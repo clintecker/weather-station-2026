@@ -3,6 +3,13 @@ test_collision (test_gateway.GatewayTests.test_collision) ... ok
 test_fault_and_invalid_values (test_gateway.GatewayTests.test_fault_and_invalid_values) ... ok
 test_replay_and_restart (test_gateway.GatewayTests.test_replay_and_restart) ... ok
 test_unknown_clock_and_future (test_gateway.GatewayTests.test_unknown_clock_and_future) ... ok
+test_commit_failure_does_not_lose_data (test_harness.HarnessTests.test_commit_failure_does_not_lose_data) ... ok
+test_negative_control_is_detected (test_harness.HarnessTests.test_negative_control_is_detected) ... ok
+test_oracle_rejects_duplicate_and_changed_payload (test_harness.HarnessTests.test_oracle_rejects_duplicate_and_changed_payload) ... ok
+test_outage_keeps_denominator_and_recovers (test_harness.HarnessTests.test_outage_keeps_denominator_and_recovers) ... ok
+test_scenario_validation (test_harness.HarnessTests.test_scenario_validation) ... ok
+test_seed_reproduces_trace_and_results (test_harness.HarnessTests.test_seed_reproduces_trace_and_results) ... ok
+test_total_loss_fails_without_hanging (test_harness.HarnessTests.test_total_loss_fails_without_hanging) ... ok
 test_ack_tamper_keeps_pending (test_stage0.AdditionalFailures.test_ack_tamper_keeps_pending) ... ok
 test_clock_quarantine_and_corrected_clock (test_stage0.AdditionalFailures.test_clock_quarantine_and_corrected_clock) ... ok
 test_c_python_wire (test_stage0.FirmwareTests.test_c_python_wire) ... ok
@@ -21,19 +28,19 @@ test_cli_demo_starts_and_persists (test_stage0.ServiceSmokeTests.test_cli_demo_s
 test_mqtt_stale_payload_and_availability (test_stage0.ServiceSmokeTests.test_mqtt_stale_payload_and_availability) ... ok
 
 ----------------------------------------------------------------------
-Ran 21 tests in 1.611s
+Ran 28 tests in 1.912s
 
 OK
-Created /tmp/tmp1cwmvsw4/state; secrets stay in gateway.json
-Created /tmp/tmp77i0gevs/state; secrets stay in gateway.json
-Created /tmp/tmp6ehtyzah/state; secrets stay in gateway.json
-Created /tmp/tmphh6jx46v/state; secrets stay in gateway.json
-Created /tmp/tmpw2fnrm9e/state; secrets stay in gateway.json
-Created /tmp/tmp3ncmrfp9/state; secrets stay in gateway.json
-Created /tmp/tmp49ccmoia/state; secrets stay in gateway.json
-Created /tmp/tmpz96sjur7/state; secrets stay in gateway.json
-Created /tmp/tmpaz3xh934/state; secrets stay in gateway.json
-Created /tmp/tmpakaseypd/state; secrets stay in gateway.json
-Created /tmp/tmpg1ge3b0l/state; secrets stay in gateway.json
-Created /tmp/tmpqgqpge70/state; secrets stay in gateway.json
-Created /tmp/tmp4v09vapr/state; secrets stay in gateway.json
+Created /tmp/tmpee271we7/state; secrets stay in gateway.json
+Created /tmp/tmpq7zlmobv/state; secrets stay in gateway.json
+Created /tmp/tmpghkfcu6d/state; secrets stay in gateway.json
+Created /tmp/tmpdf6_42g_/state; secrets stay in gateway.json
+Created /tmp/tmpeerxivy3/state; secrets stay in gateway.json
+Created /tmp/tmp4vw_b338/state; secrets stay in gateway.json
+Created /tmp/tmpbw6wh26s/state; secrets stay in gateway.json
+Created /tmp/tmp8ps6mhd0/state; secrets stay in gateway.json
+Created /tmp/tmpzlwr5e9l/state; secrets stay in gateway.json
+Created /tmp/tmpz3n5ek_q/state; secrets stay in gateway.json
+Created /tmp/tmpriwjf5q7/state; secrets stay in gateway.json
+Created /tmp/tmpr908vi9n/state; secrets stay in gateway.json
+Created /tmp/tmp8r56oxle/state; secrets stay in gateway.json

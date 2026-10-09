@@ -1,0 +1,30 @@
+{
+  "name": "custom-outage",
+  "description": "Edit this configuration to test your own link.",
+  "minutes": 240,
+  "seed": 73,
+  "uplink_loss": 0.05,
+  "ack_loss": 0.1,
+  "corruption": 0.0,
+  "duplicates": 0.0,
+  "max_delay_seconds": 20,
+  "link_outages": [
+    [
+      30,
+      45
+    ]
+  ],
+  "host_outages": [],
+  "commit_failures": [],
+  "sensor_faults": [],
+  "unknown_clock": [],
+  "clock_steps": [],
+  "node_reboots": [
+    60
+  ],
+  "gateway_reboots": [],
+  "inject_identity_collision": false,
+  "require_latency_target": false,
+  "expect_unavailable": true,
+  "expect_latency_failure": false
+}

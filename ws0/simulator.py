@@ -24,10 +24,11 @@ class Node:
         self.db.commit()
         self.sequence = 0
 
-    def sample(self,now,fault=False):
+    def sample(self,now,fault=False,clock_offset=0,clock_known=True):
         """Synthetic, clearly named station; timestamps follow real 60-second cadence."""
         record = dict(version=1,station=self.cfg['station'],session=str(self.epoch),
-                      sequence=self.sequence,sampled_at=int(now),time_quality='synchronized',
+                      sequence=self.sequence,sampled_at=int(now+clock_offset) if clock_known else None,
+                      time_quality='synchronized' if clock_known else 'unknown',
                       temperature_c=None if fault else round(21+math.sin(self.sequence/10),2),
                       humidity_pct=None if fault else round(45+math.cos(self.sequence/10),2),
                       quality='sensor_fault' if fault else 'valid')

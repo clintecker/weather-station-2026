@@ -52,6 +52,29 @@ rm run-demo/sensor-fault
 
 The transmitter journal deletes a reading only after a valid authenticated ACK. The gateway produces that ACK only after database commit. Old backfill and exact duplicate packets never refresh a measurement's age. A newer sensor failure or unknown clock marks the measurement unavailable. Future-clock samples are quarantined at receipt; a subsequent correctly timed observation restores availability.
 
+## Run the simulation harness
+
+```sh
+# 12 deterministic scenarios, 24 virtual hours each; no hardware or broker required.
+python -m ws0.harness --output my-simulation-results
+
+# Inspect the generated report on macOS.
+open my-simulation-results/report.html
+
+# Edit a scenario JSON to change loss, delay, outages, clock faults or reboots.
+python -m ws0.harness --scenario examples/scenarios/custom-outage.json --output custom-results
+
+# Intentional failure control: this should exit with status 1 and report a missing row.
+python -m ws0.harness --scenario examples/scenarios/short-baseline.json --negative-control --output negative-results
+```
+
+Output directories must be new, so repeated runs cannot silently overwrite evidence.
+Fixed scenario seeds reproduce raw frame/event traces. The included `simulation-results/report.html`
+contains the recorded campaign: all 17,280 observations recovered, zero duplicate rows,
+zero detected nonce reuse. One noisy-link seed delivered 98.82% on time, below the 99%
+target. Scenario PASS means its declared recovery/integrity contract passed; it is not
+an H01 pass. See `docs/simulation-harness.md` for the exact model and limitations.
+
 ## Home Assistant / MQTT
 
 The service includes MQTT publishing and HA discovery for temperature and humidity. MQTT is disabled by default so the demo runs without an existing broker. To enable it, stop the service and edit `run-demo/gateway.json`: set `mqtt.enabled` to true, set the broker hostname/port, add `mqtt.username` if required, and enable `mqtt.tls` for a TLS broker. Supply the password in environment variable `WS_MQTT_PASSWORD`; it is not stored in source code. Restart to apply configuration. Live reload is not implemented in this checkpoint.
