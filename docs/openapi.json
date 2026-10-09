@@ -1,0 +1,115 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Weather Station Stage 0",
+    "version": "0.2.0"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8088"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "paths": {
+    "/v1/status": {
+      "get": {
+        "summary": "Stage, qualification status and latest measurement",
+        "responses": {
+          "200": {
+            "description": "JSON response with explicit availability, UTC timestamps and units"
+          },
+          "401": {
+            "description": "Missing or incorrect bearer token"
+          }
+        }
+      }
+    },
+    "/v1/observations/latest": {
+      "get": {
+        "summary": "Latest sample by epoch and sequence",
+        "responses": {
+          "200": {
+            "description": "JSON response with explicit availability, UTC timestamps and units"
+          },
+          "401": {
+            "description": "Missing or incorrect bearer token"
+          }
+        }
+      }
+    },
+    "/v1/observations": {
+      "get": {
+        "summary": "Time-filtered historical observations",
+        "responses": {
+          "200": {
+            "description": "JSON response with explicit availability, UTC timestamps and units"
+          },
+          "401": {
+            "description": "Missing or incorrect bearer token"
+          }
+        },
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "csv"
+              ],
+              "default": "json"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

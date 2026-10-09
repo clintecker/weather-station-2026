@@ -1,0 +1,39 @@
+test_backfill_does_not_replace_live (test_gateway.GatewayTests.test_backfill_does_not_replace_live) ... ok
+test_collision (test_gateway.GatewayTests.test_collision) ... ok
+test_fault_and_invalid_values (test_gateway.GatewayTests.test_fault_and_invalid_values) ... ok
+test_replay_and_restart (test_gateway.GatewayTests.test_replay_and_restart) ... ok
+test_unknown_clock_and_future (test_gateway.GatewayTests.test_unknown_clock_and_future) ... ok
+test_ack_tamper_keeps_pending (test_stage0.AdditionalFailures.test_ack_tamper_keeps_pending) ... ok
+test_clock_quarantine_and_corrected_clock (test_stage0.AdditionalFailures.test_clock_quarantine_and_corrected_clock) ... ok
+test_c_python_wire (test_stage0.FirmwareTests.test_c_python_wire) ... ok
+test_sensirion_crc (test_stage0.FirmwareTests.test_sensirion_crc) ... ok
+test_accelerated_1440_records (test_stage0.PipelineTests.test_accelerated_1440_records) ... ok
+test_commit_ack_replay (test_stage0.PipelineTests.test_commit_ack_replay) ... ok
+test_commit_failure_no_ack (test_stage0.PipelineTests.test_commit_failure_no_ack) ... ok
+test_fault_unknown_recovery (test_stage0.PipelineTests.test_fault_unknown_recovery) ... ok
+test_ha_discovery (test_stage0.PipelineTests.test_ha_discovery) ... ok
+test_http_auth_csv_pagination (test_stage0.PipelineTests.test_http_auth_csv_pagination) ... ok
+test_nonce_restart_and_missing_state (test_stage0.PipelineTests.test_nonce_restart_and_missing_state) ... ok
+test_outage_restart_backfill_stale (test_stage0.PipelineTests.test_outage_restart_backfill_stale) ... ok
+test_tamper_key_direction (test_stage0.PipelineTests.test_tamper_key_direction) ... ok
+test_bus_failures_crc_and_conversion (test_stage0.SensorBusTests.test_bus_failures_crc_and_conversion) ... ok
+test_cli_demo_starts_and_persists (test_stage0.ServiceSmokeTests.test_cli_demo_starts_and_persists) ... ok
+test_mqtt_stale_payload_and_availability (test_stage0.ServiceSmokeTests.test_mqtt_stale_payload_and_availability) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 1.611s
+
+OK
+Created /tmp/tmp1cwmvsw4/state; secrets stay in gateway.json
+Created /tmp/tmp77i0gevs/state; secrets stay in gateway.json
+Created /tmp/tmp6ehtyzah/state; secrets stay in gateway.json
+Created /tmp/tmphh6jx46v/state; secrets stay in gateway.json
+Created /tmp/tmpw2fnrm9e/state; secrets stay in gateway.json
+Created /tmp/tmp3ncmrfp9/state; secrets stay in gateway.json
+Created /tmp/tmp49ccmoia/state; secrets stay in gateway.json
+Created /tmp/tmpz96sjur7/state; secrets stay in gateway.json
+Created /tmp/tmpaz3xh934/state; secrets stay in gateway.json
+Created /tmp/tmpakaseypd/state; secrets stay in gateway.json
+Created /tmp/tmpg1ge3b0l/state; secrets stay in gateway.json
+Created /tmp/tmpqgqpge70/state; secrets stay in gateway.json
+Created /tmp/tmp4v09vapr/state; secrets stay in gateway.json
