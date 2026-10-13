@@ -78,6 +78,17 @@ LDFLAGS = $(CPU) -T STM32WL55JCIX_FLASH.ld --specs=nano.specs --specs=nosys.spec
           -Wl,--gc-sections -Wl,-Map=$(TARGET).map -Wl,--no-warn-rwx-segments \
           -Wl,--start-group -lc -lm -Wl,--end-group
 
+# Our own C (not ST-generated Core/, not vendor) builds with a strict warning set and -Werror.
+# These flags do not change the generated code. ANALYZE=1 adds GCC's static analyzer (used by CI).
+OUR_SRC = $(filter App/%.c $(ROOT)/firmware/%.c,$(APP_SRC))
+OUR_OBJS = $(addprefix $(BUILD)/app/,$(notdir $(OUR_SRC:.c=.o)))
+STRICT = -Wextra -Wshadow -Wconversion -Wsign-conversion -Wcast-qual -Wstrict-prototypes \
+         -Wmissing-prototypes -Wundef -Wdouble-promotion -Wformat=2 -Wnull-dereference -Werror
+ifeq ($(ANALYZE),1)
+STRICT += -fanalyzer
+endif
+$(OUR_OBJS): CFLAGS += $(STRICT)
+
 OBJS = $(addprefix $(BUILD)/app/,$(notdir $(APP_SRC:.c=.o))) \
        $(addprefix $(BUILD)/cube/,$(notdir $(CUBE_SRC:.c=.o))) \
        $(BUILD)/app/startup.o

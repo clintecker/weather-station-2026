@@ -133,6 +133,15 @@ jobs:
           fi
           echo "Reproducible: both clean builds gave identical .bin hashes."
 
+      # Our C already builds with a strict warning set and -Werror (Makefile STRICT). ANALYZE=1
+      # adds GCC's static analyzer (-fanalyzer) to our files only; any finding fails the build.
+      # Separate build directories, so the release-identical bins above are untouched.
+      - name: Static analysis (gcc -fanalyzer, our code)
+        working-directory: firmware/stage0-node
+        run: |
+          make ROLE=rx ANALYZE=1 BUILD=build/analyze-rx -j"$(nproc)"
+          make ROLE=tx ANALYZE=1 BUILD=build/analyze-tx -j"$(nproc)"
+
       - name: Print sizes
         working-directory: firmware/stage0-node
         run: |

@@ -213,7 +213,7 @@ int store_journal_init(void) {
   uint32_t last_used = 0;
   for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE; s++) {
    uint32_t a = slot_addr(p, s); int bad_data = 0, bad_ack = 0; uint64_t d[4], ack;
-   for (int k = 0; k < 4; k++) d[k] = rd64(a + 8 * k, &bad_data);
+   for (uint32_t k = 0; k < 4; k++) d[k] = rd64(a + 8 * k, &bad_data);
    ack = rd64(a + 32, &bad_ack);
    if (!bad_data && !bad_ack && d[0] == ERASED && d[1] == ERASED && d[2] == ERASED && d[3] == ERASED && ack == ERASED) continue;
    last_used = s + 1;
@@ -254,7 +254,7 @@ int store_journal_append(const uint8_t plain[24], jref_t *ref) {
 }
 int store_journal_read(jref_t ref, uint8_t plain[24]) {
  uint32_t a = slot_addr(ref.page, ref.slot); int bad = 0; uint64_t d[3];
- for (int k = 0; k < 3; k++) d[k] = rd64(a + 8 * k, &bad);
+ for (uint32_t k = 0; k < 3; k++) d[k] = rd64(a + 8 * k, &bad);
  if (bad) return -1;
  memcpy(plain, d, 24);
  return 0;

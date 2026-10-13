@@ -71,7 +71,11 @@ static int i2c_recover(void)
 static int bus_write(void *ctx, uint8_t addr, const uint8_t *data, size_t n)
 {
   (void)ctx;
-  return HAL_I2C_Master_Transmit(&hi2c2, (uint16_t)(addr << 1), (uint8_t *)data, (uint16_t)n, I2C_TIMEOUT_MS) != HAL_OK;
+  /* ST's HAL takes a non-const buffer it only reads; copy instead of casting const away. */
+  uint8_t buf[8];
+  if (n > sizeof buf) return 1;
+  for (size_t i = 0; i < n; i++) buf[i] = data[i];
+  return HAL_I2C_Master_Transmit(&hi2c2, (uint16_t)(addr << 1), buf, (uint16_t)n, I2C_TIMEOUT_MS) != HAL_OK;
 }
 static int bus_read(void *ctx, uint8_t addr, uint8_t *data, size_t n)
 {
