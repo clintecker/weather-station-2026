@@ -3,6 +3,17 @@
 Each release is built from a clean commit (no `-dirty`), built twice from scratch with identical
 hashes, flashed to both boards, and recorded here. H01 evidence must name a release from this file.
 
+## How to cut a release
+
+1. Commit everything. `git status --short` must print nothing, or the build is labeled `-dirty`.
+2. Run `tools/fetch-vendor.sh`. It verifies every pinned vendor commit. Use xPack arm-none-eabi-gcc 15.2.1-1.1 (the Makefile `TOOLCHAIN` default).
+3. In `firmware/stage0-node`, run `make clean && make ROLE=rx && make ROLE=tx`. Note the two `.bin` SHA-256 values printed at the end of each build.
+4. Run `make clean && make ROLE=rx && make ROLE=tx` again. Both `.bin` hashes must be identical to step 3.
+5. Flash RX, then TX: `make ROLE=rx flash SERIAL=<RX serial>`, then the same with `ROLE=tx`. Check that both `#boot` lines show `fw=<12-character commit>`.
+6. Add a section below with the commit, date, hashes, inputs, flash record and radio settings, and commit it.
+
+**Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
+
 ## a07f498273f7 — 2026-10-13 (bench, sensor not yet wired)
 
 | Artifact | SHA-256 |

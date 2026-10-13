@@ -1,7 +1,7 @@
 # Stage-0 protocol stack: from sensor to database
 
 > **Document type:** Technical description. **Language:** ASD-STE100 Simplified Technical English (STE) [[STE]](#STE).
-> **Applies to:** protocol draft 4, firmware `firmware/stage0-node`, gateway `ws0/`. Commit `d825c17` and later.
+> **Applies to:** protocol draft 4, firmware `firmware/stage0-node`, gateway `ws0/`. Text synchronized with commit `a07f498` (draft 4 + NACK, DIAG, transmission policy).
 > **Status:** Bench data path operates. The sensor is not connected yet. **H01 is NOT RUN.**
 > **Short reference:** [`protocol.md`](protocol.md) gives the byte tables only. This document tells how each layer operates and why.
 > **Failures and recovery:** [`failure-modes.md`](failure-modes.md) defines every non-happy-path behavior, the loss budget, and the known gaps, for the battery/solar deployment.
@@ -27,8 +27,8 @@ The system has three physical units:
 
 | Unit | Hardware | Function |
 |---|---|---|
-| **TX board** | NUCLEO-WL55JC1, board A, ST-LINK serial `003B00194142500E20353451` | Reads the sensor. Stores each observation. Encrypts and transmits it. Keeps it until an ACK arrives. |
-| **RX board** | NUCLEO-WL55JC1, board B, ST-LINK serial `0016001E4142500E20353451` | Receives radio frames and sends them to the host. Transmits ACKs from the host. It has no key. It cannot read or make frames. |
+| **TX board** | NUCLEO-WL55JC1, board A, ST-LINK serial `003B00194142500E20353451` | Reads the sensor. Stores each observation. Encrypts and transmits it. Keeps it until an ACK arrives (or a NACK, or the strike limit, abandons it; section 9.5). |
+| **RX board** | NUCLEO-WL55JC1, board B, ST-LINK serial `0016001E4142500E20353451` | Receives radio frames and sends them to the host. Transmits ACKs and NACKs from the host. It has no key. It cannot read or make frames. |
 | **Gateway** | Host computer (Mac), Python service `ws0` | Authenticates frames. Stores observations in SQLite. Makes the ACK **after** the database commit. Supplies the time. |
 
 ```mermaid
@@ -141,10 +141,12 @@ After a bus fault, the firmware does a bus recovery. A sensor can hold SDA low i
 
 1. Set SCL and SDA to GPIO open-drain outputs.
 2. Give up to 9 clock pulses on SCL until the sensor releases SDA.
-3. Make a STOP condition (SDA goes high while SCL is high).
+3. Drive SDA low, then high, to make a STOP condition.
 4. Start the I²C peripheral again.
 
-> **Note:** The sensor is not connected yet (expected 2026-10-14). All current observations are `sensor_fault`. This is the correct behavior.
+> **Caution (code issue, unverified on hardware):** `i2c_recover()` in `App/sensor.c` does not drive SCL high before step 3. When SDA is already released, no clock pulse runs, so SCL can stay low (the GPIO output latch is presumably 0) and step 3 then does not make a real STOP. When the loop runs, SCL ends high and the STOP is correct. Check with a logic analyzer, or set SCL high before the loop.
+
+> **Note:** The SHT45 was delivered 2026-10-13 but is not wired yet. All current observations are `sensor_fault`. This is the correct behavior.
 
 **More information:** Sensirion SHT4x datasheet [[SHT4x]](#SHT4x) · I²C specification, NXP UM10204 [[I2C]](#I2C) · bus recovery, UM10204 section 3.1.16.
 
@@ -201,7 +203,7 @@ The STM32WL55JC has 256 KB of flash in 128 pages of 2 KB. The flash programs 64 
 |---|---|---|
 | 0–31 | 64 KB | Firmware. The linker script enforces this limit. |
 | 32 | 2 KB | Configuration: station ID, key, key check value (KCV) |
-| 33–34 | 4 KB | Monotonic log, two pages (A/B): epochs and counter reservations |
+| 33–34 | 4 KB | Monotonic log, two pages (A/B): epochs, counter reservations, lost total, abandoned total |
 | 35–127 | 186 KB | Journal ring: 93 pages × 51 slots |
 
 A firmware update programs only pages 0–31. The configuration, the counters, and the journal stay. (Verified 2026-10-12.)
@@ -226,6 +228,7 @@ stateDiagram-v2
   Erased --> Pending: data + commit word programmed
   Pending --> Acknowledged: authentic ACK → program ACK word to 0
   Pending --> Lost: ring full → page erased
+  Pending --> Acknowledged: NACK or strike limit → counted "abandoned"
   Acknowledged --> Erased: page erased on reuse
   Torn --> Erased: page erased on reuse
   Lost --> Erased
@@ -295,9 +298,11 @@ When a log page is full, the firmware writes the current maximum values to the o
 
 ### 6.2 Why counter reuse is dangerous
 
-AES-CCM uses counter mode for encryption. If two frames use the same key and nonce, an attacker can XOR the two ciphertexts and get the XOR of the two plaintexts. The attacker can also forge messages. RFC 3610 section 7 and NIST SP 800-38C describe this risk [[RFC3610]](#RFC3610) [[SP800-38C]](#SP800-38C).
+AES-CCM uses counter mode for encryption. If two frames use the same key and nonce, an attacker can XOR the two ciphertexts and get the XOR of the two plaintexts. The authentication guarantee is also lost (the exact forgery attack is not described in the cited sources; unverified). RFC 3610 section 2.1 ("destroys the security properties of this mode") and NIST SP 800-38C describe this risk [[RFC3610]](#RFC3610) [[SP800-38C]](#SP800-38C).
 
 > **Warning:** Do not restore an old copy of the TX flash state or the gateway nonce database while you keep the same key. If counter state is lost, provision a **new key** for both ends.
+
+> **Warning:** `WIPE ERASE-ALL-NODE-STATE` resets the node's 64-bit counter to 1. The `PROVISION` epoch floor raises only the epoch (the observation identity), **not** the counter. Thus never provision a wiped board with a key that it used before: it would repeat nonces already sent on air. Use a new key. See [`runbook-moving-boards.md`](runbook-moving-boards.md).
 
 ---
 
@@ -305,7 +310,7 @@ AES-CCM uses counter mode for encryption. If two frames use the same key and non
 
 ### 7.1 Frame format
 
-Both frame kinds are 56 bytes.
+All four frame kinds are 56 bytes.
 
 | Offset | Size | Field | Protection |
 |---:|---:|---|---|
@@ -322,10 +327,10 @@ Both frame kinds are 56 bytes.
 flowchart LR
   subgraph HDR["Header · 16 bytes · clear, authenticated (AAD)"]
     direction LR
-    h1["WS"] --- h2["ver 2"] --- h3["kind"] --- h4["station ID"] --- h5["counter hi"] --- h6["counter lo"]
+    h1["WS"] --- h2["ver 4"] --- h3["kind"] --- h4["station ID"] --- h5["counter hi"] --- h6["counter lo"]
   end
   subgraph CT["Ciphertext · 24 bytes"]
-    c1["observation or ACK plaintext"]
+    c1["plaintext of the kind (24 bytes)"]
   end
   subgraph TAG["Tag · 16 bytes"]
     t1["CBC-MAC tag"]
@@ -335,7 +340,7 @@ flowchart LR
 
 ### 7.2 Nonce and associated data
 
-- **Nonce (13 bytes)** = kind (1) + station ID (4) + counter (8). The kind byte separates the TX → gateway direction from the gateway → TX direction. Thus the two directions can use the same key and never share a nonce.
+- **Nonce (13 bytes)** = kind (1) + station ID (4) + counter (8). The node's counter space is used by kinds 1 and 4. The gateway's counter space is used by kinds 2 and 3. The kind byte keeps every (kind, counter) pair distinct. Thus all kinds can use the same key and never share a nonce.
 - **Associated data (AAD)** = all 16 header bytes. An attacker cannot change the station, the kind, or the counter without a tag failure.
 - **Key** = 128 bits. Each station has a different key. The gateway and the TX board share it.
 - **Tag** = 128 bits (16 bytes).
@@ -346,16 +351,47 @@ flowchart LR
 |---:|---:|---|
 | 0 | 4 | Acknowledged epoch |
 | 4 | 4 | Acknowledged sequence |
-| 8 | 8 | Host UTC at commit (Unix seconds) |
+| 8 | 8 | Host UTC at commit (Unix seconds). **0** if the gateway measured its own clock as wrong (section 11.3). |
 | 16 | 8 | **Echo**: transmission counter of the observation frame that this ACK answers |
 
 Section 11.3 explains the echo.
+
+### 7.3.1 NACK plaintext (kind 3, 24 bytes)
+
+The gateway sends a NACK only for an **authentic** frame that it must reject permanently. It first stores the raw frame in its `rejections` table. A NACK uses the gateway's ACK counter space.
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 4 | Epoch of the rejected observation |
+| 4 | 4 | Sequence of the rejected observation |
+| 8 | 4 | Reason: `1` identity collision, `2` invalid record |
+| 12 | 4 | Reserved, 0 |
+| 16 | 8 | **Echo**: counter of the observation frame |
+
+### 7.3.2 Health report plaintext (DIAG, kind 4, 24 bytes)
+
+Node → gateway, fire-and-forget: no journal entry, no receive window, no reply. It uses the node's counter space. The gateway stores it in its `diagnostics` table, ordered by (epoch, uptime), not by arrival.
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 4 | Epoch |
+| 4 | 4 | Uptime, seconds |
+| 8 | 2 | Journal pending |
+| 10 | 4 | Journal lost total (cumulative, persisted) |
+| 14 | 2 | Torn (burned) slots |
+| 16 | 2 | Abandoned total (cumulative, persisted) |
+| 18 | 2 | Missed ACKs since boot |
+| 20 | 2 | Rejected replies since boot |
+| 22 | 1 | Reset cause: 0 unknown, 1 power, 2 pin, 3 brownout, 4 software, 5 watchdog, 6 lowpower, 7 option-bytes |
+| 23 | 1 | Link state: 0 linked, 1 probing |
+
+The 16-bit fields stop at `0xFFFF`. The node sends a report every 15 minutes and after each link-state change, after that minute's exchange, **only while LINKED**. Thus the link field always reads 0 in practice.
 
 ### 7.4 Implementations
 
 | Side | Library | Version | Pinned by |
 |---|---|---|---|
-| TX board | Mbed TLS (`mbedtls_ccm_*`) | 3.6.6 LTS | `STM32CubeWL` submodule `mbed-crypto` @ `7ee7e20` |
+| TX board | Mbed TLS (`mbedtls_ccm_*`) | 3.6.6 LTS | `tools/fetch-vendor.sh`: `STM32CubeWL` submodule `mbed-crypto` @ `7ee7e20` |
 | Gateway | `cryptography` (`AESCCM`, OpenSSL) | 50.0.1 | `requirements.txt` |
 
 The project does not have its own AES code. The test file `tests/test_frame.py` compiles the C frame code on the host. It makes sure that C and Python give the **same bytes**. It does a known-answer test and 200 random frames in each direction. It also does rejection tests: bad tag, wrong station, wrong key, wrong length, and the draft-1, draft-2 and draft-3 version bytes. It also tests the filler rules (section 4.1). The TX board does the same known-answer test at each boot (`kat=pass`). If the test fails, the board does not transmit.
@@ -419,7 +455,7 @@ The firmware now sets the symbol timeout to 0 (off). The 2-second window timer s
 
 ### 8.5 Measured link (bench, 2026-10-12)
 
-Antennas: supplied stub antennas, approximately 30 cm apart, 0 dBm.
+Antennas: supplied stub antennas, approximately 30 cm apart, 0 dBm. (Unverified: no evidence file is linked for these figures.)
 
 | Measure | Value |
 |---|---|
@@ -435,6 +471,8 @@ This is a bench result. It is not a range result. H01 requires a test at the rea
 ## 9. Layer 7 — Exchange and retry
 
 ### 9.1 One minute of operation
+
+This diagram shows one minute in the LINKED state. Section 9.4 gives the transmission policy that limits the backlog and the PROBING state.
 
 ```mermaid
 sequenceDiagram
@@ -461,7 +499,7 @@ sequenceDiagram
   TX->>TX: Open ACK · mark slot acknowledged · set clock
   end
   rect rgba(120,200,120,0.12)
-  Note over TX,DB: Then up to 2 older pending observations
+  Note over TX,DB: Then up to N older pending observations (N = 5 in Stage 0, section 9.4)
   TX->>TX: Wait 50 ms · new counter · same identity
   TX-)RX: Backlog frame
   RX->>GW: hex line
@@ -469,6 +507,7 @@ sequenceDiagram
   GW->>RX: hex line
   RX-)TX: ACK frame
   end
+  TX-)RX: Health report (kind 4), if due · no reply
   TX->>TX: Radio sleep until next minute
 ```
 
@@ -478,12 +517,12 @@ sequenceDiagram
 stateDiagram-v2
   [*] --> Idle
   Idle --> Sampling: 60 s timer
-  Sampling --> Sending: journal OK, queue = live + ≤2 oldest
+  Sampling --> Sending: queue = live + ≤N oldest (section 9.4)
   Sampling --> Idle: queue empty
   Sending --> Waiting: TxDone
   Sending --> Next: TxTimeout
   Waiting --> Next: RxDone (ACK checked)
-  Waiting --> Next: RxTimeout 2,000 ms
+  Waiting --> Next: RxTimeout 2,000 ms (ends the drain)
   Next --> Sending: more in queue (after 50 ms)
   Next --> Idle: queue done · radio sleep
 ```
@@ -491,12 +530,36 @@ stateDiagram-v2
 ### 9.3 Rules
 
 - **Live first.** The current observation goes first. The backlog cannot delay new data.
-- **Bounded backlog.** Each minute sends 2 old observations at most. A 3.3-day backlog takes longer to clear than the outage that made it. H11 must examine this rate.
+- **Bounded backlog.** Each minute sends N old observations at most (section 9.4). At NORMAL (N = 5) a full 3.3-day journal (4,743 records) clears in approximately 16 hours. In CONSERVE (N = 0) the backlog does not clear. H11 must examine this rate.
 - **Retry is the same data.** A retry has the same identity and a new counter. The gateway stores it once and sends the ACK again.
-- **The RX board does not decide.** It forwards frames with the correct length, magic, version, and kind. It does not check the tag. It has no key.
+- **The RX board does not decide.** It forwards frames with the correct length, magic, version, and kind (1 or 4 up, 2 or 3 down). It does not check the tag. It has no key.
 - **Any authentic ACK clears its own slot.** An ACK can arrive late. It still clears the correct slot.
 
-### 9.4 Failure cases
+### 9.4 Transmission policy
+
+Source: [`radio-energy-policy.md`](radio-energy-policy.md) and `App/app_tx.c`. The stricter of the energy state and the link state applies.
+
+| Energy state | Backlog per minute | Radio time per minute | Note |
+|---|---:|---:|---|
+| SURPLUS | 20 | 15 s | — |
+| NORMAL | 5 | 5 s | **Stage 0 is fixed at NORMAL** (USB power) |
+| CONSERVE | 0 | 2 s | Live reading only, at most every 300 s |
+| CRITICAL | 0 | 0 | Nothing is sent. Readings stay in the journal. |
+
+- **Airtime cap.** One answered exchange is estimated at 2 × air time + 300 ms = 354 ms (SF7, 500 kHz). The number of frames in a minute is limited to the radio time ÷ 354 ms. The live reading always fits.
+- **Drain stops at the first miss.** If a frame gets no reply (or a TX timeout occurs), the node sends nothing more in that minute.
+- **PROBING.** After 3 consecutive minutes with no answer, the link state becomes PROBING. The node then sends only the live reading, as a probe, 120 s, 240 s and 480 s later, then every 900 s. Other readings stay in the journal. Any answer to a sent frame makes the link LINKED again.
+- **Simulator difference.** The Python simulator (`ws0/__main__.py` demo, `ws0/simulator.py`) still drains 2 records per minute. Simulation results thus use a different drain rate from the firmware.
+
+### 9.5 NACK and abandoned records
+
+A record leaves the journal without an ACK in three cases. Each case is counted, and the counts go into the health report (section 7.3.2).
+
+1. **NACK.** The gateway authenticated the frame but must reject it permanently (identity collision or invalid record). The node accepts a NACK only if its echo, epoch and sequence match the frame just sent. It marks the slot done and adds 1 to the persisted `abandoned` total.
+2. **Strike limit.** A record that stays unanswered in 10 exchanges in which the gateway answered other frames is abandoned and counted (`STRIKE_LIMIT` 10, 6 tracking slots). An exchange with no answer at all does not count. Thus a link or gateway outage never abandons data.
+3. **Ring overflow.** The oldest page is erased and its pending records are counted as `lost` (section 5.5).
+
+### 9.6 Failure cases
 
 | Failure | Result | Recovery |
 |---|---|---|
@@ -504,6 +567,8 @@ stateDiagram-v2
 | ACK lost on air | Gateway has the row. TX keeps the slot. | Next minute: duplicate. Gateway gives the ACK again. No second row. |
 | Gateway not running | RX prints the frame. Nobody answers. | TX keeps observations for 3.3 days |
 | Database commit fails | No ACK | TX keeps the slot and sends it again |
+| Authentic frame, identity collision or invalid record | Gateway stores the frame in `rejections`. It sends a NACK. | TX abandons the record (section 9.5) |
+| Gateway silent for 3 minutes | TX goes to PROBING | Probes at 120/240/480/900 s. The backlog drains after the link returns. |
 | TX power loss | Unsent slots stay in flash | After boot: new epoch, backlog sent first-in, first-out |
 | RX power loss | Frames are lost while RX is off | TX backlog |
 | Forged or changed frame | Tag fails | Gateway rejects it and logs it. No ACK. |
@@ -528,18 +593,20 @@ The ST-LINK on each Nucleo board makes the USB virtual COM port. The port name c
 
 | Direction | Line | Meaning |
 |---|---|---|
-| RX → host | 112 lowercase hex digits + `\n` | One observation frame (56 bytes) |
-| RX → host | `#rx obs rssi=-23 snr=13` | Diagnostic for the line before |
-| RX → host | `#rx drop …`, `#rx error`, `#tx timeout`, `#host reject …`, `#boot …`, `#status …` | Diagnostics |
-| host → RX | 112 hex digits + `\n` | One ACK frame to transmit |
+| RX → host | 112 lowercase hex digits + `\n` | One observation or health-report frame (56 bytes, kind 1 or 4) |
+| RX → host | `#rx obs rssi=-23 snr=13` | Diagnostic for the line before (also printed for kind 4) |
+| RX → host | `#rx drop …`, `#rx error`, `#tx timeout`, `#tx busy`, `#host reject …`, `#boot …`, `#status …`, `#watchdog radio not listening; re-arming` | Diagnostics |
+| RX → host | `#alive uptime=… forwarded=… dropped=… acks=… diag=… listening=…` | Every 60 s. The gateway marks the receiver silent after 180 s without it. |
+| host → RX | 112 hex digits + `\n` | One ACK or NACK frame (kind 2 or 3) to transmit once, with the uplink radio settings |
 | host → RX | `STATUS` | Ask for counters |
 
 Rules:
 
 - A line is 256 bytes or less. The gateway discards a longer line.
-- A line that starts with `#` is a diagnostic. The gateway writes it to `run-hw/receiver.log`. It never decodes it as a frame.
-- The gateway writes each frame and its ACK to `receiver.log`, with UTC time. This file is evidence for H01.
+- A line that starts with `#` is a diagnostic. The gateway writes it to `receiver.log` in its run directory (`--directory`, for example `run-hw/` at home or `run-office/` at the office). It never decodes it as a frame. It reads the fields of `#alive` and `#boot role=rx` only for receiver liveness.
+- The gateway writes each frame and its ACK or NACK to `receiver.log`, with UTC time (`frame <hex> -> ack <hex>` or `-> nack <hex>`; health reports as `diag <hex>`). This file is evidence for H01.
 - The serial read timeout is 50 ms. The gateway answers a frame immediately. (The TX ACK window is 2 s.)
+- While the RX console holds a complete line for processing, it drops more input. The host sends one line for each exchange.
 
 ### 10.3 TX console (not part of the data path)
 
@@ -548,11 +615,13 @@ The TX board also has a console. It is for provisioning and diagnostics. All lin
 | Command | Function |
 |---|---|
 | `STATUS` | Shows provisioning, KCV, self-test, epoch, sequence, time quality, and journal counters |
-| `KAT` | Runs the crypto known-answer test again |
-| `PROVISION <id> <32 hex>` | Writes the station ID and the key. Only on an empty board. |
-| `WIPE ERASE-ALL-NODE-STATE` | Erases the key, the counters, and the journal. **You must then provision a new key.** |
+| `KAT` | Runs the crypto known-answer test again (observation, ACK, tampered ACK, NACK) |
+| `PROVISION <id> <32 hex> [epoch_floor]` | Writes the station ID and the key. Only on an empty board. The optional epoch floor raises the next epoch above every epoch that the gateway stored, so a wiped board never repeats an **observation identity**. It does not change the transmission counter. |
+| `WIPE ERASE-ALL-NODE-STATE` | Erases the key, the counters, and the journal. **You must then provision a new key** (section 6.2, [`runbook-moving-boards.md`](runbook-moving-boards.md)). |
+| `TEST-HANG` | Bench only. Stops the main loop. The watchdog must reset the board in approximately 8 s. |
+| `TEST-FLASH-STORM` | Bench only. Writes flash continuously for power-cut tests. Its slots use epoch `0xFFFFFFFF`. The next boot removes any of them that a cut left pending. |
 
-Use `python -m ws0 provision-node`. Do not type the key by hand. The tool compares the KCV of the board with the KCV of the gateway key.
+Use `python -m ws0 provision-node`. Do not type the key by hand. The tool calculates the epoch floor from the gateway database and compares the KCV of the board with the KCV of the gateway key.
 
 **More information:** UM2592 section on the STLINK-V3E virtual COM port [[UM2592]](#UM2592) · pyserial [[PYSERIAL]](#PYSERIAL).
 
@@ -567,23 +636,28 @@ flowchart TD
   L["Hex line from RX"] --> P{"Valid hex?<br/>≤256 bytes?"}
   P -- no --> RJ["Reject · log"]
   P -- yes --> U{"unseal(kind=1)<br/>length · magic · version ·<br/>station · tag"}
+  P -- "kind 4" --> DG["Health report: unseal(kind=4)<br/>store · no reply"]
   U -- fail --> RJ
+  RJ -.- NO["Unauthenticated: never a NACK"]
   U -- ok --> D{"decode + validate<br/>canonical fields?"}
-  D -- no --> RJ
+  D -- no --> NK["Store frame in rejections<br/>seal NACK (reason 2, echo)"]
   D -- yes --> I{"Identity in DB?"}
   I -- "no" --> W["INSERT · COMMIT"]
   I -- "yes, same payload" --> DUP["Duplicate: no change"]
-  I -- "yes, other payload" --> COL["Collision: reject<br/>no ACK"]
+  I -- "yes, other payload" --> COL["Collision: store in rejections<br/>seal NACK (reason 1, echo)<br/>never an ACK"]
   W --> A["Reserve ACK counter (SQLite)<br/>seal ACK: epoch, seq, UTC, echo"]
   DUP --> A
   A --> S["Write hex line to RX<br/>log frame → ack"]
+  NK --> S2["Write hex line to RX<br/>log frame → nack"]
+  COL --> S2
 ```
 
 ### 11.2 Storage rules
 
-- SQLite uses `PRAGMA synchronous=FULL` [[SQLITE]](#SQLITE). The commit is on the disk before the ACK exists.
+- SQLite uses `PRAGMA synchronous=FULL` [[SQLITE]](#SQLITE), plus `PRAGMA fullfsync=ON` and `checkpoint_fullfsync=ON`. On macOS, `fsync()` does not flush the drive cache, but `F_FULLFSYNC` does. Thus the commit is on stable storage before the ACK exists (`gateway.py`, `full_flush`). Simulations and unit tests can switch this off with `WS0_UNSAFE_FAST_FSYNC=1`. Results made that way do not show power-loss durability.
 - The gateway ACK counters use a `BEGIN IMMEDIATE` transaction. The counter is in the database before the gateway seals the ACK.
 - The nonce database is bound to the key fingerprint, the station, and the direction. A different key cannot use it by accident.
+- An authentic frame that the gateway must reject permanently goes into the `rejections` table (station, session, sequence, received_at, reason, detail, frame_hex) **before** the NACK is sealed.
 - A sample time more than 5 s after the receipt time is **quarantined** (`future_clock_at_receipt`). Waiting does not make it valid.
 - An observation is **available** for 180 s after its sample time, only if it is valid and its clock is known. After 180 s, Home Assistant and the API show it as unavailable.
 
@@ -601,6 +675,8 @@ flowchart TD
   T -- no --> K["Keep the clock as it is"]
 ```
 
+**Host clock check.** The gateway is the only time source. It measures its own clock with SNTP at start and every hour (`ws0/clock.py`). If the offset is more than 1 s, every ACK carries UTC **0**. The TX board then does not change its clock, because 0 is before 2026-01-01. If no measurement is possible, the gateway still sends its time and shows `unverified` in `/v1/status`.
+
 **Why the echo is necessary.** An attacker can record an authentic ACK. Later, the attacker can jam the real ACK and send the recorded ACK. Without the echo, the TX board accepts the old time. With the echo, the old ACK has an old counter. The TX board uses a new counter for each frame, so the old ACK does not match. The attacker cannot make a new valid echo without the key.
 
 **Accuracy.** The gateway writes its time at the commit. The TX board sets its clock when the ACK arrives. The TX clock is late by the time between these two events. This time is normally much less than 1 s (two air times + USB + commit). Nobody has measured it exactly yet.
@@ -616,7 +692,7 @@ A system reset (RESET button, NRST, software reset, future watchdog) does not st
 - the sync is less than 6 hours old,
 - the clock shows a plausible date.
 
-A power loss clears the backup domain on this board, so the board then starts with `time unknown`. **Bench result (2026-10-12):** after a reset the board printed `#time restored … sync_age=11`. Its first reading in the new epoch was synchronized, within about 1 s of the host.
+A power loss clears the backup domain on this board (no VBAT battery; unverified against the board schematic), so the board then starts with `time unknown`. **Bench result (2026-10-12):** after a reset the board printed `#time restored … sync_age=11`. Its first reading in the new epoch was synchronized, within about 1 s of the host.
 
 #### 11.3.2 Reconstructed time (option C, draft 4)
 
@@ -652,7 +728,7 @@ Rules:
 | Interface | Address | Notes |
 |---|---|---|
 | HTTP API | `127.0.0.1:8088`, bearer token | `/v1/status`, `/v1/observations/latest`, `/v1/observations` (JSON or CSV) |
-| MQTT | `weatherstation/v1/{station}/…` | Off by default. Home Assistant discovery is available. Not tested with a live broker yet. |
+| MQTT | `weatherstation/v1/{station}/…` | Off by default. Home Assistant discovery is available. Verified against a local Mosquitto broker on 2026-10-13 (`evidence/mqtt-local-broker-2026-10-13/`). Not yet tested against the real Home Assistant broker. |
 
 See [`openapi.json`](openapi.json) and the stage-0 README.
 
@@ -660,7 +736,7 @@ See [`openapi.json`](openapi.json) and the stage-0 README.
 
 ## 12. Worked example: one real exchange
 
-This exchange occurred on 2026-10-13 at 02:11:25 UTC, **under draft 2**. Draft 3 changes two things in it: the version byte becomes `03`, and the invalid temperature and humidity become `8000 ffff` instead of `0000 0000`. Thus the ciphertext and the tag are different. The structure is the same. It comes from `run-hw/receiver.log`. The key is not shown.
+This exchange is **historical**. It occurred on 2026-10-13 at 02:11:25 UTC, **under draft 2**. Later drafts change it. Draft 3 changes the invalid temperature and humidity to `8000 ffff` instead of `0000 0000`. Draft 4 makes the version byte `04`, and changes the 8-byte UTC field into a 4-byte UTC field and a 4-byte uptime field (section 4). Thus the ciphertext and the tag are different, and the plaintext layout below is the draft-2 layout. The envelope (header, ciphertext, tag) is the same. It comes from `run-hw/receiver.log`. The key is not shown.
 
 ### 12.1 Observation frame (TX → gateway)
 
@@ -679,7 +755,7 @@ epoch=2  seq=1    utc=1791857484   T=0  RH=0 v=0 t=1 cal=0
 
 Note:
 - The counter is 260, not 10. A reboot skipped the rest of the reserved block (section 6.1).
-- Validity is 0, because the sensor is not connected. Temperature and humidity are 0, as the canonical rule requires.
+- Validity is 0, because the sensor is not connected. Temperature and humidity are 0, as the draft-2 rule required. Draft 3 and later require `8000 ffff`.
 - Time quality is 1. An earlier ACK set the clock.
 
 ### 12.2 ACK frame (gateway → TX)
@@ -701,17 +777,26 @@ The echo (260) is equal to the counter of the observation frame. The TX board ac
 
 ### 12.3 Try it yourself
 
+The script opens draft-4 frames only. It skips lines from earlier drafts, such as the example above. Give the run directory as the argument.
+
 ```sh
-# Decode the logged exchanges (needs the key in run-hw/gateway.json; prints no key)
-.venv/bin/python - <<'EOF'
-import json, re
-from ws0.protocol import unseal, frame_counter, OBS, ACK
-cfg = json.load(open('run-hw/gateway.json')); key = bytes.fromhex(cfg['radio_key'])
-for line in open('run-hw/receiver.log'):
-    m = re.search(r'(\S+) frame (\w+) -> ack (\w+)', line)
-    if m:
-        f, a = bytes.fromhex(m[2]), bytes.fromhex(m[3])
-        print(m[1], frame_counter(f), OBS.unpack(unseal(key, 1, 1, f)), ACK.unpack(unseal(key, 1, 2, a)))
+# Decode the logged exchanges (needs the key in <run dir>/gateway.json; prints no key)
+.venv/bin/python - run-hw <<'EOF'
+import json, re, sys
+from pathlib import Path
+from ws0.protocol import unseal, frame_counter, OBS, ACK, NACK, VERSION
+run = Path(sys.argv[1] if len(sys.argv) > 1 else 'run-hw')
+cfg = json.loads((run/'gateway.json').read_text())
+key, sid = bytes.fromhex(cfg['radio_key']), cfg['station_id']
+for line in open(run/'receiver.log'):
+    m = re.search(r'(\S+) frame (\w+) -> (ack|nack) (\w+)', line)
+    if not m:
+        continue
+    f, a = bytes.fromhex(m[2]), bytes.fromhex(m[4])
+    if f[2] != VERSION:
+        continue  # frames of earlier drafts cannot be opened by this code
+    reply = (ACK if m[3] == 'ack' else NACK).unpack(unseal(key, sid, a[3], a))
+    print(m[1], frame_counter(f), OBS.unpack(unseal(key, sid, 1, f)), m[3], reply)
 EOF
 ```
 
@@ -728,7 +813,7 @@ EOF
 | Replay an old ACK to clear a slot | Clears only the slot that the gateway already committed | No data loss |
 | Nonce reuse after reset | Durable counter reservation (section 6) | Do not clone or roll back flash state |
 | RX board is compromised | RX has no key. It can only drop or delay frames. | Drop = backlog; delay = late data |
-| Key extraction from the TX board | **None in Stage 0.** RDP level 0. The key is in plain flash. | Use RDP level 1 or higher before field use |
+| Key extraction from the TX board | **None in Stage 0.** RDP level 0 (unverified: option bytes not recorded). The key is in plain flash. | Use RDP level 1 or higher before field use |
 | Radio jamming | None (physical layer) | Backlog survives 3.3 days |
 
 ---

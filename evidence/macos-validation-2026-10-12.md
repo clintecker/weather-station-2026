@@ -37,7 +37,7 @@ MacBookPro18,4 (Apple M1 Max), macOS 26.7.1 (25G313), Python 3.12.7 (mise), Appl
 | ack-loss | 100.00% | 0 | identical |
 | identity-collision | 100.00% | 0 | identical |
 
-These reproduce the recorded campaign. The known weakness is unchanged: **noisy-link-73 misses the 99%-within-120 s target (98.82%)**. Scenario PASS means each scenario's integrity/recovery contract held; it is not an H01 pass.
+These reproduce the recorded campaign. The known weakness is unchanged: **noisy-link-73 misses the 99%-within-120 s target (98.82%)**. radio-outage (98.61%) is also below 99%, but that is by design: the scenario declares `expect_latency_failure` (`ws0/harness.py`). Scenario PASS means each scenario's integrity/recovery contract held; it is not an H01 pass.
 
 ### Finding: recorded `host-outage/trace.jsonl` is incomplete
 - Recorded: 2,962 events, ending at virtual time 1800034860 on an `uplink send`. macOS run: 7,255 events.

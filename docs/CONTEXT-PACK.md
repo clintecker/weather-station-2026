@@ -9,8 +9,8 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
 
 **Plan of record:** strict stage order. Stage 0 means passing **H01**: 24 h, 1,440 intervals, at least 1,426 valid readings committed within 120 s, plus a restart/outage matrix (`docs/H01-checklist.md`). Stage 1 (solar, batteries, RS-485, heaters) does not start before H01 passes.
 
-## 2. Where things stand (commit on `master`, pushed)
-- **Firmware release `a07f498273f7`** is already flashed on both boards. **No rebuild is needed** to resume.
+## 2. Where things stand (on `master`)
+- **Firmware release `a07f498273f7`** was restored on both boards at about 17:01Z on 2026-10-13, after the range test (bench `STATUS`: `fw=a07f498273f7 kcv=b7142e epoch=12`). Check `STATUS` on each board before relying on it. **No rebuild is needed** to resume.
   - TX = board A, ST-LINK serial `003B00194142500E20353451`
   - RX = board B, ST-LINK serial `0016001E4142500E20353451`
   - Identify boards by serial number. Port names change between machines.
@@ -25,7 +25,7 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
   - MQTT against a local broker (currently **disabled**)
   - H01 scorer `tools/h01_report.py`
 - **Latest evidence:** `evidence/soak-a07f498-2026-10-13/`. Over 9 h, 549 of 549 minutes arrived on time, median latency 1.5 s, 0 lost, 0 missed ACKs.
-- **Tests:** `.venv/bin/python -m unittest discover -s tests` should give 82 passing. Run `tools/fetch-vendor.sh` first: without `vendor/`, 7 C-vs-Python crypto tests are skipped, not run.
+- **Tests:** `.venv/bin/python -m unittest discover -s tests` should give 82 passing (needs network for one SNTP test). Run `tools/fetch-vendor.sh` first: without `vendor/`, 7 C-vs-Python crypto tests are skipped, not run.
 
 ## 3. Important: the radio key did NOT come with you
 - The TX board is provisioned with a key that lives only in `run-hw/` on the home Mac. That folder is git-ignored and must never be committed.
@@ -37,21 +37,23 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
 
 A new key with reset counters is safe. Reusing an old key with reset counters is not.
 
-**Consequence:** once TX is re-provisioned at the office, the **home** gateway will reject its frames as unauthenticated. When the boards go home, either:
-- re-provision TX again against `run-hw`'s key with the next epoch floor, or
-- copy the office run directory home by a private route (never git, chat or email).
+**Consequence:** once TX is re-provisioned at the office, the **home** gateway will reject its frames as unauthenticated. When the boards go home, use one of these (details: `docs/runbook-moving-boards.md`):
+- run the gateway on the machine that holds `run-office/` (for example, take that laptop home), or
+- copy `run-office/` to the home Mac by a private route (never git, chat or email) and point the gateway at it, or
+- create a **new** key: `init` a new run directory, `WIPE` TX, `provision-node`.
+
+**Never re-provision TX with `run-hw`'s existing key after a WIPE.** (Corrected 2026-10-13; an earlier version of this pack suggested it.) The AES-CCM nonce is kind + station + the 64-bit transmission counter (`firmware/common/ws_frame.c:15`, `docs/protocol.md`), and WIPE resets that counter to 1. The `PROVISION` epoch floor raises only the epoch, the observation identity (`App/node_store.c`, `store_epoch_floor`), not the counter. With the home key TX had reached counter 828936, so reuse would repeat nonces already sent on air.
 
 ## 4. Office setup (fast path: run the bench, no firmware build)
 ```sh
 git clone https://github.com/clintecker/weather-station-2026 && cd weather-station-2026
 python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt   # or: uv venv && uv pip install -r requirements.txt
 sh tools/fetch-vendor.sh                                                  # needed for 7 of the tests
-WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expect 82 OK, none skipped
+WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expect 82 OK, none skipped (needs network for one SNTP test)
 
 # Plug both boards in, then find their ports. Each board is one /dev/cu.usbmodem*.
-ls /dev/cu.usbmodem*
-# Map port to serial: `ioreg -p IOUSB -l | grep -E '"USB Serial Number"|IODialinDevice'`
-# or `pyserial`'s tools: .venv/bin/python -m serial.tools.list_ports -v
+# This lists each port with its ST-LINK serial (SER=...):
+.venv/bin/python -m serial.tools.list_ports -v
 
 # Wipe and re-provision TX with a new key (115200 8N1 console):
 .venv/bin/python -m serial.tools.miniterm /dev/cu.usbmodem<TX> 115200
@@ -67,7 +69,7 @@ ls /dev/cu.usbmodem*
 
 ## 5. Full setup (only if you need to change or rebuild firmware)
 - **Homebrew:** `brew install stlink open-ocd`. `uhubctl` and `mosquitto` are optional.
-- **Toolchain:** the xPack arm-none-eabi-gcc **15.2.1-1.1** must sit at `~/.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/`. The Makefile `TOOLCHAIN` variable can override that path.
+- **Toolchain:** the xPack arm-none-eabi-gcc **15.2.1-1.1** must sit at `~/.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/`. To use another install, override the Makefile's `TOOLCHAIN` variable with that install's `bin` directory: `TOOLCHAIN=<root>/bin`.
   - Download: https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/tag/v15.2.1-1.1, asset `xpack-arm-none-eabi-gcc-15.2.1-1.1-darwin-arm64.tar.gz`.
   - Expected SHA-256 (from the home machine): `574082d35e49a2bcbdc355836b2a3ae5e5bb3b9456c9f5e37177db2ab4aad870`.
   - Do not use the Homebrew `gcc-arm-embedded` cask: its checksum failed here, and that was deliberately not bypassed.
@@ -86,7 +88,9 @@ ls /dev/cu.usbmodem*
    - Verify a CRC-checked reading, plus the unplug and fault behaviour. Then cut a new release.
 3. **Home Assistant.** Needs Clint's real MQTT broker details: host, port, TLS, user. H01 requires an HA entity.
 4. **Placement.** Check the link in both directions at the real TX/RX locations, then tune SF and power.
-5. **H01:** the 24 h run plus the restart/outage matrix, scored with `tools/h01_report.py --start <UTC> --hours 24 --output evidence/h01-<date>`.
+5. **H01:** the 24 h run plus the restart/outage matrix, scored with `tools/h01_report.py --db run-office/observations.sqlite3 --station station-01 --start <UTC> --hours 24 --output evidence/h01-<date>` (use the run directory the gateway actually served; `--db` defaults to `run-hw/`).
+
+**Tonight's SHT45 test plan:** `docs/firmware-review-2026-10-13.md` §2.
 
 **Deliberately open:**
 - G10: flash read-out protection (field use).
@@ -121,4 +125,11 @@ ls /dev/cu.usbmodem*
 | `docs/hardware/nucleo-wl55jc-bringup.md` | Board bring-up trial-and-error log |
 | `firmware/stage0-node/README.md` | Build, console commands, LEDs, flash layout |
 | `firmware/stage0-node/RELEASES.md` | Release hashes |
+| `docs/firmware-review-2026-10-13.md` | Firmware review roadmap (§2: SHT45 test plan) |
+| `docs/runbook-moving-boards.md` | Moving boards between gateways without key or nonce reuse |
+| `docs/simulation-harness.md` | Simulation harness model and limits |
+| `docs/openapi.json` | Gateway HTTP API |
+| `firmware/rangetest/README.md` | Range-test bench tool |
+| `hardware/chicago-test-hardware-r0/` | Chicago test hardware R0: build/order guide and manufacturing files |
+| `tools/README.md` | Every tool in `tools/` |
 | `evidence/` | Every bench run, dated |

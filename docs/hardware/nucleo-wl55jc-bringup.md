@@ -6,13 +6,13 @@ Two brand-new NUCLEO-WL55JC1 boards, straight from ST, default jumpers, factory 
 
 ## TL;DR
 
-- **Current state: both boards run SubGHz_Phy_PingPong (915.0 MHz, LoRa SF7 / **500 kHz** per the RF decision below, 0 dBm, blue LED shows who holds the ball) and are exchanging packets.** RSSI is about −27 dBm and SNR 12 dB with stub antennas about 30 cm apart. See [PingPong link test](#pingpong-link-test).
+- **Current state (2026-10-13): the boards run the Stage-0 firmware, release `a07f498273f7`** (TX on board A, RX on board B; see [`firmware/stage0-node/RELEASES.md`](../../firmware/stage0-node/RELEASES.md)). During the office range walk they ran the bench tool `firmware/rangetest` instead (see [Office session](#office-session-2026-10-13)). PingPong was the first smoke test (2026-10-12, 915.0 MHz, LoRa SF7 / 500 kHz, 0 dBm; RSSI about −27 dBm, SNR 12 dB at about 30 cm). See [PingPong link test](#pingpong-link-test).
 - Factory firmware backups (both boards, byte-identical) are in `docs/hardware/factory-firmware/`.
 - Both boards are healthy. STLINK-V3, SWD, NRST, the 3.3 V target supply and the virtual COM port all work.
 - **No jumper changes are needed.** The default configuration is correct for USB-powered development (evidence below).
 - The factory firmware is ST's **"Concentrator" v1.0** AT-command app. Its console runs at **9600 8N1**, not 115200.
 - The factory firmware **switches the SWD pins to analog within milliseconds of boot**. A plain debugger connect fails, so always **connect under reset** (OpenOCD config below).
-- A **red** COM LED (LD4) is normal and means idle. It turns green after a successful debug session and blinks red/green during one. It is not a fault.
+- A **red** COM LED (LED6, the bicolor STLINK LED) is normal and means idle. It blinks red/green during a debug session. UM2592 says it turns green when communication finishes successfully; here both boards settled on red after OpenOCD sessions (see [LED meanings](#led-meanings-led6-stlink-com)). It is not a fault. Do not confuse it with LED4, which is the red USB overcurrent fault LED.
 
 ## Board inventory
 
@@ -36,7 +36,7 @@ Both boards:
 | FLASH_OPTR | `0x3FFFF0AA` → RDP Level 0 (unprotected) |
 | Firmware | identical on both, SHA-256 `d6365d91…5cf5f8c`, 57,836 bytes used |
 
-A backup of the factory image is in `docs/hardware/factory-firmware/nucleo-wl55jc-factory-concentrator-v1.0.bin`. Restore it with:
+A backup of the factory image is in `docs/hardware/factory-firmware/nucleo-wl55jc-factory-concentrator-v1.0.bin`. It is a full 256 KB (262,144-byte) flash dump, so restoring it overwrites pages 32–127 as well. **That erases the Stage-0 node state (key, counters, journal).** Afterwards the TX board must be provisioned with a **new** key (never reuse a key once its counter has been reset; see `docs/runbook-moving-boards.md`). Restore it with:
 
 ```sh
 openocd -f interface/stlink.cfg -c "adapter serial <SERIAL>" -f target/stm32wlx.cfg \
@@ -122,7 +122,9 @@ Steps in order, including the dead ends.
 - Both boards returned the full help listing and `v1:0`.
 - **No transmit commands were sent** (`AT+BEACON_ON`, `AT+MOD_TEST_*`). Attach an antenna before keying the radio.
 
-## LED meanings (LD4, STLINK COM)
+## LED meanings (LED6, STLINK COM)
+
+UM2592 Rev 4 §6.6.1 names the bicolor STLINK COM LED as LED6. LED4 is the red USB overcurrent fault LED, and LED5 is the green 5V_PWR LED.
 
 | Observed | Meaning |
 |---|---|
@@ -130,7 +132,7 @@ Steps in order, including the dead ends.
 | Blinking red/green | Debug or programming session talking to the target |
 | Solid green | Last target communication succeeded |
 
-Timeline: one board was green after its STLINK had talked to the target at plug-in, and the other was red (idle). After my OpenOCD sessions, both blinked red/green and settled on red. That is expected.
+Timeline: one board was green after its STLINK had talked to the target at plug-in, and the other was red (idle). After my OpenOCD sessions, both blinked red/green and settled on red. That is expected. (UM2592 says green after a successful communication; whether a successful `make flash` leaves LED6 green or red on these boards is unverified.)
 
 ## Jumpers
 
@@ -156,7 +158,7 @@ Goal: make the two boards talk to each other. The factory Concentrator firmware 
 | Path | What |
 |---|---|
 | `firmware/pingpong/` | Copy of ST's app sources plus our `Makefile`. The vendor tree is not modified. |
-| `~/code/vendor/STM32CubeWL` | STM32CubeWL v1.6.0 (`--depth 1`) with the HAL, CMSIS-device, Nucleo-BSP and SubGHz_Phy submodules |
+| `vendor/STM32CubeWL` (git-ignored) | STM32CubeWL v1.6.0 (`--depth 1`) with the HAL, CMSIS-device, Nucleo-BSP and SubGHz_Phy submodules. Created and verified by `tools/fetch-vendor.sh`. At the time of this test it lived in `~/code/vendor/STM32CubeWL`; it was later moved (see Stage-0 trial and error, item 6). |
 | `~/.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1` | Arm GCC 15.2.1 (xPack) |
 
 Build and flash:
@@ -211,7 +213,7 @@ This is a diagnostic smoke test only. It is **not H01** and not the Stage-0 prot
 ### Result (captured 20 s after resetting both)
 - Board A (`003B…`) won the election and became **master** (`Master Tx start` → `OnRxDone` → `...PING`).
 - Board B (`0016…`) became **slave** (`...PONG`, `Slave Tx start`).
-- About 1.5 round trips per second, no RX timeouts after the link formed, RSSI −26 to −28 dBm, SNR 12–13 dB.
+- About one round trip every 1.3–1.5 s (see the `BALL_HOLD_MS` row and the 500 kHz smoke test above), no RX timeouts after the link formed, RSSI −26 to −28 dBm, SNR 12–13 dB.
 - Which board becomes master depends on the random listen time at boot (`rand=` in the log), so it can swap after a reset.
 
 ### Trial and error during the build
@@ -220,12 +222,12 @@ This is a diagnostic smoke test only. It is **not H01** and not the Stage-0 prot
 3. **Build error: `radio.h: No such file`.** `Middlewares/Third_Party/SubGHz_Phy` is also a submodule. Fetching it fixed the build: 33,864 bytes of code, no warnings.
 4. **Shell gotcha:** in zsh, `for pair in "A B"; do set -- $pair` doesn't word-split, so the serial and port arrived as one argument. I ran those loops under `bash -c`.
 
-## Next steps
+## Next steps (as of the PingPong test, 2026-10-12)
 
-1. Move from PingPong toward real weather-station traffic. Options are ST's `LocalNetwork` Concentrator + Sensor demo (the factory image is the Concentrator half), raw SubGHz_Phy with our own packet format, or LoRaWAN.
-2. Check range with more TX power and real placement. Stay within the FCC Part 15.247 limits for 902–928 MHz.
-3. Investigate the missing MSC drive on board A (step 2 of the log above).
-4. To go back to factory firmware: run the restore command in [Board inventory](#board-inventory).
+1. ~~Move from PingPong toward real weather-station traffic.~~ **Done 2026-10-12:** raw SubGHz_Phy with our own packet format, see [Stage-0 firmware bring-up](#stage-0-firmware-bring-up-2026-10-12). (Options considered: ST's `LocalNetwork` Concentrator + Sensor demo, raw SubGHz_Phy, LoRaWAN.)
+2. Check range with more TX power and real placement. Stay within the FCC Part 15.247 limits for 902–928 MHz. **Started 2026-10-13** with `firmware/rangetest`, see [Office session](#office-session-2026-10-13); placement work remains.
+3. Investigate the missing MSC drive on board A (step 2 of the log above). No later entry in this log (unverified whether resolved).
+4. To go back to factory firmware: run the restore command in [Board inventory](#board-inventory). This erases the Stage-0 key, counters and journal.
 
 ## Stage-0 firmware bring-up (2026-10-12)
 
@@ -292,7 +294,7 @@ Clint approved C and D, and agreed that a reconstructed time counts toward H01 w
 
 ### Office setup
 - Fresh Mac: venv via `uv`, `tools/fetch-vendor.sh` (unlocked the 7 C-vs-Python crypto tests that skip without `vendor/`), `brew install open-ocd` (0.12.0), xPack arm-none-eabi-gcc 15.2.1-1.1 (tarball SHA-256 matched `574082d3…aad870`).
-- TX was wiped (`WIPE ERASE-ALL-NODE-STATE`, discarding 18 office-time readings) and provisioned with a fresh office key: KCV `b7142e`, run directory `run-office/`. **The home gateway will now reject TX** until it is re-provisioned with the `run-hw` key and the next epoch floor (context pack §3).
+- TX was wiped (`WIPE ERASE-ALL-NODE-STATE`, discarding 18 office-time readings) and provisioned with a fresh office key: KCV `b7142e`, run directory `run-office/`. **The home gateway will now reject TX.** Do **not** re-provision TX with the `run-hw` key: the WIPE reset the transmission counter, and the nonce is built from that counter, so reusing that key would repeat nonces (corrected the same day). Move the gateway or the run directory, or use a new key: `docs/runbook-moving-boards.md`.
 - Release `a07f498` rebuilt here from a worktree at that commit: both `.bin` hashes matched `RELEASES.md`. A build from a later commit does not match, because the firmware embeds the commit.
 
 ### Range walks
@@ -301,7 +303,7 @@ Clint approved C and D, and agreed that a reconstructed time counts toward H01 w
 
 ### Trial and error
 - **`firmware/rangetest` v1 settings gap:** a restarted board came back at the defaults while the other kept its settings, so they ran at different power, or could not hear each other at all if the SF differed. Fixed in v2: a restarted board adopts the first settings it hears; about 30 s without contact returns both to the defaults.
-- **v2 defaults were the weakest setting (SF7 / 0 dBm).** Walking out of range at SF12 / +22 dropped both boards to the setting with the shortest reach, so they could not reconnect from where the link was lost (Clint's catch). v3: boot and fallback are SF12 / +22 dBm, and the buttons step down. Built and tested on the host, **not yet flashed**.
+- **v2 defaults were the weakest setting (SF7 / 0 dBm).** Walking out of range at SF12 / +22 dropped both boards to the setting with the shortest reach, so they could not reconnect from where the link was lost (Clint's catch). v3: boot and fallback are SF12 / +22 dBm, and the buttons step down. Built and tested on the host, **not yet flashed** (as of 2026-10-13, about 17:00Z). The packet version byte (`RT_VERSION`) is still 1 in v1–v3, so boards running different tool versions interoperate without any warning: flash both boards with the same build.
 - **Logger crashes:** a mark went through a code path that assumed settings fields (KeyError); the logger also died on a USB disconnect and logged the wrong board after the port names swapped. Fixed: the logger finds the board by ST-LINK serial number and reconnects.
 - **Spontaneous restarts are USB dropouts.** Both boards restarted when their USB port vanished for about 1 s (TX 4 times, RX twice; one episode during handling). `RCC_CSR` after clearing: `PINRSTF` only, no `BORRSTF`, so no power loss. The ST-LINK pulses the target's reset pin when it re-enumerates. Earlier I blamed board A alone; RX did the same. Bench-only (no ST-LINK on the field node), but H01 on USB needs secured cables.
 - **My own debugger sessions reset TX twice** (16:22:02 and 16:22:18) while I read and cleared `RCC_CSR` with OpenOCD. A later read-only session did not. Avoid debugger sessions during runs whose restarts are being counted.

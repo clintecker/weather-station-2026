@@ -14,32 +14,38 @@ SHT45 PTFE breakout: Adafruit 6174, superseding the starter's older 5665 suggest
 The supplied development boards, their antennas and USB data cables are the Stage-0
 platform; custom boards and printed fixtures are not required to validate this link.
 
-## Required target integration, in order
+## Target integration status
 
-1. Pin a STM32CubeWL release **and exact Git commit/submodules**, the Arm GNU toolchain
-   and ST programming tools. Use the vendor's matching NUCLEO-WL55JC single-core
-   direct-radio example as the board/RF basis. No vendor revision is falsely marked
-   pinned in this package; selection and an actual target build remain open.
-2. Confirm actual board revision and sensor header mapping against UM2592 and generated
-   GPIO/I2C configuration. The C callback contract uses a 7-bit I2C address (0x44);
-   shift for STM32 HAL APIs that expect an 8-bit address. Use the breakout's short local
-   I2C connection at 3.3 V. No guessed pin numbers are an assembly instruction.
-3. Wire the I2C callbacks to bounded HAL reads/writes; run one high-precision heater-off
-   measurement/minute. CRC or bus failure emits explicit invalid readings. Test unplug,
-   stuck-bus recovery and restart before radio integration.
-4. Add maintained-library AES-CCM with 16-byte tag and verify against a host-generated
-   known-answer frame. Do not write custom AES. Implement wired key provisioning and
-   durable unique transmission nonce state. The host allocator is not an MCU flash driver.
-5. Implement a journal that survives planned power interruptions and retains observations
-   until authenticated host ACK. Reserve a boot epoch before sampling. Agree the Stage-0
-   outage/storage capacity and exact storage BOM before this integration; the final
-   30-day/16 MB H11 target is not satisfied by this host simulation.
-6. Implement the receiver's bounded hex serial framing and ACK return path, authenticated
-   time sync, and RF receive windows. Keep current observations ahead of bounded backfill.
-7. Validate RF region/channel, bandwidth/spreading factor, power, antenna configuration
-   and airtime for the US configuration before transmitting. Do not equate arbitrary
-   915 MHz settings with a qualified regional configuration.
-8. Build both targets, record binary hashes, flash via ST-LINK, then run the H01 checklist.
+Original plan, in order; status as of 2026-10-13. Done items point to where they live.
+
+1. **Done.** Vendor and toolchain pinned: `tools/fetch-vendor.sh` (STM32CubeWL v1.6.0 at
+   commit `f934cd2…` plus submodule commits), xPack arm-none-eabi-gcc 15.2.1-1.1
+   (`stage0-node/Makefile` `TOOLCHAIN`), OpenOCD over ST-LINK for flashing.
+2. **Done on paper, hardware check open.** Sensor on I2C2, PA11 = SDA and PA12 = SCL
+   (`stage0-node/App/sensor.c`), checked against UM2592 Rev 4 Tables 17/18. Wiring:
+   `docs/protocol-stack.md` §3.1. The C callback contract uses the 7-bit address 0x44;
+   `sensor.c` shifts it for the HAL. Not yet verified with the sensor wired.
+3. **Done in firmware, hardware check open.** HAL I2C callbacks with timeouts, one
+   high-precision heater-off measurement a minute (`stage0.c`), stuck-bus recovery
+   (`sensor.c` `i2c_recover`); CRC or bus failure gives an explicit invalid reading. Unplug
+   and restart behaviour still has to be tested on hardware.
+4. **Done.** AES-128-CCM with a 16-byte tag through ST's Mbed TLS (`common/ws_frame.c`),
+   checked against host-generated known-answer frames at boot (`stage0-node/App/app_tx.c`
+   `run_kat`) and in `tests/test_frame.py`. Wired provisioning: console `PROVISION`, host
+   `python -m ws0 provision-node`. Durable counter and epoch: `stage0-node/App/node_store.c`.
+5. **Done for Stage 0.** Flash journal of 4,743 observations (about 3.3 days), kept until an
+   authenticated ACK; boot epoch reserved before sampling (`stage0-node/README.md`, "Flash
+   layout"). Reset-during-write test passed (G7 part A); true power-cut test (G7 part B)
+   deferred. **Open:** the 30-day/16 MB H11 target (external SPI NOR).
+6. **Done.** RX bridge prints frames as hex lines and transmits the host's ACK/NACK
+   (`stage0-node/App/app_rx.c`; host side `ws0/link.py`, `ws0 serve`). Host UTC rides in the
+   authenticated ACK. TX sends the live reading ahead of a bounded backlog drain.
+7. **Open.** Bench RF settings are in `stage0-node/App/radio_cfg.h`: 915.0 MHz, 500 kHz,
+   SF7, CR 4/5, 0 dBm. SF and power still have to be tuned for the real placement, and the
+   regional configuration, antennas and airtime still need confirming. Do not equate bench
+   settings with a qualified regional configuration.
+8. **Built and flashed; H01 open.** Binary hashes per release: `stage0-node/RELEASES.md`.
+   The H01 checklist (`docs/H01-checklist.md`) has not been run.
 
 ## Current measurement preparation
 

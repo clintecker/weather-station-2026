@@ -55,9 +55,10 @@ Each frame costs transmit energy plus the energy of the ACK receive window. The 
 *The current values are datasheet-class assumptions for the STM32WL. Stage 1 must measure them (spec H02).*
 
 - In a **normal minute**, the node sends 1 frame and the ACK closes the window early.
-- In a **failed minute**, today's firmware sends **3 frames** (live + 2 backlog) and waits the **full 2 s** after each.
+- In a **failed minute**, the firmware sends **1 frame** and waits the **full 2 s**: the drain stops at the first missed ACK. After *K* = 3 silent minutes the node enters PROBING and sends only one live probe per back-off interval (2, 4, 8, then 15 min); the minutes between probes have no radio activity (G13, `radio-energy-policy.md` §6).
+- **Pre-G13 (before 2026-10-13)** a failed minute sent **3 frames** (live + 2 backlog), each with the full 2 s window. The arithmetic below is that pre-G13 cost; it is kept because it motivated G13.
 
-At SF12 and +20 dBm, one failed minute costs about 3 × (58 + 10) ≈ 200 mC, against about 60 mC in a normal minute. Over a one-day gateway outage, that is about 290 C ≈ 80 mAh, or roughly **0.27 Wh/day** at 3.3 V. That is about **4–5 % of the 6 Wh/day core budget**, spent on a link that is known to be down. Gaps G13 and G16 (section 10) address this.
+Pre-G13, at SF12 and +20 dBm, one failed minute cost about 3 × (58 + 10) ≈ 200 mC, against about 60 mC in a normal minute. Over a one-day gateway outage, that is about 290 C ≈ 80 mAh, or roughly **0.27 Wh/day** at 3.3 V. That is about **4–5 % of the 6 Wh/day core budget**, spent on a link that is known to be down. G13 (closed) reduces this to about 100 probes, about 0.007 Wh/day; G16 (open) would shorten each failed window.
 
 ---
 
@@ -114,8 +115,8 @@ stateDiagram-v2
 |---|---|---|---|
 | I1 | The gateway never sends an ACK for an observation that it did not commit. | `Gateway.receive`: commit, then seal ACK | Simulation `storage-failure`; unit `test_commit_failure_no_ack` |
 | I2 | The TX board never deletes an observation without an authentic ACK for that identity. | `ws_open_ack` + `store_journal_find` | Unit `test_ack_tamper_keeps_pending` (simulator); bench (firmware) |
-| I3 | No (key, nonce) pair is used two times. | Durable counter blocks; kind byte splits directions | Bench: reboot skips the block (8 → 257); not power-cut tested |
-| I4 | No two different observations have the same identity. | Durable epoch before the first sample | Bench: epochs 1→5 over reboots; **broken by `WIPE`, see G5** |
+| I3 | No (key, nonce) pair is used two times. | Durable counter blocks; kind byte splits directions | Bench: reboot skips the block (8 → 257); reset during writes tested (G7 part A: counter never went back over 71 boots); true power removal not tested (G7 part B) |
+| I4 | No two different observations have the same identity. | Durable epoch before the first sample | Bench: epochs 1→5 over reboots; after `WIPE` + `provision-node` the epoch floor keeps identities unique (G5). **The nonce counter is not protected after a WIPE: see G17.** |
 | I5 | The database stores each identity once. A changed payload with an old identity is rejected. | Primary key + payload comparison | Simulation `identity-collision`, `ack-loss` |
 | I6 | An invalid or stale reading is never shown as current. | Validity flag, impossible fillers (draft 3), 180 s freshness, 5 s future quarantine | Unit + simulation `sensor-fault`, `clock-errors` |
 | I7 | A replayed ACK cannot change the TX clock. | Counter echo in the ACK | Design + unit vectors; no adversarial bench test |
@@ -132,7 +133,7 @@ This is the data loss that the design accepts. **Items marked ⚠ need Clint's a
 | RX, gateway, or link down | **0 lost** if the outage is ≤ **79 h** (journal capacity). Data is late. | Store-and-forward. A multi-day winter storm outage at the house can exceed 79 h; the 30-day target is H11 (external flash). |
 | Outage > 79 h | **Oldest pending observations, 51 at a time** (one flash page). Counted on the TX board as `lost`. | **Approved by Clint 2026-10-12:** drop oldest first (newest data is more valuable). |
 | Time unknown after a TX boot | **Closed (G6).** Warm reset: time trust restored (D). Power loss: the gateway reconstructs the time of every reading in the epoch after its first sync (C). Residual: an epoch that ends before its first sync stays `unknown`. | Approved by Clint 2026-10-12 (C + D) |
-| Backlog drain | Backlog clears at **2 observations per minute** in addition to live data. An outage of *D* minutes takes *D*/2 minutes to clear. | Live data has priority. ⚠ H11 must accept or raise this rate. |
+| Backlog drain | Backlog clears at up to **5 observations per minute** (NORMAL; `backlog_limit` in `App/app_tx.c`) in addition to live data, and stops at the first missed ACK. An outage of *D* minutes takes about *D*/5 minutes to clear. | Live data has priority. ⚠ H11 must accept or raise this rate. |
 
 ### 3.3 H01 budget
 
@@ -142,10 +143,12 @@ H01 needs **≥ 1,426 of 1,440** one-minute intervals committed within 120 s of 
 |---|---|
 | One lost frame or one lost ACK | **0.** The next minute resends the reading as the oldest backlog item. It commits at about t + 61 s, so it is still within 120 s. |
 | Two lost exchanges in a row for one reading | 1 (it commits at about t + 121 s or later) |
-| Outage of *N* minutes (any cause) | About *N* − 1 |
+| Outage of *N* minutes (any cause) | About *N* − 1 for *N* < 3. For *N* ≥ 3: *N* − 1 **plus up to 14** (see below) |
 | TX reboot (any cause) | Outage time only. Warm reset: no time loss (D). Power loss: first reading reconstructed (C). |
 | RX reboot | 0 to 1 |
 | Gateway restart (a few seconds) | 0 |
+
+**Risk: probe back-off after an outage (open, for Clint to decide).** After 3 silent minutes the node enters PROBING and probes at 2, 4, 8, then every 15 min. Readings acquired between the link's return and the next probe are journaled, not sent, so they arrive late. One outage of 3 minutes or more can therefore cost up to 14 extra intervals: the whole H01 budget. The H01 criteria do not change; the options are to accept the risk, shorten the back-off for H01, or change the design.
 
 ---
 
@@ -160,12 +163,13 @@ stateDiagram-v2
   SelfTest --> UNPROVISIONED: no valid config
   SelfTest --> NORMAL: provisioned, epoch reserved
   UNPROVISIONED --> SelfTest: PROVISION (reboot)
-  NORMAL --> LINK_DEGRADED: no ACK in window
-  LINK_DEGRADED --> NORMAL: authentic ACK
+  NORMAL --> PROBING: 3 consecutive minutes with no answer
+  PROBING --> NORMAL: any authentic ACK or NACK (to a probe)
   NORMAL --> TIME_UNKNOWN: >6 h since last time sync
   TIME_UNKNOWN --> NORMAL: ACK with matching echo
-  LINK_DEGRADED --> OVERFLOW: journal ring full
-  OVERFLOW --> LINK_DEGRADED: ACKs drain backlog
+  PROBING --> OVERFLOW: journal ring full
+  OVERFLOW --> PROBING: still no ACK (oldest page erased again)
+  OVERFLOW --> NORMAL: authentic ACK
   state HALTED {
     [*] --> red_solid
   }
@@ -174,9 +178,10 @@ stateDiagram-v2
 | State | LED | Samples? | Transmits? | Exit |
 |---|---|---|---|---|
 | NORMAL | Blue blip every 2 s; blue then green each minute | Yes | Yes | — |
-| LINK_DEGRADED | Blue then **red** each minute | Yes, journaled | Yes, retries | Next authentic ACK |
-| TIME_UNKNOWN | as above | Yes, UTC = 0 | Yes | Next ACK with matching echo |
-| OVERFLOW | as LINK_DEGRADED | Yes; erases the oldest page | Yes | Backlog drains |
+| NORMAL, minute with a missed ACK (silent minutes 1–2) | Blue then **red** | Yes, journaled | 1 frame; the drain stops at the first miss | Next authentic ACK |
+| PROBING (`link=probing`) | Blue then **red** at each probe; **no radio flash** in the minutes between probes | Yes, journaled | Live-only probe at 2, 4, 8, then every 15 min | Any answered probe |
+| TIME_UNKNOWN | as NORMAL or PROBING | Yes, UTC = 0 | Yes | Next ACK with matching echo |
+| OVERFLOW (not a separate firmware state) | as PROBING | Yes; erases the oldest page and counts `lost` | Probes only | Link returns; backlog drains |
 | UNPROVISIONED | **Red solid** | No | No | `ws0 provision-node` |
 | HALTED | **Red solid** | No | No | Operator (section 9) |
 
@@ -190,7 +195,7 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 |---|---|---|
 | Serving | `serve.out` "Stage 0 hardware; API …" | Normal |
 | Rejecting | `receiver.log`: `rejected …` | No ACK; TX journals and retries |
-| **Exited** | Process gone; no new lines in `receiver.log` | No ACKs; TX journals. **No automatic restart (gap G3).** |
+| **Exited** | Process gone; no new lines in `receiver.log` | No ACKs; TX journals. launchd (`KeepAlive`) or systemd restarts it (G3 closed). |
 
 ---
 
@@ -198,7 +203,7 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 
 | ID | Scenario | Detection | Immediate behavior | Recovery | Data impact | H01 | Verified |
 |---|---|---|---|---|---|---|---|
-| P1 | **Gateway process stopped** (crash, Ctrl-C, update). Now restarted by launchd/systemd (G3). | No `#ack` on TX; red LED each minute; API down | RX prints frames; nobody answers. TX journals. | AUTO after restart (R1). Backlog 2/min. | None if restarted within 79 h | *N* − 1 | **Bench, 2026-10-12:** gateway stopped during draft-3 switch; queued reading delivered next minute |
+| P1 | **Gateway process stopped** (crash, Ctrl-C, update). Now restarted by launchd/systemd (G3). | No `#ack` on TX; red LED each minute; API down | RX prints frames; nobody answers. TX journals. | AUTO after restart (R1). Backlog up to 5/min. | None if restarted within 79 h | *N* − 1 | **Bench, 2026-10-12:** gateway stopped during draft-3 switch; queued reading delivered next minute |
 | P2 | **Host asleep** (Mac lid closed, sleep) | As P1; process suspended | As P1. USB VCP data from RX is lost while the host sleeps. | AUTO on wake. | None if < 79 h | *N* − 1 | No. **Bench only.** The deployment host is always-on (spec §1). Disable sleep for H01. |
 | P7 | **House power outage** (deployment) | Gateway, RX, and network down; station runs on solar | TX journals every minute and retries (energy cost, §1.2) | AUTO when power returns | None if < 79 h; oldest data lost beyond (S1) | *N* − 1 | No. This is the main store-and-forward case. |
 | P3 | **RX USB disconnected** while the gateway runs | `receiver.log`: `#gateway serial-lost`, then `serial-open` | The gateway keeps serving its API. It looks for the RX board by **ST-LINK serial number** with back-off (1–15 s) and reopens it under any port name. | AUTO | None (TX journals) | *N* − 1 | Unit tests (`tests/test_link.py`: unplug, replug under a new name, missing board, write failure). **Physical replug: pending.** |
@@ -213,16 +218,17 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 | ID | Scenario | Immediate behavior | Recovery | Data impact | Verified |
 |---|---|---|---|---|---|
 | E1 | TX power cut **between** flash writes | RAM lost; journal intact | AUTO: new epoch, counters skip to the next block, backlog first | Reading in RAM not yet journaled: ≤ 1 | Bench: resets (not cuts) |
-| E2 | TX power cut **during** a journal slot write | Slot torn | AUTO: scan counts the slot as `burned` | **≤ 1 observation** | **Not tested (gap G7)** |
-| E3 | TX power cut during an **ACK-word** write | ACK word torn | AUTO: ECC fault treated as acknowledged (the gateway committed it first) | None | **Not tested (G7)** |
-| E4 | TX power cut during a **counter or epoch** reservation | Entry torn | AUTO: torn entry ignored; maximum of valid entries used. Can skip numbers; cannot repeat them. | None | **Not tested (G7)** |
-| E5 | TX power cut during **meta-page compaction** | New page has no header | AUTO: old page stays authoritative | None | **Not tested (G7)** |
-| E6 | TX power cut during a **flash page erase** (ring advance) | Page partly erased | AUTO: page has no valid header; its slots are not read. Its pending entries were already counted `lost`. | Already counted | **Not tested (G7)** |
+| E2 | TX power cut **during** a journal slot write | Slot torn | AUTO: scan counts the slot as `burned` | **≤ 1 observation** | Reset-tested (G7 part A, `evidence/g7-reset-during-write-2026-10-13/`); true power cut not tested (part B deferred). 21 boots found and handled torn double-words |
+| E3 | TX power cut during an **ACK-word** write | ACK word torn | AUTO: ECC fault treated as acknowledged (the gateway committed it first) | None | Reset-tested (G7 part A, `evidence/g7-reset-during-write-2026-10-13/`); true power cut not tested (part B deferred) |
+| E4 | TX power cut during a **counter or epoch** reservation | Entry torn | AUTO: torn entry ignored; maximum of valid entries used. Can skip numbers; cannot repeat them. | None | Reset-tested (G7 part A, `evidence/g7-reset-during-write-2026-10-13/`); true power cut not tested (part B deferred): epochs always increased, counter never went back |
+| E5 | TX power cut during **meta-page compaction** | New page has no header | AUTO: old page stays authoritative | None | Storm workload includes compactions; no record shows a reset landed inside one. True power cut not tested (part B) |
+| E6 | TX power cut during a **flash page erase** (ring advance) | Page partly erased | AUTO: page has no valid header; its slots are not read. Its pending entries were already counted `lost`. | Already counted | Storm workload includes ring-advance erases; no record shows a reset landed inside one. True power cut not tested (part B) |
 | E7 | RX power cut | Frame or ACK in progress lost | AUTO: TX retries next minute | None | Bench (reflash resets) |
 | E8 | Host power cut **during** a SQLite commit | Transaction rolls back or completes | AUTO: if rolled back, no ACK was sent and TX retries. If completed, the ACK may be missing and TX resends a duplicate. | None (full flush on, G4) | Simulation; pragma unit test |
 | E9 | Host power cut **after** commit, before ACK | Row committed; ACK not sent | AUTO: duplicate next minute, ACK again | None | Simulation `ack-loss` |
-| E10 | USB brown-out / hub reset | Board resets (as E1/E7). USB device may get a **new port name.** | AUTO for boards; OPERATOR for the gateway (G3, R8) | As E1 | Bench: board A dropped off USB once |
+| E10 | USB brown-out / hub reset | Board resets (as E1/E7). USB device may get a **new port name.** | AUTO for boards and gateway: with `--serial-number` the gateway finds the RX board under its new name (G3). OPERATOR only when the gateway runs with `--serial <path>` (R8) | As E1 | Bench: board A dropped off USB once |
 | E11 | **TX battery near empty: brown-out cycling** (deployment; for example at dawn, when weak solar starts the board and a radio burst stops it again) | Each boot reserves a new epoch and skips the rest of a 256-counter block; after a power loss the first readings have no time until a sync (reconstructed later, C); a flash write can occur at marginal voltage | AUTO when energy recovers | Each cycle: ≤ 1 torn slot, ≥ 1 time-unknown reading. A fast cycle can repeat many times. | **Not tested.** Needs low-voltage inhibit (G14). |
+| E12 | **USB dropout of about 1 s on a bench board** (cable moved or touched; also an OpenOCD/debugger session) | The ST-LINK pulses the MCU reset pin when it re-enumerates: the board restarts with `reset=pin` (not `power`). TX: new epoch, counter block skipped, time trust restored (D). The gateway sees `serial-lost` / `serial-open` for RX | AUTO | As E1 (≤ 1 reading in RAM); outage time counts against H01 | **Bench 2026-10-13:** TX 4 times, RX twice; `RCC_CSR` showed `PINRSTF` only; two TX resets from debugger sessions (`docs/hardware/nucleo-wl55jc-bringup.md`, "Office session"). Bench only (no ST-LINK on the field node). For H01: secure cables, no debugger sessions |
 
 ---
 
@@ -233,13 +239,13 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 | L1 | Observation frame lost | TX `#ack none`, red | Slot stays pending | AUTO: resent next minute (new counter) | None | 0 (single loss) | Bench, before the symbol-timeout fix |
 | L2 | ACK lost | As L1; gateway already has the row | Duplicate next minute; gateway ACKs again | AUTO | None | 0 | Simulation `ack-loss`; bench (seq 1 resent before fix) |
 | L3 | ACK late (after the 2 s window) | As L1 | TX ignores it (radio off); duplicate later | AUTO | None | 0 | Design |
-| L4 | **Obs gets through, ACKs never do** (asymmetric link) | Gateway receives every minute; TX shows red every minute; TX `pending` grows | Gateway stores all data. TX resends 2 backlog/min forever at full energy cost (§1.2); journal overflows after 79 h. | AUTO for data; OPERATOR to repair the link | **None at the gateway.** TX `lost` counter grows (false losses). **Energy: about 3× the normal radio energy, without end.** | 0 (live data commits) | No |
+| L4 | **Obs gets through, ACKs never do** (asymmetric link) | First 3 minutes: gateway receives every minute, TX red every minute. Then the gateway receives only probes (≤ 1 per 15 min); TX `link=probing` (console `STATUS`); TX `pending` grows. No health report arrives (reports are sent only while LINKED, G8) | The node decides the link state from ACKs only, so it enters PROBING (G13) and sends only live-only probes at 2, 4, 8, then 15 min. All other readings stay journaled. | OPERATOR to repair the link (G15). **May need a design change** (for example a downlink-quality check, or the gateway telling the node it hears it); not decided | Gateway gets only the probes. Readings between probes are **really lost** after about 79 h (journal overflow, counted `lost`). Energy is low (probing) | **About all intervals missed** | No |
 | L5 | Interference or jamming | Both directions fail | As P4 | AUTO when it stops | None if < 79 h | *N* − 1 | No |
 | L6 | Out of range / bad placement | Low RSSI, intermittent L1/L2 | As L1/L2 | OPERATOR: placement, SF, power (spec H01 branch) | None if ≥ 1 success per 79 h | Likely fail | Bench: −22 to −24 dBm only |
 | L7 | TX frame during the RX ACK transmission | Frame lost | As L1 | AUTO | None | 0 | **Fixed:** symbol-timeout bug (2026-10-12) |
 | L8 | Foreign LoRa traffic on 915 MHz | RX `#rx drop` | RX discards (length, magic, version) | AUTO | None | 0 | Bench: PingPong frames dropped |
 | L9 | **Link margin changes** with weather, snow or ice on the antenna, wet foliage, and temperature (deployment) | RSSI/SNR trend in `receiver.log`; more L1/L2 events | Intermittent L1/L2 and duplicates; more TX energy per delivered reading | AUTO per exchange; OPERATOR if the trend continues (antenna, placement, SF) | None if ≥ 1 success per 79 h | Risk to the 14-interval budget | No. H01 must run at the real placement in real weather. |
-| L10 | **Downlink weaker than uplink** (the ACK path) | Gateway receives frames; TX gets no ACKs (L4) | As L4 | OPERATOR: give the ACK the same link budget (G15) | As L4 | As L4 | No. Today the RX board sends ACKs at **0 dBm** from indoors. |
+| L10 | **Downlink weaker than uplink** (the ACK path) | Gateway receives frames (only probes after 3 minutes); TX gets no ACKs (L4) | As L4 | OPERATOR: give the ACK the same link budget (G15) | As L4 | As L4 | No. Today the RX board sends ACKs at **0 dBm** from indoors. |
 
 ---
 
@@ -269,16 +275,17 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 | C2 | Wrong key on TX | Every frame `rejected InvalidTag` | TX journals until full | OPERATOR: re-key (R5) | Journal content after a WIPE is lost | Prevented by KCV check at provisioning |
 | C3 | Wrong station ID | `Unexpected frame header` | As C2 | OPERATOR (R5) | As C2 | Unit tests |
 | C4 | Both boards flashed with the same role | No `#rx` lines / no TX samples | As P4 or P5 | OPERATOR: reflash (README) | As P4/P5 | No |
-| C5 | **`WIPE` then re-provision under the same station name** | Gateway: `Identity collision` for epoch 1, 2, … | **New readings collide with stored history** and become poison (M11). API "latest" also selects the old, higher epoch. | OPERATOR: **do not do this today.** Use a new station name and directory (R5). Fix: G5. | Severe until fixed | No |
+| C5 | **`WIPE` then re-provision under the same station name** | — | **Identity: closed by G5.** `provision-node` sends an epoch floor = 1 + the highest epoch stored in **that state directory's** database, so new identities do not collide. It does **not** protect nonces: the counter restarts after a WIPE (G17, C9). | Use a **new key** after every WIPE (R5). With a new state directory the floor is 0 and the history lives in the old directory | None for identity, if the same directory is used | Unit `test_epoch_floor_is_above_all_stored_epochs` |
 | C6 | **Gateway nonce database lost** | Gateway refuses to start (`Missing nonce state`) | No ACKs | OPERATOR: re-key (R5). **First, drain TX if possible (impossible without the nonce DB).** | TX journal lost at WIPE | Unit `test_nonce_restart_and_missing_state` |
 | C7 | Old backup of nonce DB or TX flash restored with the same key | **Not detected** | **Nonce reuse, a confidentiality and integrity break** | **UNRECOVERABLE for that key.** Re-key immediately. | Security, not data | Prohibited by procedure |
 | C8 | Two TX boards with the same key and station | Identity collisions; nonce reuse | As C7 | UNRECOVERABLE for that key | As C7 | Prohibited by procedure |
+| C9 | **`WIPE`, then `PROVISION` with a key TX has used before** (gap G17) | **Not detected** (the gateway keeps no per-node counter high-water mark) | `store_wipe()` erases both meta pages, so the 64-bit counter restarts at 1; the epoch floor does not raise the counter. Every new frame repeats an AES-CCM nonce (kind + station + counter) already sent on air: **a confidentiality and integrity break** | **UNRECOVERABLE for that key.** Re-key | Security, not data | Prevented only by procedure: `docs/runbook-moving-boards.md` (new key after every WIPE). Fix proposed: G17 |
 
 ### 8.3 Storage
 
 | ID | Scenario | Behavior | Recovery | Data impact | Verified |
 |---|---|---|---|---|---|
-| S1 | TX journal full | Erase oldest page; count `lost` (RAM only, gap G8) | AUTO-BOUNDED | Oldest ≤ 51 per page | No |
+| S1 | TX journal full | Erase oldest page; count `lost` (cumulative, persisted in flash before the erase, reported in the kind-4 health report; G8 closed) | AUTO-BOUNDED | Oldest ≤ 51 per page | No |
 | S2 | TX journal write fails | Sample identity used; slot counted `burned`; that reading is not sent | AUTO-BOUNDED | 1 per failure | No |
 | S3 | TX counter reservation fails | That minute's exchange stops (no counter, no frame) | AUTO retry next minute; persistent failure = HALTED in effect | Journals until full | No |
 | S4 | TX flash wear-out | Program/erase errors (S2/S3) | OPERATOR: replace board | — | Estimate: journal pages ≈ 1 erase / 3.3 days each; meta pages ≈ 1 compaction / 40 days. Far below 10,000 cycles. |
@@ -293,7 +300,7 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 1. Run `tools/deploy/macos/install.sh install`, or by hand `python -m ws0 serve --directory run-hw --serial-number 0016001E4142500E20353451`.
 2. Make sure `serve.out` shows `Stage 0 hardware`.
 3. Make sure a TX green flash occurs within 60 s.
-4. The backlog drains at 2 per minute. Do not stop the gateway during the drain.
+4. The backlog drains at up to 5 per minute (NORMAL). If TX is in PROBING, the drain starts after its next answered probe (up to 15 min). Do not stop the gateway during the drain.
 
 **R2 — Reset the RX board.** Push the black RESET button, or unplug and reconnect the USB cable. If the port name changes, do R8. RX holds no state.
 
@@ -309,7 +316,7 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 **R5 — Re-key a station (destructive).**
 1. Drain the TX journal first (`pending=0`) with the **old** gateway, if it still operates.
 2. Stop the gateway.
-3. Generate a new key for the same state directory, or make a new state directory. The station name can stay the same: `provision-node` sends an epoch floor above all stored epochs (G5).
+3. Make a new state directory with a **new key**: `python -m ws0 init --hardware --station <name> --station-id <id> --directory <new dir>`. `ws0 init` refuses an existing directory, so there is no in-place re-key. **Never re-provision a key TX has used before:** a WIPE restarts the nonce counter (G17, C9; `docs/runbook-moving-boards.md`). The G5 epoch floor protects observation identities only, and only against the history in the directory that `provision-node` reads (a new directory gives floor 0).
 4. On the TX console, send `WIPE ERASE-ALL-NODE-STATE`.
 5. Run `python -m ws0 provision-node --directory <dir> --serial <TX port>`.
 6. Never use the old key again.
@@ -323,6 +330,11 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 
 **R8 — Port name changed.** No action is necessary with `--serial-number`; the gateway finds the board again. With `--serial <path>`, run `st-info --probe`, find the RX board (`0016001E4142500E20353451`), and restart with the new path.
 
+**R9 — Bench fault injection (never during an H01 placement run).**
+- **Watchdog:** send `TEST-HANG` on the TX or RX console. The main loop stops; expect `#boot … reset=watchdog` within about 8 s (G1).
+- **Flash writes under reset (G7):** `TEST-FLASH-STORM` on the TX console pauses sampling and writes journal slots (acknowledged at once, epoch 4294967295, never transmitted) and counter reservations continuously until the next reboot. It uses up journal slots and counter blocks. The boot scrub drops any storm slot left pending.
+- **Automated:** `tools/power_cut_test.py --method reset --serial-number <TX ST-LINK serial> --cycles <n> --gateway-db <dir>/observations.sqlite3 --output evidence/<new dir>` asserts NRST through the ST-LINK (needs `openocd`) at a random time (`--min-run`/`--max-run`, default 0.3–4 s) during the storm. It checks on every boot that the epoch strictly increases, the counter never goes back, the self-test passes, and the reset cause is `pin`; at the end it checks the gateway database for storm records. `--method power --hub <loc> --port <n>` removes VBUS with `uhubctl` (part B); run `--check` first, because the bench hubs do not really cut VBUS. `--output` must not exist; the exit code is 0 for pass, 1 for fail.
+
 ---
 
 ## 10. Known gaps and remediation plan
@@ -333,20 +345,21 @@ Priority: **P1** = fix before H01; **P2** = fix before field use; **P3** = track
 |---|---|---|---|---|
 | G1 | ~~No hardware watchdog~~ **Closed 2026-10-12** (evidence: M1, M2). Was: no hardware watchdog on TX or RX | A hang stops the system until a person resets it (M1, M2). **A field station is unattended: a hang can last until a site visit.** | Enable the IWDG (independent watchdog, LSI clock), ~8 s timeout. Refresh it from the main loop only when the radio state machine and the sample timer advance. | **P1** |
 | G2 | ~~Poison records block the backlog~~ **Closed 2026-10-12** (evidence: M11). Was: poison records block the backlog | Two permanently rejected records stop all backlog drain (M11, C1, C5), and each retry costs node energy | (a) The gateway answers a permanent rejection with an authenticated NACK, so the node stops at once (the mains side decides; §1.1 principle). (b) As a safety net, the TX board marks an entry `abandoned` after *N* attempts (counted and reported). Implement both. | **P1** |
-| G3 | ~~Gateway exits on a serial error; no supervisor; port names change~~ **Closed 2026-10-12** (evidence: P3; launchd restarted the gateway 2 s after SIGKILL and it handled the next frame 3 s later). Was: gateway exits on a serial error; no supervisor; port names change | One USB glitch stops H01 data until a person acts | Catch `SerialException`, reopen with back-off, find the RX board by **ST-LINK serial number** (pyserial `list_ports`), and run under `launchd` with `KeepAlive`. | **P1** |
+| G3 | ~~Gateway exits on a serial error; no supervisor; port names change~~ **Closed 2026-10-12** (evidence: P3; launchd restarted the gateway 2 s after SIGKILL and it handled the next frame 3 s later; no artifact in evidence/). Was: gateway exits on a serial error; no supervisor; port names change | One USB glitch stops H01 data until a person acts | Catch `SerialException`, reopen with back-off, find the RX board by **ST-LINK serial number** (pyserial `list_ports`), and run under `launchd` with `KeepAlive`. | **P1** |
 | G4 | ~~SQLite `synchronous=FULL` on macOS does not flush the drive cache~~ **Closed 2026-10-12**: `fullfsync` and `checkpoint_fullfsync` on for the observation and nonce databases. Measured: commit 0.06 ms before (not durable), 5.3 ms median / 16 ms max after; two commits per frame use < 2 % of the 2 s ACK window. Simulations opt out explicitly (`WS0_UNSAFE_FAST_FSYNC=1`). Was: | A host power cut can lose a committed and ACKed row (I1 weakened) | Set `PRAGMA fullfsync=ON` (and `checkpoint_fullfsync=ON`) on macOS [[SQLite]](https://www.sqlite.org/pragma.html#pragma_fullfsync). Measure the commit latency after the change. | **P1** |
 | G5 | ~~`WIPE` restarts epochs at 1~~ **Closed 2026-10-13**: `provision-node` sends an epoch floor = 1 + the highest epoch the gateway has stored (observations, rejections, health reports); the node raises its epoch base before its first sample. Re-provisioning under the same station name no longer collides with history (a new key is still required after a wipe). Unit test. | — |
 | G6 | ~~First reading after each TX boot has unknown time~~ **Closed 2026-10-12** | — | **Done:** D (time trust across resets, backup registers) and C (draft 4 uptime field; gateway reconstruction). Evidence: bench warm reset `#time restored`; cold start reconstructed ±2 s; simulation `reboot-during-outage` 32/32 reconstructed. | — |
 | G7 | **Power-loss behavior only partly tested** | E2–E6 | **Part A (reset during flash writes): PASS 2026-10-13, 70 cycles** (`evidence/g7-reset-during-write-2026-10-13/`; stopped early by Clint): epochs always increased, the counter never went back, self-test passed on all 71 boots, 21 boots found and handled double-ECC (torn) double-words, up to 3 torn slots burned per boot, 0 storm records reached the gateway. `tools/power_cut_test.py --method reset` asserts NRST at random times during `TEST-FLASH-STORM` (continuous journal, ACK-word and counter-reservation writes). A reset aborts a flash program/erase like a power cut does (RM0453), so it covers torn slots, ECC recovery, counter and epoch monotonicity. **Part B (true power removal, including slow supply decay): deferred by Clint 2026-10-13.** Finding: the bench VIA Labs hubs advertise per-port power switching but do not cut VBUS (board reset cause `pin`, not `power`); part B needs a hub that really switches VBUS, for example Yepkit YKUSH. | Done (A) / deferred (B) |
-| G8 | ~~TX loss counters are local and RAM-only~~ **Closed 2026-10-13**: journal-overflow losses and abandoned records are cumulative and persisted in the monotonic flash log; a health report (kind 4, 24-byte plaintext) carries epoch, uptime, pending, lost, torn slots, abandoned, missed ACKs, rejected replies, reset cause and link state every 15 min and at each link change. Gateway stores it (`diagnostics` table, ordered by epoch/uptime so replays cannot roll it back), shows it in `/v1/status` and publishes `…/diagnostics` to MQTT. Bench: first report 6 s after boot. C/Python agreement + 3 unit tests. | — |
-| G9 | ~~Host time correctness is not checked~~ **Closed 2026-10-13**: `ws0/clock.py` measures the host offset by SNTP at start and hourly (background thread). Measured > 1 s → `bad`: ACKs carry UTC 0, so the node keeps its own clock (fails safe). Unreachable → `unverified`: time still issued (the clock was NTP-set). State in `/v1/status` → `host_clock` and `receiver.log`. Bench: offset +0.097 s vs pool.ntp.org. 3 unit tests (incl. a real SNTP query). | — |
+| G8 | ~~TX loss counters are local and RAM-only~~ **Closed 2026-10-13**: journal-overflow losses and abandoned records are cumulative and persisted in the monotonic flash log; a health report (kind 4, 24-byte plaintext) carries epoch, uptime, pending, lost, torn slots, abandoned, missed ACKs, rejected replies, reset cause and link state every 15 min while linked and once when the link returns. **Reports are sent only while LINKED** (`send_diag` in `App/app_tx.c`): the change to PROBING sets the report due, but it goes out only after the link returns, so the link-state field always reads `linked` and a PROBING node sends no reports. Gateway stores it (`diagnostics` table, ordered by epoch/uptime so replays cannot roll it back), shows it in `/v1/status` and publishes `…/diagnostics` to MQTT. Bench: first report 6 s after boot (no artifact in evidence/; the 9 h soak shows the first report at uptime 1 s, `evidence/soak-a07f498-2026-10-13/`). C/Python agreement + 3 unit tests. | — |
+| G9 | ~~Host time correctness is not checked~~ **Closed 2026-10-13**: `ws0/clock.py` measures the host offset by SNTP at start and hourly (background thread). Measured > 1 s → `bad`: ACKs carry UTC 0, so the node keeps its own clock (fails safe). Unreachable → `unverified`: time still issued (the clock was NTP-set). State in `/v1/status` → `host_clock` and `receiver.log`. Bench: offset +0.097 s vs pool.ntp.org (no artifact in evidence/). 3 unit tests (incl. a real SNTP query). | — |
 | G10 | **The key is in plain flash (RDP level 0)** | Physical access to the board gives the key | Set RDP level 1 before field use. Document the recovery (a mass erase loses the journal). | P2 |
-| G11 | **Backlog drain rate is 2/min** (design: [`radio-energy-policy.md`](radio-energy-policy.md) §5–6) | A long outage takes half its own length to clear | Review in H11 together with G13: drain faster **only while ACKs arrive** (cheap: the window closes early), never during an outage. | P3 |
+| G11 | **Backlog drain rate for H11** (design: [`radio-energy-policy.md`](radio-energy-policy.md) §5–6). Implemented with G13 (2026-10-13): up to 5/min in NORMAL, 20 in SURPLUS, airtime-capped, and the drain stops at the first missed ACK (pre-G13: 2/min always) | A long outage takes about one fifth of its own length to clear | Review the 5/min NORMAL rate in H11. | P3 |
 | G12 | ~~RX liveness is not monitored~~ **Closed 2026-10-13**: RX prints `#alive` (uptime, forwarded, dropped, ACKs, reports, listening) every 60 s; the gateway shows `receiver` in `/v1/status` and logs `#gateway receiver-silent` after 180 s without a report. Bench: verified. | — |
-| G13 | ~~No energy-aware back-off when the link is down~~ **Closed 2026-10-13** (link part; energy inputs are Stage 1). Bench outage, `evidence/g13-outage-2026-10-13/`: 1 frame per silent minute (was 3), PROBING after 3 silent minutes, journal-only minutes between probes, live-only probe, back-off doubled, relinked on the first answered probe, backlog drained 5 per minute oldest first, nothing lost. Fixed during the test: probes are now scheduled from the exchange start (they ran 1 minute late). Design: [`radio-energy-policy.md`](radio-energy-policy.md) §6. Was: no energy-aware back-off when the link is down | During an outage the node spends about 3× the normal radio energy every minute (§1.2), for up to days, on a link that is known to be down | After *K* consecutive minutes with no ACK: send the **live reading only**, and try one backlog item every *M* minutes. Return to full drain at the first authentic ACK. Live readings still go every minute, so no timeliness is lost when the link returns. | **P1 for deployment** |
+| G13 | ~~No energy-aware back-off when the link is down~~ **Closed 2026-10-13** (link part; energy inputs are Stage 1). Bench outage, `evidence/g13-outage-2026-10-13/`: 1 frame per silent minute (was 3), PROBING after 3 silent minutes, journal-only minutes between probes, live-only probe, back-off doubled, relinked on the first answered probe, backlog drained 5 per minute oldest first, `lost=0` (the log ends mid-drain at `pending=5`). Fixed during the test: probes are now scheduled from the exchange start (they ran 1 minute late). The evidence log predates that fix (probes at +3 and +5 min instead of +2 and +4); no log of the fixed schedule yet. Design: [`radio-energy-policy.md`](radio-energy-policy.md) §6. Was: no energy-aware back-off when the link is down | During an outage the node spends about 3× the normal radio energy every minute (§1.2), for up to days, on a link that is known to be down | Implemented: after *K* = 3 silent minutes, PROBING: one **live-only probe** at 2, 4, 8, then every 15 min; minutes between probes are journal only (no live frame); full drain resumes after the first answered probe. (The original proposal, live every minute plus one backlog item every *M* minutes, was not built.) Cost: up to 14 late intervals after an outage (§3.3); asymmetric link (L4). | **P1 for deployment** |
 | G14 | **No low-voltage inhibit** | At a marginal supply voltage, a flash write can tear and a radio burst can cause a brown-out loop (E11) | Set the brown-out reset (BOR) level in the option bytes. Do not start a journal write or a transmission below a measured voltage threshold (pack voltage from Stage 1 telemetry; VDD/VREFINT now). | P2 (Stage 1 interface) |
-| G15 | ~~ACK link budget is not equal to the uplink~~ **Closed 2026-10-12**: both roles configure the radio from the same `radio_cfg.h` constants (power, SF, BW); RX now prints `power=` at boot. Bench: downlink (ACK at TX) −29 to −33 dBm vs uplink −26 to −32 dBm. H01 checklist now requires a both-directions measurement at the real placement. Was: | Asymmetric link (L4, L10): data arrives but the node never clears its journal | The RX board uses the same SF and a TX power that gives the downlink at least the uplink's margin. Put the receiver antenna where the link test shows the best path (spec H01 branch). | P1 before H01 placement |
+| G15 | ~~ACK link budget is not equal to the uplink~~ **Closed 2026-10-12**: both roles configure the radio from the same `radio_cfg.h` constants (power, SF, BW); RX now prints `power=` at boot. Bench: downlink (ACK at TX) −29 to −33 dBm vs uplink −26 to −32 dBm (no artifact in evidence/). H01 checklist now requires a both-directions measurement at the real placement. Was: | Asymmetric link (L4, L10): data arrives but the node never clears its journal | The RX board uses the same SF and a TX power that gives the downlink at least the uplink's margin. Put the receiver antenna where the link test shows the best path (spec H01 branch). | P1 before H01 placement |
 | G16 | **The ACK window is a blind 2 s window** | Each failed exchange costs a full 2 s of receive current (§1.2) | Use a timed receive slot: the gateway's turnaround is predictable, so open the receiver at a fixed delay after TxDone and close it with a symbol timeout sized for the SF (LoRaWAN Class A uses the same idea: RX1 delay + preamble timeout) [[LoRaWAN]](https://resources.lora-alliance.org/technical-specifications). Measure the gateway turnaround first. **Recalculate the symbol timeout for each SF** (see the 1.3 ms bug in `protocol-stack.md` §8.4). | P2 |
+| G17 | **Nonce reuse after `WIPE`** (C9) | `store_wipe()` (`App/node_store.c`) erases both meta pages, so the 64-bit transmission counter restarts at 1. `PROVISION`'s epoch floor (G5) raises only the epoch, not the counter. Provisioning a key TX has used before therefore repeats AES-CCM nonces (kind + station + counter) already sent on air, and the gateway does not detect it | Today: procedure only (`docs/runbook-moving-boards.md`: a new key after every WIPE). Proposed (`docs/firmware-review-2026-10-13.md`, item P1): `store_wipe` keeps `WS_META_PAGE_A/B` so the counter and epoch rise for the life of the board; also P4 (gateway counter high-water mark) and P17 (fail closed when counter state is lost) | **P1** |
 
 ---
 
@@ -354,14 +367,15 @@ Priority: **P1** = fix before H01; **P2** = fix before field use; **P3** = track
 
 | Evidence | Covers |
 |---|---|
-| Unit tests (33) | Frame agreement C ↔ Python, tamper/replay rejection, commit-failure no-ACK, nonce restart, canonical fillers |
-| Simulation harness (12 scenarios × 1,440 samples) | Outages, reboots, ACK loss, duplication, corruption, commit failure, clock faults, identity collision. **The node is the Python simulator, not the firmware.** |
+| Unit tests (`tests/`, 82 test functions on 2026-10-13, including 21 for the range-test tool) | Frame agreement C ↔ Python, tamper/replay rejection, commit-failure no-ACK, nonce restart, canonical fillers, NACK, health reports, epoch floor, serial link, host clock, H01 scorer |
+| Simulation harness (12 scenarios × 1,440 samples) | Outages, reboots, ACK loss, duplication, corruption, commit failure, clock faults, identity collision. **The node is the Python simulator, not the firmware.** The simulator still models the pre-G13 rule (2 backlog per minute, no PROBING, no drain stop), so its outage results do not cover the current firmware link behaviour. |
 | Bench (2026-10-12) | Gateway down → journal → delivery; TX reboots → new epoch and counter skip; version mismatch rejection; reflash keeps state; foreign LoRa frames dropped; symbol-timeout failure and fix |
-| **Not yet tested** | All power-cut cases (G7), journal overflow (S1), USB disconnect under load (P3), long RX outage (P4), asymmetric link (L4), watchdog (G1, not implemented), host sleep (P2) |
+| Bench (2026-10-13) | Watchdog (G1, M1/M2), NACK (G2), reset during flash writes (G7 part A, 70 cycles), link outage with PROBING (G13), 9 h soak (`evidence/soak-a07f498-2026-10-13/`) |
+| **Not yet tested** | True power removal (G7 part B), journal overflow (S1), physical USB replug under load (P3; unit-tested), long RX outage (P4), asymmetric link (L4), host sleep (P2) |
 
 H01 needs the P1 gaps closed, or each one explicitly accepted by Clint, before the 24-hour run starts. Do not run H01 and then remove failures from the denominator.
 
-H01 runs on USB power (spec Stage 0), so it does not test the energy behavior (§1.2, G13, G14, G16). Those behaviors are verified in Stage 1 with measured current (H02/H03). Implement G13 before the station runs from a battery for the first time.
+H01 runs on USB power (spec Stage 0), so it does not test the energy behavior (§1.2, G13, G14, G16). Those behaviors are verified in Stage 1 with measured current (H02/H03). G13 is implemented; verify its energy effect with measured current (H02/H03) before the station runs from a battery for the first time.
 
 ---
 

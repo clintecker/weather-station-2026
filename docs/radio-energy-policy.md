@@ -14,7 +14,7 @@ The station is an unattended node on battery and solar. It sends one-minute read
 - what to transmit (the live reading, older readings from the journal, diagnostics),
 - how much to transmit.
 
-Today the rule is fixed: send the live reading and up to 2 older readings every minute, whatever the link and energy state. This rule wastes energy when the link is down. It ignores the battery and the sun. And it clears a long backlog slowly when energy is plentiful.
+Before this policy (pre-G13, before 2026-10-13) the rule was fixed: send the live reading and up to 2 older readings every minute, whatever the link and energy state. That rule wasted energy when the link was down. It ignored the battery and the sun. And it cleared a long backlog slowly when energy was plentiful.
 
 ---
 
@@ -42,7 +42,7 @@ The current values are datasheet-class assumptions (TX ≈ 100 mA at +20 dBm, RX
 | Charge per **failed** attempt (TX + full 2 s window) | ≈ 13 mC | ≈ 26 mC | ≈ 68 mC |
 | One day of live readings (1,440 delivered), at 3.3 V | ≈ 0.004 Wh | ≈ 0.024 Wh | ≈ 0.08 Wh |
 | **A full journal** (4,743 readings) delivered | ≈ 0.013 Wh | ≈ 0.08 Wh | ≈ **0.27 Wh** |
-| One day of failed attempts at today's rule (3 per minute) | ≈ 0.05 Wh | ≈ 0.10 Wh | ≈ **0.27 Wh** |
+| One day of failed attempts at the pre-G13 rule (3 per minute) | ≈ 0.05 Wh | ≈ 0.10 Wh | ≈ **0.27 Wh** |
 
 Core budget: ≤ 0.25 W average = **6 Wh/day**. Main pack: about **200 Wh nominal**, reserve ≥ 50.4 Wh (spec §4).
 
@@ -114,8 +114,8 @@ stateDiagram-v2
 
 | State | Meaning | Live reading | Backlog drain | Diagnostics | Radio time cap |
 |---|---|---|---|---|---|
-| **SURPLUS** | Sun is up and the battery is full or nearly full. Energy would otherwise be lost. | Every 60 s | **Fast**: up to the airtime cap | Full | ⚠ 15 s per minute |
-| **NORMAL** | Healthy margin above reserve | Every 60 s | **Moderate**: up to 2–5 per minute | Normal rate | ⚠ 5 s per minute |
+| **SURPLUS** | Sun is up and the battery is full or nearly full. Energy would otherwise be lost. | Every 60 s | **Fast**: up to the airtime cap (Stage-0 firmware: at most 20) | Full | ⚠ 15 s per minute |
+| **NORMAL** | Healthy margin above reserve | Every 60 s | **Moderate**: up to 2–5 per minute (Stage-0 firmware: 5, `backlog_limit` in `App/app_tx.c`) | Normal rate | ⚠ 5 s per minute |
 | **CONSERVE** | Near the reserve, estimate unknown, or pack cold | ⚠ Every 300 s: the latest reading (spec R02 "conservation reports"); all readings are still journaled | **None** | Reduced; state changes only | ⚠ 2 s per minute |
 | **CRITICAL** | At the protected reserve | **None** | None | None | 0 |
 
@@ -169,17 +169,19 @@ stateDiagram-v2
 
 | Parameter | Proposal | Reason |
 |---|---|---|
-| *K*, minutes without an ACK before PROBING | ⚠ **3** | One or two lost minutes cost **0** H01 intervals (failure-modes §3.3). Do not back off for normal packet loss. |
-| Probe interval | ⚠ 2, 4, 8, then **15 min** maximum | After the link returns, the node finds it within 15 min. A long outage then saves about 93 % of the futile radio energy. |
+| *K*, minutes without an ACK before PROBING | ⚠ **3** | One lost minute costs **0** H01 intervals; two in a row cost 1 (failure-modes §3.3; the office range walk saw a 121.6 s commit after a 2-minute dropout, `evidence/range-walk-office-2026-10-13/`). Do not back off for normal packet loss. |
+| Probe interval | ⚠ 2, 4, 8, then **15 min** maximum | After the link returns, the node finds it within 15 min. A long outage then saves about 97 % of the futile radio energy against the pre-G13 rule of 3 frames per minute (about 93 % against 1 frame per minute). |
 | Probe content | **Live reading only**, 1 frame | A probe that succeeds also delivers data |
 | LINKED drain | Live, then backlog up to the energy-state limit (Stage 0: NORMAL) | — |
 | Drain stop | Stop the drain in this minute at the first missed ACK | A failing link does not burn the drain allowance |
 
-**Energy effect (SF12, one-day outage):** 3 frames every minute, about 0.27 Wh/day, becomes about 100 probes, about **0.007 Wh/day**.
+**Energy effect (SF12, one-day outage):** the pre-G13 rule (3 frames every minute, about 0.27 Wh/day) becomes about 100 probes, about **0.007 Wh/day**.
 
-**Timeliness effect:** None for outages shorter than *K*. After a longer outage, live delivery resumes within the probe interval (≤ 15 min). Those minutes were already late because of the outage.
+**Timeliness effect:** None for outages shorter than *K*. After a longer outage, live delivery resumes at the next probe (≤ 15 min after the link returns). Readings acquired between the link's return and that probe (up to 14) are late **because of the back-off**, not because of the outage. One long outage during H01 can therefore use the whole 14-interval budget (failure-modes §3.3). **Open risk for Clint to decide**; the H01 criteria do not change.
 
-**Airtime cap per minute (all states):** The firmware calculates the exchange time from the SF (airtime × 2 + measured gateway turnaround). It sends no more frames in this minute than the cap allows. At SF12, a 5 s cap allows about 3 exchanges. At SF7, the cap allows the configured maximum (⚠ 20).
+**Asymmetric link:** the node decides the link state from ACKs only. If frames reach the gateway but ACKs do not (failure-modes L4/L10), the node enters PROBING and the gateway receives only the probes (≤ 1 per 15 min); the rest stays journaled and is lost after about 79 h. This may need a design change (for example, a downlink-quality check, or the gateway signalling that it hears the node). Not decided.
+
+**Airtime cap per minute (all states):** The firmware calculates the exchange time from the SF: airtime × 2 + a **fixed 300 ms** turnaround allowance (`TURNAROUND_MS` in `App/app_tx.c`, "conservative"; not measured per exchange — G4 measured gateway commits at ≤ 16 ms). It sends no more frames in this minute than the cap allows. At SF12, a 5 s cap allows about 3 exchanges (5000 / 1452 ms). At SF7 (354 ms per exchange) the 5 s NORMAL cap allows 14, so the NORMAL limit of 5 binds; the 15 s SURPLUS cap allows the configured maximum (⚠ 20). The cap counts answered exchanges; a failed exchange costs about 2 s plus airtime, and the drain stops at the first one.
 
 ---
 
@@ -189,7 +191,7 @@ The operator must see the energy situation of **both** ends.
 
 | End | What it reports | How | Stage |
 |---|---|---|---|
-| **Station (TX)** | Pack schema subset: energy above reserve, SOC (when calibrated), solar input W, charger state, pack temperatures, **energy state**, **link state**, journal pending/lost/burned | New authenticated **diagnostic frame** (kind 4; kind 3 is the NACK), sent as priority 3 on the ladder. Every 15 min, and at each state change. | Stage 1 (frame format with pack telemetry). The journal counters can go first (G8). |
+| **Station (TX)** | Pack schema subset: energy above reserve, SOC (when calibrated), solar input W, charger state, pack temperatures, **energy state**, **link state**, journal pending/lost/burned | Authenticated **diagnostic frame**, sent as priority 3 on the ladder. Every 15 min, and at each state change. | Stage 1 (frame format with pack telemetry). **Done in Stage 0 (G8):** kind 4 is already the 24-byte health report (journal counters, reset cause, link state). Today it is sent only while LINKED, so a change to PROBING is reported only after the link returns. Open: whether Stage 1 extends kind 4 or takes a new kind. |
 | **Gateway / receiver** | Power source: mains, or UPS battery with its charge and runtime | Host UPS daemon (for example Network UPS Tools, `upsc`) read by the gateway; shown in `/v1/status` and MQTT diagnostics | Stage 1+, optional. The spec puts the receiver on continuous power. |
 
 The gateway does **not** tell the node how much to transmit. The node knows its own energy better than the gateway does. The gateway only shows and records the situation. (The gateway can still send a NACK for a permanently rejected record, G2.)
@@ -200,8 +202,8 @@ The gateway does **not** tell the node how much to transmit. The node knows its 
 
 | Stage | Work |
 |---|---|
-| **0 (now)** | Link state machine (*K*, probe back-off, live-only probes, drain stop on first miss). Airtime cap per minute from the SF. Energy-state interface in firmware with a fixed `NORMAL` (USB power). The node reports link state and journal counters. **No energy hardware and no speculative telemetry code.** |
-| **1** | Connect INA228/BQ25798/NTC data to the energy-state interface. Measure TX/RX current (H02). Set thresholds from the measured reserve. Diagnostic frame (kind 4). Test CONSERVE/CRITICAL transitions with a bench supply and replayed solar profiles (H03). |
+| **0 (now)** | Link state machine (*K*, probe back-off, live-only probes, drain stop on first miss). Airtime cap per minute from the SF. Energy-state interface in firmware with a fixed `NORMAL` (USB power). The node reports link state and journal counters (kind-4 health report, G8). **Done 2026-10-13.** Note: the Python simulator (`ws0` demo and harness) still models the pre-G13 rule (2 backlog per minute, no PROBING), so simulation results do not cover this behaviour. **No energy hardware and no speculative telemetry code.** |
+| **1** | Connect INA228/BQ25798/NTC data to the energy-state interface. Measure TX/RX current (H02). Set thresholds from the measured reserve. Diagnostic frame with pack telemetry (extend kind 4 or a new kind; kind 4 is already the Stage-0 health report). Test CONSERVE/CRITICAL transitions with a bench supply and replayed solar profiles (H03). |
 | **4+** | Field-tune SURPLUS thresholds and caps from real winter data. |
 
 ---
@@ -222,7 +224,7 @@ All six proposals below are approved as written. Thresholds in item 4 stay provi
 ## 10. Open question for Stage 1: adaptive SF and power (not approved, not implemented)
 
 Raised by Clint, 2026-10-13, after the office range walk (`evidence/rangetest-office-2026-10-13/`).
-Today the SF and power are fixed per placement (§6.4 of the context pack); this policy caps airtime
+Today the SF and power are fixed per placement (context pack §6, step 4); this policy caps airtime
 and backs off probing around that fixed SF.
 
 **Idea:** start at, and fall back to, the longest reach (SF12 / +22 dBm), then let the gateway step the
@@ -230,7 +232,7 @@ node down to cheaper settings while the margin allows, as LoRaWAN ADR does.
 
 | For | Against |
 |---|---|
-| Energy: SF12 costs about 22× the airtime of SF7 per frame (§3) | New failure mode: the two ends on different settings cannot hear each other. `firmware/rangetest` needed restart adoption and a lost-contact fallback to the longest reach to stay safe |
+| Energy: SF12 costs about 21× the airtime of SF7 per frame (576 vs 27 ms, §3) | New failure mode: the two ends on different settings cannot hear each other. `firmware/rangetest` needed restart adoption and a lost-contact fallback to the longest reach to stay safe |
 | Follows a changing link (snow or ice on the antenna, failure mode L9) | The airtime cap, *K* and the probe interval (§6, §9) currently assume one SF |
 | A failing link recovers at the longest reach on its own | More firmware and gateway state to test |
 
