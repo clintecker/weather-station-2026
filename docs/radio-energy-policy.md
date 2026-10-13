@@ -189,7 +189,7 @@ The operator must see the energy situation of **both** ends.
 
 | End | What it reports | How | Stage |
 |---|---|---|---|
-| **Station (TX)** | Pack schema subset: energy above reserve, SOC (when calibrated), solar input W, charger state, pack temperatures, **energy state**, **link state**, journal pending/lost/burned | New authenticated **diagnostic frame** (kind 3), sent as priority 3 on the ladder. Every 15 min, and at each state change. | Stage 1 (frame format with pack telemetry). The journal counters can go first (G8). |
+| **Station (TX)** | Pack schema subset: energy above reserve, SOC (when calibrated), solar input W, charger state, pack temperatures, **energy state**, **link state**, journal pending/lost/burned | New authenticated **diagnostic frame** (kind 4; kind 3 is the NACK), sent as priority 3 on the ladder. Every 15 min, and at each state change. | Stage 1 (frame format with pack telemetry). The journal counters can go first (G8). |
 | **Gateway / receiver** | Power source: mains, or UPS battery with its charge and runtime | Host UPS daemon (for example Network UPS Tools, `upsc`) read by the gateway; shown in `/v1/status` and MQTT diagnostics | Stage 1+, optional. The spec puts the receiver on continuous power. |
 
 The gateway does **not** tell the node how much to transmit. The node knows its own energy better than the gateway does. The gateway only shows and records the situation. (The gateway can still send a NACK for a permanently rejected record, G2.)
@@ -201,7 +201,7 @@ The gateway does **not** tell the node how much to transmit. The node knows its 
 | Stage | Work |
 |---|---|
 | **0 (now)** | Link state machine (*K*, probe back-off, live-only probes, drain stop on first miss). Airtime cap per minute from the SF. Energy-state interface in firmware with a fixed `NORMAL` (USB power). The node reports link state and journal counters. **No energy hardware and no speculative telemetry code.** |
-| **1** | Connect INA228/BQ25798/NTC data to the energy-state interface. Measure TX/RX current (H02). Set thresholds from the measured reserve. Diagnostic frame (kind 3). Test CONSERVE/CRITICAL transitions with a bench supply and replayed solar profiles (H03). |
+| **1** | Connect INA228/BQ25798/NTC data to the energy-state interface. Measure TX/RX current (H02). Set thresholds from the measured reserve. Diagnostic frame (kind 4). Test CONSERVE/CRITICAL transitions with a bench supply and replayed solar profiles (H03). |
 | **4+** | Field-tune SURPLUS thresholds and caps from real winter data. |
 
 ---
