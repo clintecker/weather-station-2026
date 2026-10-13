@@ -259,7 +259,7 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 | M8 | RX drops, duplicates, or delays frames | Gaps / duplicate log lines | Duplicates are idempotent; delays reduce timeliness | AUTO | None (late only) | Simulation |
 | M9 | RX alters a frame | Tag fails | Rejected; retried | AUTO | None | Unit tests |
 | M10 | RX forges an ACK | Impossible: the RX board has no key | — | — | None | Design |
-| M11 | **A frame that the gateway always rejects** ("poison") | Same identity rejected every minute in `receiver.log` | TX retries it **forever**. If 2 poison records are the oldest, **no other backlog drains** (gap G2). | OPERATOR today (R6); AUTO after G2 fix | Blocks the backlog; real data then waits until overflow | No |
+| M11 | **A frame that the gateway always rejects** ("poison") | `receiver.log` `-> nack`; TX `#nack`; gateway `rejections` table | Authentic but unacceptable (identity collision, invalid record): the gateway stores the raw frame in `rejections` and sends an authenticated **NACK**; TX drops the record and counts `abandoned`. Safety net: 10 unanswered tries while the gateway answers other frames → `#abandon`. An unauthenticated frame gets no NACK. | AUTO | None: the frame is kept in `rejections` and can be recovered | **Bench 2026-10-12:** planted collision → `#nack reason=1`, `abandoned=1`; the reading was then recovered from `rejections`. Unit tests (5); harness `identity-collision` (1 NACK) |
 
 ### 8.2 Configuration and provisioning errors
 
@@ -314,7 +314,7 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 5. Run `python -m ws0 provision-node --directory run-hw-2 --serial <TX port>`.
 6. Keep the old directory read-only for its history. Never use its key again.
 
-**R6 — Clear a poison record (until G2 is fixed).** Find the rejected identity in `receiver.log`. Do R5 only if the record cannot become acceptable. Today, no command removes one journal entry. This is part of the G2 fix.
+**R6 — Recover a NACKed reading.** The gateway keeps every NACKed frame in `observations.sqlite3`, table `rejections` (`frame_hex`). After you correct the cause (for example, a wrong stored row), decode the frame with the station key and `Store.ingest` it. Example: the bench recovery in `docs/hardware/nucleo-wl55jc-bringup.md`.
 
 **R7 — Restore the gateway database.**
 - You can restore `observations.sqlite3` from a backup.
@@ -332,7 +332,7 @@ Priority: **P1** = fix before H01; **P2** = fix before field use; **P3** = track
 | ID | Gap | Risk | Proposed fix | Priority |
 |---|---|---|---|---|
 | G1 | ~~No hardware watchdog~~ **Closed 2026-10-12** (evidence: M1, M2). Was: no hardware watchdog on TX or RX | A hang stops the system until a person resets it (M1, M2). **A field station is unattended: a hang can last until a site visit.** | Enable the IWDG (independent watchdog, LSI clock), ~8 s timeout. Refresh it from the main loop only when the radio state machine and the sample timer advance. | **P1** |
-| G2 | **Poison records block the backlog** | Two permanently rejected records stop all backlog drain (M11, C1, C5), and each retry costs node energy | (a) The gateway answers a permanent rejection with an authenticated NACK, so the node stops at once (the mains side decides; §1.1 principle). (b) As a safety net, the TX board marks an entry `abandoned` after *N* attempts (counted and reported). Implement both. | **P1** |
+| G2 | ~~Poison records block the backlog~~ **Closed 2026-10-12** (evidence: M11). Was: poison records block the backlog | Two permanently rejected records stop all backlog drain (M11, C1, C5), and each retry costs node energy | (a) The gateway answers a permanent rejection with an authenticated NACK, so the node stops at once (the mains side decides; §1.1 principle). (b) As a safety net, the TX board marks an entry `abandoned` after *N* attempts (counted and reported). Implement both. | **P1** |
 | G3 | **Gateway exits on a serial error; no supervisor; port names change** | One USB glitch stops H01 data until a person acts | Catch `SerialException`, reopen with back-off, find the RX board by **ST-LINK serial number** (pyserial `list_ports`), and run under `launchd` with `KeepAlive`. | **P1** |
 | G4 | **SQLite `synchronous=FULL` on macOS does not flush the drive cache** | A host power cut can lose a committed and ACKed row (I1 weakened) | Set `PRAGMA fullfsync=ON` (and `checkpoint_fullfsync=ON`) on macOS [[SQLite]](https://www.sqlite.org/pragma.html#pragma_fullfsync). Measure the commit latency after the change. | **P1** |
 | G5 | **`WIPE` restarts epochs at 1** | Re-provisioning under the same station collides with history (C5) | `PROVISION` takes an epoch floor from the gateway (the maximum stored session + 1), or `WIPE` keeps the epoch maximum. | P2 |

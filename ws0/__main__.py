@@ -147,7 +147,8 @@ def main():
                                 frame = bytes.fromhex(text)
                                 ack = gateway.receive(frame)
                                 serial_port.write(ack.hex().encode()+b'\n')
-                                receiver_log.write(f'{stamp} frame {text} -> ack {ack.hex()}\n')
+                                kind = 'nack' if ack[3] == 3 else 'ack'
+                                receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}\n')
                                 print(json.dumps({'received_at':stamp,'latest':gateway.store.latest(cfg['station'])['observation']}),flush=True)
                         except (ValueError,UnicodeError,InvalidTag) as exc:
                             receiver_log.write(f'{stamp} rejected {type(exc).__name__}: {exc} {text}\n')

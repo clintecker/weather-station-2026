@@ -1,0 +1,42 @@
+{
+  "name": "noisy-link-7",
+  "description": "10% uplink loss, 10% ACK loss, 1% corruption, 15% duplication, up to 20s delay.",
+  "seed": 7,
+  "scenario_pass": true,
+  "failures": [],
+  "metrics": {
+    "scheduled": 1440,
+    "stored": 1440,
+    "missing": [],
+    "unexpected_rows": [],
+    "payload_mismatches": [],
+    "duplicate_rows": 0,
+    "within_120s_with_trustworthy_time": 1429,
+    "live_delivery_percent": 99.2361,
+    "latency_target_met": true,
+    "maximum_ground_truth_latency_seconds": 193.0,
+    "unknown_clock_samples": 1,
+    "sensor_fault_samples": 0,
+    "reconstructed_time_samples": 1,
+    "unresolved_time_samples": 0
+  },
+  "network": {
+    "uplink_sent": 1748,
+    "ack_sent": 1800,
+    "random_drops": 325,
+    "outage_drops": 0,
+    "corrupted": 33,
+    "duplicates": 459,
+    "rejected": 40,
+    "commit_errors": 0,
+    "nacks": 0,
+    "identity_collision_rejections": 0,
+    "node_reboots": 0,
+    "gateway_reboots": 0
+  },
+  "pending_journal": 0,
+  "nonce_collisions": 0,
+  "drain_minutes": 1,
+  "physical_H01": "NOT RUN",
+  "negative_control": false
+}

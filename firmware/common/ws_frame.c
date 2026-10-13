@@ -32,12 +32,13 @@ int ws_seal_obs(const uint8_t key[16], uint32_t station, uint64_t counter,
  return rc;
 }
 
-int ws_open_ack(const uint8_t key[16], uint32_t station, const uint8_t *frame, uint32_t len,
- uint64_t *counter, uint32_t *epoch, uint32_t *seq, uint64_t *utc, uint64_t *echo) {
+int ws_open_reply(const uint8_t key[16], uint32_t station, const uint8_t *frame, uint32_t len,
+ uint8_t *kind, uint64_t *counter, uint32_t *epoch, uint32_t *seq, uint64_t *utc, uint64_t *echo) {
  uint8_t expect[WS_HEADER_LEN], nonce[13], plain[WS_ACK_PLAIN_LEN]; mbedtls_ccm_context ccm; int rc;
  if(len!=WS_ACK_FRAME_LEN) return -1;
+ if(frame[3]!=WS_KIND_ACK && frame[3]!=WS_KIND_NACK) return -2;
  uint64_t ctr=get(frame+8,8);
- header(expect,nonce,WS_KIND_ACK,station,ctr);
+ header(expect,nonce,frame[3],station,ctr);
  if(memcmp(expect,frame,8)) return -2; /* magic, version, kind, station */
  mbedtls_ccm_init(&ccm);
  rc=mbedtls_ccm_setkey(&ccm,MBEDTLS_CIPHER_ID_AES,key,128);
@@ -45,10 +46,17 @@ int ws_open_ack(const uint8_t key[16], uint32_t station, const uint8_t *frame, u
   frame+WS_HEADER_LEN,plain,frame+WS_HEADER_LEN+WS_ACK_PLAIN_LEN,WS_TAG_LEN);
  mbedtls_ccm_free(&ccm);
  if(!rc) {
-  *counter=ctr; *epoch=(uint32_t)get(plain,4); *seq=(uint32_t)get(plain+4,4); *utc=get(plain+8,8); *echo=get(plain+16,8);
+  *kind=frame[3]; *counter=ctr; *epoch=(uint32_t)get(plain,4); *seq=(uint32_t)get(plain+4,4); *utc=get(plain+8,8); *echo=get(plain+16,8);
  }
  mbedtls_platform_zeroize(plain,sizeof plain);
  return rc?-3:0;
+}
+
+int ws_open_ack(const uint8_t key[16], uint32_t station, const uint8_t *frame, uint32_t len,
+ uint64_t *counter, uint32_t *epoch, uint32_t *seq, uint64_t *utc, uint64_t *echo) {
+ uint8_t kind;
+ if(len>3 && frame[3]!=WS_KIND_ACK) return -2;
+ return ws_open_reply(key,station,frame,len,&kind,counter,epoch,seq,utc,echo);
 }
 
 int ws_key_check(const uint8_t key[16], uint8_t out[3]) {

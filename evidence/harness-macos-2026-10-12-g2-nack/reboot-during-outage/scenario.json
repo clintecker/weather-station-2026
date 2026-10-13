@@ -1,0 +1,31 @@
+{
+  "name": "reboot-during-outage",
+  "description": "Deployment case: station reboots during a 60-minute link outage, so it has no clock until the link returns; every buffered sample must recover a correct time.",
+  "minutes": 1440,
+  "seed": 73,
+  "uplink_loss": 0.0,
+  "ack_loss": 0.0,
+  "corruption": 0.0,
+  "duplicates": 0.0,
+  "max_delay_seconds": 0,
+  "link_outages": [
+    [
+      20,
+      80
+    ]
+  ],
+  "host_outages": [],
+  "commit_failures": [],
+  "sensor_faults": [],
+  "unknown_clock": [],
+  "clock_steps": [],
+  "node_reboots": [
+    50
+  ],
+  "gateway_reboots": [],
+  "inject_identity_collision": false,
+  "require_latency_target": false,
+  "expect_unavailable": true,
+  "expect_latency_failure": true,
+  "require_time_reconstruction": true
+}

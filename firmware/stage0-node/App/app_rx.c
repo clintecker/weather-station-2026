@@ -111,7 +111,7 @@ static void on_line(char *line)
   }
   int n = hex_decode(line, frame, sizeof frame);
   if (n != WS_ACK_FRAME_LEN || frame[0] != 'W' || frame[1] != 'S' ||
-      frame[2] != WS_FRAME_VERSION || frame[3] != WS_KIND_ACK)
+      frame[2] != WS_FRAME_VERSION || (frame[3] != WS_KIND_ACK && frame[3] != WS_KIND_NACK))
   {
     APP_PRINTF("#host reject len=%d\n", n);
     led_flash(LED_RED, 400);

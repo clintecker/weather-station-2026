@@ -17,7 +17,7 @@ import sqlite3
 import tempfile
 from typing import Any
 from cryptography.exceptions import InvalidTag
-from .protocol import Nonces
+from .protocol import KIND_NACK, NACK, NACK_COLLISION, Nonces, unseal
 from .service import Gateway
 from .simulator import Node
 
@@ -144,7 +144,7 @@ class Campaign:
         self.tx_nonces = set()
         self.nonce_collisions = 0
         self.counts = {name:0 for name in ['uplink_sent','ack_sent','random_drops','outage_drops',
-                                         'corrupted','duplicates','rejected','commit_errors',
+                                         'corrupted','duplicates','rejected','commit_errors','nacks',
                                          'identity_collision_rejections','node_reboots','gateway_reboots']}
         self.availability = []
 
@@ -212,11 +212,17 @@ class Campaign:
                     finally:
                         self.gateway.store.ingest = original
                     self.track_nonce(ack)
-                    self.log('committed_or_duplicate',frame=packet.hex())
+                    if ack[3] == KIND_NACK:
+                        reason = NACK.unpack(unseal(bytes.fromhex(self.cfg['radio_key']),1,KIND_NACK,ack))[2]
+                        self.counts['nacks'] += 1
+                        self.counts['identity_collision_rejections'] += int(reason == NACK_COLLISION)
+                        self.log('rejected_nack',frame=packet.hex(),reason=reason)
+                    else:
+                        self.log('committed_or_duplicate',frame=packet.hex())
                     self.send('ack',ack)
                 else:
-                    self.node.acknowledge(packet)
-                    self.log('ack_accepted',frame=packet.hex())
+                    self.node.handle_reply(packet)
+                    self.log('ack_accepted' if packet[3] != KIND_NACK else 'nack_accepted',frame=packet.hex())
             except OSError:
                 self.counts['commit_errors'] += 1
                 self.log('commit_failed_no_ack')

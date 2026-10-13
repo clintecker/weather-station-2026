@@ -10,7 +10,9 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from gateway import Store
-from .protocol import ACK, Nonces, decode_observation, frame_counter, seal, unseal
+import struct
+from .protocol import (ACK, KIND_NACK, NACK, NACK_COLLISION, NACK_INVALID, Nonces,
+                       decode_observation, frame_counter, seal, unseal)
 
 
 def load_config(path):
@@ -32,7 +34,7 @@ class Gateway:
         self.key = bytes.fromhex(cfg['radio_key'])
         self.store = Store(directory / 'observations.sqlite3')
         self.nonces = Nonces(directory / 'gateway-nonces.sqlite3',self.key,cfg['station_id'],2)
-        self.accepted = self.rejected = 0
+        self.accepted = self.rejected = self.nacked = 0
         self.lock = threading.Lock()
 
     def receive(self, frame, now=None):
@@ -40,8 +42,28 @@ class Gateway:
         with self.lock:
             try:
                 payload = unseal(self.key,self.cfg['station_id'],1,frame)
+            except Exception:
+                self.rejected += 1  # unauthenticated: never answered (a NACK would let anyone drop data)
+                raise
+            try:
                 record = decode_observation(payload,self.cfg['station'])
                 inserted = self.store.ingest(record,now)
+            except ValueError as exc:
+                # Authentic but permanently unacceptable: record it, then tell the node to stop
+                # retrying it (gap G2). Commit failures (OSError) still propagate with no reply.
+                reason = NACK_COLLISION if str(exc) == 'Identity collision' else NACK_INVALID
+                epoch, sequence = struct.unpack('>II',payload[:8])
+                self.store.reject(self.cfg['station'],str(epoch),sequence,
+                                  'identity_collision' if reason == NACK_COLLISION else 'invalid_record',
+                                  str(exc),frame.hex(),now)
+                self.rejected += 1
+                self.nacked += 1
+                return seal(self.key,self.cfg['station_id'],KIND_NACK,self.nonces,
+                            NACK.pack(epoch,sequence,reason,0,frame_counter(frame)))
+            except OSError:
+                self.rejected += 1  # commit failed: no ACK, the node keeps the record
+                raise
+            try:
                 # Host UTC rides in the authenticated ACK: the node's only time source.
                 host_utc = int(time.time() if now is None else now)
                 ack = seal(self.key,self.cfg['station_id'],2,self.nonces,
@@ -57,7 +79,7 @@ class Gateway:
         """Expose no credentials or raw keys in diagnostics."""
         return {'stage':0,'h01':'NOT RUN','mode':self.cfg['mode'],
                 'station':self.cfg['station'],'accepted_this_process':self.accepted,
-                'rejected_this_process':self.rejected,
+                'rejected_this_process':self.rejected,'nacked_this_process':self.nacked,
                 'latest':self.store.latest(self.cfg['station'])}
 
 

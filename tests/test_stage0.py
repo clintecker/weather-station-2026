@@ -235,3 +235,43 @@ class TimeReconstruction(unittest.TestCase):
   self.assertEqual(store.history('s',0,2000)[0]['time_basis'],'synchronized')
   self.assertFalse(store.ingest(old))  # an exact draft-2/3 duplicate is still recognized
   store.db.close()
+
+
+class NackTests(unittest.TestCase):
+ """Gap G2: authentic but permanently rejected frames get an authenticated NACK."""
+ setUp=PipelineTests.setUp
+ tearDown=PipelineTests.tearDown
+ def test_collision_is_nacked_recorded_and_dropped_by_node(self):
+  from ws0.protocol import KIND_NACK,NACK_COLLISION
+  record=self.node.sample(1000)
+  self.node.handle_reply(self.gateway.receive(self.node.packet(record),1001))
+  altered=record|{'temperature_c':record['temperature_c']+1}
+  self.node.db.execute('INSERT INTO pending VALUES (?,?,?)',(self.node.epoch,record['sequence'],json.dumps(altered)))
+  reply=self.gateway.receive(self.node.packet(altered),1002)
+  self.assertEqual(reply[3],KIND_NACK)
+  self.assertEqual(self.node.handle_reply(reply),NACK_COLLISION)
+  self.assertEqual(self.node.backfill(),[]); self.assertEqual(self.node.abandoned,1)
+  rows=self.gateway.store.db.execute('SELECT reason,frame_hex FROM rejections').fetchall()
+  self.assertEqual(len(rows),1); self.assertEqual(rows[0][0],'identity_collision'); self.assertTrue(rows[0][1])
+  self.assertEqual(self.gateway.store.latest(self.cfg['station'],1003)['observation']['temperature_c'],record['temperature_c'])
+ def test_invalid_authentic_record_is_nacked(self):
+  from ws0.protocol import KIND_NACK,NACK,NACK_INVALID,OBS,seal
+  bad=OBS.pack(self.node.epoch,7,1000,0,0,0,0,1,0)  # validity 0 with 0/0 filler: noncanonical
+  frame=seal(self.node.key,1,1,self.node.nonces,bad)
+  reply=self.gateway.receive(frame,1001)
+  self.assertEqual(reply[3],KIND_NACK)
+  self.assertEqual(NACK.unpack(unseal(self.node.key,1,KIND_NACK,reply))[2],NACK_INVALID)
+ def test_unauthenticated_frame_gets_no_reply(self):
+  frame=self.node.packet(self.node.sample(1000))
+  with self.assertRaises(InvalidTag): self.gateway.receive(frame[:-1]+bytes([frame[-1]^1]),1001)
+  self.assertEqual(self.gateway.store.db.execute('SELECT count(*) FROM rejections').fetchone()[0],0)
+ def test_nack_for_a_frame_the_node_did_not_send_is_refused(self):
+  from ws0.protocol import KIND_NACK,NACK,seal
+  record=self.node.sample(1000)
+  forged=seal(self.node.key,1,KIND_NACK,self.gateway.nonces,NACK.pack(self.node.epoch,0,1,0,999999))
+  with self.assertRaises(ValueError): self.node.handle_reply(forged)
+  self.assertEqual(len(self.node.backfill()),1)
+ def test_commit_failure_still_gets_no_reply(self):
+  frame=self.node.packet(self.node.sample(1000))
+  self.gateway.store.ingest=lambda *a: (_ for _ in ()).throw(OSError('disk full'))
+  with self.assertRaises(OSError): self.gateway.receive(frame)

@@ -45,6 +45,9 @@ static const char KAT_OBS_HEX[] = "57530401000000010000000100000002bd50c6ae3400a
 static const char KAT_ACK_HEX[] = "575304020000000100000000000000050e1eb4544766f4e68818a3b3"
                                   "9f36393d04a393ebcf0d38783b389a01f911c8748031a35a3b671bf7";
 
+static const char KAT_NACK_HEX[] = "57530403000000010000000000000006849addbf88d9aadd884aa3bb"
+                                   "88136575354a59d61612106f543f988650615437a43b53e7b56c0ff1";
+
 static RadioEvents_t events;
 static UTIL_TIMER_Object_t sample_timer;
 static uint32_t station;
@@ -62,7 +65,13 @@ static unsigned qn, qi;
 static int busy;
 static uint64_t sent_counter;
 static uint32_t sent_epoch, sent_seq;
-static uint32_t n_sent, n_acked, n_no_ack, n_ack_rejects, n_sensor_faults;
+static uint32_t n_sent, n_acked, n_no_ack, n_ack_rejects, n_sensor_faults, n_abandoned;
+/* Gap G2 safety net: a record that stays unanswered while other frames in the same exchange are
+ * answered (the gateway is up) gets a strike; at STRIKE_LIMIT it is abandoned and counted. */
+#define STRIKE_LIMIT 10
+#define STRIKE_SLOTS 6
+static struct { jref_t ref; uint8_t n; } strikes[STRIKE_SLOTS];
+static uint8_t replied[1 + MAX_BACKFILL];
 
 static uint8_t rx_frame[255];
 static uint16_t rx_len;
@@ -104,18 +113,22 @@ static int run_kat(void)
   if (ws_open_ack(KAT_KEY, 1, ack, sizeof ack, &ctr, &ep, &sq, &utc, &echo)) return 0;
   if (ctr != 5 || ep != 17 || sq != 42 || utc != 1760000000ULL || echo != 0x100000002ULL) return 0;
   ack[sizeof ack - 1] ^= 1; /* tampered tag must fail */
-  return ws_open_ack(KAT_KEY, 1, ack, sizeof ack, &ctr, &ep, &sq, &utc, &echo) != 0;
+  if (ws_open_ack(KAT_KEY, 1, ack, sizeof ack, &ctr, &ep, &sq, &utc, &echo) == 0) return 0;
+  uint8_t kind;
+  if (hex_decode(KAT_NACK_HEX, ack, sizeof ack) != WS_ACK_FRAME_LEN) return 0;
+  if (ws_open_reply(KAT_KEY, 1, ack, sizeof ack, &kind, &ctr, &ep, &sq, &utc, &echo)) return 0;
+  return kind == WS_KIND_NACK && ctr == 6 && ep == 17 && sq == 42 && (utc >> 32) == WS_NACK_COLLISION && echo == 0x100000002ULL;
 }
 
 static void status(void)
 {
   APP_PRINTF("#status role=tx fw=%s provisioned=%d station=%u kcv=%02x%02x%02x kat=%s epoch=%u next_seq=%u "
-             "time=%s utc=%u uptime=%u pending=%u lost=%u burned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u sensor_faults=%u\n",
+             "time=%s utc=%u uptime=%u pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u sensor_faults=%u\n",
              WS_FW_VERSION, provisioned, (unsigned)station, kcv[0], kcv[1], kcv[2], kat_ok ? "pass" : "FAIL",
              (unsigned)boot_epoch, (unsigned)next_seq, time_valid() ? "synchronized" : "unknown",
              (unsigned)(time_valid() ? SysTimeGet().Seconds : 0), (unsigned)(mcu_seconds() - boot_mcu),
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
-             (unsigned)store_journal_burned(), (unsigned)n_sent, (unsigned)n_acked,
+             (unsigned)store_journal_burned(), (unsigned)n_abandoned, (unsigned)n_sent, (unsigned)n_acked,
              (unsigned)n_no_ack, (unsigned)n_ack_rejects, (unsigned)n_sensor_faults);
 }
 
@@ -149,26 +162,80 @@ static void send_current(void)
   if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) { APP_PRINTF("#error radio-busy\n"); next_item(); }
 }
 
+static int same(jref_t a, jref_t b) { return a.page == b.page && a.slot == b.slot; }
+
+static void forget_strikes(jref_t r)
+{
+  for (unsigned i = 0; i < STRIKE_SLOTS; i++) if (strikes[i].n && same(strikes[i].ref, r)) strikes[i].n = 0;
+}
+
+static void strike(jref_t r)
+{
+  unsigned use = STRIKE_SLOTS, low = 0;
+  for (unsigned i = 0; i < STRIKE_SLOTS; i++)
+  {
+    if (strikes[i].n && same(strikes[i].ref, r)) { use = i; break; }
+    if (strikes[i].n < strikes[low].n) low = i;
+  }
+  if (use == STRIKE_SLOTS) { use = low; strikes[use].ref = r; strikes[use].n = 0; }
+  if (++strikes[use].n < STRIKE_LIMIT) return;
+  uint8_t plain[24];
+  int ok = store_journal_read(r, plain) == 0 && store_journal_ack(r) == 0;
+  strikes[use].n = 0;
+  if (!ok) return;
+  n_abandoned++;
+  led_flash(LED_RED, 1000);
+  APP_PRINTF("#abandon epoch=%u seq=%u after %u unanswered tries while the gateway answered other frames; abandoned=%u\n",
+             (unsigned)be32(plain), (unsigned)be32(plain + 4), STRIKE_LIMIT, (unsigned)n_abandoned);
+}
+
+/* End of an exchange: strikes only count when the gateway answered something in it. */
+static void settle_strikes(void)
+{
+  int any = 0;
+  for (unsigned i = 0; i < qn; i++) any |= replied[i];
+  if (!any) return; /* link or gateway down: never abandon data for that */
+  for (unsigned i = 0; i < qn; i++)
+  {
+    if (replied[i]) forget_strikes(queue[i]);
+    else strike(queue[i]);
+  }
+}
+
 static void next_item(void)
 {
   if (++qi < qn) { HAL_Delay(INTER_FRAME_MS); send_current(); return; }
+  settle_strikes();
   busy = 0;
   Radio.Sleep();
 }
 
-static void handle_ack(void)
+static void handle_reply(void)
 {
-  uint64_t ctr, utc, echo; uint32_t ep, sq; jref_t ref;
-  if (ws_open_ack(key, station, rx_frame, rx_len, &ctr, &ep, &sq, &utc, &echo))
+  uint64_t ctr, utc, echo; uint32_t ep, sq; jref_t ref; uint8_t kind;
+  if (ws_open_reply(key, station, rx_frame, rx_len, &kind, &ctr, &ep, &sq, &utc, &echo))
   {
     n_ack_rejects++;
     led_flash(LED_RED, 400);
     APP_PRINTF("#ack reject len=%u rssi=%d snr=%d\n", rx_len, rx_rssi, rx_snr);
     return;
   }
+  int mine = echo == sent_counter && ep == sent_epoch && sq == sent_seq;
+  if (kind == WS_KIND_NACK)
+  {
+    /* Authentic permanent rejection (gap G2). Accept it only for the frame just sent. */
+    if (!mine) { n_ack_rejects++; APP_PRINTF("#nack ignored: not for the frame just sent\n"); return; }
+    replied[qi] = 1;
+    if (store_journal_find(ep, sq, &ref) == 0 && store_journal_ack(ref) == 0) n_abandoned++;
+    led_flash(LED_RED, 1000);
+    APP_PRINTF("#nack epoch=%u seq=%u reason=%u abandoned=%u\n", (unsigned)ep, (unsigned)sq,
+               (unsigned)(utc >> 32), (unsigned)n_abandoned);
+    return;
+  }
   int found = store_journal_find(ep, sq, &ref) == 0;
   if (found && store_journal_ack(ref)) APP_PRINTF("#error journal-ack\n");
-  int fresh = echo == sent_counter && ep == sent_epoch && sq == sent_seq && utc >= MIN_PLAUSIBLE_UTC;
+  if (mine) replied[qi] = 1;
+  int fresh = mine && utc >= MIN_PLAUSIBLE_UTC;
   if (fresh)
   {
     SysTime_t now = { .Seconds = (uint32_t)utc, .SubSeconds = 0 };
@@ -192,7 +259,7 @@ static void process(void)
   switch (ev)
   {
     case EV_TX_DONE: Radio.Rx(ACK_WINDOW_MS); break;
-    case EV_RX_DONE: handle_ack(); next_item(); break;
+    case EV_RX_DONE: handle_reply(); next_item(); break;
     case EV_RX_TIMEOUT:
     case EV_RX_ERROR:
       n_no_ack++;
@@ -226,6 +293,7 @@ static void sample(void)
   if (!rc) queue[qn++] = live;
   qn += store_journal_oldest(queue + qn, MAX_BACKFILL, rc ? NULL : &live);
   qi = 0;
+  memset(replied, 0, sizeof replied);
   if (qn) { busy = 1; exchange_start_mcu = mcu_seconds(); send_current(); }
 }
 

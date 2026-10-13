@@ -78,6 +78,9 @@ class Store:
                         "time_uncertainty_s=CASE WHEN sampled_at IS NULL THEN NULL ELSE 0 END "
                         "WHERE time_basis IS NULL")
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_effective ON observations(station,effective_at)')
+        # Authentic frames that were permanently rejected (and NACKed) are kept, never silently lost.
+        self.db.execute('''CREATE TABLE IF NOT EXISTS rejections (station TEXT, session TEXT, sequence INTEGER,
+            received_at REAL, reason TEXT, detail TEXT, frame_hex TEXT)''')
         self.db.commit()
 
     def ingest(self, record, received_at=None):
@@ -118,6 +121,13 @@ class Store:
             self.db.execute("UPDATE observations SET effective_at=?,time_basis='reconstructed',time_uncertainty_s=? "
                             'WHERE station=? AND session=? AND sequence=?',
                             (ref_utc+(uptime-ref_uptime),QUANTIZATION_S+span*DRIFT_PPM/1e6,station,session,sequence))
+
+    def reject(self, station, session, sequence, reason, detail, frame_hex, received_at=None):
+        """Durably record a permanently rejected authentic frame before the NACK is sent."""
+        with self.lock, self.db:
+            self.db.execute('INSERT INTO rejections VALUES (?,?,?,?,?,?,?)',
+                            (station,session,sequence,time.time() if received_at is None else received_at,
+                             reason,detail,frame_hex))
 
     def latest(self, station, now=None):
         """Fail closed on bad clocks; old replay traffic cannot reset the age timer."""

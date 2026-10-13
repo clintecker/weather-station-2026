@@ -5,6 +5,9 @@
 #define WS_FRAME_VERSION 4
 #define WS_KIND_OBS 1
 #define WS_KIND_ACK 2
+#define WS_KIND_NACK 3 /* authentic but permanently rejected (gap G2) */
+#define WS_NACK_COLLISION 1
+#define WS_NACK_INVALID 2
 #define WS_HEADER_LEN 16
 #define WS_TAG_LEN 16
 #define WS_OBS_PLAIN_LEN 24
@@ -17,6 +20,10 @@ int ws_seal_obs(const uint8_t key[16], uint32_t station, uint64_t counter,
 /* 0 on success; nonzero for wrong length/header/station or failed authentication. */
 int ws_open_ack(const uint8_t key[16], uint32_t station, const uint8_t *frame, uint32_t len,
  uint64_t *counter, uint32_t *epoch, uint32_t *seq, uint64_t *utc, uint64_t *echo);
+/* Opens an ACK (kind 2) or NACK (kind 3). word = bytes 8..15 of the plaintext: host UTC
+   for an ACK; (reason << 32) for a NACK. 0 on success. */
+int ws_open_reply(const uint8_t key[16], uint32_t station, const uint8_t *frame, uint32_t len,
+ uint8_t *kind, uint64_t *counter, uint32_t *epoch, uint32_t *seq, uint64_t *word, uint64_t *echo);
 /* Key check value: first 3 bytes of AES-ECB(key, zero block); safe to display. */
 int ws_key_check(const uint8_t key[16], uint8_t out[3]);
 #endif

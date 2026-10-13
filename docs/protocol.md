@@ -68,6 +68,13 @@ sorting, determines newest data; a corrected clock can therefore recover availab
 A sample more than five seconds ahead of its receipt time is quarantined. This
 threshold is a conservative draft clock-tolerance setting, not an H01 waiver.
 
+NACK (kind 3, 24-byte plaintext) = sample epoch (4) + sequence (4) + reason (4: 1 identity
+collision, 2 invalid record) + reserved 0 (4) + echoed observation counter (8). The gateway sends a
+NACK only for an **authenticated** frame that it must reject permanently, after it stores the raw
+frame in its `rejections` table. It shares the gateway's ACK counter space; the kind byte keeps the
+nonces distinct. The node accepts a NACK only for the frame it just sent, then stops retrying that
+record. An unauthenticated or wrong-version frame never gets a NACK.
+
 ACK plaintext (24 bytes) = acknowledged sample epoch (4) + sample sequence (4) + host UTC
 Unix seconds at commit (8) + the 64-bit transmission counter of the observation frame being
 answered (8). The node sets its clock only from an ACK whose echoed counter equals the

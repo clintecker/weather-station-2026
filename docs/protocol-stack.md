@@ -298,7 +298,7 @@ Both frame kinds are 56 bytes.
 |---:|---:|---|---|
 | 0 | 2 | Magic `WS` (`0x57 0x53`) | Authenticated, clear |
 | 2 | 1 | Version = `4` | Authenticated, clear |
-| 3 | 1 | Kind: `1` observation, `2` ACK | Authenticated, clear |
+| 3 | 1 | Kind: `1` observation, `2` ACK, `3` NACK | Authenticated, clear |
 | 4 | 4 | Station ID | Authenticated, clear |
 | 8 | 4 | Counter, high 32 bits | Authenticated, clear |
 | 12 | 4 | Counter, low 32 bits | Authenticated, clear |

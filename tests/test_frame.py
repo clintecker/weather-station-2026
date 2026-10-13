@@ -16,6 +16,8 @@ MBEDTLS = ROOT/'vendor/STM32CubeWL/Middlewares/Third_Party/mbed-crypto'
 KAT_KEY = bytes(range(16))
 KAT_OBS = bytes.fromhex('57530401000000010000000100000002bd50c6ae3400a778bec2d16f'
                         'adad588beedf778fa19f9c44d0b48401107c5419c40efafe6b0d84b7')
+KAT_NACK = bytes.fromhex('57530403000000010000000000000006849addbf88d9aadd884aa3bb'
+                         '88136575354a59d61612106f543f988650615437a43b53e7b56c0ff1')
 KAT_ACK = bytes.fromhex('575304020000000100000000000000050e1eb4544766f4e68818a3b3'
                         '9f36393d04a393ebcf0d38783b389a01f911c8748031a35a3b671bf7')
 
@@ -49,6 +51,9 @@ class FrameAgreement(unittest.TestCase):
             [ctypes.POINTER(t) for t in (ctypes.c_uint64, ctypes.c_uint32, ctypes.c_uint32,
                                          ctypes.c_uint64, ctypes.c_uint64)]
         cls.lib.ws_key_check.argtypes = [u8p, u8p]
+        cls.lib.ws_open_reply.argtypes = [u8p, ctypes.c_uint32, u8p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8)] + \
+            [ctypes.POINTER(t) for t in (ctypes.c_uint64, ctypes.c_uint32, ctypes.c_uint32,
+                                         ctypes.c_uint64, ctypes.c_uint64)]
 
     @classmethod
     def tearDownClass(cls):
@@ -122,6 +127,23 @@ class FrameAgreement(unittest.TestCase):
                 decode_observation(bad, 'test')
         valid_zero = decode_observation(OBS.pack(3, 7, 0, 90, 0, 0, 1, 0, 0), 'test')
         self.assertEqual((valid_zero['temperature_c'], valid_zero['humidity_pct']), (0, 0))  # real 0.00 degC
+
+    def c_reply(self, key, station, frame):
+        kind = ctypes.c_uint8()
+        values = [ctypes.c_uint64(), ctypes.c_uint32(), ctypes.c_uint32(), ctypes.c_uint64(), ctypes.c_uint64()]
+        rc = self.lib.ws_open_reply(self.buf(key), station, self.buf(frame), len(frame), ctypes.byref(kind),
+                                    *map(ctypes.byref, values))
+        return rc, kind.value, [v.value for v in values]
+
+    def test_nack_known_answer_and_kind_rules(self):
+        from ws0.protocol import NACK
+        self.assertEqual(seal(KAT_KEY, 1, 3, Fixed(1, 2, 6), NACK.pack(17, 42, 1, 0, 0x100000002)), KAT_NACK)
+        self.assertEqual(self.c_reply(KAT_KEY, 1, KAT_NACK), (0, 3, [6, 17, 42, 1 << 32, 0x100000002]))
+        self.assertEqual(self.c_reply(KAT_KEY, 1, KAT_ACK)[:2], (0, 2))
+        self.assertNotEqual(self.c_reply(KAT_KEY, 1, KAT_OBS)[0], 0)          # observation is not a reply
+        self.assertNotEqual(self.c_open(KAT_KEY, 1, KAT_NACK)[0], 0)          # ACK-only opener refuses a NACK
+        flipped = bytearray(KAT_NACK); flipped[3] = 2                          # kind is authenticated
+        self.assertNotEqual(self.c_reply(KAT_KEY, 1, bytes(flipped))[0], 0)
 
     def test_key_check_value(self):
         out = (ctypes.c_uint8*3)()
