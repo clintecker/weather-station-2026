@@ -1,7 +1,7 @@
 # Radio transmission policy: energy, link health, and backlog
 
 > **Document type:** Design specification (proposal for approval). **Language:** ASD-STE100 style.
-> **Status:** Approved 2026-10-12 (section 9). Stage 0 implements the link-health part (section 6). Stage 1 connects the energy inputs (section 5) when the pack and charger telemetry exist (spec §4–5, H02/H03). Items marked ⚠ were approved in section 9.
+> **Status:** Approved 2026-10-12 (section 9). **Stage-0 part implemented 2026-10-13** (`App/app_tx.c`): link states, probe back-off, live-only probes, drain stop at first miss, airtime cap from the configured SF, and a fixed-NORMAL energy hook. Bench evidence: `evidence/g13-outage-2026-10-13/`. Stage 0 implements the link-health part (section 6). Stage 1 connects the energy inputs (section 5) when the pack and charger telemetry exist (spec §4–5, H02/H03). Items marked ⚠ were approved in section 9.
 > **Related:** [`failure-modes.md`](failure-modes.md) §1.1–1.2 (energy cost of failure), gaps G11, G13, G14, G16 · spec v0.2 R02, R03, §4, §5, §11.
 
 ---

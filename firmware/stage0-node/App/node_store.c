@@ -22,11 +22,12 @@
 #define SLOT_BYTES 40U
 
 /* ---- flash primitives ---- */
+static uint32_t n_ecc;
 static uint64_t rd64(uint32_t addr, int *bad) {
  ws_flash_ecc_fault = 0;
  uint64_t v = *(volatile const uint64_t *)addr;
  __DSB();
- if (ws_flash_ecc_fault) { if (bad) *bad = 1; return 0; }
+ if (ws_flash_ecc_fault) { n_ecc++; if (bad) *bad = 1; return 0; }
  return v;
 }
 static int prog64(uint32_t addr, uint64_t v) {
@@ -256,6 +257,22 @@ int store_journal_find(uint32_t epoch, uint32_t seq, jref_t *ref) {
 uint32_t store_journal_pending(void) { return n_pending; }
 uint32_t store_journal_lost(void) { return n_lost; }
 uint32_t store_journal_burned(void) { return n_burned; }
+uint32_t store_ecc_faults(void) { return n_ecc; }
+uint64_t store_counter_next(void) { return ctr_next; }
+
+uint32_t store_journal_scrub(uint32_t marker)
+{
+ uint32_t n = 0;
+ for (uint32_t i = 0; i < JOURNAL_CAPACITY; i++) {
+  if (!is_pending(i)) continue;
+  jref_t r = { (uint16_t)(i / JOURNAL_SLOTS_PER_PAGE), (uint16_t)(i % JOURNAL_SLOTS_PER_PAGE) };
+  int bad = 0; uint64_t d0 = rd64(slot_addr(r.page, r.slot), &bad);
+  uint8_t b[4]; memcpy(b, &d0, 4);
+  if (!bad && ((uint32_t)b[0] << 24 | (uint32_t)b[1] << 16 | (uint32_t)b[2] << 8 | b[3]) == marker
+      && store_journal_ack(r) == 0) n++;
+ }
+ return n;
+}
 
 int store_wipe(void) {
  int rc = erase_page(WS_CONFIG_PAGE) | erase_page(WS_META_PAGE_A) | erase_page(WS_META_PAGE_B);

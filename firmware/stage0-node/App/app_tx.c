@@ -28,7 +28,22 @@
 #define SAMPLE_PERIOD_MS    60000U
 #define ACK_WINDOW_MS       2000U
 #define INTER_FRAME_MS      50U
-#define MAX_BACKFILL        2U
+#define MAX_QUEUE           21U   /* live + up to 20 backlog (SURPLUS at SF7); RAM 84 B */
+
+/* Transmission policy (docs/radio-energy-policy.md, approved 2026-10-12; gap G13).
+ * Energy state: Stage 0 is USB powered, so it is fixed at NORMAL; Stage 1 feeds pack/charger/
+ * solar telemetry into energy_state(). Unknown energy must map to CONSERVE (fail closed). */
+typedef enum { EN_SURPLUS, EN_NORMAL, EN_CONSERVE, EN_CRITICAL } energy_t;
+static const char *const energy_name[] = { "surplus", "normal", "conserve", "critical" };
+static const uint8_t backlog_limit[] = { 20, 5, 0, 0 };              /* per minute */
+static const uint16_t airtime_cap_ms[] = { 15000, 5000, 2000, 0 };   /* radio time per minute */
+#define CONSERVE_INTERVAL_S 300U                                     /* spec R02 */
+static energy_t energy_state(void) { return EN_NORMAL; }
+
+/* Link state: K silent minutes -> PROBING; probe back-off 2, 4, 8, then 15 min; live only. */
+#define LINK_K_SILENT       3U
+static const uint16_t probe_interval_s[] = { 120, 240, 480, 900 };
+#define TURNAROUND_MS       300U   /* gateway commit (fullfsync) + USB both ways, conservative */
 #define SYNC_VALID_S        (6UL * 3600UL)          /* trust a sync for 6 h (LSE drift; see gateway DRIFT_PPM) */
 /* Option D: time trust survives a system reset (NRST, software, watchdog) through two RTC
  * backup registers. A power loss clears the backup domain, so trust is lost, as it must be.
@@ -60,7 +75,7 @@ static uint32_t last_sync_mcu;   /* RTC (MCU) seconds at the last accepted time 
 static uint32_t boot_mcu;        /* RTC (MCU) seconds at boot: uptime origin */
 static uint32_t last_sample_mcu, exchange_start_mcu; /* watchdog progress evidence */
 
-static jref_t queue[1 + MAX_BACKFILL];
+static jref_t queue[MAX_QUEUE];
 static unsigned qn, qi;
 static int busy;
 static uint64_t sent_counter;
@@ -71,7 +86,10 @@ static uint32_t n_sent, n_acked, n_no_ack, n_ack_rejects, n_sensor_faults, n_aba
 #define STRIKE_LIMIT 10
 #define STRIKE_SLOTS 6
 static struct { jref_t ref; uint8_t n; } strikes[STRIKE_SLOTS];
-static uint8_t replied[1 + MAX_BACKFILL];
+static uint8_t replied[MAX_QUEUE];
+static enum { LINK_LINKED, LINK_PROBING } link_state = LINK_LINKED;
+static uint32_t silent_minutes, probe_step, next_probe_mcu, last_send_mcu;
+static uint32_t exchange_ms; /* estimated radio time of one answered exchange */
 
 static uint8_t rx_frame[255];
 static uint16_t rx_len;
@@ -123,9 +141,11 @@ static int run_kat(void)
 static void status(void)
 {
   APP_PRINTF("#status role=tx fw=%s provisioned=%d station=%u kcv=%02x%02x%02x kat=%s epoch=%u next_seq=%u "
-             "time=%s utc=%u uptime=%u pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u sensor_faults=%u\n",
+             "ctr=%u ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u sensor_faults=%u\n",
              WS_FW_VERSION, provisioned, (unsigned)station, kcv[0], kcv[1], kcv[2], kat_ok ? "pass" : "FAIL",
-             (unsigned)boot_epoch, (unsigned)next_seq, time_valid() ? "synchronized" : "unknown",
+             (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)store_counter_next(), (unsigned)store_ecc_faults(),
+             link_state == LINK_LINKED ? "linked" : "probing",
+             (unsigned)silent_minutes, energy_name[energy_state()], time_valid() ? "synchronized" : "unknown",
              (unsigned)(time_valid() ? SysTimeGet().Seconds : 0), (unsigned)(mcu_seconds() - boot_mcu),
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
              (unsigned)store_journal_burned(), (unsigned)n_abandoned, (unsigned)n_sent, (unsigned)n_acked,
@@ -202,13 +222,57 @@ static void settle_strikes(void)
   }
 }
 
+/* LoRa time on air (Semtech formula), explicit header, CRC on, for the configured radio. */
+static uint32_t airtime_ms(uint32_t payload)
+{
+  static const uint32_t bw_hz[] = { 125000, 250000, 500000 };
+  uint32_t sf = WS_LORA_SF, bw = bw_hz[WS_LORA_BANDWIDTH];
+  uint32_t de = ((1000000UL << sf) / bw) > 16000 ? 1 : 0;           /* symbol > 16 ms */
+  int32_t num = 8 * (int32_t)payload - 4 * (int32_t)sf + 28 + 16;
+  int32_t den = 4 * ((int32_t)sf - 2 * (int32_t)de);
+  int32_t blocks = num > 0 ? (num + den - 1) / den : 0;
+  uint32_t symbols_x4 = (WS_LORA_PREAMBLE * 4 + 17) + 4 * (8 + (uint32_t)blocks * (WS_LORA_CR + 4));
+  return (uint32_t)(((uint64_t)symbols_x4 * (1000000UL << sf) / bw) / 4000) + 1;
+}
+
+/* End of a minute's exchange: update the link state from whether the gateway answered. */
+static void link_update(void)
+{
+  int any = 0;
+  for (unsigned i = 0; i < qn; i++) any |= replied[i];
+  if (any)
+  {
+    if (link_state == LINK_PROBING) APP_PRINTF("#link linked after %u silent minutes\n", (unsigned)silent_minutes);
+    link_state = LINK_LINKED; silent_minutes = 0; probe_step = 0;
+    return;
+  }
+  silent_minutes++;
+  if (link_state == LINK_LINKED && silent_minutes >= LINK_K_SILENT)
+  {
+    link_state = LINK_PROBING; probe_step = 0;
+    next_probe_mcu = last_send_mcu + probe_interval_s[0]; /* from the exchange start: on the minute grid */
+    APP_PRINTF("#link probing: %u silent minutes; next probe in %u s (live readings stay journaled)\n",
+               (unsigned)silent_minutes, (unsigned)probe_interval_s[0]);
+  }
+  else if (link_state == LINK_PROBING)
+  {
+    if (probe_step + 1 < sizeof probe_interval_s / sizeof probe_interval_s[0]) probe_step++;
+    next_probe_mcu = last_send_mcu + probe_interval_s[probe_step];
+    APP_PRINTF("#link probe unanswered; next probe in %u s\n", (unsigned)probe_interval_s[probe_step]);
+  }
+}
+
 static void next_item(void)
 {
   if (++qi < qn) { HAL_Delay(INTER_FRAME_MS); send_current(); return; }
   settle_strikes();
+  link_update();
   busy = 0;
   Radio.Sleep();
 }
+
+/* A missed reply ends this minute's drain: a failing link does not burn the allowance. */
+static void stop_drain(void) { qn = qi + 1; }
 
 static void handle_reply(void)
 {
@@ -265,9 +329,10 @@ static void process(void)
       n_no_ack++;
       led_flash(LED_RED, 400); /* stays journaled for a later retry */
       APP_PRINTF("#ack none epoch=%u seq=%u\n", (unsigned)sent_epoch, (unsigned)sent_seq);
+      stop_drain();
       next_item();
       break;
-    case EV_TX_TIMEOUT: led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n"); next_item(); break;
+    case EV_TX_TIMEOUT: led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n"); stop_drain(); next_item(); break;
     default: break;
   }
 }
@@ -289,10 +354,23 @@ static void sample(void)
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
   next_seq++; /* identity is never reused, even if the journal write failed */
   if (busy) { APP_PRINTF("#busy previous exchange still running\n"); return; }
+  /* What may this minute send? The stricter of the energy and link states wins. */
+  energy_t en = energy_state();
+  uint32_t now = mcu_seconds();
+  if (en == EN_CRITICAL) return;
+  if (en == EN_CONSERVE && now - last_send_mcu < CONSERVE_INTERVAL_S) return;
+  if (link_state == LINK_PROBING && (int32_t)(now - next_probe_mcu) < 0) return; /* stays journaled */
+  unsigned backlog = backlog_limit[en];
+  if (link_state == LINK_PROBING) backlog = 0;                       /* a probe is the live reading */
+  unsigned by_airtime = exchange_ms ? airtime_cap_ms[en] / exchange_ms : 0;
+  if (by_airtime == 0) by_airtime = 1;                                 /* the live reading always fits */
+  if (backlog + 1 > by_airtime) backlog = by_airtime - 1;
+  if (backlog > MAX_QUEUE - 1) backlog = MAX_QUEUE - 1;
   qn = 0;
   if (!rc) queue[qn++] = live;
-  qn += store_journal_oldest(queue + qn, MAX_BACKFILL, rc ? NULL : &live);
+  qn += store_journal_oldest(queue + qn, backlog + (rc ? 1 : 0), rc ? NULL : &live);
   qi = 0;
+  last_send_mcu = now;
   memset(replied, 0, sizeof replied);
   if (qn) { busy = 1; exchange_start_mcu = mcu_seconds(); send_current(); }
 }
@@ -307,6 +385,29 @@ static int tx_healthy(void)
   return 1;
 }
 
+/* Bench-only power-cut test load (gap G7). Writes journal slots that are acknowledged on the
+ * board at once (epoch STORM_EPOCH, never transmitted) and reserves counters, so that a
+ * random power cut almost always lands inside a flash program or erase. Not persistent: a
+ * reboot ends it, and the boot scrub drops any storm slot that a cut left pending. */
+#define STORM_EPOCH 0xFFFFFFFFUL
+static int storming;
+static uint32_t storm_writes;
+static void storm(void)
+{
+  uint8_t plain[24]; jref_t r; uint64_t c;
+  if (!storming) return;
+  for (int i = 0; i < 16; i++)
+  {
+    ws_pack_observation(plain, STORM_EPOCH, storm_writes++, 0, 0, 0, 0, 0, 0);
+    if (store_journal_append(plain, &r) == 0) store_journal_ack(r);
+    for (int k = 0; k < 4; k++) store_next_counter(&c);
+  }
+  if ((storm_writes & 255) == 0)
+    APP_PRINTF("#storm writes=%u ctr=%u burned=%u\n", (unsigned)storm_writes,
+               (unsigned)store_counter_next(), (unsigned)store_journal_burned());
+  UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
+}
+
 static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
 
 static void reboot_soon(void) { HAL_Delay(200); NVIC_SystemReset(); }
@@ -315,6 +416,13 @@ static void on_line(char *line)
 {
   if (!strcmp(line, "STATUS")) { status(); return; }
   if (!strcmp(line, "TEST-HANG")) { APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n"); HAL_Delay(50); for (;;) { } }
+  if (!strcmp(line, "TEST-FLASH-STORM"))
+  {
+    APP_PRINTF("#storm start ctr=%u (bench only: cut power now)\n", (unsigned)store_counter_next());
+    storming = 1; running = 0; /* sampling paused: the watchdog must not count a stopped sampler */
+    UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
+    return;
+  }
   if (!strcmp(line, "KAT")) { APP_PRINTF("#kat %s\n", run_kat() ? "pass" : "FAIL"); return; }
   if (!strcmp(line, "WIPE ERASE-ALL-NODE-STATE"))
   {
@@ -357,14 +465,18 @@ void SubghzApp_Init(void)
   Radio.Sleep();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process);
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample);
+  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Storm, UTIL_SEQ_RFU, storm);
   console_init(on_line);
 
   boot_mcu = mcu_seconds();
+  exchange_ms = 2 * airtime_ms(WS_OBS_FRAME_LEN) + TURNAROUND_MS;
   watchdog_start(tx_healthy);
   kat_ok = run_kat();
   APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
              watchdog_reset_cause(), kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
   if (store_meta_init() || store_journal_init()) { led_set(LED_RED, 1); APP_PRINTF("#error store-init\n"); return; }
+  uint32_t scrubbed = store_journal_scrub(STORM_EPOCH);
+  if (scrubbed) APP_PRINTF("#storm-scrub dropped=%u (test slots a power cut left pending)\n", (unsigned)scrubbed);
   provisioned = store_config_load(&station, key) == 0;
   if (!provisioned) { led_set(LED_RED, 1); status(); APP_PRINTF("#unprovisioned: send PROVISION <station_id> <key>\n"); return; }
   ws_key_check(key, kcv);

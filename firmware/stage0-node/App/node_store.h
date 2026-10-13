@@ -28,4 +28,8 @@ int store_journal_find(uint32_t epoch, uint32_t seq, jref_t *ref); /* pending on
 uint32_t store_journal_pending(void);
 uint32_t store_journal_lost(void);   /* pending records overwritten since boot */
 uint32_t store_journal_burned(void); /* torn slots found at boot */
+uint32_t store_ecc_faults(void);      /* double-ECC reads caught since boot (torn writes) */
+uint64_t store_counter_next(void);    /* next transmission counter (diagnostics, G7 test) */
+/* Acknowledge (drop) every pending entry whose epoch equals 'marker'; returns how many. */
+uint32_t store_journal_scrub(uint32_t marker);
 #endif

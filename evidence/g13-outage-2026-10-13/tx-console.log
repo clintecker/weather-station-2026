@@ -1,0 +1,26 @@
+03:42:22Z #sample epoch=13 seq=1 uptime=60 valid=0 t=0 rh=0 time=synchronized utc=1791862941 journal=ok pending=1 lost=0
+03:42:24Z #ack none epoch=13 seq=1
+03:43:22Z #sample epoch=13 seq=2 uptime=120 valid=0 t=0 rh=0 time=synchronized utc=1791863001 journal=ok pending=2 lost=0
+03:43:24Z #ack none epoch=13 seq=2
+03:44:22Z #sample epoch=13 seq=3 uptime=180 valid=0 t=0 rh=0 time=synchronized utc=1791863061 journal=ok pending=3 lost=0
+03:44:24Z #ack none epoch=13 seq=3
+03:44:24Z #link probing: 3 silent minutes; next probe in 120 s (live readings stay journaled)
+03:45:22Z #sample epoch=13 seq=4 uptime=240 valid=0 t=0 rh=0 time=synchronized utc=1791863121 journal=ok pending=4 lost=0
+03:46:22Z #sample epoch=13 seq=5 uptime=300 valid=0 t=0 rh=0 time=synchronized utc=1791863181 journal=ok pending=5 lost=0
+03:47:22Z #sample epoch=13 seq=6 uptime=360 valid=0 t=0 rh=0 time=synchronized utc=1791863241 journal=ok pending=6 lost=0
+03:47:24Z #ack none epoch=13 seq=6
+03:47:24Z #link probe unanswered; next probe in 240 s
+03:48:22Z #sample epoch=13 seq=7 uptime=420 valid=0 t=0 rh=0 time=synchronized utc=1791863301 journal=ok pending=7 lost=0
+03:49:22Z #sample epoch=13 seq=8 uptime=480 valid=0 t=0 rh=0 time=synchronized utc=1791863361 journal=ok pending=8 lost=0
+03:50:22Z #sample epoch=13 seq=9 uptime=540 valid=0 t=0 rh=0 time=synchronized utc=1791863421 journal=ok pending=9 lost=0
+03:51:22Z #sample epoch=13 seq=10 uptime=600 valid=0 t=0 rh=0 time=synchronized utc=1791863481 journal=ok pending=10 lost=0
+03:52:22Z #sample epoch=13 seq=11 uptime=660 valid=0 t=0 rh=0 time=synchronized utc=1791863541 journal=ok pending=11 lost=0
+03:52:22Z #ack epoch=13 seq=11 found=1 time_sync=1 rssi=-28 snr=14 pending=10
+03:52:22Z #link linked after 4 silent minutes
+03:53:22Z #sample epoch=13 seq=12 uptime=720 valid=0 t=0 rh=0 time=synchronized utc=1791863601 journal=ok pending=11 lost=0
+03:53:22Z #ack epoch=13 seq=12 found=1 time_sync=1 rssi=-28 snr=14 pending=10
+03:53:22Z #ack epoch=13 seq=1 found=1 time_sync=1 rssi=-28 snr=14 pending=9
+03:53:22Z #ack epoch=13 seq=2 found=1 time_sync=1 rssi=-28 snr=14 pending=8
+03:53:22Z #ack epoch=13 seq=3 found=1 time_sync=1 rssi=-29 snr=13 pending=7
+03:53:22Z #ack epoch=13 seq=4 found=1 time_sync=1 rssi=-29 snr=15 pending=6
+03:53:23Z #ack epoch=13 seq=5 found=1 time_sync=1 rssi=-29 snr=15 pending=5
