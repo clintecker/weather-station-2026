@@ -18,6 +18,24 @@ The run directory (for example `run-office/`) already holds the radio key; it is
 Windows, protect the run directory with folder permissions: the POSIX permission check does not
 apply there.
 
+## Set up the broker in Home Assistant OS (Clint's setup)
+
+Source: the Mosquitto add-on documentation,
+https://github.com/home-assistant/addons/blob/master/mosquitto/DOCS.md (checked 2026-10-13; recent
+HA versions call add-ons "Apps", so menu names may differ on older versions).
+
+1. **Install the broker:** Settings → Apps → Install app → **Mosquitto broker** → Install, then Start.
+   Check its log after a couple of minutes.
+2. **Create a user for the gateway:** Settings → People → Users → Add user (for example
+   `weatherstation`). If the Users tab is missing, turn on Advanced Mode in your HA profile. The
+   names `homeassistant` and `addons` are reserved. The broker accepts HA users; anonymous
+   connections are refused.
+3. **Enable the MQTT integration:** Settings → Devices & services. MQTT appears as a discovered
+   integration; select it, keep discovery on, and submit.
+4. **Gateway settings:** `host` = the HA machine's address (for example `homeassistant.local` or its
+   IP), `port` 1883, `tls` false (TLS on 8883 needs the add-on's `certfile` and `keyfile`), `username`
+   = the user from step 2. Then follow the steps below.
+
 ## Steps
 
 1. Stop the gateway (Ctrl-C, or the service; see below).
