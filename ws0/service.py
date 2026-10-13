@@ -11,8 +11,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from gateway import Store
 import struct
-from .protocol import (ACK, KIND_NACK, NACK, NACK_COLLISION, NACK_INVALID, Nonces,
-                       decode_observation, frame_counter, seal, unseal)
+from .protocol import (ACK, DIAG, KIND_DIAG, KIND_NACK, LINK_STATES, NACK, NACK_COLLISION, NACK_INVALID,
+                       RESET_CAUSES, Nonces, decode_observation, frame_counter, seal, unseal)
 
 
 def load_config(path):
@@ -36,10 +36,26 @@ class Gateway:
         self.nonces = Nonces(directory / 'gateway-nonces.sqlite3',self.key,cfg['station_id'],2)
         self.accepted = self.rejected = self.nacked = 0
         self.clock = None  # ws0.clock.HostClock when serving hardware (gap G9); None = trust host
+        self.receiver = None  # RX board liveness, set by the serial loop (gap G12)
         self.lock = threading.Lock()
+
+    def receive_diagnostic(self, frame, now=None):
+        """Node health report (kind 4): authenticate and store; never answered."""
+        epoch, uptime, pending, lost, burned, abandoned, no_ack, rejects, reset, link = \
+            DIAG.unpack(unseal(self.key,self.cfg['station_id'],KIND_DIAG,frame))
+        report = {'epoch':epoch,'uptime_s':uptime,'journal_pending':pending,'journal_lost_total':lost,
+                  'journal_torn_slots':burned,'abandoned_total':abandoned,'missed_acks_since_boot':no_ack,
+                  'rejected_replies_since_boot':rejects,
+                  'reset_cause':RESET_CAUSES[reset] if reset < len(RESET_CAUSES) else 'unknown',
+                  'link':LINK_STATES[link] if link < len(LINK_STATES) else 'unknown'}
+        self.store.diagnostic(self.cfg['station'],report,now)
+        return report
 
     def receive(self, frame, now=None):
         """Authenticate, validate and commit before returning an encrypted receipt."""
+        if len(frame) > 3 and frame[3] == KIND_DIAG:
+            self.receive_diagnostic(frame,now)
+            return None  # fire-and-forget: no reply on air
         with self.lock:
             try:
                 payload = unseal(self.key,self.cfg['station_id'],1,frame)
@@ -85,6 +101,8 @@ class Gateway:
                 'station':self.cfg['station'],'accepted_this_process':self.accepted,
                 'rejected_this_process':self.rejected,'nacked_this_process':self.nacked,
                 'host_clock':self.clock.status() if self.clock else None,
+                'node_diagnostics':self.store.latest_diagnostic(self.cfg['station']),
+                'receiver':self.receiver,
                 'latest':self.store.latest(self.cfg['station'])}
 
 
@@ -216,10 +234,15 @@ class MQTT:
         latest = self.gateway.store.latest(self.gateway.cfg['station'])
         weather = json.dumps(latest['observation']) if latest.get('observation') else None
         state = (weather, 'online' if latest['available'] else 'offline')
+        diag = self.gateway.store.latest_diagnostic(self.gateway.cfg['station'])
+        diagnostics = json.dumps(diag,sort_keys=True) if diag else None
+        state = state + (diagnostics,)
         if state == self.published and time.time() - self.published_at < self.REFRESH_S:
             return
         if weather:
             self.client.publish(self.root+'/weather',weather,qos=1,retain=True)
+        if diagnostics:
+            self.client.publish(self.root+'/diagnostics',diagnostics,qos=1,retain=True)
         self.client.publish(self.root+'/availability',state[1],qos=1,retain=True)
         self.published, self.published_at = state, time.time()
 

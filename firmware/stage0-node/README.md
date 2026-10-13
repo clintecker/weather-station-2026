@@ -40,7 +40,7 @@ The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac a
 
 | Board | Output | Commands |
 |---|---|---|
-| TX | `#boot` (with `reset=` cause), `#status`, `#sample`, `#ack`, `#error` lines | `STATUS`, `KAT`, `PROVISION <id> <32 hex>`, `WIPE ERASE-ALL-NODE-STATE`, `TEST-HANG` (bench: proves the watchdog), `TEST-FLASH-STORM` (bench: continuous flash writes for power-cut tests; ends at reboot) |
+| TX | `#boot` (with `reset=` cause), `#status`, `#sample`, `#ack`, `#error` lines | `STATUS`, `KAT`, `PROVISION <id> <32 hex> [epoch_floor]`, `WIPE ERASE-ALL-NODE-STATE`, `TEST-HANG` (bench: proves the watchdog), `TEST-FLASH-STORM` (bench: continuous flash writes for power-cut tests; ends at reboot) |
 | RX | One hex line per observation frame, plus `#rx`/`#tx`/`#host` diagnostics and `#boot … reset=` | `STATUS`, `TEST-HANG`, or one hex ACK line from the host |
 
 **Watchdog:** independent watchdog, ~8 s. It is refreshed only from the main loop, and only while the role shows real progress: TX samples every ≤150 s and no exchange runs >30 s; RX is listening or finishes a transmission in <5 s, with one re-arm attempt. The reset cause is printed on every boot.

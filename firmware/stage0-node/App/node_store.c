@@ -17,6 +17,8 @@
 #define SLOT_MAGIC 0x4A53U
 #define META_EPOCH 0xE1U
 #define META_CTR   0xC2U
+#define META_LOST  0xD1U /* cumulative journal overflow losses (gap G8) */
+#define META_ABAND 0xD2U /* cumulative abandoned records (NACK / strike limit) */
 #define META_DWORDS (WS_PAGE_SIZE / 8U)
 #define CTR_BLOCK 256U
 #define SLOT_BYTES 40U
@@ -76,6 +78,7 @@ int store_config_write(uint32_t station, const uint8_t key[16]) {
 static uint32_t meta_active, meta_pos, meta_gen;
 static uint32_t max_epoch;
 static uint64_t ctr_reserved, ctr_next;
+static uint32_t lost_total, abandoned_total;
 
 static int meta_scan(uint32_t page, uint32_t *gen, uint32_t *last) {
  uint32_t a = WS_PAGE_ADDR(page); int bad = 0;
@@ -90,6 +93,8 @@ static int meta_scan(uint32_t page, uint32_t *gen, uint32_t *last) {
   uint64_t val = v & 0x00FFFFFFFFFFFFFFULL;
   if ((v >> 56) == META_EPOCH && val > max_epoch && val <= 0xFFFFFFFFULL) max_epoch = (uint32_t)val;
   if ((v >> 56) == META_CTR && val > ctr_reserved) ctr_reserved = val;
+  if ((v >> 56) == META_LOST && val > lost_total && val <= 0xFFFFFFFFULL) lost_total = (uint32_t)val;
+  if ((v >> 56) == META_ABAND && val > abandoned_total && val <= 0xFFFFFFFFULL) abandoned_total = (uint32_t)val;
  }
  return 0;
 }
@@ -103,8 +108,10 @@ static int meta_append(uint32_t type, uint64_t value) {
   if (erase_page(other) ||
       prog64(a + 8, (uint64_t)META_EPOCH << 56 | max_epoch) ||
       prog64(a + 16, (uint64_t)META_CTR << 56 | ctr_reserved) ||
+      prog64(a + 24, (uint64_t)META_LOST << 56 | lost_total) ||
+      prog64(a + 32, (uint64_t)META_ABAND << 56 | abandoned_total) ||
       prog64(a, (uint64_t)META_MAGIC << 32 | (meta_gen + 1))) return -2;
-  meta_active = other; meta_gen++; meta_pos = 3;
+  meta_active = other; meta_gen++; meta_pos = 5;
  }
  if (prog64(WS_PAGE_ADDR(meta_active) + 8 * meta_pos, (uint64_t)type << 56 | value)) { meta_pos++; return -3; }
  meta_pos++;
@@ -113,7 +120,7 @@ static int meta_append(uint32_t type, uint64_t value) {
 int store_meta_init(void) {
  uint32_t ga = 0, gb = 0, la = 0, lb = 0;
  int va, vb;
- max_epoch = 0; ctr_reserved = 0;
+ max_epoch = 0; ctr_reserved = 0; lost_total = 0; abandoned_total = 0;
  va = meta_scan(WS_META_PAGE_A, &ga, &la) == 0;
  vb = meta_scan(WS_META_PAGE_B, &gb, &lb) == 0;
  if (!va && !vb) {
@@ -133,6 +140,20 @@ int store_next_epoch(uint32_t *epoch) {
  *epoch = ++max_epoch;
  return 0;
 }
+/* Gap G5: after a WIPE, the gateway supplies a floor above every epoch it has stored, so new
+   observation identities can never collide with history. Values only move up. */
+int store_epoch_floor(uint32_t floor) {
+ if (floor <= max_epoch) return 0;
+ if (meta_append(META_EPOCH, floor)) return -1;
+ max_epoch = floor;
+ return 0;
+}
+int store_note_abandoned(void) {
+ abandoned_total++;
+ return meta_append(META_ABAND, abandoned_total);
+}
+uint32_t store_abandoned_total(void) { return abandoned_total; }
+
 int store_next_counter(uint64_t *counter) {
  if (ctr_next > ctr_reserved) {
   uint64_t upto = ctr_reserved + CTR_BLOCK;
@@ -162,10 +183,12 @@ static uint16_t crc16(const uint8_t *d, unsigned n) {
  return c;
 }
 static int journal_new_page(uint32_t page, uint32_t seq) {
+ uint32_t dropped = 0;
  for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE; s++) {
   uint32_t i = page * JOURNAL_SLOTS_PER_PAGE + s;
-  if (is_pending(i)) { set_pending(i, 0); n_pending--; n_lost++; }
+  if (is_pending(i)) { set_pending(i, 0); n_pending--; n_lost++; lost_total++; dropped++; }
  }
+ if (dropped) meta_append(META_LOST, lost_total); /* persist before the page is reused */
  page_seq[page] = 0;
  if (erase_page(WS_JOURNAL_FIRST + page) || prog64(WS_PAGE_ADDR(WS_JOURNAL_FIRST + page), (uint64_t)JPG_MAGIC << 32 | seq)) return -1;
  page_seq[page] = seq;
@@ -255,7 +278,7 @@ int store_journal_find(uint32_t epoch, uint32_t seq, jref_t *ref) {
  return -1;
 }
 uint32_t store_journal_pending(void) { return n_pending; }
-uint32_t store_journal_lost(void) { return n_lost; }
+uint32_t store_journal_lost(void) { return lost_total; } /* cumulative, persisted */
 uint32_t store_journal_burned(void) { return n_burned; }
 uint32_t store_ecc_faults(void) { return n_ecc; }
 uint64_t store_counter_next(void) { return ctr_next; }

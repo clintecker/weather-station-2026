@@ -21,8 +21,13 @@ static void header(uint8_t h[WS_HEADER_LEN], uint8_t nonce[13], uint8_t kind, ui
 
 int ws_seal_obs(const uint8_t key[16], uint32_t station, uint64_t counter,
  const uint8_t plain[WS_OBS_PLAIN_LEN], uint8_t out[WS_OBS_FRAME_LEN]) {
+ return ws_seal_kind(key,station,WS_KIND_OBS,counter,plain,out);
+}
+
+int ws_seal_kind(const uint8_t key[16], uint32_t station, uint8_t kind, uint64_t counter,
+ const uint8_t plain[WS_OBS_PLAIN_LEN], uint8_t out[WS_OBS_FRAME_LEN]) {
  uint8_t nonce[13]; mbedtls_ccm_context ccm; int rc;
- header(out,nonce,WS_KIND_OBS,station,counter);
+ header(out,nonce,kind,station,counter);
  mbedtls_ccm_init(&ccm);
  rc=mbedtls_ccm_setkey(&ccm,MBEDTLS_CIPHER_ID_AES,key,128);
  if(!rc) rc=mbedtls_ccm_encrypt_and_tag(&ccm,WS_OBS_PLAIN_LEN,nonce,13,out,WS_HEADER_LEN,

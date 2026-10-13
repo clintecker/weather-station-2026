@@ -14,6 +14,7 @@
 #include "radio.h"
 #include "radio_cfg.h"
 #include "stm32_seq.h"
+#include "stm32_timer.h"
 #include "subghz_phy_app.h"
 #include "sys_app.h"
 #include "utilities_def.h"
@@ -28,6 +29,9 @@ static volatile enum { EV_NONE, EV_RX, EV_RX_ERROR, EV_TX_DONE, EV_TX_TIMEOUT } 
 static volatile uint8_t transmitting;
 static uint32_t n_forwarded, n_dropped, n_acks;
 static uint32_t tx_start_ms;
+static UTIL_TIMER_Object_t alive_timer;
+static uint32_t n_diag;
+static uint32_t boot_tick; /* HAL_GetTick runs from the RTC here and survives resets */
 static int relisten_tries;
 
 static void post(int ev) { event = ev; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0); }
@@ -66,8 +70,9 @@ static void process(void)
   {
     case EV_RX:
       if (rx_len == WS_OBS_FRAME_LEN && rx_frame[0] == 'W' && rx_frame[1] == 'S' &&
-          rx_frame[2] == WS_FRAME_VERSION && rx_frame[3] == WS_KIND_OBS)
+          rx_frame[2] == WS_FRAME_VERSION && (rx_frame[3] == WS_KIND_OBS || rx_frame[3] == WS_KIND_DIAG))
       {
+        n_diag += rx_frame[3] == WS_KIND_DIAG;
         hex_print(rx_frame, rx_len);
         led_flash(LED_BLUE, 400);
         n_forwarded++;
@@ -97,6 +102,15 @@ static void process(void)
       break;
   }
   event = EV_NONE;
+}
+
+/* Liveness report for the gateway (gap G12): it marks the receiver silent after 180 s. */
+static void on_alive(void *ctx)
+{
+  (void)ctx;
+  APP_PRINTF("#alive uptime=%u forwarded=%u dropped=%u acks=%u diag=%u listening=%d\n",
+             (unsigned)((HAL_GetTick() - boot_tick) / 1000), (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks,
+             (unsigned)n_diag, Radio.GetStatus() == RF_RX_RUNNING || transmitting);
 }
 
 static void on_line(char *line)
@@ -137,6 +151,7 @@ void SubghzApp_Init(void)
   events.RxTimeout = on_rx_timeout;
   events.TxDone = on_tx_done;
   events.TxTimeout = on_tx_timeout;
+  boot_tick = HAL_GetTick();
   leds_init();
   watchdog_start(rx_healthy);
   Radio.Init(&events);
@@ -145,5 +160,7 @@ void SubghzApp_Init(void)
   console_init(on_line);
   APP_PRINTF("#boot role=rx fw=%s reset=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION, watchdog_reset_cause(),
              (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
+  UTIL_TIMER_Create(&alive_timer, 60000, UTIL_TIMER_PERIODIC, on_alive, NULL);
+  UTIL_TIMER_Start(&alive_timer);
   listen();
 }

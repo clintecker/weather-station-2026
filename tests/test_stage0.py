@@ -285,3 +285,30 @@ class NackTests(unittest.TestCase):
   frame=self.node.packet(self.node.sample(1000))
   self.gateway.store.ingest=lambda *a: (_ for _ in ()).throw(OSError('disk full'))
   with self.assertRaises(OSError): self.gateway.receive(frame)
+
+
+class DiagnosticsAndEpochFloor(unittest.TestCase):
+ """Gaps G8 (health reports) and G5 (epoch floor after a wipe)."""
+ setUp=PipelineTests.setUp
+ tearDown=PipelineTests.tearDown
+ def diag(self,epoch,uptime,lost=0):
+  from ws0.protocol import DIAG,KIND_DIAG,seal
+  return seal(self.node.key,1,KIND_DIAG,self.node.nonces,DIAG.pack(epoch,uptime,1,lost,0,2,3,0,5,0))
+ def test_report_is_stored_unanswered_and_ordered_by_epoch_uptime(self):
+  self.assertIsNone(self.gateway.receive(self.diag(4,600,lost=7),1000))
+  late=self.diag(4,300)                       # older report arriving later (delay or replay)
+  self.assertIsNone(self.gateway.receive(late,1001))
+  d=self.gateway.status()['node_diagnostics']
+  self.assertEqual((d['epoch'],d['uptime_s'],d['journal_lost_total'],d['reset_cause'],d['link']),(4,600,7,'watchdog','linked'))
+  self.gateway.receive(self.diag(5,10),1002)
+  self.assertEqual(self.gateway.status()['node_diagnostics']['epoch'],5)
+  self.assertEqual(self.gateway.store.history(self.cfg['station']),[])   # never an observation
+ def test_tampered_report_is_rejected(self):
+  frame=self.diag(4,600)
+  with self.assertRaises(InvalidTag): self.gateway.receive(frame[:-1]+bytes([frame[-1]^1]),1000)
+ def test_epoch_floor_is_above_all_stored_epochs(self):
+  from ws0.__main__ import epoch_floor
+  self.assertEqual(epoch_floor(self.root,self.cfg['station']),0)        # empty database: no floor
+  self.gateway.receive(self.node.packet(self.node.sample(1000)),1001)  # epoch 1
+  self.gateway.receive(self.diag(9,60),1002)                             # a later epoch seen only in a report
+  self.assertEqual(epoch_floor(self.root,self.cfg['station']),10)

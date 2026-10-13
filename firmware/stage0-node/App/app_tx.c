@@ -80,7 +80,7 @@ static unsigned qn, qi;
 static int busy;
 static uint64_t sent_counter;
 static uint32_t sent_epoch, sent_seq;
-static uint32_t n_sent, n_acked, n_no_ack, n_ack_rejects, n_sensor_faults, n_abandoned;
+static uint32_t n_sent, n_acked, n_no_ack, n_ack_rejects, n_sensor_faults;
 /* Gap G2 safety net: a record that stays unanswered while other frames in the same exchange are
  * answered (the gateway is up) gets a strike; at STRIKE_LIMIT it is abandoned and counted. */
 #define STRIKE_LIMIT 10
@@ -90,6 +90,12 @@ static uint8_t replied[MAX_QUEUE];
 static enum { LINK_LINKED, LINK_PROBING } link_state = LINK_LINKED;
 static uint32_t silent_minutes, probe_step, next_probe_mcu, last_send_mcu;
 static uint32_t exchange_ms; /* estimated radio time of one answered exchange */
+
+/* Health report (kind 4, gap G8): every 15 min and at each link-state change, sent after a
+ * minute's exchange while linked. Fire-and-forget: no journal entry, no receive window. */
+#define DIAG_PERIOD_S 900U
+static int diag_due = 1, diag_in_flight;
+static uint32_t last_diag_mcu;
 
 static uint8_t rx_frame[255];
 static uint16_t rx_len;
@@ -148,7 +154,7 @@ static void status(void)
              (unsigned)silent_minutes, energy_name[energy_state()], time_valid() ? "synchronized" : "unknown",
              (unsigned)(time_valid() ? SysTimeGet().Seconds : 0), (unsigned)(mcu_seconds() - boot_mcu),
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
-             (unsigned)store_journal_burned(), (unsigned)n_abandoned, (unsigned)n_sent, (unsigned)n_acked,
+             (unsigned)store_journal_burned(), (unsigned)store_abandoned_total(), (unsigned)n_sent, (unsigned)n_acked,
              (unsigned)n_no_ack, (unsigned)n_ack_rejects, (unsigned)n_sensor_faults);
 }
 
@@ -203,10 +209,10 @@ static void strike(jref_t r)
   int ok = store_journal_read(r, plain) == 0 && store_journal_ack(r) == 0;
   strikes[use].n = 0;
   if (!ok) return;
-  n_abandoned++;
+  store_note_abandoned();
   led_flash(LED_RED, 1000);
   APP_PRINTF("#abandon epoch=%u seq=%u after %u unanswered tries while the gateway answered other frames; abandoned=%u\n",
-             (unsigned)be32(plain), (unsigned)be32(plain + 4), STRIKE_LIMIT, (unsigned)n_abandoned);
+             (unsigned)be32(plain), (unsigned)be32(plain + 4), STRIKE_LIMIT, (unsigned)store_abandoned_total());
 }
 
 /* End of an exchange: strikes only count when the gateway answered something in it. */
@@ -242,6 +248,7 @@ static void link_update(void)
   for (unsigned i = 0; i < qn; i++) any |= replied[i];
   if (any)
   {
+    if (link_state == LINK_PROBING) diag_due = 1;
     if (link_state == LINK_PROBING) APP_PRINTF("#link linked after %u silent minutes\n", (unsigned)silent_minutes);
     link_state = LINK_LINKED; silent_minutes = 0; probe_step = 0;
     return;
@@ -249,7 +256,7 @@ static void link_update(void)
   silent_minutes++;
   if (link_state == LINK_LINKED && silent_minutes >= LINK_K_SILENT)
   {
-    link_state = LINK_PROBING; probe_step = 0;
+    link_state = LINK_PROBING; probe_step = 0; diag_due = 1;
     next_probe_mcu = last_send_mcu + probe_interval_s[0]; /* from the exchange start: on the minute grid */
     APP_PRINTF("#link probing: %u silent minutes; next probe in %u s (live readings stay journaled)\n",
                (unsigned)silent_minutes, (unsigned)probe_interval_s[0]);
@@ -262,11 +269,48 @@ static void link_update(void)
   }
 }
 
+static uint8_t reset_code(void)
+{
+  static const char *const causes[] = { "unknown", "power", "pin", "brownout", "software", "watchdog", "lowpower", "option-bytes" };
+  for (uint8_t i = 0; i < sizeof causes / sizeof causes[0]; i++)
+    if (!strcmp(causes[i], watchdog_reset_cause())) return i;
+  return 0;
+}
+
+static uint16_t clamp16(uint32_t v) { return v > 0xFFFF ? 0xFFFF : (uint16_t)v; }
+
+/* Returns 1 if a health report went on air (the caller then waits for TxDone). */
+static int send_diag(void)
+{
+  uint8_t plain[24], frame[WS_OBS_FRAME_LEN]; uint64_t ctr;
+  uint32_t now = mcu_seconds();
+  if (now - last_diag_mcu >= DIAG_PERIOD_S) diag_due = 1;
+  if (!diag_due || link_state != LINK_LINKED) return 0;
+  uint32_t up = now - boot_mcu, lost = store_journal_lost();
+  uint16_t f[] = { clamp16(store_journal_pending()), clamp16(store_journal_burned()), clamp16(store_abandoned_total()),
+                   clamp16(n_no_ack), clamp16(n_ack_rejects) };
+  plain[0] = (uint8_t)(boot_epoch >> 24); plain[1] = (uint8_t)(boot_epoch >> 16); plain[2] = (uint8_t)(boot_epoch >> 8); plain[3] = (uint8_t)boot_epoch;
+  plain[4] = (uint8_t)(up >> 24); plain[5] = (uint8_t)(up >> 16); plain[6] = (uint8_t)(up >> 8); plain[7] = (uint8_t)up;
+  plain[8] = (uint8_t)(f[0] >> 8); plain[9] = (uint8_t)f[0];
+  plain[10] = (uint8_t)(lost >> 24); plain[11] = (uint8_t)(lost >> 16); plain[12] = (uint8_t)(lost >> 8); plain[13] = (uint8_t)lost;
+  for (int i = 1; i < 5; i++) { plain[12 + 2 * i] = (uint8_t)(f[i] >> 8); plain[13 + 2 * i] = (uint8_t)f[i]; }
+  plain[22] = reset_code();
+  plain[23] = (uint8_t)link_state;
+  if (store_next_counter(&ctr) || ws_seal_kind(key, station, WS_KIND_DIAG, ctr, plain, frame)) return 0;
+  diag_due = 0; last_diag_mcu = now;
+  HAL_Delay(INTER_FRAME_MS);
+  if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) return 0;
+  diag_in_flight = 1;
+  APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u\n", f[0], (unsigned)lost, f[1], f[2], f[3]);
+  return 1;
+}
+
 static void next_item(void)
 {
   if (++qi < qn) { HAL_Delay(INTER_FRAME_MS); send_current(); return; }
   settle_strikes();
   link_update();
+  if (send_diag()) return; /* busy until its TxDone */
   busy = 0;
   Radio.Sleep();
 }
@@ -290,10 +334,10 @@ static void handle_reply(void)
     /* Authentic permanent rejection (gap G2). Accept it only for the frame just sent. */
     if (!mine) { n_ack_rejects++; APP_PRINTF("#nack ignored: not for the frame just sent\n"); return; }
     replied[qi] = 1;
-    if (store_journal_find(ep, sq, &ref) == 0 && store_journal_ack(ref) == 0) n_abandoned++;
+    if (store_journal_find(ep, sq, &ref) == 0 && store_journal_ack(ref) == 0) store_note_abandoned();
     led_flash(LED_RED, 1000);
     APP_PRINTF("#nack epoch=%u seq=%u reason=%u abandoned=%u\n", (unsigned)ep, (unsigned)sq,
-               (unsigned)(utc >> 32), (unsigned)n_abandoned);
+               (unsigned)(utc >> 32), (unsigned)store_abandoned_total());
     return;
   }
   int found = store_journal_find(ep, sq, &ref) == 0;
@@ -322,7 +366,10 @@ static void process(void)
   event = EV_NONE;
   switch (ev)
   {
-    case EV_TX_DONE: Radio.Rx(ACK_WINDOW_MS); break;
+    case EV_TX_DONE:
+      if (diag_in_flight) { diag_in_flight = 0; busy = 0; Radio.Sleep(); break; } /* no reply expected */
+      Radio.Rx(ACK_WINDOW_MS);
+      break;
     case EV_RX_DONE: handle_reply(); next_item(); break;
     case EV_RX_TIMEOUT:
     case EV_RX_ERROR:
@@ -332,7 +379,11 @@ static void process(void)
       stop_drain();
       next_item();
       break;
-    case EV_TX_TIMEOUT: led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n"); stop_drain(); next_item(); break;
+    case EV_TX_TIMEOUT:
+      led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n");
+      if (diag_in_flight) { diag_in_flight = 0; busy = 0; Radio.Sleep(); break; }
+      stop_drain(); next_item();
+      break;
     default: break;
   }
 }
@@ -434,18 +485,23 @@ static void on_line(char *line)
   {
     uint8_t new_key[17]; char *end; uint8_t check[3];
     if (provisioned) { APP_PRINTF("#error already-provisioned (WIPE first)\n"); return; }
-    unsigned long id = strtoul(line + 10, &end, 10);
-    if (end == line + 10 || *end != ' ' || id == 0 || id > 0xFFFFFFFFUL ||
-        hex_decode(end + 1, new_key, sizeof new_key) != 16)
+    unsigned long id = strtoul(line + 10, &end, 10), floor = 0;
+    char key_hex[33] = { 0 };
+    if (end == line + 10 || *end != ' ' || id == 0 || id > 0xFFFFFFFFUL || strlen(end + 1) < 32)
     {
-      APP_PRINTF("#error usage: PROVISION <station_id> <32 hex key>\n");
+      APP_PRINTF("#error usage: PROVISION <station_id> <32 hex key> [epoch_floor]\n");
       return;
     }
+    memcpy(key_hex, end + 1, 32);
+    if (end[33] == ' ') floor = strtoul(end + 34, NULL, 10);   /* G5: above every stored epoch */
+    else if (end[33] != 0) { APP_PRINTF("#error usage: PROVISION <station_id> <32 hex key> [epoch_floor]\n"); return; }
+    if (hex_decode(key_hex, new_key, sizeof new_key) != 16) { APP_PRINTF("#error bad key\n"); return; }
+    if (floor && store_epoch_floor((uint32_t)floor)) { APP_PRINTF("#error epoch-floor\n"); return; }
     int rc = store_config_write((uint32_t)id, new_key);
     ws_key_check(new_key, check);
     memset(new_key, 0, sizeof new_key);
     if (rc) { APP_PRINTF("#error provision rc=%d\n", rc); return; }
-    APP_PRINTF("#provisioned station=%u kcv=%02x%02x%02x\n", (unsigned)id, check[0], check[1], check[2]);
+    APP_PRINTF("#provisioned station=%u kcv=%02x%02x%02x epoch_floor=%u\n", (unsigned)id, check[0], check[1], check[2], (unsigned)floor);
     reboot_soon();
     return;
   }

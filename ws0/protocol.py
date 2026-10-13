@@ -21,7 +21,13 @@ ACK = struct.Struct('>IIQQ')
 # (identity collision or invalid record). Epoch/seq, reason, reserved 0, echoed frame counter.
 # It is sealed from the gateway's ACK counter space; the kind byte keeps the nonces distinct.
 NACK = struct.Struct('>IIIIQ')
-KIND_OBS, KIND_ACK, KIND_NACK = 1, 2, 3
+KIND_OBS, KIND_ACK, KIND_NACK, KIND_DIAG = 1, 2, 3, 4
+# DIAG (kind 4, gap G8): node health, fire-and-forget (no journal, no ACK). Epoch, uptime s,
+# journal pending, lost (cumulative, persisted), torn slots present, abandoned (cumulative,
+# persisted), missed ACKs and rejected replies since boot, reset cause, link state.
+DIAG = struct.Struct('>IIHIHHHHBB')
+RESET_CAUSES = ('unknown','power','pin','brownout','software','watchdog','lowpower','option-bytes')
+LINK_STATES = ('linked','probing')
 NACK_COLLISION, NACK_INVALID = 1, 2
 VERSION = 4
 # Draft 3: invalid readings carry impossible fillers so a flag-blind reader never sees a
@@ -69,7 +75,9 @@ class Nonces:
 
 def seal(key, station, kind, allocator, payload):
     """Authenticate the clear header and encrypt payload with a 128-bit tag."""
-    shared = kind == KIND_NACK and allocator.kind == KIND_ACK  # NACKs share the ACK counter space
+    # NACKs share the gateway's ACK counter space; health reports share the node's observation
+    # counter space. The kind byte in the nonce keeps every (kind, counter) pair distinct.
+    shared = (kind == KIND_NACK and allocator.kind == KIND_ACK) or (kind == KIND_DIAG and allocator.kind == KIND_OBS)
     if allocator.station != station or (allocator.kind != kind and not shared):
         raise ValueError('Wrong nonce allocator')
     epoch, counter = allocator.next()

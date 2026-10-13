@@ -75,6 +75,11 @@ frame in its `rejections` table. It shares the gateway's ACK counter space; the 
 nonces distinct. The node accepts a NACK only for the frame it just sent, then stops retrying that
 record. An unauthenticated or wrong-version frame never gets a NACK.
 
+DIAG (kind 4, 24-byte plaintext, node → gateway, fire-and-forget) = epoch (4) + uptime s (4) +
+journal pending (2) + journal lost total (4) + torn slots (2) + abandoned total (2) + missed ACKs
+since boot (2) + rejected replies since boot (2) + reset cause (1) + link state (1). It uses the
+node's observation counter space. The gateway stores it and never answers it.
+
 ACK plaintext (24 bytes) = acknowledged sample epoch (4) + sample sequence (4) + host UTC
 Unix seconds at commit (8) + the 64-bit transmission counter of the observation frame being
 answered (8). The node sets its clock only from an ACK whose echoed counter equals the

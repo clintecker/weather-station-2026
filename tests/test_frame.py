@@ -54,6 +54,7 @@ class FrameAgreement(unittest.TestCase):
             [ctypes.POINTER(t) for t in (ctypes.c_uint64, ctypes.c_uint32, ctypes.c_uint32,
                                          ctypes.c_uint64, ctypes.c_uint64)]
         cls.lib.ws_key_check.argtypes = [u8p, u8p]
+        cls.lib.ws_seal_kind.argtypes = [u8p, ctypes.c_uint32, ctypes.c_uint8, ctypes.c_uint64, u8p, u8p]
         cls.lib.ws_open_reply.argtypes = [u8p, ctypes.c_uint32, u8p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8)] + \
             [ctypes.POINTER(t) for t in (ctypes.c_uint64, ctypes.c_uint32, ctypes.c_uint32,
                                          ctypes.c_uint64, ctypes.c_uint64)]
@@ -147,6 +148,16 @@ class FrameAgreement(unittest.TestCase):
         self.assertNotEqual(self.c_open(KAT_KEY, 1, KAT_NACK)[0], 0)          # ACK-only opener refuses a NACK
         flipped = bytearray(KAT_NACK); flipped[3] = 2                          # kind is authenticated
         self.assertNotEqual(self.c_reply(KAT_KEY, 1, bytes(flipped))[0], 0)
+
+    def test_diagnostic_frame_agreement(self):
+        from ws0.protocol import DIAG, KIND_DIAG
+        plain = DIAG.pack(7, 3600, 2, 51, 1, 3, 4, 0, 5, 1)
+        out = (ctypes.c_uint8*56)()
+        self.assertEqual(self.lib.ws_seal_kind(self.buf(KAT_KEY), 1, KIND_DIAG, 9, self.buf(plain), out), 0)
+        self.assertEqual(bytes(out), seal(KAT_KEY, 1, KIND_DIAG, Fixed(1, 1, 9), plain))
+        self.assertEqual(unseal(KAT_KEY, 1, KIND_DIAG, bytes(out)), plain)
+        with self.assertRaises(Exception):
+            unseal(KAT_KEY, 1, 1, bytes(out))  # a health report is never accepted as an observation
 
     def test_key_check_value(self):
         out = (ctypes.c_uint8*3)()

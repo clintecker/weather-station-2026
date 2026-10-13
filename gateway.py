@@ -93,6 +93,10 @@ class Store:
         # Authentic frames that were permanently rejected (and NACKed) are kept, never silently lost.
         self.db.execute('''CREATE TABLE IF NOT EXISTS rejections (station TEXT, session TEXT, sequence INTEGER,
             received_at REAL, reason TEXT, detail TEXT, frame_hex TEXT)''')
+        # Node health reports (kind 4, gap G8). Ordered by (epoch, uptime), not arrival, so a
+        # delayed or replayed report never replaces a newer one.
+        self.db.execute('''CREATE TABLE IF NOT EXISTS diagnostics (station TEXT, session INTEGER, uptime_s INTEGER,
+            received_at REAL, report TEXT, PRIMARY KEY(station,session,uptime_s))''')
         self.db.commit()
 
     def ingest(self, record, received_at=None):
@@ -140,6 +144,18 @@ class Store:
             self.db.execute('INSERT INTO rejections VALUES (?,?,?,?,?,?,?)',
                             (station,session,sequence,time.time() if received_at is None else received_at,
                              reason,detail,frame_hex))
+
+    def diagnostic(self, station, report, received_at=None):
+        with self.lock, self.db:
+            self.db.execute('INSERT OR IGNORE INTO diagnostics VALUES (?,?,?,?,?)',
+                            (station,report['epoch'],report['uptime_s'],
+                             time.time() if received_at is None else received_at,json.dumps(report,sort_keys=True)))
+
+    def latest_diagnostic(self, station):
+        with self.lock:
+            row = self.db.execute('SELECT report,received_at FROM diagnostics WHERE station=? '
+                                  'ORDER BY session DESC,uptime_s DESC LIMIT 1',(station,)).fetchone()
+        return None if row is None else json.loads(row[0]) | {'received_at':row[1]}
 
     def latest(self, station, now=None):
         """Fail closed on bad clocks; old replay traffic cannot reset the age timer."""

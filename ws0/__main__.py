@@ -48,7 +48,28 @@ def console_lines(port, deadline):
             yield line
 
 
-def provision_node(cfg, device):
+def epoch_floor(directory, station):
+    """Gap G5: one above every boot epoch the gateway has stored for this station, so a
+    wiped and re-provisioned node can never reuse an observation identity."""
+    import sqlite3
+    path = directory/'observations.sqlite3'
+    if not path.exists():
+        return 0
+    db = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
+    try:
+        values = [db.execute('SELECT max(CAST(session AS INTEGER)) FROM observations WHERE station=?',(station,)).fetchone()[0]]
+        for table in ('rejections','diagnostics'):
+            try:
+                values.append(db.execute(f'SELECT max(CAST(session AS INTEGER)) FROM {table} WHERE station=?',(station,)).fetchone()[0])
+            except sqlite3.OperationalError:
+                pass
+    finally:
+        db.close()
+    highest = max((v for v in values if v is not None and v < 0xFFFFFFFF), default=0)
+    return highest + 1 if highest else 0
+
+
+def provision_node(cfg, device, floor=0):
     """Wired provisioning: write station ID and key to an unprovisioned TX board, then
     confirm by key check value. Never wipes; a provisioned board must be wiped explicitly."""
     import serial
@@ -66,9 +87,9 @@ def provision_node(cfg, device):
                 return
             raise SystemExit(f'Board already provisioned (station {fields.get("station")}, kcv {fields.get("kcv")}); '
                              'refusing to overwrite. Wipe it deliberately first.')
-        port.write(f"PROVISION {cfg['station_id']} {cfg['radio_key']}\n".encode())
+        port.write(f"PROVISION {cfg['station_id']} {cfg['radio_key']} {floor}\n".encode())
         reply = next((l for l in console_lines(port,time.monotonic()+5) if l.startswith(('#provisioned','#error'))),None)
-        if reply != f"#provisioned station={cfg['station_id']} kcv={expected}":
+        if reply != f"#provisioned station={cfg['station_id']} kcv={expected} epoch_floor={floor}":
             raise SystemExit(f'Provisioning failed: {reply!r}')
         boot = [l for l in console_lines(port,time.monotonic()+5)]
         print(f"Provisioned station {cfg['station_id']} (kcv {expected}); node says:")
@@ -95,7 +116,7 @@ def main():
     if args.command == 'provision-node':
         if cfg['mode'] != 'hardware' or not args.serial:
             parser.error('provision-node requires a --hardware state directory and --serial')
-        provision_node(cfg,args.serial)
+        provision_node(cfg,args.serial,epoch_floor(args.directory,cfg['station']))
         return
     if args.command=='demo' and cfg['mode']!='simulation':
         parser.error('Demo requires a dedicated simulation configuration')
@@ -142,13 +163,20 @@ def main():
                 for line in link.poll():
                     text = line.decode('ascii','replace')
                     stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
+                    rx_seen = time.time()
                     try:
                         if text.startswith('#'):
-                            # Receiver diagnostics (RSSI/SNR, drops, boots): evidence, not data.
+                            # Receiver diagnostics (RSSI/SNR, drops, boots, alive): evidence, not data.
                             receiver_log.write(f'{stamp} {text}\n')
+                            if text.startswith(('#alive ','#boot role=rx')):
+                                fields = dict(f.split('=',1) for f in text.split()[1:] if '=' in f)
+                                gateway.receiver = {'alive':True,'last_report':stamp,'last_seen':rx_seen,**fields}
                         elif text:
                             frame = bytes.fromhex(text)
                             ack = gateway.receive(frame)
+                            if ack is None:  # node health report: stored, never answered
+                                receiver_log.write(f'{stamp} diag {text}\n')
+                                continue
                             kind = 'nack' if ack[3] == 3 else 'ack'
                             sent = link.write(ack.hex().encode()+b'\n')
                             receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}'
@@ -163,6 +191,14 @@ def main():
                         print(f'Commit failed: {exc}',file=sys.stderr)
                 if not link.connected:
                     time.sleep(0.2)
+                # RX liveness (gap G12): it reports every 60 s; three missed reports = silent.
+                if gateway.receiver and gateway.receiver.get('alive') and \
+                        time.time() - gateway.receiver['last_seen'] > 180:
+                    gateway.receiver['alive'] = False
+                    note('#gateway receiver-silent: no RX report for 180 s (check RX board, USB, watchdog)')
+                if gateway.receiver and not gateway.receiver.get('alive') and \
+                        time.time() - gateway.receiver['last_seen'] < 5:
+                    gateway.receiver['alive'] = True
             if mqtt and time.monotonic()>=next_tick:
                 mqtt.tick()
                 next_tick = time.monotonic()+1

@@ -6,6 +6,7 @@
 #define WS_KIND_OBS 1
 #define WS_KIND_ACK 2
 #define WS_KIND_NACK 3 /* authentic but permanently rejected (gap G2) */
+#define WS_KIND_DIAG 4 /* node health counters, fire-and-forget (gap G8) */
 #define WS_NACK_COLLISION 1
 #define WS_NACK_INVALID 2
 #define WS_HEADER_LEN 16
@@ -14,7 +15,10 @@
 #define WS_ACK_PLAIN_LEN 24 /* epoch, seq, host UTC, echoed observation counter */
 #define WS_OBS_FRAME_LEN (WS_HEADER_LEN+WS_OBS_PLAIN_LEN+WS_TAG_LEN)
 #define WS_ACK_FRAME_LEN (WS_HEADER_LEN+WS_ACK_PLAIN_LEN+WS_TAG_LEN)
-/* Caller reserves counter durably before sealing; it must never repeat for this key. */
+/* Caller reserves counter durably before sealing; it must never repeat for this key.
+   ws_seal_kind seals any node-to-gateway kind (observation or diagnostics). */
+int ws_seal_kind(const uint8_t key[16], uint32_t station, uint8_t kind, uint64_t counter,
+ const uint8_t plain[WS_OBS_PLAIN_LEN], uint8_t out[WS_OBS_FRAME_LEN]);
 int ws_seal_obs(const uint8_t key[16], uint32_t station, uint64_t counter,
  const uint8_t plain[WS_OBS_PLAIN_LEN], uint8_t out[WS_OBS_FRAME_LEN]);
 /* 0 on success; nonzero for wrong length/header/station or failed authentication. */
