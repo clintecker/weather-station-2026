@@ -15,6 +15,12 @@
 #define WS_ACK_PLAIN_LEN 24 /* epoch, seq, host UTC, echoed observation counter */
 #define WS_OBS_FRAME_LEN (WS_HEADER_LEN+WS_OBS_PLAIN_LEN+WS_TAG_LEN)
 #define WS_ACK_FRAME_LEN (WS_HEADER_LEN+WS_ACK_PLAIN_LEN+WS_TAG_LEN)
+/* Protocol draft 4 sizes (docs/protocol.md); the gateway (ws0/protocol.py) packs the same layout,
+   checked by the C-vs-Python agreement tests. A change here is a protocol change, not a tweak. */
+_Static_assert(WS_HEADER_LEN == 16 && WS_TAG_LEN == 16, "draft-4 header and CCM tag are 16 bytes");
+_Static_assert(WS_OBS_PLAIN_LEN == 24 && WS_ACK_PLAIN_LEN == 24, "draft-4 plaintexts are 24 bytes");
+_Static_assert(WS_OBS_FRAME_LEN == 56 && WS_ACK_FRAME_LEN == 56, "draft-4 frames are 56 bytes");
+_Static_assert(WS_OBS_FRAME_LEN <= 255, "a LoRa payload is at most 255 bytes");
 /* Caller reserves counter durably before sealing; it must never repeat for this key.
    ws_seal_kind seals any node-to-gateway kind (observation or diagnostics). */
 int ws_seal_kind(const uint8_t key[16], uint32_t station, uint8_t kind, uint64_t counter,

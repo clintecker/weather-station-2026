@@ -24,6 +24,17 @@
 #define CTR_BLOCK 256U
 #define SLOT_BYTES 40U
 
+/* Geometry the on-flash format depends on. A slot is the plaintext, one commit double-word
+   (magic + CRC) and one ACK double-word; a journal page is an 8-byte header plus its slots. */
+_Static_assert(SLOT_BYTES == WS_OBS_PLAIN_LEN + 16U, "slot = plaintext + commit + ack double-words");
+_Static_assert(SLOT_BYTES % 8U == 0U && WS_OBS_PLAIN_LEN % 8U == 0U, "slots are whole double-words");
+_Static_assert(8U + JOURNAL_SLOTS_PER_PAGE * SLOT_BYTES <= WS_PAGE_SIZE, "journal slots fit in one page");
+_Static_assert((uint64_t)WS_CONFIG_PAGE * WS_PAGE_SIZE >= 0x10000U, "node state sits above the 64 KB firmware region (STM32WL55JCIX_FLASH.ld)");
+_Static_assert(WS_CONFIG_PAGE < WS_META_PAGE_A && WS_META_PAGE_A < WS_META_PAGE_B && WS_META_PAGE_B < WS_JOURNAL_FIRST,
+               "config, meta and journal pages are distinct and in order");
+_Static_assert(WS_JOURNAL_PAGES >= 2U && WS_JOURNAL_FIRST + WS_JOURNAL_PAGES <= 128U, "journal fits in the 128 flash pages");
+_Static_assert(WS_JOURNAL_PAGES <= 0xFFFFU && JOURNAL_SLOTS_PER_PAGE <= 0xFFFFU, "jref_t page and slot are 16-bit");
+
 /* ---- flash primitives (ws_flash ops, flash_layout.h) ---- */
 static uint32_t n_ecc;
 static uint64_t rd64(uint32_t addr, int *bad) {
