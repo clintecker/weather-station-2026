@@ -42,7 +42,7 @@ ENTRY(Reset_Handler)
 _estack = ORIGIN(RAM1) + LENGTH(RAM1); /* end of "RAM1" Ram type memory */
 
 _Min_Heap_Size = 0x200; /* required amount of heap  */
-_Min_Stack_Size = 0x800; /* required amount of stack */
+_Min_Stack_Size = 0x2000; /* weather-station-2026: 8 KB reserved, above the worst-case bound from tools/stack_report.py */
 
 /* Memories definition */
 MEMORY

@@ -50,4 +50,14 @@ int ws_failrun_tripped(const ws_failrun *, uint32_t limit);
 static inline int ws_silent_for(uint32_t now_ms, uint32_t last_ms, uint32_t limit_ms)
 { return (uint32_t)(now_ms - last_ms) > limit_ms; }
 int ws_parse_provision(const char *args, uint32_t *station, uint8_t key[16], uint32_t *epoch_floor);
+/* Run-time stack monitor: unused stack is filled with WS_STACK_PAINT at boot; the peak is the
+   distance from the stack top down to the lowest word that no longer holds the paint. lo..top is
+   the painted range (lo = lowest address). Inline so both roles can use it. */
+#define WS_STACK_PAINT 0xC5C5C5C5u
+static inline uint32_t ws_stack_peak(const uint32_t *lo, const uint32_t *top)
+{
+ const uint32_t *p = lo;
+ while (p < top && *p == WS_STACK_PAINT) p++;
+ return (uint32_t)((const char *)top - (const char *)p);
+}
 #endif

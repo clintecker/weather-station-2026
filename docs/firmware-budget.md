@@ -11,11 +11,11 @@ measurements.
 |---|---|---|---|
 | Flash, application region | 64 KB (pages 0–31, enforced by the linker script) | TX 53,176 B (81 %), RX 30,360 B (46 %) | **TX is the constraint**: about 12 KB left |
 | Flash, node state | 192 KB (pages 32–127) | key 1 page, meta log 2 pages, journal 93 pages (4,743 slots, about 3.3 days) | Fixed by `App/flash_layout.h` |
-| RAM | 64 KB (RAM1 32 KB + RAM2 32 KB) | TX: 6,944 B bss + 112 B data + 2.5 KB heap/stack, all in RAM1 | Ample; RAM2 unused |
+| RAM | 64 KB (RAM1 32 KB + RAM2 32 KB) | TX: about 4.1 KB static data + 8 KB reserved stack + 0.5 KB heap, all in RAM1 (working tree after the stack work below) | Ample; RAM2 unused |
 | CPU | Cortex-M4 at 48 MHz (Cortex-M0+ core unused) | One sample and a few frames per minute | No constraint |
 | Radio payload | 24-byte observation plaintext in a 56-byte frame | Temperature and humidity only | **The constraint for more sensors** |
 
-Sources: `STM32WL55JCIX_FLASH.ld` (FLASH 64K, RAM1/RAM2 32K each, heap 0x200, stack 0x800),
+Sources: `STM32WL55JCIX_FLASH.ld` (FLASH 64K, RAM1/RAM2 32K each, heap 0x200, stack 0x2000 since the stack work below; 0x800 before),
 `App/flash_layout.h`, `firmware/common/ws_frame.h` (`WS_OBS_PLAIN_LEN 24`, header 16, tag 16).
 
 The build enforces a budget: `make` prints `flash budget: N of 65536 B` and fails above
@@ -38,6 +38,39 @@ Linked sections from `build/tx/stage0-tx.map` (`.text`, `.rodata`, `.data`):
 Measured on the `a07f498` sources; release 0f456040fe54 is the same size within 8 bytes (53,184 → 53,176 B). About 41 KB is platform
 cost that does not grow with features; new features add mostly our own code and a few more HAL
 modules.
+
+## Stack
+
+Measured 2026-10-13 on the working tree after release `9e3d38f08e8b` (not yet a release).
+
+| | TX | RX |
+|---|---:|---:|
+| Worst-case estimate (`make stack`, `tools/stack_report.py`) | 6,408 B (78 % of 8,192 B) | 1,964 B (24 %) |
+| Deepest direct chain from `main` | 1,256 B (boot self-test through Mbed TLS CCM) | 220 B |
+| Deepest callback chain | 1,232 B (`on_line`, console commands) | 380 B (`process`) |
+| RAM the stack can actually grow into before it meets static data | 28,136 B | 29,568 B |
+
+How the estimate works: GCC writes each function's frame size and its direct calls
+(`-fcallgraph-info=su`, `.ci` files beside the objects). The script adds the deepest chain from
+`main`, two levels of pointer calls (sequencer task, then driver callback), and two nested
+interrupts, each with one pointer call, plus 32 B per exception frame. Any function whose address
+is taken counts as a possible pointer target. Prebuilt newlib/libgcc functions (`memcpy`,
+`memset`, the 64-bit divides) have no call-graph data and count 0 B; they are leaf functions
+with small frames. Unbounded recursion or a variable-size frame fails the check. CI runs it on
+both roles.
+
+Changes made for it:
+
+- The linker's reserved stack (`_Min_Stack_Size`) went from 2 KB to 8 KB. The old 2 KB was below
+  the TX estimate. Nothing checks the real stack against this reservation at run time, but the
+  linker now refuses to link if static data plus 8 KB no longer fits.
+- Our recursion `send_current` ↔ `next_item` (`App/app_tx.c`) became a loop.
+- Mbed TLS's generic cipher layer is gone (`MBEDTLS_CIPHER_C` off): CCM now calls AES through the
+  smaller block-cipher layer. That removed a recursion cycle in the call graph, all `malloc`/`free`
+  from the TX image, and 1.7 KB of flash.
+- Run-time check: the stack is filled with a pattern at start-up (`App/stackmon.c`), and
+  `stack_peak` (TX `#counts`, RX `#alive`) reports the deepest byte ever overwritten. A field
+  value near the 8 KB reservation would mean the estimate is wrong.
 
 ## Measured savings available
 

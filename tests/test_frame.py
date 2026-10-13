@@ -53,7 +53,7 @@ class FrameAgreement(unittest.TestCase):
         lib = Path(cls.tmp.name)/'wsframe.so'
         sources = [ROOT/'firmware/common/ws_frame.c'] + [
             MBEDTLS/'library'/f'{name}.c' for name in
-            ('aes', 'ccm', 'cipher', 'cipher_wrap', 'platform_util', 'constant_time')]
+            ('aes', 'ccm', 'block_cipher', 'platform_util', 'constant_time')]
         subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
                         '-I', str(ROOT/'firmware/common'), '-I', str(MBEDTLS/'include'),
                         '-DMBEDTLS_CONFIG_FILE="ws_mbedtls_config.h"',

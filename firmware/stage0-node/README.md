@@ -68,7 +68,10 @@ The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac a
 
 ### TX console glossary (`App/app_tx.c`)
 
-`#status` (on `STATUS`, and at boot) has these fields:
+`STATUS` (and every boot) prints two lines, `#status` then `#counts`. One line used to be cut off
+at the console's 256-byte print buffer (`UTIL_ADV_TRACE_TMP_BUF_SIZE`), which hid the last counters.
+
+`#status` (identity and state; `ws0 provision-node` reads it) has these fields:
 
 | Field | Meaning |
 |---|---|
@@ -83,11 +86,18 @@ The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac a
 | `energy` | Energy state. Always `normal` in Stage 0 (USB power). |
 | `time`, `utc` | `synchronized` or `unknown`, and the UTC seconds (0 when unknown) |
 | `uptime` | RTC seconds since boot |
+
+`#counts` has these fields:
+
+| Field | Meaning |
+|---|---|
 | `pending` | Journaled readings not yet acknowledged |
 | `lost` | Cumulative readings dropped by journal overflow (persisted across resets) |
 | `burned` | Journal slots found torn or unusable since boot |
 | `abandoned` | Cumulative records given up by NACK or the strike limit (persisted) |
 | `sent`, `acked`, `no_ack`, `ack_rejects`, `sensor_faults` | Counters since boot. `acked` counts ACKs that matched a journal record. `ack_rejects` counts replies that failed authentication, plus NACKs that were not for the frame just sent. |
+| `tx_fail_run` | Consecutive journal, counter or radio failures; the watchdog resets the board above 10 (review P7) |
+| `stack_peak` | Most stack bytes ever used since boot. The stack is filled with a pattern at start-up and the deepest overwritten byte is found on demand (`App/stackmon.c`). The linker reserves 8192 B; `make stack` gives the worst-case estimate. |
 
 Other lines:
 
@@ -122,7 +132,7 @@ Other lines:
 | `#rx error` | Radio receive error |
 | `#host reject len=` | A host line that is not a valid ACK/NACK hex line |
 | `#tx timeout`, `#tx busy` | ACK/NACK transmission failed |
-| `#alive uptime= forwarded= dropped= acks= diag= listening= relistens= uart_errors=` | Every 60 s. The gateway marks the receiver silent after 180 s without `#alive` or `#boot` (gap G12). `relistens`: times the radio was restarted after 5 minutes without any radio event (review P6). `uart_errors`: console receive errors, each followed by a re-arm (review P5). |
+| `#alive uptime= forwarded= dropped= acks= diag= listening= relistens= uart_errors= stack_peak=` | Every 60 s. `stack_peak` as on TX (`#counts`). The gateway marks the receiver silent after 180 s without `#alive` or `#boot` (gap G12). `relistens`: times the radio was restarted after 5 minutes without any radio event (review P6). `uart_errors`: console receive errors, each followed by a re-arm (review P5). |
 | `#watchdog radio not listening; re-arming`, `#watchdog console not receiving; re-arming` | Self-heal attempt before the watchdog may reset the board |
 | `#relisten after N s without a radio event` | Radio put in standby and listening restarted (review P6) |
 | `#status role=rx forwarded= dropped= acks= relistens= uart_errors=` | Reply to `STATUS`. `acks` counts ACK/NACK lines handed to the radio. |

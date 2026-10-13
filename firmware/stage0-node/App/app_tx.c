@@ -16,6 +16,7 @@
 #include "radio_cfg.h"
 #include "rtc.h"
 #include "sensor.h"
+#include "stackmon.h"
 #include "stage0.h"
 #include "stm32_seq.h"
 #include "stm32wlxx_hal.h"
@@ -160,16 +161,21 @@ static int run_kat(void)
 
 static void status(void)
 {
+  /* Two lines: the console print buffer is 256 bytes (UTIL_ADV_TRACE_TMP_BUF_SIZE) and one line
+   * used to be cut off mid-field. #status keeps the fields provision-node and the gateway parse. */
   APP_PRINTF("#status role=tx fw=%s reset=%s provisioned=%d station=%u kcv=%02x%02x%02x kat=%s epoch=%u next_seq=%u "
-             "ctr=%u ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u sensor_faults=%u\n",
+             "ctr=%u ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u\n",
              WS_FW_VERSION, watchdog_reset_cause(), provisioned, (unsigned)station, kcv[0], kcv[1], kcv[2], kat_ok ? "pass" : "FAIL",
              (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)store_counter_next(), (unsigned)store_ecc_faults(),
              link_state == LINK_LINKED ? "linked" : "probing",
              (unsigned)silent_minutes, energy_name[energy_state()], time_valid() ? "synchronized" : "unknown",
-             (unsigned)(time_valid() ? SysTimeGet().Seconds : 0), (unsigned)(mcu_seconds() - boot_mcu),
+             (unsigned)(time_valid() ? SysTimeGet().Seconds : 0), (unsigned)(mcu_seconds() - boot_mcu));
+  APP_PRINTF("#counts pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u "
+             "sensor_faults=%u tx_fail_run=%u stack_peak=%u\n",
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
              (unsigned)store_journal_burned(), (unsigned)store_abandoned_total(), (unsigned)n_sent, (unsigned)n_acked,
-             (unsigned)n_no_ack, (unsigned)n_ack_rejects, (unsigned)n_sensor_faults);
+             (unsigned)n_no_ack, (unsigned)n_ack_rejects, (unsigned)n_sensor_faults, (unsigned)tx_fail.n,
+             (unsigned)stackmon_peak());
 }
 
 static void post(int ev) { event = ev; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0); }
@@ -186,21 +192,35 @@ static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr
   post(EV_RX_DONE);
 }
 
-static void next_item(void);
+static void finish_exchange(void);
 
+/* Send queue[qi]. A local failure (journal read, seal, radio busy) skips to the next item in this
+ * loop, never by calling next_item(): no recursion, so the stack stays bounded (tools/stack_report.py).
+ * Returns once a frame is on air (its TxDone or reply drives next_item) or the exchange is over. */
 static void send_current(void)
 {
-  uint8_t plain[24], frame[WS_OBS_FRAME_LEN];
-  if (store_journal_read(queue[qi], plain)) { APP_PRINTF("#error journal-read\n"); next_item(); return; }
-  /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
-  if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_fail, 0); APP_PRINTF("#error counter-reserve\n"); busy = 0; Radio.Sleep(); return; }
-  if (ws_seal_obs(key, station, sent_counter, plain, frame)) { APP_PRINTF("#error seal\n"); next_item(); return; }
-  sent_epoch = be32(plain);
-  sent_seq = be32(plain + 4);
-  n_sent++;
-  led_flash(LED_BLUE, 400);
-  if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_fail, 0); APP_PRINTF("#error radio-busy\n"); next_item(); return; }
-  ws_failrun_note(&tx_fail, 1);
+  for (;;)
+  {
+    uint8_t plain[24], frame[WS_OBS_FRAME_LEN];
+    if (store_journal_read(queue[qi], plain)) { APP_PRINTF("#error journal-read\n"); }
+    else
+    {
+      /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
+      if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_fail, 0); APP_PRINTF("#error counter-reserve\n"); busy = 0; Radio.Sleep(); return; }
+      if (ws_seal_obs(key, station, sent_counter, plain, frame)) { APP_PRINTF("#error seal\n"); }
+      else
+      {
+        sent_epoch = be32(plain);
+        sent_seq = be32(plain + 4);
+        n_sent++;
+        led_flash(LED_BLUE, 400);
+        if (Radio.Send(frame, sizeof frame) == RADIO_STATUS_OK) { ws_failrun_note(&tx_fail, 1); return; }
+        ws_failrun_note(&tx_fail, 0); APP_PRINTF("#error radio-busy\n");
+      }
+    }
+    if (++qi >= qn) { finish_exchange(); return; }
+    HAL_Delay(INTER_FRAME_MS);
+  }
 }
 
 static int same(jref_t a, jref_t b) { return a.page == b.page && a.slot == b.slot; }
@@ -325,14 +345,19 @@ static int send_diag(void)
   return 1;
 }
 
-static void next_item(void)
+static void finish_exchange(void)
 {
-  if (++qi < qn) { HAL_Delay(INTER_FRAME_MS); send_current(); return; }
   settle_strikes();
   link_update();
   if (send_diag()) return; /* busy until its TxDone */
   busy = 0;
   Radio.Sleep();
+}
+
+static void next_item(void)
+{
+  if (++qi < qn) { HAL_Delay(INTER_FRAME_MS); send_current(); return; }
+  finish_exchange();
 }
 
 /* A missed reply ends this minute's drain: a failing link does not burn the allowance. */
@@ -538,6 +563,7 @@ static void boot_retry(void)
 
 void SubghzApp_Init(void)
 {
+  stackmon_paint();
   events.TxDone = on_tx_done;
   events.TxTimeout = on_tx_timeout;
   events.RxDone = on_rx_done;

@@ -82,6 +82,16 @@ int main(void) {
  assert(ws_silent_for(301001,1000,300000));
  assert(!ws_silent_for(0x00000100u,0xFFFFFF00u,300000));   /* 512 ms across the wrap */
  assert(ws_silent_for(0x00050000u,0xFFFFFF00u,300000));    /* ~328 s across the wrap */
+ /* Stack high-water scan (run-time stack monitor): the deepest word no longer holding the paint. */
+ uint32_t ram[64];
+ for(int i=0;i<64;i++) ram[i]=WS_STACK_PAINT;
+ assert(ws_stack_peak(ram, ram+64)==0);                     /* nothing used */
+ ram[50]=1;                                                 /* deepest touched word, index 50 */
+ assert(ws_stack_peak(ram, ram+64)==(64-50)*4);
+ ram[10]=WS_STACK_PAINT+1;
+ assert(ws_stack_peak(ram, ram+64)==(64-10)*4);
+ ram[0]=0;
+ assert(ws_stack_peak(ram, ram+64)==64*4);                  /* reached the bottom: overflow suspect */
  puts("policy ok");
  return 0;
 }

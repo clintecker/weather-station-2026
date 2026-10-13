@@ -15,6 +15,7 @@
 #include "radio_cfg.h"
 #include "stage0.h"
 #include "usart_if.h"
+#include "stackmon.h"
 #include "stm32_seq.h"
 #include "stm32_timer.h"
 #include "subghz_phy_app.h"
@@ -133,10 +134,10 @@ static void process(void)
 static void on_alive(void *ctx)
 {
   (void)ctx;
-  APP_PRINTF("#alive uptime=%u forwarded=%u dropped=%u acks=%u diag=%u listening=%d relistens=%u uart_errors=%u\n",
+  APP_PRINTF("#alive uptime=%u forwarded=%u dropped=%u acks=%u diag=%u listening=%d relistens=%u uart_errors=%u stack_peak=%u\n",
              (unsigned)((HAL_GetTick() - boot_tick) / 1000), (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks,
              (unsigned)n_diag, Radio.GetStatus() == RF_RX_RUNNING || transmitting, (unsigned)n_relistens,
-             (unsigned)vcom_rx_errors());
+             (unsigned)vcom_rx_errors(), (unsigned)stackmon_peak());
   /* Timer context: only flag it; the radio is touched from the sequencer task. */
   if (!transmitting && ws_silent_for(HAL_GetTick(), last_radio_event_ms, SILENCE_RELISTEN_MS))
   {
@@ -178,6 +179,7 @@ static void on_line(char *line)
 
 void SubghzApp_Init(void)
 {
+  stackmon_paint();
   events.RxDone = on_rx_done;
   events.RxError = on_rx_error;
   events.RxTimeout = on_rx_timeout;

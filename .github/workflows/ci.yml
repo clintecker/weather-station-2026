@@ -142,6 +142,13 @@ jobs:
           make ROLE=rx ANALYZE=1 BUILD=build/analyze-rx -j"$(nproc)"
           make ROLE=tx ANALYZE=1 BUILD=build/analyze-tx -j"$(nproc)"
 
+      # Worst-case stack bound must fit the stack the linker reserves (tools/stack_report.py).
+      - name: Stack bound
+        working-directory: firmware/stage0-node
+        run: |
+          make ROLE=rx BUILD=build/analyze-rx stack
+          make ROLE=tx BUILD=build/analyze-tx stack
+
       - name: Print sizes
         working-directory: firmware/stage0-node
         run: |

@@ -26,7 +26,7 @@ BUILD  = build/$(ROLE)
 TARGET = $(BUILD)/stage0-$(ROLE)
 
 APP_SRC = $(wildcard Core/Src/*.c) startup/syscalls.c startup/sysmem.c \
-          App/app_subghz_phy.c App/radio_cfg.c App/console.c App/leds.c App/watchdog.c App/app_$(ROLE).c \
+          App/app_subghz_phy.c App/radio_cfg.c App/console.c App/leds.c App/watchdog.c App/stackmon.c App/app_$(ROLE).c \
           SubGHz_Phy/Target/radio_board_if.c
 ifeq ($(ROLE),tx)
 APP_SRC += App/node_store.c App/flash_stm32wl.c App/sensor.c $(ROOT)/firmware/stage0.c $(ROOT)/firmware/common/ws_frame.c
@@ -50,7 +50,7 @@ CUBE_SRC = $(CUBE)/Drivers/BSP/STM32WLxx_Nucleo/stm32wlxx_nucleo_radio.c \
            $(CUBE)/Utilities/timer/stm32_timer.c \
            $(CUBE)/Utilities/trace/adv_trace/stm32_adv_trace.c
 ifeq ($(ROLE),tx)
-CUBE_SRC += $(addprefix $(MBEDTLS)/library/,aes.c ccm.c cipher.c cipher_wrap.c platform_util.c constant_time.c)
+CUBE_SRC += $(addprefix $(MBEDTLS)/library/,aes.c ccm.c block_cipher.c platform_util.c constant_time.c)
 endif
 
 ASM_SRC = startup/startup_stm32wl55jcix.s
@@ -73,7 +73,7 @@ DEFS = -DCORE_CM4 -DSTM32WL55xx -DUSE_HAL_DRIVER -DWS_ROLE_$(ROLE) \
 
 CPU     = -mcpu=cortex-m4 -mthumb -mfloat-abi=soft
 CFLAGS  = $(CPU) $(DEFS) $(addprefix -I,$(INCS)) -std=gnu11 -Os -g3 -Wall \
-          -ffunction-sections -fdata-sections -MMD -MP
+          -ffunction-sections -fdata-sections -MMD -MP -fcallgraph-info=su
 LDFLAGS = $(CPU) -T STM32WL55JCIX_FLASH.ld --specs=nano.specs --specs=nosys.specs \
           -Wl,--gc-sections -Wl,-Map=$(TARGET).map -Wl,--no-warn-rwx-segments \
           -Wl,--start-group -lc -lm -Wl,--end-group
@@ -128,9 +128,14 @@ flash: $(TARGET).bin
 	  -c "reset_config srst_only srst_nogate connect_assert_srst" \
 	  -c "program $(TARGET).elf verify reset exit"
 
+# Worst-case stack bound from the GCC call graphs (-fcallgraph-info=su); fails if it exceeds the
+# stack the linker reserves (_Min_Stack_Size). See tools/stack_report.py and docs/firmware-budget.md.
+stack: $(TARGET).elf
+	python3 $(ROOT)/tools/stack_report.py $(BUILD) --toolchain $(TOOLCHAIN)
+
 clean:
 	rm -rf build
 
 -include $(OBJS:.o=.d)
 
-.PHONY: all flash clean
+.PHONY: all flash clean stack
