@@ -130,7 +130,7 @@ This is the data loss that the design accepts. **Items marked ⚠ need Clint's a
 | TX power cut during a journal write | **≤ 1 observation per power cut** (the slot in progress) | Flash cannot commit atomically faster than a power loss |
 | TX unpowered (battery depleted, brown-out), or TX sensor absent | **All intervals while the TX board is down.** These readings never exist, so they are not "lost". They show as a time gap between two epochs. | No energy, no measurement. In deployment, prevention is the job of the power system (spec R03: 168 h without solar). |
 | RX, gateway, or link down | **0 lost** if the outage is ≤ **79 h** (journal capacity). Data is late. | Store-and-forward. A multi-day winter storm outage at the house can exceed 79 h; the 30-day target is H11 (external flash). |
-| Outage > 79 h | **Oldest pending observations, 51 at a time** (one flash page). Counted on the TX board as `lost`. | ⚠ Approve "oldest first" (newest data is more valuable) |
+| Outage > 79 h | **Oldest pending observations, 51 at a time** (one flash page). Counted on the TX board as `lost`. | **Approved by Clint 2026-10-12:** drop oldest first (newest data is more valuable). |
 | Time unknown after a TX boot | The first reading after each TX boot has no timestamp. It is stored, but it is never "current" and cannot count as timely. | ⚠ See gap G6; fix is recommended |
 | Backlog drain | Backlog clears at **2 observations per minute** in addition to live data. An outage of *D* minutes takes *D*/2 minutes to clear. | Live data has priority. ⚠ H11 must accept or raise this rate. |
 
