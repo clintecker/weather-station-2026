@@ -4,6 +4,7 @@
 > **Applies to:** protocol draft 3, firmware `firmware/stage0-node`, gateway `ws0/`. Commit `d825c17` and later.
 > **Status:** Bench data path operates. The sensor is not connected yet. **H01 is NOT RUN.**
 > **Short reference:** [`protocol.md`](protocol.md) gives the byte tables only. This document tells how each layer operates and why.
+> **Failures and recovery:** [`failure-modes.md`](failure-modes.md) defines every non-happy-path behavior, the loss budget, and the known gaps, for the battery/solar deployment.
 
 ---
 

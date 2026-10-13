@@ -64,6 +64,9 @@ Power-fail behaviour (designed, **not yet tested by cutting power**):
 
 ## Known limits
 
+The full failure analysis, the loss budget, and the ranked gap list are in [`docs/failure-modes.md`](../../docs/failure-modes.md).
+
+
 - The key is stored in plain internal flash at RDP level 0 (anyone with SWD can read it). Stage-0 bench only.
 - Time-sync accuracy: the node is set to the host's commit time, up to about 1 s behind. It is trusted for 6 h, then marked unknown.
 - `LOW_POWER_DISABLE=1` (USB-powered Stage 0). Power work belongs to Stage 1.
