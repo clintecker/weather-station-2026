@@ -1,7 +1,8 @@
 """Draft Stage-0 binary protocol; all integers are network byte order.
 
 AES-CCM is provided by cryptography/OpenSSL, never implemented here.
-Firmware must implement the same durable nonce contract before RF use.
+The firmware reserves counters durably before use (firmware/stage0-node/App/node_store.c) and
+never resets them, not even on WIPE (gap G17), so a key never sees a repeated nonce on a board.
 """
 import hashlib
 import sqlite3
@@ -9,7 +10,7 @@ import struct
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
-HEADER = struct.Struct('>2sBBIII')  # magic, version, kind, station, tx epoch, counter
+HEADER = struct.Struct('>2sBBIII')  # magic, version, kind, station, counter high word, counter low word
 # Draft 4: sample epoch/seq, UTC seconds (u32, 0 if unknown), seconds since boot (u32, always),
 # T/RH, validity/time, calibration. Uptime lets the gateway reconstruct unknown times later.
 OBS = struct.Struct('>IIIIhHBBH')
@@ -106,7 +107,7 @@ def unseal(key, station, kind, packet):
 
 
 def encode_observation(record):
-    """Scale measurements; invalid values use explicit flags and zero wire slots."""
+    """Scale measurements; invalid values use explicit flags and the draft-3 fillers 0x8000/0xFFFF."""
     from gateway import validate
     validate(record)
     valid = record['quality'] == 'valid'

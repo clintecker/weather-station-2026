@@ -108,7 +108,7 @@ headers. Board component side up, SMA antenna connector at the top; pins count f
 
 On CN10 the odd pins are the inner column; on CN7 the odd pins are the outer column (board edge).
 
-The bus speed is 100 kHz (standard mode). The timing register value is `0x20303E5D` at PCLK1 = 48 MHz. The MCU pull-up resistors are off, because the breakout has its own pull-up resistors.
+The bus speed is 100 kHz (standard mode). The timing register value is `0x20303E5D` at PCLK1 = 48 MHz. The breakout's 10 kΩ resistors are the bus pull-ups. The MCU's internal pull-ups (about 40 kΩ) are also on, so that an unplugged breakout leaves the lines defined and the read fails as a clean address NACK (`App/sensor.c`, changed 2026-10-13).
 
 ### 3.2 Measurement transaction
 
@@ -135,16 +135,16 @@ The firmware converts the raw values to integers. It does not use floating point
 
 ### 3.3 Faults
 
-If the write, the read, or a CRC check fails, the function returns an error. The function does not change the output values. The observation then has **validity = 0**, and the packer writes the impossible filler values (section 4.1). The system never shows an invalid reading as a real value.
+If the write, the read, or a CRC check fails, the function returns an error. The function does not change the output values. The codes (`App/sensor.h`) are printed as `rc=` on every `#sample` line: 0 ok, −2 address NACK (sensor absent or wiring), −3 read NACK, −4 CRC mismatch, −5 bus still stuck after recovery. At boot, TX prints `#sensor ok t=… rh=…` or `#sensor fault rc=…` from one test reading. The observation then has **validity = 0**, and the packer writes the impossible filler values (section 4.1). The system never shows an invalid reading as a real value.
 
 After a bus fault, the firmware does a bus recovery. A sensor can hold SDA low if it resets during a byte. The recovery does these steps:
 
-1. Set SCL and SDA to GPIO open-drain outputs.
+1. Release both lines (output latch high), then make SCL and SDA GPIO open-drain outputs, so the takeover never drives SCL low.
 2. Give up to 9 clock pulses on SCL until the sensor releases SDA.
-3. Drive SDA low, then high, to make a STOP condition.
-4. Start the I²C peripheral again.
+3. Make a STOP condition: SDA low while SCL is low, SCL high, then SDA high.
+4. Start the I²C peripheral again. If SDA was still held low, the read reports −5.
 
-> **Caution (code issue, unverified on hardware):** `i2c_recover()` in `App/sensor.c` does not drive SCL high before step 3. When SDA is already released, no clock pulse runs, so SCL can stay low (the GPIO output latch is presumably 0) and step 3 then does not make a real STOP. When the loop runs, SCL ends high and the STOP is correct. Check with a logic analyzer, or set SCL high before the loop.
+The pin sequence is `ws_i2c_recover()` in `firmware/stage0.c`, tested on the host against a model of the open-drain bus (`firmware/test_policy.c`: exactly one STOP, no accidental START, bus left idle, for a free bus and for a device holding SDA for 1 to 9 clocks). Before 2026-10-13 the routine left SCL low when SDA was not stuck, so its STOP was not a real STOP.
 
 > **Note:** The SHT45 was delivered 2026-10-13 but is not wired yet. All current observations are `sensor_fault`. This is the correct behavior.
 
@@ -294,15 +294,15 @@ Each log entry is one double-word: an 8-bit type and a 56-bit value. The recover
 
 When a log page is full, the firmware writes the current maximum values to the other page. It writes the page header **last**. If power stops during this step, the old page stays valid.
 
-**Example (observed 2026-10-12):** The TX board used counters 1 to 8. Then a firmware update reset the board. The next counter was **257**, because the board skips the rest of the reserved block (9 to 256). This is correct.
+**Example (observed 2026-10-12):** The TX board used counters 1 to 8. Then the board restarted ([`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), "Reboot behaviour"). The next counter was **257**, because the board skips the rest of the reserved block (9 to 256). This is correct.
 
 ### 6.2 Why counter reuse is dangerous
 
-AES-CCM uses counter mode for encryption. If two frames use the same key and nonce, an attacker can XOR the two ciphertexts and get the XOR of the two plaintexts. The authentication guarantee is also lost (the exact forgery attack is not described in the cited sources; unverified). RFC 3610 section 2.1 ("destroys the security properties of this mode") and NIST SP 800-38C describe this risk [[RFC3610]](#RFC3610) [[SP800-38C]](#SP800-38C).
+AES-CCM uses counter mode for encryption. If two frames use the same key and nonce, an attacker can XOR the two ciphertexts and get the XOR of the two plaintexts. The authentication guarantee is also lost. RFC 3610 section 2.1 ("destroys the security properties of this mode") and NIST SP 800-38C describe this risk [[RFC3610]](#RFC3610) [[SP800-38C]](#SP800-38C).
 
 > **Warning:** Do not restore an old copy of the TX flash state or the gateway nonce database while you keep the same key. If counter state is lost, provision a **new key** for both ends.
 
-> **Warning:** `WIPE ERASE-ALL-NODE-STATE` resets the node's 64-bit counter to 1. The `PROVISION` epoch floor raises only the epoch (the observation identity), **not** the counter. Thus never provision a wiped board with a key that it used before: it would repeat nonces already sent on air. Use a new key. See [`runbook-moving-boards.md`](runbook-moving-boards.md).
+> **Warning:** before release `@G17REL@`, `WIPE ERASE-ALL-NODE-STATE` reset the node's 64-bit counter to 1; from `@G17REL@` on it keeps the counter (gap G17). The `PROVISION` epoch floor raises only the epoch (the observation identity), **not** the counter. A key used before `@G17REL@`, or on another board, can therefore repeat nonces already sent on air. Prefer a new key. See [`runbook-moving-boards.md`](runbook-moving-boards.md).
 
 ---
 
@@ -385,7 +385,7 @@ Node → gateway, fire-and-forget: no journal entry, no receive window, no reply
 | 22 | 1 | Reset cause: 0 unknown, 1 power, 2 pin, 3 brownout, 4 software, 5 watchdog, 6 lowpower, 7 option-bytes |
 | 23 | 1 | Link state: 0 linked, 1 probing |
 
-The 16-bit fields stop at `0xFFFF`. The node sends a report every 15 minutes and after each link-state change, after that minute's exchange, **only while LINKED**. Thus the link field always reads 0 in practice.
+The 16-bit fields stop at `0xFFFF`. The node sends a report every 15 minutes and after each link-state change, after that minute's exchange, also while probing (changed 2026-10-13; before that it was sent only while LINKED, so the link field always read 0).
 
 ### 7.4 Implementations
 
@@ -455,14 +455,14 @@ The firmware now sets the symbol timeout to 0 (off). The 2-second window timer s
 
 ### 8.5 Measured link (bench, 2026-10-12)
 
-Antennas: supplied stub antennas, approximately 30 cm apart, 0 dBm. (Unverified: no evidence file is linked for these figures.)
+Boards approximately 30 cm apart, 0 dBm. Source: [`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), "Stage-0 firmware bring-up" (end-to-end link, epoch 2, seq 0–12; trial-and-error item 1).
 
 | Measure | Value |
 |---|---|
-| Exchanges logged | 28 |
-| RSSI | −22 to −24 dBm |
-| SNR | 12 to 14 dB |
-| Lost after the fix | 0 |
+| Readings delivered | seq 0–12, `pending=0` |
+| RSSI | −23 / −24 dBm |
+| SNR | 12 to 13 dB |
+| After the symbol-timeout fix | `sent=3 acked=3 no_ack=0` |
 
 This is a bench result. It is not a range result. H01 requires a test at the real locations.
 
@@ -548,8 +548,8 @@ Source: [`radio-energy-policy.md`](radio-energy-policy.md) and `App/app_tx.c`. T
 
 - **Airtime cap.** One answered exchange is estimated at 2 × air time + 300 ms = 354 ms (SF7, 500 kHz). The number of frames in a minute is limited to the radio time ÷ 354 ms. The live reading always fits.
 - **Drain stops at the first miss.** If a frame gets no reply (or a TX timeout occurs), the node sends nothing more in that minute.
-- **PROBING.** After 3 consecutive minutes with no answer, the link state becomes PROBING. The node then sends only the live reading, as a probe, 120 s, 240 s and 480 s later, then every 900 s. Other readings stay in the journal. Any answer to a sent frame makes the link LINKED again.
-- **Simulator difference.** The Python simulator (`ws0/__main__.py` demo, `ws0/simulator.py`) still drains 2 records per minute. Simulation results thus use a different drain rate from the firmware.
+- **PROBING.** After 3 consecutive minutes with no answer, the link state becomes PROBING: live reading only, no backlog. In SURPLUS and NORMAL (so always in Stage 0) the live reading still goes every minute; only CONSERVE waits 120 s, 240 s, 480 s, then every 900 s (`ws_link_may_send()` in `firmware/stage0.c`, changed 2026-10-13). Any answer to a sent frame makes the link LINKED again. The health report is also sent while probing, with link state 1.
+- **Simulator.** The Python simulator (`ws0/simulator.py`, `BACKLOG_PER_MINUTE = 5`) drains 5 records per minute, like NORMAL. It sends the live reading every minute and does not model the drain stop or PROBING; that matches the firmware's timeliness in NORMAL.
 
 ### 9.5 NACK and abandoned records
 
@@ -692,7 +692,7 @@ A system reset (RESET button, NRST, software reset, future watchdog) does not st
 - the sync is less than 6 hours old,
 - the clock shows a plausible date.
 
-A power loss clears the backup domain on this board (no VBAT battery; unverified against the board schematic), so the board then starts with `time unknown`. **Bench result (2026-10-12):** after a reset the board printed `#time restored … sync_age=11`. Its first reading in the new epoch was synchronized, within about 1 s of the host.
+If a power loss clears the backup domain, the marker is gone and the board starts with `time unknown`. **Open:** whether a real power loss clears the backup domain on this board (VBAT supply) is not checked; to be checked against the board schematic and by a true power-removal test (G7 part B). A simulated loss (debugger pulsed `RCC_BDCR.BDRST`) gave no restore and `time=unknown` ([`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), draft 4). **Bench result (2026-10-12):** after a warm reset the board printed `#time restored … sync_age=11`. Its first reading in the new epoch was synchronized; board−host difference −1.0 s (same log).
 
 #### 11.3.2 Reconstructed time (option C, draft 4)
 
@@ -813,7 +813,7 @@ EOF
 | Replay an old ACK to clear a slot | Clears only the slot that the gateway already committed | No data loss |
 | Nonce reuse after reset | Durable counter reservation (section 6) | Do not clone or roll back flash state |
 | RX board is compromised | RX has no key. It can only drop or delay frames. | Drop = backlog; delay = late data |
-| Key extraction from the TX board | **None in Stage 0.** RDP level 0 (unverified: option bytes not recorded). The key is in plain flash. | Use RDP level 1 or higher before field use |
+| Key extraction from the TX board | **None in Stage 0.** RDP level 0 (`FLASH_OPTR` = `0x3FFFF0AA` on both boards, [`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), board inventory). The key is in plain flash. | Use RDP level 1 or higher before field use |
 | Radio jamming | None (physical layer) | Backlog survives 3.3 days |
 
 ---

@@ -1,7 +1,7 @@
 #ifndef LEDS_H
 #define LEDS_H
 #include <stdint.h>
-/* Nucleo user LEDs as activity indicators (meanings: docs/hardware/nucleo-wl55jc-bringup.md).
+/* Nucleo user LEDs as activity indicators (meanings: firmware/stage0-node/README.md, LEDs).
  * LED1 blue = radio traffic (400 ms) or 40 ms "alive" blip every 2 s, LED2 green = ACK,
  * LED3 red = problem. */
 typedef enum { LED_BLUE, LED_GREEN, LED_RED } led_t;

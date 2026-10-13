@@ -1,4 +1,4 @@
 evidence/validation.txt is historical: the 28-test Linux run of commit 8aca123.
-Current suite (82 tests): sh tools/fetch-vendor.sh, then
+Current suite (83 tests): sh tools/fetch-vendor.sh, then
   WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests
 macOS run of 8aca123: evidence/macos-validation-2026-10-12.md. Bench evidence: evidence/. H01: NOT RUN.

@@ -44,9 +44,9 @@ python -m ws0 serve --directory run-hw --serial /dev/cu.usbmodem<RX port>
 
 It also sends an **epoch floor** (`PROVISION <id> <key> <epoch_floor>`). The floor is one above the highest boot epoch the gateway has stored for this station in `observations`, `rejections` and `diagnostics` (`ws0/__main__.py`, `epoch_floor`), or 0 (no floor) for an empty database. The node raises its stored epoch to the floor (`store_epoch_floor`), so every later boot epoch is above it and the observation identities (epoch, seq) of a wiped and re-provisioned node never collide with stored history (gap G5). **The floor raises only the epoch, not the transmission counter.**
 
-To re-provision deliberately, send `WIPE ERASE-ALL-NODE-STATE` on the TX console. That erases the key, the counters, the journal, and the persisted `lost`/`abandoned` totals, then reboots with solid red LED3.
+To re-provision deliberately, send `WIPE ERASE-ALL-NODE-STATE` on the TX console. From release `@G17REL@` that erases the key and the journal and keeps the counter, the epoch and the `lost`/`abandoned` totals (gap G17); earlier releases erased those too. It then reboots with solid red LED3.
 
-**Re-keying rule:** WIPE resets the transmission counter to 1, and the AES-CCM nonce is kind + station + counter (`firmware/common/ws_frame.c`). Re-provisioning with any key that was used before would therefore repeat nonces. **Always `init` a new run directory, which creates a new key, after a WIPE, and never reuse an old key.** Moving the boards between gateways is covered in [`docs/runbook-moving-boards.md`](../../docs/runbook-moving-boards.md).
+**Re-keying rule:** the AES-CCM nonce is kind + station + transmission counter (`firmware/common/ws_frame.c`). From release `@G17REL@`, WIPE erases only the key and the journal and keeps the counter and epoch (gap G17); earlier releases reset the counter to 1. A key used before `@G17REL@`, or on another board, could therefore repeat nonces. **After a WIPE, `init` a new run directory (a new key).** Moving the boards between gateways is covered in [`docs/runbook-moving-boards.md`](../../docs/runbook-moving-boards.md).
 
 For a long run (H01), install the gateway as a LaunchAgent. It restarts if it exits and finds the RX board by its ST-LINK serial number after a replug:
 
@@ -94,7 +94,8 @@ Other lines:
 | Line | Meaning |
 |---|---|
 | `#boot role=tx fw= reset= kat= freq= bw= sf= power=` | Printed at every boot. `bw` is the index (2 = 500 kHz). |
-| `#sample epoch= seq= uptime= valid= t= rh= time= utc= journal= pending= lost=` | One per minute. `journal=ERROR` means the reading could not be journaled. |
+| `#sample epoch= seq= uptime= valid= rc= t= rh= time= utc= journal= pending= lost=` | One per minute. `rc` is the sensor result (`App/sensor.h`): 0 ok, −2 address NACK (sensor absent or wiring), −3 read NACK, −4 CRC mismatch, −5 bus still stuck after recovery. `journal=ERROR` means the reading could not be journaled. |
+| `#sensor ok t= rh=` / `#sensor fault rc=` | Once at boot, from one test reading. |
 | `#ack epoch= seq= found= time_sync= rssi= snr= pending=` | Authentic ACK. `time_sync=1`: the clock was set from it. |
 | `#ack none epoch= seq=` | No reply within the 2 s window. The reading stays journaled, and this minute's backlog drain stops. |
 | `#ack reject len= rssi= snr=` | A reply failed authentication |
@@ -128,8 +129,8 @@ Other lines:
 
 This is summarized from `App/app_tx.c`; the approved policy is in [`docs/radio-energy-policy.md`](../../docs/radio-energy-policy.md).
 - **Each minute:** the live reading goes first, then at most 5 older pending readings (energy state NORMAL). The total is also capped at about 5 s of estimated radio time per minute. Each frame gets one 2 s ACK window. A missed reply ends that minute's drain.
-- **Link probing:** after 3 minutes with no reply the link state becomes `probing`. Only the live reading is sent then, as a probe at 2, 4 and 8 minutes, then every 15 minutes. All readings stay journaled. Any reply returns the state to `linked`.
-- **Health report** (kind 4): sent every 15 min and at each link-state change, only while linked. It is fire-and-forget, with no journal entry and no ACK.
+- **Link probing:** after 3 minutes with no reply the link state becomes `probing`: only the live reading is sent, with no backlog. In SURPLUS and NORMAL (always, in Stage 0) it still goes every minute; only CONSERVE probes at 2, 4 and 8 minutes, then every 15 minutes (since `@G17REL@`; `ws_link_may_send()` in `firmware/stage0.c`). All other readings stay journaled. Any reply returns the link to `linked`.
+- **Health report** (kind 4): sent every 15 min and at each link-state change, also while probing (since `@G17REL@`). It is fire-and-forget, with no journal entry and no ACK.
 - **Strike limit:** a record that stays unanswered 10 times while the gateway answers other frames in the same exchange is abandoned (`#abandon`).
 
 **Watchdog:** independent watchdog, ~8 s. It is refreshed only from the main loop, and only while the role shows real progress: TX samples every ≤150 s and no exchange runs >30 s; RX is listening or finishes a transmission in <5 s, with one re-arm attempt. The reset cause is printed on every boot.
@@ -160,7 +161,7 @@ Power-fail behaviour. Resets during flash writes were tested 70 cycles (G7 part 
 - Each slot is committed by a final CRC double-word.
 - A torn write reads back as erased, uncommitted, or a double-ECC error. `NMI_Handler` catches the ECC error, and the slot is counted as `burned`, never used. Exception: a torn **ACK** word counts as acknowledged, because the host had already committed the record.
 - The epoch is reserved before the first sample of each boot.
-- Counters are reserved in blocks before use, so a reset skips the rest of the block. Observed: counter 8 → 257 after a restart (reflash or reboot; the bring-up log files it under reboot behaviour, unverified which).
+- Counters are reserved in blocks before use, so a reset skips the rest of the block. Observed: counter 8 → 257 after a reboot (`docs/hardware/nucleo-wl55jc-bringup.md`, "Reboot behaviour").
 
 ## Known limits
 
@@ -169,6 +170,6 @@ The full failure analysis, the loss budget, and the ranked gap list are in [`doc
 
 - The key is stored in plain internal flash at RDP level 0 (anyone with SWD can read it). Stage-0 bench only.
 - Time-sync accuracy: the node is set to the host's commit time, up to about 1 s behind. It is trusted for 6 h, then marked unknown.
-- Time across resets: a warm reset keeps time trust (RTC backup registers DR3/DR4; ST's SysTime uses DR0–DR2). A power loss clears it; the gateway then reconstructs times from the always-present `uptime` field.
+- Time across resets: a warm reset keeps time trust (RTC backup registers DR3/DR4; ST's SysTime uses DR0–DR2). When the backup domain is cleared (simulated with a backup-domain reset, `docs/hardware/nucleo-wl55jc-bringup.md`, draft 4), the gateway reconstructs times from the always-present `uptime` field. Open: whether a real power loss clears it on this board (`docs/protocol-stack.md` §11.3.1).
 - `LOW_POWER_DISABLE=1` (USB-powered Stage 0). Power work belongs to Stage 1.
 - The SHT45 driver uses I2C2 on PA11/PA12 at 100 kHz with stuck-bus recovery. It is untested on hardware until the sensor arrives.

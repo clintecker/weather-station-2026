@@ -131,7 +131,7 @@ sh tools/fetch-vendor.sh   # pinned STM32CubeWL + Mbed TLS; without it 7 C-vs-Py
 WS0_UNSAFE_FAST_FSYNC=1 python -m unittest discover -s tests -v
 ```
 
-Expect 82 tests. One SNTP test needs network and skips without it. The C tests require `cc` (Apple Command Line Tools on macOS). The 1,440-record test uses accelerated virtual timestamps, not 24 hours of elapsed time. `evidence/validation.txt` is historical: 28 tests at commit 8aca123.
+Expect 83 tests. One SNTP test needs network and skips without it. The C tests require `cc` (Apple Command Line Tools on macOS). The 1,440-record test uses accelerated virtual timestamps, not 24 hours of elapsed time. `evidence/validation.txt` is historical: 28 tests at commit 8aca123.
 
 `WS0_UNSAFE_FAST_FSYNC=1` is **test-only**: it turns off SQLite `fullfsync`, so commits are not power-loss durable. Never set it for a gateway that ACKs real data.
 

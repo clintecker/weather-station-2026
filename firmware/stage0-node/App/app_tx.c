@@ -1,10 +1,11 @@
 /* Stage-0 TX: one SHT45 observation per minute, journaled in flash before transmission and
- * retained until an authenticated host ACK. Each minute sends the live observation first,
- * then at most two older pending ones; each frame gets a fresh durably reserved counter and
- * one ACK receive window. Time comes only from an ACK that echoes the counter of the frame
- * just sent (replayed ACKs cannot move the clock). Console lines from this board start
- * with '#'; commands: STATUS, KAT, PROVISION <station_id> <32 hex key>,
- * WIPE ERASE-ALL-NODE-STATE. */
+ * retained until an authenticated host ACK (or a NACK / strike-limit abandon). Each minute sends
+ * the live observation first, then older pending ones as the energy and link policy allows
+ * (docs/radio-energy-policy.md); each frame gets a fresh durably reserved counter and one ACK
+ * receive window. Time comes only from an ACK that echoes the counter of the frame just sent
+ * (replayed ACKs cannot move the clock). Console lines from this board start with '#';
+ * commands: STATUS, KAT, PROVISION <station_id> <32 hex key> [epoch_floor],
+ * WIPE ERASE-ALL-NODE-STATE, TEST-HANG, TEST-FLASH-STORM (firmware/stage0-node/README.md). */
 #include <stdlib.h>
 #include <string.h>
 #include "console.h"
@@ -40,7 +41,10 @@ static const uint16_t airtime_cap_ms[] = { 15000, 5000, 2000, 0 };   /* radio ti
 #define CONSERVE_INTERVAL_S 300U                                     /* spec R02 */
 static energy_t energy_state(void) { return EN_NORMAL; }
 
-/* Link state: K silent minutes -> PROBING; probe back-off 2, 4, 8, then 15 min; live only. */
+/* Link state: K silent minutes -> PROBING: live reading only, no backlog. With healthy energy
+ * (SURPLUS, NORMAL) the live reading still goes every minute, so the node relinks within a
+ * minute and an outage adds no late readings; only CONSERVE backs off 2, 4, 8, then 15 min
+ * (ws_link_may_send in firmware/stage0.c, host-tested). */
 #define LINK_K_SILENT       3U
 static const uint16_t probe_interval_s[] = { 120, 240, 480, 900 };
 #define TURNAROUND_MS       300U   /* gateway commit (fullfsync) + USB both ways, conservative */
@@ -92,7 +96,8 @@ static uint32_t silent_minutes, probe_step, next_probe_mcu, last_send_mcu;
 static uint32_t exchange_ms; /* estimated radio time of one answered exchange */
 
 /* Health report (kind 4, gap G8): every 15 min and at each link-state change, sent after a
- * minute's exchange while linked. Fire-and-forget: no journal entry, no receive window. */
+ * minute's exchange (also while probing, so the link field can read "probing").
+ * Fire-and-forget: no journal entry, no receive window. */
 #define DIAG_PERIOD_S 900U
 static int diag_due = 1, diag_in_flight;
 static uint32_t last_diag_mcu;
@@ -258,14 +263,19 @@ static void link_update(void)
   {
     link_state = LINK_PROBING; probe_step = 0; diag_due = 1;
     next_probe_mcu = last_send_mcu + probe_interval_s[0]; /* from the exchange start: on the minute grid */
-    APP_PRINTF("#link probing: %u silent minutes; next probe in %u s (live readings stay journaled)\n",
-               (unsigned)silent_minutes, (unsigned)probe_interval_s[0]);
+    if (ws_link_may_send(energy_state(), 1, (int32_t)probe_interval_s[0]))
+    { APP_PRINTF("#link probing: %u silent minutes; live reading every minute, no backlog (energy %s)\n",
+                 (unsigned)silent_minutes, energy_name[energy_state()]); }
+    else
+    { APP_PRINTF("#link probing: %u silent minutes; next probe in %u s (live readings stay journaled)\n",
+                 (unsigned)silent_minutes, (unsigned)probe_interval_s[0]); }
   }
   else if (link_state == LINK_PROBING)
   {
     if (probe_step + 1 < sizeof probe_interval_s / sizeof probe_interval_s[0]) probe_step++;
     next_probe_mcu = last_send_mcu + probe_interval_s[probe_step];
-    APP_PRINTF("#link probe unanswered; next probe in %u s\n", (unsigned)probe_interval_s[probe_step]);
+    if (!ws_link_may_send(energy_state(), 1, (int32_t)probe_interval_s[probe_step]))
+    { APP_PRINTF("#link probe unanswered; next probe in %u s\n", (unsigned)probe_interval_s[probe_step]); }
   }
 }
 
@@ -285,7 +295,7 @@ static int send_diag(void)
   uint8_t plain[24], frame[WS_OBS_FRAME_LEN]; uint64_t ctr;
   uint32_t now = mcu_seconds();
   if (now - last_diag_mcu >= DIAG_PERIOD_S) diag_due = 1;
-  if (!diag_due || link_state != LINK_LINKED) return 0;
+  if (!diag_due) return 0;
   uint32_t up = now - boot_mcu, lost = store_journal_lost();
   uint16_t f[] = { clamp16(store_journal_pending()), clamp16(store_journal_burned()), clamp16(store_abandoned_total()),
                    clamp16(n_no_ack), clamp16(n_ack_rejects) };
@@ -392,15 +402,15 @@ static void sample(void)
 {
   int16_t t = 0; uint16_t h = 0; uint8_t plain[24]; jref_t live;
   last_sample_mcu = mcu_seconds();
-  int valid = sensor_read(&t, &h) == 0;
+  int src = sensor_read(&t, &h), valid = src == 0;
   int timed = time_valid();
   uint32_t utc = timed ? SysTimeGet().Seconds : 0;
   uint32_t uptime = mcu_seconds() - boot_mcu; /* always sent: the gateway reconstructs time from it */
   if (!valid) n_sensor_faults++;
   ws_pack_observation(plain, boot_epoch, next_seq, utc, uptime, t, h, (uint8_t)valid, (uint8_t)timed);
   int rc = store_journal_append(plain, &live);
-  APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
-             (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)uptime, valid, valid ? t : 0, valid ? h : 0,
+  APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
+             (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)uptime, valid, src, valid ? t : 0, valid ? h : 0,
              timed ? "synchronized" : "unknown", (unsigned)utc, rc ? "ERROR" : "ok",
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
   next_seq++; /* identity is never reused, even if the journal write failed */
@@ -410,7 +420,7 @@ static void sample(void)
   uint32_t now = mcu_seconds();
   if (en == EN_CRITICAL) return;
   if (en == EN_CONSERVE && now - last_send_mcu < CONSERVE_INTERVAL_S) return;
-  if (link_state == LINK_PROBING && (int32_t)(now - next_probe_mcu) < 0) return; /* stays journaled */
+  if (!ws_link_may_send(en, link_state == LINK_PROBING, (int32_t)(next_probe_mcu - now))) return; /* stays journaled */
   unsigned backlog = backlog_limit[en];
   if (link_state == LINK_PROBING) backlog = 0;                       /* a probe is the live reading */
   unsigned by_airtime = exchange_ms ? airtime_cap_ms[en] / exchange_ms : 0;
@@ -483,26 +493,21 @@ static void on_line(char *line)
   }
   if (!strncmp(line, "PROVISION ", 10))
   {
-    uint8_t new_key[17]; char *end; uint8_t check[3];
-    if (provisioned) { APP_PRINTF("#error already-provisioned (WIPE first)\n"); return; }
-    unsigned long id = strtoul(line + 10, &end, 10), floor = 0;
-    char key_hex[33] = { 0 };
-    if (end == line + 10 || *end != ' ' || id == 0 || id > 0xFFFFFFFFUL || strlen(end + 1) < 32)
+    uint8_t new_key[16], check[3]; uint32_t id, floor; int rc;
+    if (provisioned) { APP_PRINTF("#error already-provisioned (WIPE first)\n"); }
+    else if (ws_parse_provision(line + 10, &id, new_key, &floor))
+    { APP_PRINTF("#error usage: PROVISION <station_id> <32 hex key> [epoch_floor]\n"); }
+    else if (floor && store_epoch_floor(floor)) { APP_PRINTF("#error epoch-floor\n"); }
+    else if ((rc = store_config_write(id, new_key)) != 0) { APP_PRINTF("#error provision rc=%d\n", rc); }
+    else
     {
-      APP_PRINTF("#error usage: PROVISION <station_id> <32 hex key> [epoch_floor]\n");
+      ws_key_check(new_key, check);
+      APP_PRINTF("#provisioned station=%u kcv=%02x%02x%02x epoch_floor=%u\n", (unsigned)id, check[0], check[1], check[2], (unsigned)floor);
+      memset(new_key, 0, sizeof new_key); memset(line, 0, strlen(line));
+      reboot_soon();
       return;
     }
-    memcpy(key_hex, end + 1, 32);
-    if (end[33] == ' ') floor = strtoul(end + 34, NULL, 10);   /* G5: above every stored epoch */
-    else if (end[33] != 0) { APP_PRINTF("#error usage: PROVISION <station_id> <32 hex key> [epoch_floor]\n"); return; }
-    if (hex_decode(key_hex, new_key, sizeof new_key) != 16) { APP_PRINTF("#error bad key\n"); return; }
-    if (floor && store_epoch_floor((uint32_t)floor)) { APP_PRINTF("#error epoch-floor\n"); return; }
-    int rc = store_config_write((uint32_t)id, new_key);
-    ws_key_check(new_key, check);
-    memset(new_key, 0, sizeof new_key);
-    if (rc) { APP_PRINTF("#error provision rc=%d\n", rc); return; }
-    APP_PRINTF("#provisioned station=%u kcv=%02x%02x%02x epoch_floor=%u\n", (unsigned)id, check[0], check[1], check[2], (unsigned)floor);
-    reboot_soon();
+    memset(new_key, 0, sizeof new_key); memset(line, 0, strlen(line)); /* the key never lingers in RAM */
     return;
   }
   APP_PRINTF("#error unknown command\n");
@@ -541,6 +546,11 @@ void SubghzApp_Init(void)
   /* Durable epoch before the first sample: observation identities never repeat. */
   if (store_next_epoch(&boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); return; }
   sensor_init();
+  {
+    int16_t t; uint16_t h; int src = sensor_read(&t, &h);
+    if (src) { APP_PRINTF("#sensor fault rc=%d (see sensor.h for codes)\n", src); }
+    else { APP_PRINTF("#sensor ok t=%d rh=%u\n", t, h); }
+  }
   running = 1;
   last_sample_mcu = mcu_seconds();
   status();

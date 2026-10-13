@@ -140,6 +140,11 @@ class SensorBusTests(unittest.TestCase):
    exe=str(Path(temp)/'sensor-test')
    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','firmware/stage0.c','firmware/test_sensor.c','-o',exe],check=True)
    subprocess.run([exe],check=True)
+ def test_bus_recovery_waveform_and_link_gate(self):
+  with tempfile.TemporaryDirectory() as temp:
+   exe=str(Path(temp)/'policy-test')
+   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','firmware/stage0.c','firmware/test_policy.c','-o',exe],check=True)
+   subprocess.run([exe],check=True)
 
 class ServiceSmokeTests(unittest.TestCase):
  def test_cli_demo_starts_and_persists(self):

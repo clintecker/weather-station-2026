@@ -16,11 +16,11 @@ MacBookPro18,4 (Apple M1 Max), macOS 26.7.1 (25G313), Python 3.12.7 (mise), Appl
 
 ## Unit tests
 
-`python -m unittest discover -s tests -v` → **28/28 OK** in 5.3 s. This includes the C tests (`test_c_python_wire`, `test_sensirion_crc`, `test_bus_failures_crc_and_conversion`) built with Apple clang.
+`python -m unittest discover -s tests -v` → **28/28 OK**. This includes the C tests (`test_c_python_wire`, `test_sensirion_crc`, `test_bus_failures_crc_and_conversion`) built with Apple clang.
 
 ## Simulation harness
 
-`python -m ws0.harness --output evidence/harness-macos-2026-10-12` → exit 0, 38 s wall time.
+`python -m ws0.harness --output evidence/harness-macos-2026-10-12` → exit 0.
 
 | Scenario | Timely | Missing | Trace vs recorded `simulation-results/` |
 |---|---:|---:|---|

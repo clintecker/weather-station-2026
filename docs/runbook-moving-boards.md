@@ -7,16 +7,23 @@ Use this when the TX/RX boards move between machines (for example office ↔ hom
 
 A TX key may only be used with counters that only go up. The AES-CCM nonce is
 kind + station ID + the 64-bit transmission counter (`firmware/common/ws_frame.c:15`,
-`docs/protocol.md`). `WIPE ERASE-ALL-NODE-STATE` erases the key, counters and journal, so the
-counter restarts at 1 (`App/node_store.h`: `store_wipe`; observed `ctr=1` after the 2026-10-13
-wipe). `PROVISION … [epoch_floor]` raises only the **epoch** (`App/node_store.c`,
+`docs/protocol.md`). `PROVISION … [epoch_floor]` raises only the **epoch** (`App/node_store.c`,
 `store_epoch_floor`), which keeps observation identities unique (gap G5). It does not raise the
 counter.
 
+What `WIPE ERASE-ALL-NODE-STATE` erases depends on the firmware (`App/node_store.c`, `store_wipe`):
+
+- **Before release `@G17REL@`:** the key, the counters and the journal. The counter restarted at 1.
+- **From `@G17REL@` on (gap G17):** the key and the journal only. The counter and the epoch keep
+  rising for the life of the board.
+
 | After a WIPE, provision with… | Safe? |
 |---|---|
-| a **new** key (`ws0 init --hardware` into a new directory) | Yes |
-| a key TX has used before (for example `run-hw`'s) | **No**: repeats nonces already sent on air |
+| a **new** key (`ws0 init --hardware` into a new directory) | Yes, always |
+| a key first used on this board after `@G17REL@`, with no older firmware flashed since | Yes: the counter never went back |
+| a key used before `@G17REL@`, or on another board (for example `run-hw`'s) | **No**: can repeat nonces already sent on air |
+
+Prefer a new key: it is never wrong.
 
 A run directory holds the key (`gateway.json`), the observation database and the gateway's own
 nonce state. It is git-ignored (`run*/`). Move it only by a private route (AirDrop, USB stick),
@@ -30,7 +37,7 @@ never git, chat or email.
 #   type STATUS; read kcv=… (Ctrl-] quits)
 ```
 
-Known key check values: home `run-hw` = `bf886a`; office `run-office` (2026-10-13) = `b7142e`.
+Known key check value: office `run-office` (2026-10-13) = `b7142e`. The home `run-hw` value is not recorded in the repo; compute it on the home Mac.
 The gateway's key check value is `key_check()` of `gateway.json`'s key (`ws0/__main__.py`).
 
 ## Options when the boards move

@@ -17,7 +17,9 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
                                    .I2c2ClockSelection = RCC_I2C2CLKSOURCE_PCLK1 };
   HAL_RCCEx_PeriphCLKConfig(&clk);
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  GPIO_InitTypeDef gpio = { .Pin = SDA_PIN | SCL_PIN, .Mode = GPIO_MODE_AF_OD, .Pull = GPIO_NOPULL,
+  /* Internal pull-ups (~40 kOhm) only define the lines when the breakout (and its 10 kOhm
+     pull-ups) is unplugged, so an absent sensor reads as a clean address NACK, not noise. */
+  GPIO_InitTypeDef gpio = { .Pin = SDA_PIN | SCL_PIN, .Mode = GPIO_MODE_AF_OD, .Pull = GPIO_PULLUP,
                             .Speed = GPIO_SPEED_FREQ_LOW, .Alternate = GPIO_AF4_I2C2 };
   HAL_GPIO_Init(GPIOA, &gpio);
   __HAL_RCC_I2C2_CLK_ENABLE();
@@ -43,25 +45,26 @@ static void i2c_start(void)
   HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE);
 }
 
-/* Stuck-bus recovery: a sensor reset mid-byte can hold SDA low. Clock SCL up to nine
- * times by hand until SDA is released, then issue a STOP and restart the peripheral. */
-static void i2c_recover(void)
+/* Stuck-bus recovery: a sensor reset mid-byte can hold SDA low. The pin sequence (clock SCL
+ * until SDA is free, then a real STOP) is ws_i2c_recover() in firmware/stage0.c, host-tested in
+ * firmware/test_policy.c. Both lines are released (output register high) before they become
+ * outputs, so taking them over never drives SCL low by accident. */
+static void pin_scl(void *c, int level) { (void)c; HAL_GPIO_WritePin(GPIOA, SCL_PIN, level ? GPIO_PIN_SET : GPIO_PIN_RESET); }
+static void pin_sda(void *c, int level) { (void)c; HAL_GPIO_WritePin(GPIOA, SDA_PIN, level ? GPIO_PIN_SET : GPIO_PIN_RESET); }
+static int pin_read_sda(void *c) { (void)c; return HAL_GPIO_ReadPin(GPIOA, SDA_PIN) == GPIO_PIN_SET; }
+static void pin_wait(void *c, uint32_t us) { (void)c; (void)us; HAL_Delay(1); } /* >= one half period */
+
+static int i2c_recover(void)
 {
   HAL_I2C_DeInit(&hi2c2);
-  GPIO_InitTypeDef gpio = { .Pin = SCL_PIN, .Mode = GPIO_MODE_OUTPUT_OD, .Pull = GPIO_NOPULL,
+  HAL_GPIO_WritePin(GPIOA, SDA_PIN | SCL_PIN, GPIO_PIN_SET);
+  GPIO_InitTypeDef gpio = { .Pin = SDA_PIN | SCL_PIN, .Mode = GPIO_MODE_OUTPUT_OD, .Pull = GPIO_PULLUP,
                             .Speed = GPIO_SPEED_FREQ_LOW };
   HAL_GPIO_Init(GPIOA, &gpio);
-  gpio.Pin = SDA_PIN;
-  HAL_GPIO_Init(GPIOA, &gpio);
-  HAL_GPIO_WritePin(GPIOA, SDA_PIN, GPIO_PIN_SET);
-  for (int i = 0; i < 9 && HAL_GPIO_ReadPin(GPIOA, SDA_PIN) == GPIO_PIN_RESET; i++)
-  {
-    HAL_GPIO_WritePin(GPIOA, SCL_PIN, GPIO_PIN_RESET); HAL_Delay(1);
-    HAL_GPIO_WritePin(GPIOA, SCL_PIN, GPIO_PIN_SET); HAL_Delay(1);
-  }
-  HAL_GPIO_WritePin(GPIOA, SDA_PIN, GPIO_PIN_RESET); HAL_Delay(1); /* STOP: SDA rises while SCL high */
-  HAL_GPIO_WritePin(GPIOA, SDA_PIN, GPIO_PIN_SET); HAL_Delay(1);
+  const ws_i2c_pins pins = { 0, pin_scl, pin_sda, pin_read_sda, pin_wait };
+  int rc = ws_i2c_recover(&pins);
   i2c_start();
+  return rc;
 }
 
 /* ws_i2c callbacks take the 7-bit address; the STM32 HAL wants it shifted left. */
@@ -83,6 +86,6 @@ int sensor_read(int16_t *centi_c, uint16_t *centi_rh)
 {
   const ws_i2c bus = { 0, bus_write, bus_read, bus_delay };
   int rc = ws_sht45_read(&bus, centi_c, centi_rh);
-  if (rc) i2c_recover();
+  if (rc && i2c_recover()) rc = SENSOR_BUS_STUCK;
   return rc;
 }

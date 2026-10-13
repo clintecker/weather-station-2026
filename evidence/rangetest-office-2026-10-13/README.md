@@ -108,15 +108,15 @@ fridges. Test: a listen-only noise-floor mode in `firmware/rangetest` carried pa
 |---|---|---|
 | 16:07:25 (v1) | 16:07:17, seq 34 | Unknown (not in the original notes) |
 | 16:09:44 (v1) | 16:09:37, seq 205 | Unknown; follows mark 3 at 16:09:40 |
-| 16:10:06 (v1) | 16:10:02, seq 27 | TX restart with USB dropout (16:10:05) |
-| 16:21:08 | 16:20:36, seq 471 | TX restart with USB dropout (16:20:37); boards met again after the RX fell back at 16:21:07 (first packet seq 5) |
+| 16:10:06 (v1) | 16:10:02, seq 27 | TX restart with USB dropout |
+| 16:21:08 | 16:20:36, seq 471 | TX restart with USB dropout; boards met again after the RX fell back at 16:21:07 (first packet seq 5) |
 | 16:22:06 | 16:21:59, seq 84 | Debugger session (16:22:02), excluded |
 | 16:22:22 | 16:22:15, seq 14 | Debugger session (16:22:18), excluded |
-| 16:23:46 | 16:23:40, seq 121 | TX restart with USB dropout (16:23:40) |
+| 16:23:46 | 16:23:40, seq 121 | TX restart with USB dropout |
 | 16:43:38 | 16:38:52, seq 807 | Unknown: happened while the logger was stopped (16:38:52–16:43:37) |
 | 17:00:35 | 17:00:13, seq 682 | Unknown: after the walk |
 
-An earlier TX restart at 16:06:52 happened before the first logged row. The RX restarted at 16:54:35 and
+The RX restarted at 16:54:35 and
 16:54:45 (`usb` dropout rows). After that, seq continued from the TX (533 at 16:57:49), so the TX did not
 restart.
 
@@ -124,8 +124,9 @@ restart.
 that board's USB port vanishing for about 1 s, with nobody pressing reset. Reset flags read after being cleared at
 16:22 showed the reset pin only, no brown-out. When the on-board ST-LINK re-enumerates, it pulses the
 target reset. The outdoor node has no ST-LINK, so this matters only for USB bench runs such as H01:
-cables must be secured and not touched. The TX-side dropout times and reset flags come from the session
-console, not from these CSVs (which are the RX console).
+cables must be secured and not touched. The TX-side dropouts, the debugger sessions and the reset flags are
+not in these CSVs (which are the RX console); source: `docs/hardware/nucleo-wl55jc-bringup.md`, Office
+session, "Trial and error".
 
 ## Limits
 

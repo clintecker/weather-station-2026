@@ -4,6 +4,12 @@ import math
 import sqlite3
 from .protocol import ACK, KIND_ACK, KIND_NACK, NACK, Nonces, encode_observation, frame_counter, seal, unseal
 
+# Backlog records sent per minute after the live one: the firmware's NORMAL energy state
+# (firmware/stage0-node/App/app_tx.c backlog_limit). Stage 0 is always NORMAL. The firmware also
+# stops a minute's drain at the first missed reply; the simulator does not model that, which
+# does not change timeliness because the live reading still goes first every minute.
+BACKLOG_PER_MINUTE = 5
+
 
 class Node:
     def __init__(self,cfg,directory):
@@ -76,6 +82,7 @@ class Node:
         with self.db:
             self.db.execute('DELETE FROM pending WHERE epoch=? AND seq=?',(epoch,seq))
 
-    def backfill(self,limit=2):
+    def backfill(self,limit=None):
+        limit = BACKLOG_PER_MINUTE if limit is None else limit
         return [json.loads(row[0]) for row in self.db.execute(
             'SELECT data FROM pending ORDER BY epoch,seq LIMIT ?',(limit,))]

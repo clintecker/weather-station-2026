@@ -4,6 +4,13 @@ Scope: `firmware/stage0-node`, `firmware/common`, `firmware/stage0.c`, the `ws0/
 
 ---
 
+> **Status, 2026-10-13 evening (release `@G17REL@`):** implemented: P1 (WIPE keeps counters and
+> epoch, gap G17), P2 (strict `PROVISION` parser, key cleared from console buffers), the §2.2 sensor
+> items (`rc=` on `#sample`, internal I2C pull-ups, `#sensor` boot check), the I2C bus-recovery STOP
+> fix (`ws_i2c_recover()`, host-tested), health reports while probing, and Clint's probing decision
+> (live reading every minute while probing in SURPLUS/NORMAL; back-off only in CONSERVE), plus the
+> simulator's 5-per-minute drain. The rest of this review is unchanged and still open.
+
 ## 1. Executive summary
 
 - **The firmware is in good shape for an MVP.** The hard parts are done carefully:

@@ -22,7 +22,7 @@ from typing import Any
 from cryptography.exceptions import InvalidTag
 from .protocol import KIND_NACK, NACK, NACK_COLLISION, Nonces, unseal
 from .service import Gateway
-from .simulator import Node
+from .simulator import BACKLOG_PER_MINUTE, Node
 
 START = 1_800_000_000  # Fixed virtual UTC origin, independent of wall-clock date.
 
@@ -284,7 +284,7 @@ class Campaign:
                     self.send('uplink',self.allocate_frame(record))
                     self.advance(self.now)  # Zero-delay link may ACK live sample before backfill.
                     # Never intentionally send the live record again in the same period.
-                    old = [r for r in self.node.backfill(3) if key(r)!=key(record)][:2]
+                    old = [r for r in self.node.backfill(BACKLOG_PER_MINUTE+1) if key(r)!=key(record)][:BACKLOG_PER_MINUTE]
                     for r in old:
                         self.send('uplink',self.allocate_frame(r))
                     if self.s.inject_identity_collision and minute == 30:
@@ -296,7 +296,7 @@ class Campaign:
                 drain_periods = 0
                 for offset in range(1,self.s.minutes+121):
                     self.advance(START+(self.s.minutes+offset-1)*60)
-                    for record in self.node.backfill(2):
+                    for record in self.node.backfill(BACKLOG_PER_MINUTE):
                         self.send('uplink',self.allocate_frame(record))
                     self.advance(self.now+59)
                     drain_periods += 1

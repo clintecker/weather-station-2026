@@ -45,8 +45,9 @@ binds its database to key fingerprint, station and direction. Retries allocate f
 counters; observation identity is independent and unchanged. Cloning/rolling back
 state with the same key is prohibited. The firmware reserves epochs and 256-counter
 blocks durably in flash before use (`firmware/stage0-node/App/node_store.c`,
-protocol-stack.md section 6). `WIPE` resets the node's counter to 1, so a wiped node must
-get a **new** key; never re-provision it with a key it has used before
+protocol-stack.md section 6). Before release `@G17REL@`, `WIPE` reset the counter to 1; from `@G17REL@` it keeps
+the counter (gap G17). Prefer a **new** key after a WIPE; never re-use a key from before that
+release or from another board
 ([`runbook-moving-boards.md`](runbook-moving-boards.md)).
 
 ## Observation plaintext (24 bytes)
@@ -93,8 +94,8 @@ since boot (2) + rejected replies since boot (2) + reset cause (1) + link state 
 node's observation counter space. The gateway stores it and never answers it. 16-bit fields
 saturate at 0xFFFF. Reset cause: 0 unknown, 1 power, 2 pin, 3 brownout, 4 software,
 5 watchdog, 6 lowpower, 7 option-bytes. Link state: 0 linked, 1 probing. The node sends it
-every 15 minutes and after each link-state change, after a minute's exchange, **only while
-linked**; so in practice the link field always reads 0 (linked).
+every 15 minutes and after each link-state change, after a minute's exchange, also while
+probing (since 2026-10-13; earlier firmware sent it only while linked).
 
 ACK plaintext (24 bytes) = acknowledged sample epoch (4) + sample sequence (4) + host UTC
 Unix seconds at commit (8; **0** when the gateway's SNTP check measures its own clock off by
@@ -128,9 +129,10 @@ SURPLUS/NORMAL/CONSERVE/CRITICAL (Stage 0 is fixed at NORMAL, so 5), further cap
 per-minute airtime budget (15/5/2/0 s). After each frame it listens up to 2000 ms for the
 reply (no LoRa symbol timeout), then waits 50 ms before the next frame. The first missed
 reply ends that minute's drain. After 3 consecutive minutes with no answer the node goes
-PROBING: it sends only the live reading, as a probe, after 120, 240, 480, then every 900 s;
+PROBING: it sends only the live reading, with no backlog: every minute in SURPLUS and NORMAL
+(Stage 0 is always NORMAL), and after 120, 240, 480, then every 900 s in CONSERVE;
 any answer returns it to LINKED. A missing ACK leaves the record journaled; each retry gets
-a fresh counter. (The Python simulator in `ws0/` still drains 2 per minute.) The node trusts its clock for 6 hours after
+a fresh counter. (The Python simulator in `ws0/` drains 5 per minute, like NORMAL.) The node trusts its clock for 6 hours after
 the last time sync, then marks samples time-unknown until the next ACK.
 
 References:

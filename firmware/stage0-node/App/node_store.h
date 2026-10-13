@@ -7,7 +7,7 @@
 /* Provisioning */
 int store_config_load(uint32_t *station, uint8_t key[16]); /* 0 if provisioned and intact */
 int store_config_write(uint32_t station, const uint8_t key[16]);
-int store_wipe(void); /* erases config, counters and journal */
+int store_wipe(void); /* erases config (key) and journal; counters and epoch are kept (G17) */
 
 /* Monotonic values. Each call durably reserves before returning; never repeats. */
 int store_meta_init(void);

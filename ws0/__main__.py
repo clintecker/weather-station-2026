@@ -10,7 +10,7 @@ from cryptography.exceptions import InvalidTag
 from pathlib import Path
 from .protocol import Nonces
 from .service import Gateway, MQTT, http_server, load_config
-from .simulator import Node
+from .simulator import BACKLOG_PER_MINUTE, Node
 from .link import ReceiverLink
 from .clock import HostClock
 
@@ -153,9 +153,9 @@ def main():
                 record = node.sample(time.time(),(args.directory/'sensor-fault').exists())
                 dropping = (args.directory/'link-down').exists()
                 if not dropping:
-                    # Live first, then at most two history records per reporting period.
+                    # Live first, then up to BACKLOG_PER_MINUTE history records (firmware NORMAL).
                     node.acknowledge(gateway.receive(node.packet(record)))
-                    for old in node.backfill(2):
+                    for old in node.backfill(BACKLOG_PER_MINUTE):
                         node.acknowledge(gateway.receive(node.packet(old)))
                 print(json.dumps({'simulation':True,'sequence':record['sequence'],'link_down':dropping}),flush=True)
                 next_sample = time.monotonic()+60

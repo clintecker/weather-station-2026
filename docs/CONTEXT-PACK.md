@@ -10,7 +10,7 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
 **Plan of record:** strict stage order. Stage 0 means passing **H01**: 24 h, 1,440 intervals, at least 1,426 valid readings committed within 120 s, plus a restart/outage matrix (`docs/H01-checklist.md`). Stage 1 (solar, batteries, RS-485, heaters) does not start before H01 passes.
 
 ## 2. Where things stand (on `master`)
-- **Firmware release `a07f498273f7`** was restored on both boards at about 17:01Z on 2026-10-13, after the range test (bench `STATUS`: `fw=a07f498273f7 kcv=b7142e epoch=12`). Check `STATUS` on each board before relying on it. **No rebuild is needed** to resume.
+- **Firmware release `a07f498273f7`** is on both boards (`docs/hardware/nucleo-wl55jc-bringup.md`, current state). Check `STATUS` on each board before relying on it. **No rebuild is needed** to resume.
   - TX = board A, ST-LINK serial `003B00194142500E20353451`
   - RX = board B, ST-LINK serial `0016001E4142500E20353451`
   - Identify boards by serial number. Port names change between machines.
@@ -25,7 +25,7 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
   - MQTT against a local broker (currently **disabled**)
   - H01 scorer `tools/h01_report.py`
 - **Latest evidence:** `evidence/soak-a07f498-2026-10-13/`. Over 9 h, 549 of 549 minutes arrived on time, median latency 1.5 s, 0 lost, 0 missed ACKs.
-- **Tests:** `.venv/bin/python -m unittest discover -s tests` should give 82 passing (needs network for one SNTP test). Run `tools/fetch-vendor.sh` first: without `vendor/`, 7 C-vs-Python crypto tests are skipped, not run.
+- **Tests:** `.venv/bin/python -m unittest discover -s tests` should give 83 passing (needs network for one SNTP test). Run `tools/fetch-vendor.sh` first: without `vendor/`, 7 C-vs-Python crypto tests are skipped, not run.
 
 ## 3. Important: the radio key did NOT come with you
 - The TX board is provisioned with a key that lives only in `run-hw/` on the home Mac. That folder is git-ignored and must never be committed.
@@ -35,21 +35,21 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
 1. On the TX console, send `WIPE ERASE-ALL-NODE-STATE`. This erases the key, counters and journal.
 2. `init` a new run directory, then `provision-node`.
 
-A new key with reset counters is safe. Reusing an old key with reset counters is not.
+A new key is always safe. Reusing a key is safe only if the board's counter has never gone back since that key was first used (see `docs/runbook-moving-boards.md`).
 
 **Consequence:** once TX is re-provisioned at the office, the **home** gateway will reject its frames as unauthenticated. When the boards go home, use one of these (details: `docs/runbook-moving-boards.md`):
 - run the gateway on the machine that holds `run-office/` (for example, take that laptop home), or
 - copy `run-office/` to the home Mac by a private route (never git, chat or email) and point the gateway at it, or
 - create a **new** key: `init` a new run directory, `WIPE` TX, `provision-node`.
 
-**Never re-provision TX with `run-hw`'s existing key after a WIPE.** (Corrected 2026-10-13; an earlier version of this pack suggested it.) The AES-CCM nonce is kind + station + the 64-bit transmission counter (`firmware/common/ws_frame.c:15`, `docs/protocol.md`), and WIPE resets that counter to 1. The `PROVISION` epoch floor raises only the epoch, the observation identity (`App/node_store.c`, `store_epoch_floor`), not the counter. With the home key TX had reached counter 828936, so reuse would repeat nonces already sent on air.
+**Never re-provision TX with `run-hw`'s existing key after a WIPE.** (Corrected 2026-10-13; an earlier version of this pack suggested it.) The AES-CCM nonce is kind + station + the 64-bit transmission counter (`firmware/common/ws_frame.c:15`, `docs/protocol.md`), and on firmware before release `@G17REL@` WIPE reset that counter to 1 (the morning office wipe did). From `@G17REL@` on, WIPE keeps the counter (gap G17), but this board's counter is now far below what the home key already used, so the home key stays retired for this board. The `PROVISION` epoch floor raises only the epoch, the observation identity (`App/node_store.c`, `store_epoch_floor`), not the counter. TX had already transmitted with the home key (for example the 9 h soak, `evidence/soak-a07f498-2026-10-13/`), so reuse would repeat nonces already sent on air.
 
 ## 4. Office setup (fast path: run the bench, no firmware build)
 ```sh
 git clone https://github.com/clintecker/weather-station-2026 && cd weather-station-2026
 python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt   # or: uv venv && uv pip install -r requirements.txt
 sh tools/fetch-vendor.sh                                                  # needed for 7 of the tests
-WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expect 82 OK, none skipped (needs network for one SNTP test)
+WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expect 83 OK, none skipped (needs network for one SNTP test)
 
 # Plug both boards in, then find their ports. Each board is one /dev/cu.usbmodem*.
 # This lists each port with its ST-LINK serial (SER=...):

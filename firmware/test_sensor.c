@@ -17,8 +17,10 @@ static void delay_sensor(void *ctx,uint32_t ms) {(void)ctx;assert(ms>=10);}
 int main(void) {
  ws_i2c bus={0,write_sensor,read_sensor,delay_sensor}; int16_t t=0; uint16_t h=0;
  assert(ws_sht45_read(&bus,&t,&h)==0); assert(t==4250&&h==5650);
+ /* Distinct codes let the console say why a reading failed (CRC, address NACK, read NACK). */
+ static const int expect[4]={0,-4,-2,-3};
  for(mode=1;mode<=3;mode++) {
-  t=123; h=456; assert(ws_sht45_read(&bus,&t,&h)!=0); assert(t==123&&h==456);
+  t=123; h=456; assert(ws_sht45_read(&bus,&t,&h)==expect[mode]); assert(t==123&&h==456);
  }
  return 0;
 }

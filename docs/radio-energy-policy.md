@@ -163,23 +163,30 @@ stateDiagram-v2
   [*] --> LINKED
   LINKED --> LINKED: authentic ACK
   LINKED --> PROBING: K consecutive minutes with no ACK
-  PROBING --> PROBING: no ACK → double the interval (max M)
+  PROBING --> PROBING: no ACK (SURPLUS/NORMAL: next minute; CONSERVE: double the interval, max M)
   PROBING --> LINKED: any authentic ACK
 ```
+
+**Changed 2026-10-13 (Clint's decision):** while PROBING, healthy energy (SURPLUS, NORMAL) still
+sends the live reading **every minute**, with no backlog; only CONSERVE uses the back-off. This
+removes the H01 risk that one outage makes up to 14 readings late, and keeps live data flowing on
+a one-way link. Code: `ws_link_may_send()` in `firmware/stage0.c`, host-tested in
+`firmware/test_policy.c`; used by `sample()` in `firmware/stage0-node/App/app_tx.c`. Stage 0 is
+always NORMAL, so on the bench PROBING means "live only, every minute".
 
 | Parameter | Proposal | Reason |
 |---|---|---|
 | *K*, minutes without an ACK before PROBING | ⚠ **3** | One lost minute costs **0** H01 intervals; two in a row cost 1 (failure-modes §3.3; the office range walk saw a 121.6 s commit after a 2-minute dropout, `evidence/range-walk-office-2026-10-13/`). Do not back off for normal packet loss. |
-| Probe interval | ⚠ 2, 4, 8, then **15 min** maximum | After the link returns, the node finds it within 15 min. A long outage then saves about 97 % of the futile radio energy against the pre-G13 rule of 3 frames per minute (about 93 % against 1 frame per minute). |
+| Probe interval | SURPLUS, NORMAL: **every minute** (changed 2026-10-13). CONSERVE: ⚠ 2, 4, 8, then **15 min** maximum | With healthy energy the node relinks within a minute. In CONSERVE, a long outage saves about 97 % of the futile radio energy against the pre-G13 rule of 3 frames per minute (about 93 % against 1 frame per minute); every-minute probing saves about 67 % against that rule (1 frame instead of 3). |
 | Probe content | **Live reading only**, 1 frame | A probe that succeeds also delivers data |
 | LINKED drain | Live, then backlog up to the energy-state limit (Stage 0: NORMAL) | — |
 | Drain stop | Stop the drain in this minute at the first missed ACK | A failing link does not burn the drain allowance |
 
-**Energy effect (SF12, one-day outage):** the pre-G13 rule (3 frames every minute, about 0.27 Wh/day) becomes about 100 probes, about **0.007 Wh/day**.
+**Energy effect (SF12, one-day outage):** the pre-G13 rule (3 frames every minute, about 0.27 Wh/day) becomes 1 frame per minute in SURPLUS/NORMAL (about 0.09 Wh/day, one third) and about 100 probes in CONSERVE (about **0.007 Wh/day**).
 
-**Timeliness effect:** None for outages shorter than *K*. After a longer outage, live delivery resumes at the next probe (≤ 15 min after the link returns). Readings acquired between the link's return and that probe (up to 14) are late **because of the back-off**, not because of the outage. One long outage during H01 can therefore use the whole 14-interval budget (failure-modes §3.3). **Open risk for Clint to decide**; the H01 criteria do not change.
+**Timeliness effect:** with healthy energy, none beyond the outage itself: the live reading goes every minute, so the first minute after the link returns is delivered on time and the backlog drains at up to 5 per minute. In CONSERVE, readings acquired between the link's return and the next probe (up to 14) are late because of the back-off; that is acceptable there because CONSERVE protects the pack, and H01 runs in NORMAL.
 
-**Asymmetric link:** the node decides the link state from ACKs only. If frames reach the gateway but ACKs do not (failure-modes L4/L10), the node enters PROBING and the gateway receives only the probes (≤ 1 per 15 min); the rest stays journaled and is lost after about 79 h. This may need a design change (for example, a downlink-quality check, or the gateway signalling that it hears the node). Not decided.
+**Asymmetric link:** the node decides the link state from ACKs only. If frames reach the gateway but ACKs do not (failure-modes L4/L10), the node enters PROBING; with healthy energy the live reading still reaches the gateway every minute, so data stays timely. The backlog cannot drain (no ACKs), so unacknowledged records accumulate in the journal and are overwritten after about 79 h, even though the gateway already holds them. The health report (sent while probing too, link field = probing) shows this state to the operator.
 
 **Airtime cap per minute (all states):** The firmware calculates the exchange time from the SF: airtime × 2 + a **fixed 300 ms** turnaround allowance (`TURNAROUND_MS` in `App/app_tx.c`, "conservative"; not measured per exchange — G4 measured gateway commits at ≤ 16 ms). It sends no more frames in this minute than the cap allows. At SF12, a 5 s cap allows about 3 exchanges (5000 / 1452 ms). At SF7 (354 ms per exchange) the 5 s NORMAL cap allows 14, so the NORMAL limit of 5 binds; the 15 s SURPLUS cap allows the configured maximum (⚠ 20). The cap counts answered exchanges; a failed exchange costs about 2 s plus airtime, and the drain stops at the first one.
 
@@ -191,7 +198,7 @@ The operator must see the energy situation of **both** ends.
 
 | End | What it reports | How | Stage |
 |---|---|---|---|
-| **Station (TX)** | Pack schema subset: energy above reserve, SOC (when calibrated), solar input W, charger state, pack temperatures, **energy state**, **link state**, journal pending/lost/burned | Authenticated **diagnostic frame**, sent as priority 3 on the ladder. Every 15 min, and at each state change. | Stage 1 (frame format with pack telemetry). **Done in Stage 0 (G8):** kind 4 is already the 24-byte health report (journal counters, reset cause, link state). Today it is sent only while LINKED, so a change to PROBING is reported only after the link returns. Open: whether Stage 1 extends kind 4 or takes a new kind. |
+| **Station (TX)** | Pack schema subset: energy above reserve, SOC (when calibrated), solar input W, charger state, pack temperatures, **energy state**, **link state**, journal pending/lost/burned | Authenticated **diagnostic frame**, sent as priority 3 on the ladder. Every 15 min, and at each state change. | Stage 1 (frame format with pack telemetry). **Done in Stage 0 (G8):** kind 4 is already the 24-byte health report (journal counters, reset cause, link state). Today it is sent every 15 min and at each link-state change, also while PROBING (since `@G17REL@`). Open: whether Stage 1 extends kind 4 or takes a new kind. |
 | **Gateway / receiver** | Power source: mains, or UPS battery with its charge and runtime | Host UPS daemon (for example Network UPS Tools, `upsc`) read by the gateway; shown in `/v1/status` and MQTT diagnostics | Stage 1+, optional. The spec puts the receiver on continuous power. |
 
 The gateway does **not** tell the node how much to transmit. The node knows its own energy better than the gateway does. The gateway only shows and records the situation. (The gateway can still send a NACK for a permanently rejected record, G2.)

@@ -132,7 +132,7 @@ UM2592 Rev 4 §6.6.1 names the bicolor STLINK COM LED as LED6. LED4 is the red U
 | Blinking red/green | Debug or programming session talking to the target |
 | Solid green | Last target communication succeeded |
 
-Timeline: one board was green after its STLINK had talked to the target at plug-in, and the other was red (idle). After my OpenOCD sessions, both blinked red/green and settled on red. That is expected. (UM2592 says green after a successful communication; whether a successful `make flash` leaves LED6 green or red on these boards is unverified.)
+Timeline: one board was green after its STLINK had talked to the target at plug-in, and the other was red (idle). After my OpenOCD sessions, both blinked red/green and settled on red. That is expected. (UM2592 says green after a successful communication.)
 
 ## Jumpers
 
@@ -226,7 +226,7 @@ This is a diagnostic smoke test only. It is **not H01** and not the Stage-0 prot
 
 1. ~~Move from PingPong toward real weather-station traffic.~~ **Done 2026-10-12:** raw SubGHz_Phy with our own packet format, see [Stage-0 firmware bring-up](#stage-0-firmware-bring-up-2026-10-12). (Options considered: ST's `LocalNetwork` Concentrator + Sensor demo, raw SubGHz_Phy, LoRaWAN.)
 2. Check range with more TX power and real placement. Stay within the FCC Part 15.247 limits for 902–928 MHz. **Started 2026-10-13** with `firmware/rangetest`, see [Office session](#office-session-2026-10-13); placement work remains.
-3. Investigate the missing MSC drive on board A (step 2 of the log above). No later entry in this log (unverified whether resolved).
+3. Open: investigate the missing MSC drive on board A (step 2 of the log above). This log has no later entry on it.
 4. To go back to factory firmware: run the restore command in [Board inventory](#board-inventory). This erases the Stage-0 key, counters and journal.
 
 ## Stage-0 firmware bring-up (2026-10-12)

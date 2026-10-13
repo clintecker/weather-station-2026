@@ -25,9 +25,9 @@ Source of acceptance criteria: v0.2 section 3 Stage 0 and section 12 H01.
   gap G17 in `failure-modes.md`): a WIPE restarts the nonce counter.
 - Do not run bench fault-injection commands (`TEST-HANG`, `TEST-FLASH-STORM`) on the boards under
   test during the placement run.
-- Know the outage risk from probe back-off (`failure-modes.md` §3.3): after any outage of 3
-  minutes or more, up to 14 more intervals can be late. This is an open risk for Clint to
-  decide; it does not change the pass criteria below.
+- Run firmware from release `@G17REL@` or later: in NORMAL energy (always on USB) the node keeps
+  sending the live reading every minute while probing, so an outage costs no extra late
+  intervals (`failure-modes.md` §3.3). Earlier releases backed off up to 15 min.
 
 ## Link check before the run (gap G15)
 

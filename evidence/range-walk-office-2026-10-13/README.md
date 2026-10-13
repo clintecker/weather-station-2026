@@ -23,11 +23,11 @@ TX re-provisioned with a fresh office key (KCV b7142e, taken from the `provision
 
 - **No reading was lost.** The walk (15:37:14–15:51:14) covers session 2, sequences 0–14. All 15 are in the gateway database (`run-office/observations.sqlite3`, not committed) with their original sample times. Seq 0 was sampled at boot before time sync, so it has a gateway-reconstructed time. The two readings taken during the dropout (seq 10, 11) were held in the TX journal and delivered at 15:49:14 together with seq 12.
 - **Latency:** seq 10 committed 121.6 s after sampling, over the H01 120 s limit; seq 11 at 61.8 s. A 2-minute dropout therefore costs H01 on-time readings even with zero loss.
-- One TX boot health (diag) frame at 15:37:14 arrived at −58 dBm with SNR −2 dB, while the observation just before it had SNR +13 dB. Possible in-band interference at the office; single sample, unconfirmed.
+- One TX boot health (diag) frame at 15:37:14 arrived at −58 dBm with SNR −2 dB, while the observation just before it had SNR +13 dB (`receiver-excerpt.log` lines 21–23). Open: cause not determined (single sample).
 
 ## Limits of this evidence
 
-- Uncontrolled antenna orientation (polarization mismatch and pattern nulls, plus body shadowing from carrying the laptop) explains the ~40 dB shortfall at 1 ft versus the bench (−20 dBm at 30 cm) and the 10–15 dB swings at a single spot. Absolute RSSI values and the dropout distance are **not** a range figure.
+- Uncontrolled antenna orientation (polarization mismatch and pattern nulls, plus body shadowing from carrying the laptop) is the suspected cause, not tested, of the ~40 dB shortfall at 1 ft versus the bench (−20 dBm, `receiver-excerpt.log` line 17, 15:35:44, before the walk) and the 10–15 dB swings at a single spot. Absolute RSSI values and the dropout distance are **not** a range figure.
 - 0 dBm / SF7 is the weakest configuration. The deployment policy allows up to +22 dBm and SF9–SF12 (`docs/failure-modes.md`).
 - Downlink RSSI (ACK at TX) was not captured: the TX console was not connected.
 

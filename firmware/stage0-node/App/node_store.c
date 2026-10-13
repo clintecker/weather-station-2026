@@ -297,8 +297,13 @@ uint32_t store_journal_scrub(uint32_t marker)
  return n;
 }
 
+/* WIPE erases the key and the journal but never the meta log: the transmission counter (the
+ * AES-CCM nonce), the boot epoch and the lost/abandoned totals keep rising for the life of the
+ * board (gap G17). A key first used under this firmware can therefore follow the board across
+ * WIPEs; a key used under older firmware (which reset the counter) or on another board cannot
+ * (docs/runbook-moving-boards.md). */
 int store_wipe(void) {
- int rc = erase_page(WS_CONFIG_PAGE) | erase_page(WS_META_PAGE_A) | erase_page(WS_META_PAGE_B);
+ int rc = erase_page(WS_CONFIG_PAGE);
  for (uint32_t p = 0; p < WS_JOURNAL_PAGES; p++) rc |= erase_page(WS_JOURNAL_FIRST + p);
  return rc ? -1 : 0;
 }

@@ -25,6 +25,7 @@ static void on_char(uint8_t *c, uint16_t size, uint8_t error)
     {
       memcpy(line, isr_buf, isr_len);
       line[isr_len] = 0;
+      memset(isr_buf, 0, isr_len); /* a PROVISION key must not linger in the ISR buffer */
       line_ready = 1;
       UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Console, CFG_SEQ_Prio_0);
     }
