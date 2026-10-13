@@ -126,6 +126,7 @@ WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expec
 | `firmware/stage0-node/README.md` | Build, console commands, LEDs, flash layout |
 | `firmware/stage0-node/RELEASES.md` | Release hashes |
 | `docs/firmware-review-2026-10-13.md` | Firmware review roadmap (§2: SHT45 test plan) |
+| `docs/firmware-budget.md` | Flash/RAM/radio budget, measured; layout v2 and payload plan |
 | `docs/runbook-moving-boards.md` | Moving boards between gateways without key or nonce reuse |
 | `docs/simulation-harness.md` | Simulation harness model and limits |
 | `docs/openapi.json` | Gateway HTTP API |

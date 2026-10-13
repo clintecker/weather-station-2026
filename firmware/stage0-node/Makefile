@@ -94,9 +94,18 @@ $(BUILD)/app/startup.o: $(ASM_SRC)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPU) -x assembler-with-cpp -c $< -o $@
 
+# Code-space budget (docs/firmware-budget.md): fail when code + initialized data exceed
+# FLASH_BUDGET_PCT of the 64 KB application region (pages 0-31), well before the linker's hard
+# limit, so growth is noticed while there is still room to plan.
+APP_FLASH_BYTES  ?= 65536
+FLASH_BUDGET_PCT ?= 90
+
 $(TARGET).elf: $(OBJS)
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@
+	@$(SIZE) $@ | awk -v lim=$(APP_FLASH_BYTES) -v pct=$(FLASH_BUDGET_PCT) 'NR==2 { used=$$1+$$2; \
+	  printf "flash budget: %d of %d B (%.1f%%, limit %d%%)\n", used, lim, 100*used/lim, pct; \
+	  if (used*100 > lim*pct) { print "error: over the flash budget, see docs/firmware-budget.md"; exit 1 } }'
 
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $< $@
