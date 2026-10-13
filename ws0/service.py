@@ -187,6 +187,8 @@ class MQTT:
         if settings.get('tls'):
             self.client.tls_set()
         self.client.on_connect = self.on_connect
+        self.published = None   # (weather payload, availability) last sent; None forces a send
+        self.published_at = 0.0
         self.client.connect_async(settings['host'],settings.get('port',1883),keepalive=30)
         self.client.loop_start()
 
@@ -196,16 +198,25 @@ class MQTT:
         for topic,payload in discovery(self.gateway.cfg).items():
             client.publish(topic,json.dumps(payload),qos=1,retain=True)
         # Set availability from actual age before advertising a live gateway.
+        self.published = None
         self.tick()
         client.publish(self.root+'/gateway_availability','online',qos=1,retain=True)
 
+    REFRESH_S = 300  # republish unchanged retained state this often (cheap keep-fresh)
+
     def tick(self):
+        """Publish only on change (new observation or availability flip) or every REFRESH_S."""
         if not self.client.is_connected():
             return
         latest = self.gateway.store.latest(self.gateway.cfg['station'])
-        if latest.get('observation'):
-            self.client.publish(self.root+'/weather',json.dumps(latest['observation']),qos=1,retain=True)
-        self.client.publish(self.root+'/availability','online' if latest['available'] else 'offline',qos=1,retain=True)
+        weather = json.dumps(latest['observation']) if latest.get('observation') else None
+        state = (weather, 'online' if latest['available'] else 'offline')
+        if state == self.published and time.time() - self.published_at < self.REFRESH_S:
+            return
+        if weather:
+            self.client.publish(self.root+'/weather',weather,qos=1,retain=True)
+        self.client.publish(self.root+'/availability',state[1],qos=1,retain=True)
+        self.published, self.published_at = state, time.time()
 
     def close(self):
         if self.client.is_connected():

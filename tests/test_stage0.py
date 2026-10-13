@@ -178,9 +178,16 @@ class ServiceSmokeTests(unittest.TestCase):
     gateway.receive(node.packet(node.sample(1000)),1001)
     publisher=object.__new__(MQTT); publisher.gateway=gateway
     publisher.root='weatherstation/v1/simulation-01'; publisher.client=Fake()
+    publisher.published=None; publisher.published_at=0.0
     with patch('gateway.time.time',return_value=1180): publisher.tick()
     self.assertEqual(publisher.client.messages[-1][0][1],'offline')
     self.assertEqual(json.loads(publisher.client.messages[0][0][1])['sampled_at'],1000)
+    sent=len(publisher.client.messages)
+    with patch('gateway.time.time',return_value=1181): publisher.tick()   # unchanged: no republish
+    self.assertEqual(len(publisher.client.messages),sent)
+    publisher.published_at-=MQTT.REFRESH_S                                 # refresh interval elapsed
+    with patch('gateway.time.time',return_value=1182): publisher.tick()
+    self.assertEqual(len(publisher.client.messages),sent+2)
    finally:
     for db in (gateway.store.db,gateway.nonces.db,node.db,node.nonces.db): db.close()
 
