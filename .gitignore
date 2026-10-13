@@ -6,3 +6,6 @@ run*/
 gateway.json
 *.so
 *.dylib
+
+# firmware build output
+firmware/*/build/
