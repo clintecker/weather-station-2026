@@ -168,7 +168,10 @@ def main():
     if args.command=='serve' and not (args.serial or args.serial_number):
         parser.error('serve requires --serial or --serial-number')
     # launchd/systemd stop a service with SIGTERM: shut down as cleanly as Ctrl-C.
+    # Windows: Ctrl-Break (sent by service wrappers and by `tests/test_stage0.py`) does the same.
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
+    if hasattr(signal, 'SIGBREAK'):
+        signal.signal(signal.SIGBREAK, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     gateway = Gateway(cfg,args.directory)
     server = http_server(gateway,cfg['http_port'])
     mqtt = MQTT(gateway) if cfg['mqtt']['enabled'] else None

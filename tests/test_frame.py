@@ -49,7 +49,8 @@ class FrameAgreement(unittest.TestCase):
     def setUpClass(cls):
         if not MBEDTLS.exists():
             raise AssertionError(f'WS_REQUIRE_VENDOR=1 but {MBEDTLS} is missing; run tools/fetch-vendor.sh')
-        cls.tmp = tempfile.TemporaryDirectory()
+        # Windows cannot delete a library ctypes still has loaded; leave it for the OS temp cleanup.
+        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         lib = Path(cls.tmp.name)/'wsframe.so'
         sources = [ROOT/'firmware/common/ws_frame.c'] + [
             MBEDTLS/'library'/f'{name}.c' for name in

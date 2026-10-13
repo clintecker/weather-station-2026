@@ -110,7 +110,8 @@ class PipelineTests(unittest.TestCase):
 class FirmwareTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
-  cls.tmp=tempfile.TemporaryDirectory(); path=Path(cls.tmp.name)/'stage0.so'
+  # Windows cannot delete a library ctypes still has loaded; leave it for the OS temp cleanup.
+  cls.tmp=tempfile.TemporaryDirectory(ignore_cleanup_errors=True); path=Path(cls.tmp.name)/'stage0.so'
   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-shared','-fPIC','firmware/stage0.c','-o',str(path)],check=True)
   cls.lib=ctypes.CDLL(str(path))
   cls.lib.ws_pack_observation.argtypes=[ctypes.POINTER(ctypes.c_uint8),ctypes.c_uint32,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_int16,ctypes.c_uint16,ctypes.c_uint8,ctypes.c_uint8]
@@ -162,7 +163,11 @@ class ServiceSmokeTests(unittest.TestCase):
    with socket.socket() as sock:
     sock.bind(('127.0.0.1',0)); cfg['http_port']=sock.getsockname()[1]
    (directory/'gateway.json').write_text(json.dumps(cfg))
-   proc=subprocess.Popen([sys.executable,'-m','ws0','demo','--directory',str(directory)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+   # Windows has no SIGINT for another process: run it in its own group and send Ctrl-Break,
+   # which the gateway treats like Ctrl-C (ws0/__main__.py).
+   windows=sys.platform=='win32'
+   proc=subprocess.Popen([sys.executable,'-m','ws0','demo','--directory',str(directory)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if windows else 0)
    try:
     self.assertIn(b'Stage 0 simulation',proc.stdout.readline())
     line=json.loads(proc.stdout.readline()); self.assertTrue(line['simulation'])
@@ -172,7 +177,9 @@ class ServiceSmokeTests(unittest.TestCase):
      self.assertEqual(status['h01'],'NOT RUN')
    finally:
     import signal
-    proc.send_signal(signal.SIGINT); proc.communicate(timeout=5)
+    proc.send_signal(signal.CTRL_BREAK_EVENT if windows else signal.SIGINT)
+    try: proc.communicate(timeout=10)
+    except subprocess.TimeoutExpired: proc.kill(); proc.communicate(); raise
    self.assertEqual(proc.returncode,0)
 
  def test_mqtt_stale_payload_and_availability(self):

@@ -35,7 +35,8 @@ class Board:
 class RangeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp = tempfile.TemporaryDirectory()
+        # Windows cannot delete a library ctypes still has loaded; leave it for the OS temp cleanup.
+        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         path = Path(cls.tmp.name)/'rt_proto.so'
         subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
                         str(SRC), '-o', str(path)], check=True)
