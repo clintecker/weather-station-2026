@@ -12,6 +12,13 @@ Source of acceptance criteria: v0.2 section 3 Stage 0 and section 12 H01.
 - Raw receiver frames/logs, SQLite database and transmitter journal counters.
 - MQTT/HA discovery, measurement availability and local API checks.
 
+## Link check before the run (gap G15)
+
+At the intended placements, record RSSI and SNR in **both** directions for at least 30
+exchanges: uplink from `receiver.log` (`#rx obs`), downlink from the TX console (`#ack … rssi`).
+Both boards print `power=` at boot and must match. If the downlink margin is more than 3 dB
+worse than the uplink, fix the receiver antenna position before starting the 24-hour run.
+
 ## 24-hour placement test
 
 Use one-minute observations, USB/bench power and the actual intended placements.

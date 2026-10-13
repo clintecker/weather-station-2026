@@ -1,8 +1,9 @@
 /* Stage-0 RX: transparent radio <-> USB bridge for the indoor receiver.
  *
- * Upstream: every received frame that looks like a draft-2 observation (56 bytes, "WS",
- * version 2, kind 1) is written as one lowercase hex line. Downstream: every hex line from
- * the host that looks like a draft-2 ACK is transmitted once. This board holds no key and
+ * Upstream: every received frame that looks like a current-draft observation (56 bytes, "WS",
+ * WS_FRAME_VERSION, kind 1) is written as one lowercase hex line. Downstream: every hex line
+ * from the host that looks like a current-draft ACK or NACK is transmitted once. The ACK path
+ * uses the same radio_cfg.h power/SF/BW as the uplink (gap G15). This board holds no key and
  * never acknowledges anything itself; the host is the sole ACK authority (docs/protocol.md).
  * All other output lines start with '#' and are diagnostics for the host log. */
 #include <string.h>
@@ -142,7 +143,7 @@ void SubghzApp_Init(void)
   ws_radio_configure(1);
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process);
   console_init(on_line);
-  APP_PRINTF("#boot role=rx fw=%s reset=%s freq=%u bw=%u sf=%u\n", WS_FW_VERSION, watchdog_reset_cause(),
-             (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF);
+  APP_PRINTF("#boot role=rx fw=%s reset=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION, watchdog_reset_cause(),
+             (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
   listen();
 }
