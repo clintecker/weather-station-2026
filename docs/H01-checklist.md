@@ -29,6 +29,11 @@ protocol-stack.md 11.3.2) is a known time when it meets the 5 s tolerance; count
 report reconstructed intervals separately (decision by Clint, 2026-10-12). Publish missing, late, invalid-clock and
 sensor-fault records as separate counts; do not silently exclude them.
 
+Score the run with `tools/h01_report.py --start <UTC> --hours 24 --output evidence/h01-<date>`. It
+applies these rules to the gateway database and writes `report.json` and `report.md`. The verdict
+needs on-time **valid** readings; transport-only success (sensor-fault readings delivered on time)
+is reported beside it, never instead of it.
+
 Record the exact test interval and denominator. Report all intervals if injecting
 faults in the same run. A dedicated separate fault-test phase can characterize recovery,
 but must not be silently subtracted from the placement run's denominator.
