@@ -302,7 +302,7 @@ AES-CCM uses counter mode for encryption. If two frames use the same key and non
 
 > **Warning:** Do not restore an old copy of the TX flash state or the gateway nonce database while you keep the same key. If counter state is lost, provision a **new key** for both ends.
 
-> **Warning:** before release `@G17REL@`, `WIPE ERASE-ALL-NODE-STATE` reset the node's 64-bit counter to 1; from `@G17REL@` on it keeps the counter (gap G17). The `PROVISION` epoch floor raises only the epoch (the observation identity), **not** the counter. A key used before `@G17REL@`, or on another board, can therefore repeat nonces already sent on air. Prefer a new key. See [`runbook-moving-boards.md`](runbook-moving-boards.md).
+> **Warning:** before release `0f456040fe54`, `WIPE ERASE-ALL-NODE-STATE` reset the node's 64-bit counter to 1; from `0f456040fe54` on it keeps the counter (gap G17). The `PROVISION` epoch floor raises only the epoch (the observation identity), **not** the counter. A key used before `0f456040fe54`, or on another board, can therefore repeat nonces already sent on air. Prefer a new key. See [`runbook-moving-boards.md`](runbook-moving-boards.md).
 
 ---
 

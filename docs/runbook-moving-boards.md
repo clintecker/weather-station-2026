@@ -13,15 +13,15 @@ counter.
 
 What `WIPE ERASE-ALL-NODE-STATE` erases depends on the firmware (`App/node_store.c`, `store_wipe`):
 
-- **Before release `@G17REL@`:** the key, the counters and the journal. The counter restarted at 1.
-- **From `@G17REL@` on (gap G17):** the key and the journal only. The counter and the epoch keep
+- **Before release `0f456040fe54`:** the key, the counters and the journal. The counter restarted at 1.
+- **From `0f456040fe54` on (gap G17):** the key and the journal only. The counter and the epoch keep
   rising for the life of the board.
 
 | After a WIPE, provision with… | Safe? |
 |---|---|
 | a **new** key (`ws0 init --hardware` into a new directory) | Yes, always |
-| a key first used on this board after `@G17REL@`, with no older firmware flashed since | Yes: the counter never went back |
-| a key used before `@G17REL@`, or on another board (for example `run-hw`'s) | **No**: can repeat nonces already sent on air |
+| a key first used on this board after `0f456040fe54`, with no older firmware flashed since | Yes: the counter never went back |
+| a key used before `0f456040fe54`, or on another board (for example `run-hw`'s) | **No**: can repeat nonces already sent on air |
 
 Prefer a new key: it is never wrong.
 

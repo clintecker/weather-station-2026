@@ -6,7 +6,7 @@ Two brand-new NUCLEO-WL55JC1 boards, straight from ST, default jumpers, factory 
 
 ## TL;DR
 
-- **Current state (2026-10-13): the boards run the Stage-0 firmware, release `a07f498273f7`** (TX on board A, RX on board B; see [`firmware/stage0-node/RELEASES.md`](../../firmware/stage0-node/RELEASES.md)). During the office range walk they ran the bench tool `firmware/rangetest` instead (see [Office session](#office-session-2026-10-13)). PingPong was the first smoke test (2026-10-12, 915.0 MHz, LoRa SF7 / 500 kHz, 0 dBm; RSSI about −27 dBm, SNR 12 dB at about 30 cm). See [PingPong link test](#pingpong-link-test).
+- **Current state (2026-10-13): the boards run the Stage-0 firmware, release `0f456040fe54`** (TX on board A, RX on board B; see [`firmware/stage0-node/RELEASES.md`](../../firmware/stage0-node/RELEASES.md)). During the office range walk they ran the bench tool `firmware/rangetest` instead (see [Office session](#office-session-2026-10-13)). PingPong was the first smoke test (2026-10-12, 915.0 MHz, LoRa SF7 / 500 kHz, 0 dBm; RSSI about −27 dBm, SNR 12 dB at about 30 cm). See [PingPong link test](#pingpong-link-test).
 - Factory firmware backups (both boards, byte-identical) are in `docs/hardware/factory-firmware/`.
 - Both boards are healthy. STLINK-V3, SWD, NRST, the 3.3 V target supply and the virtual COM port all work.
 - **No jumper changes are needed.** The default configuration is correct for USB-powered development (evidence below).
@@ -315,3 +315,9 @@ Clint approved C and D, and agreed that a reconstructed time counts toward H01 w
 - Hazard noted: CN7.18 (5 V) sits directly below CN7.16 (3V3).
 - Hardware verification still to do: CRC-checked reading, unplug while running (expect `sensor_fault`, then recovery), then cut a release.
 - The spare 592 cable allows the planned USB cable-swap test for the board-reset dropouts.
+
+### Release 0f456040fe54 (2026-10-13 evening)
+- Built twice from a clean tree (identical `.bin` hashes) and flashed RX, then TX. The flash kept TX's node state: `kcv=b7142e`, counter 7427, `kat=pass`.
+- Trial and error: `make clean` removes both roles' builds, so the release loop must clean once and then build both roles; cleaning per role deleted the other role's binary.
+- First minute on the bench: `#sample … valid=0 rc=-2` (no sensor wired: address NACK with the new internal pull-ups), both pending readings ACKed, gateway 2 accepted / 0 rejected.
+- Not yet exercised on hardware: the new WIPE (keeps counter and epoch), the probing-every-minute path, health reports while probing, and bus recovery with a real stuck sensor.

@@ -3,7 +3,7 @@
 One source tree, two roles: **TX** (sensor node, board A `003B00194142500E20353451`) and **RX** (USB receiver bridge, board B `0016001E4142500E20353451`). Built on ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0). Wire protocol: [`docs/protocol.md`](../../docs/protocol.md) draft 4 (see also [`protocol-stack.md`](../../docs/protocol-stack.md)).
 
 **Status (2026-10-13):**
-- Release `a07f498273f7` ([`RELEASES.md`](RELEASES.md)) is on both boards, and the bench link works end to end.
+- Release `0f456040fe54` ([`RELEASES.md`](RELEASES.md)) is on both boards, and the bench link works end to end.
 - The SHT45 parts have arrived but are not yet wired, so every reading is an honest `sensor_fault`.
 - **H01 NOT RUN.**
 
@@ -44,9 +44,9 @@ python -m ws0 serve --directory run-hw --serial /dev/cu.usbmodem<RX port>
 
 It also sends an **epoch floor** (`PROVISION <id> <key> <epoch_floor>`). The floor is one above the highest boot epoch the gateway has stored for this station in `observations`, `rejections` and `diagnostics` (`ws0/__main__.py`, `epoch_floor`), or 0 (no floor) for an empty database. The node raises its stored epoch to the floor (`store_epoch_floor`), so every later boot epoch is above it and the observation identities (epoch, seq) of a wiped and re-provisioned node never collide with stored history (gap G5). **The floor raises only the epoch, not the transmission counter.**
 
-To re-provision deliberately, send `WIPE ERASE-ALL-NODE-STATE` on the TX console. From release `@G17REL@` that erases the key and the journal and keeps the counter, the epoch and the `lost`/`abandoned` totals (gap G17); earlier releases erased those too. It then reboots with solid red LED3.
+To re-provision deliberately, send `WIPE ERASE-ALL-NODE-STATE` on the TX console. From release `0f456040fe54` that erases the key and the journal and keeps the counter, the epoch and the `lost`/`abandoned` totals (gap G17); earlier releases erased those too. It then reboots with solid red LED3.
 
-**Re-keying rule:** the AES-CCM nonce is kind + station + transmission counter (`firmware/common/ws_frame.c`). From release `@G17REL@`, WIPE erases only the key and the journal and keeps the counter and epoch (gap G17); earlier releases reset the counter to 1. A key used before `@G17REL@`, or on another board, could therefore repeat nonces. **After a WIPE, `init` a new run directory (a new key).** Moving the boards between gateways is covered in [`docs/runbook-moving-boards.md`](../../docs/runbook-moving-boards.md).
+**Re-keying rule:** the AES-CCM nonce is kind + station + transmission counter (`firmware/common/ws_frame.c`). From release `0f456040fe54`, WIPE erases only the key and the journal and keeps the counter and epoch (gap G17); earlier releases reset the counter to 1. A key used before `0f456040fe54`, or on another board, could therefore repeat nonces. **After a WIPE, `init` a new run directory (a new key).** Moving the boards between gateways is covered in [`docs/runbook-moving-boards.md`](../../docs/runbook-moving-boards.md).
 
 For a long run (H01), install the gateway as a LaunchAgent. It restarts if it exits and finds the RX board by its ST-LINK serial number after a replug:
 
@@ -129,8 +129,8 @@ Other lines:
 
 This is summarized from `App/app_tx.c`; the approved policy is in [`docs/radio-energy-policy.md`](../../docs/radio-energy-policy.md).
 - **Each minute:** the live reading goes first, then at most 5 older pending readings (energy state NORMAL). The total is also capped at about 5 s of estimated radio time per minute. Each frame gets one 2 s ACK window. A missed reply ends that minute's drain.
-- **Link probing:** after 3 minutes with no reply the link state becomes `probing`: only the live reading is sent, with no backlog. In SURPLUS and NORMAL (always, in Stage 0) it still goes every minute; only CONSERVE probes at 2, 4 and 8 minutes, then every 15 minutes (since `@G17REL@`; `ws_link_may_send()` in `firmware/stage0.c`). All other readings stay journaled. Any reply returns the link to `linked`.
-- **Health report** (kind 4): sent every 15 min and at each link-state change, also while probing (since `@G17REL@`). It is fire-and-forget, with no journal entry and no ACK.
+- **Link probing:** after 3 minutes with no reply the link state becomes `probing`: only the live reading is sent, with no backlog. In SURPLUS and NORMAL (always, in Stage 0) it still goes every minute; only CONSERVE probes at 2, 4 and 8 minutes, then every 15 minutes (since `0f456040fe54`; `ws_link_may_send()` in `firmware/stage0.c`). All other readings stay journaled. Any reply returns the link to `linked`.
+- **Health report** (kind 4): sent every 15 min and at each link-state change, also while probing (since `0f456040fe54`). It is fire-and-forget, with no journal entry and no ACK.
 - **Strike limit:** a record that stays unanswered 10 times while the gateway answers other frames in the same exchange is abandoned (`#abandon`).
 
 **Watchdog:** independent watchdog, ~8 s. It is refreshed only from the main loop, and only while the role shows real progress: TX samples every ≤150 s and no exchange runs >30 s; RX is listening or finishes a transmission in <5 s, with one re-arm attempt. The reset cause is printed on every boot.
@@ -150,7 +150,7 @@ TX runs a boot self-test (`kat=pass`): it seals and opens fixed vectors and comp
 
 | Pages | Use |
 |---|---|
-| 0–31 (64 KB) | Firmware; the linker script enforces this (TX image about 52 KB, RX about 30 KB at a07f498) |
+| 0–31 (64 KB) | Firmware; the linker script enforces this (TX image 53,176 B, RX 30,360 B at 0f456040fe54) |
 | 32 | Config: station ID, key, KCV. The magic double-word is written last |
 | 33–34 | Monotonic log, A/B: boot epoch, counter reservations (blocks of 256), cumulative `lost`/`abandoned` totals. Recovery takes the maximum. Compaction writes its header last |
 | 35–127 | Journal ring: 93 pages × 51 slots of 40 bytes |

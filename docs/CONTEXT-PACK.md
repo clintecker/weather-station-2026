@@ -10,7 +10,7 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
 **Plan of record:** strict stage order. Stage 0 means passing **H01**: 24 h, 1,440 intervals, at least 1,426 valid readings committed within 120 s, plus a restart/outage matrix (`docs/H01-checklist.md`). Stage 1 (solar, batteries, RS-485, heaters) does not start before H01 passes.
 
 ## 2. Where things stand (on `master`)
-- **Firmware release `a07f498273f7`** is on both boards (`docs/hardware/nucleo-wl55jc-bringup.md`, current state). Check `STATUS` on each board before relying on it. **No rebuild is needed** to resume.
+- **Firmware release `0f456040fe54`** is on both boards (`firmware/stage0-node/RELEASES.md`; flashed 2026-10-13, office key `b7142e` kept). Check `STATUS` on each board before relying on it. **No rebuild is needed** to resume.
   - TX = board A, ST-LINK serial `003B00194142500E20353451`
   - RX = board B, ST-LINK serial `0016001E4142500E20353451`
   - Identify boards by serial number. Port names change between machines.
@@ -42,7 +42,7 @@ A new key is always safe. Reusing a key is safe only if the board's counter has 
 - copy `run-office/` to the home Mac by a private route (never git, chat or email) and point the gateway at it, or
 - create a **new** key: `init` a new run directory, `WIPE` TX, `provision-node`.
 
-**Never re-provision TX with `run-hw`'s existing key after a WIPE.** (Corrected 2026-10-13; an earlier version of this pack suggested it.) The AES-CCM nonce is kind + station + the 64-bit transmission counter (`firmware/common/ws_frame.c:15`, `docs/protocol.md`), and on firmware before release `@G17REL@` WIPE reset that counter to 1 (the morning office wipe did). From `@G17REL@` on, WIPE keeps the counter (gap G17), but this board's counter is now far below what the home key already used, so the home key stays retired for this board. The `PROVISION` epoch floor raises only the epoch, the observation identity (`App/node_store.c`, `store_epoch_floor`), not the counter. TX had already transmitted with the home key (for example the 9 h soak, `evidence/soak-a07f498-2026-10-13/`), so reuse would repeat nonces already sent on air.
+**Never re-provision TX with `run-hw`'s existing key after a WIPE.** (Corrected 2026-10-13; an earlier version of this pack suggested it.) The AES-CCM nonce is kind + station + the 64-bit transmission counter (`firmware/common/ws_frame.c:15`, `docs/protocol.md`), and on firmware before release `0f456040fe54` WIPE reset that counter to 1 (the morning office wipe did). From `0f456040fe54` on, WIPE keeps the counter (gap G17), but this board's counter is now far below what the home key already used, so the home key stays retired for this board. The `PROVISION` epoch floor raises only the epoch, the observation identity (`App/node_store.c`, `store_epoch_floor`), not the counter. TX had already transmitted with the home key (for example the 9 h soak, `evidence/soak-a07f498-2026-10-13/`), so reuse would repeat nonces already sent on air.
 
 ## 4. Office setup (fast path: run the bench, no firmware build)
 ```sh

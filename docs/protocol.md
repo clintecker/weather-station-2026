@@ -45,7 +45,7 @@ binds its database to key fingerprint, station and direction. Retries allocate f
 counters; observation identity is independent and unchanged. Cloning/rolling back
 state with the same key is prohibited. The firmware reserves epochs and 256-counter
 blocks durably in flash before use (`firmware/stage0-node/App/node_store.c`,
-protocol-stack.md section 6). Before release `@G17REL@`, `WIPE` reset the counter to 1; from `@G17REL@` it keeps
+protocol-stack.md section 6). Before release `0f456040fe54`, `WIPE` reset the counter to 1; from `0f456040fe54` it keeps
 the counter (gap G17). Prefer a **new** key after a WIPE; never re-use a key from before that
 release or from another board
 ([`runbook-moving-boards.md`](runbook-moving-boards.md)).

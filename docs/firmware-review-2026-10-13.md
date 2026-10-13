@@ -4,7 +4,7 @@ Scope: `firmware/stage0-node`, `firmware/common`, `firmware/stage0.c`, the `ws0/
 
 ---
 
-> **Status, 2026-10-13 evening (release `@G17REL@`):** implemented: P1 (WIPE keeps counters and
+> **Status, 2026-10-13 evening (release `0f456040fe54`):** implemented: P1 (WIPE keeps counters and
 > epoch, gap G17), P2 (strict `PROVISION` parser, key cleared from console buffers), the §2.2 sensor
 > items (`rc=` on `#sample`, internal I2C pull-ups, `#sensor` boot check), the I2C bus-recovery STOP
 > fix (`ws_i2c_recover()`, host-tested), health reports while probing, and Clint's probing decision

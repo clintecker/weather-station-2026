@@ -14,6 +14,22 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
 
+## 0f456040fe54 — 2026-10-13 (bench, sensor not yet wired)
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (30,360 B) | `5dd14d59c3c053d94146808422c8d82b865ae34ff52a9a16780def7d7e65629a` |
+| `build/rx/stage0-rx.elf` (path-dependent) | `39244ffa8354c93d75ed7cb437d834aff39802bacb5c32fc25eb6d200fcb13b2` |
+| `build/tx/stage0-tx.bin` (53,176 B) | `0bd4e94575634bf792993d73c5fafff67f1bc20624445de98625da67c0057f60` |
+| `build/tx/stage0-tx.elf` (path-dependent) | `8a920d899646d27da38d7af8ba6e7524dd57a2e1f144a49b8e05f4502855b38e` |
+
+- Source: commit `0f456040fe54`. Changes since a07f498: sensor `rc=` on `#sample` and `#sensor` boot check; internal I2C pull-ups; I2C bus-recovery STOP fix (`ws_i2c_recover`); WIPE keeps counter and epoch (gap G17); strict PROVISION parser with key cleared from console buffers; while probing, SURPLUS/NORMAL send the live reading every minute (only CONSERVE backs off); health reports also while probing. Protocol and flash layout unchanged (draft 4).
+- Inputs: as a07f498 (`tools/fetch-vendor.sh`, xPack arm-none-eabi-gcc 15.2.1-1.1, OpenOCD 0.12.0).
+- Reproducibility: two clean builds (`make clean`, then both roles) gave identical `.bin` hashes.
+- Flashed 2026-10-13: RX → board B `0016001E4142500E20353451`, TX → board A `003B00194142500E20353451`. TX `STATUS`: `fw=0f456040fe54`, `provisioned=1`, `kcv=b7142e` (office key kept across the flash), `kat=pass`. First minute: `#sample … valid=0 rc=-2` (no sensor wired: address NACK, as intended), both pending readings ACKed, gateway accepted 2, rejected 0.
+- Radio (bench): 915.0 MHz, LoRa 500 kHz, SF7, CR 4/5, 0 dBm.
+- Not an H01 release: the SHT45 is not connected yet, and the radio settings are bench values.
+
 ## a07f498273f7 — 2026-10-13 (bench, sensor not yet wired)
 
 | Artifact | SHA-256 |

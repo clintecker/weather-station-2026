@@ -114,7 +114,7 @@ MQTT was verified against a local Mosquitto broker (`evidence/mqtt-local-broker-
 
 ## Current state and open work
 
-Release `a07f498273f7` is built, recorded in `firmware/stage0-node/RELEASES.md` and flashed. A 9 h bench soak delivered 549 of 549 minutes on time (`evidence/soak-a07f498-2026-10-13/`). RF settings are bench values (`firmware/stage0-node/App/radio_cfg.h`: 915.0 MHz, 500 kHz, SF7, CR 4/5, 0 dBm).
+Release `0f456040fe54` is built, recorded in `firmware/stage0-node/RELEASES.md` and flashed (2026-10-13). On the previous release, `a07f498273f7`, a 9 h bench soak delivered 549 of 549 minutes on time (`evidence/soak-a07f498-2026-10-13/`). RF settings are bench values (`firmware/stage0-node/App/radio_cfg.h`: 915.0 MHz, 500 kHz, SF7, CR 4/5, 0 dBm).
 
 Still open before H01:
 - SHT45 readings on hardware.
