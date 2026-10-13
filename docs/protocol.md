@@ -1,6 +1,8 @@
 # Stage-0 transport draft 2
 
 This is a tested host protocol and portable C payload draft, **not a frozen H01 contract**.
+For how each layer works end to end (sensor bus → journal → crypto → LoRa → USB → SQLite → time sync),
+with diagrams and sources, read [`protocol-stack.md`](protocol-stack.md).
 Direct LoRa carries one observation or one acknowledgment. No mesh or module discovery.
 Every integer is big-endian. Observation frame: 56 bytes. ACK frame: 56 bytes.
 
