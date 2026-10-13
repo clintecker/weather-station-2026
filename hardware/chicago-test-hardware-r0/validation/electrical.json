@@ -1,0 +1,16 @@
+{
+  "schematic_matches_intended_nets": true,
+  "pcb_matches_schematic": true,
+  "net_count": 5,
+  "plated_holes": 10,
+  "nonplated_holes": 4,
+  "header_pitch_mm": 2.54,
+  "pcb_mount_pattern_mm": [
+    42,
+    27
+  ],
+  "drc_violations": 0,
+  "unconnected_pads": 0,
+  "physical_validation": "NOT RUN",
+  "schematic_erc": "KiCad 7 CLI has no ERC command; passive pin connectivity verified by netlist comparison, not a claimed ERC run."
+}

@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<export version="E">
+  <design>
+    <source>/workspace/scratch/f7a2ec9e9ecc/chicago-test-hardware-r0/pcb/sensor-interface.kicad_sch</source>
+    <date>Thu Oct  8 17:34:29 2026</date>
+    <tool>Eeschema 7.0.11+dfsg-1build4</tool>
+    <sheet number="1" name="/" tstamps="/">
+      <title_block>
+        <title>Chicago Stage 0 Sensor Bench Interface</title>
+        <company/>
+        <rev>R0</rev>
+        <date>2026-10-08</date>
+        <source>sensor-interface.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+  </design>
+  <components>
+    <comp ref="H1">
+      <value>M3_NPTH</value>
+      <footprint>Bench:MountingHole_3.2mm</footprint>
+      <libsource lib="Bench" part="Mount" description=""/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="sensor-interface.kicad_sch"/>
+      <property name="exclude_from_bom"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>d481d7ee-9ed4-578f-b3ed-844704018e04</tstamps>
+    </comp>
+    <comp ref="H2">
+      <value>M3_NPTH</value>
+      <footprint>Bench:MountingHole_3.2mm</footprint>
+      <libsource lib="Bench" part="Mount" description=""/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="sensor-interface.kicad_sch"/>
+      <property name="exclude_from_bom"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>91e32e07-ccad-57c2-b5b1-3879da3856c1</tstamps>
+    </comp>
+    <comp ref="H3">
+      <value>M3_NPTH</value>
+      <footprint>Bench:MountingHole_3.2mm</footprint>
+      <libsource lib="Bench" part="Mount" description=""/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="sensor-interface.kicad_sch"/>
+      <property name="exclude_from_bom"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>cb657f67-709c-5390-a101-eef5de1c9fe2</tstamps>
+    </comp>
+    <comp ref="H4">
+      <value>M3_NPTH</value>
+      <footprint>Bench:MountingHole_3.2mm</footprint>
+      <libsource lib="Bench" part="Mount" description=""/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="sensor-interface.kicad_sch"/>
+      <property name="exclude_from_bom"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>3bdb4fa4-6900-5817-bb2a-18ac36c91a95</tstamps>
+    </comp>
+    <comp ref="J1">
+      <value>HOST_3V3</value>
+      <footprint>Bench:Header_1x04_VerticalRow</footprint>
+      <libsource lib="Bench" part="Conn4" description=""/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="sensor-interface.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>139d9b5e-ed99-51c7-9ee2-a1a706682bc0</tstamps>
+    </comp>
+    <comp ref="J2">
+      <value>SENSOR_3V3</value>
+      <footprint>Bench:Header_1x04_VerticalRow</footprint>
+      <libsource lib="Bench" part="Conn4" description=""/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="sensor-interface.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>0f726e4c-67a1-564c-8c4d-f6d60abe1102</tstamps>
+    </comp>
+    <comp ref="JP1">
+      <value>CURRENT_LINK</value>
+      <footprint>Bench:Header_1x02_HorizontalRow</footprint>
+      <libsource lib="Bench" part="Conn2" description=""/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="sensor-interface.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>c7f5a016-c017-54c5-8004-4dba7db0759c</tstamps>
+    </comp>
+    <comp ref="TP1">
+      <value>3V3_SENSOR</value>
+      <footprint>Bench:TestPad_1.5mm</footprint>
+      <libsource lib="Bench" part="TestPad" description=""/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="sensor-interface.kicad_sch"/>
+      <property name="exclude_from_bom"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>d4cea3e1-a3ff-5a14-ab11-1040a41cd4b1</tstamps>
+    </comp>
+    <comp ref="TP2">
+      <value>GND</value>
+      <footprint>Bench:TestPad_1.5mm</footprint>
+      <libsource lib="Bench" part="TestPad" description=""/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="sensor-interface.kicad_sch"/>
+      <property name="exclude_from_bom"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>96327fba-5979-5569-ab93-bf22e82314b8</tstamps>
+    </comp>
+    <comp ref="TP3">
+      <value>SDA</value>
+      <footprint>Bench:TestPad_1.5mm</footprint>
+      <libsource lib="Bench" part="TestPad" description=""/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="sensor-interface.kicad_sch"/>
+      <property name="exclude_from_bom"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>38b94332-8308-5c14-9b11-77eb74bc8c2c</tstamps>
+    </comp>
+    <comp ref="TP4">
+      <value>SCL</value>
+      <footprint>Bench:TestPad_1.5mm</footprint>
+      <libsource lib="Bench" part="TestPad" description=""/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="sensor-interface.kicad_sch"/>
+      <property name="exclude_from_bom"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>35ebd07a-40c0-555a-8250-1038e85e6db3</tstamps>
+    </comp>
+  </components>
+  <libparts>
+    <libpart lib="Bench" part="Conn2">
+      <fields>
+        <field name="Reference">J</field>
+        <field name="Value">Conn2</field>
+      </fields>
+      <pins>
+        <pin num="1" name="1" type="passive"/>
+        <pin num="2" name="2" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="Bench" part="Conn4">
+      <fields>
+        <field name="Reference">J</field>
+        <field name="Value">Conn4</field>
+      </fields>
+      <pins>
+        <pin num="1" name="1" type="passive"/>
+        <pin num="2" name="2" type="passive"/>
+        <pin num="3" name="3" type="passive"/>
+        <pin num="4" name="4" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="Bench" part="Mount">
+      <fields>
+        <field name="Reference">J</field>
+        <field name="Value">Mount</field>
+      </fields>
+    </libpart>
+    <libpart lib="Bench" part="TestPad">
+      <fields>
+        <field name="Reference">J</field>
+        <field name="Value">TestPad</field>
+      </fields>
+      <pins>
+        <pin num="1" name="1" type="passive"/>
+      </pins>
+    </libpart>
+  </libparts>
+  <libraries>
+    <library logical="Bench">
+      <uri>/workspace/scratch/f7a2ec9e9ecc/chicago-test-hardware-r0/pcb/Bench.kicad_sym</uri>
+    </library>
+  </libraries>
+  <nets>
+    <net code="1" name="/3V3_IN">
+      <node ref="J1" pin="1" pinfunction="1" pintype="passive"/>
+      <node ref="JP1" pin="1" pinfunction="1" pintype="passive"/>
+    </net>
+    <net code="2" name="/3V3_SENSOR">
+      <node ref="J2" pin="1" pinfunction="1" pintype="passive"/>
+      <node ref="JP1" pin="2" pinfunction="2" pintype="passive"/>
+      <node ref="TP1" pin="1" pinfunction="1" pintype="passive"/>
+    </net>
+    <net code="3" name="/GND">
+      <node ref="J1" pin="2" pinfunction="2" pintype="passive"/>
+      <node ref="J2" pin="2" pinfunction="2" pintype="passive"/>
+      <node ref="TP2" pin="1" pinfunction="1" pintype="passive"/>
+    </net>
+    <net code="4" name="/SCL">
+      <node ref="J1" pin="4" pinfunction="4" pintype="passive"/>
+      <node ref="J2" pin="4" pinfunction="4" pintype="passive"/>
+      <node ref="TP4" pin="1" pinfunction="1" pintype="passive"/>
+    </net>
+    <net code="5" name="/SDA">
+      <node ref="J1" pin="3" pinfunction="3" pintype="passive"/>
+      <node ref="J2" pin="3" pinfunction="3" pintype="passive"/>
+      <node ref="TP3" pin="1" pinfunction="1" pintype="passive"/>
+    </net>
+  </nets>
+</export>

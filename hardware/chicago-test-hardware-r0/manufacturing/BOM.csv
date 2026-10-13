@@ -1,0 +1,4 @@
+Reference,Quantity_per_board,Manufacturer,MPN,Description,Mounting,Notes
+"J1 J2",2,Samtec,TSW-104-07-G-S,"4-pin 2.54 mm vertical male header",Through-hole,"Top side; 1.02 mm finished holes; pin 1 square"
+JP1,1,Samtec,TSW-102-07-G-S,"2-pin 2.54 mm vertical male header",Through-hole,"Top side; row runs horizontally on PCB"
+JP1_shunt,1,Samtec,SNT-100-BK-G,"2.54 mm removable shorting shunt",Manual fit,"Fit over JP1 after soldering and electrical inspection; not in placement.csv"

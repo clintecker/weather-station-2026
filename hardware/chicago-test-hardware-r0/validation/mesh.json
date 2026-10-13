@@ -1,0 +1,30 @@
+[
+  {
+    "file": "nucleo-fit-coupon.stl",
+    "triangles": 60,
+    "closed_edges": true,
+    "consistent_winding": true,
+    "volume_mm3": 2913.6000000000004
+  },
+  {
+    "file": "nucleo-open-cradle.stl",
+    "triangles": 108,
+    "closed_edges": true,
+    "consistent_winding": true,
+    "volume_mm3": 20947.20000000003
+  },
+  {
+    "file": "sensor-interface-base.stl",
+    "triangles": 4156,
+    "closed_edges": true,
+    "consistent_winding": true,
+    "volume_mm3": 11778.441682945195
+  },
+  {
+    "file": "sensor-ventilated-tray.stl",
+    "triangles": 168,
+    "closed_edges": true,
+    "consistent_winding": true,
+    "volume_mm3": 5292.0
+  }
+]
