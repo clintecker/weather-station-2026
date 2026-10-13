@@ -40,5 +40,14 @@ int ws_link_may_send(int energy, int probing, int32_t secs_until_probe);
    digits only (no sign), station 1..4294967295, epoch floor below WS_EPOCH_FLOOR_MAX so a typo
    cannot exhaust the epoch space. Returns 0 on success; outputs are undefined on error. */
 #define WS_EPOCH_FLOOR_MAX 0xFFFF0000UL
+/* Health helpers (docs/firmware-review-2026-10-13.md P6, P7). A failure run counts uninterrupted
+   failures (any success resets it; saturates); tripped when it exceeds the limit. */
+typedef struct { uint32_t n; } ws_failrun;
+void ws_failrun_note(ws_failrun *, int ok);
+int ws_failrun_tripped(const ws_failrun *, uint32_t limit);
+/* 1 if more than limit_ms passed from last_ms to now_ms on a wrapping 32-bit ms tick. Inline so
+   the RX role, which does not link stage0.c, can use it. */
+static inline int ws_silent_for(uint32_t now_ms, uint32_t last_ms, uint32_t limit_ms)
+{ return (uint32_t)(now_ms - last_ms) > limit_ms; }
 int ws_parse_provision(const char *args, uint32_t *station, uint8_t key[16], uint32_t *epoch_floor);
 #endif

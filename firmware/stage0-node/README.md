@@ -96,6 +96,8 @@ Other lines:
 | `#boot role=tx fw= reset= kat= freq= bw= sf= power=` | Printed at every boot. `bw` is the index (2 = 500 kHz). |
 | `#sample epoch= seq= uptime= valid= rc= t= rh= time= utc= journal= pending= lost=` | One per minute. `rc` is the sensor result (`App/sensor.h`): 0 ok, −2 address NACK (sensor absent or wiring), −3 read NACK, −4 CRC mismatch, −5 bus still stuck after recovery. `journal=ERROR` means the reading could not be journaled. |
 | `#sensor ok t= rh=` / `#sensor fault rc=` | Once at boot, from one test reading. |
+| `#watchdog N failures in a row` | TX: more than 10 consecutive failures of journal append, counter reservation or `Radio.Send`; the watchdog then resets the board (review P7) |
+| `#boot-retry: reset in 600 s` | TX: storage init or epoch reservation failed at boot; one automatic reset after 10 minutes (only if the self-test passed) |
 | `#ack epoch= seq= found= time_sync= rssi= snr= pending=` | Authentic ACK. `time_sync=1`: the clock was set from it. |
 | `#ack none epoch= seq=` | No reply within the 2 s window. The reading stays journaled, and this minute's backlog drain stops. |
 | `#ack reject len= rssi= snr=` | A reply failed authentication |
@@ -120,9 +122,10 @@ Other lines:
 | `#rx error` | Radio receive error |
 | `#host reject len=` | A host line that is not a valid ACK/NACK hex line |
 | `#tx timeout`, `#tx busy` | ACK/NACK transmission failed |
-| `#alive uptime= forwarded= dropped= acks= diag= listening=` | Every 60 s. The gateway marks the receiver silent after 180 s without `#alive` or `#boot` (gap G12). |
-| `#watchdog radio not listening; re-arming` | Self-heal attempt before the watchdog may reset the board |
-| `#status role=rx forwarded= dropped= acks=` | Reply to `STATUS`. `acks` counts ACK/NACK lines handed to the radio. |
+| `#alive uptime= forwarded= dropped= acks= diag= listening= relistens= uart_errors=` | Every 60 s. The gateway marks the receiver silent after 180 s without `#alive` or `#boot` (gap G12). `relistens`: times the radio was restarted after 5 minutes without any radio event (review P6). `uart_errors`: console receive errors, each followed by a re-arm (review P5). |
+| `#watchdog radio not listening; re-arming`, `#watchdog console not receiving; re-arming` | Self-heal attempt before the watchdog may reset the board |
+| `#relisten after N s without a radio event` | Radio put in standby and listening restarted (review P6) |
+| `#status role=rx forwarded= dropped= acks= relistens= uart_errors=` | Reply to `STATUS`. `acks` counts ACK/NACK lines handed to the radio. |
 | `#boot role=rx fw= reset= freq= bw= sf= power=`, `#test-hang: …` | Boot line and command reply |
 
 ### Transmission policy (TX)

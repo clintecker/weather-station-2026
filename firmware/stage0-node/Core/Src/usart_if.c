@@ -250,6 +250,26 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 }
 
 /* USER CODE BEGIN EF */
+/* weather-station-2026 (review P5): on a receive error (overrun, framing, noise, parity) the HAL
+ * may abort the one-character receive. Nothing re-armed it, so the console (on RX: the ACK
+ * downlink) went deaf for good. Clear the flags, count the error and listen again. */
+static volatile uint32_t rx_errors;
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance != USART2) return;
+  rx_errors++;
+  __HAL_UART_CLEAR_FLAG(huart, UART_CLEAR_OREF | UART_CLEAR_FEF | UART_CLEAR_NEF | UART_CLEAR_PEF);
+  if (huart->RxState == HAL_UART_STATE_READY) HAL_UART_Receive_IT(huart, &charRx, 1);
+}
+
+uint32_t vcom_rx_errors(void) { return rx_errors; }
+int vcom_rx_armed(void) { return huart2.RxState == HAL_UART_STATE_BUSY_RX; }
+void vcom_rx_rearm(void)
+{
+  __HAL_UART_CLEAR_FLAG(&huart2, UART_CLEAR_OREF | UART_CLEAR_FEF | UART_CLEAR_NEF | UART_CLEAR_PEF);
+  if (huart2.RxState == HAL_UART_STATE_READY) HAL_UART_Receive_IT(&huart2, &charRx, 1);
+}
 
 /* USER CODE END EF */
 

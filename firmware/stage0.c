@@ -77,3 +77,8 @@ int ws_parse_provision(const char *args,uint32_t *station,uint8_t key[16],uint32
  if(*p!=0) return -1;
  *epoch_floor=floor; return 0;
 }
+void ws_failrun_note(ws_failrun *r,int ok) {
+ if(ok) r->n=0;
+ else if(r->n<0xFFFFFFFFu) r->n++;
+}
+int ws_failrun_tripped(const ws_failrun *r,uint32_t limit) { return r->n>limit; }

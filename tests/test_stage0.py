@@ -7,7 +7,10 @@ import json
 import subprocess
 import tempfile
 import unittest
-from toolchain import needs_cc
+try:
+    from toolchain import needs_cc          # python -m unittest discover -s tests
+except ImportError:
+    from tests.toolchain import needs_cc    # python -m unittest tests.<module>
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request,urlopen

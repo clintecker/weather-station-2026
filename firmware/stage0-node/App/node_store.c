@@ -3,10 +3,11 @@
  * Every record is committed by programming one final double-word after its data, so an
  * interrupted write leaves either nothing, an uncommitted slot, or a double-ECC error that
  * NMI_Handler reports through ws_flash_ecc_fault. All three read back as "not present".
- * Monotonic values only ever increase: recovery takes the maximum of everything readable. */
+ * Monotonic values only ever increase: recovery takes the maximum of everything readable.
+ * No HAL here: flash goes through ws_flash_internal (App/flash_stm32wl.c on the board,
+ * firmware/sim_flash.c in tests/test_store_powercut.py). */
 #include "node_store.h"
 #include <string.h>
-#include "stm32wlxx_hal.h"
 #include "ws_frame.h"
 
 #define ERASED 0xFFFFFFFFFFFFFFFFULL
@@ -23,32 +24,23 @@
 #define CTR_BLOCK 256U
 #define SLOT_BYTES 40U
 
-/* ---- flash primitives ---- */
+/* ---- flash primitives (ws_flash ops, flash_layout.h) ---- */
 static uint32_t n_ecc;
 static uint64_t rd64(uint32_t addr, int *bad) {
- ws_flash_ecc_fault = 0;
- uint64_t v = *(volatile const uint64_t *)addr;
- __DSB();
- if (ws_flash_ecc_fault) { n_ecc++; if (bad) *bad = 1; return 0; }
+ uint64_t v;
+ if (ws_flash_internal.read64(ws_flash_internal.ctx, addr, &v)) { n_ecc++; if (bad) *bad = 1; return 0; }
  return v;
 }
 static int prog64(uint32_t addr, uint64_t v) {
- HAL_StatusTypeDef st;
- HAL_FLASH_Unlock();
- __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_ALL_ERRORS);
- st = HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, addr, v);
- HAL_FLASH_Lock();
- return st == HAL_OK ? 0 : -1;
+ return ws_flash_internal.prog64(ws_flash_internal.ctx, addr, v) ? -1 : 0;
 }
 static int erase_page(uint32_t page) {
- FLASH_EraseInitTypeDef e = { .TypeErase = FLASH_TYPEERASE_PAGES, .Page = page, .NbPages = 1 };
- uint32_t err = 0; HAL_StatusTypeDef st;
- HAL_FLASH_Unlock();
- __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_ALL_ERRORS);
- st = HAL_FLASHEx_Erase(&e, &err);
- HAL_FLASH_Lock();
- return st == HAL_OK ? 0 : -1;
+ return ws_flash_internal.erase(ws_flash_internal.ctx, page) ? -1 : 0;
 }
+
+/* store_ready guard (review P3): mutators refuse to run on RAM state that no successful init
+   produced, instead of appending at a stale position. */
+static uint8_t meta_ready, journal_ready;
 
 /* ---- provisioning ---- */
 int store_config_load(uint32_t *station, uint8_t key[16]) {
@@ -120,6 +112,7 @@ static int meta_append(uint32_t type, uint64_t value) {
 int store_meta_init(void) {
  uint32_t ga = 0, gb = 0, la = 0, lb = 0;
  int va, vb;
+ meta_ready = 0;
  max_epoch = 0; ctr_reserved = 0; lost_total = 0; abandoned_total = 0;
  va = meta_scan(WS_META_PAGE_A, &ga, &la) == 0;
  vb = meta_scan(WS_META_PAGE_B, &gb, &lb) == 0;
@@ -132,9 +125,11 @@ int store_meta_init(void) {
   meta_active = WS_META_PAGE_B; meta_gen = gb; meta_pos = lb + 1;
  }
  ctr_next = ctr_reserved + 1; /* skip anything that may have been used before reset */
+ meta_ready = 1;
  return 0;
 }
 int store_next_epoch(uint32_t *epoch) {
+ if (!meta_ready) return STORE_ENOTREADY;
  if (max_epoch == 0xFFFFFFFFUL) return -1;
  if (meta_append(META_EPOCH, (uint64_t)max_epoch + 1)) return -2;
  *epoch = ++max_epoch;
@@ -143,18 +138,22 @@ int store_next_epoch(uint32_t *epoch) {
 /* Gap G5: after a WIPE, the gateway supplies a floor above every epoch it has stored, so new
    observation identities can never collide with history. Values only move up. */
 int store_epoch_floor(uint32_t floor) {
+ if (!meta_ready) return STORE_ENOTREADY;
  if (floor <= max_epoch) return 0;
  if (meta_append(META_EPOCH, floor)) return -1;
  max_epoch = floor;
  return 0;
 }
 int store_note_abandoned(void) {
+ if (!meta_ready) return STORE_ENOTREADY;
+ if (meta_append(META_ABAND, (uint64_t)abandoned_total + 1)) return -1;
  abandoned_total++;
- return meta_append(META_ABAND, abandoned_total);
+ return 0;
 }
 uint32_t store_abandoned_total(void) { return abandoned_total; }
 
 int store_next_counter(uint64_t *counter) {
+ if (!meta_ready) return STORE_ENOTREADY;
  if (ctr_next > ctr_reserved) {
   uint64_t upto = ctr_reserved + CTR_BLOCK;
   if (meta_append(META_CTR, upto)) return -1; /* no durable reservation, no counter */
@@ -184,11 +183,11 @@ static uint16_t crc16(const uint8_t *d, unsigned n) {
 }
 static int journal_new_page(uint32_t page, uint32_t seq) {
  uint32_t dropped = 0;
- for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE; s++) {
-  uint32_t i = page * JOURNAL_SLOTS_PER_PAGE + s;
-  if (is_pending(i)) { set_pending(i, 0); n_pending--; n_lost++; lost_total++; dropped++; }
- }
- if (dropped) meta_append(META_LOST, lost_total); /* persist before the page is reused */
+ for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE; s++) dropped += (uint32_t)is_pending(page * JOURNAL_SLOTS_PER_PAGE + s);
+ /* persist before the page is reused; if that fails, keep the page and its records */
+ if (dropped && meta_append(META_LOST, (uint64_t)lost_total + dropped)) return -1;
+ for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE; s++) set_pending(page * JOURNAL_SLOTS_PER_PAGE + s, 0);
+ n_pending -= dropped; n_lost += dropped; lost_total += dropped;
  page_seq[page] = 0;
  if (erase_page(WS_JOURNAL_FIRST + page) || prog64(WS_PAGE_ADDR(WS_JOURNAL_FIRST + page), (uint64_t)JPG_MAGIC << 32 | seq)) return -1;
  page_seq[page] = seq;
@@ -196,13 +195,19 @@ static int journal_new_page(uint32_t page, uint32_t seq) {
 }
 int store_journal_init(void) {
  uint32_t best = 0; int found = 0;
+ journal_ready = 0;
  memset(pending, 0, sizeof pending); n_pending = n_lost = n_burned = 0;
  for (uint32_t p = 0; p < WS_JOURNAL_PAGES; p++) {
   int bad = 0; uint64_t h = rd64(WS_PAGE_ADDR(WS_JOURNAL_FIRST + p), &bad);
   page_seq[p] = (!bad && (h >> 32) == JPG_MAGIC && (uint32_t)h) ? (uint32_t)h : 0;
   if (page_seq[p] && page_seq[p] >= best) { best = page_seq[p]; head = p; found = 1; }
  }
- if (!found) { head = 0; head_slot = 0; return journal_new_page(0, 1); }
+ if (!found) {
+  head = 0; head_slot = 0;
+  if (journal_new_page(0, 1)) return -1;
+  journal_ready = 1;
+  return 0;
+ }
  for (uint32_t p = 0; p < WS_JOURNAL_PAGES; p++) {
   if (!page_seq[p]) continue;
   uint32_t last_used = 0;
@@ -220,10 +225,19 @@ int store_journal_init(void) {
   }
   if (p == head) head_slot = last_used;
  }
+ if (head_slot >= JOURNAL_SLOTS_PER_PAGE) {
+  /* The head is full, so the next page's recycle may have been cut mid-erase, which can wipe
+     an ACK word but leave its record: finish the recycle before trusting that page. */
+  uint32_t next = (head + 1) % WS_JOURNAL_PAGES;
+  if (journal_new_page(next, page_seq[head] + 1)) return -1;
+  head = next; head_slot = 0;
+ }
+ journal_ready = 1;
  return 0;
 }
 int store_journal_append(const uint8_t plain[24], jref_t *ref) {
  uint64_t d[3];
+ if (!meta_ready || !journal_ready) return STORE_ENOTREADY; /* a wrap persists the lost total */
  if (head_slot >= JOURNAL_SLOTS_PER_PAGE) {
   uint32_t next = (head + 1) % WS_JOURNAL_PAGES;
   if (journal_new_page(next, page_seq[head] + 1)) return -1;
@@ -247,6 +261,7 @@ int store_journal_read(jref_t ref, uint8_t plain[24]) {
 }
 int store_journal_ack(jref_t ref) {
  uint32_t i = BIT(ref);
+ if (!journal_ready) return STORE_ENOTREADY;
  if (!is_pending(i)) return 0;
  if (prog64(slot_addr(ref.page, ref.slot) + 32, 0)) return -1;
  set_pending(i, 0); n_pending--;
@@ -254,6 +269,7 @@ int store_journal_ack(jref_t ref) {
 }
 unsigned store_journal_oldest(jref_t *out, unsigned max, const jref_t *except) {
  unsigned n = 0;
+ if (!journal_ready) return 0;
  for (uint32_t k = 1; k <= WS_JOURNAL_PAGES && n < max; k++) {
   uint32_t p = (head + k) % WS_JOURNAL_PAGES; /* oldest page first, head page last */
   if (!page_seq[p]) continue;
@@ -269,6 +285,7 @@ unsigned store_journal_oldest(jref_t *out, unsigned max, const jref_t *except) {
 int store_journal_find(uint32_t epoch, uint32_t seq, jref_t *ref) {
  uint8_t want[8] = { (uint8_t)(epoch >> 24), (uint8_t)(epoch >> 16), (uint8_t)(epoch >> 8), (uint8_t)epoch,
                      (uint8_t)(seq >> 24), (uint8_t)(seq >> 16), (uint8_t)(seq >> 8), (uint8_t)seq };
+ if (!journal_ready) return -1;
  for (uint32_t i = 0; i < JOURNAL_CAPACITY; i++) {
   if (!is_pending(i)) continue;
   jref_t r = { (uint16_t)(i / JOURNAL_SLOTS_PER_PAGE), (uint16_t)(i % JOURNAL_SLOTS_PER_PAGE) };
@@ -286,6 +303,7 @@ uint64_t store_counter_next(void) { return ctr_next; }
 uint32_t store_journal_scrub(uint32_t marker)
 {
  uint32_t n = 0;
+ if (!journal_ready) return 0;
  for (uint32_t i = 0; i < JOURNAL_CAPACITY; i++) {
   if (!is_pending(i)) continue;
   jref_t r = { (uint16_t)(i / JOURNAL_SLOTS_PER_PAGE), (uint16_t)(i % JOURNAL_SLOTS_PER_PAGE) };
@@ -303,7 +321,9 @@ uint32_t store_journal_scrub(uint32_t marker)
  * WIPEs; a key used under older firmware (which reset the counter) or on another board cannot
  * (docs/runbook-moving-boards.md). */
 int store_wipe(void) {
- int rc = erase_page(WS_CONFIG_PAGE);
+ int rc = 0;
+ journal_ready = 0; /* the RAM journal no longer describes flash: store_journal_init again */
  for (uint32_t p = 0; p < WS_JOURNAL_PAGES; p++) rc |= erase_page(WS_JOURNAL_FIRST + p);
- return rc ? -1 : 0;
+ if (rc) return -1; /* keep the key: an unprovisioned board must not carry old records */
+ return erase_page(WS_CONFIG_PAGE) ? -1 : 0;
 }

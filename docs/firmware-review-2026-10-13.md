@@ -14,8 +14,12 @@ Scope: `firmware/stage0-node`, `firmware/common`, `firmware/stage0.c`, the `ws0/
 > **Status update (later 2026-10-13):** also done: P4 (gateway counter high-water mark in
 > `gateway-nonces.sqlite3`, raised durably before each commit; `provision-node` refuses a board at or
 > below it; `tests/test_counter_regression.py`), P5/P6/P7 (UART error re-arm, RX relisten after 5 silent
-> minutes, TX consecutive-failure watchdog and boot retry; firmware, pending release), and CI
-> (`.github/workflows/ci.yml`).
+> minutes, TX consecutive-failure watchdog and boot retry), P3 (`node_store.c` over a `ws_flash` ops
+> struct, host flash simulator with a power cut at every operation, `tests/test_store_powercut.py`),
+> and CI (`.github/workflows/ci.yml`). The power-cut sweep found and pinned four store bugs, all fixed:
+> an ACKed record could return after a cut during a journal wrap; an interrupted WIPE could leave
+> records on an unprovisioned board; the abandoned total could drop after a failed write; lost records
+> could go uncounted after a failed write.
 
 ## 1. Executive summary
 

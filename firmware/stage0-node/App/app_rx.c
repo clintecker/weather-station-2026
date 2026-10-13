@@ -13,6 +13,8 @@
 #include "watchdog.h"
 #include "radio.h"
 #include "radio_cfg.h"
+#include "stage0.h"
+#include "usart_if.h"
 #include "stm32_seq.h"
 #include "stm32_timer.h"
 #include "subghz_phy_app.h"
@@ -33,17 +35,24 @@ static UTIL_TIMER_Object_t alive_timer;
 static uint32_t n_diag;
 static uint32_t boot_tick; /* HAL_GetTick runs from the RTC here and survives resets */
 static int relisten_tries;
-
+/* Review P6: Radio.GetStatus() reports the driver's own state, not the chip's. Real evidence of
+ * listening is a radio event (RxDone or RxError). With TX sending every minute, 5 silent
+ * minutes means something is wrong: put the radio in standby and start listening again. */
+#define SILENCE_RELISTEN_MS (5UL * 60000UL)
+static uint32_t last_radio_event_ms, n_relistens;
+static volatile uint8_t relisten_due;
+static int uart_rearm_tries;
 static void post(int ev) { event = ev; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0); }
 static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 {
+  last_radio_event_ms = HAL_GetTick();
   rx_len = size > sizeof rx_frame ? sizeof rx_frame : size;
   memcpy(rx_frame, payload, rx_len);
   rx_rssi = rssi;
   rx_snr = snr;
   post(EV_RX);
 }
-static void on_rx_error(void) { post(EV_RX_ERROR); }
+static void on_rx_error(void) { last_radio_event_ms = HAL_GetTick(); post(EV_RX_ERROR); }
 static void on_rx_timeout(void) { post(EV_RX_ERROR); }
 static void on_tx_done(void) { post(EV_TX_DONE); }
 static void on_tx_timeout(void) { post(EV_TX_TIMEOUT); }
@@ -58,6 +67,13 @@ static void listen(void)
  * One self-heal attempt (re-arm RX) before the watchdog is allowed to reset the board. */
 static int rx_healthy(void)
 {
+  /* Review P5: the console must be receiving (it carries the ACK downlink). One re-arm first. */
+  if (!vcom_rx_armed())
+  {
+    if (uart_rearm_tries++ == 0) { APP_PRINTF("#watchdog console not receiving; re-arming\n"); vcom_rx_rearm(); return 1; }
+    return 0;
+  }
+  uart_rearm_tries = 0;
   if (transmitting) return HAL_GetTick() - tx_start_ms < 5000;
   if (Radio.GetStatus() == RF_RX_RUNNING) { relisten_tries = 0; return 1; }
   if (relisten_tries++ == 0) { APP_PRINTF("#watchdog radio not listening; re-arming\n"); listen(); return 1; }
@@ -66,6 +82,15 @@ static int rx_healthy(void)
 
 static void process(void)
 {
+  if (relisten_due && !transmitting)
+  {
+    relisten_due = 0;
+    n_relistens++;
+    APP_PRINTF("#relisten after %u s without a radio event\n", (unsigned)((HAL_GetTick() - last_radio_event_ms) / 1000));
+    Radio.Standby();
+    listen();
+    last_radio_event_ms = HAL_GetTick();
+  }
   switch (event)
   {
     case EV_RX:
@@ -108,9 +133,16 @@ static void process(void)
 static void on_alive(void *ctx)
 {
   (void)ctx;
-  APP_PRINTF("#alive uptime=%u forwarded=%u dropped=%u acks=%u diag=%u listening=%d\n",
+  APP_PRINTF("#alive uptime=%u forwarded=%u dropped=%u acks=%u diag=%u listening=%d relistens=%u uart_errors=%u\n",
              (unsigned)((HAL_GetTick() - boot_tick) / 1000), (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks,
-             (unsigned)n_diag, Radio.GetStatus() == RF_RX_RUNNING || transmitting);
+             (unsigned)n_diag, Radio.GetStatus() == RF_RX_RUNNING || transmitting, (unsigned)n_relistens,
+             (unsigned)vcom_rx_errors());
+  /* Timer context: only flag it; the radio is touched from the sequencer task. */
+  if (!transmitting && ws_silent_for(HAL_GetTick(), last_radio_event_ms, SILENCE_RELISTEN_MS))
+  {
+    relisten_due = 1;
+    UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0);
+  }
 }
 
 static void on_line(char *line)
@@ -120,8 +152,8 @@ static void on_line(char *line)
   if (!strcmp(line, "TEST-HANG")) { APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n"); HAL_Delay(50); for (;;) { } }
   if (!strcmp(line, "STATUS"))
   {
-    APP_PRINTF("#status role=rx forwarded=%u dropped=%u acks=%u\n",
-               (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks);
+    APP_PRINTF("#status role=rx forwarded=%u dropped=%u acks=%u relistens=%u uart_errors=%u\n",
+               (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks, (unsigned)n_relistens, (unsigned)vcom_rx_errors());
     return;
   }
   int n = hex_decode(line, frame, sizeof frame);
@@ -152,6 +184,7 @@ void SubghzApp_Init(void)
   events.TxDone = on_tx_done;
   events.TxTimeout = on_tx_timeout;
   boot_tick = HAL_GetTick();
+  last_radio_event_ms = boot_tick;
   leds_init();
   watchdog_start(rx_healthy);
   Radio.Init(&events);

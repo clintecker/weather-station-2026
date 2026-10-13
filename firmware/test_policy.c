@@ -67,6 +67,21 @@ int main(void) {
  assert(ws_parse_provision("1 000102030405060708090a0b0c0d0e0",&id,key,&floor)!=0);   /* 31 hex */
  assert(ws_parse_provision("1 000102030405060708090a0b0c0d0e0f0",&id,key,&floor)!=0); /* 33 hex */
  assert(ws_parse_provision("1 00010203040506070809za0b0c0d0e0f",&id,key,&floor)!=0);  /* non-hex */
+ /* Consecutive-failure run (TX health, review P7): only uninterrupted failures trip it. */
+ ws_failrun fr={0};
+ for(int i=0;i<10;i++) { ws_failrun_note(&fr,0); assert(!ws_failrun_tripped(&fr,10)); }
+ ws_failrun_note(&fr,0); assert(ws_failrun_tripped(&fr,10));           /* 11th failure in a row */
+ ws_failrun_note(&fr,1); assert(!ws_failrun_tripped(&fr,10) && fr.n==0); /* any success resets */
+ for(unsigned i=0;i<1000;i++) ws_failrun_note(&fr,0);
+ assert(fr.n==1000);                                                     /* no overflow trouble */
+ fr.n=0xFFFFFFFFu; ws_failrun_note(&fr,0); assert(fr.n==0xFFFFFFFFu);  /* saturates */
+
+ /* Radio silence check (RX relisten, review P6): wrap-safe over the 32-bit ms tick. */
+ assert(!ws_silent_for(1000,1000,300000));
+ assert(!ws_silent_for(300999,1000,300000));
+ assert(ws_silent_for(301001,1000,300000));
+ assert(!ws_silent_for(0x00000100u,0xFFFFFF00u,300000));   /* 512 ms across the wrap */
+ assert(ws_silent_for(0x00050000u,0xFFFFFF00u,300000));    /* ~328 s across the wrap */
  puts("policy ok");
  return 0;
 }

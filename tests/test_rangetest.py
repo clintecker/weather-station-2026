@@ -7,7 +7,10 @@ import ctypes
 import subprocess
 import tempfile
 import unittest
-from toolchain import needs_cc
+try:
+    from toolchain import needs_cc          # python -m unittest discover -s tests
+except ImportError:
+    from tests.toolchain import needs_cc    # python -m unittest tests.<module>
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parent.parent/'firmware/rangetest/App/rt_proto.c'

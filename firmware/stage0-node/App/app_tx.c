@@ -94,6 +94,15 @@ static uint8_t replied[MAX_QUEUE];
 static enum { LINK_LINKED, LINK_PROBING } link_state = LINK_LINKED;
 static uint32_t silent_minutes, probe_step, next_probe_mcu, last_send_mcu;
 static uint32_t exchange_ms; /* estimated radio time of one answered exchange */
+/* Review P7: a TX that keeps failing must not look healthy. Count uninterrupted failures of the
+ * steps that must work every minute (journal append, counter reservation, Radio.Send); any
+ * success resets the run. Minutes the policy chose not to send never count. Above the limit the
+ * watchdog resets the board. */
+#define TX_FAIL_LIMIT 10U
+static ws_failrun tx_fail;
+/* A storage failure at boot may be transient: retry once by a reset after 10 minutes. */
+#define BOOT_RETRY_MS (10UL * 60000UL)
+static UTIL_TIMER_Object_t boot_retry_timer;
 
 /* Health report (kind 4, gap G8): every 15 min and at each link-state change, sent after a
  * minute's exchange (also while probing, so the link field can read "probing").
@@ -184,13 +193,14 @@ static void send_current(void)
   uint8_t plain[24], frame[WS_OBS_FRAME_LEN];
   if (store_journal_read(queue[qi], plain)) { APP_PRINTF("#error journal-read\n"); next_item(); return; }
   /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
-  if (store_next_counter(&sent_counter)) { APP_PRINTF("#error counter-reserve\n"); busy = 0; Radio.Sleep(); return; }
+  if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_fail, 0); APP_PRINTF("#error counter-reserve\n"); busy = 0; Radio.Sleep(); return; }
   if (ws_seal_obs(key, station, sent_counter, plain, frame)) { APP_PRINTF("#error seal\n"); next_item(); return; }
   sent_epoch = be32(plain);
   sent_seq = be32(plain + 4);
   n_sent++;
   led_flash(LED_BLUE, 400);
-  if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) { APP_PRINTF("#error radio-busy\n"); next_item(); }
+  if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_fail, 0); APP_PRINTF("#error radio-busy\n"); next_item(); return; }
+  ws_failrun_note(&tx_fail, 1);
 }
 
 static int same(jref_t a, jref_t b) { return a.page == b.page && a.slot == b.slot; }
@@ -409,6 +419,7 @@ static void sample(void)
   if (!valid) n_sensor_faults++;
   ws_pack_observation(plain, boot_epoch, next_seq, utc, uptime, t, h, (uint8_t)valid, (uint8_t)timed);
   int rc = store_journal_append(plain, &live);
+  ws_failrun_note(&tx_fail, rc == 0);
   APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
              (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)uptime, valid, src, valid ? t : 0, valid ? h : 0,
              timed ? "synchronized" : "unknown", (unsigned)utc, rc ? "ERROR" : "ok",
@@ -443,6 +454,7 @@ static int tx_healthy(void)
   if (!running) return 1;                                   /* not sampling by design */
   if (now - last_sample_mcu > 150) return 0;                /* sampling stopped */
   if (busy && now - exchange_start_mcu > 30) return 0;      /* radio exchange stuck */
+  if (ws_failrun_tripped(&tx_fail, TX_FAIL_LIMIT)) { APP_PRINTF("#watchdog %u failures in a row\n", (unsigned)tx_fail.n); return 0; }
   return 1;
 }
 
@@ -513,6 +525,17 @@ static void on_line(char *line)
   APP_PRINTF("#error unknown command\n");
 }
 
+static void on_boot_retry(void *ctx) { (void)ctx; NVIC_SystemReset(); }
+
+/* Never for an unprovisioned board or a failed self-test: those need an operator, not a reset. */
+static void boot_retry(void)
+{
+  if (!kat_ok) return;
+  APP_PRINTF("#boot-retry: reset in %u s\n", (unsigned)(BOOT_RETRY_MS / 1000));
+  UTIL_TIMER_Create(&boot_retry_timer, BOOT_RETRY_MS, UTIL_TIMER_ONESHOT, on_boot_retry, NULL);
+  UTIL_TIMER_Start(&boot_retry_timer);
+}
+
 void SubghzApp_Init(void)
 {
   events.TxDone = on_tx_done;
@@ -535,7 +558,7 @@ void SubghzApp_Init(void)
   kat_ok = run_kat();
   APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
              watchdog_reset_cause(), kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
-  if (store_meta_init() || store_journal_init()) { led_set(LED_RED, 1); APP_PRINTF("#error store-init\n"); return; }
+  if (store_meta_init() || store_journal_init()) { led_set(LED_RED, 1); APP_PRINTF("#error store-init\n"); boot_retry(); return; }
   uint32_t scrubbed = store_journal_scrub(STORM_EPOCH);
   if (scrubbed) APP_PRINTF("#storm-scrub dropped=%u (test slots a power cut left pending)\n", (unsigned)scrubbed);
   provisioned = store_config_load(&station, key) == 0;
@@ -544,7 +567,7 @@ void SubghzApp_Init(void)
   restore_time_trust();
   if (!kat_ok) { led_set(LED_RED, 1); status(); APP_PRINTF("#error self-test failed; not transmitting\n"); return; }
   /* Durable epoch before the first sample: observation identities never repeat. */
-  if (store_next_epoch(&boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); return; }
+  if (store_next_epoch(&boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); boot_retry(); return; }
   sensor_init();
   {
     int16_t t; uint16_t h; int src = sensor_read(&t, &h);

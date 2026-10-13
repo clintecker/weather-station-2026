@@ -2,7 +2,12 @@
 #define NODE_STORE_H
 #include <stdint.h>
 #include "flash_layout.h"
-/* Durable TX node state in internal flash: provisioning, monotonic counters, journal. */
+/* Durable TX node state in internal flash: provisioning, monotonic counters, journal.
+ * All flash access goes through ws_flash_internal (flash_layout.h). Mutators of the monotonic
+ * values need a successful store_meta_init; journal mutators also need store_journal_init
+ * (and a fresh one after store_wipe). Before that they return STORE_ENOTREADY and touch
+ * nothing. */
+#define STORE_ENOTREADY (-16)
 
 /* Provisioning */
 int store_config_load(uint32_t *station, uint8_t key[16]); /* 0 if provisioned and intact */
