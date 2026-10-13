@@ -22,6 +22,7 @@
 #include "stm32wlxx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "fault.h"
 #include "flash_layout.h"
 /* USER CODE END Includes */
 
@@ -84,6 +85,9 @@ void NMI_Handler(void)
   }
   /* USER CODE END NonMaskableInt_IRQn 0 */
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
+  /* weather-station-2026: any other NMI source (clock security system) is recorded like a
+     HardFault; the frame is not needed, so 0 stands in for it and fault_record stores pc=ffffffff. */
+  fault_record(0, 0, 2);
   while (1)
   {
   }
@@ -96,7 +100,16 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
-
+  /* weather-station-2026: record the fault and reset (App/fault.c). Must stay the first statement:
+     this function has no prologue, so LR still holds EXC_RETURN and bit 2 picks the stack that holds
+     the exception frame. fault_record(frame, exc_return, kind) never returns. */
+  __asm volatile ("tst lr, #4\n\t"
+                  "ite eq\n\t"
+                  "mrseq r0, msp\n\t"
+                  "mrsne r0, psp\n\t"
+                  "mov r1, lr\n\t"
+                  "movs r2, #1\n\t"
+                  "b fault_record\n\t");
   /* USER CODE END HardFault_IRQn 0 */
   while (1)
   {

@@ -63,8 +63,8 @@ The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac a
 
 | Board | Output | Commands |
 |---|---|---|
-| TX | Lines starting with `#` (glossary below) | `STATUS`, `KAT`, `PROVISION <station_id> <32 hex key> [epoch_floor]` (decimal ID ≥ 1; only when unprovisioned; reboots on success), `WIPE ERASE-ALL-NODE-STATE` (reboots), `TEST-HANG` (bench: proves the watchdog), `TEST-FLASH-STORM` (bench: continuous flash writes for power-cut tests; pauses sampling; ends at reboot) |
-| RX | One lowercase hex line per received observation **or health-report** frame (kinds 1 and 4), plus `#` diagnostics (below) | `STATUS`, `TEST-HANG`, or one hex **ACK or NACK** line from the host. Lines starting with `#` are ignored. |
+| TX | Lines starting with `#` (glossary below) | `STATUS`, `KAT`, `PROVISION <station_id> <32 hex key> [epoch_floor]` (decimal ID ≥ 1; only when unprovisioned; reboots on success), `WIPE ERASE-ALL-NODE-STATE` (reboots), `TEST-HANG` (bench: proves the watchdog), `TEST-FAULT` (bench: proves crash recording), `TEST-FLASH-STORM` (bench: continuous flash writes for power-cut tests; pauses sampling; ends at reboot) |
+| RX | One lowercase hex line per received observation **or health-report** frame (kinds 1 and 4), plus `#` diagnostics (below) | `STATUS`, `TEST-HANG`, `TEST-FAULT`, or one hex **ACK or NACK** line from the host. Lines starting with `#` are ignored. |
 
 ### TX console glossary (`App/app_tx.c`)
 
@@ -105,6 +105,7 @@ Other lines:
 |---|---|
 | `#boot role=tx fw= reset= kat= freq= bw= sf= power=` | Printed at every boot. `bw` is the index (2 = 500 kHz). |
 | `#sample epoch= seq= uptime= valid= rc= t= rh= time= utc= journal= pending= lost=` | One per minute. `rc` is the sensor result (`App/sensor.h`): 0 ok, −2 address NACK (sensor absent or wiring), −3 read NACK, −4 CRC mismatch, −5 bus still stuck after recovery. `journal=ERROR` means the reading could not be journaled. |
+| `#fault kind= pc= lr= cfsr= hfsr= bfar= count=` | Both roles, after `#boot`, only if the previous run crashed (see Crash records) |
 | `#sensor ok t= rh=` / `#sensor fault rc=` | Once at boot, from one test reading. |
 | `#watchdog N failures in a row` | TX: more than 10 consecutive failures of journal append, counter reservation or `Radio.Send`; the watchdog then resets the board (review P7) |
 | `#boot-retry: reset in 600 s` | TX: storage init or epoch reservation failed at boot; one automatic reset after 10 minutes (only if the self-test passed) |
@@ -122,6 +123,28 @@ Other lines:
 | `#storm start ctr=`, `#storm writes= ctr= burned=`, `#storm-scrub dropped=` | TEST-FLASH-STORM progress (every 256 writes); boot cleanup of storm slots |
 | `#error <what>` | `journal-read`, `counter-reserve`, `seal`, `radio-busy`, `journal-ack`, `tx-timeout`, `store-init`, `epoch-reserve`, `self-test failed; not transmitting`, plus the command errors `already-provisioned`, `usage: …`, `bad key`, `epoch-floor`, `provision rc=`, `unknown command` |
 
+### Crash records (`App/fault.c`, both roles)
+
+A crash (a Cortex-M4 HardFault, or an NMI other than a flash ECC error) used to stop the board
+in an endless loop until the watchdog reset it, with no trace of why. Now the fault handler saves
+a few registers in RTC backup registers DR5–DR11, which survive a reset as long as the board keeps
+power, and resets at once (`reset=software`). The next boot prints a line like this (illustrative;
+`pc` and `lr` depend on the build):
+
+`#fault kind=hard pc=08001156 lr=08001153 cfsr=00008200 hfsr=40000000 bfar=20040000 count=1`
+
+| Field | Meaning |
+|---|---|
+| `kind` | `hard` (HardFault; bus, usage and memory faults all end here) or `nmi` |
+| `pc` | The instruction that faulted. Find it with `arm-none-eabi-addr2line -e build/<role>/stage0-<role>.elf <pc>` on the exact release, or in `objdump -d`. `ffffffff` means the stack pointer was not in RAM (likely a stack overflow) or the fault was an NMI. |
+| `lr` | Return address of the faulting function: usually its caller |
+| `cfsr`, `hfsr` | Configurable and HardFault status registers (Armv7-M Architecture Reference Manual, system control block). Common `cfsr` values: `00008200` precise bus error with `bfar` valid; `00010000` undefined instruction; `00020000` invalid state (for example a call through a corrupted function pointer). `hfsr=40000000` (FORCED) means a bus, usage or memory fault escalated to HardFault. |
+| `bfar` | Faulting data address; meaningful only when `cfsr` bit 15 is set |
+| `count` | Crashes since the board last lost power |
+
+`TEST-FAULT` reads address `0x20040000`, where no memory is mapped, so the expected record is
+`cfsr=00008200 hfsr=40000000 bfar=20040000` with `pc` inside `fault_test`.
+
 ### RX console glossary (`App/app_rx.c`)
 
 | Line | Meaning |
@@ -136,7 +159,8 @@ Other lines:
 | `#watchdog radio not listening; re-arming`, `#watchdog console not receiving; re-arming` | Self-heal attempt before the watchdog may reset the board |
 | `#relisten after N s without a radio event` | Radio put in standby and listening restarted (review P6) |
 | `#status role=rx forwarded= dropped= acks= relistens= uart_errors=` | Reply to `STATUS`. `acks` counts ACK/NACK lines handed to the radio. |
-| `#boot role=rx fw= reset= freq= bw= sf= power=`, `#test-hang: …` | Boot line and command reply |
+| `#boot role=rx fw= reset= freq= bw= sf= power=`, `#test-hang: …`, `#test-fault: …` | Boot line and command replies |
+| `#fault …` | As on TX: the previous run crashed (see Crash records) |
 
 ### Transmission policy (TX)
 

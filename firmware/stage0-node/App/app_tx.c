@@ -5,7 +5,7 @@
  * receive window. Time comes only from an ACK that echoes the counter of the frame just sent
  * (replayed ACKs cannot move the clock). Console lines from this board start with '#';
  * commands: STATUS, KAT, PROVISION <station_id> <32 hex key> [epoch_floor],
- * WIPE ERASE-ALL-NODE-STATE, TEST-HANG, TEST-FLASH-STORM (firmware/stage0-node/README.md). */
+ * WIPE ERASE-ALL-NODE-STATE, TEST-HANG, TEST-FAULT, TEST-FLASH-STORM (firmware/stage0-node/README.md). */
 #include <stdlib.h>
 #include <string.h>
 #include "console.h"
@@ -17,6 +17,7 @@
 #include "rtc.h"
 #include "sensor.h"
 #include "stackmon.h"
+#include "fault.h"
 #include "stage0.h"
 #include "stm32_seq.h"
 #include "stm32wlxx_hal.h"
@@ -513,6 +514,7 @@ static void reboot_soon(void) { HAL_Delay(200); NVIC_SystemReset(); }
 static void on_line(char *line)
 {
   if (!strcmp(line, "STATUS")) { status(); return; }
+  if (!strcmp(line, "TEST-FAULT")) fault_test();
   if (!strcmp(line, "TEST-HANG")) { APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n"); HAL_Delay(50); for (;;) { } }
   if (!strcmp(line, "TEST-FLASH-STORM"))
   {
@@ -584,6 +586,7 @@ void SubghzApp_Init(void)
   kat_ok = run_kat();
   APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
              watchdog_reset_cause(), kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
+  fault_report();
   if (store_meta_init() || store_journal_init()) { led_set(LED_RED, 1); APP_PRINTF("#error store-init\n"); boot_retry(); return; }
   uint32_t scrubbed = store_journal_scrub(STORM_EPOCH);
   if (scrubbed) APP_PRINTF("#storm-scrub dropped=%u (test slots a power cut left pending)\n", (unsigned)scrubbed);

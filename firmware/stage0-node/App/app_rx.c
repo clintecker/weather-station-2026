@@ -16,6 +16,7 @@
 #include "stage0.h"
 #include "usart_if.h"
 #include "stackmon.h"
+#include "fault.h"
 #include "stm32_seq.h"
 #include "stm32_timer.h"
 #include "subghz_phy_app.h"
@@ -150,6 +151,7 @@ static void on_line(char *line)
 {
   uint8_t frame[WS_ACK_FRAME_LEN + 1];
   if (line[0] == '#') return;
+  if (!strcmp(line, "TEST-FAULT")) fault_test();
   if (!strcmp(line, "TEST-HANG")) { APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n"); HAL_Delay(50); for (;;) { } }
   if (!strcmp(line, "STATUS"))
   {
@@ -195,6 +197,7 @@ void SubghzApp_Init(void)
   console_init(on_line);
   APP_PRINTF("#boot role=rx fw=%s reset=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION, watchdog_reset_cause(),
              (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
+  fault_report();
   UTIL_TIMER_Create(&alive_timer, 60000, UTIL_TIMER_PERIODIC, on_alive, NULL);
   UTIL_TIMER_Start(&alive_timer);
   listen();
