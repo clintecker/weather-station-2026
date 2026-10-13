@@ -1,0 +1,7 @@
+mark,utc,where
+1,16:44:13,front door
+-,16:45:25,Farmer's Fridge (note, no mark)
+2,16:45:46,Farmer's Fridge (SF7 -> SF10 -> SF12 comparison)
+3,16:47:44,around the corner past Farmer's Fridge
+-,16:49:20-16:50:45,stationary A/B: SF12 +22 dBm vs 0 dBm (location: returning from edge, not noted)
+1(after RX restart),16:55:11,furthest side of the building

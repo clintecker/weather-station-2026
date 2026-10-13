@@ -1,0 +1,68 @@
+2026-10-13T15:30:44Z frame hdr=57530401000000010000000000000017 -> ack
+2026-10-13T15:30:44Z #rx obs rssi=-20 snr=13
+2026-10-13T15:30:44Z #alive uptime=2334 forwarded=30 dropped=0 acks=20 diag=3 listening=1
+2026-10-13T15:31:44Z frame hdr=57530401000000010000000000000018 -> ack
+2026-10-13T15:31:44Z #rx obs rssi=-20 snr=12
+2026-10-13T15:31:44Z #alive uptime=2396 forwarded=31 dropped=0 acks=21 diag=3 listening=1
+2026-10-13T15:32:44Z frame hdr=57530401000000010000000000000019 -> ack
+2026-10-13T15:32:44Z #rx obs rssi=-20 snr=12
+2026-10-13T15:32:44Z #alive uptime=2457 forwarded=32 dropped=0 acks=22 diag=3 listening=1
+2026-10-13T15:33:44Z frame hdr=5753040100000001000000000000001a -> ack
+2026-10-13T15:33:44Z #rx obs rssi=-20 snr=13
+2026-10-13T15:33:44Z #alive uptime=2519 forwarded=33 dropped=0 acks=23 diag=3 listening=1
+2026-10-13T15:34:44Z frame hdr=5753040100000001000000000000001b -> ack
+2026-10-13T15:34:44Z #rx obs rssi=-20 snr=12
+2026-10-13T15:34:44Z #alive uptime=2580 forwarded=34 dropped=0 acks=24 diag=3 listening=1
+2026-10-13T15:35:44Z frame hdr=5753040100000001000000000000001c -> ack
+2026-10-13T15:35:44Z #rx obs rssi=-20 snr=13
+2026-10-13T15:35:44Z #alive uptime=2641 forwarded=35 dropped=0 acks=25 diag=3 listening=1
+2026-10-13T15:36:44Z #alive uptime=2703 forwarded=35 dropped=0 acks=25 diag=3 listening=1
+2026-10-13T15:37:14Z frame hdr=57530401000000010000000000000101 -> ack
+2026-10-13T15:37:14Z #rx obs rssi=-61 snr=13
+2026-10-13T15:37:14Z diag hdr=57530404000000010000000000000102
+2026-10-13T15:37:14Z #rx obs rssi=-58 snr=-2
+2026-10-13T15:37:44Z #alive uptime=2764 forwarded=37 dropped=0 acks=26 diag=4 listening=1
+2026-10-13T15:38:14Z frame hdr=57530401000000010000000000000103 -> ack
+2026-10-13T15:38:14Z #rx obs rssi=-68 snr=12
+2026-10-13T15:38:44Z #alive uptime=2826 forwarded=38 dropped=0 acks=27 diag=4 listening=1
+2026-10-13T15:39:14Z frame hdr=57530401000000010000000000000104 -> ack
+2026-10-13T15:39:14Z #rx obs rssi=-78 snr=6
+2026-10-13T15:39:44Z #alive uptime=2887 forwarded=39 dropped=0 acks=28 diag=4 listening=1
+2026-10-13T15:40:14Z frame hdr=57530401000000010000000000000105 -> ack
+2026-10-13T15:40:14Z #rx obs rssi=-72 snr=12
+2026-10-13T15:40:14Z frame hdr=57530401000000010000000000000106 -> ack
+2026-10-13T15:40:14Z #rx obs rssi=-71 snr=13
+2026-10-13T15:40:44Z #alive uptime=2949 forwarded=41 dropped=0 acks=30 diag=4 listening=1
+2026-10-13T15:41:14Z frame hdr=57530401000000010000000000000107 -> ack
+2026-10-13T15:41:14Z #rx obs rssi=-70 snr=12
+2026-10-13T15:41:44Z #alive uptime=3010 forwarded=42 dropped=0 acks=31 diag=4 listening=1
+2026-10-13T15:42:14Z frame hdr=57530401000000010000000000000108 -> ack
+2026-10-13T15:42:14Z #rx obs rssi=-68 snr=13
+2026-10-13T15:42:44Z #alive uptime=3072 forwarded=43 dropped=0 acks=32 diag=4 listening=1
+2026-10-13T15:43:14Z frame hdr=57530401000000010000000000000109 -> ack
+2026-10-13T15:43:14Z #rx obs rssi=-64 snr=13
+2026-10-13T15:43:44Z #alive uptime=3133 forwarded=44 dropped=0 acks=33 diag=4 listening=1
+2026-10-13T15:44:14Z frame hdr=5753040100000001000000000000010a -> ack
+2026-10-13T15:44:14Z #rx obs rssi=-88 snr=11
+2026-10-13T15:44:44Z #alive uptime=3194 forwarded=45 dropped=0 acks=34 diag=4 listening=1
+2026-10-13T15:45:14Z frame hdr=5753040100000001000000000000010b -> ack
+2026-10-13T15:45:14Z #rx obs rssi=-97 snr=6
+2026-10-13T15:45:44Z #alive uptime=3256 forwarded=46 dropped=0 acks=35 diag=4 listening=1
+2026-10-13T15:46:14Z frame hdr=5753040100000001000000000000010c -> ack
+2026-10-13T15:46:14Z #rx obs rssi=-83 snr=11
+2026-10-13T15:46:44Z #alive uptime=3317 forwarded=47 dropped=0 acks=36 diag=4 listening=1
+2026-10-13T15:47:44Z #alive uptime=3379 forwarded=47 dropped=0 acks=36 diag=4 listening=1
+2026-10-13T15:48:44Z #alive uptime=3440 forwarded=47 dropped=0 acks=36 diag=4 listening=1
+2026-10-13T15:49:14Z frame hdr=5753040100000001000000000000010f -> ack
+2026-10-13T15:49:14Z #rx obs rssi=-83 snr=11
+2026-10-13T15:49:14Z frame hdr=57530401000000010000000000000110 -> ack
+2026-10-13T15:49:14Z #rx obs rssi=-81 snr=12
+2026-10-13T15:49:14Z frame hdr=57530401000000010000000000000111 -> ack
+2026-10-13T15:49:14Z #rx obs rssi=-84 snr=11
+2026-10-13T15:49:44Z #alive uptime=3502 forwarded=50 dropped=0 acks=39 diag=4 listening=1
+2026-10-13T15:50:14Z frame hdr=57530401000000010000000000000112 -> ack
+2026-10-13T15:50:14Z #rx obs rssi=-65 snr=8
+2026-10-13T15:50:44Z #alive uptime=3563 forwarded=51 dropped=0 acks=40 diag=4 listening=1
+2026-10-13T15:51:14Z frame hdr=57530401000000010000000000000113 -> ack
+2026-10-13T15:51:14Z #rx obs rssi=-63 snr=13
+2026-10-13T15:51:44Z #alive uptime=3624 forwarded=52 dropped=0 acks=41 diag=4 listening=1

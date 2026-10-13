@@ -287,3 +287,22 @@ Clint approved C and D, and agreed that a reconstructed time counts toward H01 w
 ### G1 watchdog and G2 NACK on hardware (2026-10-12)
 - **G1:** `TEST-HANG` on TX → `#boot … reset=watchdog` after 7.9 s, time trust restored (D), next reading ACKed. On RX → `reset=watchdog` after 7 s. The first boot after the update showed `reset=power` because the old firmware never cleared the reset flags; the new firmware clears them.
 - **G2:** I planted a conflicting database row for TX's next identity (epoch 11, seq 1). The gateway authenticated the frame, stored it in `rejections` (112 hex characters), and sent a NACK. TX: `#nack epoch=11 seq=1 reason=1 abandoned=1`, `pending=0`. Cleanup: I deleted the planted row and recovered the genuine reading from `rejections.frame_hex` with `Store.ingest` (returned `True`). The rejection row stays as evidence.
+
+## Office session (2026-10-13)
+
+### Office setup
+- Fresh Mac: venv via `uv`, `tools/fetch-vendor.sh` (unlocked the 7 C-vs-Python crypto tests that skip without `vendor/`), `brew install open-ocd` (0.12.0), xPack arm-none-eabi-gcc 15.2.1-1.1 (tarball SHA-256 matched `574082d3…aad870`).
+- TX was wiped (`WIPE ERASE-ALL-NODE-STATE`, discarding 18 office-time readings) and provisioned with a fresh office key: KCV `b7142e`, run directory `run-office/`. **The home gateway will now reject TX** until it is re-provisioned with the `run-hw` key and the next epoch floor (context pack §3).
+- Release `a07f498` rebuilt here from a worktree at that commit: both `.bin` hashes matched `RELEASES.md`. A build from a later commit does not match, because the firmware embeds the commit.
+
+### Range walks
+- Walk 1 (weather-station firmware, 1 reading/min, SF7 / 0 dBm, boards hanging loose): `evidence/range-walk-office-2026-10-13/`. A 2-minute dropout lost nothing (journal backfill), but the first backfilled reading arrived after 121.6 s, over the H01 120 s limit.
+- Walk 2 (new bench tool `firmware/rangetest`, both directions every ~1 s, button-selected SF and power): `evidence/rangetest-office-2026-10-13/`. SF12 / +22 dBm reached the far side of the building. Noise floor about −100 dBm at both ends. Losses are bursty and start near 0 dB SNR, far above SF12's −20 dB limit; one window showed RSSI up and SNR down together (in-band interference). Hypothesis, not confirmed: bursty 902–928 MHz sources such as UHF RFID.
+
+### Trial and error
+- **`firmware/rangetest` v1 settings gap:** a restarted board came back at the defaults while the other kept its settings, so they ran at different power, or could not hear each other at all if the SF differed. Fixed in v2: a restarted board adopts the first settings it hears; about 30 s without contact returns both to the defaults.
+- **v2 defaults were the weakest setting (SF7 / 0 dBm).** Walking out of range at SF12 / +22 dropped both boards to the setting with the shortest reach, so they could not reconnect from where the link was lost (Clint's catch). v3: boot and fallback are SF12 / +22 dBm, and the buttons step down. Built and tested on the host, **not yet flashed**.
+- **Logger crashes:** a mark went through a code path that assumed settings fields (KeyError); the logger also died on a USB disconnect and logged the wrong board after the port names swapped. Fixed: the logger finds the board by ST-LINK serial number and reconnects.
+- **Spontaneous restarts are USB dropouts.** Both boards restarted when their USB port vanished for about 1 s (TX 4 times, RX twice; one episode during handling). `RCC_CSR` after clearing: `PINRSTF` only, no `BORRSTF`, so no power loss. The ST-LINK pulses the target's reset pin when it re-enumerates. Earlier I blamed board A alone; RX did the same. Bench-only (no ST-LINK on the field node), but H01 on USB needs secured cables.
+- **My own debugger sessions reset TX twice** (16:22:02 and 16:22:18) while I read and cleared `RCC_CSR` with OpenOCD. A later read-only session did not. Avoid debugger sessions during runs whose restarts are being counted.
+- **Close-range readings are unreliable at higher power** (receiver overload with antennas a few cm apart). Compare power only with the boards apart.

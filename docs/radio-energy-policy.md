@@ -218,3 +218,24 @@ All six proposals below are approved as written. Thresholds in item 4 stay provi
 | 4 | CONSERVE threshold and hysteresis | reserve + 20 %, 5 % hysteresis (final values from H02/H03 measurements) |
 | 5 | CONSERVE live interval | 300 s (spec R02) |
 | 6 | Unknown energy state | Act as CONSERVE (fail closed) |
+
+## 10. Open question for Stage 1: adaptive SF and power (not approved, not implemented)
+
+Raised by Clint, 2026-10-13, after the office range walk (`evidence/rangetest-office-2026-10-13/`).
+Today the SF and power are fixed per placement (§6.4 of the context pack); this policy caps airtime
+and backs off probing around that fixed SF.
+
+**Idea:** start at, and fall back to, the longest reach (SF12 / +22 dBm), then let the gateway step the
+node down to cheaper settings while the margin allows, as LoRaWAN ADR does.
+
+| For | Against |
+|---|---|
+| Energy: SF12 costs about 22× the airtime of SF7 per frame (§3) | New failure mode: the two ends on different settings cannot hear each other. `firmware/rangetest` needed restart adoption and a lost-contact fallback to the longest reach to stay safe |
+| Follows a changing link (snow or ice on the antenna, failure mode L9) | The airtime cap, *K* and the probe interval (§6, §9) currently assume one SF |
+| A failing link recovers at the longest reach on its own | More firmware and gateway state to test |
+
+**Evidence to respect if adopted:** in the office, losses began near 0 dB SNR, not at SF12's −20 dB
+limit, and came in bursts (probable in-band interference). Step-down decisions must use the
+measured delivery rate over a window, not reported SNR alone.
+
+Decide in Stage 1, when H02/H03 give real TX energy per frame. Stage 0 keeps a fixed SF.

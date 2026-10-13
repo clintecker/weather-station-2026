@@ -25,7 +25,7 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
   - MQTT against a local broker (currently **disabled**)
   - H01 scorer `tools/h01_report.py`
 - **Latest evidence:** `evidence/soak-a07f498-2026-10-13/`. Over 9 h, 549 of 549 minutes arrived on time, median latency 1.5 s, 0 lost, 0 missed ACKs.
-- **Tests:** `.venv/bin/python -m unittest discover -s tests` should give 61/61 passing.
+- **Tests:** `.venv/bin/python -m unittest discover -s tests` should give 82 passing. Run `tools/fetch-vendor.sh` first: without `vendor/`, 7 C-vs-Python crypto tests are skipped, not run.
 
 ## 3. Important: the radio key did NOT come with you
 - The TX board is provisioned with a key that lives only in `run-hw/` on the home Mac. That folder is git-ignored and must never be committed.
@@ -45,7 +45,8 @@ A new key with reset counters is safe. Reusing an old key with reset counters is
 ```sh
 git clone https://github.com/clintecker/weather-station-2026 && cd weather-station-2026
 python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt   # or: uv venv && uv pip install -r requirements.txt
-WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expect 61 OK
+sh tools/fetch-vendor.sh                                                  # needed for 7 of the tests
+WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expect 82 OK, none skipped
 
 # Plug both boards in, then find their ports. Each board is one /dev/cu.usbmodem*.
 ls /dev/cu.usbmodem*
@@ -70,17 +71,17 @@ ls /dev/cu.usbmodem*
   - Download: https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/tag/v15.2.1-1.1, asset `xpack-arm-none-eabi-gcc-15.2.1-1.1-darwin-arm64.tar.gz`.
   - Expected SHA-256 (from the home machine): `574082d35e49a2bcbdc355836b2a3ae5e5bb3b9456c9f5e37177db2ab4aad870`.
   - Do not use the Homebrew `gcc-arm-embedded` cask: its checksum failed here, and that was deliberately not bypassed.
-- **Vendor code:** `tools/fetch-vendor.sh` fetches pinned STM32CubeWL v1.6.0 plus its submodules and Mbed TLS 3.6.6 into `vendor/` (git-ignored).
+- **Vendor code:** `tools/fetch-vendor.sh` fetches pinned STM32CubeWL v1.6.0 plus its submodules into `vendor/` (git-ignored). Mbed TLS 3.6.6 comes in as ST's `mbed-crypto` submodule of STM32CubeWL, not as a separate download.
 - **Build and flash:**
   - `cd firmware/stage0-node && make ROLE=rx flash SERIAL=0016001E4142500E20353451`, then the same with `ROLE=tx` and the TX serial.
   - Flashing keeps provisioning and the journal.
   - A release must be recorded in `firmware/stage0-node/RELEASES.md`. H01 evidence must name a release.
 
 ## 6. Next steps, in order
-1. **Re-establish the link at the office.** Steps above. Confirm green ACK LEDs and `/v1/status`.
+1. **Re-establish the link at the office.** Steps above. Confirm green ACK LEDs and `/v1/status`. *Done 2026-10-13: office key KCV `b7142e` in `run-office/` (see `docs/hardware/nucleo-wl55jc-bringup.md`, "Office session").*
 2. **SHT45 (Adafruit 6174), expected ~Oct 14.**
    - Wiring: SDA → CN5.9 (D14/PA11), SCL → CN5.10 (D15/PA12), 3V3 → CN6.4, GND → CN6.6. Bus is I2C2 at 100 kHz.
-   - Firmware sensor driver: TODO.
+   - Firmware sensor driver: **already written** (`firmware/stage0-node/App/sensor.c`: I2C2, stuck-bus recovery; CRC and fault handling unit-tested) and in release a07f498. Untested on hardware: wire it, then verify.
    - Verify a CRC-checked reading, plus the unplug and fault behaviour. Then cut a new release.
 3. **Home Assistant.** Needs Clint's real MQTT broker details: host, port, TLS, user. H01 requires an HA entity.
 4. **Placement.** Check the link in both directions at the real TX/RX locations, then tune SF and power.
@@ -92,6 +93,8 @@ ls /dev/cu.usbmodem*
 - H11: 30-day buffer, which needs SPI NOR.
 - G16: timed ACK slot.
 - **G7 part B** (true USB power-cut testing) is **deferred by Clint**. Don't raise it.
+
+**Bench note (2026-10-13):** a USB dropout of about 1 s makes the ST-LINK reset its board (both boards seen). For H01 on USB, secure the cables and keep hands and debugger sessions off them. Range-test tool and findings: `firmware/rangetest/README.md`, `evidence/rangetest-office-2026-10-13/`.
 
 **Minor:** the simulator still models a 2-per-minute backlog drain, while the firmware drains 5 per minute.
 
