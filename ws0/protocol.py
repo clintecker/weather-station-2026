@@ -58,6 +58,45 @@ class Nonces:
         elif not row or row[0] != binding:
             raise ValueError('Nonce state/key/endpoint mismatch')
         self.station, self.kind = station, kind
+        if kind == KIND_ACK:
+            # Review item P4: the gateway's high-water mark of the node's counter space (OBS and
+            # DIAG share it). It lives here, in the state that is never restored from a backup
+            # (runbook R7), so restoring observations can never lower it.
+            self.node_binding = hashlib.sha256(key + struct.pack('>IB', station, KIND_OBS)).hexdigest()
+            self.db.execute('CREATE TABLE IF NOT EXISTS node_counter (binding TEXT PRIMARY KEY, '
+                            'max_counter INTEGER NOT NULL, regressions INTEGER NOT NULL, '
+                            'last_regression INTEGER, last_regression_at REAL)')
+            with self.db:
+                self.db.execute('INSERT OR IGNORE INTO node_counter VALUES (?,0,0,NULL,NULL)', (self.node_binding,))
+
+    def node_counter(self):
+        """The stored node-counter high-water mark and regression record (gateway only)."""
+        mark, count, last, at = self.db.execute(
+            'SELECT max_counter,regressions,last_regression,last_regression_at FROM node_counter '
+            'WHERE binding=?', (self.node_binding,)).fetchone()
+        return {'max_node_counter': mark, 'counter_regression': count,
+                'last_regression_counter': last, 'last_regression_at': at}
+
+    def advance_node_counter(self, counter, now):
+        """Call only for an authenticated node frame. Durably raise the mark and return True if
+        the counter is above it; otherwise durably count a regression and return False. The mark
+        is committed before the frame is acted on, so a crash can never leave it lower than a
+        counter the gateway stored or answered."""
+        self.db.execute('BEGIN IMMEDIATE')
+        try:
+            mark = self.db.execute('SELECT max_counter FROM node_counter WHERE binding=?',
+                                   (self.node_binding,)).fetchone()[0]
+            fresh = counter > mark
+            if fresh:
+                self.db.execute('UPDATE node_counter SET max_counter=? WHERE binding=?', (counter, self.node_binding))
+            else:
+                self.db.execute('UPDATE node_counter SET regressions=regressions+1, last_regression=?, '
+                                'last_regression_at=? WHERE binding=?', (counter, now, self.node_binding))
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+        return fresh
 
     def next(self):
         """An immediate transaction also prevents concurrent allocator collisions."""

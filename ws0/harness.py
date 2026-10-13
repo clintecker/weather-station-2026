@@ -20,8 +20,8 @@ import sqlite3
 import tempfile
 from typing import Any
 from cryptography.exceptions import InvalidTag
-from .protocol import KIND_NACK, NACK, NACK_COLLISION, Nonces, unseal
-from .service import Gateway
+from .protocol import KIND_NACK, NACK, NACK_COLLISION, Nonces, frame_counter, unseal
+from .service import CounterRegression, Gateway
 from .simulator import BACKLOG_PER_MINUTE, Node
 
 START = 1_800_000_000  # Fixed virtual UTC origin, independent of wall-clock date.
@@ -148,7 +148,14 @@ class Campaign:
         self.nonce_collisions = 0
         self.counts = {name:0 for name in ['uplink_sent','ack_sent','random_drops','outage_drops',
                                          'corrupted','duplicates','rejected','commit_errors','nacks',
-                                         'identity_collision_rejections','node_reboots','gateway_reboots']}
+                                         'identity_collision_rejections','node_reboots','gateway_reboots',
+                                         'counter_regressions','expected_counter_regressions']}
+        # P4 oracle: the node must seal strictly increasing counters in send order, and the
+        # gateway must flag exactly the authentic arrivals at or below the highest counter that
+        # has already arrived (wire duplicates and reordering), across gateway restarts.
+        self.last_sealed_counter = 0
+        self.node_counter_not_increasing = 0
+        self.highest_arrived_counter = 0
         self.availability = []
 
     def log(self, event, **details):
@@ -161,7 +168,22 @@ class Campaign:
     def allocate_frame(self, record):
         packet = self.node.packet(record)
         self.track_nonce(packet)
+        counter = frame_counter(packet)
+        self.node_counter_not_increasing += int(counter <= self.last_sealed_counter)
+        self.last_sealed_counter = counter
         return packet
+
+    def expect_regression(self, packet):
+        """Independent of the gateway: authentic and not above every earlier authentic arrival."""
+        try:
+            unseal(bytes.fromhex(self.cfg['radio_key']),self.cfg['station_id'],1,packet)
+        except (ValueError,InvalidTag):
+            return False
+        counter = frame_counter(packet)
+        expected = counter <= self.highest_arrived_counter
+        self.highest_arrived_counter = max(self.highest_arrived_counter,counter)
+        self.counts['expected_counter_regressions'] += int(expected)
+        return expected
 
     def track_nonce(self, packet):
         # Observe new encryption operations only; byte-for-byte network duplication is legal.
@@ -204,6 +226,7 @@ class Campaign:
                 continue
             try:
                 if direction == 'uplink':
+                    self.expect_regression(packet)
                     # Inject real commit-boundary failure without making a fake ACK.
                     original = self.gateway.store.ingest
                     if inside(self.minute(),self.s.commit_failures):
@@ -229,6 +252,10 @@ class Campaign:
             except OSError:
                 self.counts['commit_errors'] += 1
                 self.log('commit_failed_no_ack')
+            except CounterRegression:
+                # A replayed or reordered frame: never answered, never stored (P4).
+                self.counts['counter_regressions'] += 1
+                self.log('counter_regression_no_reply',frame=packet.hex())
             except (ValueError,InvalidTag) as exc:
                 self.counts['rejected'] += 1
                 collision = str(exc)=='Identity collision'
@@ -316,6 +343,14 @@ class Campaign:
                     if metrics[field]: failures.append(field)
                 if pending: failures.append('unacknowledged_journal_records')
                 if self.nonce_collisions: failures.append('nonce_reuse')
+                if self.node_counter_not_increasing: failures.append('node_counter_not_increasing')
+                # The durable count must survive every gateway restart in the scenario.
+                if self.counts['counter_regressions'] != self.counts['expected_counter_regressions'] or \
+                        self.gateway.node_counter['counter_regression'] != self.counts['counter_regressions']:
+                    failures.append('counter_regression_mismatch')
+                # Without wire duplication or reordering, any regression is a false key-reuse alarm.
+                if self.counts['counter_regressions'] and not (self.s.duplicates or self.s.max_delay_seconds):
+                    failures.append('counter_regression_false_positive')
                 if self.s.require_latency_target and not metrics['latency_target_met']:
                     failures.append('live_latency_target')
                 if self.s.expect_latency_failure and metrics['latency_target_met']:
@@ -350,6 +385,9 @@ class Campaign:
                 result = {'name':self.s.name,'description':self.s.description,'seed':self.s.seed,
                           'scenario_pass':not failures,'failures':failures,'metrics':metrics,
                           'network':self.counts,'pending_journal':pending,'nonce_collisions':self.nonce_collisions,
+                          'counter_regressions':self.counts['counter_regressions'],
+                          'expected_counter_regressions':self.counts['expected_counter_regressions'],
+                          'gateway_counter_status':self.gateway.status()['node_counter'],
                           'drain_minutes':drain_periods,'physical_H01':'NOT RUN',
                           'negative_control':self.negative_control}
                 # Portable backup includes committed observations without relying on leftover WAL files.

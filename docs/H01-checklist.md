@@ -14,6 +14,10 @@ Source of acceptance criteria: v0.2 section 3 Stage 0 and section 12 H01.
 
 ## Setup before the run
 
+- `/v1/status` shows `"alarm": null` before the run starts and after it ends (a non-null alarm means
+  possible key reuse; see `failure-modes.md` C7–C9). `ws0 provision-node` prints the gateway's
+  counter high-water mark and refuses a board at or below it.
+
 - **SHT45 wired and verified first:** a CRC-checked valid reading on the TX console, plus the
   unplug test (`sensor_fault`, then recovery). Without a sensor every reading is a
   `sensor_fault` and the verdict is FAIL by design (see `evidence/soak-a07f498-2026-10-13/`).

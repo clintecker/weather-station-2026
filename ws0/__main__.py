@@ -69,7 +69,49 @@ def epoch_floor(directory, station):
     return highest + 1 if highest else 0
 
 
-def provision_node(cfg, device, floor=0):
+def node_counter_mark(directory):
+    """Review item P4: the gateway's stored high-water mark of the node counter (OBS + DIAG)
+    for this state directory, or None if there is no such state yet."""
+    import sqlite3
+    path = directory/'gateway-nonces.sqlite3'
+    if not path.exists():
+        return None
+    db = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
+    try:
+        row = db.execute('SELECT max_counter,regressions,last_regression FROM node_counter').fetchone()
+    except sqlite3.OperationalError:
+        row = None  # state from before P4: no frame has been checked yet
+    finally:
+        db.close()
+    if row is None:
+        return {'max_node_counter':0,'counter_regression':0,'last_regression_counter':None}
+    return {'max_node_counter':row[0],'counter_regression':row[1],'last_regression_counter':row[2]}
+
+
+def print_counter_mark(state):
+    if state is None:
+        print('Gateway node-counter high-water mark: none (no gateway state yet)')
+        return
+    print(f"Gateway node-counter high-water mark: {state['max_node_counter']} "
+          f"(counter regressions: {state['counter_regression']})")
+    if state['counter_regression']:
+        print(f"ALARM: possible key reuse (last offending counter {state['last_regression_counter']}): "
+              're-key the node with a new state directory (failure-modes R5)')
+
+
+def check_node_counter(fields, state):
+    """A board whose next counter is at or below the mark would repeat nonces under this key."""
+    ctr = fields.get('ctr')
+    if state is None or ctr is None or not ctr.isdigit():
+        return  # older firmware does not report ctr=; the gateway still alarms on the first frame
+    mark = state['max_node_counter']
+    # STATUS prints the counter as 32 bits; compare only while the mark fits.
+    if mark < 2**32 and int(ctr) <= mark:
+        raise SystemExit(f'Node counter ctr={ctr} is at or below the gateway high-water mark {mark}: '
+                         'this key would repeat AES-CCM nonces. Use a NEW key (ws0 init into a new directory).')
+
+
+def provision_node(cfg, device, floor=0, counter_state=None):
     """Wired provisioning: write station ID and key to an unprovisioned TX board, then
     confirm by key check value. Never wipes; a provisioned board must be wiped explicitly."""
     import serial
@@ -81,6 +123,7 @@ def provision_node(cfg, device, floor=0):
         if not status or 'role=tx' not in status:
             raise SystemExit(f'{device}: no TX node status (got {status!r}); is this the TX board?')
         fields = dict(f.split('=',1) for f in status[1:].split()[1:] if '=' in f)
+        check_node_counter(fields,counter_state)
         if fields.get('provisioned') == '1':
             if fields.get('station') == str(cfg['station_id']) and fields.get('kcv') == expected:
                 print(f'Already provisioned with this station and key (kcv {expected}).')
@@ -116,7 +159,9 @@ def main():
     if args.command == 'provision-node':
         if cfg['mode'] != 'hardware' or not args.serial:
             parser.error('provision-node requires a --hardware state directory and --serial')
-        provision_node(cfg,args.serial,epoch_floor(args.directory,cfg['station']))
+        counter_state = node_counter_mark(args.directory)
+        print_counter_mark(counter_state)
+        provision_node(cfg,args.serial,epoch_floor(args.directory,cfg['station']),counter_state)
         return
     if args.command=='demo' and cfg['mode']!='simulation':
         parser.error('Demo requires a dedicated simulation configuration')

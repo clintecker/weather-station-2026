@@ -11,6 +11,12 @@ Scope: `firmware/stage0-node`, `firmware/common`, `firmware/stage0.c`, the `ws0/
 > (live reading every minute while probing in SURPLUS/NORMAL; back-off only in CONSERVE), plus the
 > simulator's 5-per-minute drain. The rest of this review is unchanged and still open.
 
+> **Status update (later 2026-10-13):** also done: P4 (gateway counter high-water mark in
+> `gateway-nonces.sqlite3`, raised durably before each commit; `provision-node` refuses a board at or
+> below it; `tests/test_counter_regression.py`), P5/P6/P7 (UART error re-arm, RX relisten after 5 silent
+> minutes, TX consecutive-failure watchdog and boot retry; firmware, pending release), and CI
+> (`.github/workflows/ci.yml`).
+
 ## 1. Executive summary
 
 - **The firmware is in good shape for an MVP.** The hard parts are done carefully:

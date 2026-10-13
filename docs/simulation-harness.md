@@ -28,7 +28,7 @@ the broader unit suite has separate HTTP, C core and mocked MQTT tests.
 | Scenario | Injection | Required result |
 |---|---|---|
 | baseline | None | Complete exact storage; at least 99% within 120s |
-| noisy-link (3 seeds) | 10% uplink/ACK loss; 1% corruption; 15% duplicates; 0–20s delay | Exact eventual recovery; measure latency without assuming success |
+| noisy-link (3 seeds) | 10% uplink/ACK loss; 1% corruption; 15% duplicates; 0–20s delay | Exact eventual recovery; measure latency without assuming success. Since 2026-10-13 the gateway does not answer a duplicated or reordered copy (counter at or below its high-water mark, P4); the harness counts these as expected `counter_regressions`. A real LoRa link cannot reorder frames, so this lowers simulated timeliness only (about 1–2 points vs `simulation-results/`) |
 | radio-outage | Link unavailable during minutes 20–40 | Unavailable state, complete recovery; full latency denominator retained; the 99% target is expected to fail (runs of 1 day or less) |
 | host-outage | Host unavailable minutes 20–30, restart at 30 | Recovery from node journal |
 | reboots | Node, gateway and simultaneous restarts with delayed packets | Exact recovery, nonce continuity, at least 99% within 120s |

@@ -26,6 +26,7 @@
     "/v1/status": {
       "get": {
         "summary": "Stage, qualification status and latest measurement",
+        "description": "Includes `alarm` (null, or \"possible key reuse: re-key the node\" once any authentic node frame arrived with a counter at or below the stored high-water mark; it persists across restarts until the node is re-keyed into a new state directory) and `node_counter` {max_node_counter, counter_regression, last_regression_counter, last_regression_at} (review item P4).",
         "responses": {
           "200": {
             "description": "JSON response with explicit availability, UTC timestamps and units"

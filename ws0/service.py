@@ -27,6 +27,14 @@ def load_config(path):
     return cfg
 
 
+KEY_REUSE_ALARM = 'possible key reuse: re-key the node'
+
+
+class CounterRegression(ValueError):
+    """An authentic node frame whose counter is at or below the stored high-water mark: a
+    replay, or the node sealing under a nonce it has already used (key reuse, C7-C9)."""
+
+
 class Gateway:
     """The sole ACK authority is the host after durable database commit."""
     def __init__(self, cfg, directory):
@@ -35,14 +43,34 @@ class Gateway:
         self.store = Store(directory / 'observations.sqlite3')
         self.nonces = Nonces(directory / 'gateway-nonces.sqlite3',self.key,cfg['station_id'],2)
         self.accepted = self.rejected = self.nacked = 0
+        self.node_counter = self.nonces.node_counter()  # cached for the HTTP/MQTT threads
         self.clock = None  # ws0.clock.HostClock when serving hardware (gap G9); None = trust host
         self.receiver = None  # RX board liveness, set by the serial loop (gap G12)
         self.lock = threading.Lock()
 
+    def check_counter(self, frame, payload, now, sequence):
+        """Review item P4. Every node transmission, retries included, gets a fresh, strictly
+        increasing counter from one space shared by OBS and DIAG (firmware store_next_counter;
+        WIPE keeps it), so an authentic frame at or below the mark is a replay or nonce reuse.
+        It is never answered or stored as data; the raw frame is kept as a rejection."""
+        counter = frame_counter(frame)
+        received = time.time() if now is None else now
+        fresh = self.nonces.advance_node_counter(counter,received)
+        self.node_counter = self.nonces.node_counter()
+        if fresh:
+            return
+        epoch = struct.unpack('>I',payload[:4])[0]
+        detail = (f"counter {counter} <= high-water mark {self.node_counter['max_node_counter']}: "
+                  + KEY_REUSE_ALARM)
+        self.store.reject(self.cfg['station'],str(epoch),sequence,'counter_regression',detail,frame.hex(),now)
+        self.rejected += 1
+        raise CounterRegression(detail)
+
     def receive_diagnostic(self, frame, now=None):
         """Node health report (kind 4): authenticate and store; never answered."""
-        epoch, uptime, pending, lost, burned, abandoned, no_ack, rejects, reset, link = \
-            DIAG.unpack(unseal(self.key,self.cfg['station_id'],KIND_DIAG,frame))
+        payload = unseal(self.key,self.cfg['station_id'],KIND_DIAG,frame)
+        self.check_counter(frame,payload,now,None)
+        epoch, uptime, pending, lost, burned, abandoned, no_ack, rejects, reset, link = DIAG.unpack(payload)
         report = {'epoch':epoch,'uptime_s':uptime,'journal_pending':pending,'journal_lost_total':lost,
                   'journal_torn_slots':burned,'abandoned_total':abandoned,'missed_acks_since_boot':no_ack,
                   'rejected_replies_since_boot':rejects,
@@ -53,15 +81,17 @@ class Gateway:
 
     def receive(self, frame, now=None):
         """Authenticate, validate and commit before returning an encrypted receipt."""
-        if len(frame) > 3 and frame[3] == KIND_DIAG:
-            self.receive_diagnostic(frame,now)
-            return None  # fire-and-forget: no reply on air
         with self.lock:
+            if len(frame) > 3 and frame[3] == KIND_DIAG:
+                self.receive_diagnostic(frame,now)
+                return None  # fire-and-forget: no reply on air
             try:
                 payload = unseal(self.key,self.cfg['station_id'],1,frame)
             except Exception:
                 self.rejected += 1  # unauthenticated: never answered (a NACK would let anyone drop data)
                 raise
+            # Raised durably before the commit, so a crash cannot leave it below this frame.
+            self.check_counter(frame,payload,now,struct.unpack('>I',payload[4:8])[0])
             try:
                 record = decode_observation(payload,self.cfg['station'])
                 inserted = self.store.ingest(record,now)
@@ -95,9 +125,18 @@ class Gateway:
                 self.rejected += 1
                 raise
 
+    def counter_alarm(self):
+        """Key-reuse alarm (P4). It persists across restarts; the cure is a new key, i.e. a new
+        state directory (runbook R5), which starts with a fresh mark."""
+        state = self.node_counter
+        return {'alarm':KEY_REUSE_ALARM if state['counter_regression'] else None,
+                'counter_regression':state['counter_regression'],
+                'last_regression_counter':state['last_regression_counter']}
+
     def status(self):
         """Expose no credentials or raw keys in diagnostics."""
         return {'stage':0,'h01':'NOT RUN','mode':self.cfg['mode'],
+                'alarm':self.counter_alarm()['alarm'],'node_counter':dict(self.node_counter),
                 'station':self.cfg['station'],'accepted_this_process':self.accepted,
                 'rejected_this_process':self.rejected,'nacked_this_process':self.nacked,
                 'host_clock':self.clock.status() if self.clock else None,
@@ -235,6 +274,9 @@ class MQTT:
         weather = json.dumps(latest['observation']) if latest.get('observation') else None
         state = (weather, 'online' if latest['available'] else 'offline')
         diag = self.gateway.store.latest_diagnostic(self.gateway.cfg['station'])
+        alarm = self.gateway.counter_alarm()
+        if diag or alarm['alarm']:
+            diag = (diag or {}) | alarm  # key-reuse alarm (P4) rides on the diagnostics topic
         diagnostics = json.dumps(diag,sort_keys=True) if diag else None
         state = state + (diagnostics,)
         if state == self.published and time.time() - self.published_at < self.REFRESH_S:

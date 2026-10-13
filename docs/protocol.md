@@ -106,9 +106,15 @@ match and cannot move the clock. The node also ignores a UTC before 2026-01-01 (
 the 0 above). Any authentic ACK still clears its own journal entry.
 ACK is only
 created after SQLite commit; the node verifies it before removing the journal entry.
-Exact duplicate observations are acknowledged again. Conflicting payloads under the
-same observation identity are rejected, never acknowledged, and answered with a NACK (reason 1). Replayed valid data
-cannot alter stored time or freshness. Replayed ACKs affect only their exact identity.
+An observation the gateway already holds, re-sent by the node in a new frame (fresh counter,
+for example after a lost ACK), is acknowledged again. Conflicting payloads under the
+same observation identity are rejected, never acknowledged, and answered with a NACK (reason 1).
+The gateway keeps a high-water mark of the node counter (observation and health frames share one
+counter space; review P4, 2026-10-13). An authentic frame whose counter is at or below the mark
+gets no reply and is not stored: it is kept in `rejections` with reason `counter_regression`, and
+`/v1/status` raises the alarm "possible key reuse: re-key the node". A node never repeats a counter,
+so this only happens for a replay or a reused key. Replayed ACKs affect only their exact identity.
+No wire change.
 
 Receiver/host USB contract: one ASCII hexadecimal frame per newline, 115200 baud,
 8N1. Receiver forwards RF frames upstream (56 bytes, `WS`, current version, kind 1 or 4)
