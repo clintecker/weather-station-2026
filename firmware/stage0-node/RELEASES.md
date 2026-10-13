@@ -14,6 +14,23 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
 
+## 45f43e78fe91 — 2026-10-13 (bench, sensor not yet wired)
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (31,584 B) | `d81863d8641c939271b611bec9cd67003534bb5afd85e652820219f1afbd6956` |
+| `build/rx/stage0-rx.elf` (path-dependent) | `520b795909c553b2a3c8a2fb325e7bc25e7194eb1ca03e53424b3d5aacc7a113` |
+| `build/tx/stage0-tx.bin` (52,896 B) | `b254929cd3f507fec5ba43d7bc2fd3476941b48d4ac21836b4e9ee18ba08bd68` |
+| `build/tx/stage0-tx.elf` (path-dependent) | `f074ba8e02397bc54be4f5ec0433267c9d93d3db609435198dc42a40c1665913` |
+
+- Source: commit `45f43e78fe91`. Changes since 9e3d38f08e8b: strict warnings with `-Werror` for our C; stack reservation 2 → 8 KB after a worst-case bound (`make stack`: TX 6,408 B, RX 2,020 B); Mbed TLS cipher layer removed (no heap use, −1.7 KB); `stack_peak` reported; TX `STATUS` split into `#status` + `#counts` (the single line was truncated); HardFault/NMI crash records (`#fault`, `TEST-FAULT`); `_Static_assert`s on frame and flash geometry; console parsing moved to `firmware/common/ws_console.c` (fuzzed). Protocol and flash layout unchanged (draft 4).
+- Inputs: as a07f498. Flash budget: TX 80.7 %, RX 48.2 %.
+- Reproducibility: two clean builds gave identical `.bin` hashes.
+- Flashed 2026-10-13 21:31Z: RX → board B `0016001E4142500E20353451`, TX → board A `003B00194142500E20353451`. TX `STATUS`: `fw=45f43e78fe91`, `kcv=b7142e`, `kat=pass`, `epoch=32`, `ctr=7939`, `stack_peak=1240`.
+- Crash test: `TEST-FAULT` on TX gave `#fault kind=hard pc=0800109a lr=080008a7 cfsr=00008200 hfsr=40000000 bfar=20040000 count=1`, with `reset=software` at once; `pc` is the faulting load in `fault_test` (`fault.c:48`). It also gave `epoch=33` and `ctr=8193` (both moved forward). On RX: the same record, with `pc=080010fa` (its `fault_test` load).
+- Gateway after the restart: 6 accepted / 0 rejected, `alarm` null, counter high-water mark 8200, `counter_regression=0`, RX `relistens=0 uart_errors=0 stack_peak=392`.
+- Not an H01 release: the SHT45 is not connected yet, and the radio settings are bench values.
+
 ## 9e3d38f08e8b — 2026-10-13 (bench, sensor not yet wired)
 
 | Artifact | SHA-256 |

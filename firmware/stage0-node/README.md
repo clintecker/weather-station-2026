@@ -128,16 +128,16 @@ Other lines:
 A crash (a Cortex-M4 HardFault, or an NMI other than a flash ECC error) used to stop the board
 in an endless loop until the watchdog reset it, with no trace of why. Now the fault handler saves
 a few registers in RTC backup registers DR5–DR11, which survive a reset as long as the board keeps
-power, and resets at once (`reset=software`). The next boot prints a line like this (illustrative;
-`pc` and `lr` depend on the build):
+power, and resets at once (`reset=software`). The next boot prints a line like this one, from
+`TEST-FAULT` on TX with release `45f43e78fe91` (`pc` and `lr` depend on the build):
 
-`#fault kind=hard pc=08001156 lr=08001153 cfsr=00008200 hfsr=40000000 bfar=20040000 count=1`
+`#fault kind=hard pc=0800109a lr=080008a7 cfsr=00008200 hfsr=40000000 bfar=20040000 count=1`
 
 | Field | Meaning |
 |---|---|
 | `kind` | `hard` (HardFault; bus, usage and memory faults all end here) or `nmi` |
 | `pc` | The instruction that faulted. Find it with `arm-none-eabi-addr2line -e build/<role>/stage0-<role>.elf <pc>` on the exact release, or in `objdump -d`. `ffffffff` means the stack pointer was not in RAM (likely a stack overflow) or the fault was an NMI. |
-| `lr` | Return address of the faulting function: usually its caller |
+| `lr` | The link register at the fault: the return address of the most recent call (bit 0 set, Thumb). Often the caller, but not always: in the line above it points into `TIMER_IF_DelayMs`, which `fault_test` had just called. |
 | `cfsr`, `hfsr` | Configurable and HardFault status registers (Armv7-M Architecture Reference Manual, system control block). Common `cfsr` values: `00008200` precise bus error with `bfar` valid; `00010000` undefined instruction; `00020000` invalid state (for example a call through a corrupted function pointer). `hfsr=40000000` (FORCED) means a bus, usage or memory fault escalated to HardFault. |
 | `bfar` | Faulting data address; meaningful only when `cfsr` bit 15 is set |
 | `count` | Crashes since the board last lost power |
