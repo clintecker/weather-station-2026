@@ -140,9 +140,9 @@ static int run_kat(void)
 
 static void status(void)
 {
-  APP_PRINTF("#status role=tx fw=%s provisioned=%d station=%u kcv=%02x%02x%02x kat=%s epoch=%u next_seq=%u "
+  APP_PRINTF("#status role=tx fw=%s reset=%s provisioned=%d station=%u kcv=%02x%02x%02x kat=%s epoch=%u next_seq=%u "
              "ctr=%u ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u sensor_faults=%u\n",
-             WS_FW_VERSION, provisioned, (unsigned)station, kcv[0], kcv[1], kcv[2], kat_ok ? "pass" : "FAIL",
+             WS_FW_VERSION, watchdog_reset_cause(), provisioned, (unsigned)station, kcv[0], kcv[1], kcv[2], kat_ok ? "pass" : "FAIL",
              (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)store_counter_next(), (unsigned)store_ecc_faults(),
              link_state == LINK_LINKED ? "linked" : "probing",
              (unsigned)silent_minutes, energy_name[energy_state()], time_valid() ? "synchronized" : "unknown",

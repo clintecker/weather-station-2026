@@ -1,0 +1,20 @@
+{
+  "method": "reset (ST-LINK NRST during TEST-FLASH-STORM)",
+  "seed": 7,
+  "planned_cycles": 200,
+  "completed_cycles": 70,
+  "stopped": "by Clint after 70 cycles (run time ~8 s/cycle judged too long)",
+  "boots": 71,
+  "failures": [],
+  "epochs_strictly_increasing": true,
+  "counter_never_went_back": true,
+  "self_test_pass_all_boots": true,
+  "reset_causes": [
+    "pin"
+  ],
+  "boots_with_ecc_faults_handled": 21,
+  "max_torn_slots_burned_per_boot": 3,
+  "storm_rows_at_gateway": 0,
+  "pass": true,
+  "not_covered": "true power removal (slow supply decay, brown-out) - G7 part B deferred by Clint 2026-10-13"
+}
