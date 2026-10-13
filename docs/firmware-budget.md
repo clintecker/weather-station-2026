@@ -58,6 +58,21 @@ modules.
 | Multi-sensor payload (protocol draft 5) | 1–3 KB | Encoder and decoder |
 | **Total** | **about 20–40 KB** | **Does not fit in the 12 KB left** |
 
+## Requirement (Clint, 2026-10-13)
+
+The STM32WL55JC stays. The firmware must **fully support the final station** (all sensor types,
+power modules, 30-day buffer, low power) **with room for expansion**. Working targets until the
+final design is sized:
+
+- **Headroom:** the final TX image uses at most **75 %** of its application region, leaving at least
+  25 % for later sensors and fixes. Until flash layout v2, every build also stays under the 90 %
+  guard in the Makefile.
+- **Watch:** every `RELEASES.md` entry records the `.bin` sizes; review this file at each stage gate
+  and whenever a release grows by more than 2 KB.
+- **Layout v2 before the region is outgrown:** key and counter pages move to the top of flash so they
+  never move again, the code/journal boundary becomes one shared constant, and a one-time migration
+  carries the counter and epoch across (gap G18 in `docs/failure-modes.md`).
+
 ## The plan that makes it fit
 
 1. **Flash layout v2 with H11.** The 30-day buffer moves to SPI NOR, which frees most of the 186 KB

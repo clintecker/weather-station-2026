@@ -97,6 +97,7 @@ WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expec
 - G14: brown-out reset level (Stage 1).
 - H11: 30-day buffer, which needs SPI NOR.
 - G16: timed ACK slot.
+- G18: code space for the final station (`docs/firmware-budget.md`): keep the STM32WL55JC, plan flash layout v2 with H11, final image ≤ 75 % of its region. Keep an eye on the flash guard in every build.
 - **G7 part B** (true USB power-cut testing) is **deferred by Clint**. Don't raise it.
 
 **Bench note (2026-10-13):** a USB dropout of about 1 s makes the ST-LINK reset its board (both boards seen). For H01 on USB, secure the cables and keep hands and debugger sessions off them. Range-test tool and findings: `firmware/rangetest/README.md`, `evidence/rangetest-office-2026-10-13/`.
