@@ -1,0 +1,112 @@
+"""USB serial link to the RX board that survives unplug, replug, and renamed ports (gap G3).
+
+The RX board is found by its ST-LINK USB serial number, not by its /dev name, which changes
+when the cable moves. Any serial error closes the port and schedules a reconnect with
+back-off; the gateway keeps serving its API meanwhile. The TX board journals everything
+while the link is down, so a reconnect loses no data.
+"""
+import time
+
+BACKOFF_S = (1, 2, 4, 8, 15)
+
+
+class ReceiverLink:
+    def __init__(self, device=None, serial_number=None, log=print, opener=None, ports=None, clock=time.monotonic):
+        if not device and not serial_number:
+            raise ValueError('Need a device path or an ST-LINK serial number')
+        import serial
+        from serial.tools import list_ports
+        self.device, self.serial_number, self.log, self.clock = device, serial_number, log, clock
+        self.opener = opener or (lambda path: serial.Serial(path, 115200, timeout=0.05, write_timeout=1))
+        self.ports = ports or list_ports.comports
+        self.errors = (serial.SerialException, OSError)
+        self.port = None
+        self.path = None
+        self.buffer = b''
+        self.failures = 0
+        self.retry_at = 0.0
+        self.reconnects = 0
+
+    @property
+    def connected(self):
+        return self.port is not None
+
+    def resolve(self):
+        if not self.serial_number:
+            return self.device
+        for info in self.ports():
+            if (info.serial_number or '').upper() == self.serial_number.upper():
+                return info.device
+        return None
+
+    def _drop(self, why):
+        if self.port is not None:
+            try:
+                self.port.close()
+            except self.errors:
+                pass
+            self.log(f'#gateway serial-lost path={self.path} reason={why}')
+        self.port = None
+        self.buffer = b''
+        delay = BACKOFF_S[min(self.failures, len(BACKOFF_S) - 1)]
+        self.failures += 1
+        self.retry_at = self.clock() + delay
+
+    def _connect(self):
+        if self.clock() < self.retry_at:
+            return False
+        path = self.resolve()
+        if path is None:
+            self._drop('board-not-present')
+            return False
+        try:
+            self.port = self.opener(path)
+        except self.errors as exc:
+            self.port = None
+            self._drop(f'open-failed:{type(exc).__name__}')
+            return False
+        self.path = path
+        if self.failures:
+            self.reconnects += 1
+        self.failures = 0
+        self.log(f'#gateway serial-open path={path}')
+        return True
+
+    def poll(self):
+        """Return complete lines (stripped bytes). Never raises on serial errors."""
+        if self.port is None and not self._connect():
+            return []
+        try:
+            fragment = self.port.read_until(b'\n', size=257)
+        except self.errors as exc:
+            self._drop(f'read:{type(exc).__name__}')
+            return []
+        lines = []
+        if fragment:
+            self.buffer += fragment
+            if len(self.buffer) > 256:
+                self.buffer = b''
+                self.log('#gateway rejected oversized serial line')
+            elif self.buffer.endswith(b'\n'):
+                lines.append(self.buffer.strip())
+                self.buffer = b''
+        return lines
+
+    def write(self, data):
+        """True if written. On failure the link reconnects; the node retries the frame."""
+        if self.port is None:
+            return False
+        try:
+            self.port.write(data)
+            return True
+        except self.errors as exc:
+            self._drop(f'write:{type(exc).__name__}')
+            return False
+
+    def close(self):
+        if self.port is not None:
+            try:
+                self.port.close()
+            except self.errors:
+                pass
+            self.port = None

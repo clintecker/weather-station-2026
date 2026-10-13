@@ -25,6 +25,15 @@ python -m ws0 serve --directory run-hw --serial /dev/cu.usbmodem<RX port>
 
 `provision-node` sends the station ID and key to an **unprovisioned** TX board over USB, then checks the reply against the key check value (KCV: first 3 bytes of AES(key, 0¹⁶)). It refuses to overwrite a provisioned board. To re-provision deliberately, send `WIPE ERASE-ALL-NODE-STATE` on the TX console. That erases the key, counters and journal, so the gateway state must then get a **new key** too (never reuse a key with reset counters).
 
+For a long run (H01), install the gateway as a LaunchAgent. It restarts if it exits and finds the RX board by its ST-LINK serial number after a replug:
+
+```sh
+tools/deploy/macos/install.sh install run-hw 0016001E4142500E20353451
+tools/deploy/macos/install.sh status      # uninstall: tools/deploy/macos/install.sh uninstall
+```
+
+The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac awake during H01.
+
 `run-hw/` holds secrets and live data and is git-ignored. `serve` appends receiver diagnostics and every frame/ACK pair to `run-hw/receiver.log`.
 
 ## Console (USB VCP, 115200 8N1)

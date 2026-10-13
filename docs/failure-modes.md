@@ -198,10 +198,10 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 
 | ID | Scenario | Detection | Immediate behavior | Recovery | Data impact | H01 | Verified |
 |---|---|---|---|---|---|---|---|
-| P1 | **Gateway process stopped** (crash, Ctrl-C, update) | No `#ack` on TX; red LED each minute; API down | RX prints frames; nobody answers. TX journals. | AUTO after restart (R1). Backlog 2/min. | None if restarted within 79 h | *N* − 1 | **Bench, 2026-10-12:** gateway stopped during draft-3 switch; queued reading delivered next minute |
+| P1 | **Gateway process stopped** (crash, Ctrl-C, update). Now restarted by launchd/systemd (G3). | No `#ack` on TX; red LED each minute; API down | RX prints frames; nobody answers. TX journals. | AUTO after restart (R1). Backlog 2/min. | None if restarted within 79 h | *N* − 1 | **Bench, 2026-10-12:** gateway stopped during draft-3 switch; queued reading delivered next minute |
 | P2 | **Host asleep** (Mac lid closed, sleep) | As P1; process suspended | As P1. USB VCP data from RX is lost while the host sleeps. | AUTO on wake. | None if < 79 h | *N* − 1 | No. **Bench only.** The deployment host is always-on (spec §1). Disable sleep for H01. |
 | P7 | **House power outage** (deployment) | Gateway, RX, and network down; station runs on solar | TX journals every minute and retries (energy cost, §1.2) | AUTO when power returns | None if < 79 h; oldest data lost beyond (S1) | *N* − 1 | No. This is the main store-and-forward case. |
-| P3 | **RX USB disconnected** while the gateway runs | Gateway raises `SerialException` | **Gateway exits** (gap G3) | OPERATOR: reconnect, restart (R1, R8) | None if < 79 h | *N* − 1 | Code review only |
+| P3 | **RX USB disconnected** while the gateway runs | `receiver.log`: `#gateway serial-lost`, then `serial-open` | The gateway keeps serving its API. It looks for the RX board by **ST-LINK serial number** with back-off (1–15 s) and reopens it under any port name. | AUTO | None (TX journals) | *N* − 1 | Unit tests (`tests/test_link.py`: unplug, replug under a new name, missing board, write failure). **Physical replug: pending.** |
 | P4 | **RX board down** (unpowered, hung, wrong firmware) | Red each minute on TX; no `#rx` lines; no RX blue heartbeat | TX journals | AUTO if power returns; OPERATOR if hung (R2) | None if < 79 h | *N* − 1 | Bench: RX reflashes (seconds) |
 | P5 | **TX board down** | No new frames; API `available=false` after 180 s | Nothing is acquired | AUTO on power return: new epoch, backlog first | **Readings during the outage are never acquired** | *N* | Bench: TX reboots, epochs 1→8; cold start reconstructed |
 | P6 | **All down** (shared USB hub or building power) | Everything dark | Nothing acquired | AUTO on power return | As P5 | As P5 | No |
@@ -289,8 +289,8 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 
 ## 9. Recovery procedures (runbook)
 
-**R1 — Restart the gateway.**
-1. Run `python -m ws0 serve --directory run-hw --serial <RX port>`.
+**R1 — Restart the gateway.** Normally launchd (`tools/deploy/macos/install.sh status`) or systemd does this automatically.
+1. Run `tools/deploy/macos/install.sh install`, or by hand `python -m ws0 serve --directory run-hw --serial-number 0016001E4142500E20353451`.
 2. Make sure `serve.out` shows `Stage 0 hardware`.
 3. Make sure a TX green flash occurs within 60 s.
 4. The backlog drains at 2 per minute. Do not stop the gateway during the drain.
@@ -321,7 +321,7 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 - **Never restore `gateway-nonces.sqlite3`.** If it is lost, do R5.
 - Rows that the TX board deleted after the backup time are lost. Record the loss window.
 
-**R8 — Port name changed.** Run `ls /dev/cu.usbmodem*` and `st-info --probe`. Find the RX board by its ST-LINK serial `0016001E4142500E20353451`. Restart the gateway with the new port.
+**R8 — Port name changed.** No action is necessary with `--serial-number`; the gateway finds the board again. With `--serial <path>`, run `st-info --probe`, find the RX board (`0016001E4142500E20353451`), and restart with the new path.
 
 ---
 
@@ -333,7 +333,7 @@ Priority: **P1** = fix before H01; **P2** = fix before field use; **P3** = track
 |---|---|---|---|---|
 | G1 | ~~No hardware watchdog~~ **Closed 2026-10-12** (evidence: M1, M2). Was: no hardware watchdog on TX or RX | A hang stops the system until a person resets it (M1, M2). **A field station is unattended: a hang can last until a site visit.** | Enable the IWDG (independent watchdog, LSI clock), ~8 s timeout. Refresh it from the main loop only when the radio state machine and the sample timer advance. | **P1** |
 | G2 | ~~Poison records block the backlog~~ **Closed 2026-10-12** (evidence: M11). Was: poison records block the backlog | Two permanently rejected records stop all backlog drain (M11, C1, C5), and each retry costs node energy | (a) The gateway answers a permanent rejection with an authenticated NACK, so the node stops at once (the mains side decides; §1.1 principle). (b) As a safety net, the TX board marks an entry `abandoned` after *N* attempts (counted and reported). Implement both. | **P1** |
-| G3 | **Gateway exits on a serial error; no supervisor; port names change** | One USB glitch stops H01 data until a person acts | Catch `SerialException`, reopen with back-off, find the RX board by **ST-LINK serial number** (pyserial `list_ports`), and run under `launchd` with `KeepAlive`. | **P1** |
+| G3 | ~~Gateway exits on a serial error; no supervisor; port names change~~ **Closed 2026-10-12** (evidence: P3; launchd restarted the gateway 2 s after SIGKILL and it handled the next frame 3 s later). Was: gateway exits on a serial error; no supervisor; port names change | One USB glitch stops H01 data until a person acts | Catch `SerialException`, reopen with back-off, find the RX board by **ST-LINK serial number** (pyserial `list_ports`), and run under `launchd` with `KeepAlive`. | **P1** |
 | G4 | **SQLite `synchronous=FULL` on macOS does not flush the drive cache** | A host power cut can lose a committed and ACKed row (I1 weakened) | Set `PRAGMA fullfsync=ON` (and `checkpoint_fullfsync=ON`) on macOS [[SQLite]](https://www.sqlite.org/pragma.html#pragma_fullfsync). Measure the commit latency after the change. | **P1** |
 | G5 | **`WIPE` restarts epochs at 1** | Re-provisioning under the same station collides with history (C5) | `PROVISION` takes an epoch floor from the gateway (the maximum stored session + 1), or `WIPE` keeps the epoch maximum. | P2 |
 | G6 | ~~First reading after each TX boot has unknown time~~ **Closed 2026-10-12** | — | **Done:** D (time trust across resets, backup registers) and C (draft 4 uptime field; gateway reconstruction). Evidence: bench warm reset `#time restored`; cold start reconstructed ±2 s; simulation `reboot-during-outage` 32/32 reconstructed. | — |

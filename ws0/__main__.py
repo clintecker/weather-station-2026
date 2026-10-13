@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import secrets
+import signal
 import sys
 import time
 from cryptography.exceptions import InvalidTag
@@ -10,6 +11,7 @@ from pathlib import Path
 from .protocol import Nonces
 from .service import Gateway, MQTT, http_server, load_config
 from .simulator import Node
+from .link import ReceiverLink
 
 
 def provision(directory, hardware=False, station='simulation-01', station_id=1):
@@ -78,6 +80,8 @@ def main():
     parser.add_argument('command',choices=['init','demo','serve','provision-node'])
     parser.add_argument('--directory',type=Path,default=Path('run-demo'))
     parser.add_argument('--serial',help='serve: RX board serial device; provision-node: TX board')
+    parser.add_argument('--serial-number',help='serve: find the RX board by its ST-LINK USB serial number '
+                        '(survives replug and renamed ports; preferred for H01)')
     parser.add_argument('--hardware',action='store_true',help='init: real station, not simulation')
     parser.add_argument('--station',default='simulation-01',help='init: station name')
     parser.add_argument('--station-id',type=int,default=1,help='init: numeric station ID')
@@ -94,27 +98,31 @@ def main():
         return
     if args.command=='demo' and cfg['mode']!='simulation':
         parser.error('Demo requires a dedicated simulation configuration')
-    if args.command=='serve' and not args.serial:
-        parser.error('serve requires --serial')
+    if args.command=='serve' and not (args.serial or args.serial_number):
+        parser.error('serve requires --serial or --serial-number')
+    # launchd/systemd stop a service with SIGTERM: shut down as cleanly as Ctrl-C.
+    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     gateway = Gateway(cfg,args.directory)
     server = http_server(gateway,cfg['http_port'])
     mqtt = MQTT(gateway) if cfg['mqtt']['enabled'] else None
-    serial_port = None
+    link = None
     node = Node(cfg,args.directory) if args.command=='demo' else None
     if node:
         # The demo node runs inside the gateway process and shares the host clock, so it
         # starts synchronized. A real node starts time-unknown (see TimeReconstruction tests).
         node.synced = True
     receiver_log = None
-    if args.serial:
-        import serial
-        # Short timeout: the node's ACK window is 2 s, so frames are answered immediately.
-        serial_port = serial.Serial(args.serial,115200,timeout=0.05,write_timeout=1)
+    if args.command == 'serve':
         receiver_log = (args.directory/'receiver.log').open('a',buffering=1)
+        def note(text):
+            stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
+            receiver_log.write(f'{stamp} {text}\n')
+            print(f'{stamp} {text}',file=sys.stderr,flush=True)
+        # Short read timeout: the node's ACK window is 2 s, so frames are answered immediately.
+        link = ReceiverLink(args.serial,args.serial_number,note)
     print(f"Stage 0 {cfg['mode']}; API http://127.0.0.1:{cfg['http_port']}/v1/status",flush=True)
     next_sample = time.monotonic()
     dropping = False
-    serial_buffer = b''
     next_tick = 0
     try:
         while True:
@@ -128,37 +136,35 @@ def main():
                         node.acknowledge(gateway.receive(node.packet(old)))
                 print(json.dumps({'simulation':True,'sequence':record['sequence'],'link_down':dropping}),flush=True)
                 next_sample = time.monotonic()+60
-            if serial_port:
-                # Accumulate partial reads until a newline; bound memory and reject overlong frames.
-                fragment = serial_port.read_until(b'\n',size=257)
-                if fragment:
-                    serial_buffer += fragment
-                    if len(serial_buffer)>256:
-                        serial_buffer = b''
-                        print('Rejected oversized serial frame',file=sys.stderr)
-                    elif serial_buffer.endswith(b'\n'):
-                        text = serial_buffer.decode('ascii','replace').strip()
-                        stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
-                        try:
-                            if text.startswith('#'):
-                                # Receiver diagnostics (RSSI/SNR, drops): evidence, not data.
-                                receiver_log.write(f'{stamp} {text}\n')
-                            elif text:
-                                frame = bytes.fromhex(text)
-                                ack = gateway.receive(frame)
-                                serial_port.write(ack.hex().encode()+b'\n')
-                                kind = 'nack' if ack[3] == 3 else 'ack'
-                                receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}\n')
-                                print(json.dumps({'received_at':stamp,'latest':gateway.store.latest(cfg['station'])['observation']}),flush=True)
-                        except (ValueError,UnicodeError,InvalidTag) as exc:
-                            receiver_log.write(f'{stamp} rejected {type(exc).__name__}: {exc} {text}\n')
-                            print(f'Rejected frame: {type(exc).__name__}: {exc}',file=sys.stderr)
-                        finally:
-                            serial_buffer = b''
+            if link:
+                for line in link.poll():
+                    text = line.decode('ascii','replace')
+                    stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
+                    try:
+                        if text.startswith('#'):
+                            # Receiver diagnostics (RSSI/SNR, drops, boots): evidence, not data.
+                            receiver_log.write(f'{stamp} {text}\n')
+                        elif text:
+                            frame = bytes.fromhex(text)
+                            ack = gateway.receive(frame)
+                            kind = 'nack' if ack[3] == 3 else 'ack'
+                            sent = link.write(ack.hex().encode()+b'\n')
+                            receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}'
+                                               f'{"" if sent else " (not delivered: serial link down)"}\n')
+                            print(json.dumps({'received_at':stamp,'latest':gateway.store.latest(cfg['station'])['observation']}),flush=True)
+                    except (ValueError,UnicodeError,InvalidTag) as exc:
+                        receiver_log.write(f'{stamp} rejected {type(exc).__name__}: {exc} {text}\n')
+                        print(f'Rejected frame: {type(exc).__name__}: {exc}',file=sys.stderr)
+                    except OSError as exc:
+                        # Commit failed: no ACK, the node keeps the record and retries.
+                        receiver_log.write(f'{stamp} commit-failed {type(exc).__name__}: {exc}\n')
+                        print(f'Commit failed: {exc}',file=sys.stderr)
+                if not link.connected:
+                    time.sleep(0.2)
             if mqtt and time.monotonic()>=next_tick:
                 mqtt.tick()
                 next_tick = time.monotonic()+1
-            if not serial_port:
+            if not link:
                 time.sleep(1)
     except KeyboardInterrupt:
         pass
@@ -172,8 +178,8 @@ def main():
         if node:
             node.db.close()
             node.nonces.db.close()
-        if serial_port:
-            serial_port.close()
+        if link:
+            link.close()
         if receiver_log:
             receiver_log.close()
 

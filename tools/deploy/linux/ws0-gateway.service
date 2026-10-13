@@ -1,0 +1,26 @@
+# Stage-0 gateway as a systemd service on the always-on Linux host (spec §1; gap G3).
+# Install: copy to /etc/systemd/system/, set User and paths, then
+#   systemctl daemon-reload && systemctl enable --now ws0-gateway
+# The user needs serial access (group `dialout` on Debian/Ubuntu).
+[Unit]
+Description=Weather station Stage-0 gateway (LoRa receiver -> SQLite/API/MQTT)
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=weather
+WorkingDirectory=/opt/weather-station-2026
+ExecStart=/opt/weather-station-2026/.venv/bin/python -u -m ws0 serve \
+  --directory /var/lib/ws0/run-hw --serial-number 0016001E4142500E20353451
+Restart=always
+RestartSec=5
+# Never let a restart loop hide a real problem: journald keeps every exit.
+StartLimitIntervalSec=0
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ws0
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
