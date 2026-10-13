@@ -20,7 +20,7 @@ What `WIPE ERASE-ALL-NODE-STATE` erases depends on the firmware (`App/node_store
 | After a WIPE, provision with… | Safe? |
 |---|---|
 | a **new** key (`ws0 init --hardware` into a new directory) | Yes, always |
-| a key first used on this board after `0f456040fe54`, with no older firmware flashed since | Yes: the counter never went back |
+| a key whose every use was on this board, with the counter never going back since its first use (no WIPE under firmware older than `0f456040fe54` after that first use; for example the office key `b7142e`, first used after the morning wipe) | Yes: the counter only went up |
 | a key used before `0f456040fe54`, or on another board (for example `run-hw`'s) | **No**: can repeat nonces already sent on air |
 
 Prefer a new key: it is never wrong.
