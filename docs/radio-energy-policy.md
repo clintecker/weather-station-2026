@@ -1,7 +1,7 @@
 # Radio transmission policy: energy, link health, and backlog
 
 > **Document type:** Design specification (proposal for approval). **Language:** ASD-STE100 style.
-> **Status:** Proposal, 2026-10-12. Stage 0 implements the link-health part (section 6). Stage 1 connects the energy inputs (section 5) when the pack and charger telemetry exist (spec §4–5, H02/H03). Items marked ⚠ need Clint's approval.
+> **Status:** Approved 2026-10-12 (section 9). Stage 0 implements the link-health part (section 6). Stage 1 connects the energy inputs (section 5) when the pack and charger telemetry exist (spec §4–5, H02/H03). Items marked ⚠ were approved in section 9.
 > **Related:** [`failure-modes.md`](failure-modes.md) §1.1–1.2 (energy cost of failure), gaps G11, G13, G14, G16 · spec v0.2 R02, R03, §4, §5, §11.
 
 ---
@@ -206,9 +206,11 @@ The gateway does **not** tell the node how much to transmit. The node knows its 
 
 ---
 
-## 9. Decisions needed
+## 9. Decisions (approved by Clint, 2026-10-12)
 
-| # | Decision | Proposal |
+All six proposals below are approved as written. Thresholds in item 4 stay provisional until the H02/H03 measurements.
+
+| # | Decision | Approved value |
 |---|---|---|
 | 1 | *K* before back-off | 3 minutes |
 | 2 | Maximum probe interval | 15 minutes |
