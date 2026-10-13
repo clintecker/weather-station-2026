@@ -12,6 +12,7 @@ from .protocol import Nonces
 from .service import Gateway, MQTT, http_server, load_config
 from .simulator import Node
 from .link import ReceiverLink
+from .clock import HostClock
 
 
 def provision(directory, hardware=False, station='simulation-01', station_id=1):
@@ -120,6 +121,7 @@ def main():
             print(f'{stamp} {text}',file=sys.stderr,flush=True)
         # Short read timeout: the node's ACK window is 2 s, so frames are answered immediately.
         link = ReceiverLink(args.serial,args.serial_number,note)
+        gateway.clock = HostClock(cfg.get('ntp_server','pool.ntp.org'),log=note).start()
     print(f"Stage 0 {cfg['mode']}; API http://127.0.0.1:{cfg['http_port']}/v1/status",flush=True)
     next_sample = time.monotonic()
     dropping = False

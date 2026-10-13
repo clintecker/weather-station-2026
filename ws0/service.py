@@ -35,6 +35,7 @@ class Gateway:
         self.store = Store(directory / 'observations.sqlite3')
         self.nonces = Nonces(directory / 'gateway-nonces.sqlite3',self.key,cfg['station_id'],2)
         self.accepted = self.rejected = self.nacked = 0
+        self.clock = None  # ws0.clock.HostClock when serving hardware (gap G9); None = trust host
         self.lock = threading.Lock()
 
     def receive(self, frame, now=None):
@@ -64,8 +65,11 @@ class Gateway:
                 self.rejected += 1  # commit failed: no ACK, the node keeps the record
                 raise
             try:
-                # Host UTC rides in the authenticated ACK: the node's only time source.
+                # Host UTC rides in the authenticated ACK: the node's only time source. A host
+                # clock measured as wrong sends 0 instead: the node then keeps its own clock (G9).
                 host_utc = int(time.time() if now is None else now)
+                if self.clock and not self.clock.may_issue_time():
+                    host_utc = 0
                 ack = seal(self.key,self.cfg['station_id'],2,self.nonces,
                            ACK.pack(int(record['session']),record['sequence'],host_utc,
                                     frame_counter(frame)))
@@ -80,6 +84,7 @@ class Gateway:
         return {'stage':0,'h01':'NOT RUN','mode':self.cfg['mode'],
                 'station':self.cfg['station'],'accepted_this_process':self.accepted,
                 'rejected_this_process':self.rejected,'nacked_this_process':self.nacked,
+                'host_clock':self.clock.status() if self.clock else None,
                 'latest':self.store.latest(self.cfg['station'])}
 
 
