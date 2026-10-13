@@ -65,7 +65,7 @@ python -m ws0 serve --directory run-office --serial-number <RX ST-LINK serial>
 python tools/status.py --directory run-office
 ```
 
-`serve` writes receiver diagnostics to `run-office/receiver.log`. For unattended runs, use the launchd agent (`tools/deploy/macos/install.sh`) or the systemd unit (`tools/deploy/linux/ws0-gateway.service`). See `tools/README.md`.
+`serve` writes receiver diagnostics to `run-office/receiver.log`. For unattended runs, use the launchd agent (`tools/deploy/macos/install.sh`) or the systemd unit (`tools/deploy/linux/ws0-gateway.service`). See `tools/README.md`. Home Assistant: `docs/runbook-home-assistant.md`. The gateway is meant to run on macOS, Linux or Windows.
 
 ## Run the simulation harness
 

@@ -1,6 +1,6 @@
 """Log a firmware/rangetest board's console: both link directions, settings, spot marks.
 
-    .venv/bin/python tools/rangetest_log.py <ST-LINK serial or /dev/cu.usbmodemXXXX> evidence/<run>/rangetest.csv
+    .venv/bin/python tools/rangetest_log.py <ST-LINK serial, /dev/... path or COMn> evidence/<run>/rangetest.csv
 
 Give the board's ST-LINK serial number: port names change with the USB socket. The logger
 reopens the port after a USB dropout and records the gap as a 'usb' row.
@@ -107,10 +107,10 @@ class Summary:
 
 
 def find_port(board):
-    """ST-LINK serial number -> current /dev path (or the path itself if given one)."""
+    """ST-LINK serial number -> current port (a /dev path or Windows COMn is used as given)."""
     from serial.tools import list_ports
 
-    if board.startswith('/dev/'):
+    if board.startswith('/dev/') or re.fullmatch(r'(?i)com\d+', board):   # macOS/Linux path, Windows COMn
         return board
     for p in list_ports.comports():
         if p.serial_number == board:

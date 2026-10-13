@@ -7,6 +7,7 @@ import ctypes
 import subprocess
 import tempfile
 import unittest
+from toolchain import needs_cc
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parent.parent/'firmware/rangetest/App/rt_proto.c'
@@ -27,6 +28,7 @@ class Board:
         return bool(self.lib.rt_is_tentative(self.st))
 
 
+@needs_cc
 class RangeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -272,6 +274,10 @@ class LogParse(unittest.TestCase):
         s.add(dict(row, peer_pwr_dbm=10, utc='16:10:04.000'))
         s.add(dict(row, utc='16:10:05.000'))
         self.assertEqual(sum('MISMATCH' in x for x in lines), 1)            # warned once per episode
+
+    def test_port_names_on_every_os_are_used_directly(self):
+        for name in ('/dev/cu.usbmodem21303', '/dev/ttyACM0', 'COM3', 'com12'):
+            self.assertEqual(self.log.find_port(name), name)
 
     def test_old_rx_lines_without_peer_settings_still_parse(self):
         row = self.log.parse('#rt rx ping seq=0 rssi=-20 snr=12 peer_rssi=-21 peer_snr=11 sf=7 pwr=0')

@@ -86,7 +86,7 @@ WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expec
    - **The 4397's female sockets do not fit the female Arduino headers.** No-solder route: plug them onto the male ST morpho pins: yellow SCL → CN10.3, blue SDA → CN10.5, black GND → CN10.9, red 3V3 → CN7.16 (not CN7.18 = 5 V). Positions and source: `docs/protocol-stack.md` §3.1. Alternative: solder the breakout's header strip and use the 1954 jumpers on CN5/CN6. Wire with TX unplugged.
    - Firmware sensor driver: **already written** (`firmware/stage0-node/App/sensor.c`: I2C2, stuck-bus recovery; CRC and fault handling unit-tested) and in release a07f498. Untested on hardware: wire it, then verify.
    - Verify a CRC-checked reading, plus the unplug and fault behaviour. Then cut a new release.
-3. **Home Assistant.** Needs Clint's real MQTT broker details: host, port, TLS, user. H01 requires an HA entity.
+3. **Home Assistant.** Steps ready in `docs/runbook-home-assistant.md`; needs Clint's broker host, port, TLS on/off and user name (the password goes in a private file, not chat). H01 requires an HA entity.
 4. **Placement.** Check the link in both directions at the real TX/RX locations, then tune SF and power.
 5. **H01:** the 24 h run plus the restart/outage matrix, scored with `tools/h01_report.py --db run-office/observations.sqlite3 --station station-01 --start <UTC> --hours 24 --output evidence/h01-<date>` (use the run directory the gateway actually served; `--db` defaults to `run-hw/`).
 
@@ -128,6 +128,7 @@ WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expec
 | `firmware/stage0-node/RELEASES.md` | Release hashes |
 | `docs/firmware-review-2026-10-13.md` | Firmware review roadmap (§2: SHT45 test plan) |
 | `docs/firmware-budget.md` | Flash/RAM/radio budget, measured; layout v2 and payload plan |
+| `docs/runbook-home-assistant.md` | MQTT / Home Assistant setup, password file, running the gateway on macOS, Linux, Windows |
 | `docs/runbook-moving-boards.md` | Moving boards between gateways without key or nonce reuse |
 | `docs/simulation-harness.md` | Simulation harness model and limits |
 | `docs/openapi.json` | Gateway HTTP API |

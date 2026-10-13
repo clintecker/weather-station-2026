@@ -4,9 +4,11 @@ import hmac
 import io
 import json
 import os
+import sys
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from gateway import Store
@@ -232,6 +234,23 @@ def discovery(cfg):
     return result
 
 
+def mqtt_password(directory):
+    """Broker password: WS_MQTT_PASSWORD if set, else the first line of <run dir>/mqtt-password.
+
+    A file in the private run directory works the same on macOS, Linux and Windows and under any
+    service manager (launchd, systemd, Task Scheduler), and stays out of gateway.json and git."""
+    if os.environ.get('WS_MQTT_PASSWORD'):
+        return os.environ['WS_MQTT_PASSWORD']
+    path = Path(directory) / 'mqtt-password'
+    if not path.exists():
+        return None
+    if os.name == 'posix' and path.stat().st_mode & 0o077:
+        print(f'#gateway warning: {path} is readable by other users; run chmod 600 on it',
+              file=sys.stderr, flush=True)
+    lines = path.read_text().splitlines()
+    return lines[0] if lines else ''
+
+
 class MQTT:
     """Publish current snapshots only; republish discovery on broker reconnect."""
     def __init__(self,gateway):
@@ -245,7 +264,7 @@ class MQTT:
         self.client.will_set(self.root+'/gateway_availability','offline',qos=1,retain=True)
         settings = cfg['mqtt']
         if settings.get('username'):
-            self.client.username_pw_set(settings['username'],os.environ.get('WS_MQTT_PASSWORD'))
+            self.client.username_pw_set(settings['username'],mqtt_password(gateway.directory))
         if settings.get('tls'):
             self.client.tls_set()
         self.client.on_connect = self.on_connect
@@ -256,6 +275,8 @@ class MQTT:
 
     def on_connect(self, client, userdata, flags, reason, properties):
         if reason.is_failure:
+            # A refused login or bad TLS setup must not fail silently.
+            print(f'#gateway mqtt connect refused: {reason}',file=sys.stderr,flush=True)
             return
         for topic,payload in discovery(self.gateway.cfg).items():
             client.publish(topic,json.dumps(payload),qos=1,retain=True)

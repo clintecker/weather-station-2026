@@ -7,6 +7,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from toolchain import needs_cc
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request,urlopen
@@ -102,6 +103,7 @@ class PipelineTests(unittest.TestCase):
   for entry in entries.values():
    self.assertEqual(entry['availability_mode'],'all'); self.assertEqual(len(entry['availability']),2)
 
+@needs_cc
 class FirmwareTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
@@ -135,6 +137,7 @@ class AdditionalFailures(unittest.TestCase):
   with self.assertRaises(InvalidTag): self.node.acknowledge(ack[:-1]+bytes([ack[-1]^1]))
   self.assertEqual(len(self.node.backfill()),1)
 
+@needs_cc
 class SensorBusTests(unittest.TestCase):
  def test_bus_failures_crc_and_conversion(self):
   with tempfile.TemporaryDirectory() as temp:

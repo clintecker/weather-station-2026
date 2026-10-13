@@ -9,6 +9,7 @@ import struct
 import subprocess
 import tempfile
 import unittest
+from toolchain import needs_cc
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from ws0.protocol import ACK, OBS, RH_INVALID, TEMP_INVALID, decode_observation, frame_counter, seal, unseal
@@ -38,6 +39,7 @@ class Fixed:
 REQUIRE_VENDOR = os.environ.get('WS_REQUIRE_VENDOR') == '1'
 
 
+@needs_cc
 @unittest.skipUnless(MBEDTLS.exists() or REQUIRE_VENDOR, 'run tools/fetch-vendor.sh to fetch pinned Mbed TLS')
 class FrameAgreement(unittest.TestCase):
     @classmethod
