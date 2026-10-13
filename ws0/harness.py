@@ -48,6 +48,8 @@ class Scenario:
     require_latency_target: bool = False
     expect_unavailable: bool = False
     expect_latency_failure: bool = False
+    # Draft 4: every unsynchronized sample must end with a reconstructed (or synchronized) time.
+    require_time_reconstruction: bool = False
 
     def validate(self):
         """Reject ambiguous scenario settings before mutating simulation state."""
@@ -84,6 +86,10 @@ def key(record):
     return record['session'],record['sequence']
 
 
+# Gateway-derived columns that are not part of the immutable observation payload.
+DERIVED = ('received_at','_effective','_basis')
+
+
 def assess(expected, rows, now):
     """Account against scheduled samples; never shrink the denominator on failure."""
     by_key = {key(row):row for row in rows}
@@ -98,15 +104,17 @@ def assess(expected, rows, now):
         invalid += expected_record['quality'] != 'valid'
         if row is None:
             continue
-        actual = {k:v for k,v in row.items() if k != 'received_at'}
+        actual = {k:v for k,v in row.items() if k not in DERIVED}
         if actual != expected_record:
             mismatches.append(list(identity))
         # Ground-truth delivery latency is available to the simulator even for bad clocks.
         latency = row['received_at']-acquired
         latencies.append(latency)
-        # H01-like eligibility also needs a declared clock close to simulated acquisition.
-        trustworthy_time = (expected_record['time_quality']=='synchronized' and
-                            abs(expected_record['sampled_at']-acquired) <= 5)
+        # H01-like eligibility also needs a known time close to simulated acquisition. Per
+        # Clint's 2026-10-12 decision, a gateway-reconstructed time (draft 4) is a known time
+        # when it is within the same 5 s tolerance; it is reported separately below.
+        trustworthy_time = (row['_basis'] in ('synchronized','reconstructed') and
+                            row['_effective'] is not None and abs(row['_effective']-acquired) <= 5)
         on_time += int(trustworthy_time and 0 <= latency <= 120)
     return {'scheduled':len(expected),'stored':len(rows),'missing':missing,
             'unexpected_rows':[list(k) for k in by_key if k not in expected],
@@ -115,7 +123,9 @@ def assess(expected, rows, now):
             'live_delivery_percent':round(100*on_time/len(expected),4) if expected else 0,
             'latency_target_met':bool(expected) and on_time >= (99*len(expected)+99)//100,
             'maximum_ground_truth_latency_seconds':max(latencies,default=None),
-            'unknown_clock_samples':unknown,'sensor_fault_samples':invalid}
+            'unknown_clock_samples':unknown,'sensor_fault_samples':invalid,
+            'reconstructed_time_samples':sum(r['_basis']=='reconstructed' for r in rows),
+            'unresolved_time_samples':sum(r['_basis']=='unknown' for r in rows)}
 
 
 class Campaign:
@@ -232,8 +242,13 @@ class Campaign:
 
     def snapshot(self):
         state = self.gateway.store.latest(self.cfg['station'],self.now)
+        truth = None
+        if state.get('observation'):
+            truth = self.expected.get(key(state['observation']),(None,None))[1]
         self.availability.append({'virtual_utc':self.now,'minute':self.minute(),
-                                  'available':state['available'],'reason':state.get('reason')})
+                                  'available':state['available'],'reason':state.get('reason'),
+                                  'time_basis':state.get('time_basis'),
+                                  'effective_sampled_at':state.get('effective_sampled_at'),'true_sampled_at':truth})
 
     def run(self):
         self.output.mkdir(parents=True,exist_ok=False)
@@ -279,8 +294,9 @@ class Campaign:
                     if not self.node.backfill(1) and not self.events:
                         break
                 rows = []
-                for payload,received in self.gateway.store.db.execute('SELECT payload,received_at FROM observations'):
-                    rows.append(json.loads(payload)|{'received_at':received})
+                for payload,received,effective,basis in self.gateway.store.db.execute(
+                        'SELECT payload,received_at,effective_at,time_basis FROM observations'):
+                    rows.append(json.loads(payload)|{'received_at':received,'_effective':effective,'_basis':basis})
                 # Deliberately break the oracle's input to prove the verdict catches lost data.
                 if self.negative_control and rows:
                     rows = rows[1:]
@@ -299,9 +315,21 @@ class Campaign:
                     failures.append('unavailable_not_observed')
                 for snapshot in self.availability:
                     minute = snapshot['minute']
-                    if inside(minute,self.s.sensor_faults+self.s.unknown_clock+self.s.clock_steps) and snapshot['available']:
+                    if inside(minute,self.s.sensor_faults+self.s.clock_steps) and snapshot['available']:
                         failures.append('fault_or_bad_clock_presented_as_current')
                         break
+                    # Unknown node clock: current only with a reconstructed time that is correct.
+                    if inside(minute,self.s.unknown_clock) and snapshot['available'] and (
+                            snapshot['time_basis'] not in ('synchronized','reconstructed') or
+                            abs(snapshot['effective_sampled_at']-snapshot['true_sampled_at']) > 5):
+                        failures.append('unknown_clock_presented_with_wrong_time')
+                        break
+                    if snapshot['available'] and snapshot['true_sampled_at'] is not None and \
+                            abs(snapshot['effective_sampled_at']-snapshot['true_sampled_at']) > 5:
+                        failures.append('current_value_with_wrong_time')
+                        break
+                if self.s.require_time_reconstruction and metrics['unresolved_time_samples']:
+                    failures.append('time_not_reconstructed')
                 # With no clock/sensor fault at the end, normal sampling should recover freshness.
                 end_minute = self.s.minutes-1
                 end_fault = inside(end_minute,self.s.sensor_faults+self.s.unknown_clock+self.s.clock_steps)
@@ -348,6 +376,10 @@ def suite(minutes=1440):
                  sensor_faults=[[20,25]],expect_unavailable=True,require_latency_target=True,**common),
         Scenario('clock-errors','Unknown clock and +1-hour clock step followed by corrected time.',
                  unknown_clock=[[20,25]],clock_steps=[[30,35,3600]],expect_unavailable=True,**common),
+        Scenario('reboot-during-outage','Deployment case: station reboots during a 60-minute link outage, so it has '
+                 'no clock until the link returns; every buffered sample must recover a correct time.',
+                 link_outages=[[20,80]],node_reboots=[50],expect_unavailable=True,
+                 expect_latency_failure=minutes<=1440,require_time_reconstruction=True,**common),
         Scenario('storage-failure','Five-minute commit failures must not ACK or delete uncommitted samples.',
                  commit_failures=[[20,25]],expect_unavailable=True,**common),
         Scenario('ack-loss','50% ACK loss and 15% duplication; records stay journaled until acknowledged.',

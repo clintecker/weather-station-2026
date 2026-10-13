@@ -15,6 +15,8 @@ int ws_sht45_read(const ws_i2c *, int16_t *, uint16_t *);
 #define WS_TEMP_INVALID ((int16_t)-32768)  /* 0x8000 = -327.68 degC */
 #define WS_RH_INVALID   ((uint16_t)0xFFFF) /* 655.35 %RH */
 uint8_t ws_crc8(const uint8_t *, size_t);
+/* Draft 4: utc = UTC seconds (sent only when synchronized); uptime = seconds since boot,
+   always sent, so the gateway can reconstruct the time of unsynchronized samples. */
 void ws_pack_observation(uint8_t out[24], uint32_t epoch, uint32_t seq,
- uint64_t utc, int16_t centi_c, uint16_t centi_rh, uint8_t valid, uint8_t synchronized);
+ uint32_t utc, uint32_t uptime, int16_t centi_c, uint16_t centi_rh, uint8_t valid, uint8_t synchronized);
 #endif

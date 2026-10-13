@@ -1,7 +1,7 @@
 # Stage-0 protocol stack: from sensor to database
 
 > **Document type:** Technical description. **Language:** ASD-STE100 Simplified Technical English (STE) [[STE]](#STE).
-> **Applies to:** protocol draft 3, firmware `firmware/stage0-node`, gateway `ws0/`. Commit `d825c17` and later.
+> **Applies to:** protocol draft 4, firmware `firmware/stage0-node`, gateway `ws0/`. Commit `d825c17` and later.
 > **Status:** Bench data path operates. The sensor is not connected yet. **H01 is NOT RUN.**
 > **Short reference:** [`protocol.md`](protocol.md) gives the byte tables only. This document tells how each layer operates and why.
 > **Failures and recovery:** [`failure-modes.md`](failure-modes.md) defines every non-happy-path behavior, the loss budget, and the known gaps, for the battery/solar deployment.
@@ -145,7 +145,8 @@ The observation record is the **plaintext** payload. It is 24 bytes. All integer
 |---:|---:|---|---|
 | 0 | 4 | Epoch | Boot epoch. Increases on each TX boot. Stored durably. |
 | 4 | 4 | Sequence | Sample number in this epoch. Starts at 0. |
-| 8 | 8 | UTC | Unix seconds at sample time. **0 if the time is unknown.** |
+| 8 | 4 | UTC | Unix seconds at sample time (u32, valid to 2106). **0 if the time is unknown.** |
+| 12 | 4 | Uptime | Seconds since the TX board booted. **Always present.** Time sync does not change it. Section 11.3 uses it. |
 | 16 | 2 | Temperature | Signed, 0.01 °C. **`0x8000` (−327.68 °C) if the sensor is invalid.** |
 | 18 | 2 | Humidity | Unsigned, 0.01 %. **`0xFFFF` (655.35 %) if the sensor is invalid.** |
 | 20 | 1 | Validity | 1 = both measurements valid. 0 = sensor fault. |
@@ -296,7 +297,7 @@ Both frame kinds are 56 bytes.
 | Offset | Size | Field | Protection |
 |---:|---:|---|---|
 | 0 | 2 | Magic `WS` (`0x57 0x53`) | Authenticated, clear |
-| 2 | 1 | Version = `3` | Authenticated, clear |
+| 2 | 1 | Version = `4` | Authenticated, clear |
 | 3 | 1 | Kind: `1` observation, `2` ACK | Authenticated, clear |
 | 4 | 4 | Station ID | Authenticated, clear |
 | 8 | 4 | Counter, high 32 bits | Authenticated, clear |
@@ -344,7 +345,7 @@ Section 11.3 explains the echo.
 | TX board | Mbed TLS (`mbedtls_ccm_*`) | 3.6.6 LTS | `STM32CubeWL` submodule `mbed-crypto` @ `7ee7e20` |
 | Gateway | `cryptography` (`AESCCM`, OpenSSL) | 50.0.1 | `requirements.txt` |
 
-The project does not have its own AES code. The test file `tests/test_frame.py` compiles the C frame code on the host. It makes sure that C and Python give the **same bytes**. It does a known-answer test and 200 random frames in each direction. It also does rejection tests: bad tag, wrong station, wrong key, wrong length, and the draft-1 and draft-2 version bytes. It also tests the draft-3 filler rules. The TX board does the same known-answer test at each boot (`kat=pass`). If the test fails, the board does not transmit.
+The project does not have its own AES code. The test file `tests/test_frame.py` compiles the C frame code on the host. It makes sure that C and Python give the **same bytes**. It does a known-answer test and 200 random frames in each direction. It also does rejection tests: bad tag, wrong station, wrong key, wrong length, and the draft-1, draft-2 and draft-3 version bytes. It also tests the filler rules (section 4.1). The TX board does the same known-answer test at each boot (`kat=pass`). If the test fails, the board does not transmit.
 
 **Key check value (KCV):** The first 3 bytes of AES-128(key, 16 zero bytes). It identifies a key and does not show the key. Example: the FIPS-197 test key `000102…0f` has the KCV `c6a13b`.
 
@@ -591,7 +592,47 @@ flowchart TD
 
 **Accuracy.** The gateway writes its time at the commit. The TX board sets its clock when the ACK arrives. The TX clock is late by the time between these two events. This time is normally much less than 1 s (two air times + USB + commit). Nobody has measured it exactly yet.
 
-**Drift.** The RTC uses the 32.768 kHz LSE crystal. At approximately 20 ppm, the drift is less than 0.5 s in 6 hours. After 6 hours without an ACK, the TX board marks new samples `time unknown` (UTC = 0). The gateway stores these samples. It does not use them to show current data.
+**Drift.** The RTC uses the 32.768 kHz LSE crystal. A tuning-fork crystal drifts approximately 20 ppm at room temperature, but its error increases with the square of the temperature difference. At −35 °C it can be more than 120 ppm. After 6 hours without an ACK, the TX board marks new samples `time unknown` (UTC = 0).
+
+#### 11.3.1 Time across a reset (option D)
+
+A system reset (RESET button, NRST, software reset, future watchdog) does not stop the RTC or clear its backup registers. The TX board keeps a trust marker in two backup registers: a magic value and the RTC second of the last sync. At boot, the board trusts its clock again only if all of these are true:
+
+- the marker is present,
+- the RTC counted forward since the sync,
+- the sync is less than 6 hours old,
+- the clock shows a plausible date.
+
+A power loss clears the backup domain on this board, so the board then starts with `time unknown`. **Bench result (2026-10-12):** after a reset the board printed `#time restored … sync_age=11`. Its first reading in the new epoch was synchronized, within about 1 s of the host.
+
+#### 11.3.2 Reconstructed time (option C, draft 4)
+
+Every observation carries **uptime**: whole seconds since the TX board booted. Time sync does not change uptime. Thus all readings of one epoch share one monotonic time line. When the gateway has at least one **synchronized** reading of an epoch, it calculates the time of every unsynchronized reading of the same epoch:
+
+`effective_time = ref_utc + (uptime − ref_uptime)`, using the synchronized reading nearest in uptime.
+
+```mermaid
+flowchart LR
+  subgraph EP["One epoch (one boot) · uptime is continuous"]
+    direction LR
+    u0["seq 0 · uptime 0<br/>time unknown"] --> u1["seq 1 · uptime 60<br/>time unknown"] --> s2["seq 2 · uptime 120<br/>SYNCHRONIZED<br/>utc = T"]
+  end
+  s2 -. "T − 120" .-> u0
+  s2 -. "T − 60" .-> u1
+```
+
+Rules:
+
+- The raw payload does not change. It stays immutable and stays the deduplication authority. The result goes into separate columns: `effective_at`, `time_basis` (`synchronized`, `reconstructed`, or `unknown`), and `time_uncertainty_s`.
+- **Uncertainty** = 2 s (whole-second quantization of two fields) + 150 ppm × |uptime − ref_uptime|. Example: 2 s after one minute; about 41 s after a 3-day outage.
+- A reference that was quarantined (its clock was ahead of its receipt time) is never used.
+- A reading with an uncertainty above 10 s is never shown as **current**. It stays in the history with its error bound.
+- **H01:** a reconstructed time counts as a known acquisition time when it meets the same 5 s tolerance (decision by Clint, 2026-10-12). Reports give the reconstructed count separately.
+- **Limit:** an epoch that ends (reboot) before its first synchronized reading has no reference. Its readings stay `unknown`. With option D, only a power loss followed by a reboot before the first ACK causes this.
+
+**Bench result (2026-10-12):** a simulated power loss (backup-domain reset) started epoch 8 with no time. One minute later the gateway reconstructed reading 0 as 03:15:34Z ± 2.0 s. The board log shows the sample at 03:15:35Z.
+
+**Simulation:** scenario `reboot-during-outage` reboots the node in the middle of a 60-minute link outage. All 32 buffered unsynchronized readings got a correct time. None stayed unresolved.
 
 ### 11.4 Upward interfaces (summary)
 

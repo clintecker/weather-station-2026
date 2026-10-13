@@ -17,7 +17,9 @@ Source of acceptance criteria: v0.2 section 3 Stage 0 and section 12 H01.
 Use one-minute observations, USB/bench power and the actual intended placements.
 Schedule 1,440 intervals. At least **1,426** must arrive within 120 seconds of acquisition
 (ceil(0.99 × 1440)). Count unique intervals, not packets or retransmissions. Unknown
-acquisition time cannot prove latency. Publish missing, late, invalid-clock and
+acquisition time cannot prove latency. A **gateway-reconstructed** time (protocol draft 4,
+protocol-stack.md 11.3.2) is a known time when it meets the 5 s tolerance; count it, and
+report reconstructed intervals separately (decision by Clint, 2026-10-12). Publish missing, late, invalid-clock and
 sensor-fault records as separate counts; do not silently exclude them.
 
 Record the exact test interval and denominator. Report all intervals if injecting

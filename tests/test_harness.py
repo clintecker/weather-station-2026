@@ -55,7 +55,8 @@ class HarnessTests(unittest.TestCase):
     def test_oracle_rejects_duplicate_and_changed_payload(self):
         record={'session':'1','sequence':1,'sampled_at':1000,'quality':'valid','time_quality':'synchronized'}
         expected={('1',1):(record,1000)}
-        duplicate=record|{'received_at':1001}
+        # Rows carry the gateway-derived time columns next to the immutable payload.
+        duplicate=record|{'received_at':1001,'_effective':1000,'_basis':'synchronized'}
         result=assess(expected,[duplicate,duplicate],1002)
         self.assertEqual(result['duplicate_rows'],1)
         result=assess(expected,[duplicate|{'sampled_at':999}],1002)

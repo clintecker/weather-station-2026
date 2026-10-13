@@ -1,7 +1,7 @@
 # Stage-0 communication: failure modes, recovery, and loss budget
 
 > **Document type:** Failure modes and effects analysis (FMEA) and recovery runbook.
-> **Applies to:** Stage 0 data path: TX board → LoRa → RX board → USB → gateway (`ws0`) → SQLite. Protocol draft 3, commit `e3da38b` and later.
+> **Applies to:** Stage 0 data path: TX board → LoRa → RX board → USB → gateway (`ws0`) → SQLite. Protocol draft 4 and later.
 > **Status:** Most behaviors exist in code. Column **Verified** tells you what has evidence. Section 10 lists the known gaps. **H01 is NOT RUN.**
 > **Related:** [`protocol-stack.md`](protocol-stack.md) (how each layer operates) · [`protocol.md`](protocol.md) (byte formats) · [`H01-checklist.md`](H01-checklist.md).
 
@@ -131,7 +131,7 @@ This is the data loss that the design accepts. **Items marked ⚠ need Clint's a
 | TX unpowered (battery depleted, brown-out), or TX sensor absent | **All intervals while the TX board is down.** These readings never exist, so they are not "lost". They show as a time gap between two epochs. | No energy, no measurement. In deployment, prevention is the job of the power system (spec R03: 168 h without solar). |
 | RX, gateway, or link down | **0 lost** if the outage is ≤ **79 h** (journal capacity). Data is late. | Store-and-forward. A multi-day winter storm outage at the house can exceed 79 h; the 30-day target is H11 (external flash). |
 | Outage > 79 h | **Oldest pending observations, 51 at a time** (one flash page). Counted on the TX board as `lost`. | **Approved by Clint 2026-10-12:** drop oldest first (newest data is more valuable). |
-| Time unknown after a TX boot | The first reading after each TX boot has no timestamp. It is stored, but it is never "current" and cannot count as timely. | ⚠ See gap G6; fix is recommended |
+| Time unknown after a TX boot | **Closed (G6).** Warm reset: time trust restored (D). Power loss: the gateway reconstructs the time of every reading in the epoch after its first sync (C). Residual: an epoch that ends before its first sync stays `unknown`. | Approved by Clint 2026-10-12 (C + D) |
 | Backlog drain | Backlog clears at **2 observations per minute** in addition to live data. An outage of *D* minutes takes *D*/2 minutes to clear. | Live data has priority. ⚠ H11 must accept or raise this rate. |
 
 ### 3.3 H01 budget
@@ -143,7 +143,7 @@ H01 needs **≥ 1,426 of 1,440** one-minute intervals committed within 120 s of 
 | One lost frame or one lost ACK | **0.** The next minute resends the reading as the oldest backlog item. It commits at about t + 61 s, so it is still within 120 s. |
 | Two lost exchanges in a row for one reading | 1 (it commits at about t + 121 s or later) |
 | Outage of *N* minutes (any cause) | About *N* − 1 |
-| TX reboot (any cause) | ≥ 1 (the first reading has unknown time, gap G6), plus the outage time |
+| TX reboot (any cause) | Outage time only. Warm reset: no time loss (D). Power loss: first reading reconstructed (C). |
 | RX reboot | 0 to 1 |
 | Gateway restart (a few seconds) | 0 |
 
@@ -203,7 +203,7 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 | P7 | **House power outage** (deployment) | Gateway, RX, and network down; station runs on solar | TX journals every minute and retries (energy cost, §1.2) | AUTO when power returns | None if < 79 h; oldest data lost beyond (S1) | *N* − 1 | No. This is the main store-and-forward case. |
 | P3 | **RX USB disconnected** while the gateway runs | Gateway raises `SerialException` | **Gateway exits** (gap G3) | OPERATOR: reconnect, restart (R1, R8) | None if < 79 h | *N* − 1 | Code review only |
 | P4 | **RX board down** (unpowered, hung, wrong firmware) | Red each minute on TX; no `#rx` lines; no RX blue heartbeat | TX journals | AUTO if power returns; OPERATOR if hung (R2) | None if < 79 h | *N* − 1 | Bench: RX reflashes (seconds) |
-| P5 | **TX board down** | No new frames; API `available=false` after 180 s | Nothing is acquired | AUTO on power return: new epoch, backlog first | **Readings during the outage are never acquired** | *N* + 1 (G6) | Bench: TX reboots, epochs 1→5 |
+| P5 | **TX board down** | No new frames; API `available=false` after 180 s | Nothing is acquired | AUTO on power return: new epoch, backlog first | **Readings during the outage are never acquired** | *N* | Bench: TX reboots, epochs 1→8; cold start reconstructed |
 | P6 | **All down** (shared USB hub or building power) | Everything dark | Nothing acquired | AUTO on power return | As P5 | As P5 | No |
 
 ---
@@ -222,7 +222,7 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 | E8 | Host power cut **during** a SQLite commit | Transaction rolls back or completes | AUTO: if rolled back, no ACK was sent and TX retries. If completed, the ACK may be missing and TX resends a duplicate. | None, **if the disk honors flushes** (gap G4) | Simulation only |
 | E9 | Host power cut **after** commit, before ACK | Row committed; ACK not sent | AUTO: duplicate next minute, ACK again | None | Simulation `ack-loss` |
 | E10 | USB brown-out / hub reset | Board resets (as E1/E7). USB device may get a **new port name.** | AUTO for boards; OPERATOR for the gateway (G3, R8) | As E1 | Bench: board A dropped off USB once |
-| E11 | **TX battery near empty: brown-out cycling** (deployment; for example at dawn, when weak solar starts the board and a radio burst stops it again) | Each boot reserves a new epoch and skips the rest of a 256-counter block; the first reading has no time (G6); a flash write can occur at marginal voltage | AUTO when energy recovers | Each cycle: ≤ 1 torn slot, ≥ 1 time-unknown reading. A fast cycle can repeat many times. | **Not tested.** Needs low-voltage inhibit (G14). |
+| E11 | **TX battery near empty: brown-out cycling** (deployment; for example at dawn, when weak solar starts the board and a radio burst stops it again) | Each boot reserves a new epoch and skips the rest of a 256-counter block; after a power loss the first readings have no time until a sync (reconstructed later, C); a flash write can occur at marginal voltage | AUTO when energy recovers | Each cycle: ≤ 1 torn slot, ≥ 1 time-unknown reading. A fast cycle can repeat many times. | **Not tested.** Needs low-voltage inhibit (G14). |
 
 ---
 
@@ -297,7 +297,7 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 
 **R2 — Reset the RX board.** Push the black RESET button, or unplug and reconnect the USB cable. If the port name changes, do R8. RX holds no state.
 
-**R3 — Reset the TX board.** Push RESET. The board reserves a new epoch and sends the backlog first. Expect one time-unknown reading (G6).
+**R3 — Reset the TX board.** Push RESET. The board reserves a new epoch and sends the backlog first. It restores its time trust (`#time restored`) if it synced in the last 6 hours.
 
 **R4 — Change the protocol version.**
 1. On the TX console, send `STATUS`. Wait for `pending=0`. If the link is down, repair it first.
@@ -336,7 +336,7 @@ Priority: **P1** = fix before H01; **P2** = fix before field use; **P3** = track
 | G3 | **Gateway exits on a serial error; no supervisor; port names change** | One USB glitch stops H01 data until a person acts | Catch `SerialException`, reopen with back-off, find the RX board by **ST-LINK serial number** (pyserial `list_ports`), and run under `launchd` with `KeepAlive`. | **P1** |
 | G4 | **SQLite `synchronous=FULL` on macOS does not flush the drive cache** | A host power cut can lose a committed and ACKed row (I1 weakened) | Set `PRAGMA fullfsync=ON` (and `checkpoint_fullfsync=ON`) on macOS [[SQLite]](https://www.sqlite.org/pragma.html#pragma_fullfsync). Measure the commit latency after the change. | **P1** |
 | G5 | **`WIPE` restarts epochs at 1** | Re-provisioning under the same station collides with history (C5) | `PROVISION` takes an epoch floor from the gateway (the maximum stored session + 1), or `WIPE` keeps the epoch maximum. | P2 |
-| G6 | **First reading after each TX boot has unknown time** | Each TX reboot costs ≥ 1 H01 interval | The TX board delays the first sample until the first ACK (bounded, for example 10 s), or the gateway gives time in a boot exchange. | P2 |
+| G6 | ~~First reading after each TX boot has unknown time~~ **Closed 2026-10-12** | — | **Done:** D (time trust across resets, backup registers) and C (draft 4 uptime field; gateway reconstruction). Evidence: bench warm reset `#time restored`; cold start reconstructed ±2 s; simulation `reboot-during-outage` 32/32 reconstructed. | — |
 | G7 | **Power-loss behavior not tested** | E2–E6 are design claims only | Bench test: a relay or MOSFET cuts TX power at random points (≥ 200 cycles, power cut during write forced with a GPIO trigger). Check: no duplicate identity, no counter reuse, ≤ 1 lost per cut. | **P1** |
 | G8 | **TX loss counters are local and RAM-only** | The gateway cannot see `lost` or `burned`; a reboot resets them | Persist the counters in the meta log. Send them in a periodic diagnostic frame (spec §5 "radio/storage health"). | P2 |
 | G9 | **Host time correctness is not checked** | Wrong host time goes to all data (M6) | At startup and every hour, the gateway checks the NTP sync state and logs it. If the offset is > 1 s, it refuses to issue time in ACKs (ACKs still go out). | P2 |

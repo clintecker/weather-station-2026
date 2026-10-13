@@ -1,6 +1,6 @@
 # Stage-0 node firmware (NUCLEO-WL55JC1)
 
-One source tree, two roles: **TX** (sensor node, board A `003B00194142500E20353451`) and **RX** (USB receiver bridge, board B `0016001E4142500E20353451`). Built on ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0). Wire protocol: [`docs/protocol.md`](../../docs/protocol.md) draft 3 (see also [`protocol-stack.md`](../../docs/protocol-stack.md)).
+One source tree, two roles: **TX** (sensor node, board A `003B00194142500E20353451`) and **RX** (USB receiver bridge, board B `0016001E4142500E20353451`). Built on ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0). Wire protocol: [`docs/protocol.md`](../../docs/protocol.md) draft 4 (see also [`protocol-stack.md`](../../docs/protocol-stack.md)).
 
 **Status (2026-10-12): bench link working end to end; SHT45 not yet wired, so every reading is an honest `sensor_fault`. H01 NOT RUN.**
 
@@ -69,5 +69,6 @@ The full failure analysis, the loss budget, and the ranked gap list are in [`doc
 
 - The key is stored in plain internal flash at RDP level 0 (anyone with SWD can read it). Stage-0 bench only.
 - Time-sync accuracy: the node is set to the host's commit time, up to about 1 s behind. It is trusted for 6 h, then marked unknown.
+- Time across resets: a warm reset keeps time trust (RTC backup registers DR3/DR4; ST's SysTime uses DR0–DR2). A power loss clears it; the gateway then reconstructs times from the always-present `uptime` field.
 - `LOW_POWER_DISABLE=1` (USB-powered Stage 0). Power work belongs to Stage 1.
 - The SHT45 driver uses I2C2 on PA11/PA12 at 100 kHz with stuck-bus recovery. It is untested on hardware until the sensor arrives.

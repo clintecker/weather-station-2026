@@ -268,3 +268,18 @@ As expected, TX's first draft-3 frame reached the old gateway and was rejected (
 |---|---|
 | `build/rx/stage0-rx.bin` (draft 3) | `1d859a309dde70317cb323a6a31f2cb78d94a76d913dffd9befedc055c15fc1f` |
 | `build/tx/stage0-tx.bin` (draft 3) | `4d7f3c7a5fb5ed8f238804820762c5cb87cdeeee8fef02d241b6ecd55b74bdf4` |
+
+### Protocol draft 4: reconstructed time (C) and time across resets (D) (2026-10-12)
+Clint approved C and D, and agreed that a reconstructed time counts toward H01 when it meets the 5 s tolerance.
+
+- **Wire:** UTC is u32 seconds plus a u32 **uptime** (seconds since boot, always present). Version byte 4. The gateway keeps the payload immutable and stores `effective_at`, `time_basis` and `time_uncertainty_s` in derived columns. It migrated the existing bench database (draft-2/3 rows) in place.
+- **Firmware:** uptime and the 6 h trust window now use RTC seconds (`SysTimeGetMcuTime`), not `HAL_GetTick`. Time trust survives a reset through RTC backup registers DR3/DR4. Finding: ST's `TIMER_IF_Init` zeroes the RTC high tick count at every boot. That only matters after ~48.5 days of uptime, and the trust check rejects it (RTC must count forward).
+- **Bench, warm reset (NRST):** `#time restored utc=1791861315 sync_age=11`. Epoch 7 reading 0 was synchronized. Board−host clock difference was −1.0 s (whole-second truncation + serial latency).
+- **Bench, simulated power loss** (debugger pulsed `RCC_BDCR.BDRST`, then reset): no restore. Epoch 8 reading 0 was `time=unknown uptime=0`. After reading 1 synced, the gateway reconstructed reading 0 as **03:15:34Z ± 2.009 s**; the board log shows 03:15:35Z.
+- **Residual case seen:** epoch 6 ended (my warm-reset test) before its first sync. Its 2 readings stay `unknown`, because there is no reference. This is documented in protocol-stack.md 11.3.2.
+- **Switch-over:** same order as draft 3 (`pending=0` → RX → TX → gateway). Again, the first draft-4 frame reached the old gateway, was rejected, and was delivered the next minute.
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (draft 4) | `a919c177d0bc6eb5820f5b9251bf3a00dd14f05a71cce8a11abe0725e109e220` |
+| `build/tx/stage0-tx.bin` (draft 4) | `5bb7690fcdbc85288643a5ccd46528cabaeac462a4d642b71c48bf8d96cfebfd` |

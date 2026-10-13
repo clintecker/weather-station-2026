@@ -12,6 +12,7 @@
 #include "node_store.h"
 #include "radio.h"
 #include "radio_cfg.h"
+#include "rtc.h"
 #include "sensor.h"
 #include "stage0.h"
 #include "stm32_seq.h"
@@ -27,15 +28,21 @@
 #define ACK_WINDOW_MS       2000U
 #define INTER_FRAME_MS      50U
 #define MAX_BACKFILL        2U
-#define SYNC_VALID_MS       (6UL * 3600UL * 1000UL) /* ~20 ppm LSE: <0.5 s drift */
+#define SYNC_VALID_S        (6UL * 3600UL)          /* trust a sync for 6 h (LSE drift; see gateway DRIFT_PPM) */
+/* Option D: time trust survives a system reset (NRST, software, watchdog) through two RTC
+ * backup registers. A power loss clears the backup domain, so trust is lost, as it must be.
+ * DR0-DR2 belong to ST's timer_if/SysTime. */
+#define BKP_TIME_MAGIC      0x57535456UL            /* "WSTV" */
+#define BKP_REG_MAGIC       RTC_BKP_DR3
+#define BKP_REG_SYNC_MCU    RTC_BKP_DR4
 #define MIN_PLAUSIBLE_UTC   1767225600ULL           /* 2026-01-01T00:00:00Z */
 
 /* Known-answer vectors shared with tests/test_frame.py (Python-generated). */
 static const uint8_t KAT_KEY[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
-static const char KAT_OBS_HEX[] = "57530301000000010000000100000002bd50c6ae3400a778bec357cf"
-                                  "adacd03beedf778fa19f9c447992145b5e7537758039b13149e7f512";
-static const char KAT_ACK_HEX[] = "575303020000000100000000000000050e1eb4544766f4e68818a3b3"
-                                  "9f36393d04a393ebcf0d38785a76634d1c45687d9476ed40fa1d3e46";
+static const char KAT_OBS_HEX[] = "57530401000000010000000100000002bd50c6ae3400a778bec2d16f"
+                                  "adad588beedf778fa19f9c44d0b48401107c5419c40efafe6b0d84b7";
+static const char KAT_ACK_HEX[] = "575304020000000100000000000000050e1eb4544766f4e68818a3b3"
+                                  "9f36393d04a393ebcf0d38783b389a01f911c8748031a35a3b671bf7";
 
 static RadioEvents_t events;
 static UTIL_TIMER_Object_t sample_timer;
@@ -45,7 +52,8 @@ static uint8_t kcv[3];
 static int provisioned, kat_ok, running;
 static uint32_t boot_epoch, next_seq;
 static int synced;
-static uint32_t last_sync_ms;
+static uint32_t last_sync_mcu;   /* RTC (MCU) seconds at the last accepted time sync */
+static uint32_t boot_mcu;        /* RTC (MCU) seconds at boot: uptime origin */
 
 static jref_t queue[1 + MAX_BACKFILL];
 static unsigned qn, qi;
@@ -61,13 +69,33 @@ static int8_t rx_snr;
 static volatile enum { EV_NONE, EV_TX_DONE, EV_TX_TIMEOUT, EV_RX_DONE, EV_RX_TIMEOUT, EV_RX_ERROR } event;
 
 static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
-static int time_valid(void) { return synced && (HAL_GetTick() - last_sync_ms) < SYNC_VALID_MS; }
+/* RTC-based monotonic seconds; SysTimeSet() does not change it. */
+static uint32_t mcu_seconds(void) { return SysTimeGetMcuTime().Seconds; }
+static int time_valid(void) { return synced && (mcu_seconds() - last_sync_mcu) < SYNC_VALID_S; }
+
+/* Option D: restore time trust after a reset if the RTC kept counting and the sync is recent. */
+static void restore_time_trust(void)
+{
+  uint32_t magic = HAL_RTCEx_BKUPRead(&hrtc, BKP_REG_MAGIC);
+  uint32_t at = HAL_RTCEx_BKUPRead(&hrtc, BKP_REG_SYNC_MCU);
+  uint32_t now = mcu_seconds();
+  if (magic == BKP_TIME_MAGIC && now >= at && now - at < SYNC_VALID_S && SysTimeGet().Seconds >= MIN_PLAUSIBLE_UTC)
+  {
+    synced = 1;
+    last_sync_mcu = at;
+    APP_PRINTF("#time restored utc=%u sync_age=%u\n", (unsigned)SysTimeGet().Seconds, (unsigned)(now - at));
+  }
+  else
+  {
+    HAL_RTCEx_BKUPWrite(&hrtc, BKP_REG_MAGIC, 0);
+  }
+}
 
 static int run_kat(void)
 {
   uint8_t plain[24], frame[WS_OBS_FRAME_LEN], expect[WS_OBS_FRAME_LEN], ack[WS_ACK_FRAME_LEN];
   uint64_t ctr, utc, echo; uint32_t ep, sq;
-  ws_pack_observation(plain, 17, 42, 100000, -1234, 4567, 1, 1);
+  ws_pack_observation(plain, 17, 42, 100000, 3600, -1234, 4567, 1, 1);
   if (hex_decode(KAT_OBS_HEX, expect, sizeof expect) != WS_OBS_FRAME_LEN) return 0;
   if (ws_seal_obs(KAT_KEY, 1, 0x100000002ULL, plain, frame) || memcmp(frame, expect, sizeof frame)) return 0;
   if (hex_decode(KAT_ACK_HEX, ack, sizeof ack) != WS_ACK_FRAME_LEN) return 0;
@@ -80,9 +108,10 @@ static int run_kat(void)
 static void status(void)
 {
   APP_PRINTF("#status role=tx fw=%s provisioned=%d station=%u kcv=%02x%02x%02x kat=%s epoch=%u next_seq=%u "
-             "time=%s pending=%u lost=%u burned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u sensor_faults=%u\n",
+             "time=%s utc=%u uptime=%u pending=%u lost=%u burned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u sensor_faults=%u\n",
              WS_FW_VERSION, provisioned, (unsigned)station, kcv[0], kcv[1], kcv[2], kat_ok ? "pass" : "FAIL",
              (unsigned)boot_epoch, (unsigned)next_seq, time_valid() ? "synchronized" : "unknown",
+             (unsigned)(time_valid() ? SysTimeGet().Seconds : 0), (unsigned)(mcu_seconds() - boot_mcu),
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
              (unsigned)store_journal_burned(), (unsigned)n_sent, (unsigned)n_acked,
              (unsigned)n_no_ack, (unsigned)n_ack_rejects, (unsigned)n_sensor_faults);
@@ -143,7 +172,9 @@ static void handle_ack(void)
     SysTime_t now = { .Seconds = (uint32_t)utc, .SubSeconds = 0 };
     SysTimeSet(now);
     synced = 1;
-    last_sync_ms = HAL_GetTick();
+    last_sync_mcu = mcu_seconds();
+    HAL_RTCEx_BKUPWrite(&hrtc, BKP_REG_SYNC_MCU, last_sync_mcu);
+    HAL_RTCEx_BKUPWrite(&hrtc, BKP_REG_MAGIC, BKP_TIME_MAGIC);
   }
   if (found) n_acked++;
   led_flash(LED_GREEN, 400); /* authentic host ACK: reading is committed */
@@ -177,12 +208,13 @@ static void sample(void)
   int16_t t = 0; uint16_t h = 0; uint8_t plain[24]; jref_t live;
   int valid = sensor_read(&t, &h) == 0;
   int timed = time_valid();
-  uint64_t utc = timed ? SysTimeGet().Seconds : 0;
+  uint32_t utc = timed ? SysTimeGet().Seconds : 0;
+  uint32_t uptime = mcu_seconds() - boot_mcu; /* always sent: the gateway reconstructs time from it */
   if (!valid) n_sensor_faults++;
-  ws_pack_observation(plain, boot_epoch, next_seq, utc, t, h, (uint8_t)valid, (uint8_t)timed);
+  ws_pack_observation(plain, boot_epoch, next_seq, utc, uptime, t, h, (uint8_t)valid, (uint8_t)timed);
   int rc = store_journal_append(plain, &live);
-  APP_PRINTF("#sample epoch=%u seq=%u valid=%d t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
-             (unsigned)boot_epoch, (unsigned)next_seq, valid, valid ? t : 0, valid ? h : 0,
+  APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
+             (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)uptime, valid, valid ? t : 0, valid ? h : 0,
              timed ? "synchronized" : "unknown", (unsigned)utc, rc ? "ERROR" : "ok",
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
   next_seq++; /* identity is never reused, even if the journal write failed */
@@ -245,6 +277,7 @@ void SubghzApp_Init(void)
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample);
   console_init(on_line);
 
+  boot_mcu = mcu_seconds();
   kat_ok = run_kat();
   APP_PRINTF("#boot role=tx fw=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
              kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
@@ -252,6 +285,7 @@ void SubghzApp_Init(void)
   provisioned = store_config_load(&station, key) == 0;
   if (!provisioned) { led_set(LED_RED, 1); status(); APP_PRINTF("#unprovisioned: send PROVISION <station_id> <key>\n"); return; }
   ws_key_check(key, kcv);
+  restore_time_trust();
   if (!kat_ok) { led_set(LED_RED, 1); status(); APP_PRINTF("#error self-test failed; not transmitting\n"); return; }
   /* Durable epoch before the first sample: observation identities never repeat. */
   if (store_next_epoch(&boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); return; }

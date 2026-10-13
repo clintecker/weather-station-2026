@@ -23,11 +23,19 @@ class Node:
         self.db.execute('INSERT INTO boot VALUES (?)',(self.epoch,))
         self.db.commit()
         self.sequence = 0
+        # Like the firmware: no trusted clock after boot until an authentic ACK arrives,
+        # and a monotonic seconds-since-boot counter that clock faults do not affect.
+        self.synced = False
+        self.boot = None
 
     def sample(self,now,fault=False,clock_offset=0,clock_known=True):
         """Synthetic, clearly named station; timestamps follow real 60-second cadence."""
-        record = dict(version=1,station=self.cfg['station'],session=str(self.epoch),
+        if self.boot is None:
+            self.boot = now
+        clock_known = clock_known and self.synced
+        record = dict(version=2,station=self.cfg['station'],session=str(self.epoch),
                       sequence=self.sequence,sampled_at=int(now+clock_offset) if clock_known else None,
+                      uptime_s=int(now-self.boot),
                       time_quality='synchronized' if clock_known else 'unknown',
                       temperature_c=None if fault else round(21+math.sin(self.sequence/10),2),
                       humidity_pct=None if fault else round(45+math.cos(self.sequence/10),2),
@@ -43,6 +51,7 @@ class Node:
     def acknowledge(self,packet):
         """A replayed ACK cannot remove a different observation."""
         epoch,seq,_host_utc,_echo = ACK.unpack(unseal(self.key,self.cfg['station_id'],2,packet))
+        self.synced = True  # simulated clock follows the authenticated host time
         with self.db:
             self.db.execute('DELETE FROM pending WHERE epoch=? AND seq=?',(epoch,seq))
 

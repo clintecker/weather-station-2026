@@ -18,6 +18,9 @@ class PipelineTests(unittest.TestCase):
   self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)/'state'
   provision(self.root); self.cfg=load_config(self.root/'gateway.json')
   self.gateway=Gateway(self.cfg,self.root); self.node=Node(self.cfg,self.root)
+  # Most tests are not about the boot clock: start from a node that already has time.
+  # Boot-time reconstruction (draft 4) has its own tests in TimeReconstruction.
+  self.node.synced=True
  def tearDown(self):
   for db in (self.gateway.store.db,self.gateway.nonces.db,self.node.db,self.node.nonces.db): db.close()
   self.tmp.cleanup()
@@ -47,19 +50,29 @@ class PipelineTests(unittest.TestCase):
   for stamp,fault in [(1000,False),(1060,True)]:
    self.gateway.receive(self.node.packet(self.node.sample(stamp,fault)),stamp)
   self.assertFalse(self.gateway.store.latest(self.cfg['station'],1061)['available'])
+  # An unknown-clock sample in an epoch with an earlier trusted reference is reconstructed
+  # from the monotonic uptime (draft 4), so it is correctly current.
   r=self.node.sample(1120); r['sampled_at']=None; r['time_quality']='unknown'
   self.gateway.receive(self.node.packet(r),1120)
-  self.assertFalse(self.gateway.store.latest(self.cfg['station'],1121)['available'])
+  latest=self.gateway.store.latest(self.cfg['station'],1121)
+  self.assertTrue(latest['available']); self.assertEqual(latest['time_basis'],'reconstructed')
+  self.assertEqual(latest['effective_sampled_at'],1120)
   self.gateway.receive(self.node.packet(self.node.sample(1180)),1180)
   self.assertTrue(self.gateway.store.latest(self.cfg['station'],1181)['available'])
  def test_outage_restart_backfill_stale(self):
   for stamp in (1000,1060,1120): self.node.sample(stamp)
   self.node.db.close(); self.node.nonces.db.close(); self.node=Node(self.cfg,self.root)
+  # The restarted node has no clock: its first sample is time-unknown until the next one.
   self.node.acknowledge(self.gateway.receive(self.node.packet(self.node.sample(1300)),1301))
   for r in self.node.backfill(10): self.node.acknowledge(self.gateway.receive(self.node.packet(r),1302))
-  self.assertEqual(len(self.gateway.store.history(self.cfg['station'])),4)
-  self.assertEqual(self.gateway.store.latest(self.cfg['station'],1303)['observation']['sampled_at'],1300)
-  self.assertFalse(self.gateway.store.latest(self.cfg['station'],1480)['available'])
+  self.assertEqual(len(self.gateway.store.history(self.cfg['station'])),3)  # unknown time is not in history yet
+  self.assertEqual(self.gateway.store.latest(self.cfg['station'],1303)['reason'],'unknown_clock')
+  self.node.acknowledge(self.gateway.receive(self.node.packet(self.node.sample(1360)),1361))
+  self.assertEqual(len(self.gateway.store.history(self.cfg['station'])),5)
+  first=[r for r in self.gateway.store.history(self.cfg['station']) if r['session']=='2' and r['sequence']==0][0]
+  self.assertEqual((first['effective_sampled_at'],first['time_basis']),(1300,'reconstructed'))
+  self.assertEqual(self.gateway.store.latest(self.cfg['station'],1363)['observation']['sampled_at'],1360)
+  self.assertFalse(self.gateway.store.latest(self.cfg['station'],1540)['available'])
   self.assertEqual(self.node.backfill(),[])
  def test_accelerated_1440_records(self):
   for i in range(1440):
@@ -91,7 +104,7 @@ class FirmwareTests(unittest.TestCase):
   cls.tmp=tempfile.TemporaryDirectory(); path=Path(cls.tmp.name)/'stage0.so'
   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-shared','-fPIC','firmware/stage0.c','-o',str(path)],check=True)
   cls.lib=ctypes.CDLL(str(path))
-  cls.lib.ws_pack_observation.argtypes=[ctypes.POINTER(ctypes.c_uint8),ctypes.c_uint32,ctypes.c_uint32,ctypes.c_uint64,ctypes.c_int16,ctypes.c_uint16,ctypes.c_uint8,ctypes.c_uint8]
+  cls.lib.ws_pack_observation.argtypes=[ctypes.POINTER(ctypes.c_uint8),ctypes.c_uint32,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_int16,ctypes.c_uint16,ctypes.c_uint8,ctypes.c_uint8]
   cls.lib.ws_crc8.argtypes=[ctypes.POINTER(ctypes.c_uint8),ctypes.c_size_t]; cls.lib.ws_crc8.restype=ctypes.c_uint8
  @classmethod
  def tearDownClass(cls): cls.tmp.cleanup()
@@ -99,8 +112,8 @@ class FirmwareTests(unittest.TestCase):
   for valid in (0,1):
    for timed in (0,1):
     output=(ctypes.c_uint8*24)()
-    self.lib.ws_pack_observation(output,17,42,100000,-1234,4567,valid,timed)
-    self.assertEqual(bytes(output),OBS.pack(17,42,100000 if timed else 0,-1234 if valid else -32768,4567 if valid else 0xFFFF,valid,timed,0))
+    self.lib.ws_pack_observation(output,17,42,100000,777,-1234,4567,valid,timed)
+    self.assertEqual(bytes(output),OBS.pack(17,42,100000 if timed else 0,777,-1234 if valid else -32768,4567 if valid else 0xFFFF,valid,timed,0))
  def test_sensirion_crc(self):
   self.assertEqual(self.lib.ws_crc8((ctypes.c_uint8*2)(0xbe,0xef),2),0x92)
 
@@ -109,7 +122,7 @@ class AdditionalFailures(unittest.TestCase):
  tearDown=PipelineTests.tearDown
  # Reuse fixture setup without duplicating inherited test execution below.
  def test_clock_quarantine_and_corrected_clock(self):
-  self.gateway.receive(self.node.packet(self.node.sample(2000)),1000)
+  self.gateway.receive(self.node.packet(self.node.sample(1000,clock_offset=1000)),1000)
   self.assertFalse(self.gateway.store.latest(self.cfg['station'],2001)['available'])
   self.gateway.receive(self.node.packet(self.node.sample(1060)),1061)
   self.assertTrue(self.gateway.store.latest(self.cfg['station'],1062)['available'])
@@ -157,7 +170,7 @@ class ServiceSmokeTests(unittest.TestCase):
    def publish(self,*a,**kw): self.messages.append((a,kw))
   with tempfile.TemporaryDirectory() as tmp:
    directory=Path(tmp)/'state'; provision(directory); cfg=load_config(directory/'gateway.json')
-   gateway=Gateway(cfg,directory); node=Node(cfg,directory)
+   gateway=Gateway(cfg,directory); node=Node(cfg,directory); node.synced=True
    try:
     gateway.receive(node.packet(node.sample(1000)),1001)
     publisher=object.__new__(MQTT); publisher.gateway=gateway
@@ -167,3 +180,58 @@ class ServiceSmokeTests(unittest.TestCase):
     self.assertEqual(json.loads(publisher.client.messages[0][0][1])['sampled_at'],1000)
    finally:
     for db in (gateway.store.db,gateway.nonces.db,node.db,node.nonces.db): db.close()
+
+
+class TimeReconstruction(unittest.TestCase):
+ """Draft 4: unsynchronized samples get UTC from the same boot epoch's uptime counter."""
+ setUp=PipelineTests.setUp
+ tearDown=PipelineTests.tearDown
+ def boot(self):
+  self.node.db.close(); self.node.nonces.db.close(); self.node=Node(self.cfg,self.root)
+ def test_boot_sample_reconstructed_after_first_sync(self):
+  self.boot()
+  self.node.acknowledge(self.gateway.receive(self.node.packet(self.node.sample(5000)),5001))
+  self.assertEqual(self.gateway.store.latest(self.cfg['station'],5002)['reason'],'unknown_clock')
+  self.node.acknowledge(self.gateway.receive(self.node.packet(self.node.sample(5060)),5061))
+  rows={r['sequence']:r for r in self.gateway.store.history(self.cfg['station'],4000,6000)}
+  self.assertEqual((rows[0]['effective_sampled_at'],rows[0]['time_basis']),(5000,'reconstructed'))
+  self.assertIsNone(rows[0]['sampled_at'])  # the raw payload stays honest and immutable
+  self.assertAlmostEqual(rows[0]['time_uncertainty_s'],2+60*150e-6)
+ def test_outage_after_reboot_whole_backlog_recovers_time(self):
+  self.boot()  # station reboots while the gateway is unreachable: nothing is synced
+  for minute in range(30): self.node.sample(7000+60*minute)
+  self.node.acknowledge(self.gateway.receive(self.node.packet(self.node.sample(7000+60*30)),9000))
+  self.node.acknowledge(self.gateway.receive(self.node.packet(self.node.sample(7000+60*31)),9061))
+  for r in self.node.backfill(100): self.node.acknowledge(self.gateway.receive(self.node.packet(r),9062))
+  rows=self.gateway.store.history(self.cfg['station'],0,10**10,1000)
+  self.assertEqual(len(rows),32)
+  for r in rows:
+   self.assertEqual(r['effective_sampled_at'],7000+60*r['sequence'])
+  self.assertEqual({r['time_basis'] for r in rows},{'reconstructed','synchronized'})
+ def test_quarantined_reference_is_never_used(self):
+  self.boot()
+  self.node.acknowledge(self.gateway.receive(self.node.packet(self.node.sample(3000)),3001))
+  self.gateway.receive(self.node.packet(self.node.sample(3060,clock_offset=3600)),3061)  # clock far ahead
+  first=self.gateway.store.db.execute("SELECT time_basis FROM observations WHERE session='2' AND sequence=0").fetchone()
+  self.assertEqual(first[0],'unknown')
+ def test_uncertainty_grows_with_distance(self):
+  self.boot()  # no ACK for three days: every sample is time-unknown
+  for day in range(4): self.node.sample(10000+86400*day)
+  for r in self.node.backfill(10): self.node.acknowledge(self.gateway.receive(self.node.packet(r),10000+86400*3+5))
+  self.node.acknowledge(self.gateway.receive(self.node.packet(self.node.sample(10000+86400*3+60)),10000+86400*3+61))
+  rows=dict(self.gateway.store.db.execute("SELECT sequence,time_uncertainty_s FROM observations WHERE session='2'").fetchall())
+  self.assertAlmostEqual(rows[0],2+(86400*3+60)*150e-6)  # ~41 s after a 3-day span
+  self.assertAlmostEqual(rows[3],2+60*150e-6)             # nearest reference: 60 s away
+  self.assertEqual(rows[4],0)                             # the synchronized reference itself
+ def test_legacy_rows_get_derived_time_columns(self):
+  import sqlite3
+  path=Path(self.tmp.name)/'legacy.sqlite3'; db=sqlite3.connect(path)
+  db.execute('CREATE TABLE observations (station TEXT, session TEXT, sequence INTEGER, sampled_at REAL, received_at REAL, payload TEXT, PRIMARY KEY(station,session,sequence))')
+  old=dict(version=1,station='s',session='1',sequence=0,sampled_at=1000,time_quality='synchronized',temperature_c=None,humidity_pct=None,quality='sensor_fault')
+  db.execute('INSERT INTO observations VALUES (?,?,?,?,?,?)',('s','1',0,1000,1001,json.dumps(old,sort_keys=True,separators=(',',':'))))
+  db.commit(); db.close()
+  from gateway import Store
+  store=Store(path)
+  self.assertEqual(store.history('s',0,2000)[0]['time_basis'],'synchronized')
+  self.assertFalse(store.ingest(old))  # an exact draft-2/3 duplicate is still recognized
+  store.db.close()

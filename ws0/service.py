@@ -101,7 +101,8 @@ def http_server(gateway, port):
                     if query.get('format',['json'])[0] == 'csv':
                         stream = io.StringIO()
                         fields = ['station','session','sequence','sampled_at','received_at',
-                                  'temperature_c','humidity_pct','quality','time_quality']
+                                  'temperature_c','humidity_pct','quality','time_quality',
+                                  'effective_sampled_at','time_basis','time_uncertainty_s','uptime_s']
                         writer = csv.DictWriter(stream,fields,extrasaction='ignore')
                         writer.writeheader()
                         writer.writerows(rows)

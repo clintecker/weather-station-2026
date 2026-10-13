@@ -28,9 +28,9 @@ int ws_sht45_read(const ws_i2c *bus,int16_t *centi_c,uint16_t *centi_rh) {
 static void put(uint8_t *out,uint64_t v,size_t n) {
  for(size_t i=0;i<n;i++) out[n-1-i]=(uint8_t)(v>>(8*i));
 }
-void ws_pack_observation(uint8_t out[24],uint32_t epoch,uint32_t seq,uint64_t utc,
+void ws_pack_observation(uint8_t out[24],uint32_t epoch,uint32_t seq,uint32_t utc,uint32_t uptime,
  int16_t t,uint16_t rh,uint8_t valid,uint8_t timed) {
- put(out,epoch,4); put(out+4,seq,4); put(out+8,timed?utc:0,8);
+ put(out,epoch,4); put(out+4,seq,4); put(out+8,timed?utc:0,4); put(out+12,uptime,4);
  put(out+16,(uint16_t)(valid?t:WS_TEMP_INVALID),2); put(out+18,valid?rh:WS_RH_INVALID,2);
  out[20]=valid?1:0; out[21]=timed?1:0; out[22]=0; out[23]=0;
 }

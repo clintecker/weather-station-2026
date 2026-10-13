@@ -101,6 +101,10 @@ def main():
     mqtt = MQTT(gateway) if cfg['mqtt']['enabled'] else None
     serial_port = None
     node = Node(cfg,args.directory) if args.command=='demo' else None
+    if node:
+        # The demo node runs inside the gateway process and shares the host clock, so it
+        # starts synchronized. A real node starts time-unknown (see TimeReconstruction tests).
+        node.synced = True
     receiver_log = None
     if args.serial:
         import serial

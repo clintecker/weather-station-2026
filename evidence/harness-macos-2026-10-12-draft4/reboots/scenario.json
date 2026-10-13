@@ -1,0 +1,32 @@
+{
+  "name": "reboots",
+  "description": "Node and gateway restarts, independently and together, with packet delay.",
+  "minutes": 1440,
+  "seed": 73,
+  "uplink_loss": 0.0,
+  "ack_loss": 0.0,
+  "corruption": 0.0,
+  "duplicates": 0.0,
+  "max_delay_seconds": 20,
+  "link_outages": [],
+  "host_outages": [],
+  "commit_failures": [],
+  "sensor_faults": [],
+  "unknown_clock": [],
+  "clock_steps": [],
+  "node_reboots": [
+    10,
+    45,
+    90
+  ],
+  "gateway_reboots": [
+    20,
+    45,
+    95
+  ],
+  "inject_identity_collision": false,
+  "require_latency_target": true,
+  "expect_unavailable": false,
+  "expect_latency_failure": false,
+  "require_time_reconstruction": false
+}

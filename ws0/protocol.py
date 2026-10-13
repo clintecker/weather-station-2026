@@ -10,12 +10,14 @@ from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
 HEADER = struct.Struct('>2sBBIII')  # magic, version, kind, station, tx epoch, counter
-OBS = struct.Struct('>IIQhHBBH')  # sample epoch/seq, UTC, T/RH, validity/time, calibration
+# Draft 4: sample epoch/seq, UTC seconds (u32, 0 if unknown), seconds since boot (u32, always),
+# T/RH, validity/time, calibration. Uptime lets the gateway reconstruct unknown times later.
+OBS = struct.Struct('>IIIIhHBBH')
 # Acknowledged sample epoch/seq, host UTC at commit, and the 64-bit transmission counter
 # of the observation frame being answered. The echo lets the node accept the time only
 # from the reply to the frame it just sent, so a replayed ACK cannot set its clock.
 ACK = struct.Struct('>IIQQ')
-VERSION = 3
+VERSION = 4
 # Draft 3: invalid readings carry impossible fillers so a flag-blind reader never sees a
 # plausible value (0.00 degC is a real Chicago temperature).
 TEMP_INVALID = -32768  # 0x8000 = -327.68 degC
@@ -91,7 +93,7 @@ def encode_observation(record):
     from gateway import validate
     validate(record)
     valid = record['quality'] == 'valid'
-    return OBS.pack(int(record['session']), record['sequence'], record['sampled_at'] or 0,
+    return OBS.pack(int(record['session']), record['sequence'], record['sampled_at'] or 0, record['uptime_s'],
                     round(record['temperature_c'] * 100) if valid else TEMP_INVALID,
                     round(record['humidity_pct'] * 100) if valid else RH_INVALID,
                     int(valid), int(record['time_quality'] == 'synchronized'), 0)
@@ -99,15 +101,15 @@ def encode_observation(record):
 
 def decode_observation(payload, station):
     """Unknown time and sensor faults stay null rather than plausible measurements."""
-    epoch, sequence, utc, temp, rh, valid, timed, calibration = OBS.unpack(payload)
+    epoch, sequence, utc, uptime, temp, rh, valid, timed, calibration = OBS.unpack(payload)
     if valid not in (0, 1) or timed not in (0, 1) or calibration != 0:
         raise ValueError('Unsupported observation flags/calibration')
     if (not timed and utc != 0) or (not valid and (temp, rh) != (TEMP_INVALID, RH_INVALID)):
         raise ValueError('Noncanonical invalid values')
     if valid and (temp == TEMP_INVALID or rh == RH_INVALID):
         raise ValueError('Invalid-reading filler in a valid observation')
-    record = dict(version=1, station=station, session=str(epoch), sequence=sequence,
-                  sampled_at=utc if timed else None,
+    record = dict(version=2, station=station, session=str(epoch), sequence=sequence,
+                  sampled_at=utc if timed else None, uptime_s=uptime,
                   time_quality='synchronized' if timed else 'unknown',
                   temperature_c=temp / 100 if valid else None,
                   humidity_pct=rh / 100 if valid else None,
