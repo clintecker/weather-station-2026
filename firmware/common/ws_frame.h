@@ -1,8 +1,8 @@
 #ifndef WS_FRAME_H
 #define WS_FRAME_H
 #include <stdint.h>
-/* Stage-0 transport draft 2 (docs/protocol.md); AES-128-CCM via Mbed TLS. */
-#define WS_FRAME_VERSION 2
+/* Stage-0 transport draft 3 (docs/protocol.md); AES-128-CCM via Mbed TLS. */
+#define WS_FRAME_VERSION 3
 #define WS_KIND_OBS 1
 #define WS_KIND_ACK 2
 #define WS_HEADER_LEN 16

@@ -253,3 +253,18 @@ The PingPong smoke test was replaced by [`firmware/stage0-node`](../../firmware/
 | `build/tx/stage0-tx.bin` | `508677c7811de80975705b23d5bc2368b0d1d2e4cb0c95e57f5faaf71e4c1298` |
 
 Built from working tree `6dd6b54-dirty`; the commit that adds this section is the source of record. Rebuild from that commit and compare the hashes (the embedded version string changes them).
+
+### Protocol draft 3: impossible fillers for invalid readings (2026-10-12)
+Clint asked if a 0 filler is wise for a sensor fault, because 0.00 °C is a real Chicago temperature. The decision: the validity flag stays authoritative, and an invalid reading now carries `0x8000` (−327.68 °C) and `0xFFFF` (655.35 % RH). A reader that ignores the flag can no longer see a plausible value. Version byte 2 → 3.
+
+Switch-over order on the live bench:
+1. Confirm TX `pending=0`, so no draft-2 plaintext with 0 filler stays in the journal.
+2. Flash RX, then TX.
+3. Restart the gateway.
+
+As expected, TX's first draft-3 frame reached the old gateway and was rejected (`Unexpected frame header`). It stayed journaled. The next minute delivered it and the live reading, both with `8000ffff` on air and stored as `null`/`sensor_fault`.
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (draft 3) | `1d859a309dde70317cb323a6a31f2cb78d94a76d913dffd9befedc055c15fc1f` |
+| `build/tx/stage0-tx.bin` (draft 3) | `4d7f3c7a5fb5ed8f238804820762c5cb87cdeeee8fef02d241b6ecd55b74bdf4` |

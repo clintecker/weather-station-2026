@@ -32,10 +32,10 @@
 
 /* Known-answer vectors shared with tests/test_frame.py (Python-generated). */
 static const uint8_t KAT_KEY[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
-static const char KAT_OBS_HEX[] = "57530201000000010000000100000002bd50c6ae3400a778bec357cf"
-                                  "adacd03beedf778fa19f9c4450481baba8339bc78487d17581c0f71c";
-static const char KAT_ACK_HEX[] = "575302020000000100000000000000050e1eb4544766f4e68818a3b3"
-                                  "9f36393d04a393ebcf0d38786e94d4fae89d4eff744866b0ec143e81";
+static const char KAT_OBS_HEX[] = "57530301000000010000000100000002bd50c6ae3400a778bec357cf"
+                                  "adacd03beedf778fa19f9c447992145b5e7537758039b13149e7f512";
+static const char KAT_ACK_HEX[] = "575303020000000100000000000000050e1eb4544766f4e68818a3b3"
+                                  "9f36393d04a393ebcf0d38785a76634d1c45687d9476ed40fa1d3e46";
 
 static RadioEvents_t events;
 static UTIL_TIMER_Object_t sample_timer;

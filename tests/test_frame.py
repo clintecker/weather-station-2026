@@ -8,16 +8,16 @@ import tempfile
 import unittest
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from ws0.protocol import ACK, OBS, frame_counter, seal, unseal
+from ws0.protocol import ACK, OBS, RH_INVALID, TEMP_INVALID, decode_observation, frame_counter, seal, unseal
 
 ROOT = Path(__file__).resolve().parent.parent
 MBEDTLS = ROOT/'vendor/STM32CubeWL/Middlewares/Third_Party/mbed-crypto'
 # Same vectors are compiled into the TX firmware's boot self-test (App/app_tx.c).
 KAT_KEY = bytes(range(16))
-KAT_OBS = bytes.fromhex('57530201000000010000000100000002bd50c6ae3400a778bec357cf'
-                        'adacd03beedf778fa19f9c4450481baba8339bc78487d17581c0f71c')
-KAT_ACK = bytes.fromhex('575302020000000100000000000000050e1eb4544766f4e68818a3b3'
-                        '9f36393d04a393ebcf0d38786e94d4fae89d4eff744866b0ec143e81')
+KAT_OBS = bytes.fromhex('57530301000000010000000100000002bd50c6ae3400a778bec357cf'
+                        'adacd03beedf778fa19f9c447992145b5e7537758039b13149e7f512')
+KAT_ACK = bytes.fromhex('575303020000000100000000000000050e1eb4544766f4e68818a3b3'
+                        '9f36393d04a393ebcf0d38785a76634d1c45687d9476ed40fa1d3e46')
 
 
 class Fixed:
@@ -96,8 +96,32 @@ class FrameAgreement(unittest.TestCase):
         self.assertNotEqual(self.c_open(b'x'*16, 1, KAT_ACK)[0], 0)        # wrong key
         self.assertNotEqual(self.c_open(KAT_KEY, 1, KAT_OBS)[0], 0)        # observation is not an ACK
         self.assertNotEqual(self.c_open(KAT_KEY, 1, KAT_ACK[:-1])[0], 0)   # length
-        old = bytearray(KAT_ACK); old[2] = 1                                 # draft-1 version byte
-        self.assertNotEqual(self.c_open(KAT_KEY, 1, bytes(old))[0], 0)
+        for version in (1, 2):                                               # earlier drafts
+            old = bytearray(KAT_ACK); old[2] = version
+            self.assertNotEqual(self.c_open(KAT_KEY, 1, bytes(old))[0], 0)
+
+    def test_invalid_reading_fillers(self):
+        """Draft 3: a sensor fault never travels as a plausible number (e.g. 0.00 degC)."""
+        stage0 = Path(self.tmp.name)/'stage0.so'
+        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
+                        str(ROOT/'firmware/stage0.c'), '-o', str(stage0)], check=True)
+        pack = ctypes.CDLL(str(stage0)).ws_pack_observation
+        pack.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint64,
+                         ctypes.c_int16, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint8]
+        out = (ctypes.c_uint8*24)()
+        pack(out, 3, 7, 0, 0, 0, 0, 0)  # fault: caller's 0/0 must not reach the wire
+        self.assertEqual(bytes(out)[16:20], bytes.fromhex('8000ffff'))
+        self.assertEqual(bytes(out), OBS.pack(3, 7, 0, TEMP_INVALID, RH_INVALID, 0, 0, 0))
+        record = decode_observation(bytes(out), 'test')
+        self.assertIsNone(record['temperature_c']); self.assertEqual(record['quality'], 'sensor_fault')
+        for bad in (OBS.pack(3, 7, 0, 0, 0, 0, 0, 0),                     # draft-2 zero filler
+                    OBS.pack(3, 7, 0, 0, RH_INVALID, 0, 0, 0),            # half filler
+                    OBS.pack(3, 7, 0, TEMP_INVALID, 4000, 1, 0, 0),       # filler marked valid
+                    OBS.pack(3, 7, 0, 2100, RH_INVALID, 1, 0, 0)):
+            with self.assertRaises(ValueError):
+                decode_observation(bad, 'test')
+        valid_zero = decode_observation(OBS.pack(3, 7, 0, 0, 0, 1, 0, 0), 'test')
+        self.assertEqual((valid_zero['temperature_c'], valid_zero['humidity_pct']), (0, 0))  # real 0.00 degC
 
     def test_key_check_value(self):
         out = (ctypes.c_uint8*3)()

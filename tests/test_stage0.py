@@ -100,7 +100,7 @@ class FirmwareTests(unittest.TestCase):
    for timed in (0,1):
     output=(ctypes.c_uint8*24)()
     self.lib.ws_pack_observation(output,17,42,100000,-1234,4567,valid,timed)
-    self.assertEqual(bytes(output),OBS.pack(17,42,100000 if timed else 0,-1234 if valid else 0,4567 if valid else 0,valid,timed,0))
+    self.assertEqual(bytes(output),OBS.pack(17,42,100000 if timed else 0,-1234 if valid else -32768,4567 if valid else 0xFFFF,valid,timed,0))
  def test_sensirion_crc(self):
   self.assertEqual(self.lib.ws_crc8((ctypes.c_uint8*2)(0xbe,0xef),2),0x92)
 

@@ -1,10 +1,15 @@
-# Stage-0 transport draft 2
+# Stage-0 transport draft 3
 
 This is a tested host protocol and portable C payload draft, **not a frozen H01 contract**.
 For how each layer works end to end (sensor bus → journal → crypto → LoRa → USB → SQLite → time sync),
 with diagrams and sources, read [`protocol-stack.md`](protocol-stack.md).
 Direct LoRa carries one observation or one acknowledgment. No mesh or module discovery.
 Every integer is big-endian. Observation frame: 56 bytes. ACK frame: 56 bytes.
+
+Draft 3 (2026-10-12) changes from draft 2: version byte 3; an invalid reading carries the
+impossible fillers temperature `0x8000` (-327.68 °C) and humidity `0xFFFF` (655.35 %), not 0.
+A reader that ignores the validity flag can therefore never see a plausible value such as
+0.00 °C. The validity flag stays authoritative.
 
 Draft 2 (2026-10-12) changes from draft 1: version byte 2; the ACK carries host UTC and
 echoes the acknowledged frame's transmission counter (authenticated time sync). Draft-1
@@ -15,7 +20,7 @@ frames are rejected. Recorded `simulation-results/` predate this change.
 | Offset | Bytes | Field |
 |---|---:|---|
 | 0 | 2 | ASCII `WS` |
-| 2 | 1 | Version, 2 |
+| 2 | 1 | Version, 3 |
 | 3 | 1 | Kind: 1 observation, 2 gateway ACK |
 | 4 | 4 | Numeric station ID |
 | 8 | 4 | Transmission counter high word |
@@ -41,8 +46,8 @@ reserved epoch/counter allocation scheme before using this key structure.
 | 0 | 4 | Durable sample/boot epoch |
 | 4 | 4 | Sample sequence within epoch |
 | 8 | 8 | Sample UTC Unix seconds, 0 if time unknown |
-| 16 | 2 | Signed temperature in 0.01°C, 0 if sensor invalid |
-| 18 | 2 | Unsigned RH in 0.01%, 0 if sensor invalid |
+| 16 | 2 | Signed temperature in 0.01°C; `0x8000` (-32768) if sensor invalid |
+| 18 | 2 | Unsigned RH in 0.01%; `0xFFFF` if sensor invalid |
 | 20 | 1 | Validity: 1 both measurements valid, 0 sensor fault |
 | 21 | 1 | Time quality: 1 synchronized, 0 unknown |
 | 22 | 2 | Calibration revision; currently 0 only |

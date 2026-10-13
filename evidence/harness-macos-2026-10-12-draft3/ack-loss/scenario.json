@@ -1,0 +1,23 @@
+{
+  "name": "ack-loss",
+  "description": "50% ACK loss and 15% duplication; records stay journaled until acknowledged.",
+  "minutes": 1440,
+  "seed": 73,
+  "uplink_loss": 0.0,
+  "ack_loss": 0.5,
+  "corruption": 0.0,
+  "duplicates": 0.15,
+  "max_delay_seconds": 0,
+  "link_outages": [],
+  "host_outages": [],
+  "commit_failures": [],
+  "sensor_faults": [],
+  "unknown_clock": [],
+  "clock_steps": [],
+  "node_reboots": [],
+  "gateway_reboots": [],
+  "inject_identity_collision": false,
+  "require_latency_target": true,
+  "expect_unavailable": false,
+  "expect_latency_failure": false
+}

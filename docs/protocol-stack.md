@@ -1,7 +1,7 @@
 # Stage-0 protocol stack: from sensor to database
 
 > **Document type:** Technical description. **Language:** ASD-STE100 Simplified Technical English (STE) [[STE]](#STE).
-> **Applies to:** protocol draft 2, firmware `firmware/stage0-node`, gateway `ws0/`. Commit `d825c17` and later.
+> **Applies to:** protocol draft 3, firmware `firmware/stage0-node`, gateway `ws0/`. Commit `d825c17` and later.
 > **Status:** Bench data path operates. The sensor is not connected yet. **H01 is NOT RUN.**
 > **Short reference:** [`protocol.md`](protocol.md) gives the byte tables only. This document tells how each layer operates and why.
 
@@ -121,7 +121,7 @@ The firmware converts the raw values to integers. It does not use floating point
 
 ### 3.3 Faults
 
-If the write, the read, or a CRC check fails, the function returns an error. The function does not change the output values. The observation then has **validity = 0** and both measurement fields are 0. The system never shows an invalid reading as a real value.
+If the write, the read, or a CRC check fails, the function returns an error. The function does not change the output values. The observation then has **validity = 0**, and the packer writes the impossible filler values (section 4.1). The system never shows an invalid reading as a real value.
 
 After a bus fault, the firmware does a bus recovery. A sensor can hold SDA low if it resets during a byte. The recovery does these steps:
 
@@ -145,13 +145,28 @@ The observation record is the **plaintext** payload. It is 24 bytes. All integer
 | 0 | 4 | Epoch | Boot epoch. Increases on each TX boot. Stored durably. |
 | 4 | 4 | Sequence | Sample number in this epoch. Starts at 0. |
 | 8 | 8 | UTC | Unix seconds at sample time. **0 if the time is unknown.** |
-| 16 | 2 | Temperature | Signed, 0.01 °C. **0 if the sensor is invalid.** |
-| 18 | 2 | Humidity | Unsigned, 0.01 %. **0 if the sensor is invalid.** |
+| 16 | 2 | Temperature | Signed, 0.01 °C. **`0x8000` (−327.68 °C) if the sensor is invalid.** |
+| 18 | 2 | Humidity | Unsigned, 0.01 %. **`0xFFFF` (655.35 %) if the sensor is invalid.** |
 | 20 | 1 | Validity | 1 = both measurements valid. 0 = sensor fault. |
 | 21 | 1 | Time quality | 1 = synchronized. 0 = unknown. |
 | 22 | 2 | Calibration revision | Must be 0 in Stage 0. |
 
-The gateway rejects a record that is not canonical. For example, it rejects a record with validity 0 and a temperature that is not 0. Each record has only one correct byte form.
+The gateway rejects a record that is not canonical. Each record has only one correct byte form:
+
+- Validity 0 requires temperature `0x8000` **and** humidity `0xFFFF`.
+- Validity 1 with either filler value is rejected.
+- Time quality 0 requires UTC 0.
+
+### 4.1 Why the fillers are impossible values (draft 3)
+
+The **validity flag** tells if a reading is valid. The filler values only protect a reader that does not check the flag. Draft 2 used 0 as the filler. But 0.00 °C is a normal Chicago temperature. A flag-blind reader (a debug script, a log reader, new firmware) shows a sensor fault as a real, plausible temperature. A range check cannot find this error, because 0 °C is in range.
+
+Draft 3 uses values that a sensor cannot make. A flag-blind reader gets −327.68 °C or 655.35 % RH. All range checks reject these values. A real reading of exactly 0.00 °C with validity 1 is still correct and accepted.
+
+| Field | Valid range (SHT45) | Filler | Filler decoded |
+|---|---|---|---|
+| Temperature | −40.00 to 125.00 °C | `0x8000` | −327.68 °C |
+| Humidity | 0.00 to 100.00 % | `0xFFFF` | 655.35 % |
 
 The pair **(station, epoch, sequence)** is the **observation identity**. Section 6 explains why this identity cannot repeat.
 
@@ -280,7 +295,7 @@ Both frame kinds are 56 bytes.
 | Offset | Size | Field | Protection |
 |---:|---:|---|---|
 | 0 | 2 | Magic `WS` (`0x57 0x53`) | Authenticated, clear |
-| 2 | 1 | Version = `2` | Authenticated, clear |
+| 2 | 1 | Version = `3` | Authenticated, clear |
 | 3 | 1 | Kind: `1` observation, `2` ACK | Authenticated, clear |
 | 4 | 4 | Station ID | Authenticated, clear |
 | 8 | 4 | Counter, high 32 bits | Authenticated, clear |
@@ -328,7 +343,7 @@ Section 11.3 explains the echo.
 | TX board | Mbed TLS (`mbedtls_ccm_*`) | 3.6.6 LTS | `STM32CubeWL` submodule `mbed-crypto` @ `7ee7e20` |
 | Gateway | `cryptography` (`AESCCM`, OpenSSL) | 50.0.1 | `requirements.txt` |
 
-The project does not have its own AES code. The test file `tests/test_frame.py` compiles the C frame code on the host. It makes sure that C and Python give the **same bytes**. It does a known-answer test and 200 random frames in each direction. It also does rejection tests: bad tag, wrong station, wrong key, wrong length, and draft-1 version byte. The TX board does the same known-answer test at each boot (`kat=pass`). If the test fails, the board does not transmit.
+The project does not have its own AES code. The test file `tests/test_frame.py` compiles the C frame code on the host. It makes sure that C and Python give the **same bytes**. It does a known-answer test and 200 random frames in each direction. It also does rejection tests: bad tag, wrong station, wrong key, wrong length, and the draft-1 and draft-2 version bytes. It also tests the draft-3 filler rules. The TX board does the same known-answer test at each boot (`kat=pass`). If the test fails, the board does not transmit.
 
 **Key check value (KCV):** The first 3 bytes of AES-128(key, 16 zero bytes). It identifies a key and does not show the key. Example: the FIPS-197 test key `000102…0f` has the KCV `c6a13b`.
 
@@ -590,7 +605,7 @@ See [`openapi.json`](openapi.json) and the stage-0 README.
 
 ## 12. Worked example: one real exchange
 
-This exchange occurred on 2026-10-13 at 02:11:25 UTC. It comes from `run-hw/receiver.log`. The key is not shown.
+This exchange occurred on 2026-10-13 at 02:11:25 UTC, **under draft 2**. Draft 3 changes two things in it: the version byte becomes `03`, and the invalid temperature and humidity become `8000 ffff` instead of `0000 0000`. Thus the ciphertext and the tag are different. The structure is the same. It comes from `run-hw/receiver.log`. The key is not shown.
 
 ### 12.1 Observation frame (TX → gateway)
 

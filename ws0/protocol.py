@@ -15,7 +15,11 @@ OBS = struct.Struct('>IIQhHBBH')  # sample epoch/seq, UTC, T/RH, validity/time, 
 # of the observation frame being answered. The echo lets the node accept the time only
 # from the reply to the frame it just sent, so a replayed ACK cannot set its clock.
 ACK = struct.Struct('>IIQQ')
-VERSION = 2
+VERSION = 3
+# Draft 3: invalid readings carry impossible fillers so a flag-blind reader never sees a
+# plausible value (0.00 degC is a real Chicago temperature).
+TEMP_INVALID = -32768  # 0x8000 = -327.68 degC
+RH_INVALID = 0xFFFF    # 655.35 %RH
 
 
 class Nonces:
@@ -88,8 +92,8 @@ def encode_observation(record):
     validate(record)
     valid = record['quality'] == 'valid'
     return OBS.pack(int(record['session']), record['sequence'], record['sampled_at'] or 0,
-                    round(record['temperature_c'] * 100) if valid else 0,
-                    round(record['humidity_pct'] * 100) if valid else 0,
+                    round(record['temperature_c'] * 100) if valid else TEMP_INVALID,
+                    round(record['humidity_pct'] * 100) if valid else RH_INVALID,
                     int(valid), int(record['time_quality'] == 'synchronized'), 0)
 
 
@@ -98,8 +102,10 @@ def decode_observation(payload, station):
     epoch, sequence, utc, temp, rh, valid, timed, calibration = OBS.unpack(payload)
     if valid not in (0, 1) or timed not in (0, 1) or calibration != 0:
         raise ValueError('Unsupported observation flags/calibration')
-    if (not timed and utc != 0) or (not valid and (temp != 0 or rh != 0)):
+    if (not timed and utc != 0) or (not valid and (temp, rh) != (TEMP_INVALID, RH_INVALID)):
         raise ValueError('Noncanonical invalid values')
+    if valid and (temp == TEMP_INVALID or rh == RH_INVALID):
+        raise ValueError('Invalid-reading filler in a valid observation')
     record = dict(version=1, station=station, session=str(epoch), sequence=sequence,
                   sampled_at=utc if timed else None,
                   time_quality='synchronized' if timed else 'unknown',

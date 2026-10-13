@@ -1,6 +1,6 @@
 # Stage-0 node firmware (NUCLEO-WL55JC1)
 
-One source tree, two roles: **TX** (sensor node, board A `003B00194142500E20353451`) and **RX** (USB receiver bridge, board B `0016001E4142500E20353451`). Built on ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0). Wire protocol: [`docs/protocol.md`](../../docs/protocol.md) draft 2.
+One source tree, two roles: **TX** (sensor node, board A `003B00194142500E20353451`) and **RX** (USB receiver bridge, board B `0016001E4142500E20353451`). Built on ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0). Wire protocol: [`docs/protocol.md`](../../docs/protocol.md) draft 3 (see also [`protocol-stack.md`](../../docs/protocol-stack.md)).
 
 **Status (2026-10-12): bench link working end to end; SHT45 not yet wired, so every reading is an honest `sensor_fault`. H01 NOT RUN.**
 

@@ -1,0 +1,39 @@
+{
+  "name": "identity-collision",
+  "description": "An authenticated altered payload reuses an existing sample identity and must be rejected.",
+  "seed": 73,
+  "scenario_pass": true,
+  "failures": [],
+  "metrics": {
+    "scheduled": 1440,
+    "stored": 1440,
+    "missing": [],
+    "unexpected_rows": [],
+    "payload_mismatches": [],
+    "duplicate_rows": 0,
+    "within_120s_with_trustworthy_time": 1440,
+    "live_delivery_percent": 100.0,
+    "latency_target_met": true,
+    "maximum_ground_truth_latency_seconds": 0.0,
+    "unknown_clock_samples": 0,
+    "sensor_fault_samples": 0
+  },
+  "network": {
+    "uplink_sent": 1441,
+    "ack_sent": 1440,
+    "random_drops": 0,
+    "outage_drops": 0,
+    "corrupted": 0,
+    "duplicates": 0,
+    "rejected": 1,
+    "commit_errors": 0,
+    "identity_collision_rejections": 1,
+    "node_reboots": 0,
+    "gateway_reboots": 0
+  },
+  "pending_journal": 0,
+  "nonce_collisions": 0,
+  "drain_minutes": 1,
+  "physical_H01": "NOT RUN",
+  "negative_control": false
+}
