@@ -1,0 +1,58 @@
+#include "watchdog.h"
+#include "stm32_seq.h"
+#include "stm32_timer.h"
+#include "stm32wlxx_hal.h"
+#include "sys_conf.h"
+#include "utilities_def.h"
+
+#define CHECK_PERIOD_MS 1000U
+/* LSI 32 kHz / 64 = 500 Hz; 4000 counts = 8 s. Longest legitimate blocking operation is a
+ * full WIPE (96 page erases, ~2.2 s), well inside this window. */
+#define IWDG_PRESCALER  IWDG_PRESCALER_64
+#define IWDG_RELOAD     4000U
+
+static IWDG_HandleTypeDef hiwdg;
+static UTIL_TIMER_Object_t check_timer;
+static int (*health)(void);
+static const char *cause = "unknown";
+
+static void request_check(void *ctx)
+{
+  (void)ctx;
+  UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Watchdog, CFG_SEQ_Prio_0);
+}
+
+static void check(void)
+{
+  if (!health || health()) HAL_IWDG_Refresh(&hiwdg);
+}
+
+static void read_reset_cause(void)
+{
+  if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)) cause = "watchdog";
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST)) cause = "power"; /* BOR flag is also set at power-on */
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)) cause = "software";
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST)) cause = "lowpower";
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_OBLRST)) cause = "option-bytes";
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST)) cause = "pin";
+  __HAL_RCC_CLEAR_RESET_FLAGS();
+}
+
+const char *watchdog_reset_cause(void) { return cause; }
+
+void watchdog_start(int (*healthy)(void))
+{
+  read_reset_cause();
+  health = healthy;
+#if defined(DEBUGGER_ENABLED) && (DEBUGGER_ENABLED == 1)
+  __HAL_DBGMCU_FREEZE_IWDG(); /* a halted debug session must not trigger resets */
+#endif
+  hiwdg.Instance = IWDG;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER;
+  hiwdg.Init.Window = IWDG_WINDOW_DISABLE;
+  hiwdg.Init.Reload = IWDG_RELOAD;
+  HAL_IWDG_Init(&hiwdg);
+  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Watchdog, UTIL_SEQ_RFU, check);
+  UTIL_TIMER_Create(&check_timer, CHECK_PERIOD_MS, UTIL_TIMER_PERIODIC, request_check, NULL);
+  UTIL_TIMER_Start(&check_timer);
+}

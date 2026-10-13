@@ -249,8 +249,8 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 
 | ID | Scenario | Detection | Behavior | Recovery | Data impact | Verified |
 |---|---|---|---|---|---|---|
-| M1 | **TX firmware hang** | No blue heartbeat on TX; no frames | Nothing acquired. **No watchdog (gap G1).** | OPERATOR: reset or power-cycle TX (R3) | Intervals during the hang never acquired | No |
-| M2 | **RX firmware hang** | No blue heartbeat on RX; no `#rx` lines | As P4. **No watchdog (G1).** | OPERATOR: reset RX (R2) | None if < 79 h | No |
+| M1 | **TX firmware hang** | `#boot … reset=watchdog` | Supervised IWDG resets the board in ≤ 8 s if the main loop stops, sampling stops for > 150 s, or an exchange is stuck for > 30 s. Time trust is restored (D). | AUTO | ≤ 1 interval per hang | **Bench 2026-10-12:** `TEST-HANG` → `reset=watchdog` after 7.9 s, time restored, next reading ACKed |
+| M2 | **RX firmware hang** | `#boot … reset=watchdog` in `receiver.log` | IWDG resets the board in ≤ 8 s if the main loop stops or the radio stops listening (one re-arm attempt first) | AUTO | None (TX retries) | **Bench 2026-10-12:** `TEST-HANG` → `reset=watchdog` after 7 s |
 | M3 | TX sends corrupt frames | Gateway `rejected InvalidTag` | No ACK; TX retries | AUTO if transient | None if transient | Unit tests |
 | M4 | **TX clock ahead** of host | Gateway quarantines (`future_clock_at_receipt`) | Stored, not available | AUTO: next ACK corrects the clock | Readings not current until corrected | Simulation `clock-errors` |
 | M5 | TX clock behind host | Readings look old; may be stale | Stored; availability by age | AUTO: next ACK | As M4 | Simulation |
@@ -331,7 +331,7 @@ Priority: **P1** = fix before H01; **P2** = fix before field use; **P3** = track
 
 | ID | Gap | Risk | Proposed fix | Priority |
 |---|---|---|---|---|
-| G1 | **No hardware watchdog** on TX or RX | A hang stops the system until a person resets it (M1, M2). **A field station is unattended: a hang can last until a site visit.** | Enable the IWDG (independent watchdog, LSI clock), ~8 s timeout. Refresh it from the main loop only when the radio state machine and the sample timer advance. | **P1** |
+| G1 | ~~No hardware watchdog~~ **Closed 2026-10-12** (evidence: M1, M2). Was: no hardware watchdog on TX or RX | A hang stops the system until a person resets it (M1, M2). **A field station is unattended: a hang can last until a site visit.** | Enable the IWDG (independent watchdog, LSI clock), ~8 s timeout. Refresh it from the main loop only when the radio state machine and the sample timer advance. | **P1** |
 | G2 | **Poison records block the backlog** | Two permanently rejected records stop all backlog drain (M11, C1, C5), and each retry costs node energy | (a) The gateway answers a permanent rejection with an authenticated NACK, so the node stops at once (the mains side decides; §1.1 principle). (b) As a safety net, the TX board marks an entry `abandoned` after *N* attempts (counted and reported). Implement both. | **P1** |
 | G3 | **Gateway exits on a serial error; no supervisor; port names change** | One USB glitch stops H01 data until a person acts | Catch `SerialException`, reopen with back-off, find the RX board by **ST-LINK serial number** (pyserial `list_ports`), and run under `launchd` with `KeepAlive`. | **P1** |
 | G4 | **SQLite `synchronous=FULL` on macOS does not flush the drive cache** | A host power cut can lose a committed and ACKed row (I1 weakened) | Set `PRAGMA fullfsync=ON` (and `checkpoint_fullfsync=ON`) on macOS [[SQLite]](https://www.sqlite.org/pragma.html#pragma_fullfsync). Measure the commit latency after the change. | **P1** |

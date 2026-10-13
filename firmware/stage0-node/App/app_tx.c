@@ -9,6 +9,7 @@
 #include <string.h>
 #include "console.h"
 #include "leds.h"
+#include "watchdog.h"
 #include "node_store.h"
 #include "radio.h"
 #include "radio_cfg.h"
@@ -54,6 +55,7 @@ static uint32_t boot_epoch, next_seq;
 static int synced;
 static uint32_t last_sync_mcu;   /* RTC (MCU) seconds at the last accepted time sync */
 static uint32_t boot_mcu;        /* RTC (MCU) seconds at boot: uptime origin */
+static uint32_t last_sample_mcu, exchange_start_mcu; /* watchdog progress evidence */
 
 static jref_t queue[1 + MAX_BACKFILL];
 static unsigned qn, qi;
@@ -206,6 +208,7 @@ static void process(void)
 static void sample(void)
 {
   int16_t t = 0; uint16_t h = 0; uint8_t plain[24]; jref_t live;
+  last_sample_mcu = mcu_seconds();
   int valid = sensor_read(&t, &h) == 0;
   int timed = time_valid();
   uint32_t utc = timed ? SysTimeGet().Seconds : 0;
@@ -223,7 +226,17 @@ static void sample(void)
   if (!rc) queue[qn++] = live;
   qn += store_journal_oldest(queue + qn, MAX_BACKFILL, rc ? NULL : &live);
   qi = 0;
-  if (qn) { busy = 1; send_current(); }
+  if (qn) { busy = 1; exchange_start_mcu = mcu_seconds(); send_current(); }
+}
+
+/* Watchdog health: real progress, not just a running main loop (failure-modes.md G1). */
+static int tx_healthy(void)
+{
+  uint32_t now = mcu_seconds();
+  if (!running) return 1;                                   /* not sampling by design */
+  if (now - last_sample_mcu > 150) return 0;                /* sampling stopped */
+  if (busy && now - exchange_start_mcu > 30) return 0;      /* radio exchange stuck */
+  return 1;
 }
 
 static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
@@ -233,6 +246,7 @@ static void reboot_soon(void) { HAL_Delay(200); NVIC_SystemReset(); }
 static void on_line(char *line)
 {
   if (!strcmp(line, "STATUS")) { status(); return; }
+  if (!strcmp(line, "TEST-HANG")) { APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n"); HAL_Delay(50); for (;;) { } }
   if (!strcmp(line, "KAT")) { APP_PRINTF("#kat %s\n", run_kat() ? "pass" : "FAIL"); return; }
   if (!strcmp(line, "WIPE ERASE-ALL-NODE-STATE"))
   {
@@ -278,9 +292,10 @@ void SubghzApp_Init(void)
   console_init(on_line);
 
   boot_mcu = mcu_seconds();
+  watchdog_start(tx_healthy);
   kat_ok = run_kat();
-  APP_PRINTF("#boot role=tx fw=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
-             kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
+  APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
+             watchdog_reset_cause(), kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
   if (store_meta_init() || store_journal_init()) { led_set(LED_RED, 1); APP_PRINTF("#error store-init\n"); return; }
   provisioned = store_config_load(&station, key) == 0;
   if (!provisioned) { led_set(LED_RED, 1); status(); APP_PRINTF("#unprovisioned: send PROVISION <station_id> <key>\n"); return; }
@@ -291,6 +306,7 @@ void SubghzApp_Init(void)
   if (store_next_epoch(&boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); return; }
   sensor_init();
   running = 1;
+  last_sample_mcu = mcu_seconds();
   status();
   UTIL_TIMER_Create(&sample_timer, SAMPLE_PERIOD_MS, UTIL_TIMER_PERIODIC, on_sample_timer, NULL);
   UTIL_TIMER_Start(&sample_timer);

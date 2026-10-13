@@ -8,6 +8,8 @@
 #include <string.h>
 #include "console.h"
 #include "leds.h"
+#include "stm32wlxx_hal.h"
+#include "watchdog.h"
 #include "radio.h"
 #include "radio_cfg.h"
 #include "stm32_seq.h"
@@ -24,6 +26,8 @@ static int8_t rx_snr;
 static volatile enum { EV_NONE, EV_RX, EV_RX_ERROR, EV_TX_DONE, EV_TX_TIMEOUT } event;
 static volatile uint8_t transmitting;
 static uint32_t n_forwarded, n_dropped, n_acks;
+static uint32_t tx_start_ms;
+static int relisten_tries;
 
 static void post(int ev) { event = ev; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0); }
 static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
@@ -43,6 +47,16 @@ static void listen(void)
 {
   transmitting = 0;
   Radio.Rx(0); /* continuous */
+}
+
+/* Watchdog health: the radio must really be listening, or finish a transmission within 5 s.
+ * One self-heal attempt (re-arm RX) before the watchdog is allowed to reset the board. */
+static int rx_healthy(void)
+{
+  if (transmitting) return HAL_GetTick() - tx_start_ms < 5000;
+  if (Radio.GetStatus() == RF_RX_RUNNING) { relisten_tries = 0; return 1; }
+  if (relisten_tries++ == 0) { APP_PRINTF("#watchdog radio not listening; re-arming\n"); listen(); return 1; }
+  return 0;
 }
 
 static void process(void)
@@ -88,6 +102,7 @@ static void on_line(char *line)
 {
   uint8_t frame[WS_ACK_FRAME_LEN + 1];
   if (line[0] == '#') return;
+  if (!strcmp(line, "TEST-HANG")) { APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n"); HAL_Delay(50); for (;;) { } }
   if (!strcmp(line, "STATUS"))
   {
     APP_PRINTF("#status role=rx forwarded=%u dropped=%u acks=%u\n",
@@ -103,6 +118,7 @@ static void on_line(char *line)
     return;
   }
   transmitting = 1;
+  tx_start_ms = HAL_GetTick();
   if (Radio.Send(frame, WS_ACK_FRAME_LEN) != RADIO_STATUS_OK)
   {
     APP_PRINTF("#tx busy\n");
@@ -121,11 +137,12 @@ void SubghzApp_Init(void)
   events.TxDone = on_tx_done;
   events.TxTimeout = on_tx_timeout;
   leds_init();
+  watchdog_start(rx_healthy);
   Radio.Init(&events);
   ws_radio_configure(1);
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process);
   console_init(on_line);
-  APP_PRINTF("#boot role=rx fw=%s freq=%u bw=%u sf=%u\n", WS_FW_VERSION,
+  APP_PRINTF("#boot role=rx fw=%s reset=%s freq=%u bw=%u sf=%u\n", WS_FW_VERSION, watchdog_reset_cause(),
              (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF);
   listen();
 }

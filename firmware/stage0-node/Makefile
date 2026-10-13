@@ -26,7 +26,7 @@ BUILD  = build/$(ROLE)
 TARGET = $(BUILD)/stage0-$(ROLE)
 
 APP_SRC = $(wildcard Core/Src/*.c) startup/syscalls.c startup/sysmem.c \
-          App/app_subghz_phy.c App/radio_cfg.c App/console.c App/leds.c App/app_$(ROLE).c \
+          App/app_subghz_phy.c App/radio_cfg.c App/console.c App/leds.c App/watchdog.c App/app_$(ROLE).c \
           SubGHz_Phy/Target/radio_board_if.c
 ifeq ($(ROLE),tx)
 APP_SRC += App/node_store.c App/sensor.c $(ROOT)/firmware/stage0.c $(ROOT)/firmware/common/ws_frame.c
@@ -39,7 +39,7 @@ CUBE_SRC = $(CUBE)/Drivers/BSP/STM32WLxx_Nucleo/stm32wlxx_nucleo_radio.c \
            $(HAL)_flash.c $(HAL)_flash_ex.c $(HAL)_gpio.c $(HAL)_pwr.c $(HAL)_pwr_ex.c \
            $(HAL)_rcc.c $(HAL)_rcc_ex.c $(HAL)_rtc.c $(HAL)_rtc_ex.c $(HAL)_subghz.c \
            $(HAL)_tim.c $(HAL)_tim_ex.c $(HAL)_uart.c $(HAL)_uart_ex.c \
-           $(HAL)_i2c.c $(HAL)_i2c_ex.c \
+           $(HAL)_i2c.c $(HAL)_i2c_ex.c $(HAL)_iwdg.c \
            $(wildcard $(CUBE)/Middlewares/Third_Party/SubGHz_Phy/radio_driver/*.c) \
            $(CUBE)/Utilities/lpm/tiny_lpm/stm32_lpm.c \
            $(CUBE)/Utilities/misc/stm32_mem.c \
