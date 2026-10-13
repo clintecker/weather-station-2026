@@ -6,7 +6,7 @@ Two brand-new NUCLEO-WL55JC1 boards, straight from ST, default jumpers, factory 
 
 ## TL;DR
 
-- **Current state (2026-10-13): the boards run the Stage-0 firmware, release `0f456040fe54`** (TX on board A, RX on board B; see [`firmware/stage0-node/RELEASES.md`](../../firmware/stage0-node/RELEASES.md)). During the office range walk they ran the bench tool `firmware/rangetest` instead (see [Office session](#office-session-2026-10-13)). PingPong was the first smoke test (2026-10-12, 915.0 MHz, LoRa SF7 / 500 kHz, 0 dBm; RSSI about −27 dBm, SNR 12 dB at about 30 cm). See [PingPong link test](#pingpong-link-test).
+- **Current state (2026-10-13): the boards run the Stage-0 firmware, release `9e3d38f08e8b`** (TX on board A, RX on board B; see [`firmware/stage0-node/RELEASES.md`](../../firmware/stage0-node/RELEASES.md)). During the office range walk they ran the bench tool `firmware/rangetest` instead (see [Office session](#office-session-2026-10-13)). PingPong was the first smoke test (2026-10-12, 915.0 MHz, LoRa SF7 / 500 kHz, 0 dBm; RSSI about −27 dBm, SNR 12 dB at about 30 cm). See [PingPong link test](#pingpong-link-test).
 - Factory firmware backups (both boards, byte-identical) are in `docs/hardware/factory-firmware/`.
 - Both boards are healthy. STLINK-V3, SWD, NRST, the 3.3 V target supply and the virtual COM port all work.
 - **No jumper changes are needed.** The default configuration is correct for USB-powered development (evidence below).

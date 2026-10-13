@@ -3,7 +3,7 @@
 One source tree, two roles: **TX** (sensor node, board A `003B00194142500E20353451`) and **RX** (USB receiver bridge, board B `0016001E4142500E20353451`). Built on ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0). Wire protocol: [`docs/protocol.md`](../../docs/protocol.md) draft 4 (see also [`protocol-stack.md`](../../docs/protocol-stack.md)).
 
 **Status (2026-10-13):**
-- Release `0f456040fe54` ([`RELEASES.md`](RELEASES.md)) is on both boards, and the bench link works end to end.
+- Release `9e3d38f08e8b` ([`RELEASES.md`](RELEASES.md)) is on both boards, and the bench link works end to end.
 - The SHT45 parts have arrived but are not yet wired, so every reading is an honest `sensor_fault`.
 - **H01 NOT RUN.**
 
@@ -153,7 +153,7 @@ TX runs a boot self-test (`kat=pass`): it seals and opens fixed vectors and comp
 
 | Pages | Use |
 |---|---|
-| 0–31 (64 KB) | Firmware; the linker script enforces this (TX image 53,176 B, RX 30,360 B at 0f456040fe54) |
+| 0–31 (64 KB) | Firmware; the linker script enforces this (TX image 53,880 B, RX 30,912 B at 9e3d38f08e8b) |
 | 32 | Config: station ID, key, KCV. The magic double-word is written last |
 | 33–34 | Monotonic log, A/B: boot epoch, counter reservations (blocks of 256), cumulative `lost`/`abandoned` totals. Recovery takes the maximum. Compaction writes its header last |
 | 35–127 | Journal ring: 93 pages × 51 slots of 40 bytes |

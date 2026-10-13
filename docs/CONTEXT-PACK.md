@@ -10,7 +10,7 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
 **Plan of record:** strict stage order. Stage 0 means passing **H01**: 24 h, 1,440 intervals, at least 1,426 valid readings committed within 120 s, plus a restart/outage matrix (`docs/H01-checklist.md`). Stage 1 (solar, batteries, RS-485, heaters) does not start before H01 passes.
 
 ## 2. Where things stand (on `master`)
-- **Firmware release `0f456040fe54`** is on both boards (`firmware/stage0-node/RELEASES.md`; flashed 2026-10-13, office key `b7142e` kept). Check `STATUS` on each board before relying on it. **No rebuild is needed** to resume.
+- **Firmware release `9e3d38f08e8b`** is on both boards (`firmware/stage0-node/RELEASES.md`; flashed 2026-10-13, office key `b7142e` kept). Check `STATUS` on each board before relying on it. **No rebuild is needed** to resume.
   - TX = board A, ST-LINK serial `003B00194142500E20353451`
   - RX = board B, ST-LINK serial `0016001E4142500E20353451`
   - Identify boards by serial number. Port names change between machines.

@@ -14,6 +14,21 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
 
+## 9e3d38f08e8b — 2026-10-13 (bench, sensor not yet wired)
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (30,912 B) | `c7239804707461eceee901fea1252c9cbc3e4fdba0324162acd9fed8e14bfa5c` |
+| `build/rx/stage0-rx.elf` (path-dependent) | `511fed32ff6dd5c4bc6b5ace7e5024a906a7c8c98c31a9f5b4497c4514549cc3` |
+| `build/tx/stage0-tx.bin` (53,880 B) | `91d8e5479fb44295e08006e0e1243fcb38f510d6cdf6a15afc9cb6a7193f4135` |
+| `build/tx/stage0-tx.elf` (path-dependent) | `63535ce267939f3c9b615e7189a4c34c866461a94d5604643086ddc63487564f` |
+
+- Source: commit `9e3d38f08e8b`. Changes since 0f456040fe54: flash store over a `ws_flash` ops struct with host power-cut tests (P3) and four store fixes they found; UART receive errors re-armed and counted (P5); RX relisten after 5 silent minutes (P6); TX consecutive-failure watchdog and boot retry (P7). Protocol and flash layout unchanged.
+- Inputs: as a07f498. Flash budget: TX 82.2 %, RX 47.2 %.
+- Reproducibility: two clean builds gave identical `.bin` hashes.
+- Flashed 2026-10-13: RX → board B `0016001E4142500E20353451`, TX → board A `003B00194142500E20353451`. TX `STATUS`: `fw=9e3d38f08e8b`, `kcv=b7142e`, `kat=pass`, `epoch=31`, `ctr=7683`. Gateway: 2 accepted / 0 rejected, `alarm` null, counter high-water mark 7684, RX `relistens=0 uart_errors=0`.
+- Not an H01 release: the SHT45 is not connected yet, and the radio settings are bench values.
+
 ## 0f456040fe54 — 2026-10-13 (bench, sensor not yet wired)
 
 | Artifact | SHA-256 |
