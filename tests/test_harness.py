@@ -1,4 +1,7 @@
 """Check the fault harness itself, including intentional failure controls."""
+import os
+os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
+
 import json
 from pathlib import Path
 import tempfile

@@ -1,5 +1,6 @@
 """SQLite observation store. Used by the authenticated gateway and regression tests."""
 import json
+import os
 import math
 import re
 import sqlite3
@@ -15,6 +16,16 @@ DRIFT_PPM = 150
 QUANTIZATION_S = 2
 # Time with a larger error bound is never presented as a current measurement.
 CURRENT_MAX_UNCERTAINTY_S = 10
+
+
+def full_flush(db):
+    """Make each commit reach stable storage (gap G4). macOS fsync() does not flush the drive
+    cache; F_FULLFSYNC does. Measured on the bench Mac: commit 0.06 ms without (not durable),
+    5.3 ms median / 16 ms max with. Harmless no-ops on Linux. Simulations and unit tests may opt
+    out with WS0_UNSAFE_FAST_FSYNC=1; they never claim power-loss durability."""
+    on = 'OFF' if os.environ.get('WS0_UNSAFE_FAST_FSYNC') == '1' else 'ON'
+    db.execute(f'PRAGMA fullfsync={on}')
+    db.execute(f'PRAGMA checkpoint_fullfsync={on}')
 
 
 def validate(record):
@@ -62,6 +73,7 @@ class Store:
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('PRAGMA synchronous=FULL')
+        full_flush(self.db)
         self.db.execute('''CREATE TABLE IF NOT EXISTS observations (
             station TEXT, session TEXT, sequence INTEGER, sampled_at REAL,
             received_at REAL, payload TEXT, PRIMARY KEY(station,session,sequence))''')

@@ -40,6 +40,8 @@ class Nonces:
             raise ValueError('Refusing to overwrite nonce state')
         self.db = sqlite3.connect(path)
         self.db.execute('PRAGMA synchronous=FULL')
+        from gateway import full_flush
+        full_flush(self.db)  # macOS: flush the drive cache too (gap G4)
         self.db.execute('CREATE TABLE IF NOT EXISTS nonce (binding TEXT, counter INTEGER)')
         binding = hashlib.sha256(key + struct.pack('>IB', station, kind)).hexdigest()
         row = self.db.execute('SELECT binding FROM nonce').fetchone()

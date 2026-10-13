@@ -9,6 +9,9 @@ import argparse
 from dataclasses import asdict, dataclass, field
 import hashlib
 import heapq
+import os
+# The harness models networks and restarts, not power loss: skip the slow drive-cache flush (G4).
+os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')
 import html
 import json
 from pathlib import Path

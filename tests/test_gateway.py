@@ -1,4 +1,7 @@
 """Regression checks for history integrity and freshness failures."""
+import os
+os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -58,3 +61,21 @@ class GatewayTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DurabilityTests(unittest.TestCase):
+    """Gap G4: commits must reach stable storage on macOS before an ACK exists."""
+    def test_full_flush_pragmas_are_on(self):
+        import os
+        from unittest.mock import patch
+        from ws0.protocol import Nonces
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'WS0_UNSAFE_FAST_FSYNC': ''}):
+            store = Store(Path(tmp)/'o.sqlite3')
+            nonces = Nonces(Path(tmp)/'n.sqlite3', b'k'*16, 1, 2, create=True)
+            try:
+                for db in (store.db, nonces.db):
+                    self.assertEqual(db.execute('PRAGMA fullfsync').fetchone()[0], 1)
+                    self.assertEqual(db.execute('PRAGMA synchronous').fetchone()[0], 2)  # FULL
+                self.assertEqual(store.db.execute('PRAGMA checkpoint_fullfsync').fetchone()[0], 1)
+            finally:
+                store.db.close(); nonces.db.close()

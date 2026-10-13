@@ -1,5 +1,8 @@
 """Host/MCU known-answer agreement: the firmware's C frame code (Mbed TLS AES-CCM)
 must produce and accept exactly the bytes the Python gateway does."""
+import os
+os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
+
 import ctypes
 import os
 import struct
