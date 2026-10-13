@@ -1,0 +1,170 @@
+# CI for the Stage-0 gateway and firmware (spec: docs/firmware-review-2026-10-13.md, section 6 "CI").
+#
+#   host      Python 3.12 unit tests, including the C-vs-Python crypto agreement tests that need vendor/.
+#   firmware  Build both roles twice from clean with the pinned xPack toolchain, require identical
+#             .bin hashes, enforce the Makefile flash budget, and upload the bins and maps.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit or branch to build (e.g. a RELEASES.md commit, to re-check its recorded hashes)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}  # empty = the pushed commit / PR merge commit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      # Pinned gateway dependencies (cryptography, paho-mqtt, pyserial).
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      # vendor/ is git-ignored. Cache it keyed on the pin list; fetch-vendor.sh always re-verifies
+      # every pinned commit, so a stale or tampered cache fails here rather than in the tests.
+      - name: Cache vendor sources
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: vendor-${{ hashFiles('tools/fetch-vendor.sh') }}
+
+      - name: Fetch and verify pinned vendor sources
+        run: sh tools/fetch-vendor.sh
+
+      # WS_REQUIRE_VENDOR=1 turns the "vendor missing" skip in tests/test_frame.py into a failure,
+      # so the C-vs-Python agreement tests can never silently drop out of CI. They compile
+      # Mbed TLS with the runner's cc. One SNTP test needs network and skips without it.
+      - name: Unit tests
+        env:
+          WS_REQUIRE_VENDOR: '1'
+          WS0_UNSAFE_FAST_FSYNC: '1'
+        run: python -m unittest discover -s tests -v
+
+  firmware:
+    runs-on: ubuntu-latest
+    env:
+      XPACK_VERSION: 15.2.1-1.1
+      # From the official release's checksum file:
+      # https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v15.2.1-1.1/xpack-arm-none-eabi-gcc-15.2.1-1.1-linux-x64.tar.gz.sha
+      XPACK_SHA256: da6a49ad4003944b823c6c93702a8787c922ab34bd7e918ec0eaf6933a9b1ff6
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Shallow checkout with no tags: `git describe --always --dirty` (the Makefile's FW_VERSION)
+      # then yields the plain 12-character commit, as on the release machine.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}  # empty = the pushed commit / PR merge commit
+
+      # The exact toolchain named in RELEASES.md, verified against the pinned SHA-256 before use.
+      # Installed at the Makefile's default TOOLCHAIN path so no override is needed.
+      - name: Install xPack arm-none-eabi-gcc (SHA-256 verified)
+        run: |
+          tarball=xpack-arm-none-eabi-gcc-$XPACK_VERSION-linux-x64.tar.gz
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v$XPACK_VERSION/$tarball"
+          echo "$XPACK_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          mkdir -p "$HOME/.local/opt"
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$HOME/.local/opt"
+          "$HOME/.local/opt/xpack-arm-none-eabi-gcc-$XPACK_VERSION/bin/arm-none-eabi-gcc" --version
+
+      - name: Cache vendor sources
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: vendor-${{ hashFiles('tools/fetch-vendor.sh') }}
+
+      - name: Fetch and verify pinned vendor sources
+        run: sh tools/fetch-vendor.sh
+
+      # Same procedure as RELEASES.md steps 3-4: `make clean` removes both roles, then build rx and
+      # tx; do it twice and require identical .bin hashes. Each link also runs the Makefile's flash
+      # budget check, which fails the build above 90 % of the 64 KB application region.
+      - name: Build both roles twice and compare .bin hashes
+        working-directory: firmware/stage0-node
+        run: |
+          for pass in 1 2; do
+            echo "::group::build pass $pass"
+            make clean
+            make ROLE=rx
+            make ROLE=tx
+            sha256sum build/rx/stage0-rx.bin build/tx/stage0-tx.bin | tee "$RUNNER_TEMP/bin-$pass.sha256"
+            echo "::endgroup::"
+          done
+          if ! diff "$RUNNER_TEMP/bin-1.sha256" "$RUNNER_TEMP/bin-2.sha256"; then
+            echo "::error::.bin hashes differ between two clean builds (not reproducible)"
+            exit 1
+          fi
+          echo "Reproducible: both clean builds gave identical .bin hashes."
+
+      - name: Print sizes
+        working-directory: firmware/stage0-node
+        run: |
+          size="$HOME/.local/opt/xpack-arm-none-eabi-gcc-$XPACK_VERSION/bin/arm-none-eabi-size"
+          "$size" build/rx/stage0-rx.elf build/tx/stage0-tx.elf
+          ls -l build/rx/stage0-rx.bin build/tx/stage0-tx.bin
+          {
+            echo '### Firmware'
+            echo '```'
+            echo "fw=$(git describe --always --dirty --abbrev=12)"
+            "$size" build/rx/stage0-rx.elf build/tx/stage0-tx.elf
+            sha256sum build/rx/stage0-rx.bin build/tx/stage0-tx.bin
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Informational only (never fails the job): if this commit is named in a RELEASES.md heading,
+      # compare the .bin hashes with the recorded ones. A release is recorded in a later commit,
+      # so read RELEASES.md from the default branch, falling back to the checked-out copy.
+      - name: Compare with RELEASES.md (non-gating)
+        continue-on-error: true
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          releases=firmware/stage0-node/RELEASES.md
+          if git fetch -q --depth 1 origin "$DEFAULT_BRANCH"; then
+            git show "FETCH_HEAD:$releases" > "$RUNNER_TEMP/RELEASES.md" || cp "$releases" "$RUNNER_TEMP/RELEASES.md"
+          else
+            cp "$releases" "$RUNNER_TEMP/RELEASES.md"
+          fi
+          commit=$(git rev-parse --short=12 HEAD)
+          section=$(awk -v c="$commit" '/^## /{on = ($2 == c)} on' "$RUNNER_TEMP/RELEASES.md")
+          if [ -z "$section" ]; then
+            echo "Commit $commit is not a RELEASES.md release; nothing to compare."
+            exit 0
+          fi
+          for role in rx tx; do
+            bin=build/$role/stage0-$role.bin
+            want=$(printf '%s\n' "$section" | grep -F "\`$bin\`" | grep -oE '[0-9a-f]{64}' | head -n 1)
+            got=$(sha256sum "firmware/stage0-node/$bin" | cut -d' ' -f1)
+            if [ "$want" = "$got" ]; then
+              echo "::notice::release $commit $bin matches the recorded hash ($got)"
+            else
+              echo "::warning::release $commit $bin is $got, RELEASES.md records ${want:-nothing}; investigate (not a gate)"
+            fi
+          done
+
+      - name: Upload bins and maps
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage0-firmware
+          path: |
+            firmware/stage0-node/build/*/stage0-*.bin
+            firmware/stage0-node/build/*/stage0-*.map
+          if-no-files-found: error

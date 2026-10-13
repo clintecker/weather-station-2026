@@ -34,10 +34,16 @@ class Fixed:
         return self.counter >> 32, self.counter & 0xffffffff
 
 
-@unittest.skipUnless(MBEDTLS.exists(), 'run tools/fetch-vendor.sh to fetch pinned Mbed TLS')
+# CI sets WS_REQUIRE_VENDOR=1 so a missing vendor/ fails these tests instead of skipping them.
+REQUIRE_VENDOR = os.environ.get('WS_REQUIRE_VENDOR') == '1'
+
+
+@unittest.skipUnless(MBEDTLS.exists() or REQUIRE_VENDOR, 'run tools/fetch-vendor.sh to fetch pinned Mbed TLS')
 class FrameAgreement(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        if not MBEDTLS.exists():
+            raise AssertionError(f'WS_REQUIRE_VENDOR=1 but {MBEDTLS} is missing; run tools/fetch-vendor.sh')
         cls.tmp = tempfile.TemporaryDirectory()
         lib = Path(cls.tmp.name)/'wsframe.so'
         sources = [ROOT/'firmware/common/ws_frame.c'] + [

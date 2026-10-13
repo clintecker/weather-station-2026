@@ -15,3 +15,11 @@ number where the tool supports it, because `/dev/cu.usbmodem*` names change betw
 | `deploy/macos/install.sh` | Install, remove or inspect the launchd agent `com.clintecker.weatherstation.gateway`. The agent runs `ws0 serve --serial-number <RX>`, restarts if it exits, and logs to `<state-dir>/serve.out`. | `tools/deploy/macos/install.sh install [state-dir] [rx-stlink-serial]` \| `uninstall` \| `status` (defaults: `run-hw`, `0016001E4142500E20353451`) | `docs/CONTEXT-PACK.md` §4 |
 | `deploy/macos/com.clintecker.weatherstation.gateway.plist.in` | launchd template filled in by `install.sh` (`@REPO@`, `@STATE@`, `@RX_SERIAL@`). | Not run directly | |
 | `deploy/linux/ws0-gateway.service` | systemd unit for an always-on Linux gateway. | Copy to `/etc/systemd/system/`, set `User` and paths, then `systemctl daemon-reload && systemctl enable --now ws0-gateway` | `firmware/stage0-node/README.md` |
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push and pull request, and by hand (`workflow_dispatch`, with an optional commit to build).
+
+- **host**: Python 3.12, `sh tools/fetch-vendor.sh` (cached, always re-verified), then `WS_REQUIRE_VENDOR=1 WS0_UNSAFE_FAST_FSYNC=1 python -m unittest discover -s tests`. With `WS_REQUIRE_VENDOR=1`, a missing `vendor/` fails the C-vs-Python crypto tests instead of skipping them.
+- **firmware**: installs xPack arm-none-eabi-gcc 15.2.1-1.1 (linux-x64, SHA-256 pinned in the workflow), then builds `ROLE=rx` and `ROLE=tx` twice from `make clean` and fails if the `.bin` hashes differ. The Makefile flash budget check runs on each link. The bins and maps are uploaded as the `stage0-firmware` artifact.
+- If the built commit has a section in `firmware/stage0-node/RELEASES.md` (read from the default branch), the job compares the `.bin` hashes with the recorded ones and reports a match or mismatch. This check never fails the job. To re-check an old release, run the workflow by hand with that commit.
