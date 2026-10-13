@@ -1,0 +1,21 @@
+{
+  "gate": "H01",
+  "station": "station-01",
+  "window_start": "2026-10-13T04:18:00Z",
+  "window_end": "2026-10-13T13:27:00Z",
+  "intervals": 549,
+  "required_on_time_valid": 544,
+  "on_time_valid": 0,
+  "on_time_sensor_fault": 549,
+  "late": 0,
+  "transport_on_time": 549,
+  "missing": 0,
+  "missing_first": [],
+  "invalid_clock_observations": 0,
+  "reconstructed_time_intervals_counted": 0,
+  "latency_median_s": 1.5070788860321045,
+  "latency_max_on_time_s": 1.9912288188934326,
+  "boot_epochs_seen": 1,
+  "gateway_rejections": 0,
+  "verdict": "FAIL"
+}
