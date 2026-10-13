@@ -226,3 +226,30 @@ This is a diagnostic smoke test only. It is **not H01** and not the Stage-0 prot
 2. Check range with more TX power and real placement. Stay within the FCC Part 15.247 limits for 902–928 MHz.
 3. Investigate the missing MSC drive on board A (step 2 of the log above).
 4. To go back to factory firmware: run the restore command in [Board inventory](#board-inventory).
+
+## Stage-0 firmware bring-up (2026-10-12)
+
+The PingPong smoke test was replaced by [`firmware/stage0-node`](../../firmware/stage0-node/README.md): TX on board A, RX on board B. The host runs `python -m ws0 serve` against the RX port.
+
+### Verified on hardware
+- **Sensor wiring checked against UM2592 Rev 4 (Nov 2025), Table 17** (supplied by Clint): CN5.9 = D14 = PA11 = I2C2_SDA, CN5.10 = D15 = PA12 = I2C2_SCL, CN6.4 = 3V3, CN6.6 = GND. No solder bridge in the path. ST's I2C example uses PA15 for SDA; that was that example's own choice and is not the Arduino D14 pin.
+- **Board variant checked against data brief DB3933 Rev 1:** NUCLEO-WL55JC1 = high band, 865–928 MHz, so 915.0 MHz is in band.
+- **End-to-end link:** TX reading → LoRa → RX → USB hex line → gateway authenticates, commits to SQLite, ACKs → RX → LoRa → TX clears the journal and syncs its clock. Epoch 2 delivered seq 0–12 with `pending=0`; every reading after the first ACK carried synchronized UTC; RSSI −23/−24 dBm, SNR 12–13 dB.
+- **Reboot behaviour:** epoch advanced 1 → 2 → 3 and the counter skipped the unused reservation (8 → 257). Backlogged readings from the previous epoch were delivered first-in-first-out, at most two per minute. Provisioning survived reflashing.
+- **Crypto:** the TX boot self-test passes on target; the C frame code matches Python on fixed vectors and 200 random frames per direction (`tests/test_frame.py`).
+
+### Trial and error
+1. **ACK window closed after 1.3 ms.** The first run showed `sent=9 acked=0 no_ack=9`, and backlog frames were lost while RX was busy sending ACKs. Cause: ST's default `LORA_SYMBOL_TIMEOUT` of 5 symbols, which at SF7/500 kHz (0.256 ms per symbol) ends a single RX window after about 1.3 ms unless a preamble has already started. Fix: symbol timeout 0, so the 2 s window timer bounds RX. After the fix: `sent=3 acked=3 no_ack=0`.
+2. **`%lu` printed literally.** ST's `tiny_vsnprintf` is built with `TINY_PRINTF`, which drops the `l` length modifier (widths and zero-padding still work). All console formats now use `%u` with `(unsigned)` casts.
+3. **Board A dropped off USB once** while still powered and transmitting: the RX bridge kept hearing its 64-byte PingPong packets. Replugging fixed it. One TX flash failed mid-verify (`jtag status contains invalid mode value`) during the replug; a retry verified OK.
+4. **ACK design change during implementation:** draft 2 originally added only host UTC (48-byte ACK). That allows a recorded ACK to be replayed to move the clock, so the ACK now also echoes the observation frame's counter, and the node accepts time only from the reply to the frame it just sent (56-byte ACK).
+5. **Mbed TLS choice:** ST's pinned `mbed-crypto` submodule is Mbed TLS **3.6.6 LTS**. It is used for AES-CCM on target and is compiled on the host for the agreement tests. No hand-written AES; the STM32WL hardware AES is not used.
+6. **Vendor checkout moved** into `vendor/` (git-ignored). `tools/fetch-vendor.sh` re-creates and verifies every pinned commit.
+
+### Build record
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` | `37d79f7b05b60ca007b99b533087e931d69c97129aeb5181477d95eaab7d58c4` |
+| `build/tx/stage0-tx.bin` | `508677c7811de80975705b23d5bc2368b0d1d2e4cb0c95e57f5faaf71e4c1298` |
+
+Built from working tree `6dd6b54-dirty`; the commit that adds this section is the source of record. Rebuild from that commit and compare the hashes (the embedded version string changes them).

@@ -10,7 +10,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from gateway import Store
-from .protocol import ACK, Nonces, decode_observation, seal, unseal
+from .protocol import ACK, Nonces, decode_observation, frame_counter, seal, unseal
 
 
 def load_config(path):
@@ -42,8 +42,11 @@ class Gateway:
                 payload = unseal(self.key,self.cfg['station_id'],1,frame)
                 record = decode_observation(payload,self.cfg['station'])
                 inserted = self.store.ingest(record,now)
+                # Host UTC rides in the authenticated ACK: the node's only time source.
+                host_utc = int(time.time() if now is None else now)
                 ack = seal(self.key,self.cfg['station_id'],2,self.nonces,
-                           ACK.pack(int(record['session']),record['sequence']))
+                           ACK.pack(int(record['session']),record['sequence'],host_utc,
+                                    frame_counter(frame)))
                 self.accepted += int(inserted)
                 return ack
             except Exception:

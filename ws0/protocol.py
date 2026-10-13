@@ -11,7 +11,11 @@ from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
 HEADER = struct.Struct('>2sBBIII')  # magic, version, kind, station, tx epoch, counter
 OBS = struct.Struct('>IIQhHBBH')  # sample epoch/seq, UTC, T/RH, validity/time, calibration
-ACK = struct.Struct('>II')
+# Acknowledged sample epoch/seq, host UTC at commit, and the 64-bit transmission counter
+# of the observation frame being answered. The echo lets the node accept the time only
+# from the reply to the frame it just sent, so a replayed ACK cannot set its clock.
+ACK = struct.Struct('>IIQQ')
+VERSION = 2
 
 
 class Nonces:
@@ -54,9 +58,15 @@ def seal(key, station, kind, allocator, payload):
     if (allocator.station, allocator.kind) != (station, kind):
         raise ValueError('Wrong nonce allocator')
     epoch, counter = allocator.next()
-    header = HEADER.pack(b'WS', 1, kind, station, epoch, counter)
+    header = HEADER.pack(b'WS', VERSION, kind, station, epoch, counter)
     nonce = struct.pack('>BIII', kind, station, epoch, counter)
     return header + AESCCM(key, tag_length=16).encrypt(nonce, payload, header)
+
+
+def frame_counter(packet):
+    """64-bit transmission counter from an (authenticated) frame header."""
+    _magic, _version, _kind, _station, high, low = HEADER.unpack(packet[:HEADER.size])
+    return high << 32 | low
 
 
 def unseal(key, station, kind, packet):
@@ -65,7 +75,7 @@ def unseal(key, station, kind, packet):
     if len(packet) != HEADER.size + size + 16:
         raise ValueError('Wrong frame length')
     magic, version, direction, device, epoch, counter = HEADER.unpack(packet[:HEADER.size])
-    if (magic, version, direction, device) != (b'WS', 1, kind, station):
+    if (magic, version, direction, device) != (b'WS', VERSION, kind, station):
         raise ValueError('Unexpected frame header')
     return AESCCM(key, tag_length=16).decrypt(
         struct.pack('>BIII', kind, station, epoch, counter),

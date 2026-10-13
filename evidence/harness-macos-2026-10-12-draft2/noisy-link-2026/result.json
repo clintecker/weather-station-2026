@@ -1,0 +1,39 @@
+{
+  "name": "noisy-link-2026",
+  "description": "10% uplink loss, 10% ACK loss, 1% corruption, 15% duplication, up to 20s delay.",
+  "seed": 2026,
+  "scenario_pass": true,
+  "failures": [],
+  "metrics": {
+    "scheduled": 1440,
+    "stored": 1440,
+    "missing": [],
+    "unexpected_rows": [],
+    "payload_mismatches": [],
+    "duplicate_rows": 0,
+    "within_120s_with_trustworthy_time": 1426,
+    "live_delivery_percent": 99.0278,
+    "latency_target_met": true,
+    "maximum_ground_truth_latency_seconds": 192.0,
+    "unknown_clock_samples": 0,
+    "sensor_fault_samples": 0
+  },
+  "network": {
+    "uplink_sent": 1759,
+    "ack_sent": 1821,
+    "random_drops": 337,
+    "outage_drops": 0,
+    "corrupted": 26,
+    "duplicates": 496,
+    "rejected": 31,
+    "commit_errors": 0,
+    "identity_collision_rejections": 0,
+    "node_reboots": 0,
+    "gateway_reboots": 0
+  },
+  "pending_journal": 0,
+  "nonce_collisions": 0,
+  "drain_minutes": 1,
+  "physical_H01": "NOT RUN",
+  "negative_control": false
+}

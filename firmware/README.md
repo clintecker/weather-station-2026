@@ -1,8 +1,11 @@
 # NUCLEO-WL55JC1 firmware groundwork
 
+**Board firmware now lives in [`stage0-node/`](stage0-node/README.md)** (2026-10-12: TX/RX built, flashed, link verified on the bench; sensor not yet wired; H01 NOT RUN).
+
 `stage0.c` and `stage0.h` provide portable SHT45 acquisition and packet serialization.
-They compile with warnings-as-errors in the host tests. **No ARM target build,
-flash image, board programming or radio transmission has been performed.**
+They compile with warnings-as-errors in the host tests and are linked unchanged into the
+TX firmware. (The original checkpoint note that no ARM build or radio transmission had been
+performed is superseded by `stage0-node/`.)
 
 ## Existing hardware target
 

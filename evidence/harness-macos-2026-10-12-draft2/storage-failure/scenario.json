@@ -1,0 +1,28 @@
+{
+  "name": "storage-failure",
+  "description": "Five-minute commit failures must not ACK or delete uncommitted samples.",
+  "minutes": 1440,
+  "seed": 73,
+  "uplink_loss": 0.0,
+  "ack_loss": 0.0,
+  "corruption": 0.0,
+  "duplicates": 0.0,
+  "max_delay_seconds": 0,
+  "link_outages": [],
+  "host_outages": [],
+  "commit_failures": [
+    [
+      20,
+      25
+    ]
+  ],
+  "sensor_faults": [],
+  "unknown_clock": [],
+  "clock_steps": [],
+  "node_reboots": [],
+  "gateway_reboots": [],
+  "inject_identity_collision": false,
+  "require_latency_target": false,
+  "expect_unavailable": true,
+  "expect_latency_failure": false
+}

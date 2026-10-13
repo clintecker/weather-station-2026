@@ -4,7 +4,7 @@
 #   make                      build build/pingpong.elf/.bin
 #   make flash SERIAL=<stlink serial>
 
-CUBE      ?= $(HOME)/code/vendor/STM32CubeWL
+CUBE      ?= ../../vendor/STM32CubeWL
 TOOLCHAIN ?= $(HOME)/.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin
 PREFIX     = $(TOOLCHAIN)/arm-none-eabi-
 CC         = $(PREFIX)gcc

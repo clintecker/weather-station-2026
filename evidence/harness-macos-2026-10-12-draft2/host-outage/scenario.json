@@ -1,0 +1,30 @@
+{
+  "name": "host-outage",
+  "description": "10-minute host outage followed by gateway restart and journal recovery.",
+  "minutes": 1440,
+  "seed": 73,
+  "uplink_loss": 0.0,
+  "ack_loss": 0.0,
+  "corruption": 0.0,
+  "duplicates": 0.0,
+  "max_delay_seconds": 0,
+  "link_outages": [],
+  "host_outages": [
+    [
+      20,
+      30
+    ]
+  ],
+  "commit_failures": [],
+  "sensor_faults": [],
+  "unknown_clock": [],
+  "clock_steps": [],
+  "node_reboots": [],
+  "gateway_reboots": [
+    30
+  ],
+  "inject_identity_collision": false,
+  "require_latency_target": false,
+  "expect_unavailable": true,
+  "expect_latency_failure": false
+}

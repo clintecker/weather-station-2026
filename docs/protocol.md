@@ -1,20 +1,24 @@
-# Stage-0 transport draft 1
+# Stage-0 transport draft 2
 
 This is a tested host protocol and portable C payload draft, **not a frozen H01 contract**.
 Direct LoRa carries one observation or one acknowledgment. No mesh or module discovery.
-Every integer is big-endian. Observation frame: 56 bytes. ACK frame: 40 bytes.
+Every integer is big-endian. Observation frame: 56 bytes. ACK frame: 56 bytes.
+
+Draft 2 (2026-10-12) changes from draft 1: version byte 2; the ACK carries host UTC and
+echoes the acknowledged frame's transmission counter (authenticated time sync). Draft-1
+frames are rejected. Recorded `simulation-results/` predate this change.
 
 ## Authenticated envelope
 
 | Offset | Bytes | Field |
 |---|---:|---|
 | 0 | 2 | ASCII `WS` |
-| 2 | 1 | Version, 1 |
+| 2 | 1 | Version, 2 |
 | 3 | 1 | Kind: 1 observation, 2 gateway ACK |
 | 4 | 4 | Numeric station ID |
 | 8 | 4 | Transmission counter high word |
 | 12 | 4 | Transmission counter low word |
-| 16 | 24 or 8 | AES-128-CCM ciphertext |
+| 16 | 24 | AES-128-CCM ciphertext (observation or ACK) |
 | end | 16 | Authentication tag |
 
 AES-CCM nonce = kind (1 byte) + station ID (4) + high counter (4) + low counter (4).
@@ -51,7 +55,12 @@ sorting, determines newest data; a corrected clock can therefore recover availab
 A sample more than five seconds ahead of its receipt time is quarantined. This
 threshold is a conservative draft clock-tolerance setting, not an H01 waiver.
 
-ACK plaintext = acknowledged sample epoch (4) + sample sequence (4). ACK is only
+ACK plaintext (24 bytes) = acknowledged sample epoch (4) + sample sequence (4) + host UTC
+Unix seconds at commit (8) + the 64-bit transmission counter of the observation frame being
+answered (8). The node sets its clock only from an ACK whose echoed counter equals the
+frame it just sent, in that frame's receive window; a recorded ACK replayed later cannot
+match and cannot move the clock. Any authentic ACK still clears its own journal entry.
+ACK is only
 created after SQLite commit; the node verifies it before removing the journal entry.
 Exact duplicate observations are acknowledged again. Conflicting payloads under the
 same observation identity are rejected and never acknowledged. Replayed valid data
@@ -59,9 +68,19 @@ cannot alter stored time or freshness. Replayed ACKs affect only their exact ide
 
 Receiver/host USB contract: one ASCII hexadecimal frame per newline, 115200 baud,
 8N1. Receiver forwards opaque RF frames upstream and host ACK frames downstream;
-it must never acknowledge independently. Maximum input line is 256 bytes. Radio
-scheduling, host-to-node authenticated time synchronization and receive-window timing
-remain to implement with the target firmware. No RF configuration is implied here.
+it must never acknowledge independently. Maximum input line is 256 bytes. Lines
+starting with `#` are receiver diagnostics (RSSI/SNR, drops); the host logs them to
+`receiver.log` and never parses them as frames.
+
+## Radio exchange (firmware/stage0-node)
+
+RF: 915.0 MHz LoRa, 500 kHz bandwidth, SF7, CR 4/5, 8-symbol preamble, explicit header,
+CRC on, 0 dBm (bench). See docs/hardware/nucleo-wl55jc-bringup.md for the regulatory basis.
+Each minute the node journals one observation, then sends it, then at most two older
+pending ones. After each frame it listens up to 2000 ms for the ACK (no LoRa symbol
+timeout), then waits 50 ms before the next frame. A missing ACK leaves the record
+journaled; each retry gets a fresh counter. The node trusts its clock for 6 hours after
+the last time sync, then marks samples time-unknown until the next ACK.
 
 References:
 - https://cryptography.io/en/latest/hazmat/primitives/aead/#cryptography.hazmat.primitives.ciphers.aead.AESCCM

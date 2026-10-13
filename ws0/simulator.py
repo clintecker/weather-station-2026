@@ -42,7 +42,7 @@ class Node:
 
     def acknowledge(self,packet):
         """A replayed ACK cannot remove a different observation."""
-        epoch,seq = ACK.unpack(unseal(self.key,self.cfg['station_id'],2,packet))
+        epoch,seq,_host_utc,_echo = ACK.unpack(unseal(self.key,self.cfg['station_id'],2,packet))
         with self.db:
             self.db.execute('DELETE FROM pending WHERE epoch=? AND seq=?',(epoch,seq))
 

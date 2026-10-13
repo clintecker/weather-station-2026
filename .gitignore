@@ -9,3 +9,6 @@ gateway.json
 
 # firmware build output
 firmware/*/build/
+
+# pinned third-party checkouts (tools/fetch-vendor.sh)
+vendor/
