@@ -27,6 +27,7 @@ TARGET = $(BUILD)/stage0-$(ROLE)
 
 APP_SRC = $(wildcard Core/Src/*.c) startup/syscalls.c startup/sysmem.c \
           App/app_subghz_phy.c App/radio_cfg.c App/console.c App/leds.c App/watchdog.c App/stackmon.c App/fault.c App/app_$(ROLE).c \
+          $(ROOT)/firmware/common/ws_console.c \
           SubGHz_Phy/Target/radio_board_if.c
 ifeq ($(ROLE),tx)
 APP_SRC += App/node_store.c App/flash_stm32wl.c App/sensor.c $(ROOT)/firmware/stage0.c $(ROOT)/firmware/common/ws_frame.c

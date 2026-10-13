@@ -36,10 +36,15 @@
 /* Transmission policy (docs/radio-energy-policy.md, approved 2026-10-12; gap G13).
  * Energy state: Stage 0 is USB powered, so it is fixed at NORMAL; Stage 1 feeds pack/charger/
  * solar telemetry into energy_state(). Unknown energy must map to CONSERVE (fail closed). */
-typedef enum { EN_SURPLUS, EN_NORMAL, EN_CONSERVE, EN_CRITICAL } energy_t;
+typedef enum { EN_SURPLUS, EN_NORMAL, EN_CONSERVE, EN_CRITICAL, EN_COUNT } energy_t;
+#define BACKLOG_SURPLUS 20U                                          /* the largest per-minute backlog */
 static const char *const energy_name[] = { "surplus", "normal", "conserve", "critical" };
-static const uint8_t backlog_limit[] = { 20, 5, 0, 0 };              /* per minute */
+static const uint8_t backlog_limit[] = { BACKLOG_SURPLUS, 5, 0, 0 }; /* per minute */
 static const uint16_t airtime_cap_ms[] = { 15000, 5000, 2000, 0 };   /* radio time per minute */
+_Static_assert(sizeof energy_name / sizeof energy_name[0] == EN_COUNT &&
+               sizeof backlog_limit == EN_COUNT && sizeof airtime_cap_ms / sizeof airtime_cap_ms[0] == EN_COUNT,
+               "one entry per energy state");
+_Static_assert(BACKLOG_SURPLUS <= MAX_QUEUE - 1U, "the send queue holds the live reading plus the largest backlog");
 #define CONSERVE_INTERVAL_S 300U                                     /* spec R02 */
 static energy_t energy_state(void) { return EN_NORMAL; }
 
@@ -147,15 +152,15 @@ static int run_kat(void)
   uint8_t plain[24], frame[WS_OBS_FRAME_LEN], expect[WS_OBS_FRAME_LEN], ack[WS_ACK_FRAME_LEN];
   uint64_t ctr, utc, echo; uint32_t ep, sq;
   ws_pack_observation(plain, 17, 42, 100000, 3600, -1234, 4567, 1, 1);
-  if (hex_decode(KAT_OBS_HEX, expect, sizeof expect) != WS_OBS_FRAME_LEN) return 0;
+  if (ws_hex_decode(KAT_OBS_HEX, expect, sizeof expect) != WS_OBS_FRAME_LEN) return 0;
   if (ws_seal_obs(KAT_KEY, 1, 0x100000002ULL, plain, frame) || memcmp(frame, expect, sizeof frame)) return 0;
-  if (hex_decode(KAT_ACK_HEX, ack, sizeof ack) != WS_ACK_FRAME_LEN) return 0;
+  if (ws_hex_decode(KAT_ACK_HEX, ack, sizeof ack) != WS_ACK_FRAME_LEN) return 0;
   if (ws_open_ack(KAT_KEY, 1, ack, sizeof ack, &ctr, &ep, &sq, &utc, &echo)) return 0;
   if (ctr != 5 || ep != 17 || sq != 42 || utc != 1760000000ULL || echo != 0x100000002ULL) return 0;
   ack[sizeof ack - 1] ^= 1; /* tampered tag must fail */
   if (ws_open_ack(KAT_KEY, 1, ack, sizeof ack, &ctr, &ep, &sq, &utc, &echo) == 0) return 0;
   uint8_t kind;
-  if (hex_decode(KAT_NACK_HEX, ack, sizeof ack) != WS_ACK_FRAME_LEN) return 0;
+  if (ws_hex_decode(KAT_NACK_HEX, ack, sizeof ack) != WS_ACK_FRAME_LEN) return 0;
   if (ws_open_reply(KAT_KEY, 1, ack, sizeof ack, &kind, &ctr, &ep, &sq, &utc, &echo)) return 0;
   return kind == WS_KIND_NACK && ctr == 6 && ep == 17 && sq == 42 && (utc >> 32) == WS_NACK_COLLISION && echo == 0x100000002ULL;
 }

@@ -149,6 +149,17 @@ jobs:
           make ROLE=rx BUILD=build/analyze-rx stack
           make ROLE=tx BUILD=build/analyze-tx stack
 
+      # Coverage-guided fuzzing of the input parsers (firmware/fuzz/README.md), 60 s per target.
+      # The unit tests already run the same targets briefly without libFuzzer on every OS.
+      - name: Fuzz (libFuzzer)
+        working-directory: firmware/fuzz
+        run: |
+          make libfuzzer CLANG=clang
+          for t in reply provision console; do
+            mkdir -p "build/corpus-$t"
+            "build/libfuzzer-$t" "build/corpus-$t" "corpus/$t" -max_total_time=60 -print_final_stats=1
+          done
+
       - name: Print sizes
         working-directory: firmware/stage0-node
         run: |

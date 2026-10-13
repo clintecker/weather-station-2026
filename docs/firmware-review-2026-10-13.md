@@ -20,6 +20,14 @@ Scope: `firmware/stage0-node`, `firmware/common`, `firmware/stage0.c`, the `ws0/
 > an ACKed record could return after a cut during a journal wrap; an interrupted WIPE could leave
 > records on an unprovisioned board; the abandoned total could drop after a failed write; lost records
 > could go uncounted after a failed write.
+>
+> **Status update (night of 2026-10-13, after release `9e3d38f08e8b`, not yet released):** a strict
+> warning set with `-Werror` and an optional `-fanalyzer` build for our C. A worst-case stack bound
+> (`make stack`, `docs/firmware-budget.md` §Stack): the reserved stack went from 2 KB to 8 KB, and
+> `stack_peak` is reported at run time. Crash records: HardFault/NMI → `#fault` at the next boot
+> (`firmware/stage0-node/README.md` §Crash records). P16's `_Static_assert`s, all four, plus
+> frame sizes and one entry per energy state; the gateway fingerprint comparison in P16 is **not**
+> done. Fuzzing of the reply, PROVISION and console parsers (`firmware/fuzz/`).
 
 ## 1. Executive summary
 

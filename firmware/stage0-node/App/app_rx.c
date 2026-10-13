@@ -159,9 +159,8 @@ static void on_line(char *line)
                (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks, (unsigned)n_relistens, (unsigned)vcom_rx_errors());
     return;
   }
-  int n = hex_decode(line, frame, sizeof frame);
-  if (n != WS_ACK_FRAME_LEN || frame[0] != 'W' || frame[1] != 'S' ||
-      frame[2] != WS_FRAME_VERSION || (frame[3] != WS_KIND_ACK && frame[3] != WS_KIND_NACK))
+  int n = ws_hex_decode(line, frame, sizeof frame);
+  if (!ws_host_reply_ok(frame, n))
   {
     APP_PRINTF("#host reject len=%d\n", n);
     led_flash(LED_RED, 400);

@@ -12,6 +12,7 @@
 #define WS_JOURNAL_FIRST     35U   /* observation ring: pages 35-127 */
 #ifndef WS_JOURNAL_PAGES      /* host tests may shrink the ring (tests/test_store_powercut.py) */
 #define WS_JOURNAL_PAGES     93U
+_Static_assert(WS_JOURNAL_FIRST + WS_JOURNAL_PAGES == 128U, "the journal runs to the last of the 128 flash pages");
 #endif
 /* Set by NMI_Handler when a read hits a double ECC error (interrupted program). */
 extern volatile uint8_t ws_flash_ecc_fault;
