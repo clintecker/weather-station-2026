@@ -306,3 +306,10 @@ Clint approved C and D, and agreed that a reconstructed time counts toward H01 w
 - **Spontaneous restarts are USB dropouts.** Both boards restarted when their USB port vanished for about 1 s (TX 4 times, RX twice; one episode during handling). `RCC_CSR` after clearing: `PINRSTF` only, no `BORRSTF`, so no power loss. The ST-LINK pulses the target's reset pin when it re-enumerates. Earlier I blamed board A alone; RX did the same. Bench-only (no ST-LINK on the field node), but H01 on USB needs secured cables.
 - **My own debugger sessions reset TX twice** (16:22:02 and 16:22:18) while I read and cleared `RCC_CSR` with OpenOCD. A later read-only session did not. Avoid debugger sessions during runs whose restarts are being counted.
 - **Close-range readings are unreliable at higher power** (receiver overload with antennas a few cm apart). Compare power only with the boards apart.
+
+### SHT45 parts arrived; wiring plan (2026-10-13)
+- Delivered: Adafruit 6174 (SHT45 with PTFE), 4397 (STEMMA QT to female sockets, 150 mm), 1954 (female/male jumpers), 592 (USB A to Micro-B, 3 ft).
+- **Connector mismatch found before wiring:** the 4397 ends in female sockets and the Nucleo Arduino headers (CN5, CN6) are female; the 1954 jumpers do not bridge that either. Chose the ST morpho male pins instead: CN10.3 = PA12/SCL, CN10.5 = PA11/SDA, CN10.9 = GND, CN7.16 = 3V3, from UM2592 Rev 4 Table 18 and Figure 24 (Clint supplied the PDF; ST's site timed out for automated downloads). No solder bridges on PA11/PA12. Full table in `docs/protocol-stack.md` §3.1.
+- Hazard noted: CN7.18 (5 V) sits directly below CN7.16 (3V3).
+- Hardware verification still to do: CRC-checked reading, unplug while running (expect `sensor_fault`, then recovery), then cut a release.
+- The spare 592 cable allows the planned USB cable-swap test for the board-reset dropouts.

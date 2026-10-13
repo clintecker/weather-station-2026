@@ -2,7 +2,7 @@
 
 - Project: weather-station-2026, Stage 0 bench test bed
 - Revision: `hardware/chicago-test-hardware-r0` (commit 7e5a1c0), firmware release a07f498273f7
-- Status: `USER_REVIEW`
+- Status: `USER_REVIEW` (F6 open: whether to order the passive PCB)
 - Reviewed 2026-10-13. Review only; no design files changed.
 - Electrical source of truth: `source/build_schematic.py` (generates `pcb/sensor-interface.kicad_sch`); PCB from `source/build_pcb.py`
 - Reviewed evidence: generator part/net table, exported `validation/schematic-netlist.xml`, `validation/electrical.json`, `validation/pcb-drc.txt` (KiCad 7.0.11 run on another machine, 2026-10-08), `manufacturing/BOM.csv`, `docs/build-and-order.md`, `docs/schematic.png`, firmware `App/sensor.c`/`sensor.h`, `docs/protocol-stack.md`, `docs/hardware/nucleo-wl55jc-bringup.md`, Adafruit product pages 5665 and 6174 (fetched 2026-10-13). KiCad is not installed on this machine, so DRC/netlist were **not re-run**.
@@ -52,7 +52,7 @@ No ESD or series protection on the I2C lines; acceptable for indoor bench use on
 
 | ID | Severity | Evidence | Consequence | Action | Gate | Status |
 |---|---|---|---|---|---|---|
-| F1 | Minor | Hardware BOM/build guide name Adafruit **5665**; firmware, `protocol-stack.md` and context pack name **6174**. Adafruit pages: 6174 is the same SHT45 breakout plus a PTFE membrane (IP67, particle/liquid protection), $13.50 vs $12.50. | Electrically interchangeable; risk is only documentation drift. 6174 is the better long-term choice outdoors. | Clint: confirm 6174 is the part of record; then update the hardware package docs. | Sourcing | Open |
+| F1 | Minor | Hardware BOM/build guide name Adafruit **5665**; firmware, `protocol-stack.md` and context pack name **6174**. Adafruit pages: 6174 is the same SHT45 breakout plus a PTFE membrane (IP67, particle/liquid protection), $13.50 vs $12.50. | Electrically interchangeable; risk is only documentation drift. 6174 is the better long-term choice outdoors. | None. 6174 is the part of record (`firmware/README.md`: "superseding the starter's older 5665 suggestion"); Clint's order delivered 2026-10-13 is 6174. The R0 package stays unedited because `SHA256SUMS.txt` locks it. | Sourcing | Closed |
 | F2 | Information | Context pack §6.2 says "Firmware sensor driver: TODO". `App/sensor.c` already implements the I2C2 driver with stuck-bus recovery, and CRC/fault handling is unit-tested. It is shipped in a07f498 (current readings are `sensor_fault` because nothing is connected). | Planned work is smaller than the pack implies: tomorrow is wire up + hardware verification, not driver writing. | Correct the context pack. | — | Open |
 | F3 | Minor | Breakout has its own LDO, level shifters and pull-ups (Adafruit page). | Current through JP1 is the whole breakout, not the SHT45 chip; overstates sensor current for the Stage 1 energy budget. | Record measurements as "breakout current"; budget the bare SHT45 from its datasheet until the Stage 1 board exists. | Stage 1 power | Open |
 | F4 | Information | Build guide procedure says disable I2C and set pins high-impedance before removing sensor power; firmware has no console command for that. | The pack's "unplug test" is a hot unplug with I2C active. Low risk at 3.3 V through the breakout's level shifters, and it is exactly the fault the driver should survive. | None needed for Stage 0; note in bring-up log when performed. | — | Accepted |

@@ -79,8 +79,9 @@ ls /dev/cu.usbmodem*
 
 ## 6. Next steps, in order
 1. **Re-establish the link at the office.** Steps above. Confirm green ACK LEDs and `/v1/status`. *Done 2026-10-13: office key KCV `b7142e` in `run-office/` (see `docs/hardware/nucleo-wl55jc-bringup.md`, "Office session").*
-2. **SHT45 (Adafruit 6174), expected ~Oct 14.**
-   - Wiring: SDA → CN5.9 (D14/PA11), SCL → CN5.10 (D15/PA12), 3V3 → CN6.4, GND → CN6.6. Bus is I2C2 at 100 kHz.
+2. **SHT45 (Adafruit 6174), delivered 2026-10-13** with a 4397 STEMMA QT-to-female-socket cable, 1954 female/male jumpers and a spare Micro-B cable.
+   - Wiring (Arduino headers): SDA → CN5.9 (D14/PA11), SCL → CN5.10 (D15/PA12), 3V3 → CN6.4, GND → CN6.6. Bus is I2C2 at 100 kHz.
+   - **The 4397's female sockets do not fit the female Arduino headers.** No-solder route: plug them onto the male ST morpho pins: yellow SCL → CN10.3, blue SDA → CN10.5, black GND → CN10.9, red 3V3 → CN7.16 (not CN7.18 = 5 V). Positions and source: `docs/protocol-stack.md` §3.1. Alternative: solder the breakout's header strip and use the 1954 jumpers on CN5/CN6. Wire with TX unplugged.
    - Firmware sensor driver: **already written** (`firmware/stage0-node/App/sensor.c`: I2C2, stuck-bus recovery; CRC and fault handling unit-tested) and in release a07f498. Untested on hardware: wire it, then verify.
    - Verify a CRC-checked reading, plus the unplug and fault behaviour. Then cut a new release.
 3. **Home Assistant.** Needs Clint's real MQTT broker details: host, port, TLS, user. H01 requires an HA entity.

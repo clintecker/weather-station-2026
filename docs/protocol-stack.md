@@ -95,6 +95,19 @@ The SHT45 breakout (Adafruit 6174) connects to I2C2 of the STM32WL55. The pins c
 | 3.3 V | CN6 pin 4 | 3V3 | — | Sensor supply |
 | GND | CN6 pin 6 | GND | — | Ground |
 
+**Same signals on the ST morpho headers** (UM2592 Rev 4, Table 18 and Figure 24; no solder bridges in the
+path). Use these with the Adafruit 4397 cable, whose female sockets cannot plug into the female Arduino
+headers. Board component side up, SMA antenna connector at the top; pins count from the top.
+
+| Signal | Morpho pin | Position | 4397 wire (STEMMA QT colors) |
+|---|---|---|---|
+| SCL (PA12) | CN10 pin 3 | right edge, inner column, 2nd from top | yellow |
+| SDA (PA11) | CN10 pin 5 | right edge, inner column, 3rd from top | blue |
+| GND | CN10 pin 9 | right edge, inner column, 5th from top | black |
+| 3.3 V | CN7 pin 16 | left edge, inner column, 8th from top | red (not CN7 pin 18, which is 5 V) |
+
+On CN10 the odd pins are the inner column; on CN7 the odd pins are the outer column (board edge).
+
 The bus speed is 100 kHz (standard mode). The timing register value is `0x20303E5D` at PCLK1 = 48 MHz. The MCU pull-up resistors are off, because the breakout has its own pull-up resistors.
 
 ### 3.2 Measurement transaction
