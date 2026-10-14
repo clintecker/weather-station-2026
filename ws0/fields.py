@@ -187,3 +187,25 @@ def codes_from_record(record):
         else:
             codes[f.index] = f.code(v)
     return codes
+
+
+def dew_point(temperature_c, humidity_pct):
+    """Derived dew point in °C (Magnus formula, Sonntag 1990 constants over water: within about
+    ±0.35 °C from −45 to +60 °C), rounded to 0.01. None when either input is missing or RH is 0
+    (the logarithm is undefined; the air has no measurable water). Derived values are computed at
+    publication and never stored in the immutable observation payload."""
+    import math
+    if temperature_c is None or humidity_pct is None or humidity_pct <= 0:
+        return None
+    a, b = 17.62, 243.12
+    gamma = math.log(humidity_pct / 100) + a * temperature_c / (b + temperature_c)
+    return round(b * gamma / (a - gamma), 2)
+
+
+def derived(record):
+    """Values computed from a record's measurements, labelled as derived (PRD R10: every value has a
+    unit and validity; derived values are marked as such)."""
+    out = {}
+    if 'temperature_c' in record and 'humidity_pct' in record:
+        out['dew_point_c'] = dew_point(record['temperature_c'], record['humidity_pct'])
+    return out

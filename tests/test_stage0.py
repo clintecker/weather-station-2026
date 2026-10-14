@@ -118,7 +118,9 @@ class PipelineTests(unittest.TestCase):
   rain=more['homeassistant/sensor/simulation-01_rain_tips/config']; batt=more['homeassistant/sensor/simulation-01_batt_mv/config']
   self.assertEqual((rain['state_class'],batt['entity_category'],batt['device_class']),('total_increasing','diagnostic','voltage'))
   self.assertEqual([e['name'] for e in entries.values()],['Temperature','Humidity'])
-  from ws0.fields import MEASURED; from ws0.service import LABELS; self.assertEqual(set(LABELS),set(MEASURED))
+  from ws0.fields import MEASURED; from ws0.service import DERIVED, LABELS; self.assertEqual(set(LABELS),set(MEASURED)|set(DERIVED))
+  dew=discovery(self.cfg,['dew_point_c'])['homeassistant/sensor/simulation-01_dew_point_c/config']
+  self.assertEqual((dew['name'],dew['unit_of_measurement'],dew['device_class']),('Dew point (derived)','°C','temperature'))
 
 @needs_cc
 class FirmwareTests(unittest.TestCase):
@@ -225,7 +227,7 @@ class ServiceSmokeTests(unittest.TestCase):
    try:
     publisher=object.__new__(MQTT); publisher.gateway=gateway; publisher.client=Fake()
     publisher.root='weatherstation/v1/simulation-01'; publisher.published=None; publisher.published_at=0.0
-    publisher.advertised={'temperature_c','humidity_pct'}
+    publisher.advertised={'temperature_c','humidity_pct','dew_point_c'}
     record=dict(version=5,station=cfg['station'],session='1',sequence=0,sampled_at=1000,uptime_s=60,
                 time_quality='synchronized',energy_state='normal',calibration_revision=0,
                 temperature_c=20.5,humidity_pct=40,pressure_hpa=1001.3,quality='valid')
@@ -269,7 +271,7 @@ class ServiceSmokeTests(unittest.TestCase):
     gateway.receive(node.packet(node.sample(1000)),1001)
     publisher=object.__new__(MQTT); publisher.gateway=gateway
     publisher.root='weatherstation/v1/simulation-01'; publisher.client=Fake()
-    publisher.published=None; publisher.published_at=0.0; publisher.advertised={'temperature_c','humidity_pct'}
+    publisher.published=None; publisher.published_at=0.0; publisher.advertised={'temperature_c','humidity_pct','dew_point_c'}
     with patch('gateway.time.time',return_value=1180): publisher.tick()
     self.assertEqual(publisher.client.messages[-1][0][1],'offline')
     self.assertEqual(json.loads(publisher.client.messages[0][0][1])['sampled_at'],1000)

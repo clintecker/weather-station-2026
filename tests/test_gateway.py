@@ -83,6 +83,16 @@ class GatewayTests(unittest.TestCase):
         with self.assertRaises(ValueError):          # at most 60 samples a minute
             self.store.ingest(reading(sequence=3, **(summary | {'th_samples': 61})))
 
+    def test_dew_point_is_derived_not_stored(self):
+        from ws0.fields import dew_point
+        self.assertEqual(dew_point(20, 50), 9.26)            # by hand: gamma 0.6462, Td 157.10 / 16.974
+        self.assertEqual(dew_point(6.74, 86.68), 4.67)       # the lab AC outlet, 2026-10-14
+        self.assertEqual((dew_point(20, 100), dew_point(20, 0), dew_point(None, 50)), (20.0, None, None))
+        self.store.ingest(reading(temperature_c=6.74, humidity_pct=86.68), 1001)
+        latest = self.store.latest('test', 1001)
+        self.assertEqual(latest['derived'], {'dew_point_c': 4.67})
+        self.assertNotIn('dew_point_c', latest['observation'])       # the stored payload is unchanged
+
     def test_counters_never_decrease_in_sequence_order(self):
         rain = lambda seq, tips: reading(sequence=seq, sampled_at=1000 + 60 * seq, rain_tips=tips)
         self.store.ingest(rain(5, 10), 1400)

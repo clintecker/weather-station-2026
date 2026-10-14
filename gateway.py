@@ -222,8 +222,9 @@ class Store:
         reason = ('future_clock_at_receipt' if future else 'unknown_clock' if age is None else
                   'time_uncertain' if vague else
                   'sensor_fault' if record['quality']=='sensor_fault' else 'fresh' if timely else 'stale_or_clock_step')
+        from ws0.fields import derived
         return {'available':available,'reason':reason,'fields_available':fields,'age_seconds':age,'received_at':row[1],
-                'observation':record,'effective_sampled_at':effective,'time_basis':basis,
+                'observation':record,'derived':derived(record),'effective_sampled_at':effective,'time_basis':basis,
                 'time_uncertainty_s':uncertainty,'units':{n: BY_NAME[n].unit for n in fields if BY_NAME[n].unit}}
 
     def history(self, station, start=0, end=253402300800, limit=100, offset=0):

@@ -266,7 +266,10 @@ LABELS = {'temperature_c':'Temperature','humidity_pct':'Humidity','pressure_hpa'
           'charger_pins':'Charger status pins','enclosure_temp_c':'Enclosure temperature',
           'enclosure_rh_pct':'Enclosure humidity','temperature_min_c':'Temperature minimum (minute)',
           'temperature_max_c':'Temperature maximum (minute)','humidity_min_pct':'Humidity minimum (minute)',
-          'humidity_max_pct':'Humidity maximum (minute)','th_samples':'T/RH samples per minute'}
+          'humidity_max_pct':'Humidity maximum (minute)','th_samples':'T/RH samples per minute',
+          'dew_point_c':'Dew point (derived)'}
+# Published with the weather but computed by the gateway, never sent by the node (fields.derived).
+DERIVED = {'dew_point_c': dict(unit='°C', ha_class='temperature', needs=('temperature_c','humidity_pct'))}
 
 
 def discovery(cfg, names=('temperature_c','humidity_pct')):
@@ -277,23 +280,26 @@ def discovery(cfg, names=('temperature_c','humidity_pct')):
     root = f"weatherstation/v1/{cfg['station']}"
     result = {}
     for field in names:
-        if field not in MEASURED:
+        if field not in MEASURED and field not in DERIVED:
             continue
-        f, uid = BY_NAME[field], f"{cfg['station']}_{field}"
+        uid = f"{cfg['station']}_{field}"
+        f = BY_NAME.get(field)
         entry = {'name':LABELS[field],'unique_id':uid,'state_topic':root+'/weather',
                  'value_template':'{{ value_json.'+field+' }}',
                  # Since-boot counters restart at 0 each boot; HA's total_increasing treats a decrease as a reset.
-                 'state_class':'total_increasing' if f.counter else 'measurement',
+                 'state_class':'total_increasing' if f and f.counter else 'measurement',
                  'availability':[{'topic':root+'/availability'},{'topic':root+'/gateway_availability'},
                                  {'topic':root+'/weather','value_template':
                                   "{{ 'online' if value_json."+field+" is not none else 'offline' }}"}],
                  'availability_mode':'all',
                  'device':{'identifiers':[cfg['station']],'name':cfg['station'],
                            'manufacturer':'Weather Station Project','model':'Stage 0 '+cfg['mode']}}
-        if f.unit:
-            entry['unit_of_measurement'] = f.unit
-        if f.ha_class:
-            entry['device_class'] = f.ha_class
+        unit = f.unit if f else DERIVED[field]['unit']
+        ha_class = f.ha_class if f else DERIVED[field]['ha_class']
+        if unit:
+            entry['unit_of_measurement'] = unit
+        if ha_class:
+            entry['device_class'] = ha_class
         if field in DIAGNOSTIC_FIELDS:
             entry['entity_category'] = 'diagnostic'
         result[f'homeassistant/sensor/{uid}/config'] = entry
@@ -357,6 +363,7 @@ class MQTT:
         republished when a new field appears, e.g. after a sensor is added."""
         from .fields import MEASURED
         names = {n for n in (observation or {}) if n in MEASURED} or {'temperature_c','humidity_pct'}
+        names |= {d for d, spec in DERIVED.items() if all(n in names for n in spec['needs'])}
         if names <= self.advertised:
             return
         for topic,payload in discovery(self.gateway.cfg,sorted(names - self.advertised)).items():
@@ -371,7 +378,8 @@ class MQTT:
             return
         latest = self.gateway.store.latest(self.gateway.cfg['station'])
         self.advertise(latest.get('observation'))
-        weather = json.dumps(latest['observation']) if latest.get('observation') else None
+        # The weather topic carries the reading plus the gateway's derived values (e.g. dew point).
+        weather = json.dumps(latest['observation'] | latest.get('derived', {})) if latest.get('observation') else None
         state = (weather, 'online' if latest['available'] else 'offline')
         diag = self.gateway.store.latest_diagnostic(self.gateway.cfg['station'])
         alarm = self.gateway.counter_alarm()
