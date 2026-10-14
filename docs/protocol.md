@@ -1,146 +1,409 @@
-# Stage-0 transport draft 4
+# Stage-0 wire protocol, draft 5
 
-This is a tested host protocol and portable C payload draft, **not a frozen H01 contract**.
-For how each layer works end to end (sensor bus → journal → crypto → LoRa → USB → SQLite → time sync),
-with diagrams and sources, read [`protocol-stack.md`](protocol-stack.md).
-Direct LoRa carries one frame per packet: an observation, a health report (DIAG), an ACK or a NACK.
-No mesh or module discovery. Every integer is big-endian. Every frame kind is 56 bytes.
+This is the normative specification of the protocol on `master`, released to both boards as
+`bc5e6ede429c` on 2026-10-14 (`firmware/stage0-node/RELEASES.md`). It is **not yet a frozen H01
+contract**: when H01 passes, the PRD freezes the identity, time and quality contract. The design
+reasoning is in [`protocol-draft5-design.md`](protocol-draft5-design.md). How
+each layer works end to end (sensor → journal → crypto → LoRa → USB → SQLite → time) is in
+[`protocol-stack.md`](protocol-stack.md).
 
-Draft 4 (2026-10-12) changes from draft 3: version byte 4; the 8-byte UTC field becomes a
-4-byte UTC field (u32 seconds, valid to 2106) plus a 4-byte **uptime** (seconds since the
-node booted, always present). The gateway reconstructs the UTC time of an unsynchronized
-sample from the nearest synchronized sample of the same epoch (see protocol-stack.md 11.3).
+Direct LoRa carries one frame per packet: an observation (OBS), a health report (DIAG), an ACK or a
+NACK. There is no mesh and no module discovery. Every integer on the wire is **big-endian**.
 
-Draft 3 (2026-10-12) changes from draft 2: version byte 3; an invalid reading carries the
-impossible fillers temperature `0x8000` (-327.68 °C) and humidity `0xFFFF` (655.35 %), not 0.
-A reader that ignores the validity flag can therefore never see a plausible value such as
-0.00 °C. The validity flag stays authoritative.
+Where the code and this text disagree, the code wins. The code is:
 
-Draft 2 (2026-10-12) changes from draft 1: version byte 2; the ACK carries host UTC and
-echoes the acknowledged frame's transmission counter (authenticated time sync). Draft-1
-frames are rejected. Recorded `simulation-results/` predate this change.
+| Part | C (node, RX bridge) | Python (gateway) |
+|---|---|---|
+| Envelope, ACK/NACK | `firmware/common/ws_frame.{c,h}` | `ws0/protocol.py` |
+| Observation and field catalog | `firmware/common/ws_obs.{c,h}` | `ws0/fields.py` |
+| RX filters, console line parsing | `firmware/common/ws_console.{c,h}` | `ws0/link.py`, `ws0/__main__.py` |
+| Node application | `firmware/stage0-node/App/app_tx.c`, `app_rx.c`, `node_store.c`, `node_fields.h` | — |
+| Validation, storage | — | `gateway.py`, `ws0/service.py` |
 
-## Authenticated envelope
+## Changes from draft 4
+
+| | Draft 4 | Draft 5 |
+|---|---|---|
+| Header | 16 bytes: `WS`, version, kind, station u32, counter u64 | **8 bytes**: version << 4 \| kind, station **u16**, counter **u40** |
+| CCM tag | 16 bytes | **8 bytes** |
+| Frame sizes | every kind 56 B | OBS 39–85 B (**42 B** for the T/RH build), ACK/NACK **33 B**, DIAG **48 B** |
+| ACK/NACK plaintext | 24 B (UTC u64 or reason + reserved, echo u64) | **17 B** (UTC or reason u32, echo u40) |
+| DIAG plaintext | 24 B | **32 B**: adds firmware build ID, ACK RSSI/SNR, crash count, energy state |
+| Observation | fixed 24 B: T, RH, one validity byte, fillers `0x8000`/`0xFFFF` | 22-byte head + **field bitmap** + catalog fields; each field has its own **INVALID** code |
+| Gateway record | `version: 4`, record-level validity | `version: 5`, per-field `null`, quality `valid`/`partial`/`sensor_fault` |
+| Station ID | 1 to 2^32 − 1 | **1 to 65,535** |
+| Counter | 64-bit | **1 to 2^40 − 1**, refused beyond |
+| Replay | any frame at or below the counter mark raised the key-reuse alarm | a byte-identical copy is a **replay** (counted, no alarm); only different bytes raise the alarm |
+| Journal page magic | `WSJ1` | `WSJ` + slot size (`WSJ0` for 48-byte slots) |
+
+Draft-4 frames are rejected: their first byte `0x57` reads as version 5, kind 7, which is not a
+kind. The nonce construction did not change, but the draft-5 release still uses a **new key** (see
+"Counters and limits"). Earlier drafts: draft 4 (2026-10-12) added the uptime field; draft 3 the
+impossible fillers; draft 2 the authenticated time in the ACK. Recorded `simulation-results/` and
+evidence logs before 2026-10-14 are in older drafts.
+
+## 1. Envelope
+
+| Offset | Bytes | Field | Protection |
+|---:|---:|---|---|
+| 0 | 1 | High nibble: version **5**. Low nibble: kind (1 OBS, 2 ACK, 3 NACK, 4 DIAG) | Clear, authenticated |
+| 1 | 2 | Station ID, u16, 1–65,535 | Clear, authenticated |
+| 3 | 5 | Transmission counter, u40, 1 to 2^40 − 1 | Clear, authenticated |
+| 8 | *n* | AES-128-CCM ciphertext of the kind's plaintext | Encrypted, authenticated |
+| 8 + *n* | 8 | CCM tag, M = 8 (a constant; never inferred from the length) | — |
+
+So byte 0 is `0x51` (OBS), `0x52` (ACK), `0x53` (NACK) or `0x54` (DIAG).
+
+- **AAD:** the 8 header bytes. Changing the version, kind, station or counter breaks the tag.
+- **Nonce (13 bytes):** kind (1 byte) + station as a big-endian **u32** + counter as a big-endian
+  **u64**. It is built from the integers, never copied from the header bytes (`header()` in
+  `ws_frame.c`, `_header_and_nonce()` in `protocol.py`). Same construction as draft 4.
+- **Key:** 128 bits per station, shared by the node and the gateway. Key check value (KCV) = first
+  3 bytes of AES-128(key, 16 zero bytes); safe to display.
+- **Libraries:** Mbed TLS 3.6.6 CCM on the node; `cryptography` AESCCM (OpenSSL) on the gateway. The
+  project has no AES code of its own.
+- **Overhead:** 16 bytes per frame (8 header + 8 tag).
+
+Example, the boot self-test vector (`KAT_OBS_HEX` in `App/app_tx.c`, key `000102…0f`): header
+`51 0001 0100000002` = OBS, station 1, counter 0x100000002; nonce
+`01 00000001 0000000100000002`.
+
+### Frame lengths
+
+| Kind | Plaintext | Frame | Checked |
+|---|---:|---:|---|
+| OBS | 23–69 B (22 + 1 to 47 field bytes) | 39–85 B | Range before decrypting; exact length from the field bitmap after |
+| ACK, NACK | 17 B | 33 B | Exact, before decrypting |
+| DIAG | 32 B | 48 B | Exact, before decrypting |
+
+The gateway checks the length, version, kind and station **before** decrypting
+(`plain_lengths()`, `unseal()`). A frame that fails any check, or the tag, is dropped silently. It
+is never answered, so an outsider cannot make the gateway send a NACK. The Stage-0 build always
+sends 42-byte observations.
+
+## 2. Counters and limits
+
+There are two counter spaces under one key. The kind byte in the nonce keeps every (kind, counter)
+pair distinct, so no two frames share a nonce.
+
+| Counter space | Used by | Kept in |
+|---|---|---|
+| Node | OBS and DIAG | TX flash monotonic log, reserved in blocks of 256 before use (`store_next_counter`, `App/node_store.c`) |
+| Gateway | ACK and NACK | `gateway-nonces.sqlite3`, one `BEGIN IMMEDIATE` transaction per counter (`Nonces.next`) |
+
+A 5-byte header field would truncate a larger counter silently, and a truncated counter repeats a
+nonce. So the limits are enforced at every place that issues or seals a counter:
+
+| Limit | Node (C) | Gateway (Python) |
+|---|---|---|
+| Counter 1 to 2^40 − 1 | `store_next_counter` refuses past `WS_COUNTER_MAX`; `ws_seal_kind` refuses 0 and > `WS_COUNTER_MAX`, wipes its output buffer and returns < 0; the boot self-test checks that 2^40 is refused | `Nonces.next` raises "Nonce space exhausted; rotate key"; `_header_and_nonce` raises; `to_bytes(5)` would also raise |
+| Station 1 to 65,535 | `ws_parse_provision` (`firmware/stage0.c`), `store_config_write`, `store_config_load`, `ws_seal_kind`, `ws_open_reply` | `_header_and_nonce`; `station_id` in `gateway.json` (`ws0/service.py`, `STATION_MAX`) |
+| Kind 1 to 4 | `ws_seal_kind` | `_header_and_nonce` |
+
+2^40 frames last more than 100,000 years at 20 frames a minute.
+
+Rules that keep nonces unique:
+- The node reserves a counter block in flash **before** it uses a counter from it. A reset skips the
+  rest of the block (for example counter 8 → 257).
+- `WIPE ERASE-ALL-NODE-STATE` erases the key and the journal and **keeps** the counter and epoch
+  (since release `0f456040fe54`, gap G17). The `PROVISION` epoch floor raises only the epoch.
+- Never restore old node flash or an old gateway nonce database while keeping the key. If counter
+  state is lost, use a new key ([`runbook-moving-boards.md`](runbook-moving-boards.md)).
+- **A frame-format change needs a new key and fresh state:** WIPE the TX, `init` a new run
+  directory, `provision-node`. The draft-5 release did this (run directory `run-d5`, KCV
+  `5618eb`). CCM's keystream blocks encode only the nonce length, not the tag length, so a draft-4
+  key could repeat keystream across versions.
+
+## 3. ACK and NACK (kinds 2 and 3, gateway → node)
+
+Both have the same 17-byte plaintext. They use the gateway's counter space.
+
+| Offset | Bytes | ACK | NACK |
+|---:|---:|---|---|
+| 0 | 4 | Epoch of the observation | Epoch of the rejected observation |
+| 4 | 4 | Sequence of the observation | Sequence of the rejected observation |
+| 8 | 4 | Host UTC at commit, Unix seconds; **0** when the gateway measured its own clock as wrong (`ws0/clock.py`) | Reason: **1** identity collision, **2** invalid record |
+| 12 | 5 | **Echo:** the counter of the observation frame being answered | Echo, as for the ACK |
+
+C API: `ws_open_reply(key, station, frame, len, &kind, &counter, &epoch, &seq, &word, &echo)`, where
+`word` is the UTC or the reason.
+
+**Gateway.** It seals an ACK only **after** the SQLite commit, and also for an identity it already
+holds (a retry after a lost ACK). It seals a NACK only for an **authentic** observation that it must
+reject permanently, after it stores the raw frame in its `rejections` table.
+
+**Node.**
+- Any authentic ACK clears its own journal record (found by epoch and sequence).
+- It sets its clock only from an ACK whose echo, epoch and sequence match the frame it just sent,
+  in that frame's receive window, and only if the UTC is at or after 2026-01-01 (this also ignores
+  the 0 above). A recorded ACK replayed later cannot match, so it cannot move the clock.
+- It accepts a NACK only for the frame it just sent. It then marks the record done and adds 1 to
+  the persisted `abandoned` total.
+- After an authentic reply it latches the reply's RSSI and SNR for the DIAG report. A forged reply
+  cannot set them.
+
+## 4. Health report (DIAG, kind 4, node → gateway)
+
+Fire-and-forget: no journal entry, no receive window, no reply. It uses the node's counter space.
+The node sends one every 15 minutes and after each link-state change, after that minute's exchange,
+also while probing. The gateway stores it in its `diagnostics` table, ordered by (epoch, uptime), not
+by arrival.
+
+| Offset | Bytes | Field | Gateway JSON name |
+|---:|---:|---|---|
+| 0 | 4 | Epoch | `epoch` |
+| 4 | 4 | Uptime, seconds | `uptime_s` |
+| 8 | 2 | Journal records pending | `journal_pending` |
+| 10 | 4 | Journal records lost to overflow (cumulative, persisted) | `journal_lost_total` |
+| 14 | 2 | Torn (burned) slots found at boot | `journal_torn_slots` |
+| 16 | 2 | Abandoned records (cumulative, persisted) | `abandoned_total` |
+| 18 | 2 | Missed ACKs since boot | `missed_acks_since_boot` |
+| 20 | 2 | Rejected replies since boot | `rejected_replies_since_boot` |
+| 22 | 1 | Reset cause: 0 unknown, 1 power, 2 pin, 3 brownout, 4 software, 5 watchdog, 6 lowpower, 7 option-bytes | `reset_cause` |
+| 23 | 1 | Link state: 0 linked, 1 probing | `link` |
+| 24 | 4 | Firmware build ID: the first 8 hex digits of `WS_FW_VERSION` (the release commit); 0 if not hex | `firmware_build` (8 hex digits) |
+| 28 | 1 | RSSI of the last authentic ACK/NACK as the node heard it, signed dBm, clamped to −127…127; **−128 = none yet** | `ack_rssi_dbm` (`null` for −128) |
+| 29 | 1 | SNR of that reply, signed dB; −128 = none yet | `ack_snr_db` (`null` for −128) |
+| 30 | 1 | Crashes since power-up (`fault_count()`, RTC backup register DR11), saturating at 255 | `crashes_since_power_up` |
+| 31 | 1 | Energy state (section 5.2) | `energy_state` |
+
+The 2-byte counts saturate at `0xFFFF`. Python layout: `DIAG = struct.Struct('>IIHIHHHHBBIbbBB')`.
+
+## 5. Observation (kind 1, node → gateway)
+
+### 5.1 Layout
 
 | Offset | Bytes | Field |
+|---:|---:|---|
+| 0 | 4 | Epoch: boot epoch, durable, increases at each TX boot |
+| 4 | 4 | Sequence within the epoch, from 0 |
+| 8 | 4 | Sample UTC, Unix seconds (u32, valid to 2106); **0** if the time is unknown |
+| 12 | 4 | Uptime: seconds since the node booted; always present; time sync never changes it |
+| 16 | 1 | Flags: bit 0 time known (must equal UTC ≠ 0); bits 1–2 energy state; bits 3–7 zero |
+| 17 | 1 | Calibration revision, u8; 0 in Stage 0 |
+| 18 | 4 | Field bitmap, u32: field *i* is present when `(bitmap >> i) & 1`. T/RH = `0x00000003` |
+| 22 | *k* | The present fields in increasing *i*, each a big-endian unsigned integer of its catalog width |
+
+The plaintext length is 22 + the widths of the present fields (`WS_OBS_PLAIN_LEN(bitmap)`,
+`ws_obs_plain_len()`). The Stage-0 plaintext is 22 + 2 + 2 = **26 bytes**; the frame is 42 bytes.
+
+**Presence rule.** Which fields are present depends only on the build (`WS_NODE_FIELDS` in
+`App/node_fields.h`), never on a reading. A faulted field is sent with its INVALID code, never left
+out, so the frame length does not reveal a sensor fault. A bitmap of 0 is rejected.
+
+Example, the encoder's known answer (`tests/test_obs.py`, `run_kat` in `App/app_tx.c`): epoch 1,
+sequence 2, UTC 1791991189, uptime 300 s, NORMAL, T −12.34 °C, RH 45.67 %:
+
+```text
+00000001 00000002 6acf9d95 0000012c 03    00  00000003 0ace  11d7
+epoch=1  seq=2    utc      uptime   flags cal bitmap   T     RH
+```
+
+Flags `0x03` = time known + energy 1 (NORMAL). T code `0x0ace` = 2766 = −12.34 °C + 40.00 °C in
+0.01 °C. RH code `0x11d7` = 4567.
+
+### 5.2 Energy state (flag bits 1–2)
+
+| Code | State | Gateway string |
+|---:|---|---|
+| 0 | SURPLUS | `surplus` |
+| 1 | NORMAL | `normal` |
+| 2 | CONSERVE | `conserve` |
+| 3 | CRITICAL | `critical` |
+
+This is the firmware's `energy_t` numbering. The Stage-0 build always sends 1 (NORMAL, USB power).
+
+### 5.3 Field catalog v1
+
+Value = (code − offset) / scale. INVALID is the field's all-ones code (`0xFF`, `0xFFFF` or
+`0xFFFFFF`), except `qualifiers`, which has none.
+
+| *i* | Field | Bytes | Unit, step | Offset (codes) | In-range codes | Value range | Special codes | Status |
+|---:|---|---:|---|---:|---|---|---|---|
+| 0 | `temperature_c` | 2 | 0.01 °C | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | **Stage 0** (SHT45) |
+| 1 | `humidity_pct` | 2 | 0.01 % | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | **Stage 0** (SHT45) |
+| 2 | `pressure_hpa` | 2 | 0.1 hPa | −3000 | 0–8000 | 300.0 to 1100.0 | `0xFFFF` INVALID | defined, not built |
+| 3 | `wind_speed_ms` | 2 | 0.1 m/s | 0 | 0–750 | 0 to 75.0, mean over the minute | `0xFFFF` INVALID | defined |
+| 4 | `wind_gust_ms` | 2 | 0.1 m/s | 0 | 0–750 | 0 to 75.0, highest 3-s mean | `0xFFFF` INVALID | defined |
+| 5 | `wind_dir_deg` | 2 | 1° | 0 | 0–359 | 0 to 359, wraps mod 360 | `0xFFFE` CALM; `0xFFFF` INVALID | defined |
+| 6 | `rain_tips` | 3 | tips since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | defined |
+| 7 | `uv_index` | 1 | 0.1 UVI | 0 | 0–250 | 0 to 25.0 | `0xFF` INVALID | defined |
+| 8 | `irradiance_wm2` | 2 | 1 W/m² | 0 | 0–2000 | 0 to 2000 | `0xFFFF` INVALID | defined |
+| 9 | `uva_raw` | 3 | sensor counts | 0 | 0–1,048,575 (2^20 − 1) | raw; never reported as UV index | `0xFFFFFF` INVALID | defined |
+| 10 | `qualifiers` | 4 | 2 bits per field 0–15: 0 ok, 1 suspected icing, 2 delayed melt, 3 outside the qualified envelope | — | any u32 | — | none (never INVALID) | defined |
+| 11 | `batt_mv` | 2 | 1 mV | 0 | 0–65,534 | 0 to 65,534 | `0xFFFF` INVALID | defined |
+| 12 | `batt_current_ma` | 2 | 0.1 mA, positive = into the cells | 32768 | 0–65,534 | −3276.8 to +3276.6 | `0xFFFF` INVALID | defined |
+| 13 | `energy_in_mwh` | 3 | mWh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | defined |
+| 14 | `energy_out_mwh` | 3 | mWh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | defined |
+| 15 | `charge_in_mah` | 3 | mAh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | defined |
+| 16 | `charge_out_mah` | 3 | mAh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | defined |
+| 17 | `soc_gauge_pct` | 1 | 1 %, fuel-gauge estimate | 0 | 0–100 | 0 to 100 | `0xFF` INVALID | defined |
+| 18 | `charger_pins` | 1 | bit 0 PGOOD, bit 1 CHG | 0 | 0–3 | raw pins | `0xFF` INVALID | defined |
+| 19 | `enclosure_temp_c` | 2 | as field 0 | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | defined |
+| 20 | `enclosure_rh_pct` | 2 | as field 1 | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | defined |
+| 21–31 | reserved | — | — | — | must be zero | — | — | — |
+
+All 21 fields together are 47 bytes, so the largest plaintext is 69 bytes and the largest frame 85.
+Only fields 0 and 1 have a driver today; the others are fixed in the catalog so that later builds
+need no wire change. Counter fields (6, 13–16) start at 0 when their epoch starts.
+
+### 5.4 Encoding rules
+
+| Rule | Where |
+|---|---|
+| Code = round half up of (value × scale) + offset, that is `floor(x × scale + 0.5) + offset`, computed exactly (Python `Decimal`; C works from integer 0.01 units) | `Field.code()`; `ws_code_temp_centi`, `ws_code_rh_centi` |
+| Out of range → **INVALID**, never clamped | `Field.code()`; `ws_code_temp_centi` (T outside −40.00…125.00 °C) |
+| Exception: relative humidity (fields 1 and 20) is **clamped** to 0–100 % | `Field.code()`; `ws_code_rh_centi` |
+| `wind_dir_deg` wraps modulo 360 before the range check | `Field.code()` |
+| No sample or a sensor fault → INVALID. The Stage-0 node sends **both** T and RH INVALID after any SHT45 fault | `sample()` in `App/app_tx.c` |
+| A wind direction needs a valid speed: if `wind_speed_ms` is INVALID, `wind_dir_deg` must be INVALID (CALM is not allowed either) | `ws_obs_encode`, `_check_wind` |
+| Decoding is exact: (code − offset) is an integer before the single division, so no float noise reaches the stored JSON | `Field.value()` |
+
+The C encoder `ws_obs_encode` refuses (returns −1) any record the decoder would reject. The C and
+Python encoders produce identical bytes (`tests/test_obs.py`).
+
+### 5.5 One valid encoding per reading (canonical rules)
+
+The gateway accepts exactly one byte form for each reading. An **authentic** observation that
+breaks a rule below is stored in `rejections` and answered with a **NACK**:
+
+| Rule | NACK reason | Code |
 |---|---:|---|
-| 0 | 2 | ASCII `WS` |
-| 2 | 1 | Version, 4 |
-| 3 | 1 | Kind: 1 observation, 2 gateway ACK, 3 gateway NACK, 4 node health report (DIAG) |
-| 4 | 4 | Numeric station ID |
-| 8 | 4 | Transmission counter high word |
-| 12 | 4 | Transmission counter low word |
-| 16 | 24 | AES-128-CCM ciphertext (24-byte plaintext of the kind) |
-| end | 16 | Authentication tag |
+| Plaintext length ≠ 22 + the present fields' widths | 2 | `fields.decode` |
+| A flag bit 3–7 set, a reserved bitmap bit (21–31) set, or a bitmap of 0 | 2 | `fields.decode` |
+| Time-known flag ≠ (UTC ≠ 0) | 2 | `fields.decode` |
+| A code above its field's maximum that is not that field's INVALID or CALM | 2 | `Field.code_ok` |
+| `wind_dir_deg` not INVALID while `wind_speed_ms` is INVALID | 2 | `_check_wind` |
+| A since-boot counter that decreases **in sequence order** within its epoch (section 6) | 2 | `Store.check_counters` |
+| Anything else `gateway.validate` refuses (for example a value that is not an exact catalog value, or a quality that does not match the fields) | 2 | `gateway.validate` |
+| Same identity (station, epoch, sequence) as a stored record, different content | **1** | `Store.ingest` |
 
-AES-CCM nonce = kind (1 byte) + station ID (4) + high counter (4) + low counter (4).
-The full 16-byte header is authenticated additional data. A per-station 128-bit key
-is shared by the node and gateway. There are two counter spaces: the node's (observation
-and DIAG) and the gateway's (ACK and NACK). The kind byte in the nonce keeps every
-(kind, counter) pair distinct, so the four kinds never share a nonce.
+A frame with a length outside 39–85 bytes, a wrong version, kind or station, or a bad tag never
+reaches these checks: it is dropped with no reply (section 1). The gateway and node ship one
+catalog together, so an unknown bit is a bug, not a newer node.
 
-Python uses `cryptography` 50.0.1 / OpenSSL AESCCM. A durable SQLite transaction
-reserves every counter **before** encryption. Failure stops sending. The allocator
-binds its database to key fingerprint, station and direction. Retries allocate fresh
-counters; observation identity is independent and unchanged. Cloning/rolling back
-state with the same key is prohibited. The firmware reserves epochs and 256-counter
-blocks durably in flash before use (`firmware/stage0-node/App/node_store.c`,
-protocol-stack.md section 6). Before release `0f456040fe54`, `WIPE` reset the counter to 1; from `0f456040fe54` it keeps
-the counter (gap G17). Prefer a **new** key after a WIPE; never re-use a key from before that
-release or from another board
-([`runbook-moving-boards.md`](runbook-moving-boards.md)).
+A sample time more than 5 s after its receipt time is **not** rejected: it is stored and
+**quarantined** (`future_clock_at_receipt`); waiting does not make it valid.
 
-## Observation plaintext (24 bytes)
+## 6. Gateway record
 
-| Offset | Bytes | Field |
-|---|---:|---|
-| 0 | 4 | Durable sample/boot epoch |
-| 4 | 4 | Sample sequence within epoch |
-| 8 | 4 | Sample UTC Unix seconds (u32), 0 if time unknown |
-| 12 | 4 | Uptime: seconds since node boot (u32), always present; monotonic, unaffected by time sync |
-| 16 | 2 | Signed temperature in 0.01°C; `0x8000` (-32768) if sensor invalid |
-| 18 | 2 | Unsigned RH in 0.01%; `0xFFFF` if sensor invalid |
-| 20 | 1 | Validity: 1 both measurements valid, 0 sensor fault |
-| 21 | 1 | Time quality: 1 synchronized, 0 unknown |
-| 22 | 2 | Calibration revision; currently 0 only |
+`decode_observation()` turns a plaintext into this JSON record, and `gateway.validate()` checks it
+(closed schema: no other keys).
 
-SHT45 failure invalidates the complete paired reading. JSON represents invalid
-measurements as null and preserves separate time quality. Later individual sensor
-fields need their own validity, not expansion in Stage 0.
+| Key | Value |
+|---|---|
+| `version` | `5` |
+| `station` | Configured station name (string) |
+| `session` | The epoch, as a decimal string |
+| `sequence` | Sequence number |
+| `sampled_at` | UTC seconds, or `null` when the time is unknown |
+| `uptime_s` | Uptime |
+| `time_quality` | `synchronized` or `unknown` |
+| `energy_state` | `surplus`, `normal`, `conserve` or `critical` |
+| `calibration_revision` | 0–255 |
+| `quality` | `valid`, `partial` or `sensor_fault` (below) |
+| *each present field* | Its value in catalog units, or **`null`** for INVALID |
+| `wind_calm` | Present exactly when `wind_dir_deg` is: `true` for CALM (then `wind_dir_deg` is `null`), else `false` |
+| `qualifiers` | Object with only the non-ok fields, for example `{"temperature_c": "suspected_icing"}` |
 
-Observation identity = configured station name + sample epoch + sample sequence.
-Epoch must increase durably across node restarts. Sample identity, not wall-clock
-sorting, determines newest data; a corrected clock can therefore recover availability.
-A sample more than five seconds ahead of its receipt time is quarantined. This
-threshold is a conservative draft clock-tolerance setting, not an H01 waiver.
+**Quality** is computed over the present measurement fields (all but `qualifiers`):
+- `valid`: every present field has a value (CALM counts as a value);
+- `partial`: some present fields are `null`;
+- `sensor_fault`: every present field is `null`.
 
-NACK (kind 3, 24-byte plaintext) = sample epoch (4) + sequence (4) + reason (4: 1 identity
-collision, 2 invalid record) + reserved 0 (4) + echoed observation counter (8).
-The node opens it with the same code as an ACK; bytes 8..15 then read as `reason << 32`. The gateway sends a
-NACK only for an **authenticated** frame that it must reject permanently, after it stores the raw
-frame in its `rejections` table. It shares the gateway's ACK counter space; the kind byte keeps the
-nonces distinct. The node accepts a NACK only for the frame it just sent, then stops retrying that
-record: it marks the journal slot done and counts it in the persisted `abandoned` total.
-An unauthenticated or wrong-version frame never gets a NACK.
+For the Stage-0 build, a sensor fault gives `temperature_c: null, humidity_pct: null,
+quality: "sensor_fault"`.
 
-Strike safety net (node): if a record stays unanswered in 10 exchanges in which the gateway
-answered other frames, the node also abandons it and counts it as `abandoned`
-(`STRIKE_LIMIT` 10, 6 tracking slots, `App/app_tx.c`). Exchanges with no answer at all
-never count, so a link or gateway outage never abandons data.
+**Per-field availability.** `/v1/observations/latest` reports `fields_available` per field and the
+units per field; Home Assistant gets one entity per field, each unavailable when its own value is
+`null`. A dead sensor never hides the others. **H01 scores the validity of the T/RH fields**
+(`tools/h01_report.py`).
 
-DIAG (kind 4, 24-byte plaintext, node → gateway, fire-and-forget) = epoch (4) + uptime s (4) +
-journal pending (2) + journal lost total (4) + torn slots (2) + abandoned total (2) + missed ACKs
-since boot (2) + rejected replies since boot (2) + reset cause (1) + link state (1). It uses the
-node's observation counter space. The gateway stores it and never answers it. 16-bit fields
-saturate at 0xFFFF. Reset cause: 0 unknown, 1 power, 2 pin, 3 brownout, 4 software,
-5 watchdog, 6 lowpower, 7 option-bytes. Link state: 0 linked, 1 probing. The node sends it
-every 15 minutes and after each link-state change, after a minute's exchange, also while
-probing (since 2026-10-13; earlier firmware sent it only while linked).
+**Identity.** Observation identity = station + epoch + sequence. A record whose identity is already
+stored with the same content is a duplicate: no new row, ACK again. Different content under the same
+identity is a collision: NACK reason 1, never an ACK. Identity order (epoch, then sequence), not
+wall-clock time, decides which record is newest.
 
-ACK plaintext (24 bytes) = acknowledged sample epoch (4) + sample sequence (4) + host UTC
-Unix seconds at commit (8; **0** when the gateway's SNTP check measures its own clock off by
-more than 1 s, so the node keeps its own clock) + the 64-bit transmission counter of the observation frame being
-answered (8). The node sets its clock only from an ACK whose echoed counter equals the
-frame it just sent, in that frame's receive window; a recorded ACK replayed later cannot
-match and cannot move the clock. The node also ignores a UTC before 2026-01-01 (this covers
-the 0 above). Any authentic ACK still clears its own journal entry.
-ACK is only
-created after SQLite commit; the node verifies it before removing the journal entry.
-An observation the gateway already holds, re-sent by the node in a new frame (fresh counter,
-for example after a lost ACK), is acknowledged again. Conflicting payloads under the
-same observation identity are rejected, never acknowledged, and answered with a NACK (reason 1).
-The gateway keeps a high-water mark of the node counter (observation and health frames share one
-counter space; review P4, 2026-10-13). An authentic frame whose counter is at or below the mark
-gets no reply and is not stored: it is kept in `rejections` with reason `counter_regression`, and
-`/v1/status` raises the alarm "possible key reuse: re-key the node". A node never repeats a counter,
-so this only happens for a replay or a reused key. Replayed ACKs affect only their exact identity.
-No wire change.
+**Since-boot counters** (`rain_tips`, `energy_*`, `charge_*`) must not decrease **in sequence
+order** within one epoch. The gateway compares a new record with its stored neighbours by sequence
+(the nearest lower and nearest higher sequence that has a value), never by arrival order, so an
+older record that arrives late (backfill) is accepted. `null` values are skipped.
 
-Receiver/host USB contract: one ASCII hexadecimal frame per newline, 115200 baud,
-8N1. Receiver forwards RF frames upstream (56 bytes, `WS`, current version, kind 1 or 4)
-and host ACK/NACK frames downstream (kind 2 or 3); it holds no key and must never
-acknowledge independently. Maximum input line is 256 bytes. Lines starting with `#` are
-receiver diagnostics (RSSI/SNR, drops, `#alive` every 60 s, `#watchdog`, `#tx busy`); the host
-logs them to `receiver.log` and never parses them as frames (it reads `#alive` fields for
-receiver liveness only).
+**Reconstructed time.** An unsynchronized record gets an effective time from the nearest
+synchronized record of the same epoch: `ref_utc + (uptime − ref_uptime)`, uncertainty 2 s + 150 ppm
+× |uptime − ref_uptime| (`Store.reconstruct`, `protocol-stack.md` §11.3.2).
 
-## Radio exchange (firmware/stage0-node)
+## 7. Replay and key reuse
 
-RF: 915.0 MHz LoRa, 500 kHz bandwidth, SF7, CR 4/5, 8-symbol preamble, explicit header,
-CRC on, 0 dBm (bench). See docs/hardware/nucleo-wl55jc-bringup.md for the regulatory basis.
-Each minute the node journals one observation. While the link is LINKED it sends it, then
-up to N older pending ones (oldest first). N comes from the transmission policy
-([`radio-energy-policy.md`](radio-energy-policy.md)): 20/5/0/0 for energy state
-SURPLUS/NORMAL/CONSERVE/CRITICAL (Stage 0 is fixed at NORMAL, so 5), further capped by a
-per-minute airtime budget (15/5/2/0 s). After each frame it listens up to 2000 ms for the
-reply (no LoRa symbol timeout), then waits 50 ms before the next frame. The first missed
-reply ends that minute's drain. After 3 consecutive minutes with no answer the node goes
-PROBING: it sends only the live reading, with no backlog: every minute in SURPLUS and NORMAL
-(Stage 0 is always NORMAL), and after 120, 240, 480, then every 900 s in CONSERVE;
-any answer returns it to LINKED. A missing ACK leaves the record journaled; each retry gets
-a fresh counter. (The Python simulator in `ws0/` drains 5 per minute, like NORMAL.) The node trusts its clock for 6 hours after
-the last time sync, then marks samples time-unknown until the next ACK.
+The gateway keeps a high-water mark of the node counter, plus the SHA-256 of every authentic node
+frame it accepted as fresh, by counter (`node_counter` and `node_frames` tables in the nonce
+database, `Nonces.advance_node_counter`). For every **authentic** OBS or DIAG frame:
+
+| Case | Verdict | What the gateway does |
+|---|---|---|
+| Counter above the mark | fresh | Raises the mark, keeps the digest, then processes the frame |
+| Counter at or below the mark, same bytes as the frame accepted under that counter | **replay** | No reply, nothing stored as data; raw frame kept in `rejections` with reason `replay`; `replays` counted; **no alarm** |
+| Counter at or below the mark, different bytes, or a counter never accepted | **counter regression** | No reply, nothing stored as data; raw frame kept in `rejections` with reason `counter_regression`; `/v1/status` raises the persistent alarm "possible key reuse: re-key the node" |
+
+The mark is committed before the frame is acted on. A direct LoRa link cannot reorder frames, so an
+older, never-seen counter means a repeated nonce or a reused key, not a late frame. The alarm clears
+only with a new key in a new state directory (runbook R5).
+
+## 8. RX bridge and USB line contract
+
+The RX board holds no key. It never acknowledges anything itself; the gateway is the only ACK
+authority. Serial: 115200 baud, 8N1, one line per message, `\n`-terminated (`\r` ignored).
+
+| Direction | Line | Rule |
+|---|---|---|
+| RX → host | Lowercase hex of one received frame | Only if `ws_air_frame_ok()`: version 5 and either kind 1 with length 39–85 B (78–170 hex digits) or kind 4 with length 48 B (96 digits). The Stage-0 observation is 84 digits. Anything else gives `#rx drop len= rssi= snr=` |
+| RX → host | `#…` | Diagnostics (`#rx obs rssi= snr=` after each forwarded frame, `#alive` every 60 s, `#boot`, `#status`, `#watchdog …`, `#tx busy`, `#host reject len=`, …) |
+| host → RX | 66 hex digits | One ACK or NACK, transmitted once with the uplink radio settings. Only if `ws_host_reply_ok()`: exactly 33 bytes, version 5, kind 2 or 3. Anything else gives `#host reject len=` |
+| host → RX | `STATUS`, `TEST-HANG`, `TEST-FAULT` | Commands; lines that start with `#` are ignored |
+
+- A line is at most 256 bytes on both sides (`WS_LINE_MAX`; `ws0/link.py`). A longer line is
+  discarded whole.
+- The bridge prints the largest catalog frame whole (85 bytes; `hex_print` in `App/console.c`, with a
+  static assert against the 256-byte trace buffer) and reports anything longer as `#error`, never a
+  truncated line.
+- The gateway writes every `#` line to `receiver.log` and never decodes it as a frame. It reads
+  `#alive` and `#boot role=rx` only for receiver liveness (silent after 180 s). It logs each frame and
+  its reply (`frame <hex> -> ack <hex>`, `-> nack <hex>`, `diag <hex>`).
+- While the RX console holds a complete line, it drops further input; the host sends one line per
+  exchange.
+
+## 9. Radio exchange (`firmware/stage0-node`)
+
+Unchanged from draft 4 except the frame sizes.
+
+RF: 915.0 MHz LoRa, 500 kHz bandwidth, SF7, CR 4/5, 8-symbol preamble, explicit header, CRC on,
+0 dBm (bench), symbol timeout off (`App/radio_cfg.h`). See
+[`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md) for the regulatory basis.
+At SF7 a 42-byte observation takes 21.8 ms on air, a 33-byte ACK 18.0 ms and a 48-byte DIAG 24.4 ms
+(`protocol-stack.md` §8.2).
+
+- Each minute the node journals one observation. While the link is LINKED it sends it, then up to
+  *N* older pending ones, oldest first. *N* comes from the transmission policy
+  ([`radio-energy-policy.md`](radio-energy-policy.md)): 20/5/0/0 for SURPLUS/NORMAL/CONSERVE/CRITICAL
+  (Stage 0 is fixed at NORMAL, so 5). It is further capped by a per-minute airtime budget
+  (15/5/2/0 s), counting one exchange as observation airtime + ACK airtime + 300 ms, which is
+  22 + 18 + 300 = **340 ms** at SF7 (`exchange_ms`, `airtime_ms()` in `App/app_tx.c`).
+- CONSERVE sends only the live reading, at most every 300 s. CRITICAL journals and does not send.
+- After each frame the node listens up to 2000 ms for the reply, then waits 50 ms before the next
+  frame. The first missed reply ends that minute's drain.
+- After 3 consecutive minutes with no answer the node goes PROBING: it sends only the live reading,
+  with no backlog: every minute in SURPLUS and NORMAL (so always in Stage 0), and after 120, 240,
+  480, then every 900 s in CONSERVE. Any answer returns it to LINKED.
+- A missing ACK leaves the record journaled. Each retry has the same identity and a fresh counter.
+- Strike limit: a record that stays unanswered in 10 exchanges in which the gateway answered other
+  frames is abandoned and counted (`STRIKE_LIMIT` 10, 6 tracking slots). Exchanges with no answer at
+  all never count, so an outage never abandons data.
+- The node trusts its clock for 6 hours after the last time sync, then sends UTC 0 (time unknown)
+  until the next accepted ACK.
+- The Python simulator (`ws0/simulator.py`) drains 5 records per minute, like NORMAL.
 
 References:
-- https://cryptography.io/en/latest/hazmat/primitives/aead/#cryptography.hazmat.primitives.ciphers.aead.AESCCM
-- https://sensirion.com/resource/datasheet/sht4x
+- RFC 3610, *Counter with CBC-MAC (CCM)*: <https://www.rfc-editor.org/rfc/rfc3610>
+- NIST SP 800-38C: <https://csrc.nist.gov/pubs/sp/800/38/c/upd1/final>
+- `cryptography` AESCCM: <https://cryptography.io/en/latest/hazmat/primitives/aead/#cryptography.hazmat.primitives.ciphers.aead.AESCCM>
+- Sensirion SHT4x datasheet: <https://sensirion.com/resource/datasheet/sht4x>

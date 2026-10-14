@@ -6,8 +6,8 @@ Use this when the TX/RX boards move between machines (for example office ↔ hom
 ## The rule that matters
 
 A TX key may only be used with counters that only go up. The AES-CCM nonce is
-kind + station ID + the 64-bit transmission counter (`firmware/common/ws_frame.c:15`,
-`docs/protocol.md`). `PROVISION … [epoch_floor]` raises only the **epoch** (`App/node_store.c`,
+kind + station ID + the transmission counter (40-bit since draft 5; `header()` in
+`firmware/common/ws_frame.c`, `docs/protocol.md` section 2). `PROVISION … [epoch_floor]` raises only the **epoch** (`App/node_store.c`,
 `store_epoch_floor`), which keeps observation identities unique (gap G5). It does not raise the
 counter.
 

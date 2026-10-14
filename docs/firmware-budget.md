@@ -1,7 +1,8 @@
 # Firmware budget: flash, RAM, CPU and radio
 
-Measured 2026-10-13 on release `0f456040fe54` (`firmware/stage0-node/RELEASES.md`). Measured
-numbers come from the build (`arm-none-eabi-size`, the linker map) or from the firmware's own
+Sizes in the summary, the stack table and the radio section were measured 2026-10-14 on release
+`bc5e6ede429c` (protocol draft 5). Older rows say which release they were measured on
+(`firmware/stage0-node/RELEASES.md`). Measured numbers come from the build (`arm-none-eabi-size`, the linker map) or from the firmware's own
 airtime formula. Rows marked **estimate** are planning figures for future features, not
 measurements.
 
@@ -9,14 +10,15 @@ measurements.
 
 | Resource | Available | Used now | Status |
 |---|---|---|---|
-| Flash, application region | 64 KB (pages 0–31, enforced by the linker script) | TX 53,176 B (81 %), RX 30,360 B (46 %) | **TX is the constraint**: about 12 KB left |
-| Flash, node state | 192 KB (pages 32–127) | key 1 page, meta log 2 pages, journal 93 pages (4,743 slots, about 3.3 days) | Fixed by `App/flash_layout.h` |
+| Flash, application region | 64 KB (pages 0–31, enforced by the linker script) | TX 53,752 B (82.0 %), RX 31,696 B (48.4 %) | **TX is the constraint**: 11,784 B left, 5,230 B below the 90 % guard |
+| Flash, node state | 192 KB (pages 32–127) | key 1 page, meta log 2 pages, journal 93 pages (3,906 slots of 48 B for the T/RH build, about 2.7 days) | Pages fixed by `App/flash_layout.h`; slot size follows `App/node_fields.h` |
 | RAM | 64 KB (RAM1 32 KB + RAM2 32 KB) | TX: about 4.1 KB static data + 8 KB reserved stack + 0.5 KB heap, all in RAM1 (working tree after the stack work below) | Ample; RAM2 unused |
 | CPU | Cortex-M4 at 48 MHz (Cortex-M0+ core unused) | One sample and a few frames per minute | No constraint |
-| Radio payload | 24-byte observation plaintext in a 56-byte frame | Temperature and humidity only | **The constraint for more sensors** |
+| Radio payload | 26-byte observation plaintext in a 42-byte frame (T/RH); the draft-5 catalog allows up to 69 B in an 85-byte frame | Temperature and humidity only | No longer the limit: every catalog field fits in one frame (section below) |
 
 Sources: `STM32WL55JCIX_FLASH.ld` (FLASH 64K, RAM1/RAM2 32K each, heap 0x200, stack 0x2000 since the stack work below; 0x800 before),
-`App/flash_layout.h`, `firmware/common/ws_frame.h` (`WS_OBS_PLAIN_LEN 24`, header 16, tag 16).
+`App/flash_layout.h`, `firmware/common/ws_frame.h` (`WS_HEADER_LEN 8`, `WS_TAG_LEN 8`), `firmware/common/ws_obs.h` and
+`App/node_fields.h` (`WS_OBS_PLAIN_MAX` = 26 for T/RH).
 
 The build enforces a budget: `make` prints `flash budget: N of 65536 B` and fails above
 `FLASH_BUDGET_PCT` (default 90 %) of the application region (`firmware/stage0-node/Makefile`).
@@ -39,15 +41,21 @@ Measured on the `a07f498` sources; release 0f456040fe54 is the same size within 
 cost that does not grow with features; new features add mostly our own code and a few more HAL
 modules.
 
+Draft 5 (release `bc5e6ede429c`): the observation encoder and catalog table,
+`firmware/common/ws_obs.c`, link 676 B into the TX image (508 B code + 168 B table; from the linker
+map). Against the previous release `45f43e78fe91` the TX image grew by 856 B (52,896 → 53,752 B) and
+the RX image by 112 B (31,584 → 31,696 B). The encoder is most of the TX growth; the rest is the
+larger health report and the new self-test, less the removed draft-4 packer (not broken down).
+
 ## Stack
 
-Measured 2026-10-13 on the working tree after release `9e3d38f08e8b` (not yet a release).
+Measured 2026-10-14 on release `bc5e6ede429c` (draft 5).
 
 | | TX | RX |
 |---|---:|---:|
-| Worst-case estimate (`make stack`, `tools/stack_report.py`) | 6,408 B (78 % of 8,192 B) | 1,964 B (24 %) |
-| Deepest direct chain from `main` | 1,256 B (boot self-test through Mbed TLS CCM) | 220 B |
-| Deepest callback chain | 1,232 B (`on_line`, console commands) | 380 B (`process`) |
+| Worst-case estimate (`make stack`, `tools/stack_report.py`) | 6,528 B (80 % of 8,192 B) | 2,212 B (27 %) |
+| Deepest direct chain from `main` | 1,280 B (boot self-test through Mbed TLS CCM) | 276 B (`fault_report` through the trace printf) |
+| Deepest callback chain | 1,256 B (`on_line`, console commands) | 428 B (`process`) |
 | RAM the stack can actually grow into before it meets static data | 28,136 B | 29,568 B |
 
 How the estimate works: GCC writes each function's frame size and its direct calls
@@ -68,6 +76,9 @@ Changes made for it:
 - Mbed TLS's generic cipher layer is gone (`MBEDTLS_CIPHER_C` off): CCM now calls AES through the
   smaller block-cipher layer. That removed a recursion cycle in the call graph, all `malloc`/`free`
   from the TX image, and 1.7 KB of flash.
+- `sample()` keeps its 104-byte observation record (`ws_obs_t`) in static memory, not on the stack.
+  It is part of the deepest callback chain, which the estimate counts four times (about 416 B).
+  With the record on the stack the TX estimate was 83 %.
 - Run-time check: the stack is filled with a pattern at start-up (`App/stackmon.c`), and
   `stack_peak` (TX `#counts`, RX `#alive`) reports the deepest byte ever overwritten. A field
   value near the 8 KB reservation would mean the estimate is wrong.
@@ -88,8 +99,8 @@ Changes made for it:
 | SPI NOR journal for the 30-day buffer, H11 (Stage 1) | 6–10 KB | SPI HAL plus a journal backend |
 | RS-485 / Modbus sensor modules (Stage 2) | 4–8 KB, plus a few KB per sensor type | UART HAL is already linked |
 | Low-power sleep, heater control, energy state machine | 4–8 KB | Mostly our code |
-| Multi-sensor payload (protocol draft 5) | 1–3 KB | Encoder and decoder |
-| **Total** | **about 20–40 KB** | **Does not fit in the 12 KB left** |
+| Multi-sensor payload (protocol draft 5) | **Done**: +856 B TX against release `45f43e78fe91` | `ws_obs.c` is 676 B; the decoder is on the gateway |
+| **Total** | **about 18–33 KB** | **Does not fit in the 11.5 KB left** |
 
 ## Requirement (Clint, 2026-10-13)
 
@@ -118,28 +129,28 @@ final design is sized:
 4. **Module split after H01** (`docs/firmware-review-2026-10-13.md` §4–5): sensors become
    drivers behind one interface instead of edits to `app_tx.c`.
 
-## Radio payload: the limit for more sensors
+## Radio payload
 
-Every frame carries a fixed 32 bytes (16-byte authenticated header, 16-byte tag) around the
-plaintext. Air time per frame from the firmware's formula (`airtime_ms()` in `App/app_tx.c`:
-500 kHz, CR 4/5, 8-symbol preamble, explicit header, CRC on):
+Draft 5 carries a fixed 16 bytes per frame (8-byte authenticated header, 8-byte tag) around the
+plaintext; draft 4 carried 32. Air time per frame from the firmware's formula (`airtime_ms()` in
+`App/app_tx.c`: 500 kHz, CR 4/5, 8-symbol preamble, explicit header, CRC on; the firmware rounds up
+to whole milliseconds):
 
-| Plaintext | Frame | SF7 | SF9 | SF10 | SF12 |
-|---:|---:|---:|---:|---:|---:|
-| 24 B (today) | 56 B | 26.9 ms | 87.3 ms | 164.4 ms | 575.5 ms |
-| 40 B | 72 B | 33.3 ms | 107.8 ms | 195.1 ms | 657.4 ms |
-| 56 B | 88 B | 38.5 ms | 123.1 ms | 225.8 ms | 780.3 ms |
-| 72 B | 104 B | 44.9 ms | 143.6 ms | 256.5 ms | 903.2 ms |
-| 104 B | 136 B | 56.4 ms | 179.5 ms | 328.2 ms | 1,108.0 ms |
+| Frame | Plaintext | Frame | SF7 | SF9 | SF10 | SF12 |
+|---|---:|---:|---:|---:|---:|---:|
+| ACK / NACK | 17 B | 33 B | 18.0 ms | 61.7 ms | 113.2 ms | 411.6 ms |
+| Observation, T/RH (Stage 0, today) | 26 B | 42 B | 21.8 ms | 71.9 ms | 133.6 ms | 452.6 ms |
+| Health report (DIAG) | 32 B | 48 B | 24.4 ms | 77.1 ms | 143.9 ms | 493.6 ms |
+| Observation, Core weather set (design §2) | 40 B | 56 B | 26.9 ms | 87.3 ms | 164.4 ms | 575.5 ms |
+| Observation, full proof-of-concept build | 62 B | 78 B | 34.6 ms | 112.9 ms | 205.3 ms | 698.4 ms |
+| Observation, every catalog field | 69 B | 85 B | 37.2 ms | 123.1 ms | 225.8 ms | 780.3 ms |
+| (Draft 4, every kind) | 24 B | 56 B | 26.9 ms | 87.3 ms | 164.4 ms | 575.5 ms |
 
-- **One bigger frame beats several frames.** Going from 24 to 56 bytes of plaintext adds 36 % air
-  time at SF12 (575.5 → 780.3 ms); a second 56-byte frame adds 100 %, plus another ACK window.
-- **The airtime cap shrinks the backlog drain.** At SF12 the NORMAL cap of 5 s per minute allows
-  about 3 exchanges with today's frame (5000 / (2 × 575.5 + 300)) and 2 with an 88-byte frame
-  (5000 / (2 × 780.3 + 300)). The ACK is also a 56-byte frame (`WS_ACK_FRAME_LEN`); this estimate
-  assumes it keeps that size.
-- **Energy follows air time.** Per-frame energy figures and SF choices: `docs/radio-energy-policy.md` §3.
-
-**Recommendation:** design the draft-5 observation format (for example, a sensor bitmap plus
-fixed-width fields, or a compact type-length-value list) **before** the second sensor type,
-sized for the full sensor set in one frame.
+- **One frame carries every field.** The largest possible observation (85 B) is still one frame,
+  so more sensors never need a second frame or a second ACK window.
+- **The airtime cap sets the backlog drain.** The firmware counts one exchange as observation +
+  ACK air time + 300 ms (`exchange_ms`). For the T/RH build that is 22 + 18 + 300 = 340 ms at SF7
+  (the 5 s NORMAL cap allows 14 exchanges, so the NORMAL limit of 5 binds) and 453 + 412 + 300 =
+  1,165 ms at SF12 (4 exchanges). With the full PoC frame at SF12: 699 + 412 + 300 = 1,411 ms, so 3.
+- **Energy follows air time.** Per-frame energy figures and SF choices:
+  `docs/radio-energy-policy.md` §3.

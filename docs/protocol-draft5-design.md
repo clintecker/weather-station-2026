@@ -1,6 +1,23 @@
 # Protocol draft 5: design
 
-**Status:** design, revision 2 (2026-10-14). Not implemented yet.
+**Status:** design, revision 2 (2026-10-14). **Implemented on `master`** in commits `6f52a51`
+(catalog), `0d5ebc2` (envelope), `5dbe2d9` (gateway decoding), `51ae971` (node encoder and
+journal), `a4f1d08` (32-byte DIAG), `dd49609` (replay vs key reuse) and `bc5e6ed` (per-field Home
+Assistant discovery). Released as `bc5e6ede429c` and flashed to both boards on 2026-10-14 with a
+new key (`firmware/stage0-node/RELEASES.md`). The normative specification is
+[`protocol.md`](protocol.md); this file keeps the design rationale. Where the implementation differs
+from the text below, the code and `protocol.md` win. Known differences:
+- the journal page magic is `"WSJ"` + the slot size in its low byte (`WSJ0` for 48-byte slots), not
+  a fixed `WSJ2` (§7), so a field-set change that changes the slot size also retires old pages;
+- the RX filter is fuzzed through the existing `console` target, not a new `fuzz_air`; the new
+  target is `obs` (the encoder) (§6);
+- the pre-decryption length check for an observation (gateway and RX filter) allows any catalog
+  length, 39–85 bytes (plaintext 23–69: at least one 1-byte field, at most every field), not the
+  build's `WS_OBS_PLAIN_MAX` (§3.4); the exact length is checked after decryption as designed;
+- the C/Python catalog cross-checks live in `tests/test_obs.py`, not `tests/test_frame.py` (§6);
+- the gateway accepts any calibration revision 0–255; it does not yet check it against a configured
+  maximum (§5.6);
+- the TX `STATUS` line still prints `ctr` as a 32-bit value (§7).
 
 Revision 2 folds in four parallel reviews (security, encoding, implementation fit, requirements and
 simplicity) and Clint's decisions:

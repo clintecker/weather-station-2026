@@ -1,10 +1,11 @@
 # Stage-0 node firmware (NUCLEO-WL55JC1)
 
-One source tree, two roles: **TX** (sensor node, board A `003B00194142500E20353451`) and **RX** (USB receiver bridge, board B `0016001E4142500E20353451`). Built on ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0). Wire protocol: [`docs/protocol.md`](../../docs/protocol.md) draft 4 (see also [`protocol-stack.md`](../../docs/protocol-stack.md)).
+One source tree, two roles: **TX** (sensor node, board A `003B00194142500E20353451`) and **RX** (USB receiver bridge, board B `0016001E4142500E20353451`). Built on ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0). Wire protocol: [`docs/protocol.md`](../../docs/protocol.md) draft 5 (see also [`protocol-stack.md`](../../docs/protocol-stack.md)).
 
-**Status (2026-10-13):**
-- Release `9e3d38f08e8b` ([`RELEASES.md`](RELEASES.md)) is on both boards, and the bench link works end to end.
-- The SHT45 parts have arrived but are not yet wired, so every reading is an honest `sensor_fault`.
+**Status (2026-10-14):**
+- Release `bc5e6ede429c` ([`RELEASES.md`](RELEASES.md)), protocol **draft 5** (8-byte header and tag, field catalog, 32-byte health report), is on both boards since 2026-10-14, and the bench link works end to end.
+- That release changed the frame format, so it was installed with a **fresh key**: `WIPE ERASE-ALL-NODE-STATE` on the TX, a new run directory (`run-d5`, KCV `5618eb`), then `provision-node` (protocol.md section 2). Any later frame-format change needs the same. Always flash **both** boards: boards of different drafts drop each other's frames.
+- The SHT45 is wired (morpho pins) and gave valid readings on 2026-10-14 ([`docs/hardware/nucleo-wl55jc-bringup.md`](../../docs/hardware/nucleo-wl55jc-bringup.md), "SHT45 first light").
 - **H01 NOT RUN.**
 
 ## Build and flash
@@ -40,7 +41,7 @@ python -m ws0 provision-node --directory run-hw --serial /dev/cu.usbmodem<TX por
 python -m ws0 serve --directory run-hw --serial /dev/cu.usbmodem<RX port>
 ```
 
-`provision-node` sends the station ID and key to an **unprovisioned** TX board over USB, then checks the reply against the key check value (KCV: first 3 bytes of AES(key, 0¹⁶)). It refuses to overwrite a provisioned board.
+`provision-node` sends the station ID (1 to 65,535: the draft-5 header holds 2 bytes) and key to an **unprovisioned** TX board over USB, then checks the reply against the key check value (KCV: first 3 bytes of AES(key, 0¹⁶)). It refuses to overwrite a provisioned board.
 
 It also sends an **epoch floor** (`PROVISION <id> <key> <epoch_floor>`). The floor is one above the highest boot epoch the gateway has stored for this station in `observations`, `rejections` and `diagnostics` (`ws0/__main__.py`, `epoch_floor`), or 0 (no floor) for an empty database. The node raises its stored epoch to the floor (`store_epoch_floor`), so every later boot epoch is above it and the observation identities (epoch, seq) of a wiped and re-provisioned node never collide with stored history (gap G5). **The floor raises only the epoch, not the transmission counter.**
 
@@ -63,8 +64,8 @@ The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac a
 
 | Board | Output | Commands |
 |---|---|---|
-| TX | Lines starting with `#` (glossary below) | `STATUS`, `KAT`, `PROVISION <station_id> <32 hex key> [epoch_floor]` (decimal ID ≥ 1; only when unprovisioned; reboots on success), `WIPE ERASE-ALL-NODE-STATE` (reboots), `TEST-HANG` (bench: proves the watchdog), `TEST-FAULT` (bench: proves crash recording), `TEST-FLASH-STORM` (bench: continuous flash writes for power-cut tests; pauses sampling; ends at reboot) |
-| RX | One lowercase hex line per received observation **or health-report** frame (kinds 1 and 4), plus `#` diagnostics (below) | `STATUS`, `TEST-HANG`, `TEST-FAULT`, or one hex **ACK or NACK** line from the host. Lines starting with `#` are ignored. |
+| TX | Lines starting with `#` (glossary below) | `STATUS`, `KAT`, `PROVISION <station_id> <32 hex key> [epoch_floor]` (decimal ID 1–65535; only when unprovisioned; reboots on success), `WIPE ERASE-ALL-NODE-STATE` (reboots), `TEST-HANG` (bench: proves the watchdog), `TEST-FAULT` (bench: proves crash recording), `TEST-FLASH-STORM` (bench: continuous flash writes for power-cut tests; pauses sampling; ends at reboot) |
+| RX | One lowercase hex line per received draft-5 observation (39–85 bytes; 42 for the T/RH build) **or health-report** frame (48 bytes), plus `#` diagnostics (below) | `STATUS`, `TEST-HANG`, `TEST-FAULT`, or one hex **ACK or NACK** line from the host (exactly 33 bytes = 66 hex digits). Lines starting with `#` are ignored. |
 
 ### TX console glossary (`App/app_tx.c`)
 
@@ -80,7 +81,7 @@ at the console's 256-byte print buffer (`UTIL_ADV_TRACE_TMP_BUF_SIZE`), which hi
 | `provisioned`, `station`, `kcv` | Provisioning state, station ID, and the key check value |
 | `kat` | Boot self-test result, `pass` or `FAIL` |
 | `epoch`, `next_seq` | This boot's epoch, and the next observation sequence number |
-| `ctr` | Next transmission counter (the nonce counter) |
+| `ctr` | Next transmission counter (the nonce counter). The counter is 40-bit on the wire; this line prints its low 32 bits, which is exact below 2^32 |
 | `ecc` | Double-ECC flash read faults seen since boot |
 | `link`, `silent` | Link state (`linked` or `probing`), and consecutive minutes with no reply |
 | `energy` | Energy state. Always `normal` in Stage 0 (USB power). |
@@ -104,7 +105,7 @@ Other lines:
 | Line | Meaning |
 |---|---|
 | `#boot role=tx fw= reset= kat= freq= bw= sf= power=` | Printed at every boot. `bw` is the index (2 = 500 kHz). |
-| `#sample epoch= seq= uptime= valid= rc= t= rh= time= utc= journal= pending= lost=` | One per minute. `rc` is the sensor result (`App/sensor.h`): 0 ok, −2 address NACK (sensor absent or wiring), −3 read NACK, −4 CRC mismatch, −5 bus still stuck after recovery. `journal=ERROR` means the reading could not be journaled. |
+| `#sample epoch= seq= uptime= valid= rc= t= rh= time= utc= journal= pending= lost=` | One per minute. `t` and `rh` are the sensor values in 0.01 °C and 0.01 % (0 when `valid=0`). The journaled record comes from the draft-5 encoder (`ws_obs_encode`): `t` outside −40.00…125.00 °C goes out as INVALID, `rh` is clamped to 0–100 %, and `valid=0` sends both fields as INVALID (never omitted). `rc` is the sensor result (`App/sensor.h`): 0 ok, −2 address NACK (sensor absent or wiring), −3 read NACK, −4 CRC mismatch, −5 bus still stuck after recovery. `journal=ERROR` means the record could not be encoded or journaled. |
 | `#fault kind= pc= lr= cfsr= hfsr= bfar= count=` | Both roles, after `#boot`, only if the previous run crashed (see Crash records) |
 | `#sensor ok t= rh=` / `#sensor fault rc=` | Once at boot, from one test reading. |
 | `#watchdog N failures in a row` | TX: more than 10 consecutive failures of journal append, counter reservation or `Radio.Send`; the watchdog then resets the board (review P7) |
@@ -116,7 +117,7 @@ Other lines:
 | `#nack ignored: …` | NACK that was not for the frame just sent |
 | `#abandon epoch= seq= after 10 unanswered tries …` | Strike limit: the record was abandoned |
 | `#link probing: …`, `#link probe unanswered; …`, `#link linked after N silent minutes` | Link-state changes (see Transmission policy) |
-| `#diag sent pending= lost= torn= abandoned= no_ack=` | Health report (kind 4) sent. `torn` is `burned`. |
+| `#diag sent pending= lost= torn= abandoned= no_ack=` | Health report (kind 4, 32-byte plaintext) sent. `torn` is `burned`. The report also carries the rejected-reply count, reset cause, link state, firmware build ID, the RSSI/SNR of the last authentic ACK, the crash count and the energy state (protocol.md section 4); this line does not print them. The gateway shows them in `/v1/status` (`node_diagnostics`). |
 | `#time restored utc= sync_age=` | Time trust kept across a warm reset |
 | `#busy previous exchange still running` | The minute's sample was journaled but not sent |
 | `#kat pass\|FAIL`, `#wipe ok\|ERROR`, `#provisioned station= kcv= epoch_floor=`, `#unprovisioned: …`, `#test-hang: …` | Command replies |
@@ -172,7 +173,12 @@ This is summarized from `App/app_tx.c`; the approved policy is in [`docs/radio-e
 
 **Watchdog:** independent watchdog, ~8 s. It is refreshed only from the main loop, and only while the role shows real progress: TX samples every ≤150 s and no exchange runs >30 s; RX is listening or finishes a transmission in <5 s, with one re-arm attempt. The reset cause is printed on every boot.
 
-TX runs a boot self-test (`kat=pass`): it seals and opens fixed vectors and compares them with Python-generated bytes (`tests/test_frame.py`). A failed self-test means the board refuses to transmit.
+TX runs a boot self-test (`kat=pass`, also on demand with `KAT`; `run_kat` in `App/app_tx.c`). The vectors are shared with `tests/test_frame.py` and `tests/test_obs.py` and were made directly with the `cryptography` library from the specified header and nonce. The test:
+- encodes the known-answer observation (T −12.34 °C, RH 45.67 %) with the draft-5 encoder `ws_obs_encode`, seals it with counter 0x100000002, and compares all 42 bytes with the vector. This covers the encoder, the 8-byte header, the nonce and the 8-byte tag;
+- opens a known ACK and a known NACK and checks every field, and checks that an ACK with a changed tag fails;
+- checks that `ws_seal_kind` refuses counter 2^40 instead of truncating it.
+
+A failed self-test means the board refuses to transmit.
 
 ## LEDs
 
@@ -187,12 +193,33 @@ TX runs a boot self-test (`kat=pass`): it seals and opens fixed vectors and comp
 
 | Pages | Use |
 |---|---|
-| 0–31 (64 KB) | Firmware; the linker script enforces this (TX image 53,880 B, RX 30,912 B at 9e3d38f08e8b) |
+| 0–31 (64 KB) | Firmware; the linker script enforces this (TX image 53,752 B, RX 31,696 B at release bc5e6ede429c; `docs/firmware-budget.md`) |
 | 32 | Config: station ID, key, KCV. The magic double-word is written last |
 | 33–34 | Monotonic log, A/B: boot epoch, counter reservations (blocks of 256), cumulative `lost`/`abandoned` totals. Recovery takes the maximum. Compaction writes its header last |
-| 35–127 | Journal ring: 93 pages × 51 slots of 40 bytes |
+| 35–127 | Journal ring: 93 pages × 42 slots of 48 bytes (T/RH build) |
 
-**Capacity: 4,743 observations ≈ 79 h ≈ 3.3 days** of one-minute readings without an ACK. When full, the oldest page is erased and its unacknowledged records are counted in `lost`. The agreed target was "about 4 days"; the actual layout gives 3.3 days because each slot needs a separately programmed ACK double-word. The 30-day/16 MB requirement remains H11 work (external SPI NOR).
+**Slot:** the observation plaintext rounded up to whole 8-byte double-words, then a commit double-word (magic + CRC-16 of the plaintext) and an ACK double-word. For T/RH: 26 → 32 + 8 + 8 = **48 bytes**, and (2048 − 8) / 48 = **42 slots** per page after the 8-byte page header.
+
+**Capacity: 93 × 42 = 3,906 observations ≈ 65 h ≈ 2.7 days** of one-minute readings without an ACK. When full, the oldest page is erased and its unacknowledged records are counted in `lost`. Draft 4 had 40-byte slots, 4,743 observations, about 3.3 days. The agreed target was "about 4 days"; each slot needs a separately programmed ACK double-word, and the draft-5 record is 2 bytes longer, which pushes it past a double-word boundary. The 30-day/16 MB requirement remains H11 work (external SPI NOR).
+
+**Page magic:** `"WSJ"` + the slot size in the low byte (`0x57534A30`, `WSJ0`, for 48-byte slots). At boot, a page with any other magic (a draft-4 `WSJ1` page, or a page from a build with another field set) is ignored and later recycled. It is never misread. Pending draft-4 records on the board are therefore dropped at the first draft-5 boot; the WIPE that the draft-5 release required erased the journal anyway.
+
+### Field set of a build (`App/node_fields.h`)
+
+One constant names the catalog fields that this build measures:
+
+```c
+#define WS_NODE_FIELDS (WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT)   /* Stage 0 */
+```
+
+Everything else follows at compile time: `WS_OBS_PLAIN_MAX` (the record length, 22 + the field widths; 26 B now), the frame length (+ 16 B), the journal slot size and slots per page (`App/node_store.h`), the page magic, and the airtime estimate per exchange. To add a sensor: add its `WS_F_…` bit here and fill its `o.code[…]` in `sample()` (`App/app_tx.c`); the catalog itself (`firmware/common/ws_obs.c`, `ws0/fields.py`) already defines all 21 fields. The gateway needs no change.
+
+What a different field set does to the journal:
+- if the slot size changes, the page magic changes, so **every journal page of the old build is ignored at the first boot and recycled**, and records still pending in it are never sent;
+- if the slot size stays the same (a small addition: one 1-byte field makes 27 bytes, which still rounds up to a 48-byte slot), old pages are read, but each old record's CRC is checked over the new record length and almost always fails, so the record is counted as `burned` and not sent;
+- either way: drain the journal (`pending=0` in `STATUS`) before flashing a build with another field set;
+- capacity falls as records grow. For example, the full proof-of-concept field set (62-byte record) gives 80-byte slots, 25 per page, 2,325 records, about 1.6 days;
+- the static asserts in `node_store.c` stop the build if a slot no longer fits the page magic's low byte (under 256 B) or a page.
 
 Power-fail behaviour. Resets during flash writes were tested 70 cycles (G7 part A, pass, `evidence/g7-reset-during-write-2026-10-13/`). **True power removal has not been tested yet** (G7 part B, deferred; see `docs/failure-modes.md`).
 - Each slot is committed by a final CRC double-word.
