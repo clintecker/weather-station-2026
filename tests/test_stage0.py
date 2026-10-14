@@ -117,6 +117,8 @@ class PipelineTests(unittest.TestCase):
   self.assertEqual(sorted(k.split('/')[2] for k in more),['simulation-01_batt_mv','simulation-01_pressure_hpa','simulation-01_rain_tips'])
   rain=more['homeassistant/sensor/simulation-01_rain_tips/config']; batt=more['homeassistant/sensor/simulation-01_batt_mv/config']
   self.assertEqual((rain['state_class'],batt['entity_category'],batt['device_class']),('total_increasing','diagnostic','voltage'))
+  self.assertEqual([e['name'] for e in entries.values()],['Temperature','Humidity'])
+  from ws0.fields import MEASURED; from ws0.service import LABELS; self.assertEqual(set(LABELS),set(MEASURED))
 
 @needs_cc
 class FirmwareTests(unittest.TestCase):

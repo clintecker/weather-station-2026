@@ -253,6 +253,17 @@ DIAGNOSTIC_FIELDS = frozenset({'batt_mv','batt_current_ma','energy_in_mwh','ener
                                'enclosure_rh_pct','uva_raw'})
 
 
+# Home Assistant entity names (the unique_id stays the field name, so renaming here is safe).
+LABELS = {'temperature_c':'Temperature','humidity_pct':'Humidity','pressure_hpa':'Pressure',
+          'wind_speed_ms':'Wind speed','wind_gust_ms':'Wind gust','wind_dir_deg':'Wind direction',
+          'rain_tips':'Rain tips','uv_index':'UV index','irradiance_wm2':'Solar irradiance',
+          'uva_raw':'UVA raw (not UV index)','batt_mv':'Battery voltage','batt_current_ma':'Battery current',
+          'energy_in_mwh':'Energy in','energy_out_mwh':'Energy out','charge_in_mah':'Charge in',
+          'charge_out_mah':'Charge out','soc_gauge_pct':'Battery (fuel gauge estimate)',
+          'charger_pins':'Charger status pins','enclosure_temp_c':'Enclosure temperature',
+          'enclosure_rh_pct':'Enclosure humidity'}
+
+
 def discovery(cfg, names=('temperature_c','humidity_pct')):
     """Stable HA identities, one sensor per catalog field the station sends (design section 8).
     Availability needs all three: the reading is fresh, the gateway is up, and this field is not
@@ -264,7 +275,7 @@ def discovery(cfg, names=('temperature_c','humidity_pct')):
         if field not in MEASURED:
             continue
         f, uid = BY_NAME[field], f"{cfg['station']}_{field}"
-        entry = {'name':field.replace('_',' ').capitalize(),'unique_id':uid,'state_topic':root+'/weather',
+        entry = {'name':LABELS[field],'unique_id':uid,'state_topic':root+'/weather',
                  'value_template':'{{ value_json.'+field+' }}',
                  # Since-boot counters restart at 0 each boot; HA's total_increasing treats a decrease as a reset.
                  'state_class':'total_increasing' if f.counter else 'measurement',
