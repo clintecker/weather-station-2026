@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Weather Station Stage 0",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "servers": [
     {
@@ -110,6 +110,378 @@
             }
           }
         ]
+      }
+    },
+    "/v1/events": {
+      "get": {
+        "summary": "Live event stream (Server-Sent Events)",
+        "description": "text/event-stream. Each event is `id: <instance>-<n>`, `event: <type>`, one `data:` line of JSON. Types: `hello` {instance, server_time, resumed}; `resync` (the cursor could not be resumed: reload from the history endpoints); `observation` {record, latest}; `diagnostic` (node health report); `radio` (one frame with RSSI/SNR and outcome: ack, duplicate, nack, diag, rejected, commit_failed, dropped_by_rx, unparsed); `rx` (RX #alive report); `gateway` (gateway or receiver event). A `: heartbeat` comment is sent every 15 s when idle. Resume with the `Last-Event-ID` header (or `since`): events after it are replayed if still buffered (5,000) and from this gateway run, otherwise `resync`. At most 8 streams at once (503 with Retry-After beyond that). Browsers must use fetch() with the Authorization header: EventSource cannot send it.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Event id to resume after; the Last-Event-ID header wins"
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "text/event-stream",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "401": {
+            "description": "Missing or incorrect bearer token"
+          },
+          "503": {
+            "description": "Too many open streams; Retry-After: 5"
+          }
+        }
+      }
+    },
+    "/v1/history": {
+      "get": {
+        "summary": "Everything the dashboard charts for a time range",
+        "description": "observations (columnar: t = effective sample time, basis synchronized/reconstructed, quality, session, values per catalog field; null = sensor fault, never zero; unknown_time_count = readings without a time yet), diagnostics (node health reports), radio (per-frame RSSI/SNR and outcome), receiver (RX #alive counters), events (last 500 gateway/receiver events). A series with more than max_points rows is reduced to time buckets (bucket_s > 0: mean per bucket, last value for counters and wind direction; empty buckets are absent).",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Default: 24 h before `to`"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Default: now"
+          },
+          {
+            "name": "max_points",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 10000,
+              "default": 1500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JSON response"
+          },
+          "400": {
+            "description": "Invalid parameter (time without timezone, range, limit, order)"
+          },
+          "401": {
+            "description": "Missing or incorrect bearer token"
+          }
+        }
+      }
+    },
+    "/v1/radio": {
+      "get": {
+        "summary": "Radio frames as the RX board heard them",
+        "description": "Table radio_events: received_at, kind (obs, diag, dropped), counter, outcome, delivered (reply written to the RX), session, sequence, length, rssi_dbm, snr_db, detail.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "UTC, ISO-8601 with timezone; inclusive"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "UTC; exclusive"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "description": "By time"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JSON {rows, offset, limit}"
+          },
+          "400": {
+            "description": "Invalid parameter (time without timezone, range, limit, order)"
+          },
+          "401": {
+            "description": "Missing or incorrect bearer token"
+          }
+        }
+      }
+    },
+    "/v1/receiver/alive": {
+      "get": {
+        "summary": "RX board #alive reports (every 60 s)",
+        "description": "Table rx_alive: uptime_s, forwarded, dropped, acks, diag, listening, relistens, uart_errors, stack_peak (counters since the RX board booted).",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "UTC, ISO-8601 with timezone; inclusive"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "UTC; exclusive"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "description": "By time"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JSON {rows, offset, limit}"
+          },
+          "400": {
+            "description": "Invalid parameter (time without timezone, range, limit, order)"
+          },
+          "401": {
+            "description": "Missing or incorrect bearer token"
+          }
+        }
+      }
+    },
+    "/v1/diagnostics": {
+      "get": {
+        "summary": "Node health reports (DIAG, every 15 min)",
+        "description": "Decoded reports by arrival time (received_at), including ack_rssi_dbm/ack_snr_db as the node heard the gateway.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "UTC, ISO-8601 with timezone; inclusive"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "UTC; exclusive"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "description": "By time"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JSON {rows, offset, limit}"
+          },
+          "400": {
+            "description": "Invalid parameter (time without timezone, range, limit, order)"
+          },
+          "401": {
+            "description": "Missing or incorrect bearer token"
+          }
+        }
+      }
+    },
+    "/v1/gateway/events": {
+      "get": {
+        "summary": "Gateway and receiver events",
+        "description": "Table gateway_events: at, source (gateway, rx), kind (start, stop, serial-open, serial-lost, receiver-silent, host-clock, rejected, rx_boot, relisten, ...), level (info, warn), text.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "UTC, ISO-8601 with timezone; inclusive"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "UTC; exclusive"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "description": "By time"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JSON {rows, offset, limit}"
+          },
+          "400": {
+            "description": "Invalid parameter (time without timezone, range, limit, order)"
+          },
+          "401": {
+            "description": "Missing or incorrect bearer token"
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Dashboard page (no authentication, contains no data)",
+        "security": [],
+        "description": "Also /dashboard, /static/app.js, /static/app.css. The page asks for the token and calls the authenticated endpoints. See docs/web-dashboard.md.",
+        "responses": {
+          "200": {
+            "description": "text/html"
+          }
+        }
       }
     }
   }

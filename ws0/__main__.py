@@ -10,7 +10,7 @@ from cryptography.exceptions import InvalidTag
 from pathlib import Path
 from .protocol import KIND_NACK, Nonces, frame_kind
 from .service import Gateway, MQTT, http_server, load_config
-from .simulator import BACKLOG_PER_MINUTE, Node
+from .simulator import BACKLOG_PER_MINUTE, DemoReceiver, Node
 from .link import ReceiverLink
 from .clock import HostClock
 
@@ -140,6 +140,49 @@ def provision_node(cfg, device, floor=0, counter_state=None):
             print('  '+line)
 
 
+def handle_receiver_line(gateway, link, line, receiver_log, now=None):
+    """One line from the RX board: a '#' diagnostic, or a hex frame to authenticate, store and
+    answer. Everything goes to receiver.log (evidence); radio frames with their RSSI/SNR, RX
+    #alive reports and RX events also go to SQLite for the dashboard (ws0/web.py Telemetry)."""
+    telemetry = gateway.telemetry
+    text = line.decode('ascii','replace')
+    rx_seen = time.time() if now is None else now
+    stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(rx_seen))
+    frame = None
+    try:
+        if text.startswith('#'):
+            # Receiver diagnostics (RSSI/SNR, drops, boots, alive): evidence, not data.
+            receiver_log.write(f'{stamp} {text}\n')
+            if text.startswith(('#alive ','#boot role=rx')):
+                fields = dict(f.split('=',1) for f in text.split()[1:] if '=' in f)
+                gateway.receiver = {'alive':True,'last_report':stamp,'last_seen':rx_seen,**fields}
+            telemetry.rx_line(text,rx_seen)
+        elif text:
+            frame = bytes.fromhex(text)
+            ack = gateway.receive(frame)
+            if ack is None:  # node health report: stored, never answered
+                receiver_log.write(f'{stamp} diag {text}\n')
+                telemetry.frame(frame,'diag',at=rx_seen)
+                return
+            kind = 'nack' if frame_kind(ack) == KIND_NACK else 'ack'
+            sent = link.write(ack.hex().encode()+b'\n')
+            receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}'
+                               f'{"" if sent else " (not delivered: serial link down)"}\n')
+            duplicate = kind == 'ack' and (gateway.last_ingested or {}).get('duplicate')
+            telemetry.frame(frame,'duplicate' if duplicate else kind,delivered=sent,at=rx_seen)
+            if kind == 'ack':  # the frame just stored, not the newest reading (backlog)
+                print(json.dumps({'received_at':stamp,'observation':gateway.last_ingested}),flush=True)
+    except (ValueError,UnicodeError,InvalidTag) as exc:
+        receiver_log.write(f'{stamp} rejected {type(exc).__name__}: {exc} {text}\n')
+        print(f'Rejected frame: {type(exc).__name__}: {exc}',file=sys.stderr)
+        telemetry.frame(frame,'rejected',detail=f'{type(exc).__name__}: {exc}',at=rx_seen)
+    except OSError as exc:
+        # Commit failed: no ACK, the node keeps the record and retries.
+        receiver_log.write(f'{stamp} commit-failed {type(exc).__name__}: {exc}\n')
+        print(f'Commit failed: {exc}',file=sys.stderr)
+        telemetry.frame(frame,'commit_failed',detail=f'{type(exc).__name__}: {exc}',at=rx_seen)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command',choices=['init','demo','serve','provision-node'])
@@ -188,6 +231,9 @@ def main():
         # The demo node runs inside the gateway process and shares the host clock, so it
         # starts synchronized. A real node starts time-unknown (see TimeReconstruction tests).
         node.synced = True
+    # Demo only: invented RSSI/SNR, RX #alive reports and node health reports, so the dashboard
+    # has every panel to show without boards.
+    demo_rx = DemoReceiver(gateway,node) if node else None
     receiver_log = None
     if args.command == 'serve':
         receiver_log = (args.directory/'receiver.log').open('a',buffering=1)
@@ -195,10 +241,12 @@ def main():
             stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
             receiver_log.write(f'{stamp} {text}\n')
             print(f'{stamp} {text}',file=sys.stderr,flush=True)
+            gateway.telemetry.event(text)
         # Short read timeout: the node's ACK window is 2 s, so frames are answered immediately.
         link = ReceiverLink(args.serial,args.serial_number,note)
         gateway.clock = HostClock(cfg.get('ntp_server','pool.ntp.org'),log=note).start()
     print(f"Stage 0 {cfg['mode']}; API http://127.0.0.1:{cfg['http_port']}/v1/status",flush=True)
+    gateway.telemetry.event(f"#gateway start {args.command} mode={cfg['mode']}",kind='start',level='info')
     next_sample = time.monotonic()
     dropping = False
     next_tick = 0
@@ -209,42 +257,17 @@ def main():
                 dropping = (args.directory/'link-down').exists()
                 if not dropping:
                     # Live first, then up to BACKLOG_PER_MINUTE history records (firmware NORMAL).
-                    node.acknowledge(gateway.receive(node.packet(record)))
+                    node.acknowledge(demo_rx.deliver(node.packet(record)))
                     for old in node.backfill(BACKLOG_PER_MINUTE):
-                        node.acknowledge(gateway.receive(node.packet(old)))
+                        node.acknowledge(demo_rx.deliver(node.packet(old)))
                 print(json.dumps({'simulation':True,'sequence':record['sequence'],'link_down':dropping}),flush=True)
                 next_sample = time.monotonic()+60
+            if demo_rx:
+                demo_rx.tick(link_down=dropping)
             if link:
                 for line in link.poll():
-                    text = line.decode('ascii','replace')
-                    stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
-                    rx_seen = time.time()
-                    try:
-                        if text.startswith('#'):
-                            # Receiver diagnostics (RSSI/SNR, drops, boots, alive): evidence, not data.
-                            receiver_log.write(f'{stamp} {text}\n')
-                            if text.startswith(('#alive ','#boot role=rx')):
-                                fields = dict(f.split('=',1) for f in text.split()[1:] if '=' in f)
-                                gateway.receiver = {'alive':True,'last_report':stamp,'last_seen':rx_seen,**fields}
-                        elif text:
-                            frame = bytes.fromhex(text)
-                            ack = gateway.receive(frame)
-                            if ack is None:  # node health report: stored, never answered
-                                receiver_log.write(f'{stamp} diag {text}\n')
-                                continue
-                            kind = 'nack' if frame_kind(ack) == KIND_NACK else 'ack'
-                            sent = link.write(ack.hex().encode()+b'\n')
-                            receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}'
-                                               f'{"" if sent else " (not delivered: serial link down)"}\n')
-                            if kind == 'ack':  # the frame just stored, not the newest reading (backlog)
-                                print(json.dumps({'received_at':stamp,'observation':gateway.last_ingested}),flush=True)
-                    except (ValueError,UnicodeError,InvalidTag) as exc:
-                        receiver_log.write(f'{stamp} rejected {type(exc).__name__}: {exc} {text}\n')
-                        print(f'Rejected frame: {type(exc).__name__}: {exc}',file=sys.stderr)
-                    except OSError as exc:
-                        # Commit failed: no ACK, the node keeps the record and retries.
-                        receiver_log.write(f'{stamp} commit-failed {type(exc).__name__}: {exc}\n')
-                        print(f'Commit failed: {exc}',file=sys.stderr)
+                    handle_receiver_line(gateway,link,line,receiver_log)
+                gateway.telemetry.tick()
                 if not link.connected:
                     time.sleep(0.2)
                 # RX liveness (gap G12): it reports every 60 s; three missed reports = silent.
@@ -265,6 +288,8 @@ def main():
     finally:
         if mqtt:
             mqtt.close()
+        gateway.telemetry.event('#gateway stop',kind='stop',level='info')
+        gateway.hub.close()  # ends open event streams, so their threads exit
         server.shutdown()
         server.server_close()
         gateway.store.db.close()

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>Weather Station Gateway</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%232a78d6'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>Weather station</h1>
+    <span id="station" class="muted"></span>
+  </div>
+  <div class="actions">
+    <span id="conn" class="pill" data-state="off" role="status">offline</span>
+    <button id="theme" type="button" class="ghost">Theme: auto</button>
+    <button id="signout" type="button" class="ghost" hidden>Sign out</button>
+  </div>
+</header>
+
+<section id="login" class="card login" hidden>
+  <h2>Sign in</h2>
+  <p>Paste the gateway's API token: <code>api_token</code> in <code>&lt;run dir&gt;/gateway.json</code>.
+     It stays in this browser tab's session storage and is sent only to this gateway, in a header.</p>
+  <form id="login-form" autocomplete="off">
+    <label for="token">API token</label>
+    <input id="token" name="token" type="password" autocomplete="off" spellcheck="false" required minlength="32">
+    <button type="submit">Open dashboard</button>
+    <p id="login-error" class="error" role="alert"></p>
+  </form>
+</section>
+
+<main id="app" hidden>
+  <section aria-labelledby="h-live">
+    <h2 id="h-live">Live</h2>
+    <div id="chips" class="chips" aria-live="polite"></div>
+    <div id="readings" class="tiles"></div>
+    <p id="reading-meta" class="muted small"></p>
+    <div class="grid">
+      <article class="card"><h3>Node (TX) health <span id="node-age" class="muted small"></span></h3><dl id="node" class="kv"></dl></article>
+      <article class="card"><h3>Receiver (RX) <span id="rx-age" class="muted small"></span></h3><dl id="rx" class="kv"></dl></article>
+      <article class="card"><h3>Gateway</h3><dl id="gw" class="kv"></dl></article>
+    </div>
+    <div class="grid wide">
+      <article class="card">
+        <h3>Recent frames</h3>
+        <div class="scroll">
+          <table id="frames">
+            <thead><tr><th>Time</th><th>Kind</th><th class="num">Counter</th><th>Outcome</th><th class="num">RSSI dBm</th><th class="num">SNR dB</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </article>
+      <article class="card">
+        <h3>Gateway and receiver events</h3>
+        <ol id="events" class="events"></ol>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-hist" class="history">
+    <div class="hist-head">
+      <h2 id="h-hist">History</h2>
+      <div class="ranges" role="group" aria-label="Time range">
+        <button type="button" data-range="3600">1 h</button>
+        <button type="button" data-range="86400" aria-pressed="true">24 h</button>
+        <button type="button" data-range="604800">7 d</button>
+        <button type="button" data-range="custom">Custom</button>
+      </div>
+    </div>
+    <form id="custom" class="custom" hidden>
+      <label>From <input id="c-from" type="datetime-local" required></label>
+      <label>To <input id="c-to" type="datetime-local" required></label>
+      <button type="submit">Show</button>
+      <span id="custom-error" class="error" role="alert"></span>
+    </form>
+    <p id="hist-note" class="muted small"></p>
+    <h3>Sensors</h3>
+    <p class="muted small legend-note">Solid line: synchronized time. Dashed line: time reconstructed from the node's uptime.
+      A break means no reading; a shaded band means the sensor reported a fault. Values are never filled in.</p>
+    <div id="c-sensors" class="charts"></div>
+    <h3>Link quality</h3>
+    <p class="muted small legend-note">Uplink: each frame as the RX board heard the node. Downlink: the last ACK as the node heard the gateway (from its 15-minute health report).</p>
+    <div id="c-link" class="charts"></div>
+    <h3>Node health</h3>
+    <div id="c-node" class="charts"></div>
+    <h3>Receiver health</h3>
+    <p class="muted small legend-note">RX counters run since the RX board's last boot.</p>
+    <div id="c-rx" class="charts"></div>
+  </section>
+</main>
+<footer class="muted small">Served by the gateway on this machine. No internet connection is used.</footer>
+</body>
+</html>

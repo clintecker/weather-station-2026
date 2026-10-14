@@ -1,8 +1,10 @@
 """Persistent simulated node: journal before send, delete only after valid ACK."""
 import json
 import math
+import random
 import sqlite3
-from .protocol import (KIND_ACK, KIND_NACK, Nonces, encode_observation, frame_counter, frame_kind, seal, unpack_reply,
+import time
+from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, Nonces, encode_observation, frame_counter, frame_kind, seal, unpack_reply,
                        unseal)
 
 # Backlog records sent per minute after the live one: the firmware's NORMAL energy state
@@ -84,7 +86,68 @@ class Node:
         with self.db:
             self.db.execute('DELETE FROM pending WHERE epoch=? AND seq=?',(epoch,seq))
 
+    def diagnostic(self,now,ack_signal=None):
+        """A sealed health report (kind 4) with this simulated node's journal state."""
+        pending = self.db.execute('SELECT count(*) FROM pending').fetchone()[0]
+        rssi, snr = ack_signal or (-128, -128)
+        report = DIAG.pack(self.epoch, int(max(0,now-(self.boot or now))), min(pending,0xFFFF), 0, 0,
+                           min(self.abandoned,0xFFFF), 0, 0, 1, 0, 0x5eed0001, rssi, snr, 0, 1)
+        return seal(self.key,self.cfg['station_id'],KIND_DIAG,self.nonces,report)
+
     def backfill(self,limit=None):
         limit = BACKLOG_PER_MINUTE if limit is None else limit
         return [json.loads(row[0]) for row in self.db.execute(
             'SELECT data FROM pending ORDER BY epoch,seq LIMIT ?',(limit,))]
+
+
+class DemoReceiver:
+    """`ws0 demo` only: stands in for the RX board and the node's health reports, so the dashboard
+    shows every panel without hardware. RSSI/SNR and the RX counters are invented (a slow wander
+    around a bench-like -40 dBm); nothing here is evidence."""
+    ALIVE_S, DIAG_S = 60, 900
+
+    def __init__(self, gateway, node, clock=time.time):
+        self.gateway, self.node, self.clock = gateway, node, clock
+        self.boot = clock()
+        self.rng = random.Random()
+        self.forwarded = self.acks = self.diags = 0
+        self.next_alive = self.boot
+        self.next_diag = self.boot + 5
+        self.ack_signal = None
+
+    def signal(self):
+        phase = (self.clock() - self.boot) / 600
+        return (round(-40 + 6 * math.sin(phase) + self.rng.uniform(-2, 2)),
+                round(9 + 2 * math.cos(phase) + self.rng.uniform(-1, 1)))
+
+    def deliver(self, frame):
+        """Hand one node frame to the gateway as the serve loop would, recording radio telemetry."""
+        telemetry = self.gateway.telemetry
+        reply = self.gateway.receive(frame)
+        self.forwarded += 1
+        if reply is None:
+            telemetry.frame(frame, 'diag')
+        else:
+            self.acks += 1
+            nack = frame_kind(reply) == KIND_NACK
+            duplicate = not nack and (self.gateway.last_ingested or {}).get('duplicate')
+            telemetry.frame(frame, 'nack' if nack else 'duplicate' if duplicate else 'ack', delivered=True)
+            self.ack_signal = self.signal()
+        rssi, snr = self.signal()
+        telemetry.rx_line(f'#rx obs rssi={rssi} snr={snr}')
+        return reply
+
+    def tick(self, link_down=False):
+        now = self.clock()
+        if now >= self.next_alive:
+            self.next_alive = now + self.ALIVE_S
+            line = (f'#alive uptime={int(now - self.boot)} forwarded={self.forwarded} dropped=0 acks={self.acks} '
+                    f'diag={self.diags} listening=1 relistens=0 uart_errors=0 stack_peak=1184')
+            self.gateway.receiver = {'alive': True, 'last_seen': now,
+                                     'last_report': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now)),
+                                     **dict(f.split('=', 1) for f in line.split()[1:])}
+            self.gateway.telemetry.rx_line(line, now)
+        if now >= self.next_diag and not link_down:
+            self.next_diag = now + self.DIAG_S
+            self.diags += 1
+            self.deliver(self.node.diagnostic(now, self.ack_signal))

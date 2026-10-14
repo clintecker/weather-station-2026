@@ -13,6 +13,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from gateway import Store
+from . import web
 import struct
 from .fields import ENERGY
 from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, LINK_STATES, NACK_COLLISION, NACK_INVALID,
@@ -59,6 +60,8 @@ class Gateway:
         self.receiver = None  # RX board liveness, set by the serial loop (gap G12)
         self.last_ingested = None  # the observation in the frame just ACKed, for the serve log
         self.lock = threading.Lock()
+        self.hub = web.EventHub()  # live events for the dashboard stream (GET /v1/events)
+        self.telemetry = web.Telemetry(self)
 
     def check_counter(self, frame, payload, now, sequence):
         """Review item P4. Every node transmission, retries included, gets a fresh, strictly
@@ -98,6 +101,7 @@ class Gateway:
                   'ack_snr_db':None if snr == -128 else snr,'crashes_since_power_up':crashes,
                   'energy_state':ENERGY[energy] if energy < len(ENERGY) else 'unknown'}
         self.store.diagnostic(self.cfg['station'],report,now)
+        self.telemetry.diagnostic(report,now)
         return report
 
     def receive(self, frame, now=None):
@@ -142,6 +146,8 @@ class Gateway:
                                       frame_counter(frame)))
                 self.accepted += int(inserted)
                 self.last_ingested = dict(record,duplicate=not inserted)
+                if inserted:
+                    self.telemetry.observation(record,now)
                 return ack
             except Exception:
                 self.rejected += 1
@@ -184,6 +190,8 @@ def http_server(gateway, port):
             pass  # Avoid recording credentials or query strings in access logs.
 
         def do_GET(self):
+            if web.serve_static(self,urlparse(self.path).path):
+                return  # the dashboard page itself: fixed files, no data
             supplied = self.headers.get('Authorization','')
             expected = 'Bearer ' + gateway.cfg['api_token']
             if not hmac.compare_digest(supplied.encode(),expected.encode()):
@@ -216,6 +224,9 @@ def http_server(gateway, port):
                         return
                     result = {'observations':rows,'offset':offset,'limit':limit,
                               'units':{'temperature_c':'°C','humidity_pct':'%','sampled_at':'unix_seconds_UTC'}}
+                elif url.path in web.ROUTES:
+                    web.route(self,gateway,url.path,query)  # dashboard data and the event stream
+                    return
                 else:
                     self.reply(404,{'error':'not_found'})
                     return
@@ -231,7 +242,7 @@ def http_server(gateway, port):
             self.send_header('Cache-Control','no-store')
             self.end_headers()
             self.wfile.write(data)
-    server = ThreadingHTTPServer(('127.0.0.1',port),Handler)
+    server = ThreadingHTTPServer((web.bind_address(gateway.cfg),port),Handler)
     threading.Thread(target=server.serve_forever,daemon=True).start()
     return server
 
