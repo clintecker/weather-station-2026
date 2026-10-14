@@ -112,8 +112,8 @@ def find_port(board):
 
     if board.startswith('/dev/') or re.fullmatch(r'(?i)com\d+', board):   # macOS/Linux path, Windows COMn
         return board
-    for p in list_ports.comports():
-        if p.serial_number == board:
+    for p in list_ports.comports():   # case-insensitive, as ws0/link.py and power_cut_test.py
+        if (p.serial_number or '').upper() == board.upper():
             return p.device
     return None
 

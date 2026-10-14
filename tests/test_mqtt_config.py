@@ -21,6 +21,7 @@ class PasswordSource(unittest.TestCase):
 
     def test_file_in_run_directory(self):
         (self.dir / 'mqtt-password').write_text('s3cret\n')
+        (self.dir / 'mqtt-password').chmod(0o600)   # else the permission warning reaches real stderr
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop('WS_MQTT_PASSWORD', None)
             self.assertEqual(mqtt_password(self.dir), 's3cret')   # trailing newline stripped

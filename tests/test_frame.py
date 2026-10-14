@@ -4,7 +4,6 @@ import os
 os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
 
 import ctypes
-import os
 import struct
 import subprocess
 import tempfile

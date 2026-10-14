@@ -169,7 +169,7 @@ class SensorBusTests(unittest.TestCase):
 
 class ServiceSmokeTests(unittest.TestCase):
  def test_cli_demo_starts_and_persists(self):
-  import socket,sys
+  import socket
   with tempfile.TemporaryDirectory() as tmp:
    directory=Path(tmp)/'state'; provision(directory)
    cfg=json.loads((directory/'gateway.json').read_text())

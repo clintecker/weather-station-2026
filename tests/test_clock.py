@@ -77,11 +77,11 @@ class ClockTests(unittest.TestCase):
             def settimeout(self, t): pass
             def sendto(self, data, addr):
                 if not isinstance(addr[0], str) or not addr[0][0].isdigit():
-                    time.sleep(0.4)  # a name lookup inside the timed window
+                    time.sleep(0.2)  # a name lookup inside the timed window
             def recvfrom(self, n):
                 now = time.time()  # server clock == local clock: true offset 0
                 return bytes([0x24, 2]) + bytes(30) + ntp(now) + ntp(now), None
-        with patch.object(clockmod.socket, 'getaddrinfo', side_effect=lambda *a, **k: (time.sleep(0.4), [(socket.AF_INET, socket.SOCK_DGRAM, 17, '', ('192.0.2.1', 123))])[1]), \
+        with patch.object(clockmod.socket, 'getaddrinfo', side_effect=lambda *a, **k: (time.sleep(0.2), [(socket.AF_INET, socket.SOCK_DGRAM, 17, '', ('192.0.2.1', 123))])[1]), \
              patch.object(clockmod.socket, 'socket', FakeSocket):
             offset, rtt = clockmod.sntp_offset('pool.example')
         self.assertLess(abs(offset), 0.05)

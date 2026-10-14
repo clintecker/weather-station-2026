@@ -109,6 +109,8 @@ def main():
     rng = random.Random(args.seed)
     if args.method == 'power' and (not args.hub or not args.port):
         ap.error('--method power needs --hub and --port')
+    if args.check and args.method != 'power':
+        ap.error('--check tests a hub power cut: use it with --method power')
     expected_reset = 'power' if args.method == 'power' else 'pin'
     cut = (lambda: power(args.hub, args.port, 'off')) if args.method == 'power' else (lambda: nrst(args.serial_number))
 
@@ -139,7 +141,8 @@ def main():
         device = find_port(args.serial_number, 30)
         if not device:
             failures.append({'cycle': cycle, 'error': 'board did not enumerate'})
-            power(args.hub, args.port, 'on')
+            if args.method == 'power':   # with --method reset there is no hub to switch back on
+                power(args.hub, args.port, 'on')
             continue
         boot_lines, status = read_status(device)
         record = {'cycle': cycle, 'boot': boot_lines[-6:], 'status': status}

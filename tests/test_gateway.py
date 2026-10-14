@@ -142,7 +142,6 @@ class ReconstructionTests(unittest.TestCase):
 class DurabilityTests(unittest.TestCase):
     """Gap G4: commits must reach stable storage on macOS before an ACK exists."""
     def test_full_flush_pragmas_are_on(self):
-        import os
         from unittest.mock import patch
         from ws0.protocol import Nonces
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'WS0_UNSAFE_FAST_FSYNC': ''}):

@@ -6,6 +6,9 @@
 Description=Weather station Stage-0 gateway (LoRa receiver -> SQLite/API/MQTT)
 After=network-online.target time-sync.target
 Wants=network-online.target time-sync.target
+# Never stop restarting after repeated failures (a [Unit] option; in [Service] systemd ignores it).
+# journald keeps every exit, so a restart loop stays visible.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -15,8 +18,6 @@ ExecStart=/opt/weather-station-2026/.venv/bin/python -u -m ws0 serve \
   --directory /var/lib/ws0/run-hw --serial-number 0016001E4142500E20353451
 Restart=always
 RestartSec=5
-# Never let a restart loop hide a real problem: journald keeps every exit.
-StartLimitIntervalSec=0
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/ws0
