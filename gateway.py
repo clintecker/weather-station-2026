@@ -134,8 +134,13 @@ class Store:
                             'uptime_s,effective_at,time_basis,time_uncertainty_s) VALUES (?,?,?,?,?,?,?,?,?,?)',
                             (*key,record['sampled_at'],received,payload,record.get('uptime_s'),record['sampled_at'],
                              'synchronized' if synced else 'unknown',0 if synced else None))
-            # A new untimed reading needs only its own estimate; a new reference may improve them all.
-            self.reconstruct(record['station'],record['session'],None if synced else record['sequence'])
+            # A new untimed reading needs only its own estimate; a new reference can only change the
+            # readings between its neighbouring references.
+            if synced:
+                self.reconstruct(record['station'],record['session'],reference=(record.get('uptime_s'),
+                                 record['sampled_at'] <= received+5))
+            else:
+                self.reconstruct(record['station'],record['session'],only=record['sequence'])
         return True
 
     def check_counters(self, record):
@@ -158,18 +163,33 @@ class Store:
             if (before and before[0] > value) or (after and after[0] < value):
                 raise ValueError(f'{f.name} decreased within epoch {record["session"]}')
 
-    def reconstruct(self, station, session, only=None):
+    def reconstruct(self, station, session, only=None, reference=None):
         """Give unsynchronized samples of one boot epoch a UTC time from the nearest trusted
         synchronized sample of the same epoch (same monotonic uptime counter). A reference
         whose clock was ahead of its own receipt (quarantined) is never used. Targets are looked up
-        first: most epochs have none, and then nothing else is read (every ingest calls this)."""
-        targets = self.db.execute('SELECT sequence,uptime_s FROM observations WHERE station=? AND session=? '
-                                  "AND time_basis IN ('unknown','reconstructed') AND uptime_s IS NOT NULL"
-                                  + ('' if only is None else ' AND sequence=?'),
-                                  (station,session) if only is None else (station,session,only)).fetchall()
+        first: most epochs have none, and then nothing else is read (every ingest calls this).
+
+        only: just this sequence (a new untimed reading). reference: (uptime, trusted) of a newly
+        stored synchronized reading; only readings strictly between its neighbouring references can
+        have it as their nearest one, so only those are recomputed (an epoch can hold thousands of
+        untimed readings; rescanning all of them on every frame cost 14 ms at 1440). Neither: all."""
         ref_sql = ('SELECT uptime_s,sampled_at FROM observations WHERE station=? AND session=? '
                    "AND time_basis='synchronized' AND uptime_s IS NOT NULL AND sampled_at<=received_at+5 "
                    'AND uptime_s {} ? ORDER BY uptime_s {} LIMIT 1')
+        where, args = '', (station, session)
+        if only is not None:
+            where, args = ' AND sequence=?', (station, session, only)
+        elif reference is not None:
+            uptime, trusted = reference
+            if uptime is None or not trusted:
+                return   # not usable as a reference: no estimate changes
+            lo = self.db.execute(ref_sql.format('<','DESC'),(station,session,uptime)).fetchone()
+            hi = self.db.execute(ref_sql.format('>','ASC'),(station,session,uptime)).fetchone()
+            where = ' AND uptime_s>? AND uptime_s<?'
+            args = (station, session, lo[0] if lo else -1, hi[0] if hi else 2**63-1)
+        targets = self.db.execute('SELECT sequence,uptime_s FROM observations WHERE station=? AND session=? '
+                                  "AND time_basis IN ('unknown','reconstructed') AND uptime_s IS NOT NULL" + where,
+                                  args).fetchall()
         for sequence, uptime in targets:
             near = [r for r in (self.db.execute(ref_sql.format('<=','DESC'),(station,session,uptime)).fetchone(),
                                 self.db.execute(ref_sql.format('>=','ASC'),(station,session,uptime)).fetchone()) if r]

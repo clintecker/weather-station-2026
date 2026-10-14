@@ -105,9 +105,39 @@ class GatewayTests(unittest.TestCase):
         self.store.ingest(reading(session='boot-2', sequence=0, rain_tips=0), 1405)   # new epoch starts at 0
 
 
-if __name__ == '__main__':
-    unittest.main()
 
+class ReconstructionTests(unittest.TestCase):
+    def test_bounded_update_matches_a_full_rescan(self):
+        """A new reference recomputes only the readings between its neighbouring references. After
+        every ingest, in any arrival order, with quarantined references and untimed readings mixed
+        in, the time columns must equal a full rescan of the epoch."""
+        import random
+        cols = 'SELECT sequence,effective_at,time_basis,time_uncertainty_s FROM observations ORDER BY sequence'
+        for seed in range(6):
+            rng = random.Random(seed)
+            records = []
+            for seq in range(120):
+                uptime = 60 * seq + rng.randint(0, 5)
+                if rng.random() < 0.6:
+                    records.append((reading(session='9', sequence=seq, uptime_s=uptime, sampled_at=None,
+                                            time_quality='unknown'), 5000 + uptime))
+                else:
+                    ahead = rng.random() < 0.1    # clock ahead of its receipt: quarantined, never a reference
+                    t = 100_000 + uptime + rng.randint(-2, 2)
+                    records.append((reading(session='9', sequence=seq, uptime_s=uptime, sampled_at=t),
+                                    t - (60 if ahead else -1)))
+            rng.shuffle(records)
+            with tempfile.TemporaryDirectory() as tmp:
+                store = Store(Path(tmp) / 'r.db')
+                try:
+                    for i, (record, received) in enumerate(records):
+                        store.ingest(record, received)
+                        bounded = store.db.execute(cols).fetchall()
+                        with store.db:
+                            store.reconstruct('test', '9')     # full rescan as the reference answer
+                        self.assertEqual(store.db.execute(cols).fetchall(), bounded, (seed, i))
+                finally:
+                    store.db.close()
 
 class DurabilityTests(unittest.TestCase):
     """Gap G4: commits must reach stable storage on macOS before an ACK exists."""
@@ -126,3 +156,7 @@ class DurabilityTests(unittest.TestCase):
                 self.assertEqual(store.db.execute('PRAGMA checkpoint_fullfsync').fetchone()[0], 1)
             finally:
                 store.db.close(); nonces.db.close()
+
+
+if __name__ == '__main__':
+    unittest.main()
