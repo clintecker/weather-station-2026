@@ -103,7 +103,10 @@ static uint32_t n_sent, n_acked, n_no_ack, n_ack_rejects, n_sensor_faults;
  * answered (the gateway is up) gets a strike; at STRIKE_LIMIT it is abandoned and counted. */
 #define STRIKE_LIMIT 10
 #define STRIKE_SLOTS 6
-static struct { jref_t ref; uint8_t n; } strikes[STRIKE_SLOTS];
+/* Keyed by the record's identity, not its journal slot: a slot is reused after the ring wraps, and
+ * a record can leave the journal (an ACK that was not for the frame just sent, a ring loss)
+ * without its slot's entry being cleared (firmware review finding 5). */
+static struct { uint32_t epoch, seq; uint8_t n; } strikes[STRIKE_SLOTS];
 static uint8_t replied[MAX_QUEUE];
 static enum { LINK_LINKED, LINK_PROBING } link_state = LINK_LINKED;
 static uint32_t silent_minutes, probe_step, next_probe_mcu, last_send_mcu;
@@ -262,31 +265,40 @@ static void send_current(void)
   }
 }
 
-static int same(jref_t a, jref_t b) { return a.page == b.page && a.slot == b.slot; }
-
-static void forget_strikes(jref_t r)
+/* Identity of a journaled record (its first 8 bytes); 0 if the slot cannot be read. */
+static int record_id(jref_t r, uint32_t *epoch, uint32_t *seq)
 {
-  for (unsigned i = 0; i < STRIKE_SLOTS; i++) if (strikes[i].n && same(strikes[i].ref, r)) strikes[i].n = 0;
+  uint8_t plain[WS_OBS_PLAIN_MAX];
+  if (store_journal_read(r, plain)) return 0;
+  *epoch = be32(plain); *seq = be32(plain + 4);
+  return 1;
+}
+
+static void forget_strikes(uint32_t epoch, uint32_t seq)
+{
+  for (unsigned i = 0; i < STRIKE_SLOTS; i++)
+    if (strikes[i].n && strikes[i].epoch == epoch && strikes[i].seq == seq) strikes[i].n = 0;
 }
 
 static void strike(jref_t r)
 {
+  uint32_t epoch, seq; jref_t now;
+  if (!record_id(r, &epoch, &seq)) return;
   unsigned use = STRIKE_SLOTS, low = 0;
   for (unsigned i = 0; i < STRIKE_SLOTS; i++)
   {
-    if (strikes[i].n && same(strikes[i].ref, r)) { use = i; break; }
+    if (strikes[i].n && strikes[i].epoch == epoch && strikes[i].seq == seq) { use = i; break; }
     if (strikes[i].n < strikes[low].n) low = i;
   }
-  if (use == STRIKE_SLOTS) { use = low; strikes[use].ref = r; strikes[use].n = 0; }
+  if (use == STRIKE_SLOTS) { use = low; strikes[use].epoch = epoch; strikes[use].seq = seq; strikes[use].n = 0; }
   if (++strikes[use].n < STRIKE_LIMIT) return;
-  uint8_t plain[WS_OBS_PLAIN_MAX];
-  int ok = store_journal_read(r, plain) == 0 && store_journal_ack(r) == 0;
   strikes[use].n = 0;
-  if (!ok) return;
+  /* Abandon only a record that is still pending under this identity. */
+  if (store_journal_find(epoch, seq, &now) || store_journal_ack(now)) return;
   store_note_abandoned();
   led_flash(LED_RED, 1000);
   APP_PRINTF("#abandon epoch=%u seq=%u after %u unanswered tries while the gateway answered other frames; abandoned=%u\n",
-             (unsigned)be32(plain), (unsigned)be32(plain + 4), STRIKE_LIMIT, (unsigned)store_abandoned_total());
+             (unsigned)epoch, (unsigned)seq, STRIKE_LIMIT, (unsigned)store_abandoned_total());
 }
 
 /* End of an exchange: strikes only count when the gateway answered something in it. */
@@ -297,11 +309,11 @@ static void settle_strikes(void)
   if (!any) return; /* link or gateway down: never abandon data for that */
   for (unsigned i = 0; i < qn; i++)
   {
-    if (replied[i]) forget_strikes(queue[i]);
-    else strike(queue[i]);
+    uint32_t epoch, seq;
+    if (!replied[i]) strike(queue[i]);
+    else if (record_id(queue[i], &epoch, &seq)) forget_strikes(epoch, seq);
   }
 }
-
 /* LoRa time on air (Semtech formula), explicit header, CRC on, for the configured radio. */
 static uint32_t airtime_ms(uint32_t payload)
 {
@@ -450,6 +462,7 @@ static int handle_reply(void)
   }
   int found = store_journal_find(ep, sq, &ref) == 0;
   if (found && store_journal_ack(ref)) APP_PRINTF("#error journal-ack\n");
+  forget_strikes(ep, sq);   /* any authentic ACK for a record ends its strikes */
   if (mine) replied[qi] = 1;
   int fresh = mine && utc >= MIN_PLAUSIBLE_UTC;
   if (fresh)
