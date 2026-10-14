@@ -159,6 +159,22 @@ class StaticAndAuth(Fixture):
 
 
 class EventStream(Fixture):
+    def test_ipv6_bind_serves(self):
+        """GW9: an IPv6 http_bind used to crash (the stock server is AF_INET only)."""
+        import socket
+        if not socket.has_ipv6:
+            self.skipTest('no IPv6')
+        try:
+            socket.socket(socket.AF_INET6).bind(('::1', 0))
+        except OSError:
+            self.skipTest('no IPv6 loopback')
+        self.cfg['http_bind'] = '::1'
+        self.serve()
+        request = Request(f'http://[::1]:{self.port}/v1/status',
+                          headers={'Authorization': 'Bearer ' + self.cfg['api_token']})
+        with urlopen(request, timeout=5) as r:
+            self.assertEqual(r.status, 200)
+
     def test_framing_live_observation_and_heartbeat(self):
         self.serve()
         _, response = self.open_stream()

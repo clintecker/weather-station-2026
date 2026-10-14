@@ -64,5 +64,34 @@ class ConnectDiagnostics(unittest.TestCase):
         self.assertIn('mqtt connect refused: Not authorized', err.getvalue())
 
 
+class StartAndClose(unittest.TestCase):
+    def test_username_without_password_fails_at_start(self):
+        """GW12: refuse to start rather than connect with no password and fail vaguely later."""
+        with tempfile.TemporaryDirectory() as tmp:
+            gateway = type('G', (), {'directory': tmp,
+                                     'cfg': {'station': 's', 'mqtt': {'username': 'weatherstation'}}})()
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop('WS_MQTT_PASSWORD', None)
+                with self.assertRaises(ValueError) as exc:
+                    MQTT(gateway)
+            self.assertIn('mqtt-password', str(exc.exception))
+
+    def test_close_survives_a_failed_final_publish(self):
+        """GW12: wait_for_publish raises if the link drops; close must still stop the client."""
+        calls = []
+        class Info:
+            def wait_for_publish(self, timeout=None):
+                raise RuntimeError('The client is not currently connected.')
+        class Client:
+            def is_connected(self): return True
+            def publish(self, *a, **k): return Info()
+            def disconnect(self): calls.append('disconnect')
+            def loop_stop(self): calls.append('loop_stop')
+        publisher = object.__new__(MQTT)
+        publisher.client, publisher.root = Client(), 'weatherstation/v1/s'
+        publisher.close()
+        self.assertEqual(calls, ['disconnect', 'loop_stop'])
+
+
 if __name__ == '__main__':
     unittest.main()

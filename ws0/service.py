@@ -5,6 +5,7 @@ import hmac
 import io
 import json
 import os
+import socket
 import sys
 import threading
 import time
@@ -245,7 +246,11 @@ def http_server(gateway, port):
             self.send_header('Cache-Control','no-store')
             self.end_headers()
             self.wfile.write(data)
-    server = ThreadingHTTPServer((web.bind_address(gateway.cfg),port),Handler)
+    host = web.bind_address(gateway.cfg)
+    server_class = ThreadingHTTPServer
+    if ':' in host:   # IPv6 literal: the stock server class is AF_INET only (gateway review GW9)
+        server_class = type('ThreadingHTTPServerV6',(ThreadingHTTPServer,),{'address_family':socket.AF_INET6})
+    server = server_class((host,port),Handler)
     threading.Thread(target=server.serve_forever,daemon=True).start()
     return server
 
@@ -336,7 +341,11 @@ class MQTT:
         self.client.will_set(self.root+'/gateway_availability','offline',qos=1,retain=True)
         settings = cfg['mqtt']
         if settings.get('username'):
-            self.client.username_pw_set(settings['username'],mqtt_password(gateway.directory))
+            password = mqtt_password(gateway.directory)
+            if password is None:   # GW12: fail at start, not as a vague broker refusal later
+                raise ValueError(f"mqtt.username is set but there is no password: write it to "
+                                 f"{Path(gateway.directory) / 'mqtt-password'} or set WS_MQTT_PASSWORD")
+            self.client.username_pw_set(settings['username'],password)
         if settings.get('tls'):
             self.client.tls_set()
         self.client.on_connect = self.on_connect
@@ -397,7 +406,13 @@ class MQTT:
         self.published, self.published_at = state, time.time()
 
     def close(self):
-        if self.client.is_connected():
-            self.client.publish(self.root+'/gateway_availability','offline',qos=1,retain=True).wait_for_publish(timeout=2)
-        self.client.disconnect()
-        self.client.loop_stop()
+        # Best effort: wait_for_publish raises (RuntimeError, ValueError) if the connection drops
+        # meanwhile; shutdown must still disconnect and stop the network thread (GW12).
+        try:
+            if self.client.is_connected():
+                self.client.publish(self.root+'/gateway_availability','offline',qos=1,retain=True).wait_for_publish(timeout=2)
+        except (RuntimeError, ValueError, OSError):
+            pass
+        finally:
+            self.client.disconnect()
+            self.client.loop_stop()
