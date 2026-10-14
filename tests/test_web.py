@@ -377,6 +377,33 @@ class ServeLoopTelemetry(Fixture):
     def rows(self, sql):
         return self.gateway.store.db.execute(sql).fetchall()
 
+    def test_forged_frame_flood_is_bounded_and_real_data_still_lands(self):
+        """GW6: a flood of junk frames (each with its RSSI line) and RX drop reports writes at most
+        the burst, then a summary with the suppressed count; real frames are never throttled."""
+        throttle = self.gateway.telemetry.throttle
+        burst, rate = throttle.burst, throttle.per_s
+        throttle.per_s = 0                                 # lines() steps the clock 1 s per line
+        flood = []
+        for _ in range(3 * burst):
+            flood += ['ab' * 30, '#rx obs rssi=-90 snr=-5', '#rx drop len=3 rssi=-110 snr=-12']
+        log, _ = self.lines(*flood, now=2000)
+        count = lambda outcome: self.rows(f"SELECT COUNT(*) FROM radio_events WHERE outcome='{outcome}'")[0][0]
+        self.assertEqual(count('rejected'), burst)
+        self.assertEqual(count('dropped_by_rx'), burst)
+        self.assertEqual(count('unparsed'), 0)            # throttled frames' RSSI lines are dropped too
+        self.assertLess(log.count('\n'), 4 * burst)
+        # a real observation in the middle of the flood still lands with its RSSI
+        obs = self.node.packet(self.node.sample(time.time()))
+        _, link = self.lines(obs.hex(), '#rx obs rssi=-51 snr=8', now=2000 + len(flood))
+        self.assertEqual(len(link.written), 1)
+        self.assertEqual(self.rows("SELECT rssi_dbm FROM radio_events WHERE outcome='ack'"), [(-51,)])
+        # once the bucket refills, the next junk frame carries the suppressed count
+        throttle.per_s = rate
+        log, _ = self.lines('ab' * 30, now=2000 + len(flood) + 2 + 2 / rate)
+        self.assertIn(f'suppressed {2 * burst} rejected lines', log)
+        events = self.rows("SELECT text FROM gateway_events WHERE kind='suppressed'")
+        self.assertEqual(len(events), 1)
+
     def test_frames_alive_and_events_reach_sqlite(self):
         obs = self.node.packet(self.node.sample(time.time()))
         diag = self.node.diagnostic(time.time())

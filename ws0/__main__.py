@@ -14,6 +14,7 @@ from .service import Gateway, MQTT, http_server, load_config
 from .simulator import BACKLOG_PER_MINUTE, DemoReceiver, Node
 from .link import ReceiverLink
 from .clock import HostClock
+from .logfile import RotatingLog
 
 
 def provision(directory, hardware=False, station='simulation-01', station_id=1):
@@ -150,7 +151,22 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
     rx_seen = time.time() if now is None else now
     stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(rx_seen))
     frame = None
+
+    def quiet(key):
+        """GW6: True if this noise line is over budget (drop it); else log any suppressed count."""
+        allowed, suppressed = telemetry.throttle.allow(key,rx_seen)
+        telemetry.muted = not allowed
+        if allowed and suppressed:
+            note = f'#gateway suppressed {suppressed} {key} lines (rate limit; disk protection)'
+            receiver_log.write(f'{stamp} {note}\n')
+            telemetry.event(note,kind='suppressed',level='warn',at=rx_seen)
+        return not allowed
     try:
+        if text.startswith('#rx obs') and telemetry.muted:
+            telemetry.muted = False   # RSSI of a throttled frame
+            return
+        if text.startswith('#rx drop') and quiet('rx_drop'):
+            return
         if text.startswith('#'):
             # Receiver diagnostics (RSSI/SNR, drops, boots, alive): evidence, not data.
             receiver_log.write(f'{stamp} {text}\n')
@@ -159,6 +175,7 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
                 gateway.receiver = {'alive':True,'last_report':stamp,'last_seen':rx_seen,**fields}
             telemetry.rx_line(text,rx_seen)
         elif text:
+            telemetry.muted = False
             frame = bytes.fromhex(text)
             ack = gateway.receive(frame)
             if ack is None:  # node health report: stored, never answered
@@ -167,13 +184,17 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
                 return
             kind = 'nack' if frame_kind(ack) == KIND_NACK else 'ack'
             sent = link.write(ack.hex().encode()+b'\n')
+            duplicate = kind == 'ack' and (gateway.last_ingested or {}).get('duplicate')
+            if duplicate and quiet('duplicate'):   # a replayed frame is answered, but not logged forever
+                return
             receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}'
                                f'{"" if sent else " (not delivered: serial link down)"}\n')
-            duplicate = kind == 'ack' and (gateway.last_ingested or {}).get('duplicate')
             telemetry.frame(frame,'duplicate' if duplicate else kind,delivered=sent,at=rx_seen)
             if kind == 'ack':  # the frame just stored, not the newest reading (backlog)
                 print(json.dumps({'received_at':stamp,'observation':gateway.last_ingested}),flush=True)
     except (ValueError,UnicodeError,InvalidTag) as exc:
+        if quiet('rejected'):
+            return
         receiver_log.write(f'{stamp} rejected {type(exc).__name__}: {exc} {text}\n')
         print(f'Rejected frame: {type(exc).__name__}: {exc}',file=sys.stderr)
         telemetry.frame(frame,'rejected',detail=f'{type(exc).__name__}: {exc}',at=rx_seen)
@@ -193,6 +214,8 @@ def main():
     parser.add_argument('--serial',help='serve: RX board serial device; provision-node: TX board')
     parser.add_argument('--serial-number',help='serve: find the RX board by its ST-LINK USB serial number '
                         '(survives replug and renamed ports; preferred for H01)')
+    parser.add_argument('--log-file',type=Path,help='serve/demo: write output and errors to this file, '
+                        'rotated by size (ws0/logfile.py), instead of the terminal. For service managers.')
     parser.add_argument('--hardware',action='store_true',help='init: real station, not simulation')
     parser.add_argument('--station',default='simulation-01',help='init: station name')
     parser.add_argument('--station-id',type=int,default=1,help='init: numeric station ID')
@@ -213,6 +236,8 @@ def main():
         parser.error('Demo requires a dedicated simulation configuration')
     if args.command=='serve' and not (args.serial or args.serial_number):
         parser.error('serve requires --serial or --serial-number')
+    if args.log_file:
+        sys.stdout = sys.stderr = RotatingLog(args.log_file)
     # launchd/systemd stop a service with SIGTERM: shut down as cleanly as Ctrl-C.
     # Windows: Ctrl-Break (sent by service wrappers and by `tests/test_stage0.py`) does the same.
     # Only the first stop request interrupts: a repeat (a second Ctrl-C, a service manager that
@@ -239,7 +264,7 @@ def main():
     demo_rx = DemoReceiver(gateway,node) if node else None
     receiver_log = None
     if args.command == 'serve':
-        receiver_log = (args.directory/'receiver.log').open('a',buffering=1)
+        receiver_log = RotatingLog(args.directory/'receiver.log')
         def note(text):
             stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
             receiver_log.write(f'{stamp} {text}\n')

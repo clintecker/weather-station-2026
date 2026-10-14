@@ -17,6 +17,8 @@
     <string>@STATE@</string>
     <string>--serial-number</string>
     <string>@RX_SERIAL@</string>
+    <string>--log-file</string>
+    <string>@STATE@/serve.out</string>
   </array>
   <key>WorkingDirectory</key>
   <string>@REPO@</string>
@@ -26,9 +28,11 @@
   <true/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
+  <!-- The gateway writes and rotates serve.out itself (the log-file option): launchd cannot rotate a
+       file it holds open. serve.err only catches failures before the log file is open. -->
   <key>StandardOutPath</key>
-  <string>@STATE@/serve.out</string>
+  <string>@STATE@/serve.err</string>
   <key>StandardErrorPath</key>
-  <string>@STATE@/serve.out</string>
+  <string>@STATE@/serve.err</string>
 </dict>
 </plist>

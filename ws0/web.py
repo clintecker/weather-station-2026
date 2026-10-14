@@ -68,6 +68,28 @@ RX_EVENTS = (('#boot role=rx', 'rx_boot', 'warn'), ('#relisten', 'relisten', 'wa
              ('#tx busy', 'tx_busy', 'warn'))
 
 
+class Throttle:
+    """Token bucket per noise class (gateway review GW6). Anyone with a 915 MHz radio can send
+    frames that fail authentication, and each one used to add a radio row, an event row and
+    receiver.log lines: a sustained flood could fill the disk. Real data (stored observations,
+    their ACKs, node health reports) is never throttled; rejected frames, replays and RX drop
+    reports are, after a burst. Suppressed lines are counted and reported in one summary."""
+    def __init__(self, burst=200, per_s=0.1):
+        self.burst, self.per_s = burst, per_s
+        self.tokens, self.updated, self.suppressed = {}, {}, {}
+
+    def allow(self, key, now):
+        """(allowed, suppressed_since_last_allowed). A refused call counts as suppressed."""
+        tokens = min(self.burst, self.tokens.get(key, self.burst) + (now - self.updated.get(key, now)) * self.per_s)
+        self.updated[key] = now
+        if tokens < 1:
+            self.tokens[key] = tokens
+            self.suppressed[key] = self.suppressed.get(key, 0) + 1
+            return False, 0
+        self.tokens[key] = tokens - 1
+        return True, self.suppressed.pop(key, 0)
+
+
 def line_fields(text):
     """'#alive uptime=5 forwarded=2' -> {'uptime': '5', ...}; text without '=' is skipped."""
     return dict(f.split('=', 1) for f in text.split()[1:] if '=' in f)
@@ -168,6 +190,8 @@ class Telemetry:
         self.gateway, self.store, self.station = gateway, gateway.store, gateway.cfg['station']
         self.hub = gateway.hub
         self.pending = None   # frame waiting for the RX's RSSI/SNR line
+        self.throttle = Throttle()
+        self.muted = False    # the last frame was throttled: drop its RSSI line too
         with self.store.lock, self.store.db:
             for sql in TABLES:
                 self.store.db.execute(sql)
