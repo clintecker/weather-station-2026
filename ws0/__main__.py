@@ -4,6 +4,7 @@ import json
 import os
 import secrets
 import signal
+import sqlite3
 import sys
 import time
 from cryptography.exceptions import InvalidTag
@@ -176,8 +177,10 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
         receiver_log.write(f'{stamp} rejected {type(exc).__name__}: {exc} {text}\n')
         print(f'Rejected frame: {type(exc).__name__}: {exc}',file=sys.stderr)
         telemetry.frame(frame,'rejected',detail=f'{type(exc).__name__}: {exc}',at=rx_seen)
-    except OSError as exc:
-        # Commit failed: no ACK, the node keeps the record and retries.
+    except (OSError, sqlite3.Error) as exc:
+        # Commit failed (sqlite3 raises its own errors, not OSError): no ACK, the node keeps the
+        # record and retries. The process must not exit: under a service manager it would only
+        # restart into the same failure, and from a terminal it would stay down.
         receiver_log.write(f'{stamp} commit-failed {type(exc).__name__}: {exc}\n')
         print(f'Commit failed: {exc}',file=sys.stderr)
         telemetry.frame(frame,'commit_failed',detail=f'{type(exc).__name__}: {exc}',at=rx_seen)

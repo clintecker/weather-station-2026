@@ -237,7 +237,8 @@ class Campaign:
                     original = self.gateway.store.ingest
                     if inside(self.minute(),self.s.commit_failures):
                         def failed_commit(*args,**kwargs):
-                            raise OSError('injected storage failure')
+                            # What SQLite really raises on a full or failing disk (not OSError).
+                            raise sqlite3.OperationalError('disk I/O error (injected)')
                         self.gateway.store.ingest = failed_commit
                     try:
                         ack = self.gateway.receive(packet,self.now)
@@ -255,7 +256,7 @@ class Campaign:
                 else:
                     self.node.handle_reply(packet)
                     self.log('ack_accepted' if frame_kind(packet) != KIND_NACK else 'nack_accepted',frame=packet.hex())
-            except OSError:
+            except (OSError, sqlite3.Error):
                 self.counts['commit_errors'] += 1
                 self.log('commit_failed_no_ack')
             except Replay:

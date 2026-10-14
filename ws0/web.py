@@ -141,6 +141,27 @@ class EventHub:
             self.cond.notify_all()
 
 
+def best_effort(method):
+    """Telemetry never stops the data path: a failed SQLite write (disk full, I/O error, locked)
+    is reported on stderr, at most once a minute, and the serve loop carries on. Observations,
+    ACKs and the counter mark do not go through here."""
+    import functools
+    import sqlite3
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return method(self, *args, **kwargs)
+        except sqlite3.Error as exc:
+            now = time.time()
+            if now - getattr(self, '_last_failure_note', 0) >= 60:
+                self._last_failure_note = now
+                print(f'#gateway telemetry write failed ({method.__name__}): {type(exc).__name__}: {exc}',
+                      file=sys.stderr, flush=True)
+            return None
+    return wrapper
+
+
 class Telemetry:
     """Persist and publish what the serve loop sees besides observations (one per Gateway)."""
     def __init__(self, gateway):
@@ -152,6 +173,7 @@ class Telemetry:
                 self.store.db.execute(sql)
 
     # -- events published by the Gateway itself ------------------------------------------------
+    @best_effort
     def observation(self, record, received_at=None):
         """A newly stored observation, as the history endpoint shows it, plus the new 'latest'."""
         with self.store.lock:
@@ -224,6 +246,7 @@ class Telemetry:
                     self.event(text, source='rx', kind=kind, level=level, at=at)
                     break
 
+    @best_effort
     def alive(self, fields, at):
         values = {'uptime_s': as_int(fields.get('uptime')), **{k: as_int(fields.get(k)) for k in ALIVE_FIELDS[1:]}}
         with self.store.lock, self.store.db:
@@ -233,6 +256,7 @@ class Telemetry:
                 (self.station, at, *(values[k] for k in ALIVE_FIELDS), json.dumps(fields, sort_keys=True)))
         self.hub.publish('rx', dict(values, id=cur.lastrowid, received_at=at))
 
+    @best_effort
     def event(self, text, source='gateway', kind=None, level=None, at=None):
         """A gateway or receiver event: serial link, host clock, receiver silent, RX boots, rejects."""
         at = time.time() if at is None else at
@@ -248,6 +272,7 @@ class Telemetry:
         self.hub.publish('gateway', {'id': cur.lastrowid, 'at': at, 'source': source, 'kind': kind,
                                      'level': level, 'text': text})
 
+    @best_effort
     def _radio(self, row):
         cols = ('received_at', 'kind', 'counter', 'outcome', 'delivered', 'session', 'sequence', 'length',
                 'rssi_dbm', 'snr_db', 'detail')

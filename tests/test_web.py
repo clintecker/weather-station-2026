@@ -361,6 +361,31 @@ class ServeLoopTelemetry(Fixture):
         kinds = [r[0] for r in self.rows('SELECT kind FROM gateway_events ORDER BY id')]
         self.assertEqual(kinds, ['rx_boot', 'rejected', 'rejected', 'relisten'])
 
+    def test_database_failure_never_stops_the_serve_loop(self):
+        """Review GW1 (2026-10-14): SQLite raises sqlite3.OperationalError (disk full, I/O error,
+        locked), not OSError. A failed commit must give no ACK and leave the process running, even
+        when the telemetry writes in the error path fail too."""
+        import sqlite3
+        from unittest.mock import patch
+        def broken(*args, **kwargs):
+            raise sqlite3.OperationalError('disk I/O error (injected)')
+        record = self.node.sample(time.time())
+        obs = self.node.packet(record)
+        class BrokenDB:                                       # every telemetry write fails too
+            execute = staticmethod(broken)
+            def __enter__(self): return self
+            def __exit__(self, *exc): return False
+        with patch.object(self.gateway.store, 'ingest', broken), patch.object(self.gateway.store, 'db', BrokenDB()):
+            log, link = self.lines(obs.hex(), '#rx obs rssi=-51 snr=8',
+                                   '#alive uptime=61 forwarded=1 dropped=0 acks=0 diag=0 listening=1 relistens=0 '
+                                   'uart_errors=0 stack_peak=400')
+        self.assertEqual(link.written, [])                    # no ACK: the node keeps the record
+        self.assertIn('commit-failed OperationalError', log)  # receiver.log still records it
+        # The database works again: the retry (a fresh frame for the same record) is stored and ACKed.
+        _, link = self.lines(self.node.packet(record).hex(), '#rx obs rssi=-52 snr=8')
+        self.assertEqual(len(link.written), 1)
+        self.assertEqual(self.rows('SELECT count(*) FROM observations'), [(1,)])
+
     def test_frame_without_rssi_line_is_written_after_a_timeout(self):
         obs = self.node.packet(self.node.sample(time.time()))
         self.lines(obs.hex(), now=3000)

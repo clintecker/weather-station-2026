@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from gateway import Store
 from . import web
+import sqlite3
 import struct
 from .fields import ENERGY
 from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, LINK_STATES, NACK_COLLISION, NACK_INVALID,
@@ -132,8 +133,10 @@ class Gateway:
                 self.nacked += 1
                 return seal(self.key,self.cfg['station_id'],KIND_NACK,self.nonces,
                             pack_reply(epoch,sequence,reason,frame_counter(frame)))
-            except OSError:
-                self.rejected += 1  # commit failed: no ACK, the node keeps the record
+            except (OSError, sqlite3.Error):
+                # Commit failed (disk full, I/O error, database locked): no ACK, the node keeps the
+                # record and retries. sqlite3 raises its own errors, not OSError.
+                self.rejected += 1
                 raise
             try:
                 # Host UTC rides in the authenticated ACK: the node's only time source. A host
