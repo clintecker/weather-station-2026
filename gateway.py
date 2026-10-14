@@ -263,7 +263,8 @@ class Store:
                   'sensor_fault' if record['quality']=='sensor_fault' else 'fresh' if timely else 'stale_or_clock_step')
         return {'available':available,'reason':reason,'fields_available':fields,'age_seconds':age,'received_at':row[1],
                 'observation':record,'derived':F.derived(record),'effective_sampled_at':effective,'time_basis':basis,
-                'time_uncertainty_s':uncertainty,'units':{n: F.BY_NAME[n].unit for n in fields if F.BY_NAME[n].unit}}
+                'time_uncertainty_s':uncertainty,'units':{n: F.BY_NAME[n].unit for n in fields if F.BY_NAME[n].unit},
+                'labels':{n: F.LABELS[n] for n in fields}}
 
     def history(self, station, start=0, end=FAR_FUTURE, limit=100, offset=0):
         """Stable page ordering; UTC-unknown records remain in DB but outside time queries."""

@@ -7,6 +7,12 @@
  * Real time: one fetch() stream of Server-Sent Events from GET /v1/events (EventSource cannot
  * send an Authorization header). On reconnect the last event id goes back as Last-Event-ID; the
  * gateway replays what was missed, or sends `resync`, and then the page reloads its snapshot.
+ *
+ * Rendering: events only change state and mark parts dirty; one animation frame redraws each
+ * dirty part once, however many events arrived (a reconnect replay is one redraw, not N). The
+ * 1 s tick rewrites age texts in place and rebuilds nothing unless a state flips with time.
+ * Field names, labels and their order come from the gateway's catalog (/v1/history), not from
+ * a table in this file.
  */
 'use strict';
 (() => {
@@ -16,23 +22,16 @@
   const RX_SILENT_S = 180;      // three missed 60 s #alive reports
   const DIAG_OVERDUE_S = 1900;  // two 15-minute health reports plus slack
   const WATCHDOG_MS = 45000;    // no byte (heartbeats included) for this long: reconnect
-  const FIELDS = [
-    ['temperature_c', 'Temperature'], ['humidity_pct', 'Humidity'], ['pressure_hpa', 'Pressure'],
-    ['wind_speed_ms', 'Wind speed'], ['wind_gust_ms', 'Wind gust'], ['wind_dir_deg', 'Wind direction'],
-    ['rain_tips', 'Rain tips (since boot)'], ['uv_index', 'UV index'], ['irradiance_wm2', 'Irradiance'],
-    ['uva_raw', 'UVA (raw)'], ['batt_mv', 'Battery voltage'], ['batt_current_ma', 'Battery current'],
-    ['energy_in_mwh', 'Energy in (since boot)'], ['energy_out_mwh', 'Energy out (since boot)'],
-    ['charge_in_mah', 'Charge in (since boot)'], ['charge_out_mah', 'Charge out (since boot)'],
-    ['soc_gauge_pct', 'State of charge'], ['charger_pins', 'Charger pins'],
-    ['enclosure_temp_c', 'Enclosure temperature'], ['enclosure_rh_pct', 'Enclosure humidity'],
-  ];
-  const LABEL = Object.fromEntries(FIELDS);
   const MAX_FRAMES = 40;
   const MAX_EVENTS = 60;
+  const GROUPS = ['sensors', 'link', 'node', 'rx'];   // chart groups, redrawn independently
 
   const S = {
     token: null, running: false, lastId: null, skew: 0, conn: 'off', status: null,
     frames: [], events: [], hist: null, range: { span: 86400 }, abort: null, epoch: 0,
+    labels: {},       // field name -> display label, from the gateway catalog (history responses)
+    histSeq: 0,       // request sequence: only the newest history request may land
+    histLoadedAt: 0,  // Date.now() of the last history request (bucketed reloads are spaced from it)
   };
 
   // ---------------------------------------------------------------- DOM helpers (text only)
@@ -56,16 +55,25 @@
     return e;
   }
   const clear = (node) => { while (node.firstChild) node.removeChild(node.firstChild); };
+  // Change a text in place: reuse the existing text node, touch the DOM only when it differs.
+  function setText(node, s) {
+    const f = node.firstChild;
+    if (f && f.nodeType === 3 && !f.nextSibling) { if (f.data !== s) f.data = s; } else if (node.textContent !== s) node.textContent = s;
+  }
 
   // ---------------------------------------------------------------- formatting
   const now = () => Date.now() / 1000 + S.skew;
+  function fmtDuration(s) {
+    if (s === null || s === undefined || !isFinite(s)) return '—';
+    s = Number(s);
+    if (s < 120) return `${Math.round(s)} s`;
+    if (s < 7200) return `${Math.round(s / 60)} min`;
+    if (s < 172800) return `${(s / 3600).toFixed(1)} h`;
+    return `${(s / 86400).toFixed(1)} d`;
+  }
   function fmtAge(s) {
     if (s === null || s === undefined || !isFinite(s)) return '—';
-    if (s < 0) return 'in the future';
-    if (s < 90) return `${Math.round(s)} s ago`;
-    if (s < 5400) return `${Math.round(s / 60)} min ago`;
-    if (s < 172800) return `${(s / 3600).toFixed(1)} h ago`;
-    return `${(s / 86400).toFixed(1)} d ago`;
+    return s < 0 ? 'in the future' : `${fmtDuration(s)} ago`;
   }
   function fmtTime(t, withDate) {
     if (t === null || t === undefined) return '—';
@@ -79,14 +87,8 @@
     if (typeof v !== 'number') return String(v);
     return v.toLocaleString(undefined, { maximumFractionDigits: digits === undefined ? 2 : digits });
   }
-  function fmtDuration(s) {
-    if (s === null || s === undefined) return '—';
-    s = Number(s);
-    if (s < 120) return `${s} s`;
-    if (s < 7200) return `${Math.round(s / 60)} min`;
-    if (s < 172800) return `${(s / 3600).toFixed(1)} h`;
-    return `${(s / 86400).toFixed(1)} d`;
-  }
+  // History responses and the latest reading both carry the catalog labels.
+  const label = (name) => S.labels[name] || ((S.status && S.status.latest && S.status.latest.labels) || {})[name] || name;
 
   // ---------------------------------------------------------------- theme (per-viewer convenience)
   function storage(kind) { try { return kind === 'session' ? window.sessionStorage : window.localStorage; } catch (e) { return null; } }
@@ -98,12 +100,12 @@
     else delete document.documentElement.dataset.theme;
     $('theme').textContent = `Theme: ${mode}`;
   }
+  // Charts take every colour from CSS variables, so a theme change needs no redraw.
   $('theme').addEventListener('click', () => {
     const order = ['auto', 'light', 'dark'];
     const next = order[(order.indexOf(getItem('local', THEME_KEY) || 'auto') + 1) % 3];
     setItem('local', THEME_KEY, next);
     applyTheme(next);
-    renderHistory();
   });
   applyTheme(getItem('local', THEME_KEY) || 'auto');
 
@@ -116,6 +118,23 @@
     return r.json();
   }
   const iso = (t) => new Date(t * 1000).toISOString();
+
+  // ---------------------------------------------------------------- render scheduling
+  // Parts: live, frames, events. Marked dirty by events, drawn once in the next animation frame.
+  const dirty = new Set();
+  let frameRequest = 0;
+  function invalidate(...parts) {
+    for (const p of parts) dirty.add(p);
+    if (!frameRequest) frameRequest = requestAnimationFrame(flush);
+  }
+  function flush() {
+    frameRequest = 0;
+    const parts = new Set(dirty);
+    dirty.clear();
+    if (parts.has('live')) renderLive();
+    if (parts.has('frames')) renderFrames();
+    if (parts.has('events')) renderEvents();
+  }
 
   // ---------------------------------------------------------------- sign in / out
   function showLogin(message) {
@@ -159,6 +178,7 @@
     const pill = $('conn');
     pill.dataset.state = state;
     pill.textContent = { live: 'live', connecting: 'connecting…', reconnecting: 'reconnecting…', off: 'offline' }[state] || state;
+    invalidate('live');   // the Gateway card shows the stream state
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -240,12 +260,11 @@
         loadSnapshot();
         break;
       case 'observation':
-        if (S.status) { S.status.latest = d.latest; }
-        addObservation(d.record);
-        renderLive();
+        if (S.status) { S.status.latest = d.latest; invalidate('live'); }
+        toHistory(addObservation, d.record, d.latest);
         break;
       case 'diagnostic':
-        addDiagnostic(d);
+        toHistory(addDiagnostic, d);
         refreshStatusSoon();
         break;
       case 'radio':
@@ -276,7 +295,7 @@
         S.status = status;
         S.frames = frames.rows;
         S.events = events.rows;
-        renderLive(); renderFrames(); renderEvents();
+        invalidate('live', 'frames', 'events');
         await loadHistory();
       } catch (e) {
         if (e instanceof Unauthorized) signOut('The gateway rejected the token.');
@@ -288,7 +307,7 @@
     return snapshotBusy;
   }
   async function refreshStatus() {
-    try { S.status = await api('/v1/status'); renderLive(); } catch (e) {
+    try { S.status = await api('/v1/status'); invalidate('live'); } catch (e) {
       if (e instanceof Unauthorized) signOut('The gateway rejected the token.');
     }
   }
@@ -299,54 +318,96 @@
   }
 
   // ---------------------------------------------------------------- live panel
-  function chip(level, icon, text) {
-    return el('span', { class: 'chip', 'data-level': level }, el('span', { class: 'icon', 'aria-hidden': 'true', text: icon }), text);
+  // Texts that count up with time register here; the 1 s tick rewrites them in place.
+  let ages = [];   // [node, at (unix s), format(age s) -> text]
+  function ageText(node, at, format) {
+    const f = format || fmtAge;
+    setText(node, f(now() - at));
+    ages.push([node, at, f]);
+    return node;
   }
-  const ICON = { good: '✓', warning: '!', critical: '✕', neutral: '•' };
+  // The states that flip with time alone; when one does, the tick redraws the live panel.
+  function timeSignature() {
+    const st = S.status;
+    if (!st) return '';
+    const l = st.latest;
+    const age = l && l.effective_sampled_at !== null && l.effective_sampled_at !== undefined ? now() - l.effective_sampled_at : null;
+    const rx = st.receiver;
+    return `${age === null || age >= STALE_S}|${!!rx && (!rx.alive || now() - rx.last_seen > RX_SILENT_S)}`;
+  }
+  let liveSignature = '';
 
-  function readingState(latest) {
+  // Status chips: one fixed slot each. A chip's level and text (what the live region announces)
+  // change only with the state; its detail (ages, clock offset) is visual only and outside the
+  // live region, so a screen reader hears a state change once, not every second.
+  const ICON = { good: '✓', warning: '!', critical: '✕', neutral: '•' };
+  const CHIP_SLOTS = ['alarm', 'reading', 'quality', 'receiver', 'clock', 'link', 'energy', 'overdue'];
+  const chips = {};   // slot -> { box, icon, text, detail, said, key }
+
+  function readingChip(latest) {
     if (!latest || latest.reason === 'no_observation') return ['neutral', 'No readings yet'];
     const age = latest.effective_sampled_at === null ? null : now() - latest.effective_sampled_at;
     if (latest.reason === 'unknown_clock') return ['warning', 'Latest reading has no time yet'];
     if (latest.reason === 'future_clock_at_receipt') return ['critical', 'Latest reading is time-stamped in the future'];
     if (latest.reason === 'time_uncertain') return ['warning', 'Latest reading time is too uncertain'];
-    if (age !== null && age >= STALE_S) return ['warning', `Reading stale (${fmtAge(age)})`];
+    if (age !== null && age >= STALE_S) return ['warning', 'Reading stale', `(${fmtAge(age)})`];
     if (latest.reason === 'sensor_fault') return ['critical', 'Sensor fault: no valid field'];
-    return ['good', `Reading fresh (${fmtAge(age)})`];
+    return ['good', 'Reading fresh', `(${fmtAge(age)})`];
   }
-
-  function renderChips() {
-    const st = S.status;
-    const box = $('chips');
-    clear(box);
-    if (!st) return;
-    const add = (level, text) => box.append(chip(level, ICON[level], text));
-    add(...(st.alarm ? ['critical', `Alarm: ${st.alarm}`] : ['good', 'No key-reuse alarm']));
-    add(...readingState(st.latest));
+  function chipSpecs(st) {
+    const c = {};
+    c.alarm = st.alarm ? ['critical', `Alarm: ${st.alarm}`] : ['good', 'No key-reuse alarm'];
+    c.reading = readingChip(st.latest);
     const obs = st.latest && st.latest.observation;
     if (obs) {
       const q = obs.quality;
-      add(q === 'valid' ? 'good' : q === 'partial' ? 'warning' : 'critical',
-        q === 'valid' ? 'All sensors valid' : q === 'partial' ? 'Some sensors faulty' : 'All sensors faulty');
+      c.quality = [q === 'valid' ? 'good' : q === 'partial' ? 'warning' : 'critical',
+        q === 'valid' ? 'All sensors valid' : q === 'partial' ? 'Some sensors faulty' : 'All sensors faulty'];
     }
     const rx = st.receiver;
-    if (!rx) add('neutral', 'Receiver: no report yet');
+    if (!rx) c.receiver = ['neutral', 'Receiver: no report yet'];
     else {
       const age = now() - rx.last_seen;
-      if (!rx.alive || age > RX_SILENT_S) add('critical', `Receiver silent (last report ${fmtAge(age)})`);
-      else add('good', 'Receiver alive');
+      c.receiver = !rx.alive || age > RX_SILENT_S ? ['critical', 'Receiver silent', `(last report ${fmtAge(age)})`] : ['good', 'Receiver alive'];
     }
     const hc = st.host_clock;
-    if (!hc) add('neutral', 'Host clock: not checked (demo)');
-    else add(hc.state === 'ok' ? 'good' : hc.state === 'bad' ? 'critical' : 'warning',
-      `Host clock ${hc.state}${hc.offset_s !== null && hc.offset_s !== undefined ? ` (${hc.offset_s >= 0 ? '+' : ''}${hc.offset_s.toFixed(3)} s)` : ''}`);
+    c.clock = !hc ? ['neutral', 'Host clock: not checked (demo)']
+      : [hc.state === 'ok' ? 'good' : hc.state === 'bad' ? 'critical' : 'warning', `Host clock ${hc.state}`,
+        hc.offset_s !== null && hc.offset_s !== undefined ? `(${hc.offset_s >= 0 ? '+' : ''}${hc.offset_s.toFixed(3)} s)` : ''];
     const dg = st.node_diagnostics;
-    if (!dg) add('neutral', 'Node: no health report yet');
+    if (!dg) c.link = ['neutral', 'Node: no health report yet'];
     else {
-      add(dg.link === 'linked' ? 'good' : 'warning', `Node link ${dg.link}`);
-      add(dg.energy_state === 'critical' ? 'critical' : dg.energy_state === 'conserve' ? 'warning' : 'good', `Energy ${dg.energy_state}`);
+      c.link = [dg.link === 'linked' ? 'good' : 'warning', `Node link ${dg.link}`];
+      c.energy = [dg.energy_state === 'critical' ? 'critical' : dg.energy_state === 'conserve' ? 'warning' : 'good', `Energy ${dg.energy_state}`];
       const age = now() - dg.received_at;
-      if (age > DIAG_OVERDUE_S) add('warning', `Node health report overdue (${fmtAge(age)})`);
+      if (age > DIAG_OVERDUE_S) c.overdue = ['warning', 'Node health report overdue', `(${fmtAge(age)})`];
+    }
+    return c;
+  }
+  function renderChips() {
+    const st = S.status;
+    if (!st) return;
+    const specs = chipSpecs(st);
+    for (const slot of CHIP_SLOTS) {
+      let c = chips[slot];
+      if (!c) {
+        c = chips[slot] = {
+          icon: el('span', { class: 'icon', 'aria-hidden': 'true' }), text: el('span'), detail: el('span', { class: 'detail' }),
+          said: el('span'), key: null,
+        };
+        c.box = el('span', { class: 'chip', hidden: true }, c.icon, c.text, c.detail);
+        $('chips').append(c.box);
+        $('chips-live').append(c.said);
+      }
+      const [level, text, detail] = specs[slot] || [];
+      const key = level ? `${level}|${text}` : '';
+      if (key !== c.key) {
+        c.key = key;
+        c.box.hidden = !level;
+        if (level) { c.box.dataset.level = level; setText(c.icon, ICON[level]); setText(c.text, text); }
+        setText(c.said, level ? `${text}. ` : '');
+      }
+      setText(c.detail, detail || '');
     }
   }
 
@@ -358,24 +419,26 @@
     if (!latest || !latest.observation) { meta.textContent = 'No observation stored yet.'; return; }
     const obs = latest.observation;
     const units = latest.units || {};
-    const age = latest.effective_sampled_at === null ? null : now() - latest.effective_sampled_at;
+    const at = latest.effective_sampled_at;
+    const age = at === null ? null : now() - at;
     const stale = age === null || age >= STALE_S;
-    for (const [name, label] of FIELDS) {
-      if (!(name in obs)) continue;
+    for (const name of Object.keys(latest.fields_available || {})) {   // catalog order (gateway)
       let value = obs[name];
       let state = 'ok', flag = '';
       if (name === 'wind_dir_deg' && obs.wind_calm) value = 'calm';
       if (value === null) { state = 'fault'; flag = 'sensor fault'; }
       else if (stale) { state = 'stale'; flag = 'stale'; }
       const qual = obs.qualifiers && obs.qualifiers[name];
+      const sub = el('div', { class: 'sub' });
+      if (at === null) sub.textContent = '—'; else ageText(sub, at);
       box.append(el('div', { class: 'tile', 'data-state': state },
-        el('div', { class: 'label', text: label }),
+        el('div', { class: 'label', text: label(name) }),
         el('div', { class: 'value' }, value === null ? '—' : fmtNum(value), units[name] && value !== null && value !== 'calm' ? el('span', { class: 'unit', text: units[name] }) : null),
-        el('div', { class: 'sub', text: fmtAge(age) }),
+        sub,
         flag ? el('div', { class: 'flag', text: flag }) : null,
         qual ? el('div', { class: 'flag', text: qual.replace(/_/g, ' ') }) : null));
     }
-    meta.textContent = `Sample ${fmtTime(latest.effective_sampled_at, true)} · epoch ${obs.session} · sequence ${obs.sequence} · ` +
+    meta.textContent = `Sample ${fmtTime(at, true)} · epoch ${obs.session} · sequence ${obs.sequence} · ` +
       `time ${latest.time_basis}${latest.time_uncertainty_s ? ` (±${fmtNum(latest.time_uncertainty_s, 1)} s)` : ''} · ` +
       `quality ${obs.quality} · energy ${obs.energy_state} · received ${fmtTime(latest.received_at, true)}`;
   }
@@ -383,13 +446,16 @@
   function kv(target, rows) {
     clear(target);
     for (const [k, v, level] of rows) {
-      target.append(el('dt', { text: k }), el('dd', { text: v === null || v === undefined ? '—' : v, 'data-level': level || null }));
+      const dd = el('dd', { 'data-level': level || null });
+      if (v && typeof v === 'object') dd.append(v); else dd.textContent = v === null || v === undefined ? '—' : String(v);
+      target.append(el('dt', { text: k }), dd);
     }
   }
+  const sinceText = (s) => `· ${fmtAge(s)}`;
 
   function renderNode() {
     const d = S.status && S.status.node_diagnostics;
-    $('node-age').textContent = d ? `· ${fmtAge(now() - d.received_at)}` : '';
+    if (d) ageText($('node-age'), d.received_at, sinceText); else setText($('node-age'), '');
     if (!d) { kv($('node'), [['Health report', 'none received yet']]); return; }
     kv($('node'), [
       ['Firmware build', d.firmware_build],
@@ -411,7 +477,7 @@
 
   function renderRx() {
     const rx = S.status && S.status.receiver;
-    $('rx-age').textContent = rx ? `· ${fmtAge(now() - rx.last_seen)}` : '';
+    if (rx) ageText($('rx-age'), rx.last_seen, sinceText); else setText($('rx-age'), '');
     if (!rx) { kv($('rx'), [['Reports', 'none received yet']]); return; }
     const silent = !rx.alive || now() - rx.last_seen > RX_SILENT_S;
     kv($('rx'), [
@@ -436,6 +502,8 @@
     $('station').textContent = `${st.station} · ${st.mode}`;
     const nc = st.node_counter || {};
     const hc = st.host_clock;
+    let clock = 'not checked (demo)';
+    if (hc) clock = hc.checked_at ? el('span', {}, `${hc.state}, checked `, ageText(el('span'), hc.checked_at)) : hc.state;
     kv($('gw'), [
       ['Station', st.station],
       ['Mode', st.mode],
@@ -444,12 +512,25 @@
       ['NACKed (this run)', fmtNum(st.nacked_this_process), st.nacked_this_process > 0 ? 'warning' : null],
       ['Node counter mark', fmtNum(nc.max_node_counter, 0)],
       ['Counter regressions', fmtNum(nc.counter_regression, 0), nc.counter_regression ? 'critical' : null],
-      ['Host clock', hc ? `${hc.state}${hc.checked_at ? `, checked ${fmtAge(Date.now() / 1000 - hc.checked_at)}` : ''}` : 'not checked (demo)', hc && hc.state === 'bad' ? 'critical' : null],
+      ['Host clock', clock, hc && hc.state === 'bad' ? 'critical' : null],
       ['Event stream', S.conn],
     ]);
   }
 
-  function renderLive() { renderChips(); renderReadings(); renderNode(); renderRx(); renderGateway(); }
+  function renderLive() {
+    ages = [];
+    liveSignature = timeSignature();
+    renderChips(); renderReadings(); renderNode(); renderRx(); renderGateway();
+  }
+  // Every second: ages count up in place; a state that flips with time (stale reading, silent
+  // receiver) redraws the panel once.
+  function tick() {
+    if (!S.running || !S.status) return;
+    if (timeSignature() !== liveSignature) { invalidate('live'); return; }
+    renderChips();
+    const t = now();
+    for (const [node, at, format] of ages) setText(node, format(t - at));
+  }
 
   const OUTCOME_LEVEL = { nack: 'warning', duplicate: null, rejected: 'critical', commit_failed: 'critical', dropped_by_rx: 'warning', unparsed: 'warning' };
   function renderFrames() {
@@ -489,38 +570,60 @@
   }
   const following = () => S.hist && S.range.span !== undefined;
 
-  function addObservation(r) {
-    const h = S.hist;
-    if (!following() || r.effective_sampled_at === null || r.effective_sampled_at === undefined) return;
-    const o = h.observations;
+  // Live data for the history charts. While a history request is in flight, each addition is
+  // also queued and applied again to the response, so an event that raced the request is not
+  // lost (the add functions ignore what is already there).
+  let histReplay = null;
+  function toHistory(add, ...args) {
+    if (S.range.span === undefined) return;
+    if (histReplay) histReplay.push([add, args]);
+    if (S.hist) add(...args);
+  }
+  // A bucketed series (bucket_s > 0) holds averages, counts or last values per bucket: a raw
+  // point does not belong in it. Reload the history instead, at most once per bucket.
+  let reloadTimer = null, reloadDue = 0;
+  function reloadHistorySoon(bucket) {
+    const due = S.histLoadedAt + bucket * 1000;
+    if (reloadTimer && reloadDue <= due) return;
+    clearTimeout(reloadTimer);
+    reloadDue = due;
+    reloadTimer = setTimeout(() => {
+      reloadTimer = null;
+      if (S.running && following()) loadHistory().catch(historyError);
+    }, Math.max(0, due - Date.now()));
+  }
+
+  function addObservation(r, latest) {
+    const o = S.hist.observations;
     const t = r.effective_sampled_at;
-    for (let i = 0; i < o.t.length; i++) if (o.t[i] === t && o.session[i] === r.session) return;  // already loaded
-    for (const [name] of FIELDS) {
-      if (name in r && !o.fields.includes(name)) {
-        o.fields.push(name);
-        o.values[name] = o.t.map(() => null);
-        o.fields.sort((a, b) => FIELDS.findIndex((f) => f[0] === a) - FIELDS.findIndex((f) => f[0] === b));
-      }
-    }
+    if (t === null || t === undefined) return;
+    if (o.bucket_s) { reloadHistorySoon(o.bucket_s); return; }
+    // A field the loaded range has never seen: its label and catalog place come with a reload
+    // (spaced like a 60 s bucket, so a record outside the reloaded window cannot loop).
+    if (Object.keys((latest && latest.fields_available) || {}).some((n) => n in r && !o.fields.includes(n))) reloadHistorySoon(60);
     const at = insertionPoint(o.t, t);
+    for (let i = at - 1; i >= 0 && o.t[i] === t; i--) if (o.session[i] === r.session) return;  // already loaded
     o.t.splice(at, 0, t);
     o.basis.splice(at, 0, r.time_basis);
     o.quality.splice(at, 0, r.quality);
     o.session.splice(at, 0, r.session);
     for (const name of o.fields) o.values[name].splice(at, 0, name in r ? r[name] : null);
-    scheduleHistory();
+    scheduleHistory('sensors');
   }
   function addFrame(f) {
     if (S.frames.some((x) => x.id === f.id)) return;
     S.frames.unshift(f);
     S.frames.length = Math.min(S.frames.length, MAX_FRAMES);
-    renderFrames();
-    if (!following()) return;
+    invalidate('frames');
+    toHistory(addRadioPoint, f);
+  }
+  function addRadioPoint(f) {
     const r = S.hist.radio;
+    if (r.bucket_s) { reloadHistorySoon(r.bucket_s); return; }
     if (r.t.length && r.t[r.t.length - 1] >= f.received_at) return;
     r.t.push(f.received_at); r.rssi_dbm.push(f.rssi_dbm); r.snr_db.push(f.snr_db); r.rssi_min.push(f.rssi_dbm);
     r.frames.push(1); r.kind.push(f.kind); r.outcome.push(f.outcome); r.counter.push(f.counter);
-    scheduleHistory();
+    scheduleHistory('link');
   }
   function addAlive(a) {
     if (S.status) {
@@ -530,29 +633,36 @@
         acks: a.acks, diag: a.diag, listening: String(a.listening), relistens: a.relistens, uart_errors: a.uart_errors,
         stack_peak: a.stack_peak,
       });
-      renderLive();
+      invalidate('live');
     }
-    if (!following()) return;
+    toHistory(addAlivePoint, a);
+  }
+  function addAlivePoint(a) {
     const h = S.hist.receiver;
+    if (h.bucket_s) { reloadHistorySoon(h.bucket_s); return; }
     if (h.t.length && h.t[h.t.length - 1] >= a.received_at) return;
     h.t.push(a.received_at);
     for (const k of ['uptime_s', 'forwarded', 'dropped', 'acks', 'diag', 'listening', 'relistens', 'uart_errors', 'stack_peak']) h[k].push(a[k]);
-    scheduleHistory();
+    scheduleHistory('rx');
   }
   function addDiagnostic(d) {
-    if (!following()) return;
     const list = S.hist.diagnostics;
     if (list.some((x) => x.epoch === d.epoch && x.uptime_s === d.uptime_s)) return;
     list.push(d);
     list.sort((a, b) => a.received_at - b.received_at);
-    scheduleHistory();
+    scheduleHistory('link', 'node');
   }
   function addEvent(e) {
     if (S.events.some((x) => x.id === e.id)) return;
     S.events.unshift(e);
     S.events.length = Math.min(S.events.length, MAX_EVENTS);
-    renderEvents();
-    if (following() && !S.hist.events.some((x) => x.id === e.id)) { S.hist.events.push(e); scheduleHistory(); }
+    invalidate('events');
+    toHistory(addHistoryEvent, e);
+  }
+  function addHistoryEvent(e) {
+    if (S.hist.events.some((x) => x.id === e.id)) return;
+    S.hist.events.push(e);
+    scheduleHistory();   // only markers may change: renderHistory redraws the groups whose markers did
   }
 
   // ---------------------------------------------------------------- history
@@ -560,13 +670,32 @@
     if (S.range.span !== undefined) { const to = now(); return [to - S.range.span, to]; }
     return [S.range.from, S.range.to];
   }
+  const historyError = (e) => { $('hist-note').textContent = `Could not load history: ${e.message}`; };
   async function loadHistory() {
+    const seq = ++S.histSeq, epoch = S.epoch;
+    clearTimeout(reloadTimer); reloadTimer = null;   // this request is the reload
+    S.histLoadedAt = Date.now();
+    if (S.range.span !== undefined && !histReplay) histReplay = [];
     const [from, to] = rangeBounds();
     const width = Math.max(320, Math.min(2400, document.documentElement.clientWidth));
     const points = Math.max(300, Math.min(3000, Math.round(width * 1.5)));
     $('hist-note').textContent = 'Loading…';
-    const h = await api(`/v1/history?from=${encodeURIComponent(iso(from))}&to=${encodeURIComponent(iso(to))}&max_points=${points}`);
+    let h;
+    try {
+      h = await api(`/v1/history?from=${encodeURIComponent(iso(from))}&to=${encodeURIComponent(iso(to))}&max_points=${points}`);
+    } catch (e) {
+      if (seq !== S.histSeq || epoch !== S.epoch) return;   // superseded: the newer request reports
+      histReplay = null;
+      throw e;
+    }
+    if (seq !== S.histSeq || epoch !== S.epoch) return;     // a newer range was asked for meanwhile
     S.hist = h;
+    const queued = histReplay || [];
+    histReplay = null;
+    for (const [add, args] of queued) toHistory(add, ...args);
+    const labels = h.observations.labels || {};
+    if (Object.keys(labels).some((n) => S.labels[n] !== labels[n])) { Object.assign(S.labels, labels); invalidate('live'); }
+    clearTimeout(histTimer); histTimer = null; histDirty.clear();
     renderHistory();
   }
 
@@ -582,7 +711,7 @@
     }
     $('custom').hidden = true;
     S.range = { span: Number(b.dataset.range) };
-    loadHistory().catch((e) => { $('hist-note').textContent = `Could not load history: ${e.message}`; });
+    loadHistory().catch(historyError);
   }));
   $('custom').addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -591,13 +720,22 @@
     if (!isFinite(from) || !isFinite(to) || from >= to) { $('custom-error').textContent = 'Choose a start before the end.'; return; }
     $('custom-error').textContent = '';
     S.range = { from, to };
-    loadHistory().catch((e) => { $('hist-note').textContent = `Could not load history: ${e.message}`; });
+    loadHistory().catch(historyError);
   });
 
+  // Live additions are batched: one redraw of the touched chart groups per 500 ms at most.
   let histTimer = null;
-  function scheduleHistory() {
+  const histDirty = new Set();
+  function scheduleHistory(...groups) {
+    for (const g of groups) histDirty.add(g);
     if (histTimer) return;
-    histTimer = setTimeout(() => { histTimer = null; trimHistory(); renderHistory(); }, 500);
+    histTimer = setTimeout(() => {
+      histTimer = null;
+      trimHistory();
+      const only = new Set(histDirty);
+      histDirty.clear();
+      renderHistory(only);
+    }, 500);
   }
   // While following live, points older than the window are dropped, so a page left open for days
   // keeps a bounded history instead of growing forever (gateway review GW11).
@@ -641,14 +779,29 @@
     }
     return m.sort((a, b) => a.t - b.t);
   }
+  const MARKER_GROUPS = { sensors: ['node', 'gateway'], link: ['node', 'rx'], node: ['node', 'gateway'], rx: ['rx', 'gateway'] };
+  let drawn = null;   // what is on screen: { from, to, width, markers: {group: key} }
 
-  function renderHistory() {
+  // Draw the chart groups in `only` (all of them when omitted). A group is redrawn anyway when
+  // its markers changed, and every group is when the time axis moved by a pixel or more.
+  function renderHistory(only) {
     const h = S.hist;
     if (!h) return;
     const [from, to] = S.range.span !== undefined ? rangeBounds() : [h.from, h.to];
+    const width = chartWidth();
+    const all = markersFor(h);
+    const markers = {}, keys = {};
+    for (const g of GROUPS) {
+      markers[g] = all.filter((m) => MARKER_GROUPS[g].includes(m.group));
+      keys[g] = markers[g].map((m) => `${m.t}:${m.label}`).join('|');
+    }
+    const secondsPerPixel = (to - from) / (width - M.l - M.r);
+    const redrawAll = !only || !drawn || drawn.width !== width || Math.abs(to - drawn.to) >= secondsPerPixel || Math.abs(from - drawn.from) >= secondsPerPixel;
+    const groups = GROUPS.filter((g) => redrawAll || only.has(g) || drawn.markers[g] !== keys[g]);
+    // the axis drift is measured from the last full redraw, so partial redraws cannot accumulate it
+    drawn = redrawAll ? { from, to, width, markers: keys } : Object.assign(drawn, { markers: keys });
+
     const o = h.observations;
-    const markers = markersFor(h);
-    const pick = (...groups) => markers.filter((m) => groups.includes(m.group));
     const notes = [`${fmtTime(from, true)} – ${fmtTime(to, true)}`];
     if (o.bucket_s) notes.push(`sensor values averaged over ${fmtDuration(o.bucket_s)} (counters: last value)`);
     if (h.radio.bucket_s) notes.push(`radio averaged over ${fmtDuration(h.radio.bucket_s)}`);
@@ -656,89 +809,81 @@
     if (S.range.span !== undefined) notes.push('following live');
     $('hist-note').textContent = notes.join(' · ');
 
-    const obsGap = o.bucket_s ? o.bucket_s * 1.5 : 110;
-    const sensors = $('c-sensors');
-    clear(sensors);
-    if (!o.fields.length) sensors.append(el('p', { class: 'muted small', text: 'No observations with a known time in this range.' }));
-    for (const name of o.fields) {
-      sensors.append(chart({
-        title: LABEL[name] || name, unit: o.units[name], from, to, markers: pick('node', 'gateway'),
-        series: [{ name: LABEL[name] || name, cls: 'c1', t: o.t, v: o.values[name], basis: o.basis, gap: obsGap, dots: name === 'wind_dir_deg', faults: true }],
-      }));
-    }
-
-    const r = h.radio;
+    const stepChart = (title, unit, t, v, gap, m) => chart({
+      title, unit, from, to, markers: m, integer: true, series: [{ name: title, cls: 'c1', t, v, gap, step: true }],
+    });
     const diag = h.diagnostics;
     const dt = diag.map((d) => d.received_at);
-    const radioGap = r.bucket_s ? r.bucket_s * 1.5 : 0;
-    const link = $('c-link');
-    clear(link);
-    link.append(chart({
-      title: 'Signal strength (RSSI)', unit: 'dBm', from, to, markers: pick('node', 'rx'),
-      series: [
-        { name: 'Uplink (RX hears node)', cls: 'c1', t: r.t, v: r.rssi_dbm, gap: radioGap, dots: !r.bucket_s },
-        { name: 'Downlink ACK (node hears gateway)', cls: 'c2', t: dt, v: diag.map((d) => d.ack_rssi_dbm), gap: 2000, dots: true },
-      ],
-    }));
-    link.append(chart({
-      title: 'Signal-to-noise ratio (SNR)', unit: 'dB', from, to, markers: pick('node', 'rx'),
-      series: [
-        { name: 'Uplink (RX hears node)', cls: 'c1', t: r.t, v: r.snr_db, gap: radioGap, dots: !r.bucket_s },
-        { name: 'Downlink ACK (node hears gateway)', cls: 'c2', t: dt, v: diag.map((d) => d.ack_snr_db), gap: 2000, dots: true },
-      ],
-    }));
-    const bad = { t: [], v: [] };
-    for (let i = 0; i < r.t.length; i++) {
-      const out = r.outcome[i];
-      const n = typeof out === 'object' && out ? Object.entries(out).filter(([k]) => !['ack', 'diag', 'duplicate'].includes(k)).reduce((s, [, c]) => s + c, 0)
-        : (['ack', 'diag', 'duplicate'].includes(out) ? 0 : 1);
-      bad.t.push(r.t[i]); bad.v.push(n);
-    }
-    const problem = { name: 'NACKed, rejected or dropped', cls: r.bucket_s ? 'c2' : 'c1', t: bad.t, v: bad.v, gap: radioGap, dots: true, skipZero: true };
-    link.append(chart(r.bucket_s ? {
-      title: `Frames per ${fmtDuration(r.bucket_s)}`, unit: 'count', from, to, markers: pick('node', 'rx'), integer: true,
-      series: [{ name: 'All frames', cls: 'c1', t: r.t, v: r.frames, gap: radioGap }, problem],
-    } : {
-      title: 'Problem frames (NACK, rejected, dropped by RX)', unit: 'count', from, to, markers: pick('node', 'rx'), integer: true,
-      empty: r.t.length ? 'None in this range' : 'No frames in this range', series: [problem],
-    }));
-
-    const node = $('c-node');
-    clear(node);
-    const nodeMarkers = pick('node', 'gateway');
-    const nodeSeries = (title, key, unit) => chart({
-      title, unit, from, to, markers: nodeMarkers, integer: true,
-      series: [{ name: title, cls: 'c1', t: dt, v: diag.map((d) => d[key]), gap: 2000, step: true }],
-    });
-    if (!diag.length) node.append(el('p', { class: 'muted small', text: 'No node health reports in this range (one every 15 minutes).' }));
-    else {
-      node.append(stateChart('Energy state', from, to, dt, diag.map((d) => d.energy_state),
-        { surplus: 'st-s3', normal: 'st-s1', conserve: 'st-warning', critical: 'st-critical' }, nodeMarkers));
-      node.append(stateChart('Link state', from, to, dt, diag.map((d) => d.link), { linked: 'st-good', probing: 'st-warning' }, nodeMarkers));
-      node.append(nodeSeries('Journal pending', 'journal_pending', 'records'));
-      node.append(nodeSeries('Journal lost (total)', 'journal_lost_total', 'records'));
-      node.append(nodeSeries('Missed ACKs since boot', 'missed_acks_since_boot', 'count'));
-      node.append(nodeSeries('Crashes since power-up', 'crashes_since_power_up', 'count'));
-      node.append(nodeSeries('Boot epoch', 'epoch', ''));
-      node.append(nodeSeries('Abandoned records (total)', 'abandoned_total', 'records'));
-    }
-
-    const a = h.receiver;
-    const rx = $('c-rx');
-    clear(rx);
-    const rxGap = a.bucket_s ? a.bucket_s * 1.5 : 150;
-    const rxSeries = (title, key, unit) => chart({
-      title, unit, from, to, markers: pick('rx', 'gateway'), integer: true,
-      series: [{ name: title, cls: 'c1', t: a.t, v: a[key], gap: rxGap, step: true }],
-    });
-    if (!a.t.length) rx.append(el('p', { class: 'muted small', text: 'No RX reports in this range (one a minute while the gateway serves a receiver).' }));
-    else {
-      rx.append(rxSeries('Frames forwarded', 'forwarded', 'count'));
-      rx.append(rxSeries('Frames dropped by RX', 'dropped', 'count'));
-      rx.append(rxSeries('Re-listens', 'relistens', 'count'));
-      rx.append(rxSeries('UART errors', 'uart_errors', 'count'));
-      rx.append(rxSeries('Stack peak', 'stack_peak', 'bytes'));
-      rx.append(rxSeries('RX uptime', 'uptime_s', 's'));
+    const draw = {
+      sensors(box) {
+        if (!o.fields.length) box.append(el('p', { class: 'muted small', text: 'No observations with a known time in this range.' }));
+        const gap = o.bucket_s ? o.bucket_s * 1.5 : 110;
+        const labels = o.labels || {};
+        for (const name of o.fields) {
+          const title = labels[name] || label(name);
+          box.append(chart({
+            title, unit: o.units[name], from, to, markers: markers.sensors,
+            series: [{ name: title, cls: 'c1', t: o.t, v: o.values[name], basis: o.basis, gap, dots: name === 'wind_dir_deg', faults: true }],
+          }));
+        }
+      },
+      link(box) {
+        const r = h.radio;
+        const gap = r.bucket_s ? r.bucket_s * 1.5 : 0;
+        box.append(chart({
+          title: 'Signal strength (RSSI)', unit: 'dBm', from, to, markers: markers.link,
+          series: [
+            { name: 'Uplink (RX hears node)', cls: 'c1', t: r.t, v: r.rssi_dbm, gap, dots: !r.bucket_s },
+            { name: 'Downlink ACK (node hears gateway)', cls: 'c2', t: dt, v: diag.map((d) => d.ack_rssi_dbm), gap: 2000, dots: true },
+          ],
+        }));
+        box.append(chart({
+          title: 'Signal-to-noise ratio (SNR)', unit: 'dB', from, to, markers: markers.link,
+          series: [
+            { name: 'Uplink (RX hears node)', cls: 'c1', t: r.t, v: r.snr_db, gap, dots: !r.bucket_s },
+            { name: 'Downlink ACK (node hears gateway)', cls: 'c2', t: dt, v: diag.map((d) => d.ack_snr_db), gap: 2000, dots: true },
+          ],
+        }));
+        const fine = ['ack', 'diag', 'duplicate'];
+        const bad = r.outcome.map((out) => (typeof out === 'object' && out
+          ? Object.entries(out).reduce((s, [k, c]) => s + (fine.includes(k) ? 0 : c), 0)
+          : (fine.includes(out) ? 0 : 1)));
+        const problem = { name: 'NACKed, rejected or dropped', cls: r.bucket_s ? 'c2' : 'c1', t: r.t, v: bad, gap, dots: true, skipZero: true };
+        box.append(chart(r.bucket_s ? {
+          title: `Frames per ${fmtDuration(r.bucket_s)}`, unit: 'count', from, to, markers: markers.link, integer: true,
+          series: [{ name: 'All frames', cls: 'c1', t: r.t, v: r.frames, gap }, problem],
+        } : {
+          title: 'Problem frames (NACK, rejected, dropped by RX)', unit: 'count', from, to, markers: markers.link, integer: true,
+          empty: r.t.length ? 'None in this range' : 'No frames in this range', series: [problem],
+        }));
+      },
+      node(box) {
+        if (!diag.length) { box.append(el('p', { class: 'muted small', text: 'No node health reports in this range (one every 15 minutes).' })); return; }
+        const m = markers.node;
+        box.append(stateChart('Energy state', from, to, dt, diag.map((d) => d.energy_state),
+          { surplus: 'st-s3', normal: 'st-s1', conserve: 'st-warning', critical: 'st-critical' }, m));
+        box.append(stateChart('Link state', from, to, dt, diag.map((d) => d.link), { linked: 'st-good', probing: 'st-warning' }, m));
+        for (const [title, key, unit] of [
+          ['Journal pending', 'journal_pending', 'records'], ['Journal lost (total)', 'journal_lost_total', 'records'],
+          ['Missed ACKs since boot', 'missed_acks_since_boot', 'count'], ['Crashes since power-up', 'crashes_since_power_up', 'count'],
+          ['Boot epoch', 'epoch', ''], ['Abandoned records (total)', 'abandoned_total', 'records'],
+        ]) box.append(stepChart(title, unit, dt, diag.map((d) => d[key]), 2000, m));
+      },
+      rx(box) {
+        const a = h.receiver;
+        if (!a.t.length) { box.append(el('p', { class: 'muted small', text: 'No RX reports in this range (one a minute while the gateway serves a receiver).' })); return; }
+        const gap = a.bucket_s ? a.bucket_s * 1.5 : 150;
+        for (const [title, key, unit] of [
+          ['Frames forwarded', 'forwarded', 'count'], ['Frames dropped by RX', 'dropped', 'count'], ['Re-listens', 'relistens', 'count'],
+          ['UART errors', 'uart_errors', 'count'], ['Stack peak', 'stack_peak', 'bytes'], ['RX uptime', 'uptime_s', 's'],
+        ]) box.append(stepChart(title, unit, a.t, a[key], gap, markers.rx));
+      },
+    };
+    const BOX = { sensors: 'c-sensors', link: 'c-link', node: 'c-node', rx: 'c-rx' };
+    for (const g of groups) {
+      const box = $(BOX[g]);
+      clear(box);
+      draw[g](box);
     }
   }
 
@@ -794,22 +939,25 @@
     const { from, to } = spec;
     const x = (t) => M.l + (t - from) / (to - from) * (W - M.l - M.r);
     const series = spec.series;
-    const legend = series.length > 1 ? series.map((s) => [s.cls, s.name]) : [];
-    if (series.some((s) => s.faults && s.v.some((v, i) => v === null && s.t[i] >= from && s.t[i] <= to))) legend.push(['fault', 'sensor fault', true]);
-    if (series.some((s) => s.basis && s.basis.some((b, i) => b === 'reconstructed' && s.t[i] >= from && s.t[i] <= to))) legend.push(['c1', 'dashed: reconstructed time']);
-    const fig = frame(spec, legend);
-    let lo = Infinity, hi = -Infinity;
+    let lo = Infinity, hi = -Infinity, fault = false, reconstructed = false;
     for (const s of series) for (let i = 0; i < s.t.length; i++) {
+      if (s.t[i] < from || s.t[i] > to) continue;
       const v = s.v[i];
-      if (v === null || v === undefined || s.t[i] < from || s.t[i] > to || (s.skipZero && v === 0)) continue;
+      if (s.basis && s.basis[i] === 'reconstructed') reconstructed = true;
+      if (v === null || v === undefined) { if (s.faults && v === null) fault = true; continue; }
+      if (s.skipZero && v === 0) continue;
       if (v < lo) lo = v; if (v > hi) hi = v;
     }
+    const legend = series.length > 1 ? series.map((s) => [s.cls, s.name]) : [];
+    if (fault) legend.push(['fault', 'sensor fault', true]);
+    if (reconstructed) legend.push(['c1', 'dashed: reconstructed time']);
+    const fig = frame(spec, legend);
     const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${spec.title} chart` });
     fig.append(svg);
     const plotBottom = H - M.b;
     if (lo === Infinity) {
       svg.append(sv('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle', class: 'empty' }, spec.empty || 'No data in this range'));
-      drawTimeAxis(svg, from, to, x, W);
+      drawTimeAxis(svg, from, to, x, W, plotBottom, H - 6);
       return fig;
     }
     const pad = (hi - lo) * 0.08 || (spec.integer ? 1 : Math.abs(hi) * 0.05 || 1);
@@ -821,8 +969,8 @@
       svg.append(sv('line', { x1: M.l, x2: W - M.r, y1: y(tv), y2: y(tv), class: 'gridline' }));
       svg.append(sv('text', { x: M.l - 6, y: y(tv) + 3.5, 'text-anchor': 'end', class: 'tick' }, fmtNum(tv, 2)));
     }
-    drawTimeAxis(svg, from, to, x, W);
-    drawMarkers(svg, spec.markers || [], from, to, x);
+    drawTimeAxis(svg, from, to, x, W, plotBottom, H - 6);
+    drawMarkers(svg, spec.markers || [], from, to, x, M.t - 4, plotBottom, true);
 
     for (const s of series) {
       if (s.faults) {
@@ -865,33 +1013,44 @@
       }
       if (solid) svg.append(sv('path', { d: solid, class: `line ${s.cls}` }));
       if (dashed) svg.append(sv('path', { d: dashed, class: `line dash ${s.cls}` }));
-      const r = s.dots ? 2.6 : 3;
+      // Dots: one path of zero-length segments with round caps, over a wider surface-coloured
+      // path for the outline ring. Two nodes per series instead of one circle per point.
+      let pts = '';
       for (const i of lonely) {
         if (s.t[i] < from || s.t[i] > to) continue;
-        svg.append(sv('circle', { cx: x(s.t[i]).toFixed(1), cy: y(s.v[i]).toFixed(1), r, class: `dot ${s.cls}` }));
+        pts += `M${x(s.t[i]).toFixed(1)},${y(s.v[i]).toFixed(1)}h0`;
+      }
+      if (pts) {
+        const size = s.dots ? ' sm' : '';
+        svg.append(sv('path', { d: pts, class: `pts-ring${size}` }));
+        svg.append(sv('path', { d: pts, class: `pts${size} ${s.cls}` }));
       }
     }
     hover(fig, svg, spec, series, x, y, W);
     return fig;
   }
 
-  function drawTimeAxis(svg, from, to, x, W) {
-    const plotBottom = H - M.b;
-    svg.append(sv('line', { x1: M.l, x2: W - M.r, y1: plotBottom, y2: plotBottom, class: 'baseline' }));
+  function drawTimeAxis(svg, from, to, x, W, baseY, labelY) {
+    svg.append(sv('line', { x1: M.l, x2: W - M.r, y1: baseY, y2: baseY, class: 'baseline' }));
     const [ticks, step] = timeTicks(from, to, Math.max(2, Math.floor((W - M.l - M.r) / 90)));
-    for (const t of ticks) svg.append(sv('text', { x: x(t), y: H - 6, 'text-anchor': 'middle', class: 'tick' }, timeLabel(t, step)));
+    for (const t of ticks) svg.append(sv('text', { x: x(t), y: labelY, 'text-anchor': 'middle', class: 'tick' }, timeLabel(t, step)));
   }
-  function drawMarkers(svg, markers, from, to, x) {
+  // Event markers: dashed vertical lines from top to bottom; labelled (where they do not
+  // collide) or with the label as a tooltip only.
+  function drawMarkers(svg, markers, from, to, x, top, bottom, labelled) {
     let lastX = -Infinity;
     for (const m of markers) {
       if (m.t < from || m.t > to) continue;
       const mx = x(m.t);
-      svg.append(sv('line', { x1: mx, x2: mx, y1: M.t - 4, y2: H - M.b, class: 'marker' }));
+      const line = sv('line', { x1: mx, x2: mx, y1: top, y2: bottom, class: 'marker' });
+      const tip = sv('title', {}, `${m.label} · ${fmtTime(m.t, true)}`);
+      svg.append(line);
+      if (!labelled) { line.append(tip); continue; }
       const right = mx > x(to) - 90;   // near the right edge: label on the left of the line
-      const label = sv('text', { x: right ? mx - 3 : mx + 3, y: M.t - 4, 'text-anchor': right ? 'end' : 'start', class: 'marker-label' },
+      const text = sv('text', { x: right ? mx - 3 : mx + 3, y: top, 'text-anchor': right ? 'end' : 'start', class: 'marker-label' },
         mx - lastX > 70 ? m.label : '');
-      label.append(sv('title', {}, `${m.label} · ${fmtTime(m.t, true)}`));
-      svg.append(label);
+      text.append(tip);
+      svg.append(text);
       if (mx - lastX > 70) lastX = mx;
     }
   }
@@ -904,6 +1063,8 @@
     return lo;
   }
 
+  // Crosshair and tooltip: at most one update per animation frame; layout is read once, before
+  // anything is written, and the tooltip is anchored by its left or right edge (no width read).
   function hover(fig, svg, spec, series, x, y, W) {
     const cross = sv('line', { y1: M.t, y2: H - M.b, class: 'cross', visibility: 'hidden' });
     svg.append(cross);
@@ -912,11 +1073,21 @@
     fig.append(tip);
     const hit = sv('rect', { x: M.l, y: 0, width: W - M.l - M.r, height: H, fill: 'transparent' });
     svg.append(hit);
-    const hide = () => { cross.setAttribute('visibility', 'hidden'); dots.forEach((d) => d.setAttribute('visibility', 'hidden')); tip.hidden = true; };
+    let pending = 0, lastX = 0;
+    const hide = () => {
+      cancelAnimationFrame(pending); pending = 0;
+      cross.setAttribute('visibility', 'hidden'); dots.forEach((d) => d.setAttribute('visibility', 'hidden')); tip.hidden = true;
+    };
     hit.addEventListener('pointerleave', hide);
     hit.addEventListener('pointermove', (ev) => {
+      lastX = ev.clientX;
+      if (!pending) pending = requestAnimationFrame(update);
+    });
+    function update() {
+      pending = 0;
       const box = svg.getBoundingClientRect();
-      const px = (ev.clientX - box.left) * W / box.width;
+      const figBox = fig.getBoundingClientRect();
+      const px = (lastX - box.left) * W / box.width;
       const t = spec.from + (px - M.l) / (W - M.l - M.r) * (spec.to - spec.from);
       let best = null;
       series.forEach((s, k) => {
@@ -942,11 +1113,11 @@
       });
       cross.setAttribute('x1', x(best.t)); cross.setAttribute('x2', x(best.t)); cross.setAttribute('visibility', 'visible');
       tip.hidden = false;
-      const figBox = fig.getBoundingClientRect();
-      const left = ev.clientX - figBox.left + 12;
-      tip.style.left = `${Math.min(left, figBox.width - tip.offsetWidth - 4)}px`;
+      const at = lastX - figBox.left;
+      if (at > figBox.width / 2) { tip.style.left = 'auto'; tip.style.right = `${figBox.width - at + 12}px`; }
+      else { tip.style.right = 'auto'; tip.style.left = `${at + 12}px`; }
       tip.style.top = `${box.top - figBox.top + 8}px`;
-    });
+    }
   }
 
   // Category over time (energy state, link state): a band per report interval, labelled in the legend.
@@ -966,24 +1137,16 @@
       r.append(sv('title', {}, `${values[i]} · ${fmtTime(t[i], true)}`));
       svg.append(r);
     }
-    svg.append(sv('line', { x1: M.l, x2: W - M.r, y1: 40, y2: 40, class: 'baseline' }));
-    const [ticks, step] = timeTicks(from, to, Math.max(2, Math.floor((W - M.l - M.r) / 90)));
-    for (const tt of ticks) svg.append(sv('text', { x: x(tt), y: h - 8, 'text-anchor': 'middle', class: 'tick' }, timeLabel(tt, step)));
-    for (const m of markers) {
-      if (m.t < from || m.t > to) continue;
-      const mx = x(m.t);
-      const line = sv('line', { x1: mx, x2: mx, y1: 8, y2: 40, class: 'marker' });
-      line.append(sv('title', {}, `${m.label} · ${fmtTime(m.t, true)}`));
-      svg.append(line);
-    }
+    drawTimeAxis(svg, from, to, x, W, 40, h - 8);
+    drawMarkers(svg, markers, from, to, x, 8, 40, false);
     return fig;
   }
 
   // ---------------------------------------------------------------- timers and start
-  setInterval(() => { if (S.running) renderLive(); }, 1000);          // ages tick locally; no polling
-  setInterval(() => { if (S.running && S.range.span !== undefined) renderHistory(); }, 60000);  // slide the window
+  setInterval(tick, 1000);   // ages tick locally; no polling
+  setInterval(() => { if (S.running && following()) { trimHistory(); renderHistory(); } }, 60000);  // slide the window
   let resizeTimer = null;
-  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderHistory, 250); });
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => renderHistory(), 250); });
 
   S.token = getItem('session', TOKEN_KEY);
   if (S.token) start(); else showLogin('');
