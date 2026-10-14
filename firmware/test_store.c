@@ -177,8 +177,12 @@ static void do_provision(uint32_t station, uint8_t seed) {
  uint8_t key[16];
  for (int k = 0; k < 16; k++) key[k] = (uint8_t)(seed * 17 + k * 29 + 1);
  M.try_station = station; memcpy(M.try_key, key, 16);
- infl.op = OP_PROVISION; int rc = store_config_write(station, key); infl.op = OP_NONE;
- if (!rc) { M.cfg = 1; M.station = station; memcpy(M.key, key, 16); }
+ infl.op = OP_PROVISION; uint8_t kcv[3]; int rc = store_config_write(station, key, kcv); infl.op = OP_NONE;
+ if (!rc) {
+  uint8_t want[3]; ws_key_check(key, want);
+  CHECK("config_kcv", !memcmp(kcv, want, 3), "provision returned a wrong key check value");
+  M.cfg = 1; M.station = station; memcpy(M.key, key, 16);
+ }
 }
 static void do_wipe(void) {
  infl.op = OP_WIPE; int rc = store_wipe(); infl.op = OP_NONE;

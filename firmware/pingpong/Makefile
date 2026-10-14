@@ -9,7 +9,7 @@ BUILD  = build
 TARGET = $(BUILD)/pingpong
 
 APP_SRC = $(BOARD_CORE_SRC) \
-          SubGHz_Phy/App/app_subghz_phy.c \
+          $(BOARD_APP_SRC) \
           SubGHz_Phy/App/subghz_phy_app.c \
           $(BOARD_RADIO_SRC) \
           $(BOARD_SYS_SRC)

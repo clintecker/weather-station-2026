@@ -15,7 +15,11 @@ static IWDG_HandleTypeDef hiwdg;
 static UTIL_TIMER_Object_t check_timer;
 static int (*health)(void);
 static ws_reset_t cause = WS_RESET_UNKNOWN;
-static const char *const cause_name[] = { "unknown", "power", "pin", "brownout", "software", "watchdog", "lowpower", "option-bytes" };
+/* Indexed by code (designated initializers), so the name and the DIAG wire code cannot drift apart. */
+static const char *const cause_name[] = {
+  [WS_RESET_UNKNOWN] = "unknown", [WS_RESET_POWER] = "power", [WS_RESET_PIN] = "pin",
+  [WS_RESET_BROWNOUT] = "brownout", [WS_RESET_SOFTWARE] = "software", [WS_RESET_WATCHDOG] = "watchdog",
+  [WS_RESET_LOWPOWER] = "lowpower", [WS_RESET_OPTION_BYTES] = "option-bytes" };
 _Static_assert(sizeof cause_name / sizeof cause_name[0] == WS_RESET_COUNT, "one name per reset code");
 
 static void request_check(void *ctx)

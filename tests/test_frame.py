@@ -1,27 +1,22 @@
 """Host/MCU known-answer agreement: the firmware's C frame code (Mbed TLS AES-CCM)
 must produce and accept exactly the bytes the Python gateway does."""
-import os
-os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
-
 import ctypes
+import os
 import random
 import re
 import struct
-import subprocess
 import tempfile
 import unittest
-try:
-    from toolchain import needs_cc          # python -m unittest discover -s tests
+try:                                        # first: sets WS0_UNSAFE_FAST_FSYNC before ws0 is imported
+    from toolchain import MBEDTLS, ROOT, host_library, needs_cc, needs_vendor
 except ImportError:
-    from tests.toolchain import needs_cc    # python -m unittest tests.<module>
+    from tests.toolchain import MBEDTLS, ROOT, host_library, needs_cc, needs_vendor
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from ws0.fields import encode
 from ws0.protocol import (COUNTER_MAX, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, STATION_MAX, Nonces, frame_counter,
                           pack_reply, seal, unpack_reply, unseal)
 
-ROOT = Path(__file__).resolve().parent.parent
-MBEDTLS = ROOT/'vendor/STM32CubeWL/Middlewares/Third_Party/mbed-crypto'
 # Same vectors are compiled into the TX firmware's boot self-test (App/app_tx.c). They were made
 # directly with AESCCM from the spec's header and nonce (see test_vectors_follow_the_spec), not by
 # ws0/protocol.py, so they check the implementations rather than echo them.
@@ -50,27 +45,18 @@ class Fixed:
 
 
 # CI sets WS_REQUIRE_VENDOR=1 so a missing vendor/ fails these tests instead of skipping them.
-REQUIRE_VENDOR = os.environ.get('WS_REQUIRE_VENDOR') == '1'
-
-
 @needs_cc
-@unittest.skipUnless(MBEDTLS.exists() or REQUIRE_VENDOR, 'run tools/fetch-vendor.sh to fetch pinned Mbed TLS')
+@needs_vendor
 class FrameAgreement(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not MBEDTLS.exists():
             raise AssertionError(f'WS_REQUIRE_VENDOR=1 but {MBEDTLS} is missing; run tools/fetch-vendor.sh')
-        # Windows cannot delete a library ctypes still has loaded; leave it for the OS temp cleanup.
-        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        lib = Path(cls.tmp.name)/'wsframe.so'
         sources = [ROOT/'firmware/common/ws_frame.c'] + [
             MBEDTLS/'library'/f'{name}.c' for name in
             ('aes', 'ccm', 'block_cipher', 'platform_util', 'constant_time')]
-        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
-                        '-I', str(ROOT/'firmware/common'), '-I', str(MBEDTLS/'include'),
-                        '-DMBEDTLS_CONFIG_FILE="ws_mbedtls_config.h"',
-                        *map(str, sources), '-o', str(lib)], check=True)
-        cls.lib = ctypes.CDLL(str(lib))
+        cls.lib = host_library(cls, 'wsframe', '-I', ROOT/'firmware/common', '-I', MBEDTLS/'include',
+                               '-DMBEDTLS_CONFIG_FILE="ws_mbedtls_config.h"', *sources)
         u8p = ctypes.POINTER(ctypes.c_uint8)
         cls.lib.ws_key_check.argtypes = [u8p, u8p]
         cls.lib.ws_seal_kind.argtypes = [u8p, ctypes.c_uint32, ctypes.c_uint8, ctypes.c_uint64, u8p, ctypes.c_uint32,
@@ -78,10 +64,6 @@ class FrameAgreement(unittest.TestCase):
         cls.lib.ws_open_reply.argtypes = [u8p, ctypes.c_uint32, u8p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8)] + \
             [ctypes.POINTER(t) for t in (ctypes.c_uint64, ctypes.c_uint32, ctypes.c_uint32,
                                          ctypes.c_uint32, ctypes.c_uint64)]
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.tmp.cleanup()
 
     @staticmethod
     def buf(data, size=None):
@@ -245,12 +227,19 @@ class FirmwareTables(unittest.TestCase):
         self.assertEqual(self.c_array(source, 'KAT_NACK'), KAT_NACK)
 
     def test_reset_cause_numbering(self):
-        """DIAG byte 22 is the index into watchdog.c's name table: it must be ws0's RESET_CAUSES."""
+        """DIAG byte 22 is the ws_reset_t code (enum order in watchdog.h); its name in watchdog.c's
+        table (designated initializers) must be ws0's RESET_CAUSES at that index."""
         from ws0.protocol import RESET_CAUSES
+        header = (ROOT/'firmware/stage0-node/App/watchdog.h').read_text()
         source = (ROOT/'firmware/stage0-node/App/watchdog.c').read_text()
-        m = re.search(r'cause_name\[\] = \{([^}]*)\};', source)
-        self.assertIsNotNone(m)
-        self.assertEqual(tuple(re.findall(r'"([^"]*)"', m.group(1))), RESET_CAUSES)
+        enum = re.search(r'typedef enum \{([^}]*)\} ws_reset_t;', header)
+        table = re.search(r'cause_name\[\] = \{([^}]*)\};', source)
+        self.assertIsNotNone(enum)
+        self.assertIsNotNone(table)
+        codes = {name: i for i, name in enumerate(re.findall(r'WS_RESET_\w+', enum.group(1)))}
+        named = {codes[k]: v for k, v in re.findall(r'\[(WS_RESET_\w+)\]\s*=\s*"([^"]*)"', table.group(1))}
+        self.assertEqual(tuple(named[i] for i in range(len(RESET_CAUSES))), RESET_CAUSES)
+        self.assertEqual(codes['WS_RESET_COUNT'], len(RESET_CAUSES))
 
 
 if __name__ == '__main__':

@@ -9,7 +9,7 @@ BUILD  = build
 TARGET = $(BUILD)/rangetest
 
 APP_SRC = $(BOARD_CORE_SRC) \
-          SubGHz_Phy/App/app_subghz_phy.c \
+          $(BOARD_APP_SRC) \
           SubGHz_Phy/App/subghz_phy_app.c \
           App/rt_proto.c \
           $(BOARD_RADIO_SRC) \

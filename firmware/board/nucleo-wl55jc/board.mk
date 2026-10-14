@@ -43,6 +43,8 @@ IT_SRC         ?= $(BOARD)/Core/Src/stm32wlxx_it.c
 BOARD_CORE_SRC  = $(patsubst $(BOARD)/Core/Src/stm32wlxx_it.c,$(IT_SRC),$(wildcard $(BOARD)/Core/Src/*.c))
 BOARD_SYS_SRC   = $(BOARD)/startup/syscalls.c $(BOARD)/startup/sysmem.c
 BOARD_RADIO_SRC = $(BOARD)/SubGHz_Phy/Target/radio_board_if.c
+# MX_SubGHz_Phy_Init/Process, which hand over to the project's SubGHz app.
+BOARD_APP_SRC   = $(BOARD)/SubGHz_Phy/App/app_subghz_phy.c
 ASM_SRC         = $(BOARD)/startup/startup_stm32wl55jcix.s
 
 HAL = $(CUBE)/Drivers/STM32WLxx_HAL_Driver/Src/stm32wlxx_hal
@@ -64,7 +66,7 @@ CUBE_SRC = $(CUBE)/Drivers/BSP/STM32WLxx_Nucleo/stm32wlxx_nucleo_radio.c \
            $(CUBE)/Utilities/trace/adv_trace/stm32_adv_trace.c \
            $(CUBE_EXTRA)
 
-INCS = $(PROJ_INCS) $(BOARD)/Core/Inc $(BOARD)/SubGHz_Phy/Target \
+INCS = $(PROJ_INCS) $(BOARD)/Core/Inc $(BOARD)/SubGHz_Phy/App $(BOARD)/SubGHz_Phy/Target \
        $(CUBE)/Drivers/BSP/STM32WLxx_Nucleo \
        $(CUBE)/Drivers/CMSIS/Device/ST/STM32WLxx/Include \
        $(CUBE)/Drivers/CMSIS/Include \
@@ -108,6 +110,15 @@ $(STRICT_OBJS): CFLAGS += $(STRICT)
 
 all: $(TARGET).bin
 
+# -MMD tracks headers, not flags: rewrite flags.txt when the compile flags change (a new
+# FW_VERSION after a commit, a different DEFS) so every object rebuilds, and relink when the
+# linker script or a makefile changes. Otherwise `make` without `clean` kept an old version string.
+FLAGS_FILE := $(BUILD)/flags.txt
+ifeq ($(filter clean,$(MAKECMDGOALS)),)
+$(shell mkdir -p $(BUILD) && printf '%s\n' '$(CFLAGS) $(LDFLAGS)' | cmp -s - $(FLAGS_FILE) || printf '%s\n' '$(CFLAGS) $(LDFLAGS)' > $(FLAGS_FILE))
+endif
+$(OBJS): $(FLAGS_FILE)
+
 # One explicit rule per source (no vpath), so a project file can never be shadowed by a board or
 # vendor file of the same name.
 define BOARD_COMPILE_RULE
@@ -124,7 +135,7 @@ $(BUILD)/app/startup.o: $(ASM_SRC)
 
 APP_FLASH_BYTES ?= 65536
 
-$(TARGET).elf: $(OBJS)
+$(TARGET).elf: $(OBJS) $(BOARD)/STM32WL55JCIX_FLASH.ld $(MAKEFILE_LIST)
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@
 ifneq ($(FLASH_BUDGET_PCT),)

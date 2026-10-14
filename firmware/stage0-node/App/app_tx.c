@@ -645,10 +645,9 @@ static void on_line(char *line)
     else if (ws_parse_provision(line + 10, &id, new_key, &floor))
     { APP_PRINTF("#error usage: PROVISION <station_id> <32 hex key> [epoch_floor]\n"); }
     else if (floor && store_epoch_floor(floor)) { APP_PRINTF("#error epoch-floor\n"); }
-    else if ((rc = store_config_write(id, new_key)) != 0) { APP_PRINTF("#error provision rc=%d\n", rc); }
+    else if ((rc = store_config_write(id, new_key, check)) != 0) { APP_PRINTF("#error provision rc=%d\n", rc); }
     else
     {
-      ws_key_check(new_key, check);
       APP_PRINTF("#provisioned station=%u kcv=%02x%02x%02x epoch_floor=%u\n", (unsigned)id, check[0], check[1], check[2], (unsigned)floor);
       memset(new_key, 0, sizeof new_key); memset(line, 0, strlen(line));
       reboot_soon();

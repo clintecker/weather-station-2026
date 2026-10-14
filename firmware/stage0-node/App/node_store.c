@@ -70,8 +70,8 @@ int store_config_load(uint32_t *station, uint8_t key[16], uint8_t kcv_out[3]) {
  memcpy(kcv_out, kcv, 3);
  return 0;
 }
-int store_config_write(uint32_t station, const uint8_t key[16]) {
- uint32_t a = WS_PAGE_ADDR(WS_CONFIG_PAGE); uint64_t k0, k1; uint8_t kcv[3];
+int store_config_write(uint32_t station, const uint8_t key[16], uint8_t kcv[3]) {
+ uint32_t a = WS_PAGE_ADDR(WS_CONFIG_PAGE); uint64_t k0, k1;
  for (uint32_t i = 0; i < 4; i++) if (rd64(a + 8 * i, 0) != ERASED) return -1; /* refuse overwrite */
  if (station == 0 || station > WS_STATION_MAX || ws_key_check(key, kcv)) return -2;
  memcpy(&k0, key, 8); memcpy(&k1, key + 8, 8);
