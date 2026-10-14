@@ -39,7 +39,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements*.txt   # dev tools (ruff) too
 
       # Pinned gateway dependencies (cryptography, paho-mqtt, pyserial).
       - name: Install Python dependencies
@@ -102,14 +102,22 @@ jobs:
 
       # The exact toolchain named in RELEASES.md, verified against the pinned SHA-256 before use.
       # Installed at the Makefile's default TOOLCHAIN path so no override is needed.
+      # The tarball is cached by version and hash; the SHA-256 check below runs on every job either way.
+      - name: Cache xPack tarball
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/xpack
+          key: xpack-${{ env.XPACK_VERSION }}-${{ env.XPACK_SHA256 }}
+
       - name: Install xPack arm-none-eabi-gcc (SHA-256 verified)
         run: |
           tarball=xpack-arm-none-eabi-gcc-$XPACK_VERSION-linux-x64.tar.gz
-          curl -fsSL -o "$RUNNER_TEMP/$tarball" \
+          mkdir -p ~/.cache/xpack
+          [ -f ~/.cache/xpack/$tarball ] || curl -fsSL -o ~/.cache/xpack/$tarball \
             "https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v$XPACK_VERSION/$tarball"
-          echo "$XPACK_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          echo "$XPACK_SHA256  $HOME/.cache/xpack/$tarball" | sha256sum -c -
           mkdir -p "$HOME/.local/opt"
-          tar -xzf "$RUNNER_TEMP/$tarball" -C "$HOME/.local/opt"
+          tar -xzf ~/.cache/xpack/$tarball -C "$HOME/.local/opt"
           "$HOME/.local/opt/xpack-arm-none-eabi-gcc-$XPACK_VERSION/bin/arm-none-eabi-gcc" --version
 
       - name: Cache vendor sources
@@ -130,8 +138,8 @@ jobs:
           for pass in 1 2; do
             echo "::group::build pass $pass"
             make clean
-            make ROLE=rx
-            make ROLE=tx
+            make ROLE=rx -j"$(nproc)"   # parallel is safe: the two passes' hashes must match
+            make ROLE=tx -j"$(nproc)"
             sha256sum build/rx/stage0-rx.bin build/tx/stage0-tx.bin | tee "$RUNNER_TEMP/bin-$pass.sha256"
             echo "::endgroup::"
           done
@@ -171,10 +179,21 @@ jobs:
         working-directory: firmware/fuzz
         run: |
           make libfuzzer CLANG=clang
-          for t in reply provision console obs; do
-            mkdir -p "build/corpus-$t"
-            "build/libfuzzer-$t" "build/corpus-$t" "corpus/$t" -max_total_time=60 -print_final_stats=1
+          # libFuzzer is single-threaded: two targets at a time on the 2-core runner, each still
+          # gets a full core for its 60 s. Any failing target fails the step.
+          fuzz() {
+            mkdir -p "build/corpus-$1"
+            "build/libfuzzer-$1" "build/corpus-$1" "corpus/$1" -max_total_time=60 -print_final_stats=1 \
+              -artifact_prefix="build/crash-$1-" > "build/fuzz-$1.log" 2>&1
+          }
+          fail=0
+          for pair in "reply provision" "console obs"; do
+            pids=""
+            for t in $pair; do fuzz "$t" & pids="$pids $!"; done
+            for pid in $pids; do wait "$pid" || fail=1; done
           done
+          for t in reply provision console obs; do echo "::group::fuzz $t"; cat "build/fuzz-$t.log"; echo "::endgroup::"; done
+          exit $fail
 
       - name: Print sizes
         working-directory: firmware/stage0-node
