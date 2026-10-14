@@ -28,42 +28,58 @@ def full_flush(db):
     db.execute(f'PRAGMA checkpoint_fullfsync={on}')
 
 
+BASE_KEYS = frozenset({'version','station','session','sequence','sampled_at','uptime_s','time_quality',
+                       'energy_state','calibration_revision','quality'})
+
+
 def validate(record):
-    """Enforce a closed schema and reject NaN, booleans and impossible readings."""
-    required = {'version','station','session','sequence','sampled_at','time_quality',
-                'temperature_c','humidity_pct','quality'}
-    if not isinstance(record, dict) or type(record.get('version')) is not int:
+    """Closed schema for protocol draft 5 (docs/protocol-draft5-design.md 5.7): identity and time as
+    before, catalog fields with exact, representable values, and a quality that matches them."""
+    from ws0 import fields as F
+    if not isinstance(record, dict) or type(record.get('version')) is not int or record['version'] != 5:
         raise ValueError('Unsupported version')
-    if record['version'] == 2:  # protocol draft 4 adds seconds since boot
-        required = required | {'uptime_s'}
-    elif record['version'] != 1:
-        raise ValueError('Unsupported version')
-    if set(record) != required:
+    if not BASE_KEYS <= set(record):
+        raise ValueError('Missing record fields')
+    extra = set(record) - BASE_KEYS
+    if extra - set(F.BY_NAME) - {'wind_calm'}:
         raise ValueError('Unexpected record fields')
-    if record['version'] == 2 and (type(record['uptime_s']) is not int or not 0 <= record['uptime_s'] < 2**32):
-        raise ValueError('Invalid uptime')
+    if ('wind_calm' in record) != ('wind_dir_deg' in record):
+        raise ValueError('wind_calm goes with wind_dir_deg')
     for name in ('station','session'):
         if not isinstance(record[name], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', record[name]):
             raise ValueError('Invalid identity')
-    if type(record['sequence']) is not int or not 0 <= record['sequence'] < 2**32:
-        raise ValueError('Invalid sequence')
-    if record['quality'] not in ('valid','sensor_fault'):
-        raise ValueError('Invalid quality')
+    for name, top in (('sequence',2**32),('uptime_s',2**32),('calibration_revision',256)):
+        if type(record[name]) is not int or not 0 <= record[name] < top:
+            raise ValueError(f'Invalid {name}')
+    if record['energy_state'] not in F.ENERGY:
+        raise ValueError('Invalid energy state')
     if record['time_quality'] not in ('synchronized','unknown'):
         raise ValueError('Invalid time quality')
     stamp = record['sampled_at']
     if record['time_quality'] == 'unknown':
         if stamp is not None:
             raise ValueError('Unknown clock must have null time')
-    elif type(stamp) not in (int,float) or not math.isfinite(stamp) or not 0 <= stamp < 253402300800:
+    elif type(stamp) not in (int,float) or not math.isfinite(stamp) or not 0 < stamp < 2**32:
         raise ValueError('Invalid UTC timestamp')
-    for name, low, high in [('temperature_c',-40,125),('humidity_pct',0,100)]:
-        value = record[name]
-        if record['quality'] == 'sensor_fault':
-            if value is not None:
-                raise ValueError('Fault readings must be null')
-        elif type(value) not in (int,float) or not math.isfinite(value) or not low <= value <= high:
-            raise ValueError('Invalid measurement')
+    for name in extra & set(F.MEASURED):
+        value, f = record[name], F.BY_NAME[name]
+        if value is None:
+            continue
+        if type(value) not in (int,float) or not math.isfinite(value) or f.code(value) == f.invalid \
+                or f.value(f.code(value)) != value:
+            raise ValueError(f'{name}: not an exact catalog value')
+    if 'wind_calm' in record:
+        if type(record['wind_calm']) is not bool or (record['wind_calm'] and record['wind_dir_deg'] is not None):
+            raise ValueError('Invalid wind_calm')
+    if record.get('wind_speed_ms', 0) is None and (record.get('wind_dir_deg') is not None or record.get('wind_calm')):
+        raise ValueError('Wind direction without a valid speed')
+    if 'qualifiers' in record:
+        q = record['qualifiers']
+        if not isinstance(q, dict) or any(n not in {g.name for g in F.FIELDS[:16]} or v not in F.QUALIFIER[1:]
+                                          for n, v in q.items()):
+            raise ValueError('Invalid qualifiers')
+    if record['quality'] != F.quality(record):
+        raise ValueError('Quality does not match the field values')
 
 
 class Store:
@@ -74,21 +90,13 @@ class Store:
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('PRAGMA synchronous=FULL')
         full_flush(self.db)
+        # The JSON payload is immutable and the deduplication authority; the derived time columns
+        # are recomputed when references arrive (reconstruct).
         self.db.execute('''CREATE TABLE IF NOT EXISTS observations (
-            station TEXT, session TEXT, sequence INTEGER, sampled_at REAL,
-            received_at REAL, payload TEXT, PRIMARY KEY(station,session,sequence))''')
+            station TEXT, session TEXT, sequence INTEGER, sampled_at REAL, received_at REAL, payload TEXT,
+            uptime_s INTEGER, effective_at REAL, time_basis TEXT, time_uncertainty_s REAL,
+            PRIMARY KEY(station,session,sequence))''')
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_time ON observations(station,sampled_at)')
-        # Derived time columns (draft 4). The JSON payload stays immutable and remains the
-        # deduplication authority; these columns are recomputed when references arrive.
-        columns = {row[1] for row in self.db.execute('PRAGMA table_info(observations)')}
-        for name, kind in (('uptime_s','INTEGER'),('effective_at','REAL'),('time_basis','TEXT'),
-                           ('time_uncertainty_s','REAL')):
-            if name not in columns:
-                self.db.execute(f'ALTER TABLE observations ADD COLUMN {name} {kind}')
-        self.db.execute("UPDATE observations SET effective_at=sampled_at, "
-                        "time_basis=CASE WHEN sampled_at IS NULL THEN 'unknown' ELSE 'synchronized' END, "
-                        "time_uncertainty_s=CASE WHEN sampled_at IS NULL THEN NULL ELSE 0 END "
-                        "WHERE time_basis IS NULL")
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_effective ON observations(station,effective_at)')
         # Authentic frames that were permanently rejected (and NACKed) are kept, never silently lost.
         self.db.execute('''CREATE TABLE IF NOT EXISTS rejections (station TEXT, session TEXT, sequence INTEGER,
@@ -110,6 +118,7 @@ class Store:
                 if old[0] != payload:
                     raise ValueError('Identity collision')
                 return False
+            self.check_counters(record)
             received = time.time() if received_at is None else received_at
             synced = record['sampled_at'] is not None
             self.db.execute('INSERT INTO observations (station,session,sequence,sampled_at,received_at,payload,'
@@ -118,6 +127,26 @@ class Store:
                              'synchronized' if synced else 'unknown',0 if synced else None))
             self.reconstruct(record['station'],record['session'])
         return True
+
+    def check_counters(self, record):
+        """Since-boot counters (rain tips, energy, charge) never decrease in sequence order within an
+        epoch (design 5.3). Compared with the stored neighbours by sequence, not by arrival, so a
+        backfilled older record is fine; a decrease is an invalid record."""
+        from ws0.fields import FIELDS
+        for f in FIELDS:
+            value = record.get(f.name)
+            if not f.counter or value is None:
+                continue
+            path = f'$.{f.name}'
+            args = (path, record['station'], record['session'], path)
+            before = self.db.execute('SELECT json_extract(payload,?) FROM observations WHERE station=? AND session=? '
+                                     'AND json_extract(payload,?) IS NOT NULL AND sequence<? ORDER BY sequence DESC LIMIT 1',
+                                     (*args, record['sequence'])).fetchone()
+            after = self.db.execute('SELECT json_extract(payload,?) FROM observations WHERE station=? AND session=? '
+                                    'AND json_extract(payload,?) IS NOT NULL AND sequence>? ORDER BY sequence LIMIT 1',
+                                    (*args, record['sequence'])).fetchone()
+            if (before and before[0] > value) or (after and after[0] < value):
+                raise ValueError(f'{f.name} decreased within epoch {record["session"]}')
 
     def reconstruct(self, station, session):
         """Give unsynchronized samples of one boot epoch a UTC time from the nearest trusted
@@ -173,14 +202,18 @@ class Store:
         # A future sample at receipt stays quarantined; waiting does not validate its clock.
         future = effective is not None and effective > row[1]+5
         vague = uncertainty is not None and uncertainty > CURRENT_MAX_UNCERTAINTY_S
-        available = (age is not None and 0 <= age < 180 and not future and not vague
-                     and record['quality']=='valid')
+        timely = age is not None and 0 <= age < 180 and not future and not vague
+        # Availability is per field (design 5.7): one dead sensor never hides the others.
+        from ws0.fields import BY_NAME, MEASURED
+        fields = {name: timely and (record[name] is not None or (name == 'wind_dir_deg' and record.get('wind_calm', False)))
+                  for name in MEASURED if name in record}
+        available = timely and record['quality'] != 'sensor_fault'
         reason = ('future_clock_at_receipt' if future else 'unknown_clock' if age is None else
                   'time_uncertain' if vague else
-                  'sensor_fault' if record['quality']!='valid' else 'fresh' if available else 'stale_or_clock_step')
-        return {'available':available,'reason':reason,'age_seconds':age,'received_at':row[1],
+                  'sensor_fault' if record['quality']=='sensor_fault' else 'fresh' if timely else 'stale_or_clock_step')
+        return {'available':available,'reason':reason,'fields_available':fields,'age_seconds':age,'received_at':row[1],
                 'observation':record,'effective_sampled_at':effective,'time_basis':basis,
-                'time_uncertainty_s':uncertainty,'units':{'temperature_c':'°C','humidity_pct':'%'}}
+                'time_uncertainty_s':uncertainty,'units':{n: BY_NAME[n].unit for n in fields if BY_NAME[n].unit}}
 
     def history(self, station, start=0, end=253402300800, limit=100, offset=0):
         """Stable page ordering; UTC-unknown records remain in DB but outside time queries."""

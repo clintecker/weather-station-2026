@@ -21,7 +21,9 @@ from urllib.error import HTTPError
 from urllib.request import Request,urlopen
 from cryptography.exceptions import InvalidTag
 from ws0.__main__ import provision
-from ws0.protocol import Nonces,OBS,unseal
+from ws0.protocol import Nonces,unseal
+from struct import Struct
+D4_OBS=Struct('>IIIIhHBBH')  # the firmware's draft-4 packer, until its draft-5 encoder lands
 from ws0.service import CounterRegression,Gateway,discovery,http_server,load_config
 from ws0.simulator import Node
 
@@ -128,7 +130,7 @@ class FirmwareTests(unittest.TestCase):
    for timed in (0,1):
     output=(ctypes.c_uint8*24)()
     self.lib.ws_pack_observation(output,17,42,100000,777,-1234,4567,valid,timed)
-    self.assertEqual(bytes(output),OBS.pack(17,42,100000 if timed else 0,777,-1234 if valid else -32768,4567 if valid else 0xFFFF,valid,timed,0))
+    self.assertEqual(bytes(output),D4_OBS.pack(17,42,100000 if timed else 0,777,-1234 if valid else -32768,4567 if valid else 0xFFFF,valid,timed,0))
  def test_sensirion_crc(self):
   self.assertEqual(self.lib.ws_crc8((ctypes.c_uint8*2)(0xbe,0xef),2),0x92)
 
@@ -297,19 +299,6 @@ class TimeReconstruction(unittest.TestCase):
   self.assertAlmostEqual(rows[0],2+(86400*3+60)*150e-6)  # ~41 s after a 3-day span
   self.assertAlmostEqual(rows[3],2+60*150e-6)             # nearest reference: 60 s away
   self.assertEqual(rows[4],0)                             # the synchronized reference itself
- def test_legacy_rows_get_derived_time_columns(self):
-  import sqlite3
-  path=Path(self.tmp.name)/'legacy.sqlite3'; db=sqlite3.connect(path)
-  db.execute('CREATE TABLE observations (station TEXT, session TEXT, sequence INTEGER, sampled_at REAL, received_at REAL, payload TEXT, PRIMARY KEY(station,session,sequence))')
-  old=dict(version=1,station='s',session='1',sequence=0,sampled_at=1000,time_quality='synchronized',temperature_c=None,humidity_pct=None,quality='sensor_fault')
-  db.execute('INSERT INTO observations VALUES (?,?,?,?,?,?)',('s','1',0,1000,1001,json.dumps(old,sort_keys=True,separators=(',',':'))))
-  db.commit(); db.close()
-  from gateway import Store
-  store=Store(path)
-  self.assertEqual(store.history('s',0,2000)[0]['time_basis'],'synchronized')
-  self.assertFalse(store.ingest(old))  # an exact draft-2/3 duplicate is still recognized
-  store.db.close()
-
 
 class NackTests(unittest.TestCase):
  """Gap G2: authentic but permanently rejected frames get an authenticated NACK."""
@@ -329,8 +318,10 @@ class NackTests(unittest.TestCase):
   self.assertEqual(len(rows),1); self.assertEqual(rows[0][0],'identity_collision'); self.assertTrue(rows[0][1])
   self.assertEqual(self.gateway.store.latest(self.cfg['station'],1003)['observation']['temperature_c'],record['temperature_c'])
  def test_invalid_authentic_record_is_nacked(self):
-  from ws0.protocol import KIND_NACK,NACK_INVALID,OBS,frame_kind,seal,unpack_reply
-  bad=OBS.pack(self.node.epoch,7,1000,0,0,0,0,1,0)  # validity 0 with 0/0 filler: noncanonical
+  from ws0 import fields
+  from ws0.protocol import KIND_NACK,NACK_INVALID,frame_kind,seal,unpack_reply
+  good=fields.encode(self.node.epoch,7,1000,0,1,0,{0:4000,1:5000})
+  bad=good[:16]+bytes([good[16]&~1])+good[17:]  # UTC set but time-known flag clear: noncanonical
   frame=seal(self.node.key,1,1,self.node.nonces,bad)
   reply=self.gateway.receive(frame,1001)
   self.assertEqual(frame_kind(reply),KIND_NACK)

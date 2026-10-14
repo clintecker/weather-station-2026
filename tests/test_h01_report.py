@@ -15,9 +15,10 @@ START = 1_800_000_000
 
 
 def obs(seq, sampled, valid=True, session='1', uptime=None):
-    return dict(version=2, station='s', session=session, sequence=seq, sampled_at=sampled,
+    return dict(version=5, station='s', session=session, sequence=seq, sampled_at=sampled,
                 uptime_s=seq * 60 if uptime is None else uptime,
                 time_quality='synchronized' if sampled is not None else 'unknown',
+                energy_state='normal', calibration_revision=0,
                 temperature_c=20.0 if valid else None, humidity_pct=40.0 if valid else None,
                 quality='valid' if valid else 'sensor_fault')
 

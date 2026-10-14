@@ -10,9 +10,9 @@ from gateway import Store
 
 def reading(**updates):
     """Use deterministic simulated UTC times for repeatable age checks."""
-    value = dict(version=1, station='test', session='boot-1', sequence=1,
-                 sampled_at=1000, time_quality='synchronized', temperature_c=20,
-                 humidity_pct=40, quality='valid')
+    value = dict(version=5, station='test', session='boot-1', sequence=1, sampled_at=1000, uptime_s=60,
+                 time_quality='synchronized', energy_state='normal', calibration_revision=0,
+                 temperature_c=20, humidity_pct=40, quality='valid')
     return value | updates
 
 
@@ -54,9 +54,29 @@ class GatewayTests(unittest.TestCase):
     def test_fault_and_invalid_values(self):
         self.store.ingest(reading(quality='sensor_fault', temperature_c=None, humidity_pct=None))
         self.assertFalse(self.store.latest('test', 1001)['available'])
-        for value in [float('nan'), float('inf'), True, 101]:
-            with self.assertRaises(ValueError):
+        for value in [float('nan'), float('inf'), True, 101, 40.001, '40']:
+            with self.assertRaises(ValueError, msg=repr(value)):
                 self.store.ingest(reading(sequence=2, humidity_pct=value))
+        with self.assertRaises(ValueError):    # quality must match the values
+            self.store.ingest(reading(sequence=3, humidity_pct=None))
+
+    def test_one_dead_field_does_not_hide_the_others(self):
+        self.store.ingest(reading(humidity_pct=None, quality='partial'), 1001)
+        latest = self.store.latest('test', 1001)
+        self.assertTrue(latest['available'])
+        self.assertEqual(latest['fields_available'], {'temperature_c': True, 'humidity_pct': False})
+        self.assertEqual(latest['units'], {'temperature_c': '°C', 'humidity_pct': '%'})
+
+    def test_counters_never_decrease_in_sequence_order(self):
+        rain = lambda seq, tips: reading(sequence=seq, sampled_at=1000 + 60 * seq, rain_tips=tips)
+        self.store.ingest(rain(5, 10), 1400)
+        self.store.ingest(rain(2, 7), 1401)          # backfill arriving after a later record: fine
+        self.store.ingest(rain(3, 7), 1402)
+        for seq, tips in ((4, 11), (4, 6), (6, 9)):  # above its successor, below its predecessor
+            with self.assertRaises(ValueError, msg=(seq, tips)):
+                self.store.ingest(rain(seq, tips), 1403)
+        self.store.ingest(rain(4, 8), 1404)
+        self.store.ingest(reading(session='boot-2', sequence=0, rain_tips=0), 1405)   # new epoch starts at 0
 
 
 if __name__ == '__main__':

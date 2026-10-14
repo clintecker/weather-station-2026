@@ -150,3 +150,32 @@ def values(codes):
         else:
             out[f.name] = None if code == f.invalid else f.value(code)
     return out
+
+
+MEASURED = tuple(f.name for f in FIELDS if f.name != 'qualifiers')
+
+
+def quality(record):
+    """valid: every present measurement valid (CALM counts); partial: some INVALID; sensor_fault: all."""
+    present = [record[name] is not None or (name == 'wind_dir_deg' and record.get('wind_calm'))
+               for name in MEASURED if name in record]
+    if not present:
+        raise ValueError('No measurements')
+    return 'valid' if all(present) else 'sensor_fault' if not any(present) else 'partial'
+
+
+def codes_from_record(record):
+    """Inverse of values(): {field index: code} for the catalog fields present in a record."""
+    codes = {}
+    for f in FIELDS:
+        if f.name not in record:
+            continue
+        v = record[f.name]
+        if f.name == 'qualifiers':
+            names = {g.name: g.index for g in FIELDS[:16]}
+            codes[f.index] = sum(QUALIFIER.index(q) << 2 * names[n] for n, q in v.items())
+        elif f.name == 'wind_dir_deg' and record.get('wind_calm'):
+            codes[f.index] = WIND_DIR_CALM
+        else:
+            codes[f.index] = f.code(v)
+    return codes

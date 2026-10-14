@@ -60,7 +60,8 @@ def score(db, station, start, hours):
         if not 0 <= minute < minutes:
             continue
         latency = received - effective
-        valid = json.loads(payload)['quality'] == 'valid'
+        record = json.loads(payload)   # H01 scores the T/RH fields' own validity (draft-5 design 5.7)
+        valid = record.get('temperature_c') is not None and record.get('humidity_pct') is not None
         rank = (0 if valid else 1) if 0 <= latency <= LATENCY_S else 2
         if minute not in best or (rank, latency) < best[minute]:
             best[minute] = (rank, latency)

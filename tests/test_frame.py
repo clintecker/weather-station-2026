@@ -15,9 +15,8 @@ except ImportError:
     from tests.toolchain import needs_cc    # python -m unittest tests.<module>
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from ws0.protocol import (COUNTER_MAX, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, OBS, RH_INVALID, STATION_MAX,
-                          TEMP_INVALID, Nonces, decode_observation, frame_counter, pack_reply, seal, unpack_reply,
-                          unseal)
+from ws0.protocol import (COUNTER_MAX, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, STATION_MAX, Nonces, frame_counter,
+                          pack_reply, seal, unpack_reply, unseal)
 
 ROOT = Path(__file__).resolve().parent.parent
 MBEDTLS = ROOT/'vendor/STM32CubeWL/Middlewares/Third_Party/mbed-crypto'
@@ -28,7 +27,7 @@ KAT_KEY = bytes(range(16))
 KAT_OBS = bytes.fromhex('5100010100000002bd50c6ae3400a778bec2d16fadad588beedf778fa19f9c44aa67cd92b9f30417')
 KAT_ACK = bytes.fromhex('52000100000000050e1eb4544766f4e6e0ffdbb3f6d1413d06f6369500199b8fe2')
 KAT_NACK = bytes.fromhex('5300010000000006849addbf88d9aadd884aa3bb89136575374521c5e416a1d0c9')
-KAT_OBS_PLAIN = OBS.pack(17, 42, 100000, 3600, -1234, 4567, 1, 1, 0)
+KAT_OBS_PLAIN = struct.pack('>IIIIhHBBH', 17, 42, 100000, 3600, -1234, 4567, 1, 1, 0)  # any 24-byte plaintext
 
 
 def spec_frame(key, kind, station, counter, plain):
@@ -178,29 +177,6 @@ class FrameAgreement(unittest.TestCase):
             unseal(KAT_KEY, 1, KIND_ACK, KAT_ACK[:-1] + bytes([KAT_ACK[-1] ^ 1]))
         with self.assertRaisesRegex(ValueError, 'Unexpected frame header'):
             unseal(KAT_KEY, 1, KIND_ACK, bytes([0x42]) + KAT_ACK[1:])
-
-    def test_invalid_reading_fillers(self):
-        """Draft 3: a sensor fault never travels as a plausible number (e.g. 0.00 degC)."""
-        stage0 = Path(self.tmp.name)/'stage0.so'
-        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
-                        str(ROOT/'firmware/stage0.c'), '-o', str(stage0)], check=True)
-        pack = ctypes.CDLL(str(stage0)).ws_pack_observation
-        pack.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32,
-                         ctypes.c_int16, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint8]
-        out = (ctypes.c_uint8*24)()
-        pack(out, 3, 7, 0, 90, 0, 0, 0, 0)  # fault: caller's 0/0 must not reach the wire
-        self.assertEqual(bytes(out)[16:20], bytes.fromhex('8000ffff'))
-        self.assertEqual(bytes(out), OBS.pack(3, 7, 0, 90, TEMP_INVALID, RH_INVALID, 0, 0, 0))
-        record = decode_observation(bytes(out), 'test')
-        self.assertIsNone(record['temperature_c']); self.assertEqual(record['quality'], 'sensor_fault')
-        for bad in (OBS.pack(3, 7, 0, 90, 0, 0, 0, 0, 0),                     # draft-2 zero filler
-                    OBS.pack(3, 7, 0, 90, 0, RH_INVALID, 0, 0, 0),            # half filler
-                    OBS.pack(3, 7, 0, 90, TEMP_INVALID, 4000, 1, 0, 0),       # filler marked valid
-                    OBS.pack(3, 7, 0, 90, 2100, RH_INVALID, 1, 0, 0)):
-            with self.assertRaises(ValueError):
-                decode_observation(bad, 'test')
-        valid_zero = decode_observation(OBS.pack(3, 7, 0, 90, 0, 0, 1, 0, 0), 'test')
-        self.assertEqual((valid_zero['temperature_c'], valid_zero['humidity_pct']), (0, 0))  # real 0.00 degC
 
     def test_diagnostic_frame_agreement(self):
         from ws0.protocol import DIAG

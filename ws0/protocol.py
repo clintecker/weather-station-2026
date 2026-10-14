@@ -10,6 +10,8 @@ import struct
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
+from . import fields
+
 # Draft-5 envelope (docs/protocol-draft5-design.md section 3): byte 0 = version << 4 | kind,
 # station u16, counter u40; then ciphertext and an 8-byte CCM tag. The C twin is
 # firmware/common/ws_frame.c, checked byte for byte by tests/test_frame.py.
@@ -17,9 +19,6 @@ VERSION = 5
 HEADER_LEN, TAG_LEN = 8, 8
 STATION_MAX = 65535
 COUNTER_MAX = 2**40 - 1   # the header holds 5 bytes; a larger counter would truncate and repeat a nonce
-# Draft 4: sample epoch/seq, UTC seconds (u32, 0 if unknown), seconds since boot (u32, always),
-# T/RH, validity/time, calibration. Uptime lets the gateway reconstruct unknown times later.
-OBS = struct.Struct('>IIIIhHBBH')
 # ACK and NACK plaintexts (17 bytes): epoch u32, sequence u32, word u32 (host UTC at commit for an
 # ACK, 0 if the gateway measured its clock wrong; the reason for a NACK), and the u40 counter of
 # the observation frame being answered. The echo lets the node accept the time only from the
@@ -47,10 +46,6 @@ DIAG = struct.Struct('>IIHIHHHHBB')
 RESET_CAUSES = ('unknown','power','pin','brownout','software','watchdog','lowpower','option-bytes')
 LINK_STATES = ('linked','probing')
 NACK_COLLISION, NACK_INVALID = 1, 2
-# Draft 3: invalid readings carry impossible fillers so a flag-blind reader never sees a
-# plausible value (0.00 degC is a real Chicago temperature).
-TEMP_INVALID = -32768  # 0x8000 = -327.68 degC
-RH_INVALID = 0xFFFF    # 655.35 %RH
 
 
 class Nonces:
@@ -159,14 +154,17 @@ def frame_counter(packet):
     return int.from_bytes(packet[3:HEADER_LEN], 'big')
 
 
-def plain_len(kind):
-    """Fixed plaintext length of each kind (the draft-4 observation layout until step 3)."""
-    return {KIND_OBS: OBS.size, KIND_ACK: REPLY_LEN, KIND_NACK: REPLY_LEN, KIND_DIAG: DIAG.size}[kind]
+def plain_lengths(kind):
+    """Plaintext lengths a frame of this kind may have before decrypting (design 3.4). An
+    observation's exact length depends on its encrypted field bitmap and is checked after."""
+    if kind == KIND_OBS:
+        return range(fields.HEAD_LEN + 1, fields.HEAD_LEN + fields.fields_len(fields.DEFINED) + 1)
+    return (REPLY_LEN,) if kind in (KIND_ACK, KIND_NACK) else (DIAG.size,)
 
 
 def unseal(key, station, kind, packet):
     """Reject the wrong length, version, kind or station before decrypting, then a bad tag."""
-    if len(packet) != HEADER_LEN + plain_len(kind) + TAG_LEN:
+    if len(packet) - HEADER_LEN - TAG_LEN not in plain_lengths(kind):
         raise ValueError('Wrong frame length')
     if frame_kind(packet) != kind or int.from_bytes(packet[1:3], 'big') != station:
         raise ValueError('Unexpected frame header')
@@ -175,31 +173,23 @@ def unseal(key, station, kind, packet):
 
 
 def encode_observation(record):
-    """Scale measurements; invalid values use explicit flags and the draft-3 fillers 0x8000/0xFFFF."""
+    """Gateway record -> draft-5 observation plaintext (design 5); the simulator's node uses it."""
     from gateway import validate
     validate(record)
-    valid = record['quality'] == 'valid'
-    return OBS.pack(int(record['session']), record['sequence'], record['sampled_at'] or 0, record['uptime_s'],
-                    round(record['temperature_c'] * 100) if valid else TEMP_INVALID,
-                    round(record['humidity_pct'] * 100) if valid else RH_INVALID,
-                    int(valid), int(record['time_quality'] == 'synchronized'), 0)
+    return fields.encode(int(record['session']), record['sequence'], record['sampled_at'] or 0, record['uptime_s'],
+                         fields.ENERGY.index(record['energy_state']), record['calibration_revision'],
+                         fields.codes_from_record(record))
 
 
 def decode_observation(payload, station):
-    """Unknown time and sensor faults stay null rather than plausible measurements."""
-    epoch, sequence, utc, uptime, temp, rh, valid, timed, calibration = OBS.unpack(payload)
-    if valid not in (0, 1) or timed not in (0, 1) or calibration != 0:
-        raise ValueError('Unsupported observation flags/calibration')
-    if (not timed and utc != 0) or (not valid and (temp, rh) != (TEMP_INVALID, RH_INVALID)):
-        raise ValueError('Noncanonical invalid values')
-    if valid and (temp == TEMP_INVALID or rh == RH_INVALID):
-        raise ValueError('Invalid-reading filler in a valid observation')
-    record = dict(version=2, station=station, session=str(epoch), sequence=sequence,
-                  sampled_at=utc if timed else None, uptime_s=uptime,
-                  time_quality='synchronized' if timed else 'unknown',
-                  temperature_c=temp / 100 if valid else None,
-                  humidity_pct=rh / 100 if valid else None,
-                  quality='valid' if valid else 'sensor_fault')
+    """Draft-5 observation plaintext -> gateway record. INVALID fields are null, never numbers."""
+    head, codes = fields.decode(payload)
+    record = dict(version=5, station=station, session=str(head['epoch']), sequence=head['sequence'],
+                  sampled_at=head['utc'] if head['time_known'] else None, uptime_s=head['uptime'],
+                  time_quality='synchronized' if head['time_known'] else 'unknown',
+                  energy_state=head['energy_state'], calibration_revision=head['calibration_revision'],
+                  **fields.values(codes))
+    record['quality'] = fields.quality(record)
     from gateway import validate
     validate(record)
     return record

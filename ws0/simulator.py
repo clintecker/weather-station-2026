@@ -42,10 +42,11 @@ class Node:
         if self.boot is None:
             self.boot = now
         clock_known = clock_known and self.synced
-        record = dict(version=2,station=self.cfg['station'],session=str(self.epoch),
+        record = dict(version=5,station=self.cfg['station'],session=str(self.epoch),
                       sequence=self.sequence,sampled_at=int(now+clock_offset) if clock_known else None,
                       uptime_s=int(now-self.boot),
                       time_quality='synchronized' if clock_known else 'unknown',
+                      energy_state='normal',calibration_revision=0,
                       temperature_c=None if fault else round(21+math.sin(self.sequence/10),2),
                       humidity_pct=None if fault else round(45+math.cos(self.sequence/10),2),
                       quality='sensor_fault' if fault else 'valid')
