@@ -116,7 +116,7 @@ def stack_symbols(build, toolchain):
 
 def analyse(build, toolchain=DEFAULT_TOOLCHAIN):
     frames, kinds, edges, defined_in = load(build)
-    roots_irq = [f for f in frames if f.split(':')[-1].endswith('_Handler')]   # includes *_IRQHandler
+    roots_irq = [f for f in frames if f.split(':')[-1].endswith(('_IRQHandler', '_Handler'))]
     taken = address_taken(build, toolchain)
     callbacks = [f for f in frames if f.split(':')[-1] in taken and f not in roots_irq]
     memo, missing, recursion = {}, set(), []
@@ -134,8 +134,10 @@ def analyse(build, toolchain=DEFAULT_TOOLCHAIN):
             cycle = stack[at:]
             if frozenset(c.split(':')[-1] for c in cycle) in BOUNDED_RECURSION:
                 return frames[f], [f], at          # one extra level of the bounded cycle
+            # Unbounded recursion is reported as an error; its partial results may be memoised
+            # (not doing so is factorial in the cycle size).
             recursion.append(' -> '.join(c.split(':')[-1] for c in cycle + [f]))
-            return 0, [f], at
+            return 0, [f], math.inf
         best, path, cut = 0, [], math.inf
         for d in edges.get(f, ()):
             if d == INDIRECT:

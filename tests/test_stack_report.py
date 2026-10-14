@@ -1,14 +1,14 @@
 """tools/stack_report.py: the worst-case stack bound must never be understated."""
-import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+try:
+    from toolchain import load_tool          # python -m unittest discover -s tests
+except ImportError:
+    from tests.toolchain import load_tool    # python -m unittest tests.<module>
 
-ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location('stack_report', ROOT/'tools/stack_report.py')
-stack_report = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(stack_report)
+stack_report = load_tool('stack_report')
 
 
 def callgraph(frames, edges):
@@ -33,6 +33,33 @@ class BoundedCycle(unittest.TestCase):
         self.assertEqual(r['cb'], (4 + 32 + 16 + 1000, 'app.c:on_event'))
         self.assertEqual(r['main_cost'], 8 + 16 + 1000)
         self.assertEqual(r['recursion'], [])
+
+
+class Roots(unittest.TestCase):
+    def test_irq_handlers_are_interrupt_roots(self):
+        """Vector-table handlers are named *_IRQHandler (USART2_IRQHandler) or *_Handler
+        (SysTick_Handler); both are interrupts, never callbacks, in the estimate."""
+        frames = {'app.c:main': 8, 'it.c:SUBGHZ_Radio_IRQHandler': 400, 'it.c:SysTick_Handler': 16}
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp)/'g.ci').write_text(callgraph(frames, []))
+            with patch.object(stack_report, 'address_taken',
+                              return_value={'SUBGHZ_Radio_IRQHandler', 'SysTick_Handler'}):
+                r = stack_report.analyse(tmp)
+        self.assertEqual(r['worst_irq'], (400, 'it.c:SUBGHZ_Radio_IRQHandler'))
+        self.assertEqual(r['cb'], (0, '-'))
+
+    def test_unbounded_recursion_is_reported_quickly(self):
+        """A large unbounded cycle is an error, found without exploring every path through it."""
+        import time
+        names = [f'x.c:f{i}' for i in range(12)]
+        edges = [(a, b) for a in names for b in names if a != b] + [('app.c:main', names[0])]
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp)/'g.ci').write_text(callgraph({'app.c:main': 8, **{n: 8 for n in names}}, edges))
+            with patch.object(stack_report, 'address_taken', return_value=set()):
+                began = time.monotonic()
+                r = stack_report.analyse(tmp)
+        self.assertLess(time.monotonic() - began, 5)
+        self.assertTrue(r['recursion'])
 
 
 if __name__ == '__main__':
