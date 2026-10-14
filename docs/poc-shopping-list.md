@@ -46,7 +46,7 @@ Everything wires to the TX NUCLEO-WL55JC1: I2C2 through a STEMMA QT hub, plus a 
 | Radiation shield | **Printed:** `hardware/poc-enclosure-r1/` (or buy an Ambient Weather SRS100LX, $54.99) | — | — |
 | Printed-part hardware | Rods, nuts, inserts, hose clamps, SMA bulkhead pigtail: see `hardware/poc-enclosure-r1/README.md` | — | — |
 
-**Total for the electronics and sensors above:** about $305, before shipping, the printed parts and
+**Total for the electronics and sensors above:** about $290, before shipping, the printed parts and
 their hardware.
 
 ## I2C addresses on I2C2
