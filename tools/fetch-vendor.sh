@@ -23,11 +23,20 @@ fi
 actual=$(git -C "$cube" rev-parse HEAD)
 [ "$actual" = "$CUBE_COMMIT" ] || { echo "STM32CubeWL is at $actual, expected $CUBE_COMMIT" >&2; exit 1; }
 
+# The right commit is not enough: an edited or added file (a local experiment, a tampered cache)
+# would still build. Fail on any change to the tracked tree.
+clean() {
+  changes=$(git -C "$1" status --porcelain --ignore-submodules=all)
+  [ -z "$changes" ] || { printf '%s has local changes:\n%s\n' "$1" "$changes" >&2; exit 1; }
+}
+clean "$cube"
+
 echo "$SUBMODULES" | while read -r path commit; do
   [ -n "$path" ] || continue
   git -C "$cube" submodule update --init --depth 1 "$path"
   actual=$(git -C "$cube/$path" rev-parse HEAD)
   [ "$actual" = "$commit" ] || { echo "$path is at $actual, expected $commit" >&2; exit 1; }
+  clean "$cube/$path"
   echo "ok $path $commit"
 done
 echo "ok STM32CubeWL $CUBE_TAG $CUBE_COMMIT"

@@ -72,9 +72,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
  if (got < 0) return 0;
 
  FUZZ_CHECK((size_t)got == WS_OBS_PLAIN_LEN(o.bitmap));
- FUZZ_CHECK(take((const uint8_t *[]){out}, &(size_t){4}, 4) == o.epoch);
- FUZZ_CHECK(((uint32_t)out[8] << 24 | (uint32_t)out[9] << 16 | (uint32_t)out[10] << 8 | out[11]) == o.utc);
+ const uint8_t *h = out; size_t hl = WS_OBS_HEAD_LEN;
+ FUZZ_CHECK(take(&h, &hl, 4) == o.epoch && take(&h, &hl, 4) == o.seq && take(&h, &hl, 4) == o.utc &&
+            take(&h, &hl, 4) == o.uptime);
  FUZZ_CHECK((out[16] & 1U) == (o.utc != 0) && (out[16] >> 1) == o.energy && out[17] == o.cal_rev);
+ h = out + 18; hl = 4;
+ FUZZ_CHECK(take(&h, &hl, 4) == o.bitmap);
  const uint8_t *q = out + WS_OBS_HEAD_LEN; size_t left = (size_t)got - WS_OBS_HEAD_LEN;
  for (unsigned i = 0; i < WS_FI_COUNT; i++)
   if (o.bitmap & WS_F(i)) FUZZ_CHECK(take(&q, &left, spec_width[i]) == o.code[i]);

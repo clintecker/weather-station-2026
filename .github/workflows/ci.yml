@@ -54,7 +54,7 @@ jobs:
           ruff check
 
       # vendor/ is git-ignored. Cache it keyed on the pin list; fetch-vendor.sh always re-verifies
-      # every pinned commit, so a stale or tampered cache fails here rather than in the tests.
+      # every pinned commit and that no vendored file changed, so a stale or tampered cache fails here rather than in the tests.
       - name: Cache vendor sources
         if: runner.os != 'Windows'
         uses: actions/cache@v4
@@ -140,6 +140,13 @@ jobs:
             exit 1
           fi
           echo "Reproducible: both clean builds gave identical .bin hashes."
+
+      # The bench tools (firmware/rangetest, firmware/pingpong) are not released, but they must keep
+      # compiling: they share the board code with the node.
+      - name: Build bench firmware
+        run: |
+          make -C firmware/rangetest BUILD=build/ci -j"$(nproc)"
+          make -C firmware/pingpong BUILD=build/ci -j"$(nproc)"
 
       # Our C already builds with a strict warning set and -Werror (Makefile STRICT). ANALYZE=1
       # adds GCC's static analyzer (-fanalyzer) to our files only; any finding fails the build.
