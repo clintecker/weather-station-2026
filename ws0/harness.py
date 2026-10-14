@@ -55,28 +55,38 @@ class Scenario:
 
     def validate(self):
         """Reject ambiguous scenario settings before mutating simulation state."""
-        if not self.name or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-_' for c in self.name):
-            raise ValueError('Scenario name must use lowercase letters, digits, - or _')
-        if type(self.minutes) is not int or not 1 <= self.minutes <= 10080:
-            raise ValueError('minutes must be an integer from 1 to 10080')
-        for name in ('uplink_loss','ack_loss','corruption','duplicates'):
+        _require(self.name and all(c in NAME_CHARACTERS for c in self.name),
+                 'Scenario name must use lowercase letters, digits, - or _')
+        _require(_integer_in(self.minutes, 1, 10080), 'minutes must be an integer from 1 to 10080')
+        for name in PROBABILITIES:
             value = getattr(self,name)
-            if type(value) not in (int,float) or not 0 <= value <= 1:
-                raise ValueError(f'{name} must be a probability')
-        if type(self.max_delay_seconds) is not int or not 0 <= self.max_delay_seconds <= 600:
-            raise ValueError('max_delay_seconds must be 0..600')
-        for name in ('link_outages','host_outages','commit_failures','sensor_faults','unknown_clock','clock_steps'):
+            _require(type(value) in (int,float) and 0 <= value <= 1, f'{name} must be a probability')
+        _require(_integer_in(self.max_delay_seconds, 0, 600), 'max_delay_seconds must be 0..600')
+        for name, size in SPAN_SIZES.items():
             for span in getattr(self,name):
-                size = 3 if name == 'clock_steps' else 2
-                if len(span) != size or any(type(n) is not int for n in span):
-                    raise ValueError(f'Invalid interval in {name}')
-                if not 0 <= span[0] < span[1] <= self.minutes:
-                    raise ValueError(f'Out-of-range interval in {name}')
+                _require(len(span) == size and all(type(n) is int for n in span), f'Invalid interval in {name}')
+                _require(0 <= span[0] < span[1] <= self.minutes, f'Out-of-range interval in {name}')
         for minute in self.node_reboots+self.gateway_reboots:
-            if type(minute) is not int or not 0 <= minute < self.minutes:
-                raise ValueError('Reboot outside sampling interval')
-        if self.require_latency_target and self.expect_latency_failure:
-            raise ValueError('Contradictory latency expectations')
+            _require(_integer_in(minute, 0, self.minutes-1), 'Reboot outside sampling interval')
+        _require(not (self.require_latency_target and self.expect_latency_failure),
+                 'Contradictory latency expectations')
+
+
+NAME_CHARACTERS = 'abcdefghijklmnopqrstuvwxyz0123456789-_'
+PROBABILITIES = ('uplink_loss','ack_loss','corruption','duplicates')
+# Interval lists and their lengths: [start, end) minutes; a clock step adds its offset in seconds.
+SPAN_SIZES = {'link_outages':2,'host_outages':2,'commit_failures':2,'sensor_faults':2,'unknown_clock':2,
+              'clock_steps':3}
+
+
+def _require(ok, message):
+    if not ok:
+        raise ValueError(message)
+
+
+def _integer_in(value, low, high):
+    """An int (not a bool) in [low, high]."""
+    return type(value) is int and low <= value <= high
 
 
 def inside(minute: int, spans: list[list[int]]) -> bool:
@@ -92,6 +102,15 @@ def key(record):
 DERIVED = ('received_at','_effective','_basis')
 
 
+def trustworthy_on_time(row, acquired, latency):
+    """H01-like eligibility: delivered within 120 s with a known time close to simulated
+    acquisition. Per Clint's 2026-10-12 decision, a gateway-reconstructed time (draft 4) is a known
+    time when it is within the same 5 s tolerance; it is reported separately by assess()."""
+    trustworthy_time = (row['_basis'] in ('synchronized','reconstructed') and
+                        row['_effective'] is not None and abs(row['_effective']-acquired) <= 5)
+    return trustworthy_time and 0 <= latency <= 120
+
+
 def assess(expected, rows, now):
     """Account against scheduled samples; never shrink the denominator on failure."""
     by_key = {key(row):row for row in rows}
@@ -99,25 +118,18 @@ def assess(expected, rows, now):
     mismatches = []
     on_time = unknown = invalid = 0
     latencies = []
-    for identity, info in expected.items():
-        expected_record, acquired = info
+    for identity, (expected_record, acquired) in expected.items():
         row = by_key.get(identity)
         unknown += expected_record['time_quality'] != 'synchronized'
         invalid += expected_record['quality'] != 'valid'
         if row is None:
             continue
-        actual = {k:v for k,v in row.items() if k not in DERIVED}
-        if actual != expected_record:
+        if {k:v for k,v in row.items() if k not in DERIVED} != expected_record:
             mismatches.append(list(identity))
         # Ground-truth delivery latency is available to the simulator even for bad clocks.
         latency = row['received_at']-acquired
         latencies.append(latency)
-        # H01-like eligibility also needs a known time close to simulated acquisition. Per
-        # Clint's 2026-10-12 decision, a gateway-reconstructed time (draft 4) is a known time
-        # when it is within the same 5 s tolerance; it is reported separately below.
-        trustworthy_time = (row['_basis'] in ('synchronized','reconstructed') and
-                            row['_effective'] is not None and abs(row['_effective']-acquired) <= 5)
-        on_time += int(trustworthy_time and 0 <= latency <= 120)
+        on_time += int(trustworthy_on_time(row, acquired, latency))
     return {'scheduled':len(expected),'stored':len(rows),'missing':missing,
             'unexpected_rows':[list(k) for k in by_key if k not in expected],
             'payload_mismatches':mismatches,'duplicate_rows':len(rows)-len(by_key),
@@ -128,6 +140,42 @@ def assess(expected, rows, now):
             'unknown_clock_samples':unknown,'sensor_fault_samples':invalid,
             'reconstructed_time_samples':sum(r['_basis']=='reconstructed' for r in rows),
             'unresolved_time_samples':sum(r['_basis']=='unknown' for r in rows)}
+
+
+ORACLE_FAILURES = ('missing','unexpected_rows','payload_mismatches','duplicate_rows')
+
+
+def _wrong_time(snapshot):
+    return abs(snapshot['effective_sampled_at']-snapshot['true_sampled_at']) > 5
+
+
+def snapshot_failure(scenario, snapshot):
+    """Why one availability snapshot presents something as current that is not, or None."""
+    if not snapshot['available']:
+        return None
+    minute = snapshot['minute']
+    if inside(minute,scenario.sensor_faults+scenario.clock_steps):
+        return 'fault_or_bad_clock_presented_as_current'
+    # Unknown node clock: current only with a reconstructed time that is correct.
+    if inside(minute,scenario.unknown_clock) and (
+            snapshot['time_basis'] not in ('synchronized','reconstructed') or _wrong_time(snapshot)):
+        return 'unknown_clock_presented_with_wrong_time'
+    if snapshot['true_sampled_at'] is not None and _wrong_time(snapshot):
+        return 'current_value_with_wrong_time'
+    return None
+
+
+def availability_failure(scenario, availability):
+    """The first snapshot failure of the run (only the first is reported), or None."""
+    return next(filter(None,(snapshot_failure(scenario,snapshot) for snapshot in availability)),None)
+
+
+def recovery_expected(scenario):
+    """With no clock/sensor fault or outage at the end, normal sampling should recover freshness."""
+    end_minute = scenario.minutes-1
+    end_fault = inside(end_minute,scenario.sensor_faults+scenario.unknown_clock+scenario.clock_steps)
+    end_outage = inside(end_minute,scenario.link_outages+scenario.host_outages+scenario.commit_failures)
+    return not end_fault and not end_outage
 
 
 class Campaign:
@@ -299,106 +347,110 @@ class Campaign:
                                   'time_basis':state.get('time_basis'),
                                   'effective_sampled_at':state.get('effective_sampled_at'),'true_sampled_at':truth})
 
+    def start(self, state):
+        """Provision fresh node and gateway state for this campaign."""
+        self.state = state
+        # Fixed public test key makes traces reproducible. It is never deployment provisioning.
+        radio_key = hashlib.sha256(('PUBLIC-TEST-KEY/'+self.s.name).encode()).digest()[:16]
+        self.cfg = {'station':'simulation-01','station_id':1,'mode':'simulation',
+                    'radio_key':radio_key.hex(),'api_token':'not-a-deployment-token','mqtt':{'enabled':False}}
+        for name,kind in [('node',KIND_OBS),('gateway',KIND_ACK)]:
+            Nonces(self.state/f'{name}-nonces.sqlite3',radio_key,1,kind,create=True).db.close()
+        self.node = Node(self.cfg,self.state)
+        self.gateway = Gateway(self.cfg,self.state)
+
+    def sample_minute(self, minute):
+        """One scheduled sample, its live send, up to BACKLOG_PER_MINUTE backfill sends, then the
+        minute's arrivals and an availability snapshot."""
+        self.advance(START+minute*60)
+        self.restart(minute in self.s.node_reboots,minute in self.s.gateway_reboots)
+        clock_offset = next((offset for start,end,offset in self.s.clock_steps if start<=minute<end),0)
+        record = self.node.sample(self.now,inside(minute,self.s.sensor_faults),clock_offset,
+                                  not inside(minute,self.s.unknown_clock))
+        self.expected[key(record)] = (record.copy(),self.now)
+        self.log('sample',record=record)
+        self.send('uplink',self.allocate_frame(record))
+        self.advance(self.now)  # Zero-delay link may ACK live sample before backfill.
+        # Never intentionally send the live record again in the same period.
+        old = [r for r in self.node.backfill(BACKLOG_PER_MINUTE+1) if key(r)!=key(record)][:BACKLOG_PER_MINUTE]
+        for r in old:
+            self.send('uplink',self.allocate_frame(r))
+        if self.s.inject_identity_collision and minute == 30:
+            altered = record | {'temperature_c':record['temperature_c']+1}
+            self.send('uplink',self.allocate_frame(altered))
+        self.advance(START+minute*60+59)
+        self.snapshot()
+
+    def drain(self):
+        """Finite drain budget is explicit; no free infinite recovery is assumed. Returns the
+        number of drain minutes used."""
+        drain_periods = 0
+        for offset in range(1,self.s.minutes+121):
+            self.advance(START+(self.s.minutes+offset-1)*60)
+            for record in self.node.backfill(BACKLOG_PER_MINUTE):
+                self.send('uplink',self.allocate_frame(record))
+            self.advance(self.now+59)
+            drain_periods += 1
+            if not self.node.backfill(1) and not self.events:
+                break
+        return drain_periods
+
+    def stored_rows(self):
+        rows = []
+        for payload,received,effective,basis in self.gateway.store.db.execute(
+                'SELECT payload,received_at,effective_at,time_basis FROM observations'):
+            rows.append(json.loads(payload)|{'received_at':received,'_effective':effective,'_basis':basis})
+        # Deliberately break the oracle's input to prove the verdict catches lost data.
+        if self.negative_control and rows:
+            rows = rows[1:]
+        return rows
+
+    def verdict(self, metrics, pending):
+        """The scenario's failed contracts, in a fixed order; empty means the scenario passed."""
+        s, counts, durable = self.s, self.counts, self.gateway.node_counter
+        first_availability_failure = availability_failure(s,self.availability)
+        checks = [*((field,metrics[field]) for field in ORACLE_FAILURES),
+                  ('unacknowledged_journal_records',pending),
+                  ('nonce_reuse',self.nonce_collisions),
+                  ('node_counter_not_increasing',self.node_counter_not_increasing),
+                  # The durable count must survive every gateway restart in the scenario.
+                  ('counter_regression_mismatch',counts['counter_regressions'] != counts['expected_counter_regressions']
+                   or durable['counter_regression'] != counts['counter_regressions']),
+                  ('replay_mismatch',counts['replays'] != counts['expected_replays']
+                   or durable['replays'] != counts['replays']),
+                  # Wire duplicates are replays now; without reordering, any regression is a false
+                  # key-reuse alarm.
+                  ('counter_regression_false_positive',counts['counter_regressions'] and not s.max_delay_seconds),
+                  ('live_latency_target',s.require_latency_target and not metrics['latency_target_met']),
+                  ('expected_latency_failure_not_observed',s.expect_latency_failure and metrics['latency_target_met']),
+                  ('unavailable_not_observed',s.expect_unavailable and all(row['available'] for row in self.availability)),
+                  (first_availability_failure,first_availability_failure is not None),
+                  ('time_not_reconstructed',s.require_time_reconstruction and metrics['unresolved_time_samples']),
+                  ('availability_not_recovered',recovery_expected(s) and not self.availability[-1]['available']),
+                  ('identity_collision_not_rejected',
+                   s.inject_identity_collision and counts['identity_collision_rejections'] != 1)]
+        return [label for label,failed in checks if failed]
+
+    def write_evidence(self, result):
+        # Portable backup includes committed observations without relying on leftover WAL files.
+        backup=sqlite3.connect(self.output/'observations.sqlite3')
+        self.gateway.store.db.backup(backup); backup.close()
+        (self.output/'scenario.json').write_text(json.dumps(asdict(self.s),indent=2)+'\n')
+        (self.output/'result.json').write_text(json.dumps(result,indent=2)+'\n')
+        (self.output/'availability.json').write_text(json.dumps(self.availability,indent=2)+'\n')
+
     def run(self):
         self.output.mkdir(parents=True,exist_ok=False)
         with tempfile.TemporaryDirectory(prefix='ws0-harness-') as temporary, \
                 (self.output/'trace.jsonl').open('w') as self.trace:
-            self.state = Path(temporary)
-            # Fixed public test key makes traces reproducible. It is never deployment provisioning.
-            radio_key = hashlib.sha256(('PUBLIC-TEST-KEY/'+self.s.name).encode()).digest()[:16]
-            self.cfg = {'station':'simulation-01','station_id':1,'mode':'simulation',
-                        'radio_key':radio_key.hex(),'api_token':'not-a-deployment-token','mqtt':{'enabled':False}}
-            for name,kind in [('node',KIND_OBS),('gateway',KIND_ACK)]:
-                Nonces(self.state/f'{name}-nonces.sqlite3',radio_key,1,kind,create=True).db.close()
-            self.node = Node(self.cfg,self.state)
-            self.gateway = Gateway(self.cfg,self.state)
+            self.start(Path(temporary))
             try:
                 for minute in range(self.s.minutes):
-                    self.advance(START+minute*60)
-                    self.restart(minute in self.s.node_reboots,minute in self.s.gateway_reboots)
-                    clock_offset = next((offset for start,end,offset in self.s.clock_steps if start<=minute<end),0)
-                    record = self.node.sample(self.now,inside(minute,self.s.sensor_faults),clock_offset,
-                                              not inside(minute,self.s.unknown_clock))
-                    self.expected[key(record)] = (record.copy(),self.now)
-                    self.log('sample',record=record)
-                    self.send('uplink',self.allocate_frame(record))
-                    self.advance(self.now)  # Zero-delay link may ACK live sample before backfill.
-                    # Never intentionally send the live record again in the same period.
-                    old = [r for r in self.node.backfill(BACKLOG_PER_MINUTE+1) if key(r)!=key(record)][:BACKLOG_PER_MINUTE]
-                    for r in old:
-                        self.send('uplink',self.allocate_frame(r))
-                    if self.s.inject_identity_collision and minute == 30:
-                        altered = record | {'temperature_c':record['temperature_c']+1}
-                        self.send('uplink',self.allocate_frame(altered))
-                    self.advance(START+minute*60+59)
-                    self.snapshot()
-                # Finite drain budget is explicit; no free infinite recovery is assumed.
-                drain_periods = 0
-                for offset in range(1,self.s.minutes+121):
-                    self.advance(START+(self.s.minutes+offset-1)*60)
-                    for record in self.node.backfill(BACKLOG_PER_MINUTE):
-                        self.send('uplink',self.allocate_frame(record))
-                    self.advance(self.now+59)
-                    drain_periods += 1
-                    if not self.node.backfill(1) and not self.events:
-                        break
-                rows = []
-                for payload,received,effective,basis in self.gateway.store.db.execute(
-                        'SELECT payload,received_at,effective_at,time_basis FROM observations'):
-                    rows.append(json.loads(payload)|{'received_at':received,'_effective':effective,'_basis':basis})
-                # Deliberately break the oracle's input to prove the verdict catches lost data.
-                if self.negative_control and rows:
-                    rows = rows[1:]
-                metrics = assess(self.expected,rows,self.now)
+                    self.sample_minute(minute)
+                drain_periods = self.drain()
+                metrics = assess(self.expected,self.stored_rows(),self.now)
                 pending = self.node.db.execute('SELECT count(*) FROM pending').fetchone()[0]
-                failures = []
-                for field in ('missing','unexpected_rows','payload_mismatches','duplicate_rows'):
-                    if metrics[field]: failures.append(field)
-                if pending: failures.append('unacknowledged_journal_records')
-                if self.nonce_collisions: failures.append('nonce_reuse')
-                if self.node_counter_not_increasing: failures.append('node_counter_not_increasing')
-                # The durable count must survive every gateway restart in the scenario.
-                if self.counts['counter_regressions'] != self.counts['expected_counter_regressions'] or \
-                        self.gateway.node_counter['counter_regression'] != self.counts['counter_regressions']:
-                    failures.append('counter_regression_mismatch')
-                if self.counts['replays'] != self.counts['expected_replays'] or \
-                        self.gateway.node_counter['replays'] != self.counts['replays']:
-                    failures.append('replay_mismatch')
-                # Wire duplicates are replays now; without reordering, any regression is a false
-                # key-reuse alarm.
-                if self.counts['counter_regressions'] and not self.s.max_delay_seconds:
-                    failures.append('counter_regression_false_positive')
-                if self.s.require_latency_target and not metrics['latency_target_met']:
-                    failures.append('live_latency_target')
-                if self.s.expect_latency_failure and metrics['latency_target_met']:
-                    failures.append('expected_latency_failure_not_observed')
-                if self.s.expect_unavailable and not any(not row['available'] for row in self.availability):
-                    failures.append('unavailable_not_observed')
-                for snapshot in self.availability:
-                    minute = snapshot['minute']
-                    if inside(minute,self.s.sensor_faults+self.s.clock_steps) and snapshot['available']:
-                        failures.append('fault_or_bad_clock_presented_as_current')
-                        break
-                    # Unknown node clock: current only with a reconstructed time that is correct.
-                    if inside(minute,self.s.unknown_clock) and snapshot['available'] and (
-                            snapshot['time_basis'] not in ('synchronized','reconstructed') or
-                            abs(snapshot['effective_sampled_at']-snapshot['true_sampled_at']) > 5):
-                        failures.append('unknown_clock_presented_with_wrong_time')
-                        break
-                    if snapshot['available'] and snapshot['true_sampled_at'] is not None and \
-                            abs(snapshot['effective_sampled_at']-snapshot['true_sampled_at']) > 5:
-                        failures.append('current_value_with_wrong_time')
-                        break
-                if self.s.require_time_reconstruction and metrics['unresolved_time_samples']:
-                    failures.append('time_not_reconstructed')
-                # With no clock/sensor fault at the end, normal sampling should recover freshness.
-                end_minute = self.s.minutes-1
-                end_fault = inside(end_minute,self.s.sensor_faults+self.s.unknown_clock+self.s.clock_steps)
-                end_outage = inside(end_minute,self.s.link_outages+self.s.host_outages+self.s.commit_failures)
-                if not end_fault and not end_outage and not self.availability[-1]['available']:
-                    failures.append('availability_not_recovered')
-                if self.s.inject_identity_collision and self.counts['identity_collision_rejections'] != 1:
-                    failures.append('identity_collision_not_rejected')
+                failures = self.verdict(metrics,pending)
                 result = {'name':self.s.name,'description':self.s.description,'seed':self.s.seed,
                           'scenario_pass':not failures,'failures':failures,'metrics':metrics,
                           'network':self.counts,'pending_journal':pending,'nonce_collisions':self.nonce_collisions,
@@ -408,12 +460,7 @@ class Campaign:
                           'gateway_counter_status':self.gateway.status()['node_counter'],
                           'drain_minutes':drain_periods,'physical_H01':'NOT RUN',
                           'negative_control':self.negative_control}
-                # Portable backup includes committed observations without relying on leftover WAL files.
-                backup=sqlite3.connect(self.output/'observations.sqlite3')
-                self.gateway.store.db.backup(backup); backup.close()
-                (self.output/'scenario.json').write_text(json.dumps(asdict(self.s),indent=2)+'\n')
-                (self.output/'result.json').write_text(json.dumps(result,indent=2)+'\n')
-                (self.output/'availability.json').write_text(json.dumps(self.availability,indent=2)+'\n')
+                self.write_evidence(result)
                 return result
             finally:
                 self.node.close()

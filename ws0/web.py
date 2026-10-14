@@ -519,6 +519,21 @@ HISTORY_SQL = ('SELECT payload,effective_at,time_basis FROM observations WHERE s
 
 
 def _history(db, station, start, end, max_points):
+    obs = observation_series(db, station, start, end, max_points)
+    radio = radio_series(db, station, start, end, max_points)
+    alive = receiver_series(db, station, start, end, max_points)
+    diags = diagnostic_series(db, station, start, end, max_points)
+    events = rows_between(db, station, 'gateway_events', start, end, limit=500, order='desc')[::-1]
+    return {'from': start, 'to': end, 'server_time': time.time(), 'observations': obs, 'diagnostics': diags,
+            'radio': radio, 'receiver': alive, 'events': events}
+
+
+def _summarize(name, column):
+    """One bucket's value of one field: direction and counters keep their last valid value."""
+    return _last(column) if name == 'wind_dir_deg' or BY_NAME[name].counter else _mean(column)
+
+
+def observation_series(db, station, start, end, max_points):
     rows = db.execute(HISTORY_SQL, (station, start, end)).fetchall()
     unknown = db.execute('SELECT count(*) FROM observations WHERE station=? AND effective_at IS NULL '
                          'AND received_at>=? AND received_at<?', (station, start, end)).fetchone()[0]
@@ -531,41 +546,51 @@ def _history(db, station, start, end, max_points):
            'unknown_time_count': unknown, 't': [], 'basis': [], 'quality': [], 'session': [],
            'values': {n: [] for n in names}}
     for t, group in _groups(records, lambda r: r[1], start, bucket):
-        obs['t'].append(t)
-        bases = {b for _, _, b in group}
-        obs['basis'].append('reconstructed' if 'reconstructed' in bases else 'synchronized')
-        qualities = {r['quality'] for r, _, _ in group}
-        obs['quality'].append(qualities.pop() if len(qualities) == 1 else 'partial')
-        obs['session'].append(group[-1][0]['session'])
-        for n in names:
-            column = [r.get(n) for r, _, _ in group]
-            if n == 'wind_dir_deg' or BY_NAME[n].counter:
-                obs['values'][n].append(_last(column))
-            else:
-                obs['values'][n].append(_mean(column))
+        _add_observation_point(obs, t, group)
+    return obs
 
-    radio = radio_series(db, station, start, end, max_points)
 
-    # A year of 60 s reports is ~525,000 rows: counted first, then streamed through the buckets.
-    abucket = _bucket_of(end - start, count_between(db, station, 'rx_alive', start, end), max_points)
-    alive = {'bucket_s': abucket, 't': [], **{k: [] for k in ALIVE_FIELDS}}
+def _add_observation_point(obs, t, group):
+    """One point per row or bucket: a reconstructed time anywhere marks the point reconstructed,
+    mixed qualities make it partial, the session is the last row's."""
+    obs['t'].append(t)
+    bases = {b for _, _, b in group}
+    obs['basis'].append('reconstructed' if 'reconstructed' in bases else 'synchronized')
+    qualities = {r['quality'] for r, _, _ in group}
+    obs['quality'].append(qualities.pop() if len(qualities) == 1 else 'partial')
+    obs['session'].append(group[-1][0]['session'])
+    for n in obs['fields']:
+        obs['values'][n].append(_summarize(n, [r.get(n) for r, _, _ in group]))
+
+
+def receiver_series(db, station, start, end, max_points):
+    """RX health. A year of 60 s reports is ~525,000 rows: counted first, then streamed through
+    the buckets. Every field is cumulative since RX boot: the bucket's last report, except
+    stack_peak, the bucket's highest."""
+    bucket = _bucket_of(end - start, count_between(db, station, 'rx_alive', start, end), max_points)
+    alive = {'bucket_s': bucket, 't': [], **{k: [] for k in ALIVE_FIELDS}}
     for t, group in _groups(iter_rows(db, station, 'rx_alive', start, end), lambda r: r['received_at'],
-                            start, abucket):
+                            start, bucket):
         alive['t'].append(t)
-        for k in ALIVE_FIELDS:   # cumulative since RX boot: the bucket's last report
+        for k in ALIVE_FIELDS:
             values = [r[k] for r in group]
             alive[k].append(max((v for v in values if v is not None), default=None) if k == 'stack_peak'
                             else _last(values))
+    return alive
 
+
+DIAGNOSTIC_STATE = ('epoch', 'firmware_build', 'energy_state', 'link')
+
+
+def diagnostic_series(db, station, start, end, max_points):
+    """Node health reports, thinned past max_points; every change of epoch, firmware, energy or
+    link state is kept, as are the first and last report."""
     diags = rows_between(db, station, 'diagnostics', start, end)
-    if len(diags) > max_points:   # keep every change of epoch, firmware, energy or link state
-        step = math.ceil(len(diags) / max_points)
-        keys = ('epoch', 'firmware_build', 'energy_state', 'link')
-        diags = [d for i, d in enumerate(diags)
-                 if i % step == 0 or i == len(diags) - 1 or any(d[k] != diags[i - 1][k] for k in keys)]
-    events = rows_between(db, station, 'gateway_events', start, end, limit=500, order='desc')[::-1]
-    return {'from': start, 'to': end, 'server_time': time.time(), 'observations': obs, 'diagnostics': diags,
-            'radio': radio, 'receiver': alive, 'events': events}
+    if len(diags) <= max_points:
+        return diags
+    step = math.ceil(len(diags) / max_points)
+    return [d for i, d in enumerate(diags)
+            if i % step == 0 or i == len(diags) - 1 or any(d[k] != diags[i - 1][k] for k in DIAGNOSTIC_STATE)]
 
 
 def radio_series(db, station, start, end, max_points):

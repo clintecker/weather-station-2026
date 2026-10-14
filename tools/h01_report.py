@@ -40,6 +40,68 @@ def iso(ts):
     return datetime.fromtimestamp(ts, timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
+RANKS = ('on_time_valid', 'on_time_sensor_fault', 'late')   # an interval's category, best first
+
+
+def known_time(effective, basis, uncertainty):
+    """Synchronized, or reconstructed within the tolerance: the reading can be placed in an interval."""
+    return effective is not None and basis in ('synchronized', 'reconstructed') and \
+        (uncertainty or 0) <= TIME_TOLERANCE_S
+
+
+def rank(record, latency):
+    """Index into RANKS. H01 scores the T/RH fields' own validity (draft-5 design 5.7)."""
+    valid = record.get('temperature_c') is not None and record.get('humidity_pct') is not None
+    return (0 if valid else 1) if 0 <= latency <= LATENCY_S else 2
+
+
+class Placement:
+    """Each interval's best reading: interval -> (rank, latency, time basis); lower is better. The
+    grid diagnostics (readings per interval, readings near an edge) never change the verdict."""
+    def __init__(self, start, minutes):
+        self.start, self.minutes = start, minutes
+        self.best, self.invalid_clock, self.epochs = {}, 0, set()
+        self.per_minute, self.edge = {}, 0
+
+    def add(self, session, effective, received, basis, uncertainty, payload):
+        self.epochs.add(session)
+        if not known_time(effective, basis, uncertainty):
+            self.invalid_clock += 1
+            return
+        minute = int((effective - self.start) // 60)
+        if not 0 <= minute < self.minutes:
+            return
+        self.per_minute[minute] = self.per_minute.get(minute, 0) + 1
+        phase = (effective - self.start) % 60
+        self.edge += int(phase < EDGE_S or phase > 60 - EDGE_S)
+        latency = received - effective
+        candidate = (rank(json.loads(payload), latency), latency)
+        if minute not in self.best or candidate < self.best[minute][:2]:
+            self.best[minute] = (*candidate, basis)
+
+
+def tally(best):
+    """From each interval's final choice (an earlier pick may have been replaced): intervals per
+    category, on-time intervals that used a reconstructed time, and the sorted on-time latencies."""
+    counts = dict.fromkeys(RANKS, 0)
+    for r, _, _ in best.values():
+        counts[RANKS[r]] += 1
+    reconstructed_used = sum(1 for r, _, basis in best.values() if r < 2 and basis == 'reconstructed')
+    latencies = sorted(lat for r, lat, _ in best.values() if r < 2)
+    return counts, reconstructed_used, latencies
+
+
+def grid_warning(edge, several):
+    """The node's clock is set from ACKs to whole seconds and its sample timer runs freely, so
+    sample times jitter by about a second. Readings this close to an interval edge can land two in
+    one interval and none in the next: a miss that lost no data. The rule itself is unchanged; pick
+    a --start that puts the readings mid-interval and score again."""
+    if not edge:
+        return None
+    return (f'{edge} readings lie within {EDGE_S} s of an interval edge and {several} intervals hold more '
+            'than one reading: choose a --start that puts the readings mid-interval')
+
+
 def score(db, station, start, hours):
     minutes = int(round(hours * 60))
     end = start + minutes * 60
@@ -48,44 +110,12 @@ def score(db, station, start, hours):
         FROM observations WHERE station=? AND ((effective_at>=? AND effective_at<?)
         OR (effective_at IS NULL AND received_at>=? AND received_at<?+?))''',
         (station, start, end, start, end, LATENCY_S)).fetchall()
-    best = {}  # interval -> (rank, latency, time basis); rank 0 on-time valid, 1 on-time fault, 2 late
-    invalid_clock, epochs = 0, set()
-    per_minute, edge = {}, 0   # grid diagnostics; they never change the verdict
-    for session, _sequence, effective, received, basis, uncertainty, payload in rows:
-        epochs.add(session)
-        known = effective is not None and basis in ('synchronized', 'reconstructed') and \
-            (uncertainty or 0) <= TIME_TOLERANCE_S
-        if not known:
-            invalid_clock += 1
-            continue
-        minute = int((effective - start) // 60)
-        if not 0 <= minute < minutes:
-            continue
-        per_minute[minute] = per_minute.get(minute, 0) + 1
-        phase = (effective - start) % 60
-        edge += int(phase < EDGE_S or phase > 60 - EDGE_S)
-        latency = received - effective
-        record = json.loads(payload)   # H01 scores the T/RH fields' own validity (draft-5 design 5.7)
-        valid = record.get('temperature_c') is not None and record.get('humidity_pct') is not None
-        rank = (0 if valid else 1) if 0 <= latency <= LATENCY_S else 2
-        if minute not in best or (rank, latency) < best[minute][:2]:
-            best[minute] = (rank, latency, basis)
-    # Counted from each interval's final choice (an earlier pick may have been replaced).
-    reconstructed_used = sum(1 for rank, _, basis in best.values() if rank < 2 and basis == 'reconstructed')
-    counts = {'on_time_valid': 0, 'on_time_sensor_fault': 0, 'late': 0}
-    for rank, _, _ in best.values():
-        counts[('on_time_valid', 'on_time_sensor_fault', 'late')[rank]] += 1
-    missing = [m for m in range(minutes) if m not in best]
-    latencies = sorted(lat for rank, lat, _ in best.values() if rank < 2)
-    several = sum(1 for n in per_minute.values() if n > 1)
-    warning = None
-    if edge:
-        # The node's clock is set from ACKs to whole seconds and its sample timer runs freely, so
-        # sample times jitter by about a second. Readings this close to an interval edge can land
-        # two in one interval and none in the next: a miss that lost no data. The rule itself is
-        # unchanged; pick a --start that puts the readings mid-interval and score again.
-        warning = (f'{edge} readings lie within {EDGE_S} s of an interval edge and {several} intervals hold more '
-                   'than one reading: choose a --start that puts the readings mid-interval')
+    placed = Placement(start, minutes)
+    for session, _sequence, *reading in rows:
+        placed.add(session, *reading)
+    counts, reconstructed_used, latencies = tally(placed.best)
+    missing = [m for m in range(minutes) if m not in placed.best]
+    several = sum(1 for n in placed.per_minute.values() if n > 1)
     rejections = db.execute('SELECT count(*) FROM rejections WHERE station=? AND received_at>=? AND received_at<?',
                             (station, start, end + LATENCY_S)).fetchone()[0]
     return {
@@ -95,12 +125,13 @@ def score(db, station, start, hours):
         'transport_on_time': counts['on_time_valid'] + counts['on_time_sensor_fault'],
         'missing': len(missing),
         'missing_first': [iso(start + 60 * m) for m in missing[:20]],
-        'invalid_clock_observations': invalid_clock,
+        'invalid_clock_observations': placed.invalid_clock,
         'reconstructed_time_intervals_counted': reconstructed_used,
         'latency_median_s': latencies[len(latencies) // 2] if latencies else None,
         'latency_max_on_time_s': latencies[-1] if latencies else None,
-        'boot_epochs_seen': len(epochs), 'gateway_rejections': rejections,
-        'intervals_with_several_readings': several, 'readings_near_interval_edge': edge, 'grid_warning': warning,
+        'boot_epochs_seen': len(placed.epochs), 'gateway_rejections': rejections,
+        'intervals_with_several_readings': several, 'readings_near_interval_edge': placed.edge,
+        'grid_warning': grid_warning(placed.edge, several),
         'verdict': 'PASS' if counts['on_time_valid'] >= required else 'FAIL',
     }
 

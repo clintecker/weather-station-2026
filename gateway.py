@@ -42,53 +42,84 @@ BASE_KEYS = frozenset({'version','station','session','sequence','sampled_at','up
                        'energy_state','calibration_revision','quality'})
 
 
-def validate(record):
-    """Closed schema for protocol draft 5 (docs/protocol-draft5-design.md 5.7): identity and time as
-    before, catalog fields with exact, representable values, and a quality that matches them."""
-    if not isinstance(record, dict) or type(record.get('version')) is not int or record['version'] != 5:
-        raise ValueError('Unsupported version')
-    if not BASE_KEYS <= set(record):
-        raise ValueError('Missing record fields')
+IDENTITY = re.compile(r'[A-Za-z0-9_-]{1,64}')
+COUNTERS = (('sequence',2**32),('uptime_s',2**32),('calibration_revision',256))   # name, exclusive top
+
+
+def _require(ok, message):
+    if not ok:
+        raise ValueError(message)
+
+
+def _finite_number(value):
+    return type(value) in (int,float) and math.isfinite(value)
+
+
+def _check_keys(record):
+    """Version, then a closed key set; returns the catalog keys beyond the base."""
+    _require(isinstance(record, dict) and type(record.get('version')) is int and record['version'] == 5,
+             'Unsupported version')
+    _require(BASE_KEYS <= set(record), 'Missing record fields')
     extra = set(record) - BASE_KEYS
-    if extra - set(F.BY_NAME) - {'wind_calm'}:
-        raise ValueError('Unexpected record fields')
-    if ('wind_calm' in record) != ('wind_dir_deg' in record):
-        raise ValueError('wind_calm goes with wind_dir_deg')
+    _require(not extra - set(F.BY_NAME) - {'wind_calm'}, 'Unexpected record fields')
+    _require(('wind_calm' in record) == ('wind_dir_deg' in record), 'wind_calm goes with wind_dir_deg')
+    return extra
+
+
+def _check_header(record):
+    """Identity, counters, energy state."""
     for name in ('station','session'):
-        if not isinstance(record[name], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', record[name]):
-            raise ValueError('Invalid identity')
-    for name, top in (('sequence',2**32),('uptime_s',2**32),('calibration_revision',256)):
-        if type(record[name]) is not int or not 0 <= record[name] < top:
-            raise ValueError(f'Invalid {name}')
-    if record['energy_state'] not in F.ENERGY:
-        raise ValueError('Invalid energy state')
-    if record['time_quality'] not in ('synchronized','unknown'):
-        raise ValueError('Invalid time quality')
+        _require(isinstance(record[name], str) and IDENTITY.fullmatch(record[name]), 'Invalid identity')
+    for name, top in COUNTERS:
+        _require(type(record[name]) is int and 0 <= record[name] < top, f'Invalid {name}')
+    _require(record['energy_state'] in F.ENERGY, 'Invalid energy state')
+
+
+def _check_time(record):
+    _require(record['time_quality'] in ('synchronized','unknown'), 'Invalid time quality')
     stamp = record['sampled_at']
     if record['time_quality'] == 'unknown':
-        if stamp is not None:
-            raise ValueError('Unknown clock must have null time')
-    elif type(stamp) not in (int,float) or not math.isfinite(stamp) or not 0 < stamp < 2**32:
-        raise ValueError('Invalid UTC timestamp')
+        _require(stamp is None, 'Unknown clock must have null time')
+    else:
+        _require(_finite_number(stamp) and 0 < stamp < 2**32, 'Invalid UTC timestamp')
+
+
+def _exact_catalog_value(f, value):
+    return _finite_number(value) and f.code(value) != f.invalid and f.value(f.code(value)) == value
+
+
+def _check_measurements(record, extra):
     for name in extra & set(F.MEASURED):
-        value, f = record[name], F.BY_NAME[name]
-        if value is None:
-            continue
-        if type(value) not in (int,float) or not math.isfinite(value) or f.code(value) == f.invalid \
-                or f.value(f.code(value)) != value:
-            raise ValueError(f'{name}: not an exact catalog value')
+        value = record[name]
+        _require(value is None or _exact_catalog_value(F.BY_NAME[name], value), f'{name}: not an exact catalog value')
+
+
+def _check_wind(record):
     if 'wind_calm' in record:
-        if type(record['wind_calm']) is not bool or (record['wind_calm'] and record['wind_dir_deg'] is not None):
-            raise ValueError('Invalid wind_calm')
-    if record.get('wind_speed_ms', 0) is None and (record.get('wind_dir_deg') is not None or record.get('wind_calm')):
-        raise ValueError('Wind direction without a valid speed')
+        calm = record['wind_calm']
+        _require(type(calm) is bool and not (calm and record['wind_dir_deg'] is not None), 'Invalid wind_calm')
+    has_direction = record.get('wind_dir_deg') is not None or record.get('wind_calm')
+    _require(not (record.get('wind_speed_ms', 0) is None and has_direction), 'Wind direction without a valid speed')
+
+
+def _check_qualifiers(record):
     if 'qualifiers' in record:
         q = record['qualifiers']
-        if not isinstance(q, dict) or any(n not in F.QUALIFIABLE or v not in F.QUALIFIER[1:]
-                                          for n, v in q.items()):
-            raise ValueError('Invalid qualifiers')
-    if record['quality'] != F.quality(record):
-        raise ValueError('Quality does not match the field values')
+        _require(isinstance(q, dict) and all(n in F.QUALIFIABLE and v in F.QUALIFIER[1:] for n, v in q.items()),
+                 'Invalid qualifiers')
+
+
+def validate(record):
+    """Closed schema for protocol draft 5 (docs/protocol-draft5-design.md 5.7): identity and time as
+    before, catalog fields with exact, representable values, and a quality that matches them. The
+    checks run in this order; the first failure names the error."""
+    extra = _check_keys(record)
+    _check_header(record)
+    _check_time(record)
+    _check_measurements(record, extra)
+    _check_wind(record)
+    _check_qualifiers(record)
+    _require(record['quality'] == F.quality(record), 'Quality does not match the field values')
 
 
 def open_read_only(path):
@@ -99,6 +130,20 @@ def open_read_only(path):
     path = Path(path).resolve()
     live = path.with_name(path.name + '-wal').exists()
     return sqlite3.connect(path.as_uri() + ('?mode=ro' if live else '?mode=ro&immutable=1'), uri=True)
+
+
+def _freshness(record, received_at, effective, age, uncertainty):
+    """(timely, reason) for the latest record. A future sample at receipt stays quarantined;
+    waiting does not validate its clock. Reasons are checked in this order."""
+    future = effective is not None and effective > received_at+5
+    vague = uncertainty is not None and uncertainty > CURRENT_MAX_UNCERTAINTY_S
+    timely = age is not None and 0 <= age < 180 and not future and not vague
+    for reason, applies in (('future_clock_at_receipt', future), ('unknown_clock', age is None),
+                            ('time_uncertain', vague), ('sensor_fault', record['quality'] == 'sensor_fault'),
+                            ('fresh', timely)):
+        if applies:
+            return timely, reason
+    return timely, 'stale_or_clock_step'
 
 
 class Store:
@@ -261,17 +306,11 @@ class Store:
         record = json.loads(row[0])
         effective, basis, uncertainty = row[2], row[3], row[4]
         age = None if effective is None else now-effective
-        # A future sample at receipt stays quarantined; waiting does not validate its clock.
-        future = effective is not None and effective > row[1]+5
-        vague = uncertainty is not None and uncertainty > CURRENT_MAX_UNCERTAINTY_S
-        timely = age is not None and 0 <= age < 180 and not future and not vague
+        timely, reason = _freshness(record, row[1], effective, age, uncertainty)
         # Availability is per field (design 5.7): one dead sensor never hides the others.
         fields = {name: timely and (record[name] is not None or (name == 'wind_dir_deg' and record.get('wind_calm', False)))
                   for name in F.MEASURED if name in record}
         available = timely and record['quality'] != 'sensor_fault'
-        reason = ('future_clock_at_receipt' if future else 'unknown_clock' if age is None else
-                  'time_uncertain' if vague else
-                  'sensor_fault' if record['quality']=='sensor_fault' else 'fresh' if timely else 'stale_or_clock_step')
         return {'available':available,'reason':reason,'fields_available':fields,'age_seconds':age,'received_at':row[1],
                 'observation':record,'derived':F.derived(record),'effective_sampled_at':effective,'time_basis':basis,
                 'time_uncertainty_s':uncertainty,'units':{n: F.BY_NAME[n].unit for n in fields if F.BY_NAME[n].unit},

@@ -151,6 +151,55 @@ class StaticAndAuth(Fixture):
 
 
 class EventStream(Fixture):
+    def test_half_open_requests_cannot_exhaust_the_server(self):
+        """Security audit: slowloris. Half-sent requests are capped and time out, so an
+        authorised request gets through once they are dropped."""
+        import socket
+        from ws0 import service
+        for name, value in (('HTTP_MAX_CONNECTIONS', 4), ('HTTP_TIMEOUT_S', 0.5)):
+            self.addCleanup(setattr, service, name, getattr(service, name))
+            setattr(service, name, value)
+        self.serve()
+        held = []
+        for _ in range(20):                       # five times the cap, none ever finishes its headers
+            s = socket.create_connection(('127.0.0.1', self.port))
+            s.sendall(b'GET /v1/status HTTP/1.1\r\nHost: x\r\n')
+            held.append(s)
+            self.addCleanup(s.close)
+        began = time.monotonic()
+        for s in held:                             # the server closes every one: over the cap at
+            s.settimeout(3)                        # once, the rest when their request times out
+            try:
+                self.assertIn(s.recv(1024), (b'',))
+            except ConnectionResetError:
+                pass
+        self.assertLess(time.monotonic() - began, 2)
+        self.assertEqual(self.get_json('/v1/status')['station'], self.cfg['station'])
+
+    def test_connections_over_the_cap_are_closed_at_once(self):
+        import socket
+        from ws0 import service
+        for name, value in (('HTTP_MAX_CONNECTIONS', 4), ('HTTP_TIMEOUT_S', 30)):
+            self.addCleanup(setattr, service, name, getattr(service, name))
+            setattr(service, name, value)
+        self.serve()
+        held = []
+        for _ in range(10):
+            s = socket.create_connection(('127.0.0.1', self.port))
+            s.sendall(b'GET /v1/status HTTP/1.1\r\n')
+            s.settimeout(0.3)
+            held.append(s)
+            self.addCleanup(s.close)
+        closed = 0
+        for s in held:
+            try:
+                closed += s.recv(1024) == b''
+            except ConnectionResetError:
+                closed += 1
+            except socket.timeout:
+                pass                               # within the cap: still waiting for its headers
+        self.assertEqual(closed, 6)
+
     def test_ipv6_bind_serves(self):
         """GW9: an IPv6 http_bind used to crash (the stock server is AF_INET only)."""
         import socket
@@ -306,6 +355,50 @@ class History(Fixture):
         self.assertEqual(o['bucket_s'], 120)
         self.assertIn(None, o['values']['temperature_c'])
         self.assertLess(len(o['t']), 11)
+
+    def test_history_bucket_rules_per_series(self):
+        """Characterization of each history series when bucketed: observations (mean, or last for
+        direction and counters; mixed quality is partial; reconstructed wins), receiver (last, max
+        for stack_peak), diagnostics thinning (keeps every state change) and the newest 500 events."""
+        base, station, db = 1_700_000_000, self.cfg['station'], self.gateway.store.db
+        rows = [  # offset, basis, quality, session, temperature, wind dir, rain tips
+            (0, 'synchronized', 'valid', '1', 20, 90, 1), (10, 'reconstructed', 'valid', '1', 21, None, 2),
+            (20, 'synchronized', 'partial', '2', None, 180, None),
+            (130, 'synchronized', 'valid', '2', 22.25, 10, 5), (140, 'synchronized', 'valid', '2', 22.5, None, None)]
+        with db:
+            for seq, (dt, basis, quality, session, temp, wdir, tips) in enumerate(rows):
+                payload = {'session': session, 'quality': quality, 'temperature_c': temp, 'wind_dir_deg': wdir,
+                           'rain_tips': tips}
+                db.execute('INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?,?)',
+                           (station, session, seq, base + dt, base + dt + 1, json.dumps(payload), 0, base + dt,
+                            basis, 0))
+            db.execute('INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?,?)',
+                       (station, '9', 0, None, base + 5, json.dumps({'session': '9'}), 0, None, None, None))
+            for dt, forwarded, peak in ((0, 1, 5), (30, 2, None), (60, None, 3), (150, 7, None)):
+                db.execute('INSERT INTO rx_alive (station,received_at,forwarded,stack_peak) VALUES (?,?,?,?)',
+                           (station, base + dt, forwarded, peak))
+            db.executemany('INSERT INTO gateway_events (station,at,source,kind,level,text) VALUES (?,?,?,?,?,?)',
+                           ((station, base + i * 0.25, 'gw', 'k', 'info', str(i)) for i in range(502)))
+        for i in range(7):
+            self.gateway.store.diagnostic(station, {'epoch': 1, 'uptime_s': i, 'firmware_build': 'b', 'link': 'up',
+                                                    'energy_state': 'conserve' if i >= 2 else 'normal'}, base + i)
+        h = web.history(self.gateway, base, base + 240, 2)
+        o = h['observations']
+        self.assertEqual((o['bucket_s'], o['t'], o['unknown_time_count']), (120, [base, base + 120], 1))
+        self.assertEqual(o['fields'], ['temperature_c', 'wind_dir_deg', 'rain_tips'])
+        self.assertEqual(o['values'], {'temperature_c': [20.5, 22.375], 'wind_dir_deg': [180, 10],
+                                       'rain_tips': [2, 5]})
+        self.assertEqual((o['basis'], o['quality'], o['session']),
+                         (['reconstructed', 'synchronized'], ['partial', 'valid'], ['2', '2']))
+        r = h['receiver']
+        self.assertEqual((r['bucket_s'], r['t'], r['forwarded'], r['stack_peak'], r['uptime_s']),
+                         (120, [base, base + 120], [2, 7], [5, None], [None, None]))
+        self.assertEqual([d['uptime_s'] for d in h['diagnostics']], [0, 2, 4, 6])
+        self.assertEqual((len(h['events']), h['events'][0]['text'], h['events'][-1]['text']), (500, '2', '501'))
+        whole = web.history(self.gateway, base, base + 240, 1500)     # small enough: one point per row
+        self.assertEqual(whole['observations']['values']['wind_dir_deg'], [90, None, 180, 10, None])
+        self.assertEqual(whole['receiver']['stack_peak'], [5, None, 3, None])
+        self.assertEqual(len(whole['diagnostics']), 7)
 
     def radio(self, start, end, max_points):
         with self.gateway.store.reader() as db:
@@ -551,6 +644,44 @@ class ServeLoopTelemetry(Fixture):
         _, link = self.lines(self.node.packet(record).hex(), '#rx obs rssi=-52 snr=8')
         self.assertEqual(len(link.written), 1)
         self.assertEqual(self.rows('SELECT count(*) FROM observations'), [(1,)])
+
+    def test_ack_nack_duplicate_and_link_down_paths(self):
+        """Characterization of each answered-frame path of handle_receiver_line: what is logged,
+        printed and written to the link."""
+        from contextlib import redirect_stdout
+        class DownLink(self.Link):
+            def write(self, data):
+                self.written.append(data)
+                return False
+        record = self.node.sample(time.time())
+        throttle = self.gateway.telemetry.throttle
+        throttle.per_s = 0
+        log, out, link = io.StringIO(), io.StringIO(), DownLink()
+        retransmits = [self.node.packet(record) for _ in range(throttle.burst + 3)]
+        collision = self.node.packet(record | {'temperature_c': record['temperature_c'] + 1})
+        with redirect_stderr(io.StringIO()), redirect_stdout(out):
+            for i, frame in enumerate(retransmits + [collision]):
+                handle_receiver_line(self.gateway, link, frame.hex().encode(), log, 4000 + i)
+            handle_receiver_line(self.gateway, link, b'', log, 4100)
+        lines = log.getvalue().splitlines()
+        self.assertEqual(len(link.written), len(retransmits) + 1)            # every frame is answered
+        self.assertEqual(sum(' -> ack ' in line for line in lines), 1 + throttle.burst)   # the rest: throttled
+        self.assertTrue(all(line.endswith('(not delivered: serial link down)') for line in lines))
+        self.assertTrue(lines[-1].split(' frame ')[1].startswith(collision.hex() + ' -> nack '))
+        printed = [json.loads(line) for line in out.getvalue().splitlines()]
+        # Answered with an ACK and logged (not throttled, not a NACK): the stored-or-duplicate record.
+        self.assertEqual([p['observation']['duplicate'] for p in printed], [False] + [True] * throttle.burst)
+        self.assertEqual({p['observation']['sequence'] for p in printed}, {record['sequence']})
+        self.gateway.telemetry.tick(5000 + web.PENDING_RSSI_S)
+        rows = self.rows('SELECT outcome,delivered FROM radio_events ORDER BY id')
+        self.assertEqual(rows, [('ack', 0)] + [('duplicate', 0)] * throttle.burst + [('nack', 0)])
+
+    def test_rssi_line_of_a_throttled_frame_is_dropped(self):
+        self.gateway.telemetry.muted = True
+        log, _ = self.lines('#rx obs rssi=-90 snr=-5', '#rx obs rssi=-91 snr=-5')
+        self.assertEqual(log.splitlines()[0][-len('#rx obs rssi=-91 snr=-5'):], '#rx obs rssi=-91 snr=-5')
+        self.assertEqual(len(log.splitlines()), 1)
+        self.assertFalse(self.gateway.telemetry.muted)
 
     def test_frame_without_rssi_line_is_written_after_a_timeout(self):
         obs = self.node.packet(self.node.sample(time.time()))

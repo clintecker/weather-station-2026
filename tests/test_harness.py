@@ -70,3 +70,176 @@ class HarnessTests(unittest.TestCase):
             with self.assertRaises(ValueError): Scenario('bad','bad',uplink_loss=value).validate()
         with self.assertRaises(ValueError): Scenario('../escape','bad').validate()
         with self.assertRaises(ValueError): Scenario('bad','bad',link_outages=[[10,1]]).validate()
+
+
+class VerdictTests(unittest.TestCase):
+    """Characterization of every failure rule of a campaign verdict, and their order. Each case runs
+    a short lossless campaign and then perturbs one input the verdict reads: the oracle's metrics,
+    an availability snapshot or a campaign counter."""
+    def campaign(self, scenario, metrics=None, hook=None):
+        from unittest import mock
+        from ws0 import harness
+        real_assess, real_snapshot = harness.assess, Campaign.snapshot
+        def assess_override(*args):
+            return real_assess(*args) | (metrics or {})
+        def snapshot(campaign):
+            real_snapshot(campaign)
+            if hook:
+                hook(campaign, campaign.availability[-1])
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(harness, 'assess', assess_override), \
+                mock.patch.object(Campaign, 'snapshot', snapshot):
+            return Campaign(scenario, Path(tmp) / 'case').run()
+
+    def failures(self, metrics=None, hook=None, minutes=5, **settings):
+        return self.campaign(Scenario('verdict', 'Verdict rule.', minutes=minutes, **settings), metrics, hook)['failures']
+
+    def test_clean_run_passes(self):
+        result = self.campaign(Scenario('verdict', 'Verdict rule.', minutes=5, require_latency_target=True))
+        self.assertEqual((result['failures'], result['scenario_pass']), ([], True))
+
+    def test_oracle_and_latency_rules(self):
+        self.assertEqual(self.failures({'missing': [[1, 1]], 'unexpected_rows': [[9, 9]], 'payload_mismatches': [[1, 2]],
+                                        'duplicate_rows': 1}),
+                         ['missing', 'unexpected_rows', 'payload_mismatches', 'duplicate_rows'])
+        self.assertEqual(self.failures({'latency_target_met': False}, require_latency_target=True),
+                         ['live_latency_target'])
+        self.assertEqual(self.failures({'latency_target_met': False}), [])
+        self.assertEqual(self.failures(expect_latency_failure=True), ['expected_latency_failure_not_observed'])
+        self.assertEqual(self.failures({'unresolved_time_samples': 1}, require_time_reconstruction=True),
+                         ['time_not_reconstructed'])
+        self.assertEqual(self.failures({'unresolved_time_samples': 1}), [])
+        self.assertEqual(self.failures(expect_unavailable=True), [])     # the first minute is not yet current
+        self.assertEqual(self.failures(hook=lambda c, snap: snap.update(
+            available=True, effective_sampled_at=snap['true_sampled_at']), expect_unavailable=True),
+                         ['unavailable_not_observed'])
+
+    def test_counter_rules(self):
+        def bump(*names, value=1):
+            def hook(c, snap):
+                for name in names:
+                    if name in c.counts:
+                        c.counts[name] += value if snap['minute'] == 0 else 0
+                    elif snap['minute'] == 0:
+                        setattr(c, name, getattr(c, name) + value)
+            return hook
+        self.assertEqual(self.failures(hook=bump('nonce_collisions')), ['nonce_reuse'])
+        self.assertEqual(self.failures(hook=bump('node_counter_not_increasing')), ['node_counter_not_increasing'])
+        self.assertEqual(self.failures(hook=bump('expected_counter_regressions')), ['counter_regression_mismatch'])
+        self.assertEqual(self.failures(hook=bump('expected_replays')), ['replay_mismatch'])
+        both = bump('counter_regressions', 'expected_counter_regressions')
+        self.assertEqual(self.failures(hook=both), ['counter_regression_mismatch', 'counter_regression_false_positive'])
+        self.assertEqual(self.failures(hook=both, max_delay_seconds=1), ['counter_regression_mismatch'])
+        self.assertEqual(self.failures(hook=bump('identity_collision_rejections', value=2), minutes=32,
+                                       inject_identity_collision=True), ['identity_collision_not_rejected'])
+        self.assertEqual(self.failures(minutes=32, inject_identity_collision=True), [])
+        self.assertEqual(self.failures(inject_identity_collision=True), ['identity_collision_not_rejected'])
+        self.assertEqual(self.failures(uplink_loss=1),
+                         ['missing', 'unacknowledged_journal_records', 'availability_not_recovered'])
+
+    def test_availability_rules_and_their_order(self):
+        def at(minute, **changes):
+            def hook(c, snap):
+                if snap['minute'] == minute:
+                    snap.update(changes)
+            return hook
+        def both(*hooks):
+            return lambda c, snap: [h(c, snap) for h in hooks]
+        wrong = lambda minute: (lambda c, snap: snap['minute'] == minute and snap.update(
+            available=True, effective_sampled_at=snap['true_sampled_at'] + 6))
+        self.assertEqual(self.failures(hook=at(1, available=True), sensor_faults=[[1, 2]]),
+                         ['fault_or_bad_clock_presented_as_current'])
+        self.assertEqual(self.failures(hook=at(1, available=True), clock_steps=[[1, 2, 3600]]),
+                         ['fault_or_bad_clock_presented_as_current'])
+        self.assertEqual(self.failures(sensor_faults=[[1, 2]], clock_steps=[[2, 3, 3600]], unknown_clock=[[3, 4]]), [])
+        self.assertEqual(self.failures(hook=at(1, available=True, time_basis='unknown'), unknown_clock=[[1, 2]]),
+                         ['unknown_clock_presented_with_wrong_time'])
+        self.assertEqual(self.failures(hook=wrong(1), unknown_clock=[[1, 2]]),
+                         ['unknown_clock_presented_with_wrong_time'])
+        self.assertEqual(self.failures(hook=wrong(2)), ['current_value_with_wrong_time'])
+        self.assertEqual(self.failures(hook=at(2, true_sampled_at=None, effective_sampled_at=0)), [])
+        # Only the first availability failure is reported.
+        self.assertEqual(self.failures(hook=both(wrong(3), at(1, available=True)), sensor_faults=[[1, 2]]),
+                         ['fault_or_bad_clock_presented_as_current'])
+        self.assertEqual(self.failures(hook=both(wrong(1), wrong(2)), unknown_clock=[[1, 2]]),
+                         ['unknown_clock_presented_with_wrong_time'])
+        # The end of the run must be current again, unless it ends inside a fault or an outage.
+        self.assertEqual(self.failures(hook=at(4, available=False)), ['availability_not_recovered'])
+        for ends_inside in ('sensor_faults', 'unknown_clock', 'link_outages', 'host_outages', 'commit_failures'):
+            self.assertEqual(self.failures(hook=at(4, available=False), **{ends_inside: [[4, 5]]}), [], ends_inside)
+        self.assertEqual(self.failures(hook=at(4, available=False), clock_steps=[[4, 5, 3600]]), [])
+        self.assertEqual(self.failures(hook=at(4, available=False), expect_unavailable=True), ['availability_not_recovered'])
+
+
+class ScenarioValidationTests(unittest.TestCase):
+    """Characterization of Scenario.validate: every rule and its message."""
+    def test_each_rule(self):
+        cases = [
+            (dict(name=''), 'Scenario name must use lowercase letters, digits, - or _'),
+            (dict(name='Bad'), 'Scenario name must use lowercase letters, digits, - or _'),
+            (dict(minutes=0), 'minutes must be an integer from 1 to 10080'),
+            (dict(minutes=10081), 'minutes must be an integer from 1 to 10080'),
+            (dict(minutes=5.0), 'minutes must be an integer from 1 to 10080'),
+            (dict(minutes=True), 'minutes must be an integer from 1 to 10080'),
+            (dict(ack_loss='0'), 'ack_loss must be a probability'),
+            (dict(corruption=True), 'corruption must be a probability'),
+            (dict(duplicates=1.5), 'duplicates must be a probability'),
+            (dict(max_delay_seconds=601), 'max_delay_seconds must be 0..600'),
+            (dict(max_delay_seconds=-1), 'max_delay_seconds must be 0..600'),
+            (dict(max_delay_seconds=1.0), 'max_delay_seconds must be 0..600'),
+            (dict(host_outages=[[1]]), 'Invalid interval in host_outages'),
+            (dict(commit_failures=[[1, 2.0]]), 'Invalid interval in commit_failures'),
+            (dict(clock_steps=[[1, 2]]), 'Invalid interval in clock_steps'),
+            (dict(sensor_faults=[[1, 2, 3]]), 'Invalid interval in sensor_faults'),
+            (dict(unknown_clock=[[-1, 2]]), 'Out-of-range interval in unknown_clock'),
+            (dict(link_outages=[[2, 2]]), 'Out-of-range interval in link_outages'),
+            (dict(minutes=10, clock_steps=[[1, 11, 5]]), 'Out-of-range interval in clock_steps'),
+            (dict(node_reboots=[1440]), 'Reboot outside sampling interval'),
+            (dict(gateway_reboots=[-1]), 'Reboot outside sampling interval'),
+            (dict(gateway_reboots=[1.0]), 'Reboot outside sampling interval'),
+            (dict(require_latency_target=True, expect_latency_failure=True), 'Contradictory latency expectations'),
+            (dict(name='Bad', minutes=0), 'Scenario name must use lowercase letters, digits, - or _'),
+            (dict(minutes=0, ack_loss=2), 'minutes must be an integer from 1 to 10080'),
+            (dict(uplink_loss=2, ack_loss=2), 'uplink_loss must be a probability'),
+            (dict(link_outages=[[1]], host_outages=[[1]]), 'Invalid interval in link_outages'),
+        ]
+        for settings, message in cases:
+            scenario = Scenario(**({'name': 'ok', 'description': 'd'} | settings))
+            with self.assertRaises(ValueError, msg=settings) as caught:
+                scenario.validate()
+            self.assertEqual(str(caught.exception), message, settings)
+        for settings in (dict(), dict(minutes=10080, max_delay_seconds=600, uplink_loss=1, ack_loss=0.0),
+                         dict(minutes=10, link_outages=[[0, 10]], clock_steps=[[0, 1, -5]], node_reboots=[0, 9])):
+            Scenario(**({'name': 'ok-1_a', 'description': 'd'} | settings)).validate()
+
+
+class AssessTests(unittest.TestCase):
+    """Characterization of the oracle's accounting: trustworthy time and latency bounds."""
+    def test_empty_schedule(self):
+        result = assess({}, [], 0)
+        self.assertEqual((result['live_delivery_percent'], result['latency_target_met'],
+                          result['maximum_ground_truth_latency_seconds']), (0, False, None))
+
+    def test_on_time_needs_a_trustworthy_time_and_bounded_latency(self):
+        def record(seq, **changes):
+            return {'session': '1', 'sequence': seq, 'quality': 'valid', 'time_quality': 'synchronized'} | changes
+        def row(seq, received, effective, basis, **changes):
+            return record(seq, **changes) | {'received_at': received, '_effective': effective, '_basis': basis}
+        acquired = 1000
+        cases = [  # received, effective, basis -> on time
+            (1120, 1000, 'synchronized', True), (1121, 1000, 'synchronized', False),
+            (999, 1000, 'synchronized', False), (1000, 1005, 'reconstructed', True),
+            (1000, 994.5, 'reconstructed', False), (1000, None, 'unknown', False), (1000, 1000, 'unknown', False)]
+        expected = {('1', i): (record(i), acquired) for i in range(len(cases))}
+        expected[('1', 99)] = (record(99, quality='sensor_fault', time_quality='unknown'), acquired)  # never stored
+        rows = [row(i, received, effective, basis) for i, (received, effective, basis, _) in enumerate(cases)]
+        rows.append(row(50, 1000, 1000, 'synchronized'))
+        result = assess(expected, rows, 2000)
+        self.assertEqual(result['within_120s_with_trustworthy_time'], sum(c[-1] for c in cases))
+        self.assertEqual((result['scheduled'], result['stored'], result['missing'], result['unexpected_rows']),
+                         (8, 8, [['1', 99]], [['1', 50]]))
+        self.assertEqual((result['unknown_clock_samples'], result['sensor_fault_samples'],
+                          result['reconstructed_time_samples'], result['unresolved_time_samples']), (1, 1, 2, 2))
+        self.assertEqual((result['live_delivery_percent'], result['latency_target_met'],
+                          result['maximum_ground_truth_latency_seconds']), (25.0, False, 121))
+        everything = {k: v for k, v in expected.items() if k[1] < 1}
+        self.assertTrue(assess(everything, rows[:1], 2000)['latency_target_met'])

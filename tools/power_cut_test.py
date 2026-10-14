@@ -90,7 +90,7 @@ def storm_then_cut(device, cut, run_s):
     return seen
 
 
-def main():
+def parse_args():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--method', choices=['power', 'reset'], default='power',
                     help='power: uhubctl removes VBUS (true power cut); reset: ST-LINK NRST during writes')
@@ -106,97 +106,129 @@ def main():
     ap.add_argument('--output', type=Path)
     ap.add_argument('--check', action='store_true', help='one cut: verify the hub really removes power')
     args = ap.parse_args()
-    rng = random.Random(args.seed)
     if args.method == 'power' and (not args.hub or not args.port):
         ap.error('--method power needs --hub and --port')
     if args.check and args.method != 'power':
         ap.error('--check tests a hub power cut: use it with --method power')
-    expected_reset = 'power' if args.method == 'power' else 'pin'
-    cut = (lambda: power(args.hub, args.port, 'off')) if args.method == 'power' else (lambda: nrst(args.serial_number))
-
-    if args.check:
-        device = find_port(args.serial_number, 5)
-        print('before:', device)
-        power(args.hub, args.port, 'off')
-        time.sleep(args.off)
-        gone = find_port(args.serial_number, 1) is None
-        power(args.hub, args.port, 'on')
-        device = find_port(args.serial_number, 20)
-        _, status = read_status(device) if device else ([], None)
-        reset = status.get('reset') if status else None
-        print(f'enumeration removed while off: {gone}; boot reset cause: {reset}; status: {bool(status)}')
-        print('PASS: hub cuts power' if gone and reset == 'power' else
-              'FAIL: hub does not cut VBUS on this port (reset cause must be "power")')
-        return
-
-    if not args.output:
+    if not args.check and not args.output:
         ap.error('--output is required for a test run')
+    return args
+
+
+def hub_check(args):
+    """One cut: the board must disappear from USB while off and boot with reset cause 'power'."""
+    device = find_port(args.serial_number, 5)
+    print('before:', device)
+    power(args.hub, args.port, 'off')
+    time.sleep(args.off)
+    gone = find_port(args.serial_number, 1) is None
+    power(args.hub, args.port, 'on')
+    device = find_port(args.serial_number, 20)
+    _, status = read_status(device) if device else ([], None)
+    reset = status.get('reset') if status else None
+    print(f'enumeration removed while off: {gone}; boot reset cause: {reset}; status: {bool(status)}')
+    print('PASS: hub cuts power' if gone and reset == 'power' else
+          'FAIL: hub does not cut VBUS on this port (reset cause must be "power")')
+
+
+class Invariants:
+    """The checks across boots (I3, I4, self-test, reset cause) and the run totals."""
+    def __init__(self, expected_reset):
+        self.expected_reset = expected_reset
+        self.failures, self.last_epoch, self.max_ctr_used = [], None, 0
+        self.totals = {'cycles': 0, 'boots_ok': 0, 'burned_max': 0, 'ecc_boot_events': 0, 'scrubbed': 0}
+
+    def fail(self, cycle, error):
+        self.failures.append({'cycle': cycle, 'error': error})
+
+    def boot(self, cycle, boot_lines, status):
+        """One boot's status (None: the board printed none)."""
+        if not status:
+            self.fail(cycle, 'no status after boot')
+            return
+        self.totals['boots_ok'] += 1
+        epoch, ctr = int(status['epoch']), int(status['ctr'])
+        if cycle > 0 and status.get('reset') != self.expected_reset:
+            self.fail(cycle, f"reset cause {status.get('reset')!r}, expected {self.expected_reset!r}")
+        if status.get('kat') != 'pass':
+            self.fail(cycle, 'self-test failed')
+        if self.last_epoch is not None and epoch <= self.last_epoch:
+            self.fail(cycle, f'epoch did not increase ({self.last_epoch} -> {epoch})')
+        if ctr <= self.max_ctr_used:
+            self.fail(cycle, f'counter went back ({self.max_ctr_used} -> {ctr})')
+        self.last_epoch = epoch
+        self.totals['burned_max'] = max(self.totals['burned_max'], int(status.get('burned', 0)))
+        self.totals['ecc_boot_events'] += int(int(status.get('ecc', 0)) > 0)
+        self.totals['scrubbed'] += sum(int(m[1]) for m in (re.search(r'#storm-scrub dropped=(\d+)', line)
+                                                           for line in boot_lines) if m)
+        self.used_counter(ctr)
+
+    def used_counter(self, next_ctr):
+        """The board's next counter is next_ctr: everything below it may have been used."""
+        self.max_ctr_used = max(self.max_ctr_used, next_ctr - 1)
+
+    def storm(self, lines):
+        for line in lines:
+            m = re.search(r'ctr=(\d+)', line)
+            if m:
+                self.used_counter(int(m[1]))
+
+
+def gateway_check(path, started):
+    """(storm records stored, rejections since the start): storm records must never be sent."""
+    db = sqlite3.connect(path)
+    storm_rows = db.execute("SELECT count(*) FROM observations WHERE session='4294967295'").fetchone()[0]
+    rejections = db.execute('SELECT count(*) FROM rejections WHERE received_at>=?', (started,)).fetchone()[0]
+    return storm_rows, rejections
+
+
+def main():
+    args = parse_args()
+    rng = random.Random(args.seed)
+    cut = (lambda: power(args.hub, args.port, 'off')) if args.method == 'power' else (lambda: nrst(args.serial_number))
+    if args.check:
+        hub_check(args)
+        return
     args.output.mkdir(parents=True, exist_ok=False)
     log = (args.output/'cycles.jsonl').open('w', buffering=1)
     started = time.time()
-    failures, last_epoch, max_ctr_used = [], None, 0
-    totals = {'cycles': 0, 'boots_ok': 0, 'burned_max': 0, 'ecc_boot_events': 0, 'scrubbed': 0}
+    run = Invariants('power' if args.method == 'power' else 'pin')
 
     for cycle in range(args.cycles + 1):
         device = find_port(args.serial_number, 30)
         if not device:
-            failures.append({'cycle': cycle, 'error': 'board did not enumerate'})
+            run.fail(cycle, 'board did not enumerate')
             if args.method == 'power':   # with --method reset there is no hub to switch back on
                 power(args.hub, args.port, 'on')
             continue
         boot_lines, status = read_status(device)
         record = {'cycle': cycle, 'boot': boot_lines[-6:], 'status': status}
-        if not status:
-            failures.append({'cycle': cycle, 'error': 'no status after boot'})
-        else:
-            totals['boots_ok'] += 1
-            epoch, ctr = int(status['epoch']), int(status['ctr'])
-            if cycle > 0 and status.get('reset') != expected_reset:
-                failures.append({'cycle': cycle, 'error': f"reset cause {status.get('reset')!r}, expected {expected_reset!r}"})
-            if status.get('kat') != 'pass':
-                failures.append({'cycle': cycle, 'error': 'self-test failed'})
-            if last_epoch is not None and epoch <= last_epoch:
-                failures.append({'cycle': cycle, 'error': f'epoch did not increase ({last_epoch} -> {epoch})'})
-            if ctr <= max_ctr_used:
-                failures.append({'cycle': cycle, 'error': f'counter went back ({max_ctr_used} -> {ctr})'})
-            last_epoch = epoch
-            totals['burned_max'] = max(totals['burned_max'], int(status.get('burned', 0)))
-            totals['ecc_boot_events'] += int(int(status.get('ecc', 0)) > 0)
-            for line in boot_lines:
-                m = re.search(r'#storm-scrub dropped=(\d+)', line)
-                if m:
-                    totals['scrubbed'] += int(m[1])
-            max_ctr_used = max(max_ctr_used, ctr - 1)
+        run.boot(cycle, boot_lines, status)
         if cycle == args.cycles:
             log.write(json.dumps(record) + '\n')
             break
         run_s = rng.uniform(args.min_run, args.max_run)
         storm_lines = storm_then_cut(device, cut, run_s)
-        for line in storm_lines:
-            m = re.search(r'ctr=(\d+)', line)
-            if m:
-                max_ctr_used = max(max_ctr_used, int(m[1]) - 1)
-        record.update(run_s=round(run_s, 3), storm=storm_lines[-3:], max_ctr_used=max_ctr_used)
+        run.storm(storm_lines)
+        record.update(run_s=round(run_s, 3), storm=storm_lines[-3:], max_ctr_used=run.max_ctr_used)
         log.write(json.dumps(record) + '\n')
         if args.method == 'power':
             time.sleep(args.off)
             power(args.hub, args.port, 'on')
-        totals['cycles'] += 1
+        run.totals['cycles'] += 1
         print(f'cycle {cycle + 1}/{args.cycles} cut after {run_s:.2f}s; epoch={status and status["epoch"]} '
-              f'failures={len(failures)}', flush=True)
+              f'failures={len(run.failures)}', flush=True)
 
-    db = sqlite3.connect(args.gateway_db)
-    storm_rows = db.execute("SELECT count(*) FROM observations WHERE session='4294967295'").fetchone()[0]
-    rejections = db.execute('SELECT count(*) FROM rejections WHERE received_at>=?', (started,)).fetchone()[0]
+    storm_rows, rejections = gateway_check(args.gateway_db, started)
     if storm_rows:
-        failures.append({'error': f'{storm_rows} storm records reached the gateway'})
+        run.failures.append({'error': f'{storm_rows} storm records reached the gateway'})
     summary = {'started': started, 'finished': time.time(), 'seed': args.seed, 'method': args.method,
                'hub': args.hub, 'port': args.port,
-               'totals': totals, 'storm_rows_at_gateway': storm_rows, 'gateway_rejections': rejections,
-               'failures': failures, 'pass': not failures}
+               'totals': run.totals, 'storm_rows_at_gateway': storm_rows, 'gateway_rejections': rejections,
+               'failures': run.failures, 'pass': not run.failures}
     (args.output/'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
     print(json.dumps(summary, indent=2))
-    raise SystemExit(0 if not failures else 1)
+    raise SystemExit(0 if not run.failures else 1)
 
 
 if __name__ == '__main__':

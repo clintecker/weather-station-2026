@@ -370,3 +370,68 @@ class DiagnosticsAndEpochFloor(StationTest):
   self.gateway.receive(self.node.packet(self.node.sample(1000)),1001)  # epoch 1
   self.gateway.receive(self.diag(9,60),1002)                             # a later epoch seen only in a report
   self.assertEqual(epoch_floor(self.root,self.cfg['station']),10)
+
+
+class CommandLineTests(unittest.TestCase):
+ """Characterization of `python -m ws0` argument handling and the demo's log file and link-down
+ switch (ws0/__main__.py main)."""
+ def ws0(self,*args,timeout=60):
+  return subprocess.run([sys.executable,'-m','ws0',*args],capture_output=True,timeout=timeout)
+ def test_command_and_mode_mismatches_are_usage_errors(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   sim,hw=Path(tmp)/'sim',Path(tmp)/'hw'
+   self.assertEqual(self.ws0('init','--directory',str(sim)).returncode,0)
+   created=self.ws0('init','--hardware','--station','station-01','--station-id','7','--directory',str(hw))
+   self.assertEqual(created.returncode,0)
+   self.assertIn(b'Created',created.stdout)
+   cfg=json.loads((hw/'gateway.json').read_text())
+   self.assertEqual((cfg['mode'],cfg['station'],cfg['station_id']),('hardware','station-01',7))
+   self.assertEqual(sorted(p.name for p in hw.iterdir()),['gateway-nonces.sqlite3','gateway.json'])
+   for args,message in [(('demo','--directory',str(hw)),b'Demo requires a dedicated simulation configuration'),
+                        (('serve','--directory',str(sim)),b'serve requires --serial or --serial-number'),
+                        (('provision-node','--directory',str(sim),'--serial','/dev/null'),
+                         b'provision-node requires a --hardware state directory and --serial'),
+                        (('provision-node','--directory',str(hw)),
+                         b'provision-node requires a --hardware state directory and --serial'),
+                        (('bogus',),b'invalid choice')]:
+    result=self.ws0(*args)
+    self.assertEqual(result.returncode,2,args)
+    self.assertIn(message,result.stderr,args)
+   self.assertFalse((hw/'observations.sqlite3').exists())    # nothing started
+ def test_demo_log_file_and_link_down(self):
+  import signal,time
+  with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+   directory=Path(tmp)/'state'; quiet_provision(directory)
+   import socket
+   cfg=json.loads((directory/'gateway.json').read_text())
+   with socket.socket() as sock:
+    sock.bind(('127.0.0.1',0)); cfg['http_port']=sock.getsockname()[1]
+   (directory/'gateway.json').write_text(json.dumps(cfg))
+   (directory/'link-down').touch()
+   log=Path(tmp)/'serve.log'
+   windows=sys.platform=='win32'
+   proc=subprocess.Popen([sys.executable,'-m','ws0','demo','--directory',str(directory),'--log-file',str(log)],
+                         stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if windows else 0)
+   try:
+    deadline=time.monotonic()+20
+    while time.monotonic()<deadline and b'"simulation": true' not in (log.read_bytes() if log.exists() else b''):
+     time.sleep(0.1)
+   finally:
+    proc.send_signal(signal.CTRL_BREAK_EVENT if windows else signal.SIGINT)
+    try: out,err=proc.communicate(timeout=10)
+    except subprocess.TimeoutExpired: proc.kill(); proc.communicate(); raise
+   self.assertEqual(proc.returncode,0)
+   self.assertEqual((out,err),(b'',b''))                          # everything went to the log file
+   lines=log.read_text().splitlines()
+   self.assertTrue(lines[0].startswith('Stage 0 simulation; API http://127.0.0.1:'))
+   sample=json.loads(next(l for l in lines if l.startswith('{')))
+   self.assertEqual((sample['simulation'],sample['link_down']),(True,True))
+   from gateway import open_read_only
+   db=open_read_only(directory/'observations.sqlite3')
+   try:
+    self.assertEqual(db.execute('SELECT count(*) FROM observations').fetchone()[0],0)   # link down: nothing sent
+    kinds=[r[0] for r in db.execute('SELECT kind FROM gateway_events ORDER BY id')]
+   finally:
+    db.close()
+   self.assertEqual((kinds[0],kinds[-1]),('start','stop'))

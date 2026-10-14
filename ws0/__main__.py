@@ -138,6 +138,35 @@ def provision_node(cfg, device, floor=0, counter_state=None):
             print('  '+line)
 
 
+def _receiver_diagnostic(gateway, text, receiver_log, stamp, rx_seen):
+    """Receiver diagnostics (RSSI/SNR, drops, boots, alive): evidence, not data."""
+    receiver_log.write(f'{stamp} {text}\n')
+    if text.startswith(('#alive ','#boot role=rx')):
+        gateway.receiver_report(text,rx_seen)
+    gateway.telemetry.rx_line(text,rx_seen)
+
+
+def _answer_frame(gateway, link, frame, text, receiver_log, stamp, rx_seen, quiet):
+    """Authenticate and store one frame and send its ACK/NACK; a node health report is stored
+    but never answered. A replay is answered but its log line is rate-limited (quiet)."""
+    telemetry = gateway.telemetry
+    ack = gateway.receive(frame)
+    outcome = gateway.last_outcome
+    if ack is None:  # node health report: stored, never answered
+        receiver_log.write(f'{stamp} diag {text}\n')
+        telemetry.frame(frame,outcome,at=rx_seen)
+        return
+    sent = link.write(ack.hex().encode()+b'\n')
+    if outcome == 'duplicate' and quiet('duplicate'):   # a replay is answered, not logged forever
+        return
+    kind = 'nack' if outcome == 'nack' else 'ack'
+    receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}'
+                       f'{"" if sent else " (not delivered: serial link down)"}\n')
+    telemetry.frame(frame,outcome,delivered=sent,at=rx_seen)
+    if kind == 'ack':  # the frame just stored, not the newest reading (backlog)
+        print(json.dumps({'received_at':stamp,'observation':gateway.last_ingested}),flush=True)
+
+
 def handle_receiver_line(gateway, link, line, receiver_log, now=None):
     """One line from the RX board: a '#' diagnostic, or a hex frame to authenticate, store and
     answer. Everything goes to receiver.log (evidence); radio frames with their RSSI/SNR, RX
@@ -164,29 +193,11 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
         if text.startswith('#rx drop') and quiet('rx_drop'):
             return
         if text.startswith('#'):
-            # Receiver diagnostics (RSSI/SNR, drops, boots, alive): evidence, not data.
-            receiver_log.write(f'{stamp} {text}\n')
-            if text.startswith(('#alive ','#boot role=rx')):
-                gateway.receiver_report(text,rx_seen)
-            telemetry.rx_line(text,rx_seen)
+            _receiver_diagnostic(gateway,text,receiver_log,stamp,rx_seen)
         elif text:
             telemetry.muted = False
             frame = bytes.fromhex(text)
-            ack = gateway.receive(frame)
-            outcome = gateway.last_outcome
-            if ack is None:  # node health report: stored, never answered
-                receiver_log.write(f'{stamp} diag {text}\n')
-                telemetry.frame(frame,outcome,at=rx_seen)
-                return
-            sent = link.write(ack.hex().encode()+b'\n')
-            if outcome == 'duplicate' and quiet('duplicate'):   # a replay is answered, not logged forever
-                return
-            kind = 'nack' if outcome == 'nack' else 'ack'
-            receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}'
-                               f'{"" if sent else " (not delivered: serial link down)"}\n')
-            telemetry.frame(frame,outcome,delivered=sent,at=rx_seen)
-            if kind == 'ack':  # the frame just stored, not the newest reading (backlog)
-                print(json.dumps({'received_at':stamp,'observation':gateway.last_ingested}),flush=True)
+            _answer_frame(gateway,link,frame,text,receiver_log,stamp,rx_seen,quiet)
     except (ValueError,UnicodeError,InvalidTag) as exc:
         if quiet('rejected'):
             return
@@ -202,7 +213,7 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
         telemetry.frame(frame,'commit_failed',detail=f'{type(exc).__name__}: {exc}',at=rx_seen)
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command',choices=['init','demo','serve','provision-node'])
     parser.add_argument('--directory',type=Path,default=Path('run-demo'))
@@ -214,32 +225,32 @@ def main():
     parser.add_argument('--hardware',action='store_true',help='init: real station, not simulation')
     parser.add_argument('--station',default='simulation-01',help='init: station name')
     parser.add_argument('--station-id',type=int,default=1,help='init: numeric station ID')
-    args = parser.parse_args()
-    os.umask(0o077)
-    if args.command == 'init':
-        provision(args.directory,args.hardware,args.station,args.station_id)
-        return
-    cfg = load_config(args.directory/'gateway.json')
-    if args.command == 'provision-node':
-        if cfg['mode'] != 'hardware' or not args.serial:
-            parser.error('provision-node requires a --hardware state directory and --serial')
-        counter_state = node_counter_mark(args.directory)
-        print_counter_mark(counter_state)
-        provision_node(cfg,args.serial,epoch_floor(args.directory,cfg['station']),counter_state)
-        return
+    return parser
+
+
+def run_provision_node(parser, args, cfg):
+    if cfg['mode'] != 'hardware' or not args.serial:
+        parser.error('provision-node requires a --hardware state directory and --serial')
+    counter_state = node_counter_mark(args.directory)
+    print_counter_mark(counter_state)
+    provision_node(cfg,args.serial,epoch_floor(args.directory,cfg['station']),counter_state)
+
+
+def check_serving_args(parser, args, cfg):
     if args.command=='demo' and cfg['mode']!='simulation':
         parser.error('Demo requires a dedicated simulation configuration')
     if args.command=='serve' and not (args.serial or args.serial_number):
         parser.error('serve requires --serial or --serial-number')
-    if args.log_file:
-        sys.stdout = sys.stderr = RotatingLog(args.log_file)
-    # launchd/systemd stop a service with SIGTERM: shut down as cleanly as Ctrl-C.
-    # Windows: Ctrl-Break (sent by service wrappers and by `tests/test_stage0.py`) does the same.
-    # Only the first stop request interrupts: a repeat (a second Ctrl-C, a service manager that
-    # signals twice) would otherwise land inside the cleanup below and abort it with a traceback.
-    # After the first one, further stop signals are ignored by the OS itself (SIG_IGN): Python resets
-    # its own handlers to the default while the interpreter exits, so a repeat arriving then
-    # would otherwise kill the process with SIGTERM instead of a clean exit 0.
+
+
+def install_stop_handlers():
+    """launchd/systemd stop a service with SIGTERM: shut down as cleanly as Ctrl-C.
+    Windows: Ctrl-Break (sent by service wrappers and by `tests/test_stage0.py`) does the same.
+    Only the first stop request interrupts: a repeat (a second Ctrl-C, a service manager that
+    signals twice) would otherwise land inside the cleanup and abort it with a traceback.
+    After the first one, further stop signals are ignored by the OS itself (SIG_IGN): Python resets
+    its own handlers to the default while the interpreter exits, so a repeat arriving then
+    would otherwise kill the process with SIGTERM instead of a clean exit 0."""
     stop_signals = [getattr(signal, n) for n in ('SIGINT', 'SIGTERM', 'SIGBREAK') if hasattr(signal, n)]
     def stop(*_):
         for s in stop_signals:
@@ -247,80 +258,126 @@ def main():
         raise KeyboardInterrupt
     for s in stop_signals:
         signal.signal(s, stop)
-    gateway = Gateway(cfg,args.directory)
-    server = http_server(gateway,cfg['http_port'])
-    mqtt = MQTT(gateway) if cfg['mqtt']['enabled'] else None
-    link = None
-    node = Node(cfg,args.directory) if args.command=='demo' else None
-    if node:
-        # The demo node runs inside the gateway process and shares the host clock, so it
-        # starts synchronized. A real node starts time-unknown (see TimeReconstruction tests).
-        node.synced = True
-    # Demo only: invented RSSI/SNR, RX #alive reports and node health reports, so the dashboard
-    # has every panel to show without boards.
-    demo_rx = DemoReceiver(gateway,node) if node else None
-    receiver_log = None
-    if args.command == 'serve':
-        receiver_log = RotatingLog(args.directory/'receiver.log')
-        def note(text):
-            stamp = utc_stamp(time.time())
-            receiver_log.write(f'{stamp} {text}\n')
-            print(f'{stamp} {text}',file=sys.stderr,flush=True)
-            gateway.telemetry.event(text)
+
+
+class Services:
+    """A running gateway, its HTTP server and optional MQTT publisher, and what feeds it: the
+    in-process demo node with its simulated receiver (demo) or the RX board's serial link (serve)."""
+    def __init__(self, command, directory, cfg):
+        self.directory = directory
+        self.gateway = Gateway(cfg,directory)
+        self.server = http_server(self.gateway,cfg['http_port'])
+        self.mqtt = MQTT(self.gateway) if cfg['mqtt']['enabled'] else None
+        self.link = self.node = self.demo_rx = self.receiver_log = None
+        if command == 'demo':
+            self.node = Node(cfg,directory)
+            # The demo node runs inside the gateway process and shares the host clock, so it
+            # starts synchronized. A real node starts time-unknown (see TimeReconstruction tests).
+            self.node.synced = True
+            # Demo only: invented RSSI/SNR, RX #alive reports and node health reports, so the
+            # dashboard has every panel to show without boards.
+            self.demo_rx = DemoReceiver(self.gateway,self.node)
+        self.dropping = False
+
+    def attach_receiver(self, cfg, serial, serial_number):
+        self.receiver_log = RotatingLog(self.directory/'receiver.log')
         # Short read timeout: the node's ACK window is 2 s, so frames are answered immediately.
-        link = ReceiverLink(args.serial,args.serial_number,note)
-        gateway.clock = HostClock(cfg.get('ntp_server','pool.ntp.org'),log=note).start()
-    print(f"Stage 0 {cfg['mode']}; API http://127.0.0.1:{cfg['http_port']}/v1/status",flush=True)
-    gateway.telemetry.event(f"#gateway start {args.command} mode={cfg['mode']}",kind='start',level='info')
-    next_sample = time.monotonic()
-    dropping = False
-    next_tick = 0
-    try:
+        self.link = ReceiverLink(serial,serial_number,self.note)
+        self.gateway.clock = HostClock(cfg.get('ntp_server','pool.ntp.org'),log=self.note).start()
+
+    def note(self, text):
+        stamp = utc_stamp(time.time())
+        self.receiver_log.write(f'{stamp} {text}\n')
+        print(f'{stamp} {text}',file=sys.stderr,flush=True)
+        self.gateway.telemetry.event(text)
+
+    def sample_demo(self):
+        """One demo minute: sample (a sensor-fault file fails the sensor), then unless a link-down
+        file exists deliver the live record and up to BACKLOG_PER_MINUTE history records
+        (firmware NORMAL)."""
+        node, directory = self.node, self.directory
+        record = node.sample(time.time(),(directory/'sensor-fault').exists())
+        self.dropping = (directory/'link-down').exists()
+        if not self.dropping:
+            node.acknowledge(self.demo_rx.deliver(node.packet(record)))
+            for old in node.backfill(BACKLOG_PER_MINUTE):
+                node.acknowledge(self.demo_rx.deliver(node.packet(old)))
+        print(json.dumps({'simulation':True,'sequence':record['sequence'],'link_down':self.dropping}),flush=True)
+
+    def poll_receiver(self):
+        gateway = self.gateway
+        for line in self.link.poll():
+            handle_receiver_line(gateway,self.link,line,self.receiver_log)
+        gateway.telemetry.tick()
+        if not self.link.connected:
+            time.sleep(0.2)
+        # RX liveness (gap G12): it reports every 60 s; three missed reports = silent.
+        if gateway.receiver and gateway.receiver.get('alive') and \
+                time.time() - gateway.receiver['last_seen'] > 180:
+            gateway.receiver['alive'] = False
+            self.note('#gateway receiver-silent: no RX report for 180 s (check RX board, USB, watchdog)')
+
+    def serve_forever(self):
+        """Until KeyboardInterrupt (a stop signal): demo samples each minute, the serial link is
+        polled continuously, MQTT ticks each second."""
+        next_sample = time.monotonic()
+        next_tick = 0
         while True:
-            if node and time.monotonic()>=next_sample:
-                record = node.sample(time.time(),(args.directory/'sensor-fault').exists())
-                dropping = (args.directory/'link-down').exists()
-                if not dropping:
-                    # Live first, then up to BACKLOG_PER_MINUTE history records (firmware NORMAL).
-                    node.acknowledge(demo_rx.deliver(node.packet(record)))
-                    for old in node.backfill(BACKLOG_PER_MINUTE):
-                        node.acknowledge(demo_rx.deliver(node.packet(old)))
-                print(json.dumps({'simulation':True,'sequence':record['sequence'],'link_down':dropping}),flush=True)
+            if self.node and time.monotonic()>=next_sample:
+                self.sample_demo()
                 next_sample = time.monotonic()+60
-            if demo_rx:
-                demo_rx.tick(link_down=dropping)
-            if link:
-                for line in link.poll():
-                    handle_receiver_line(gateway,link,line,receiver_log)
-                gateway.telemetry.tick()
-                if not link.connected:
-                    time.sleep(0.2)
-                # RX liveness (gap G12): it reports every 60 s; three missed reports = silent.
-                if gateway.receiver and gateway.receiver.get('alive') and \
-                        time.time() - gateway.receiver['last_seen'] > 180:
-                    gateway.receiver['alive'] = False
-                    note('#gateway receiver-silent: no RX report for 180 s (check RX board, USB, watchdog)')
-            if mqtt and time.monotonic()>=next_tick:
-                mqtt.tick()
+            if self.demo_rx:
+                self.demo_rx.tick(link_down=self.dropping)
+            if self.link:
+                self.poll_receiver()
+            if self.mqtt and time.monotonic()>=next_tick:
+                self.mqtt.tick()
                 next_tick = time.monotonic()+1
-            if not link:
+            if not self.link:
                 time.sleep(1)
+
+    def close(self):
+        if self.mqtt:
+            self.mqtt.close()
+        self.gateway.telemetry.event('#gateway stop',kind='stop',level='info')
+        self.gateway.hub.close()  # ends open event streams, so their threads exit
+        self.server.shutdown()
+        self.server.server_close()
+        self.gateway.close()
+        if self.node:
+            self.node.close()
+        if self.link:
+            self.link.close()
+        if self.receiver_log:
+            self.receiver_log.close()
+
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+    os.umask(0o077)
+    if args.command == 'init':
+        provision(args.directory,args.hardware,args.station,args.station_id)
+        return
+    cfg = load_config(args.directory/'gateway.json')
+    if args.command == 'provision-node':
+        run_provision_node(parser,args,cfg)
+        return
+    check_serving_args(parser,args,cfg)
+    if args.log_file:
+        sys.stdout = sys.stderr = RotatingLog(args.log_file)
+    install_stop_handlers()
+    services = Services(args.command,args.directory,cfg)
+    if args.command == 'serve':
+        services.attach_receiver(cfg,args.serial,args.serial_number)
+    print(f"Stage 0 {cfg['mode']}; API http://127.0.0.1:{cfg['http_port']}/v1/status",flush=True)
+    services.gateway.telemetry.event(f"#gateway start {args.command} mode={cfg['mode']}",kind='start',level='info')
+    try:
+        services.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        if mqtt:
-            mqtt.close()
-        gateway.telemetry.event('#gateway stop',kind='stop',level='info')
-        gateway.hub.close()  # ends open event streams, so their threads exit
-        server.shutdown()
-        server.server_close()
-        gateway.close()
-        if node:
-            node.close()
-        if link:
-            link.close()
-        if receiver_log:
-            receiver_log.close()
+        services.close()
 
 
 if __name__=='__main__':
