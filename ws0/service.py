@@ -25,6 +25,11 @@ from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, LINK_STAT
 def load_config(path):
     """Load secrets locally; bind the diagnostic API to loopback only."""
     cfg = json.loads(path.read_text())
+    # The file holds the radio key and API token. A run directory copied by AirDrop, a USB stick or
+    # cp can arrive readable by other users; say so (the gateway itself creates it 0600).
+    if os.name == 'posix' and Path(path).stat().st_mode & 0o077:
+        print(f'#gateway warning: {path} is readable by other users; run chmod 600 on it',
+              file=sys.stderr, flush=True)
     if not isinstance(cfg.get('station'), str) or not cfg['station'].replace('-','').isalnum():
         raise ValueError('Invalid station name')
     if type(cfg.get('station_id')) is not int or not 1 <= cfg['station_id'] <= STATION_MAX:
@@ -187,9 +192,40 @@ class Gateway:
                 'latest':self.store.latest(self.cfg['station'])}
 
 
+HTTP_TIMEOUT_S = 10       # a request (headers and body) must arrive within this; SSE sets its own
+HTTP_MAX_CONNECTIONS = 32  # beyond the 8 event streams: the API is for one household's browsers
+
+
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """At most HTTP_MAX_CONNECTIONS handler threads. Unbounded, a slow or half-open client per
+    connection (slowloris) took a thread and a file descriptor each until the process ran out of
+    descriptors (security audit, 2026-10-14); then serial reconnects and log rotation fail too.
+    A connection over the cap is closed at once."""
+    def __init__(self, *args, **kwargs):
+        self.slots = threading.BoundedSemaphore(HTTP_MAX_CONNECTIONS)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        if not self.slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self.slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.slots.release()
+
+
 def http_server(gateway, port):
     """All endpoints require a bearer token; HTTP cannot inject observations."""
     class Handler(BaseHTTPRequestHandler):
+        timeout = HTTP_TIMEOUT_S   # socket timeout for reading a request (None waited forever)
         def log_message(self, *args):
             pass  # Avoid recording credentials or query strings in access logs.
 
@@ -252,9 +288,9 @@ def http_server(gateway, port):
             self.end_headers()
             self.wfile.write(data)
     host = web.bind_address(gateway.cfg)
-    server_class = ThreadingHTTPServer
+    server_class = BoundedThreadingHTTPServer
     if ':' in host:   # IPv6 literal: the stock server class is AF_INET only (gateway review GW9)
-        server_class = type('ThreadingHTTPServerV6',(ThreadingHTTPServer,),{'address_family':socket.AF_INET6})
+        server_class = type('ThreadingHTTPServerV6',(BoundedThreadingHTTPServer,),{'address_family':socket.AF_INET6})
     server = server_class((host,port),Handler)
     # shutdown() waits up to one poll interval: 0.5 s by default, paid on every gateway stop and
     # by every test that starts a server. 0.05 s costs an idle select() wakeup 20 times a second.
