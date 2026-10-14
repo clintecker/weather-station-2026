@@ -14,7 +14,9 @@
 static IWDG_HandleTypeDef hiwdg;
 static UTIL_TIMER_Object_t check_timer;
 static int (*health)(void);
-static const char *cause = "unknown";
+static ws_reset_t cause = WS_RESET_UNKNOWN;
+static const char *const cause_name[] = { "unknown", "power", "pin", "brownout", "software", "watchdog", "lowpower", "option-bytes" };
+_Static_assert(sizeof cause_name / sizeof cause_name[0] == WS_RESET_COUNT, "one name per reset code");
 
 static void request_check(void *ctx)
 {
@@ -29,16 +31,17 @@ static void check(void)
 
 static void read_reset_cause(void)
 {
-  if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)) cause = "watchdog";
-  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST)) cause = "power"; /* BOR flag is also set at power-on */
-  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)) cause = "software";
-  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST)) cause = "lowpower";
-  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_OBLRST)) cause = "option-bytes";
-  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST)) cause = "pin";
+  if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)) cause = WS_RESET_WATCHDOG;
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST)) cause = WS_RESET_POWER; /* BOR flag is also set at power-on */
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)) cause = WS_RESET_SOFTWARE;
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST)) cause = WS_RESET_LOWPOWER;
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_OBLRST)) cause = WS_RESET_OPTION_BYTES;
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST)) cause = WS_RESET_PIN;
   __HAL_RCC_CLEAR_RESET_FLAGS();
 }
 
-const char *watchdog_reset_cause(void) { return cause; }
+ws_reset_t watchdog_reset_code(void) { return cause; }
+const char *watchdog_reset_cause(void) { return cause_name[cause]; }
 
 void watchdog_start(int (*healthy)(void))
 {

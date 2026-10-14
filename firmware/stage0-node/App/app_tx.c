@@ -26,6 +26,7 @@
 #include "subghz_phy_app.h"
 #include "sys_app.h"
 #include "utilities_def.h"
+#include "ws_be.h"
 #include "ws_frame.h"
 
 #define SAMPLE_PERIOD_MS    15000U  /* one T/RH sample; every SAMPLES_PER_REPORT-th builds the minute (PRD 9) */
@@ -73,12 +74,21 @@ static const uint16_t probe_interval_s[] = { 120, 240, 480, 900 };
  * cryptography library's AESCCM from the spec's header and nonce, not by ws0/protocol.py. */
 static const uint8_t KAT_KEY[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
 /* Observation: the encoder's own known answer (tests/test_obs.py KAT: T -12.34 C, RH 45.67 %, epoch 1,
- * seq 2, UTC 1791991189, uptime 300 s, NORMAL), sealed with counter 0x100000002. */
-static const char KAT_OBS_HEX[] = "5100010100000002bd50c6be3400a750d40cca5aadad57b716f16658a09d968acf9a212d7f2e95a5e34f";
-static const char KAT_ACK_HEX[] = "52000100000000050e1eb4544766f4e6e0ffdbb3f6d1413d06f6369500199b8fe2";
-static const char KAT_NACK_HEX[] = "5300010000000006849addbf88d9aadd884aa3bb89136575374521c5e416a1d0c9";
+ * seq 2, UTC 1791991189, uptime 300 s, NORMAL), sealed with counter 0x100000002. Raw bytes, not hex
+ * text (no decoder needed); tests/test_frame.py reads these three arrays back from this file. */
+static const uint8_t KAT_OBS[] = {
+  0x51, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0xbd, 0x50, 0xc6, 0xbe, 0x34, 0x00, 0xa7, 0x50, 0xd4, 0x0c, 0xca, 0x5a, 0xad,
+  0xad, 0x57, 0xb7, 0x16, 0xf1, 0x66, 0x58, 0xa0, 0x9d, 0x96, 0x8a, 0xcf, 0x9a, 0x21, 0x2d, 0x7f, 0x2e, 0x95, 0xa5, 0xe3, 0x4f };
+static const uint8_t KAT_ACK[] = {
+  0x52, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x05, 0x0e, 0x1e, 0xb4, 0x54, 0x47, 0x66, 0xf4, 0xe6, 0xe0,
+  0xff, 0xdb, 0xb3, 0xf6, 0xd1, 0x41, 0x3d, 0x06, 0xf6, 0x36, 0x95, 0x00, 0x19, 0x9b, 0x8f, 0xe2 };
+static const uint8_t KAT_NACK[] = {
+  0x53, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x06, 0x84, 0x9a, 0xdd, 0xbf, 0x88, 0xd9, 0xaa, 0xdd, 0x88,
+  0x4a, 0xa3, 0xbb, 0x89, 0x13, 0x65, 0x75, 0x37, 0x45, 0x21, 0xc5, 0xe4, 0x16, 0xa1, 0xd0, 0xc9 };
 #define KAT_OBS_PLAIN_LEN WS_OBS_PLAIN_LEN(WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT)
 #define KAT_OBS_FRAME_LEN (KAT_OBS_PLAIN_LEN + WS_FRAME_OVERHEAD)
+_Static_assert(sizeof KAT_OBS == KAT_OBS_FRAME_LEN && sizeof KAT_ACK == WS_ACK_FRAME_LEN && sizeof KAT_NACK == WS_ACK_FRAME_LEN,
+               "known-answer vectors have their frame lengths");
 #define OBS_FRAME_MAX (WS_OBS_PLAIN_MAX + WS_FRAME_OVERHEAD)
 
 static RadioEvents_t events;
@@ -133,7 +143,9 @@ static int diag_due = 1, diag_in_flight;
 static uint32_t ack_window_end;   /* HAL_GetTick() at which the current ACK window closes */
 static uint32_t last_diag_mcu;
 
-static uint8_t rx_frame[255];
+/* Only a WS_ACK_FRAME_LEN reply is ever opened. rx_len keeps the true received size, so a longer
+   packet is still rejected (ws_open_reply checks the length before reading) and logged as it was. */
+static uint8_t rx_frame[WS_ACK_FRAME_LEN];
 static uint16_t rx_len;
 static int16_t rx_rssi;
 static int8_t rx_snr;
@@ -142,7 +154,6 @@ static int8_t rx_snr;
 static int8_t ack_rssi = -128, ack_snr = -128;
 static volatile enum { EV_NONE, EV_TX_DONE, EV_TX_TIMEOUT, EV_RX_DONE, EV_RX_TIMEOUT, EV_RX_ERROR } event;
 
-static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
 /* RTC-based monotonic seconds; SysTimeSet() does not change it. */
 static uint32_t mcu_seconds(void) { return SysTimeGetMcuTime().Seconds; }
 static int time_valid(void) { return synced && (mcu_seconds() - last_sync_mcu) < SYNC_VALID_S; }
@@ -167,23 +178,21 @@ static void restore_time_trust(void)
 
 static int run_kat(void)
 {
-  uint8_t plain[KAT_OBS_PLAIN_LEN], frame[KAT_OBS_FRAME_LEN], expect[KAT_OBS_FRAME_LEN], ack[WS_ACK_FRAME_LEN];
+  uint8_t plain[KAT_OBS_PLAIN_LEN], frame[KAT_OBS_FRAME_LEN], ack[WS_ACK_FRAME_LEN];
   uint64_t ctr, echo; uint32_t ep, sq, word; uint8_t kind;
   ws_obs_t o = { .epoch = 1, .seq = 2, .utc = 1791991189UL, .uptime = 300, .energy = WS_ENERGY_NORMAL,
                  .bitmap = WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT };
   o.code[WS_FI_TEMPERATURE_C] = ws_code_temp_centi(-1234);
   o.code[WS_FI_HUMIDITY_PCT] = ws_code_rh_centi(4567);
   if (ws_obs_encode(&o, plain, sizeof plain) != (int)sizeof plain) return 0;
-  if (ws_hex_decode(KAT_OBS_HEX, expect, sizeof expect) != KAT_OBS_FRAME_LEN) return 0;
   if (ws_seal_kind(KAT_KEY, 1, WS_KIND_OBS, 0x100000002ULL, plain, sizeof plain, frame, sizeof frame) != KAT_OBS_FRAME_LEN ||
-      memcmp(frame, expect, sizeof frame)) return 0;
-  if (ws_hex_decode(KAT_ACK_HEX, ack, sizeof ack) != WS_ACK_FRAME_LEN) return 0;
-  if (ws_open_reply(KAT_KEY, 1, ack, sizeof ack, &kind, &ctr, &ep, &sq, &word, &echo)) return 0;
+      memcmp(frame, KAT_OBS, sizeof frame)) return 0;
+  if (ws_open_reply(KAT_KEY, 1, KAT_ACK, sizeof KAT_ACK, &kind, &ctr, &ep, &sq, &word, &echo)) return 0;
   if (kind != WS_KIND_ACK || ctr != 5 || ep != 17 || sq != 42 || word != 1760000000UL || echo != 0x100000002ULL) return 0;
+  memcpy(ack, KAT_ACK, sizeof ack);
   ack[sizeof ack - 1] ^= 1; /* tampered tag must fail */
   if (ws_open_reply(KAT_KEY, 1, ack, sizeof ack, &kind, &ctr, &ep, &sq, &word, &echo) == 0) return 0;
-  if (ws_hex_decode(KAT_NACK_HEX, ack, sizeof ack) != WS_ACK_FRAME_LEN) return 0;
-  if (ws_open_reply(KAT_KEY, 1, ack, sizeof ack, &kind, &ctr, &ep, &sq, &word, &echo)) return 0;
+  if (ws_open_reply(KAT_KEY, 1, KAT_NACK, sizeof KAT_NACK, &kind, &ctr, &ep, &sq, &word, &echo)) return 0;
   /* The counter limit is part of the self-test: 2^40 must be refused, never truncated. */
   if (ws_seal_kind(KAT_KEY, 1, WS_KIND_OBS, WS_COUNTER_MAX + 1ULL, plain, sizeof plain, frame, sizeof frame) >= 0) return 0;
   return kind == WS_KIND_NACK && ctr == 6 && ep == 17 && sq == 42 && word == WS_NACK_COLLISION && echo == 0x100000002ULL;
@@ -225,14 +234,17 @@ static void on_rx_timeout(void) { post(EV_RX_TIMEOUT); }
 static void on_rx_error(void) { post(EV_RX_ERROR); }
 static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 {
-  rx_len = size > sizeof rx_frame ? sizeof rx_frame : size;
-  memcpy(rx_frame, payload, rx_len);
+  rx_len = size;
+  memcpy(rx_frame, payload, size > sizeof rx_frame ? sizeof rx_frame : size);
   rx_rssi = rssi;
   rx_snr = snr;
   post(EV_RX_DONE);
 }
 
 static void finish_exchange(void);
+
+/* The exchange (and any health report in flight) is over: the radio sleeps until the next minute. */
+static void radio_idle(void) { diag_in_flight = 0; busy = 0; Radio.Sleep(); }
 
 /* Send queue[qi]. A local failure (journal read, seal, radio busy) skips to the next item in this
  * loop, never by calling next_item(): no recursion, so the stack stays bounded (tools/stack_report.py).
@@ -247,13 +259,13 @@ static void send_current(void)
     else
     {
       /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
-      if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_air, 0); APP_PRINTF("#error counter-reserve\n"); busy = 0; Radio.Sleep(); return; }
+      if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_air, 0); APP_PRINTF("#error counter-reserve\n"); radio_idle(); return; }
       int flen = ws_seal_kind(key, station, WS_KIND_OBS, sent_counter, plain, (uint32_t)plen, frame, sizeof frame);
       if (flen < 0) { APP_PRINTF("#error seal\n"); }
       else
       {
-        sent_epoch = be32(plain);
-        sent_seq = be32(plain + 4);
+        sent_epoch = ws_get_be32(plain);
+        sent_seq = ws_get_be32(plain + 4);
         n_sent++;
         led_flash(LED_BLUE, 400);
         if (Radio.Send(frame, (uint8_t)flen) == RADIO_STATUS_OK) return;  /* success is its TxDone */
@@ -270,7 +282,7 @@ static int record_id(jref_t r, uint32_t *epoch, uint32_t *seq)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX];
   if (store_journal_read(r, plain)) return 0;
-  *epoch = be32(plain); *seq = be32(plain + 4);
+  *epoch = ws_get_be32(plain); *seq = ws_get_be32(plain + 4);
   return 1;
 }
 
@@ -301,11 +313,9 @@ static void strike(jref_t r)
              (unsigned)epoch, (unsigned)seq, STRIKE_LIMIT, (unsigned)store_abandoned_total());
 }
 
-/* End of an exchange: strikes only count when the gateway answered something in it. */
-static void settle_strikes(void)
+/* End of an exchange: strikes only count when the gateway answered something in it (any). */
+static void settle_strikes(int any)
 {
-  int any = 0;
-  for (unsigned i = 0; i < qn; i++) any |= replied[i];
   if (!any) return; /* link or gateway down: never abandon data for that */
   for (unsigned i = 0; i < qn; i++)
   {
@@ -327,11 +337,9 @@ static uint32_t airtime_ms(uint32_t payload)
   return (uint32_t)(((uint64_t)symbols_x4 * (1000000UL << sf) / bw) / 4000) + 1;
 }
 
-/* End of a minute's exchange: update the link state from whether the gateway answered. */
-static void link_update(void)
+/* End of a minute's exchange: update the link state from whether the gateway answered (any). */
+static void link_update(int any)
 {
-  int any = 0;
-  for (unsigned i = 0; i < qn; i++) any |= replied[i];
   if (any)
   {
     if (link_state == LINK_PROBING) diag_due = 1;
@@ -360,30 +368,14 @@ static void link_update(void)
   }
 }
 
-static uint8_t reset_code(void)
-{
-  static const char *const causes[] = { "unknown", "power", "pin", "brownout", "software", "watchdog", "lowpower", "option-bytes" };
-  for (uint8_t i = 0; i < sizeof causes / sizeof causes[0]; i++)
-    if (!strcmp(causes[i], watchdog_reset_cause())) return i;
-  return 0;
-}
-
 static uint16_t clamp16(uint32_t v) { return v > 0xFFFF ? 0xFFFF : (uint16_t)v; }
 static int8_t clamp8(int v) { return (int8_t)(v < -127 ? -127 : v > 127 ? 127 : v); }  /* -128 means "none" */
 
-/* First 8 hex digits of the release commit (WS_FW_VERSION, Makefile), 0 if it is not hex. */
-static uint32_t fw_build_id(void)
-{
-  uint32_t id = 0;
-  for (int i = 0; i < 8; i++)
-  {
-    char c = WS_FW_VERSION[i];
-    int v = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
-    if (v < 0) return 0;
-    id = id << 4 | (uint32_t)v;
-  }
-  return id;
-}
+/* WS_FW_BUILD_ID: first 8 hex digits of the release commit (WS_FW_VERSION), 0 if they are not
+   hex; computed by the Makefile. */
+#ifndef WS_FW_BUILD_ID
+#error "WS_FW_BUILD_ID comes from the Makefile"
+#endif
 
 /* Returns 1 if a health report went on air (the caller then waits for TxDone). */
 static int send_diag(void)
@@ -392,38 +384,30 @@ static int send_diag(void)
   uint32_t now = mcu_seconds();
   if (now - last_diag_mcu >= DIAG_PERIOD_S) diag_due = 1;
   if (!diag_due) return 0;
-  uint32_t up = now - boot_mcu, lost = store_journal_lost();
-  uint16_t f[] = { clamp16(store_journal_pending()), clamp16(store_journal_burned()), clamp16(store_abandoned_total()),
-                   clamp16(n_no_ack), clamp16(n_ack_rejects) };
-  plain[0] = (uint8_t)(boot_epoch >> 24); plain[1] = (uint8_t)(boot_epoch >> 16); plain[2] = (uint8_t)(boot_epoch >> 8); plain[3] = (uint8_t)boot_epoch;
-  plain[4] = (uint8_t)(up >> 24); plain[5] = (uint8_t)(up >> 16); plain[6] = (uint8_t)(up >> 8); plain[7] = (uint8_t)up;
-  plain[8] = (uint8_t)(f[0] >> 8); plain[9] = (uint8_t)f[0];
-  plain[10] = (uint8_t)(lost >> 24); plain[11] = (uint8_t)(lost >> 16); plain[12] = (uint8_t)(lost >> 8); plain[13] = (uint8_t)lost;
-  for (int i = 1; i < 5; i++) { plain[12 + 2 * i] = (uint8_t)(f[i] >> 8); plain[13 + 2 * i] = (uint8_t)f[i]; }
-  plain[22] = reset_code();
-  plain[23] = (uint8_t)link_state;
-  uint32_t build = fw_build_id(), crashes = fault_count();
-  plain[24] = (uint8_t)(build >> 24); plain[25] = (uint8_t)(build >> 16); plain[26] = (uint8_t)(build >> 8); plain[27] = (uint8_t)build;
-  plain[28] = (uint8_t)ack_rssi;
-  plain[29] = (uint8_t)ack_snr;
-  plain[30] = (uint8_t)(crashes > 0xFF ? 0xFF : crashes);
-  plain[31] = (uint8_t)energy_state();
+  uint32_t crashes = fault_count();
+  ws_diag_t d = { .epoch = boot_epoch, .uptime = now - boot_mcu, .lost = store_journal_lost(), .build = (uint32_t)WS_FW_BUILD_ID,
+                  .pending = clamp16(store_journal_pending()), .torn = clamp16(store_journal_burned()),
+                  .abandoned = clamp16(store_abandoned_total()), .no_ack = clamp16(n_no_ack), .rejects = clamp16(n_ack_rejects),
+                  .reset_cause = (uint8_t)watchdog_reset_code(), .link = (uint8_t)link_state, .crashes = (uint8_t)(crashes > 0xFF ? 0xFF : crashes),
+                  .energy = (uint8_t)energy_state(), .rssi = ack_rssi, .snr = ack_snr };
+  ws_diag_pack(&d, plain);
   if (store_next_counter(&ctr) || ws_seal_kind(key, station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) < 0) return 0;
   diag_due = 0; last_diag_mcu = now;
   HAL_Delay(INTER_FRAME_MS);
   if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_air, 0); return 0; }
   diag_in_flight = 1;
-  APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u\n", f[0], (unsigned)lost, f[1], f[2], f[3]);
+  APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u\n", d.pending, (unsigned)d.lost, d.torn, d.abandoned, d.no_ack);
   return 1;
 }
 
 static void finish_exchange(void)
 {
-  settle_strikes();
-  link_update();
+  int any = 0; /* did the gateway answer anything in this exchange? */
+  for (unsigned i = 0; i < qn; i++) any |= replied[i];
+  settle_strikes(any);
+  link_update(any);
   if (send_diag()) return; /* busy until its TxDone */
-  busy = 0;
-  Radio.Sleep();
+  radio_idle();
 }
 
 static void next_item(void)
@@ -434,6 +418,16 @@ static void next_item(void)
 
 /* A missed reply ends this minute's drain: a failing link does not burn the allowance. */
 static void stop_drain(void) { qn = qi + 1; }
+
+/* No reply to the frame just sent; it stays journaled for a later retry. */
+static void no_reply(int flash_red)
+{
+  n_no_ack++;
+  if (flash_red) led_flash(LED_RED, 400);
+  APP_PRINTF("#ack none epoch=%u seq=%u\n", (unsigned)sent_epoch, (unsigned)sent_seq);
+  stop_drain();
+  next_item();
+}
 
 /* Returns 1 for the authentic reply (ACK or NACK) to the frame just sent; 0 for anything else. */
 static int handle_reply(void)
@@ -490,7 +484,7 @@ static void process(void)
   {
     case EV_TX_DONE:
       ws_failrun_note(&tx_air, 1);   /* the frame left: the radio works */
-      if (diag_in_flight) { diag_in_flight = 0; busy = 0; Radio.Sleep(); break; } /* no reply expected */
+      if (diag_in_flight) { radio_idle(); break; } /* no reply expected */
       ack_window_end = HAL_GetTick() + ACK_WINDOW_MS;
       Radio.Rx(ACK_WINDOW_MS);
       break;
@@ -503,23 +497,16 @@ static void process(void)
         uint32_t now = HAL_GetTick(), left = (int32_t)(ack_window_end - now) > 0 ? ack_window_end - now : 0;
         if (left > MIN_RELISTEN_MS) { Radio.Rx(left); break; }
       }
-      n_no_ack++;
-      APP_PRINTF("#ack none epoch=%u seq=%u\n", (unsigned)sent_epoch, (unsigned)sent_seq);
-      stop_drain();
-      next_item();
+      no_reply(0);
       break;
     case EV_RX_TIMEOUT:
     case EV_RX_ERROR:
-      n_no_ack++;
-      led_flash(LED_RED, 400); /* stays journaled for a later retry */
-      APP_PRINTF("#ack none epoch=%u seq=%u\n", (unsigned)sent_epoch, (unsigned)sent_seq);
-      stop_drain();
-      next_item();
+      no_reply(1);
       break;
     case EV_TX_TIMEOUT:
       ws_failrun_note(&tx_air, 0);
       led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n");
-      if (diag_in_flight) { diag_in_flight = 0; busy = 0; Radio.Sleep(); break; }
+      if (diag_in_flight) { radio_idle(); break; }
       stop_drain(); next_item();
       break;
     default: break;
@@ -711,9 +698,8 @@ void SubghzApp_Init(void)
   if (store_meta_init() || store_journal_init()) { led_set(LED_RED, 1); APP_PRINTF("#error store-init\n"); boot_retry(); return; }
   uint32_t scrubbed = store_journal_scrub(STORM_EPOCH);
   if (scrubbed) APP_PRINTF("#storm-scrub dropped=%u (test slots a power cut left pending)\n", (unsigned)scrubbed);
-  provisioned = store_config_load(&station, key) == 0;
+  provisioned = store_config_load(&station, key, kcv) == 0;
   if (!provisioned) { led_set(LED_RED, 1); status(); APP_PRINTF("#unprovisioned: send PROVISION <station_id> <key>\n"); return; }
-  ws_key_check(key, kcv);
   restore_time_trust();
   if (!kat_ok) { led_set(LED_RED, 1); status(); APP_PRINTF("#error self-test failed; not transmitting\n"); return; }
   /* Durable epoch before the first sample: observation identities never repeat. */

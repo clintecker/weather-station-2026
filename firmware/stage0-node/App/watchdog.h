@@ -4,7 +4,13 @@
  * check and the refresh run in the main loop, so a hung main loop is never fed. The role
  * supplies a health test that proves real progress (failure-modes.md gap G1). */
 void watchdog_start(int (*healthy)(void));
-/* Reset cause of this boot, read once before the flags are cleared: "power", "pin",
- * "brownout", "software", "watchdog", "lowpower", "option-bytes" or "unknown". */
-const char *watchdog_reset_cause(void);
+/* Reset cause of this boot, read once before the flags are cleared. The codes are the DIAG wire
+ * numbering (docs/protocol.md, ws0/protocol.py RESET_CAUSES; tests/test_frame.py checks the names).
+ * BROWNOUT is never reported: the BOR flag is also set at power-on, so both read as POWER. */
+typedef enum {
+  WS_RESET_UNKNOWN, WS_RESET_POWER, WS_RESET_PIN, WS_RESET_BROWNOUT, WS_RESET_SOFTWARE, WS_RESET_WATCHDOG,
+  WS_RESET_LOWPOWER, WS_RESET_OPTION_BYTES, WS_RESET_COUNT
+} ws_reset_t;
+ws_reset_t watchdog_reset_code(void);
+const char *watchdog_reset_cause(void); /* its name: "unknown", "power", "pin", ... */
 #endif

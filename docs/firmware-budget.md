@@ -10,7 +10,7 @@ measurements.
 
 | Resource | Available | Used now | Status |
 |---|---|---|---|
-| Flash, application region | 64 KB (pages 0–31, enforced by the linker script) | TX 53,752 B (82.0 %), RX 31,696 B (48.4 %) | **TX is the constraint**: 11,784 B left, 5,230 B below the 90 % guard |
+| Flash, application region | 64 KB (pages 0–31, enforced by the linker script) | TX 51,080 B (77.9 %), RX 31,792 B (48.5 %) (unreleased tree, 2026-10-14) | **TX is the constraint**: 14,456 B left, 7,902 B below the 90 % guard |
 | Flash, node state | 192 KB (pages 32–127) | key 1 page, meta log 2 pages, journal 93 pages (3,906 slots of 48 B for the T/RH build, about 2.7 days) | Pages fixed by `App/flash_layout.h`; slot size follows `App/node_fields.h` |
 | RAM | 64 KB (RAM1 32 KB + RAM2 32 KB) | TX: about 4.1 KB static data + 8 KB reserved stack + 0.5 KB heap, all in RAM1 (working tree after the stack work below) | Ample; RAM2 unused |
 | CPU | Cortex-M4 at 48 MHz (Cortex-M0+ core unused) | One sample and a few frames per minute | No constraint |
@@ -27,6 +27,14 @@ The build enforces a budget: `make` prints `flash budget: N of 65536 B` and fail
 21–25, `ws_th_*` in `firmware/stage0.c`) adds 632 B: TX 54,384 B (83.0 %). The observation grows to
 35 B plaintext / 51 B on air (25.7 ms at SF7, 534.5 ms at SF12), so journal slots become 56 B:
 36 per page, 3,348 records, about 2.3 days of outage buffer.
+
+**Efficiency review, unreleased (2026-10-14), TX 54,832 → 51,080 B (−3,752 B):** AES without the
+decrypt direction (`MBEDTLS_BLOCK_CIPHER_NO_DECRYPT`, −2,208 B; CCM and the key check value only
+encrypt), 128-bit keys only (−272 B, AES context 272 → 176 B on the stack), bitwise CRCs instead of
+GCC 15's lookup tables (`-fno-optimize-crc` on `node_store.o` and `stage0.o`, −752 B), a 32-bit
+minute mean (−208 B), boot self-test vectors as byte arrays (−184 B), the field catalog as one
+X-macro (−88 B), the build ID computed at build time (−56 B) and smaller items. The TX reply
+buffer is 33 B instead of 255 B (RAM −224 B). Stack bound: TX 6,056 B (74 %), RX 2,276 B (28 %).
 
 ## Where the TX flash goes
 

@@ -252,8 +252,11 @@ static void reconcile(void) {
 }
 
 static void check_config(unsigned npending) {
- uint32_t st = 0; uint8_t key[16]; int cut = cut_happened;
- int rc = store_config_load(&st, key);
+ uint32_t st = 0; uint8_t key[16], kcv[3] = { 0xA5, 0xA5, 0xA5 }, want[3]; int cut = cut_happened;
+ int rc = store_config_load(&st, key, kcv);
+ /* The returned key check value is the loaded key's; a failed load leaves it untouched. */
+ if (rc == 0) { ws_key_check(key, want); if (memcmp(kcv, want, 3)) viol("config_kcv", "wrong key check value"); }
+ else if (kcv[0] != 0xA5 || kcv[1] != 0xA5 || kcv[2] != 0xA5) viol("config_kcv", "kcv written on a failed load (rc %d)", rc);
  int match = rc == 0 && M.cfg && st == M.station && !memcmp(key, M.key, 16);
  int match_try = rc == 0 && cut && infl.op == OP_PROVISION && st == M.try_station && !memcmp(key, M.try_key, 16);
  int wiping = (cut && infl.op == OP_WIPE) || M.wipe_uncertain;

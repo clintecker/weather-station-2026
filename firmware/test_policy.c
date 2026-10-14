@@ -108,7 +108,21 @@ int main(void) {
    ws_th_reset(&w); ws_th_add(&w,1,-1,0); ws_th_add(&w,1,-2,0);         /* -1.5 -> -1 (toward +inf) */
    assert(ws_th_mean_t(&w,&t) && t==-1);
    for(int i=0;i<300;i++) ws_th_add(&w,1,12500,10000);                  /* saturates at 255 samples */
-   assert(w.n==255 && ws_th_mean_t(&w,&t)); }
+   assert(w.n==255 && ws_th_mean_t(&w,&t));
+   /* The mean's 32-bit arithmetic over every reachable sum (n <= 255 samples of -4000..12500)
+      matches floor((2*sum + n) / (2n)) done in 64 bits, at the extremes and on a sweep. */
+   for(int n=1;n<=255;n++) {
+    for(int64_t s=-4000LL*n;s<=12500LL*n;s+=(s<-4000LL*n+600||s>12500LL*n-600)?1:997) {
+     int64_t num=2*s+n, den=2LL*n, q=num/den;
+     if(num%den!=0&&num<0) q--;
+     ws_th_reset(&w); w.t_sum=(int32_t)s; w.n=(uint8_t)n;
+     assert(ws_th_mean_t(&w,&t) && t==(int16_t)q);
+    }
+   }
+   ws_th_reset(&w); for(int i=0;i<255;i++) ws_th_add(&w,1,-4000,0);
+   assert(ws_th_mean_t(&w,&t) && t==-4000 && ws_th_mean_h(&w,&h) && h==0);
+   ws_th_reset(&w); for(int i=0;i<255;i++) ws_th_add(&w,1,12500,10000);
+   assert(ws_th_mean_t(&w,&t) && t==12500 && ws_th_mean_h(&w,&h) && h==10000); }
  puts("policy ok");
  return 0;
 }

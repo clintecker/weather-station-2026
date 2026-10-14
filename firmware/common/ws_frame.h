@@ -41,6 +41,15 @@ static inline int ws_frame_kind(const uint8_t *frame, uint32_t len) {
  if(!frame || len<1 || (frame[0]>>4)!=WS_FRAME_VERSION) return -1;
  return frame[0]&0x0F;
 }
+/* Health report plaintext (kind 4, docs/protocol-draft5-design.md section 4; ws0/protocol.py DIAG,
+ * checked byte for byte by tests/test_frame.py). The caller clamps the counts. */
+typedef struct {
+ uint32_t epoch, uptime, lost, build;               /* build: first 4 bytes of the release commit */
+ uint16_t pending, torn, abandoned, no_ack, rejects;
+ uint8_t reset_cause, link, crashes, energy;
+ int8_t rssi, snr;                                  /* last authentic ACK as heard; -128 = none yet */
+} ws_diag_t;
+void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]);
 /* Key check value: first 3 bytes of AES-ECB(key, zero block); safe to display. */
 int ws_key_check(const uint8_t key[16], uint8_t out[3]);
 #endif

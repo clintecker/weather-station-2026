@@ -18,6 +18,9 @@ BOARD      = ../board/nucleo-wl55jc
 CUBE      ?= $(ROOT)/vendor/STM32CubeWL
 MBEDTLS    = $(CUBE)/Middlewares/Third_Party/mbed-crypto
 FW_VERSION:= $(shell git describe --always --dirty --abbrev=12 2>/dev/null || echo unknown)
+# DIAG firmware build ID (docs/protocol.md): the first 8 hex digits of FW_VERSION, 0 if they are not
+# 8 lowercase hex digits (e.g. "unknown" or a tag name).
+FW_BUILD_ID := $(or $(shell printf '%s\n' '$(FW_VERSION)' | cut -c1-8 | grep -E '^[0-9a-f]{8}$$' | sed 's/^/0x/'),0)
 
 ifeq ($(filter $(ROLE),tx rx),)
 $(error ROLE must be tx or rx)
@@ -45,8 +48,11 @@ endif
 PROJ_INCS  = App Core/Inc $(ROOT)/firmware $(ROOT)/firmware/common
 EXTRA_INCS = $(MBEDTLS)/include
 
-DEFS = -DWS_ROLE_$(ROLE) -DWS_FW_VERSION=\"$(FW_VERSION)\" -DMBEDTLS_CONFIG_FILE=\"ws_mbedtls_config.h\"
+DEFS = -DWS_ROLE_$(ROLE) -DWS_FW_VERSION=\"$(FW_VERSION)\" -DWS_FW_BUILD_ID=$(FW_BUILD_ID)UL -DMBEDTLS_CONFIG_FILE=\"ws_mbedtls_config.h\"
 OPT  = -Os
+# GCC 15 turns the bitwise CRC loops (node_store.c crc16, stage0.c ws_crc8) into 768 B of lookup
+# tables; they run a few times a minute, so keep them as loops (same values, tests/test_stage0.py).
+$(BUILD)/app/node_store.o $(BUILD)/app/stage0.o: CFLAGS += -fno-optimize-crc
 
 # Our own C (not ST-generated Core/, not vendor, not the board code) builds with board.mk's strict
 # warning set and -Werror. ANALYZE=1 adds -fanalyzer (used by CI).

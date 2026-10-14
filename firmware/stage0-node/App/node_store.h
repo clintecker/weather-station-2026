@@ -11,7 +11,9 @@
 #define STORE_ENOTREADY (-16)
 
 /* Provisioning */
-int store_config_load(uint32_t *station, uint8_t key[16]); /* 0 if provisioned and intact */
+/* 0 if provisioned and intact; then also the key check value (ws_key_check), verified against the
+   stored one. On failure key is zeroed and kcv is untouched. */
+int store_config_load(uint32_t *station, uint8_t key[16], uint8_t kcv[3]);
 int store_config_write(uint32_t station, const uint8_t key[16]);
 int store_wipe(void); /* erases config (key) and journal; counters and epoch are kept (G17) */
 

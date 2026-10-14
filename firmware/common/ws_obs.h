@@ -26,13 +26,41 @@ enum {
                          WS_F(WS_FI_HUMIDITY_MIN_PCT) | WS_F(WS_FI_HUMIDITY_MAX_PCT) | WS_F(WS_FI_TH_SAMPLES))
 #define WS_FIELDS_DEFINED  (WS_F(WS_FI_COUNT) - 1U)
 
-/* Bytes of each field, as a constant expression so builds can size buffers from a bitmap. */
-#define WS_FW(m, i, w) ((((m) >> (i)) & 1U) * (w))
-#define WS_OBS_FIELDS_LEN(m) (WS_FW(m,0,2) + WS_FW(m,1,2) + WS_FW(m,2,2) + WS_FW(m,3,2) + \
- WS_FW(m,4,2) + WS_FW(m,5,2) + WS_FW(m,6,3) + WS_FW(m,7,1) + WS_FW(m,8,2) + WS_FW(m,9,3) + \
- WS_FW(m,10,4) + WS_FW(m,11,2) + WS_FW(m,12,2) + WS_FW(m,13,3) + WS_FW(m,14,3) + WS_FW(m,15,3) + \
- WS_FW(m,16,3) + WS_FW(m,17,1) + WS_FW(m,18,1) + WS_FW(m,19,2) + WS_FW(m,20,2) + WS_FW(m,21,2) + \
- WS_FW(m,22,2) + WS_FW(m,23,2) + WS_FW(m,24,2) + WS_FW(m,25,1))
+/* Catalog v1 (docs/protocol-draft5-design.md section 5.3), the only copy of each field's width in
+ * bytes and highest in-range code: ws_obs.c builds its tables from it and WS_OBS_FIELDS_LEN its
+ * constant-expression lengths. INVALID is the field's all-ones value, except qualifiers, which have
+ * none. X(a, index, width, max); a is passed through to X. */
+#define WS_OBS_CATALOG(X, a) \
+ X(a, WS_FI_TEMPERATURE_C,     2, 16500)       /* 0.01 C, offset -40.00 */ \
+ X(a, WS_FI_HUMIDITY_PCT,      2, 10000)       /* 0.01 % */ \
+ X(a, WS_FI_PRESSURE_HPA,      2, 8000)        /* 0.1 hPa, offset 300.0 */ \
+ X(a, WS_FI_WIND_SPEED_MS,     2, 750)         /* 0.1 m/s */ \
+ X(a, WS_FI_WIND_GUST_MS,      2, 750)         /* 0.1 m/s */ \
+ X(a, WS_FI_WIND_DIR_DEG,      2, 359)         /* 1 deg, plus CALM */ \
+ X(a, WS_FI_RAIN_TIPS,         3, 16777214)    /* since boot */ \
+ X(a, WS_FI_UV_INDEX,          1, 250)         /* 0.1 UVI */ \
+ X(a, WS_FI_IRRADIANCE_WM2,    2, 2000) \
+ X(a, WS_FI_UVA_RAW,           3, 1048575)     /* LTR390 counts (20 bit) */ \
+ X(a, WS_FI_QUALIFIERS,        4, 0xFFFFFFFFU) /* 2 bits per field 0-15, no INVALID */ \
+ X(a, WS_FI_BATT_MV,           2, 65534) \
+ X(a, WS_FI_BATT_CURRENT_MA,   2, 65534)       /* 0.1 mA, offset binary */ \
+ X(a, WS_FI_ENERGY_IN_MWH,     3, 16777214) \
+ X(a, WS_FI_ENERGY_OUT_MWH,    3, 16777214) \
+ X(a, WS_FI_CHARGE_IN_MAH,     3, 16777214) \
+ X(a, WS_FI_CHARGE_OUT_MAH,    3, 16777214) \
+ X(a, WS_FI_SOC_GAUGE_PCT,     1, 100) \
+ X(a, WS_FI_CHARGER_PINS,      1, 3)           /* bit 0 PGOOD, bit 1 CHG */ \
+ X(a, WS_FI_ENCLOSURE_TEMP_C,  2, 16500) \
+ X(a, WS_FI_ENCLOSURE_RH_PCT,  2, 10000) \
+ X(a, WS_FI_TEMPERATURE_MIN_C, 2, 16500)       /* lowest valid 15-s sample of the minute */ \
+ X(a, WS_FI_TEMPERATURE_MAX_C, 2, 16500) \
+ X(a, WS_FI_HUMIDITY_MIN_PCT,  2, 10000) \
+ X(a, WS_FI_HUMIDITY_MAX_PCT,  2, 10000) \
+ X(a, WS_FI_TH_SAMPLES,        1, 60)          /* valid T/RH samples behind the minute's values */
+
+/* Bytes of the fields in bitmap m, as a constant expression so builds can size buffers from it. */
+#define WS_OBS_FW_(m, i, w, max) + ((((m) >> (i)) & 1U) * (w))
+#define WS_OBS_FIELDS_LEN(m) (0U WS_OBS_CATALOG(WS_OBS_FW_, m))
 #define WS_OBS_PLAIN_LEN(m) (WS_OBS_HEAD_LEN + WS_OBS_FIELDS_LEN(m))
 #define WS_OBS_PLAIN_ALL WS_OBS_PLAIN_LEN(WS_FIELDS_DEFINED)
 

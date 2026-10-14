@@ -36,11 +36,14 @@ void ws_th_add(ws_th_window *w,int valid,int16_t t,uint16_t h) {
  if(!w->n||h>w->h_max) w->h_max=h;
  w->t_sum+=t; w->h_sum+=h; w->n++;
 }
-/* floor((2*sum + n) / (2n)): round half up, also for negative sums (C division truncates). */
+/* floor((2*sum + n) / (2n)): round half up, also for negative sums (C division truncates, and
+ * den > 0, so a negative inexact quotient is one too high). 32-bit arithmetic: ws_th_add counts at
+ * most 255 samples of -4000..12500 (T) or 0..10000 (RH), so |2*sum + n| stays far below 2^31. */
+_Static_assert(2LL*255*12500+255 < INT32_MAX && 2LL*255*-4000 > INT32_MIN,"T/RH window sums fit 32-bit mean arithmetic");
 static int32_t mean_half_up(int32_t sum,uint8_t n) {
- int64_t num=2*(int64_t)sum+n, den=2*(int64_t)n, q=num/den;
- if((num%den!=0)&&((num<0)!=(den<0))) q--;
- return (int32_t)q;
+ int32_t num=2*sum+n, den=2*(int32_t)n, q=num/den;
+ if(num%den!=0&&num<0) q--;
+ return q;
 }
 int ws_th_mean_t(const ws_th_window *w,int16_t *t) { if(!w->n) return 0; *t=(int16_t)mean_half_up(w->t_sum,w->n); return 1; }
 int ws_th_mean_h(const ws_th_window *w,uint16_t *h) { if(!w->n) return 0; *h=(uint16_t)mean_half_up(w->h_sum,w->n); return 1; }

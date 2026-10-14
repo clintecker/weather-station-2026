@@ -64,7 +64,7 @@ So byte 0 is `0x51` (OBS), `0x52` (ACK), `0x53` (NACK) or `0x54` (DIAG).
   project has no AES code of its own.
 - **Overhead:** 16 bytes per frame (8 header + 8 tag).
 
-Example, the boot self-test vector (`KAT_OBS_HEX` in `App/app_tx.c`, key `000102…0f`): header
+Example, the boot self-test vector (`KAT_OBS` in `App/app_tx.c`, key `000102…0f`): header
 `51 0001 0100000002` = OBS, station 1, counter 0x100000002; nonce
 `01 00000001 0000000100000002`.
 

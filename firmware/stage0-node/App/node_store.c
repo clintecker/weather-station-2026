@@ -8,6 +8,7 @@
  * firmware/sim_flash.c in tests/test_store_powercut.py). */
 #include "node_store.h"
 #include <string.h>
+#include "ws_be.h"
 #include "ws_frame.h"
 
 #define ERASED 0xFFFFFFFFFFFFFFFFULL
@@ -56,7 +57,7 @@ static int erase_page(uint32_t page) {
 static uint8_t meta_ready, journal_ready;
 
 /* ---- provisioning ---- */
-int store_config_load(uint32_t *station, uint8_t key[16]) {
+int store_config_load(uint32_t *station, uint8_t key[16], uint8_t kcv_out[3]) {
  uint32_t a = WS_PAGE_ADDR(WS_CONFIG_PAGE); int bad = 0; uint8_t kcv[3];
  uint64_t d0 = rd64(a, &bad), k0 = rd64(a + 8, &bad), k1 = rd64(a + 16, &bad), d3 = rd64(a + 24, &bad);
  if (bad || (d0 >> 32) != CFG_MAGIC || (d3 >> 32) != CFG_MAGIC2) return -1;
@@ -66,6 +67,7 @@ int store_config_load(uint32_t *station, uint8_t key[16]) {
  }
  *station = (uint32_t)d0;
  if (*station == 0 || *station > WS_STATION_MAX) { memset(key, 0, 16); return -3; }
+ memcpy(kcv_out, kcv, 3);
  return 0;
 }
 int store_config_write(uint32_t station, const uint8_t key[16]) {
@@ -307,17 +309,24 @@ unsigned store_journal_oldest(jref_t *out, unsigned max, const jref_t *except) {
  }
  return n;
 }
-int store_journal_find(uint32_t epoch, uint32_t seq, jref_t *ref) {
- uint8_t want[8] = { (uint8_t)(epoch >> 24), (uint8_t)(epoch >> 16), (uint8_t)(epoch >> 8), (uint8_t)epoch,
-                     (uint8_t)(seq >> 24), (uint8_t)(seq >> 16), (uint8_t)(seq >> 8), (uint8_t)seq };
- if (!journal_ready) return -1;
- for (uint32_t i = 0; i < JOURNAL_CAPACITY; i++) {
-  if (!is_pending(i)) continue;
-  jref_t r = { (uint16_t)(i / JOURNAL_SLOTS_PER_PAGE), (uint16_t)(i % JOURNAL_SLOTS_PER_PAGE) };
+/* Shared by find and scrub: the next pending slot, from index *i on, whose identity (epoch and,
+   unless any_seq, sequence: the plaintext's first 8 bytes) matches and reads back without an ECC
+   fault. Returns 1 with its ref and *i just past it; 0 when no such slot is left. */
+static int next_pending_match(uint32_t epoch, int any_seq, uint32_t seq, uint32_t *i, jref_t *ref) {
+ uint8_t want[8];
+ ws_put_be32(want, epoch); ws_put_be32(want + 4, seq);
+ for (uint32_t k = *i; k < JOURNAL_CAPACITY; k++) {
+  if (!is_pending(k)) continue;
+  jref_t r = { (uint16_t)(k / JOURNAL_SLOTS_PER_PAGE), (uint16_t)(k % JOURNAL_SLOTS_PER_PAGE) };
   int bad = 0; uint64_t d0 = rd64(slot_addr(r.page, r.slot), &bad);
-  if (!bad && !memcmp(&d0, want, 8)) { *ref = r; return 0; }
+  if (!bad && !memcmp(&d0, want, any_seq ? 4U : 8U)) { *ref = r; *i = k + 1; return 1; }
  }
- return -1;
+ return 0;
+}
+int store_journal_find(uint32_t epoch, uint32_t seq, jref_t *ref) {
+ uint32_t i = 0;
+ if (!journal_ready) return -1;
+ return next_pending_match(epoch, 0, seq, &i, ref) ? 0 : -1;
 }
 uint32_t store_journal_pending(void) { return n_pending; }
 uint32_t store_journal_lost(void) { return lost_total; } /* cumulative, persisted */
@@ -327,16 +336,11 @@ uint64_t store_counter_next(void) { return ctr_next; }
 
 uint32_t store_journal_scrub(uint32_t marker)
 {
- uint32_t n = 0;
+ uint32_t n = 0, i = 0; jref_t r;
  if (!journal_ready) return 0;
- for (uint32_t i = 0; i < JOURNAL_CAPACITY; i++) {
-  if (!is_pending(i)) continue;
-  jref_t r = { (uint16_t)(i / JOURNAL_SLOTS_PER_PAGE), (uint16_t)(i % JOURNAL_SLOTS_PER_PAGE) };
-  int bad = 0; uint64_t d0 = rd64(slot_addr(r.page, r.slot), &bad);
-  uint8_t b[4]; memcpy(b, &d0, 4);
-  if (!bad && ((uint32_t)b[0] << 24 | (uint32_t)b[1] << 16 | (uint32_t)b[2] << 8 | b[3]) == marker
-      && store_journal_ack(r) == 0) n++;
- }
+ /* Only bad == 0 slots match; the ack clears slot r's bit, which the scan has already passed. */
+ while (next_pending_match(marker, 1, 0, &i, &r))
+  if (store_journal_ack(r) == 0) n++;
  return n;
 }
 

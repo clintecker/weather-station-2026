@@ -1,56 +1,30 @@
 #include "ws_obs.h"
+#include "ws_be.h"
 
-/* Catalog v1 (docs/protocol-draft5-design.md section 5.3): bytes and highest in-range code.
- * INVALID is the field's all-ones value, except qualifiers, which have none. */
-static const struct { uint8_t width; uint32_t max; } field[WS_FI_COUNT] = {
- {2, 16500},       /* temperature_c   0.01 C, offset -40.00 */
- {2, 10000},       /* humidity_pct    0.01 % */
- {2, 8000},        /* pressure_hpa    0.1 hPa, offset 300.0 */
- {2, 750},         /* wind_speed_ms   0.1 m/s */
- {2, 750},         /* wind_gust_ms    0.1 m/s */
- {2, 359},         /* wind_dir_deg    1 deg, plus CALM */
- {3, 16777214},    /* rain_tips       since boot */
- {1, 250},         /* uv_index        0.1 UVI */
- {2, 2000},        /* irradiance_wm2 */
- {3, 1048575},     /* uva_raw         LTR390 counts (20 bit) */
- {4, 0xFFFFFFFFU}, /* qualifiers      2 bits per field 0-15, no INVALID */
- {2, 65534},       /* batt_mv */
- {2, 65534},       /* batt_current_ma 0.1 mA, offset binary */
- {3, 16777214},    /* energy_in_mwh */
- {3, 16777214},    /* energy_out_mwh */
- {3, 16777214},    /* charge_in_mah */
- {3, 16777214},    /* charge_out_mah */
- {1, 100},         /* soc_gauge_pct */
- {1, 3},           /* charger_pins    bit 0 PGOOD, bit 1 CHG */
- {2, 16500},       /* enclosure_temp_c */
- {2, 10000},       /* enclosure_rh_pct */
- {2, 16500},       /* temperature_min_c  lowest valid 15-s sample of the minute */
- {2, 16500},       /* temperature_max_c */
- {2, 10000},       /* humidity_min_pct */
- {2, 10000},       /* humidity_max_pct */
- {1, 60},          /* th_samples         valid T/RH samples behind the minute's values */
-};
+/* Catalog tables from WS_OBS_CATALOG (ws_obs.h): two arrays, so no padding between the widths and
+ * the 32-bit maxima. */
+#define WIDTH_(a, i, w, max) [i] = (w),
+#define MAX_(a, i, w, max) [i] = (max),
+#define COUNT_(a, i, w, max) + 1
+static const uint8_t width[WS_FI_COUNT] = { WS_OBS_CATALOG(WIDTH_, ) };
+static const uint32_t code_max[WS_FI_COUNT] = { WS_OBS_CATALOG(MAX_, ) };
+_Static_assert(0 WS_OBS_CATALOG(COUNT_, ) == WS_FI_COUNT, "one catalog entry per field index");
 
-unsigned ws_obs_width(unsigned i) { return i < WS_FI_COUNT ? field[i].width : 0; }
+unsigned ws_obs_width(unsigned i) { return i < WS_FI_COUNT ? width[i] : 0; }
 
 uint32_t ws_obs_invalid(unsigned i)
 {
  if (i >= WS_FI_COUNT || i == WS_FI_QUALIFIERS) return 0;
- return field[i].width == 4 ? 0xFFFFFFFFU : ((uint32_t)1 << (8U * field[i].width)) - 1U;
+ return width[i] == 4 ? 0xFFFFFFFFU : ((uint32_t)1 << (8U * width[i])) - 1U;
 }
 
 int ws_obs_code_ok(unsigned i, uint32_t code)
 {
  if (i >= WS_FI_COUNT) return 0;
- if (code <= field[i].max) return 1;
+ if (code <= code_max[i]) return 1;
  if (i == WS_FI_QUALIFIERS) return 0;
  if (code == ws_obs_invalid(i)) return 1;
  return i == WS_FI_WIND_DIR_DEG && code == WS_WIND_DIR_CALM;
-}
-
-static void put(uint8_t *p, uint32_t v, unsigned n)
-{
- for (unsigned k = 0; k < n; k++) p[k] = (uint8_t)(v >> (8U * (n - 1U - k)));
 }
 
 int ws_obs_encode(const ws_obs_t *o, uint8_t *out, size_t cap)
@@ -60,22 +34,22 @@ int ws_obs_encode(const ws_obs_t *o, uint8_t *out, size_t cap)
  for (unsigned i = 0; i < WS_FI_COUNT; i++) {
   if (!(o->bitmap & WS_F(i))) continue;
   if (!ws_obs_code_ok(i, o->code[i])) return -1;
-  len += field[i].width;
+  len += width[i];
  }
  /* A direction needs a speed: INVALID speed forces INVALID direction (section 5.4). */
  if ((o->bitmap & WS_F(WS_FI_WIND_DIR_DEG)) && (o->bitmap & WS_F(WS_FI_WIND_SPEED_MS)) &&
      o->code[WS_FI_WIND_SPEED_MS] == ws_obs_invalid(WS_FI_WIND_SPEED_MS) &&
      o->code[WS_FI_WIND_DIR_DEG] != ws_obs_invalid(WS_FI_WIND_DIR_DEG)) return -1;
  if (len > cap) return -1;
- put(out, o->epoch, 4); put(out + 4, o->seq, 4); put(out + 8, o->utc, 4); put(out + 12, o->uptime, 4);
+ ws_put_be32(out, o->epoch); ws_put_be32(out + 4, o->seq); ws_put_be32(out + 8, o->utc); ws_put_be32(out + 12, o->uptime);
  out[16] = (uint8_t)((o->utc != 0) | (o->energy << 1));
  out[17] = o->cal_rev;
- put(out + 18, o->bitmap, 4);
+ ws_put_be32(out + 18, o->bitmap);
  uint8_t *p = out + WS_OBS_HEAD_LEN;
  for (unsigned i = 0; i < WS_FI_COUNT; i++) {
   if (!(o->bitmap & WS_F(i))) continue;
-  put(p, o->code[i], field[i].width);
-  p += field[i].width;
+  ws_put_be(p, o->code[i], width[i]);
+  p += width[i];
  }
  return (int)len;
 }
@@ -83,10 +57,10 @@ int ws_obs_encode(const ws_obs_t *o, uint8_t *out, size_t cap)
 int ws_obs_plain_len(const uint8_t *plain, size_t avail)
 {
  if (!plain || avail < WS_OBS_HEAD_LEN) return -1;
- uint32_t bitmap = (uint32_t)plain[18] << 24 | (uint32_t)plain[19] << 16 | (uint32_t)plain[20] << 8 | plain[21];
+ uint32_t bitmap = ws_get_be32(plain + 18);
  if (!bitmap || (bitmap & ~WS_FIELDS_DEFINED)) return -1;
  size_t len = WS_OBS_HEAD_LEN;
- for (unsigned i = 0; i < WS_FI_COUNT; i++) if (bitmap & WS_F(i)) len += field[i].width;
+ for (unsigned i = 0; i < WS_FI_COUNT; i++) if (bitmap & WS_F(i)) len += width[i];
  return len <= avail ? (int)len : -1;
 }
 

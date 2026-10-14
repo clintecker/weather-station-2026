@@ -4,6 +4,8 @@ import os
 os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
 
 import ctypes
+import random
+import re
 import struct
 import subprocess
 import tempfile
@@ -14,6 +16,7 @@ except ImportError:
     from tests.toolchain import needs_cc    # python -m unittest tests.<module>
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from ws0.fields import encode
 from ws0.protocol import (COUNTER_MAX, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, STATION_MAX, Nonces, frame_counter,
                           pack_reply, seal, unpack_reply, unseal)
 
@@ -188,12 +191,66 @@ class FrameAgreement(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Unexpected frame header'):
             unseal(KAT_KEY, 1, 1, bytes(out))  # a health report is never accepted as an observation
 
+    def test_diag_plaintext_matches_python(self):
+        """The TX health report's bytes (ws_diag_pack, used by send_diag in App/app_tx.c) are
+        exactly ws0/protocol.py's DIAG struct, field by field, extremes and signed bytes included."""
+        from ws0.protocol import DIAG
+
+        class DiagT(ctypes.Structure):  # ws_diag_t in firmware/common/ws_frame.h
+            _fields_ = [(n, ctypes.c_uint32) for n in ('epoch', 'uptime', 'lost', 'build')] + \
+                       [(n, ctypes.c_uint16) for n in ('pending', 'torn', 'abandoned', 'no_ack', 'rejects')] + \
+                       [(n, ctypes.c_uint8) for n in ('reset_cause', 'link', 'crashes', 'energy')] + \
+                       [(n, ctypes.c_int8) for n in ('rssi', 'snr')]
+        self.lib.ws_diag_pack.argtypes = [ctypes.POINTER(DiagT), ctypes.POINTER(ctypes.c_uint8)]
+        order = ('epoch', 'uptime', 'pending', 'lost', 'torn', 'abandoned', 'no_ack', 'rejects', 'reset_cause', 'link',
+                 'build', 'rssi', 'snr', 'crashes', 'energy')   # the wire order (design section 4)
+        bits = {n: (8 * ctypes.sizeof(t), t in (ctypes.c_int8,)) for n, t in DiagT._fields_}
+        rng = random.Random(4)
+        cases = [{n: 0 for n in order}, {n: -1 if signed else 2**b - 1 for n, (b, signed) in bits.items()},
+                 {n: -128 if signed else 2**(b - 1) for n, (b, signed) in bits.items()}]
+        cases += [{n: rng.randrange(-2**(b - 1), 2**(b - 1)) if signed else rng.randrange(2**b)
+                   for n, (b, signed) in bits.items()} for _ in range(200)]
+        for values in cases:
+            out = (ctypes.c_uint8*DIAG.size)()
+            self.lib.ws_diag_pack(ctypes.byref(DiagT(**values)), out)
+            self.assertEqual(bytes(out), DIAG.pack(*(values[n] for n in order)), values)
+
     def test_key_check_value(self):
         out = (ctypes.c_uint8*3)()
         self.assertEqual(self.lib.ws_key_check(self.buf(KAT_KEY), out), 0)
         expected = Cipher(algorithms.AES(KAT_KEY), modes.ECB()).encryptor().update(b'\0'*16)[:3]
         self.assertEqual(bytes(out), expected)
         self.assertEqual(bytes(out).hex(), 'c6a13b')  # FIPS-197 AES-128 vector for this key
+
+
+class FirmwareTables(unittest.TestCase):
+    """Constant tables in the board-only firmware sources (no host build), read back as text."""
+
+    @staticmethod
+    def c_array(source, name):
+        m = re.search(r'static const uint8_t ' + name + r'\[\] = \{([^}]*)\};', source)
+        if not m:
+            raise AssertionError(f'{name} not found in app_tx.c')
+        return bytes(int(v, 16) for v in m.group(1).replace(',', ' ').split())
+
+    def test_app_tx_vectors(self):
+        """The TX boot self-test (run_kat in App/app_tx.c) holds its vectors as byte arrays: they must
+        be the spec's frames, so a typo there cannot make the board refuse to transmit."""
+        source = (ROOT/'firmware/stage0-node/App/app_tx.c').read_text()
+        # tests/test_obs.py KAT: T -12.34 C (code 2766), RH 45.67 %, epoch 1, seq 2, UTC 1791991189,
+        # uptime 300 s, NORMAL, calibration 0.
+        obs_plain = encode(1, 2, 1791991189, 300, 1, 0, {0: 2766, 1: 4567})
+        self.assertEqual(self.c_array(source, 'KAT_OBS'), spec_frame(KAT_KEY, KIND_OBS, 1, 0x100000002, obs_plain))
+        self.assertEqual(self.c_array(source, 'KAT_ACK'), KAT_ACK)
+        self.assertEqual(self.c_array(source, 'KAT_NACK'), KAT_NACK)
+
+    def test_reset_cause_numbering(self):
+        """DIAG byte 22 is the index into watchdog.c's name table: it must be ws0's RESET_CAUSES."""
+        from ws0.protocol import RESET_CAUSES
+        source = (ROOT/'firmware/stage0-node/App/watchdog.c').read_text()
+        m = re.search(r'cause_name\[\] = \{([^}]*)\};', source)
+        self.assertIsNotNone(m)
+        self.assertEqual(tuple(re.findall(r'"([^"]*)"', m.group(1))), RESET_CAUSES)
 
 
 if __name__ == '__main__':

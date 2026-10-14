@@ -1,23 +1,16 @@
 #include "ws_frame.h"
 #include <string.h>
+#include "ws_be.h"
 #include "mbedtls/aes.h"
 #include "mbedtls/ccm.h"
 #include "mbedtls/platform_util.h"
 
-static void put(uint8_t *out, uint64_t v, unsigned n) {
- for(unsigned i=0;i<n;i++) out[n-1-i]=(uint8_t)(v>>(8*i));
-}
-static uint64_t get(const uint8_t *in, unsigned n) {
- uint64_t v=0;
- for(unsigned i=0;i<n;i++) v=(v<<8)|in[i];
- return v;
-}
 /* Header (also the AAD) and nonce. The nonce is built from the integers, kind + station u32 +
  * counter u64 (13 bytes), never copied from the header: a counter the 5-byte field cannot hold
  * must not reach here (callers check), and the nonce must not depend on how the header packs it. */
 static void header(uint8_t h[WS_HEADER_LEN], uint8_t nonce[13], uint8_t kind, uint32_t station, uint64_t counter) {
- h[0]=WS_FRAME_BYTE0(kind); put(h+1,station,2); put(h+3,counter,5);
- nonce[0]=kind; put(nonce+1,station,4); put(nonce+5,counter,8);
+ h[0]=WS_FRAME_BYTE0(kind); ws_put_be64(h+1,station,2); ws_put_be64(h+3,counter,5);
+ nonce[0]=kind; ws_put_be64(nonce+1,station,4); ws_put_be64(nonce+5,counter,8);
 }
 
 int ws_seal_kind(const uint8_t key[16], uint32_t station, uint8_t kind, uint64_t counter,
@@ -50,7 +43,7 @@ int ws_open_reply(const uint8_t key[16], uint32_t station, const uint8_t *frame,
  int k=ws_frame_kind(frame,len);
  if(k!=WS_KIND_ACK && k!=WS_KIND_NACK) return -2;
  if(station==0 || station>WS_STATION_MAX) return -2;
- uint64_t ctr=get(frame+3,5);
+ uint64_t ctr=ws_get_be64(frame+3,5);
  header(expect,nonce,(uint8_t)k,station,ctr);
  if(memcmp(expect,frame,3)) return -2; /* version, kind, station */
  mbedtls_ccm_init(&ccm);
@@ -59,8 +52,8 @@ int ws_open_reply(const uint8_t key[16], uint32_t station, const uint8_t *frame,
   frame+WS_HEADER_LEN,plain,frame+WS_HEADER_LEN+WS_REPLY_PLAIN_LEN,WS_TAG_LEN);
  mbedtls_ccm_free(&ccm);
  if(!rc) {
-  *kind=(uint8_t)k; *counter=ctr; *epoch=(uint32_t)get(plain,4); *seq=(uint32_t)get(plain+4,4);
-  *word=(uint32_t)get(plain+8,4); *echo=get(plain+12,5);
+  *kind=(uint8_t)k; *counter=ctr; *epoch=ws_get_be32(plain); *seq=ws_get_be32(plain+4);
+  *word=ws_get_be32(plain+8); *echo=ws_get_be64(plain+12,5);
  }
  mbedtls_platform_zeroize(plain,sizeof plain);
  return rc?-3:0;
@@ -74,4 +67,12 @@ int ws_key_check(const uint8_t key[16], uint8_t out[3]) {
  mbedtls_aes_free(&aes);
  if(!rc) memcpy(out,block,3);
  return rc;
+}
+
+void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]) {
+ ws_put_be32(out,d->epoch); ws_put_be32(out+4,d->uptime); ws_put_be16(out+8,d->pending);
+ ws_put_be32(out+10,d->lost); ws_put_be16(out+14,d->torn); ws_put_be16(out+16,d->abandoned);
+ ws_put_be16(out+18,d->no_ack); ws_put_be16(out+20,d->rejects);
+ out[22]=d->reset_cause; out[23]=d->link; ws_put_be32(out+24,d->build);
+ out[28]=(uint8_t)d->rssi; out[29]=(uint8_t)d->snr; out[30]=d->crashes; out[31]=d->energy;
 }
