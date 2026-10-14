@@ -19,13 +19,18 @@ CURRENT_MAX_UNCERTAINTY_S = 10
 
 
 def full_flush(db):
-    """Make each commit reach stable storage (gap G4). macOS fsync() does not flush the drive
-    cache; F_FULLFSYNC does. Measured on the bench Mac: commit 0.06 ms without (not durable),
-    5.3 ms median / 16 ms max with. Harmless no-ops on Linux. Simulations and unit tests may opt
-    out with WS0_UNSAFE_FAST_FSYNC=1; they never claim power-loss durability."""
-    on = 'OFF' if os.environ.get('WS0_UNSAFE_FAST_FSYNC') == '1' else 'ON'
-    db.execute(f'PRAGMA fullfsync={on}')
-    db.execute(f'PRAGMA checkpoint_fullfsync={on}')
+    """Write-ahead log, and each commit reaches stable storage (gap G4). macOS fsync() does not
+    flush the drive cache; F_FULLFSYNC does. Measured on the bench Mac: commit 0.06 ms without
+    (not durable), 5.3 ms median / 16 ms max with. WAL: one flush per commit instead of the
+    rollback journal's several (a nonce commit 14 ms -> 5 ms; gateway efficiency review). The
+    WAL file is part of the database: copy all of name, name-wal and name-shm or none (R7).
+    Harmless no-ops on Linux. Simulations and unit tests may opt out with
+    WS0_UNSAFE_FAST_FSYNC=1; they never claim power-loss durability."""
+    fast = os.environ.get('WS0_UNSAFE_FAST_FSYNC') == '1'
+    db.execute('PRAGMA journal_mode=WAL')
+    db.execute(f"PRAGMA synchronous={'OFF' if fast else 'FULL'}")
+    db.execute(f"PRAGMA fullfsync={'OFF' if fast else 'ON'}")
+    db.execute(f"PRAGMA checkpoint_fullfsync={'OFF' if fast else 'ON'}")
 
 
 BASE_KEYS = frozenset({'version','station','session','sequence','sampled_at','uptime_s','time_quality',
@@ -87,8 +92,6 @@ class Store:
     def __init__(self, path):
         self.lock = threading.RLock()
         self.db = sqlite3.connect(path, check_same_thread=False)
-        self.db.execute('PRAGMA journal_mode=WAL')
-        self.db.execute('PRAGMA synchronous=FULL')
         full_flush(self.db)
         # The JSON payload is immutable and the deduplication authority; the derived time columns
         # are recomputed when references arrive (reconstruct).

@@ -8,6 +8,7 @@ import hashlib
 import sqlite3
 import struct
 from pathlib import Path
+from gateway import full_flush
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
 from . import fields
@@ -59,9 +60,7 @@ class Nonces:
         if create and path.exists():
             raise ValueError('Refusing to overwrite nonce state')
         self.db = sqlite3.connect(path)
-        self.db.execute('PRAGMA synchronous=FULL')
-        from gateway import full_flush
-        full_flush(self.db)  # macOS: flush the drive cache too (gap G4)
+        full_flush(self.db)  # WAL, synchronous=FULL, and on macOS flush the drive cache too (gap G4)
         self.db.execute('CREATE TABLE IF NOT EXISTS nonce (binding TEXT, counter INTEGER)')
         binding = hashlib.sha256(key + struct.pack('>IB', station, kind)).hexdigest()
         row = self.db.execute('SELECT binding FROM nonce').fetchone()

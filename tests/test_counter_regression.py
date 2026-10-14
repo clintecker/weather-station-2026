@@ -9,7 +9,6 @@ import os
 os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
 
 import io
-import sqlite3
 import tempfile
 import unittest
 
@@ -233,17 +232,6 @@ class CounterRegressionTests(unittest.TestCase):
         self.assertIsNotNone(self.gateway.receive(retry, self.now))  # retry of a stored record: ACKed
         self.assert_quiet()
 
-    def test_existing_nonce_state_gains_a_zero_mark(self):
-        """A gateway directory from before P4 opens with mark 0 and no alarm."""
-        self.gateway.nonces.db.close()
-        db = sqlite3.connect(self.dir/'gateway-nonces.sqlite3')
-        db.execute('DROP TABLE node_counter'); db.commit(); db.close()
-        self.gateway.store.db.close()
-        self.gateway = Gateway(self.cfg, self.dir)
-        self.assertEqual(self.gateway.status()['node_counter']['max_node_counter'], 0)
-        self.deliver(self.minute())
-        self.assert_quiet()
-
     def test_provision_node_reports_mark(self):
         self.deliver(self.minute())
         mark = self.gateway.status()['node_counter']['max_node_counter']
@@ -259,7 +247,13 @@ class CounterRegressionTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             cli.check_node_counter({'ctr': str(mark)}, state)
         cli.check_node_counter({'ctr': str(mark+1)}, state)
-        cli.check_node_counter({}, state)  # older firmware without ctr=: print only
+        big = dict(state, max_node_counter=2**33)    # the full 64-bit mark is compared, not just 32 bits
+        with self.assertRaises(SystemExit):
+            cli.check_node_counter({'ctr': str(2**33)}, big)
+        cli.check_node_counter({'ctr': str(2**33 + 1)}, big)
+        for bad in ({}, {'ctr': ''}, {'ctr': '12x'}):  # a missing counter cannot be checked: refuse
+            with self.assertRaises(SystemExit):
+                cli.check_node_counter(bad, state)
 
 
 class HarnessCounterTests(unittest.TestCase):

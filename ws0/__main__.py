@@ -53,18 +53,13 @@ def console_lines(port, deadline):
 def epoch_floor(directory, station):
     """Gap G5: one above every boot epoch the gateway has stored for this station, so a
     wiped and re-provisioned node can never reuse an observation identity."""
-    import sqlite3
     path = directory/'observations.sqlite3'
     if not path.exists():
         return 0
     db = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
-    try:
-        values = [db.execute('SELECT max(CAST(session AS INTEGER)) FROM observations WHERE station=?',(station,)).fetchone()[0]]
-        for table in ('rejections','diagnostics'):
-            try:
-                values.append(db.execute(f'SELECT max(CAST(session AS INTEGER)) FROM {table} WHERE station=?',(station,)).fetchone()[0])
-            except sqlite3.OperationalError:
-                pass
+    try:   # Store creates all three tables
+        values = [db.execute(f'SELECT max(CAST(session AS INTEGER)) FROM {table} WHERE station=?',
+                             (station,)).fetchone()[0] for table in ('observations','rejections','diagnostics')]
     finally:
         db.close()
     highest = max((v for v in values if v is not None and v < 0xFFFFFFFF), default=0)
@@ -74,15 +69,12 @@ def epoch_floor(directory, station):
 def node_counter_mark(directory):
     """Review item P4: the gateway's stored high-water mark of the node counter (OBS + DIAG)
     for this state directory, or None if there is no such state yet."""
-    import sqlite3
     path = directory/'gateway-nonces.sqlite3'
     if not path.exists():
         return None
     db = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
     try:
         row = db.execute('SELECT max_counter,regressions,last_regression FROM node_counter').fetchone()
-    except sqlite3.OperationalError:
-        row = None  # state from before P4: no frame has been checked yet
     finally:
         db.close()
     if row is None:
@@ -103,12 +95,13 @@ def print_counter_mark(state):
 
 def check_node_counter(fields, state):
     """A board whose next counter is at or below the mark would repeat nonces under this key."""
-    ctr = fields.get('ctr')
-    if state is None or ctr is None or not ctr.isdigit():
-        return  # older firmware does not report ctr=; the gateway still alarms on the first frame
+    if state is None:
+        return
+    ctr = fields.get('ctr', '')
+    if not ctr.isdigit():   # STATUS always reports the full 64-bit counter (u64_text)
+        raise SystemExit(f'Node STATUS has no usable ctr= ({ctr!r}): cannot check for nonce reuse.')
     mark = state['max_node_counter']
-    # STATUS prints the counter as 32 bits; compare only while the mark fits.
-    if mark < 2**32 and int(ctr) <= mark:
+    if int(ctr) <= mark:
         raise SystemExit(f'Node counter ctr={ctr} is at or below the gateway high-water mark {mark}: '
                          'this key would repeat AES-CCM nonces. Use a NEW key (ws0 init into a new directory).')
 

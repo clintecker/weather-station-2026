@@ -328,8 +328,12 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 **R6 — Recover a NACKed reading.** The gateway keeps every NACKed frame in `observations.sqlite3`, table `rejections` (`frame_hex`). After you correct the cause (for example, a wrong stored row), decode the frame with the station key and `Store.ingest` it. Example: the bench recovery in `docs/hardware/nucleo-wl55jc-bringup.md`.
 
 **R7 — Restore the gateway database.**
-- You can restore `observations.sqlite3` from a backup.
-- **Never restore `gateway-nonces.sqlite3`.** If it is lost, do R5.
+- You can restore `observations.sqlite3` from a backup. Both gateway databases use a write-ahead log:
+  a database is the `.sqlite3` file **plus** its `-wal` and `-shm` files. Back up and restore all
+  three together while the gateway is stopped (or use `sqlite3 <db> ".backup <file>"`), never the
+  `.sqlite3` file alone: recent commits live in the `-wal` file.
+- **Never restore `gateway-nonces.sqlite3`.** If it is lost, do R5. Deleting only its `-wal` file
+  loses the latest counters, which is the same as restoring an old copy: never do it.
 - Rows that the TX board deleted after the backup time are lost. Record the loss window.
 
 **R8 — Port name changed.** No action is necessary with `--serial-number`; the gateway finds the board again. With `--serial <path>`, run `st-info --probe`, find the RX board (`0016001E4142500E20353451`), and restart with the new path.

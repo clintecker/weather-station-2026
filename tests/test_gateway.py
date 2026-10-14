@@ -122,6 +122,7 @@ class DurabilityTests(unittest.TestCase):
                 for db in (store.db, nonces.db):
                     self.assertEqual(db.execute('PRAGMA fullfsync').fetchone()[0], 1)
                     self.assertEqual(db.execute('PRAGMA synchronous').fetchone()[0], 2)  # FULL
+                    self.assertEqual(db.execute('PRAGMA journal_mode').fetchone()[0], 'wal')
                 self.assertEqual(store.db.execute('PRAGMA checkpoint_fullfsync').fetchone()[0], 1)
             finally:
                 store.db.close(); nonces.db.close()

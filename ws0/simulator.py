@@ -4,6 +4,7 @@ import math
 import random
 import sqlite3
 import time
+from gateway import full_flush
 from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, Nonces, encode_observation, frame_counter, frame_kind, seal, unpack_reply,
                        unseal)
 
@@ -20,7 +21,7 @@ class Node:
         self.key = bytes.fromhex(cfg['radio_key'])
         self.nonces = Nonces(directory/'node-nonces.sqlite3',self.key,cfg['station_id'],1)
         self.db = sqlite3.connect(directory/'node-journal.sqlite3')
-        self.db.execute('PRAGMA synchronous=FULL')
+        full_flush(self.db)
         self.db.execute('CREATE TABLE IF NOT EXISTS boot (epoch INTEGER)')
         self.db.execute('CREATE TABLE IF NOT EXISTS pending (epoch INTEGER, seq INTEGER, data TEXT, PRIMARY KEY(epoch,seq))')
         self.db.execute('BEGIN IMMEDIATE')
