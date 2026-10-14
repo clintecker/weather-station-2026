@@ -2,7 +2,8 @@
 import json
 import math
 import sqlite3
-from .protocol import ACK, KIND_NACK, NACK, Nonces, encode_observation, frame_counter, seal, unseal
+from .protocol import (KIND_ACK, KIND_NACK, Nonces, encode_observation, frame_counter, frame_kind, seal, unpack_reply,
+                       unseal)
 
 # Backlog records sent per minute after the live one: the firmware's NORMAL energy state
 # (firmware/stage0-node/App/app_tx.c backlog_limit). Stage 0 is always NORMAL. The firmware also
@@ -60,14 +61,14 @@ class Node:
 
     def handle_reply(self,packet):
         """Route a gateway reply by its (authenticated) kind byte."""
-        if len(packet) > 3 and packet[3] == KIND_NACK:
+        if frame_kind(packet) == KIND_NACK:
             return self.reject(packet)
         return self.acknowledge(packet)
 
     def reject(self,packet):
         """Authentic NACK: stop retrying that record (gap G2). Only a NACK that echoes a frame
         this node sent is accepted; the gateway has kept the rejected frame."""
-        epoch,seq,reason,_reserved,echo = NACK.unpack(unseal(self.key,self.cfg['station_id'],KIND_NACK,packet))
+        epoch,seq,reason,echo = unpack_reply(unseal(self.key,self.cfg['station_id'],KIND_NACK,packet))
         if echo not in self.sent:
             raise ValueError('NACK does not answer a frame from this node')
         with self.db:
@@ -77,7 +78,7 @@ class Node:
 
     def acknowledge(self,packet):
         """A replayed ACK cannot remove a different observation."""
-        epoch,seq,_host_utc,_echo = ACK.unpack(unseal(self.key,self.cfg['station_id'],2,packet))
+        epoch,seq,_host_utc,_echo = unpack_reply(unseal(self.key,self.cfg['station_id'],KIND_ACK,packet))
         self.synced = True  # simulated clock follows the authenticated host time
         with self.db:
             self.db.execute('DELETE FROM pending WHERE epoch=? AND seq=?',(epoch,seq))

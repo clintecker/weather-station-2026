@@ -8,7 +8,7 @@ import sys
 import time
 from cryptography.exceptions import InvalidTag
 from pathlib import Path
-from .protocol import Nonces
+from .protocol import KIND_NACK, Nonces, frame_kind
 from .service import Gateway, MQTT, http_server, load_config
 from .simulator import BACKLOG_PER_MINUTE, Node
 from .link import ReceiverLink
@@ -232,7 +232,7 @@ def main():
                             if ack is None:  # node health report: stored, never answered
                                 receiver_log.write(f'{stamp} diag {text}\n')
                                 continue
-                            kind = 'nack' if ack[3] == 3 else 'ack'
+                            kind = 'nack' if frame_kind(ack) == KIND_NACK else 'ack'
                             sent = link.write(ack.hex().encode()+b'\n')
                             receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}'
                                                f'{"" if sent else " (not delivered: serial link down)"}\n')

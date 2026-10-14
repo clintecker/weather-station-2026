@@ -19,7 +19,7 @@ import random
 import sqlite3
 import tempfile
 from cryptography.exceptions import InvalidTag
-from .protocol import KIND_NACK, NACK, NACK_COLLISION, Nonces, frame_counter, unseal
+from .protocol import HEADER_LEN, KIND_NACK, NACK_COLLISION, Nonces, frame_counter, frame_kind, unpack_reply, unseal
 from .service import CounterRegression, Gateway
 from .simulator import BACKLOG_PER_MINUTE, Node
 
@@ -186,7 +186,7 @@ class Campaign:
 
     def track_nonce(self, packet):
         # Observe new encryption operations only; byte-for-byte network duplication is legal.
-        nonce = packet[3:16]
+        nonce = (frame_kind(packet), packet[1:3], frame_counter(packet))  # what CCM's nonce is built from
         if nonce in self.tx_nonces:
             self.nonce_collisions += 1
         self.tx_nonces.add(nonce)
@@ -205,7 +205,7 @@ class Campaign:
             self.log('random_drop',direction=direction)
             return
         if self.random.random() < self.s.corruption:
-            offset = self.random.randrange(16,len(packet))
+            offset = self.random.randrange(HEADER_LEN,len(packet))  # ciphertext or tag, never the header
             packet = packet[:offset]+bytes([packet[offset]^1])+packet[offset+1:]
             self.counts['corrupted'] += 1
         copies = 2 if self.random.random() < self.s.duplicates else 1
@@ -237,8 +237,8 @@ class Campaign:
                     finally:
                         self.gateway.store.ingest = original
                     self.track_nonce(ack)
-                    if ack[3] == KIND_NACK:
-                        reason = NACK.unpack(unseal(bytes.fromhex(self.cfg['radio_key']),1,KIND_NACK,ack))[2]
+                    if frame_kind(ack) == KIND_NACK:
+                        reason = unpack_reply(unseal(bytes.fromhex(self.cfg['radio_key']),1,KIND_NACK,ack))[2]
                         self.counts['nacks'] += 1
                         self.counts['identity_collision_rejections'] += int(reason == NACK_COLLISION)
                         self.log('rejected_nack',frame=packet.hex(),reason=reason)
@@ -247,7 +247,7 @@ class Campaign:
                     self.send('ack',ack)
                 else:
                     self.node.handle_reply(packet)
-                    self.log('ack_accepted' if packet[3] != KIND_NACK else 'nack_accepted',frame=packet.hex())
+                    self.log('ack_accepted' if frame_kind(packet) != KIND_NACK else 'nack_accepted',frame=packet.hex())
             except OSError:
                 self.counts['commit_errors'] += 1
                 self.log('commit_failed_no_ack')

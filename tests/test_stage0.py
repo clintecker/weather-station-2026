@@ -14,7 +14,8 @@ except ImportError:
     from tests.toolchain import needs_cc    # python -m unittest tests.<module>
 # Host C test programs run under AddressSanitizer + UBSan: an out-of-bounds write or signed overflow
 # in the firmware's pure code fails the test instead of passing silently.
-SAN=['-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-fno-omit-frame-pointer']
+# MinGW gcc (the Windows CI runner's cc) has no sanitizer runtime; there the tests run without them.
+SAN=[] if sys.platform=='win32' else ['-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-fno-omit-frame-pointer']
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request,urlopen
@@ -315,33 +316,33 @@ class NackTests(unittest.TestCase):
  setUp=PipelineTests.setUp
  tearDown=PipelineTests.tearDown
  def test_collision_is_nacked_recorded_and_dropped_by_node(self):
-  from ws0.protocol import KIND_NACK,NACK_COLLISION
+  from ws0.protocol import KIND_NACK,NACK_COLLISION,frame_kind
   record=self.node.sample(1000)
   self.node.handle_reply(self.gateway.receive(self.node.packet(record),1001))
   altered=record|{'temperature_c':record['temperature_c']+1}
   self.node.db.execute('INSERT INTO pending VALUES (?,?,?)',(self.node.epoch,record['sequence'],json.dumps(altered)))
   reply=self.gateway.receive(self.node.packet(altered),1002)
-  self.assertEqual(reply[3],KIND_NACK)
+  self.assertEqual(frame_kind(reply),KIND_NACK)
   self.assertEqual(self.node.handle_reply(reply),NACK_COLLISION)
   self.assertEqual(self.node.backfill(),[]); self.assertEqual(self.node.abandoned,1)
   rows=self.gateway.store.db.execute('SELECT reason,frame_hex FROM rejections').fetchall()
   self.assertEqual(len(rows),1); self.assertEqual(rows[0][0],'identity_collision'); self.assertTrue(rows[0][1])
   self.assertEqual(self.gateway.store.latest(self.cfg['station'],1003)['observation']['temperature_c'],record['temperature_c'])
  def test_invalid_authentic_record_is_nacked(self):
-  from ws0.protocol import KIND_NACK,NACK,NACK_INVALID,OBS,seal
+  from ws0.protocol import KIND_NACK,NACK_INVALID,OBS,frame_kind,seal,unpack_reply
   bad=OBS.pack(self.node.epoch,7,1000,0,0,0,0,1,0)  # validity 0 with 0/0 filler: noncanonical
   frame=seal(self.node.key,1,1,self.node.nonces,bad)
   reply=self.gateway.receive(frame,1001)
-  self.assertEqual(reply[3],KIND_NACK)
-  self.assertEqual(NACK.unpack(unseal(self.node.key,1,KIND_NACK,reply))[2],NACK_INVALID)
+  self.assertEqual(frame_kind(reply),KIND_NACK)
+  self.assertEqual(unpack_reply(unseal(self.node.key,1,KIND_NACK,reply))[2],NACK_INVALID)
  def test_unauthenticated_frame_gets_no_reply(self):
   frame=self.node.packet(self.node.sample(1000))
   with self.assertRaises(InvalidTag): self.gateway.receive(frame[:-1]+bytes([frame[-1]^1]),1001)
   self.assertEqual(self.gateway.store.db.execute('SELECT count(*) FROM rejections').fetchone()[0],0)
  def test_nack_for_a_frame_the_node_did_not_send_is_refused(self):
-  from ws0.protocol import KIND_NACK,NACK,seal
+  from ws0.protocol import KIND_NACK,pack_reply,seal
   self.node.sample(1000)
-  forged=seal(self.node.key,1,KIND_NACK,self.gateway.nonces,NACK.pack(self.node.epoch,0,1,0,999999))
+  forged=seal(self.node.key,1,KIND_NACK,self.gateway.nonces,pack_reply(self.node.epoch,0,1,999999))
   with self.assertRaises(ValueError): self.node.handle_reply(forged)
   self.assertEqual(len(self.node.backfill()),1)
  def test_commit_failure_still_gets_no_reply(self):

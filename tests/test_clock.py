@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from ws0.__main__ import provision
 from ws0.clock import HostClock
-from ws0.protocol import ACK, unseal
+from ws0.protocol import KIND_ACK, unpack_reply, unseal
 from ws0.service import Gateway, load_config
 from ws0.simulator import Node
 
@@ -37,11 +37,11 @@ class ClockTests(unittest.TestCase):
             try:
                 gateway.clock = self.clock([5.0]); gateway.clock.check()
                 ack = gateway.receive(node.packet(node.sample(1000)), 1001)
-                self.assertEqual(ACK.unpack(unseal(node.key, 1, 2, ack))[2], 0)
+                self.assertEqual(unpack_reply(unseal(node.key, 1, KIND_ACK, ack))[2], 0)
                 self.assertEqual(gateway.status()['host_clock']['state'], 'bad')
                 gateway.clock = self.clock([0.0]); gateway.clock.check()
                 ack = gateway.receive(node.packet(node.sample(1060)), 1061)
-                self.assertEqual(ACK.unpack(unseal(node.key, 1, 2, ack))[2], 1061)
+                self.assertEqual(unpack_reply(unseal(node.key, 1, KIND_ACK, ack))[2], 1061)
             finally:
                 for db in (gateway.store.db, gateway.nonces.db, node.db, node.nonces.db): db.close()
 

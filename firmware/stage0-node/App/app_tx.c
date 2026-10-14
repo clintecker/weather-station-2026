@@ -64,15 +64,13 @@ static const uint16_t probe_interval_s[] = { 120, 240, 480, 900 };
 #define BKP_REG_SYNC_MCU    RTC_BKP_DR4
 #define MIN_PLAUSIBLE_UTC   1767225600ULL           /* 2026-01-01T00:00:00Z */
 
-/* Known-answer vectors shared with tests/test_frame.py (Python-generated). */
+/* Draft-5 known-answer vectors, shared with tests/test_frame.py. They were made directly with the
+ * cryptography library's AESCCM from the spec's header and nonce, not by ws0/protocol.py. */
 static const uint8_t KAT_KEY[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
-static const char KAT_OBS_HEX[] = "57530401000000010000000100000002bd50c6ae3400a778bec2d16f"
-                                  "adad588beedf778fa19f9c44d0b48401107c5419c40efafe6b0d84b7";
-static const char KAT_ACK_HEX[] = "575304020000000100000000000000050e1eb4544766f4e68818a3b3"
-                                  "9f36393d04a393ebcf0d38783b389a01f911c8748031a35a3b671bf7";
-
-static const char KAT_NACK_HEX[] = "57530403000000010000000000000006849addbf88d9aadd884aa3bb"
-                                   "88136575354a59d61612106f543f988650615437a43b53e7b56c0ff1";
+static const char KAT_OBS_HEX[] = "5100010100000002bd50c6ae3400a778bec2d16fadad588beedf778fa19f9c44aa67cd92b9f30417";
+static const char KAT_ACK_HEX[] = "52000100000000050e1eb4544766f4e6e0ffdbb3f6d1413d06f6369500199b8fe2";
+static const char KAT_NACK_HEX[] = "5300010000000006849addbf88d9aadd884aa3bb89136575374521c5e416a1d0c9";
+#define KAT_OBS_FRAME_LEN (WS_D4_PLAIN_LEN + WS_FRAME_OVERHEAD)
 
 static RadioEvents_t events;
 static UTIL_TIMER_Object_t sample_timer;
@@ -149,20 +147,22 @@ static void restore_time_trust(void)
 
 static int run_kat(void)
 {
-  uint8_t plain[24], frame[WS_OBS_FRAME_LEN], expect[WS_OBS_FRAME_LEN], ack[WS_ACK_FRAME_LEN];
-  uint64_t ctr, utc, echo; uint32_t ep, sq;
+  uint8_t plain[WS_D4_PLAIN_LEN], frame[KAT_OBS_FRAME_LEN], expect[KAT_OBS_FRAME_LEN], ack[WS_ACK_FRAME_LEN];
+  uint64_t ctr, echo; uint32_t ep, sq, word; uint8_t kind;
   ws_pack_observation(plain, 17, 42, 100000, 3600, -1234, 4567, 1, 1);
-  if (ws_hex_decode(KAT_OBS_HEX, expect, sizeof expect) != WS_OBS_FRAME_LEN) return 0;
-  if (ws_seal_obs(KAT_KEY, 1, 0x100000002ULL, plain, frame) || memcmp(frame, expect, sizeof frame)) return 0;
+  if (ws_hex_decode(KAT_OBS_HEX, expect, sizeof expect) != KAT_OBS_FRAME_LEN) return 0;
+  if (ws_seal_kind(KAT_KEY, 1, WS_KIND_OBS, 0x100000002ULL, plain, sizeof plain, frame, sizeof frame) != KAT_OBS_FRAME_LEN ||
+      memcmp(frame, expect, sizeof frame)) return 0;
   if (ws_hex_decode(KAT_ACK_HEX, ack, sizeof ack) != WS_ACK_FRAME_LEN) return 0;
-  if (ws_open_ack(KAT_KEY, 1, ack, sizeof ack, &ctr, &ep, &sq, &utc, &echo)) return 0;
-  if (ctr != 5 || ep != 17 || sq != 42 || utc != 1760000000ULL || echo != 0x100000002ULL) return 0;
+  if (ws_open_reply(KAT_KEY, 1, ack, sizeof ack, &kind, &ctr, &ep, &sq, &word, &echo)) return 0;
+  if (kind != WS_KIND_ACK || ctr != 5 || ep != 17 || sq != 42 || word != 1760000000UL || echo != 0x100000002ULL) return 0;
   ack[sizeof ack - 1] ^= 1; /* tampered tag must fail */
-  if (ws_open_ack(KAT_KEY, 1, ack, sizeof ack, &ctr, &ep, &sq, &utc, &echo) == 0) return 0;
-  uint8_t kind;
+  if (ws_open_reply(KAT_KEY, 1, ack, sizeof ack, &kind, &ctr, &ep, &sq, &word, &echo) == 0) return 0;
   if (ws_hex_decode(KAT_NACK_HEX, ack, sizeof ack) != WS_ACK_FRAME_LEN) return 0;
-  if (ws_open_reply(KAT_KEY, 1, ack, sizeof ack, &kind, &ctr, &ep, &sq, &utc, &echo)) return 0;
-  return kind == WS_KIND_NACK && ctr == 6 && ep == 17 && sq == 42 && (utc >> 32) == WS_NACK_COLLISION && echo == 0x100000002ULL;
+  if (ws_open_reply(KAT_KEY, 1, ack, sizeof ack, &kind, &ctr, &ep, &sq, &word, &echo)) return 0;
+  /* The counter limit is part of the self-test: 2^40 must be refused, never truncated. */
+  if (ws_seal_kind(KAT_KEY, 1, WS_KIND_OBS, WS_COUNTER_MAX + 1ULL, plain, sizeof plain, frame, sizeof frame) >= 0) return 0;
+  return kind == WS_KIND_NACK && ctr == 6 && ep == 17 && sq == 42 && word == WS_NACK_COLLISION && echo == 0x100000002ULL;
 }
 
 static void status(void)
@@ -207,13 +207,13 @@ static void send_current(void)
 {
   for (;;)
   {
-    uint8_t plain[24], frame[WS_OBS_FRAME_LEN];
+    uint8_t plain[WS_D4_PLAIN_LEN], frame[WS_D4_PLAIN_LEN + WS_FRAME_OVERHEAD];
     if (store_journal_read(queue[qi], plain)) { APP_PRINTF("#error journal-read\n"); }
     else
     {
       /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
       if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_fail, 0); APP_PRINTF("#error counter-reserve\n"); busy = 0; Radio.Sleep(); return; }
-      if (ws_seal_obs(key, station, sent_counter, plain, frame)) { APP_PRINTF("#error seal\n"); }
+      if (ws_seal_kind(key, station, WS_KIND_OBS, sent_counter, plain, sizeof plain, frame, sizeof frame) < 0) { APP_PRINTF("#error seal\n"); }
       else
       {
         sent_epoch = be32(plain);
@@ -328,7 +328,7 @@ static uint16_t clamp16(uint32_t v) { return v > 0xFFFF ? 0xFFFF : (uint16_t)v; 
 /* Returns 1 if a health report went on air (the caller then waits for TxDone). */
 static int send_diag(void)
 {
-  uint8_t plain[24], frame[WS_OBS_FRAME_LEN]; uint64_t ctr;
+  uint8_t plain[24], frame[24 + WS_FRAME_OVERHEAD]; uint64_t ctr;
   uint32_t now = mcu_seconds();
   if (now - last_diag_mcu >= DIAG_PERIOD_S) diag_due = 1;
   if (!diag_due) return 0;
@@ -342,7 +342,7 @@ static int send_diag(void)
   for (int i = 1; i < 5; i++) { plain[12 + 2 * i] = (uint8_t)(f[i] >> 8); plain[13 + 2 * i] = (uint8_t)f[i]; }
   plain[22] = reset_code();
   plain[23] = (uint8_t)link_state;
-  if (store_next_counter(&ctr) || ws_seal_kind(key, station, WS_KIND_DIAG, ctr, plain, frame)) return 0;
+  if (store_next_counter(&ctr) || ws_seal_kind(key, station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) < 0) return 0;
   diag_due = 0; last_diag_mcu = now;
   HAL_Delay(INTER_FRAME_MS);
   if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) return 0;
@@ -371,7 +371,7 @@ static void stop_drain(void) { qn = qi + 1; }
 
 static void handle_reply(void)
 {
-  uint64_t ctr, utc, echo; uint32_t ep, sq; jref_t ref; uint8_t kind;
+  uint64_t ctr, echo; uint32_t ep, sq, utc; jref_t ref; uint8_t kind;
   if (ws_open_reply(key, station, rx_frame, rx_len, &kind, &ctr, &ep, &sq, &utc, &echo))
   {
     n_ack_rejects++;
@@ -388,7 +388,7 @@ static void handle_reply(void)
     if (store_journal_find(ep, sq, &ref) == 0 && store_journal_ack(ref) == 0) store_note_abandoned();
     led_flash(LED_RED, 1000);
     APP_PRINTF("#nack epoch=%u seq=%u reason=%u abandoned=%u\n", (unsigned)ep, (unsigned)sq,
-               (unsigned)(utc >> 32), (unsigned)store_abandoned_total());
+               (unsigned)utc, (unsigned)store_abandoned_total());
     return;
   }
   int found = store_journal_find(ep, sq, &ref) == 0;
@@ -397,7 +397,7 @@ static void handle_reply(void)
   int fresh = mine && utc >= MIN_PLAUSIBLE_UTC;
   if (fresh)
   {
-    SysTime_t now = { .Seconds = (uint32_t)utc, .SubSeconds = 0 };
+    SysTime_t now = { .Seconds = utc, .SubSeconds = 0 };
     SysTimeSet(now);
     synced = 1;
     last_sync_mcu = mcu_seconds();
@@ -586,7 +586,7 @@ void SubghzApp_Init(void)
   console_init(on_line);
 
   boot_mcu = mcu_seconds();
-  exchange_ms = 2 * airtime_ms(WS_OBS_FRAME_LEN) + TURNAROUND_MS;
+  exchange_ms = airtime_ms(WS_D4_PLAIN_LEN + WS_FRAME_OVERHEAD) + airtime_ms(WS_ACK_FRAME_LEN) + TURNAROUND_MS;
   watchdog_start(tx_healthy);
   kat_ok = run_kat();
   APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,

@@ -10,9 +10,10 @@ os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim p
 
 import io
 import sqlite3
-import struct
 import tempfile
 import unittest
+
+from cryptography.exceptions import InvalidTag
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
@@ -149,10 +150,9 @@ class CounterRegressionTests(unittest.TestCase):
         self.deliver(self.minute())
         mark = self.gateway.status()['node_counter']['max_node_counter']
         forged = bytearray(self.node.packet(self.minute()))
-        forged[8:16] = struct.pack('>Q', 2**40)  # huge counter, tag no longer valid
-        with self.assertRaises(Exception) as caught:
+        forged[3:8] = (2**40 - 1).to_bytes(5, 'big')  # the header's counter field: huge, tag no longer valid
+        with self.assertRaises(InvalidTag):
             self.gateway.receive(bytes(forged), self.now)
-        self.assertNotIsInstance(caught.exception, CounterRegression)
         self.assertEqual(self.gateway.status()['node_counter']['max_node_counter'], mark)
         self.deliver(self.minute())
         self.assert_quiet()

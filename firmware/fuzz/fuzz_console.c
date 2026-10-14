@@ -2,8 +2,8 @@
  * line assembler (ws_line_feed); each completed line goes through what the boards do with it:
  * RX decodes an ACK/NACK hex line for transmission, TX parses PROVISION arguments.
  * Properties: no memory error; a line is never longer than WS_LINE_MAX, never empty and never
- * contains '\n' or '\r'; a hex decode is exactly half the line; only a 56-byte ACK/NACK header
- * passes the RX check. */
+ * contains '\n' or '\r'; a hex decode is exactly half the line; only a 33-byte version-5 ACK/NACK
+ * passes the RX downstream check, and only valid observation/health-report lengths the upstream one. */
 #include <string.h>
 #include "fuzz.h"
 #include "stage0.h"
@@ -26,7 +26,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   int got = ws_hex_decode(line, frame, (int)sizeof frame);
   FUZZ_CHECK(got == -1 || ((size_t)got * 2 == strlen(line) && got <= (int)sizeof frame));
   if (ws_host_reply_ok(frame, got))
-   FUZZ_CHECK(got == WS_ACK_FRAME_LEN && frame[0] == 'W' && frame[1] == 'S' && frame[2] == WS_FRAME_VERSION);
+   FUZZ_CHECK(got == WS_ACK_FRAME_LEN && (frame[0] == 0x52 || frame[0] == 0x53));
+  /* The same bytes as a received radio frame: only a version-5 observation within the catalog's
+     length range, or a health report of its fixed length, is forwarded upstream. */
+  if (got > 0 && ws_air_frame_ok(frame, (uint32_t)got))
+   FUZZ_CHECK((frame[0] == 0x51 && got >= 39 && got <= 85) || (frame[0] == 0x54 && got == 40));
   uint32_t station, floor; uint8_t key[16];
   if (!strncmp(line, "PROVISION ", 10) && !ws_parse_provision(line + 10, &station, key, &floor))
    FUZZ_CHECK(station != 0);

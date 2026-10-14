@@ -9,6 +9,7 @@
 #include "node_store.h"
 #include <string.h>
 #include "ws_frame.h"
+#include "stage0.h"
 
 #define ERASED 0xFFFFFFFFFFFFFFFFULL
 #define CFG_MAGIC  0x57534331UL /* "WSC1" */
@@ -26,8 +27,8 @@
 
 /* Geometry the on-flash format depends on. A slot is the plaintext, one commit double-word
    (magic + CRC) and one ACK double-word; a journal page is an 8-byte header plus its slots. */
-_Static_assert(SLOT_BYTES == WS_OBS_PLAIN_LEN + 16U, "slot = plaintext + commit + ack double-words");
-_Static_assert(SLOT_BYTES % 8U == 0U && WS_OBS_PLAIN_LEN % 8U == 0U, "slots are whole double-words");
+_Static_assert(SLOT_BYTES == WS_D4_PLAIN_LEN + 16U, "slot = plaintext + commit + ack double-words");
+_Static_assert(SLOT_BYTES % 8U == 0U && WS_D4_PLAIN_LEN % 8U == 0U, "slots are whole double-words");
 _Static_assert(8U + JOURNAL_SLOTS_PER_PAGE * SLOT_BYTES <= WS_PAGE_SIZE, "journal slots fit in one page");
 _Static_assert((uint64_t)WS_CONFIG_PAGE * WS_PAGE_SIZE >= 0x10000U, "node state sits above the 64 KB firmware region (STM32WL55JCIX_FLASH.ld)");
 _Static_assert(WS_CONFIG_PAGE < WS_META_PAGE_A && WS_META_PAGE_A < WS_META_PAGE_B && WS_META_PAGE_B < WS_JOURNAL_FIRST,

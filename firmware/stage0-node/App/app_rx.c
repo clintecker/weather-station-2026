@@ -1,8 +1,9 @@
 /* Stage-0 RX: transparent radio <-> USB bridge for the indoor receiver.
  *
- * Upstream: every received frame that looks like a current-draft observation (56 bytes, "WS",
- * WS_FRAME_VERSION, kind 1) is written as one lowercase hex line. Downstream: every hex line
- * from the host that looks like a current-draft ACK or NACK is transmitted once. The ACK path
+ * Upstream: every received frame that ws_air_frame_ok() accepts (a current-version observation or
+ * health report of a valid length) is written as one lowercase hex line. Downstream: every hex
+ * line from the host that ws_host_reply_ok() accepts (a current-version ACK or NACK) is
+ * transmitted once. The ACK path
  * uses the same radio_cfg.h power/SF/BW as the uplink (gap G15). This board holds no key and
  * never acknowledges anything itself; the host is the sole ACK authority (docs/protocol.md).
  * All other output lines start with '#' and are diagnostics for the host log. */
@@ -96,10 +97,9 @@ static void process(void)
   switch (event)
   {
     case EV_RX:
-      if (rx_len == WS_OBS_FRAME_LEN && rx_frame[0] == 'W' && rx_frame[1] == 'S' &&
-          rx_frame[2] == WS_FRAME_VERSION && (rx_frame[3] == WS_KIND_OBS || rx_frame[3] == WS_KIND_DIAG))
+      if (ws_air_frame_ok(rx_frame, rx_len))
       {
-        n_diag += rx_frame[3] == WS_KIND_DIAG;
+        n_diag += ws_frame_kind(rx_frame, rx_len) == WS_KIND_DIAG;
         hex_print(rx_frame, rx_len);
         led_flash(LED_BLUE, 400);
         n_forwarded++;

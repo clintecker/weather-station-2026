@@ -4,6 +4,9 @@
 #include "sys_app.h"
 #include "usart_if.h"
 #include "utilities_def.h"
+#include "utilities_conf.h"
+#include "ws_frame.h"
+#include "ws_obs.h"
 
 static ws_line_asm isr_line;
 static char line[WS_LINE_MAX + 1];
@@ -36,11 +39,21 @@ void console_init(void (*on_line)(char *line))
   vcom_ReceiveInit(on_char);
 }
 
+/* The longest frame the protocol allows (every catalog field) must print whole: a truncated line
+ * would reach the gateway as a malformed frame, get no ACK, and never be delivered. The line, its
+ * newline and NUL must fit the trace buffer. */
+#define HEX_FRAME_MAX (WS_FRAME_OVERHEAD + WS_OBS_PLAIN_ALL)
+_Static_assert(2U * HEX_FRAME_MAX + 2U <= UTIL_ADV_TRACE_TMP_BUF_SIZE, "longest frame fits one console line");
+
 void hex_print(const uint8_t *data, int len)
 {
   static const char digits[] = "0123456789abcdef";
-  char text[2 * 64 + 1];
-  if (len > 64) len = 64;
+  char text[2 * HEX_FRAME_MAX + 1];
+  if (len < 0 || len > (int)HEX_FRAME_MAX)
+  {
+    APP_PRINTF("#error frame too long to forward len=%d\n", len);  /* never a truncated frame */
+    return;
+  }
   for (int i = 0; i < len; i++)
   {
     text[2 * i] = digits[data[i] >> 4];

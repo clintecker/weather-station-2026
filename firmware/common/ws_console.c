@@ -1,6 +1,7 @@
 #include "ws_console.h"
 #include <string.h>
 #include "ws_frame.h"
+#include "ws_obs.h"
 
 int ws_line_feed(ws_line_asm *a, uint8_t c, char out[WS_LINE_MAX + 1])
 {
@@ -44,6 +45,15 @@ int ws_hex_decode(const char *text, uint8_t *out, int max)
 
 int ws_host_reply_ok(const uint8_t *frame, int n)
 {
- return n == WS_ACK_FRAME_LEN && frame[0] == 'W' && frame[1] == 'S' && frame[2] == WS_FRAME_VERSION &&
-        (frame[3] == WS_KIND_ACK || frame[3] == WS_KIND_NACK);
+ if (n != WS_ACK_FRAME_LEN) return 0;
+ int kind = ws_frame_kind(frame, (uint32_t)n);
+ return kind == WS_KIND_ACK || kind == WS_KIND_NACK;
+}
+
+int ws_air_frame_ok(const uint8_t *frame, uint32_t len)
+{
+ int kind = ws_frame_kind(frame, len);
+ /* The smallest observation carries one 1-byte field; the largest, every catalog field. */
+ if (kind == WS_KIND_OBS) return len >= WS_FRAME_OVERHEAD + WS_OBS_HEAD_LEN + 1U && len <= WS_FRAME_OVERHEAD + WS_OBS_PLAIN_ALL;
+ return kind == WS_KIND_DIAG && len == WS_DIAG_FRAME_LEN;
 }

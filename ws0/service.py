@@ -13,8 +13,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from gateway import Store
 import struct
-from .protocol import (ACK, DIAG, KIND_DIAG, KIND_NACK, LINK_STATES, NACK, NACK_COLLISION, NACK_INVALID,
-                       RESET_CAUSES, Nonces, decode_observation, frame_counter, seal, unseal)
+from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, LINK_STATES, NACK_COLLISION, NACK_INVALID,
+                       RESET_CAUSES, Nonces, decode_observation, frame_counter, frame_kind, pack_reply, seal,
+                       unseal)
 
 
 def load_config(path):
@@ -85,11 +86,11 @@ class Gateway:
     def receive(self, frame, now=None):
         """Authenticate, validate and commit before returning an encrypted receipt."""
         with self.lock:
-            if len(frame) > 3 and frame[3] == KIND_DIAG:
+            if frame_kind(frame) == KIND_DIAG:
                 self.receive_diagnostic(frame,now)
                 return None  # fire-and-forget: no reply on air
             try:
-                payload = unseal(self.key,self.cfg['station_id'],1,frame)
+                payload = unseal(self.key,self.cfg['station_id'],KIND_OBS,frame)
             except Exception:
                 self.rejected += 1  # unauthenticated: never answered (a NACK would let anyone drop data)
                 raise
@@ -109,7 +110,7 @@ class Gateway:
                 self.rejected += 1
                 self.nacked += 1
                 return seal(self.key,self.cfg['station_id'],KIND_NACK,self.nonces,
-                            NACK.pack(epoch,sequence,reason,0,frame_counter(frame)))
+                            pack_reply(epoch,sequence,reason,frame_counter(frame)))
             except OSError:
                 self.rejected += 1  # commit failed: no ACK, the node keeps the record
                 raise
@@ -119,9 +120,9 @@ class Gateway:
                 host_utc = int(time.time() if now is None else now)
                 if self.clock and not self.clock.may_issue_time():
                     host_utc = 0
-                ack = seal(self.key,self.cfg['station_id'],2,self.nonces,
-                           ACK.pack(int(record['session']),record['sequence'],host_utc,
-                                    frame_counter(frame)))
+                ack = seal(self.key,self.cfg['station_id'],KIND_ACK,self.nonces,
+                           pack_reply(int(record['session']),record['sequence'],host_utc,
+                                      frame_counter(frame)))
                 self.accepted += int(inserted)
                 self.last_ingested = dict(record,duplicate=not inserted)
                 return ack
