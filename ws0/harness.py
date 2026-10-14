@@ -20,7 +20,7 @@ import sqlite3
 import tempfile
 from cryptography.exceptions import InvalidTag
 from .protocol import HEADER_LEN, KIND_NACK, NACK_COLLISION, Nonces, frame_counter, frame_kind, unpack_reply, unseal
-from .service import CounterRegression, Gateway
+from .service import CounterRegression, Gateway, Replay
 from .simulator import BACKLOG_PER_MINUTE, Node
 
 START = 1_800_000_000  # Fixed virtual UTC origin, independent of wall-clock date.
@@ -148,13 +148,15 @@ class Campaign:
         self.counts = {name:0 for name in ['uplink_sent','ack_sent','random_drops','outage_drops',
                                          'corrupted','duplicates','rejected','commit_errors','nacks',
                                          'identity_collision_rejections','node_reboots','gateway_reboots',
-                                         'counter_regressions','expected_counter_regressions']}
+                                         'counter_regressions','expected_counter_regressions',
+                                         'replays','expected_replays']}
         # P4 oracle: the node must seal strictly increasing counters in send order, and the
         # gateway must flag exactly the authentic arrivals at or below the highest counter that
         # has already arrived (wire duplicates and reordering), across gateway restarts.
         self.last_sealed_counter = 0
         self.node_counter_not_increasing = 0
         self.highest_arrived_counter = 0
+        self.first_arrival = {}   # counter -> bytes of the first authentic frame accepted under it
         self.availability = []
 
     def log(self, event, **details):
@@ -179,10 +181,15 @@ class Campaign:
         except (ValueError,InvalidTag):
             return False
         counter = frame_counter(packet)
-        expected = counter <= self.highest_arrived_counter
-        self.highest_arrived_counter = max(self.highest_arrived_counter,counter)
-        self.counts['expected_counter_regressions'] += int(expected)
-        return expected
+        if counter > self.highest_arrived_counter:
+            self.highest_arrived_counter = counter
+            self.first_arrival[counter] = packet
+            return False
+        # At or below the mark: an exact copy of the accepted frame is a replay; anything else
+        # (reordered older frame, different bytes) is a regression (draft-5 design section 8).
+        replay = self.first_arrival.get(counter) == packet
+        self.counts['expected_replays' if replay else 'expected_counter_regressions'] += 1
+        return not replay
 
     def track_nonce(self, packet):
         # Observe new encryption operations only; byte-for-byte network duplication is legal.
@@ -251,8 +258,13 @@ class Campaign:
             except OSError:
                 self.counts['commit_errors'] += 1
                 self.log('commit_failed_no_ack')
+            except Replay:
+                # An exact duplicate of an accepted frame: never answered, never stored, no alarm.
+                self.counts['replays'] += 1
+                self.log('replay_no_reply',frame=packet.hex())
             except CounterRegression:
-                # A replayed or reordered frame: never answered, never stored (P4).
+                # A reordered older frame or different bytes under a used counter: never answered,
+                # never stored, raises the key-reuse alarm (P4).
                 self.counts['counter_regressions'] += 1
                 self.log('counter_regression_no_reply',frame=packet.hex())
             except (ValueError,InvalidTag) as exc:
@@ -347,8 +359,12 @@ class Campaign:
                 if self.counts['counter_regressions'] != self.counts['expected_counter_regressions'] or \
                         self.gateway.node_counter['counter_regression'] != self.counts['counter_regressions']:
                     failures.append('counter_regression_mismatch')
-                # Without wire duplication or reordering, any regression is a false key-reuse alarm.
-                if self.counts['counter_regressions'] and not (self.s.duplicates or self.s.max_delay_seconds):
+                if self.counts['replays'] != self.counts['expected_replays'] or \
+                        self.gateway.node_counter['replays'] != self.counts['replays']:
+                    failures.append('replay_mismatch')
+                # Wire duplicates are replays now; without reordering, any regression is a false
+                # key-reuse alarm.
+                if self.counts['counter_regressions'] and not self.s.max_delay_seconds:
                     failures.append('counter_regression_false_positive')
                 if self.s.require_latency_target and not metrics['latency_target_met']:
                     failures.append('live_latency_target')
@@ -386,6 +402,7 @@ class Campaign:
                           'network':self.counts,'pending_journal':pending,'nonce_collisions':self.nonce_collisions,
                           'counter_regressions':self.counts['counter_regressions'],
                           'expected_counter_regressions':self.counts['expected_counter_regressions'],
+                          'replays':self.counts['replays'],'expected_replays':self.counts['expected_replays'],
                           'gateway_counter_status':self.gateway.status()['node_counter'],
                           'drain_minutes':drain_periods,'physical_H01':'NOT RUN',
                           'negative_control':self.negative_control}

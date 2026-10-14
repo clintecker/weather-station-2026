@@ -78,38 +78,54 @@ class Nonces:
             self.node_binding = hashlib.sha256(key + struct.pack('>IB', station, KIND_OBS)).hexdigest()
             self.db.execute('CREATE TABLE IF NOT EXISTS node_counter (binding TEXT PRIMARY KEY, '
                             'max_counter INTEGER NOT NULL, regressions INTEGER NOT NULL, '
-                            'last_regression INTEGER, last_regression_at REAL)')
+                            'last_regression INTEGER, last_regression_at REAL, replays INTEGER NOT NULL DEFAULT 0)')
+            # SHA-256 of every authentic node frame accepted as fresh, by counter: a later frame with
+            # the same counter and the same bytes is a replay (harmless); different bytes under one
+            # counter is a repeated nonce (draft-5 design section 8).
+            self.db.execute('CREATE TABLE IF NOT EXISTS node_frames (binding TEXT, counter INTEGER, digest TEXT, '
+                            'PRIMARY KEY(binding, counter))')
             with self.db:
-                self.db.execute('INSERT OR IGNORE INTO node_counter VALUES (?,0,0,NULL,NULL)', (self.node_binding,))
+                self.db.execute('INSERT OR IGNORE INTO node_counter (binding,max_counter,regressions) VALUES (?,0,0)',
+                                (self.node_binding,))
 
     def node_counter(self):
         """The stored node-counter high-water mark and regression record (gateway only)."""
-        mark, count, last, at = self.db.execute(
-            'SELECT max_counter,regressions,last_regression,last_regression_at FROM node_counter '
+        mark, count, last, at, replays = self.db.execute(
+            'SELECT max_counter,regressions,last_regression,last_regression_at,replays FROM node_counter '
             'WHERE binding=?', (self.node_binding,)).fetchone()
         return {'max_node_counter': mark, 'counter_regression': count,
-                'last_regression_counter': last, 'last_regression_at': at}
+                'last_regression_counter': last, 'last_regression_at': at, 'replays': replays}
 
-    def advance_node_counter(self, counter, now):
-        """Call only for an authenticated node frame. Durably raise the mark and return True if
-        the counter is above it; otherwise durably count a regression and return False. The mark
-        is committed before the frame is acted on, so a crash can never leave it lower than a
-        counter the gateway stored or answered."""
+    def advance_node_counter(self, counter, now, digest):
+        """Call only for an authenticated node frame, with the SHA-256 hex digest of its bytes.
+        Returns 'fresh' (counter above the mark: the mark is raised and the digest kept), 'replay'
+        (an exact copy of a frame already accepted: counted, no alarm) or 'regression' (at or below
+        the mark with different or unknown bytes: a repeated nonce or key reuse, counted for the
+        alarm). Committed before the frame is acted on, so a crash can never leave the mark lower
+        than a counter the gateway stored or answered."""
         self.db.execute('BEGIN IMMEDIATE')
         try:
             mark = self.db.execute('SELECT max_counter FROM node_counter WHERE binding=?',
                                    (self.node_binding,)).fetchone()[0]
-            fresh = counter > mark
-            if fresh:
+            if counter > mark:
+                verdict = 'fresh'
                 self.db.execute('UPDATE node_counter SET max_counter=? WHERE binding=?', (counter, self.node_binding))
+                self.db.execute('INSERT OR REPLACE INTO node_frames VALUES (?,?,?)', (self.node_binding, counter, digest))
             else:
-                self.db.execute('UPDATE node_counter SET regressions=regressions+1, last_regression=?, '
-                                'last_regression_at=? WHERE binding=?', (counter, now, self.node_binding))
+                seen = self.db.execute('SELECT digest FROM node_frames WHERE binding=? AND counter=?',
+                                       (self.node_binding, counter)).fetchone()
+                if seen and seen[0] == digest:
+                    verdict = 'replay'
+                    self.db.execute('UPDATE node_counter SET replays=replays+1 WHERE binding=?', (self.node_binding,))
+                else:
+                    verdict = 'regression'
+                    self.db.execute('UPDATE node_counter SET regressions=regressions+1, last_regression=?, '
+                                    'last_regression_at=? WHERE binding=?', (counter, now, self.node_binding))
             self.db.commit()
         except Exception:
             self.db.rollback()
             raise
-        return fresh
+        return verdict
 
     def next(self):
         """An immediate transaction also prevents concurrent allocator collisions."""

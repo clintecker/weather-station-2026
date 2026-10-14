@@ -22,7 +22,7 @@ from urllib.request import Request,urlopen
 from cryptography.exceptions import InvalidTag
 from ws0.__main__ import provision
 from ws0.protocol import Nonces,unseal
-from ws0.service import CounterRegression,Gateway,discovery,http_server,load_config
+from ws0.service import Gateway,Replay,discovery,http_server,load_config
 from ws0.simulator import Node
 
 class PipelineTests(unittest.TestCase):
@@ -39,8 +39,10 @@ class PipelineTests(unittest.TestCase):
  def test_commit_ack_replay(self):
   frame=self.node.packet(self.node.sample(1000)); ack=self.gateway.receive(frame,1001)
   self.node.acknowledge(ack); self.assertEqual(self.node.backfill(),[])
-  # P4: a replayed frame repeats a counter the gateway already accepted: no reply, nothing stored.
-  with self.assertRaises(CounterRegression): self.gateway.receive(frame,1100)
+  # A replayed frame repeats a counter the gateway already accepted: no reply, nothing stored,
+  # and no key-reuse alarm (identical bytes, so no nonce was reused).
+  with self.assertRaises(Replay): self.gateway.receive(frame,1100)
+  self.assertIsNone(self.gateway.status()['alarm'])
   self.assertEqual(len(self.gateway.store.history(self.cfg['station'])),1)
   self.assertEqual(self.gateway.store.latest(self.cfg['station'],1100)['received_at'],1001)
  def test_tamper_key_direction(self):

@@ -1,5 +1,6 @@
 """Single-process gateway: authenticated frames, SQLite, read-only HTTP and MQTT."""
 import csv
+import hashlib
 import hmac
 import io
 import json
@@ -35,8 +36,14 @@ KEY_REUSE_ALARM = 'possible key reuse: re-key the node'
 
 
 class CounterRegression(ValueError):
-    """An authentic node frame whose counter is at or below the stored high-water mark: a
-    replay, or the node sealing under a nonce it has already used (key reuse, C7-C9)."""
+    """An authentic node frame whose counter is at or below the stored high-water mark and whose
+    bytes differ from (or were never seen as) the frame accepted under that counter: the node
+    sealed under a nonce it already used (key reuse, C7-C9)."""
+
+
+class Replay(ValueError):
+    """An exact copy of a node frame already accepted (radio duplicate or a recorded frame played
+    back). Harmless: never answered or stored as data, counted, and no key-reuse alarm."""
 
 
 class Gateway:
@@ -60,11 +67,16 @@ class Gateway:
         It is never answered or stored as data; the raw frame is kept as a rejection."""
         counter = frame_counter(frame)
         received = time.time() if now is None else now
-        fresh = self.nonces.advance_node_counter(counter,received)
+        verdict = self.nonces.advance_node_counter(counter,received,hashlib.sha256(frame).hexdigest())
         self.node_counter = self.nonces.node_counter()
-        if fresh:
+        if verdict == 'fresh':
             return
         epoch = struct.unpack('>I',payload[:4])[0]
+        if verdict == 'replay':
+            self.store.reject(self.cfg['station'],str(epoch),sequence,'replay',
+                              f'identical copy of the frame accepted under counter {counter}',frame.hex(),now)
+            self.rejected += 1
+            raise Replay(f'replay of counter {counter}')
         detail = (f"counter {counter} <= high-water mark {self.node_counter['max_node_counter']}: "
                   + KEY_REUSE_ALARM)
         self.store.reject(self.cfg['station'],str(epoch),sequence,'counter_regression',detail,frame.hex(),now)

@@ -20,7 +20,7 @@ from unittest import mock
 
 from ws0.harness import Campaign, Scenario
 from ws0.protocol import DIAG, KIND_DIAG, Nonces, frame_counter, seal
-from ws0.service import CounterRegression, Gateway
+from ws0.service import CounterRegression, Replay, Gateway
 from ws0.simulator import Node
 from ws0 import __main__ as cli
 
@@ -75,9 +75,9 @@ class CounterRegressionTests(unittest.TestCase):
     def diagnostics(self):
         return self.gateway.store.db.execute('SELECT count(*) FROM diagnostics').fetchone()[0]
 
-    def rejections(self):
+    def rejections(self, reason='counter_regression'):
         return self.gateway.store.db.execute(
-            "SELECT reason, frame_hex FROM rejections WHERE reason='counter_regression'").fetchall()
+            'SELECT reason, frame_hex FROM rejections WHERE reason=?', (reason,)).fetchall()
 
     def assert_quiet(self):
         status = self.gateway.status()
@@ -90,36 +90,52 @@ class CounterRegressionTests(unittest.TestCase):
         second = self.minute()
         self.deliver(second)
         rows = self.stored()
-        with self.assertRaises(CounterRegression):
-            self.gateway.receive(first, self.now)        # an old frame, replayed later
-        with self.assertRaises(CounterRegression):
+        with self.assertRaises(Replay):
+            self.gateway.receive(first, self.now)        # an old frame, recorded and played back later
+        with self.assertRaises(Replay):
             self.gateway.receive(first, self.now)        # and again
         self.assertEqual(self.stored(), rows)
         status = self.gateway.status()
-        self.assertEqual(status['alarm'], ALARM)
-        self.assertEqual(status['node_counter']['counter_regression'], 2)
-        self.assertEqual(status['node_counter']['last_regression_counter'], frame_counter(first))
-        self.assertEqual([r[1] for r in self.rejections()], [first.hex(), first.hex()])
+        self.assertIsNone(status['alarm'])                # an exact copy reuses no nonce: no alarm
+        self.assertEqual((status['node_counter']['replays'], status['node_counter']['counter_regression']), (2, 0))
+        self.assertEqual([r[1] for r in self.rejections('replay')], [first.hex(), first.hex()])
+
+    def test_older_frame_never_seen_still_alarms(self):
+        held = self.node.packet(self.minute())           # sealed, but lost on air for now
+        self.deliver(self.minute())                      # a newer frame raises the mark
+        with self.assertRaises(CounterRegression):       # direct LoRa cannot reorder: treat as reuse
+            self.gateway.receive(held, self.now)
+        self.assertEqual(self.gateway.status()['alarm'], ALARM)
+
+    def test_same_counter_different_bytes_alarms(self):
+        self.deliver(self.minute())
+        self.wipe_node_counter()                         # the node repeats counters with the same key
+        with self.assertRaises(CounterRegression):
+            self.gateway.receive(self.node.packet(self.minute()), self.now)
+        status = self.gateway.status()
+        self.assertEqual((status['alarm'], status['node_counter']['counter_regression']), (ALARM, 1))
 
     def test_exact_duplicate_of_latest_frame_is_not_answered(self):
         frame = self.node.packet(self.minute())
         self.gateway.receive(frame, self.now)
-        with self.assertRaises(CounterRegression):
+        with self.assertRaises(Replay):
             self.gateway.receive(frame, self.now)
+        self.assert_quiet()
 
     def test_replayed_and_reused_diag_are_not_stored(self):
         self.deliver(self.minute())
         report = seal(KEY, 1, KIND_DIAG, self.node.nonces, diag_payload(100))
         self.assertIsNone(self.gateway.receive(report, self.now))
         self.assertEqual(self.diagnostics(), 1)
-        with self.assertRaises(CounterRegression):
+        with self.assertRaises(Replay):
             self.gateway.receive(report, self.now)
+        self.assert_quiet()
         self.wipe_node_counter()
         reused = seal(KEY, 1, KIND_DIAG, self.node.nonces, diag_payload(200, epoch=2))
         with self.assertRaises(CounterRegression):
             self.gateway.receive(reused, self.now)
         self.assertEqual(self.diagnostics(), 1)
-        self.assertEqual(self.gateway.status()['node_counter']['counter_regression'], 2)
+        self.assertEqual(self.gateway.status()['node_counter']['counter_regression'], 1)
         self.assertEqual(self.gateway.status()['alarm'], ALARM)
 
     def test_obs_and_diag_share_one_counter_space(self):
@@ -164,8 +180,11 @@ class CounterRegressionTests(unittest.TestCase):
         mark = self.gateway.status()['node_counter']['max_node_counter']
         self.restart_gateway()
         self.assertEqual(self.gateway.status()['node_counter']['max_node_counter'], mark)
-        with self.assertRaises(CounterRegression):
+        with self.assertRaises(Replay):                   # frame digests survive the restart too
             self.gateway.receive(old, self.now)
+        self.wipe_node_counter()
+        with self.assertRaises(CounterRegression):        # real reuse: same counter, new bytes
+            self.gateway.receive(self.node.packet(self.minute()), self.now)
         self.restart_gateway()  # the alarm also survives restart
         self.assertEqual(self.gateway.status()['alarm'], ALARM)
         self.assertEqual(self.gateway.status()['node_counter']['counter_regression'], 1)
@@ -260,7 +279,8 @@ class HarnessCounterTests(unittest.TestCase):
         result = self.run_case(Scenario('dups', 'Duplicated and delayed frames.', minutes=60,
                                         duplicates=.3, max_delay_seconds=15, gateway_reboots=[30]))
         self.assertTrue(result['scenario_pass'], result['failures'])
-        self.assertGreater(result['counter_regressions'], 0)
+        self.assertGreater(result['replays'], 0)              # wire duplicates: exact copies, no alarm
+        self.assertEqual(result['replays'], result['expected_replays'])
         self.assertEqual(result['counter_regressions'], result['expected_counter_regressions'])
 
 
