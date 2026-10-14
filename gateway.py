@@ -99,7 +99,6 @@ class Store:
             station TEXT, session TEXT, sequence INTEGER, sampled_at REAL, received_at REAL, payload TEXT,
             uptime_s INTEGER, effective_at REAL, time_basis TEXT, time_uncertainty_s REAL,
             PRIMARY KEY(station,session,sequence))''')
-        self.db.execute('CREATE INDEX IF NOT EXISTS obs_time ON observations(station,sampled_at)')
         # latest() orders by identity; without this index every call sorted the whole table (337 ms
         # at a year of readings, under the store lock, on every ingest and every MQTT tick).
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_latest ON observations'

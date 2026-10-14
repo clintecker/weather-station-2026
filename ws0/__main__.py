@@ -296,9 +296,6 @@ def main():
                         time.time() - gateway.receiver['last_seen'] > 180:
                     gateway.receiver['alive'] = False
                     note('#gateway receiver-silent: no RX report for 180 s (check RX board, USB, watchdog)')
-                if gateway.receiver and not gateway.receiver.get('alive') and \
-                        time.time() - gateway.receiver['last_seen'] < 5:
-                    gateway.receiver['alive'] = True
             if mqtt and time.monotonic()>=next_tick:
                 mqtt.tick()
                 next_tick = time.monotonic()+1

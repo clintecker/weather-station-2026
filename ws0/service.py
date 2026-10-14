@@ -65,18 +65,16 @@ class Gateway:
         self.hub = web.EventHub()  # live events for the dashboard stream (GET /v1/events)
         self.telemetry = web.Telemetry(self)
 
-    def check_counter(self, frame, payload, now, sequence):
+    def check_counter(self, frame, epoch, sequence, now):
         """Review item P4. Every node transmission, retries included, gets a fresh, strictly
         increasing counter from one space shared by OBS and DIAG (firmware store_next_counter;
         WIPE keeps it), so an authentic frame at or below the mark is a replay or nonce reuse.
         It is never answered or stored as data; the raw frame is kept as a rejection."""
         counter = frame_counter(frame)
-        received = time.time() if now is None else now
-        verdict = self.nonces.advance_node_counter(counter,received,hashlib.sha256(frame).hexdigest())
+        verdict = self.nonces.advance_node_counter(counter,now,hashlib.sha256(frame).hexdigest())
         self.node_counter = self.nonces.node_counter()
         if verdict == 'fresh':
             return
-        epoch = struct.unpack('>I',payload[:4])[0]
         if verdict == 'replay':
             self.store.reject(self.cfg['station'],str(epoch),sequence,'replay',
                               f'identical copy of the frame accepted under counter {counter}',frame.hex(),now)
@@ -88,10 +86,9 @@ class Gateway:
         self.rejected += 1
         raise CounterRegression(detail)
 
-    def receive_diagnostic(self, frame, now=None):
-        """Node health report (kind 4): authenticate and store; never answered."""
-        payload = unseal(self.key,self.cfg['station_id'],KIND_DIAG,frame)
-        self.check_counter(frame,payload,now,None)
+    def receive_diagnostic(self, frame, payload, now):
+        """Node health report (kind 4), already authenticated: store; never answered."""
+        self.check_counter(frame,struct.unpack_from('>I',payload)[0],None,now)
         (epoch, uptime, pending, lost, burned, abandoned, no_ack, rejects, reset, link,
          build, rssi, snr, crashes, energy) = DIAG.unpack(payload)
         report = {'epoch':epoch,'uptime_s':uptime,'journal_pending':pending,'journal_lost_total':lost,
@@ -108,17 +105,20 @@ class Gateway:
 
     def receive(self, frame, now=None):
         """Authenticate, validate and commit before returning an encrypted receipt."""
+        now = time.time() if now is None else now
         with self.lock:
-            if frame_kind(frame) == KIND_DIAG:
-                self.receive_diagnostic(frame,now)
-                return None  # fire-and-forget: no reply on air
+            diag = frame_kind(frame) == KIND_DIAG
             try:
-                payload = unseal(self.key,self.cfg['station_id'],KIND_OBS,frame)
+                payload = unseal(self.key,self.cfg['station_id'],KIND_DIAG if diag else KIND_OBS,frame)
             except Exception:
                 self.rejected += 1  # unauthenticated: never answered (a NACK would let anyone drop data)
                 raise
+            if diag:
+                self.receive_diagnostic(frame,payload,now)
+                return None  # fire-and-forget: no reply on air
+            epoch, sequence = struct.unpack_from('>II',payload)
             # Raised durably before the commit, so a crash cannot leave it below this frame.
-            self.check_counter(frame,payload,now,struct.unpack('>I',payload[4:8])[0])
+            self.check_counter(frame,epoch,sequence,now)
             try:
                 record = decode_observation(payload,self.cfg['station'])
                 inserted = self.store.ingest(record,now)
@@ -126,7 +126,6 @@ class Gateway:
                 # Authentic but permanently unacceptable: record it, then tell the node to stop
                 # retrying it (gap G2). Commit failures (OSError) still propagate with no reply.
                 reason = NACK_COLLISION if str(exc) == 'Identity collision' else NACK_INVALID
-                epoch, sequence = struct.unpack('>II',payload[:8])
                 self.store.reject(self.cfg['station'],str(epoch),sequence,
                                   'identity_collision' if reason == NACK_COLLISION else 'invalid_record',
                                   str(exc),frame.hex(),now)
@@ -142,7 +141,7 @@ class Gateway:
             try:
                 # Host UTC rides in the authenticated ACK: the node's only time source. A host
                 # clock measured as wrong sends 0 instead: the node then keeps its own clock (G9).
-                host_utc = int(time.time() if now is None else now)
+                host_utc = int(now)
                 if self.clock and not self.clock.may_issue_time():
                     host_utc = 0
                 ack = seal(self.key,self.cfg['station_id'],KIND_ACK,self.nonces,

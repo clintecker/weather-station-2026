@@ -49,6 +49,16 @@ class CounterRegressionTests(unittest.TestCase):
             db.close()
         self.tmp.cleanup()
 
+    def test_forged_frames_of_both_kinds_are_counted(self):
+        """An unauthenticated health report counts as rejected, like a forged observation."""
+        from cryptography.exceptions import InvalidTag
+        for frame in (self.node.diagnostic(self.now), self.node.packet(self.node.sample(self.now))):
+            forged = frame[:-1] + bytes([frame[-1] ^ 1])
+            before = self.gateway.status()['rejected_this_process']
+            with self.assertRaises(InvalidTag):
+                self.gateway.receive(forged, self.now)
+            self.assertEqual(self.gateway.status()['rejected_this_process'], before + 1)
+
     def restart_gateway(self):
         self.gateway.store.db.close(); self.gateway.nonces.db.close()
         self.gateway = Gateway(self.cfg, self.dir)
