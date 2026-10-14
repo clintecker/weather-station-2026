@@ -30,7 +30,14 @@ static uint8_t rx_frame[255];
 static uint16_t rx_len;
 static int16_t rx_rssi;
 static int8_t rx_snr;
-static volatile enum { EV_NONE, EV_RX, EV_RX_ERROR, EV_TX_DONE, EV_TX_TIMEOUT } event;
+/* Radio events from interrupt context, as bits: several can arrive before process() runs, and none
+ * is lost (firmware review finding 3: one event slot, cleared at the end of process(), dropped
+ * events posted meanwhile; a lost TxDone left `transmitting` set until the watchdog reset). */
+#define EV_RX         (1U << 0)
+#define EV_RX_ERROR   (1U << 1)
+#define EV_TX_DONE    (1U << 2)
+#define EV_TX_TIMEOUT (1U << 3)
+static volatile uint32_t pending_ev;
 static volatile uint8_t transmitting;
 static uint32_t n_forwarded, n_dropped, n_acks;
 static uint32_t tx_start_ms;
@@ -45,7 +52,14 @@ static int relisten_tries;
 static uint32_t last_radio_event_ms, n_relistens;
 static volatile uint8_t relisten_due;
 static int uart_rearm_tries;
-static void post(int ev) { event = ev; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0); }
+static void post(uint32_t ev)
+{
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  pending_ev |= ev;
+  __set_PRIMASK(primask);
+  UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0);
+}
 static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 {
   last_radio_event_ms = HAL_GetTick();
@@ -94,41 +108,44 @@ static void process(void)
     listen();
     last_radio_event_ms = HAL_GetTick();
   }
-  switch (event)
+  /* Take the pending events and the received frame in one step with interrupts masked, so a
+     second RxDone cannot tear the frame while it is forwarded (it is handled on the next pass). */
+  static uint8_t frame[sizeof rx_frame];
+  uint16_t len = 0; int16_t rssi = 0; int8_t snr = 0;
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  uint32_t ev = pending_ev;
+  pending_ev = 0;
+  if (ev & EV_RX) { len = rx_len; memcpy(frame, rx_frame, len); rssi = rx_rssi; snr = rx_snr; }
+  __set_PRIMASK(primask);
+  if (ev & (EV_TX_DONE | EV_TX_TIMEOUT))
   {
-    case EV_RX:
-      if (ws_air_frame_ok(rx_frame, rx_len))
-      {
-        n_diag += ws_frame_kind(rx_frame, rx_len) == WS_KIND_DIAG;
-        hex_print(rx_frame, rx_len);
-        led_flash(LED_BLUE, 400);
-        n_forwarded++;
-        APP_PRINTF("#rx obs rssi=%d snr=%d\n", rx_rssi, rx_snr);
-      }
-      else
-      {
-        n_dropped++;
-        led_flash(LED_RED, 400);
-        APP_PRINTF("#rx drop len=%u rssi=%d snr=%d\n", rx_len, rx_rssi, rx_snr);
-      }
-      break;
-    case EV_RX_ERROR:
-      APP_PRINTF("#rx error\n");
-      led_flash(LED_RED, 400);
-      if (!transmitting) listen();
-      break;
-    case EV_TX_DONE:
-      listen();
-      break;
-    case EV_TX_TIMEOUT:
-      APP_PRINTF("#tx timeout\n");
-      led_flash(LED_RED, 400);
-      listen();
-      break;
-    default:
-      break;
+    if (ev & EV_TX_TIMEOUT) { APP_PRINTF("#tx timeout\n"); led_flash(LED_RED, 400); }
+    listen();
   }
-  event = EV_NONE;
+  if (ev & EV_RX)
+  {
+    if (ws_air_frame_ok(frame, len))
+    {
+      n_diag += ws_frame_kind(frame, len) == WS_KIND_DIAG;
+      hex_print(frame, len);
+      led_flash(LED_BLUE, 400);
+      n_forwarded++;
+      APP_PRINTF("#rx obs rssi=%d snr=%d\n", rssi, snr);
+    }
+    else
+    {
+      n_dropped++;
+      led_flash(LED_RED, 400);
+      APP_PRINTF("#rx drop len=%u rssi=%d snr=%d\n", len, rssi, snr);
+    }
+  }
+  if (ev & EV_RX_ERROR)
+  {
+    APP_PRINTF("#rx error\n");
+    led_flash(LED_RED, 400);
+    if (!transmitting) listen();
+  }
 }
 
 /* Liveness report for the gateway (gap G12): it marks the receiver silent after 180 s. */

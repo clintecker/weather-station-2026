@@ -18,7 +18,13 @@ int ws_line_feed(ws_line_asm *a, uint8_t c, char out[WS_LINE_MAX + 1])
   a->overflow = 0;
   return n;
  }
- if (a->len >= WS_LINE_MAX) { a->overflow = 1; return 0; }
+ if (a->len >= WS_LINE_MAX) {
+  /* An over-long line is discarded whole: clear it now, so a long PROVISION line's key does not
+     linger in RAM until the next line arrives. */
+  if (!a->overflow) memset(a->buf, 0, sizeof a->buf);
+  a->overflow = 1;
+  return 0;
+ }
  a->buf[a->len++] = (char)c;
  return 0;
 }

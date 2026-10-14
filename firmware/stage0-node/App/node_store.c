@@ -149,7 +149,9 @@ int store_meta_init(void) {
 }
 int store_next_epoch(uint32_t *epoch) {
  if (!meta_ready) return STORE_ENOTREADY;
- if (max_epoch == 0xFFFFFFFFUL) return -1;
+ /* 0xFFFFFFFF is the bench storm test's epoch (app_tx.c STORM_EPOCH), whose records the boot
+    scrub acknowledges: a real boot must never get it. */
+ if (max_epoch >= 0xFFFFFFFEUL) return -1;
  if (meta_append(META_EPOCH, (uint64_t)max_epoch + 1)) return -2;
  *epoch = ++max_epoch;
  return 0;
