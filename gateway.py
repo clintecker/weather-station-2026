@@ -97,6 +97,12 @@ class Store:
             uptime_s INTEGER, effective_at REAL, time_basis TEXT, time_uncertainty_s REAL,
             PRIMARY KEY(station,session,sequence))''')
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_time ON observations(station,sampled_at)')
+        # latest() orders by identity; without this index every call sorted the whole table (337 ms
+        # at a year of readings, under the store lock, on every ingest and every MQTT tick).
+        self.db.execute('CREATE INDEX IF NOT EXISTS obs_latest ON observations'
+                        '(station, CAST(session AS INTEGER) DESC, sequence DESC, received_at DESC)')
+        # reconstruct() looks up a boot epoch's readings by time basis and uptime.
+        self.db.execute('CREATE INDEX IF NOT EXISTS obs_basis ON observations(station, session, time_basis, uptime_s)')
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_effective ON observations(station,effective_at)')
         # Authentic frames that were permanently rejected (and NACKed) are kept, never silently lost.
         self.db.execute('''CREATE TABLE IF NOT EXISTS rejections (station TEXT, session TEXT, sequence INTEGER,
@@ -125,7 +131,8 @@ class Store:
                             'uptime_s,effective_at,time_basis,time_uncertainty_s) VALUES (?,?,?,?,?,?,?,?,?,?)',
                             (*key,record['sampled_at'],received,payload,record.get('uptime_s'),record['sampled_at'],
                              'synchronized' if synced else 'unknown',0 if synced else None))
-            self.reconstruct(record['station'],record['session'])
+            # A new untimed reading needs only its own estimate; a new reference may improve them all.
+            self.reconstruct(record['station'],record['session'],None if synced else record['sequence'])
         return True
 
     def check_counters(self, record):
@@ -148,20 +155,24 @@ class Store:
             if (before and before[0] > value) or (after and after[0] < value):
                 raise ValueError(f'{f.name} decreased within epoch {record["session"]}')
 
-    def reconstruct(self, station, session):
+    def reconstruct(self, station, session, only=None):
         """Give unsynchronized samples of one boot epoch a UTC time from the nearest trusted
         synchronized sample of the same epoch (same monotonic uptime counter). A reference
-        whose clock was ahead of its own receipt (quarantined) is never used."""
-        refs = self.db.execute('SELECT uptime_s,sampled_at FROM observations WHERE station=? AND session=? '
-                               "AND time_basis='synchronized' AND uptime_s IS NOT NULL AND sampled_at<=received_at+5",
-                               (station,session)).fetchall()
-        if not refs:
-            return
+        whose clock was ahead of its own receipt (quarantined) is never used. Targets are looked up
+        first: most epochs have none, and then nothing else is read (every ingest calls this)."""
         targets = self.db.execute('SELECT sequence,uptime_s FROM observations WHERE station=? AND session=? '
-                                  "AND time_basis IN ('unknown','reconstructed') AND uptime_s IS NOT NULL",
-                                  (station,session)).fetchall()
+                                  "AND time_basis IN ('unknown','reconstructed') AND uptime_s IS NOT NULL"
+                                  + ('' if only is None else ' AND sequence=?'),
+                                  (station,session) if only is None else (station,session,only)).fetchall()
+        ref_sql = ('SELECT uptime_s,sampled_at FROM observations WHERE station=? AND session=? '
+                   "AND time_basis='synchronized' AND uptime_s IS NOT NULL AND sampled_at<=received_at+5 "
+                   'AND uptime_s {} ? ORDER BY uptime_s {} LIMIT 1')
         for sequence, uptime in targets:
-            ref_uptime, ref_utc = min(refs, key=lambda r: abs(r[0]-uptime))
+            near = [r for r in (self.db.execute(ref_sql.format('<=','DESC'),(station,session,uptime)).fetchone(),
+                                self.db.execute(ref_sql.format('>=','ASC'),(station,session,uptime)).fetchone()) if r]
+            if not near:
+                continue
+            ref_uptime, ref_utc = min(near, key=lambda r: abs(r[0]-uptime))
             span = abs(uptime-ref_uptime)
             self.db.execute("UPDATE observations SET effective_at=?,time_basis='reconstructed',time_uncertainty_s=? "
                             'WHERE station=? AND session=? AND sequence=?',
