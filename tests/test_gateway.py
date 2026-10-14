@@ -67,6 +67,22 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(latest['fields_available'], {'temperature_c': True, 'humidity_pct': False})
         self.assertEqual(latest['units'], {'temperature_c': '°C', 'humidity_pct': '%'})
 
+    def test_fifteen_second_summary_fields(self):
+        """15-s sampling (PRD section 9): the minute's mean, extrema and sample count. A minute with
+        no valid sample is still a sensor fault: the sample count (0) is metadata, not a reading."""
+        summary = dict(temperature_min_c=19.5, temperature_max_c=20.5, humidity_min_pct=39.5,
+                       humidity_max_pct=40.25, th_samples=4)
+        self.store.ingest(reading(**summary), 1001)
+        self.assertEqual(self.store.latest('test', 1001)['observation']['th_samples'], 4)
+        dead = dict(temperature_c=None, humidity_pct=None, temperature_min_c=None, temperature_max_c=None,
+                    humidity_min_pct=None, humidity_max_pct=None, th_samples=0)
+        with self.assertRaises(ValueError):          # th_samples does not make it 'partial'
+            self.store.ingest(reading(sequence=2, quality='partial', **dead))
+        self.store.ingest(reading(sequence=2, sampled_at=1060, quality='sensor_fault', **dead), 1061)
+        self.assertEqual(self.store.latest('test', 1061)['reason'], 'sensor_fault')
+        with self.assertRaises(ValueError):          # at most 60 samples a minute
+            self.store.ingest(reading(sequence=3, **(summary | {'th_samples': 61})))
+
     def test_counters_never_decrease_in_sequence_order(self):
         rain = lambda seq, tips: reading(sequence=seq, sampled_at=1000 + 60 * seq, rain_tips=tips)
         self.store.ingest(rain(5, 10), 1400)

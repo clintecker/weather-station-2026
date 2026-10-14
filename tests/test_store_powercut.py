@@ -56,7 +56,10 @@ class StorePowerCut(unittest.TestCase):
                 '-I', str(FW), '-I', str(APP), '-I', str(FW/'common')]
         san = ['-fsanitize=address,undefined', '-fno-sanitize-recover=undefined', '-fno-omit-frame-pointer']
         cls.exe = {}
-        for name, extra in (('full', []), ('small', [f'-DWS_JOURNAL_PAGES={SMALL_JOURNAL}U'])):
+        # 'wide': the largest slot (every catalog field), so a geometry-specific bookkeeping slip
+        # cannot hide behind the default field set (one did, 2026-10-14, with 56-byte slots).
+        wide = ['-DWS_NODE_FIELDS=WS_FIELDS_DEFINED', f'-DWS_JOURNAL_PAGES={SMALL_JOURNAL}U']
+        for name, extra in (('full', []), ('small', [f'-DWS_JOURNAL_PAGES={SMALL_JOURNAL}U']), ('wide', wide)):
             exe = str(Path(cls.tmp.name)/f'test_store_{name}')
             cmd = base + extra + [*map(str, SOURCES), '-o', exe]
             # ASan + UBSan when the toolchain has them (macOS clang and Linux gcc/clang do).
@@ -124,6 +127,14 @@ class StorePowerCut(unittest.TestCase):
         self.assertGreater(int(s['cut_points']), 900)
         self.assertGreater(int(s['erase_cuts']), 400)
         self.assert_only(out, counts, NOTES | KNOWN_CUT)
+
+    def test_powercut_every_op_widest_slot(self):
+        """The wrap sweep and error sweep again with the largest slot the catalog allows."""
+        for mode in ('sweep', 'errsweep'):
+            out, counts, s = self.run_driver('wide', mode, '1')
+            self.assert_only(out, counts, NOTES | (KNOWN_CUT if mode == 'sweep' else KNOWN_ERR))
+        out, counts, s = self.run_driver('wide', 'functional', '1')
+        self.assertEqual(counts, {}, out)
 
     def test_flash_error_every_op(self):
         """A HAL program or erase error at every op (flash unchanged, or torn / partially

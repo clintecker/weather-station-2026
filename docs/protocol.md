@@ -26,7 +26,7 @@ Where the code and this text disagree, the code wins. The code is:
 |---|---|---|
 | Header | 16 bytes: `WS`, version, kind, station u32, counter u64 | **8 bytes**: version << 4 \| kind, station **u16**, counter **u40** |
 | CCM tag | 16 bytes | **8 bytes** |
-| Frame sizes | every kind 56 B | OBS 39–85 B (**42 B** for the T/RH build), ACK/NACK **33 B**, DIAG **48 B** |
+| Frame sizes | every kind 56 B | OBS 39–94 B (**42 B** for the T/RH build, **51 B** with the 15-s summary), ACK/NACK **33 B**, DIAG **48 B** |
 | ACK/NACK plaintext | 24 B (UTC u64 or reason + reserved, echo u64) | **17 B** (UTC or reason u32, echo u40) |
 | DIAG plaintext | 24 B | **32 B**: adds firmware build ID, ACK RSSI/SNR, crash count, energy state |
 | Observation | fixed 24 B: T, RH, one validity byte, fillers `0x8000`/`0xFFFF` | 22-byte head + **field bitmap** + catalog fields; each field has its own **INVALID** code |
@@ -72,7 +72,7 @@ Example, the boot self-test vector (`KAT_OBS_HEX` in `App/app_tx.c`, key `000102
 
 | Kind | Plaintext | Frame | Checked |
 |---|---:|---:|---|
-| OBS | 23–69 B (22 + 1 to 47 field bytes) | 39–85 B | Range before decrypting; exact length from the field bitmap after |
+| OBS | 23–78 B (22 + 1 to 56 field bytes) | 39–94 B | Range before decrypting; exact length from the field bitmap after |
 | ACK, NACK | 17 B | 33 B | Exact, before decrypting |
 | DIAG | 32 B | 48 B | Exact, before decrypting |
 
@@ -241,11 +241,26 @@ Value = (code − offset) / scale. INVALID is the field's all-ones code (`0xFF`,
 | 18 | `charger_pins` | 1 | bit 0 PGOOD, bit 1 CHG | 0 | 0–3 | raw pins | `0xFF` INVALID | defined |
 | 19 | `enclosure_temp_c` | 2 | as field 0 | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | defined |
 | 20 | `enclosure_rh_pct` | 2 | as field 1 | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | defined |
-| 21–31 | reserved | — | — | — | must be zero | — | — | — |
+| 21 | `temperature_min_c` | 2 | as field 0: lowest valid 15-s sample of the minute | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | next release |
+| 22 | `temperature_max_c` | 2 | as field 0: highest | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | next release |
+| 23 | `humidity_min_pct` | 2 | as field 1: lowest | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | next release |
+| 24 | `humidity_max_pct` | 2 | as field 1: highest | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | next release |
+| 25 | `th_samples` | 1 | valid T/RH samples behind fields 0, 1, 21–24 (metadata) | 0 | 0–60 | count | `0xFF` INVALID | next release |
+| 26–31 | reserved | — | — | — | must be zero | — | — | — |
 
-All 21 fields together are 47 bytes, so the largest plaintext is 69 bytes and the largest frame 85.
-Only fields 0 and 1 have a driver today; the others are fixed in the catalog so that later builds
-need no wire change. Counter fields (6, 13–16) start at 0 when their epoch starts.
+All 26 fields together are 56 bytes, so the largest plaintext is 78 bytes and the largest frame 94.
+Fields 0 and 1 have a driver in release bc5e6ede429c; 21–25 are built and come with the next
+release; the others are fixed in the catalog so that later builds need no wire change. Counter
+fields (6, 13–16) start at 0 when their epoch starts.
+
+**15-s sampling (PRD section 9), next release.** The node reads the SHT45 every 15 s
+(`SAMPLE_PERIOD_MS`) and sends one observation per minute after the 4th sample. With fields 21–25
+present, `temperature_c` and `humidity_pct` are the **mean** of the minute's valid samples (round
+half up, in integers: `ws_th_mean_*`, `firmware/stage0.c`), 21–24 are their extrema and 25 is how
+many samples were valid. A sample outside −40.00…125.00 °C is not counted; RH is clamped to
+0–100 % before counting. With no valid sample, fields 0, 1 and 21–24 are INVALID and 25 is 0.
+`th_samples` is metadata: it does not count towards the record's `quality`, so a dead sensor is
+still `sensor_fault`.
 
 ### 5.4 Encoding rules
 
@@ -270,7 +285,7 @@ breaks a rule below is stored in `rejections` and answered with a **NACK**:
 | Rule | NACK reason | Code |
 |---|---:|---|
 | Plaintext length ≠ 22 + the present fields' widths | 2 | `fields.decode` |
-| A flag bit 3–7 set, a reserved bitmap bit (21–31) set, or a bitmap of 0 | 2 | `fields.decode` |
+| A flag bit 3–7 set, a reserved bitmap bit (26–31) set, or a bitmap of 0 | 2 | `fields.decode` |
 | Time-known flag ≠ (UTC ≠ 0) | 2 | `fields.decode` |
 | A code above its field's maximum that is not that field's INVALID or CALM | 2 | `Field.code_ok` |
 | `wind_dir_deg` not INVALID while `wind_speed_ms` is INVALID | 2 | `_check_wind` |
@@ -278,7 +293,7 @@ breaks a rule below is stored in `rejections` and answered with a **NACK**:
 | Anything else `gateway.validate` refuses (for example a value that is not an exact catalog value, or a quality that does not match the fields) | 2 | `gateway.validate` |
 | Same identity (station, epoch, sequence) as a stored record, different content | **1** | `Store.ingest` |
 
-A frame with a length outside 39–85 bytes, a wrong version, kind or station, or a bad tag never
+A frame with a length outside 39–94 bytes, a wrong version, kind or station, or a bad tag never
 reaches these checks: it is dropped with no reply (section 1). The gateway and node ship one
 catalog together, so an unknown bit is a bug, not a newer node.
 
@@ -356,7 +371,7 @@ authority. Serial: 115200 baud, 8N1, one line per message, `\n`-terminated (`\r`
 
 | Direction | Line | Rule |
 |---|---|---|
-| RX → host | Lowercase hex of one received frame | Only if `ws_air_frame_ok()`: version 5 and either kind 1 with length 39–85 B (78–170 hex digits) or kind 4 with length 48 B (96 digits). The Stage-0 observation is 84 digits. Anything else gives `#rx drop len= rssi= snr=` |
+| RX → host | Lowercase hex of one received frame | Only if `ws_air_frame_ok()`: version 5 and either kind 1 with length 39–94 B (78–188 hex digits) or kind 4 with length 48 B (96 digits). The Stage-0 observation is 84 digits. Anything else gives `#rx drop len= rssi= snr=` |
 | RX → host | `#…` | Diagnostics (`#rx obs rssi= snr=` after each forwarded frame, `#alive` every 60 s, `#boot`, `#status`, `#watchdog …`, `#tx busy`, `#host reject len=`, …) |
 | host → RX | 66 hex digits | One ACK or NACK, transmitted once with the uplink radio settings. Only if `ws_host_reply_ok()`: exactly 33 bytes, version 5, kind 2 or 3. Anything else gives `#host reject len=` |
 | host → RX | `STATUS`, `TEST-HANG`, `TEST-FAULT` | Commands; lines that start with `#` are ignored |

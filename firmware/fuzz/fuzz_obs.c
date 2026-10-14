@@ -13,8 +13,10 @@
 /* The spec's catalog (section 5.3), written out again on purpose: checking the encoder with its own
  * ws_obs_code_ok() would share any bug in it (a planted off-by-one went unnoticed that way). */
 static const uint32_t spec_max[WS_FI_COUNT] = {16500, 10000, 8000, 750, 750, 359, 16777214, 250, 2000,
- 1048575, 0xFFFFFFFFU, 65534, 65534, 16777214, 16777214, 16777214, 16777214, 100, 3, 16500, 10000};
-static const uint8_t spec_width[WS_FI_COUNT] = {2, 2, 2, 2, 2, 2, 3, 1, 2, 3, 4, 2, 2, 3, 3, 3, 3, 1, 1, 2, 2};
+ 1048575, 0xFFFFFFFFU, 65534, 65534, 16777214, 16777214, 16777214, 16777214, 100, 3, 16500, 10000,
+ 16500, 16500, 10000, 10000, 60};
+static const uint8_t spec_width[WS_FI_COUNT] = {2, 2, 2, 2, 2, 2, 3, 1, 2, 3, 4, 2, 2, 3, 3, 3, 3, 1, 1, 2, 2,
+ 2, 2, 2, 2, 1};
 
 static uint32_t spec_invalid(unsigned i)
 {

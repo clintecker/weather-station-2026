@@ -11,6 +11,15 @@ typedef struct {
 } ws_i2c;
 int ws_sht45_read(const ws_i2c *, int16_t *, uint16_t *);
 uint8_t ws_crc8(const uint8_t *, size_t);
+/* One minute of 15-s T/RH samples (PRD section 9: coverage, mean and extrema). Samples whose
+   temperature is outside the SHT45 range (-40.00..125.00 C) are not counted; RH is clamped to
+   0..100 % first. The mean rounds half up, in integers, like the catalog (protocol.md). */
+typedef struct { int32_t t_sum, h_sum; int16_t t_min, t_max; uint16_t h_min, h_max; uint8_t n; } ws_th_window;
+void ws_th_reset(ws_th_window *w);
+void ws_th_add(ws_th_window *w, int valid, int16_t centi_c, uint16_t centi_rh);
+/* Mean of the counted samples in 0.01 units; 0 if none were counted (then all values are INVALID). */
+int ws_th_mean_t(const ws_th_window *w, int16_t *centi_c);
+int ws_th_mean_h(const ws_th_window *w, uint16_t *centi_rh);
 /* Stuck-bus recovery as a pin sequence, so the waveform is host-tested (I2C-bus spec UM10204
    section 3.1.16). Pins are open-drain: level 1 releases the line. The caller sets both lines
    released before handing over. Clocks SCL until SDA is free (at most 9), then makes a STOP:

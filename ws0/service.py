@@ -250,7 +250,7 @@ def http_server(gateway, port):
 # Power and enclosure fields describe the station, not the weather: HA diagnostic entities.
 DIAGNOSTIC_FIELDS = frozenset({'batt_mv','batt_current_ma','energy_in_mwh','energy_out_mwh','charge_in_mah',
                                'charge_out_mah','soc_gauge_pct','charger_pins','enclosure_temp_c',
-                               'enclosure_rh_pct','uva_raw'})
+                               'enclosure_rh_pct','uva_raw','th_samples'})
 
 
 # Home Assistant entity names (the unique_id stays the field name, so renaming here is safe).
@@ -261,7 +261,9 @@ LABELS = {'temperature_c':'Temperature','humidity_pct':'Humidity','pressure_hpa'
           'energy_in_mwh':'Energy in','energy_out_mwh':'Energy out','charge_in_mah':'Charge in',
           'charge_out_mah':'Charge out','soc_gauge_pct':'Battery (fuel gauge estimate)',
           'charger_pins':'Charger status pins','enclosure_temp_c':'Enclosure temperature',
-          'enclosure_rh_pct':'Enclosure humidity'}
+          'enclosure_rh_pct':'Enclosure humidity','temperature_min_c':'Temperature minimum (minute)',
+          'temperature_max_c':'Temperature maximum (minute)','humidity_min_pct':'Humidity minimum (minute)',
+          'humidity_max_pct':'Humidity maximum (minute)','th_samples':'T/RH samples per minute'}
 
 
 def discovery(cfg, names=('temperature_c','humidity_pct')):

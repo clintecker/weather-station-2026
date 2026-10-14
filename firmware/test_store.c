@@ -341,6 +341,9 @@ static void workload(int wrap) {
  for (int i = 0; i < 6; i++) { uint32_t r = do_append(STORM); if (i % 2) do_ack(r, OP_ACK); }
  power_cycle();
  for (int i = 0; i < 10; i++) obs_cycle();
+ /* Account for any wrap losses before the WIPE: afterwards a missing record reads as wiped, so a
+    loss left unchecked here would make the exact lost count disagree (seen with 56-byte slots). */
+ sync_now();
  do_wipe(); power_cycle();             /* WIPE reboots; meta must survive it */
  do_provision(1002, 2); power_cycle();
  for (int i = 0; i < 20; i++) obs_cycle();

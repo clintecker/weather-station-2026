@@ -23,6 +23,11 @@ Sources: `STM32WL55JCIX_FLASH.ld` (FLASH 64K, RAM1/RAM2 32K each, heap 0x200, st
 The build enforces a budget: `make` prints `flash budget: N of 65536 B` and fails above
 `FLASH_BUDGET_PCT` (default 90 %) of the application region (`firmware/stage0-node/Makefile`).
 
+**Pending, not yet released (2026-10-14):** 15-s T/RH sampling with a minute summary (catalog fields
+21–25, `ws_th_*` in `firmware/stage0.c`) adds 632 B: TX 54,384 B (83.0 %). The observation grows to
+35 B plaintext / 51 B on air (25.7 ms at SF7, 534.5 ms at SF12), so journal slots become 56 B:
+36 per page, 3,348 records, about 2.3 days of outage buffer.
+
 ## Where the TX flash goes
 
 Linked sections from `build/tx/stage0-tx.map` (`.text`, `.rodata`, `.data`):

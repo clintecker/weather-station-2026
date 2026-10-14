@@ -25,6 +25,7 @@ class Field:
     unit: str = ''
     ha_class: str = ''  # Home Assistant device_class
     counter: bool = False  # since-boot counter: non-decreasing in sequence order within an epoch
+    meta: bool = False     # describes the other values (sample count); not counted in quality
 
     @property
     def invalid(self):
@@ -44,7 +45,7 @@ class Field:
         """Physical value -> code: round half up; out of range -> INVALID (RH fields clamp)."""
         if value is None:
             return self.invalid
-        if self.name in ('humidity_pct', 'enclosure_rh_pct'):
+        if self.name in ('humidity_pct', 'enclosure_rh_pct', 'humidity_min_pct', 'humidity_max_pct'):
             value = min(max(value, 0), 100)
         # Round half up = floor(x + 0.5), exact on the value as written (Decimal(str(x))): in binary
         # floating point -40.005 * 100 is -4000.5000000001 and would round the wrong way. (Decimal's
@@ -79,6 +80,13 @@ FIELDS = (
     Field(18, 'charger_pins', 1, 3),
     Field(19, 'enclosure_temp_c', 2, 16500, **T),
     Field(20, 'enclosure_rh_pct', 2, 10000, **RH),
+    # 15-s sampling summary of the minute (PRD section 9: coverage and extrema). temperature_c and
+    # humidity_pct are then the mean of th_samples valid samples; all five are INVALID together.
+    Field(21, 'temperature_min_c', 2, 16500, **T),
+    Field(22, 'temperature_max_c', 2, 16500, **T),
+    Field(23, 'humidity_min_pct', 2, 10000, **RH),
+    Field(24, 'humidity_max_pct', 2, 10000, **RH),
+    Field(25, 'th_samples', 1, 60, meta=True),
 )
 DEFINED = (1 << len(FIELDS)) - 1
 BY_NAME = {f.name: f for f in FIELDS}
@@ -158,7 +166,7 @@ MEASURED = tuple(f.name for f in FIELDS if f.name != 'qualifiers')
 def quality(record):
     """valid: every present measurement valid (CALM counts); partial: some INVALID; sensor_fault: all."""
     present = [record[name] is not None or (name == 'wind_dir_deg' and record.get('wind_calm'))
-               for name in MEASURED if name in record]
+               for name in MEASURED if name in record and not BY_NAME[name].meta]
     if not present:
         raise ValueError('No measurements')
     return 'valid' if all(present) else 'sensor_fault' if not any(present) else 'partial'

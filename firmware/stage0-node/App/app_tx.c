@@ -28,7 +28,8 @@
 #include "utilities_def.h"
 #include "ws_frame.h"
 
-#define SAMPLE_PERIOD_MS    60000U
+#define SAMPLE_PERIOD_MS    15000U  /* one T/RH sample; every SAMPLES_PER_REPORT-th builds the minute (PRD 9) */
+#define SAMPLES_PER_REPORT  4U
 #define ACK_WINDOW_MS       2000U
 #define INTER_FRAME_MS      50U
 #define MAX_QUEUE           21U   /* live + up to 20 backlog (SURPLUS at SF7); RAM 84 B */
@@ -478,11 +479,19 @@ static void process(void)
   }
 }
 
+/* The minute's 15-s samples (PRD section 9: coverage, mean and extrema). */
+static ws_th_window th_window;
+static unsigned th_ticks;
+
 static void sample(void)
 {
   int16_t t = 0; uint16_t h = 0; uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live;
   last_sample_mcu = mcu_seconds();
-  int src = sensor_read(&t, &h), valid = src == 0;
+  int src = sensor_read(&t, &h);
+  ws_th_add(&th_window, src == 0, t, h);
+  if (++th_ticks < SAMPLES_PER_REPORT) return;   /* the minute's report follows its last sample */
+  th_ticks = 0;
+  int valid = ws_th_mean_t(&th_window, &t) && ws_th_mean_h(&th_window, &h);
   int timed = time_valid();
   uint32_t utc = timed ? SysTimeGet().Seconds : 0;
   uint32_t uptime = mcu_seconds() - boot_mcu; /* always sent: the gateway reconstructs time from it */
@@ -496,10 +505,18 @@ static void sample(void)
                   .energy = (uint8_t)energy_state(), .bitmap = WS_NODE_FIELDS };
   o.code[WS_FI_TEMPERATURE_C] = valid ? ws_code_temp_centi(t) : ws_obs_invalid(WS_FI_TEMPERATURE_C);
   o.code[WS_FI_HUMIDITY_PCT] = valid ? ws_code_rh_centi(h) : ws_obs_invalid(WS_FI_HUMIDITY_PCT);
+  /* Used only if the build's bitmap includes them (WS_F_TH_SUMMARY in node_fields.h). */
+  o.code[WS_FI_TEMPERATURE_MIN_C] = valid ? ws_code_temp_centi(th_window.t_min) : ws_obs_invalid(WS_FI_TEMPERATURE_MIN_C);
+  o.code[WS_FI_TEMPERATURE_MAX_C] = valid ? ws_code_temp_centi(th_window.t_max) : ws_obs_invalid(WS_FI_TEMPERATURE_MAX_C);
+  o.code[WS_FI_HUMIDITY_MIN_PCT] = valid ? ws_code_rh_centi(th_window.h_min) : ws_obs_invalid(WS_FI_HUMIDITY_MIN_PCT);
+  o.code[WS_FI_HUMIDITY_MAX_PCT] = valid ? ws_code_rh_centi(th_window.h_max) : ws_obs_invalid(WS_FI_HUMIDITY_MAX_PCT);
+  o.code[WS_FI_TH_SAMPLES] = th_window.n > 60U ? 60U : th_window.n;
+  unsigned samples = th_window.n;
+  ws_th_reset(&th_window);
   int rc = ws_obs_encode(&o, plain, sizeof plain) == (int)WS_OBS_PLAIN_MAX ? store_journal_append(plain, &live) : -3;
   ws_failrun_note(&tx_fail, rc == 0);
-  APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
-             (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)uptime, valid, src, valid ? t : 0, valid ? h : 0,
+  APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d n=%u t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
+             (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)uptime, valid, src, samples, valid ? t : 0, valid ? h : 0,
              timed ? "synchronized" : "unknown", (unsigned)utc, rc ? "ERROR" : "ok",
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
   next_seq++; /* identity is never reused, even if the journal write failed */

@@ -24,6 +24,11 @@ static const struct { uint8_t width; uint32_t max; } field[WS_FI_COUNT] = {
  {1, 3},           /* charger_pins    bit 0 PGOOD, bit 1 CHG */
  {2, 16500},       /* enclosure_temp_c */
  {2, 10000},       /* enclosure_rh_pct */
+ {2, 16500},       /* temperature_min_c  lowest valid 15-s sample of the minute */
+ {2, 16500},       /* temperature_max_c */
+ {2, 10000},       /* humidity_min_pct */
+ {2, 10000},       /* humidity_max_pct */
+ {1, 60},          /* th_samples         valid T/RH samples behind the minute's values */
 };
 
 unsigned ws_obs_width(unsigned i) { return i < WS_FI_COUNT ? field[i].width : 0; }

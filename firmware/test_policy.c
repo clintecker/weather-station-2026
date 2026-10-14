@@ -93,5 +93,21 @@ int main(void) {
  ram[0]=0;
  assert(ws_stack_peak(ram, ram+64)==64*4);                  /* reached the bottom: overflow suspect */
  puts("policy ok");
+ /* 15-s T/RH window: mean rounds half up (also below zero), extrema, out-of-range samples skipped. */
+ { ws_th_window w; int16_t t; uint16_t h;
+   ws_th_reset(&w); assert(!ws_th_mean_t(&w,&t) && !ws_th_mean_h(&w,&h));
+   ws_th_add(&w,1,-1234,4567); ws_th_add(&w,1,-1235,4568);           /* mean -1234.5 -> -1234 (half up) */
+   assert(ws_th_mean_t(&w,&t) && t==-1234 && ws_th_mean_h(&w,&h) && h==4568); /* 4567.5 -> 4568 */
+   ws_th_add(&w,0,9999,9999);                                          /* sensor fault: not counted */
+   ws_th_add(&w,1,-4001,5000); ws_th_add(&w,1,12501,5000);              /* outside -40..125 C: not counted */
+   ws_th_add(&w,1,2000,11900);                                         /* RH clamps to 100.00 % */
+   assert(w.n==3 && w.t_min==-1235 && w.t_max==2000 && w.h_min==4567 && w.h_max==10000);
+   assert(ws_th_mean_t(&w,&t) && t==-156);                             /* (-1234-1235+2000)/3 = -156.33 -> -156 */
+   ws_th_reset(&w); ws_th_add(&w,1,1,0); ws_th_add(&w,1,2,0);           /* 1.5 -> 2 */
+   assert(ws_th_mean_t(&w,&t) && t==2);
+   ws_th_reset(&w); ws_th_add(&w,1,-1,0); ws_th_add(&w,1,-2,0);         /* -1.5 -> -1 (toward +inf) */
+   assert(ws_th_mean_t(&w,&t) && t==-1);
+   for(int i=0;i<300;i++) ws_th_add(&w,1,12500,10000);                  /* saturates at 255 samples */
+   assert(w.n==255 && ws_th_mean_t(&w,&t)); }
  return 0;
 }

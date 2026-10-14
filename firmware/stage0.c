@@ -1,4 +1,5 @@
 #include "stage0.h"
+#include <string.h>
 /* Sensirion polynomial 0x31, initial FF, no final XOR. */
 uint8_t ws_crc8(const uint8_t *data, size_t count) {
  uint8_t crc=0xff;
@@ -25,6 +26,24 @@ int ws_sht45_read(const ws_i2c *bus,int16_t *centi_c,uint16_t *centi_rh) {
  return 0; /* Outputs are unchanged on failure; caller must emit invalid flags. */
 }
 /* Explicit packing avoids structure padding and alignment assumptions. */
+void ws_th_reset(ws_th_window *w) { memset(w,0,sizeof *w); }
+void ws_th_add(ws_th_window *w,int valid,int16_t t,uint16_t h) {
+ if(!valid||t<-4000||t>12500||w->n>=255) return;
+ if(h>10000) h=10000;
+ if(!w->n||t<w->t_min) w->t_min=t;
+ if(!w->n||t>w->t_max) w->t_max=t;
+ if(!w->n||h<w->h_min) w->h_min=h;
+ if(!w->n||h>w->h_max) w->h_max=h;
+ w->t_sum+=t; w->h_sum+=h; w->n++;
+}
+/* floor((2*sum + n) / (2n)): round half up, also for negative sums (C division truncates). */
+static int32_t mean_half_up(int32_t sum,uint8_t n) {
+ int64_t num=2*(int64_t)sum+n, den=2*(int64_t)n, q=num/den;
+ if((num%den!=0)&&((num<0)!=(den<0))) q--;
+ return (int32_t)q;
+}
+int ws_th_mean_t(const ws_th_window *w,int16_t *t) { if(!w->n) return 0; *t=(int16_t)mean_half_up(w->t_sum,w->n); return 1; }
+int ws_th_mean_h(const ws_th_window *w,uint16_t *h) { if(!w->n) return 0; *h=(uint16_t)mean_half_up(w->h_sum,w->n); return 1; }
 int ws_i2c_recover(const ws_i2c_pins *p) {
  const uint32_t half=5;                      /* 5 us half period = 100 kHz */
  p->set_sda(p->context,1); p->set_scl(p->context,1); p->wait_us(p->context,half);
