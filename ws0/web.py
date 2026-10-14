@@ -380,6 +380,9 @@ def rows_between(gateway, table, column, start, end, limit=100000, offset=0, ord
     return rows
 
 
+STREAM_SEND_TIMEOUT_S = 20
+
+
 def stream(handler, hub, cursor):
     """GET /v1/events: text/event-stream. Frames are `id:`, `event:`, one `data:` JSON line."""
     if not hub.acquire():
@@ -393,6 +396,9 @@ def stream(handler, hub, cursor):
         return
     handler.close_connection = True
     try:
+        # A client that stops reading would block a write forever and hold one of the stream slots
+        # (gateway review GW8). With a send timeout the write fails and the slot is released.
+        handler.connection.settimeout(STREAM_SEND_TIMEOUT_S)
         handler.send_response(200)
         handler.send_header('Content-Type', 'text/event-stream; charset=utf-8')
         handler.send_header('Cache-Control', 'no-store')

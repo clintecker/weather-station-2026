@@ -237,6 +237,30 @@ class EventStream(Fixture):
         _, response = self.open_stream()
         self.assertEqual(response.status, 200)
 
+    def test_stuck_client_releases_its_slot(self):
+        """GW8: a client that connects and never reads must not hold a stream slot forever."""
+        import socket
+        old = web.STREAM_SEND_TIMEOUT_S
+        web.STREAM_SEND_TIMEOUT_S = 0.5
+        self.addCleanup(setattr, web, 'STREAM_SEND_TIMEOUT_S', old)
+        self.serve()
+        client = socket.socket()
+        client.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        client.connect(('127.0.0.1', self.port))
+        self.addCleanup(client.close)
+        client.sendall(f'GET /v1/events HTTP/1.1\r\nHost: x\r\n'
+                       f'Authorization: Bearer {self.cfg["api_token"]}\r\n\r\n'.encode())
+        deadline = time.monotonic() + 3
+        while not self.gateway.hub.streams and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertEqual(self.gateway.hub.streams, 1)
+        blob = 'x' * 8000                     # fill both socket buffers; the client never reads
+        deadline = time.monotonic() + 10
+        while self.gateway.hub.streams and time.monotonic() < deadline:
+            self.gateway.hub.publish('noise', json.dumps(blob))
+            time.sleep(0.005)
+        self.assertEqual(self.gateway.hub.streams, 0)
+
     def test_close_ends_streams(self):
         self.serve()
         _, response = self.open_stream()

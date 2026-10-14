@@ -87,6 +87,31 @@ class ClockTests(unittest.TestCase):
         self.assertLess(abs(offset), 0.05)
         self.assertLess(rtt, 0.05)
 
+    def test_thread_loop_survives_unexpected_errors(self):
+        """GW10: a measurement that raises something other than OSError/ValueError, or a log
+        callback that fails, must not end the checking loop."""
+        from ws0.clock import RETRY_S
+        calls, delays = [], []
+        def measure(server):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError('surprise')
+            return 0.1, 0.02
+        logged = []
+        def log(text):
+            logged.append(text)
+            if len(logged) == 1:
+                raise OSError('log file gone')
+        c = HostClock(measure=measure, log=log, clock=lambda: 1000.0)
+        def sleep(delay):
+            delays.append(delay)
+            if len(delays) == 2:
+                raise StopIteration
+        with self.assertRaises(StopIteration):
+            c.run(sleep=sleep)
+        self.assertEqual(delays[0], RETRY_S)                # the failure was retried soon
+        self.assertEqual(c.status()['state'], 'ok')         # and the next check worked
+
     def test_real_sntp_query(self):
         from ws0.clock import sntp_offset
         try:

@@ -88,9 +88,21 @@ class HostClock:
             return {'state': self.state, 'offset_s': self.offset, 'checked_at': self.checked_at,
                     'error': self.error, 'server': self.server, 'max_offset_s': MAX_OFFSET_S}
 
+    def run(self, sleep=time.sleep):
+        """Check forever. An unexpected error (in a measurement or in the log callback, which writes
+        to SQLite) is logged and retried after RETRY_S: before, it ended the thread and froze the
+        clock state silently (gateway review GW10)."""
+        while True:
+            try:
+                delay = self.check()
+            except Exception as exc:   # noqa: BLE001 - the thread must survive anything
+                delay = RETRY_S
+                try:
+                    self.log(f'#gateway host-clock check failed ({type(exc).__name__}: {exc}); retrying')
+                except Exception:      # noqa: BLE001 - the logger itself may be what failed
+                    pass
+            sleep(delay)
+
     def start(self):
-        def loop():
-            while True:
-                time.sleep(self.check())
-        threading.Thread(target=loop, daemon=True, name='host-clock').start()
+        threading.Thread(target=self.run, daemon=True, name='host-clock').start()
         return self
