@@ -31,6 +31,7 @@
 #define SAMPLE_PERIOD_MS    15000U  /* one T/RH sample; every SAMPLES_PER_REPORT-th builds the minute (PRD 9) */
 #define SAMPLES_PER_REPORT  4U
 #define ACK_WINDOW_MS       2000U
+#define MIN_RELISTEN_MS     50U     /* less window left than this after a stray packet: give up */
 #define INTER_FRAME_MS      50U
 #define MAX_QUEUE           21U   /* live + up to 20 backlog (SURPLUS at SF7); RAM 84 B */
 
@@ -126,6 +127,7 @@ static UTIL_TIMER_Object_t boot_retry_timer;
  * Fire-and-forget: no journal entry, no receive window. */
 #define DIAG_PERIOD_S 900U
 static int diag_due = 1, diag_in_flight;
+static uint32_t ack_window_end;   /* HAL_GetTick() at which the current ACK window closes */
 static uint32_t last_diag_mcu;
 
 static uint8_t rx_frame[255];
@@ -421,7 +423,8 @@ static void next_item(void)
 /* A missed reply ends this minute's drain: a failing link does not burn the allowance. */
 static void stop_drain(void) { qn = qi + 1; }
 
-static void handle_reply(void)
+/* Returns 1 for the authentic reply (ACK or NACK) to the frame just sent; 0 for anything else. */
+static int handle_reply(void)
 {
   uint64_t ctr, echo; uint32_t ep, sq, utc; jref_t ref; uint8_t kind;
   if (ws_open_reply(key, station, rx_frame, rx_len, &kind, &ctr, &ep, &sq, &utc, &echo))
@@ -429,7 +432,7 @@ static void handle_reply(void)
     n_ack_rejects++;
     led_flash(LED_RED, 400);
     APP_PRINTF("#ack reject len=%u rssi=%d snr=%d\n", rx_len, rx_rssi, rx_snr);
-    return;
+    return 0;
   }
   ack_rssi = clamp8(rx_rssi);   /* authentic reply only: a forged frame cannot set these */
   ack_snr = clamp8(rx_snr);
@@ -437,13 +440,13 @@ static void handle_reply(void)
   if (kind == WS_KIND_NACK)
   {
     /* Authentic permanent rejection (gap G2). Accept it only for the frame just sent. */
-    if (!mine) { n_ack_rejects++; APP_PRINTF("#nack ignored: not for the frame just sent\n"); return; }
+    if (!mine) { n_ack_rejects++; APP_PRINTF("#nack ignored: not for the frame just sent\n"); return 0; }
     replied[qi] = 1;
     if (store_journal_find(ep, sq, &ref) == 0 && store_journal_ack(ref) == 0) store_note_abandoned();
     led_flash(LED_RED, 1000);
     APP_PRINTF("#nack epoch=%u seq=%u reason=%u abandoned=%u\n", (unsigned)ep, (unsigned)sq,
                (unsigned)utc, (unsigned)store_abandoned_total());
-    return;
+    return 1;
   }
   int found = store_journal_find(ep, sq, &ref) == 0;
   if (found && store_journal_ack(ref)) APP_PRINTF("#error journal-ack\n");
@@ -463,6 +466,7 @@ static void handle_reply(void)
   APP_PRINTF("#ack epoch=%u seq=%u found=%d time_sync=%d rssi=%d snr=%d pending=%u\n",
              (unsigned)ep, (unsigned)sq, found, fresh, rx_rssi, rx_snr,
              (unsigned)store_journal_pending());
+  return mine;
 }
 
 static void process(void)
@@ -474,9 +478,23 @@ static void process(void)
     case EV_TX_DONE:
       ws_failrun_note(&tx_air, 1);   /* the frame left: the radio works */
       if (diag_in_flight) { diag_in_flight = 0; busy = 0; Radio.Sleep(); break; } /* no reply expected */
+      ack_window_end = HAL_GetTick() + ACK_WINDOW_MS;
       Radio.Rx(ACK_WINDOW_MS);
       break;
-    case EV_RX_DONE: handle_reply(); next_item(); break;
+    case EV_RX_DONE:
+      if (handle_reply()) { next_item(); break; }
+      /* Not the reply to this frame (foreign, forged, or another frame's ACK): keep listening for
+         the rest of the window instead of moving on and missing the real ACK (firmware review,
+         finding 2). Too little time left counts as no reply. */
+      {
+        uint32_t now = HAL_GetTick(), left = (int32_t)(ack_window_end - now) > 0 ? ack_window_end - now : 0;
+        if (left > MIN_RELISTEN_MS) { Radio.Rx(left); break; }
+      }
+      n_no_ack++;
+      APP_PRINTF("#ack none epoch=%u seq=%u\n", (unsigned)sent_epoch, (unsigned)sent_seq);
+      stop_drain();
+      next_item();
+      break;
     case EV_RX_TIMEOUT:
     case EV_RX_ERROR:
       n_no_ack++;

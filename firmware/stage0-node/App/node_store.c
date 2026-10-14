@@ -108,9 +108,14 @@ static int meta_append(uint32_t type, uint64_t value) {
  if (value >> 56) return -1;
  if (meta_pos >= META_DWORDS) {
   /* Compact into the other page; its header is written last so a torn compaction
-     leaves the current page authoritative. */
+     leaves the current page authoritative. The other page still carries an older valid header:
+     zero it first (programming all-zeros over data is allowed), so an erase cut part way can
+     never leave half-erased values under a header boot would trust (firmware review finding 4:
+     junk could raise the counter past 2^40 and disable the node for good). */
   uint32_t other = meta_active == WS_META_PAGE_A ? WS_META_PAGE_B : WS_META_PAGE_A;
   uint32_t a = WS_PAGE_ADDR(other);
+  int bad = 0;
+  if (rd64(a, &bad) != ERASED && prog64(a, 0)) return -2;
   if (erase_page(other) ||
       prog64(a + 8, (uint64_t)META_EPOCH << 56 | max_epoch) ||
       prog64(a + 16, (uint64_t)META_CTR << 56 | ctr_reserved) ||
