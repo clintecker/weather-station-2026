@@ -40,6 +40,10 @@ class Node:
         self.sent = set()      # counters of frames this node sealed (NACK echo check)
         self.abandoned = 0     # records dropped on an authentic NACK
 
+    def close(self):
+        self.db.close()
+        self.nonces.db.close()
+
     def sample(self,now,fault=False,clock_offset=0,clock_known=True):
         """Synthetic, clearly named station; timestamps follow real 60-second cadence."""
         if self.boot is None:

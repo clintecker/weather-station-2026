@@ -233,17 +233,18 @@ class Campaign:
             try:
                 if direction == 'uplink':
                     self.expect_regression(packet)
-                    # Inject real commit-boundary failure without making a fake ACK.
-                    original = self.gateway.store.ingest
+                    # Inject real commit-boundary failure without making a fake ACK: what SQLite
+                    # really raises on a full or failing disk (not OSError).
                     if inside(self.minute(),self.s.commit_failures):
                         def failed_commit(*args,**kwargs):
-                            # What SQLite really raises on a full or failing disk (not OSError).
                             raise sqlite3.OperationalError('disk I/O error (injected)')
                         self.gateway.store.ingest = failed_commit
-                    try:
+                        try:
+                            ack = self.gateway.receive(packet,self.now)
+                        finally:
+                            del self.gateway.store.ingest   # the class method again
+                    else:
                         ack = self.gateway.receive(packet,self.now)
-                    finally:
-                        self.gateway.store.ingest = original
                     self.track_nonce(ack)
                     if frame_kind(ack) == KIND_NACK:
                         reason = unpack_reply(unseal(bytes.fromhex(self.cfg['radio_key']),1,KIND_NACK,ack))[2]
@@ -278,12 +279,12 @@ class Campaign:
     def restart(self, node=False, gateway=False):
         """Close/reopen real databases; queued wire packets can arrive after reboot."""
         if node:
-            self.node.db.close(); self.node.nonces.db.close()
+            self.node.close()
             self.node = Node(self.cfg,self.state)
             self.counts['node_reboots'] += 1
             self.log('node_reboot',new_sample_epoch=self.node.epoch)
         if gateway:
-            self.gateway.store.db.close(); self.gateway.nonces.db.close()
+            self.gateway.close()
             self.gateway = Gateway(self.cfg,self.state)
             self.counts['gateway_reboots'] += 1
             self.log('gateway_reboot')
@@ -415,8 +416,8 @@ class Campaign:
                 (self.output/'availability.json').write_text(json.dumps(self.availability,indent=2)+'\n')
                 return result
             finally:
-                self.node.db.close(); self.node.nonces.db.close()
-                self.gateway.store.db.close(); self.gateway.nonces.db.close()
+                self.node.close()
+                self.gateway.close()
 
 
 def suite(minutes=1440):

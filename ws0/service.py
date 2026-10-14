@@ -171,6 +171,10 @@ class Gateway:
                 'counter_regression':state['counter_regression'],
                 'last_regression_counter':state['last_regression_counter']}
 
+    def close(self):
+        self.store.db.close()
+        self.nonces.db.close()
+
     def status(self):
         """Expose no credentials or raw keys in diagnostics."""
         return {'stage':0,'h01':'NOT RUN','mode':self.cfg['mode'],

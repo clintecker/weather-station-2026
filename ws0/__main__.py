@@ -312,11 +312,9 @@ def main():
         gateway.hub.close()  # ends open event streams, so their threads exit
         server.shutdown()
         server.server_close()
-        gateway.store.db.close()
-        gateway.nonces.db.close()
+        gateway.close()
         if node:
-            node.db.close()
-            node.nonces.db.close()
+            node.close()
         if link:
             link.close()
         if receiver_log:
