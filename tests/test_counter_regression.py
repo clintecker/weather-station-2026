@@ -29,7 +29,7 @@ ALARM = 'possible key reuse: re-key the node'
 
 
 def diag_payload(uptime, epoch=1):
-    return DIAG.pack(epoch, uptime, 0, 0, 0, 0, 0, 0, 1, 0)
+    return DIAG.pack(epoch, uptime, 0, 0, 0, 0, 0, 0, 1, 0, 0, -128, -128, 0, 1)
 
 
 class CounterRegressionTests(unittest.TestCase):

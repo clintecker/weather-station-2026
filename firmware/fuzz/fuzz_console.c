@@ -30,7 +30,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   /* The same bytes as a received radio frame: only a version-5 observation within the catalog's
      length range, or a health report of its fixed length, is forwarded upstream. */
   if (got > 0 && ws_air_frame_ok(frame, (uint32_t)got))
-   FUZZ_CHECK((frame[0] == 0x51 && got >= 39 && got <= 85) || (frame[0] == 0x54 && got == 40));
+   FUZZ_CHECK((frame[0] == 0x51 && got >= 39 && got <= 85) || (frame[0] == 0x54 && got == 48));
   uint32_t station, floor; uint8_t key[16];
   if (!strncmp(line, "PROVISION ", 10) && !ws_parse_provision(line + 10, &station, key, &floor))
    FUZZ_CHECK(station != 0);

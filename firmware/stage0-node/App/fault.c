@@ -40,6 +40,8 @@ void fault_report(void)
   BKP(BKP_MAGIC) = 0;
 }
 
+uint32_t fault_count(void) { return BKP(BKP_COUNT); }
+
 void fault_test(void)
 {
   APP_PRINTF("#test-fault: reading %08x; expect a reset and #fault with bfar=%08x\n",

@@ -127,6 +127,9 @@ static uint8_t rx_frame[255];
 static uint16_t rx_len;
 static int16_t rx_rssi;
 static int8_t rx_snr;
+/* Signal of the last authentic ACK, as the node heard it (DIAG, design section 4): the uplink and
+   downlink can differ (gap G15). -128 = none yet. */
+static int8_t ack_rssi = -128, ack_snr = -128;
 static volatile enum { EV_NONE, EV_TX_DONE, EV_TX_TIMEOUT, EV_RX_DONE, EV_RX_TIMEOUT, EV_RX_ERROR } event;
 
 static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
@@ -337,11 +340,26 @@ static uint8_t reset_code(void)
 }
 
 static uint16_t clamp16(uint32_t v) { return v > 0xFFFF ? 0xFFFF : (uint16_t)v; }
+static int8_t clamp8(int v) { return (int8_t)(v < -127 ? -127 : v > 127 ? 127 : v); }  /* -128 means "none" */
+
+/* First 8 hex digits of the release commit (WS_FW_VERSION, Makefile), 0 if it is not hex. */
+static uint32_t fw_build_id(void)
+{
+  uint32_t id = 0;
+  for (int i = 0; i < 8; i++)
+  {
+    char c = WS_FW_VERSION[i];
+    int v = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+    if (v < 0) return 0;
+    id = id << 4 | (uint32_t)v;
+  }
+  return id;
+}
 
 /* Returns 1 if a health report went on air (the caller then waits for TxDone). */
 static int send_diag(void)
 {
-  uint8_t plain[24], frame[24 + WS_FRAME_OVERHEAD]; uint64_t ctr;
+  uint8_t plain[WS_DIAG_PLAIN_LEN], frame[WS_DIAG_FRAME_LEN]; uint64_t ctr;
   uint32_t now = mcu_seconds();
   if (now - last_diag_mcu >= DIAG_PERIOD_S) diag_due = 1;
   if (!diag_due) return 0;
@@ -355,6 +373,12 @@ static int send_diag(void)
   for (int i = 1; i < 5; i++) { plain[12 + 2 * i] = (uint8_t)(f[i] >> 8); plain[13 + 2 * i] = (uint8_t)f[i]; }
   plain[22] = reset_code();
   plain[23] = (uint8_t)link_state;
+  uint32_t build = fw_build_id(), crashes = fault_count();
+  plain[24] = (uint8_t)(build >> 24); plain[25] = (uint8_t)(build >> 16); plain[26] = (uint8_t)(build >> 8); plain[27] = (uint8_t)build;
+  plain[28] = (uint8_t)ack_rssi;
+  plain[29] = (uint8_t)ack_snr;
+  plain[30] = (uint8_t)(crashes > 0xFF ? 0xFF : crashes);
+  plain[31] = (uint8_t)energy_state();
   if (store_next_counter(&ctr) || ws_seal_kind(key, station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) < 0) return 0;
   diag_due = 0; last_diag_mcu = now;
   HAL_Delay(INTER_FRAME_MS);
@@ -392,6 +416,8 @@ static void handle_reply(void)
     APP_PRINTF("#ack reject len=%u rssi=%d snr=%d\n", rx_len, rx_rssi, rx_snr);
     return;
   }
+  ack_rssi = clamp8(rx_rssi);   /* authentic reply only: a forged frame cannot set these */
+  ack_snr = clamp8(rx_snr);
   int mine = echo == sent_counter && ep == sent_epoch && sq == sent_seq;
   if (kind == WS_KIND_NACK)
   {

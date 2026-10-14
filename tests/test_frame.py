@@ -180,7 +180,8 @@ class FrameAgreement(unittest.TestCase):
 
     def test_diagnostic_frame_agreement(self):
         from ws0.protocol import DIAG
-        plain = DIAG.pack(7, 3600, 2, 51, 1, 3, 4, 0, 5, 1)
+        plain = DIAG.pack(7, 3600, 2, 51, 1, 3, 4, 0, 5, 1, 0x45f43e78, -61, 9, 2, 1)
+        self.assertEqual(len(plain), 32)
         n, out = self.c_seal(KAT_KEY, 1, 9, plain, KIND_DIAG)
         self.assertEqual(out[:n], seal(KAT_KEY, 1, KIND_DIAG, Fixed(1, KIND_OBS, 9), plain))
         self.assertEqual(unseal(KAT_KEY, 1, KIND_DIAG, out[:n]), plain)

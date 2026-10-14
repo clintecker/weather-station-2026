@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from gateway import Store
 import struct
+from .fields import ENERGY
 from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, LINK_STATES, NACK_COLLISION, NACK_INVALID,
                        RESET_CAUSES, STATION_MAX, Nonces, decode_observation, frame_counter, frame_kind, pack_reply, seal,
                        unseal)
@@ -74,12 +75,16 @@ class Gateway:
         """Node health report (kind 4): authenticate and store; never answered."""
         payload = unseal(self.key,self.cfg['station_id'],KIND_DIAG,frame)
         self.check_counter(frame,payload,now,None)
-        epoch, uptime, pending, lost, burned, abandoned, no_ack, rejects, reset, link = DIAG.unpack(payload)
+        (epoch, uptime, pending, lost, burned, abandoned, no_ack, rejects, reset, link,
+         build, rssi, snr, crashes, energy) = DIAG.unpack(payload)
         report = {'epoch':epoch,'uptime_s':uptime,'journal_pending':pending,'journal_lost_total':lost,
                   'journal_torn_slots':burned,'abandoned_total':abandoned,'missed_acks_since_boot':no_ack,
                   'rejected_replies_since_boot':rejects,
                   'reset_cause':RESET_CAUSES[reset] if reset < len(RESET_CAUSES) else 'unknown',
-                  'link':LINK_STATES[link] if link < len(LINK_STATES) else 'unknown'}
+                  'link':LINK_STATES[link] if link < len(LINK_STATES) else 'unknown',
+                  'firmware_build':f'{build:08x}','ack_rssi_dbm':None if rssi == -128 else rssi,
+                  'ack_snr_db':None if snr == -128 else snr,'crashes_since_power_up':crashes,
+                  'energy_state':ENERGY[energy] if energy < len(ENERGY) else 'unknown'}
         self.store.diagnostic(self.cfg['station'],report,now)
         return report
 

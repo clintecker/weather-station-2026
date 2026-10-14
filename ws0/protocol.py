@@ -39,10 +39,12 @@ def unpack_reply(plain):
 
 
 KIND_OBS, KIND_ACK, KIND_NACK, KIND_DIAG = 1, 2, 3, 4
-# DIAG (kind 4, gap G8): node health, fire-and-forget (no journal, no ACK). Epoch, uptime s,
-# journal pending, lost (cumulative, persisted), torn slots present, abandoned (cumulative,
-# persisted), missed ACKs and rejected replies since boot, reset cause, link state.
-DIAG = struct.Struct('>IIHIHHHHBB')
+# DIAG (kind 4, gap G8; draft-5 design section 4): node health, fire-and-forget (no journal, no
+# ACK). Epoch, uptime s, journal pending, lost (cumulative, persisted), torn slots present, abandoned
+# (cumulative, persisted), missed ACKs and rejected replies since boot, reset cause, link state;
+# firmware build ID (first 4 bytes of the release commit), signal of the last authentic ACK as the
+# node heard it (RSSI dBm, SNR dB; -128 = none yet), crashes since power-up, energy state.
+DIAG = struct.Struct('>IIHIHHHHBBIbbBB')
 RESET_CAUSES = ('unknown','power','pin','brownout','software','watchdog','lowpower','option-bytes')
 LINK_STATES = ('linked','probing')
 NACK_COLLISION, NACK_INVALID = 1, 2

@@ -6,6 +6,8 @@
  * reset while the board keeps power, then resets at once. The next boot prints `#fault ...` and
  * clears the record; the fault count stays until power is lost. */
 void fault_report(void);
+/* Crashes recorded since the board last lost power (the backup domain is cleared then). */
+uint32_t fault_count(void);
 /* Bench: TEST-FAULT reads an address with no memory behind it, which must end in a recorded
  * HardFault and a reset. */
 void fault_test(void) __attribute__((noreturn));

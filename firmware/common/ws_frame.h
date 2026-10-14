@@ -18,7 +18,7 @@
 #define WS_REPLY_PLAIN_LEN 17    /* ACK/NACK: epoch u32, seq u32, UTC or reason u32, echo u40 */
 #define WS_ACK_FRAME_LEN (WS_FRAME_OVERHEAD + WS_REPLY_PLAIN_LEN)
 #define WS_FRAME_MAX 255U        /* a LoRa payload */
-#define WS_DIAG_PLAIN_LEN 24     /* health report (section 4) */
+#define WS_DIAG_PLAIN_LEN 32     /* health report (section 4) */
 #define WS_DIAG_FRAME_LEN (WS_FRAME_OVERHEAD + WS_DIAG_PLAIN_LEN)
 #define WS_FRAME_BYTE0(kind) ((uint8_t)((WS_FRAME_VERSION << 4) | (kind)))
 _Static_assert(WS_HEADER_LEN == 8 && WS_TAG_LEN == 8, "draft-5 header and CCM tag are 8 bytes");
