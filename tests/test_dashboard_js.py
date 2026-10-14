@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # The harness: `node harness.js <app.js>` prints one JSON object of measurements.
 HARNESS = r'''
+
 // Node harness for ws0/static/app.js: a stub DOM, fake timers, a fake clock and a scripted gateway.
 // Usage: node harness.js <path to app.js>   -> prints one JSON object of measurements and checks.
 'use strict';
@@ -49,7 +50,7 @@ function makeWorld() {
     set textContent(v) { for (const c of this.childNodes) c.parentNode = null; this.childNodes = []; if (this.tagName === '#text') this._text = String(v); else if (String(v) !== '') { const t = new Node('#text'); t._text = String(v); t.parentNode = this; this.childNodes.push(t); } this._mut(); }
     get data() { return this._text; } set data(v) { this._text = String(v); this._mut(); }
     get nodeValue() { return this._text; } set nodeValue(v) { this._text = String(v); this._mut(); }
-    setAttribute(k, v) { this.attrs[k] = String(v); if (k === 'class') this.className = String(v); this._mut(); }
+    setAttribute(k, v) { this.attrs[k] = String(v); if (k === 'class') this.className = String(v); if (k === 'hidden') this.hidden = true; this._mut(); }
     getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
     hasAttribute(k) { return k in this.attrs; }
     removeAttribute(k) { delete this.attrs[k]; this._mut(); }
@@ -123,8 +124,12 @@ function makeWorld() {
     }
     const path = url.split('?')[0];
     if (path === '/v1/history') {
-      if (W.historyQueue) return new Promise((resolve) => W.historyQueue.push({ url, resolve: (v) => resolve(json(v)) }));
-      return Promise.resolve(json(W.responses.history(url)));
+      const signal = opts && opts.signal;
+      return new Promise((resolve, reject) => {
+        if (signal) signal.addEventListener('abort', () => { const e = new Error('aborted'); e.name = 'AbortError'; reject(e); });
+        const answer = (v) => { if (v === 'hang') return; if (v && v.__status) resolve({ status: v.__status, ok: false, json: async () => ({}) }); else resolve(json(v)); };
+        if (W.historyQueue) W.historyQueue.push({ url, resolve: answer }); else answer(W.responses.history(url));
+      });
     }
     return Promise.resolve(json(W.responses[path]));
   };
@@ -282,8 +287,94 @@ async function main() {
     await W.advance(10);
     out.race = { sensor_titles: sensorTitles(W) };
   }
+  out.review = await review();
   console.log(JSON.stringify(out));
 }
+const points = (W, title) => {   // vertices in the first line path of a sensor chart
+  const f = chartBy(W, 'c-sensors', title);
+  const p = f && W.find(f, (n) => n.tagName === 'path' && /^line /.test(n.className))[0];
+  return p ? (p.attrs.d.match(/[ML]/g) || []).length / 2 + 1 : 0;   // one continuous line: segments + 1
+};
+const histCount = (W) => W.fetches.filter((f) => f.url.startsWith('/v1/history')).length;
+const obsEvent = (W, t) => {
+  const rec = Object.assign(Object.fromEntries(FIELDS.map((f) => [f, 12])), { session: 7, sequence: 5000, quality: 'valid', energy_state: 'normal', effective_sampled_at: t, time_basis: 'synchronized', received_at: t });
+  W.sse('observation', { record: rec, latest: statusAt(t).latest });
+};
+const local = (t) => { const d = new Date(t * 1000 - new Date(t * 1000).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+
+async function review() {
+  const r = {};
+  {  // (2) idle slide at 24 h; (3) a live observation at 1 h, and the tooltip under a still pointer
+    const W = makeWorld();
+    await boot(W);
+    let c = W.created; await W.advance(61000); r.nodes_idle_minute_24h = W.created - c;
+    W.ranges[0].click(); await W.advance(10000);   // the axis has moved > 1 px (1 px = ~6.7 s at 1 h)
+    c = W.created; obsEvent(W, W.clock / 1000 - 0.5); await W.advance(1000); r.nodes_per_observation_1h = W.created - c;
+    await W.advance(10000);
+    const fig = () => chartBy(W, 'c-sensors', 'Temperature');
+    const hit = () => W.find(fig(), (n) => n.tagName === 'rect' && n.attrs.fill === 'transparent')[0];
+    const tip = () => W.find(fig(), (n) => n.className === 'tip')[0];
+    hit().fire('pointermove', { clientX: 590 }); W.flushRaf();
+    const shown = !tip().hidden;
+    obsEvent(W, W.clock / 1000 - 0.25); await W.advance(1000);
+    r.tooltip_kept_after_redraw = shown && !tip().hidden;
+  }
+  {  // (1A) custom week shown, "1 h" pending, an observation arrives
+    const W = makeWorld();
+    await boot(W);
+    const t = W.clock / 1000;
+    W.byId('c-from').value = local(t - 7 * 86400); W.byId('c-to').value = local(t);
+    W.byId('custom').fire('submit'); await W.advance(1000);
+    const before = points(W, 'Temperature');
+    W.historyQueue = [];
+    W.ranges[0].click(); await W.settle();
+    obsEvent(W, W.clock / 1000 - 0.5); await W.advance(2000);
+    r.pending_custom = { before, after: points(W, 'Temperature'), note: W.byId('hist-note').textContent };
+    W.historyQueue = null;
+  }
+  {  // (1B) 7 d bucketed shown, "1 h" fails
+    const W = makeWorld();
+    await boot(W, (url) => { const [f, t] = parseRange(url); return history(f, t, { step: 600, obsBucket: 600, radioBucket: 600 }); });
+    W.ranges[2].click(); await W.advance(1000);
+    const before = points(W, 'Temperature');
+    W.responses.history = () => ({ __status: 500 });
+    W.ranges[0].click(); await W.advance(61000);
+    r.failed_switch = { before, after: points(W, 'Temperature'), note: W.byId('hist-note').textContent };
+  }
+  {  // (4) history fails inside the snapshot, then recovers
+    const W = makeWorld();
+    let calls = 0;
+    await boot(W, (url) => { calls++; if (calls === 1) return { __status: 500 }; const [f, t] = parseRange(url); return history(f, t); });
+    const note = W.byId('hist-note').textContent;
+    await W.advance(30000);
+    r.snapshot_history_failure = { note, retried: histCount(W) > 1, charts: W.find(W.byId('c-sensors'), (n) => n.tagName === 'figure').length };
+  }
+  {  // (5a) a queue left over from a signed-out session must not reach the next one
+    const W = makeWorld();
+    await boot(W);
+    W.historyQueue = [];
+    W.ranges[0].click(); await W.settle();
+    obsEvent(W, W.clock / 1000 - 30.5); await W.settle();
+    W.byId('signout').click(); await W.settle();
+    const held = W.historyQueue; W.historyQueue = null;
+    for (const q of held) { const [f, t] = parseRange(q.url); q.resolve(history(f, t)); }
+    await W.advance(10);
+    W.byId('token').value = 'x'.repeat(43);
+    W.byId('login-form').fire('submit'); await W.settle();
+    W.sse('hello', { server_time: W.clock / 1000, resumed: false }); await W.advance(1000);
+    const [f, t] = parseRange(W.fetches.filter((x) => x.url.startsWith('/v1/history')).pop().url);
+    r.stale_queue = { points: points(W, 'Temperature'), expected: history(f, t).observations.t.length };
+  }
+  {  // (5b) a history request that never answers times out and is retried
+    const W = makeWorld();
+    await boot(W);
+    W.responses.history = () => 'hang';
+    W.ranges[0].click(); await W.advance(40000);
+    r.hung_request = { note: W.byId('hist-note').textContent, requests: histCount(W) };
+  }
+  return r;
+}
+
 main().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
 '''
 
@@ -338,6 +429,40 @@ class DashboardScript(unittest.TestCase):
 
     def test_token_never_in_a_url(self):
         self.assertFalse(self.out['token_in_url'])
+
+
+    # -- review of the first version: each of these failed before its fix
+    def test_slide_redraws_nothing_until_the_axis_moves_a_pixel(self):
+        self.assertLess(self.out['review']['nodes_idle_minute_24h'], 50)   # was ~1,000 a minute at 24 h
+
+    def test_live_batch_at_1h_redraws_only_its_group_and_keeps_the_tooltip(self):
+        self.assertLess(self.out['review']['nodes_per_observation_1h'], 500)   # was 735
+        self.assertTrue(self.out['review']['tooltip_kept_after_redraw'])
+
+    def test_pending_range_does_not_touch_the_data_on_screen(self):
+        r = self.out['review']['pending_custom']   # a week shown, "1 h" pending, one observation arrives
+        self.assertEqual(r['after'], r['before'])
+        self.assertNotIn('following live', r['note'])
+
+    def test_failed_range_switch_keeps_data_and_error(self):
+        r = self.out['review']['failed_switch']   # 7 d shown, "1 h" fails, the window slides
+        self.assertEqual(r['after'], r['before'])
+        self.assertIn('Could not load history', r['note'])
+
+    def test_history_failure_in_snapshot_is_shown_and_retried(self):
+        r = self.out['review']['snapshot_history_failure']
+        self.assertIn('Could not load history', r['note'])
+        self.assertTrue(r['retried'])
+        self.assertGreater(r['charts'], 0)
+
+    def test_queue_of_a_signed_out_session_is_dropped(self):
+        r = self.out['review']['stale_queue']
+        self.assertEqual(r['points'], r['expected'])
+
+    def test_history_request_times_out_and_is_retried(self):
+        r = self.out['review']['hung_request']
+        self.assertIn('no answer within', r['note'])
+        self.assertGreaterEqual(r['requests'], 3)
 
 
 if __name__ == '__main__':

@@ -204,6 +204,7 @@ td[data-level="critical"] { color: var(--critical-ink); font-weight: 600; }
 .c2 { stroke: var(--s2); fill: var(--s2); color: var(--s2); }
 .line.c1, .line.c2 { fill: none; }
 .sw.c1 { background: var(--s1); } .sw.c2 { background: var(--s2); }
+.chart .sw.dash { background: repeating-linear-gradient(90deg, var(--s1) 0 4px, transparent 4px 7px); }
 .st-good { fill: var(--good); } .st-warning { fill: var(--warning); } .st-critical { fill: var(--critical); }
 .st-s1 { fill: var(--s1); } .st-s3 { fill: var(--s3); } .st-unknown { fill: var(--axis); }
 .sw.st-good { background: var(--good); } .sw.st-warning { background: var(--warning); } .sw.st-critical { background: var(--critical); }

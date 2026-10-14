@@ -24,6 +24,8 @@
   const WATCHDOG_MS = 45000;    // no byte (heartbeats included) for this long: reconnect
   const MAX_FRAMES = 40;
   const MAX_EVENTS = 60;
+  const HISTORY_TIMEOUT_MS = 30000;   // a history request that has not answered by then is abandoned
+  const SLIDE_S = 60;                 // the following window slides (full redraw) this often
   const GROUPS = ['sensors', 'link', 'node', 'rx'];   // chart groups, redrawn independently
 
   const S = {
@@ -32,6 +34,8 @@
     labels: {},       // field name -> display label, from the gateway catalog (history responses)
     histSeq: 0,       // request sequence: only the newest history request may land
     histLoadedAt: 0,  // Date.now() of the last history request (bucketed reloads are spaced from it)
+    histPending: false, histError: null, histBackoff: 2000,
+    // S.range is the range last asked for; S.hist.range the one the data on screen belongs to.
   };
 
   // ---------------------------------------------------------------- DOM helpers (text only)
@@ -111,11 +115,20 @@
 
   // ---------------------------------------------------------------- API
   class Unauthorized extends Error {}
-  async function api(path) {
-    const r = await fetch(path, { headers: { Authorization: `Bearer ${S.token}` }, cache: 'no-store' });
-    if (r.status === 401) throw new Unauthorized('token rejected');
-    if (!r.ok) throw new Error(`HTTP ${r.status} for ${path.split('?')[0]}`);
-    return r.json();
+  async function api(path, timeoutMs) {
+    const ctrl = timeoutMs ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+    try {
+      const r = await fetch(path, { headers: { Authorization: `Bearer ${S.token}` }, cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+      if (r.status === 401) throw new Unauthorized('token rejected');
+      if (!r.ok) throw new Error(`HTTP ${r.status} for ${path.split('?')[0]}`);
+      return await r.json();
+    } catch (e) {
+      if (e && e.name === 'AbortError' && ctrl && ctrl.signal.aborted) throw new Error(`no answer within ${timeoutMs / 1000} s`);
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
   }
   const iso = (t) => new Date(t * 1000).toISOString();
 
@@ -144,6 +157,7 @@
   }
   function signOut(message) {
     S.running = false; S.token = null; S.lastId = null; S.epoch += 1;
+    histReplay = null; S.histPending = false; clearTimeout(retryTimer);
     removeItem('session', TOKEN_KEY);
     if (S.abort) S.abort.abort();
     setConn('off');
@@ -244,7 +258,7 @@
     try {
       dispatch(type, payload);
     } finally {
-      if (id !== null) S.lastId = id;  // after handling: a crash mid-event replays it
+      if (id !== null) S.lastId = id;  // even when handling threw: the event is skipped on resume, not replayed forever
     }
     return true;
   }
@@ -402,10 +416,11 @@
       const [level, text, detail] = specs[slot] || [];
       const key = level ? `${level}|${text}` : '';
       if (key !== c.key) {
+        const first = c.key === null;   // the first state is not announced, only changes are
         c.key = key;
         c.box.hidden = !level;
         if (level) { c.box.dataset.level = level; setText(c.icon, ICON[level]); setText(c.text, text); }
-        setText(c.said, level ? `${text}. ` : '');
+        if (!first) setText(c.said, level ? `${text}. ` : '');
       }
       setText(c.detail, detail || '');
     }
@@ -568,16 +583,15 @@
     while (lo < hi) { const mid = (lo + hi) >> 1; if (keyArr[mid] <= t) lo = mid + 1; else hi = mid; }
     return lo;
   }
-  const following = () => S.hist && S.range.span !== undefined;
+  const following = () => !!S.hist && S.hist.range.span !== undefined;   // the data on screen follows live
 
   // Live data for the history charts. While a history request is in flight, each addition is
   // also queued and applied again to the response, so an event that raced the request is not
   // lost (the add functions ignore what is already there).
   let histReplay = null;
   function toHistory(add, ...args) {
-    if (S.range.span === undefined) return;
-    if (histReplay) histReplay.push([add, args]);
-    if (S.hist) add(...args);
+    if (histReplay) histReplay.push([add, args]);   // for the pending response (bounded by its timeout)
+    if (following()) add(...args);                  // for the data on screen
   }
   // A bucketed series (bucket_s > 0) holds averages, counts or last values per bucket: a raw
   // point does not belong in it. Reload the history instead, at most once per bucket.
@@ -589,7 +603,7 @@
     reloadDue = due;
     reloadTimer = setTimeout(() => {
       reloadTimer = null;
-      if (S.running && following()) loadHistory().catch(historyError);
+      if (S.running && following()) loadHistory();
     }, Math.max(0, due - Date.now()));
   }
 
@@ -670,25 +684,45 @@
     if (S.range.span !== undefined) { const to = now(); return [to - S.range.span, to]; }
     return [S.range.from, S.range.to];
   }
-  const historyError = (e) => { $('hist-note').textContent = `Could not load history: ${e.message}`; };
+  // On screen: the bounds of the data shown, following live or fixed.
+  function histBounds() {
+    const r = S.hist.range;
+    if (r.span !== undefined) { const to = now(); return [to - r.span, to]; }
+    return [S.hist.from, S.hist.to];
+  }
+  // One history request at a time is current (S.histSeq); an older one that lands is dropped.
+  // A failure keeps the previous data with its own range, shows the error and retries with backoff.
+  let retryTimer = null;
   async function loadHistory() {
-    const seq = ++S.histSeq, epoch = S.epoch;
+    const seq = ++S.histSeq, epoch = S.epoch, range = S.range;
     clearTimeout(reloadTimer); reloadTimer = null;   // this request is the reload
+    clearTimeout(retryTimer); retryTimer = null;
     S.histLoadedAt = Date.now();
-    if (S.range.span !== undefined && !histReplay) histReplay = [];
+    S.histPending = true;
+    histReplay = range.span !== undefined ? histReplay || [] : null;
     const [from, to] = rangeBounds();
     const width = Math.max(320, Math.min(2400, document.documentElement.clientWidth));
     const points = Math.max(300, Math.min(3000, Math.round(width * 1.5)));
-    $('hist-note').textContent = 'Loading…';
+    $('hist-note').textContent = S.histError ? `${historyNote()} · loading…` : 'Loading…';
     let h;
     try {
-      h = await api(`/v1/history?from=${encodeURIComponent(iso(from))}&to=${encodeURIComponent(iso(to))}&max_points=${points}`);
+      h = await api(`/v1/history?from=${encodeURIComponent(iso(from))}&to=${encodeURIComponent(iso(to))}&max_points=${points}`, HISTORY_TIMEOUT_MS);
     } catch (e) {
       if (seq !== S.histSeq || epoch !== S.epoch) return;   // superseded: the newer request reports
+      S.histPending = false;
       histReplay = null;
-      throw e;
+      if (e instanceof Unauthorized) { signOut('The gateway rejected the token.'); return; }
+      S.histError = e.message;
+      renderHistory();   // the previous data, if any, under the error note
+      if (!S.hist) $('hist-note').textContent = historyNote();
+      const delay = S.histBackoff;
+      S.histBackoff = Math.min(S.histBackoff * 2, 60000);
+      retryTimer = setTimeout(() => { if (S.running && epoch === S.epoch && seq === S.histSeq) loadHistory(); }, delay);
+      return;
     }
     if (seq !== S.histSeq || epoch !== S.epoch) return;     // a newer range was asked for meanwhile
+    S.histPending = false; S.histError = null; S.histBackoff = 2000;
+    h.range = range;
     S.hist = h;
     const queued = histReplay || [];
     histReplay = null;
@@ -698,6 +732,7 @@
     clearTimeout(histTimer); histTimer = null; histDirty.clear();
     renderHistory();
   }
+  const historyNote = () => (S.histError ? `Could not load history: ${S.histError} (retrying)` : '');
 
   document.querySelectorAll('.ranges button').forEach((b) => b.addEventListener('click', () => {
     document.querySelectorAll('.ranges button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
@@ -711,7 +746,7 @@
     }
     $('custom').hidden = true;
     S.range = { span: Number(b.dataset.range) };
-    loadHistory().catch(historyError);
+    loadHistory();
   }));
   $('custom').addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -720,7 +755,7 @@
     if (!isFinite(from) || !isFinite(to) || from >= to) { $('custom-error').textContent = 'Choose a start before the end.'; return; }
     $('custom-error').textContent = '';
     S.range = { from, to };
-    loadHistory().catch(historyError);
+    loadHistory();
   });
 
   // Live additions are batched: one redraw of the touched chart groups per 500 ms at most.
@@ -734,14 +769,14 @@
       trimHistory();
       const only = new Set(histDirty);
       histDirty.clear();
-      renderHistory(only);
+      renderHistory(only, SLIDE_S);
     }, 500);
   }
   // While following live, points older than the window are dropped, so a page left open for days
   // keeps a bounded history instead of growing forever (gateway review GW11).
   function trimHistory() {
     if (!following()) return;
-    const cutoff = now() - S.range.span;
+    const cutoff = now() - S.hist.range.span;
     const h = S.hist;
     const dropColumns = (series, names) => {
       const n = insertionPoint(series.t, cutoff - 1e-9);
@@ -783,11 +818,14 @@
   let drawn = null;   // what is on screen: { from, to, width, markers: {group: key} }
 
   // Draw the chart groups in `only` (all of them when omitted). A group is redrawn anyway when
-  // its markers changed, and every group is when the time axis moved by a pixel or more.
-  function renderHistory(only) {
+  // its markers changed, and every group is when the time axis moved since the last full redraw
+  // by a pixel or more, or by `slack` seconds if that is more (live batches pass the slide
+  // period: between slides only the touched groups redraw, the slide moves every axis).
+  // Nothing is drawn while a history request is pending: its response redraws everything.
+  function renderHistory(only, slack) {
     const h = S.hist;
-    if (!h) return;
-    const [from, to] = S.range.span !== undefined ? rangeBounds() : [h.from, h.to];
+    if (!h || S.histPending) return;
+    const [from, to] = histBounds();
     const width = chartWidth();
     const all = markersFor(h);
     const markers = {}, keys = {};
@@ -795,18 +833,19 @@
       markers[g] = all.filter((m) => MARKER_GROUPS[g].includes(m.group));
       keys[g] = markers[g].map((m) => `${m.t}:${m.label}`).join('|');
     }
-    const secondsPerPixel = (to - from) / (width - M.l - M.r);
-    const redrawAll = !only || !drawn || drawn.width !== width || Math.abs(to - drawn.to) >= secondsPerPixel || Math.abs(from - drawn.from) >= secondsPerPixel;
+    const drift = Math.max((to - from) / (width - M.l - M.r), slack || 0);
+    const redrawAll = !only || !drawn || drawn.width !== width || Math.abs(to - drawn.to) >= drift || Math.abs(from - drawn.from) >= drift;
     const groups = GROUPS.filter((g) => redrawAll || only.has(g) || drawn.markers[g] !== keys[g]);
     // the axis drift is measured from the last full redraw, so partial redraws cannot accumulate it
     drawn = redrawAll ? { from, to, width, markers: keys } : Object.assign(drawn, { markers: keys });
 
     const o = h.observations;
     const notes = [`${fmtTime(from, true)} – ${fmtTime(to, true)}`];
+    if (S.histError) notes.unshift(historyNote());
     if (o.bucket_s) notes.push(`sensor values averaged over ${fmtDuration(o.bucket_s)} (counters: last value)`);
     if (h.radio.bucket_s) notes.push(`radio averaged over ${fmtDuration(h.radio.bucket_s)}`);
     if (o.unknown_time_count) notes.push(`${o.unknown_time_count} reading(s) with no time yet are not plotted`);
-    if (S.range.span !== undefined) notes.push('following live');
+    if (following()) notes.push('following live');
     $('hist-note').textContent = notes.join(' · ');
 
     const stepChart = (title, unit, t, v, gap, m) => chart({
@@ -818,9 +857,8 @@
       sensors(box) {
         if (!o.fields.length) box.append(el('p', { class: 'muted small', text: 'No observations with a known time in this range.' }));
         const gap = o.bucket_s ? o.bucket_s * 1.5 : 110;
-        const labels = o.labels || {};
         for (const name of o.fields) {
-          const title = labels[name] || label(name);
+          const title = label(name);   // S.labels already holds this response's labels
           box.append(chart({
             title, unit: o.units[name], from, to, markers: markers.sensors,
             series: [{ name: title, cls: 'c1', t: o.t, v: o.values[name], basis: o.basis, gap, dots: name === 'wind_dir_deg', faults: true }],
@@ -950,7 +988,7 @@
     }
     const legend = series.length > 1 ? series.map((s) => [s.cls, s.name]) : [];
     if (fault) legend.push(['fault', 'sensor fault', true]);
-    if (reconstructed) legend.push(['c1', 'dashed: reconstructed time']);
+    if (reconstructed) legend.push(['c1 dash', 'dashed: reconstructed time']);
     const fig = frame(spec, legend);
     const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${spec.title} chart` });
     fig.append(svg);
@@ -1015,6 +1053,7 @@
       if (dashed) svg.append(sv('path', { d: dashed, class: `line dash ${s.cls}` }));
       // Dots: one path of zero-length segments with round caps, over a wider surface-coloured
       // path for the outline ring. Two nodes per series instead of one circle per point.
+      // Never give these paths a dash class: Chrome drops zero-length subpaths when dashed.
       let pts = '';
       for (const i of lonely) {
         if (s.t[i] < from || s.t[i] > to) continue;
@@ -1065,6 +1104,7 @@
 
   // Crosshair and tooltip: at most one update per animation frame; layout is read once, before
   // anything is written, and the tooltip is anchored by its left or right edge (no width read).
+  let pointer = null;   // { title, x }: where the pointer rests, so a redrawn chart keeps its tooltip
   function hover(fig, svg, spec, series, x, y, W) {
     const cross = sv('line', { y1: M.t, y2: H - M.b, class: 'cross', visibility: 'hidden' });
     svg.append(cross);
@@ -1076,13 +1116,16 @@
     let pending = 0, lastX = 0;
     const hide = () => {
       cancelAnimationFrame(pending); pending = 0;
+      if (pointer && pointer.title === spec.title) pointer = null;
       cross.setAttribute('visibility', 'hidden'); dots.forEach((d) => d.setAttribute('visibility', 'hidden')); tip.hidden = true;
     };
     hit.addEventListener('pointerleave', hide);
     hit.addEventListener('pointermove', (ev) => {
       lastX = ev.clientX;
+      pointer = { title: spec.title, x: lastX };
       if (!pending) pending = requestAnimationFrame(update);
     });
+    if (pointer && pointer.title === spec.title) { lastX = pointer.x; pending = requestAnimationFrame(update); }
     function update() {
       pending = 0;
       const box = svg.getBoundingClientRect();
@@ -1097,7 +1140,10 @@
         const dist = Math.abs(s.t[i] - t);
         if (!best || dist < best.dist) best = { dist, t: s.t[i] };
       });
-      if (!best || Math.abs(x(best.t) - px) > 40) { hide(); return; }
+      if (!best || Math.abs(x(best.t) - px) > 40) {
+        pending = 0; cross.setAttribute('visibility', 'hidden'); tip.hidden = true;   // pointer still here: keep it
+        return;
+      }
       clear(tip);
       tip.append(el('div', { class: 'tt', text: fmtTime(best.t, true) }));
       series.forEach((s, k) => {
@@ -1144,7 +1190,8 @@
 
   // ---------------------------------------------------------------- timers and start
   setInterval(tick, 1000);   // ages tick locally; no polling
-  setInterval(() => { if (S.running && following()) { trimHistory(); renderHistory(); } }, 60000);  // slide the window
+  // Slide the window: the drift rule redraws everything only once the axis moved a pixel.
+  setInterval(() => { if (S.running && following()) { trimHistory(); renderHistory(new Set(), 0); } }, SLIDE_S * 1000);
   let resizeTimer = null;
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => renderHistory(), 250); });
 
