@@ -235,14 +235,16 @@ def main():
     # Windows: Ctrl-Break (sent by service wrappers and by `tests/test_stage0.py`) does the same.
     # Only the first stop request interrupts: a repeat (a second Ctrl-C, a service manager that
     # signals twice) would otherwise land inside the cleanup below and abort it with a traceback.
-    stopping = []
+    # After the first one, further stop signals are ignored by the OS itself (SIG_IGN): Python resets
+    # its own handlers to the default while the interpreter exits, so a repeat arriving then
+    # would otherwise kill the process with SIGTERM instead of a clean exit 0.
+    stop_signals = [getattr(signal, n) for n in ('SIGINT', 'SIGTERM', 'SIGBREAK') if hasattr(signal, n)]
     def stop(*_):
-        if not stopping:
-            stopping.append(True)
-            raise KeyboardInterrupt
-    for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
-        if hasattr(signal, name):
-            signal.signal(getattr(signal, name), stop)
+        for s in stop_signals:
+            signal.signal(s, signal.SIG_IGN)
+        raise KeyboardInterrupt
+    for s in stop_signals:
+        signal.signal(s, stop)
     gateway = Gateway(cfg,args.directory)
     server = http_server(gateway,cfg['http_port'])
     mqtt = MQTT(gateway) if cfg['mqtt']['enabled'] else None

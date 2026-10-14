@@ -250,7 +250,9 @@ def http_server(gateway, port):
     if ':' in host:   # IPv6 literal: the stock server class is AF_INET only (gateway review GW9)
         server_class = type('ThreadingHTTPServerV6',(ThreadingHTTPServer,),{'address_family':socket.AF_INET6})
     server = server_class((host,port),Handler)
-    threading.Thread(target=server.serve_forever,daemon=True).start()
+    # shutdown() waits up to one poll interval: 0.5 s by default, paid on every gateway stop and
+    # by every test that starts a server. 0.05 s costs an idle select() wakeup 20 times a second.
+    threading.Thread(target=server.serve_forever,kwargs={'poll_interval':0.05},daemon=True).start()
     return server
 
 
