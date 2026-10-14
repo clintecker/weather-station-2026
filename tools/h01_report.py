@@ -27,6 +27,7 @@ from pathlib import Path
 LATENCY_S = 120
 TIME_TOLERANCE_S = 5
 
+EDGE_S = 2   # readings closer than this to an interval edge make the interval grid unreliable
 
 def utc(text):
     value = datetime.fromisoformat(text.replace('Z', '+00:00'))
@@ -47,8 +48,9 @@ def score(db, station, start, hours):
         FROM observations WHERE station=? AND ((effective_at>=? AND effective_at<?)
         OR (effective_at IS NULL AND received_at>=? AND received_at<?+?))''',
         (station, start, end, start, end, LATENCY_S)).fetchall()
-    best = {}  # interval -> (rank, latency); rank 0 on-time valid, 1 on-time fault, 2 late
-    invalid_clock, reconstructed_used, epochs = 0, 0, set()
+    best = {}  # interval -> (rank, latency, time basis); rank 0 on-time valid, 1 on-time fault, 2 late
+    invalid_clock, epochs = 0, set()
+    per_minute, edge = {}, 0   # grid diagnostics; they never change the verdict
     for session, _sequence, effective, received, basis, uncertainty, payload in rows:
         epochs.add(session)
         known = effective is not None and basis in ('synchronized', 'reconstructed') and \
@@ -59,19 +61,31 @@ def score(db, station, start, hours):
         minute = int((effective - start) // 60)
         if not 0 <= minute < minutes:
             continue
+        per_minute[minute] = per_minute.get(minute, 0) + 1
+        phase = (effective - start) % 60
+        edge += int(phase < EDGE_S or phase > 60 - EDGE_S)
         latency = received - effective
         record = json.loads(payload)   # H01 scores the T/RH fields' own validity (draft-5 design 5.7)
         valid = record.get('temperature_c') is not None and record.get('humidity_pct') is not None
         rank = (0 if valid else 1) if 0 <= latency <= LATENCY_S else 2
-        if minute not in best or (rank, latency) < best[minute]:
-            best[minute] = (rank, latency)
-            if rank < 2 and basis == 'reconstructed':
-                reconstructed_used += 1
+        if minute not in best or (rank, latency) < best[minute][:2]:
+            best[minute] = (rank, latency, basis)
+    # Counted from each interval's final choice (an earlier pick may have been replaced).
+    reconstructed_used = sum(1 for rank, _, basis in best.values() if rank < 2 and basis == 'reconstructed')
     counts = {'on_time_valid': 0, 'on_time_sensor_fault': 0, 'late': 0}
-    for rank, _ in best.values():
+    for rank, _, _ in best.values():
         counts[('on_time_valid', 'on_time_sensor_fault', 'late')[rank]] += 1
     missing = [m for m in range(minutes) if m not in best]
-    latencies = sorted(lat for rank, lat in best.values() if rank < 2)
+    latencies = sorted(lat for rank, lat, _ in best.values() if rank < 2)
+    several = sum(1 for n in per_minute.values() if n > 1)
+    warning = None
+    if edge:
+        # The node's clock is set from ACKs to whole seconds and its sample timer runs freely, so
+        # sample times jitter by about a second. Readings this close to an interval edge can land
+        # two in one interval and none in the next: a miss that lost no data. The rule itself is
+        # unchanged; pick a --start that puts the readings mid-interval and score again.
+        warning = (f'{edge} readings lie within {EDGE_S} s of an interval edge and {several} intervals hold more '
+                   'than one reading: choose a --start that puts the readings mid-interval')
     rejections = db.execute('SELECT count(*) FROM rejections WHERE station=? AND received_at>=? AND received_at<?',
                             (station, start, end + LATENCY_S)).fetchone()[0]
     return {
@@ -86,6 +100,7 @@ def score(db, station, start, hours):
         'latency_median_s': latencies[len(latencies) // 2] if latencies else None,
         'latency_max_on_time_s': latencies[-1] if latencies else None,
         'boot_epochs_seen': len(epochs), 'gateway_rejections': rejections,
+        'intervals_with_several_readings': several, 'readings_near_interval_edge': edge, 'grid_warning': warning,
         'verdict': 'PASS' if counts['on_time_valid'] >= required else 'FAIL',
     }
 
@@ -96,9 +111,12 @@ def markdown(r):
              '| Measure | Value |', '|---|---:|']
     for key in ('required_on_time_valid', 'on_time_valid', 'on_time_sensor_fault', 'transport_on_time',
                 'late', 'missing', 'invalid_clock_observations', 'reconstructed_time_intervals_counted',
-                'latency_median_s', 'latency_max_on_time_s', 'boot_epochs_seen', 'gateway_rejections'):
+                'latency_median_s', 'latency_max_on_time_s', 'boot_epochs_seen', 'gateway_rejections',
+                'intervals_with_several_readings', 'readings_near_interval_edge'):
         value = r[key]
         lines.append(f"| {key.replace('_', ' ')} | {round(value, 1) if isinstance(value, float) else value} |")
+    if r['grid_warning']:
+        lines += ['', f"**Warning:** {r['grid_warning']}."]
     if r['missing_first']:
         lines += ['', 'First missing intervals: ' + ', '.join(r['missing_first'])]
     return '\n'.join(lines) + '\n'
