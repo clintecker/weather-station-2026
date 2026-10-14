@@ -37,6 +37,9 @@
  * Energy state: Stage 0 is USB powered, so it is fixed at NORMAL; Stage 1 feeds pack/charger/
  * solar telemetry into energy_state(). Unknown energy must map to CONSERVE (fail closed). */
 typedef enum { EN_SURPLUS, EN_NORMAL, EN_CONSERVE, EN_CRITICAL, EN_COUNT } energy_t;
+/* The observation's energy-state bits use this numbering (docs/protocol-draft5-design.md 5.2). */
+_Static_assert((int)EN_SURPLUS == (int)WS_ENERGY_SURPLUS && (int)EN_NORMAL == (int)WS_ENERGY_NORMAL && (int)EN_CONSERVE == (int)WS_ENERGY_CONSERVE &&
+               (int)EN_CRITICAL == (int)WS_ENERGY_CRITICAL, "energy_t matches the wire codes");
 #define BACKLOG_SURPLUS 20U                                          /* the largest per-minute backlog */
 static const char *const energy_name[] = { "surplus", "normal", "conserve", "critical" };
 static const uint8_t backlog_limit[] = { BACKLOG_SURPLUS, 5, 0, 0 }; /* per minute */
@@ -67,10 +70,14 @@ static const uint16_t probe_interval_s[] = { 120, 240, 480, 900 };
 /* Draft-5 known-answer vectors, shared with tests/test_frame.py. They were made directly with the
  * cryptography library's AESCCM from the spec's header and nonce, not by ws0/protocol.py. */
 static const uint8_t KAT_KEY[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
-static const char KAT_OBS_HEX[] = "5100010100000002bd50c6ae3400a778bec2d16fadad588beedf778fa19f9c44aa67cd92b9f30417";
+/* Observation: the encoder's own known answer (tests/test_obs.py KAT: T -12.34 C, RH 45.67 %, epoch 1,
+ * seq 2, UTC 1791991189, uptime 300 s, NORMAL), sealed with counter 0x100000002. */
+static const char KAT_OBS_HEX[] = "5100010100000002bd50c6be3400a750d40cca5aadad57b716f16658a09d968acf9a212d7f2e95a5e34f";
 static const char KAT_ACK_HEX[] = "52000100000000050e1eb4544766f4e6e0ffdbb3f6d1413d06f6369500199b8fe2";
 static const char KAT_NACK_HEX[] = "5300010000000006849addbf88d9aadd884aa3bb89136575374521c5e416a1d0c9";
-#define KAT_OBS_FRAME_LEN (WS_D4_PLAIN_LEN + WS_FRAME_OVERHEAD)
+#define KAT_OBS_PLAIN_LEN WS_OBS_PLAIN_LEN(WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT)
+#define KAT_OBS_FRAME_LEN (KAT_OBS_PLAIN_LEN + WS_FRAME_OVERHEAD)
+#define OBS_FRAME_MAX (WS_OBS_PLAIN_MAX + WS_FRAME_OVERHEAD)
 
 static RadioEvents_t events;
 static UTIL_TIMER_Object_t sample_timer;
@@ -147,9 +154,13 @@ static void restore_time_trust(void)
 
 static int run_kat(void)
 {
-  uint8_t plain[WS_D4_PLAIN_LEN], frame[KAT_OBS_FRAME_LEN], expect[KAT_OBS_FRAME_LEN], ack[WS_ACK_FRAME_LEN];
+  uint8_t plain[KAT_OBS_PLAIN_LEN], frame[KAT_OBS_FRAME_LEN], expect[KAT_OBS_FRAME_LEN], ack[WS_ACK_FRAME_LEN];
   uint64_t ctr, echo; uint32_t ep, sq, word; uint8_t kind;
-  ws_pack_observation(plain, 17, 42, 100000, 3600, -1234, 4567, 1, 1);
+  ws_obs_t o = { .epoch = 1, .seq = 2, .utc = 1791991189UL, .uptime = 300, .energy = WS_ENERGY_NORMAL,
+                 .bitmap = WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT };
+  o.code[WS_FI_TEMPERATURE_C] = ws_code_temp_centi(-1234);
+  o.code[WS_FI_HUMIDITY_PCT] = ws_code_rh_centi(4567);
+  if (ws_obs_encode(&o, plain, sizeof plain) != (int)sizeof plain) return 0;
   if (ws_hex_decode(KAT_OBS_HEX, expect, sizeof expect) != KAT_OBS_FRAME_LEN) return 0;
   if (ws_seal_kind(KAT_KEY, 1, WS_KIND_OBS, 0x100000002ULL, plain, sizeof plain, frame, sizeof frame) != KAT_OBS_FRAME_LEN ||
       memcmp(frame, expect, sizeof frame)) return 0;
@@ -207,20 +218,22 @@ static void send_current(void)
 {
   for (;;)
   {
-    uint8_t plain[WS_D4_PLAIN_LEN], frame[WS_D4_PLAIN_LEN + WS_FRAME_OVERHEAD];
-    if (store_journal_read(queue[qi], plain)) { APP_PRINTF("#error journal-read\n"); }
+    uint8_t plain[WS_OBS_PLAIN_MAX], frame[OBS_FRAME_MAX];
+    int plen = -1;
+    if (store_journal_read(queue[qi], plain) || (plen = ws_obs_plain_len(plain, sizeof plain)) < 0) { APP_PRINTF("#error journal-read\n"); }
     else
     {
       /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
       if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_fail, 0); APP_PRINTF("#error counter-reserve\n"); busy = 0; Radio.Sleep(); return; }
-      if (ws_seal_kind(key, station, WS_KIND_OBS, sent_counter, plain, sizeof plain, frame, sizeof frame) < 0) { APP_PRINTF("#error seal\n"); }
+      int flen = ws_seal_kind(key, station, WS_KIND_OBS, sent_counter, plain, (uint32_t)plen, frame, sizeof frame);
+      if (flen < 0) { APP_PRINTF("#error seal\n"); }
       else
       {
         sent_epoch = be32(plain);
         sent_seq = be32(plain + 4);
         n_sent++;
         led_flash(LED_BLUE, 400);
-        if (Radio.Send(frame, sizeof frame) == RADIO_STATUS_OK) { ws_failrun_note(&tx_fail, 1); return; }
+        if (Radio.Send(frame, (uint8_t)flen) == RADIO_STATUS_OK) { ws_failrun_note(&tx_fail, 1); return; }
         ws_failrun_note(&tx_fail, 0); APP_PRINTF("#error radio-busy\n");
       }
     }
@@ -246,7 +259,7 @@ static void strike(jref_t r)
   }
   if (use == STRIKE_SLOTS) { use = low; strikes[use].ref = r; strikes[use].n = 0; }
   if (++strikes[use].n < STRIKE_LIMIT) return;
-  uint8_t plain[24];
+  uint8_t plain[WS_OBS_PLAIN_MAX];
   int ok = store_journal_read(r, plain) == 0 && store_journal_ack(r) == 0;
   strikes[use].n = 0;
   if (!ok) return;
@@ -441,15 +454,23 @@ static void process(void)
 
 static void sample(void)
 {
-  int16_t t = 0; uint16_t h = 0; uint8_t plain[24]; jref_t live;
+  int16_t t = 0; uint16_t h = 0; uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live;
   last_sample_mcu = mcu_seconds();
   int src = sensor_read(&t, &h), valid = src == 0;
   int timed = time_valid();
   uint32_t utc = timed ? SysTimeGet().Seconds : 0;
   uint32_t uptime = mcu_seconds() - boot_mcu; /* always sent: the gateway reconstructs time from it */
   if (!valid) n_sensor_faults++;
-  ws_pack_observation(plain, boot_epoch, next_seq, utc, uptime, t, h, (uint8_t)valid, (uint8_t)timed);
-  int rc = store_journal_append(plain, &live);
+  /* Draft-5 observation (docs/protocol-draft5-design.md 5): out-of-range temperature is INVALID,
+     RH is clamped (ws_code_*); a sensor fault sends both fields as INVALID, never leaves them out. */
+  /* static: sample() runs only from the sequencer, never re-entered, and it is the deepest
+     callback chain, which tools/stack_report.py counts four times (a 104-byte record cost ~416 B). */
+  static ws_obs_t o;
+  o = (ws_obs_t){ .epoch = boot_epoch, .seq = next_seq, .utc = utc, .uptime = uptime,
+                  .energy = (uint8_t)energy_state(), .bitmap = WS_NODE_FIELDS };
+  o.code[WS_FI_TEMPERATURE_C] = valid ? ws_code_temp_centi(t) : ws_obs_invalid(WS_FI_TEMPERATURE_C);
+  o.code[WS_FI_HUMIDITY_PCT] = valid ? ws_code_rh_centi(h) : ws_obs_invalid(WS_FI_HUMIDITY_PCT);
+  int rc = ws_obs_encode(&o, plain, sizeof plain) == (int)WS_OBS_PLAIN_MAX ? store_journal_append(plain, &live) : -3;
   ws_failrun_note(&tx_fail, rc == 0);
   APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
              (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)uptime, valid, src, valid ? t : 0, valid ? h : 0,
@@ -498,11 +519,13 @@ static int storming;
 static uint32_t storm_writes;
 static void storm(void)
 {
-  uint8_t plain[24]; jref_t r; uint64_t c;
+  uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t r; uint64_t c;
   if (!storming) return;
   for (int i = 0; i < 16; i++)
   {
-    ws_pack_observation(plain, STORM_EPOCH, storm_writes++, 0, 0, 0, 0, 0, 0);
+    ws_obs_t o = { .epoch = STORM_EPOCH, .seq = storm_writes++, .energy = WS_ENERGY_NORMAL, .bitmap = WS_NODE_FIELDS };
+    for (unsigned f = 0; f < WS_FI_COUNT; f++) o.code[f] = ws_obs_invalid(f);
+    (void)ws_obs_encode(&o, plain, sizeof plain);
     if (store_journal_append(plain, &r) == 0) store_journal_ack(r);
     for (int k = 0; k < 4; k++) store_next_counter(&c);
   }
@@ -586,7 +609,7 @@ void SubghzApp_Init(void)
   console_init(on_line);
 
   boot_mcu = mcu_seconds();
-  exchange_ms = airtime_ms(WS_D4_PLAIN_LEN + WS_FRAME_OVERHEAD) + airtime_ms(WS_ACK_FRAME_LEN) + TURNAROUND_MS;
+  exchange_ms = airtime_ms(OBS_FRAME_MAX) + airtime_ms(WS_ACK_FRAME_LEN) + TURNAROUND_MS;
   watchdog_start(tx_healthy);
   kat_ok = run_kat();
   APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,

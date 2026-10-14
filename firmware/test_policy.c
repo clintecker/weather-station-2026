@@ -54,11 +54,11 @@ int main(void) {
  char buf[160]; uint32_t id, floor; uint8_t key[16];
  snprintf(buf,sizeof buf,"1 %s",K);
  assert(ws_parse_provision(buf,&id,key,&floor)==0 && id==1 && floor==0 && key[0]==0 && key[15]==15);
- snprintf(buf,sizeof buf,"4294967295 %s 102",K);
- assert(ws_parse_provision(buf,&id,key,&floor)==0 && id==4294967295u && floor==102);
+ snprintf(buf,sizeof buf,"65535 %s 102",K);
+ assert(ws_parse_provision(buf,&id,key,&floor)==0 && id==65535u && floor==102);  /* draft 5: station is u16 */
  snprintf(buf,sizeof buf,"7 %s 4294901759",K);
  assert(ws_parse_provision(buf,&id,key,&floor)==0 && floor==4294901759u);
- const char *bad[]={ "0 %s", "4294967296 %s", "-1 %s", "+1 %s", " 1 %s", "1  %s", "1 %s ", "1 %s 12x",
+ const char *bad[]={ "0 %s", "65536 %s", "4294967295 %s", "4294967296 %s", "-1 %s", "+1 %s", " 1 %s", "1  %s", "1 %s ", "1 %s 12x",
                      "1 %s -3", "1 %s 4294901760", "1 %s 1 2", "1x %s", "%s", "1" };
  for(unsigned i=0;i<sizeof bad/sizeof bad[0];i++) {
   snprintf(buf,sizeof buf,bad[i],K);

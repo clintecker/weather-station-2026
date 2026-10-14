@@ -105,9 +105,11 @@ static void model_reset(void) {
 static void be32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v; }
 static uint32_t rd_be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
 /* Record i carries (epoch, seq = i) like an observation, plus a pattern derived from both. */
-static void plain_for(uint32_t i, uint8_t p[24]) {
+/* The journal stores WS_OBS_PLAIN_MAX bytes (node_fields.h) without parsing them. */
+#define PLAIN WS_OBS_PLAIN_MAX
+static void plain_for(uint32_t i, uint8_t p[PLAIN]) {
  be32(p, R[i].epoch); be32(p + 4, i);
- for (uint32_t k = 8; k < 24; k++) p[k] = (uint8_t)(i * 31U + k * 7U + R[i].epoch);
+ for (uint32_t k = 8; k < PLAIN; k++) p[k] = (uint8_t)(i * 31U + k * 7U + R[i].epoch);
 }
 
 static void observe(void) {
@@ -147,7 +149,7 @@ static void do_note(void) {
  observe();
 }
 static uint32_t do_append(uint32_t epoch) {
- uint8_t p[24]; uint32_t i = nrec++; int rc;
+ uint8_t p[PLAIN]; uint32_t i = nrec++; int rc;
  if (nrec >= MAXREC) { fprintf(stderr, "MAXREC\n"); exit(2); }
  R[i].epoch = epoch; R[i].st = ST_NONE; plain_for(i, p);
  infl.op = OP_APPEND; infl.rec = i; rc = store_journal_append(p, &R[i].ref); infl.op = OP_NONE;
@@ -193,12 +195,12 @@ static void reconcile(void) {
  CHECK("pending_count", n == store_journal_pending(), "oldest %u pending %u", n, (unsigned)store_journal_pending());
  memset(present, 0, nrec);
  for (unsigned k = 0; k < n; k++) {
-  uint8_t p[24], want[24]; uint32_t i;
+  uint8_t p[PLAIN], want[PLAIN]; uint32_t i;
   if (store_journal_read(refs[k], p)) { viol("unreadable_pending", "page %u slot %u", refs[k].page, refs[k].slot); continue; }
   i = rd_be32(p + 4);
   if (i >= nrec) { viol("foreign_record", "seq %u", (unsigned)i); continue; }
   plain_for(i, want);
-  if (memcmp(p, want, 24)) { viol("foreign_record", "rec %u content differs", (unsigned)i); continue; }
+  if (memcmp(p, want, PLAIN)) { viol("foreign_record", "rec %u content differs", (unsigned)i); continue; }
   if (present[i]) { viol("duplicate_pending", "rec %u", (unsigned)i); continue; }
   present[i] = 1;
   switch (R[i].st) {
@@ -354,7 +356,7 @@ static void recovery(void) {
 
 /* ---- store_ready guards ---- */
 static int guards(void) {
- uint64_t c; uint32_t e; jref_t r; uint8_t p[24] = { 0 }; int bad = 0;
+ uint64_t c; uint32_t e; jref_t r; uint8_t p[PLAIN] = { 0 }; int bad = 0;
  if (store_next_counter(&c) != STORE_ENOTREADY) { printf("GUARD next_counter\n"); bad++; }
  if (store_next_epoch(&e) != STORE_ENOTREADY) { printf("GUARD next_epoch\n"); bad++; }
  if (store_epoch_floor(5) != STORE_ENOTREADY) { printf("GUARD epoch_floor\n"); bad++; }
@@ -373,6 +375,36 @@ static int guards(void) {
  return bad;
 }
 
+/* ---- draft-5 limits ---- */
+/* The transmission counter stops at 2^40 - 1 (the header holds 5 bytes): seed the meta log just
+   below it, then the allocator must hand out exactly WS_COUNTER_MAX and refuse the next one. */
+static int counter_limit(void) {
+ uint64_t c = 0; int bad = 0;
+ sim_flash_reset(&S);
+ if (store_meta_init()) { printf("LIMIT meta_init\n"); return 1; }
+ sim_flash_prog64(&S, WS_PAGE_ADDR(WS_META_PAGE_A) + 8, (uint64_t)0xC2 << 56 | (WS_COUNTER_MAX - 1U));
+ if (store_meta_init()) { printf("LIMIT meta_init seeded\n"); return 1; }
+ if (store_next_counter(&c) || c != WS_COUNTER_MAX) { printf("LIMIT last counter %llu\n", (unsigned long long)c); bad++; }
+ if (store_next_counter(&c) == 0) { printf("LIMIT counter past 2^40-1 issued: %llu\n", (unsigned long long)c); bad++; }
+ return bad;
+}
+
+/* A journal page written with another slot layout (here the draft-4 "WSJ1" magic, 40-byte slots)
+   is ignored at boot, never read as records of this layout. */
+static int foreign_layout(void) {
+ uint8_t p[PLAIN] = { 0 }; jref_t r; int bad = 0;
+ sim_flash_reset(&S);
+ uint32_t a = WS_PAGE_ADDR(WS_JOURNAL_FIRST);
+ sim_flash_prog64(&S, a, (uint64_t)0x57534A31UL << 32 | 7U);                    /* "WSJ1", sequence 7 */
+ for (uint32_t k = 1; k <= 4; k++) sim_flash_prog64(&S, a + 8 * k, 0x0102030405060708ULL * k);
+ if (store_meta_init() || store_journal_init()) { printf("FOREIGN init\n"); return 1; }
+ if (store_journal_pending() != 0 || store_journal_burned() != 0) {
+  printf("FOREIGN pending=%u burned=%u\n", (unsigned)store_journal_pending(), (unsigned)store_journal_burned()); bad++;
+ }
+ if (store_journal_append(p, &r) || store_journal_pending() != 1) { printf("FOREIGN append\n"); bad++; }
+ return bad;
+}
+
 static void summary(const char *extra) {
  for (int c = 0; c < ncat; c++) printf("COUNT %s %lu\n", cat_name[c], cat_count[c]);
  printf("SUMMARY mode=%s journal_pages=%u %s\n", mode, (unsigned)WS_JOURNAL_PAGES, extra);
@@ -387,7 +419,7 @@ int main(int argc, char **argv) {
  setvbuf(stdout, NULL, _IOLBF, 0);
  sim_flash_reset(&S);
  if (!strcmp(mode, "functional")) {
-  int g = guards();
+  int g = guards() + counter_limit() + foreign_layout();
   sim_flash_reset(&S); model_reset();
   workload(wrap);
   uint32_t ma = S.page_erases[WS_META_PAGE_A - SIM_FIRST_PAGE], mb = S.page_erases[WS_META_PAGE_B - SIM_FIRST_PAGE];

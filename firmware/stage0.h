@@ -10,17 +10,7 @@ typedef struct {
  void (*delay_ms)(void *, uint32_t);
 } ws_i2c;
 int ws_sht45_read(const ws_i2c *, int16_t *, uint16_t *);
-/* Draft 3: invalid readings carry physically impossible fillers, never plausible values.
-   The validity flag stays authoritative; fillers only protect flag-blind readers. */
-#define WS_TEMP_INVALID ((int16_t)-32768)  /* 0x8000 = -327.68 degC */
-#define WS_RH_INVALID   ((uint16_t)0xFFFF) /* 655.35 %RH */
 uint8_t ws_crc8(const uint8_t *, size_t);
-/* Draft-4 observation plaintext, still carried inside the draft-5 envelope until the draft-5
-   observation codec (firmware/common/ws_obs.c) replaces it (docs/protocol-draft5-design.md 11, step 3).
-   utc = UTC seconds (sent only when synchronized); uptime = seconds since boot, always sent. */
-#define WS_D4_PLAIN_LEN 24
-void ws_pack_observation(uint8_t out[WS_D4_PLAIN_LEN], uint32_t epoch, uint32_t seq,
- uint32_t utc, uint32_t uptime, int16_t centi_c, uint16_t centi_rh, uint8_t valid, uint8_t synchronized);
 /* Stuck-bus recovery as a pin sequence, so the waveform is host-tested (I2C-bus spec UM10204
    section 3.1.16). Pins are open-drain: level 1 releases the line. The caller sets both lines
    released before handing over. Clocks SCL until SDA is free (at most 9), then makes a STOP:
@@ -39,7 +29,7 @@ int ws_i2c_recover(const ws_i2c_pins *);
    waits for the back-off schedule (secs_until_probe <= 0). CRITICAL never transmits. */
 int ws_link_may_send(int energy, int probing, int32_t secs_until_probe);
 /* PROVISION arguments "<station_id> <32 hex key> [epoch_floor]": exact single spaces, decimal
-   digits only (no sign), station 1..4294967295, epoch floor below WS_EPOCH_FLOOR_MAX so a typo
+   digits only (no sign), station 1..65535 (the draft-5 header's u16), epoch floor below WS_EPOCH_FLOOR_MAX so a typo
    cannot exhaust the epoch space. Returns 0 on success; outputs are undefined on error. */
 #define WS_EPOCH_FLOOR_MAX 0xFFFF0000UL
 /* Health helpers (docs/firmware-review-2026-10-13.md P6, P7). A failure run counts uninterrupted

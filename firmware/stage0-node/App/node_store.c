@@ -9,13 +9,12 @@
 #include "node_store.h"
 #include <string.h>
 #include "ws_frame.h"
-#include "stage0.h"
 
 #define ERASED 0xFFFFFFFFFFFFFFFFULL
 #define CFG_MAGIC  0x57534331UL /* "WSC1" */
 #define CFG_MAGIC2 0x4B435631UL /* "KCV1" */
 #define META_MAGIC 0x57534D31UL /* "WSM1" */
-#define JPG_MAGIC  0x57534A31UL /* "WSJ1" */
+#define JPG_MAGIC  (0x57534A00UL | JOURNAL_SLOT_BYTES) /* "WSJ" + slot size: another layout is ignored */
 #define SLOT_MAGIC 0x4A53U
 #define META_EPOCH 0xE1U
 #define META_CTR   0xC2U
@@ -23,13 +22,15 @@
 #define META_ABAND 0xD2U /* cumulative abandoned records (NACK / strike limit) */
 #define META_DWORDS (WS_PAGE_SIZE / 8U)
 #define CTR_BLOCK 256U
-#define SLOT_BYTES 40U
 
-/* Geometry the on-flash format depends on. A slot is the plaintext, one commit double-word
-   (magic + CRC) and one ACK double-word; a journal page is an 8-byte header plus its slots. */
-_Static_assert(SLOT_BYTES == WS_D4_PLAIN_LEN + 16U, "slot = plaintext + commit + ack double-words");
-_Static_assert(SLOT_BYTES % 8U == 0U && WS_D4_PLAIN_LEN % 8U == 0U, "slots are whole double-words");
-_Static_assert(8U + JOURNAL_SLOTS_PER_PAGE * SLOT_BYTES <= WS_PAGE_SIZE, "journal slots fit in one page");
+/* Geometry the on-flash format depends on (node_store.h). */
+#define SLOT_BYTES JOURNAL_SLOT_BYTES
+#define COMMIT_OFF (JOURNAL_PLAIN_DW * 8U)
+#define ACK_OFF (COMMIT_OFF + 8U)
+_Static_assert(SLOT_BYTES == JOURNAL_PLAIN_DW * 8U + 16U && SLOT_BYTES >= WS_OBS_PLAIN_MAX + 16U,
+               "slot = plaintext rounded to double-words + commit + ack double-words");
+_Static_assert(SLOT_BYTES < 256U, "the slot size fits in the page magic's low byte");
+_Static_assert(JOURNAL_SLOTS_PER_PAGE >= 1U && 8U + JOURNAL_SLOTS_PER_PAGE * SLOT_BYTES <= WS_PAGE_SIZE, "journal slots fit in one page");
 _Static_assert((uint64_t)WS_CONFIG_PAGE * WS_PAGE_SIZE >= 0x10000U, "node state sits above the 64 KB firmware region (STM32WL55JCIX_FLASH.ld)");
 _Static_assert(WS_CONFIG_PAGE < WS_META_PAGE_A && WS_META_PAGE_A < WS_META_PAGE_B && WS_META_PAGE_B < WS_JOURNAL_FIRST,
                "config, meta and journal pages are distinct and in order");
@@ -64,12 +65,13 @@ int store_config_load(uint32_t *station, uint8_t key[16]) {
   memset(key, 0, 16); return -2;
  }
  *station = (uint32_t)d0;
+ if (*station == 0 || *station > WS_STATION_MAX) { memset(key, 0, 16); return -3; }
  return 0;
 }
 int store_config_write(uint32_t station, const uint8_t key[16]) {
  uint32_t a = WS_PAGE_ADDR(WS_CONFIG_PAGE); uint64_t k0, k1; uint8_t kcv[3];
  for (uint32_t i = 0; i < 4; i++) if (rd64(a + 8 * i, 0) != ERASED) return -1; /* refuse overwrite */
- if (station == 0 || ws_key_check(key, kcv)) return -2;
+ if (station == 0 || station > WS_STATION_MAX || ws_key_check(key, kcv)) return -2;
  memcpy(&k0, key, 8); memcpy(&k1, key + 8, 8);
  /* Magic double-word last: a torn write is never mistaken for a valid config. */
  if (prog64(a + 8, k0) || prog64(a + 16, k1) ||
@@ -166,6 +168,8 @@ uint32_t store_abandoned_total(void) { return abandoned_total; }
 
 int store_next_counter(uint64_t *counter) {
  if (!meta_ready) return STORE_ENOTREADY;
+ /* The header carries 40 bits: past that a counter would be truncated and repeat a nonce. */
+ if (ctr_next > WS_COUNTER_MAX) return -2;
  if (ctr_next > ctr_reserved) {
   uint64_t upto = ctr_reserved + CTR_BLOCK;
   if (meta_append(META_CTR, upto)) return -1; /* no durable reservation, no counter */
@@ -224,13 +228,14 @@ int store_journal_init(void) {
   if (!page_seq[p]) continue;
   uint32_t last_used = 0;
   for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE; s++) {
-   uint32_t a = slot_addr(p, s); int bad_data = 0, bad_ack = 0; uint64_t d[4], ack;
-   for (uint32_t k = 0; k < 4; k++) d[k] = rd64(a + 8 * k, &bad_data);
-   ack = rd64(a + 32, &bad_ack);
-   if (!bad_data && !bad_ack && d[0] == ERASED && d[1] == ERASED && d[2] == ERASED && d[3] == ERASED && ack == ERASED) continue;
+   uint32_t a = slot_addr(p, s); int bad_data = 0, bad_ack = 0, erased = 1; uint64_t d[JOURNAL_PLAIN_DW + 1], ack;
+   for (uint32_t k = 0; k <= JOURNAL_PLAIN_DW; k++) { d[k] = rd64(a + 8 * k, &bad_data); erased &= d[k] == ERASED; }
+   ack = rd64(a + ACK_OFF, &bad_ack);
+   if (!bad_data && !bad_ack && erased && ack == ERASED) continue;
    last_used = s + 1;
-   uint8_t plain[24]; memcpy(plain, d, 24);
-   if (bad_data || (d[3] >> 48) != SLOT_MAGIC || (uint16_t)(d[3] >> 32) != crc16(plain, 24)) { n_burned++; continue; }
+   uint64_t commit = d[JOURNAL_PLAIN_DW];
+   uint8_t plain[WS_OBS_PLAIN_MAX]; memcpy(plain, d, sizeof plain);
+   if (bad_data || (commit >> 48) != SLOT_MAGIC || (uint16_t)(commit >> 32) != crc16(plain, sizeof plain)) { n_burned++; continue; }
    /* An ECC fault confined to the ACK word means the ACK program was interrupted; the
       host had already committed (it ACKed), so treating it as acknowledged loses nothing. */
    if (!bad_ack && ack == ERASED) { set_pending(p * JOURNAL_SLOTS_PER_PAGE + s, 1); n_pending++; }
@@ -247,8 +252,8 @@ int store_journal_init(void) {
  journal_ready = 1;
  return 0;
 }
-int store_journal_append(const uint8_t plain[24], jref_t *ref) {
- uint64_t d[3];
+int store_journal_append(const uint8_t plain[WS_OBS_PLAIN_MAX], jref_t *ref) {
+ uint64_t d[JOURNAL_PLAIN_DW] = { 0 };
  if (!meta_ready || !journal_ready) return STORE_ENOTREADY; /* a wrap persists the lost total */
  if (head_slot >= JOURNAL_SLOTS_PER_PAGE) {
   uint32_t next = (head + 1) % WS_JOURNAL_PAGES;
@@ -258,24 +263,25 @@ int store_journal_append(const uint8_t plain[24], jref_t *ref) {
  uint32_t a = slot_addr(head, head_slot);
  ref->page = (uint16_t)head; ref->slot = (uint16_t)head_slot;
  head_slot++; /* consumed even if programming fails: never reuse a possibly torn slot */
- memcpy(d, plain, 24);
- if (prog64(a, d[0]) || prog64(a + 8, d[1]) || prog64(a + 16, d[2]) ||
-     prog64(a + 24, (uint64_t)SLOT_MAGIC << 48 | (uint64_t)crc16(plain, 24) << 32)) { n_burned++; return -2; }
+ memcpy(d, plain, WS_OBS_PLAIN_MAX);
+ for (uint32_t k = 0; k < JOURNAL_PLAIN_DW; k++)
+  if (prog64(a + 8 * k, d[k])) { n_burned++; return -2; }
+ if (prog64(a + COMMIT_OFF, (uint64_t)SLOT_MAGIC << 48 | (uint64_t)crc16(plain, WS_OBS_PLAIN_MAX) << 32)) { n_burned++; return -2; }
  set_pending(BIT(*ref), 1); n_pending++;
  return 0;
 }
-int store_journal_read(jref_t ref, uint8_t plain[24]) {
- uint32_t a = slot_addr(ref.page, ref.slot); int bad = 0; uint64_t d[3];
- for (uint32_t k = 0; k < 3; k++) d[k] = rd64(a + 8 * k, &bad);
+int store_journal_read(jref_t ref, uint8_t plain[WS_OBS_PLAIN_MAX]) {
+ uint32_t a = slot_addr(ref.page, ref.slot); int bad = 0; uint64_t d[JOURNAL_PLAIN_DW];
+ for (uint32_t k = 0; k < JOURNAL_PLAIN_DW; k++) d[k] = rd64(a + 8 * k, &bad);
  if (bad) return -1;
- memcpy(plain, d, 24);
+ memcpy(plain, d, WS_OBS_PLAIN_MAX);
  return 0;
 }
 int store_journal_ack(jref_t ref) {
  uint32_t i = BIT(ref);
  if (!journal_ready) return STORE_ENOTREADY;
  if (!is_pending(i)) return 0;
- if (prog64(slot_addr(ref.page, ref.slot) + 32, 0)) return -1;
+ if (prog64(slot_addr(ref.page, ref.slot) + ACK_OFF, 0)) return -1;
  set_pending(i, 0); n_pending--;
  return 0;
 }

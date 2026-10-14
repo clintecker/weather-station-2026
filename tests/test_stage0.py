@@ -22,8 +22,6 @@ from urllib.request import Request,urlopen
 from cryptography.exceptions import InvalidTag
 from ws0.__main__ import provision
 from ws0.protocol import Nonces,unseal
-from struct import Struct
-D4_OBS=Struct('>IIIIhHBBH')  # the firmware's draft-4 packer, until its draft-5 encoder lands
 from ws0.service import CounterRegression,Gateway,discovery,http_server,load_config
 from ws0.simulator import Node
 
@@ -121,16 +119,9 @@ class FirmwareTests(unittest.TestCase):
   cls.tmp=tempfile.TemporaryDirectory(ignore_cleanup_errors=True); path=Path(cls.tmp.name)/'stage0.so'
   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-shared','-fPIC','firmware/stage0.c','-o',str(path)],check=True)
   cls.lib=ctypes.CDLL(str(path))
-  cls.lib.ws_pack_observation.argtypes=[ctypes.POINTER(ctypes.c_uint8),ctypes.c_uint32,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_int16,ctypes.c_uint16,ctypes.c_uint8,ctypes.c_uint8]
   cls.lib.ws_crc8.argtypes=[ctypes.POINTER(ctypes.c_uint8),ctypes.c_size_t]; cls.lib.ws_crc8.restype=ctypes.c_uint8
  @classmethod
  def tearDownClass(cls): cls.tmp.cleanup()
- def test_c_python_wire(self):
-  for valid in (0,1):
-   for timed in (0,1):
-    output=(ctypes.c_uint8*24)()
-    self.lib.ws_pack_observation(output,17,42,100000,777,-1234,4567,valid,timed)
-    self.assertEqual(bytes(output),D4_OBS.pack(17,42,100000 if timed else 0,777,-1234 if valid else -32768,4567 if valid else 0xFFFF,valid,timed,0))
  def test_sensirion_crc(self):
   self.assertEqual(self.lib.ws_crc8((ctypes.c_uint8*2)(0xbe,0xef),2),0x92)
 

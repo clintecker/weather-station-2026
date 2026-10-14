@@ -30,7 +30,7 @@ APP_SRC = $(wildcard Core/Src/*.c) startup/syscalls.c startup/sysmem.c \
           $(ROOT)/firmware/common/ws_console.c \
           SubGHz_Phy/Target/radio_board_if.c
 ifeq ($(ROLE),tx)
-APP_SRC += App/node_store.c App/flash_stm32wl.c App/sensor.c $(ROOT)/firmware/stage0.c $(ROOT)/firmware/common/ws_frame.c
+APP_SRC += App/node_store.c App/flash_stm32wl.c App/sensor.c $(ROOT)/firmware/stage0.c $(ROOT)/firmware/common/ws_frame.c $(ROOT)/firmware/common/ws_obs.c
 endif
 
 HAL = $(CUBE)/Drivers/STM32WLxx_HAL_Driver/Src/stm32wlxx_hal

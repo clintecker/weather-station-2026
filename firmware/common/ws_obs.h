@@ -52,6 +52,10 @@ int ws_obs_code_ok(unsigned i, uint32_t code);
  * INVALID speed) or does not fit in cap bytes. */
 int ws_obs_encode(const ws_obs_t *o, uint8_t *out, size_t cap);
 
+/* Length of a stored plaintext from its own field bitmap: WS_OBS_HEAD_LEN + the present widths, or
+ * -1 if avail is shorter than the header or that length, or the bitmap is empty or reserved. */
+int ws_obs_plain_len(const uint8_t *plain, size_t avail);
+
 /* Physical value -> code (section 5.3). Out of range gives INVALID; RH is clamped to 0-100 %. */
 uint32_t ws_code_temp_centi(int32_t centi_c);
 uint32_t ws_code_rh_centi(int32_t centi_pct);

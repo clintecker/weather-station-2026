@@ -75,6 +75,16 @@ int ws_obs_encode(const ws_obs_t *o, uint8_t *out, size_t cap)
  return (int)len;
 }
 
+int ws_obs_plain_len(const uint8_t *plain, size_t avail)
+{
+ if (!plain || avail < WS_OBS_HEAD_LEN) return -1;
+ uint32_t bitmap = (uint32_t)plain[18] << 24 | (uint32_t)plain[19] << 16 | (uint32_t)plain[20] << 8 | plain[21];
+ if (!bitmap || (bitmap & ~WS_FIELDS_DEFINED)) return -1;
+ size_t len = WS_OBS_HEAD_LEN;
+ for (unsigned i = 0; i < WS_FI_COUNT; i++) if (bitmap & WS_F(i)) len += field[i].width;
+ return len <= avail ? (int)len : -1;
+}
+
 uint32_t ws_code_temp_centi(int32_t centi_c)
 {
  if (centi_c < -4000 || centi_c > 12500) return ws_obs_invalid(WS_FI_TEMPERATURE_C);

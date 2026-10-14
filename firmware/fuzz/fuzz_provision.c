@@ -1,5 +1,5 @@
 /* PROVISION arguments as typed on the TX console (ws_parse_provision, firmware/stage0.c).
- * Properties: no memory error; on success the station is non-zero, the epoch floor is in range,
+ * Properties: no memory error; on success the station is 1-65535, the epoch floor is in range,
  * and the 32 key digits at offset (station digits + 1) decode to exactly the key returned. */
 #include <ctype.h>
 #include <string.h>
@@ -12,7 +12,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
  if (size >= sizeof text) return 0;
  memcpy(text, data, size); text[size] = 0;  /* the console hands over a NUL-terminated line */
  if (ws_parse_provision(text, &station, key, &floor)) return 0;
- FUZZ_CHECK(station != 0 && floor < WS_EPOCH_FLOOR_MAX);
+ FUZZ_CHECK(station != 0 && station <= 65535U && floor < WS_EPOCH_FLOOR_MAX);   /* draft 5: u16 station */
  size_t digits = strspn(text, "0123456789");
  FUZZ_CHECK(digits >= 1 && text[digits] == ' ');
  for (int i = 0; i < 32; i++) {

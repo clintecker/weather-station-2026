@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from gateway import Store
 import struct
 from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, LINK_STATES, NACK_COLLISION, NACK_INVALID,
-                       RESET_CAUSES, Nonces, decode_observation, frame_counter, frame_kind, pack_reply, seal,
+                       RESET_CAUSES, STATION_MAX, Nonces, decode_observation, frame_counter, frame_kind, pack_reply, seal,
                        unseal)
 
 
@@ -23,7 +23,7 @@ def load_config(path):
     cfg = json.loads(path.read_text())
     if not isinstance(cfg.get('station'), str) or not cfg['station'].replace('-','').isalnum():
         raise ValueError('Invalid station name')
-    if type(cfg.get('station_id')) is not int or not 1 <= cfg['station_id'] < 2**32:
+    if type(cfg.get('station_id')) is not int or not 1 <= cfg['station_id'] <= STATION_MAX:
         raise ValueError('Invalid numeric station ID')
     if len(bytes.fromhex(cfg['radio_key'])) != 16 or len(cfg['api_token']) < 32:
         raise ValueError('Invalid key/token')
