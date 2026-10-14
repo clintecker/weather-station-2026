@@ -45,6 +45,14 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt
 
+      # Python bug checks (ruff.toml: pyflakes, bugbear, errors; no style rules). Linux only: the
+      # result does not depend on the OS.
+      - name: Lint (ruff)
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install -r requirements-dev.txt
+          ruff check
+
       # vendor/ is git-ignored. Cache it keyed on the pin list; fetch-vendor.sh always re-verifies
       # every pinned commit, so a stale or tampered cache fails here rather than in the tests.
       - name: Cache vendor sources
@@ -155,7 +163,7 @@ jobs:
         working-directory: firmware/fuzz
         run: |
           make libfuzzer CLANG=clang
-          for t in reply provision console; do
+          for t in reply provision console obs; do
             mkdir -p "build/corpus-$t"
             "build/libfuzzer-$t" "build/corpus-$t" "corpus/$t" -max_total_time=60 -print_final_stats=1
           done

@@ -1,0 +1,7 @@
+# Bug-finding rules only, no style: pyflakes (undefined/unused names), bugbear (likely bugs),
+# syntax errors and pylint's error class. Run: ruff check
+target-version = "py312"
+extend-exclude = ["vendor", "firmware", "hardware", ".venv*", "simulation-results", "evidence"]
+
+[lint]
+select = ["F", "B", "E9", "PLE"]

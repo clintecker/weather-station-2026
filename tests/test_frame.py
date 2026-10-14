@@ -168,7 +168,7 @@ class FrameAgreement(unittest.TestCase):
         self.assertEqual(self.lib.ws_seal_kind(self.buf(KAT_KEY), 1, KIND_DIAG, 9, self.buf(plain), out), 0)
         self.assertEqual(bytes(out), seal(KAT_KEY, 1, KIND_DIAG, Fixed(1, 1, 9), plain))
         self.assertEqual(unseal(KAT_KEY, 1, KIND_DIAG, bytes(out)), plain)
-        with self.assertRaises(Exception):
+        with self.assertRaisesRegex(ValueError, 'Unexpected frame header'):
             unseal(KAT_KEY, 1, 1, bytes(out))  # a health report is never accepted as an observation
 
     def test_key_check_value(self):

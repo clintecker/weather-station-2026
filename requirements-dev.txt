@@ -1,0 +1,2 @@
+# Development-only tools (CI host job, Linux). The gateway itself needs only requirements.txt.
+ruff==0.8.6

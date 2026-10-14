@@ -2,7 +2,7 @@
 import json
 import math
 import sqlite3
-from .protocol import ACK, KIND_ACK, KIND_NACK, NACK, Nonces, encode_observation, frame_counter, seal, unseal
+from .protocol import ACK, KIND_NACK, NACK, Nonces, encode_observation, frame_counter, seal, unseal
 
 # Backlog records sent per minute after the live one: the firmware's NORMAL energy state
 # (firmware/stage0-node/App/app_tx.c backlog_limit). Stage 0 is always NORMAL. The firmware also

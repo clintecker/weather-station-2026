@@ -12,6 +12,9 @@ try:
     from toolchain import needs_cc          # python -m unittest discover -s tests
 except ImportError:
     from tests.toolchain import needs_cc    # python -m unittest tests.<module>
+# Host C test programs run under AddressSanitizer + UBSan: an out-of-bounds write or signed overflow
+# in the firmware's pure code fails the test instead of passing silently.
+SAN=['-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-fno-omit-frame-pointer']
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request,urlopen
@@ -147,17 +150,18 @@ class SensorBusTests(unittest.TestCase):
  def test_bus_failures_crc_and_conversion(self):
   with tempfile.TemporaryDirectory() as temp:
    exe=str(Path(temp)/'sensor-test')
-   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','firmware/stage0.c','firmware/test_sensor.c','-o',exe],check=True)
+   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',*SAN,'firmware/stage0.c','firmware/test_sensor.c','-o',exe],check=True)
    subprocess.run([exe],check=True)
  def test_bus_recovery_waveform_and_link_gate(self):
   with tempfile.TemporaryDirectory() as temp:
    exe=str(Path(temp)/'policy-test')
-   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','firmware/stage0.c','firmware/test_policy.c','-o',exe],check=True)
+   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',*SAN,'firmware/stage0.c','firmware/test_policy.c','-o',exe],check=True)
    subprocess.run([exe],check=True)
+
 
 class ServiceSmokeTests(unittest.TestCase):
  def test_cli_demo_starts_and_persists(self):
-  import socket,sys,time
+  import socket,sys
   with tempfile.TemporaryDirectory() as tmp:
    directory=Path(tmp)/'state'; provision(directory)
    cfg=json.loads((directory/'gateway.json').read_text())
@@ -226,7 +230,6 @@ class ServiceSmokeTests(unittest.TestCase):
  def test_mqtt_stale_payload_and_availability(self):
   from unittest.mock import patch
   from ws0.service import MQTT
-  from gateway import Store
   class Fake:
    def __init__(self): self.messages=[]
    def is_connected(self): return True
@@ -337,7 +340,7 @@ class NackTests(unittest.TestCase):
   self.assertEqual(self.gateway.store.db.execute('SELECT count(*) FROM rejections').fetchone()[0],0)
  def test_nack_for_a_frame_the_node_did_not_send_is_refused(self):
   from ws0.protocol import KIND_NACK,NACK,seal
-  record=self.node.sample(1000)
+  self.node.sample(1000)
   forged=seal(self.node.key,1,KIND_NACK,self.gateway.nonces,NACK.pack(self.node.epoch,0,1,0,999999))
   with self.assertRaises(ValueError): self.node.handle_reply(forged)
   self.assertEqual(len(self.node.backfill()),1)

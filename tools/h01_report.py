@@ -49,7 +49,7 @@ def score(db, station, start, hours):
         (station, start, end, start, end, LATENCY_S)).fetchall()
     best = {}  # interval -> (rank, latency); rank 0 on-time valid, 1 on-time fault, 2 late
     invalid_clock, reconstructed_used, epochs = 0, 0, set()
-    for session, sequence, effective, received, basis, uncertainty, payload in rows:
+    for session, _sequence, effective, received, basis, uncertainty, payload in rows:
         epochs.add(session)
         known = effective is not None and basis in ('synchronized', 'reconstructed') and \
             (uncertainty or 0) <= TIME_TOLERANCE_S

@@ -43,6 +43,9 @@ class Fuzz(unittest.TestCase):
     def test_console(self):
         self.run_target('console')
 
+    def test_obs(self):
+        self.run_target('obs')
+
 
 if __name__ == '__main__':
     unittest.main()

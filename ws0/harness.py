@@ -18,7 +18,6 @@ from pathlib import Path
 import random
 import sqlite3
 import tempfile
-from typing import Any
 from cryptography.exceptions import InvalidTag
 from .protocol import KIND_NACK, NACK, NACK_COLLISION, Nonces, frame_counter, unseal
 from .service import CounterRegression, Gateway
