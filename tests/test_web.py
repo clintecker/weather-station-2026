@@ -314,6 +314,66 @@ class History(Fixture):
         self.assertIn(None, o['values']['temperature_c'])
         self.assertLess(len(o['t']), 11)
 
+    def test_radio_buckets_match_python_and_count_every_frame(self):
+        """GW11: bucketed radio points are computed in SQLite and match the per-row Python rule
+        (mean, exact single values, nulls, outcome counts); a range past 100,000 frames is whole."""
+        import collections
+        import random
+        rng = random.Random(7)
+        base, n = 1_700_000_000, 120_000
+        outcomes = ('ack', 'rejected', 'duplicate', 'dropped_by_rx')
+        rows = []
+        for i in range(n):
+            rssi = None if rng.random() < 0.05 else rng.randint(-120, -40)
+            snr = None if rng.random() < 0.05 else rng.randint(-20, 12)
+            rows.append(('station-x', base + i * 0.5 + rng.random() * 0.4, rng.choice(('obs', 'diag', None)),
+                         i, rng.choice(outcomes), rssi, snr))
+        station = self.cfg['station']
+        rows = [(station, *r[1:]) for r in rows]
+        with self.gateway.store.db:
+            self.gateway.store.db.executemany(
+                'INSERT INTO radio_events (station,received_at,kind,counter,outcome,rssi_dbm,snr_db) '
+                'VALUES (?,?,?,?,?,?,?)', rows)
+        start, end = base, base + n * 0.5
+        got = web.radio_series(self.gateway, start, end, 1500)
+        self.assertEqual(sum(got['frames']), n)                        # nothing cut off
+        bucket = got['bucket_s']
+        self.assertGreater(bucket, 0)
+        want = collections.defaultdict(list)
+        for r in rows:
+            want[start + (r[1] - start) // bucket * bucket].append(r)
+        self.assertEqual(got['t'], sorted(want))
+        for i, t in enumerate(got['t']):
+            group = want[t]
+            self.assertEqual(got['frames'][i], len(group))
+            self.assertEqual(got['rssi_dbm'][i], web._mean([r[5] for r in group]))
+            self.assertEqual(got['snr_db'][i], web._mean([r[6] for r in group]))
+            self.assertEqual(got['rssi_min'][i], min((r[5] for r in group if r[5] is not None), default=None))
+            self.assertEqual(got['outcome'][i], dict(collections.Counter(r[4] for r in group)))
+        # sparse buckets: no reading, exactly one reading, and one reading beside a null
+        b2 = base + 10_000_000
+        sparse = [(station, b2 + i, 'obs', i, 'ack', -50 - i, 5) for i in range(9)]
+        sparse += [(station, b2 + 600, 'obs', 20, 'rejected', None, None),
+                   (station, b2 + 1200, 'obs', 21, 'ack', -61, 4),
+                   (station, b2 + 1800, None, 22, 'ack', None, None), (station, b2 + 1801, None, 23, 'rejected', -70, None),
+                   (station, b2 + 2400, None, 24, 'dropped_by_rx', None, None), (station, b2 + 2401, None, 25, 'ack', None, None)]
+        with self.gateway.store.db:
+            self.gateway.store.db.executemany(
+                'INSERT INTO radio_events (station,received_at,kind,counter,outcome,rssi_dbm,snr_db) '
+                'VALUES (?,?,?,?,?,?,?)', sparse)
+        got = web.radio_series(self.gateway, b2, b2 + 6000, 10)
+        self.assertEqual(got['bucket_s'], 600)
+        self.assertEqual(got['frames'], [9, 1, 1, 2, 2])
+        self.assertEqual(got['rssi_dbm'], [-54, None, -61, -70, None])
+        self.assertEqual(got['snr_db'], [5, None, 4, None, None])
+        self.assertEqual(got['outcome'][1:3], ['rejected', 'ack'])
+        self.assertEqual((got['kind'][1:3], got['counter'][1:3]), (['obs', 'obs'], [20, 21]))
+        self.assertEqual(got['outcome'][3], {'ack': 1, 'rejected': 1})
+        # a small range is per frame, as before
+        small = web.radio_series(self.gateway, start, start + 30, 1500)
+        self.assertEqual((small['bucket_s'], len(small['t'])), (0, 60))
+        self.assertEqual(small['outcome'][0], rows[0][4])
+
     def test_reconstructed_and_unknown_time(self):
         base = 1_700_000_000
         self.node.synced = False

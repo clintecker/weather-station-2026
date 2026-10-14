@@ -597,7 +597,26 @@
   let histTimer = null;
   function scheduleHistory() {
     if (histTimer) return;
-    histTimer = setTimeout(() => { histTimer = null; renderHistory(); }, 500);
+    histTimer = setTimeout(() => { histTimer = null; trimHistory(); renderHistory(); }, 500);
+  }
+  // While following live, points older than the window are dropped, so a page left open for days
+  // keeps a bounded history instead of growing forever (gateway review GW11).
+  function trimHistory() {
+    if (!following()) return;
+    const cutoff = now() - S.range.span;
+    const h = S.hist;
+    const dropColumns = (series, names) => {
+      const n = insertionPoint(series.t, cutoff - 1e-9);
+      if (n) for (const k of names) series[k].splice(0, n);
+      return n;
+    };
+    const o = h.observations;
+    const n = dropColumns(o, ['t', 'basis', 'quality', 'session']);
+    if (n) for (const name of o.fields) o.values[name].splice(0, n);
+    dropColumns(h.radio, Object.keys(h.radio).filter((k) => Array.isArray(h.radio[k])));
+    dropColumns(h.receiver, Object.keys(h.receiver).filter((k) => Array.isArray(h.receiver[k])));
+    h.diagnostics = h.diagnostics.filter((d) => d.received_at >= cutoff);
+    h.events = h.events.filter((e) => e.at >= cutoff);
   }
 
   function markersFor(h) {

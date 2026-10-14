@@ -514,20 +514,7 @@ def history(gateway, start, end, max_points=1500):
             else:
                 obs['values'][n].append(_mean(column))
 
-    radio_rows = rows_between(gateway, 'radio_events', 'received_at', start, end)
-    rbucket = _bucket_of(end - start, len(radio_rows), max_points)
-    radio = {'bucket_s': rbucket, 't': [], 'rssi_dbm': [], 'snr_db': [], 'rssi_min': [], 'frames': [],
-             'kind': [], 'outcome': [], 'counter': []}
-    for t, group in _groups(radio_rows, lambda r: r['received_at'], start, rbucket):
-        radio['t'].append(t)
-        radio['rssi_dbm'].append(_mean([r['rssi_dbm'] for r in group]))
-        radio['snr_db'].append(_mean([r['snr_db'] for r in group]))
-        radio['rssi_min'].append(min((r['rssi_dbm'] for r in group if r['rssi_dbm'] is not None), default=None))
-        radio['frames'].append(len(group))
-        outcomes = collections.Counter(r['outcome'] for r in group)
-        radio['kind'].append(group[0]['kind'] if len(group) == 1 else None)
-        radio['outcome'].append(group[0]['outcome'] if len(group) == 1 else dict(outcomes))
-        radio['counter'].append(group[0]['counter'] if len(group) == 1 else None)
+    radio = radio_series(gateway, start, end, max_points)
 
     alive_rows = rows_between(gateway, 'rx_alive', 'received_at', start, end)
     abucket = _bucket_of(end - start, len(alive_rows), max_points)
@@ -548,6 +535,55 @@ def history(gateway, start, end, max_points=1500):
     events = rows_between(gateway, 'gateway_events', 'at', start, end, limit=500, order='desc')[::-1]
     return {'from': start, 'to': end, 'server_time': time.time(), 'observations': obs, 'diagnostics': diags,
             'radio': radio, 'receiver': alive, 'events': events}
+
+
+def radio_series(gateway, start, end, max_points):
+    """Radio chart for [start, end). Small ranges: one point per frame. Large ones: buckets
+    averaged inside SQLite, so every frame counts however many there are (gateway review GW11:
+    the rows were fetched with a 100,000 limit and later frames silently fell off the chart)."""
+    radio = {'bucket_s': 0, 't': [], 'rssi_dbm': [], 'snr_db': [], 'rssi_min': [], 'frames': [],
+             'kind': [], 'outcome': [], 'counter': []}
+    station, store = gateway.cfg['station'], gateway.store
+    where = 'station=? AND received_at>=? AND received_at<?'
+    with store.lock:
+        count = store.db.execute(f'SELECT COUNT(*) FROM radio_events WHERE {where}', (station, start, end)).fetchone()[0]
+    bucket = radio['bucket_s'] = _bucket_of(end - start, count, max_points)
+    if not bucket:
+        for r in rows_between(gateway, 'radio_events', 'received_at', start, end):
+            radio['t'].append(r['received_at'])
+            radio['rssi_dbm'].append(r['rssi_dbm'])
+            radio['snr_db'].append(r['snr_db'])
+            radio['rssi_min'].append(r['rssi_dbm'])
+            radio['frames'].append(1)
+            radio['kind'].append(r['kind'])
+            radio['outcome'].append(r['outcome'])
+            radio['counter'].append(r['counter'])
+        return radio
+    b = 'CAST((received_at-?)/? AS INTEGER)'
+    with store.lock:
+        groups = store.db.execute(
+            f'SELECT {b} AS b, COUNT(*), COUNT(rssi_dbm), AVG(rssi_dbm), MIN(rssi_dbm), COUNT(snr_db), AVG(snr_db), '
+            f'MIN(snr_db), MIN(kind), MIN(counter) FROM radio_events WHERE {where} GROUP BY b ORDER BY b',
+            (start, bucket, station, start, end)).fetchall()
+        outcomes = collections.defaultdict(dict)
+        for key, outcome, n in store.db.execute(
+                f'SELECT {b} AS b, outcome, COUNT(*) FROM radio_events WHERE {where} GROUP BY b, outcome',
+                (start, bucket, station, start, end)):
+            outcomes[key][outcome] = n
+
+    def mean(n, avg, only):   # same rule as _mean: one reading keeps its exact value
+        return None if n == 0 else only if n == 1 else round(avg, 3)
+    for key, frames, n_rssi, avg_rssi, min_rssi, n_snr, avg_snr, min_snr, kind, counter in groups:
+        radio['t'].append(start + key * bucket)
+        radio['rssi_dbm'].append(mean(n_rssi, avg_rssi, min_rssi))
+        radio['snr_db'].append(mean(n_snr, avg_snr, min_snr))
+        radio['rssi_min'].append(min_rssi)
+        radio['frames'].append(frames)
+        single = frames == 1
+        radio['kind'].append(kind if single else None)
+        radio['outcome'].append(next(iter(outcomes[key])) if single else outcomes[key])
+        radio['counter'].append(counter if single else None)
+    return radio
 
 
 def _groups(rows, when, start, bucket):
