@@ -542,16 +542,16 @@ static void PingPong_Process(void)
 
 static void LogEvents(int ev)
 {
-  if (ev & RT_EV_COMMIT)
-    APP_LOG(TS_ON, VLEVEL_L, "#rt cfg sf=%d pwr=%d commit\n\r", rt_cur_sf(&rt), rt_cur_pwr(&rt));
-  if (ev & RT_EV_SWITCHED)
-    APP_LOG(TS_ON, VLEVEL_L, "#rt cfg sf=%d pwr=%d switched\n\r", rt_cur_sf(&rt), rt_cur_pwr(&rt));
-  if (ev & RT_EV_ROLLBACK)
-    APP_LOG(TS_ON, VLEVEL_L, "#rt cfg sf=%d pwr=%d rollback\n\r", rt_cur_sf(&rt), rt_cur_pwr(&rt));
-  if (ev & RT_EV_ADOPTED)
-    APP_LOG(TS_ON, VLEVEL_L, "#rt cfg sf=%d pwr=%d adopted\n\r", rt_cur_sf(&rt), rt_cur_pwr(&rt));
-  if (ev & RT_EV_FALLBACK)
-    APP_LOG(TS_ON, VLEVEL_L, "#rt cfg sf=%d pwr=%d fallback\n\r", rt_cur_sf(&rt), rt_cur_pwr(&rt));
+  /* In the order rt_on_rx applies them; each line names the settings that event refers to. */
+  static const struct { int bit; const char *name; } events[] = {
+    { RT_EV_ADOPTED, "adopted" }, { RT_EV_COMMIT, "commit" }, { RT_EV_SWITCHED, "switched" },
+    { RT_EV_ROLLBACK, "rollback" }, { RT_EV_FALLBACK, "fallback" } };
+  for (unsigned i = 0; i < sizeof events / sizeof events[0]; i++)
+  {
+    if (!(ev & events[i].bit)) continue;
+    rt_cfg_t c = rt_event_cfg(&rt, ev, events[i].bit);
+    APP_LOG(TS_ON, VLEVEL_L, "#rt cfg sf=%d pwr=%d %s\n\r", rt_sf_of(c), rt_pwr_of(c), events[i].name);
+  }
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)

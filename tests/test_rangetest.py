@@ -18,6 +18,10 @@ EV_SWITCHED, EV_COMMIT, EV_ROLLBACK, EV_ADOPTED, EV_FALLBACK = 1, 2, 4, 8, 16
 EV_LOST_MISSES = 10  # RT_LOST_MISSES: ~30 s of 3 s receive windows
 
 
+class Cfg(ctypes.Structure):
+    _fields_ = [('sf', ctypes.c_uint8), ('pwr', ctypes.c_uint8)]   # rt_cfg_t
+
+
 class Board:
     def __init__(self, lib):
         self.lib = lib
@@ -47,7 +51,10 @@ class RangeTest(unittest.TestCase):
         lib.rt_build.restype = ctypes.c_size_t
         lib.rt_on_rx.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
                                  ctypes.c_void_p]
-        for name in ('rt_cur_sf', 'rt_cur_pwr', 'rt_info_sf', 'rt_info_pwr'):
+        lib.rt_event_cfg.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+        lib.rt_event_cfg.restype = Cfg
+        lib.rt_sf_of.argtypes = lib.rt_pwr_of.argtypes = [Cfg]
+        for name in ('rt_cur_sf', 'rt_cur_pwr', 'rt_info_sf', 'rt_info_pwr', 'rt_sf_of', 'rt_pwr_of'):
             getattr(lib, name).restype = ctypes.c_int
 
     @classmethod
@@ -107,6 +114,24 @@ class RangeTest(unittest.TestCase):
         self.assertTrue(a.tentative() and b.tentative())
         self.exchange(a, b)
         self.assertFalse(a.tentative() or b.tentative())
+
+    def test_commit_and_switch_together_name_the_right_settings(self):
+        """A board still tentative after one change hears the ack of its next proposal: rt_on_rx
+        reports COMMIT and SWITCHED at once. The commit is of the old settings, the switch to the new."""
+        a, b = Board(self.lib), Board(self.lib)
+        self.lib.rt_press_pwr(a.st)
+        self.send(a, b, kind=0)
+        self.send(b, a, kind=1)
+        self.assertTrue(a.tentative())               # at 14 dBm, not yet committed
+        self.lib.rt_press_pwr(a.st)                  # next proposal before any commit
+        self.send(a, b, kind=0)
+        _, ev, _ = self.send(b, a, kind=1)
+        self.assertEqual(ev & (EV_COMMIT | EV_SWITCHED), EV_COMMIT | EV_SWITCHED)
+        commit = self.lib.rt_event_cfg(a.st, ev, EV_COMMIT)
+        switched = self.lib.rt_event_cfg(a.st, ev, EV_SWITCHED)
+        self.assertEqual((self.lib.rt_sf_of(commit), self.lib.rt_pwr_of(commit)), (12, 14))
+        self.assertEqual((self.lib.rt_sf_of(switched), self.lib.rt_pwr_of(switched)), a.cfg())
+        self.assertNotEqual(a.cfg(), (12, 14))
 
     def test_sf_change_with_lost_ack_rolls_back_then_retries(self):
         a, b = Board(self.lib), Board(self.lib)

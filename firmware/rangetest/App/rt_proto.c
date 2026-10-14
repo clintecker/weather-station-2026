@@ -181,6 +181,11 @@ int rt_on_miss(rt_state_t *st)
 
 int rt_sf_of(rt_cfg_t c) { return SF_LADDER[c.sf]; }
 int rt_pwr_of(rt_cfg_t c) { return PWR_LADDER[c.pwr]; }
+rt_cfg_t rt_event_cfg(const rt_state_t *st, int events, int event)
+{
+  return (event & (RT_EV_ADOPTED | RT_EV_COMMIT)) && (events & RT_EV_SWITCHED) ? st->prev : st->cur;
+}
+
 int rt_cur_sf(const rt_state_t *st) { return rt_sf_of(st->cur); }
 int rt_cur_pwr(const rt_state_t *st) { return rt_pwr_of(st->cur); }
 int rt_is_tentative(const rt_state_t *st) { return st->tentative; }

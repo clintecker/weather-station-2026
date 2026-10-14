@@ -67,6 +67,9 @@ int    rt_on_miss(rt_state_t *st);
 
 int    rt_sf_of(rt_cfg_t c);    /* spreading factor, e.g. 7 */
 int    rt_pwr_of(rt_cfg_t c);   /* dBm */
+/* Settings one event in a returned event set refers to. rt_on_rx can report COMMIT (or ADOPTED)
+   and SWITCHED together: the commit was of the settings in force before the switch. */
+rt_cfg_t rt_event_cfg(const rt_state_t *st, int events, int event);
 int    rt_cur_sf(const rt_state_t *st);
 int    rt_cur_pwr(const rt_state_t *st);
 int    rt_is_tentative(const rt_state_t *st);
