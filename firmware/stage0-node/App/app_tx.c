@@ -649,11 +649,11 @@ static void on_line(char *line)
     else
     {
       APP_PRINTF("#provisioned station=%u kcv=%02x%02x%02x epoch_floor=%u\n", (unsigned)id, check[0], check[1], check[2], (unsigned)floor);
-      memset(new_key, 0, sizeof new_key); memset(line, 0, strlen(line));
+      ws_wipe(new_key, sizeof new_key); ws_wipe(line, strlen(line));
       reboot_soon();
       return;
     }
-    memset(new_key, 0, sizeof new_key); memset(line, 0, strlen(line)); /* the key never lingers in RAM */
+    ws_wipe(new_key, sizeof new_key); ws_wipe(line, strlen(line)); /* the key never lingers in RAM */
     return;
   }
   APP_PRINTF("#error unknown command\n");

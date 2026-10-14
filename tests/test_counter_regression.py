@@ -107,7 +107,9 @@ class CounterRegressionTests(unittest.TestCase):
         status = self.gateway.status()
         self.assertIsNone(status['alarm'])                # an exact copy reuses no nonce: no alarm
         self.assertEqual((status['node_counter']['replays'], status['node_counter']['counter_regression']), (2, 0))
-        self.assertEqual([r[1] for r in self.rejections('replay')], [first.hex(), first.hex()])
+        # Both copies are counted; the evidence row is kept once per frame (a replay flood must
+        # not grow the database: security audit 2026-10-14).
+        self.assertEqual([r[1] for r in self.rejections('replay')], [first.hex()])
 
     def test_older_frame_never_seen_still_alarms(self):
         held = self.node.packet(self.minute())           # sealed, but lost on air for now

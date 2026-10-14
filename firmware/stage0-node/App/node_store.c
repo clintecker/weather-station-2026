@@ -61,12 +61,12 @@ int store_config_load(uint32_t *station, uint8_t key[16], uint8_t kcv_out[3]) {
  uint32_t a = WS_PAGE_ADDR(WS_CONFIG_PAGE); int bad = 0; uint8_t kcv[3];
  uint64_t d0 = rd64(a, &bad), k0 = rd64(a + 8, &bad), k1 = rd64(a + 16, &bad), d3 = rd64(a + 24, &bad);
  if (bad || (d0 >> 32) != CFG_MAGIC || (d3 >> 32) != CFG_MAGIC2) return -1;
- memcpy(key, &k0, 8); memcpy(key + 8, &k1, 8);
+ memcpy(key, &k0, 8); memcpy(key + 8, &k1, 8); ws_wipe(&k0, 8); ws_wipe(&k1, 8);
  if (ws_key_check(key, kcv) || (uint32_t)(d3 & 0xFFFFFFU) != ((uint32_t)kcv[0] << 16 | kcv[1] << 8 | kcv[2])) {
-  memset(key, 0, 16); return -2;
+  ws_wipe(key, 16); return -2;
  }
  *station = (uint32_t)d0;
- if (*station == 0 || *station > WS_STATION_MAX) { memset(key, 0, 16); return -3; }
+ if (*station == 0 || *station > WS_STATION_MAX) { ws_wipe(key, 16); return -3; }
  memcpy(kcv_out, kcv, 3);
  return 0;
 }
@@ -78,7 +78,8 @@ int store_config_write(uint32_t station, const uint8_t key[16], uint8_t kcv[3]) 
  /* Magic double-word last: a torn write is never mistaken for a valid config. */
  if (prog64(a + 8, k0) || prog64(a + 16, k1) ||
      prog64(a + 24, (uint64_t)CFG_MAGIC2 << 32 | (uint32_t)kcv[0] << 16 | kcv[1] << 8 | kcv[2]) ||
-     prog64(a, (uint64_t)CFG_MAGIC << 32 | station)) return -3;
+     prog64(a, (uint64_t)CFG_MAGIC << 32 | station)) { ws_wipe(&k0, 8); ws_wipe(&k1, 8); return -3; }
+ ws_wipe(&k0, 8); ws_wipe(&k1, 8);
  return 0;
 }
 

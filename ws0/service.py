@@ -82,7 +82,8 @@ class Gateway:
             return
         if verdict == 'replay':
             self.store.reject(self.cfg['station'],str(epoch),sequence,'replay',
-                              f'identical copy of the frame accepted under counter {counter}',frame.hex(),now)
+                              f'identical copy of the frame accepted under counter {counter}',frame.hex(),now,
+                              once=True)
             self.rejected += 1
             raise Replay(f'replay of counter {counter}')
         detail = (f"counter {counter} <= high-water mark {self.node_counter['max_node_counter']}: "

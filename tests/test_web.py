@@ -596,6 +596,20 @@ class ServeLoopTelemetry(Fixture):
         events = self.rows("SELECT text FROM gateway_events WHERE kind='suppressed'")
         self.assertEqual(len(events), 1)
 
+    def test_rx_error_flood_is_bounded_and_a_regression_is_never_hidden(self):
+        """Security audit: '#rx error' (any radio can cause it) is rate-limited like other noise,
+        and a counter regression is logged even while garbage frames are being suppressed."""
+        throttle = self.gateway.telemetry.throttle
+        throttle.per_s = 0
+        burst = throttle.burst
+        log, _ = self.lines(*['#rx error'] * (3 * burst), now=5000)
+        self.assertEqual(log.count('#rx error'), burst)
+        self.assertEqual(self.rows("SELECT COUNT(*) FROM gateway_events WHERE kind='rx_error'")[0][0], burst)
+        log, _ = self.lines(*['ab' * 30] * (2 * burst), now=6000)          # garbage uses up 'rejected'
+        frames = [self.node.packet(self.node.sample(time.time() + 60 * i)) for i in range(3)]
+        log, _ = self.lines(frames[0].hex(), frames[2].hex(), frames[1].hex(), now=7000)
+        self.assertIn('CounterRegression', log)
+
     def test_frames_alive_and_events_reach_sqlite(self):
         obs = self.node.packet(self.node.sample(time.time()))
         diag = self.node.diagnostic(time.time())

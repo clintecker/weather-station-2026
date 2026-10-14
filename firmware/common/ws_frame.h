@@ -1,5 +1,6 @@
 #ifndef WS_FRAME_H
 #define WS_FRAME_H
+#include <stddef.h>
 #include <stdint.h>
 /* Protocol draft 5 envelope (docs/protocol-draft5-design.md sections 3-4); AES-128-CCM via Mbed TLS.
  * The gateway (ws0/protocol.py) builds the same bytes, checked by tests/test_frame.py. */
@@ -52,4 +53,7 @@ typedef struct {
 void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]);
 /* Key check value: first 3 bytes of AES-ECB(key, zero block); safe to display. */
 int ws_key_check(const uint8_t key[16], uint8_t out[3]);
+/* Zero key material. A plain memset of a buffer that is not read again is a dead store the
+   compiler may delete; writes through a volatile pointer are kept. */
+static inline void ws_wipe(void *p, size_t n) { volatile uint8_t *v = (volatile uint8_t *)p; while (n--) *v++ = 0; }
 #endif

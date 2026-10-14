@@ -274,12 +274,17 @@ class Store:
                             'WHERE station=? AND session=? AND sequence=?',
                             (ref_utc+(uptime-ref_uptime),QUANTIZATION_S+span*DRIFT_PPM/1e6,station,session,sequence))
 
-    def reject(self, station, session, sequence, reason, detail, frame_hex, received_at=None):
-        """Durably record a permanently rejected authentic frame before the NACK is sent."""
+    def reject(self, station, session, sequence, reason, detail, frame_hex, received_at=None, once=False):
+        """Durably record a permanently rejected authentic frame before the NACK is sent. once: skip
+        it if these exact bytes were already recorded for this reason (replays: anyone can resend a
+        captured frame thousands of times; one row per frame keeps the evidence, not the flood)."""
+        received = time.time() if received_at is None else received_at
         with self.lock, self.db:
+            if once and self.db.execute('SELECT 1 FROM rejections WHERE station=? AND reason=? AND frame_hex=?',
+                                        (station, reason, frame_hex)).fetchone():
+                return
             self.db.execute('INSERT INTO rejections VALUES (?,?,?,?,?,?,?)',
-                            (station,session,sequence,time.time() if received_at is None else received_at,
-                             reason,detail,frame_hex))
+                            (station,session,sequence,received,reason,detail,frame_hex))
 
     def diagnostic(self, station, report, received_at=None):
         with self.lock, self.db:

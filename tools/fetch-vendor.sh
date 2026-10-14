@@ -2,6 +2,8 @@
 # Fetch the exact pinned third-party sources used by firmware/ builds and C tests.
 # Everything lands in vendor/ (git-ignored). Re-running verifies the pins.
 set -eu
+# Never let refs/replace objects (e.g. in a poisoned cache) stand in for the pinned commits.
+export GIT_NO_REPLACE_OBJECTS=1
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cube="$root/vendor/STM32CubeWL"
 

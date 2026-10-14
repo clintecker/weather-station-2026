@@ -12,7 +12,7 @@ from pathlib import Path
 from gateway import open_read_only
 
 from .protocol import KIND_ACK, KIND_OBS, Nonces
-from .service import Gateway, MQTT, http_server, load_config
+from .service import CounterRegression, Gateway, MQTT, Replay, http_server, load_config
 from .simulator import BACKLOG_PER_MINUTE, DemoReceiver, Node
 from .link import ReceiverLink
 from .clock import HostClock
@@ -190,8 +190,10 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
         if text.startswith('#rx obs') and telemetry.muted:
             telemetry.muted = False   # RSSI of a throttled frame
             return
-        if text.startswith('#rx drop') and quiet('rx_drop'):
-            return
+        # Lines any nearby radio can cause at will (bad packets, CRC errors): rate-limited (GW6).
+        for prefix, key in (('#rx drop', 'rx_drop'), ('#rx error', 'rx_error'), ('#relisten', 'relisten')):
+            if text.startswith(prefix) and quiet(key):
+                return
         if text.startswith('#'):
             _receiver_diagnostic(gateway,text,receiver_log,stamp,rx_seen)
         elif text:
@@ -199,7 +201,9 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
             frame = bytes.fromhex(text)
             _answer_frame(gateway,link,frame,text,receiver_log,stamp,rx_seen,quiet)
     except (ValueError,UnicodeError,InvalidTag) as exc:
-        if quiet('rejected'):
+        # A counter regression (possible key reuse) is always logged: noise must not hide it.
+        # Replays of captured frames have their own budget, so they cannot use up garbage's.
+        if not isinstance(exc, CounterRegression) and quiet('replay' if isinstance(exc, Replay) else 'rejected'):
             return
         receiver_log.write(f'{stamp} rejected {type(exc).__name__}: {exc} {text}\n')
         print(f'Rejected frame: {type(exc).__name__}: {exc}',file=sys.stderr)
