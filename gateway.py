@@ -1,4 +1,5 @@
 """SQLite observation store. Used by the authenticated gateway and regression tests."""
+import contextlib
 import json
 import os
 import math
@@ -6,6 +7,7 @@ import re
 import sqlite3
 import threading
 import time
+from pathlib import Path
 
 # Reconstructed time (draft 4): an unsynchronized sample gets UTC from the nearest synchronized
 # sample of the same boot epoch: utc = ref_utc + (uptime - ref_uptime). Error bound: 1 s
@@ -91,6 +93,7 @@ class Store:
     """Serialize concurrent HTTP/ingestion access; immutable identities survive restart."""
     def __init__(self, path):
         self.lock = threading.RLock()
+        self.path = Path(path)
         self.db = sqlite3.connect(path, check_same_thread=False)
         full_flush(self.db)
         # The JSON payload is immutable and the deduplication authority; the derived time columns
@@ -105,7 +108,9 @@ class Store:
                         '(station, CAST(session AS INTEGER) DESC, sequence DESC, received_at DESC)')
         # reconstruct() looks up a boot epoch's readings by time basis and uptime.
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_basis ON observations(station, session, time_basis, uptime_s)')
-        self.db.execute('CREATE INDEX IF NOT EXISTS obs_effective ON observations(station,effective_at)')
+        # History reads a time range in identity order: covered here, so no sort in a temp B-tree.
+        self.db.execute('CREATE INDEX IF NOT EXISTS obs_effective_order ON observations'
+                        '(station,effective_at,session,sequence)')
         # Authentic frames that were permanently rejected (and NACKed) are kept, never silently lost.
         self.db.execute('''CREATE TABLE IF NOT EXISTS rejections (station TEXT, session TEXT, sequence INTEGER,
             received_at REAL, reason TEXT, detail TEXT, frame_hex TEXT)''')
@@ -114,6 +119,18 @@ class Store:
         self.db.execute('''CREATE TABLE IF NOT EXISTS diagnostics (station TEXT, session INTEGER, uptime_s INTEGER,
             received_at REAL, report TEXT, PRIMARY KEY(station,session,uptime_s))''')
         self.db.commit()
+
+    @contextlib.contextmanager
+    def reader(self):
+        """A read-only connection with one consistent snapshot, for long reads (dashboard history
+        and tables). It never takes self.lock: in WAL mode readers do not block the writer, so a
+        year-long history query cannot delay an ACK (it held the lock for up to ~1 s before)."""
+        db = sqlite3.connect(self.path.resolve().as_uri() + '?mode=ro', uri=True, check_same_thread=False)
+        try:
+            db.execute('BEGIN')
+            yield db
+        finally:
+            db.close()
 
     def ingest(self, record, received_at=None):
         """Return only after commit; exact repeats are harmless, collisions are errors."""

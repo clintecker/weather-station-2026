@@ -314,6 +314,38 @@ class History(Fixture):
         self.assertIn(None, o['values']['temperature_c'])
         self.assertLess(len(o['t']), 11)
 
+    def radio(self, start, end, max_points):
+        with self.gateway.store.reader() as db:
+            return web.radio_series(db, self.cfg['station'], start, end, max_points)
+
+    def test_history_never_waits_for_the_ingest_lock(self):
+        """Dashboard reads use their own read-only connection: a long history query must not hold
+        (or wait for) the store lock that the radio receive path needs before its ACK."""
+        import threading
+        self.observe(1_700_000_000)
+        held, release = threading.Event(), threading.Event()
+        def hold():
+            with self.gateway.store.lock:
+                held.set()
+                release.wait(10)
+        t = threading.Thread(target=hold)
+        t.start()
+        held.wait(5)
+        try:
+            began = time.monotonic()
+            h = web.history(self.gateway, 1_699_999_000, 1_700_001_000)
+            self.assertLess(time.monotonic() - began, 1)
+            self.assertEqual(len(h['observations']['t']), 1)
+        finally:
+            release.set()
+            t.join()
+
+    def test_history_query_uses_its_index(self):
+        plan = ' '.join(r[-1] for r in self.gateway.store.db.execute('EXPLAIN QUERY PLAN ' + web.HISTORY_SQL,
+                                                                     ('s', 0, 1)))
+        self.assertIn('obs_effective_order', plan)
+        self.assertNotIn('TEMP B-TREE', plan)
+
     def test_radio_buckets_match_python_and_count_every_frame(self):
         """GW11: bucketed radio points are computed in SQLite and match the per-row Python rule
         (mean, exact single values, nulls, outcome counts); a range past 100,000 frames is whole."""
@@ -335,7 +367,7 @@ class History(Fixture):
                 'INSERT INTO radio_events (station,received_at,kind,counter,outcome,rssi_dbm,snr_db) '
                 'VALUES (?,?,?,?,?,?,?)', rows)
         start, end = base, base + n * 0.5
-        got = web.radio_series(self.gateway, start, end, 1500)
+        got = self.radio(start, end, 1500)
         self.assertEqual(sum(got['frames']), n)                        # nothing cut off
         bucket = got['bucket_s']
         self.assertGreater(bucket, 0)
@@ -361,7 +393,7 @@ class History(Fixture):
             self.gateway.store.db.executemany(
                 'INSERT INTO radio_events (station,received_at,kind,counter,outcome,rssi_dbm,snr_db) '
                 'VALUES (?,?,?,?,?,?,?)', sparse)
-        got = web.radio_series(self.gateway, b2, b2 + 6000, 10)
+        got = self.radio(b2, b2 + 6000, 10)
         self.assertEqual(got['bucket_s'], 600)
         self.assertEqual(got['frames'], [9, 1, 1, 2, 2])
         self.assertEqual(got['rssi_dbm'], [-54, None, -61, -70, None])
@@ -370,7 +402,7 @@ class History(Fixture):
         self.assertEqual((got['kind'][1:3], got['counter'][1:3]), (['obs', 'obs'], [20, 21]))
         self.assertEqual(got['outcome'][3], {'ack': 1, 'rejected': 1})
         # a small range is per frame, as before
-        small = web.radio_series(self.gateway, start, start + 30, 1500)
+        small = self.radio(start, start + 30, 1500)
         self.assertEqual((small['bucket_s'], len(small['t'])), (0, 60))
         self.assertEqual(small['outcome'][0], rows[0][4])
 

@@ -28,6 +28,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from .fields import BY_NAME, FIELDS, LABELS, MEASURED
+
 STATIC = Path(__file__).parent / 'static'
 # Fixed table: no path from the request ever reaches the file system.
 STATIC_FILES = {'/': ('index.html', 'text/html'), '/dashboard': ('index.html', 'text/html'),
@@ -51,7 +53,7 @@ TABLES = (
     'CREATE INDEX IF NOT EXISTS radio_time ON radio_events(station,received_at)',
     '''CREATE TABLE IF NOT EXISTS rx_alive (id INTEGER PRIMARY KEY AUTOINCREMENT, station TEXT, received_at REAL,
         uptime_s INTEGER, forwarded INTEGER, dropped INTEGER, acks INTEGER, diag INTEGER, listening INTEGER,
-        relistens INTEGER, uart_errors INTEGER, stack_peak INTEGER, report TEXT)''',
+        relistens INTEGER, uart_errors INTEGER, stack_peak INTEGER)''',
     'CREATE INDEX IF NOT EXISTS rx_alive_time ON rx_alive(station,received_at)',
     '''CREATE TABLE IF NOT EXISTS gateway_events (id INTEGER PRIMARY KEY AUTOINCREMENT, station TEXT, at REAL,
         source TEXT, kind TEXT, level TEXT, text TEXT)''',
@@ -275,9 +277,9 @@ class Telemetry:
         values = {'uptime_s': as_int(fields.get('uptime')), **{k: as_int(fields.get(k)) for k in ALIVE_FIELDS[1:]}}
         with self.store.lock, self.store.db:
             cur = self.store.db.execute(
-                f'INSERT INTO rx_alive (station,received_at,{",".join(ALIVE_FIELDS)},report) '
-                f'VALUES (?,?,{",".join("?" * len(ALIVE_FIELDS))},?)',
-                (self.station, at, *(values[k] for k in ALIVE_FIELDS), json.dumps(fields, sort_keys=True)))
+                f'INSERT INTO rx_alive (station,received_at,{",".join(ALIVE_FIELDS)}) '
+                f'VALUES (?,?,{",".join("?" * len(ALIVE_FIELDS))})',
+                (self.station, at, *(values[k] for k in ALIVE_FIELDS)))
         self.hub.publish('rx', dict(values, id=cur.lastrowid, received_at=at))
 
     @best_effort
@@ -379,29 +381,32 @@ def route(handler, gateway, path, query):
     table, column = {'/v1/radio': ('radio_events', 'received_at'), '/v1/receiver/alive': ('rx_alive', 'received_at'),
                      '/v1/diagnostics': ('diagnostics', 'received_at'),
                      '/v1/gateway/events': ('gateway_events', 'at')}[path]
-    rows = rows_between(gateway, table, column, start, end, limit, offset, order)
+    with gateway.store.reader() as db:
+        rows = rows_between(db, gateway.cfg['station'], table, start, end, limit, offset, order)
     handler.reply(200, {'rows': rows, 'offset': offset, 'limit': limit})
 
 
-def rows_between(gateway, table, column, start, end, limit=100000, offset=0, order='asc'):
-    """Rows of one dashboard table in [start, end), as dicts (diagnostics: the decoded report)."""
-    store = gateway.store
-    tiebreak = 'session,uptime_s' if table == 'diagnostics' else 'id'
+# Per table: time column, tie-break order, and the columns a dashboard row carries.
+TABLE_ROWS = {
+    'radio_events': ('received_at', 'id', ('id', 'received_at', 'kind', 'counter', 'outcome', 'delivered',
+                                           'session', 'sequence', 'length', 'rssi_dbm', 'snr_db', 'detail')),
+    'rx_alive': ('received_at', 'id', ('id', 'received_at', *ALIVE_FIELDS)),
+    'diagnostics': ('received_at', 'session,uptime_s', ('received_at', 'report')),
+    'gateway_events': ('at', 'id', ('id', 'at', 'source', 'kind', 'level', 'text')),
+}
+
+
+def rows_between(db, station, table, start, end, limit=100000, offset=0, order='asc'):
+    """Rows of one dashboard table in [start, end), as dicts (diagnostics: the decoded report).
+    db is a Store.reader() connection: never the ingest connection or its lock."""
+    column, tiebreak, names = TABLE_ROWS[table]
     direction = 'DESC' if order == 'desc' else 'ASC'
-    with store.lock:
-        cur = store.db.execute(f'SELECT * FROM {table} WHERE station=? AND {column}>=? AND {column}<? '
-                               f'ORDER BY {column} {direction},{tiebreak} {direction} LIMIT ? OFFSET ?',
-                               (gateway.cfg['station'], start, end, limit, offset))
-        names = [d[0] for d in cur.description]
-        rows = [dict(zip(names, r, strict=True)) for r in cur.fetchall()]
+    cur = db.execute(f'SELECT {",".join(names)} FROM {table} WHERE station=? AND {column}>=? AND {column}<? '
+                     f'ORDER BY {column} {direction},{tiebreak} {direction} LIMIT ? OFFSET ?',
+                     (station, start, end, limit, offset))
     if table == 'diagnostics':
-        rows = [json.loads(r['report']) | {'received_at': r['received_at']} for r in rows]
-    elif table == 'rx_alive':
-        for r in rows:
-            r.pop('report', None)
-    for r in rows:
-        r.pop('station', None)
-    return rows
+        return [json.loads(report) | {'received_at': at} for at, report in cur]
+    return [dict(zip(names, r, strict=True)) for r in cur]
 
 
 STREAM_SEND_TIMEOUT_S = 20
@@ -485,14 +490,19 @@ def history(gateway, start, end, max_points=1500):
     """Everything the page charts for [start, end): observations, node health, RX health, radio,
     events. A series longer than max_points is reduced to time buckets (bucket_s > 0); a bucket
     with no valid value stays null, and empty buckets are absent, so gaps remain gaps."""
-    from .fields import BY_NAME, FIELDS, LABELS, MEASURED
-    store, station = gateway.store, gateway.cfg['station']
-    with store.lock:
-        rows = store.db.execute('SELECT payload,effective_at,time_basis FROM observations WHERE station=? '
-                                'AND effective_at>=? AND effective_at<? ORDER BY effective_at,session,sequence',
-                                (station, start, end)).fetchall()
-        unknown = store.db.execute('SELECT count(*) FROM observations WHERE station=? AND effective_at IS NULL '
-                                   'AND received_at>=? AND received_at<?', (station, start, end)).fetchone()[0]
+    with gateway.store.reader() as db:   # one snapshot, and never the ACK path's lock
+        return _history(db, gateway.cfg['station'], start, end, max_points)
+
+
+# Covered by the index obs_effective_order (gateway.py): no sort in a temp B-tree.
+HISTORY_SQL = ('SELECT payload,effective_at,time_basis FROM observations WHERE station=? '
+               'AND effective_at>=? AND effective_at<? ORDER BY effective_at,session,sequence')
+
+
+def _history(db, station, start, end, max_points):
+    rows = db.execute(HISTORY_SQL, (station, start, end)).fetchall()
+    unknown = db.execute('SELECT count(*) FROM observations WHERE station=? AND effective_at IS NULL '
+                         'AND received_at>=? AND received_at<?', (station, start, end)).fetchone()[0]
     records = [(json.loads(p), t, b) for p, t, b in rows]
     present = {name for r, _, _ in records for name in MEASURED if name in r}
     names = [f.name for f in FIELDS if f.name in present]
@@ -515,9 +525,9 @@ def history(gateway, start, end, max_points=1500):
             else:
                 obs['values'][n].append(_mean(column))
 
-    radio = radio_series(gateway, start, end, max_points)
+    radio = radio_series(db, station, start, end, max_points)
 
-    alive_rows = rows_between(gateway, 'rx_alive', 'received_at', start, end)
+    alive_rows = rows_between(db, station, 'rx_alive', start, end)
     abucket = _bucket_of(end - start, len(alive_rows), max_points)
     alive = {'bucket_s': abucket, 't': [], **{k: [] for k in ALIVE_FIELDS}}
     for t, group in _groups(alive_rows, lambda r: r['received_at'], start, abucket):
@@ -527,30 +537,28 @@ def history(gateway, start, end, max_points=1500):
             alive[k].append(max((v for v in values if v is not None), default=None) if k == 'stack_peak'
                             else _last(values))
 
-    diags = rows_between(gateway, 'diagnostics', 'received_at', start, end)
+    diags = rows_between(db, station, 'diagnostics', start, end)
     if len(diags) > max_points:   # keep every change of epoch, firmware, energy or link state
         step = math.ceil(len(diags) / max_points)
         keys = ('epoch', 'firmware_build', 'energy_state', 'link')
         diags = [d for i, d in enumerate(diags)
                  if i % step == 0 or i == len(diags) - 1 or any(d[k] != diags[i - 1][k] for k in keys)]
-    events = rows_between(gateway, 'gateway_events', 'at', start, end, limit=500, order='desc')[::-1]
+    events = rows_between(db, station, 'gateway_events', start, end, limit=500, order='desc')[::-1]
     return {'from': start, 'to': end, 'server_time': time.time(), 'observations': obs, 'diagnostics': diags,
             'radio': radio, 'receiver': alive, 'events': events}
 
 
-def radio_series(gateway, start, end, max_points):
+def radio_series(db, station, start, end, max_points):
     """Radio chart for [start, end). Small ranges: one point per frame. Large ones: buckets
     averaged inside SQLite, so every frame counts however many there are (gateway review GW11:
     the rows were fetched with a 100,000 limit and later frames silently fell off the chart)."""
     radio = {'bucket_s': 0, 't': [], 'rssi_dbm': [], 'snr_db': [], 'rssi_min': [], 'frames': [],
              'kind': [], 'outcome': [], 'counter': []}
-    station, store = gateway.cfg['station'], gateway.store
     where = 'station=? AND received_at>=? AND received_at<?'
-    with store.lock:
-        count = store.db.execute(f'SELECT COUNT(*) FROM radio_events WHERE {where}', (station, start, end)).fetchone()[0]
+    count = db.execute(f'SELECT COUNT(*) FROM radio_events WHERE {where}', (station, start, end)).fetchone()[0]
     bucket = radio['bucket_s'] = _bucket_of(end - start, count, max_points)
     if not bucket:
-        for r in rows_between(gateway, 'radio_events', 'received_at', start, end):
+        for r in rows_between(db, station, 'radio_events', start, end):
             radio['t'].append(r['received_at'])
             radio['rssi_dbm'].append(r['rssi_dbm'])
             radio['snr_db'].append(r['snr_db'])
@@ -561,16 +569,15 @@ def radio_series(gateway, start, end, max_points):
             radio['counter'].append(r['counter'])
         return radio
     b = 'CAST((received_at-?)/? AS INTEGER)'
-    with store.lock:
-        groups = store.db.execute(
-            f'SELECT {b} AS b, COUNT(*), COUNT(rssi_dbm), AVG(rssi_dbm), MIN(rssi_dbm), COUNT(snr_db), AVG(snr_db), '
-            f'MIN(snr_db), MIN(kind), MIN(counter) FROM radio_events WHERE {where} GROUP BY b ORDER BY b',
-            (start, bucket, station, start, end)).fetchall()
-        outcomes = collections.defaultdict(dict)
-        for key, outcome, n in store.db.execute(
-                f'SELECT {b} AS b, outcome, COUNT(*) FROM radio_events WHERE {where} GROUP BY b, outcome',
-                (start, bucket, station, start, end)):
-            outcomes[key][outcome] = n
+    groups = db.execute(
+        f'SELECT {b} AS b, COUNT(*), COUNT(rssi_dbm), AVG(rssi_dbm), MIN(rssi_dbm), COUNT(snr_db), AVG(snr_db), '
+        f'MIN(snr_db), MIN(kind), MIN(counter) FROM radio_events WHERE {where} GROUP BY b ORDER BY b',
+        (start, bucket, station, start, end)).fetchall()
+    outcomes = collections.defaultdict(dict)
+    for key, outcome, n in db.execute(
+            f'SELECT {b} AS b, outcome, COUNT(*) FROM radio_events WHERE {where} GROUP BY b, outcome',
+            (start, bucket, station, start, end)):
+        outcomes[key][outcome] = n
 
     def mean(n, avg, only):   # same rule as _mean: one reading keeps its exact value
         return None if n == 0 else only if n == 1 else round(avg, 3)
