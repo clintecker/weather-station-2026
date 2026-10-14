@@ -107,12 +107,16 @@ static uint8_t replied[MAX_QUEUE];
 static enum { LINK_LINKED, LINK_PROBING } link_state = LINK_LINKED;
 static uint32_t silent_minutes, probe_step, next_probe_mcu, last_send_mcu;
 static uint32_t exchange_ms; /* estimated radio time of one answered exchange */
-/* Review P7: a TX that keeps failing must not look healthy. Count uninterrupted failures of the
- * steps that must work every minute (journal append, counter reservation, Radio.Send); any
- * success resets the run. Minutes the policy chose not to send never count. Above the limit the
- * watchdog resets the board. */
+/* Review P7: a TX that keeps failing must not look healthy. Two runs of uninterrupted failures;
+ * above the limit on either, the watchdog resets the board (which re-runs Radio.Init).
+ *  - tx_fail: the minute's journal append.
+ *  - tx_air: transmissions. A failure is a refused counter reservation, a refused Radio.Send or a
+ *    TxTimeout; only a TxDone (the frame really left) clears it. Before 2026-10-14 one run mixed
+ *    both and every successful append or accepted Send reset it, so a radio that accepted Send but
+ *    never finished a frame was never reset (firmware review, finding 1).
+ * Minutes the policy chose not to send never count. */
 #define TX_FAIL_LIMIT 10U
-static ws_failrun tx_fail;
+static ws_failrun tx_fail, tx_air;
 /* A storage failure at boot may be transient: retry once by a reset after 10 minutes. */
 #define BOOT_RETRY_MS (10UL * 60000UL)
 static UTIL_TIMER_Object_t boot_retry_timer;
@@ -180,22 +184,32 @@ static int run_kat(void)
   return kind == WS_KIND_NACK && ctr == 6 && ep == 17 && sq == 42 && word == WS_NACK_COLLISION && echo == 0x100000002ULL;
 }
 
+/* Decimal text of a 64-bit counter: the console's tiny_vsnprintf has no 64-bit format, and a
+   (unsigned) cast printed only the low 32 bits. */
+static const char *u64_text(uint64_t v, char buf[21])
+{
+  char *p = buf + 20; *p = 0;
+  do { *--p = (char)('0' + (int)(v % 10U)); v /= 10U; } while (v);
+  return p;
+}
+
 static void status(void)
 {
+  char ctr_buf[21];
   /* Two lines: the console print buffer is 256 bytes (UTIL_ADV_TRACE_TMP_BUF_SIZE) and one line
    * used to be cut off mid-field. #status keeps the fields provision-node and the gateway parse. */
   APP_PRINTF("#status role=tx fw=%s reset=%s provisioned=%d station=%u kcv=%02x%02x%02x kat=%s epoch=%u next_seq=%u "
-             "ctr=%u ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u\n",
+             "ctr=%s ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u\n",
              WS_FW_VERSION, watchdog_reset_cause(), provisioned, (unsigned)station, kcv[0], kcv[1], kcv[2], kat_ok ? "pass" : "FAIL",
-             (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)store_counter_next(), (unsigned)store_ecc_faults(),
+             (unsigned)boot_epoch, (unsigned)next_seq, u64_text(store_counter_next(), ctr_buf), (unsigned)store_ecc_faults(),
              link_state == LINK_LINKED ? "linked" : "probing",
              (unsigned)silent_minutes, energy_name[energy_state()], time_valid() ? "synchronized" : "unknown",
              (unsigned)(time_valid() ? SysTimeGet().Seconds : 0), (unsigned)(mcu_seconds() - boot_mcu));
   APP_PRINTF("#counts pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u "
-             "sensor_faults=%u tx_fail_run=%u stack_peak=%u\n",
+             "sensor_faults=%u tx_fail_run=%u tx_air_run=%u stack_peak=%u\n",
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
              (unsigned)store_journal_burned(), (unsigned)store_abandoned_total(), (unsigned)n_sent, (unsigned)n_acked,
-             (unsigned)n_no_ack, (unsigned)n_ack_rejects, (unsigned)n_sensor_faults, (unsigned)tx_fail.n,
+             (unsigned)n_no_ack, (unsigned)n_ack_rejects, (unsigned)n_sensor_faults, (unsigned)tx_fail.n, (unsigned)tx_air.n,
              (unsigned)stackmon_peak());
 }
 
@@ -228,7 +242,7 @@ static void send_current(void)
     else
     {
       /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
-      if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_fail, 0); APP_PRINTF("#error counter-reserve\n"); busy = 0; Radio.Sleep(); return; }
+      if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_air, 0); APP_PRINTF("#error counter-reserve\n"); busy = 0; Radio.Sleep(); return; }
       int flen = ws_seal_kind(key, station, WS_KIND_OBS, sent_counter, plain, (uint32_t)plen, frame, sizeof frame);
       if (flen < 0) { APP_PRINTF("#error seal\n"); }
       else
@@ -237,8 +251,8 @@ static void send_current(void)
         sent_seq = be32(plain + 4);
         n_sent++;
         led_flash(LED_BLUE, 400);
-        if (Radio.Send(frame, (uint8_t)flen) == RADIO_STATUS_OK) { ws_failrun_note(&tx_fail, 1); return; }
-        ws_failrun_note(&tx_fail, 0); APP_PRINTF("#error radio-busy\n");
+        if (Radio.Send(frame, (uint8_t)flen) == RADIO_STATUS_OK) return;  /* success is its TxDone */
+        ws_failrun_note(&tx_air, 0); APP_PRINTF("#error radio-busy\n");
       }
     }
     if (++qi >= qn) { finish_exchange(); return; }
@@ -383,7 +397,7 @@ static int send_diag(void)
   if (store_next_counter(&ctr) || ws_seal_kind(key, station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) < 0) return 0;
   diag_due = 0; last_diag_mcu = now;
   HAL_Delay(INTER_FRAME_MS);
-  if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) return 0;
+  if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_air, 0); return 0; }
   diag_in_flight = 1;
   APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u\n", f[0], (unsigned)lost, f[1], f[2], f[3]);
   return 1;
@@ -458,6 +472,7 @@ static void process(void)
   switch (ev)
   {
     case EV_TX_DONE:
+      ws_failrun_note(&tx_air, 1);   /* the frame left: the radio works */
       if (diag_in_flight) { diag_in_flight = 0; busy = 0; Radio.Sleep(); break; } /* no reply expected */
       Radio.Rx(ACK_WINDOW_MS);
       break;
@@ -471,6 +486,7 @@ static void process(void)
       next_item();
       break;
     case EV_TX_TIMEOUT:
+      ws_failrun_note(&tx_air, 0);
       led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n");
       if (diag_in_flight) { diag_in_flight = 0; busy = 0; Radio.Sleep(); break; }
       stop_drain(); next_item();
@@ -549,7 +565,8 @@ static int tx_healthy(void)
   if (!running) return 1;                                   /* not sampling by design */
   if (now - last_sample_mcu > 150) return 0;                /* sampling stopped */
   if (busy && now - exchange_start_mcu > 30) return 0;      /* radio exchange stuck */
-  if (ws_failrun_tripped(&tx_fail, TX_FAIL_LIMIT)) { APP_PRINTF("#watchdog %u failures in a row\n", (unsigned)tx_fail.n); return 0; }
+  if (ws_failrun_tripped(&tx_fail, TX_FAIL_LIMIT)) { APP_PRINTF("#watchdog %u journal failures in a row\n", (unsigned)tx_fail.n); return 0; }
+  if (ws_failrun_tripped(&tx_air, TX_FAIL_LIMIT)) { APP_PRINTF("#watchdog %u transmit failures in a row\n", (unsigned)tx_air.n); return 0; }
   return 1;
 }
 
@@ -573,8 +590,9 @@ static void storm(void)
     for (int k = 0; k < 4; k++) store_next_counter(&c);
   }
   if ((storm_writes & 255) == 0)
-    APP_PRINTF("#storm writes=%u ctr=%u burned=%u\n", (unsigned)storm_writes,
-               (unsigned)store_counter_next(), (unsigned)store_journal_burned());
+    { char ctr_buf[21];
+      APP_PRINTF("#storm writes=%u ctr=%s burned=%u\n", (unsigned)storm_writes,
+                 u64_text(store_counter_next(), ctr_buf), (unsigned)store_journal_burned()); }
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
 }
 
@@ -589,7 +607,8 @@ static void on_line(char *line)
   if (!strcmp(line, "TEST-HANG")) { APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n"); HAL_Delay(50); for (;;) { } }
   if (!strcmp(line, "TEST-FLASH-STORM"))
   {
-    APP_PRINTF("#storm start ctr=%u (bench only: cut power now)\n", (unsigned)store_counter_next());
+    { char ctr_buf[21];
+      APP_PRINTF("#storm start ctr=%s (bench only: cut power now)\n", u64_text(store_counter_next(), ctr_buf)); }
     storming = 1; running = 0; /* sampling paused: the watchdog must not count a stopped sampler */
     UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
     return;
