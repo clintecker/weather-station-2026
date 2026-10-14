@@ -54,7 +54,7 @@ class Gateway:
         self.cfg, self.directory = cfg, directory
         self.key = bytes.fromhex(cfg['radio_key'])
         self.store = Store(directory / 'observations.sqlite3')
-        self.nonces = Nonces(directory / 'gateway-nonces.sqlite3',self.key,cfg['station_id'],2)
+        self.nonces = Nonces(directory / 'gateway-nonces.sqlite3',self.key,cfg['station_id'],KIND_ACK)
         self.accepted = self.rejected = self.nacked = 0
         self.node_counter = self.nonces.node_counter()  # cached for the HTTP/MQTT threads
         self.clock = None  # ws0.clock.HostClock when serving hardware (gap G9); None = trust host
@@ -254,11 +254,13 @@ def http_server(gateway, port):
     return server
 
 
-def discovery(cfg, names=('temperature_c','humidity_pct')):
+DEFAULT_DISCOVERY = ('temperature_c','humidity_pct')   # advertised before the first reading
+
+
+def discovery(cfg, names=DEFAULT_DISCOVERY):
     """Stable HA identities, one sensor per catalog field the station sends (design section 8).
     Availability needs all three: the reading is fresh, the gateway is up, and this field is not
     null in the latest reading, so a faulted sensor shows as unavailable, never as a number."""
-    from .fields import BY_NAME, MEASURED
     root = f"weatherstation/v1/{cfg['station']}"
     result = {}
     for field in names:
@@ -347,8 +349,7 @@ class MQTT:
     def advertise(self, observation):
         """Discovery for the fields the newest reading carries (T/RH before the first reading);
         republished when a new field appears, e.g. after a sensor is added."""
-        from .fields import MEASURED
-        names = {n for n in (observation or {}) if n in MEASURED} or {'temperature_c','humidity_pct'}
+        names = {n for n in (observation or {}) if n in MEASURED} or set(DEFAULT_DISCOVERY)
         names |= {d for d, spec in DERIVED.items() if all(n in names for n in spec['needs'])}
         if names <= self.advertised:
             return
@@ -366,13 +367,12 @@ class MQTT:
         self.advertise(latest.get('observation'))
         # The weather topic carries the reading plus the gateway's derived values (e.g. dew point).
         weather = json.dumps(latest['observation'] | latest.get('derived', {})) if latest.get('observation') else None
-        state = (weather, 'online' if latest['available'] else 'offline')
         diag = self.gateway.store.latest_diagnostic(self.gateway.cfg['station'])
         alarm = self.gateway.counter_alarm()
         if diag or alarm['alarm']:
             diag = (diag or {}) | alarm  # key-reuse alarm (P4) rides on the diagnostics topic
         diagnostics = json.dumps(diag,sort_keys=True) if diag else None
-        state = state + (diagnostics,)
+        state = (weather, 'online' if latest['available'] else 'offline', diagnostics)
         if state == self.published and time.time() - self.published_at < self.REFRESH_S:
             return
         if weather:

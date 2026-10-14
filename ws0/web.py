@@ -18,17 +18,23 @@ Standard library only. The static page (ws0/static/) is served without authentic
 no data; every /v1/ endpoint, the stream included, needs the bearer token.
 """
 import collections
+import functools
 import ipaddress
+import itertools
 import json
 import math
 import secrets
+import sqlite3
 import sys
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
 
+from gateway import FAR_FUTURE
+
 from .fields import BY_NAME, FIELDS, LABELS, MEASURED
+from .protocol import frame_counter, frame_kind
 
 STATIC = Path(__file__).parent / 'static'
 # Fixed table: no path from the request ever reaches the file system.
@@ -44,7 +50,6 @@ MAX_STREAMS = 8         # one server thread per open stream (ThreadingHTTPServer
 HEARTBEAT_S = 15.0      # comment line on an idle stream: keeps proxies open, detects gone clients
 RING = 5000             # events kept for resume (~1 day at one station's rate)
 PENDING_RSSI_S = 2.0    # wait this long for the RX's '#rx obs rssi=' line after a frame
-FAR_FUTURE = 253402300800
 
 TABLES = (
     '''CREATE TABLE IF NOT EXISTS radio_events (id INTEGER PRIMARY KEY AUTOINCREMENT, station TEXT,
@@ -149,9 +154,11 @@ class EventHub:
             self.cond.wait_for(lambda: self.closed or self.seq > seq, timeout)
             if self.closed:
                 return None
-            if self.events and self.events[0][0] > seq + 1:
+            oldest = self.events[0][0] if self.events else self.seq + 1
+            if oldest > seq + 1:
                 return 'overflow'
-            return [e for e in self.events if e[0] > seq]
+            # Numbers are consecutive, so the events after seq start at a known index.
+            return list(itertools.islice(self.events, seq + 1 - oldest, None))
 
     def acquire(self):
         with self.cond:
@@ -174,8 +181,6 @@ def best_effort(method):
     """Telemetry never stops the data path: a failed SQLite write (disk full, I/O error, locked)
     is reported on stderr, at most once a minute, and the serve loop carries on. Observations,
     ACKs and the counter mark do not go through here."""
-    import functools
-    import sqlite3
 
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
@@ -229,7 +234,6 @@ class Telemetry:
         self.flush()
         kind = counter = None
         if isinstance(frame, (bytes, bytearray)) and len(frame) >= 8:
-            from .protocol import frame_counter, frame_kind
             kind = KIND_NAMES.get(frame_kind(frame), 'unknown')
             counter = frame_counter(frame)
         session = sequence = None

@@ -8,7 +8,7 @@ import hashlib
 import sqlite3
 import struct
 from pathlib import Path
-from gateway import full_flush
+from gateway import full_flush, validate
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
 from . import fields
@@ -171,12 +171,14 @@ def frame_counter(packet):
     return int.from_bytes(packet[3:HEADER_LEN], 'big')
 
 
+# Plaintext lengths a frame of each kind may have before decrypting (design 3.4). An observation's
+# exact length depends on its encrypted field bitmap and is checked after.
+PLAIN_LENGTHS = {KIND_OBS: range(fields.HEAD_LEN + 1, fields.HEAD_LEN + fields.fields_len(fields.DEFINED) + 1),
+                 KIND_ACK: (REPLY_LEN,), KIND_NACK: (REPLY_LEN,), KIND_DIAG: (DIAG.size,)}
+
+
 def plain_lengths(kind):
-    """Plaintext lengths a frame of this kind may have before decrypting (design 3.4). An
-    observation's exact length depends on its encrypted field bitmap and is checked after."""
-    if kind == KIND_OBS:
-        return range(fields.HEAD_LEN + 1, fields.HEAD_LEN + fields.fields_len(fields.DEFINED) + 1)
-    return (REPLY_LEN,) if kind in (KIND_ACK, KIND_NACK) else (DIAG.size,)
+    return PLAIN_LENGTHS.get(kind, ())
 
 
 def unseal(key, station, kind, packet):
@@ -191,7 +193,6 @@ def unseal(key, station, kind, packet):
 
 def encode_observation(record):
     """Gateway record -> draft-5 observation plaintext (design 5); the simulator's node uses it."""
-    from gateway import validate
     validate(record)
     return fields.encode(int(record['session']), record['sequence'], record['sampled_at'] or 0, record['uptime_s'],
                          fields.ENERGY.index(record['energy_state']), record['calibration_revision'],
@@ -207,6 +208,5 @@ def decode_observation(payload, station):
                   energy_state=head['energy_state'], calibration_revision=head['calibration_revision'],
                   **fields.values(codes))
     record['quality'] = fields.quality(record)
-    from gateway import validate
     validate(record)
     return record

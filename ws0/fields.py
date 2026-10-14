@@ -3,6 +3,7 @@
 docs/protocol-draft5-design.md section 5. The C twin is firmware/common/ws_obs.{c,h};
 tests/test_obs.py checks that both produce and accept the same bytes.
 """
+import math
 import struct
 from dataclasses import dataclass
 from decimal import ROUND_FLOOR, Decimal
@@ -26,6 +27,7 @@ class Field:
     ha_class: str = ''  # Home Assistant device_class
     counter: bool = False  # since-boot counter: non-decreasing in sequence order within an epoch
     meta: bool = False     # describes the other values (sample count); not counted in quality
+    clamp: bool = False    # relative humidity: readings just outside 0..100 are clamped, not INVALID
 
     @property
     def invalid(self):
@@ -45,7 +47,7 @@ class Field:
         """Physical value -> code: round half up; out of range -> INVALID (RH fields clamp)."""
         if value is None:
             return self.invalid
-        if self.name in ('humidity_pct', 'enclosure_rh_pct', 'humidity_min_pct', 'humidity_max_pct'):
+        if self.clamp:
             value = min(max(value, 0), 100)
         # Round half up = floor(x + 0.5), exact on the value as written (Decimal(str(x))): in binary
         # floating point -40.005 * 100 is -4000.5000000001 and would round the wrong way. (Decimal's
@@ -57,7 +59,7 @@ class Field:
         return n if 0 <= n <= self.max else self.invalid
 
 
-T, RH = dict(scale=100, offset=4000, unit='°C', ha_class='temperature'), dict(scale=100, unit='%', ha_class='humidity')
+T, RH = dict(scale=100, offset=4000, unit='°C', ha_class='temperature'), dict(scale=100, unit='%', ha_class='humidity', clamp=True)
 FIELDS = (
     Field(0, 'temperature_c', 2, 16500, **T),
     Field(1, 'humidity_pct', 2, 10000, **RH),
@@ -143,6 +145,9 @@ def decode(plain):
                 calibration_revision=cal_rev, time_known=bool(flags & 1))
     return head, codes
 
+# The qualifiers field holds 2 bits for each of the first 16 catalog fields (design 5.3).
+QUALIFIABLE = {f.name: f.index for f in FIELDS[:16]}
+
 
 def values(codes):
     """{field index: code} -> JSON-ready {name: value}. INVALID -> None; CALM -> None plus wind_calm."""
@@ -151,7 +156,7 @@ def values(codes):
         f = FIELDS[i]
         if f.name == 'qualifiers':
             out['qualifiers'] = {FIELDS[k].name: QUALIFIER[code >> 2 * k & 3]
-                                 for k in range(16) if code >> 2 * k & 3}
+                                 for k in QUALIFIABLE.values() if code >> 2 * k & 3}
         elif f.name == 'wind_dir_deg':
             out['wind_calm'] = code == WIND_DIR_CALM
             out[f.name] = None if code in (WIND_DIR_CALM, f.invalid) else code
@@ -180,8 +185,7 @@ def codes_from_record(record):
             continue
         v = record[f.name]
         if f.name == 'qualifiers':
-            names = {g.name: g.index for g in FIELDS[:16]}
-            codes[f.index] = sum(QUALIFIER.index(q) << 2 * names[n] for n, q in v.items())
+            codes[f.index] = sum(QUALIFIER.index(q) << 2 * QUALIFIABLE[n] for n, q in v.items())
         elif f.name == 'wind_dir_deg' and record.get('wind_calm'):
             codes[f.index] = WIND_DIR_CALM
         else:
@@ -194,7 +198,6 @@ def dew_point(temperature_c, humidity_pct):
     ±0.35 °C from −45 to +60 °C), rounded to 0.01. None when either input is missing or RH is 0
     (the logarithm is undefined; the air has no measurable water). Derived values are computed at
     publication and never stored in the immutable observation payload."""
-    import math
     if temperature_c is None or humidity_pct is None or humidity_pct <= 0:
         return None
     a, b = 17.62, 243.12

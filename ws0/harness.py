@@ -19,7 +19,7 @@ import random
 import sqlite3
 import tempfile
 from cryptography.exceptions import InvalidTag
-from .protocol import HEADER_LEN, KIND_NACK, NACK_COLLISION, Nonces, frame_counter, frame_kind, unpack_reply, unseal
+from .protocol import HEADER_LEN, KIND_ACK, KIND_NACK, KIND_OBS, NACK_COLLISION, Nonces, frame_counter, frame_kind, unpack_reply, unseal
 from .service import CounterRegression, Gateway, Replay
 from .simulator import BACKLOG_PER_MINUTE, Node
 
@@ -307,7 +307,7 @@ class Campaign:
             radio_key = hashlib.sha256(('PUBLIC-TEST-KEY/'+self.s.name).encode()).digest()[:16]
             self.cfg = {'station':'simulation-01','station_id':1,'mode':'simulation',
                         'radio_key':radio_key.hex(),'api_token':'not-a-deployment-token','mqtt':{'enabled':False}}
-            for name,kind in [('node',1),('gateway',2)]:
+            for name,kind in [('node',KIND_OBS),('gateway',KIND_ACK)]:
                 Nonces(self.state/f'{name}-nonces.sqlite3',radio_key,1,kind,create=True).db.close()
             self.node = Node(self.cfg,self.state)
             self.gateway = Gateway(self.cfg,self.state)

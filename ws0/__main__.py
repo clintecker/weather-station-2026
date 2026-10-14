@@ -9,7 +9,7 @@ import sys
 import time
 from cryptography.exceptions import InvalidTag
 from pathlib import Path
-from .protocol import Nonces
+from .protocol import KIND_ACK, KIND_OBS, Nonces
 from .service import Gateway, MQTT, http_server, load_config
 from .simulator import BACKLOG_PER_MINUTE, DemoReceiver, Node
 from .link import ReceiverLink
@@ -32,7 +32,7 @@ def provision(directory, hardware=False, station='simulation-01', station_id=1):
     config.write_text(json.dumps(cfg,indent=2)+'\n')
     config.chmod(0o600)
     load_config(config)
-    for name,kind in ([('gateway',2)] if hardware else [('node',1),('gateway',2)]):
+    for name,kind in ([('gateway',KIND_ACK)] if hardware else [('node',KIND_OBS),('gateway',KIND_ACK)]):
         Nonces(directory/f'{name}-nonces.sqlite3',key,station_id,kind,create=True).db.close()
     print(f'Created {directory}; secrets stay in gateway.json')
 

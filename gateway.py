@@ -9,6 +9,8 @@ import threading
 import time
 from pathlib import Path
 
+from ws0 import fields as F
+
 # Reconstructed time (draft 4): an unsynchronized sample gets UTC from the nearest synchronized
 # sample of the same boot epoch: utc = ref_utc + (uptime - ref_uptime). Error bound: 1 s
 # quantization on each of the two whole-second fields, plus crystal drift. The 32.768 kHz
@@ -18,6 +20,7 @@ DRIFT_PPM = 150
 QUANTIZATION_S = 2
 # Time with a larger error bound is never presented as a current measurement.
 CURRENT_MAX_UNCERTAINTY_S = 10
+FAR_FUTURE = 253402300800   # 10000-01-01T00:00:00Z: the open end of a time range
 
 
 def full_flush(db):
@@ -42,7 +45,6 @@ BASE_KEYS = frozenset({'version','station','session','sequence','sampled_at','up
 def validate(record):
     """Closed schema for protocol draft 5 (docs/protocol-draft5-design.md 5.7): identity and time as
     before, catalog fields with exact, representable values, and a quality that matches them."""
-    from ws0 import fields as F
     if not isinstance(record, dict) or type(record.get('version')) is not int or record['version'] != 5:
         raise ValueError('Unsupported version')
     if not BASE_KEYS <= set(record):
@@ -82,7 +84,7 @@ def validate(record):
         raise ValueError('Wind direction without a valid speed')
     if 'qualifiers' in record:
         q = record['qualifiers']
-        if not isinstance(q, dict) or any(n not in {g.name for g in F.FIELDS[:16]} or v not in F.QUALIFIER[1:]
+        if not isinstance(q, dict) or any(n not in F.QUALIFIABLE or v not in F.QUALIFIER[1:]
                                           for n, v in q.items()):
             raise ValueError('Invalid qualifiers')
     if record['quality'] != F.quality(record):
@@ -163,8 +165,7 @@ class Store:
         """Since-boot counters (rain tips, energy, charge) never decrease in sequence order within an
         epoch (design 5.3). Compared with the stored neighbours by sequence, not by arrival, so a
         backfilled older record is fine; a decrease is an invalid record."""
-        from ws0.fields import FIELDS
-        for f in FIELDS:
+        for f in F.FIELDS:
             value = record.get(f.name)
             if not f.counter or value is None:
                 continue
@@ -254,19 +255,17 @@ class Store:
         vague = uncertainty is not None and uncertainty > CURRENT_MAX_UNCERTAINTY_S
         timely = age is not None and 0 <= age < 180 and not future and not vague
         # Availability is per field (design 5.7): one dead sensor never hides the others.
-        from ws0.fields import BY_NAME, MEASURED
         fields = {name: timely and (record[name] is not None or (name == 'wind_dir_deg' and record.get('wind_calm', False)))
-                  for name in MEASURED if name in record}
+                  for name in F.MEASURED if name in record}
         available = timely and record['quality'] != 'sensor_fault'
         reason = ('future_clock_at_receipt' if future else 'unknown_clock' if age is None else
                   'time_uncertain' if vague else
                   'sensor_fault' if record['quality']=='sensor_fault' else 'fresh' if timely else 'stale_or_clock_step')
-        from ws0.fields import derived
         return {'available':available,'reason':reason,'fields_available':fields,'age_seconds':age,'received_at':row[1],
-                'observation':record,'derived':derived(record),'effective_sampled_at':effective,'time_basis':basis,
-                'time_uncertainty_s':uncertainty,'units':{n: BY_NAME[n].unit for n in fields if BY_NAME[n].unit}}
+                'observation':record,'derived':F.derived(record),'effective_sampled_at':effective,'time_basis':basis,
+                'time_uncertainty_s':uncertainty,'units':{n: F.BY_NAME[n].unit for n in fields if F.BY_NAME[n].unit}}
 
-    def history(self, station, start=0, end=253402300800, limit=100, offset=0):
+    def history(self, station, start=0, end=FAR_FUTURE, limit=100, offset=0):
         """Stable page ordering; UTC-unknown records remain in DB but outside time queries."""
         with self.lock:
             rows = self.db.execute('''SELECT payload,received_at,effective_at,time_basis,time_uncertainty_s

@@ -5,7 +5,7 @@ import random
 import sqlite3
 import time
 from gateway import full_flush
-from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, Nonces, encode_observation, frame_counter, frame_kind, seal, unpack_reply,
+from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, Nonces, encode_observation, frame_counter, frame_kind, seal, unpack_reply,
                        unseal)
 
 # Backlog records sent per minute after the live one: the firmware's NORMAL energy state
@@ -19,7 +19,7 @@ class Node:
     def __init__(self,cfg,directory):
         self.cfg = cfg
         self.key = bytes.fromhex(cfg['radio_key'])
-        self.nonces = Nonces(directory/'node-nonces.sqlite3',self.key,cfg['station_id'],1)
+        self.nonces = Nonces(directory/'node-nonces.sqlite3',self.key,cfg['station_id'],KIND_OBS)
         self.db = sqlite3.connect(directory/'node-journal.sqlite3')
         full_flush(self.db)
         self.db.execute('CREATE TABLE IF NOT EXISTS boot (epoch INTEGER)')
@@ -59,7 +59,7 @@ class Node:
         return record
 
     def packet(self,record):
-        frame = seal(self.key,self.cfg['station_id'],1,self.nonces,encode_observation(record))
+        frame = seal(self.key,self.cfg['station_id'],KIND_OBS,self.nonces,encode_observation(record))
         self.sent.add(frame_counter(frame))
         return frame
 
