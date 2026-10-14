@@ -19,7 +19,9 @@ Rules (conservative where the graph is incomplete):
 Exit status 1 if the estimate exceeds --limit, or on recursion or dynamic frames.
 """
 import argparse
+import functools
 import os
+import math
 import re
 import subprocess
 import sys
@@ -66,13 +68,20 @@ def resolve(name, frames, defined_in):
     return defined_in.get(name.split(':')[-1], [])
 
 
+@functools.lru_cache(maxsize=None)
+def nm_lines(elf, toolchain):
+    """`arm-none-eabi-nm` of the .elf, run once per (elf, toolchain)."""
+    return subprocess.run([str(Path(toolchain)/'arm-none-eabi-nm'), str(elf)], capture_output=True,
+                          text=True, check=True).stdout.splitlines()
+
+
 def address_taken(build, toolchain):
     """Function names whose address is taken (non-call relocations outside debug sections) and that
     survive linking into the .elf."""
     tool = lambda name: str(Path(toolchain)/f'arm-none-eabi-{name}')
     elf = next(Path(build).glob('*.elf'))
-    linked = {line.split()[-1] for line in subprocess.run([tool('nm'), str(elf)], capture_output=True,
-              text=True, check=True).stdout.splitlines() if len(line.split()) == 3 and line.split()[1] in 'Tt'}
+    linked = {line.split()[-1] for line in nm_lines(elf, toolchain)
+              if len(line.split()) == 3 and line.split()[1] in 'Tt'}
     taken = set()
     for obj in Path(build).rglob('*.o'):
         out = subprocess.run([tool('objdump'), '-r', str(obj)], capture_output=True, text=True).stdout
@@ -97,8 +106,7 @@ def stack_symbols(build, toolchain):
     """Reserved stack (_Min_Stack_Size) and the free RAM the stack can really grow into."""
     elf = next(Path(build).glob('*.elf'))
     syms = {}
-    for line in subprocess.run([str(Path(toolchain)/'arm-none-eabi-nm'), str(elf)], capture_output=True,
-                               text=True, check=True).stdout.splitlines():
+    for line in nm_lines(elf, toolchain):
         parts = line.split()
         if len(parts) == 3:
             syms[parts[2]] = int(parts[0], 16)
@@ -108,22 +116,27 @@ def stack_symbols(build, toolchain):
 
 def analyse(build, toolchain=DEFAULT_TOOLCHAIN):
     frames, kinds, edges, defined_in = load(build)
-    roots_irq = [f for f in frames if re.search(r'(_IRQHandler|_Handler)$', f.split(':')[-1])]
+    roots_irq = [f for f in frames if f.split(':')[-1].endswith('_Handler')]   # includes *_IRQHandler
     taken = address_taken(build, toolchain)
     callbacks = [f for f in frames if f.split(':')[-1] in taken and f not in roots_irq]
     memo, missing, recursion = {}, set(), []
 
     def depth(f, stack):
-        """Deepest direct-call stack below f (pointer calls are accounted for separately)."""
+        """Deepest direct-call stack below f (pointer calls are accounted for separately), and
+        the lowest stack index at which a cycle was cut below f (len(stack) or more: none open).
+        A result computed while a cycle through a caller still on the stack was cut short is
+        partial (the caller's other callees were not counted on that path), so it is not
+        memoised: reused from another path it would understate the depth."""
         if f in memo:
-            return memo[f]
+            return (*memo[f], math.inf)
         if f in stack:
-            cycle = stack[stack.index(f):]
+            at = stack.index(f)
+            cycle = stack[at:]
             if frozenset(c.split(':')[-1] for c in cycle) in BOUNDED_RECURSION:
-                return frames[f], [f]              # one extra level of the bounded cycle
+                return frames[f], [f], at          # one extra level of the bounded cycle
             recursion.append(' -> '.join(c.split(':')[-1] for c in cycle + [f]))
-            return 0, [f]
-        best, path = 0, []
+            return 0, [f], at
+        best, path, cut = 0, [], math.inf
         for d in edges.get(f, ()):
             if d == INDIRECT:
                 continue
@@ -131,14 +144,18 @@ def analyse(build, toolchain=DEFAULT_TOOLCHAIN):
             if not cands:
                 missing.add(d.split(':')[-1])
             for c in cands:
-                cost, p = depth(c, stack + [f])
+                cost, p, c_cut = depth(c, stack + [f])
+                cut = min(cut, c_cut)
                 if cost > best:
                     best, path = cost, p
-        memo[f] = (frames[f] + best, [f] + path)
-        return memo[f]
+        result = (frames[f] + best, [f] + path)
+        if cut >= len(stack):                      # no cut through a caller still open
+            memo[f] = result
+            cut = math.inf
+        return (*result, cut)
 
     mains = [f for f in frames if f.split(':')[-1] == 'main']
-    main_cost, main_path = depth(mains[0], []) if mains else (0, [])
+    main_cost, main_path = depth(mains[0], [])[:2] if mains else (0, [])
     cb = max(((depth(c, [])[0], c) for c in callbacks), default=(0, '-'))
     irq = sorted(((depth(r, [])[0], r) for r in roots_irq), reverse=True)
     worst_irq = irq[0] if irq else (0, '-')
