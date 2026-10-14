@@ -2,6 +2,21 @@
 
 **Board firmware now lives in [`stage0-node/`](stage0-node/README.md)** (2026-10-12: TX/RX built, flashed, link verified on the bench; sensor not yet wired; H01 NOT RUN).
 
+## Layout
+
+| Path | What |
+|---|---|
+| `board/nucleo-wl55jc/` | Shared NUCLEO-WL55JC1 board code from ST's CubeWL template (`Core/`, `startup/`, `SubGHz_Phy/Target/`), the linker script (64 KB application region for every project: pages 32–127 hold the node key and journal) and `board.mk`, the common build rules each project Makefile includes. `Core/Inc/sys_conf.h` takes `VERBOSE_LEVEL` and `LOW_POWER_DISABLE` from the project's `DEFS`. |
+| `stage0-node/` | The weather-station firmware, TX and RX roles. Keeps its own `Core/Src/stm32wlxx_it.c` (flash-ECC NMI, HardFault record). |
+| `rangetest/` | Bench range-test tool (`rangetest/README.md`). |
+| `pingpong/` | ST's PingPong example, the first smoke test. |
+| `common/` | Frame, observation and console code shared by the firmware and the host tests. |
+| `fuzz/` | Host fuzz targets for the input parsers (`fuzz/README.md`). |
+| `stage0.c`, `test_*.c`, `sim_flash.*` | Portable sensor and policy code plus the host test drivers run by `tests/`. |
+
+Each project keeps only its application, its sequencer task list (`Core/Inc/utilities_def.h`) and a short
+Makefile that sets `TARGET`, `APP_SRC`, `DEFS` and `OPT` before including `../board/nucleo-wl55jc/board.mk`.
+
 `stage0.c` and `stage0.h` provide portable SHT45 acquisition and packet serialization.
 They compile with warnings-as-errors in the host tests and are linked unchanged into the
 TX firmware. (The original checkpoint note that no ARM build or radio transmission had been

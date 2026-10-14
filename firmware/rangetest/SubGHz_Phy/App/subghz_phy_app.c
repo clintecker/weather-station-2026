@@ -65,8 +65,6 @@ typedef enum
 #endif /* (PAYLOAD_LEN > MAX_APP_BUFFER_SIZE) */
 /* wait for remote to be in Rx, before sending a Tx frame*/
 #define RX_TIME_MARGIN                200
-/* Afc bandwidth in Hz */
-#define FSK_AFC_BANDWIDTH             83333
 /* LED blink Period*/
 #define LED_PERIOD_MS                 200
 /* weather-station-2026: extra time a board holds the "ball" (blue LED on) before returning it.
@@ -178,6 +176,12 @@ static void PingPong_Process(void);
 static void RadioSend(uint8_t type);
 
 /**
+  * @brief rangetest: hold the ball (blue LED), wait for the peer to be in RX, then send it back
+  *        as a PING (master) or PONG (slave)
+  */
+static void ReturnBall(uint8_t type);
+
+/**
   * @brief rangetest: button presses, run from the sequencer (never inside the interrupt)
   */
 static void Buttons_Process(void);
@@ -253,19 +257,10 @@ void SubghzApp_Init(void)
   Radio.SetChannel(RF_FREQUENCY);
 
   /* Radio configuration */
-#if ((USE_MODEM_LORA == 1) && (USE_MODEM_FSK == 0))
   APP_LOG(TS_OFF, VLEVEL_M, "---------------\n\r");
   APP_LOG(TS_OFF, VLEVEL_M, "LORA_MODULATION\n\r");
   APP_LOG(TS_OFF, VLEVEL_M, "LORA_BW=%d kHz\n\r", (1 << LORA_BANDWIDTH) * 125);
   APP_LOG(TS_OFF, VLEVEL_M, "#rt cfg sf=%d pwr=%d boot\n\r", rt_cur_sf(&rt), rt_cur_pwr(&rt));
-#elif ((USE_MODEM_LORA == 0) && (USE_MODEM_FSK == 1))
-  APP_LOG(TS_OFF, VLEVEL_M, "---------------\n\r");
-  APP_LOG(TS_OFF, VLEVEL_M, "FSK_MODULATION\n\r");
-  APP_LOG(TS_OFF, VLEVEL_M, "FSK_BW=%d Hz\n\r", FSK_BANDWIDTH);
-  APP_LOG(TS_OFF, VLEVEL_M, "FSK_DR=%d bits/s\n\r", FSK_DATARATE);
-#else
-#error "Please define a modulation in the subghz_phy_app.h file."
-#endif /* USE_MODEM_LORA | USE_MODEM_FSK */
 
   /*fills tx buffer*/
   memset(BufferTx, 0x0, MAX_APP_BUFFER_SIZE);
@@ -303,15 +298,9 @@ static void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t LoraS
 {
   /* USER CODE BEGIN OnRxDone */
   APP_LOG(TS_ON, VLEVEL_L, "OnRxDone\n\r");
-#if ((USE_MODEM_LORA == 1) && (USE_MODEM_FSK == 0))
   APP_LOG(TS_ON, VLEVEL_L, "RssiValue=%d dBm, SnrValue=%ddB\n\r", rssi, LoraSnr_FskCfo);
   /* Record payload Signal to noise ratio in Lora*/
   SnrValue = LoraSnr_FskCfo;
-#endif /* USE_MODEM_LORA | USE_MODEM_FSK */
-#if ((USE_MODEM_LORA == 0) && (USE_MODEM_FSK == 1))
-  APP_LOG(TS_ON, VLEVEL_L, "RssiValue=%d dBm, Cfo=%dkHz\n\r", rssi, LoraSnr_FskCfo);
-  SnrValue = 0; /*not applicable in GFSK*/
-#endif /* USE_MODEM_LORA | USE_MODEM_FSK */
   /* Update the State of the FSM*/
   State = RX;
   /* Clear BufferRx*/
@@ -324,17 +313,6 @@ static void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t LoraS
   }
   /* Record Received Signal Strength*/
   RssiValue = rssi;
-  /* Record payload content*/
-  APP_LOG(TS_ON, VLEVEL_H, "payload. size=%d \n\r", size);
-  for (int32_t i = 0; i < PAYLOAD_LEN; i++)
-  {
-    APP_LOG(TS_OFF, VLEVEL_H, "%02X", BufferRx[i]);
-    if (i % 16 == 15)
-    {
-      APP_LOG(TS_OFF, VLEVEL_H, "\n\r");
-    }
-  }
-  APP_LOG(TS_OFF, VLEVEL_H, "\n\r");
   /* Run PingPong process in background*/
   UTIL_SEQ_SetTask((1 << CFG_SEQ_Task_SubGHz_Phy_App_Process), CFG_SEQ_Prio_0);
   /* USER CODE END OnRxDone */
@@ -377,7 +355,6 @@ static void OnRxError(void)
 static void RadioSend(uint8_t type)
 {
   rt_build(&rt, type, txSeq++, lastRssi, lastSnr, BufferTx);
-#if ((USE_MODEM_LORA == 1) && (USE_MODEM_FSK == 0))
   Radio.Sleep();
   Radio.SetChannel(RF_FREQUENCY);
   Radio.SetTxConfig(MODEM_LORA, (int8_t)rt_cur_pwr(&rt), 0, LORA_BANDWIDTH,
@@ -385,22 +362,11 @@ static void RadioSend(uint8_t type)
                     LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
                     true, 0, 0, LORA_IQ_INVERSION_ON, TX_TIMEOUT_VALUE);
   Radio.SetMaxPayloadLength(MODEM_LORA, MAX_APP_BUFFER_SIZE);
-#elif ((USE_MODEM_LORA == 0) && (USE_MODEM_FSK == 1))
-  Radio.SetTxConfig(MODEM_FSK, TX_OUTPUT_POWER, FSK_FDEV, 0,
-                    FSK_DATARATE, 0,
-                    FSK_PREAMBLE_LENGTH, FSK_FIX_LENGTH_PAYLOAD_ON,
-                    true, 0, 0, 0, TX_TIMEOUT_VALUE);
-  Radio.SetMaxPayloadLength(MODEM_FSK, MAX_APP_BUFFER_SIZE);
-#else
-#error "Please define a modulation in the subghz_phy_app.h file."
-#endif /* USE_MODEM_LORA | USE_MODEM_FSK */
-
   Radio.Send(BufferTx, PAYLOAD_LEN);
 }
 
 static void RadioRx(void)
 {
-#if ((USE_MODEM_LORA == 1) && (USE_MODEM_FSK == 0))
   Radio.Sleep();
   Radio.SetChannel(RF_FREQUENCY);
   Radio.SetRxConfig(MODEM_LORA, LORA_BANDWIDTH, (uint32_t)rt_cur_sf(&rt),
@@ -415,23 +381,6 @@ static void RadioRx(void)
   {
     Radio.SetMaxPayloadLength(MODEM_LORA, MAX_APP_BUFFER_SIZE);
   }
-#elif ((USE_MODEM_LORA == 0) && (USE_MODEM_FSK == 1))
-  Radio.SetRxConfig(MODEM_FSK, FSK_BANDWIDTH, FSK_DATARATE,
-                    0, FSK_AFC_BANDWIDTH, FSK_PREAMBLE_LENGTH,
-                    0, FSK_FIX_LENGTH_PAYLOAD_ON, 0, true,
-                    0, 0, false, true);
-  if (LORA_FIX_LENGTH_PAYLOAD_ON == true)
-  {
-    Radio.SetMaxPayloadLength(MODEM_FSK, PAYLOAD_LEN);
-  }
-  else
-  {
-    Radio.SetMaxPayloadLength(MODEM_FSK, MAX_APP_BUFFER_SIZE);
-  }
-#else
-#error "Please define a modulation in the subghz_phy_app.h file."
-#endif /* USE_MODEM_LORA | USE_MODEM_FSK */
-
   Radio.Rx(RX_TIMEOUT_VALUE);
 }
 
@@ -468,11 +417,7 @@ static void PingPong_Process(void)
       {
         if (gotPong)
         {
-          CatchBall();
-          /* Add delay between RX and TX */
-          HAL_Delay(Radio.GetWakeupTime() + RX_TIME_MARGIN + BALL_HOLD_MS);
-          APP_LOG(TS_ON, VLEVEL_L, "Master Tx start\n\r");
-          RadioSend(RT_PING);
+          ReturnBall(RT_PING);
         }
         else if (gotPing)
         {
@@ -491,11 +436,7 @@ static void PingPong_Process(void)
       {
         if (gotPing)
         {
-          CatchBall();
-          /* Add delay between RX and TX */
-          HAL_Delay(Radio.GetWakeupTime() + RX_TIME_MARGIN + BALL_HOLD_MS);
-          APP_LOG(TS_ON, VLEVEL_L, "Slave  Tx start\n\r");
-          RadioSend(RT_PONG);
+          ReturnBall(RT_PONG);
         }
         else /* valid reception but not a PING as expected */
         {
@@ -552,6 +493,27 @@ static void LogEvents(int ev)
     rt_cfg_t c = rt_event_cfg(&rt, ev, events[i].bit);
     APP_LOG(TS_ON, VLEVEL_L, "#rt cfg sf=%d pwr=%d %s\n\r", rt_sf_of(c), rt_pwr_of(c), events[i].name);
   }
+}
+
+/* rangetest: user buttons B1 (PA0), B2 (PA1), B3 (PC6). The board's stock stm32wlxx_it.c has no
+   EXTI handlers, so they live here with the code that enables them in SubghzApp_Init. */
+void EXTI0_IRQHandler(void);
+void EXTI1_IRQHandler(void);
+void EXTI9_5_IRQHandler(void);
+
+void EXTI0_IRQHandler(void)
+{
+  HAL_GPIO_EXTI_IRQHandler(BUT1_Pin);
+}
+
+void EXTI1_IRQHandler(void)
+{
+  HAL_GPIO_EXTI_IRQHandler(BUT2_Pin);
+}
+
+void EXTI9_5_IRQHandler(void)
+{
+  HAL_GPIO_EXTI_IRQHandler(BUT3_Pin);
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -617,6 +579,15 @@ static void OnledEvent(void *context)
   HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin); /* LED_GREEN */
   HAL_GPIO_TogglePin(LED3_GPIO_Port, LED3_Pin); /* LED_RED */
   UTIL_TIMER_Start(&timerLed);
+}
+
+static void ReturnBall(uint8_t type)
+{
+  CatchBall();
+  /* Add delay between RX and TX */
+  HAL_Delay(Radio.GetWakeupTime() + RX_TIME_MARGIN + BALL_HOLD_MS);
+  APP_LOG(TS_ON, VLEVEL_L, "%s Tx start\n\r", type == RT_PING ? "Master" : "Slave ");
+  RadioSend(type);
 }
 
 static void CatchBall(void)

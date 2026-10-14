@@ -1,4 +1,5 @@
 #include "stage0.h"
+#undef NDEBUG /* the checks below are assert()s: keep them in every build */
 #include <assert.h>
 #include <stdio.h>
 /* Host tests for the I2C stuck-bus recovery waveform and the per-minute link gate. */
@@ -92,7 +93,6 @@ int main(void) {
  assert(ws_stack_peak(ram, ram+64)==(64-10)*4);
  ram[0]=0;
  assert(ws_stack_peak(ram, ram+64)==64*4);                  /* reached the bottom: overflow suspect */
- puts("policy ok");
  /* 15-s T/RH window: mean rounds half up (also below zero), extrema, out-of-range samples skipped. */
  { ws_th_window w; int16_t t; uint16_t h;
    ws_th_reset(&w); assert(!ws_th_mean_t(&w,&t) && !ws_th_mean_h(&w,&h));
@@ -109,5 +109,6 @@ int main(void) {
    assert(ws_th_mean_t(&w,&t) && t==-1);
    for(int i=0;i<300;i++) ws_th_add(&w,1,12500,10000);                  /* saturates at 255 samples */
    assert(w.n==255 && ws_th_mean_t(&w,&t)); }
+ puts("policy ok");
  return 0;
 }

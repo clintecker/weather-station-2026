@@ -1,8 +1,10 @@
 # Range test (bench tool)
 
 Measures the LoRa link in **both directions about once a second** while you walk. Built from ST's
-SubGHz_Phy PingPong (STM32CubeWL v1.6.0, see `readme.txt`); `firmware/pingpong` stays as the recorded
-smoke test. Not the weather-station protocol and not H01 evidence.
+SubGHz_Phy PingPong (STM32CubeWL v1.6.0); `firmware/pingpong` stays as the recorded smoke test. The
+board code, linker script and build rules are shared with the node in `firmware/board/nucleo-wl55jc`;
+this directory holds only the application (`SubGHz_Phy/App/`, `App/rt_proto.*`) and its sequencer
+task list (`Core/Inc/utilities_def.h`). Not the weather-station protocol and not H01 evidence.
 
 Both boards run the same image. They bounce a 16-byte packet back and forth. Each packet carries what
 the sender measured of the other board's previous packet, so one console logs both directions.
@@ -46,11 +48,10 @@ Flash both boards with the same build. The packet version byte (`RT_VERSION` in 
 across tool versions v1–v3, so boards running different builds talk to each other without any warning. Status as of 2026-10-13
 (about 17:00Z): v3 (SF12 / +22 dBm boot and fallback) was built and tested on the host, **not yet flashed**.
 
-The image is currently about 36 KB, so it stays below the weather-station node state at `0x08010000`
-(page 32), and the provisioned key and journal survive. **This is not enforced:** the rangetest linker
-script allows the full 256 KB (`STM32WL55JCIX_FLASH.ld`), unlike `firmware/stage0-node`. Put the
-weather-station release back afterwards (see `firmware/stage0-node/RELEASES.md`) and confirm `STATUS`
-shows the expected `kcv`.
+The image is about 36 KB. It links with the board's shared linker script, which stops at the 64 KB
+application region (pages 0–31), so a range-test build can never reach the weather-station node state
+at `0x08010000` (page 32): the provisioned key and journal survive. Put the weather-station release
+back afterwards (see `firmware/stage0-node/RELEASES.md`) and confirm `STATUS` shows the expected `kcv`.
 
 Logger (`tools/rangetest_log.py <board> <csv>`):
 - `<board>` is an ST-LINK serial number (preferred) or a `/dev/...` port path. The logger reopens the port after a USB dropout and records a `usb` row.

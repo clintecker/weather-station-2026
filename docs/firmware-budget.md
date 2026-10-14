@@ -16,7 +16,7 @@ measurements.
 | CPU | Cortex-M4 at 48 MHz (Cortex-M0+ core unused) | One sample and a few frames per minute | No constraint |
 | Radio payload | 26-byte observation plaintext in a 42-byte frame (T/RH); the draft-5 catalog allows up to 69 B in an 85-byte frame | Temperature and humidity only | No longer the limit: every catalog field fits in one frame (section below) |
 
-Sources: `STM32WL55JCIX_FLASH.ld` (FLASH 64K, RAM1/RAM2 32K each, heap 0x200, stack 0x2000 since the stack work below; 0x800 before),
+Sources: `firmware/board/nucleo-wl55jc/STM32WL55JCIX_FLASH.ld` (shared by every NUCLEO project; FLASH 64K, RAM1/RAM2 32K each, heap 0x200, stack 0x2000 since the stack work below; 0x800 before),
 `App/flash_layout.h`, `firmware/common/ws_frame.h` (`WS_HEADER_LEN 8`, `WS_TAG_LEN 8`), `firmware/common/ws_obs.h` and
 `App/node_fields.h` (`WS_OBS_PLAIN_MAX` = 26 for T/RH).
 

@@ -42,14 +42,14 @@ ENTRY(Reset_Handler)
 _estack = ORIGIN(RAM1) + LENGTH(RAM1); /* end of "RAM1" Ram type memory */
 
 _Min_Heap_Size = 0x200; /* required amount of heap  */
-_Min_Stack_Size = 0x800; /* required amount of stack */
+_Min_Stack_Size = 0x2000; /* weather-station-2026: 8 KB reserved, above the worst-case bound from tools/stack_report.py */
 
 /* Memories definition */
 MEMORY
 {
   RAM1   (xrw)   : ORIGIN = 0x20000000, LENGTH = 32K
   RAM2   (xrw)   : ORIGIN = 0x20008000, LENGTH = 32K
-  FLASH   (rx)   : ORIGIN = 0x08000000, LENGTH = 256K
+  FLASH   (rx)   : ORIGIN = 0x08000000, LENGTH = 64K   /* weather-station-2026: pages 32..127 hold node state, see firmware/stage0-node/App/flash_layout.h. Shared by every project on this board, so a bench-tool image cannot reach the node key or journal */
 }
 
 /* Sections */

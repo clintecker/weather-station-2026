@@ -33,6 +33,9 @@ class Fuzz(unittest.TestCase):
                              capture_output=True, text=True, timeout=600)
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr[-4000:])
         self.assertIn(f'fuzz ok: {len(corpus)} corpus files', run.stdout)
+        # A corpus file over the driver's input limit, or more files than it keeps as seeds,
+        # would be fuzzed only in part: standalone.c warns, and the corpus must not trigger it.
+        self.assertNotIn('warning:', run.stderr)
 
     def test_reply(self):
         self.run_target('reply')

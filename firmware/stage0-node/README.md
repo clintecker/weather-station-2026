@@ -1,6 +1,6 @@
 # Stage-0 node firmware (NUCLEO-WL55JC1)
 
-One source tree, two roles: **TX** (sensor node, board A `003B00194142500E20353451`) and **RX** (USB receiver bridge, board B `0016001E4142500E20353451`). Built on ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0). Wire protocol: [`docs/protocol.md`](../../docs/protocol.md) draft 5 (see also [`protocol-stack.md`](../../docs/protocol-stack.md)).
+One source tree, two roles: **TX** (sensor node, board A `003B00194142500E20353451`) and **RX** (USB receiver bridge, board B `0016001E4142500E20353451`). Built on ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0), which lives in [`../board/nucleo-wl55jc`](../board/nucleo-wl55jc/board.mk) and is shared with the bench tools (`firmware/rangetest`, `firmware/pingpong`): `Core/`, `startup/`, `SubGHz_Phy/Target/`, the linker script and the common build rules (`board.mk`). This project keeps only its own `Core/Src/stm32wlxx_it.c` (flash-ECC NMI hook, HardFault record) and `Core/Inc/utilities_def.h` (sequencer tasks). Wire protocol: [`docs/protocol.md`](../../docs/protocol.md) draft 5 (see also [`protocol-stack.md`](../../docs/protocol-stack.md)).
 
 **Status (2026-10-14):**
 - Release `bc5e6ede429c` ([`RELEASES.md`](RELEASES.md)), protocol **draft 5** (8-byte header and tag, field catalog, 32-byte health report), is on both boards since 2026-10-14, and the bench link works end to end.
@@ -27,8 +27,11 @@ Makefile variables and targets:
 | `SERIAL` | none | ST-LINK serial of the board to program (`flash` target only). |
 | `CUBE` | `../../vendor/STM32CubeWL` | STM32CubeWL checkout created by `tools/fetch-vendor.sh`. |
 | `TOOLCHAIN` | `~/.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin` | Directory that holds `arm-none-eabi-gcc`. |
-| `all` (default target) | | Builds the `.elf` and `.bin`, then prints the size and the `.bin` SHA-256. |
+| `BUILD` | `build/<role>` | Build directory (CI uses separate ones for the analyzer builds). |
+| `ANALYZE` | unset | `1` adds GCC's static analyzer (`-fanalyzer`) to our own C, which always builds with a strict warning set and `-Werror`. |
+| `all` (default target) | | Builds the `.elf` and `.bin`, then prints the size, the flash budget line and the `.bin` SHA-256. |
 | `flash` | | Builds if needed, then programs the `.elf` with OpenOCD (connect under reset) and verifies it. |
+| `stack` | | Worst-case stack bound from the GCC call graphs (`tools/stack_report.py`); fails above the linker's 8 KB reservation. |
 | `clean` | | Removes `build/`, for **both** roles. |
 
 The firmware version string (`fw=` in `#boot`/`#status`) is `git describe --always --dirty --abbrev=12` at build time. A build from a modified tree reports `…-dirty`, and every commit changes the binary.

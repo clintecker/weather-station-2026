@@ -102,6 +102,12 @@ class StorePowerCut(unittest.TestCase):
         self.assertEqual(s['wipes'], '1')
         self.assertGreater(int(s['max_counter']), 3 * 256, 'counters crossed reservation blocks')
 
+    def test_unknown_mode_rejected(self):
+        """A mistyped mode must not silently run as a sweep (it used to)."""
+        proc = subprocess.run([self.exe['small'], 'sweeep', '1'], capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertNotIn('SUMMARY', proc.stdout)
+
     def test_functional_small_geometry(self):
         out, counts, s = self.run_driver('small', 'functional', '1')
         self.assertEqual(counts, {}, out)
@@ -143,12 +149,13 @@ class StorePowerCut(unittest.TestCase):
             out, counts, s = self.run_driver(build, 'errsweep', wrap)
             self.assert_only(out, counts, NOTES | KNOWN_ERR)
 
-    # ---- known bugs: these fail today; each docstring carries the proposed fix ----
+    # ---- regression tests for the bugs this harness found, all fixed 2026-10-13 (KNOWN_CUT and
+    # KNOWN_ERR are empty). Each docstring says what went wrong and how it was fixed ----
 
     def test_bug_interrupted_recycle_resurrects_acked_record(self):
         """A cut during the page erase in journal_new_page (an append wrapping onto the oldest
-        page) can erase a slot's ACK word but not its data; journal_init then reads the acked
-        record as pending, and it is sent again. Fix: at the end of store_journal_init, if the
+        page) could erase a slot's ACK word but not its data; journal_init then read the acked
+        record as pending, and it was sent again. Fixed by: at the end of store_journal_init, if the
         head page is full (head_slot == JOURNAL_SLOTS_PER_PAGE), finish the recycle of
         (head + 1) % WS_JOURNAL_PAGES with journal_new_page before setting journal_ready. Its
         pending records are counted lost (they would be dropped by the next append anyway)."""
@@ -156,9 +163,9 @@ class StorePowerCut(unittest.TestCase):
         self.assertEqual(counts.get('acked_returned_recycle_erase', 0), 0)
 
     def test_bug_interrupted_wipe_leaves_journal_on_unprovisioned_board(self):
-        """store_wipe erases the config page first, then the journal. A cut (or a failed erase)
-        after the key is gone leaves an unprovisioned board whose journal still holds pending
-        records; after the next PROVISION they go out under the new station identity. Fix:
+        """store_wipe erased the config page first, then the journal. A cut (or a failed erase)
+        after the key was gone left an unprovisioned board whose journal still held pending
+        records; after the next PROVISION they went out under the new station identity. Fixed by:
         erase the journal pages first and the config page last, and keep the key (return -1)
         if any journal erase failed."""
         _, cut, _ = self.run_driver('small', 'sweep', '1')
@@ -166,16 +173,16 @@ class StorePowerCut(unittest.TestCase):
         self.assertEqual((cut.get('wipe_journal_survives', 0), err.get('wipe_journal_survives', 0)), (0, 0))
 
     def test_bug_failed_abandon_note_lowers_total_after_reboot(self):
-        """store_note_abandoned raises abandoned_total in RAM before meta_append; if that
-        program fails, STATUS/DIAG have shown a total that the next boot does not restore.
-        Fix: if (meta_append(META_ABAND, abandoned_total + 1)) return -1; then increment."""
+        """store_note_abandoned raised abandoned_total in RAM before meta_append; if that
+        program failed, STATUS/DIAG had shown a total that the next boot did not restore.
+        Fixed by: if (meta_append(META_ABAND, abandoned_total + 1)) return -1; then increment."""
         _, counts, _ = self.run_driver('small', 'errsweep', '1')
         self.assertEqual(counts.get('abandoned_decreased_note_failed', 0), 0)
 
     def test_bug_failed_lost_persist_still_erases_page(self):
-        """journal_new_page ignores a failed meta_append(META_LOST) and erases the page anyway,
-        so the dropped records are gone while the persisted lost total never counted them.
-        Fix: count the pending slots first, persist lost_total + dropped, and on failure return
+        """journal_new_page ignored a failed meta_append(META_LOST) and erased the page anyway,
+        so the dropped records were gone while the persisted lost total never counted them.
+        Fixed by: count the pending slots first, persist lost_total + dropped, and on failure return
         -1 before clearing pending bits or erasing (the append fails; nothing is lost)."""
         _, counts, _ = self.run_driver('small', 'errsweep', '1')
         self.assertEqual(counts.get('lost_decreased_wrap_persist_failed', 0), 0)

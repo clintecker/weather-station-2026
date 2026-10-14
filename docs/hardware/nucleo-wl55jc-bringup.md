@@ -157,7 +157,7 @@ Goal: make the two boards talk to each other. The factory Concentrator firmware 
 ### Where things live
 | Path | What |
 |---|---|
-| `firmware/pingpong/` | Copy of ST's app sources plus our `Makefile`. The vendor tree is not modified. |
+| `firmware/pingpong/` | Copy of ST's app sources plus our `Makefile`. The vendor tree is not modified. Since 2026-10-14 the board code (`Core/`, `startup/`, `SubGHz_Phy/Target/`) and the linker script come from `firmware/board/nucleo-wl55jc`, shared with the node; that linker script limits the image to 64 KB, where the original PingPong one allowed 256 KB. |
 | `vendor/STM32CubeWL` (git-ignored) | STM32CubeWL v1.6.0 (`--depth 1`) with the HAL, CMSIS-device, Nucleo-BSP and SubGHz_Phy submodules. Created and verified by `tools/fetch-vendor.sh`. At the time of this test it lived in `~/code/vendor/STM32CubeWL`; it was later moved (see Stage-0 trial and error, item 6). |
 | `~/.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1` | Arm GCC 15.2.1 (xPack) |
 

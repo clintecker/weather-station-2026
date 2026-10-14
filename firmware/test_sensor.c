@@ -1,4 +1,5 @@
 #include "stage0.h"
+#undef NDEBUG /* the checks below are assert()s: keep them in every build */
 #include <assert.h>
 #include <string.h>
 /* Fake I2C verifies command, address, delay, CRC handling and transport failure. */

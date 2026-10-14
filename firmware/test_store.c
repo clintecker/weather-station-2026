@@ -8,7 +8,8 @@
  *                                 and the workload carries on
  * wrap=1 (default) runs the journal past its capacity. Output: "VIOLATION ..." lines (first few
  * per category), then "COUNT <category> <n>" for every category seen and one "SUMMARY" line.
- * The process exits 0 unless the driver itself breaks; the caller judges the categories.
+ * The process exits 0 unless the driver itself breaks (exit 2: unknown mode, or a driver limit
+ * such as MAXREC); the caller judges the categories.
  *
  * Model: the driver keeps what the application has been told (every counter and epoch
  * returned, every record appended / acked / abandoned, the lost and abandoned totals it read)
@@ -59,10 +60,13 @@ static void viol(const char *cat, const char *fmt, ...) {
  if (c == ncat) { if (ncat == MAXCAT) abort(); cat_name[ncat++] = cat; }
  if (cat_count[c]++ < 4) {
   va_list ap; va_start(ap, fmt);
-  printf("VIOLATION %s mode=%s op=%lld kind=%s variant=%d at=%s: ", cat, mode,
+  char target[24] = "-";  /* what the cut op was writing: an address (program) or a page (erase) */
+  if (S.cut_kind == SIM_OP_PROG) snprintf(target, sizeof target, "0x%08lx", (unsigned long)S.cut_addr);
+  else if (S.cut_kind == SIM_OP_ERASE) snprintf(target, sizeof target, "page%lu", (unsigned long)S.cut_addr);
+  printf("VIOLATION %s mode=%s op=%lld kind=%s target=%s variant=%d at=%s: ", cat, mode,
          cur_op == SIM_NEVER ? -1LL : (long long)cur_op,
          S.cut_kind == SIM_OP_PROG ? "prog" : S.cut_kind == SIM_OP_ERASE ? "erase" : "-",
-         cur_variant, where);
+         target, cur_variant, where);
   vprintf(fmt, ap); printf("\n"); va_end(ap);
  }
 }
@@ -209,9 +213,10 @@ static void reconcile(void) {
    if (inflight_ack && infl.rec == i) break;
    if (cut && infl.op == OP_SCRUB && R[i].epoch == STORM) break;
    if (maybe_wipe) { viol("note_acked_back_after_interrupted_wipe", "rec %u", (unsigned)i); break; }
-   /* Known issue: an interrupted erase while a journal append recycles the oldest page
-      (journal_new_page) can erase an ACK word but not its record, which then reads back as
-      pending. Reported under its own category; any other path is acked_returned. */
+   /* Fixed 2026-10-13 (store_journal_init finishes an interrupted recycle): an interrupted erase
+      while a journal append recycled the oldest page (journal_new_page) could erase an ACK word
+      but not its record, which then read back as pending. Kept as its own category so a
+      regression is recognisable; any other path is acked_returned. Both fail the sweeps. */
    viol(fault_op == OP_APPEND && S.cut_kind == SIM_OP_ERASE ? "acked_returned_recycle_erase" : "acked_returned",
         "rec %u (state %d) pending again at page %u slot %u", (unsigned)i, R[i].st, refs[k].page, refs[k].slot);
    break;
@@ -235,7 +240,8 @@ static void reconcile(void) {
  }
  uint32_t lost = store_journal_lost();
  uint32_t delta = lost > M.lost_base ? lost - M.lost_base : 0;
- /* Known issue: journal_new_page erases the page even when persisting the lost total failed. */
+ /* Fixed 2026-10-13: journal_new_page used to erase the page even when persisting the lost
+    total failed. Kept as its own category so a regression is recognisable; it fails the sweeps. */
  CHECK(err_mode && fault_op == OP_APPEND ? "lost_decreased_wrap_persist_failed" : "lost_decreased",
        lost >= M.lost_seen, "lost %u after %u", (unsigned)lost, (unsigned)M.lost_seen);
  if (!cut && !err_mode)
@@ -276,7 +282,8 @@ static void power_cycle(void) {
  infl.op = saved_op; infl.rec = saved_rec;
  reconcile();
  uint32_t ab = store_abandoned_total();
- /* Known issue: store_note_abandoned raises the RAM total before (and even if not) persisting. */
+ /* Fixed 2026-10-13: store_note_abandoned used to raise the RAM total before (and even if not)
+    persisting. Kept as its own category so a regression is recognisable; it fails the sweeps. */
  CHECK(err_mode && fault_op == OP_NOTE ? "abandoned_decreased_note_failed" : "abandoned_decreased",
        ab >= M.aband_seen, "abandoned %u after %u", (unsigned)ab, (unsigned)M.aband_seen);
  if (!(cut_happened && infl.op == OP_NOTE) && !err_mode)
@@ -415,10 +422,14 @@ static void summary(const char *extra) {
 
 int main(int argc, char **argv) {
  static jmp_buf jb;
- char buf[256];
+ char buf[512];
  int wrap = argc > 2 ? atoi(argv[2]) : 1;
  if (argc < 2) { fprintf(stderr, "usage: %s functional|sweep|errsweep [wrap]\n", argv[0]); return 2; }
  mode = argv[1];
+ if (strcmp(mode, "functional") && strcmp(mode, "sweep") && strcmp(mode, "errsweep")) {
+  fprintf(stderr, "unknown mode '%s'; usage: %s functional|sweep|errsweep [wrap]\n", mode, argv[0]);
+  return 2;
+ }
  setvbuf(stdout, NULL, _IOLBF, 0);
  sim_flash_reset(&S);
  if (!strcmp(mode, "functional")) {
@@ -428,11 +439,12 @@ int main(int argc, char **argv) {
   uint32_t ma = S.page_erases[WS_META_PAGE_A - SIM_FIRST_PAGE], mb = S.page_erases[WS_META_PAGE_B - SIM_FIRST_PAGE];
   uint32_t j0 = S.page_erases[WS_JOURNAL_FIRST - SIM_FIRST_PAGE];
   snprintf(buf, sizeof buf, "guard_failures=%d ops=%llu progs=%llu erases=%llu meta_erases=%u,%u journal0_erases=%u "
-           "lost=%u abandoned=%u max_counter=%llu max_epoch=%u records=%u boots=%u wipes=%u zero_overwrites=%llu",
+           "lost=%u abandoned=%u max_counter=%llu max_epoch=%u records=%u boots=%u wipes=%u zero_overwrites=%llu "
+           "ecc_reads=%llu",
            g, (unsigned long long)S.ops, (unsigned long long)S.progs, (unsigned long long)S.erases,
            (unsigned)ma, (unsigned)mb, (unsigned)j0, (unsigned)M.lost_seen, (unsigned)M.aband_seen,
            (unsigned long long)M.max_counter, (unsigned)M.max_epoch, (unsigned)nrec, (unsigned)M.boots, (unsigned)M.wipes,
-           (unsigned long long)S.zero_overwrites);
+           (unsigned long long)S.zero_overwrites, (unsigned long long)S.ecc_reads);
   summary(buf);
   return 0;
  }
@@ -442,14 +454,14 @@ int main(int argc, char **argv) {
  S.kinds = kinds; S.kinds_cap = sizeof kinds;
  sim_flash_reset(&S); model_reset();
  workload(wrap);
- uint64_t nops = S.ops, runs = 0, cuts_prog = 0, cuts_erase = 0, zero_ow = 0;
+ uint64_t nops = S.ops, runs = 0, cuts_prog = 0, cuts_erase = 0, zero_ow = 0, ecc_reads = 0;
  if (nops > sizeof kinds) { fprintf(stderr, "too many ops\n"); return 2; }
  S.kinds = NULL; S.kinds_cap = 0;
+ err_mode = !strcmp(mode, "errsweep");
  for (uint64_t k = 0; k < nops; k++) {
-  err_mode = !strcmp(mode, "errsweep");
   int nv = err_mode ? SIM_FAIL_VARIANTS : sim_flash_variants(kinds[k]);
   for (int v = 0; v < nv; v++) {
-   zero_ow += S.zero_overwrites;
+   zero_ow += S.zero_overwrites; ecc_reads += S.ecc_reads;
    sim_flash_reset(&S); model_reset();
    cur_op = k; cur_variant = v; where = "run";
    runs++;
@@ -463,9 +475,9 @@ int main(int argc, char **argv) {
    recovery();
   }
  }
- snprintf(buf, sizeof buf, "cut_points=%llu runs=%llu prog_cuts=%llu erase_cuts=%llu zero_overwrites=%llu",
+ snprintf(buf, sizeof buf, "cut_points=%llu runs=%llu prog_cuts=%llu erase_cuts=%llu zero_overwrites=%llu ecc_reads=%llu",
           (unsigned long long)nops, (unsigned long long)runs, (unsigned long long)cuts_prog, (unsigned long long)cuts_erase,
-          (unsigned long long)(zero_ow + S.zero_overwrites));
+          (unsigned long long)(zero_ow + S.zero_overwrites), (unsigned long long)(ecc_reads + S.ecc_reads));
  summary(buf);
  return 0;
 }

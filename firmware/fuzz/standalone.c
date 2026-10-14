@@ -9,7 +9,7 @@
 #define MAX_SEEDS 64
 static uint8_t seeds[MAX_SEEDS][MAX_INPUT];
 static size_t seed_len[MAX_SEEDS];
-static int n_seeds;
+static int n_seeds, n_files;
 static uint64_t rng = 0x9E3779B97F4A7C15ull;
 
 static uint64_t next(void) { rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17; return rng; }
@@ -19,9 +19,15 @@ static int run_file(const char *path)
 {
  FILE *f = fopen(path, "rb");
  if (!f) { perror(path); return 1; }
- uint8_t buf[MAX_INPUT]; size_t n = fread(buf, 1, sizeof buf, f); fclose(f);
+ uint8_t buf[MAX_INPUT]; size_t n = fread(buf, 1, sizeof buf, f);
+ int longer = n == sizeof buf && fgetc(f) != EOF;
+ fclose(f);
+ if (longer) fprintf(stderr, "warning: %s is longer than %d bytes; only the first %d are used\n", path, MAX_INPUT, MAX_INPUT);
  LLVMFuzzerTestOneInput(buf, n);
+ n_files++;
  if (n_seeds < MAX_SEEDS) { memcpy(seeds[n_seeds], buf, n); seed_len[n_seeds++] = n; }
+ else if (n_files == MAX_SEEDS + 1)
+  fprintf(stderr, "warning: more than %d corpus files; files after the %dth are run once but not used as mutation seeds\n", MAX_SEEDS, MAX_SEEDS);
  return 0;
 }
 
@@ -73,6 +79,6 @@ int main(int argc, char **argv)
   n = mutate(buf, n);
   LLVMFuzzerTestOneInput(buf, n);
  }
- printf("fuzz ok: %d corpus files, %ld mutated runs\n", n_seeds, runs);
+ printf("fuzz ok: %d corpus files (%d used as seeds), %ld mutated runs\n", n_files, n_seeds, runs);
  return 0;
 }
