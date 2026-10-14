@@ -47,10 +47,9 @@ byte-aligned (§5.2). The fixed overhead was the larger cost.
 
 - **AAD** = the 8 header bytes.
 - **Nonce** (13 bytes) = kind (1) + station ID zero-extended to 4 bytes + counter zero-extended to
-  8 bytes. This is **byte-for-byte the draft-4 nonce construction**, so the draft-4 uniqueness
-  argument still holds. Counters keep counting up across the upgrade (the node's flash counter
-  and the gateway's nonce database are unchanged). So the existing key stays valid: no draft-5
-  frame can reuse a nonce that a draft-4 frame already used.
+  8 bytes, the same construction as draft 4. Uniqueness comes from the node's flash counter and
+  the gateway's nonce database, which only count up. If a release keeps a key, it must keep
+  both counters; otherwise it provisions a new key.
 - **Counter limit.** Each side refuses to seal when the counter would reach 2^40 (fail closed: no
   sending). 2^40 frames is more than 100,000 years at the 20-frames-per-minute SURPLUS maximum.
 - **Frame length** = 16 + plaintext length. The LoRa explicit header carries it. Every kind has a
@@ -59,8 +58,7 @@ byte-aligned (§5.2). The fixed overhead was the larger cost.
 - **Dropped:** the `WS` magic (2 bytes). The private sync word and the PHY CRC already filter
   foreign packets, and the tag rejects anything else. A foreign frame costs one failed tag check.
 - **Tag length.** The chance that a forged or altered frame passes is 2^-64 per attempt.
-  LoRaWAN uses 4 bytes. One key never mixes tag lengths under the same nonce, because nonces
-  never repeat (§3, nonce). Mbed TLS (`mbedtls_ccm_encrypt_and_tag`, `tag_len` 8) and
+  LoRaWAN uses 4 bytes. Mbed TLS (`mbedtls_ccm_encrypt_and_tag`, `tag_len` 8) and
   `cryptography` (`AESCCM(key, tag_length=8)`) both support M = 8.
 
 ## 4. Fixed plaintexts
@@ -69,14 +67,9 @@ byte-aligned (§5.2). The fixed overhead was the larger cost.
 **0** when the gateway measured its own clock as wrong) · echoed observation counter u40.
 Draft 4 used a u64 UTC. A u32 is valid to 2106, the same as the observation's UTC field.
 
-**NACK (kind 3), 17 bytes:** epoch u32 · sequence u32 · reason u32 · echoed counter u40. The
-layout matches the ACK, so the node opens both with one code path, as in draft 4. Reasons:
-
-| Reason | Meaning | Node action |
-|---:|---|---|
-| 1 | Identity collision | Stop retrying; count as `abandoned` (as draft 4) |
-| 2 | Invalid record | Stop retrying; count as `abandoned` (as draft 4) |
-| 3 | **Deferred**: authentic, but the gateway can't decode it yet (§5.3) | **Keep the record**, count no strike, and end this minute's drain. Draft 5 adds this reason |
+**NACK (kind 3), 17 bytes:** epoch u32 · sequence u32 · reason u32 (1 identity collision,
+2 invalid record) · echoed counter u40. The layout matches the ACK, so the node opens both with
+one code path. The node stops retrying the record and counts it as `abandoned`.
 
 **DIAG (kind 4), 24 bytes:** unchanged from draft 4 (`protocol.md`). Stage 1 extends the
 health report or adds kind 5 (PACK) for the per-pack schema of PRD §5. That decision belongs to
@@ -98,12 +91,11 @@ draft 5.
 | 12 | 4 | Uptime u32, seconds since boot, always present |
 | 16 | 1 | Flags: bit 0 time known · bits 1–2 energy state at sampling (0 NORMAL, 1 SURPLUS, 2 CONSERVE, 3 CRITICAL) · bits 3–7 zero |
 | 17 | 1 | Calibration revision u8 (0 in Stage 0) |
-| 18 | 2 | Field bitmap u16: bit *i* set = catalog field *i* is present. Bit 15 = another u16 bitmap follows (catalog fields 15–29); zero in draft 5 |
+| 18 | 2 | Field bitmap u16: bit *i* set = catalog field *i* is present |
 | 20 | *k* | Present fields, bit-packed in increasing field order, most significant bit first, zero-padded to a byte boundary |
 
-Bytes 0–15 are the identity and time contract. They have the same meaning and width as in draft 4.
-The 1-byte flags field replaces draft 4's two bytes for validity and time quality. Validity moves
-into each field (§5.2).
+Bytes 0–15 are the identity and time contract. The flags byte carries time quality. Validity
+lives in each field (§5.2).
 
 The energy state tells the gateway the reporting interval the node was in when it sampled:
 60 s, or 300 s in CONSERVE (PRD R02). The gateway therefore doesn't treat a CONSERVE gap as a
@@ -112,8 +104,8 @@ link failure. Stage 0 always sends NORMAL.
 ### 5.2 Field catalog v1
 
 **Every field reserves its all-ones code as INVALID** (sensor fault, sample missing, or out of
-range). This replaces draft 4's validity byte and filler values. Each field pays for it with
-one code, never a bit. Field-specific special codes sit just below all-ones.
+range). Each field pays for it with one code, never a bit, and a reader that ignores validity
+still sees an impossible value, never a plausible one. Field-specific special codes sit just below all-ones.
 
 | Bit | Field | Encoding | Range | Bits | Special codes | Stage |
 |---:|---|---|---|---:|---|---|
@@ -126,7 +118,7 @@ one code, never a bit. Field-specific special codes sit just below all-ones.
 | 6 | `rain_tips` | lifetime tip count | 0 to 16,777,214 | 24 | 16777215 invalid | 3 |
 | 7 | `uv_index` | UVI × 10 | 0.0 to 25.0 | 8 | 255 invalid | 3 |
 | 8 | `irradiance_wm2` | W/m² | 0 to 2000 | 11 | 2047 invalid | 3 (optional module) |
-| 9–14 | reserved | — | — | — | must be zero | — |
+| 9–15 | reserved | — | — | — | must be zero | — |
 
 **Sizes:** T/RH = 29 bits → 4 bytes, so the plaintext is 24 bytes and the frame 40 bytes. The full
 catalog v1 is 114 bits → 15 bytes, so the plaintext is 35 bytes and the frame 51 bytes.
@@ -137,7 +129,7 @@ bits and 0.2 mm tips, the counter wraps after 3,355 m of rain, which is never. S
 treat **any decrease as a counter reset** (for example after a flash wipe), flag it, and never
 mistake a reset for a wrap. A 16-bit counter would force that ambiguous guess.
 
-**Reserved bits 9–14** are for measurements whose meaning isn't tested yet: T/RH minimum, maximum
+**Reserved bits 9–15** are for measurements whose meaning isn't tested yet: T/RH minimum, maximum
 and sample coverage (PRD §9: 15-s sampling, "store coverage, mean and extrema"), suspected
 icing, delayed melt, and outside-envelope flags (PRD R10). Each gets its encoding when its stage
 tests it. Draft 5 leaves them unassigned rather than guessing.
@@ -147,37 +139,23 @@ tests it. Draft 5 leaves them unassigned rather than guessing.
 The gateway rejects (with a NACK, reason 2) an authenticated observation that:
 
 - has a length other than 20 + ⌈(sum of the present fields' bits) / 8⌉;
-- has a non-zero padding bit, reserved flag bit, or reserved bitmap bit (9–15);
+- has a non-zero padding bit, reserved flag bit, or reserved bitmap bit (9–15). Gateway and node
+  share one catalog and ship together, so an unknown bit is a bug, not a newer node;
 - has a code outside its field's range that is not one of that field's special codes;
 - has time known ≠ (UTC ≠ 0);
 - is otherwise not canonical as draft 4 defines it (identity, time quarantine).
 
-**Unknown field bit (gateway older than the node).** A bit the gateway's catalog doesn't define
-means the node runs a newer catalog. The gateway can't find the field lengths. It then stores
-the raw frame in `rejections` with reason `unknown_field`, answers with **NACK reason 3
-(deferred)**, and raises a status alarm: "update the gateway". The node keeps the record journaled
-and retries later, so the data waits instead of being abandoned.
-
-Silence would not be enough. While older records (without the new field) are still in the
-backlog, the gateway would answer them and ignore the newer ones. The node's strike safety net
-(abandon a record after 10 exchanges in which other frames were answered) would then drop the
-newer records. The deferred reply tells the node to wait without counting a strike.
-**Update the gateway before the node.**
 
 ### 5.4 Gateway record (JSON and storage)
 
-The stored record keeps draft 4's keys (`version`, `station`, `session`, `sequence`,
-`sampled_at`, `uptime_s`, `time_quality`, `temperature_c`, `humidity_pct`, `quality`) and adds
-`energy_state`, `calibration_revision` and each catalog field that is present. An INVALID code
+The stored record has `version`, `station`, `session`, `sequence`, `sampled_at`, `uptime_s`,
+`time_quality`, `energy_state`, `calibration_revision`, `quality`, and each catalog field that is
+present. An INVALID code
 becomes `null`. `wind_dir_deg` CALM becomes `null` with `wind_calm: true`. `quality` is `valid`
 when every present field is valid, otherwise `sensor_fault`. A T/RH-only station therefore
 behaves exactly as today. Absent fields are omitted, not null, so "not installed" stays
 distinct from "faulty".
 
-**Identity collision compares measurements, not encodings.** Draft 4 compared the stored JSON
-text, so the same reading re-sent as draft 5 (for example a record journaled before the upgrade)
-would differ only in `version`, read as a collision, and be NACKed. Draft 5 compares the
-identity, time and measurement fields and ignores `version`.
 
 ## 6. Code: one schema, generated twice
 
@@ -203,11 +181,8 @@ identity, time and measurement fields and ignores `version`.
   bytes, the same as today, so the outage buffer stays 4,743 records (3.3 days). A build's
   configured field set fixes its maximum plaintext, and a static assert ties the slot size to it.
   The SPI-NOR journal of H11 brings bigger slots for the full sensor set.
-- **Upgrade without losing data:** new journal pages get the magic `WSJ2`. Pending records on
-  older `WSJ1` pages hold draft-4 plaintexts. The node converts each one to a draft-5 plaintext
-  **when it reads it to send** (same epoch, sequence, time and T/RH; time-known from draft-4 time
-  quality; invalid from draft-4 validity). It never rewrites them in flash. `WSJ1` pages are
-  reused as `WSJ2` in the normal ring order once their records are done.
+- **Journal format:** pages get the magic `WSJ2`. At boot the firmware erases any journal page
+  with another magic. There is no conversion: old bench records are disposable.
 - **Station ID** must be 1–65535. `PROVISION` refuses anything larger.
 - **The RX bridge** checks a frame's length (17 to 56 bytes in draft 5), version 5 and kind
   (1 or 4 upstream, 2 or 3 downstream). It still holds no key.
@@ -223,23 +198,17 @@ identity, time and measurement fields and ignores `version`.
 - The simulator and harness switch to draft 5. Their recorded `simulation-results/` are already
   stale (draft 1) and stay labeled as such.
 
-## 9. Release and upgrade order
+## 9. Release
 
-1. Stop the gateway. The TX keeps journaling.
-2. Flash RX, then TX (both draft 5). The TX converts its pending `WSJ1` records when it sends
-   them.
-3. Start the draft-5 gateway.
-
-The draft-5 gateway does not accept draft-4 frames. Any frames the TX sent before the switch
-stay journaled, because they got no ACK, and go out again as draft 5. Record the release in
-`RELEASES.md`. The key and the counters carry over (§3). **No re-provisioning.**
+Flash RX and TX and start the draft-5 gateway together. The gateway decodes draft 5 only. Start a
+fresh run directory (new key, empty databases) or keep the current one together with its counter
+state (§3). Record the release in `RELEASES.md`.
 
 ## 10. Tests and gate
 
 - Host: everything in §6, plus the existing suites switched to draft 5 (frame, gateway, harness,
   counter regression, power-cut store, fuzz).
 - Bench, before H01:
-  - flash with pending `WSJ1` records and check that they arrive converted, without collision;
   - check that the 40-byte observation and 33-byte ACK round trip;
   - check the sensor unplug test (`null` T/RH, `quality=sensor_fault`);
   - check a counter-limit guard test on the host.
