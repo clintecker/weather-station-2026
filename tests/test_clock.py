@@ -1,15 +1,11 @@
 """Gap G9: the gateway never hands a measured-wrong host time to the node."""
-import os
-os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
-
-import tempfile
 import unittest
-from pathlib import Path
-from ws0.__main__ import provision
+try:                                        # first: sets WS0_UNSAFE_FAST_FSYNC before ws0 is imported
+    from toolchain import Station
+except ImportError:
+    from tests.toolchain import Station
 from ws0.clock import HostClock
 from ws0.protocol import KIND_ACK, unpack_reply, unseal
-from ws0.service import Gateway, load_config
-from ws0.simulator import Node
 
 
 class ClockTests(unittest.TestCase):
@@ -31,19 +27,15 @@ class ClockTests(unittest.TestCase):
         self.assertEqual(self.clock([OSError('x')]).may_issue_time(), True)  # never measured: unverified
 
     def test_bad_clock_ack_carries_no_time(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)/'s'; provision(root); cfg = load_config(root/'gateway.json')
-            gateway, node = Gateway(cfg, root), Node(cfg, root)
-            try:
-                gateway.clock = self.clock([5.0]); gateway.clock.check()
-                ack = gateway.receive(node.packet(node.sample(1000)), 1001)
-                self.assertEqual(unpack_reply(unseal(node.key, 1, KIND_ACK, ack))[2], 0)
-                self.assertEqual(gateway.status()['host_clock']['state'], 'bad')
-                gateway.clock = self.clock([0.0]); gateway.clock.check()
-                ack = gateway.receive(node.packet(node.sample(1060)), 1061)
-                self.assertEqual(unpack_reply(unseal(node.key, 1, KIND_ACK, ack))[2], 1061)
-            finally:
-                for db in (gateway.store.db, gateway.nonces.db, node.db, node.nonces.db): db.close()
+        with Station(synced=False) as s:
+            gateway, node = s.gateway, s.node
+            gateway.clock = self.clock([5.0]); gateway.clock.check()
+            ack = gateway.receive(node.packet(node.sample(1000)), 1001)
+            self.assertEqual(unpack_reply(unseal(node.key, 1, KIND_ACK, ack))[2], 0)
+            self.assertEqual(gateway.status()['host_clock']['state'], 'bad')
+            gateway.clock = self.clock([0.0]); gateway.clock.check()
+            ack = gateway.receive(node.packet(node.sample(1060)), 1061)
+            self.assertEqual(unpack_reply(unseal(node.key, 1, KIND_ACK, ack))[2], 1061)
 
     def test_slow_round_trip_is_not_called_bad(self):
         # 2026-10-13 20:44Z: offset +1.114 s with rtt 2.099 s was logged as 'bad'. An SNTP offset is

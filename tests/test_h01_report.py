@@ -1,16 +1,14 @@
 """H01 scorer: denominators, categories and the strict pass rule."""
-import os
-os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
-
-import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+try:                                        # first: sets WS0_UNSAFE_FAST_FSYNC before gateway is imported
+    from toolchain import load_tool
+except ImportError:
+    from tests.toolchain import load_tool
 from gateway import Store
 
-spec = importlib.util.spec_from_file_location('h01', Path(__file__).resolve().parent.parent/'tools/h01_report.py')
-h01 = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(h01)
+h01 = load_tool('h01_report')
 START = 1_800_000_000
 
 

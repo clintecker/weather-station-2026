@@ -4,16 +4,14 @@ The handshake changes spreading factor or power on both boards together and roll
 when the boards lose each other right after a change. Pure C, compiled for the host.
 """
 import ctypes
-import subprocess
-import tempfile
 import unittest
+from unittest import mock
 try:
-    from toolchain import needs_cc          # python -m unittest discover -s tests
+    from toolchain import ROOT, host_library, load_tool, needs_cc          # python -m unittest discover -s tests
 except ImportError:
-    from tests.toolchain import needs_cc    # python -m unittest tests.<module>
-from pathlib import Path
+    from tests.toolchain import ROOT, host_library, load_tool, needs_cc    # python -m unittest tests.<module>
 
-SRC = Path(__file__).resolve().parent.parent/'firmware/rangetest/App/rt_proto.c'
+SRC = ROOT/'firmware/rangetest/App/rt_proto.c'
 EV_SWITCHED, EV_COMMIT, EV_ROLLBACK, EV_ADOPTED, EV_FALLBACK = 1, 2, 4, 8, 16
 EV_LOST_MISSES = 10  # RT_LOST_MISSES: ~30 s of 3 s receive windows
 
@@ -39,12 +37,7 @@ class Board:
 class RangeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Windows cannot delete a library ctypes still has loaded; leave it for the OS temp cleanup.
-        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        path = Path(cls.tmp.name)/'rt_proto.so'
-        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
-                        str(SRC), '-o', str(path)], check=True)
-        lib = cls.lib = ctypes.CDLL(str(path))
+        lib = cls.lib = host_library(cls, 'rt_proto', SRC)
         lib.rt_state_size.restype = ctypes.c_size_t
         lib.rt_build.argtypes = [ctypes.c_void_p, ctypes.c_uint8, ctypes.c_uint16, ctypes.c_int16,
                                  ctypes.c_int8, ctypes.POINTER(ctypes.c_uint8)]
@@ -56,10 +49,6 @@ class RangeTest(unittest.TestCase):
         lib.rt_sf_of.argtypes = lib.rt_pwr_of.argtypes = [Cfg]
         for name in ('rt_cur_sf', 'rt_cur_pwr', 'rt_info_sf', 'rt_info_pwr', 'rt_sf_of', 'rt_pwr_of'):
             getattr(lib, name).restype = ctypes.c_int
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.tmp.cleanup()
 
     def send(self, src, dst, kind=0, seq=1, rssi=-80, snr=5, lost=False):
         """src transmits one packet; dst hears it only if not lost and both share an SF."""
@@ -258,11 +247,7 @@ class RangeTest(unittest.TestCase):
 class LogParse(unittest.TestCase):
     """tools/rangetest_log.py against the firmware's console formats (TS_ON prefix included)."""
 
-    def setUp(self):
-        import sys
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent/'tools'))
-        import rangetest_log
-        self.log = rangetest_log
+    log = load_tool('rangetest_log')
 
     def test_rx_both_directions(self):
         row = self.log.parse('3862s157:#rt rx pong seq=41 rssi=-97 snr=-4 peer_rssi=-101 peer_snr=-6 sf=10 pwr=14')
@@ -307,6 +292,16 @@ class LogParse(unittest.TestCase):
     def test_port_names_on_every_os_are_used_directly(self):
         for name in ('/dev/cu.usbmodem21303', '/dev/ttyACM0', 'COM3', 'com12'):
             self.assertEqual(self.log.find_port(name), name)
+
+    def test_stlink_serial_matches_in_any_case(self):
+        """find_port matches an ST-LINK serial number case-insensitively (it was case-sensitive)."""
+        from types import SimpleNamespace
+        ports = [SimpleNamespace(serial_number=None, device='/dev/cu.Bluetooth'),
+                 SimpleNamespace(serial_number='0039003A3532510F31333430', device='/dev/cu.usbmodem21303')]
+        with mock.patch('serial.tools.list_ports.comports', return_value=ports):
+            for board in ('0039003A3532510F31333430', '0039003a3532510f31333430', '0039003a3532510F31333430'):
+                self.assertEqual(self.log.find_port(board), '/dev/cu.usbmodem21303')
+            self.assertIsNone(self.log.find_port('0039003A3532510F31333431'))
 
     def test_old_rx_lines_without_peer_settings_still_parse(self):
         row = self.log.parse('#rt rx ping seq=0 rssi=-20 snr=12 peer_rssi=-21 peer_snr=11 sf=7 pwr=0')

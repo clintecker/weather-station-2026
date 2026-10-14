@@ -1,13 +1,9 @@
 """Web dashboard back end (ws0/web.py): event stream, resume, stream cap, history, telemetry tables."""
-import os
-os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
-
 import http.client
 import io
 import json
 import shutil
 import subprocess
-import tempfile
 import time
 import unittest
 from contextlib import redirect_stderr
@@ -15,24 +11,22 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+try:                                        # first: sets WS0_UNSAFE_FAST_FSYNC before ws0 is imported
+    from toolchain import StationTest
+except ImportError:
+    from tests.toolchain import StationTest
 from ws0 import web
-from ws0.__main__ import handle_receiver_line, provision
-from ws0.service import Gateway, http_server, load_config
-from ws0.simulator import DemoReceiver, Node
+from ws0.__main__ import handle_receiver_line
+from ws0.service import http_server
+from ws0.simulator import DemoReceiver
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
-class Fixture(unittest.TestCase):
+class Fixture(StationTest):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name) / 'state'
-        provision(self.root)
-        self.cfg = load_config(self.root / 'gateway.json')
-        self.gateway = Gateway(self.cfg, self.root)
+        super().setUp()
         self.gateway.hub.heartbeat_s = 0.2
-        self.node = Node(self.cfg, self.root)
-        self.node.synced = True
         self.server = None
 
     def tearDown(self):
@@ -40,9 +34,7 @@ class Fixture(unittest.TestCase):
             self.gateway.hub.close()
             self.server.shutdown()
             self.server.server_close()
-        for db in (self.gateway.store.db, self.gateway.nonces.db, self.node.db, self.node.nonces.db):
-            db.close()
-        self.tmp.cleanup()
+        super().tearDown()
 
     def serve(self):
         self.server = http_server(self.gateway, 0)
@@ -165,7 +157,8 @@ class EventStream(Fixture):
         if not socket.has_ipv6:
             self.skipTest('no IPv6')
         try:
-            socket.socket(socket.AF_INET6).bind(('::1', 0))
+            with socket.socket(socket.AF_INET6) as probe:
+                probe.bind(('::1', 0))
         except OSError:
             self.skipTest('no IPv6 loopback')
         self.cfg['http_bind'] = '::1'

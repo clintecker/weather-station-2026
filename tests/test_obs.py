@@ -2,19 +2,15 @@
 and byte-for-byte agreement between the C encoder (firmware/common/ws_obs.c) and ws0/fields.py."""
 import ctypes
 import random
-import subprocess
-import tempfile
 import unittest
-from pathlib import Path
 
 try:
-    from toolchain import needs_cc          # python -m unittest discover -s tests
+    from toolchain import ROOT, host_library, needs_cc          # python -m unittest discover -s tests
 except ImportError:
-    from tests.toolchain import needs_cc    # python -m unittest tests.<module>
+    from tests.toolchain import ROOT, host_library, needs_cc    # python -m unittest tests.<module>
 from ws0 import fields
 from ws0.fields import FIELDS, decode, encode
 
-ROOT = Path(__file__).resolve().parent.parent
 SEED = 20261014
 # Encoding known-answer vector (docs/protocol-draft5-design.md section 6): T = -12.34 C, RH = 45.67 %,
 # epoch 1, sequence 2, UTC 1791991189, uptime 300 s, NORMAL, calibration 0.
@@ -152,16 +148,11 @@ class ObsT(ctypes.Structure):
 class CAgreement(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        lib = Path(cls.tmp.name) / 'wsobs.so'
-        check = Path(cls.tmp.name) / 'check.c'
         # The header's constant-expression length macro must agree with the runtime table.
-        check.write_text('#include "ws_obs.h"\nint macro_width(unsigned i) { return (int)WS_OBS_FIELDS_LEN(WS_F(i)); }\n'
-                         'int plain_all(void) { return (int)WS_OBS_PLAIN_ALL; }\n')
-        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-Wconversion', '-Wsign-conversion',
-                        '-shared', '-fPIC', '-I', str(ROOT / 'firmware/common'),
-                        str(ROOT / 'firmware/common/ws_obs.c'), str(check), '-o', str(lib)], check=True)
-        cls.lib = ctypes.CDLL(str(lib))
+        check = ('#include "ws_obs.h"\nint macro_width(unsigned i) { return (int)WS_OBS_FIELDS_LEN(WS_F(i)); }\n'
+                 'int plain_all(void) { return (int)WS_OBS_PLAIN_ALL; }\n')
+        cls.lib = host_library(cls, 'wsobs', '-Wconversion', '-Wsign-conversion', '-I', ROOT / 'firmware/common',
+                               ROOT / 'firmware/common/ws_obs.c', files={'check.c': check})
         cls.lib.ws_obs_encode.argtypes = [ctypes.POINTER(ObsT), ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t]
         cls.lib.ws_obs_code_ok.argtypes = [ctypes.c_uint, ctypes.c_uint32]
         cls.lib.ws_obs_invalid.restype = ctypes.c_uint32
@@ -169,10 +160,6 @@ class CAgreement(unittest.TestCase):
         cls.lib.ws_code_temp_centi.restype = ctypes.c_uint32
         cls.lib.ws_code_rh_centi.argtypes = [ctypes.c_int32]
         cls.lib.ws_code_rh_centi.restype = ctypes.c_uint32
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.tmp.cleanup()
 
     def c_encode(self, head, codes, cap=96):
         o = ObsT(*head[:6], sum(1 << i for i in codes))

@@ -1,41 +1,54 @@
 """Failure tests; accelerated records are not physical H01 evidence."""
-import os
-os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
-
-import ctypes
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
-try:
-    from toolchain import needs_cc          # python -m unittest discover -s tests
+try:                                        # first: sets WS0_UNSAFE_FAST_FSYNC before ws0 is imported
+    from toolchain import SAN, CC_STRICT, Station, StationTest, host_library, needs_cc, quiet_provision
 except ImportError:
-    from tests.toolchain import needs_cc    # python -m unittest tests.<module>
-# Host C test programs run under AddressSanitizer + UBSan: an out-of-bounds write or signed overflow
-# in the firmware's pure code fails the test instead of passing silently.
-# MinGW gcc (the Windows CI runner's cc) has no sanitizer runtime; there the tests run without them.
-SAN=[] if sys.platform=='win32' else ['-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-fno-omit-frame-pointer']
+    from tests.toolchain import SAN, CC_STRICT, Station, StationTest, host_library, needs_cc, quiet_provision
+import ctypes
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request,urlopen
 from cryptography.exceptions import InvalidTag
-from ws0.__main__ import provision
 from ws0.protocol import Nonces,unseal
-from ws0.service import Gateway,Replay,discovery,http_server,load_config
+from ws0.service import MQTT,Replay,discovery,http_server
 from ws0.simulator import Node
 
-class PipelineTests(unittest.TestCase):
- def setUp(self):
-  self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)/'state'
-  provision(self.root); self.cfg=load_config(self.root/'gateway.json')
-  self.gateway=Gateway(self.cfg,self.root); self.node=Node(self.cfg,self.root)
-  # Most tests are not about the boot clock: start from a node that already has time.
-  # Boot-time reconstruction (draft 4) has its own tests in TimeReconstruction.
-  self.node.synced=True
- def tearDown(self):
-  for db in (self.gateway.store.db,self.gateway.nonces.db,self.node.db,self.node.nonces.db): db.close()
-  self.tmp.cleanup()
+
+def fake_mqtt(gateway):
+ """An MQTT publisher for gateway whose client records publish() calls instead of sending."""
+ class Fake:
+  def __init__(self): self.messages=[]
+  def is_connected(self): return True
+  def publish(self,*a,**kw): self.messages.append((a,kw))
+ publisher=object.__new__(MQTT); publisher.gateway=gateway; publisher.client=Fake()
+ publisher.root='weatherstation/v1/simulation-01'; publisher.published=None; publisher.published_at=0.0
+ publisher.advertised={'temperature_c','humidity_pct','dew_point_c'}
+ return publisher
+
+
+def start_demo(tmp):
+ """`python -m ws0 demo` on a fresh station in tmp, on a free HTTP port: (process, config)."""
+ import socket
+ directory=Path(tmp)/'state'; quiet_provision(directory)
+ cfg=json.loads((directory/'gateway.json').read_text())
+ with socket.socket() as sock:
+  sock.bind(('127.0.0.1',0)); cfg['http_port']=sock.getsockname()[1]
+ (directory/'gateway.json').write_text(json.dumps(cfg))
+ # Windows has no SIGINT for another process: run it in its own group and send Ctrl-Break,
+ # which the gateway treats like Ctrl-C (ws0/__main__.py).
+ windows=sys.platform=='win32'
+ proc=subprocess.Popen([sys.executable,'-m','ws0','demo','--directory',str(directory)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                       creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if windows else 0)
+ return proc,cfg
+
+
+# Most tests are not about the boot clock: StationTest starts from a node that already has time.
+# Boot-time reconstruction (draft 4) has its own tests in TimeReconstruction.
+class PipelineTests(StationTest):
  def test_commit_ack_replay(self):
   frame=self.node.packet(self.node.sample(1000)); ack=self.gateway.receive(frame,1001)
   self.node.acknowledge(ack); self.assertEqual(self.node.backfill(),[])
@@ -129,20 +142,12 @@ class PipelineTests(unittest.TestCase):
 class FirmwareTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
-  # Windows cannot delete a library ctypes still has loaded; leave it for the OS temp cleanup.
-  cls.tmp=tempfile.TemporaryDirectory(ignore_cleanup_errors=True); path=Path(cls.tmp.name)/'stage0.so'
-  subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-shared','-fPIC','firmware/stage0.c','-o',str(path)],check=True)
-  cls.lib=ctypes.CDLL(str(path))
+  cls.lib=host_library(cls,'stage0','firmware/stage0.c')
   cls.lib.ws_crc8.argtypes=[ctypes.POINTER(ctypes.c_uint8),ctypes.c_size_t]; cls.lib.ws_crc8.restype=ctypes.c_uint8
- @classmethod
- def tearDownClass(cls): cls.tmp.cleanup()
  def test_sensirion_crc(self):
   self.assertEqual(self.lib.ws_crc8((ctypes.c_uint8*2)(0xbe,0xef),2),0x92)
 
-class AdditionalFailures(unittest.TestCase):
- setUp=PipelineTests.setUp
- tearDown=PipelineTests.tearDown
- # Reuse fixture setup without duplicating inherited test execution below.
+class AdditionalFailures(StationTest):
  def test_clock_quarantine_and_corrected_clock(self):
   self.gateway.receive(self.node.packet(self.node.sample(1000,clock_offset=1000)),1000)
   self.assertFalse(self.gateway.store.latest(self.cfg['station'],2001)['available'])
@@ -158,29 +163,20 @@ class SensorBusTests(unittest.TestCase):
  def test_bus_failures_crc_and_conversion(self):
   with tempfile.TemporaryDirectory() as temp:
    exe=str(Path(temp)/'sensor-test')
-   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',*SAN,'firmware/stage0.c','firmware/test_sensor.c','-o',exe],check=True)
+   subprocess.run([*CC_STRICT,*SAN,'firmware/stage0.c','firmware/test_sensor.c','-o',exe],check=True)
    subprocess.run([exe],check=True)
  def test_bus_recovery_waveform_and_link_gate(self):
   with tempfile.TemporaryDirectory() as temp:
    exe=str(Path(temp)/'policy-test')
-   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',*SAN,'firmware/stage0.c','firmware/test_policy.c','-o',exe],check=True)
+   subprocess.run([*CC_STRICT,*SAN,'firmware/stage0.c','firmware/test_policy.c','-o',exe],check=True)
    subprocess.run([exe],check=True)
 
 
 class ServiceSmokeTests(unittest.TestCase):
  def test_cli_demo_starts_and_persists(self):
-  import socket
   with tempfile.TemporaryDirectory() as tmp:
-   directory=Path(tmp)/'state'; provision(directory)
-   cfg=json.loads((directory/'gateway.json').read_text())
-   with socket.socket() as sock:
-    sock.bind(('127.0.0.1',0)); cfg['http_port']=sock.getsockname()[1]
-   (directory/'gateway.json').write_text(json.dumps(cfg))
-   # Windows has no SIGINT for another process: run it in its own group and send Ctrl-Break,
-   # which the gateway treats like Ctrl-C (ws0/__main__.py).
+   proc,cfg=start_demo(tmp)
    windows=sys.platform=='win32'
-   proc=subprocess.Popen([sys.executable,'-m','ws0','demo','--directory',str(directory)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,
-                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if windows else 0)
    try:
     self.assertIn(b'Stage 0 simulation',proc.stdout.readline())
     line=json.loads(proc.stdout.readline()); self.assertTrue(line['simulation'])
@@ -199,14 +195,9 @@ class ServiceSmokeTests(unittest.TestCase):
  def test_cli_second_stop_signal_during_shutdown_is_ignored(self):
   # A service manager may send SIGTERM more than once; a second one during cleanup used to
   # raise KeyboardInterrupt inside server.shutdown() and leave a traceback in serve.log.
-  import signal,socket,time
+  import signal,time
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-   directory=Path(tmp)/'state'; provision(directory)
-   cfg=json.loads((directory/'gateway.json').read_text())
-   with socket.socket() as sock:
-    sock.bind(('127.0.0.1',0)); cfg['http_port']=sock.getsockname()[1]
-   (directory/'gateway.json').write_text(json.dumps(cfg))
-   proc=subprocess.Popen([sys.executable,'-m','ws0','demo','--directory',str(directory)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+   proc,_=start_demo(tmp)
    try:
     self.assertIn(b'Stage 0 simulation',proc.stdout.readline())
     proc.stdout.readline()
@@ -219,79 +210,51 @@ class ServiceSmokeTests(unittest.TestCase):
    self.assertEqual(proc.returncode,0)
 
  def test_mqtt_advertises_a_field_when_it_first_appears(self):
-  from ws0.service import MQTT
-  class Fake:
-   def __init__(self): self.messages=[]
-   def is_connected(self): return True
-   def publish(self,*a,**kw): self.messages.append((a,kw))
-  with tempfile.TemporaryDirectory() as tmp:
-   directory=Path(tmp)/'state'; provision(directory); cfg=load_config(directory/'gateway.json')
-   gateway=Gateway(cfg,directory)
-   try:
-    publisher=object.__new__(MQTT); publisher.gateway=gateway; publisher.client=Fake()
-    publisher.root='weatherstation/v1/simulation-01'; publisher.published=None; publisher.published_at=0.0
-    publisher.advertised={'temperature_c','humidity_pct','dew_point_c'}
-    record=dict(version=5,station=cfg['station'],session='1',sequence=0,sampled_at=1000,uptime_s=60,
-                time_quality='synchronized',energy_state='normal',calibration_revision=0,
-                temperature_c=20.5,humidity_pct=40,pressure_hpa=1001.3,quality='valid')
-    gateway.store.ingest(record,1001)
-    publisher.tick()
-    configs=[m[0][0] for m in publisher.client.messages if m[0][0].startswith('homeassistant/')]
-    self.assertEqual(configs,['homeassistant/sensor/simulation-01_pressure_hpa/config'])
-    publisher.client.messages.clear(); publisher.published_at-=MQTT.REFRESH_S; publisher.tick()
-    self.assertFalse([m for m in publisher.client.messages if m[0][0].startswith('homeassistant/')])
-   finally:
-    gateway.store.db.close(); gateway.nonces.db.close()
+  with Station(node=False) as s:
+   gateway,cfg=s.gateway,s.cfg
+   publisher=fake_mqtt(gateway)
+   record=dict(version=5,station=cfg['station'],session='1',sequence=0,sampled_at=1000,uptime_s=60,
+               time_quality='synchronized',energy_state='normal',calibration_revision=0,
+               temperature_c=20.5,humidity_pct=40,pressure_hpa=1001.3,quality='valid')
+   gateway.store.ingest(record,1001)
+   publisher.tick()
+   configs=[m[0][0] for m in publisher.client.messages if m[0][0].startswith('homeassistant/')]
+   self.assertEqual(configs,['homeassistant/sensor/simulation-01_pressure_hpa/config'])
+   publisher.client.messages.clear(); publisher.published_at-=MQTT.REFRESH_S; publisher.tick()
+   self.assertFalse([m for m in publisher.client.messages if m[0][0].startswith('homeassistant/')])
 
  def test_last_ingested_is_the_frame_just_received(self):
   # serve.log printed the newest stored reading after each frame, so a backlog burst
   # (live seq 4, then backfilled 0..2) logged 'seq 4' four times (2026-10-14 15:19:50Z).
-  with tempfile.TemporaryDirectory() as tmp:
-   directory=Path(tmp)/'state'; provision(directory); cfg=load_config(directory/'gateway.json')
-   gateway=Gateway(cfg,directory); node=Node(cfg,directory); node.synced=True
-   try:
-    old=node.sample(1000); new=node.sample(1060)
-    gateway.receive(node.packet(new),1061)
-    self.assertEqual((gateway.last_ingested['sequence'],gateway.last_ingested['duplicate']),(new['sequence'],False))
-    gateway.receive(node.packet(old),1062)
-    self.assertEqual((gateway.last_ingested['sequence'],gateway.last_ingested['duplicate']),(old['sequence'],False))
-    gateway.receive(node.packet(old),1063)
-    self.assertTrue(gateway.last_ingested['duplicate'])
-   finally:
-    for db in (gateway.store.db,gateway.nonces.db,node.db,node.nonces.db): db.close()
+  with Station() as s:
+   gateway,node=s.gateway,s.node
+   old=node.sample(1000); new=node.sample(1060)
+   gateway.receive(node.packet(new),1061)
+   self.assertEqual((gateway.last_ingested['sequence'],gateway.last_ingested['duplicate']),(new['sequence'],False))
+   gateway.receive(node.packet(old),1062)
+   self.assertEqual((gateway.last_ingested['sequence'],gateway.last_ingested['duplicate']),(old['sequence'],False))
+   gateway.receive(node.packet(old),1063)
+   self.assertTrue(gateway.last_ingested['duplicate'])
 
  def test_mqtt_stale_payload_and_availability(self):
   from unittest.mock import patch
-  from ws0.service import MQTT
-  class Fake:
-   def __init__(self): self.messages=[]
-   def is_connected(self): return True
-   def publish(self,*a,**kw): self.messages.append((a,kw))
-  with tempfile.TemporaryDirectory() as tmp:
-   directory=Path(tmp)/'state'; provision(directory); cfg=load_config(directory/'gateway.json')
-   gateway=Gateway(cfg,directory); node=Node(cfg,directory); node.synced=True
-   try:
-    gateway.receive(node.packet(node.sample(1000)),1001)
-    publisher=object.__new__(MQTT); publisher.gateway=gateway
-    publisher.root='weatherstation/v1/simulation-01'; publisher.client=Fake()
-    publisher.published=None; publisher.published_at=0.0; publisher.advertised={'temperature_c','humidity_pct','dew_point_c'}
-    with patch('gateway.time.time',return_value=1180): publisher.tick()
-    self.assertEqual(publisher.client.messages[-1][0][1],'offline')
-    self.assertEqual(json.loads(publisher.client.messages[0][0][1])['sampled_at'],1000)
-    sent=len(publisher.client.messages)
-    with patch('gateway.time.time',return_value=1181): publisher.tick()   # unchanged: no republish
-    self.assertEqual(len(publisher.client.messages),sent)
-    publisher.published_at-=MQTT.REFRESH_S                                 # refresh interval elapsed
-    with patch('gateway.time.time',return_value=1182): publisher.tick()
-    self.assertEqual(len(publisher.client.messages),sent+2)
-   finally:
-    for db in (gateway.store.db,gateway.nonces.db,node.db,node.nonces.db): db.close()
+  with Station() as s:
+   gateway,node=s.gateway,s.node
+   gateway.receive(node.packet(node.sample(1000)),1001)
+   publisher=fake_mqtt(gateway)
+   with patch('gateway.time.time',return_value=1180): publisher.tick()
+   self.assertEqual(publisher.client.messages[-1][0][1],'offline')
+   self.assertEqual(json.loads(publisher.client.messages[0][0][1])['sampled_at'],1000)
+   sent=len(publisher.client.messages)
+   with patch('gateway.time.time',return_value=1181): publisher.tick()   # unchanged: no republish
+   self.assertEqual(len(publisher.client.messages),sent)
+   publisher.published_at-=MQTT.REFRESH_S                                 # refresh interval elapsed
+   with patch('gateway.time.time',return_value=1182): publisher.tick()
+   self.assertEqual(len(publisher.client.messages),sent+2)
 
 
-class TimeReconstruction(unittest.TestCase):
+class TimeReconstruction(StationTest):
  """Draft 4: unsynchronized samples get UTC from the same boot epoch's uptime counter."""
- setUp=PipelineTests.setUp
- tearDown=PipelineTests.tearDown
  def boot(self):
   self.node.db.close(); self.node.nonces.db.close(); self.node=Node(self.cfg,self.root)
  def test_boot_sample_reconstructed_after_first_sync(self):
@@ -330,10 +293,8 @@ class TimeReconstruction(unittest.TestCase):
   self.assertAlmostEqual(rows[3],2+60*150e-6)             # nearest reference: 60 s away
   self.assertEqual(rows[4],0)                             # the synchronized reference itself
 
-class NackTests(unittest.TestCase):
+class NackTests(StationTest):
  """Gap G2: authentic but permanently rejected frames get an authenticated NACK."""
- setUp=PipelineTests.setUp
- tearDown=PipelineTests.tearDown
  def test_collision_is_nacked_recorded_and_dropped_by_node(self):
   from ws0.protocol import KIND_NACK,NACK_COLLISION,frame_kind
   record=self.node.sample(1000)
@@ -372,10 +333,8 @@ class NackTests(unittest.TestCase):
   with self.assertRaises(OSError): self.gateway.receive(frame)
 
 
-class DiagnosticsAndEpochFloor(unittest.TestCase):
+class DiagnosticsAndEpochFloor(StationTest):
  """Gaps G8 (health reports) and G5 (epoch floor after a wipe)."""
- setUp=PipelineTests.setUp
- tearDown=PipelineTests.tearDown
  def diag(self,epoch,uptime,lost=0):
   from ws0.protocol import DIAG,KIND_DIAG,seal
   return seal(self.node.key,1,KIND_DIAG,self.node.nonces,DIAG.pack(epoch,uptime,1,lost,0,2,3,0,5,0,0x45f43e78,-61,9,2,1))

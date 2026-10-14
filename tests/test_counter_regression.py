@@ -45,8 +45,8 @@ class CounterRegressionTests(unittest.TestCase):
         self.now = 1_800_000_000
 
     def tearDown(self):
-        for db in (self.node.db, self.node.nonces.db, self.gateway.store.db, self.gateway.nonces.db):
-            db.close()
+        self.node.close()
+        self.gateway.close()
         self.tmp.cleanup()
 
     def test_forged_frames_of_both_kinds_are_counted(self):
@@ -60,7 +60,7 @@ class CounterRegressionTests(unittest.TestCase):
             self.assertEqual(self.gateway.status()['rejected_this_process'], before + 1)
 
     def restart_gateway(self):
-        self.gateway.store.db.close(); self.gateway.nonces.db.close()
+        self.gateway.close()
         self.gateway = Gateway(self.cfg, self.dir)
 
     def wipe_node_counter(self):
@@ -226,7 +226,7 @@ class CounterRegressionTests(unittest.TestCase):
             if minute in (7, 20):
                 self.restart_gateway()
             if minute in (12, 25):
-                self.node.db.close(); self.node.nonces.db.close()
+                self.node.close()
                 self.node = Node(self.cfg, self.dir)
             if minute == 30:
                 self.gateway.receive(seal(KEY, 1, KIND_DIAG, self.node.nonces, diag_payload(5, self.node.epoch)),

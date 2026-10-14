@@ -13,14 +13,14 @@ import re
 import subprocess
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 try:
-    from toolchain import needs_cc          # python -m unittest discover -s tests
+    from toolchain import CC_STRICT, ROOT, SAN, needs_cc          # python -m unittest discover -s tests
 except ImportError:
-    from tests.toolchain import needs_cc    # python -m unittest tests.<module>
+    from tests.toolchain import CC_STRICT, ROOT, SAN, needs_cc    # python -m unittest tests.<module>
 
-ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT/'firmware'
 APP = FW/'stage0-node'/'App'
 SOURCES = [APP/'node_store.c', FW/'sim_flash.c', FW/'test_store.c']
@@ -41,6 +41,13 @@ KNOWN_CUT = set()
 KNOWN_ERR = set()
 
 
+# Every (build, mode, wrap) driver run the tests below read. setUpClass runs them all at once in
+# parallel; a key missing here still works (run_driver runs it on first use), only slower.
+RUNS = [('full', 'functional', '1'), ('small', 'functional', '1'), ('small', 'sweep', '1'),
+        ('full', 'sweep', '0'), ('wide', 'sweep', '1'), ('wide', 'errsweep', '1'),
+        ('wide', 'functional', '1'), ('small', 'errsweep', '1'), ('full', 'errsweep', '0')]
+
+
 def parse(out):
     counts = {m[1]: int(m[2]) for m in re.finditer(r'^COUNT (\S+) (\d+)$', out, re.M)}
     summary = dict(re.findall(r'(\w+)=(\S+)', re.search(r'^SUMMARY (.*)$', out, re.M)[1]))
@@ -52,35 +59,46 @@ class StorePowerCut(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
-        base = ['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-O1', '-g',
-                '-I', str(FW), '-I', str(APP), '-I', str(FW/'common')]
-        san = ['-fsanitize=address,undefined', '-fno-sanitize-recover=undefined', '-fno-omit-frame-pointer']
-        cls.exe = {}
+        cls.addClassCleanup(cls.tmp.cleanup)
+        base = [*CC_STRICT, '-O1', '-g', '-I', str(FW), '-I', str(APP), '-I', str(FW/'common')]
         # 'wide': the largest slot (every catalog field), so a geometry-specific bookkeeping slip
         # cannot hide behind the default field set (one did, 2026-10-14, with 56-byte slots).
         wide = ['-DWS_NODE_FIELDS=WS_FIELDS_DEFINED', f'-DWS_JOURNAL_PAGES={SMALL_JOURNAL}U']
-        for name, extra in (('full', []), ('small', [f'-DWS_JOURNAL_PAGES={SMALL_JOURNAL}U']), ('wide', wide)):
-            exe = str(Path(cls.tmp.name)/f'test_store_{name}')
-            cmd = base + extra + [*map(str, SOURCES), '-o', exe]
+        builds = {'full': [], 'small': [f'-DWS_JOURNAL_PAGES={SMALL_JOURNAL}U'], 'wide': wide}
+        cls.exe = {name: str(Path(cls.tmp.name)/f'test_store_{name}') for name in builds}
+
+        def compile(name):
+            cmd = base + builds[name] + [*map(str, SOURCES), '-o', cls.exe[name]]
             # ASan + UBSan when the toolchain has them (macOS clang and Linux gcc/clang do).
-            if subprocess.run(cmd[:1] + san + cmd[1:], capture_output=True).returncode:
+            if subprocess.run(cmd[:1] + SAN + cmd[1:], capture_output=True).returncode:
                 subprocess.run(cmd, check=True)
-            cls.exe[name] = exe
-        cls.results = {}
+
+        def run(key):
+            try:
+                return cls.drive(*key)
+            except Exception as e:       # raised again by run_driver, in the test that reads this key
+                return e
+
+        with ThreadPoolExecutor(max_workers=max(len(builds), len(RUNS))) as pool:
+            list(pool.map(compile, builds))          # a failed build fails setUpClass, as before
+            cls.results = dict(zip(RUNS, pool.map(run, RUNS), strict=True))
 
     @classmethod
-    def tearDownClass(cls):
-        cls.tmp.cleanup()
+    def drive(cls, build, *args):
+        proc = subprocess.run([cls.exe[build], *args], capture_output=True, text=True, timeout=600)
+        if proc.returncode:
+            raise AssertionError(f'test_store {args} exited {proc.returncode}:\n{proc.stdout[-4000:]}{proc.stderr[-4000:]}')
+        return (proc.stdout, *parse(proc.stdout))
 
     @classmethod
     def run_driver(cls, build, *args):
         key = (build,) + args
         if key not in cls.results:
-            proc = subprocess.run([cls.exe[build], *args], capture_output=True, text=True, timeout=600)
-            if proc.returncode:
-                raise AssertionError(f'test_store {args} exited {proc.returncode}:\n{proc.stdout[-4000:]}{proc.stderr[-4000:]}')
-            cls.results[key] = (proc.stdout, *parse(proc.stdout))
-        return cls.results[key]
+            cls.results[key] = cls.drive(build, *args)
+        result = cls.results[key]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
     def assert_only(self, out, counts, allowed):
         bad = {c: n for c, n in counts.items() if c not in allowed}
