@@ -12,7 +12,7 @@ H01 rules as a rehearsal. Placement is Clint's call; the PRD scores H01 "at inte
 | RX | board B `0016001E4142500E20353451`, USB to the gateway Mac, across the room |
 | Link at start | -52 dBm, SNR 12-13 (gateway side) |
 | Radio | 915.0 MHz, 500 kHz, SF7, CR 4/5, 0 dBm (bench values) |
-| Host | Mac kept awake with `caffeinate -dimsu -t 93600` |
+| Host | Desktop Mac that never sleeps (used 24/7) |
 
 Before the start (not part of the window): TX moved 18:43-18:51Z (sessions 36, 37); the RX USB cable was
 replugged twice (18:45:46Z, 18:50:23-18:51:24Z). The window starts after both.
