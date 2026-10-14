@@ -236,21 +236,40 @@ def http_server(gateway, port):
     return server
 
 
-def discovery(cfg):
-    """Stable HA identities with both gateway and measurement availability."""
+# Power and enclosure fields describe the station, not the weather: HA diagnostic entities.
+DIAGNOSTIC_FIELDS = frozenset({'batt_mv','batt_current_ma','energy_in_mwh','energy_out_mwh','charge_in_mah',
+                               'charge_out_mah','soc_gauge_pct','charger_pins','enclosure_temp_c',
+                               'enclosure_rh_pct','uva_raw'})
+
+
+def discovery(cfg, names=('temperature_c','humidity_pct')):
+    """Stable HA identities, one sensor per catalog field the station sends (design section 8).
+    Availability needs all three: the reading is fresh, the gateway is up, and this field is not
+    null in the latest reading, so a faulted sensor shows as unavailable, never as a number."""
+    from .fields import BY_NAME, MEASURED
     root = f"weatherstation/v1/{cfg['station']}"
     result = {}
-    for field, label, unit, device_class in [('temperature_c','Temperature','°C','temperature'),
-                                            ('humidity_pct','Humidity','%','humidity')]:
-        uid = f"{cfg['station']}_{field}"
-        result[f'homeassistant/sensor/{uid}/config'] = {
-            'name':label,'unique_id':uid,'state_topic':root+'/weather',
-            'value_template':'{{ value_json.'+field+' }}','unit_of_measurement':unit,
-            'device_class':device_class,'state_class':'measurement',
-            'availability':[{'topic':root+'/availability'},{'topic':root+'/gateway_availability'}],
-            'availability_mode':'all',
-            'device':{'identifiers':[cfg['station']],'name':cfg['station'],
-                      'manufacturer':'Weather Station Project','model':'Stage 0 '+cfg['mode']}}
+    for field in names:
+        if field not in MEASURED:
+            continue
+        f, uid = BY_NAME[field], f"{cfg['station']}_{field}"
+        entry = {'name':field.replace('_',' ').capitalize(),'unique_id':uid,'state_topic':root+'/weather',
+                 'value_template':'{{ value_json.'+field+' }}',
+                 # Since-boot counters restart at 0 each boot; HA's total_increasing treats a decrease as a reset.
+                 'state_class':'total_increasing' if f.counter else 'measurement',
+                 'availability':[{'topic':root+'/availability'},{'topic':root+'/gateway_availability'},
+                                 {'topic':root+'/weather','value_template':
+                                  "{{ 'online' if value_json."+field+" is not none else 'offline' }}"}],
+                 'availability_mode':'all',
+                 'device':{'identifiers':[cfg['station']],'name':cfg['station'],
+                           'manufacturer':'Weather Station Project','model':'Stage 0 '+cfg['mode']}}
+        if f.unit:
+            entry['unit_of_measurement'] = f.unit
+        if f.ha_class:
+            entry['device_class'] = f.ha_class
+        if field in DIAGNOSTIC_FIELDS:
+            entry['entity_category'] = 'diagnostic'
+        result[f'homeassistant/sensor/{uid}/config'] = entry
     return result
 
 
@@ -290,6 +309,7 @@ class MQTT:
         self.client.on_connect = self.on_connect
         self.published = None   # (weather payload, availability) last sent; None forces a send
         self.published_at = 0.0
+        self.advertised = set()  # catalog fields with an HA discovery entry on this connection
         self.client.connect_async(settings['host'],settings.get('port',1883),keepalive=30)
         self.client.loop_start()
 
@@ -298,12 +318,23 @@ class MQTT:
             # A refused login or bad TLS setup must not fail silently.
             print(f'#gateway mqtt connect refused: {reason}',file=sys.stderr,flush=True)
             return
-        for topic,payload in discovery(self.gateway.cfg).items():
-            client.publish(topic,json.dumps(payload),qos=1,retain=True)
+        self.advertised = set()
+        self.advertise(self.gateway.store.latest(self.gateway.cfg['station']).get('observation'))
         # Set availability from actual age before advertising a live gateway.
         self.published = None
         self.tick()
         client.publish(self.root+'/gateway_availability','online',qos=1,retain=True)
+
+    def advertise(self, observation):
+        """Discovery for the fields the newest reading carries (T/RH before the first reading);
+        republished when a new field appears, e.g. after a sensor is added."""
+        from .fields import MEASURED
+        names = {n for n in (observation or {}) if n in MEASURED} or {'temperature_c','humidity_pct'}
+        if names <= self.advertised:
+            return
+        for topic,payload in discovery(self.gateway.cfg,sorted(names - self.advertised)).items():
+            self.client.publish(topic,json.dumps(payload),qos=1,retain=True)
+        self.advertised |= names
 
     REFRESH_S = 300  # republish unchanged retained state this often (cheap keep-fresh)
 
@@ -312,6 +343,7 @@ class MQTT:
         if not self.client.is_connected():
             return
         latest = self.gateway.store.latest(self.gateway.cfg['station'])
+        self.advertise(latest.get('observation'))
         weather = json.dumps(latest['observation']) if latest.get('observation') else None
         state = (weather, 'online' if latest['available'] else 'offline')
         diag = self.gateway.store.latest_diagnostic(self.gateway.cfg['station'])

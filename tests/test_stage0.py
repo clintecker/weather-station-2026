@@ -111,7 +111,12 @@ class PipelineTests(unittest.TestCase):
  def test_ha_discovery(self):
   entries=discovery(self.cfg); self.assertEqual(len(entries),2)
   for entry in entries.values():
-   self.assertEqual(entry['availability_mode'],'all'); self.assertEqual(len(entry['availability']),2)
+   self.assertEqual(entry['availability_mode'],'all'); self.assertEqual(len(entry['availability']),3)
+   self.assertIn('is not none',entry['availability'][2]['value_template'])   # a null field is unavailable
+  more=discovery(self.cfg,['pressure_hpa','rain_tips','batt_mv','qualifiers','wind_calm'])
+  self.assertEqual(sorted(k.split('/')[2] for k in more),['simulation-01_batt_mv','simulation-01_pressure_hpa','simulation-01_rain_tips'])
+  rain=more['homeassistant/sensor/simulation-01_rain_tips/config']; batt=more['homeassistant/sensor/simulation-01_batt_mv/config']
+  self.assertEqual((rain['state_class'],batt['entity_category'],batt['device_class']),('total_increasing','diagnostic','voltage'))
 
 @needs_cc
 class FirmwareTests(unittest.TestCase):
@@ -206,6 +211,31 @@ class ServiceSmokeTests(unittest.TestCase):
    self.assertNotIn(b'Traceback',err)
    self.assertEqual(proc.returncode,0)
 
+ def test_mqtt_advertises_a_field_when_it_first_appears(self):
+  from ws0.service import MQTT
+  class Fake:
+   def __init__(self): self.messages=[]
+   def is_connected(self): return True
+   def publish(self,*a,**kw): self.messages.append((a,kw))
+  with tempfile.TemporaryDirectory() as tmp:
+   directory=Path(tmp)/'state'; provision(directory); cfg=load_config(directory/'gateway.json')
+   gateway=Gateway(cfg,directory)
+   try:
+    publisher=object.__new__(MQTT); publisher.gateway=gateway; publisher.client=Fake()
+    publisher.root='weatherstation/v1/simulation-01'; publisher.published=None; publisher.published_at=0.0
+    publisher.advertised={'temperature_c','humidity_pct'}
+    record=dict(version=5,station=cfg['station'],session='1',sequence=0,sampled_at=1000,uptime_s=60,
+                time_quality='synchronized',energy_state='normal',calibration_revision=0,
+                temperature_c=20.5,humidity_pct=40,pressure_hpa=1001.3,quality='valid')
+    gateway.store.ingest(record,1001)
+    publisher.tick()
+    configs=[m[0][0] for m in publisher.client.messages if m[0][0].startswith('homeassistant/')]
+    self.assertEqual(configs,['homeassistant/sensor/simulation-01_pressure_hpa/config'])
+    publisher.client.messages.clear(); publisher.published_at-=MQTT.REFRESH_S; publisher.tick()
+    self.assertFalse([m for m in publisher.client.messages if m[0][0].startswith('homeassistant/')])
+   finally:
+    gateway.store.db.close(); gateway.nonces.db.close()
+
  def test_last_ingested_is_the_frame_just_received(self):
   # serve.log printed the newest stored reading after each frame, so a backlog burst
   # (live seq 4, then backfilled 0..2) logged 'seq 4' four times (2026-10-14 15:19:50Z).
@@ -237,7 +267,7 @@ class ServiceSmokeTests(unittest.TestCase):
     gateway.receive(node.packet(node.sample(1000)),1001)
     publisher=object.__new__(MQTT); publisher.gateway=gateway
     publisher.root='weatherstation/v1/simulation-01'; publisher.client=Fake()
-    publisher.published=None; publisher.published_at=0.0
+    publisher.published=None; publisher.published_at=0.0; publisher.advertised={'temperature_c','humidity_pct'}
     with patch('gateway.time.time',return_value=1180): publisher.tick()
     self.assertEqual(publisher.client.messages[-1][0][1],'offline')
     self.assertEqual(json.loads(publisher.client.messages[0][0][1])['sampled_at'],1000)
