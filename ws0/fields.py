@@ -92,7 +92,8 @@ FIELDS = (
 )
 DEFINED = (1 << len(FIELDS)) - 1
 BY_NAME = {f.name: f for f in FIELDS}
-assert all(f.index == i for i, f in enumerate(FIELDS))
+if any(f.index != i for i, f in enumerate(FIELDS)):   # a check that survives python -O
+    raise ImportError('field catalog indexes must be 0, 1, 2, ... in order')
 
 
 def fields_len(bitmap):
