@@ -12,3 +12,4 @@ firmware/*/build/
 
 # pinned third-party checkouts (tools/fetch-vendor.sh)
 vendor/
+.venv-cad/

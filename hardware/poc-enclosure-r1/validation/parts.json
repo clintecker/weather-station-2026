@@ -1,0 +1,74 @@
+[
+  {
+    "part": "shield-louvre",
+    "note": "print 7; white ASA or PETG; rim down; 3 perimeters, 20 % infill",
+    "valid": true,
+    "solids": 1,
+    "volume_cm3": 29.3,
+    "bounds_mm": [
+      130.0,
+      130.0,
+      22.0
+    ]
+  },
+  {
+    "part": "shield-cap",
+    "note": "print 1; rim down; 2 x M3 heat-set inserts in the central boss",
+    "valid": true,
+    "solids": 1,
+    "volume_cm3": 45.1,
+    "bounds_mm": [
+      130.0,
+      130.0,
+      24.7
+    ]
+  },
+  {
+    "part": "shield-sensor-cartridge",
+    "note": "print 1; flat; slide the 6174 into the slot, sensor membrane facing the window; 2 x M3 x 8 into the cap",
+    "valid": true,
+    "solids": 1,
+    "volume_cm3": 8.6,
+    "bounds_mm": [
+      62.0,
+      34.0,
+      14.0
+    ]
+  },
+  {
+    "part": "shield-arm",
+    "note": "print 1; flat; sits on the cap spacers; two stainless hose clamps to the mast",
+    "valid": true,
+    "solids": 1,
+    "volume_cm3": 87.8,
+    "bounds_mm": [
+      214.5,
+      161.1,
+      46.0
+    ]
+  },
+  {
+    "part": "electronics-chassis",
+    "note": "print 1; flat; Nucleo slides into the rails from the antenna end; battery strapped; small boards on the slots",
+    "valid": true,
+    "solids": 1,
+    "volume_cm3": 61.8,
+    "bounds_mm": [
+      160.0,
+      110.0,
+      21.6
+    ]
+  },
+  {
+    "part": "nucleo-rail-coupon",
+    "note": "print first: checks the 70 mm width and the 1.6 mm edge slot",
+    "valid": true,
+    "solids": 1,
+    "volume_cm3": 3.3,
+    "bounds_mm": [
+      82.0,
+      14.0,
+      12.6
+    ]
+  }
+]
