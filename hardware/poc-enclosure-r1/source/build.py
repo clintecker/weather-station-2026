@@ -70,10 +70,9 @@ def plate(open_d):
     """Conical louvre: a revolved band, rim on the bed, rising towards the centre."""
     r0 = open_d / 2
     r1 = PLATE_D / 2
-    top_inner = cone_top(r0) if r0 > 0 else cone_top(0)
+    top_inner = cone_top(r0)
+    # With r0 = 0 (solid cap) the same profile closes on the axis.
     pts = [(r0, top_inner - PLATE_T), (r1, 0), (r1, PLATE_T), (r0, top_inner)]
-    if r0 == 0:  # solid cap: close the profile on the axis
-        pts = [(0, top_inner - PLATE_T), (r1, 0), (r1, PLATE_T), (0, top_inner)]
     band = cq.Workplane('XZ').polyline(pts).close().revolve(360, (0, 0, 0), (0, 1, 0))
     # A short vertical drip lip on the rim (rain falls clear of the plate below).
     lip = (cq.Workplane('XY').circle(r1).circle(r1 - 1.6).extrude(PLATE_T + 1.0))

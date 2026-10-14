@@ -13,7 +13,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from PIL import Image, ImageDraw, ImageFont
 import cadquery as cq
 
-ROOT=Path('/workspace/scratch/f7a2ec9e9ecc/chicago-test-hardware-r0')
+ROOT=Path(__file__).resolve().parents[1]   # hardware/chicago-test-hardware-r0
 OUT=Path(__file__).resolve().parent
 COLORS={'plastic':'#d8dfe3','green':'#08674f','black':'#232831','gold':'#dcb974','metal':'#a8afb9','blue':'#096aa3'}
 
@@ -112,8 +112,9 @@ render('nucleo',nucleo,[(-48,48),(-44,44),(0,72)])
 render('interface',interface,[(-5,75),(-5,60),(0,38)],elev=38)
 render('sensor',sensor,[(-5,47),(-5,43),(0,25)],elev=38)
 # Compose a labeled explanatory plate. Typography remains separate from precise geometry.
-font='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
-bold='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+# DejaVu ships with matplotlib, so the plate renders the same on macOS and Linux.
+font=str(Path(matplotlib.get_data_path())/'fonts/ttf/DejaVuSans.ttf')
+bold=str(Path(matplotlib.get_data_path())/'fonts/ttf/DejaVuSans-Bold.ttf')
 def F(n,b=False):return ImageFont.truetype(bold if b else font,n)
 canvas=Image.new('RGB',(2000,1610),'#ffffff');d=ImageDraw.Draw(canvas)
 d.text((70,42),'WHAT THE FIRST BUILD LOOKS LIKE',font=F(42,True),fill='#163b33')
