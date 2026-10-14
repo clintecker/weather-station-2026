@@ -21,5 +21,5 @@ Score at the end with:
 
 ```sh
 .venv/bin/python tools/h01_report.py --db run-d5/observations.sqlite3 --station station-01 \
-  --start 2026-10-14T18:54:00Z --hours 24 --output evidence/h01-rehearsal-2026-10-14
+  --start 2026-10-14T18:54:00Z --hours 24 --output evidence/h01-rehearsal-2026-10-14/report
 ```
