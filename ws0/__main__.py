@@ -9,12 +9,13 @@ import sys
 import time
 from cryptography.exceptions import InvalidTag
 from pathlib import Path
-from .protocol import KIND_NACK, Nonces, frame_kind
+from .protocol import Nonces
 from .service import Gateway, MQTT, http_server, load_config
 from .simulator import BACKLOG_PER_MINUTE, DemoReceiver, Node
 from .link import ReceiverLink
 from .clock import HostClock
 from .logfile import RotatingLog
+from .web import line_fields, utc_stamp
 
 
 def provision(directory, hardware=False, station='simulation-01', station_id=1):
@@ -117,7 +118,7 @@ def provision_node(cfg, device, floor=0, counter_state=None):
         status = next((l for l in console_lines(port,time.monotonic()+3) if l.startswith('#status role=')),None)
         if not status or 'role=tx' not in status:
             raise SystemExit(f'{device}: no TX node status (got {status!r}); is this the TX board?')
-        fields = dict(f.split('=',1) for f in status[1:].split()[1:] if '=' in f)
+        fields = line_fields(status)
         check_node_counter(fields,counter_state)
         if fields.get('provisioned') == '1':
             if fields.get('station') == str(cfg['station_id']) and fields.get('kcv') == expected:
@@ -142,7 +143,7 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
     telemetry = gateway.telemetry
     text = line.decode('ascii','replace')
     rx_seen = time.time() if now is None else now
-    stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(rx_seen))
+    stamp = utc_stamp(rx_seen)
     frame = None
 
     def quiet(key):
@@ -164,25 +165,24 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
             # Receiver diagnostics (RSSI/SNR, drops, boots, alive): evidence, not data.
             receiver_log.write(f'{stamp} {text}\n')
             if text.startswith(('#alive ','#boot role=rx')):
-                fields = dict(f.split('=',1) for f in text.split()[1:] if '=' in f)
-                gateway.receiver = {'alive':True,'last_report':stamp,'last_seen':rx_seen,**fields}
+                gateway.receiver_report(text,rx_seen)
             telemetry.rx_line(text,rx_seen)
         elif text:
             telemetry.muted = False
             frame = bytes.fromhex(text)
             ack = gateway.receive(frame)
+            outcome = gateway.last_outcome
             if ack is None:  # node health report: stored, never answered
                 receiver_log.write(f'{stamp} diag {text}\n')
-                telemetry.frame(frame,'diag',at=rx_seen)
+                telemetry.frame(frame,outcome,at=rx_seen)
                 return
-            kind = 'nack' if frame_kind(ack) == KIND_NACK else 'ack'
             sent = link.write(ack.hex().encode()+b'\n')
-            duplicate = kind == 'ack' and (gateway.last_ingested or {}).get('duplicate')
-            if duplicate and quiet('duplicate'):   # a replayed frame is answered, but not logged forever
+            if outcome == 'duplicate' and quiet('duplicate'):   # a replay is answered, not logged forever
                 return
+            kind = 'nack' if outcome == 'nack' else 'ack'
             receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}'
                                f'{"" if sent else " (not delivered: serial link down)"}\n')
-            telemetry.frame(frame,'duplicate' if duplicate else kind,delivered=sent,at=rx_seen)
+            telemetry.frame(frame,outcome,delivered=sent,at=rx_seen)
             if kind == 'ack':  # the frame just stored, not the newest reading (backlog)
                 print(json.dumps({'received_at':stamp,'observation':gateway.last_ingested}),flush=True)
     except (ValueError,UnicodeError,InvalidTag) as exc:
@@ -261,7 +261,7 @@ def main():
     if args.command == 'serve':
         receiver_log = RotatingLog(args.directory/'receiver.log')
         def note(text):
-            stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
+            stamp = utc_stamp(time.time())
             receiver_log.write(f'{stamp} {text}\n')
             print(f'{stamp} {text}',file=sys.stderr,flush=True)
             gateway.telemetry.event(text)

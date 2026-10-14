@@ -92,6 +92,11 @@ class Throttle:
         return True, self.suppressed.pop(key, 0)
 
 
+def utc_stamp(t):
+    """Whole-second ISO-8601 UTC, as written in logs and receiver reports."""
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t))
+
+
 def line_fields(text):
     """'#alive uptime=5 forwarded=2' -> {'uptime': '5', ...}; text without '=' is skipped."""
     return dict(f.split('=', 1) for f in text.split()[1:] if '=' in f)

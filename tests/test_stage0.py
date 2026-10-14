@@ -104,7 +104,10 @@ class PipelineTests(unittest.TestCase):
    with self.assertRaises(HTTPError) as exc: get('/v1/status',False)
    self.assertEqual(exc.exception.code,401)
    with get('/v1/observations?limit=1') as r: self.assertEqual(len(json.load(r)['observations']),1)
-   with get('/v1/observations?format=csv') as r: self.assertIn('temperature_c',r.read().decode())
+   with get('/v1/observations?format=csv') as r: header=r.read().decode().splitlines()[0].split(',')
+   from ws0.fields import MEASURED
+   self.assertTrue(set(MEASURED) <= set(header))   # every catalog field, not just T/RH
+   with get('/v1/observations') as r: self.assertEqual(json.load(r)['units']['humidity_max_pct'],'%')
    with self.assertRaises(HTTPError): get('/v1/observations?limit=1001')
    with get('/v1/status') as r: self.assertNotIn('radio_key',r.read().decode())
   finally: server.shutdown(); server.server_close()

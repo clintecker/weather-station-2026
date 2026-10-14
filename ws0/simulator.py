@@ -126,13 +126,9 @@ class DemoReceiver:
         telemetry = self.gateway.telemetry
         reply = self.gateway.receive(frame)
         self.forwarded += 1
-        if reply is None:
-            telemetry.frame(frame, 'diag')
-        else:
+        telemetry.frame(frame, self.gateway.last_outcome, delivered=None if reply is None else True)
+        if reply is not None:
             self.acks += 1
-            nack = frame_kind(reply) == KIND_NACK
-            duplicate = not nack and (self.gateway.last_ingested or {}).get('duplicate')
-            telemetry.frame(frame, 'nack' if nack else 'duplicate' if duplicate else 'ack', delivered=True)
             self.ack_signal = self.signal()
         rssi, snr = self.signal()
         telemetry.rx_line(f'#rx obs rssi={rssi} snr={snr}')
@@ -144,9 +140,7 @@ class DemoReceiver:
             self.next_alive = now + self.ALIVE_S
             line = (f'#alive uptime={int(now - self.boot)} forwarded={self.forwarded} dropped=0 acks={self.acks} '
                     f'diag={self.diags} listening=1 relistens=0 uart_errors=0 stack_peak=1184')
-            self.gateway.receiver = {'alive': True, 'last_seen': now,
-                                     'last_report': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now)),
-                                     **dict(f.split('=', 1) for f in line.split()[1:])}
+            self.gateway.receiver_report(line, now)
             self.gateway.telemetry.rx_line(line, now)
         if now >= self.next_diag and not link_down:
             self.next_diag = now + self.DIAG_S

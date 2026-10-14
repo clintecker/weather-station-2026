@@ -9,7 +9,6 @@ import socket
 import sys
 import threading
 import time
-from datetime import datetime
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -17,7 +16,7 @@ from gateway import Store
 from . import web
 import sqlite3
 import struct
-from .fields import DERIVED, DIAGNOSTIC_FIELDS, ENERGY, LABELS
+from .fields import BY_NAME, DERIVED, DIAGNOSTIC_FIELDS, ENERGY, LABELS, MEASURED
 from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, LINK_STATES, NACK_COLLISION, NACK_INVALID,
                        RESET_CAUSES, STATION_MAX, Nonces, decode_observation, frame_counter, frame_kind, pack_reply, seal,
                        unseal)
@@ -61,6 +60,7 @@ class Gateway:
         self.clock = None  # ws0.clock.HostClock when serving hardware (gap G9); None = trust host
         self.receiver = None  # RX board liveness, set by the serial loop (gap G12)
         self.last_ingested = None  # the observation in the frame just ACKed, for the serve log
+        self.last_outcome = None   # what receive() did with the last frame: ack, duplicate, nack, diag
         self.lock = threading.Lock()
         self.hub = web.EventHub()  # live events for the dashboard stream (GET /v1/events)
         self.telemetry = web.Telemetry(self)
@@ -115,6 +115,7 @@ class Gateway:
                 raise
             if diag:
                 self.receive_diagnostic(frame,payload,now)
+                self.last_outcome = 'diag'
                 return None  # fire-and-forget: no reply on air
             epoch, sequence = struct.unpack_from('>II',payload)
             # Raised durably before the commit, so a crash cannot leave it below this frame.
@@ -131,6 +132,7 @@ class Gateway:
                                   str(exc),frame.hex(),now)
                 self.rejected += 1
                 self.nacked += 1
+                self.last_outcome = 'nack'
                 return seal(self.key,self.cfg['station_id'],KIND_NACK,self.nonces,
                             pack_reply(epoch,sequence,reason,frame_counter(frame)))
             except (OSError, sqlite3.Error):
@@ -149,12 +151,17 @@ class Gateway:
                                       frame_counter(frame)))
                 self.accepted += int(inserted)
                 self.last_ingested = dict(record,duplicate=not inserted)
+                self.last_outcome = 'ack' if inserted else 'duplicate'
                 if inserted:
                     self.telemetry.observation(record,now)
                 return ack
             except Exception:
                 self.rejected += 1
                 raise
+
+    def receiver_report(self, text, at):
+        """An RX '#alive' or '#boot' line: the receiver is alive (gap G12)."""
+        self.receiver = {'alive':True,'last_report':web.utc_stamp(at),'last_seen':at,**web.line_fields(text)}
 
     def counter_alarm(self):
         """Key-reuse alarm (P4). It persists across restarts; the cure is a new key, i.e. a new
@@ -176,16 +183,6 @@ class Gateway:
                 'latest':self.store.latest(self.cfg['station'])}
 
 
-def utc_filter(text, default):
-    """History filters use timezone-aware ISO-8601 values, never local naive time."""
-    if text is None:
-        return default
-    value = datetime.fromisoformat(text.replace('Z','+00:00'))
-    if value.tzinfo is None:
-        raise ValueError('UTC filter requires timezone')
-    return value.timestamp()
-
-
 def http_server(gateway, port):
     """All endpoints require a bearer token; HTTP cannot inject observations."""
     class Handler(BaseHTTPRequestHandler):
@@ -193,14 +190,14 @@ def http_server(gateway, port):
             pass  # Avoid recording credentials or query strings in access logs.
 
         def do_GET(self):
-            if web.serve_static(self,urlparse(self.path).path):
+            url = urlparse(self.path)
+            if web.serve_static(self,url.path):
                 return  # the dashboard page itself: fixed files, no data
             supplied = self.headers.get('Authorization','')
             expected = 'Bearer ' + gateway.cfg['api_token']
             if not hmac.compare_digest(supplied.encode(),expected.encode()):
                 self.reply(401,{'error':'unauthorized'})
                 return
-            url = urlparse(self.path)
             query = parse_qs(url.query)
             try:
                 if url.path == '/v1/status':
@@ -208,25 +205,26 @@ def http_server(gateway, port):
                 elif url.path == '/v1/observations/latest':
                     result = gateway.store.latest(gateway.cfg['station'])
                 elif url.path == '/v1/observations':
-                    limit = int(query.get('limit',['100'])[0])
-                    offset = int(query.get('offset',['0'])[0])
-                    start = utc_filter(query.get('from',[None])[0],0)
-                    end = utc_filter(query.get('to',[None])[0],253402300800)
-                    if not 1 <= limit <= 1000 or offset < 0 or end < start:
-                        raise ValueError('Invalid pagination/time range')
+                    limit = web.int_param(query,'limit',100,1,1000)
+                    offset = web.int_param(query,'offset',0,0,2**31)
+                    start = web.utc_param(query,'from',0)
+                    end = web.utc_param(query,'to',web.FAR_FUTURE)
+                    if end < start:
+                        raise ValueError('Invalid time range')
                     rows = gateway.store.history(gateway.cfg['station'],start,end,limit,offset)
                     if query.get('format',['json'])[0] == 'csv':
                         stream = io.StringIO()
-                        fields = ['station','session','sequence','sampled_at','received_at',
-                                  'temperature_c','humidity_pct','quality','time_quality',
-                                  'effective_sampled_at','time_basis','time_uncertainty_s','uptime_s']
+                        fields = ['station','session','sequence','sampled_at','received_at',*MEASURED,
+                                  'quality','time_quality','effective_sampled_at','time_basis',
+                                  'time_uncertainty_s','uptime_s']
                         writer = csv.DictWriter(stream,fields,extrasaction='ignore')
                         writer.writeheader()
                         writer.writerows(rows)
                         self.reply(200,stream.getvalue(),'text/csv')
                         return
                     result = {'observations':rows,'offset':offset,'limit':limit,
-                              'units':{'temperature_c':'°C','humidity_pct':'%','sampled_at':'unix_seconds_UTC'}}
+                              'units':{**{n:BY_NAME[n].unit for n in MEASURED},
+                                       'sampled_at':'unix_seconds_UTC'}}
                 elif url.path in web.ROUTES:
                     web.route(self,gateway,url.path,query)  # dashboard data and the event stream
                     return
