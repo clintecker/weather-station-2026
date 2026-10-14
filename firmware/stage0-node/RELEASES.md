@@ -14,6 +14,23 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
 
+## bc5e6ede429c — 2026-10-14 (bench, protocol draft 5, SHT45 wired)
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (31,696 B) | `27d6a013b442fffcf8d5d2e8c7aa9a1d2b8e55db49d33cab6119ca44650ffa6c` |
+| `build/rx/stage0-rx.elf` (path-dependent) | `77ed90ab4f7a9c73de17bcb1954cbd07c3ffc5e7916eab078c99dfba8b9127ff` |
+| `build/tx/stage0-tx.bin` (53,752 B) | `89726d99a486e6c31600ac643e4bf108911d57e753d1f4f025118f83aac0c03b` |
+| `build/tx/stage0-tx.elf` (path-dependent) | `66bb1327d3a617d697d1050ba6bf6692894d818e714e5e26ae077cda6bb3ae4a` |
+
+- Source: commit `bc5e6ede429c`. **Protocol draft 5** (`docs/protocol-draft5-design.md`, commits 6f52a51..bc5e6ed): 8-byte header and CCM tag, u40 counter (refused past 2^40-1 in the allocator and the sealer), u16 station, 33-byte ACK/NACK, byte-aligned observation with a field bitmap (T/RH build: 26-byte plaintext, 42-byte frame), 32-byte health report (build ID, ACK RSSI/SNR, crash count, energy state). Journal slots sized by the build's fields (48 B, 3,906 records); page magic "WSJ" + slot size. RX forwards frames up to the largest catalog frame (`hex_print` truncated above 64 B before).
+- Built from a clean `git worktree` of the commit (the main checkout had uncommitted docs). Inputs: as a07f498. Flash budget: TX 82.0 %, RX 48.4 %. Stack bound: TX 80 %, RX 27 %.
+- Reproducibility: two clean builds gave identical `.bin` hashes.
+- Release procedure for the format change: TX `WIPE ERASE-ALL-NODE-STATE` (run by Clint; `pending=0` checked first, counter kept: 8622 before, 8705 after), flash, new run directory `run-d5`, `provision-node` with a **new key**.
+- Flashed 2026-10-14 17:58Z: RX → board B `0016001E4142500E20353451`, TX → board A `003B00194142500E20353451`. TX after provisioning: `fw=bc5e6ede429c`, `kcv=5618eb`, `kat=pass` (draft-5 encoder vector, sealed frame, 2^40 refusal), `epoch=35`, `ctr=8705`, `#sensor ok t=2607 rh=4059`.
+- Bench check 17:59Z: on air a 42 B observation and a 33 B ACK; the live reading and the one taken before the gateway started both stored (version 5, T/RH valid, availability per field); 2 accepted / 0 rejected, `alarm` null, counter mark 8708, `replays=0`; RX `uart_errors=0`.
+- Not yet an H01 release: radio settings are bench values; the sensor-unplug check and the first health report on this release are still to be seen.
+
 ## 45f43e78fe91 — 2026-10-13 (bench, sensor not yet wired)
 
 | Artifact | SHA-256 |
