@@ -20,7 +20,8 @@ class RotatingLog:
         self.file = self._open()
 
     def _open(self):
-        return self.path.open('a', buffering=1, encoding='utf-8', errors='replace')
+        # newline='': no \n -> \r\n translation on Windows, so the bytes counted are the bytes written.
+        return self.path.open('a', buffering=1, encoding='utf-8', errors='replace', newline='')
 
     def _rotate(self):
         self.file.close()
