@@ -485,7 +485,7 @@ def history(gateway, start, end, max_points=1500):
     """Everything the page charts for [start, end): observations, node health, RX health, radio,
     events. A series longer than max_points is reduced to time buckets (bucket_s > 0); a bucket
     with no valid value stays null, and empty buckets are absent, so gaps remain gaps."""
-    from .fields import BY_NAME, FIELDS, MEASURED
+    from .fields import BY_NAME, FIELDS, LABELS, MEASURED
     store, station = gateway.store, gateway.cfg['station']
     with store.lock:
         rows = store.db.execute('SELECT payload,effective_at,time_basis FROM observations WHERE station=? '
@@ -498,6 +498,7 @@ def history(gateway, start, end, max_points=1500):
     names = [f.name for f in FIELDS if f.name in present]
     bucket = _bucket_of(end - start, len(records), max_points)
     obs = {'bucket_s': bucket, 'fields': names, 'units': {n: BY_NAME[n].unit for n in names},
+           'labels': {n: LABELS[n] for n in names},
            'unknown_time_count': unknown, 't': [], 'basis': [], 'quality': [], 'session': [],
            'values': {n: [] for n in names}}
     for t, group in _groups(records, lambda r: r[1], start, bucket):

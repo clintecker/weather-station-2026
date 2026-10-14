@@ -118,7 +118,7 @@ class PipelineTests(unittest.TestCase):
   rain=more['homeassistant/sensor/simulation-01_rain_tips/config']; batt=more['homeassistant/sensor/simulation-01_batt_mv/config']
   self.assertEqual((rain['state_class'],batt['entity_category'],batt['device_class']),('total_increasing','diagnostic','voltage'))
   self.assertEqual([e['name'] for e in entries.values()],['Temperature','Humidity'])
-  from ws0.fields import MEASURED; from ws0.service import DERIVED, LABELS; self.assertEqual(set(LABELS),set(MEASURED)|set(DERIVED))
+  from ws0.fields import MEASURED; from ws0.fields import DERIVED, LABELS; self.assertEqual(set(LABELS),set(MEASURED)|set(DERIVED))
   dew=discovery(self.cfg,['dew_point_c'])['homeassistant/sensor/simulation-01_dew_point_c/config']
   self.assertEqual((dew['name'],dew['unit_of_measurement'],dew['device_class']),('Dew point (derived)','°C','temperature'))
 

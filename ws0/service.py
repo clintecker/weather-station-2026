@@ -17,7 +17,7 @@ from gateway import Store
 from . import web
 import sqlite3
 import struct
-from .fields import ENERGY
+from .fields import DERIVED, DIAGNOSTIC_FIELDS, ENERGY, LABELS
 from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, LINK_STATES, NACK_COLLISION, NACK_INVALID,
                        RESET_CAUSES, STATION_MAX, Nonces, decode_observation, frame_counter, frame_kind, pack_reply, seal,
                        unseal)
@@ -253,28 +253,6 @@ def http_server(gateway, port):
     server = server_class((host,port),Handler)
     threading.Thread(target=server.serve_forever,daemon=True).start()
     return server
-
-
-# Power and enclosure fields describe the station, not the weather: HA diagnostic entities.
-DIAGNOSTIC_FIELDS = frozenset({'batt_mv','batt_current_ma','energy_in_mwh','energy_out_mwh','charge_in_mah',
-                               'charge_out_mah','soc_gauge_pct','charger_pins','enclosure_temp_c',
-                               'enclosure_rh_pct','uva_raw','th_samples'})
-
-
-# Home Assistant entity names (the unique_id stays the field name, so renaming here is safe).
-LABELS = {'temperature_c':'Temperature','humidity_pct':'Humidity','pressure_hpa':'Pressure',
-          'wind_speed_ms':'Wind speed','wind_gust_ms':'Wind gust','wind_dir_deg':'Wind direction',
-          'rain_tips':'Rain tips','uv_index':'UV index','irradiance_wm2':'Solar irradiance',
-          'uva_raw':'UVA raw (not UV index)','batt_mv':'Battery voltage','batt_current_ma':'Battery current',
-          'energy_in_mwh':'Energy in','energy_out_mwh':'Energy out','charge_in_mah':'Charge in',
-          'charge_out_mah':'Charge out','soc_gauge_pct':'Battery (fuel gauge estimate)',
-          'charger_pins':'Charger status pins','enclosure_temp_c':'Enclosure temperature',
-          'enclosure_rh_pct':'Enclosure humidity','temperature_min_c':'Temperature minimum (minute)',
-          'temperature_max_c':'Temperature maximum (minute)','humidity_min_pct':'Humidity minimum (minute)',
-          'humidity_max_pct':'Humidity maximum (minute)','th_samples':'T/RH samples per minute',
-          'dew_point_c':'Dew point (derived)'}
-# Published with the weather but computed by the gateway, never sent by the node (fields.derived).
-DERIVED = {'dew_point_c': dict(unit='°C', ha_class='temperature', needs=('temperature_c','humidity_pct'))}
 
 
 def discovery(cfg, names=('temperature_c','humidity_pct')):

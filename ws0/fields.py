@@ -202,10 +202,32 @@ def dew_point(temperature_c, humidity_pct):
     return round(b * gamma / (a - gamma), 2)
 
 
+# Power and enclosure fields describe the station, not the weather: HA diagnostic entities.
+DIAGNOSTIC_FIELDS = frozenset({'batt_mv','batt_current_ma','energy_in_mwh','energy_out_mwh','charge_in_mah',
+                               'charge_out_mah','soc_gauge_pct','charger_pins','enclosure_temp_c',
+                               'enclosure_rh_pct','uva_raw','th_samples'})
+
+
+# Display names: Home Assistant entities and dashboard charts (the HA unique_id stays the field name,
+# so renaming here is safe).
+LABELS = {'temperature_c':'Temperature','humidity_pct':'Humidity','pressure_hpa':'Pressure',
+          'wind_speed_ms':'Wind speed','wind_gust_ms':'Wind gust','wind_dir_deg':'Wind direction',
+          'rain_tips':'Rain tips','uv_index':'UV index','irradiance_wm2':'Solar irradiance',
+          'uva_raw':'UVA raw (not UV index)','batt_mv':'Battery voltage','batt_current_ma':'Battery current',
+          'energy_in_mwh':'Energy in','energy_out_mwh':'Energy out','charge_in_mah':'Charge in',
+          'charge_out_mah':'Charge out','soc_gauge_pct':'Battery (fuel gauge estimate)',
+          'charger_pins':'Charger status pins','enclosure_temp_c':'Enclosure temperature',
+          'enclosure_rh_pct':'Enclosure humidity','temperature_min_c':'Temperature minimum (minute)',
+          'temperature_max_c':'Temperature maximum (minute)','humidity_min_pct':'Humidity minimum (minute)',
+          'humidity_max_pct':'Humidity maximum (minute)','th_samples':'T/RH samples per minute',
+          'dew_point_c':'Dew point (derived)'}
+# Published with the weather but computed by the gateway, never sent by the node (fields.derived).
+DERIVED = {'dew_point_c': dict(unit='°C', ha_class='temperature', needs=('temperature_c','humidity_pct'),
+                              compute=dew_point)}
+
+
 def derived(record):
     """Values computed from a record's measurements, labelled as derived (PRD R10: every value has a
     unit and validity; derived values are marked as such)."""
-    out = {}
-    if 'temperature_c' in record and 'humidity_pct' in record:
-        out['dew_point_c'] = dew_point(record['temperature_c'], record['humidity_pct'])
-    return out
+    return {name: spec['compute'](*(record[n] for n in spec['needs']))
+            for name, spec in DERIVED.items() if all(n in record for n in spec['needs'])}
