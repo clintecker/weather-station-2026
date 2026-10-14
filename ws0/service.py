@@ -48,6 +48,7 @@ class Gateway:
         self.node_counter = self.nonces.node_counter()  # cached for the HTTP/MQTT threads
         self.clock = None  # ws0.clock.HostClock when serving hardware (gap G9); None = trust host
         self.receiver = None  # RX board liveness, set by the serial loop (gap G12)
+        self.last_ingested = None  # the observation in the frame just ACKed, for the serve log
         self.lock = threading.Lock()
 
     def check_counter(self, frame, payload, now, sequence):
@@ -122,6 +123,7 @@ class Gateway:
                            ACK.pack(int(record['session']),record['sequence'],host_utc,
                                     frame_counter(frame)))
                 self.accepted += int(inserted)
+                self.last_ingested = dict(record,duplicate=not inserted)
                 return ack
             except Exception:
                 self.rejected += 1

@@ -5,13 +5,14 @@ would put a consistent but wrong time on all data. This module measures the host
 with a minimal SNTP query (RFC 4330) at startup and every hour, in a background thread so an
 ACK is never delayed.
 
-Policy:
-  * measured |offset| <= MAX_OFFSET_S          -> 'ok': ACKs carry host UTC
-  * measured |offset| >  MAX_OFFSET_S          -> 'bad': ACKs carry UTC 0, so the node keeps its
+Policy. An SNTP offset is only known to within half the round trip (rtt/2), so:
+  * |offset| + rtt/2 <= MAX_OFFSET_S           -> 'ok': ACKs carry host UTC
+  * |offset| - rtt/2 >  MAX_OFFSET_S           -> 'bad': ACKs carry UTC 0, so the node keeps its
                                                   own clock (and marks samples unknown after 6 h)
-  * no measurement possible (no network)       -> 'unverified': ACKs carry host UTC (the clock
-                                                  was set by NTP before); status shows it
-A 'bad' result is kept until a later measurement is within the limit.
+  * in between (a slow round trip), or no      -> 'unverified': ACKs carry host UTC (the clock
+    measurement possible (no network)             was set by NTP before); status shows it
+A 'bad' result is kept until a later measurement is clearly within the limit. After a failed or
+undecided check the next one comes after RETRY_S instead of CHECK_PERIOD_S.
 """
 import socket
 import struct
@@ -20,6 +21,7 @@ import time
 
 MAX_OFFSET_S = 1.0
 CHECK_PERIOD_S = 3600
+RETRY_S = 300
 NTP_EPOCH = 2208988800  # seconds from 1900-01-01 to 1970-01-01
 
 
@@ -27,10 +29,13 @@ def sntp_offset(server='pool.ntp.org', timeout=2.0):
     """Return (offset_s, round_trip_s): server time minus local time."""
     packet = bytearray(48)
     packet[0] = 0x23  # LI 0, version 4, mode 3 (client)
+    # Resolve the name first: a lookup inside sendto() would fall between t1 and the server's
+    # receive time and read as a positive offset of half the lookup time.
+    address = socket.getaddrinfo(server, 123, socket.AF_INET, socket.SOCK_DGRAM)[0][4]
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.settimeout(timeout)
         t1 = time.time()
-        sock.sendto(packet, (server, 123))
+        sock.sendto(packet, address)
         data, _ = sock.recvfrom(512)
         t4 = time.time()
     if len(data) < 48 or (data[0] & 0x07) != 4 or data[1] == 0:  # server mode; stratum 0 = kiss-o'-death
@@ -49,6 +54,7 @@ class HostClock:
         self.lock = threading.Lock()
 
     def check(self):
+        """Measure once; return the delay in seconds until the next check."""
         try:
             offset, rtt = self.measure(self.server)
         except (OSError, ValueError) as exc:
@@ -57,13 +63,21 @@ class HostClock:
                 if self.state != 'bad':
                     self.state = 'unverified'
             self.log(f'#gateway host-clock unverified ({self.error})')
-            return
+            return RETRY_S
+        bound = max(rtt, 0.0) / 2
         with self.lock:
             previous = self.state
             self.offset, self.checked_at, self.error = offset, self.clock(), None
-            self.state = 'ok' if abs(offset) <= MAX_OFFSET_S else 'bad'
-        if self.state == 'bad' or previous != self.state:
+            if abs(offset) + bound <= MAX_OFFSET_S:
+                self.state = 'ok'
+            elif abs(offset) - bound > MAX_OFFSET_S:
+                self.state = 'bad'
+            elif self.state != 'bad':
+                self.state = 'unverified'
+                self.error = 'round trip too slow to decide'
+        if self.state != 'ok' or previous != self.state:
             self.log(f'#gateway host-clock {self.state} offset={offset:+.3f}s rtt={rtt:.3f}s server={self.server}')
+        return CHECK_PERIOD_S if self.state == 'ok' else RETRY_S
 
     def may_issue_time(self):
         with self.lock:
@@ -77,7 +91,6 @@ class HostClock:
     def start(self):
         def loop():
             while True:
-                self.check()
-                time.sleep(CHECK_PERIOD_S)
+                time.sleep(self.check())
         threading.Thread(target=loop, daemon=True, name='host-clock').start()
         return self

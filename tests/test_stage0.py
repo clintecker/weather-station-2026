@@ -5,6 +5,7 @@ os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim p
 import ctypes
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 try:
@@ -181,6 +182,46 @@ class ServiceSmokeTests(unittest.TestCase):
     try: proc.communicate(timeout=10)
     except subprocess.TimeoutExpired: proc.kill(); proc.communicate(); raise
    self.assertEqual(proc.returncode,0)
+
+ @unittest.skipIf(sys.platform=='win32','POSIX signals')
+ def test_cli_second_stop_signal_during_shutdown_is_ignored(self):
+  # A service manager may send SIGTERM more than once; a second one during cleanup used to
+  # raise KeyboardInterrupt inside server.shutdown() and leave a traceback in serve.log.
+  import signal,socket,time
+  with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+   directory=Path(tmp)/'state'; provision(directory)
+   cfg=json.loads((directory/'gateway.json').read_text())
+   with socket.socket() as sock:
+    sock.bind(('127.0.0.1',0)); cfg['http_port']=sock.getsockname()[1]
+   (directory/'gateway.json').write_text(json.dumps(cfg))
+   proc=subprocess.Popen([sys.executable,'-m','ws0','demo','--directory',str(directory)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+   try:
+    self.assertIn(b'Stage 0 simulation',proc.stdout.readline())
+    proc.stdout.readline()
+    for _ in range(5):
+     proc.send_signal(signal.SIGTERM); time.sleep(0.05)
+    _,err=proc.communicate(timeout=10)
+   except subprocess.TimeoutExpired:
+    proc.kill(); proc.communicate(); raise
+   self.assertNotIn(b'Traceback',err)
+   self.assertEqual(proc.returncode,0)
+
+ def test_last_ingested_is_the_frame_just_received(self):
+  # serve.log printed the newest stored reading after each frame, so a backlog burst
+  # (live seq 4, then backfilled 0..2) logged 'seq 4' four times (2026-10-14 15:19:50Z).
+  with tempfile.TemporaryDirectory() as tmp:
+   directory=Path(tmp)/'state'; provision(directory); cfg=load_config(directory/'gateway.json')
+   gateway=Gateway(cfg,directory); node=Node(cfg,directory); node.synced=True
+   try:
+    old=node.sample(1000); new=node.sample(1060)
+    gateway.receive(node.packet(new),1061)
+    self.assertEqual((gateway.last_ingested['sequence'],gateway.last_ingested['duplicate']),(new['sequence'],False))
+    gateway.receive(node.packet(old),1062)
+    self.assertEqual((gateway.last_ingested['sequence'],gateway.last_ingested['duplicate']),(old['sequence'],False))
+    gateway.receive(node.packet(old),1063)
+    self.assertTrue(gateway.last_ingested['duplicate'])
+   finally:
+    for db in (gateway.store.db,gateway.nonces.db,node.db,node.nonces.db): db.close()
 
  def test_mqtt_stale_payload_and_availability(self):
   from unittest.mock import patch

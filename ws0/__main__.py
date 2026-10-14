@@ -169,9 +169,16 @@ def main():
         parser.error('serve requires --serial or --serial-number')
     # launchd/systemd stop a service with SIGTERM: shut down as cleanly as Ctrl-C.
     # Windows: Ctrl-Break (sent by service wrappers and by `tests/test_stage0.py`) does the same.
-    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
-    if hasattr(signal, 'SIGBREAK'):
-        signal.signal(signal.SIGBREAK, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
+    # Only the first stop request interrupts: a repeat (a second Ctrl-C, a service manager that
+    # signals twice) would otherwise land inside the cleanup below and abort it with a traceback.
+    stopping = []
+    def stop(*_):
+        if not stopping:
+            stopping.append(True)
+            raise KeyboardInterrupt
+    for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), stop)
     gateway = Gateway(cfg,args.directory)
     server = http_server(gateway,cfg['http_port'])
     mqtt = MQTT(gateway) if cfg['mqtt']['enabled'] else None
@@ -229,7 +236,8 @@ def main():
                             sent = link.write(ack.hex().encode()+b'\n')
                             receiver_log.write(f'{stamp} frame {text} -> {kind} {ack.hex()}'
                                                f'{"" if sent else " (not delivered: serial link down)"}\n')
-                            print(json.dumps({'received_at':stamp,'latest':gateway.store.latest(cfg['station'])['observation']}),flush=True)
+                            if kind == 'ack':  # the frame just stored, not the newest reading (backlog)
+                                print(json.dumps({'received_at':stamp,'observation':gateway.last_ingested}),flush=True)
                     except (ValueError,UnicodeError,InvalidTag) as exc:
                         receiver_log.write(f'{stamp} rejected {type(exc).__name__}: {exc} {text}\n')
                         print(f'Rejected frame: {type(exc).__name__}: {exc}',file=sys.stderr)
