@@ -91,11 +91,21 @@ def validate(record):
         raise ValueError('Quality does not match the field values')
 
 
+def open_read_only(path):
+    """Read a gateway database without writing anything. While a gateway has it open, its -wal and
+    -shm files exist and a mode=ro reader uses them. Without a -wal file (gateway stopped, log
+    checkpointed), mode=ro would still create -wal/-shm, owned by whoever runs the command (say
+    root, locking the service out later); immutable=1 reads the file as it is."""
+    path = Path(path).resolve()
+    live = path.with_name(path.name + '-wal').exists()
+    return sqlite3.connect(path.as_uri() + ('?mode=ro' if live else '?mode=ro&immutable=1'), uri=True)
+
+
 class Store:
     """Serialize concurrent HTTP/ingestion access; immutable identities survive restart."""
     def __init__(self, path):
         self.lock = threading.RLock()
-        self.path = Path(path)
+        self.path = Path(path).resolve()   # reader() opens it by URI
         self.db = sqlite3.connect(path, check_same_thread=False)
         full_flush(self.db)
         # The JSON payload is immutable and the deduplication authority; the derived time columns
@@ -110,7 +120,8 @@ class Store:
                         '(station, CAST(session AS INTEGER) DESC, sequence DESC, received_at DESC)')
         # reconstruct() looks up a boot epoch's readings by time basis and uptime.
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_basis ON observations(station, session, time_basis, uptime_s)')
-        # History reads a time range in identity order: covered here, so no sort in a temp B-tree.
+        # History reads a time range in identity order: this index yields that order, so no sort
+        # in a temp B-tree (the payload still comes from the table).
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_effective_order ON observations'
                         '(station,effective_at,session,sequence)')
         # Authentic frames that were permanently rejected (and NACKed) are kept, never silently lost.
@@ -127,7 +138,7 @@ class Store:
         """A read-only connection with one consistent snapshot, for long reads (dashboard history
         and tables). It never takes self.lock: in WAL mode readers do not block the writer, so a
         year-long history query cannot delay an ACK (it held the lock for up to ~1 s before)."""
-        db = sqlite3.connect(self.path.resolve().as_uri() + '?mode=ro', uri=True, check_same_thread=False)
+        db = sqlite3.connect(self.path.as_uri() + '?mode=ro', uri=True, check_same_thread=False)
         try:
             db.execute('BEGIN')
             yield db
@@ -267,9 +278,10 @@ class Store:
                 'labels':{n: F.LABELS[n] for n in fields}}
 
     def history(self, station, start=0, end=FAR_FUTURE, limit=100, offset=0):
-        """Stable page ordering; UTC-unknown records remain in DB but outside time queries."""
-        with self.lock:
-            rows = self.db.execute('''SELECT payload,received_at,effective_at,time_basis,time_uncertainty_s
+        """Stable page ordering; UTC-unknown records remain in DB but outside time queries. Read
+        through reader(): an export never waits for, or delays, the ingest lock."""
+        with self.reader() as db:
+            rows = db.execute('''SELECT payload,received_at,effective_at,time_basis,time_uncertainty_s
                 FROM observations WHERE station=? AND effective_at>=? AND effective_at<?
                 ORDER BY effective_at,session,sequence LIMIT ? OFFSET ?''',
                 (station,start,end,limit,offset)).fetchall()

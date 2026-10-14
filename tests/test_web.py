@@ -333,6 +333,20 @@ class History(Fixture):
             release.set()
             t.join()
 
+    def test_receiver_history_covers_a_range_past_100000_reports(self):
+        """GW11 for RX reports: a long range is bucketed whole, not cut at a row limit."""
+        base, n = 1_700_000_000, 120_000
+        station = self.cfg['station']
+        with self.gateway.store.db:
+            self.gateway.store.db.executemany(
+                'INSERT INTO rx_alive (station,received_at,uptime_s,forwarded) VALUES (?,?,?,?)',
+                ((station, base + 60 * i, 60 * i, i) for i in range(n)))
+        h = web.history(self.gateway, base, base + 60 * n, 1500)
+        receiver = h['receiver']
+        self.assertGreater(receiver['bucket_s'], 0)
+        self.assertEqual(receiver['forwarded'][-1], n - 1)      # the newest report is in the last bucket
+        self.assertGreater(receiver['t'][-1], base + 60 * (n - 1) - receiver['bucket_s'])
+
     def test_history_query_uses_its_index(self):
         plan = ' '.join(r[-1] for r in self.gateway.store.db.execute('EXPLAIN QUERY PLAN ' + web.HISTORY_SQL,
                                                                      ('s', 0, 1)))

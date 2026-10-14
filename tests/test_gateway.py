@@ -139,6 +139,28 @@ class ReconstructionTests(unittest.TestCase):
                 finally:
                     store.db.close()
 
+class ReadOnlyOpen(unittest.TestCase):
+    def test_reading_a_stopped_gateways_database_leaves_no_files(self):
+        """CLI reads (provision-node's counter mark and epoch floor) may run as another user: with
+        the gateway stopped they must not create -wal/-shm files that the service then can't open."""
+        from gateway import open_read_only
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'o.sqlite3'
+            store = Store(path)
+            store.ingest(reading(), 1001)
+            store.db.close()                              # last connection: WAL checkpointed, removed
+            before = sorted(p.name for p in Path(tmp).iterdir())
+            db = open_read_only(path)
+            self.assertEqual(db.execute('SELECT count(*) FROM observations').fetchone()[0], 1)
+            db.close()
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), before)
+            store = Store(path)                           # and with the gateway running, it reads live data
+            store.ingest(reading(sequence=2), 1002)
+            db = open_read_only(path)
+            self.assertEqual(db.execute('SELECT count(*) FROM observations').fetchone()[0], 2)
+            db.close()
+            store.db.close()
+
 class DurabilityTests(unittest.TestCase):
     """Gap G4: commits must reach stable storage on macOS before an ACK exists."""
     def test_full_flush_pragmas_are_on(self):

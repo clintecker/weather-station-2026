@@ -218,12 +218,16 @@ def http_server(gateway, port):
                     rows = gateway.store.history(gateway.cfg['station'],start,end,limit,offset)
                     if query.get('format',['json'])[0] == 'csv':
                         stream = io.StringIO()
-                        fields = ['station','session','sequence','sampled_at','received_at',*MEASURED,
-                                  'quality','time_quality','effective_sampled_at','time_basis',
-                                  'time_uncertainty_s','uptime_s']
-                        writer = csv.DictWriter(stream,fields,extrasaction='ignore')
+                        # Every key a stored record can carry; extrasaction='raise' turns a
+                        # forgotten column into an error instead of a silently dropped value.
+                        fields = ['version','station','session','sequence','sampled_at','received_at',
+                                  'effective_sampled_at','time_basis','time_uncertainty_s','uptime_s',
+                                  'time_quality','energy_state','calibration_revision','quality',
+                                  *MEASURED,'wind_calm','qualifiers']
+                        writer = csv.DictWriter(stream,fields,extrasaction='raise')
                         writer.writeheader()
-                        writer.writerows(rows)
+                        writer.writerows(dict(r,qualifiers=json.dumps(r['qualifiers'],sort_keys=True))
+                                         if 'qualifiers' in r else r for r in rows)
                         self.reply(200,stream.getvalue(),'text/csv')
                         return
                     result = {'observations':rows,'offset':offset,'limit':limit,

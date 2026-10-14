@@ -387,9 +387,8 @@ def route(handler, gateway, path, query):
     order = query.get('order', ['asc'])[0]
     if end < start or order not in ('asc', 'desc'):
         raise ValueError('Invalid time range or order')
-    table, column = {'/v1/radio': ('radio_events', 'received_at'), '/v1/receiver/alive': ('rx_alive', 'received_at'),
-                     '/v1/diagnostics': ('diagnostics', 'received_at'),
-                     '/v1/gateway/events': ('gateway_events', 'at')}[path]
+    table = {'/v1/radio': 'radio_events', '/v1/receiver/alive': 'rx_alive', '/v1/diagnostics': 'diagnostics',
+             '/v1/gateway/events': 'gateway_events'}[path]
     with gateway.store.reader() as db:
         rows = rows_between(db, gateway.cfg['station'], table, start, end, limit, offset, order)
     handler.reply(200, {'rows': rows, 'offset': offset, 'limit': limit})
@@ -405,8 +404,9 @@ TABLE_ROWS = {
 }
 
 
-def rows_between(db, station, table, start, end, limit=100000, offset=0, order='asc'):
-    """Rows of one dashboard table in [start, end), as dicts (diagnostics: the decoded report).
+def iter_rows(db, station, table, start, end, limit=-1, offset=0, order='asc'):
+    """Rows of one dashboard table in [start, end), as dicts (diagnostics: the decoded report),
+    streamed from the cursor. limit -1: all of them (history never truncates a range; GW11).
     db is a Store.reader() connection: never the ingest connection or its lock."""
     column, tiebreak, names = TABLE_ROWS[table]
     direction = 'DESC' if order == 'desc' else 'ASC'
@@ -414,8 +414,18 @@ def rows_between(db, station, table, start, end, limit=100000, offset=0, order='
                      f'ORDER BY {column} {direction},{tiebreak} {direction} LIMIT ? OFFSET ?',
                      (station, start, end, limit, offset))
     if table == 'diagnostics':
-        return [json.loads(report) | {'received_at': at} for at, report in cur]
-    return [dict(zip(names, r, strict=True)) for r in cur]
+        return (json.loads(report) | {'received_at': at} for at, report in cur)
+    return (dict(zip(names, r, strict=True)) for r in cur)
+
+
+def rows_between(*args, **kwargs):
+    return list(iter_rows(*args, **kwargs))
+
+
+def count_between(db, station, table, start, end):
+    column = TABLE_ROWS[table][0]
+    return db.execute(f'SELECT COUNT(*) FROM {table} WHERE station=? AND {column}>=? AND {column}<?',
+                      (station, start, end)).fetchone()[0]
 
 
 STREAM_SEND_TIMEOUT_S = 20
@@ -503,7 +513,7 @@ def history(gateway, start, end, max_points=1500):
         return _history(db, gateway.cfg['station'], start, end, max_points)
 
 
-# Covered by the index obs_effective_order (gateway.py): no sort in a temp B-tree.
+# Ordered by the index obs_effective_order (gateway.py): no sort in a temp B-tree.
 HISTORY_SQL = ('SELECT payload,effective_at,time_basis FROM observations WHERE station=? '
                'AND effective_at>=? AND effective_at<? ORDER BY effective_at,session,sequence')
 
@@ -536,10 +546,11 @@ def _history(db, station, start, end, max_points):
 
     radio = radio_series(db, station, start, end, max_points)
 
-    alive_rows = rows_between(db, station, 'rx_alive', start, end)
-    abucket = _bucket_of(end - start, len(alive_rows), max_points)
+    # A year of 60 s reports is ~525,000 rows: counted first, then streamed through the buckets.
+    abucket = _bucket_of(end - start, count_between(db, station, 'rx_alive', start, end), max_points)
     alive = {'bucket_s': abucket, 't': [], **{k: [] for k in ALIVE_FIELDS}}
-    for t, group in _groups(alive_rows, lambda r: r['received_at'], start, abucket):
+    for t, group in _groups(iter_rows(db, station, 'rx_alive', start, end), lambda r: r['received_at'],
+                            start, abucket):
         alive['t'].append(t)
         for k in ALIVE_FIELDS:   # cumulative since RX boot: the bucket's last report
             values = [r[k] for r in group]

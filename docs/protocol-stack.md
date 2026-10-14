@@ -688,7 +688,7 @@ Draft 4 raised the alarm for a plain replay too.
 
 ### 11.2 Storage rules
 
-- SQLite uses `PRAGMA synchronous=FULL` [[SQLITE]](#SQLITE), plus `PRAGMA fullfsync=ON` and `checkpoint_fullfsync=ON`. On macOS, `fsync()` does not flush the drive cache, but `F_FULLFSYNC` does. Thus the commit is on stable storage before the ACK exists (`gateway.py`, `full_flush`). Simulations and unit tests can switch this off with `WS0_UNSAFE_FAST_FSYNC=1`. Results made that way do not show power-loss durability.
+- SQLite uses `PRAGMA synchronous=FULL` [[SQLITE]](#SQLITE), plus `PRAGMA fullfsync=ON` and `checkpoint_fullfsync=ON`. On macOS, `fsync()` does not flush the drive cache, but `F_FULLFSYNC` does. Thus the commit is on stable storage before the ACK exists (`gateway.py`, `full_flush`). Both databases use a write-ahead log (WAL). Simulations and unit tests can switch durability off with `WS0_UNSAFE_FAST_FSYNC=1` (`synchronous=OFF`, no `fullfsync`). Results made that way do not show power-loss durability.
 - The gateway ACK counters use a `BEGIN IMMEDIATE` transaction. The counter is in the database before the gateway seals the ACK.
 - The nonce database is bound to the key fingerprint, the station, and the direction. A different key cannot use it by accident.
 - An authentic frame that the gateway must reject permanently goes into the `rejections` table (station, session, sequence, received_at, reason, detail, frame_hex) **before** the NACK is sealed.

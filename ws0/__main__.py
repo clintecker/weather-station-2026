@@ -9,6 +9,8 @@ import sys
 import time
 from cryptography.exceptions import InvalidTag
 from pathlib import Path
+from gateway import open_read_only
+
 from .protocol import KIND_ACK, KIND_OBS, Nonces
 from .service import Gateway, MQTT, http_server, load_config
 from .simulator import BACKLOG_PER_MINUTE, DemoReceiver, Node
@@ -57,7 +59,7 @@ def epoch_floor(directory, station):
     path = directory/'observations.sqlite3'
     if not path.exists():
         return 0
-    db = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
+    db = open_read_only(path)
     try:   # Store creates all three tables
         values = [db.execute(f'SELECT max(CAST(session AS INTEGER)) FROM {table} WHERE station=?',
                              (station,)).fetchone()[0] for table in ('observations','rejections','diagnostics')]
@@ -73,7 +75,7 @@ def node_counter_mark(directory):
     path = directory/'gateway-nonces.sqlite3'
     if not path.exists():
         return None
-    db = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
+    db = open_read_only(path)
     try:
         row = db.execute('SELECT max_counter,regressions,last_regression FROM node_counter').fetchone()
     finally:

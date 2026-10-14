@@ -121,6 +121,18 @@ class PipelineTests(StationTest):
    from ws0.fields import MEASURED
    self.assertTrue(set(MEASURED) <= set(header))   # every catalog field, not just T/RH
    with get('/v1/observations') as r: self.assertEqual(json.load(r)['units']['humidity_max_pct'],'%')
+   # A calm reading (wind_calm) and a qualifier must survive the CSV export, not vanish.
+   import csv,io
+   from ws0 import fields as F
+   calm=dict(version=5,station=self.cfg['station'],session='7',sequence=1,sampled_at=2000,uptime_s=60,
+             time_quality='synchronized',energy_state='normal',calibration_revision=0,temperature_c=-1.5,
+             humidity_pct=90.0,wind_speed_ms=0.0,wind_dir_deg=None,wind_calm=True,
+             qualifiers={'temperature_c':'suspected_icing'})
+   calm['quality']=F.quality(calm)
+   self.gateway.store.ingest(calm,2001)
+   with get('/v1/observations?format=csv') as r: rows=list(csv.DictReader(io.StringIO(r.read().decode())))
+   row=next(x for x in rows if x['session']=='7')
+   self.assertEqual((row['wind_calm'],json.loads(row['qualifiers'])),('True',{'temperature_c':'suspected_icing'}))
    with self.assertRaises(HTTPError): get('/v1/observations?limit=1001')
    with get('/v1/status') as r: self.assertNotIn('radio_key',r.read().decode())
   finally: server.shutdown(); server.server_close()
