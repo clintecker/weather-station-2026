@@ -30,7 +30,8 @@ STATION = 7
 KEY = bytes(range(16, 32))
 R_SLEEP, R_STANDBY, R_TX, R_RX = range(4)
 SOURCES = ['host/tx_harness.c', 'stage0-node/App/app_tx.c', 'stage0-node/App/node_store.c',
-           'stage0-node/App/busymon.c', 'stage0.c', 'common/ws_frame.c', 'common/ws_obs.c', 'sim_flash.c']
+           'stage0-node/App/busymon.c', 'stage0-node/App/clock.c', 'stage0-node/App/events.c', 'stage0-node/App/bench.c',
+           'common/ws_console.c', 'stage0.c', 'common/ws_frame.c', 'common/ws_obs.c', 'sim_flash.c']
 ASAN_ENV = 'WS_TX_ASAN'   # set by TxUnderAddressSanitizer for its child run
 
 # What the firmware must do (docs/firmware-event-model.md, docs/radio-energy-policy.md, PRD 9). Written

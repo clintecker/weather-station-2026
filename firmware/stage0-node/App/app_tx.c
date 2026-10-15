@@ -8,8 +8,11 @@
  * WIPE ERASE-ALL-NODE-STATE, TEST-HANG, TEST-FAULT, TEST-FLASH-STORM (firmware/stage0-node/README.md). */
 #include <stdlib.h>
 #include <string.h>
+#include "bench.h"
 #include "busymon.h"
+#include "clock.h"
 #include "console.h"
+#include "events.h"
 #include "leds.h"
 #include "watchdog.h"
 #include "node_store.h"
@@ -180,16 +183,14 @@ static int8_t ack_rssi = -128, ack_snr = -128;
 static const char *const ev_name[EV_COUNT] = { "tx-done", "tx-timeout", "rx-done", "rx-timeout", "rx-error", "gap", "ack-end" };
 static volatile uint32_t pending_ev;
 
-/* RTC-based monotonic seconds; SysTimeSet() does not change it. */
-static uint32_t mcu_seconds(void) { return SysTimeGetMcuTime().Seconds; }
-static int time_valid(void) { return synced && (mcu_seconds() - last_sync_mcu) < SYNC_VALID_S; }
+static int time_valid(void) { return synced && (clock_s() - last_sync_mcu) < SYNC_VALID_S; }
 
 /* Option D: restore time trust after a reset if the RTC kept counting and the sync is recent. */
 static void restore_time_trust(void)
 {
   uint32_t magic = HAL_RTCEx_BKUPRead(&hrtc, BKP_REG_MAGIC);
   uint32_t at = HAL_RTCEx_BKUPRead(&hrtc, BKP_REG_SYNC_MCU);
-  uint32_t now = mcu_seconds();
+  uint32_t now = clock_s();
   if (magic == BKP_TIME_MAGIC && now >= at && now - at < SYNC_VALID_S && SysTimeGet().Seconds >= MIN_PLAUSIBLE_UTC)
   {
     synced = 1;
@@ -244,7 +245,7 @@ static void status(void)
              (unsigned)boot_epoch, (unsigned)next_seq, u64_text(store_counter_next(), ctr_buf), (unsigned)store_ecc_faults(),
              link_state == LINK_LINKED ? "linked" : "probing",
              (unsigned)silent_minutes, energy_name[energy_state()], time_valid() ? "synchronized" : "unknown",
-             (unsigned)(time_valid() ? SysTimeGet().Seconds : 0), (unsigned)(mcu_seconds() - boot_mcu));
+             (unsigned)(time_valid() ? SysTimeGet().Seconds : 0), (unsigned)(clock_s() - boot_mcu));
   APP_PRINTF("#counts pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u "
              "sensor_faults=%u tx_fail_run=%u tx_air_run=%u stack_peak=%u\n",
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
@@ -258,14 +259,7 @@ static void status(void)
              (unsigned)ws_trace_drops, (unsigned)n_unexpected);
 }
 
-static void post(uint32_t ev)
-{
-  uint32_t primask = __get_PRIMASK();
-  __disable_irq();
-  pending_ev |= ev;
-  __set_PRIMASK(primask);
-  UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0);
-}
+static void post(uint32_t ev) { events_post(&pending_ev, ev); }
 static void on_gap(void *ctx) { (void)ctx; post(EV_GAP); }
 static void on_ack_end(void *ctx) { (void)ctx; post(EV_ACK_END); }
 static void on_tx_done(void) { post(EV_TX_DONE); }
@@ -420,13 +414,13 @@ static int8_t clamp8(int v) { return (int8_t)(v < -127 ? -127 : v > 127 ? 127 : 
 #error "WS_FW_BUILD_ID comes from the Makefile"
 #endif
 
-static int diag_wanted(void) { return diag_due || mcu_seconds() - last_diag_mcu >= DIAG_PERIOD_S; }
+static int diag_wanted(void) { return diag_due || clock_s() - last_diag_mcu >= DIAG_PERIOD_S; }
 
 /* Returns 1 if a health report went on air (its TxDone or TxTimeout ends the exchange). */
 static int send_diag(void)
 {
   uint8_t plain[WS_DIAG_PLAIN_LEN], frame[WS_DIAG_FRAME_LEN]; uint64_t ctr;
-  uint32_t now = mcu_seconds();
+  uint32_t now = clock_s();
   uint32_t crashes = fault_count();
   ws_diag_t d = { .epoch = boot_epoch, .uptime = now - boot_mcu, .lost = store_journal_lost(), .build = (uint32_t)WS_FW_BUILD_ID,
                   .pending = clamp16(store_journal_pending()), .torn = clamp16(store_journal_burned()),
@@ -506,7 +500,7 @@ static int handle_reply(void)
     SysTime_t now = { .Seconds = utc, .SubSeconds = 0 };
     SysTimeSet(now);
     synced = 1;
-    last_sync_mcu = mcu_seconds();
+    last_sync_mcu = clock_s();
     HAL_RTCEx_BKUPWrite(&hrtc, BKP_REG_SYNC_MCU, last_sync_mcu);
     HAL_RTCEx_BKUPWrite(&hrtc, BKP_REG_MAGIC, BKP_TIME_MAGIC);
   }
@@ -582,11 +576,7 @@ static void handle(uint32_t ev)
 
 static void process(void)
 {
-  uint32_t primask = __get_PRIMASK();
-  __disable_irq();
-  uint32_t ev = pending_ev;
-  pending_ev = 0;
-  __set_PRIMASK(primask);
+  uint32_t ev = events_take(&pending_ev);
   for (uint32_t bit = 1; ev; bit <<= 1)   /* bounded: EV_COUNT bits */
     if (ev & bit) { ev &= ~bit; handle(bit); }
 }
@@ -605,7 +595,7 @@ static void sampled(int src, int16_t t, uint16_t h);
 /* Every 15 s: start a measurement; sampled() gets its result from the sensor task ~10 ms later. */
 static void sample(void)
 {
-  last_sample_mcu = mcu_seconds();
+  last_sample_mcu = clock_s();
   if (sensor_start(sampled)) sampled(-1, 0, 0);   /* the previous one never finished: a missed sample */
 }
 BUSYMON_TASK(sample)
@@ -626,7 +616,7 @@ static void sampled(int src, int16_t t, uint16_t h)
   int valid = ws_th_mean_t(&th_window, &t) && ws_th_mean_h(&th_window, &h);
   int timed = time_valid();
   uint32_t utc = timed ? SysTimeGet().Seconds : 0;
-  uint32_t uptime = mcu_seconds() - boot_mcu; /* always sent: the gateway reconstructs time from it */
+  uint32_t uptime = clock_s() - boot_mcu; /* always sent: the gateway reconstructs time from it */
   if (!valid) n_sensor_faults++;
   /* Draft-5 observation (docs/protocol-draft5-design.md 5): out-of-range temperature is INVALID,
      RH is clamped (ws_code_*); a sensor fault sends both fields as INVALID, never leaves them out. */
@@ -655,7 +645,7 @@ static void sampled(int src, int16_t t, uint16_t h)
   if (busy) { APP_PRINTF("#busy previous exchange still running\n"); return; }
   /* What may this minute send? The stricter of the energy and link states wins. */
   energy_t en = energy_state();
-  uint32_t now = mcu_seconds();
+  uint32_t now = clock_s();
   if (en == EN_CRITICAL) return;
   if (en == EN_CONSERVE && now - last_send_mcu < CONSERVE_INTERVAL_S) return;
   if (!ws_link_may_send(en, link_state == LINK_PROBING, (int32_t)(next_probe_mcu - now))) return; /* stays journaled */
@@ -674,13 +664,13 @@ static void sampled(int src, int16_t t, uint16_t h)
   /* The longest this exchange can take: every frame and the health report hit their transmit
      timeout or wait out the whole ACK window, plus the gaps; then 5 s of margin. */
   exchange_limit_s = ((qn + 1U) * (WS_TX_TIMEOUT_MS + ACK_WINDOW_MS + INTER_FRAME_MS)) / 1000U + 5U;
-  if (qn) { exchange_start_mcu = mcu_seconds(); send_current(); }
+  if (qn) { exchange_start_mcu = clock_s(); send_current(); }
 }
 
 /* Watchdog health: real progress, not just a running main loop (failure-modes.md G1). */
 static int tx_healthy(void)
 {
-  uint32_t now = mcu_seconds();
+  uint32_t now = clock_s();
   if (!running) return 1;                                   /* not sampling by design */
   if (now - last_sample_mcu > 150) return 0;                /* sampling stopped */
   if (busy && now - exchange_start_mcu > exchange_limit_s) return 0;   /* radio exchange stuck */
@@ -728,20 +718,10 @@ static void reboot_soon(void)
   UTIL_TIMER_Start(&reboot_timer);
 }
 
-/* Bench: TEST-HANG stops the main loop on purpose, so the watchdog must reset the board. A deliberate
-   hang, like TEST-FAULT's 50 ms console wait before its fault (tools/blocking_report.py TEST_ONLY). */
-static void test_hang(void) __attribute__((noreturn));
-static void test_hang(void)
-{
-  APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n");
-  for (;;) { }
-}
-
 static void on_line(char *line)
 {
   if (!strcmp(line, "STATUS")) { status(); return; }
-  if (!strcmp(line, "TEST-FAULT")) fault_test();
-  if (!strcmp(line, "TEST-HANG")) test_hang();
+  bench_command(line);   /* TEST-FAULT, TEST-HANG (not in a field build) */
   /* Commands that write flash never run during a radio exchange or a pending reboot: flash is only
      written with the radio idle (docs/firmware-event-model.md). The operator retries. */
   if ((!strcmp(line, "TEST-FLASH-STORM") || !strcmp(line, "WIPE ERASE-ALL-NODE-STATE") || !strncmp(line, "PROVISION ", 10)) &&
@@ -821,7 +801,7 @@ void SubghzApp_Init(void)
   UTIL_TIMER_Create(&reboot_timer, REBOOT_DELAY_MS, UTIL_TIMER_ONESHOT, on_reboot, NULL);
   console_init(on_line);
 
-  boot_mcu = mcu_seconds();
+  boot_mcu = clock_s();
   exchange_ms = airtime_ms(OBS_FRAME_MAX) + airtime_ms(WS_ACK_FRAME_LEN) + TURNAROUND_MS;
   watchdog_start(tx_healthy);
   kat_ok = run_kat();
@@ -839,7 +819,7 @@ void SubghzApp_Init(void)
   if (store_next_epoch(&boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); boot_retry(); return; }
   sensor_init();
   running = 1;
-  last_sample_mcu = mcu_seconds();
+  last_sample_mcu = clock_s();
   status();
   UTIL_TIMER_Create(&sample_timer, SAMPLE_PERIOD_MS, UTIL_TIMER_PERIODIC, on_sample_timer, NULL);
   UTIL_TIMER_Start(&sample_timer);

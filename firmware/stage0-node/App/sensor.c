@@ -1,5 +1,6 @@
 #include "sensor.h"
 #include "busymon.h"
+#include "events.h"
 #include "stage0.h"
 #include "stm32_seq.h"
 #include "stm32_timer.h"
@@ -80,25 +81,23 @@ static void post(void) { UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sensor, CFG_SEQ_Pri
 
 static void finish(int rc)
 {
-  uint32_t primask = __get_PRIMASK();
-  __disable_irq();
+  uint32_t primask = irq_lock();
   if (st == S_CMD || st == S_MEASURE || st == S_READ)
   {
     UTIL_TIMER_Stop(&guard_timer); UTIL_TIMER_Stop(&measure_timer);
     bus_rc = rc; st = S_DONE; post();
   }
-  __set_PRIMASK(primask);
+  irq_unlock(primask);
 }
 
 /* Compare-and-set of the state: the I2C interrupt (priority 2) can be preempted by the guard
  * timer (RTC, priority 0), so a step is taken only if the state is still the expected one. */
 static int advance(sensor_state from, sensor_state to)
 {
-  uint32_t primask = __get_PRIMASK();
-  __disable_irq();
+  uint32_t primask = irq_lock();
   int ok = st == from;
   if (ok) st = to;
-  __set_PRIMASK(primask);
+  irq_unlock(primask);
   return ok;
 }
 
@@ -106,10 +105,9 @@ void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
   if (hi2c != &hi2c2) return;
   /* State change and timers in one critical section: the guard cannot fire in between. */
-  uint32_t primask = __get_PRIMASK();
-  __disable_irq();
+  uint32_t primask = irq_lock();
   if (st == S_CMD) { st = S_MEASURE; UTIL_TIMER_Stop(&guard_timer); UTIL_TIMER_Start(&measure_timer); }
-  __set_PRIMASK(primask);
+  irq_unlock(primask);
 }
 
 static void on_measured(void *ctx)

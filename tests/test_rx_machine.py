@@ -29,7 +29,8 @@ except ImportError:
 RF_IDLE, RF_RX_RUNNING, RF_TX_RUNNING = range(3)
 TX_NORMAL, TX_STUCK, TX_HANG = range(3)
 LED_BLUE, LED_GREEN, LED_RED = range(3)
-SOURCES = ['host/rx_harness.c', 'stage0-node/App/console.c', 'stage0-node/App/busymon.c', 'common/ws_console.c']
+SOURCES = ['host/rx_harness.c', 'stage0-node/App/console.c', 'stage0-node/App/busymon.c', 'stage0-node/App/clock.c',
+           'stage0-node/App/events.c', 'stage0-node/App/bench.c', 'common/ws_console.c']
 ALIVE_KEYS = ['uptime', 'forwarded', 'dropped', 'acks', 'diag', 'listening', 'relistens', 'uart_errors', 'stack_peak',
               'crc_errors', 'hdr_errors', 'fault_overruns', 'task_peak_us', 'task_peak', 'isr_peak_us', 'isr_peak',
               'trace_drops', 'frames_lost']

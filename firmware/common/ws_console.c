@@ -34,11 +34,12 @@ void ws_line_discard(ws_line_asm *a)
  a->overflow = 1;
 }
 
-static int nibble(char c)
+int ws_cmd_find(const char *const names[], unsigned n, const char *line)
 {
- if (c >= '0' && c <= '9') return c - '0';
- if (c >= 'a' && c <= 'f') return c - 'a' + 10;
- if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+ for (unsigned i = 0; i < n; i++) {
+  size_t len = strlen(names[i]);
+  if (!strncmp(line, names[i], len) && (names[i][len - 1] == ' ' || line[len] == 0)) return (int)i;
+ }
  return -1;
 }
 
@@ -53,7 +54,7 @@ int ws_hex_decode(const char *text, uint8_t *out, int max)
 {
  int n = 0;
  while (text[0] && text[1]) {
-  int hi = nibble(text[0]), lo = nibble(text[1]);
+  int hi = ws_hex_nibble(text[0]), lo = ws_hex_nibble(text[1]);
   if (hi < 0 || lo < 0 || n >= max) return -1;
   out[n++] = (uint8_t)(hi << 4 | lo);
   text += 2;
