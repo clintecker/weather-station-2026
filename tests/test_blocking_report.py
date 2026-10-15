@@ -15,14 +15,15 @@ def callgraph(funcs, edges):
     """A GCC -fcallgraph-info file defining `funcs` (8-byte frames) with these direct calls."""
     nodes = ''.join(f'node: {{ title: "{t}" label: "{t}\\n{t.split(":")[0] if ":" in t else "app.c"}:1:1\\n'
                     f'8 bytes (static)" }}\n' for t in funcs)
-    links = ''.join(f'edge: {{ sourcename: "{a}" targetname: "{b}" }}\n' for a, b in edges)
+    links = ''.join(f'edge: {{ sourcename: "{e[0]}" targetname: "{e[1]}"'
+                    + (f' label: "{e[2]}:1"' if len(e) > 2 else '') + ' }\n' for e in edges)
     return 'graph: {\n' + nodes + links + '}\n'
 
 
 def analyse(edges, taken=(), funcs=(), sources=None):
     """Analyse a synthetic build: every function named in `edges` (plus `funcs`) is defined.
     `sources` maps C file names to text, compiled (listed in .d files) into the build."""
-    names = {n for e in edges for n in e if n != blocking_report.INDIRECT} | set(funcs)
+    names = {n for e in edges for n in e[:2] if n != blocking_report.INDIRECT} | set(funcs)
     with tempfile.TemporaryDirectory() as tmp:
         (Path(tmp)/'g.ci').write_text(callgraph(sorted(names), edges))
         for name, text in (sources or {}).items():
@@ -97,7 +98,7 @@ class Clocks(unittest.TestCase):
         """A hand-written timeout loop is caught by its HAL_GetTick call."""
         r = analyse(self.EDGES, taken={'task'})
         self.assertTrue(r['failed'])
-        self.assertEqual(r['unclassified'], [('poll_ready', 'task > poll_ready')])
+        self.assertEqual(r['unclassified'], [('poll_ready', 'task > poll_ready', ['HAL_GetTick'])])
 
     def test_classified_timestamp_caller_passes(self):
         with patch.dict(blocking_report.TIMESTAMP, {'app.c:poll_ready': 'reads the time once'}):
@@ -111,12 +112,37 @@ class Clocks(unittest.TestCase):
 
     def test_timer_server_clock_counts_too(self):
         r = analyse([('it.c:EXTI_IRQHandler', 'spin'), ('spin', 'UTIL_TIMER_GetElapsedTime')])
-        self.assertEqual(r['unclassified'], [('spin', 'EXTI_IRQHandler > spin')])
+        self.assertEqual(r['unclassified'], [('spin', 'EXTI_IRQHandler > spin', ['UTIL_TIMER_GetElapsedTime'])])
 
     def test_unclassified_clock_caller_at_boot_is_listed_not_failed(self):
         r = analyse([('main', 'clock_init'), ('clock_init', 'HAL_GetTick')])
         self.assertFalse(r['failed'])
         self.assertEqual(r['boot'], [('clock_init', 'main > clock_init', 'unclassified clock caller')])
+
+
+class Inlining(unittest.TestCase):
+    """GCC inlines static functions: the .ci call site (file:line) still names the source line, so
+    the function written around the call decides, not the node it was inlined into."""
+    APP = ('static void handle(int ev)\n{\n  deadline = HAL_GetTick() + 100;\n}\n'          # lines 1-4
+           'static void fault_test(void)\n{\n  HAL_Delay(50);\n}\n'                        # lines 5-8
+           'static void task(void)\n{\n  handle(1);\n  fault_test();\n}\n')                # lines 9-13
+
+    def test_clock_call_inlined_from_a_classified_function_passes(self):
+        edges = [('app.c:task', 'HAL_GetTick', 'app.c:3')]
+        r = analyse(edges, taken={'task'}, sources={'app.c': self.APP})
+        self.assertEqual(r['unclassified'], [('task', 'task', ['HAL_GetTick at app.c:3 in handle'])])
+        with patch.dict(blocking_report.TIMESTAMP, {'app.c:handle': 'deadline'}):
+            self.assertFalse(analyse(edges, taken={'task'}, sources={'app.c': self.APP})['failed'])
+
+    def test_banned_call_inlined_from_a_test_only_function_is_test_only(self):
+        r = analyse([('app.c:task', 'HAL_Delay', 'app.c:7')], taken={'task'}, sources={'app.c': self.APP})
+        self.assertFalse(r['failed'])
+        self.assertEqual(r['test'], [('HAL_Delay', 'task > fault_test (inlined) > HAL_Delay', 'BANNED')])
+
+    def test_the_same_call_also_written_outside_the_test_function_fails(self):
+        edges = [('app.c:task', 'HAL_Delay', 'app.c:7'), ('app.c:task', 'HAL_Delay', 'app.c:3')]
+        r = analyse(edges, taken={'task'}, sources={'app.c': self.APP})
+        self.assertTrue(r['failed'])
 
 
 class Pointers(unittest.TestCase):
@@ -159,6 +185,15 @@ class DriverTables(unittest.TestCase):
         r = self.run_with('void boot_radio(void) { go(); }\nstatic void go(void) { Radio.Sleep(); }\n')
         self.assertTrue(r['failed'])
         self.assertIn('no call graph', r['escaped']['RadioSleep'])
+
+    def test_slot_call_inlined_into_another_function_is_placed_by_its_call_site(self):
+        """go() was inlined into boot_radio; the .ci indirect call site (app.c:2) places it there."""
+        r = analyse([('radio.c:RadioSleep', 'HAL_Delay'), ('main', 'boot_radio'),
+                     ('boot_radio', blocking_report.INDIRECT, 'app.c:2')],
+                    taken={'RadioSleep': {'.rodata.Radio'}},
+                    sources={'app.c': 'void boot_radio(void) { go(); }\nstatic void go(void) { Radio.Sleep(); }\n'})
+        self.assertFalse(r['failed'])
+        self.assertIn(('HAL_Delay', 'main > boot_radio > RadioSleep > HAL_Delay', 'BANNED'), r['boot'])
 
     def test_slot_never_read_is_not_a_root(self):
         r = self.run_with('void boot_radio(void) { /* Radio.Sleep(); */ }\n')
