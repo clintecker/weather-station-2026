@@ -1,7 +1,7 @@
 # Range test (bench tool)
 
 Measures the LoRa link in **both directions about once a second** while you walk. Built from ST's
-SubGHz_Phy PingPong (STM32CubeWL v1.6.0); `firmware/pingpong` stays as the recorded smoke test. The
+SubGHz_Phy PingPong (STM32CubeWL v1.6.0). The
 board code, linker script and build rules are shared with the node in `firmware/board/nucleo-wl55jc`;
 this directory holds only the application (`SubGHz_Phy/App/`, `App/rt_proto.*`) and its sequencer
 task list (`Core/Inc/utilities_def.h`). Not the weather-station protocol and not H01 evidence.

@@ -43,7 +43,7 @@ extern "C" {
   */
 /* weather-station-2026: shared by every project on this board; a project overrides the default with
    -DVERBOSE_LEVEL=... in its Makefile. The default (VLEVEL_OFF) is the Stage-0 node's: its console
-   carries only explicit APP_PRINTF lines. The bench tools (rangetest, pingpong) use VLEVEL_M. */
+   carries only explicit APP_PRINTF lines. The bench tool (rangetest) uses VLEVEL_M. */
 #ifndef VERBOSE_LEVEL
 #define VERBOSE_LEVEL                        VLEVEL_OFF
 #endif
