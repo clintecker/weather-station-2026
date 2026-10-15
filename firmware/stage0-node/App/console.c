@@ -15,11 +15,19 @@ static volatile uint8_t line_ready;
 static void (*handler)(char *line);
 
 /* UART receive interrupt, one character at a time. While a completed line waits for the
- * main loop, further input is dropped (the host sends one line per exchange). */
+ * main loop, further input is dropped (the host sends one line per exchange). A dropped or damaged
+ * character (a receive error) discards the whole line it belongs to, so its tail never becomes a
+ * line of its own. */
 static void on_char(uint8_t *c, uint16_t size, uint8_t error)
 {
   (void)size;
-  if (error || line_ready) return;
+  if (error) { ws_line_discard(&isr_line); return; }
+  if (line_ready)
+  {
+    ws_line_discard(&isr_line);
+    if (*c == '\n') isr_line.overflow = 0;   /* the dropped line ended here; the next one is whole */
+    return;
+  }
   if (ws_line_feed(&isr_line, *c, line) > 0)
   {
     line_ready = 1;
@@ -47,14 +55,14 @@ void console_init(void (*on_line)(char *line))
 #define HEX_FRAME_MAX (WS_FRAME_OVERHEAD + WS_OBS_PLAIN_ALL)
 _Static_assert(2U * HEX_FRAME_MAX + 2U <= UTIL_ADV_TRACE_TMP_BUF_SIZE, "longest frame fits one console line");
 
-void hex_print(const uint8_t *data, int len)
+int hex_print(const uint8_t *data, int len)
 {
   char text[2 * HEX_FRAME_MAX + 1];
   if (len < 0 || len > (int)HEX_FRAME_MAX)
   {
     APP_PRINTF("#error frame too long to forward len=%d\n", len);  /* never a truncated frame */
-    return;
+    return 0;
   }
   ws_hex_text(data, len, text);
-  APP_PRINTF("%s\n", text);
+  return APP_PRINTF_OK("%s\n", text);
 }

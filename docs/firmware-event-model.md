@@ -77,7 +77,16 @@ the radio kept (`#rx crc … data=`, `#rx hdr rssi=`). The radio stays in contin
 both failures (ST's radio.c), so nothing re-arms it. One capture waits for `process` at a time;
 failures meanwhile are counted (`fault_overruns` on `#alive`), as is a forwarded frame replaced
 before it was printed. A host ACK line goes on air from the console task; its TxDone/TxTimeout
-returns the radio to listening. The 60 s `#alive` timer only asks for the report; `process` prints it.
+returns the radio to listening (after a TxTimeout, through standby: the chip may still be transmitting);
+one ACK is on air at a time, so a second line meanwhile is refused (`#tx busy`). The 60 s `#alive`
+timer only asks for the report; `process` prints it.
+
+RX self-checks (the health test the watchdog runs every second): the console receive is armed (one
+re-arm first); console output is moving (a trace DMA transfer that never finishes for 3 s fails it);
+an ACK is not on air longer than the 3 s transmit timeout plus 2 s; and the radio is heard from: after
+16 minutes without any radio event (longer than the node's longest silence) the radio is put in
+standby and listens again, and two such relistens in a row without a radio event fail the check, so
+the watchdog resets the board. Failure lines are limited to 20 a minute; beyond that they are counted.
 
 ## What still stalls the CPU (hardware, not our choice)
 

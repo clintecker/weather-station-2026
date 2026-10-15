@@ -78,6 +78,9 @@ class ReceiverLink:
             self.reconnects += 1
         self.failures = 0
         self.log(f'#gateway serial-open path={path}')
+        # End any line the receiver assembled before we (re)connected: an empty line is ignored, and
+        # a partial one is discarded instead of prefixing the next ACK (2026-10-15 review m8).
+        self.write(b'\n')
         return True
 
     def poll(self):

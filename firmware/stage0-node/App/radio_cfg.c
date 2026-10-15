@@ -44,3 +44,5 @@ int ws_radio_take_crc_error(void)
   hsubghz.ErrorCode &= ~HAL_SUBGHZ_ERROR_CRC_MISMATCH;
   return 1;
 }
+
+void ws_radio_rx_full_length(void) { Radio.SetMaxPayloadLength(MODEM_LORA, 255); }

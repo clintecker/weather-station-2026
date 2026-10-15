@@ -6,5 +6,5 @@
  * WS_LINE_MAX bytes, assembled by ws_line_feed (firmware/common/ws_console.c); longer lines are
  * discarded whole. Output: APP_PRINTF. Hex input: ws_hex_decode. */
 void console_init(void (*on_line)(char *line));
-void hex_print(const uint8_t *data, int len); /* one line, lowercase, newline-terminated */
+int hex_print(const uint8_t *data, int len); /* one line, lowercase, newline-terminated; 0 if it was not queued */
 #endif

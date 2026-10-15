@@ -60,10 +60,13 @@ extern "C" {
 #define APP_TPRINTF(...)   do{ {UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_ON, __VA_ARGS__);} }while(0); /* with timestamp */
 /* weather-station-2026: a line that does not fit the trace FIFO is dropped, never waited for; each
    drop is counted (ws_trace_drops, printed on #timing / #alive). Lines must stay under
-   UTIL_ADV_TRACE_TMP_BUF_SIZE (640): a longer one would be cut, not counted. */
+   UTIL_ADV_TRACE_TMP_BUF_SIZE (640): a longer one would be cut, not counted. The RX prints only from the
+   main loop; the TX also from timer callbacks. */
 extern volatile uint32_t ws_trace_drops;
 void ws_trace_drop(void);   /* atomic increment: tasks and interrupts both print */
 #define APP_PRINTF(...)   do{ if (UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_OFF, __VA_ARGS__) != UTIL_ADV_TRACE_OK) ws_trace_drop(); }while(0)
+/* The same, as an expression: 1 if the line was queued, 0 if it was dropped (and counted). */
+#define APP_PRINTF_OK(...) (UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_OFF, __VA_ARGS__) == UTIL_ADV_TRACE_OK ? 1 : (ws_trace_drop(), 0))
 
 #if defined (APP_LOG_ENABLED) && (APP_LOG_ENABLED == 1)
 #define APP_LOG(TS,VL,...)   do{ {UTIL_ADV_TRACE_COND_FSend(VL, T_REG_OFF, TS, __VA_ARGS__);} }while(0);

@@ -88,7 +88,7 @@ ACCEPTED_OUTCOMES = ('ack', 'duplicate', 'diag', 'nack')
 RX_EVENTS = (('#boot role=rx', 'rx_boot', 'warn'), ('#relisten', 'relisten', 'warn'),
              ('#tx timeout', 'tx_timeout', 'warn'),
              ('#watchdog', 'rx_watchdog', 'warn'), ('#host reject', 'host_reject', 'warn'),
-             ('#tx busy', 'tx_busy', 'warn'))
+             ('#tx busy', 'tx_busy', 'warn'), ('#rx frame-lost', 'rx_frame_lost', 'warn'))
 # Bad receptions ('#rx crc', '#rx hdr'): ambient 915 MHz traffic and noise cause a few an hour, so
 # they are stored and counted, not raised one by one. More than this many in the trailing hour is
 # abnormal (a jammer, a failing antenna, a node transmitting into a bad link): one warning, and the

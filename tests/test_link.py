@@ -58,6 +58,13 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(self.opened, ['/dev/cu.usbmodem122303'])
         self.assertIn('serial-open', self.logs[0])
 
+    def test_a_new_connection_first_ends_any_partial_line_on_the_receiver(self):
+        # The RX discards a partial line at the newline instead of prefixing the next ACK with it.
+        self.next_port = FakePort([b'aa\n'])
+        link = self.link()
+        link.poll()
+        self.assertEqual(self.next_port.written[:1], [b'\n'])
+
     def test_unplug_then_replug_under_a_new_name(self):
         self.next_port = FakePort([b'x\n'], fail_after=1)
         link = self.link()

@@ -20,7 +20,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   FUZZ_CHECK(n >= 0 && n <= WS_LINE_MAX && a.len <= WS_LINE_MAX);
   if (a.overflow) for (int k = 0; k < WS_LINE_MAX; k++) FUZZ_CHECK(a.buf[k] == 0);   /* over-long line wiped */
   if (n == 0) continue;
-  FUZZ_CHECK(strlen(line) <= (size_t)n);   /* a NUL from the UART ends the C string early */
+  FUZZ_CHECK(strlen(line) == (size_t)n);   /* no NUL inside: such a line is discarded */
+  for (int k = 0; k < n; k++) FUZZ_CHECK(line[k] >= 0x20 && line[k] <= 0x7e);   /* printable ASCII only */
   FUZZ_CHECK(!memchr(line, '\n', (size_t)n) && !memchr(line, '\r', (size_t)n));
   for (int k = 0; k < n; k++) FUZZ_CHECK(a.buf[k] == 0);   /* key hygiene: buffer cleared */
   uint8_t frame[WS_ACK_FRAME_LEN + 1];

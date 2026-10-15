@@ -19,6 +19,8 @@ void ws_radio_configure(int continuous);
    (length, bytes, packet RSSI/SNR), valid after a payload CRC error; and the channel RSSI now. */
 void ws_radio_last_packet(uint8_t buf[255], uint8_t *len, int8_t *rssi, int8_t *snr);
 int8_t ws_radio_rssi_now(void);
+/* Before listening: ST's RadioSend leaves the LoRa payload length at the last frame sent. */
+void ws_radio_rx_full_length(void);
 /* In an RxDone callback: 1 (and cleared) if this "received" packet failed its payload CRC; RxError
    follows it in the same interrupt (radio_cfg.c). */
 int ws_radio_take_crc_error(void);

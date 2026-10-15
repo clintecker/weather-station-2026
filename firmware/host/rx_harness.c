@@ -75,20 +75,21 @@ void SysTimeSet(SysTime_t t) { (void)t; }
 static char out[1 << 20];
 static size_t out_len;
 static uint32_t fifo_used, overlong_lines, capture_overflow;
-void host_printf(const char *fmt, ...)
+static int vprint(const char *fmt, va_list ap)
 {
   char line[UTIL_ADV_TRACE_TMP_BUF_SIZE];
-  va_list ap; va_start(ap, fmt);
   int n = vsnprintf(line, sizeof line, fmt, ap);
-  va_end(ap);
-  if (n < 0) { ws_trace_drops++; return; }
+  if (n < 0) { ws_trace_drops++; return 0; }
   if ((size_t)n >= sizeof line) { overlong_lines++; n = (int)sizeof line - 1; }   /* cut, as on the board */
-  if (fifo_used + (uint32_t)n > UTIL_ADV_TRACE_FIFO_SIZE) { ws_trace_drops++; return; }
+  if (fifo_used + (uint32_t)n > UTIL_ADV_TRACE_FIFO_SIZE) { ws_trace_drops++; return 0; }
   fifo_used += (uint32_t)n;
-  if (out_len + (size_t)n >= sizeof out) { capture_overflow++; return; }
+  if (out_len + (size_t)n >= sizeof out) { capture_overflow++; return 1; }
   memcpy(out + out_len, line, (size_t)n);
   out_len += (size_t)n;
+  return 1;
 }
+void host_printf(const char *fmt, ...) { va_list ap; va_start(ap, fmt); vprint(fmt, ap); va_end(ap); }
+int host_print_ok(const char *fmt, ...) { va_list ap; va_start(ap, fmt); int ok = vprint(fmt, ap); va_end(ap); return ok; }
 static void drain_fifo(uint64_t ticks)
 {
   uint64_t bytes = ticks * 11520U / 1024U;   /* 115200 baud, 8N1 */
@@ -200,6 +201,15 @@ static RadioState_t radio_get_status(void) { return radio_state; }
 const struct Radio_s Radio = { radio_init, radio_send, radio_rx, radio_sleep, radio_standby, radio_get_status };
 int ws_radio_take_crc_error(void) { int f = crc_flag; crc_flag = 0; return f; }
 void ws_radio_configure(int c) { continuous = c; pkt_len = 255; }
+void ws_radio_rx_full_length(void) { pkt_len = 255; }
+/* Trace DMA progress: transfers finish unless a test stalls them (h_tx_stall). */
+static int tx_stalled;
+static uint32_t tx_started_n, tx_done_n;
+void vcom_tx_progress(uint32_t *started, uint32_t *done)
+{
+  if (!tx_stalled) tx_done_n = tx_started_n;
+  *started = tx_started_n; *done = tx_done_n;
+}
 void ws_radio_sleep(void) { radio_sleep(); }
 void ws_radio_last_packet(uint8_t buf[255], uint8_t *len, int8_t *rssi, int8_t *snr)
 {
@@ -387,7 +397,9 @@ int h_uart(const uint8_t *data, int n, int run_each)
   }
   return taken;
 }
-void h_uart_error(void) { uart_errors++; }   /* counted; the HAL error callback re-arms at once */
+/* A receive error, as the board's HAL_UART_ErrorCallback reports it (usart_if.c): counted, the line
+   in progress discarded through the callback's error flag, the receive re-armed at once. */
+void h_uart_error(void) { uint8_t c = 0; uart_errors++; if (uart_cb) uart_cb(&c, 0, 1); }
 void h_uart_deaf(void) { uart_armed = 0; }   /* the receive was aborted and not re-armed */
 void h_uart_rearm_fails(int on) { uart_rearm_fails = on; }
 int h_uart_armed(void) { return uart_armed; }
@@ -405,6 +417,7 @@ uint32_t h_wd_resets(void) { return wd_resets; }
 uint32_t h_wd_unhealthy(void) { return wd_unhealthy; }
 uint32_t h_wd_checks(void) { return wd_checks; }
 uint32_t h_trace_drops(void) { return ws_trace_drops; }
+void h_tx_stall(int on) { tx_stalled = on; if (on) tx_started_n++; }
 uint32_t h_overlong(void) { return overlong_lines; }
 uint32_t h_capture_overflow(void) { return capture_overflow; }
 uint32_t h_primask_leaks(void) { return primask_leaks; }

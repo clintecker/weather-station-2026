@@ -110,6 +110,8 @@ void vcom_Resume(void);
 /* weather-station-2026 (review P5): UART receive errors are counted and the receiver re-armed. */
 uint32_t vcom_rx_errors(void);
 int vcom_rx_armed(void);       /* 1 while a one-character receive is pending */
+/* Trace DMA transfers started and finished: started != done that never moves means output stalled. */
+void vcom_tx_progress(uint32_t *started, uint32_t *done);
 void vcom_rx_rearm(void);
 
 /* USER CODE END EFP */

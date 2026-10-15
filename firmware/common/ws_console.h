@@ -9,6 +9,9 @@ typedef struct { char buf[WS_LINE_MAX]; uint16_t len; uint8_t overflow; } ws_lin
  * copied to out with a terminating NUL, the internal buffer is cleared (a PROVISION key must not
  * linger), and its length is returned; otherwise 0. */
 int ws_line_feed(ws_line_asm *a, uint8_t c, char out[WS_LINE_MAX + 1]);
+/* The line being assembled lost a character: discard it whole (up to its '\n'). A line with a byte
+   outside printable ASCII (NUL, control characters, 8-bit) is discarded the same way by ws_line_feed. */
+void ws_line_discard(ws_line_asm *a);
 /* Hex text to bytes: byte count, or -1 on odd length, a non-hex digit, or more than max bytes. */
 int ws_hex_decode(const char *text, uint8_t *out, int max);
 /* Bytes to lowercase hex: writes 2n digits and a NUL to text (room for 2n + 1); n < 0 counts as 0. */

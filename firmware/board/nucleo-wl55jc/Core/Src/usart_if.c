@@ -85,6 +85,7 @@ static void (*TxCpltCallback)(void *);
   * @return none
   */
 static void (*RxCpltCallback)(uint8_t *rxChar, uint16_t size, uint8_t error);
+static volatile uint32_t tx_started, tx_done;   /* trace DMA transfers (weather-station-2026) */
 
 /* USER CODE BEGIN PV */
 
@@ -152,7 +153,10 @@ UTIL_ADV_TRACE_Status_t vcom_Trace_DMA(uint8_t *p_data, uint16_t size)
   /* USER CODE BEGIN vcom_Trace_DMA_1 */
 
   /* USER CODE END vcom_Trace_DMA_1 */
-  HAL_UART_Transmit_DMA(&huart2, p_data, size);
+  /* weather-station-2026: transfers started and finished, so a stalled trace DMA is visible
+     (vcom_tx_progress); a refused start is reported, not hidden. */
+  if (HAL_UART_Transmit_DMA(&huart2, p_data, size) != HAL_OK) return UTIL_ADV_TRACE_HW_ERROR;
+  tx_started++;
   return UTIL_ADV_TRACE_OK;
   /* USER CODE BEGIN vcom_Trace_DMA_2 */
 
@@ -224,6 +228,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
   /* buffer transmission complete*/
   if (huart->Instance == USART2)
   {
+    tx_done++;
     TxCpltCallback(NULL);
   }
   /* USER CODE BEGIN HAL_UART_TxCpltCallback_2 */
@@ -259,11 +264,14 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance != USART2) return;
   rx_errors++;
+  /* The line being received lost a character: the console discards it whole (App/console.c). */
+  if (RxCpltCallback != NULL) RxCpltCallback(&charRx, 0, 1);
   __HAL_UART_CLEAR_FLAG(huart, UART_CLEAR_OREF | UART_CLEAR_FEF | UART_CLEAR_NEF | UART_CLEAR_PEF);
   if (huart->RxState == HAL_UART_STATE_READY) HAL_UART_Receive_IT(huart, &charRx, 1);
 }
 
 uint32_t vcom_rx_errors(void) { return rx_errors; }
+void vcom_tx_progress(uint32_t *started, uint32_t *done) { *started = tx_started; *done = tx_done; }
 int vcom_rx_armed(void) { return huart2.RxState == HAL_UART_STATE_BUSY_RX; }
 void vcom_rx_rearm(void)
 {

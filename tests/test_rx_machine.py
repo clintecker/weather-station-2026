@@ -32,9 +32,10 @@ LED_BLUE, LED_GREEN, LED_RED = range(3)
 SOURCES = ['host/rx_harness.c', 'stage0-node/App/console.c', 'stage0-node/App/busymon.c', 'common/ws_console.c']
 ALIVE_KEYS = ['uptime', 'forwarded', 'dropped', 'acks', 'diag', 'listening', 'relistens', 'uart_errors', 'stack_peak',
               'crc_errors', 'hdr_errors', 'fault_overruns', 'task_peak_us', 'task_peak', 'isr_peak_us', 'isr_peak',
-              'trace_drops']
+              'trace_drops', 'frames_lost']
 ALIVE_MS = 60_000
-BOOT_LINE = '#boot role=rx fw=host reset=power freq=915000000 bw=2 sf=7 power=0\n'
+RELISTEN_S = 17 * 60    # silence > 16 min at a minute report: the first relisten comes at 1020 s
+BOOT_LINE = '\n#boot role=rx fw=host reset=power freq=915000000 bw=2 sf=7 power=0\n'
 
 
 def fields(line):
@@ -295,9 +296,10 @@ class RxStateMachine(unittest.TestCase):
         b.rx(f1, rssi=-41, snr=1, run=False)
         b.rx(f2, rssi=-42, snr=2, run=False)
         b.poll()
-        self.assertEqual(b.out(), f'{f2.hex()}\n#rx obs rssi=-42 snr=2\n')
+        self.assertEqual(b.out(), f'{f2.hex()}\n#rx obs rssi=-42 snr=2\n'
+                                  '#rx frame-lost total=1 (a valid frame replaced before it was forwarded)\n')
         a = self.alive_now(b)
-        self.assertEqual((a['forwarded'], a['fault_overruns']), ('1', '1'))
+        self.assertEqual((a['forwarded'], a['fault_overruns'], a['frames_lost']), ('1', '0', '1'))
 
     def test_one_main_loop_pass_handles_every_kind_of_event(self):
         b = self.bridge()
@@ -446,6 +448,7 @@ class RxStateMachine(unittest.TestCase):
         b.line(reply(self.rnd).hex())
         b.lib.h_uart_error()
         b.lib.h_uart_error()
+        b.uart('\n')                                        # ends the line the errors damaged (discarded)
         b.advance(30)
         self.assertEqual(b.status(), {'role': 'rx', 'forwarded': '1', 'dropped': '1', 'acks': '1', 'relistens': '0',
                                       'uart_errors': '2'})
@@ -472,7 +475,7 @@ class RxStateMachine(unittest.TestCase):
         self.assertEqual(a, {'uptime': '60', 'forwarded': '0', 'dropped': '0', 'acks': '0', 'diag': '0', 'listening': '1',
                              'relistens': '0', 'uart_errors': '0', 'stack_peak': '0', 'crc_errors': '0', 'hdr_errors': '0',
                              'fault_overruns': '0', 'task_peak_us': '0', 'task_peak': 'none', 'isr_peak_us': '0',
-                             'isr_peak': 'none', 'trace_drops': '0'})
+                             'isr_peak': 'none', 'trace_drops': '0', 'frames_lost': '0'})
 
     def test_alive_every_minute_with_uptime_in_seconds(self):
         b = self.bridge(start_s=1234)                       # the RTC keeps counting through a reset
@@ -489,27 +492,31 @@ class RxStateMachine(unittest.TestCase):
         b = self.bridge(start_s=4294967 - 150)              # ms_now() wraps 150 s after boot (49.7 days)
         b.out()
         b.hdr()
-        b.advance(10 * ALIVE_MS)
+        b.advance(RELISTEN_S * 1000)
         text = b.out()
-        self.assertEqual([int(a['uptime']) for a in b.alive_lines(text)], list(range(60, 601, 60)))
-        self.assertEqual(re.findall(r'#relisten after (\d+) s', text), ['360'])
+        self.assertEqual([int(a['uptime']) for a in b.alive_lines(text)], list(range(60, RELISTEN_S + 1, 60)))
+        self.assertEqual(re.findall(r'#relisten after (\d+) s', text), [str(RELISTEN_S)])
 
-    def test_relisten_after_five_minutes_without_a_radio_event(self):
+    def test_relisten_after_sixteen_minutes_without_a_radio_event(self):
+        # Longer than the node's longest legitimate silence (15 min, PROBING in CONSERVE).
         b = self.bridge()
         b.out()
-        b.advance(5 * ALIVE_MS)
+        b.advance(RELISTEN_S * 1000 - ALIVE_MS)
         self.assertNotIn('#relisten', b.out())
         self.assertEqual(b.lib.h_standby_calls(), 0)
         b.advance(ALIVE_MS)
         text = b.out()
-        self.assertIn('#relisten after 360 s without a radio event\n', text)
+        self.assertIn(f'#relisten after {RELISTEN_S} s without a radio event\n', text)
         self.assertLess(text.index('#alive'), text.index('#relisten'))
         self.assertEqual((b.lib.h_standby_calls(), b.lib.h_rx_calls(), b.radio()), (1, 2, RF_RX_RUNNING))
-        b.advance(6 * ALIVE_MS)
-        self.assertEqual(re.findall(r'#relisten after (\d+) s', b.out()), ['360'])
+        self.assertEqual(b.lib.h_wd_resets(), 0)       # one relisten is a self-heal, not yet a reset
+        b.hdr()                                        # the radio hears something: the quiet count restarts
+        b.advance(RELISTEN_S * 1000)
+        self.assertEqual(re.findall(r'#relisten after (\d+) s', b.out()), [str(RELISTEN_S)])
         a = self.alive_now(b)
         self.assertEqual(a['relistens'], '2')
         self.assertEqual(b.status()['relistens'], '2')
+        self.assertEqual(b.lib.h_wd_resets(), 0)
 
     def test_every_kind_of_reception_counts_as_radio_life(self):
         for name, event in (('hdr', lambda b: b.hdr()), ('crc', lambda b: b.crc(bytes(30))),
@@ -519,25 +526,25 @@ class RxStateMachine(unittest.TestCase):
                 b = self.bridge()
                 b.advance(200_000)
                 event(b)
-                b.advance(160_000 + 120_000)                # alives at 240 .. 480 s: at most 280 s of silence
+                b.advance(1_140_000 - 200_000)              # alives up to 1140 s: at most 940 s of silence
                 self.assertNotIn('#relisten', b.out())
-                b.advance(ALIVE_MS)                         # 540 s: 340 s
-                self.assertIn('#relisten after 340 s', b.out())
+                b.advance(ALIVE_MS)                         # 1200 s: 1000 s
+                self.assertIn('#relisten after 1000 s', b.out())
 
     def test_a_transmission_is_not_a_radio_event(self):
         b = self.bridge()
         b.out()
-        for _ in range(5):
+        for _ in range(RELISTEN_S // 60 - 1):
             b.advance(ALIVE_MS)
             b.line(reply(self.rnd).hex())
         b.advance(ALIVE_MS)
-        self.assertIn('#relisten after 360 s', b.out())
+        self.assertIn(f'#relisten after {RELISTEN_S} s', b.out())
 
     def test_no_relisten_while_transmitting(self):
         b = self.bridge()
         b.out()
-        b.advance(6 * ALIVE_MS - 10)
-        b.line(reply(self.rnd).hex())                       # on air when the 360 s report runs
+        b.advance(RELISTEN_S * 1000 - 10)
+        b.line(reply(self.rnd).hex())                       # on air when the 1020 s report runs
         b.advance(40)
         self.assertNotIn('#relisten', b.out())
         self.assertEqual(b.radio(), RF_RX_RUNNING)
@@ -546,8 +553,10 @@ class RxStateMachine(unittest.TestCase):
         self.assertEqual(b.out(), '#rx hdr rssi=-97\n')
         b.advance(ALIVE_MS)
         self.assertNotIn('#relisten', b.out())
-        b.advance(5 * ALIVE_MS)
-        self.assertIn('#relisten after 339 s', b.out())
+        b.advance(15 * ALIVE_MS)                            # to 2000 s: 960 s since the header error
+        self.assertNotIn('#relisten', b.out())
+        b.advance(ALIVE_MS)
+        self.assertIn('#relisten after 999 s', b.out())
 
     # ---- watchdog health ----
     def test_transmitting_more_than_5_s_is_unhealthy(self):
@@ -605,15 +614,17 @@ class RxStateMachine(unittest.TestCase):
         b.advance(ALIVE_MS)                                 # (the board would have reset; the report says why)
         self.assertEqual(b.alive_lines(b.out())[0]['listening'], '0')
 
-    # ---- 2026-10-15 review findings (firmware not yet fixed: these show the defect) ----
-    @unittest.expectedFailure   # M1: relisten repeats forever; rx_healthy trusts the driver's state, so a deaf radio never resets
+    # ---- 2026-10-15 review findings (each failed before its fix) ----
     def test_review_m1_a_radio_that_hears_nothing_is_eventually_reset(self):
         b = self.bridge()
-        b.advance(3600_000)                                 # an hour of relistens, not one radio event
-        self.assertGreaterEqual(b.log.count('#relisten') + b.out().count('#relisten'), 9)
+        b.advance(2 * RELISTEN_S * 1000 - 1000)             # the first relisten brought nothing back
+        self.assertEqual(b.lib.h_wd_resets(), 0)
+        b.advance(1000 + 10_000)                            # the second: the health check fails, the watchdog resets
+        text = b.log + b.out()
+        self.assertEqual(text.count('#relisten after'), 2)
+        self.assertIn('#watchdog radio silent after 2 relistens; reset', text)
         self.assertGreaterEqual(b.lib.h_wd_resets(), 1)
 
-    @unittest.expectedFailure   # m1: on_line never checks `transmitting`; a second ACK line is sent over the first
     def test_review_m1_a_second_ack_line_does_not_cut_the_first_short(self):
         b = self.bridge()
         b.out()
@@ -624,7 +635,6 @@ class RxStateMachine(unittest.TestCase):
         self.assertNotIn('#tx timeout', b.out())
         self.assertEqual(b.lib.h_sends_while_tx(), 0, 'Radio.Send while the radio was still transmitting')
 
-    @unittest.expectedFailure   # m3: on EV_TX_TIMEOUT listen() goes straight to Rx with the chip still in TX
     def test_review_m3_a_transmit_timeout_stops_the_transmitter_first(self):
         b = self.bridge()
         b.lib.h_tx_mode(TX_STUCK)
@@ -633,7 +643,6 @@ class RxStateMachine(unittest.TestCase):
         self.assertIn('#tx timeout', b.out())
         self.assertEqual(b.lib.h_rx_after_timeout_no_standby(), 0)
 
-    @unittest.expectedFailure   # m4: RadioSend sets the LoRa payload length to 33; RadioRx does not restore 255
     def test_review_m4_listening_after_an_ack_restores_the_payload_length(self):
         b = self.bridge()
         self.assertEqual(b.lib.h_pkt_len(), 255)
@@ -642,7 +651,6 @@ class RxStateMachine(unittest.TestCase):
         self.assertEqual(b.radio(), RF_RX_RUNNING)
         self.assertEqual(b.lib.h_pkt_len(), 255, 'harness models the driver parameter only; chip effect not modelled')
 
-    @unittest.expectedFailure   # m6: the 5-minute silence relisten fires inside a node's legitimate 15-minute probe interval
     def test_review_m6_no_relisten_while_a_probing_node_sends_every_15_minutes(self):
         b = self.bridge()
         b.out()
@@ -651,12 +659,10 @@ class RxStateMachine(unittest.TestCase):
             b.advance(15 * ALIVE_MS)
         self.assertNotIn('#relisten', b.out())
 
-    @unittest.expectedFailure   # m7: #boot has no leading newline, so a reset mid-line glues it to the partial line
     def test_review_m7_boot_line_starts_on_a_fresh_line(self):
         b = self.bridge()
         self.assertTrue(b.out().startswith('\n#boot '))
 
-    @unittest.expectedFailure   # m8: bytes dropped while a line waits do not poison the assembler; the tail becomes a line
     def test_review_m8_the_tail_of_a_dropped_line_is_not_a_line(self):
         b = self.bridge()
         b.out()
@@ -665,7 +671,6 @@ class RxStateMachine(unittest.TestCase):
         b.poll()
         self.assertEqual(b.out(), '')                       # today: '#host reject len=-1' for 'ATUS'
 
-    @unittest.expectedFailure   # m8: a NUL ends the C string early, so 'ACKHEX\0junk' decodes as a valid ACK
     def test_review_m8_a_nul_inside_a_host_line_is_rejected(self):
         b = self.bridge()
         b.out()
@@ -673,7 +678,6 @@ class RxStateMachine(unittest.TestCase):
         b.poll()
         self.assertEqual(b.lib.h_send_calls(), 0)
 
-    @unittest.expectedFailure   # m10: n_forwarded counts a frame whose hex line the full trace FIFO dropped
     def test_review_m10_forwarded_counts_only_frames_that_reached_the_host(self):
         b = self.bridge(drops_ok=True)
         b.out()
@@ -684,7 +688,6 @@ class RxStateMachine(unittest.TestCase):
         b.advance(ALIVE_MS)
         self.assertEqual(b.alive_lines(b.out())[0]['forwarded'], str(printed))
 
-    @unittest.expectedFailure   # m11: fault_overruns lumps lost valid frames with skipped diagnostic captures
     def test_review_m11_a_lost_frame_is_told_apart_from_a_skipped_capture(self):
         def run(lose_frame):
             b = self.bridge()
@@ -740,6 +743,7 @@ class Mixed:
         self.last_event = 0
         self.relistened_since = False
         self.alive_seen = 0
+        self.failure_lines = 0               # #rx crc / #rx hdr lines this minute (20 at most)
 
     # ---- the model ----
     def radio_event(self, kind, frame=b'', rssi=0, snr=0):
@@ -748,9 +752,10 @@ class Mixed:
             self.n[kind if kind != 'rxerr' else 'crc'] += 1
         slot = {'rx': 'rx', 'crc': 'crc', 'rxerr': 'crc', 'hdr': 'hdr'}[kind]
         if slot in self.pend:
-            self.n['overruns'] += 1
             if slot != 'rx':
+                self.n['overruns'] += 1                     # a capture skipped
                 return
+            self.n['frames_lost'] += 1                      # a valid frame replaced before forwarding
         self.pend[slot] = (frame, rssi, snr)
 
     def expected_process(self):
@@ -766,33 +771,48 @@ class Mixed:
             else:
                 self.n['dropped'] += 1
                 lines.append(f'#rx drop len={len(f)} rssi={rssi} snr={snr}')
-        if 'crc' in self.pend:
-            f, rssi, snr = self.pend['crc']
-            lines.append(f'#rx crc len={len(f)} rssi={rssi} snr={snr} data={f.hex()}')
-        if 'hdr' in self.pend:
-            lines.append(f'#rx hdr rssi={self.pend["hdr"][1]}')
+        for slot in ('crc', 'hdr'):                         # 20 failure lines a minute; then counted only
+            if slot in self.pend:
+                f, rssi, snr = self.pend[slot]
+                self.failure_lines += 1
+                if self.failure_lines > 20:
+                    self.n['overruns'] += 1
+                elif slot == 'crc':
+                    lines.append(f'#rx crc len={len(f)} rssi={rssi} snr={snr} data={f.hex()}')
+                else:
+                    lines.append(f'#rx hdr rssi={rssi}')
+        if self.n['frames_lost'] != self.n['frames_lost_told']:
+            self.n['frames_lost_told'] = self.n['frames_lost']
+            lines.append(f'#rx frame-lost total={self.n["frames_lost"]} (a valid frame replaced before it was forwarded)')
         self.pend = {}
         return lines
 
+    def discard(self):
+        self.asm, self.overflow = bytearray(), True
+
     def feed(self, data):
         for c in data:
-            if self.ready is not None:
-                continue                                    # console.c: input dropped while a line waits
+            if self.ready is not None:                      # console.c: a dropped byte discards its whole line,
+                self.discard()                              # which ends at its (dropped) newline
+                self.overflow = c != 10
+                continue
             if c == 13:
                 continue
             if c == 10:
                 if not self.overflow and self.asm:
                     self.ready = bytes(self.asm)
                 self.asm, self.overflow = bytearray(), False
-            elif len(self.asm) >= self.b.line_max:
-                self.overflow = True
+            elif self.overflow:
+                continue
+            elif len(self.asm) >= self.b.line_max or c < 0x20 or c > 0x7e:
+                self.discard()                              # over-long, or not printable ASCII
             else:
                 self.asm.append(c)
 
     def expected_console(self):
         if self.ready is None:
             return []
-        line, self.ready = self.ready.split(b'\0')[0].decode('latin-1'), None
+        line, self.ready = self.ready.decode('ascii'), None
         if line.startswith('#'):
             return []
         assert line not in ('TEST-FAULT', 'TEST-HANG')
@@ -803,6 +823,8 @@ class Mixed:
         size, frame = hex_decode(line, self.b.ack_len + 1)
         if size != self.b.ack_len or frame[0] not in (0x52, 0x53):
             return [f'#host reject len={size}']
+        if self.tx_deadline is not None:
+            return ['#tx busy']                             # one ACK on air at a time
         if self.send_fails:
             self.send_fails = 0
             self.tx_deadline = None                         # listen() again
@@ -827,25 +849,27 @@ class Mixed:
                 want = {'uptime': str(60 * self.alive_seen), 'forwarded': str(n['forwarded']), 'dropped': str(n['dropped']),
                         'acks': str(n['acks']), 'diag': str(n['diag']), 'listening': '1', 'relistens': str(n['relistens']),
                         'uart_errors': str(n['uart_errors']), 'crc_errors': str(n['crc']), 'hdr_errors': str(n['hdr']),
-                        'fault_overruns': str(n['overruns']), 'trace_drops': '0'}
+                        'fault_overruns': str(n['overruns']), 'trace_drops': '0', 'frames_lost': str(n['frames_lost'])}
                 self.t.assertEqual({k: a[k] for k in want}, want, line)
+                self.failure_lines = 0
             elif m := re.fullmatch(r'#relisten after (\d+) s without a radio event', line):
-                self.t.assertGreaterEqual(int(m[1]), 300)      # more than 300 000 ms, in whole seconds
-                self.t.assertGreaterEqual(self.b.now() - self.last_event, 300_000)
+                self.t.assertGreaterEqual(int(m[1]), 960)      # more than 16 min, in whole seconds
+                self.t.assertGreaterEqual(self.b.now() - self.last_event, 960_000)
                 self.n['relistens'] += 1
                 self.relistened_since = True
             else:
                 other.append(line)
         self.check_lines(other, ['#tx timeout'] if crossed_deadline else [], 'advance')
-        if self.b.now() - self.last_event > 362_000 and self.b.radio() == RF_RX_RUNNING and self.tx_deadline is None:
+        if self.b.now() - self.last_event > 960_000 + 62_000 and self.b.radio() == RF_RX_RUNNING and self.tx_deadline is None:
             self.t.assertTrue(self.relistened_since, 'silent for more than 6 minutes without a relisten')
 
     def run(self, duration):
         b, rnd, t = self.b, self.rnd, self.t
         self.tx_mode, self.send_fails = TX_NORMAL, 0
-        self.check_lines(b.out().splitlines(), [BOOT_LINE.strip()], 'boot')
+        self.check_lines(b.out().splitlines(), BOOT_LINE.splitlines(), 'boot')
         while b.now() < duration:
-            dt = rnd.randint(50, 3000) if rnd.random() > 0.002 else rnd.randint(360_000, 480_000)
+            quiet = rnd.random() < 0.002
+            dt = rnd.randint(50, 3000) if not quiet else rnd.randint(1_000_000, 1_100_000)   # beyond the 16 min relisten
             b.advance(dt)
             crossed = self.tx_deadline is not None and b.lib.h_now_ticks() >= self.tx_deadline
             if crossed:
@@ -853,8 +877,12 @@ class Mixed:
             self.after_advance(b.out(), crossed)
             t.assertIn(b.radio(), (RF_RX_RUNNING,) if self.tx_deadline is None else (RF_TX_RUNNING,))
             t.assertEqual((b.lib.h_wd_unhealthy(), b.lib.h_wd_resets()), (0, 0))
+            if quiet and b.radio() == RF_RX_RUNNING:        # the radio hears something after a quiet spell (a
+                self.inject()                               # second quiet spell in a row would rightly reset it)
+                b.poll()
+                self.check_lines(b.out().splitlines(), self.expected_process(), 'radio')
             self.step()
-        t.assertEqual(self.alive_seen, duration // ALIVE_MS)
+        t.assertEqual(self.alive_seen, b.now() // ALIVE_MS)                 # the last step may run past duration
         t.assertLessEqual(b.lib.h_max_not_rx_ms(), 3001, 'the radio was not back in receive soon after a transmission')
         t.assertEqual(b.lib.h_sends(), self.sends)
         for kind in ('forwarded', 'dropped', 'crc', 'hdr', 'overruns', 'acks', 'relistens'):
@@ -923,6 +951,7 @@ class Mixed:
         elif r < 0.95:
             b.lib.h_uart_error()
             self.n['uart_errors'] += 1
+            self.discard()                                  # the damaged character's line is discarded
             return
         else:
             return
