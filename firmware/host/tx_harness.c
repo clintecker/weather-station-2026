@@ -1,4 +1,5 @@
-/* Host harness for the TX node's event-driven firmware (App/app_tx.c, compiled unchanged).
+/* Host harness for the TX node's event-driven firmware (App/app_tx.c and the modules App/tx_node.h
+ * lists, compiled unchanged).
  *
  * The board is replaced by a deterministic simulation (tests/test_tx_machine.py drives it through
  * ctypes): a virtual millisecond clock, the UTIL_TIMER server, the UTIL_SEQ sequencer, a radio

@@ -38,7 +38,9 @@ APP_SRC = $(BOARD_CORE_SRC) $(BOARD_SYS_SRC) \
           $(ROOT)/firmware/common/ws_console.c \
           $(BOARD_RADIO_SRC)
 ifeq ($(ROLE),tx)
-APP_SRC += App/node_store.c App/flash_stm32wl.c App/sensor.c $(ROOT)/firmware/stage0.c $(ROOT)/firmware/common/ws_frame.c $(ROOT)/firmware/common/ws_obs.c
+APP_SRC += App/tx_exchange.c App/tx_policy.c App/tx_time.c App/tx_console.c App/selftest.c \
+           App/node_store.c App/flash_stm32wl.c App/sensor.c $(ROOT)/firmware/stage0.c \
+           $(ROOT)/firmware/common/ws_frame.c $(ROOT)/firmware/common/ws_obs.c $(ROOT)/firmware/common/ws_policy.c
 endif
 
 HAL_EXTRA = i2c i2c_ex iwdg

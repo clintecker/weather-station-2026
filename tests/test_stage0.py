@@ -182,6 +182,13 @@ class SensorBusTests(unittest.TestCase):
    exe=str(Path(temp)/'policy-test')
    subprocess.run([*CC_STRICT,*SAN,'firmware/stage0.c','firmware/test_policy.c','-o',exe],check=True)
    subprocess.run([exe],check=True)
+ def test_tx_transmission_policy(self):
+  # firmware/common/ws_policy.c: airtime, link state, what a minute may send, strikes.
+  with tempfile.TemporaryDirectory() as temp:
+   exe=str(Path(temp)/'tx-policy-test')
+   subprocess.run([*CC_STRICT,*SAN,'-Ifirmware','firmware/stage0.c','firmware/common/ws_policy.c',
+                   'firmware/test_tx_policy.c','-o',exe,'-lm'],check=True)
+   subprocess.run([exe],check=True)
 
 
 class ServiceSmokeTests(unittest.TestCase):

@@ -201,16 +201,12 @@ ALLOWED = {
 }
 
 # Clock callers that only read the time (a timestamp or a deadline for a timer/radio call): no loop.
-TIMESTAMP = {
-    'app_rx.c:on_rx_done': 'records the time of the last radio event.',
-    'app_rx.c:on_rx_error': 'records the time of the last radio event.',
-    'app_rx.c:rx_healthy': 'compares now with the TX start time (5 s TX limit).',
-    'app_rx.c:process': 'relisten log line and last-event timestamp.',
-    'app_rx.c:on_alive': 'uptime and silence check for the #alive report.',
-    'app_rx.c:on_line': 'TX start time for the 5 s TX health limit.',
-    'app_rx.c:SubghzApp_Init': 'boot timestamp (boot only).',
-    'app_tx.c:handle': 'ACK window deadline; the remaining window is passed to Radio.Rx.',
-}
+# None in stage0-node now: both roles read the time only through App/clock.c (SysTimeGetMcuTime, not
+# a CLOCKS source), and the ACK window is a UTIL_TIMER. The entries this table held (app_rx.c
+# on_rx_done ... SubghzApp_Init, app_tx.c handle) dated from HAL_GetTick timestamps and no longer
+# matched any clock call (2026-10-15 refactor, checked with the table emptied). A new entry needs a
+# real clock call to classify.
+TIMESTAMP = {}
 
 # Deliberate hang/crash bench commands.
 TEST_ONLY = {

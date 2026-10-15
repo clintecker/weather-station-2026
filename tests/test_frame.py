@@ -17,7 +17,7 @@ from ws0.fields import encode
 from ws0.protocol import (COUNTER_MAX, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, STATION_MAX, Nonces, frame_counter,
                           pack_reply, seal, unpack_reply, unseal)
 
-# Same vectors are compiled into the TX firmware's boot self-test (App/app_tx.c). They were made
+# Same vectors are compiled into the TX firmware's boot self-test (App/selftest.c). They were made
 # directly with AESCCM from the spec's header and nonce (see test_vectors_follow_the_spec), not by
 # ws0/protocol.py, so they check the implementations rather than echo them.
 KAT_KEY = bytes(range(16))
@@ -174,7 +174,7 @@ class FrameAgreement(unittest.TestCase):
             unseal(KAT_KEY, 1, 1, bytes(out))  # a health report is never accepted as an observation
 
     def test_diag_plaintext_matches_python(self):
-        """The TX health report's bytes (ws_diag_pack, used by send_diag in App/app_tx.c) are
+        """The TX health report's bytes (ws_diag_pack, used by send_diag in App/tx_exchange.c) are
         exactly ws0/protocol.py's DIAG struct, field by field, extremes and signed bytes included."""
         from ws0.protocol import DIAG
 
@@ -212,13 +212,13 @@ class FirmwareTables(unittest.TestCase):
     def c_array(source, name):
         m = re.search(r'static const uint8_t ' + name + r'\[\] = \{([^}]*)\};', source)
         if not m:
-            raise AssertionError(f'{name} not found in app_tx.c')
+            raise AssertionError(f'{name} not found in selftest.c')
         return bytes(int(v, 16) for v in m.group(1).replace(',', ' ').split())
 
-    def test_app_tx_vectors(self):
-        """The TX boot self-test (run_kat in App/app_tx.c) holds its vectors as byte arrays: they must
+    def test_selftest_vectors(self):
+        """The TX boot self-test (selftest_kat in App/selftest.c) holds its vectors as byte arrays: they must
         be the spec's frames, so a typo there cannot make the board refuse to transmit."""
-        source = (ROOT/'firmware/stage0-node/App/app_tx.c').read_text()
+        source = (ROOT/'firmware/stage0-node/App/selftest.c').read_text()
         # tests/test_obs.py KAT: T -12.34 C (code 2766), RH 45.67 %, epoch 1, seq 2, UTC 1791991189,
         # uptime 300 s, NORMAL, calibration 0.
         obs_plain = encode(1, 2, 1791991189, 300, 1, 0, {0: 2766, 1: 4567})

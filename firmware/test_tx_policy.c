@@ -1,0 +1,120 @@
+#include "common/ws_policy.h"
+#include "common/ws_obs.h"
+#undef NDEBUG /* the checks below are assert()s: keep them in every build */
+#include <assert.h>
+#include <math.h>
+#include <string.h>
+/* Host tests for the TX transmission policy (firmware/common/ws_policy.c,
+ * docs/radio-energy-policy.md). Expected values come from the policy text and Semtech's formula,
+ * not from the code under test. */
+
+/* Semtech AN1200.13 time on air, in floating point: explicit header, CRC on. */
+static double airtime_ref_ms(int payload, int sf, double bw_hz, int preamble, int cr) {
+ double t_sym = pow(2, sf) / bw_hz * 1000.0;
+ int de = t_sym > 16.0;
+ double blocks = ceil((8.0 * payload - 4.0 * sf + 28 + 16) / (4.0 * (sf - 2 * de)));
+ if (blocks < 0) blocks = 0;
+ return (preamble + 4.25 + 8 + blocks * (cr + 4)) * t_sym;
+}
+
+static void airtime(void) {
+ const double bws[] = { 125000, 250000, 500000 };
+ for (int sf = 7; sf <= 12; sf++)
+  for (int b = 0; b < 3; b++)
+   for (int pl = 0; pl <= 255; pl += 17) {
+    double ref = airtime_ref_ms(pl, sf, bws[b], 8, 1);
+    uint32_t got = ws_lora_airtime_ms((uint32_t)pl, (uint32_t)sf, (uint32_t)bws[b], 8, 1);
+    assert(got >= ref && got <= ref + 1.0);            /* rounded up, by at most 1 ms */
+   }
+ assert(ws_lora_airtime_ms(42, 7, 500000, 8, 1) == 22);  /* this build's frame: 21.8 ms at SF7/500 kHz */
+ assert(ws_lora_airtime_ms(10, 12, 125000, 8, 1) == 992);   /* low data rate optimisation: 991.2 ms */
+}
+
+static void link(void) {
+ ws_link l = { 0 };
+ /* Two silent minutes: still linked. The third: probing, first probe 120 s after that exchange. */
+ assert(ws_link_minute(&l, 0, 1000) == WS_LINK_SAME && ws_link_minute(&l, 0, 1060) == WS_LINK_SAME);
+ assert(!l.probing && l.silent == 2);
+ assert(ws_link_minute(&l, 0, 1120) == WS_LINK_PROBING);
+ assert(l.probing && l.silent == 3 && l.next_probe_s == 1120 + 120 && ws_link_probe_interval(&l) == 120);
+ /* Unanswered probes back off 240, 480, then 900 s and stay there. */
+ const uint32_t backoff[] = { 240, 480, 900, 900, 900 };
+ for (unsigned i = 0; i < 5; i++) {
+  uint32_t at = 2000 + 1000 * i;
+  assert(ws_link_minute(&l, 0, at) == WS_LINK_PROBE_MISSED);
+  assert(l.next_probe_s == at + backoff[i] && ws_link_probe_interval(&l) == backoff[i]);
+ }
+ assert(l.silent == 8);
+ /* Any reply relinks and starts the count again; a reply while linked changes nothing. */
+ assert(ws_link_minute(&l, 1, 9000) == WS_LINK_RELINKED);
+ assert(!l.probing && l.silent == 0 && l.probe_step == 0);
+ assert(ws_link_minute(&l, 1, 9060) == WS_LINK_SAME);
+ assert(ws_link_minute(&l, 0, 9120) == WS_LINK_SAME && l.silent == 1);
+}
+
+static void minute(void) {
+ ws_link linked = { 0 }, probing = { .probing = 1, .next_probe_s = 5000 };
+ uint32_t one = 100;   /* ms per answered exchange: no airtime limit below 15 s / 5 s */
+ /* Backlog per energy state while linked (docs/radio-energy-policy.md): 20, 5, 0; CRITICAL silent. */
+ assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &linked, 4000, 3940, one, 20) == 20);
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, one, 20) == 5);
+ assert(ws_minute_backlog(WS_ENERGY_CRITICAL, &linked, 4000, 3000, one, 20) == -1);
+ assert(ws_minute_backlog(4, &linked, 4000, 3000, one, 20) == -1);   /* unknown energy: never sends */
+ assert(ws_minute_backlog(-1, &linked, 4000, 3000, one, 20) == -1);
+ /* CONSERVE: live reading only, at most every 300 s. */
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &linked, 4000, 3701, one, 20) == -1);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &linked, 4000, 3700, one, 20) == 0);
+ /* Probing: the live reading every minute with healthy energy; CONSERVE waits for the probe time. */
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &probing, 4000, 3940, one, 20) == 0);
+ assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &probing, 4000, 3940, one, 20) == 0);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &probing, 4999, 3000, one, 20) == -1);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &probing, 5000, 3000, one, 20) == 0);
+ /* The airtime budget (15 s, 5 s, 2 s per minute) caps the frames; the live reading always goes. */
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, 1000, 20) == 4);   /* 5 frames of 1 s */
+ assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &linked, 4000, 3940, 1000, 20) == 14);
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, 6000, 20) == 0);  /* over budget: live only */
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, 0, 20) == 0);     /* no estimate: live only */
+ /* And the send queue. */
+ assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &linked, 4000, 3940, one, 7) == 7);
+ /* Wrap-safe: the next probe time is compared as a signed difference. */
+ ws_link wrap = { .probing = 1, .next_probe_s = 10 };
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &wrap, 0xFFFFFFF0u, 0, one, 20) == -1);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &wrap, 11, 0xFFFFFE00u, one, 20) == 0);
+}
+
+static void strikes(void) {
+ ws_strike t[3];
+ memset(t, 0, sizeof t);
+ /* The 10th strike of one record reaches the limit and clears its entry. */
+ for (int i = 1; i < 10; i++) assert(ws_strike_note(t, 3, 1, 7, 10) == 0);
+ assert(ws_strike_note(t, 3, 1, 7, 10) == 1);
+ assert(ws_strike_note(t, 3, 1, 7, 10) == 0);        /* counting starts again */
+ /* Keyed by identity: another seq (or epoch) is another record. */
+ memset(t, 0, sizeof t);
+ for (int i = 1; i < 10; i++) { ws_strike_note(t, 3, 1, 7, 10); ws_strike_note(t, 3, 2, 7, 10); }
+ assert(ws_strike_note(t, 3, 1, 8, 10) == 0);
+ assert(ws_strike_note(t, 3, 1, 7, 10) == 1 && ws_strike_note(t, 3, 2, 7, 10) == 1);
+ /* Forgetting (an ACK) ends a record's strikes. */
+ memset(t, 0, sizeof t);
+ for (int i = 1; i < 10; i++) ws_strike_note(t, 3, 1, 7, 10);
+ ws_strike_forget(t, 3, 1, 7);
+ for (int i = 1; i < 10; i++) assert(ws_strike_note(t, 3, 1, 7, 10) == 0);
+ /* Full table: a new record takes the entry with the fewest strikes; the others keep theirs. */
+ memset(t, 0, sizeof t);
+ for (int i = 0; i < 5; i++) { ws_strike_note(t, 3, 1, 1, 10); ws_strike_note(t, 3, 1, 3, 10); }
+ ws_strike_note(t, 3, 1, 2, 10);                      /* 5, 5 and 1 strikes */
+ ws_strike_note(t, 3, 1, 4, 10);                      /* replaces seq 2 */
+ for (int i = 0; i < 4; i++) assert(ws_strike_note(t, 3, 1, 1, 10) == 0);
+ assert(ws_strike_note(t, 3, 1, 1, 10) == 1);         /* seq 1 kept its 5 */
+ for (int i = 0; i < 8; i++) assert(ws_strike_note(t, 3, 1, 4, 10) == 0);
+ assert(ws_strike_note(t, 3, 1, 4, 10) == 1);         /* seq 4 started at 1 */
+}
+
+int main(void) {
+ airtime();
+ link();
+ minute();
+ strikes();
+ assert(!strcmp(ws_energy_name(WS_ENERGY_NORMAL), "normal") && !strcmp(ws_energy_name(4), "?"));
+ return 0;
+}

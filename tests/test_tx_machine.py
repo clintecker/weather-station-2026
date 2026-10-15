@@ -1,4 +1,4 @@
-"""The TX node's event-driven firmware (firmware/stage0-node/App/app_tx.c, unchanged) on the host.
+"""The TX node's event-driven firmware (firmware/stage0-node/App/app_tx.c and the tx_*.c modules, as built) on the host.
 
 firmware/host/tx_harness.c simulates the board: a virtual clock, timers and sequencer with ST's
 semantics, a radio that follows ST's SubGHz_Phy driver, the SHT45, and the flash under the real
@@ -29,13 +29,14 @@ from ws0.protocol import (KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, frame_counte
 STATION = 7
 KEY = bytes(range(16, 32))
 R_SLEEP, R_STANDBY, R_TX, R_RX = range(4)
-SOURCES = ['host/tx_harness.c', 'stage0-node/App/app_tx.c', 'stage0-node/App/node_store.c',
-           'stage0-node/App/busymon.c', 'stage0-node/App/clock.c', 'stage0-node/App/events.c', 'stage0-node/App/bench.c',
-           'common/ws_console.c', 'stage0.c', 'common/ws_frame.c', 'common/ws_obs.c', 'sim_flash.c']
+SOURCES = ['host/tx_harness.c', 'sim_flash.c', 'stage0.c',
+           *(f'stage0-node/App/{name}.c' for name in ('app_tx', 'tx_exchange', 'tx_policy', 'tx_time', 'tx_console', 'selftest',
+                                                      'node_store', 'busymon', 'clock', 'events', 'bench')),
+           *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy'))]
 ASAN_ENV = 'WS_TX_ASAN'   # set by TxUnderAddressSanitizer for its child run
 
 # What the firmware must do (docs/firmware-event-model.md, docs/radio-energy-policy.md, PRD 9). Written
-# here once, from the specification, not read back from app_tx.c: a test that took its expectations
+# here once, from the specification, not read back from the firmware: a test that took its expectations
 # from the code under test could not notice the code changing them.
 SENSOR_MS = 10              # the harness SHT45's measurement time
 SAMPLE_MS = 15_000
@@ -498,6 +499,18 @@ class TxStateMachine(unittest.TestCase):
         n.advance(5000)                                # the exchange ends; now it runs
         n.lib.h_line(b'WIPE ERASE-ALL-NODE-STATE')
         self.assertIn('#wipe ok', n.out())
+
+    def test_console_commands_match_whole_names(self):
+        n = self.node()
+        n.out()
+        n.lib.h_line(b'KAT')
+        self.assertEqual(n.out(), '#kat pass\n')
+        for line in (b'STATUS ', b'status', b'KAT2', b'PROVISION', b'WIPE', b'TEST-FLASH-STORMS', b'TEST-HANGS', b''):
+            n.lib.h_line(line)
+            self.assertEqual(n.out(), '#error unknown command\n', line)
+        n.lib.h_line(b'PROVISION 9 ' + b'00' * 16)     # arguments follow the name's space
+        self.assertEqual(n.out(), '#error already-provisioned (WIPE first)\n')
+        self.assertEqual((n.lib.h_resets(), n.status()['provisioned']), (0, '1'))
 
     def test_commanded_reboot_comes_from_a_timer_and_stops_sampling(self):
         n = self.node()

@@ -2,608 +2,118 @@
  * retained until an authenticated host ACK (or a NACK / strike-limit abandon). Each minute sends
  * the live observation first, then older pending ones as the energy and link policy allows
  * (docs/radio-energy-policy.md); each frame gets a fresh durably reserved counter and one ACK
- * receive window. Time comes only from an ACK that echoes the counter of the frame just sent
- * (replayed ACKs cannot move the clock). Console lines from this board start with '#';
- * commands: STATUS, KAT, PROVISION <station_id> <32 hex key> [epoch_floor],
- * WIPE ERASE-ALL-NODE-STATE, TEST-HANG, TEST-FAULT, TEST-FLASH-STORM (firmware/stage0-node/README.md). */
-#include <stdlib.h>
+ * receive window. This file is boot and the sampling glue; the other TX modules are listed in
+ * App/tx_node.h. */
 #include <string.h>
-#include "bench.h"
 #include "busymon.h"
 #include "clock.h"
-#include "console.h"
-#include "events.h"
+#include "fault.h"
 #include "leds.h"
-#include "watchdog.h"
 #include "node_store.h"
-#include "radio.h"
 #include "radio_cfg.h"
-#include "rtc.h"
+#include "selftest.h"
 #include "sensor.h"
 #include "stackmon.h"
-#include "fault.h"
 #include "stage0.h"
 #include "stm32_seq.h"
-#include "stm32wlxx_hal.h"
-#include "stm32_systime.h"
 #include "stm32_timer.h"
+#include "stm32wlxx_hal.h"
 #include "subghz_phy_app.h"
 #include "sys_app.h"
+#include "tx_console.h"
+#include "tx_exchange.h"
+#include "tx_node.h"
+#include "tx_policy.h"
+#include "tx_time.h"
 #include "utilities_def.h"
-#include "ws_be.h"
-#include "ws_frame.h"
+#include "watchdog.h"
+#include "ws_obs.h"
 
 #define SAMPLE_PERIOD_MS    15000U  /* one T/RH sample; every SAMPLES_PER_REPORT-th builds the minute (PRD 9) */
 #define SAMPLES_PER_REPORT  4U
-#define ACK_WINDOW_MS       2000U
-#define INTER_FRAME_MS      50U     /* gap before each further frame: the RX is back to listening after its ACK */
-#define REBOOT_DELAY_MS     200U    /* a commanded reboot lets the console finish its line first */
-#define MAX_QUEUE           21U   /* live + up to 20 backlog (SURPLUS at SF7); RAM 84 B */
-
-/* Transmission policy (docs/radio-energy-policy.md, approved 2026-10-12; gap G13).
- * Energy state: Stage 0 is USB powered, so it is fixed at NORMAL; Stage 1 feeds pack/charger/
- * solar telemetry into energy_state(). Unknown energy must map to CONSERVE (fail closed). */
-typedef enum { EN_SURPLUS, EN_NORMAL, EN_CONSERVE, EN_CRITICAL, EN_COUNT } energy_t;
-/* The observation's energy-state bits use this numbering (docs/protocol-draft5-design.md 5.2). */
-_Static_assert((int)EN_SURPLUS == (int)WS_ENERGY_SURPLUS && (int)EN_NORMAL == (int)WS_ENERGY_NORMAL && (int)EN_CONSERVE == (int)WS_ENERGY_CONSERVE &&
-               (int)EN_CRITICAL == (int)WS_ENERGY_CRITICAL, "energy_t matches the wire codes");
-#define BACKLOG_SURPLUS 20U                                          /* the largest per-minute backlog */
-static const char *const energy_name[] = { "surplus", "normal", "conserve", "critical" };
-static const uint8_t backlog_limit[] = { BACKLOG_SURPLUS, 5, 0, 0 }; /* per minute */
-static const uint16_t airtime_cap_ms[] = { 15000, 5000, 2000, 0 };   /* radio time per minute */
-_Static_assert(sizeof energy_name / sizeof energy_name[0] == EN_COUNT &&
-               sizeof backlog_limit == EN_COUNT && sizeof airtime_cap_ms / sizeof airtime_cap_ms[0] == EN_COUNT,
-               "one entry per energy state");
-_Static_assert(BACKLOG_SURPLUS <= MAX_QUEUE - 1U, "the send queue holds the live reading plus the largest backlog");
-#define CONSERVE_INTERVAL_S 300U                                     /* spec R02 */
-static energy_t energy_state(void) { return EN_NORMAL; }
-
-/* Link state: K silent minutes -> PROBING: live reading only, no backlog. With healthy energy
- * (SURPLUS, NORMAL) the live reading still goes every minute, so the node relinks within a
- * minute and an outage adds no late readings; only CONSERVE backs off 2, 4, 8, then 15 min
- * (ws_link_may_send in firmware/stage0.c, host-tested). */
-#define LINK_K_SILENT       3U
-static const uint16_t probe_interval_s[] = { 120, 240, 480, 900 };
-#define TURNAROUND_MS       300U   /* gateway commit (fullfsync) + USB both ways, conservative */
-#define SYNC_VALID_S        (6UL * 3600UL)          /* trust a sync for 6 h (LSE drift; see gateway DRIFT_PPM) */
-/* Option D: time trust survives a system reset (NRST, software, watchdog) through two RTC
- * backup registers. A power loss clears the backup domain, so trust is lost, as it must be.
- * DR0-DR2 belong to ST's timer_if/SysTime. */
-#define BKP_TIME_MAGIC      0x57535456UL            /* "WSTV" */
-#define BKP_REG_MAGIC       RTC_BKP_DR3
-#define BKP_REG_SYNC_MCU    RTC_BKP_DR4
-#define MIN_PLAUSIBLE_UTC   1767225600ULL           /* 2026-01-01T00:00:00Z */
-
-/* Draft-5 known-answer vectors, shared with tests/test_frame.py. They were made directly with the
- * cryptography library's AESCCM from the spec's header and nonce, not by ws0/protocol.py. */
-static const uint8_t KAT_KEY[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
-/* Observation: the encoder's own known answer (tests/test_obs.py KAT: T -12.34 C, RH 45.67 %, epoch 1,
- * seq 2, UTC 1791991189, uptime 300 s, NORMAL), sealed with counter 0x100000002. Raw bytes, not hex
- * text (no decoder needed); tests/test_frame.py reads these three arrays back from this file. */
-static const uint8_t KAT_OBS[] = {
-  0x51, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0xbd, 0x50, 0xc6, 0xbe, 0x34, 0x00, 0xa7, 0x50, 0xd4, 0x0c, 0xca, 0x5a, 0xad,
-  0xad, 0x57, 0xb7, 0x16, 0xf1, 0x66, 0x58, 0xa0, 0x9d, 0x96, 0x8a, 0xcf, 0x9a, 0x21, 0x2d, 0x7f, 0x2e, 0x95, 0xa5, 0xe3, 0x4f };
-static const uint8_t KAT_ACK[] = {
-  0x52, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x05, 0x0e, 0x1e, 0xb4, 0x54, 0x47, 0x66, 0xf4, 0xe6, 0xe0,
-  0xff, 0xdb, 0xb3, 0xf6, 0xd1, 0x41, 0x3d, 0x06, 0xf6, 0x36, 0x95, 0x00, 0x19, 0x9b, 0x8f, 0xe2 };
-static const uint8_t KAT_NACK[] = {
-  0x53, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x06, 0x84, 0x9a, 0xdd, 0xbf, 0x88, 0xd9, 0xaa, 0xdd, 0x88,
-  0x4a, 0xa3, 0xbb, 0x89, 0x13, 0x65, 0x75, 0x37, 0x45, 0x21, 0xc5, 0xe4, 0x16, 0xa1, 0xd0, 0xc9 };
-#define KAT_OBS_PLAIN_LEN WS_OBS_PLAIN_LEN(WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT)
-#define KAT_OBS_FRAME_LEN (KAT_OBS_PLAIN_LEN + WS_FRAME_OVERHEAD)
-_Static_assert(sizeof KAT_OBS == KAT_OBS_FRAME_LEN && sizeof KAT_ACK == WS_ACK_FRAME_LEN && sizeof KAT_NACK == WS_ACK_FRAME_LEN,
-               "known-answer vectors have their frame lengths");
-#define OBS_FRAME_MAX (WS_OBS_PLAIN_MAX + WS_FRAME_OVERHEAD)
-
-static RadioEvents_t events;
-static UTIL_TIMER_Object_t sample_timer;
-static uint32_t station;
-static uint8_t key[16];
-static uint8_t kcv[3];
-static int provisioned, kat_ok, running;
-static uint32_t boot_epoch, next_seq;
-static int synced;
-static uint32_t last_sync_mcu;   /* RTC (MCU) seconds at the last accepted time sync */
-static uint32_t boot_mcu;        /* RTC (MCU) seconds at boot: uptime origin */
-static uint32_t last_sample_mcu, exchange_start_mcu, exchange_limit_s; /* watchdog progress evidence */
-
-static jref_t queue[MAX_QUEUE];
-static unsigned qn, qi;
-/* The minute's radio exchange, one state at a time (docs/firmware-event-model.md). Every state is
- * left by an event that is certain to come: the radio's TxDone/TxTimeout (WS_TX_TIMEOUT_MS), its
- * RxDone/RxTimeout (the ACK window), or the gap timer. Anything else is counted as unexpected. */
-typedef enum { TX_IDLE, TX_GAP, TX_SENDING, TX_ACK_WAIT, TX_DIAG_SENDING, TX_STATES } tx_state_t;
-static const char *const tx_state_name[] = { "idle", "gap", "sending", "ack-wait", "diag-sending" };
-_Static_assert(sizeof tx_state_name / sizeof tx_state_name[0] == TX_STATES, "one name per state");
-static tx_state_t tx_state = TX_IDLE;
-static enum { GAP_FRAME, GAP_DIAG } gap_then;   /* what the gap timer starts */
-static UTIL_TIMER_Object_t gap_timer, reboot_timer;
-static uint32_t n_unexpected;
-#define busy (tx_state != TX_IDLE)
-static uint64_t sent_counter;
-static uint32_t sent_epoch, sent_seq;
-static uint32_t n_sent, n_acked, n_no_ack, n_ack_rejects, n_sensor_faults;
-/* Gap G2 safety net: a record that stays unanswered while other frames in the same exchange are
- * answered (the gateway is up) gets a strike; at STRIKE_LIMIT it is abandoned and counted. */
-#define STRIKE_LIMIT 10
-#define STRIKE_SLOTS 6
-/* Keyed by the record's identity, not its journal slot: a slot is reused after the ring wraps, and
- * a record can leave the journal (an ACK that was not for the frame just sent, a ring loss)
- * without its slot's entry being cleared (firmware review finding 5). */
-static struct { uint32_t epoch, seq; uint8_t n; } strikes[STRIKE_SLOTS];
-static uint8_t replied[MAX_QUEUE];
-static enum { LINK_LINKED, LINK_PROBING } link_state = LINK_LINKED;
-static uint32_t silent_minutes, probe_step, next_probe_mcu, last_send_mcu;
-static uint32_t exchange_ms; /* estimated radio time of one answered exchange */
-/* Review P7: a TX that keeps failing must not look healthy. Two runs of uninterrupted failures;
- * above the limit on either, the watchdog resets the board (which re-runs Radio.Init).
- *  - tx_fail: the minute's journal append.
- *  - tx_air: transmissions. A failure is a refused counter reservation, a refused Radio.Send or a
- *    TxTimeout; only a TxDone (the frame really left) clears it. Before 2026-10-14 one run mixed
- *    both and every successful append or accepted Send reset it, so a radio that accepted Send but
- *    never finished a frame was never reset (firmware review, finding 1).
- * Minutes the policy chose not to send never count. */
-#define TX_FAIL_LIMIT 10U
-static ws_failrun tx_fail, tx_air;
+/* Review P7: a TX that keeps failing must not look healthy. Above this many failures in a row,
+ * of journal appends (tx_node.journal_fails) or of transmissions (tx_counts.air), the watchdog
+ * resets the board (which re-runs Radio.Init). Minutes the policy chose not to send never count. */
+#define TX_FAIL_LIMIT       10U
 /* A storage failure at boot may be transient: retry once by a reset after 10 minutes. */
-#define BOOT_RETRY_MS (10UL * 60000UL)
-static UTIL_TIMER_Object_t boot_retry_timer;
+#define BOOT_RETRY_MS       (10UL * 60000UL)
 
-/* Health report (kind 4, gap G8): every 15 min and at each link-state change, sent after a
- * minute's exchange (also while probing, so the link field can read "probing").
- * Fire-and-forget: no journal entry, no receive window. */
-#define DIAG_PERIOD_S 900U
-static int diag_due = 1;
-/* The ACK window is this firmware's own timer, not the radio driver's: ST's RxTimeoutTimer is left
-   running by a CRC error and its timeout leaves the radio receiving (review 2026-10-15). The radio
-   listens with no driver timeout (Radio.Rx(0)); ack_timer ends the window, and every way out of
-   ack-wait puts the radio in standby first. */
-static UTIL_TIMER_Object_t ack_timer;
-static uint32_t last_diag_mcu;
-
-/* Only a WS_ACK_FRAME_LEN reply is ever opened. rx_len keeps the true received size, so a longer
-   packet is still rejected (ws_open_reply checks the length before reading) and logged as it was. */
-static uint8_t rx_frame[WS_ACK_FRAME_LEN];
-static uint16_t rx_len;
-static int16_t rx_rssi;
-static int8_t rx_snr;
-/* Signal of the last authentic ACK, as the node heard it (DIAG, design section 4): the uplink and
-   downlink can differ (gap G15). -128 = none yet. */
-static int8_t ack_rssi = -128, ack_snr = -128;
-/* Events from interrupt and timer context, as bits (as in app_rx.c: none is lost if two arrive
-   before process() runs). */
-#define EV_TX_DONE    (1U << 0)
-#define EV_TX_TIMEOUT (1U << 1)
-#define EV_RX_DONE    (1U << 2)
-#define EV_RX_TIMEOUT (1U << 3)
-#define EV_RX_ERROR   (1U << 4)
-#define EV_GAP        (1U << 5)
-#define EV_ACK_END    (1U << 6)
-#define EV_COUNT      7U
-static const char *const ev_name[EV_COUNT] = { "tx-done", "tx-timeout", "rx-done", "rx-timeout", "rx-error", "gap", "ack-end" };
-static volatile uint32_t pending_ev;
-
-static int time_valid(void) { return synced && (clock_s() - last_sync_mcu) < SYNC_VALID_S; }
-
-/* Option D: restore time trust after a reset if the RTC kept counting and the sync is recent. */
-static void restore_time_trust(void)
-{
-  uint32_t magic = HAL_RTCEx_BKUPRead(&hrtc, BKP_REG_MAGIC);
-  uint32_t at = HAL_RTCEx_BKUPRead(&hrtc, BKP_REG_SYNC_MCU);
-  uint32_t now = clock_s();
-  if (magic == BKP_TIME_MAGIC && now >= at && now - at < SYNC_VALID_S && SysTimeGet().Seconds >= MIN_PLAUSIBLE_UTC)
-  {
-    synced = 1;
-    last_sync_mcu = at;
-    APP_PRINTF("#time restored utc=%u sync_age=%u\n", (unsigned)SysTimeGet().Seconds, (unsigned)(now - at));
-  }
-  else
-  {
-    HAL_RTCEx_BKUPWrite(&hrtc, BKP_REG_MAGIC, 0);
-  }
-}
-
-static int run_kat(void)
-{
-  uint8_t plain[KAT_OBS_PLAIN_LEN], frame[KAT_OBS_FRAME_LEN], ack[WS_ACK_FRAME_LEN];
-  uint64_t ctr, echo; uint32_t ep, sq, word; uint8_t kind;
-  ws_obs_t o = { .epoch = 1, .seq = 2, .utc = 1791991189UL, .uptime = 300, .energy = WS_ENERGY_NORMAL,
-                 .bitmap = WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT };
-  o.code[WS_FI_TEMPERATURE_C] = ws_code_temp_centi(-1234);
-  o.code[WS_FI_HUMIDITY_PCT] = ws_code_rh_centi(4567);
-  if (ws_obs_encode(&o, plain, sizeof plain) != (int)sizeof plain) return 0;
-  if (ws_seal_kind(KAT_KEY, 1, WS_KIND_OBS, 0x100000002ULL, plain, sizeof plain, frame, sizeof frame) != KAT_OBS_FRAME_LEN ||
-      memcmp(frame, KAT_OBS, sizeof frame)) return 0;
-  if (ws_open_reply(KAT_KEY, 1, KAT_ACK, sizeof KAT_ACK, &kind, &ctr, &ep, &sq, &word, &echo)) return 0;
-  if (kind != WS_KIND_ACK || ctr != 5 || ep != 17 || sq != 42 || word != 1760000000UL || echo != 0x100000002ULL) return 0;
-  memcpy(ack, KAT_ACK, sizeof ack);
-  ack[sizeof ack - 1] ^= 1; /* tampered tag must fail */
-  if (ws_open_reply(KAT_KEY, 1, ack, sizeof ack, &kind, &ctr, &ep, &sq, &word, &echo) == 0) return 0;
-  if (ws_open_reply(KAT_KEY, 1, KAT_NACK, sizeof KAT_NACK, &kind, &ctr, &ep, &sq, &word, &echo)) return 0;
-  /* The counter limit is part of the self-test: 2^40 must be refused, never truncated. */
-  if (ws_seal_kind(KAT_KEY, 1, WS_KIND_OBS, WS_COUNTER_MAX + 1ULL, plain, sizeof plain, frame, sizeof frame) >= 0) return 0;
-  return kind == WS_KIND_NACK && ctr == 6 && ep == 17 && sq == 42 && word == WS_NACK_COLLISION && echo == 0x100000002ULL;
-}
-
-/* Decimal text of a 64-bit counter: the console's tiny_vsnprintf has no 64-bit format, and a
-   (unsigned) cast printed only the low 32 bits. */
-static const char *u64_text(uint64_t v, char buf[21])
-{
-  char *p = buf + 20; *p = 0;
-  do { *--p = (char)('0' + (int)(v % 10U)); v /= 10U; } while (v);
-  return p;
-}
-
-static void status(void)
-{
-  char ctr_buf[21];
-  /* Separate lines: one long line was once cut off at the old 256-byte print buffer (now 640) and
-   * used to be cut off mid-field. #status keeps the fields provision-node and the gateway parse. */
-  APP_PRINTF("#status role=tx fw=%s reset=%s provisioned=%d station=%u kcv=%02x%02x%02x kat=%s epoch=%u next_seq=%u "
-             "ctr=%s ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u\n",
-             WS_FW_VERSION, watchdog_reset_cause(), provisioned, (unsigned)station, kcv[0], kcv[1], kcv[2], kat_ok ? "pass" : "FAIL",
-             (unsigned)boot_epoch, (unsigned)next_seq, u64_text(store_counter_next(), ctr_buf), (unsigned)store_ecc_faults(),
-             link_state == LINK_LINKED ? "linked" : "probing",
-             (unsigned)silent_minutes, energy_name[energy_state()], time_valid() ? "synchronized" : "unknown",
-             (unsigned)(time_valid() ? SysTimeGet().Seconds : 0), (unsigned)(clock_s() - boot_mcu));
-  APP_PRINTF("#counts pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u "
-             "sensor_faults=%u tx_fail_run=%u tx_air_run=%u stack_peak=%u\n",
-             (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
-             (unsigned)store_journal_burned(), (unsigned)store_abandoned_total(), (unsigned)n_sent, (unsigned)n_acked,
-             (unsigned)n_no_ack, (unsigned)n_ack_rejects, (unsigned)n_sensor_faults, (unsigned)tx_fail.n, (unsigned)tx_air.n,
-             (unsigned)stackmon_peak());
-  APP_PRINTF("#timing state=%s task_peak_us=%u task_peak=%s isr_peak_us=%u isr_peak=%s erase_peak_us=%u prog_peak_us=%u "
-             "trace_drops=%u unexpected=%u\n", tx_state_name[tx_state],
-             (unsigned)busymon_peak_us(BM_TASK), busymon_peak_name(BM_TASK), (unsigned)busymon_peak_us(BM_ISR),
-             busymon_peak_name(BM_ISR), (unsigned)busymon_peak_us(BM_ERASE), (unsigned)busymon_peak_us(BM_PROG),
-             (unsigned)ws_trace_drops, (unsigned)n_unexpected);
-}
-
-static void post(uint32_t ev) { events_post(&pending_ev, ev); }
-static void on_gap(void *ctx) { (void)ctx; post(EV_GAP); }
-static void on_ack_end(void *ctx) { (void)ctx; post(EV_ACK_END); }
-static void on_tx_done(void) { post(EV_TX_DONE); }
-static void on_tx_timeout(void) { post(EV_TX_TIMEOUT); }
-static void on_rx_timeout(void) { post(EV_RX_TIMEOUT); }
-static void on_rx_error(void) { post(EV_RX_ERROR); }
-/* ST's HAL raises RxDone for a packet whose payload CRC failed, then RxError (stm32wlxx_hal_subghz.c
-   HAL_SUBGHZ_IRQHandler): such a packet is only the RxError. */
-static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
-{
-  if (ws_radio_take_crc_error()) return;
-  rx_len = size;
-  memcpy(rx_frame, payload, size > sizeof rx_frame ? sizeof rx_frame : size);
-  rx_rssi = rssi;
-  rx_snr = snr;
-  post(EV_RX_DONE);
-}
-
-static void finish_exchange(void);
-
-/* The exchange (and any health report in flight) is over: the radio sleeps until the next minute. */
-static void radio_idle(void) { tx_state = TX_IDLE; ws_radio_sleep(); }
-
-/* The next frame goes after INTER_FRAME_MS, from the gap timer: nothing waits meanwhile. */
-static void gap_before(int then) { gap_then = then; tx_state = TX_GAP; UTIL_TIMER_Start(&gap_timer); }
-
-static void next_item(void);
-
-/* Send queue[qi]. A local failure (journal read, seal, radio busy) moves on to the next item after
- * a gap, like a sent frame; a refused counter reservation ends the exchange. */
-static void send_current(void)
-{
-  uint8_t plain[WS_OBS_PLAIN_MAX], frame[OBS_FRAME_MAX];
-  int plen = -1;
-  if (store_journal_read(queue[qi], plain) || (plen = ws_obs_plain_len(plain, sizeof plain)) < 0) { APP_PRINTF("#error journal-read\n"); }
-  else
-  {
-    /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
-    if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_air, 0); APP_PRINTF("#error counter-reserve\n"); radio_idle(); return; }
-    int flen = ws_seal_kind(key, station, WS_KIND_OBS, sent_counter, plain, (uint32_t)plen, frame, sizeof frame);
-    if (flen < 0) { APP_PRINTF("#error seal\n"); }
-    else
-    {
-      sent_epoch = ws_get_be32(plain);
-      sent_seq = ws_get_be32(plain + 4);
-      n_sent++;
-      led_flash(LED_BLUE, 400);
-      if (Radio.Send(frame, (uint8_t)flen) == RADIO_STATUS_OK) { tx_state = TX_SENDING; return; }  /* its TxDone follows */
-      ws_failrun_note(&tx_air, 0); APP_PRINTF("#error radio-busy\n");
-    }
-  }
-  next_item();
-}
-
-/* Identity of a journaled record (its first 8 bytes); 0 if the slot cannot be read. */
-static int record_id(jref_t r, uint32_t *epoch, uint32_t *seq)
-{
-  uint8_t plain[WS_OBS_PLAIN_MAX];
-  if (store_journal_read(r, plain)) return 0;
-  *epoch = ws_get_be32(plain); *seq = ws_get_be32(plain + 4);
-  return 1;
-}
-
-static void forget_strikes(uint32_t epoch, uint32_t seq)
-{
-  for (unsigned i = 0; i < STRIKE_SLOTS; i++)
-    if (strikes[i].n && strikes[i].epoch == epoch && strikes[i].seq == seq) strikes[i].n = 0;
-}
-
-static void strike(jref_t r)
-{
-  uint32_t epoch, seq; jref_t now;
-  if (!record_id(r, &epoch, &seq)) return;
-  unsigned use = STRIKE_SLOTS, low = 0;
-  for (unsigned i = 0; i < STRIKE_SLOTS; i++)
-  {
-    if (strikes[i].n && strikes[i].epoch == epoch && strikes[i].seq == seq) { use = i; break; }
-    if (strikes[i].n < strikes[low].n) low = i;
-  }
-  if (use == STRIKE_SLOTS) { use = low; strikes[use].epoch = epoch; strikes[use].seq = seq; strikes[use].n = 0; }
-  if (++strikes[use].n < STRIKE_LIMIT) return;
-  strikes[use].n = 0;
-  /* Abandon only a record that is still pending under this identity. */
-  if (store_journal_find(epoch, seq, &now) || store_journal_ack(now)) return;
-  store_note_abandoned();
-  led_flash(LED_RED, 1000);
-  APP_PRINTF("#abandon epoch=%u seq=%u after %u unanswered tries while the gateway answered other frames; abandoned=%u\n",
-             (unsigned)epoch, (unsigned)seq, STRIKE_LIMIT, (unsigned)store_abandoned_total());
-}
-
-/* End of an exchange: strikes only count when the gateway answered something in it (any). */
-static void settle_strikes(int any)
-{
-  if (!any) return; /* link or gateway down: never abandon data for that */
-  for (unsigned i = 0; i < qn; i++)
-  {
-    uint32_t epoch, seq;
-    if (!replied[i]) strike(queue[i]);
-    else if (record_id(queue[i], &epoch, &seq)) forget_strikes(epoch, seq);
-  }
-}
-/* LoRa time on air (Semtech formula), explicit header, CRC on, for the configured radio. */
-static uint32_t airtime_ms(uint32_t payload)
-{
-  static const uint32_t bw_hz[] = { 125000, 250000, 500000 };
-  uint32_t sf = WS_LORA_SF, bw = bw_hz[WS_LORA_BANDWIDTH];
-  uint32_t de = ((1000000UL << sf) / bw) > 16000 ? 1 : 0;           /* symbol > 16 ms */
-  int32_t num = 8 * (int32_t)payload - 4 * (int32_t)sf + 28 + 16;
-  int32_t den = 4 * ((int32_t)sf - 2 * (int32_t)de);
-  int32_t blocks = num > 0 ? (num + den - 1) / den : 0;
-  uint32_t symbols_x4 = (WS_LORA_PREAMBLE * 4 + 17) + 4 * (8 + (uint32_t)blocks * (WS_LORA_CR + 4));
-  return (uint32_t)(((uint64_t)symbols_x4 * (1000000UL << sf) / bw) / 4000) + 1;
-}
-
-/* End of a minute's exchange: update the link state from whether the gateway answered (any). */
-static void link_update(int any)
-{
-  if (any)
-  {
-    if (link_state == LINK_PROBING) diag_due = 1;
-    if (link_state == LINK_PROBING) APP_PRINTF("#link linked after %u silent minutes\n", (unsigned)silent_minutes);
-    link_state = LINK_LINKED; silent_minutes = 0; probe_step = 0;
-    return;
-  }
-  silent_minutes++;
-  if (link_state == LINK_LINKED && silent_minutes >= LINK_K_SILENT)
-  {
-    link_state = LINK_PROBING; probe_step = 0; diag_due = 1;
-    next_probe_mcu = last_send_mcu + probe_interval_s[0]; /* from the exchange start: on the minute grid */
-    if (ws_link_may_send(energy_state(), 1, (int32_t)probe_interval_s[0]))
-    { APP_PRINTF("#link probing: %u silent minutes; live reading every minute, no backlog (energy %s)\n",
-                 (unsigned)silent_minutes, energy_name[energy_state()]); }
-    else
-    { APP_PRINTF("#link probing: %u silent minutes; next probe in %u s (live readings stay journaled)\n",
-                 (unsigned)silent_minutes, (unsigned)probe_interval_s[0]); }
-  }
-  else if (link_state == LINK_PROBING)
-  {
-    if (probe_step + 1 < sizeof probe_interval_s / sizeof probe_interval_s[0]) probe_step++;
-    next_probe_mcu = last_send_mcu + probe_interval_s[probe_step];
-    if (!ws_link_may_send(energy_state(), 1, (int32_t)probe_interval_s[probe_step]))
-    { APP_PRINTF("#link probe unanswered; next probe in %u s\n", (unsigned)probe_interval_s[probe_step]); }
-  }
-}
-
-static uint16_t clamp16(uint32_t v) { return v > 0xFFFF ? 0xFFFF : (uint16_t)v; }
-static int8_t clamp8(int v) { return (int8_t)(v < -127 ? -127 : v > 127 ? 127 : v); }  /* -128 means "none" */
-
-/* WS_FW_BUILD_ID: first 8 hex digits of the release commit (WS_FW_VERSION), 0 if they are not
-   hex; computed by the Makefile. */
-#ifndef WS_FW_BUILD_ID
-#error "WS_FW_BUILD_ID comes from the Makefile"
-#endif
-
-static int diag_wanted(void) { return diag_due || clock_s() - last_diag_mcu >= DIAG_PERIOD_S; }
-
-/* Returns 1 if a health report went on air (its TxDone or TxTimeout ends the exchange). */
-static int send_diag(void)
-{
-  uint8_t plain[WS_DIAG_PLAIN_LEN], frame[WS_DIAG_FRAME_LEN]; uint64_t ctr;
-  uint32_t now = clock_s();
-  uint32_t crashes = fault_count();
-  ws_diag_t d = { .epoch = boot_epoch, .uptime = now - boot_mcu, .lost = store_journal_lost(), .build = (uint32_t)WS_FW_BUILD_ID,
-                  .pending = clamp16(store_journal_pending()), .torn = clamp16(store_journal_burned()),
-                  .abandoned = clamp16(store_abandoned_total()), .no_ack = clamp16(n_no_ack), .rejects = clamp16(n_ack_rejects),
-                  .reset_cause = (uint8_t)watchdog_reset_code(), .link = (uint8_t)link_state, .crashes = (uint8_t)(crashes > 0xFF ? 0xFF : crashes),
-                  .energy = (uint8_t)energy_state(), .rssi = ack_rssi, .snr = ack_snr };
-  ws_diag_pack(&d, plain);
-  if (store_next_counter(&ctr) || ws_seal_kind(key, station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) < 0) return 0;
-  diag_due = 0; last_diag_mcu = now;
-  if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_air, 0); return 0; }
-  tx_state = TX_DIAG_SENDING;
-  APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u\n", d.pending, (unsigned)d.lost, d.torn, d.abandoned, d.no_ack);
-  return 1;
-}
-
-static void finish_exchange(void)
-{
-  int any = 0; /* did the gateway answer anything in this exchange? */
-  for (unsigned i = 0; i < qn; i++) any |= replied[i];
-  settle_strikes(any);
-  link_update(any);
-  if (diag_wanted()) { gap_before(GAP_DIAG); return; }
-  radio_idle();
-}
-
-static void next_item(void)
-{
-  if (++qi < qn) { gap_before(GAP_FRAME); return; }
-  finish_exchange();
-}
-
-/* A missed reply ends this minute's drain: a failing link does not burn the allowance. */
-static void stop_drain(void) { qn = qi + 1; }
-
-/* No reply to the frame just sent; it stays journaled for a later retry. */
-static void no_reply(int flash_red)
-{
-  n_no_ack++;
-  if (flash_red) led_flash(LED_RED, 400);
-  APP_PRINTF("#ack none epoch=%u seq=%u\n", (unsigned)sent_epoch, (unsigned)sent_seq);
-  stop_drain();
-  next_item();
-}
-
-/* Returns 1 for the authentic reply (ACK or NACK) to the frame just sent; 0 for anything else. */
-static int handle_reply(void)
-{
-  uint64_t ctr, echo; uint32_t ep, sq, utc; jref_t ref; uint8_t kind;
-  if (ws_open_reply(key, station, rx_frame, rx_len, &kind, &ctr, &ep, &sq, &utc, &echo))
-  {
-    n_ack_rejects++;
-    led_flash(LED_RED, 400);
-    APP_PRINTF("#ack reject len=%u rssi=%d snr=%d\n", rx_len, rx_rssi, rx_snr);
-    return 0;
-  }
-  ack_rssi = clamp8(rx_rssi);   /* authentic reply only: a forged frame cannot set these */
-  ack_snr = clamp8(rx_snr);
-  int mine = echo == sent_counter && ep == sent_epoch && sq == sent_seq;
-  if (kind == WS_KIND_NACK)
-  {
-    /* Authentic permanent rejection (gap G2). Accept it only for the frame just sent. */
-    if (!mine) { n_ack_rejects++; APP_PRINTF("#nack ignored: not for the frame just sent\n"); return 0; }
-    replied[qi] = 1;
-    if (store_journal_find(ep, sq, &ref) == 0 && store_journal_ack(ref) == 0) store_note_abandoned();
-    led_flash(LED_RED, 1000);
-    APP_PRINTF("#nack epoch=%u seq=%u reason=%u abandoned=%u\n", (unsigned)ep, (unsigned)sq,
-               (unsigned)utc, (unsigned)store_abandoned_total());
-    return 1;
-  }
-  int found = store_journal_find(ep, sq, &ref) == 0;
-  if (found && store_journal_ack(ref)) APP_PRINTF("#error journal-ack\n");
-  forget_strikes(ep, sq);   /* any authentic ACK for a record ends its strikes */
-  if (mine) replied[qi] = 1;
-  int fresh = mine && utc >= MIN_PLAUSIBLE_UTC;
-  if (fresh)
-  {
-    SysTime_t now = { .Seconds = utc, .SubSeconds = 0 };
-    SysTimeSet(now);
-    synced = 1;
-    last_sync_mcu = clock_s();
-    HAL_RTCEx_BKUPWrite(&hrtc, BKP_REG_SYNC_MCU, last_sync_mcu);
-    HAL_RTCEx_BKUPWrite(&hrtc, BKP_REG_MAGIC, BKP_TIME_MAGIC);
-  }
-  if (found) n_acked++;
-  led_flash(LED_GREEN, 400); /* authentic host ACK: reading is committed */
-  APP_PRINTF("#ack epoch=%u seq=%u found=%d time_sync=%d rssi=%d snr=%d pending=%u\n",
-             (unsigned)ep, (unsigned)sq, found, fresh, rx_rssi, rx_snr,
-             (unsigned)store_journal_pending());
-  return mine;
-}
-
-/* One event in one state. Every pair not listed is a bug or a stray radio callback: counted and
-   printed, never acted on (docs/firmware-event-model.md has the full table). */
-static void handle(uint32_t ev)
-{
-  switch (tx_state)
-  {
-    case TX_SENDING:
-      if (ev == EV_TX_DONE)
-      {
-        ws_failrun_note(&tx_air, 1);   /* the frame left: the radio works */
-        tx_state = TX_ACK_WAIT;
-        UTIL_TIMER_Start(&ack_timer);
-        Radio.Rx(0);
-        return;
-      }
-      if (ev == EV_TX_TIMEOUT)
-      {
-        Radio.Standby();               /* the driver's timeout leaves the radio transmitting */
-        ws_failrun_note(&tx_air, 0);
-        led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n");
-        stop_drain(); next_item();
-        return;
-      }
-      break;
-    case TX_ACK_WAIT:
-      if (ev == EV_RX_DONE && handle_reply()) { UTIL_TIMER_Stop(&ack_timer); next_item(); return; }
-      if (ev == EV_RX_DONE || ev == EV_RX_ERROR || ev == EV_RX_TIMEOUT)
-      {
-        /* Not the reply to this frame: foreign, forged, another frame's ACK, a payload CRC failure
-           (rx-error) or a header failure (rx-timeout: ST's radio.c reports IRQ_HEADER_ERROR so).
-           Keep listening until the window ends rather than miss the real ACK (firmware review,
-           finding 2). After a single-window reception the radio is in standby; listen again. */
-        if (ev != EV_RX_DONE) APP_PRINTF("#ack damaged %s; still listening\n", ev == EV_RX_ERROR ? "payload" : "header");
-        Radio.Rx(0);
-        return;
-      }
-      if (ev == EV_ACK_END) { Radio.Standby(); no_reply(1); return; }
-      break;
-    case TX_DIAG_SENDING:
-      if (ev == EV_TX_DONE || ev == EV_TX_TIMEOUT)
-      {
-        if (ev == EV_TX_TIMEOUT) Radio.Standby();
-        ws_failrun_note(&tx_air, ev == EV_TX_DONE);
-        if (ev == EV_TX_TIMEOUT) { led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n"); }
-        radio_idle();
-        return;
-      }
-      break;
-    case TX_GAP:
-      if (ev == EV_GAP)
-      {
-        if (gap_then == GAP_FRAME) send_current();
-        else if (!send_diag()) radio_idle();
-        return;
-      }
-      break;
-    default: break;
-  }
-  n_unexpected++;
-  APP_PRINTF("#error unexpected event=%s state=%s\n", ev_name[__builtin_ctz(ev)], tx_state_name[tx_state]);
-}
-
-static void process(void)
-{
-  uint32_t ev = events_take(&pending_ev);
-  for (uint32_t bit = 1; ev; bit <<= 1)   /* bounded: EV_COUNT bits */
-    if (ev & bit) { ev &= ~bit; handle(bit); }
-}
-BUSYMON_TASK(process)
+tx_node_t tx_node;
+static UTIL_TIMER_Object_t sample_timer, boot_retry_timer;
+static uint32_t last_sample_s;   /* watchdog progress evidence */
 
 /* The minute's 15-s samples (PRD section 9: coverage, mean and extrema). */
 static ws_th_window th_window;
 static unsigned th_ticks;
-
 static int sensor_reported;   /* the first reading after boot is printed as #sensor */
-static int rebooting;         /* a commanded reboot is pending: a late reading is dropped */
-static int storming;          /* TEST-FLASH-STORM: sampling stopped */
 
-static void sampled(int src, int16_t t, uint16_t h);
-
-/* Every 15 s: start a measurement; sampled() gets its result from the sensor task ~10 ms later. */
-static void sample(void)
+void sampling_stop(void)
 {
-  last_sample_mcu = clock_s();
-  if (sensor_start(sampled)) sampled(-1, 0, 0);   /* the previous one never finished: a missed sample */
+  tx_node.running = 0;
+  UTIL_TIMER_Stop(&sample_timer);
 }
-BUSYMON_TASK(sample)
+
+/* Draft-5 observation (docs/protocol-draft5-design.md 5): out-of-range temperature is INVALID,
+   RH is clamped (ws_code_*); a sensor fault sends every field as INVALID, never leaves it out.
+   The summary fields are used only if the build's bitmap includes them (WS_F_TH_SUMMARY in
+   node_fields.h). */
+static void obs_codes(ws_obs_t *o, int valid, int16_t t, uint16_t h)
+{
+  static const uint8_t th_fields[] = { WS_FI_TEMPERATURE_C, WS_FI_HUMIDITY_PCT, WS_FI_TEMPERATURE_MIN_C,
+                                       WS_FI_TEMPERATURE_MAX_C, WS_FI_HUMIDITY_MIN_PCT, WS_FI_HUMIDITY_MAX_PCT };
+  o->code[WS_FI_TH_SAMPLES] = th_window.n > 60U ? 60U : th_window.n;
+  if (!valid)
+  {
+    for (unsigned i = 0; i < sizeof th_fields; i++) o->code[th_fields[i]] = ws_obs_invalid(th_fields[i]);
+    return;
+  }
+  o->code[WS_FI_TEMPERATURE_C] = ws_code_temp_centi(t);
+  o->code[WS_FI_HUMIDITY_PCT] = ws_code_rh_centi(h);
+  o->code[WS_FI_TEMPERATURE_MIN_C] = ws_code_temp_centi(th_window.t_min);
+  o->code[WS_FI_TEMPERATURE_MAX_C] = ws_code_temp_centi(th_window.t_max);
+  o->code[WS_FI_HUMIDITY_MIN_PCT] = ws_code_rh_centi(th_window.h_min);
+  o->code[WS_FI_HUMIDITY_MAX_PCT] = ws_code_rh_centi(th_window.h_max);
+}
+
+/* What this minute may send, if anything: the live reading (NULL if its journal append failed)
+   and the backlog the policy allows. A refused minute's reading stays journaled. */
+static void minute_send(const jref_t *live)
+{
+  int backlog = policy_minute_backlog();
+  if (backlog >= 0) exchange_start(live, (unsigned)backlog);
+}
+
+/* The minute's report, from its samples: journaled, then sent as the policy allows. */
+static void minute_report(int src)
+{
+  uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live;
+  int16_t t = 0; uint16_t h = 0;
+  int valid = ws_th_mean_t(&th_window, &t) && ws_th_mean_h(&th_window, &h);
+  uint32_t utc = time_utc();
+  uint32_t uptime = clock_s() - tx_node.boot_s; /* always sent: the gateway reconstructs time from it */
+  if (!valid) tx_node.sensor_faults++;
+  /* static: minute_report() runs only from the sequencer, never re-entered, and it is on the deepest
+     callback chain, which tools/stack_report.py counts four times (a 104-byte record cost ~416 B). */
+  static ws_obs_t o;
+  o = (ws_obs_t){ .epoch = tx_node.boot_epoch, .seq = tx_node.next_seq, .utc = utc, .uptime = uptime,
+                  .energy = (uint8_t)energy_state(), .bitmap = WS_NODE_FIELDS };
+  obs_codes(&o, valid, t, h);
+  unsigned samples = th_window.n;
+  ws_th_reset(&th_window);
+  int rc = ws_obs_encode(&o, plain, sizeof plain) == (int)WS_OBS_PLAIN_MAX ? store_journal_append(plain, &live) : -3;
+  ws_failrun_note(&tx_node.journal_fails, rc == 0);
+  APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d n=%u t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
+             (unsigned)tx_node.boot_epoch, (unsigned)tx_node.next_seq, (unsigned)uptime, valid, src, samples, valid ? t : 0,
+             valid ? h : 0, utc ? "synchronized" : "unknown", (unsigned)utc, rc ? "ERROR" : "ok",
+             (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
+  tx_node.next_seq++; /* identity is never reused, even if the journal write failed */
+  if (exchange_busy()) { APP_PRINTF("#busy previous exchange still running\n"); return; }
+  minute_send(rc ? NULL : &live);
+}
 
 static void sampled(int src, int16_t t, uint16_t h)
 {
-  uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live;
-  if (rebooting || storming) return;   /* a measurement that finishes after either stops sampling */
+  if (tx_node.rebooting || tx_node.storming) return;   /* a measurement that finishes after either stops sampling */
   if (!sensor_reported)
   {
     sensor_reported = 1;
@@ -613,160 +123,31 @@ static void sampled(int src, int16_t t, uint16_t h)
   ws_th_add(&th_window, src == 0, t, h);
   if (++th_ticks < SAMPLES_PER_REPORT) return;   /* the minute's report follows its last sample */
   th_ticks = 0;
-  int valid = ws_th_mean_t(&th_window, &t) && ws_th_mean_h(&th_window, &h);
-  int timed = time_valid();
-  uint32_t utc = timed ? SysTimeGet().Seconds : 0;
-  uint32_t uptime = clock_s() - boot_mcu; /* always sent: the gateway reconstructs time from it */
-  if (!valid) n_sensor_faults++;
-  /* Draft-5 observation (docs/protocol-draft5-design.md 5): out-of-range temperature is INVALID,
-     RH is clamped (ws_code_*); a sensor fault sends both fields as INVALID, never leaves them out. */
-  /* static: sampled() runs only from the sequencer, never re-entered, and it is the deepest
-     callback chain, which tools/stack_report.py counts four times (a 104-byte record cost ~416 B). */
-  static ws_obs_t o;
-  o = (ws_obs_t){ .epoch = boot_epoch, .seq = next_seq, .utc = utc, .uptime = uptime,
-                  .energy = (uint8_t)energy_state(), .bitmap = WS_NODE_FIELDS };
-  o.code[WS_FI_TEMPERATURE_C] = valid ? ws_code_temp_centi(t) : ws_obs_invalid(WS_FI_TEMPERATURE_C);
-  o.code[WS_FI_HUMIDITY_PCT] = valid ? ws_code_rh_centi(h) : ws_obs_invalid(WS_FI_HUMIDITY_PCT);
-  /* Used only if the build's bitmap includes them (WS_F_TH_SUMMARY in node_fields.h). */
-  o.code[WS_FI_TEMPERATURE_MIN_C] = valid ? ws_code_temp_centi(th_window.t_min) : ws_obs_invalid(WS_FI_TEMPERATURE_MIN_C);
-  o.code[WS_FI_TEMPERATURE_MAX_C] = valid ? ws_code_temp_centi(th_window.t_max) : ws_obs_invalid(WS_FI_TEMPERATURE_MAX_C);
-  o.code[WS_FI_HUMIDITY_MIN_PCT] = valid ? ws_code_rh_centi(th_window.h_min) : ws_obs_invalid(WS_FI_HUMIDITY_MIN_PCT);
-  o.code[WS_FI_HUMIDITY_MAX_PCT] = valid ? ws_code_rh_centi(th_window.h_max) : ws_obs_invalid(WS_FI_HUMIDITY_MAX_PCT);
-  o.code[WS_FI_TH_SAMPLES] = th_window.n > 60U ? 60U : th_window.n;
-  unsigned samples = th_window.n;
-  ws_th_reset(&th_window);
-  int rc = ws_obs_encode(&o, plain, sizeof plain) == (int)WS_OBS_PLAIN_MAX ? store_journal_append(plain, &live) : -3;
-  ws_failrun_note(&tx_fail, rc == 0);
-  APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d n=%u t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
-             (unsigned)boot_epoch, (unsigned)next_seq, (unsigned)uptime, valid, src, samples, valid ? t : 0, valid ? h : 0,
-             timed ? "synchronized" : "unknown", (unsigned)utc, rc ? "ERROR" : "ok",
-             (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
-  next_seq++; /* identity is never reused, even if the journal write failed */
-  if (busy) { APP_PRINTF("#busy previous exchange still running\n"); return; }
-  /* What may this minute send? The stricter of the energy and link states wins. */
-  energy_t en = energy_state();
-  uint32_t now = clock_s();
-  if (en == EN_CRITICAL) return;
-  if (en == EN_CONSERVE && now - last_send_mcu < CONSERVE_INTERVAL_S) return;
-  if (!ws_link_may_send(en, link_state == LINK_PROBING, (int32_t)(next_probe_mcu - now))) return; /* stays journaled */
-  unsigned backlog = backlog_limit[en];
-  if (link_state == LINK_PROBING) backlog = 0;                       /* a probe is the live reading */
-  unsigned by_airtime = exchange_ms ? airtime_cap_ms[en] / exchange_ms : 0;
-  if (by_airtime == 0) by_airtime = 1;                                 /* the live reading always fits */
-  if (backlog + 1 > by_airtime) backlog = by_airtime - 1;
-  if (backlog > MAX_QUEUE - 1) backlog = MAX_QUEUE - 1;
-  qn = 0;
-  if (!rc) queue[qn++] = live;
-  qn += store_journal_oldest(queue + qn, backlog + (rc ? 1 : 0), rc ? NULL : &live);
-  qi = 0;
-  last_send_mcu = now;
-  memset(replied, 0, sizeof replied);
-  /* The longest this exchange can take: every frame and the health report hit their transmit
-     timeout or wait out the whole ACK window, plus the gaps; then 5 s of margin. */
-  exchange_limit_s = ((qn + 1U) * (WS_TX_TIMEOUT_MS + ACK_WINDOW_MS + INTER_FRAME_MS)) / 1000U + 5U;
-  if (qn) { exchange_start_mcu = clock_s(); send_current(); }
+  minute_report(src);
 }
+
+/* Every 15 s: start a measurement; sampled() gets its result from the sensor task ~10 ms later. */
+static void sample(void)
+{
+  last_sample_s = clock_s();
+  if (sensor_start(sampled)) sampled(-1, 0, 0);   /* the previous one never finished: a missed sample */
+}
+BUSYMON_TASK(sample)
+
+static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
 
 /* Watchdog health: real progress, not just a running main loop (failure-modes.md G1). */
 static int tx_healthy(void)
 {
   uint32_t now = clock_s();
-  if (!running) return 1;                                   /* not sampling by design */
-  if (now - last_sample_mcu > 150) return 0;                /* sampling stopped */
-  if (busy && now - exchange_start_mcu > exchange_limit_s) return 0;   /* radio exchange stuck */
-  if (ws_failrun_tripped(&tx_fail, TX_FAIL_LIMIT)) { APP_PRINTF("#watchdog %u journal failures in a row\n", (unsigned)tx_fail.n); return 0; }
-  if (ws_failrun_tripped(&tx_air, TX_FAIL_LIMIT)) { APP_PRINTF("#watchdog %u transmit failures in a row\n", (unsigned)tx_air.n); return 0; }
+  if (!tx_node.running) return 1;                             /* not sampling by design */
+  if (now - last_sample_s > 150) return 0;                    /* sampling stopped */
+  if (exchange_overdue(now)) return 0;                        /* radio exchange stuck */
+  if (ws_failrun_tripped(&tx_node.journal_fails, TX_FAIL_LIMIT))
+  { APP_PRINTF("#watchdog %u journal failures in a row\n", (unsigned)tx_node.journal_fails.n); return 0; }
+  if (ws_failrun_tripped(&tx_counts.air, TX_FAIL_LIMIT))
+  { APP_PRINTF("#watchdog %u transmit failures in a row\n", (unsigned)tx_counts.air.n); return 0; }
   return 1;
-}
-
-/* Bench-only power-cut test load (gap G7). Writes journal slots that are acknowledged on the
- * board at once (epoch STORM_EPOCH, never transmitted) and reserves counters, so that a
- * random power cut almost always lands inside a flash program or erase. Not persistent: a
- * reboot ends it, and the boot scrub drops any storm slot that a cut left pending. */
-#define STORM_EPOCH 0xFFFFFFFFUL
-static uint32_t storm_writes;
-static void storm(void)
-{
-  uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t r; uint64_t c;
-  if (!storming) return;
-  for (int i = 0; i < 16; i++)
-  {
-    ws_obs_t o = { .epoch = STORM_EPOCH, .seq = storm_writes++, .energy = WS_ENERGY_NORMAL, .bitmap = WS_NODE_FIELDS };
-    for (unsigned f = 0; f < WS_FI_COUNT; f++) o.code[f] = ws_obs_invalid(f);
-    (void)ws_obs_encode(&o, plain, sizeof plain);
-    if (store_journal_append(plain, &r) == 0) store_journal_ack(r);
-    for (int k = 0; k < 4; k++) store_next_counter(&c);
-  }
-  if ((storm_writes & 255) == 0)
-    { char ctr_buf[21];
-      APP_PRINTF("#storm writes=%u ctr=%s burned=%u\n", (unsigned)storm_writes,
-                 u64_text(store_counter_next(), ctr_buf), (unsigned)store_journal_burned()); }
-  UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
-}
-BUSYMON_TASK(storm)
-
-static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
-
-/* A commanded reboot: sampling stops now, the reset comes from a timer once the console has had
-   REBOOT_DELAY_MS to send the reply line. */
-static void on_reboot(void *ctx) { (void)ctx; NVIC_SystemReset(); }
-static void reboot_soon(void)
-{
-  if (rebooting) return;
-  running = 0; rebooting = 1;
-  UTIL_TIMER_Stop(&sample_timer);
-  UTIL_TIMER_Start(&reboot_timer);
-}
-
-static void on_line(char *line)
-{
-  if (!strcmp(line, "STATUS")) { status(); return; }
-  bench_command(line);   /* TEST-FAULT, TEST-HANG (not in a field build) */
-  /* Commands that write flash never run during a radio exchange or a pending reboot: flash is only
-     written with the radio idle (docs/firmware-event-model.md). The operator retries. */
-  if ((!strcmp(line, "TEST-FLASH-STORM") || !strcmp(line, "WIPE ERASE-ALL-NODE-STATE") || !strncmp(line, "PROVISION ", 10)) &&
-      (busy || rebooting))
-  {
-    ws_wipe(line, strlen(line));   /* a refused PROVISION's key does not linger either */
-    APP_PRINTF("#error busy (radio exchange or reboot in progress); retry\n");
-    return;
-  }
-  if (!strcmp(line, "TEST-FLASH-STORM"))
-  {
-    { char ctr_buf[21];
-      APP_PRINTF("#storm start ctr=%s (bench only: cut power now)\n", u64_text(store_counter_next(), ctr_buf)); }
-    /* Sampling stops, so no exchange starts; the watchdog must not count a stopped sampler. */
-    storming = 1; running = 0;
-    UTIL_TIMER_Stop(&sample_timer);
-    UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
-    return;
-  }
-  if (!strcmp(line, "KAT")) { APP_PRINTF("#kat %s\n", run_kat() ? "pass" : "FAIL"); return; }
-  if (!strcmp(line, "WIPE ERASE-ALL-NODE-STATE"))
-  {
-    APP_PRINTF("#wipe %s\n", store_wipe() ? "ERROR" : "ok");
-    reboot_soon();
-    return;
-  }
-  if (!strncmp(line, "PROVISION ", 10))
-  {
-    uint8_t new_key[16], check[3]; uint32_t id, floor; int rc;
-    if (provisioned) { APP_PRINTF("#error already-provisioned (WIPE first)\n"); }
-    else if (ws_parse_provision(line + 10, &id, new_key, &floor))
-    { APP_PRINTF("#error usage: PROVISION <station_id> <32 hex key> [epoch_floor]\n"); }
-    else if (floor && store_epoch_floor(floor)) { APP_PRINTF("#error epoch-floor\n"); }
-    else if ((rc = store_config_write(id, new_key, check)) != 0) { APP_PRINTF("#error provision rc=%d\n", rc); }
-    else
-    {
-      APP_PRINTF("#provisioned station=%u kcv=%02x%02x%02x epoch_floor=%u\n", (unsigned)id, check[0], check[1], check[2], (unsigned)floor);
-      ws_wipe(new_key, sizeof new_key); ws_wipe(line, strlen(line));
-      reboot_soon();
-      return;
-    }
-    ws_wipe(new_key, sizeof new_key); ws_wipe(line, strlen(line)); /* the key never lingers in RAM */
-    return;
-  }
-  APP_PRINTF("#error unknown command\n");
 }
 
 static void on_boot_retry(void *ctx) { (void)ctx; NVIC_SystemReset(); }
@@ -774,53 +155,48 @@ static void on_boot_retry(void *ctx) { (void)ctx; NVIC_SystemReset(); }
 /* Never for an unprovisioned board or a failed self-test: those need an operator, not a reset. */
 static void boot_retry(void)
 {
-  if (!kat_ok) return;
+  if (!tx_node.kat_ok) return;
   APP_PRINTF("#boot-retry: reset in %u s\n", (unsigned)(BOOT_RETRY_MS / 1000));
   UTIL_TIMER_Create(&boot_retry_timer, BOOT_RETRY_MS, UTIL_TIMER_ONESHOT, on_boot_retry, NULL);
   UTIL_TIMER_Start(&boot_retry_timer);
+}
+
+/* Storage, key, self-test and a durable epoch: 1 if the node may sample and transmit. */
+static int boot_ready(void)
+{
+  if (store_meta_init() || store_journal_init()) { led_set(LED_RED, 1); APP_PRINTF("#error store-init\n"); boot_retry(); return 0; }
+  uint32_t scrubbed = store_journal_scrub(STORM_EPOCH);
+  if (scrubbed) APP_PRINTF("#storm-scrub dropped=%u (test slots a power cut left pending)\n", (unsigned)scrubbed);
+  tx_node.provisioned = store_config_load(&tx_node.station, tx_node.key, tx_node.kcv) == 0;
+  if (!tx_node.provisioned) { led_set(LED_RED, 1); tx_status(); APP_PRINTF("#unprovisioned: send PROVISION <station_id> <key>\n"); return 0; }
+  time_restore();
+  if (!tx_node.kat_ok) { led_set(LED_RED, 1); tx_status(); APP_PRINTF("#error self-test failed; not transmitting\n"); return 0; }
+  /* Durable epoch before the first sample: observation identities never repeat. */
+  if (store_next_epoch(&tx_node.boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); boot_retry(); return 0; }
+  return 1;
 }
 
 void SubghzApp_Init(void)
 {
   stackmon_paint();
   busymon_init();
-  events.TxDone = on_tx_done;
-  events.TxTimeout = on_tx_timeout;
-  events.RxDone = on_rx_done;
-  events.RxTimeout = on_rx_timeout;
-  events.RxError = on_rx_error;
   leds_init();
-  Radio.Init(&events);
-  ws_radio_configure(0);
-  Radio.Sleep();
-  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process_timed);
+  exchange_init();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample_timed);
-  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Storm, UTIL_SEQ_RFU, storm_timed);
-  UTIL_TIMER_Create(&gap_timer, INTER_FRAME_MS, UTIL_TIMER_ONESHOT, on_gap, NULL);
-  UTIL_TIMER_Create(&ack_timer, ACK_WINDOW_MS, UTIL_TIMER_ONESHOT, on_ack_end, NULL);
-  UTIL_TIMER_Create(&reboot_timer, REBOOT_DELAY_MS, UTIL_TIMER_ONESHOT, on_reboot, NULL);
-  console_init(on_line);
+  tx_console_init();
 
-  boot_mcu = clock_s();
-  exchange_ms = airtime_ms(OBS_FRAME_MAX) + airtime_ms(WS_ACK_FRAME_LEN) + TURNAROUND_MS;
+  tx_node.boot_s = clock_s();
+  policy_init();
   watchdog_start(tx_healthy);
-  kat_ok = run_kat();
+  tx_node.kat_ok = selftest_kat();
   APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
-             watchdog_reset_cause(), kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
+             watchdog_reset_cause(), tx_node.kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
   fault_report();
-  if (store_meta_init() || store_journal_init()) { led_set(LED_RED, 1); APP_PRINTF("#error store-init\n"); boot_retry(); return; }
-  uint32_t scrubbed = store_journal_scrub(STORM_EPOCH);
-  if (scrubbed) APP_PRINTF("#storm-scrub dropped=%u (test slots a power cut left pending)\n", (unsigned)scrubbed);
-  provisioned = store_config_load(&station, key, kcv) == 0;
-  if (!provisioned) { led_set(LED_RED, 1); status(); APP_PRINTF("#unprovisioned: send PROVISION <station_id> <key>\n"); return; }
-  restore_time_trust();
-  if (!kat_ok) { led_set(LED_RED, 1); status(); APP_PRINTF("#error self-test failed; not transmitting\n"); return; }
-  /* Durable epoch before the first sample: observation identities never repeat. */
-  if (store_next_epoch(&boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); boot_retry(); return; }
+  if (!boot_ready()) return;
   sensor_init();
-  running = 1;
-  last_sample_mcu = clock_s();
-  status();
+  tx_node.running = 1;
+  last_sample_s = clock_s();
+  tx_status();
   UTIL_TIMER_Create(&sample_timer, SAMPLE_PERIOD_MS, UTIL_TIMER_PERIODIC, on_sample_timer, NULL);
   UTIL_TIMER_Start(&sample_timer);
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0);
