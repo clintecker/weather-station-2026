@@ -78,7 +78,7 @@ typedef enum
   CFG_SEQ_Task_SubGHz_Phy_App_Process,
   /* USER CODE BEGIN CFG_SEQ_Task_Id_t */
   CFG_SEQ_Task_Console,        /* weather-station-2026: one complete USB console line */
-  CFG_SEQ_Task_Sample,         /* weather-station-2026: one-minute observation */
+  CFG_SEQ_Task_Sample,         /* weather-station-2026: one 15-s sample (every 4th makes the minute report) */
   CFG_SEQ_Task_Watchdog,       /* weather-station-2026: supervised IWDG refresh (main loop) */
   CFG_SEQ_Task_Storm,          /* weather-station-2026: bench-only flash write storm (G7) */
   CFG_SEQ_Task_Sensor,         /* weather-station-2026: a finished SHT45 measurement (App/sensor.c) */

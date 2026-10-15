@@ -3,7 +3,7 @@
 #include "sys_app.h"
 
 /* RTC backup registers (TAMP->BKPxR). DR0-DR2 belong to SysTime (Core/Src/timer_if.c), DR3-DR4 to
- * the TX time trust (App/app_tx.c). Written directly, not through the HAL: this runs in a fault. */
+ * the TX time trust (App/tx_time.c). Written directly, not through the HAL: this runs in a fault. */
 enum { BKP_MAGIC = 5, BKP_PC, BKP_LR, BKP_CFSR, BKP_HFSR, BKP_BFAR, BKP_COUNT };
 #define FAULT_MAGIC_HARD 0x57534601UL   /* "WSF" + kind */
 #define FAULT_MAGIC_NMI  0x57534602UL

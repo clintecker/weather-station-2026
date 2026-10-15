@@ -47,6 +47,7 @@ static uint32_t last_sample_s;   /* watchdog progress evidence */
 static ws_th_window th_window;
 static unsigned th_ticks;
 static int sensor_reported;   /* the first reading after boot is printed as #sensor */
+static int stuck;             /* the exchange outlasted its worst case: the watchdog is resetting the board */
 
 void sampling_stop(void)
 {
@@ -182,7 +183,7 @@ static void minute_report(int src)
 
 static void sampled(int src, int16_t t, uint16_t h)
 {
-  if (tx_node.rebooting || tx_node.storming) return;   /* a measurement that finishes after either stops sampling */
+  if (tx_node.rebooting || tx_node.storming || stuck) return;   /* a measurement that finishes after sampling stopped */
   if (!sensor_reported)
   {
     sensor_reported = 1;
@@ -206,7 +207,6 @@ BUSYMON_TASK(sample)
 static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
 
 /* Watchdog health: real progress, not just a running main loop (failure-modes.md G1). */
-static int stuck;   /* the exchange outlasted its worst case: the watchdog is resetting the board */
 static int tx_healthy(void)
 {
   uint32_t now = clock_s();

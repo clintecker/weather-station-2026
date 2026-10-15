@@ -60,8 +60,8 @@ extern "C" {
 #define APP_TPRINTF(...)   do{ {UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_ON, __VA_ARGS__);} }while(0); /* with timestamp */
 /* weather-station-2026: a line that does not fit the trace FIFO is dropped, never waited for; each
    drop is counted (ws_trace_drops, printed on #timing / #alive). Lines must stay under
-   UTIL_ADV_TRACE_TMP_BUF_SIZE (640): a longer one would be cut, not counted. The RX prints only from the
-   main loop; the TX also from timer callbacks. */
+   UTIL_ADV_TRACE_TMP_BUF_SIZE (640): a longer one would be cut, not counted. Both roles print only from the
+   main loop (UNCHUNK mode formats into one static buffer, which is not re-entrant). */
 extern volatile uint32_t ws_trace_drops;
 void ws_trace_drop(void);   /* atomic increment: tasks and interrupts both print */
 #define APP_PRINTF(...)   do{ if (UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_OFF, __VA_ARGS__) != UTIL_ADV_TRACE_OK) ws_trace_drop(); }while(0)

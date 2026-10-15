@@ -86,10 +86,14 @@ static void reboot_soon(void)
  * random power cut almost always lands inside a flash program or erase. Not persistent: a
  * reboot ends it, and the boot scrub drops any storm slot that a cut left pending. */
 static uint32_t storm_writes;
+/* At most this many slots per boot (~30 s): enough for a power cut to land in a write, far from
+   wearing out the journal (93 pages, 10 k erase cycles each; 2026-10-15 review). */
+#define STORM_MAX_WRITES 24000U
 static void storm(void)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t r; uint64_t c;
   if (!tx_node.storming) return;
+  if (storm_writes >= STORM_MAX_WRITES) { tx_node.storming = 0; APP_PRINTF("#storm done writes=%u (cap)\n", (unsigned)storm_writes); return; }
   for (int i = 0; i < 16; i++)
   {
     ws_obs_t o = { .epoch = STORM_EPOCH, .seq = storm_writes++, .energy = WS_ENERGY_NORMAL, .bitmap = WS_NODE_FIELDS };
@@ -155,8 +159,10 @@ static void on_line(char *line)
   switch (cmd)
   {
     case CMD_STATUS: tx_status(); break;
-    case CMD_KAT: APP_PRINTF("#kat %s\n", selftest_kat() ? "pass" : "FAIL"); break;
+    case CMD_KAT: tx_node.kat_ok = selftest_kat(); APP_PRINTF("#kat %s\n", tx_node.kat_ok ? "pass" : "FAIL"); break;
+#ifndef WS_FIELD_BUILD   /* bench only: a field image has no flash write load */
     case CMD_STORM: storm_start(); break;
+#endif
     case CMD_WIPE: APP_PRINTF("#wipe %s\n", store_wipe() ? "ERROR" : "ok"); reboot_soon(); break;
     case CMD_PROVISION: provision(line); break;
     default: APP_PRINTF("#error unknown command\n"); break;

@@ -1,6 +1,7 @@
 #ifndef RADIO_CFG_H
 #define RADIO_CFG_H
 #include <stdint.h>
+#include "radio.h"
 /* Stage-0 RF configuration (docs/hardware/nucleo-wl55jc-bringup.md, "RF configuration
  * decision"): 915.0 MHz LoRa, 500 kHz bandwidth = FCC 15.247(a)(2) digital-modulation
  * class. Power and spreading factor are bench values; tune SF/power for the H01
@@ -26,4 +27,15 @@ void ws_radio_rx_full_length(void);
 int ws_radio_take_crc_error(void);
 /* Radio.Sleep() without its 2 ms busy-wait (radio_cfg.c). */
 void ws_radio_sleep(void);
+/* Radio commands from the main loop run with the radio interrupt masked. ST's HAL lets one SUBGHZ
+   command hold the driver at a time; a radio interrupt that arrives meanwhile has its own commands
+   refused (HAL_BUSY), cannot clear the radio's IRQ, and re-enters at once, starving the main loop
+   until the watchdog resets the board (2026-10-15 review M1). Masked, it waits for the command
+   and runs right after. Never from the radio interrupt itself. */
+void ws_radio_irq_hold(void);
+void ws_radio_irq_release(void);
+static inline radio_status_t ws_radio_send(uint8_t *buf, uint8_t size)
+{ ws_radio_irq_hold(); radio_status_t rc = Radio.Send(buf, size); ws_radio_irq_release(); return rc; }
+static inline void ws_radio_rx(uint32_t timeout) { ws_radio_irq_hold(); Radio.Rx(timeout); ws_radio_irq_release(); }
+static inline void ws_radio_standby(void) { ws_radio_irq_hold(); Radio.Standby(); ws_radio_irq_release(); }
 #endif

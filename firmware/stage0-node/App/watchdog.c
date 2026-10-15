@@ -8,7 +8,7 @@
 
 #define CHECK_PERIOD_MS 1000U
 /* LSI 32 kHz / 64 = 500 Hz; 4000 counts = 8 s. Longest legitimate blocking operation is a
- * full WIPE (96 page erases, ~2.2 s), well inside this window. */
+ * full WIPE (94 page erases: 93 journal + config, ~2.2 s), well inside this window. */
 #define IWDG_PRESCALER  IWDG_PRESCALER_64
 #define IWDG_RELOAD     4000U
 

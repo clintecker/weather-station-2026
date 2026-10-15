@@ -267,7 +267,7 @@ One constant names the catalog fields that this build measures:
 #define WS_NODE_FIELDS (WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT)   /* Stage 0 */
 ```
 
-Everything else follows at compile time: `WS_OBS_PLAIN_MAX` (the record length, 22 + the field widths; 26 B now), the frame length (+ 16 B), the journal slot size and slots per page (`App/node_store.h`), the page magic, and the airtime estimate per exchange. To add a sensor: add its `WS_F_…` bit here and fill its `o.code[…]` in `obs_codes()` (`App/app_tx.c`); the catalog itself (`firmware/common/ws_obs.c`, `ws0/fields.py`) already defines all 21 fields. The gateway needs no change.
+Everything else follows at compile time: `WS_OBS_PLAIN_MAX` (the record length, 22 + the field widths; 35 B with the T/RH summary), the frame length (+ 16 B), the journal slot size and slots per page (`App/node_store.h`), the page magic, and the airtime estimate per exchange. To add a sensor: add its `WS_F_…` bit here and fill its `o.code[…]` in `obs_codes()` (`App/app_tx.c`); the catalog itself (`firmware/common/ws_obs.c`, `ws0/fields.py`) already defines all 21 fields. The gateway needs no change.
 
 What a different field set does to the journal:
 - if the slot size changes, the page magic changes, so **every journal page of the old build is ignored at the first boot and recycled**, and records still pending in it are never sent;

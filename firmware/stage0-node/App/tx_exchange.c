@@ -38,9 +38,10 @@ static enum { GAP_FRAME, GAP_DIAG } gap_then;   /* what the gap timer starts */
 static UTIL_TIMER_Object_t gap_timer;
 /* The ACK window is this firmware's own timer, not the radio driver's: ST's RxTimeoutTimer is left
    running by a CRC error and its timeout leaves the radio receiving (review 2026-10-15). The radio
-   listens with no driver timeout (Radio.Rx(0)); ack_timer ends the window, and every way out of
+   listens with no driver timeout (ws_radio_rx(0)); ack_timer ends the window, and every way out of
    ack-wait puts the radio in standby first. */
 static UTIL_TIMER_Object_t ack_timer;
+static int ack_end_stale;   /* ack_timer was stopped by a reply; an ack-end already posted is stale */
 static RadioEvents_t events;
 
 static jref_t queue[MAX_QUEUE];
@@ -110,7 +111,7 @@ void exchange_abort(void)
 {
   UTIL_TIMER_Stop(&gap_timer);
   UTIL_TIMER_Stop(&ack_timer);
-  Radio.Standby();
+  ws_radio_standby();
   tx_state = TX_IDLE;
   held_flush();
 }
@@ -140,7 +141,7 @@ static int send_diag(void)
   if (store_next_counter(&ctr) ||
       ws_seal_kind(tx_node.key, tx_node.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) < 0) return 0;
   policy_diag_sent(now);
-  if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_counts.air, 0); return 0; }
+  if (ws_radio_send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_counts.air, 0); return 0; }
   tx_state = TX_DIAG_SENDING;
   APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u\n", d.pending, (unsigned)d.lost, d.torn, d.abandoned, d.no_ack);
   return 1;
@@ -175,7 +176,7 @@ static int send_obs(const uint8_t *plain, int plen)
   sent_seq = ws_get_be32(plain + 4);
   tx_counts.sent++;
   led_flash(LED_BLUE, 400);
-  if (Radio.Send(frame, (uint8_t)flen) == RADIO_STATUS_OK) { tx_state = TX_SENDING; return 1; }
+  if (ws_radio_send(frame, (uint8_t)flen) == RADIO_STATUS_OK) { tx_state = TX_SENDING; return 1; }
   ws_failrun_note(&tx_counts.air, 0); APP_PRINTF("#error radio-busy\n");
   return 0;
 }
@@ -202,7 +203,10 @@ void exchange_start(const jref_t *live, unsigned backlog)
   /* The longest this exchange can take: every frame and the health report hit their transmit
      timeout or wait out the whole ACK window, plus the gaps; then 5 s of margin. */
   exchange_limit_s = ((qn + 1U) * (WS_TX_TIMEOUT_MS + ACK_WINDOW_MS + INTER_FRAME_MS)) / 1000U + 5U;
-  if (qn) { exchange_start_s = clock_s(); send_current(); }
+  /* The first frame, like every other, goes after the gap: the radio may have been put to sleep
+     moments ago (the last exchange ended this main-loop pass), and the chip needs time to enter
+     sleep before it is woken (ST's RadioSleep waited 2 ms; radio_cfg.c ws_radio_sleep). */
+  if (qn) { exchange_start_s = clock_s(); gap_before(GAP_FRAME); }
 }
 
 /* No reply to the frame just sent; it stays journaled for a later retry. */
@@ -273,12 +277,13 @@ static int in_sending(uint32_t ev)
   {
     ws_failrun_note(&tx_counts.air, 1);   /* the frame left: the radio works */
     tx_state = TX_ACK_WAIT;
+    ack_end_stale = 0;
     UTIL_TIMER_Start(&ack_timer);
-    Radio.Rx(0);
+    ws_radio_rx(0);
     return 1;
   }
   if (ev != EV_TX_TIMEOUT) return 0;
-  Radio.Standby();               /* the driver's timeout leaves the radio transmitting */
+  ws_radio_standby();               /* the driver's timeout leaves the radio transmitting */
   ws_failrun_note(&tx_counts.air, 0);
   led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n");
   stop_drain(); next_item();
@@ -287,22 +292,22 @@ static int in_sending(uint32_t ev)
 
 static int in_ack_wait(uint32_t ev)
 {
-  if (ev == EV_ACK_END) { Radio.Standby(); no_reply(1); return 1; }
-  if (ev == EV_RX_DONE && handle_reply()) { UTIL_TIMER_Stop(&ack_timer); next_item(); return 1; }
+  if (ev == EV_ACK_END) { ws_radio_standby(); no_reply(1); return 1; }
+  if (ev == EV_RX_DONE && handle_reply()) { UTIL_TIMER_Stop(&ack_timer); ack_end_stale = 1; next_item(); return 1; }
   if (ev != EV_RX_DONE && ev != EV_RX_ERROR && ev != EV_RX_TIMEOUT) return 0;
   /* Not the reply to this frame: foreign, forged, another frame's ACK, a payload CRC failure
      (rx-error) or a header failure (rx-timeout: ST's radio.c reports IRQ_HEADER_ERROR so).
      Keep listening until the window ends rather than miss the real ACK (firmware review,
      finding 2). After a single-window reception the radio is in standby; listen again. */
   if (ev != EV_RX_DONE) APP_PRINTF("#ack damaged %s; still listening\n", ev == EV_RX_ERROR ? "payload" : "header");
-  Radio.Rx(0);
+  ws_radio_rx(0);
   return 1;
 }
 
 static int in_diag_sending(uint32_t ev)
 {
   if (ev != EV_TX_DONE && ev != EV_TX_TIMEOUT) return 0;
-  if (ev == EV_TX_TIMEOUT) Radio.Standby();
+  if (ev == EV_TX_TIMEOUT) ws_radio_standby();
   ws_failrun_note(&tx_counts.air, ev == EV_TX_DONE);
   if (ev == EV_TX_TIMEOUT) { led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n"); }
   radio_idle();
@@ -338,6 +343,12 @@ static void handle(uint32_t ev)
 static void process(void)
 {
   uint32_t ev = events_take(&pending_ev);
+  /* Two harmless races, not bugs (2026-10-15 review): a TxTimeout that fired with the TxDone in
+     the same batch (the frame left; ST stops the timer on TxDone, so a later one cannot come), and
+     an ack-end that fired while the reply that ended the window was being handled. Dropped here,
+     so `unexpected` stays a bug indicator. */
+  if ((ev & EV_TX_DONE) && (ev & EV_TX_TIMEOUT)) ev &= ~EV_TX_TIMEOUT;
+  if ((ev & EV_ACK_END) && ack_end_stale) { ev &= ~EV_ACK_END; ack_end_stale = 0; }
   for (uint32_t bit = 1; ev; bit <<= 1)   /* bounded: EV_COUNT bits, lowest first */
     if (ev & bit) { ev &= ~bit; handle(bit); }
 }
@@ -352,7 +363,7 @@ void exchange_init(void)
   events.RxError = on_rx_error;
   Radio.Init(&events);
   ws_radio_configure(0);
-  Radio.Sleep();
+  ws_radio_sleep();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process_timed);
   UTIL_TIMER_Create(&gap_timer, INTER_FRAME_MS, UTIL_TIMER_ONESHOT, on_gap, NULL);
   UTIL_TIMER_Create(&ack_timer, ACK_WINDOW_MS, UTIL_TIMER_ONESHOT, on_ack_end, NULL);

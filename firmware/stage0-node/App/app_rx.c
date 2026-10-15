@@ -135,7 +135,7 @@ static void listen(void)
 {
   transmitting = 0;
   ws_radio_rx_full_length();   /* Radio.Send left the LoRa payload length at the ACK's (review m4) */
-  Radio.Rx(0); /* continuous */
+  ws_radio_rx(0); /* continuous */
 }
 
 /* Watchdog health: the radio must really be listening, or finish a transmission within 5 s.
@@ -171,7 +171,7 @@ static void relisten(void)
   n_relistens++;
   quiet_relistens++;
   APP_PRINTF("#relisten after %u s without a radio event\n", (unsigned)((clock_ms() - last_radio_event_ms) / 1000));
-  Radio.Standby();
+  ws_radio_standby();
   listen();
   last_radio_event_ms = clock_ms();   /* the next silence is measured from here, the quiet count kept */
   if (quiet_relistens >= QUIET_RELISTEN_LIMIT) APP_PRINTF("#watchdog radio silent after %u relistens; reset\n", (unsigned)quiet_relistens);
@@ -202,7 +202,7 @@ static uint32_t take_events(void)
    still be transmitting (review m3). */
 static void tx_ended(uint32_t ev)
 {
-  if (ev & EV_TX_TIMEOUT) { APP_PRINTF("#tx timeout\n"); led_flash(LED_RED, 400); Radio.Standby(); }
+  if (ev & EV_TX_TIMEOUT) { APP_PRINTF("#tx timeout\n"); led_flash(LED_RED, 400); ws_radio_standby(); }
   listen();
 }
 
@@ -300,7 +300,7 @@ static void on_line(char *line)
   if (transmitting) { APP_PRINTF("#tx busy\n"); return; }
   transmitting = 1;
   tx_start_ms = clock_ms();
-  if (Radio.Send(frame, WS_ACK_FRAME_LEN) != RADIO_STATUS_OK)
+  if (ws_radio_send(frame, WS_ACK_FRAME_LEN) != RADIO_STATUS_OK)
   {
     APP_PRINTF("#tx busy\n");
     listen();
