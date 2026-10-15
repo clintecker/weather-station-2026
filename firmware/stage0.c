@@ -80,34 +80,38 @@ int ws_link_may_send(int energy,int probing,int32_t secs_until_probe) {
  if(!probing||energy<=1) return 1;
  return secs_until_probe<=0;
 }
-static int parse_u32(const char **s,uint32_t *out) {
- uint64_t v=0; const char *p=*s;
- if(*p<'0'||*p>'9') return -1;
+/* Each parser returns the text just past what it read, or NULL if the text does not parse (one level
+   of indirection: no pointer to the cursor, docs/power-of-ten.md rule 9). */
+static const char *parse_u32(const char *p,uint32_t *out) {
+ uint64_t v=0;
+ if(*p<'0'||*p>'9') return NULL;
  /* bound: the NUL-terminated console line (WS_LINE_MAX); any 11th significant digit overflows */
- for(;*p>='0'&&*p<='9';p++) { v=v*10+(uint64_t)(*p-'0'); if(v>0xFFFFFFFFULL) return -1; }
- *out=(uint32_t)v; *s=p; return 0;
+ for(;*p>='0'&&*p<='9';p++) { v=v*10+(uint64_t)(*p-'0'); if(v>0xFFFFFFFFULL) return NULL; }
+ *out=(uint32_t)v; return p;
 }
 /* 32 hex digits (either case); a NUL ends the parse before the byte after it is read. */
-static int parse_key(const char **s,uint8_t key[16]) {
- const char *p=*s;
+static const char *parse_key(const char *p,uint8_t key[16]) {
  for(int i=0;i<16;i++,p+=2) {
   int hi=ws_hex_nibble(p[0]), lo=hi<0?-1:ws_hex_nibble(p[1]);
-  if(lo<0) return -1;
+  if(lo<0) return NULL;
   key[i]=(uint8_t)(hi<<4|lo);
  }
- *s=p; return 0;
+ return p;
 }
 /* The optional " <epoch_floor>"; 0 (no floor) if absent. */
-static int parse_floor(const char **s,uint32_t *floor) {
+static const char *parse_floor(const char *p,uint32_t *floor) {
  *floor=0;
- if(**s!=' ') return 0;
- (*s)++;
- return parse_u32(s,floor)||*floor>=WS_EPOCH_FLOOR_MAX?-1:0;
+ if(*p!=' ') return p;
+ p=parse_u32(p+1,floor);
+ return p&&*floor<WS_EPOCH_FLOOR_MAX?p:NULL;
 }
 int ws_parse_provision(const char *args,uint32_t *station,uint8_t key[16],uint32_t *epoch_floor) {
- const char *p=args; uint32_t floor;
- if(!p||parse_u32(&p,station)||*station==0||*station>65535U||*p++!=' ') return -1;
- if(parse_key(&p,key)||parse_floor(&p,&floor)||*p!=0) return -1;
+ uint32_t floor;
+ const char *p=args?parse_u32(args,station):NULL;
+ if(!p||*station==0||*station>65535U||*p++!=' ') return -1;
+ p=parse_key(p,key);
+ if(p) p=parse_floor(p,&floor);
+ if(!p||*p!=0) return -1;
  *epoch_floor=floor; return 0;
 }
 void ws_failrun_note(ws_failrun *r,int ok) {

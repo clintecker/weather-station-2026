@@ -37,8 +37,9 @@ void ws_line_discard(ws_line_asm *a)
 int ws_cmd_find(const char *const names[], unsigned n, const char *line)
 {
  for (unsigned i = 0; i < n; i++) {
-  size_t len = strlen(names[i]);
-  if (!strncmp(line, names[i], len) && (names[i][len - 1] == ' ' || line[len] == 0)) return (int)i;
+  const char *name = names[i];
+  size_t len = strlen(name);
+  if (!strncmp(line, name, len) && (name[len - 1] == ' ' || line[len] == 0)) return (int)i;
  }
  return -1;
 }
