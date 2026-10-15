@@ -38,6 +38,7 @@ class Sites(unittest.TestCase):
             self.assertIsNotNone(number, f'{name} uses WS_CHECK without #define WS_CHECK_FILE')
             self.assertEqual(listed.get(number), name, f'{name} is not number {number} in ws_check.h')
             self.assertLess(len(path.read_text().splitlines()), 1024, f'{name}: a site keeps 10 bits of line')
+            self.assertLess(number, 64, f'{name}: a site keeps 6 bits of file number')
         self.assertEqual(len(set(found.values())), len(found), 'two files share a number')
         self.assertEqual(set(listed), set(found.values()), 'ws_check.h lists a file that has no checks')
 

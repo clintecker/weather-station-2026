@@ -135,6 +135,7 @@ void held_flush(void)
    and the backlog the policy allows. A refused minute's reading stays journaled. */
 static void minute_send(const jref_t *live)
 {
+  if (exchange_busy()) return;   /* the reading is held (journal_or_hold); ask the policy only for a minute that sends */
   int backlog = policy_minute_backlog();
   if (backlog >= 0) exchange_start(live, (unsigned)backlog);
 }

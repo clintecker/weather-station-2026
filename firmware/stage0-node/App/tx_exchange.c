@@ -216,7 +216,7 @@ static void send_current(void)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX];
   int plen = -1, rc = 0;
-  if (!WS_CHECK(qi < qn)) { radio_idle(); return; }   /* gap_before(GAP_FRAME) comes only with an item left */
+  if (!WS_CHECK(qi < qn)) { finish_exchange(); return; }   /* gap_before(GAP_FRAME) comes only with an item left */
   if (store_journal_read(queue[qi], plain) || (plen = ws_obs_plain_len(plain, sizeof plain)) < 0) { APP_PRINTF("#error journal-read\n"); }
   else rc = send_obs(plain, plen);
   if (rc < 0) radio_idle();

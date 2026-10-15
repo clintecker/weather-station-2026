@@ -72,8 +72,8 @@ static inline void ws_printf_check(const char *fmt, ...) { (void)fmt; }
 #define APP_PRINTF(...)   do{ if (0) ws_printf_check(__VA_ARGS__); \
                               if (UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_OFF, __VA_ARGS__) != UTIL_ADV_TRACE_OK) ws_trace_drop(); }while(0)
 /* The same, as an expression: 1 if the line was queued, 0 if it was dropped (and counted). */
-#define APP_PRINTF_OK(...) ((void)(0 && (ws_printf_check(__VA_ARGS__), 0)), \
-                            UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_OFF, __VA_ARGS__) == UTIL_ADV_TRACE_OK ? 1 : (ws_trace_drop(), 0))
+#define APP_PRINTF_OK(...) (((void)(0 && (ws_printf_check(__VA_ARGS__), 0)), \
+                            UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_OFF, __VA_ARGS__) == UTIL_ADV_TRACE_OK ? 1 : (ws_trace_drop(), 0)))
 
 #if defined (APP_LOG_ENABLED) && (APP_LOG_ENABLED == 1)
 #define APP_LOG(TS,VL,...)   do{ {UTIL_ADV_TRACE_COND_FSend(VL, T_REG_OFF, TS, __VA_ARGS__);} }while(0);

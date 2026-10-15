@@ -62,7 +62,11 @@ int hex_print(const uint8_t *data, int len)
 {
   char text[2 * HEX_FRAME_MAX + 1];
   /* The callers pass frames ws_air_frame_ok accepted; anything longer is never printed truncated. */
-  if (!WS_CHECK(len >= 0 && len <= (int)HEX_FRAME_MAX)) return 0;
+  if (!WS_CHECK(len >= 0 && len <= (int)HEX_FRAME_MAX))
+  {
+    APP_PRINTF("#error frame too long to forward len=%d\n", len);  /* never a truncated frame */
+    return 0;
+  }
   ws_hex_text(data, len, text);
   return APP_PRINTF_OK("%s\n", text);
 }

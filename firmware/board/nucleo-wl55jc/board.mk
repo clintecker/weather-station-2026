@@ -153,8 +153,9 @@ ifneq ($(FLASH_BUDGET_PCT),)
 	  if (used*100 > lim*pct) { print "error: over the flash budget, see docs/firmware-budget.md"; exit 1 } }'
 endif
 ifeq ($(NO_HEAP),1)
-	@! $(NM) $@ | grep -E ' [TtWw] (_?(malloc|calloc|realloc|free)|_(malloc|calloc|realloc|free)_r|_sbrk)$$' \
-	  || { echo "error: the heap allocator is linked in (docs/power-of-ten.md, rule 3)"; exit 1; }
+	@$(NM) $@ > $@.nm && ! grep -E ' [TtWw] (_?(malloc|calloc|realloc|free)|_(malloc|calloc|realloc|free)_r|_sbrk)$$' $@.nm \
+	  || { rm -f $@.nm; echo "error: the heap allocator is linked in, or nm failed (docs/power-of-ten.md, rule 3)"; exit 1; }
+	@rm -f $@.nm
 	@echo "no heap: no allocator linked"
 endif
 
@@ -182,5 +183,8 @@ clean:
 	rm -rf $(CLEAN_DIR)
 
 -include $(OBJS:.o=.d)
+
+# A failed check after the link (flash budget, no heap) must not leave an .elf the next make trusts.
+.DELETE_ON_ERROR:
 
 .PHONY: all flash clean stack waits

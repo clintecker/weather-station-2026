@@ -25,6 +25,18 @@ class LoopBounds(unittest.TestCase):
                      'unsigned k = 0; k < EV_COUNT && batch; k++, bit <<= 1'):
             self.assertEqual(self.flagged(f'void f(void) {{ for ({head}) g(); }}\n'), [], head)
 
+    def test_a_counting_header_that_cannot_end_needs_a_bound_comment(self):
+        # Review 2026-10-15: wrong step direction, a zero or variable step, a literal bound past a
+        # narrow counter, and a body that moves the loop variable are not counting loops.
+        for code in ('for (unsigned i = 0; i < n; i--) g();', 'for (unsigned i = 10; i > 0; i++) g();',
+                     'for (uint8_t i = 0; i < 300; i++) g();', 'for (unsigned i = 0; i < n; i += 0) g();',
+                     'for (unsigned i = 0; i < n; i += k) g();', 'for (unsigned i = 0; i < n; i++) { i = 0; }',
+                     'for (unsigned i = 0; i < n; i++) { g(i--); }', 'for (unsigned i = 0; i < n; i++) i -= 1;'):
+            self.assertEqual(len(self.flagged(f'void f(void) {{ {code} }}\n')), 1, code)
+        for code in ('for (unsigned i = 0; i < n; i += 2) g(i);', 'for (uint8_t i = 0; i < 255; i++) a[i] = b == i;',
+                     'for (unsigned i = n; i > 0; i--) g(i);', 'for (unsigned i = 0; i < n; i += STEP) g(i + 1);'):
+            self.assertEqual(self.flagged(f'void f(void) {{ {code} }}\n'), [], code)
+
     def test_other_loops_need_a_bound_comment(self):
         for code in ('while (n--) g();', 'do { g(); } while (v);', 'for (;;) { }', 'for (i = n; i-- > 0;) g();',
                      'for (unsigned i = 0; j < n; i++) g();', 'for (unsigned i = 0; i < n; j++) g();'):

@@ -89,6 +89,7 @@ void NMI_Handler(void)
   /* weather-station-2026: any other NMI source (clock security system) is recorded like a
      HardFault; the frame is not needed, so 0 stands in for it and fault_record stores pc=ffffffff. */
   fault_record(0, 0, 2);
+  /* bound: unreachable; fault_record() does not return (ST template loop kept) */
   while (1)
   {
   }
@@ -112,6 +113,9 @@ void HardFault_Handler(void)
                   "movs r2, #1\n\t"
                   "b fault_record\n\t");
   /* USER CODE END HardFault_IRQn 0 */
+  /* A fault that gets here stops the CPU and the watchdog resets the board (HardFault records first
+     and does not return; MemManage, BusFault and UsageFault are not enabled, so they escalate to
+     HardFault). bound: none on purpose */
   while (1)
   {
     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
@@ -127,6 +131,9 @@ void MemManage_Handler(void)
   /* USER CODE BEGIN MemoryManagement_IRQn 0 */
 
   /* USER CODE END MemoryManagement_IRQn 0 */
+  /* A fault that gets here stops the CPU and the watchdog resets the board (HardFault records first
+     and does not return; MemManage, BusFault and UsageFault are not enabled, so they escalate to
+     HardFault). bound: none on purpose */
   while (1)
   {
     /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
@@ -142,6 +149,9 @@ void BusFault_Handler(void)
   /* USER CODE BEGIN BusFault_IRQn 0 */
 
   /* USER CODE END BusFault_IRQn 0 */
+  /* A fault that gets here stops the CPU and the watchdog resets the board (HardFault records first
+     and does not return; MemManage, BusFault and UsageFault are not enabled, so they escalate to
+     HardFault). bound: none on purpose */
   while (1)
   {
     /* USER CODE BEGIN W1_BusFault_IRQn 0 */
@@ -157,6 +167,9 @@ void UsageFault_Handler(void)
   /* USER CODE BEGIN UsageFault_IRQn 0 */
 
   /* USER CODE END UsageFault_IRQn 0 */
+  /* A fault that gets here stops the CPU and the watchdog resets the board (HardFault records first
+     and does not return; MemManage, BusFault and UsageFault are not enabled, so they escalate to
+     HardFault). bound: none on purpose */
   while (1)
   {
     /* USER CODE BEGIN W1_UsageFault_IRQn 0 */

@@ -24,7 +24,7 @@ Size of the scope: 26 C files, 275 functions (lizard), about 2,600 lines of code
 | 6 | Data at the smallest possible scope | **Complies** (one shared variable left, set by an interrupt) | Review; `-Wmissing-declarations`, `-Wredundant-decls`, cppcheck `variableScope` |
 | 7 | Check every non-void result; check parameters | **Complies with documented deviations** (`memcpy`/`memset`, `APP_PRINTF`, ST's void radio API) | `(void)` casts with reasons; `WS_CHECK` at module boundaries; review |
 | 8 | Preprocessor: includes and simple macros only | **Complies with documented deviations** (an X-macro catalog, one token-pasting wrapper, `__LINE__` in `WS_CHECK`, 6 conditional-compilation switches) | Review; `-Wundef`, `-Wunused-macros` |
-| 9 | One level of dereference; no function pointers | **Complies with documented deviations** (ST's callback APIs, one host-test seam) | Review; `tools/stack_report.py` accounts for every pointer call |
+| 9 | One level of dereference; no function pointers | **Complies with documented deviations** (ST's callback APIs; `ws_i2c_pins`, the pin interface the stuck-bus recovery drives on the board and in its host test) | Review; `tools/stack_report.py` accounts for every pointer call |
 | 10 | All warnings on, zero warnings, static analysis every day | **Complies** (every push, not daily) | `-Werror` strict set, GCC `-fanalyzer`, Cppcheck, all in CI |
 
 ## Rule 1: simple control flow
@@ -47,8 +47,13 @@ the bound (`for (i = 0; i < n; i++)` with a constant or a parameter whose maximu
 the other 11 carry a `bound:` comment saying what bounds them, for example the journal scrub
 (`App/node_store.c`, `store_journal_scrub`: at most `JOURNAL_CAPACITY` passes, each match moves the
 index past its slot) or `ws_hex_decode` (`common/ws_console.c`: at most `max + 1` passes).
-`tools/loop_bounds.py` enforces exactly this: a loop that is neither a counting loop nor annotated
-fails `tools/code_shape.sh` and so CI (`tests/test_loop_bounds.py` tests the checker itself).
+`tools/loop_bounds.py` checks this syntactically: a counting loop's step must move toward its bound,
+its body must not assign the loop variable, and a literal bound must fit a declared 8- or 16-bit
+counter; any other loop needs a `bound:` comment. What a symbolic bound (a parameter, a constant) is
+worth, and whether a `bound:` comment is true, is reviewed, not proven. A loop that fails the check
+fails `tools/code_shape.sh` and so CI (`tests/test_loop_bounds.py` tests the checker, including the
+review's counterexamples). In scope: `App/`, `firmware/common`, `firmware/stage0.c` and the node's
+`Core/Src/stm32wlxx_it.c` (its fault-handler loops are the documented deliberate hangs).
 
 Changed for this rule (commit "every loop has a stated upper bound"):
 - `App/tx_exchange.c` `process()`: the event loop now counts at most `EV_COUNT` bits; before, it
@@ -119,7 +124,7 @@ plentiful and already "an assertion with a recovery" in Holzmann's sense, but it
 | Flash writes stay in the node-state pages | `node_store.c` `prog64`, `erase_page`: every program and erase lies inside pages 32–127 (never the firmware) and is double-word aligned | refused like a failed flash operation, which every caller already handles |
 | Our own data must encode or seal | `app_tx.c` `minute_report` (`ws_obs_encode`); `tx_exchange.c` `send_obs`, `send_diag` (`ws_seal_kind` with a provisioned station and a reserved counter) | `journal=ERROR` / the item is skipped, as for a local send failure |
 | ST timer starts that must not be refused | `tx_exchange.c` gap and ACK-window timers; `sensor.c` guard, measurement and step timers; `tx_console.c` reboot timer; `app_rx.c` `#alive` timer; `watchdog.c` check timer. ST refuses a start only for a running timer | its event still comes from the running timer; the reboot timer resets at once instead |
-| HAL results ST documents as impossible for our arguments | `sensor.c` `i2c_start` (`HAL_I2C_Init`, analog filter); `watchdog.c` `HAL_IWDG_Init`; `console.c` `console_init` (`vcom_ReceiveInit`) | the next transfer fails and the bus recovery re-initialises / the IWDG takes the values when its update completes / re-arm the receive once (RX's health check re-arms too) |
+| HAL results that should not fail for our arguments | `sensor.c` `i2c_start` (`HAL_I2C_Init`, analog filter); `watchdog.c` `HAL_IWDG_Init` (it can return `HAL_TIMEOUT` if the LSI never settles); `console.c` `console_init` (`vcom_ReceiveInit`) | the next transfer fails and the bus recovery re-initialises / the IWDG takes the values when its update completes / re-arm the receive once (RX's health check re-arms too) |
 | Policy inputs | `ws_policy.c` `ws_lora_airtime_ms` (SF, bandwidth, coding rate) | a whole minute: the live reading only, no division by zero |
 
 **Tests.** Every test of the TX, RX and sensor harnesses and every power-cut sweep now also requires
@@ -245,8 +250,10 @@ relocations) and that is linked, with at most two pointer hops on one stack (mai
 driver callback) and two nested interrupts. The changes above removed four of our own targets from
 that conservative set, so those paths are now computed exactly.
 
-Pointer dereference: no `**` remains in scope. Struct members are reached through one pointer
-(`p->x`); `held[i][k]` is a two-dimensional array, not a pointer to pointers.
+Pointer dereference: one level wherever we can choose. Struct members are reached through one pointer
+(`p->x`); `held[i][k]` is a two-dimensional array, not a pointer to pointers. One deliberate
+exception: `ws_cmd_find(const char *const names[])` takes the command-name table, an array of string
+pointers.
 
 ## Rule 10: all warnings, zero warnings, static analysis
 
@@ -266,7 +273,9 @@ Pointer dereference: no `**` remains in scope. Struct members are reached throug
 - **GCC's static analyser** (`-fanalyzer`) on our C for both roles: zero findings.
 - **Cppcheck 2.22.0** (`tools/cppcheck.sh`; the pinned `cppcheck==1.5.3` wheel in
   `requirements-dev.txt`), warning, style, performance and portability checks, exhaustive: zero
-  findings. Its first run found 14: two variables whose scope could shrink, a pointer that could be
+  findings. It runs without the HAL and ST utility include paths (`--suppress=missingInclude`), so it
+  analyses our code without ST's types and does not cover the board files: a lighter check than the
+  compiler's own, which sees everything. Its first run found 14: two variables whose scope could shrink, a pointer that could be
   const, a static assert it misread (now `!= 0`), and ST callback signatures that we cannot make
   const, suppressed inline with the reason (`/* cppcheck-suppress … ; ST's … signature */`).
 - **Our own analyses**: worst-case stack (`make stack`), no blocking call reachable at run time
