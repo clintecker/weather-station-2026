@@ -64,6 +64,6 @@ void watchdog_start(void)
      reload had not taken effect within ST's wait; they still do once the update completes. Counted. */
   (void)WS_CHECK(HAL_IWDG_Init(&hiwdg) == HAL_OK);
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Watchdog, UTIL_SEQ_RFU, check_timed);
-  UTIL_TIMER_Create(&check_timer, CHECK_PERIOD_MS, UTIL_TIMER_PERIODIC, request_check, NULL);
+  (void)UTIL_TIMER_Create(&check_timer, CHECK_PERIOD_MS, UTIL_TIMER_PERIODIC, request_check, NULL);
   (void)WS_CHECK(UTIL_TIMER_Start(&check_timer) == UTIL_TIMER_OK);   /* created just above */
 }

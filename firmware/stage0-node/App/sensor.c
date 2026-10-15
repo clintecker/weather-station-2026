@@ -26,7 +26,7 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
   if (hi2c->Instance != I2C2) return;
   RCC_PeriphCLKInitTypeDef clk = { .PeriphClockSelection = RCC_PERIPHCLK_I2C2,
                                    .I2c2ClockSelection = RCC_I2C2CLKSOURCE_PCLK1 };
-  HAL_RCCEx_PeriphCLKConfig(&clk);
+  (void)HAL_RCCEx_PeriphCLKConfig(&clk);   /* I2C2 from PCLK1: only selects a clock, cannot time out */
   __HAL_RCC_GPIOA_CLK_ENABLE();
   /* Internal pull-ups (~40 kOhm) only define the lines when the breakout (and its 10 kOhm
      pull-ups) is unplugged, so an absent sensor reads as a clean address NACK, not noise. */
@@ -87,7 +87,7 @@ static void finish(int rc)
   uint32_t primask = irq_lock();
   if (st == S_CMD || st == S_MEASURE || st == S_READ)
   {
-    UTIL_TIMER_Stop(&guard_timer); UTIL_TIMER_Stop(&measure_timer);
+    (void)UTIL_TIMER_Stop(&guard_timer); (void)UTIL_TIMER_Stop(&measure_timer);
     bus_rc = rc; st = S_DONE; post();
   }
   irq_unlock(primask);
@@ -109,7 +109,7 @@ void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
   if (hi2c != &hi2c2) return;
   /* State change and timers in one critical section: the guard cannot fire in between. */
   uint32_t primask = irq_lock();
-  if (st == S_CMD) { st = S_MEASURE; UTIL_TIMER_Stop(&guard_timer); (void)WS_CHECK(UTIL_TIMER_Start(&measure_timer) == UTIL_TIMER_OK); }
+  if (st == S_CMD) { st = S_MEASURE; (void)UTIL_TIMER_Stop(&guard_timer); (void)WS_CHECK(UTIL_TIMER_Start(&measure_timer) == UTIL_TIMER_OK); }
   irq_unlock(primask);
 }
 
@@ -190,9 +190,9 @@ BUSYMON_TASK(sensor_task)
 
 void sensor_init(void)
 {
-  UTIL_TIMER_Create(&measure_timer, WS_SHT45_MEASURE_MS, UTIL_TIMER_ONESHOT, on_measured, NULL);
-  UTIL_TIMER_Create(&guard_timer, I2C_GUARD_MS, UTIL_TIMER_ONESHOT, on_guard, NULL);
-  UTIL_TIMER_Create(&step_timer, 1, UTIL_TIMER_ONESHOT, on_step, NULL);
+  (void)UTIL_TIMER_Create(&measure_timer, WS_SHT45_MEASURE_MS, UTIL_TIMER_ONESHOT, on_measured, NULL);
+  (void)UTIL_TIMER_Create(&guard_timer, I2C_GUARD_MS, UTIL_TIMER_ONESHOT, on_guard, NULL);
+  (void)UTIL_TIMER_Create(&step_timer, 1, UTIL_TIMER_ONESHOT, on_step, NULL);
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sensor, UTIL_SEQ_RFU, sensor_task_timed);
   i2c_start();
 }

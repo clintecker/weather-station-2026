@@ -59,7 +59,7 @@ static int stuck;             /* the exchange outlasted its worst case: the watc
 void sampling_stop(void)
 {
   node.running = 0;
-  UTIL_TIMER_Stop(&sample_timer);
+  (void)UTIL_TIMER_Stop(&sample_timer);
 }
 
 /* Draft-5 observation (docs/protocol-draft5-design.md 5): out-of-range temperature is INVALID,
@@ -232,7 +232,7 @@ int watchdog_healthy(void)
     /* Stop sampling and the radio, journal any held reading with the radio idle, then let the
        watchdog reset the board: the reset loses no reading. */
     stuck = 1;
-    UTIL_TIMER_Stop(&sample_timer);
+    (void)UTIL_TIMER_Stop(&sample_timer);
     exchange_abort();
     APP_PRINTF("#watchdog radio exchange stuck; radio stopped, held readings journaled, resetting\n");
     return 0;
@@ -252,8 +252,8 @@ static void boot_retry(void)
 {
   if (!node.kat_ok) return;
   APP_PRINTF("#boot-retry: reset in %u s\n", (unsigned)(BOOT_RETRY_MS / 1000));
-  UTIL_TIMER_Create(&boot_retry_timer, BOOT_RETRY_MS, UTIL_TIMER_ONESHOT, on_boot_retry, NULL);
-  UTIL_TIMER_Start(&boot_retry_timer);
+  (void)UTIL_TIMER_Create(&boot_retry_timer, BOOT_RETRY_MS, UTIL_TIMER_ONESHOT, on_boot_retry, NULL);
+  (void)UTIL_TIMER_Start(&boot_retry_timer);
 }
 
 /* Storage, key, self-test and a durable epoch: 1 if the node may sample and transmit. */
@@ -291,7 +291,7 @@ void SubghzApp_Init(void)
   node.running = 1;
   last_sample_s = clock_s();
   tx_status();
-  UTIL_TIMER_Create(&sample_timer, SAMPLE_PERIOD_MS, UTIL_TIMER_PERIODIC, on_sample_timer, NULL);
-  UTIL_TIMER_Start(&sample_timer);
+  (void)UTIL_TIMER_Create(&sample_timer, SAMPLE_PERIOD_MS, UTIL_TIMER_PERIODIC, on_sample_timer, NULL);
+  (void)UTIL_TIMER_Start(&sample_timer);
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0);
 }

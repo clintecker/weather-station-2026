@@ -123,8 +123,8 @@ static void radio_idle(void) { tx_state = TX_IDLE; ws_radio_sleep(); held_flush(
    any held reading while it is idle, so a watchdog reset loses nothing (app_tx.c watchdog_healthy). */
 void exchange_abort(void)
 {
-  UTIL_TIMER_Stop(&gap_timer);
-  UTIL_TIMER_Stop(&ack_timer);
+  (void)UTIL_TIMER_Stop(&gap_timer);
+  (void)UTIL_TIMER_Stop(&ack_timer);
   ws_radio_standby();
   tx_state = TX_IDLE;
   held_flush();
@@ -314,7 +314,7 @@ static int handle_reply(void)
    or the next (a race, not a bug: `unexpected` stays a bug indicator; 2026-10-15 review). */
 static void window_closed(void)
 {
-  UTIL_TIMER_Stop(&ack_timer);
+  (void)UTIL_TIMER_Stop(&ack_timer);
   batch &= ~EV_ACK_END;
   events_clear(&pending_ev, EV_ACK_END);
 }
@@ -412,6 +412,6 @@ void exchange_init(void)
   ws_radio_configure(0);
   ws_radio_sleep();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process_timed);
-  UTIL_TIMER_Create(&gap_timer, INTER_FRAME_MS, UTIL_TIMER_ONESHOT, on_gap, NULL);
-  UTIL_TIMER_Create(&ack_timer, ACK_WINDOW_MS, UTIL_TIMER_ONESHOT, on_ack_end, NULL);
+  (void)UTIL_TIMER_Create(&gap_timer, INTER_FRAME_MS, UTIL_TIMER_ONESHOT, on_gap, NULL);
+  (void)UTIL_TIMER_Create(&ack_timer, ACK_WINDOW_MS, UTIL_TIMER_ONESHOT, on_ack_end, NULL);
 }

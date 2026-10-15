@@ -23,23 +23,23 @@ void leds_init(void)
 {
   for (uintptr_t i = 0; i < 3; i++)
   {
-    UTIL_TIMER_Create(&off_timer[i], 100, UTIL_TIMER_ONESHOT, off, (void *)i);
+    (void)UTIL_TIMER_Create(&off_timer[i], 100, UTIL_TIMER_ONESHOT, off, (void *)i);
     HAL_GPIO_WritePin(port[i], pin[i], GPIO_PIN_RESET);
   }
-  UTIL_TIMER_Create(&heartbeat_timer, HEARTBEAT_PERIOD_MS, UTIL_TIMER_PERIODIC, heartbeat, NULL);
-  UTIL_TIMER_Start(&heartbeat_timer);
+  (void)UTIL_TIMER_Create(&heartbeat_timer, HEARTBEAT_PERIOD_MS, UTIL_TIMER_PERIODIC, heartbeat, NULL);
+  (void)UTIL_TIMER_Start(&heartbeat_timer);
 }
 
 void led_flash(led_t led, uint32_t ms)
 {
   HAL_GPIO_WritePin(port[led], pin[led], GPIO_PIN_SET);
-  UTIL_TIMER_Stop(&off_timer[led]);
-  UTIL_TIMER_SetPeriod(&off_timer[led], ms);
-  UTIL_TIMER_Start(&off_timer[led]);
+  (void)UTIL_TIMER_Stop(&off_timer[led]);
+  (void)UTIL_TIMER_SetPeriod(&off_timer[led], ms);
+  (void)UTIL_TIMER_Start(&off_timer[led]);
 }
 
 void led_set(led_t led, int on)
 {
-  UTIL_TIMER_Stop(&off_timer[led]);
+  (void)UTIL_TIMER_Stop(&off_timer[led]);
   HAL_GPIO_WritePin(port[led], pin[led], on ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
