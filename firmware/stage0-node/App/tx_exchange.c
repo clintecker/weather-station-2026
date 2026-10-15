@@ -160,8 +160,18 @@ static void next_item(void)
   finish_exchange();
 }
 
-/* A missed reply ends this minute's drain: a failing link does not burn the allowance. */
+/* A missed reply ends this minute's drain, after one more frame: a failing link does not burn the
+   allowance, and the one more frame tells a record the gateway refuses (the next one is answered,
+   so the missed one earns a strike) from a lossy link (strike rule, ws_policy.h). A second miss in a
+   row, or a transmit failure, ends it at once. */
+static int missed_last;   /* the frame before this one got no reply */
 static void stop_drain(void) { qn = qi + 1; }
+static void drain_after_miss(void)
+{
+  if (missed_last) stop_drain();
+  else if (qn > qi + 2U) qn = qi + 2U;
+  missed_last = 1;
+}
 
 /* Seal and send one journaled plaintext. 1: on air (its TxDone follows); 0: a local failure (the
    exchange moves on); -1: the counter reservation was refused, which ends the exchange. */
@@ -199,6 +209,7 @@ void exchange_start(const jref_t *live, unsigned backlog)
   if (live) queue[qn++] = *live;
   qn += store_journal_oldest(queue + qn, backlog + (live ? 0U : 1U), live);
   qi = 0;
+  missed_last = 0;
   memset(replied, 0, sizeof replied);
   /* The longest this exchange can take: every frame and the health report hit their transmit
      timeout or wait out the whole ACK window, plus the gaps; then 5 s of margin. */
@@ -215,7 +226,7 @@ static void no_reply(int flash_red)
   tx_counts.no_ack++;
   if (flash_red) led_flash(LED_RED, 400);
   APP_PRINTF("#ack none epoch=%u seq=%u\n", (unsigned)sent_epoch, (unsigned)sent_seq);
-  stop_drain();
+  drain_after_miss();
   next_item();
 }
 
@@ -227,7 +238,7 @@ static int on_nack(const reply_t *r, int mine)
 {
   jref_t ref;
   if (!mine) { tx_counts.ack_rejects++; APP_PRINTF("#nack ignored: not for the frame just sent\n"); return 0; }
-  replied[qi] = 1;
+  replied[qi] = 1; missed_last = 0;
   if (store_journal_find(r->epoch, r->seq, &ref) == 0 && store_journal_ack(ref) == 0) store_note_abandoned();
   led_flash(LED_RED, 1000);
   APP_PRINTF("#nack epoch=%u seq=%u reason=%u abandoned=%u\n", (unsigned)r->epoch, (unsigned)r->seq,
@@ -243,7 +254,7 @@ static int on_ack(const reply_t *r, int mine)
   int found = store_journal_find(r->epoch, r->seq, &ref) == 0;
   if (found && store_journal_ack(ref)) APP_PRINTF("#error journal-ack\n");
   policy_strike_forget(r->epoch, r->seq);   /* any authentic ACK for a record ends its strikes */
-  if (mine) replied[qi] = 1;
+  if (mine) { replied[qi] = 1; missed_last = 0; }
   int fresh = mine && time_sync(r->word);
   if (found) tx_counts.acked++;
   led_flash(LED_GREEN, 400); /* authentic host ACK: reading is committed */

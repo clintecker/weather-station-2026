@@ -571,7 +571,7 @@ Source: [`radio-energy-policy.md`](radio-energy-policy.md), `App/tx_policy.c` an
 | CRITICAL | 0 | 0 | Nothing is sent. Readings stay in the journal. |
 
 - **Airtime cap.** One answered exchange is estimated at observation air time + ACK air time + 300 ms = 22 + 18 + 300 = 340 ms (SF7, 500 kHz; `exchange_ms` in `App/tx_policy.c`). The number of frames in a minute is limited to the radio time ÷ 340 ms: 14 for the 5 s NORMAL cap, so the NORMAL backlog limit of 5 applies. The live reading always fits.
-- **Drain stops at the first miss.** If a frame gets no reply (or a TX timeout occurs), the node sends nothing more in that minute.
+- **Drain stops after a miss, one frame later.** If a frame gets no reply, the node sends one more frame of the planned queue, then stops; a second miss in a row, or a TX timeout, stops it at once. The one more frame is what lets a strike tell a record the gateway refuses from a lossy link (below).
 - **PROBING.** After 3 consecutive minutes with no answer, the link state becomes PROBING: live reading only, no backlog. In SURPLUS and NORMAL (so always in Stage 0) the live reading still goes every minute; only CONSERVE waits 120 s, 240 s, 480 s, then every 900 s (`ws_link_may_send()` in `firmware/stage0.c`, changed 2026-10-13). Any answer to a sent frame makes the link LINKED again. The health report is also sent while probing, with link state 1.
 - **Simulator.** The Python simulator (`ws0/simulator.py`, `BACKLOG_PER_MINUTE = 5`) drains 5 records per minute, like NORMAL. It sends the live reading every minute and does not model the drain stop or PROBING; that matches the firmware's timeliness in NORMAL.
 
@@ -580,7 +580,7 @@ Source: [`radio-energy-policy.md`](radio-energy-policy.md), `App/tx_policy.c` an
 A record leaves the journal without an ACK in three cases. Each case is counted, and the counts go into the health report (section 7.3.2).
 
 1. **NACK.** The gateway authenticated the frame but must reject it permanently (identity collision or invalid record). The node accepts a NACK only if its echo, epoch and sequence match the frame just sent. It marks the slot done and adds 1 to the persisted `abandoned` total.
-2. **Strike limit.** A record that stays unanswered in 10 exchanges in which the gateway answered other frames is abandoned and counted (`STRIKE_LIMIT` 10, 6 tracking slots). An exchange with no answer at all does not count. Thus a link or gateway outage never abandons data.
+2. **Strike limit.** A record that gets no reply while a frame sent **after** it in the same exchange is answered earns a strike; at 10 it is abandoned and counted (`STRIKE_LIMIT` 10, 6 tracking slots). An answer to an earlier frame proves nothing (on a weak link the next frame can simply be lost), so it never strikes, and a link or gateway outage never abandons data. A refused record that is the only backlog is the minute's last frame: no later frame can show it is refused, so it is retried each minute (one frame) and never abandoned by luck (Clint, 2026-10-15, review M2 option A).
 3. **Ring overflow.** The oldest page is erased and its pending records are counted as `lost` (section 5.5).
 
 ### 9.6 Failure cases

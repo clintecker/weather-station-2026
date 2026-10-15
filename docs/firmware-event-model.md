@@ -57,7 +57,7 @@ The exchange is one explicit state machine. Every state is left by an event that
 |  | TxTimeout (3 s, a software timer in ST's radio driver) | radio put in standby (the driver leaves it transmitting); drain stops: `gap` if a health report is due, else `idle` |
 | `ack-wait` | RxDone, the authentic reply to this frame | `ack_timer` stopped; `gap` (next frame) or end of exchange |
 |  | RxDone, anything else (foreign, forged, another frame's ACK), RxError (payload CRC failed), RxTimeout (ST's radio.c reports a header error so) | listen again (`Radio.Rx(0)`), same window |
-|  | `ack_timer` (the window is over) | radio put in standby; no reply: drain stops, end of exchange |
+|  | `ack_timer` (the window is over) | radio put in standby; no reply: the drain ends after one more frame (at once after a second miss in a row), `gap` or end of exchange |
 | `diag-sending` | TxDone, or TxTimeout (radio put in standby) | `idle` (radio sleeps) |
 
 Why the window is the firmware's own timer: ST's driver window (`RxTimeoutTimer`) is not stopped by

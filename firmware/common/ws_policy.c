@@ -86,3 +86,9 @@ void ws_strike_forget(ws_strike *t, unsigned slots, uint32_t epoch, uint32_t seq
  for (unsigned i = 0; i < slots; i++)
   if (same_record(&t[i], epoch, seq)) t[i].n = 0;
 }
+
+void ws_strike_targets(const uint8_t *replied, unsigned n, uint8_t *struck)
+{
+ int later = 0;   /* a frame after i was answered */
+ for (unsigned i = n; i-- > 0;) { struck[i] = (uint8_t)(!replied[i] && later); later |= replied[i]; }
+}

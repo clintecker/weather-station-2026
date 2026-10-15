@@ -542,12 +542,19 @@ class TxStateMachine(unittest.TestCase):
 
     # ---- policy: drain, failures, link, health reports, strikes ----
 
-    def test_a_missed_reply_stops_the_drain(self):
-        n = self.node()
-        n.advance_to(minute(2) - 1000)                 # two readings pending
-        start = n.sent()
-        n.serve(MINUTE_MS - 2000, answer=lambda head: KIND_ACK if head['sequence'] == 2 else None)
-        self.assertEqual(len(n.sends(start, KIND_OBS)), 2)   # live (answered), the oldest (not); no third
+    def test_a_missed_reply_allows_one_more_frame_then_stops_the_drain(self):
+        # Strike rule (review M2, option A): after a missed reply one more frame goes, so a record
+        # the gateway refuses can be told from a lossy link; a second miss in a row stops at once.
+        def run(answer):
+            n = self.node()
+            n.advance_to(minute(2) - 1000)             # seq 0 and 1 pending; the live is seq 2
+            n.out()
+            mark = len(n.log)
+            n.serve(MINUTE_MS - 2000, answer=answer)
+            n.out()
+            return [int(q) for q in re.findall(r'#ack (?:none )?epoch=\d+ seq=(\d+)', n.log[mark:])]
+        self.assertEqual(run(lambda h: KIND_ACK if h['sequence'] == 2 else None), [2, 0, 1])   # one more after seq 0's miss
+        self.assertEqual(run(lambda h: None), [2, 0])                                          # two misses in a row: stop
 
     def test_a_transmit_timeout_stops_the_drain(self):
         n = self.node()
@@ -706,17 +713,32 @@ class TxStateMachine(unittest.TestCase):
         for a, b in zip(diags, diags[1:], strict=False):
             self.assertTrue(DIAG_PERIOD_MS - 1000 <= b - a < DIAG_PERIOD_MS + MINUTE_MS, diags)   # whole RTC seconds
 
-    def test_strikes_abandon_a_record_that_alone_stays_unanswered(self):
+    def test_strikes_need_an_answer_after_the_missed_record(self):
+        # A refused record (seq 0) earns a strike only when a frame sent after it is answered. Each
+        # minute the live frame's Send is refused, so it joins the backlog behind seq 0 and is
+        # answered the minute after: ten such minutes abandon seq 0.
         n = self.node()
-        n.serve(minute(1) - 1000, answer=lambda head: None)   # record seq 0: never answered from here on
+        n.serve(minute(1) - 1000, answer=lambda head: None)   # seq 0 is never answered from here on
         answer = lambda head: None if head['sequence'] == 0 else KIND_ACK   # noqa: E731
-        for k in range(1, STRIKE_LIMIT + 1):
-            n.serve(MINUTE_MS, answer=answer)          # live answered, seq 0 not: one strike each minute
-            self.assertEqual('#abandon epoch=' in n.out(), k == STRIKE_LIMIT, k)
+        for k in range(1, STRIKE_LIMIT + 2):
+            n.advance_to(minute(k) - 100)
+            n.lib.h_radio_send_fails(1)                # this minute's live frame waits in the backlog
+            n.serve(MINUTE_MS - 200, answer=answer)    # seq 0 missed, then the previous live answered
+            self.assertEqual('#abandon epoch=' in n.out(), k == STRIKE_LIMIT + 1, k)   # the first minute has nothing behind seq 0
         self.assertEqual(n.status()['abandoned'], '1')
-        start = n.sent()
-        n.serve(MINUTE_MS, answer=answer)
-        self.assertEqual(len(n.sends(start, KIND_OBS)), 1)    # no longer sent
+
+    def test_a_lone_refused_record_is_retried_never_abandoned_by_luck(self):
+        # The only backlog record is the minute's last frame: no later frame can show the gateway
+        # refuses it, so it is retried every minute (at most one frame) and never struck.
+        n = self.node()
+        n.serve(minute(1) - 1000, answer=lambda head: None)
+        answer = lambda head: None if head['sequence'] == 0 else KIND_ACK   # noqa: E731
+        n.out()
+        mark = len(n.log)
+        n.serve((STRIKE_LIMIT + 3) * MINUTE_MS, answer=answer)
+        n.out()
+        self.assertNotIn('#abandon', n.log)
+        self.assertEqual(len(re.findall(r'#ack none epoch=\d+ seq=0\n', n.log[mark:])), STRIKE_LIMIT + 3)
 
     def test_no_strikes_while_nothing_is_answered(self):
         # The gateway answers only the probe that relinks: no exchange that resent the old reading

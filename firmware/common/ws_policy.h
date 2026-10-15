@@ -36,8 +36,11 @@ uint32_t ws_link_probe_interval(const ws_link *l);   /* the current back-off ste
 int ws_minute_backlog(int energy, const ws_link *l, uint32_t now_s, uint32_t last_send_s, uint32_t exchange_ms,
                       unsigned max_backlog);
 
-/* Strikes (gap G2 safety net): a record that stays unanswered while other frames in the same
- * exchange are answered gets a strike; at the limit it is abandoned. Keyed by the record's
+/* Strikes (gap G2 safety net): a record that stays unanswered while a frame sent AFTER it in the
+ * same exchange is answered gets a strike; at the limit it is abandoned. An answer to an earlier
+ * frame proves nothing (on a weak link the next frame may simply be lost), so it never strikes
+ * (Clint 2026-10-15, review M2 option A; the drain sends one more frame after a miss so that a
+ * refused record can still be told apart). Keyed by the record's
  * identity (epoch, seq), not its journal slot: a slot is reused after the ring wraps, and a record
  * can leave the journal without its entry being cleared (firmware review finding 5). A new
  * identity takes the slot with the fewest strikes. */
@@ -45,4 +48,7 @@ typedef struct { uint32_t epoch, seq; uint8_t n; } ws_strike;
 /* One more strike; 1 when it reaches limit (the entry is then cleared), else 0. */
 int ws_strike_note(ws_strike *t, unsigned slots, uint32_t epoch, uint32_t seq, unsigned limit);
 void ws_strike_forget(ws_strike *t, unsigned slots, uint32_t epoch, uint32_t seq);
+/* Which records of an exchange earn a strike: struck[i] = 1 if queue[i] got no reply but a later
+   frame of the same exchange did. */
+void ws_strike_targets(const uint8_t *replied, unsigned n, uint8_t *struck);
 #endif

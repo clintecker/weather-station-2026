@@ -60,7 +60,7 @@ static void strike(jref_t r)
   if (store_journal_find(epoch, seq, &now) || store_journal_ack(now)) return;
   store_note_abandoned();
   led_flash(LED_RED, 1000);
-  APP_PRINTF("#abandon epoch=%u seq=%u after %u unanswered tries while the gateway answered other frames; abandoned=%u\n",
+  APP_PRINTF("#abandon epoch=%u seq=%u after %u unanswered tries while the gateway answered a later frame; abandoned=%u\n",
              (unsigned)epoch, (unsigned)seq, STRIKE_LIMIT, (unsigned)store_abandoned_total());
 }
 
@@ -86,13 +86,14 @@ static void link_report(int change, uint32_t was_silent)
 void policy_exchange_end(const jref_t *queue, const uint8_t *replied, unsigned n)
 {
   int any = 0; /* did the gateway answer anything in this exchange? */
-  for (unsigned i = 0; i < n; i++) any |= replied[i];
-  /* Strikes only count when the gateway answered something: link or gateway down never abandons data. */
-  for (unsigned i = 0; any && i < n; i++)
+  uint8_t struck[MAX_QUEUE];
+  ws_strike_targets(replied, n, struck);
+  for (unsigned i = 0; i < n; i++)
   {
     uint32_t epoch, seq;
-    if (!replied[i]) strike(queue[i]);
-    else if (record_id(queue[i], &epoch, &seq)) policy_strike_forget(epoch, seq);
+    any |= replied[i];
+    if (struck[i]) strike(queue[i]);
+    else if (replied[i] && record_id(queue[i], &epoch, &seq)) policy_strike_forget(epoch, seq);
   }
   uint32_t was_silent = link.silent;
   link_report(ws_link_minute(&link, any, last_send_s), was_silent);

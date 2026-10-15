@@ -405,14 +405,13 @@ At SF7 a 42-byte observation takes 21.8 ms on air, a 33-byte ACK 18.0 ms and a 4
   22 + 18 + 300 = **340 ms** at SF7 (`exchange_ms` in `App/tx_policy.c`, `ws_lora_airtime_ms()` in `firmware/common/ws_policy.c`).
 - CONSERVE sends only the live reading, at most every 300 s. CRITICAL journals and does not send.
 - After each frame the node listens up to 2000 ms for the reply, then waits 50 ms before the next
-  frame. The first missed reply ends that minute's drain.
+  frame. A missed reply ends that minute's drain one frame later (a second miss in a row, or a TX
+  timeout, at once).
 - After 3 consecutive minutes with no answer the node goes PROBING: it sends only the live reading,
   with no backlog: every minute in SURPLUS and NORMAL (so always in Stage 0), and after 120, 240,
   480, then every 900 s in CONSERVE. Any answer returns it to LINKED.
 - A missing ACK leaves the record journaled. Each retry has the same identity and a fresh counter.
-- Strike limit: a record that stays unanswered in 10 exchanges in which the gateway answered other
-  frames is abandoned and counted (`STRIKE_LIMIT` 10, 6 tracking slots). Exchanges with no answer at
-  all never count, so an outage never abandons data.
+- Strike limit: a record that gets no reply while a frame sent **after** it in the same exchange is answered earns a strike; at 10 it is abandoned and counted (`STRIKE_LIMIT` 10, 6 tracking slots). An answer to an earlier frame proves nothing (on a weak link the next frame can simply be lost), so it never strikes, and a link or gateway outage never abandons data. A refused record that is the only backlog is the minute's last frame: no later frame can show it is refused, so it is retried each minute (one frame) and never abandoned by luck (Clint, 2026-10-15, review M2 option A).
 - The node trusts its clock for 6 hours after the last time sync, then sends UTC 0 (time unknown)
   until the next accepted ACK.
 - The Python simulator (`ws0/simulator.py`) drains 5 records per minute, like NORMAL.

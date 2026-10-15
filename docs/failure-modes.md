@@ -57,7 +57,7 @@ Draft 4 frames were 56 bytes (27 / 164 / 576 ms, 2.7 / 16 / 58 mC); the pre-G13 
 *The current values are datasheet-class assumptions for the STM32WL. Stage 1 must measure them (spec H02).*
 
 - In a **normal minute**, the node sends 1 frame and the ACK closes the window early.
-- In a **failed minute**, the firmware sends **1 frame** and waits the **full 2 s**: the drain stops at the first missed ACK. After *K* = 3 silent minutes the node enters PROBING and sends only one live probe per back-off interval (2, 4, 8, then 15 min); the minutes between probes have no radio activity (G13, `radio-energy-policy.md` §6).
+- In a **failed minute**, the firmware sends **1 frame** and waits the **full 2 s**: the drain stops at the first missed ACK (with backlog pending: one more frame first, which a strike needs; see `protocol-stack.md` 9.5). After *K* = 3 silent minutes the node enters PROBING and sends only one live probe per back-off interval (2, 4, 8, then 15 min); the minutes between probes have no radio activity (G13, `radio-energy-policy.md` §6).
 - **Pre-G13 (before 2026-10-13)** a failed minute sent **3 frames** (live + 2 backlog), each with the full 2 s window. The arithmetic below is that pre-G13 cost; it is kept because it motivated G13.
 
 Pre-G13, at SF12 and +20 dBm, one failed minute cost about 3 × (58 + 10) ≈ 200 mC, against about 60 mC in a normal minute. Over a one-day gateway outage, that is about 290 C ≈ 80 mAh, or roughly **0.27 Wh/day** at 3.3 V. That is about **4–5 % of the 6 Wh/day core budget**, spent on a link that is known to be down. G13 (closed) reduces this to about 100 probes, about 0.007 Wh/day; G16 (open) would shorten each failed window.

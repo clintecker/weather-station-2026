@@ -82,6 +82,21 @@ static void minute(void) {
  assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &wrap, 11, 0xFFFFFE00u, one, 20) == 0);
 }
 
+/* Only an answer AFTER an unanswered frame earns it a strike (review M2, option A). */
+static void strike_targets(void) {
+ uint8_t s[5];
+ const uint8_t a[5] = { 1, 0, 1, 0, 0 };              /* live answered, b1 missed, b2 answered, b3 b4 missed */
+ ws_strike_targets(a, 5, s);
+ assert(s[0] == 0 && s[1] == 1 && s[2] == 0 && s[3] == 0 && s[4] == 0);
+ const uint8_t b[2] = { 1, 0 };                        /* the last frame missed: nothing after it answered */
+ ws_strike_targets(b, 2, s);
+ assert(s[0] == 0 && s[1] == 0);
+ const uint8_t c[3] = { 0, 0, 1 };                     /* both earlier misses were followed by an answer */
+ ws_strike_targets(c, 3, s);
+ assert(s[0] == 1 && s[1] == 1 && s[2] == 0);
+ ws_strike_targets(c, 0, s);                           /* empty exchange */
+}
+
 static void strikes(void) {
  ws_strike t[3];
  memset(t, 0, sizeof t);
@@ -115,6 +130,7 @@ int main(void) {
  link();
  minute();
  strikes();
+ strike_targets();
  assert(!strcmp(ws_energy_name(WS_ENERGY_NORMAL), "normal") && !strcmp(ws_energy_name(4), "?"));
  return 0;
 }
