@@ -17,6 +17,12 @@
  *  - The transmit timeout is a software timer too: TxTimeout leaves the radio TRANSMITTING. Interrupt callbacks (timers, radio)
  * run first, then the sequencer runs every pending task to completion, as on the chip.
  *
+ * Timers and sequencer follow ST's Utilities too: starting a running timer is refused and does not
+ * restart it; tasks run round robin, highest bit first. h_hold holds the main loop off, so a test can
+ * have several interrupts post before process() runs; h_fire_timer raises a timer event in a state
+ * that does not expect it; h_burn moves the next durable counter reservation; h_radio_hang makes a
+ * transmission that never ends.
+ *
  * Checked on every step, not just at the end of a test:
  *  - no flash program or erase while the radio is transmitting or receiving (the CPU stalls
  *    for a flash erase; the firmware must schedule it with the radio idle);
@@ -61,7 +67,8 @@ static int resets;
 volatile uint32_t ws_trace_drops;
 volatile uint8_t ws_flash_ecc_fault;
 
-uint32_t HAL_GetTick(void) { return now_ms; }
+/* Like the target: HAL_GetTick counts 1/1024 s RTC ticks, not milliseconds (docs/firmware-event-model.md). */
+uint32_t HAL_GetTick(void) { return (uint32_t)((uint64_t)now_ms * 1024U / 1000U); }
 void NVIC_SystemReset(void) { resets++; }
 uint32_t HAL_RTCEx_BKUPRead(RTC_HandleTypeDef *h, uint32_t reg) { (void)h; return bkp[reg]; }
 void HAL_RTCEx_BKUPWrite(RTC_HandleTypeDef *h, uint32_t reg, uint32_t value) { (void)h; bkp[reg] = value; }
@@ -81,34 +88,49 @@ void host_printf(const char *fmt, ...)
   out_len += (size_t)n;
 }
 
-/* ---- timer server ---- */
+/* ---- timer server, with ST's semantics (Utilities/timer/stm32_timer.c) ----
+   UTIL_TIMER_Start on a timer that is already running is refused (UTIL_TIMER_INVALID_PARAM) and changes
+   nothing: it does NOT restart it. Refusals are counted; the firmware never relies on one. A periodic
+   timer is reloaded after its callback unless the callback stopped it. */
+#define TIMER_INVALID_PARAM 1
 static UTIL_TIMER_Object_t *timers;
+static uint32_t timer_start_refused;
 int UTIL_TIMER_Create(UTIL_TIMER_Object_t *t, uint32_t period, UTIL_TIMER_Mode_t mode, void (*cb)(void *), void *arg)
 {
   int known = 0;
   for (UTIL_TIMER_Object_t *p = timers; p; p = p->next) known |= p == t;
-  t->period = period; t->mode = mode; t->cb = cb; t->arg = arg; t->running = 0;
+  t->period = period; t->mode = mode; t->cb = cb; t->arg = arg; t->running = 0; t->reload_stopped = 0;
   if (!known) { t->next = timers; timers = t; }
   return 0;
 }
-int UTIL_TIMER_Start(UTIL_TIMER_Object_t *t) { t->running = 1; t->due = now_ms + t->period; return 0; }
-int UTIL_TIMER_Stop(UTIL_TIMER_Object_t *t) { t->running = 0; return 0; }
+int UTIL_TIMER_Start(UTIL_TIMER_Object_t *t)
+{
+  if (t->running) { timer_start_refused++; return TIMER_INVALID_PARAM; }
+  t->running = 1; t->reload_stopped = 0; t->due = now_ms + t->period;
+  return 0;
+}
+int UTIL_TIMER_Stop(UTIL_TIMER_Object_t *t) { t->running = 0; t->reload_stopped = 1; return 0; }
 int UTIL_TIMER_SetPeriod(UTIL_TIMER_Object_t *t, uint32_t period) { t->period = period; return 0; }
 
-/* ---- sequencer ---- */
+/* ---- sequencer, picking tasks as ST's UTIL_SEQ_Run does (all tasks here use one priority):
+   round robin over the pending set, highest task bit first (SEQ_BitPosition = 31 - clz) ---- */
 static void (*tasks[32])(void);
-static uint32_t task_pending;
+static uint32_t task_pending, round_robin = ~0U;
 static uint32_t task_saturations;
+static int hold;   /* h_hold: the main loop is held off (a long task); interrupts and timers still post */
 void UTIL_SEQ_RegTask(uint32_t mask, uint32_t flags, void (*task)(void)) { (void)flags; tasks[__builtin_ctz(mask)] = task; }
 void UTIL_SEQ_SetTask(uint32_t mask, uint32_t prio) { (void)prio; task_pending |= mask; }
 static void run_tasks(void)
 {
+  if (hold) return;
   /* A task that re-posts itself (TEST-FLASH-STORM) never settles: like UTIL_SEQ, run a bounded
      number of tasks per step and let time move on (counted, so a test can tell). */
   for (int guard = 0; task_pending; guard++)
   {
     if (guard > 1000) { task_saturations++; return; }
-    int id = __builtin_ctz(task_pending);
+    if ((task_pending & round_robin) == 0) round_robin = ~0U;
+    int id = 31 - __builtin_clz(task_pending & round_robin);
+    round_robin &= ~(1U << id);
     task_pending &= ~(1U << id);
     if (tasks[id]) tasks[id]();
   }
@@ -119,21 +141,30 @@ enum { R_SLEEP, R_STANDBY, R_TX, R_RX };
 static int radio_state = R_SLEEP;
 static RadioEvents_t *radio_events;
 static uint32_t radio_due;         /* TxDone or RxTimeout time, if radio_timed */
-static int radio_timed, radio_send_fails, radio_crc_flag;
+static int radio_timed, radio_send_fails, radio_crc_flag, radio_hang;
 static uint32_t sw_rx_due;          /* the driver's RxTimeoutTimer (Rx(t > 0)), if sw_rx_armed */
 static int sw_rx_armed;
 static uint8_t last_frame[256];
 static int last_frame_len, frames_sent;
 static uint32_t last_send_ms, last_rx_timeout;
-static uint32_t sends_at[64];
+/* Every transmission: its start time and kind (the frame's first byte), for as long as the test runs. */
+static struct { uint32_t at; uint8_t kind; } *sends;
+static int sends_cap;
 static void radio_init(RadioEvents_t *e) { radio_events = e; radio_state = R_STANDBY; }
 static radio_status_t radio_send(uint8_t *buf, uint8_t size)
 {
   if (radio_send_fails > 0) { radio_send_fails--; return RADIO_STATUS_ERROR; }
   memcpy(last_frame, buf, size); last_frame_len = size;
-  if (frames_sent < 64) sends_at[frames_sent] = now_ms;
+  if (frames_sent == sends_cap)
+  {
+    sends_cap = sends_cap ? 2 * sends_cap : 256;
+    sends = realloc(sends, (size_t)sends_cap * sizeof *sends);
+    if (!sends) { fprintf(stderr, "tx_harness: out of memory\n"); abort(); }
+  }
+  sends[frames_sent].at = now_ms; sends[frames_sent].kind = size ? buf[0] : 0;
   frames_sent++; last_send_ms = now_ms;
-  radio_state = R_TX; radio_timed = 1; radio_due = now_ms + TX_AIR_MS;
+  /* h_radio_hang: the frame is accepted but never finishes, and the driver's timeout never comes either */
+  radio_state = R_TX; radio_timed = !radio_hang; radio_due = now_ms + TX_AIR_MS;
   return RADIO_STATUS_OK;
 }
 static void radio_rx(uint32_t timeout)
@@ -236,8 +267,9 @@ void h_advance(uint32_t ms)
     }
     else
     {
-      if (t->mode == UTIL_TIMER_PERIODIC) t->due += t->period; else t->running = 0;
+      t->running = 0;
       t->cb(t->arg);
+      if (t->mode == UTIL_TIMER_PERIODIC && !t->reload_stopped) UTIL_TIMER_Start(t);
     }
     run_tasks();
   }
@@ -255,7 +287,13 @@ void h_boot(void) { SubghzApp_Init(); run_tasks(); }
 uint32_t h_now(void) { return now_ms; }
 int h_radio_state(void) { return radio_state; }
 int h_frames_sent(void) { return frames_sent; }
-uint32_t h_send_at(int i) { return i < 64 ? sends_at[i] : 0; }
+static void check_send_index(int i)
+{
+  if (i < 0 || i >= frames_sent) { fprintf(stderr, "tx_harness: no transmission %d (%d sent)\n", i, frames_sent); abort(); }
+}
+uint32_t h_send_at(int i) { check_send_index(i); return sends[i].at; }
+int h_send_kind(int i) { check_send_index(i); return sends[i].kind; }
+uint32_t h_tx_air_ms(void) { return TX_AIR_MS; }
 uint32_t h_last_rx_timeout(void) { return last_rx_timeout; }
 int h_last_frame(uint8_t *buf) { memcpy(buf, last_frame, (size_t)last_frame_len); return last_frame_len; }
 uint32_t h_flash_ops_during_radio(void) { return flash_ops_during_radio; }
@@ -265,6 +303,26 @@ int h_healthy(void) { return healthy_fn(); }
 int h_sensor_starts(void) { return sensor_starts; }
 void h_sensor(int rc, int hang) { sensor_rc = rc; sensor_hang = hang; }
 void h_radio_send_fails(int n) { radio_send_fails = n; }
+void h_radio_hang(int on) { radio_hang = on; }
+/* Hold the main loop: interrupts (timers, radio callbacks) still post, nothing runs until released. */
+void h_hold(int on) { hold = on; run_tasks(); }
+/* Consume k transmission counters through the store, as the firmware does (moves the next durable
+   reservation, CTR_BLOCK counters apart, to where a test wants it). Returns how many it got. */
+int h_burn(int k)
+{
+  int got = 0; uint64_t c;
+  while (got < k && store_next_counter(&c) == 0) got++;
+  return got;
+}
+uint32_t h_timer_start_refused(void) { return timer_start_refused; }
+/* Call the callback of the firmware timer with this period now, running or not: a stale timer event
+   in a state that does not expect it. Returns 0 if there is no such timer. */
+int h_fire_timer(uint32_t period)
+{
+  for (UTIL_TIMER_Object_t *p = timers; p; p = p->next)
+    if (p->period == period) { p->cb(p->arg); run_tasks(); return 1; }
+  return 0;
+}
 /* Console output since the last call (NUL-terminated, valid until the next call). */
 const char *h_output(void)
 {
@@ -314,11 +372,15 @@ void h_tx_timeout(void)
   radio_events->TxTimeout();
   run_tasks();
 }
-/* A stray radio callback (0 TxDone, 1 TxTimeout, 2 RxTimeout, 3 RxError), radio state untouched. */
+/* A stray radio callback (0 TxDone, 1 TxTimeout, 2 RxTimeout, 3 RxError, 4 RxDone of 33 zero bytes),
+   radio state untouched. */
 void h_raw_event(int which)
 {
   void (*cb[])(void) = { radio_events->TxDone, radio_events->TxTimeout, radio_events->RxTimeout, radio_events->RxError };
-  cb[which]();
+  uint8_t junk[33] = { 0 };
+  if (which < 0 || which > 4) { fprintf(stderr, "tx_harness: no raw event %d\n", which); abort(); }
+  if (which == 4) radio_events->RxDone(junk, sizeof junk, -100, -5);
+  else cb[which]();
   run_tasks();
 }
 int h_sw_rx_armed(void) { return sw_rx_armed; }

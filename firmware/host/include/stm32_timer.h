@@ -3,7 +3,7 @@
 #include <stdint.h>
 typedef enum { UTIL_TIMER_ONESHOT, UTIL_TIMER_PERIODIC } UTIL_TIMER_Mode_t;
 typedef struct UTIL_TIMER_Object_s {
-  uint32_t period, due; int running; UTIL_TIMER_Mode_t mode;
+  uint32_t period, due; int running, reload_stopped; UTIL_TIMER_Mode_t mode;
   void (*cb)(void *); void *arg; struct UTIL_TIMER_Object_s *next;
 } UTIL_TIMER_Object_t;
 int UTIL_TIMER_Create(UTIL_TIMER_Object_t *t, uint32_t period, UTIL_TIMER_Mode_t mode, void (*cb)(void *), void *arg);
