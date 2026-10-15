@@ -206,12 +206,23 @@ BUSYMON_TASK(sample)
 static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
 
 /* Watchdog health: real progress, not just a running main loop (failure-modes.md G1). */
+static int stuck;   /* the exchange outlasted its worst case: the watchdog is resetting the board */
 static int tx_healthy(void)
 {
   uint32_t now = clock_s();
+  if (stuck) return 0;
   if (!tx_node.running) return 1;                             /* not sampling by design */
   if (now - last_sample_s > 150) return 0;                    /* sampling stopped */
-  if (exchange_overdue(now)) return 0;                        /* radio exchange stuck */
+  if (exchange_overdue(now))                                  /* radio exchange stuck */
+  {
+    /* Stop sampling and the radio, journal any held reading with the radio idle, then let the
+       watchdog reset the board: the reset loses no reading. */
+    stuck = 1;
+    UTIL_TIMER_Stop(&sample_timer);
+    exchange_abort();
+    APP_PRINTF("#watchdog radio exchange stuck; radio stopped, held readings journaled, resetting\n");
+    return 0;
+  }
   if (ws_failrun_tripped(&tx_node.journal_fails, TX_FAIL_LIMIT))
   { APP_PRINTF("#watchdog %u journal failures in a row\n", (unsigned)tx_node.journal_fails.n); return 0; }
   if (ws_failrun_tripped(&tx_counts.air, TX_FAIL_LIMIT))

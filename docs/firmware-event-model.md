@@ -42,9 +42,10 @@ before anything else runs; the next minute sends it as backlog. A normal exchang
 its minute, so only a hung radio holds a reading, and the watchdog then resets the board once the
 exchange outlasts its bound (at most 116 s) plus the IWDG's ~8 s: at most two readings can be
 waiting. Two are held; should a third come, the oldest is dropped and counted (`#error held-lost`,
-`held_lost` on `#counts`) and the newest kept. A reset loses what is held: those sequence numbers
-are never sent, so the gateway sees the gap. Until this change the reading was journaled while the
-hung radio was still transmitting.
+`held_lost` on `#counts`) and the newest kept. A watchdog reset for a stuck exchange loses nothing
+held: the check first stops the radio and journals the held readings (below). Only another kind of
+reset (power, fault) loses what is held; those sequence numbers then never come, and the gateway sees
+the gap.
 
 The exchange is one explicit state machine. Every state is left by an event that is certain to come:
 
@@ -72,7 +73,10 @@ End of exchange: link state updated, then `gap` → health report if one is due,
 Any (state, event) pair not in this table is counted (`unexpected=` on `#timing`), printed as
 `#error unexpected event=… state=…`, and otherwise ignored. Events are bits, so two arriving before
 `process` runs are both handled. The watchdog check also requires a busy exchange to end within its
-worst case: (frames + 1) × (3 s transmit timeout + 2 s window + 50 ms gap) + 5 s.
+worst case: (frames + 1) × (3 s transmit timeout + 2 s window + 50 ms gap) + 5 s. Past it, the check
+puts the radio in standby, ends the exchange, journals any held reading (the radio is idle now),
+stops sampling and keeps failing, so the watchdog resets the board (`#watchdog radio exchange stuck;
+…`).
 
 Console commands that write flash (WIPE, PROVISION, TEST-FLASH-STORM) are refused with
 `#error busy …; retry` during an exchange or a pending reboot. A commanded reboot (WIPE, PROVISION)

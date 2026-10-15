@@ -608,10 +608,10 @@ class TxStateMachine(unittest.TestCase):
         self.assertEqual((n.status()['tx_air_run'], n.lib.h_healthy()), ('0', 1))
 
     def test_a_radio_that_never_finishes_trips_the_exchange_bound(self):
-        # Send accepted, then neither TxDone nor the driver's TxTimeout: the watchdog check fails once
-        # the exchange outlasts its worst case, and (on the board, the reset comes first) a minute that
-        # still finds it busy holds its reading in RAM and starts no second exchange. Nothing touches
-        # the flash while the hung radio counts as transmitting (node() checks that at the end).
+        # Send accepted, then neither TxDone nor the driver's TxTimeout: once the exchange outlasts
+        # its worst case the check stops the radio (standby), journals any held reading with the radio
+        # idle, stops sampling and keeps failing, so the watchdog resets the board and no reading is
+        # lost. Nothing touches the flash while the hung radio transmits (node() checks that).
         for pending in (0, 2):
             with self.subTest(backlog=pending):
                 n = self.node()
@@ -625,14 +625,14 @@ class TxStateMachine(unittest.TestCase):
                 self.assertEqual(n.lib.h_healthy(), 1)
                 n.advance(1)
                 self.assertEqual(n.lib.h_healthy(), 0)
+                self.assertIn('#watchdog radio exchange stuck; radio stopped, held readings journaled, resetting', n.out())
+                self.assertEqual(n.radio(), R_STANDBY)    # the hung transmission is stopped
                 frames = n.sent()
                 self.assertEqual(n.lib.h_flash_ops_during_radio(), 0)
                 journaled = n.status()['pending']
-                n.advance_to(minute(k + 1) + 100)      # the next minute does not start another exchange
-                out = n.out()
-                self.assertIn('#busy previous exchange still running', out)
-                self.assertRegex(out, rf'#sample epoch=\d+ seq={k + 1} .* journal=held ')
-                self.assertEqual((n.sent(), n.status()['pending']), (frames, journaled))
+                n.advance_to(minute(k + 2) + 100)      # until the reset: no sampling, no other exchange
+                self.assertNotIn('#sample ', n.out())
+                self.assertEqual((n.sent(), n.status()['pending'], n.lib.h_healthy()), (frames, journaled, 0))
 
     def test_a_reading_made_during_an_exchange_is_journaled_when_the_radio_goes_idle(self):
         # Flash is only written with the radio idle: minute 1's reading waits in RAM while minute 0's

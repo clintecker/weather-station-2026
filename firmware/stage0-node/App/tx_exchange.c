@@ -104,6 +104,17 @@ const char *exchange_state_name(void) { return tx_state_name[tx_state]; }
    and a reading that a minute produced meanwhile is journaled now, first. */
 static void radio_idle(void) { tx_state = TX_IDLE; ws_radio_sleep(); held_flush(); }
 
+/* The exchange outlasted its worst case (a radio that never finishes): stop the radio, then journal
+   any held reading while it is idle, so a watchdog reset loses nothing (app_tx.c tx_healthy). */
+void exchange_abort(void)
+{
+  UTIL_TIMER_Stop(&gap_timer);
+  UTIL_TIMER_Stop(&ack_timer);
+  Radio.Standby();
+  tx_state = TX_IDLE;
+  held_flush();
+}
+
 /* The next frame goes after INTER_FRAME_MS, from the gap timer: nothing waits meanwhile. */
 static void gap_before(int then) { gap_then = then; tx_state = TX_GAP; UTIL_TIMER_Start(&gap_timer); }
 

@@ -18,6 +18,7 @@ void exchange_init(void);   /* radio, timers and the process task; the radio sle
 void exchange_start(const jref_t *live, unsigned backlog);
 int exchange_busy(void);
 int exchange_overdue(uint32_t now_s);   /* busy for longer than this exchange's worst case (watchdog) */
+void exchange_abort(void);               /* radio to standby, exchange over, held readings journaled */
 const char *exchange_state_name(void);
 
 typedef struct {
