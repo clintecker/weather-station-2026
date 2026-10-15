@@ -155,9 +155,9 @@ extern "C" {
 #define UTIL_ADV_TRACE_INIT_CRITICAL_SECTION( )    UTILS_INIT_CRITICAL_SECTION()         /*!< init the critical section in trace feature */
 #define UTIL_ADV_TRACE_ENTER_CRITICAL_SECTION( )   UTILS_ENTER_CRITICAL_SECTION()        /*!< enter the critical section in trace feature */
 #define UTIL_ADV_TRACE_EXIT_CRITICAL_SECTION( )    UTILS_EXIT_CRITICAL_SECTION()         /*!< exit the critical section in trace feature */
-#define UTIL_ADV_TRACE_TMP_BUF_SIZE                (256U)                                /*!< default trace buffer size */
+#define UTIL_ADV_TRACE_TMP_BUF_SIZE                (640U)                                /*!< one line: a 255-byte #rx crc capture is ~560 characters */
 #define UTIL_ADV_TRACE_TMP_MAX_TIMESTMAP_SIZE      (15U)                                 /*!< default trace timestamp size */
-#define UTIL_ADV_TRACE_FIFO_SIZE                   (512U)                                /*!< default trace fifo size */
+#define UTIL_ADV_TRACE_FIFO_SIZE                   (2048U)                               /*!< lines waiting for the UART DMA (~180 ms at 115200 baud) */
 #define UTIL_ADV_TRACE_MEMSET8( dest, value, size) UTIL_MEM_set_8((dest),(value),(size)) /*!< memset utilities interface to trace feature */
 #define UTIL_ADV_TRACE_VSNPRINTF(...)              tiny_vsnprintf_like(__VA_ARGS__)      /*!< vsnprintf utilities interface to trace feature */
 

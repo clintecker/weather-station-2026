@@ -9,13 +9,7 @@ uint8_t ws_crc8(const uint8_t *data, size_t count) {
  }
  return crc;
 }
-int ws_sht45_read(const ws_i2c *bus,int16_t *centi_c,uint16_t *centi_rh) {
- const uint8_t command=0xfd; uint8_t bytes[6];
- if(!bus||!bus->write||!bus->read||!bus->delay_ms||!centi_c||!centi_rh) return -1;
- /* Callbacks use the 7-bit address; STM32 HAL glue shifts it when needed. */
- if(bus->write(bus->context,0x44,&command,1)) return -2;
- bus->delay_ms(bus->context,10); /* High precision, heater OFF. */
- if(bus->read(bus->context,0x44,bytes,6)) return -3;
+int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN],int16_t *centi_c,uint16_t *centi_rh) {
  if(ws_crc8(bytes,2)!=bytes[2]||ws_crc8(bytes+3,2)!=bytes[5]) return -4;
  uint32_t rt=((uint32_t)bytes[0]<<8)|bytes[1], rh=((uint32_t)bytes[3]<<8)|bytes[4];
  int32_t t=-4500+(int32_t)((17500*rt+32767)/65535);
@@ -47,19 +41,30 @@ static int32_t mean_half_up(int32_t sum,uint8_t n) {
 }
 int ws_th_mean_t(const ws_th_window *w,int16_t *t) { if(!w->n) return 0; *t=(int16_t)mean_half_up(w->t_sum,w->n); return 1; }
 int ws_th_mean_h(const ws_th_window *w,uint16_t *h) { if(!w->n) return 0; *h=(uint16_t)mean_half_up(w->h_sum,w->n); return 1; }
-int ws_i2c_recover(const ws_i2c_pins *p) {
- const uint32_t half=5;                      /* 5 us half period = 100 kHz */
- p->set_sda(p->context,1); p->set_scl(p->context,1); p->wait_us(p->context,half);
- for(int i=0;i<9 && !p->read_sda(p->context);i++) {
-  p->set_scl(p->context,0); p->wait_us(p->context,half);
-  p->set_scl(p->context,1); p->wait_us(p->context,half);
+/* One step per half period of 100 kHz SCL; the caller waits >= WS_I2C_HALF_US between steps. */
+enum { REC_CHECK, REC_HIGH, REC_STOP_SDA_LOW, REC_STOP_SCL_HIGH, REC_STOP_SDA_HIGH, REC_DONE };
+void ws_i2c_recover_begin(ws_i2c_rec *s,const ws_i2c_pins *p) {
+ s->phase=REC_CHECK; s->pulses=0; s->held=0;
+ p->set_sda(p->context,1); p->set_scl(p->context,1);
+}
+int ws_i2c_recover_step(ws_i2c_rec *s,const ws_i2c_pins *p) {
+ switch(s->phase) {
+  case REC_CHECK:
+   if(s->pulses<9&&!p->read_sda(p->context)) { p->set_scl(p->context,0); s->phase=REC_HIGH; return 1; }
+   s->held=!p->read_sda(p->context);
+   p->set_scl(p->context,0); s->phase=REC_STOP_SDA_LOW; return 1;   /* STOP */
+  case REC_HIGH: p->set_scl(p->context,1); s->pulses++; s->phase=REC_CHECK; return 1;
+  case REC_STOP_SDA_LOW: p->set_sda(p->context,0); s->phase=REC_STOP_SCL_HIGH; return 1;
+  case REC_STOP_SCL_HIGH: p->set_scl(p->context,1); s->phase=REC_STOP_SDA_HIGH; return 1;
+  case REC_STOP_SDA_HIGH: p->set_sda(p->context,1); s->phase=REC_DONE; return 1;
+  default: return s->held?-1:0;
  }
- int held=!p->read_sda(p->context);
- p->set_scl(p->context,0); p->wait_us(p->context,half);   /* STOP */
- p->set_sda(p->context,0); p->wait_us(p->context,half);
- p->set_scl(p->context,1); p->wait_us(p->context,half);
- p->set_sda(p->context,1); p->wait_us(p->context,half);
- return held?-1:0;
+}
+int ws_i2c_recover(const ws_i2c_pins *p) {
+ ws_i2c_rec s; int rc;
+ ws_i2c_recover_begin(&s,p); p->wait_us(p->context,WS_I2C_HALF_US);
+ while((rc=ws_i2c_recover_step(&s,p))>0) p->wait_us(p->context,WS_I2C_HALF_US);
+ return rc;
 }
 int ws_link_may_send(int energy,int probing,int32_t secs_until_probe) {
  if(energy>=3) return 0;

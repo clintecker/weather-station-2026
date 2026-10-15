@@ -8,6 +8,7 @@
  * WIPE ERASE-ALL-NODE-STATE, TEST-HANG, TEST-FAULT, TEST-FLASH-STORM (firmware/stage0-node/README.md). */
 #include <stdlib.h>
 #include <string.h>
+#include "busymon.h"
 #include "console.h"
 #include "leds.h"
 #include "watchdog.h"
@@ -33,7 +34,8 @@
 #define SAMPLES_PER_REPORT  4U
 #define ACK_WINDOW_MS       2000U
 #define MIN_RELISTEN_MS     50U     /* less window left than this after a stray packet: give up */
-#define INTER_FRAME_MS      50U
+#define INTER_FRAME_MS      50U     /* gap before each further frame: the RX is back to listening after its ACK */
+#define REBOOT_DELAY_MS     200U    /* a commanded reboot lets the console finish its line first */
 #define MAX_QUEUE           21U   /* live + up to 20 backlog (SURPLUS at SF7); RAM 84 B */
 
 /* Transmission policy (docs/radio-energy-policy.md, approved 2026-10-12; gap G13).
@@ -105,7 +107,17 @@ static uint32_t last_sample_mcu, exchange_start_mcu; /* watchdog progress eviden
 
 static jref_t queue[MAX_QUEUE];
 static unsigned qn, qi;
-static int busy;
+/* The minute's radio exchange, one state at a time (docs/firmware-event-model.md). Every state is
+ * left by an event that is certain to come: the radio's TxDone/TxTimeout (WS_TX_TIMEOUT_MS), its
+ * RxDone/RxTimeout (the ACK window), or the gap timer. Anything else is counted as unexpected. */
+typedef enum { TX_IDLE, TX_GAP, TX_SENDING, TX_ACK_WAIT, TX_DIAG_SENDING, TX_STATES } tx_state_t;
+static const char *const tx_state_name[] = { "idle", "gap", "sending", "ack-wait", "diag-sending" };
+_Static_assert(sizeof tx_state_name / sizeof tx_state_name[0] == TX_STATES, "one name per state");
+static tx_state_t tx_state = TX_IDLE;
+static enum { GAP_FRAME, GAP_DIAG } gap_then;   /* what the gap timer starts */
+static UTIL_TIMER_Object_t gap_timer, reboot_timer;
+static uint32_t n_unexpected;
+#define busy (tx_state != TX_IDLE)
 static uint64_t sent_counter;
 static uint32_t sent_epoch, sent_seq;
 static uint32_t n_sent, n_acked, n_no_ack, n_ack_rejects, n_sensor_faults;
@@ -139,7 +151,7 @@ static UTIL_TIMER_Object_t boot_retry_timer;
  * minute's exchange (also while probing, so the link field can read "probing").
  * Fire-and-forget: no journal entry, no receive window. */
 #define DIAG_PERIOD_S 900U
-static int diag_due = 1, diag_in_flight;
+static int diag_due = 1;
 static uint32_t ack_window_end;   /* HAL_GetTick() at which the current ACK window closes */
 static uint32_t last_diag_mcu;
 
@@ -152,7 +164,17 @@ static int8_t rx_snr;
 /* Signal of the last authentic ACK, as the node heard it (DIAG, design section 4): the uplink and
    downlink can differ (gap G15). -128 = none yet. */
 static int8_t ack_rssi = -128, ack_snr = -128;
-static volatile enum { EV_NONE, EV_TX_DONE, EV_TX_TIMEOUT, EV_RX_DONE, EV_RX_TIMEOUT, EV_RX_ERROR } event;
+/* Events from interrupt and timer context, as bits (as in app_rx.c: none is lost if two arrive
+   before process() runs). */
+#define EV_TX_DONE    (1U << 0)
+#define EV_TX_TIMEOUT (1U << 1)
+#define EV_RX_DONE    (1U << 2)
+#define EV_RX_TIMEOUT (1U << 3)
+#define EV_RX_ERROR   (1U << 4)
+#define EV_GAP        (1U << 5)
+#define EV_COUNT      6U
+static const char *const ev_name[EV_COUNT] = { "tx-done", "tx-timeout", "rx-done", "rx-timeout", "rx-error", "gap" };
+static volatile uint32_t pending_ev;
 
 /* RTC-based monotonic seconds; SysTimeSet() does not change it. */
 static uint32_t mcu_seconds(void) { return SysTimeGetMcuTime().Seconds; }
@@ -210,7 +232,7 @@ static const char *u64_text(uint64_t v, char buf[21])
 static void status(void)
 {
   char ctr_buf[21];
-  /* Two lines: the console print buffer is 256 bytes (UTIL_ADV_TRACE_TMP_BUF_SIZE) and one line
+  /* Separate lines: one long line was once cut off at the old 256-byte print buffer (now 640) and
    * used to be cut off mid-field. #status keeps the fields provision-node and the gateway parse. */
   APP_PRINTF("#status role=tx fw=%s reset=%s provisioned=%d station=%u kcv=%02x%02x%02x kat=%s epoch=%u next_seq=%u "
              "ctr=%s ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u\n",
@@ -225,9 +247,22 @@ static void status(void)
              (unsigned)store_journal_burned(), (unsigned)store_abandoned_total(), (unsigned)n_sent, (unsigned)n_acked,
              (unsigned)n_no_ack, (unsigned)n_ack_rejects, (unsigned)n_sensor_faults, (unsigned)tx_fail.n, (unsigned)tx_air.n,
              (unsigned)stackmon_peak());
+  APP_PRINTF("#timing state=%s task_peak_us=%u task_peak=%s isr_peak_us=%u isr_peak=%s erase_peak_us=%u prog_peak_us=%u "
+             "trace_drops=%u unexpected=%u\n", tx_state_name[tx_state],
+             (unsigned)busymon_peak_us(BM_TASK), busymon_peak_name(BM_TASK), (unsigned)busymon_peak_us(BM_ISR),
+             busymon_peak_name(BM_ISR), (unsigned)busymon_peak_us(BM_ERASE), (unsigned)busymon_peak_us(BM_PROG),
+             (unsigned)ws_trace_drops, (unsigned)n_unexpected);
 }
 
-static void post(int ev) { event = ev; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0); }
+static void post(uint32_t ev)
+{
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  pending_ev |= ev;
+  __set_PRIMASK(primask);
+  UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0);
+}
+static void on_gap(void *ctx) { (void)ctx; post(EV_GAP); }
 static void on_tx_done(void) { post(EV_TX_DONE); }
 static void on_tx_timeout(void) { post(EV_TX_TIMEOUT); }
 static void on_rx_timeout(void) { post(EV_RX_TIMEOUT); }
@@ -244,37 +279,37 @@ static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr
 static void finish_exchange(void);
 
 /* The exchange (and any health report in flight) is over: the radio sleeps until the next minute. */
-static void radio_idle(void) { diag_in_flight = 0; busy = 0; Radio.Sleep(); }
+static void radio_idle(void) { tx_state = TX_IDLE; Radio.Sleep(); }
 
-/* Send queue[qi]. A local failure (journal read, seal, radio busy) skips to the next item in this
- * loop, never by calling next_item(): no recursion, so the stack stays bounded (tools/stack_report.py).
- * Returns once a frame is on air (its TxDone or reply drives next_item) or the exchange is over. */
+/* The next frame goes after INTER_FRAME_MS, from the gap timer: nothing waits meanwhile. */
+static void gap_before(int then) { gap_then = then; tx_state = TX_GAP; UTIL_TIMER_Start(&gap_timer); }
+
+static void next_item(void);
+
+/* Send queue[qi]. A local failure (journal read, seal, radio busy) moves on to the next item after
+ * a gap, like a sent frame; a refused counter reservation ends the exchange. */
 static void send_current(void)
 {
-  for (;;)
+  uint8_t plain[WS_OBS_PLAIN_MAX], frame[OBS_FRAME_MAX];
+  int plen = -1;
+  if (store_journal_read(queue[qi], plain) || (plen = ws_obs_plain_len(plain, sizeof plain)) < 0) { APP_PRINTF("#error journal-read\n"); }
+  else
   {
-    uint8_t plain[WS_OBS_PLAIN_MAX], frame[OBS_FRAME_MAX];
-    int plen = -1;
-    if (store_journal_read(queue[qi], plain) || (plen = ws_obs_plain_len(plain, sizeof plain)) < 0) { APP_PRINTF("#error journal-read\n"); }
+    /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
+    if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_air, 0); APP_PRINTF("#error counter-reserve\n"); radio_idle(); return; }
+    int flen = ws_seal_kind(key, station, WS_KIND_OBS, sent_counter, plain, (uint32_t)plen, frame, sizeof frame);
+    if (flen < 0) { APP_PRINTF("#error seal\n"); }
     else
     {
-      /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
-      if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_air, 0); APP_PRINTF("#error counter-reserve\n"); radio_idle(); return; }
-      int flen = ws_seal_kind(key, station, WS_KIND_OBS, sent_counter, plain, (uint32_t)plen, frame, sizeof frame);
-      if (flen < 0) { APP_PRINTF("#error seal\n"); }
-      else
-      {
-        sent_epoch = ws_get_be32(plain);
-        sent_seq = ws_get_be32(plain + 4);
-        n_sent++;
-        led_flash(LED_BLUE, 400);
-        if (Radio.Send(frame, (uint8_t)flen) == RADIO_STATUS_OK) return;  /* success is its TxDone */
-        ws_failrun_note(&tx_air, 0); APP_PRINTF("#error radio-busy\n");
-      }
+      sent_epoch = ws_get_be32(plain);
+      sent_seq = ws_get_be32(plain + 4);
+      n_sent++;
+      led_flash(LED_BLUE, 400);
+      if (Radio.Send(frame, (uint8_t)flen) == RADIO_STATUS_OK) { tx_state = TX_SENDING; return; }  /* its TxDone follows */
+      ws_failrun_note(&tx_air, 0); APP_PRINTF("#error radio-busy\n");
     }
-    if (++qi >= qn) { finish_exchange(); return; }
-    HAL_Delay(INTER_FRAME_MS);
   }
+  next_item();
 }
 
 /* Identity of a journaled record (its first 8 bytes); 0 if the slot cannot be read. */
@@ -377,13 +412,13 @@ static int8_t clamp8(int v) { return (int8_t)(v < -127 ? -127 : v > 127 ? 127 : 
 #error "WS_FW_BUILD_ID comes from the Makefile"
 #endif
 
-/* Returns 1 if a health report went on air (the caller then waits for TxDone). */
+static int diag_wanted(void) { return diag_due || mcu_seconds() - last_diag_mcu >= DIAG_PERIOD_S; }
+
+/* Returns 1 if a health report went on air (its TxDone or TxTimeout ends the exchange). */
 static int send_diag(void)
 {
   uint8_t plain[WS_DIAG_PLAIN_LEN], frame[WS_DIAG_FRAME_LEN]; uint64_t ctr;
   uint32_t now = mcu_seconds();
-  if (now - last_diag_mcu >= DIAG_PERIOD_S) diag_due = 1;
-  if (!diag_due) return 0;
   uint32_t crashes = fault_count();
   ws_diag_t d = { .epoch = boot_epoch, .uptime = now - boot_mcu, .lost = store_journal_lost(), .build = (uint32_t)WS_FW_BUILD_ID,
                   .pending = clamp16(store_journal_pending()), .torn = clamp16(store_journal_burned()),
@@ -393,9 +428,8 @@ static int send_diag(void)
   ws_diag_pack(&d, plain);
   if (store_next_counter(&ctr) || ws_seal_kind(key, station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) < 0) return 0;
   diag_due = 0; last_diag_mcu = now;
-  HAL_Delay(INTER_FRAME_MS);
   if (Radio.Send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_air, 0); return 0; }
-  diag_in_flight = 1;
+  tx_state = TX_DIAG_SENDING;
   APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u\n", d.pending, (unsigned)d.lost, d.torn, d.abandoned, d.no_ack);
   return 1;
 }
@@ -406,13 +440,13 @@ static void finish_exchange(void)
   for (unsigned i = 0; i < qn; i++) any |= replied[i];
   settle_strikes(any);
   link_update(any);
-  if (send_diag()) return; /* busy until its TxDone */
+  if (diag_wanted()) { gap_before(GAP_DIAG); return; }
   radio_idle();
 }
 
 static void next_item(void)
 {
-  if (++qi < qn) { HAL_Delay(INTER_FRAME_MS); send_current(); return; }
+  if (++qi < qn) { gap_before(GAP_FRAME); return; }
   finish_exchange();
 }
 
@@ -476,52 +510,105 @@ static int handle_reply(void)
   return mine;
 }
 
-static void process(void)
+/* One event in one state. Every pair not listed is a bug or a stray radio callback: counted and
+   printed, never acted on (docs/firmware-event-model.md has the full table). */
+static void handle(uint32_t ev)
 {
-  int ev = event;
-  event = EV_NONE;
-  switch (ev)
+  switch (tx_state)
   {
-    case EV_TX_DONE:
-      ws_failrun_note(&tx_air, 1);   /* the frame left: the radio works */
-      if (diag_in_flight) { radio_idle(); break; } /* no reply expected */
-      ack_window_end = HAL_GetTick() + ACK_WINDOW_MS;
-      Radio.Rx(ACK_WINDOW_MS);
-      break;
-    case EV_RX_DONE:
-      if (handle_reply()) { next_item(); break; }
-      /* Not the reply to this frame (foreign, forged, or another frame's ACK): keep listening for
-         the rest of the window instead of moving on and missing the real ACK (firmware review,
-         finding 2). Too little time left counts as no reply. */
+    case TX_SENDING:
+      if (ev == EV_TX_DONE)
       {
-        uint32_t now = HAL_GetTick(), left = (int32_t)(ack_window_end - now) > 0 ? ack_window_end - now : 0;
-        if (left > MIN_RELISTEN_MS) { Radio.Rx(left); break; }
+        ws_failrun_note(&tx_air, 1);   /* the frame left: the radio works */
+        ack_window_end = HAL_GetTick() + ACK_WINDOW_MS;
+        tx_state = TX_ACK_WAIT;
+        Radio.Rx(ACK_WINDOW_MS);
+        return;
       }
-      no_reply(0);
+      if (ev == EV_TX_TIMEOUT)
+      {
+        ws_failrun_note(&tx_air, 0);
+        led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n");
+        stop_drain(); next_item();
+        return;
+      }
       break;
-    case EV_RX_TIMEOUT:
-    case EV_RX_ERROR:
-      no_reply(1);
+    case TX_ACK_WAIT:
+      if (ev == EV_RX_DONE)
+      {
+        if (handle_reply()) { next_item(); return; }
+        /* Not the reply to this frame (foreign, forged, or another frame's ACK): keep listening for
+           the rest of the window instead of moving on and missing the real ACK (firmware review,
+           finding 2). Too little time left counts as no reply. */
+        uint32_t now = HAL_GetTick(), left = (int32_t)(ack_window_end - now) > 0 ? ack_window_end - now : 0;
+        if (left > MIN_RELISTEN_MS) { Radio.Rx(left); return; }
+        no_reply(0);
+        return;
+      }
+      if (ev == EV_RX_TIMEOUT || ev == EV_RX_ERROR) { no_reply(1); return; }
       break;
-    case EV_TX_TIMEOUT:
-      ws_failrun_note(&tx_air, 0);
-      led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n");
-      if (diag_in_flight) { radio_idle(); break; }
-      stop_drain(); next_item();
+    case TX_DIAG_SENDING:
+      if (ev == EV_TX_DONE || ev == EV_TX_TIMEOUT)
+      {
+        ws_failrun_note(&tx_air, ev == EV_TX_DONE);
+        if (ev == EV_TX_TIMEOUT) { led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n"); }
+        radio_idle();
+        return;
+      }
+      break;
+    case TX_GAP:
+      if (ev == EV_GAP)
+      {
+        if (gap_then == GAP_FRAME) send_current();
+        else if (!send_diag()) radio_idle();
+        return;
+      }
       break;
     default: break;
   }
+  n_unexpected++;
+  APP_PRINTF("#error unexpected event=%s state=%s\n", ev_name[__builtin_ctz(ev)], tx_state_name[tx_state]);
 }
+
+static void process(void)
+{
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  uint32_t ev = pending_ev;
+  pending_ev = 0;
+  __set_PRIMASK(primask);
+  for (uint32_t bit = 1; ev; bit <<= 1)   /* bounded: EV_COUNT bits */
+    if (ev & bit) { ev &= ~bit; handle(bit); }
+}
+BUSYMON_TASK(process)
 
 /* The minute's 15-s samples (PRD section 9: coverage, mean and extrema). */
 static ws_th_window th_window;
 static unsigned th_ticks;
 
+static int sensor_reported;   /* the first reading after boot is printed as #sensor */
+static int rebooting;         /* a commanded reboot is pending: a late reading is dropped */
+
+static void sampled(int src, int16_t t, uint16_t h);
+
+/* Every 15 s: start a measurement; sampled() gets its result from the sensor task ~10 ms later. */
 static void sample(void)
 {
-  int16_t t = 0; uint16_t h = 0; uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live;
   last_sample_mcu = mcu_seconds();
-  int src = sensor_read(&t, &h);
+  if (sensor_start(sampled)) sampled(-1, 0, 0);   /* the previous one never finished: a missed sample */
+}
+BUSYMON_TASK(sample)
+
+static void sampled(int src, int16_t t, uint16_t h)
+{
+  uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live;
+  if (rebooting) return;
+  if (!sensor_reported)
+  {
+    sensor_reported = 1;
+    if (src) { APP_PRINTF("#sensor fault rc=%d (see sensor.h for codes)\n", src); }
+    else { APP_PRINTF("#sensor ok t=%d rh=%u\n", t, h); }
+  }
   ws_th_add(&th_window, src == 0, t, h);
   if (++th_ticks < SAMPLES_PER_REPORT) return;   /* the minute's report follows its last sample */
   th_ticks = 0;
@@ -532,7 +619,7 @@ static void sample(void)
   if (!valid) n_sensor_faults++;
   /* Draft-5 observation (docs/protocol-draft5-design.md 5): out-of-range temperature is INVALID,
      RH is clamped (ws_code_*); a sensor fault sends both fields as INVALID, never leaves them out. */
-  /* static: sample() runs only from the sequencer, never re-entered, and it is the deepest
+  /* static: sampled() runs only from the sequencer, never re-entered, and it is the deepest
      callback chain, which tools/stack_report.py counts four times (a 104-byte record cost ~416 B). */
   static ws_obs_t o;
   o = (ws_obs_t){ .epoch = boot_epoch, .seq = next_seq, .utc = utc, .uptime = uptime,
@@ -573,7 +660,7 @@ static void sample(void)
   qi = 0;
   last_send_mcu = now;
   memset(replied, 0, sizeof replied);
-  if (qn) { busy = 1; exchange_start_mcu = mcu_seconds(); send_current(); }
+  if (qn) { exchange_start_mcu = mcu_seconds(); send_current(); }
 }
 
 /* Watchdog health: real progress, not just a running main loop (failure-modes.md G1). */
@@ -613,16 +700,35 @@ static void storm(void)
                  u64_text(store_counter_next(), ctr_buf), (unsigned)store_journal_burned()); }
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
 }
+BUSYMON_TASK(storm)
 
 static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
 
-static void reboot_soon(void) { HAL_Delay(200); NVIC_SystemReset(); }
+/* A commanded reboot: sampling stops now, the reset comes from a timer once the console has had
+   REBOOT_DELAY_MS to send the reply line. */
+static void on_reboot(void *ctx) { (void)ctx; NVIC_SystemReset(); }
+static void reboot_soon(void)
+{
+  running = 0; rebooting = 1;
+  UTIL_TIMER_Stop(&sample_timer);
+  UTIL_TIMER_Create(&reboot_timer, REBOOT_DELAY_MS, UTIL_TIMER_ONESHOT, on_reboot, NULL);
+  UTIL_TIMER_Start(&reboot_timer);
+}
+
+/* Bench: TEST-HANG stops the main loop on purpose, so the watchdog must reset the board. The only
+   wait in this firmware, and it is meant to never end (tools/blocking_report.py TEST_ONLY). */
+static void test_hang(void) __attribute__((noreturn));
+static void test_hang(void)
+{
+  APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n");
+  for (;;) { }
+}
 
 static void on_line(char *line)
 {
   if (!strcmp(line, "STATUS")) { status(); return; }
   if (!strcmp(line, "TEST-FAULT")) fault_test();
-  if (!strcmp(line, "TEST-HANG")) { APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n"); HAL_Delay(50); for (;;) { } }
+  if (!strcmp(line, "TEST-HANG")) test_hang();
   if (!strcmp(line, "TEST-FLASH-STORM"))
   {
     { char ctr_buf[21];
@@ -673,6 +779,7 @@ static void boot_retry(void)
 void SubghzApp_Init(void)
 {
   stackmon_paint();
+  busymon_init();
   events.TxDone = on_tx_done;
   events.TxTimeout = on_tx_timeout;
   events.RxDone = on_rx_done;
@@ -682,9 +789,10 @@ void SubghzApp_Init(void)
   Radio.Init(&events);
   ws_radio_configure(0);
   Radio.Sleep();
-  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process);
-  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample);
-  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Storm, UTIL_SEQ_RFU, storm);
+  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process_timed);
+  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample_timed);
+  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Storm, UTIL_SEQ_RFU, storm_timed);
+  UTIL_TIMER_Create(&gap_timer, INTER_FRAME_MS, UTIL_TIMER_ONESHOT, on_gap, NULL);
   console_init(on_line);
 
   boot_mcu = mcu_seconds();
@@ -704,11 +812,6 @@ void SubghzApp_Init(void)
   /* Durable epoch before the first sample: observation identities never repeat. */
   if (store_next_epoch(&boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); boot_retry(); return; }
   sensor_init();
-  {
-    int16_t t; uint16_t h; int src = sensor_read(&t, &h);
-    if (src) { APP_PRINTF("#sensor fault rc=%d (see sensor.h for codes)\n", src); }
-    else { APP_PRINTF("#sensor ok t=%d rh=%u\n", t, h); }
-  }
   running = 1;
   last_sample_mcu = mcu_seconds();
   status();

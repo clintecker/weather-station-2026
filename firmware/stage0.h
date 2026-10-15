@@ -3,13 +3,15 @@
 #include <stdint.h>
 #include <stddef.h>
 /* Portable core; board HAL, flash journal, AES-CCM and RF remain integration work. */
-typedef struct {
- void *context;
- int (*write)(void *, uint8_t, const uint8_t *, size_t);
- int (*read)(void *, uint8_t, uint8_t *, size_t);
- void (*delay_ms)(void *, uint32_t);
-} ws_i2c;
-int ws_sht45_read(const ws_i2c *, int16_t *, uint16_t *);
+/* SHT45 (Sensirion datasheet v1): write WS_SHT45_MEASURE to WS_SHT45_ADDR, wait at least
+   WS_SHT45_MEASURE_MS (high precision, heater off), then read WS_SHT45_REPLY_LEN bytes. The firmware
+   does each step from an interrupt or timer (App/sensor.c); ws_sht45_parse checks both CRCs and
+   converts: 0, or -4 on a CRC mismatch (outputs untouched). */
+#define WS_SHT45_ADDR       0x44
+#define WS_SHT45_MEASURE    0xfd
+#define WS_SHT45_MEASURE_MS 10
+#define WS_SHT45_REPLY_LEN  6
+int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN], int16_t *centi_c, uint16_t *centi_rh);
 uint8_t ws_crc8(const uint8_t *, size_t);
 /* One minute of 15-s T/RH samples (PRD section 9: coverage, mean and extrema). Samples whose
    temperature is outside the SHT45 range (-40.00..125.00 C) are not counted; RH is clamped to
@@ -31,6 +33,13 @@ typedef struct {
  int (*read_sda)(void *);
  void (*wait_us)(void *, uint32_t);
 } ws_i2c_pins;
+/* The same sequence one half period at a time, for a timer to drive (no busy-wait): begin, wait,
+   then step and wait while it returns 1; it ends with 0 (bus free) or -1. ws_i2c_recover runs
+   it with wait_us between steps (host tests). */
+#define WS_I2C_HALF_US 5   /* 100 kHz */
+typedef struct { uint8_t phase, pulses, held; } ws_i2c_rec;
+void ws_i2c_recover_begin(ws_i2c_rec *, const ws_i2c_pins *);
+int ws_i2c_recover_step(ws_i2c_rec *, const ws_i2c_pins *);
 int ws_i2c_recover(const ws_i2c_pins *);
 /* Link gate for one minute (docs/radio-energy-policy.md section 6). energy: 0 SURPLUS,
    1 NORMAL, 2 CONSERVE, 3 CRITICAL. While probing, healthy energy (SURPLUS, NORMAL) still

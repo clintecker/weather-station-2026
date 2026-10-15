@@ -1,3 +1,4 @@
+#include "busymon.h"
 #include "console.h"
 #include <string.h>
 #include "stm32_seq.h"
@@ -31,11 +32,12 @@ static void console_task(void)
   if (line_ready && handler) handler(line);
   line_ready = 0;
 }
+BUSYMON_TASK(console_task)
 
 void console_init(void (*on_line)(char *line))
 {
   handler = on_line;
-  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Console, UTIL_SEQ_RFU, console_task);
+  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Console, UTIL_SEQ_RFU, console_task_timed);
   vcom_ReceiveInit(on_char);
 }
 
@@ -47,18 +49,12 @@ _Static_assert(2U * HEX_FRAME_MAX + 2U <= UTIL_ADV_TRACE_TMP_BUF_SIZE, "longest 
 
 void hex_print(const uint8_t *data, int len)
 {
-  static const char digits[] = "0123456789abcdef";
   char text[2 * HEX_FRAME_MAX + 1];
   if (len < 0 || len > (int)HEX_FRAME_MAX)
   {
     APP_PRINTF("#error frame too long to forward len=%d\n", len);  /* never a truncated frame */
     return;
   }
-  for (int i = 0; i < len; i++)
-  {
-    text[2 * i] = digits[data[i] >> 4];
-    text[2 * i + 1] = digits[data[i] & 15];
-  }
-  text[2 * len] = 0;
+  ws_hex_text(data, len, text);
   APP_PRINTF("%s\n", text);
 }

@@ -59,6 +59,7 @@
 static uint8_t SYS_TimerInitialisedFlag = 0;
 
 /* USER CODE BEGIN PV */
+volatile uint32_t ws_trace_drops;
 
 /* USER CODE END PV */
 

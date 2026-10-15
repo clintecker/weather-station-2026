@@ -37,6 +37,13 @@ static int nibble(char c)
  return -1;
 }
 
+void ws_hex_text(const uint8_t *data, int n, char *text)
+{
+ static const char digits[] = "0123456789abcdef";
+ for (int i = 0; i < n; i++) { text[2 * i] = digits[data[i] >> 4]; text[2 * i + 1] = digits[data[i] & 15]; }
+ text[n > 0 ? 2 * n : 0] = 0;
+}
+
 int ws_hex_decode(const char *text, uint8_t *out, int max)
 {
  int n = 0;

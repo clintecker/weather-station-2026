@@ -22,6 +22,7 @@
 #include "stm32wlxx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "busymon.h"   /* weather-station-2026: every handler is timed (App/busymon.h) */
 #include "fault.h"
 #include "flash_layout.h"
 /* USER CODE END Includes */
@@ -230,7 +231,7 @@ void TAMP_STAMP_LSECSS_SSRU_IRQHandler(void)
   /* USER CODE BEGIN TAMP_STAMP_LSECSS_SSRU_IRQn 0 */
 
   /* USER CODE END TAMP_STAMP_LSECSS_SSRU_IRQn 0 */
-  HAL_RTCEx_SSRUIRQHandler(&hrtc);
+  BUSYMON_ISR("RTC_SSRU", HAL_RTCEx_SSRUIRQHandler(&hrtc));
   /* USER CODE BEGIN TAMP_STAMP_LSECSS_SSRU_IRQn 1 */
 
   /* USER CODE END TAMP_STAMP_LSECSS_SSRU_IRQn 1 */
@@ -244,7 +245,7 @@ void DMA1_Channel5_IRQHandler(void)
   /* USER CODE BEGIN DMA1_Channel5_IRQn 0 */
 
   /* USER CODE END DMA1_Channel5_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart2_tx);
+  BUSYMON_ISR("DMA1_CH5", HAL_DMA_IRQHandler(&hdma_usart2_tx));
   /* USER CODE BEGIN DMA1_Channel5_IRQn 1 */
 
   /* USER CODE END DMA1_Channel5_IRQn 1 */
@@ -258,7 +259,7 @@ void USART2_IRQHandler(void)
   /* USER CODE BEGIN USART2_IRQn 0 */
 
   /* USER CODE END USART2_IRQn 0 */
-  HAL_UART_IRQHandler(&huart2);
+  BUSYMON_ISR("USART2", HAL_UART_IRQHandler(&huart2));
   /* USER CODE BEGIN USART2_IRQn 1 */
 
   /* USER CODE END USART2_IRQn 1 */
@@ -272,7 +273,7 @@ void RTC_Alarm_IRQHandler(void)
   /* USER CODE BEGIN RTC_Alarm_IRQn 0 */
 
   /* USER CODE END RTC_Alarm_IRQn 0 */
-  HAL_RTC_AlarmIRQHandler(&hrtc);
+  BUSYMON_ISR("RTC_Alarm", HAL_RTC_AlarmIRQHandler(&hrtc));
   /* USER CODE BEGIN RTC_Alarm_IRQn 1 */
 
   /* USER CODE END RTC_Alarm_IRQn 1 */
@@ -286,7 +287,7 @@ void SUBGHZ_Radio_IRQHandler(void)
   /* USER CODE BEGIN SUBGHZ_Radio_IRQn 0 */
 
   /* USER CODE END SUBGHZ_Radio_IRQn 0 */
-  HAL_SUBGHZ_IRQHandler(&hsubghz);
+  BUSYMON_ISR("SUBGHZ_Radio", HAL_SUBGHZ_IRQHandler(&hsubghz));
   /* USER CODE BEGIN SUBGHZ_Radio_IRQn 1 */
 
   /* USER CODE END SUBGHZ_Radio_IRQn 1 */

@@ -5,9 +5,13 @@
  * Rev 4 Tables 17-18. 100 kHz, open-drain. The Adafruit 6174 breakout carries the real 10 kOhm
  * pull-ups; the MCU's internal pull-ups are on only so an unplugged sensor reads as a NACK. */
 void sensor_init(void);
-/* Return codes, printed as rc= on #sample: 0 ok (CRC-checked), -2 address NACK (sensor absent
- * or wiring), -3 read NACK, -4 CRC mismatch (noise, cable), -5 bus still stuck after recovery.
- * On any fault the outputs are untouched. */
+/* Starts one measurement and returns at once: 0, or -1 if one is still running. done() runs
+ * later from the main loop (the sensor task), about 10 ms later, or ~25 ms after a failure
+ * (the bus recovery runs first). Its rc, printed as rc= on #sample: 0 ok (CRC-checked), -1 the
+ * previous measurement had not finished (app_tx.c),
+ * -2 address NACK (sensor absent or wiring), -3 read NACK, -4 CRC mismatch (noise, cable),
+ * -5 bus still stuck after recovery, -6 a transfer never completed. On a fault the values are 0. */
 #define SENSOR_BUS_STUCK (-5)
-int sensor_read(int16_t *centi_c, uint16_t *centi_rh);
+#define SENSOR_TIMEOUT   (-6)
+int sensor_start(void (*done)(int rc, int16_t centi_c, uint16_t centi_rh));
 #endif

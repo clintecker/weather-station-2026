@@ -26,6 +26,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   uint8_t frame[WS_ACK_FRAME_LEN + 1];
   int got = ws_hex_decode(line, frame, (int)sizeof frame);
   FUZZ_CHECK(got == -1 || ((size_t)got * 2 == strlen(line) && got <= (int)sizeof frame));
+  if (got >= 0) {   /* hex out (the #rx crc capture) and back in is the identity */
+   char text[2 * (WS_ACK_FRAME_LEN + 1) + 1]; uint8_t back[WS_ACK_FRAME_LEN + 1];
+   ws_hex_text(frame, got, text);
+   FUZZ_CHECK(strlen(text) == (size_t)got * 2 && ws_hex_decode(text, back, (int)sizeof back) == got && !memcmp(back, frame, (size_t)got));
+  }
   if (ws_host_reply_ok(frame, got))
    FUZZ_CHECK(got == WS_ACK_FRAME_LEN && (frame[0] == 0x52 || frame[0] == 0x53));
   /* The same bytes as a received radio frame: only a version-5 observation within the catalog's

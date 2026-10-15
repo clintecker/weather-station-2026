@@ -6,8 +6,11 @@
  * transmitted once. The ACK path
  * uses the same radio_cfg.h power/SF/BW as the uplink (gap G15). This board holds no key and
  * never acknowledges anything itself; the host is the sole ACK authority (docs/protocol.md).
- * All other output lines start with '#' and are diagnostics for the host log. */
+ * All other output lines start with '#' and are diagnostics for the host log. A reception that
+ * fails its checks is logged too: `#rx crc ... data=<hex>` keeps every byte the radio received
+ * when only the payload CRC failed; `#rx hdr rssi=` is a header that failed (no payload). */
 #include <string.h>
+#include "busymon.h"
 #include "console.h"
 #include "leds.h"
 #include "stm32wlxx_hal.h"
@@ -34,9 +37,10 @@ static int8_t rx_snr;
  * is lost (firmware review finding 3: one event slot, cleared at the end of process(), dropped
  * events posted meanwhile; a lost TxDone left `transmitting` set until the watchdog reset). */
 #define EV_RX         (1U << 0)
-#define EV_RX_ERROR   (1U << 1)
+#define EV_RX_CRC     (1U << 1)
 #define EV_TX_DONE    (1U << 2)
 #define EV_TX_TIMEOUT (1U << 3)
+#define EV_RX_HDR     (1U << 4)
 static volatile uint32_t pending_ev;
 static volatile uint8_t transmitting;
 static uint32_t n_forwarded, n_dropped, n_acks;
@@ -69,8 +73,29 @@ static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr
   rx_snr = snr;
   post(EV_RX);
 }
-static void on_rx_error(void) { last_radio_event_ms = HAL_GetTick(); post(EV_RX_ERROR); }
-static void on_rx_timeout(void) { post(EV_RX_ERROR); }
+/* Failed receptions, from the radio interrupt. RxError is a payload CRC failure: the header
+   decoded, so the radio stored the whole packet and its buffer still holds it. RxTimeout cannot
+   be a timeout in continuous receive: ST's radio.c reports a header error that way. One capture is
+   kept until process() prints it; failures meanwhile are counted, not captured (n_fault_overrun). */
+static uint8_t bad_frame[255];
+static uint8_t bad_len;
+static int8_t bad_rssi, bad_snr, hdr_rssi;
+static uint32_t n_crc, n_hdr, n_fault_overrun;
+static void on_rx_error(void)
+{
+  last_radio_event_ms = HAL_GetTick();
+  n_crc++;
+  if (pending_ev & EV_RX_CRC) { n_fault_overrun++; return; }
+  ws_radio_last_packet(bad_frame, &bad_len, &bad_rssi, &bad_snr);
+  post(EV_RX_CRC);
+}
+static void on_rx_timeout(void)
+{
+  n_hdr++;
+  if (pending_ev & EV_RX_HDR) { n_fault_overrun++; return; }
+  hdr_rssi = ws_radio_rssi_now();   /* the channel right after the failed header */
+  post(EV_RX_HDR);
+}
 static void on_tx_done(void) { post(EV_TX_DONE); }
 static void on_tx_timeout(void) { post(EV_TX_TIMEOUT); }
 
@@ -110,13 +135,16 @@ static void process(void)
   }
   /* Take the pending events and the received frame in one step with interrupts masked, so a
      second RxDone cannot tear the frame while it is forwarded (it is handled on the next pass). */
-  static uint8_t frame[sizeof rx_frame];
+  static uint8_t frame[sizeof rx_frame], bad[sizeof bad_frame];
   uint16_t len = 0; int16_t rssi = 0; int8_t snr = 0;
+  uint8_t blen = 0; int8_t brssi = 0, bsnr = 0, hrssi = 0;
   uint32_t primask = __get_PRIMASK();
   __disable_irq();
   uint32_t ev = pending_ev;
   pending_ev = 0;
   if (ev & EV_RX) { len = rx_len; memcpy(frame, rx_frame, len); rssi = rx_rssi; snr = rx_snr; }
+  if (ev & EV_RX_CRC) { blen = bad_len; memcpy(bad, bad_frame, blen); brssi = bad_rssi; bsnr = bad_snr; }
+  hrssi = hdr_rssi;
   __set_PRIMASK(primask);
   if (ev & (EV_TX_DONE | EV_TX_TIMEOUT))
   {
@@ -140,22 +168,28 @@ static void process(void)
       APP_PRINTF("#rx drop len=%u rssi=%d snr=%d\n", len, rssi, snr);
     }
   }
-  if (ev & EV_RX_ERROR)
+  if (ev & EV_RX_CRC)
   {
-    APP_PRINTF("#rx error\n");
-    led_flash(LED_RED, 400);
-    if (!transmitting) listen();
+    static char text[2 * sizeof bad_frame + 1];
+    ws_hex_text(bad, blen, text);
+    APP_PRINTF("#rx crc len=%u rssi=%d snr=%d data=%s\n", blen, brssi, bsnr, text);
   }
+  if (ev & EV_RX_HDR) APP_PRINTF("#rx hdr rssi=%d\n", hrssi);
+  if ((ev & (EV_RX_CRC | EV_RX_HDR)) && !transmitting) listen();
 }
+BUSYMON_TASK(process)
 
 /* Liveness report for the gateway (gap G12): it marks the receiver silent after 180 s. */
 static void on_alive(void *ctx)
 {
   (void)ctx;
-  APP_PRINTF("#alive uptime=%u forwarded=%u dropped=%u acks=%u diag=%u listening=%d relistens=%u uart_errors=%u stack_peak=%u\n",
+  APP_PRINTF("#alive uptime=%u forwarded=%u dropped=%u acks=%u diag=%u listening=%d relistens=%u uart_errors=%u stack_peak=%u "
+             "crc_errors=%u hdr_errors=%u fault_overruns=%u task_peak_us=%u task_peak=%s isr_peak_us=%u isr_peak=%s trace_drops=%u\n",
              (unsigned)((HAL_GetTick() - boot_tick) / 1000), (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks,
              (unsigned)n_diag, Radio.GetStatus() == RF_RX_RUNNING || transmitting, (unsigned)n_relistens,
-             (unsigned)vcom_rx_errors(), (unsigned)stackmon_peak());
+             (unsigned)vcom_rx_errors(), (unsigned)stackmon_peak(), (unsigned)n_crc, (unsigned)n_hdr, (unsigned)n_fault_overrun,
+             (unsigned)busymon_peak_us(BM_TASK), busymon_peak_name(BM_TASK), (unsigned)busymon_peak_us(BM_ISR),
+             busymon_peak_name(BM_ISR), (unsigned)ws_trace_drops);
   /* Timer context: only flag it; the radio is touched from the sequencer task. */
   if (!transmitting && ws_silent_for(HAL_GetTick(), last_radio_event_ms, SILENCE_RELISTEN_MS))
   {
@@ -164,12 +198,21 @@ static void on_alive(void *ctx)
   }
 }
 
+/* Bench: TEST-HANG stops the main loop on purpose, so the watchdog must reset the board
+   (tools/blocking_report.py TEST_ONLY). */
+static void test_hang(void) __attribute__((noreturn));
+static void test_hang(void)
+{
+  APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n");
+  for (;;) { }
+}
+
 static void on_line(char *line)
 {
   uint8_t frame[WS_ACK_FRAME_LEN + 1];
   if (line[0] == '#') return;
   if (!strcmp(line, "TEST-FAULT")) fault_test();
-  if (!strcmp(line, "TEST-HANG")) { APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n"); HAL_Delay(50); for (;;) { } }
+  if (!strcmp(line, "TEST-HANG")) test_hang();
   if (!strcmp(line, "STATUS"))
   {
     APP_PRINTF("#status role=rx forwarded=%u dropped=%u acks=%u relistens=%u uart_errors=%u\n",
@@ -198,6 +241,7 @@ static void on_line(char *line)
 void SubghzApp_Init(void)
 {
   stackmon_paint();
+  busymon_init();
   events.RxDone = on_rx_done;
   events.RxError = on_rx_error;
   events.RxTimeout = on_rx_timeout;
@@ -209,7 +253,7 @@ void SubghzApp_Init(void)
   watchdog_start(rx_healthy);
   Radio.Init(&events);
   ws_radio_configure(1);
-  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process);
+  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process_timed);
   console_init(on_line);
   APP_PRINTF("#boot role=rx fw=%s reset=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION, watchdog_reset_cause(),
              (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);

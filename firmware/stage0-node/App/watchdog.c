@@ -1,3 +1,4 @@
+#include "busymon.h"
 #include "watchdog.h"
 #include "stm32_seq.h"
 #include "stm32_timer.h"
@@ -32,6 +33,7 @@ static void check(void)
 {
   if (!health || health()) HAL_IWDG_Refresh(&hiwdg);
 }
+BUSYMON_TASK(check)
 
 static void read_reset_cause(void)
 {
@@ -59,7 +61,7 @@ void watchdog_start(int (*healthy)(void))
   hiwdg.Init.Window = IWDG_WINDOW_DISABLE;
   hiwdg.Init.Reload = IWDG_RELOAD;
   HAL_IWDG_Init(&hiwdg);
-  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Watchdog, UTIL_SEQ_RFU, check);
+  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Watchdog, UTIL_SEQ_RFU, check_timed);
   UTIL_TIMER_Create(&check_timer, CHECK_PERIOD_MS, UTIL_TIMER_PERIODIC, request_check, NULL);
   UTIL_TIMER_Start(&check_timer);
 }
