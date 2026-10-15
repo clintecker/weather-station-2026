@@ -23,3 +23,24 @@ Score at the end with:
 .venv/bin/python tools/h01_report.py --db run-d5/observations.sqlite3 --station station-01 \
   --start 2026-10-14T18:54:00Z --hours 24 --output evidence/h01-rehearsal-2026-10-14/report
 ```
+
+## Result (scored 2026-10-15T18:55Z)
+
+The H01 scorer passes this window, but this is a **lab rehearsal, not H01**: office lab, not the
+intended placement. The report's own "PASS" heading is the scorer's verdict on these rules only.
+Full report: [`report/report.md`](report/report.md), [`report/report.json`](report/report.json).
+
+| Measure | Value |
+|---|---:|
+| On-time valid readings | 1440 of 1440 intervals (1426 required) |
+| Late / missing / sensor faults | 0 / 0 / 0 |
+| Boot epochs (resets) | 1: no reset of the TX in 24 h |
+| Gateway rejections | 0 |
+| Latency, sample to gateway | median 1.5 s, max 2.0 s (sample time is whole seconds) |
+| Frames received | 1440 observations acknowledged, 96 health reports |
+| Link (gateway side) | -58 to -43 dBm, SNR 6 to 14 dB |
+| Temperature / RH seen | 5.95 to 23.12 C, 48.4 to 94.4 %RH (AC outlet air, then the AC idle) |
+| RX failed receptions (`#rx error`) | 46 in the window, none at the TX's transmit second; no RX drop, reboot, relisten or watchdog line. RX dropped 0 frames, so these were most likely all LoRa header failures (no payload): ambient 915 MHz noise or other devices. The new RX firmware logs each one (`#rx crc` with bytes, `#rx hdr`) |
+
+Firmware during the run was `bc5e6ede429c`. The firmware that follows (interrupt-driven rework,
+docs/firmware-event-model.md) was not part of this run and needs its own rehearsal.
