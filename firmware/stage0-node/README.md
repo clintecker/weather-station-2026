@@ -101,6 +101,7 @@ to be cut off at the console's old 256-byte print buffer (`UTIL_ADV_TRACE_TMP_BU
 | `burned` | Journal slots found torn or unusable since boot |
 | `abandoned` | Cumulative records given up by NACK or the strike limit (persisted) |
 | `sent`, `acked`, `no_ack`, `ack_rejects`, `sensor_faults` | Counters since boot. `acked` counts ACKs that matched a journal record. `ack_rejects` counts replies that failed authentication, plus NACKs that were not for the frame just sent. |
+| `held_lost` | Readings dropped since boot because two were already held in RAM during a hung exchange (docs/firmware-event-model.md); 0 in normal operation |
 | `tx_fail_run` | Consecutive journal-append failures |
 | `tx_air_run` | Consecutive transmission failures: counter refused, `Radio.Send` refused, or TxTimeout; only a TxDone clears it. Either run above 10 resets the board through the watchdog (review P7) |
 | `stack_peak` | Most stack bytes ever used since boot. The stack is filled with a pattern at start-up and the deepest overwritten byte is found on demand (`App/stackmon.c`). The linker reserves 8192 B; `make stack` gives the worst-case estimate. |
@@ -121,7 +122,7 @@ Other lines:
 | Line | Meaning |
 |---|---|
 | `#boot role=tx fw= reset= kat= freq= bw= sf= power=` | Printed at every boot. `bw` is the index (2 = 500 kHz). |
-| `#sample epoch= seq= uptime= valid= rc= n= t= rh= time= utc= journal= pending= lost=` | One per minute, from four 15-s samples: `n` is how many were valid, `t`/`rh` their mean, `rc` the last sample's result. `t` and `rh` are the sensor values in 0.01 °C and 0.01 % (0 when `valid=0`). The journaled record comes from the draft-5 encoder (`ws_obs_encode`): `t` outside −40.00…125.00 °C goes out as INVALID, `rh` is clamped to 0–100 %, and `valid=0` sends both fields as INVALID (never omitted). `rc` is the sensor result (`App/sensor.h`): 0 ok, −1 the previous measurement had not finished, −2 the command write failed (address NACK: sensor absent or wiring; or a bus error or busy bus), −3 the reply read failed, −4 CRC mismatch, −5 bus still stuck after recovery, −6 a transfer never completed. `journal=ERROR` means the record could not be encoded or journaled. |
+| `#sample epoch= seq= uptime= valid= rc= n= t= rh= time= utc= journal= pending= lost=` | One per minute, from four 15-s samples: `n` is how many were valid, `t`/`rh` their mean, `rc` the last sample's result. `t` and `rh` are the sensor values in 0.01 °C and 0.01 % (0 when `valid=0`). The journaled record comes from the draft-5 encoder (`ws_obs_encode`): `t` outside −40.00…125.00 °C goes out as INVALID, `rh` is clamped to 0–100 %, and `valid=0` sends both fields as INVALID (never omitted). `rc` is the sensor result (`App/sensor.h`): 0 ok, −1 the previous measurement had not finished, −2 the command write failed (address NACK: sensor absent or wiring; or a bus error or busy bus), −3 the reply read failed, −4 CRC mismatch, −5 bus still stuck after recovery, −6 a transfer never completed. `journal=ERROR` means the record could not be encoded or journaled; `journal=held` that the previous exchange is still running, so the record waits in RAM and is journaled when the radio goes idle (`#held journaled`). |
 | `#fault kind= pc= lr= cfsr= hfsr= bfar= count=` | Both roles, after `#boot`, only if the previous run crashed (see Crash records) |
 | `#sensor ok t= rh=` / `#sensor fault rc=` | Once after boot, from the first sample (taken at boot). |
 | `#watchdog N journal failures in a row` / `#watchdog N transmit failures in a row` | TX: more than 10 consecutive journal-append failures (`tx_fail_run`) or transmission failures (`tx_air_run`); the watchdog then resets the board (review P7) |
@@ -136,10 +137,11 @@ Other lines:
 | `#link probing: …`, `#link probe unanswered; …`, `#link linked after N silent minutes` | Link-state changes (see Transmission policy) |
 | `#diag sent pending= lost= torn= abandoned= no_ack=` | Health report (kind 4, 32-byte plaintext) sent. `torn` is `burned`. The report also carries the rejected-reply count, reset cause, link state, firmware build ID, the RSSI/SNR of the last authentic ACK, the crash count and the energy state (protocol.md section 4); this line does not print them. The gateway shows them in `/v1/status` (`node_diagnostics`). |
 | `#time restored utc= sync_age=` | Time trust kept across a warm reset |
-| `#busy previous exchange still running` | The minute's sample was journaled but not sent |
+| `#busy previous exchange still running; reading held until it ends` | The minute's reading is held in RAM (flash is only written with the radio idle) and not sent this minute |
+| `#held journaled seq= rc= pending=` | A held reading was journaled as the radio went idle (`rc=0`: ok); the next minute sends it as backlog |
 | `#kat pass\|FAIL`, `#wipe ok\|ERROR`, `#provisioned station= kcv= epoch_floor=`, `#unprovisioned: …`, `#test-hang: …` | Command replies |
 | `#storm start ctr=`, `#storm writes= ctr= burned=`, `#storm-scrub dropped=` | TEST-FLASH-STORM progress (every 256 writes); boot cleanup of storm slots |
-| `#error <what>` | `journal-read`, `counter-reserve`, `seal`, `radio-busy`, `journal-ack`, `tx-timeout`, `unexpected event= state=`, `busy (radio exchange or reboot in progress); retry` (WIPE, PROVISION, TEST-FLASH-STORM during an exchange), `store-init`, `epoch-reserve`, `self-test failed; not transmitting`, plus the command errors `already-provisioned`, `usage: …` (also for a malformed key), `epoch-floor`, `provision rc=`, `unknown command` |
+| `#error <what>` | `journal-read`, `counter-reserve`, `seal`, `radio-busy`, `journal-ack`, `tx-timeout`, `unexpected event= state=`, `held-lost seq=` (a third reading during a hung exchange replaced the oldest held one), `busy (radio exchange or reboot in progress); retry` (WIPE, PROVISION, TEST-FLASH-STORM during an exchange), `store-init`, `epoch-reserve`, `self-test failed; not transmitting`, plus the command errors `already-provisioned`, `usage: …` (also for a malformed key), `epoch-floor`, `provision rc=`, `unknown command` |
 
 ### Crash records (`App/fault.c`, both roles)
 

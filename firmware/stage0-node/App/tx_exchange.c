@@ -100,8 +100,9 @@ int exchange_busy(void) { return tx_state != TX_IDLE; }
 int exchange_overdue(uint32_t now_s) { return exchange_busy() && now_s - exchange_start_s > exchange_limit_s; }
 const char *exchange_state_name(void) { return tx_state_name[tx_state]; }
 
-/* The exchange (and any health report in flight) is over: the radio sleeps until the next minute. */
-static void radio_idle(void) { tx_state = TX_IDLE; ws_radio_sleep(); }
+/* The exchange (and any health report in flight) is over: the radio sleeps until the next minute,
+   and a reading that a minute produced meanwhile is journaled now, first. */
+static void radio_idle(void) { tx_state = TX_IDLE; ws_radio_sleep(); held_flush(); }
 
 /* The next frame goes after INTER_FRAME_MS, from the gap timer: nothing waits meanwhile. */
 static void gap_before(int then) { gap_then = then; tx_state = TX_GAP; UTIL_TIMER_Start(&gap_timer); }

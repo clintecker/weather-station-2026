@@ -21,10 +21,14 @@ typedef struct {
   uint32_t boot_epoch, next_seq;
   uint32_t boot_s;              /* clock_s() at boot: the uptime origin */
   uint32_t sensor_faults;       /* minutes with no valid sample */
+  uint32_t held_lost;           /* held readings dropped for a newer one (see held_flush) */
   ws_failrun journal_fails;     /* the minute's journal appends that failed in a row (review P7) */
 } tx_node_t;
 extern tx_node_t tx_node;
 
 /* app_tx.c */
 void sampling_stop(void);   /* no more samples (commanded reboot, TEST-FLASH-STORM); the watchdog stops expecting them */
+/* Journal the readings held while an exchange was running. tx_exchange.c calls it the moment the
+   radio goes idle, before anything else runs: flash is only written with the radio idle. */
+void held_flush(void);
 #endif

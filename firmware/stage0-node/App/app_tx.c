@@ -27,6 +27,7 @@
 #include "tx_time.h"
 #include "utilities_def.h"
 #include "watchdog.h"
+#include "ws_be.h"
 #include "ws_obs.h"
 
 #define SAMPLE_PERIOD_MS    15000U  /* one T/RH sample; every SAMPLES_PER_REPORT-th builds the minute (PRD 9) */
@@ -75,6 +76,46 @@ static void obs_codes(ws_obs_t *o, int valid, int16_t t, uint16_t h)
   o->code[WS_FI_HUMIDITY_MAX_PCT] = ws_code_rh_centi(th_window.h_max);
 }
 
+/* Readings a minute produced while the previous minute's exchange was still running. Flash is only
+ * written with the radio idle (docs/firmware-event-model.md), so such a reading waits here, encoded,
+ * and held_flush() journals it the moment the radio goes idle, before anything else runs; the next
+ * minute sends it as backlog. A normal exchange ends well within its minute; only a hung radio
+ * keeps it busy longer, and then the watchdog resets the board once the exchange outlasts its bound
+ * (at most 116 s, with 21 frames) plus the IWDG's ~8 s, so at most HELD_MAX minutes can be waiting.
+ * Should one more come anyway, the oldest held reading is dropped and counted (held_lost) and the
+ * newest kept. A reset loses what is held: those sequence numbers are never sent, so the gateway
+ * sees the gap. */
+#define HELD_MAX 2U
+static uint8_t held[HELD_MAX][WS_OBS_PLAIN_MAX];
+static unsigned held_n;
+
+static uint32_t plain_seq(const uint8_t *plain) { return ws_get_be32(plain + 4); }
+
+static void hold(const uint8_t *plain)
+{
+  if (held_n == HELD_MAX)
+  {
+    tx_node.held_lost++;
+    APP_PRINTF("#error held-lost seq=%u (a newer reading replaced it; held_lost=%u)\n", (unsigned)plain_seq(held[0]),
+               (unsigned)tx_node.held_lost);
+    memmove(held[0], held[1], (HELD_MAX - 1U) * sizeof held[0]);
+    held_n--;
+  }
+  memcpy(held[held_n++], plain, sizeof held[0]);
+}
+
+void held_flush(void)
+{
+  jref_t r;
+  for (unsigned i = 0; i < held_n; i++)
+  {
+    int rc = store_journal_append(held[i], &r);
+    ws_failrun_note(&tx_node.journal_fails, rc == 0);
+    APP_PRINTF("#held journaled seq=%u rc=%d pending=%u\n", (unsigned)plain_seq(held[i]), rc, (unsigned)store_journal_pending());
+  }
+  held_n = 0;
+}
+
 /* What this minute may send, if anything: the live reading (NULL if its journal append failed)
    and the backlog the policy allows. A refused minute's reading stays journaled. */
 static void minute_send(const jref_t *live)
@@ -83,31 +124,59 @@ static void minute_send(const jref_t *live)
   if (backlog >= 0) exchange_start(live, (unsigned)backlog);
 }
 
-/* The minute's report, from its samples: journaled, then sent as the policy allows. */
+/* The minute's observation, from its samples. */
+typedef struct { int valid; int16_t t; uint16_t h; uint32_t utc, uptime; unsigned samples; } minute_t;
+
+/* Build and encode the minute's observation into plain (WS_OBS_PLAIN_MAX bytes); 0 if it did not
+   encode. Starts the next minute's window. */
+static int minute_encode(minute_t *m, uint8_t *plain)
+{
+  m->t = 0; m->h = 0;
+  m->valid = ws_th_mean_t(&th_window, &m->t) && ws_th_mean_h(&th_window, &m->h);
+  m->utc = time_utc();
+  m->uptime = clock_s() - tx_node.boot_s; /* always sent: the gateway reconstructs time from it */
+  if (!m->valid) tx_node.sensor_faults++;
+  /* static: this runs only from the sequencer, never re-entered, and it is on the deepest callback
+     chain, which tools/stack_report.py counts four times (a 104-byte record cost ~416 B). */
+  static ws_obs_t o;
+  o = (ws_obs_t){ .epoch = tx_node.boot_epoch, .seq = tx_node.next_seq, .utc = m->utc, .uptime = m->uptime,
+                  .energy = (uint8_t)energy_state(), .bitmap = WS_NODE_FIELDS };
+  obs_codes(&o, m->valid, m->t, m->h);
+  m->samples = th_window.n;
+  ws_th_reset(&th_window);
+  return ws_obs_encode(&o, plain, WS_OBS_PLAIN_MAX) == (int)WS_OBS_PLAIN_MAX;
+}
+
+/* Journal the encoded reading now, or hold it while the radio is busy (a held reading's append
+   is counted when the radio goes idle). 0: journaled or held; else the error (-3: not encoded). */
+static int journal_or_hold(const uint8_t *plain, int encoded, int busy, jref_t *live)
+{
+  int rc = encoded ? 0 : -3;
+  if (!rc && busy) hold(plain);
+  else if (!rc) rc = store_journal_append(plain, live);
+  if (rc || !busy) ws_failrun_note(&tx_node.journal_fails, rc == 0);
+  return rc;
+}
+
+static void sample_line(const minute_t *m, int src, int rc, int busy)
+{
+  APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d n=%u t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
+             (unsigned)tx_node.boot_epoch, (unsigned)tx_node.next_seq, (unsigned)m->uptime, m->valid, src, m->samples,
+             m->valid ? m->t : 0, m->valid ? m->h : 0, m->utc ? "synchronized" : "unknown", (unsigned)m->utc,
+             rc ? "ERROR" : busy ? "held" : "ok", (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
+}
+
+/* The minute's report: journaled and sent as the policy allows, or held while the previous
+   minute's exchange is still running (the radio is transmitting or listening: no flash write). */
 static void minute_report(int src)
 {
-  uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live;
-  int16_t t = 0; uint16_t h = 0;
-  int valid = ws_th_mean_t(&th_window, &t) && ws_th_mean_h(&th_window, &h);
-  uint32_t utc = time_utc();
-  uint32_t uptime = clock_s() - tx_node.boot_s; /* always sent: the gateway reconstructs time from it */
-  if (!valid) tx_node.sensor_faults++;
-  /* static: minute_report() runs only from the sequencer, never re-entered, and it is on the deepest
-     callback chain, which tools/stack_report.py counts four times (a 104-byte record cost ~416 B). */
-  static ws_obs_t o;
-  o = (ws_obs_t){ .epoch = tx_node.boot_epoch, .seq = tx_node.next_seq, .utc = utc, .uptime = uptime,
-                  .energy = (uint8_t)energy_state(), .bitmap = WS_NODE_FIELDS };
-  obs_codes(&o, valid, t, h);
-  unsigned samples = th_window.n;
-  ws_th_reset(&th_window);
-  int rc = ws_obs_encode(&o, plain, sizeof plain) == (int)WS_OBS_PLAIN_MAX ? store_journal_append(plain, &live) : -3;
-  ws_failrun_note(&tx_node.journal_fails, rc == 0);
-  APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d n=%u t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
-             (unsigned)tx_node.boot_epoch, (unsigned)tx_node.next_seq, (unsigned)uptime, valid, src, samples, valid ? t : 0,
-             valid ? h : 0, utc ? "synchronized" : "unknown", (unsigned)utc, rc ? "ERROR" : "ok",
-             (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
+  uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live; minute_t m;
+  int encoded = minute_encode(&m, plain);
+  int busy = exchange_busy();
+  int rc = journal_or_hold(plain, encoded, busy, &live);
+  sample_line(&m, src, rc, busy);
   tx_node.next_seq++; /* identity is never reused, even if the journal write failed */
-  if (exchange_busy()) { APP_PRINTF("#busy previous exchange still running\n"); return; }
+  if (busy) { APP_PRINTF("#busy previous exchange still running; reading held until it ends\n"); return; }
   minute_send(rc ? NULL : &live);
 }
 

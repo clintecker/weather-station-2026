@@ -23,7 +23,7 @@ least 3 ticks (`timer_if.c`); a timer can also start up to a tick late. Periods 
 code asks for. `HAL_GetTick()` also counts those ticks, not milliseconds, so the firmware measures
 time from `SysTimeGetMcuTime()` instead.
 
-## TX: the minute's exchange (`App/app_tx.c`)
+## TX: the minute's exchange (`App/tx_exchange.c`; sampling in `App/app_tx.c`)
 
 Sampling: the 15-s periodic timer posts `sample`, which starts an SHT45 measurement and returns.
 The measurement is a chain of interrupts (`App/sensor.c`): command write (I2C interrupt mode) →
@@ -33,6 +33,18 @@ which hands the result to `sampled()`. A 30 ms guard timer ends any transfer tha
 the stuck-bus recovery runs one pin step per timer tick (~2-3 ms; `ws_i2c_recover_step`, same
 waveform as before), ~15-70 ms in all. Every 4th sample journals the minute's report and starts the
 exchange.
+
+Flash is only written with the radio idle, without exception (2026-10-15). If the previous minute's
+exchange is still running when a report is ready (`#busy previous exchange still running; reading
+held until it ends`, `journal=held` on `#sample`), the encoded reading is kept in RAM and journaled
+the moment that exchange ends (`radio_idle` → `held_flush`, `#held journaled seq= rc= pending=`),
+before anything else runs; the next minute sends it as backlog. A normal exchange ends well within
+its minute, so only a hung radio holds a reading, and the watchdog then resets the board once the
+exchange outlasts its bound (at most 116 s) plus the IWDG's ~8 s: at most two readings can be
+waiting. Two are held; should a third come, the oldest is dropped and counted (`#error held-lost`,
+`held_lost` on `#counts`) and the newest kept. A reset loses what is held: those sequence numbers
+are never sent, so the gateway sees the gap. Until this change the reading was journaled while the
+hung radio was still transmitting.
 
 The exchange is one explicit state machine. Every state is left by an event that is certain to come:
 
@@ -92,7 +104,7 @@ the watchdog resets the board. Failure lines are limited to 20 a minute; beyond 
 
 | Stall | Bound | When it happens |
 |---|---|---|
-| Flash page erase | STM32WL55 datasheet (DS13293) t_ERASE: ~22 ms typical, ~24.5 ms max (from the datasheet as recalled in review; to be checked against the PDF and measured). The CPU cannot fetch from flash meanwhile, so interrupts start late by up to that much | starting a journal page (every 36 readings), meta-page compaction, WIPE, PROVISION, TEST-FLASH-STORM. Always with the radio idle: journal and counter writes happen before an exchange or between frames, and the flash-writing commands are refused during one (checked by the host harness) |
+| Flash page erase | STM32WL55 datasheet (DS13293) t_ERASE: ~22 ms typical, ~24.5 ms max (from the datasheet as recalled in review; to be checked against the PDF and measured). The CPU cannot fetch from flash meanwhile, so interrupts start late by up to that much | starting a journal page (every 36 readings), meta-page compaction, WIPE, PROVISION, TEST-FLASH-STORM. Always with the radio idle: journal and counter writes happen before an exchange or between frames, a reading made during an exchange waits in RAM until it ends, and the flash-writing commands are refused during one (checked by the host harness in every test, a hung radio included) |
 | Flash double-word program | DS13293 t_PROG: ~82 µs typical, ~91 µs max (same caveat) | journal append, ACK mark, counter reservation; radio idle |
 | Radio SPI / BUSY handshakes in ST's driver | bounded by ST's loop counters (`stm32wlxx_hal_subghz.c`); microseconds per command, ~3.5 ms on wake with calibration (`tools/blocking_report.py` table) | every radio command; inside `task_peak_us` / `isr_peak_us` |
 | RTC sub-second double read, UART start-up flags | `timer_if.c` reads the sub-second register until two reads agree (it changes every 30.5 µs); UART TEACK/REACK at start | timer reads; console start |
@@ -106,7 +118,7 @@ recorded yet; they come with the reflash.
 
 | Check | What it proves | Where |
 |---|---|---|
-| Host state-machine harness | The real `app_tx.c` over a simulated clock, timers, sequencer, flash and a radio that follows ST's driver (CRC failure = RxDone + RxError; driver timeouts leave the radio transmitting or receiving; a simulated SHT45). Gaps are timers; every state ends; damaged packets do not end the window early; flash commands wait for the exchange; every (state, event) pair outside the table is only counted; two events pending together are handled in bit order; only the ACK for the frame just sent ends a window or sets the clock; a counter reservation swept across a whole exchange never meets a busy radio; the drain, link, health-report, strike and watchdog policies (transmit-failure run, exchange bound); 3 h randomized links with 5 fixed seeds (lost ACKs whose windows run out, NACKs, junk, CRC and header failures, another frame's ACK, transmit timeouts, send failures) give no unexpected event, keep the radio state matching the exchange state and the watchdog check healthy, and never write flash while the radio transmits or receives. Timers and sequencer have ST's semantics; built with UBSan, and the suite reruns under ASan where the runtime can be preloaded | `firmware/host/tx_harness.c`, `tests/test_tx_machine.py` |
+| Host state-machine harness | The real `app_tx.c` and its modules (`tx_exchange.c`, `tx_policy.c`, `tx_time.c`, `tx_console.c`, `selftest.c`) over a simulated clock, timers, sequencer, flash and a radio that follows ST's driver (CRC failure = RxDone + RxError; driver timeouts leave the radio transmitting or receiving; a simulated SHT45). Gaps are timers; every state ends; damaged packets do not end the window early; flash commands wait for the exchange; every (state, event) pair outside the table is only counted; two events pending together are handled in bit order; only the ACK for the frame just sent ends a window or sets the clock; a counter reservation swept across a whole exchange never meets a busy radio; the drain, link, health-report, strike and watchdog policies (transmit-failure run, exchange bound); a reading made while an exchange hangs is held in RAM, journaled when the radio goes idle and sent as backlog, and a third held reading replaces the oldest (counted); 3 h randomized links with 5 fixed seeds (lost ACKs whose windows run out, NACKs, junk, CRC and header failures, another frame's ACK, transmit timeouts, send failures) give no unexpected event, keep the radio state matching the exchange state and the watchdog check healthy, and never write flash while the radio transmits or receives. Timers and sequencer have ST's semantics; built with UBSan, and the suite reruns under ASan where the runtime can be preloaded | `firmware/host/tx_harness.c`, `tests/test_tx_machine.py` |
 | Host RX bridge harness | The real `app_rx.c` and `console.c` over 1/1024 s ticks with ST's timer server, the sequencer, a continuous-receive radio that follows ST's driver, the console UART interrupt, the trace FIFO and the watchdog's health check. Every valid frame is forwarded once as hex, CRC-failed packets never are (logged whole), header failures are logged, nothing re-arms the radio after a failure, only a valid host ACK/NACK is transmitted and the radio listens again after it, `#alive` is printed by the main loop, relisten and watchdog self-heal behave as documented; a 6 h randomized run is checked line by line against a reference model. A mutation pass (47 planted bugs) kills all but one equivalent mutant. Review findings not yet fixed are `expectedFailure` tests | `firmware/host/rx_harness.c`, `tests/test_rx_machine.py` |
 | Host sensor-driver harness | The real `sensor.c` over ST-rounded timers and a simulated I2C bus and SHT45: one done() per measurement with the documented code for success, NACKs, bad CRC, hangs and a busy bus; recovery clocks a held SDA free or reports it stuck; a completion at the guard's instant cannot overwrite the timeout; the read never comes before 9 ms | `firmware/host/sensor_harness.c`, `tests/test_sensor_machine.py` |
 | Build-time wait check | No blocking call (`HAL_Delay`, blocking HAL I2C/UART/SPI, …) is reachable from any interrupt handler or task in the linked image; every timeout-loop user is classified | `tools/blocking_report.py`, `make ROLE=… waits`, CI |

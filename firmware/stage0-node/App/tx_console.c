@@ -52,10 +52,10 @@ static void counts_line(void)
 {
   const tx_counts_t *c = &tx_counts;
   APP_PRINTF("#counts pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u "
-             "sensor_faults=%u tx_fail_run=%u tx_air_run=%u stack_peak=%u\n",
+             "sensor_faults=%u held_lost=%u tx_fail_run=%u tx_air_run=%u stack_peak=%u\n",
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
              (unsigned)store_journal_burned(), (unsigned)store_abandoned_total(), (unsigned)c->sent, (unsigned)c->acked,
-             (unsigned)c->no_ack, (unsigned)c->ack_rejects, (unsigned)tx_node.sensor_faults,
+             (unsigned)c->no_ack, (unsigned)c->ack_rejects, (unsigned)tx_node.sensor_faults, (unsigned)tx_node.held_lost,
              (unsigned)tx_node.journal_fails.n, (unsigned)c->air.n, (unsigned)stackmon_peak());
 }
 
