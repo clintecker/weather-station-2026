@@ -31,7 +31,7 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
   - `ruff check`: Python bug rules only (pyflakes, bugbear, errors; `ruff.toml`), installed with `pip install -r requirements-dev.txt`. Linux only in CI.
   - Fuzzing of the node's input parsers: `make -C firmware/fuzz check`, targets `reply` (envelope open and seal limits), `provision`, `console` (line assembly, hex decode, RX up/down filters) and `obs` (the draft-5 encoder). `tests/test_fuzz.py` runs them on every test run; CI also runs libFuzzer 60 s per target (`firmware/fuzz/README.md`).
   - The C host tests (`test_policy`, `test_sensor`, the flash power-cut tests) and the fuzzers run under AddressSanitizer + UndefinedBehaviorSanitizer (not on Windows).
-  - Firmware builds: GCC `-fanalyzer` on our files, and the worst-case stack bound (`make stack`: TX 80 %, RX 27 % of 8 KB).
+  - Firmware builds: GCC `-fanalyzer` on our files, and the worst-case stack bound (`make stack`: TX 80 %, RX 27 % of 8 KB), and no blocking wait reachable at run time (`make waits`, `docs/firmware-budget.md` §Blocking waits).
 
 ## 3. Important: the radio key did NOT come with you
 - The TX board is provisioned with a key that lives only in `run-hw/` on the home Mac. That folder is git-ignored and must never be committed.

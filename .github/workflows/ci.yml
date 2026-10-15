@@ -173,6 +173,14 @@ jobs:
           make ROLE=rx BUILD=build/analyze-rx stack
           make ROLE=tx BUILD=build/analyze-tx stack
 
+      # Interrupt/event driven: no banned busy-wait (HAL_Delay, blocking HAL I2C/UART/SPI, ...) and no
+      # unclassified HAL_GetTick polling reachable at run time (tools/blocking_report.py).
+      - name: No blocking waits at run time
+        working-directory: firmware/stage0-node
+        run: |
+          make ROLE=rx BUILD=build/analyze-rx waits
+          make ROLE=tx BUILD=build/analyze-tx waits
+
       # Coverage-guided fuzzing of the input parsers (firmware/fuzz/README.md), 60 s per target.
       # The unit tests already run the same targets briefly without libFuzzer on every OS.
       - name: Fuzz (libFuzzer)

@@ -75,14 +75,18 @@ def nm_lines(elf, toolchain):
                           text=True, check=True).stdout.splitlines()
 
 
-def address_taken(build, toolchain):
-    """Function names whose address is taken (non-call relocations outside debug sections) and that
-    survive linking into the .elf."""
-    tool = lambda name: str(Path(toolchain)/f'arm-none-eabi-{name}')
+def linked_functions(build, toolchain):
+    """Function symbols (nm type T/t) in the linked .elf."""
     elf = next(Path(build).glob('*.elf'))
-    linked = {line.split()[-1] for line in nm_lines(elf, toolchain)
-              if len(line.split()) == 3 and line.split()[1] in 'Tt'}
-    taken = set()
+    return {line.split()[-1] for line in nm_lines(elf, toolchain)
+            if len(line.split()) == 3 and line.split()[1] in 'Tt'}
+
+
+def address_references(build, toolchain):
+    """Every symbol referenced by a non-call relocation outside debug sections, with the sections
+    holding those references ({name: {section, ...}})."""
+    tool = lambda name: str(Path(toolchain)/f'arm-none-eabi-{name}')
+    refs = {}
     for obj in Path(build).rglob('*.o'):
         out = subprocess.run([tool('objdump'), '-r', str(obj)], capture_output=True, text=True).stdout
         section = ''
@@ -98,8 +102,14 @@ def address_taken(build, toolchain):
             name = parts[2].split('+')[0]
             if name.startswith('.text.'):
                 name = name[len('.text.'):]
-            taken.add(name)
-    return taken & linked
+            refs.setdefault(name, set()).add(section)
+    return refs
+
+
+def address_taken(build, toolchain):
+    """Function names whose address is taken (non-call relocations outside debug sections) and that
+    survive linking into the .elf."""
+    return set(address_references(build, toolchain)) & linked_functions(build, toolchain)
 
 
 def stack_symbols(build, toolchain):

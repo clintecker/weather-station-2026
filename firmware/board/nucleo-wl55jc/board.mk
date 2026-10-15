@@ -159,9 +159,14 @@ flash: $(TARGET).bin
 stack: $(TARGET).elf
 	python3 $(ROOT)/tools/stack_report.py $(BUILD) --toolchain $(TOOLCHAIN)
 
+# No busy-wait or blocking call reachable at run time (interrupts, tasks, callbacks, main loop); boot
+# and TEST_ONLY waits are listed. See tools/blocking_report.py and docs/firmware-budget.md.
+waits: $(TARGET).elf
+	python3 $(ROOT)/tools/blocking_report.py $(BUILD) --toolchain $(TOOLCHAIN)
+
 clean:
 	rm -rf $(CLEAN_DIR)
 
 -include $(OBJS:.o=.d)
 
-.PHONY: all flash clean stack
+.PHONY: all flash clean stack waits

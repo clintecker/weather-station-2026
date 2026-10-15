@@ -32,6 +32,7 @@ Makefile variables and targets:
 | `all` (default target) | | Builds the `.elf` and `.bin`, then prints the size, the flash budget line and the `.bin` SHA-256. |
 | `flash` | | Builds if needed, then programs the `.elf` with OpenOCD (connect under reset) and verifies it. |
 | `stack` | | Worst-case stack bound from the GCC call graphs (`tools/stack_report.py`); fails above the linker's 8 KB reservation. |
+| `waits` | | No busy-wait at run time (`tools/blocking_report.py`): fails if a banned wait (`HAL_Delay`, blocking HAL I2C/UART/SPI, ...) or an unclassified `HAL_GetTick` poller is reachable from an interrupt, task, callback or the main loop. Lists allowed hardware stalls with their bounds, boot waits and test-only waits. |
 | `clean` | | Removes `build/`, for **both** roles. |
 
 The firmware version string (`fw=` in `#boot`/`#status`) is `git describe --always --dirty --abbrev=12` at build time. A build from a modified tree reports `…-dirty`, and every commit changes the binary.

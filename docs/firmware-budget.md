@@ -96,6 +96,43 @@ Changes made for it:
   `stack_peak` (TX `#counts`, RX `#alive`) reports the deepest byte ever overwritten. A field
   value near the 8 KB reservation would mean the estimate is wrong.
 
+## Blocking waits
+
+Rule: the firmware is interrupt/event driven. After boot nothing may busy-wait or block for
+milliseconds; only short hardware handshakes with a stated bound are allowed. `make waits`
+(`tools/blocking_report.py`, CI on both roles) checks this from the same GCC call graphs as the
+stack bound.
+
+- **Run-time roots**: every interrupt handler (`*_IRQHandler`, `*_Handler`, not `Reset_Handler`),
+  every linked address-taken function (sequencer tasks, timer and radio callbacks, driver tables,
+  the console line handler: a pointer call can reach any of them), and `MX_SubGHz_Phy_Process`, the
+  body of `main`'s forever loop. Exception: a function whose address is taken *only* in the
+  SubGHz_Phy `Radio` table is followed as a direct call from each function that calls
+  `Radio.Slot(...)` in the compiled sources; any other use of the slot or of `Radio` keeps it a root.
+- **Boot code**: what `main` reaches by direct calls and no root reaches. Waits there are allowed
+  and listed (clock set-up, LSE start-up, IWDG init, radio reset).
+- **Tables in the tool**, each entry with its reason and source reference:
+  - `BANNED`: `HAL_Delay`, `TIMER_IF_DelayMs`, blocking HAL I2C/UART/SPI/DMA/ADC transfers and
+    polls, `vcom_Trace`, `UTIL_SEQ_WaitEvt`, `RadioIsChannelFree`, `RFW_PollRxBytes`. Reachable at
+    run time: **fail**.
+  - `ALLOWED`: flash program/erase (CPU stalls on the single bank anyway; page erase 24.5 ms max),
+    SUBGHZ BUSY-line and SPI byte handshakes (counter-bounded, ~100 ms cap, µs in practice), RTC
+    sub-second double read and init/sync flags (≤ 2 RTCCLK), UART TEACK/REACK after enable, the
+    boot RCC/IWDG waits. Each states its bound.
+  - `CLOCKS` (`HAL_GetTick`, `UTIL_TIMER_GetCurrentTime`, `UTIL_TIMER_GetElapsedTime`): every
+    run-time function that calls one must be in a table (`TIMESTAMP` if it only reads the time).
+    An unclassified caller **fails**: this is how a new HAL timeout loop or hand-written delay is
+    caught.
+  - `TEST_ONLY` (`fault_test`, `test_hang`): deliberate hang/crash bench commands; waits reachable
+    only through them are listed, not failures.
+- **Limits**: only calls are visible. An inline register poll (`while (!(REG & FLAG));`) or a
+  counter loop GCC inlined from a static function is not seen, so `ALLOWED` names the public
+  functions holding such loops (e.g. `vcom_ReceiveInit`, whose BUSY/REACK loops have no counter),
+  and new inline polls must be caught in review. Prebuilt newlib/libgcc is assumed not to wait.
+
+Adding code: a new `HAL_GetTick` reader needs a `TIMESTAMP` entry (`'file.c:function'` for a static);
+a new hardware wait needs an `ALLOWED` entry with its worst-case bound from the datasheet/RM.
+
 ## Measured savings available
 
 | Option | TX | RX | Cost |
