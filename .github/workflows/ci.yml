@@ -53,6 +53,11 @@ jobs:
           python -m pip install -r requirements-dev.txt
           ruff check
 
+      # Our firmware and host-harness C: small functions, no copied code (tools/code_shape.sh).
+      - name: Code shape (C function size, duplication)
+        if: runner.os == 'Linux'
+        run: tools/code_shape.sh
+
       # vendor/ is git-ignored. Cache it keyed on the pin list; fetch-vendor.sh always re-verifies
       # every pinned commit and that no vendored file changed, so a stale or tampered cache fails here rather than in the tests.
       - name: Cache vendor sources
