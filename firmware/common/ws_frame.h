@@ -55,5 +55,6 @@ void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]);
 int ws_key_check(const uint8_t key[16], uint8_t out[3]);
 /* Zero key material. A plain memset of a buffer that is not read again is a dead store the
    compiler may delete; writes through a volatile pointer are kept. */
-static inline void ws_wipe(void *p, size_t n) { volatile uint8_t *v = (volatile uint8_t *)p; while (n--) *v++ = 0; }
+static inline void ws_wipe(void *p, size_t n)
+{ volatile uint8_t *v = (volatile uint8_t *)p; while (n--) *v++ = 0; }   /* bound: n bytes */
 #endif

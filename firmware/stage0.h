@@ -39,6 +39,8 @@ typedef struct {
    then step and wait while it returns 1; it ends with 0 (bus free) or -1. ws_i2c_recover runs
    it with wait_us between steps (host tests). */
 #define WS_I2C_HALF_US 5   /* 100 kHz */
+/* Steps of one recovery, the last included: 9 clock pulses of 2 steps, the STOP's 4, the result. */
+#define WS_I2C_RECOVER_STEPS 23
 typedef struct { uint8_t phase, pulses, held; } ws_i2c_rec;
 void ws_i2c_recover_begin(ws_i2c_rec *, const ws_i2c_pins *);
 int ws_i2c_recover_step(ws_i2c_rec *, const ws_i2c_pins *);
@@ -69,7 +71,7 @@ int ws_parse_provision(const char *args, uint32_t *station, uint8_t key[16], uin
 static inline uint32_t ws_stack_peak(const uint32_t *lo, const uint32_t *top)
 {
  const uint32_t *p = lo;
- while (p < top && *p == WS_STACK_PAINT) p++;
+ while (p < top && *p == WS_STACK_PAINT) p++;   /* bound: top - lo words */
  return (uint32_t)((const char *)top - (const char *)p);
 }
 #endif

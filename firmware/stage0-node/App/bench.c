@@ -8,7 +8,7 @@ static void test_hang(void) __attribute__((noreturn));
 static void test_hang(void)
 {
   APP_PRINTF("#test-hang: main loop stops; watchdog must reset in ~8 s\n");
-  for (;;) { }
+  for (;;) { }   /* bound: none, on purpose: TEST-HANG proves the watchdog ends it */
 }
 #endif
 

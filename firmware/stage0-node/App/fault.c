@@ -48,5 +48,5 @@ void fault_test(void)
              (unsigned)UNMAPPED_ADDRESS, (unsigned)UNMAPPED_ADDRESS);
   HAL_Delay(50);
   (void)*(volatile uint32_t *)UNMAPPED_ADDRESS;
-  for (;;) { }
+  for (;;) { }   /* bound: none; never reached: the read above faults (TEST-FAULT only) */
 }

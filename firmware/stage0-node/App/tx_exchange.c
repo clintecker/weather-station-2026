@@ -376,7 +376,8 @@ static void process(void)
   /* A TxTimeout that fired with its TxDone in the same pass is a race, not a bug: the frame left
      (ST stops the timeout on TxDone, so a later one cannot come). Dropped, like a stale ack-end. */
   if ((batch & EV_TX_DONE) && (batch & EV_TX_TIMEOUT)) batch &= ~EV_TX_TIMEOUT;
-  for (uint32_t bit = 1; batch; bit <<= 1)   /* bounded: EV_COUNT bits, lowest first */
+  uint32_t bit = 1;
+  for (unsigned k = 0; k < EV_COUNT && batch; k++, bit <<= 1)   /* lowest bit first */
     if (batch & bit) { batch &= ~bit; handle(bit); }
 }
 BUSYMON_TASK(process)

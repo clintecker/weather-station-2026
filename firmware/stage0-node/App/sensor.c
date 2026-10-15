@@ -136,7 +136,7 @@ static void pin_sda(void *c, int level) { (void)c; HAL_GPIO_WritePin(GPIOA, SDA_
 static int pin_read_sda(void *c) { (void)c; return HAL_GPIO_ReadPin(GPIOA, SDA_PIN) == GPIO_PIN_SET; }
 static const ws_i2c_pins pins = { 0, pin_scl, pin_sda, pin_read_sda, 0 };
 
-/* One recovery step per timer tick. The timer asks for 1 ms; ST's timer server makes it at least 3
+/* One recovery step per timer tick; the chain ends within WS_I2C_RECOVER_STEPS ticks (stage0.h). The timer asks for 1 ms; ST's timer server makes it at least 3
    RTC ticks (~2-3 ms, timer_if.c MIN_ALARM_DELAY). I2C's 100 kHz half period is 5 us (UM10204
    t_LOW >= 4.7 us); slower is fine. The whole recovery takes ~15-70 ms. */
 static void on_step(void *ctx)

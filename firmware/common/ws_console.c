@@ -53,6 +53,7 @@ void ws_hex_text(const uint8_t *data, int n, char *text)
 int ws_hex_decode(const char *text, uint8_t *out, int max)
 {
  int n = 0;
+ /* bound: at most max + 1 passes: each one stores a byte or returns */
  while (text[0] && text[1]) {
   int hi = ws_hex_nibble(text[0]), lo = ws_hex_nibble(text[1]);
   if (hi < 0 || lo < 0 || n >= max) return -1;

@@ -66,10 +66,14 @@ int ws_i2c_recover_step(ws_i2c_rec *s,const ws_i2c_pins *p) {
  }
 }
 int ws_i2c_recover(const ws_i2c_pins *p) {
- ws_i2c_rec s; int rc;
+ ws_i2c_rec s;
  ws_i2c_recover_begin(&s,p); p->wait_us(p->context,WS_I2C_HALF_US);
- while((rc=ws_i2c_recover_step(&s,p))>0) p->wait_us(p->context,WS_I2C_HALF_US);
- return rc;
+ for(int k=0;k<WS_I2C_RECOVER_STEPS;k++) {
+  int rc=ws_i2c_recover_step(&s,p);
+  if(rc<=0) return rc;
+  p->wait_us(p->context,WS_I2C_HALF_US);
+ }
+ return -1; /* not reached: the sequence ends within WS_I2C_RECOVER_STEPS steps */
 }
 int ws_link_may_send(int energy,int probing,int32_t secs_until_probe) {
  if(energy>=3) return 0;
@@ -79,6 +83,7 @@ int ws_link_may_send(int energy,int probing,int32_t secs_until_probe) {
 static int parse_u32(const char **s,uint32_t *out) {
  uint64_t v=0; const char *p=*s;
  if(*p<'0'||*p>'9') return -1;
+ /* bound: the NUL-terminated console line (WS_LINE_MAX); any 11th significant digit overflows */
  for(;*p>='0'&&*p<='9';p++) { v=v*10+(uint64_t)(*p-'0'); if(v>0xFFFFFFFFULL) return -1; }
  *out=(uint32_t)v; *s=p; return 0;
 }

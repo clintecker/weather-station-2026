@@ -216,6 +216,7 @@ static uint32_t slot_addr(uint32_t page, uint32_t slot) {
 }
 static uint16_t crc16(const uint8_t *d, unsigned n) {
  uint16_t c = 0xFFFF;
+ /* bound: n bytes (WS_OBS_PLAIN_MAX from the only caller), 8 bits each */
  while (n--) { c ^= (uint16_t)(*d++ << 8); for (int b = 0; b < 8; b++) c = (c & 0x8000) ? (uint16_t)(c << 1 ^ 0x1021) : (uint16_t)(c << 1); }
  return c;
 }
@@ -371,7 +372,9 @@ uint32_t store_journal_scrub(uint32_t marker)
 {
  uint32_t n = 0, i = 0; jref_t r;
  if (!journal_ready) return 0;
- /* Only bad == 0 slots match; the ack clears slot r's bit, which the scan has already passed. */
+ /* Only bad == 0 slots match; the ack clears slot r's bit, which the scan has already passed.
+    Each match moves i past its slot, and none is found at or past JOURNAL_CAPACITY, so: */
+ /* bound: at most JOURNAL_CAPACITY passes */
  while (next_pending_match(marker, 1, 0, &i, &r))
   if (store_journal_ack(r) == 0) n++;
  return n;

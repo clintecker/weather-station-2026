@@ -28,7 +28,7 @@ static UTIL_TIMER_Object_t reboot_timer;
 static const char *u64_text(uint64_t v, char buf[21])
 {
   char *p = buf + 20; *p = 0;
-  do { *--p = (char)('0' + (int)(v % 10U)); v /= 10U; } while (v);
+  do { *--p = (char)('0' + (int)(v % 10U)); v /= 10U; } while (v);   /* bound: 20 digits (2^64 - 1) */
   return p;
 }
 
