@@ -33,7 +33,6 @@
 #define SAMPLE_PERIOD_MS    15000U  /* one T/RH sample; every SAMPLES_PER_REPORT-th builds the minute (PRD 9) */
 #define SAMPLES_PER_REPORT  4U
 #define ACK_WINDOW_MS       2000U
-#define MIN_RELISTEN_MS     50U     /* less window left than this after a stray packet: give up */
 #define INTER_FRAME_MS      50U     /* gap before each further frame: the RX is back to listening after its ACK */
 #define REBOOT_DELAY_MS     200U    /* a commanded reboot lets the console finish its line first */
 #define MAX_QUEUE           21U   /* live + up to 20 backlog (SURPLUS at SF7); RAM 84 B */
@@ -103,7 +102,7 @@ static uint32_t boot_epoch, next_seq;
 static int synced;
 static uint32_t last_sync_mcu;   /* RTC (MCU) seconds at the last accepted time sync */
 static uint32_t boot_mcu;        /* RTC (MCU) seconds at boot: uptime origin */
-static uint32_t last_sample_mcu, exchange_start_mcu; /* watchdog progress evidence */
+static uint32_t last_sample_mcu, exchange_start_mcu, exchange_limit_s; /* watchdog progress evidence */
 
 static jref_t queue[MAX_QUEUE];
 static unsigned qn, qi;
@@ -152,7 +151,11 @@ static UTIL_TIMER_Object_t boot_retry_timer;
  * Fire-and-forget: no journal entry, no receive window. */
 #define DIAG_PERIOD_S 900U
 static int diag_due = 1;
-static uint32_t ack_window_end;   /* HAL_GetTick() at which the current ACK window closes */
+/* The ACK window is this firmware's own timer, not the radio driver's: ST's RxTimeoutTimer is left
+   running by a CRC error and its timeout leaves the radio receiving (review 2026-10-15). The radio
+   listens with no driver timeout (Radio.Rx(0)); ack_timer ends the window, and every way out of
+   ack-wait puts the radio in standby first. */
+static UTIL_TIMER_Object_t ack_timer;
 static uint32_t last_diag_mcu;
 
 /* Only a WS_ACK_FRAME_LEN reply is ever opened. rx_len keeps the true received size, so a longer
@@ -172,8 +175,9 @@ static int8_t ack_rssi = -128, ack_snr = -128;
 #define EV_RX_TIMEOUT (1U << 3)
 #define EV_RX_ERROR   (1U << 4)
 #define EV_GAP        (1U << 5)
-#define EV_COUNT      6U
-static const char *const ev_name[EV_COUNT] = { "tx-done", "tx-timeout", "rx-done", "rx-timeout", "rx-error", "gap" };
+#define EV_ACK_END    (1U << 6)
+#define EV_COUNT      7U
+static const char *const ev_name[EV_COUNT] = { "tx-done", "tx-timeout", "rx-done", "rx-timeout", "rx-error", "gap", "ack-end" };
 static volatile uint32_t pending_ev;
 
 /* RTC-based monotonic seconds; SysTimeSet() does not change it. */
@@ -263,12 +267,16 @@ static void post(uint32_t ev)
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0);
 }
 static void on_gap(void *ctx) { (void)ctx; post(EV_GAP); }
+static void on_ack_end(void *ctx) { (void)ctx; post(EV_ACK_END); }
 static void on_tx_done(void) { post(EV_TX_DONE); }
 static void on_tx_timeout(void) { post(EV_TX_TIMEOUT); }
 static void on_rx_timeout(void) { post(EV_RX_TIMEOUT); }
 static void on_rx_error(void) { post(EV_RX_ERROR); }
+/* ST's HAL raises RxDone for a packet whose payload CRC failed, then RxError (stm32wlxx_hal_subghz.c
+   HAL_SUBGHZ_IRQHandler): such a packet is only the RxError. */
 static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 {
+  if (ws_radio_take_crc_error()) return;
   rx_len = size;
   memcpy(rx_frame, payload, size > sizeof rx_frame ? sizeof rx_frame : size);
   rx_rssi = rssi;
@@ -520,13 +528,14 @@ static void handle(uint32_t ev)
       if (ev == EV_TX_DONE)
       {
         ws_failrun_note(&tx_air, 1);   /* the frame left: the radio works */
-        ack_window_end = HAL_GetTick() + ACK_WINDOW_MS;
         tx_state = TX_ACK_WAIT;
-        Radio.Rx(ACK_WINDOW_MS);
+        UTIL_TIMER_Start(&ack_timer);
+        Radio.Rx(0);
         return;
       }
       if (ev == EV_TX_TIMEOUT)
       {
+        Radio.Standby();               /* the driver's timeout leaves the radio transmitting */
         ws_failrun_note(&tx_air, 0);
         led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n");
         stop_drain(); next_item();
@@ -534,22 +543,23 @@ static void handle(uint32_t ev)
       }
       break;
     case TX_ACK_WAIT:
-      if (ev == EV_RX_DONE)
+      if (ev == EV_RX_DONE && handle_reply()) { UTIL_TIMER_Stop(&ack_timer); next_item(); return; }
+      if (ev == EV_RX_DONE || ev == EV_RX_ERROR || ev == EV_RX_TIMEOUT)
       {
-        if (handle_reply()) { next_item(); return; }
-        /* Not the reply to this frame (foreign, forged, or another frame's ACK): keep listening for
-           the rest of the window instead of moving on and missing the real ACK (firmware review,
-           finding 2). Too little time left counts as no reply. */
-        uint32_t now = HAL_GetTick(), left = (int32_t)(ack_window_end - now) > 0 ? ack_window_end - now : 0;
-        if (left > MIN_RELISTEN_MS) { Radio.Rx(left); return; }
-        no_reply(0);
+        /* Not the reply to this frame: foreign, forged, another frame's ACK, a payload CRC failure
+           (rx-error) or a header failure (rx-timeout: ST's radio.c reports IRQ_HEADER_ERROR so).
+           Keep listening until the window ends rather than miss the real ACK (firmware review,
+           finding 2). After a single-window reception the radio is in standby; listen again. */
+        if (ev != EV_RX_DONE) APP_PRINTF("#ack damaged %s; still listening\n", ev == EV_RX_ERROR ? "payload" : "header");
+        Radio.Rx(0);
         return;
       }
-      if (ev == EV_RX_TIMEOUT || ev == EV_RX_ERROR) { no_reply(1); return; }
+      if (ev == EV_ACK_END) { Radio.Standby(); no_reply(1); return; }
       break;
     case TX_DIAG_SENDING:
       if (ev == EV_TX_DONE || ev == EV_TX_TIMEOUT)
       {
+        if (ev == EV_TX_TIMEOUT) Radio.Standby();
         ws_failrun_note(&tx_air, ev == EV_TX_DONE);
         if (ev == EV_TX_TIMEOUT) { led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n"); }
         radio_idle();
@@ -588,6 +598,7 @@ static unsigned th_ticks;
 
 static int sensor_reported;   /* the first reading after boot is printed as #sensor */
 static int rebooting;         /* a commanded reboot is pending: a late reading is dropped */
+static int storming;          /* TEST-FLASH-STORM: sampling stopped */
 
 static void sampled(int src, int16_t t, uint16_t h);
 
@@ -602,7 +613,7 @@ BUSYMON_TASK(sample)
 static void sampled(int src, int16_t t, uint16_t h)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live;
-  if (rebooting) return;
+  if (rebooting || storming) return;   /* a measurement that finishes after either stops sampling */
   if (!sensor_reported)
   {
     sensor_reported = 1;
@@ -660,6 +671,9 @@ static void sampled(int src, int16_t t, uint16_t h)
   qi = 0;
   last_send_mcu = now;
   memset(replied, 0, sizeof replied);
+  /* The longest this exchange can take: every frame and the health report hit their transmit
+     timeout or wait out the whole ACK window, plus the gaps; then 5 s of margin. */
+  exchange_limit_s = ((qn + 1U) * (WS_TX_TIMEOUT_MS + ACK_WINDOW_MS + INTER_FRAME_MS)) / 1000U + 5U;
   if (qn) { exchange_start_mcu = mcu_seconds(); send_current(); }
 }
 
@@ -669,7 +683,7 @@ static int tx_healthy(void)
   uint32_t now = mcu_seconds();
   if (!running) return 1;                                   /* not sampling by design */
   if (now - last_sample_mcu > 150) return 0;                /* sampling stopped */
-  if (busy && now - exchange_start_mcu > 30) return 0;      /* radio exchange stuck */
+  if (busy && now - exchange_start_mcu > exchange_limit_s) return 0;   /* radio exchange stuck */
   if (ws_failrun_tripped(&tx_fail, TX_FAIL_LIMIT)) { APP_PRINTF("#watchdog %u journal failures in a row\n", (unsigned)tx_fail.n); return 0; }
   if (ws_failrun_tripped(&tx_air, TX_FAIL_LIMIT)) { APP_PRINTF("#watchdog %u transmit failures in a row\n", (unsigned)tx_air.n); return 0; }
   return 1;
@@ -680,7 +694,6 @@ static int tx_healthy(void)
  * random power cut almost always lands inside a flash program or erase. Not persistent: a
  * reboot ends it, and the boot scrub drops any storm slot that a cut left pending. */
 #define STORM_EPOCH 0xFFFFFFFFUL
-static int storming;
 static uint32_t storm_writes;
 static void storm(void)
 {
@@ -709,14 +722,14 @@ static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_S
 static void on_reboot(void *ctx) { (void)ctx; NVIC_SystemReset(); }
 static void reboot_soon(void)
 {
+  if (rebooting) return;
   running = 0; rebooting = 1;
   UTIL_TIMER_Stop(&sample_timer);
-  UTIL_TIMER_Create(&reboot_timer, REBOOT_DELAY_MS, UTIL_TIMER_ONESHOT, on_reboot, NULL);
   UTIL_TIMER_Start(&reboot_timer);
 }
 
-/* Bench: TEST-HANG stops the main loop on purpose, so the watchdog must reset the board. The only
-   wait in this firmware, and it is meant to never end (tools/blocking_report.py TEST_ONLY). */
+/* Bench: TEST-HANG stops the main loop on purpose, so the watchdog must reset the board. A deliberate
+   hang, like TEST-FAULT's 50 ms console wait before its fault (tools/blocking_report.py TEST_ONLY). */
 static void test_hang(void) __attribute__((noreturn));
 static void test_hang(void)
 {
@@ -729,11 +742,22 @@ static void on_line(char *line)
   if (!strcmp(line, "STATUS")) { status(); return; }
   if (!strcmp(line, "TEST-FAULT")) fault_test();
   if (!strcmp(line, "TEST-HANG")) test_hang();
+  /* Commands that write flash never run during a radio exchange or a pending reboot: flash is only
+     written with the radio idle (docs/firmware-event-model.md). The operator retries. */
+  if ((!strcmp(line, "TEST-FLASH-STORM") || !strcmp(line, "WIPE ERASE-ALL-NODE-STATE") || !strncmp(line, "PROVISION ", 10)) &&
+      (busy || rebooting))
+  {
+    ws_wipe(line, strlen(line));   /* a refused PROVISION's key does not linger either */
+    APP_PRINTF("#error busy (radio exchange or reboot in progress); retry\n");
+    return;
+  }
   if (!strcmp(line, "TEST-FLASH-STORM"))
   {
     { char ctr_buf[21];
       APP_PRINTF("#storm start ctr=%s (bench only: cut power now)\n", u64_text(store_counter_next(), ctr_buf)); }
-    storming = 1; running = 0; /* sampling paused: the watchdog must not count a stopped sampler */
+    /* Sampling stops, so no exchange starts; the watchdog must not count a stopped sampler. */
+    storming = 1; running = 0;
+    UTIL_TIMER_Stop(&sample_timer);
     UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
     return;
   }
@@ -793,6 +817,8 @@ void SubghzApp_Init(void)
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample_timed);
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Storm, UTIL_SEQ_RFU, storm_timed);
   UTIL_TIMER_Create(&gap_timer, INTER_FRAME_MS, UTIL_TIMER_ONESHOT, on_gap, NULL);
+  UTIL_TIMER_Create(&ack_timer, ACK_WINDOW_MS, UTIL_TIMER_ONESHOT, on_ack_end, NULL);
+  UTIL_TIMER_Create(&reboot_timer, REBOOT_DELAY_MS, UTIL_TIMER_ONESHOT, on_reboot, NULL);
   console_init(on_line);
 
   boot_mcu = mcu_seconds();

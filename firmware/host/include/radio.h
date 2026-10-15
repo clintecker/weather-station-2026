@@ -15,6 +15,7 @@ struct Radio_s {
   radio_status_t (*Send)(uint8_t *buffer, uint8_t size);
   void (*Rx)(uint32_t timeout);
   void (*Sleep)(void);
+  void (*Standby)(void);
 };
 extern const struct Radio_s Radio;
 #endif

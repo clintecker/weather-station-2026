@@ -3,13 +3,15 @@
 #include <stdint.h>
 #include <stddef.h>
 /* Portable core; board HAL, flash journal, AES-CCM and RF remain integration work. */
-/* SHT45 (Sensirion datasheet v1): write WS_SHT45_MEASURE to WS_SHT45_ADDR, wait at least
-   WS_SHT45_MEASURE_MS (high precision, heater off), then read WS_SHT45_REPLY_LEN bytes. The firmware
+/* SHT45 (SHT4x datasheet, Table 4: high repeatability 6.9 ms typ, 8.3 ms max): write
+   WS_SHT45_MEASURE to WS_SHT45_ADDR, wait WS_SHT45_MEASURE_MS, then read WS_SHT45_REPLY_LEN bytes.
+   11 ms: ST's timer rounds down to 1/1024 s ticks and can start up to a tick late, so this waits
+   at least ~9.8 ms. The firmware
    does each step from an interrupt or timer (App/sensor.c); ws_sht45_parse checks both CRCs and
    converts: 0, or -4 on a CRC mismatch (outputs untouched). */
 #define WS_SHT45_ADDR       0x44
 #define WS_SHT45_MEASURE    0xfd
-#define WS_SHT45_MEASURE_MS 10
+#define WS_SHT45_MEASURE_MS 11
 #define WS_SHT45_REPLY_LEN  6
 int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN], int16_t *centi_c, uint16_t *centi_rh);
 uint8_t ws_crc8(const uint8_t *, size_t);

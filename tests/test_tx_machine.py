@@ -112,9 +112,11 @@ class TxStateMachine(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls.addClassCleanup(cls.tmp.cleanup)
 
-    def node(self):
+    def node(self, storm=False):
         node = Node(self.library, self.tmp.name)
         self.addCleanup(lambda: self.assertEqual(node.lib.h_flash_ops_during_radio(), 0, 'flash written while the radio was busy'))
+        if not storm:   # only the storm task re-posts itself forever; anything else is a livelock
+            self.addCleanup(lambda: self.assertEqual(node.lib.h_task_saturations(), 0, 'main-loop tasks never settled'))
         return node
 
     def test_minute_exchange_then_health_report_after_a_gap(self):
@@ -125,7 +127,8 @@ class TxStateMachine(unittest.TestCase):
         n.advance(FIRST_REPORT_MS - 15)
         self.assertEqual((n.lib.h_frames_sent(), n.radio()), (1, R_TX))
         n.advance(30)                                  # TxDone: the ACK window opens
-        self.assertEqual((n.radio(), n.lib.h_last_rx_timeout()), (R_RX, 2000))
+        # Rx(0): no driver timer (ST's is left running by a CRC error); the firmware's own ends the window
+        self.assertEqual((n.radio(), n.lib.h_last_rx_timeout(), n.lib.h_sw_rx_armed()), (R_RX, 0, 0))
         self.assertEqual(n.timing()['state'], 'ack-wait')
         n.advance(200)
         acked_at = n.lib.h_now()
@@ -148,6 +151,7 @@ class TxStateMachine(unittest.TestCase):
         self.assertEqual(n.radio(), R_RX)
         n.advance(1)
         self.assertIn('#ack none', n.out())
+        self.assertEqual(n.radio(), R_STANDBY)         # the window's end stops the receiver
         n.advance(50 + 30)                             # the health report after its gap, then idle
         self.assertEqual((n.lib.h_frames_sent(), n.radio()), (2, R_SLEEP))
 
@@ -167,24 +171,55 @@ class TxStateMachine(unittest.TestCase):
         self.assertTrue(all(b - a >= 30 + 50 for a, b in zip(sends, sends[1:], strict=False)), sends)  # air time + gap
         self.assertEqual(n.timing()['unexpected'], '0')
 
-    def test_a_stray_frame_keeps_the_rest_of_the_window(self):
+    def test_stray_and_damaged_packets_keep_the_rest_of_the_window(self):
         n = self.node()
         n.advance(FIRST_REPORT_MS + 30 + 500)
         n.rx(b'\x51' + bytes(40))                      # foreign, fails authentication
         self.assertIn('#ack reject', n.out())
-        self.assertEqual((n.radio(), n.lib.h_last_rx_timeout()), (R_RX, 1500))
-        n.reply()
+        self.assertEqual(n.radio(), R_RX)              # listening again, same window
+        n.advance(300)
+        n.lib.h_rx_crc((ctypes.c_uint8 * 33)(*bytes(33)), 33)   # RxDone + RxError, as ST delivers it
+        self.assertIn('#ack damaged payload; still listening', n.out())
+        n.advance(300)
+        n.lib.h_rx_hdr()                               # a header failure
+        self.assertIn('#ack damaged header; still listening', n.out())
+        self.assertEqual(n.radio(), R_RX)
+        n.reply()                                      # the real ACK, 1.1 s into the window
         self.assertIn('#ack epoch=', n.out())
+        n.advance(5000)
+        t = n.timing()
+        self.assertEqual((t['unexpected'], t['state']), ('0', 'idle'))
+        self.assertNotIn('#ack none', n.log)
+
+    def test_a_damaged_reply_does_not_end_the_window_early(self):
+        n = self.node()
+        n.advance(FIRST_REPORT_MS + 30 + 100)
+        n.lib.h_rx_crc((ctypes.c_uint8 * 33)(*bytes(33)), 33)
+        n.advance(1899)
+        self.assertNotIn('#ack none', n.out())
+        n.advance(1)                                   # the window still ends at 2 s
+        self.assertIn('#ack none', n.out())
+        n.advance(5000)
+        self.assertEqual(n.timing()['unexpected'], '0')
+
+    def test_a_transmit_timeout_puts_the_stuck_radio_in_standby(self):
+        n = self.node()
+        n.advance(FIRST_REPORT_MS + 5)
+        self.assertEqual(n.radio(), R_TX)
+        n.lib.h_tx_timeout()                           # ST's software timer: the radio is still transmitting
+        self.assertIn('#error tx-timeout', n.out())
+        self.assertNotEqual(n.radio(), R_TX)
+        n.advance(5000)
+        self.assertEqual(n.timing()['unexpected'], '0')
 
     def test_unexpected_events_are_counted_not_acted_on(self):
         n = self.node()
         n.advance(1000)
         n.lib.h_raw_event(0)                           # a TxDone with nothing on air
         self.assertIn('#error unexpected event=tx-done state=idle', n.out())
-        n.advance(FIRST_REPORT_MS + 30)
-        n.lib.h_raw_event(3)                           # RxError: a damaged reply counts as none
-        self.assertIn('#ack none', n.out())
-        self.assertEqual(n.timing()['unexpected'], '1')
+        n.lib.h_raw_event(2)                           # an RxTimeout with no window open
+        self.assertIn('#error unexpected event=rx-timeout state=idle', n.out())
+        self.assertEqual((n.timing()['unexpected'], n.timing()['state']), ('2', 'idle'))
 
     def test_sensor_failure_and_a_measurement_that_never_ends(self):
         n = self.node()
@@ -202,10 +237,34 @@ class TxStateMachine(unittest.TestCase):
         n.lib.h_line(b'WIPE ERASE-ALL-NODE-STATE')
         self.assertIn('#wipe ok', n.out())
         self.assertEqual(n.lib.h_resets(), 0)          # no wait inside the command
+        n.lib.h_line(b'WIPE ERASE-ALL-NODE-STATE')     # a retry while the reboot is pending
+        self.assertIn('#error busy', n.out())
         n.advance(199)
         self.assertEqual(n.lib.h_resets(), 0)
         n.advance(1)
         self.assertEqual(n.lib.h_resets(), 1)
+
+    def test_flash_commands_wait_for_the_radio_exchange(self):
+        n = self.node()
+        n.advance(FIRST_REPORT_MS + 30 + 100)          # in the ACK window
+        erases = n.lib.h_flash_erases()
+        for cmd in (b'WIPE ERASE-ALL-NODE-STATE', b'TEST-FLASH-STORM', b'PROVISION 9 ' + b'00' * 16):
+            n.lib.h_line(cmd)
+            self.assertIn('#error busy', n.out())
+        self.assertEqual((n.lib.h_flash_erases(), n.lib.h_resets()), (erases, 0))
+        n.advance(5000)                                # the exchange ends; now it runs
+        n.lib.h_line(b'WIPE ERASE-ALL-NODE-STATE')
+        self.assertIn('#wipe ok', n.out())
+
+    def test_flash_storm_stops_sampling_and_exchanges(self):
+        n = self.node(storm=True)
+        n.advance(20)
+        n.lib.h_line(b'TEST-FLASH-STORM')
+        self.assertIn('#storm start', n.out())
+        frames = n.lib.h_frames_sent()
+        n.advance(3 * 60_000)
+        self.assertEqual(n.lib.h_frames_sent(), frames)
+        self.assertNotIn('#sample ', n.out())
 
     def test_three_hours_of_mixed_link_keep_every_invariant(self):
         n = self.node()
@@ -219,19 +278,22 @@ class TxStateMachine(unittest.TestCase):
                     n.reply()
                 elif roll < 0.7:
                     n.reply(kind=KIND_NACK)
-                elif roll < 0.85:
+                elif roll < 0.8:
                     n.rx(bytes(rnd.getrandbits(8) for _ in range(33)))
+                elif roll < 0.9:
+                    junk = bytes(rnd.getrandbits(8) for _ in range(33))
+                    n.lib.h_rx_crc((ctypes.c_uint8 * 33)(*junk), 33)
                 else:
-                    n.lib.h_raw_event(3)
+                    n.lib.h_rx_hdr()
             elif n.radio() == R_TX and rnd.random() < 0.01:
-                n.lib.h_raw_event(1)                   # TxTimeout
+                n.lib.h_tx_timeout()
             if rnd.random() < 0.001:
                 n.lib.h_radio_send_fails(1)
             self.assertEqual(n.lib.h_healthy(), 1, n.log[-2000:])
         n.out()
         self.assertEqual(n.timing()['unexpected'], '0', n.log[-2000:])
         self.assertGreaterEqual(n.log.count('#sample '), 179)
-        self.assertGreaterEqual(n.lib.h_flash_erases(), 6)  # ~28 readings per journal page: pages started during the run
+        self.assertGreaterEqual(n.lib.h_flash_erases(), 5)  # 36 readings per journal page: pages started during the run
         self.assertNotIn('#error journal', n.log)
 
 

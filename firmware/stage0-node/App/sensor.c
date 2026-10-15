@@ -8,8 +8,10 @@
 
 #define SDA_PIN GPIO_PIN_11
 #define SCL_PIN GPIO_PIN_12
-/* No transfer completes later than this: a command is 2 bytes, a reply 7, ~0.7 ms at 100 kHz. */
-#define I2C_GUARD_MS 20
+/* No transfer completes later than this: a command is 2 bytes, a reply 7, ~0.7 ms at 100 kHz. Longer
+   than a flash page erase (24.5 ms max), which stalls the I2C interrupt, so an erase that overlaps a
+   transfer does not read as a sensor timeout. ST's timer rounds down to 1/1024 s ticks. */
+#define I2C_GUARD_MS 30
 #define I2C_IRQ_PRIORITY 2   /* below the radio and the RTC (0), like the console UART */
 /* 100 kHz standard mode at PCLK1 = 48 MHz (same value as ST's NUCLEO-WL55JC I2C examples). */
 #define I2C_TIMING 0x20303E5DU
@@ -59,11 +61,11 @@ static void i2c_start(void)
 
 /* One measurement as a chain of interrupts and timers; nothing waits:
  *   sensor_start: command write (I2C interrupt mode)       S_CMD
- *   write complete (I2C IRQ): 10 ms measurement timer      S_MEASURE
+ *   write complete (I2C IRQ): measurement timer             S_MEASURE
  *   timer (RTC IRQ): reply read (I2C interrupt mode)       S_READ
  *   read complete (I2C IRQ): sensor task                   S_DONE
  *   sensor task (main loop): CRC check, then done(), or the stuck-bus recovery first: one pin step
- *   per 1 ms timer tick (S_RECOVER), then done().
+ *   per timer tick (S_RECOVER; ST's timer makes it ~2-3 ms), then done().
  * A guard timer bounds S_CMD and S_READ; an I2C error ends either. finish() is the one way out of
  * a bus state, under a critical section, so a late completion and the guard cannot both count. */
 typedef enum { S_IDLE, S_CMD, S_MEASURE, S_READ, S_DONE, S_RECOVER, S_RECOVERED } sensor_state;
@@ -102,9 +104,12 @@ static int advance(sensor_state from, sensor_state to)
 
 void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
-  if (hi2c != &hi2c2 || !advance(S_CMD, S_MEASURE)) return;
-  UTIL_TIMER_Stop(&guard_timer);
-  UTIL_TIMER_Start(&measure_timer);
+  if (hi2c != &hi2c2) return;
+  /* State change and timers in one critical section: the guard cannot fire in between. */
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  if (st == S_CMD) { st = S_MEASURE; UTIL_TIMER_Stop(&guard_timer); UTIL_TIMER_Start(&measure_timer); }
+  __set_PRIMASK(primask);
 }
 
 static void on_measured(void *ctx)
@@ -134,7 +139,9 @@ static void pin_sda(void *c, int level) { (void)c; HAL_GPIO_WritePin(GPIOA, SDA_
 static int pin_read_sda(void *c) { (void)c; return HAL_GPIO_ReadPin(GPIOA, SDA_PIN) == GPIO_PIN_SET; }
 static const ws_i2c_pins pins = { 0, pin_scl, pin_sda, pin_read_sda, 0 };
 
-/* One recovery step per tick: 1 ms half periods (the spec's minimum is 5 us; slower is fine). */
+/* One recovery step per timer tick. The timer asks for 1 ms; ST's timer server makes it at least 3
+   RTC ticks (~2-3 ms, timer_if.c MIN_ALARM_DELAY). I2C's 100 kHz half period is 5 us (UM10204
+   t_LOW >= 4.7 us); slower is fine. The whole recovery takes ~15-70 ms. */
 static void on_step(void *ctx)
 {
   (void)ctx;
@@ -146,6 +153,10 @@ static void on_step(void *ctx)
 static void recover_begin(void)
 {
   HAL_I2C_DeInit(&hi2c2);
+  /* An abandoned transfer can leave its interrupt pending and its handler set; neither may run on
+     the re-initialised peripheral. */
+  HAL_NVIC_ClearPendingIRQ(I2C2_EV_IRQn); HAL_NVIC_ClearPendingIRQ(I2C2_ER_IRQn);
+  hi2c2.XferISR = NULL;
   HAL_GPIO_WritePin(GPIOA, SDA_PIN | SCL_PIN, GPIO_PIN_SET);
   GPIO_InitTypeDef gpio = { .Pin = SDA_PIN | SCL_PIN, .Mode = GPIO_MODE_OUTPUT_OD, .Pull = GPIO_PULLUP,
                             .Speed = GPIO_SPEED_FREQ_LOW };

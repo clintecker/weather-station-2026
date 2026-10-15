@@ -3,8 +3,18 @@
  * The board is replaced by a deterministic simulation (tests/test_tx_machine.py drives it through
  * ctypes): a virtual millisecond clock, the UTIL_TIMER server, the UTIL_SEQ sequencer, a radio
  * that finishes a transmission after TX_AIR_MS and times out a receive window on its own, the
- * SHT45 (a measurement ends 10 ms after it starts, with a result the test chooses), and the flash
- * (firmware/sim_flash.c under the real App/node_store.c). Interrupt callbacks (timers, radio)
+ * SHT45 (a measurement ends 10 ms after it starts, with a result the test chooses; App/sensor.c
+ * itself is tested by firmware/host/sensor_harness.c), and the flash (firmware/sim_flash.c under
+ * the real App/node_store.c).
+ *
+ * The radio follows ST's SubGHz_Phy (radio.c, stm32wlxx_hal_subghz.c), as the 2026-10-15 reviews
+ * read it, not an idealised radio:
+ *  - Rx(t > 0) arms the driver's software timer: its timeout calls RxTimeout and leaves the radio
+ *    RECEIVING; a CRC error does not stop that timer. Rx(0) in single mode: the chip's own ~65 s
+ *    timeout, which puts it in standby.
+ *  - A payload CRC failure is RxDone (bytes, CRC flag set in the HAL) then RxError, in one interrupt;
+ *    single mode then standby. A header failure is RxTimeout (standby, timer stopped).
+ *  - The transmit timeout is a software timer too: TxTimeout leaves the radio TRANSMITTING. Interrupt callbacks (timers, radio)
  * run first, then the sequencer runs every pending task to completion, as on the chip.
  *
  * Checked on every step, not just at the end of a test:
@@ -88,13 +98,16 @@ int UTIL_TIMER_SetPeriod(UTIL_TIMER_Object_t *t, uint32_t period) { t->period = 
 /* ---- sequencer ---- */
 static void (*tasks[32])(void);
 static uint32_t task_pending;
+static uint32_t task_saturations;
 void UTIL_SEQ_RegTask(uint32_t mask, uint32_t flags, void (*task)(void)) { (void)flags; tasks[__builtin_ctz(mask)] = task; }
 void UTIL_SEQ_SetTask(uint32_t mask, uint32_t prio) { (void)prio; task_pending |= mask; }
 static void run_tasks(void)
 {
+  /* A task that re-posts itself (TEST-FLASH-STORM) never settles: like UTIL_SEQ, run a bounded
+     number of tasks per step and let time move on (counted, so a test can tell). */
   for (int guard = 0; task_pending; guard++)
   {
-    if (guard > 10000) { fprintf(stderr, "tx_harness: tasks never settle\n"); abort(); }
+    if (guard > 1000) { task_saturations++; return; }
     int id = __builtin_ctz(task_pending);
     task_pending &= ~(1U << id);
     if (tasks[id]) tasks[id]();
@@ -106,7 +119,9 @@ enum { R_SLEEP, R_STANDBY, R_TX, R_RX };
 static int radio_state = R_SLEEP;
 static RadioEvents_t *radio_events;
 static uint32_t radio_due;         /* TxDone or RxTimeout time, if radio_timed */
-static int radio_timed, radio_send_fails;
+static int radio_timed, radio_send_fails, radio_crc_flag;
+static uint32_t sw_rx_due;          /* the driver's RxTimeoutTimer (Rx(t > 0)), if sw_rx_armed */
+static int sw_rx_armed;
 static uint8_t last_frame[256];
 static int last_frame_len, frames_sent;
 static uint32_t last_send_ms, last_rx_timeout;
@@ -124,10 +139,13 @@ static radio_status_t radio_send(uint8_t *buf, uint8_t size)
 static void radio_rx(uint32_t timeout)
 {
   radio_state = R_RX; last_rx_timeout = timeout;
-  radio_timed = timeout != 0; radio_due = now_ms + timeout;
+  radio_timed = 1; radio_due = now_ms + 65000U;   /* the chip's single-mode timeout */
+  sw_rx_armed = timeout != 0; sw_rx_due = now_ms + timeout;
 }
 static void radio_sleep(void) { radio_state = R_SLEEP; radio_timed = 0; }
-const struct Radio_s Radio = { radio_init, radio_send, radio_rx, radio_sleep };
+static void radio_standby(void) { radio_state = R_STANDBY; radio_timed = 0; }
+const struct Radio_s Radio = { radio_init, radio_send, radio_rx, radio_sleep, radio_standby };
+int ws_radio_take_crc_error(void) { int f = radio_crc_flag; radio_crc_flag = 0; return f; }
 void ws_radio_configure(int continuous) { (void)continuous; }
 void ws_radio_sleep(void) { radio_sleep(); }
 
@@ -198,16 +216,23 @@ void h_advance(uint32_t ms)
   for (;;)
   {
     UTIL_TIMER_Object_t *t = next_timer();
-    int radio_first = radio_timed && (!t || (int32_t)(radio_due - t->due) <= 0);
-    uint32_t due = radio_first ? radio_due : t ? t->due : until;
+    int sw_first = sw_rx_armed && (!t || (int32_t)(sw_rx_due - t->due) <= 0) &&
+                   (!radio_timed || (int32_t)(sw_rx_due - radio_due) <= 0);
+    int radio_first = !sw_first && radio_timed && (!t || (int32_t)(radio_due - t->due) <= 0);
+    uint32_t due = sw_first ? sw_rx_due : radio_first ? radio_due : t ? t->due : until;
     if ((int32_t)(due - until) > 0) break;
-    if (!radio_first && !t) break;
+    if (!sw_first && !radio_first && !t) break;
     now_ms = due;
-    if (radio_first)
+    if (sw_first)
+    {
+      sw_rx_armed = 0;
+      radio_events->RxTimeout();          /* ST's RxTimeoutTimer: the radio keeps receiving */
+    }
+    else if (radio_first)
     {
       radio_timed = 0;
-      if (radio_state == R_TX) { radio_state = R_STANDBY; radio_events->TxDone(); }
-      else if (radio_state == R_RX) { radio_state = R_STANDBY; radio_events->RxTimeout(); }
+      if (radio_state == R_TX) { radio_state = R_STANDBY; sw_rx_armed = 0; radio_events->TxDone(); }
+      else if (radio_state == R_RX) { radio_state = R_STANDBY; sw_rx_armed = 0; radio_events->RxTimeout(); }
     }
     else
     {
@@ -259,14 +284,42 @@ void h_rx(const uint8_t *frame, int len, int rssi, int snr)
 {
   uint8_t buf[256];
   memcpy(buf, frame, (size_t)len);
-  radio_state = R_STANDBY; radio_timed = 0;
+  radio_state = R_STANDBY; radio_timed = 0; sw_rx_armed = 0;   /* RX_DONE stops the driver's timer */
   radio_events->RxDone(buf, (uint16_t)len, (int16_t)rssi, (int8_t)snr);
   run_tasks();
 }
-void h_raw_event(int which)   /* 0 TxDone, 1 TxTimeout, 2 RxTimeout, 3 RxError, regardless of state */
+/* A payload CRC failure, as ST delivers it: RxDone with the damaged bytes, then RxError; the
+   driver's RX timer is NOT stopped. */
+void h_rx_crc(const uint8_t *frame, int len)
+{
+  uint8_t buf[256];
+  memcpy(buf, frame, (size_t)len);
+  radio_state = R_STANDBY; radio_timed = 0;
+  radio_crc_flag = 1;
+  radio_events->RxDone(buf, (uint16_t)len, -110, -15);
+  radio_events->RxError();
+  run_tasks();
+}
+/* A header failure: ST reports it as RxTimeout (standby, timer stopped). */
+void h_rx_hdr(void)
+{
+  radio_state = R_STANDBY; radio_timed = 0; sw_rx_armed = 0;
+  radio_events->RxTimeout();
+  run_tasks();
+}
+/* The driver's transmit timeout: the radio is still transmitting (stuck), no TxDone will come. */
+void h_tx_timeout(void)
+{
+  radio_timed = 0;
+  radio_events->TxTimeout();
+  run_tasks();
+}
+/* A stray radio callback (0 TxDone, 1 TxTimeout, 2 RxTimeout, 3 RxError), radio state untouched. */
+void h_raw_event(int which)
 {
   void (*cb[])(void) = { radio_events->TxDone, radio_events->TxTimeout, radio_events->RxTimeout, radio_events->RxError };
-  radio_state = R_STANDBY; radio_timed = 0;
   cb[which]();
   run_tasks();
 }
+int h_sw_rx_armed(void) { return sw_rx_armed; }
+uint32_t h_task_saturations(void) { return task_saturations; }

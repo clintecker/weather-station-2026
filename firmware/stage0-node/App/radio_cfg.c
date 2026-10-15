@@ -1,5 +1,6 @@
 #include "radio_cfg.h"
 #include "radio_driver.h"
+#include "subghz.h"
 #include "radio.h"
 
 void ws_radio_configure(int continuous)
@@ -32,4 +33,14 @@ void ws_radio_sleep(void)
   SleepParams_t params = { 0 };
   params.Fields.WarmStart = 1;
   SUBGRF_SetSleep(params);
+}
+
+/* ST's HAL_SUBGHZ_IRQHandler sets ErrorCode CRC_MISMATCH and still calls RxCplt (radio.c: RxDone)
+   for a packet whose payload CRC failed, then the CRC error callback (RxError). The flag is never
+   cleared by ST; this reads and clears it, from the radio interrupt's RxDone callback. */
+int ws_radio_take_crc_error(void)
+{
+  if (!(hsubghz.ErrorCode & HAL_SUBGHZ_ERROR_CRC_MISMATCH)) return 0;
+  hsubghz.ErrorCode &= ~HAL_SUBGHZ_ERROR_CRC_MISMATCH;
+  return 1;
 }

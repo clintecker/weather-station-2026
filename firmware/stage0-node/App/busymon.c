@@ -20,5 +20,12 @@ void busymon_end(bm_kind kind, uint32_t start, const char *name)
   __set_PRIMASK(primask);
 }
 
-uint32_t busymon_peak_us(bm_kind kind) { return peak[kind] / (SystemCoreClock / 1000000U); }
+/* A debugger can turn the cycle counter off when it attaches or detaches; reading the peaks turns it
+   back on, so a report never repeats stale peaks for long. */
+uint32_t busymon_peak_us(bm_kind kind)
+{
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+  return peak[kind] / (SystemCoreClock / 1000000U);
+}
 const char *busymon_peak_name(bm_kind kind) { return peak_name[kind] ? peak_name[kind] : "none"; }

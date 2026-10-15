@@ -259,5 +259,13 @@ void HAL_Delay(__IO uint32_t Delay)
 }
 
 /* USER CODE BEGIN Overload_HAL_weaks */
+void ws_trace_drop(void)
+{
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  ws_trace_drops++;
+  __set_PRIMASK(primask);
+}
+
 
 /* USER CODE END Overload_HAL_weaks */

@@ -22,6 +22,7 @@
 #include "stackmon.h"
 #include "fault.h"
 #include "stm32_seq.h"
+#include "stm32_systime.h"
 #include "stm32_timer.h"
 #include "subghz_phy_app.h"
 #include "sys_app.h"
@@ -47,14 +48,19 @@ static uint32_t n_forwarded, n_dropped, n_acks;
 static uint32_t tx_start_ms;
 static UTIL_TIMER_Object_t alive_timer;
 static uint32_t n_diag;
-static uint32_t boot_tick; /* HAL_GetTick runs from the RTC here and survives resets */
+static uint32_t boot_ms;
+/* Milliseconds from the RTC (MCU time keeps counting through a reset). Not HAL_GetTick: on this
+   board that counts 1/1024 s RTC ticks (timer_if.c), not milliseconds. Wraps after 49 days; every
+   use is a difference. */
+static uint32_t ms_now(void) { SysTime_t t = SysTimeGetMcuTime(); return t.Seconds * 1000U + (uint32_t)t.SubSeconds; }
 static int relisten_tries;
 /* Review P6: Radio.GetStatus() reports the driver's own state, not the chip's. Real evidence of
  * listening is a radio event (RxDone or RxError). With TX sending every minute, 5 silent
  * minutes means something is wrong: put the radio in standby and start listening again. */
 #define SILENCE_RELISTEN_MS (5UL * 60000UL)
 static uint32_t last_radio_event_ms, n_relistens;
-static volatile uint8_t relisten_due;
+static volatile uint8_t relisten_due, alive_due;
+static void alive(void);
 static int uart_rearm_tries;
 static void post(uint32_t ev)
 {
@@ -64,33 +70,53 @@ static void post(uint32_t ev)
   __set_PRIMASK(primask);
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0);
 }
+static uint8_t bad_frame[255];
+static uint8_t bad_len;
+static int8_t bad_rssi, bad_snr, hdr_rssi;
+static uint32_t n_crc, n_hdr, n_fault_overrun;
+static void capture_crc(const uint8_t *payload, uint16_t size, int8_t rssi, int8_t snr);
+static uint8_t crc_in_done;   /* this packet's RxError follows its RxDone in the same interrupt */
 static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 {
-  last_radio_event_ms = HAL_GetTick();
+  last_radio_event_ms = ms_now();
+  /* ST's HAL also raises RxDone for a packet whose payload CRC failed: that one is a failed
+     reception, never forwarded (stm32wlxx_hal_subghz.c HAL_SUBGHZ_IRQHandler). */
+  if (ws_radio_take_crc_error()) { crc_in_done = 1; capture_crc(payload, size, (int8_t)rssi, snr); return; }
+  if (pending_ev & EV_RX) n_fault_overrun++;   /* a frame not yet forwarded is replaced */
   rx_len = size > sizeof rx_frame ? sizeof rx_frame : size;
   memcpy(rx_frame, payload, rx_len);
   rx_rssi = rssi;
   rx_snr = snr;
   post(EV_RX);
 }
-/* Failed receptions, from the radio interrupt. RxError is a payload CRC failure: the header
-   decoded, so the radio stored the whole packet and its buffer still holds it. RxTimeout cannot
-   be a timeout in continuous receive: ST's radio.c reports a header error that way. One capture is
-   kept until process() prints it; failures meanwhile are counted, not captured (n_fault_overrun). */
-static uint8_t bad_frame[255];
-static uint8_t bad_len;
-static int8_t bad_rssi, bad_snr, hdr_rssi;
-static uint32_t n_crc, n_hdr, n_fault_overrun;
-static void on_rx_error(void)
+/* Failed receptions, from the radio interrupt. A payload CRC failure arrives as RxDone (bytes
+   included, flagged by the HAL) and then RxError; on_rx_done captures it. RxTimeout cannot be a
+   timeout in continuous receive: ST's radio.c reports a header error that way. One capture is kept
+   until process() prints it; failures meanwhile are counted, not captured (n_fault_overrun). The
+   radio stays in continuous receive through both (radio.c), so nothing re-arms it. */
+static void capture_crc(const uint8_t *payload, uint16_t size, int8_t rssi, int8_t snr)
 {
-  last_radio_event_ms = HAL_GetTick();
   n_crc++;
   if (pending_ev & EV_RX_CRC) { n_fault_overrun++; return; }
-  ws_radio_last_packet(bad_frame, &bad_len, &bad_rssi, &bad_snr);
+  bad_len = (uint8_t)(size > sizeof bad_frame ? sizeof bad_frame : size);
+  memcpy(bad_frame, payload, bad_len);
+  bad_rssi = rssi; bad_snr = snr;
+  post(EV_RX_CRC);
+}
+static void on_rx_error(void)
+{
+  if (crc_in_done) { crc_in_done = 0; return; }   /* already captured by on_rx_done */
+  /* An RxError without the RxDone before it: read what the radio kept. */
+  uint8_t len; int8_t rssi, snr;
+  last_radio_event_ms = ms_now();
+  if (pending_ev & EV_RX_CRC) { n_crc++; n_fault_overrun++; return; }
+  ws_radio_last_packet(bad_frame, &len, &rssi, &snr);
+  n_crc++; bad_len = len; bad_rssi = rssi; bad_snr = snr;
   post(EV_RX_CRC);
 }
 static void on_rx_timeout(void)
 {
+  last_radio_event_ms = ms_now();   /* a header error is evidence the radio is listening */
   n_hdr++;
   if (pending_ev & EV_RX_HDR) { n_fault_overrun++; return; }
   hdr_rssi = ws_radio_rssi_now();   /* the channel right after the failed header */
@@ -116,7 +142,7 @@ static int rx_healthy(void)
     return 0;
   }
   uart_rearm_tries = 0;
-  if (transmitting) return HAL_GetTick() - tx_start_ms < 5000;
+  if (transmitting) return ms_now() - tx_start_ms < 5000;
   if (Radio.GetStatus() == RF_RX_RUNNING) { relisten_tries = 0; return 1; }
   if (relisten_tries++ == 0) { APP_PRINTF("#watchdog radio not listening; re-arming\n"); listen(); return 1; }
   return 0;
@@ -124,14 +150,15 @@ static int rx_healthy(void)
 
 static void process(void)
 {
+  if (alive_due) { alive_due = 0; alive(); }   /* may set relisten_due, handled just below */
   if (relisten_due && !transmitting)
   {
     relisten_due = 0;
     n_relistens++;
-    APP_PRINTF("#relisten after %u s without a radio event\n", (unsigned)((HAL_GetTick() - last_radio_event_ms) / 1000));
+    APP_PRINTF("#relisten after %u s without a radio event\n", (unsigned)((ms_now() - last_radio_event_ms) / 1000));
     Radio.Standby();
     listen();
-    last_radio_event_ms = HAL_GetTick();
+    last_radio_event_ms = ms_now();
   }
   /* Take the pending events and the received frame in one step with interrupts masked, so a
      second RxDone cannot tear the frame while it is forwarded (it is handled on the next pass). */
@@ -175,27 +202,27 @@ static void process(void)
     APP_PRINTF("#rx crc len=%u rssi=%d snr=%d data=%s\n", blen, brssi, bsnr, text);
   }
   if (ev & EV_RX_HDR) APP_PRINTF("#rx hdr rssi=%d\n", hrssi);
-  if ((ev & (EV_RX_CRC | EV_RX_HDR)) && !transmitting) listen();
 }
 BUSYMON_TASK(process)
 
-/* Liveness report for the gateway (gap G12): it marks the receiver silent after 180 s. */
-static void on_alive(void *ctx)
+/* Liveness report for the gateway (gap G12): it marks the receiver silent after 180 s. Printed
+   from the main loop: the timer interrupt only asks for it. */
+static void alive(void)
 {
-  (void)ctx;
   APP_PRINTF("#alive uptime=%u forwarded=%u dropped=%u acks=%u diag=%u listening=%d relistens=%u uart_errors=%u stack_peak=%u "
              "crc_errors=%u hdr_errors=%u fault_overruns=%u task_peak_us=%u task_peak=%s isr_peak_us=%u isr_peak=%s trace_drops=%u\n",
-             (unsigned)((HAL_GetTick() - boot_tick) / 1000), (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks,
+             (unsigned)((ms_now() - boot_ms) / 1000), (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks,
              (unsigned)n_diag, Radio.GetStatus() == RF_RX_RUNNING || transmitting, (unsigned)n_relistens,
              (unsigned)vcom_rx_errors(), (unsigned)stackmon_peak(), (unsigned)n_crc, (unsigned)n_hdr, (unsigned)n_fault_overrun,
              (unsigned)busymon_peak_us(BM_TASK), busymon_peak_name(BM_TASK), (unsigned)busymon_peak_us(BM_ISR),
              busymon_peak_name(BM_ISR), (unsigned)ws_trace_drops);
-  /* Timer context: only flag it; the radio is touched from the sequencer task. */
-  if (!transmitting && ws_silent_for(HAL_GetTick(), last_radio_event_ms, SILENCE_RELISTEN_MS))
-  {
-    relisten_due = 1;
-    UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0);
-  }
+  if (!transmitting && ws_silent_for(ms_now(), last_radio_event_ms, SILENCE_RELISTEN_MS)) relisten_due = 1;
+}
+static void on_alive(void *ctx)
+{
+  (void)ctx;
+  alive_due = 1;
+  UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0);
 }
 
 /* Bench: TEST-HANG stops the main loop on purpose, so the watchdog must reset the board
@@ -227,7 +254,7 @@ static void on_line(char *line)
     return;
   }
   transmitting = 1;
-  tx_start_ms = HAL_GetTick();
+  tx_start_ms = ms_now();
   if (Radio.Send(frame, WS_ACK_FRAME_LEN) != RADIO_STATUS_OK)
   {
     APP_PRINTF("#tx busy\n");
@@ -247,8 +274,8 @@ void SubghzApp_Init(void)
   events.RxTimeout = on_rx_timeout;
   events.TxDone = on_tx_done;
   events.TxTimeout = on_tx_timeout;
-  boot_tick = HAL_GetTick();
-  last_radio_event_ms = boot_tick;
+  boot_ms = ms_now();
+  last_radio_event_ms = boot_ms;
   leds_init();
   watchdog_start(rx_healthy);
   Radio.Init(&events);

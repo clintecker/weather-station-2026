@@ -73,7 +73,7 @@ The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac a
 
 ### TX console glossary (`App/app_tx.c`)
 
-`STATUS` (and every boot) prints three lines: `#status`, `#counts`, then `#timing`. One line used
+`STATUS` (and every boot that reaches provisioning) prints three lines: `#status`, `#counts`, then `#timing`. One line used
 to be cut off at the console's old 256-byte print buffer (`UTIL_ADV_TRACE_TMP_BUF_SIZE`, now 640).
 
 `#status` (identity and state; `ws0 provision-node` reads it) has these fields:
@@ -85,7 +85,7 @@ to be cut off at the console's old 256-byte print buffer (`UTIL_ADV_TRACE_TMP_BU
 | `provisioned`, `station`, `kcv` | Provisioning state, station ID, and the key check value |
 | `kat` | Boot self-test result, `pass` or `FAIL` |
 | `epoch`, `next_seq` | This boot's epoch, and the next observation sequence number |
-| `ctr` | Next transmission counter (the nonce counter). The counter is 40-bit on the wire; this line prints its low 32 bits, which is exact below 2^32 |
+| `ctr` | Next transmission counter (the nonce counter). The counter is 40-bit on the wire; printed in full (decimal) |
 | `ecc` | Double-ECC flash read faults seen since boot |
 | `link`, `silent` | Link state (`linked` or `probing`), and consecutive minutes with no reply |
 | `energy` | Energy state. Always `normal` in Stage 0 (USB power). |
@@ -101,7 +101,8 @@ to be cut off at the console's old 256-byte print buffer (`UTIL_ADV_TRACE_TMP_BU
 | `burned` | Journal slots found torn or unusable since boot |
 | `abandoned` | Cumulative records given up by NACK or the strike limit (persisted) |
 | `sent`, `acked`, `no_ack`, `ack_rejects`, `sensor_faults` | Counters since boot. `acked` counts ACKs that matched a journal record. `ack_rejects` counts replies that failed authentication, plus NACKs that were not for the frame just sent. |
-| `tx_fail_run` | Consecutive journal, counter or radio failures; the watchdog resets the board above 10 (review P7) |
+| `tx_fail_run` | Consecutive journal-append failures |
+| `tx_air_run` | Consecutive transmission failures: counter refused, `Radio.Send` refused, or TxTimeout; only a TxDone clears it. Either run above 10 resets the board through the watchdog (review P7) |
 | `stack_peak` | Most stack bytes ever used since boot. The stack is filled with a pattern at start-up and the deepest overwritten byte is found on demand (`App/stackmon.c`). The linker reserves 8192 B; `make stack` gives the worst-case estimate. |
 
 `#timing` (how the event-driven firmware really runs, `App/busymon.h`; docs/firmware-event-model.md):
@@ -120,13 +121,14 @@ Other lines:
 | Line | Meaning |
 |---|---|
 | `#boot role=tx fw= reset= kat= freq= bw= sf= power=` | Printed at every boot. `bw` is the index (2 = 500 kHz). |
-| `#sample epoch= seq= uptime= valid= rc= t= rh= time= utc= journal= pending= lost=` | One per minute. (Next release: the node samples every 15 s and the line gains `n=`, the minute's valid samples; `t`/`rh` are then the minute's mean, `rc` the last sample's result.) `t` and `rh` are the sensor values in 0.01 °C and 0.01 % (0 when `valid=0`). The journaled record comes from the draft-5 encoder (`ws_obs_encode`): `t` outside −40.00…125.00 °C goes out as INVALID, `rh` is clamped to 0–100 %, and `valid=0` sends both fields as INVALID (never omitted). `rc` is the sensor result (`App/sensor.h`): 0 ok, −1 the previous measurement had not finished, −2 address NACK (sensor absent or wiring), −3 read NACK, −4 CRC mismatch, −5 bus still stuck after recovery, −6 a transfer never completed. `journal=ERROR` means the record could not be encoded or journaled. |
+| `#sample epoch= seq= uptime= valid= rc= n= t= rh= time= utc= journal= pending= lost=` | One per minute, from four 15-s samples: `n` is how many were valid, `t`/`rh` their mean, `rc` the last sample's result. `t` and `rh` are the sensor values in 0.01 °C and 0.01 % (0 when `valid=0`). The journaled record comes from the draft-5 encoder (`ws_obs_encode`): `t` outside −40.00…125.00 °C goes out as INVALID, `rh` is clamped to 0–100 %, and `valid=0` sends both fields as INVALID (never omitted). `rc` is the sensor result (`App/sensor.h`): 0 ok, −1 the previous measurement had not finished, −2 the command write failed (address NACK: sensor absent or wiring; or a bus error or busy bus), −3 the reply read failed, −4 CRC mismatch, −5 bus still stuck after recovery, −6 a transfer never completed. `journal=ERROR` means the record could not be encoded or journaled. |
 | `#fault kind= pc= lr= cfsr= hfsr= bfar= count=` | Both roles, after `#boot`, only if the previous run crashed (see Crash records) |
-| `#sensor ok t= rh=` / `#sensor fault rc=` | Once after boot, from the first 15-s sample. |
-| `#watchdog N failures in a row` | TX: more than 10 consecutive failures of journal append, counter reservation or `Radio.Send`; the watchdog then resets the board (review P7) |
+| `#sensor ok t= rh=` / `#sensor fault rc=` | Once after boot, from the first sample (taken at boot). |
+| `#watchdog N journal failures in a row` / `#watchdog N transmit failures in a row` | TX: more than 10 consecutive journal-append failures (`tx_fail_run`) or transmission failures (`tx_air_run`); the watchdog then resets the board (review P7) |
 | `#boot-retry: reset in 600 s` | TX: storage init or epoch reservation failed at boot; one automatic reset after 10 minutes (only if the self-test passed) |
 | `#ack epoch= seq= found= time_sync= rssi= snr= pending=` | Authentic ACK. `time_sync=1`: the clock was set from it. |
 | `#ack none epoch= seq=` | No reply within the 2 s window. The reading stays journaled, and this minute's backlog drain stops. |
+| `#ack damaged payload; still listening` / `#ack damaged header; still listening` | A packet in the ACK window failed its payload CRC or its header; the node listens on until the window ends (docs/firmware-event-model.md) |
 | `#ack reject len= rssi= snr=` | A reply failed authentication |
 | `#nack epoch= seq= reason= abandoned=` | Authentic NACK for the frame just sent; the record is abandoned. Reason 1 = collision, 2 = invalid (`ws_frame.h`). |
 | `#nack ignored: …` | NACK that was not for the frame just sent |
@@ -137,7 +139,7 @@ Other lines:
 | `#busy previous exchange still running` | The minute's sample was journaled but not sent |
 | `#kat pass\|FAIL`, `#wipe ok\|ERROR`, `#provisioned station= kcv= epoch_floor=`, `#unprovisioned: …`, `#test-hang: …` | Command replies |
 | `#storm start ctr=`, `#storm writes= ctr= burned=`, `#storm-scrub dropped=` | TEST-FLASH-STORM progress (every 256 writes); boot cleanup of storm slots |
-| `#error <what>` | `journal-read`, `counter-reserve`, `seal`, `radio-busy`, `journal-ack`, `tx-timeout`, `unexpected event= state=`, `store-init`, `epoch-reserve`, `self-test failed; not transmitting`, plus the command errors `already-provisioned`, `usage: …`, `bad key`, `epoch-floor`, `provision rc=`, `unknown command` |
+| `#error <what>` | `journal-read`, `counter-reserve`, `seal`, `radio-busy`, `journal-ack`, `tx-timeout`, `unexpected event= state=`, `busy (radio exchange or reboot in progress); retry` (WIPE, PROVISION, TEST-FLASH-STORM during an exchange), `store-init`, `epoch-reserve`, `self-test failed; not transmitting`, plus the command errors `already-provisioned`, `usage: …` (also for a malformed key), `epoch-floor`, `provision rc=`, `unknown command` |
 
 ### Crash records (`App/fault.c`, both roles)
 

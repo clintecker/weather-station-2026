@@ -6,8 +6,8 @@
  * pull-ups; the MCU's internal pull-ups are on only so an unplugged sensor reads as a NACK. */
 void sensor_init(void);
 /* Starts one measurement and returns at once: 0, or -1 if one is still running. done() runs
- * later from the main loop (the sensor task), about 10 ms later, or ~25 ms after a failure
- * (the bus recovery runs first). Its rc, printed as rc= on #sample: 0 ok (CRC-checked), -1 the
+ * later from the main loop (the sensor task): ~11 ms after the start, or ~15-100 ms after a
+ * failure (a 30 ms guard timeout, then the bus recovery). Its rc, printed as rc= on #sample: 0 ok (CRC-checked), -1 the
  * previous measurement had not finished (app_tx.c),
  * -2 address NACK (sensor absent or wiring), -3 read NACK, -4 CRC mismatch (noise, cable),
  * -5 bus still stuck after recovery, -6 a transfer never completed. On a fault the values are 0. */

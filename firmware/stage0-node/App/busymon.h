@@ -9,7 +9,7 @@
  *  - BM_ISR: one interrupt handler, including any it was preempted by;
  *  - BM_ERASE / BM_PROG: one flash page erase / double-word program. The CPU stalls while the
  *    single-bank flash is busy (RM0453 section 3.3); these are inside a task's time as well.
- * Peaks since boot, with the name of the slowest, are printed on #counts (TX) and #alive (RX). */
+ * Peaks since boot, with the name of the slowest, are printed on #timing (TX) and #alive (RX). */
 typedef enum { BM_TASK, BM_ISR, BM_ERASE, BM_PROG, BM_KINDS } bm_kind;
 void busymon_init(void);
 static inline uint32_t busymon_now(void) { return DWT->CYCCNT; }
