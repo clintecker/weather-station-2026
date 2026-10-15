@@ -72,8 +72,8 @@ The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac a
 
 ### TX console glossary (`App/app_tx.c`)
 
-`STATUS` (and every boot) prints two lines, `#status` then `#counts`. One line used to be cut off
-at the console's 256-byte print buffer (`UTIL_ADV_TRACE_TMP_BUF_SIZE`), which hid the last counters.
+`STATUS` (and every boot) prints three lines: `#status`, `#counts`, then `#timing`. One line used
+to be cut off at the console's old 256-byte print buffer (`UTIL_ADV_TRACE_TMP_BUF_SIZE`, now 640).
 
 `#status` (identity and state; `ws0 provision-node` reads it) has these fields:
 
@@ -103,14 +103,25 @@ at the console's 256-byte print buffer (`UTIL_ADV_TRACE_TMP_BUF_SIZE`), which hi
 | `tx_fail_run` | Consecutive journal, counter or radio failures; the watchdog resets the board above 10 (review P7) |
 | `stack_peak` | Most stack bytes ever used since boot. The stack is filled with a pattern at start-up and the deepest overwritten byte is found on demand (`App/stackmon.c`). The linker reserves 8192 B; `make stack` gives the worst-case estimate. |
 
+`#timing` (how the event-driven firmware really runs, `App/busymon.h`; docs/firmware-event-model.md):
+
+| Field | Meaning |
+|---|---|
+| `state` | The radio exchange state: `idle`, `gap`, `sending`, `ack-wait` or `diag-sending` |
+| `task_peak_us`, `task_peak` | Longest any one main-loop task ran since boot (µs, cycle counter), and which task |
+| `isr_peak_us`, `isr_peak` | Longest any one interrupt handler ran since boot, and which |
+| `erase_peak_us`, `prog_peak_us` | Longest flash page erase and double-word program: the CPU stalls for these |
+| `trace_drops` | Console lines dropped because the output queue was full (never waited for) |
+| `unexpected` | Events that arrived in a state that does not expect them (counted, printed as `#error unexpected`, ignored) |
+
 Other lines:
 
 | Line | Meaning |
 |---|---|
 | `#boot role=tx fw= reset= kat= freq= bw= sf= power=` | Printed at every boot. `bw` is the index (2 = 500 kHz). |
-| `#sample epoch= seq= uptime= valid= rc= t= rh= time= utc= journal= pending= lost=` | One per minute. (Next release: the node samples every 15 s and the line gains `n=`, the minute's valid samples; `t`/`rh` are then the minute's mean, `rc` the last sample's result.) `t` and `rh` are the sensor values in 0.01 °C and 0.01 % (0 when `valid=0`). The journaled record comes from the draft-5 encoder (`ws_obs_encode`): `t` outside −40.00…125.00 °C goes out as INVALID, `rh` is clamped to 0–100 %, and `valid=0` sends both fields as INVALID (never omitted). `rc` is the sensor result (`App/sensor.h`): 0 ok, −2 address NACK (sensor absent or wiring), −3 read NACK, −4 CRC mismatch, −5 bus still stuck after recovery. `journal=ERROR` means the record could not be encoded or journaled. |
+| `#sample epoch= seq= uptime= valid= rc= t= rh= time= utc= journal= pending= lost=` | One per minute. (Next release: the node samples every 15 s and the line gains `n=`, the minute's valid samples; `t`/`rh` are then the minute's mean, `rc` the last sample's result.) `t` and `rh` are the sensor values in 0.01 °C and 0.01 % (0 when `valid=0`). The journaled record comes from the draft-5 encoder (`ws_obs_encode`): `t` outside −40.00…125.00 °C goes out as INVALID, `rh` is clamped to 0–100 %, and `valid=0` sends both fields as INVALID (never omitted). `rc` is the sensor result (`App/sensor.h`): 0 ok, −1 the previous measurement had not finished, −2 address NACK (sensor absent or wiring), −3 read NACK, −4 CRC mismatch, −5 bus still stuck after recovery, −6 a transfer never completed. `journal=ERROR` means the record could not be encoded or journaled. |
 | `#fault kind= pc= lr= cfsr= hfsr= bfar= count=` | Both roles, after `#boot`, only if the previous run crashed (see Crash records) |
-| `#sensor ok t= rh=` / `#sensor fault rc=` | Once at boot, from one test reading. |
+| `#sensor ok t= rh=` / `#sensor fault rc=` | Once after boot, from the first 15-s sample. |
 | `#watchdog N failures in a row` | TX: more than 10 consecutive failures of journal append, counter reservation or `Radio.Send`; the watchdog then resets the board (review P7) |
 | `#boot-retry: reset in 600 s` | TX: storage init or epoch reservation failed at boot; one automatic reset after 10 minutes (only if the self-test passed) |
 | `#ack epoch= seq= found= time_sync= rssi= snr= pending=` | Authentic ACK. `time_sync=1`: the clock was set from it. |
@@ -125,7 +136,7 @@ Other lines:
 | `#busy previous exchange still running` | The minute's sample was journaled but not sent |
 | `#kat pass\|FAIL`, `#wipe ok\|ERROR`, `#provisioned station= kcv= epoch_floor=`, `#unprovisioned: …`, `#test-hang: …` | Command replies |
 | `#storm start ctr=`, `#storm writes= ctr= burned=`, `#storm-scrub dropped=` | TEST-FLASH-STORM progress (every 256 writes); boot cleanup of storm slots |
-| `#error <what>` | `journal-read`, `counter-reserve`, `seal`, `radio-busy`, `journal-ack`, `tx-timeout`, `store-init`, `epoch-reserve`, `self-test failed; not transmitting`, plus the command errors `already-provisioned`, `usage: …`, `bad key`, `epoch-floor`, `provision rc=`, `unknown command` |
+| `#error <what>` | `journal-read`, `counter-reserve`, `seal`, `radio-busy`, `journal-ack`, `tx-timeout`, `unexpected event= state=`, `store-init`, `epoch-reserve`, `self-test failed; not transmitting`, plus the command errors `already-provisioned`, `usage: …`, `bad key`, `epoch-floor`, `provision rc=`, `unknown command` |
 
 ### Crash records (`App/fault.c`, both roles)
 
@@ -160,7 +171,7 @@ power, and resets at once (`reset=software`). The next boot prints a line like t
 | `#rx hdr rssi=` | Bad reception: the header CRC failed, no payload. `rssi` is the channel RSSI read right after the failure |
 | `#host reject len=` | A host line that is not a valid ACK/NACK hex line |
 | `#tx timeout`, `#tx busy` | ACK/NACK transmission failed |
-| `#alive uptime= forwarded= dropped= acks= diag= listening= relistens= uart_errors= stack_peak= crc_errors= hdr_errors= task_peak_us= task_peak= isr_peak_us= isr_peak= trace_drops=` | Every 60 s. `stack_peak` as on TX (`#counts`). `crc_errors`/`hdr_errors`: bad receptions since boot (`#rx crc`/`#rx hdr`). `task_peak_us`/`isr_peak_us`: longest task and interrupt since boot, with the name of the one that set it (`task_peak`, `isr_peak`: words such as `process`, `SUBGHZ_Radio`, not numbers). `trace_drops`: trace records lost. The gateway marks the receiver silent after 180 s without `#alive` or `#boot` (gap G12). `relistens`: times the radio was restarted after 5 minutes without any radio event (review P6). `uart_errors`: console receive errors, each followed by a re-arm (review P5). |
+| `#alive uptime= forwarded= dropped= acks= diag= listening= relistens= uart_errors= stack_peak= crc_errors= hdr_errors= fault_overruns= task_peak_us= task_peak= isr_peak_us= isr_peak= trace_drops=` | Every 60 s. `stack_peak` as on TX (`#counts`). `crc_errors`/`hdr_errors`: bad receptions since boot (`#rx crc`/`#rx hdr`); `fault_overruns`: of those, how many came before the previous capture was printed, so were counted but not logged. `task_peak_us`/`isr_peak_us`: longest task and interrupt since boot, with the name of the one that set it (`task_peak`, `isr_peak`: words such as `process`, `SUBGHZ_Radio`, not numbers). `trace_drops`: console lines dropped because the output queue was full (the firmware never waits for it). The gateway marks the receiver silent after 180 s without `#alive` or `#boot` (gap G12). `relistens`: times the radio was restarted after 5 minutes without any radio event (review P6). `uart_errors`: console receive errors, each followed by a re-arm (review P5). |
 | `#watchdog radio not listening; re-arming`, `#watchdog console not receiving; re-arming` | Self-heal attempt before the watchdog may reset the board |
 | `#relisten after N s without a radio event` | Radio put in standby and listening restarted (review P6) |
 | `#status role=rx forwarded= dropped= acks= relistens= uart_errors=` | Reply to `STATUS`. `acks` counts ACK/NACK lines handed to the radio. |

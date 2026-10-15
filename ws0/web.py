@@ -61,7 +61,7 @@ TABLES = (
     '''CREATE TABLE IF NOT EXISTS rx_alive (id INTEGER PRIMARY KEY AUTOINCREMENT, station TEXT, received_at REAL,
         uptime_s INTEGER, forwarded INTEGER, dropped INTEGER, acks INTEGER, diag INTEGER, listening INTEGER,
         relistens INTEGER, uart_errors INTEGER, stack_peak INTEGER, crc_errors INTEGER, hdr_errors INTEGER,
-        task_peak_us INTEGER, task_peak TEXT, isr_peak_us INTEGER, isr_peak TEXT, trace_drops INTEGER)''',
+        fault_overruns INTEGER, task_peak_us INTEGER, task_peak TEXT, isr_peak_us INTEGER, isr_peak TEXT, trace_drops INTEGER)''',
     'CREATE INDEX IF NOT EXISTS rx_alive_time ON rx_alive(station,received_at)',
     '''CREATE TABLE IF NOT EXISTS gateway_events (id INTEGER PRIMARY KEY AUTOINCREMENT, station TEXT, at REAL,
         source TEXT, kind TEXT, level TEXT, text TEXT)''',
@@ -74,7 +74,7 @@ TABLES = (
     'CREATE INDEX IF NOT EXISTS rx_faults_time ON rx_faults(station,received_at)',
 )
 ALIVE_FIELDS = ('uptime_s', 'forwarded', 'dropped', 'acks', 'diag', 'listening', 'relistens', 'uart_errors',
-                'stack_peak', 'crc_errors', 'hdr_errors', 'task_peak_us', 'task_peak', 'isr_peak_us', 'isr_peak',
+                'stack_peak', 'crc_errors', 'hdr_errors', 'fault_overruns', 'task_peak_us', 'task_peak', 'isr_peak_us', 'isr_peak',
                 'trace_drops')
 ALIVE_WORDS = ('task_peak', 'isr_peak')   # identifiers (the task or ISR that set the peak), kept as text
 # Peaks since RX boot: a history bucket keeps its highest, with the word of the report it came from.
