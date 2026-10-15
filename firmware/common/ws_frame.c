@@ -66,10 +66,10 @@ int ws_open_reply(const uint8_t key[16], uint32_t station, const uint8_t *frame,
 }
 
 int ws_key_check(const uint8_t key[16], uint8_t out[3]) {
- uint8_t zero[16]={0}, block[16]; mbedtls_aes_context aes; int rc;
+ uint8_t block[16]; mbedtls_aes_context aes; int rc;
  mbedtls_aes_init(&aes);
  rc=mbedtls_aes_setkey_enc(&aes,key,128);
- if(!rc) rc=mbedtls_aes_crypt_ecb(&aes,MBEDTLS_AES_ENCRYPT,zero,block);
+ if(!rc) { const uint8_t zero[16]={0}; rc=mbedtls_aes_crypt_ecb(&aes,MBEDTLS_AES_ENCRYPT,zero,block); }
  mbedtls_aes_free(&aes);
  if(!rc) memcpy(out,block,3);
  return rc;

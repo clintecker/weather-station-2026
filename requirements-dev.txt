@@ -1,3 +1,4 @@
 # Development-only tools (CI host job, Linux). The gateway itself needs only requirements.txt.
 ruff==0.8.6
 lizard==1.24.1
+cppcheck==1.5.3   # the Cppcheck 2.22.0 wheel (tools/cppcheck.sh)

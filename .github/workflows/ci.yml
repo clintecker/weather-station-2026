@@ -54,9 +54,15 @@ jobs:
           ruff check
 
       # Our firmware and host-harness C: small functions, no copied code (tools/code_shape.sh).
-      - name: Code shape (C function size, duplication)
+      - name: Code shape (C function size, duplication, loop bounds)
         if: runner.os == 'Linux'
         run: tools/code_shape.sh
+
+      # A second static analyser on our firmware C, next to GCC's -fanalyzer in the firmware job
+      # (pinned Cppcheck from requirements-dev.txt; docs/power-of-ten.md rule 10). Any finding fails.
+      - name: Static analysis (cppcheck, our firmware C)
+        if: runner.os == 'Linux'
+        run: tools/cppcheck.sh
 
       # vendor/ is git-ignored. Cache it keyed on the pin list; fetch-vendor.sh always re-verifies
       # every pinned commit and that no vendored file changed, so a stale or tampered cache fails here rather than in the tests.
@@ -136,7 +142,8 @@ jobs:
 
       # Same procedure as RELEASES.md steps 3-4: `make clean` removes both roles, then build rx and
       # tx; do it twice and require identical .bin hashes. Each link also runs the Makefile's flash
-      # budget check, which fails the build above 90 % of the 64 KB application region.
+      # budget check, which fails the build above 90 % of the 64 KB application region, and the no-heap
+      # check (no malloc & co. linked in; docs/power-of-ten.md rule 3).
       - name: Build both roles twice and compare .bin hashes
         working-directory: firmware/stage0-node
         run: |
@@ -160,7 +167,7 @@ jobs:
         run: |
           make -C firmware/rangetest BUILD=build/ci -j"$(nproc)"
 
-      # Our C already builds with a strict warning set and -Werror (Makefile STRICT). ANALYZE=1
+      # Our C already builds with a strict warning set and -Werror (board.mk STRICT). ANALYZE=1
       # adds GCC's static analyzer (-fanalyzer) to our files only; any finding fails the build.
       # Separate build directories, so the release-identical bins above are untouched.
       - name: Static analysis (gcc -fanalyzer, our code)

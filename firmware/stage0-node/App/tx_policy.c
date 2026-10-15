@@ -14,7 +14,7 @@
 
 _Static_assert(WS_BACKLOG_MAX <= MAX_QUEUE - 1U, "the send queue holds the live reading plus the largest backlog");
 #define TURNAROUND_MS 300U   /* gateway commit (fullfsync) + USB both ways, conservative */
-#define STRIKE_LIMIT  10
+#define STRIKE_LIMIT  10U
 #define STRIKE_SLOTS  6
 #define DIAG_PERIOD_S 900U
 

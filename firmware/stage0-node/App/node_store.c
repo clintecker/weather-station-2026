@@ -213,7 +213,7 @@ static uint32_t page_seq[WS_JOURNAL_PAGES];
 static uint8_t pending[(JOURNAL_CAPACITY + 7) / 8];
 static uint32_t head, head_slot, n_pending, n_lost, n_burned;
 
-#define BIT(r) ((uint32_t)(r).page * JOURNAL_SLOTS_PER_PAGE + (r).slot)
+static uint32_t slot_index(jref_t r) { return (uint32_t)r.page * JOURNAL_SLOTS_PER_PAGE + r.slot; }
 static int is_pending(uint32_t i) { return pending[i >> 3] >> (i & 7) & 1; }
 static void set_pending(uint32_t i, int on) {
  if (on) pending[i >> 3] |= (uint8_t)(1U << (i & 7)); else pending[i >> 3] &= (uint8_t)~(1U << (i & 7));
@@ -313,7 +313,7 @@ int store_journal_append(const uint8_t plain[WS_OBS_PLAIN_MAX], jref_t *ref) {
  for (uint32_t k = 0; k < JOURNAL_PLAIN_DW; k++)
   if (prog64(a + 8 * k, d[k])) { n_burned++; return -2; }
  if (prog64(a + COMMIT_OFF, slot_commit_word(plain))) { n_burned++; return -2; }
- set_pending(BIT(*ref), 1); n_pending++;
+ set_pending(slot_index(*ref), 1); n_pending++;
  return 0;
 }
 /* A jref_t comes only from this file (append, oldest, find): always a slot of the journal. */
@@ -329,7 +329,7 @@ int store_journal_read(jref_t ref, uint8_t plain[WS_OBS_PLAIN_MAX]) {
 int store_journal_ack(jref_t ref) {
  if (!journal_ready) return STORE_ENOTREADY;
  if (!WS_CHECK(ref_in_journal(ref))) return -1;   /* before it indexes pending[] */
- uint32_t i = BIT(ref);
+ uint32_t i = slot_index(ref);
  if (!is_pending(i)) return 0;
  if (prog64(slot_addr(ref.page, ref.slot) + ACK_OFF, 0)) return -1;
  set_pending(i, 0); n_pending--;
@@ -339,7 +339,7 @@ int store_journal_ack(jref_t ref) {
 static unsigned page_pending(uint32_t p, jref_t *out, unsigned n, unsigned max, const jref_t *except) {
  for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE && n < max; s++) {
   jref_t r = { (uint16_t)p, (uint16_t)s };
-  if (!is_pending(BIT(r))) continue;
+  if (!is_pending(slot_index(r))) continue;
   if (except && except->page == r.page && except->slot == r.slot) continue;
   out[n++] = r;
  }

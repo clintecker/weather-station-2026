@@ -9,5 +9,5 @@
 #define WS_NODE_FIELDS (WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT | WS_F_TH_SUMMARY)  /* T/RH: 15-s samples, minute mean + extrema */
 #endif
 #define WS_OBS_PLAIN_MAX WS_OBS_PLAIN_LEN(WS_NODE_FIELDS)
-_Static_assert(WS_NODE_FIELDS && !(WS_NODE_FIELDS & ~WS_FIELDS_DEFINED), "a build measures catalog fields");
+_Static_assert((WS_NODE_FIELDS) != 0 && !(WS_NODE_FIELDS & ~WS_FIELDS_DEFINED), "a build measures catalog fields");
 #endif

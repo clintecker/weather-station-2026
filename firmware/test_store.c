@@ -441,7 +441,7 @@ static int checks(void) {
   printf("CHECK count %u -> %u, pending %u -> %u\n", (unsigned)before, (unsigned)ws_check_count(), (unsigned)pending,
          (unsigned)store_journal_pending()); bad++;
  }
- if (!before && WS_CHECK_FILE_OF(ws_check_first()) != 5) { printf("CHECK first site %04x\n", ws_check_first()); bad++; }
+ if (!before && ws_check_site_file(ws_check_first()) != 5) { printf("CHECK first site %04x\n", ws_check_first()); bad++; }
  if (store_journal_ack(r) || store_journal_pending() != pending - 1) { printf("CHECK a real ack after\n"); bad++; }
  return bad;
 }

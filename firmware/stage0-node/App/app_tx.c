@@ -177,7 +177,7 @@ static void sample_line(const minute_t *m, int src, int rc, int busy)
 {
   APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d n=%u t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
              (unsigned)node.boot_epoch, (unsigned)node.next_seq, (unsigned)m->uptime, m->valid, src, m->samples,
-             m->valid ? m->t : 0, m->valid ? m->h : 0, m->utc ? "synchronized" : "unknown", (unsigned)m->utc,
+             m->valid ? m->t : 0, m->valid ? m->h : 0U, m->utc ? "synchronized" : "unknown", (unsigned)m->utc,
              rc ? "ERROR" : busy ? "held" : "ok", (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
 }
 
@@ -284,7 +284,7 @@ void SubghzApp_Init(void)
   watchdog_start();
   node.kat_ok = selftest_kat();
   APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
-             watchdog_reset_cause(), node.kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
+             watchdog_reset_cause(), node.kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, (unsigned)WS_LORA_BANDWIDTH, (unsigned)WS_LORA_SF, WS_TX_POWER_DBM);
   fault_report();
   if (!boot_ready()) return;
   sensor_init();

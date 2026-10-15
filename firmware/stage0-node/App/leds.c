@@ -10,6 +10,7 @@ static UTIL_TIMER_Object_t heartbeat_timer;
 #define HEARTBEAT_PERIOD_MS 2000U
 #define HEARTBEAT_BLIP_MS   40U
 
+/* cppcheck-suppress constParameterCallback ; ST's UTIL_TIMER callback signature */
 static void off(void *ctx) { led_t led = (led_t)(uintptr_t)ctx; HAL_GPIO_WritePin(port[led], pin[led], GPIO_PIN_RESET); }
 
 /* "Alive" blip on blue; skipped while blue is already showing real radio traffic. */

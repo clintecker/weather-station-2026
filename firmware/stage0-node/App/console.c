@@ -19,6 +19,7 @@ static volatile uint8_t line_ready;
  * main loop, further input is dropped (the host sends one line per exchange). A dropped or damaged
  * character (a receive error) discards the whole line it belongs to, so its tail never becomes a
  * line of its own. */
+/* cppcheck-suppress constParameterCallback ; the board's vcom_ReceiveInit callback signature */
 static void on_char(uint8_t *c, uint16_t size, uint8_t error)
 {
   (void)size;

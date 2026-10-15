@@ -64,9 +64,16 @@ extern "C" {
    main loop (UNCHUNK mode formats into one static buffer, which is not re-entrant). */
 extern volatile uint32_t ws_trace_drops;
 void ws_trace_drop(void);   /* atomic increment: tasks and interrupts both print */
-#define APP_PRINTF(...)   do{ if (UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_OFF, __VA_ARGS__) != UTIL_ADV_TRACE_OK) ws_trace_drop(); }while(0)
+/* weather-station-2026: ST's UTIL_ADV_TRACE_COND_FSend has no format attribute, so GCC never checked
+   these format strings against their arguments. ws_printf_check has one and is never called (an
+   `if (0)` branch): the formats are checked (-Wformat=2 in our strict set) at no code cost. */
+static inline void ws_printf_check(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+static inline void ws_printf_check(const char *fmt, ...) { (void)fmt; }
+#define APP_PRINTF(...)   do{ if (0) ws_printf_check(__VA_ARGS__); \
+                              if (UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_OFF, __VA_ARGS__) != UTIL_ADV_TRACE_OK) ws_trace_drop(); }while(0)
 /* The same, as an expression: 1 if the line was queued, 0 if it was dropped (and counted). */
-#define APP_PRINTF_OK(...) (UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_OFF, __VA_ARGS__) == UTIL_ADV_TRACE_OK ? 1 : (ws_trace_drop(), 0))
+#define APP_PRINTF_OK(...) ((void)(0 && (ws_printf_check(__VA_ARGS__), 0)), \
+                            UTIL_ADV_TRACE_COND_FSend(VLEVEL_ALWAYS, T_REG_OFF, TS_OFF, __VA_ARGS__) == UTIL_ADV_TRACE_OK ? 1 : (ws_trace_drop(), 0))
 
 #if defined (APP_LOG_ENABLED) && (APP_LOG_ENABLED == 1)
 #define APP_LOG(TS,VL,...)   do{ {UTIL_ADV_TRACE_COND_FSend(VL, T_REG_OFF, TS, __VA_ARGS__);} }while(0);

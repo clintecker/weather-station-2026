@@ -5,9 +5,9 @@
 
 int ws_line_feed(ws_line_asm *a, uint8_t c, char out[WS_LINE_MAX + 1])
 {
- int n = 0;
  if (c == '\r') return 0;
  if (c == '\n') {
+  int n = 0;
   if (!a->overflow && a->len) {
    memcpy(out, a->buf, a->len);
    out[a->len] = 0;

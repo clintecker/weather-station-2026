@@ -21,6 +21,7 @@
 
 static I2C_HandleTypeDef hi2c2;
 
+/* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
 {
   if (hi2c->Instance != I2C2) return;
@@ -40,6 +41,7 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
   HAL_NVIC_EnableIRQ(I2C2_ER_IRQn);
 }
 
+/* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_MspDeInit(I2C_HandleTypeDef *hi2c)
 {
   if (hi2c->Instance != I2C2) return;
@@ -104,6 +106,7 @@ static int advance(sensor_state from, sensor_state to)
   return ok;
 }
 
+/* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
   if (hi2c != &hi2c2) return;
@@ -121,8 +124,10 @@ static void on_measured(void *ctx)
   if (HAL_I2C_Master_Receive_IT(&hi2c2, (uint16_t)(WS_SHT45_ADDR << 1), reply, sizeof reply) != HAL_OK) finish(-3);
 }
 
+/* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c) { if (hi2c == &hi2c2 && st == S_READ) finish(0); }
 /* A NACK (no sensor at the address, or not ready) or a bus error. */
+/* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) { if (hi2c == &hi2c2) finish(st == S_CMD ? -2 : -3); }
 static void on_guard(void *ctx) { (void)ctx; finish(SENSOR_TIMEOUT); }
 

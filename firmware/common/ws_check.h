@@ -30,8 +30,8 @@
 void ws_check_fail(uint16_t site) __attribute__((cold));
 uint32_t ws_check_count(void);   /* failed checks since boot (saturates) */
 uint16_t ws_check_first(void);   /* site of the first failed check, 0 if none */
-#define WS_CHECK_LINE(site) ((unsigned)(site) & 1023U)
-#define WS_CHECK_FILE_OF(site) ((unsigned)(site) >> 10)
+static inline unsigned ws_check_site_file(uint16_t site) { return (unsigned)site >> 10; }
+static inline unsigned ws_check_site_line(uint16_t site) { return (unsigned)site & 1023U; }
 
 #define WS_CHECK(cond) \
   (__builtin_expect(!!(cond), 1) ? 1 : (ws_check_fail((uint16_t)((WS_CHECK_FILE << 10) | __LINE__)), 0))

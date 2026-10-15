@@ -101,6 +101,7 @@ static void on_rx_timeout(void) { post(EV_RX_TIMEOUT); }
 static void on_rx_error(void) { post(EV_RX_ERROR); }
 /* ST's HAL raises RxDone for a packet whose payload CRC failed, then RxError (stm32wlxx_hal_subghz.c
    HAL_SUBGHZ_IRQHandler): such a packet is only the RxError. */
+/* cppcheck-suppress constParameterCallback ; ST's RadioEvents_t RxDone signature */
 static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 {
   if (ws_radio_take_crc_error()) return;

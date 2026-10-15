@@ -61,7 +61,7 @@ static void counts_line(void)
              (unsigned)store_journal_burned(), (unsigned)store_abandoned_total(), (unsigned)c->sent, (unsigned)c->acked,
              (unsigned)c->no_ack, (unsigned)c->ack_rejects, (unsigned)n->sensor_faults, (unsigned)n->held_lost,
              (unsigned)n->journal_fails.n, (unsigned)c->air.n, (unsigned)stackmon_peak(), (unsigned)ws_check_count(),
-             WS_CHECK_FILE_OF(site), WS_CHECK_LINE(site));
+             ws_check_site_file(site), ws_check_site_line(site));
 }
 
 static void timing_line(void)

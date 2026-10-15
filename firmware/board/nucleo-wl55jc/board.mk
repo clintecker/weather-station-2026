@@ -20,6 +20,7 @@
 #   STRICT_SRC optional: sources built with the strict warning set and -Werror (ANALYZE=1 adds
 #              -fanalyzer); ST-generated and vendor code is never in it
 #   FLASH_BUDGET_PCT optional: fail the link when code + data exceed this % of APP_FLASH_BYTES
+#   NO_HEAP    optional: 1 fails the link if the heap allocator (malloc, free, ... or _sbrk) is linked in
 #   CLEAN_DIR  optional: what `make clean` removes (default $(BUILD))
 #   USAGE_ARGS optional: extra arguments shown in the `make flash` usage line
 #
@@ -32,6 +33,7 @@ TOOLCHAIN ?= $(HOME)/.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin
 PREFIX     = $(TOOLCHAIN)/arm-none-eabi-
 CC         = $(PREFIX)gcc
 OBJCOPY    = $(PREFIX)objcopy
+NM         = $(PREFIX)nm
 SIZE       = $(PREFIX)size
 CLEAN_DIR ?= $(BUILD)
 
@@ -99,9 +101,16 @@ ifneq ($(words $(sort $(notdir $(CUBE_SRC)))),$(words $(CUBE_SRC)))
 $(error duplicate source basenames in CUBE_SRC)
 endif
 
-# Strict warnings for our own C. These flags do not change the generated code.
+# Strict warnings for our own C. These flags do not change the generated code. The second and third
+# lines came with docs/power-of-ten.md (rule 10): ISO C (-Wpedantic, on top of gnu11's extensions), the
+# console formats (sys_app.h gives APP_PRINTF a format check), declarations, and no function frame
+# above 512 B (-Wstack-usage; tools/stack_report.py bounds whole call chains).
 STRICT = -Wextra -Wshadow -Wconversion -Wsign-conversion -Wcast-qual -Wstrict-prototypes \
-         -Wmissing-prototypes -Wundef -Wdouble-promotion -Wformat=2 -Wnull-dereference -Werror
+         -Wmissing-prototypes -Wundef -Wdouble-promotion -Wformat=2 -Wnull-dereference \
+         -Wpedantic -Wformat-signedness -Wformat-overflow=2 -Wformat-truncation=2 -Wvla -Walloca -Wcast-align \
+         -Wpointer-arith -Wredundant-decls -Wold-style-definition -Wmissing-declarations -Wwrite-strings \
+         -Wjump-misses-init -Wlogical-op -Wduplicated-cond -Wduplicated-branches -Wswitch-default \
+         -Wfloat-equal -Wunused-macros -Wstack-usage=512 -Werror
 ifeq ($(ANALYZE),1)
 STRICT += -fanalyzer
 endif
@@ -142,6 +151,11 @@ ifneq ($(FLASH_BUDGET_PCT),)
 	@$(SIZE) $@ | awk -v lim=$(APP_FLASH_BYTES) -v pct=$(FLASH_BUDGET_PCT) 'NR==2 { used=$$1+$$2; \
 	  printf "flash budget: %d of %d B (%.1f%%, limit %d%%)\n", used, lim, 100*used/lim, pct; \
 	  if (used*100 > lim*pct) { print "error: over the flash budget, see docs/firmware-budget.md"; exit 1 } }'
+endif
+ifeq ($(NO_HEAP),1)
+	@! $(NM) $@ | grep -E ' [TtWw] (_?(malloc|calloc|realloc|free)|_(malloc|calloc|realloc|free)_r|_sbrk)$$' \
+	  || { echo "error: the heap allocator is linked in (docs/power-of-ten.md, rule 3)"; exit 1; }
+	@echo "no heap: no allocator linked"
 endif
 
 $(TARGET).bin: $(TARGET).elf

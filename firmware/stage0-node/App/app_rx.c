@@ -83,6 +83,7 @@ static int8_t bad_rssi, bad_snr, hdr_rssi;
 static uint32_t n_crc, n_hdr, n_fault_overrun;
 static void capture_crc(const uint8_t *payload, uint16_t size, int8_t rssi, int8_t snr);
 static uint8_t crc_in_done;   /* this packet's RxError follows its RxDone in the same interrupt */
+/* cppcheck-suppress constParameterCallback ; ST's RadioEvents_t RxDone signature */
 static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 {
   last_radio_event_ms = clock_ms(); quiet_relistens = 0;
@@ -278,6 +279,7 @@ static void on_alive(void *ctx)
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0);
 }
 
+/* cppcheck-suppress constParameterPointer ; console.h's signature: TX wipes a PROVISION line in place */
 void console_line(char *line)
 {
   uint8_t frame[WS_ACK_FRAME_LEN + 1];
@@ -289,7 +291,7 @@ void console_line(char *line)
     uint16_t site = ws_check_first();
     APP_PRINTF("#status role=rx forwarded=%u dropped=%u acks=%u relistens=%u uart_errors=%u check_fails=%u check_first=%u:%u\n",
                (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks, (unsigned)n_relistens, (unsigned)vcom_rx_errors(),
-               (unsigned)ws_check_count(), WS_CHECK_FILE_OF(site), WS_CHECK_LINE(site));
+               (unsigned)ws_check_count(), ws_check_site_file(site), ws_check_site_line(site));
     return;
   }
   int n = ws_hex_decode(line, frame, sizeof frame);
@@ -335,7 +337,7 @@ void SubghzApp_Init(void)
   watchdog_start();
   /* A leading newline ends any line a reset cut off, so the host sees #boot on a line of its own (m7). */
   APP_PRINTF("\n#boot role=rx fw=%s reset=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION, watchdog_reset_cause(),
-             (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
+             (unsigned)WS_RF_FREQUENCY_HZ, (unsigned)WS_LORA_BANDWIDTH, (unsigned)WS_LORA_SF, WS_TX_POWER_DBM);
   fault_report();
   (void)UTIL_TIMER_Create(&alive_timer, 60000, UTIL_TIMER_PERIODIC, on_alive, NULL);
   (void)WS_CHECK(UTIL_TIMER_Start(&alive_timer) == UTIL_TIMER_OK);   /* created just above, so not running */

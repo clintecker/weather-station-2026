@@ -17,7 +17,7 @@ static uint32_t *lowest(void)
 void stackmon_paint(void)
 {
   /* Leave 64 bytes below the current stack pointer untouched: this function's own frame. */
-  uint32_t *stop = (uint32_t *)((__get_MSP() - 64u) & ~(uint32_t)3u);
+  const uint32_t *stop = (const uint32_t *)((__get_MSP() - 64u) & ~(uint32_t)3u);
   for (uint32_t *p = lowest(); p < stop; p++) *p = WS_STACK_PAINT;
 }
 
