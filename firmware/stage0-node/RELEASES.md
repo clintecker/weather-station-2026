@@ -14,6 +14,27 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
 
+## ddb469680a30 — 2026-10-15 (bench, refactored and reviewed; protocol draft 5)
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (34,080 B) | `73e8423ba987ab3ce2cad5e5e632218fc3148054279dcf9dee99dbd4f7a7e82e` |
+| `build/rx/stage0-rx.elf` (path-dependent) | `db5df4d7b5969188828e3251e54abcff7b7340da1f0dadd32913fb3f02dc252f` |
+| `build/tx/stage0-tx.bin` (57,048 B) | `718278c804fbc206d15a2a0d1a3062d3c7f11c3120cbdb472f11159d0d3fb046` |
+| `build/tx/stage0-tx.elf` (path-dependent) | `fdf9842a0d617b61673f0c1256545abe34804ea6ca9f8721ad868f664cfcd819` |
+
+- Source: commit `ddb469680a30`. Changes since 586001994b09:
+  - RX: independent whole-file review, all findings fixed with failing tests first (dead radio reset after two quiet 16-min relistens; one ACK on air at a time; standby before listening after a TX timeout; full payload length before listening; `#boot` on a fresh line; a line that lost a character or has a non-printable byte discarded whole; stalled console output fails the health check; `frames_lost` and `#rx frame-lost`; failure lines limited to 20 a minute; TEST-* out of a field build; watchdog after the console).
+  - Refactor (both roles): shared clock, event posting and bench modules; `app_tx.c` split into exchange, policy (`firmware/common/ws_policy.c`, unit-tested), time, console and self-test; every function in our C at most CCN 10 and 60 lines, no duplicated code (`tools/code_shape.sh`, in CI).
+  - Flash only with the radio idle, without exception: a reading made during an exchange is held in RAM and journaled when the radio goes idle; a stuck exchange is stopped and its held readings journaled before the watchdog reset.
+  - Review of the refactored firmware: every main-loop radio command runs with the radio interrupt masked (ST's HAL refuses a radio interrupt's commands while a main-loop command holds the driver); the first frame of an exchange also waits for the gap; two benign races dropped instead of counted as unexpected; TEST-FLASH-STORM bench-only and capped.
+  - Host test strength: TX 91/93 and RX 46/47 planted bugs caught; one shared simulation core under all harnesses.
+- Inputs: as a07f498 (vendor pins verified). Flash budget: TX 87.1 %, RX 52.0 %. Stack bound: TX 5,648 B (69 %), RX 2,588 B (32 %). `make waits`: OK on both.
+- Reproducibility: two clean builds gave identical `.bin` hashes.
+- Flashed 2026-10-15 ~20:50Z: RX → board B `0016001E4142500E20353451`, TX → board A `003B00194142500E20353451`, gateway `serve --directory run-d6` left running. TX after flashing: `fw=ddb469680a30`, `kcv=e03059` (run-d6 key kept), `kat=pass`, `epoch=41`, `ctr=11777`, time trust restored after the reset (`time=synchronized`), `pending=0`; `#timing` task peak 52 µs (`sensor_task`), interrupt peak 43 µs (`I2C2_EV`), program 93 µs.
+- Bench check 20:52Z: epoch 41 seq 0 and 1 stored and acknowledged, RX -27 dBm / SNR 13. RX `#alive`: forwarded 2, dropped 0, no failed receptions, `frames_lost=0`, task peak 389 µs (`console_task`), interrupt peak 219 µs (`SUBGHZ_Radio`), `trace_drops=0`.
+- Not an H01 release: radio settings are bench values. Pending decision: the strike rule (review M2: strikes cannot tell a refused record from a lossy link); this release keeps the existing rule.
+
 ## 586001994b09 — 2026-10-15 (bench, interrupt-driven, protocol draft 5)
 
 | Artifact | SHA-256 |
