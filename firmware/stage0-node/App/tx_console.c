@@ -5,7 +5,6 @@
 #include "clock.h"
 #include "console.h"
 #include "node_store.h"
-#include "selftest.h"
 #include "stackmon.h"
 #include "stage0.h"
 #include "stm32_seq.h"
@@ -38,25 +37,27 @@ static const char *u64_text(uint64_t v, char buf[21])
 static void status_line(void)
 {
   char ctr_buf[21];
-  const tx_node_t *n = &tx_node;
+  const tx_identity_t *id = exchange_identity();
+  const tx_node_t *n = node_state();
   APP_PRINTF("#status role=tx fw=%s reset=%s provisioned=%d station=%u kcv=%02x%02x%02x kat=%s epoch=%u next_seq=%u "
              "ctr=%s ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u\n",
-             WS_FW_VERSION, watchdog_reset_cause(), n->provisioned, (unsigned)n->station, n->kcv[0], n->kcv[1], n->kcv[2],
+             WS_FW_VERSION, watchdog_reset_cause(), id->provisioned, (unsigned)id->station, id->kcv[0], id->kcv[1], id->kcv[2],
              n->kat_ok ? "pass" : "FAIL", (unsigned)n->boot_epoch, (unsigned)n->next_seq,
              u64_text(store_counter_next(), ctr_buf), (unsigned)store_ecc_faults(),
              policy_probing() ? "probing" : "linked", (unsigned)policy_silent_minutes(), ws_energy_name(energy_state()),
-             time_valid() ? "synchronized" : "unknown", (unsigned)time_utc(), (unsigned)(clock_s() - n->boot_s));
+             time_valid() ? "synchronized" : "unknown", (unsigned)time_utc(), (unsigned)node_uptime_s());
 }
 
 static void counts_line(void)
 {
-  const tx_counts_t *c = &tx_counts;
+  const tx_counts_t *c = exchange_counts();
+  const tx_node_t *n = node_state();
   APP_PRINTF("#counts pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u "
              "sensor_faults=%u held_lost=%u tx_fail_run=%u tx_air_run=%u stack_peak=%u\n",
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
              (unsigned)store_journal_burned(), (unsigned)store_abandoned_total(), (unsigned)c->sent, (unsigned)c->acked,
-             (unsigned)c->no_ack, (unsigned)c->ack_rejects, (unsigned)tx_node.sensor_faults, (unsigned)tx_node.held_lost,
-             (unsigned)tx_node.journal_fails.n, (unsigned)c->air.n, (unsigned)stackmon_peak());
+             (unsigned)c->no_ack, (unsigned)c->ack_rejects, (unsigned)n->sensor_faults, (unsigned)n->held_lost,
+             (unsigned)n->journal_fails.n, (unsigned)c->air.n, (unsigned)stackmon_peak());
 }
 
 static void timing_line(void)
@@ -65,7 +66,7 @@ static void timing_line(void)
              "trace_drops=%u unexpected=%u\n", exchange_state_name(),
              (unsigned)busymon_peak_us(BM_TASK), busymon_peak_name(BM_TASK), (unsigned)busymon_peak_us(BM_ISR),
              busymon_peak_name(BM_ISR), (unsigned)busymon_peak_us(BM_ERASE), (unsigned)busymon_peak_us(BM_PROG),
-             (unsigned)ws_trace_drops, (unsigned)tx_counts.unexpected);
+             (unsigned)ws_trace_drops, (unsigned)exchange_counts()->unexpected);
 }
 
 void tx_status(void) { status_line(); counts_line(); timing_line(); }
@@ -73,10 +74,11 @@ void tx_status(void) { status_line(); counts_line(); timing_line(); }
 /* A commanded reboot: sampling stops now, the reset comes from a timer once the console has had
    REBOOT_DELAY_MS to send the reply line. */
 static void on_reboot(void *ctx) { (void)ctx; NVIC_SystemReset(); }
+static int rebooting;   /* a commanded reboot is pending */
 static void reboot_soon(void)
 {
-  if (tx_node.rebooting) return;
-  tx_node.rebooting = 1;
+  if (rebooting) return;
+  rebooting = 1;
   sampling_stop();
   UTIL_TIMER_Start(&reboot_timer);
 }
@@ -86,13 +88,14 @@ static void reboot_soon(void)
  * random power cut almost always lands inside a flash program or erase. Not persistent: a
  * reboot ends it, and the boot scrub drops any storm slot that a cut left pending. */
 static uint32_t storm_writes;
+static int storming;   /* sampling stopped for the load */
 /* At most this many slots per boot (~30 s): enough for a power cut to land in a write, far from
    wearing out the journal (93 pages, 10 k erase cycles each; 2026-10-15 review). */
 #define STORM_MAX_WRITES 24000U
 static void storm(void)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t r; uint64_t c;
-  if (!tx_node.storming) return;
+  if (!storming) return;
   /* At the cap the load stops; sampling stays stopped until the reboot that ends a storm. */
   if (storm_writes >= STORM_MAX_WRITES) { APP_PRINTF("#storm done writes=%u (cap; reboot to resume)\n", (unsigned)storm_writes); return; }
   for (int i = 0; i < 16; i++)
@@ -116,7 +119,7 @@ static void storm_start(void)
   char ctr_buf[21];
   APP_PRINTF("#storm start ctr=%s (bench only: cut power now)\n", u64_text(store_counter_next(), ctr_buf));
   /* Sampling stops, so no exchange starts; the watchdog must not count a stopped sampler. */
-  tx_node.storming = 1;
+  storming = 1;
   sampling_stop();
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
 }
@@ -125,7 +128,7 @@ static void storm_start(void)
 static void provision(char *line)
 {
   uint8_t new_key[16], check[3]; uint32_t id, floor; int rc, done = 0;
-  if (tx_node.provisioned) { APP_PRINTF("#error already-provisioned (WIPE first)\n"); }
+  if (exchange_identity()->provisioned) { APP_PRINTF("#error already-provisioned (WIPE first)\n"); }
   else if (ws_parse_provision(line + PROVISION_ARGS, &id, new_key, &floor))
   { APP_PRINTF("#error usage: PROVISION <station_id> <32 hex key> [epoch_floor]\n"); }
   else if (floor && store_epoch_floor(floor)) { APP_PRINTF("#error epoch-floor\n"); }
@@ -146,7 +149,7 @@ static const char *const command[CMD_COUNT] = { "STATUS", "KAT", "TEST-FLASH-STO
 
 static int refused(int cmd, char *line)
 {
-  if (cmd < CMD_STORM || !(exchange_busy() || tx_node.rebooting)) return 0;
+  if (cmd < CMD_STORM || !(exchange_busy() || rebooting)) return 0;
   ws_wipe(line, strlen(line));   /* a refused PROVISION's key does not linger either */
   APP_PRINTF("#error busy (radio exchange or reboot in progress); retry\n");
   return 1;
@@ -160,7 +163,7 @@ void console_line(char *line)
   switch (cmd)
   {
     case CMD_STATUS: tx_status(); break;
-    case CMD_KAT: tx_node.kat_ok = selftest_kat(); APP_PRINTF("#kat %s\n", tx_node.kat_ok ? "pass" : "FAIL"); break;
+    case CMD_KAT: APP_PRINTF("#kat %s\n", node_selftest() ? "pass" : "FAIL"); break;
 #ifndef WS_FIELD_BUILD   /* bench only: a field image has no flash write load */
     case CMD_STORM: storm_start(); break;
 #endif

@@ -33,15 +33,20 @@
 #define SAMPLE_PERIOD_MS    15000U  /* one T/RH sample; every SAMPLES_PER_REPORT-th builds the minute (PRD 9) */
 #define SAMPLES_PER_REPORT  4U
 /* Review P7: a TX that keeps failing must not look healthy. Above this many failures in a row,
- * of journal appends (tx_node.journal_fails) or of transmissions (tx_counts.air), the watchdog
+ * of journal appends (journal_fails) or of transmissions (exchange_counts()->air), the watchdog
  * resets the board (which re-runs Radio.Init). Minutes the policy chose not to send never count. */
 #define TX_FAIL_LIMIT       10U
 /* A storage failure at boot may be transient: retry once by a reset after 10 minutes. */
 #define BOOT_RETRY_MS       (10UL * 60000UL)
 
-tx_node_t tx_node;
 static UTIL_TIMER_Object_t sample_timer, boot_retry_timer;
 static uint32_t last_sample_s;   /* watchdog progress evidence */
+/* This boot's identity and run state: written only here; the other TX modules read it through
+   node_state() (docs/power-of-ten.md, rule 6). */
+static tx_node_t node;
+const tx_node_t *node_state(void) { return &node; }
+uint32_t node_uptime_s(void) { return clock_s() - node.boot_s; }
+int node_selftest(void) { node.kat_ok = selftest_kat(); return node.kat_ok; }
 
 /* The minute's 15-s samples (PRD section 9: coverage, mean and extrema). */
 static ws_th_window th_window;
@@ -51,7 +56,7 @@ static int stuck;             /* the exchange outlasted its worst case: the watc
 
 void sampling_stop(void)
 {
-  tx_node.running = 0;
+  node.running = 0;
   UTIL_TIMER_Stop(&sample_timer);
 }
 
@@ -96,9 +101,9 @@ static void hold(const uint8_t *plain)
 {
   if (held_n == HELD_MAX)
   {
-    tx_node.held_lost++;
+    node.held_lost++;
     APP_PRINTF("#error held-lost seq=%u (a newer reading replaced it; held_lost=%u)\n", (unsigned)plain_seq(held[0]),
-               (unsigned)tx_node.held_lost);
+               (unsigned)node.held_lost);
     memmove(held[0], held[1], (HELD_MAX - 1U) * sizeof held[0]);
     held_n--;
   }
@@ -111,7 +116,7 @@ void held_flush(void)
   for (unsigned i = 0; i < held_n; i++)
   {
     int rc = store_journal_append(held[i], &r);
-    ws_failrun_note(&tx_node.journal_fails, rc == 0);
+    ws_failrun_note(&node.journal_fails, rc == 0);
     APP_PRINTF("#held journaled seq=%u rc=%d pending=%u\n", (unsigned)plain_seq(held[i]), rc, (unsigned)store_journal_pending());
   }
   held_n = 0;
@@ -135,12 +140,12 @@ static int minute_encode(minute_t *m, uint8_t *plain)
   m->t = 0; m->h = 0;
   m->valid = ws_th_mean_t(&th_window, &m->t) && ws_th_mean_h(&th_window, &m->h);
   m->utc = time_utc();
-  m->uptime = clock_s() - tx_node.boot_s; /* always sent: the gateway reconstructs time from it */
-  if (!m->valid) tx_node.sensor_faults++;
+  m->uptime = node_uptime_s(); /* always sent: the gateway reconstructs time from it */
+  if (!m->valid) node.sensor_faults++;
   /* static: this runs only from the sequencer, never re-entered, and it is on the deepest callback
      chain, which tools/stack_report.py counts four times (a 104-byte record cost ~416 B). */
   static ws_obs_t o;
-  o = (ws_obs_t){ .epoch = tx_node.boot_epoch, .seq = tx_node.next_seq, .utc = m->utc, .uptime = m->uptime,
+  o = (ws_obs_t){ .epoch = node.boot_epoch, .seq = node.next_seq, .utc = m->utc, .uptime = m->uptime,
                   .energy = (uint8_t)energy_state(), .bitmap = WS_NODE_FIELDS };
   obs_codes(&o, m->valid, m->t, m->h);
   m->samples = th_window.n;
@@ -155,14 +160,14 @@ static int journal_or_hold(const uint8_t *plain, int encoded, int busy, jref_t *
   int rc = encoded ? 0 : -3;
   if (!rc && busy) hold(plain);
   else if (!rc) rc = store_journal_append(plain, live);
-  if (rc || !busy) ws_failrun_note(&tx_node.journal_fails, rc == 0);
+  if (rc || !busy) ws_failrun_note(&node.journal_fails, rc == 0);
   return rc;
 }
 
 static void sample_line(const minute_t *m, int src, int rc, int busy)
 {
   APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d n=%u t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
-             (unsigned)tx_node.boot_epoch, (unsigned)tx_node.next_seq, (unsigned)m->uptime, m->valid, src, m->samples,
+             (unsigned)node.boot_epoch, (unsigned)node.next_seq, (unsigned)m->uptime, m->valid, src, m->samples,
              m->valid ? m->t : 0, m->valid ? m->h : 0, m->utc ? "synchronized" : "unknown", (unsigned)m->utc,
              rc ? "ERROR" : busy ? "held" : "ok", (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
 }
@@ -176,14 +181,14 @@ static void minute_report(int src)
   int busy = exchange_busy();
   int rc = journal_or_hold(plain, encoded, busy, &live);
   sample_line(&m, src, rc, busy);
-  tx_node.next_seq++; /* identity is never reused, even if the journal write failed */
+  node.next_seq++; /* identity is never reused, even if the journal write failed */
   if (busy) { APP_PRINTF("#busy previous exchange still running; reading held until it ends\n"); return; }
   minute_send(rc ? NULL : &live);
 }
 
 void sensor_done(int src, int16_t t, uint16_t h)
 {
-  if (tx_node.rebooting || tx_node.storming || stuck) return;   /* a measurement that finishes after sampling stopped */
+  if (!node.running || stuck) return;   /* a measurement that finishes after sampling stopped (reboot, storm, stuck radio) */
   if (!sensor_reported)
   {
     sensor_reported = 1;
@@ -211,7 +216,7 @@ int watchdog_healthy(void)
 {
   uint32_t now = clock_s();
   if (stuck) return 0;
-  if (!tx_node.running) return 1;                             /* not sampling by design */
+  if (!node.running) return 1;                             /* not sampling by design */
   if (now - last_sample_s > 150) return 0;                    /* sampling stopped */
   if (exchange_overdue(now))                                  /* radio exchange stuck */
   {
@@ -223,10 +228,11 @@ int watchdog_healthy(void)
     APP_PRINTF("#watchdog radio exchange stuck; radio stopped, held readings journaled, resetting\n");
     return 0;
   }
-  if (ws_failrun_tripped(&tx_node.journal_fails, TX_FAIL_LIMIT))
-  { APP_PRINTF("#watchdog %u journal failures in a row\n", (unsigned)tx_node.journal_fails.n); return 0; }
-  if (ws_failrun_tripped(&tx_counts.air, TX_FAIL_LIMIT))
-  { APP_PRINTF("#watchdog %u transmit failures in a row\n", (unsigned)tx_counts.air.n); return 0; }
+  if (ws_failrun_tripped(&node.journal_fails, TX_FAIL_LIMIT))
+  { APP_PRINTF("#watchdog %u journal failures in a row\n", (unsigned)node.journal_fails.n); return 0; }
+  const ws_failrun *air = &exchange_counts()->air;
+  if (ws_failrun_tripped(air, TX_FAIL_LIMIT))
+  { APP_PRINTF("#watchdog %u transmit failures in a row\n", (unsigned)air->n); return 0; }
   return 1;
 }
 
@@ -235,7 +241,7 @@ static void on_boot_retry(void *ctx) { (void)ctx; NVIC_SystemReset(); }
 /* Never for an unprovisioned board or a failed self-test: those need an operator, not a reset. */
 static void boot_retry(void)
 {
-  if (!tx_node.kat_ok) return;
+  if (!node.kat_ok) return;
   APP_PRINTF("#boot-retry: reset in %u s\n", (unsigned)(BOOT_RETRY_MS / 1000));
   UTIL_TIMER_Create(&boot_retry_timer, BOOT_RETRY_MS, UTIL_TIMER_ONESHOT, on_boot_retry, NULL);
   UTIL_TIMER_Start(&boot_retry_timer);
@@ -247,12 +253,11 @@ static int boot_ready(void)
   if (store_meta_init() || store_journal_init()) { led_set(LED_RED, 1); APP_PRINTF("#error store-init\n"); boot_retry(); return 0; }
   uint32_t scrubbed = store_journal_scrub(STORM_EPOCH);
   if (scrubbed) APP_PRINTF("#storm-scrub dropped=%u (test slots a power cut left pending)\n", (unsigned)scrubbed);
-  tx_node.provisioned = store_config_load(&tx_node.station, tx_node.key, tx_node.kcv) == 0;
-  if (!tx_node.provisioned) { led_set(LED_RED, 1); tx_status(); APP_PRINTF("#unprovisioned: send PROVISION <station_id> <key>\n"); return 0; }
+  if (!exchange_load_identity()) { led_set(LED_RED, 1); tx_status(); APP_PRINTF("#unprovisioned: send PROVISION <station_id> <key>\n"); return 0; }
   time_restore();
-  if (!tx_node.kat_ok) { led_set(LED_RED, 1); tx_status(); APP_PRINTF("#error self-test failed; not transmitting\n"); return 0; }
+  if (!node.kat_ok) { led_set(LED_RED, 1); tx_status(); APP_PRINTF("#error self-test failed; not transmitting\n"); return 0; }
   /* Durable epoch before the first sample: observation identities never repeat. */
-  if (store_next_epoch(&tx_node.boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); boot_retry(); return 0; }
+  if (store_next_epoch(&node.boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); boot_retry(); return 0; }
   return 1;
 }
 
@@ -265,16 +270,16 @@ void SubghzApp_Init(void)
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample_timed);
   tx_console_init();
 
-  tx_node.boot_s = clock_s();
+  node.boot_s = clock_s();
   policy_init();
   watchdog_start();
-  tx_node.kat_ok = selftest_kat();
+  node.kat_ok = selftest_kat();
   APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
-             watchdog_reset_cause(), tx_node.kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
+             watchdog_reset_cause(), node.kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
   fault_report();
   if (!boot_ready()) return;
   sensor_init();
-  tx_node.running = 1;
+  node.running = 1;
   last_sample_s = clock_s();
   tx_status();
   UTIL_TIMER_Create(&sample_timer, SAMPLE_PERIOD_MS, UTIL_TIMER_PERIODIC, on_sample_timer, NULL);

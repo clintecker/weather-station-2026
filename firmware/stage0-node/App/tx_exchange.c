@@ -54,7 +54,18 @@ static uint32_t sent_epoch, sent_seq;
    TxTimeout; only a TxDone (the frame really left) clears the run. Before 2026-10-14 one run mixed
    these with journal appends, and every accepted Send reset it, so a radio that accepted Send but
    never finished a frame was never reset (firmware review, finding 1). */
-tx_counts_t tx_counts;
+static tx_counts_t tx_counts;
+const tx_counts_t *exchange_counts(void) { return &tx_counts; }
+
+/* Provisioning: the key never leaves this file (docs/power-of-ten.md, rule 6). */
+static tx_identity_t identity;
+static uint8_t key[16];
+int exchange_load_identity(void)
+{
+  identity.provisioned = store_config_load(&identity.station, key, identity.kcv) == 0;
+  return identity.provisioned;
+}
+const tx_identity_t *exchange_identity(void) { return &identity; }
 
 /* Only a WS_ACK_FRAME_LEN reply is ever opened. rx_len keeps the true received size, so a longer
    packet is still rejected (ws_open_reply checks the length before reading) and logged as it was. */
@@ -130,7 +141,7 @@ static int send_diag(void)
   uint8_t plain[WS_DIAG_PLAIN_LEN], frame[WS_DIAG_FRAME_LEN]; uint64_t ctr;
   uint32_t now = clock_s();
   uint32_t crashes = fault_count();
-  ws_diag_t d = { .epoch = tx_node.boot_epoch, .uptime = now - tx_node.boot_s, .lost = store_journal_lost(),
+  ws_diag_t d = { .epoch = node_state()->boot_epoch, .uptime = node_uptime_s(), .lost = store_journal_lost(),
                   .build = (uint32_t)WS_FW_BUILD_ID, .pending = clamp16(store_journal_pending()),
                   .torn = clamp16(store_journal_burned()), .abandoned = clamp16(store_abandoned_total()),
                   .no_ack = clamp16(tx_counts.no_ack), .rejects = clamp16(tx_counts.ack_rejects),
@@ -139,7 +150,7 @@ static int send_diag(void)
                   .rssi = ack_rssi, .snr = ack_snr };
   ws_diag_pack(&d, plain);
   if (store_next_counter(&ctr) ||
-      ws_seal_kind(tx_node.key, tx_node.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) < 0) return 0;
+      ws_seal_kind(key, identity.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) < 0) return 0;
   policy_diag_sent(now);
   if (ws_radio_send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_counts.air, 0); return 0; }
   tx_state = TX_DIAG_SENDING;
@@ -180,7 +191,7 @@ static int send_obs(const uint8_t *plain, int plen)
   uint8_t frame[OBS_FRAME_MAX];
   /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
   if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_counts.air, 0); APP_PRINTF("#error counter-reserve\n"); return -1; }
-  int flen = ws_seal_kind(tx_node.key, tx_node.station, WS_KIND_OBS, sent_counter, plain, (uint32_t)plen, frame, sizeof frame);
+  int flen = ws_seal_kind(key, identity.station, WS_KIND_OBS, sent_counter, plain, (uint32_t)plen, frame, sizeof frame);
   if (flen < 0) { APP_PRINTF("#error seal\n"); return 0; }
   sent_epoch = ws_get_be32(plain);
   sent_seq = ws_get_be32(plain + 4);
@@ -268,7 +279,7 @@ static int on_ack(const reply_t *r, int mine)
 static int handle_reply(void)
 {
   reply_t r;
-  if (ws_open_reply(tx_node.key, tx_node.station, rx_frame, rx_len, &r.kind, &r.ctr, &r.epoch, &r.seq, &r.word, &r.echo))
+  if (ws_open_reply(key, identity.station, rx_frame, rx_len, &r.kind, &r.ctr, &r.epoch, &r.seq, &r.word, &r.echo))
   {
     tx_counts.ack_rejects++;
     led_flash(LED_RED, 400);

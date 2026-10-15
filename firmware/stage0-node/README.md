@@ -48,12 +48,12 @@ tasks, the exchange state machine) is in [`docs/firmware-event-model.md`](../../
 | File | Role | What it does |
 |---|---|---|
 | `App/app_tx.c` | TX | Boot (`SubghzApp_Init`), the 15-s samples and the minute's report: encoded, journaled, or held in RAM while an exchange runs (`held_flush`); the watchdog health test |
-| `App/tx_exchange.c` | TX | The minute's radio exchange: one state machine (`idle`, `gap`, `sending`, `ack-wait`, `diag-sending`), one handler per state; sealing, ACK/NACK handling, the health report |
+| `App/tx_exchange.c` | TX | The minute's radio exchange: one state machine (`idle`, `gap`, `sending`, `ack-wait`, `diag-sending`), one handler per state; sealing, ACK/NACK handling, the health report; the node's key (private to this file) |
 | `App/tx_policy.c` | TX | Energy and link state, what a minute may send, strikes, the health-report schedule; the decisions are `firmware/common/ws_policy.c` |
 | `App/tx_time.c` | TX | Time trust: sync from the ACK for the frame just sent, kept across a warm reset (RTC backup registers) |
 | `App/tx_console.c` | TX | Console commands (a table: `STATUS`, `KAT`, `PROVISION`, `WIPE`, `TEST-FLASH-STORM`), `#status`/`#counts`/`#timing`, the storm load, commanded reboots |
 | `App/selftest.c` | TX | The boot known-answer test (`selftest_kat`) and its vectors (also read by `tests/test_frame.py`) |
-| `App/tx_node.h` | TX | The node identity and run state the TX modules share (`tx_node`) |
+| `App/tx_node.h` | TX | `app_tx.c`'s interface: this boot's identity and run state, read-only to the other modules (`node_state()`). The key and station live in `tx_exchange.c` (`exchange_load_identity`), the only module that seals and opens frames |
 | `App/node_store.c` | TX | Flash: provisioning, monotonic epoch/counter log, the observation journal |
 | `App/flash_stm32wl.c` | TX | The internal-flash driver behind `node_store.c` |
 | `App/sensor.c` | TX | SHT45 over I2C2, interrupt driven, with stuck-bus recovery |
