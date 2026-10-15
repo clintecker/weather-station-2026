@@ -26,7 +26,7 @@
     "/v1/status": {
       "get": {
         "summary": "Stage, qualification status and latest measurement",
-        "description": "Includes `alarm` (null, or \"possible key reuse: re-key the node\" once any authentic node frame arrived with a counter at or below the stored high-water mark; it persists across restarts until the node is re-keyed into a new state directory) and `node_counter` {max_node_counter, counter_regression, last_regression_counter, last_regression_at} (review item P4).",
+        "description": "Includes `alarm` (null, or \"possible key reuse: re-key the node\" once any authentic node frame arrived with a counter at or below the stored high-water mark; it persists across restarts until the node is re-keyed into a new state directory) and `node_counter` {max_node_counter, counter_regression, last_regression_counter, last_regression_at} (review item P4). `rx_faults` {window_s, crc, hdr, last_at, warn_per_hour, throttled}: bad receptions the RX reported in the trailing hour by kind, the rate above which the gateway warns (30/h), and how many the rate limit dropped since the gateway started.",
         "responses": {
           "200": {
             "description": "JSON response with explicit availability, UTC timestamps and units"
@@ -115,7 +115,7 @@
     "/v1/events": {
       "get": {
         "summary": "Live event stream (Server-Sent Events)",
-        "description": "text/event-stream. Each event is `id: <instance>-<n>`, `event: <type>`, one `data:` line of JSON. Types: `hello` {instance, server_time, resumed}; `resync` (the cursor could not be resumed: reload from the history endpoints); `observation` {record, latest}; `diagnostic` (node health report); `radio` (one frame with RSSI/SNR and outcome: ack, duplicate, nack, diag, rejected, commit_failed, dropped_by_rx, unparsed); `rx` (RX #alive report); `gateway` (gateway or receiver event). A `: heartbeat` comment is sent every 15 s when idle. Resume with the `Last-Event-ID` header (or `since`): events after it are replayed if still buffered (5,000) and from this gateway run, otherwise `resync`. At most 8 streams at once (503 with Retry-After beyond that). Browsers must use fetch() with the Authorization header: EventSource cannot send it.",
+        "description": "text/event-stream. Each event is `id: <instance>-<n>`, `event: <type>`, one `data:` line of JSON. Types: `hello` {instance, server_time, resumed}; `resync` (the cursor could not be resumed: reload from the history endpoints); `observation` {record, latest}; `diagnostic` (node health report); `radio` (one frame with RSSI/SNR and outcome: ack, duplicate, nack, diag, rejected, commit_failed, dropped_by_rx, unparsed); `rx` (RX #alive report); `rx_fault` (one bad reception: id, received_at, kind crc/hdr, length, rssi_dbm, snr_db, data, and `summary` as in /v1/status rx_faults); `gateway` (gateway or receiver event). A `: heartbeat` comment is sent every 15 s when idle. Resume with the `Last-Event-ID` header (or `since`): events after it are replayed if still buffered (5,000) and from this gateway run, otherwise `resync`. At most 8 streams at once (503 with Retry-After beyond that). Browsers must use fetch() with the Authorization header: EventSource cannot send it.",
         "parameters": [
           {
             "name": "since",
@@ -265,10 +265,79 @@
         }
       }
     },
+    "/v1/radio/faults": {
+      "get": {
+        "summary": "Bad receptions the RX board reported",
+        "description": "Table rx_faults, one row per `#rx crc` (header decoded, payload CRC failed) or `#rx hdr` (header CRC failed): id, received_at, kind (crc, hdr), length (crc: 0-255 bytes), rssi_dbm, snr_db (crc only), data (crc: lowercase hex of every received byte). Rate-limited with other radio noise (GW6). Plus `summary` {window_s, crc, hdr, last_at, warn_per_hour, throttled}: counts in the trailing hour and rows the rate limit dropped since the gateway started. tools/rx_faults.py classifies the captures.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "UTC, ISO-8601 with timezone; inclusive"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "UTC; exclusive"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "description": "By time"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JSON {rows, offset, limit, summary}"
+          },
+          "400": {
+            "description": "Invalid parameter (time without timezone, range, limit, order)"
+          },
+          "401": {
+            "description": "Missing or incorrect bearer token"
+          }
+        }
+      }
+    },
     "/v1/receiver/alive": {
       "get": {
         "summary": "RX board #alive reports (every 60 s)",
-        "description": "Table rx_alive: uptime_s, forwarded, dropped, acks, diag, listening, relistens, uart_errors, stack_peak (counters since the RX board booted).",
+        "description": "Table rx_alive: uptime_s, forwarded, dropped, acks, diag, listening, relistens, uart_errors, stack_peak, crc_errors, hdr_errors, task_peak_us, task_peak, isr_peak_us, isr_peak, trace_drops (counters and peaks since the RX board booted; task_peak and isr_peak are names, e.g. `process`, `SUBGHZ_Radio`).",
         "parameters": [
           {
             "name": "from",
@@ -406,7 +475,7 @@
     "/v1/gateway/events": {
       "get": {
         "summary": "Gateway and receiver events",
-        "description": "Table gateway_events: at, source (gateway, rx), kind (start, stop, serial-open, serial-lost, receiver-silent, host-clock, rejected, rx_boot, relisten, ...), level (info, warn), text.",
+        "description": "Table gateway_events: at, source (gateway, rx), kind (start, stop, serial-open, serial-lost, receiver-silent, host-clock, rejected, rx_boot, relisten, rx_faults (hourly count of bad receptions, info), rx-fault-rate (more than 30 in the trailing hour, warn), rx_fault_malformed, suppressed, ...), level (info, warn), text.",
         "parameters": [
           {
             "name": "from",

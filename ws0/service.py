@@ -189,7 +189,7 @@ class Gateway:
                 'rejected_this_process':self.rejected,'nacked_this_process':self.nacked,
                 'host_clock':self.clock.status() if self.clock else None,
                 'node_diagnostics':self.store.latest_diagnostic(self.cfg['station']),
-                'receiver':self.receiver,
+                'receiver':self.receiver,'rx_faults':self.telemetry.fault_summary(),
                 'latest':self.store.latest(self.cfg['station'])}
 
 

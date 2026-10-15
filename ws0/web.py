@@ -4,8 +4,10 @@ docs/web-dashboard.md describes the page. Server side, three things live here:
 
 * Telemetry: what the serve loop learns that is not an observation, persisted in the gateway's
   SQLite database (observations.sqlite3): one row per radio frame with the RX board's RSSI/SNR
-  (radio_events), the RX board's 60 s #alive reports (rx_alive) and gateway/receiver events
-  (gateway_events). receiver.log stays the raw evidence; these tables are what the page queries.
+  (radio_events), the RX board's 60 s #alive reports (rx_alive), gateway/receiver events
+  (gateway_events) and every bad reception the RX reports, with the bytes of a CRC failure
+  (rx_faults; tools/rx_faults.py). receiver.log stays the raw evidence; these tables are what the
+  page queries.
 * EventHub: an in-memory, numbered log of recent events (observations, health reports, radio
   frames, RX reports, gateway events), pushed to browsers as Server-Sent Events (GET /v1/events).
   Event ids are "<instance>-<n>"; a client that reconnects with Last-Event-ID (or ?since=) gets
@@ -54,25 +56,41 @@ PENDING_RSSI_S = 2.0    # wait this long for the RX's '#rx obs rssi=' line after
 TABLES = (
     '''CREATE TABLE IF NOT EXISTS radio_events (id INTEGER PRIMARY KEY AUTOINCREMENT, station TEXT,
         received_at REAL, kind TEXT, counter INTEGER, outcome TEXT, delivered INTEGER, session TEXT,
-        sequence INTEGER, length INTEGER, rssi_dbm INTEGER, snr_db INTEGER, detail TEXT)''',
+        sequence INTEGER, length INTEGER, rssi_dbm INTEGER, snr_db INTEGER, detail TEXT, frame_hex TEXT)''',
     'CREATE INDEX IF NOT EXISTS radio_time ON radio_events(station,received_at)',
     '''CREATE TABLE IF NOT EXISTS rx_alive (id INTEGER PRIMARY KEY AUTOINCREMENT, station TEXT, received_at REAL,
         uptime_s INTEGER, forwarded INTEGER, dropped INTEGER, acks INTEGER, diag INTEGER, listening INTEGER,
-        relistens INTEGER, uart_errors INTEGER, stack_peak INTEGER)''',
+        relistens INTEGER, uart_errors INTEGER, stack_peak INTEGER, crc_errors INTEGER, hdr_errors INTEGER,
+        task_peak_us INTEGER, task_peak TEXT, isr_peak_us INTEGER, isr_peak TEXT, trace_drops INTEGER)''',
     'CREATE INDEX IF NOT EXISTS rx_alive_time ON rx_alive(station,received_at)',
     '''CREATE TABLE IF NOT EXISTS gateway_events (id INTEGER PRIMARY KEY AUTOINCREMENT, station TEXT, at REAL,
         source TEXT, kind TEXT, level TEXT, text TEXT)''',
     'CREATE INDEX IF NOT EXISTS gateway_events_time ON gateway_events(station,at)',
     'CREATE INDEX IF NOT EXISTS diag_received ON diagnostics(station,received_at)',
+    # One row per '#rx crc' (header decoded, payload CRC failed: the bytes as received) or '#rx hdr'
+    # (header CRC failed: no payload). Throttled like other radio noise (GW6).
+    '''CREATE TABLE IF NOT EXISTS rx_faults (id INTEGER PRIMARY KEY AUTOINCREMENT, station TEXT, received_at REAL,
+        kind TEXT, length INTEGER, rssi_dbm INTEGER, snr_db INTEGER, data TEXT)''',
+    'CREATE INDEX IF NOT EXISTS rx_faults_time ON rx_faults(station,received_at)',
 )
 ALIVE_FIELDS = ('uptime_s', 'forwarded', 'dropped', 'acks', 'diag', 'listening', 'relistens', 'uart_errors',
-                'stack_peak')
+                'stack_peak', 'crc_errors', 'hdr_errors', 'task_peak_us', 'task_peak', 'isr_peak_us', 'isr_peak',
+                'trace_drops')
+ALIVE_WORDS = ('task_peak', 'isr_peak')   # identifiers (the task or ISR that set the peak), kept as text
+# Peaks since RX boot: a history bucket keeps its highest, with the word of the report it came from.
+ALIVE_PEAKS = {'stack_peak': None, 'task_peak_us': 'task_peak', 'isr_peak_us': 'isr_peak'}
 KIND_NAMES = {1: 'obs', 2: 'ack', 3: 'nack', 4: 'diag'}
 # RX console lines worth keeping as events (firmware/stage0-node/App/app_rx.c).
 RX_EVENTS = (('#boot role=rx', 'rx_boot', 'warn'), ('#relisten', 'relisten', 'warn'),
-             ('#rx error', 'rx_error', 'warn'), ('#tx timeout', 'tx_timeout', 'warn'),
+             ('#tx timeout', 'tx_timeout', 'warn'),
              ('#watchdog', 'rx_watchdog', 'warn'), ('#host reject', 'host_reject', 'warn'),
              ('#tx busy', 'tx_busy', 'warn'))
+# Bad receptions ('#rx crc', '#rx hdr'): ambient 915 MHz traffic and noise cause a few an hour, so
+# they are stored and counted, not raised one by one. More than this many in the trailing hour is
+# abnormal (a jammer, a failing antenna, a node transmitting into a bad link): one warning, and the
+# next only after the rate has fallen to half of it.
+RX_FAULT_WINDOW_S = 3600
+RX_FAULT_WARN_PER_H = 30
 
 
 class Throttle:
@@ -84,6 +102,7 @@ class Throttle:
     def __init__(self, burst=200, per_s=0.1):
         self.burst, self.per_s = burst, per_s
         self.tokens, self.updated, self.suppressed = {}, {}, {}
+        self.refused = collections.Counter()   # per key, since the gateway started
 
     def allow(self, key, now):
         """(allowed, suppressed_since_last_allowed). A refused call counts as suppressed."""
@@ -92,6 +111,7 @@ class Throttle:
         if tokens < 1:
             self.tokens[key] = tokens
             self.suppressed[key] = self.suppressed.get(key, 0) + 1
+            self.refused[key] += 1
             return False, 0
         self.tokens[key] = tokens - 1
         return True, self.suppressed.pop(key, 0)
@@ -112,6 +132,28 @@ def as_int(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def parse_rx_fault(text):
+    """'#rx crc len=<n> rssi= snr= data=<hex>' or '#rx hdr rssi=' -> rx_faults row, None if malformed
+    (len 0..255, data exactly len bytes of hex, integers where integers belong)."""
+    words = text.split()
+    if len(words) < 2 or words[0] != '#rx' or words[1] not in ('crc', 'hdr'):
+        return None
+    f = line_fields(text)
+    rssi = as_int(f.get('rssi'))
+    if rssi is None:
+        return None
+    if words[1] == 'hdr':
+        return dict(kind='hdr', length=None, rssi_dbm=rssi, snr_db=None, data=None)
+    length, snr, data = as_int(f.get('len')), as_int(f.get('snr')), f.get('data')
+    if length is None or not 0 <= length <= 255 or snr is None or data is None or len(data) != 2 * length:
+        return None
+    try:
+        data = bytes.fromhex(data).hex()   # normalized lowercase; ValueError for anything but hex digits
+    except ValueError:
+        return None
+    return dict(kind='crc', length=length, rssi_dbm=rssi, snr_db=snr, data=data)
 
 
 class EventHub:
@@ -204,9 +246,17 @@ class Telemetry:
         self.pending = None   # frame waiting for the RX's RSSI/SNR line
         self.throttle = Throttle()
         self.muted = False    # the last frame was throttled: drop its RSSI line too
+        # Bad receptions of the trailing hour (time, kind), for the count the page shows and the
+        # rate warning; HTTP threads read it, hence the lock. hour: the clock hour being tallied
+        # for its info summary event.
+        self.faults, self.faults_lock, self.fault_alarm = collections.deque(), threading.Lock(), False
+        self.hour, self.hour_counts = None, collections.Counter()
         with self.store.lock, self.store.db:
             for sql in TABLES:
                 self.store.db.execute(sql)
+            self.faults.extend(self.store.db.execute(
+                'SELECT received_at,kind FROM rx_faults WHERE station=? AND received_at>=? ORDER BY received_at',
+                (self.station, time.time() - RX_FAULT_WINDOW_S)))
 
     # -- events published by the Gateway itself ------------------------------------------------
     @best_effort
@@ -242,7 +292,8 @@ class Telemetry:
         self.pending = dict(received_at=at, kind=kind, counter=counter, outcome=outcome,
                             delivered=None if delivered is None else int(bool(delivered)), session=session,
                             sequence=sequence, length=len(frame) if frame is not None else None,
-                            detail=None if detail is None else str(detail)[:300])
+                            detail=None if detail is None else str(detail)[:300],
+                            frame_hex=frame.hex() if isinstance(frame, (bytes, bytearray)) else None)
         if outcome in ('rejected', 'commit_failed'):
             self.event(f'{outcome}: {detail}', source='gateway', kind=outcome, level='warn', at=at)
 
@@ -253,10 +304,13 @@ class Telemetry:
         self._radio(row)
 
     def tick(self, now=None):
-        """Write a frame whose RSSI line never came (older RX firmware, lost serial line)."""
+        """Write a frame whose RSSI line never came (older RX firmware, lost serial line); close
+        the hour of bad receptions once it is over."""
         now = time.time() if now is None else now
         if self.pending and now - self.pending['received_at'] > PENDING_RSSI_S:
             self.flush()
+        if self.hour is not None and now // 3600 > self.hour:
+            self._close_hour()
 
     def rx_line(self, text, at=None):
         """A '#' diagnostic line from the RX board."""
@@ -265,14 +319,22 @@ class Telemetry:
             f = line_fields(text)
             if self.pending is None:  # RSSI for a frame line that never reached us intact
                 self.pending = dict(received_at=at, kind=None, counter=None, outcome='unparsed', delivered=None,
-                                    session=None, sequence=None, length=None, detail=None)
+                                    session=None, sequence=None, length=None, detail=None, frame_hex=None)
             self.flush(as_int(f.get('rssi')), as_int(f.get('snr')))
         elif text.startswith('#rx drop'):
             self.flush()
             f = line_fields(text)
             self._radio(dict(received_at=at, kind='dropped', counter=None, outcome='dropped_by_rx', delivered=None,
                              session=None, sequence=None, length=as_int(f.get('len')),
-                             rssi_dbm=as_int(f.get('rssi')), snr_db=as_int(f.get('snr')), detail=None))
+                             rssi_dbm=as_int(f.get('rssi')), snr_db=as_int(f.get('snr')), detail=None,
+                             frame_hex=None))
+        elif text.startswith(('#rx crc', '#rx hdr')):
+            self.flush()
+            row = parse_rx_fault(text)
+            if row is None:   # firmware and gateway disagree on the format, or a garbled serial line
+                self.event(text, source='rx', kind='rx_fault_malformed', level='warn', at=at)
+            else:
+                self.rx_fault(row, at)
         elif text.startswith('#alive '):
             self.alive(line_fields(text), at)
         else:
@@ -281,9 +343,62 @@ class Telemetry:
                     self.event(text, source='rx', kind=kind, level=level, at=at)
                     break
 
+    # -- bad receptions -------------------------------------------------------------------------
+    def rx_fault(self, row, at):
+        """Store one bad reception and count it; warn only when the rate is abnormal."""
+        if self.hour is not None and at // 3600 != self.hour:
+            self._close_hour()
+        self.hour = at // 3600
+        self.hour_counts[row['kind']] += 1
+        with self.faults_lock:
+            self.faults.append((at, row['kind']))
+        summary = self.fault_summary(at)
+        self._store_fault(row, at, summary)
+        total = summary['crc'] + summary['hdr']
+        if not self.fault_alarm and total > RX_FAULT_WARN_PER_H:
+            self.fault_alarm = True
+            self.event(f'#gateway rx-faults {total} bad receptions in the last hour ({summary["crc"]} CRC, '
+                       f'{summary["hdr"]} header; normally a few): interference, antenna or a weak link? '
+                       'See tools/rx_faults.py', kind='rx-fault-rate', level='warn', at=at)
+        elif self.fault_alarm and total <= RX_FAULT_WARN_PER_H // 2:
+            self.fault_alarm = False
+
+    def fault_summary(self, now=None):
+        """Bad receptions in the trailing hour by kind, and how many the throttle dropped since start."""
+        now = time.time() if now is None else now
+        with self.faults_lock:
+            while self.faults and self.faults[0][0] < now - RX_FAULT_WINDOW_S:
+                self.faults.popleft()
+            counts = collections.Counter(kind for _, kind in self.faults)
+            last = self.faults[-1][0] if self.faults else None
+        return {'window_s': RX_FAULT_WINDOW_S, 'crc': counts['crc'], 'hdr': counts['hdr'], 'last_at': last,
+                'warn_per_hour': RX_FAULT_WARN_PER_H, 'throttled': self.throttle.refused['rx_fault']}
+
+    def _close_hour(self):
+        """One info event per clock hour that had bad receptions, instead of a warning for each."""
+        counts, start = self.hour_counts, self.hour * 3600
+        self.hour, self.hour_counts = None, collections.Counter()
+        if counts:
+            self.event(f'bad receptions {utc_stamp(start)} + 1 h: {counts["crc"]} CRC, {counts["hdr"]} header',
+                       source='rx', kind='rx_faults', level='info', at=start + 3600)
+
+    @best_effort
+    def _store_fault(self, row, at, summary):
+        cols = ('kind', 'length', 'rssi_dbm', 'snr_db', 'data')
+        with self.store.lock, self.store.db:
+            cur = self.store.db.execute(f'INSERT INTO rx_faults (station,received_at,{",".join(cols)}) '
+                                        f'VALUES (?,?,{",".join("?" * len(cols))})',
+                                        (self.station, at, *(row[c] for c in cols)))
+        self.hub.publish('rx_fault', dict(row, id=cur.lastrowid, received_at=at, summary=summary))
+
     @best_effort
     def alive(self, fields, at):
-        values = {'uptime_s': as_int(fields.get('uptime')), **{k: as_int(fields.get(k)) for k in ALIVE_FIELDS[1:]}}
+        """An '#alive' report: numbers as integers, the peak words as short text. A field this
+        gateway does not know is ignored (it stays in receiver.log)."""
+        def value(k):
+            text = fields.get('uptime' if k == 'uptime_s' else k)
+            return (None if text is None else text[:32]) if k in ALIVE_WORDS else as_int(text)
+        values = {k: value(k) for k in ALIVE_FIELDS}
         with self.store.lock, self.store.db:
             cur = self.store.db.execute(
                 f'INSERT INTO rx_alive (station,received_at,{",".join(ALIVE_FIELDS)}) '
@@ -310,12 +425,12 @@ class Telemetry:
     @best_effort
     def _radio(self, row):
         cols = ('received_at', 'kind', 'counter', 'outcome', 'delivered', 'session', 'sequence', 'length',
-                'rssi_dbm', 'snr_db', 'detail')
+                'rssi_dbm', 'snr_db', 'detail', 'frame_hex')
         with self.store.lock, self.store.db:
             cur = self.store.db.execute(f'INSERT INTO radio_events (station,{",".join(cols)}) '
                                         f'VALUES (?,{",".join("?" * len(cols))})',
                                         (self.station, *(row[c] for c in cols)))
-        self.hub.publish('radio', dict(row, id=cur.lastrowid))
+        self.hub.publish('radio', {**{k: v for k, v in row.items() if k != 'frame_hex'}, 'id': cur.lastrowid})
 
 
 # -- HTTP ---------------------------------------------------------------------------------------
@@ -346,7 +461,8 @@ def serve_static(handler, path):
     return True
 
 
-ROUTES = ('/v1/events', '/v1/history', '/v1/radio', '/v1/receiver/alive', '/v1/diagnostics', '/v1/gateway/events')
+ROUTES = ('/v1/events', '/v1/history', '/v1/radio', '/v1/receiver/alive', '/v1/diagnostics', '/v1/gateway/events',
+          '/v1/radio/faults')
 
 
 def utc_param(query, name, default):
@@ -388,10 +504,13 @@ def route(handler, gateway, path, query):
     if end < start or order not in ('asc', 'desc'):
         raise ValueError('Invalid time range or order')
     table = {'/v1/radio': 'radio_events', '/v1/receiver/alive': 'rx_alive', '/v1/diagnostics': 'diagnostics',
-             '/v1/gateway/events': 'gateway_events'}[path]
+             '/v1/gateway/events': 'gateway_events', '/v1/radio/faults': 'rx_faults'}[path]
     with gateway.store.reader() as db:
         rows = rows_between(db, gateway.cfg['station'], table, start, end, limit, offset, order)
-    handler.reply(200, {'rows': rows, 'offset': offset, 'limit': limit})
+    body = {'rows': rows, 'offset': offset, 'limit': limit}
+    if table == 'rx_faults':   # plus the trailing-hour count and what the throttle dropped
+        body['summary'] = gateway.telemetry.fault_summary()
+    handler.reply(200, body)
 
 
 # Per table: time column, tie-break order, and the columns a dashboard row carries.
@@ -401,6 +520,7 @@ TABLE_ROWS = {
     'rx_alive': ('received_at', 'id', ('id', 'received_at', *ALIVE_FIELDS)),
     'diagnostics': ('received_at', 'session,uptime_s', ('received_at', 'report')),
     'gateway_events': ('at', 'id', ('id', 'at', 'source', 'kind', 'level', 'text')),
+    'rx_faults': ('received_at', 'id', ('id', 'received_at', 'kind', 'length', 'rssi_dbm', 'snr_db', 'data')),
 }
 
 
@@ -565,17 +685,21 @@ def _add_observation_point(obs, t, group):
 
 def receiver_series(db, station, start, end, max_points):
     """RX health. A year of 60 s reports is ~525,000 rows: counted first, then streamed through
-    the buckets. Every field is cumulative since RX boot: the bucket's last report, except
-    stack_peak, the bucket's highest."""
+    the buckets. Every field is cumulative since RX boot: the bucket's last report, except the
+    peaks (ALIVE_PEAKS), the bucket's highest with the word of that report."""
     bucket = _bucket_of(end - start, count_between(db, station, 'rx_alive', start, end), max_points)
     alive = {'bucket_s': bucket, 't': [], **{k: [] for k in ALIVE_FIELDS}}
     for t, group in _groups(iter_rows(db, station, 'rx_alive', start, end), lambda r: r['received_at'],
                             start, bucket):
         alive['t'].append(t)
         for k in ALIVE_FIELDS:
-            values = [r[k] for r in group]
-            alive[k].append(max((v for v in values if v is not None), default=None) if k == 'stack_peak'
-                            else _last(values))
+            if k in ALIVE_PEAKS:
+                top = max((r for r in group if r[k] is not None), key=lambda r: r[k], default=None)
+                alive[k].append(None if top is None else top[k])
+                if ALIVE_PEAKS[k]:
+                    alive[ALIVE_PEAKS[k]].append(None if top is None else top[ALIVE_PEAKS[k]])
+            elif k not in ALIVE_PEAKS.values():
+                alive[k].append(_last([r[k] for r in group]))
     return alive
 
 

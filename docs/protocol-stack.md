@@ -619,7 +619,7 @@ The ST-LINK on each Nucleo board makes the USB virtual COM port. The port name c
 |---|---|---|
 | RX → host | Lowercase hex digits + `\n`: 84 for a T/RH observation (42 bytes), 96 for a health report (48 bytes); any observation of 39–85 bytes is forwarded | One observation or health-report frame (kind 1 or 4) |
 | RX → host | `#rx obs rssi=-23 snr=13` | Diagnostic for the line before (also printed for kind 4) |
-| RX → host | `#rx drop …`, `#rx error`, `#tx timeout`, `#tx busy`, `#host reject …`, `#boot …`, `#status …`, `#watchdog radio not listening; re-arming` | Diagnostics |
+| RX → host | `#rx drop …`, `#rx crc …`, `#rx hdr …`, `#tx timeout`, `#tx busy`, `#host reject …`, `#boot …`, `#status …`, `#watchdog radio not listening; re-arming` | Diagnostics |
 | RX → host | `#alive uptime=… forwarded=… dropped=… acks=… diag=… listening=…` | Every 60 s. The gateway marks the receiver silent after 180 s without it. |
 | host → RX | 66 hex digits + `\n` (33 bytes) | One ACK or NACK frame (kind 2 or 3) to transmit once, with the uplink radio settings |
 | host → RX | `STATUS` | Ask for counters |

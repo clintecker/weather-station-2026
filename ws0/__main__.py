@@ -191,7 +191,9 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
             telemetry.muted = False   # RSSI of a throttled frame
             return
         # Lines any nearby radio can cause at will (bad packets, CRC errors): rate-limited (GW6).
-        for prefix, key in (('#rx drop', 'rx_drop'), ('#rx error', 'rx_error'), ('#relisten', 'relisten')):
+        # CRC and header failures share one budget; what it drops is counted (fault_summary).
+        for prefix, key in (('#rx drop', 'rx_drop'), ('#rx crc', 'rx_fault'), ('#rx hdr', 'rx_fault'),
+                            ('#relisten', 'relisten')):
             if text.startswith(prefix) and quiet(key):
                 return
         if text.startswith('#'):

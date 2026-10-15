@@ -115,7 +115,8 @@ class DemoReceiver:
         self.gateway, self.node, self.clock = gateway, node, clock
         self.boot = clock()
         self.rng = random.Random()
-        self.forwarded = self.acks = self.diags = 0
+        self.forwarded = self.acks = self.diags = self.crc_errors = self.hdr_errors = 0
+        self.last_frame = b''
         self.next_alive = self.boot
         self.next_diag = self.boot + 5
         self.ack_signal = None
@@ -128,6 +129,7 @@ class DemoReceiver:
     def deliver(self, frame):
         """Hand one node frame to the gateway as the serve loop would, recording radio telemetry."""
         telemetry = self.gateway.telemetry
+        self.last_frame = bytes(frame)
         reply = self.gateway.receive(frame)
         self.forwarded += 1
         telemetry.frame(frame, self.gateway.last_outcome, delivered=None if reply is None else True)
@@ -138,14 +140,34 @@ class DemoReceiver:
         telemetry.rx_line(f'#rx obs rssi={rssi} snr={snr}')
         return reply
 
+    def bad_reception(self, now):
+        """About two an hour, like ambient 915 MHz traffic: a CRC failure (the last frame with a few
+        bits flipped) or a header failure."""
+        if self.rng.random() >= 1 / 30:
+            return
+        if self.last_frame and self.rng.random() < 0.7:
+            data = bytearray(self.last_frame)
+            for _ in range(self.rng.randint(1, 4)):
+                data[self.rng.randrange(len(data))] ^= 1 << self.rng.randrange(8)
+            self.crc_errors += 1
+            rssi, snr = self.signal()
+            line = f'#rx crc len={len(data)} rssi={rssi} snr={snr} data={data.hex()}'
+        else:
+            self.hdr_errors += 1
+            line = f'#rx hdr rssi={self.rng.randint(-125, -110)}'
+        self.gateway.telemetry.rx_line(line, now)
+
     def tick(self, link_down=False):
         now = self.clock()
         if now >= self.next_alive:
             self.next_alive = now + self.ALIVE_S
             line = (f'#alive uptime={int(now - self.boot)} forwarded={self.forwarded} dropped=0 acks={self.acks} '
-                    f'diag={self.diags} listening=1 relistens=0 uart_errors=0 stack_peak=1184')
+                    f'diag={self.diags} listening=1 relistens=0 uart_errors=0 stack_peak=1184 '
+                    f'crc_errors={self.crc_errors} hdr_errors={self.hdr_errors} task_peak_us=850 task_peak=process '
+                    f'isr_peak_us=40 isr_peak=SUBGHZ_Radio trace_drops=0')
             self.gateway.receiver_report(line, now)
             self.gateway.telemetry.rx_line(line, now)
+            self.bad_reception(now)
         if now >= self.next_diag and not link_down:
             self.next_diag = now + self.DIAG_S
             self.diags += 1

@@ -596,19 +596,95 @@ class ServeLoopTelemetry(Fixture):
         events = self.rows("SELECT text FROM gateway_events WHERE kind='suppressed'")
         self.assertEqual(len(events), 1)
 
-    def test_rx_error_flood_is_bounded_and_a_regression_is_never_hidden(self):
-        """Security audit: '#rx error' (any radio can cause it) is rate-limited like other noise,
-        and a counter regression is logged even while garbage frames are being suppressed."""
+    def test_rx_fault_flood_is_bounded_and_a_regression_is_never_hidden(self):
+        """Security audit: bad receptions (any radio can cause them) are rate-limited like other
+        noise, CRC and header failures on one budget, and what the throttle drops is counted;
+        a counter regression is logged even while garbage frames are being suppressed."""
         throttle = self.gateway.telemetry.throttle
         throttle.per_s = 0
         burst = throttle.burst
-        log, _ = self.lines(*['#rx error'] * (3 * burst), now=5000)
-        self.assertEqual(log.count('#rx error'), burst)
-        self.assertEqual(self.rows("SELECT COUNT(*) FROM gateway_events WHERE kind='rx_error'")[0][0], burst)
+        log, _ = self.lines(*['#rx crc len=2 rssi=-110 snr=-9 data=abcd', '#rx hdr rssi=-120'] * (3 * burst // 2),
+                            now=5000)
+        self.assertEqual(log.count('#rx '), burst)
+        self.assertEqual(self.rows('SELECT COUNT(*) FROM rx_faults')[0][0], burst)
+        self.assertEqual(throttle.refused['rx_fault'], 2 * burst)
+        self.assertEqual(self.gateway.telemetry.fault_summary(5000 + 3 * burst)['throttled'], 2 * burst)
         log, _ = self.lines(*['ab' * 30] * (2 * burst), now=6000)          # garbage uses up 'rejected'
         frames = [self.node.packet(self.node.sample(time.time() + 60 * i)) for i in range(3)]
         log, _ = self.lines(frames[0].hex(), frames[2].hex(), frames[1].hex(), now=7000)
         self.assertIn('CounterRegression', log)
+
+    def test_bad_receptions_are_stored_counted_and_not_warned(self):
+        """'#rx crc' / '#rx hdr': every one stored with its bytes, counted for the page (info),
+        never a warning each; a malformed line is a warning (format mismatch)."""
+        data = bytes(range(42)).hex()
+        log, _ = self.lines(f'#rx crc len=42 rssi=-97 snr=-3 data={data}', '#rx hdr rssi=-118',
+                            '#rx crc len=0 rssi=-120 snr=-15 data=', '#rx crc len=3 rssi=-1 snr=0 data=abcd', now=7200)
+        self.assertIn('#rx hdr rssi=-118', log)                      # receiver.log keeps everything
+        rows = self.rows('SELECT received_at,kind,length,rssi_dbm,snr_db,data FROM rx_faults ORDER BY id')
+        self.assertEqual(rows, [(7200, 'crc', 42, -97, -3, data), (7201, 'hdr', None, -118, None, None),
+                                (7202, 'crc', 0, -120, -15, '')])
+        events = self.rows('SELECT kind,level FROM gateway_events')
+        self.assertEqual(events, [('rx_fault_malformed', 'warn')])
+        summary = self.gateway.telemetry.fault_summary(7300)
+        self.assertEqual((summary['crc'], summary['hdr'], summary['throttled'], summary['last_at']), (2, 1, 0, 7202))
+        self.assertEqual(self.gateway.telemetry.fault_summary(7202 + 3601)['crc'], 0)   # trailing hour only
+
+    def test_bad_reception_rate_warns_once_and_each_hour_is_summarized(self):
+        t = self.gateway.telemetry
+        hour = 10 * 3600
+        for i in range(web.RX_FAULT_WARN_PER_H):
+            t.rx_line('#rx hdr rssi=-119', hour + 10 + i)
+        t.tick(hour + 3599)
+        self.assertEqual(self.rows('SELECT count(*) FROM gateway_events'), [(0,)])   # at the limit: quiet
+        for i in range(20):
+            t.rx_line('#rx crc len=1 rssi=-100 snr=-5 data=00', hour + 3600 + i)      # next hour, rate 31+
+        warn = self.rows("SELECT level,text FROM gateway_events WHERE kind='rx-fault-rate'")
+        self.assertEqual(len(warn), 1)
+        self.assertIn('31 bad receptions in the last hour (1 CRC, 30 header', warn[0][1])
+        self.assertEqual(warn[0][0], 'warn')
+        info = self.rows("SELECT level,text,at FROM gateway_events WHERE kind='rx_faults'")
+        self.assertEqual(info, [('info', 'bad receptions 1970-01-01T10:00:00Z + 1 h: 0 CRC, 30 header', hour + 3600)])
+        t.tick(hour + 2 * 3600)                                                      # the second hour closes
+        self.assertEqual(self.rows("SELECT text FROM gateway_events WHERE kind='rx_faults' ORDER BY id")[-1],
+                         ('bad receptions 1970-01-01T11:00:00Z + 1 h: 20 CRC, 0 header',))
+        # quiet again: re-armed only after the rate has fallen to half the limit
+        t.rx_line('#rx hdr rssi=-119', hour + 3 * 3600)
+        for i in range(web.RX_FAULT_WARN_PER_H + 1):
+            t.rx_line('#rx hdr rssi=-119', hour + 3 * 3600 + 1 + i)
+        self.assertEqual(self.rows("SELECT count(*) FROM gateway_events WHERE kind='rx-fault-rate'"), [(2,)])
+
+    def test_bad_receptions_api_and_status(self):
+        t = self.gateway.telemetry
+        now = time.time()
+        t.rx_line('#rx crc len=2 rssi=-100 snr=-7 data=51ff', now - 2)
+        t.rx_line('#rx hdr rssi=-121', now - 1)
+        self.serve()
+        body = self.get_json('/v1/radio/faults?order=desc&limit=1')
+        self.assertEqual(body['rows'], [{'id': 2, 'received_at': now - 1, 'kind': 'hdr', 'length': None,
+                                         'rssi_dbm': -121, 'snr_db': None, 'data': None}])
+        self.assertEqual({k: body['summary'][k] for k in ('window_s', 'crc', 'hdr', 'warn_per_hour', 'throttled')},
+                         {'window_s': 3600, 'crc': 1, 'hdr': 1, 'warn_per_hour': web.RX_FAULT_WARN_PER_H,
+                          'throttled': 0})
+        self.assertEqual(self.get_json('/v1/radio/faults')['rows'][0]['data'], '51ff')
+        self.assertEqual(self.get_json('/v1/status')['rx_faults']['crc'], 1)
+
+    def test_alive_with_word_fields_and_unknown_ones(self):
+        """'#alive' gained numeric and identifier fields; words are text, an unknown field or a
+        bare word is ignored, a garbled number is NULL rather than an error."""
+        self.lines('#alive uptime=61 forwarded=4 dropped=0 acks=4 diag=1 listening=1 relistens=0 uart_errors=0 '
+                   'stack_peak=1100 crc_errors=3 hdr_errors=1 task_peak_us=850 task_peak=process isr_peak_us=x '
+                   'isr_peak=SUBGHZ_Radio trace_drops=0 future_field=7 bare', now=8000)
+        row = self.rows('SELECT uptime_s,crc_errors,hdr_errors,task_peak_us,task_peak,isr_peak_us,isr_peak,trace_drops '
+                        'FROM rx_alive')
+        self.assertEqual(row, [(61, 3, 1, 850, 'process', None, 'SUBGHZ_Radio', 0)])
+        self.assertEqual(self.gateway.receiver['task_peak'], 'process')
+        self.lines('#alive uptime=121 task_peak_us=900 task_peak=console', now=8060)
+        self.lines('#alive uptime=181 task_peak_us=700 task_peak=process', now=8120)
+        r = web.history(self.gateway, 7800, 8400, 10)['receiver']          # one point per report
+        self.assertEqual((r['task_peak_us'], r['task_peak']), ([850, 900, 700], ['process', 'console', 'process']))
+        r = web.history(self.gateway, 8000, 8000 + 6000, 2)['receiver']    # one bucket: the peak keeps its word
+        self.assertEqual((r['task_peak_us'], r['task_peak'], r['crc_errors']), ([900], ['console'], [3]))
 
     def test_frames_alive_and_events_reach_sqlite(self):
         obs = self.node.packet(self.node.sample(time.time()))
@@ -717,6 +793,24 @@ class ServeLoopTelemetry(Fixture):
         self.assertEqual(self.rows('SELECT count(*) FROM rx_alive'), [(1,)])
         self.assertTrue(self.gateway.receiver['alive'])
         self.assertIsNotNone(self.gateway.store.latest_diagnostic(self.cfg['station']))
+
+
+class ParseRxFault(unittest.TestCase):
+    def test_lines(self):
+        full = bytes(range(256))[:255].hex()
+        self.assertEqual(web.parse_rx_fault(f'#rx crc len=255 rssi=-80 snr=7 data={full}'),
+                         dict(kind='crc', length=255, rssi_dbm=-80, snr_db=7, data=full))
+        self.assertEqual(web.parse_rx_fault('#rx crc len=0 rssi=-80 snr=-7 data='),
+                         dict(kind='crc', length=0, rssi_dbm=-80, snr_db=-7, data=''))
+        self.assertEqual(web.parse_rx_fault('#rx crc len=1 rssi=-80 snr=-7 data=AB')['data'], 'ab')
+        self.assertEqual(web.parse_rx_fault('#rx hdr rssi=-117'),
+                         dict(kind='hdr', length=None, rssi_dbm=-117, snr_db=None, data=None))
+        for bad in ('#rx crc len=2 rssi=-80 snr=7 data=ab', '#rx crc len=1 rssi=-80 snr=7 data=zz',
+                    '#rx crc len=256 rssi=-80 snr=7 data=' + '00' * 256, '#rx crc len=-1 rssi=-80 snr=7 data=',
+                    '#rx crc len=1 rssi=-80 snr=7', '#rx crc len=1 snr=7 data=00', '#rx crc len=1 rssi=-80 data=00',
+                    '#rx crc len=1 rssi=x snr=7 data=00', '#rx hdr', '#rx hdr rssi=', '#rx crcx len=0 rssi=1 snr=1 data=',
+                    '#rx error', '#rx crc len=1 rssi=-80 snr=7 data=0 0'):
+            self.assertIsNone(web.parse_rx_fault(bad), bad)
 
 
 class redirect_stdout_quiet:

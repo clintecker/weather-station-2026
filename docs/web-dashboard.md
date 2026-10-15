@@ -24,10 +24,10 @@ From another machine (a phone, a laptop), prefer an SSH tunnel to the gateway:
 | Status chips | Key-reuse alarm, reading fresh/stale (180 s, as the API), sensor quality, receiver alive/silent (180 s), host clock state (`ok` / `unverified` / `bad`; "not checked" in demo), node link and energy state, overdue node health report |
 | Readings | Latest value of every catalog field the node sends, with unit and age. A null field shows "sensor fault"; wind calm shows "calm"; qualifiers (icing …) are shown |
 | Node (TX) health | Latest 15-minute health report: firmware build, epoch, uptime, reset cause, link and energy state, journal pending/lost/torn, abandoned, missed ACKs, rejected replies, crashes, ACK RSSI/SNR as the node heard the gateway |
-| Receiver (RX) | Latest `#alive` report: forwarded, dropped, ACKs, re-listens, UART errors, stack peak, uptime |
+| Receiver (RX) | Latest `#alive` report: forwarded, dropped, ACKs, re-listens, UART errors, stack peak, CRC/header errors since boot, longest task and interrupt (µs, with the name of the one that set the peak), trace drops, uptime. Plus **bad receptions in the last hour** (CRC vs header), from the gateway's `rx_faults` table: a few an hour from other 915 MHz devices and noise is normal and shown plainly; above 30 in the trailing hour, or any dropped by the rate limit, it is marked as a warning |
 | Gateway | Accepted/rejected/NACKed this run, node-counter mark and regressions, host clock, stream state |
 | Recent frames | Last 40 frames: time, kind, counter, outcome (ACK, duplicate, NACK, diag, rejected, commit failed, dropped by RX, reply not delivered), RSSI and SNR as the RX heard them |
-| Events | Last 60 gateway and receiver events: gateway start/stop, serial open/lost, receiver silent, host clock, rejected frames, RX boots, re-listens, RX errors |
+| Events | Last 60 gateway and receiver events: gateway start/stop, serial open/lost, receiver silent, host clock, rejected frames, RX boots, re-listens. Bad receptions are not listed one by one: one info event per clock hour that had any ("bad receptions <hour> + 1 h: n CRC, m header"), and one warning (`rx-fault-rate`) when more than 30 fall in the trailing hour; the next such warning only after the rate has dropped to 15 or fewer |
 
 **History** (last hour, day, week, or a custom range; relative ranges keep following live):
 
@@ -39,8 +39,9 @@ From another machine (a phone, a laptop), prefer an SSH tunnel to the gateway:
 - **Node health:** energy and link state bands, journal pending, journal lost, missed ACKs,
   crashes, boot epoch, abandoned records. Markers: node boots (epoch changes, with reset cause),
   firmware changes, gateway starts.
-- **Receiver health:** forwarded, dropped, re-listens, UART errors, stack peak, uptime (counters
-  since the RX board's last boot); RX boot, serial-lost and receiver-silent markers.
+- **Receiver health:** forwarded, dropped, re-listens, UART errors, stack peak, uptime, CRC and
+  header errors, longest task and interrupt (counters and peaks since the RX board's last boot);
+  RX boot, serial-lost and receiver-silent markers.
 
 Long ranges are reduced on the server (`max_points`, about 1.5 points per screen pixel): mean per
 time bucket, last value for counters; a bucket whose readings are all faults stays a gap.
@@ -50,8 +51,8 @@ Hovering (or touching) a chart shows the values at that time.
 
 The page opens one `GET /v1/events` stream (Server-Sent Events) with `fetch()`, because
 `EventSource` cannot send the `Authorization` header. The gateway pushes an event when it stores an
-observation or a health report, handles a radio frame, gets an RX `#alive` report, or logs a gateway
-event. An idle stream gets a heartbeat comment every 15 s; if the page hears nothing for 45 s it
+observation or a health report, handles a radio frame, gets an RX `#alive` report or bad
+reception (`rx_fault`, carrying the trailing-hour count), or logs a gateway event. An idle stream gets a heartbeat comment every 15 s; if the page hears nothing for 45 s it
 reconnects (back-off 1 s doubling to 15 s).
 
 Every event has an id `<gateway run>-<n>`. On reconnect the page sends the last id it handled as
@@ -66,14 +67,17 @@ The serve loop writes, next to the observations in `<run dir>/observations.sqlit
 
 | Table | One row per | Source |
 |---|---|---|
-| `radio_events` | frame line from the RX board | frame + the RX's following `#rx obs rssi= snr=` line, or `#rx drop`; outcome from the gateway |
-| `rx_alive` | RX `#alive` report (60 s) | RX console |
-| `gateway_events` | gateway or receiver event | `#gateway …` notes, RX boot/re-listen/error lines, rejected frames |
+| `radio_events` | frame line from the RX board | frame + the RX's following `#rx obs rssi= snr=` line, or `#rx drop`; outcome from the gateway; the frame's bytes (`frame_hex`, for `tools/rx_faults.py`) |
+| `rx_alive` | RX `#alive` report (60 s) | RX console; `task_peak`/`isr_peak` are names (text), the rest numbers; unknown fields are ignored |
+| `rx_faults` | bad reception: `#rx crc` (with every received byte) or `#rx hdr` | RX console: `received_at` (gateway UTC), `kind` `crc`/`hdr`, `length`, `rssi_dbm`, `snr_db`, `data` (lowercase hex). Rate-limited with other radio noise (GW6: burst 200, then one per 10 s); the number dropped since the gateway started is in the API's `summary.throttled`, and each suppressed run is a `suppressed` event |
+| `gateway_events` | gateway or receiver event | `#gateway …` notes, RX boot/re-listen lines, hourly bad-reception counts, rejected frames |
 
 `diagnostics` (node health reports) already existed. `receiver.log` is unchanged and stays the raw
-evidence. Volume is about 1,500 frames and 1,440 RX reports a day (a few MB a year), so there is no
-retention yet. Endpoints: `docs/openapi.json` (`/v1/events`, `/v1/history`, `/v1/radio`,
-`/v1/receiver/alive`, `/v1/diagnostics`, `/v1/gateway/events`).
+evidence. Volume is about 1,500 frames (with their bytes) and 1,440 RX reports a day (tens of MB a
+year), so there is no retention yet. Endpoints: `docs/openapi.json` (`/v1/events`, `/v1/history`,
+`/v1/radio`, `/v1/radio/faults`, `/v1/receiver/alive`, `/v1/diagnostics`, `/v1/gateway/events`).
+`tools/rx_faults.py` lists the stored bad receptions and says whether each CRC capture looks like
+one of our frames (and how many bits differ from the closest accepted frame) or foreign/noise.
 
 `ws0 demo` invents RSSI/SNR, RX reports and a node health report every 15 minutes so every panel
 has something to show. Demo values are not evidence.

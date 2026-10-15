@@ -372,7 +372,7 @@ authority. Serial: 115200 baud, 8N1, one line per message, `\n`-terminated (`\r`
 | Direction | Line | Rule |
 |---|---|---|
 | RX → host | Lowercase hex of one received frame | Only if `ws_air_frame_ok()`: version 5 and either kind 1 with length 39–94 B (78–188 hex digits) or kind 4 with length 48 B (96 digits). The Stage-0 observation is 84 digits. Anything else gives `#rx drop len= rssi= snr=` |
-| RX → host | `#…` | Diagnostics (`#rx obs rssi= snr=` after each forwarded frame, `#alive` every 60 s, `#boot`, `#status`, `#watchdog …`, `#tx busy`, `#host reject len=`, …) |
+| RX → host | `#…` | Diagnostics (`#rx obs rssi= snr=` after each forwarded frame, `#rx crc len= rssi= snr= data=` and `#rx hdr rssi=` for bad receptions, `#alive` every 60 s, `#boot`, `#status`, `#watchdog …`, `#tx busy`, `#host reject len=`, …) |
 | host → RX | 66 hex digits | One ACK or NACK, transmitted once with the uplink radio settings. Only if `ws_host_reply_ok()`: exactly 33 bytes, version 5, kind 2 or 3. Anything else gives `#host reject len=` |
 | host → RX | `STATUS`, `TEST-HANG`, `TEST-FAULT` | Commands; lines that start with `#` are ignored |
 

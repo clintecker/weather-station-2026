@@ -365,6 +365,27 @@ async function review() {
     const [f, t] = parseRange(W.fetches.filter((x) => x.url.startsWith('/v1/history')).pop().url);
     r.stale_queue = { points: points(W, 'Temperature'), expected: history(f, t).observations.t.length };
   }
+  {  // (6) bad receptions: the trailing-hour count from status, updated by 'rx_fault' events; a warning only above the gateway's limit
+    const W = makeWorld();
+    W.responses['/v1/status'] = statusAt(T0);
+    const st = statusAt(T0);
+    st.rx_faults = { window_s: 3600, crc: 2, hdr: 1, warn_per_hour: 30, throttled: 0, last_at: T0 - 60 };
+    st.receiver = Object.assign(st.receiver, { crc_errors: '2', hdr_errors: '1', task_peak_us: '850', task_peak: 'process' });
+    await boot(W);
+    W.responses['/v1/status'] = st;
+    W.sse('resync', {}); await W.advance(1000);
+    const row = () => {
+      const kids = W.byId('rx').children;
+      const i = kids.findIndex((n) => n.textContent === 'Bad receptions (last hour)');
+      return [kids[i + 1].textContent, kids[i + 1].getAttribute('data-level')];
+    };
+    const kid = (label) => { const kids = W.byId('rx').children; return kids[kids.findIndex((n) => n.textContent === label) + 1].textContent; };
+    r.rx_faults = { normal: row(), task: kid('Longest task (µs)'), since_boot: kid('CRC / header errors since boot'), events_before: W.byId('events').textContent };
+    W.sse('rx_fault', { id: 9, kind: 'crc', received_at: T0, summary: Object.assign({}, st.rx_faults, { crc: 29, hdr: 2 }) });
+    await W.advance(1000);
+    r.rx_faults.abnormal = row();
+    r.rx_faults.events_after = W.byId('events').textContent;
+  }
   {  // (5b) a history request that never answers times out and is retried
     const W = makeWorld();
     await boot(W);
@@ -458,6 +479,13 @@ class DashboardScript(unittest.TestCase):
     def test_queue_of_a_signed_out_session_is_dropped(self):
         r = self.out['review']['stale_queue']
         self.assertEqual(r['points'], r['expected'])
+
+    def test_bad_receptions_are_a_count_not_a_warning_each(self):
+        r = self.out['review']['rx_faults']
+        self.assertEqual(r['normal'], ['2 CRC · 1 header', None])
+        self.assertEqual(r['abnormal'], ['29 CRC · 2 header', 'warning'])
+        self.assertEqual((r['task'], r['since_boot']), ('850 (process)', '2 / 1'))
+        self.assertEqual(r['events_after'], r['events_before'])   # no event line per bad reception
 
     def test_history_request_times_out_and_is_retried(self):
         r = self.out['review']['hung_request']

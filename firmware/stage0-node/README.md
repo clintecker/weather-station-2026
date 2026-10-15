@@ -156,10 +156,11 @@ power, and resets at once (`reset=software`). The next boot prints a line like t
 | `<hex>` | A received frame for the host (observation or health report) |
 | `#rx obs rssi= snr=` | Follows each forwarded frame |
 | `#rx drop len= rssi= snr=` | Received something that is not a current-draft observation or health report |
-| `#rx error` | Radio receive error |
+| `#rx crc len= rssi= snr= data=` | Bad reception: the header decoded but the payload CRC failed. `data` is the lowercase hex of all `len` (0–255) bytes the radio kept (empty when `len=0`). The gateway stores each in `rx_faults` and counts them; `tools/rx_faults.py` classifies the captures |
+| `#rx hdr rssi=` | Bad reception: the header CRC failed, no payload. `rssi` is the channel RSSI read right after the failure |
 | `#host reject len=` | A host line that is not a valid ACK/NACK hex line |
 | `#tx timeout`, `#tx busy` | ACK/NACK transmission failed |
-| `#alive uptime= forwarded= dropped= acks= diag= listening= relistens= uart_errors= stack_peak=` | Every 60 s. `stack_peak` as on TX (`#counts`). The gateway marks the receiver silent after 180 s without `#alive` or `#boot` (gap G12). `relistens`: times the radio was restarted after 5 minutes without any radio event (review P6). `uart_errors`: console receive errors, each followed by a re-arm (review P5). |
+| `#alive uptime= forwarded= dropped= acks= diag= listening= relistens= uart_errors= stack_peak= crc_errors= hdr_errors= task_peak_us= task_peak= isr_peak_us= isr_peak= trace_drops=` | Every 60 s. `stack_peak` as on TX (`#counts`). `crc_errors`/`hdr_errors`: bad receptions since boot (`#rx crc`/`#rx hdr`). `task_peak_us`/`isr_peak_us`: longest task and interrupt since boot, with the name of the one that set it (`task_peak`, `isr_peak`: words such as `process`, `SUBGHZ_Radio`, not numbers). `trace_drops`: trace records lost. The gateway marks the receiver silent after 180 s without `#alive` or `#boot` (gap G12). `relistens`: times the radio was restarted after 5 minutes without any radio event (review P6). `uart_errors`: console receive errors, each followed by a re-arm (review P5). |
 | `#watchdog radio not listening; re-arming`, `#watchdog console not receiving; re-arming` | Self-heal attempt before the watchdog may reset the board |
 | `#relisten after N s without a radio event` | Radio put in standby and listening restarted (review P6) |
 | `#status role=rx forwarded= dropped= acks= relistens= uart_errors=` | Reply to `STATUS`. `acks` counts ACK/NACK lines handed to the radio. |

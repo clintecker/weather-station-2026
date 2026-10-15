@@ -245,7 +245,7 @@ The RX board has one operating state: **continuous receive**. It leaves this sta
 | L5 | Interference or jamming | Both directions fail | As P4 | AUTO when it stops | None if < 65 h | *N* − 1 | No |
 | L6 | Out of range / bad placement | Low RSSI, intermittent L1/L2 | As L1/L2 | OPERATOR: placement, SF, power (spec H01 branch) | None if ≥ 1 success per 65 h | Likely fail | Bench (30 cm): −23 / −24 dBm only (`protocol-stack.md` §8.5) |
 | L7 | TX frame during the RX ACK transmission | Frame lost | As L1 | AUTO | None | 0 | **Fixed:** symbol-timeout bug (2026-10-12) |
-| L8 | Foreign LoRa traffic on 915 MHz | RX `#rx drop` | RX discards (length, magic, version) | AUTO | None | 0 | No |
+| L8 | Foreign LoRa traffic on 915 MHz | RX `#rx drop`; `#rx crc`/`#rx hdr` (bad receptions, stored in `rx_faults`, `tools/rx_faults.py`) | RX discards (length, magic, version); the gateway counts bad receptions and warns above 30 an hour | AUTO | None | 0 | No |
 | L9 | **Link margin changes** with weather, snow or ice on the antenna, wet foliage, and temperature (deployment) | RSSI/SNR trend in `receiver.log`; more L1/L2 events | Intermittent L1/L2 and duplicates; more TX energy per delivered reading | AUTO per exchange; OPERATOR if the trend continues (antenna, placement, SF) | None if ≥ 1 success per 65 h | Risk to the 14-interval budget | No. H01 must run at the real placement in real weather. |
 | L10 | **Downlink weaker than uplink** (the ACK path) | Gateway receives frames (only probes after 3 minutes); TX gets no ACKs (L4) | As L4 | OPERATOR: give the ACK the same link budget (G15) | As L4 | As L4 | No. Today the RX board sends ACKs at **0 dBm** from indoors. |
 
