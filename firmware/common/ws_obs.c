@@ -27,20 +27,31 @@ int ws_obs_code_ok(unsigned i, uint32_t code)
  return i == WS_FI_WIND_DIR_DEG && code == WS_WIND_DIR_CALM;
 }
 
-int ws_obs_encode(const ws_obs_t *o, uint8_t *out, size_t cap)
+/* A direction needs a speed: INVALID speed forces INVALID direction (section 5.4). */
+static int wind_ok(const ws_obs_t *o)
 {
- if (!o || !out || !o->bitmap || (o->bitmap & ~WS_FIELDS_DEFINED) || o->energy > WS_ENERGY_CRITICAL) return -1;
- size_t len = WS_OBS_HEAD_LEN;
+ uint32_t both = WS_F(WS_FI_WIND_DIR_DEG) | WS_F(WS_FI_WIND_SPEED_MS);
+ if ((o->bitmap & both) != both || o->code[WS_FI_WIND_SPEED_MS] != ws_obs_invalid(WS_FI_WIND_SPEED_MS)) return 1;
+ return o->code[WS_FI_WIND_DIR_DEG] == ws_obs_invalid(WS_FI_WIND_DIR_DEG);
+}
+
+/* The encoded length of a valid observation, or -1. */
+static int obs_len(const ws_obs_t *o)
+{
+ if (!o->bitmap || (o->bitmap & ~WS_FIELDS_DEFINED) || o->energy > WS_ENERGY_CRITICAL) return -1;
+ int len = WS_OBS_HEAD_LEN;
  for (unsigned i = 0; i < WS_FI_COUNT; i++) {
   if (!(o->bitmap & WS_F(i))) continue;
   if (!ws_obs_code_ok(i, o->code[i])) return -1;
   len += width[i];
  }
- /* A direction needs a speed: INVALID speed forces INVALID direction (section 5.4). */
- if ((o->bitmap & WS_F(WS_FI_WIND_DIR_DEG)) && (o->bitmap & WS_F(WS_FI_WIND_SPEED_MS)) &&
-     o->code[WS_FI_WIND_SPEED_MS] == ws_obs_invalid(WS_FI_WIND_SPEED_MS) &&
-     o->code[WS_FI_WIND_DIR_DEG] != ws_obs_invalid(WS_FI_WIND_DIR_DEG)) return -1;
- if (len > cap) return -1;
+ return wind_ok(o) ? len : -1;
+}
+
+int ws_obs_encode(const ws_obs_t *o, uint8_t *out, size_t cap)
+{
+ int len = o && out ? obs_len(o) : -1;
+ if (len < 0 || (size_t)len > cap) return -1;
  ws_put_be32(out, o->epoch); ws_put_be32(out + 4, o->seq); ws_put_be32(out + 8, o->utc); ws_put_be32(out + 12, o->uptime);
  out[16] = (uint8_t)((o->utc != 0) | (o->energy << 1));
  out[17] = o->cal_rev;
@@ -51,7 +62,7 @@ int ws_obs_encode(const ws_obs_t *o, uint8_t *out, size_t cap)
   ws_put_be(p, o->code[i], width[i]);
   p += width[i];
  }
- return (int)len;
+ return len;
 }
 
 int ws_obs_plain_len(const uint8_t *plain, size_t avail)

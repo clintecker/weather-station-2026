@@ -13,6 +13,14 @@ static void header(uint8_t h[WS_HEADER_LEN], uint8_t nonce[13], uint8_t kind, ui
  nonce[0]=kind; ws_put_be64(nonce+1,station,4); ws_put_be64(nonce+5,counter,8);
 }
 
+/* What ws_seal_kind can seal: a plaintext that fits the frame and the output, a valid station,
+ * counter and sealed kind. */
+static int seal_ok(uint32_t station, uint8_t kind, uint64_t counter, const uint8_t *plain, uint32_t plain_len, uint32_t out_cap) {
+ if(plain_len>WS_FRAME_MAX-WS_FRAME_OVERHEAD || plain_len+WS_FRAME_OVERHEAD>out_cap || (!plain && plain_len)) return 0;
+ if(station==0 || station>WS_STATION_MAX || counter==0 || counter>WS_COUNTER_MAX) return 0;
+ return kind>=WS_KIND_OBS && kind<=WS_KIND_DIAG;
+}
+
 int ws_seal_kind(const uint8_t key[16], uint32_t station, uint8_t kind, uint64_t counter,
  const uint8_t *plain, uint32_t plain_len, uint8_t *out, uint32_t out_cap) {
  uint8_t nonce[13]; mbedtls_ccm_context ccm; int rc;
@@ -20,9 +28,7 @@ int ws_seal_kind(const uint8_t key[16], uint32_t station, uint8_t kind, uint64_t
  if(!out) return -1;
  /* Every refusal wipes the whole output buffer, so a caller that ignores the result cannot send
     a stale or half-built frame. */
- if(plain_len>WS_FRAME_MAX-WS_FRAME_OVERHEAD || len>out_cap ||
-    station==0 || station>WS_STATION_MAX || counter==0 || counter>WS_COUNTER_MAX ||
-    kind<WS_KIND_OBS || kind>WS_KIND_DIAG || (!plain && plain_len)) {
+ if(!seal_ok(station,kind,counter,plain,plain_len,out_cap)) {
   mbedtls_platform_zeroize(out,out_cap);
   return -1;
  }

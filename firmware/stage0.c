@@ -1,5 +1,6 @@
 #include "stage0.h"
 #include <string.h>
+#include "common/ws_console.h"   /* ws_hex_nibble */
 /* Sensirion polynomial 0x31, initial FF, no final XOR. */
 uint8_t ws_crc8(const uint8_t *data, size_t count) {
  uint8_t crc=0xff;
@@ -21,13 +22,17 @@ int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN],int16_t *centi_c,uint
 }
 /* Explicit packing avoids structure padding and alignment assumptions. */
 void ws_th_reset(ws_th_window *w) { memset(w,0,sizeof *w); }
+static void th_extrema(ws_th_window *w,int16_t t,uint16_t h) {
+ if(!w->n) { w->t_min=w->t_max=t; w->h_min=w->h_max=h; return; }
+ if(t<w->t_min) w->t_min=t;
+ if(t>w->t_max) w->t_max=t;
+ if(h<w->h_min) w->h_min=h;
+ if(h>w->h_max) w->h_max=h;
+}
 void ws_th_add(ws_th_window *w,int valid,int16_t t,uint16_t h) {
  if(!valid||t<-4000||t>12500||w->n>=255) return;
  if(h>10000) h=10000;
- if(!w->n||t<w->t_min) w->t_min=t;
- if(!w->n||t>w->t_max) w->t_max=t;
- if(!w->n||h<w->h_min) w->h_min=h;
- if(!w->n||h>w->h_max) w->h_max=h;
+ th_extrema(w,t,h);
  w->t_sum+=t; w->h_sum+=h; w->n++;
 }
 /* floor((2*sum + n) / (2n)): round half up, also for negative sums (C division truncates, and
@@ -77,22 +82,27 @@ static int parse_u32(const char **s,uint32_t *out) {
  for(;*p>='0'&&*p<='9';p++) { v=v*10+(uint64_t)(*p-'0'); if(v>0xFFFFFFFFULL) return -1; }
  *out=(uint32_t)v; *s=p; return 0;
 }
-static int hex_nibble(char c) {
- if(c>='0'&&c<='9') return c-'0';
- if(c>='a'&&c<='f') return c-'a'+10;
- if(c>='A'&&c<='F') return c-'A'+10;
- return -1;
+/* 32 hex digits (either case); a NUL ends the parse before the byte after it is read. */
+static int parse_key(const char **s,uint8_t key[16]) {
+ const char *p=*s;
+ for(int i=0;i<16;i++,p+=2) {
+  int hi=ws_hex_nibble(p[0]), lo=hi<0?-1:ws_hex_nibble(p[1]);
+  if(lo<0) return -1;
+  key[i]=(uint8_t)(hi<<4|lo);
+ }
+ *s=p; return 0;
+}
+/* The optional " <epoch_floor>"; 0 (no floor) if absent. */
+static int parse_floor(const char **s,uint32_t *floor) {
+ *floor=0;
+ if(**s!=' ') return 0;
+ (*s)++;
+ return parse_u32(s,floor)||*floor>=WS_EPOCH_FLOOR_MAX?-1:0;
 }
 int ws_parse_provision(const char *args,uint32_t *station,uint8_t key[16],uint32_t *epoch_floor) {
- const char *p=args; uint32_t floor=0;
+ const char *p=args; uint32_t floor;
  if(!p||parse_u32(&p,station)||*station==0||*station>65535U||*p++!=' ') return -1;
- for(int i=0;i<16;i++) {
-  int hi=hex_nibble(p[0]), lo=hi<0?-1:hex_nibble(p[1]);
-  if(lo<0) return -1;
-  key[i]=(uint8_t)(hi<<4|lo); p+=2;
- }
- if(*p==' ') { p++; if(parse_u32(&p,&floor)||floor>=WS_EPOCH_FLOOR_MAX) return -1; }
- if(*p!=0) return -1;
+ if(parse_key(&p,key)||parse_floor(&p,&floor)||*p!=0) return -1;
  *epoch_floor=floor; return 0;
 }
 void ws_failrun_note(ws_failrun *r,int ok) {
