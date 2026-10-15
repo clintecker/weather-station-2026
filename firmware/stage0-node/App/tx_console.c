@@ -93,7 +93,8 @@ static void storm(void)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t r; uint64_t c;
   if (!tx_node.storming) return;
-  if (storm_writes >= STORM_MAX_WRITES) { tx_node.storming = 0; APP_PRINTF("#storm done writes=%u (cap)\n", (unsigned)storm_writes); return; }
+  /* At the cap the load stops; sampling stays stopped until the reboot that ends a storm. */
+  if (storm_writes >= STORM_MAX_WRITES) { APP_PRINTF("#storm done writes=%u (cap; reboot to resume)\n", (unsigned)storm_writes); return; }
   for (int i = 0; i < 16; i++)
   {
     ws_obs_t o = { .epoch = STORM_EPOCH, .seq = storm_writes++, .energy = WS_ENERGY_NORMAL, .bitmap = WS_NODE_FIELDS };

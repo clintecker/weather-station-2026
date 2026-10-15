@@ -51,7 +51,7 @@ The exchange is one explicit state machine. Every state is left by an event that
 
 | State | Left by | Next |
 |---|---|---|
-| `idle` | the 4th sample's report | `sending` (first frame, no gap) |
+| `idle` | the 4th sample's report | `gap`: the first frame too waits 50 ms, so the radio, which may have been put to sleep moments earlier, has time to enter sleep before it is woken (ST's RadioSleep waited 2 ms instead) |
 | `gap` | gap timer (50 ms) | `sending` (next frame) or `diag-sending` (health report). A local send failure (journal read, seal, radio busy) moves to the next item after another gap; a refused counter reservation ends the exchange (`idle`) |
 | `sending` | radio TxDone | `ack-wait`: the firmware's 2 s `ack_timer` starts, the radio listens with no driver timeout (`Radio.Rx(0)`) |
 |  | TxTimeout (3 s, a software timer in ST's radio driver) | radio put in standby (the driver leaves it transmitting); drain stops: `gap` if a health report is due, else `idle` |
@@ -70,7 +70,8 @@ The RxDone callback recognises it (`ws_radio_take_crc_error`, the HAL's CRC flag
 RxError, in both roles.
 
 End of exchange: link state updated, then `gap` → health report if one is due, else `idle`.
-Any (state, event) pair not in this table is counted (`unexpected=` on `#timing`), printed as
+Two races are dropped, not counted: a TxTimeout that fired in the same pass as its TxDone (the frame left), and
+an ack-end posted while the reply that closed the window was handled. Any other (state, event) pair not in this table is counted (`unexpected=` on `#timing`), printed as
 `#error unexpected event=… state=…`, and otherwise ignored. Events are bits, so two arriving before
 `process` runs are both handled. The watchdog check also requires a busy exchange to end within its
 worst case: (frames + 1) × (3 s transmit timeout + 2 s window + 50 ms gap) + 5 s. Past it, the check
@@ -81,7 +82,8 @@ stops sampling and keeps failing, so the watchdog resets the board (`#watchdog r
 Console commands that write flash (WIPE, PROVISION, TEST-FLASH-STORM) are refused with
 `#error busy …; retry` during an exchange or a pending reboot. A commanded reboot (WIPE, PROVISION)
 stops sampling and resets from a 200 ms timer (created once at boot), so the console can send the
-reply first; a second one meanwhile is refused. TEST-FLASH-STORM stops sampling, so no exchange
+reply first; a second one meanwhile is refused. TEST-FLASH-STORM (a bench command, not in a field build) writes at most 24 000 journal slots per boot
+(about 30 s; far from wearing out the journal) and stops sampling, so no exchange
 starts. A storage-init or epoch-reservation failure at boot (self-test passed) retries by a reset
 after 10 minutes.
 
@@ -104,11 +106,21 @@ an ACK is not on air longer than the 3 s transmit timeout plus 2 s; and the radi
 standby and listens again, and two such relistens in a row without a radio event fail the check, so
 the watchdog resets the board. Failure lines are limited to 20 a minute; beyond that they are counted.
 
+## Radio commands and the radio interrupt
+
+ST's HAL lets one SUBGHZ command hold the driver at a time. A radio interrupt that arrives while a
+main-loop command holds it has its own commands refused (HAL_BUSY), cannot clear the radio's IRQ and
+re-enters at once, starving the main loop (2026-10-15 review M1). So every radio command from the
+main loop (`ws_radio_send`, `ws_radio_rx`, `ws_radio_standby`, `ws_radio_sleep`,
+`ws_radio_rx_full_length`, in `App/radio_cfg.*`) runs with the radio interrupt masked in the NVIC; the
+interrupt waits and runs right after. The host harnesses count any radio command made unmasked, and
+every test requires none.
+
 ## What still stalls the CPU (hardware, not our choice)
 
 | Stall | Bound | When it happens |
 |---|---|---|
-| Flash page erase | STM32WL55 datasheet (DS13293) t_ERASE: ~22 ms typical, ~24.5 ms max (from the datasheet as recalled in review; to be checked against the PDF and measured). The CPU cannot fetch from flash meanwhile, so interrupts start late by up to that much | starting a journal page (every 36 readings), meta-page compaction, WIPE, PROVISION, TEST-FLASH-STORM. Always with the radio idle: journal and counter writes happen before an exchange or between frames, a reading made during an exchange waits in RAM until it ends, and the flash-writing commands are refused during one (checked by the host harness in every test, a hung radio included) |
+| Flash page erase | STM32WL55 datasheet (DS13293) t_ERASE: ~22 ms typical, ~24.5 ms max (from the datasheet as recalled in review). Measured on the board: 22,057 µs (`erase_peak_us`, release 586001994b09). The CPU cannot fetch from flash meanwhile, so interrupts start late by up to that much | starting a journal page (every 36 readings), meta-page compaction, WIPE, PROVISION, TEST-FLASH-STORM. Always with the radio idle: journal and counter writes happen before an exchange or between frames, a reading made during an exchange waits in RAM until it ends, and the flash-writing commands are refused during one (checked by the host harness in every test, a hung radio included) |
 | Flash double-word program | DS13293 t_PROG: ~82 µs typical, ~91 µs max (same caveat) | journal append, ACK mark, counter reservation; radio idle |
 | Radio SPI / BUSY handshakes in ST's driver | bounded by ST's loop counters (`stm32wlxx_hal_subghz.c`); microseconds per command, ~3.5 ms on wake with calibration (`tools/blocking_report.py` table) | every radio command; inside `task_peak_us` / `isr_peak_us` |
 | RTC sub-second double read, UART start-up flags | `timer_if.c` reads the sub-second register until two reads agree (it changes every 30.5 µs); UART TEACK/REACK at start | timer reads; console start |

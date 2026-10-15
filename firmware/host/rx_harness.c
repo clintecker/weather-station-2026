@@ -97,7 +97,7 @@ static void radio_init(RadioEvents_t *e)
   UTIL_TIMER_Create(&tx_timeout_timer, WS_TX_TIMEOUT_MS, UTIL_TIMER_ONESHOT, on_tx_timeout_timer, NULL);
 }
 static radio_status_t radio_send(uint8_t *buf, uint8_t size)
-{
+{ sim_radio_command();
   send_calls++;
   if (send_fails > 0) { send_fails--; return RADIO_STATUS_ERROR; }
   if (radio_state == RF_TX_RUNNING) sends_while_tx++;
@@ -113,7 +113,7 @@ static radio_status_t radio_send(uint8_t *buf, uint8_t size)
 }
 static void chip_idle(void) { chip_tx_pending = 0; UTIL_TIMER_Stop(&tx_timeout_timer); }
 static void radio_rx(uint32_t timeout)
-{
+{ sim_radio_command();
   rx_calls++; last_rx_timeout = timeout;
   if (timed_out_in_tx) rx_after_timeout_no_standby++;
   timed_out_in_tx = 0;
@@ -121,14 +121,14 @@ static void radio_rx(uint32_t timeout)
   chip_idle();
   set_state(RF_RX_RUNNING);
 }
-static void radio_sleep(void) { sleep_calls++; chip_idle(); set_state(RF_IDLE); }
-static void radio_standby(void) { standby_calls++; timed_out_in_tx = 0; chip_idle(); set_state(RF_IDLE); }
+static void radio_sleep(void) { sim_radio_command(); sleep_calls++; chip_idle(); set_state(RF_IDLE); }
+static void radio_standby(void) { sim_radio_command(); standby_calls++; timed_out_in_tx = 0; chip_idle(); set_state(RF_IDLE); }
 static RadioState_t radio_get_status(void) { return radio_state; }
 const struct Radio_s Radio = { radio_init, radio_send, radio_rx, radio_sleep, radio_standby, radio_get_status };
 int ws_radio_take_crc_error(void) { int f = crc_flag; crc_flag = 0; return f; }
 void ws_radio_configure(int c) { continuous = c; pkt_len = 255; }
 void ws_radio_rx_full_length(void) { pkt_len = 255; }
-void ws_radio_sleep(void) { radio_sleep(); }
+void ws_radio_sleep(void) { ws_radio_irq_hold(); radio_sleep(); ws_radio_irq_release(); }
 void ws_radio_last_packet(uint8_t buf[255], uint8_t *len, int8_t *rssi, int8_t *snr)
 {
   memcpy(buf, chip_buf, chip_len); *len = chip_len; *rssi = chip_rssi; *snr = chip_snr;

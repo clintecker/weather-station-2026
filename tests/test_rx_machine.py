@@ -167,6 +167,7 @@ class RxStateMachine(unittest.TestCase):
         def checks():
             lib = b.lib
             self.assertEqual(lib.h_primask_leaks(), 0, 'a task left interrupts masked')
+            self.assertEqual(lib.h_unmasked_radio_calls(), 0, 'a radio command without the radio interrupt masked')
             self.assertEqual(lib.h_task_saturations(), 0, 'main-loop tasks never settled')
             self.assertEqual(lib.h_overlong(), 0, 'a console line longer than the 640-byte trace buffer was cut')
             self.assertEqual(lib.h_capture_overflow(), 0)

@@ -57,6 +57,11 @@ void sim_run_tasks(void);               /* the main loop: every posted task, unl
 void sim_set_hold(int on);              /* hold the main loop off; interrupts still post */
 void sim_advance(uint32_t ms);          /* move the test clock, serving every interrupt due */
 
+/* ---- radio commands: call at the start of every harness radio command (counts unmasked ones) ---- */
+void sim_radio_command(void);
+void ws_radio_irq_hold(void);
+void ws_radio_irq_release(void);
+
 /* ---- console capture (h_output returns it) ---- */
 int sim_capture(const char *text, size_t n);   /* 0 if it did not fit (nothing is kept) */
 #endif

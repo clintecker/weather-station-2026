@@ -18,3 +18,10 @@ uint32_t events_take(volatile uint32_t *pending)
   irq_unlock(primask);
   return bits;
 }
+
+void events_clear(volatile uint32_t *pending, uint32_t bits)
+{
+  uint32_t primask = irq_lock();
+  *pending &= ~bits;
+  irq_unlock(primask);
+}

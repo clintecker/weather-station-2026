@@ -16,4 +16,5 @@ static inline void irq_unlock(uint32_t primask) { __set_PRIMASK(primask); }
  * and clears them in one step. */
 void events_post(volatile uint32_t *pending, uint32_t bits);
 uint32_t events_take(volatile uint32_t *pending);
+void events_clear(volatile uint32_t *pending, uint32_t bits);   /* drop bits no longer wanted */
 #endif

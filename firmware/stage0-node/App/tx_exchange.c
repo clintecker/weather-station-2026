@@ -41,7 +41,7 @@ static UTIL_TIMER_Object_t gap_timer;
    listens with no driver timeout (ws_radio_rx(0)); ack_timer ends the window, and every way out of
    ack-wait puts the radio in standby first. */
 static UTIL_TIMER_Object_t ack_timer;
-static int ack_end_stale;   /* ack_timer was stopped by a reply; an ack-end already posted is stale */
+static uint32_t batch;      /* this pass's events not yet handled (process) */
 static RadioEvents_t events;
 
 static jref_t queue[MAX_QUEUE];
@@ -270,6 +270,15 @@ static int handle_reply(void)
   return r.kind == WS_KIND_NACK ? on_nack(&r, mine) : on_ack(&r, mine);
 }
 
+/* The reply ended the window: stop its timer, and drop an ack-end it already posted, in this pass
+   or the next (a race, not a bug: `unexpected` stays a bug indicator; 2026-10-15 review). */
+static void window_closed(void)
+{
+  UTIL_TIMER_Stop(&ack_timer);
+  batch &= ~EV_ACK_END;
+  events_clear(&pending_ev, EV_ACK_END);
+}
+
 /* The state handlers: 1 if the event is one this state expects (and was handled), else 0. */
 static int in_sending(uint32_t ev)
 {
@@ -277,7 +286,6 @@ static int in_sending(uint32_t ev)
   {
     ws_failrun_note(&tx_counts.air, 1);   /* the frame left: the radio works */
     tx_state = TX_ACK_WAIT;
-    ack_end_stale = 0;
     UTIL_TIMER_Start(&ack_timer);
     ws_radio_rx(0);
     return 1;
@@ -293,7 +301,7 @@ static int in_sending(uint32_t ev)
 static int in_ack_wait(uint32_t ev)
 {
   if (ev == EV_ACK_END) { ws_radio_standby(); no_reply(1); return 1; }
-  if (ev == EV_RX_DONE && handle_reply()) { UTIL_TIMER_Stop(&ack_timer); ack_end_stale = 1; next_item(); return 1; }
+  if (ev == EV_RX_DONE && handle_reply()) { window_closed(); next_item(); return 1; }
   if (ev != EV_RX_DONE && ev != EV_RX_ERROR && ev != EV_RX_TIMEOUT) return 0;
   /* Not the reply to this frame: foreign, forged, another frame's ACK, a payload CRC failure
      (rx-error) or a header failure (rx-timeout: ST's radio.c reports IRQ_HEADER_ERROR so).
@@ -342,15 +350,12 @@ static void handle(uint32_t ev)
 
 static void process(void)
 {
-  uint32_t ev = events_take(&pending_ev);
-  /* Two harmless races, not bugs (2026-10-15 review): a TxTimeout that fired with the TxDone in
-     the same batch (the frame left; ST stops the timer on TxDone, so a later one cannot come), and
-     an ack-end that fired while the reply that ended the window was being handled. Dropped here,
-     so `unexpected` stays a bug indicator. */
-  if ((ev & EV_TX_DONE) && (ev & EV_TX_TIMEOUT)) ev &= ~EV_TX_TIMEOUT;
-  if ((ev & EV_ACK_END) && ack_end_stale) { ev &= ~EV_ACK_END; ack_end_stale = 0; }
-  for (uint32_t bit = 1; ev; bit <<= 1)   /* bounded: EV_COUNT bits, lowest first */
-    if (ev & bit) { ev &= ~bit; handle(bit); }
+  batch = events_take(&pending_ev);
+  /* A TxTimeout that fired with its TxDone in the same pass is a race, not a bug: the frame left
+     (ST stops the timeout on TxDone, so a later one cannot come). Dropped, like a stale ack-end. */
+  if ((batch & EV_TX_DONE) && (batch & EV_TX_TIMEOUT)) batch &= ~EV_TX_TIMEOUT;
+  for (uint32_t bit = 1; batch; bit <<= 1)   /* bounded: EV_COUNT bits, lowest first */
+    if (batch & bit) { batch &= ~bit; handle(bit); }
 }
 BUSYMON_TASK(process)
 

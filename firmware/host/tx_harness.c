@@ -95,7 +95,7 @@ static void record_send(const uint8_t *buf, uint8_t size)
   frames_sent++;
 }
 static radio_status_t radio_send(uint8_t *buf, uint8_t size)
-{
+{ sim_radio_command();
   if (radio_send_fails > 0) { radio_send_fails--; return RADIO_STATUS_ERROR; }
   record_send(buf, size);
   /* h_radio_hang: the frame is accepted but never finishes, and the driver's timeout never comes either */
@@ -103,19 +103,19 @@ static radio_status_t radio_send(uint8_t *buf, uint8_t size)
   return RADIO_STATUS_OK;
 }
 static void radio_rx(uint32_t timeout)
-{
+{ sim_radio_command();
   radio_state = R_RX; last_rx_timeout = timeout;
   radio_timed = 1; radio_due = sim_now() + 65000U * SIM_UNITS_PER_MS;   /* the chip's single-mode timeout */
   /* ST: TimerSetValue (UTIL_TIMER_SetPeriod restarts a running timer), then TimerStart */
   if (timeout) { UTIL_TIMER_SetPeriod(&sw_rx_timer, timeout); if (!sw_rx_timer.running) UTIL_TIMER_Start(&sw_rx_timer); }
   else UTIL_TIMER_Stop(&sw_rx_timer);
 }
-static void radio_sleep(void) { radio_state = R_SLEEP; radio_timed = 0; }
-static void radio_standby(void) { radio_state = R_STANDBY; radio_timed = 0; }
+static void radio_sleep(void) { sim_radio_command(); radio_state = R_SLEEP; radio_timed = 0; }
+static void radio_standby(void) { sim_radio_command(); radio_state = R_STANDBY; radio_timed = 0; }
 const struct Radio_s Radio = { radio_init, radio_send, radio_rx, radio_sleep, radio_standby };
 int ws_radio_take_crc_error(void) { int f = radio_crc_flag; radio_crc_flag = 0; return f; }
 void ws_radio_configure(int continuous) { (void)continuous; }
-void ws_radio_sleep(void) { radio_sleep(); }
+void ws_radio_sleep(void) { ws_radio_irq_hold(); radio_sleep(); ws_radio_irq_release(); }
 /* The chip's own interrupts: TxDone after the air time, the single-mode receive timeout. */
 static int radio_pending(uint64_t *at) { *at = radio_due; return radio_timed; }
 static void radio_fire(void)

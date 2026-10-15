@@ -43,7 +43,7 @@ SAMPLE_MS = 15_000
 MINUTE_MS = 60_000
 FIRST_REPORT_MS = 3 * SAMPLE_MS + SENSOR_MS   # samples at 0, 15, 30, 45 s; the report follows the 4th
 ACK_WINDOW_MS = 2000
-GAP_MS = 50                 # before every further frame of an exchange
+GAP_MS = 50                 # before every frame of an exchange, the first included (radio sleep -> wake)
 TX_TIMEOUT_MS = 3000        # ST driver's transmit timeout (radio_cfg.h WS_TX_TIMEOUT_MS)
 REBOOT_DELAY_MS = 200
 TX_FAIL_LIMIT = 10          # transmit failures in a row the watchdog tolerates
@@ -59,8 +59,8 @@ SEEDS = (2026, 1, 2, 3, 4)
 
 
 def minute(k):
-    """When minute k's report is journaled and its exchange starts (the live frame goes on air)."""
-    return FIRST_REPORT_MS + k * MINUTE_MS
+    """When minute k's live frame goes on air: its report, then the exchange's first gap."""
+    return FIRST_REPORT_MS + GAP_MS + k * MINUTE_MS
 
 
 def exchange_limit_s(frames):
@@ -227,6 +227,7 @@ class TxStateMachine(unittest.TestCase):
         node = Node(self.library, self.tmp.name)
         self.addCleanup(lambda: self.assertEqual(node.lib.h_flash_ops_during_radio(), 0, 'flash written while the radio was busy'))
         self.addCleanup(lambda: self.assertEqual(node.lib.h_timer_start_refused(), 0, 'a running timer was started again (ST ignores that)'))
+        self.addCleanup(lambda: self.assertEqual(node.lib.h_unmasked_radio_calls(), 0, 'a radio command without the radio interrupt masked'))
         if not storm:   # only the storm task re-posts itself forever; anything else is a livelock
             self.addCleanup(lambda: self.assertEqual(node.lib.h_task_saturations(), 0, 'main-loop tasks never settled'))
         return node
@@ -350,8 +351,8 @@ class TxStateMachine(unittest.TestCase):
 
     def test_two_events_before_the_main_loop_are_both_handled_in_bit_order(self):
         # The ACK arrives, then the window timer fires before the main loop has run: both bits are
-        # pending. RxDone (bit 2) is handled before ack-end (bit 6), so the ACK counts and the late
-        # window end is only an unexpected event in the gap.
+        # pending. RxDone (bit 2) is handled before ack-end (bit 6), so the ACK counts, and the late
+        # window end is a race the reply already settled: dropped, not counted as unexpected.
         n = self.node()
         self.window(n)
         n.lib.h_hold(1)
@@ -361,17 +362,18 @@ class TxStateMachine(unittest.TestCase):
         out = n.out()
         self.assertIn('#ack epoch=', out)
         self.assertNotIn('#ack none', out)
-        self.assertIn('#error unexpected event=ack-end state=gap', out)
-        self.assertEqual(n.status()['unexpected'], '1')
-        # TxTimeout (bit 1) and TxDone (bit 0) together: the frame did leave, so the window opens.
+        self.assertNotIn('#error unexpected', out)
+        self.assertEqual((n.status()['unexpected'], n.state()), ('0', 'gap'))
+        # TxTimeout (bit 1) and TxDone (bit 0) together: the frame did leave, so the window opens and
+        # the timeout is dropped as a race (ST stops it on TxDone, so a later one cannot come).
         n = self.node()
         n.advance_to(minute(0) + 5)
         n.lib.h_hold(1)
         n.lib.h_raw_event(1)                           # the driver's timeout callback ...
         n.advance(n.air)                               # ... and the TxDone, both before the main loop
         n.lib.h_hold(0)
-        self.assertIn('#error unexpected event=tx-timeout state=ack-wait', n.out())
-        self.assertEqual((n.state(), n.radio()), ('ack-wait', R_RX))
+        self.assertNotIn('#error unexpected', n.out())
+        self.assertEqual((n.state(), n.radio(), n.status()['unexpected']), ('ack-wait', R_RX, '0'))
 
     def test_every_unlisted_state_event_pair_is_only_counted(self):
         # docs/firmware-event-model.md: every (state, event) pair not in its table is counted, printed
@@ -529,7 +531,7 @@ class TxStateMachine(unittest.TestCase):
 
     def test_flash_storm_stops_sampling_and_exchanges(self):
         n = self.node(storm=True)
-        n.advance_to(minute(0) - 5)                    # the minute's 4th measurement is in flight
+        n.advance_to(FIRST_REPORT_MS - 5)              # the minute's 4th measurement is in flight
         n.lib.h_line(b'TEST-FLASH-STORM')
         self.assertIn('#storm start', n.out())
         frames, starts = n.sent(), n.lib.h_sensor_starts()

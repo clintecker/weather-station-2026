@@ -343,3 +343,13 @@ void sim_advance(uint32_t ms)
   move_to(until);
   sim_run_tasks();
 }
+
+/* ---- radio interrupt masking (tx_harness.c, rx_harness.c) ----
+   The firmware masks the radio interrupt around every main-loop radio command (radio_cfg.h,
+   2026-10-15 review M1); a harness radio command made without it is counted (tests require none). */
+static int radio_irq_held;
+static uint32_t unmasked_radio_calls;
+void ws_radio_irq_hold(void) { radio_irq_held++; }
+void ws_radio_irq_release(void) { radio_irq_held--; }
+void sim_radio_command(void) { if (radio_irq_held <= 0) unmasked_radio_calls++; }
+uint32_t h_unmasked_radio_calls(void) { return unmasked_radio_calls; }
