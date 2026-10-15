@@ -89,6 +89,21 @@ static uint32_t max_epoch;
 static uint64_t ctr_reserved, ctr_next;
 static uint32_t lost_total, abandoned_total;
 
+/* A 32-bit total only moves up, and only to a value that fits. */
+static void raise32(uint32_t *total, uint64_t val) {
+ if (val > *total && val <= 0xFFFFFFFFULL) *total = (uint32_t)val;
+}
+/* Folds one readable meta record into the RAM maxima; unknown types are ignored. */
+static void meta_absorb(uint64_t v) {
+ uint64_t val = v & 0x00FFFFFFFFFFFFFFULL;
+ switch (v >> 56) {
+ case META_EPOCH: raise32(&max_epoch, val); break;
+ case META_CTR: if (val > ctr_reserved) ctr_reserved = val; break;
+ case META_LOST: raise32(&lost_total, val); break;
+ case META_ABAND: raise32(&abandoned_total, val); break;
+ default: break;
+ }
+}
 static int meta_scan(uint32_t page, uint32_t *gen, uint32_t *last) {
  uint32_t a = WS_PAGE_ADDR(page); int bad = 0;
  uint64_t h = rd64(a, &bad);
@@ -97,36 +112,33 @@ static int meta_scan(uint32_t page, uint32_t *gen, uint32_t *last) {
  for (uint32_t i = 1; i < META_DWORDS; i++) {
   int b = 0; uint64_t v = rd64(a + 8 * i, &b);
   if (!b && v == ERASED) continue;
-  *last = i;
-  if (b) continue;
-  uint64_t val = v & 0x00FFFFFFFFFFFFFFULL;
-  if ((v >> 56) == META_EPOCH && val > max_epoch && val <= 0xFFFFFFFFULL) max_epoch = (uint32_t)val;
-  if ((v >> 56) == META_CTR && val > ctr_reserved) ctr_reserved = val;
-  if ((v >> 56) == META_LOST && val > lost_total && val <= 0xFFFFFFFFULL) lost_total = (uint32_t)val;
-  if ((v >> 56) == META_ABAND && val > abandoned_total && val <= 0xFFFFFFFFULL) abandoned_total = (uint32_t)val;
+  *last = i; /* an unreadable double-word still occupies its position */
+  if (!b) meta_absorb(v);
  }
+ return 0;
+}
+/* Compact into the other page; its header is written last so a torn compaction
+   leaves the current page authoritative. The other page still carries an older valid header:
+   zero it first (programming all-zeros over data is allowed), so an erase cut part way can
+   never leave half-erased values under a header boot would trust (firmware review finding 4:
+   junk could raise the counter past 2^40 and disable the node for good). */
+static int meta_compact(void) {
+ uint32_t other = meta_active == WS_META_PAGE_A ? WS_META_PAGE_B : WS_META_PAGE_A;
+ uint32_t a = WS_PAGE_ADDR(other);
+ int bad = 0;
+ if (rd64(a, &bad) != ERASED && prog64(a, 0)) return -1;
+ if (erase_page(other) ||
+     prog64(a + 8, (uint64_t)META_EPOCH << 56 | max_epoch) ||
+     prog64(a + 16, (uint64_t)META_CTR << 56 | ctr_reserved) ||
+     prog64(a + 24, (uint64_t)META_LOST << 56 | lost_total) ||
+     prog64(a + 32, (uint64_t)META_ABAND << 56 | abandoned_total) ||
+     prog64(a, (uint64_t)META_MAGIC << 32 | (meta_gen + 1))) return -1;
+ meta_active = other; meta_gen++; meta_pos = 5;
  return 0;
 }
 static int meta_append(uint32_t type, uint64_t value) {
  if (value >> 56) return -1;
- if (meta_pos >= META_DWORDS) {
-  /* Compact into the other page; its header is written last so a torn compaction
-     leaves the current page authoritative. The other page still carries an older valid header:
-     zero it first (programming all-zeros over data is allowed), so an erase cut part way can
-     never leave half-erased values under a header boot would trust (firmware review finding 4:
-     junk could raise the counter past 2^40 and disable the node for good). */
-  uint32_t other = meta_active == WS_META_PAGE_A ? WS_META_PAGE_B : WS_META_PAGE_A;
-  uint32_t a = WS_PAGE_ADDR(other);
-  int bad = 0;
-  if (rd64(a, &bad) != ERASED && prog64(a, 0)) return -2;
-  if (erase_page(other) ||
-      prog64(a + 8, (uint64_t)META_EPOCH << 56 | max_epoch) ||
-      prog64(a + 16, (uint64_t)META_CTR << 56 | ctr_reserved) ||
-      prog64(a + 24, (uint64_t)META_LOST << 56 | lost_total) ||
-      prog64(a + 32, (uint64_t)META_ABAND << 56 | abandoned_total) ||
-      prog64(a, (uint64_t)META_MAGIC << 32 | (meta_gen + 1))) return -2;
-  meta_active = other; meta_gen++; meta_pos = 5;
- }
+ if (meta_pos >= META_DWORDS && meta_compact()) return -2;
  if (prog64(WS_PAGE_ADDR(meta_active) + 8 * meta_pos, (uint64_t)type << 56 | value)) { meta_pos++; return -3; }
  meta_pos++;
  return 0;
@@ -207,6 +219,10 @@ static uint16_t crc16(const uint8_t *d, unsigned n) {
  while (n--) { c ^= (uint16_t)(*d++ << 8); for (int b = 0; b < 8; b++) c = (c & 0x8000) ? (uint16_t)(c << 1 ^ 0x1021) : (uint16_t)(c << 1); }
  return c;
 }
+/* The commit double-word: magic and the plaintext CRC in the upper half, zeros below. */
+static uint64_t slot_commit_word(const uint8_t plain[WS_OBS_PLAIN_MAX]) {
+ return (uint64_t)SLOT_MAGIC << 48 | (uint64_t)crc16(plain, WS_OBS_PLAIN_MAX) << 32;
+}
 static int journal_new_page(uint32_t page, uint32_t seq) {
  uint32_t dropped = 0;
  for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE; s++) dropped += (uint32_t)is_pending(page * JOURNAL_SLOTS_PER_PAGE + s);
@@ -219,16 +235,49 @@ static int journal_new_page(uint32_t page, uint32_t seq) {
  page_seq[page] = seq;
  return 0;
 }
-int store_journal_init(void) {
+/* Opens a fresh page after the head once the head is full (append, and init after a cut). */
+static int journal_advance_if_full(void) {
+ if (head_slot < JOURNAL_SLOTS_PER_PAGE) return 0;
+ uint32_t next = (head + 1) % WS_JOURNAL_PAGES;
+ if (journal_new_page(next, page_seq[head] + 1)) return -1;
+ head = next; head_slot = 0;
+ return 0;
+}
+/* Reads every page header into page_seq (0: not a journal page) and points head at the
+   highest sequence, the later page on a tie. Returns 0 when no page is a journal page. */
+static int journal_find_head(void) {
  uint32_t best = 0; int found = 0;
- journal_ready = 0;
- memset(pending, 0, sizeof pending); n_pending = n_lost = n_burned = 0;
  for (uint32_t p = 0; p < WS_JOURNAL_PAGES; p++) {
   int bad = 0; uint64_t h = rd64(WS_PAGE_ADDR(WS_JOURNAL_FIRST + p), &bad);
   page_seq[p] = (!bad && (h >> 32) == JPG_MAGIC && (uint32_t)h) ? (uint32_t)h : 0;
   if (page_seq[p] && page_seq[p] >= best) { best = page_seq[p]; head = p; found = 1; }
  }
- if (!found) {
+ return found;
+}
+/* Boot scan of one slot: 0 if blank, else 1 after counting it burned (torn or unreadable data)
+   or, when committed and not acknowledged, pending. */
+static int journal_scan_slot(uint32_t p, uint32_t s) {
+ uint32_t a = slot_addr(p, s); int bad_data = 0, bad_ack = 0, erased = 1; uint64_t d[JOURNAL_PLAIN_DW + 1], ack;
+ for (uint32_t k = 0; k <= JOURNAL_PLAIN_DW; k++) { d[k] = rd64(a + 8 * k, &bad_data); erased &= d[k] == ERASED; }
+ ack = rd64(a + ACK_OFF, &bad_ack);
+ if (!bad_data && !bad_ack && erased && ack == ERASED) return 0;
+ uint8_t plain[WS_OBS_PLAIN_MAX]; memcpy(plain, d, sizeof plain);
+ /* An ECC fault confined to the ACK word means the ACK program was interrupted; the
+    host had already committed (it ACKed), so treating it as acknowledged loses nothing. */
+ if (bad_data || (d[JOURNAL_PLAIN_DW] >> 32) != (slot_commit_word(plain) >> 32)) n_burned++;
+ else if (!bad_ack && ack == ERASED) { set_pending(p * JOURNAL_SLOTS_PER_PAGE + s, 1); n_pending++; }
+ return 1;
+}
+/* Scans a journal page's slots; returns one past the last used slot (0 if none). */
+static uint32_t journal_scan_page(uint32_t p) {
+ uint32_t last_used = 0;
+ for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE; s++) if (journal_scan_slot(p, s)) last_used = s + 1;
+ return last_used;
+}
+int store_journal_init(void) {
+ journal_ready = 0;
+ memset(pending, 0, sizeof pending); n_pending = n_lost = n_burned = 0;
+ if (!journal_find_head()) {
   head = 0; head_slot = 0;
   if (journal_new_page(0, 1)) return -1;
   journal_ready = 1;
@@ -236,47 +285,26 @@ int store_journal_init(void) {
  }
  for (uint32_t p = 0; p < WS_JOURNAL_PAGES; p++) {
   if (!page_seq[p]) continue;
-  uint32_t last_used = 0;
-  for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE; s++) {
-   uint32_t a = slot_addr(p, s); int bad_data = 0, bad_ack = 0, erased = 1; uint64_t d[JOURNAL_PLAIN_DW + 1], ack;
-   for (uint32_t k = 0; k <= JOURNAL_PLAIN_DW; k++) { d[k] = rd64(a + 8 * k, &bad_data); erased &= d[k] == ERASED; }
-   ack = rd64(a + ACK_OFF, &bad_ack);
-   if (!bad_data && !bad_ack && erased && ack == ERASED) continue;
-   last_used = s + 1;
-   uint64_t commit = d[JOURNAL_PLAIN_DW];
-   uint8_t plain[WS_OBS_PLAIN_MAX]; memcpy(plain, d, sizeof plain);
-   if (bad_data || (commit >> 48) != SLOT_MAGIC || (uint16_t)(commit >> 32) != crc16(plain, sizeof plain)) { n_burned++; continue; }
-   /* An ECC fault confined to the ACK word means the ACK program was interrupted; the
-      host had already committed (it ACKed), so treating it as acknowledged loses nothing. */
-   if (!bad_ack && ack == ERASED) { set_pending(p * JOURNAL_SLOTS_PER_PAGE + s, 1); n_pending++; }
-  }
+  uint32_t last_used = journal_scan_page(p);
   if (p == head) head_slot = last_used;
  }
- if (head_slot >= JOURNAL_SLOTS_PER_PAGE) {
-  /* The head is full, so the next page's recycle may have been cut mid-erase, which can wipe
-     an ACK word but leave its record: finish the recycle before trusting that page. */
-  uint32_t next = (head + 1) % WS_JOURNAL_PAGES;
-  if (journal_new_page(next, page_seq[head] + 1)) return -1;
-  head = next; head_slot = 0;
- }
+ /* The head is full, so the next page's recycle may have been cut mid-erase, which can wipe
+    an ACK word but leave its record: finish the recycle before trusting that page. */
+ if (journal_advance_if_full()) return -1;
  journal_ready = 1;
  return 0;
 }
 int store_journal_append(const uint8_t plain[WS_OBS_PLAIN_MAX], jref_t *ref) {
  uint64_t d[JOURNAL_PLAIN_DW] = { 0 };
  if (!meta_ready || !journal_ready) return STORE_ENOTREADY; /* a wrap persists the lost total */
- if (head_slot >= JOURNAL_SLOTS_PER_PAGE) {
-  uint32_t next = (head + 1) % WS_JOURNAL_PAGES;
-  if (journal_new_page(next, page_seq[head] + 1)) return -1;
-  head = next; head_slot = 0;
- }
+ if (journal_advance_if_full()) return -1;
  uint32_t a = slot_addr(head, head_slot);
  ref->page = (uint16_t)head; ref->slot = (uint16_t)head_slot;
  head_slot++; /* consumed even if programming fails: never reuse a possibly torn slot */
  memcpy(d, plain, WS_OBS_PLAIN_MAX);
  for (uint32_t k = 0; k < JOURNAL_PLAIN_DW; k++)
   if (prog64(a + 8 * k, d[k])) { n_burned++; return -2; }
- if (prog64(a + COMMIT_OFF, (uint64_t)SLOT_MAGIC << 48 | (uint64_t)crc16(plain, WS_OBS_PLAIN_MAX) << 32)) { n_burned++; return -2; }
+ if (prog64(a + COMMIT_OFF, slot_commit_word(plain))) { n_burned++; return -2; }
  set_pending(BIT(*ref), 1); n_pending++;
  return 0;
 }
@@ -295,18 +323,22 @@ int store_journal_ack(jref_t ref) {
  set_pending(i, 0); n_pending--;
  return 0;
 }
+/* Appends page p's pending refs, in slot order and skipping 'except', to out[n..max). */
+static unsigned page_pending(uint32_t p, jref_t *out, unsigned n, unsigned max, const jref_t *except) {
+ for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE && n < max; s++) {
+  jref_t r = { (uint16_t)p, (uint16_t)s };
+  if (!is_pending(BIT(r))) continue;
+  if (except && except->page == r.page && except->slot == r.slot) continue;
+  out[n++] = r;
+ }
+ return n;
+}
 unsigned store_journal_oldest(jref_t *out, unsigned max, const jref_t *except) {
  unsigned n = 0;
  if (!journal_ready) return 0;
  for (uint32_t k = 1; k <= WS_JOURNAL_PAGES && n < max; k++) {
   uint32_t p = (head + k) % WS_JOURNAL_PAGES; /* oldest page first, head page last */
-  if (!page_seq[p]) continue;
-  for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE && n < max; s++) {
-   jref_t r = { (uint16_t)p, (uint16_t)s };
-   if (!is_pending(BIT(r))) continue;
-   if (except && except->page == r.page && except->slot == r.slot) continue;
-   out[n++] = r;
-  }
+  if (page_seq[p]) n = page_pending(p, out, n, max, except);
  }
  return n;
 }
