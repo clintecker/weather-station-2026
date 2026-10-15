@@ -129,6 +129,7 @@ static void radio_rx(uint32_t timeout)
 static void radio_sleep(void) { radio_state = R_SLEEP; radio_timed = 0; }
 const struct Radio_s Radio = { radio_init, radio_send, radio_rx, radio_sleep };
 void ws_radio_configure(int continuous) { (void)continuous; }
+void ws_radio_sleep(void) { radio_sleep(); }
 
 /* ---- flash: the real node_store.c over sim_flash, with the radio-idle check ---- */
 static sim_flash S;

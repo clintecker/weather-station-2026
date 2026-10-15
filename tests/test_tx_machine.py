@@ -164,7 +164,7 @@ class TxStateMachine(unittest.TestCase):
         obs = n.log.count('#ack epoch=')
         self.assertEqual(obs, 3)                       # live + the 2 backlog readings
         sends = [n.lib.h_send_at(i) for i in range(start, n.lib.h_frames_sent())]
-        self.assertTrue(all(b - a >= 30 + 50 for a, b in zip(sends, sends[1:])), sends)  # air time + gap
+        self.assertTrue(all(b - a >= 30 + 50 for a, b in zip(sends, sends[1:], strict=False)), sends)  # air time + gap
         self.assertEqual(n.timing()['unexpected'], '0')
 
     def test_a_stray_frame_keeps_the_rest_of_the_window(self):

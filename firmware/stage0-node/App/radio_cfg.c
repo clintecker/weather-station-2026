@@ -22,3 +22,14 @@ void ws_radio_last_packet(uint8_t buf[255], uint8_t *len, int8_t *rssi, int8_t *
 }
 
 int8_t ws_radio_rssi_now(void) { return SUBGRF_GetRssiInst(); }
+
+/* ST's RadioSleep() (radio.c) is SUBGRF_SetSleep + RADIO_DELAY_MS(2), a 2 ms HAL_Delay busy-wait
+   (radio_conf.h) after every exchange. The wait only guards a command sent right after sleep; the
+   next one here comes at the next minute's exchange, and SUBGRF wakes the chip and waits on its
+   BUSY line first (SUBGHZ_CheckDeviceReady). Same sleep (warm start), no wait. */
+void ws_radio_sleep(void)
+{
+  SleepParams_t params = { 0 };
+  params.Fields.WarmStart = 1;
+  SUBGRF_SetSleep(params);
+}

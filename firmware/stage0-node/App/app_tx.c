@@ -279,7 +279,7 @@ static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr
 static void finish_exchange(void);
 
 /* The exchange (and any health report in flight) is over: the radio sleeps until the next minute. */
-static void radio_idle(void) { tx_state = TX_IDLE; Radio.Sleep(); }
+static void radio_idle(void) { tx_state = TX_IDLE; ws_radio_sleep(); }
 
 /* The next frame goes after INTER_FRAME_MS, from the gap timer: nothing waits meanwhile. */
 static void gap_before(int then) { gap_then = then; tx_state = TX_GAP; UTIL_TIMER_Start(&gap_timer); }

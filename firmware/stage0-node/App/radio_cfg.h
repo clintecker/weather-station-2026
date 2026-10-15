@@ -19,4 +19,6 @@ void ws_radio_configure(int continuous);
    (length, bytes, packet RSSI/SNR), valid after a payload CRC error; and the channel RSSI now. */
 void ws_radio_last_packet(uint8_t buf[255], uint8_t *len, int8_t *rssi, int8_t *snr);
 int8_t ws_radio_rssi_now(void);
+/* Radio.Sleep() without its 2 ms busy-wait (radio_cfg.c). */
+void ws_radio_sleep(void);
 #endif

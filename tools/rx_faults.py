@@ -45,7 +45,7 @@ def iso(ts):
 
 def hamming(a, b):
     """Differing bits; each byte one frame has past the other's end counts 8."""
-    return sum(bin(x ^ y).count('1') for x, y in zip(a, b)) + 8 * abs(len(a) - len(b))
+    return sum(bin(x ^ y).count('1') for x, y in zip(a, b, strict=False)) + 8 * abs(len(a) - len(b))
 
 
 def header(data):
@@ -76,7 +76,7 @@ def classify(fault, accepted):
 
 def load(db, since=0.0, window_s=WINDOW_S):
     cols = ('id', 'station', 'received_at', 'kind', 'length', 'rssi_dbm', 'snr_db', 'data')
-    faults = [dict(zip(cols, r)) for r in db.execute(
+    faults = [dict(zip(cols, r, strict=True)) for r in db.execute(
         f'SELECT {",".join(cols)} FROM rx_faults WHERE received_at>=? ORDER BY received_at,id', (since,))]
     marks = ','.join('?' * len(ACCEPTED))
     rows = []
