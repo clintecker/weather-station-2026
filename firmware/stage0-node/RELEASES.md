@@ -14,6 +14,24 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
 
+## 586001994b09 — 2026-10-15 (bench, interrupt-driven, protocol draft 5)
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (33,224 B) | `deb34fc06eb2217593dfc1f909dadd3cdc266cd1ffda1f1848363fa4bc24dafb` |
+| `build/rx/stage0-rx.elf` (path-dependent) | `884fd5eed59c69706b2d212cf988080e02e57f13c1414993a1b0ebb0851d5834` |
+| `build/tx/stage0-tx.bin` (55,744 B) | `6d88406f25323050fa5346d6364ee1b788a06ea8f2409ea940a7b712f5b50a65` |
+| `build/tx/stage0-tx.elf` (path-dependent) | `a5ecbd5ff5f15b74138b2ee5f5069e0874696e17e4ffd44bbc3bd1c27891e35e` |
+
+- Source: commit `586001994b09`. Changes since bc5e6ede429c: 15-s T/RH sampling with a minute summary (35-byte plaintext, 56-byte journal slots: a new journal format; older pages are ignored); review fixes FW2-FW8; TX flash 54,832 -> 51,080 B before the rework; key wipes; and the **interrupt-driven rework** (docs/firmware-event-model.md): no run-time busy-wait (`make waits`), explicit TX exchange state machine with the firmware's own ACK window, interrupt-mode SHT45 driver, run-time timing (`#timing`, RX `#alive`), every failed reception logged with its bytes (`#rx crc`, `#rx hdr`), flash-writing commands refused during an exchange. Reviewed by five independent reviewers before release.
+- Inputs: as a07f498 (vendor pins verified by `tools/fetch-vendor.sh`). Flash budget: TX 85.1 %, RX 50.7 %. Stack bound: TX 5,952 B (73 %), RX 2,588 B (32 %).
+- Reproducibility: two clean builds gave identical `.bin` hashes.
+- Flashed 2026-10-15 ~19:00Z: RX → board B `0016001E4142500E20353451`, TX → board A `003B00194142500E20353451` (on the gateway Mac's USB for flashing). TX first booted with the run-d5 key (`kcv=5618eb`, epoch 39, ctr 11265, `kat=pass`); one reading pending from the old firmware (taken after the rehearsal, while the gateway was stopped) was not carried over by the new journal format.
+- First hardware timings (`#timing`, TX): flash page erase **22,057 µs**, double-word program **93 µs**, longest task 56 µs (`sensor_task`), longest interrupt 39 µs (I2C2_EV).
+- Fresh start (Clint): `run-d5` archived intact as `run-d5-archive-2026-10-15/`; new run directory `run-d6` (new key, same station 1, same MQTT settings). TX `WIPE ERASE-ALL-NODE-STATE` run by Clint (`#wipe ok`, counter kept at 11521), then `provision-node`: `kcv=e03059`, `epoch=40`, `ctr=11521`, `kat=pass`, `#sensor ok t=2343 rh=5191`.
+- Bench check 19:08Z: gateway `serve --directory run-d6`; the first two readings (epoch 40, seq 0 from the journal and seq 1) stored and acknowledged, RX -29 dBm / SNR 13. Startup rejections: 4 `InvalidTag` (old-key frames the RX had queued) and 1 partial line at port open.
+- Not an H01 release: radio settings are bench values.
+
 ## bc5e6ede429c — 2026-10-14 (bench, protocol draft 5, SHT45 wired)
 
 | Artifact | SHA-256 |
