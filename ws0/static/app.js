@@ -35,6 +35,7 @@
     histSeq: 0,       // request sequence: only the newest history request may land
     histLoadedAt: 0,  // Date.now() of the last history request (bucketed reloads are spaced from it)
     histPending: false, histError: null, histBackoff: 2000,
+    snapshotOk: false, snapshotBackoff: 2000,   // a resumed stream reloads the snapshot until one has loaded
     // S.range is the range last asked for; S.hist.range the one the data on screen belongs to.
   };
 
@@ -157,7 +158,8 @@
   }
   function signOut(message) {
     S.running = false; S.token = null; S.lastId = null; S.epoch += 1;
-    histReplay = null; S.histPending = false; clearTimeout(retryTimer);
+    histReplay = null; S.histPending = false; clearTimeout(retryTimer); clearTimeout(snapshotTimer);
+    S.snapshotOk = false; S.snapshotBackoff = 2000;
     removeItem('session', TOKEN_KEY);
     if (S.abort) S.abort.abort();
     setConn('off');
@@ -268,7 +270,7 @@
       case 'hello':
         S.skew = d.server_time - Date.now() / 1000;
         setConn('live');
-        if (d.resumed) refreshStatus(); else loadSnapshot();
+        if (d.resumed && S.snapshotOk) refreshStatus(); else loadSnapshot();
         break;
       case 'resync':
         loadSnapshot();
@@ -304,9 +306,12 @@
   }
 
   // ---------------------------------------------------------------- snapshot loading
-  let snapshotBusy = null;
+  // A failed snapshot is shown and retried with backoff (and by the next hello, resumed or not).
+  let snapshotBusy = null, snapshotTimer = null;
   async function loadSnapshot() {
     if (snapshotBusy) return snapshotBusy;
+    clearTimeout(snapshotTimer); snapshotTimer = null;
+    const epoch = S.epoch;
     snapshotBusy = (async () => {
       try {
         const [status, frames, events] = await Promise.all([
@@ -316,10 +321,17 @@
         S.frames = frames.rows;
         S.events = events.rows;
         invalidate('live', 'frames', 'events');
-        await loadHistory();
+        S.snapshotOk = true; S.snapshotBackoff = 2000;
+        await loadHistory();   // retries its own failures
       } catch (e) {
-        if (e instanceof Unauthorized) signOut('The gateway rejected the token.');
-        else console.warn('snapshot:', e.message);
+        if (epoch !== S.epoch) return;
+        if (e instanceof Unauthorized) { signOut('The gateway rejected the token.'); return; }
+        console.warn('snapshot:', e.message);
+        S.snapshotOk = false;
+        if (!S.hist) $('hist-note').textContent = `Could not load the dashboard: ${e.message} (retrying)`;
+        const delay = S.snapshotBackoff;
+        S.snapshotBackoff = Math.min(S.snapshotBackoff * 2, 60000);
+        snapshotTimer = setTimeout(() => { if (S.running && epoch === S.epoch) loadSnapshot(); }, delay);
       } finally {
         snapshotBusy = null;
       }
@@ -360,9 +372,19 @@
   // Status chips: one fixed slot each. A chip's level and text (what the live region announces)
   // change only with the state; its detail (ages, clock offset) is visual only and outside the
   // live region, so a screen reader hears a state change once, not every second.
+  // The visible chips are the readable state; the sr-only live region only carries changes (not
+  // the first state) and is emptied again after SAID_HOLD_MS, so reading the page in browse mode
+  // meets each chip once, not twice. Emptying is a removal, which a polite region does not announce.
   const ICON = { good: '✓', warning: '!', critical: '✕', neutral: '•' };
   const CHIP_SLOTS = ['alarm', 'reading', 'quality', 'receiver', 'clock', 'link', 'energy', 'overdue'];
+  const SAID_HOLD_MS = 10000;
   const chips = {};   // slot -> { box, icon, text, detail, said, key }
+  let saidTimer = null;
+  function announce(c, s) {
+    setText(c.said, s);
+    clearTimeout(saidTimer);
+    saidTimer = setTimeout(() => { for (const x of Object.values(chips)) setText(x.said, ''); }, SAID_HOLD_MS);
+  }
 
   function readingChip(latest) {
     if (!latest || latest.reason === 'no_observation') return ['neutral', 'No readings yet'];
@@ -426,7 +448,7 @@
         c.key = key;
         c.box.hidden = !level;
         if (level) { c.box.dataset.level = level; setText(c.icon, ICON[level]); setText(c.text, text); }
-        if (!first) setText(c.said, level ? `${text}. ` : '');
+        if (!first) { if (level) announce(c, `${text}. `); else setText(c.said, ''); }
       }
       setText(c.detail, detail || '');
     }

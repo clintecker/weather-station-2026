@@ -59,7 +59,9 @@ Every event has an id `<gateway run>-<n>`. On reconnect the page sends the last 
 `Last-Event-ID`; the gateway replays everything after it from a buffer of the last 5,000 events.
 If that is impossible (the gateway restarted, or the page was away too long) the gateway sends
 `resync` and the page reloads its snapshot from the history endpoints, so nothing is missed either
-way. At most 8 streams are open at once (each holds one server thread); a ninth gets HTTP 503.
+way. A snapshot or history load that fails is shown on the page and retried (back-off 2 s doubling
+to 60 s; history requests time out after 30 s); until a snapshot has loaded, a resumed stream
+reloads it too. At most 8 streams are open at once (each holds one server thread); a ninth gets HTTP 503.
 
 ## Where the data comes from
 

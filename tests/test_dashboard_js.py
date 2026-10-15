@@ -23,14 +23,15 @@ const APP = fs.readFileSync(process.argv[2], 'utf8');
 const T0 = 1760400000;   // fake "now" (unix seconds)
 
 function makeWorld() {
-  const W = { created: 0, liveMutations: 0, fetches: [], historyQueue: null, clock: T0 * 1000 };
+  const W = { created: 0, liveMutations: 0, said: [], fetches: [], historyQueue: null, clock: T0 * 1000 };
   // ---------------------------------------------------------------- stub DOM
   class Node {
     constructor(tag) { this.tagName = tag; this.childNodes = []; this.parentNode = null; this.attrs = {}; this.dataset = {}; this.style = {}; this.listeners = {}; this._text = ''; this.hidden = false; }
     get nodeType() { return this.tagName === '#text' ? 3 : 1; }
     get firstChild() { return this.childNodes[0] || null; }
     get children() { return this.childNodes.filter((c) => c.tagName !== '#text'); }
-    _mut() { for (let n = this; n; n = n.parentNode) if (n.attrs['aria-live']) { W.liveMutations++; return; } }
+    _mut() { for (let n = this; n; n = n.parentNode) if (n.attrs['aria-live']) { W.liveMutations++; return true; } return false; }
+    _say(v) { if (this._mut() && String(v) !== '') W.said.push(String(v)); }   // text written into a live region
     _adopt(k) {
       if (typeof k === 'string' || typeof k === 'number') { const t = new Node('#text'); t._text = String(k); W.created++; k = t; }
       if (k.tagName === '#fragment') { const kids = k.childNodes.slice(); k.childNodes = []; return kids.map((c) => this._adopt(c)); }
@@ -47,8 +48,8 @@ function makeWorld() {
     get lastChild() { return this.childNodes[this.childNodes.length - 1] || null; }
     get nextSibling() { const p = this.parentNode; if (!p) return null; return p.childNodes[p.childNodes.indexOf(this) + 1] || null; }
     get textContent() { return this.tagName === '#text' ? this._text : this.childNodes.map((c) => c.textContent).join(''); }
-    set textContent(v) { for (const c of this.childNodes) c.parentNode = null; this.childNodes = []; if (this.tagName === '#text') this._text = String(v); else if (String(v) !== '') { const t = new Node('#text'); t._text = String(v); t.parentNode = this; this.childNodes.push(t); } this._mut(); }
-    get data() { return this._text; } set data(v) { this._text = String(v); this._mut(); }
+    set textContent(v) { for (const c of this.childNodes) c.parentNode = null; this.childNodes = []; if (this.tagName === '#text') this._text = String(v); else if (String(v) !== '') { const t = new Node('#text'); t._text = String(v); t.parentNode = this; this.childNodes.push(t); } this._say(v); }
+    get data() { return this._text; } set data(v) { this._text = String(v); this._say(v); }
     get nodeValue() { return this._text; } set nodeValue(v) { this._text = String(v); this._mut(); }
     setAttribute(k, v) { this.attrs[k] = String(v); if (k === 'class') this.className = String(v); if (k === 'hidden') this.hidden = true; this._mut(); }
     getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
@@ -131,7 +132,8 @@ function makeWorld() {
         if (W.historyQueue) W.historyQueue.push({ url, resolve: answer }); else answer(W.responses.history(url));
       });
     }
-    return Promise.resolve(json(W.responses[path]));
+    const v = W.responses[path];
+    return Promise.resolve(v && v.__status ? { status: v.__status, ok: false, json: async () => ({}) } : json(v));
   };
 
   const ctx = {
@@ -217,6 +219,7 @@ async function main() {
   {
     const W = makeWorld();
     await boot(W);
+    out.said_on_first_render = W.said.slice();
     out.charts = W.find(W.byId('c-sensors'), (n) => n.tagName === 'figure').length;
     let c = W.created; W.resize(); await W.advance(400); out.nodes_per_renderHistory = W.created - c;
     out.circles_after_render = W.find(W.byId('c-link'), (n) => n.tagName === 'circle').length + W.find(W.byId('c-sensors'), (n) => n.tagName === 'circle').length;
@@ -246,10 +249,13 @@ async function main() {
     const sub = () => W.find(W.byId('readings'), (n) => n.className === 'sub').map((n) => n.textContent)[0];
     const ageBefore = sub();
     live = W.liveMutations;
+    const said = W.said.length;
     await W.advance(200000);
     out.age_text = [ageBefore, sub()];
     out.live_region_mutations_on_stale = W.liveMutations - live;
-    out.live_region_text = W.byId('chips-live').textContent;
+    out.announced_on_stale = W.said.slice(said);
+    await W.advance(11000);
+    out.live_region_text_later = W.byId('chips-live').textContent;
     out.tile_labels = W.find(W.byId('readings'), (n) => n.className === 'label').map((n) => n.textContent);
     out.token_in_url = W.fetches.some((f) => /x{43}/.test(f.url));
   }
@@ -398,6 +404,30 @@ async function review() {
     W.ranges[0].click(); await W.advance(40000);
     r.hung_request = { note: W.byId('hist-note').textContent, requests: histCount(W) };
   }
+  {  // (4b) the snapshot itself fails (not only its history): shown, retried, and reloaded by a resumed hello
+    const W = makeWorld();
+    W.responses['/v1/radio'] = { __status: 500 };
+    W.responses['/v1/status'] = statusAt(T0);
+    W.responses['/v1/gateway/events'] = { rows: [] };
+    W.responses.history = (url) => { const [f, t] = parseRange(url); return history(f, t); };
+    W.start(); await W.settle();
+    W.sse('hello', { server_time: W.clock / 1000, resumed: false }); await W.advance(500);
+    const note = W.byId('hist-note').textContent;
+    W.sse('hello', { server_time: W.clock / 1000, resumed: true }); await W.advance(500);   // the stream came back, the API not yet
+    const radioAfterResume = W.fetches.filter((f) => f.url.startsWith('/v1/radio')).length;
+    W.responses['/v1/radio'] = { rows: [] };
+    await W.advance(10000);
+    r.snapshot_failure = { note, radio_after_resume: radioAfterResume, charts: W.find(W.byId('c-sensors'), (n) => n.tagName === 'figure').length };
+  }
+  {  // (7) reconstructed time: dashed line and a dashed legend swatch
+    const W = makeWorld();
+    await boot(W, (url) => { const [f, t] = parseRange(url); const h = history(f, t); h.observations.basis = h.observations.basis.map(() => 'reconstructed'); return h; });
+    const fig = chartBy(W, 'c-sensors', 'Temperature');
+    r.reconstructed = {
+      swatch: W.find(fig, (n) => /(^| )sw( |$)/.test(n.className) && n.parentNode && n.parentNode.textContent === 'dashed: reconstructed time').map((n) => n.className),
+      dashed_line: W.find(fig, (n) => n.tagName === 'path' && /\bline\b/.test(n.className) && /\bdash\b/.test(n.className)).length,
+    };
+  }
   return r;
 }
 
@@ -436,9 +466,19 @@ class DashboardScript(unittest.TestCase):
 
     def test_state_change_is_announced_once(self):
         # the reading goes stale and the receiver silent: two announcements, not one per second
+        # (plus, at most, emptying the region again afterwards)
+        said = self.out['announced_on_stale']
+        self.assertLessEqual(len(said), 2)
         self.assertLessEqual(self.out['live_region_mutations_on_stale'], 4)
-        self.assertIn('Reading stale', self.out['live_region_text'])
-        self.assertNotIn('ago', self.out['live_region_text'])
+        self.assertTrue(any('Reading stale' in s for s in said), said)
+        self.assertFalse(any('ago' in s for s in said), said)
+
+    def test_first_render_is_not_announced(self):
+        self.assertEqual(self.out['said_on_first_render'], [])
+
+    def test_announcement_does_not_linger_to_be_read_twice(self):
+        # the visible chips are the readable state; the live region is emptied after announcing
+        self.assertEqual(self.out['live_region_text_later'], '')
 
     def test_replay_burst_redraws_once(self):
         self.assertLess(self.out['nodes_per_replayed_event'], 20)   # was ~176
@@ -493,6 +533,20 @@ class DashboardScript(unittest.TestCase):
         self.assertEqual(r['events_after'], r['events_before'])   # no event line per bad reception
         self.assertEqual(r['overruns'], ['3', 'warning'])
         self.assertEqual(r['moved_on'], ['0 CRC · 0 header (4 more dropped by the rate limit in the last hour)', 'warning'])
+
+    def test_snapshot_failure_is_shown_retried_and_reloaded_on_resume(self):
+        r = self.out['review']['snapshot_failure']
+        self.assertIn('Could not load', r['note'])
+        self.assertEqual(r['radio_after_resume'], 2)   # a resumed hello reloads a snapshot that never loaded
+        self.assertGreater(r['charts'], 0)               # and the retry brings the dashboard up
+
+    def test_reconstructed_time_legend_swatch_is_dashed(self):
+        r = self.out['review']['reconstructed']
+        self.assertEqual(r['dashed_line'], 1)
+        self.assertEqual(len(r['swatch']), 1)
+        self.assertIn('dash', r['swatch'][0].split())
+        css = (ROOT / 'ws0' / 'static' / 'app.css').read_text()
+        self.assertRegex(css, r'\.sw\.dash\s*\{[^}]*repeating-linear-gradient')
 
     def test_history_request_times_out_and_is_retried(self):
         r = self.out['review']['hung_request']
