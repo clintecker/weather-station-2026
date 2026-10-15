@@ -1,7 +1,7 @@
 # Radio transmission policy: energy, link health, and backlog
 
 > **Document type:** Design specification (proposal for approval). **Language:** ASD-STE100 style.
-> **Status:** Approved 2026-10-12 (section 9). **Stage-0 part implemented 2026-10-13** (`App/app_tx.c`): link states, probe back-off, live-only probes, drain stop at first miss, airtime cap from the configured SF, and a fixed-NORMAL energy hook. Bench evidence: `evidence/g13-outage-2026-10-13/`. Stage 0 implements the link-health part (section 6). Stage 1 connects the energy inputs (section 5) when the pack and charger telemetry exist (spec §4–5, H02/H03). Items marked ⚠ were approved in section 9.
+> **Status:** Approved 2026-10-12 (section 9). **Stage-0 part implemented 2026-10-13** (now `App/tx_policy.c` over the pure `firmware/common/ws_policy.c`, host-tested in `firmware/test_tx_policy.c`): link states, probe back-off, live-only probes, drain stop at first miss, airtime cap from the configured SF, and a fixed-NORMAL energy hook. Bench evidence: `evidence/g13-outage-2026-10-13/`. Stage 0 implements the link-health part (section 6). Stage 1 connects the energy inputs (section 5) when the pack and charger telemetry exist (spec §4–5, H02/H03). Items marked ⚠ were approved in section 9.
 > **Related:** [`failure-modes.md`](failure-modes.md) §1.1–1.2 (energy cost of failure), gaps G11, G13, G14, G16 · spec v0.2 R02, R03, §4, §5, §11.
 
 ---
@@ -118,7 +118,7 @@ stateDiagram-v2
 | State | Meaning | Live reading | Backlog drain | Diagnostics | Radio time cap |
 |---|---|---|---|---|---|
 | **SURPLUS** | Sun is up and the battery is full or nearly full. Energy would otherwise be lost. | Every 60 s | **Fast**: up to the airtime cap (Stage-0 firmware: at most 20) | Full | ⚠ 15 s per minute |
-| **NORMAL** | Healthy margin above reserve | Every 60 s | **Moderate**: up to 2–5 per minute (Stage-0 firmware: 5, `backlog_limit` in `App/app_tx.c`) | Normal rate | ⚠ 5 s per minute |
+| **NORMAL** | Healthy margin above reserve | Every 60 s | **Moderate**: up to 2–5 per minute (Stage-0 firmware: 5, `backlog_limit` in `firmware/common/ws_policy.c`) | Normal rate | ⚠ 5 s per minute |
 | **CONSERVE** | Near the reserve, estimate unknown, or pack cold | ⚠ Every 300 s: the latest reading (spec R02 "conservation reports"); all readings are still journaled | **None** | Reduced; state changes only | ⚠ 2 s per minute |
 | **CRITICAL** | At the protected reserve | **None** | None | None | 0 |
 
@@ -174,7 +174,7 @@ stateDiagram-v2
 sends the live reading **every minute**, with no backlog; only CONSERVE uses the back-off. This
 removes the H01 risk that one outage makes up to 14 readings late, and keeps live data flowing on
 a one-way link. Code: `ws_link_may_send()` in `firmware/stage0.c`, host-tested in
-`firmware/test_policy.c`; used by `sample()` in `firmware/stage0-node/App/app_tx.c`. Stage 0 is
+`firmware/test_policy.c`; used by `ws_minute_backlog()` in `firmware/common/ws_policy.c`. Stage 0 is
 always NORMAL, so on the bench PROBING means "live only, every minute".
 
 | Parameter | Proposal | Reason |
@@ -191,7 +191,7 @@ always NORMAL, so on the bench PROBING means "live only, every minute".
 
 **Asymmetric link:** the node decides the link state from ACKs only. If frames reach the gateway but ACKs do not (failure-modes L4/L10), the node enters PROBING; with healthy energy the live reading still reaches the gateway every minute, so data stays timely. The backlog cannot drain (no ACKs), so unacknowledged records accumulate in the journal and are overwritten after about 65 h, even though the gateway already holds them. The health report (sent while probing too, link field = probing) shows this state to the operator.
 
-**Airtime cap per minute (all states):** The firmware calculates the exchange time from the SF: observation airtime + ACK airtime + a **fixed 300 ms** turnaround allowance (`TURNAROUND_MS` in `App/app_tx.c`, "conservative"; not measured per exchange — G4 measured gateway commits at ≤ 16 ms). It sends no more frames in this minute than the cap allows. With draft-5 frames (42-byte observation, 33-byte ACK), at SF12 a 5 s cap allows 4 exchanges (5000 / (453 + 412 + 300) = 5000 / 1165 ms). At SF7 (22 + 18 + 300 = 340 ms per exchange) the 5 s NORMAL cap allows 14, so the NORMAL limit of 5 binds; the 15 s SURPLUS cap allows the configured maximum (⚠ 20). The cap counts answered exchanges; a failed exchange costs about 2 s plus airtime, and the drain stops at the first one.
+**Airtime cap per minute (all states):** The firmware calculates the exchange time from the SF: observation airtime + ACK airtime + a **fixed 300 ms** turnaround allowance (`TURNAROUND_MS` in `App/tx_policy.c`, "conservative"; not measured per exchange — G4 measured gateway commits at ≤ 16 ms). It sends no more frames in this minute than the cap allows. With draft-5 frames (42-byte observation, 33-byte ACK), at SF12 a 5 s cap allows 4 exchanges (5000 / (453 + 412 + 300) = 5000 / 1165 ms). At SF7 (22 + 18 + 300 = 340 ms per exchange) the 5 s NORMAL cap allows 14, so the NORMAL limit of 5 binds; the 15 s SURPLUS cap allows the configured maximum (⚠ 20). The cap counts answered exchanges; a failed exchange costs about 2 s plus airtime, and the drain stops at the first one.
 
 ---
 

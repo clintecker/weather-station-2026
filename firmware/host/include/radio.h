@@ -1,4 +1,4 @@
-/* Host stand-in for ST's SubGHz_Phy radio.h: the calls and callbacks app_tx.c and app_rx.c use. */
+/* Host stand-in for ST's SubGHz_Phy radio.h: the calls and callbacks the TX and RX roles use. */
 #ifndef HOST_RADIO_H
 #define HOST_RADIO_H
 #include <stdint.h>

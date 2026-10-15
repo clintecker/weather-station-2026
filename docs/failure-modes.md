@@ -135,7 +135,7 @@ This is the data loss that the design accepts. **Items marked ⚠ need Clint's a
 | RX, gateway, or link down | **0 lost** if the outage is ≤ **65 h** (journal capacity: 3,906 one-minute records, T/RH build; 79 h in draft 4). Data is late. | Store-and-forward. A multi-day winter storm outage at the house can exceed 65 h; the 30-day target is H11 (external flash). |
 | Outage > 65 h | **Oldest pending observations, 42 at a time** (one flash page of 48-byte slots). Counted on the TX board as `lost`. | **Approved by Clint 2026-10-12:** drop oldest first (newest data is more valuable). |
 | Time unknown after a TX boot | **Closed (G6).** Warm reset: time trust restored (D). Power loss: the gateway reconstructs the time of every reading in the epoch after its first sync (C). Residual: an epoch that ends before its first sync stays `unknown`. | Approved by Clint 2026-10-12 (C + D) |
-| Backlog drain | Backlog clears at up to **5 observations per minute** (NORMAL; `backlog_limit` in `App/app_tx.c`) in addition to live data, and stops at the first missed ACK. An outage of *D* minutes takes about *D*/5 minutes to clear. | Live data has priority. ⚠ H11 must accept or raise this rate. |
+| Backlog drain | Backlog clears at up to **5 observations per minute** (NORMAL; `backlog_limit` in `firmware/common/ws_policy.c`) in addition to live data, and stops at the first missed ACK. An outage of *D* minutes takes about *D*/5 minutes to clear. | Live data has priority. ⚠ H11 must accept or raise this rate. |
 
 ### 3.3 H01 budget
 

@@ -56,7 +56,7 @@ recovery does not erase late delivery or pass a failed latency threshold.
 This drain model is simpler than the firmware. The simulated node sends the live
 sample plus up to 2 backlog records every minute, even while the link is down. The
 board firmware drains up to 5 backlog records per minute in the normal energy state,
-capped by airtime (`backlog_limit`, `firmware/stage0-node/App/app_tx.c`). After 3
+capped by airtime (`backlog_limit`, `firmware/common/ws_policy.c`). After 3
 silent minutes it enters PROBING: live-only probes with a 2, 4, 8, then 15-minute
 back-off, and journal-only minutes in between (failure-modes.md G13). The harness
 does not model PROBING, so its outage latencies and drain times are not

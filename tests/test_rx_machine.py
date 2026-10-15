@@ -1,4 +1,4 @@
-"""The RX bridge's event-driven firmware (firmware/stage0-node/App/app_rx.c and App/console.c,
+"""The RX bridge's event-driven firmware (firmware/stage0-node/App/app_rx.c, App/console.c and the shared modules,
 unchanged) on the host.
 
 firmware/host/rx_harness.c simulates the board: a clock in 1/1024 s RTC ticks with ST's timer server,
@@ -86,7 +86,7 @@ class Bridge:
         return self.lib.h_now_ms()
 
     def mcu_ms(self):
-        """ms_now() as the firmware computes it (SysTimeGetMcuTime), modulo 2^32."""
+        """clock_ms() as the firmware computes it (App/clock.c, SysTimeGetMcuTime), modulo 2^32."""
         t = self.lib.h_now_ticks()
         return ((t >> 10) * 1000 + ((t & 1023) * 1000 >> 10)) & 0xFFFFFFFF
 
@@ -490,7 +490,7 @@ class RxStateMachine(unittest.TestCase):
         self.assertEqual(ups, list(range(120, 3601, 60)))
 
     def test_alive_across_the_millisecond_wrap(self):
-        b = self.bridge(start_s=4294967 - 150)              # ms_now() wraps 150 s after boot (49.7 days)
+        b = self.bridge(start_s=4294967 - 150)              # clock_ms() wraps 150 s after boot (49.7 days)
         b.out()
         b.hdr()
         b.advance(RELISTEN_S * 1000)

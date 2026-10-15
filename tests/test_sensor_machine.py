@@ -1,4 +1,4 @@
-"""The interrupt-driven SHT45 driver (firmware/stage0-node/App/sensor.c, unchanged) on the host.
+"""The interrupt-driven SHT45 driver (firmware/stage0-node/App/sensor.c, as built) on the host.
 
 firmware/host/sensor_harness.c simulates ST's timer rounding, the sequencer, the I2C completions and
 a sensor that answers, NACKs, hangs, sends a bad CRC or holds SDA low. Every case must end in

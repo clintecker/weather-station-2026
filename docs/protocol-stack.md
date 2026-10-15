@@ -455,7 +455,7 @@ The symbol time is `Ts = 2^SF / BW = 128 / 500 kHz = 0.256 ms`. The number of he
 | Health report | 48 | ceil(400 / 28) = 15 | 83 | 12.25 symbols | 95.25 × 0.256 = **24.4 ms** |
 | (Draft 4, any kind) | 56 | ceil(464 / 28) = 17 | 93 | 12.25 symbols | 105.25 × 0.256 = 26.9 ms |
 
-At SF12 the same frames take 452.6 ms (observation), 411.6 ms (ACK) and 493.6 ms (DIAG). Airtime moves in steps of 4 × SF bits: about every 3–4 bytes at SF7. The firmware uses the same formula (`airtime_ms()` in `App/app_tx.c`, rounded up to whole milliseconds: 22 ms and 18 ms at SF7).
+At SF12 the same frames take 452.6 ms (observation), 411.6 ms (ACK) and 493.6 ms (DIAG). Airtime moves in steps of 4 × SF bits: about every 3–4 bytes at SF7. The firmware uses the same formula (`ws_lora_airtime_ms()` in `firmware/common/ws_policy.c`, rounded up to whole milliseconds: 22 ms and 18 ms at SF7).
 
 The formula is in Semtech AN1200.13 and the SX1261/2 datasheet [[SX126X]](#SX126X). You can also use an online calculator [[AIRTIME]](#AIRTIME).
 
@@ -561,7 +561,7 @@ stateDiagram-v2
 
 ### 9.4 Transmission policy
 
-Source: [`radio-energy-policy.md`](radio-energy-policy.md) and `App/app_tx.c`. The stricter of the energy state and the link state applies.
+Source: [`radio-energy-policy.md`](radio-energy-policy.md), `App/tx_policy.c` and `firmware/common/ws_policy.c`. The stricter of the energy state and the link state applies.
 
 | Energy state | Backlog per minute | Radio time per minute | Note |
 |---|---:|---:|---|
@@ -570,7 +570,7 @@ Source: [`radio-energy-policy.md`](radio-energy-policy.md) and `App/app_tx.c`. T
 | CONSERVE | 0 | 2 s | Live reading only, at most every 300 s |
 | CRITICAL | 0 | 0 | Nothing is sent. Readings stay in the journal. |
 
-- **Airtime cap.** One answered exchange is estimated at observation air time + ACK air time + 300 ms = 22 + 18 + 300 = 340 ms (SF7, 500 kHz; `exchange_ms` in `App/app_tx.c`). The number of frames in a minute is limited to the radio time ÷ 340 ms: 14 for the 5 s NORMAL cap, so the NORMAL backlog limit of 5 applies. The live reading always fits.
+- **Airtime cap.** One answered exchange is estimated at observation air time + ACK air time + 300 ms = 22 + 18 + 300 = 340 ms (SF7, 500 kHz; `exchange_ms` in `App/tx_policy.c`). The number of frames in a minute is limited to the radio time ÷ 340 ms: 14 for the 5 s NORMAL cap, so the NORMAL backlog limit of 5 applies. The live reading always fits.
 - **Drain stops at the first miss.** If a frame gets no reply (or a TX timeout occurs), the node sends nothing more in that minute.
 - **PROBING.** After 3 consecutive minutes with no answer, the link state becomes PROBING: live reading only, no backlog. In SURPLUS and NORMAL (so always in Stage 0) the live reading still goes every minute; only CONSERVE waits 120 s, 240 s, 480 s, then every 900 s (`ws_link_may_send()` in `firmware/stage0.c`, changed 2026-10-13). Any answer to a sent frame makes the link LINKED again. The health report is also sent while probing, with link state 1.
 - **Simulator.** The Python simulator (`ws0/simulator.py`, `BACKLOG_PER_MINUTE = 5`) drains 5 records per minute, like NORMAL. It sends the live reading every minute and does not model the drain stop or PROBING; that matches the firmware's timeliness in NORMAL.
@@ -862,7 +862,7 @@ When you change the protocol, do these steps:
 1. Increase the version (the high 4 bits of byte 0). Old frames must fail at the header check. A change of the frame format also needs a **new key** (protocol.md section 2).
 2. Update [`protocol.md`](protocol.md) and this document.
 3. Update `ws0/protocol.py` and `firmware/common/ws_frame.{c,h}` together, and `ws0/fields.py` and `firmware/common/ws_obs.{c,h}` together.
-4. Make new known-answer vectors directly with the `cryptography` library from the specified header and nonce (not with `ws0/protocol.py`). Put them in `tests/test_frame.py` **and** `App/app_tx.c`.
+4. Make new known-answer vectors directly with the `cryptography` library from the specified header and nonce (not with `ws0/protocol.py`). Put them in `tests/test_frame.py` **and** `App/selftest.c`.
 5. Run `WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests` and `make -C firmware/fuzz check`. All must pass.
 6. Run the harness into a **new** output directory. Do not overwrite old evidence.
 7. Build both roles. Record the binary SHA-256 values. Flash **both** boards. A version mismatch stops all traffic.

@@ -9,7 +9,7 @@ from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, Nonces, e
                        unseal)
 
 # Backlog records sent per minute after the live one: the firmware's NORMAL energy state
-# (firmware/stage0-node/App/app_tx.c backlog_limit). Stage 0 is always NORMAL. The firmware also
+# (firmware/common/ws_policy.c backlog_limit). Stage 0 is always NORMAL. The firmware also
 # stops a minute's drain at the first missed reply; the simulator does not model that, which
 # does not change timeliness because the live reading still goes first every minute.
 BACKLOG_PER_MINUTE = 5

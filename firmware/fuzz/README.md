@@ -11,7 +11,7 @@ check properties that must hold for every input.
 | `console` | `ws_line_feed`, `ws_hex_decode`, `ws_host_reply_ok`, `ws_air_frame_ok` (`firmware/common/ws_console.c`), then `ws_parse_provision`: a raw UART byte stream as either board receives it | Lines are 1–256 bytes with no `\n`/`\r`; the line buffer is cleared after each line; a hex decode is exactly half the line; only a 33-byte version-5 ACK/NACK passes the RX downstream check, and only valid observation and health-report lengths the upstream one |
 | `obs` | `ws_obs_encode` (`firmware/common/ws_obs.c`): arbitrary records, codes biased to edges, INVALID and CALM | The encoder accepts exactly the records an independent copy of the spec's catalog accepts; accepted records have the spec's length, header and big-endian fields |
 
-The boards run the same functions (`App/console.c`, `App/app_rx.c`, `App/app_tx.c`).
+The boards run the same functions (`App/console.c`, `App/app_rx.c`, `App/tx_console.c`, `App/tx_exchange.c`).
 
 ## Run
 

@@ -17,7 +17,7 @@ Where the code and this text disagree, the code wins. The code is:
 | Envelope, ACK/NACK | `firmware/common/ws_frame.{c,h}` | `ws0/protocol.py` |
 | Observation and field catalog | `firmware/common/ws_obs.{c,h}` | `ws0/fields.py` |
 | RX filters, console line parsing | `firmware/common/ws_console.{c,h}` | `ws0/link.py`, `ws0/__main__.py` |
-| Node application | `firmware/stage0-node/App/app_tx.c`, `app_rx.c`, `node_store.c`, `node_fields.h` | — |
+| Node application | `firmware/stage0-node/App/app_tx.c` and the `tx_*.c` modules, `selftest.c`, `app_rx.c`, `node_store.c`, `node_fields.h` (file map: `firmware/stage0-node/README.md`) | — |
 | Validation, storage | — | `gateway.py`, `ws0/service.py` |
 
 ## Changes from draft 4
@@ -64,7 +64,7 @@ So byte 0 is `0x51` (OBS), `0x52` (ACK), `0x53` (NACK) or `0x54` (DIAG).
   project has no AES code of its own.
 - **Overhead:** 16 bytes per frame (8 header + 8 tag).
 
-Example, the boot self-test vector (`KAT_OBS` in `App/app_tx.c`, key `000102…0f`): header
+Example, the boot self-test vector (`KAT_OBS` in `App/selftest.c`, key `000102…0f`): header
 `51 0001 0100000002` = OBS, station 1, counter 0x100000002; nonce
 `01 00000001 0000000100000002`.
 
@@ -191,7 +191,7 @@ The plaintext length is 22 + the widths of the present fields (`WS_OBS_PLAIN_LEN
 `App/node_fields.h`), never on a reading. A faulted field is sent with its INVALID code, never left
 out, so the frame length does not reveal a sensor fault. A bitmap of 0 is rejected.
 
-Example, the encoder's known answer (`tests/test_obs.py`, `run_kat` in `App/app_tx.c`): epoch 1,
+Example, the encoder's known answer (`tests/test_obs.py`, `selftest_kat` in `App/selftest.c`): epoch 1,
 sequence 2, UTC 1791991189, uptime 300 s, NORMAL, T −12.34 °C, RH 45.67 %:
 
 ```text
@@ -270,7 +270,7 @@ still `sensor_fault`.
 | Out of range → **INVALID**, never clamped | `Field.code()`; `ws_code_temp_centi` (T outside −40.00…125.00 °C) |
 | Exception: relative humidity (fields 1 and 20) is **clamped** to 0–100 % | `Field.code()`; `ws_code_rh_centi` |
 | `wind_dir_deg` wraps modulo 360 before the range check | `Field.code()` |
-| No sample or a sensor fault → INVALID. The Stage-0 node sends **both** T and RH INVALID after any SHT45 fault | `sample()` in `App/app_tx.c` |
+| No sample or a sensor fault → INVALID. The Stage-0 node sends **both** T and RH INVALID after any SHT45 fault | `obs_codes()` in `App/app_tx.c` |
 | A wind direction needs a valid speed: if `wind_speed_ms` is INVALID, `wind_dir_deg` must be INVALID (CALM is not allowed either) | `ws_obs_encode`, `_check_wind` |
 | Decoding is exact: (code − offset) is an integer before the single division, so no float noise reaches the stored JSON | `Field.value()` |
 
@@ -402,7 +402,7 @@ At SF7 a 42-byte observation takes 21.8 ms on air, a 33-byte ACK 18.0 ms and a 4
   ([`radio-energy-policy.md`](radio-energy-policy.md)): 20/5/0/0 for SURPLUS/NORMAL/CONSERVE/CRITICAL
   (Stage 0 is fixed at NORMAL, so 5). It is further capped by a per-minute airtime budget
   (15/5/2/0 s), counting one exchange as observation airtime + ACK airtime + 300 ms, which is
-  22 + 18 + 300 = **340 ms** at SF7 (`exchange_ms`, `airtime_ms()` in `App/app_tx.c`).
+  22 + 18 + 300 = **340 ms** at SF7 (`exchange_ms` in `App/tx_policy.c`, `ws_lora_airtime_ms()` in `firmware/common/ws_policy.c`).
 - CONSERVE sends only the live reading, at most every 300 s. CRITICAL journals and does not send.
 - After each frame the node listens up to 2000 ms for the reply, then waits 50 ms before the next
   frame. The first missed reply ends that minute's drain.

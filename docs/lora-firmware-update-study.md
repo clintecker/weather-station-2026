@@ -5,7 +5,7 @@ the gateway changed.** It answers Clint's question: *"Once both ends of the syst
 flash, can we remotely reprogram units over LoRa somehow?"*
 
 Numbers marked **measured** come from this repository's builds, or from the firmware's own air-time
-formula (`airtime_ms()` in `App/app_tx.c`, which matches `protocol-stack.md` §8.2 to the tenth of a
+formula (`ws_lora_airtime_ms()` in `firmware/common/ws_policy.c`, which matches `protocol-stack.md` §8.2 to the tenth of a
 millisecond). Numbers marked **estimate** are planning figures and must be checked on the bench.
 
 ## 0. Short answer
@@ -59,7 +59,7 @@ updates come after those, not before.
 | Largest LoRa packet | 255 B (radio limit) | SubGHz_Phy |
 | Envelope | 8-byte header + AES-128-CCM ciphertext + 8-byte tag; kinds 1–4 used; per-direction counter spaces | `protocol.md` §1–2 |
 | Exchange pattern | The node sends; then it listens up to 2,000 ms for the reply. The node can only be reached right after it transmits | `protocol.md` §9 |
-| Per-minute air-time cap | 15 / 5 / 2 / 0 s for SURPLUS / NORMAL / CONSERVE / CRITICAL | `App/app_tx.c` `airtime_cap_ms` |
+| Per-minute air-time cap | 15 / 5 / 2 / 0 s for SURPLUS / NORMAL / CONSERVE / CRITICAL | `firmware/common/ws_policy.c` `airtime_cap_ms` |
 | RX bridge | Holds no key. Forwards node frames as hex lines; transmits one 33-byte ACK/NACK line from the host. Lines ≤ 256 B. Drops input while it holds a complete line | `App/app_rx.c`, `protocol.md` §8 |
 | Watchdog | Independent watchdog (IWDG), about 8 s, started by the firmware | `App/watchdog.c` |
 | Read protection | RDP level 0: the key is readable with a debugger (gap G10) | `failure-modes.md` |

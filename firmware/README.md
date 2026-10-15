@@ -44,8 +44,8 @@ Original plan, in order; status as of 2026-10-13. Done items point to where they
    (`sensor.c` `i2c_recover`); CRC or bus failure gives an explicit invalid reading. Unplug
    and restart behaviour still has to be tested on hardware.
 4. **Done.** AES-128-CCM with a 16-byte tag through ST's Mbed TLS (`common/ws_frame.c`),
-   checked against host-generated known-answer frames at boot (`stage0-node/App/app_tx.c`
-   `run_kat`) and in `tests/test_frame.py`. Wired provisioning: console `PROVISION`, host
+   checked against host-generated known-answer frames at boot (`stage0-node/App/selftest.c`
+   `selftest_kat`) and in `tests/test_frame.py`. Wired provisioning: console `PROVISION`, host
    `python -m ws0 provision-node`. Durable counter and epoch: `stage0-node/App/node_store.c`.
 5. **Done for Stage 0.** Flash journal of 4,743 observations (about 3.3 days), kept until an
    authenticated ACK; boot epoch reserved before sampling (`stage0-node/README.md`, "Flash

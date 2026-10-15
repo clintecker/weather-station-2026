@@ -37,6 +37,40 @@ Makefile variables and targets:
 
 The firmware version string (`fw=` in `#boot`/`#status`) is `git describe --always --dirty --abbrev=12` at build time. A build from a modified tree reports `…-dirty`, and every commit changes the binary.
 
+## Source files
+
+`App/` holds this project's own code; the board support is in `../board/nucleo-wl55jc`. Portable
+logic (no HAL) lives in `firmware/common/` and `firmware/stage0.c`, so the host tests run it as is;
+`firmware/host/` builds the role modules over a simulated board (`tests/test_tx_machine.py`,
+`tests/test_rx_machine.py`, `tests/test_sensor_machine.py`). How the code runs (interrupts, timers,
+tasks, the exchange state machine) is in [`docs/firmware-event-model.md`](../../docs/firmware-event-model.md).
+
+| File | Role | What it does |
+|---|---|---|
+| `App/app_tx.c` | TX | Boot (`SubghzApp_Init`), the 15-s samples and the minute's report: encoded, journaled, or held in RAM while an exchange runs (`held_flush`); the watchdog health test |
+| `App/tx_exchange.c` | TX | The minute's radio exchange: one state machine (`idle`, `gap`, `sending`, `ack-wait`, `diag-sending`), one handler per state; sealing, ACK/NACK handling, the health report |
+| `App/tx_policy.c` | TX | Energy and link state, what a minute may send, strikes, the health-report schedule; the decisions are `firmware/common/ws_policy.c` |
+| `App/tx_time.c` | TX | Time trust: sync from the ACK for the frame just sent, kept across a warm reset (RTC backup registers) |
+| `App/tx_console.c` | TX | Console commands (a table: `STATUS`, `KAT`, `PROVISION`, `WIPE`, `TEST-FLASH-STORM`), `#status`/`#counts`/`#timing`, the storm load, commanded reboots |
+| `App/selftest.c` | TX | The boot known-answer test (`selftest_kat`) and its vectors (also read by `tests/test_frame.py`) |
+| `App/tx_node.h` | TX | The node identity and run state the TX modules share (`tx_node`) |
+| `App/node_store.c` | TX | Flash: provisioning, monotonic epoch/counter log, the observation journal |
+| `App/flash_stm32wl.c` | TX | The internal-flash driver behind `node_store.c` |
+| `App/sensor.c` | TX | SHT45 over I2C2, interrupt driven, with stuck-bus recovery |
+| `App/node_fields.h` | TX | The catalog fields this build measures |
+| `App/app_rx.c` | RX | The keyless radio <-> USB bridge: forwarding, failed-reception logs, host ACK/NACK transmission, relisten, `#alive` |
+| `App/events.c` | both | Interrupt-safe event bits for the process task (`events_post`, `events_take`) and `irq_lock`/`irq_unlock` |
+| `App/clock.c` | both | The RTC clock, `clock_ms`/`clock_s` (never `HAL_GetTick`, which counts 1/1024 s ticks) |
+| `App/bench.c` | both | `TEST-FAULT`, `TEST-HANG`; left out of a field build (`-DWS_FIELD_BUILD`) |
+| `App/console.c` | both | USB console: line assembly from the UART interrupt, `hex_print` |
+| `App/watchdog.c`, `App/fault.c` | both | Supervised IWDG and reset cause; crash records |
+| `App/busymon.c`, `App/stackmon.c` | both | Run-time task/interrupt/flash-stall timing; stack peak |
+| `App/leds.c`, `App/radio_cfg.c` | both | LEDs; radio settings shared by both roles |
+| `firmware/common/ws_frame.c`, `ws_obs.c` | TX | Draft-5 frames (AES-CCM seal/open, health report) and the observation encoder |
+| `firmware/common/ws_policy.c` | TX | Transmission policy as pure functions: LoRa airtime, link state, the minute's backlog, strikes (`firmware/test_tx_policy.c`) |
+| `firmware/common/ws_console.c` | both | Line assembly, hex, command lookup (`ws_cmd_find`), the RX up/downstream frame checks |
+| `firmware/stage0.c` | TX | SHT45 parsing, the T/RH window, the I2C recovery waveform, the link gate, `PROVISION` parsing, failure runs |
+
 ## Provision and run (host)
 
 ```sh
@@ -71,7 +105,7 @@ The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac a
 | TX | Lines starting with `#` (glossary below) | `STATUS`, `KAT`, `PROVISION <station_id> <32 hex key> [epoch_floor]` (decimal ID 1–65535; only when unprovisioned; reboots on success), `WIPE ERASE-ALL-NODE-STATE` (reboots), `TEST-HANG` (bench: proves the watchdog), `TEST-FAULT` (bench: proves crash recording), `TEST-FLASH-STORM` (bench: continuous flash writes for power-cut tests; pauses sampling; ends at reboot) |
 | RX | One lowercase hex line per received draft-5 observation (39–85 bytes; 42 for the T/RH build) **or health-report** frame (48 bytes), plus `#` diagnostics (below) | `STATUS`, `TEST-HANG`, `TEST-FAULT`, or one hex **ACK or NACK** line from the host (exactly 33 bytes = 66 hex digits). Lines starting with `#` are ignored. A line with a byte outside printable ASCII, a line longer than 256 characters, and a line that lost a character (receive error, or arriving while the previous line still waits) are discarded whole. |
 
-### TX console glossary (`App/app_tx.c`)
+### TX console glossary (`App/tx_console.c`, `App/app_tx.c`, `App/tx_exchange.c`)
 
 `STATUS` (and every boot that reaches provisioning) prints three lines: `#status`, `#counts`, then `#timing`. One line used
 to be cut off at the console's old 256-byte print buffer (`UTIL_ADV_TRACE_TMP_BUF_SIZE`, now 640).
@@ -186,7 +220,7 @@ power, and resets at once (`reset=software`). The next boot prints a line like t
 
 ### Transmission policy (TX)
 
-This is summarized from `App/app_tx.c`; the approved policy is in [`docs/radio-energy-policy.md`](../../docs/radio-energy-policy.md).
+This is summarized from `App/tx_policy.c` and `firmware/common/ws_policy.c`; the approved policy is in [`docs/radio-energy-policy.md`](../../docs/radio-energy-policy.md).
 - **Each minute:** the live reading goes first, then at most 5 older pending readings (energy state NORMAL). The total is also capped at about 5 s of estimated radio time per minute. Each frame gets one 2 s ACK window. A missed reply ends that minute's drain.
 - **Link probing:** after 3 minutes with no reply the link state becomes `probing`: only the live reading is sent, with no backlog. In SURPLUS and NORMAL (always, in Stage 0) it still goes every minute; only CONSERVE probes at 2, 4 and 8 minutes, then every 15 minutes (since `0f456040fe54`; `ws_link_may_send()` in `firmware/stage0.c`). All other readings stay journaled. Any reply returns the link to `linked`.
 - **Health report** (kind 4): sent every 15 min and at each link-state change, also while probing (since `0f456040fe54`). It is fire-and-forget, with no journal entry and no ACK.
@@ -194,7 +228,7 @@ This is summarized from `App/app_tx.c`; the approved policy is in [`docs/radio-e
 
 **Watchdog:** independent watchdog, ~8 s. It is refreshed only from the main loop, and only while the role shows real progress: TX samples every ≤150 s and no exchange runs >30 s; RX is listening or finishes a transmission in <5 s, with one re-arm attempt. The reset cause is printed on every boot.
 
-TX runs a boot self-test (`kat=pass`, also on demand with `KAT`; `run_kat` in `App/app_tx.c`). The vectors are shared with `tests/test_frame.py` and `tests/test_obs.py` and were made directly with the `cryptography` library from the specified header and nonce. The test:
+TX runs a boot self-test (`kat=pass`, also on demand with `KAT`; `selftest_kat` in `App/selftest.c`). The vectors are shared with `tests/test_frame.py` and `tests/test_obs.py` and were made directly with the `cryptography` library from the specified header and nonce. The test:
 - encodes the known-answer observation (T −12.34 °C, RH 45.67 %) with the draft-5 encoder `ws_obs_encode`, seals it with counter 0x100000002, and compares all 42 bytes with the vector. This covers the encoder, the 8-byte header, the nonce and the 8-byte tag;
 - opens a known ACK and a known NACK and checks every field, and checks that an ACK with a changed tag fails;
 - checks that `ws_seal_kind` refuses counter 2^40 instead of truncating it.
@@ -233,7 +267,7 @@ One constant names the catalog fields that this build measures:
 #define WS_NODE_FIELDS (WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT)   /* Stage 0 */
 ```
 
-Everything else follows at compile time: `WS_OBS_PLAIN_MAX` (the record length, 22 + the field widths; 26 B now), the frame length (+ 16 B), the journal slot size and slots per page (`App/node_store.h`), the page magic, and the airtime estimate per exchange. To add a sensor: add its `WS_F_…` bit here and fill its `o.code[…]` in `sample()` (`App/app_tx.c`); the catalog itself (`firmware/common/ws_obs.c`, `ws0/fields.py`) already defines all 21 fields. The gateway needs no change.
+Everything else follows at compile time: `WS_OBS_PLAIN_MAX` (the record length, 22 + the field widths; 26 B now), the frame length (+ 16 B), the journal slot size and slots per page (`App/node_store.h`), the page magic, and the airtime estimate per exchange. To add a sensor: add its `WS_F_…` bit here and fill its `o.code[…]` in `obs_codes()` (`App/app_tx.c`); the catalog itself (`firmware/common/ws_obs.c`, `ws0/fields.py`) already defines all 21 fields. The gateway needs no change.
 
 What a different field set does to the journal:
 - if the slot size changes, the page magic changes, so **every journal page of the old build is ignored at the first boot and recycled**, and records still pending in it are never sent;

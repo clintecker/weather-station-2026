@@ -1,6 +1,6 @@
 /* The draft-5 envelope (firmware/common/ws_frame.c), both directions, under the self-test key.
  * Opening: any bytes from the air go through ws_open_reply as the TX node receives them. Nothing
- * opens except the two genuine frames (the self-test vectors in App/app_tx.c and
+ * opens except the two genuine frames (the self-test vectors in App/selftest.c and
  * tests/test_frame.py); anything else would be a forgery.
  * Sealing: the input also chooses a station, counter, kind and plaintext, biased to the edges
  * (0, 1, the 16-bit station and 40-bit counter limits and one past them). Out-of-range values must

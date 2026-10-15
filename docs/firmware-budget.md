@@ -85,7 +85,7 @@ Changes made for it:
 - The linker's reserved stack (`_Min_Stack_Size`) went from 2 KB to 8 KB. The old 2 KB was below
   the TX estimate. Nothing checks the real stack against this reservation at run time, but the
   linker now refuses to link if static data plus 8 KB no longer fits.
-- Our recursion `send_current` ↔ `next_item` (`App/app_tx.c`) became a loop.
+- Our recursion `send_current` ↔ `next_item` (now `App/tx_exchange.c`) became a loop.
 - Mbed TLS's generic cipher layer is gone (`MBEDTLS_CIPHER_C` off): CCM now calls AES through the
   smaller block-cipher layer. That removed a recursion cycle in the call graph, all `malloc`/`free`
   from the TX image, and 1.7 KB of flash.
@@ -182,8 +182,8 @@ final design is sized:
 ## Radio payload
 
 Draft 5 carries a fixed 16 bytes per frame (8-byte authenticated header, 8-byte tag) around the
-plaintext; draft 4 carried 32. Air time per frame from the firmware's formula (`airtime_ms()` in
-`App/app_tx.c`: 500 kHz, CR 4/5, 8-symbol preamble, explicit header, CRC on; the firmware rounds up
+plaintext; draft 4 carried 32. Air time per frame from the firmware's formula (`ws_lora_airtime_ms()` in
+`firmware/common/ws_policy.c`: 500 kHz, CR 4/5, 8-symbol preamble, explicit header, CRC on; the firmware rounds up
 to whole milliseconds):
 
 | Frame | Plaintext | Frame | SF7 | SF9 | SF10 | SF12 |
