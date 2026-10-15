@@ -8,6 +8,12 @@ while the link is down, so a reconnect loses no data.
 import time
 
 BACKOFF_S = (1, 2, 4, 8, 15)
+# Longest serial line accepted, newline excluded. The RX firmware prints at most one trace buffer
+# per line (UTIL_ADV_TRACE_TMP_BUF_SIZE = 640 B, firmware/board/nucleo-wl55jc/Core/Inc/utilities_conf.h);
+# its longest line is a 255-byte '#rx crc ... data=<510 hex>' capture, about 560 characters.
+# Anything longer is not from our firmware (garbled stream, wrong device): it is dropped whole,
+# up to and including its newline, so its tail is never taken for a line of its own.
+MAX_LINE = 1024
 
 
 class ReceiverLink:
@@ -23,6 +29,7 @@ class ReceiverLink:
         self.port = None
         self.path = None
         self.buffer = b''
+        self.discarding = False   # inside an oversized line: drop bytes through its newline
         self.failures = 0
         self.retry_at = 0.0
         self.reconnects = 0
@@ -48,6 +55,7 @@ class ReceiverLink:
             self.log(f'#gateway serial-lost path={self.path} reason={why}')
         self.port = None
         self.buffer = b''
+        self.discarding = False
         delay = BACKOFF_S[min(self.failures, len(BACKOFF_S) - 1)]
         self.failures += 1
         self.retry_at = self.clock() + delay
@@ -77,20 +85,26 @@ class ReceiverLink:
         if self.port is None and not self._connect():
             return []
         try:
-            fragment = self.port.read_until(b'\n', size=257)
+            fragment = self.port.read_until(b'\n', size=MAX_LINE + 1)
         except self.errors as exc:
             self._drop(f'read:{type(exc).__name__}')
             return []
-        lines = []
-        if fragment:
-            self.buffer += fragment
-            if len(self.buffer) > 256:
-                self.buffer = b''
-                self.log('#gateway rejected oversized serial line')
-            elif self.buffer.endswith(b'\n'):
-                lines.append(self.buffer.strip())
-                self.buffer = b''
-        return lines
+        if not fragment:
+            return []
+        if self.discarding:   # the rest of an oversized line
+            self.discarding = not fragment.endswith(b'\n')
+            return []
+        self.buffer += fragment
+        if self.buffer.endswith(b'\n'):
+            line, self.buffer = self.buffer[:-1], b''
+            if len(line) <= MAX_LINE:
+                return [line.strip()]
+        elif len(self.buffer) > MAX_LINE:
+            self.buffer, self.discarding = b'', True
+        else:
+            return []
+        self.log('#gateway rejected oversized serial line')
+        return []
 
     def write(self, data):
         """True if written. On failure the link reconnects; the node retries the frame."""

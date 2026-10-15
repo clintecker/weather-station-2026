@@ -370,7 +370,7 @@ async function review() {
     W.responses['/v1/status'] = statusAt(T0);
     const st = statusAt(T0);
     st.rx_faults = { window_s: 3600, crc: 2, hdr: 1, warn_per_hour: 30, throttled: 0, last_at: T0 - 60 };
-    st.receiver = Object.assign(st.receiver, { crc_errors: '2', hdr_errors: '1', task_peak_us: '850', task_peak: 'process' });
+    st.receiver = Object.assign(st.receiver, { crc_errors: '2', hdr_errors: '1', fault_overruns: '3', task_peak_us: '850', task_peak: 'process' });
     await boot(W);
     W.responses['/v1/status'] = st;
     W.sse('resync', {}); await W.advance(1000);
@@ -385,6 +385,11 @@ async function review() {
     await W.advance(1000);
     r.rx_faults.abnormal = row();
     r.rx_faults.events_after = W.byId('events').textContent;
+    r.rx_faults.overruns = [kid('Bad receptions not captured (overrun)'),
+      (() => { const kids = W.byId('rx').children; return kids[kids.findIndex((n) => n.textContent === 'Bad receptions not captured (overrun)') + 1].getAttribute('data-level'); })()];
+    W.sse('rx_fault_summary', { summary: Object.assign({}, st.rx_faults, { crc: 0, hdr: 0, throttled: 4 }) });   // the hour moved on
+    await W.advance(1000);
+    r.rx_faults.moved_on = row();
   }
   {  // (5b) a history request that never answers times out and is retried
     const W = makeWorld();
@@ -486,6 +491,8 @@ class DashboardScript(unittest.TestCase):
         self.assertEqual(r['abnormal'], ['29 CRC · 2 header', 'warning'])
         self.assertEqual((r['task'], r['since_boot']), ('850 (process)', '2 / 1'))
         self.assertEqual(r['events_after'], r['events_before'])   # no event line per bad reception
+        self.assertEqual(r['overruns'], ['3', 'warning'])
+        self.assertEqual(r['moved_on'], ['0 CRC · 0 header (4 more dropped by the rate limit in the last hour)', 'warning'])
 
     def test_history_request_times_out_and_is_retried(self):
         r = self.out['review']['hung_request']

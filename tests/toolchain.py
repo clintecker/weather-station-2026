@@ -128,3 +128,22 @@ class StationTest(unittest.TestCase):
         self.gateway.close()
         self.node.close()
         self.tmp.cleanup()
+
+
+class StreamPort:
+    """A serial port over a byte stream that reads like pyserial's read_until: up to and
+    including the terminator, at most `size` bytes per call; b'' once the stream is empty."""
+    def __init__(self, data):
+        self.data, self.written, self.closed = bytes(data), [], False
+
+    def read_until(self, terminator, size):
+        end = self.data.find(terminator)
+        n = size if end < 0 else min(size, end + len(terminator))
+        chunk, self.data = self.data[:n], self.data[n:]
+        return chunk
+
+    def write(self, data):
+        self.written.append(data)
+
+    def close(self):
+        self.closed = True

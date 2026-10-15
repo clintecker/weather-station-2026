@@ -12,10 +12,11 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 try:                                        # first: sets WS0_UNSAFE_FAST_FSYNC before ws0 is imported
-    from toolchain import StationTest
+    from toolchain import StationTest, StreamPort
 except ImportError:
-    from tests.toolchain import StationTest
+    from tests.toolchain import StationTest, StreamPort
 from ws0 import web
+from ws0.link import MAX_LINE, ReceiverLink
 from ws0.__main__ import handle_receiver_line
 from ws0.service import http_server
 from ws0.simulator import DemoReceiver
@@ -794,6 +795,162 @@ class ServeLoopTelemetry(Fixture):
         self.assertTrue(self.gateway.receiver['alive'])
         self.assertIsNotNone(self.gateway.store.latest_diagnostic(self.cfg['station']))
 
+    # -- review of rx_faults (2026-10-15) ----------------------------------------------------------
+    def serial_lines(self, data, now=9000):
+        """Feed a byte stream through ReceiverLink (as from the RX board's USB serial) into the
+        serve loop's line handler."""
+        port, logs = StreamPort(data), []
+        link = ReceiverLink(device='/dev/rx', log=logs.append, opener=lambda path: port, ports=lambda: [])
+        log = io.StringIO()
+        with redirect_stderr(io.StringIO()), redirect_stdout_quiet():
+            for i in range(200):
+                for line in link.poll():
+                    handle_receiver_line(self.gateway, link, line, log, now + i)
+        return log.getvalue(), logs
+
+    def test_longest_rx_crc_line_reaches_rx_faults_through_the_serial_link(self):
+        data = bytes(range(255)).hex()
+        line = f'#rx crc len=255 rssi=-123 snr=-20 data={data}'.encode()
+        self.assertGreater(len(line), 256)
+        _, logs = self.serial_lines(line + b'\n')
+        self.assertEqual(self.rows('SELECT kind,length,rssi_dbm,snr_db,data FROM rx_faults'),
+                         [('crc', 255, -123, -20, data)])
+        self.assertEqual(self.rows('SELECT count(*) FROM radio_events'), [(0,)])
+        self.assertFalse(any('oversized' in entry for entry in logs))
+
+    def test_tail_of_an_oversized_serial_line_is_not_taken_for_a_frame(self):
+        _, logs = self.serial_lines(b'ab' * MAX_LINE + b'\n#rx hdr rssi=-117\n')
+        self.assertEqual(self.rows('SELECT count(*) FROM radio_events'), [(0,)])   # no 'rejected' tail frame
+        self.assertEqual(self.rows('SELECT kind,rssi_dbm FROM rx_faults'), [('hdr', -117)])
+        self.assertEqual(sum('oversized' in entry for entry in logs), 1)
+
+    def test_out_of_range_integers_never_stop_the_serve_loop(self):
+        """SQLite holds signed 64-bit integers; inserting a larger one raises OverflowError, which
+        must neither escape handle_receiver_line nor be stored as a bad reception."""
+        huge = '123456789012345678901234'
+        obs = self.node.packet(self.node.sample(time.time()))
+        log, link = self.lines(f'#rx hdr rssi=-{huge}', f'#rx crc len=1 rssi=-80 snr={huge} data=00',
+                               '#rx crc len=1 rssi=-80 snr=99 data=00', '#rx hdr rssi=-201',
+                               f'#alive uptime={huge} forwarded=9223372036854775808 dropped=-1 acks=2',
+                               obs.hex(), f'#rx obs rssi={huge} snr=-{huge}',
+                               f'#rx drop len={huge} rssi=-110 snr=-12', now=9500)
+        self.assertEqual(len(link.written), 1)
+        self.assertEqual(self.rows('SELECT count(*) FROM rx_faults'), [(0,)])
+        self.assertEqual(self.rows("SELECT count(*) FROM gateway_events WHERE kind='rx_fault_malformed'"), [(4,)])
+        self.assertEqual(self.rows('SELECT uptime_s,forwarded,dropped,acks FROM rx_alive'), [(None, None, -1, 2)])
+        self.assertEqual(self.rows('SELECT outcome,rssi_dbm,snr_db,length FROM radio_events ORDER BY id'),
+                         [('ack', None, None, len(obs)), ('dropped_by_rx', -110, -12, None)])
+        self.assertNotIn('commit-failed', log)
+        with redirect_stderr(io.StringIO()) as err:   # a write that still overflows is best effort
+            self.assertIsNone(self.gateway.telemetry.event('x', at=2 ** 64))
+        self.assertIn('OverflowError', err.getvalue())
+
+    def test_a_bad_reception_is_counted_only_once_stored(self):
+        t = self.gateway.telemetry
+        t.store.db.execute('ALTER TABLE rx_faults RENAME TO rx_faults_away')
+        seq = self.gateway.hub.seq
+        with redirect_stderr(io.StringIO()):
+            t.rx_line('#rx hdr rssi=-117', 9000)
+        self.assertEqual((t.fault_summary(9001)['hdr'], sum(t.hour_counts.values())), (0, 0))
+        self.assertEqual(self.gateway.hub.seq, seq)                     # nothing published
+
+    def test_throttled_count_is_for_the_same_trailing_hour(self):
+        t = self.gateway.telemetry
+        t.throttle.per_s = 0
+        burst = t.throttle.burst
+        self.lines(*['#rx hdr rssi=-120'] * (burst + 5), now=20000)
+        self.assertEqual(t.fault_summary(20000 + burst + 5)['throttled'], 5)
+        self.assertEqual(t.fault_summary(20000 + burst + 5 + 3600)['throttled'], 0)
+        self.assertEqual(t.throttle.refused['rx_fault'], 5)              # since start, kept for diagnosis
+
+    def published(self, kind):
+        return [json.loads(text) for _, k, text in self.gateway.hub.events if k == kind]
+
+    def test_summary_is_republished_when_the_window_moves(self):
+        """The page does not poll: once bad receptions leave the trailing hour, the gateway
+        publishes the lower count itself (rate-limited), and nothing while it is unchanged."""
+        t = self.gateway.telemetry
+        t.rx_line('#rx hdr rssi=-117', 30000)
+        t.rx_line('#rx crc len=1 rssi=-100 snr=-5 data=00', 30100)
+        self.assertEqual(len(self.published('rx_fault')), 2)
+        t.tick(30200)
+        t.tick(30200 + web.RX_FAULT_SUMMARY_S)
+        self.assertEqual(self.published('rx_fault_summary'), [])         # unchanged: nothing sent
+        t.tick(30000 + web.RX_FAULT_WINDOW_S + 1)                          # the header failure left the window
+        t.tick(30000 + web.RX_FAULT_WINDOW_S + 2)                          # rate limit: no second check yet
+        t.tick(30100 + web.RX_FAULT_WINDOW_S + web.RX_FAULT_SUMMARY_S)     # and now the CRC one
+        sent = [(e['summary']['crc'], e['summary']['hdr']) for e in self.published('rx_fault_summary')]
+        self.assertEqual(sent, [(1, 0), (0, 0)])
+
+    def test_bad_receptions_past_retention_are_deleted(self):
+        t = self.gateway.telemetry
+        now = 40 * 86400
+        t.rx_line('#rx hdr rssi=-117', now - web.RX_FAULT_RETENTION_S - 1)
+        t.rx_line('#rx hdr rssi=-118', now - web.RX_FAULT_RETENTION_S + 7200)
+        t.tick(now)
+        self.assertEqual(self.rows('SELECT rssi_dbm FROM rx_faults'), [(-118,)])
+        t.rx_line('#rx hdr rssi=-119', now - web.RX_FAULT_RETENTION_S - 1)
+        t.tick(now + 60)                                                   # at most once an hour
+        self.assertEqual(self.rows('SELECT count(*) FROM rx_faults'), [(2,)])
+        t.tick(now + 3600)
+        self.assertEqual(self.rows('SELECT rssi_dbm FROM rx_faults'), [(-118,)])
+
+    def test_frame_bytes_are_kept_only_for_authentic_frames(self):
+        obs = self.node.packet(self.node.sample(time.time()))
+        self.lines(obs.hex(), '#rx obs rssi=-51 snr=8', 'ab' * 30, '#rx obs rssi=-90 snr=-5', obs.hex(),
+                   '#rx obs rssi=-52 snr=8')
+        self.assertEqual(self.rows('SELECT outcome,frame_hex FROM radio_events ORDER BY id'),
+                         [('ack', obs.hex()), ('rejected', None), ('rejected', None)])
+        self.assertEqual(set(web.ACCEPTED_OUTCOMES), set(tool_accepted()))
+
+    def test_dashboard_keeps_every_alive_field(self):
+        import re
+        app = (ROOT / 'ws0' / 'static' / 'app.js').read_text()
+        keys = re.search(r'const ALIVE_KEYS = \[(.*?)\];', app, re.S).group(1)
+        self.assertEqual(tuple(re.findall(r"'(\w+)'", keys)), web.ALIVE_FIELDS)
+
+
+def tool_accepted():
+    try:
+        from toolchain import load_tool
+    except ImportError:
+        from tests.toolchain import load_tool
+    return load_tool('rx_faults').ACCEPTED
+
+
+class SchemaCheck(StationTest):
+    """No migrations (greenfield): a telemetry table from an older gateway stops the start with a
+    message naming the table and the remedy, instead of failing every insert silently."""
+    def restart(self):
+        from ws0.service import Gateway
+        self.gateway.close()
+        self.gateway = None
+        return Gateway(self.cfg, self.root)
+
+    def tearDown(self):
+        if self.gateway is None:
+            self.node.close()
+            self.tmp.cleanup()
+        else:
+            super().tearDown()
+
+    def test_current_schema_starts(self):
+        self.gateway = self.restart()
+
+    def test_old_table_is_named_with_the_remedy(self):
+        import sqlite3
+        db = sqlite3.connect(self.root / 'observations.sqlite3')
+        with db:
+            db.execute('ALTER TABLE rx_alive DROP COLUMN fault_overruns')
+            db.execute('ALTER TABLE radio_events DROP COLUMN frame_hex')
+        db.close()
+        with self.assertRaises(web.SchemaDrift) as caught:
+            self.restart()
+        text = str(caught.exception)
+        for part in ('radio_events, rx_alive', 'lacks frame_hex', 'lacks fault_overruns', 'predates this gateway version',
+                     'rename or drop table', 'ALTER TABLE radio_events RENAME TO radio_events_old'):
+            self.assertIn(part, text)
+
 
 class ParseRxFault(unittest.TestCase):
     def test_lines(self):
@@ -809,7 +966,9 @@ class ParseRxFault(unittest.TestCase):
                     '#rx crc len=256 rssi=-80 snr=7 data=' + '00' * 256, '#rx crc len=-1 rssi=-80 snr=7 data=',
                     '#rx crc len=1 rssi=-80 snr=7', '#rx crc len=1 snr=7 data=00', '#rx crc len=1 rssi=-80 data=00',
                     '#rx crc len=1 rssi=x snr=7 data=00', '#rx hdr', '#rx hdr rssi=', '#rx crcx len=0 rssi=1 snr=1 data=',
-                    '#rx error', '#rx crc len=1 rssi=-80 snr=7 data=0 0'):
+                    '#rx error', '#rx crc len=1 rssi=-80 snr=7 data=0 0',
+                    '#rx hdr rssi=-201', '#rx hdr rssi=21', '#rx hdr rssi=-123456789012345678901234',
+                    '#rx crc len=1 rssi=-80 snr=65 data=00', '#rx crc len=1 rssi=-80 snr=-65 data=00'):
             self.assertIsNone(web.parse_rx_fault(bad), bad)
 
 

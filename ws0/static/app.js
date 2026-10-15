@@ -291,6 +291,9 @@
       case 'rx_fault':   // a bad reception: only the trailing-hour count is shown (rows: /v1/radio/faults)
         if (S.status) { S.status.rx_faults = d.summary; invalidate('live'); }
         break;
+      case 'rx_fault_summary':   // the same count, changed as time passed (old ones left the hour)
+        if (S.status) { S.status.rx_faults = d.summary; invalidate('live'); }
+        break;
       case 'gateway':
         addEvent(d);
         refreshStatusSoon();
@@ -513,17 +516,19 @@
       ['Stack peak (bytes)', rx.stack_peak],
       ['Bad receptions (last hour)', badReceptions(S.status.rx_faults), badLevel(S.status.rx_faults)],
       ['CRC / header errors since boot', rx.crc_errors === undefined ? null : `${rx.crc_errors} / ${rx.hdr_errors}`],
+      ['Bad receptions not captured (overrun)', rx.fault_overruns, Number(rx.fault_overruns) > 0 ? 'warning' : null],
       ['Longest task (µs)', peak(rx.task_peak_us, rx.task_peak)],
       ['Longest interrupt (µs)', peak(rx.isr_peak_us, rx.isr_peak)],
       ['Trace drops', rx.trace_drops, Number(rx.trace_drops) > 0 ? 'warning' : null],
     ]);
   }
   // Bad receptions (#rx crc / #rx hdr) are normal at a few an hour (ambient 915 MHz traffic); the
-  // gateway's threshold (warn_per_hour) marks an abnormal rate. Throttled ones are counted apart.
+  // gateway's threshold (warn_per_hour) marks an abnormal rate. The ones the gateway's rate limit
+  // dropped in the same trailing hour (throttled) are counted apart.
   function badReceptions(f) {
     if (!f) return null;
     const text = `${f.crc} CRC · ${f.hdr} header`;
-    return f.throttled ? `${text} (${f.throttled} more dropped by the rate limit)` : text;
+    return f.throttled ? `${text} (${f.throttled} more dropped by the rate limit in the last hour)` : text;
   }
   function badLevel(f) { return f && (f.crc + f.hdr > f.warn_per_hour || f.throttled > 0) ? 'warning' : null; }
   function peak(us, word) { return us === undefined || us === null ? null : word ? `${us} (${word})` : String(us); }
@@ -662,7 +667,8 @@
       S.status.receiver = Object.assign({}, rx, {
         alive: true, last_seen: a.received_at, uptime: a.uptime_s, forwarded: a.forwarded, dropped: a.dropped,
         acks: a.acks, diag: a.diag, listening: String(a.listening), relistens: a.relistens, uart_errors: a.uart_errors,
-        stack_peak: a.stack_peak, crc_errors: a.crc_errors, hdr_errors: a.hdr_errors, task_peak_us: a.task_peak_us,
+        stack_peak: a.stack_peak, crc_errors: a.crc_errors, hdr_errors: a.hdr_errors, fault_overruns: a.fault_overruns,
+        task_peak_us: a.task_peak_us,
         task_peak: a.task_peak, isr_peak_us: a.isr_peak_us, isr_peak: a.isr_peak, trace_drops: a.trace_drops,
       });
       invalidate('live');
@@ -670,7 +676,7 @@
     toHistory(addAlivePoint, a);
   }
   const ALIVE_KEYS = ['uptime_s', 'forwarded', 'dropped', 'acks', 'diag', 'listening', 'relistens', 'uart_errors', 'stack_peak',
-    'crc_errors', 'hdr_errors', 'task_peak_us', 'task_peak', 'isr_peak_us', 'isr_peak', 'trace_drops'];   // web.ALIVE_FIELDS
+    'crc_errors', 'hdr_errors', 'fault_overruns', 'task_peak_us', 'task_peak', 'isr_peak_us', 'isr_peak', 'trace_drops'];   // web.ALIVE_FIELDS
   function addAlivePoint(a) {
     const h = S.hist.receiver;
     if (h.bucket_s) { reloadHistorySoon(h.bucket_s); return; }

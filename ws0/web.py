@@ -80,6 +80,10 @@ ALIVE_WORDS = ('task_peak', 'isr_peak')   # identifiers (the task or ISR that se
 # Peaks since RX boot: a history bucket keeps its highest, with the word of the report it came from.
 ALIVE_PEAKS = {'stack_peak': None, 'task_peak_us': 'task_peak', 'isr_peak_us': 'isr_peak'}
 KIND_NAMES = {1: 'obs', 2: 'ack', 3: 'nack', 4: 'diag'}
+# radio_events outcomes of authentic frames. Only these rows keep the frame's bytes (frame_hex): a
+# corrupted capture in rx_faults is compared with them (tools/rx_faults.py). A rejected frame's
+# bytes are anyone's radio traffic and are not stored.
+ACCEPTED_OUTCOMES = ('ack', 'duplicate', 'diag', 'nack')
 # RX console lines worth keeping as events (firmware/stage0-node/App/app_rx.c).
 RX_EVENTS = (('#boot role=rx', 'rx_boot', 'warn'), ('#relisten', 'relisten', 'warn'),
              ('#tx timeout', 'tx_timeout', 'warn'),
@@ -91,6 +95,22 @@ RX_EVENTS = (('#boot role=rx', 'rx_boot', 'warn'), ('#relisten', 'relisten', 'wa
 # next only after the rate has fallen to half of it.
 RX_FAULT_WINDOW_S = 3600
 RX_FAULT_WARN_PER_H = 30
+# rx_faults rows older than this are deleted (checked hourly by Telemetry.tick): at the GW6 rate
+# limit a flood adds at most ~560 rows an hour, so the table stays bounded.
+RX_FAULT_RETENTION_S = 30 * 86400
+# When the trailing-hour summary changes without a new stored bad reception (old ones leave the
+# window, the rate limit drops some), the gateway re-publishes it (SSE 'rx_fault_summary') at most
+# this often, so an open page's count stays current without polling.
+RX_FAULT_SUMMARY_S = 60
+# Integer columns: SQLite stores signed 64-bit integers; a larger value from a garbled or hostile
+# line would raise OverflowError on insert.
+INT64 = 2 ** 63
+# What a '#rx crc' / '#rx hdr' line may hold (SX126x: RSSI about -148..0 dBm, SNR -32..+32 dB).
+RX_FAULT_RANGES = {'rssi': (-200, 20), 'snr': (-64, 64), 'len': (0, 255)}
+
+
+class SchemaDrift(RuntimeError):
+    """A telemetry table in the database predates this gateway version (greenfield: no migrations)."""
 
 
 class Throttle:
@@ -103,6 +123,9 @@ class Throttle:
         self.burst, self.per_s = burst, per_s
         self.tokens, self.updated, self.suppressed = {}, {}, {}
         self.refused = collections.Counter()   # per key, since the gateway started
+        # Recent refusals per key, as [second, count] buckets, for refused_since(); pruned to
+        # RX_FAULT_WINDOW_S. HTTP threads read them, hence the lock.
+        self.recent, self.lock = {}, threading.Lock()
 
     def allow(self, key, now):
         """(allowed, suppressed_since_last_allowed). A refused call counts as suppressed."""
@@ -112,9 +135,23 @@ class Throttle:
             self.tokens[key] = tokens
             self.suppressed[key] = self.suppressed.get(key, 0) + 1
             self.refused[key] += 1
+            second = int(now)
+            with self.lock:
+                buckets = self.recent.setdefault(key, collections.deque())
+                if buckets and buckets[-1][0] == second:
+                    buckets[-1][1] += 1
+                else:
+                    buckets.append([second, 1])
+                while buckets and buckets[0][0] < now - RX_FAULT_WINDOW_S:
+                    buckets.popleft()
             return False, 0
         self.tokens[key] = tokens - 1
         return True, self.suppressed.pop(key, 0)
+
+    def refused_since(self, key, since):
+        """Refusals of `key` at or after `since` (to the second; at most RX_FAULT_WINDOW_S back)."""
+        with self.lock:
+            return sum(n for second, n in self.recent.get(key, ()) if second >= int(since))
 
 
 def utc_stamp(t):
@@ -127,27 +164,31 @@ def line_fields(text):
     return dict(f.split('=', 1) for f in text.split()[1:] if '=' in f)
 
 
-def as_int(value):
+def as_int(value, low=-INT64, high=INT64 - 1):
+    """An integer field of a console line, or None if it is missing, not an integer or outside
+    low..high (by default what an SQLite INTEGER holds)."""
     try:
-        return int(value)
-    except (TypeError, ValueError):
+        number = int(value)
+    except (TypeError, ValueError):   # ValueError also for digit strings beyond int's limit
         return None
+    return number if low <= number <= high else None
 
 
 def parse_rx_fault(text):
     """'#rx crc len=<n> rssi= snr= data=<hex>' or '#rx hdr rssi=' -> rx_faults row, None if malformed
-    (len 0..255, data exactly len bytes of hex, integers where integers belong)."""
+    (len 0..255, data exactly len bytes of hex, rssi and snr integers in RX_FAULT_RANGES)."""
     words = text.split()
     if len(words) < 2 or words[0] != '#rx' or words[1] not in ('crc', 'hdr'):
         return None
     f = line_fields(text)
-    rssi = as_int(f.get('rssi'))
+    rssi = as_int(f.get('rssi'), *RX_FAULT_RANGES['rssi'])
     if rssi is None:
         return None
     if words[1] == 'hdr':
         return dict(kind='hdr', length=None, rssi_dbm=rssi, snr_db=None, data=None)
-    length, snr, data = as_int(f.get('len')), as_int(f.get('snr')), f.get('data')
-    if length is None or not 0 <= length <= 255 or snr is None or data is None or len(data) != 2 * length:
+    length, snr = as_int(f.get('len'), *RX_FAULT_RANGES['len']), as_int(f.get('snr'), *RX_FAULT_RANGES['snr'])
+    data = f.get('data')
+    if length is None or snr is None or data is None or len(data) != 2 * length:
         return None
     try:
         data = bytes.fromhex(data).hex()   # normalized lowercase; ValueError for anything but hex digits
@@ -219,6 +260,49 @@ class EventHub:
             self.cond.notify_all()
 
 
+TELEMETRY_TABLES = ('radio_events', 'rx_alive', 'gateway_events', 'rx_faults')
+
+
+def expected_columns():
+    """{table: [column, ...]} of this version's telemetry tables, from TABLES itself."""
+    db = sqlite3.connect(':memory:')
+    try:
+        for sql in TABLES:
+            if sql.startswith('CREATE TABLE'):
+                db.execute(sql)
+        return {t: [row[1] for row in db.execute(f'PRAGMA table_info({t})')] for t in TELEMETRY_TABLES}
+    finally:
+        db.close()
+
+
+def check_schema(db, path, tables=TELEMETRY_TABLES):
+    """Raise SchemaDrift, naming each table and the remedy, if a telemetry table's columns are not
+    this version's. The tables are created with IF NOT EXISTS and never migrated (greenfield), so a
+    table from an older gateway would otherwise fail every insert, silently (best_effort)."""
+    expected = expected_columns()
+    stale, details = [], []
+    for table in tables:
+        have = [row[1] for row in db.execute(f'PRAGMA table_info({table})')]
+        if have == expected[table]:
+            continue
+        stale.append(table)
+        if not have:
+            details.append(f'{table}: missing (not a gateway database, or one older than this version)')
+            continue
+        missing = [c for c in expected[table] if c not in have]
+        extra = [c for c in have if c not in expected[table]]
+        parts = [f'lacks {", ".join(missing)}'] if missing else []
+        parts += [f'has unknown {", ".join(extra)}'] if extra else []
+        details.append(f'{table}: {"; ".join(parts) or "columns in a different order"}')
+    if stale:
+        names = ', '.join(stale)
+        raise SchemaDrift(
+            f'{path}: table {names} predates this gateway version ({"; ".join(details)}). There are no '
+            f'migrations: stop the gateway, rename or drop table {names} (for example sqlite3 {path} '
+            f'"ALTER TABLE {stale[0]} RENAME TO {stale[0]}_old") and start it again; it creates the '
+            'table afresh.')
+
+
 def best_effort(method):
     """Telemetry never stops the data path: a failed SQLite write (disk full, I/O error, locked)
     is reported on stderr, at most once a minute, and the serve loop carries on. Observations,
@@ -228,7 +312,7 @@ def best_effort(method):
     def wrapper(self, *args, **kwargs):
         try:
             return method(self, *args, **kwargs)
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, OverflowError) as exc:   # OverflowError: an integer SQLite cannot hold
             now = time.time()
             if now - getattr(self, '_last_failure_note', 0) >= 60:
                 self._last_failure_note = now
@@ -248,15 +332,21 @@ class Telemetry:
         self.muted = False    # the last frame was throttled: drop its RSSI line too
         # Bad receptions of the trailing hour (time, kind), for the count the page shows and the
         # rate warning; HTTP threads read it, hence the lock. hour: the clock hour being tallied
-        # for its info summary event.
+        # for its info summary event. faults is reloaded from rx_faults at start, but fault_alarm
+        # and hour_counts are in memory only: after a restart a high rate warns again, and the
+        # hour in progress is summarized from the faults seen since the start.
         self.faults, self.faults_lock, self.fault_alarm = collections.deque(), threading.Lock(), False
         self.hour, self.hour_counts = None, collections.Counter()
+        self.summary_at, self.summary_sent = 0.0, None   # last summary published (RX_FAULT_SUMMARY_S)
+        self.pruned_at = 0.0                             # last rx_faults retention pass
         with self.store.lock, self.store.db:
             for sql in TABLES:
                 self.store.db.execute(sql)
+            check_schema(self.store.db, self.store.path)
             self.faults.extend(self.store.db.execute(
                 'SELECT received_at,kind FROM rx_faults WHERE station=? AND received_at>=? ORDER BY received_at',
                 (self.station, time.time() - RX_FAULT_WINDOW_S)))
+        self.summary_sent = self.fault_summary()
 
     # -- events published by the Gateway itself ------------------------------------------------
     @best_effort
@@ -293,7 +383,8 @@ class Telemetry:
                             delivered=None if delivered is None else int(bool(delivered)), session=session,
                             sequence=sequence, length=len(frame) if frame is not None else None,
                             detail=None if detail is None else str(detail)[:300],
-                            frame_hex=frame.hex() if isinstance(frame, (bytes, bytearray)) else None)
+                            frame_hex=frame.hex() if isinstance(frame, (bytes, bytearray)) and
+                            outcome in ACCEPTED_OUTCOMES else None)
         if outcome in ('rejected', 'commit_failed'):
             self.event(f'{outcome}: {detail}', source='gateway', kind=outcome, level='warn', at=at)
 
@@ -304,13 +395,25 @@ class Telemetry:
         self._radio(row)
 
     def tick(self, now=None):
-        """Write a frame whose RSSI line never came (older RX firmware, lost serial line); close
-        the hour of bad receptions once it is over."""
+        """Called continually by the serve loop (with or without a serial link). Write a frame whose
+        RSSI line never came (older RX firmware, lost serial line); close the hour of bad receptions
+        once it is over; re-publish the trailing-hour summary when it changed without a new stored
+        bad reception (old ones left the window, or the rate limit dropped some);
+        delete bad receptions past RX_FAULT_RETENTION_S once an hour."""
         now = time.time() if now is None else now
         if self.pending and now - self.pending['received_at'] > PENDING_RSSI_S:
             self.flush()
         if self.hour is not None and now // 3600 > self.hour:
             self._close_hour()
+        if now - self.summary_at >= RX_FAULT_SUMMARY_S:
+            self.summary_at = now
+            summary = self.fault_summary(now)
+            if any(summary[k] != self.summary_sent[k] for k in ('crc', 'hdr', 'throttled')):
+                self.summary_sent = summary
+                self.hub.publish('rx_fault_summary', {'summary': summary})
+        if now - self.pruned_at >= 3600:
+            self.pruned_at = now
+            self._prune_faults(now)
 
     def rx_line(self, text, at=None):
         """A '#' diagnostic line from the RX board."""
@@ -345,15 +448,19 @@ class Telemetry:
 
     # -- bad receptions -------------------------------------------------------------------------
     def rx_fault(self, row, at):
-        """Store one bad reception and count it; warn only when the rate is abnormal."""
+        """Store one bad reception and count it; warn only when the rate is abnormal. Counted only
+        once stored, so the page's count and the rows tools/rx_faults.py lists agree."""
+        fault_id = self._store_fault(row, at)
+        if fault_id is None:   # not stored (best_effort reported why)
+            return
         if self.hour is not None and at // 3600 != self.hour:
             self._close_hour()
         self.hour = at // 3600
         self.hour_counts[row['kind']] += 1
         with self.faults_lock:
             self.faults.append((at, row['kind']))
-        summary = self.fault_summary(at)
-        self._store_fault(row, at, summary)
+        summary = self.summary_sent = self.fault_summary(at)
+        self.hub.publish('rx_fault', dict(row, id=fault_id, received_at=at, summary=summary))
         total = summary['crc'] + summary['hdr']
         if not self.fault_alarm and total > RX_FAULT_WARN_PER_H:
             self.fault_alarm = True
@@ -364,7 +471,8 @@ class Telemetry:
             self.fault_alarm = False
 
     def fault_summary(self, now=None):
-        """Bad receptions in the trailing hour by kind, and how many the throttle dropped since start."""
+        """Bad receptions in the trailing hour by kind, and how many more the rate limit dropped
+        (throttled) in the same window."""
         now = time.time() if now is None else now
         with self.faults_lock:
             while self.faults and self.faults[0][0] < now - RX_FAULT_WINDOW_S:
@@ -372,7 +480,8 @@ class Telemetry:
             counts = collections.Counter(kind for _, kind in self.faults)
             last = self.faults[-1][0] if self.faults else None
         return {'window_s': RX_FAULT_WINDOW_S, 'crc': counts['crc'], 'hdr': counts['hdr'], 'last_at': last,
-                'warn_per_hour': RX_FAULT_WARN_PER_H, 'throttled': self.throttle.refused['rx_fault']}
+                'warn_per_hour': RX_FAULT_WARN_PER_H,
+                'throttled': self.throttle.refused_since('rx_fault', now - RX_FAULT_WINDOW_S)}
 
     def _close_hour(self):
         """One info event per clock hour that had bad receptions, instead of a warning for each."""
@@ -383,13 +492,19 @@ class Telemetry:
                        source='rx', kind='rx_faults', level='info', at=start + 3600)
 
     @best_effort
-    def _store_fault(self, row, at, summary):
+    def _store_fault(self, row, at):
+        """The new row's id; None (from best_effort) if the insert failed."""
         cols = ('kind', 'length', 'rssi_dbm', 'snr_db', 'data')
         with self.store.lock, self.store.db:
             cur = self.store.db.execute(f'INSERT INTO rx_faults (station,received_at,{",".join(cols)}) '
                                         f'VALUES (?,?,{",".join("?" * len(cols))})',
                                         (self.station, at, *(row[c] for c in cols)))
-        self.hub.publish('rx_fault', dict(row, id=cur.lastrowid, received_at=at, summary=summary))
+        return cur.lastrowid
+
+    @best_effort
+    def _prune_faults(self, now):
+        with self.store.lock, self.store.db:
+            self.store.db.execute('DELETE FROM rx_faults WHERE received_at<?', (now - RX_FAULT_RETENTION_S,))
 
     @best_effort
     def alive(self, fields, at):

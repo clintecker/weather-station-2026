@@ -115,7 +115,7 @@
     "/v1/events": {
       "get": {
         "summary": "Live event stream (Server-Sent Events)",
-        "description": "text/event-stream. Each event is `id: <instance>-<n>`, `event: <type>`, one `data:` line of JSON. Types: `hello` {instance, server_time, resumed}; `resync` (the cursor could not be resumed: reload from the history endpoints); `observation` {record, latest}; `diagnostic` (node health report); `radio` (one frame with RSSI/SNR and outcome: ack, duplicate, nack, diag, rejected, commit_failed, dropped_by_rx, unparsed); `rx` (RX #alive report); `rx_fault` (one bad reception: id, received_at, kind crc/hdr, length, rssi_dbm, snr_db, data, and `summary` as in /v1/status rx_faults); `gateway` (gateway or receiver event). A `: heartbeat` comment is sent every 15 s when idle. Resume with the `Last-Event-ID` header (or `since`): events after it are replayed if still buffered (5,000) and from this gateway run, otherwise `resync`. At most 8 streams at once (503 with Retry-After beyond that). Browsers must use fetch() with the Authorization header: EventSource cannot send it.",
+        "description": "text/event-stream. Each event is `id: <instance>-<n>`, `event: <type>`, one `data:` line of JSON. Types: `hello` {instance, server_time, resumed}; `resync` (the cursor could not be resumed: reload from the history endpoints); `observation` {record, latest}; `diagnostic` (node health report); `radio` (one frame with RSSI/SNR and outcome: ack, duplicate, nack, diag, rejected, commit_failed, dropped_by_rx, unparsed); `rx` (RX #alive report); `rx_fault` (one bad reception: id, received_at, kind crc/hdr, length, rssi_dbm, snr_db, data, and `summary` as in /v1/status rx_faults); `rx_fault_summary` {summary} (the same summary, re-sent at most once a minute when it changed without a new bad reception, e.g. old ones left the trailing hour); `gateway` (gateway or receiver event). A `: heartbeat` comment is sent every 15 s when idle. Resume with the `Last-Event-ID` header (or `since`): events after it are replayed if still buffered (5,000) and from this gateway run, otherwise `resync`. At most 8 streams at once (503 with Retry-After beyond that). Browsers must use fetch() with the Authorization header: EventSource cannot send it.",
         "parameters": [
           {
             "name": "since",
@@ -268,7 +268,7 @@
     "/v1/radio/faults": {
       "get": {
         "summary": "Bad receptions the RX board reported",
-        "description": "Table rx_faults, one row per `#rx crc` (header decoded, payload CRC failed) or `#rx hdr` (header CRC failed): id, received_at, kind (crc, hdr), length (crc: 0-255 bytes), rssi_dbm, snr_db (crc only), data (crc: lowercase hex of every received byte). Rate-limited with other radio noise (GW6). Plus `summary` {window_s, crc, hdr, last_at, warn_per_hour, throttled}: counts in the trailing hour and rows the rate limit dropped since the gateway started. tools/rx_faults.py classifies the captures.",
+        "description": "Table rx_faults, one row per `#rx crc` (header decoded, payload CRC failed) or `#rx hdr` (header CRC failed): id, received_at, kind (crc, hdr), length (crc: 0-255 bytes), rssi_dbm, snr_db (crc only), data (crc: lowercase hex of every received byte). Rate-limited with other radio noise (GW6). Plus `summary` {window_s, crc, hdr, last_at, warn_per_hour, throttled}: counts in the trailing hour, and how many more the rate limit dropped in that same hour (throttled). Rows are kept 30 days. tools/rx_faults.py classifies the captures.",
         "parameters": [
           {
             "name": "from",
@@ -337,7 +337,7 @@
     "/v1/receiver/alive": {
       "get": {
         "summary": "RX board #alive reports (every 60 s)",
-        "description": "Table rx_alive: uptime_s, forwarded, dropped, acks, diag, listening, relistens, uart_errors, stack_peak, crc_errors, hdr_errors, task_peak_us, task_peak, isr_peak_us, isr_peak, trace_drops (counters and peaks since the RX board booted; task_peak and isr_peak are names, e.g. `process`, `SUBGHZ_Radio`).",
+        "description": "Table rx_alive: uptime_s, forwarded, dropped, acks, diag, listening, relistens, uart_errors, stack_peak, crc_errors, hdr_errors, fault_overruns, task_peak_us, task_peak, isr_peak_us, isr_peak, trace_drops (counters and peaks since the RX board booted; task_peak and isr_peak are names, e.g. `process`, `SUBGHZ_Radio`).",
         "parameters": [
           {
             "name": "from",

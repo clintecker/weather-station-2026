@@ -5,7 +5,11 @@ os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim p
 import unittest
 from types import SimpleNamespace
 import serial
-from ws0.link import BACKOFF_S, ReceiverLink
+try:
+    from toolchain import StreamPort
+except ImportError:
+    from tests.toolchain import StreamPort
+from ws0.link import BACKOFF_S, MAX_LINE, ReceiverLink
 
 RX = '0016001E4142500E20353451'
 
@@ -94,10 +98,31 @@ class LinkTests(unittest.TestCase):
         self.assertFalse(link.connected)
 
     def test_oversized_line_is_discarded(self):
-        self.next_port = FakePort([b'a' * 257])
+        self.next_port = FakePort([b'a' * (MAX_LINE + 1)])
         link = self.link()
         self.assertEqual(link.poll(), [])
         self.assertTrue(any('oversized' in line for line in self.logs))
+
+    def poll_all(self, link):
+        lines = []
+        for _ in range(100):
+            lines += link.poll()
+        return lines
+
+    def test_longest_firmware_line_is_read_whole(self):
+        """A 255-byte '#rx crc' capture is ~560 characters: the RX firmware's trace buffer
+        (UTIL_ADV_TRACE_TMP_BUF_SIZE) is 640 bytes, so every line it prints must fit."""
+        self.assertGreaterEqual(MAX_LINE, 640)
+        longest = b'#rx crc len=255 rssi=-123 snr=-20 data=' + b'ab' * 255
+        self.next_port = StreamPort(longest + b'\n' + b'#alive uptime=1\n')
+        self.assertEqual(self.poll_all(self.link()), [longest, b'#alive uptime=1'])
+        self.assertFalse(any('oversized' in line for line in self.logs))
+
+    def test_tail_of_an_oversized_line_is_not_a_line(self):
+        """Hex digits past the limit must not reach the gateway as a radio frame of their own."""
+        self.next_port = StreamPort(b'ab' * (MAX_LINE + 300) + b'\nnext\n' + b'cd' * MAX_LINE + b'\n')
+        self.assertEqual(self.poll_all(self.link()), [b'next'])
+        self.assertEqual(sum('oversized' in line for line in self.logs), 2)
 
 
 if __name__ == '__main__':

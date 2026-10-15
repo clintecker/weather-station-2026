@@ -17,7 +17,7 @@ from .simulator import BACKLOG_PER_MINUTE, DemoReceiver, Node
 from .link import ReceiverLink
 from .clock import HostClock
 from .logfile import RotatingLog
-from .web import line_fields, utc_stamp
+from .web import SchemaDrift, line_fields, utc_stamp
 
 
 def provision(directory, hardware=False, station='simulation-01', station_id=1):
@@ -210,9 +210,9 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
         receiver_log.write(f'{stamp} rejected {type(exc).__name__}: {exc} {text}\n')
         print(f'Rejected frame: {type(exc).__name__}: {exc}',file=sys.stderr)
         telemetry.frame(frame,'rejected',detail=f'{type(exc).__name__}: {exc}',at=rx_seen)
-    except (OSError, sqlite3.Error) as exc:
-        # Commit failed (sqlite3 raises its own errors, not OSError): no ACK, the node keeps the
-        # record and retries. The process must not exit: under a service manager it would only
+    except (OSError, sqlite3.Error, OverflowError) as exc:
+        # Commit failed (sqlite3 raises its own errors, not OSError; OverflowError is an integer
+        # SQLite cannot store): no ACK, the node keeps the record and retries. The process must not exit: under a service manager it would only
         # restart into the same failure, and from a terminal it would stay down.
         receiver_log.write(f'{stamp} commit-failed {type(exc).__name__}: {exc}\n')
         print(f'Commit failed: {exc}',file=sys.stderr)
@@ -314,7 +314,6 @@ class Services:
         gateway = self.gateway
         for line in self.link.poll():
             handle_receiver_line(gateway,self.link,line,self.receiver_log)
-        gateway.telemetry.tick()
         if not self.link.connected:
             time.sleep(0.2)
         # RX liveness (gap G12): it reports every 60 s; three missed reports = silent.
@@ -336,6 +335,7 @@ class Services:
                 self.demo_rx.tick(link_down=self.dropping)
             if self.link:
                 self.poll_receiver()
+            self.gateway.telemetry.tick()   # demo too: its simulated RX reports bad receptions
             if self.mqtt and time.monotonic()>=next_tick:
                 self.mqtt.tick()
                 next_tick = time.monotonic()+1
@@ -373,7 +373,10 @@ def main():
     if args.log_file:
         sys.stdout = sys.stderr = RotatingLog(args.log_file)
     install_stop_handlers()
-    services = Services(args.command,args.directory,cfg)
+    try:
+        services = Services(args.command,args.directory,cfg)
+    except SchemaDrift as exc:
+        raise SystemExit(f'ws0: {exc}') from None
     if args.command == 'serve':
         services.attach_receiver(cfg,args.serial,args.serial_number)
     print(f"Stage 0 {cfg['mode']}; API http://127.0.0.1:{cfg['http_port']}/v1/status",flush=True)
