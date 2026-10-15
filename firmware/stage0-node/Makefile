@@ -35,7 +35,7 @@ USAGE_ARGS = ROLE=$(ROLE)
 IT_SRC  = Core/Src/stm32wlxx_it.c
 APP_SRC = $(BOARD_CORE_SRC) $(BOARD_SYS_SRC) \
           $(BOARD_APP_SRC) App/radio_cfg.c App/console.c App/leds.c App/watchdog.c App/stackmon.c App/busymon.c App/fault.c App/clock.c App/events.c App/bench.c App/app_$(ROLE).c \
-          $(ROOT)/firmware/common/ws_console.c \
+          $(ROOT)/firmware/common/ws_console.c $(ROOT)/firmware/common/ws_check.c \
           $(BOARD_RADIO_SRC)
 ifeq ($(ROLE),tx)
 APP_SRC += App/tx_exchange.c App/tx_policy.c App/tx_time.c App/tx_console.c App/selftest.c \

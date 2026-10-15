@@ -201,13 +201,27 @@ int h_burn(int k)
   while (got < k && store_next_counter(&c) == 0) got++;
   return got;
 }
+static UTIL_TIMER_Object_t *firmware_timer(uint32_t period)
+{
+  for (UTIL_TIMER_Object_t *p = sim_timers(); p; p = p->next)
+    if (p != &sw_rx_timer && p->period == period) return p;
+  return NULL;
+}
 /* Call the callback of the firmware timer with this period now, running or not: a stale timer event
    in a state that does not expect it. Returns 0 if there is no such timer. */
 int h_fire_timer(uint32_t period)
 {
-  for (UTIL_TIMER_Object_t *p = sim_timers(); p; p = p->next)
-    if (p != &sw_rx_timer && p->period == period) { p->cb(p->arg); sim_run_tasks(); return 1; }
-  return 0;
+  UTIL_TIMER_Object_t *p = firmware_timer(period);
+  if (!p) return 0;
+  p->cb(p->arg); sim_run_tasks();
+  return 1;
+}
+/* Start the firmware timer with this period now, so that the firmware's own start of it is refused
+   (a running timer: ST ignores the start), the WS_CHECK test. Returns 0 if there is no such timer. */
+int h_start_timer(uint32_t period)
+{
+  UTIL_TIMER_Object_t *p = firmware_timer(period);
+  return p && UTIL_TIMER_Start(p) == UTIL_TIMER_OK;
 }
 void h_line(const char *line)
 {

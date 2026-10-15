@@ -187,7 +187,7 @@ class SensorBusTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as temp:
    exe=str(Path(temp)/'tx-policy-test')
    subprocess.run([*CC_STRICT,*SAN,'-Ifirmware','firmware/stage0.c','firmware/common/ws_policy.c',
-                   'firmware/test_tx_policy.c','-o',exe,'-lm'],check=True)
+                   'firmware/common/ws_check.c','firmware/test_tx_policy.c','-o',exe,'-lm'],check=True)
    subprocess.run([exe],check=True)
 
 

@@ -1,3 +1,4 @@
+#define WS_CHECK_FILE 3
 #include "tx_policy.h"
 #include "clock.h"
 #include "leds.h"
@@ -6,6 +7,7 @@
 #include "sys_app.h"
 #include "tx_exchange.h"
 #include "ws_be.h"
+#include "ws_check.h"
 #include "ws_frame.h"
 #include "ws_obs.h"
 #include "ws_policy.h"
@@ -30,6 +32,7 @@ uint32_t policy_silent_minutes(void) { return link.silent; }
 void policy_init(void)
 {
   static const uint32_t bw_hz[] = { 125000, 250000, 500000 };
+  _Static_assert(WS_LORA_BANDWIDTH < sizeof bw_hz / sizeof bw_hz[0], "a LoRa bandwidth index radio_cfg.h knows");
   uint32_t bw = bw_hz[WS_LORA_BANDWIDTH];
   exchange_ms = ws_lora_airtime_ms(OBS_FRAME_MAX, WS_LORA_SF, bw, WS_LORA_PREAMBLE, WS_LORA_CR) +
                 ws_lora_airtime_ms(WS_ACK_FRAME_LEN, WS_LORA_SF, bw, WS_LORA_PREAMBLE, WS_LORA_CR) + TURNAROUND_MS;
@@ -87,6 +90,7 @@ void policy_exchange_end(const jref_t *queue, const uint8_t *replied, unsigned n
 {
   int any = 0; /* did the gateway answer anything in this exchange? */
   uint8_t struck[MAX_QUEUE];
+  if (!WS_CHECK(n <= MAX_QUEUE)) n = MAX_QUEUE;   /* the exchange's queue: struck[] has its size */
   ws_strike_targets(replied, n, struck);
   for (unsigned i = 0; i < n; i++)
   {

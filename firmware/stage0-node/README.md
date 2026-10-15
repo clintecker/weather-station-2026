@@ -69,6 +69,7 @@ tasks, the exchange state machine) is in [`docs/firmware-event-model.md`](../../
 | `firmware/common/ws_frame.c`, `ws_obs.c` | TX | Draft-5 frames (AES-CCM seal/open, health report) and the observation encoder |
 | `firmware/common/ws_policy.c` | TX | Transmission policy as pure functions: LoRa airtime, link state, the minute's backlog, strikes (`firmware/test_tx_policy.c`) |
 | `firmware/common/ws_console.c` | both | Line assembly, hex, command lookup (`ws_cmd_find`), the RX up/downstream frame checks |
+| `firmware/common/ws_check.c` | both | `WS_CHECK`: run-time checks with a recovery at the call site; the count and first site (`docs/power-of-ten.md`) |
 | `firmware/stage0.c` | TX | SHT45 parsing, the T/RH window, the I2C recovery waveform, the link gate, `PROVISION` parsing, failure runs |
 
 ## Provision and run (host)
@@ -139,6 +140,7 @@ to be cut off at the console's old 256-byte print buffer (`UTIL_ADV_TRACE_TMP_BU
 | `tx_fail_run` | Consecutive journal-append failures |
 | `tx_air_run` | Consecutive transmission failures: counter refused, `Radio.Send` refused, or TxTimeout; only a TxDone clears it. Either run above 10 resets the board through the watchdog (review P7) |
 | `stack_peak` | Most stack bytes ever used since boot. The stack is filled with a pattern at start-up and the deepest overwritten byte is found on demand (`App/stackmon.c`). The linker reserves 8192 B; `make stack` gives the worst-case estimate. |
+| `check_fails`, `check_first` | Run-time checks (`WS_CHECK`, `firmware/common/ws_check.h`, [`docs/power-of-ten.md`](../../docs/power-of-ten.md) rule 5) that failed since boot, and where the first one is: `file:line`, the file by its number in `ws_check.h`'s table (`5:322` is line 322 of `App/node_store.c`); `0:0` while none failed. Each check's caller recovers on the spot (refuses the step, ends the exchange, clamps); any nonzero count is a firmware bug to report |
 
 `#timing` (how the event-driven firmware really runs, `App/busymon.h`; docs/firmware-event-model.md):
 
@@ -214,7 +216,7 @@ power, and resets at once (`reset=software`). The next boot prints a line like t
 | `#watchdog radio not listening; re-arming`, `#watchdog console not receiving; re-arming` | Self-heal attempt before the watchdog may reset the board. `#watchdog radio silent after N relistens; reset`: no radio event across two relistens; the health check now fails. A console whose output stopped moving for 3 s also fails it |
 | `#relisten after N s without a radio event` | Radio put in standby and listening restarted after 16 minutes of silence (review P6) |
 | `#rx frame-lost total=` | A valid frame was replaced by the next one before it could be forwarded (the node retries it) |
-| `#status role=rx forwarded= dropped= acks= relistens= uart_errors=` | Reply to `STATUS`. `acks` counts ACK/NACK lines handed to the radio. |
+| `#status role=rx forwarded= dropped= acks= relistens= uart_errors= check_fails= check_first=` | Reply to `STATUS`. `acks` counts ACK/NACK lines handed to the radio. `check_fails`, `check_first`: failed run-time checks, as on TX `#counts` (not on `#alive`, whose fields the gateway stores) |
 | `#boot role=rx fw= reset= freq= bw= sf= power=`, `#test-hang: …`, `#test-fault: …` | Boot line (preceded by an empty line, which ends anything a reset cut off) and command replies. TEST-HANG and TEST-FAULT are left out of a field build (`-DWS_FIELD_BUILD`) |
 | `#fault …` | As on TX: the previous run crashed (see Crash records) |
 

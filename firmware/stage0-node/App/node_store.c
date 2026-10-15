@@ -6,9 +6,11 @@
  * Monotonic values only ever increase: recovery takes the maximum of everything readable.
  * No HAL here: flash goes through the ws_flash_* primitives (flash_layout.h: App/flash_stm32wl.c on
  * the board, firmware/sim_flash.c in tests/test_store_powercut.py). */
+#define WS_CHECK_FILE 5
 #include "node_store.h"
 #include <string.h>
 #include "ws_be.h"
+#include "ws_check.h"
 #include "ws_frame.h"
 
 #define ERASED 0xFFFFFFFFFFFFFFFFULL
@@ -45,10 +47,15 @@ static uint64_t rd64(uint32_t addr, int *bad) {
  if (ws_flash_read64(addr, &v)) { n_ecc++; if (bad) *bad = 1; return 0; }
  return v;
 }
+/* Every write stays inside the node-state pages (config, meta, journal; flash_layout.h): never the
+   firmware below them. A bad address or page is refused like a failed flash operation. */
+#define STORE_PAGE_END (WS_JOURNAL_FIRST + WS_JOURNAL_PAGES)
 static int prog64(uint32_t addr, uint64_t v) {
+ if (!WS_CHECK(addr >= WS_PAGE_ADDR(WS_CONFIG_PAGE) && addr < WS_PAGE_ADDR(STORE_PAGE_END) && !(addr & 7U))) return -1;
  return ws_flash_prog64(addr, v) ? -1 : 0;
 }
 static int erase_page(uint32_t page) {
+ if (!WS_CHECK(page >= WS_CONFIG_PAGE && page < STORE_PAGE_END)) return -1;
  return ws_flash_erase(page) ? -1 : 0;
 }
 
@@ -309,7 +316,10 @@ int store_journal_append(const uint8_t plain[WS_OBS_PLAIN_MAX], jref_t *ref) {
  set_pending(BIT(*ref), 1); n_pending++;
  return 0;
 }
+/* A jref_t comes only from this file (append, oldest, find): always a slot of the journal. */
+static int ref_in_journal(jref_t r) { return r.page < WS_JOURNAL_PAGES && r.slot < JOURNAL_SLOTS_PER_PAGE; }
 int store_journal_read(jref_t ref, uint8_t plain[WS_OBS_PLAIN_MAX]) {
+ if (!WS_CHECK(ref_in_journal(ref))) return -1;
  uint32_t a = slot_addr(ref.page, ref.slot); int bad = 0; uint64_t d[JOURNAL_PLAIN_DW];
  for (uint32_t k = 0; k < JOURNAL_PLAIN_DW; k++) d[k] = rd64(a + 8 * k, &bad);
  if (bad) return -1;
@@ -317,8 +327,9 @@ int store_journal_read(jref_t ref, uint8_t plain[WS_OBS_PLAIN_MAX]) {
  return 0;
 }
 int store_journal_ack(jref_t ref) {
- uint32_t i = BIT(ref);
  if (!journal_ready) return STORE_ENOTREADY;
+ if (!WS_CHECK(ref_in_journal(ref))) return -1;   /* before it indexes pending[] */
+ uint32_t i = BIT(ref);
  if (!is_pending(i)) return 0;
  if (prog64(slot_addr(ref.page, ref.slot) + ACK_OFF, 0)) return -1;
  set_pending(i, 0); n_pending--;

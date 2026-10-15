@@ -2,6 +2,7 @@
  * Every state is left by an event that is certain to come: the radio's TxDone/TxTimeout
  * (WS_TX_TIMEOUT_MS), the ACK window timer, or the gap timer. Anything else is counted as
  * unexpected. Time comes only from an ACK that echoes the counter of the frame just sent. */
+#define WS_CHECK_FILE 2
 #include "tx_exchange.h"
 #include <string.h>
 #include "busymon.h"
@@ -20,6 +21,7 @@
 #include "utilities_def.h"
 #include "watchdog.h"
 #include "ws_be.h"
+#include "ws_check.h"
 
 #define ACK_WINDOW_MS       2000U
 #define INTER_FRAME_MS      50U     /* gap before each further frame: the RX is back to listening after its ACK */
@@ -86,6 +88,7 @@ static int8_t ack_rssi = -128, ack_snr = -128;
 #define EV_GAP        (1U << 5)
 #define EV_ACK_END    (1U << 6)
 #define EV_COUNT      7U
+#define EV_ALL        ((1U << EV_COUNT) - 1U)
 static const char *const ev_name[EV_COUNT] = { "tx-done", "tx-timeout", "rx-done", "rx-timeout", "rx-error", "gap", "ack-end" };
 static volatile uint32_t pending_ev;
 
@@ -128,7 +131,11 @@ void exchange_abort(void)
 }
 
 /* The next frame goes after INTER_FRAME_MS, from the gap timer: nothing waits meanwhile. */
-static void gap_before(int then) { gap_then = then; tx_state = TX_GAP; UTIL_TIMER_Start(&gap_timer); }
+static void gap_before(int then)
+{
+  gap_then = then; tx_state = TX_GAP;
+  (void)WS_CHECK(UTIL_TIMER_Start(&gap_timer) == UTIL_TIMER_OK);   /* refused only if running: its EV_GAP still comes */
+}
 
 static uint16_t clamp16(uint32_t v) { return v > 0xFFFF ? 0xFFFF : (uint16_t)v; }
 static int8_t clamp8(int v) { return (int8_t)(v < -127 ? -127 : v > 127 ? 127 : v); }  /* -128 means "none" */
@@ -150,7 +157,7 @@ static int send_diag(void)
                   .rssi = ack_rssi, .snr = ack_snr };
   ws_diag_pack(&d, plain);
   if (store_next_counter(&ctr) ||
-      ws_seal_kind(key, identity.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) < 0) return 0;
+      !WS_CHECK(ws_seal_kind(key, identity.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) >= 0)) return 0;
   policy_diag_sent(now);
   if (ws_radio_send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_counts.air, 0); return 0; }
   tx_state = TX_DIAG_SENDING;
@@ -192,7 +199,7 @@ static int send_obs(const uint8_t *plain, int plen)
   /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
   if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_counts.air, 0); APP_PRINTF("#error counter-reserve\n"); return -1; }
   int flen = ws_seal_kind(key, identity.station, WS_KIND_OBS, sent_counter, plain, (uint32_t)plen, frame, sizeof frame);
-  if (flen < 0) { APP_PRINTF("#error seal\n"); return 0; }
+  if (!WS_CHECK(flen >= 0)) { APP_PRINTF("#error seal\n"); return 0; }   /* a valid station and counter always seal */
   sent_epoch = ws_get_be32(plain);
   sent_seq = ws_get_be32(plain + 4);
   tx_counts.sent++;
@@ -208,6 +215,7 @@ static void send_current(void)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX];
   int plen = -1, rc = 0;
+  if (!WS_CHECK(qi < qn)) { radio_idle(); return; }   /* gap_before(GAP_FRAME) comes only with an item left */
   if (store_journal_read(queue[qi], plain) || (plen = ws_obs_plain_len(plain, sizeof plain)) < 0) { APP_PRINTF("#error journal-read\n"); }
   else rc = send_obs(plain, plen);
   if (rc < 0) radio_idle();
@@ -216,6 +224,8 @@ static void send_current(void)
 
 void exchange_start(const jref_t *live, unsigned backlog)
 {
+  if (!WS_CHECK(!exchange_busy())) return;   /* app_tx.c holds the reading while an exchange runs */
+  if (!WS_CHECK(backlog <= MAX_QUEUE - 1U)) backlog = MAX_QUEUE - 1U;   /* the queue's room */
   qn = 0;
   if (live) queue[qn++] = *live;
   qn += store_journal_oldest(queue + qn, backlog + (live ? 0U : 1U), live);
@@ -244,13 +254,21 @@ static void no_reply(int flash_red)
 /* An authentic reply, opened. */
 typedef struct { uint64_t ctr, echo; uint32_t epoch, seq, word; uint8_t kind; } reply_t;
 
+/* The gateway answered the frame just sent (queue[qi]). */
+static void mark_replied(void)
+{
+  if (WS_CHECK(qi < MAX_QUEUE)) replied[qi] = 1;
+  missed_last = 0;
+}
+
 /* Authentic permanent rejection (gap G2). Accepted only for the frame just sent. */
 static int on_nack(const reply_t *r, int mine)
 {
   jref_t ref;
   if (!mine) { tx_counts.ack_rejects++; APP_PRINTF("#nack ignored: not for the frame just sent\n"); return 0; }
-  replied[qi] = 1; missed_last = 0;
-  if (store_journal_find(r->epoch, r->seq, &ref) == 0 && store_journal_ack(ref) == 0) store_note_abandoned();
+  mark_replied();
+  /* A total that failed to persist is only a count: the record is acknowledged either way. */
+  if (store_journal_find(r->epoch, r->seq, &ref) == 0 && store_journal_ack(ref) == 0) (void)store_note_abandoned();
   led_flash(LED_RED, 1000);
   APP_PRINTF("#nack epoch=%u seq=%u reason=%u abandoned=%u\n", (unsigned)r->epoch, (unsigned)r->seq,
              (unsigned)r->word, (unsigned)store_abandoned_total());
@@ -265,7 +283,7 @@ static int on_ack(const reply_t *r, int mine)
   int found = store_journal_find(r->epoch, r->seq, &ref) == 0;
   if (found && store_journal_ack(ref)) APP_PRINTF("#error journal-ack\n");
   policy_strike_forget(r->epoch, r->seq);   /* any authentic ACK for a record ends its strikes */
-  if (mine) { replied[qi] = 1; missed_last = 0; }
+  if (mine) mark_replied();
   int fresh = mine && time_sync(r->word);
   if (found) tx_counts.acked++;
   led_flash(LED_GREEN, 400); /* authentic host ACK: reading is committed */
@@ -308,7 +326,7 @@ static int in_sending(uint32_t ev)
   {
     ws_failrun_note(&tx_counts.air, 1);   /* the frame left: the radio works */
     tx_state = TX_ACK_WAIT;
-    UTIL_TIMER_Start(&ack_timer);
+    (void)WS_CHECK(UTIL_TIMER_Start(&ack_timer) == UTIL_TIMER_OK);   /* refused only if running: it still ends the window */
     ws_radio_rx(0);
     return 1;
   }
@@ -363,7 +381,7 @@ static void handle(uint32_t ev)
     case TX_ACK_WAIT: done = in_ack_wait(ev); break;
     case TX_DIAG_SENDING: done = in_diag_sending(ev); break;
     case TX_GAP: done = in_gap(ev); break;
-    default: break;
+    default: if (!WS_CHECK(tx_state == TX_IDLE)) tx_state = TX_IDLE; break;   /* idle expects nothing */
   }
   if (done) return;
   tx_counts.unexpected++;
@@ -376,6 +394,7 @@ static void process(void)
   /* A TxTimeout that fired with its TxDone in the same pass is a race, not a bug: the frame left
      (ST stops the timeout on TxDone, so a later one cannot come). Dropped, like a stale ack-end. */
   if ((batch & EV_TX_DONE) && (batch & EV_TX_TIMEOUT)) batch &= ~EV_TX_TIMEOUT;
+  if (!WS_CHECK(!(batch & ~EV_ALL))) batch &= EV_ALL;   /* only post() sets bits, and only EV_* ones */
   uint32_t bit = 1;
   for (unsigned k = 0; k < EV_COUNT && batch; k++, bit <<= 1)   /* lowest bit first */
     if (batch & bit) { batch &= ~bit; handle(bit); }

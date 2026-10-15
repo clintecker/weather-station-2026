@@ -21,6 +21,7 @@ os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim p
 import ctypes
 import importlib.util
 import io
+import re
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,17 @@ def host_library(owner, name, *args, files=None):
     lib = Path(tmp.name)/f'{name}.so'
     subprocess.run([*CC_STRICT, '-shared', '-fPIC', *map(str, args), *extra, '-o', str(lib)], check=True)
     return ctypes.CDLL(str(lib))
+
+
+def check_site(source, needle):
+    """The site a failed WS_CHECK reports (firmware/common/ws_check.h), 'file:line', for the check on the
+    one line of firmware/<source> that contains needle: read from the source, so a moved line moves it."""
+    text = (ROOT/'firmware'/source).read_text()
+    file_id = int(re.search(r'^#define WS_CHECK_FILE (\d+)', text, re.M)[1])
+    lines = [n for n, line in enumerate(text.splitlines(), 1) if needle in line and 'WS_CHECK(' in line]
+    if len(lines) != 1:
+        raise AssertionError(f'{source}: {len(lines)} WS_CHECK lines contain {needle!r}')
+    return f'{file_id}:{lines[0]}'
 
 
 def load_tool(name):

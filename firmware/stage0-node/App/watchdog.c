@@ -1,3 +1,4 @@
+#define WS_CHECK_FILE 9
 #include "busymon.h"
 #include "watchdog.h"
 #include "stm32_seq.h"
@@ -5,6 +6,7 @@
 #include "stm32wlxx_hal.h"
 #include "sys_conf.h"
 #include "utilities_def.h"
+#include "ws_check.h"
 
 #define CHECK_PERIOD_MS 1000U
 /* LSI 32 kHz / 64 = 500 Hz; 4000 counts = 8 s. Longest legitimate blocking operation is a
@@ -30,7 +32,7 @@ static void request_check(void *ctx)
 
 static void check(void)
 {
-  if (watchdog_healthy()) HAL_IWDG_Refresh(&hiwdg);
+  if (watchdog_healthy()) (void)HAL_IWDG_Refresh(&hiwdg);   /* always HAL_OK (stm32wlxx_hal_iwdg.c) */
 }
 BUSYMON_TASK(check)
 
@@ -58,8 +60,10 @@ void watchdog_start(void)
   hiwdg.Init.Prescaler = IWDG_PRESCALER;
   hiwdg.Init.Window = IWDG_WINDOW_DISABLE;
   hiwdg.Init.Reload = IWDG_RELOAD;
-  HAL_IWDG_Init(&hiwdg);
+  /* Started either way (the HAL writes the start key first). A timeout means the new prescaler and
+     reload had not taken effect within ST's wait; they still do once the update completes. Counted. */
+  (void)WS_CHECK(HAL_IWDG_Init(&hiwdg) == HAL_OK);
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Watchdog, UTIL_SEQ_RFU, check_timed);
   UTIL_TIMER_Create(&check_timer, CHECK_PERIOD_MS, UTIL_TIMER_PERIODIC, request_check, NULL);
-  UTIL_TIMER_Start(&check_timer);
+  (void)WS_CHECK(UTIL_TIMER_Start(&check_timer) == UTIL_TIMER_OK);   /* created just above */
 }

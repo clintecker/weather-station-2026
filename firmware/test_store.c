@@ -33,6 +33,8 @@
 #include "node_store.h"
 #include "sim_flash.h"
 #include "ws_frame.h"
+#define WS_CHECK_FILE 0   /* reads the count; has no checks of its own */
+#include "ws_check.h"
 
 static sim_flash S;
 int ws_flash_read64(uint32_t addr, uint64_t *out) { return sim_flash_read64(&S, addr, out); }
@@ -424,9 +426,29 @@ static int foreign_layout(void) {
  return bad;
 }
 
+/* ---- run-time checks (firmware/common/ws_check.h) ---- */
+/* A jref_t outside the journal (none ever comes from the store) is refused by read and ack: each
+   failed check is counted, the first one's site is node_store.c's, and the pending set is untouched. */
+static int checks(void) {
+ uint8_t p[PLAIN] = { 0 }; jref_t r, out = { (uint16_t)WS_JOURNAL_PAGES, 0 }; int bad = 0;
+ sim_flash_reset(&S);
+ if (store_meta_init() || store_journal_init() || store_journal_append(p, &r)) { printf("CHECK init\n"); return 1; }
+ uint32_t before = ws_check_count(), pending = store_journal_pending();
+ if (store_journal_ack(out) == 0 || store_journal_read(out, p) == 0) { printf("CHECK out-of-journal ref accepted\n"); bad++; }
+ out.page = 0; out.slot = (uint16_t)JOURNAL_SLOTS_PER_PAGE;
+ if (store_journal_ack(out) == 0) { printf("CHECK out-of-page slot accepted\n"); bad++; }
+ if (ws_check_count() != before + 3 || store_journal_pending() != pending) {
+  printf("CHECK count %u -> %u, pending %u -> %u\n", (unsigned)before, (unsigned)ws_check_count(), (unsigned)pending,
+         (unsigned)store_journal_pending()); bad++;
+ }
+ if (!before && WS_CHECK_FILE_OF(ws_check_first()) != 5) { printf("CHECK first site %04x\n", ws_check_first()); bad++; }
+ if (store_journal_ack(r) || store_journal_pending() != pending - 1) { printf("CHECK a real ack after\n"); bad++; }
+ return bad;
+}
+
 static void summary(const char *extra) {
  for (int c = 0; c < ncat; c++) printf("COUNT %s %lu\n", cat_name[c], cat_count[c]);
- printf("SUMMARY mode=%s journal_pages=%u %s\n", mode, (unsigned)WS_JOURNAL_PAGES, extra);
+ printf("SUMMARY mode=%s journal_pages=%u check_fails=%u %s\n", mode, (unsigned)WS_JOURNAL_PAGES, (unsigned)ws_check_count(), extra);
 }
 
 int main(int argc, char **argv) {
@@ -442,7 +464,7 @@ int main(int argc, char **argv) {
  setvbuf(stdout, NULL, _IOLBF, 0);
  sim_flash_reset(&S);
  if (!strcmp(mode, "functional")) {
-  int g = guards() + counter_limit() + foreign_layout();
+  int g = guards() + counter_limit() + foreign_layout() + checks();
   sim_flash_reset(&S); model_reset();
   workload(wrap);
   uint32_t ma = S.page_erases[WS_META_PAGE_A - SIM_FIRST_PAGE], mb = S.page_erases[WS_META_PAGE_B - SIM_FIRST_PAGE];

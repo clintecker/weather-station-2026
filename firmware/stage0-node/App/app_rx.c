@@ -9,6 +9,7 @@
  * All other output lines start with '#' and are diagnostics for the host log. A reception that
  * fails its checks is logged too: `#rx crc ... data=<hex>` keeps every byte the radio received
  * when only the payload CRC failed; `#rx hdr rssi=` is a header that failed (no payload). */
+#define WS_CHECK_FILE 7
 #include <string.h>
 #include "bench.h"
 #include "busymon.h"
@@ -30,6 +31,7 @@
 #include "subghz_phy_app.h"
 #include "sys_app.h"
 #include "utilities_def.h"
+#include "ws_check.h"
 #include "ws_frame.h"
 
 static RadioEvents_t events;
@@ -284,8 +286,10 @@ void console_line(char *line)
   bench_command(line);   /* TEST-FAULT, TEST-HANG (not in a field build) */
   if (ws_cmd_find(commands, 1, line) == 0)
   {
-    APP_PRINTF("#status role=rx forwarded=%u dropped=%u acks=%u relistens=%u uart_errors=%u\n",
-               (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks, (unsigned)n_relistens, (unsigned)vcom_rx_errors());
+    uint16_t site = ws_check_first();
+    APP_PRINTF("#status role=rx forwarded=%u dropped=%u acks=%u relistens=%u uart_errors=%u check_fails=%u check_first=%u:%u\n",
+               (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks, (unsigned)n_relistens, (unsigned)vcom_rx_errors(),
+               (unsigned)ws_check_count(), WS_CHECK_FILE_OF(site), WS_CHECK_LINE(site));
     return;
   }
   int n = ws_hex_decode(line, frame, sizeof frame);
@@ -334,6 +338,6 @@ void SubghzApp_Init(void)
              (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);
   fault_report();
   UTIL_TIMER_Create(&alive_timer, 60000, UTIL_TIMER_PERIODIC, on_alive, NULL);
-  UTIL_TIMER_Start(&alive_timer);
+  (void)WS_CHECK(UTIL_TIMER_Start(&alive_timer) == UTIL_TIMER_OK);   /* created just above, so not running */
   listen();
 }

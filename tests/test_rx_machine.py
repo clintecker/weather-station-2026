@@ -22,15 +22,15 @@ import unittest
 from collections import Counter
 from pathlib import Path
 try:
-    from toolchain import ROOT, host_library, needs_cc
+    from toolchain import ROOT, check_site, host_library, needs_cc
 except ImportError:
-    from tests.toolchain import ROOT, host_library, needs_cc
+    from tests.toolchain import ROOT, check_site, host_library, needs_cc
 
 RF_IDLE, RF_RX_RUNNING, RF_TX_RUNNING = range(3)
 TX_NORMAL, TX_STUCK, TX_HANG = range(3)
 LED_BLUE, LED_GREEN, LED_RED = range(3)
 SOURCES = ['host/rx_harness.c', 'host/sim_core.c', 'stage0-node/App/console.c', 'stage0-node/App/busymon.c', 'stage0-node/App/clock.c',
-           'stage0-node/App/events.c', 'stage0-node/App/bench.c', 'common/ws_console.c']
+           'stage0-node/App/events.c', 'stage0-node/App/bench.c', 'common/ws_console.c', 'common/ws_check.c']
 ALIVE_KEYS = ['uptime', 'forwarded', 'dropped', 'acks', 'diag', 'listening', 'relistens', 'uart_errors', 'stack_peak',
               'crc_errors', 'hdr_errors', 'fault_overruns', 'task_peak_us', 'task_peak', 'isr_peak_us', 'isr_peak',
               'trace_drops', 'frames_lost']
@@ -45,7 +45,7 @@ def fields(line):
 
 class Bridge:
     """One fresh boot of the RX firmware: its own copy of the library, so every static starts at zero."""
-    def __init__(self, library, tmp, start_s=0):
+    def __init__(self, library, tmp, start_s=0, before_boot=None):
         path = Path(tmp)/f'rx{random.getrandbits(48):x}.so'
         shutil.copy(library, path)
         self.lib = lib = ctypes.CDLL(str(path))
@@ -59,6 +59,8 @@ class Bridge:
             getattr(lib, name).restype = ctypes.c_uint32
         self.obs_min, self.obs_max, self.diag_len, self.ack_len, self.line_max, self.version = (lib.h_const(i) for i in range(6))
         self.log = ''
+        if before_boot:
+            before_boot(lib)
         lib.h_boot(start_s)
 
     # ---- console ----
@@ -125,7 +127,8 @@ class Bridge:
         self.out()
         self.line('STATUS')
         text = self.out()
-        self.assertion(re.fullmatch(r'#status role=rx forwarded=\d+ dropped=\d+ acks=\d+ relistens=\d+ uart_errors=\d+\n', text), text)
+        self.assertion(re.fullmatch(r'#status role=rx forwarded=\d+ dropped=\d+ acks=\d+ relistens=\d+ uart_errors=\d+ '
+                                    r'check_fails=\d+ check_first=\d+:\d+\n', text), text)
         return fields(text)
 
     def alive_lines(self, text):
@@ -160,8 +163,8 @@ class RxStateMachine(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls.addClassCleanup(cls.tmp.cleanup)
 
-    def bridge(self, start_s=0, drops_ok=False):
-        b = Bridge(self.library, self.tmp.name, start_s)
+    def bridge(self, start_s=0, drops_ok=False, before_boot=None, check_fails=0):
+        b = Bridge(self.library, self.tmp.name, start_s, before_boot)
         self.rnd = random.Random(self.id())
 
         def checks():
@@ -173,6 +176,7 @@ class RxStateMachine(unittest.TestCase):
             self.assertEqual(lib.h_capture_overflow(), 0)
             self.assertEqual(lib.h_continuous(), 1, 'the bridge must configure continuous receive')
             self.assertEqual(lib.h_last_rx_timeout(), 0, 'Rx(0): continuous receive, no driver timeout')
+            self.assertEqual(lib.ws_check_count(), check_fails, 'failed WS_CHECKs (docs/power-of-ten.md, rule 5)')
             if not drops_ok:
                 self.assertEqual(lib.h_trace_drops(), 0, 'console lines dropped')
         self.addCleanup(checks)
@@ -232,7 +236,7 @@ class RxStateMachine(unittest.TestCase):
             self.assertEqual(b.out(), f'#rx drop len={len(f)} rssi=-70 snr=-3\n')
         self.assertEqual(b.lib.h_led_flashes(LED_RED), len(bad))
         self.assertEqual(b.status(), {'role': 'rx', 'forwarded': '0', 'dropped': str(len(bad)), 'acks': '0', 'relistens': '0',
-                                      'uart_errors': '0'})
+                                      'uart_errors': '0', 'check_fails': '0', 'check_first': '0:0'})
 
     def test_a_crc_failed_packet_is_logged_whole_and_never_forwarded(self):
         b = self.bridge()
@@ -453,7 +457,19 @@ class RxStateMachine(unittest.TestCase):
         b.uart('\n')                                        # ends the line the errors damaged (discarded)
         b.advance(30)
         self.assertEqual(b.status(), {'role': 'rx', 'forwarded': '1', 'dropped': '1', 'acks': '1', 'relistens': '0',
-                                      'uart_errors': '2'})
+                                      'uart_errors': '2', 'check_fails': '0', 'check_first': '0:0'})
+
+    def test_a_failed_check_is_counted_reported_and_recovered(self):
+        """A failed WS_CHECK (firmware/common/ws_check.h, docs/power-of-ten.md rule 5): the console's
+        receive could not be started at boot. console.c recovers on the spot (one re-arm), the console
+        works, and STATUS reports the count and the site of the first failure."""
+        b = self.bridge(before_boot=lambda lib: lib.h_uart_init_fails(1), check_fails=1)
+        self.assertEqual((b.lib.h_uart_armed(), b.lib.h_uart_rearms()), (1, 1))
+        status = b.status()
+        self.assertEqual((status['check_fails'], status['check_first']),
+                         ('1', check_site('stage0-node/App/console.c', 'vcom_ReceiveInit(on_char)')))
+        b.line(reply(self.rnd).hex())                       # the downlink works
+        self.assertEqual(b.lib.h_sends(), 1)
 
     def test_test_fault_goes_to_the_fault_handler(self):
         b = self.bridge()
@@ -821,7 +837,7 @@ class Mixed:
         if line == 'STATUS':
             n = self.n
             return [f'#status role=rx forwarded={n["forwarded"]} dropped={n["dropped"]} acks={n["acks"]} '
-                    f'relistens={n["relistens"]} uart_errors={n["uart_errors"]}']
+                    f'relistens={n["relistens"]} uart_errors={n["uart_errors"]} check_fails=0 check_first=0:0']
         size, frame = hex_decode(line, self.b.ack_len + 1)
         if size != self.b.ack_len or frame[0] not in (0x52, 0x53):
             return [f'#host reject len={size}']

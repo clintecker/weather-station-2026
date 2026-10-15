@@ -23,7 +23,7 @@ except ImportError:
 
 FW = ROOT/'firmware'
 APP = FW/'stage0-node'/'App'
-SOURCES = [APP/'node_store.c', FW/'sim_flash.c', FW/'test_store.c']
+SOURCES = [APP/'node_store.c', FW/'sim_flash.c', FW/'test_store.c', FW/'common/ws_check.c']
 SMALL_JOURNAL = 3  # journal pages in the reduced-geometry build, so every-op sweeps include a wrap
 
 # Every category the driver can report, by meaning. Anything not listed in NOTES or in a
@@ -100,7 +100,8 @@ class StorePowerCut(unittest.TestCase):
             raise result
         return result
 
-    def assert_only(self, out, counts, allowed):
+    def assert_only(self, out, counts, allowed, s):
+        self.assertEqual(s['check_fails'], '0', 'no WS_CHECK fails in a sweep (docs/power-of-ten.md, rule 5)')
         bad = {c: n for c, n in counts.items() if c not in allowed}
         violations = '\n'.join(line for line in out.splitlines()
                                if line.startswith('VIOLATION') and line.split()[1] in bad)
@@ -111,6 +112,9 @@ class StorePowerCut(unittest.TestCase):
         out, counts, s = self.run_driver('full', 'functional', '1')
         self.assertEqual(counts, {}, out)
         self.assertEqual(s['guard_failures'], '0', out)
+        # test_store.c checks(): three deliberate refusals of a ref outside the journal (WS_CHECK,
+        # docs/power-of-ten.md rule 5), counted and recovered; the workload fails none.
+        self.assertEqual(s['check_fails'], '3', out)
         meta = [int(x) for x in s['meta_erases'].split(',')]
         self.assertGreaterEqual(min(meta), 1, 'both meta pages compacted into')
         self.assertGreaterEqual(sum(meta), 3, 'at least two compactions after the first boot')
@@ -130,6 +134,7 @@ class StorePowerCut(unittest.TestCase):
         out, counts, s = self.run_driver('small', 'functional', '1')
         self.assertEqual(counts, {}, out)
         self.assertEqual(s['guard_failures'], '0', out)
+        self.assertEqual(s['check_fails'], '3', out)
         self.assertGreaterEqual(int(s['journal0_erases']), 2)
         self.assertGreater(int(s['lost']), 0)
 
@@ -143,20 +148,20 @@ class StorePowerCut(unittest.TestCase):
         out, counts, s = self.run_driver('small', 'sweep', '1')
         self.assertGreater(int(s['cut_points']), 1500)
         self.assertGreater(int(s['erase_cuts']), 50)
-        self.assert_only(out, counts, NOTES | KNOWN_CUT)
+        self.assert_only(out, counts, NOTES | KNOWN_CUT, s)
 
     def test_powercut_every_op_full_geometry(self):
         """The same with the real 93-page journal (no wrap: the small build covers that)."""
         out, counts, s = self.run_driver('full', 'sweep', '0')
         self.assertGreater(int(s['cut_points']), 900)
         self.assertGreater(int(s['erase_cuts']), 400)
-        self.assert_only(out, counts, NOTES | KNOWN_CUT)
+        self.assert_only(out, counts, NOTES | KNOWN_CUT, s)
 
     def test_powercut_every_op_widest_slot(self):
         """The wrap sweep and error sweep again with the largest slot the catalog allows."""
         for mode in ('sweep', 'errsweep'):
             out, counts, s = self.run_driver('wide', mode, '1')
-            self.assert_only(out, counts, NOTES | (KNOWN_CUT if mode == 'sweep' else KNOWN_ERR))
+            self.assert_only(out, counts, NOTES | (KNOWN_CUT if mode == 'sweep' else KNOWN_ERR), s)
         out, counts, s = self.run_driver('wide', 'functional', '1')
         self.assertEqual(counts, {}, out)
 
@@ -165,7 +170,7 @@ class StorePowerCut(unittest.TestCase):
         erased), the workload carries on, then the same reboot checks."""
         for build, wrap in (('small', '1'), ('full', '0')):
             out, counts, s = self.run_driver(build, 'errsweep', wrap)
-            self.assert_only(out, counts, NOTES | KNOWN_ERR)
+            self.assert_only(out, counts, NOTES | KNOWN_ERR, s)
 
     # ---- regression tests for the bugs this harness found, all fixed 2026-10-13 (KNOWN_CUT and
     # KNOWN_ERR are empty). Each docstring says what went wrong and how it was fixed ----

@@ -1,6 +1,8 @@
+#define WS_CHECK_FILE 11
 #include "ws_policy.h"
 #include "stage0.h"
 #include "ws_obs.h"
+#include "ws_check.h"
 
 /* Per energy state (WS_ENERGY_* order): backlog frames and radio time per minute. */
 static const char *const energy_name[] = { "surplus", "normal", "conserve", "critical" };
@@ -20,6 +22,9 @@ const char *ws_energy_name(int energy)
 
 uint32_t ws_lora_airtime_ms(uint32_t payload, uint32_t sf, uint32_t bw_hz, uint32_t preamble, uint32_t cr)
 {
+ /* radio_cfg.h's constants; outside the formula's range the answer is a whole minute, which leaves
+    room for the live reading only (the cautious estimate) instead of a division by zero. */
+ if (!WS_CHECK(sf >= 7 && sf <= 12 && bw_hz >= 7800 && cr >= 1 && cr <= 4)) return 60000;
  uint32_t de = ((1000000UL << sf) / bw_hz) > 16000 ? 1 : 0;           /* low data rate optimisation: symbol > 16 ms */
  int32_t num = 8 * (int32_t)payload - 4 * (int32_t)sf + 28 + 16;
  int32_t den = 4 * ((int32_t)sf - 2 * (int32_t)de);
@@ -44,7 +49,11 @@ int ws_link_minute(ws_link *l, int answered, uint32_t sent_s)
  return started ? WS_LINK_PROBING : WS_LINK_PROBE_MISSED;
 }
 
-uint32_t ws_link_probe_interval(const ws_link *l) { return probe_interval_s[l->probe_step]; }
+uint32_t ws_link_probe_interval(const ws_link *l)
+{
+ /* ws_link_minute keeps probe_step below PROBE_STEPS; past it, the longest interval */
+ return probe_interval_s[WS_CHECK(l->probe_step < PROBE_STEPS) ? l->probe_step : PROBE_STEPS - 1U];
+}
 
 /* The energy and link gates: may this minute send at all? */
 static int minute_may_send(int energy, const ws_link *l, uint32_t now_s, uint32_t last_send_s)
@@ -71,6 +80,7 @@ static int same_record(const ws_strike *s, uint32_t epoch, uint32_t seq) { retur
 int ws_strike_note(ws_strike *t, unsigned slots, uint32_t epoch, uint32_t seq, unsigned limit)
 {
  unsigned use = slots, low = 0;
+ if (!WS_CHECK(slots > 0)) return 0;   /* no table: no strike */
  for (unsigned i = 0; i < slots; i++) {
   if (same_record(&t[i], epoch, seq)) { use = i; break; }
   if (t[i].n < t[low].n) low = i;

@@ -155,9 +155,15 @@ void vcom_tx_progress(uint32_t *started, uint32_t *done)
 
 /* ---- console UART ---- */
 static void (*uart_cb)(uint8_t *, uint16_t, uint8_t);
-static int uart_armed, uart_rearm_fails;
+static int uart_armed, uart_rearm_fails, uart_init_fails;
 static uint32_t uart_errors, uart_lost, uart_rearms;
-UTIL_ADV_TRACE_Status_t vcom_ReceiveInit(void (*cb)(uint8_t *, uint16_t, uint8_t)) { uart_cb = cb; uart_armed = 1; return UTIL_ADV_TRACE_OK; }
+/* h_uart_init_fails: the receive could not be started (the board's version never reports that; the
+   interface allows it, and console.c's WS_CHECK must recover). */
+UTIL_ADV_TRACE_Status_t vcom_ReceiveInit(void (*cb)(uint8_t *, uint16_t, uint8_t))
+{
+  uart_cb = cb; uart_armed = !uart_init_fails;
+  return uart_init_fails ? UTIL_ADV_TRACE_INVALID_PARAM : UTIL_ADV_TRACE_OK;
+}
 uint32_t vcom_rx_errors(void) { return uart_errors; }
 int vcom_rx_armed(void) { return uart_armed; }
 void vcom_rx_rearm(void) { uart_rearms++; if (!uart_rearm_fails) uart_armed = 1; }
@@ -259,6 +265,7 @@ int h_uart(const uint8_t *data, int n, int run_each)
 void h_uart_error(void) { uint8_t c = 0; uart_errors++; if (uart_cb) uart_cb(&c, 0, 1); }
 void h_uart_deaf(void) { uart_armed = 0; }   /* the receive was aborted and not re-armed */
 void h_uart_rearm_fails(int on) { uart_rearm_fails = on; }
+void h_uart_init_fails(int on) { uart_init_fails = on; }
 int h_uart_armed(void) { return uart_armed; }
 uint32_t h_uart_rearms(void) { return uart_rearms; }
 

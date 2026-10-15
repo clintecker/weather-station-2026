@@ -26,7 +26,7 @@ class SensorMachine(unittest.TestCase):
         lib = host_library(cls, 'sensormachine', '-I', fw/'host/include', '-I', fw/'stage0-node/App',
                            '-I', fw/'stage0-node/Core/Inc', '-I', fw, '-I', fw/'common',
                            fw/'host/sensor_harness.c', fw/'host/sim_core.c', fw/'stage0-node/App/sensor.c', fw/'stage0-node/App/busymon.c',
-                           fw/'stage0.c')
+                           fw/'stage0.c', fw/'common/ws_check.c')
         cls.library = lib._name
         cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls.addClassCleanup(cls.tmp.cleanup)
@@ -41,7 +41,7 @@ class SensorMachine(unittest.TestCase):
         lib.h_done_after.restype = ctypes.c_uint32
         lib.h_init()
         lib.h_device(mode, sda_hold, latency)
-        self.addCleanup(lambda: self.assertEqual((lib.h_read_too_early(), lib.h_pin_errors()), (0, 0)))
+        self.addCleanup(lambda: self.assertEqual((lib.h_read_too_early(), lib.h_pin_errors(), lib.ws_check_count()), (0, 0, 0)))
         return lib
 
     def measure(self, lib, ms=200):

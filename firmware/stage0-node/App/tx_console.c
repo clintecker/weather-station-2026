@@ -1,3 +1,4 @@
+#define WS_CHECK_FILE 4
 #include "tx_console.h"
 #include <string.h>
 #include "bench.h"
@@ -17,6 +18,7 @@
 #include "tx_time.h"
 #include "utilities_def.h"
 #include "watchdog.h"
+#include "ws_check.h"
 #include "ws_obs.h"
 #include "ws_policy.h"
 
@@ -52,12 +54,14 @@ static void counts_line(void)
 {
   const tx_counts_t *c = exchange_counts();
   const tx_node_t *n = node_state();
+  uint16_t site = ws_check_first();
   APP_PRINTF("#counts pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u "
-             "sensor_faults=%u held_lost=%u tx_fail_run=%u tx_air_run=%u stack_peak=%u\n",
+             "sensor_faults=%u held_lost=%u tx_fail_run=%u tx_air_run=%u stack_peak=%u check_fails=%u check_first=%u:%u\n",
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
              (unsigned)store_journal_burned(), (unsigned)store_abandoned_total(), (unsigned)c->sent, (unsigned)c->acked,
              (unsigned)c->no_ack, (unsigned)c->ack_rejects, (unsigned)n->sensor_faults, (unsigned)n->held_lost,
-             (unsigned)n->journal_fails.n, (unsigned)c->air.n, (unsigned)stackmon_peak());
+             (unsigned)n->journal_fails.n, (unsigned)c->air.n, (unsigned)stackmon_peak(), (unsigned)ws_check_count(),
+             WS_CHECK_FILE_OF(site), WS_CHECK_LINE(site));
 }
 
 static void timing_line(void)
@@ -80,7 +84,9 @@ static void reboot_soon(void)
   if (rebooting) return;
   rebooting = 1;
   sampling_stop();
-  UTIL_TIMER_Start(&reboot_timer);
+  /* Refused only if already running, which rebooting excludes; should it be, reset now (the reply
+     line may be cut short). */
+  if (!WS_CHECK(UTIL_TIMER_Start(&reboot_timer) == UTIL_TIMER_OK)) NVIC_SystemReset();
 }
 
 /* Bench-only power-cut test load (gap G7). Writes journal slots that are acknowledged on the
@@ -103,8 +109,9 @@ static void storm(void)
     ws_obs_t o = { .epoch = STORM_EPOCH, .seq = storm_writes++, .energy = WS_ENERGY_NORMAL, .bitmap = WS_NODE_FIELDS };
     for (unsigned f = 0; f < WS_FI_COUNT; f++) o.code[f] = ws_obs_invalid(f);
     (void)ws_obs_encode(&o, plain, sizeof plain);
-    if (store_journal_append(plain, &r) == 0) store_journal_ack(r);
-    for (int k = 0; k < 4; k++) store_next_counter(&c);
+    /* A load, not data: a failed write or reservation is simply one less flash operation. */
+    if (store_journal_append(plain, &r) == 0) (void)store_journal_ack(r);
+    for (int k = 0; k < 4; k++) (void)store_next_counter(&c);
   }
   if ((storm_writes & 255) == 0)
     { char ctr_buf[21];

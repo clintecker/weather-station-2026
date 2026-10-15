@@ -1,3 +1,4 @@
+#define WS_CHECK_FILE 8
 #include "busymon.h"
 #include "console.h"
 #include <string.h>
@@ -6,6 +7,7 @@
 #include "usart_if.h"
 #include "utilities_def.h"
 #include "utilities_conf.h"
+#include "ws_check.h"
 #include "ws_frame.h"
 #include "ws_obs.h"
 
@@ -44,7 +46,9 @@ BUSYMON_TASK(console_task)
 void console_init(void)
 {
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Console, UTIL_SEQ_RFU, console_task_timed);
-  vcom_ReceiveInit(on_char);
+  /* The board's vcom_ReceiveInit always reports OK (usart_if.c); should it not, re-arm the receive
+     once now. RX also re-arms a console that is not receiving from its health check. */
+  if (!WS_CHECK(vcom_ReceiveInit(on_char) == UTIL_ADV_TRACE_OK)) vcom_rx_rearm();
 }
 
 /* The longest frame the protocol allows (every catalog field) must print whole: a truncated line
@@ -56,11 +60,8 @@ _Static_assert(2U * HEX_FRAME_MAX + 2U <= UTIL_ADV_TRACE_TMP_BUF_SIZE, "longest 
 int hex_print(const uint8_t *data, int len)
 {
   char text[2 * HEX_FRAME_MAX + 1];
-  if (len < 0 || len > (int)HEX_FRAME_MAX)
-  {
-    APP_PRINTF("#error frame too long to forward len=%d\n", len);  /* never a truncated frame */
-    return 0;
-  }
+  /* The callers pass frames ws_air_frame_ok accepted; anything longer is never printed truncated. */
+  if (!WS_CHECK(len >= 0 && len <= (int)HEX_FRAME_MAX)) return 0;
   ws_hex_text(data, len, text);
   return APP_PRINTF_OK("%s\n", text);
 }

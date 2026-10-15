@@ -19,9 +19,9 @@ import tempfile
 import unittest
 from pathlib import Path
 try:                                        # first: sets WS0_UNSAFE_FAST_FSYNC before ws0 is imported
-    from toolchain import MBEDTLS, ROOT, SAN, host_library, needs_cc, needs_vendor
+    from toolchain import MBEDTLS, ROOT, SAN, check_site, host_library, needs_cc, needs_vendor
 except ImportError:
-    from tests.toolchain import MBEDTLS, ROOT, SAN, host_library, needs_cc, needs_vendor
+    from tests.toolchain import MBEDTLS, ROOT, SAN, check_site, host_library, needs_cc, needs_vendor
 from ws0.fields import decode
 from ws0.protocol import (KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, frame_counter, frame_kind, pack_reply, seal,
                           unseal)
@@ -32,7 +32,7 @@ R_SLEEP, R_STANDBY, R_TX, R_RX = range(4)
 SOURCES = ['host/tx_harness.c', 'host/sim_core.c', 'sim_flash.c', 'stage0.c',
            *(f'stage0-node/App/{name}.c' for name in ('app_tx', 'tx_exchange', 'tx_policy', 'tx_time', 'tx_console', 'selftest',
                                                       'node_store', 'busymon', 'clock', 'events', 'bench')),
-           *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy'))]
+           *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy', 'ws_check'))]
 ASAN_ENV = 'WS_TX_ASAN'   # set by TxUnderAddressSanitizer for its child run
 
 # What the firmware must do (docs/firmware-event-model.md, docs/radio-energy-policy.md, PRD 9). Written
@@ -228,6 +228,7 @@ class TxStateMachine(unittest.TestCase):
         self.addCleanup(lambda: self.assertEqual(node.lib.h_flash_ops_during_radio(), 0, 'flash written while the radio was busy'))
         self.addCleanup(lambda: self.assertEqual(node.lib.h_timer_start_refused(), 0, 'a running timer was started again (ST ignores that)'))
         self.addCleanup(lambda: self.assertEqual(node.lib.h_unmasked_radio_calls(), 0, 'a radio command without the radio interrupt masked'))
+        self.addCleanup(lambda: self.assertEqual(node.lib.ws_check_count(), 0, 'a WS_CHECK failed (docs/power-of-ten.md, rule 5)'))
         if not storm:   # only the storm task re-posts itself forever; anything else is a livelock
             self.addCleanup(lambda: self.assertEqual(node.lib.h_task_saturations(), 0, 'main-loop tasks never settled'))
         return node
@@ -238,6 +239,26 @@ class TxStateMachine(unittest.TestCase):
         self.assertEqual((n.radio(), n.state()), (R_RX, 'ack-wait'))
 
     # ---- the exchange, step by step ----
+
+    def test_a_failed_check_is_counted_reported_and_recovered(self):
+        """A failed WS_CHECK (firmware/common/ws_check.h, docs/power-of-ten.md rule 5): the exchange's gap
+        timer is already running when the minute's exchange starts it, so ST refuses the start. The check
+        is counted, its recovery is that the running timer's event still comes, so the exchange goes on
+        (10 ms early here), and #counts reports the count and the site of the first failure."""
+        n = Node(self.library, self.tmp.name)       # not self.node(): this test makes a start be refused
+        n.advance_to(FIRST_REPORT_MS - 10)
+        self.assertEqual(n.lib.h_start_timer(GAP_MS), 1)
+        n.advance_to(minute(0) - 10)                   # the report at FIRST_REPORT_MS; its gap timer was running
+        self.assertEqual((n.sent(), n.radio(), n.lib.h_timer_start_refused(), n.lib.ws_check_count()), (1, R_TX, 1, 1))
+        n.advance(n.air + 200)
+        n.reply()
+        self.assertIn('#ack epoch=', n.out())
+        n.advance(GAP_MS + n.air)                      # the health report, then idle
+        status = n.status()
+        self.assertEqual((n.sent(), n.radio(), status['state'], status['unexpected']), (2, R_SLEEP, 'idle', '0'))
+        self.assertEqual((status['check_fails'], status['check_first']),
+                         ('1', check_site('stage0-node/App/tx_exchange.c', 'UTIL_TIMER_Start(&gap_timer)')))
+        self.assertEqual((n.lib.h_flash_ops_during_radio(), n.lib.h_unmasked_radio_calls()), (0, 0))
 
     def test_minute_exchange_then_health_report_after_a_gap(self):
         n = self.node()

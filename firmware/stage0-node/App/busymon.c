@@ -1,4 +1,6 @@
+#define WS_CHECK_FILE 10
 #include "busymon.h"
+#include "ws_check.h"
 
 static uint32_t peak[BM_KINDS];
 static const char *peak_name[BM_KINDS];
@@ -14,6 +16,7 @@ void busymon_init(void)
 void busymon_end(bm_kind kind, uint32_t start, const char *name)
 {
   uint32_t cycles = DWT->CYCCNT - start;
+  if (!WS_CHECK(kind < BM_KINDS)) return;   /* every caller passes a BM_* constant */
   uint32_t primask = __get_PRIMASK();
   __disable_irq();
   if (cycles > peak[kind]) { peak[kind] = cycles; peak_name[kind] = name; }

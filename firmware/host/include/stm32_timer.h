@@ -3,6 +3,7 @@
 #define HOST_STM32_TIMER_H
 #include <stdint.h>
 typedef enum { UTIL_TIMER_ONESHOT, UTIL_TIMER_PERIODIC } UTIL_TIMER_Mode_t;
+enum { UTIL_TIMER_OK = 0 };   /* ST's UTIL_TIMER_Status_t success value; sim_core.c returns it */
 typedef struct UTIL_TIMER_Object_s {
   uint32_t period;            /* ms, as given to Create / SetPeriod */
   uint64_t due;               /* expiry in sim_core time units, while running */

@@ -4,6 +4,7 @@
  * (docs/radio-energy-policy.md); each frame gets a fresh durably reserved counter and one ACK
  * receive window. This file is boot and the sampling glue; the other TX modules are listed in
  * App/tx_node.h. */
+#define WS_CHECK_FILE 1
 #include <string.h>
 #include "busymon.h"
 #include "clock.h"
@@ -28,6 +29,7 @@
 #include "utilities_def.h"
 #include "watchdog.h"
 #include "ws_be.h"
+#include "ws_check.h"
 #include "ws_obs.h"
 
 #define SAMPLE_PERIOD_MS    15000U  /* one T/RH sample; every SAMPLES_PER_REPORT-th builds the minute (PRD 9) */
@@ -97,9 +99,16 @@ static unsigned held_n;
 
 static uint32_t plain_seq(const uint8_t *plain) { return ws_get_be32(plain + 4); }
 
+/* hold() makes room before it adds, so held_n never exceeds HELD_MAX; a count that did is clamped. */
+static unsigned held_count(void)
+{
+  if (!WS_CHECK(held_n <= HELD_MAX)) held_n = HELD_MAX;
+  return held_n;
+}
+
 static void hold(const uint8_t *plain)
 {
-  if (held_n == HELD_MAX)
+  if (held_count() == HELD_MAX)
   {
     node.held_lost++;
     APP_PRINTF("#error held-lost seq=%u (a newer reading replaced it; held_lost=%u)\n", (unsigned)plain_seq(held[0]),
@@ -113,7 +122,7 @@ static void hold(const uint8_t *plain)
 void held_flush(void)
 {
   jref_t r;
-  for (unsigned i = 0; i < held_n; i++)
+  for (unsigned i = 0, n = held_count(); i < n; i++)
   {
     int rc = store_journal_append(held[i], &r);
     ws_failrun_note(&node.journal_fails, rc == 0);
@@ -177,7 +186,7 @@ static void sample_line(const minute_t *m, int src, int rc, int busy)
 static void minute_report(int src)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live; minute_t m;
-  int encoded = minute_encode(&m, plain);
+  int encoded = WS_CHECK(minute_encode(&m, plain));   /* our own codes always encode */
   int busy = exchange_busy();
   int rc = journal_or_hold(plain, encoded, busy, &live);
   sample_line(&m, src, rc, busy);

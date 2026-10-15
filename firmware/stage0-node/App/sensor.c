@@ -1,3 +1,4 @@
+#define WS_CHECK_FILE 6
 #include "sensor.h"
 #include "busymon.h"
 #include "events.h"
@@ -6,6 +7,7 @@
 #include "stm32_timer.h"
 #include "stm32wlxx_hal.h"
 #include "utilities_def.h"
+#include "ws_check.h"
 
 #define SDA_PIN GPIO_PIN_11
 #define SCL_PIN GPIO_PIN_12
@@ -56,8 +58,10 @@ static void i2c_start(void)
   hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
   hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
   hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  HAL_I2C_Init(&hi2c2);
-  HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE);
+  /* Both fail only for a NULL or busy handle (stm32wlxx_hal_i2c.c). Should one fail anyway, the next
+     transfer is refused (rc -2) and the bus recovery that follows initialises the peripheral again. */
+  (void)WS_CHECK(HAL_I2C_Init(&hi2c2) == HAL_OK);
+  (void)WS_CHECK(HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) == HAL_OK);
 }
 
 /* One measurement as a chain of interrupts and timers; nothing waits:
@@ -105,7 +109,7 @@ void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
   if (hi2c != &hi2c2) return;
   /* State change and timers in one critical section: the guard cannot fire in between. */
   uint32_t primask = irq_lock();
-  if (st == S_CMD) { st = S_MEASURE; UTIL_TIMER_Stop(&guard_timer); UTIL_TIMER_Start(&measure_timer); }
+  if (st == S_CMD) { st = S_MEASURE; UTIL_TIMER_Stop(&guard_timer); (void)WS_CHECK(UTIL_TIMER_Start(&measure_timer) == UTIL_TIMER_OK); }
   irq_unlock(primask);
 }
 
@@ -113,7 +117,7 @@ static void on_measured(void *ctx)
 {
   (void)ctx;
   if (!advance(S_MEASURE, S_READ)) return;
-  UTIL_TIMER_Start(&guard_timer);
+  (void)WS_CHECK(UTIL_TIMER_Start(&guard_timer) == UTIL_TIMER_OK);
   if (HAL_I2C_Master_Receive_IT(&hi2c2, (uint16_t)(WS_SHT45_ADDR << 1), reply, sizeof reply) != HAL_OK) finish(-3);
 }
 
@@ -143,13 +147,13 @@ static void on_step(void *ctx)
 {
   (void)ctx;
   int rc = ws_i2c_recover_step(&rec, &pins);
-  if (rc > 0) { UTIL_TIMER_Start(&step_timer); return; }
+  if (rc > 0) { (void)WS_CHECK(UTIL_TIMER_Start(&step_timer) == UTIL_TIMER_OK); return; }
   recover_rc = rc; st = S_RECOVERED; post();
 }
 
 static void recover_begin(void)
 {
-  HAL_I2C_DeInit(&hi2c2);
+  (void)HAL_I2C_DeInit(&hi2c2);   /* fails only for a NULL handle; the pins are taken over below either way */
   /* An abandoned transfer can leave its interrupt pending and its handler set; neither may run on
      the re-initialised peripheral. */
   HAL_NVIC_ClearPendingIRQ(I2C2_EV_IRQn); HAL_NVIC_ClearPendingIRQ(I2C2_ER_IRQn);
@@ -160,7 +164,7 @@ static void recover_begin(void)
   HAL_GPIO_Init(GPIOA, &gpio);
   st = S_RECOVER;
   ws_i2c_recover_begin(&rec, &pins);
-  UTIL_TIMER_Start(&step_timer);
+  (void)WS_CHECK(UTIL_TIMER_Start(&step_timer) == UTIL_TIMER_OK);
 }
 
 static int failed_rc;   /* the reading's failure, reported once the recovery has run */
@@ -175,7 +179,7 @@ static void sensor_task(void)
     st = S_IDLE;
     sensor_done(0, t, h);
   }
-  else if (st == S_RECOVERED)
+  else if (WS_CHECK(st == S_RECOVERED))   /* the task is posted only with S_DONE or S_RECOVERED */
   {
     i2c_start();
     st = S_IDLE;
@@ -198,7 +202,7 @@ int sensor_start(void)
   static const uint8_t command[1] = { WS_SHT45_MEASURE };
   if (st != S_IDLE) return -1;
   st = S_CMD;
-  UTIL_TIMER_Start(&guard_timer);
+  (void)WS_CHECK(UTIL_TIMER_Start(&guard_timer) == UTIL_TIMER_OK);   /* stopped by finish() or the write's completion */
   /* ST's HAL takes a non-const buffer it only reads (the static array outlives the transfer). */
   if (HAL_I2C_Master_Transmit_IT(&hi2c2, (uint16_t)(WS_SHT45_ADDR << 1), (uint8_t *)(uintptr_t)command, 1) != HAL_OK) finish(-2);
   return 0;
