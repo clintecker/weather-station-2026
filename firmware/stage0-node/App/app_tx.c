@@ -181,7 +181,7 @@ static void minute_report(int src)
   minute_send(rc ? NULL : &live);
 }
 
-static void sampled(int src, int16_t t, uint16_t h)
+void sensor_done(int src, int16_t t, uint16_t h)
 {
   if (tx_node.rebooting || tx_node.storming || stuck) return;   /* a measurement that finishes after sampling stopped */
   if (!sensor_reported)
@@ -196,18 +196,18 @@ static void sampled(int src, int16_t t, uint16_t h)
   minute_report(src);
 }
 
-/* Every 15 s: start a measurement; sampled() gets its result from the sensor task ~10 ms later. */
+/* Every 15 s: start a measurement; sensor_done() gets its result from the sensor task ~10 ms later. */
 static void sample(void)
 {
   last_sample_s = clock_s();
-  if (sensor_start(sampled)) sampled(-1, 0, 0);   /* the previous one never finished: a missed sample */
+  if (sensor_start()) sensor_done(-1, 0, 0);   /* the previous one never finished: a missed sample */
 }
 BUSYMON_TASK(sample)
 
 static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
 
 /* Watchdog health: real progress, not just a running main loop (failure-modes.md G1). */
-static int tx_healthy(void)
+int watchdog_healthy(void)
 {
   uint32_t now = clock_s();
   if (stuck) return 0;
@@ -267,7 +267,7 @@ void SubghzApp_Init(void)
 
   tx_node.boot_s = clock_s();
   policy_init();
-  watchdog_start(tx_healthy);
+  watchdog_start();
   tx_node.kat_ok = selftest_kat();
   APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
              watchdog_reset_cause(), tx_node.kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);

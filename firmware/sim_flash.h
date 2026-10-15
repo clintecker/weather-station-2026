@@ -55,7 +55,7 @@ typedef struct {
 } sim_flash;
 
 void sim_flash_reset(sim_flash *s); /* everything erased, counters zero, no cut, no failure */
-/* ws_flash ops; ctx is a sim_flash *. */
+/* The flash primitives over the model ctx (a sim_flash *); the host tests' ws_flash_* call these. */
 int sim_flash_read64(void *ctx, uint32_t addr, uint64_t *out);
 int sim_flash_prog64(void *ctx, uint32_t addr, uint64_t value);
 int sim_flash_erase(void *ctx, uint32_t page);

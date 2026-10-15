@@ -232,19 +232,19 @@ void fault_test(void)
 }
 
 /* ---- watchdog ---- */
-static int (*healthy_fn)(void);
+static int wd_started;
 static UTIL_TIMER_Object_t wd_timer;
 static uint64_t wd_refreshed;   /* ticks */
 static uint32_t wd_resets, wd_unhealthy, wd_checks;
 static void wd_check(void)
 {
   wd_checks++;
-  if (healthy_fn()) wd_refreshed = sim_ticks(); else wd_unhealthy++;
+  if (watchdog_healthy()) wd_refreshed = sim_ticks(); else wd_unhealthy++;
 }
 static void wd_request(void *arg) { (void)arg; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Watchdog, CFG_SEQ_Prio_0); }
-void watchdog_start(int (*healthy)(void))
+void watchdog_start(void)
 {
-  healthy_fn = healthy;
+  wd_started = 1;
   if (!sim_cfg.watchdog_periodic) return;
   wd_refreshed = sim_ticks();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Watchdog, UTIL_SEQ_RFU, wd_check);
@@ -253,12 +253,12 @@ void watchdog_start(int (*healthy)(void))
 }
 static void wd_iwdg(void)
 {
-  if (!sim_cfg.watchdog_periodic || !healthy_fn) return;
+  if (!sim_cfg.watchdog_periodic || !wd_started) return;
   if (sim_ticks() - wd_refreshed > 8U * 1024U) { wd_resets++; wd_refreshed = sim_ticks(); }
 }
 ws_reset_t watchdog_reset_code(void) { return WS_RESET_POWER; }
 const char *watchdog_reset_cause(void) { return "power"; }
-int h_healthy(void) { return healthy_fn(); }
+int h_healthy(void) { return watchdog_healthy(); }
 uint32_t h_wd_resets(void) { return wd_resets; }
 uint32_t h_wd_unhealthy(void) { return wd_unhealthy; }
 uint32_t h_wd_checks(void) { return wd_checks; }

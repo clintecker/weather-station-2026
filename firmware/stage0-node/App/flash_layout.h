@@ -17,17 +17,14 @@ _Static_assert(WS_JOURNAL_FIRST + WS_JOURNAL_PAGES == 128U, "the journal runs to
 /* Set by NMI_Handler when a read hits a double ECC error (interrupted program). */
 extern volatile uint8_t ws_flash_ecc_fault;
 
-/* The three flash primitives node_store.c uses (review P3), so the store builds and is
- * power-cut tested on the host (firmware/sim_flash.c). Addresses are absolute (0x0800xxxx);
- * every call returns 0 on success. read64 returns nonzero when the read hit a double-ECC
- * fault (a torn program). prog64 writes one erased, 8-byte-aligned double-word; erase takes a
- * page number. The target implementation is App/flash_stm32wl.c (HAL_FLASH_*). */
-typedef struct {
- void *ctx;
- int (*read64)(void *ctx, uint32_t addr, uint64_t *out);
- int (*prog64)(void *ctx, uint32_t addr, uint64_t value);
- int (*erase)(void *ctx, uint32_t page);
-} ws_flash;
-/* The internal flash: App/flash_stm32wl.c on the board, the simulator in host tests. */
-extern const ws_flash ws_flash_internal;
+/* The three flash primitives node_store.c uses (review P3), so the store builds and is power-cut
+ * tested on the host. Addresses are absolute (0x0800xxxx); every call returns 0 on success.
+ * read64 returns nonzero when the read hit a double-ECC fault (a torn program). prog64 writes one
+ * erased, 8-byte-aligned double-word; erase takes a page number. A link-time seam, not a table of
+ * function pointers (docs/power-of-ten.md, rule 9): App/flash_stm32wl.c (HAL_FLASH_*) defines them on
+ * the board, firmware/test_store.c and firmware/host/tx_harness.c over firmware/sim_flash.c on the
+ * host. */
+int ws_flash_read64(uint32_t addr, uint64_t *out);
+int ws_flash_prog64(uint32_t addr, uint64_t value);
+int ws_flash_erase(uint32_t page);
 #endif

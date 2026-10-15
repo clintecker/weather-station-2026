@@ -106,7 +106,7 @@ const char *exchange_state_name(void) { return tx_state_name[tx_state]; }
 static void radio_idle(void) { tx_state = TX_IDLE; ws_radio_sleep(); held_flush(); }
 
 /* The exchange outlasted its worst case (a radio that never finishes): stop the radio, then journal
-   any held reading while it is idle, so a watchdog reset loses nothing (app_tx.c tx_healthy). */
+   any held reading while it is idle, so a watchdog reset loses nothing (app_tx.c watchdog_healthy). */
 void exchange_abort(void)
 {
   UTIL_TIMER_Stop(&gap_timer);

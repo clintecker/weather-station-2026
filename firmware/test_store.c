@@ -35,7 +35,9 @@
 #include "ws_frame.h"
 
 static sim_flash S;
-const ws_flash ws_flash_internal = { &S, sim_flash_read64, sim_flash_prog64, sim_flash_erase };
+int ws_flash_read64(uint32_t addr, uint64_t *out) { return sim_flash_read64(&S, addr, out); }
+int ws_flash_prog64(uint32_t addr, uint64_t value) { return sim_flash_prog64(&S, addr, value); }
+int ws_flash_erase(uint32_t page) { return sim_flash_erase(&S, page); }
 
 /* node_store only needs a deterministic 3-byte check value; AES is tested in test_frame.py. */
 int ws_key_check(const uint8_t key[16], uint8_t out[3]) {

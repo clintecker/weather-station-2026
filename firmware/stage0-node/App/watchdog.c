@@ -14,7 +14,6 @@
 
 static IWDG_HandleTypeDef hiwdg;
 static UTIL_TIMER_Object_t check_timer;
-static int (*health)(void);
 static ws_reset_t cause = WS_RESET_UNKNOWN;
 /* Indexed by code (designated initializers), so the name and the DIAG wire code cannot drift apart. */
 static const char *const cause_name[] = {
@@ -31,7 +30,7 @@ static void request_check(void *ctx)
 
 static void check(void)
 {
-  if (!health || health()) HAL_IWDG_Refresh(&hiwdg);
+  if (watchdog_healthy()) HAL_IWDG_Refresh(&hiwdg);
 }
 BUSYMON_TASK(check)
 
@@ -49,10 +48,9 @@ static void read_reset_cause(void)
 ws_reset_t watchdog_reset_code(void) { return cause; }
 const char *watchdog_reset_cause(void) { return cause_name[cause]; }
 
-void watchdog_start(int (*healthy)(void))
+void watchdog_start(void)
 {
   read_reset_cause();
-  health = healthy;
 #if defined(DEBUGGER_ENABLED) && (DEBUGGER_ENABLED == 1)
   __HAL_DBGMCU_FREEZE_IWDG(); /* a halted debug session must not trigger resets */
 #endif

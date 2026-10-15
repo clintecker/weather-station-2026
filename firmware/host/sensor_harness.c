@@ -19,6 +19,7 @@
 static const sim_source i2c_source;
 const sim_config sim_cfg = { .name = "sensor_harness", .sources = (const sim_source *const[]){ &i2c_source, NULL },
                              .reset_fatal = 1, .saturation_fatal = 1, .primask_leak_fatal = 1 };
+int watchdog_healthy(void) { return 1; }   /* sim_core.c's watchdog; this harness never starts it */
 
 /* ---- the SHT45 and its bus ---- */
 enum { DEV_OK, DEV_NACK_CMD, DEV_NACK_READ, DEV_BAD_CRC, DEV_HANG_CMD, DEV_HANG_READ, DEV_BUSY };
@@ -111,7 +112,7 @@ static int done_calls, done_rc;
 static int16_t done_t;
 static uint16_t done_h;
 static uint64_t done_at, started_at;
-static void on_done(int rc, int16_t t, uint16_t h) { done_calls++; done_rc = rc; done_t = t; done_h = h; done_at = sim_now(); }
+void sensor_done(int rc, int16_t t, uint16_t h) { done_calls++; done_rc = rc; done_t = t; done_h = h; done_at = sim_now(); }
 void h_advance(uint32_t ms) { sim_advance(ms); }
 void h_init(void)
 {
@@ -124,7 +125,7 @@ void h_device(int mode, int sda_hold, uint32_t latency_ms)
   dev_mode = mode; sda_hold_edges = sda_hold; scl_edges = 0; i2c_latency_ms = latency_ms;
   reply_bytes[5] = ws_crc8(reply_bytes + 3, 2) ^ (mode == DEV_BAD_CRC);
 }
-int h_start(void) { started_at = sim_now(); return sensor_start(on_done); }
+int h_start(void) { started_at = sim_now(); return sensor_start(); }
 int h_done_calls(void) { return done_calls; }
 int h_done_rc(void) { return done_rc; }
 int h_done_t(void) { return done_t; }

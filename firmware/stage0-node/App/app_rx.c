@@ -140,7 +140,7 @@ static void listen(void)
 
 /* Watchdog health: the radio must really be listening, or finish a transmission within 5 s.
  * One self-heal attempt (re-arm RX) before the watchdog is allowed to reset the board. */
-static int rx_healthy(void)
+int watchdog_healthy(void)
 {
   /* Review P5: the console must be receiving (it carries the ACK downlink). One re-arm first. */
   if (!vcom_rx_armed())
@@ -276,7 +276,7 @@ static void on_alive(void *ctx)
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, CFG_SEQ_Prio_0);
 }
 
-static void on_line(char *line)
+void console_line(char *line)
 {
   uint8_t frame[WS_ACK_FRAME_LEN + 1];
   static const char *const commands[] = { "STATUS" };
@@ -325,10 +325,10 @@ void SubghzApp_Init(void)
   Radio.Init(&events);
   ws_radio_configure(1);
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process_timed);
-  console_init(on_line);
+  console_init();
   /* After console_init: vcom_ReceiveInit waits for the UART to be idle, which a host streaming
      without gaps could stretch past the watchdog (review m13). */
-  watchdog_start(rx_healthy);
+  watchdog_start();
   /* A leading newline ends any line a reset cut off, so the host sees #boot on a line of its own (m7). */
   APP_PRINTF("\n#boot role=rx fw=%s reset=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION, watchdog_reset_cause(),
              (unsigned)WS_RF_FREQUENCY_HZ, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_TX_POWER_DBM);

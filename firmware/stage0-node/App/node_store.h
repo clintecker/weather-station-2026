@@ -4,7 +4,7 @@
 #include "flash_layout.h"
 #include "node_fields.h"
 /* Durable TX node state in internal flash: provisioning, monotonic counters, journal.
- * All flash access goes through ws_flash_internal (flash_layout.h). Mutators of the monotonic
+ * All flash access goes through the ws_flash_* primitives (flash_layout.h). Mutators of the monotonic
  * values need a successful store_meta_init; journal mutators also need store_journal_init
  * (and a fresh one after store_wipe). Before that they return STORE_ENOTREADY and touch
  * nothing. */

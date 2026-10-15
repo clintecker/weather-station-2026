@@ -132,17 +132,14 @@ static const sim_source radio_source = { radio_pending, radio_fire, SIM_IRQ_SUBG
 static sim_flash S;
 static uint32_t flash_ops_during_radio, flash_erases;
 static void check_radio_idle(void) { if (radio_state == R_TX || radio_state == R_RX) flash_ops_during_radio++; }
-static int h_read64(void *c, uint32_t a, uint64_t *v) { return sim_flash_read64(c, a, v); }
-static int h_prog64(void *c, uint32_t a, uint64_t v) { check_radio_idle(); return sim_flash_prog64(c, a, v); }
-static int h_erase(void *c, uint32_t p) { check_radio_idle(); flash_erases++; return sim_flash_erase(c, p); }
-const ws_flash ws_flash_internal = { &S, h_read64, h_prog64, h_erase };
+int ws_flash_read64(uint32_t a, uint64_t *v) { return sim_flash_read64(&S, a, v); }
+int ws_flash_prog64(uint32_t a, uint64_t v) { check_radio_idle(); return sim_flash_prog64(&S, a, v); }
+int ws_flash_erase(uint32_t p) { check_radio_idle(); flash_erases++; return sim_flash_erase(&S, p); }
 
 /* ---- the USB console: the test hands over whole lines (h_line) ---- */
-static void (*line_handler)(char *);
-void console_init(void (*on_line)(char *)) { line_handler = on_line; }
+void console_init(void) {}
 
 /* ---- SHT45: a measurement ends WS-defined 10 ms after it starts, through the sensor task ---- */
-static void (*sensor_cb)(int, int16_t, uint16_t);
 static int sensor_busy, sensor_rc, sensor_hang, sensor_starts;
 static int16_t sensor_t = 2150;
 static uint16_t sensor_h = 4500;
@@ -150,7 +147,7 @@ static UTIL_TIMER_Object_t sensor_timer;
 static void sensor_task(void)
 {
   sensor_busy = 0;
-  sensor_cb(sensor_rc, sensor_rc ? 0 : sensor_t, sensor_rc ? 0 : sensor_h);
+  sensor_done(sensor_rc, sensor_rc ? 0 : sensor_t, sensor_rc ? 0 : sensor_h);
 }
 static void on_sensor_timer(void *arg) { (void)arg; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sensor, CFG_SEQ_Prio_0); }
 void sensor_init(void)
@@ -158,10 +155,10 @@ void sensor_init(void)
   UTIL_TIMER_Create(&sensor_timer, 10, UTIL_TIMER_ONESHOT, on_sensor_timer, NULL);
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sensor, UTIL_SEQ_RFU, sensor_task);
 }
-int sensor_start(void (*done)(int, int16_t, uint16_t))
+int sensor_start(void)
 {
   if (sensor_busy) return -1;
-  sensor_busy = 1; sensor_cb = done; sensor_starts++;
+  sensor_busy = 1; sensor_starts++;
   if (!sensor_hang) UTIL_TIMER_Start(&sensor_timer);
   return 0;
 }
@@ -216,7 +213,7 @@ void h_line(const char *line)
 {
   char buf[WS_LINE_MAX + 1];
   snprintf(buf, sizeof buf, "%s", line);
-  line_handler(buf);
+  console_line(buf);
   sim_run_tasks();
 }
 /* Radio callbacks as the chip would raise them (interrupt context, then the main loop runs). */

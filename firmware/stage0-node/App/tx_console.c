@@ -152,7 +152,7 @@ static int refused(int cmd, char *line)
   return 1;
 }
 
-static void on_line(char *line)
+void console_line(char *line)
 {
   bench_command(line);   /* TEST-FAULT, TEST-HANG (not in a field build) */
   int cmd = ws_cmd_find(command, CMD_COUNT, line);
@@ -174,5 +174,5 @@ void tx_console_init(void)
 {
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Storm, UTIL_SEQ_RFU, storm_timed);
   UTIL_TIMER_Create(&reboot_timer, REBOOT_DELAY_MS, UTIL_TIMER_ONESHOT, on_reboot, NULL);
-  console_init(on_line);
+  console_init();
 }

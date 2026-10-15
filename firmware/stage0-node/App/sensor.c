@@ -65,15 +65,14 @@ static void i2c_start(void)
  *   write complete (I2C IRQ): measurement timer             S_MEASURE
  *   timer (RTC IRQ): reply read (I2C interrupt mode)       S_READ
  *   read complete (I2C IRQ): sensor task                   S_DONE
- *   sensor task (main loop): CRC check, then done(), or the stuck-bus recovery first: one pin step
- *   per timer tick (S_RECOVER; ST's timer makes it ~2-3 ms), then done().
+ *   sensor task (main loop): CRC check, then sensor_done(), or the stuck-bus recovery first: one pin step
+ *   per timer tick (S_RECOVER; ST's timer makes it ~2-3 ms), then sensor_done().
  * A guard timer bounds S_CMD and S_READ; an I2C error ends either. finish() is the one way out of
  * a bus state, under a critical section, so a late completion and the guard cannot both count. */
 typedef enum { S_IDLE, S_CMD, S_MEASURE, S_READ, S_DONE, S_RECOVER, S_RECOVERED } sensor_state;
 static volatile sensor_state st = S_IDLE;
 static volatile int bus_rc, recover_rc;
 static uint8_t reply[WS_SHT45_REPLY_LEN];
-static void (*done_cb)(int rc, int16_t centi_c, uint16_t centi_rh);
 static UTIL_TIMER_Object_t measure_timer, guard_timer, step_timer;
 static ws_i2c_rec rec;
 
@@ -167,20 +166,20 @@ static void recover_begin(void)
 static int failed_rc;   /* the reading's failure, reported once the recovery has run */
 static void sensor_task(void)
 {
-  int16_t t = 0; uint16_t h = 0; void (*cb)(int, int16_t, uint16_t) = done_cb;
+  int16_t t = 0; uint16_t h = 0;
   if (st == S_DONE)
   {
     int rc = bus_rc;
     if (rc == 0) rc = ws_sht45_parse(reply, &t, &h);
     if (rc) { failed_rc = rc; recover_begin(); return; }
     st = S_IDLE;
-    cb(0, t, h);
+    sensor_done(0, t, h);
   }
   else if (st == S_RECOVERED)
   {
     i2c_start();
     st = S_IDLE;
-    cb(recover_rc ? SENSOR_BUS_STUCK : failed_rc, 0, 0);
+    sensor_done(recover_rc ? SENSOR_BUS_STUCK : failed_rc, 0, 0);
   }
 }
 BUSYMON_TASK(sensor_task)
@@ -194,11 +193,10 @@ void sensor_init(void)
   i2c_start();
 }
 
-int sensor_start(void (*done)(int rc, int16_t centi_c, uint16_t centi_rh))
+int sensor_start(void)
 {
   static const uint8_t command[1] = { WS_SHT45_MEASURE };
   if (st != S_IDLE) return -1;
-  done_cb = done;
   st = S_CMD;
   UTIL_TIMER_Start(&guard_timer);
   /* ST's HAL takes a non-const buffer it only reads (the static array outlives the transfer). */

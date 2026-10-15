@@ -12,7 +12,6 @@
 static ws_line_asm isr_line;
 static char line[WS_LINE_MAX + 1];
 static volatile uint8_t line_ready;
-static void (*handler)(char *line);
 
 /* UART receive interrupt, one character at a time. While a completed line waits for the
  * main loop, further input is dropped (the host sends one line per exchange). A dropped or damaged
@@ -37,14 +36,13 @@ static void on_char(uint8_t *c, uint16_t size, uint8_t error)
 
 static void console_task(void)
 {
-  if (line_ready && handler) handler(line);
+  if (line_ready) console_line(line);
   line_ready = 0;
 }
 BUSYMON_TASK(console_task)
 
-void console_init(void (*on_line)(char *line))
+void console_init(void)
 {
-  handler = on_line;
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Console, UTIL_SEQ_RFU, console_task_timed);
   vcom_ReceiveInit(on_char);
 }

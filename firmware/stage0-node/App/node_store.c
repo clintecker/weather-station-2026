@@ -4,8 +4,8 @@
  * interrupted write leaves either nothing, an uncommitted slot, or a double-ECC error that
  * NMI_Handler reports through ws_flash_ecc_fault. All three read back as "not present".
  * Monotonic values only ever increase: recovery takes the maximum of everything readable.
- * No HAL here: flash goes through ws_flash_internal (App/flash_stm32wl.c on the board,
- * firmware/sim_flash.c in tests/test_store_powercut.py). */
+ * No HAL here: flash goes through the ws_flash_* primitives (flash_layout.h: App/flash_stm32wl.c on
+ * the board, firmware/sim_flash.c in tests/test_store_powercut.py). */
 #include "node_store.h"
 #include <string.h>
 #include "ws_be.h"
@@ -38,18 +38,18 @@ _Static_assert(WS_CONFIG_PAGE < WS_META_PAGE_A && WS_META_PAGE_A < WS_META_PAGE_
 _Static_assert(WS_JOURNAL_PAGES >= 2U && WS_JOURNAL_FIRST + WS_JOURNAL_PAGES <= 128U, "journal fits in the 128 flash pages");
 _Static_assert(WS_JOURNAL_PAGES <= 0xFFFFU && JOURNAL_SLOTS_PER_PAGE <= 0xFFFFU, "jref_t page and slot are 16-bit");
 
-/* ---- flash primitives (ws_flash ops, flash_layout.h) ---- */
+/* ---- flash primitives (flash_layout.h) ---- */
 static uint32_t n_ecc;
 static uint64_t rd64(uint32_t addr, int *bad) {
  uint64_t v;
- if (ws_flash_internal.read64(ws_flash_internal.ctx, addr, &v)) { n_ecc++; if (bad) *bad = 1; return 0; }
+ if (ws_flash_read64(addr, &v)) { n_ecc++; if (bad) *bad = 1; return 0; }
  return v;
 }
 static int prog64(uint32_t addr, uint64_t v) {
- return ws_flash_internal.prog64(ws_flash_internal.ctx, addr, v) ? -1 : 0;
+ return ws_flash_prog64(addr, v) ? -1 : 0;
 }
 static int erase_page(uint32_t page) {
- return ws_flash_internal.erase(ws_flash_internal.ctx, page) ? -1 : 0;
+ return ws_flash_erase(page) ? -1 : 0;
 }
 
 /* store_ready guard (review P3): mutators refuse to run on RAM state that no successful init
