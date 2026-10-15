@@ -41,7 +41,7 @@ The firmware version string (`fw=` in `#boot`/`#status`) is `git describe --alwa
 
 `App/` holds this project's own code; the board support is in `../board/nucleo-wl55jc`. Portable
 logic (no HAL) lives in `firmware/common/` and `firmware/stage0.c`, so the host tests run it as is;
-`firmware/host/` builds the role modules over a simulated board (`tests/test_tx_machine.py`,
+`firmware/host/` builds the role modules over a simulated board (one shared core, `sim_core.c`: clock, ST's timer server and sequencer, event loop; `tests/test_tx_machine.py`,
 `tests/test_rx_machine.py`, `tests/test_sensor_machine.py`). How the code runs (interrupts, timers,
 tasks, the exchange state machine) is in [`docs/firmware-event-model.md`](../../docs/firmware-event-model.md).
 

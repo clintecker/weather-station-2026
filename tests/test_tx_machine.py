@@ -29,7 +29,7 @@ from ws0.protocol import (KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, frame_counte
 STATION = 7
 KEY = bytes(range(16, 32))
 R_SLEEP, R_STANDBY, R_TX, R_RX = range(4)
-SOURCES = ['host/tx_harness.c', 'sim_flash.c', 'stage0.c',
+SOURCES = ['host/tx_harness.c', 'host/sim_core.c', 'sim_flash.c', 'stage0.c',
            *(f'stage0-node/App/{name}.c' for name in ('app_tx', 'tx_exchange', 'tx_policy', 'tx_time', 'tx_console', 'selftest',
                                                       'node_store', 'busymon', 'clock', 'events', 'bench')),
            *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy'))]

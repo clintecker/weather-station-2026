@@ -25,7 +25,7 @@ class SensorMachine(unittest.TestCase):
         fw = ROOT/'firmware'
         lib = host_library(cls, 'sensormachine', '-I', fw/'host/include', '-I', fw/'stage0-node/App',
                            '-I', fw/'stage0-node/Core/Inc', '-I', fw, '-I', fw/'common',
-                           fw/'host/sensor_harness.c', fw/'stage0-node/App/sensor.c', fw/'stage0-node/App/busymon.c',
+                           fw/'host/sensor_harness.c', fw/'host/sim_core.c', fw/'stage0-node/App/sensor.c', fw/'stage0-node/App/busymon.c',
                            fw/'stage0.c')
         cls.library = lib._name
         cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)

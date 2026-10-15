@@ -1,4 +1,4 @@
-/* Host stand-in (firmware/host/tx_harness.c): the few CMSIS names the TX application uses. */
+/* Host stand-in (implemented by firmware/host/sim_core.c): the few CMSIS names the applications use. */
 #ifndef HOST_STM32WLXX_H
 #define HOST_STM32WLXX_H
 #include <stdint.h>
