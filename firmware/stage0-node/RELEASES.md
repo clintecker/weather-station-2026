@@ -14,6 +14,24 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
 
+## 7eb79f64f2bd — 2026-10-15 (bench, strike rule A, Power of Ten; protocol draft 5)
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (34,248 B) | `67de0491b97f03b453bf9d655281cb4882d5ec03296fa305796b765a4ef6e7f0` |
+| `build/rx/stage0-rx.elf` (path-dependent) | `c16075519b94b9892d2bbd812f3e995f03df54b76c80b95bd8720babaa7b0b38` |
+| `build/tx/stage0-tx.bin` (57,816 B) | `cc5c662ab6a9e537429504d6de21c291fac0f8bd42ee8d081691727b8a064e44` |
+| `build/tx/stage0-tx.elf` (path-dependent) | `77779d55378ee0ee31ec95f3f0ce09b2434bdada7cf378b50c4e8c199e45c1c5` |
+
+- Source: commit `7eb79f64f2bd`. Changes since ddb469680a30:
+  - Strike rule A (Clint): a record earns a strike only when a frame sent after it in the same exchange is answered; after a missed reply the drain sends one more frame (a second miss in a row stops it). A lone refused record is retried each minute, never abandoned by luck.
+  - NASA/JPL Power of Ten pass (docs/power-of-ten.md): link-time seams instead of our own function pointers; narrowed TX node state (the AES key only in `tx_exchange.c`); every loop bounded (`tools/loop_bounds.py`, in CI); `WS_CHECK` run-time checks with a defined recovery (35 sites; `check_fails`/`check_first` on TX `#counts` and RX STATUS); every discarded result explicit; ~20 more warning flags, Cppcheck in CI, a no-heap link check. Reviewed; review fixes included.
+- Inputs: as a07f498 (vendor pins verified). Flash budget: TX 88.2 %, RX 52.3 %. Stack bound: TX 5,744 B (70 %), RX 2,588 B (32 %). `make waits`: OK on both; no heap.
+- Reproducibility: two clean builds gave identical `.bin` hashes.
+- Flashed 2026-10-15 ~22:33Z: RX → board B `0016001E4142500E20353451`, TX → board A `003B00194142500E20353451`; gateway restarted on `run-d6` at the same commit. TX after flashing: `fw=7eb79f64f2bd`, `kcv=e03059` (key kept), `kat=pass`, `epoch=42`, `ctr=12033`, time trust restored, `pending=0`, `check_fails=0`; `#timing` task peak 51 µs, interrupt peak 43 µs, program 93 µs.
+- Bench check 22:35Z: epoch 42 seq 0 and 1 stored and acknowledged. RX `#alive`: forwarded 2, no failed receptions, task peak 387 µs (`console_task`), interrupt peak 216 µs. (The previous RX release's last `#alive`, after 103 min: `hdr_errors=5`, `dropped=1`, `frames_lost=0`, task peak 1,746 µs in `process`.)
+- 24-hour lab rehearsal started 2026-10-15T22:37:00Z (evidence/h01-rehearsal-2026-10-15/). Not an H01 release: radio settings are bench values.
+
 ## ddb469680a30 — 2026-10-15 (bench, refactored and reviewed; protocol draft 5)
 
 | Artifact | SHA-256 |
