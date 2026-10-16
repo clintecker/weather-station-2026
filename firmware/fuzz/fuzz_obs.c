@@ -1,4 +1,4 @@
-/* Draft-5 observation encoder (firmware/common/ws_obs.c), driven with arbitrary records.
+/* Observation encoder (firmware/common/ws_obs.c), driven with arbitrary records.
  * The input bytes become a ws_obs_t (header values, bitmap, and per-field codes chosen as random,
  * INVALID, small or CALM so valid records are common). Properties, checked against an independent
  * reading of docs/protocol-design.md section 5:
@@ -14,8 +14,9 @@
 #define SPEC_WIND_CALM 0xFFFEU   /* section 5.3: wind direction "calm" */
 #define CAP_MAX 100U             /* buffer sizes tried: 0-99, the longest record is 78 + 22 */
 
-/* The spec's catalog (section 5.3), written out again on purpose: checking the encoder with its own
- * ws_obs_code_ok() would share any bug in it (a planted off-by-one went unnoticed that way). */
+/* The field catalog of docs/protocol-design.md (section 5.3), written out again on purpose.
+ * A check with the encoder's own ws_obs_code_ok() would share any bug in it (a planted off-by-one
+ * went unnoticed that way). */
 static const uint32_t spec_max[WS_FI_COUNT] = {16500, 10000, 8000, 750, 750, 359, 16777214, 250, 2000,
  1048575, 0xFFFFFFFFU, 65534, 65534, 16777214, 16777214, 16777214, 16777214, 100, 3, 16500, 10000,
  16500, 16500, 10000, 10000, 60};

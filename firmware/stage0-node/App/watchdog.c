@@ -17,7 +17,8 @@
 static IWDG_HandleTypeDef hiwdg;
 static UTIL_TIMER_Object_t check_timer;
 static ws_reset_t cause = WS_RESET_UNKNOWN;
-/* Indexed by code (designated initializers), so the name and the DIAG wire code cannot drift apart. */
+/* Indexed by code (designated initializers), so the name and the wire code of the health report
+   (DIAG) cannot drift apart. */
 static const char *const cause_name[] = {
   [WS_RESET_UNKNOWN] = "unknown", [WS_RESET_POWER] = "power", [WS_RESET_PIN] = "pin",
   [WS_RESET_BROWNOUT] = "brownout", [WS_RESET_SOFTWARE] = "software", [WS_RESET_WATCHDOG] = "watchdog",
@@ -39,7 +40,7 @@ BUSYMON_TASK(check)
 static void read_reset_cause(void)
 {
   if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)) cause = WS_RESET_WATCHDOG;
-  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST)) cause = WS_RESET_POWER; /* BOR flag is also set at power-on */
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST)) cause = WS_RESET_POWER; /* the brownout-reset (BOR) flag is also set at power-on */
   else if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)) cause = WS_RESET_SOFTWARE;
   else if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST)) cause = WS_RESET_LOWPOWER;
   else if (__HAL_RCC_GET_FLAG(RCC_FLAG_OBLRST)) cause = WS_RESET_OPTION_BYTES;

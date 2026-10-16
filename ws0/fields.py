@@ -1,4 +1,4 @@
-"""Draft-5 observation plaintext: field catalog v1, encoder and decoder.
+"""Observation plaintext: field catalog v1, encoder and decoder.
 
 docs/protocol-design.md section 5. The C twin is firmware/common/ws_obs.{c,h};
 tests/test_obs.py checks that both produce and accept the same bytes.
@@ -93,8 +93,9 @@ FIELDS = (
     Field(18, 'charger_pins', 1, 3),
     Field(19, 'enclosure_temp_c', 2, TEMP_CODE_TOP, **T),
     Field(20, 'enclosure_rh_pct', 2, RH_MAX_CENTI, **RH),
-    # 15-s sampling summary of the minute (PRD section 9: coverage and extrema). temperature_c and
-    # humidity_pct are then the mean of th_samples valid samples; all five are INVALID together.
+    # 15-s sampling summary of the minute: coverage and extrema (product spec, sampling section).
+    # temperature_c and humidity_pct are then the mean of th_samples valid samples. All five are
+    # INVALID together.
     Field(21, 'temperature_min_c', 2, TEMP_CODE_TOP, **T),
     Field(22, 'temperature_max_c', 2, TEMP_CODE_TOP, **T),
     Field(23, 'humidity_min_pct', 2, RH_MAX_CENTI, **RH),
@@ -244,7 +245,7 @@ DERIVED = {'dew_point_c': dict(unit='°C', ha_class='temperature', needs=('tempe
 
 
 def derived(record):
-    """Values computed from a record's measurements, labelled as derived (PRD R10: every value has a
-    unit and validity; derived values are marked as such)."""
+    """Values computed from a record's measurements, labelled as derived. The product spec requires
+    a unit and validity for every value, and derived values must be marked as such."""
     return {name: spec['compute'](*(record[n] for n in spec['needs']))
             for name, spec in DERIVED.items() if all(n in record for n in spec['needs'])}

@@ -74,8 +74,8 @@ def epoch_floor(directory, station):
 
 
 def node_counter_mark(directory):
-    """The gateway's stored high-water mark of the node counter (OBS + DIAG)
-    for this state directory, or None if there is no such state yet."""
+    """The gateway's stored high-water mark of the node counter (shared by observations and
+    health reports) for this state directory, or None if there is no such state yet."""
     path = directory/'gateway-nonces.sqlite3'
     if not path.exists():
         return None

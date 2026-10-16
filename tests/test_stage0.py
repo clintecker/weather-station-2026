@@ -1,4 +1,4 @@
-"""Failure tests; accelerated records are not physical H01 evidence."""
+"""Failure tests. Accelerated records are not evidence for the physical 24-hour delivery test (H01)."""
 import json
 import subprocess
 import sys
@@ -47,7 +47,7 @@ def start_demo(tmp):
 
 
 # Most tests are not about the boot clock: StationTest starts from a node that already has time.
-# Boot-time reconstruction (draft 4) has its own tests in TimeReconstruction.
+# Boot-time time reconstruction has its own tests in TimeReconstruction.
 class PipelineTests(StationTest):
  def test_commit_ack_replay(self):
   frame=self.node.packet(self.node.sample(1000)); ack=self.gateway.receive(frame,1001)
@@ -79,7 +79,7 @@ class PipelineTests(StationTest):
    self.gateway.receive(self.node.packet(self.node.sample(stamp,fault)),stamp)
   self.assertFalse(self.gateway.store.latest(self.cfg['station'],1061)['available'])
   # An unknown-clock sample in an epoch with an earlier trusted reference is reconstructed
-  # from the monotonic uptime (draft 4), so it is correctly current.
+  # from the monotonic uptime, so it is correctly current.
   r=self.node.sample(1120); r['sampled_at']=None; r['time_quality']='unknown'
   self.gateway.receive(self.node.packet(r),1120)
   latest=self.gateway.store.latest(self.cfg['station'],1121)
@@ -119,7 +119,7 @@ class PipelineTests(StationTest):
    with get('/v1/observations?limit=1') as r: self.assertEqual(len(json.load(r)['observations']),1)
    with get('/v1/observations?format=csv') as r: header=r.read().decode().splitlines()[0].split(',')
    from ws0.fields import MEASURED
-   self.assertTrue(set(MEASURED) <= set(header))   # every catalog field, not just T/RH
+   self.assertTrue(set(MEASURED) <= set(header))   # every catalog field, not just temperature/humidity
    with get('/v1/observations') as r: self.assertEqual(json.load(r)['units']['humidity_max_pct'],'%')
    # A calm reading (wind_calm) and a qualifier must survive the CSV export, not vanish.
    import csv,io
@@ -273,7 +273,7 @@ class ServiceSmokeTests(unittest.TestCase):
 
 
 class TimeReconstruction(StationTest):
- """Draft 4: unsynchronized samples get UTC from the same boot epoch's uptime counter."""
+ """Unsynchronized samples get UTC from the same boot epoch's uptime counter."""
  def boot(self):
   self.node.db.close(); self.node.nonces.db.close(); self.node=Node(self.cfg,self.root)
  def test_boot_sample_reconstructed_after_first_sync(self):

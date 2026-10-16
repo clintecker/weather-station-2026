@@ -197,7 +197,8 @@ class StorePowerCut(unittest.TestCase):
 
     def test_bug_failed_abandon_note_lowers_total_after_reboot(self):
         """store_note_abandoned raised abandoned_total in RAM before meta_append; if that
-        program failed, STATUS/DIAG had shown a total that the next boot did not restore.
+        program failed, STATUS and the health report (DIAG) had shown a total that the next boot
+        did not restore.
         Fixed by: if (meta_append(META_ABAND, abandoned_total + 1)) return -1; then increment."""
         _, counts, _ = self.run_driver('small', 'errsweep', '1')
         self.assertEqual(counts.get('abandoned_decreased_note_failed', 0), 0)

@@ -24,7 +24,7 @@ typedef struct {
 } tx_node_t;
 const tx_node_t *node_state(void);   /* read-only view; only app_tx.c writes it */
 uint32_t node_uptime_s(void);        /* RTC seconds since boot */
-int node_selftest(void);             /* run the self-test again (KAT command); its result */
+int node_selftest(void);             /* run the known-answer self-test again (KAT command); its result */
 
 void sampling_stop(void);   /* no more samples (commanded reboot, TEST-FLASH-STORM); the watchdog stops expecting them */
 /* Journal the readings held while an exchange was running. tx_exchange.c calls it the moment the

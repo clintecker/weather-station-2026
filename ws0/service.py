@@ -73,9 +73,9 @@ class Gateway:
         self.telemetry = web.Telemetry(self)
 
     def check_counter(self, frame, epoch, sequence, now):
-        """Every node transmission, retries included, gets a fresh, strictly
-        increasing counter from one space shared by OBS and DIAG (firmware store_next_counter;
-        WIPE keeps it), so an authentic frame at or below the mark is a replay or nonce reuse.
+        """Every node transmission, retries included, gets a fresh, strictly increasing
+        counter from one space shared by observations and health reports (firmware
+        store_next_counter; WIPE keeps it). So an authentic frame at or below the mark is a replay or nonce reuse.
         It is never answered or stored as data; the raw frame is kept as a rejection."""
         counter = frame_counter(frame)
         verdict = self.nonces.advance_node_counter(counter,now,hashlib.sha256(frame).hexdigest())
@@ -305,7 +305,7 @@ DEFAULT_DISCOVERY = ('temperature_c','humidity_pct')   # advertised before the f
 
 
 def discovery(cfg, names=DEFAULT_DISCOVERY):
-    """Stable HA identities, one sensor per catalog field the station sends (design section 8).
+    """Stable HA identities, one sensor per catalog field the station sends (docs/protocol-design.md section 6).
     Availability needs all three: the reading is fresh, the gateway is up, and this field is not
     null in the latest reading, so a faulted sensor shows as unavailable, never as a number."""
     root = f"weatherstation/v1/{cfg['station']}"
@@ -394,7 +394,7 @@ class MQTT:
         client.publish(self.root+'/gateway_availability','online',qos=1,retain=True)
 
     def advertise(self, observation):
-        """Discovery for the fields the newest reading carries (T/RH before the first reading);
+        """Discovery for the fields the newest reading carries (temperature and humidity before the first reading);
         republished when a new field appears, e.g. after a sensor is added."""
         names = {n for n in (observation or {}) if n in MEASURED} or set(DEFAULT_DISCOVERY)
         names |= {d for d, spec in DERIVED.items() if all(n in names for n in spec['needs'])}

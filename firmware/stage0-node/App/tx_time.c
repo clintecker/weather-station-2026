@@ -5,7 +5,7 @@
 #include "stm32wlxx_hal.h"
 #include "sys_app.h"
 
-#define SYNC_VALID_S        (6UL * 3600UL)          /* trust a sync for 6 h (LSE drift; see gateway DRIFT_PPM) */
+#define SYNC_VALID_S        (6UL * 3600UL)          /* trust a sync for 6 h (32 kHz crystal drift; see gateway DRIFT_PPM) */
 /* DR0-DR2 belong to ST's timer_if/SysTime. */
 #define BKP_TIME_MAGIC      0x57535456UL            /* "WSTV" */
 #define BKP_REG_MAGIC       RTC_BKP_DR3

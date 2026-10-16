@@ -1,4 +1,4 @@
-"""H01 scorer: denominators, categories and the strict pass rule."""
+"""Scorer for the 24-hour delivery test (H01): denominators, categories and the strict pass rule."""
 import tempfile
 import unittest
 from pathlib import Path

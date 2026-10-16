@@ -17,9 +17,10 @@ from ws0.fields import encode
 from ws0.protocol import (COUNTER_MAX, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, STATION_MAX, Nonces, frame_counter,
                           pack_reply, seal, unpack_reply, unseal)
 
-# Same vectors are compiled into the TX firmware's boot self-test (App/selftest.c). They were made
-# directly with AESCCM from the spec's header and nonce (see test_vectors_follow_the_spec), not by
-# ws0/protocol.py, so they check the implementations rather than echo them.
+# Known-answer test (KAT) vectors. The same vectors are compiled into the TX firmware's boot
+# self-test (App/selftest.c). They were made directly with AESCCM from the designed header and
+# nonce (see test_vectors_follow_the_spec), not by ws0/protocol.py. So they check the
+# implementations rather than echo them.
 KAT_KEY = bytes(range(16))
 KAT_OBS = bytes.fromhex('5100010100000002bd50c6ae3400a778bec2d16fadad588beedf778fa19f9c44aa67cd92b9f30417')
 KAT_ACK = bytes.fromhex('52000100000000050e1eb4544766f4e6e0ffdbb3f6d1413d06f6369500199b8fe2')
@@ -217,18 +218,18 @@ class FirmwareTables(unittest.TestCase):
 
     def test_selftest_vectors(self):
         """The TX boot self-test (selftest_kat in App/selftest.c) holds its vectors as byte arrays: they must
-        be the spec's frames, so a typo there cannot make the board refuse to transmit."""
+        be the designed frames, so a typo there cannot make the board refuse to transmit."""
         source = (ROOT/'firmware/stage0-node/App/selftest.c').read_text()
-        # tests/test_obs.py KAT: T -12.34 C (code 2766), RH 45.67 %, epoch 1, seq 2, UTC 1791991189,
-        # uptime 300 s, NORMAL, calibration 0.
+        # The KAT record of tests/test_obs.py: T -12.34 C (code 2766), RH 45.67 %, epoch 1, seq 2,
+        # UTC 1791991189, uptime 300 s, NORMAL, calibration 0.
         obs_plain = encode(1, 2, 1791991189, 300, 1, 0, {0: 2766, 1: 4567})
         self.assertEqual(self.c_array(source, 'KAT_OBS'), spec_frame(KAT_KEY, KIND_OBS, 1, 0x100000002, obs_plain))
         self.assertEqual(self.c_array(source, 'KAT_ACK'), KAT_ACK)
         self.assertEqual(self.c_array(source, 'KAT_NACK'), KAT_NACK)
 
     def test_reset_cause_numbering(self):
-        """DIAG byte 22 is the ws_reset_t code (enum order in watchdog.h); its name in watchdog.c's
-        table (designated initializers) must be ws0's RESET_CAUSES at that index."""
+        """Byte 22 of the health report (DIAG) is the ws_reset_t code (enum order in watchdog.h). Its
+        name in watchdog.c's table (designated initializers) must be ws0's RESET_CAUSES at that index."""
         from ws0.protocol import RESET_CAUSES
         header = (ROOT/'firmware/stage0-node/App/watchdog.h').read_text()
         source = (ROOT/'firmware/stage0-node/App/watchdog.c').read_text()

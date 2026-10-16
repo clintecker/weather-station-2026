@@ -5,8 +5,9 @@
 /* The node's transmission policy state (docs/radio-energy-policy.md); the decisions themselves
  * are pure functions in firmware/common/ws_policy.c. */
 
-/* Energy state (WS_ENERGY_*): Stage 0 is USB powered, so it is fixed at NORMAL; Stage 1 feeds
-   pack/charger/solar telemetry in here. Unknown energy must map to CONSERVE (fail closed). */
+/* Energy state (WS_ENERGY_*): the bench prototype is USB powered, so it is fixed at NORMAL. The
+   battery and solar build will feed pack/charger/solar telemetry in here. Unknown energy must map
+   to CONSERVE (fail closed). */
 int energy_state(void);
 void policy_init(void);   /* at boot: the airtime estimate of one answered exchange */
 /* What this minute may send: -1 nothing (the reading stays journaled), else how many backlog

@@ -400,7 +400,7 @@ static int guards(void) {
  return bad;
 }
 
-/* ---- draft-5 limits ---- */
+/* ---- protocol limits ---- */
 /* The transmission counter stops at 2^40 - 1 (the header holds 5 bytes): seed the meta log just
    below it, then the allocator must hand out exactly WS_COUNTER_MAX and refuse the next one. */
 static int counter_limit(void) {
@@ -415,7 +415,7 @@ static int counter_limit(void) {
  return bad;
 }
 
-/* A journal page written with another slot layout (here the draft-4 "WSJ1" magic, 40-byte slots)
+/* A journal page written with another slot layout (here the older "WSJ1" magic, 40-byte slots)
    is ignored at boot, never read as records of this layout. */
 static int foreign_layout(void) {
  uint8_t p[PLAIN] = { 0 }; jref_t r; int bad = 0;

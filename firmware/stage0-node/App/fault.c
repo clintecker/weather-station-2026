@@ -8,7 +8,8 @@ enum { BKP_MAGIC = 5, BKP_PC, BKP_LR, BKP_CFSR, BKP_HFSR, BKP_BFAR, BKP_COUNT };
 #define FAULT_MAGIC_HARD 0x57534601UL   /* "WSF" + kind */
 #define FAULT_MAGIC_NMI  0x57534602UL
 #define BKP(n) ((&TAMP->BKP0R)[n])
-/* The exception frame the core stacks: r0-r3, r12, lr, pc, xPSR (ARMv7-M B1.5.6). */
+/* The exception frame the core stacks: r0-r3, r12, lr, pc, xPSR (ARMv7-M Architecture
+ * Reference Manual, B1.5.6). */
 enum { FRAME_LR = 5, FRAME_PC = 6, FRAME_WORDS = 8 };
 #define PRINT_DRAIN_MS 50U   /* lets the console send the line before the fault */
 

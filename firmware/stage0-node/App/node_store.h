@@ -26,8 +26,8 @@ enum {
 #define STORE_EPOCH_RESERVED UINT32_MAX
 
 /* Provisioning */
-/* 0 if provisioned and intact; then also the key check value (ws_key_check), verified against the
-   stored one. On failure key is zeroed and kcv is untouched. */
+/* 0 if provisioned and intact; then kcv also holds the key check value (ws_key_check), verified
+   against the stored one. On failure key is zeroed and kcv is untouched. */
 int store_config_load(uint32_t *station, uint8_t key[WS_KEY_LEN], uint8_t kcv[WS_KCV_LEN]);
 int store_config_write(uint32_t station, const uint8_t key[WS_KEY_LEN], uint8_t kcv[WS_KCV_LEN]);   /* kcv: out, the key check value */
 int store_wipe(void); /* erases config (key) and journal; counters and epoch are kept (no nonce reuse) */

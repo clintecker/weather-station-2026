@@ -23,7 +23,8 @@ without a name ({#...}) are only shown (diagrams, examples). <<name>> in prose l
                                             (no DOC: every *.lit.md under firmware/)
     tools/tangle.py --lines -o OUT DOC      the root with #line directives into the .lit.md, for a
                                             debug build only (see the note below)
-    tools/tangle.py --weave OUT.html DOC    a standalone HTML page (inline CSS, no external assets)
+    tools/tangle.py --weave OUT.html DOC    a standalone HTML page (inline CSS; the one external asset
+                                            is the pinned Mermaid module, for pages with diagrams)
 
 #line: the committed .c carries none. WS_CHECK sites are (file id << 10 | __LINE__) and keep only
 10 bits of line (firmware/common/ws_check.h, tests/test_check.py), and a document runs past 1024

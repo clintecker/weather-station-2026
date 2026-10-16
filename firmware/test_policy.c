@@ -57,7 +57,7 @@ int main(void) {
  snprintf(buf,sizeof buf,"1 %s",K);
  assert(ws_parse_provision(buf,&id,key,&floor)==0 && id==1 && floor==0 && key[0]==0 && key[15]==15);
  snprintf(buf,sizeof buf,"65535 %s 102",K);
- assert(ws_parse_provision(buf,&id,key,&floor)==0 && id==65535u && floor==102);  /* draft 5: station is u16 */
+ assert(ws_parse_provision(buf,&id,key,&floor)==0 && id==65535u && floor==102);  /* the header's station is u16 */
  snprintf(buf,sizeof buf,"7 %s 4294901759",K);
  assert(ws_parse_provision(buf,&id,key,&floor)==0 && floor==4294901759u);
  const char *bad[]={ "0 %s", "65536 %s", "4294967295 %s", "4294967296 %s", "-1 %s", "+1 %s", " 1 %s", "1  %s", "1 %s ", "1 %s 12x",
@@ -109,9 +109,9 @@ int main(void) {
    ws_stack_scan sz = {0};                                  /* slice 1: still converges */
    for(int k=0;k<200;k++) r=ws_stack_scan_step(&sz, ram, ram+64, 1);
    assert(r==64*4); }
- /* Limits below are written as the spec states them (-40.00..125.00 C, 100.00 %, a u8 count), not
+ /* Limits below are written as the protocol design states them (-40.00..125.00 C, 100.00 %, a u8 count), not
     taken from ws_obs.h, so the test does not share a wrong constant with the code. */
- /* 15-s T/RH window: mean rounds half up (also below zero), extrema, out-of-range samples skipped. */
+ /* 15-s temperature/humidity window: mean rounds half up (also below zero), extrema, out-of-range samples skipped. */
  { ws_th_window w; int16_t t; uint16_t h;
    ws_th_reset(&w); assert(!ws_th_mean_t(&w,&t) && !ws_th_mean_h(&w,&h));
    ws_th_add(&w,1,-1234,4567); ws_th_add(&w,1,-1235,4568);           /* mean -1234.5 -> -1234 (half up) */

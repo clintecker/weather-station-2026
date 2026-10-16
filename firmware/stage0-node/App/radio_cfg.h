@@ -3,10 +3,11 @@
 #include <stdint.h>
 #include "radio.h"
 #include "ws_frame.h"   /* WS_FRAME_MAX */
-/* Stage-0 RF configuration (docs/hardware/nucleo-wl55jc-bringup.md, "RF configuration
- * decision"): 915.0 MHz LoRa, 500 kHz bandwidth = FCC 15.247(a)(2) digital-modulation
- * class. Power and spreading factor are bench values; tune SF/power for the H01
- * placement link budget, never bandwidth below 500 kHz. Both boards must match. */
+/* RF configuration of the bench prototype (docs/hardware/nucleo-wl55jc-bringup.md, "RF
+ * configuration decision"): 915.0 MHz LoRa, 500 kHz bandwidth = FCC 15.247(a)(2)
+ * digital-modulation class. Power and spreading factor are bench values. Tune them for the link
+ * budget of the 24-hour delivery test (H01). Never set the bandwidth below 500 kHz. Both boards
+ * must match. */
 #define WS_RF_FREQUENCY_HZ   915000000UL
 #define WS_TX_POWER_DBM      0
 #define WS_LORA_BANDWIDTH    2      /* 0:125 1:250 2:500 kHz */

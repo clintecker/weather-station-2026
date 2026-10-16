@@ -2,8 +2,8 @@
 #define TX_CONSOLE_H
 #include <stdint.h>
 #include "node_store.h"
-/* TX console (firmware/stage0-node/README.md, "Console"): STATUS, KAT,
- * PROVISION <station_id> <32 hex key> [epoch_floor], WIPE ERASE-ALL-NODE-STATE, TEST-FLASH-STORM,
+/* TX console (firmware/stage0-node/README.md, "Console"): STATUS, KAT (known-answer
+ * self-test), PROVISION <station_id> <32 hex key> [epoch_floor], WIPE ERASE-ALL-NODE-STATE, TEST-FLASH-STORM,
  * and the bench commands of App/bench.h. Every line this board prints starts with '#'. */
 #define STORM_EPOCH STORE_EPOCH_RESERVED   /* TEST-FLASH-STORM records; the boot scrub drops any left pending */
 void tx_console_init(void);   /* the console, the reboot timer and the storm task */

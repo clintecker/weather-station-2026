@@ -4,6 +4,7 @@ The check CI relies on: every committed root (firmware/stage0-node/App/node_stor
 its document tangles to, so the document is the source of truth and nobody edits the C by hand.
 The rest pins the tangler's rules (references, joined definitions, errors) and the two outputs
 that are not committed: the #line build for debugging and the woven HTML page."""
+import re
 import subprocess
 import tempfile
 import unittest
@@ -91,7 +92,12 @@ class Rules(unittest.TestCase):
 class Woven(unittest.TestCase):
     def test_page_is_standalone_with_cross_references(self):
         page = tangle.Weaver(ROOT/'firmware/stage0-node/App/node_store.lit.md').page()
-        self.assertNotRegex(page, r'<(?:script|link)\b|src="http', 'no external assets')
+        # The only script is the pinned Mermaid module, for the diagrams; nothing else loads from outside.
+        scripts = re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.S)
+        self.assertEqual(len(scripts), 1)
+        self.assertEqual(re.findall(r'https://[^\'"]+', scripts[0]),
+                         ['https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs'])
+        self.assertNotRegex(page, r'<link\b|src="http', 'no other external assets')
         self.assertIn('id="chunk-journal-append"', page)
         self.assertIn('Used in <a class="ref" href="#chunk-node-store-c">', page)
         self.assertIn('<table>', page)

@@ -1,12 +1,13 @@
 #!/bin/sh
-# Install or remove the Stage-0 gateway LaunchAgent for the current user.
+# Install or remove the gateway LaunchAgent for the current user.
 #
 #   tools/deploy/macos/install.sh install [state-dir] [rx-stlink-serial]
 #   tools/deploy/macos/install.sh uninstall
 #   tools/deploy/macos/install.sh status
 #
 # The agent runs `python -m ws0 serve --serial-number <RX>`, restarts if it exits, and logs to
-# <state-dir>/serve.out. H01 also needs the Mac to stay awake (System Settings > Battery/Energy).
+# <state-dir>/serve.out. The 24-hour delivery test (H01) also needs the Mac to stay awake
+# (System Settings > Battery/Energy).
 set -eu
 label=com.clintecker.weatherstation.gateway
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)

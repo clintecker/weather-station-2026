@@ -1,4 +1,4 @@
-"""Draft-5 observation codec: catalog arithmetic, exact decoding, canonical-encoding properties,
+"""Observation codec: catalog arithmetic, exact decoding, canonical-encoding properties,
 and byte-for-byte agreement between the C encoder (firmware/common/ws_obs.c) and ws0/fields.py."""
 import ctypes
 import random

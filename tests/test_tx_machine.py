@@ -35,9 +35,10 @@ SOURCES = ['host/tx_harness.c', 'host/sim_core.c', 'sim_flash.c', 'stage0.c',
            *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy', 'ws_check'))]
 ASAN_ENV = 'WS_TX_ASAN'   # set by TxUnderAddressSanitizer for its child run
 
-# What the firmware must do (docs/firmware-event-model.md, docs/radio-energy-policy.md, PRD 9). Written
-# here once, from the specification, not read back from the firmware: a test that took its expectations
-# from the code under test could not notice the code changing them.
+# What the firmware must do (docs/firmware-event-model.md, docs/radio-energy-policy.md, and the
+# product spec's sampling section). Written here once, from the specification, not read back from
+# the firmware. A test that took its expectations from the code under test could not notice the
+# code changing them.
 SENSOR_MS = 10              # the harness SHT45's measurement time
 SAMPLE_MS = 15_000
 MINUTE_MS = 60_000
@@ -49,7 +50,7 @@ REBOOT_DELAY_MS = 200
 TX_FAIL_LIMIT = 10          # transmit failures in a row the watchdog tolerates
 STRIKE_LIMIT = 10
 LINK_K_SILENT = 3
-NORMAL_BACKLOG = 5          # backlog frames per minute at NORMAL energy (Stage 0 is USB powered)
+NORMAL_BACKLOG = 5          # backlog frames per minute at NORMAL energy (the bench prototype is USB powered)
 DIAG_PERIOD_MS = 900_000
 EVENTS = ['tx-done', 'tx-timeout', 'rx-done', 'rx-timeout', 'rx-error', 'gap', 'ack-end']
 # The radio in each exchange state (a gap after a refused first Send still has the radio asleep).

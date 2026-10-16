@@ -1,7 +1,7 @@
 """The gateway detects AES-CCM nonce reuse by the node.
 
-The node seals OBS (kind 1) and DIAG (kind 4) frames from one strictly increasing 64-bit
-counter (firmware store_next_counter; WIPE keeps it). The gateway keeps a durable high-water
+The node seals observation (OBS, kind 1) and health report (DIAG, kind 4) frames from one
+strictly increasing 64-bit counter (firmware store_next_counter; WIPE keeps it). The gateway keeps a durable high-water
 mark per key binding. A frame at or below it is never answered or stored; it is kept as a
 rejection and raises a loud status alarm.
 """

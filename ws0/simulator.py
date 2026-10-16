@@ -7,10 +7,10 @@ import time
 from gateway import full_flush
 from .protocol import (EPOCH_RESERVED, SIGNAL_NONE, VERSION, DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, Nonces, encode_observation, frame_counter, frame_kind, seal, unpack_reply,
                        unseal)
-U16_MAX = 2**16 - 1   # the DIAG report's u16 counts saturate
+U16_MAX = 2**16 - 1   # the health report's (DIAG) u16 counts saturate
 
 # Backlog records sent per minute after the live one: the firmware's NORMAL energy state
-# (firmware/common/ws_policy.c backlog_limit). Stage 0 is always NORMAL. The firmware also
+# (firmware/common/ws_policy.c backlog_limit). The bench prototype is always NORMAL. The firmware also
 # stops a minute's drain at the first missed reply; the simulator does not model that, which
 # does not change timeliness because the live reading still goes first every minute.
 BACKLOG_PER_MINUTE = 5

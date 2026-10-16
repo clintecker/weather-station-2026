@@ -1,11 +1,11 @@
-/* The draft-5 envelope (firmware/common/ws_frame.c), both directions, under the self-test key.
+/* The frame envelope (firmware/common/ws_frame.c), both directions, under the self-test key.
  * Opening: any bytes from the air go through ws_open_reply as the TX node receives them. Nothing
  * opens except the two genuine frames (the self-test vectors in App/selftest.c and
  * tests/test_frame.py); anything else would be a forgery.
  * Sealing: the input also chooses a station, counter, kind and plaintext, biased to the edges
  * (0, 1, the 16-bit station and 40-bit counter limits and one past them). Out-of-range values must
  * be refused with the output zeroized, never truncated into the 2- and 5-byte header fields (that
- * would repeat a nonce); accepted ones must give exactly the spec's header and length, and an
+ * would repeat a nonce); accepted ones must give exactly the designed header and length, and an
  * ACK/NACK must open again to the same values. */
 #include <string.h>
 #include "fuzz.h"

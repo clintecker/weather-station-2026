@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "ws_be.h"
-/* Draft-5 observation plaintext (docs/protocol-design.md section 5). No hardware
+/* Observation plaintext (docs/protocol-design.md section 5). No hardware
  * dependencies: the TX firmware, the host tests and the fuzzers run the same code. The Python
  * twin of this table is ws0/fields.py; tests/test_obs.py checks that the two agree. */
 
@@ -36,7 +36,7 @@ enum {
  WS_FI_UVA_RAW, WS_FI_QUALIFIERS, WS_FI_BATT_MV, WS_FI_BATT_CURRENT_MA, WS_FI_ENERGY_IN_MWH,
  WS_FI_ENERGY_OUT_MWH, WS_FI_CHARGE_IN_MAH, WS_FI_CHARGE_OUT_MAH, WS_FI_SOC_GAUGE_PCT,
  WS_FI_CHARGER_PINS, WS_FI_ENCLOSURE_TEMP_C, WS_FI_ENCLOSURE_RH_PCT,
- /* 15-s sampling summary of the minute (PRD section 9: coverage and extrema) */
+ /* 15-s sampling summary of the minute: coverage and extrema (product spec, sampling section) */
  WS_FI_TEMPERATURE_MIN_C, WS_FI_TEMPERATURE_MAX_C, WS_FI_HUMIDITY_MIN_PCT, WS_FI_HUMIDITY_MAX_PCT,
  WS_FI_TH_SAMPLES, WS_FI_COUNT
 };
@@ -77,7 +77,7 @@ enum {
  X(a, WS_FI_TEMPERATURE_MAX_C, 2, WS_TEMP_CODE_TOP)     \
  X(a, WS_FI_HUMIDITY_MIN_PCT,  2, WS_RH_MAX_CENTI)      \
  X(a, WS_FI_HUMIDITY_MAX_PCT,  2, WS_RH_MAX_CENTI)      \
- X(a, WS_FI_TH_SAMPLES,        1, WS_TH_SAMPLES_MAX)    /* valid T/RH samples behind the minute's values */
+ X(a, WS_FI_TH_SAMPLES,        1, WS_TH_SAMPLES_MAX)    /* valid temperature/humidity samples behind the minute's values */
 
 /* Bytes of the fields in bitmap m, as a constant expression so builds can size buffers from it. */
 #define WS_OBS_FW_(m, i, w, max) + ((((m) >> (i)) & 1U) * (w))

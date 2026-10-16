@@ -1,4 +1,4 @@
-/* Minimal Mbed TLS 3.6 configuration: AES-128-CCM only (Stage-0 radio frames). */
+/* Minimal Mbed TLS 3.6 configuration: AES-128-CCM only (the radio frames). */
 #ifndef WS_MBEDTLS_CONFIG_H
 #define WS_MBEDTLS_CONFIG_H
 #define MBEDTLS_AES_C
@@ -12,7 +12,7 @@
 /* CCM runs AES forward only (CTR + CBC-MAC), for sealing and opening alike, and the key check value
  * is an ECB encryption: no AES decryption or its inverse tables. */
 #define MBEDTLS_BLOCK_CIPHER_NO_DECRYPT
-/* Keys are AES-128 only (protocol draft 5): smaller key schedule code and a smaller AES context
+/* Keys are AES-128 only (the protocol uses no other size): smaller key schedule code and a smaller AES context
  * on the stack. A 192/256-bit key is refused (MBEDTLS_ERR_AES_INVALID_KEY_LENGTH). */
 #define MBEDTLS_AES_ONLY_128_BIT_KEY_LENGTH
 #endif

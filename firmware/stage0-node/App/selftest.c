@@ -3,11 +3,11 @@
 #include "ws_frame.h"
 #include "ws_obs.h"
 
-/* Draft-5 known-answer vectors, shared with tests/test_frame.py. They were made directly with the
- * cryptography library's AESCCM from the spec's header and nonce, not by ws0/protocol.py. */
+/* Known-answer test (KAT) vectors, shared with tests/test_frame.py. They were made directly with
+ * the cryptography library's AESCCM from the designed header and nonce, not by ws0/protocol.py. */
 static const uint8_t KAT_KEY[WS_KEY_LEN] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
-/* Observation: the encoder's own known answer (tests/test_obs.py KAT: T -12.34 C, RH 45.67 %, epoch 1,
- * seq 2, UTC 1791991189, uptime 300 s, NORMAL), sealed with counter 0x100000002. Raw bytes, not hex
+/* Observation: the encoder's own known answer (the KAT record of tests/test_obs.py: T -12.34 C,
+ * RH 45.67 %, epoch 1, seq 2, UTC 1791991189, uptime 300 s, NORMAL), sealed with counter 0x100000002. Raw bytes, not hex
  * text (no decoder needed); tests/test_frame.py reads these three arrays back from this file. */
 static const uint8_t KAT_OBS[] = {
   0x51, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0xbd, 0x50, 0xc6, 0xbe, 0x34, 0x00, 0xa7, 0x50, 0xd4, 0x0c, 0xca, 0x5a, 0xad,

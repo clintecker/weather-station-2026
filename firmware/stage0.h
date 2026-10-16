@@ -24,9 +24,9 @@
 #define WS_SHT45_RH_SPAN_CENTI   12500
 int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN], int16_t *centi_c, uint16_t *centi_rh);
 uint8_t ws_crc8(const uint8_t *, size_t);
-/* One minute of 15-s T/RH samples (PRD section 9: coverage, mean and extrema). Samples whose
-   temperature is outside the SHT45 range (-40.00..125.00 C) are not counted; RH is clamped to
-   0..100 % first. The mean rounds half up, in integers, like the catalog (protocol.md). */
+/* One minute of 15-s temperature/humidity samples: coverage, mean and extrema (product spec,
+   sampling section). Samples whose temperature is outside the SHT45 range (-40.00..125.00 C) are
+   not counted; RH is clamped to 0..100 % first. The mean rounds half up, in integers, like the catalog (protocol.md). */
 typedef struct { int32_t t_sum, h_sum; int16_t t_min, t_max; uint16_t h_min, h_max; uint8_t n; } ws_th_window;
 void ws_th_reset(ws_th_window *w);
 void ws_th_add(ws_th_window *w, int valid, int16_t centi_c, uint16_t centi_rh);
@@ -61,8 +61,8 @@ int ws_i2c_recover(const ws_i2c_pins *);
    waits for the back-off schedule (secs_until_probe <= 0). CRITICAL never transmits. */
 int ws_link_may_send(int energy, int probing, int32_t secs_until_probe);
 /* PROVISION arguments "<station_id> <32 hex key> [epoch_floor]": exact single spaces, decimal
-   digits only (no sign), station 1..65535 (the draft-5 header's u16), epoch floor below WS_EPOCH_FLOOR_MAX so a typo
-   cannot exhaust the epoch space. Returns 0 on success; outputs are undefined on error. */
+   digits only (no sign), station 1..65535 (a u16 in the frame header), epoch floor below
+   WS_EPOCH_FLOOR_MAX so a typo cannot exhaust the epoch space. Returns 0 on success; outputs are undefined on error. */
 #define WS_EPOCH_FLOOR_MAX 0xFFFF0000UL
 /* Health helpers (TX failure runs, RX radio silence). A failure run counts uninterrupted
    failures (any success resets it; saturates); tripped when it exceeds the limit. */

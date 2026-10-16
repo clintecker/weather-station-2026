@@ -1,4 +1,4 @@
-"""tools/loop_bounds.py: every firmware loop is a counting loop or says what bounds it (rule 2)."""
+"""tools/loop_bounds.py: every firmware loop is a counting loop or says what bounds it (Power of Ten rule 2)."""
 import io
 import tempfile
 import unittest

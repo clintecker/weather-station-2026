@@ -1,4 +1,4 @@
-"""Deterministic virtual-time campaigns against real Stage-0 protocol/storage code.
+"""Deterministic virtual-time campaigns against the real protocol and storage code of the bench prototype.
 
 Only time, sensor input, delivery and injected failures are simulated. AES-CCM,
 SQLite commits, nonce allocation, journaling, deduplication and freshness use the
@@ -51,7 +51,7 @@ class Scenario:
     require_latency_target: bool = False
     expect_unavailable: bool = False
     expect_latency_failure: bool = False
-    # Draft 4: every unsynchronized sample must end with a reconstructed (or synchronized) time.
+    # Every unsynchronized sample must end with a reconstructed (or synchronized) time.
     require_time_reconstruction: bool = False
 
     def validate(self):
@@ -104,13 +104,13 @@ DERIVED = ('received_at','_effective','_basis')
 
 
 TIME_TOLERANCE_S = 5     # a known time must be this close to the true acquisition time
-LATENCY_TARGET_S = 120   # delivered within this of acquisition (H01)
+LATENCY_TARGET_S = 120   # delivered within this of acquisition (24-hour delivery test, H01)
 
 
 def trustworthy_on_time(row, acquired, latency):
-    """H01-like eligibility: delivered within 120 s with a known time close to simulated
-    acquisition. Per Clint's 2026-10-12 decision, a gateway-reconstructed time (draft 4) is a known
-    time when it is within the same 5 s tolerance; it is reported separately by assess()."""
+    """Eligibility as in the 24-hour delivery test (H01): delivered within 120 s, with a known time
+    close to the simulated acquisition. A gateway-reconstructed time is a known time when it is
+    within the same 5 s tolerance (owner's rule, 2026-10-12). assess() reports it separately."""
     trustworthy_time = (row['_basis'] in ('synchronized','reconstructed') and
                         row['_effective'] is not None and abs(row['_effective']-acquired) <= TIME_TOLERANCE_S)
     return trustworthy_time and 0 <= latency <= LATENCY_TARGET_S
@@ -239,7 +239,7 @@ class Campaign:
             self.first_arrival[counter] = packet
             return False
         # At or below the mark: an exact copy of the accepted frame is a replay; anything else
-        # (reordered older frame, different bytes) is a regression (draft-5 design section 8).
+        # (reordered older frame, different bytes) is a regression (docs/protocol-design.md section 6).
         replay = self.first_arrival.get(counter) == packet
         self.counts['expected_replays' if replay else 'expected_counter_regressions'] += 1
         return not replay

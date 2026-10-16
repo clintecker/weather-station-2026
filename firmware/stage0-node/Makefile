@@ -1,4 +1,4 @@
-# Stage-0 NUCLEO-WL55JC1 firmware, two roles from one tree.
+# Bench prototype firmware for the NUCLEO-WL55JC1, two roles from one tree.
 #
 #   make ROLE=tx                         sensor node  -> build/tx/stage0-tx.{elf,bin}
 #   make ROLE=rx                         USB receiver -> build/rx/stage0-rx.{elf,bin}
@@ -18,8 +18,8 @@ BOARD      = ../board/nucleo-wl55jc
 # CUBE comes from board.mk (expanded when used).
 MBEDTLS    = $(CUBE)/Middlewares/Third_Party/mbed-crypto
 FW_VERSION:= $(shell git describe --always --dirty --abbrev=12 2>/dev/null || echo unknown)
-# DIAG firmware build ID (docs/protocol.md): the first 8 hex digits of FW_VERSION, 0 if they are not
-# 8 lowercase hex digits (e.g. "unknown" or a tag name).
+# Firmware build ID in the health report, DIAG (docs/protocol.md): the first 8 hex digits of
+# FW_VERSION, or 0 if they are not 8 lowercase hex digits (e.g. "unknown" or a tag name).
 FW_BUILD_ID := $(or $(shell printf '%s\n' '$(FW_VERSION)' | cut -c1-8 | grep -E '^[0-9a-f]{8}$$' | sed 's/^/0x/'),0)
 
 ifeq ($(filter $(ROLE),tx rx),)

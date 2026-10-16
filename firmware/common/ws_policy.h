@@ -28,11 +28,11 @@ uint32_t ws_link_probe_interval(const ws_link *l);   /* the current back-off ste
 
 /* What one minute may send: -1 nothing (the reading stays journaled), else how many backlog
  * frames may follow the live reading. The stricter of the energy and link states wins:
- * CRITICAL (or an energy code out of range) never transmits; CONSERVE sends at most every 5
- * minutes (spec R02); probing sends no backlog; the backlog is capped per energy state, and by
- * the minute's airtime budget over exchange_ms (one answered exchange's radio time; the live
- * reading always fits), and by max_backlog (the send queue). last_send_s: the last minute that
- * sent. */
+ * CRITICAL (or an energy code out of range) never transmits. CONSERVE sends at most every 5
+ * minutes (the product spec's conservation reports). Probing sends no backlog. The backlog is
+ * capped per energy state, by the minute's airtime budget over exchange_ms (one answered
+ * exchange's radio time; the live reading always fits), and by max_backlog (the send queue).
+ * last_send_s: the last minute that sent. */
 int ws_minute_backlog(int energy, const ws_link *l, uint32_t now_s, uint32_t last_send_s, uint32_t exchange_ms,
                       unsigned max_backlog);
 

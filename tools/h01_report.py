@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""H01 scorer: compute the 24-hour placement verdict from the gateway database.
+"""Score the 24-hour delivery test (H01) from the gateway database.
 
 Rules (docs/H01-checklist.md):
   * The window [start, start + hours) is cut into one-minute intervals: the denominator.
   * An interval is ON TIME when an observation with a KNOWN acquisition time falls in it and
     was committed within 120 s of that time. Known = synchronized, or gateway-reconstructed
-    with an error bound of at most 5 s (Clint, 2026-10-12).
+    with an error bound of at most 5 s (owner's rule, 2026-10-12).
   * Each interval counts once (unique intervals, not packets or retransmissions).
   * Pass: on-time intervals with a VALID sensor reading >= ceil(0.99 x intervals).
     Transport-only success (counting sensor-fault readings) is reported beside it, never
@@ -26,7 +26,7 @@ from pathlib import Path
 
 MINUTE_S = 60
 MINUTES_PER_HOUR = 60
-REQUIRED_FRACTION = 0.99   # H01: at least 99 % of the minutes on time
+REQUIRED_FRACTION = 0.99   # the pass rule: at least 99 % of the minutes on time
 LATENCY_S = 120
 TIME_TOLERANCE_S = 5
 
@@ -53,7 +53,8 @@ def known_time(effective, basis, uncertainty):
 
 
 def rank(record, latency):
-    """Index into RANKS. H01 scores the T/RH fields' own validity (draft-5 design 5.7)."""
+    """Index into RANKS. The test scores the validity of the temperature and humidity fields
+    themselves (docs/protocol-design.md section 5.7)."""
     valid = record.get('temperature_c') is not None and record.get('humidity_pct') is not None
     return (0 if valid else 1) if 0 <= latency <= LATENCY_S else 2
 

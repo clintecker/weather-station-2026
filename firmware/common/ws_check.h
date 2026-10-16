@@ -11,7 +11,8 @@
  * precondition, an index or length bound before a buffer is used, a value one of our modules
  * produced, a result ST's code documents as impossible for our arguments. A failed check is a bug.
  * Unlike assert(), WS_CHECK is never compiled out, so its condition may be the call whose result it
- * checks (WS_CHECK(UTIL_TIMER_Start(&t) == UTIL_TIMER_OK)): rule 7's result checks are written so.
+ * checks (WS_CHECK(UTIL_TIMER_Start(&t) == UTIL_TIMER_OK)): the result checks of
+ * Power of Ten rule 7 (docs/power-of-ten.md) are written so.
  *
  * Cost: no strings. A failure records only how many checks failed since boot and the site of the
  * first one, a 16-bit (file id << 10 | line). TX prints them on #counts, RX on its STATUS reply:
