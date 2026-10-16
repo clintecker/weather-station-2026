@@ -66,8 +66,9 @@ typedef struct {
  uint32_t epoch, uptime, lost, build;               /* build: first 4 bytes of the release commit */
  uint16_t pending, torn, abandoned, no_ack, rejects;
  uint8_t reset_cause, link, crashes, energy;
- int8_t rssi, snr;                                  /* last authentic ACK as heard; -128 = none yet */
+ int8_t rssi, snr;                                  /* last authentic ACK as heard; WS_SIGNAL_NONE = none yet */
 } ws_diag_t;
+#define WS_SIGNAL_NONE INT8_MIN
 void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]);
 /* Key check value: first 3 bytes of AES-ECB(key, zero block); safe to display. */
 int ws_key_check(const uint8_t key[WS_KEY_LEN], uint8_t out[WS_KCV_LEN]);

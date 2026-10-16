@@ -62,7 +62,7 @@ static void strike(jref_t r)
   /* Abandon only a record that is still pending under this identity. */
   if (store_journal_find(epoch, seq, &now) || store_journal_ack(now)) return;
   (void)store_note_abandoned();   /* a total that failed to persist is only a count: the record is acknowledged */
-  led_flash(LED_RED, 1000);
+  led_flash(LED_RED, LED_FLASH_LONG_MS);
   APP_PRINTF("#abandon epoch=%u seq=%u after %u unanswered tries while the gateway answered a later frame; abandoned=%u\n",
              (unsigned)epoch, (unsigned)seq, STRIKE_LIMIT, (unsigned)store_abandoned_total());
 }

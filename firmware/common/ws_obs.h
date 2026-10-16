@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "ws_be.h"
 /* Draft-5 observation plaintext (docs/protocol-draft5-design.md section 5). No hardware
  * dependencies: the TX firmware, the host tests and the fuzzers run the same code. The Python
  * twin of this table is ws0/fields.py; tests/test_obs.py checks that the two agree. */
@@ -19,9 +20,14 @@
 #define WS_TEMP_MIN_CENTI (-4000)
 #define WS_TEMP_MAX_CENTI 12500
 #define WS_RH_MAX_CENTI 10000
+#define WS_TH_SAMPLES_MAX 60   /* 15-s samples in a minute's window, at most */
 #define WS_TEMP_CODE_TOP (WS_TEMP_MAX_CENTI - WS_TEMP_MIN_CENTI)   /* code = centi C + 40.00 C */
 /* The highest in-range code of a w-byte field whose all-ones value is INVALID. */
 #define WS_CODE_TOP(w) ((1UL << (CHAR_BIT * (w))) - 2U)
+
+/* A stored plaintext's identity. */
+static inline uint32_t ws_obs_epoch(const uint8_t *plain) { return ws_get_be32(plain); }
+static inline uint32_t ws_obs_seq(const uint8_t *plain) { return ws_get_be32(plain + WS_OBS_EPOCH_LEN); }
 
 /* Field catalog v1: index = bit in the field bitmap. */
 enum {
@@ -71,7 +77,7 @@ enum {
  X(a, WS_FI_TEMPERATURE_MAX_C, 2, WS_TEMP_CODE_TOP)     \
  X(a, WS_FI_HUMIDITY_MIN_PCT,  2, WS_RH_MAX_CENTI)      \
  X(a, WS_FI_HUMIDITY_MAX_PCT,  2, WS_RH_MAX_CENTI)      \
- X(a, WS_FI_TH_SAMPLES,        1, 60)                   /* valid T/RH samples behind the minute's values */
+ X(a, WS_FI_TH_SAMPLES,        1, WS_TH_SAMPLES_MAX)    /* valid T/RH samples behind the minute's values */
 
 /* Bytes of the fields in bitmap m, as a constant expression so builds can size buffers from it. */
 #define WS_OBS_FW_(m, i, w, max) + ((((m) >> (i)) & 1U) * (w))

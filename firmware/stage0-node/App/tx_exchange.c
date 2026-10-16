@@ -24,6 +24,7 @@
 #include "ws_check.h"
 
 #define ACK_WINDOW_MS       2000U
+#define EXCHANGE_MARGIN_S   5U
 #define INTER_FRAME_MS      50U     /* gap before each further frame: the RX is back to listening after its ACK */
 
 /* WS_FW_BUILD_ID: first 8 hex digits of the release commit (WS_FW_VERSION), 0 if they are not
@@ -61,7 +62,7 @@ const tx_counts_t *exchange_counts(void) { return &tx_counts; }
 
 /* Provisioning: the key never leaves this file (docs/power-of-ten.md, rule 6). */
 static tx_identity_t identity;
-static uint8_t key[16];
+static uint8_t key[WS_KEY_LEN];
 int exchange_load_identity(void)
 {
   identity.provisioned = store_config_load(&identity.station, key, identity.kcv) == 0;
@@ -76,8 +77,8 @@ static uint16_t rx_len;
 static int16_t rx_rssi;
 static int8_t rx_snr;
 /* Signal of the last authentic ACK, as the node heard it (DIAG, design section 4): the uplink and
-   downlink can differ. -128 = none yet. */
-static int8_t ack_rssi = -128, ack_snr = -128;
+   downlink can differ. */
+static int8_t ack_rssi = WS_SIGNAL_NONE, ack_snr = WS_SIGNAL_NONE;
 
 /* Events from interrupt and timer context, as bits (App/events.h). */
 #define EV_TX_DONE    (1U << 0)
@@ -138,8 +139,8 @@ static void gap_before(int then)
   (void)WS_CHECK(UTIL_TIMER_Start(&gap_timer) == UTIL_TIMER_OK);   /* refused only if running: its EV_GAP still comes */
 }
 
-static uint16_t clamp16(uint32_t v) { return v > 0xFFFF ? 0xFFFF : (uint16_t)v; }
-static int8_t clamp8(int v) { return (int8_t)(v < -127 ? -127 : v > 127 ? 127 : v); }  /* -128 means "none" */
+static uint16_t clamp16(uint32_t v) { return v > UINT16_MAX ? UINT16_MAX : (uint16_t)v; }
+static int8_t clamp8(int v) { return (int8_t)(v < -INT8_MAX ? -INT8_MAX : v > INT8_MAX ? INT8_MAX : v); }  /* INT8_MIN means "none" */
 
 /* Health report (kind 4), sent after a minute's exchange (also while probing, so the link
    field can read "probing"). Fire-and-forget: no journal entry, no receive window. Returns 1 if it
@@ -154,7 +155,7 @@ static int send_diag(void)
                   .torn = clamp16(store_journal_burned()), .abandoned = clamp16(store_abandoned_total()),
                   .no_ack = clamp16(tx_counts.no_ack), .rejects = clamp16(tx_counts.ack_rejects),
                   .reset_cause = (uint8_t)watchdog_reset_code(), .link = (uint8_t)policy_probing(),
-                  .crashes = (uint8_t)(crashes > 0xFF ? 0xFF : crashes), .energy = (uint8_t)energy_state(),
+                  .crashes = (uint8_t)(crashes > UINT8_MAX ? UINT8_MAX : crashes), .energy = (uint8_t)energy_state(),
                   .rssi = ack_rssi, .snr = ack_snr };
   ws_diag_pack(&d, plain);
   if (store_next_counter(&ctr) ||
@@ -183,12 +184,13 @@ static void next_item(void)
    allowance, and the one more frame tells a record the gateway refuses (the next one is answered,
    so the missed one earns a strike) from a lossy link (strike rule, ws_policy.h). A second miss in a
    row, or a transmit failure, ends it at once. */
+#define FRAMES_AFTER_MISS 1U   /* one more frame after a miss tells a refused record from a lost one */
 static int missed_last;   /* the frame before this one got no reply */
 static void stop_drain(void) { qn = qi + 1; }
 static void drain_after_miss(void)
 {
   if (missed_last) stop_drain();
-  else if (qn > qi + 2U) qn = qi + 2U;
+  else if (qn > qi + 1U + FRAMES_AFTER_MISS) qn = qi + 1U + FRAMES_AFTER_MISS;
   missed_last = 1;
 }
 
@@ -201,10 +203,10 @@ static int send_obs(const uint8_t *plain, int plen)
   if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_counts.air, 0); APP_PRINTF("#error counter-reserve\n"); return -1; }
   int flen = ws_seal_kind(key, identity.station, WS_KIND_OBS, sent_counter, plain, (uint32_t)plen, frame, sizeof frame);
   if (!WS_CHECK(flen >= 0)) { APP_PRINTF("#error seal\n"); return 0; }   /* a valid station and counter always seal */
-  sent_epoch = ws_get_be32(plain);
-  sent_seq = ws_get_be32(plain + 4);
+  sent_epoch = ws_obs_epoch(plain);
+  sent_seq = ws_obs_seq(plain);
   tx_counts.sent++;
-  led_flash(LED_BLUE, 400);
+  led_flash(LED_BLUE, LED_FLASH_MS);
   if (ws_radio_send(frame, (uint8_t)flen) == RADIO_STATUS_OK) { tx_state = TX_SENDING; return 1; }
   ws_failrun_note(&tx_counts.air, 0); APP_PRINTF("#error radio-busy\n");
   return 0;
@@ -234,8 +236,8 @@ void exchange_start(const jref_t *live, unsigned backlog)
   missed_last = 0;
   memset(replied, 0, sizeof replied);
   /* The longest this exchange can take: every frame and the health report hit their transmit
-     timeout or wait out the whole ACK window, plus the gaps; then 5 s of margin. */
-  exchange_limit_s = ((qn + 1U) * (WS_TX_TIMEOUT_MS + ACK_WINDOW_MS + INTER_FRAME_MS)) / 1000U + 5U;
+     timeout or wait out the whole ACK window, plus the gaps; then a margin. */
+  exchange_limit_s = ((qn + 1U) * (WS_TX_TIMEOUT_MS + ACK_WINDOW_MS + INTER_FRAME_MS)) / CLOCK_MS_PER_S + EXCHANGE_MARGIN_S;
   /* The first frame, like every other, goes after the gap: the radio may have been put to sleep
      moments ago (the last exchange ended this main-loop pass), and the chip needs time to enter
      sleep before it is woken (ST's RadioSleep waited 2 ms; radio_cfg.c ws_radio_sleep). */
@@ -246,7 +248,7 @@ void exchange_start(const jref_t *live, unsigned backlog)
 static void no_reply(int flash_red)
 {
   tx_counts.no_ack++;
-  if (flash_red) led_flash(LED_RED, 400);
+  if (flash_red) led_flash(LED_RED, LED_FLASH_MS);
   APP_PRINTF("#ack none epoch=%u seq=%u\n", (unsigned)sent_epoch, (unsigned)sent_seq);
   drain_after_miss();
   next_item();
@@ -270,7 +272,7 @@ static int on_nack(const reply_t *r, int mine)
   mark_replied();
   /* A total that failed to persist is only a count: the record is acknowledged either way. */
   if (store_journal_find(r->epoch, r->seq, &ref) == 0 && store_journal_ack(ref) == 0) (void)store_note_abandoned();
-  led_flash(LED_RED, 1000);
+  led_flash(LED_RED, LED_FLASH_LONG_MS);
   APP_PRINTF("#nack epoch=%u seq=%u reason=%u abandoned=%u\n", (unsigned)r->epoch, (unsigned)r->seq,
              (unsigned)r->word, (unsigned)store_abandoned_total());
   return 1;
@@ -287,7 +289,7 @@ static int on_ack(const reply_t *r, int mine)
   if (mine) mark_replied();
   int fresh = mine && time_sync(r->word);
   if (found) tx_counts.acked++;
-  led_flash(LED_GREEN, 400); /* authentic host ACK: reading is committed */
+  led_flash(LED_GREEN, LED_FLASH_MS); /* authentic host ACK: reading is committed */
   APP_PRINTF("#ack epoch=%u seq=%u found=%d time_sync=%d rssi=%d snr=%d pending=%u\n",
              (unsigned)r->epoch, (unsigned)r->seq, found, fresh, rx_rssi, rx_snr,
              (unsigned)store_journal_pending());
@@ -301,7 +303,7 @@ static int handle_reply(void)
   if (ws_open_reply(key, identity.station, rx_frame, rx_len, &r.kind, &r.ctr, &r.epoch, &r.seq, &r.word, &r.echo))
   {
     tx_counts.ack_rejects++;
-    led_flash(LED_RED, 400);
+    led_flash(LED_RED, LED_FLASH_MS);
     APP_PRINTF("#ack reject len=%u rssi=%d snr=%d\n", rx_len, rx_rssi, rx_snr);
     return 0;
   }
@@ -334,7 +336,7 @@ static int in_sending(uint32_t ev)
   if (ev != EV_TX_TIMEOUT) return 0;
   ws_radio_standby();               /* the driver's timeout leaves the radio transmitting */
   ws_failrun_note(&tx_counts.air, 0);
-  led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n");
+  led_flash(LED_RED, LED_FLASH_MS); APP_PRINTF("#error tx-timeout\n");
   stop_drain(); next_item();
   return 1;
 }
@@ -358,7 +360,7 @@ static int in_diag_sending(uint32_t ev)
   if (ev != EV_TX_DONE && ev != EV_TX_TIMEOUT) return 0;
   if (ev == EV_TX_TIMEOUT) ws_radio_standby();
   ws_failrun_note(&tx_counts.air, ev == EV_TX_DONE);
-  if (ev == EV_TX_TIMEOUT) { led_flash(LED_RED, 400); APP_PRINTF("#error tx-timeout\n"); }
+  if (ev == EV_TX_TIMEOUT) { led_flash(LED_RED, LED_FLASH_MS); APP_PRINTF("#error tx-timeout\n"); }
   radio_idle();
   return 1;
 }

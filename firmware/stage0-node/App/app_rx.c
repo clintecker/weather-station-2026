@@ -35,7 +35,7 @@
 #include "ws_frame.h"
 
 static RadioEvents_t events;
-static uint8_t rx_frame[255];
+static uint8_t rx_frame[WS_FRAME_MAX];
 static uint16_t rx_len;
 static int16_t rx_rssi;
 static int8_t rx_snr;
@@ -62,22 +62,25 @@ static int relisten_tries;
  * a single radio event, the radio is not trusted: after QUIET_RELISTEN_LIMIT relistens in a row
  * with none, the health check fails and the watchdog resets the board (the
  * bridge holds no state, so a reset costs nothing). */
-#define SILENCE_RELISTEN_MS  (16UL * 60000UL)
+#define SILENCE_RELISTEN_MS  (16UL * CLOCK_MS_PER_MIN)
 #define QUIET_RELISTEN_LIMIT 2U
-#define TX_HEALTH_MS         (WS_TX_TIMEOUT_MS + 2000UL)   /* an ACK on air longer than this is stuck */
+#define TX_STALL_CHECKS      3U   /* watchdog health checks with console output stalled */
+#define ALIVE_PERIOD_MS      CLOCK_MS_PER_MIN
+#define TX_HEALTH_MS         (WS_TX_TIMEOUT_MS + 2UL * CLOCK_MS_PER_S)   /* an ACK on air longer than this is stuck */
 static volatile uint32_t last_radio_event_ms;
 static volatile uint32_t quiet_relistens;   /* relistens since the last radio event (any interrupt clears it) */
 static uint32_t n_relistens;
 static volatile uint8_t relisten_due, alive_due;
 static void alive(void);
-static int uart_rearm_tries, tx_stall_checks;
+static int uart_rearm_tries;
+static uint32_t tx_stall_checks;
 static uint32_t tx_done_seen;
 /* Failure lines (#rx crc / #rx hdr) per minute at most: a noisy band must not crowd frames out of the
    console. Over budget, a failure is counted (fault_overruns), not logged. */
 #define FAILURE_LINES_PER_MIN 20U
 static uint32_t failure_lines;
 static void post(uint32_t ev) { events_post(&pending_ev, ev); }
-static uint8_t bad_frame[255];
+static uint8_t bad_frame[WS_FRAME_MAX];
 static uint8_t bad_len;
 static int8_t bad_rssi, bad_snr, hdr_rssi;
 static uint32_t n_crc, n_hdr, n_fault_overrun;
@@ -153,10 +156,10 @@ int watchdog_healthy(void)
   }
   uart_rearm_tries = 0;
   /* Console output that stopped moving (a trace DMA transfer started and never finished)
-     silences frames and #alive alike. Three checks (3 s) without progress: unhealthy. */
+     silences frames and #alive alike. TX_STALL_CHECKS checks (1 s apart) without progress: unhealthy. */
   uint32_t started, done;
   vcom_tx_progress(&started, &done);
-  if (started != done && done == tx_done_seen) { if (++tx_stall_checks >= 3) return 0; }
+  if (started != done && done == tx_done_seen) { if (++tx_stall_checks >= TX_STALL_CHECKS) return 0; }
   else tx_stall_checks = 0;
   tx_done_seen = done;
   if (quiet_relistens >= QUIET_RELISTEN_LIMIT) return 0;
@@ -173,7 +176,7 @@ static void relisten(void)
   relisten_due = 0;
   n_relistens++;
   quiet_relistens++;
-  APP_PRINTF("#relisten after %u s without a radio event\n", (unsigned)((clock_ms() - last_radio_event_ms) / 1000));
+  APP_PRINTF("#relisten after %u s without a radio event\n", (unsigned)((clock_ms() - last_radio_event_ms) / CLOCK_MS_PER_S));
   ws_radio_standby();
   listen();
   last_radio_event_ms = clock_ms();   /* the next silence is measured from here, the quiet count kept */
@@ -205,7 +208,7 @@ static uint32_t take_events(void)
    still be transmitting. */
 static void tx_ended(uint32_t ev)
 {
-  if (ev & EV_TX_TIMEOUT) { APP_PRINTF("#tx timeout\n"); led_flash(LED_RED, 400); ws_radio_standby(); }
+  if (ev & EV_TX_TIMEOUT) { APP_PRINTF("#tx timeout\n"); led_flash(LED_RED, LED_FLASH_MS); ws_radio_standby(); }
   listen();
 }
 
@@ -214,12 +217,12 @@ static void forward(void)
   if (!ws_air_frame_ok(got.frame, got.len))
   {
     n_dropped++;
-    led_flash(LED_RED, 400);
+    led_flash(LED_RED, LED_FLASH_MS);
     APP_PRINTF("#rx drop len=%u rssi=%d snr=%d\n", got.len, got.rssi, got.snr);
     return;
   }
   n_diag += ws_frame_kind(got.frame, got.len) == WS_KIND_DIAG;
-  led_flash(LED_BLUE, 400);
+  led_flash(LED_BLUE, LED_FLASH_MS);
   if (hex_print(got.frame, got.len)) n_forwarded++;   /* a line the full console queue dropped is not forwarded */
   APP_PRINTF("#rx obs rssi=%d snr=%d\n", got.rssi, got.snr);
 }
@@ -234,7 +237,7 @@ static int failure_line_ok(void)
 
 static void log_crc(void)
 {
-  static char text[2 * sizeof bad_frame + 1];
+  static char text[WS_HEX_PER_BYTE * sizeof bad_frame + 1];
   if (!failure_line_ok()) return;
   ws_hex_text(got.bad, got.blen, text);
   APP_PRINTF("#rx crc len=%u rssi=%d snr=%d data=%s\n", got.blen, got.brssi, got.bsnr, text);
@@ -266,7 +269,7 @@ static void alive(void)
   APP_PRINTF("#alive uptime=%u forwarded=%u dropped=%u acks=%u diag=%u listening=%d relistens=%u uart_errors=%u stack_peak=%u "
              "crc_errors=%u hdr_errors=%u fault_overruns=%u task_peak_us=%u task_peak=%s isr_peak_us=%u isr_peak=%s trace_drops=%u "
              "frames_lost=%u\n",
-             (unsigned)((clock_ms() - boot_ms) / 1000), (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks,
+             (unsigned)((clock_ms() - boot_ms) / CLOCK_MS_PER_S), (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks,
              (unsigned)n_diag, Radio.GetStatus() == RF_RX_RUNNING || transmitting, (unsigned)n_relistens,
              (unsigned)vcom_rx_errors(), (unsigned)stackmon_peak_step(), (unsigned)n_crc, (unsigned)n_hdr, (unsigned)n_fault_overrun,
              (unsigned)busymon_peak_us(BM_TASK), busymon_peak_name(BM_TASK), (unsigned)busymon_peak_us(BM_ISR),
@@ -302,7 +305,7 @@ void console_line(char *line)
   if (!ws_host_reply_ok(frame, n))
   {
     APP_PRINTF("#host reject len=%d\n", n);
-    led_flash(LED_RED, 400);
+    led_flash(LED_RED, LED_FLASH_MS);
     return;
   }
   /* One ACK on air at a time: a second would be cut short when the first one's TxDone re-arms the
@@ -317,7 +320,7 @@ void console_line(char *line)
     return;
   }
   n_acks++;
-  led_flash(LED_GREEN, 400);
+  led_flash(LED_GREEN, LED_FLASH_MS);
 }
 
 void SubghzApp_Init(void)
@@ -343,7 +346,7 @@ void SubghzApp_Init(void)
   APP_PRINTF("\n#boot role=rx fw=%s reset=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION, watchdog_reset_cause(),
              (unsigned)WS_RF_FREQUENCY_HZ, (unsigned)WS_LORA_BANDWIDTH, (unsigned)WS_LORA_SF, WS_TX_POWER_DBM);
   fault_report();
-  (void)UTIL_TIMER_Create(&alive_timer, 60000, UTIL_TIMER_PERIODIC, on_alive, NULL);
+  (void)UTIL_TIMER_Create(&alive_timer, ALIVE_PERIOD_MS, UTIL_TIMER_PERIODIC, on_alive, NULL);
   (void)WS_CHECK(UTIL_TIMER_Start(&alive_timer) == UTIL_TIMER_OK);   /* created just above, so not running */
   listen();
   stackmon_seed();
