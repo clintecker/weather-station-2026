@@ -1,3 +1,5 @@
+# GENERATED from gateway.lit.md by tools/tangle.py: do not edit. Edit the document, then run
+# tools/tangle.py gateway.lit.md (tests/test_tangle.py checks this file).
 """SQLite observation store. Used by the authenticated gateway and regression tests."""
 import contextlib
 import json
