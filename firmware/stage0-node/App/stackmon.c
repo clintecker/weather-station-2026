@@ -32,6 +32,6 @@ uint32_t stackmon_peak_step(void) { return ws_stack_scan_step(&scan, lowest(), _
    while the slices climb to it. */
 void stackmon_seed(void)
 {
-  scan.deepest = (const uint32_t *)((const char *)_estack - stackmon_peak());
+  scan.deepest = _estack - stackmon_peak() / sizeof(uint32_t);   /* the peak is whole words */
   scan.cursor = lowest();
 }
