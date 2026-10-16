@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 from ws0.harness import Campaign, Scenario
-from ws0.protocol import DIAG, KIND_DIAG, Nonces, frame_counter, seal
+from ws0.protocol import COUNTER_AT, COUNTER_BYTES, COUNTER_MAX, DIAG, HEADER_LEN, KIND_DIAG, Nonces, frame_counter, seal
 from ws0.service import CounterRegression, Replay, Gateway
 from ws0.simulator import Node
 from ws0 import __main__ as cli
@@ -177,7 +177,7 @@ class CounterRegressionTests(unittest.TestCase):
         self.deliver(self.minute())
         mark = self.gateway.status()['node_counter']['max_node_counter']
         forged = bytearray(self.node.packet(self.minute()))
-        forged[3:8] = (2**40 - 1).to_bytes(5, 'big')  # the header's counter field: huge, tag no longer valid
+        forged[COUNTER_AT:HEADER_LEN] = COUNTER_MAX.to_bytes(COUNTER_BYTES, 'big')  # huge counter, tag no longer valid
         with self.assertRaises(InvalidTag):
             self.gateway.receive(bytes(forged), self.now)
         self.assertEqual(self.gateway.status()['node_counter']['max_node_counter'], mark)
