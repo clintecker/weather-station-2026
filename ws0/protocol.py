@@ -1,3 +1,5 @@
+# GENERATED from protocol.lit.md by tools/tangle.py: do not edit. Edit the document, then run
+# tools/tangle.py ws0/protocol.lit.md (tests/test_tangle.py checks this file).
 """Draft Stage-0 binary protocol; all integers are network byte order.
 
 AES-CCM is provided by cryptography/OpenSSL, never implemented here.
