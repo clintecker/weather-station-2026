@@ -1,28 +1,54 @@
 # Tools
 
-Run from the repository root with the project virtualenv (`.venv/bin/python`). Boards are found by ST-LINK serial
-number where the tool supports it, because `/dev/cu.usbmodem*` names change between USB sockets and machines.
+Run the tools from the repository root with the project virtualenv (`.venv/bin/python`). Where a tool supports it, it finds a board by its ST-LINK serial number. The `/dev/cu.usbmodem*` names change between USB sockets and machines.
 
 | File | Purpose | Usage | More |
 |---|---|---|---|
-| `fetch-vendor.sh` | Clone pinned STM32CubeWL v1.6.0 and its submodules (HAL, CMSIS, BSP, SubGHz_Phy, Mbed TLS) into `vendor/`. Re-running verifies the pinned commits. Needed for firmware builds and for 7 C-vs-Python crypto tests. | `sh tools/fetch-vendor.sh` | `docs/CONTEXT-PACK.md` §5 |
-| `status.py` | Print the gateway's `/v1/status` JSON without echoing the API token. | `.venv/bin/python tools/status.py --directory run-office` (default `run-demo`) | `README.md` |
-| `h01_report.py` | H01 scorer: the verdict for a time window, computed from a gateway database (opened read-only). With `--output`, writes `report.json` and `report.md` to a new directory. | `.venv/bin/python tools/h01_report.py --db run-office/observations.sqlite3 --station station-01 --start 2026-10-15T00:00:00Z --hours 24 --output evidence/h01-2026-10-15` (`--db` defaults to `run-hw/observations.sqlite3`) | `docs/H01-checklist.md` |
-| `rx_faults.py` | List the bad receptions the RX reported (`#rx crc` with the received bytes, `#rx hdr`) from a gateway database (opened read-only), with a summary. Each CRC capture is classified: looks like one of our frames (first byte `0x51`–`0x54`; then the closest accepted frame within ±5 s and how many bits differ) ours with a damaged header (kind byte wrong, but under 10% of bits differ from an accepted frame within ±5 s) or foreign/noise. A database whose tables predate the gateway version is named with the remedy, not a traceback. | `.venv/bin/python tools/rx_faults.py --db run-hw/observations.sqlite3 [--since 2026-10-15T00:00:00Z] [--until 2026-10-16T00:00:00Z] [--limit 50] [--json]` | `docs/web-dashboard.md` |
-| `power_cut_test.py` | Power-loss test of the TX flash state: start `TEST-FLASH-STORM`, then cut power (`--method power`, uhubctl) or pulse NRST (`--method reset`). Each boot is checked for counter and epoch monotonicity. `--check` does one cut to verify that the hub really removes VBUS. | `.venv/bin/python tools/power_cut_test.py --method reset --serial-number 003B00194142500E20353451 --cycles 200 --gateway-db run-office/observations.sqlite3 --output evidence/power-cut-<date>` | `docs/failure-modes.md` §6 (power events), §10 (power-removal test not done); `evidence/g7-reset-during-write-2026-10-13/` |
-| `code_shape.sh` | Shape check for our C (`firmware/stage0-node/App`, `firmware/common`, `firmware/stage0.c`, `firmware/host`): every function at most cyclomatic complexity 10 and 60 lines (lizard), and no copied code (jscpd, 5+ lines / 40+ tokens). Fails on any finding; run in CI. | `.venv/bin/pip install -r requirements-dev.txt; tools/code_shape.sh` (needs Node.js for `npx`) | `docs/firmware-budget.md` |
-| `tangle.py` | Literate sources: `firmware/stage0-node/App/node_store.lit.md` is the source of `node_store.c` (committed, generated, never edited by hand). Tangles the C out, `--check`s that the committed file matches (in `code_shape.sh` and `tests/test_tangle.py`), `--weave`s a standalone HTML page, `--lines` writes a `#line` build for a debugger only. Python standard library. | `python3 tools/tangle.py firmware/stage0-node/App/node_store.lit.md`; `python3 tools/tangle.py --weave /tmp/node_store.html firmware/stage0-node/App/node_store.lit.md` | the docstring in `tools/tangle.py` |
-| `rangetest_log.py` | Log a `firmware/rangetest` board's console (both link directions, settings, spot marks) to CSV. Reconnects after USB dropouts. | `.venv/bin/python tools/rangetest_log.py 0016001E4142500E20353451 evidence/<run>/rangetest.csv` | `firmware/rangetest/README.md` |
-| `nucleo/at.py` | Send AT commands to a board running ST's factory Concentrator firmware (console 9600 8N1). | `python3 tools/nucleo/at.py /dev/cu.usbmodemXXXX "AT+VER=?"` | `docs/hardware/nucleo-wl55jc-bringup.md` |
-| `nucleo/trace-swd-disable.tcl` | OpenOCD script: a watchpoint on `GPIOA_MODER` writes, used to find where the factory firmware disables SWD. The script runs `init` itself. | `openocd -f interface/stlink.cfg -f target/stm32wlx.cfg -f tools/nucleo/trace-swd-disable.tcl` | `docs/hardware/nucleo-wl55jc-bringup.md` (SWD) |
-| `deploy/macos/install.sh` | Install, remove or inspect the launchd agent `com.clintecker.weatherstation.gateway`. The agent runs `ws0 serve --serial-number <RX>`, restarts if it exits, and logs to `<state-dir>/serve.out` (rotated by the gateway at 50 MB, 10 kept; `serve.err` holds only failures before that file opens). | `tools/deploy/macos/install.sh install [state-dir] [rx-stlink-serial]` \| `uninstall` \| `status` (defaults: `run-hw`, `0016001E4142500E20353451`) | `docs/CONTEXT-PACK.md` §4 |
-| `deploy/macos/com.clintecker.weatherstation.gateway.plist.in` | launchd template filled in by `install.sh` (`@REPO@`, `@STATE@`, `@RX_SERIAL@`). | Not run directly | |
-| `deploy/linux/ws0-gateway.service` | systemd unit for an always-on Linux gateway. | Copy to `/etc/systemd/system/`, set `User` and paths, then `systemctl daemon-reload && systemctl enable --now ws0-gateway` | `firmware/stage0-node/README.md` |
+| `fetch-vendor.sh` | Clones the pinned STM32CubeWL v1.6.0 and its submodules (HAL, CMSIS, BSP, SubGHz_Phy, Mbed TLS) into `vendor/`. A second run verifies the pinned commits. Firmware builds need it. 7 C-vs-Python crypto tests also need it. | `sh tools/fetch-vendor.sh` | `docs/CONTEXT-PACK.md` §5 |
+| `status.py` | Prints the `/v1/status` JSON of the gateway. It does not show the API token. | `.venv/bin/python tools/status.py --directory run-office` (default `run-demo`) | `README.md` |
+| `h01_report.py` | The scorer for the 24-hour delivery test (H01). It computes the verdict for a time window from a gateway database, opened read-only. With `--output`, it writes `report.json` and `report.md` to a new directory. | `.venv/bin/python tools/h01_report.py --db run-office/observations.sqlite3 --station station-01 --start 2026-10-15T00:00:00Z --hours 24 --output evidence/h01-2026-10-15` (`--db` defaults to `run-hw/observations.sqlite3`) | `docs/H01-checklist.md` |
+| `rx_faults.py` | Lists the bad receptions that the RX board (the receiver) reported, from a gateway database opened read-only. These are `#rx crc` lines with the received bytes, and `#rx hdr` lines. It adds a summary. It puts each CRC capture in one of three classes (below). For a database whose tables are older than the gateway version, it names the remedy and does not print a traceback. | `.venv/bin/python tools/rx_faults.py --db run-hw/observations.sqlite3 [--since 2026-10-15T00:00:00Z] [--until 2026-10-16T00:00:00Z] [--limit 50] [--json]` | `docs/web-dashboard.md` |
+| `power_cut_test.py` | Power-loss test of the flash state of the TX board (the transmitter). It starts `TEST-FLASH-STORM`, then cuts power (`--method power`, uhubctl) or pulses the reset pin NRST (`--method reset`). It checks each boot for a monotonic counter and epoch. `--check` does one cut to verify that the hub really removes the USB supply (VBUS). | `.venv/bin/python tools/power_cut_test.py --method reset --serial-number 003B00194142500E20353451 --cycles 200 --gateway-db run-office/observations.sqlite3 --output evidence/power-cut-<date>` | `docs/failure-modes.md` §6 (power events), §10 (power-removal test not done), `evidence/g7-reset-during-write-2026-10-13/` |
+| `code_shape.sh` | Checks the shape of our C (`firmware/stage0-node/App`, `firmware/common`, `firmware/stage0.c`, `firmware/host`). Every function has a cyclomatic complexity of at most 10 and at most 60 lines (lizard). No code is copied (jscpd, 5+ lines or 40+ tokens). It fails on any finding. CI runs it. | `.venv/bin/pip install -r requirements-dev.txt; tools/code_shape.sh` (needs Node.js for `npx`) | `docs/firmware-budget.md` |
+| `tangle.py` | Literate sources: `firmware/stage0-node/App/node_store.lit.md` is the source of `node_store.c`. The C file is committed and generated. Never edit it by hand. The tool tangles the C out. `--check` verifies that the committed file matches (used in `code_shape.sh` and `tests/test_tangle.py`). `--weave` writes a standalone HTML page. `--lines` writes a `#line` build, only for a debugger. It needs only the Python standard library. | `python3 tools/tangle.py firmware/stage0-node/App/node_store.lit.md`; `python3 tools/tangle.py --weave /tmp/node_store.html firmware/stage0-node/App/node_store.lit.md` | the docstring in `tools/tangle.py` |
+| `rangetest_log.py` | Logs the console of a `firmware/rangetest` board to CSV: both link directions, the settings and the spot marks. It reconnects after USB dropouts. | `.venv/bin/python tools/rangetest_log.py 0016001E4142500E20353451 evidence/<run>/rangetest.csv` | `firmware/rangetest/README.md` |
+| `nucleo/at.py` | Sends AT commands to a board that runs ST's factory Concentrator firmware (console 9600 8N1). | `python3 tools/nucleo/at.py /dev/cu.usbmodemXXXX "AT+VER=?"` | `docs/hardware/nucleo-wl55jc-bringup.md` |
+| `nucleo/trace-swd-disable.tcl` | An OpenOCD script. It sets a watchpoint on writes to `GPIOA_MODER`, to find where the factory firmware turns off the Serial Wire Debug (SWD) port. The script runs `init` itself. | `openocd -f interface/stlink.cfg -f target/stm32wlx.cfg -f tools/nucleo/trace-swd-disable.tcl` | `docs/hardware/nucleo-wl55jc-bringup.md` (SWD) |
+| `deploy/macos/install.sh` | Installs, removes or inspects the launchd agent `com.clintecker.weatherstation.gateway`. The agent runs `ws0 serve --serial-number <RX>` and restarts it if it exits. It logs to `<state-dir>/serve.out`. The gateway rotates that file at 50 MB and keeps 10. `serve.err` holds only the failures before that file opens. | `tools/deploy/macos/install.sh install [state-dir] [rx-stlink-serial]` \| `uninstall` \| `status` (defaults: `run-hw`, `0016001E4142500E20353451`) | `docs/CONTEXT-PACK.md` §4 |
+| `deploy/macos/com.clintecker.weatherstation.gateway.plist.in` | The launchd template. `install.sh` fills in `@REPO@`, `@STATE@` and `@RX_SERIAL@`. | Do not run it directly. | |
+| `deploy/linux/ws0-gateway.service` | The systemd unit for an always-on Linux gateway. | Copy it to `/etc/systemd/system/`, set `User` and the paths, then `systemctl daemon-reload && systemctl enable --now ws0-gateway` | `firmware/stage0-node/README.md` |
+
+`rx_faults.py` puts each CRC capture in one of these classes:
+
+```mermaid
+flowchart TD
+  A["CRC capture"] --> B{"First byte 0x51 to 0x54?"}
+  B -->|"yes"| C["Looks like one of our frames<br/>also shows the closest accepted frame within ±5 s<br/>and the number of bits that differ"]
+  B -->|"no"| D{"Under 10 % of bits differ from<br/>an accepted frame within ±5 s?"}
+  D -->|"yes"| E["Ours, with a damaged header"]
+  D -->|"no"| F["Foreign or noise"]
+```
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push and pull request, and by hand (`workflow_dispatch`, with an optional commit to build).
+`.github/workflows/ci.yml` runs on every push and pull request. You can also start it by hand (`workflow_dispatch`, with an optional commit to build).
 
-- **host**: Python 3.12, `sh tools/fetch-vendor.sh` (cached, always re-verified), then `WS_REQUIRE_VENDOR=1 WS0_UNSAFE_FAST_FSYNC=1 python -m unittest discover -s tests`. With `WS_REQUIRE_VENDOR=1`, a missing `vendor/` fails the C-vs-Python crypto tests instead of skipping them.
-- **firmware**: installs xPack arm-none-eabi-gcc 15.2.1-1.1 (linux-x64, SHA-256 pinned in the workflow), then builds `ROLE=rx` and `ROLE=tx` twice from `make clean` and fails if the `.bin` hashes differ. The Makefile flash budget check runs on each link. The bins and maps are uploaded as the `stage0-firmware` artifact.
-- If the built commit has a section in `firmware/stage0-node/RELEASES.md` (read from the default branch), the job compares the `.bin` hashes with the recorded ones and reports a match or mismatch. This check never fails the job. To re-check an old release, run the workflow by hand with that commit.
+- **host**: runs on Linux, macOS and Windows with Python 3.12. Windows does not gate the result yet. On Linux the job first runs ruff, `tools/code_shape.sh` and `tools/cppcheck.sh`. On Linux and macOS it runs `sh tools/fetch-vendor.sh` (cached, always verified again), then `WS_REQUIRE_VENDOR=1 WS_REQUIRE_CC=1 WS0_UNSAFE_FAST_FSYNC=1 python -m unittest discover -s tests`. With `WS_REQUIRE_VENDOR=1` and `WS_REQUIRE_CC=1`, a missing `vendor/` or a missing C compiler fails the C tests and does not skip them. On Windows the job runs the gateway tests only.
+- **firmware**: installs xPack arm-none-eabi-gcc 15.2.1-1.1 (linux-x64, SHA-256 pinned in the workflow). It builds `ROLE=rx` and `ROLE=tx` two times from `make clean` and fails if the `.bin` hashes differ. The flash budget check of the Makefile runs at each link. The job uploads the bins and maps as the `stage0-firmware` artifact.
+- The firmware job can find a section for the built commit in `firmware/stage0-node/RELEASES.md`, read from the default branch. It then compares the `.bin` hashes with the recorded ones and reports a match or a mismatch. This check never fails the job. To check an old release again, run the workflow by hand with that commit.
+
+```mermaid
+flowchart TD
+  P["push, pull request or manual run"] --> H["host job<br/>Linux, macOS, Windows"]
+  P --> F["firmware job<br/>Linux"]
+  H --> H1["Linux only: ruff, code_shape.sh, cppcheck.sh"]
+  H1 --> H2["Linux and macOS: fetch-vendor.sh"]
+  H2 --> H3["unit tests"]
+  F --> F1["install pinned xPack GCC"]
+  F1 --> F2["fetch-vendor.sh"]
+  F2 --> F3["build rx and tx two times<br/>compare .bin hashes"]
+  F3 --> F4["rangetest build, -fanalyzer, stack bound, no blocking waits"]
+  F4 --> F5["libFuzzer, 60 s per target"]
+  F5 --> F6["compare with RELEASES.md<br/>does not gate"]
+  F6 --> F7["upload stage0-firmware artifact"]
+```

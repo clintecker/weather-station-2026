@@ -1,9 +1,33 @@
-# Weather Station — Stage 0 software checkpoint
+# Weather Station: bench prototype software
 
-Authority: **Weather Station v0.2 PRD/TRD, 8 October 2026**, sections 3, 9, 11 and H01.
-Status: Python gateway (`ws0`) plus Stage-0 firmware for two NUCLEO-WL55JC1 boards, built, flashed and bench-tested (`firmware/stage0-node/`). **Stage 0 is not complete; H01 NOT RUN.**
+Authority: the **Weather Station v0.2 product and technical requirements document (PRD/TRD), 8 October 2026**, sections 3, 9, 11 and the 24-hour delivery test (H01).
 
-Resuming the bench work? Start with `docs/CONTEXT-PACK.md`. Firmware: `firmware/stage0-node/README.md`, releases: `firmware/stage0-node/RELEASES.md`. Moving boards between gateways: `docs/runbook-moving-boards.md`. Tools: `tools/README.md`.
+Status: this repository holds the Python gateway (`ws0`) and the firmware for two NUCLEO-WL55JC1 boards (`firmware/stage0-node/`). Both are built, flashed and tested on the bench. The bench prototype is Stage 0 of the staged plan ([`docs/next-stages-plan.md`](docs/next-stages-plan.md)). **Stage 0 is not complete. The 24-hour delivery test (H01, [`docs/H01-checklist.md`](docs/H01-checklist.md)) has NOT RUN.**
+
+Do you resume the bench work? Start with [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md). Other entry points:
+
+- Firmware: [`firmware/stage0-node/README.md`](firmware/stage0-node/README.md).
+- Releases: [`firmware/stage0-node/RELEASES.md`](firmware/stage0-node/RELEASES.md).
+- Moving boards between gateways: [`docs/runbook-moving-boards.md`](docs/runbook-moving-boards.md).
+- Tools: [`tools/README.md`](tools/README.md).
+
+The data path with the boards:
+
+```mermaid
+flowchart LR
+  S["SHT45 sensor"] -->|"I2C"| TX["TX board<br/>sensor node"]
+  TX -->|"LoRa: encrypted observation"| RX["RX board<br/>USB bridge"]
+  RX -->|"USB serial: hex line"| GW["Gateway<br/>ws0 serve"]
+  GW --> DB[("SQLite")]
+  GW -->|"ACK after the commit"| RX
+  RX -->|"LoRa: encrypted ACK"| TX
+  GW --> API["HTTP API<br/>127.0.0.1:8088"]
+  GW -->|"optional"| MQ["MQTT broker"]
+  MQ --> HA["Home Assistant"]
+  API --> ST["tools/status.py"]
+```
+
+In the simulated demo, `ws0 demo` takes the place of the boards. It sends encrypted frames to the same gateway code.
 
 ## Run the simulated demo on your Mac
 
@@ -17,7 +41,9 @@ python -m ws0 init
 python -m ws0 demo
 ```
 
-`init` creates a private `run-demo` directory with a fresh radio key, API token and persistent nonce state. It refuses to overwrite an existing directory. `demo` emits one simulated sample immediately, then every 60 seconds. It exercises the encrypted frame → gateway → SQLite → encrypted ACK path. All station identifiers say `simulation-01`. Ctrl-C stops it; rerun `demo` to resume with a new observation epoch and the old queued history.
+`init` creates a private `run-demo` directory with a fresh radio key, an API token and persistent nonce state. It refuses to overwrite an existing directory.
+
+`demo` sends one simulated sample at once, then one every 60 seconds. It tests the path from encrypted frame to gateway to SQLite to encrypted ACK. All station identifiers say `simulation-01`. Ctrl-C stops it. Run `demo` again to resume with a new observation epoch and the old queued history.
 
 In a second terminal, from the same folder:
 
@@ -26,18 +52,22 @@ source .venv/bin/activate
 python tools/status.py
 ```
 
-This displays live status without printing your API token. The read-only API listens at `127.0.0.1:8088` and requires the bearer token from `run-demo/gateway.json` on every request. Routes:
+This shows the live status and does not print your API token. The read-only API listens at `127.0.0.1:8088`. Every request needs the bearer token from `run-demo/gateway.json`. Routes:
 
 - `GET /v1/status`
 - `GET /v1/observations/latest`
 - `GET /v1/observations?limit=100&offset=0`
 - `GET /v1/observations?from=2026-10-09T00:00:00Z&to=2026-10-10T00:00:00Z&format=csv`
 
-Times in records are Unix seconds UTC. `from` is inclusive and `to` exclusive. A sample with an unknown clock gets a reconstructed UTC time, with an uncertainty, once a synchronized sample from the same boot epoch exists. Until then its effective time is null: it is kept in SQLite but never returned by `/v1/observations`. Pagination is bounded to 1,000 rows. Read `docs/openapi.json` for the interface.
+Times in records are Unix seconds UTC. `from` is inclusive and `to` is exclusive.
 
-## Exercise failures while waiting
+A sample with an unknown clock gets a reconstructed UTC time with an uncertainty. The gateway makes it when a synchronized sample from the same boot epoch exists. Until then the effective time is null. SQLite keeps the sample, but `/v1/observations` never returns it.
 
-Run these in a second terminal. These commands act only on the simulator:
+A page holds at most 1,000 rows. [`docs/openapi.json`](docs/openapi.json) describes the interface.
+
+## Test failures while the demo runs
+
+Run these commands in a second terminal. They act only on the simulator:
 
 ```sh
 # Interrupt transport; leave demo running so it journals new observations.
@@ -52,11 +82,19 @@ touch run-demo/sensor-fault
 rm run-demo/sensor-fault
 ```
 
-The transmitter journal deletes a reading only after a valid authenticated ACK. The gateway produces that ACK only after database commit. Old backfill and exact duplicate packets never refresh a measurement's age. A newer sensor failure or unknown clock marks the measurement unavailable. Future-clock samples are quarantined at receipt; a subsequent correctly timed observation restores availability.
+Rules that the demo shows:
+
+- The transmitter journal deletes a reading only after a valid authenticated ACK.
+- The gateway makes that ACK only after the database commit.
+- Old backfill and exact duplicate packets never refresh the age of a measurement.
+- A newer sensor failure or an unknown clock marks the measurement unavailable.
+- The gateway quarantines a sample with a future clock when it arrives. The next correctly timed observation makes the measurement available again.
 
 ## Run with the boards
 
-Both boards run the Stage-0 firmware (`firmware/stage0-node/README.md`). Find each board's port and ST-LINK serial with `.venv/bin/python -m serial.tools.list_ports -v`. TX must be unprovisioned (`WIPE ERASE-ALL-NODE-STATE` on its console erases it). Never re-provision a wiped TX with a key it has used before (`docs/runbook-moving-boards.md`).
+Both boards run the firmware in [`firmware/stage0-node/`](firmware/stage0-node/README.md). Find the port and the ST-LINK serial number of each board with `.venv/bin/python -m serial.tools.list_ports -v`.
+
+The TX board must be unprovisioned. `WIPE ERASE-ALL-NODE-STATE` on its console erases it. Never provision a wiped TX board again with a key that it used before ([`docs/runbook-moving-boards.md`](docs/runbook-moving-boards.md)).
 
 ```sh
 python -m ws0 init --hardware --station station-01 --station-id 1 --directory run-office
@@ -65,7 +103,9 @@ python -m ws0 serve --directory run-office --serial-number <RX ST-LINK serial>
 python tools/status.py --directory run-office
 ```
 
-`serve` writes receiver diagnostics to `run-office/receiver.log`. For unattended runs, use the launchd agent (`tools/deploy/macos/install.sh`) or the systemd unit (`tools/deploy/linux/ws0-gateway.service`). See `tools/README.md`. Home Assistant: `docs/runbook-home-assistant.md`. The gateway is meant to run on macOS, Linux or Windows.
+`serve` writes receiver diagnostics to `run-office/receiver.log`. For unattended runs, use the launchd agent (`tools/deploy/macos/install.sh`) or the systemd unit (`tools/deploy/linux/ws0-gateway.service`). See [`tools/README.md`](tools/README.md). For Home Assistant, see [`docs/runbook-home-assistant.md`](docs/runbook-home-assistant.md).
+
+The gateway runs on macOS and Linux. Windows has low priority.
 
 ## Run the simulation harness
 
@@ -83,46 +123,62 @@ python -m ws0.harness --scenario examples/scenarios/custom-outage.json --output 
 python -m ws0.harness --scenario examples/scenarios/short-baseline.json --negative-control --output negative-results
 ```
 
-Output directories must be new, so repeated runs cannot silently overwrite evidence.
-Fixed scenario seeds reproduce raw frame/event traces. The included `simulation-results/report.html`
-is an older campaign: 12 scenarios, recorded at commit 8aca123 (protocol draft 1, before
-`reboot-during-outage` was added). In that campaign all 17,280 observations were recovered,
-with zero duplicate rows and zero detected nonce reuse. One noisy-link seed delivered 98.82% on time, below the 99%
-target. Scenario PASS means its declared recovery/integrity contract passed; it is not
-an H01 pass. See `docs/simulation-harness.md` for the exact model and limitations.
+Each output directory must be new, so a repeated run cannot overwrite evidence. Fixed scenario seeds reproduce the raw frame and event traces.
 
-## Home Assistant / MQTT
+The included `simulation-results/report.html` is from an older campaign. It has 12 scenarios, recorded at commit 8aca123 with protocol version 1, before the `reboot-during-outage` scenario existed. In that campaign the gateway recovered all 17,280 observations. It found zero duplicate rows and zero nonce reuse. One noisy-link seed delivered 98.82 % on time, below the 99 % target.
 
-The service includes MQTT publishing and HA discovery for temperature and humidity. MQTT is disabled by default so the demo runs without an existing broker. To enable it, stop the service and edit `run-demo/gateway.json`: set `mqtt.enabled` to true, set the broker hostname/port, add `mqtt.username` if required, and enable `mqtt.tls` for a TLS broker. Supply the password in environment variable `WS_MQTT_PASSWORD`; it is not stored in source code. Restart to apply configuration. Live reload is not implemented in this checkpoint.
+A scenario PASS means that its declared recovery and integrity contract passed. It is not a pass of the 24-hour delivery test. [`docs/simulation-harness.md`](docs/simulation-harness.md) gives the exact model and its limits.
 
-The broker must already be configured in Home Assistant. No HA instance or broker has been changed for you. The simulated device appears under **simulation-01**. Both gateway health and measurement freshness must be online for its sensors to be available. Gateway disconnection uses MQTT last-will; stale measurements go offline at 180 seconds. Discovery is republished when the broker reconnects. The two measurement sensors fulfill the Stage-0 weather-data integration; this does not manufacture an unsupported forecast/composite weather entity.
+## Home Assistant and MQTT
 
-MQTT was verified against a local Mosquitto broker (`evidence/mqtt-local-broker-2026-10-13/`): discovery, last will and reconnect. A real Home Assistant instance, TLS and broker authentication remain untested. Use a separate future station ID and key for hardware. Never reuse the demo state as production provisioning.
+The gateway can publish to MQTT, with Home Assistant discovery for temperature and humidity. MQTT is off by default, so the demo runs without a broker.
+
+To turn on MQTT:
+
+1. Stop the service.
+2. Edit `run-demo/gateway.json`. Set `mqtt.enabled` to true and set the broker hostname and port.
+3. Add `mqtt.username` if the broker needs it. Set `mqtt.tls` for a TLS broker.
+4. Put the password in the environment variable `WS_MQTT_PASSWORD`. The source code does not store it.
+5. Start the service again. The gateway reads the configuration only at start.
+
+You must configure the broker in Home Assistant first. This repository changed no Home Assistant instance and no broker. The simulated device appears as **simulation-01**.
+
+Its sensors are available only while the gateway health and the measurement freshness are both online:
+
+- The gateway uses an MQTT last will to report its disconnection.
+- A measurement goes offline when it is 180 seconds old.
+- The gateway publishes discovery again when the broker reconnects.
+
+The two measurement sensors meet the weather-data integration requirement of the bench prototype. The gateway does not make a forecast or composite weather entity, because no data supports one.
+
+A test against a local Mosquitto broker verified discovery, last will and reconnect (`evidence/mqtt-local-broker-2026-10-13/`). Nobody has tested a real Home Assistant instance, TLS or broker authentication yet. Use a separate station ID and key for hardware. Never use the demo state to provision real boards.
 
 ## What is implemented
 
-- AES-128-CCM authenticated observation and ACK frames; 16-byte authentication tags.
-- Durable host nonce allocation, endpoint/key binding, separate observation identity.
+- AES-128-CCM authenticated observation and ACK frames.
+- Durable allocation of the host nonce, binding of the endpoint and key, and a separate observation identity.
 - SQLite storage, immutable deduplication and collision rejection.
-- Persistent simulated transmitter queue, restart handling and bounded backfill.
-- Authenticated loopback HTTP status/history and CSV export.
+- A persistent simulated transmitter queue, restart handling and bounded backfill.
+- An authenticated loopback HTTP API for status and history, with CSV export.
 - Optional MQTT snapshots, availability and Home Assistant discovery.
-- USB serial ingestion from the RX board (`ws0 serve`), with ACK/NACK return.
-- Portable C SHT45 acquisition/CRC/conversion and 24-byte observation serializer.
-- Stage-0 TX/RX firmware (`firmware/stage0-node/`): flash journal of about 3.3 days, durable counters and epochs, watchdog, wired provisioning.
-- Failure-oriented Python/C tests and recorded validation output.
+- USB serial input from the RX board (`ws0 serve`), with the ACK/NACK return path.
+- Portable C code for the SHT45: acquisition, CRC check and conversion.
+- TX and RX firmware (`firmware/stage0-node/`): a flash journal of about 2.3 days, durable counters and epochs, a watchdog, and provisioning over USB.
+- Python and C tests that target failures, and recorded validation output.
 
 ## Current state and open work
 
-Release `9e3d38f08e8b` is built, recorded in `firmware/stage0-node/RELEASES.md` and flashed (2026-10-13). On the previous release, `a07f498273f7`, a 9 h bench soak delivered 549 of 549 minutes on time (`evidence/soak-a07f498-2026-10-13/`). RF settings are bench values (`firmware/stage0-node/App/radio_cfg.h`: 915.0 MHz, 500 kHz, SF7, CR 4/5, 0 dBm).
+Release `260c9ccbe938` is built, recorded in [`firmware/stage0-node/RELEASES.md`](firmware/stage0-node/RELEASES.md) and flashed to both boards (2026-10-16). On the earlier release `a07f498273f7`, a 9-hour bench soak delivered 549 of 549 minutes on time (`evidence/soak-a07f498-2026-10-13/`).
 
-Still open before H01:
-- SHT45 readings on hardware.
+The radio settings are bench values (`firmware/stage0-node/App/radio_cfg.h`): 915.0 MHz, 500 kHz bandwidth, spreading factor 7, coding rate 4/5, 0 dBm.
+
+Open before the 24-hour delivery test:
+
 - Home Assistant against the real broker.
-- Placement link budget, antennas and current measurements.
-- The 24-hour run with its restart/outage matrix.
+- The link budget at the real placement, the antennas and the current measurements.
+- The 24-hour run with its restart and outage matrix.
 
-Simulation does not pass H01. The 30-day on-device storage requirement belongs to the later H11 qualification. Ordered next steps: `docs/CONTEXT-PACK.md` §6.
+Simulation cannot pass the 24-hour delivery test. The 30-day on-device storage requirement belongs to the later qualification H11. The ordered next steps are in [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) §6.
 
 ## Tests
 
@@ -131,16 +187,24 @@ sh tools/fetch-vendor.sh   # pinned STM32CubeWL + Mbed TLS; without it 7 C-vs-Py
 WS0_UNSAFE_FAST_FSYNC=1 python -m unittest discover -s tests -v
 ```
 
-Expect 83 tests. One SNTP test needs network and skips without it. The C tests require `cc` (Apple Command Line Tools on macOS). The 1,440-record test uses accelerated virtual timestamps, not 24 hours of elapsed time. `evidence/validation.txt` is historical: 28 tests at commit 8aca123.
+One SNTP test needs the network and skips without it. The C tests need `cc` (Apple Command Line Tools on macOS). The 1,440-record test uses accelerated virtual timestamps, not 24 hours of real time. `evidence/validation.txt` is a historical record: 28 tests at commit 8aca123.
 
-`WS0_UNSAFE_FAST_FSYNC=1` is **test-only**: it sets SQLite `synchronous=OFF` and turns off `fullfsync`, so commits are not power-loss durable. Never set it for a gateway that ACKs real data.
+`WS0_UNSAFE_FAST_FSYNC=1` is **only for tests**. It sets SQLite `synchronous=OFF` and turns off `fullfsync`, so a commit does not survive a power loss. Never set it for a gateway that acknowledges real data.
 
 ## State and key handling
 
-Keep the entire run directory private. Never copy it to two concurrently running hosts; never restore an older nonce state while retaining its key. If nonce state is lost or rolled back, retire that key and provision a new configuration for both ends. Host counters persist in SQLite; on the TX board, counters and boot epochs persist in flash (`firmware/stage0-node/App/node_store.c`). WIPE resets the node counter, so a wiped node needs a new key. A known key must not be used with a reset counter. Do not commit keys, tokens or run databases. The downloadable archive includes no working secrets.
+Keep the whole run directory private. Obey these rules:
+
+- Never copy a run directory to two hosts that run at the same time.
+- Never restore an older nonce state and keep its key.
+- If the nonce state is lost or rolled back, retire that key. Provision a new configuration for both ends.
+- Never use a known key with a reset counter.
+- Do not commit keys, tokens or run databases.
+
+The host counters persist in SQLite. On the TX board, the counters and boot epochs persist in flash (`firmware/stage0-node/App/node_store.c`). A wiped node needs a new key ([`firmware/stage0-node/README.md`](firmware/stage0-node/README.md), "Re-keying rule"). The downloadable archive contains no working secrets.
 
 ## Ordered next steps
 
-See `docs/CONTEXT-PACK.md` §6. Stage 1 (power and pack state) starts only after H01 passes.
+See [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) §6. The battery and solar build (Stage 1: power and pack state) starts only after the 24-hour delivery test passes.
 
-Existing PCB/print orders are prototype aids. Their arrival is not a prerequisite for the first USB-powered development-board data path. No solar, pack control, RJ45/Modbus abstraction, heater or shared-charging implementation is added here.
+The PCB and print orders that exist are aids for the prototype. The first USB-powered data path on the development boards does not need them. This repository adds no solar power, pack control, RJ45/Modbus abstraction, heater or shared charging.

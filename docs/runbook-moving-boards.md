@@ -1,15 +1,18 @@
 # Runbook: moving the boards between gateways
 
-Use this when the TX/RX boards move between machines (for example office ↔ home). Written
-2026-10-13; every rule below is tied to code so it can be re-checked.
+Use this runbook when the transmitter (TX) and receiver (RX) boards move between machines (for
+example office ↔ home). Written 2026-10-13. Each rule below names the code that implements it,
+so you can check it again.
 
 ## The rule that matters
 
-A TX key may only be used with counters that only go up. The AES-CCM nonce is
-kind + station ID + the transmission counter (40-bit since draft 5; `header()` in
-`firmware/common/ws_frame.c`, `docs/protocol.md` section 2). `PROVISION … [epoch_floor]` raises only the **epoch** (`App/node_store.c`,
-`store_epoch_floor`), which keeps observation identities unique. It does not raise the
-counter.
+Use a TX key only with a counter that only goes up.
+
+- The AES-CCM nonce is kind + station ID + the transmission counter, a 40-bit value (`header()`
+  in `firmware/common/ws_frame.c`, `docs/protocol.md` section 1).
+- `PROVISION … [epoch_floor]` raises only the **epoch** (`App/node_store.c`,
+  `store_epoch_floor`). The epoch keeps observation identities unique. The floor does not raise
+  the counter.
 
 What `WIPE ERASE-ALL-NODE-STATE` erases depends on the firmware (`App/node_store.c`, `store_wipe`):
 
@@ -20,14 +23,25 @@ What `WIPE ERASE-ALL-NODE-STATE` erases depends on the firmware (`App/node_store
 | After a WIPE, provision with… | Safe? |
 |---|---|
 | a **new** key (`ws0 init --hardware` into a new directory) | Yes, always |
-| a key whose every use was on this board, with the counter never going back since its first use (no WIPE under firmware older than `0f456040fe54` after that first use; for example the office key `b7142e`, first used after the morning wipe) | Yes: the counter only went up |
-| a key used before `0f456040fe54`, or on another board (for example `run-hw`'s) | **No**: can repeat nonces already sent on air |
+| a key used only on this board, with a counter that never went back since its first use. This means no WIPE under firmware older than `0f456040fe54` after that first use. Example: the office key `b7142e`, first used after the morning wipe | Yes: the counter only went up |
+| a key that TX used before a WIPE on firmware older than `0f456040fe54`, or a key used on another board. Example: the key in `run-hw`, used before the morning office wipe | **No**: it can repeat nonces already sent on air |
 
-Prefer a new key: it is never wrong.
+```mermaid
+flowchart TD
+  W["TX was wiped. Which key to provision?"] --> N{"Is the key new (fresh ws0 init)?"}
+  N -- yes --> OK1["Safe"]
+  N -- no --> B{"Was the key ever used on another board?"}
+  B -- yes --> NO["Not safe: nonces can repeat. Use a new key"]
+  B -- no --> O{"Since its first use, did TX get a WIPE on firmware older than 0f456040fe54?"}
+  O -- yes --> NO
+  O -- no --> OK2["Safe: the counter only went up"]
+```
+
+Prefer a new key. A new key is never wrong.
 
 A run directory holds the key (`gateway.json`), the observation database and the gateway's own
-nonce state. It is git-ignored (`run*/`). Move it only by a private route (AirDrop, USB stick),
-never git, chat or email.
+nonce state. Git ignores it (`run*/`). Move it only by a private route (AirDrop, USB stick).
+Never move it by git, chat or email.
 
 ## Know which key TX has
 
@@ -37,13 +51,28 @@ never git, chat or email.
 #   type STATUS; read kcv=… (Ctrl-] quits)
 ```
 
-Known key check value: office `run-office` (2026-10-13) = `b7142e`. The home `run-hw` value is not recorded in the repo; compute it on the home Mac.
-The gateway's key check value is `key_check()` of `gateway.json`'s key (`ws0/__main__.py`).
+The key check value (KCV) identifies a key without showing it. Known value: office `run-office`
+(2026-10-13) = `b7142e`. The repo does not record the value of the home `run-hw` key. Compute it
+on the home Mac. The gateway's KCV is `key_check()` of the key in `gateway.json`
+(`ws0/__main__.py`).
 
-## Options when the boards move
+## Choose how to move
 
-**A. Move the gateway with the key (no re-provisioning).** Run the gateway on the machine that
-holds the matching run directory, wherever the boards are:
+```mermaid
+flowchart TD
+  S["The boards move to another place"] --> Q1{"Can the machine that holds the matching run directory go too?"}
+  Q1 -- yes --> M["Move the gateway with the key"]
+  Q1 -- no --> Q2{"Can you copy the run directory by a private route?"}
+  Q2 -- yes --> C["Copy the run directory"]
+  Q2 -- no --> K["Make a new key"]
+  M --> CH["Checks after any move"]
+  C --> CH
+  K --> CH
+```
+
+### Move the gateway with the key (no re-provisioning)
+
+Run the gateway on the machine that holds the matching run directory, wherever the boards are:
 
 ```sh
 .venv/bin/python -m ws0 serve --directory run-office --serial-number 0016001E4142500E20353451
@@ -51,27 +80,33 @@ holds the matching run directory, wherever the boards are:
 tools/deploy/macos/install.sh install run-office 0016001E4142500E20353451
 ```
 
-**B. Copy the run directory to the other machine** (private route), then point that machine's
-gateway at it: `tools/deploy/macos/install.sh install <copied-dir> 0016001E4142500E20353451`.
-Stop any other gateway for the same RX first: only one process can hold RX's port, and a gateway
-with the wrong key rejects every frame.
+### Copy the run directory
 
-**C. New key.** `ws0 init --hardware --station station-01 --station-id 1 --directory run-<new>`,
-then `WIPE ERASE-ALL-NODE-STATE` on TX, then
-`ws0 provision-node --directory run-<new> --serial /dev/cu.usbmodem<TX>`. Readings start a new
-history in the new directory.
+1. Copy the run directory to the other machine by a private route.
+2. Stop any other gateway for the same RX board. Only one process can hold the RX port, and a
+   gateway with the wrong key rejects every frame.
+3. Point that machine's gateway at the copy:
+   `tools/deploy/macos/install.sh install <copied-dir> 0016001E4142500E20353451`.
+
+### Make a new key
+
+1. `ws0 init --hardware --station station-01 --station-id 1 --directory run-<new>`.
+2. On TX, send `WIPE ERASE-ALL-NODE-STATE`.
+3. `ws0 provision-node --directory run-<new> --serial /dev/cu.usbmodem<TX>`.
+
+Readings then start a new history in the new directory.
 
 ## Checks after any move
 
 - `STATUS` on TX shows `provisioned=1` and the expected `kcv`.
-- The gateway log shows frames accepted, none rejected: `tools/status.py --directory <dir>`
-  (`accepted_this_process` rises, `rejected_this_process` stays 0).
-- Green LED after each blue flash on TX (ACK received).
+- The gateway log shows frames accepted and none rejected: run `tools/status.py --directory <dir>`.
+  `accepted_this_process` rises, and `rejected_this_process` stays 0.
+- TX shows a green LED after each blue flash (ACK received).
 
 ## Bench notes
 
-- A USB dropout of about 1 s makes the ST-LINK reset its board (seen on both boards,
-  `docs/hardware/nucleo-wl55jc-bringup.md`, "Office session"). Seat cables firmly; for long runs
-  avoid touching them.
-- Port names (`/dev/cu.usbmodem…`) follow the USB socket, not the board. Always identify boards
-  by ST-LINK serial number.
+- A USB dropout of about 1 s makes the ST-LINK reset its board. This happened on both boards
+  (`docs/hardware/nucleo-wl55jc-bringup.md`, "Office session"). Seat the cables firmly. For long
+  runs, do not touch them.
+- Port names (`/dev/cu.usbmodem…`) follow the USB socket, not the board. Always identify a board
+  by its ST-LINK serial number.

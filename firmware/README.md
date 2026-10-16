@@ -1,73 +1,62 @@
-# NUCLEO-WL55JC1 firmware groundwork
+# NUCLEO-WL55JC1 firmware
 
-**Board firmware now lives in [`stage0-node/`](stage0-node/README.md)** (2026-10-12: TX/RX built, flashed, link verified on the bench; sensor not yet wired; H01 NOT RUN).
+**The board firmware lives in [`stage0-node/`](stage0-node/README.md).** Both roles are built, flashed and tested on the bench. TX is the transmitter (the sensor node). RX is the receiver (the USB bridge to the gateway). The 24-hour delivery test (H01, [`docs/H01-checklist.md`](../docs/H01-checklist.md)) has NOT RUN.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `board/nucleo-wl55jc/` | Shared NUCLEO-WL55JC1 board code from ST's CubeWL template (`Core/`, `startup/`, `SubGHz_Phy/Target/`), the linker script (64 KB application region for every project: pages 32–127 hold the node key and journal) and `board.mk`, the common build rules each project Makefile includes. `Core/Inc/sys_conf.h` takes `VERBOSE_LEVEL` and `LOW_POWER_DISABLE` from the project's `DEFS`. |
-| `stage0-node/` | The weather-station firmware, TX and RX roles. Keeps its own `Core/Src/stm32wlxx_it.c` (flash-ECC NMI, HardFault record). |
-| `rangetest/` | Bench range-test tool (`rangetest/README.md`). |
-| `common/` | Frame, observation and console code shared by the firmware and the host tests. |
-| `fuzz/` | Host fuzz targets for the input parsers (`fuzz/README.md`). |
-| `stage0.c`, `test_*.c`, `sim_flash.*` | Portable sensor and policy code plus the host test drivers run by `tests/`. |
+| `board/nucleo-wl55jc/` | The shared NUCLEO-WL55JC1 board code from ST's CubeWL template (`Core/`, `startup/`, `SubGHz_Phy/Target/`). Also the linker script and `board.mk`. The linker script gives every project a 64 KB application region. Pages 32–127 hold the node key and the journal. `board.mk` holds the common build rules that each project Makefile includes. `Core/Inc/sys_conf.h` takes `VERBOSE_LEVEL` and `LOW_POWER_DISABLE` from the project's `DEFS`. |
+| `stage0-node/` | The weather-station firmware, TX and RX roles. It keeps its own `Core/Src/stm32wlxx_it.c` (the flash error-correction hook in the non-maskable interrupt handler, and the HardFault record). |
+| `rangetest/` | The bench range-test tool ([`rangetest/README.md`](rangetest/README.md)). |
+| `pingpong/` | A bench tool on the same board code. |
+| `common/` | Frame, observation and console code. The firmware and the host tests share it. |
+| `host/` | The host harnesses that run the role modules over a simulated board (`sim_core.c`). |
+| `fuzz/` | Host fuzz targets for the input parsers ([`fuzz/README.md`](fuzz/README.md)). |
+| `stage0.c`, `test_*.c`, `sim_flash.*` | Portable sensor and policy code, plus the host test drivers that `tests/` runs. |
 
-Each project keeps only its application, its sequencer task list (`Core/Inc/utilities_def.h`) and a short
-Makefile that sets `TARGET`, `APP_SRC`, `DEFS` and `OPT` before including `../board/nucleo-wl55jc/board.mk`.
+Each project keeps only its application, its sequencer task list (`Core/Inc/utilities_def.h`) and a short Makefile. The Makefile sets `TARGET`, `APP_SRC`, `DEFS` and `OPT`, then includes `../board/nucleo-wl55jc/board.mk`.
 
-`stage0.c` and `stage0.h` provide portable SHT45 acquisition and packet serialization.
-They compile with warnings-as-errors in the host tests and are linked unchanged into the
-TX firmware. (The original checkpoint note that no ARM build or radio transmission had been
-performed is superseded by `stage0-node/`.)
+```mermaid
+flowchart TD
+  NM["stage0-node/Makefile<br/>ROLE=tx or rx"] -->|"include"| BMK["board/nucleo-wl55jc/board.mk"]
+  RM["rangetest/Makefile"] -->|"include"| BMK
+  BMK --> BC["board code: Core, startup, SubGHz_Phy/Target"]
+  BMK --> LD["linker script<br/>64 KB application region"]
+  NM --> APP["stage0-node/App"]
+  NM --> COM["common/ and stage0.c"]
+  TESTS["tests/ host tests"] --> COM
+  TESTS --> HOST["host/ harnesses"]
+  HOST --> APP
+```
 
-## Existing hardware target
+`stage0.c` and `stage0.h` hold portable SHT45 code: the reply parser with its CRC check, the I2C recovery waveform, the link gate and the `PROVISION` parser. The host tests compile them with warnings as errors. The TX firmware links them unchanged.
 
-Two ST NUCLEO-WL55JC1 boards: sensor transmitter and powered USB receiver.
-SHT45 PTFE breakout: Adafruit 6174, superseding the starter's older 5665 suggestion.
-The supplied development boards, their antennas and USB data cables are the Stage-0
-platform; custom boards and printed fixtures are not required to validate this link.
+## Hardware target
+
+- Two ST NUCLEO-WL55JC1 boards: the sensor transmitter and the USB-powered receiver.
+- One SHT45 breakout with a PTFE filter: Adafruit 6174. It replaces the older Adafruit 5665 of the starter suggestion.
+
+The development boards, their antennas and their USB data cables are the platform of the bench prototype. This link needs no custom boards and no printed fixtures.
 
 ## Target integration status
 
-Original plan, in order; status as of 2026-10-13. Done items point to where they live.
+This is the original plan, in order. The status is from 2026-10-13, with later sensor results added. Each item that is done points to where it lives.
 
-1. **Done.** Vendor and toolchain pinned: `tools/fetch-vendor.sh` (STM32CubeWL v1.6.0 at
-   commit `f934cd2…` plus submodule commits), xPack arm-none-eabi-gcc 15.2.1-1.1
-   (`stage0-node/Makefile` `TOOLCHAIN`), OpenOCD over ST-LINK for flashing.
-2. **Done on paper, hardware check open.** Sensor on I2C2, PA11 = SDA and PA12 = SCL
-   (`stage0-node/App/sensor.c`), checked against UM2592 Rev 4 Tables 17/18. Wiring:
-   `docs/protocol-stack.md` §3.1. The C callback contract uses the 7-bit address 0x44;
-   `sensor.c` shifts it for the HAL. Not yet verified with the sensor wired.
-3. **Done in firmware, hardware check open.** HAL I2C callbacks with timeouts, one
-   high-precision heater-off measurement a minute (`stage0.c`), stuck-bus recovery
-   (`sensor.c` `i2c_recover`); CRC or bus failure gives an explicit invalid reading. Unplug
-   and restart behaviour still has to be tested on hardware.
-4. **Done.** AES-128-CCM with a 16-byte tag through ST's Mbed TLS (`common/ws_frame.c`),
-   checked against host-generated known-answer frames at boot (`stage0-node/App/selftest.c`
-   `selftest_kat`) and in `tests/test_frame.py`. Wired provisioning: console `PROVISION`, host
-   `python -m ws0 provision-node`. Durable counter and epoch: `stage0-node/App/node_store.c`.
-5. **Done for Stage 0.** Flash journal of 4,743 observations (about 3.3 days), kept until an
-   authenticated ACK; boot epoch reserved before sampling (`stage0-node/README.md`, "Flash
-   layout"). Reset-during-write test passed; true power-cut test
-   deferred. **Open:** the 30-day/16 MB H11 target (external SPI NOR).
-6. **Done.** RX bridge prints frames as hex lines and transmits the host's ACK/NACK
-   (`stage0-node/App/app_rx.c`; host side `ws0/link.py`, `ws0 serve`). Host UTC rides in the
-   authenticated ACK. TX sends the live reading ahead of a bounded backlog drain.
-7. **Open.** Bench RF settings are in `stage0-node/App/radio_cfg.h`: 915.0 MHz, 500 kHz,
-   SF7, CR 4/5, 0 dBm. SF and power still have to be tuned for the real placement, and the
-   regional configuration, antennas and airtime still need confirming. Do not equate bench
-   settings with a qualified regional configuration.
-8. **Built and flashed; H01 open.** Binary hashes per release: `stage0-node/RELEASES.md`.
-   The H01 checklist (`docs/H01-checklist.md`) has not been run.
+1. **Done.** Vendor code and toolchain are pinned: `tools/fetch-vendor.sh` (STM32CubeWL v1.6.0 at commit `f934cd2…` plus the submodule commits), xPack arm-none-eabi-gcc 15.2.1-1.1 (`stage0-node/Makefile` `TOOLCHAIN`). OpenOCD over ST-LINK flashes the boards.
+2. **Done.** The sensor is on I2C2: PA11 = SDA and PA12 = SCL (`stage0-node/App/sensor.c`). A check against UM2592 Rev 4 Tables 17/18 confirmed the pins. The wiring is in `docs/protocol-stack.md` §3.1. The C code uses the 7-bit address 0x44 (`WS_SHT45_ADDR`). `sensor.c` shifts it for the HAL. The sensor gave valid readings on 2026-10-14 ([`stage0-node/README.md`](stage0-node/README.md)).
+3. **Done in firmware. The hardware check is open.** The firmware uses HAL I2C in interrupt mode with timeouts. It takes four samples a minute, one every 15 s (`stage0-node/App/app_tx.c`). It has stuck-bus recovery (`ws_i2c_recover_step` in `stage0.c`, one step per timer tick in `sensor.c`). A CRC or bus failure gives an explicit invalid reading. Nobody has tested unplug and restart behaviour on hardware yet.
+4. **Done.** AES-128-CCM through ST's Mbed TLS (`common/ws_frame.c`). At boot the firmware checks it against known-answer frames that the host generated (`stage0-node/App/selftest.c` `selftest_kat`). `tests/test_frame.py` checks the same frames. Provisioning over USB: the console command `PROVISION` and the host command `python -m ws0 provision-node`. The durable counter and epoch are in `stage0-node/App/node_store.c`.
+5. **Done for the bench prototype.** The flash journal holds 3,348 observations (about 2.3 days). It keeps each one until an authenticated ACK arrives. The firmware reserves the boot epoch before sampling ([`stage0-node/README.md`](stage0-node/README.md), "Flash layout and outage capacity"). A reset-during-write test passed. A true power-cut test is deferred. **Open:** the 30-day storage target (H11, 16 MB of external SPI NOR flash).
+6. **Done.** The RX bridge prints frames as hex lines and transmits the ACK/NACK of the host (`stage0-node/App/app_rx.c`, host side `ws0/link.py`, `ws0 serve`). The authenticated ACK carries the host UTC time. TX sends the live reading first, then a bounded backlog.
+7. **Open.** The bench radio settings are in `stage0-node/App/radio_cfg.h`: 915.0 MHz, 500 kHz bandwidth, spreading factor 7, coding rate 4/5, 0 dBm. The spreading factor and power still need tuning for the real placement. The regional configuration, the antennas and the airtime still need confirmation. Bench settings are not a qualified regional configuration.
+8. **Built and flashed. The 24-hour delivery test is open.** The binary hashes of each release are in [`stage0-node/RELEASES.md`](stage0-node/RELEASES.md). Nobody has run the checklist in [`docs/H01-checklist.md`](../docs/H01-checklist.md) yet.
 
 ## Current measurement preparation
 
-UM2592 documents JP1/I_SoC and separate measurement arrangements involving JP2/I_RF,
-JP5/I_SYS and associated bridges. Verify the board revision and manual before changing
-jumpers/bridges. USB input power includes debugger/development-board overhead; it is
-not a measurement of the final station's pack power. Record supply boundary and
-jumper/debugger settings with traces. Normal USB power is appropriate for Stage 0.
+UM2592 documents JP1/I_SoC, and separate measurement arrangements with JP2/I_RF, JP5/I_SYS and related bridges. Verify the board revision and the manual before you change jumpers or bridges.
+
+USB input power includes the overhead of the debugger and the development board. It is not a measurement of the pack power of the final station. Record the supply boundary and the jumper and debugger settings with the traces. Normal USB power is correct for the bench prototype.
 
 References:
 - https://github.com/STMicroelectronics/STM32CubeWL
