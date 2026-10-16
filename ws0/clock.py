@@ -23,27 +23,37 @@ MAX_OFFSET_S = 1.0
 CHECK_PERIOD_S = 3600
 RETRY_S = 300
 NTP_EPOCH = 2208988800  # seconds from 1900-01-01 to 1970-01-01
+# SNTP (RFC 5905 section 7.3): a 48-byte packet; byte 0 = leap (2 bits), version (3), mode (3);
+# byte 1 = stratum; the receive and transmit timestamps (u32 seconds, u32 fraction) at 32 and 40.
+NTP_PORT = 123
+NTP_PACKET_LEN = 48
+NTP_CLIENT_REQUEST = 0x23           # leap 0, version 4, mode 3 (client)
+NTP_MODE_MASK, NTP_MODE_SERVER = 0x07, 4
+NTP_RECEIVE_AT, NTP_TRANSMIT_AT = 32, 40
+NTP_TIMESTAMP = struct.Struct('>II')
+NTP_FRACTION = 2**32
+UDP_MAX_REPLY = 512
 
 
 def sntp_offset(server='pool.ntp.org', timeout=2.0):
     """Return (offset_s, round_trip_s): server time minus local time."""
-    packet = bytearray(48)
-    packet[0] = 0x23  # LI 0, version 4, mode 3 (client)
+    packet = bytearray(NTP_PACKET_LEN)
+    packet[0] = NTP_CLIENT_REQUEST
     # Resolve the name first: a lookup inside sendto() would fall between t1 and the server's
     # receive time and read as a positive offset of half the lookup time.
-    address = socket.getaddrinfo(server, 123, socket.AF_INET, socket.SOCK_DGRAM)[0][4]
+    address = socket.getaddrinfo(server, NTP_PORT, socket.AF_INET, socket.SOCK_DGRAM)[0][4]
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.settimeout(timeout)
         t1 = time.time()
         sock.sendto(packet, address)
-        data, _ = sock.recvfrom(512)
+        data, _ = sock.recvfrom(UDP_MAX_REPLY)
         t4 = time.time()
-    if len(data) < 48 or (data[0] & 0x07) != 4 or data[1] == 0:  # server mode; stratum 0 = kiss-o'-death
+    if len(data) < NTP_PACKET_LEN or (data[0] & NTP_MODE_MASK) != NTP_MODE_SERVER or data[1] == 0:  # stratum 0 = kiss-o'-death
         raise ValueError('invalid SNTP reply')
     def ts(offset):
-        seconds, fraction = struct.unpack('>II', data[offset:offset + 8])
-        return seconds - NTP_EPOCH + fraction / 2**32
-    t2, t3 = ts(32), ts(40)
+        seconds, fraction = NTP_TIMESTAMP.unpack_from(data, offset)
+        return seconds - NTP_EPOCH + fraction / NTP_FRACTION
+    t2, t3 = ts(NTP_RECEIVE_AT), ts(NTP_TRANSMIT_AT)
     return ((t2 - t1) + (t3 - t4)) / 2, (t4 - t1) - (t3 - t2)
 
 

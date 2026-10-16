@@ -11,14 +11,18 @@ from cryptography.exceptions import InvalidTag
 from pathlib import Path
 from gateway import open_read_only
 
-from .protocol import KIND_ACK, KIND_OBS, Nonces
-from .service import CounterRegression, Gateway, MQTT, Replay, http_server, load_config
+from gateway import MINUTE_S
+from .protocol import EPOCH_RESERVED, KCV_LEN, KEY_LEN, KIND_ACK, KIND_OBS, Nonces
+from .service import API_TOKEN_MIN, CounterRegression, Gateway, MQTT, Replay, http_server, load_config
 from .simulator import BACKLOG_PER_MINUTE, DemoReceiver, Node
-from .link import ReceiverLink
+from .link import BAUD, ReceiverLink
 from .clock import HostClock
 from .logfile import RotatingLog
 from .web import SchemaDrift, line_fields, utc_stamp
 
+
+
+RECEIVER_SILENT_S = 180   # no RX #alive (every 60 s) for this long: the receiver is silent
 
 def provision(directory, hardware=False, station='simulation-01', station_id=1):
     """Generate unique local secrets; existing state is never reset implicitly.
@@ -26,9 +30,9 @@ def provision(directory, hardware=False, station='simulation-01', station_id=1):
     Hardware stations keep their node-direction nonce state on the MCU, so only the
     gateway (ACK) allocator is created here; the key reaches the node over USB only."""
     directory.mkdir(mode=0o700,parents=True,exist_ok=False)
-    key = secrets.token_bytes(16)
+    key = secrets.token_bytes(KEY_LEN)
     cfg = {'station':station,'station_id':station_id,'mode':'hardware' if hardware else 'simulation',
-           'radio_key':key.hex(),'api_token':secrets.token_urlsafe(32),
+           'radio_key':key.hex(),'api_token':secrets.token_urlsafe(API_TOKEN_MIN),
            'http_port':8088,'mqtt':{'enabled':False,'host':'127.0.0.1','port':1883,'tls':False}}
     config = directory/'gateway.json'
     config.write_text(json.dumps(cfg,indent=2)+'\n')
@@ -42,7 +46,7 @@ def provision(directory, hardware=False, station='simulation-01', station_id=1):
 def key_check(key):
     """First 3 bytes of AES-ECB(key, 0^16): identifies a key without revealing it."""
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-    return Cipher(algorithms.AES(key),modes.ECB()).encryptor().update(bytes(16))[:3].hex()
+    return Cipher(algorithms.AES(key),modes.ECB()).encryptor().update(bytes(KEY_LEN))[:KCV_LEN].hex()
 
 
 def console_lines(port, deadline):
@@ -65,7 +69,7 @@ def epoch_floor(directory, station):
                              (station,)).fetchone()[0] for table in ('observations','rejections','diagnostics')]
     finally:
         db.close()
-    highest = max((v for v in values if v is not None and v < 0xFFFFFFFF), default=0)
+    highest = max((v for v in values if v is not None and v < EPOCH_RESERVED), default=0)
     return highest + 1 if highest else 0
 
 
@@ -114,7 +118,7 @@ def provision_node(cfg, device, floor=0, counter_state=None):
     confirm by key check value. Never wipes; a provisioned board must be wiped explicitly."""
     import serial
     expected = key_check(bytes.fromhex(cfg['radio_key']))
-    with serial.Serial(device,115200,timeout=0.5,write_timeout=1) as port:
+    with serial.Serial(device,BAUD,timeout=0.5,write_timeout=1) as port:
         port.reset_input_buffer()
         port.write(b'STATUS\n')
         status = next((l for l in console_lines(port,time.monotonic()+3) if l.startswith('#status role=')),None)
@@ -318,9 +322,9 @@ class Services:
             time.sleep(0.2)
         # RX liveness: it reports every 60 s; three missed reports = silent.
         if gateway.receiver and gateway.receiver.get('alive') and \
-                time.time() - gateway.receiver['last_seen'] > 180:
+                time.time() - gateway.receiver['last_seen'] > RECEIVER_SILENT_S:
             gateway.receiver['alive'] = False
-            self.note('#gateway receiver-silent: no RX report for 180 s (check RX board, USB, watchdog)')
+            self.note(f'#gateway receiver-silent: no RX report for {RECEIVER_SILENT_S} s (check RX board, USB, watchdog)')
 
     def serve_forever(self):
         """Until KeyboardInterrupt (a stop signal): demo samples each minute, the serial link is
@@ -330,7 +334,7 @@ class Services:
         while True:
             if self.node and time.monotonic()>=next_sample:
                 self.sample_demo()
-                next_sample = time.monotonic()+60
+                next_sample = time.monotonic()+MINUTE_S
             if self.demo_rx:
                 self.demo_rx.tick(link_down=self.dropping)
             if self.link:

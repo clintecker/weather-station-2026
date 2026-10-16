@@ -20,6 +20,12 @@ DRIFT_PPM = 150
 QUANTIZATION_S = 2
 # Time with a larger error bound is never presented as a current measurement.
 CURRENT_MAX_UNCERTAINTY_S = 10
+MINUTE_S, HOUR_S, DAY_S = 60, 3600, 86400
+RECORD_VERSION = 5          # the protocol version (ws0/protocol.py VERSION)
+CURRENT_MAX_AGE_S = 180     # older than this, the latest reading is not current
+FUTURE_SLACK_S = 5          # a sample time this far past receipt is a wrong clock, not jitter
+UTC_LIMIT = 2**32           # the observation's UTC field is u32
+SQLITE_INT_MAX = 2**63 - 1
 FAR_FUTURE = 253402300800   # 10000-01-01T00:00:00Z: the open end of a time range
 
 
@@ -57,7 +63,7 @@ def _finite_number(value):
 
 def _check_keys(record):
     """Version, then a closed key set; returns the catalog keys beyond the base."""
-    _require(isinstance(record, dict) and type(record.get('version')) is int and record['version'] == 5,
+    _require(isinstance(record, dict) and type(record.get('version')) is int and record['version'] == RECORD_VERSION,
              'Unsupported version')
     _require(BASE_KEYS <= set(record), 'Missing record fields')
     extra = set(record) - BASE_KEYS
@@ -81,7 +87,7 @@ def _check_time(record):
     if record['time_quality'] == 'unknown':
         _require(stamp is None, 'Unknown clock must have null time')
     else:
-        _require(_finite_number(stamp) and 0 < stamp < 2**32, 'Invalid UTC timestamp')
+        _require(_finite_number(stamp) and 0 < stamp < UTC_LIMIT, 'Invalid UTC timestamp')
 
 
 def _exact_catalog_value(f, value):
@@ -135,9 +141,9 @@ def open_read_only(path):
 def _freshness(record, received_at, effective, age, uncertainty):
     """(timely, reason) for the latest record. A future sample at receipt stays quarantined;
     waiting does not validate its clock. Reasons are checked in this order."""
-    future = effective is not None and effective > received_at+5
+    future = effective is not None and effective > received_at+FUTURE_SLACK_S
     vague = uncertainty is not None and uncertainty > CURRENT_MAX_UNCERTAINTY_S
-    timely = age is not None and 0 <= age < 180 and not future and not vague
+    timely = age is not None and 0 <= age < CURRENT_MAX_AGE_S and not future and not vague
     for reason, applies in (('future_clock_at_receipt', future), ('unknown_clock', age is None),
                             ('time_uncertain', vague), ('sensor_fault', record['quality'] == 'sensor_fault'),
                             ('fresh', timely)):
@@ -212,7 +218,7 @@ class Store:
             # readings between its neighbouring references.
             if synced:
                 self.reconstruct(record['station'],record['session'],reference=(record.get('uptime_s'),
-                                 record['sampled_at'] <= received+5))
+                                 record['sampled_at'] <= received+FUTURE_SLACK_S))
             else:
                 self.reconstruct(record['station'],record['session'],only=record['sequence'])
         return True
@@ -259,7 +265,7 @@ class Store:
             lo = self.db.execute(ref_sql.format('<','DESC'),(station,session,uptime)).fetchone()
             hi = self.db.execute(ref_sql.format('>','ASC'),(station,session,uptime)).fetchone()
             where = ' AND uptime_s>? AND uptime_s<?'
-            args = (station, session, lo[0] if lo else -1, hi[0] if hi else 2**63-1)
+            args = (station, session, lo[0] if lo else -1, hi[0] if hi else SQLITE_INT_MAX)
         targets = self.db.execute('SELECT sequence,uptime_s FROM observations WHERE station=? AND session=? '
                                   "AND time_basis IN ('unknown','reconstructed') AND uptime_s IS NOT NULL" + where,
                                   args).fetchall()

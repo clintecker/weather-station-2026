@@ -31,12 +31,13 @@ import sys
 import threading
 import time
 from datetime import datetime
+from http import HTTPStatus
 from pathlib import Path
 
-from gateway import FAR_FUTURE
+from gateway import DAY_S, FAR_FUTURE, HOUR_S, MINUTE_S
 
 from .fields import BY_NAME, FIELDS, LABELS, MEASURED
-from .protocol import frame_counter, frame_kind
+from .protocol import HEADER_LEN, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, frame_counter, frame_kind
 
 STATIC = Path(__file__).parent / 'static'
 # Fixed table: no path from the request ever reaches the file system.
@@ -48,6 +49,9 @@ STATIC_HEADERS = {
     'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY',
     'Cache-Control': 'no-cache'}
 
+HEX_PER_BYTE = 2
+TEXT_MAX = 300          # characters kept of a detail or event text
+WORD_MAX = 32           # characters kept of an identifier in an #alive report
 MAX_STREAMS = 8         # one server thread per open stream (ThreadingHTTPServer)
 HEARTBEAT_S = 15.0      # comment line on an idle stream: keeps proxies open, detects gone clients
 RING = 5000             # events kept for resume (~1 day at one station's rate)
@@ -79,7 +83,7 @@ ALIVE_FIELDS = ('uptime_s', 'forwarded', 'dropped', 'acks', 'diag', 'listening',
 ALIVE_WORDS = ('task_peak', 'isr_peak')   # identifiers (the task or ISR that set the peak), kept as text
 # Peaks since RX boot: a history bucket keeps its highest, with the word of the report it came from.
 ALIVE_PEAKS = {'stack_peak': None, 'task_peak_us': 'task_peak', 'isr_peak_us': 'isr_peak'}
-KIND_NAMES = {1: 'obs', 2: 'ack', 3: 'nack', 4: 'diag'}
+KIND_NAMES = {KIND_OBS: 'obs', KIND_ACK: 'ack', KIND_NACK: 'nack', KIND_DIAG: 'diag'}
 # radio_events outcomes of authentic frames. Only these rows keep the frame's bytes (frame_hex): a
 # corrupted capture in rx_faults is compared with them (tools/rx_faults.py). A rejected frame's
 # bytes are anyone's radio traffic and are not stored.
@@ -93,15 +97,15 @@ RX_EVENTS = (('#boot role=rx', 'rx_boot', 'warn'), ('#relisten', 'relisten', 'wa
 # they are stored and counted, not raised one by one. More than this many in the trailing hour is
 # abnormal (a jammer, a failing antenna, a node transmitting into a bad link): one warning, and the
 # next only after the rate has fallen to half of it.
-RX_FAULT_WINDOW_S = 3600
+RX_FAULT_WINDOW_S = HOUR_S
 RX_FAULT_WARN_PER_H = 30
 # rx_faults rows older than this are deleted (checked hourly by Telemetry.tick): at the noise rate
 # limit a flood adds at most ~560 rows an hour, so the table stays bounded.
-RX_FAULT_RETENTION_S = 30 * 86400
+RX_FAULT_RETENTION_S = 30 * DAY_S
 # When the trailing-hour summary changes without a new stored bad reception (old ones leave the
 # window, the rate limit drops some), the gateway re-publishes it (SSE 'rx_fault_summary') at most
 # this often, so an open page's count stays current without polling.
-RX_FAULT_SUMMARY_S = 60
+RX_FAULT_SUMMARY_S = MINUTE_S
 # Integer columns: SQLite stores signed 64-bit integers; a larger value from a garbled or hostile
 # line would raise OverflowError on insert.
 INT64 = 2 ** 63
@@ -188,7 +192,7 @@ def parse_rx_fault(text):
         return dict(kind='hdr', length=None, rssi_dbm=rssi, snr_db=None, data=None)
     length, snr = as_int(f.get('len'), *RX_FAULT_RANGES['len']), as_int(f.get('snr'), *RX_FAULT_RANGES['snr'])
     data = f.get('data')
-    if length is None or snr is None or data is None or len(data) != 2 * length:
+    if length is None or snr is None or data is None or len(data) != HEX_PER_BYTE * length:
         return None
     try:
         data = bytes.fromhex(data).hex()   # normalized lowercase; ValueError for anything but hex digits
@@ -314,7 +318,7 @@ def best_effort(method):
             return method(self, *args, **kwargs)
         except (sqlite3.Error, OverflowError) as exc:   # OverflowError: an integer SQLite cannot hold
             now = time.time()
-            if now - getattr(self, '_last_failure_note', 0) >= 60:
+            if now - getattr(self, '_last_failure_note', 0) >= MINUTE_S:
                 self._last_failure_note = now
                 print(f'#gateway telemetry write failed ({method.__name__}): {type(exc).__name__}: {exc}',
                       file=sys.stderr, flush=True)
@@ -373,7 +377,7 @@ class Telemetry:
         at = time.time() if at is None else at
         self.flush()
         kind = counter = None
-        if isinstance(frame, (bytes, bytearray)) and len(frame) >= 8:
+        if isinstance(frame, (bytes, bytearray)) and len(frame) >= HEADER_LEN:
             kind = KIND_NAMES.get(frame_kind(frame), 'unknown')
             counter = frame_counter(frame)
         session = sequence = None
@@ -382,7 +386,7 @@ class Telemetry:
         self.pending = dict(received_at=at, kind=kind, counter=counter, outcome=outcome,
                             delivered=None if delivered is None else int(bool(delivered)), session=session,
                             sequence=sequence, length=len(frame) if frame is not None else None,
-                            detail=None if detail is None else str(detail)[:300],
+                            detail=None if detail is None else str(detail)[:TEXT_MAX],
                             frame_hex=frame.hex() if isinstance(frame, (bytes, bytearray)) and
                             outcome in ACCEPTED_OUTCOMES else None)
         if outcome in ('rejected', 'commit_failed'):
@@ -403,7 +407,7 @@ class Telemetry:
         now = time.time() if now is None else now
         if self.pending and now - self.pending['received_at'] > PENDING_RSSI_S:
             self.flush()
-        if self.hour is not None and now // 3600 > self.hour:
+        if self.hour is not None and now // HOUR_S > self.hour:
             self._close_hour()
         if now - self.summary_at >= RX_FAULT_SUMMARY_S:
             self.summary_at = now
@@ -411,7 +415,7 @@ class Telemetry:
             if any(summary[k] != self.summary_sent[k] for k in ('crc', 'hdr', 'throttled')):
                 self.summary_sent = summary
                 self.hub.publish('rx_fault_summary', {'summary': summary})
-        if now - self.pruned_at >= 3600:
+        if now - self.pruned_at >= HOUR_S:
             self.pruned_at = now
             self._prune_faults(now)
 
@@ -453,9 +457,9 @@ class Telemetry:
         fault_id = self._store_fault(row, at)
         if fault_id is None:   # not stored (best_effort reported why)
             return
-        if self.hour is not None and at // 3600 != self.hour:
+        if self.hour is not None and at // HOUR_S != self.hour:
             self._close_hour()
-        self.hour = at // 3600
+        self.hour = at // HOUR_S
         self.hour_counts[row['kind']] += 1
         with self.faults_lock:
             self.faults.append((at, row['kind']))
@@ -485,11 +489,11 @@ class Telemetry:
 
     def _close_hour(self):
         """One info event per clock hour that had bad receptions, instead of a warning for each."""
-        counts, start = self.hour_counts, self.hour * 3600
+        counts, start = self.hour_counts, self.hour * HOUR_S
         self.hour, self.hour_counts = None, collections.Counter()
         if counts:
             self.event(f'bad receptions {utc_stamp(start)} + 1 h: {counts["crc"]} CRC, {counts["hdr"]} header',
-                       source='rx', kind='rx_faults', level='info', at=start + 3600)
+                       source='rx', kind='rx_faults', level='info', at=start + HOUR_S)
 
     @best_effort
     def _store_fault(self, row, at):
@@ -512,7 +516,7 @@ class Telemetry:
         gateway does not know is ignored (it stays in receiver.log)."""
         def value(k):
             text = fields.get('uptime' if k == 'uptime_s' else k)
-            return (None if text is None else text[:32]) if k in ALIVE_WORDS else as_int(text)
+            return (None if text is None else text[:WORD_MAX]) if k in ALIVE_WORDS else as_int(text)
         values = {k: value(k) for k in ALIVE_FIELDS}
         with self.store.lock, self.store.db:
             cur = self.store.db.execute(
@@ -525,7 +529,7 @@ class Telemetry:
     def event(self, text, source='gateway', kind=None, level=None, at=None):
         """A gateway or receiver event: serial link, host clock, receiver silent, RX boots, rejects."""
         at = time.time() if at is None else at
-        text = str(text)[:300]
+        text = str(text)[:TEXT_MAX]
         if kind is None:
             kind = text.split()[1] if text.startswith('#gateway ') and len(text.split()) > 1 else 'gateway'
         if level is None:
@@ -566,7 +570,7 @@ def serve_static(handler, path):
     if entry is None:
         return False
     data = (STATIC / entry[0]).read_bytes()
-    handler.send_response(200)
+    handler.send_response(HTTPStatus.OK)
     handler.send_header('Content-Type', entry[1] + '; charset=utf-8')
     handler.send_header('Content-Length', str(len(data)))
     for name, value in STATIC_HEADERS.items():
@@ -607,10 +611,10 @@ def route(handler, gateway, path, query):
     end = utc_param(query, 'to', None)
     if path == '/v1/history':
         end = time.time() if end is None else end
-        start = end - 86400 if start is None else start
+        start = end - DAY_S if start is None else start
         if not start < end:
             raise ValueError('Invalid time range')
-        handler.reply(200, history(gateway, start, end, int_param(query, 'max_points', 1500, 10, 10000)))
+        handler.reply(HTTPStatus.OK, history(gateway, start, end, int_param(query, 'max_points', 1500, 10, 10000)))
         return
     start, end = (0 if start is None else start), (FAR_FUTURE if end is None else end)
     limit = int_param(query, 'limit', 100, 1, 5000)
@@ -625,7 +629,7 @@ def route(handler, gateway, path, query):
     body = {'rows': rows, 'offset': offset, 'limit': limit}
     if table == 'rx_faults':   # plus the trailing-hour count and what the throttle dropped
         body['summary'] = gateway.telemetry.fault_summary()
-    handler.reply(200, body)
+    handler.reply(HTTPStatus.OK, body)
 
 
 # Per table: time column, tie-break order, and the columns a dashboard row carries.
@@ -670,7 +674,7 @@ def stream(handler, hub, cursor):
     """GET /v1/events: text/event-stream. Frames are `id:`, `event:`, one `data:` JSON line."""
     if not hub.acquire():
         body = b'{"error":"too_many_streams"}'
-        handler.send_response(503)
+        handler.send_response(HTTPStatus.SERVICE_UNAVAILABLE)
         handler.send_header('Content-Type', 'application/json; charset=utf-8')
         handler.send_header('Content-Length', str(len(body)))
         handler.send_header('Retry-After', '5')
@@ -682,7 +686,7 @@ def stream(handler, hub, cursor):
         # A client that stops reading would block a write forever and hold one of the stream slots.
         # With a send timeout the write fails and the slot is released.
         handler.connection.settimeout(STREAM_SEND_TIMEOUT_S)
-        handler.send_response(200)
+        handler.send_response(HTTPStatus.OK)
         handler.send_header('Content-Type', 'text/event-stream; charset=utf-8')
         handler.send_header('Cache-Control', 'no-store')
         handler.send_header('X-Accel-Buffering', 'no')
@@ -725,7 +729,7 @@ def stream(handler, hub, cursor):
 
 # -- history ------------------------------------------------------------------------------------
 def _bucket_of(span, count, max_points):
-    return 0 if count <= max_points else max(60, math.ceil(span / max_points))
+    return 0 if count <= max_points else max(MINUTE_S, math.ceil(span / max_points))
 
 
 def _mean(values):

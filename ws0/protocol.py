@@ -17,6 +17,9 @@ from . import fields
 # station u16, counter u40; then ciphertext and an 8-byte CCM tag. The C twin is
 # firmware/common/ws_frame.c, checked byte for byte by tests/test_frame.py.
 VERSION = 5
+KEY_LEN, KCV_LEN = 16, 3                   # AES-128 key; key check value: AES-ECB(key, 0)[:3]
+SIGNAL_NONE = -128                         # DIAG rssi/snr: no authentic ACK heard yet
+EPOCH_RESERVED = 2**32 - 1                 # the bench storm test's epoch; a real boot never gets it
 VERSION_SHIFT, KIND_MASK = 4, 0x0F          # byte 0: version in the high nibble, kind in the low
 STATION_AT, STATION_BYTES = 1, 2
 COUNTER_AT, COUNTER_BYTES = STATION_AT + STATION_BYTES, 5

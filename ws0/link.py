@@ -7,6 +7,7 @@ while the link is down, so a reconnect loses no data.
 """
 import time
 
+BAUD = 115200   # the boards' ST-LINK virtual COM port
 BACKOFF_S = (1, 2, 4, 8, 15)
 # Longest serial line accepted, newline excluded. The RX firmware prints at most one trace buffer
 # per line (UTIL_ADV_TRACE_TMP_BUF_SIZE = 640 B, firmware/board/nucleo-wl55jc/Core/Inc/utilities_conf.h);
@@ -23,7 +24,7 @@ class ReceiverLink:
         import serial
         from serial.tools import list_ports
         self.device, self.serial_number, self.log, self.clock = device, serial_number, log, clock
-        self.opener = opener or (lambda path: serial.Serial(path, 115200, timeout=0.05, write_timeout=1))
+        self.opener = opener or (lambda path: serial.Serial(path, BAUD, timeout=0.05, write_timeout=1))
         self.ports = ports or list_ports.comports
         self.errors = (serial.SerialException, OSError)
         self.port = None

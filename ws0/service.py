@@ -9,6 +9,7 @@ import socket
 import sys
 import threading
 import time
+from http import HTTPStatus
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -17,7 +18,7 @@ from . import web
 import sqlite3
 import struct
 from .fields import BY_NAME, DERIVED, DIAGNOSTIC_FIELDS, ENERGY, LABELS, MEASURED
-from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, LINK_STATES, NACK_COLLISION, NACK_INVALID,
+from .protocol import (KEY_LEN, SIGNAL_NONE, DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, LINK_STATES, NACK_COLLISION, NACK_INVALID,
                        RESET_CAUSES, STATION_MAX, Nonces, decode_observation, frame_counter, frame_kind, pack_reply, seal,
                        unseal)
 
@@ -34,11 +35,12 @@ def load_config(path):
         raise ValueError('Invalid station name')
     if type(cfg.get('station_id')) is not int or not 1 <= cfg['station_id'] <= STATION_MAX:
         raise ValueError('Invalid numeric station ID')
-    if len(bytes.fromhex(cfg['radio_key'])) != 16 or len(cfg['api_token']) < 32:
+    if len(bytes.fromhex(cfg['radio_key'])) != KEY_LEN or len(cfg['api_token']) < API_TOKEN_MIN:
         raise ValueError('Invalid key/token')
     return cfg
 
 
+API_TOKEN_MIN = 32   # characters; ws0 init makes a 43-character token
 KEY_REUSE_ALARM = 'possible key reuse: re-key the node'
 
 
@@ -102,8 +104,8 @@ class Gateway:
                   'rejected_replies_since_boot':rejects,
                   'reset_cause':RESET_CAUSES[reset] if reset < len(RESET_CAUSES) else 'unknown',
                   'link':LINK_STATES[link] if link < len(LINK_STATES) else 'unknown',
-                  'firmware_build':f'{build:08x}','ack_rssi_dbm':None if rssi == -128 else rssi,
-                  'ack_snr_db':None if snr == -128 else snr,'crashes_since_power_up':crashes,
+                  'firmware_build':f'{build:08x}','ack_rssi_dbm':None if rssi == SIGNAL_NONE else rssi,
+                  'ack_snr_db':None if snr == SIGNAL_NONE else snr,'crashes_since_power_up':crashes,
                   'energy_state':ENERGY[energy] if energy < len(ENERGY) else 'unknown'}
         self.store.diagnostic(self.cfg['station'],report,now)
         self.telemetry.diagnostic(report,now)
@@ -237,7 +239,7 @@ def http_server(gateway, port):
             supplied = self.headers.get('Authorization','')
             expected = 'Bearer ' + gateway.cfg['api_token']
             if not hmac.compare_digest(supplied.encode(),expected.encode()):
-                self.reply(401,{'error':'unauthorized'})
+                self.reply(HTTPStatus.UNAUTHORIZED,{'error':'unauthorized'})
                 return
             query = parse_qs(url.query)
             try:
@@ -265,7 +267,7 @@ def http_server(gateway, port):
                         writer.writeheader()
                         writer.writerows(dict(r,qualifiers=json.dumps(r['qualifiers'],sort_keys=True))
                                          if 'qualifiers' in r else r for r in rows)
-                        self.reply(200,stream.getvalue(),'text/csv')
+                        self.reply(HTTPStatus.OK,stream.getvalue(),'text/csv')
                         return
                     result = {'observations':rows,'offset':offset,'limit':limit,
                               'units':{**{n:BY_NAME[n].unit for n in MEASURED},
@@ -274,11 +276,11 @@ def http_server(gateway, port):
                     web.route(self,gateway,url.path,query)  # dashboard data and the event stream
                     return
                 else:
-                    self.reply(404,{'error':'not_found'})
+                    self.reply(HTTPStatus.NOT_FOUND,{'error':'not_found'})
                     return
-                self.reply(200,result)
+                self.reply(HTTPStatus.OK,result)
             except (ValueError,OverflowError) as exc:
-                self.reply(400,{'error':str(exc)})
+                self.reply(HTTPStatus.BAD_REQUEST,{'error':str(exc)})
 
         def reply(self, code, body, content_type='application/json'):
             data = (json.dumps(body,allow_nan=False) if content_type=='application/json' else body).encode()
