@@ -22,3 +22,8 @@ void stackmon_paint(void)
 }
 
 uint32_t stackmon_peak(void) { return ws_stack_peak(lowest(), _estack); }
+
+/* 256 words (1 KB, ~0.1 ms) per call: the RX's 17 KB painted range is one pass every ~17 calls. */
+#define SCAN_SLICE_WORDS 256U
+static ws_stack_scan scan;
+uint32_t stackmon_peak_step(void) { return ws_stack_scan_step(&scan, lowest(), _estack, SCAN_SLICE_WORDS); }

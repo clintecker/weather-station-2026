@@ -93,6 +93,21 @@ int main(void) {
  assert(ws_stack_peak(ram, ram+64)==(64-10)*4);
  ram[0]=0;
  assert(ws_stack_peak(ram, ram+64)==64*4);                  /* reached the bottom: overflow suspect */
+ /* The sliced scan finds the same peaks, a few calls later, and a deeper use within one pass. */
+ { ws_stack_scan sc = {0}; uint32_t r = 0;
+   for(int i=0;i<64;i++) ram[i]=WS_STACK_PAINT;
+   ram[50]=1;
+   for(int k=0;k<8;k++) r=ws_stack_scan_step(&sc, ram, ram+64, 16);
+   assert(r==(64-50)*4);
+   ram[10]=1;                                               /* deeper, below the cursor's pass */
+   for(int k=0;k<8;k++) r=ws_stack_scan_step(&sc, ram, ram+64, 16);
+   assert(r==(64-10)*4);
+   ram[0]=1;
+   for(int k=0;k<8;k++) r=ws_stack_scan_step(&sc, ram, ram+64, 16);
+   assert(r==64*4);
+   ws_stack_scan sz = {0};                                  /* slice 1: still converges */
+   for(int k=0;k<200;k++) r=ws_stack_scan_step(&sz, ram, ram+64, 1);
+   assert(r==64*4); }
  /* 15-s T/RH window: mean rounds half up (also below zero), extrema, out-of-range samples skipped. */
  { ws_th_window w; int16_t t; uint16_t h;
    ws_th_reset(&w); assert(!ws_th_mean_t(&w,&t) && !ws_th_mean_h(&w,&h));

@@ -273,6 +273,7 @@ void fault_report(void) {}
 uint32_t fault_count(void) { return 0; }
 void stackmon_paint(void) {}
 uint32_t stackmon_peak(void) { return 0; }
+uint32_t stackmon_peak_step(void) { return 0; }
 void NVIC_SystemReset(void)
 {
   resets++;

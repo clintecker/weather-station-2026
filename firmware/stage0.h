@@ -74,4 +74,20 @@ static inline uint32_t ws_stack_peak(const uint32_t *lo, const uint32_t *top)
  while (p < top && *p == WS_STACK_PAINT) p++;   /* bound: top - lo words */
  return (uint32_t)((const char *)top - (const char *)p);
 }
+/* The same scan a slice at a time, for a periodic report: reading the whole painted range (about
+   17 KB on the RX) took 1.5 ms of a 1.7 ms #alive (measured 2026-10-16). Each call reads at most
+   `slice` words from where the last one stopped; a pass runs from lo up to the deepest word found
+   so far and then starts again at lo, so a deeper use is seen within one pass. Returns the peak
+   found so far (bytes from the top), at most one pass old. Zero-initialise the state. */
+typedef struct { const uint32_t *cursor, *deepest; } ws_stack_scan;
+static inline uint32_t ws_stack_scan_step(ws_stack_scan *s, const uint32_t *lo, const uint32_t *top, uint32_t slice)
+{
+ if (!s->deepest) { s->deepest = top; s->cursor = lo; }
+ const uint32_t *end = (uint32_t)(s->deepest - s->cursor) > slice ? s->cursor + slice : s->deepest;
+ const uint32_t *p = s->cursor;
+ while (p < end && *p == WS_STACK_PAINT) p++;   /* bound: slice words */
+ if (p < end) { s->deepest = p; s->cursor = lo; }          /* deeper than before: the next pass starts over */
+ else s->cursor = end == s->deepest ? lo : end;            /* this pass is done, or goes on next call */
+ return (uint32_t)((const char *)top - (const char *)s->deepest);
+}
 #endif
