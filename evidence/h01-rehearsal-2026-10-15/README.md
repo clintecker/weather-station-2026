@@ -30,3 +30,27 @@ Score at the end with:
 .venv/bin/python tools/h01_report.py --db run-d6/observations.sqlite3 --station station-01 \
   --start 2026-10-15T22:37:00Z --hours 24 --output evidence/h01-rehearsal-2026-10-15/report
 ```
+
+## Result: ended early (Clint, 2026-10-16 15:05Z: "24 hours is arbitrary")
+
+Scored over the first **16 hours** (22:37Z to 14:37Z; the scorer takes whole hours). **Lab rehearsal,
+not H01**; the scorer's "PASS" heading is its verdict on these rules only. Report:
+[`report/report.md`](report/report.md).
+
+| Measure | Value |
+|---|---:|
+| On-time valid readings | 960 of 960 intervals (951 required) |
+| Late / missing / sensor faults / gateway rejections | 0 / 0 / 0 / 0 |
+| Resets | none (one boot epoch, TX uptime 59,494 s at 15:05Z) |
+| Latency, sample to gateway | median 1.5 s, max 2.0 s |
+| TX at 15:05Z | sent 991, acked 991, no_ack 0, abandoned 0, `check_fails=0`, `unexpected=0`, `held_lost=0` |
+| TX `#timing` peaks | task 23,849 µs (`sensor_task`: the minute report's journal write includes a 22 ms page erase), interrupt 228 µs (radio), erase 22,042 µs, program 94 µs |
+| RX `#alive` at 15:05Z | forwarded 1,058, dropped 3, `frames_lost=0`, `relistens=0`, `hdr_errors=81`, `crc_errors=0`, `trace_drops=0`; task peak **1,888 µs** (`process`), interrupt peak 216 µs (radio) |
+| Bad receptions (gateway `rx_faults`, `tools/rx_faults.py`) | 80 header failures, 0 CRC failures. Spread over the minute (none at the TX's seconds :01-:03); RSSI mostly -93 to -95 dBm (noise floor), a few at -64 to -66 dBm (another transmitter nearby). The 3 RX drops were zero-length packets (`len=0`) |
+
+The scorer warned that 587 readings lie within 2 s of an interval edge: the TX samples at second
+:01-:02 of the minute and the window starts on :00. A scoring-alignment note, not a fault (no
+interval held two readings).
+
+Open: the RX `process` task's 1.9 ms peak (the longest thing either board does) is unexplained; the
+next firmware times each step of it and separates interrupt time (2026-10-16).
