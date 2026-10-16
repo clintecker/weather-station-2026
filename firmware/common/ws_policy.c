@@ -1,3 +1,5 @@
+/* GENERATED from ws_policy.lit.md by tools/tangle.py: do not edit. Edit the document, then run
+ * tools/tangle.py firmware/common/ws_policy.lit.md (tests/test_tangle.py checks this file). */
 #define WS_CHECK_FILE 11
 #include "ws_policy.h"
 #include "stage0.h"
