@@ -16,7 +16,7 @@ int policy_minute_backlog(void);
    something, replied[i] for queue[i]) and the link state. */
 void policy_exchange_end(const jref_t *queue, const uint8_t *replied, unsigned n);
 void policy_strike_forget(uint32_t epoch, uint32_t seq);   /* an authentic ACK for this record */
-/* Health report (kind 4, gap G8): every 15 min and at each link-state change. */
+/* Health report (kind 4): every 15 min and at each link-state change. */
 int policy_diag_due(void);
 void policy_diag_sent(uint32_t now_s);
 int policy_probing(void);

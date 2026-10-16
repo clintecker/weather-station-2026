@@ -9,8 +9,8 @@
  * chooses; App/sensor.c itself is tested by firmware/host/sensor_harness.c), and the flash
  * (firmware/sim_flash.c under the real App/node_store.c).
  *
- * The radio follows ST's SubGHz_Phy (radio.c, stm32wlxx_hal_subghz.c), as the 2026-10-15 reviews
- * read it, not an idealised radio:
+ * The radio follows ST's SubGHz_Phy (radio.c, stm32wlxx_hal_subghz.c) as
+ * written, not an idealised radio:
  *  - Rx(t > 0) arms the driver's software timer (RxTimeoutTimer, a UTIL_TIMER): its timeout calls
  *    RxTimeout and leaves the radio RECEIVING; a CRC error does not stop that timer. Rx(0) in single
  *    mode: the chip's own ~65 s timeout, which puts it in standby.

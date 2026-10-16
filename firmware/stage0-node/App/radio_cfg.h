@@ -30,7 +30,7 @@ void ws_radio_sleep(void);
 /* Radio commands from the main loop run with the radio interrupt masked. ST's HAL lets one SUBGHZ
    command hold the driver at a time; a radio interrupt that arrives meanwhile has its own commands
    refused (HAL_BUSY), cannot clear the radio's IRQ, and re-enters at once, starving the main loop
-   until the watchdog resets the board (2026-10-15 review M1). Masked, it waits for the command
+   until the watchdog resets the board. Masked, it waits for the command
    and runs right after. Never from the radio interrupt itself. */
 void ws_radio_irq_hold(void);
 void ws_radio_irq_release(void);

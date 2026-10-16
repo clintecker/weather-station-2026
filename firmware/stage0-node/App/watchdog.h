@@ -2,7 +2,7 @@
 #define WATCHDOG_H
 /* Independent watchdog (IWDG, LSI clock, ~8 s). A 1 s timer only *requests* a check; the
  * check and the refresh run in the main loop, so a hung main loop is never fed. The role
- * supplies a health test that proves real progress (failure-modes.md gap G1). */
+ * supplies a health test that proves real progress. */
 void watchdog_start(void);
 /* The role's health test (App/app_tx.c, App/app_rx.c), called by the 1 s check: 1 lets the check
    refresh the IWDG. A link-time call, not a registered function pointer (docs/power-of-ten.md rule 9). */

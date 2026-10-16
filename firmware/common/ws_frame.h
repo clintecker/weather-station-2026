@@ -7,8 +7,8 @@
 #define WS_FRAME_VERSION 5
 #define WS_KIND_OBS 1
 #define WS_KIND_ACK 2
-#define WS_KIND_NACK 3 /* authentic but permanently rejected (gap G2) */
-#define WS_KIND_DIAG 4 /* node health, fire-and-forget (gap G8) */
+#define WS_KIND_NACK 3 /* authentic but permanently rejected */
+#define WS_KIND_DIAG 4 /* node health, fire-and-forget */
 #define WS_NACK_COLLISION 1
 #define WS_NACK_INVALID 2
 #define WS_HEADER_LEN 8          /* version<<4 | kind, station u16, counter u40 */

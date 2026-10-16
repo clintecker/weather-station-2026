@@ -3,9 +3,9 @@
  * Upstream: every received frame that ws_air_frame_ok() accepts (a current-version observation or
  * health report of a valid length) is written as one lowercase hex line. Downstream: every hex
  * line from the host that ws_host_reply_ok() accepts (a current-version ACK or NACK) is
- * transmitted once. The ACK path
- * uses the same radio_cfg.h power/SF/BW as the uplink (gap G15). This board holds no key and
- * never acknowledges anything itself; the host is the sole ACK authority (docs/protocol.md).
+ * transmitted once. The ACK path uses the same radio_cfg.h power/SF/BW as the uplink, so the
+ * downlink has the uplink's margin. This board holds no key and never acknowledges anything
+ * itself; the host is the sole ACK authority (docs/protocol.md).
  * All other output lines start with '#' and are diagnostics for the host log. A reception that
  * fails its checks is logged too: `#rx crc ... data=<hex>` keeps every byte the radio received
  * when only the payload CRC failed; `#rx hdr rssi=` is a header that failed (no payload). */
@@ -55,12 +55,12 @@ static UTIL_TIMER_Object_t alive_timer;
 static uint32_t n_diag;
 static uint32_t boot_ms;   /* clock_ms() at boot (App/clock.h) */
 static int relisten_tries;
-/* Review P6: Radio.GetStatus() reports the driver's own state, not the chip's. Real evidence of
+/* Radio.GetStatus() reports the driver's own state, not the chip's. Real evidence of
  * listening is a radio event (a frame, a failed reception, a header error). The node is silent at
  * most 15 minutes by design (PROBING in CONSERVE, docs/radio-energy-policy.md), so 16 silent minutes
  * means something is wrong: put the radio in standby and listen again. If that does not bring back
  * a single radio event, the radio is not trusted: after QUIET_RELISTEN_LIMIT relistens in a row
- * with none, the health check fails and the watchdog resets the board (2026-10-15 review M1; the
+ * with none, the health check fails and the watchdog resets the board (the
  * bridge holds no state, so a reset costs nothing). */
 #define SILENCE_RELISTEN_MS  (16UL * 60000UL)
 #define QUIET_RELISTEN_LIMIT 2U
@@ -73,7 +73,7 @@ static void alive(void);
 static int uart_rearm_tries, tx_stall_checks;
 static uint32_t tx_done_seen;
 /* Failure lines (#rx crc / #rx hdr) per minute at most: a noisy band must not crowd frames out of the
-   console (2026-10-15 review m10). Over budget, a failure is counted (fault_overruns), not logged. */
+   console. Over budget, a failure is counted (fault_overruns), not logged. */
 #define FAILURE_LINES_PER_MIN 20U
 static uint32_t failure_lines;
 static void post(uint32_t ev) { events_post(&pending_ev, ev); }
@@ -137,7 +137,7 @@ static void on_tx_timeout(void) { post(EV_TX_TIMEOUT); }
 static void listen(void)
 {
   transmitting = 0;
-  ws_radio_rx_full_length();   /* Radio.Send left the LoRa payload length at the ACK's (review m4) */
+  ws_radio_rx_full_length();   /* Radio.Send left the LoRa payload length at the ACK's */
   ws_radio_rx(0); /* continuous */
 }
 
@@ -145,14 +145,14 @@ static void listen(void)
  * One self-heal attempt (re-arm RX) before the watchdog is allowed to reset the board. */
 int watchdog_healthy(void)
 {
-  /* Review P5: the console must be receiving (it carries the ACK downlink). One re-arm first. */
+  /* The console must be receiving (it carries the ACK downlink). One re-arm first. */
   if (!vcom_rx_armed())
   {
     if (uart_rearm_tries++ == 0) { APP_PRINTF("#watchdog console not receiving; re-arming\n"); vcom_rx_rearm(); return 1; }
     return 0;
   }
   uart_rearm_tries = 0;
-  /* Review m9: console output that stopped moving (a trace DMA transfer started and never finished)
+  /* Console output that stopped moving (a trace DMA transfer started and never finished)
      silences frames and #alive alike. Three checks (3 s) without progress: unhealthy. */
   uint32_t started, done;
   vcom_tx_progress(&started, &done);
@@ -166,7 +166,7 @@ int watchdog_healthy(void)
   return 0;
 }
 
-/* Radio silence (review P6): standby, listen again, and count it; the health check fails after
+/* Radio silence: standby, listen again, and count it; the health check fails after
    QUIET_RELISTEN_LIMIT of these in a row with no radio event between them. */
 static void relisten(void)
 {
@@ -202,7 +202,7 @@ static uint32_t take_events(void)
 }
 
 /* The host ACK's transmission ended. The driver's TX timeout is a software timer: the chip may
-   still be transmitting (review m3). */
+   still be transmitting. */
 static void tx_ended(uint32_t ev)
 {
   if (ev & EV_TX_TIMEOUT) { APP_PRINTF("#tx timeout\n"); led_flash(LED_RED, 400); ws_radio_standby(); }
@@ -220,7 +220,7 @@ static void forward(void)
   }
   n_diag += ws_frame_kind(got.frame, got.len) == WS_KIND_DIAG;
   led_flash(LED_BLUE, 400);
-  if (hex_print(got.frame, got.len)) n_forwarded++;   /* a line the full console queue dropped is not forwarded (m10) */
+  if (hex_print(got.frame, got.len)) n_forwarded++;   /* a line the full console queue dropped is not forwarded */
   APP_PRINTF("#rx obs rssi=%d snr=%d\n", got.rssi, got.snr);
 }
 
@@ -259,7 +259,7 @@ static void process(void)
 }
 BUSYMON_TASK(process)
 
-/* Liveness report for the gateway (gap G12): it marks the receiver silent after 180 s. Printed
+/* Liveness report for the gateway: it marks the receiver silent after 180 s. Printed
    from the main loop: the timer interrupt only asks for it. */
 static void alive(void)
 {
@@ -306,7 +306,7 @@ void console_line(char *line)
     return;
   }
   /* One ACK on air at a time: a second would be cut short when the first one's TxDone re-arms the
-     receiver (review m1). The node retries a frame it got no ACK for. */
+     receiver. The node retries a frame it got no ACK for. */
   if (transmitting) { APP_PRINTF("#tx busy\n"); return; }
   transmitting = 1;
   tx_start_ms = clock_ms();
@@ -337,9 +337,9 @@ void SubghzApp_Init(void)
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_SubGHz_Phy_App_Process, UTIL_SEQ_RFU, process_timed);
   console_init();
   /* After console_init: vcom_ReceiveInit waits for the UART to be idle, which a host streaming
-     without gaps could stretch past the watchdog (review m13). */
+     without gaps could stretch past the watchdog. */
   watchdog_start();
-  /* A leading newline ends any line a reset cut off, so the host sees #boot on a line of its own (m7). */
+  /* A leading newline ends any line a reset cut off, so the host sees #boot on a line of its own. */
   APP_PRINTF("\n#boot role=rx fw=%s reset=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION, watchdog_reset_cause(),
              (unsigned)WS_RF_FREQUENCY_HZ, (unsigned)WS_LORA_BANDWIDTH, (unsigned)WS_LORA_SF, WS_TX_POWER_DBM);
   fault_report();

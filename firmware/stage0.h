@@ -54,7 +54,7 @@ int ws_link_may_send(int energy, int probing, int32_t secs_until_probe);
    digits only (no sign), station 1..65535 (the draft-5 header's u16), epoch floor below WS_EPOCH_FLOOR_MAX so a typo
    cannot exhaust the epoch space. Returns 0 on success; outputs are undefined on error. */
 #define WS_EPOCH_FLOOR_MAX 0xFFFF0000UL
-/* Health helpers (docs/firmware-review-2026-10-13.md P6, P7). A failure run counts uninterrupted
+/* Health helpers (TX failure runs, RX radio silence). A failure run counts uninterrupted
    failures (any success resets it; saturates); tripped when it exceeds the limit. */
 typedef struct { uint32_t n; } ws_failrun;
 void ws_failrun_note(ws_failrun *, int ok);

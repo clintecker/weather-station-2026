@@ -20,7 +20,7 @@ _Static_assert(WS_JOURNAL_FIRST + WS_JOURNAL_PAGES == WS_FLASH_PAGES, "the journ
 /* Set by NMI_Handler when a read hits a double ECC error (interrupted program). */
 extern volatile uint8_t ws_flash_ecc_fault;
 
-/* The three flash primitives node_store.c uses (review P3), so the store builds and is power-cut
+/* The three flash primitives node_store.c uses, so the store builds and is power-cut
  * tested on the host. Addresses are absolute (0x0800xxxx); every call returns 0 on success.
  * read64 returns nonzero when the read hit a double-ECC fault (a torn program). prog64 writes one
  * erased, 8-byte-aligned double-word; erase takes a page number. A link-time seam, not a table of

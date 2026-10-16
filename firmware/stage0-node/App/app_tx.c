@@ -34,7 +34,7 @@
 
 #define SAMPLE_PERIOD_MS    15000U  /* one T/RH sample; every SAMPLES_PER_REPORT-th builds the minute (PRD 9) */
 #define SAMPLES_PER_REPORT  4U
-/* Review P7: a TX that keeps failing must not look healthy. Above this many failures in a row,
+/* A TX that keeps failing must not look healthy. Above this many failures in a row,
  * of journal appends (journal_fails) or of transmissions (exchange_counts()->air), the watchdog
  * resets the board (which re-runs Radio.Init). Minutes the policy chose not to send never count. */
 #define TX_FAIL_LIMIT       10U
@@ -225,7 +225,7 @@ BUSYMON_TASK(sample)
 
 static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
 
-/* Watchdog health: real progress, not just a running main loop (failure-modes.md G1). */
+/* Watchdog health: real progress, not just a running main loop. */
 int watchdog_healthy(void)
 {
   uint32_t now = clock_s();

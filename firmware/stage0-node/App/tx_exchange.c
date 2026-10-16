@@ -39,7 +39,7 @@ static tx_state_t tx_state = TX_IDLE;
 static enum { GAP_FRAME, GAP_DIAG } gap_then;   /* what the gap timer starts */
 static UTIL_TIMER_Object_t gap_timer;
 /* The ACK window is this firmware's own timer, not the radio driver's: ST's RxTimeoutTimer is left
-   running by a CRC error and its timeout leaves the radio receiving (review 2026-10-15). The radio
+   running by a CRC error and its timeout leaves the radio receiving. The radio
    listens with no driver timeout (ws_radio_rx(0)); ack_timer ends the window, and every way out of
    ack-wait puts the radio in standby first. */
 static UTIL_TIMER_Object_t ack_timer;
@@ -52,10 +52,10 @@ static unsigned qn, qi;
 static uint32_t exchange_start_s, exchange_limit_s;   /* watchdog progress evidence */
 static uint64_t sent_counter;
 static uint32_t sent_epoch, sent_seq;
-/* Transmission failures (review P7): a refused counter reservation, a refused Radio.Send or a
+/* Transmission failures: a refused counter reservation, a refused Radio.Send or a
    TxTimeout; only a TxDone (the frame really left) clears the run. Before 2026-10-14 one run mixed
    these with journal appends, and every accepted Send reset it, so a radio that accepted Send but
-   never finished a frame was never reset (firmware review, finding 1). */
+   never finished a frame was never reset. */
 static tx_counts_t tx_counts;
 const tx_counts_t *exchange_counts(void) { return &tx_counts; }
 
@@ -76,7 +76,7 @@ static uint16_t rx_len;
 static int16_t rx_rssi;
 static int8_t rx_snr;
 /* Signal of the last authentic ACK, as the node heard it (DIAG, design section 4): the uplink and
-   downlink can differ (gap G15). -128 = none yet. */
+   downlink can differ. -128 = none yet. */
 static int8_t ack_rssi = -128, ack_snr = -128;
 
 /* Events from interrupt and timer context, as bits (App/events.h). */
@@ -141,7 +141,7 @@ static void gap_before(int then)
 static uint16_t clamp16(uint32_t v) { return v > 0xFFFF ? 0xFFFF : (uint16_t)v; }
 static int8_t clamp8(int v) { return (int8_t)(v < -127 ? -127 : v > 127 ? 127 : v); }  /* -128 means "none" */
 
-/* Health report (kind 4, gap G8), sent after a minute's exchange (also while probing, so the link
+/* Health report (kind 4), sent after a minute's exchange (also while probing, so the link
    field can read "probing"). Fire-and-forget: no journal entry, no receive window. Returns 1 if it
    went on air (its TxDone or TxTimeout ends the exchange). */
 static int send_diag(void)
@@ -262,7 +262,7 @@ static void mark_replied(void)
   missed_last = 0;
 }
 
-/* Authentic permanent rejection (gap G2). Accepted only for the frame just sent. */
+/* Authentic permanent rejection. Accepted only for the frame just sent. */
 static int on_nack(const reply_t *r, int mine)
 {
   jref_t ref;
@@ -312,7 +312,7 @@ static int handle_reply(void)
 }
 
 /* The reply ended the window: stop its timer, and drop an ack-end it already posted, in this pass
-   or the next (a race, not a bug: `unexpected` stays a bug indicator; 2026-10-15 review). */
+   or the next (a race, not a bug: `unexpected` stays a bug indicator). */
 static void window_closed(void)
 {
   (void)UTIL_TIMER_Stop(&ack_timer);
@@ -346,8 +346,8 @@ static int in_ack_wait(uint32_t ev)
   if (ev != EV_RX_DONE && ev != EV_RX_ERROR && ev != EV_RX_TIMEOUT) return 0;
   /* Not the reply to this frame: foreign, forged, another frame's ACK, a payload CRC failure
      (rx-error) or a header failure (rx-timeout: ST's radio.c reports IRQ_HEADER_ERROR so).
-     Keep listening until the window ends rather than miss the real ACK (firmware review,
-     finding 2). After a single-window reception the radio is in standby; listen again. */
+     Keep listening until the window ends rather than miss the real ACK.
+     After a single-window reception the radio is in standby; listen again. */
   if (ev != EV_RX_DONE) APP_PRINTF("#ack damaged %s; still listening\n", ev == EV_RX_ERROR ? "payload" : "header");
   ws_radio_rx(0);
   return 1;

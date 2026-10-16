@@ -30,14 +30,14 @@ enum {
    stored one. On failure key is zeroed and kcv is untouched. */
 int store_config_load(uint32_t *station, uint8_t key[WS_KEY_LEN], uint8_t kcv[WS_KCV_LEN]);
 int store_config_write(uint32_t station, const uint8_t key[WS_KEY_LEN], uint8_t kcv[WS_KCV_LEN]);   /* kcv: out, the key check value */
-int store_wipe(void); /* erases config (key) and journal; counters and epoch are kept (G17) */
+int store_wipe(void); /* erases config (key) and journal; counters and epoch are kept (no nonce reuse) */
 
 /* Monotonic values. Each call durably reserves before returning; never repeats. */
 int store_meta_init(void);
 int store_next_epoch(uint32_t *epoch);     /* once per boot, before sampling */
 int store_next_counter(uint64_t *counter); /* one per transmission; refuses past WS_COUNTER_MAX */
-int store_epoch_floor(uint32_t floor);     /* G5: raise the epoch base (never lowers) */
-int store_note_abandoned(void);            /* G8: persist one more abandoned record */
+int store_epoch_floor(uint32_t floor);     /* after WIPE: raise the epoch base (never lowers) */
+int store_note_abandoned(void);            /* persist one more abandoned record */
 uint32_t store_abandoned_total(void);
 
 /* Journal of observation plaintexts (WS_OBS_PLAIN_MAX bytes, node_fields.h), retained until an
@@ -60,7 +60,7 @@ uint32_t store_journal_pending(void);
 uint32_t store_journal_lost(void);   /* pending records overwritten, cumulative across boots */
 uint32_t store_journal_burned(void); /* torn slots found at boot */
 uint32_t store_ecc_faults(void);      /* double-ECC reads caught since boot (torn writes) */
-uint64_t store_counter_next(void);    /* next transmission counter (diagnostics, G7 test) */
+uint64_t store_counter_next(void);    /* next transmission counter (diagnostics, power-cut test) */
 /* Acknowledge (drop) every pending entry whose epoch equals 'marker'; returns how many. */
 uint32_t store_journal_scrub(uint32_t marker);
 #endif

@@ -1,4 +1,4 @@
-/* Host test driver for stage0-node/App/node_store.c over the sim_flash model (review P3).
+/* Host test driver for stage0-node/App/node_store.c over the sim_flash model.
  *
  *   test_store functional [wrap]  store_ready guards + one scripted workload, no faults
  *   test_store sweep [wrap]       the workload once per flash op index, power cut at that op,

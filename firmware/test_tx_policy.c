@@ -82,7 +82,7 @@ static void minute(void) {
  assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &wrap, 11, 0xFFFFFE00u, one, 20) == 0);
 }
 
-/* Only an answer AFTER an unanswered frame earns it a strike (review M2, option A). */
+/* Only an answer AFTER an unanswered frame earns it a strike. */
 static void strike_targets(void) {
  uint8_t s[5];
  const uint8_t a[5] = { 1, 0, 1, 0, 0 };              /* live answered, b1 missed, b2 answered, b3 b4 missed */

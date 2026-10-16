@@ -20,7 +20,7 @@ typedef struct {
   int running;                    /* sampling by design: the watchdog expects progress */
   uint32_t sensor_faults;         /* minutes with no valid sample */
   uint32_t held_lost;             /* held readings dropped for a newer one (see held_flush) */
-  ws_failrun journal_fails;       /* the minute's journal appends that failed in a row (review P7) */
+  ws_failrun journal_fails;       /* the minute's journal appends that failed in a row */
 } tx_node_t;
 const tx_node_t *node_state(void);   /* read-only view; only app_tx.c writes it */
 uint32_t node_uptime_s(void);        /* RTC seconds since boot */

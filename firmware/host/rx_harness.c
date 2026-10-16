@@ -74,7 +74,7 @@ static uint8_t last_sent[256], chip_buf[256], chip_len;
 static int last_sent_len;
 static int8_t chip_rssi = -110, chip_snr = -15, rssi_now = -120;
 static uint8_t rx_scratch[256];        /* the radio's buffer as RxDone passes it */
-/* Observations for the review findings: a Send while the chip still transmits (it is cut short), an
+/* Observations of known driver pitfalls: a Send while the chip still transmits (it is cut short), an
    Rx straight after a TxTimeout with no Standby first (the chip is still in TX), and the LoRa packet
    length parameter: ST's RadioSend sets it to the frame size and RadioRx does not restore it. */
 static uint32_t sends_while_tx, rx_after_timeout_no_standby;

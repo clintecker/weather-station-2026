@@ -35,7 +35,7 @@ static uint32_t kcv_value(const uint8_t kcv[WS_KCV_LEN]) { return (uint32_t)ws_g
 #define META_MAGIC 0x57534D31UL /* "WSM1" */
 #define META_EPOCH 0xE1U
 #define META_CTR   0xC2U
-#define META_LOST  0xD1U /* cumulative journal overflow losses (gap G8) */
+#define META_LOST  0xD1U /* cumulative journal overflow losses */
 #define META_ABAND 0xD2U /* cumulative abandoned records (NACK / strike limit) */
 #define META_TYPE_SHIFT 56U                                  /* type: bits 63-56, value: bits 55-0 */
 #define META_VALUE_MAX ((1ULL << META_TYPE_SHIFT) - 1U)
@@ -84,7 +84,7 @@ static int erase_page(uint32_t page) {
  return ws_flash_erase(page) ? STORE_EFLASH : STORE_OK;
 }
 
-/* store_ready guard (review P3): mutators refuse to run on RAM state that no successful init
+/* store_ready guard: mutators refuse to run on RAM state that no successful init
    produced, instead of appending at a stale position. */
 static uint8_t meta_ready, journal_ready;
 
@@ -158,7 +158,7 @@ static int meta_scan(uint32_t page, uint32_t *gen, uint32_t *last) {
 /* Compact into the other page; its header is written last so a torn compaction
    leaves the current page authoritative. The other page still carries an older valid header:
    zero it first (programming all-zeros over data is allowed), so an erase cut part way can
-   never leave half-erased values under a header boot would trust (firmware review finding 4). */
+   never leave half-erased values under a header boot would trust. */
 static int meta_compact(void) {
  uint32_t other = meta_active == WS_META_PAGE_A ? WS_META_PAGE_B : WS_META_PAGE_A;
  uint32_t a = WS_PAGE_ADDR(other);
@@ -208,7 +208,7 @@ int store_next_epoch(uint32_t *epoch) {
  *epoch = ++max_epoch;
  return STORE_OK;
 }
-/* Gap G5: after a WIPE, the gateway supplies a floor above every epoch it has stored, so new
+/* After a WIPE, the gateway supplies a floor above every epoch it has stored, so new
    observation identities can never collide with history. Values only move up. */
 int store_epoch_floor(uint32_t floor) {
  if (!meta_ready) return STORE_ENOTREADY;
@@ -436,7 +436,7 @@ uint32_t store_journal_scrub(uint32_t marker)
  return n;
 }
 
-/* WIPE erases the key and the journal but never the meta log (gap G17): the counter (the AES-CCM
+/* WIPE erases the key and the journal but never the meta log: the counter (the AES-CCM
  * nonce), the boot epoch and the lost/abandoned totals keep rising for the life of the board. */
 int store_wipe(void) {
  int rc = STORE_OK;

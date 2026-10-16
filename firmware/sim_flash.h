@@ -1,4 +1,4 @@
-/* Host RAM model of the STM32WL55 internal flash that node_store.c uses (review item P3).
+/* Host RAM model of the STM32WL55 internal flash that node_store.c uses.
  *
  * Rules modelled (RM0453 section 3.3):
  *  - erased = all ones; a page erase sets every double-word of one 2 KB page to all ones;

@@ -10,8 +10,8 @@ static inline uint32_t irq_lock(void) { uint32_t primask = __get_PRIMASK(); __di
 static inline void irq_unlock(uint32_t primask) { __set_PRIMASK(primask); }
 
 /* Radio and timer events for the role's process task (CFG_SEQ_Task_SubGHz_Phy_App_Process), as
- * bits: several events can arrive before the task runs and none is lost (firmware review finding
- * 3: one event slot, cleared at the end of process(), dropped events posted meanwhile).
+ * bits: several events can arrive before the task runs and none is lost (a single event
+ * slot, cleared at the end of process(), would drop events posted meanwhile).
  * events_post sets bits from any context and posts the task; events_take returns the pending bits
  * and clears them in one step. */
 void events_post(volatile uint32_t *pending, uint32_t bits);

@@ -107,7 +107,7 @@ void vcom_DMA_TX_IRQHandler(void);
 void vcom_Resume(void);
 
 /* USER CODE BEGIN EFP */
-/* weather-station-2026 (review P5): UART receive errors are counted and the receiver re-armed. */
+/* weather-station-2026: UART receive errors are counted and the receiver re-armed. */
 uint32_t vcom_rx_errors(void);
 int vcom_rx_armed(void);       /* 1 while a one-character receive is pending */
 /* Trace DMA transfers started and finished: started != done that never moves means output stalled. */

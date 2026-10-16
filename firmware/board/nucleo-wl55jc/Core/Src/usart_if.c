@@ -255,7 +255,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 }
 
 /* USER CODE BEGIN EF */
-/* weather-station-2026 (review P5): on a receive error (overrun, framing, noise, parity) the HAL
+/* weather-station-2026: on a receive error (overrun, framing, noise, parity) the HAL
  * may abort the one-character receive. Nothing re-armed it, so the console (on RX: the ACK
  * downlink) went deaf for good. Clear the flags, count the error and listen again. */
 static volatile uint32_t rx_errors;

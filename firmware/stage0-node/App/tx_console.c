@@ -90,14 +90,14 @@ static void reboot_soon(void)
   if (!WS_CHECK(UTIL_TIMER_Start(&reboot_timer) == UTIL_TIMER_OK)) NVIC_SystemReset();
 }
 
-/* Bench-only power-cut test load (gap G7). Writes journal slots that are acknowledged on the
+/* Bench-only power-cut test load. Writes journal slots that are acknowledged on the
  * board at once (epoch STORM_EPOCH, never transmitted) and reserves counters, so that a
  * random power cut almost always lands inside a flash program or erase. Not persistent: a
  * reboot ends it, and the boot scrub drops any storm slot that a cut left pending. */
 static uint32_t storm_writes;
 static int storming;   /* sampling stopped for the load */
 /* At most this many slots per boot (~30 s): enough for a power cut to land in a write, far from
-   wearing out the journal (93 pages, 10 k erase cycles each; 2026-10-15 review). */
+   wearing out the journal (93 pages, 10 k erase cycles each). */
 #define STORM_MAX_WRITES 24000U
 static void storm(void)
 {

@@ -24,7 +24,7 @@ const char *exchange_state_name(void);
 typedef struct {
   uint32_t sent, acked, no_ack, ack_rejects;
   uint32_t unexpected;   /* events in a state that does not expect them */
-  ws_failrun air;        /* transmissions that failed in a row (review P7) */
+  ws_failrun air;        /* transmissions that failed in a row */
 } tx_counts_t;
 const tx_counts_t *exchange_counts(void);   /* read-only: only the exchange counts */
 

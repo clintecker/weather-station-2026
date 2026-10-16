@@ -1,4 +1,4 @@
-/* The flash primitives of flash_layout.h for the STM32WL55 internal flash (review P3): the HAL calls node_store.c used
+/* The flash primitives of flash_layout.h for the STM32WL55 internal flash: the HAL calls node_store.c used
  * to make directly. A double-ECC error on a read raises the NMI; NMI_Handler (stm32wlxx_it.c)
  * clears it and sets ws_flash_ecc_fault, which read64 turns into a nonzero return.
  * Program and erase stall the CPU until the flash is done (it cannot fetch code meanwhile, RM0453

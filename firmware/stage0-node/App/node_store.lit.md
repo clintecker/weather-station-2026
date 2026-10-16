@@ -149,11 +149,11 @@ static int erase_page(uint32_t page) {
 ```
 
 Mutators require the RAM state that a successful `store_meta_init` or `store_journal_init` built.
-Without it they return `STORE_ENOTREADY` (`node_store.h`) and write nothing (review P3), so a failed
+Without it they return `STORE_ENOTREADY` (`node_store.h`) and write nothing, so a failed
 boot scan cannot lead to appends at a stale position.
 
 ```c {#ready-flags}
-/* store_ready guard (review P3): mutators refuse to run on RAM state that no successful init
+/* store_ready guard: mutators refuse to run on RAM state that no successful init
    produced, instead of appending at a stale position. */
 static uint8_t meta_ready, journal_ready;
 ```
@@ -265,7 +265,7 @@ Pages 33 and 34 hold an append-only log of 64-bit records:
 |---|---|---|
 | `0xE1` | `META_EPOCH` | highest boot epoch reserved, or the epoch floor |
 | `0xC2` | `META_CTR` | highest counter reserved (inclusive) |
-| `0xD1` | `META_LOST` | cumulative records overwritten while pending (gap G8) |
+| `0xD1` | `META_LOST` | cumulative records overwritten while pending |
 | `0xD2` | `META_ABAND` | cumulative records abandoned by NACK or strike limit |
 
 A record is one double-word, so it is its own commit word. Double-word 0 of a page is the header:
@@ -276,7 +276,7 @@ records.
 #define META_MAGIC 0x57534D31UL /* "WSM1" */
 #define META_EPOCH 0xE1U
 #define META_CTR   0xC2U
-#define META_LOST  0xD1U /* cumulative journal overflow losses (gap G8) */
+#define META_LOST  0xD1U /* cumulative journal overflow losses */
 #define META_ABAND 0xD2U /* cumulative abandoned records (NACK / strike limit) */
 #define META_TYPE_SHIFT 56U                                  /* type: bits 63-56, value: bits 55-0 */
 #define META_VALUE_MAX ((1ULL << META_TYPE_SHIFT) - 1U)
@@ -372,7 +372,7 @@ int store_meta_init(void) {
 ```
 
 If both meta pages are unreadable while the provisioning record survives, the counter restarts at 1
-under the existing key. Firmware review rated this robustness-2. It needs a layout change to cause,
+under the existing key. This risk is accepted: it needs a layout change to cause,
 and a layout-version field is deferred to the first layout change.
 
 ### Append
@@ -409,19 +409,19 @@ step                                    other page at boot          active page 
 A cut at steps 1–3 leaves the current page authoritative and the next append compacts again. After
 step 4 the maxima over both pages are unchanged.
 
-Step 1 fixes firmware review finding 4 (FW4, 2026-10-14). The other page holds the previous
-generation with a valid header. Erasing it with the header in place allowed a cut to leave the
-header readable over partially erased records. Boot would then take maxima from junk, and a counter
-above 2^40 disables the node permanently (WIPE keeps the counter). Programming zeros over the
-header first (allowed over written data) makes the page invalid before the erase starts. The test
-model's partial erases leave whole double-words old, erased or unreadable, never altered values, so
-the sweeps exercise the step order but cannot reproduce the original failure.
+Step 1 matters because the other page holds the previous generation with a valid header. Erasing it
+with the header in place allowed a cut to leave the header readable over partially erased records.
+Boot would then take maxima from junk, and a counter above 2^40 disables the node permanently (WIPE
+keeps the counter). Programming zeros over the header first (allowed over written data) makes the
+page invalid before the erase starts. The test model's partial erases leave whole double-words old,
+erased or unreadable, never altered values, so the sweeps exercise the step order but cannot
+reproduce the original failure.
 
 ```c {#meta-compact}
 /* Compact into the other page; its header is written last so a torn compaction
    leaves the current page authoritative. The other page still carries an older valid header:
    zero it first (programming all-zeros over data is allowed), so an erase cut part way can
-   never leave half-erased values under a header boot would trust (firmware review finding 4). */
+   never leave half-erased values under a header boot would trust. */
 static int meta_compact(void) {
  uint32_t other = meta_active == WS_META_PAGE_A ? WS_META_PAGE_B : WS_META_PAGE_A;
  uint32_t a = WS_PAGE_ADDR(other);
@@ -464,11 +464,11 @@ int store_next_epoch(uint32_t *epoch) {
 }
 ```
 
-**Epoch floor** (gap G5). After a WIPE the gateway supplies a floor above every epoch it has stored
+**Epoch floor**. After a WIPE the gateway supplies a floor above every epoch it has stored
 for the station. A floor at or below the current epoch is accepted and changes nothing.
 
 ```c {#epoch-floor}
-/* Gap G5: after a WIPE, the gateway supplies a floor above every epoch it has stored, so new
+/* After a WIPE, the gateway supplies a floor above every epoch it has stored, so new
    observation identities can never collide with history. Values only move up. */
 int store_epoch_floor(uint32_t floor) {
  if (!meta_ready) return STORE_ENOTREADY;
@@ -480,7 +480,7 @@ int store_epoch_floor(uint32_t floor) {
 }
 ```
 
-**Abandoned total** (gap G8): incremented for each record the gateway NACKed or the strike limit
+**Abandoned total**: incremented for each record the gateway NACKed or the strike limit
 dropped.
 
 ```c {#abandoned}
@@ -558,7 +558,7 @@ opened. The head is the page with the highest sequence.
 #define ACK_POS (COMMIT_POS + 1U)
 ```
 
-Compile-time checks tie the format to `node_fields.h` and `flash_layout.h` (review P16):
+Compile-time checks tie the format to `node_fields.h` and `flash_layout.h`:
 
 ```c {#geometry-checks}
 _Static_assert(SLOT_BYTES == (ACK_POS + 1U) * WS_DW_BYTES && COMMIT_POS * WS_DW_BYTES >= WS_OBS_PLAIN_MAX,
@@ -930,11 +930,11 @@ uint64_t store_counter_next(void) { return ctr_next; }
 
 ## 7. WIPE
 
-`store_wipe` erases the journal and the provisioning record. It never erases the meta log (gap
-G17, review P1): the counter, epoch and totals keep rising for the life of the board. The first
-version erased both meta pages, which restarted the counter at 1. Re-provisioning the same key then
-repeated nonces. A key first used under this firmware can follow the board across WIPEs. A key used
-under older firmware, or on another board, cannot (`docs/runbook-moving-boards.md`).
+`store_wipe` erases the journal and the provisioning record. It never erases the meta log: the
+counter, epoch and totals keep rising for the life of the board. The first version erased both meta
+pages, which restarted the counter at 1. Re-provisioning the same key then repeated nonces. A key
+first used under this firmware can follow the board across WIPEs. A key used under older firmware,
+or on another board, cannot (`docs/runbook-moving-boards.md`).
 
 Order:
 
@@ -953,7 +953,7 @@ leave acknowledged records pending again (`note_acked_back_after_interrupted_wip
 promise until it reports success.
 
 ```c {#wipe}
-/* WIPE erases the key and the journal but never the meta log (gap G17): the counter (the AES-CCM
+/* WIPE erases the key and the journal but never the meta log: the counter (the AES-CCM
  * nonce), the boot epoch and the lost/abandoned totals keep rising for the life of the board. */
 int store_wipe(void) {
  int rc = STORE_OK;
