@@ -9,13 +9,14 @@
 static const uint8_t width[WS_FI_COUNT] = { WS_OBS_CATALOG(WIDTH_, ) };
 static const uint32_t code_max[WS_FI_COUNT] = { WS_OBS_CATALOG(MAX_, ) };
 _Static_assert(0 WS_OBS_CATALOG(COUNT_, ) == WS_FI_COUNT, "one catalog entry per field index");
+_Static_assert(WS_OBS_HEAD_LEN == 4 * sizeof(uint32_t) + 2 + sizeof(uint32_t), "header: four u32, flags, calibration, bitmap");
 
 unsigned ws_obs_width(unsigned i) { return i < WS_FI_COUNT ? width[i] : 0; }
 
 uint32_t ws_obs_invalid(unsigned i)
 {
  if (i >= WS_FI_COUNT || i == WS_FI_QUALIFIERS) return 0;
- return width[i] == 4 ? 0xFFFFFFFFU : ((uint32_t)1 << (8U * width[i])) - 1U;
+ return width[i] >= sizeof(uint32_t) ? UINT32_MAX : ((uint32_t)1 << (CHAR_BIT * width[i])) - 1U;
 }
 
 int ws_obs_code_ok(unsigned i, uint32_t code)
@@ -52,23 +53,21 @@ int ws_obs_encode(const ws_obs_t *o, uint8_t *out, size_t cap)
 {
  int len = o && out ? obs_len(o) : -1;
  if (len < 0 || (size_t)len > cap) return -1;
- ws_put_be32(out, o->epoch); ws_put_be32(out + 4, o->seq); ws_put_be32(out + 8, o->utc); ws_put_be32(out + 12, o->uptime);
- out[16] = (uint8_t)((o->utc != 0) | (o->energy << 1));
- out[17] = o->cal_rev;
- ws_put_be32(out + 18, o->bitmap);
- uint8_t *p = out + WS_OBS_HEAD_LEN;
- for (unsigned i = 0; i < WS_FI_COUNT; i++) {
-  if (!(o->bitmap & WS_F(i))) continue;
-  ws_put_be(p, o->code[i], width[i]);
-  p += width[i];
- }
+ uint8_t *p = ws_write_be32(out, o->epoch);
+ p = ws_write_be32(p, o->seq);
+ p = ws_write_be32(p, o->utc);
+ p = ws_write_be32(p, o->uptime);
+ p = ws_write_u8(p, (uint8_t)((o->utc != 0 ? WS_OBS_FLAG_UTC : 0U) | (unsigned)o->energy << WS_OBS_ENERGY_SHIFT));
+ p = ws_write_u8(p, o->cal_rev);
+ p = ws_write_be32(p, o->bitmap);
+ for (unsigned i = 0; i < WS_FI_COUNT; i++) if (o->bitmap & WS_F(i)) p = ws_write_be(p, o->code[i], width[i]);
  return len;
 }
 
 int ws_obs_plain_len(const uint8_t *plain, size_t avail)
 {
  if (!plain || avail < WS_OBS_HEAD_LEN) return -1;
- uint32_t bitmap = ws_get_be32(plain + 18);
+ uint32_t bitmap = ws_get_be32(plain + WS_OBS_BITMAP_OFF);
  if (!bitmap || (bitmap & ~WS_FIELDS_DEFINED)) return -1;
  size_t len = WS_OBS_HEAD_LEN;
  for (unsigned i = 0; i < WS_FI_COUNT; i++) if (bitmap & WS_F(i)) len += width[i];
@@ -77,12 +76,12 @@ int ws_obs_plain_len(const uint8_t *plain, size_t avail)
 
 uint32_t ws_code_temp_centi(int32_t centi_c)
 {
- if (centi_c < -4000 || centi_c > 12500) return ws_obs_invalid(WS_FI_TEMPERATURE_C);
- return (uint32_t)(centi_c + 4000);
+ if (centi_c < WS_TEMP_MIN_CENTI || centi_c > WS_TEMP_MAX_CENTI) return ws_obs_invalid(WS_FI_TEMPERATURE_C);
+ return (uint32_t)(centi_c - WS_TEMP_MIN_CENTI);
 }
 
 uint32_t ws_code_rh_centi(int32_t centi_pct)
 {
  if (centi_pct < 0) return 0;
- return centi_pct > 10000 ? 10000U : (uint32_t)centi_pct;
+ return centi_pct > WS_RH_MAX_CENTI ? WS_RH_MAX_CENTI : (uint32_t)centi_pct;
 }
