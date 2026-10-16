@@ -38,7 +38,7 @@ make ROLE=rx flash SERIAL=0016001E4142500E20353451
 make ROLE=tx flash SERIAL=003B00194142500E20353451
 ```
 
-Flashing rewrites only the firmware region (pages 0–54). Provisioning, counters and the journal (pages 55–127) survive a reflash. A test on 2026-10-12 verified this. Each build prints the binary SHA-256 at the end.
+Flashing rewrites only the firmware region (pages 0–54). Provisioning, counters and the journal (pages 55–127) survive a reflash that keeps the flash layout (verified 2026-10-12 on the previous layout). A release that changes the layout loses them: follow [`docs/runbook-moving-boards.md`](../../docs/runbook-moving-boards.md), "Changing the flash layout". Each build prints the binary SHA-256 at the end.
 
 A release follows the procedure in [`RELEASES.md`](RELEASES.md), "How to cut a release":
 
@@ -236,7 +236,7 @@ Other lines:
 | `#held journaled seq= rc= pending=` | The firmware journaled a held reading when the radio went idle (`rc=0`: ok). The next minute sends it as backlog. |
 | `#kat pass\|FAIL`, `#wipe ok\|ERROR`, `#provisioned station= kcv= epoch_floor=`, `#unprovisioned: …`, `#test-hang: …` | Command replies. |
 | `#storm start ctr=`, `#storm writes= ctr= burned=`, `#storm-scrub dropped=` | TEST-FLASH-STORM progress (every 256 writes), and the boot cleanup of storm slots. |
-| `#error <what>` | `journal-read`, `counter-reserve`, `seal`, `radio-busy`, `journal-ack`, `tx-timeout`, `unexpected event= state=`, `held-lost seq=` (a third reading during a hung exchange replaced the oldest held reading), `busy (radio exchange or reboot in progress); retry` (WIPE, PROVISION or TEST-FLASH-STORM during an exchange), `store-init`, `epoch-reserve`, `self-test failed; not transmitting`. Also the command errors `already-provisioned`, `usage: …` (also for a malformed key), `epoch-floor`, `provision rc=`, `unknown command`. |
+| `#error <what>` | `journal-read`, `counter-reserve`, `seal`, `radio-busy`, `journal-ack`, `tx-timeout`, `unexpected event= state=`, `held-lost seq=` (a third reading during a hung exchange replaced the oldest held reading), `busy (radio exchange or reboot in progress); retry` (WIPE, PROVISION or TEST-FLASH-STORM during an exchange), `store-init`, `epoch-reserve`, `self-test failed; not transmitting`. Also the command errors `already-provisioned`, `journal-not-empty` (pending records from an old key or flash layout: WIPE first), `usage: …` (also for a malformed key), `epoch-floor`, `provision rc=`, `unknown command`. |
 
 ### Crash records (`App/fault.c`, both roles)
 

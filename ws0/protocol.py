@@ -4,8 +4,9 @@
 
 AES-CCM comes from cryptography (OpenSSL). This module does not implement it.
 The firmware reserves each counter durably before use (firmware/stage0-node/App/node_store.c).
-The firmware never resets the counter, not even on WIPE. So one key never sees a repeated nonce
-on one board.
+The firmware never resets the counter, not even on WIPE. A flash-layout change does reset it,
+and always comes with a new key (docs/runbook-moving-boards.md). So one key never sees a
+repeated nonce on one board.
 """
 import hashlib
 import sqlite3

@@ -116,7 +116,8 @@ nonces. Therefore a layout change always gets a new key, in a new run directory:
 Then do the checks below. `STATUS` on TX also shows `epoch=1` and a counter near 1.
 
 Until step 6, TX is not provisioned: the old journal data on the provisioning page does not read as
-a provisioning record. So TX sends nothing from the old layout.
+a provisioning record. So TX sends nothing from the old layout. If step 4 is skipped, PROVISION
+refuses with `#error journal-not-empty (WIPE first)` while old records are pending.
 
 ## Checks after any move
 

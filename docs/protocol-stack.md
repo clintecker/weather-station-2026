@@ -235,7 +235,7 @@ The STM32WL55JC has 256 KB of flash in 128 pages of 2 KB. The flash programs 64 
 | 125–126 | 4 KB | Monotonic log, two pages (A and B): epochs, counter reservations, lost total, abandoned total |
 | 127 | 2 KB | Configuration: station ID, key, key check value (KCV) |
 
-A firmware update programs only pages 0–54. The configuration, the counters, and the journal stay. (Verified 2026-10-12.)
+A firmware update programs only pages 0–54. The configuration, the counters, and the journal stay (verified 2026-10-12 on the previous layout). A release that changes the page map loses them, and the board then needs a WIPE and a new key ([`runbook-moving-boards.md`](runbook-moving-boards.md), "Changing the flash layout"). PROVISION refuses a journal with pending records.
 
 ### 5.2 Slot format
 

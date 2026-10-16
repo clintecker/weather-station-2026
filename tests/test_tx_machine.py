@@ -88,7 +88,7 @@ class Replies:
 
 class Node:
     """One fresh boot of the firmware: its own copy of the library, so every static starts at zero."""
-    def __init__(self, library, tmp):
+    def __init__(self, library, tmp, provision=True, seed=0):
         path = Path(tmp)/f'node{random.getrandbits(48):x}.so'
         shutil.copy(library, path)
         self.lib = ctypes.CDLL(str(path))
@@ -103,7 +103,9 @@ class Node:
         self.answers = []                   # (time, head) of every reply serve() sent
         self.lib.h_reset()
         key = (ctypes.c_uint8 * 16)(*KEY)
-        if self.lib.h_provision(STATION, key) != 0:
+        if seed and self.lib.h_seed_journal(seed) != 0:
+            raise RuntimeError('tx_harness: seeding the simulated journal failed')
+        if provision and self.lib.h_provision(STATION, key) != 0:
             raise RuntimeError('tx_harness: provisioning the simulated flash failed')
         self.lib.h_boot()
 
@@ -223,9 +225,9 @@ class TxStateMachine(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls.addClassCleanup(cls.tmp.cleanup)
 
-    def node(self, storm=False):
+    def node(self, storm=False, provision=True, seed=0):
         """A fresh node, with the invariants every test must keep checked at its end."""
-        node = Node(self.library, self.tmp.name)
+        node = Node(self.library, self.tmp.name, provision, seed)
         self.addCleanup(lambda: self.assertEqual(node.lib.h_flash_ops_during_radio(), 0, 'flash written while the radio was busy'))
         self.addCleanup(lambda: self.assertEqual(node.lib.h_timer_start_refused(), 0, 'a running timer was started again (ST ignores that)'))
         self.addCleanup(lambda: self.assertEqual(node.lib.h_unmasked_radio_calls(), 0, 'a radio command without the radio interrupt masked'))
@@ -558,6 +560,23 @@ class TxStateMachine(unittest.TestCase):
         n.lib.h_line(b'PROVISION 9 ' + b'00' * 16)     # arguments follow the name's space
         self.assertEqual(n.out(), '#error already-provisioned (WIPE first)\n')
         self.assertEqual((n.lib.h_resets(), n.status()['provisioned']), (0, '1'))
+
+    def test_provision_refuses_a_journal_with_pending_records(self):
+        # A skipped WIPE after a flash-layout change leaves old journal pages; under a new key
+        # they would read as new history (docs/runbook-moving-boards.md).
+        n = self.node(provision=False, seed=3)
+        self.assertIn('#unprovisioned', n.out())
+        n.lib.h_line(b'PROVISION 9 ' + b'11' * 16)
+        self.assertEqual(n.out(), '#error journal-not-empty (WIPE first)\n')
+        self.assertEqual(n.lib.h_resets(), 0)
+        n.lib.h_line(b'WIPE ERASE-ALL-NODE-STATE')
+        self.assertIn('#wipe ok', n.out())
+
+    def test_provision_accepts_a_clean_unprovisioned_board(self):
+        n = self.node(provision=False)
+        self.assertIn('#unprovisioned', n.out())
+        n.lib.h_line(b'PROVISION 9 ' + b'11' * 16)
+        self.assertIn('#provisioned station=9 ', n.out())
 
     def test_commanded_reboot_comes_from_a_timer_and_stops_sampling(self):
         n = self.node()

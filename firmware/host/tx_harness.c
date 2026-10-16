@@ -175,6 +175,15 @@ int h_provision(uint32_t station, const uint8_t key[WS_KEY_LEN])
   uint8_t kcv[WS_KCV_LEN];
   return store_meta_init() || store_config_write(station, key, kcv);
 }
+/* n pending records in the journal of an unprovisioned board: old data that a skipped WIPE left. */
+int h_seed_journal(int n)
+{
+  uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 };
+  jref_t ref;
+  if (store_meta_init() || store_journal_init()) return -1;
+  for (int i = 0; i < n; i++) { plain[0] = (uint8_t)i; if (store_journal_append(plain, &ref)) return -1; }
+  return 0;
+}
 void h_boot(void) { SubghzApp_Init(); sim_run_tasks(); }
 uint32_t h_now(void) { return (uint32_t)sim_ms(); }
 int h_radio_state(void) { return radio_state; }

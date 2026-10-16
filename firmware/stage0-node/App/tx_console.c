@@ -142,6 +142,8 @@ static void provision(char *line)
 {
   uint8_t new_key[WS_KEY_LEN], check[WS_KCV_LEN]; uint32_t id, floor; int rc, done = 0;
   if (exchange_identity()->provisioned) { APP_PRINTF("#error already-provisioned (WIPE first)\n"); }
+  /* Pending records belong to an old key or an old flash layout: a new key must start empty. */
+  else if (store_journal_pending()) { APP_PRINTF("#error journal-not-empty (WIPE first)\n"); }
   else if (ws_parse_provision(line + PROVISION_ARGS, &id, new_key, &floor))
   { APP_PRINTF("#error usage: PROVISION <station_id> <32 hex key> [epoch_floor]\n"); }
   else if (floor && store_epoch_floor(floor)) { APP_PRINTF("#error epoch-floor\n"); }
