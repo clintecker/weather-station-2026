@@ -27,3 +27,11 @@ uint32_t stackmon_peak(void) { return ws_stack_peak(lowest(), _estack); }
 #define SCAN_SLICE_WORDS 256U
 static ws_stack_scan scan;
 uint32_t stackmon_peak_step(void) { return ws_stack_scan_step(&scan, lowest(), _estack, SCAN_SLICE_WORDS); }
+
+/* One whole scan at boot (not a timed task), so the first reports show the peak so far, not 0
+   while the slices climb to it. */
+void stackmon_seed(void)
+{
+  scan.deepest = (const uint32_t *)((const char *)_estack - stackmon_peak());
+  scan.cursor = lowest();
+}

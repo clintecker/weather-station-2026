@@ -9,4 +9,5 @@ uint32_t stackmon_peak(void);
 /* The same for a periodic report (RX #alive): a slice of the scan per call, at most one pass
    (~17 calls on the RX) behind; stackmon_peak() reads the whole range at once (~1.5 ms). */
 uint32_t stackmon_peak_step(void);
+void stackmon_seed(void);   /* at the end of boot: one whole scan, so stackmon_peak_step starts from it */
 #endif

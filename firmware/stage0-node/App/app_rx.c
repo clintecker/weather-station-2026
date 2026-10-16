@@ -346,4 +346,5 @@ void SubghzApp_Init(void)
   (void)UTIL_TIMER_Create(&alive_timer, 60000, UTIL_TIMER_PERIODIC, on_alive, NULL);
   (void)WS_CHECK(UTIL_TIMER_Start(&alive_timer) == UTIL_TIMER_OK);   /* created just above, so not running */
   listen();
+  stackmon_seed();
 }
