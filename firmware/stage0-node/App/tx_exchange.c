@@ -1,3 +1,5 @@
+/* GENERATED from tx_exchange.lit.md by tools/tangle.py: do not edit. Edit the document, then run
+ * tools/tangle.py firmware/stage0-node/App/tx_exchange.lit.md (tests/test_tangle.py checks this file). */
 /* The minute's radio exchange, one state at a time (docs/firmware-event-model.md has the table).
  * Every state is left by an event that is certain to come: the radio's TxDone/TxTimeout
  * (WS_TX_TIMEOUT_MS), the ACK window timer, or the gap timer. Anything else is counted as
