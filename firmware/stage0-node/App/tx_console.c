@@ -66,9 +66,10 @@ static void counts_line(void)
 
 static void timing_line(void)
 {
-  APP_PRINTF("#timing state=%s task_peak_us=%u task_peak=%s isr_peak_us=%u isr_peak=%s erase_peak_us=%u prog_peak_us=%u "
-             "trace_drops=%u unexpected=%u\n", exchange_state_name(),
-             (unsigned)busymon_peak_us(BM_TASK), busymon_peak_name(BM_TASK), (unsigned)busymon_peak_us(BM_ISR),
+  APP_PRINTF("#timing state=%s task_peak_us=%u task_peak=%s task_wall_us=%u isr_peak_us=%u isr_peak=%s erase_peak_us=%u "
+             "prog_peak_us=%u trace_drops=%u unexpected=%u\n", exchange_state_name(),
+             (unsigned)busymon_peak_us(BM_TASK), busymon_peak_name(BM_TASK), (unsigned)busymon_peak_us(BM_TASK_WALL),
+             (unsigned)busymon_peak_us(BM_ISR),
              busymon_peak_name(BM_ISR), (unsigned)busymon_peak_us(BM_ERASE), (unsigned)busymon_peak_us(BM_PROG),
              (unsigned)ws_trace_drops, (unsigned)exchange_counts()->unexpected);
 }

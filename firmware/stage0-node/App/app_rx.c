@@ -240,14 +240,16 @@ static void log_crc(void)
   APP_PRINTF("#rx crc len=%u rssi=%d snr=%d data=%s\n", got.blen, got.brssi, got.bsnr, text);
 }
 
+/* Each step is timed on its own (busymon), so the task's peak names the step that made it. */
 static void process(void)
 {
-  if (alive_due) { alive_due = 0; alive(); }   /* may set relisten_due, handled just below */
-  if (relisten_due && !transmitting) relisten();
+  bm_span s;
+  if (alive_due) { alive_due = 0; s = busymon_begin(); alive(); busymon_step_end(s, "process.alive"); }   /* may set relisten_due */
+  if (relisten_due && !transmitting) { s = busymon_begin(); relisten(); busymon_step_end(s, "process.relisten"); }
   uint32_t ev = take_events();
-  if (ev & (EV_TX_DONE | EV_TX_TIMEOUT)) tx_ended(ev);
-  if (ev & EV_RX) forward();
-  if (ev & EV_RX_CRC) log_crc();
+  if (ev & (EV_TX_DONE | EV_TX_TIMEOUT)) { s = busymon_begin(); tx_ended(ev); busymon_step_end(s, "process.listen"); }
+  if (ev & EV_RX) { s = busymon_begin(); forward(); busymon_step_end(s, "process.forward"); }
+  if (ev & EV_RX_CRC) { s = busymon_begin(); log_crc(); busymon_step_end(s, "process.crc"); }
   if ((ev & EV_RX_HDR) && failure_line_ok()) APP_PRINTF("#rx hdr rssi=%d\n", got.hrssi);
   if (n_frames_lost != n_frames_lost_told)   /* real data loss: told at once, not only on #alive */
   {
@@ -289,9 +291,11 @@ void console_line(char *line)
   if (ws_cmd_find(commands, 1, line) == 0)
   {
     uint16_t site = ws_check_first();
-    APP_PRINTF("#status role=rx forwarded=%u dropped=%u acks=%u relistens=%u uart_errors=%u check_fails=%u check_first=%u:%u\n",
+    APP_PRINTF("#status role=rx forwarded=%u dropped=%u acks=%u relistens=%u uart_errors=%u check_fails=%u check_first=%u:%u "
+               "task_wall_us=%u task_wall=%s\n",
                (unsigned)n_forwarded, (unsigned)n_dropped, (unsigned)n_acks, (unsigned)n_relistens, (unsigned)vcom_rx_errors(),
-               (unsigned)ws_check_count(), ws_check_site_file(site), ws_check_site_line(site));
+               (unsigned)ws_check_count(), ws_check_site_file(site), ws_check_site_line(site),
+               (unsigned)busymon_peak_us(BM_TASK_WALL), busymon_peak_name(BM_TASK_WALL));
     return;
   }
   int n = ws_hex_decode(line, frame, sizeof frame);

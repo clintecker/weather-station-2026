@@ -128,8 +128,9 @@ class Bridge:
         self.line('STATUS')
         text = self.out()
         self.assertion(re.fullmatch(r'#status role=rx forwarded=\d+ dropped=\d+ acks=\d+ relistens=\d+ uart_errors=\d+ '
-                                    r'check_fails=\d+ check_first=\d+:\d+\n', text), text)
-        return fields(text)
+                                    r'check_fails=\d+ check_first=\d+:\d+ task_wall_us=\d+ task_wall=\w+\n', text), text)
+        # The task-time peak (interrupts included) is the board's cycle counter: 0 / none on the host.
+        return {k: v for k, v in fields(text).items() if not k.startswith('task_wall')}
 
     def alive_lines(self, text):
         return [fields(m) for m in re.findall(r'^#alive .*$', text, re.M)]
@@ -837,7 +838,7 @@ class Mixed:
         if line == 'STATUS':
             n = self.n
             return [f'#status role=rx forwarded={n["forwarded"]} dropped={n["dropped"]} acks={n["acks"]} '
-                    f'relistens={n["relistens"]} uart_errors={n["uart_errors"]} check_fails=0 check_first=0:0']
+                    f'relistens={n["relistens"]} uart_errors={n["uart_errors"]} check_fails=0 check_first=0:0 task_wall_us=0 task_wall=none']
         size, frame = hex_decode(line, self.b.ack_len + 1)
         if size != self.b.ack_len or frame[0] not in (0x52, 0x53):
             return [f'#host reject len={size}']

@@ -189,11 +189,15 @@ static void minute_report(int src)
   uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live; minute_t m;
   int encoded = WS_CHECK(minute_encode(&m, plain));   /* our own codes always encode */
   int busy = exchange_busy();
-  int rc = journal_or_hold(plain, encoded, busy, &live);
+  bm_span s = busymon_begin();
+  int rc = journal_or_hold(plain, encoded, busy, &live);   /* a journal page start erases 22 ms */
+  busymon_step_end(s, "report.journal");
   sample_line(&m, src, rc, busy);
   node.next_seq++; /* identity is never reused, even if the journal write failed */
   if (busy) { APP_PRINTF("#busy previous exchange still running; reading held until it ends\n"); return; }
+  s = busymon_begin();
   minute_send(rc ? NULL : &live);
+  busymon_step_end(s, "report.send");
 }
 
 void sensor_done(int src, int16_t t, uint16_t h)
