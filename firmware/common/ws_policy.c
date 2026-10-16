@@ -3,6 +3,7 @@
 #include "stage0.h"
 #include "ws_obs.h"
 #include "ws_check.h"
+#include <limits.h>
 
 /* Per energy state (WS_ENERGY_* order): backlog frames and radio time per minute. */
 static const char *const energy_name[] = { "surplus", "normal", "conserve", "critical" };
@@ -20,17 +21,35 @@ const char *ws_energy_name(int energy)
  return energy >= 0 && energy < (int)ENERGY_STATES ? energy_name[energy] : "?";
 }
 
+/* Semtech time on air (SX1261/2 datasheet section 6.1.4, AN1200.13), explicit header, CRC on:
+ *   T_sym = 2^SF / BW; preamble = (n_preamble + 4.25) T_sym;
+ *   payload = 8 + max(ceil((8 PL - 4 SF + 28 + 16 CRC) / (4 (SF - 2 DE))), 0) (CR + 4) symbols.
+ * Counted in quarter symbols, so the 4.25 stays an integer. */
+#define LORA_SF_MIN 7U
+#define LORA_SF_MAX 12U
+#define LORA_BW_MIN_HZ 7800U
+#define LORA_CR_MAX 4U              /* 4/8 */
+#define LDRO_SYMBOL_US 16000U       /* low data rate optimisation is on above this symbol time */
+#define HEADER_FIXED_BITS 28        /* the formula's +28 */
+#define CRC_BITS 16
+#define PAYLOAD_FIXED_SYMBOLS 8U
+#define SYNC_QUARTERS 17U           /* 4.25 symbols of sync word and start of frame */
+#define QUARTERS 4U
+#define US_PER_MS 1000U
+#define AIRTIME_UNKNOWN_MS 60000U   /* a whole minute: room for the live reading only */
 uint32_t ws_lora_airtime_ms(uint32_t payload, uint32_t sf, uint32_t bw_hz, uint32_t preamble, uint32_t cr)
 {
- /* radio_cfg.h's constants; outside the formula's range the answer is a whole minute, which leaves
-    room for the live reading only (the cautious estimate) instead of a division by zero. */
- if (!WS_CHECK(sf >= 7 && sf <= 12 && bw_hz >= 7800 && cr >= 1 && cr <= 4)) return 60000;
- uint32_t de = ((1000000UL << sf) / bw_hz) > 16000 ? 1 : 0;           /* low data rate optimisation: symbol > 16 ms */
- int32_t num = 8 * (int32_t)payload - 4 * (int32_t)sf + 28 + 16;
+ /* radio_cfg.h's constants; outside the formula's range the answer is AIRTIME_UNKNOWN_MS (the
+    cautious estimate) instead of a division by zero. */
+ if (!WS_CHECK(sf >= LORA_SF_MIN && sf <= LORA_SF_MAX && bw_hz >= LORA_BW_MIN_HZ && cr >= 1 && cr <= LORA_CR_MAX))
+  return AIRTIME_UNKNOWN_MS;
+ uint32_t symbol_us_x_bw = 1000000UL << sf;                           /* T_sym in us, times BW */
+ uint32_t de = symbol_us_x_bw / bw_hz > LDRO_SYMBOL_US ? 1 : 0;
+ int32_t num = CHAR_BIT * (int32_t)payload - 4 * (int32_t)sf + HEADER_FIXED_BITS + CRC_BITS;
  int32_t den = 4 * ((int32_t)sf - 2 * (int32_t)de);
  int32_t blocks = num > 0 ? (num + den - 1) / den : 0;
- uint32_t symbols_x4 = (preamble * 4 + 17) + 4 * (8 + (uint32_t)blocks * (cr + 4));
- return (uint32_t)(((uint64_t)symbols_x4 * (1000000UL << sf) / bw_hz) / 4000) + 1;
+ uint32_t quarters = (preamble * QUARTERS + SYNC_QUARTERS) + QUARTERS * (PAYLOAD_FIXED_SYMBOLS + (uint32_t)blocks * (cr + 4));
+ return (uint32_t)(((uint64_t)quarters * symbol_us_x_bw / bw_hz) / (QUARTERS * US_PER_MS)) + 1;
 }
 
 int ws_link_minute(ws_link *l, int answered, uint32_t sent_s)

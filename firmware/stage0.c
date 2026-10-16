@@ -27,7 +27,7 @@ static int sht45_word(const uint8_t *b, uint16_t *raw) {
 }
 int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN],int16_t *centi_c,uint16_t *centi_rh) {
  uint16_t rt, rh;
- if(sht45_word(bytes,&rt)||sht45_word(bytes+WS_SHT45_WORD_LEN+1,&rh)) return -4;
+ if(sht45_word(bytes,&rt)||sht45_word(bytes+WS_SHT45_WORD_LEN+1,&rh)) return WS_SHT45_ECRC;
  int32_t t=sht45_scale(rt,WS_SHT45_T_OFFSET_CENTI,WS_SHT45_T_SPAN_CENTI);
  int32_t h=sht45_scale(rh,WS_SHT45_RH_OFFSET_CENTI,WS_SHT45_RH_SPAN_CENTI);
  if(h<0) h=0;

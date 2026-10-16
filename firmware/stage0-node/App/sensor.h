@@ -1,6 +1,7 @@
 #ifndef SENSOR_H
 #define SENSOR_H
 #include <stdint.h>
+#include "stage0.h"   /* WS_SHT45_ECRC */
 /* SHT45 on I2C2: SDA = PA11 (CN5.9 / morpho CN10.5), SCL = PA12 (CN5.10 / CN10.3), per UM2592
  * Rev 4 Tables 17-18. 100 kHz, open-drain. The Adafruit 6174 breakout carries the real 10 kOhm
  * pull-ups; the MCU's internal pull-ups are on only so an unplugged sensor reads as a NACK. */
@@ -13,7 +14,7 @@ void sensor_init(void);
  * -5 bus still stuck after recovery, -6 a transfer never completed. On a fault the values are 0. */
 #define SENSOR_ENACK_ADDR (-2)
 #define SENSOR_ENACK_READ (-3)
-#define SENSOR_ECRC       (-4)   /* ws_sht45_parse */
+#define SENSOR_ECRC       WS_SHT45_ECRC
 #define SENSOR_BUS_STUCK (-5)
 #define SENSOR_TIMEOUT   (-6)
 int sensor_start(void);
