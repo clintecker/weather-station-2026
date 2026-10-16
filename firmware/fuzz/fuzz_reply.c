@@ -11,13 +11,17 @@
 #include "fuzz.h"
 #include "ws_frame.h"
 
-static const uint8_t KEY[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
+static const uint8_t KEY[WS_KEY_LEN] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
 static const uint8_t ACK[WS_ACK_FRAME_LEN] = {
  0x52,0x00,0x01,0x00,0x00,0x00,0x00,0x05,0x0e,0x1e,0xb4,0x54,0x47,0x66,0xf4,0xe6,0xe0,0xff,0xdb,0xb3,0xf6,0xd1,0x41,0x3d,
  0x06,0xf6,0x36,0x95,0x00,0x19,0x9b,0x8f,0xe2 };
 static const uint8_t NACK[WS_ACK_FRAME_LEN] = {
  0x53,0x00,0x01,0x00,0x00,0x00,0x00,0x06,0x84,0x9a,0xdd,0xbf,0x88,0xd9,0xaa,0xdd,0x88,0x4a,0xa3,0xbb,0x89,0x13,0x65,0x75,
  0x37,0x45,0x21,0xc5,0xe4,0x16,0xa1,0xd0,0xc9 };
+
+/* The input: station selector and raw u32, counter selector and raw u64, kind, then the plaintext. */
+enum { IN_STATION_SEL = 0, IN_STATION = 1, IN_COUNTER_SEL = 5, IN_COUNTER = 6, IN_KIND = 14, IN_PLAIN = 15 };
+#define OUT_SLACK 8   /* bytes past any frame, which must still be zeroized on a refusal */
 
 static uint64_t edge(uint8_t sel, uint64_t raw, uint64_t max)
 {
@@ -46,19 +50,19 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
  if (rc == 0) {
   FUZZ_CHECK(size == WS_ACK_FRAME_LEN);
   FUZZ_CHECK(!memcmp(data, ACK, size) || !memcmp(data, NACK, size));
-  FUZZ_CHECK(kind == (data[0] & 0x0F));
+  FUZZ_CHECK(kind == (data[0] & SPEC_KIND_MASK));
  }
 
- if (size < 16) return 0;
- uint32_t station = (uint32_t)edge(data[0], be(data + 1, 4), WS_STATION_MAX);
- uint64_t ctr = edge(data[5], be(data + 6, 8), WS_COUNTER_MAX);
- uint8_t k = (uint8_t)(data[14] % 6U);                /* 0-5: two invalid kinds */
- uint32_t plen = (uint32_t)(size - 15U);
- const uint8_t *plain = data + 15;
- uint8_t out[WS_FRAME_MAX + 8];
+ if (size <= IN_PLAIN) return 0;
+ uint32_t station = (uint32_t)edge(data[IN_STATION_SEL], be(data + IN_STATION, 4), WS_STATION_MAX);
+ uint64_t ctr = edge(data[IN_COUNTER_SEL], be(data + IN_COUNTER, 8), WS_COUNTER_MAX);
+ uint8_t k = (uint8_t)(data[IN_KIND] % (SPEC_KIND_MAX + 2U));   /* 0-5: two invalid kinds */
+ uint32_t plen = (uint32_t)(size - IN_PLAIN);
+ const uint8_t *plain = data + IN_PLAIN;
+ uint8_t out[WS_FRAME_MAX + OUT_SLACK];
  memset(out, 0xA5, sizeof out);
  int n = ws_seal_kind(KEY, station, k, ctr, plain, plen, out, (uint32_t)sizeof out);
- int valid = station >= 1 && station <= WS_STATION_MAX && ctr >= 1 && ctr <= WS_COUNTER_MAX && k >= 1 && k <= 4 &&
+ int valid = station >= 1 && station <= WS_STATION_MAX && ctr >= 1 && ctr <= WS_COUNTER_MAX && k >= 1 && k <= SPEC_KIND_MAX &&
              plen + WS_FRAME_OVERHEAD <= WS_FRAME_MAX;
  if (!valid) {
   FUZZ_CHECK(n < 0);
@@ -66,11 +70,13 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   return 0;
  }
  FUZZ_CHECK(n == (int)(plen + WS_FRAME_OVERHEAD));
- FUZZ_CHECK(out[0] == (uint8_t)(WS_FRAME_VERSION << 4 | k) && be(out + 1, 2) == station && be(out + 3, 5) == ctr);
+ FUZZ_CHECK(out[0] == SPEC_BYTE0(k) && be(out + SPEC_STATION_AT, SPEC_STATION_BYTES) == station &&
+            be(out + SPEC_COUNTER_AT, SPEC_COUNTER_BYTES) == ctr);
  if ((k == WS_KIND_ACK || k == WS_KIND_NACK) && plen == WS_REPLY_PLAIN_LEN && station == 1) {
   FUZZ_CHECK(ws_open_reply(KEY, 1, out, (uint32_t)n, &kind, &counter, &epoch, &seq, &word, &echo) == 0);
-  FUZZ_CHECK(kind == k && counter == ctr && epoch == be(plain, 4) && seq == be(plain + 4, 4) &&
-             word == be(plain + 8, 4) && echo == be(plain + 12, 5));
+  /* reply plaintext: epoch, seq, word (u32 each), echo (the counter's width) */
+  FUZZ_CHECK(kind == k && counter == ctr && epoch == be(plain, SPEC_U32) && seq == be(plain + SPEC_U32, SPEC_U32) &&
+             word == be(plain + 2 * SPEC_U32, SPEC_U32) && echo == be(plain + 3 * SPEC_U32, SPEC_COUNTER_BYTES));
  }
  return 0;
 }

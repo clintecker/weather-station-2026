@@ -9,6 +9,10 @@
 #include <string.h>
 #include "fuzz.h"
 #include "ws_obs.h"
+#include <limits.h>
+
+#define SPEC_WIND_CALM 0xFFFEU   /* section 5.3: wind direction "calm" */
+#define CAP_MAX 100U             /* buffer sizes tried: 0-99, the longest record is 78 + 22 */
 
 /* The spec's catalog (section 5.3), written out again on purpose: checking the encoder with its own
  * ws_obs_code_ok() would share any bug in it (a planted off-by-one went unnoticed that way). */
@@ -20,14 +24,14 @@ static const uint8_t spec_width[WS_FI_COUNT] = {2, 2, 2, 2, 2, 2, 3, 1, 2, 3, 4,
 
 static uint32_t spec_invalid(unsigned i)
 {
- return spec_width[i] == 4 ? 0xFFFFFFFFU : ((uint32_t)1 << (8U * spec_width[i])) - 1U;
+ return spec_width[i] >= SPEC_U32 ? UINT32_MAX : ((uint32_t)1 << (CHAR_BIT * spec_width[i])) - 1U;
 }
 
 static int spec_code_ok(unsigned i, uint32_t c)
 {
  if (c <= spec_max[i]) return 1;
  if (i == WS_FI_QUALIFIERS) return 0;
- return c == spec_invalid(i) || (i == WS_FI_WIND_DIR_DEG && c == 0xFFFEU);
+ return c == spec_invalid(i) || (i == WS_FI_WIND_DIR_DEG && c == SPEC_WIND_CALM);
 }
 
 static uint32_t take(const uint8_t **p, size_t *n, unsigned bytes)
@@ -41,14 +45,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
  const uint8_t *p = data; size_t n = size;
  ws_obs_t o; memset(&o, 0, sizeof o);
- o.epoch = take(&p, &n, 4); o.seq = take(&p, &n, 4); o.utc = take(&p, &n, 4); o.uptime = take(&p, &n, 4);
+ o.epoch = take(&p, &n, SPEC_U32); o.seq = take(&p, &n, SPEC_U32); o.utc = take(&p, &n, SPEC_U32); o.uptime = take(&p, &n, SPEC_U32);
  o.energy = (uint8_t)take(&p, &n, 1); o.cal_rev = (uint8_t)take(&p, &n, 1);
- o.bitmap = take(&p, &n, 4);
- size_t cap = take(&p, &n, 1) % 100U;
+ o.bitmap = take(&p, &n, SPEC_U32);
+ size_t cap = take(&p, &n, 1) % CAP_MAX;   /* below and above the longest record */
  for (unsigned i = 0; i < WS_FI_COUNT; i++) {
-  uint32_t sel = take(&p, &n, 1), raw = take(&p, &n, 4);
+  uint32_t sel = take(&p, &n, 1), raw = take(&p, &n, SPEC_U32);
   unsigned w = ws_obs_width(i);
-  uint32_t mask = w == 4 ? 0xFFFFFFFFU : ((uint32_t)1 << (8U * w)) - 1U;
+  uint32_t mask = w >= SPEC_U32 ? UINT32_MAX : ((uint32_t)1 << (CHAR_BIT * w)) - 1U;
   switch (sel & 3U) {
    case 0: o.code[i] = raw & mask; break;
    case 1: o.code[i] = ws_obs_invalid(i); break;
@@ -56,7 +60,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
    default: o.code[i] = (sel & 4U) ? WS_WIND_DIR_CALM : raw; break;
   }
  }
- uint8_t out[128];
+ uint8_t out[CAP_MAX];
  int got = ws_obs_encode(&o, out, cap);
 
  /* Independent statement of the rules. */
@@ -73,11 +77,13 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
  FUZZ_CHECK((size_t)got == WS_OBS_PLAIN_LEN(o.bitmap));
  const uint8_t *h = out; size_t hl = WS_OBS_HEAD_LEN;
- FUZZ_CHECK(take(&h, &hl, 4) == o.epoch && take(&h, &hl, 4) == o.seq && take(&h, &hl, 4) == o.utc &&
-            take(&h, &hl, 4) == o.uptime);
- FUZZ_CHECK((out[16] & 1U) == (o.utc != 0) && (out[16] >> 1) == o.energy && out[17] == o.cal_rev);
- h = out + 18; hl = 4;
- FUZZ_CHECK(take(&h, &hl, 4) == o.bitmap);
+ FUZZ_CHECK(take(&h, &hl, SPEC_U32) == o.epoch && take(&h, &hl, SPEC_U32) == o.seq && take(&h, &hl, SPEC_U32) == o.utc &&
+            take(&h, &hl, SPEC_U32) == o.uptime);
+ uint8_t flags = out[SPEC_OBS_FLAGS_AT];
+ FUZZ_CHECK((flags & SPEC_OBS_FLAG_UTC) == (o.utc != 0) && (flags >> SPEC_OBS_ENERGY_SHIFT) == o.energy &&
+            out[SPEC_OBS_CAL_AT] == o.cal_rev);
+ h = out + SPEC_OBS_BITMAP_AT; hl = SPEC_U32;
+ FUZZ_CHECK(take(&h, &hl, SPEC_U32) == o.bitmap);
  const uint8_t *q = out + WS_OBS_HEAD_LEN; size_t left = (size_t)got - WS_OBS_HEAD_LEN;
  for (unsigned i = 0; i < WS_FI_COUNT; i++)
   if (o.bitmap & WS_F(i)) FUZZ_CHECK(take(&q, &left, spec_width[i]) == o.code[i]);
