@@ -510,6 +510,30 @@ class TxStateMachine(unittest.TestCase):
                 self.assertEqual(n.lib.h_flash_ops_during_radio(), 0)
                 self.assertEqual(n.status()['pending'], '0')
 
+    def test_a_refused_counter_reservation_still_reports_the_answers(self):
+        # The live reading is answered, then the next frame's counter reservation (a flash write
+        # every CTR_BLOCK counters) is refused. The exchange ends at once, but the policy must still
+        # see the answer: the link counts the minute as answered.
+        def answer_then_fail(n):
+            n.reply()
+            n.lib.h_flash_prog_fails(1)
+        refused = 0
+        for j in range(8):
+            with self.subTest(before_boundary=j):
+                n = self.node()
+                n.lib.h_burn(ctr_block() - j)
+                n.advance_to(minute(2) - 1000)         # two unanswered minutes: silent=2, a backlog of two
+                n.out()
+                mark = len(n.log)
+                n.serve(MINUTE_MS - 2000, answer=lambda h: answer_then_fail if h['sequence'] == 2 else None)
+                n.lib.h_flash_prog_fails(0)
+                n.out()
+                if '#error counter-reserve' not in n.log[mark:]:
+                    continue
+                refused += 1
+                self.assertEqual(n.status()['silent'], '0')
+        self.assertGreater(refused, 0, 'no position of the counter boundary hit the refusal')
+
     def test_flash_commands_wait_for_the_radio_exchange(self):
         n = self.node()
         self.window(n)
@@ -626,8 +650,12 @@ class TxStateMachine(unittest.TestCase):
                     n.lib.h_tx_timeout()
                 t = n.status()
                 self.assertEqual((t['state'], n.radio(), t['tx_air_run']), ('idle', R_SLEEP, '1'))
-                n.advance(MINUTE_MS)                   # the next minute runs normally
+                start = n.sent()
+                n.serve(MINUTE_MS + 5000)              # the next minute runs normally
                 self.assertEqual(n.status()['unexpected'], '0')
+                # A refused report is still due and goes with the next exchange; one that went on
+                # air (and timed out) is not repeated.
+                self.assertEqual(len(n.sends(start, KIND_DIAG)), 1 if fail == 'send' else 0)
 
     def test_a_health_report_that_leaves_clears_the_transmit_failure_run(self):
         n = self.node()

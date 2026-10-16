@@ -438,14 +438,15 @@ static int in_gap(uint32_t ev)
 | journal read or length check failed | `#error journal-read` | next item, after a gap |
 | `send_obs` returns 1 | | `sending` |
 | `send_obs` returns 0 (seal failed, radio refused) | its own `#error` | next item, after a gap |
-| `send_obs` returns -1 (counter refused) | `#error counter-reserve` | `idle` at once |
+| `send_obs` returns -1 (counter refused) | `#error counter-reserve` | the policy sees the replies so far, then `idle` at once (no health report: it needs a counter too) |
 
 A local failure does not count as a missed reply and does not change the drain. The `WS_CHECK` on
 `qi < qn` guards an index: `gap_before(GAP_FRAME)` is only called while an item is left.
 
 ```c {#send-current}
 /* Send queue[qi]. A local failure (journal read, seal, radio busy) moves on to the next item after
- * a gap, like a sent frame; a refused counter reservation ends the exchange. */
+ * a gap, like a sent frame; a refused counter reservation ends the exchange, after the policy has seen
+ * the replies so far (test_a_refused_counter_reservation_still_reports_the_answers). */
 static void send_current(void)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX];
@@ -453,7 +454,7 @@ static void send_current(void)
   if (!WS_CHECK(qi < qn)) { finish_exchange(); return; }   /* gap_before(GAP_FRAME) comes only with an item left */
   if (store_journal_read(queue[qi], plain) || (plen = ws_obs_plain_len(plain, sizeof plain)) < 0) { APP_PRINTF("#error journal-read\n"); }
   else rc = send_obs(plain, plen);
-  if (rc < 0) radio_idle();
+  if (rc < 0) { policy_exchange_end(queue, replied, qn); radio_idle(); }
   else if (rc == 0) next_item();
 }
 ```
@@ -761,11 +762,13 @@ the reset cause, the link state, the fault count, the energy state and the last 
 
 | Step | Failure |
 |---|---|
-| reserve a counter | return 0 |
+| reserve a counter | note a transmit failure, return 0 |
 | seal (`WS_CHECK`) | return 0 |
-| `policy_diag_sent(now)`: the report is no longer due | |
 | `ws_radio_send` | note a transmit failure, return 0 |
+| `policy_diag_sent(now)`: the report is no longer due | |
 | enter `diag-sending`, print `#diag sent`, return 1 | |
+
+A report that failed at any step stays due, so the next minute's exchange tries again.
 
 A return of 0 ends the exchange (`in_gap`).
 
@@ -786,10 +789,10 @@ static int send_diag(void)
                   .crashes = (uint8_t)(crashes > UINT8_MAX ? UINT8_MAX : crashes), .energy = (uint8_t)energy_state(),
                   .rssi = ack_rssi, .snr = ack_snr };
   ws_diag_pack(&d, plain);
-  if (store_next_counter(&ctr) ||
-      !WS_CHECK(ws_seal_kind(key, identity.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) >= 0)) return 0;
-  policy_diag_sent(now);
+  if (store_next_counter(&ctr)) { ws_failrun_note(&tx_counts.air, 0); return 0; }
+  if (!WS_CHECK(ws_seal_kind(key, identity.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) >= 0)) return 0;
   if (ws_radio_send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_counts.air, 0); return 0; }
+  policy_diag_sent(now);   /* only a report the radio took: a refused one is due again next minute */
   tx_state = TX_DIAG_SENDING;
   APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u\n", d.pending, (unsigned)d.lost, d.torn, d.abandoned, d.no_ack);
   return 1;

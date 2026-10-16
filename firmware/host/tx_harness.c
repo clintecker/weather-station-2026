@@ -133,9 +133,10 @@ static const sim_source radio_source = { radio_pending, radio_fire, SIM_IRQ_SUBG
 /* ---- flash: the real node_store.c over sim_flash, with the radio-idle check ---- */
 static sim_flash S;
 static uint32_t flash_ops_during_radio, flash_erases;
+static int prog_fails;   /* h_flash_prog_fails: every program is refused like a HAL error */
 static void check_radio_idle(void) { if (radio_state == R_TX || radio_state == R_RX) flash_ops_during_radio++; }
 int ws_flash_read64(uint32_t a, uint64_t *v) { return sim_flash_read64(&S, a, v); }
-int ws_flash_prog64(uint32_t a, uint64_t v) { check_radio_idle(); return sim_flash_prog64(&S, a, v); }
+int ws_flash_prog64(uint32_t a, uint64_t v) { check_radio_idle(); return prog_fails ? -1 : sim_flash_prog64(&S, a, v); }
 int ws_flash_erase(uint32_t p) { check_radio_idle(); flash_erases++; return sim_flash_erase(&S, p); }
 
 /* ---- the USB console: the test hands over whole lines (h_line) ---- */
@@ -192,6 +193,7 @@ uint32_t h_flash_erases(void) { return flash_erases; }
 int h_sensor_starts(void) { return sensor_starts; }
 void h_sensor(int rc, int hang) { sensor_rc = rc; sensor_hang = hang; }
 void h_radio_send_fails(int n) { radio_send_fails = n; }
+void h_flash_prog_fails(int on) { prog_fails = on; }
 void h_radio_hang(int on) { radio_hang = on; }
 /* Hold the main loop: interrupts (timers, radio callbacks) still post, nothing runs until released. */
 void h_hold(int on) { sim_set_hold(on); sim_run_tasks(); }
