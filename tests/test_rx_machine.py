@@ -577,6 +577,18 @@ class RxStateMachine(unittest.TestCase):
         b.advance(ALIVE_MS)
         self.assertIn('#relisten after 999 s', b.out())
 
+    def test_a_frame_with_a_kind_above_7_is_not_an_observation(self):
+        # The kind is the low nibble: 0x59 is kind 9, not kind 1 (a 3-bit mask would read it as an
+        # observation and forward it).
+        b = self.bridge(drops_ok=True)
+        b.out()
+        f = bytearray(self.obs(b))
+        f[0] = (b.version << 4) | 9
+        b.rx(bytes(f))
+        out = b.out()
+        self.assertIn('#rx drop', out)
+        self.assertNotIn(bytes(f).hex(), out)
+
     # ---- watchdog health ----
     def test_transmitting_more_than_5_s_is_unhealthy(self):
         b = self.bridge()
@@ -591,6 +603,15 @@ class RxStateMachine(unittest.TestCase):
         b.advance(9000)
         self.assertGreaterEqual(b.lib.h_wd_unhealthy(), 8)
         self.assertEqual(b.lib.h_wd_resets(), 1)
+
+    def test_console_output_stalled_for_three_checks_is_unhealthy(self):
+        b = self.bridge()
+        b.out()
+        b.lib.h_tx_stall(1)                                 # a trace DMA transfer started and never finished
+        b.advance(2000)                                     # two watchdog checks: still healthy
+        self.assertEqual(b.lib.h_wd_unhealthy(), 0)
+        b.advance(1000)                                     # the third
+        self.assertEqual(b.lib.h_wd_unhealthy(), 1)
 
     def test_console_not_armed_is_rearmed_once_then_unhealthy(self):
         b = self.bridge()

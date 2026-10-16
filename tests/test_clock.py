@@ -79,6 +79,28 @@ class ClockTests(unittest.TestCase):
         self.assertLess(abs(offset), 0.05)
         self.assertLess(rtt, 0.05)
 
+    def test_offset_uses_the_receive_and_the_transmit_timestamps(self):
+        # RFC 5905: offset = ((t2 - t1) + (t3 - t4)) / 2 with t2 at byte 32 and t3 at byte 40.
+        import struct, time
+        from unittest.mock import patch
+        from ws0 import clock as clockmod
+        def ntp(t):
+            t += clockmod.NTP_EPOCH
+            return struct.pack('>II', int(t), int((t % 1) * 2**32))
+        class FakeSocket:
+            def __init__(self, *a): pass
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def settimeout(self, t): pass
+            def sendto(self, data, addr): pass
+            def recvfrom(self, n):
+                now = time.time()   # the server is 10 s ahead and holds the request for 0.4 s
+                return bytes([0x24, 2]) + bytes(30) + ntp(now + 10.0) + ntp(now + 10.4), None
+        with patch.object(clockmod.socket, 'getaddrinfo', return_value=[(0, 0, 0, '', ('192.0.2.1', 123))]), \
+             patch.object(clockmod.socket, 'socket', FakeSocket):
+            offset, _ = clockmod.sntp_offset('pool.example')
+        self.assertAlmostEqual(offset, 10.2, delta=0.05)
+
     def test_thread_loop_survives_unexpected_errors(self):
         """A measurement that raises something other than OSError/ValueError, or a log
         callback that fails, must not end the checking loop."""

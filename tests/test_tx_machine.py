@@ -577,6 +577,18 @@ class TxStateMachine(unittest.TestCase):
         self.assertEqual(run(lambda h: KIND_ACK if h['sequence'] == 2 else None), [2, 0, 1])   # one more after seq 0's miss
         self.assertEqual(run(lambda h: None), [2, 0])                                          # two misses in a row: stop
 
+    def test_after_a_miss_only_one_more_frame_goes_even_if_it_is_answered(self):
+        n = self.node()
+        n.advance_to(minute(2) - 1000)             # seq 0 and 1 pending
+        n.serve(MINUTE_MS, answer=lambda h: KIND_ACK if h['sequence'] == 2 else None)   # live 2 answered: linked
+        n.advance_to(minute(4) - 1000)             # minute 3 unanswered: seq 0, 1 and 3 pending, still linked
+        n.out()
+        mark = len(n.log)
+        n.serve(MINUTE_MS - 2000, answer=lambda h: None if h['sequence'] == 0 else KIND_ACK)
+        n.out()
+        sent = [int(q) for q in re.findall(r'#ack (?:none )?epoch=\d+ seq=(\d+)', n.log[mark:])]
+        self.assertEqual(sent, [4, 0, 1])          # seq 3 waits for the next minute
+
     def test_a_transmit_timeout_stops_the_drain(self):
         n = self.node()
         n.advance_to(minute(2) + 5)
