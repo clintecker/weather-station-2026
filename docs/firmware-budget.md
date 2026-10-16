@@ -1,7 +1,7 @@
 # Firmware budget: flash, RAM, CPU and radio
 
-Sizes in the summary, the stack table and the radio section were measured 2026-10-14 on release
-`bc5e6ede429c` (protocol draft 5). Older rows say which release they were measured on
+The summary's flash and RAM figures were measured 2026-10-16 on master (`f26bc3b`, after release
+`809230951ae1`); the stack table and the radio section on release `bc5e6ede429c` (2026-10-14, protocol draft 5). Older rows say which release they were measured on
 (`firmware/stage0-node/RELEASES.md`). Measured numbers come from the build (`arm-none-eabi-size`, the linker map) or from the firmware's own
 airtime formula. Rows marked **estimate** are planning figures for future features, not
 measurements.
@@ -10,23 +10,22 @@ measurements.
 
 | Resource | Available | Used now | Status |
 |---|---|---|---|
-| Flash, application region | 64 KB (pages 0–31, enforced by the linker script) | TX 51,080 B (77.9 %), RX 31,792 B (48.5 %) (unreleased tree, 2026-10-14) | **TX is the constraint**: 14,456 B left, 7,902 B below the 90 % guard |
-| Flash, node state | 192 KB (pages 32–127) | key 1 page, meta log 2 pages, journal 93 pages (3,906 slots of 48 B for the T/RH build, about 2.7 days) | Pages fixed by `App/flash_layout.h`; slot size follows `App/node_fields.h` |
-| RAM | 64 KB (RAM1 32 KB + RAM2 32 KB) | TX: about 4.1 KB static data + 8 KB reserved stack + 0.5 KB heap, all in RAM1 (working tree after the stack work below) | Ample; RAM2 unused |
+| Flash, application region | 64 KB (pages 0–31, enforced by the linker script) | TX 58,240 B (88.9 %), RX 34,840 B (53.2 %) | **TX is the constraint**: 7,296 B left, 742 B below the 90 % guard |
+| Flash, node state | 192 KB (pages 32–127) | key 1 page, meta log 2 pages, journal 93 pages (3,348 slots of 56 B for the T/RH build with the minute summary, about 2.3 days) | Pages fixed by `App/flash_layout.h`; slot size follows `App/node_fields.h` |
+| RAM | 64 KB (RAM1 32 KB + RAM2 32 KB) | TX: about 6.0 KB static data + 8 KB reserved stack + 0.5 KB heap, all in RAM1; worst-case stack estimate 5,784 B of 8,192 B (71 %) | Ample; RAM2 unused |
 | CPU | Cortex-M4 at 48 MHz (Cortex-M0+ core unused) | One sample and a few frames per minute | No constraint |
-| Radio payload | 26-byte observation plaintext in a 42-byte frame (T/RH); the draft-5 catalog allows up to 69 B in an 85-byte frame | Temperature and humidity only | No longer the limit: every catalog field fits in one frame (section below) |
+| Radio payload | 35-byte observation plaintext in a 51-byte frame (T/RH with the minute summary); the draft-5 catalog allows up to 78 B in a 94-byte frame | Temperature and humidity only | No longer the limit: every catalog field fits in one frame (section below) |
 
 Sources: `firmware/board/nucleo-wl55jc/STM32WL55JCIX_FLASH.ld` (shared by every NUCLEO project; FLASH 64K, RAM1/RAM2 32K each, heap 0x200, stack 0x2000 since the stack work below; 0x800 before),
 `App/flash_layout.h`, `firmware/common/ws_frame.h` (`WS_HEADER_LEN 8`, `WS_TAG_LEN 8`), `firmware/common/ws_obs.h` and
-`App/node_fields.h` (`WS_OBS_PLAIN_MAX` = 26 for T/RH).
+`App/node_fields.h` (`WS_OBS_PLAIN_MAX` = 35 for T/RH with the minute summary).
 
 The build enforces a budget: `make` prints `flash budget: N of 65536 B` and fails above
 `FLASH_BUDGET_PCT` (default 90 %) of the application region (`firmware/stage0-node/Makefile`).
 
-**Pending, not yet released (2026-10-14):** 15-s T/RH sampling with a minute summary (catalog fields
-21–25, `ws_th_*` in `firmware/stage0.c`) adds 632 B: TX 54,384 B (83.0 %). The observation grows to
-35 B plaintext / 51 B on air (25.7 ms at SF7, 534.5 ms at SF12), so journal slots become 56 B:
-36 per page, 3,348 records, about 2.3 days of outage buffer.
+The 15-s T/RH sampling with a minute summary (catalog fields 21–25, `ws_th_*` in `firmware/stage0.c`)
+is in the build: a 35 B plaintext, 51 B on air (25.7 ms at SF7, 534.5 ms at SF12), 56-byte journal
+slots.
 
 **Efficiency review, unreleased (2026-10-14), TX 54,832 → 51,080 B (−3,752 B):** AES without the
 decrypt direction (`MBEDTLS_BLOCK_CIPHER_NO_DECRYPT`, −2,208 B; CCM and the key check value only

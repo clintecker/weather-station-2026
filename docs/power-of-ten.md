@@ -10,7 +10,7 @@ and `.h`, and our edits in the ST-generated board files (`Core/Src/stm32wlxx_it.
 `vendor/` (ST's HAL, SubGHz_Phy, utilities; Mbed TLS), not the rest of the ST-generated board code
 (`firmware/board/nucleo-wl55jc`), not the host harnesses and test programs (`firmware/host`,
 `firmware/test_*.c`, `firmware/fuzz`), which run on the PC and may allocate, recurse or `longjmp`.
-Size of the scope: 26 C files, 275 functions (lizard), about 2,600 lines of code.
+Size of the scope: 26 C files, 320 functions (lizard, headers included), 2,146 lines of code (lizard NLOC).
 
 ## Summary
 
@@ -20,7 +20,7 @@ Size of the scope: 26 C files, 275 functions (lizard), about 2,600 lines of code
 | 2 | A fixed upper bound on every loop | **Complies with documented deviations** (2 deliberate hangs) | `tools/loop_bounds.py` (in `tools/code_shape.sh`, CI host job) |
 | 3 | No dynamic allocation after initialisation | **Complies** (none at all) | The link fails if an allocator is linked (`NO_HEAP=1`, CI firmware job); `-Wvla -Walloca` |
 | 4 | No function longer than 60 lines | **Complies** (also CCN ≤ 10) | `tools/code_shape.sh` (lizard), CI host job |
-| 5 | Assertions: at least two per function, with an explicit recovery | **Partial**: a check facility with a defined recovery, 35 sites (0.13 per function, below the target; argued below) | Every host harness test requires zero failed checks; tests make checks fail on purpose |
+| 5 | Assertions: at least two per function, with an explicit recovery | **Partial**: a check facility with a defined recovery, 36 sites (0.11 per function, below the target; argued below) | Every host harness test requires zero failed checks; tests make checks fail on purpose |
 | 6 | Data at the smallest possible scope | **Complies** (one shared variable left, set by an interrupt) | Review; `-Wmissing-declarations`, `-Wredundant-decls`, cppcheck `variableScope` |
 | 7 | Check every non-void result; check parameters | **Complies with documented deviations** (`memcpy`/`memset`, `APP_PRINTF`, ST's void radio API) | `(void)` casts with reasons; `WS_CHECK` at module boundaries; review |
 | 8 | Preprocessor: includes and simple macros only | **Complies with documented deviations** (an X-macro catalog, one token-pasting wrapper, `__LINE__` in `WS_CHECK`, 6 conditional-compilation switches) | Review; `-Wundef`, `-Wunused-macros` |
@@ -92,11 +92,11 @@ layer, which `calloc`'d a context for every seal and open (`common/ws_mbedtls_co
 
 **Complies.** `tools/code_shape.sh` runs lizard with `-L 60` (lines per function) and `-C 10`
 (cyclomatic complexity, stricter than the rule asks) over the scope and the host harnesses, and
-jscpd (no copied code). CI host job. The 275 functions average 6.9 lines and CCN 3.2.
+jscpd (no copied code). CI host job. The 320 functions average 6.7 lines and CCN 3.0.
 
 ## Rule 5: assertions with an explicit recovery
 
-**Partial: the facility, its reporting and its tests comply; the density (0.13 per function) is far
+**Partial: the facility, its reporting and its tests comply; the density (0.11 per function) is far
 below Holzmann's 2 per function, deliberately.**
 
 **The facility** (`firmware/common/ws_check.h`, `ws_check.c`): `WS_CHECK(cond)` is an expression, 1
@@ -115,12 +115,12 @@ cut) is not checked with `WS_CHECK`: it is validated, and its failures are norma
 own counters (`ack_rejects`, `#rx drop`, `#host reject`, `burned`, `#error journal-read`). That code is
 plentiful and already "an assertion with a recovery" in Holzmann's sense, but it is not counted here.
 
-**The 35 sites** (34 in TX, 6 in RX; some files are in both), by kind:
+**The 36 sites** (35 in TX, 7 in RX; some files are in both), by kind:
 
 | Kind | Sites (file, function) | Recovery |
 |---|---|---|
 | State-machine preconditions | `tx_exchange.c`: `exchange_start` (no exchange running), `handle` (an unknown state is idle), `process` (only `EV_*` bits); `sensor.c` `sensor_task` (posted only in `S_DONE`/`S_RECOVERED`) | refuse the start / back to idle / drop the stray bits / nothing to do |
-| Index and length bounds before a buffer is used | `tx_exchange.c` `send_current` (`qi < qn`), `mark_replied` (`qi`), `exchange_start` (backlog fits the queue); `tx_policy.c` `policy_exchange_end` (`n` fits `struck[]`); `app_tx.c` `held_count`; `node_store.c` `store_journal_read`/`_ack` (the ref is a journal slot, before it indexes the pending bitmap); `busymon.c` `busymon_end` (`kind`); `console.c` `hex_print` (frame length); `ws_policy.c` `ws_strike_note` (table size), `ws_link_probe_interval` (`probe_step`) | end the exchange / skip the write / clamp / refuse (-1) |
+| Index and length bounds before a buffer is used | `tx_exchange.c` `send_current` (`qi < qn`), `mark_replied` (`qi`), `exchange_start` (backlog fits the queue); `tx_policy.c` `policy_exchange_end` (`n` fits `struck[]`); `app_tx.c` `held_count`; `node_store.c` `store_journal_read`/`_ack` (the ref is a journal slot, before it indexes the pending bitmap); `busymon.c` `busymon_end` (`kind`), `busymon_isr_exit` (an exit has its enter); `console.c` `hex_print` (frame length); `ws_policy.c` `ws_strike_note` (table size), `ws_link_probe_interval` (`probe_step`) | end the exchange / skip the write / clamp / refuse (-1) |
 | Flash writes stay in the node-state pages | `node_store.c` `prog64`, `erase_page`: every program and erase lies inside pages 32–127 (never the firmware) and is double-word aligned | refused like a failed flash operation, which every caller already handles |
 | Our own data must encode or seal | `app_tx.c` `minute_report` (`ws_obs_encode`); `tx_exchange.c` `send_obs`, `send_diag` (`ws_seal_kind` with a provisioned station and a reserved counter) | `journal=ERROR` / the item is skipped, as for a local send failure |
 | ST timer starts that must not be refused | `tx_exchange.c` gap and ACK-window timers; `sensor.c` guard, measurement and step timers; `tx_console.c` reboot timer; `app_rx.c` `#alive` timer; `watchdog.c` check timer. ST refuses a start only for a running timer | its event still comes from the running timer; the reboot timer resets at once instead |
@@ -137,17 +137,17 @@ and the site), RX (the console receive does not start at boot; one re-arm, the d
 refused, counted, the pending set untouched) and the facility itself (`tests/test_check.py`).
 
 **Why the density is lower than 2 per function, and should be:**
-- Cost. A check costs 12–20 B of flash. TX is at 88.1 % of its 64 KB region against a hard 90 % limit
-  (1,238 B left). The 35 sites cost 664 B with the facility and its reporting; Holzmann's density over TX's 255
-  functions would be about 500 checks, roughly 8 KB, which does not fit.
-- Most of the 275 functions are too small to have an invariant worth a run-time check: one-line
-  accessors, timer and radio callbacks that post an event bit, the timed task wrappers. 161 functions
-  are non-trivial (CCN ≥ 3 or ≥ 8 lines); 26 of them hold a check, and they are the ones that index
+- Cost. A check costs 12–20 B of flash. TX is at 88.9 % of its 64 KB region against a hard 90 % limit
+  (742 B left). The sites cost about 660 B with the facility and its reporting (measured at 35 sites);
+  Holzmann's density over TX's 287 functions would be about 570 checks, roughly 9 KB, which does not fit.
+- Most of the 320 functions are too small to have an invariant worth a run-time check: one-line
+  accessors, timer and radio callbacks that post an event bit, the timed task wrappers. 170 functions
+  are non-trivial (CCN ≥ 3 or ≥ 8 lines); 29 of them hold a check, and they are the ones that index
   arrays, write flash or move a state machine.
 - The portable pure code (`ws_frame.c`, `ws_obs.c`, `ws_console.c`, `stage0.c`) validates every input
   and returns an error: that is its recovery, it is fuzzed (`firmware/fuzz`, libFuzzer in CI) and unit
   tested, and a `WS_CHECK` there would count legitimate bad input as bugs.
-- Many invariants are checked where checking costs no flash: 20 `_Static_assert`s (layouts, table
+- Many invariants are checked where checking costs no flash: 25 `_Static_assert`s (layouts, table
   sizes, the journal geometry), and the host harnesses' per-step invariants (no flash write while the
   radio is busy, no radio command with its interrupt unmasked, no refused timer start, no task that
   never settles, no interrupt mask left set), which run the real firmware C on every test.
