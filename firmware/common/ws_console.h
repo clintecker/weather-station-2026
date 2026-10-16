@@ -23,6 +23,16 @@ static inline int ws_hex_nibble(char c)
  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
  return -1;
 }
+#define WS_HEX_DIGIT_BITS 4
+#define WS_HEX_DIGIT_MASK 0x0FU
+#define WS_HEX_PER_BYTE 2     /* hex digits per byte */
+/* The byte two hex digits spell, or -1. The second digit is read only when the first is a digit, so
+   a NUL ends the parse before the byte after it is read. */
+static inline int ws_hex_byte(const char *p)
+{
+ int hi = ws_hex_nibble(p[0]), lo = hi < 0 ? -1 : ws_hex_nibble(p[1]);
+ return lo < 0 ? -1 : hi << WS_HEX_DIGIT_BITS | lo;
+}
 /* Hex text to bytes: byte count, or -1 on odd length, a non-hex digit, or more than max bytes. */
 int ws_hex_decode(const char *text, uint8_t *out, int max);
 /* Bytes to lowercase hex: writes 2n digits and a NUL to text (room for 2n + 1); n < 0 counts as 0. */

@@ -2,6 +2,7 @@
 #define WS_STAGE0_H
 #include <stdint.h>
 #include <stddef.h>
+#include "common/ws_frame.h"   /* WS_KEY_LEN, WS_STATION_MAX */
 /* Portable core; board HAL, flash journal, AES-CCM and RF remain integration work. */
 /* SHT45 (SHT4x datasheet, Table 4: high repeatability 6.9 ms typ, 8.3 ms max): write
    WS_SHT45_MEASURE to WS_SHT45_ADDR, wait WS_SHT45_MEASURE_MS, then read WS_SHT45_REPLY_LEN bytes.
@@ -12,7 +13,14 @@
 #define WS_SHT45_ADDR       0x44
 #define WS_SHT45_MEASURE    0xfd
 #define WS_SHT45_MEASURE_MS 11
-#define WS_SHT45_REPLY_LEN  6
+#define WS_SHT45_WORD_LEN   2   /* the reply: T word, its CRC, RH word, its CRC */
+#define WS_SHT45_REPLY_LEN  (2 * (WS_SHT45_WORD_LEN + 1))
+/* Conversion (SHT4x datasheet section 4.6), in 0.01 units: T = -45 + 175 * raw / (2^16 - 1) C,
+   RH = -6 + 125 * raw / (2^16 - 1) %. */
+#define WS_SHT45_T_OFFSET_CENTI  (-4500)
+#define WS_SHT45_T_SPAN_CENTI    17500
+#define WS_SHT45_RH_OFFSET_CENTI (-600)
+#define WS_SHT45_RH_SPAN_CENTI   12500
 int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN], int16_t *centi_c, uint16_t *centi_rh);
 uint8_t ws_crc8(const uint8_t *, size_t);
 /* One minute of 15-s T/RH samples (PRD section 9: coverage, mean and extrema). Samples whose
@@ -39,8 +47,9 @@ typedef struct {
    then step and wait while it returns 1; it ends with 0 (bus free) or -1. ws_i2c_recover runs
    it with wait_us between steps (host tests). */
 #define WS_I2C_HALF_US 5   /* 100 kHz */
-/* Steps of one recovery, the last included: 9 clock pulses of 2 steps, the STOP's 4, the result. */
-#define WS_I2C_RECOVER_STEPS 23
+#define WS_I2C_RECOVER_PULSES 9   /* enough to clock out any byte a slave was sending (UM10204) */
+/* Steps of one recovery, the last included: each clock pulse is 2 steps, the STOP 4, the result 1. */
+#define WS_I2C_RECOVER_STEPS (2 * WS_I2C_RECOVER_PULSES + 4 + 1)
 typedef struct { uint8_t phase, pulses, held; } ws_i2c_rec;
 void ws_i2c_recover_begin(ws_i2c_rec *, const ws_i2c_pins *);
 int ws_i2c_recover_step(ws_i2c_rec *, const ws_i2c_pins *);
@@ -63,7 +72,7 @@ int ws_failrun_tripped(const ws_failrun *, uint32_t limit);
    the RX role, which does not link stage0.c, can use it. */
 static inline int ws_silent_for(uint32_t now_ms, uint32_t last_ms, uint32_t limit_ms)
 { return (uint32_t)(now_ms - last_ms) > limit_ms; }
-int ws_parse_provision(const char *args, uint32_t *station, uint8_t key[16], uint32_t *epoch_floor);
+int ws_parse_provision(const char *args, uint32_t *station, uint8_t key[WS_KEY_LEN], uint32_t *epoch_floor);
 /* Run-time stack monitor: unused stack is filled with WS_STACK_PAINT at boot; the peak is the
    distance from the stack top down to the lowest word that no longer holds the paint. lo..top is
    the painted range (lo = lowest address). Inline so both roles can use it. */

@@ -21,7 +21,7 @@ int ws_line_feed(ws_line_asm *a, uint8_t c, char out[WS_LINE_MAX + 1])
  /* An over-long line, or one with a byte outside printable ASCII (a NUL would end the C string
     early: "ACKHEX\0junk" must not decode as an ACK), is discarded whole. */
  if (a->overflow) return 0;
- if (a->len >= WS_LINE_MAX || c < 0x20 || c > 0x7e) { ws_line_discard(a); return 0; }
+ if (a->len >= WS_LINE_MAX || c < ' ' || c > '~') { ws_line_discard(a); return 0; }   /* printable ASCII only */
  a->buf[a->len++] = (char)c;
  return 0;
 }
@@ -47,8 +47,11 @@ int ws_cmd_find(const char *const names[], unsigned n, const char *line)
 void ws_hex_text(const uint8_t *data, int n, char *text)
 {
  static const char digits[] = "0123456789abcdef";
- for (int i = 0; i < n; i++) { text[2 * i] = digits[data[i] >> 4]; text[2 * i + 1] = digits[data[i] & 15]; }
- text[n > 0 ? 2 * n : 0] = 0;
+ for (int i = 0; i < n; i++, text += WS_HEX_PER_BYTE) {
+  text[0] = digits[data[i] >> WS_HEX_DIGIT_BITS];
+  text[1] = digits[data[i] & WS_HEX_DIGIT_MASK];
+ }
+ *text = 0;
 }
 
 int ws_hex_decode(const char *text, uint8_t *out, int max)
@@ -56,10 +59,10 @@ int ws_hex_decode(const char *text, uint8_t *out, int max)
  int n = 0;
  /* bound: at most max + 1 passes: each one stores a byte or returns */
  while (text[0] && text[1]) {
-  int hi = ws_hex_nibble(text[0]), lo = ws_hex_nibble(text[1]);
-  if (hi < 0 || lo < 0 || n >= max) return -1;
-  out[n++] = (uint8_t)(hi << 4 | lo);
-  text += 2;
+  int b = ws_hex_byte(text);
+  if (b < 0 || n >= max) return -1;
+  out[n++] = (uint8_t)b;
+  text += WS_HEX_PER_BYTE;
  }
  return text[0] ? -1 : n;
 }
