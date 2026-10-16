@@ -3,18 +3,33 @@
 #include <stdint.h>
 #include "flash_layout.h"
 #include "node_fields.h"
+#include "ws_frame.h"
 /* Durable TX node state in internal flash: provisioning, monotonic counters, journal.
  * All flash access goes through the ws_flash_* primitives (flash_layout.h). Mutators of the monotonic
  * values need a successful store_meta_init; journal mutators also need store_journal_init
  * (and a fresh one after store_wipe). Before that they return STORE_ENOTREADY and touch
  * nothing. */
-#define STORE_ENOTREADY (-16)
+/* Return codes: 0 on success, a negative STORE_E* on failure. Callers test for nonzero; the value
+ * is printed in #error lines. */
+enum {
+ STORE_OK = 0,
+ STORE_EFLASH = -1,      /* a program or erase failed, or an address outside the node pages was refused */
+ STORE_ENODATA = -2,     /* no valid record: erased, unreadable, or not committed; or not found */
+ STORE_EKEY = -3,        /* the key check value cannot be computed, or the stored one does not match */
+ STORE_ERANGE = -4,      /* station id outside 1..WS_STATION_MAX, or a meta value over 56 bits */
+ STORE_EEXISTS = -5,     /* the provisioning page is not erased: WIPE first */
+ STORE_EEXHAUSTED = -6,  /* no epoch or counter left */
+ STORE_EINVAL = -7,      /* a jref_t this file did not issue (WS_CHECK records the site) */
+ STORE_ENOTREADY = -16,  /* init has not succeeded */
+};
+/* store_next_epoch never returns this epoch: the bench storm test (TEST-FLASH-STORM) uses it. */
+#define STORE_EPOCH_RESERVED UINT32_MAX
 
 /* Provisioning */
 /* 0 if provisioned and intact; then also the key check value (ws_key_check), verified against the
    stored one. On failure key is zeroed and kcv is untouched. */
-int store_config_load(uint32_t *station, uint8_t key[16], uint8_t kcv[3]);
-int store_config_write(uint32_t station, const uint8_t key[16], uint8_t kcv[3]);   /* kcv: out, the key check value */
+int store_config_load(uint32_t *station, uint8_t key[WS_KEY_LEN], uint8_t kcv[WS_KCV_LEN]);
+int store_config_write(uint32_t station, const uint8_t key[WS_KEY_LEN], uint8_t kcv[WS_KCV_LEN]);   /* kcv: out, the key check value */
 int store_wipe(void); /* erases config (key) and journal; counters and epoch are kept (G17) */
 
 /* Monotonic values. Each call durably reserves before returning; never repeats. */
@@ -29,9 +44,10 @@ uint32_t store_abandoned_total(void);
  * authenticated ACK. A slot is the plaintext rounded up to double-words, a commit double-word
  * (magic + CRC) and an ACK double-word; a page is an 8-byte header plus its slots. */
 typedef struct { uint16_t page; uint16_t slot; } jref_t;
-#define JOURNAL_PLAIN_DW ((WS_OBS_PLAIN_MAX + 7U) / 8U)
-#define JOURNAL_SLOT_BYTES ((JOURNAL_PLAIN_DW + 2U) * 8U)
-#define JOURNAL_SLOTS_PER_PAGE ((WS_PAGE_SIZE - 8U) / JOURNAL_SLOT_BYTES)
+#define JOURNAL_HDR_BYTES WS_DW_BYTES   /* page header: magic | slot size, sequence */
+#define JOURNAL_PLAIN_DW ((WS_OBS_PLAIN_MAX + WS_DW_BYTES - 1U) / WS_DW_BYTES)
+#define JOURNAL_SLOT_BYTES ((JOURNAL_PLAIN_DW + 2U) * WS_DW_BYTES)   /* + commit and ACK double-words */
+#define JOURNAL_SLOTS_PER_PAGE ((WS_PAGE_SIZE - JOURNAL_HDR_BYTES) / JOURNAL_SLOT_BYTES)
 #define JOURNAL_CAPACITY (JOURNAL_SLOTS_PER_PAGE * WS_JOURNAL_PAGES)
 int store_journal_init(void);
 int store_journal_append(const uint8_t plain[WS_OBS_PLAIN_MAX], jref_t *ref);
