@@ -19,7 +19,8 @@ import random
 import sqlite3
 import tempfile
 from cryptography.exceptions import InvalidTag
-from .protocol import HEADER_LEN, KIND_ACK, KIND_NACK, KIND_OBS, NACK_COLLISION, Nonces, frame_counter, frame_kind, unpack_reply, unseal
+from gateway import MINUTE_S
+from .protocol import COUNTER_AT, HEADER_LEN, KEY_LEN, STATION_AT, KIND_ACK, KIND_NACK, KIND_OBS, NACK_COLLISION, Nonces, frame_counter, frame_kind, unpack_reply, unseal
 from .service import CounterRegression, Gateway, Replay
 from .simulator import BACKLOG_PER_MINUTE, Node
 
@@ -102,13 +103,17 @@ def key(record):
 DERIVED = ('received_at','_effective','_basis')
 
 
+TIME_TOLERANCE_S = 5     # a known time must be this close to the true acquisition time
+LATENCY_TARGET_S = 120   # delivered within this of acquisition (H01)
+
+
 def trustworthy_on_time(row, acquired, latency):
     """H01-like eligibility: delivered within 120 s with a known time close to simulated
     acquisition. Per Clint's 2026-10-12 decision, a gateway-reconstructed time (draft 4) is a known
     time when it is within the same 5 s tolerance; it is reported separately by assess()."""
     trustworthy_time = (row['_basis'] in ('synchronized','reconstructed') and
-                        row['_effective'] is not None and abs(row['_effective']-acquired) <= 5)
-    return trustworthy_time and 0 <= latency <= 120
+                        row['_effective'] is not None and abs(row['_effective']-acquired) <= TIME_TOLERANCE_S)
+    return trustworthy_time and 0 <= latency <= LATENCY_TARGET_S
 
 
 def assess(expected, rows, now):
@@ -146,7 +151,7 @@ ORACLE_FAILURES = ('missing','unexpected_rows','payload_mismatches','duplicate_r
 
 
 def _wrong_time(snapshot):
-    return abs(snapshot['effective_sampled_at']-snapshot['true_sampled_at']) > 5
+    return abs(snapshot['effective_sampled_at']-snapshot['true_sampled_at']) > TIME_TOLERANCE_S
 
 
 def snapshot_failure(scenario, snapshot):
@@ -212,7 +217,7 @@ class Campaign:
         self.trace.write(json.dumps({'virtual_utc':self.now,'event':event,**details},sort_keys=True)+'\n')
 
     def minute(self):
-        return (self.now-START)//60
+        return (self.now-START)//MINUTE_S
 
     def allocate_frame(self, record):
         packet = self.node.packet(record)
@@ -241,7 +246,7 @@ class Campaign:
 
     def track_nonce(self, packet):
         # Observe new encryption operations only; byte-for-byte network duplication is legal.
-        nonce = (frame_kind(packet), packet[1:3], frame_counter(packet))  # what CCM's nonce is built from
+        nonce = (frame_kind(packet), packet[STATION_AT:COUNTER_AT], frame_counter(packet))  # what CCM's nonce is built from
         if nonce in self.tx_nonces:
             self.nonce_collisions += 1
         self.tx_nonces.add(nonce)
@@ -351,7 +356,7 @@ class Campaign:
         """Provision fresh node and gateway state for this campaign."""
         self.state = state
         # Fixed public test key makes traces reproducible. It is never deployment provisioning.
-        radio_key = hashlib.sha256(('PUBLIC-TEST-KEY/'+self.s.name).encode()).digest()[:16]
+        radio_key = hashlib.sha256(('PUBLIC-TEST-KEY/'+self.s.name).encode()).digest()[:KEY_LEN]
         self.cfg = {'station':'simulation-01','station_id':1,'mode':'simulation',
                     'radio_key':radio_key.hex(),'api_token':'not-a-deployment-token','mqtt':{'enabled':False}}
         for name,kind in [('node',KIND_OBS),('gateway',KIND_ACK)]:
@@ -362,7 +367,7 @@ class Campaign:
     def sample_minute(self, minute):
         """One scheduled sample, its live send, up to BACKLOG_PER_MINUTE backfill sends, then the
         minute's arrivals and an availability snapshot."""
-        self.advance(START+minute*60)
+        self.advance(START+minute*MINUTE_S)
         self.restart(minute in self.s.node_reboots,minute in self.s.gateway_reboots)
         clock_offset = next((offset for start,end,offset in self.s.clock_steps if start<=minute<end),0)
         record = self.node.sample(self.now,inside(minute,self.s.sensor_faults),clock_offset,
@@ -378,7 +383,7 @@ class Campaign:
         if self.s.inject_identity_collision and minute == 30:
             altered = record | {'temperature_c':record['temperature_c']+1}
             self.send('uplink',self.allocate_frame(altered))
-        self.advance(START+minute*60+59)
+        self.advance(START+minute*MINUTE_S+59)
         self.snapshot()
 
     def drain(self):
@@ -386,7 +391,7 @@ class Campaign:
         number of drain minutes used."""
         drain_periods = 0
         for offset in range(1,self.s.minutes+121):
-            self.advance(START+(self.s.minutes+offset-1)*60)
+            self.advance(START+(self.s.minutes+offset-1)*MINUTE_S)
             for record in self.node.backfill(BACKLOG_PER_MINUTE):
                 self.send('uplink',self.allocate_frame(record))
             self.advance(self.now+59)

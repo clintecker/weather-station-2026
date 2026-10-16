@@ -5,8 +5,9 @@ import random
 import sqlite3
 import time
 from gateway import full_flush
-from .protocol import (DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, Nonces, encode_observation, frame_counter, frame_kind, seal, unpack_reply,
+from .protocol import (EPOCH_RESERVED, SIGNAL_NONE, VERSION, DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, Nonces, encode_observation, frame_counter, frame_kind, seal, unpack_reply,
                        unseal)
+U16_MAX = 2**16 - 1   # the DIAG report's u16 counts saturate
 
 # Backlog records sent per minute after the live one: the firmware's NORMAL energy state
 # (firmware/common/ws_policy.c backlog_limit). Stage 0 is always NORMAL. The firmware also
@@ -27,7 +28,7 @@ class Node:
         self.db.execute('BEGIN IMMEDIATE')
         row = self.db.execute('SELECT epoch FROM boot').fetchone()
         self.epoch = (row[0] if row else 0)+1
-        if self.epoch >= 2**32:
+        if self.epoch >= EPOCH_RESERVED:
             raise ValueError('Observation epoch exhausted')
         self.db.execute('DELETE FROM boot')
         self.db.execute('INSERT INTO boot VALUES (?)',(self.epoch,))
@@ -49,7 +50,7 @@ class Node:
         if self.boot is None:
             self.boot = now
         clock_known = clock_known and self.synced
-        record = dict(version=5,station=self.cfg['station'],session=str(self.epoch),
+        record = dict(version=VERSION,station=self.cfg['station'],session=str(self.epoch),
                       sequence=self.sequence,sampled_at=int(now+clock_offset) if clock_known else None,
                       uptime_s=int(now-self.boot),
                       time_quality='synchronized' if clock_known else 'unknown',
@@ -94,9 +95,9 @@ class Node:
     def diagnostic(self,now,ack_signal=None):
         """A sealed health report (kind 4) with this simulated node's journal state."""
         pending = self.db.execute('SELECT count(*) FROM pending').fetchone()[0]
-        rssi, snr = ack_signal or (-128, -128)
-        report = DIAG.pack(self.epoch, int(max(0,now-(self.boot or now))), min(pending,0xFFFF), 0, 0,
-                           min(self.abandoned,0xFFFF), 0, 0, 1, 0, 0x5eed0001, rssi, snr, 0, 1)
+        rssi, snr = ack_signal or (SIGNAL_NONE, SIGNAL_NONE)
+        report = DIAG.pack(self.epoch, int(max(0,now-(self.boot or now))), min(pending,U16_MAX), 0, 0,
+                           min(self.abandoned,U16_MAX), 0, 0, 1, 0, 0x5eed0001, rssi, snr, 0, 1)
         return seal(self.key,self.cfg['station_id'],KIND_DIAG,self.nonces,report)
 
     def backfill(self,limit=None):
