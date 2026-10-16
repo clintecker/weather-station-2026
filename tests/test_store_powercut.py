@@ -108,7 +108,7 @@ class StorePowerCut(unittest.TestCase):
         self.assertEqual(bad, {}, violations)
 
     def test_functional_full_geometry(self):
-        """No faults, 93 journal pages: exact bookkeeping, wrap, two meta compactions, WIPE."""
+        """No faults, the board's 70-page journal: exact bookkeeping, wrap, two meta compactions, WIPE."""
         out, counts, s = self.run_driver('full', 'functional', '1')
         self.assertEqual(counts, {}, out)
         self.assertEqual(s['guard_failures'], '0', out)
@@ -119,6 +119,9 @@ class StorePowerCut(unittest.TestCase):
         self.assertGreaterEqual(min(meta), 1, 'both meta pages compacted into')
         self.assertGreaterEqual(sum(meta), 3, 'at least two compactions after the first boot')
         self.assertGreaterEqual(int(s['journal0_erases']), 2, 'journal wrapped onto page 0')
+        # The edges of the node-state range: the journal's first page (55) and the provisioning page
+        # (127, erased by WIPE) were reached; the flash model counts any access outside the range.
+        self.assertGreaterEqual(int(s['config_erases']), 1, 'WIPE erased the provisioning page')
         self.assertGreater(int(s['lost']), 0)
         self.assertGreater(int(s['abandoned']), 0)
         self.assertEqual(s['wipes'], '1')
@@ -151,10 +154,13 @@ class StorePowerCut(unittest.TestCase):
         self.assert_only(out, counts, NOTES | KNOWN_CUT, s)
 
     def test_powercut_every_op_full_geometry(self):
-        """The same with the real 93-page journal (no wrap: the small build covers that)."""
+        """The same with the board's 70-page journal (no wrap: the small build covers that)."""
         out, counts, s = self.run_driver('full', 'sweep', '0')
         self.assertGreater(int(s['cut_points']), 900)
-        self.assertGreater(int(s['erase_cuts']), 400)
+        # Every erase of the workload was cut in every outcome the model has, and the workload erases
+        # at least the whole journal and the provisioning page (WIPE).
+        self.assertEqual(int(s['erase_cuts']), int(s['erase_ops']) * int(s['erase_variants']))
+        self.assertGreaterEqual(int(s['erase_ops']), int(s['journal_pages']) + 1)
         self.assert_only(out, counts, NOTES | KNOWN_CUT, s)
 
     def test_powercut_every_op_widest_slot(self):

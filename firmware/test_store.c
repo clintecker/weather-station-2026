@@ -473,12 +473,12 @@ int main(int argc, char **argv) {
   sim_flash_reset(&S); model_reset();
   workload(wrap);
   uint32_t ma = S.page_erases[WS_META_PAGE_A - SIM_FIRST_PAGE], mb = S.page_erases[WS_META_PAGE_B - SIM_FIRST_PAGE];
-  uint32_t j0 = S.page_erases[WS_JOURNAL_FIRST - SIM_FIRST_PAGE];
-  snprintf(buf, sizeof buf, "guard_failures=%d ops=%llu progs=%llu erases=%llu meta_erases=%u,%u journal0_erases=%u "
+  uint32_t j0 = S.page_erases[WS_JOURNAL_FIRST - SIM_FIRST_PAGE], cfg = S.page_erases[WS_CONFIG_PAGE - SIM_FIRST_PAGE];
+  snprintf(buf, sizeof buf, "guard_failures=%d ops=%llu progs=%llu erases=%llu meta_erases=%u,%u journal0_erases=%u config_erases=%u "
            "lost=%u abandoned=%u max_counter=%llu max_epoch=%u records=%u boots=%u wipes=%u zero_overwrites=%llu "
            "ecc_reads=%llu",
            g, (unsigned long long)S.ops, (unsigned long long)S.progs, (unsigned long long)S.erases,
-           (unsigned)ma, (unsigned)mb, (unsigned)j0, (unsigned)M.lost_seen, (unsigned)M.aband_seen,
+           (unsigned)ma, (unsigned)mb, (unsigned)j0, (unsigned)cfg, (unsigned)M.lost_seen, (unsigned)M.aband_seen,
            (unsigned long long)M.max_counter, (unsigned)M.max_epoch, (unsigned)nrec, (unsigned)M.boots, (unsigned)M.wipes,
            (unsigned long long)S.zero_overwrites, (unsigned long long)S.ecc_reads);
   summary(buf);
@@ -494,6 +494,8 @@ int main(int argc, char **argv) {
  if (nops > sizeof kinds) { fprintf(stderr, "too many ops\n"); return 2; }
  S.kinds = NULL; S.kinds_cap = 0;
  err_mode = !strcmp(mode, "errsweep");
+ uint64_t erase_ops = 0;
+ for (uint64_t k = 0; k < nops; k++) erase_ops += kinds[k] == SIM_OP_ERASE;
  for (uint64_t k = 0; k < nops; k++) {
   int nv = err_mode ? SIM_FAIL_VARIANTS : sim_flash_variants(kinds[k]);
   for (int v = 0; v < nv; v++) {
@@ -511,8 +513,10 @@ int main(int argc, char **argv) {
    recovery();
   }
  }
- snprintf(buf, sizeof buf, "cut_points=%llu runs=%llu prog_cuts=%llu erase_cuts=%llu zero_overwrites=%llu ecc_reads=%llu",
+ snprintf(buf, sizeof buf, "cut_points=%llu runs=%llu prog_cuts=%llu erase_cuts=%llu erase_ops=%llu erase_variants=%d "
+          "zero_overwrites=%llu ecc_reads=%llu",
           (unsigned long long)nops, (unsigned long long)runs, (unsigned long long)cuts_prog, (unsigned long long)cuts_erase,
+          (unsigned long long)erase_ops, (int)SIM_ERASE_VARIANTS,
           (unsigned long long)(zero_ow + S.zero_overwrites), (unsigned long long)(ecc_reads + S.ecc_reads));
  summary(buf);
  return 0;

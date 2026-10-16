@@ -49,7 +49,7 @@ MEMORY
 {
   RAM1   (xrw)   : ORIGIN = 0x20000000, LENGTH = 32K
   RAM2   (xrw)   : ORIGIN = 0x20008000, LENGTH = 32K
-  FLASH   (rx)   : ORIGIN = 0x08000000, LENGTH = 64K   /* weather-station-2026: pages 32..127 hold node state, see firmware/stage0-node/App/flash_layout.h. Shared by every project on this board, so a bench-tool image cannot reach the node key or journal */
+  FLASH   (rx)   : ORIGIN = 0x08000000, LENGTH = 110K  /* weather-station-2026: pages 55..127 hold node state, see firmware/stage0-node/App/flash_layout.h. Shared by every project on this board, so a bench-tool image cannot reach the node key or journal */
 }
 
 /* Sections */

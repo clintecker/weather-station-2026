@@ -57,10 +57,10 @@ Page map (`flash_layout.h`):
 
 | Pages | Contents |
 |---|---|
-| 0–31 | firmware (64 KB, the linker script enforces the limit) |
-| 32 | provisioning record |
-| 33, 34 | meta log A and B |
-| 35–127 | journal, a ring of 93 pages |
+| 0–54 | firmware (110 KB, the linker script enforces the limit) |
+| 55–124 | journal, a ring of 70 pages |
+| 125, 126 | meta log A and B |
+| 127 | provisioning record |
 
 ## 3. Recovery rules
 
@@ -134,22 +134,23 @@ static uint64_t rd64(uint32_t addr, int *bad) {
 <<write-guards>>
 ```
 
-`prog64` and `erase_page` refuse a misaligned program or any address outside pages 32–127. The
+`prog64` and `erase_page` refuse a misaligned program or any address outside pages 55–127. The
 refusal goes through `WS_CHECK` (`firmware/common/ws_check.h`). It returns `STORE_EFLASH`, the same
 code as a failed flash operation, which every caller handles. Only a bug in this file can produce a
 wrong address. The check stops such a bug from erasing firmware pages.
 
 ```c {#write-guards}
-/* Every write stays inside the node-state pages (config, meta and journal, flash_layout.h).
+/* Every write stays inside the node-state pages (journal, meta and config, flash_layout.h).
    No write reaches the firmware below them. A bad address or page fails like a flash error. */
-#define STORE_PAGE_END (WS_JOURNAL_FIRST + WS_JOURNAL_PAGES)
+#define STORE_PAGE_FIRST WS_STATE_FIRST
+#define STORE_PAGE_END WS_FLASH_PAGES
 static int prog64(uint32_t addr, uint64_t v) {
- if (!WS_CHECK(addr >= WS_PAGE_ADDR(WS_CONFIG_PAGE) && addr < WS_PAGE_ADDR(STORE_PAGE_END) && addr % WS_DW_BYTES == 0))
+ if (!WS_CHECK(addr >= WS_PAGE_ADDR(STORE_PAGE_FIRST) && addr < WS_PAGE_ADDR(STORE_PAGE_END) && addr % WS_DW_BYTES == 0))
   return STORE_EFLASH;
  return ws_flash_prog64(addr, v) ? STORE_EFLASH : STORE_OK;
 }
 static int erase_page(uint32_t page) {
- if (!WS_CHECK(page >= WS_CONFIG_PAGE && page < STORE_PAGE_END)) return STORE_EFLASH;
+ if (!WS_CHECK(page >= STORE_PAGE_FIRST && page < STORE_PAGE_END)) return STORE_EFLASH;
  return ws_flash_erase(page) ? STORE_EFLASH : STORE_OK;
 }
 ```
@@ -166,7 +167,7 @@ static uint8_t meta_ready, journal_ready;
 
 ## 4. Provisioning record
 
-Page 32 holds one record of four double-words. A position is a double-word index:
+Page 127 holds one record of four double-words. A position is a double-word index:
 `CFG_ID_POS` is 0, `CFG_KEY_POS` is 1 and 2, and `CFG_KCV_POS` is 3. Each row of the diagram is
 one double-word, most significant bit on the left:
 
@@ -287,7 +288,7 @@ int store_config_load(uint32_t *station, uint8_t key[WS_KEY_LEN], uint8_t kcv_ou
 
 ### Format
 
-Pages 33 and 34 hold an append-only log of 64-bit records. Double-word 0 of a page is the header.
+Pages 125 and 126 hold an append-only log of 64-bit records. Double-word 0 of a page is the header.
 Positions 1–255 hold records. A record is one double-word, so it is its own commit word. The first
 row of the diagram is the header, and the second row is one record:
 
@@ -605,7 +606,7 @@ int store_next_counter(uint64_t *counter) {
 
 ### Format
 
-Pages 35–127 form a ring of `WS_JOURNAL_PAGES` pages. The host sweeps build the ring with 3 pages
+Pages 55–124 form a ring of `WS_JOURNAL_PAGES` pages. The host sweeps build the ring with 3 pages
 so that it wraps. Each page has an 8-byte header followed by fixed-size slots. In the default build
 (35-byte plaintext) a 2048-byte page holds 36 slots of 56 bytes and leaves 24 bytes unused:
 
@@ -675,10 +676,18 @@ _Static_assert(SLOT_BYTES <= UINT8_MAX, "the slot size fits in the page magic's 
 _Static_assert(JOURNAL_SLOTS_PER_PAGE >= 1U && JOURNAL_HDR_BYTES + JOURNAL_SLOTS_PER_PAGE * SLOT_BYTES <= WS_PAGE_SIZE,
                "journal slots fit in one page");
 _Static_assert(WS_OBS_ID_LEN <= WS_DW_BYTES, "a record's identity is in its first double-word");
-_Static_assert((uint64_t)WS_CONFIG_PAGE * WS_PAGE_SIZE >= WS_FIRMWARE_BYTES, "node state sits above the firmware region");
-_Static_assert(WS_CONFIG_PAGE < WS_META_PAGE_A && WS_META_PAGE_A < WS_META_PAGE_B && WS_META_PAGE_B < WS_JOURNAL_FIRST,
-               "config, meta and journal pages are distinct and in order");
-_Static_assert(WS_JOURNAL_PAGES >= 2U && WS_JOURNAL_FIRST + WS_JOURNAL_PAGES <= WS_FLASH_PAGES, "journal fits in flash");
+_Static_assert((uint64_t)WS_STATE_FIRST * WS_PAGE_SIZE >= WS_FIRMWARE_BYTES, "node state sits above the firmware region");
+_Static_assert(WS_JOURNAL_FIRST + WS_JOURNAL_PAGES == WS_META_PAGE_A && WS_META_PAGE_A < WS_META_PAGE_B &&
+               WS_META_PAGE_B < WS_CONFIG_PAGE && WS_CONFIG_PAGE == WS_FLASH_PAGES - 1U,
+               "journal, meta and config pages are distinct, in order, and end at the last page");
+_Static_assert(WS_JOURNAL_PAGES >= 2U, "the journal ring has at least two pages");
+#ifdef WS_JOURNAL_DEFAULT
+/* The board's ring keeps 24 h for a full station (every catalog field), whatever this build sends.
+   One page is always being recycled, so it does not count. */
+#define WIDEST_SLOT_BYTES ((((WS_OBS_PLAIN_ALL + WS_DW_BYTES - 1U) / WS_DW_BYTES) + 2U) * WS_DW_BYTES)
+_Static_assert((WS_JOURNAL_PAGES - 1U) * ((WS_PAGE_SIZE - JOURNAL_HDR_BYTES) / WIDEST_SLOT_BYTES) >= 24U * 60U,
+               "the journal keeps 24 hours of a full station's readings");
+#endif
 _Static_assert(WS_JOURNAL_PAGES <= UINT16_MAX && JOURNAL_SLOTS_PER_PAGE <= UINT16_MAX, "jref_t page and slot are 16-bit");
 ```
 
@@ -1088,10 +1097,10 @@ under older firmware, or on another board, cannot (`docs/runbook-moving-boards.m
 
 ```mermaid
 flowchart TD
-    J["journal_ready = 0: RAM no longer describes flash"] --> E["erase every journal page, 35-127"]
+    J["journal_ready = 0: RAM no longer describes flash"] --> E["erase every journal page, 55-124"]
     E --> Q{"any erase failed?"}
     Q -- yes --> F["STORE_EFLASH, provisioning record kept"]
-    Q -- no --> C["erase provisioning page 32, return its result"]
+    Q -- no --> C["erase provisioning page 127, return its result"]
 ```
 
 `store_wipe` tries every journal page, even after a failure. It erases the provisioning page last.
@@ -1192,7 +1201,7 @@ storm epoch and runs WIPE. It runs in three modes:
 | sweep (the power-cut sweep) | for each flash operation index: cuts power there once for each outcome that the model has, reboots, and checks every guarantee in section 1. Program outcomes: old, new, torn. Erase outcomes: none, all, two random partial patterns, partial with unreadable double-words |
 | errsweep (the error sweep) | for each flash operation index: fails that operation like a hardware abstraction layer (HAL) error, continues the workload, and checks. The failed operation leaves flash unchanged, torn or partially erased |
 
-The tests use three geometries: `full` (the board's 93-page journal), `small` (a 3-page journal, so
+The tests use three geometries: `full` (the board's 70-page journal), `small` (a 3-page journal, so
 the sweeps wrap) and `wide` (the widest field catalog, 3 pages). `tests/test_store_powercut.py`
 builds and runs them under AddressSanitizer and UndefinedBehaviorSanitizer. It fails on any
 violation that it does not list as a note. It also runs the four `test_bug_*` regressions named

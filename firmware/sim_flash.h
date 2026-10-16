@@ -10,16 +10,16 @@
  *    double-word whose read raises a double-ECC fault (the NMI that sets ws_flash_ecc_fault);
  *  - a power cut during an erase leaves the page partially erased: some double-words erased,
  *    others still old, and (variant 4) some unreadable.
- * Addresses are the real 0x0800xxxx ones; the model covers pages WS_CONFIG_PAGE.. the last
- * journal page (flash_layout.h). The node firmware below WS_CONFIG_PAGE is not modelled. */
+ * Addresses are the real 0x0800xxxx ones. The model covers the node-state pages, WS_STATE_FIRST to
+ * the last flash page (flash_layout.h). The firmware below WS_STATE_FIRST is not modelled. */
 #ifndef SIM_FLASH_H
 #define SIM_FLASH_H
 #include <setjmp.h>
 #include <stdint.h>
 #include "flash_layout.h"
 
-#define SIM_FIRST_PAGE WS_CONFIG_PAGE
-#define SIM_PAGES (WS_JOURNAL_FIRST + WS_JOURNAL_PAGES - WS_CONFIG_PAGE)
+#define SIM_FIRST_PAGE WS_STATE_FIRST
+#define SIM_PAGES (WS_FLASH_PAGES - WS_STATE_FIRST)
 #define SIM_DW_PER_PAGE (WS_PAGE_SIZE / 8U)
 #define SIM_NEVER UINT64_MAX
 

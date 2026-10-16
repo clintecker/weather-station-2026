@@ -2,7 +2,7 @@
 #
 # The board directory holds the ST CubeMX/CubeIDE template code all projects share: Core/ (HAL init,
 # UART, RTC, low power), startup/, SubGHz_Phy/Target/ and the linker script (64 KB application
-# region: pages 32..127 hold the node key and journal, see firmware/stage0-node/App/flash_layout.h).
+# region: pages 55..127 hold the node key and journal, see firmware/stage0-node/App/flash_layout.h).
 #
 # A project Makefile sets these, then includes this file last:
 #   BOARD      path to this directory (../board/nucleo-wl55jc)
@@ -142,7 +142,7 @@ $(BUILD)/app/startup.o: $(ASM_SRC)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPU) -x assembler-with-cpp -c $< -o $@
 
-APP_FLASH_BYTES ?= 65536
+APP_FLASH_BYTES ?= 112640
 
 $(TARGET).elf: $(OBJS) $(BOARD)/STM32WL55JCIX_FLASH.ld $(MAKEFILE_LIST)
 	$(CC) $(OBJS) $(LDFLAGS) -o $@

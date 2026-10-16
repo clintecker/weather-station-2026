@@ -62,7 +62,7 @@ $(BUILD)/app/node_store.o $(BUILD)/app/stage0.o: CFLAGS += -fno-optimize-crc
 STRICT_SRC = $(filter App/%.c $(ROOT)/firmware/%.c,$(APP_SRC))
 
 # Code-space budget (docs/firmware-budget.md): fail when code + initialized data exceed
-# FLASH_BUDGET_PCT of the 64 KB application region (pages 0-31), well before the linker's hard
+# FLASH_BUDGET_PCT of the 110 KB application region (pages 0-54), well before the linker's hard
 # limit, so growth is noticed while there is still room to plan.
 FLASH_BUDGET_PCT ?= 90
 # No dynamic allocation (docs/power-of-ten.md, rule 3): the link fails if malloc & co. are linked in.

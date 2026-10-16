@@ -61,10 +61,18 @@ _Static_assert(SLOT_BYTES <= UINT8_MAX, "the slot size fits in the page magic's 
 _Static_assert(JOURNAL_SLOTS_PER_PAGE >= 1U && JOURNAL_HDR_BYTES + JOURNAL_SLOTS_PER_PAGE * SLOT_BYTES <= WS_PAGE_SIZE,
                "journal slots fit in one page");
 _Static_assert(WS_OBS_ID_LEN <= WS_DW_BYTES, "a record's identity is in its first double-word");
-_Static_assert((uint64_t)WS_CONFIG_PAGE * WS_PAGE_SIZE >= WS_FIRMWARE_BYTES, "node state sits above the firmware region");
-_Static_assert(WS_CONFIG_PAGE < WS_META_PAGE_A && WS_META_PAGE_A < WS_META_PAGE_B && WS_META_PAGE_B < WS_JOURNAL_FIRST,
-               "config, meta and journal pages are distinct and in order");
-_Static_assert(WS_JOURNAL_PAGES >= 2U && WS_JOURNAL_FIRST + WS_JOURNAL_PAGES <= WS_FLASH_PAGES, "journal fits in flash");
+_Static_assert((uint64_t)WS_STATE_FIRST * WS_PAGE_SIZE >= WS_FIRMWARE_BYTES, "node state sits above the firmware region");
+_Static_assert(WS_JOURNAL_FIRST + WS_JOURNAL_PAGES == WS_META_PAGE_A && WS_META_PAGE_A < WS_META_PAGE_B &&
+               WS_META_PAGE_B < WS_CONFIG_PAGE && WS_CONFIG_PAGE == WS_FLASH_PAGES - 1U,
+               "journal, meta and config pages are distinct, in order, and end at the last page");
+_Static_assert(WS_JOURNAL_PAGES >= 2U, "the journal ring has at least two pages");
+#ifdef WS_JOURNAL_DEFAULT
+/* The board's ring keeps 24 h for a full station (every catalog field), whatever this build sends.
+   One page is always being recycled, so it does not count. */
+#define WIDEST_SLOT_BYTES ((((WS_OBS_PLAIN_ALL + WS_DW_BYTES - 1U) / WS_DW_BYTES) + 2U) * WS_DW_BYTES)
+_Static_assert((WS_JOURNAL_PAGES - 1U) * ((WS_PAGE_SIZE - JOURNAL_HDR_BYTES) / WIDEST_SLOT_BYTES) >= 24U * 60U,
+               "the journal keeps 24 hours of a full station's readings");
+#endif
 _Static_assert(WS_JOURNAL_PAGES <= UINT16_MAX && JOURNAL_SLOTS_PER_PAGE <= UINT16_MAX, "jref_t page and slot are 16-bit");
 
 /* ---- flash primitives (flash_layout.h) ---- */
@@ -74,16 +82,17 @@ static uint64_t rd64(uint32_t addr, int *bad) {
  if (ws_flash_read64(addr, &v)) { n_ecc++; if (bad) *bad = 1; return 0; }
  return v;
 }
-/* Every write stays inside the node-state pages (config, meta and journal, flash_layout.h).
+/* Every write stays inside the node-state pages (journal, meta and config, flash_layout.h).
    No write reaches the firmware below them. A bad address or page fails like a flash error. */
-#define STORE_PAGE_END (WS_JOURNAL_FIRST + WS_JOURNAL_PAGES)
+#define STORE_PAGE_FIRST WS_STATE_FIRST
+#define STORE_PAGE_END WS_FLASH_PAGES
 static int prog64(uint32_t addr, uint64_t v) {
- if (!WS_CHECK(addr >= WS_PAGE_ADDR(WS_CONFIG_PAGE) && addr < WS_PAGE_ADDR(STORE_PAGE_END) && addr % WS_DW_BYTES == 0))
+ if (!WS_CHECK(addr >= WS_PAGE_ADDR(STORE_PAGE_FIRST) && addr < WS_PAGE_ADDR(STORE_PAGE_END) && addr % WS_DW_BYTES == 0))
   return STORE_EFLASH;
  return ws_flash_prog64(addr, v) ? STORE_EFLASH : STORE_OK;
 }
 static int erase_page(uint32_t page) {
- if (!WS_CHECK(page >= WS_CONFIG_PAGE && page < STORE_PAGE_END)) return STORE_EFLASH;
+ if (!WS_CHECK(page >= STORE_PAGE_FIRST && page < STORE_PAGE_END)) return STORE_EFLASH;
  return ws_flash_erase(page) ? STORE_EFLASH : STORE_OK;
 }
 
