@@ -36,6 +36,7 @@ const char *ws_energy_name(int energy)
 #define SYNC_QUARTERS 17U           /* 4.25 symbols of sync word and start of frame */
 #define QUARTERS 4U
 #define US_PER_MS 1000U
+#define US_PER_S 1000000UL
 #define AIRTIME_UNKNOWN_MS 60000U   /* a whole minute: room for the live reading only */
 uint32_t ws_lora_airtime_ms(uint32_t payload, uint32_t sf, uint32_t bw_hz, uint32_t preamble, uint32_t cr)
 {
@@ -43,7 +44,7 @@ uint32_t ws_lora_airtime_ms(uint32_t payload, uint32_t sf, uint32_t bw_hz, uint3
     cautious estimate) instead of a division by zero. */
  if (!WS_CHECK(sf >= LORA_SF_MIN && sf <= LORA_SF_MAX && bw_hz >= LORA_BW_MIN_HZ && cr >= 1 && cr <= LORA_CR_MAX))
   return AIRTIME_UNKNOWN_MS;
- uint32_t symbol_us_x_bw = 1000000UL << sf;                           /* T_sym in us, times BW */
+ uint32_t symbol_us_x_bw = US_PER_S << sf;                           /* T_sym in us, times BW */
  uint32_t de = symbol_us_x_bw / bw_hz > LDRO_SYMBOL_US ? 1 : 0;
  int32_t num = CHAR_BIT * (int32_t)payload - 4 * (int32_t)sf + HEADER_FIXED_BITS + CRC_BITS;
  int32_t den = 4 * ((int32_t)sf - 2 * (int32_t)de);
