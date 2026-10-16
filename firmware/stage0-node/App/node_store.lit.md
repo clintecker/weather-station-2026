@@ -428,7 +428,9 @@ int store_meta_init(void) {
 
 Both meta pages can become unreadable while the provisioning record survives. The counter then
 restarts at 1 under the existing key. The design accepts this risk, because only a layout change
-can cause it. A layout-version field waits for the first layout change.
+can cause it. A layout change gives the board a WIPE and a new key
+(`docs/runbook-moving-boards.md`, "Changing the flash layout"), so no layout-version field is
+necessary.
 
 ### Append
 

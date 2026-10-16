@@ -7,7 +7,7 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 1. Commit everything. `git status --short` must print nothing, or the build is labeled `-dirty`.
 2. Run `tools/fetch-vendor.sh`. It verifies every pinned vendor commit. Use xPack arm-none-eabi-gcc 15.2.1-1.1 (the Makefile `TOOLCHAIN` default).
-3. In `firmware/stage0-node`, run `make clean && make ROLE=rx && make ROLE=tx`. Note the two `.bin` SHA-256 values printed at the end of each build. Each build also prints `flash budget: N of 65536 B` and fails above 90 % (`docs/firmware-budget.md`).
+3. In `firmware/stage0-node`, run `make clean && make ROLE=rx && make ROLE=tx`. Note the two `.bin` SHA-256 values printed at the end of each build. Each build also prints `flash budget: N of 112640 B` and fails above 90 % (`docs/firmware-budget.md`).
 4. Run `make clean && make ROLE=rx && make ROLE=tx` again. Both `.bin` hashes must be identical to step 3.
 5. Flash RX, then TX: `make ROLE=rx flash SERIAL=<RX serial>`, then the same with `ROLE=tx`. Check that both `#boot` lines show `fw=<12-character commit>`.
 6. Add a section below with the commit, date, hashes, inputs, flash record and radio settings, and commit it.

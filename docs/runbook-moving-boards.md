@@ -96,6 +96,28 @@ tools/deploy/macos/install.sh install run-office 0016001E4142500E20353451
 
 Readings then start a new history in the new directory.
 
+## Changing the flash layout
+
+A release that moves the page map (`App/flash_layout.h`) loses the counter. The old meta log
+pages become firmware or journal pages, so the new firmware finds no meta log and starts the
+counter again at 1. The old key has already used those counters on air. Re-using it would repeat
+nonces. Therefore a layout change always gets a new key, in a new run directory:
+
+1. Stop the gateway.
+2. Archive the old run directory. Its key is retired: never provision it again.
+3. Flash RX, then TX (`firmware/stage0-node/RELEASES.md`, "How to cut a release", step 5).
+4. Clint sends `WIPE ERASE-ALL-NODE-STATE` on TX. It erases every journal page (they still hold
+   journal pages of the old layout) and the provisioning page.
+5. `ws0 init --hardware --station station-01 --station-id 1 --directory run-<new>`. This makes a
+   new key.
+6. `ws0 provision-node --directory run-<new> --serial /dev/cu.usbmodem<TX>`.
+7. `ws0 serve --directory run-<new> --serial-number <RX serial>`.
+
+Then do the checks below. `STATUS` on TX also shows `epoch=1` and a counter near 1.
+
+Until step 6, TX is not provisioned: the old journal data on the provisioning page does not read as
+a provisioning record. So TX sends nothing from the old layout.
+
 ## Checks after any move
 
 - `STATUS` on TX shows `provisioned=1` and the expected `kcv`.
