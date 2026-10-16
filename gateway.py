@@ -1,6 +1,6 @@
 # GENERATED from gateway.lit.md by tools/tangle.py: do not edit. Edit the document, then run
 # tools/tangle.py gateway.lit.md (tests/test_tangle.py checks this file).
-"""SQLite observation store. Used by the authenticated gateway and regression tests."""
+"""SQLite observation store. The authenticated gateway and the regression tests use it."""
 import contextlib
 import json
 import os
@@ -13,32 +13,33 @@ from pathlib import Path
 
 from ws0 import fields as F
 
-# Reconstructed time (draft 4): an unsynchronized sample gets UTC from the nearest synchronized
-# sample of the same boot epoch: utc = ref_utc + (uptime - ref_uptime). Error bound: 1 s
+# Reconstructed time: an unsynchronized sample gets UTC from the nearest synchronized sample of
+# the same boot epoch: utc = ref_utc + (uptime - ref_uptime). The error bound is 1 s of
 # quantization on each of the two whole-second fields, plus crystal drift. The 32.768 kHz
-# tuning-fork crystal is ~20 ppm at room temperature but drifts quadratically with
-# temperature (~120 ppm at -35 degC), so the bound uses 150 ppm.
+# tuning-fork crystal drifts about 20 ppm at room temperature. Its drift grows quadratically with
+# temperature (about 120 ppm at -35 degC), so the bound uses 150 ppm.
 DRIFT_PPM = 150
 QUANTIZATION_S = 2
-# Time with a larger error bound is never presented as a current measurement.
+# The store never presents a time with a larger error bound as a current measurement.
 CURRENT_MAX_UNCERTAINTY_S = 10
 MINUTE_S, HOUR_S, DAY_S = 60, 3600, 86400
-RECORD_VERSION = 5          # the protocol version (ws0/protocol.py VERSION)
-CURRENT_MAX_AGE_S = 180     # older than this, the latest reading is not current
-FUTURE_SLACK_S = 5          # a sample time this far past receipt is a wrong clock, not jitter
-UTC_LIMIT = 2**32           # the observation's UTC field is u32
+RECORD_VERSION = 5          # the protocol version (VERSION in ws0/protocol.py)
+CURRENT_MAX_AGE_S = 180     # a latest reading older than this is not current
+FUTURE_SLACK_S = 5          # a sample time this far after receipt is a wrong clock, not jitter
+UTC_LIMIT = 2**32           # the UTC field of the observation is u32
 SQLITE_INT_MAX = 2**63 - 1
 FAR_FUTURE = 253402300800   # 10000-01-01T00:00:00Z: the open end of a time range
 
 
 def full_flush(db):
-    """Write-ahead log, and each commit reaches stable storage. macOS fsync() does not
-    flush the drive cache; F_FULLFSYNC does. Measured on the bench Mac: commit 0.06 ms without
-    (not durable), 5.3 ms median / 16 ms max with. WAL: one flush per commit instead of the
-    rollback journal's several (a nonce commit 14 ms -> 5 ms). The
-    WAL file is part of the database: copy all of name, name-wal and name-shm or none.
-    The fullfsync pragmas are no-ops on Linux; WAL and synchronous=FULL apply everywhere. Simulations and unit tests may opt out with
-    WS0_UNSAFE_FAST_FSYNC=1; they never claim power-loss durability."""
+    """Use a write-ahead log, and make each commit reach stable storage. On macOS, fsync() does
+    not flush the drive cache. F_FULLFSYNC does. Measured on the bench Mac: a commit takes
+    0.06 ms without the flush (not durable), and 5.3 ms median, 16 ms max with it. WAL needs one
+    flush per commit. The rollback journal needs several (a nonce commit: 14 ms with the
+    rollback journal, 5 ms with WAL). The WAL file is part of the database: copy all of name,
+    name-wal and name-shm, or none of them. Linux ignores the fullfsync pragmas. WAL and
+    synchronous=FULL apply on every platform. Simulations and unit tests can turn the flush off
+    with WS0_UNSAFE_FAST_FSYNC=1. Those runs never claim durability across power loss."""
     fast = os.environ.get('WS0_UNSAFE_FAST_FSYNC') == '1'
     db.execute('PRAGMA journal_mode=WAL')
     db.execute(f"PRAGMA synchronous={'OFF' if fast else 'FULL'}")
@@ -64,7 +65,7 @@ def _finite_number(value):
 
 
 def _check_keys(record):
-    """Version, then a closed key set; returns the catalog keys beyond the base."""
+    """Check the version, then the closed key set. Return the catalog keys beyond the base keys."""
     _require(isinstance(record, dict) and type(record.get('version')) is int and record['version'] == RECORD_VERSION,
              'Unsupported version')
     _require(BASE_KEYS <= set(record), 'Missing record fields')
@@ -75,7 +76,7 @@ def _check_keys(record):
 
 
 def _check_header(record):
-    """Identity, counters, energy state."""
+    """Check the identity, the counters and the energy state."""
     for name in ('station','session'):
         _require(isinstance(record[name], str) and IDENTITY.fullmatch(record[name]), 'Invalid identity')
     for name, top in COUNTERS:
@@ -118,9 +119,9 @@ def _check_qualifiers(record):
 
 
 def validate(record):
-    """Closed schema for protocol draft 5 (docs/protocol-design.md 5.7): identity and time as
-    before, catalog fields with exact, representable values, and a quality that matches them. The
-    checks run in this order; the first failure names the error."""
+    """Check a record against the closed schema (docs/protocol-design.md section 5.7): identity,
+    time, catalog fields with exact representable values, and a quality that matches them. The
+    checks run in this order. The first failure names the error."""
     extra = _check_keys(record)
     _check_header(record)
     _check_time(record)
@@ -131,18 +132,19 @@ def validate(record):
 
 
 def open_read_only(path):
-    """Read a gateway database without writing anything. While a gateway has it open, its -wal and
-    -shm files exist and a mode=ro reader uses them. Without a -wal file (gateway stopped, log
-    checkpointed), mode=ro would still create -wal/-shm, owned by whoever runs the command (say
-    root, locking the service out later); immutable=1 reads the file as it is."""
+    """Read a gateway database without writing anything. While a gateway has the database open,
+    its -wal and -shm files exist, and a mode=ro reader uses them. Without a -wal file (gateway
+    stopped, log checkpointed), mode=ro would still create -wal and -shm. The user who runs the
+    command would own them. For root, that locks the service out later. immutable=1 reads the
+    file as it is."""
     path = Path(path).resolve()
     live = path.with_name(path.name + '-wal').exists()
     return sqlite3.connect(path.as_uri() + ('?mode=ro' if live else '?mode=ro&immutable=1'), uri=True)
 
 
 def _freshness(record, received_at, effective, age, uncertainty):
-    """(timely, reason) for the latest record. A future sample at receipt stays quarantined;
-    waiting does not validate its clock. Reasons are checked in this order."""
+    """Return (timely, reason) for the latest record. A sample that was in the future at receipt
+    stays quarantined. Waiting does not validate its clock. The reasons are checked in this order."""
     future = effective is not None and effective > received_at+FUTURE_SLACK_S
     vague = uncertainty is not None and uncertainty > CURRENT_MAX_UNCERTAINTY_S
     timely = age is not None and 0 <= age < CURRENT_MAX_AGE_S and not future and not vague
@@ -155,32 +157,33 @@ def _freshness(record, received_at, effective, age, uncertainty):
 
 
 class Store:
-    """Serialize concurrent HTTP/ingestion access; immutable identities survive restart."""
+    """Serialize concurrent access from HTTP and ingestion. Immutable identities survive a restart."""
     def __init__(self, path):
         self.lock = threading.RLock()
         self.path = Path(path).resolve()   # reader() opens it by URI
         self.db = sqlite3.connect(path, check_same_thread=False)
         full_flush(self.db)
-        # The JSON payload is immutable and the deduplication authority; the derived time columns
-        # are recomputed when references arrive (reconstruct).
+        # The JSON payload never changes and decides whether a record is a duplicate. reconstruct
+        # recomputes the derived time columns when references arrive.
         self.db.execute('''CREATE TABLE IF NOT EXISTS observations (
             station TEXT, session TEXT, sequence INTEGER, sampled_at REAL, received_at REAL, payload TEXT,
             uptime_s INTEGER, effective_at REAL, time_basis TEXT, time_uncertainty_s REAL,
             PRIMARY KEY(station,session,sequence))''')
-        # latest() orders by identity; without this index every call sorted the whole table (337 ms
-        # at a year of readings, under the store lock, on every ingest and every MQTT tick).
+        # latest() orders by identity. Without this index every call sorted the whole table: 337 ms
+        # at a year of readings, under the store lock, on every ingest and every MQTT tick.
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_latest ON observations'
                         '(station, CAST(session AS INTEGER) DESC, sequence DESC, received_at DESC)')
-        # reconstruct() looks up a boot epoch's readings by time basis and uptime.
+        # reconstruct() looks up the readings of a boot epoch by time basis and uptime.
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_basis ON observations(station, session, time_basis, uptime_s)')
-        # History reads a time range in identity order: this index yields that order, so no sort
-        # in a temp B-tree (the payload still comes from the table).
+        # history reads a time range in identity order. This index gives that order, so SQLite needs
+        # no sort in a temporary B-tree. The payload still comes from the table.
         self.db.execute('CREATE INDEX IF NOT EXISTS obs_effective_order ON observations'
                         '(station,effective_at,session,sequence)')
-        # Authentic frames that were permanently rejected (and NACKed) are kept, never silently lost.
+        # The store keeps authentic frames that the gateway rejected permanently (and NACKed). It
+        # never loses them silently.
         self.db.execute('''CREATE TABLE IF NOT EXISTS rejections (station TEXT, session TEXT, sequence INTEGER,
             received_at REAL, reason TEXT, detail TEXT, frame_hex TEXT)''')
-        # Node health reports (kind 4). Ordered by (epoch, uptime), not arrival, so a
+        # Node health reports (kind 4). They are ordered by (epoch, uptime), not by arrival, so a
         # delayed or replayed report never replaces a newer one.
         self.db.execute('''CREATE TABLE IF NOT EXISTS diagnostics (station TEXT, session INTEGER, uptime_s INTEGER,
             received_at REAL, report TEXT, PRIMARY KEY(station,session,uptime_s))''')
@@ -188,9 +191,10 @@ class Store:
 
     @contextlib.contextmanager
     def reader(self):
-        """A read-only connection with one consistent snapshot, for long reads (dashboard history
-        and tables). It never takes self.lock: in WAL mode readers do not block the writer, so a
-        year-long history query cannot delay an ACK (it held the lock for up to ~1 s before)."""
+        """Give a read-only connection with one consistent snapshot, for long reads (dashboard
+        history and tables). It never takes self.lock. In WAL mode readers do not block the writer,
+        so a history query of one year cannot delay an ACK. Before this change, that query held the
+        lock for up to about 1 s."""
         db = sqlite3.connect(self.path.as_uri() + '?mode=ro', uri=True, check_same_thread=False)
         try:
             db.execute('BEGIN')
@@ -199,7 +203,7 @@ class Store:
             db.close()
 
     def ingest(self, record, received_at=None):
-        """Return only after commit; exact repeats are harmless, collisions are errors."""
+        """Return only after the commit. An exact repeat is harmless. A collision is an error."""
         validate(record)
         payload = json.dumps(record, sort_keys=True, separators=(',',':'), allow_nan=False)
         key = (record['station'],record['session'],record['sequence'])
@@ -216,7 +220,7 @@ class Store:
                             'uptime_s,effective_at,time_basis,time_uncertainty_s) VALUES (?,?,?,?,?,?,?,?,?,?)',
                             (*key,record['sampled_at'],received,payload,record.get('uptime_s'),record['sampled_at'],
                              'synchronized' if synced else 'unknown',0 if synced else None))
-            # A new untimed reading needs only its own estimate; a new reference can only change the
+            # A new untimed reading needs only its own estimate. A new reference can change only the
             # readings between its neighbouring references.
             if synced:
                 self.reconstruct(record['station'],record['session'],reference=(record.get('uptime_s'),
@@ -227,8 +231,8 @@ class Store:
 
     def check_counters(self, record):
         """Since-boot counters (rain tips, energy, charge) never decrease in sequence order within an
-        epoch (design 5.3). Compared with the stored neighbours by sequence, not by arrival, so a
-        backfilled older record is fine; a decrease is an invalid record."""
+        epoch (docs/protocol-design.md section 5.3). The check compares with the stored neighbours by
+        sequence, not by arrival, so a backfilled older record passes. A decrease is an invalid record."""
         for f in F.FIELDS:
             value = record.get(f.name)
             if not f.counter or value is None:
@@ -245,15 +249,17 @@ class Store:
                 raise ValueError(f'{f.name} decreased within epoch {record["session"]}')
 
     def reconstruct(self, station, session, only=None, reference=None):
-        """Give unsynchronized samples of one boot epoch a UTC time from the nearest trusted
-        synchronized sample of the same epoch (same monotonic uptime counter). A reference
-        whose clock was ahead of its own receipt (quarantined) is never used. Targets are looked up
-        first: most epochs have none, and then nothing else is read (every ingest calls this).
+        """Give the unsynchronized samples of one boot epoch a UTC time. The time comes from the
+        nearest trusted synchronized sample of the same epoch, which shares the monotonic uptime
+        counter. A reference whose clock was ahead of its own receipt (quarantined) is never used.
+        The targets are looked up first. Most epochs have none, and then nothing else is read. Every
+        ingest calls this method.
 
-        only: just this sequence (a new untimed reading). reference: (uptime, trusted) of a newly
-        stored synchronized reading; only readings strictly between its neighbouring references can
-        have it as their nearest one, so only those are recomputed (an epoch can hold thousands of
-        untimed readings; rescanning all of them on every frame cost 14 ms at 1440). Neither: all."""
+        only: only this sequence (a new untimed reading). reference: (uptime, trusted) of a newly
+        stored synchronized reading. Only the readings strictly between its neighbouring references
+        can have it as their nearest reference, so only those are recomputed. An epoch can hold
+        thousands of untimed readings. A rescan of all of them on every frame cost 14 ms at 1440.
+        Neither: all targets."""
         ref_sql = ('SELECT uptime_s,sampled_at FROM observations WHERE station=? AND session=? '
                    "AND time_basis='synchronized' AND uptime_s IS NOT NULL AND sampled_at<=received_at+? "
                    'AND uptime_s {} ? ORDER BY uptime_s {} LIMIT 1')
@@ -284,8 +290,8 @@ class Store:
 
     def reject(self, station, session, sequence, reason, detail, frame_hex, received_at=None, once=False):
         """Durably record a permanently rejected authentic frame before the NACK is sent. once: skip
-        it if these exact bytes were already recorded for this reason (replays: anyone can resend a
-        captured frame thousands of times; one row per frame keeps the evidence, not the flood)."""
+        the insert if these exact bytes were already recorded for this reason. Anyone can resend a
+        captured frame thousands of times. One row per frame keeps the evidence, not the flood."""
         received = time.time() if received_at is None else received_at
         with self.lock, self.db:
             if once and self.db.execute('SELECT 1 FROM rejections WHERE station=? AND reason=? AND frame_hex=?',
@@ -307,10 +313,10 @@ class Store:
         return None if row is None else json.loads(row[0]) | {'received_at':row[1]}
 
     def latest(self, station, now=None):
-        """Fail closed on bad clocks; old replay traffic cannot reset the age timer."""
+        """Fail closed on bad clocks. Old replayed traffic cannot reset the age timer."""
         now = time.time() if now is None else now
         with self.lock:
-            # The immutable sample identity defines order, even across clock corrections.
+            # The immutable sample identity defines the order, also across clock corrections.
             row = self.db.execute('''SELECT payload,received_at,effective_at,time_basis,time_uncertainty_s
                 FROM observations WHERE station=?
                 ORDER BY CAST(session AS INTEGER) DESC,sequence DESC,received_at DESC LIMIT 1''',(station,)).fetchone()
@@ -320,7 +326,8 @@ class Store:
         effective, basis, uncertainty = row[2], row[3], row[4]
         age = None if effective is None else now-effective
         timely, reason = _freshness(record, row[1], effective, age, uncertainty)
-        # Availability is per field (design 5.7): one dead sensor never hides the others.
+        # Availability is per field (docs/protocol-design.md section 5.7). One dead sensor never
+        # hides the others.
         fields = {name: timely and (record[name] is not None or (name == 'wind_dir_deg' and record.get('wind_calm', False)))
                   for name in F.MEASURED if name in record}
         available = timely and record['quality'] != 'sensor_fault'
@@ -330,8 +337,9 @@ class Store:
                 'labels':{n: F.LABELS[n] for n in fields}}
 
     def history(self, station, start=0, end=FAR_FUTURE, limit=100, offset=0):
-        """Stable page ordering; UTC-unknown records remain in DB but outside time queries. Read
-        through reader(): an export never waits for, or delays, the ingest lock."""
+        """Return pages in a stable order. Records with unknown UTC stay in the database but match no
+        time range. The read goes through reader(), so an export never waits for the ingest lock and
+        never delays it."""
         with self.reader() as db:
             rows = db.execute('''SELECT payload,received_at,effective_at,time_basis,time_uncertainty_s
                 FROM observations WHERE station=? AND effective_at>=? AND effective_at<?

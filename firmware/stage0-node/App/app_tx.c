@@ -1,11 +1,12 @@
 /* GENERATED from app_tx.lit.md by tools/tangle.py: do not edit. Edit the document, then run
  * tools/tangle.py firmware/stage0-node/App/app_tx.lit.md (tests/test_tangle.py checks this file). */
-/* Stage-0 TX: one SHT45 observation per minute, journaled in flash before transmission and
- * retained until an authenticated host ACK (or a NACK / strike-limit abandon). Each minute sends
- * the live observation first, then older pending ones as the energy and link policy allows
- * (docs/radio-energy-policy.md); each frame gets a fresh durably reserved counter and one ACK
- * receive window. This file is boot and the sampling glue; the other TX modules are listed in
- * App/tx_node.h. */
+/* TX node of the bench prototype: one SHT45 observation per minute. The node journals each
+ * observation in flash before it transmits it. The journal keeps the record until the gateway
+ * sends an authenticated ACK or NACK, or until the strike rule abandons it (ws_policy.h). Each
+ * minute sends the live observation first. Then it sends older pending records as the energy and
+ * link policy allows (docs/radio-energy-policy.md). Each frame gets a new counter, reserved
+ * durably, and one ACK receive window. This file holds boot and the sampling glue. App/tx_node.h
+ * lists the other TX modules. */
 #define WS_CHECK_FILE 1
 #include <string.h>
 #include "busymon.h"
@@ -34,29 +35,30 @@
 #include "ws_check.h"
 #include "ws_obs.h"
 
-#define SAMPLE_PERIOD_MS    15000U  /* one T/RH sample; every SAMPLES_PER_REPORT-th builds the minute (PRD 9) */
+#define SAMPLE_PERIOD_MS    15000U  /* one temperature and humidity sample (product spec, section 9) */
 #define SAMPLES_PER_REPORT  4U
-/* A TX that keeps failing must not look healthy. Above this many failures in a row,
- * of journal appends (journal_fails) or of transmissions (exchange_counts()->air), the watchdog
- * resets the board (which re-runs Radio.Init). Minutes the policy chose not to send never count. */
+/* A TX node that keeps failing must not look healthy. Above this many failures in a row, the
+ * watchdog resets the board, and the reset runs Radio.Init again. The two runs are journal appends
+ * (journal_fails) and transmissions (exchange_counts()->air). Minutes that the policy chose not to
+ * send never count. */
 #define TX_FAIL_LIMIT       10U
-/* A storage failure at boot may be transient: retry once by a reset after 10 minutes. */
+/* A storage failure at boot can be transient. A reset after 10 minutes retries the boot once. */
 #define BOOT_RETRY_MS       (10UL * CLOCK_MS_PER_MIN)
 
 static UTIL_TIMER_Object_t sample_timer, boot_retry_timer;
-static uint32_t last_sample_s;   /* watchdog progress evidence */
-/* This boot's identity and run state: written only here; the other TX modules read it through
-   node_state() (docs/power-of-ten.md, rule 6). */
+static uint32_t last_sample_s;   /* the watchdog check reads it as proof of progress */
+/* This boot's identity and run state. Only this file writes it. The other TX modules read it
+   through node_state() (docs/power-of-ten.md, rule 6). */
 static tx_node_t node;
 const tx_node_t *node_state(void) { return &node; }
 uint32_t node_uptime_s(void) { return clock_s() - node.boot_s; }
 int node_selftest(void) { node.kat_ok = selftest_kat(); return node.kat_ok; }
 
-/* The minute's 15-s samples (PRD section 9: coverage, mean and extrema). */
+/* The minute's 15-s samples. The product spec, section 9, asks for coverage, mean and extrema. */
 static ws_th_window th_window;
 static unsigned th_ticks;
-static int sensor_reported;   /* the first reading after boot is printed as #sensor */
-static int stuck;             /* the exchange outlasted its worst case: the watchdog is resetting the board */
+static int sensor_reported;   /* the first reading after boot prints a #sensor line */
+static int stuck;             /* the exchange outlasted its bound. The watchdog resets the board */
 
 void sampling_stop(void)
 {
@@ -64,10 +66,10 @@ void sampling_stop(void)
   (void)UTIL_TIMER_Stop(&sample_timer);
 }
 
-/* Draft-5 observation (docs/protocol-design.md 5): out-of-range temperature is INVALID,
-   RH is clamped (ws_code_*); a sensor fault sends every field as INVALID, never leaves it out.
-   The summary fields are used only if the build's bitmap includes them (WS_F_TH_SUMMARY in
-   node_fields.h). */
+/* The observation format is in docs/protocol-design.md, section 5. ws_code_* marks an
+   out-of-range temperature INVALID and clamps humidity. A sensor fault sends every field as
+   INVALID and never leaves a field out. The summary fields reach the frame only if the build's
+   bitmap includes them (WS_F_TH_SUMMARY in node_fields.h). */
 static void obs_codes(ws_obs_t *o, int valid, int16_t t, uint16_t h)
 {
   static const uint8_t th_fields[] = { WS_FI_TEMPERATURE_C, WS_FI_HUMIDITY_PCT, WS_FI_TEMPERATURE_MIN_C,
@@ -86,22 +88,22 @@ static void obs_codes(ws_obs_t *o, int valid, int16_t t, uint16_t h)
   o->code[WS_FI_HUMIDITY_MAX_PCT] = ws_code_rh_centi(th_window.h_max);
 }
 
-/* Readings a minute produced while the previous minute's exchange was still running. Flash is only
- * written with the radio idle (docs/firmware-event-model.md), so such a reading waits here, encoded,
- * and held_flush() journals it the moment the radio goes idle, before anything else runs; the next
- * minute sends it as backlog. A normal exchange ends well within its minute; only a hung radio
- * keeps it busy longer, and then the watchdog resets the board once the exchange outlasts its bound
- * (at most 116 s, with 21 frames) plus the IWDG's ~8 s, so at most HELD_MAX minutes can be waiting.
- * Should one more come anyway, the oldest held reading is dropped and counted (held_lost) and the
- * newest kept. A reset loses what is held: those sequence numbers are never sent, so the gateway
- * sees the gap. */
+/* Readings that a minute produced while the previous minute's exchange still ran. The firmware
+ * writes flash only with the radio idle (docs/firmware-event-model.md). Such a reading therefore
+ * waits here, encoded. held_flush() journals it the moment the radio goes idle, before anything
+ * else runs. The next minute sends it as backlog. A normal exchange ends well within its minute.
+ * Only a hung radio keeps it busy longer. The watchdog then resets the board after the exchange
+ * outlasts its bound (at most 116 s, with 21 frames) plus the independent watchdog's ~8 s. So at
+ * most HELD_MAX minutes can wait. If one more comes anyway, hold() drops the oldest held reading,
+ * counts it in held_lost and keeps the newest. A reset loses what is held. Those sequence numbers
+ * are never sent, so the gateway sees the gap. */
 #define HELD_MAX 2U
 #define SAMPLING_STALL_S 150U   /* 10 sample periods without a sample: the sampler stopped */
 static uint8_t held[HELD_MAX][WS_OBS_PLAIN_MAX];
 static unsigned held_n;
 
 
-/* hold() makes room before it adds, so held_n never exceeds HELD_MAX; a count that did is clamped. */
+/* hold() makes room first, so held_n never exceeds HELD_MAX. held_count() clamps a count that did. */
 static unsigned held_count(void)
 {
   if (!WS_CHECK(held_n <= HELD_MAX)) held_n = HELD_MAX;
@@ -133,20 +135,20 @@ void held_flush(void)
   held_n = 0;
 }
 
-/* What this minute may send, if anything: the live reading (NULL if its journal append failed)
-   and the backlog the policy allows. A refused minute's reading stays journaled. */
+/* Sends what this minute may send: the live reading and the backlog that the policy allows. live
+   is NULL if its journal append failed. A refused minute's reading stays journaled. */
 static void minute_send(const jref_t *live)
 {
-  if (exchange_busy()) return;   /* the reading is held (journal_or_hold); ask the policy only for a minute that sends */
+  if (exchange_busy()) return;   /* journal_or_hold held the reading. Ask the policy only for a sending minute */
   int backlog = policy_minute_backlog();
   if (backlog >= 0) exchange_start(live, (unsigned)backlog);
 }
 
-/* The minute's observation, from its samples. */
+/* The minute's observation, built from its samples. */
 typedef struct { int valid; int16_t t; uint16_t h; uint32_t utc, uptime; unsigned samples; } minute_t;
 
-/* Build and encode the minute's observation into plain (WS_OBS_PLAIN_MAX bytes); 0 if it did not
-   encode. Starts the next minute's window. */
+/* Builds and encodes the minute's observation into plain (WS_OBS_PLAIN_MAX bytes). Returns 0 if
+   it did not encode. Starts the next minute's window. */
 static int minute_encode(minute_t *m, uint8_t *plain)
 {
   m->t = 0; m->h = 0;
@@ -154,7 +156,7 @@ static int minute_encode(minute_t *m, uint8_t *plain)
   m->utc = time_utc();
   m->uptime = node_uptime_s(); /* always sent: the gateway reconstructs time from it */
   if (!m->valid) node.sensor_faults++;
-  /* static: this runs only from the sequencer, never re-entered, and it is on the deepest callback
+  /* static: only the sequencer runs this, and it never re-enters. It is on the deepest callback
      chain, which tools/stack_report.py counts four times (a 104-byte record cost ~416 B). */
   static ws_obs_t o;
   o = (ws_obs_t){ .epoch = node.boot_epoch, .seq = node.next_seq, .utc = m->utc, .uptime = m->uptime,
@@ -165,8 +167,9 @@ static int minute_encode(minute_t *m, uint8_t *plain)
   return ws_obs_encode(&o, plain, WS_OBS_PLAIN_MAX) == (int)WS_OBS_PLAIN_MAX;
 }
 
-/* Journal the encoded reading now, or hold it while the radio is busy (a held reading's append
-   is counted when the radio goes idle). 0: journaled or held; else the error (REC_ENOTENCODED or a STORE_E* code). */
+/* Journals the encoded reading now, or holds it while the radio is busy. held_flush() counts a
+   held reading's append when the radio goes idle. Returns 0 if it journaled or held the reading.
+   Otherwise returns the error: REC_ENOTENCODED or a STORE_E* code. */
 #define REC_ENOTENCODED (-100)   /* outside the STORE_E* range */
 static int journal_or_hold(const uint8_t *plain, int encoded, int busy, jref_t *live)
 {
@@ -185,18 +188,19 @@ static void sample_line(const minute_t *m, int src, int rc, int busy)
              rc ? "ERROR" : busy ? "held" : "ok", (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
 }
 
-/* The minute's report: journaled and sent as the policy allows, or held while the previous
-   minute's exchange is still running (the radio is transmitting or listening: no flash write). */
+/* The minute's report. The node journals it and sends it as the policy allows. If the previous
+   minute's exchange still runs, the radio transmits or listens, and no flash write may happen.
+   The node then holds the report in RAM. */
 static void minute_report(int src)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t live; minute_t m;
-  int encoded = WS_CHECK(minute_encode(&m, plain));   /* our own codes always encode */
+  int encoded = WS_CHECK(minute_encode(&m, plain));   /* this file's codes always encode */
   int busy = exchange_busy();
   bm_span s = busymon_begin();
-  int rc = journal_or_hold(plain, encoded, busy, &live);   /* a journal page start erases 22 ms */
+  int rc = journal_or_hold(plain, encoded, busy, &live);   /* a new journal page erases ~22 ms */
   busymon_step_end(s, "report.journal");
   sample_line(&m, src, rc, busy);
-  node.next_seq++; /* identity is never reused, even if the journal write failed */
+  node.next_seq++; /* a sequence number is never reused, even after a failed journal write */
   if (busy) { APP_PRINTF("#busy previous exchange still running; reading held until it ends\n"); return; }
   s = busymon_begin();
   minute_send(rc ? NULL : &live);
@@ -205,7 +209,7 @@ static void minute_report(int src)
 
 void sensor_done(int src, int16_t t, uint16_t h)
 {
-  if (!node.running || stuck) return;   /* a measurement that finishes after sampling stopped (reboot, storm, stuck radio) */
+  if (!node.running || stuck) return;   /* drop a result that ends after sampling stopped (reboot, storm, stuck radio) */
   if (!sensor_reported)
   {
     sensor_reported = 1;
@@ -218,17 +222,17 @@ void sensor_done(int src, int16_t t, uint16_t h)
   minute_report(src);
 }
 
-/* Every 15 s: start a measurement; sensor_done() gets its result from the sensor task ~10 ms later. */
+/* Every 15 s: start one measurement. sensor_done() gets its result ~11 ms later. */
 static void sample(void)
 {
   last_sample_s = clock_s();
-  if (sensor_start()) sensor_done(-1, 0, 0);   /* the previous one never finished: a missed sample */
+  if (sensor_start()) sensor_done(-1, 0, 0);   /* the previous measurement still runs: a missed sample */
 }
 BUSYMON_TASK(sample)
 
 static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
 
-/* Watchdog health: real progress, not just a running main loop. */
+/* Watchdog health: the node must make real progress, not only run its main loop. */
 int watchdog_healthy(void)
 {
   uint32_t now = clock_s();
@@ -237,8 +241,8 @@ int watchdog_healthy(void)
   if (now - last_sample_s > SAMPLING_STALL_S) return 0;       /* sampling stopped */
   if (exchange_overdue(now))                                  /* radio exchange stuck */
   {
-    /* Stop sampling and the radio, journal any held reading with the radio idle, then let the
-       watchdog reset the board: the reset loses no reading. */
+    /* Stop sampling and the radio, and journal any held reading with the radio idle. Then the
+       watchdog resets the board, and the reset loses no reading. */
     stuck = 1;
     (void)UTIL_TIMER_Stop(&sample_timer);
     exchange_abort();
@@ -255,7 +259,8 @@ int watchdog_healthy(void)
 
 static void on_boot_retry(void *ctx) { (void)ctx; NVIC_SystemReset(); }
 
-/* Never for an unprovisioned board or a failed self-test: those need an operator, not a reset. */
+/* A failed self-test needs an operator, not a reset, so it never retries. An unprovisioned board
+   never calls this. */
 static void boot_retry(void)
 {
   if (!node.kat_ok) return;
@@ -264,7 +269,7 @@ static void boot_retry(void)
   (void)UTIL_TIMER_Start(&boot_retry_timer);
 }
 
-/* Storage, key, self-test and a durable epoch: 1 if the node may sample and transmit. */
+/* Returns 1 if the node may sample and transmit: storage, key, self-test and a durable epoch. */
 static int boot_ready(void)
 {
   if (store_meta_init() || store_journal_init()) { led_set(LED_RED, 1); APP_PRINTF("#error store-init\n"); boot_retry(); return 0; }
@@ -273,7 +278,7 @@ static int boot_ready(void)
   if (!exchange_load_identity()) { led_set(LED_RED, 1); tx_status(); APP_PRINTF("#unprovisioned: send PROVISION <station_id> <key>\n"); return 0; }
   time_restore();
   if (!node.kat_ok) { led_set(LED_RED, 1); tx_status(); APP_PRINTF("#error self-test failed; not transmitting\n"); return 0; }
-  /* Durable epoch before the first sample: observation identities never repeat. */
+  /* A durable epoch before the first sample keeps every observation identity unique. */
   if (store_next_epoch(&node.boot_epoch)) { led_set(LED_RED, 1); APP_PRINTF("#error epoch-reserve\n"); boot_retry(); return 0; }
   return 1;
 }

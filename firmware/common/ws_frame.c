@@ -15,9 +15,9 @@
 #define NONCE_LEN (1 + NONCE_STATION_BYTES + NONCE_COUNTER_BYTES)
 _Static_assert(NONCE_LEN == 13, "CCM with a 2-byte length field takes a 13-byte nonce (15 - L)");
 
-/* Header (also the AAD) and nonce. The nonce is built from the integers, never copied from the
- * header: a counter the 5-byte field cannot hold must not reach here (callers check), and the
- * nonce must not depend on how the header packs it. */
+/* Writes the header (also the AAD) and the nonce. The nonce comes from the integers, not from
+ * the header bytes. The callers refuse a counter that the 5-byte field cannot hold. The nonce
+ * must not depend on how the header packs the fields. */
 static void header(uint8_t h[WS_HEADER_LEN], uint8_t nonce[NONCE_LEN], uint8_t kind, uint32_t station, uint64_t counter) {
  uint8_t *p = ws_write_u8(h, WS_FRAME_BYTE0(kind));
  p = ws_write_be(p, station, WS_STATION_BYTES);
@@ -27,8 +27,8 @@ static void header(uint8_t h[WS_HEADER_LEN], uint8_t nonce[NONCE_LEN], uint8_t k
  (void)ws_write_be(p, counter, NONCE_COUNTER_BYTES);
 }
 
-/* What ws_seal_kind can seal: a plaintext that fits the frame and the output, a valid station,
- * counter and sealed kind. */
+/* Returns 1 if ws_seal_kind can seal these arguments: a plaintext that fits the frame and the
+ * output, a valid station and counter, and a kind that the node or the gateway seals. */
 static int seal_ok(uint32_t station, uint8_t kind, uint64_t counter, const uint8_t *plain, uint32_t plain_len, uint32_t out_cap) {
  if(plain_len>WS_FRAME_MAX-WS_FRAME_OVERHEAD || plain_len+WS_FRAME_OVERHEAD>out_cap || (!plain && plain_len)) return 0;
  if(station==0 || station>WS_STATION_MAX || counter==0 || counter>WS_COUNTER_MAX) return 0;
@@ -40,8 +40,8 @@ int ws_seal_kind(const uint8_t key[WS_KEY_LEN], uint32_t station, uint8_t kind, 
  uint8_t nonce[NONCE_LEN]; mbedtls_ccm_context ccm; int rc;
  uint32_t len=plain_len+WS_FRAME_OVERHEAD;
  if(!out) return WS_FRAME_EINVAL;
- /* Every refusal wipes the whole output buffer, so a caller that ignores the result cannot send
-    a stale or half-built frame. */
+ /* Every refusal wipes the whole output buffer. A caller that ignores the result then cannot
+    send a stale or half-built frame. */
  if(!seal_ok(station,kind,counter,plain,plain_len,out_cap)) {
   mbedtls_platform_zeroize(out,out_cap);
   return WS_FRAME_EINVAL;
@@ -91,7 +91,7 @@ int ws_key_check(const uint8_t key[WS_KEY_LEN], uint8_t out[WS_KCV_LEN]) {
  if(!rc) { const uint8_t zero[AES_BLOCK_LEN]={0}; rc=mbedtls_aes_crypt_ecb(&aes,MBEDTLS_AES_ENCRYPT,zero,block); }
  mbedtls_aes_free(&aes);
  if(!rc) memcpy(out,block,WS_KCV_LEN);
- mbedtls_platform_zeroize(block,sizeof block);   /* AES(key, 0): only 3 bytes are meant to leave */
+ mbedtls_platform_zeroize(block,sizeof block);   /* only 3 bytes of AES(key, 0) may leave */
  return rc;
 }
 

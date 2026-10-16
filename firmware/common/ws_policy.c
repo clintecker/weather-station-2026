@@ -7,14 +7,14 @@
 #include "ws_check.h"
 #include <limits.h>
 
-/* Per energy state (WS_ENERGY_* order): backlog frames and radio time per minute. */
+/* Per energy state, in WS_ENERGY_* order: backlog frames and radio time per minute. */
 static const char *const energy_name[] = { "surplus", "normal", "conserve", "critical" };
 static const uint8_t backlog_limit[] = { WS_BACKLOG_MAX, 5, 0, 0 };
 static const uint16_t airtime_cap_ms[] = { 15000, 5000, 2000, 0 };
 #define ENERGY_STATES (sizeof energy_name / sizeof energy_name[0])
 _Static_assert(ENERGY_STATES == WS_ENERGY_CRITICAL + 1 && sizeof backlog_limit == ENERGY_STATES &&
                sizeof airtime_cap_ms / sizeof airtime_cap_ms[0] == ENERGY_STATES, "one entry per energy state");
-#define CONSERVE_INTERVAL_S 300U   /* spec R02 */
+#define CONSERVE_INTERVAL_S 300U   /* spec rule R02: CONSERVE reports every 5 minutes */
 static const uint16_t probe_interval_s[] = { 120, 240, 480, 900 };
 #define PROBE_STEPS (sizeof probe_interval_s / sizeof probe_interval_s[0])
 
@@ -24,9 +24,9 @@ const char *ws_energy_name(int energy)
 }
 
 /* Semtech time on air (SX1261/2 datasheet section 6.1.4, AN1200.13), explicit header, CRC on:
- *   T_sym = 2^SF / BW; preamble = (n_preamble + 4.25) T_sym;
+ *   T_sym = 2^SF / BW, preamble = (n_preamble + 4.25) T_sym,
  *   payload = 8 + max(ceil((8 PL - 4 SF + 28 + 16 CRC) / (4 (SF - 2 DE))), 0) (CR + 4) symbols.
- * Counted in quarter symbols, so the 4.25 stays an integer. */
+ * The code counts in quarter symbols, so the 4.25 stays an integer. */
 #define LORA_SF_MIN 7U
 #define LORA_SF_MAX 12U
 #define LORA_BW_MIN_HZ 7800U
@@ -42,8 +42,8 @@ const char *ws_energy_name(int energy)
 #define AIRTIME_UNKNOWN_MS 60000U   /* a whole minute: room for the live reading only */
 uint32_t ws_lora_airtime_ms(uint32_t payload, uint32_t sf, uint32_t bw_hz, uint32_t preamble, uint32_t cr)
 {
- /* radio_cfg.h's constants; outside the formula's range the answer is AIRTIME_UNKNOWN_MS (the
-    cautious estimate) instead of a division by zero. */
+ /* The arguments are radio_cfg.h's constants. Outside the formula's range, the function returns
+    the cautious AIRTIME_UNKNOWN_MS. It never divides by zero. */
  if (!WS_CHECK(sf >= LORA_SF_MIN && sf <= LORA_SF_MAX && bw_hz >= LORA_BW_MIN_HZ && cr >= 1 && cr <= LORA_CR_MAX))
   return AIRTIME_UNKNOWN_MS;
  uint32_t symbol_us_x_bw = US_PER_S << sf;                           /* T_sym in us, times BW */
@@ -73,7 +73,7 @@ int ws_link_minute(ws_link *l, int answered, uint32_t sent_s)
 
 uint32_t ws_link_probe_interval(const ws_link *l)
 {
- /* ws_link_minute keeps probe_step below PROBE_STEPS; past it, the longest interval */
+ /* ws_link_minute keeps probe_step below PROBE_STEPS. Past it, return the longest interval. */
  return probe_interval_s[WS_CHECK(l->probe_step < PROBE_STEPS) ? l->probe_step : PROBE_STEPS - 1U];
 }
 
@@ -102,7 +102,7 @@ static int same_record(const ws_strike *s, uint32_t epoch, uint32_t seq) { retur
 int ws_strike_note(ws_strike *t, unsigned slots, uint32_t epoch, uint32_t seq, unsigned limit)
 {
  unsigned use = slots, low = 0;
- if (!WS_CHECK(slots > 0)) return 0;   /* no table: no strike */
+ if (!WS_CHECK(slots > 0)) return 0;   /* no table, so no strike */
  for (unsigned i = 0; i < slots; i++) {
   if (same_record(&t[i], epoch, seq)) { use = i; break; }
   if (t[i].n < t[low].n) low = i;
@@ -121,7 +121,7 @@ void ws_strike_forget(ws_strike *t, unsigned slots, uint32_t epoch, uint32_t seq
 
 void ws_strike_targets(const uint8_t *replied, unsigned n, uint8_t *struck)
 {
- int later = 0;   /* a frame after i was answered */
+ int later = 0;   /* 1 when a frame after i got a reply */
  /* bound: n frames (the exchange's queue, MAX_QUEUE) */
  for (unsigned i = n; i-- > 0;) { struck[i] = (uint8_t)(!replied[i] && later); later |= replied[i]; }
 }

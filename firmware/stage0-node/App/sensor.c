@@ -13,9 +13,10 @@
 
 #define SDA_PIN GPIO_PIN_11
 #define SCL_PIN GPIO_PIN_12
-/* No transfer completes later than this: a command is 2 bytes, a reply 7, ~0.7 ms at 100 kHz. Longer
-   than a flash page erase (24.5 ms max), which stalls the I2C interrupt, so an erase that overlaps a
-   transfer does not read as a sensor timeout. ST's timer rounds down to 1/1024 s ticks. */
+/* No transfer completes later than this. A command is 2 bytes and a reply 7, ~0.7 ms at 100 kHz.
+   The guard is longer than a flash page erase (24.5 ms max), which stalls the I2C interrupt. So an
+   erase that overlaps a transfer does not read as a sensor timeout. ST's timer rounds down to
+   1/1024 s ticks. */
 #define I2C_GUARD_MS 30
 #define SHT45_HAL_ADDR ((uint16_t)(WS_SHT45_ADDR << 1))   /* ST's HAL takes the 7-bit address shifted left */
 #define I2C_IRQ_PRIORITY 2   /* below the radio and the RTC (0), like the console UART */
@@ -30,10 +31,10 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
   if (hi2c->Instance != I2C2) return;
   RCC_PeriphCLKInitTypeDef clk = { .PeriphClockSelection = RCC_PERIPHCLK_I2C2,
                                    .I2c2ClockSelection = RCC_I2C2CLKSOURCE_PCLK1 };
-  (void)HAL_RCCEx_PeriphCLKConfig(&clk);   /* I2C2 from PCLK1: only selects a clock, cannot time out */
+  (void)HAL_RCCEx_PeriphCLKConfig(&clk);   /* selects the I2C2 clock only, so it cannot time out */
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  /* Internal pull-ups (~40 kOhm) only define the lines when the breakout (and its 10 kOhm
-     pull-ups) is unplugged, so an absent sensor reads as a clean address NACK, not noise. */
+  /* The internal pull-ups (~40 kOhm) matter only when the breakout and its 10 kOhm pull-ups are
+     unplugged. They hold both lines high, so an absent sensor reads as a clean address NACK. */
   GPIO_InitTypeDef gpio = { .Pin = SDA_PIN | SCL_PIN, .Mode = GPIO_MODE_AF_OD, .Pull = GPIO_PULLUP,
                             .Speed = GPIO_SPEED_FREQ_LOW, .Alternate = GPIO_AF4_I2C2 };
   HAL_GPIO_Init(GPIOA, &gpio);
@@ -63,21 +64,24 @@ static void i2c_start(void)
   hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
   hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
   hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  /* Both fail only for a NULL or busy handle (stm32wlxx_hal_i2c.c). Should one fail anyway, the next
-     transfer is refused (rc -2) and the bus recovery that follows initialises the peripheral again. */
+  /* Both calls fail only for a NULL or busy handle (stm32wlxx_hal_i2c.c). If one fails anyway, the
+     HAL refuses the next transfer (rc -2). The bus recovery after it initialises the peripheral
+     again. */
   (void)WS_CHECK(HAL_I2C_Init(&hi2c2) == HAL_OK);
   (void)WS_CHECK(HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) == HAL_OK);
 }
 
-/* One measurement as a chain of interrupts and timers; nothing waits:
- *   sensor_start: command write (I2C interrupt mode)       S_CMD
- *   write complete (I2C IRQ): measurement timer             S_MEASURE
- *   timer (RTC IRQ): reply read (I2C interrupt mode)       S_READ
- *   read complete (I2C IRQ): sensor task                   S_DONE
- *   sensor task (main loop): CRC check, then sensor_done(), or the stuck-bus recovery first: one pin step
- *   per timer tick (S_RECOVER; ST's timer makes it ~2-3 ms), then sensor_done().
- * A guard timer bounds S_CMD and S_READ; an I2C error ends either. finish() is the one way out of
- * a bus state, under a critical section, so a late completion and the guard cannot both count. */
+/* One measurement is a chain of interrupts and timers. Nothing waits.
+ *   S_CMD:       sensor_start starts the command write (I2C interrupt mode).
+ *   S_MEASURE:   the write-complete interrupt starts the measurement timer.
+ *   S_READ:      the timer (RTC interrupt) starts the reply read (I2C interrupt mode).
+ *   S_DONE:      the read-complete interrupt posts the sensor task.
+ *   The sensor task (main loop) checks the CRCs and calls sensor_done(). After a failure it first
+ *   runs the stuck-bus recovery (S_RECOVER), one pin step per timer tick (~2-3 ms with ST's timer).
+ *   S_RECOVERED: the last step posts the sensor task, which then calls sensor_done().
+ * A guard timer bounds S_CMD and S_READ. An I2C error ends either state. finish() is the one way
+ * out of a bus state. It runs under a critical section, so a late completion and the guard cannot
+ * both count. */
 typedef enum { S_IDLE, S_CMD, S_MEASURE, S_READ, S_DONE, S_RECOVER, S_RECOVERED } sensor_state;
 static volatile sensor_state st = S_IDLE;
 static volatile int bus_rc, recover_rc;
@@ -98,8 +102,8 @@ static void finish(int rc)
   irq_unlock(primask);
 }
 
-/* Compare-and-set of the state: the I2C interrupt (priority 2) can be preempted by the guard
- * timer (RTC, priority 0), so a step is taken only if the state is still the expected one. */
+/* Compare-and-set of the state. The guard timer (RTC, priority 0) can preempt the I2C interrupt
+ * (priority 2). So a step happens only if the state is still the expected one. */
 static int advance(sensor_state from, sensor_state to)
 {
   uint32_t primask = irq_lock();
@@ -129,7 +133,7 @@ static void on_measured(void *ctx)
 
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c) { if (hi2c == &hi2c2 && st == S_READ) finish(0); }
-/* A NACK (no sensor at the address, or not ready) or a bus error. */
+/* An I2C error: a NACK (no sensor at the address, or a sensor not ready) or a bus error. */
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) { if (hi2c == &hi2c2) finish(st == S_CMD ? SENSOR_ENACK_ADDR : SENSOR_ENACK_READ); }
 static void on_guard(void *ctx) { (void)ctx; finish(SENSOR_TIMEOUT); }
@@ -139,19 +143,20 @@ void I2C2_ER_IRQHandler(void);
 void I2C2_EV_IRQHandler(void) { BUSYMON_ISR("I2C2_EV", HAL_I2C_EV_IRQHandler(&hi2c2)); }
 void I2C2_ER_IRQHandler(void) { BUSYMON_ISR("I2C2_ER", HAL_I2C_ER_IRQHandler(&hi2c2)); }
 
-/* Stuck-bus recovery: a sensor reset mid-byte can hold SDA low. The pin sequence (clock SCL
- * until SDA is free, then a real STOP) is ws_i2c_recover_step() in firmware/stage0.c, host-tested
- * in firmware/test_policy.c. Both lines are released (output register high) before they become
- * outputs, so taking them over never drives SCL low by accident. */
+/* Stuck-bus recovery: a sensor reset in the middle of a byte can hold SDA low. The pin sequence
+ * clocks SCL until SDA is free, then sends a real STOP. It is ws_i2c_recover_step() in
+ * firmware/stage0.c, and firmware/test_policy.c tests it on the host. recover_begin() releases
+ * both lines (output register high) before they become outputs. So the takeover never drives SCL
+ * low by accident. */
 static void pin_scl(void *c, int level) { (void)c; HAL_GPIO_WritePin(GPIOA, SCL_PIN, level ? GPIO_PIN_SET : GPIO_PIN_RESET); }
 static void pin_sda(void *c, int level) { (void)c; HAL_GPIO_WritePin(GPIOA, SDA_PIN, level ? GPIO_PIN_SET : GPIO_PIN_RESET); }
 static int pin_read_sda(void *c) { (void)c; return HAL_GPIO_ReadPin(GPIOA, SDA_PIN) == GPIO_PIN_SET; }
 static const ws_i2c_pins pins = { 0, pin_scl, pin_sda, pin_read_sda, 0 };
 
-/* One recovery step per timer tick; the chain ends within WS_I2C_RECOVER_STEPS ticks (stage0.h).
-   The timer asks for 1 ms; ST's timer server makes it at least 3 RTC ticks (~2-3 ms, timer_if.c
-   MIN_ALARM_DELAY). I2C's 100 kHz half period is 5 us (UM10204 t_LOW >= 4.7 us); slower is fine.
-   The whole recovery takes ~15-70 ms. */
+/* One recovery step per timer tick. The chain ends within WS_I2C_RECOVER_STEPS ticks (stage0.h).
+   The timer asks for 1 ms. ST's timer server makes it at least 3 RTC ticks (~2-3 ms, timer_if.c
+   MIN_ALARM_DELAY). The I2C half period at 100 kHz is 5 us (UM10204 t_LOW >= 4.7 us). A slower
+   clock is valid. The whole recovery takes ~15-70 ms. */
 static void on_step(void *ctx)
 {
   (void)ctx;
@@ -162,8 +167,8 @@ static void on_step(void *ctx)
 
 static void recover_begin(void)
 {
-  (void)HAL_I2C_DeInit(&hi2c2);   /* fails only for a NULL handle; the pins are taken over below either way */
-  /* An abandoned transfer can leave its interrupt pending and its handler set; neither may run on
+  (void)HAL_I2C_DeInit(&hi2c2);   /* fails only for a NULL handle. The code below takes the pins over anyway */
+  /* An abandoned transfer can leave its interrupt pending and its handler set. Neither may run on
      the re-initialised peripheral. */
   HAL_NVIC_ClearPendingIRQ(I2C2_EV_IRQn); HAL_NVIC_ClearPendingIRQ(I2C2_ER_IRQn);
   hi2c2.XferISR = NULL;
@@ -176,7 +181,7 @@ static void recover_begin(void)
   (void)WS_CHECK(UTIL_TIMER_Start(&step_timer) == UTIL_TIMER_OK);
 }
 
-static int failed_rc;   /* the reading's failure, reported once the recovery has run */
+static int failed_rc;   /* the measurement's failure code. The task reports it after the recovery */
 static void sensor_task(void)
 {
   int16_t t = 0; uint16_t h = 0;
@@ -212,7 +217,7 @@ int sensor_start(void)
   if (st != S_IDLE) return -1;
   st = S_CMD;
   (void)WS_CHECK(UTIL_TIMER_Start(&guard_timer) == UTIL_TIMER_OK);   /* stopped by finish() or the write's completion */
-  /* ST's HAL takes a non-const buffer it only reads (the static array outlives the transfer). */
+  /* ST's HAL takes a non-const buffer but only reads it. The static array outlives the transfer. */
   if (HAL_I2C_Master_Transmit_IT(&hi2c2, SHT45_HAL_ADDR, (uint8_t *)(uintptr_t)command, sizeof command) != HAL_OK) finish(SENSOR_ENACK_ADDR);
   return 0;
 }

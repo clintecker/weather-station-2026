@@ -1,10 +1,11 @@
 # tx_exchange: the minute's radio exchange
 
-`tx_exchange.c` runs the TX node's radio exchange for one minute. It sends the live observation,
-then older pending observations as the policy allows. It seals each one with a freshly reserved
-counter and follows it with its own ACK window. Then it sends the health report if one is due. One
-explicit state machine does this, driven by radio and timer events. This file also holds the AES key
-and is the only module that seals and opens frames.
+`tx_exchange.c` runs the radio exchange of the transmitting node (the TX node) for one minute. The
+TX node sends the live observation first. Then it sends older pending observations, as many as the
+transmission policy allows. It seals each frame with a newly reserved counter. After each frame it
+listens for an acknowledgement (ACK) during its own ACK window. Then it sends the health report if
+one is due. One explicit state machine does this work. Radio events and timer events drive it. This
+file also holds the AES key, and it is the only module that seals and opens frames.
 
 This document is the source. `tools/tangle.py` generates `tx_exchange.c` from the code chunks below.
 The repository also holds the generated file, so the build, the static analysers and the host tests
@@ -17,23 +18,28 @@ python3 tools/tangle.py --weave /tmp/tx_exchange.html firmware/stage0-node/App/t
 ```
 
 A chunk is a fenced ` ```c {#name} ` block. A line `<<name>>` inside a chunk includes chunk
-`name`. Chunks appear in reading order. The root chunk (section 11) puts them in C order.
+`name`. The chunks appear in reading order. The root chunk (section 11) puts them in C order.
 `docs/firmware-event-model.md` describes the same state machine for the whole firmware.
+
+The other parties in an exchange are the receiving board (the RX bridge) and the gateway. The RX
+bridge holds no key. It forwards each frame to the gateway over USB serial. It transmits the ACK or
+the negative acknowledgement (NACK) that the gateway seals. `docs/protocol.md` has the frame
+layouts and the bridge's line contract.
 
 ## 1. Behaviour
 
 | Behaviour | Mechanism | Checked by (`tests/test_tx_machine.py`) |
 |---|---|---|
-| Every state ends | each state waits only for an event that is certain to come: TxDone or TxTimeout (`WS_TX_TIMEOUT_MS`, 3000 ms), the ACK window timer (2000 ms) or the gap timer (50 ms) | `test_no_reply_closes_the_window_by_its_own_timeout`, `test_a_transmit_timeout_puts_the_stuck_radio_in_standby` |
-| Unexpected events change nothing | a (state, event) pair outside the table in section 2 is counted in `unexpected` and printed | `test_every_unlisted_state_event_pair_is_only_counted` |
-| Events posted together are all handled | events are bits, handled lowest bit first. Two known races are dropped, not counted | `test_two_events_before_the_main_loop_are_both_handled_in_bit_order` |
-| Each frame gets a full window | the window timer is stopped when a reply ends the window | `test_every_frame_gets_its_own_full_window` |
-| Damaged or foreign packets do not end the window | the radio listens again until the window timer fires | `test_stray_and_damaged_packets_keep_the_rest_of_the_window`, `test_a_damaged_reply_does_not_end_the_window_early` |
-| Only the reply to the frame just sent ends the window or sets the clock | the reply must echo the counter, epoch and sequence of that frame | `test_an_authentic_ack_for_another_frame_keeps_the_window_open`, `test_a_nack_for_another_frame_is_ignored`, `test_only_an_ack_for_the_frame_just_sent_sets_the_clock` |
-| No frame without a durable counter | `store_next_counter` must succeed before a frame is sealed | `test_counter_reservations_never_meet_a_busy_radio` (the reservation's flash write) |
-| No flash write while the radio is busy | counters are reserved in the gap state. Readings made during an exchange are journaled when the radio goes idle | every test (`h_flash_ops_during_radio`), `test_a_reading_made_during_an_exchange_is_journaled_when_the_radio_goes_idle` |
-| A failing link sends little | after a missed reply one more frame goes, then the drain stops | `test_a_missed_reply_allows_one_more_frame_then_stops_the_drain` |
-| A hung radio is detected | the exchange has a time limit. The watchdog check aborts it | `test_a_radio_that_never_finishes_trips_the_exchange_bound` |
+| Every state ends | Each state waits only for an event that is certain to come: TxDone or TxTimeout (`WS_TX_TIMEOUT_MS`, 3000 ms), the ACK window timer (2000 ms) or the gap timer (50 ms) | `test_no_reply_closes_the_window_by_its_own_timeout`, `test_a_transmit_timeout_puts_the_stuck_radio_in_standby` |
+| Unexpected events change nothing | The code counts a (state, event) pair outside the table in section 2 in `unexpected` and prints it | `test_every_unlisted_state_event_pair_is_only_counted` |
+| Events posted together are all handled | Events are bits. The code handles the lowest bit first. It drops two known races and does not count them | `test_two_events_before_the_main_loop_are_both_handled_in_bit_order` |
+| Each frame gets a full window | The code stops the window timer when a reply ends the window | `test_every_frame_gets_its_own_full_window` |
+| Damaged or foreign packets do not end the window | The radio listens again until the window timer fires | `test_stray_and_damaged_packets_keep_the_rest_of_the_window`, `test_a_damaged_reply_does_not_end_the_window_early` |
+| Only the reply to the frame just sent ends the window or sets the clock | The reply must echo the counter, epoch and sequence of that frame | `test_an_authentic_ack_for_another_frame_keeps_the_window_open`, `test_a_nack_for_another_frame_is_ignored`, `test_only_an_ack_for_the_frame_just_sent_sets_the_clock` |
+| No frame without a durable counter | `store_next_counter` must succeed before the code seals a frame | `test_counter_reservations_never_meet_a_busy_radio` (the flash write of the reservation) |
+| No flash write while the radio is busy | The code reserves counters in the gap state. `app_tx.c` journals a reading made during an exchange when the radio goes idle | every test (`h_flash_ops_during_radio`), `test_a_reading_made_during_an_exchange_is_journaled_when_the_radio_goes_idle` |
+| A failing link sends little | After a missed reply, one more frame goes. Then the drain stops | `test_a_missed_reply_allows_one_more_frame_then_stops_the_drain` |
+| A hung radio is detected | The exchange has a time limit. The watchdog check aborts an exchange that passes it | `test_a_radio_that_never_finishes_trips_the_exchange_bound` |
 
 ## 2. State machine
 
@@ -41,7 +47,7 @@ A chunk is a fenced ` ```c {#name} ` block. A line `<<name>>` inside a chunk inc
 
 | `tx_state` | Name (`STATUS`) | Radio | Waits for |
 |---|---|---|---|
-| `TX_IDLE` | `idle` | sleep | nothing: `exchange_start` leaves it |
+| `TX_IDLE` | `idle` | sleep | nothing. `exchange_start` leaves it |
 | `TX_GAP` | `gap` | standby or sleep | `EV_GAP` |
 | `TX_SENDING` | `sending` | transmitting an observation | `EV_TX_DONE`, `EV_TX_TIMEOUT` |
 | `TX_ACK_WAIT` | `ack-wait` | receiving | `EV_RX_DONE`, `EV_RX_ERROR`, `EV_RX_TIMEOUT`, `EV_ACK_END` |
@@ -52,17 +58,18 @@ A chunk is a fenced ` ```c {#name} ` block. A line `<<name>>` inside a chunk inc
 | Bit | Event | Name | Source |
 |---|---|---|---|
 | 0 | `EV_TX_DONE` | `tx-done` | radio TxDone: the frame left |
-| 1 | `EV_TX_TIMEOUT` | `tx-timeout` | radio TxTimeout, the driver's 3000 ms software timer |
-| 2 | `EV_RX_DONE` | `rx-done` | radio RxDone with a good payload CRC |
+| 1 | `EV_TX_TIMEOUT` | `tx-timeout` | radio TxTimeout, the 3000 ms software timer of the driver |
+| 2 | `EV_RX_DONE` | `rx-done` | radio RxDone with a good payload CRC (cyclic redundancy check) |
 | 3 | `EV_RX_TIMEOUT` | `rx-timeout` | radio RxTimeout. ST's `radio.c` reports a header error this way |
-| 4 | `EV_RX_ERROR` | `rx-error` | radio RxError: payload CRC failed |
+| 4 | `EV_RX_ERROR` | `rx-error` | radio RxError: the payload CRC failed |
 | 5 | `EV_GAP` | `gap` | `gap_timer`, 50 ms one-shot |
 | 6 | `EV_ACK_END` | `ack-end` | `ack_timer`, 2000 ms one-shot: the ACK window is over |
 
 ### Transitions
 
-"Next item" means: the next queued frame after a gap if one is left, else the end of the exchange.
-The end of the exchange is the health report after a gap if one is due, else `idle`.
+"Next item" means the next queued frame after a gap if one is left, else the end of the exchange.
+At the end of the exchange the node sends the health report after a gap if one is due. Else it goes
+to `idle`.
 
 | State | Event | Action | Next state |
 |---|---|---|---|
@@ -76,17 +83,74 @@ The end of the exchange is the health report after a gap if one is due, else `id
 | `diag-sending` | `EV_TX_DONE` or `EV_TX_TIMEOUT` | note the transmit result (timeout: radio to standby first) | `idle` |
 | any | any other | count `unexpected`, print `#error unexpected` | unchanged |
 
-```text
-idle --exchange_start--> gap --EV_GAP, frame--> sending --EV_TX_DONE--> ack-wait
-                          ^ |                      |                        |
-                          | |                      | EV_TX_TIMEOUT          | reply or EV_ACK_END
-                          | |                      v                        |
-                          | |                  next item <------------------+
-                          | |                      |  frame left or report due: gap
-                          | |                      |  else: idle
-                          +-|----------------------+
-                            |
-                            +--EV_GAP, report--> diag-sending --EV_TX_DONE, EV_TX_TIMEOUT--> idle
+The diagram shows the same transitions. The two diamonds are "next item" and "end of the
+exchange". `exchange_abort` (section 9) can also move any state to `idle`.
+
+```mermaid
+stateDiagram-v2
+  state "idle" as idle
+  state "gap" as gap
+  state "sending" as sending
+  state "ack-wait" as ack_wait
+  state "diag-sending" as diag_sending
+  state next_item <<choice>>
+  state exchange_done <<choice>>
+
+  [*] --> idle
+  idle --> gap : exchange_start with a non-empty queue
+  gap --> sending : EV_GAP for a frame, frame sent
+  gap --> next_item : EV_GAP for a frame, local failure
+  gap --> idle : EV_GAP for a frame, counter refused
+  gap --> diag_sending : EV_GAP for the health report, report sent
+  gap --> idle : EV_GAP for the health report, any failure
+  sending --> ack_wait : EV_TX_DONE
+  sending --> exchange_done : EV_TX_TIMEOUT, drain stopped
+  ack_wait --> ack_wait : EV_RX_DONE not the reply, EV_RX_ERROR, EV_RX_TIMEOUT
+  ack_wait --> next_item : EV_RX_DONE with the reply to this frame
+  ack_wait --> next_item : EV_ACK_END, no reply
+  next_item --> gap : a frame is left
+  next_item --> exchange_done : no frame is left
+  exchange_done --> gap : health report due
+  exchange_done --> idle : no health report due
+  diag_sending --> idle : EV_TX_DONE or EV_TX_TIMEOUT
+```
+
+### One minute's exchange
+
+The sequence shows one minute with a live frame, backlog frames and a health report.
+
+```mermaid
+sequenceDiagram
+  participant TX as TX node
+  participant RX as RX bridge
+  participant GW as Gateway
+  Note over TX: exchange_start queues the live frame, then the oldest backlog frames
+  loop Each queued frame, the live frame first
+    Note over TX: Gap of 50 ms. Reserve a counter. Seal the frame.
+    TX->>RX: Observation frame over LoRa
+    Note over TX: TxDone starts the ACK window of 2000 ms
+    RX->>GW: The frame as a hex line over USB serial
+    alt Gateway stores the record or already holds it
+      Note over GW: Commit the record, then seal an ACK
+      GW->>RX: ACK as 66 hex digits
+      RX->>TX: ACK over LoRa
+      Note over TX: The reply to this frame closes the window
+    else Gateway refuses an authentic record
+      GW->>RX: NACK as 66 hex digits
+      RX->>TX: NACK over LoRa
+      Note over TX: The record is abandoned. The window closes.
+    else No reply reaches the node
+      Note over TX: The ACK window ends. The drain rule applies.
+    end
+  end
+  Note over TX: policy_exchange_end applies strikes and updates the link state
+  opt Health report due
+    Note over TX: Gap of 50 ms. Reserve a counter. Seal the report.
+    TX->>RX: Health report over LoRa
+    RX->>GW: The report as a hex line
+    Note over GW: The gateway logs the report and sends no reply
+  end
+  Note over TX: Idle. The radio sleeps. held_flush journals held readings.
 ```
 
 ### Timing constants
@@ -96,17 +160,17 @@ idle --exchange_start--> gap --EV_GAP, frame--> sending --EV_TX_DONE--> ack-wait
 | `ACK_WINDOW_MS` | 2000 ms | the ACK window, from TxDone |
 | `INTER_FRAME_MS` | 50 ms | the gap before every frame, the first one included |
 | `EXCHANGE_MARGIN_S` | 5 s | added to the exchange time limit |
-| `WS_TX_TIMEOUT_MS` (`radio_cfg.h`) | 3000 ms | the driver's transmit timeout |
+| `WS_TX_TIMEOUT_MS` (`radio_cfg.h`) | 3000 ms | the transmit timeout of the driver |
 
-The gap gives the gateway's receiver time to listen again after it sent its ACK.
+The gap gives the RX bridge time to listen again after it sent its ACK.
 
 The generated file opens with a summary:
 
 ```c {#abstract}
-/* The minute's radio exchange, one state at a time (docs/firmware-event-model.md has the table).
- * Every state is left by an event that is certain to come: the radio's TxDone/TxTimeout
- * (WS_TX_TIMEOUT_MS), the ACK window timer, or the gap timer. Anything else is counted as
- * unexpected. Time comes only from an ACK that echoes the counter of the frame just sent. */
+/* The minute's radio exchange, one state at a time. docs/firmware-event-model.md has the table.
+ * An event that is certain to come ends every state: the radio's TxDone or TxTimeout
+ * (WS_TX_TIMEOUT_MS), the ACK window timer or the gap timer. Any other event counts as
+ * unexpected. Only an ACK that echoes the counter of the frame just sent sets the clock. */
 ```
 
 The constants:
@@ -114,15 +178,15 @@ The constants:
 ```c {#timing}
 #define ACK_WINDOW_MS       2000U
 #define EXCHANGE_MARGIN_S   5U
-#define INTER_FRAME_MS      50U     /* gap before each further frame: the RX is back to listening after its ACK */
+#define INTER_FRAME_MS      50U     /* gap before each frame: the RX bridge listens again after its ACK */
 ```
 
 The health report carries the build id. The Makefile computes it, and the file refuses to build
 without it:
 
 ```c {#build-id}
-/* WS_FW_BUILD_ID: first 8 hex digits of the release commit (WS_FW_VERSION), 0 if they are not
-   hex; computed by the Makefile. */
+/* WS_FW_BUILD_ID is the first 8 hex digits of the release commit (WS_FW_VERSION), or 0 if they
+   are not hex. The Makefile computes it. */
 #ifndef WS_FW_BUILD_ID
 #error "WS_FW_BUILD_ID comes from the Makefile"
 #endif
@@ -130,7 +194,7 @@ without it:
 
 ## 3. State
 
-`tx_state` is the current state. `tx_state_name` gives the name that `STATUS` prints, and a
+`tx_state` is the current state. `tx_state_name` gives the name that `STATUS` prints. A
 compile-time check keeps one name per state.
 
 ```c {#states}
@@ -140,7 +204,7 @@ _Static_assert(sizeof tx_state_name / sizeof tx_state_name[0] == TX_STATES, "one
 static tx_state_t tx_state = TX_IDLE;
 ```
 
-One gap timer serves both kinds of gap. `gap_then` says what the gap starts: the next frame or the
+One gap timer serves both kinds of gap. `gap_then` tells what the gap starts: the next frame or the
 health report.
 
 ```c {#gap-timer}
@@ -148,59 +212,58 @@ static enum { GAP_FRAME, GAP_DIAG } gap_then;   /* what the gap timer starts */
 static UTIL_TIMER_Object_t gap_timer;
 ```
 
-The ACK window has its own timer. ST's driver timeout is not used because a CRC error leaves its
-`RxTimeoutTimer` running, and its timeout leaves the radio receiving. The radio listens with
-`ws_radio_rx(0)` (no driver timeout). Every way out of `ack-wait` puts the radio in standby.
-`batch` holds the events of the current `process` pass that are not yet handled. `events` is the
-callback table given to the radio driver.
+The ACK window has its own timer. The code does not use the timeout of ST's driver. A CRC error
+leaves the driver's `RxTimeoutTimer` running, and its timeout leaves the radio receiving. The radio
+listens with `ws_radio_rx(0)`, which sets no driver timeout. Every way out of `ack-wait` puts the
+radio in standby. `batch` holds the events of the current `process` pass that are not handled yet.
+`events` is the callback table that the code gives to the radio driver.
 
 ```c {#ack-timer}
-/* The ACK window is this firmware's own timer, not the radio driver's: ST's RxTimeoutTimer is left
-   running by a CRC error and its timeout leaves the radio receiving. The radio
-   listens with no driver timeout (ws_radio_rx(0)); ack_timer ends the window, and every way out of
-   ack-wait puts the radio in standby first. */
+/* This firmware times the ACK window with its own timer, not with the radio driver's timeout.
+   A CRC error leaves ST's RxTimeoutTimer running, and its timeout leaves the radio receiving.
+   The radio listens with no driver timeout (ws_radio_rx(0)). ack_timer ends the window, and
+   every way out of ack-wait puts the radio in standby first. */
 static UTIL_TIMER_Object_t ack_timer;
-static uint32_t batch;      /* this pass's events not yet handled (process) */
+static uint32_t batch;      /* the events of this process pass not handled yet */
 static RadioEvents_t events;
 ```
 
-The exchange queue. `queue[0..qn)` holds journal references, `qi` is the frame being sent, and
+The exchange queue. `queue[0..qn)` holds journal references, and `qi` is the frame being sent.
 `replied[i]` records that the gateway answered `queue[i]` with an ACK or a NACK. `MAX_QUEUE` is 21
 (`tx_exchange.h`): the live frame and up to 20 backlog frames. `exchange_start_s` and
 `exchange_limit_s` give the watchdog its evidence. `sent_counter`, `sent_epoch` and `sent_seq`
-identify the frame just sent, which a reply must echo.
+identify the frame just sent. A reply must echo them.
 
 ```c {#queue}
 static jref_t queue[MAX_QUEUE];
-static uint8_t replied[MAX_QUEUE];   /* the gateway answered queue[i] (ACK or NACK) */
+static uint8_t replied[MAX_QUEUE];   /* the gateway answered queue[i] with an ACK or a NACK */
 static unsigned qn, qi;
-static uint32_t exchange_start_s, exchange_limit_s;   /* watchdog progress evidence */
+static uint32_t exchange_start_s, exchange_limit_s;   /* progress evidence for the watchdog */
 static uint64_t sent_counter;
 static uint32_t sent_epoch, sent_seq;
 ```
 
 ### Counts
 
-`tx_counts` is written only here. Other modules read it through `exchange_counts()`.
+Only this file writes `tx_counts`. Other modules read it through `exchange_counts()`.
 
 | Field | Incremented when |
 |---|---|
-| `sent` | an observation frame is sealed, before the send (a refused send counts too) |
-| `acked` | an authentic ACK names a record found in the journal |
+| `sent` | the code seals an observation frame, before the send (a refused send counts too) |
+| `acked` | an authentic ACK names a record that the journal holds |
 | `no_ack` | an ACK window ends with no reply |
 | `ack_rejects` | a packet fails `ws_open_reply`, or a NACK is not for the frame just sent |
 | `unexpected` | an event arrives in a state that does not expect it |
-| `air` | a failure run: a refused counter reservation, a refused send or a TxTimeout adds one, a TxDone clears it |
+| `air` | a failure run: a refused counter reservation, a refused send or a TxTimeout adds one. A TxDone clears it |
 
 Only a TxDone proves that the radio works. `watchdog_healthy` (`app_tx.c`) fails when the `air`
-run exceeds `TX_FAIL_LIMIT` (10), so a radio that accepts sends but never finishes a frame leads to
-a reset.
+run passes `TX_FAIL_LIMIT` (10). The watchdog then resets a radio that accepts sends but never
+finishes a frame.
 
 ```c {#counts}
-/* Transmission failures: a refused counter reservation, a refused Radio.Send or a
-   TxTimeout; only a TxDone (the frame really left) clears the run. Before 2026-10-14 one run mixed
-   these with journal appends, and every accepted Send reset it, so a radio that accepted Send but
-   never finished a frame was never reset. */
+/* tx_counts.air is the run of transmit failures in a row. A refused counter reservation, a refused
+   Radio.Send or a TxTimeout adds one. Only a TxDone clears the run, because only a TxDone proves
+   that the frame left. Failed journal appends have their own run (journal_fails, app_tx.c). */
 static tx_counts_t tx_counts;
 const tx_counts_t *exchange_counts(void) { return &tx_counts; }
 ```
@@ -208,11 +271,11 @@ const tx_counts_t *exchange_counts(void) { return &tx_counts; }
 ## 4. Identity and key
 
 `exchange_load_identity` loads the provisioning record from `node_store.c` once at boot. The key
-stays in this file. Other modules see only the station id and the key check value through
+stays in this file. Other modules see only the station id and the key check value (`kcv`) through
 `exchange_identity()`. A failed load leaves `provisioned` at 0.
 
 ```c {#identity}
-/* Provisioning: the key never leaves this file (docs/power-of-ten.md, rule 6). */
+/* The key never leaves this file: data at the smallest scope (docs/power-of-ten.md, rule 6). */
 static tx_identity_t identity;
 static uint8_t key[WS_KEY_LEN];
 int exchange_load_identity(void)
@@ -229,18 +292,18 @@ const tx_identity_t *exchange_identity(void) { return &identity; }
 
 The RxDone callback copies at most `WS_ACK_FRAME_LEN` (33) bytes. `rx_len` keeps the received
 size, so `ws_open_reply` still rejects a longer packet by its length. `ack_rssi` and `ack_snr` keep
-the signal of the last authentic reply for the health report. They start at `WS_SIGNAL_NONE`
-(`INT8_MIN`).
+the signal of the last authentic reply for the health report: the received signal strength (RSSI)
+and the signal-to-noise ratio (SNR). They start at `WS_SIGNAL_NONE` (`INT8_MIN`).
 
 ```c {#rx-buffer}
-/* Only a WS_ACK_FRAME_LEN reply is ever opened. rx_len keeps the true received size, so a longer
-   packet is still rejected (ws_open_reply checks the length before reading) and logged as it was. */
+/* The code opens only a reply of WS_ACK_FRAME_LEN bytes. rx_len keeps the true received size.
+   ws_open_reply checks that length before it reads, so it still rejects and logs a longer packet. */
 static uint8_t rx_frame[WS_ACK_FRAME_LEN];
 static uint16_t rx_len;
 static int16_t rx_rssi;
 static int8_t rx_snr;
-/* Signal of the last authentic ACK, as the node heard it (DIAG, design section 4): the uplink and
-   downlink can differ. */
+/* The signal of the last authentic ACK as the node heard it, for the health report
+   (docs/protocol-design.md section 4). The uplink signal and the downlink signal can differ. */
 static int8_t ack_rssi = WS_SIGNAL_NONE, ack_snr = WS_SIGNAL_NONE;
 ```
 
@@ -248,10 +311,10 @@ static int8_t ack_rssi = WS_SIGNAL_NONE, ack_snr = WS_SIGNAL_NONE;
 
 Interrupt and timer callbacks post events as bits into `pending_ev` (`App/events.h`).
 `events_post` sets bits with interrupts masked and schedules the process task. Several events can
-therefore arrive before the task runs, and none is lost.
+therefore arrive before the task runs, and the task loses none of them.
 
 ```c {#event-bits}
-/* Events from interrupt and timer context, as bits (App/events.h). */
+/* Interrupt and timer callbacks post these events as bits (App/events.h). */
 #define EV_TX_DONE    (1U << 0)
 #define EV_TX_TIMEOUT (1U << 1)
 #define EV_RX_DONE    (1U << 2)
@@ -267,9 +330,10 @@ static volatile uint32_t pending_ev;
 
 ### Callbacks
 
-Each callback only posts its bit. `on_rx_done` also copies the packet and its signal. ST's HAL
-raises RxDone and then RxError for a packet whose payload CRC failed. `on_rx_done` asks
-`ws_radio_take_crc_error()` and drops such a packet, so only its `EV_RX_ERROR` is posted.
+Each callback only posts its bit. `on_rx_done` also copies the packet and its signal. For a packet
+whose payload CRC failed, ST's hardware abstraction layer (HAL) raises RxDone and then RxError.
+`on_rx_done` asks `ws_radio_take_crc_error()` and drops such a packet. Only its `EV_RX_ERROR` is
+posted.
 
 ```c {#callbacks}
 static void post(uint32_t ev) { events_post(&pending_ev, ev); }
@@ -279,8 +343,8 @@ static void on_tx_done(void) { post(EV_TX_DONE); }
 static void on_tx_timeout(void) { post(EV_TX_TIMEOUT); }
 static void on_rx_timeout(void) { post(EV_RX_TIMEOUT); }
 static void on_rx_error(void) { post(EV_RX_ERROR); }
-/* ST's HAL raises RxDone for a packet whose payload CRC failed, then RxError (stm32wlxx_hal_subghz.c
-   HAL_SUBGHZ_IRQHandler): such a packet is only the RxError. */
+/* For a packet whose payload CRC failed, ST's HAL raises RxDone and then RxError
+   (stm32wlxx_hal_subghz.c, HAL_SUBGHZ_IRQHandler). The code keeps only the RxError. */
 /* cppcheck-suppress constParameterCallback ; ST's RadioEvents_t RxDone signature */
 static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 {
@@ -300,8 +364,8 @@ applies two rules:
 
 | Rule | Why |
 |---|---|
-| `EV_TX_DONE` and `EV_TX_TIMEOUT` in one batch: drop the timeout | the frame left. ST stops the timeout on TxDone, so a later one cannot come |
-| bits outside `EV_ALL`: `WS_CHECK` fails, the bits are dropped | only `post()` sets bits, and only `EV_*` bits |
+| `EV_TX_DONE` and `EV_TX_TIMEOUT` in one batch: drop the timeout | The frame left. ST stops the timeout on TxDone, so no later timeout can come |
+| Bits outside `EV_ALL`: `WS_CHECK` fails, and the code drops the bits | Only `post()` sets bits, and only `EV_*` bits |
 
 `batch` is a file variable, so a handler can remove a later bit from the current pass
 (`window_closed`, section 7). `BUSYMON_TASK(process)` defines `process_timed`, which times each
@@ -311,10 +375,10 @@ pass (`busymon.h`). `exchange_init` registers `process_timed` with the sequencer
 static void process(void)
 {
   batch = events_take(&pending_ev);
-  /* A TxTimeout that fired with its TxDone in the same pass is a race, not a bug: the frame left
-     (ST stops the timeout on TxDone, so a later one cannot come). Dropped, like a stale ack-end. */
+  /* A TxTimeout in the same pass as its TxDone is a race, not a bug. The frame left, and ST stops
+     the timeout on TxDone, so no later timeout comes. The code drops it, like a stale ack-end. */
   if ((batch & EV_TX_DONE) && (batch & EV_TX_TIMEOUT)) batch &= ~EV_TX_TIMEOUT;
-  if (!WS_CHECK(!(batch & ~EV_ALL))) batch &= EV_ALL;   /* only post() sets bits, and only EV_* ones */
+  if (!WS_CHECK(!(batch & ~EV_ALL))) batch &= EV_ALL;   /* only post() sets bits, and only EV_* bits */
   uint32_t bit = 1;
   for (unsigned k = 0; k < EV_COUNT && batch; k++, bit <<= 1)   /* lowest bit first */
     if (batch & bit) { batch &= ~bit; handle(bit); }
@@ -323,13 +387,14 @@ BUSYMON_TASK(process)
 ```
 
 `handle` passes one event to the handler of the current state. A handler returns 1 if the state
-expects the event, else 0. A 0 increments `unexpected` and prints
-`#error unexpected event=<name> state=<name>`, and nothing else changes. `idle` expects no event.
-An out-of-range `tx_state` fails a `WS_CHECK` and is reset to `TX_IDLE`.
+expects the event, else 0. After a 0, `handle` increments `unexpected` and prints
+`#error unexpected event=<name> state=<name>`. Nothing else changes. `idle` expects no event. An
+out-of-range `tx_state` fails a `WS_CHECK`, and `handle` resets it to `TX_IDLE`.
 
 ```c {#dispatch}
-/* One event in one state. Every pair not listed is a bug or a stray radio callback: counted and
-   printed, never acted on (docs/firmware-event-model.md has the full table). */
+/* Handle one event in one state. A pair that the table does not list is a bug or a stray radio
+   callback. The code counts it and prints it, and does nothing else
+   (docs/firmware-event-model.md has the full table). */
 static void handle(uint32_t ev)
 {
   int done = 0;
@@ -339,7 +404,7 @@ static void handle(uint32_t ev)
     case TX_ACK_WAIT: done = in_ack_wait(ev); break;
     case TX_DIAG_SENDING: done = in_diag_sending(ev); break;
     case TX_GAP: done = in_gap(ev); break;
-    default: if (!WS_CHECK(tx_state == TX_IDLE)) tx_state = TX_IDLE; break;   /* idle expects nothing */
+    default: if (!WS_CHECK(tx_state == TX_IDLE)) tx_state = TX_IDLE; break;   /* idle expects no event */
   }
   if (done) return;
   tx_counts.unexpected++;
@@ -351,20 +416,20 @@ static void handle(uint32_t ev)
 
 ### Start
 
-`app_tx.c` calls `exchange_start` once per minute that may send.
+`app_tx.c` calls `exchange_start` once in each minute that may send.
 
 | Step | Action |
 |---|---|
-| 1 | `WS_CHECK` that no exchange runs. If one does, return. `app_tx.c` holds the reading instead |
+| 1 | `WS_CHECK` that no exchange runs. If one runs, return. `app_tx.c` holds the reading instead |
 | 2 | clamp `backlog` to `MAX_QUEUE - 1` (20) with a `WS_CHECK` |
 | 3 | queue the live reference first if `live` is not NULL |
-| 4 | append the oldest pending records from `store_journal_oldest`, excluding `live`. Without a live reference the backlog may use its slot too |
+| 4 | append the oldest pending records from `store_journal_oldest`, except `live`. Without a live reference the backlog can also use the live slot |
 | 5 | reset `qi`, the drain flag (`missed_last`) and `replied[]` |
 | 6 | compute the exchange time limit |
 | 7 | if the queue is not empty: record the start time and enter `gap` before the first frame. Else stay `idle` |
 
-The exchange time limit assumes the worst case for every frame and the health report. Each uses its
-full transmit timeout, its full ACK window and a gap:
+The exchange time limit assumes the worst case for every frame and for the health report. Each one
+uses its full transmit timeout, a full ACK window and a gap:
 
 ```text
 exchange_limit_s = (qn + 1) * (WS_TX_TIMEOUT_MS + ACK_WINDOW_MS + INTER_FRAME_MS) / 1000 + EXCHANGE_MARGIN_S
@@ -373,30 +438,30 @@ qn = 1:   15 s
 qn = 21: 116 s
 ```
 
-`exchange_overdue(now_s)` is true when the exchange is busy and more than `exchange_limit_s` has
-passed since `exchange_start_s`. `watchdog_healthy` (`app_tx.c`) then calls `exchange_abort`
-(section 9) and lets the watchdog reset the board.
+`exchange_overdue(now_s)` is true when an exchange runs and more than `exchange_limit_s` has passed
+since `exchange_start_s`. `watchdog_healthy` (`app_tx.c`) then calls `exchange_abort` (section 9)
+and lets the watchdog reset the board.
 
-The first frame also waits for the gap. The previous exchange may have put the radio to sleep in the
-same main-loop pass. The chip needs time to enter sleep before the firmware wakes it.
+The first frame also waits for the gap. The previous exchange can put the radio to sleep in the same
+main-loop pass. The chip needs time to enter sleep before the firmware wakes it.
 
 ```c {#exchange-start}
 void exchange_start(const jref_t *live, unsigned backlog)
 {
   if (!WS_CHECK(!exchange_busy())) return;   /* app_tx.c holds the reading while an exchange runs */
-  if (!WS_CHECK(backlog <= MAX_QUEUE - 1U)) backlog = MAX_QUEUE - 1U;   /* the queue's room */
+  if (!WS_CHECK(backlog <= MAX_QUEUE - 1U)) backlog = MAX_QUEUE - 1U;   /* the room in the queue */
   qn = 0;
   if (live) queue[qn++] = *live;
   qn += store_journal_oldest(queue + qn, backlog + (live ? 0U : 1U), live);
   qi = 0;
   missed_last = 0;
   memset(replied, 0, sizeof replied);
-  /* The longest this exchange can take: every frame and the health report hit their transmit
-     timeout or wait out the whole ACK window, plus the gaps; then a margin. */
+  /* The time limit allows every frame and the health report a full transmit timeout, a full ACK
+     window and a gap. A margin follows. */
   exchange_limit_s = ((qn + 1U) * (WS_TX_TIMEOUT_MS + ACK_WINDOW_MS + INTER_FRAME_MS)) / CLOCK_MS_PER_S + EXCHANGE_MARGIN_S;
-  /* The first frame, like every other, goes after the gap: the radio may have been put to sleep
-     moments ago (the last exchange ended this main-loop pass), and the chip needs time to enter
-     sleep before it is woken (ST's RadioSleep waited 2 ms; radio_cfg.c ws_radio_sleep). */
+  /* The first frame also waits for the gap. The last exchange can put the radio to sleep in this
+     main-loop pass, and the chip needs time to enter sleep before the firmware wakes it.
+     ST's RadioSleep waited 2 ms (radio_cfg.c, ws_radio_sleep). */
   if (qn) { exchange_start_s = clock_s(); gap_before(GAP_FRAME); }
 }
 ```
@@ -404,11 +469,11 @@ void exchange_start(const jref_t *live, unsigned backlog)
 ### Gap
 
 `gap_before` records what the gap starts and enters `gap`. ST's `UTIL_TIMER_Start` refuses a timer
-that is already running. That refusal fails a `WS_CHECK` but needs no other recovery: the running
-timer still posts `EV_GAP`.
+that is already running. That refusal fails a `WS_CHECK`, but it needs no other recovery. The
+running timer still posts `EV_GAP`.
 
 ```c {#gap-before}
-/* The next frame goes after INTER_FRAME_MS, from the gap timer: nothing waits meanwhile. */
+/* The gap timer starts the next frame after INTER_FRAME_MS. Nothing waits in the meantime. */
 static void gap_before(int then)
 {
   gap_then = then; tx_state = TX_GAP;
@@ -417,7 +482,7 @@ static void gap_before(int then)
 ```
 
 `in_gap` handles `EV_GAP`. For a frame it calls `send_current`. For the health report it calls
-`send_diag`, and if the report did not go on air the exchange ends.
+`send_diag`. If the report did not go on air, the exchange ends.
 
 ```c {#in-gap}
 static int in_gap(uint32_t ev)
@@ -438,20 +503,55 @@ static int in_gap(uint32_t ev)
 | journal read or length check failed | `#error journal-read` | next item, after a gap |
 | `send_obs` returns 1 | | `sending` |
 | `send_obs` returns 0 (seal failed, radio refused) | its own `#error` | next item, after a gap |
-| `send_obs` returns -1 (counter refused) | `#error counter-reserve` | the policy sees the replies so far, then `idle` at once (no health report: it needs a counter too) |
+| `send_obs` returns -1 (counter refused) | `#error counter-reserve` | The policy sees the replies so far. Then the state goes to `idle` at once. No health report goes, because it needs a counter too |
 
 A local failure does not count as a missed reply and does not change the drain. The `WS_CHECK` on
-`qi < qn` guards an index: the code calls `gap_before(GAP_FRAME)` only while an item is left.
+`qi < qn` guards an index. The code calls `gap_before(GAP_FRAME)` only while an item is left.
+
+`send_obs` seals and sends one plaintext. It does these steps in order:
+
+1. Reserve a counter with `store_next_counter`. On failure, note a transmit failure and return -1.
+   A frame without a durable counter could repeat an AES-CCM nonce (a number that must be used
+   only once with a key).
+2. Seal with `ws_seal_kind`. A valid station and counter always seal, so a failure is a `WS_CHECK`
+   failure. Return 0.
+3. Record the counter, epoch and sequence that a reply must echo. Increment `sent`. Flash the blue
+   LED.
+4. Call `ws_radio_send`. If the radio accepts the frame, enter `sending` and return 1. If it refuses,
+   note a transmit failure, print `#error radio-busy` and return 0.
+
+The counter reservation can write flash. It runs in the gap state, while the radio is in standby
+or asleep. The flowchart shows `send_current` and `send_obs` together.
+
+```mermaid
+flowchart TD
+  start["EV_GAP in gap, gap_then = GAP_FRAME"] --> read{"Journal read and length check of queue[qi] pass?"}
+  read -- "no" --> jr["Print #error journal-read"]
+  jr --> nxt["next_item"]
+  read -- "yes" --> ctr{"store_next_counter reserves a counter?"}
+  ctr -- "no" --> cr["Note a transmit failure, print #error counter-reserve"]
+  cr --> pol["policy_exchange_end"]
+  pol --> idle["radio_idle: state idle, no health report"]
+  ctr -- "yes" --> seal{"ws_seal_kind seals the frame?"}
+  seal -- "no" --> se["WS_CHECK fails, print #error seal"]
+  se --> nxt
+  seal -- "yes" --> rec["Record sent_counter, sent_epoch and sent_seq. Count sent. Flash blue."]
+  rec --> send{"ws_radio_send accepts the frame?"}
+  send -- "yes" --> sending["State sending"]
+  send -- "no" --> rb["Note a transmit failure, print #error radio-busy"]
+  rb --> nxt
+```
 
 ```c {#send-current}
-/* Send queue[qi]. A local failure (journal read, seal, radio busy) moves on to the next item after
- * a gap, like a sent frame; a refused counter reservation ends the exchange, after the policy has seen
- * the replies so far (test_a_refused_counter_reservation_still_reports_the_answers). */
+/* Send queue[qi]. After a local failure (journal read, seal, radio busy) the exchange moves to the
+ * next item after a gap, as after a sent frame. A refused counter reservation ends the exchange.
+ * The policy first sees the replies so far
+ * (test_a_refused_counter_reservation_still_reports_the_answers). */
 static void send_current(void)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX];
   int plen = -1, rc = 0;
-  if (!WS_CHECK(qi < qn)) { finish_exchange(); return; }   /* gap_before(GAP_FRAME) comes only with an item left */
+  if (!WS_CHECK(qi < qn)) { finish_exchange(); return; }   /* gap_before(GAP_FRAME) runs only with an item left */
   if (store_journal_read(queue[qi], plain) || (plen = ws_obs_plain_len(plain, sizeof plain)) < 0) { APP_PRINTF("#error journal-read\n"); }
   else rc = send_obs(plain, plen);
   if (rc < 0) { policy_exchange_end(queue, replied, qn); radio_idle(); }
@@ -459,27 +559,14 @@ static void send_current(void)
 }
 ```
 
-`send_obs` seals and sends one plaintext. Order of operations:
-
-1. Reserve a counter with `store_next_counter`. On failure note a transmit failure and return -1.
-   A frame without a durable counter could repeat a CCM nonce.
-2. Seal with `ws_seal_kind`. A valid station and counter always seal, so a failure is a `WS_CHECK`
-   failure and returns 0.
-3. Record the counter, epoch and sequence that a reply must echo. Increment `sent`. Flash the blue
-   LED.
-4. `ws_radio_send`. Accepted: enter `sending`, return 1. Refused: note a transmit failure, print
-   `#error radio-busy`, return 0.
-
-The counter reservation can write flash. It runs in the gap state, while the radio is in standby
-or asleep.
-
 ```c {#send-obs}
-/* Seal and send one journaled plaintext. 1: on air (its TxDone follows); 0: a local failure (the
-   exchange moves on); -1: the counter reservation was refused, which ends the exchange. */
+/* Seal and send one journaled plaintext. Returns 1 when the frame is on air and its TxDone follows.
+   Returns 0 for a local failure, and the exchange moves on. Returns -1 when the counter reservation
+   is refused, and the exchange ends. */
 static int send_obs(const uint8_t *plain, int plen)
 {
   uint8_t frame[OBS_FRAME_MAX];
-  /* No durable counter reservation, no transmission (nonce reuse would break CCM). */
+  /* No durable counter, no transmission: a repeated nonce breaks AES-CCM. */
   if (store_next_counter(&sent_counter)) { ws_failrun_note(&tx_counts.air, 0); APP_PRINTF("#error counter-reserve\n"); return -1; }
   int flen = ws_seal_kind(key, identity.station, WS_KIND_OBS, sent_counter, plain, (uint32_t)plen, frame, sizeof frame);
   if (!WS_CHECK(flen >= 0)) { APP_PRINTF("#error seal\n"); return 0; }   /* a valid station and counter always seal */
@@ -497,16 +584,16 @@ static int send_obs(const uint8_t *plain, int plen)
 
 `in_sending` waits for the radio. On TxDone it clears the transmit failure run, starts `ack_timer`
 and listens with no driver timeout. On TxTimeout it puts the radio in standby, because the driver
-leaves it transmitting. Then it notes a transmit failure, flashes red, prints `#error tx-timeout`
-and stops the drain, so the exchange ends after this frame.
+leaves the radio transmitting. Then it notes a transmit failure, flashes the red LED, prints
+`#error tx-timeout` and stops the drain. The exchange then ends after this frame.
 
 ```c {#in-sending}
-/* The state handlers: 1 if the event is one this state expects (and was handled), else 0. */
+/* The state handlers return 1 if the state expects the event and handled it, else 0. */
 static int in_sending(uint32_t ev)
 {
   if (ev == EV_TX_DONE)
   {
-    ws_failrun_note(&tx_counts.air, 1);   /* the frame left: the radio works */
+    ws_failrun_note(&tx_counts.air, 1);   /* the frame left, so the radio works */
     tx_state = TX_ACK_WAIT;
     (void)WS_CHECK(UTIL_TIMER_Start(&ack_timer) == UTIL_TIMER_OK);   /* refused only if running: it still ends the window */
     ws_radio_rx(0);
@@ -534,8 +621,8 @@ static int in_sending(uint32_t ev)
 | `EV_RX_TIMEOUT` | print `#ack damaged header; still listening`, listen again |
 
 After a single reception the radio is in standby, so every "listen again" calls `ws_radio_rx(0)`.
-The window keeps its original end. A damaged packet could be a damaged copy of the real ACK, and
-the real one may still come.
+The window keeps its original end. A damaged packet can be a damaged copy of the real ACK, and the
+real ACK can still come.
 
 ```c {#in-ack-wait}
 static int in_ack_wait(uint32_t ev)
@@ -543,10 +630,10 @@ static int in_ack_wait(uint32_t ev)
   if (ev == EV_ACK_END) { ws_radio_standby(); no_reply(1); return 1; }
   if (ev == EV_RX_DONE && handle_reply()) { window_closed(); next_item(); return 1; }
   if (ev != EV_RX_DONE && ev != EV_RX_ERROR && ev != EV_RX_TIMEOUT) return 0;
-  /* Not the reply to this frame: foreign, forged, another frame's ACK, a payload CRC failure
-     (rx-error) or a header failure (rx-timeout: ST's radio.c reports IRQ_HEADER_ERROR so).
-     Keep listening until the window ends rather than miss the real ACK.
-     After a single-window reception the radio is in standby; listen again. */
+  /* The packet is not the reply to this frame. It is foreign, forged, the ACK of another frame,
+     a payload CRC failure (rx-error) or a header failure (rx-timeout, because ST's radio.c reports
+     IRQ_HEADER_ERROR as a timeout). The radio listens until the window ends, so it does not miss
+     the real ACK. After one reception the radio is in standby, so the code starts it again. */
   if (ev != EV_RX_DONE) APP_PRINTF("#ack damaged %s; still listening\n", ev == EV_RX_ERROR ? "payload" : "header");
   ws_radio_rx(0);
   return 1;
@@ -554,12 +641,13 @@ static int in_ack_wait(uint32_t ev)
 ```
 
 `window_closed` stops `ack_timer`. If the timer already fired, the code removes its `EV_ACK_END`
-from the current `batch` and from `pending_ev`. That event is a race the reply already settled, so
-it must not count as `unexpected`.
+from the current `batch` and from `pending_ev`. The reply already settled that race, so the event
+must not count as `unexpected`.
 
 ```c {#window-closed}
-/* The reply ended the window: stop its timer, and drop an ack-end it already posted, in this pass
-   or the next (a race, not a bug: `unexpected` stays a bug indicator). */
+/* The reply ended the window. Stop the window timer, and drop an ack-end that the timer already
+   posted for this pass or the next. That ack-end is a race, not a bug, so `unexpected` keeps
+   counting only bugs. */
 static void window_closed(void)
 {
   (void)UTIL_TIMER_Stop(&ack_timer);
@@ -571,13 +659,34 @@ static void window_closed(void)
 ### Opening a reply
 
 `handle_reply` opens `rx_frame` with `ws_open_reply`, which checks length, version, kind, station
-and tag. A failure increments `ack_rejects`, flashes red, prints `#ack reject` and returns 0. An
-authentic reply sets `ack_rssi` and `ack_snr`, clamped to -127..127, so a forged frame cannot set
-them. The reply is "mine" when it echoes `sent_counter`, `sent_epoch` and `sent_seq`. The kind
-selects `on_nack` or `on_ack`.
+and authentication tag. On a failure, `handle_reply` increments `ack_rejects`, flashes the red LED,
+prints `#ack reject` and returns 0. An authentic reply sets `ack_rssi` and `ack_snr`, clamped to
+-127..127. A forged frame therefore cannot set them. The reply is "mine" when it echoes
+`sent_counter`, `sent_epoch` and `sent_seq`. The kind selects `on_nack` or `on_ack`.
+
+```mermaid
+flowchart TD
+  rx["EV_RX_DONE in ack-wait"] --> open{"ws_open_reply accepts the packet?"}
+  open -- "no" --> rej["Count ack_rejects, flash red, print #ack reject"]
+  rej --> listen["Listen again. The window stays open."]
+  open -- "yes" --> sig["Set ack_rssi and ack_snr"]
+  sig --> kind{"Reply kind?"}
+  kind -- "NACK" --> nmine{"Mine?"}
+  nmine -- "no" --> ign["Count ack_rejects, print #nack ignored"]
+  ign --> listen
+  nmine -- "yes" --> nack["mark_replied. Acknowledge the record in the journal. If that succeeds, add 1 to the abandoned total."]
+  nack --> close["window_closed, then next_item"]
+  kind -- "ACK" --> commit["Find the record and acknowledge it in the journal. policy_strike_forget."]
+  commit --> amine{"Mine?"}
+  amine -- "yes" --> sync["mark_replied, time_sync"]
+  sync --> cnt1["Count acked if found, flash green, print #ack"]
+  cnt1 --> close
+  amine -- "no" --> cnt2["Count acked if found, flash green, print #ack"]
+  cnt2 --> listen
+```
 
 ```c {#handle-reply}
-/* Returns 1 for the authentic reply (ACK or NACK) to the frame just sent; 0 for anything else. */
+/* Returns 1 for the authentic reply (ACK or NACK) to the frame just sent, else 0. */
 static int handle_reply(void)
 {
   reply_t r;
@@ -588,7 +697,7 @@ static int handle_reply(void)
     APP_PRINTF("#ack reject len=%u rssi=%d snr=%d\n", rx_len, rx_rssi, rx_snr);
     return 0;
   }
-  ack_rssi = clamp8(rx_rssi);   /* authentic reply only: a forged frame cannot set these */
+  ack_rssi = clamp8(rx_rssi);   /* only an authentic reply sets these, so a forged frame cannot */
   ack_snr = clamp8(rx_snr);
   int mine = r.echo == sent_counter && r.epoch == sent_epoch && r.seq == sent_seq;
   return r.kind == WS_KIND_NACK ? on_nack(&r, mine) : on_ack(&r, mine);
@@ -598,7 +707,7 @@ static int handle_reply(void)
 `reply_t` holds the opened fields. `mark_replied` sets `replied[qi]` and clears the drain flag.
 
 ```c {#reply}
-/* An authentic reply, opened. */
+/* The fields of an authentic reply, opened. */
 typedef struct { uint64_t ctr, echo; uint32_t epoch, seq, word; uint8_t kind; } reply_t;
 
 /* The gateway answered the frame just sent (queue[qi]). */
@@ -614,18 +723,18 @@ static void mark_replied(void)
 | Step | Applies to |
 |---|---|
 | find the record by (epoch, sequence) and acknowledge it in the journal (`#error journal-ack` on failure) | any ACK |
-| `policy_strike_forget`: the record's strikes end | any ACK |
+| `policy_strike_forget`: the strikes of the record end | any ACK |
 | `mark_replied` | mine only |
-| `time_sync(word)`: set the clock from the ACK's time | mine only |
-| increment `acked` if the record was found | any ACK |
+| `time_sync(word)`: set the clock from the time in the ACK | mine only |
+| increment `acked` if the journal holds the record | any ACK |
 | green LED, print `#ack ... found= time_sync= ...` | any ACK |
 
-It returns `mine`. An ACK for another frame commits its record but keeps the window open, and a
+`on_ack` returns `mine`. An ACK for another frame commits its record but keeps the window open. A
 replayed ACK cannot move the clock. `time_sync` returns 0 for an implausible time (`tx_time.h`).
 
 ```c {#on-ack}
-/* Any authentic ACK commits its record, wherever it is; only the ACK for the frame just sent ends
-   the window or sets the clock (a replayed ACK cannot move it). */
+/* Any authentic ACK commits its record, wherever the record is in the journal. Only the ACK for the
+   frame just sent ends the window or sets the clock, so a replayed ACK cannot move the clock. */
 static int on_ack(const reply_t *r, int mine)
 {
   jref_t ref;
@@ -635,7 +744,7 @@ static int on_ack(const reply_t *r, int mine)
   if (mine) mark_replied();
   int fresh = mine && time_sync(r->word);
   if (found) tx_counts.acked++;
-  led_flash(LED_GREEN, LED_FLASH_MS); /* authentic host ACK: reading is committed */
+  led_flash(LED_GREEN, LED_FLASH_MS); /* an authentic gateway ACK: the reading is committed */
   APP_PRINTF("#ack epoch=%u seq=%u found=%d time_sync=%d rssi=%d snr=%d pending=%u\n",
              (unsigned)r->epoch, (unsigned)r->seq, found, fresh, rx_rssi, rx_snr,
              (unsigned)store_journal_pending());
@@ -643,20 +752,20 @@ static int on_ack(const reply_t *r, int mine)
 }
 ```
 
-`on_nack` accepts a NACK only for the frame just sent. Another NACK increments `ack_rejects`, prints
-`#nack ignored: not for the frame just sent` and keeps the window open. An accepted NACK marks the
-frame replied. If the search finds the record and its journal ACK succeeds, the abandoned total goes
-up by one. The code ignores a total that fails to persist, because the journal acknowledges the
-record either way. The red LED flashes for `LED_FLASH_LONG_MS` (1000 ms).
+`on_nack` accepts a NACK only for the frame just sent. For another NACK it increments
+`ack_rejects`, prints `#nack ignored: not for the frame just sent` and keeps the window open. An
+accepted NACK marks the frame replied. If the search finds the record and its journal ACK succeeds,
+the abandoned total goes up by one. The code ignores a total that fails to persist, because the
+journal acknowledges the record either way. The red LED flashes for `LED_FLASH_LONG_MS` (1000 ms).
 
 ```c {#on-nack}
-/* Authentic permanent rejection. Accepted only for the frame just sent. */
+/* An authentic NACK is a permanent rejection. The node accepts it only for the frame just sent. */
 static int on_nack(const reply_t *r, int mine)
 {
   jref_t ref;
   if (!mine) { tx_counts.ack_rejects++; APP_PRINTF("#nack ignored: not for the frame just sent\n"); return 0; }
   mark_replied();
-  /* A total that failed to persist is only a count: the record is acknowledged either way. */
+  /* A total that fails to persist is only a count. The journal acknowledges the record either way. */
   if (store_journal_find(r->epoch, r->seq, &ref) == 0 && store_journal_ack(ref) == 0) (void)store_note_abandoned();
   led_flash(LED_RED, LED_FLASH_LONG_MS);
   APP_PRINTF("#nack epoch=%u seq=%u reason=%u abandoned=%u\n", (unsigned)r->epoch, (unsigned)r->seq,
@@ -667,12 +776,12 @@ static int on_nack(const reply_t *r, int mine)
 
 ### No reply
 
-`no_reply` runs when the window ends without a reply. It increments `no_ack`, flashes red, prints
-`#ack none`, applies the drain rule and moves to the next item. The record stays journaled for a
-later minute.
+`no_reply` runs when the window ends without a reply. It increments `no_ack`, flashes the red LED,
+prints `#ack none`, applies the drain rule and moves to the next item. The record stays journaled
+for a later minute.
 
 ```c {#no-reply}
-/* No reply to the frame just sent; it stays journaled for a later retry. */
+/* No reply came to the frame just sent. Its record stays journaled for a later retry. */
 static void no_reply(int flash_red)
 {
   tx_counts.no_ack++;
@@ -687,29 +796,47 @@ static void no_reply(int flash_red)
 
 ### Drain rule
 
-A missed reply ends the minute's drain after `FRAMES_AFTER_MISS` (1) more frame. The one more frame
-separates two cases for the strike rule (`ws_policy.h`):
+A missed reply ends the minute's drain after `FRAMES_AFTER_MISS` (1) more frame. The policy gives a
+strike to a record that stays unanswered while a later frame of the same exchange gets an answer
+(`ws_policy.h`). At the strike limit the policy abandons the record. The one more frame separates
+two cases:
 
 | After a miss at `queue[qi]` | Meaning |
 |---|---|
-| the next frame is answered | the link works, so the gateway refused `queue[qi]`: it earns a strike |
-| the next frame is missed too | the link is failing. The drain stops at once |
+| the next frame is answered | The link works, so the gateway refused `queue[qi]`. That record earns a strike |
+| the next frame is missed too | The link is failing. The drain stops at once |
 
-`drain_after_miss` implements this with `missed_last`, which `mark_replied` clears:
+`drain_after_miss` implements this rule with `missed_last`. `mark_replied` clears `missed_last`.
 
 | `missed_last` | Action on a miss |
 |---|---|
 | 0 | cap `qn` at `qi + 1 + FRAMES_AFTER_MISS`, set `missed_last` |
 | 1 | `stop_drain`: `qn = qi + 1`, so this frame is the last |
 
-A TxTimeout also calls `stop_drain`. A failing link therefore does not use up the minute's backlog
-allowance.
+A TxTimeout also calls `stop_drain`. A failing link therefore does not use up the backlog allowance
+of the minute.
+
+```mermaid
+flowchart TD
+  miss["ACK window ends with no reply to queue[qi]"] --> last{"missed_last set?"}
+  last -- "no, first miss" --> cap["If qn > qi + 1 + FRAMES_AFTER_MISS, set qn = qi + 1 + FRAMES_AFTER_MISS"]
+  last -- "yes, second miss in a row" --> stop["stop_drain: qn = qi + 1"]
+  cap --> setm["Set missed_last"]
+  stop --> setm
+  setm --> nxt["next_item"]
+  tto["TxTimeout in sending"] --> stopt["stop_drain: qn = qi + 1"]
+  stopt --> nxt
+  nxt --> left{"qi + 1 < qn?"}
+  left -- "yes" --> gap["Gap, then send the next frame"]
+  left -- "no" --> fin["finish_exchange"]
+  reply["Reply to the frame just sent"] --> clear["mark_replied clears missed_last"]
+```
 
 ```c {#drain}
-/* A missed reply ends this minute's drain, after one more frame: a failing link does not burn the
-   allowance, and the one more frame tells a record the gateway refuses (the next one is answered,
-   so the missed one earns a strike) from a lossy link (strike rule, ws_policy.h). A second miss in a
-   row, or a transmit failure, ends it at once. */
+/* A missed reply ends this minute's drain after one more frame. A failing link then does not use up
+   the backlog allowance. The one more frame tells a record that the gateway refuses from a lossy
+   link (the strike rule, ws_policy.h). If the next frame gets an answer, the missed record earns a
+   strike. A second miss in a row, or a transmit failure, ends the drain at once. */
 #define FRAMES_AFTER_MISS 1U   /* one more frame after a miss tells a refused record from a lost one */
 static int missed_last;   /* the frame before this one got no reply */
 static void stop_drain(void) { qn = qi + 1; }
@@ -723,10 +850,10 @@ static void drain_after_miss(void)
 
 ### Next item and end
 
-`next_item` moves to the next queued frame after a gap, or ends the exchange. `finish_exchange`
+`next_item` moves to the next queued frame after a gap, or it ends the exchange. `finish_exchange`
 passes `queue`, `replied` and `qn` to `policy_exchange_end`, which applies strikes and updates the
-link state. Then it starts the gap before the health report if `policy_diag_due()`, else it makes
-the radio idle.
+link state. Then `finish_exchange` starts the gap before the health report if `policy_diag_due()`
+is true. Else it makes the radio idle.
 
 ```c {#finish}
 static void finish_exchange(void)
@@ -747,18 +874,19 @@ static void next_item(void)
 
 ### Health report
 
-The health report (kind 4, `WS_KIND_DIAG`) goes after the minute's exchange, also while the link
-is probing, so its link field can say so. It has no journal entry and no ACK window. `clamp16`
-saturates totals to the 16-bit fields. `clamp8` keeps a signal value in -127..127, because
-`INT8_MIN` means "none".
+The health report (kind 4, `WS_KIND_DIAG`) goes after the minute's exchange. It also goes while the
+link is probing, so its link field can report that. It has no journal entry and no ACK window.
+`clamp16` saturates totals to the 16-bit fields. `clamp8` keeps a signal value in -127..127,
+because `INT8_MIN` means "none".
 
 ```c {#clamps}
 static uint16_t clamp16(uint32_t v) { return v > UINT16_MAX ? UINT16_MAX : (uint16_t)v; }
 static int8_t clamp8(int v) { return (int8_t)(v < -INT8_MAX ? -INT8_MAX : v > INT8_MAX ? INT8_MAX : v); }  /* INT8_MIN means "none" */
 ```
 
-`send_diag` fills a `ws_diag_t` from the node state, the journal and meta totals and `tx_counts`. It
-adds the reset cause, the link state, the fault count, the energy state and the last ACK signal.
+`send_diag` fills a `ws_diag_t` from the node state, the journal totals, the meta totals and
+`tx_counts`. It adds the reset cause, the link state, the fault count, the energy state and the
+signal of the last ACK.
 
 | Step | Failure |
 |---|---|
@@ -768,14 +896,13 @@ adds the reset cause, the link state, the fault count, the energy state and the 
 | `policy_diag_sent(now)`: the report is no longer due | |
 | enter `diag-sending`, print `#diag sent`, return 1 | |
 
-A report that failed at any step stays due, so the next minute's exchange tries again.
-
-A return of 0 ends the exchange (`in_gap`).
+A report that failed at any step stays due, so the exchange of the next minute tries again. A
+return of 0 ends the exchange (`in_gap`).
 
 ```c {#send-diag}
-/* Health report (kind 4), sent after a minute's exchange (also while probing, so the link
-   field can read "probing"). Fire-and-forget: no journal entry, no receive window. Returns 1 if it
-   went on air (its TxDone or TxTimeout ends the exchange). */
+/* The health report (kind 4) goes after the minute's exchange. It goes also while the link is
+   probing, so its link field can report "probing". It has no journal entry and no receive window.
+   Returns 1 if it went on air. Its TxDone or TxTimeout then ends the exchange. */
 static int send_diag(void)
 {
   uint8_t plain[WS_DIAG_PLAIN_LEN], frame[WS_DIAG_FRAME_LEN]; uint64_t ctr;
@@ -792,16 +919,16 @@ static int send_diag(void)
   if (store_next_counter(&ctr)) { ws_failrun_note(&tx_counts.air, 0); return 0; }
   if (!WS_CHECK(ws_seal_kind(key, identity.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) >= 0)) return 0;
   if (ws_radio_send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_counts.air, 0); return 0; }
-  policy_diag_sent(now);   /* only a report the radio took: a refused one is due again next minute */
+  policy_diag_sent(now);   /* only a report that the radio took. A refused one is due next minute */
   tx_state = TX_DIAG_SENDING;
   APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u\n", d.pending, (unsigned)d.lost, d.torn, d.abandoned, d.no_ack);
   return 1;
 }
 ```
 
-`in_diag_sending` ends the exchange on TxDone or TxTimeout. A TxTimeout puts the radio in standby
-first and prints `#error tx-timeout`. Both note the transmit result, so a report that leaves clears
-the failure run.
+`in_diag_sending` ends the exchange on TxDone or TxTimeout. A TxTimeout first puts the radio in
+standby and prints `#error tx-timeout`. Both events note the transmit result, so a report that
+leaves clears the failure run.
 
 ```c {#in-diag-sending}
 static int in_diag_sending(uint32_t ev)
@@ -817,24 +944,25 @@ static int in_diag_sending(uint32_t ev)
 
 ### Idle
 
-`radio_idle` ends the exchange: state `idle`, radio asleep, then `held_flush()` (`app_tx.c`). A
-minute that ended while the exchange ran could not write flash, so `app_tx.c` held its reading in
-RAM (at most `HELD_MAX`, 2). `held_flush` journals the held readings now, before anything else
-runs, and the next minute sends them as backlog.
+`radio_idle` ends the exchange. It sets the state `idle`, puts the radio to sleep and then calls
+`held_flush()` (`app_tx.c`). A minute that ended during the exchange could not write flash, so
+`app_tx.c` held its reading in RAM (at most `HELD_MAX`, 2). `held_flush` journals the held readings
+now, before anything else runs. The next minute sends them as backlog.
 
 ```c {#radio-idle}
-/* The exchange (and any health report in flight) is over: the radio sleeps until the next minute,
-   and a reading that a minute produced meanwhile is journaled now, first. */
+/* The exchange and any health report in flight are over. The radio sleeps until the next minute,
+   and a reading that a minute made in the meantime is journaled now, first. */
 static void radio_idle(void) { tx_state = TX_IDLE; ws_radio_sleep(); held_flush(); }
 ```
 
-`exchange_abort` ends an exchange that outlasted its time limit. It stops both timers, puts the
-radio in standby, enters `idle` and journals the held readings with the radio stopped. A watchdog
+`exchange_abort` ends an exchange that passed its time limit. It stops both timers, puts the radio
+in standby, enters `idle` and journals the held readings while the radio is stopped. A watchdog
 reset that follows then loses no reading.
 
 ```c {#abort}
-/* The exchange outlasted its worst case (a radio that never finishes): stop the radio, then journal
-   any held reading while it is idle, so a watchdog reset loses nothing (app_tx.c watchdog_healthy). */
+/* The exchange passed its worst case, for example because the radio never finishes. Stop the radio,
+   then journal any held reading while the radio is idle. A watchdog reset then loses nothing
+   (app_tx.c, watchdog_healthy). */
 void exchange_abort(void)
 {
   (void)UTIL_TIMER_Stop(&gap_timer);
@@ -860,7 +988,7 @@ const char *exchange_state_name(void) { return tx_state_name[tx_state]; }
 1. Fill the radio callback table and call `Radio.Init`.
 2. Configure the radio (`ws_radio_configure`) and put it to sleep.
 3. Register `process_timed` as the sequencer task `CFG_SEQ_Task_SubGHz_Phy_App_Process`.
-4. Create the gap timer (50 ms) and the ACK window timer (2000 ms), both one-shot.
+4. Create the gap timer (50 ms) and the ACK window timer (2000 ms). Both are one-shot timers.
 
 ```c {#init}
 void exchange_init(void)
@@ -881,8 +1009,8 @@ void exchange_init(void)
 
 ## 11. The file
 
-The generated file orders the chunks for C. The order is: the summary, the includes, constants,
-state, the event callbacks, then the functions, each after the functions it calls.
+The generated file puts the chunks in C order: the summary, the includes, the constants, the state,
+the event callbacks, then the functions. Each function comes after the functions it calls.
 
 ```c {#tx_exchange.c}
 <<abstract>>
@@ -977,13 +1105,17 @@ state, the event callbacks, then the functions, each after the functions it call
 
 ## 12. Tests
 
-`tests/test_tx_machine.py` builds the real `app_tx.c`, `tx_exchange.c` and the other TX modules
+`tests/test_tx_machine.py` builds the real `app_tx.c`, `tx_exchange.c` and the other TX node modules
 against `firmware/host/tx_harness.c`. The harness simulates the clock, ST's timers and sequencer, a
-radio that follows ST's driver, the SHT45 and the flash under the real `node_store.c`. The test
-build adds UBSan to the library. `TxUnderAddressSanitizer` reruns the suite under ASan where the
-platform allows preloading its runtime. At its end, every test also checks four things. No flash
-operation ran while the radio was busy, and the firmware started no running timer again. No radio
-command ran without the radio interrupt masked, and no `WS_CHECK` failed.
+radio that behaves like ST's driver, the SHT45 temperature and humidity sensor, and the flash under
+the real `node_store.c`. The test build adds the undefined-behaviour sanitizer (UBSan) to the
+library. `TxUnderAddressSanitizer` runs the suite again under the address sanitizer (ASan) where the
+platform allows the preload of its runtime. At its end, every test also checks four things:
+
+- No flash operation ran while the radio was busy.
+- The firmware did not start a timer that was already running.
+- No radio command ran without the radio interrupt masked.
+- No `WS_CHECK` failed.
 
 | Area | Tests |
 |---|---|
@@ -995,7 +1127,7 @@ command ran without the radio interrupt masked, and no `WS_CHECK` failed.
 | drain and failures | `test_a_missed_reply_allows_one_more_frame_then_stops_the_drain`, `test_after_a_miss_only_one_more_frame_goes_even_if_it_is_answered`, `test_a_transmit_timeout_stops_the_drain`, `test_a_send_failure_on_a_backlog_frame_moves_on`, `test_a_failed_health_report_ends_the_exchange`, `test_a_health_report_that_leaves_clears_the_transmit_failure_run`, `test_transmit_failures_in_a_row_trip_the_watchdog_and_a_tx_done_clears_them` |
 | time limit, held readings | `test_a_radio_that_never_finishes_trips_the_exchange_bound`, `test_a_reading_made_during_an_exchange_is_journaled_when_the_radio_goes_idle`, `test_held_readings_keep_the_newest_when_more_minutes_wait` |
 | policy | `test_three_silent_minutes_mean_probing_with_no_backlog_until_a_reply`, `test_a_health_report_at_least_every_15_minutes`, `test_strikes_need_an_answer_after_the_missed_record`, `test_a_lone_refused_record_is_retried_never_abandoned_by_luck`, `test_no_strikes_while_nothing_is_answered` |
-| randomized | `test_three_hours_of_mixed_link_keep_every_invariant`: 3 h with 5 seeds of lost ACKs, NACKs, junk, CRC and header failures, another frame's ACK, transmit timeouts and refused sends. The radio state must match the exchange state at every step, and no event may be unexpected |
+| randomized | `test_three_hours_of_mixed_link_keep_every_invariant`: 3 h with 5 seeds of lost ACKs, NACKs, junk, CRC and header failures, the ACK of another frame, transmit timeouts and refused sends. The radio state must match the exchange state at every step, and no event can be unexpected |
 
 ```sh
 .venv/bin/python -m unittest tests.test_tx_machine tests.test_tangle
