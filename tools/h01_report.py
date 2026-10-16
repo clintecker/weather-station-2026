@@ -24,6 +24,9 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+MINUTE_S = 60
+MINUTES_PER_HOUR = 60
+REQUIRED_FRACTION = 0.99   # H01: at least 99 % of the minutes on time
 LATENCY_S = 120
 TIME_TOLERANCE_S = 5
 
@@ -68,12 +71,12 @@ class Placement:
         if not known_time(effective, basis, uncertainty):
             self.invalid_clock += 1
             return
-        minute = int((effective - self.start) // 60)
+        minute = int((effective - self.start) // MINUTE_S)
         if not 0 <= minute < self.minutes:
             return
         self.per_minute[minute] = self.per_minute.get(minute, 0) + 1
-        phase = (effective - self.start) % 60
-        self.edge += int(phase < EDGE_S or phase > 60 - EDGE_S)
+        phase = (effective - self.start) % MINUTE_S
+        self.edge += int(phase < EDGE_S or phase > MINUTE_S - EDGE_S)
         latency = received - effective
         candidate = (rank(json.loads(payload), latency), latency)
         if minute not in self.best or candidate < self.best[minute][:2]:
@@ -103,9 +106,9 @@ def grid_warning(edge, several):
 
 
 def score(db, station, start, hours):
-    minutes = int(round(hours * 60))
-    end = start + minutes * 60
-    required = math.ceil(0.99 * minutes)
+    minutes = int(round(hours * MINUTES_PER_HOUR))
+    end = start + minutes * MINUTE_S
+    required = math.ceil(REQUIRED_FRACTION * minutes)
     rows = db.execute('''SELECT session,sequence,effective_at,received_at,time_basis,time_uncertainty_s,payload
         FROM observations WHERE station=? AND ((effective_at>=? AND effective_at<?)
         OR (effective_at IS NULL AND received_at>=? AND received_at<?+?))''',
@@ -124,7 +127,7 @@ def score(db, station, start, hours):
         **counts,
         'transport_on_time': counts['on_time_valid'] + counts['on_time_sensor_fault'],
         'missing': len(missing),
-        'missing_first': [iso(start + 60 * m) for m in missing[:20]],
+        'missing_first': [iso(start + MINUTE_S * m) for m in missing[:20]],
         'invalid_clock_observations': placed.invalid_clock,
         'reconstructed_time_intervals_counted': reconstructed_used,
         'latency_median_s': latencies[len(latencies) // 2] if latencies else None,

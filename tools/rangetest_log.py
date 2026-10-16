@@ -18,6 +18,8 @@ import sys
 import time
 from datetime import datetime, timezone
 
+BAUD = 115200   # the boards' ST-LINK virtual COM port
+
 RX = re.compile(r'#rt rx (\w+) seq=(\d+) rssi=(-?\d+) snr=(-?\d+) peer_rssi=(-?\d+) peer_snr=(-?\d+) '
                 r'sf=(\d+) pwr=(-?\d+)(?: peer_sf=(\d+) peer_pwr=(-?\d+))?')
 CFG = re.compile(r'#rt cfg sf=(\d+) pwr=(-?\d+) (\w+)')
@@ -143,7 +145,7 @@ def main():
             time.sleep(0.5)
             continue
         try:
-            port = serial.Serial(path, 115200, timeout=0.2)
+            port = serial.Serial(path, BAUD, timeout=0.2)
         except serial.SerialException:
             time.sleep(0.5)
             continue

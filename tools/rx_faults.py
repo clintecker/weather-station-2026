@@ -36,7 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from gateway import open_read_only  # noqa: E402
-from ws0.protocol import HEADER_LEN, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, VERSION  # noqa: E402
+from ws0.protocol import COUNTER_AT, HEADER_LEN, STATION_AT, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, VERSION  # noqa: E402
 from ws0.web import ACCEPTED_OUTCOMES as ACCEPTED, SchemaDrift, check_schema  # noqa: E402
 
 KINDS = {(VERSION << 4) | k: name for k, name in ((KIND_OBS, 'obs'), (KIND_ACK, 'ack'), (KIND_NACK, 'nack'),
@@ -66,7 +66,7 @@ def header(data):
     """Station and counter from a capture's header (whatever it holds)."""
     if len(data) < HEADER_LEN:
         return {}
-    return {'station_id': int.from_bytes(data[1:3], 'big'), 'counter': int.from_bytes(data[3:HEADER_LEN], 'big')}
+    return {'station_id': int.from_bytes(data[STATION_AT:COUNTER_AT], 'big'), 'counter': int.from_bytes(data[COUNTER_AT:HEADER_LEN], 'big')}
 
 
 def closest(fault, data, accepted):
@@ -76,7 +76,7 @@ def closest(fault, data, accepted):
     at, outcome, frame = min(accepted, key=lambda a: (abs(a[0] - fault['received_at']), a[0]))
     return {'dt_s': round(at - fault['received_at'], 3), 'outcome': outcome, 'length': len(frame),
             'bits_differ': hamming(data, frame), 'bits': 8 * max(len(data), len(frame)),
-            **({'counter': int.from_bytes(frame[3:HEADER_LEN], 'big')} if len(frame) >= HEADER_LEN else {})}
+            **({'counter': int.from_bytes(frame[COUNTER_AT:HEADER_LEN], 'big')} if len(frame) >= HEADER_LEN else {})}
 
 
 def classify(fault, accepted):
