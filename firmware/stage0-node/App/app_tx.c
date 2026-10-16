@@ -1,3 +1,5 @@
+/* GENERATED from app_tx.lit.md by tools/tangle.py: do not edit. Edit the document, then run
+ * tools/tangle.py firmware/stage0-node/App/app_tx.lit.md (tests/test_tangle.py checks this file). */
 /* Stage-0 TX: one SHT45 observation per minute, journaled in flash before transmission and
  * retained until an authenticated host ACK (or a NACK / strike-limit abandon). Each minute sends
  * the live observation first, then older pending ones as the energy and link policy allows
