@@ -70,10 +70,11 @@ static uint32_t rx_calls, standby_calls, sleep_calls, send_calls, sends_ok, last
 static int chip_tx_pending;            /* TxDone due at chip_tx_due */
 static uint64_t chip_tx_due;
 static UTIL_TIMER_Object_t tx_timeout_timer;   /* ST's TxTimeoutTimer (radio.c) */
-static uint8_t last_sent[256], chip_buf[256], chip_len;
+#define RADIO_BUF_LEN (WS_FRAME_MAX + 1)   /* room for any length a uint8 can report */
+static uint8_t last_sent[RADIO_BUF_LEN], chip_buf[RADIO_BUF_LEN], chip_len;
 static int last_sent_len;
 static int8_t chip_rssi = -110, chip_snr = -15, rssi_now = -120;
-static uint8_t rx_scratch[256];        /* the radio's buffer as RxDone passes it */
+static uint8_t rx_scratch[RADIO_BUF_LEN];        /* the radio's buffer as RxDone passes it */
 /* Observations of known driver pitfalls: a Send while the chip still transmits (it is cut short), an
    Rx straight after a TxTimeout with no Standby first (the chip is still in TX), and the LoRa packet
    length parameter: ST's RadioSend sets it to the frame size and RadioRx does not restore it. */
@@ -126,10 +127,10 @@ static void radio_standby(void) { sim_radio_command(); standby_calls++; timed_ou
 static RadioState_t radio_get_status(void) { return radio_state; }
 const struct Radio_s Radio = { radio_init, radio_send, radio_rx, radio_sleep, radio_standby, radio_get_status };
 int ws_radio_take_crc_error(void) { int f = crc_flag; crc_flag = 0; return f; }
-void ws_radio_configure(int c) { continuous = c; pkt_len = 255; }
-void ws_radio_rx_full_length(void) { pkt_len = 255; }
+void ws_radio_configure(int c) { continuous = c; pkt_len = WS_FRAME_MAX; }
+void ws_radio_rx_full_length(void) { pkt_len = WS_FRAME_MAX; }
 void ws_radio_sleep(void) { ws_radio_irq_hold(); radio_sleep(); ws_radio_irq_release(); }
-void ws_radio_last_packet(uint8_t buf[255], uint8_t *len, int8_t *rssi, int8_t *snr)
+void ws_radio_last_packet(uint8_t buf[WS_FRAME_MAX], uint8_t *len, int8_t *rssi, int8_t *snr)
 {
   memcpy(buf, chip_buf, chip_len); *len = chip_len; *rssi = chip_rssi; *snr = chip_snr;
 }

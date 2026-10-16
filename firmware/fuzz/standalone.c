@@ -12,6 +12,7 @@ static size_t seed_len[MAX_SEEDS];
 static int n_seeds, n_files;
 static uint64_t rng = 0x9E3779B97F4A7C15ull;
 
+/* Marsaglia xorshift64 (shifts 13, 7, 17); the seed is the golden-ratio constant 2^64 / phi. */
 static uint64_t next(void) { rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17; return rng; }
 static size_t below(size_t n) { return n ? (size_t)(next() % n) : 0; }
 
@@ -63,12 +64,15 @@ static size_t mutate(uint8_t *buf, size_t n)
  return n;
 }
 
+#define RUNS "-runs="
+#define SEED "-seed="
+
 int main(int argc, char **argv)
 {
  long runs = 0;
  for (int i = 1; i < argc; i++) {
-  if (!strncmp(argv[i], "-runs=", 6)) runs = atol(argv[i] + 6);
-  else if (!strncmp(argv[i], "-seed=", 6)) rng = strtoull(argv[i] + 6, NULL, 0) | 1u;
+  if (!strncmp(argv[i], RUNS, sizeof RUNS - 1)) runs = atol(argv[i] + sizeof RUNS - 1);
+  else if (!strncmp(argv[i], SEED, sizeof SEED - 1)) rng = strtoull(argv[i] + sizeof SEED - 1, NULL, 0) | 1u;
   else if (run_file(argv[i])) return 1;
  }
  uint8_t buf[MAX_INPUT];

@@ -70,7 +70,9 @@ static RadioEvents_t *radio_events;
 static uint64_t radio_due;         /* TxDone or RxTimeout time, if radio_timed */
 static int radio_timed, radio_send_fails, radio_crc_flag, radio_hang;
 static UTIL_TIMER_Object_t sw_rx_timer;   /* the driver's RxTimeoutTimer (Rx(t > 0)) */
-static uint8_t last_frame[256];
+#define RADIO_BUF_LEN (WS_FRAME_MAX + 1)   /* room for any length a uint8 can report */
+#define SENDS_INITIAL 256                  /* first capacity of the send log; it doubles */
+static uint8_t last_frame[RADIO_BUF_LEN];
 static int last_frame_len, frames_sent;
 static uint32_t last_rx_timeout;
 /* Every transmission: its start time and kind (the frame's first byte), for as long as the test runs. */
@@ -87,7 +89,7 @@ static void record_send(const uint8_t *buf, uint8_t size)
   memcpy(last_frame, buf, size); last_frame_len = size;
   if (frames_sent == sends_cap)
   {
-    sends_cap = sends_cap ? 2 * sends_cap : 256;
+    sends_cap = sends_cap ? 2 * sends_cap : SENDS_INITIAL;
     sends = realloc(sends, (size_t)sends_cap * sizeof *sends);
     if (!sends) { fprintf(stderr, "tx_harness: out of memory\n"); abort(); }
   }
@@ -167,9 +169,9 @@ int sensor_start(void)
 /* Move the clock ms forward, firing every timer and radio event due on the way. */
 void h_advance(uint32_t ms) { sim_advance(ms); }
 void h_reset(void) { sim_flash_reset(&S); }
-int h_provision(uint32_t station, const uint8_t key[16])
+int h_provision(uint32_t station, const uint8_t key[WS_KEY_LEN])
 {
-  uint8_t kcv[3];
+  uint8_t kcv[WS_KCV_LEN];
   return store_meta_init() || store_config_write(station, key, kcv);
 }
 void h_boot(void) { SubghzApp_Init(); sim_run_tasks(); }
@@ -233,7 +235,7 @@ void h_line(const char *line)
 /* Radio callbacks as the chip would raise them (interrupt context, then the main loop runs). */
 static void rx_done(const uint8_t *frame, int len, int rssi, int snr)
 {
-  uint8_t buf[256];
+  uint8_t buf[RADIO_BUF_LEN];
   memcpy(buf, frame, (size_t)len);
   radio_state = R_STANDBY; radio_timed = 0;
   radio_events->RxDone(buf, (uint16_t)len, (int16_t)rssi, (int8_t)snr);
@@ -267,14 +269,15 @@ void h_tx_timeout(void)
   radio_events->TxTimeout();
   sim_run_tasks();
 }
-/* A stray radio callback (0 TxDone, 1 TxTimeout, 2 RxTimeout, 3 RxError, 4 RxDone of 33 zero bytes),
-   radio state untouched. */
+/* A stray radio callback (0 TxDone, 1 TxTimeout, 2 RxTimeout, 3 RxError, 4 RxDone of an ACK's length
+   of zero bytes), radio state untouched. The numbers are tests/test_tx_machine.py's. */
+enum { RAW_RX_DONE = 4 };
 void h_raw_event(int which)
 {
   void (*cb[])(void) = { radio_events->TxDone, radio_events->TxTimeout, radio_events->RxTimeout, radio_events->RxError };
-  uint8_t junk[33] = { 0 };
-  if (which < 0 || which > 4) { fprintf(stderr, "tx_harness: no raw event %d\n", which); abort(); }
-  if (which == 4) radio_events->RxDone(junk, sizeof junk, -100, -5);
+  uint8_t junk[WS_ACK_FRAME_LEN] = { 0 };
+  if (which < 0 || which > RAW_RX_DONE) { fprintf(stderr, "tx_harness: no raw event %d\n", which); abort(); }
+  if (which == RAW_RX_DONE) radio_events->RxDone(junk, sizeof junk, -100, -5);
   else cb[which]();
   sim_run_tasks();
 }

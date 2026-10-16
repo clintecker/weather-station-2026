@@ -1,4 +1,5 @@
 #include "stage0.h"
+#include "common/ws_obs.h"
 #undef NDEBUG /* the checks below are assert()s: keep them in every build */
 #include <assert.h>
 #include <stdio.h>
@@ -38,21 +39,21 @@ int main(void) {
  for(int hold=0; hold<=9; hold++) run_recovery(hold);   /* free bus and stuck for 1..9 clocks */
  run_recovery(12);                                       /* stuck beyond 9 clocks */
 
- /* Link gate (docs/radio-energy-policy.md §6): energy 0 SURPLUS, 1 NORMAL, 2 CONSERVE, 3 CRITICAL. */
- for(int e=0;e<=1;e++) {                     /* healthy energy: probing still sends every minute */
+ /* Link gate (docs/radio-energy-policy.md §6). */
+ for(int e=WS_ENERGY_SURPLUS;e<=WS_ENERGY_NORMAL;e++) {                     /* healthy energy: probing still sends every minute */
   assert(ws_link_may_send(e,0,500)==1);
   assert(ws_link_may_send(e,1,500)==1);
   assert(ws_link_may_send(e,1,-5)==1);
  }
- assert(ws_link_may_send(2,0,500)==1);       /* CONSERVE, linked: the energy gate decides elsewhere */
- assert(ws_link_may_send(2,1,500)==0);       /* CONSERVE, probing: wait for the back-off */
- assert(ws_link_may_send(2,1,0)==1);
- assert(ws_link_may_send(2,1,-1)==1);
- assert(ws_link_may_send(3,0,0)==0);         /* CRITICAL never transmits */
- assert(ws_link_may_send(3,1,-1)==0);
+ assert(ws_link_may_send(WS_ENERGY_CONSERVE,0,500)==1);       /* CONSERVE, linked: the energy gate decides elsewhere */
+ assert(ws_link_may_send(WS_ENERGY_CONSERVE,1,500)==0);       /* CONSERVE, probing: wait for the back-off */
+ assert(ws_link_may_send(WS_ENERGY_CONSERVE,1,0)==1);
+ assert(ws_link_may_send(WS_ENERGY_CONSERVE,1,-1)==1);
+ assert(ws_link_may_send(WS_ENERGY_CRITICAL,0,0)==0);         /* CRITICAL never transmits */
+ assert(ws_link_may_send(WS_ENERGY_CRITICAL,1,-1)==0);
  /* PROVISION argument parser: exact fields, digits only, no overflow, floor below the ceiling. */
  const char *K="000102030405060708090a0b0c0d0e0f";
- char buf[160]; uint32_t id, floor; uint8_t key[16];
+ char buf[160]; uint32_t id, floor; uint8_t key[WS_KEY_LEN];
  snprintf(buf,sizeof buf,"1 %s",K);
  assert(ws_parse_provision(buf,&id,key,&floor)==0 && id==1 && floor==0 && key[0]==0 && key[15]==15);
  snprintf(buf,sizeof buf,"65535 %s 102",K);
@@ -108,6 +109,8 @@ int main(void) {
    ws_stack_scan sz = {0};                                  /* slice 1: still converges */
    for(int k=0;k<200;k++) r=ws_stack_scan_step(&sz, ram, ram+64, 1);
    assert(r==64*4); }
+ /* Limits below are written as the spec states them (-40.00..125.00 C, 100.00 %, a u8 count), not
+    taken from ws_obs.h, so the test does not share a wrong constant with the code. */
  /* 15-s T/RH window: mean rounds half up (also below zero), extrema, out-of-range samples skipped. */
  { ws_th_window w; int16_t t; uint16_t h;
    ws_th_reset(&w); assert(!ws_th_mean_t(&w,&t) && !ws_th_mean_h(&w,&h));

@@ -31,6 +31,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "node_store.h"
+#include "ws_be.h"
+#include "ws_obs.h"
 #include "sim_flash.h"
 #include "ws_frame.h"
 #define WS_CHECK_FILE 0   /* reads the count; has no checks of its own */
@@ -42,10 +44,12 @@ int ws_flash_prog64(uint32_t addr, uint64_t value) { return sim_flash_prog64(&S,
 int ws_flash_erase(uint32_t page) { return sim_flash_erase(&S, page); }
 
 /* node_store only needs a deterministic 3-byte check value; AES is tested in test_frame.py. */
-int ws_key_check(const uint8_t key[16], uint8_t out[3]) {
- uint32_t h = 2166136261U;
- for (int i = 0; i < 16; i++) h = (h ^ key[i]) * 16777619U;
- out[0] = (uint8_t)(h >> 16); out[1] = (uint8_t)(h >> 8); out[2] = (uint8_t)h;
+#define FNV_OFFSET 2166136261U   /* FNV-1a, 32-bit */
+#define FNV_PRIME  16777619U
+int ws_key_check(const uint8_t key[WS_KEY_LEN], uint8_t out[WS_KCV_LEN]) {
+ uint32_t h = FNV_OFFSET;
+ for (int i = 0; i < WS_KEY_LEN; i++) h = (h ^ key[i]) * FNV_PRIME;
+ ws_put_be(out, h, WS_KCV_LEN);
  return 0;
 }
 
@@ -99,8 +103,8 @@ static struct {
  uint64_t max_counter;
  uint32_t max_epoch, boot_epoch;
  uint32_t lost_seen, lost_base, aband_seen;
- int cfg; uint32_t station; uint8_t key[16];
- uint32_t try_station; uint8_t try_key[16];
+ int cfg; uint32_t station; uint8_t key[WS_KEY_LEN];
+ uint32_t try_station; uint8_t try_key[WS_KEY_LEN];
  int wipe_uncertain;      /* a WIPE returned an error: some pages may be erased */
  uint32_t wipes, boots;
 } M;
@@ -110,14 +114,12 @@ static void model_reset(void) {
  cut_happened = 0; fault_op = OP_NONE;
 }
 
-static void be32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v; }
-static uint32_t rd_be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
 /* Record i carries (epoch, seq = i) like an observation, plus a pattern derived from both. */
 /* The journal stores WS_OBS_PLAIN_MAX bytes (node_fields.h) without parsing them. */
 #define PLAIN WS_OBS_PLAIN_MAX
 static void plain_for(uint32_t i, uint8_t p[PLAIN]) {
- be32(p, R[i].epoch); be32(p + 4, i);
- for (uint32_t k = 8; k < PLAIN; k++) p[k] = (uint8_t)(i * 31U + k * 7U + R[i].epoch);
+ ws_put_be32(p, R[i].epoch); ws_put_be32(p + WS_OBS_EPOCH_LEN, i);
+ for (uint32_t k = WS_OBS_ID_LEN; k < PLAIN; k++) p[k] = (uint8_t)(i * 31U + k * 7U + R[i].epoch);
 }
 
 static void observe(void) {
@@ -178,14 +180,14 @@ static int do_ack(uint32_t i, int op) {
 }
 static void do_abandon(uint32_t i) { if (do_ack(i, OP_ABANDON_ACK) == 0) do_note(); }
 static void do_provision(uint32_t station, uint8_t seed) {
- uint8_t key[16];
- for (int k = 0; k < 16; k++) key[k] = (uint8_t)(seed * 17 + k * 29 + 1);
- M.try_station = station; memcpy(M.try_key, key, 16);
- infl.op = OP_PROVISION; uint8_t kcv[3]; int rc = store_config_write(station, key, kcv); infl.op = OP_NONE;
+ uint8_t key[WS_KEY_LEN];
+ for (int k = 0; k < WS_KEY_LEN; k++) key[k] = (uint8_t)(seed * 17 + k * 29 + 1);
+ M.try_station = station; memcpy(M.try_key, key, WS_KEY_LEN);
+ infl.op = OP_PROVISION; uint8_t kcv[WS_KCV_LEN]; int rc = store_config_write(station, key, kcv); infl.op = OP_NONE;
  if (!rc) {
-  uint8_t want[3]; ws_key_check(key, want);
-  CHECK("config_kcv", !memcmp(kcv, want, 3), "provision returned a wrong key check value");
-  M.cfg = 1; M.station = station; memcpy(M.key, key, 16);
+  uint8_t want[WS_KCV_LEN]; ws_key_check(key, want);
+  CHECK("config_kcv", !memcmp(kcv, want, WS_KCV_LEN), "provision returned a wrong key check value");
+  M.cfg = 1; M.station = station; memcpy(M.key, key, WS_KEY_LEN);
  }
 }
 static void do_wipe(void) {
@@ -209,7 +211,7 @@ static void reconcile(void) {
  for (unsigned k = 0; k < n; k++) {
   uint8_t p[PLAIN], want[PLAIN]; uint32_t i;
   if (store_journal_read(refs[k], p)) { viol("unreadable_pending", "page %u slot %u", refs[k].page, refs[k].slot); continue; }
-  i = rd_be32(p + 4);
+  i = ws_obs_seq(p);
   if (i >= nrec) { viol("foreign_record", "seq %u", (unsigned)i); continue; }
   plain_for(i, want);
   if (memcmp(p, want, PLAIN)) { viol("foreign_record", "rec %u content differs", (unsigned)i); continue; }
@@ -259,14 +261,16 @@ static void reconcile(void) {
  M.lost_seen = M.lost_base = lost;
 }
 
+#define KCV_UNTOUCHED 0xA5   /* a load that fails must leave the caller's buffer as it was */
 static void check_config(unsigned npending) {
- uint32_t st = 0; uint8_t key[16], kcv[3] = { 0xA5, 0xA5, 0xA5 }, want[3]; int cut = cut_happened;
+ uint32_t st = 0; uint8_t key[WS_KEY_LEN], kcv[WS_KCV_LEN], want[WS_KCV_LEN]; int cut = cut_happened;
+ memset(kcv, KCV_UNTOUCHED, sizeof kcv);
  int rc = store_config_load(&st, key, kcv);
  /* The returned key check value is the loaded key's; a failed load leaves it untouched. */
- if (rc == 0) { ws_key_check(key, want); if (memcmp(kcv, want, 3)) viol("config_kcv", "wrong key check value"); }
- else if (kcv[0] != 0xA5 || kcv[1] != 0xA5 || kcv[2] != 0xA5) viol("config_kcv", "kcv written on a failed load (rc %d)", rc);
- int match = rc == 0 && M.cfg && st == M.station && !memcmp(key, M.key, 16);
- int match_try = rc == 0 && cut && infl.op == OP_PROVISION && st == M.try_station && !memcmp(key, M.try_key, 16);
+ if (rc == 0) { ws_key_check(key, want); if (memcmp(kcv, want, WS_KCV_LEN)) viol("config_kcv", "wrong key check value"); }
+ else if (kcv[0] != KCV_UNTOUCHED || kcv[1] != KCV_UNTOUCHED || kcv[2] != KCV_UNTOUCHED) viol("config_kcv", "kcv written on a failed load (rc %d)", rc);
+ int match = rc == 0 && M.cfg && st == M.station && !memcmp(key, M.key, WS_KEY_LEN);
+ int match_try = rc == 0 && cut && infl.op == OP_PROVISION && st == M.try_station && !memcmp(key, M.try_key, WS_KEY_LEN);
  int wiping = (cut && infl.op == OP_WIPE) || M.wipe_uncertain;
  int was_cfg = M.cfg;
  /* An interrupted WIPE may leave the old config readable; no other config may appear. */
@@ -274,7 +278,7 @@ static void check_config(unsigned npending) {
  if (rc != 0 && M.cfg && !wiping) viol("config_lost", "rc %d", rc);
  if (rc != 0 && was_cfg && wiping && npending)
   viol("wipe_journal_survives", "unprovisioned after an interrupted WIPE with %u pending records", npending);
- if (match_try) { M.station = st; memcpy(M.key, key, 16); }
+ if (match_try) { M.station = st; memcpy(M.key, key, WS_KEY_LEN); }
  M.cfg = rc == 0;
 }
 
@@ -403,7 +407,8 @@ static int counter_limit(void) {
  uint64_t c = 0; int bad = 0;
  sim_flash_reset(&S);
  if (store_meta_init()) { printf("LIMIT meta_init\n"); return 1; }
- sim_flash_prog64(&S, WS_PAGE_ADDR(WS_META_PAGE_A) + 8, (uint64_t)0xC2 << 56 | (WS_COUNTER_MAX - 1U));
+ /* A META_CTR record (type 0xC2, bits 63-56) at the first position after the page header. */
+ sim_flash_prog64(&S, WS_PAGE_ADDR(WS_META_PAGE_A) + WS_DW_BYTES, (uint64_t)0xC2 << 56 | (WS_COUNTER_MAX - 1U));
  if (store_meta_init()) { printf("LIMIT meta_init seeded\n"); return 1; }
  if (store_next_counter(&c) || c != WS_COUNTER_MAX) { printf("LIMIT last counter %llu\n", (unsigned long long)c); bad++; }
  if (store_next_counter(&c) == 0) { printf("LIMIT counter past 2^40-1 issued: %llu\n", (unsigned long long)c); bad++; }
@@ -417,7 +422,7 @@ static int foreign_layout(void) {
  sim_flash_reset(&S);
  uint32_t a = WS_PAGE_ADDR(WS_JOURNAL_FIRST);
  sim_flash_prog64(&S, a, (uint64_t)0x57534A31UL << 32 | 7U);                    /* "WSJ1", sequence 7 */
- for (uint32_t k = 1; k <= 4; k++) sim_flash_prog64(&S, a + 8 * k, 0x0102030405060708ULL * k);
+ for (uint32_t k = 1; k <= 4; k++) sim_flash_prog64(&S, a + WS_DW_BYTES * k, 0x0102030405060708ULL * k);   /* a few slot words */
  if (store_meta_init() || store_journal_init()) { printf("FOREIGN init\n"); return 1; }
  if (store_journal_pending() != 0 || store_journal_burned() != 0) {
   printf("FOREIGN pending=%u burned=%u\n", (unsigned)store_journal_pending(), (unsigned)store_journal_burned()); bad++;

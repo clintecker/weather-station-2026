@@ -22,6 +22,7 @@
  *  - watchdog (board watchdog.c): a 1 s check timer posts the check task, which calls the health
  *    test and refreshes the IWDG; 8 s without a refresh is a reset (4000 / 500 Hz), counted.
  * Checked after every task: interrupts are not left masked. */
+#include <limits.h>
 #include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -156,13 +157,13 @@ static const sim_source timer_source = { timer_pending, timer_fire, SIM_IRQ_RTC_
 uint32_t h_timer_start_refused(void) { return timer_start_refused; }
 
 /* ---- sequencer ---- */
-static void (*task_cb[32])(void);
 static uint32_t task_set, clear_list;
+static void (*task_cb[sizeof task_set * CHAR_BIT])(void);   /* one per bit of the task mask */
 static struct { uint32_t priority, round_robin; } task_prio[CFG_SEQ_Prio_NBR];
 static uint32_t task_saturations, task_runs, primask_leaks;
 static int hold, fault_tests, in_tasks;
 static jmp_buf fault_jump;
-void UTIL_SEQ_RegTask(uint32_t mask, uint32_t flags, void (*task)(void)) { (void)flags; task_cb[31 - __builtin_clz(mask)] = task; }
+void UTIL_SEQ_RegTask(uint32_t mask, uint32_t flags, void (*task)(void)) { (void)flags; task_cb[sizeof mask * CHAR_BIT - 1U - (unsigned)__builtin_clz(mask)] = task; }
 void UTIL_SEQ_SetTask(uint32_t mask, uint32_t prio)
 {
   if (prio >= CFG_SEQ_Prio_NBR) fatal("UTIL_SEQ_SetTask: no such priority");

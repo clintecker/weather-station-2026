@@ -30,6 +30,7 @@ static int locate(sim_flash *s, uint32_t addr, uint32_t *pg, uint32_t *dw) {
  return 0;
 }
 
+/* Marsaglia xorshift32 (shifts 13, 17, 5). */
 static uint32_t rnd(uint32_t *x) { *x ^= *x << 13; *x ^= *x >> 17; *x ^= *x << 5; return *x; }
 
 /* Counts the op; returns 1 when it must fail without effect, longjmps on a cut (after the
