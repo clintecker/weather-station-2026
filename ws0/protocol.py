@@ -17,26 +17,32 @@ from . import fields
 # station u16, counter u40; then ciphertext and an 8-byte CCM tag. The C twin is
 # firmware/common/ws_frame.c, checked byte for byte by tests/test_frame.py.
 VERSION = 5
-HEADER_LEN, TAG_LEN = 8, 8
-STATION_MAX = 65535
-COUNTER_MAX = 2**40 - 1   # the header holds 5 bytes; a larger counter would truncate and repeat a nonce
+VERSION_SHIFT, KIND_MASK = 4, 0x0F          # byte 0: version in the high nibble, kind in the low
+STATION_AT, STATION_BYTES = 1, 2
+COUNTER_AT, COUNTER_BYTES = STATION_AT + STATION_BYTES, 5
+HEADER_LEN = COUNTER_AT + COUNTER_BYTES
+TAG_LEN = 8
+STATION_MAX = 2**(8 * STATION_BYTES) - 1
+COUNTER_MAX = 2**(8 * COUNTER_BYTES) - 1   # a larger counter would truncate and repeat a nonce
+NONCE = struct.Struct('>BIQ')               # kind, station u32, counter u64: 13 bytes
 # ACK and NACK plaintexts (17 bytes): epoch u32, sequence u32, word u32 (host UTC at commit for an
 # ACK, 0 if the gateway measured its clock wrong; the reason for a NACK), and the u40 counter of
 # the observation frame being answered. The echo lets the node accept the time only from the
 # reply to the frame it just sent, so a replayed ACK cannot set its clock. NACKs share
 # the gateway's ACK counter space; the kind byte keeps the nonces distinct.
-REPLY_LEN = 17
+REPLY_HEAD = struct.Struct('>III')
+REPLY_LEN = REPLY_HEAD.size + COUNTER_BYTES
 
 
 def pack_reply(epoch, sequence, word, echo):
-    return struct.pack('>III', epoch, sequence, word) + echo.to_bytes(5, 'big')
+    return REPLY_HEAD.pack(epoch, sequence, word) + echo.to_bytes(COUNTER_BYTES, 'big')
 
 
 def unpack_reply(plain):
     """(epoch, sequence, word, echo)"""
     if len(plain) != REPLY_LEN:
         raise ValueError('Wrong reply length')
-    return (*struct.unpack('>III', plain[:12]), int.from_bytes(plain[12:], 'big'))
+    return (*REPLY_HEAD.unpack(plain[:REPLY_HEAD.size]), int.from_bytes(plain[REPLY_HEAD.size:], 'big'))
 
 
 KIND_OBS, KIND_ACK, KIND_NACK, KIND_DIAG = 1, 2, 3, 4
@@ -144,10 +150,11 @@ class Nonces:
 def _header_and_nonce(kind, station, counter):
     """Header (also the AAD) and the 13-byte nonce, built from the integers: kind, station u32,
     counter u64. to_bytes raises on a value its field cannot hold, so nothing is truncated."""
-    if not 1 <= station <= STATION_MAX or not 1 <= counter <= COUNTER_MAX or not 1 <= kind <= 4:
+    if not 1 <= station <= STATION_MAX or not 1 <= counter <= COUNTER_MAX or not KIND_OBS <= kind <= KIND_DIAG:
         raise ValueError('Station, counter or kind out of range')
-    header = bytes([VERSION << 4 | kind]) + station.to_bytes(2, 'big') + counter.to_bytes(5, 'big')
-    return header, struct.pack('>BIQ', kind, station, counter)
+    header = (bytes([VERSION << VERSION_SHIFT | kind]) + station.to_bytes(STATION_BYTES, 'big') +
+              counter.to_bytes(COUNTER_BYTES, 'big'))
+    return header, NONCE.pack(kind, station, counter)
 
 
 def seal(key, station, kind, allocator, payload):
@@ -163,12 +170,12 @@ def seal(key, station, kind, allocator, payload):
 
 def frame_kind(packet):
     """Kind of a frame of this protocol version, or None (empty or another version)."""
-    return packet[0] & 0x0F if packet and packet[0] >> 4 == VERSION else None
+    return packet[0] & KIND_MASK if packet and packet[0] >> VERSION_SHIFT == VERSION else None
 
 
 def frame_counter(packet):
     """Transmission counter from an (authenticated) frame header."""
-    return int.from_bytes(packet[3:HEADER_LEN], 'big')
+    return int.from_bytes(packet[COUNTER_AT:HEADER_LEN], 'big')
 
 
 # Plaintext lengths a frame of each kind may have before decrypting (design 3.4). An observation's
@@ -185,7 +192,7 @@ def unseal(key, station, kind, packet):
     """Reject the wrong length, version, kind or station before decrypting, then a bad tag."""
     if len(packet) - HEADER_LEN - TAG_LEN not in plain_lengths(kind):
         raise ValueError('Wrong frame length')
-    if frame_kind(packet) != kind or int.from_bytes(packet[1:3], 'big') != station:
+    if frame_kind(packet) != kind or int.from_bytes(packet[STATION_AT:COUNTER_AT], 'big') != station:
         raise ValueError('Unexpected frame header')
     header, nonce = _header_and_nonce(kind, station, frame_counter(packet))
     return AESCCM(key, tag_length=TAG_LEN).decrypt(nonce, packet[HEADER_LEN:], header)
@@ -202,7 +209,7 @@ def encode_observation(record):
 def decode_observation(payload, station):
     """Draft-5 observation plaintext -> gateway record. INVALID fields are null, never numbers."""
     head, codes = fields.decode(payload)
-    record = dict(version=5, station=station, session=str(head['epoch']), sequence=head['sequence'],
+    record = dict(version=VERSION, station=station, session=str(head['epoch']), sequence=head['sequence'],
                   sampled_at=head['utc'] if head['time_known'] else None, uptime_s=head['uptime'],
                   time_quality='synchronized' if head['time_known'] else 'unknown',
                   energy_state=head['energy_state'], calibration_revision=head['calibration_revision'],

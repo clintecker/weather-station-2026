@@ -12,6 +12,17 @@ HEAD = struct.Struct('>IIIIBBI')       # epoch, sequence, UTC, uptime, flags, ca
 HEAD_LEN = HEAD.size                   # 22
 ENERGY = ('surplus', 'normal', 'conserve', 'critical')   # the firmware's energy_t numbering
 WIND_DIR_CALM = 0xFFFE
+FLAG_UTC, ENERGY_SHIFT, ENERGY_MASK, FLAGS_RESERVED = 0x01, 1, 0x03, 0xF8   # flags: bit 0 UTC known, bits 1-2 energy
+TEMP_MIN_CENTI, TEMP_MAX_CENTI, RH_MAX_CENTI = -4000, 12500, 10000         # SHT45: -40.00..125.00 C, 0..100.00 %
+TEMP_CODE_TOP = TEMP_MAX_CENTI - TEMP_MIN_CENTI                             # code = centi C + 40.00 C
+TH_SAMPLES_MAX = 60                                                          # 15-s samples in a minute's window
+QUALIFIER_BITS, QUALIFIABLE_COUNT = 2, 16                                   # qualifiers: 2 bits for each of fields 0-15
+DEGREES = 360
+
+
+def code_top(width):
+    """The highest in-range code of a field whose all-ones value is INVALID."""
+    return 2**(8 * width) - 2
 QUALIFIER = (None, 'suspected_icing', 'delayed_melt', 'outside_envelope')
 
 
@@ -31,7 +42,7 @@ class Field:
 
     @property
     def invalid(self):
-        return None if self.name == 'qualifiers' else (1 << (8 * self.width)) - 1
+        return None if self.name == 'qualifiers' else 2**(8 * self.width) - 1
 
     def code_ok(self, code):
         if 0 <= code <= self.max:
@@ -48,47 +59,47 @@ class Field:
         if value is None:
             return self.invalid
         if self.clamp:
-            value = min(max(value, 0), 100)
+            value = min(max(value, 0), RH_MAX_CENTI / self.scale)
         # Round half up = floor(x + 0.5), exact on the value as written (Decimal(str(x))): in binary
         # floating point -40.005 * 100 is -4000.5000000001 and would round the wrong way. (Decimal's
         # ROUND_HALF_UP rounds halves away from zero, which is not what section 5.3 means.)
         x = Decimal(str(value)) * self.scale + Decimal('0.5')
         n = int(x.to_integral_value(ROUND_FLOOR)) + self.offset
         if self.name == 'wind_dir_deg':
-            n %= 360
+            n %= DEGREES
         return n if 0 <= n <= self.max else self.invalid
 
 
-T, RH = dict(scale=100, offset=4000, unit='°C', ha_class='temperature'), dict(scale=100, unit='%', ha_class='humidity', clamp=True)
+T, RH = dict(scale=100, offset=-TEMP_MIN_CENTI, unit='°C', ha_class='temperature'), dict(scale=100, unit='%', ha_class='humidity', clamp=True)
 FIELDS = (
-    Field(0, 'temperature_c', 2, 16500, **T),
-    Field(1, 'humidity_pct', 2, 10000, **RH),
+    Field(0, 'temperature_c', 2, TEMP_CODE_TOP, **T),
+    Field(1, 'humidity_pct', 2, RH_MAX_CENTI, **RH),
     Field(2, 'pressure_hpa', 2, 8000, scale=10, offset=-3000, unit='hPa', ha_class='atmospheric_pressure'),
     Field(3, 'wind_speed_ms', 2, 750, scale=10, unit='m/s', ha_class='wind_speed'),
     Field(4, 'wind_gust_ms', 2, 750, scale=10, unit='m/s', ha_class='wind_speed'),
     Field(5, 'wind_dir_deg', 2, 359, unit='°'),
-    Field(6, 'rain_tips', 3, 16777214, counter=True),
+    Field(6, 'rain_tips', 3, code_top(3), counter=True),
     Field(7, 'uv_index', 1, 250, scale=10),
     Field(8, 'irradiance_wm2', 2, 2000, unit='W/m²', ha_class='irradiance'),
-    Field(9, 'uva_raw', 3, 1048575),
-    Field(10, 'qualifiers', 4, 0xFFFFFFFF),
-    Field(11, 'batt_mv', 2, 65534, unit='mV', ha_class='voltage'),
-    Field(12, 'batt_current_ma', 2, 65534, scale=10, offset=32768, unit='mA', ha_class='current'),
-    Field(13, 'energy_in_mwh', 3, 16777214, unit='mWh', ha_class='energy', counter=True),
-    Field(14, 'energy_out_mwh', 3, 16777214, unit='mWh', ha_class='energy', counter=True),
-    Field(15, 'charge_in_mah', 3, 16777214, unit='mAh', counter=True),
-    Field(16, 'charge_out_mah', 3, 16777214, unit='mAh', counter=True),
+    Field(9, 'uva_raw', 3, 2**20 - 1),   # LTR390 counts (20 bit)
+    Field(10, 'qualifiers', 4, 2**32 - 1),   # no INVALID
+    Field(11, 'batt_mv', 2, code_top(2), unit='mV', ha_class='voltage'),
+    Field(12, 'batt_current_ma', 2, code_top(2), scale=10, offset=32768, unit='mA', ha_class='current'),
+    Field(13, 'energy_in_mwh', 3, code_top(3), unit='mWh', ha_class='energy', counter=True),
+    Field(14, 'energy_out_mwh', 3, code_top(3), unit='mWh', ha_class='energy', counter=True),
+    Field(15, 'charge_in_mah', 3, code_top(3), unit='mAh', counter=True),
+    Field(16, 'charge_out_mah', 3, code_top(3), unit='mAh', counter=True),
     Field(17, 'soc_gauge_pct', 1, 100, unit='%', ha_class='battery'),
     Field(18, 'charger_pins', 1, 3),
-    Field(19, 'enclosure_temp_c', 2, 16500, **T),
-    Field(20, 'enclosure_rh_pct', 2, 10000, **RH),
+    Field(19, 'enclosure_temp_c', 2, TEMP_CODE_TOP, **T),
+    Field(20, 'enclosure_rh_pct', 2, RH_MAX_CENTI, **RH),
     # 15-s sampling summary of the minute (PRD section 9: coverage and extrema). temperature_c and
     # humidity_pct are then the mean of th_samples valid samples; all five are INVALID together.
-    Field(21, 'temperature_min_c', 2, 16500, **T),
-    Field(22, 'temperature_max_c', 2, 16500, **T),
-    Field(23, 'humidity_min_pct', 2, 10000, **RH),
-    Field(24, 'humidity_max_pct', 2, 10000, **RH),
-    Field(25, 'th_samples', 1, 60, meta=True),
+    Field(21, 'temperature_min_c', 2, TEMP_CODE_TOP, **T),
+    Field(22, 'temperature_max_c', 2, TEMP_CODE_TOP, **T),
+    Field(23, 'humidity_min_pct', 2, RH_MAX_CENTI, **RH),
+    Field(24, 'humidity_max_pct', 2, RH_MAX_CENTI, **RH),
+    Field(25, 'th_samples', 1, TH_SAMPLES_MAX, meta=True),
 )
 DEFINED = (1 << len(FIELDS)) - 1
 BY_NAME = {f.name: f for f in FIELDS}
@@ -103,7 +114,7 @@ def fields_len(bitmap):
 def encode(epoch, seq, utc, uptime, energy, cal_rev, codes):
     """codes: {field index: code}. Raises ValueError for anything the decoder would reject."""
     bitmap = sum(1 << i for i in codes)
-    if not codes or bitmap & ~DEFINED or not 0 <= energy <= 3:
+    if not codes or bitmap & ~DEFINED or not 0 <= energy < len(ENERGY):
         raise ValueError('Invalid field set or energy state')
     body = b''
     for f in FIELDS:
@@ -112,12 +123,13 @@ def encode(epoch, seq, utc, uptime, energy, cal_rev, codes):
                 raise ValueError(f'{f.name}: code {codes[f.index]} out of range')
             body += codes[f.index].to_bytes(f.width, 'big')
     _check_wind(codes)
-    return HEAD.pack(epoch, seq, utc, uptime, int(utc != 0) | energy << 1, cal_rev, bitmap) + body
+    return HEAD.pack(epoch, seq, utc, uptime, (FLAG_UTC if utc else 0) | energy << ENERGY_SHIFT, cal_rev, bitmap) + body
 
 
 def _check_wind(codes):
-    speed, direction = codes.get(3), codes.get(5)
-    if speed == FIELDS[3].invalid and direction is not None and direction != FIELDS[5].invalid:
+    s, d = BY_NAME['wind_speed_ms'], BY_NAME['wind_dir_deg']
+    speed, direction = codes.get(s.index), codes.get(d.index)
+    if speed == s.invalid and direction is not None and direction != d.invalid:
         raise ValueError('Wind direction without a valid speed')
 
 
@@ -127,9 +139,9 @@ def decode(plain):
     if len(plain) < HEAD_LEN:
         raise ValueError('Observation too short')
     epoch, seq, utc, uptime, flags, cal_rev, bitmap = HEAD.unpack_from(plain)
-    if flags & 0xF8 or bitmap & ~DEFINED or not bitmap:
+    if flags & FLAGS_RESERVED or bitmap & ~DEFINED or not bitmap:
         raise ValueError('Reserved flag or bitmap bits, or no fields')
-    if (flags & 1) != (utc != 0):
+    if bool(flags & FLAG_UTC) != (utc != 0):
         raise ValueError('Time-known flag does not match UTC')
     if len(plain) != HEAD_LEN + fields_len(bitmap):
         raise ValueError('Observation length does not match its field bitmap')
@@ -142,12 +154,13 @@ def decode(plain):
             codes[f.index] = code
             at += f.width
     _check_wind(codes)
-    head = dict(epoch=epoch, sequence=seq, utc=utc, uptime=uptime, energy_state=ENERGY[flags >> 1 & 3],
-                calibration_revision=cal_rev, time_known=bool(flags & 1))
+    head = dict(epoch=epoch, sequence=seq, utc=utc, uptime=uptime, energy_state=ENERGY[flags >> ENERGY_SHIFT & ENERGY_MASK],
+                calibration_revision=cal_rev, time_known=bool(flags & FLAG_UTC))
     return head, codes
 
-# The qualifiers field holds 2 bits for each of the first 16 catalog fields (design 5.3).
-QUALIFIABLE = {f.name: f.index for f in FIELDS[:16]}
+# The qualifiers field holds QUALIFIER_BITS for each of the first QUALIFIABLE_COUNT catalog fields (design 5.3).
+QUALIFIABLE = {f.name: f.index for f in FIELDS[:QUALIFIABLE_COUNT]}
+QUALIFIER_MASK = 2**QUALIFIER_BITS - 1
 
 
 def values(codes):
@@ -156,8 +169,8 @@ def values(codes):
     for i, code in codes.items():
         f = FIELDS[i]
         if f.name == 'qualifiers':
-            out['qualifiers'] = {FIELDS[k].name: QUALIFIER[code >> 2 * k & 3]
-                                 for k in QUALIFIABLE.values() if code >> 2 * k & 3}
+            out['qualifiers'] = {FIELDS[k].name: QUALIFIER[code >> QUALIFIER_BITS * k & QUALIFIER_MASK]
+                                 for k in QUALIFIABLE.values() if code >> QUALIFIER_BITS * k & QUALIFIER_MASK}
         elif f.name == 'wind_dir_deg':
             out['wind_calm'] = code == WIND_DIR_CALM
             out[f.name] = None if code in (WIND_DIR_CALM, f.invalid) else code
@@ -186,7 +199,7 @@ def codes_from_record(record):
             continue
         v = record[f.name]
         if f.name == 'qualifiers':
-            codes[f.index] = sum(QUALIFIER.index(q) << 2 * QUALIFIABLE[n] for n, q in v.items())
+            codes[f.index] = sum(QUALIFIER.index(q) << QUALIFIER_BITS * QUALIFIABLE[n] for n, q in v.items())
         elif f.name == 'wind_dir_deg' and record.get('wind_calm'):
             codes[f.index] = WIND_DIR_CALM
         else:
