@@ -12,6 +12,8 @@
 #define WS_NACK_COLLISION 1
 #define WS_NACK_INVALID 2
 #define WS_HEADER_LEN 8          /* version<<4 | kind, station u16, counter u40 */
+#define WS_KEY_LEN 16            /* AES-128 */
+#define WS_KCV_LEN 3             /* key check value (ws_key_check) */
 #define WS_TAG_LEN 8             /* CCM M = 8, fixed (section 3.3) */
 #define WS_FRAME_OVERHEAD (WS_HEADER_LEN + WS_TAG_LEN)
 #define WS_STATION_MAX 65535U
@@ -52,7 +54,7 @@ typedef struct {
 } ws_diag_t;
 void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]);
 /* Key check value: first 3 bytes of AES-ECB(key, zero block); safe to display. */
-int ws_key_check(const uint8_t key[16], uint8_t out[3]);
+int ws_key_check(const uint8_t key[WS_KEY_LEN], uint8_t out[WS_KCV_LEN]);
 /* Zero key material. A plain memset of a buffer that is not read again is a dead store the
    compiler may delete; writes through a volatile pointer are kept. */
 static inline void ws_wipe(void *p, size_t n)

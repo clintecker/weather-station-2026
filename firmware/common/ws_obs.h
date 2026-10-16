@@ -6,6 +6,8 @@
  * dependencies: the TX firmware, the host tests and the fuzzers run the same code. The Python
  * twin of this table is ws0/fields.py; tests/test_obs.py checks that the two agree. */
 
+#define WS_OBS_EPOCH_LEN 4   /* the identity, (epoch, sequence), opens the plaintext */
+#define WS_OBS_ID_LEN 8
 #define WS_OBS_HEAD_LEN 22   /* epoch, sequence, UTC, uptime (4 each), flags, calibration, bitmap (4) */
 
 /* Field catalog v1: index = bit in the field bitmap. */

@@ -84,6 +84,22 @@ The generated file opens with the same summary:
  * the power-cut argument are in node_store.lit.md, which this file is generated from. */
 ```
 
+### Return codes
+
+Every function returns `STORE_OK` (0) or a negative `STORE_E*` code from `node_store.h`.
+Callers only test for nonzero. The value appears in `#error` lines.
+
+| Code | Value | Meaning |
+|---|---|---|
+| `STORE_EFLASH` | -1 | a program or erase failed, or `prog64`/`erase_page` refused the address |
+| `STORE_ENODATA` | -2 | no valid record: erased, unreadable or not committed; or not found |
+| `STORE_EKEY` | -3 | the key check value cannot be computed, or does not match |
+| `STORE_ERANGE` | -4 | station id or meta value out of range |
+| `STORE_EEXISTS` | -5 | the provisioning page is not erased |
+| `STORE_EEXHAUSTED` | -6 | no epoch or counter left |
+| `STORE_EINVAL` | -7 | a `jref_t` this file did not issue (`WS_CHECK` records the site) |
+| `STORE_ENOTREADY` | -16 | init has not succeeded |
+
 ### Flash access
 
 `rd64` returns 0 and sets `*bad` on an ECC fault. `bad` stays set, so a caller can read several
@@ -92,6 +108,13 @@ count after boot means a cut tore a double-word.
 
 ```c {#erased}
 #define ERASED 0xFFFFFFFFFFFFFFFFULL
+/* Header, station, check-value and commit double-words: a 32-bit tag in the high half, a 32-bit
+   value in the low half. */
+static uint64_t dw_make(uint32_t hi, uint32_t lo) { return (uint64_t)hi << 32 | lo; }
+static uint32_t dw_hi(uint64_t w) { return (uint32_t)(w >> 32); }
+static uint32_t dw_lo(uint64_t w) { return (uint32_t)w; }
+/* The address of double-word pos of a record or page that starts at base. */
+static uint32_t dw_addr(uint32_t base, uint32_t pos) { return base + pos * WS_DW_BYTES; }
 ```
 
 ```c {#flash-primitives}
@@ -106,8 +129,8 @@ static uint64_t rd64(uint32_t addr, int *bad) {
 ```
 
 `prog64` and `erase_page` refuse any address outside pages 32–127, or a misaligned program, with
-a `WS_CHECK` (`firmware/common/ws_check.h`). The refusal returns -1, the same as a failed flash
-operation, which every caller handles. A wrong address can only come from a bug in this file. The
+a `WS_CHECK` (`firmware/common/ws_check.h`). The refusal returns `STORE_EFLASH`, the same as a failed
+flash operation, which every caller handles. A wrong address can only come from a bug in this file. The
 check stops such a bug from erasing firmware pages.
 
 ```c {#write-guards}
@@ -115,12 +138,13 @@ check stops such a bug from erasing firmware pages.
    firmware below them. A bad address or page is refused like a failed flash operation. */
 #define STORE_PAGE_END (WS_JOURNAL_FIRST + WS_JOURNAL_PAGES)
 static int prog64(uint32_t addr, uint64_t v) {
- if (!WS_CHECK(addr >= WS_PAGE_ADDR(WS_CONFIG_PAGE) && addr < WS_PAGE_ADDR(STORE_PAGE_END) && !(addr & 7U))) return -1;
- return ws_flash_prog64(addr, v) ? -1 : 0;
+ if (!WS_CHECK(addr >= WS_PAGE_ADDR(WS_CONFIG_PAGE) && addr < WS_PAGE_ADDR(STORE_PAGE_END) && addr % WS_DW_BYTES == 0))
+  return STORE_EFLASH;
+ return ws_flash_prog64(addr, v) ? STORE_EFLASH : STORE_OK;
 }
 static int erase_page(uint32_t page) {
- if (!WS_CHECK(page >= WS_CONFIG_PAGE && page < STORE_PAGE_END)) return -1;
- return ws_flash_erase(page) ? -1 : 0;
+ if (!WS_CHECK(page >= WS_CONFIG_PAGE && page < STORE_PAGE_END)) return STORE_EFLASH;
+ return ws_flash_erase(page) ? STORE_EFLASH : STORE_OK;
 }
 ```
 
@@ -138,44 +162,63 @@ static uint8_t meta_ready, journal_ready;
 
 Page 32 holds one record of four double-words:
 
-| Offset | Double-word | Contents |
+| Position | Name | Contents |
 |---|---|---|
-| +0 | `d0` | `CFG_MAGIC` "WSC1" (bits 63–32), station id (bits 31–0) |
-| +8 | `k0` | key bytes 0–7 |
-| +16 | `k1` | key bytes 8–15 |
-| +24 | `d3` | `CFG_MAGIC2` "KCV1" (bits 63–32), key check value (bits 23–0) |
+| 0 | `CFG_ID_POS` | `CFG_MAGIC` "WSC1" (bits 63–32), station id (bits 31–0) |
+| 1, 2 | `CFG_KEY_POS` | key bytes 0–7, 8–15 |
+| 3 | `CFG_KCV_POS` | `CFG_MAGIC2` "KCV1" (bits 63–32), key check value (bits 23–0) |
+
+A position is a double-word index: `dw_addr(page address, position)` gives its address, and
+`dw_make`, `dw_hi` and `dw_lo` build and split the tag-and-value double-words.
 
 ```c {#config-constants}
 #define CFG_MAGIC  0x57534331UL /* "WSC1" */
 #define CFG_MAGIC2 0x4B435631UL /* "KCV1" */
+#define CFG_KEY_DWORDS (WS_KEY_LEN / WS_DW_BYTES)
+enum { CFG_ID_POS, CFG_KEY_POS, CFG_KCV_POS = CFG_KEY_POS + CFG_KEY_DWORDS, CFG_DWORDS };
+_Static_assert(WS_KEY_LEN % WS_DW_BYTES == 0, "the key fills whole double-words");
+/* The 3-byte key check value as the low bits of a 32-bit number, big-endian like its hex form. */
+static uint32_t kcv_value(const uint8_t kcv[WS_KCV_LEN]) { return (uint32_t)ws_get_be64(kcv, WS_KCV_LEN); }
 ```
 
 ### Write
 
-`store_config_write` programs `k0`, `k1`, `d3`, then `d0`. `d0` is the commit word:
+`store_config_write` programs the key, the check value, then the station double-word, which is
+the commit word:
 
 ```text
-cut before d0 is programmed   d0 erased        load returns -1 (not provisioned)
-cut during d0                 d0 unreadable    load returns -1
-d0 programmed                 complete         load returns the record
+cut before the station dw   station dw erased       load returns STORE_ENODATA (not provisioned)
+cut during the station dw   station dw unreadable   load returns STORE_ENODATA
+station dw programmed       complete                load returns the record
 ```
 
-The function returns -1 if any of the four double-words is not erased (a programmed double-word
-cannot be programmed again, WIPE erases the page first), -2 for a station id outside
-1..`WS_STATION_MAX`, and -3 if a program fails. Stack copies of the key are wiped on every path.
+| Return | Cause |
+|---|---|
+| `STORE_EEXISTS` | a double-word of the record is not erased (it cannot be programmed again; WIPE erases the page) |
+| `STORE_ERANGE` | station id outside 1..`WS_STATION_MAX` |
+| `STORE_EKEY` | `ws_key_check` failed |
+| `STORE_EFLASH` | a program failed |
+
+The stack copy of the key is wiped on every path.
 
 ```c {#config-write}
-int store_config_write(uint32_t station, const uint8_t key[16], uint8_t kcv[3]) {
- uint32_t a = WS_PAGE_ADDR(WS_CONFIG_PAGE); uint64_t k0, k1;
- for (uint32_t i = 0; i < 4; i++) if (rd64(a + 8 * i, 0) != ERASED) return -1; /* refuse overwrite */
- if (station == 0 || station > WS_STATION_MAX || ws_key_check(key, kcv)) return -2;
- memcpy(&k0, key, 8); memcpy(&k1, key + 8, 8);
- /* Magic double-word last: a torn write is never mistaken for a valid config. */
- if (prog64(a + 8, k0) || prog64(a + 16, k1) ||
-     prog64(a + 24, (uint64_t)CFG_MAGIC2 << 32 | (uint32_t)kcv[0] << 16 | kcv[1] << 8 | kcv[2]) ||
-     prog64(a, (uint64_t)CFG_MAGIC << 32 | station)) { ws_wipe(&k0, 8); ws_wipe(&k1, 8); return -3; }
- ws_wipe(&k0, 8); ws_wipe(&k1, 8);
- return 0;
+/* 1 if every double-word of the record is erased (a programmed one cannot be programmed again). */
+static int cfg_erased(uint32_t a) {
+ for (uint32_t i = 0; i < CFG_DWORDS; i++) if (rd64(dw_addr(a, i), 0) != ERASED) return 0;
+ return 1;
+}
+int store_config_write(uint32_t station, const uint8_t key[WS_KEY_LEN], uint8_t kcv[WS_KCV_LEN]) {
+ uint32_t a = WS_PAGE_ADDR(WS_CONFIG_PAGE); uint64_t k[CFG_KEY_DWORDS]; int rc = STORE_OK;
+ if (!cfg_erased(a)) return STORE_EEXISTS; /* WIPE first */
+ if (station == 0 || station > WS_STATION_MAX) return STORE_ERANGE;
+ if (ws_key_check(key, kcv)) return STORE_EKEY;
+ memcpy(k, key, sizeof k);
+ for (uint32_t i = 0; i < CFG_KEY_DWORDS && !rc; i++) rc = prog64(dw_addr(a, CFG_KEY_POS + i), k[i]);
+ ws_wipe(k, sizeof k);
+ /* The station double-word last: it commits the record. */
+ if (rc || prog64(dw_addr(a, CFG_KCV_POS), dw_make(CFG_MAGIC2, kcv_value(kcv))) ||
+     prog64(dw_addr(a, CFG_ID_POS), dw_make(CFG_MAGIC, station))) return STORE_EFLASH;
+ return STORE_OK;
 }
 ```
 
@@ -183,24 +226,25 @@ int store_config_write(uint32_t station, const uint8_t key[16], uint8_t kcv[3]) 
 
 `store_config_load` returns 0 only when both magics match, every double-word is readable, the
 recomputed key check value (`ws_key_check`) equals the stored one, and the station id is in range.
-It returns -1 (missing or unreadable), -2 (check value mismatch: the key changed after it was
-written) or -3 (station out of range), and zeroes the key buffer on -2 and -3. On success it
-returns the check value, which the console prints for comparison with the gateway's.
+It returns `STORE_ENODATA` (missing or unreadable), `STORE_EKEY` (check value mismatch: the key
+changed after it was written) or `STORE_ERANGE` (station out of range), and zeroes the key buffer
+on every failure. On success it also fills `kcv_out` with the check value, which the console
+prints for comparison with the gateway's.
 
 ```c {#config-load}
 /* ---- provisioning ---- */
-int store_config_load(uint32_t *station, uint8_t key[16], uint8_t kcv_out[3]) {
- uint32_t a = WS_PAGE_ADDR(WS_CONFIG_PAGE); int bad = 0; uint8_t kcv[3];
- uint64_t d0 = rd64(a, &bad), k0 = rd64(a + 8, &bad), k1 = rd64(a + 16, &bad), d3 = rd64(a + 24, &bad);
- if (bad || (d0 >> 32) != CFG_MAGIC || (d3 >> 32) != CFG_MAGIC2) return -1;
- memcpy(key, &k0, 8); memcpy(key + 8, &k1, 8); ws_wipe(&k0, 8); ws_wipe(&k1, 8);
- if (ws_key_check(key, kcv) || (uint32_t)(d3 & 0xFFFFFFU) != ((uint32_t)kcv[0] << 16 | kcv[1] << 8 | kcv[2])) {
-  ws_wipe(key, 16); return -2;
- }
- *station = (uint32_t)d0;
- if (*station == 0 || *station > WS_STATION_MAX) { ws_wipe(key, 16); return -3; }
- memcpy(kcv_out, kcv, 3);
- return 0;
+int store_config_load(uint32_t *station, uint8_t key[WS_KEY_LEN], uint8_t kcv_out[WS_KCV_LEN]) {
+ uint32_t a = WS_PAGE_ADDR(WS_CONFIG_PAGE); int bad = 0; uint8_t kcv[WS_KCV_LEN]; uint64_t k[CFG_KEY_DWORDS];
+ uint64_t id = rd64(dw_addr(a, CFG_ID_POS), &bad), check = rd64(dw_addr(a, CFG_KCV_POS), &bad);
+ for (uint32_t i = 0; i < CFG_KEY_DWORDS; i++) k[i] = rd64(dw_addr(a, CFG_KEY_POS + i), &bad);
+ memcpy(key, k, WS_KEY_LEN); ws_wipe(k, sizeof k);
+ int rc = bad || dw_hi(id) != CFG_MAGIC || dw_hi(check) != CFG_MAGIC2 ? STORE_ENODATA
+        : ws_key_check(key, kcv) || dw_lo(check) != kcv_value(kcv) ? STORE_EKEY
+        : dw_lo(id) == 0 || dw_lo(id) > WS_STATION_MAX ? STORE_ERANGE : STORE_OK;
+ if (rc) { ws_wipe(key, WS_KEY_LEN); return rc; }
+ *station = dw_lo(id);
+ memcpy(kcv_out, kcv, WS_KCV_LEN);
+ return STORE_OK;
 }
 ```
 
@@ -234,8 +278,13 @@ records.
 #define META_CTR   0xC2U
 #define META_LOST  0xD1U /* cumulative journal overflow losses (gap G8) */
 #define META_ABAND 0xD2U /* cumulative abandoned records (NACK / strike limit) */
-#define META_DWORDS (WS_PAGE_SIZE / 8U)
+#define META_TYPE_SHIFT 56U                                  /* type: bits 63-56, value: bits 55-0 */
+#define META_VALUE_MAX ((1ULL << META_TYPE_SHIFT) - 1U)
+#define META_DWORDS (WS_PAGE_SIZE / WS_DW_BYTES)
+#define META_FIRST_POS 1U   /* position 0 is the page header */
+#define META_FIRST_GEN 1U
 #define CTR_BLOCK 256U
+static uint64_t meta_word(uint32_t type, uint64_t value) { return (uint64_t)type << META_TYPE_SHIFT | value; }
 ```
 
 RAM state: the active page, the next free position and its generation, and the four maxima.
@@ -258,12 +307,12 @@ totals are 32-bit in RAM. `raise32` ignores a value above `0xFFFFFFFF` instead o
 ```c {#meta-absorb}
 /* A 32-bit total only moves up, and only to a value that fits. */
 static void raise32(uint32_t *total, uint64_t val) {
- if (val > *total && val <= 0xFFFFFFFFULL) *total = (uint32_t)val;
+ if (val > *total && val <= UINT32_MAX) *total = (uint32_t)val;
 }
 /* Folds one readable meta record into the RAM maxima; unknown types are ignored. */
 static void meta_absorb(uint64_t v) {
- uint64_t val = v & 0x00FFFFFFFFFFFFFFULL;
- switch (v >> 56) {
+ uint64_t val = v & META_VALUE_MAX;
+ switch (v >> META_TYPE_SHIFT) {
  case META_EPOCH: raise32(&max_epoch, val); break;
  case META_CTR: if (val > ctr_reserved) ctr_reserved = val; break;
  case META_LOST: raise32(&lost_total, val); break;
@@ -282,15 +331,15 @@ programmed again.
 static int meta_scan(uint32_t page, uint32_t *gen, uint32_t *last) {
  uint32_t a = WS_PAGE_ADDR(page); int bad = 0;
  uint64_t h = rd64(a, &bad);
- if (bad || (h >> 32) != META_MAGIC) return -1;
- *gen = (uint32_t)h; *last = 0;
- for (uint32_t i = 1; i < META_DWORDS; i++) {
-  int b = 0; uint64_t v = rd64(a + 8 * i, &b);
+ if (bad || dw_hi(h) != META_MAGIC) return STORE_ENODATA;
+ *gen = dw_lo(h); *last = 0;
+ for (uint32_t i = META_FIRST_POS; i < META_DWORDS; i++) {
+  int b = 0; uint64_t v = rd64(dw_addr(a, i), &b);
   if (!b && v == ERASED) continue;
   *last = i; /* an unreadable double-word still occupies its position */
   if (!b) meta_absorb(v);
  }
- return 0;
+ return STORE_OK;
 }
 ```
 
@@ -306,11 +355,11 @@ int store_meta_init(void) {
  int va, vb;
  meta_ready = 0;
  max_epoch = 0; ctr_reserved = 0; lost_total = 0; abandoned_total = 0;
- va = meta_scan(WS_META_PAGE_A, &ga, &la) == 0;
- vb = meta_scan(WS_META_PAGE_B, &gb, &lb) == 0;
+ va = meta_scan(WS_META_PAGE_A, &ga, &la) == STORE_OK;
+ vb = meta_scan(WS_META_PAGE_B, &gb, &lb) == STORE_OK;
  if (!va && !vb) {
-  if (erase_page(WS_META_PAGE_A) || prog64(WS_PAGE_ADDR(WS_META_PAGE_A), (uint64_t)META_MAGIC << 32 | 1)) return -1;
-  meta_active = WS_META_PAGE_A; meta_gen = 1; meta_pos = 1;
+  if (erase_page(WS_META_PAGE_A) || prog64(WS_PAGE_ADDR(WS_META_PAGE_A), dw_make(META_MAGIC, META_FIRST_GEN))) return STORE_EFLASH;
+  meta_active = WS_META_PAGE_A; meta_gen = META_FIRST_GEN; meta_pos = META_FIRST_POS;
  } else if (va && (!vb || ga > gb)) {
   meta_active = WS_META_PAGE_A; meta_gen = ga; meta_pos = la + 1;
  } else {
@@ -318,7 +367,7 @@ int store_meta_init(void) {
  }
  ctr_next = ctr_reserved + 1; /* skip anything that may have been used before reset */
  meta_ready = 1;
- return 0;
+ return STORE_OK;
 }
 ```
 
@@ -328,17 +377,18 @@ and a layout-version field is deferred to the first layout change.
 
 ### Append
 
-`meta_append` returns -1 for a value that does not fit in 56 bits, compacts when the active page is
-full (-2 if that fails), and returns -3 if the program fails. A failed program still consumes its
+`meta_append` returns `STORE_ERANGE` for a value over `META_VALUE_MAX` (56 bits), compacts when
+the active page is full, and returns `STORE_EFLASH` if the compaction or the program fails. Callers
+pass its code through. A failed program still consumes its
 position: the double-word may be torn.
 
 ```c {#meta-append}
 static int meta_append(uint32_t type, uint64_t value) {
- if (value >> 56) return -1;
- if (meta_pos >= META_DWORDS && meta_compact()) return -2;
- if (prog64(WS_PAGE_ADDR(meta_active) + 8 * meta_pos, (uint64_t)type << 56 | value)) { meta_pos++; return -3; }
- meta_pos++;
- return 0;
+ if (value > META_VALUE_MAX) return STORE_ERANGE;
+ if (meta_pos >= META_DWORDS && meta_compact()) return STORE_EFLASH;
+ int rc = prog64(dw_addr(WS_PAGE_ADDR(meta_active), meta_pos), meta_word(type, value));
+ meta_pos++; /* a failed program may have torn the double-word: never reuse it */
+ return rc ? STORE_EFLASH : STORE_OK;
 }
 ```
 
@@ -353,7 +403,7 @@ step                                    other page at boot          active page 
 2. erase it                             not a meta page             valid, all values
 3. program EPOCH, CTR, LOST, ABAND      not a meta page (no header) valid, all values
 4. program header WSM1 | gen + 1        valid, higher generation    valid, older generation
-   RAM: active = other page, pos = 5
+   RAM: active = other page, pos = META_FIRST_POS + 4
 ```
 
 A cut at steps 1–3 leaves the current page authoritative and the next append compacts again. After
@@ -375,16 +425,15 @@ the sweeps exercise the step order but cannot reproduce the original failure.
 static int meta_compact(void) {
  uint32_t other = meta_active == WS_META_PAGE_A ? WS_META_PAGE_B : WS_META_PAGE_A;
  uint32_t a = WS_PAGE_ADDR(other);
+ const uint64_t rec[] = { meta_word(META_EPOCH, max_epoch), meta_word(META_CTR, ctr_reserved),
+                          meta_word(META_LOST, lost_total), meta_word(META_ABAND, abandoned_total) };
  int bad = 0;
- if (rd64(a, &bad) != ERASED && prog64(a, 0)) return -1;
- if (erase_page(other) ||
-     prog64(a + 8, (uint64_t)META_EPOCH << 56 | max_epoch) ||
-     prog64(a + 16, (uint64_t)META_CTR << 56 | ctr_reserved) ||
-     prog64(a + 24, (uint64_t)META_LOST << 56 | lost_total) ||
-     prog64(a + 32, (uint64_t)META_ABAND << 56 | abandoned_total) ||
-     prog64(a, (uint64_t)META_MAGIC << 32 | (meta_gen + 1))) return -1;
- meta_active = other; meta_gen++; meta_pos = 5;
- return 0;
+ if (rd64(a, &bad) != ERASED && prog64(a, 0)) return STORE_EFLASH;
+ if (erase_page(other)) return STORE_EFLASH;
+ for (uint32_t k = 0; k < sizeof rec / sizeof rec[0]; k++) if (prog64(dw_addr(a, META_FIRST_POS + k), rec[k])) return STORE_EFLASH;
+ if (prog64(a, dw_make(META_MAGIC, meta_gen + 1))) return STORE_EFLASH;
+ meta_active = other; meta_gen++; meta_pos = META_FIRST_POS + sizeof rec / sizeof rec[0];
+ return STORE_OK;
 }
 ```
 
@@ -398,18 +447,20 @@ raised `abandoned_total` before appending, so a failed program made the reported
 the next reboot (fixed 2026-10-13, `test_bug_failed_abandon_note_lowers_total_after_reboot`).
 
 **Epoch.** `store_next_epoch` reserves one epoch per boot, before sampling. The observation
-identity is (epoch, sequence). It returns -1 at `0xFFFFFFFE`: `0xFFFFFFFF` is `STORM_EPOCH`, the
-bench storm test's epoch, whose records the boot scrub acknowledges.
+identity is (epoch, sequence). It returns `STORE_EEXHAUSTED` one below `STORE_EPOCH_RESERVED`
+(`UINT32_MAX`, `node_store.h`). That epoch is `STORM_EPOCH`, the bench storm test's, whose records
+the boot scrub acknowledges.
 
 ```c {#next-epoch}
 int store_next_epoch(uint32_t *epoch) {
  if (!meta_ready) return STORE_ENOTREADY;
- /* 0xFFFFFFFF is the bench storm test's epoch (app_tx.c STORM_EPOCH), whose records the boot
-    scrub acknowledges: a real boot must never get it. */
- if (max_epoch >= 0xFFFFFFFEUL) return -1;
- if (meta_append(META_EPOCH, (uint64_t)max_epoch + 1)) return -2;
+ /* A real boot never gets STORE_EPOCH_RESERVED, the bench storm test's epoch, whose records the
+    boot scrub acknowledges. */
+ if (max_epoch >= STORE_EPOCH_RESERVED - 1U) return STORE_EEXHAUSTED;
+ int rc = meta_append(META_EPOCH, (uint64_t)max_epoch + 1);
+ if (rc) return rc;
  *epoch = ++max_epoch;
- return 0;
+ return STORE_OK;
 }
 ```
 
@@ -421,10 +472,11 @@ for the station. A floor at or below the current epoch is accepted and changes n
    observation identities can never collide with history. Values only move up. */
 int store_epoch_floor(uint32_t floor) {
  if (!meta_ready) return STORE_ENOTREADY;
- if (floor <= max_epoch) return 0;
- if (meta_append(META_EPOCH, floor)) return -1;
+ if (floor <= max_epoch) return STORE_OK;
+ int rc = meta_append(META_EPOCH, floor);
+ if (rc) return rc;
  max_epoch = floor;
- return 0;
+ return STORE_OK;
 }
 ```
 
@@ -434,9 +486,10 @@ dropped.
 ```c {#abandoned}
 int store_note_abandoned(void) {
  if (!meta_ready) return STORE_ENOTREADY;
- if (meta_append(META_ABAND, (uint64_t)abandoned_total + 1)) return -1;
+ int rc = meta_append(META_ABAND, (uint64_t)abandoned_total + 1);
+ if (rc) return rc;
  abandoned_total++;
- return 0;
+ return STORE_OK;
 }
 uint32_t store_abandoned_total(void) { return abandoned_total; }
 ```
@@ -444,21 +497,23 @@ uint32_t store_abandoned_total(void) { return abandoned_total; }
 **Counter.** One counter per transmission would fill a meta page every 255 frames, so the log
 reserves blocks of `CTR_BLOCK` (256) and `store_next_counter` returns counters from RAM within the
 block. A reset discards the rest of the block (init starts at `ctr_reserved + 1`): at most 255 of
-2^40 counters. The frame header carries 40 bits (`WS_COUNTER_MAX`). Past it the function returns -2
-permanently instead of truncating. A failed reservation returns -1 and no counter.
+2^40 counters. The frame header carries 40 bits (`WS_COUNTER_MAX`). Past it the function returns
+`STORE_EEXHAUSTED` permanently instead of truncating. A failed reservation returns its error and
+no counter.
 
 ```c {#next-counter}
 int store_next_counter(uint64_t *counter) {
  if (!meta_ready) return STORE_ENOTREADY;
  /* The header carries 40 bits: past that a counter would be truncated and repeat a nonce. */
- if (ctr_next > WS_COUNTER_MAX) return -2;
+ if (ctr_next > WS_COUNTER_MAX) return STORE_EEXHAUSTED;
  if (ctr_next > ctr_reserved) {
   uint64_t upto = ctr_reserved + CTR_BLOCK;
-  if (meta_append(META_CTR, upto)) return -1; /* no durable reservation, no counter */
+  int rc = meta_append(META_CTR, upto);
+  if (rc) return rc; /* no durable reservation, no counter */
   ctr_reserved = upto;
  }
  *counter = ctr_next++;
- return 0;
+ return STORE_OK;
 }
 ```
 
@@ -481,7 +536,7 @@ slot, 56 B
 | JOURNAL_PLAIN_DW double-words | 0x4A53 | CRC-16 | 0       | erased = pending |
 |                               | (bits 63-48|47-32|31-0)   | 0 = acknowledged |
 +-------------------------------+---------------------------+------------------+
- +0                              COMMIT_OFF                  ACK_OFF
+ position 0                      COMMIT_POS                  ACK_POS
 ```
 
 The slot size follows the build's field set (`node_fields.h`). The widest catalog gives 78-byte
@@ -493,27 +548,30 @@ opened. The head is the page with the highest sequence.
 ```c {#journal-constants}
 #define JPG_MAGIC  (0x57534A00UL | JOURNAL_SLOT_BYTES) /* "WSJ" + slot size: another layout is ignored */
 #define SLOT_MAGIC 0x4A53U
+#define JOURNAL_FIRST_SEQ 1U   /* page sequence 0 marks "not a journal page" */
 ```
 
 ```c {#geometry}
-/* Geometry the on-flash format depends on (node_store.h). */
+/* Geometry the on-flash format depends on (node_store.h). Positions are double-words in a slot. */
 #define SLOT_BYTES JOURNAL_SLOT_BYTES
-#define COMMIT_OFF (JOURNAL_PLAIN_DW * 8U)
-#define ACK_OFF (COMMIT_OFF + 8U)
+#define COMMIT_POS JOURNAL_PLAIN_DW
+#define ACK_POS (COMMIT_POS + 1U)
 ```
 
 Compile-time checks tie the format to `node_fields.h` and `flash_layout.h` (review P16):
 
 ```c {#geometry-checks}
-_Static_assert(SLOT_BYTES == JOURNAL_PLAIN_DW * 8U + 16U && SLOT_BYTES >= WS_OBS_PLAIN_MAX + 16U,
+_Static_assert(SLOT_BYTES == (ACK_POS + 1U) * WS_DW_BYTES && COMMIT_POS * WS_DW_BYTES >= WS_OBS_PLAIN_MAX,
                "slot = plaintext rounded to double-words + commit + ack double-words");
-_Static_assert(SLOT_BYTES < 256U, "the slot size fits in the page magic's low byte");
-_Static_assert(JOURNAL_SLOTS_PER_PAGE >= 1U && 8U + JOURNAL_SLOTS_PER_PAGE * SLOT_BYTES <= WS_PAGE_SIZE, "journal slots fit in one page");
-_Static_assert((uint64_t)WS_CONFIG_PAGE * WS_PAGE_SIZE >= 0x10000U, "node state sits above the 64 KB firmware region (STM32WL55JCIX_FLASH.ld)");
+_Static_assert(SLOT_BYTES <= UINT8_MAX, "the slot size fits in the page magic's low byte");
+_Static_assert(JOURNAL_SLOTS_PER_PAGE >= 1U && JOURNAL_HDR_BYTES + JOURNAL_SLOTS_PER_PAGE * SLOT_BYTES <= WS_PAGE_SIZE,
+               "journal slots fit in one page");
+_Static_assert(WS_OBS_ID_LEN <= WS_DW_BYTES, "a record's identity is in its first double-word");
+_Static_assert((uint64_t)WS_CONFIG_PAGE * WS_PAGE_SIZE >= WS_FIRMWARE_BYTES, "node state sits above the firmware region");
 _Static_assert(WS_CONFIG_PAGE < WS_META_PAGE_A && WS_META_PAGE_A < WS_META_PAGE_B && WS_META_PAGE_B < WS_JOURNAL_FIRST,
                "config, meta and journal pages are distinct and in order");
-_Static_assert(WS_JOURNAL_PAGES >= 2U && WS_JOURNAL_FIRST + WS_JOURNAL_PAGES <= 128U, "journal fits in the 128 flash pages");
-_Static_assert(WS_JOURNAL_PAGES <= 0xFFFFU && JOURNAL_SLOTS_PER_PAGE <= 0xFFFFU, "jref_t page and slot are 16-bit");
+_Static_assert(WS_JOURNAL_PAGES >= 2U && WS_JOURNAL_FIRST + WS_JOURNAL_PAGES <= WS_FLASH_PAGES, "journal fits in flash");
+_Static_assert(WS_JOURNAL_PAGES <= UINT16_MAX && JOURNAL_SLOTS_PER_PAGE <= UINT16_MAX, "jref_t page and slot are 16-bit");
 ```
 
 ### Slot states
@@ -545,15 +603,22 @@ gateway's authenticated ACK arrived, so the gateway already stored the record. T
 pending would send it again.
 
 ```c {#crc}
+#define CRC16_INIT 0xFFFFU   /* CRC-16/CCITT-FALSE */
+#define CRC16_POLY 0x1021U
+#define CRC16_TOP  0x8000U
 static uint16_t crc16(const uint8_t *d, unsigned n) {
- uint16_t c = 0xFFFF;
- /* bound: n bytes (WS_OBS_PLAIN_MAX from the only caller), 8 bits each */
- while (n--) { c ^= (uint16_t)(*d++ << 8); for (int b = 0; b < 8; b++) c = (c & 0x8000) ? (uint16_t)(c << 1 ^ 0x1021) : (uint16_t)(c << 1); }
+ uint16_t c = CRC16_INIT;
+ /* bound: n bytes (WS_OBS_PLAIN_MAX from the only caller), CHAR_BIT bits each */
+ while (n--) {
+  c ^= (uint16_t)(*d++ << CHAR_BIT);
+  for (int b = 0; b < CHAR_BIT; b++) c = (c & CRC16_TOP) ? (uint16_t)(c << 1 ^ CRC16_POLY) : (uint16_t)(c << 1);
+ }
  return c;
 }
-/* The commit double-word: magic and the plaintext CRC in the upper half, zeros below. */
+/* The commit double-word: the high half is the slot magic (bits 31-16) and the plaintext's CRC
+   (bits 15-0); the low half is zero. */
 static uint64_t slot_commit_word(const uint8_t plain[WS_OBS_PLAIN_MAX]) {
- return (uint64_t)SLOT_MAGIC << 48 | (uint64_t)crc16(plain, WS_OBS_PLAIN_MAX) << 32;
+ return dw_make((uint32_t)SLOT_MAGIC << 16 | crc16(plain, WS_OBS_PLAIN_MAX), 0);
 }
 ```
 
@@ -570,18 +635,19 @@ creates them, and the public functions that take one check its range.
 ```c {#journal-state}
 /* ---- journal ---- */
 static uint32_t page_seq[WS_JOURNAL_PAGES];
-static uint8_t pending[(JOURNAL_CAPACITY + 7) / 8];
+static uint8_t pending[(JOURNAL_CAPACITY + CHAR_BIT - 1) / CHAR_BIT];   /* one bit per slot */
 static uint32_t head, head_slot, n_pending, n_lost, n_burned;
 ```
 
 ```c {#journal-helpers}
 static uint32_t slot_index(jref_t r) { return (uint32_t)r.page * JOURNAL_SLOTS_PER_PAGE + r.slot; }
-static int is_pending(uint32_t i) { return pending[i >> 3] >> (i & 7) & 1; }
+static int is_pending(uint32_t i) { return pending[i / CHAR_BIT] >> (i % CHAR_BIT) & 1U; }
 static void set_pending(uint32_t i, int on) {
- if (on) pending[i >> 3] |= (uint8_t)(1U << (i & 7)); else pending[i >> 3] &= (uint8_t)~(1U << (i & 7));
+ uint8_t bit = (uint8_t)(1U << (i % CHAR_BIT));
+ if (on) pending[i / CHAR_BIT] |= bit; else pending[i / CHAR_BIT] &= (uint8_t)~bit;
 }
 static uint32_t slot_addr(uint32_t page, uint32_t slot) {
- return WS_PAGE_ADDR(WS_JOURNAL_FIRST + page) + 8 + slot * SLOT_BYTES;
+ return WS_PAGE_ADDR(WS_JOURNAL_FIRST + page) + JOURNAL_HDR_BYTES + slot * SLOT_BYTES;
 }
 ```
 
@@ -602,16 +668,17 @@ is never reused. Append requires `meta_ready` because opening a page may persist
 int store_journal_append(const uint8_t plain[WS_OBS_PLAIN_MAX], jref_t *ref) {
  uint64_t d[JOURNAL_PLAIN_DW] = { 0 };
  if (!meta_ready || !journal_ready) return STORE_ENOTREADY; /* a wrap persists the lost total */
- if (journal_advance_if_full()) return -1;
+ int rc = journal_advance_if_full();
+ if (rc) return rc;
  uint32_t a = slot_addr(head, head_slot);
  ref->page = (uint16_t)head; ref->slot = (uint16_t)head_slot;
  head_slot++; /* consumed even if programming fails: never reuse a possibly torn slot */
  memcpy(d, plain, WS_OBS_PLAIN_MAX);
  for (uint32_t k = 0; k < JOURNAL_PLAIN_DW; k++)
-  if (prog64(a + 8 * k, d[k])) { n_burned++; return -2; }
- if (prog64(a + COMMIT_OFF, slot_commit_word(plain))) { n_burned++; return -2; }
+  if (prog64(dw_addr(a, k), d[k])) { n_burned++; return STORE_EFLASH; }
+ if (prog64(dw_addr(a, COMMIT_POS), slot_commit_word(plain))) { n_burned++; return STORE_EFLASH; }
  set_pending(slot_index(*ref), 1); n_pending++;
- return 0;
+ return STORE_OK;
 }
 ```
 
@@ -622,7 +689,7 @@ opening it destroys. `journal_new_page` counts them before the erase:
 
 ```text
 1. count pending slots on the page
-2. if any: meta_append(LOST, lost_total + count)    fails: return -1, page untouched
+2. if any: meta_append(LOST, lost_total + count)    fails: return its error, page untouched
 3. RAM: clear their pending bits, add count to the totals, page_seq = 0
 4. erase the page
 5. program the header: WSJ | slot size, sequence = previous head's + 1
@@ -640,13 +707,14 @@ static int journal_new_page(uint32_t page, uint32_t seq) {
  uint32_t dropped = 0;
  for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE; s++) dropped += (uint32_t)is_pending(page * JOURNAL_SLOTS_PER_PAGE + s);
  /* persist before the page is reused; if that fails, keep the page and its records */
- if (dropped && meta_append(META_LOST, (uint64_t)lost_total + dropped)) return -1;
+ int rc = dropped ? meta_append(META_LOST, (uint64_t)lost_total + dropped) : STORE_OK;
+ if (rc) return rc;
  for (uint32_t s = 0; s < JOURNAL_SLOTS_PER_PAGE; s++) set_pending(page * JOURNAL_SLOTS_PER_PAGE + s, 0);
  n_pending -= dropped; n_lost += dropped; lost_total += dropped;
  page_seq[page] = 0;
- if (erase_page(WS_JOURNAL_FIRST + page) || prog64(WS_PAGE_ADDR(WS_JOURNAL_FIRST + page), (uint64_t)JPG_MAGIC << 32 | seq)) return -1;
+ if (erase_page(WS_JOURNAL_FIRST + page) || prog64(WS_PAGE_ADDR(WS_JOURNAL_FIRST + page), dw_make(JPG_MAGIC, seq))) return STORE_EFLASH;
  page_seq[page] = seq;
- return 0;
+ return STORE_OK;
 }
 ```
 
@@ -656,11 +724,12 @@ call it.
 ```c {#journal-advance}
 /* Opens a fresh page after the head once the head is full (append, and init after a cut). */
 static int journal_advance_if_full(void) {
- if (head_slot < JOURNAL_SLOTS_PER_PAGE) return 0;
+ if (head_slot < JOURNAL_SLOTS_PER_PAGE) return STORE_OK;
  uint32_t next = (head + 1) % WS_JOURNAL_PAGES;
- if (journal_new_page(next, page_seq[head] + 1)) return -1;
+ int rc = journal_new_page(next, page_seq[head] + 1);
+ if (rc) return rc;
  head = next; head_slot = 0;
- return 0;
+ return STORE_OK;
 }
 ```
 
@@ -676,7 +745,7 @@ static int journal_find_head(void) {
  uint32_t best = 0; int found = 0;
  for (uint32_t p = 0; p < WS_JOURNAL_PAGES; p++) {
   int bad = 0; uint64_t h = rd64(WS_PAGE_ADDR(WS_JOURNAL_FIRST + p), &bad);
-  page_seq[p] = (!bad && (h >> 32) == JPG_MAGIC && (uint32_t)h) ? (uint32_t)h : 0;
+  page_seq[p] = !bad && dw_hi(h) == JPG_MAGIC ? dw_lo(h) : 0;
   if (page_seq[p] && page_seq[p] >= best) { best = page_seq[p]; head = p; found = 1; }
  }
  return found;
@@ -690,13 +759,13 @@ last slot that is not blank. On the head page the next append goes there, after 
 /* Boot scan of one slot: 0 if blank, else 1 after counting it burned (torn or unreadable data)
    or, when committed and not acknowledged, pending. */
 static int journal_scan_slot(uint32_t p, uint32_t s) {
- uint32_t a = slot_addr(p, s); int bad_data = 0, bad_ack = 0, erased = 1; uint64_t d[JOURNAL_PLAIN_DW + 1], ack;
- for (uint32_t k = 0; k <= JOURNAL_PLAIN_DW; k++) { d[k] = rd64(a + 8 * k, &bad_data); erased &= d[k] == ERASED; }
- ack = rd64(a + ACK_OFF, &bad_ack);
+ uint32_t a = slot_addr(p, s); int bad_data = 0, bad_ack = 0, erased = 1; uint64_t d[COMMIT_POS + 1], ack;
+ for (uint32_t k = 0; k <= COMMIT_POS; k++) { d[k] = rd64(dw_addr(a, k), &bad_data); erased &= d[k] == ERASED; }
+ ack = rd64(dw_addr(a, ACK_POS), &bad_ack);
  if (!bad_data && !bad_ack && erased && ack == ERASED) return 0;
  uint8_t plain[WS_OBS_PLAIN_MAX]; memcpy(plain, d, sizeof plain);
  /* A torn ACK word (ECC) means the ACK program was interrupted after the host committed: acked. */
- if (bad_data || (d[JOURNAL_PLAIN_DW] >> 32) != (slot_commit_word(plain) >> 32)) n_burned++;
+ if (bad_data || dw_hi(d[COMMIT_POS]) != dw_hi(slot_commit_word(plain))) n_burned++;
  else if (!bad_ack && ack == ERASED) { set_pending(p * JOURNAL_SLOTS_PER_PAGE + s, 1); n_pending++; }
  return 1;
 }
@@ -721,9 +790,10 @@ int store_journal_init(void) {
  memset(pending, 0, sizeof pending); n_pending = n_lost = n_burned = 0;
  if (!journal_find_head()) {
   head = 0; head_slot = 0;
-  if (journal_new_page(0, 1)) return -1;
+  int rc = journal_new_page(0, JOURNAL_FIRST_SEQ);
+  if (rc) return rc;
   journal_ready = 1;
-  return 0;
+  return STORE_OK;
  }
  for (uint32_t p = 0; p < WS_JOURNAL_PAGES; p++) {
   if (!page_seq[p]) continue;
@@ -732,27 +802,28 @@ int store_journal_init(void) {
  }
  /* The head is full, so the next page's recycle may have been cut mid-erase, which can wipe
     an ACK word but leave its record: finish the recycle before trusting that page. */
- if (journal_advance_if_full()) return -1;
+ int rc = journal_advance_if_full();
+ if (rc) return rc;
  journal_ready = 1;
- return 0;
+ return STORE_OK;
 }
 ```
 
 ### Read and acknowledge
 
-`store_journal_read` returns -1 if any plaintext double-word is unreadable. The caller prints
+`store_journal_read` returns `STORE_ENODATA` if any plaintext double-word is unreadable. The caller prints
 `#error journal-read` and moves to the next record.
 
 ```c {#journal-read}
 /* A jref_t comes only from this file (append, oldest, find): always a slot of the journal. */
 static int ref_in_journal(jref_t r) { return r.page < WS_JOURNAL_PAGES && r.slot < JOURNAL_SLOTS_PER_PAGE; }
 int store_journal_read(jref_t ref, uint8_t plain[WS_OBS_PLAIN_MAX]) {
- if (!WS_CHECK(ref_in_journal(ref))) return -1;
+ if (!WS_CHECK(ref_in_journal(ref))) return STORE_EINVAL;
  uint32_t a = slot_addr(ref.page, ref.slot); int bad = 0; uint64_t d[JOURNAL_PLAIN_DW];
- for (uint32_t k = 0; k < JOURNAL_PLAIN_DW; k++) d[k] = rd64(a + 8 * k, &bad);
- if (bad) return -1;
+ for (uint32_t k = 0; k < JOURNAL_PLAIN_DW; k++) d[k] = rd64(dw_addr(a, k), &bad);
+ if (bad) return STORE_ENODATA;
  memcpy(plain, d, WS_OBS_PLAIN_MAX);
- return 0;
+ return STORE_OK;
 }
 ```
 
@@ -764,12 +835,12 @@ send it anyway. Acknowledging a slot that is not pending returns 0 and writes no
 ```c {#journal-ack}
 int store_journal_ack(jref_t ref) {
  if (!journal_ready) return STORE_ENOTREADY;
- if (!WS_CHECK(ref_in_journal(ref))) return -1;   /* before it indexes pending[] */
+ if (!WS_CHECK(ref_in_journal(ref))) return STORE_EINVAL;   /* before it indexes pending[] */
  uint32_t i = slot_index(ref);
- if (!is_pending(i)) return 0;
- if (prog64(slot_addr(ref.page, ref.slot) + ACK_OFF, 0)) return -1;
+ if (!is_pending(i)) return STORE_OK;
+ if (prog64(dw_addr(slot_addr(ref.page, ref.slot), ACK_POS), 0)) return STORE_EFLASH;
  set_pending(i, 0); n_pending--;
- return 0;
+ return STORE_OK;
 }
 ```
 
@@ -807,23 +878,23 @@ first double-word is unreadable never matches. `store_journal_find` matches epoc
 
 ```c {#journal-find}
 /* Shared by find and scrub: the next pending slot, from index *i on, whose identity (epoch and,
-   unless any_seq, sequence: the plaintext's first 8 bytes) matches and reads back without an ECC
-   fault. Returns 1 with its ref and *i just past it; 0 when no such slot is left. */
+   unless any_seq, sequence: the plaintext's first WS_OBS_ID_LEN bytes) matches and reads back
+   without an ECC fault. Returns 1 with its ref and *i just past it; 0 when no such slot is left. */
 static int next_pending_match(uint32_t epoch, int any_seq, uint32_t seq, uint32_t *i, jref_t *ref) {
- uint8_t want[8];
- ws_put_be32(want, epoch); ws_put_be32(want + 4, seq);
+ uint8_t want[WS_OBS_ID_LEN];
+ ws_put_be32(want, epoch); ws_put_be32(want + WS_OBS_EPOCH_LEN, seq);
  for (uint32_t k = *i; k < JOURNAL_CAPACITY; k++) {
   if (!is_pending(k)) continue;
   jref_t r = { (uint16_t)(k / JOURNAL_SLOTS_PER_PAGE), (uint16_t)(k % JOURNAL_SLOTS_PER_PAGE) };
   int bad = 0; uint64_t d0 = rd64(slot_addr(r.page, r.slot), &bad);
-  if (!bad && !memcmp(&d0, want, any_seq ? 4U : 8U)) { *ref = r; *i = k + 1; return 1; }
+  if (!bad && !memcmp(&d0, want, any_seq ? WS_OBS_EPOCH_LEN : WS_OBS_ID_LEN)) { *ref = r; *i = k + 1; return 1; }
  }
  return 0;
 }
 int store_journal_find(uint32_t epoch, uint32_t seq, jref_t *ref) {
  uint32_t i = 0;
- if (!journal_ready) return -1;
- return next_pending_match(epoch, 0, seq, &i, ref) ? 0 : -1;
+ if (!journal_ready) return STORE_ENOTREADY;
+ return next_pending_match(epoch, 0, seq, &i, ref) ? STORE_OK : STORE_ENODATA;
 }
 ```
 
@@ -869,7 +940,7 @@ Order:
 
 ```text
 journal_ready = 0               RAM no longer describes flash
-erase journal pages 35-127      any failure: return -1, record kept
+erase journal pages 35-127      any failure: return STORE_EFLASH, record kept
 erase provisioning page 32      the board is unprovisioned from here
 ```
 
@@ -885,11 +956,11 @@ promise until it reports success.
 /* WIPE erases the key and the journal but never the meta log (gap G17): the counter (the AES-CCM
  * nonce), the boot epoch and the lost/abandoned totals keep rising for the life of the board. */
 int store_wipe(void) {
- int rc = 0;
+ int rc = STORE_OK;
  journal_ready = 0; /* the RAM journal no longer describes flash: store_journal_init again */
  for (uint32_t p = 0; p < WS_JOURNAL_PAGES; p++) rc |= erase_page(WS_JOURNAL_FIRST + p);
- if (rc) return -1; /* keep the key: an unprovisioned board must not carry old records */
- return erase_page(WS_CONFIG_PAGE) ? -1 : 0;
+ if (rc) return STORE_EFLASH; /* keep the key: an unprovisioned board must not carry old records */
+ return erase_page(WS_CONFIG_PAGE);
 }
 ```
 
@@ -902,6 +973,7 @@ provisioning, the meta log and the journal, each after the state it uses.
 <<abstract>>
 #define WS_CHECK_FILE 5
 #include "node_store.h"
+#include <limits.h>
 #include <string.h>
 #include "ws_be.h"
 #include "ws_check.h"
