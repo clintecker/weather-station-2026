@@ -99,7 +99,7 @@ static void reboot_soon(void)
 static uint32_t storm_writes;
 static int storming;   /* sampling stopped for the load */
 /* At most this many slots per boot (~30 s): enough for a power cut to land in a write, far from
-   wearing out the journal (93 pages, 10 k erase cycles each). */
+   wearing out the journal (70 pages, 10 k erase cycles each). */
 #define STORM_MAX_WRITES 24000U
 #define STORM_WRITES_PER_PASS 16U      /* journal writes per task pass */
 #define STORM_COUNTERS_PER_WRITE 4U   /* counter reservations per write: meta-log appends too */

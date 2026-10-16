@@ -345,12 +345,15 @@ The journal stores `WS_OBS_PLAIN_MAX` bytes per slot, plus the commit word and t
 `SLOT_BYTES = roundup8(WS_OBS_PLAIN_MAX) + 16`. When the node reads a record back, it takes the
 record's length from the record's own bitmap.
 
-| Build | Plaintext | Frame | Slot | Records (93 pages) | Outage buffer |
+| Build | Plaintext | Frame | Slot | Records (69 of 70 pages) | Outage buffer |
 |---|---:|---:|---:|---:|---:|
-| Bench prototype (temperature and humidity with the minute summary) | 35 B | 51 B | 56 B | 3,348 | 2.3 days |
-| Full station (fields 0–6, 9, 11–20) | 62 B | 78 B | 80 B | 2,325 | 1.6 days |
+| Bench prototype (temperature and humidity with the minute summary) | 35 B | 51 B | 56 B | 2,484 | 41.4 h |
+| Full station (fields 0–6, 9, 11–20) | 62 B | 78 B | 80 B | 1,725 | 28.8 h |
+| Every catalog field | 78 B | 94 B | 96 B | 1,449 | 24.2 h |
 
-The proof of concept accepts the smaller buffer. The 30-day buffer comes with an external SPI NOR
+One journal page is always being recycled, so the counts use 69 of the 70 pages. A compile-time
+check in `node_store.c` keeps the 24-hour floor for every catalog field. The proof of concept
+accepts this buffer. The 30-day buffer comes with an external SPI NOR
 flash journal (PRD test H11).
 
 The journal page magic is `"WSJ"` + the slot size in its low byte. A build with another field set

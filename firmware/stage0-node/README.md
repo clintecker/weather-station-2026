@@ -38,7 +38,7 @@ make ROLE=rx flash SERIAL=0016001E4142500E20353451
 make ROLE=tx flash SERIAL=003B00194142500E20353451
 ```
 
-Flashing rewrites only the firmware region (pages 0–31). Provisioning, counters and the journal (pages 32–127) survive a reflash. A test on 2026-10-12 verified this. Each build prints the binary SHA-256 at the end.
+Flashing rewrites only the firmware region (pages 0–54). Provisioning, counters and the journal (pages 55–127) survive a reflash. A test on 2026-10-12 verified this. Each build prints the binary SHA-256 at the end.
 
 A release follows the procedure in [`RELEASES.md`](RELEASES.md), "How to cut a release":
 
@@ -341,17 +341,17 @@ The STM32WL55JC has 256 KB of flash in 128 pages of 2 KB (`App/flash_layout.h`):
 
 ```mermaid
 flowchart LR
-  FW["Pages 0–31, 64 KB<br/>firmware"] --- CFG["Page 32<br/>config: station ID, key, KCV"]
-  CFG --- META["Pages 33–34<br/>monotonic log, A and B"]
-  META --- J["Pages 35–127, 93 pages<br/>journal ring"]
+  FW["Pages 0–54, 110 KB<br/>firmware"] --- J["Pages 55–124, 70 pages<br/>journal ring"]
+  J --- META["Pages 125–126<br/>monotonic log, A and B"]
+  META --- CFG["Page 127<br/>config: station ID, key, KCV"]
 ```
 
 | Pages | Use |
 |---|---|
-| 0–31 (64 KB) | The firmware. The linker script enforces this limit. Release 260c9ccbe938: TX image 58,264 B, RX 34,832 B ([`RELEASES.md`](RELEASES.md), [`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
-| 32 | Config: station ID, key, KCV. The firmware writes the magic double-word last. |
-| 33–34 | The monotonic log, pages A and B: boot epoch, counter reservations (blocks of 256), the `lost`/`abandoned` totals. Recovery takes the maximum. Compaction writes its header last. |
-| 35–127 | The journal ring: 93 pages × 36 slots of 56 bytes (temperature and humidity build). |
+| 0–54 (110 KB) | The firmware. The linker script enforces this limit. Release 260c9ccbe938: TX image 58,264 B, RX 34,832 B ([`RELEASES.md`](RELEASES.md), [`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
+| 55–124 | The journal ring: 70 pages × 36 slots of 56 bytes (temperature and humidity build). |
+| 125–126 | The monotonic log, pages A and B: boot epoch, counter reservations (blocks of 256), the `lost`/`abandoned` totals. Recovery takes the maximum. Compaction writes its header last. |
+| 127 | Config: station ID, key, KCV. The firmware writes the magic double-word last. |
 
 **Slot:** the observation plaintext rounded up to whole 8-byte double-words, then a commit double-word (magic + CRC-16 of the plaintext) and an ACK double-word (`App/node_store.h`). For the temperature and humidity build: 35 → 40 + 8 + 8 = **56 bytes**. After the 8-byte page header, a page holds (2048 − 8) / 56 = **36 slots**. Bit offsets of one slot:
 
@@ -363,7 +363,7 @@ packet-beta
   384-447: "ACK double-word"
 ```
 
-**Capacity: 93 × 36 = 3,348 observations, about 2.3 days** of one-minute readings without an ACK. When the journal is full, the firmware erases the oldest page and counts its unacknowledged records in `lost`. The agreed target was "about 4 days". Each slot needs a separately programmed ACK double-word, which costs space. The 30-day storage requirement (H11, 16 MB of external SPI NOR flash) remains future work.
+**Capacity: at least 69 × 36 = 2,484 observations, about 41 hours** of one-minute readings without an ACK. One of the 70 pages is always being recycled, so it does not count. When the journal is full, the firmware erases the oldest page and counts its unacknowledged records in `lost`. The layout keeps 24 hours for a station with every catalog field (a compile-time check in `node_store.c`). Each slot needs a separately programmed ACK double-word, which costs space. The 30-day storage requirement (H11, 16 MB of external SPI NOR flash) remains future work.
 
 **Page magic:** `"WSJ"` + the slot size in the low byte (`0x57534A38` for 56-byte slots, `App/node_store.c`). At boot the firmware ignores a page with any other magic, for example a page from a build with another field set or another protocol version. Later it recycles that page. It never misreads it.
 
@@ -390,7 +390,7 @@ What a different field set does to the journal:
 - If the slot size changes, the page magic changes. So at the first boot the firmware **ignores every journal page of the old build and recycles it**. It never sends the records that were still pending in those pages.
 - If the slot size stays the same, the firmware reads the old pages. An example is a small addition: one 1-byte field makes 36 bytes, which still rounds up to a 56-byte slot. But the firmware checks each old record's CRC over the new record length. That check almost always fails. The firmware then counts the record as `burned` and does not send it.
 - In both cases, drain the journal (`pending=0` in `STATUS`) before you flash a build with another field set.
-- Capacity falls as records grow. For example, the full proof-of-concept field set (62-byte record) gives 80-byte slots, 25 per page, 2,325 records, about 1.6 days.
+- Capacity falls as records grow. For example, the full proof-of-concept field set (62-byte record) gives 80-byte slots, 25 per page, 1,725 records, about 28.8 hours. Every catalog field gives 96-byte slots, 21 per page, 1,449 records, 24.2 hours.
 - The static asserts in `node_store.c` stop the build if a slot no longer fits a page or the low byte of the page magic (under 256 B).
 
 Power-fail behaviour: a test ran 70 reset cycles during flash writes and passed (`evidence/g7-reset-during-write-2026-10-13/`). **Nobody has tested a true power removal yet.** That test is deferred (see `docs/failure-modes.md`).

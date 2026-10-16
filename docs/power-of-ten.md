@@ -192,7 +192,7 @@ TX has 35 sites and RX has 7. Some files are in both roles.
 |---|---|---|
 | State-machine preconditions | `tx_exchange.c`: `exchange_start` (no exchange running), `handle` (an unknown state is idle), `process` (only `EV_*` bits). `sensor.c` `sensor_task` (posted only in `S_DONE` or `S_RECOVERED`) | refuse the start, back to idle, drop the stray bits, or do nothing |
 | Index and length bounds before a buffer is used | `tx_exchange.c` `send_current` (`qi < qn`), `mark_replied` (`qi`), `exchange_start` (backlog fits the queue). `tx_policy.c` `policy_exchange_end` (`n` fits `struck[]`). `app_tx.c` `held_count`. `node_store.c` `store_journal_read` and `_ack` (the ref is a journal slot, checked before it indexes the pending bitmap). `busymon.c` `busymon_end` (`kind`), `busymon_isr_exit` (an exit has its enter). `console.c` `hex_print` (frame length). `ws_policy.c` `ws_strike_note` (table size), `ws_link_probe_interval` (`probe_step`) | end the exchange, skip the write, clamp, or refuse (-1) |
-| Flash writes stay in the node-state pages | `node_store.c` `prog64`, `erase_page`: every program and erase lies inside pages 32–127 (never the firmware) and is double-word aligned | refused like a failed flash operation, which every caller already handles |
+| Flash writes stay in the node-state pages | `node_store.c` `prog64`, `erase_page`: every program and erase lies inside pages 55–127 (never the firmware) and is double-word aligned | refused like a failed flash operation, which every caller already handles |
 | Our own data must encode or seal | `app_tx.c` `minute_report` (`ws_obs_encode`). `tx_exchange.c` `send_obs`, `send_diag` (`ws_seal_kind` with a provisioned station and a reserved counter) | `journal=ERROR`, or the item is skipped as for a local send failure |
 | ST timer starts that must not be refused | `tx_exchange.c` gap and ACK-window timers. `sensor.c` guard, measurement and step timers. `tx_console.c` reboot timer. `app_rx.c` `#alive` timer. `watchdog.c` check timer. ST refuses a start only for a running timer | the running timer still delivers its event. The reboot timer resets at once instead |
 | HAL results that should not fail for our arguments | `sensor.c` `i2c_start` (`HAL_I2C_Init`, analog filter). `watchdog.c` `HAL_IWDG_Init`, which can return `HAL_TIMEOUT` if the internal low-speed oscillator (LSI) never settles. `console.c` `console_init` (`vcom_ReceiveInit`) | the next transfer fails and the bus recovery re-initialises. The independent watchdog (IWDG) takes the values when its update completes. The console re-arms the receive once, and the RX health check also re-arms it |
@@ -218,10 +218,11 @@ and recovers:
 
 ### Why the density is lower than 2 per function
 
-- **Cost.** A check costs 12–20 B of flash. TX uses 88.9 % of its 64 KB region, against a hard
-  90 % limit (742 B left). The sites cost about 660 B with the facility and its reporting (measured
-  at 35 sites). Holzmann's density over TX's 287 functions would be about 570 checks, roughly 9 KB.
-  That does not fit.
+- **Cost.** A check costs 12–20 B of flash. TX uses 51.7 % of its 110 KB region. The final
+  station's features need an estimated 18–33 KB of the 26 KB below the 75 % headroom target. The
+  sites cost about 660 B with the facility and its reporting (measured at 35 sites). Holzmann's
+  density over TX's 287 functions would be about 570 checks, roughly 9 KB. That is too large a
+  share of the headroom.
 - **Small functions.** Most of the 320 functions are too small to have an invariant worth a
   run-time check. Examples are one-line accessors, timer and radio callbacks that post an event
   bit, and the timed task wrappers. 170 functions are non-trivial (cyclomatic complexity ≥ 3 or

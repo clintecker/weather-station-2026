@@ -163,7 +163,7 @@ A test against a local Mosquitto broker verified discovery, last will and reconn
 - Optional MQTT snapshots, availability and Home Assistant discovery.
 - USB serial input from the RX board (`ws0 serve`), with the ACK/NACK return path.
 - Portable C code for the SHT45: acquisition, CRC check and conversion.
-- TX and RX firmware (`firmware/stage0-node/`): a flash journal of about 2.3 days, durable counters and epochs, a watchdog, and provisioning over USB.
+- TX and RX firmware (`firmware/stage0-node/`): a flash journal of about 41 hours (24 hours for a station with every sensor), durable counters and epochs, a watchdog, and provisioning over USB.
 - Python and C tests that target failures, and recorded validation output.
 
 ## Current state and open work

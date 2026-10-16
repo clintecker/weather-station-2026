@@ -1,7 +1,7 @@
 # Common build for every NUCLEO-WL55JC1 project (stage0-node, rangetest).
 #
 # The board directory holds the ST CubeMX/CubeIDE template code all projects share: Core/ (HAL init,
-# UART, RTC, low power), startup/, SubGHz_Phy/Target/ and the linker script (64 KB application
+# UART, RTC, low power), startup/, SubGHz_Phy/Target/ and the linker script (110 KB application
 # region: pages 55..127 hold the node key and journal, see firmware/stage0-node/App/flash_layout.h).
 #
 # A project Makefile sets these, then includes this file last:

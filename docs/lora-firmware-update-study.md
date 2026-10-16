@@ -67,8 +67,8 @@ Updates over the air come after those three.
 | Microcontroller | STM32WL55JC: a Cortex-M4 at 48 MHz plus an unused Cortex-M0+. 256 KB flash in 128 pages of 2 KB. 64 KB RAM | `App/flash_layout.h`, [`firmware-budget.md`](firmware-budget.md) |
 | TX image | **53,752 B** (release `bc5e6ede429c`), 82.0 % of its 64 KB region. 54,384 B with the 15-s sampling, which was not yet released | [`RELEASES.md`](../firmware/stage0-node/RELEASES.md), [`firmware-budget.md`](firmware-budget.md) |
 | RX image | 31,696 B | [`RELEASES.md`](../firmware/stage0-node/RELEASES.md) |
-| Final TX image budget | The features of the later build stages (Stages 1–3 in [`next-stages-plan.md`](next-stages-plan.md)) add an estimated 18–33 KB. Layout v2 grows the application region to 128 KB or more. The target is at most 75 % used | [`firmware-budget.md`](firmware-budget.md) |
-| Flash map now | Pages 0–31 code, 32 key, 33–34 counter and epoch log, 35–127 journal. "A firmware update programs only pages 0–31" | [`protocol-stack.md`](protocol-stack.md) §5.1 |
+| Final TX image budget | The features of the later build stages (Stages 1–3 in [`next-stages-plan.md`](next-stages-plan.md)) add an estimated 18–33 KB. Layout v2 (2026-10-16) grew the application region to 110 KB. The target is at most 75 % used | [`firmware-budget.md`](firmware-budget.md) |
+| Flash map now | Pages 0–54 code (110 KB), 55–124 journal, 125–126 counter and epoch log, 127 key. "A firmware update programs only pages 0–54" | [`protocol-stack.md`](protocol-stack.md) §5.1 |
 | Radio | 915.0 MHz, LoRa, **500 kHz**, SF7, coding rate 4/5, 8-symbol preamble, explicit header, CRC on, 0 dBm (bench). "Never bandwidth below 500 kHz" | `App/radio_cfg.h` |
 | Largest LoRa packet | 255 B (radio limit) | SubGHz_Phy |
 | Frame envelope | An 8-byte header, then AES-128-CCM ciphertext, then an 8-byte tag. Kinds 1–4 are in use. Each direction has its own counter space | [`protocol.md`](protocol.md) §1–2 |
@@ -629,8 +629,9 @@ Costs (estimates unless marked):
 | Boot-status log | 4 KB (2 pages) | — |
 | NOR | 832 KB of 16 MB | — |
 
-The application grows by an estimated 6–10 KB. That fits only after layout v2. It does not fit in
-today's 64 KB region, which had 11.5 KB left when this study was written.
+The application grows by an estimated 6–10 KB. It did not fit in the 64 KB region of the time,
+which had 11.5 KB left when this study was written. It fits in the 110 KB region of layout v2
+(2026-10-16).
 
 ## 8. Risks
 

@@ -48,9 +48,9 @@ Flash both boards with the same build. The packet version byte (`RT_VERSION` in 
 across tool versions v1–v3, so boards running different builds talk to each other without any warning. Status as of 2026-10-13
 (about 17:00Z): v3 (SF12 / +22 dBm boot and fallback) was built and tested on the host, **not yet flashed**.
 
-The image is about 36 KB. It links with the board's shared linker script, which stops at the 64 KB
-application region (pages 0–31), so a range-test build can never reach the weather-station node state
-at `0x08010000` (page 32): the provisioned key and journal survive. Put the weather-station release
+The image is about 36 KB. It links with the board's shared linker script, which stops at the 110 KB
+application region (pages 0–54), so a range-test build can never reach the weather-station node state
+at `0x0801B800` (page 55): the provisioned key and journal survive. Put the weather-station release
 back afterwards (see `firmware/stage0-node/RELEASES.md`) and confirm `STATUS` shows the expected `kcv`.
 
 Logger (`tools/rangetest_log.py <board> <csv>`):

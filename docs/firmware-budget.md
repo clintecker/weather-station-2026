@@ -17,8 +17,8 @@ not measurements.
 
 | Resource | Available | Used now | Status |
 |---|---|---|---|
-| Flash, application region | 64 KB (pages 0–31, enforced by the linker script) | TX 58,240 B (88.9 %), RX 34,840 B (53.2 %) | **TX is the constraint**: 7,296 B left, 742 B below the 90 % guard |
-| Flash, node state | 192 KB (pages 32–127) | key 1 page, meta log 2 pages, journal 93 pages (3,348 slots of 56 B for the temperature and humidity build with the minute summary, about 2.3 days) | `App/flash_layout.h` fixes the pages. `App/node_fields.h` sets the slot size |
+| Flash, application region | 110 KB (pages 0–54, enforced by the linker script) | TX 58,272 B (51.7 %), RX 34,840 B (30.9 %) | TX has 54,368 B left: 43,104 B below the 90 % guard and 26,208 B below the 75 % headroom target |
+| Flash, node state | 146 KB (pages 55–127) | journal 70 pages, meta log 2 pages, key 1 page. The journal keeps at least 2,484 slots of 56 B for the temperature and humidity build with the minute summary (41.4 h), and 24.2 h for a station with every catalog field | `App/flash_layout.h` fixes the pages. `App/node_fields.h` sets the slot size |
 | RAM | 64 KB (RAM1 32 KB + RAM2 32 KB) | TX: about 6.0 KB static data + 8 KB reserved stack + 0.5 KB heap, all in RAM1. Worst-case stack estimate 5,784 B of 8,192 B (71 %) | Ample. RAM2 is unused |
 | CPU | Cortex-M4 at 48 MHz (the Cortex-M0+ core is unused) | One sample and a few frames per minute | No constraint |
 | Radio payload | 35-byte observation plaintext in a 51-byte frame (temperature and humidity with the minute summary). The field catalog allows up to 78 B in a 94-byte frame | Temperature and humidity only | No longer the limit: every catalog field fits in one frame (see [Radio payload](#radio-payload)) |
@@ -26,7 +26,7 @@ not measurements.
 Sources:
 
 - `firmware/board/nucleo-wl55jc/STM32WL55JCIX_FLASH.ld`. Every NUCLEO project shares this linker
-  script. It sets FLASH 64K, RAM1 and RAM2 32K each, heap 0x200 and stack 0x2000. The stack was
+  script. It sets FLASH 110K, RAM1 and RAM2 32K each, heap 0x200 and stack 0x2000. The stack was
   0x800 before the stack work below.
 - `App/flash_layout.h`.
 - `firmware/common/ws_frame.h` (`WS_HEADER_LEN 8`, `WS_TAG_LEN 8`).
@@ -39,17 +39,20 @@ The STM32WL55JC has 256 KB of single-bank flash in 128 pages of 2 KB (`App/flash
 
 ```mermaid
 flowchart LR
-  app["Pages 0–31 at 0x08000000<br/>Firmware, 64 KB"] --- cfg["Page 32 at 0x08010000<br/>Config: station id and key"]
-  cfg --- meta["Pages 33–34 at 0x08010800<br/>Meta log A and B: epoch, counter reservation"]
-  meta --- jrnl["Pages 35–127 at 0x08011800<br/>Journal: observation ring, 93 pages"]
+  app["Pages 0–54 at 0x08000000<br/>Firmware, 110 KB"] --- jrnl["Pages 55–124 at 0x0801B800<br/>Journal: observation ring, 70 pages"]
+  jrnl --- meta["Pages 125–126 at 0x0803E800<br/>Meta log A and B: epoch, counter reservation"]
+  meta --- cfg["Page 127 at 0x0803F800<br/>Config: station id and key"]
 ```
 
-The linker script limits the firmware to pages 0–31. Every project on this board shares that
-script, so a bench-tool image cannot reach the node key or the journal.
+The linker script limits the firmware to pages 0–54. Every project on this board shares that
+script, so a bench-tool image cannot reach the node key or the journal. One constant,
+`WS_FIRMWARE_PAGES` in `App/flash_layout.h`, sets the boundary. The node state sits at the top of
+flash, so a larger firmware region moves only the journal start. `tests/test_flash_layout.py`
+checks that the header, the linker script and `board.mk` agree.
 
 ### Budget check in the build
 
-The build enforces a budget. `make` prints `flash budget: N of 65536 B`. It fails above
+The build enforces a budget. `make` prints `flash budget: N of 112640 B`. It fails above
 `FLASH_BUDGET_PCT` (default 90 %) of the application region (`firmware/stage0-node/Makefile`).
 
 ### Current build
@@ -242,7 +245,7 @@ sensing.
 | RS-485 and Modbus sensor modules (Stage 2) | 4–8 KB, plus a few KB per sensor type | The UART HAL is already linked |
 | Low-power sleep, heater control, energy state machine | 4–8 KB | Mostly our code |
 | Multi-sensor payload | **Done**: +856 B TX against release `45f43e78fe91` | `ws_obs.c` is 676 B. The decoder is on the gateway |
-| **Total** | **about 18–33 KB** | **Does not fit in the 7,296 B left** |
+| **Total** | **about 18–33 KB** | Fits below the 90 % guard (43,104 B left). The upper estimate passes the 75 % target (26,208 B left) |
 
 ## Requirement (Clint, 2026-10-13)
 
@@ -251,36 +254,38 @@ expansion**. The final station has all sensor types, power modules, the 30-day b
 operation. These targets apply until the final design is sized:
 
 - **Headroom:** the final TX image uses at most **75 %** of its application region. This leaves at
-  least 25 % for later sensors and fixes. Until flash layout v2, every build also stays under the
-  90 % guard in the Makefile.
+  least 25 % for later sensors and fixes. Every build also stays under the 90 % guard in the
+  Makefile.
 - **Watch:** every `RELEASES.md` entry records the `.bin` sizes. Review this file at each stage
   gate and whenever a release grows by more than 2 KB.
-- **Layout v2 before the region is outgrown:** the key and counter pages move to the top of flash,
-  so they never move again. The boundary between code and journal becomes one shared constant. A
-  one-time migration carries the counter and epoch across ([`docs/failure-modes.md`](failure-modes.md),
-  §10 open issues: code space for the final station).
+- **Layout v2 (code done 2026-10-16):** the key and counter pages are at the top of flash, so they
+  never move again. One constant sets the boundary between code and journal. The change erases the
+  node state. Each board gets a WIPE and a new key, so no migration is necessary
+  ([`docs/runbook-moving-boards.md`](runbook-moving-boards.md)).
 
 ## The plan that makes it fit
 
 ```mermaid
 flowchart TD
-  A["Budget check in every build, size line in every RELEASES.md entry"] --> B{"Must a feature land before layout v2?"}
+  A["Budget check in every build, size line in every RELEASES.md entry"] --> B{"Does a feature take TX past 75 % of 110 KB?"}
   B -->|"yes"| C["Use LTO as a measured reserve, −6.6 KB on TX"]
-  B -->|"no"| D["Flash layout v2 with the SPI NOR 30-day buffer"]
+  B -->|"no"| D["SPI NOR journal for the 30-day buffer"]
   C --> D
-  D --> E["Application region grows to 128 KB or more"]
+  D --> E["Application region can grow further: change WS_FIRMWARE_PAGES"]
   F["Module split after the 24-hour delivery test"] --> G["Sensors become drivers behind one interface"]
 ```
 
-1. **Flash layout v2 with the 30-day buffer (H11).** The 30-day buffer moves to SPI NOR flash. This
-   frees most of the 186 KB internal journal. The application region can then grow to 128 KB or
-   more. **Constraint:** the key and the transmission counter live in the node-state pages. A
-   layout change must carry the counter and epoch across, or the board must get a new key.
-   Otherwise the board repeats AES-CCM nonces ([`docs/runbook-moving-boards.md`](runbook-moving-boards.md)).
-2. **Link-time optimisation (LTO) as a measured reserve** (−6.6 KB on TX), if a feature must land
-   before layout v2.
-3. **Budget check** in every build (above), and a size line in every `RELEASES.md` entry.
-4. **Module split after the 24-hour delivery test** (H01, [`docs/H01-checklist.md`](H01-checklist.md)),
+1. **Flash layout v2 (code done 2026-10-16).** Firmware pages 0–54 (110 KB), journal 55–124 (70
+   pages), meta log 125–126, provisioning 127. The internal journal keeps 24 hours for a full
+   station. **Constraint:** the key and the transmission counter live in the node-state pages. A
+   layout change erases them, so the board must get a new key. Otherwise the board repeats AES-CCM
+   nonces ([`docs/runbook-moving-boards.md`](runbook-moving-boards.md)).
+2. **The 30-day buffer (H11)** goes to SPI NOR flash. This frees most of the 140 KB internal
+   journal, so the application region can grow again.
+3. **Link-time optimisation (LTO) as a measured reserve** (−6.6 KB on TX), if a feature takes TX
+   past the 75 % target.
+4. **Budget check** in every build (above), and a size line in every `RELEASES.md` entry.
+5. **Module split after the 24-hour delivery test** (H01, [`docs/H01-checklist.md`](H01-checklist.md)),
    as [`docs/firmware-review-2026-10-13.md`](firmware-review-2026-10-13.md) §4–5 describes. Sensors
    become drivers behind one interface instead of edits to `app_tx.c`.
 

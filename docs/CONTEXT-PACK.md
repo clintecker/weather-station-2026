@@ -59,7 +59,7 @@ flowchart LR
     `run-d5` is archived as `run-d5-archive-2026-10-15/`.
 - **Radio:** 915.0 MHz, 500 kHz bandwidth, spreading factor (SF) 7, coding rate 4/5, 0 dBm (bench).
 - **Bench-verified:**
-  - the journal: about 2.3 days of outage buffer in internal flash (3,348 records of 56 bytes),
+  - the journal: about 41 hours of outage buffer in internal flash (2,484 records of 56 bytes; 24 hours for a station with every sensor),
   - durable counters and the watchdog,
   - the reset-during-write test (70 cycles),
   - outage recovery with link back-off, NACK, and gateway auto-reconnect,

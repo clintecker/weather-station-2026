@@ -1,5 +1,5 @@
 # Bench range test for NUCLEO-WL55JC1, built from ST's SubGHz_Phy_PingPong (STM32CubeWL v1.6.0).
-# Board code, linker script (64 KB application region) and build rules: ../board/nucleo-wl55jc.
+# Board code, linker script (110 KB application region) and build rules: ../board/nucleo-wl55jc.
 #
 #   make                      build build/rangetest.elf/.bin
 #   make flash SERIAL=<stlink serial>
