@@ -1,3 +1,5 @@
+/* GENERATED from sensor.lit.md by tools/tangle.py: do not edit. Edit the document, then run
+ * tools/tangle.py firmware/stage0-node/App/sensor.lit.md (tests/test_tangle.py checks this file). */
 #define WS_CHECK_FILE 6
 #include "sensor.h"
 #include "busymon.h"
