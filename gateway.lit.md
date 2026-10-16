@@ -1,13 +1,13 @@
 # gateway: the observation store
 
 `gateway.py` keeps the gateway's observations in one SQLite database. It validates each decoded
-record against a closed schema, commits it to stable storage before the caller sends an ACK, and
-reports whether the latest reading is current, with a reason when it is not. It also
+record against a closed schema. It commits the record to stable storage before the caller sends an
+ACK. It reports whether the latest reading is current, with a reason when it is not. It also
 gives samples taken without a synchronized clock a UTC time with an error bound.
 
 This document is the source. `tools/tangle.py` generates `gateway.py` from the code chunks below.
-The generated file is committed, so `import gateway`, ruff and the tests read ordinary Python.
-Edit this file, then regenerate and check:
+The repository also holds the generated file, so `import gateway`, ruff and the tests read ordinary
+Python. Edit this file, then regenerate and check:
 
 ```sh
 python3 tools/tangle.py gateway.lit.md                          # write gateway.py
@@ -18,8 +18,8 @@ python3 tools/tangle.py --weave /tmp/gateway.html gateway.lit.md   # render
 `--check` without a document checks only the documents under `firmware/`, so name this one.
 
 A chunk is a fenced ` ```python {#name} ` block. A line `<<name>>` inside a chunk includes chunk
-`name` at that line's indentation. The `Store` methods are written without their class indentation.
-The root chunk (section 10) puts every chunk in file order.
+`name` at that line's indentation. This document writes the `Store` methods without their class
+indentation. The root chunk (section 10) puts every chunk in file order.
 
 ## 1. Guarantees
 
@@ -128,15 +128,17 @@ def full_flush(db):
 
 ## 4. Record validation
 
-`validate` checks a decoded record (a `dict`) before anything is stored. `ws0/protocol.py` calls it
-in `decode_observation` and `encode_observation`, and `Store.ingest` calls it again. Every failure
-raises `ValueError` with a message that names the rule. The service turns that into a NACK (section 6).
+`validate` checks a decoded record (a `dict`) before the store writes anything. `ws0/protocol.py`
+calls it in `decode_observation` and `encode_observation`, and `Store.ingest` calls it again. Every
+failure raises `ValueError` with a message that names the rule. The service turns that into a NACK
+(section 6).
 
 ### Key set
 
 The base keys are always present. Every other key must be a catalog field name
 (`F.BY_NAME`) or `wind_calm`. `wind_calm` is present exactly when `wind_dir_deg` is present.
-A derived value such as `dew_point_c` is not a catalog field, so a record carrying it is refused.
+A derived value such as `dew_point_c` is not a catalog field, so `validate` refuses a record that
+carries it.
 
 ```python {#base-keys}
 BASE_KEYS = frozenset({'version','station','session','sequence','sampled_at','uptime_s','time_quality',
@@ -160,7 +162,7 @@ COUNTERS = (('sequence',2**32),('uptime_s',2**32),('calibration_revision',256)) 
 ```
 
 `_require` raises the message when the condition is false. `_finite_number` accepts only `int` and
-`float` by exact type, so `True` and `'40'` are not numbers, and NaN and infinity are refused.
+`float` by exact type, so `True` and `'40'` are not numbers, and it refuses NaN and infinity.
 
 ```python {#require}
 def _require(ok, message):
@@ -305,7 +307,8 @@ class Store:
 | `time_uncertainty_s` | REAL | error bound of `effective_at`: 0, a reconstruction bound, or NULL |
 
 The primary key is (`station`, `session`, `sequence`), the observation identity. The payload is
-the deduplication authority. The three time columns are derived and `reconstruct` rewrites them.
+the deduplication authority. The gateway derives the three time columns, and `reconstruct` rewrites
+them.
 
 ### Indexes
 
@@ -322,8 +325,8 @@ the deduplication authority. The three time columns are derived and `reconstruct
 | `rejections` | `station, session, sequence, received_at, reason, detail, frame_hex` | none: every rejection is a row |
 | `diagnostics` | `station, session` (the epoch, INTEGER), `uptime_s, received_at, report` (JSON) | (`station`, `session`, `uptime_s`) |
 
-All tables are created with `IF NOT EXISTS`, so a restart opens the existing data. `ws0/__main__.py`
-`epoch_floor` reads the highest epoch from all three tables.
+The store creates every table with `IF NOT EXISTS`, so a restart opens the existing data.
+`ws0/__main__.py` `epoch_floor` reads the highest epoch from all three tables.
 
 ```python {#store-init}
 def __init__(self, path):
@@ -460,9 +463,9 @@ the collision by its message text, so the string `'Identity collision'` is part 
 ### Counters within an epoch
 
 `check_counters` covers every catalog field with `counter=True`: `rain_tips`, `energy_in_mwh`,
-`energy_out_mwh`, `charge_in_mah` and `charge_out_mah`. These count since boot. For each one
-present and not null, it finds the stored neighbours of the same station and session that carry the
-field: the nearest lower sequence and the nearest higher sequence. The new value must be at least
+`energy_out_mwh`, `charge_in_mah` and `charge_out_mah`. These count since boot. For each one present
+and not null, it finds the stored neighbours of the same station and session that carry the field.
+These are the nearest lower and the nearest higher sequence. The new value must be at least
 the lower one and at most the higher one. It compares by sequence, not by arrival, so a backfilled
 older record passes. A violation raises `ValueError('<name> decreased within epoch <session>')`,
 which the service NACKs as `invalid_record`. A new epoch starts its counters again.
@@ -534,8 +537,8 @@ CURRENT_MAX_UNCERTAINTY_S = 10
 
 A reference is a row of the same station and session with `time_basis = 'synchronized'`, a
 non-null `uptime_s`, and `sampled_at <= received_at + FUTURE_SLACK_S` (5 s). The session is the boot epoch, so a
-reference shares the uptime counter of its targets. A synchronized sample whose time was ahead of
-its own receipt is quarantined. It is stored, but it is never a reference
+reference shares the uptime counter of its targets. The store quarantines a synchronized sample
+whose time was ahead of its own receipt. It keeps the sample, but never uses it as a reference
 (`TimeReconstruction.test_quarantined_reference_is_never_used`).
 
 A target is a row with `time_basis` `unknown` or `reconstructed` and a non-null `uptime_s`. For each
@@ -559,7 +562,7 @@ per frame at 1440 untimed readings. `ReconstructionTests.test_bounded_update_mat
 ingests 120 records in random order, with quarantined references and untimed readings, and after
 each one compares the time columns with a full rescan.
 
-Targets are read first. Most epochs have none, and then no reference is read.
+`reconstruct` reads the targets first. Most epochs have none, and then it reads no reference.
 
 ```python {#store-reconstruct}
 def reconstruct(self, station, session, only=None, reference=None):
@@ -615,8 +618,8 @@ its NACK (or, for a replay, no reply). The insert commits under the same durabil
 | `identity_collision` | `receive`, after `ingest` raised the collision | `False` |
 | `invalid_record` | `receive`, after any other `ValueError` | `False` |
 
-With `once=True` the row is skipped when the same station, reason and frame bytes are already
-stored. A captured frame can be resent any number of times, and one row per distinct frame keeps
+With `once=True`, `reject` skips the row when a row with the same station, reason and frame bytes
+exists. A captured frame can be resent any number of times, and one row per distinct frame keeps
 the evidence. An unauthenticated frame is never stored (`NackTests.test_unauthenticated_frame_gets_no_reply`).
 
 ```python {#store-reject}
@@ -635,9 +638,9 @@ def reject(self, station, session, sequence, reason, detail, frame_hex, received
 
 ### `diagnostic` and `latest_diagnostic`
 
-A node health report (kind 4) is stored under (`station`, epoch, uptime). `INSERT OR IGNORE` keeps
-the first report for a key. `latest_diagnostic` orders by epoch, then uptime, not by arrival. A
-delayed or replayed older report therefore never replaces a newer one
+`diagnostic` stores a node health report (kind 4) under (`station`, epoch, uptime). `INSERT OR
+IGNORE` keeps the first report for a key. `latest_diagnostic` orders by epoch, then uptime, not by
+arrival. A delayed or replayed older report therefore never replaces a newer one
 (`DiagnosticsAndEpochFloor.test_report_is_stored_unanswered_and_ordered_by_epoch_uptime`). It
 returns the report with `received_at` added, or `None`.
 
@@ -691,8 +694,8 @@ The reason is the first one that applies, in this order:
 `future` compares with the receipt time, not with `now`. A sample that was in the future when it
 arrived stays quarantined after the wall clock passes it. `sensor_fault` comes before `fresh`, so a
 timely all-fault reading reports the fault. `LatestReasonTests.test_reasons` pins each reason and
-the boundary values (179 s fresh, 180 s stale, uncertainty 10 fresh, 11 uncertain, 5 s ahead fresh,
-6 s ahead future).
+its boundary values. Age: 179 s fresh, 180 s stale. Uncertainty: 10 fresh, 11 uncertain. Clock: 5 s
+ahead fresh, 6 s ahead future.
 
 ```python {#freshness}
 def _freshness(record, received_at, effective, age, uncertainty):
@@ -815,9 +818,9 @@ def history(self, station, start=0, end=FAR_FUTURE, limit=100, offset=0):
 
 ## 11. The file
 
-The root chunk puts the chunks in file order: the module header, the constants, `full_flush`, the
-validation functions, `open_read_only`, `_freshness`, then `Store` with its methods at class
-indentation.
+The root chunk puts the chunks in file order. The order is: the module header, the constants,
+`full_flush`, the validation functions, `open_read_only`, `_freshness`, then `Store` with its
+methods at class indentation.
 
 ```python {#gateway.py}
 <<module-docstring>>

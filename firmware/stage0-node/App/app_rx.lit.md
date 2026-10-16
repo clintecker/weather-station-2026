@@ -1,12 +1,12 @@
 # app_rx: the stage-0 radio bridge
 
 `app_rx.c` is the firmware of the indoor receiver. It forwards every valid frame it receives as one
-hex line on the USB console, and it transmits every valid ACK or NACK line the host sends. It holds
+hex line on the USB console. It transmits every valid ACK or NACK line the host sends. It holds
 no key and decides nothing: the host is the only ACK authority (`docs/protocol.md`).
 
 This document is the source. `tools/tangle.py` generates `app_rx.c` from the code chunks below. The
-generated file is committed, so the build, the static analysers and the host tests read ordinary C.
-Edit this file, then regenerate and check:
+repository also holds the generated file, so the build, the static analysers and the host tests read
+ordinary C. Edit this file, then regenerate and check:
 
 ```sh
 python3 tools/tangle.py firmware/stage0-node/App/app_rx.lit.md                       # write app_rx.c
@@ -134,7 +134,7 @@ static void post(uint32_t ev) { events_post(&pending_ev, ev); }
 
 Each failure kind has one capture slot: `bad_frame` for a CRC failure, `hdr_rssi` for a header
 failure. A slot stays full until `process` takes it. A failure that arrives while its slot is full
-is counted in `n_crc` or `n_hdr` and in `n_fault_overrun`, and is not captured
+adds to `n_crc` or `n_hdr` and to `n_fault_overrun`, and the code does not capture it
 (`test_failures_before_the_main_loop_runs_are_counted`).
 
 ```c {#crc-capture-state}
@@ -723,7 +723,7 @@ void SubghzApp_Init(void)
 
 ## 9. The file
 
-The generated file orders the chunks for C: state and constants first, then the callbacks, the
+The generated file orders the chunks for C. State and constants come first, then the callbacks, the
 radio helpers, the process task and its steps, the console handler and boot.
 
 ```c {#app_rx.c}
@@ -795,10 +795,11 @@ radio helpers, the process task and its steps, the console handler and boot.
 ## 10. Tests
 
 `tests/test_rx_machine.py` compiles `app_rx.c`, `App/console.c` and the shared modules unchanged
-against `firmware/host/rx_harness.c`. The harness models ST's SubGHz_Phy in continuous receive (a
-CRC failure is RxDone with the HAL's CRC flag, then RxError, and a header failure is RxTimeout),
-the console UART, the 2 KB trace FIFO at 115200 baud, and the watchdog's 1 s check and 8 s IWDG. The
-tests check the bridge through its console output and its radio calls.
+against `firmware/host/rx_harness.c`. The harness models ST's SubGHz_Phy in continuous receive.
+There, a CRC failure is RxDone with the HAL's CRC flag, then RxError, and a header failure is
+RxTimeout. The harness also models the console UART, the 2 KB trace FIFO at 115200 baud, and the
+watchdog's 1 s check and 8 s IWDG. The tests check the bridge through its console output and its
+radio calls.
 
 | Group | Tests |
 |---|---|

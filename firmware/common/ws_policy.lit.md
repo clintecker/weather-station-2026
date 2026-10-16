@@ -5,8 +5,8 @@ follow the live reading. It also tracks the link state from the gateway's replie
 strikes against records the gateway keeps refusing. Every function is pure: `App/tx_policy.c` holds
 the state, feeds these functions from the journal and the clock, and acts on their results.
 
-This document is the source. `tools/tangle.py` generates `ws_policy.c` from the code chunks
-below. The generated file is committed, so the build, the static analysers and the host tests
+This document is the source. `tools/tangle.py` generates `ws_policy.c` from the code chunks below.
+The repository also holds the generated file, so the build, the static analysers and the host tests
 read ordinary C. Edit this file, then regenerate and check:
 
 ```sh
@@ -52,8 +52,8 @@ Energy is a `WS_ENERGY_*` code from `ws_obs.h`, in this order: `SURPLUS`, `NORMA
 
 The caps are decision 3 of `docs/radio-energy-policy.md` section 9. `CRITICAL` never reaches the
 arrays in `ws_minute_backlog`, because the energy gate refuses it first (section 5). Its entries
-exist so that the arrays have one entry per state. The `_Static_assert` fails the build if a
-state is added without an entry in every array.
+exist so that the arrays have one entry per state. The `_Static_assert` fails the build if someone
+adds a state without an entry in every array.
 
 `App/tx_policy.c` asserts `WS_BACKLOG_MAX <= MAX_QUEUE - 1`, so the send queue holds the live
 reading plus the largest backlog.
@@ -90,11 +90,11 @@ payload  = 8 + max(ceil((8 PL - 4 SF + 28 + 16 CRC) / (4 (SF - 2 DE))), 0) (CR +
 DE       = 1 when T_sym > 16 ms (low data rate optimisation), else 0
 ```
 
-The function counts in quarter symbols, so the 4.25 symbols of sync word and start of frame are
-an integer (17 quarters). `symbol_us_x_bw` is `T_sym` in µs times the bandwidth, `10^6 << SF`. It
-fits 32 bits up to SF12 (4.096 × 10^9). The division by the bandwidth comes last, in 64 bits, so
-no precision is lost before it. The result is the truncated ms plus 1, so it is never below the
-exact time.
+The function counts in quarter symbols, so the 4.25 symbols of sync word and start of frame are an
+integer (17 quarters). `symbol_us_x_bw` is `T_sym` in µs times the bandwidth, `10^6 << SF`. It fits
+32 bits up to SF12 (4.096 × 10^9). The division by the bandwidth comes last, in 64 bits, so the
+calculation loses no precision before it. The result is the truncated ms plus 1, so it is never
+below the exact time.
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -297,11 +297,11 @@ static int minute_may_send(int energy, const ws_link *l, uint32_t now_s, uint32_
 
 ### The airtime budget
 
-`exchange_ms` is the radio time of one answered exchange. The live reading always fits: an
-exchange longer than the cap, or an `exchange_ms` of 0 (no estimate), still gives `by_airtime` = 1
-and a backlog of 0. A failed exchange costs more than `exchange_ms`. The drain in `App/tx_exchange.c` sends one
-more frame after a miss (`FRAMES_AFTER_MISS`) and then stops, so the budget counts answered
-exchanges only.
+`exchange_ms` is the radio time of one answered exchange. The live reading always fits. An exchange
+longer than the cap, or an `exchange_ms` of 0 (no estimate), still gives `by_airtime` = 1 and a
+backlog of 0. A failed exchange costs more than `exchange_ms`. The drain in `App/tx_exchange.c`
+sends one more frame after a miss (`FRAMES_AFTER_MISS`) and then stops, so the budget counts
+answered exchanges only.
 
 With the 344 ms exchange of section 3:
 
@@ -337,12 +337,12 @@ stays in the journal. Strikes find such a record and abandon it.
 
 A record gets a strike when its frame gets no reply and a frame sent **after** it in the same
 exchange gets a reply. The later reply shows that the link worked at that time, so the missing
-reply points at the record. A reply to an earlier frame shows nothing: on a weak link the next
-frame can simply be lost. The drain therefore sends one more frame after a miss, so that a refused
+reply points at the record. A reply to an earlier frame shows nothing: on a weak link the next frame
+can simply fail to arrive. The drain therefore sends one more frame after a miss, so that a refused
 record can still be told apart (`FRAMES_AFTER_MISS` in `App/tx_exchange.c`).
 
 `ws_strike_targets` scans the exchange from the last frame to the first. `later` becomes 1 at the
-first reply it meets, so `struck[i]` is 1 exactly when frame `i` got no reply and some frame after
+first reply it meets. So `struck[i]` is 1 exactly when frame `i` got no reply and some frame after
 it did.
 
 | `replied` | `struck` |
@@ -362,8 +362,8 @@ void ws_strike_targets(const uint8_t *replied, unsigned n, uint8_t *struck)
 
 ### The strike table
 
-The table is keyed by the record's identity (epoch, seq), not by its journal slot. A slot is reused
-after the journal ring wraps, and a record can leave the journal without its entry being cleared.
+The table key is the record's identity (epoch, seq), not its journal slot. The journal reuses a slot
+after its ring wraps, and a record can leave the journal while its entry stays.
 An entry with a count of 0 is free: `same_record` never matches it.
 
 ```c {#same-record}
@@ -374,15 +374,15 @@ static int same_record(const ws_strike *s, uint32_t epoch, uint32_t seq) { retur
 
 1. A table of 0 slots fails a `WS_CHECK` and returns 0.
 2. An entry with the same identity takes the strike.
-3. Otherwise the record takes the entry with the fewest strikes (the first such entry), with a
-   count of 0. A free entry has 0 strikes, so a free entry is taken first. In a full table the new
-   record replaces the record with the fewest strikes, and that record's count is lost.
+3. Otherwise the record takes the entry with the fewest strikes (the first such entry), with a count
+   of 0. A free entry has 0 strikes, so `ws_strike_note` takes a free entry first. In a full table
+   the new record replaces the record with the fewest strikes, and that record's count disappears.
 4. The count goes up by 1. Below `limit` the result is 0.
-5. At `limit` the entry is cleared and the result is 1.
+5. At `limit` the function clears the entry and returns 1.
 
-`App/tx_policy.c` uses 6 slots (`STRIKE_SLOTS`) and a limit of 10 (`STRIKE_LIMIT`). On a result of 1
-its `strike` function looks the record up by identity, acknowledges it in the journal if it is
-still pending, adds 1 to the abandoned total and prints `#abandon`.
+`App/tx_policy.c` uses 6 slots (`STRIKE_SLOTS`) and a limit of 10 (`STRIKE_LIMIT`). On a result of
+1, its `strike` function looks the record up by identity. It acknowledges the record in the journal
+if it is still pending, adds 1 to the abandoned total and prints `#abandon`.
 
 ```c {#strike-note}
 int ws_strike_note(ws_strike *t, unsigned slots, uint32_t epoch, uint32_t seq, unsigned limit)

@@ -1,14 +1,14 @@
 # protocol: the draft-5 frame on the gateway side
 
-`protocol.py` builds and opens the draft-5 radio frames: the clear header, the AES-128-CCM nonce,
-the ACK, NACK and DIAG plaintexts, and the observation plaintext through `ws0/fields.py`. It also
-holds `Nonces`, the durable counter allocator that the gateway (and the simulator's node) reserves
-every nonce from. For the gateway it keeps the high-water mark of the node's counter, which detects
-replays and repeated nonces.
+`protocol.py` builds and opens the draft-5 radio frames. It builds the clear header, the AES-128-CCM
+nonce and the ACK, NACK and DIAG plaintexts. It builds the observation plaintext through
+`ws0/fields.py`. It also holds `Nonces`, the durable counter allocator that the gateway (and the
+simulator's node) reserves every nonce from. For the gateway it keeps the high-water mark of the
+node's counter, which detects replays and repeated nonces.
 
 This document is the source. `tools/tangle.py` generates `protocol.py` from the code chunks below.
-The generated file is committed, so imports, ruff and the tests read ordinary Python. Edit this
-file, then regenerate and check:
+The repository also holds the generated file, so imports, ruff and the tests read ordinary Python.
+Edit this file, then regenerate and check:
 
 ```sh
 python3 tools/tangle.py ws0/protocol.lit.md                          # write protocol.py
@@ -129,8 +129,8 @@ counter on air, which repeats a nonce. Every path refuses such a counter instead
 
 ### Nonce
 
-The 13-byte nonce is the kind as u8, the station as u32 and the counter as u64, big-endian. It is
-built from the integers, never copied from the header bytes. `ws_frame.c` uses the same
+The 13-byte nonce is the kind as u8, the station as u32 and the counter as u64, big-endian. The code
+builds it from the integers and never copies it from the header bytes. `ws_frame.c` uses the same
 construction (`NONCE_LEN` 13).
 
 ```text
@@ -152,7 +152,7 @@ NONCE = struct.Struct('>BIQ')               # kind, station u32, counter u64: 13
 
 `_header_and_nonce` checks the ranges first. It raises `ValueError` for a station outside 1 to
 `STATION_MAX`, a counter outside 1 to `COUNTER_MAX`, or a kind outside `KIND_OBS` to `KIND_DIAG`.
-`to_bytes` raises on a value its field cannot hold, so nothing is masked or truncated.
+`to_bytes` raises on a value its field cannot hold, so the code never masks or truncates a value.
 
 ```python {#header-and-nonce}
 def _header_and_nonce(kind, station, counter):
@@ -322,9 +322,9 @@ be 1. The key already used counter 1 and every counter up to the lost value. Rec
 silently would repeat nonces under the same key. Only `provision` in `ws0/__main__.py` passes
 `create=True`, and it generates a new key in the same step. The error text names that remedy.
 
-**Why the binding.** The binding is a hash of the key, station and kind. A state file copied to
-another station, used with another key, or opened for the wrong kind fails step 6 instead of
-handing out counters for another nonce space. The file stores the hash, not the key.
+**Why the binding.** The binding is a hash of the key, station and kind. Step 6 fails for a state
+file copied to another station, used with another key, or opened for the wrong kind. So the file
+never hands out counters for another nonce space. The file stores the hash, not the key.
 
 `WS0_UNSAFE_FAST_FSYNC=1` turns the durability pragmas off for simulations and unit tests
 (`gateway.full_flush`). Those runs claim no power-loss durability.
@@ -404,8 +404,9 @@ Opening a `KIND_ACK` allocator adds two tables and seeds the mark at 0. Both are
 | `node_counter` | `binding`, `max_counter`, `regressions`, `last_regression`, `last_regression_at`, `replays` | the mark, the regression count with the last one's counter and time, the replay count |
 | `node_frames` | `binding`, `counter`, `digest` | SHA-256 of each frame accepted as fresh, by counter |
 
-The mark lives in the nonce file, not the observation database. The observation database can be
-restored from a backup. The nonce file is never restored, so a restore cannot lower the mark.
+The mark lives in the nonce file, not the observation database. An operator can restore the
+observation database from a backup. The nonce file is never restored, so a restore cannot lower the
+mark.
 
 ```python {#node-counter-tables}
 if kind == KIND_ACK:
@@ -428,7 +429,7 @@ if kind == KIND_ACK:
 
 ### Verdicts
 
-`advance_node_counter(counter, now, digest)` is called only for a frame that `unseal`
+`service.py` calls `advance_node_counter(counter, now, digest)` only for a frame that `unseal`
 authenticated. `digest` is the SHA-256 hex of the whole frame. It runs in one `BEGIN IMMEDIATE`
 transaction:
 
@@ -441,12 +442,12 @@ transaction:
 **Why a replay is not an alarm.** An exact copy reuses no nonce. It is the same ciphertext under the
 same nonce, so it reveals nothing new. The gateway still neither answers nor stores it.
 
-**Why a regression is an alarm.** Different bytes under a counter already seen means the node
-sealed a second plaintext with a nonce it already used. That breaks CCM for both frames. An unknown
-frame below the mark counts too. Direct LoRa does not reorder frames, so an older counter that
-never arrived is treated as reuse (`test_older_frame_never_seen_still_alarms`). A node that restarts its counter
-under the old key produces this verdict on its first frame (`test_wipe_and_reuse_alarms_on_first_frame`).
-The remedy is a new key.
+**Why a regression is an alarm.** Different bytes under a counter already seen have one cause. The
+node sealed a second plaintext with a nonce it already used. That breaks CCM for both frames. An
+unknown frame below the mark counts too. Direct LoRa does not reorder frames, so the gateway treats
+an older counter that never arrived as reuse (`test_older_frame_never_seen_still_alarms`). A node
+that restarts its counter under the old key produces this verdict on its first frame
+(`test_wipe_and_reuse_alarms_on_first_frame`). The remedy is a new key.
 
 **Why before the frame is acted on.** `service.py` calls this before `decode_observation` and the
 database commit. A crash or a failed commit after it leaves the mark at or above every counter the
@@ -551,9 +552,9 @@ length = frame length − `HEADER_LEN` − `TAG_LEN`.
 | DIAG | `DIAG.size` (32) | 48 |
 | other | none | every length is refused |
 
-The OBS range covers every bitmap of the full catalog, not one build's. An OBS plaintext with no
-field is refused here, because the smallest field adds one byte. The exact OBS length depends on
-the encrypted field bitmap, so `fields.decode` checks it after decryption.
+The OBS range covers every bitmap of the full catalog, not one build's. `unseal` refuses an OBS
+plaintext with no field here, because the smallest field adds one byte. The exact OBS length depends
+on the encrypted field bitmap, so `fields.decode` checks it after decryption.
 
 ```python {#plain-length-table}
 # Plaintext lengths a frame of each kind may have before decrypting (design 3.4). An observation's

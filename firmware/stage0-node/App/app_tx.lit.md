@@ -2,11 +2,11 @@
 
 `app_tx.c` boots the TX node and runs its sampling. It reads the SHT45 every 15 s and builds one
 observation per minute from four samples. It journals the observation in flash and hands it to the
-radio exchange (`tx_exchange.c`). It also decides whether the watchdog may be refreshed.
+radio exchange (`tx_exchange.c`). It also tells the watchdog task whether to refresh the watchdog.
 
 This document is the source. `tools/tangle.py` generates `app_tx.c` from the code chunks below. The
-generated file is committed, so the build, the static analysers and the host tests read ordinary C.
-Edit this file, then regenerate and check:
+repository also holds the generated file, so the build, the static analysers and the host tests read
+ordinary C. Edit this file, then regenerate and check:
 
 ```sh
 python3 tools/tangle.py firmware/stage0-node/App/app_tx.lit.md                           # write app_tx.c
@@ -60,9 +60,9 @@ first, then `boot_ready`, then starts sampling:
 7. tx_status; start the 15-s periodic timer; post the sample task at once (the first sample is at 0 s)
 ```
 
-The watchdog starts at step 3, before storage is read. Before step 6 `node.running` is 0, so
-`watchdog_healthy` returns 1 (section 6). A node that fails `boot_ready` therefore stays up with the
-console available and is not reset by the watchdog.
+The watchdog starts at step 3, before the firmware reads storage. Before step 6 `node.running` is 0,
+so `watchdog_healthy` returns 1 (section 6). A node that fails `boot_ready` therefore stays up with
+the console available and is not reset by the watchdog.
 
 ### State
 
@@ -210,7 +210,7 @@ static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_S
 
 `th_window` collects the minute's samples (`ws_th_window`, `firmware/stage0.c`). `th_ticks` counts
 sample results since the last report. `sensor_reported` makes the first result after boot print one
-`#sensor` line. `stuck` is set by the watchdog check when an exchange outlasts its bound (section 6).
+`#sensor` line. The watchdog check sets `stuck` when an exchange outlasts its bound (section 6).
 
 ```c {#window-state}
 /* The minute's 15-s samples (PRD section 9: coverage, mean and extrema). */
@@ -377,11 +377,11 @@ static void obs_codes(ws_obs_t *o, int valid, int16_t t, uint16_t h)
 
 ### Journal or hold
 
-`journal_or_hold` writes flash only when the radio is idle. It returns 0 when the reading was
-journaled or held, `REC_ENOTENCODED` (-100, outside the `STORE_E*` range) when it did not encode, and
-the `STORE_E*` code of a failed append otherwise. It updates the journal failure run
-(`node.journal_fails`) for every case except a held reading. `held_flush` counts that append when it
-happens.
+`journal_or_hold` writes flash only when the radio is idle. It returns 0 when it journaled or held
+the reading. It returns `REC_ENOTENCODED` (-100, outside the `STORE_E*` range) when the reading did
+not encode. Otherwise it returns the `STORE_E*` code of the failed append. It updates the journal
+failure run (`node.journal_fails`) for every case except a held reading. `held_flush` counts that
+append when it happens.
 
 | Encoded | Radio busy | Action | Return | `journal_fails` |
 |---|---|---|---|---|
@@ -448,11 +448,11 @@ static void minute_send(const jref_t *live)
 
 ### Why a reading waits
 
-Flash is written only with the radio idle (`docs/firmware-event-model.md`). A journal append can
-erase a page, and the CPU stalls during a flash erase. A minute that ends while the previous
-minute's exchange still runs therefore keeps its encoded reading in `held[]`. `tx_exchange.c` calls
-`held_flush` the moment the radio goes idle, before anything else runs. The next minute sends the
-journaled reading as backlog.
+The firmware writes flash only with the radio idle (`docs/firmware-event-model.md`). A journal
+append can erase a page, and the CPU stalls during a flash erase. A minute that ends while the
+previous minute's exchange still runs therefore keeps its encoded reading in `held[]`.
+`tx_exchange.c` calls `held_flush` the moment the radio goes idle, before anything else runs. The
+next minute sends the journaled reading as backlog.
 
 ### HELD_MAX
 
@@ -471,7 +471,7 @@ watchdog resets the board:
 newest.
 
 A reset loses what is held. Those sequence numbers are never sent, and the gateway sees the gap. The
-watchdog check avoids this for a hung radio: it calls `exchange_abort`, which stops the radio and
+watchdog check avoids this for a hung radio. It calls `exchange_abort`, which stops the radio and
 calls `held_flush` before the check starts to fail (section 6).
 
 ```c {#held-buffer}
@@ -580,7 +580,7 @@ then does the following, in this order:
 1. Set `stuck`. From now on `sensor_done` ignores results and every check returns 0.
 2. Stop the sample timer.
 3. Call `exchange_abort`: stop the gap and ACK timers, put the radio in standby, mark the exchange
-   idle, then `held_flush`. The held readings are journaled with the radio idle.
+idle, then `held_flush`. `held_flush` journals the held readings with the radio idle.
 4. Print `#watchdog radio exchange stuck; radio stopped, held readings journaled, resetting` and
    return 0.
 
@@ -616,8 +616,8 @@ int watchdog_healthy(void)
 ### sampling_stop
 
 The console calls `sampling_stop` for a commanded reboot and for `TEST-FLASH-STORM`. It clears
-`node.running` and stops the sample timer. The watchdog check then stops expecting samples, and a
-measurement already in flight is dropped by `sensor_done`.
+`node.running` and stops the sample timer. The watchdog check then stops expecting samples, and
+`sensor_done` drops a measurement already in flight.
 
 ```c {#sampling-stop}
 void sampling_stop(void)
@@ -711,8 +711,8 @@ before its first caller.
 
 `tests/test_tx_machine.py` builds `app_tx.c` with the other TX modules and the real `node_store.c`
 into a host library. `firmware/host/tx_harness.c` simulates the clock, the timers, the sequencer, the
-radio, the SHT45 and the flash. Every test checks at its end that no flash operation happened while
-the radio was busy, that no running timer was started again, and that no `WS_CHECK` failed.
+radio, the SHT45 and the flash. At its end, every test checks three things. No flash operation ran
+while the radio was busy, no test started a running timer again, and no `WS_CHECK` failed.
 
 | Test | What it checks in this file |
 |---|---|

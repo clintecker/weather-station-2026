@@ -1,13 +1,13 @@
 # ws_frame: the draft-5 radio envelope
 
-`ws_frame.c` seals and opens the frames the TX node exchanges with the gateway over LoRa. It
-builds the 8-byte clear header, the 13-byte AES-128-CCM nonce and the 8-byte tag, opens ACK and
+`ws_frame.c` seals and opens the frames the TX node exchanges with the gateway over LoRa. It builds
+the 8-byte clear header, the 13-byte AES-128-CCM nonce and the 8-byte tag. It also opens ACK and
 NACK replies, packs the health report and computes the key check value. The gateway builds the
 same bytes in `ws0/protocol.py`. The format is `docs/protocol-draft5-design.md` sections 3 and 4.
 
 This document is the source. `tools/tangle.py` generates `ws_frame.c` from the code chunks below.
-The generated file is committed, so the build, the static analysers, the fuzzer and the host tests
-read ordinary C. Edit this file, then regenerate and check:
+The repository also holds the generated file, so the build, the static analysers, the fuzzer and the
+host tests read ordinary C. Edit this file, then regenerate and check:
 
 ```sh
 python3 tools/tangle.py firmware/common/ws_frame.lit.md                            # write ws_frame.c
@@ -126,7 +126,7 @@ the calls.
 
 ### Nonce uniqueness
 
-Under one key, each (kind, station, counter) triple must be sealed at most once. `ws_seal_kind`
+Under one key, the code must seal each (kind, station, counter) triple at most once. `ws_seal_kind`
 keeps no state. It trusts the caller for uniqueness and checks only the range.
 
 | Side | Kinds | Counter source | Durable before use |
@@ -136,8 +136,8 @@ keeps no state. It trusts the caller for uniqueness and checks only the range.
 
 The two sides use separate counter spaces. The kind byte in the nonce keeps them apart: node
 counter 5 sealed as OBS and gateway counter 5 sealed as ACK give different nonces. OBS and DIAG
-share the node's counter, and ACK and NACK share the gateway's, so no counter value is issued
-twice within one space.
+share the node's counter, and ACK and NACK share the gateway's, so no allocator issues a counter
+value twice within one space.
 
 A counter must be durable before use because a reset between seal and reservation would let the
 next boot issue the same counter again. A repeated counter is fatal for CCM. CCM encrypts in
@@ -153,8 +153,8 @@ The version is in the AAD but not in the nonce. The draft-5 release therefore us
 
 ### Refusals
 
-`seal_ok` decides what `ws_seal_kind` may seal. The checks short-circuit in order, so
-`plain_len + WS_FRAME_OVERHEAD` is computed only for a `plain_len` that cannot overflow.
+`seal_ok` decides what `ws_seal_kind` may seal. The checks short-circuit in order, so the code
+computes `plain_len + WS_FRAME_OVERHEAD` only for a `plain_len` that cannot overflow.
 
 ```c {#seal-ok}
 /* What ws_seal_kind can seal: a plaintext that fits the frame and the output, a valid station,
@@ -177,7 +177,7 @@ static int seal_ok(uint32_t station, uint8_t kind, uint64_t counter, const uint8
 | kind not 1–4 | `WS_FRAME_EINVAL` | `out_cap` zero bytes |
 | Mbed TLS `setkey` or `encrypt_and_tag` fails | `WS_FRAME_ECRYPTO` (-4) | `out_cap` zero bytes |
 
-Counter 0 is refused because neither allocator issues it. Both start at 1.
+`seal_ok` refuses counter 0 because neither allocator issues it. Both start at 1.
 
 The zeroized output protects a caller that ignores the return code. A refused call leaves no stale
 frame from an earlier call in `out`. A failed cipher call leaves no header with a partial
@@ -216,9 +216,9 @@ int ws_seal_kind(const uint8_t key[WS_KEY_LEN], uint32_t station, uint8_t kind, 
 }
 ```
 
-`mbedtls_ccm_free` clears the key schedule held in `ccm` on both paths. `mbedtls_platform_zeroize`
-is used instead of `memset` because the compiler may delete a `memset` of memory that is not read
-again.
+`mbedtls_ccm_free` clears the key schedule held in `ccm` on both paths. The code uses
+`mbedtls_platform_zeroize`, not `memset`, because the compiler may delete a `memset` of memory that
+nothing reads again.
 
 ## 5. Opening a reply
 
@@ -260,9 +260,10 @@ static void reply_unpack(const uint8_t plain[WS_REPLY_PLAIN_LEN], uint32_t *epoc
 | | all checks pass | `WS_FRAME_OK` (0) |
 
 Steps 1–4 need no key and run no cipher. A reply for another station fails at step 4. Step 4
-compares only the first 3 bytes (`WS_COUNTER_OFF`). The counter bytes were read from the frame and
-re-encoded, so they match by construction. The nonce for step 5 comes from the same `header` call.
-It holds the node's own station, so the tag can verify only for a frame sealed for this station.
+compares only the first 3 bytes (`WS_COUNTER_OFF`). `ws_open_reply` reads the counter bytes from the
+frame and encodes them again, so they match by construction. The nonce for step 5 comes from the
+same `header` call. It holds the node's own station, so the tag can verify only for a frame sealed
+for this station.
 
 A failed `mbedtls_ccm_setkey` also returns `WS_FRAME_EAUTH`. The caller cannot tell it from a bad
 tag.
@@ -377,8 +378,8 @@ void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]) {
 
 ## 8. The file
 
-The generated file orders the chunks for C: includes, constants, the header and nonce builder, the
-seal path, the reply path, the key check value and the health report.
+The generated file orders the chunks for C. The order is: includes, constants, the header and nonce
+builder, the seal path, the reply path, the key check value and the health report.
 
 ```c {#ws_frame.c}
 #include "ws_frame.h"
@@ -431,8 +432,8 @@ any frame. An accepted value must give the spec's header and length, and an ACK 
 to the same values.
 
 `selftest_kat` (`App/selftest.c`) runs on the TX board at boot (`App/app_tx.c`). It seals the
-observation vector, requires counter 2^40 to be refused, and opens the ACK, a tampered ACK and the
-NACK. `#status` reports the result as `kat=`.
+observation vector, checks that `ws_seal_kind` refuses counter 2^40, and opens the ACK, a tampered
+ACK and the NACK. `#status` reports the result as `kat=`.
 
 ```sh
 .venv/bin/python -m unittest tests.test_frame tests.test_fuzz tests.test_tangle

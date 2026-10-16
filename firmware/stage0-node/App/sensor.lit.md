@@ -5,8 +5,8 @@
 that, and the main loop reports the result through `sensor_done`. After any failure the driver
 frees a stuck bus before it reports.
 
-This document is the source. `tools/tangle.py` generates `sensor.c` from the code chunks below.
-The generated file is committed, so the build, the static analysers and the host tests read
+This document is the source. `tools/tangle.py` generates `sensor.c` from the code chunks below. The
+repository also holds the generated file, so the build, the static analysers and the host tests read
 ordinary C. Edit this file, then regenerate and check:
 
 ```sh
@@ -215,8 +215,8 @@ static ws_i2c_rec rec;
 ### Leaving a bus state
 
 `S_CMD`, `S_MEASURE` and `S_READ` are the bus states. `finish(rc)` is the one way out of them.
-Inside a critical section it checks the state, stops the guard and the measurement timer, stores
-`rc` in `bus_rc`, moves to `S_DONE` and posts the task. In any other state it does nothing.
+Inside a critical section it checks the state and stops the guard and the measurement timer. Then it
+stores `rc` in `bus_rc`, moves to `S_DONE` and posts the task. In any other state it does nothing.
 
 The first call that finds a bus state ends the measurement. A later completion or guard finds
 `S_DONE` or a later state and changes nothing, so one measurement cannot end twice.
@@ -434,7 +434,7 @@ static void on_step(void *ctx)
    high before the pins become outputs, so the takeover never drives SCL low.
 4. Move to `S_RECOVER`, call `ws_i2c_recover_begin` and start the step timer.
 
-`HAL_I2C_DeInit` fails only for a NULL handle. The pins are taken over in either case.
+`HAL_I2C_DeInit` fails only for a NULL handle. The driver takes the pins over in either case.
 
 ```c {#recover-begin}
 static void recover_begin(void)
@@ -456,7 +456,7 @@ static void recover_begin(void)
 
 ## 7. Sensor task
 
-The sequencer runs the task in the main loop. The task is posted only in `S_DONE` and
+The sequencer runs the task in the main loop. The driver posts the task only in `S_DONE` and
 `S_RECOVERED`.
 
 | State | Condition | Action |
@@ -523,8 +523,8 @@ void sensor_init(void)
 
 ## 9. The file
 
-The generated file orders the chunks for C: constants and the handle, the HAL setup callbacks,
-the state, the measurement callbacks, the recovery, the task, then the public functions.
+The generated file orders the chunks for C. The order is: constants and the handle, the HAL setup
+callbacks, the state, the measurement callbacks, the recovery, the task, then the public functions.
 
 ```c {#sensor.c}
 #define WS_CHECK_FILE 6
@@ -576,11 +576,12 @@ the state, the measurement callbacks, the recovery, the task, then the public fu
 ## 10. Tests
 
 `tests/test_sensor_machine.py` compiles this file unchanged with `firmware/host/sensor_harness.c`
-and `firmware/host/sim_core.c`. The harness models ST's timer rounding (1/1024 s ticks, at least
-3 ticks), the sequencer, the I2C completions at priority 2 after the RTC alarm, and one SHT45 that
-answers, NACKs, hangs or sends a bad CRC, a HAL that refuses the write, and SDA held low for a chosen number of SCL
-rising edges. After each test it also checks that no read started earlier than 9 ms after the
-write, that the driver read no pin other than SDA, and that no `WS_CHECK` failed.
+and `firmware/host/sim_core.c`. The harness models ST's timer rounding (1/1024 s ticks, at least 3
+ticks) and the sequencer. It delivers the I2C completions at priority 2, after the RTC alarm. It
+models one SHT45 that answers, NACKs, hangs or sends a bad CRC. It can also make the HAL refuse the
+write and hold SDA low for a chosen number of SCL rising edges. After each test it also checks three
+things. No read started earlier than 9 ms after the write, the driver read no pin other than SDA,
+and no `WS_CHECK` failed.
 
 | Test | What it checks |
 |---|---|
@@ -592,8 +593,8 @@ write, that the driver read no pin other than SDA, and that no `WS_CHECK` failed
 | `test_a_completion_at_the_guard_instant_counts_once` | a read that completes, or fails, in the instant its guard expires: one `sensor_done`, -6 |
 
 `firmware/test_policy.c` (run by `tests/test_stage0.py`) tests the recovery waveform through
-`ws_i2c_recover`: SDA free or held for 1 to 9 clocks ends with 0 and exactly one STOP, SDA held
-for 12 clocks ends with -1, and no sequence makes an accidental START.
+`ws_i2c_recover`. SDA free or held for 1 to 9 clocks ends with 0 and exactly one STOP. SDA held for
+12 clocks ends with -1. No sequence makes an accidental START.
 
 ```sh
 .venv/bin/python -m unittest tests.test_sensor_machine tests.test_stage0 tests.test_tangle

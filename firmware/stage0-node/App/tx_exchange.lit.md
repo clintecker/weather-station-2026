@@ -1,13 +1,13 @@
 # tx_exchange: the minute's radio exchange
 
 `tx_exchange.c` runs the TX node's radio exchange for one minute. It sends the live observation,
-then older pending observations as the policy allows, each sealed with a freshly reserved counter
-and followed by its own ACK window. Then it sends the health report if one is due. One explicit
-state machine does this, driven by radio and timer events. This file also holds the AES key and
-is the only module that seals and opens frames.
+then older pending observations as the policy allows. It seals each one with a freshly reserved
+counter and follows it with its own ACK window. Then it sends the health report if one is due. One
+explicit state machine does this, driven by radio and timer events. This file also holds the AES key
+and is the only module that seals and opens frames.
 
-This document is the source. `tools/tangle.py` generates `tx_exchange.c` from the code chunks
-below. The generated file is committed, so the build, the static analysers and the host tests
+This document is the source. `tools/tangle.py` generates `tx_exchange.c` from the code chunks below.
+The repository also holds the generated file, so the build, the static analysers and the host tests
 read ordinary C. Edit this file, then regenerate and check:
 
 ```sh
@@ -363,8 +363,8 @@ static void handle(uint32_t ev)
 | 6 | compute the exchange time limit |
 | 7 | if the queue is not empty: record the start time and enter `gap` before the first frame. Else stay `idle` |
 
-The exchange time limit assumes that every frame and the health report use their full transmit
-timeout and their full ACK window, plus a gap each:
+The exchange time limit assumes the worst case for every frame and the health report. Each uses its
+full transmit timeout, its full ACK window and a gap:
 
 ```text
 exchange_limit_s = (qn + 1) * (WS_TX_TIMEOUT_MS + ACK_WINDOW_MS + INTER_FRAME_MS) / 1000 + EXCHANGE_MARGIN_S
@@ -377,8 +377,8 @@ qn = 21: 116 s
 passed since `exchange_start_s`. `watchdog_healthy` (`app_tx.c`) then calls `exchange_abort`
 (section 9) and lets the watchdog reset the board.
 
-The first frame also waits for the gap. The previous exchange may have put the radio to sleep in
-the same main-loop pass, and the chip needs time to enter sleep before it is woken.
+The first frame also waits for the gap. The previous exchange may have put the radio to sleep in the
+same main-loop pass. The chip needs time to enter sleep before the firmware wakes it.
 
 ```c {#exchange-start}
 void exchange_start(const jref_t *live, unsigned backlog)
@@ -441,7 +441,7 @@ static int in_gap(uint32_t ev)
 | `send_obs` returns -1 (counter refused) | `#error counter-reserve` | the policy sees the replies so far, then `idle` at once (no health report: it needs a counter too) |
 
 A local failure does not count as a missed reply and does not change the drain. The `WS_CHECK` on
-`qi < qn` guards an index: `gap_before(GAP_FRAME)` is only called while an item is left.
+`qi < qn` guards an index: the code calls `gap_before(GAP_FRAME)` only while an item is left.
 
 ```c {#send-current}
 /* Send queue[qi]. A local failure (journal read, seal, radio busy) moves on to the next item after
@@ -553,9 +553,9 @@ static int in_ack_wait(uint32_t ev)
 }
 ```
 
-`window_closed` stops `ack_timer`. If the timer already fired, its `EV_ACK_END` is removed from the
-current `batch` and from `pending_ev`. That event is a race the reply already settled, so it must
-not count as `unexpected`.
+`window_closed` stops `ack_timer`. If the timer already fired, the code removes its `EV_ACK_END`
+from the current `batch` and from `pending_ev`. That event is a race the reply already settled, so
+it must not count as `unexpected`.
 
 ```c {#window-closed}
 /* The reply ended the window: stop its timer, and drop an ack-end it already posted, in this pass
@@ -643,11 +643,11 @@ static int on_ack(const reply_t *r, int mine)
 }
 ```
 
-`on_nack` accepts a NACK only for the frame just sent. Another NACK increments `ack_rejects`,
-prints `#nack ignored: not for the frame just sent` and keeps the window open. An accepted NACK
-marks the frame replied. If the record is found and its journal ACK succeeds, the abandoned total
-goes up by one. A total that fails to persist is ignored, because the record is acknowledged either way.
-The red LED flashes for `LED_FLASH_LONG_MS` (1000 ms).
+`on_nack` accepts a NACK only for the frame just sent. Another NACK increments `ack_rejects`, prints
+`#nack ignored: not for the frame just sent` and keeps the window open. An accepted NACK marks the
+frame replied. If the search finds the record and its journal ACK succeeds, the abandoned total goes
+up by one. The code ignores a total that fails to persist, because the journal acknowledges the
+record either way. The red LED flashes for `LED_FLASH_LONG_MS` (1000 ms).
 
 ```c {#on-nack}
 /* Authentic permanent rejection. Accepted only for the frame just sent. */
@@ -757,8 +757,8 @@ static uint16_t clamp16(uint32_t v) { return v > UINT16_MAX ? UINT16_MAX : (uint
 static int8_t clamp8(int v) { return (int8_t)(v < -INT8_MAX ? -INT8_MAX : v > INT8_MAX ? INT8_MAX : v); }  /* INT8_MIN means "none" */
 ```
 
-`send_diag` fills a `ws_diag_t` from the node state, the journal and meta totals, `tx_counts`,
-the reset cause, the link state, the fault count, the energy state and the last ACK signal.
+`send_diag` fills a `ws_diag_t` from the node state, the journal and meta totals and `tx_counts`. It
+adds the reset cause, the link state, the fault count, the energy state and the last ACK signal.
 
 | Step | Failure |
 |---|---|
@@ -881,8 +881,8 @@ void exchange_init(void)
 
 ## 11. The file
 
-The generated file orders the chunks for C: the summary, the includes, constants, state, the event
-callbacks, then the functions, each after the functions it calls.
+The generated file orders the chunks for C. The order is: the summary, the includes, constants,
+state, the event callbacks, then the functions, each after the functions it calls.
 
 ```c {#tx_exchange.c}
 <<abstract>>
@@ -979,11 +979,11 @@ callbacks, then the functions, each after the functions it calls.
 
 `tests/test_tx_machine.py` builds the real `app_tx.c`, `tx_exchange.c` and the other TX modules
 against `firmware/host/tx_harness.c`. The harness simulates the clock, ST's timers and sequencer, a
-radio that follows ST's driver, the SHT45 and the flash under the real `node_store.c`. The library
-is built with UBSan. `TxUnderAddressSanitizer` reruns the suite under ASan where the runtime can be
-preloaded. Every test also checks at its end that no flash operation ran while the radio was busy,
-no running timer was started again, no radio command ran without the radio interrupt masked, and
-no `WS_CHECK` failed.
+radio that follows ST's driver, the SHT45 and the flash under the real `node_store.c`. The test
+build adds UBSan to the library. `TxUnderAddressSanitizer` reruns the suite under ASan where the
+platform allows preloading its runtime. At its end, every test also checks four things. No flash
+operation ran while the radio was busy, and the firmware started no running timer again. No radio
+command ran without the radio interrupt masked, and no `WS_CHECK` failed.
 
 | Area | Tests |
 |---|---|
