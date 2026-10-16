@@ -26,7 +26,7 @@ Mac, as it is today, also over SSH.
 | Off-the-shelf? | LoRaWAN FUOTA does not fit a single point-to-point link, and ST removed its FUOTA examples from STM32CubeWL in v1.5.0. MCUboot fits, but has no STM32WL bare-metal port. **Recommendation: a minimal custom bootloader and a pull-based chunk transfer inside our own protocol** (§6) |
 | Is it in scope? | **Not today.** The PRD says *"Wired programming and recovery … No over-radio firmware updates in the required implementation."* Building it needs Clint to expand the scope (decision U1, §9) |
 
-Main prerequisites: the H01 gate, flash layout v2 (gap G18) and the SPI NOR flash (H11). Over-the-air
+Main prerequisites: the H01 gate, flash layout v2 (`docs/firmware-budget.md`) and the SPI NOR flash (H11). Over-the-air
 updates come after those, not before.
 
 ## 1. Terms used here
@@ -53,7 +53,7 @@ updates come after those, not before.
 | MCU | STM32WL55JC: Cortex-M4 at 48 MHz plus an unused Cortex-M0+; 256 KB flash in 128 pages of 2 KB; 64 KB RAM | `App/flash_layout.h`, `firmware-budget.md` |
 | TX image | **53,752 B** (release `bc5e6ede429c`), 82.0 % of its 64 KB region; 54,384 B with the pending 15-s sampling | `RELEASES.md`, `firmware-budget.md` |
 | RX image | 31,696 B | `RELEASES.md` |
-| Final TX image budget | Stage 1–3 features add an estimated 18–33 KB. Layout v2 grows the application region to 128 KB or more; target ≤ 75 % used | `firmware-budget.md` (G18) |
+| Final TX image budget | Stage 1–3 features add an estimated 18–33 KB. Layout v2 grows the application region to 128 KB or more; target ≤ 75 % used | `firmware-budget.md` |
 | Flash map now | Pages 0–31 code, 32 key, 33–34 counter/epoch log, 35–127 journal. "A firmware update programs only pages 0–31" | `protocol-stack.md` §5.1 |
 | Radio | 915.0 MHz, LoRa, **500 kHz**, SF7, CR 4/5, 8-symbol preamble, explicit header, CRC on, 0 dBm (bench). "Never bandwidth below 500 kHz" | `App/radio_cfg.h` |
 | Largest LoRa packet | 255 B (radio limit) | SubGHz_Phy |
@@ -62,7 +62,7 @@ updates come after those, not before.
 | Per-minute air-time cap | 15 / 5 / 2 / 0 s for SURPLUS / NORMAL / CONSERVE / CRITICAL | `firmware/common/ws_policy.c` `airtime_cap_ms` |
 | RX bridge | Holds no key. Forwards node frames as hex lines; transmits one 33-byte ACK/NACK line from the host. Lines ≤ 256 B. Drops input while it holds a complete line | `App/app_rx.c`, `protocol.md` §8 |
 | Watchdog | Independent watchdog (IWDG), about 8 s, started by the firmware | `App/watchdog.c` |
-| Read protection | RDP level 0: the key is readable with a debugger (gap G10) | `failure-modes.md` |
+| Read protection | RDP level 0: the key is readable with a debugger | `failure-modes.md` |
 | External flash planned | Winbond **W25Q128JVSIM** (16 MB, −40 °C), Adafruit 5643 breakout for the bench; for the 30-day buffer (H11) | `next-stages-plan.md` §4, `poc-shopping-list.md` |
 | Scope | PRD: *"Firmware delivery: Wired programming and recovery … No over-radio firmware updates in the required implementation."* Scope rule: *"Future features receive documented … accommodation where cheap, but not speculative firmware"* | PRD/TRD v0.2 §1 |
 
@@ -221,10 +221,10 @@ directory. Conclusions:
 | Install time | Swap of up to 110 KB | Copy of up to 192 KB: about 4 s (96 page erases at about 23 ms each, measured by WIPE; plus about 2 s of 8-byte programming, an estimate) |
 | Zephyr's default for this board | 48 KB MCUboot + 98 KB + 100 KB slots, all internal [ZEPHYR-DTS] | — |
 
-Internal A/B would squeeze the firmware budget that G18 is about to fix. The NOR chip arrives anyway
+Internal A/B would squeeze the firmware budget that flash layout v2 is about to fix. The NOR chip arrives anyway
 for H11, and 16 MB is far more than needed. **Recommended: staging in NOR plus copy-in.**
 
-Proposed internal flash map (this would become part of layout v2, G18):
+Proposed internal flash map (this would become part of flash layout v2):
 
 | Pages | Size | Contents |
 |---|---|---|
@@ -232,7 +232,7 @@ Proposed internal flash map (this would become part of layout v2, G18):
 | 8–9 | 4 KB | Boot-status log, two pages, append-only like today's counter log: install request, trial state, boots left, rollback floor |
 | 10–105 | 192 KB | Application slot: signed header (manifest + signature) then the image. Vector table at `0x08005000` (`VECT_TAB_OFFSET`) |
 | 106–119 | 28 KB | Reserved |
-| 120–127 | 16 KB | Node state at the top of flash, as G18 already plans: key page, counter/epoch log A/B, spare. **The bootloader never writes here** |
+| 120–127 | 16 KB | Node state at the top of flash, as flash layout v2 already plans: key page, counter/epoch log A/B, spare. **The bootloader never writes here** |
 
 Proposed NOR map (16 MB):
 
@@ -312,7 +312,7 @@ target fields at the start and stops at once if they do not match its own.
    image into the free NOR slot.
 4. **Check:** SHA-256 of the staged image = the manifest hash. Optionally also the signature (the
    bootloader checks it in any case).
-5. **Install:** only on a healthy supply (G14: brown-out level set, measured voltage above a
+5. **Install:** only on a healthy supply (brown-out reset level set, measured voltage above a
    threshold). Append "install slot X" to the boot-status log, report in DIAG, reset.
 6. **Trial:** see §5.3.
 
@@ -373,7 +373,7 @@ never gets an ACK, so it reverts by itself.
 
 **Node state is outside the update.** The trial image uses the same key, counter log and epoch pages.
 Counter reservations made during a failed trial stay in the log, so the reverted image continues
-above them, and no nonce repeats (G17). This works only if **an over-the-air release never changes
+above them, and no nonce repeats. This works only if **an over-the-air release never changes
 the protocol draft or the node-state layout**. The manifest carries both versions, and the node
 refuses a mismatch. Such changes stay wired releases of both ends with a new key, as today. That
 fits the greenfield rule: no migration code, ever.
@@ -392,8 +392,8 @@ for the PoC: OTP bits can never be cleared.
 |---|---|
 | Cortex-M0+ (CPU2) | Keep it off, as now. ST's secure designs (SBSFU, KMS) run the secure boot, key store and radio stack on CPU2 with "secure mode" (option bytes ESE/SFSA, `OPTIONBYTE_SECURE_MODE`, with optional secure sub-GHz SPI access). That is a complete re-architecture of the radio side. Not worth it here |
 | WRP (write protection) | Area A over the bootloader pages 0–7. The application cannot then overwrite the bootloader by mistake |
-| RDP (read protection) | Level 1 before field use (already gap G10). A debugger cannot then read flash, but can still mass-erase and reflash, so wired recovery keeps working. Going back to level 0 erases everything, **including the key and counters**, so re-key afterwards (G17). **Never level 2**: it is permanent and ends wired recovery, against the PRD |
-| BOR (brown-out reset) level | Set it before any field install (gap G14) |
+| RDP (read protection) | Level 1 before field use (already an open item in `failure-modes.md`). A debugger cannot then read flash, but can still mass-erase and reflash, so wired recovery keeps working. Going back to level 0 erases everything, **including the key and counters**, so re-key afterwards: a fresh counter under the old key would repeat nonces. **Never level 2**: it is permanent and ends wired recovery, against the PRD |
+| BOR (brown-out reset) level | Set it before any field install |
 | IWDG option bits | `IWDG_STOP`/`IWDG_STDBY` decide whether the watchdog counts in low-power modes. Choose them when Stage-1 sleep arrives, so the trial timer counts the right time |
 | `BOOT_LOCK`, `nBOOT0`, `nSWBOOT0` | Leave as now. Read RM0453 before setting `BOOT_LOCK`: it changes how the chip boots and may block recovery paths |
 
@@ -421,7 +421,7 @@ grows past about 16 KB. Do not use LoRaWAN FUOTA.
 
 ## 7. Staged plan
 
-Precondition for all stages: H01 passed, flash layout v2 (G18) and the NOR journal (H11) built.
+Precondition for all stages: H01 passed, flash layout v2 and the NOR journal (H11) built.
 **Accommodation now, at no code cost:** when layout v2 is designed, reserve pages 0–9 for a future
 bootloader and boot-status log, and put the application vector table at `0x08005000`. This matches
 the PRD rule "documented accommodation where cheap". Without it, adding updates later means one more
@@ -456,9 +456,9 @@ today's 64 KB region (11.5 KB left).
 | Risk | Effect | Mitigation |
 |---|---|---|
 | Bootloader bug | A brick that needs a ladder and a laptop | Wired-only bootloader updates, small code, host power-cut tests, WRP, U1 bench matrix |
-| An OTA release changes the protocol or the node-state layout | Lost link, or nonce reuse (G17) | Manifest carries both versions and the node refuses a mismatch; such releases stay wired with a new key; an unconfirmed image reverts by itself |
-| Install on a weak battery | Torn flash, brown-out loop (E11) | BOR level (G14), voltage gate before install, energy state ≥ NORMAL |
-| Scope creep against the PRD | Work before the gates are passed | Only the free layout accommodation before H01/G18/H11; U1 onward only with an explicit PRD change |
+| An OTA release changes the protocol or the node-state layout | Lost link, or nonce reuse | Manifest carries both versions and the node refuses a mismatch; such releases stay wired with a new key; an unconfirmed image reverts by itself |
+| Install on a weak battery | Torn flash, brown-out loop | BOR level, voltage gate before install, energy state ≥ NORMAL |
+| Scope creep against the PRD | Work before the gates are passed | Only the free layout accommodation before H01, flash layout v2 and H11; U1 onward only with an explicit PRD change |
 | Signing-key loss | No more updates until a wired bootloader reflash with a new key | Encrypted offline backup |
 | Signing-key theft | Code can be signed. Delivery still needs the link key or physical access | Keep it off the gateway; RDP 1 in the field |
 | More air time on a not-yet-measured transmitter (6 dB bandwidth, antenna gain unknown) | Compliance doubt | Same open item as today; measure before the field. Trickle mode keeps the per-minute cap |
@@ -469,7 +469,7 @@ today's 64 KB region (11.5 KB left).
 
 | # | Decision | Options (recommendation first) |
 |---|---|---|
-| U1 | Scope | (a) Reserve the layout now, build U1–U5 after H01/G18/H11, with a PRD amendment; (b) keep wired-only (PRD as written); (c) a cheaper middle way: a sealed external SWD/USB service port on the enclosure |
+| U1 | Scope | (a) Reserve the layout now, build U1–U5 after H01, flash layout v2 and H11, with a PRD amendment; (b) keep wired-only (PRD as written); (c) a cheaper middle way: a sealed external SWD/USB service port on the enclosure |
 | U2 | Bootloader | (a) Minimal custom; (b) MCUboot port |
 | U3 | Signature | (a) ECDSA P-256 with the PKA; (b) Ed25519 in software |
 | U4 | Signing-key custody | Where the private key lives and how it is backed up (file on the Mac with a passphrase; a hardware token). Never in the ws0 state directory |
@@ -477,7 +477,7 @@ today's 64 KB region (11.5 KB left).
 | U6 | Scheduling | (a) Trickle inside the existing per-minute cap, NORMAL and SURPLUS only; (b) also allow session mode outside the cap; (c) allow full images only in SURPLUS when SF ≥ 10 |
 | U7 | Delta updates | (a) Later stage (U4) after full images work; (b) in the first OTA release |
 | U8 | Rollback | (a) Floor rises at confirm; downgrade only by re-signing with a higher counter; (b) no rollback protection in the PoC |
-| U9 | Read protection | RDP 1 before field use (already G10): confirm, and accept that going back to RDP 0 erases the key |
+| U9 | Read protection | RDP 1 before field use (already an open item): confirm, and accept that going back to RDP 0 erases the key |
 
 ## Sources
 
@@ -511,6 +511,6 @@ today's 64 KB region (11.5 KB left).
 - [W25Q] Winbond W25Q128JV datasheet — <https://cdn.sparkfun.com/assets/7/2/4/9/e/w25q128jv.pdf>
   (timing values to re-check against the current revision)
 - Repository: `docs/protocol.md`, `docs/protocol-stack.md` §5.1, §8, `docs/firmware-budget.md`,
-  `docs/radio-energy-policy.md`, `docs/failure-modes.md` (G10, G14, G17, G18),
+  `docs/radio-energy-policy.md`, `docs/failure-modes.md` (open issues),
   `docs/next-stages-plan.md`, `docs/poc-shopping-list.md`, `firmware/stage0-node/RELEASES.md`,
   `App/radio_cfg.h`, `App/flash_layout.h`, `App/app_rx.c`, `App/app_tx.c`, `App/watchdog.c`, PRD/TRD v0.2.

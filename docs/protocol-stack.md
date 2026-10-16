@@ -4,7 +4,7 @@
 > **Applies to:** protocol draft 5, firmware `firmware/stage0-node`, gateway `ws0/`. Text synchronized with commit `bc5e6ed` (draft 5: 8-byte header and tag, field catalog, 32-byte DIAG, replay vs key reuse). Both boards run draft-5 release `bc5e6ede429c` since 2026-10-14 (`firmware/stage0-node/RELEASES.md`).
 > **Status:** Bench data path operates. The SHT45 is wired and gives valid readings (2026-10-14). **H01 is NOT RUN.**
 > **Short reference:** [`protocol.md`](protocol.md) is the normative wire specification (byte tables and rules). This document tells how each layer operates and why.
-> **Failures and recovery:** [`failure-modes.md`](failure-modes.md) defines every non-happy-path behavior, the loss budget, and the known gaps, for the battery/solar deployment.
+> **Failures and recovery:** [`failure-modes.md`](failure-modes.md) defines every non-happy-path behavior, the loss budget, and the open issues, for the battery/solar deployment.
 
 ---
 
@@ -309,7 +309,7 @@ AES-CCM uses counter mode for encryption. If two frames use the same key and non
 
 > **Warning:** Do not restore an old copy of the TX flash state or the gateway nonce database while you keep the same key. If counter state is lost, provision a **new key** for both ends.
 
-> **Warning:** before release `0f456040fe54`, `WIPE ERASE-ALL-NODE-STATE` reset the node's 64-bit counter to 1; from `0f456040fe54` on it keeps the counter (gap G17). The `PROVISION` epoch floor raises only the epoch (the observation identity), **not** the counter. A key used before `0f456040fe54`, or on another board, can therefore repeat nonces already sent on air. Prefer a new key. See [`runbook-moving-boards.md`](runbook-moving-boards.md).
+> **Warning:** before release `0f456040fe54`, `WIPE ERASE-ALL-NODE-STATE` reset the node's 64-bit counter to 1; from `0f456040fe54` on it keeps the counter. The `PROVISION` epoch floor raises only the epoch (the observation identity), **not** the counter. A key used before `0f456040fe54`, or on another board, can therefore repeat nonces already sent on air. Prefer a new key. See [`runbook-moving-boards.md`](runbook-moving-boards.md).
 
 ---
 
@@ -402,7 +402,7 @@ Node → gateway, fire-and-forget: no journal entry, no receive window, no reply
 | 30 | 1 | Crashes since power-up (`App/fault.c`, RTC backup register DR11), stops at 255 |
 | 31 | 1 | Energy state (section 4.1) |
 
-The 16-bit fields stop at `0xFFFF`. The RSSI and SNR show the downlink (gateway → node). The `#rx obs` line of the RX board shows the uplink. The two can be different (gap G15). The node sends a report every 15 minutes and after each link-state change, after that minute's exchange, also while probing (changed 2026-10-13; before that it was sent only while LINKED, so the link field always read 0).
+The 16-bit fields stop at `0xFFFF`. The RSSI and SNR show the downlink (gateway → node). The `#rx obs` line of the RX board shows the uplink. The two can be different, so check both directions at the real placement (`docs/H01-checklist.md`). The node sends a report every 15 minutes and after each link-state change, after that minute's exchange, also while probing (changed 2026-10-13; before that it was sent only while LINKED, so the link field always read 0).
 
 ### 7.4 Implementations
 
@@ -580,7 +580,7 @@ Source: [`radio-energy-policy.md`](radio-energy-policy.md), `App/tx_policy.c` an
 A record leaves the journal without an ACK in three cases. Each case is counted, and the counts go into the health report (section 7.3.2).
 
 1. **NACK.** The gateway authenticated the frame but must reject it permanently (identity collision or invalid record). The node accepts a NACK only if its echo, epoch and sequence match the frame just sent. It marks the slot done and adds 1 to the persisted `abandoned` total.
-2. **Strike limit.** A record that gets no reply while a frame sent **after** it in the same exchange is answered earns a strike; at 10 it is abandoned and counted (`STRIKE_LIMIT` 10, 6 tracking slots). An answer to an earlier frame proves nothing (on a weak link the next frame can simply be lost), so it never strikes, and a link or gateway outage never abandons data. A refused record that is the only backlog is the minute's last frame: no later frame can show it is refused, so it is retried each minute (one frame) and never abandoned by luck (Clint, 2026-10-15, review M2 option A).
+2. **Strike limit.** A record that gets no reply while a frame sent **after** it in the same exchange is answered earns a strike; at 10 it is abandoned and counted (`STRIKE_LIMIT` 10, 6 tracking slots). An answer to an earlier frame proves nothing (on a weak link the next frame can simply be lost), so it never strikes, and a link or gateway outage never abandons data. A refused record that is the only backlog is the minute's last frame: no later frame can show it is refused, so it is retried each minute (one frame) and never abandoned by luck.
 3. **Ring overflow.** The oldest page is erased and its pending records are counted as `lost` (section 5.5).
 
 ### 9.6 Failure cases
@@ -641,7 +641,7 @@ The TX board also has a console. It is for provisioning and diagnostics. All lin
 | `STATUS` | Shows provisioning, KCV, self-test, epoch, sequence, time quality, and journal counters |
 | `KAT` | Runs the boot self-test again: draft-5 observation encoding and sealing, ACK, tampered ACK, NACK, and the refusal of counter 2^40 |
 | `PROVISION <id> <32 hex> [epoch_floor]` | Writes the station ID (1 to 65,535) and the key. Only on an empty board. The optional epoch floor raises the next epoch above every epoch that the gateway stored, so a wiped board never repeats an **observation identity**. It does not change the transmission counter. |
-| `WIPE ERASE-ALL-NODE-STATE` | Erases the key and the journal. Keeps the counter, the epoch, and the `lost`/`abandoned` totals (gap G17). **You must then provision a new key** (section 6.2, [`runbook-moving-boards.md`](runbook-moving-boards.md)). |
+| `WIPE ERASE-ALL-NODE-STATE` | Erases the key and the journal. Keeps the counter, the epoch, and the `lost`/`abandoned` totals. **You must then provision a new key** (section 6.2, [`runbook-moving-boards.md`](runbook-moving-boards.md)). |
 | `TEST-HANG` | Bench only. Stops the main loop. The watchdog must reset the board in approximately 8 s. |
 | `TEST-FLASH-STORM` | Bench only. Writes flash continuously for power-cut tests. Its slots use epoch `0xFFFFFFFF`. The next boot removes any of them that a cut left pending. |
 
@@ -727,7 +727,7 @@ A system reset (RESET button, NRST, software reset, future watchdog) does not st
 - the sync is less than 6 hours old,
 - the clock shows a plausible date.
 
-If a power loss clears the backup domain, the marker is gone and the board starts with `time unknown`. **Open:** whether a real power loss clears the backup domain on this board (VBAT supply) is not checked; to be checked against the board schematic and by a true power-removal test (G7 part B). A simulated loss (debugger pulsed `RCC_BDCR.BDRST`) gave no restore and `time=unknown` ([`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), draft 4). **Bench result (2026-10-12):** after a warm reset the board printed `#time restored … sync_age=11`. Its first reading in the new epoch was synchronized; board−host difference −1.0 s (same log).
+If a power loss clears the backup domain, the marker is gone and the board starts with `time unknown`. **Open:** whether a real power loss clears the backup domain on this board (VBAT supply) is not checked; to be checked against the board schematic and by a true power-removal test (deferred). A simulated loss (debugger pulsed `RCC_BDCR.BDRST`) gave no restore and `time=unknown` ([`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), draft 4). **Bench result (2026-10-12):** after a warm reset the board printed `#time restored … sync_age=11`. Its first reading in the new epoch was synchronized; board−host difference −1.0 s (same log).
 
 #### 11.3.2 Reconstructed time (option C, draft 4)
 

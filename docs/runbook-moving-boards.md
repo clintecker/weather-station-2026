@@ -8,13 +8,13 @@ Use this when the TX/RX boards move between machines (for example office ↔ hom
 A TX key may only be used with counters that only go up. The AES-CCM nonce is
 kind + station ID + the transmission counter (40-bit since draft 5; `header()` in
 `firmware/common/ws_frame.c`, `docs/protocol.md` section 2). `PROVISION … [epoch_floor]` raises only the **epoch** (`App/node_store.c`,
-`store_epoch_floor`), which keeps observation identities unique (gap G5). It does not raise the
+`store_epoch_floor`), which keeps observation identities unique. It does not raise the
 counter.
 
 What `WIPE ERASE-ALL-NODE-STATE` erases depends on the firmware (`App/node_store.c`, `store_wipe`):
 
 - **Before release `0f456040fe54`:** the key, the counters and the journal. The counter restarted at 1.
-- **From `0f456040fe54` on (gap G17):** the key and the journal only. The counter and the epoch keep
+- **From `0f456040fe54` on:** the key and the journal only. The counter and the epoch keep
   rising for the life of the board.
 
 | After a WIPE, provision with… | Safe? |

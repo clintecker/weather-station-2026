@@ -15,7 +15,8 @@ Source of acceptance criteria: v0.2 section 3 Stage 0 and section 12 H01.
 ## Setup before the run
 
 - `/v1/status` shows `"alarm": null` before the run starts and after it ends (a non-null alarm means
-  possible key reuse; see `failure-modes.md` C7–C9). `ws0 provision-node` prints the gateway's
+  possible key reuse: a restored flash backup, two boards sharing a key, or a key reused after a WIPE;
+  see `failure-modes.md`, configuration and provisioning errors). `ws0 provision-node` prints the gateway's
   counter high-water mark and refuses a board at or below it.
 
 - **SHT45 wired and verified first:** a CRC-checked valid reading on the TX console, plus the
@@ -23,17 +24,18 @@ Source of acceptance criteria: v0.2 section 3 Stage 0 and section 12 H01.
   `sensor_fault` and the verdict is FAIL by design (see `evidence/soak-a07f498-2026-10-13/`).
 - **Secure the USB cables and run no debugger sessions during the run.** A USB dropout of about
   1 s makes the ST-LINK reset its board (`reset=pin`); a debugger session can also reset TX
-  (`docs/hardware/nucleo-wl55jc-bringup.md`, "Office session"; failure mode E12 in
+  (`docs/hardware/nucleo-wl55jc-bringup.md`, "Office session"; USB-dropout failure mode in
   `failure-modes.md`).
-- If TX was wiped, it must have been provisioned with a **new** key (`docs/runbook-moving-boards.md`;
-  gap G17 in `failure-modes.md`): a WIPE restarts the nonce counter.
+- If TX was wiped, it must have been provisioned with a **new** key (`docs/runbook-moving-boards.md`):
+  on firmware before release `0f456040fe54` a WIPE restarts the nonce counter, and a key used
+  before that release or on another board can repeat nonces.
 - Do not run bench fault-injection commands (`TEST-HANG`, `TEST-FLASH-STORM`) on the boards under
   test during the placement run.
 - Run firmware from release `0f456040fe54` or later: in NORMAL energy (always on USB) the node keeps
   sending the live reading every minute while probing, so an outage costs no extra late
   intervals (`failure-modes.md` §3.3). Earlier releases backed off up to 15 min.
 
-## Link check before the run (gap G15)
+## Link check before the run
 
 At the intended placements, record RSSI and SNR in **both** directions for at least 30
 exchanges: uplink from `receiver.log` (`#rx obs`), downlink from the TX console (`#ack … rssi`).

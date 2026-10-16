@@ -171,7 +171,7 @@ class Gateway:
 
     def counter_alarm(self):
         """Key-reuse alarm. It persists across restarts; the cure is a new key, i.e. a new
-        state directory (the re-key procedure), which starts with a fresh mark."""
+        state directory (re-key procedure, docs/failure-modes.md §9.5), which starts with a fresh mark."""
         state = self.node_counter
         return {'alarm':KEY_REUSE_ALARM if state['counter_regression'] else None,
                 'counter_regression':state['counter_regression'],

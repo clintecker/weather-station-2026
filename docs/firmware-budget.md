@@ -165,7 +165,8 @@ final design is sized:
   and whenever a release grows by more than 2 KB.
 - **Layout v2 before the region is outgrown:** key and counter pages move to the top of flash so they
   never move again, the code/journal boundary becomes one shared constant, and a one-time migration
-  carries the counter and epoch across (gap G18 in `docs/failure-modes.md`).
+  carries the counter and epoch across (`docs/failure-modes.md`, §10 open issues: code space for the
+  final station).
 
 ## The plan that makes it fit
 
@@ -173,7 +174,7 @@ final design is sized:
    internal journal. The application region can then grow to 128 KB or more. **Constraint:** the
    key and the transmission counter live in the node-state pages. A layout change must carry the
    counter and epoch across (or the board gets a new key); otherwise it repeats AES-CCM nonces
-   (gap G17, `docs/runbook-moving-boards.md`).
+   (`docs/runbook-moving-boards.md`).
 2. **LTO as a measured reserve** (−6.6 KB on TX) if a feature must land before layout v2.
 3. **Budget check** in every build (above), and a size line in every `RELEASES.md` entry.
 4. **Module split after H01** (`docs/firmware-review-2026-10-13.md` §4–5): sensors become

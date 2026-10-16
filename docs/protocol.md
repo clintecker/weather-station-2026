@@ -106,7 +106,7 @@ Rules that keep nonces unique:
 - The node reserves a counter block in flash **before** it uses a counter from it. A reset skips the
   rest of the block (for example counter 8 → 257).
 - `WIPE ERASE-ALL-NODE-STATE` erases the key and the journal and **keeps** the counter and epoch
-  (since release `0f456040fe54`, gap G17). The `PROVISION` epoch floor raises only the epoch.
+  (since release `0f456040fe54`). The `PROVISION` epoch floor raises only the epoch.
 - Never restore old node flash or an old gateway nonce database while keeping the key. If counter
   state is lost, use a new key ([`runbook-moving-boards.md`](runbook-moving-boards.md)).
 - **A frame-format change needs a new key and fresh state:** WIPE the TX, `init` a new run
@@ -411,7 +411,7 @@ At SF7 a 42-byte observation takes 21.8 ms on air, a 33-byte ACK 18.0 ms and a 4
   with no backlog: every minute in SURPLUS and NORMAL (so always in Stage 0), and after 120, 240,
   480, then every 900 s in CONSERVE. Any answer returns it to LINKED.
 - A missing ACK leaves the record journaled. Each retry has the same identity and a fresh counter.
-- Strike limit: a record that gets no reply while a frame sent **after** it in the same exchange is answered earns a strike; at 10 it is abandoned and counted (`STRIKE_LIMIT` 10, 6 tracking slots). An answer to an earlier frame proves nothing (on a weak link the next frame can simply be lost), so it never strikes, and a link or gateway outage never abandons data. A refused record that is the only backlog is the minute's last frame: no later frame can show it is refused, so it is retried each minute (one frame) and never abandoned by luck (Clint, 2026-10-15, review M2 option A).
+- Strike limit: a record that gets no reply while a frame sent **after** it in the same exchange is answered earns a strike; at 10 it is abandoned and counted (`STRIKE_LIMIT` 10, 6 tracking slots). An answer to an earlier frame proves nothing (on a weak link the next frame can simply be lost), so it never strikes, and a link or gateway outage never abandons data. A refused record that is the only backlog is the minute's last frame: no later frame can show it is refused, so it is retried each minute (one frame) and never abandoned by luck.
 - The node trusts its clock for 6 hours after the last time sync, then sends UTC 0 (time unknown)
   until the next accepted ACK.
 - The Python simulator (`ws0/simulator.py`) drains 5 records per minute, like NORMAL.

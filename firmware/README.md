@@ -49,7 +49,7 @@ Original plan, in order; status as of 2026-10-13. Done items point to where they
    `python -m ws0 provision-node`. Durable counter and epoch: `stage0-node/App/node_store.c`.
 5. **Done for Stage 0.** Flash journal of 4,743 observations (about 3.3 days), kept until an
    authenticated ACK; boot epoch reserved before sampling (`stage0-node/README.md`, "Flash
-   layout"). Reset-during-write test passed (G7 part A); true power-cut test (G7 part B)
+   layout"). Reset-during-write test passed; true power-cut test
    deferred. **Open:** the 30-day/16 MB H11 target (external SPI NOR).
 6. **Done.** RX bridge prints frames as hex lines and transmits the host's ACK/NACK
    (`stage0-node/App/app_rx.c`; host side `ws0/link.py`, `ws0 serve`). Host UTC rides in the

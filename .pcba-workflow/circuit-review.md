@@ -64,7 +64,7 @@ No critical or major findings.
 ## Approved design decisions and waivers
 
 - Indoor bench only; no ESD protection, unbuffered I2C (build guide).
-- G7 part B (true USB power-cut testing) deferred by Clint.
+- True USB power-cut testing (removing power, not just resetting) deferred by Clint.
 
 ## Verification and unresolved evidence
 

@@ -93,7 +93,7 @@ def print_counter_mark(state):
           f"(counter regressions: {state['counter_regression']})")
     if state['counter_regression']:
         print(f"ALARM: possible key reuse (last offending counter {state['last_regression_counter']}): "
-              're-key the node with a new state directory (re-key procedure in docs/failure-modes.md)')
+              're-key the node with a new state directory (docs/failure-modes.md §9.5)')
 
 
 def check_node_counter(fields, state):

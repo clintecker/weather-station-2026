@@ -28,7 +28,7 @@ the broader unit suite has separate HTTP, C core and mocked MQTT tests.
 | Scenario | Injection | Required result |
 |---|---|---|
 | baseline | None | Complete exact storage; at least 99% within 120s |
-| noisy-link (3 seeds) | 10% uplink/ACK loss; 1% corruption; 15% duplicates; 0–20s delay | Exact eventual recovery; measure latency without assuming success. Since 2026-10-13 the gateway does not answer a duplicated or reordered copy (counter at or below its high-water mark, P4); the harness counts these as expected `counter_regressions`. A real LoRa link cannot reorder frames, so this lowers simulated timeliness only (about 1–2 points vs `simulation-results/`) |
+| noisy-link (3 seeds) | 10% uplink/ACK loss; 1% corruption; 15% duplicates; 0–20s delay | Exact eventual recovery; measure latency without assuming success. Since 2026-10-13 the gateway does not answer a duplicated or reordered copy (counter at or below its high-water mark); the harness counts these as expected `counter_regressions`. A real LoRa link cannot reorder frames, so this lowers simulated timeliness only (about 1–2 points vs `simulation-results/`) |
 | radio-outage | Link unavailable during minutes 20–40 | Unavailable state, complete recovery; full latency denominator retained; the 99% target is expected to fail (runs of 1 day or less) |
 | host-outage | Host unavailable minutes 20–30, restart at 30 | Recovery from node journal |
 | reboots | Node, gateway and simultaneous restarts with delayed packets | Exact recovery, nonce continuity, at least 99% within 120s |
@@ -58,7 +58,7 @@ sample plus up to 2 backlog records every minute, even while the link is down. T
 board firmware drains up to 5 backlog records per minute in the normal energy state,
 capped by airtime (`backlog_limit`, `firmware/common/ws_policy.c`). After 3
 silent minutes it enters PROBING: live-only probes with a 2, 4, 8, then 15-minute
-back-off, and journal-only minutes in between (failure-modes.md G13). The harness
+back-off, and journal-only minutes in between (`radio-energy-policy.md` §6). The harness
 does not model PROBING, so its outage latencies and drain times are not
 firmware-accurate.
 

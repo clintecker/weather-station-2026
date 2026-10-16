@@ -110,7 +110,7 @@ the watchdog resets the board. Failure lines are limited to 20 a minute; beyond 
 
 ST's HAL lets one SUBGHZ command hold the driver at a time. A radio interrupt that arrives while a
 main-loop command holds it has its own commands refused (HAL_BUSY), cannot clear the radio's IRQ and
-re-enters at once, starving the main loop (2026-10-15 review M1). So every radio command from the
+re-enters at once, starving the main loop. So every radio command from the
 main loop (`ws_radio_send`, `ws_radio_rx`, `ws_radio_standby`, `ws_radio_sleep`,
 `ws_radio_rx_full_length`, in `App/radio_cfg.*`) runs with the radio interrupt masked in the NVIC; the
 interrupt waits and runs right after. The host harnesses count any radio command made unmasked, and

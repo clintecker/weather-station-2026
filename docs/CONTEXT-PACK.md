@@ -20,8 +20,8 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
 - **Bench-verified:**
   - journal (2.7 days of outage buffer in internal flash: 3,906 records of 48 bytes for draft 5; it was 3.3 days in draft 4)
   - durable counters, watchdog
-  - reset-during-write test (G7 part A, 70 cycles)
-  - outage recovery (G13), NACK, gateway auto-reconnect
+  - reset-during-write test (70 cycles)
+  - outage recovery with link back-off, NACK, gateway auto-reconnect
   - host clock check, RX liveness
   - MQTT against a local broker (currently **disabled**)
   - H01 scorer `tools/h01_report.py`
@@ -38,7 +38,7 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
 - The home gateway's launchd agent is still running and waiting for the boards. When they come home, it will reconnect on its own, as long as TX still has the home key.
 
 **For the office, use a fresh key (recommended):**
-1. On the TX console, send `WIPE ERASE-ALL-NODE-STATE`. This erases the key and the journal; from release `0f456040fe54` it keeps the counter and epoch (gap G17).
+1. On the TX console, send `WIPE ERASE-ALL-NODE-STATE`. This erases the key and the journal; from release `0f456040fe54` it keeps the counter and epoch.
 2. `init` a new run directory, then `provision-node`.
 
 A new key is always safe. Reusing a key is safe only if the board's counter has never gone back since that key was first used (see `docs/runbook-moving-boards.md`).
@@ -48,7 +48,7 @@ A new key is always safe. Reusing a key is safe only if the board's counter has 
 - copy `run-office/` to the home Mac by a private route (never git, chat or email) and point the gateway at it, or
 - create a **new** key: `init` a new run directory, `WIPE` TX, `provision-node`.
 
-**Never re-provision TX with `run-hw`'s existing key after a WIPE.** (Corrected 2026-10-13; an earlier version of this pack suggested it.) The AES-CCM nonce is kind + station + the transmission counter (64-bit in draft 4, 40-bit in draft 5; `header()` in `firmware/common/ws_frame.c`, `docs/protocol.md` section 1), and on firmware before release `0f456040fe54` WIPE reset that counter to 1 (the morning office wipe did). From `0f456040fe54` on, WIPE keeps the counter (gap G17), but this board's counter is now far below what the home key already used, so the home key stays retired for this board. The `PROVISION` epoch floor raises only the epoch, the observation identity (`App/node_store.c`, `store_epoch_floor`), not the counter. TX had already transmitted with the home key (for example the 9 h soak, `evidence/soak-a07f498-2026-10-13/`), so reuse would repeat nonces already sent on air.
+**Never re-provision TX with `run-hw`'s existing key after a WIPE.** (Corrected 2026-10-13; an earlier version of this pack suggested it.) The AES-CCM nonce is kind + station + the transmission counter (64-bit in draft 4, 40-bit in draft 5; `header()` in `firmware/common/ws_frame.c`, `docs/protocol.md` section 1), and on firmware before release `0f456040fe54` WIPE reset that counter to 1 (the morning office wipe did). From `0f456040fe54` on, WIPE keeps the counter, but this board's counter is now far below what the home key already used, so the home key stays retired for this board. The `PROVISION` epoch floor raises only the epoch, the observation identity (`App/node_store.c`, `store_epoch_floor`), not the counter. TX had already transmitted with the home key (for example the 9 h soak, `evidence/soak-a07f498-2026-10-13/`), so reuse would repeat nonces already sent on air.
 
 ## 4. Office setup (fast path: run the bench, no firmware build)
 ```sh
@@ -99,12 +99,12 @@ WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expec
 **Tonight's SHT45 test plan:** `docs/firmware-review-2026-10-13.md` §2.
 
 **Deliberately open:**
-- G10: flash read-out protection (field use).
-- G14: brown-out reset level (Stage 1).
+- Flash read-out protection (field use).
+- Brown-out reset level (Stage 1).
 - H11: 30-day buffer, which needs SPI NOR.
-- G16: timed ACK slot.
-- G18: code space for the final station (`docs/firmware-budget.md`): keep the STM32WL55JC, plan flash layout v2 with H11, final image ≤ 75 % of its region. Keep an eye on the flash guard in every build.
-- **G7 part B** (true USB power-cut testing) is **deferred by Clint**. Don't raise it.
+- Timed ACK slot.
+- Code space for the final station (`docs/firmware-budget.md`): keep the STM32WL55JC, plan flash layout v2 with H11, final image ≤ 75 % of its region. Keep an eye on the flash guard in every build.
+- **True USB power-cut testing** is **deferred by Clint**. Don't raise it.
 
 **Bench note (2026-10-13):** a USB dropout of about 1 s makes the ST-LINK reset its board (both boards seen). For H01 on USB, secure the cables and keep hands and debugger sessions off them. Range-test tool and findings: `firmware/rangetest/README.md`, `evidence/rangetest-office-2026-10-13/`.
 
@@ -127,7 +127,7 @@ WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expec
 | `docs/protocol.md` | Wire format, draft 5 (normative) |
 | `docs/protocol-draft5-design.md` | Why draft 5 looks the way it does (design rationale, reviews) |
 | `docs/protocol-stack.md` | Layered explanation with diagrams |
-| `docs/failure-modes.md` | FMEA, loss budget, runbook R1–R8, gaps G1–G16 |
+| `docs/failure-modes.md` | FMEA, loss budget, recovery runbook, open issues |
 | `docs/radio-energy-policy.md` | Approved send and back-off policy for battery/solar |
 | `docs/H01-checklist.md` | The gate |
 | `docs/hardware/nucleo-wl55jc-bringup.md` | Board bring-up trial-and-error log |

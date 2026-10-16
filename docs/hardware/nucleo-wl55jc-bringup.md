@@ -286,9 +286,9 @@ Clint approved C and D, and agreed that a reconstructed time counts toward H01 w
 | `build/rx/stage0-rx.bin` (draft 4) | `a919c177d0bc6eb5820f5b9251bf3a00dd14f05a71cce8a11abe0725e109e220` |
 | `build/tx/stage0-tx.bin` (draft 4) | `5bb7690fcdbc85288643a5ccd46528cabaeac462a4d642b71c48bf8d96cfebfd` |
 
-### G1 watchdog and G2 NACK on hardware (2026-10-12)
-- **G1:** `TEST-HANG` on TX → `#boot … reset=watchdog` after 7.9 s, time trust restored (D), next reading ACKed. On RX → `reset=watchdog` after 7 s. The first boot after the update showed `reset=power` because the old firmware never cleared the reset flags; the new firmware clears them.
-- **G2:** I planted a conflicting database row for TX's next identity (epoch 11, seq 1). The gateway authenticated the frame, stored it in `rejections` (112 hex characters), and sent a NACK. TX: `#nack epoch=11 seq=1 reason=1 abandoned=1`, `pending=0`. Cleanup: I deleted the planted row and recovered the genuine reading from `rejections.frame_hex` with `Store.ingest` (returned `True`). The rejection row stays as evidence.
+### Watchdog and NACK on hardware (2026-10-12)
+- **Watchdog:** `TEST-HANG` on TX → `#boot … reset=watchdog` after 7.9 s, time trust restored from the backup registers, next reading ACKed. On RX → `reset=watchdog` after 7 s. The first boot after the update showed `reset=power` because the old firmware never cleared the reset flags; the new firmware clears them.
+- **NACK for a permanently rejected record:** I planted a conflicting database row for TX's next identity (epoch 11, seq 1). The gateway authenticated the frame, stored it in `rejections` (112 hex characters), and sent a NACK. TX: `#nack epoch=11 seq=1 reason=1 abandoned=1`, `pending=0`. Cleanup: I deleted the planted row and recovered the genuine reading from `rejections.frame_hex` with `Store.ingest` (returned `True`). The rejection row stays as evidence.
 
 ## Office session (2026-10-13)
 
