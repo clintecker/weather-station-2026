@@ -79,7 +79,7 @@ Example, the boot self-test vector (`KAT_OBS` in `App/selftest.c`, key `000102โ€
 The gateway checks the length, version, kind and station **before** decrypting
 (`plain_lengths()`, `unseal()`). A frame that fails any check, or the tag, is dropped silently. It
 is never answered, so an outsider cannot make the gateway send a NACK. The Stage-0 build always
-sends 42-byte observations.
+sends 51-byte observations (T/RH with the minute summary).
 
 ## 2. Counters and limits
 
@@ -394,7 +394,7 @@ Unchanged from draft 4 except the frame sizes.
 RF: 915.0 MHz LoRa, 500 kHz bandwidth, SF7, CR 4/5, 8-symbol preamble, explicit header, CRC on,
 0 dBm (bench), symbol timeout off (`App/radio_cfg.h`). See
 [`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md) for the regulatory basis.
-At SF7 a 42-byte observation takes 21.8 ms on air, a 33-byte ACK 18.0 ms and a 48-byte DIAG 24.4 ms
+At SF7 a 51-byte observation takes 25.7 ms on air, a 33-byte ACK 18.0 ms and a 48-byte DIAG 24.4 ms
 (`protocol-stack.md` ยง8.2).
 
 - Each minute the node journals one observation. While the link is LINKED it sends it, then up to

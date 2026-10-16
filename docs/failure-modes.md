@@ -31,7 +31,7 @@ The protocol exists for one job: **an unattended station sends periodic sensor r
 | TX attendance | On the desk | Outdoors, unattended; a site visit is expensive |
 | Distance | ~30 cm | Roof/yard to indoor receiver through walls; to be measured (H01). No range claim. |
 | Radio settings | SF7, 0 dBm, RSSI ≈ −23 dBm | SF and power from the measured link budget: SF9–SF12, up to +22 dBm (§15.247 allows +30 dBm) |
-| Airtime, 42-byte observation frame (draft 5) | 21.8 ms | 72 ms (SF9) to 453 ms (SF12) |
+| Airtime, 51-byte observation frame (draft 5, T/RH with the minute summary) | 25.7 ms | 82 ms (SF9) to 535 ms (SF12) |
 | Packet loss | Rare | **Routine.** Weather, snow on the antenna, interference, temperature |
 | Gateway host | Mac, can sleep | Always-on Linux computer or SBC on mains (spec §1). It must not sleep. |
 | Typical outage | Developer stops the gateway | **House power outage or storm.** The station keeps measuring on solar; the gateway is down. This is exactly what store-and-forward is for. |
@@ -46,11 +46,11 @@ The protocol exists for one job: **an unattended station sends periodic sensor r
 
 Each frame costs transmit energy plus the energy of the ACK receive window. The window is short when the ACK arrives. It stays open for the full **2,000 ms** when no ACK arrives.
 
-| SF (500 kHz) | Airtime, 42-byte observation | TX charge at ~100 mA (+20 dBm class) | RX charge, full 2 s window at ~5 mA |
+| SF (500 kHz) | Airtime, 51-byte observation | TX charge at ~100 mA (+20 dBm class) | RX charge, full 2 s window at ~5 mA |
 |---|---:|---:|---:|
-| SF7 | 22 ms | 2.2 mC | 10 mC |
-| SF10 | 134 ms | 13 mC | 10 mC |
-| SF12 | 453 ms | 45 mC | 10 mC |
+| SF7 | 26 ms | 2.6 mC | 10 mC |
+| SF10 | 154 ms | 15 mC | 10 mC |
+| SF12 | 535 ms | 53 mC | 10 mC |
 
 Draft 4 frames were 56 bytes (27 / 164 / 576 ms, 2.7 / 16 / 58 mC); the outage arithmetic below uses those.
 

@@ -189,11 +189,11 @@ to whole milliseconds):
 | Frame | Plaintext | Frame | SF7 | SF9 | SF10 | SF12 |
 |---|---:|---:|---:|---:|---:|---:|
 | ACK / NACK | 17 B | 33 B | 18.0 ms | 61.7 ms | 113.2 ms | 411.6 ms |
-| Observation, T/RH (Stage 0, today) | 26 B | 42 B | 21.8 ms | 71.9 ms | 133.6 ms | 452.6 ms |
+| Observation, T/RH with the minute summary (Stage 0, today) | 35 B | 51 B | 25.7 ms | 82.2 ms | 154.1 ms | 534.5 ms |
 | Health report (DIAG) | 32 B | 48 B | 24.4 ms | 77.1 ms | 143.9 ms | 493.6 ms |
 | Observation, Core weather set (design §2) | 40 B | 56 B | 26.9 ms | 87.3 ms | 164.4 ms | 575.5 ms |
 | Observation, full proof-of-concept build | 62 B | 78 B | 34.6 ms | 112.9 ms | 205.3 ms | 698.4 ms |
-| Observation, every catalog field | 69 B | 85 B | 37.2 ms | 123.1 ms | 225.8 ms | 780.3 ms |
+| Observation, every catalog field | 78 B | 94 B | 41.0 ms | 133.4 ms | 236.0 ms | 821.2 ms |
 | (Draft 4, every kind) | 24 B | 56 B | 26.9 ms | 87.3 ms | 164.4 ms | 575.5 ms |
 
 - **One frame carries every field.** The largest possible observation (85 B) is still one frame,

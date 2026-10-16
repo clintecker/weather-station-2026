@@ -49,7 +49,8 @@ Airtime moves in steps: about every 3–4 bytes at SF7 and every 6 bytes at SF12
 
 | Frame | Draft 4 | Draft 5 | SF7 | SF12 |
 |---|---:|---:|---:|---:|
-| Observation, T/RH (the Stage-0 build) | 56 B | **42 B** | 21.8 ms | 452.6 ms |
+| Observation, T/RH with the minute summary (the Stage-0 build) | — | **51 B** | 25.7 ms | 534.5 ms |
+| Observation, T/RH only (the first draft-5 build) | 56 B | 42 B | 21.8 ms | 452.6 ms |
 | Observation, PRD Core weather set | — | 56 B | 26.9 ms | 575.5 ms |
 | Observation, full PoC build (weather + battery + enclosure, §5.5) | — | 78 B | 34.6 ms | 698.4 ms |
 | ACK / NACK | 56 B | **33 B** | 18.0 ms | 411.6 ms |
@@ -292,7 +293,7 @@ bitmap when it is read back.
 
 | Build | Plaintext | Frame | Slot | Records (93 pages) | Outage buffer |
 |---|---:|---:|---:|---:|---:|
-| Stage 0 (T/RH) | 26 B | 42 B | 48 B | 3,906 | 2.7 days |
+| Stage 0 (T/RH with the minute summary) | 35 B | 51 B | 56 B | 3,348 | 2.3 days |
 | Full PoC (fields 0–6, 9, 11–20) | 62 B | 78 B | 80 B | 2,325 | 1.6 days |
 
 The smaller buffer is accepted for the proof of concept. The 30-day buffer comes with the SPI-NOR
@@ -417,7 +418,7 @@ On the host, beyond the existing suites switched to draft 5:
 - equal frame lengths for valid and faulted readings.
 
 On the bench, before H01:
-- a 42-byte observation and a 33-byte ACK round trip;
+- a 51-byte observation and a 33-byte ACK round trip;
 - the sensor-unplug test (`null` T/RH, `quality=sensor_fault`);
 - DIAG fields: build ID and ACK RSSI/SNR.
 

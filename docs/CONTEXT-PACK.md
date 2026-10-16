@@ -14,7 +14,7 @@ The eventual node runs **unattended on battery and solar, at long range**. Judge
   - TX = board A, ST-LINK serial `003B00194142500E20353451`
   - RX = board B, ST-LINK serial `0016001E4142500E20353451`
   - Identify boards by serial number. Port names change between machines.
-- **Protocol draft 5.** AES-128-CCM with an 8-byte header (version/kind, station u16, counter u40) and an 8-byte tag. Frames: observation 42 bytes for the T/RH build (a 22-byte head, a field bitmap and catalog fields, each with its own INVALID code), ACK/NACK 33 bytes (the ACK carries host time), health report 48 bytes every 15 min. Spec: `docs/protocol.md`; design rationale: `docs/protocol-draft5-design.md`.
+- **Protocol draft 5.** AES-128-CCM with an 8-byte header (version/kind, station u16, counter u40) and an 8-byte tag. Frames: observation 51 bytes for the T/RH build with the minute summary (a 22-byte head, a field bitmap and catalog fields, each with its own INVALID code), ACK/NACK 33 bytes (the ACK carries host time), health report 48 bytes every 15 min. Spec: `docs/protocol.md`; design rationale: `docs/protocol-draft5-design.md`.
   - **A frame-format change needs a fresh key:** `WIPE ERASE-ALL-NODE-STATE` on TX, `init` a new run directory, `provision-node`, and flash both boards. Release `bc5e6ede429c` was installed that way. Keys and run directories from draft 4 (`run-hw/`, `run-office/`) are retired.
 - **Radio:** 915.0 MHz, 500 kHz bandwidth, SF7, CR 4/5, 0 dBm (bench).
 - **Bench-verified:**

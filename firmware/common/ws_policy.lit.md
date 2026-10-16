@@ -135,22 +135,22 @@ when `sf` is 2 and `DE` is 1.
 ### Worked example
 
 `radio_cfg.h` sets SF7, 500 kHz, an 8-symbol preamble and coding rate 4/5 (`cr` = 1).
-`firmware/test_tx_policy.c` pins a 42-byte frame at these settings to 22 ms:
+`firmware/test_tx_policy.c` pins this build's 51-byte observation frame at these settings to 26 ms
+(and a 42-byte frame to 22 ms):
 
 | Step | Value |
 |---|---|
 | `symbol_us_x_bw` | 10^6 << 7 = 128 000 000 |
 | `T_sym` | 128 000 000 / 500 000 = 256 µs, so DE = 0 |
-| `num` | 8 × 42 − 4 × 7 + 28 + 16 = 352 |
+| `num` | 8 × 51 − 4 × 7 + 28 + 16 = 424 |
 | `den` | 4 × (7 − 0) = 28 |
-| `blocks` | ceil(352 / 28) = 13 |
-| `quarters` | (8 × 4 + 17) + 4 × (8 + 13 × 5) = 49 + 292 = 341 |
-| time | 341 × 128 000 000 / 500 000 = 87 296 quarter-µs, / 4000 = 21 ms truncated |
-| result | 21 + 1 = **22 ms** (formula: 21.824 ms) |
+| `blocks` | ceil(424 / 28) = 16 |
+| `quarters` | (8 × 4 + 17) + 4 × (8 + 16 × 5) = 49 + 352 = 401 |
+| time | 401 × 128 000 000 / 500 000 = 102 656 quarter-µs, / 4000 = 25 ms truncated |
+| result | 25 + 1 = **26 ms** (formula: 25.664 ms) |
 
 The same steps give 18 ms for the 33-byte ACK (`WS_ACK_FRAME_LEN`). The default field set gives a
-35-byte plaintext and 16 bytes of frame overhead, so `OBS_FRAME_MAX` is 51 bytes: 16 blocks,
-401 quarters, 26 ms.
+35-byte plaintext and 16 bytes of frame overhead, so `OBS_FRAME_MAX` is the 51-byte frame above.
 
 `App/tx_policy.c` (`policy_init`) adds the observation airtime, the ACK airtime and
 `TURNAROUND_MS` (300 ms) into `exchange_ms`, the radio time of one answered exchange. With a
@@ -458,7 +458,7 @@ Semtech's formula, not from the code under test:
 
 | Test | What it checks |
 |---|---|
-| `airtime` | The formula over SF7–SF12, three bandwidths and payloads 0–255. 42 bytes at SF7/500 kHz give 22 ms. 10 bytes at SF12/125 kHz give 992 ms |
+| `airtime` | The formula over SF7–SF12, three bandwidths and payloads 0–255. 51 bytes at SF7/500 kHz give 26 ms, 42 bytes 22 ms. 10 bytes at SF12/125 kHz give 992 ms |
 | `link` | Two silent minutes stay linked. The third starts probing. The back-off is 240, 480, 900, 900 s. A reply relinks and resets the count |
 | `minute` | The backlog per state (20, 5, 0). `CRITICAL` and unknown codes send nothing. The 300 s `CONSERVE` interval. Probing sends the live reading only. The airtime cap, `max_backlog` and a clock wrap |
 | `strike_targets` | the three `replied` patterns of section 6, and an empty exchange |

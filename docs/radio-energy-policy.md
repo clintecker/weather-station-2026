@@ -38,14 +38,14 @@ The current values are datasheet-class assumptions (TX ≈ 100 mA at +20 dBm, RX
 | Quantity | SF7 | SF10 | SF12 |
 |---|---:|---:|---:|
 | Airtime, 56-byte frame (draft 4) | 27 ms | 164 ms | 576 ms |
-| Airtime, 42-byte observation (draft 5, today) | 22 ms | 134 ms | 453 ms |
+| Airtime, 51-byte observation (draft 5, today) | 26 ms | 154 ms | 535 ms |
 | Charge per **delivered** reading (TX + short ACK window) | ≈ 3 mC | ≈ 18 mC | ≈ 62 mC |
 | Charge per **failed** attempt (TX + full 2 s window) | ≈ 13 mC | ≈ 26 mC | ≈ 68 mC |
 | One day of live readings (1,440 delivered), at 3.3 V | ≈ 0.004 Wh | ≈ 0.024 Wh | ≈ 0.08 Wh |
 | **A full journal** (4,743 readings, draft 4) delivered | ≈ 0.013 Wh | ≈ 0.08 Wh | ≈ **0.27 Wh** |
 | One day of failed attempts at the old fixed rule (3 per minute) | ≈ 0.05 Wh | ≈ 0.10 Wh | ≈ **0.27 Wh** |
 
-The charge and Wh rows were computed for draft 4 (56-byte frames and ACKs, a 4,743-reading journal). Draft-5 frames take about 20 % less air time (42-byte observation, 33-byte ACK) and the journal holds 3,906 readings, so for draft 5 these rows are upper bounds.
+The charge and Wh rows were computed for draft 4 (56-byte frames and ACKs, a 4,743-reading journal). Draft-5 frames take less air time (51-byte observation: 154 ms at SF10 against 164 ms; 33-byte ACK) and the journal holds 3,348 readings, so for draft 5 these rows are upper bounds.
 
 Core budget: ≤ 0.25 W average = **6 Wh/day**. Main pack: about **200 Wh nominal**, reserve ≥ 50.4 Wh (spec §4).
 
@@ -191,7 +191,7 @@ always NORMAL, so on the bench PROBING means "live only, every minute".
 
 **Asymmetric link:** the node decides the link state from ACKs only. If frames reach the gateway but ACKs do not (`failure-modes.md`, asymmetric link), the node enters PROBING; with healthy energy the live reading still reaches the gateway every minute, so data stays timely. The backlog cannot drain (no ACKs), so unacknowledged records accumulate in the journal and are overwritten after about 65 h, even though the gateway already holds them. The health report (sent while probing too, link field = probing) shows this state to the operator.
 
-**Airtime cap per minute (all states):** The firmware calculates the exchange time from the SF: observation airtime + ACK airtime + a **fixed 300 ms** turnaround allowance (`TURNAROUND_MS` in `App/tx_policy.c`, "conservative"; not measured per exchange; gateway database commits measured at ≤ 16 ms). It sends no more frames in this minute than the cap allows. With draft-5 frames (42-byte observation, 33-byte ACK), at SF12 a 5 s cap allows 4 exchanges (5000 / (453 + 412 + 300) = 5000 / 1165 ms). At SF7 (22 + 18 + 300 = 340 ms per exchange) the 5 s NORMAL cap allows 14, so the NORMAL limit of 5 binds; the 15 s SURPLUS cap allows the configured maximum (⚠ 20). The cap counts answered exchanges; a failed exchange costs about 2 s plus airtime, and the drain stops at the first one.
+**Airtime cap per minute (all states):** The firmware calculates the exchange time from the SF: observation airtime + ACK airtime + a **fixed 300 ms** turnaround allowance (`TURNAROUND_MS` in `App/tx_policy.c`, "conservative"; not measured per exchange; gateway database commits measured at ≤ 16 ms). It sends no more frames in this minute than the cap allows. With draft-5 frames (51-byte observation, 33-byte ACK), at SF12 a 5 s cap allows 4 exchanges (5000 / (535 + 412 + 300) = 5000 / 1247 ms). At SF7 (26 + 18 + 300 = 344 ms per exchange) the 5 s NORMAL cap allows 14, so the NORMAL limit of 5 binds; the 15 s SURPLUS cap allows the configured maximum (⚠ 20). The cap counts answered exchanges; a failed exchange costs about 2 s plus airtime, and the drain stops at the first one.
 
 ---
 

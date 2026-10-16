@@ -50,7 +50,7 @@ flowchart LR
     V --> D[("SQLite<br/>commit")]
     D --> A["Seal ACK<br/>+ host UTC"]
   end
-  R1 -- "42-byte frame · air" --> R2
+  R1 -- "51-byte frame · air" --> R2
   H -- "USB (ST-LINK VCP)" --> U
   A -- "hex line" --> H
   R2 -. "33-byte ACK · air" .-> R1
@@ -511,7 +511,7 @@ sequenceDiagram
   rect rgba(80,140,255,0.12)
   Note over TX,DB: Live observation first
   TX->>TX: Reserve counter · seal frame
-  TX-)RX: Observation frame (42 B, 21.8 ms)
+  TX-)RX: Observation frame (51 B, 25.7 ms)
   TX->>TX: Open receive window (2,000 ms)
   RX->>GW: hex line + "#rx obs rssi snr"
   GW->>GW: Authenticate · validate
