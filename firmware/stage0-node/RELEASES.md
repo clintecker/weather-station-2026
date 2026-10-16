@@ -14,6 +14,26 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
 
+## 809230951ae1 — 2026-10-16 (bench, timing attribution; protocol draft 5)
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (34,832 B) | `282e04eecba988a03ed10ba8dbbf38da5bcfd9f5013e57e60fd56ac50017c075
+0ae2c1eb16636bc0d90d984efc31329572ab45f633734eab0762ec465b3f14f0
+feb187ef903b7476ff03d555ff4b3fd41f070340bd8e7fb1f8ba6c3617a759b2
+70abf0b144efbc868be6338bbaa6524679b488e0ad93f06cc1fefcdcd077ca17` |
+| `build/rx/stage0-rx.elf` (path-dependent) | `` |
+| `build/tx/stage0-tx.bin` (58,192 B) | `` |
+| `build/tx/stage0-tx.elf` (path-dependent) | `` |
+
+- Source: commit `809230951ae1`. Changes since 7eb79f64f2bd:
+  - Timing attribution (busymon): a task's peak is its own time with the interrupts that ran meanwhile taken out (interrupt time summed once per outermost handler), named after its slowest timed step (`process.alive`, `.relisten`, `.listen`, `.forward`, `.crc`; `report.journal`, `report.send`); the wall time is `task_wall_us` (TX `#timing`, RX STATUS). Host-tested (`firmware/test_busymon.c`).
+  - The RX's 1.7-1.9 ms `process` peak explained and removed: it was every `#alive`. Measured on the RX with a throwaway bench build (not released): the whole-RAM stack high-water scan 1,472 µs, line formatting ~260 µs. The scan now reads 256 words (1 KB) per report, at most one pass (~17 reports) behind, seeded by one whole scan at boot.
+- Inputs: as a07f498. Flash budget: TX 88.8 %, RX 53.2 %. Stack bound: TX 5,744 B (70 %), RX 2,652 B (32 %). `make waits`: OK on both.
+- Reproducibility: two clean builds gave identical `.bin` hashes.
+- Flashed 2026-10-16 ~15:45Z to both boards (`run-d6` gateway running). Before (release d1998d142fd0, same instrumentation, whole scan): RX task peak 1,740-1,744 µs `process.alive`, every report. After: RX task peak 391 µs (`console_task`, an ACK line), interrupt peak 219 µs, `stack_peak=272` from the first report.
+- The lab rehearsal of 7eb79f64f2bd was ended at 16 h (Clint): evidence/h01-rehearsal-2026-10-15/. Not an H01 release: radio settings are bench values.
+
 ## 7eb79f64f2bd — 2026-10-15 (bench, strike rule A, Power of Ten; protocol draft 5)
 
 | Artifact | SHA-256 |
