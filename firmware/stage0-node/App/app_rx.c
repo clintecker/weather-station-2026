@@ -1,3 +1,5 @@
+/* GENERATED from app_rx.lit.md by tools/tangle.py: do not edit. Edit the document, then run
+ * tools/tangle.py firmware/stage0-node/App/app_rx.lit.md (tests/test_tangle.py checks this file). */
 /* Stage-0 RX: transparent radio <-> USB bridge for the indoor receiver.
  *
  * Upstream: every received frame that ws_air_frame_ok() accepts (a current-version observation or
