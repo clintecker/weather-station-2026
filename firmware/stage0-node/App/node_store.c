@@ -1,3 +1,5 @@
+/* GENERATED from node_store.lit.md by tools/tangle.py: do not edit. Edit the document, then run
+ * tools/tangle.py firmware/stage0-node/App/node_store.lit.md (tests/test_tangle.py checks this file). */
 /* Power-fail-safe node state in internal flash.
  *
  * Every record is committed by programming one final double-word after its data, so an
@@ -5,7 +7,8 @@
  * NMI_Handler reports through ws_flash_ecc_fault. All three read back as "not present".
  * Monotonic values only ever increase: recovery takes the maximum of everything readable.
  * No HAL here: flash goes through the ws_flash_* primitives (flash_layout.h: App/flash_stm32wl.c on
- * the board, firmware/sim_flash.c in tests/test_store_powercut.py). */
+ * the board, firmware/sim_flash.c in tests/test_store_powercut.py). The design, the layouts and
+ * the power-cut argument are in node_store.lit.md, which this file is generated from. */
 #define WS_CHECK_FILE 5
 #include "node_store.h"
 #include <string.h>
@@ -17,14 +20,14 @@
 #define CFG_MAGIC  0x57534331UL /* "WSC1" */
 #define CFG_MAGIC2 0x4B435631UL /* "KCV1" */
 #define META_MAGIC 0x57534D31UL /* "WSM1" */
-#define JPG_MAGIC  (0x57534A00UL | JOURNAL_SLOT_BYTES) /* "WSJ" + slot size: another layout is ignored */
-#define SLOT_MAGIC 0x4A53U
 #define META_EPOCH 0xE1U
 #define META_CTR   0xC2U
 #define META_LOST  0xD1U /* cumulative journal overflow losses (gap G8) */
 #define META_ABAND 0xD2U /* cumulative abandoned records (NACK / strike limit) */
 #define META_DWORDS (WS_PAGE_SIZE / 8U)
 #define CTR_BLOCK 256U
+#define JPG_MAGIC  (0x57534A00UL | JOURNAL_SLOT_BYTES) /* "WSJ" + slot size: another layout is ignored */
+#define SLOT_MAGIC 0x4A53U
 
 /* Geometry the on-flash format depends on (node_store.h). */
 #define SLOT_BYTES JOURNAL_SLOT_BYTES
@@ -127,8 +130,7 @@ static int meta_scan(uint32_t page, uint32_t *gen, uint32_t *last) {
 /* Compact into the other page; its header is written last so a torn compaction
    leaves the current page authoritative. The other page still carries an older valid header:
    zero it first (programming all-zeros over data is allowed), so an erase cut part way can
-   never leave half-erased values under a header boot would trust (firmware review finding 4:
-   junk could raise the counter past 2^40 and disable the node for good). */
+   never leave half-erased values under a header boot would trust (firmware review finding 4). */
 static int meta_compact(void) {
  uint32_t other = meta_active == WS_META_PAGE_A ? WS_META_PAGE_B : WS_META_PAGE_A;
  uint32_t a = WS_PAGE_ADDR(other);
@@ -270,8 +272,7 @@ static int journal_scan_slot(uint32_t p, uint32_t s) {
  ack = rd64(a + ACK_OFF, &bad_ack);
  if (!bad_data && !bad_ack && erased && ack == ERASED) return 0;
  uint8_t plain[WS_OBS_PLAIN_MAX]; memcpy(plain, d, sizeof plain);
- /* An ECC fault confined to the ACK word means the ACK program was interrupted; the
-    host had already committed (it ACKed), so treating it as acknowledged loses nothing. */
+ /* A torn ACK word (ECC) means the ACK program was interrupted after the host committed: acked. */
  if (bad_data || (d[JOURNAL_PLAIN_DW] >> 32) != (slot_commit_word(plain) >> 32)) n_burned++;
  else if (!bad_ack && ack == ERASED) { set_pending(p * JOURNAL_SLOTS_PER_PAGE + s, 1); n_pending++; }
  return 1;
@@ -391,11 +392,8 @@ uint32_t store_journal_scrub(uint32_t marker)
  return n;
 }
 
-/* WIPE erases the key and the journal but never the meta log: the transmission counter (the
- * AES-CCM nonce), the boot epoch and the lost/abandoned totals keep rising for the life of the
- * board (gap G17). A key first used under this firmware can therefore follow the board across
- * WIPEs; a key used under older firmware (which reset the counter) or on another board cannot
- * (docs/runbook-moving-boards.md). */
+/* WIPE erases the key and the journal but never the meta log (gap G17): the counter (the AES-CCM
+ * nonce), the boot epoch and the lost/abandoned totals keep rising for the life of the board. */
 int store_wipe(void) {
  int rc = 0;
  journal_ready = 0; /* the RAM journal no longer describes flash: store_journal_init again */
