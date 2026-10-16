@@ -12,7 +12,7 @@ from ws0 import fields
 from ws0.fields import FIELDS, decode, encode
 
 SEED = 20261014
-# Encoding known-answer vector (docs/protocol-draft5-design.md section 6): T = -12.34 C, RH = 45.67 %,
+# Encoding known-answer vector (docs/protocol-design.md section 6): T = -12.34 C, RH = 45.67 %,
 # epoch 1, sequence 2, UTC 1791991189, uptime 300 s, NORMAL, calibration 0.
 KAT = bytes.fromhex('00000001' '00000002' '6acf9d95' '0000012c' '03' '00' '00000003' '0ace' '11d7')
 

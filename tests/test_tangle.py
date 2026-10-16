@@ -54,6 +54,14 @@ class Rules(unittest.TestCase):
             with self.assertRaisesRegex(tangle.LitError, message):
                 self.tangled(doc)
 
+    def test_mermaid_blocks_become_diagrams_and_load_mermaid_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'t.lit.md'
+            path.write_text(f'# T\n\n{F}mermaid\nstateDiagram-v2\n  a --> b\n{F}\n\n{F}c {{#t.c}}\nint x;\n{F}\n')
+            page = tangle.Weaver(path).page()
+        self.assertIn('<pre class="mermaid">stateDiagram-v2\n  a --&gt; b</pre>', page)
+        self.assertEqual(page.count('mermaid@'), 1)
+
     def test_a_python_root_gets_a_python_banner(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'t.lit.md'

@@ -3,7 +3,7 @@
 This is the normative specification of the protocol on `master`, released to both boards as
 `bc5e6ede429c` on 2026-10-14 (`firmware/stage0-node/RELEASES.md`). It is **not yet a frozen H01
 contract**: when H01 passes, the PRD freezes the identity, time and quality contract. The design
-reasoning is in [`protocol-draft5-design.md`](protocol-draft5-design.md). How
+reasoning is in [`protocol-design.md`](protocol-design.md). How
 each layer works end to end (sensor → journal → crypto → LoRa → USB → SQLite → time) is in
 [`protocol-stack.md`](protocol-stack.md).
 

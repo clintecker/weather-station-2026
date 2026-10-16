@@ -15,7 +15,7 @@ Re-check everything that isn't live before ordering.
 
 | Stage | Gate | State |
 |---|---|---|
-| 0 Data path | H01 (24 h, ≥ 1,426 of 1,440 within 120 s, restart/outage matrix) | SHT45 reading on the bench (2026-10-14). Next: protocol draft 5 (`protocol-draft5-design.md`), then H01 on that release |
+| 0 Data path | H01 (24 h, ≥ 1,426 of 1,440 within 120 s, restart/outage matrix) | SHT45 reading on the bench (2026-10-14). Next: protocol draft 5 (`protocol-design.md`), then H01 on that release |
 | 1 Main power and pack state | H02 (pack Ah/Wh within 5 %), H03 (168 h at −35 °C, cold-charge inhibit, dawn recovery, 7-day deficit back in ≤ 3 solar days) | Parts planned below. Building waits for H01 |
 | 2 One wired module | H04 (RJ45 port: power, faults, 10 m, 10⁶ transactions) | Long-lead parts identified |
 | 3 Complete unheated sensing | H05, H06, H07, H11 | Instruments identified |

@@ -218,6 +218,7 @@ class Weaver:
         validate(self.chunks)
         self.used = uses(self.chunks)
         self.seen = {}
+        self.mermaid = False   # a ```mermaid block makes the page load Mermaid
 
     def anchor(self, name, k=0):
         return 'chunk-' + slug(name) + (f'-{k + 1}' if k else '')
@@ -265,6 +266,9 @@ class Weaver:
         return ''.join(out)
 
     def code(self, lang, name, lines, first):
+        if not name and lang == 'mermaid':
+            self.mermaid = True
+            return f'<figure class="diagram"><pre class="mermaid">{html.escape(chr(10).join(lines))}</pre></figure>'
         if not name:
             return f'<pre class="plain">{html.escape(chr(10).join(lines))}</pre>'
         k = self.seen.get(name, 0)
@@ -364,7 +368,7 @@ class Weaver:
         index = ''.join(f'<li>{self.ref(n)}' + (f' <span class="muted">used in {", ".join(self.ref(p) for p in sorted(set(self.used[n])))}</span>' if n in self.used else ' <span class="muted">root</span>') + '</li>'
                         for n in sorted(self.chunks, key=str.lower))
         return PAGE.format(title=html.escape(re.sub(r'`', '', title)), css=CSS, nav=nav, body='\n'.join(body), index=index,
-                           src=html.escape(str(self.doc)))
+                           src=html.escape(str(self.doc)), scripts=MERMAID_SCRIPT if self.mermaid else '')
 
 
 CSS = """
@@ -401,6 +405,8 @@ a.ref:hover{text-decoration:underline}
 .kw{color:var(--kw);font-weight:600}.ty{color:var(--ty)}.cm{color:var(--cm);font-style:italic}.st{color:var(--st)}.pp{color:var(--pp)}.nu{color:var(--nu)}
 .table{overflow-x:auto;margin:1rem 0}table{border-collapse:collapse;font-size:15px;min-width:60%}
 th,td{border-bottom:1px solid var(--rule);padding:.35rem .7rem;text-align:left;vertical-align:top}th{font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:var(--muted)}
+figure.diagram{margin:1.2rem 0;padding:1rem;border:1px solid var(--rule);border-radius:6px;background:var(--code-bg);overflow-x:auto;text-align:center}
+figure.diagram pre.mermaid{background:none;padding:0;font-size:13px;white-space:pre}
 .muted{color:var(--muted);font-size:.9em}#index ul{columns:2;font-size:14px}
 footer{margin-top:4rem;color:var(--muted);font:13px/1.5 system-ui,sans-serif}
 @media (max-width:900px){.wrap{display:block;padding:1.5rem 16px 4rem}nav{position:static;max-height:none;margin-bottom:2rem;
@@ -414,8 +420,17 @@ PAGE = """<!doctype html>
 <main>{body}
 <h2 id="index">Chunk index</h2><ul>{index}</ul>
 <footer>Woven by tools/tangle.py from {src}. The code shown is exactly what tangles into the generated file.</footer>
-</main></div></body></html>
+</main></div>{scripts}</body></html>
 """
+
+# Diagrams: ```mermaid blocks (state, flow, sequence and packet-beta diagrams), rendered in the page by
+# Mermaid, pinned. GitHub renders the same blocks in the .md file.
+MERMAID_SCRIPT = """<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'neutral' });
+await mermaid.run({ querySelector: 'pre.mermaid' });
+</script>"""
 
 
 DOC_DIRS = ('firmware', 'ws0')   # plus the repository root itself (gateway.lit.md)

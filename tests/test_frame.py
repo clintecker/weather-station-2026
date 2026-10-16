@@ -28,7 +28,7 @@ KAT_OBS_PLAIN = struct.pack('>IIIIhHBBH', 17, 42, 100000, 3600, -1234, 4567, 1, 
 
 
 def spec_frame(key, kind, station, counter, plain):
-    """docs/protocol-draft5-design.md section 3, written out independently of ws0/protocol.py."""
+    """docs/protocol-design.md section 3, written out independently of ws0/protocol.py."""
     from cryptography.hazmat.primitives.ciphers.aead import AESCCM
     header = bytes([0x50 | kind]) + station.to_bytes(2, 'big') + counter.to_bytes(5, 'big')
     nonce = bytes([kind]) + station.to_bytes(4, 'big') + counter.to_bytes(8, 'big')
