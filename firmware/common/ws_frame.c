@@ -1,3 +1,5 @@
+/* GENERATED from ws_frame.lit.md by tools/tangle.py: do not edit. Edit the document, then run
+ * tools/tangle.py firmware/common/ws_frame.lit.md (tests/test_tangle.py checks this file). */
 #include "ws_frame.h"
 #include <string.h>
 #include "ws_be.h"
