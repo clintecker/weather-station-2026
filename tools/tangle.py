@@ -35,6 +35,7 @@ Python standard library only.
 import argparse
 import difflib
 import html
+import keyword
 import re
 import sys
 from pathlib import Path
@@ -146,9 +147,13 @@ def expand(chunks, name, doc, lines_mode, stack=()):
 
 
 def banner(doc_path, root):
+    """Two comment lines in the root's language: C (/* */) or Python (#)."""
     rel = doc_path.resolve().relative_to(ROOT) if doc_path.resolve().is_relative_to(ROOT) else doc_path
-    return [f'/* GENERATED from {rel.name} by tools/tangle.py: do not edit. Edit the document, then run',
-            f' * tools/tangle.py {rel} (tests/test_tangle.py checks this file). */']
+    first = f'GENERATED from {rel.name} by tools/tangle.py: do not edit. Edit the document, then run'
+    second = f'tools/tangle.py {rel} (tests/test_tangle.py checks this file).'
+    if str(root).endswith('.py'):
+        return [f'# {first}', f'# {second}']
+    return [f'/* {first}', f' * {second} */']
 
 
 def tangle(doc_path, lines_mode=False):
@@ -193,6 +198,14 @@ C_TOKEN = re.compile(r'(?P<comment>/\*.*?\*/|//[^\n]*)|(?P<string>"(?:\\.|[^"\\\
                      r'|(?P<num>\b(?:0[xX][0-9a-fA-F]+|\d+)[uUlL]*\b)|(?P<word>\b[A-Za-z_]\w*\b)', re.S | re.M)
 
 
+PY_KEYWORDS = tuple(keyword.kwlist) + ('self', 'cls')
+PY_TOKEN = re.compile(r'(?P<comment>#[^\n]*)|(?P<string>(?:[rbfRBF]{1,2})?(?:"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\''
+                      r'|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'))|(?P<pre>^[ \t]*@[\w.]+)|(?P<ref>\x00\d+\x00)'
+                      r'|(?P<num>\b(?:0[xXoObB][0-9a-fA-F_]+|\d[\d_]*(?:\.\d+)?(?:e-?\d+)?)\b)|(?P<word>\b[A-Za-z_]\w*\b)', re.M)
+LANGS = {'c': (C_TOKEN, C_KEYWORDS), 'h': (C_TOKEN, C_KEYWORDS), 'python': (PY_TOKEN, PY_KEYWORDS),
+         'py': (PY_TOKEN, PY_KEYWORDS)}
+
+
 def slug(text):
     return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-') or 'section'
 
@@ -227,7 +240,8 @@ class Weaver:
             out.append(s)
         return ''.join(out)
 
-    def highlight(self, lines):
+    def highlight(self, lines, lang='c'):
+        token, keywords = LANGS[lang]
         refs = []
 
         def stash(m):
@@ -235,13 +249,13 @@ class Weaver:
             return f'{m[1]}\x00{len(refs) - 1}\x00'
         text = '\n'.join(REF.sub(stash, line) for line in lines)
         out, pos = [], 0
-        for m in C_TOKEN.finditer(text):
+        for m in token.finditer(text):
             out.append(html.escape(text[pos:m.start()]))
             kind, tok = m.lastgroup, m[0]
             if kind == 'ref':
                 out.append(self.ref(refs[int(tok.strip('\x00'))][1]))
             elif kind == 'word':
-                cls = 'kw' if tok in C_KEYWORDS else 'ty' if tok.endswith('_t') else ''
+                cls = 'kw' if tok in keywords else 'ty' if tok.endswith('_t') else ''
                 out.append(f'<span class="{cls}">{tok}</span>' if cls else tok)
             else:
                 cls = {'comment': 'cm', 'string': 'st', 'pre': 'pp', 'num': 'nu'}[kind]
@@ -266,7 +280,7 @@ class Weaver:
             others = [f'<a href="#{self.anchor(name, j)}">{j + 1}</a>' for j in range(defs) if j != k]
             notes.append(f'Part {k + 1} of {defs} (also {", ".join(others)}).')
         notes.append(f'<span class="src">{html.escape(self.doc.name)}:{first}</span>')
-        body = self.highlight(lines) if lang in ('c', 'h') else html.escape('\n'.join(lines))
+        body = self.highlight(lines, lang) if lang in LANGS else html.escape('\n'.join(lines))
         return (f'<figure class="chunk" id="{self.anchor(name, k)}"><figcaption>'
                 f'<a class="name" href="#{self.anchor(name, k)}">⟨{html.escape(name)}⟩</a> {sign}</figcaption>'
                 f'<pre>{body}</pre><div class="xref">{" ".join(notes)}</div></figure>')
@@ -404,8 +418,11 @@ PAGE = """<!doctype html>
 """
 
 
+DOC_DIRS = ('firmware', 'ws0')   # plus the repository root itself (gateway.lit.md)
+
+
 def all_docs():
-    return sorted((ROOT/'firmware').rglob('*.lit.md'))
+    return sorted([d for top in DOC_DIRS for d in (ROOT/top).rglob('*.lit.md')] + list(ROOT.glob('*.lit.md')))
 
 
 def main(argv=None):

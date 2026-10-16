@@ -27,7 +27,7 @@ class Committed(unittest.TestCase):
                 self.assertTrue(path.exists(), f'{path} is not committed; run tools/tangle.py {doc}')
                 self.assertEqual(path.read_text(), text, f'{path} differs from {doc}: edit the document and '
                                  f'run tools/tangle.py {doc.relative_to(ROOT)}')
-                self.assertTrue(text.startswith('/* GENERATED from '), 'the banner says where the file comes from')
+                self.assertTrue(text.startswith(('/* GENERATED from ', '# GENERATED from ')), 'the banner says where the file comes from')
 
 
 class Rules(unittest.TestCase):
@@ -53,6 +53,15 @@ class Rules(unittest.TestCase):
         for message, doc in cases.items():
             with self.assertRaisesRegex(tangle.LitError, message):
                 self.tangled(doc)
+
+    def test_a_python_root_gets_a_python_banner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'t.lit.md'
+            path.write_text(f'{F}python {{#out.py}}\nx = 1 << 2\n{F}\n')
+            (text,) = tangle.tangle(path).values()
+        first, second, body = text.split('\n', 2)
+        self.assertTrue(first.startswith('# GENERATED from t.lit.md') and second.startswith('# tools/tangle.py'))
+        self.assertEqual(body, 'x = 1 << 2\n')
 
     def test_line_directives_point_into_the_document(self):
         doc = f'# T\n\n{F}c {{#a.c}}\n<<b>>\nint y;\n{F}\n\n{F}c {{#b}}\nint x;\n{F}\n'
