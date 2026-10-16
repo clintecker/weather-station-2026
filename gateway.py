@@ -37,7 +37,7 @@ def full_flush(db):
     (not durable), 5.3 ms median / 16 ms max with. WAL: one flush per commit instead of the
     rollback journal's several (a nonce commit 14 ms -> 5 ms). The
     WAL file is part of the database: copy all of name, name-wal and name-shm or none.
-    Harmless no-ops on Linux. Simulations and unit tests may opt out with
+    The fullfsync pragmas are no-ops on Linux; WAL and synchronous=FULL apply everywhere. Simulations and unit tests may opt out with
     WS0_UNSAFE_FAST_FSYNC=1; they never claim power-loss durability."""
     fast = os.environ.get('WS0_UNSAFE_FAST_FSYNC') == '1'
     db.execute('PRAGMA journal_mode=WAL')
@@ -255,7 +255,7 @@ class Store:
         have it as their nearest one, so only those are recomputed (an epoch can hold thousands of
         untimed readings; rescanning all of them on every frame cost 14 ms at 1440). Neither: all."""
         ref_sql = ('SELECT uptime_s,sampled_at FROM observations WHERE station=? AND session=? '
-                   "AND time_basis='synchronized' AND uptime_s IS NOT NULL AND sampled_at<=received_at+5 "
+                   "AND time_basis='synchronized' AND uptime_s IS NOT NULL AND sampled_at<=received_at+? "
                    'AND uptime_s {} ? ORDER BY uptime_s {} LIMIT 1')
         where, args = '', (station, session)
         if only is not None:
@@ -264,16 +264,16 @@ class Store:
             uptime, trusted = reference
             if uptime is None or not trusted:
                 return   # not usable as a reference: no estimate changes
-            lo = self.db.execute(ref_sql.format('<','DESC'),(station,session,uptime)).fetchone()
-            hi = self.db.execute(ref_sql.format('>','ASC'),(station,session,uptime)).fetchone()
+            lo = self.db.execute(ref_sql.format('<','DESC'),(station,session,FUTURE_SLACK_S,uptime)).fetchone()
+            hi = self.db.execute(ref_sql.format('>','ASC'),(station,session,FUTURE_SLACK_S,uptime)).fetchone()
             where = ' AND uptime_s>? AND uptime_s<?'
             args = (station, session, lo[0] if lo else -1, hi[0] if hi else SQLITE_INT_MAX)
         targets = self.db.execute('SELECT sequence,uptime_s FROM observations WHERE station=? AND session=? '
                                   "AND time_basis IN ('unknown','reconstructed') AND uptime_s IS NOT NULL" + where,
                                   args).fetchall()
         for sequence, uptime in targets:
-            near = [r for r in (self.db.execute(ref_sql.format('<=','DESC'),(station,session,uptime)).fetchone(),
-                                self.db.execute(ref_sql.format('>=','ASC'),(station,session,uptime)).fetchone()) if r]
+            near = [r for r in (self.db.execute(ref_sql.format('<=','DESC'),(station,session,FUTURE_SLACK_S,uptime)).fetchone(),
+                                self.db.execute(ref_sql.format('>=','ASC'),(station,session,FUTURE_SLACK_S,uptime)).fetchone()) if r]
             if not near:
                 continue
             ref_uptime, ref_utc = min(near, key=lambda r: abs(r[0]-uptime))

@@ -13,7 +13,7 @@
 #define NONCE_STATION_BYTES 4
 #define NONCE_COUNTER_BYTES 8
 #define NONCE_LEN (1 + NONCE_STATION_BYTES + NONCE_COUNTER_BYTES)
-_Static_assert(NONCE_LEN == 13, "CCM with an 8-byte tag and 2-byte length field takes a 13-byte nonce");
+_Static_assert(NONCE_LEN == 13, "CCM with a 2-byte length field takes a 13-byte nonce (15 - L)");
 
 /* Header (also the AAD) and nonce. The nonce is built from the integers, never copied from the
  * header: a counter the 5-byte field cannot hold must not reach here (callers check), and the
@@ -70,7 +70,7 @@ int ws_open_reply(const uint8_t key[WS_KEY_LEN], uint32_t station, const uint8_t
  if(len!=WS_ACK_FRAME_LEN) return WS_FRAME_EINVAL;
  int k=ws_frame_kind(frame,len);
  if(k!=WS_KIND_ACK && k!=WS_KIND_NACK) return WS_FRAME_EHEADER;
- if(station==0 || station>WS_STATION_MAX) return WS_FRAME_EHEADER;
+ if(station==0 || station>WS_STATION_MAX) return WS_FRAME_EINVAL;   /* the caller's station, not the frame's */
  uint64_t ctr=ws_get_be64(frame+WS_COUNTER_OFF,WS_COUNTER_BYTES);
  header(expect,nonce,(uint8_t)k,station,ctr);
  if(memcmp(expect,frame,WS_COUNTER_OFF)) return WS_FRAME_EHEADER; /* version, kind, station */
@@ -91,6 +91,7 @@ int ws_key_check(const uint8_t key[WS_KEY_LEN], uint8_t out[WS_KCV_LEN]) {
  if(!rc) { const uint8_t zero[AES_BLOCK_LEN]={0}; rc=mbedtls_aes_crypt_ecb(&aes,MBEDTLS_AES_ENCRYPT,zero,block); }
  mbedtls_aes_free(&aes);
  if(!rc) memcpy(out,block,WS_KCV_LEN);
+ mbedtls_platform_zeroize(block,sizeof block);   /* AES(key, 0): only 3 bytes are meant to leave */
  return rc;
 }
 

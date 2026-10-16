@@ -102,10 +102,10 @@ static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr
   rx_snr = snr;
   post(EV_RX);
 }
-/* Failed receptions, from the radio interrupt. (RxTimeout in continuous receive is a header error;
-   ST's radio.c would also call it for a hardware RX timeout, which continuous receive never arms.) A payload CRC failure arrives as RxDone (bytes
+/* Failed receptions, from the radio interrupt. A payload CRC failure arrives as RxDone (bytes
    included, flagged by the HAL) and then RxError; on_rx_done captures it. RxTimeout cannot be a
-   timeout in continuous receive: ST's radio.c reports a header error that way. One capture is kept
+   timeout in continuous receive (which never arms the hardware RX timer): ST's radio.c reports a
+   header error that way. One capture is kept
    until process() prints it; failures meanwhile are counted, not captured (n_fault_overrun). The
    radio stays in continuous receive through both (radio.c), so nothing re-arms it. */
 static void capture_crc(const uint8_t *payload, uint16_t size, int8_t rssi, int8_t snr)

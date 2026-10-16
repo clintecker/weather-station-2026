@@ -70,7 +70,7 @@ The file's own constants size the key, the AES block and the nonce:
 #define NONCE_STATION_BYTES 4
 #define NONCE_COUNTER_BYTES 8
 #define NONCE_LEN (1 + NONCE_STATION_BYTES + NONCE_COUNTER_BYTES)
-_Static_assert(NONCE_LEN == 13, "CCM with an 8-byte tag and 2-byte length field takes a 13-byte nonce");
+_Static_assert(NONCE_LEN == 13, "CCM with a 2-byte length field takes a 13-byte nonce (15 - L)");
 ```
 
 A CCM nonce of 13 bytes leaves 2 bytes for CCM's message-length field (15 − 13). Two bytes count
@@ -254,7 +254,7 @@ static void reply_unpack(const uint8_t plain[WS_REPLY_PLAIN_LEN], uint32_t *epoc
 |---:|---|---|
 | 1 | `len` is exactly 33 (`WS_ACK_FRAME_LEN`) | `WS_FRAME_EINVAL` (-1) |
 | 2 | `ws_frame_kind`: `frame` is not NULL, version is 5, kind is ACK or NACK | `WS_FRAME_EHEADER` (-2) |
-| 3 | the caller's `station` is 1–65535 | `WS_FRAME_EHEADER` |
+| 3 | the caller's `station` is 1–65535 | `WS_FRAME_EINVAL` (a bad argument, not a bad frame) |
 | 4 | bytes 0–2 (version, kind, station) equal the header rebuilt from the kind, the caller's station and the frame's counter | `WS_FRAME_EHEADER` |
 | 5 | CCM decrypts and the tag verifies, with AAD = the frame's 8 header bytes | `WS_FRAME_EAUTH` (-3) |
 | | all checks pass | `WS_FRAME_OK` (0) |
@@ -277,7 +277,7 @@ int ws_open_reply(const uint8_t key[WS_KEY_LEN], uint32_t station, const uint8_t
  if(len!=WS_ACK_FRAME_LEN) return WS_FRAME_EINVAL;
  int k=ws_frame_kind(frame,len);
  if(k!=WS_KIND_ACK && k!=WS_KIND_NACK) return WS_FRAME_EHEADER;
- if(station==0 || station>WS_STATION_MAX) return WS_FRAME_EHEADER;
+ if(station==0 || station>WS_STATION_MAX) return WS_FRAME_EINVAL;   /* the caller's station, not the frame's */
  uint64_t ctr=ws_get_be64(frame+WS_COUNTER_OFF,WS_COUNTER_BYTES);
  header(expect,nonce,(uint8_t)k,station,ctr);
  if(memcmp(expect,frame,WS_COUNTER_OFF)) return WS_FRAME_EHEADER; /* version, kind, station */
@@ -296,7 +296,8 @@ int ws_open_reply(const uint8_t key[WS_KEY_LEN], uint32_t station, const uint8_t
 
 `ws_key_check` encrypts one zero block with AES-128-ECB under the key and returns its first 3
 bytes (`WS_KCV_LEN`). The node and the gateway compute it from the same key, so equal values show
-equal keys without displaying the key.
+equal keys without displaying the key. The function zeroes the whole AES block before it returns,
+so only those 3 bytes leave it.
 
 | Key | Check value |
 |---|---|
@@ -318,6 +319,7 @@ int ws_key_check(const uint8_t key[WS_KEY_LEN], uint8_t out[WS_KCV_LEN]) {
  if(!rc) { const uint8_t zero[AES_BLOCK_LEN]={0}; rc=mbedtls_aes_crypt_ecb(&aes,MBEDTLS_AES_ENCRYPT,zero,block); }
  mbedtls_aes_free(&aes);
  if(!rc) memcpy(out,block,WS_KCV_LEN);
+ mbedtls_platform_zeroize(block,sizeof block);   /* AES(key, 0): only 3 bytes are meant to leave */
  return rc;
 }
 ```
