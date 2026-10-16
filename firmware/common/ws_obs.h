@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "ws_be.h"
-/* Draft-5 observation plaintext (docs/protocol-draft5-design.md section 5). No hardware
+/* Draft-5 observation plaintext (docs/protocol-design.md section 5). No hardware
  * dependencies: the TX firmware, the host tests and the fuzzers run the same code. The Python
  * twin of this table is ws0/fields.py; tests/test_obs.py checks that the two agree. */
 
@@ -47,7 +47,7 @@ enum {
                          WS_F(WS_FI_HUMIDITY_MIN_PCT) | WS_F(WS_FI_HUMIDITY_MAX_PCT) | WS_F(WS_FI_TH_SAMPLES))
 #define WS_FIELDS_DEFINED  (WS_F(WS_FI_COUNT) - 1U)
 
-/* Catalog v1 (docs/protocol-draft5-design.md section 5.3), the only copy of each field's width in
+/* Catalog v1 (docs/protocol-design.md section 5.3), the only copy of each field's width in
  * bytes and highest in-range code: ws_obs.c builds its tables from it and WS_OBS_FIELDS_LEN its
  * constant-expression lengths. INVALID is the field's all-ones value, except qualifiers, which have
  * none. X(a, index, width, max); a is passed through to X. */

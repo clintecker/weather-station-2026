@@ -3,7 +3,7 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
-/* Protocol draft 5 envelope (docs/protocol-draft5-design.md sections 3-4); AES-128-CCM via Mbed TLS.
+/* Protocol draft 5 envelope (docs/protocol-design.md sections 3-4); AES-128-CCM via Mbed TLS.
  * The gateway (ws0/protocol.py) builds the same bytes, checked by tests/test_frame.py. */
 #define WS_FRAME_VERSION 5
 #define WS_KIND_OBS 1
@@ -60,7 +60,7 @@ static inline int ws_frame_kind(const uint8_t *frame, uint32_t len) {
  if(!frame || len<1 || (frame[0]>>WS_VERSION_SHIFT)!=WS_FRAME_VERSION) return -1;
  return frame[0]&WS_KIND_MASK;
 }
-/* Health report plaintext (kind 4, docs/protocol-draft5-design.md section 4; ws0/protocol.py DIAG,
+/* Health report plaintext (kind 4, docs/protocol-design.md section 4; ws0/protocol.py DIAG,
  * checked byte for byte by tests/test_frame.py). The caller clamps the counts. */
 typedef struct {
  uint32_t epoch, uptime, lost, build;               /* build: first 4 bytes of the release commit */

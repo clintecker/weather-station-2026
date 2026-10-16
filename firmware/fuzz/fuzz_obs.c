@@ -1,7 +1,7 @@
 /* Draft-5 observation encoder (firmware/common/ws_obs.c), driven with arbitrary records.
  * The input bytes become a ws_obs_t (header values, bitmap, and per-field codes chosen as random,
  * INVALID, small or CALM so valid records are common). Properties, checked against an independent
- * reading of docs/protocol-draft5-design.md section 5:
+ * reading of docs/protocol-design.md section 5:
  *  - the encoder accepts exactly the canonical records and the ones that fit the buffer;
  *  - an accepted record has length 22 + the present widths (and equals WS_OBS_PLAIN_LEN), its
  *    header bytes carry the inputs, flags bit 0 is (utc != 0), and each field is its code, big-endian;

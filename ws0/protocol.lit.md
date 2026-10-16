@@ -93,7 +93,7 @@ The 8 header bytes are the AAD. The tag length is a fixed constant. It is never 
 frame length.
 
 ```python {#envelope}
-# Draft-5 envelope (docs/protocol-draft5-design.md section 3): byte 0 = version << 4 | kind,
+# Draft-5 envelope (docs/protocol-design.md section 3): byte 0 = version << 4 | kind,
 # station u16, counter u40; then ciphertext and an 8-byte CCM tag. The C twin is
 # firmware/common/ws_frame.c, checked byte for byte by tests/test_frame.py.
 VERSION = 5

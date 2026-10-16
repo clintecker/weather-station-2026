@@ -1,7 +1,7 @@
 #ifndef NODE_FIELDS_H
 #define NODE_FIELDS_H
 #include "ws_obs.h"
-/* The catalog fields this build measures (docs/protocol-draft5-design.md 5.5). Every record of
+/* The catalog fields this build measures (docs/protocol-design.md 5.5). Every record of
  * the build carries exactly these, so the observation and journal slot sizes follow from them at
  * compile time. The journal page magic encodes the slot size, so a build with another field set
  * ignores and recycles pages written with the old layout. */

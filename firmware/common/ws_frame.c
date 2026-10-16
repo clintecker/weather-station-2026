@@ -95,7 +95,7 @@ int ws_key_check(const uint8_t key[WS_KEY_LEN], uint8_t out[WS_KCV_LEN]) {
  return rc;
 }
 
-/* Field order and widths: docs/protocol-draft5-design.md section 4 and ws0/protocol.py DIAG. */
+/* Field order and widths: docs/protocol-design.md section 4 and ws0/protocol.py DIAG. */
 void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]) {
  uint8_t *p = ws_write_be32(out, d->epoch);
  p = ws_write_be32(p, d->uptime);

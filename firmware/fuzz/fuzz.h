@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-/* The protocol's numbers as docs/protocol-draft5-design.md states them, written out here on
+/* The protocol's numbers as docs/protocol-design.md states them, written out here on
  * purpose instead of taken from ws_frame.h or ws_obs.h: an oracle that reused those headers would
  * share any mistake in them. */
 #define SPEC_BYTE0(kind)    (0x50U | (kind))   /* version 5 in the high nibble, kind in the low */

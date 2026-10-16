@@ -3,7 +3,7 @@
 `ws_frame.c` seals and opens the frames the TX node exchanges with the gateway over LoRa. It builds
 the 8-byte clear header, the 13-byte AES-128-CCM nonce and the 8-byte tag. It also opens ACK and
 NACK replies, packs the health report and computes the key check value. The gateway builds the
-same bytes in `ws0/protocol.py`. The format is `docs/protocol-draft5-design.md` sections 3 and 4.
+same bytes in `ws0/protocol.py`. The format is `docs/protocol-design.md` sections 3 and 4.
 
 This document is the source. `tools/tangle.py` generates `ws_frame.c` from the code chunks below.
 The repository also holds the generated file, so the build, the static analysers, the fuzzer and the
@@ -356,7 +356,7 @@ offsets follow from the order of the writes:
   `WS_SIGNAL_NONE` (`INT8_MIN`) goes out as `0x80`, which the gateway reads as −128, "none yet".
 
 ```c {#diag-pack}
-/* Field order and widths: docs/protocol-draft5-design.md section 4 and ws0/protocol.py DIAG. */
+/* Field order and widths: docs/protocol-design.md section 4 and ws0/protocol.py DIAG. */
 void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]) {
  uint8_t *p = ws_write_be32(out, d->epoch);
  p = ws_write_be32(p, d->uptime);

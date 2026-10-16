@@ -118,7 +118,7 @@ def _check_qualifiers(record):
 
 
 def validate(record):
-    """Closed schema for protocol draft 5 (docs/protocol-draft5-design.md 5.7): identity and time as
+    """Closed schema for protocol draft 5 (docs/protocol-design.md 5.7): identity and time as
     before, catalog fields with exact, representable values, and a quality that matches them. The
     checks run in this order; the first failure names the error."""
     extra = _check_keys(record)

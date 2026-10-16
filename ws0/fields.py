@@ -1,6 +1,6 @@
 """Draft-5 observation plaintext: field catalog v1, encoder and decoder.
 
-docs/protocol-draft5-design.md section 5. The C twin is firmware/common/ws_obs.{c,h};
+docs/protocol-design.md section 5. The C twin is firmware/common/ws_obs.{c,h};
 tests/test_obs.py checks that both produce and accept the same bytes.
 """
 import math

@@ -64,7 +64,7 @@ void sampling_stop(void)
   (void)UTIL_TIMER_Stop(&sample_timer);
 }
 
-/* Draft-5 observation (docs/protocol-draft5-design.md 5): out-of-range temperature is INVALID,
+/* Draft-5 observation (docs/protocol-design.md 5): out-of-range temperature is INVALID,
    RH is clamped (ws_code_*); a sensor fault sends every field as INVALID, never leaves it out.
    The summary fields are used only if the build's bitmap includes them (WS_F_TH_SUMMARY in
    node_fields.h). */
