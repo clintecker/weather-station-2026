@@ -15,6 +15,7 @@
    than a flash page erase (24.5 ms max), which stalls the I2C interrupt, so an erase that overlaps a
    transfer does not read as a sensor timeout. ST's timer rounds down to 1/1024 s ticks. */
 #define I2C_GUARD_MS 30
+#define SHT45_HAL_ADDR ((uint16_t)(WS_SHT45_ADDR << 1))   /* ST's HAL takes the 7-bit address shifted left */
 #define I2C_IRQ_PRIORITY 2   /* below the radio and the RTC (0), like the console UART */
 /* 100 kHz standard mode at PCLK1 = 48 MHz (same value as ST's NUCLEO-WL55JC I2C examples). */
 #define I2C_TIMING 0x20303E5DU
@@ -121,14 +122,14 @@ static void on_measured(void *ctx)
   (void)ctx;
   if (!advance(S_MEASURE, S_READ)) return;
   (void)WS_CHECK(UTIL_TIMER_Start(&guard_timer) == UTIL_TIMER_OK);
-  if (HAL_I2C_Master_Receive_IT(&hi2c2, (uint16_t)(WS_SHT45_ADDR << 1), reply, sizeof reply) != HAL_OK) finish(-3);
+  if (HAL_I2C_Master_Receive_IT(&hi2c2, SHT45_HAL_ADDR, reply, sizeof reply) != HAL_OK) finish(SENSOR_ENACK_READ);
 }
 
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c) { if (hi2c == &hi2c2 && st == S_READ) finish(0); }
 /* A NACK (no sensor at the address, or not ready) or a bus error. */
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
-void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) { if (hi2c == &hi2c2) finish(st == S_CMD ? -2 : -3); }
+void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) { if (hi2c == &hi2c2) finish(st == S_CMD ? SENSOR_ENACK_ADDR : SENSOR_ENACK_READ); }
 static void on_guard(void *ctx) { (void)ctx; finish(SENSOR_TIMEOUT); }
 
 void I2C2_EV_IRQHandler(void);   /* vector table names (startup_stm32wl55jcix.s) */
@@ -210,6 +211,6 @@ int sensor_start(void)
   st = S_CMD;
   (void)WS_CHECK(UTIL_TIMER_Start(&guard_timer) == UTIL_TIMER_OK);   /* stopped by finish() or the write's completion */
   /* ST's HAL takes a non-const buffer it only reads (the static array outlives the transfer). */
-  if (HAL_I2C_Master_Transmit_IT(&hi2c2, (uint16_t)(WS_SHT45_ADDR << 1), (uint8_t *)(uintptr_t)command, 1) != HAL_OK) finish(-2);
+  if (HAL_I2C_Master_Transmit_IT(&hi2c2, SHT45_HAL_ADDR, (uint8_t *)(uintptr_t)command, sizeof command) != HAL_OK) finish(SENSOR_ENACK_ADDR);
   return 0;
 }

@@ -39,7 +39,7 @@
  * resets the board (which re-runs Radio.Init). Minutes the policy chose not to send never count. */
 #define TX_FAIL_LIMIT       10U
 /* A storage failure at boot may be transient: retry once by a reset after 10 minutes. */
-#define BOOT_RETRY_MS       (10UL * 60000UL)
+#define BOOT_RETRY_MS       (10UL * CLOCK_MS_PER_MIN)
 
 static UTIL_TIMER_Object_t sample_timer, boot_retry_timer;
 static uint32_t last_sample_s;   /* watchdog progress evidence */
@@ -70,7 +70,7 @@ static void obs_codes(ws_obs_t *o, int valid, int16_t t, uint16_t h)
 {
   static const uint8_t th_fields[] = { WS_FI_TEMPERATURE_C, WS_FI_HUMIDITY_PCT, WS_FI_TEMPERATURE_MIN_C,
                                        WS_FI_TEMPERATURE_MAX_C, WS_FI_HUMIDITY_MIN_PCT, WS_FI_HUMIDITY_MAX_PCT };
-  o->code[WS_FI_TH_SAMPLES] = th_window.n > 60U ? 60U : th_window.n;
+  o->code[WS_FI_TH_SAMPLES] = th_window.n > WS_TH_SAMPLES_MAX ? WS_TH_SAMPLES_MAX : th_window.n;
   if (!valid)
   {
     for (unsigned i = 0; i < sizeof th_fields; i++) o->code[th_fields[i]] = ws_obs_invalid(th_fields[i]);
@@ -94,10 +94,10 @@ static void obs_codes(ws_obs_t *o, int valid, int16_t t, uint16_t h)
  * newest kept. A reset loses what is held: those sequence numbers are never sent, so the gateway
  * sees the gap. */
 #define HELD_MAX 2U
+#define SAMPLING_STALL_S 150U   /* 10 sample periods without a sample: the sampler stopped */
 static uint8_t held[HELD_MAX][WS_OBS_PLAIN_MAX];
 static unsigned held_n;
 
-static uint32_t plain_seq(const uint8_t *plain) { return ws_get_be32(plain + 4); }
 
 /* hold() makes room before it adds, so held_n never exceeds HELD_MAX; a count that did is clamped. */
 static unsigned held_count(void)
@@ -111,7 +111,7 @@ static void hold(const uint8_t *plain)
   if (held_count() == HELD_MAX)
   {
     node.held_lost++;
-    APP_PRINTF("#error held-lost seq=%u (a newer reading replaced it; held_lost=%u)\n", (unsigned)plain_seq(held[0]),
+    APP_PRINTF("#error held-lost seq=%u (a newer reading replaced it; held_lost=%u)\n", (unsigned)ws_obs_seq(held[0]),
                (unsigned)node.held_lost);
     memmove(held[0], held[1], (HELD_MAX - 1U) * sizeof held[0]);
     held_n--;
@@ -126,7 +126,7 @@ void held_flush(void)
   {
     int rc = store_journal_append(held[i], &r);
     ws_failrun_note(&node.journal_fails, rc == 0);
-    APP_PRINTF("#held journaled seq=%u rc=%d pending=%u\n", (unsigned)plain_seq(held[i]), rc, (unsigned)store_journal_pending());
+    APP_PRINTF("#held journaled seq=%u rc=%d pending=%u\n", (unsigned)ws_obs_seq(held[i]), rc, (unsigned)store_journal_pending());
   }
   held_n = 0;
 }
@@ -164,10 +164,11 @@ static int minute_encode(minute_t *m, uint8_t *plain)
 }
 
 /* Journal the encoded reading now, or hold it while the radio is busy (a held reading's append
-   is counted when the radio goes idle). 0: journaled or held; else the error (-3: not encoded). */
+   is counted when the radio goes idle). 0: journaled or held; else the error (REC_ENOTENCODED or a STORE_E* code). */
+#define REC_ENOTENCODED (-100)   /* outside the STORE_E* range */
 static int journal_or_hold(const uint8_t *plain, int encoded, int busy, jref_t *live)
 {
-  int rc = encoded ? 0 : -3;
+  int rc = encoded ? 0 : REC_ENOTENCODED;
   if (!rc && busy) hold(plain);
   else if (!rc) rc = store_journal_append(plain, live);
   if (rc || !busy) ws_failrun_note(&node.journal_fails, rc == 0);
@@ -231,7 +232,7 @@ int watchdog_healthy(void)
   uint32_t now = clock_s();
   if (stuck) return 0;
   if (!node.running) return 1;                             /* not sampling by design */
-  if (now - last_sample_s > 150) return 0;                    /* sampling stopped */
+  if (now - last_sample_s > SAMPLING_STALL_S) return 0;       /* sampling stopped */
   if (exchange_overdue(now))                                  /* radio exchange stuck */
   {
     /* Stop sampling and the radio, journal any held reading with the radio idle, then let the
@@ -256,7 +257,7 @@ static void on_boot_retry(void *ctx) { (void)ctx; NVIC_SystemReset(); }
 static void boot_retry(void)
 {
   if (!node.kat_ok) return;
-  APP_PRINTF("#boot-retry: reset in %u s\n", (unsigned)(BOOT_RETRY_MS / 1000));
+  APP_PRINTF("#boot-retry: reset in %u s\n", (unsigned)(BOOT_RETRY_MS / CLOCK_MS_PER_S));
   (void)UTIL_TIMER_Create(&boot_retry_timer, BOOT_RETRY_MS, UTIL_TIMER_ONESHOT, on_boot_retry, NULL);
   (void)UTIL_TIMER_Start(&boot_retry_timer);
 }

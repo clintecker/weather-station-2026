@@ -32,9 +32,12 @@
 void ws_check_fail(uint16_t site) __attribute__((cold));
 uint32_t ws_check_count(void);   /* failed checks since boot (saturates) */
 uint16_t ws_check_first(void);   /* site of the first failed check, 0 if none */
-static inline unsigned ws_check_site_file(uint16_t site) { return (unsigned)site >> 10; }
-static inline unsigned ws_check_site_line(uint16_t site) { return (unsigned)site & 1023U; }
+/* A site is (file << WS_CHECK_LINE_BITS) | line: files 1-63, lines 1-1023. */
+#define WS_CHECK_LINE_BITS 10
+#define WS_CHECK_LINE_MASK ((1U << WS_CHECK_LINE_BITS) - 1U)
+static inline unsigned ws_check_site_file(uint16_t site) { return (unsigned)site >> WS_CHECK_LINE_BITS; }
+static inline unsigned ws_check_site_line(uint16_t site) { return (unsigned)site & WS_CHECK_LINE_MASK; }
 
 #define WS_CHECK(cond) \
-  (__builtin_expect(!!(cond), 1) ? 1 : (ws_check_fail((uint16_t)((WS_CHECK_FILE << 10) | __LINE__)), 0))
+  (__builtin_expect(!!(cond), 1) ? 1 : (ws_check_fail((uint16_t)((WS_CHECK_FILE << WS_CHECK_LINE_BITS) | __LINE__)), 0))
 #endif

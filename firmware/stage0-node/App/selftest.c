@@ -5,7 +5,7 @@
 
 /* Draft-5 known-answer vectors, shared with tests/test_frame.py. They were made directly with the
  * cryptography library's AESCCM from the spec's header and nonce, not by ws0/protocol.py. */
-static const uint8_t KAT_KEY[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
+static const uint8_t KAT_KEY[WS_KEY_LEN] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
 /* Observation: the encoder's own known answer (tests/test_obs.py KAT: T -12.34 C, RH 45.67 %, epoch 1,
  * seq 2, UTC 1791991189, uptime 300 s, NORMAL), sealed with counter 0x100000002. Raw bytes, not hex
  * text (no decoder needed); tests/test_frame.py reads these three arrays back from this file. */

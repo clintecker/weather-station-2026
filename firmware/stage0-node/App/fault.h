@@ -12,6 +12,8 @@ uint32_t fault_count(void);
  * HardFault and a reset. */
 void fault_test(void) __attribute__((noreturn));
 /* Called from the exception handlers (Core/Src/stm32wlxx_it.c) with the stacked exception frame
- * and the EXC_RETURN value; kind 1 = HardFault, 2 = NMI. */
+ * and the EXC_RETURN value. The HardFault handler's assembly passes FAULT_KIND_HARD as an immediate. */
+#define FAULT_KIND_HARD 1U
+#define FAULT_KIND_NMI  2U
 void fault_record(const uint32_t *frame, uint32_t exc_return, uint32_t kind) __attribute__((noreturn));
 #endif

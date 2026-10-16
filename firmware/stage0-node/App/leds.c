@@ -4,7 +4,7 @@
 
 static GPIO_TypeDef *const port[] = { LED1_GPIO_Port, LED2_GPIO_Port, LED3_GPIO_Port };
 static const uint16_t pin[] = { LED1_Pin, LED2_Pin, LED3_Pin };
-static UTIL_TIMER_Object_t off_timer[3];
+static UTIL_TIMER_Object_t off_timer[LED_COUNT];
 static UTIL_TIMER_Object_t heartbeat_timer;
 
 #define HEARTBEAT_PERIOD_MS 2000U
@@ -22,9 +22,9 @@ static void heartbeat(void *ctx)
 
 void leds_init(void)
 {
-  for (uintptr_t i = 0; i < 3; i++)
+  for (uintptr_t i = 0; i < LED_COUNT; i++)
   {
-    (void)UTIL_TIMER_Create(&off_timer[i], 100, UTIL_TIMER_ONESHOT, off, (void *)i);
+    (void)UTIL_TIMER_Create(&off_timer[i], LED_FLASH_MS, UTIL_TIMER_ONESHOT, off, (void *)i);   /* led_flash sets the period */
     HAL_GPIO_WritePin(port[i], pin[i], GPIO_PIN_RESET);
   }
   (void)UTIL_TIMER_Create(&heartbeat_timer, HEARTBEAT_PERIOD_MS, UTIL_TIMER_PERIODIC, heartbeat, NULL);

@@ -88,7 +88,7 @@ void NMI_Handler(void)
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
   /* weather-station-2026: any other NMI source (clock security system) is recorded like a
      HardFault; the frame is not needed, so 0 stands in for it and fault_record stores pc=ffffffff. */
-  fault_record(0, 0, 2);
+  fault_record(0, 0, FAULT_KIND_NMI);
   /* bound: unreachable; fault_record() does not return (ST template loop kept) */
   while (1)
   {
@@ -110,7 +110,7 @@ void HardFault_Handler(void)
                   "mrseq r0, msp\n\t"
                   "mrsne r0, psp\n\t"
                   "mov r1, lr\n\t"
-                  "movs r2, #1\n\t"
+                  "movs r2, #1\n\t"          /* FAULT_KIND_HARD */
                   "b fault_record\n\t");
   /* USER CODE END HardFault_IRQn 0 */
   /* A fault that gets here stops the CPU and the watchdog resets the board (HardFault records first

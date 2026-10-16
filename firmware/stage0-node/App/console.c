@@ -56,11 +56,11 @@ void console_init(void)
  * would reach the gateway as a malformed frame, get no ACK, and never be delivered. The line, its
  * newline and NUL must fit the trace buffer. */
 #define HEX_FRAME_MAX (WS_FRAME_OVERHEAD + WS_OBS_PLAIN_ALL)
-_Static_assert(2U * HEX_FRAME_MAX + 2U <= UTIL_ADV_TRACE_TMP_BUF_SIZE, "longest frame fits one console line");
+_Static_assert(WS_HEX_PER_BYTE * HEX_FRAME_MAX + sizeof "\n" <= UTIL_ADV_TRACE_TMP_BUF_SIZE, "longest frame fits one console line");
 
 int hex_print(const uint8_t *data, int len)
 {
-  char text[2 * HEX_FRAME_MAX + 1];
+  char text[WS_HEX_PER_BYTE * HEX_FRAME_MAX + 1];
   /* The callers pass frames ws_air_frame_ok accepted; anything longer is never printed truncated. */
   if (!WS_CHECK(len >= 0 && len <= (int)HEX_FRAME_MAX))
   {

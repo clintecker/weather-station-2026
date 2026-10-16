@@ -2,6 +2,7 @@
 #define RADIO_CFG_H
 #include <stdint.h>
 #include "radio.h"
+#include "ws_frame.h"   /* WS_FRAME_MAX */
 /* Stage-0 RF configuration (docs/hardware/nucleo-wl55jc-bringup.md, "RF configuration
  * decision"): 915.0 MHz LoRa, 500 kHz bandwidth = FCC 15.247(a)(2) digital-modulation
  * class. Power and spreading factor are bench values; tune SF/power for the H01
@@ -18,7 +19,7 @@
 void ws_radio_configure(int continuous);
 /* For a reception that failed its checks (radio interrupt context): the packet the radio stored
    (length, bytes, packet RSSI/SNR), valid after a payload CRC error; and the channel RSSI now. */
-void ws_radio_last_packet(uint8_t buf[255], uint8_t *len, int8_t *rssi, int8_t *snr);
+void ws_radio_last_packet(uint8_t buf[WS_FRAME_MAX], uint8_t *len, int8_t *rssi, int8_t *snr);
 int8_t ws_radio_rssi_now(void);
 /* Before listening: ST's RadioSend leaves the LoRa payload length at the last frame sent. */
 void ws_radio_rx_full_length(void);

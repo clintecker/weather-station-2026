@@ -27,10 +27,11 @@ static UTIL_TIMER_Object_t reboot_timer;
 
 /* Decimal text of a 64-bit counter: the console's tiny_vsnprintf has no 64-bit format, and a
    (unsigned) cast printed only the low 32 bits. */
-static const char *u64_text(uint64_t v, char buf[21])
+#define U64_DIGITS 20   /* 2^64 - 1 has 20 decimal digits */
+static const char *u64_text(uint64_t v, char buf[U64_DIGITS + 1])
 {
-  char *p = buf + 20; *p = 0;
-  do { *--p = (char)('0' + (int)(v % 10U)); v /= 10U; } while (v);   /* bound: 20 digits (2^64 - 1) */
+  char *p = buf + U64_DIGITS; *p = 0;
+  do { *--p = (char)('0' + (int)(v % 10U)); v /= 10U; } while (v);   /* bound: U64_DIGITS digits */
   return p;
 }
 
@@ -38,12 +39,13 @@ static const char *u64_text(uint64_t v, char buf[21])
  * used to be cut off mid-field. #status keeps the fields provision-node and the gateway parse. */
 static void status_line(void)
 {
-  char ctr_buf[21];
+  char ctr_buf[U64_DIGITS + 1], kcv[WS_HEX_PER_BYTE * WS_KCV_LEN + 1];
   const tx_identity_t *id = exchange_identity();
   const tx_node_t *n = node_state();
-  APP_PRINTF("#status role=tx fw=%s reset=%s provisioned=%d station=%u kcv=%02x%02x%02x kat=%s epoch=%u next_seq=%u "
+  ws_hex_text(id->kcv, WS_KCV_LEN, kcv);
+  APP_PRINTF("#status role=tx fw=%s reset=%s provisioned=%d station=%u kcv=%s kat=%s epoch=%u next_seq=%u "
              "ctr=%s ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u\n",
-             WS_FW_VERSION, watchdog_reset_cause(), id->provisioned, (unsigned)id->station, id->kcv[0], id->kcv[1], id->kcv[2],
+             WS_FW_VERSION, watchdog_reset_cause(), id->provisioned, (unsigned)id->station, kcv,
              n->kat_ok ? "pass" : "FAIL", (unsigned)n->boot_epoch, (unsigned)n->next_seq,
              u64_text(store_counter_next(), ctr_buf), (unsigned)store_ecc_faults(),
              policy_probing() ? "probing" : "linked", (unsigned)policy_silent_minutes(), ws_energy_name(energy_state()),
@@ -99,23 +101,26 @@ static int storming;   /* sampling stopped for the load */
 /* At most this many slots per boot (~30 s): enough for a power cut to land in a write, far from
    wearing out the journal (93 pages, 10 k erase cycles each). */
 #define STORM_MAX_WRITES 24000U
+#define STORM_WRITES_PER_PASS 16U      /* journal writes per task pass */
+#define STORM_COUNTERS_PER_WRITE 4U   /* counter reservations per write: meta-log appends too */
+#define STORM_REPORT_EVERY 256U       /* writes between #storm lines */
 static void storm(void)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX] = { 0 }; jref_t r; uint64_t c;
   if (!storming) return;
   /* At the cap the load stops; sampling stays stopped until the reboot that ends a storm. */
   if (storm_writes >= STORM_MAX_WRITES) { APP_PRINTF("#storm done writes=%u (cap; reboot to resume)\n", (unsigned)storm_writes); return; }
-  for (int i = 0; i < 16; i++)
+  for (unsigned i = 0; i < STORM_WRITES_PER_PASS; i++)
   {
     ws_obs_t o = { .epoch = STORM_EPOCH, .seq = storm_writes++, .energy = WS_ENERGY_NORMAL, .bitmap = WS_NODE_FIELDS };
     for (unsigned f = 0; f < WS_FI_COUNT; f++) o.code[f] = ws_obs_invalid(f);
     (void)ws_obs_encode(&o, plain, sizeof plain);
     /* A load, not data: a failed write or reservation is simply one less flash operation. */
     if (store_journal_append(plain, &r) == 0) (void)store_journal_ack(r);
-    for (int k = 0; k < 4; k++) (void)store_next_counter(&c);
+    for (unsigned k = 0; k < STORM_COUNTERS_PER_WRITE; k++) (void)store_next_counter(&c);
   }
-  if ((storm_writes & 255) == 0)
-    { char ctr_buf[21];
+  if (storm_writes % STORM_REPORT_EVERY == 0)
+    { char ctr_buf[U64_DIGITS + 1];
       APP_PRINTF("#storm writes=%u ctr=%s burned=%u\n", (unsigned)storm_writes,
                  u64_text(store_counter_next(), ctr_buf), (unsigned)store_journal_burned()); }
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
@@ -124,7 +129,7 @@ BUSYMON_TASK(storm)
 
 static void storm_start(void)
 {
-  char ctr_buf[21];
+  char ctr_buf[U64_DIGITS + 1];
   APP_PRINTF("#storm start ctr=%s (bench only: cut power now)\n", u64_text(store_counter_next(), ctr_buf));
   /* Sampling stops, so no exchange starts; the watchdog must not count a stopped sampler. */
   storming = 1;
@@ -135,7 +140,7 @@ static void storm_start(void)
 #define PROVISION_ARGS (sizeof "PROVISION " - 1U)
 static void provision(char *line)
 {
-  uint8_t new_key[16], check[3]; uint32_t id, floor; int rc, done = 0;
+  uint8_t new_key[WS_KEY_LEN], check[WS_KCV_LEN]; uint32_t id, floor; int rc, done = 0;
   if (exchange_identity()->provisioned) { APP_PRINTF("#error already-provisioned (WIPE first)\n"); }
   else if (ws_parse_provision(line + PROVISION_ARGS, &id, new_key, &floor))
   { APP_PRINTF("#error usage: PROVISION <station_id> <32 hex key> [epoch_floor]\n"); }
@@ -143,7 +148,9 @@ static void provision(char *line)
   else if ((rc = store_config_write(id, new_key, check)) != 0) { APP_PRINTF("#error provision rc=%d\n", rc); }
   else
   {
-    APP_PRINTF("#provisioned station=%u kcv=%02x%02x%02x epoch_floor=%u\n", (unsigned)id, check[0], check[1], check[2], (unsigned)floor);
+    char kcv[WS_HEX_PER_BYTE * WS_KCV_LEN + 1];
+    ws_hex_text(check, WS_KCV_LEN, kcv);
+    APP_PRINTF("#provisioned station=%u kcv=%s epoch_floor=%u\n", (unsigned)id, kcv, (unsigned)floor);
     done = 1;
   }
   ws_wipe(new_key, sizeof new_key); ws_wipe(line, strlen(line)); /* the key never lingers in RAM */

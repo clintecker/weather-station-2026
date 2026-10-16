@@ -51,7 +51,7 @@ static int record_id(jref_t r, uint32_t *epoch, uint32_t *seq)
 {
   uint8_t plain[WS_OBS_PLAIN_MAX];
   if (store_journal_read(r, plain)) return 0;
-  *epoch = ws_get_be32(plain); *seq = ws_get_be32(plain + 4);
+  *epoch = ws_obs_epoch(plain); *seq = ws_obs_seq(plain);
   return 1;
 }
 

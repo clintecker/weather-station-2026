@@ -30,7 +30,7 @@ const tx_counts_t *exchange_counts(void);   /* read-only: only the exchange coun
 
 /* The node's provisioning (node_store.c), loaded once at boot. The key stays inside tx_exchange.c,
    the only module that seals and opens frames; the others see the station and the key check value. */
-typedef struct { int provisioned; uint32_t station; uint8_t kcv[3]; } tx_identity_t;
+typedef struct { int provisioned; uint32_t station; uint8_t kcv[WS_KCV_LEN]; } tx_identity_t;
 int exchange_load_identity(void);           /* 1 if provisioned and intact */
 const tx_identity_t *exchange_identity(void);   /* read-only */
 #endif

@@ -11,10 +11,10 @@ void ws_radio_configure(int continuous)
                     WS_LORA_PREAMBLE, false, true, 0, 0, false, WS_TX_TIMEOUT_MS);
   Radio.SetRxConfig(MODEM_LORA, WS_LORA_BANDWIDTH, WS_LORA_SF, WS_LORA_CR, 0, WS_LORA_PREAMBLE,
                     WS_LORA_SYMBOL_TO, false, 0, true, 0, 0, false, continuous ? true : false);
-  Radio.SetMaxPayloadLength(MODEM_LORA, 255);
+  Radio.SetMaxPayloadLength(MODEM_LORA, WS_FRAME_MAX);
 }
 
-void ws_radio_last_packet(uint8_t buf[255], uint8_t *len, int8_t *rssi, int8_t *snr)
+void ws_radio_last_packet(uint8_t buf[WS_FRAME_MAX], uint8_t *len, int8_t *rssi, int8_t *snr)
 {
   uint8_t start = 0; PacketStatus_t ps;
   SUBGRF_GetRxBufferStatus(len, &start);
@@ -49,7 +49,7 @@ int ws_radio_take_crc_error(void)
   return 1;
 }
 
-void ws_radio_rx_full_length(void) { ws_radio_irq_hold(); Radio.SetMaxPayloadLength(MODEM_LORA, 255); ws_radio_irq_release(); }
+void ws_radio_rx_full_length(void) { ws_radio_irq_hold(); Radio.SetMaxPayloadLength(MODEM_LORA, WS_FRAME_MAX); ws_radio_irq_release(); }
 
 void ws_radio_irq_hold(void) { HAL_NVIC_DisableIRQ(SUBGHZ_Radio_IRQn); __DSB(); __ISB(); }
 void ws_radio_irq_release(void) { HAL_NVIC_EnableIRQ(SUBGHZ_Radio_IRQn); }

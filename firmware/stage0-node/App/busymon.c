@@ -1,5 +1,6 @@
 #define WS_CHECK_FILE 10
 #include "busymon.h"
+#include "clock.h"
 #include "ws_check.h"
 
 static uint32_t peak[BM_KINDS];
@@ -85,6 +86,6 @@ uint32_t busymon_peak_us(bm_kind kind)
 {
   CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
   DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-  return peak[kind] / (SystemCoreClock / 1000000U);
+  return peak[kind] / (SystemCoreClock / CLOCK_US_PER_S);
 }
 const char *busymon_peak_name(bm_kind kind) { return peak_name[kind] ? peak_name[kind] : "none"; }

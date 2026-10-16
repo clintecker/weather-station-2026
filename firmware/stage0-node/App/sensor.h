@@ -11,6 +11,9 @@ void sensor_init(void);
  * previous measurement had not finished (app_tx.c),
  * -2 address NACK (sensor absent or wiring), -3 read NACK, -4 CRC mismatch (noise, cable),
  * -5 bus still stuck after recovery, -6 a transfer never completed. On a fault the values are 0. */
+#define SENSOR_ENACK_ADDR (-2)
+#define SENSOR_ENACK_READ (-3)
+#define SENSOR_ECRC       (-4)   /* ws_sht45_parse */
 #define SENSOR_BUS_STUCK (-5)
 #define SENSOR_TIMEOUT   (-6)
 int sensor_start(void);

@@ -8,16 +8,18 @@ extern uint32_t _end[];
 extern char _Min_Heap_Size[];
 extern uint32_t _estack[];
 
+#define WORD_ALIGN (sizeof(uint32_t) - 1U)   /* round a byte address to a word */
+#define OWN_FRAME_BYTES 64U
 static uint32_t *lowest(void)
 {
   uintptr_t lo = (uintptr_t)_end + (uintptr_t)_Min_Heap_Size;
-  return (uint32_t *)((lo + 3u) & ~(uintptr_t)3u);
+  return (uint32_t *)((lo + WORD_ALIGN) & ~(uintptr_t)WORD_ALIGN);
 }
 
 void stackmon_paint(void)
 {
-  /* Leave 64 bytes below the current stack pointer untouched: this function's own frame. */
-  const uint32_t *stop = (const uint32_t *)((__get_MSP() - 64u) & ~(uint32_t)3u);
+  /* Leave OWN_FRAME_BYTES below the current stack pointer untouched: this function's own frame. */
+  const uint32_t *stop = (const uint32_t *)((__get_MSP() - OWN_FRAME_BYTES) & ~(uint32_t)WORD_ALIGN);
   for (uint32_t *p = lowest(); p < stop; p++) *p = WS_STACK_PAINT;
 }
 
