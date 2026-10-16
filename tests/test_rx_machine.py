@@ -633,8 +633,8 @@ class RxStateMachine(unittest.TestCase):
         b.advance(ALIVE_MS)                                 # (the board would have reset; the report says why)
         self.assertEqual(b.alive_lines(b.out())[0]['listening'], '0')
 
-    # ---- 2026-10-15 review findings (each failed before its fix) ----
-    def test_review_m1_a_radio_that_hears_nothing_is_eventually_reset(self):
+    # ---- regressions (each failed before its fix) ----
+    def test_a_radio_that_hears_nothing_is_eventually_reset(self):
         b = self.bridge()
         b.advance(2 * RELISTEN_S * 1000 - 1000)             # the first relisten brought nothing back
         self.assertEqual(b.lib.h_wd_resets(), 0)
@@ -644,7 +644,7 @@ class RxStateMachine(unittest.TestCase):
         self.assertIn('#watchdog radio silent after 2 relistens; reset', text)
         self.assertGreaterEqual(b.lib.h_wd_resets(), 1)
 
-    def test_review_m1_a_second_ack_line_does_not_cut_the_first_short(self):
+    def test_a_second_ack_line_does_not_cut_the_first_short(self):
         b = self.bridge()
         b.out()
         b.line(reply(self.rnd).hex())
@@ -654,7 +654,7 @@ class RxStateMachine(unittest.TestCase):
         self.assertNotIn('#tx timeout', b.out())
         self.assertEqual(b.lib.h_sends_while_tx(), 0, 'Radio.Send while the radio was still transmitting')
 
-    def test_review_m3_a_transmit_timeout_stops_the_transmitter_first(self):
+    def test_a_transmit_timeout_stops_the_transmitter_first(self):
         b = self.bridge()
         b.lib.h_tx_mode(TX_STUCK)
         b.line(reply(self.rnd).hex())
@@ -662,7 +662,7 @@ class RxStateMachine(unittest.TestCase):
         self.assertIn('#tx timeout', b.out())
         self.assertEqual(b.lib.h_rx_after_timeout_no_standby(), 0)
 
-    def test_review_m4_listening_after_an_ack_restores_the_payload_length(self):
+    def test_listening_after_an_ack_restores_the_payload_length(self):
         b = self.bridge()
         self.assertEqual(b.lib.h_pkt_len(), 255)
         b.line(reply(self.rnd).hex())
@@ -670,7 +670,7 @@ class RxStateMachine(unittest.TestCase):
         self.assertEqual(b.radio(), RF_RX_RUNNING)
         self.assertEqual(b.lib.h_pkt_len(), 255, 'harness models the driver parameter only; chip effect not modelled')
 
-    def test_review_m6_no_relisten_while_a_probing_node_sends_every_15_minutes(self):
+    def test_no_relisten_while_a_probing_node_sends_every_15_minutes(self):
         b = self.bridge()
         b.out()
         for _ in range(4):
@@ -678,11 +678,11 @@ class RxStateMachine(unittest.TestCase):
             b.advance(15 * ALIVE_MS)
         self.assertNotIn('#relisten', b.out())
 
-    def test_review_m7_boot_line_starts_on_a_fresh_line(self):
+    def test_boot_line_starts_on_a_fresh_line(self):
         b = self.bridge()
         self.assertTrue(b.out().startswith('\n#boot '))
 
-    def test_review_m8_the_tail_of_a_dropped_line_is_not_a_line(self):
+    def test_the_tail_of_a_dropped_line_is_not_a_line(self):
         b = self.bridge()
         b.out()
         b.uart(f'{reply(self.rnd).hex()}\nST', run_each=False)
@@ -690,14 +690,14 @@ class RxStateMachine(unittest.TestCase):
         b.poll()
         self.assertEqual(b.out(), '')                       # today: '#host reject len=-1' for 'ATUS'
 
-    def test_review_m8_a_nul_inside_a_host_line_is_rejected(self):
+    def test_a_nul_inside_a_host_line_is_rejected(self):
         b = self.bridge()
         b.out()
         b.uart(reply(self.rnd).hex().encode() + b'\0junk\n')
         b.poll()
         self.assertEqual(b.lib.h_send_calls(), 0)
 
-    def test_review_m10_forwarded_counts_only_frames_that_reached_the_host(self):
+    def test_forwarded_counts_only_frames_that_reached_the_host(self):
         b = self.bridge(drops_ok=True)
         b.out()
         for _ in range(20):                                 # no time passes: the 2 KB FIFO cannot drain
@@ -707,7 +707,7 @@ class RxStateMachine(unittest.TestCase):
         b.advance(ALIVE_MS)
         self.assertEqual(b.alive_lines(b.out())[0]['forwarded'], str(printed))
 
-    def test_review_m11_a_lost_frame_is_told_apart_from_a_skipped_capture(self):
+    def test_a_lost_frame_is_told_apart_from_a_skipped_capture(self):
         def run(lose_frame):
             b = self.bridge()
             f1, f2 = self.obs(b), self.obs(b)
@@ -724,7 +724,7 @@ class RxStateMachine(unittest.TestCase):
             return b.alive_lines(b.out())[0]
         self.assertNotEqual(run(True), run(False))
 
-    # m12 (TEST-HANG / TEST-FAULT live in the production image) is a build-configuration question:
+    # Whether TEST-HANG / TEST-FAULT belong in the production image is a build-configuration question:
     # there is no production/bench build split to test here; test_test_fault_goes_to_the_fault_handler
     # shows TEST-FAULT is reachable in this build.
 

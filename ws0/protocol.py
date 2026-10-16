@@ -2,7 +2,7 @@
 
 AES-CCM is provided by cryptography/OpenSSL, never implemented here.
 The firmware reserves counters durably before use (firmware/stage0-node/App/node_store.c) and
-never resets them, not even on WIPE (gap G17), so a key never sees a repeated nonce on a board.
+never resets them, not even on WIPE, so a key never sees a repeated nonce on a board.
 """
 import hashlib
 import sqlite3
@@ -23,7 +23,7 @@ COUNTER_MAX = 2**40 - 1   # the header holds 5 bytes; a larger counter would tru
 # ACK and NACK plaintexts (17 bytes): epoch u32, sequence u32, word u32 (host UTC at commit for an
 # ACK, 0 if the gateway measured its clock wrong; the reason for a NACK), and the u40 counter of
 # the observation frame being answered. The echo lets the node accept the time only from the
-# reply to the frame it just sent, so a replayed ACK cannot set its clock. NACKs (gap G2) share
+# reply to the frame it just sent, so a replayed ACK cannot set its clock. NACKs share
 # the gateway's ACK counter space; the kind byte keeps the nonces distinct.
 REPLY_LEN = 17
 
@@ -40,7 +40,7 @@ def unpack_reply(plain):
 
 
 KIND_OBS, KIND_ACK, KIND_NACK, KIND_DIAG = 1, 2, 3, 4
-# DIAG (kind 4, gap G8; draft-5 design section 4): node health, fire-and-forget (no journal, no
+# DIAG (kind 4; draft-5 design section 4): node health, fire-and-forget (no journal, no
 # ACK). Epoch, uptime s, journal pending, lost (cumulative, persisted), torn slots present, abandoned
 # (cumulative, persisted), missed ACKs and rejected replies since boot, reset cause, link state;
 # firmware build ID (first 4 bytes of the release commit), signal of the last authentic ACK as the
@@ -60,7 +60,7 @@ class Nonces:
         if create and path.exists():
             raise ValueError('Refusing to overwrite nonce state')
         self.db = sqlite3.connect(path)
-        full_flush(self.db)  # WAL, synchronous=FULL, and on macOS flush the drive cache too (gap G4)
+        full_flush(self.db)  # WAL, synchronous=FULL, and on macOS flush the drive cache too
         self.db.execute('CREATE TABLE IF NOT EXISTS nonce (binding TEXT, counter INTEGER)')
         binding = hashlib.sha256(key + struct.pack('>IB', station, kind)).hexdigest()
         row = self.db.execute('SELECT binding FROM nonce').fetchone()
@@ -71,9 +71,9 @@ class Nonces:
             raise ValueError('Nonce state/key/endpoint mismatch')
         self.station, self.kind = station, kind
         if kind == KIND_ACK:
-            # Review item P4: the gateway's high-water mark of the node's counter space (OBS and
-            # DIAG share it). It lives here, in the state that is never restored from a backup
-            # (runbook R7), so restoring observations can never lower it.
+            # The gateway's high-water mark of the node's counter space (OBS and
+            # DIAG share it). It lives here, in the state that is never restored from a backup,
+            # so restoring observations can never lower it.
             self.node_binding = hashlib.sha256(key + struct.pack('>IB', station, KIND_OBS)).hexdigest()
             self.db.execute('CREATE TABLE IF NOT EXISTS node_counter (binding TEXT PRIMARY KEY, '
                             'max_counter INTEGER NOT NULL, regressions INTEGER NOT NULL, '

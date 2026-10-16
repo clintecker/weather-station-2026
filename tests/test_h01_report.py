@@ -62,7 +62,7 @@ class H01ReportTests(unittest.TestCase):
         self.assertEqual(r['invalid_clock_observations'], 1)
 
     def test_readings_at_the_interval_edge_are_flagged_not_rescored(self):
-        """Review GW2: sample times jitter about 1 s, so readings at :59.5 or :00.4 can land two in
+        """Sample times jitter about 1 s, so readings at :59.5 or :00.4 can land two in
         one interval and none in the next. The scorer flags it; the pass rule is unchanged."""
         for m in range(60):
             jitter = -0.6 if m % 7 == 3 else 0.4                       # mostly :00.4, sometimes :59.4
@@ -77,7 +77,7 @@ class H01ReportTests(unittest.TestCase):
         self.assertEqual(shifted['intervals_with_several_readings'], 0)
 
     def test_reconstructed_count_uses_each_intervals_final_choice(self):
-        """Review GW5: a reconstructed reading later replaced by a better one is not counted."""
+        """A reconstructed reading later replaced by a better one is not counted."""
         self.store.ingest(obs(0, None, session='5', uptime=0), START + 70)   # reconstructed, 70 s late
         self.store.ingest(obs(1, START + 60, session='5', uptime=60), START + 61)
         self.store.ingest(obs(0, START + 3, session='6', uptime=0), START + 4)  # same minute, better

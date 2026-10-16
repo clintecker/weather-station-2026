@@ -1,4 +1,4 @@
-"""Host clock check (failure-modes.md gap G9).
+"""Host clock check.
 
 The gateway is the station's only time source: every ACK carries host UTC. A wrong host clock
 would put a consistent but wrong time on all data. This module measures the host clock offset
@@ -91,7 +91,7 @@ class HostClock:
     def run(self, sleep=time.sleep):
         """Check forever. An unexpected error (in a measurement or in the log callback, which writes
         to SQLite) is logged and retried after RETRY_S: before, it ended the thread and froze the
-        clock state silently (gateway review GW10)."""
+        clock state silently."""
         while True:
             try:
                 delay = self.check()

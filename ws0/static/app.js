@@ -821,7 +821,7 @@
     }, 500);
   }
   // While following live, points older than the window are dropped, so a page left open for days
-  // keeps a bounded history instead of growing forever (gateway review GW11).
+  // keeps a bounded history instead of growing forever.
   function trimHistory() {
     if (!following()) return;
     const cutoff = now() - S.hist.range.span;

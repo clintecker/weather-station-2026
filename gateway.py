@@ -24,11 +24,11 @@ FAR_FUTURE = 253402300800   # 10000-01-01T00:00:00Z: the open end of a time rang
 
 
 def full_flush(db):
-    """Write-ahead log, and each commit reaches stable storage (gap G4). macOS fsync() does not
+    """Write-ahead log, and each commit reaches stable storage. macOS fsync() does not
     flush the drive cache; F_FULLFSYNC does. Measured on the bench Mac: commit 0.06 ms without
     (not durable), 5.3 ms median / 16 ms max with. WAL: one flush per commit instead of the
-    rollback journal's several (a nonce commit 14 ms -> 5 ms; gateway efficiency review). The
-    WAL file is part of the database: copy all of name, name-wal and name-shm or none (R7).
+    rollback journal's several (a nonce commit 14 ms -> 5 ms). The
+    WAL file is part of the database: copy all of name, name-wal and name-shm or none.
     Harmless no-ops on Linux. Simulations and unit tests may opt out with
     WS0_UNSAFE_FAST_FSYNC=1; they never claim power-loss durability."""
     fast = os.environ.get('WS0_UNSAFE_FAST_FSYNC') == '1'
@@ -172,7 +172,7 @@ class Store:
         # Authentic frames that were permanently rejected (and NACKed) are kept, never silently lost.
         self.db.execute('''CREATE TABLE IF NOT EXISTS rejections (station TEXT, session TEXT, sequence INTEGER,
             received_at REAL, reason TEXT, detail TEXT, frame_hex TEXT)''')
-        # Node health reports (kind 4, gap G8). Ordered by (epoch, uptime), not arrival, so a
+        # Node health reports (kind 4). Ordered by (epoch, uptime), not arrival, so a
         # delayed or replayed report never replaces a newer one.
         self.db.execute('''CREATE TABLE IF NOT EXISTS diagnostics (station TEXT, session INTEGER, uptime_s INTEGER,
             received_at REAL, report TEXT, PRIMARY KEY(station,session,uptime_s))''')

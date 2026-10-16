@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install or remove the Stage-0 gateway LaunchAgent for the current user (gap G3).
+# Install or remove the Stage-0 gateway LaunchAgent for the current user.
 #
 #   tools/deploy/macos/install.sh install [state-dir] [rx-stlink-serial]
 #   tools/deploy/macos/install.sh uninstall

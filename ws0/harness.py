@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, field
 import hashlib
 import heapq
 import os
-# The harness models networks and restarts, not power loss: skip the slow drive-cache flush (G4).
+# The harness models networks and restarts, not power loss: skip the slow drive-cache flush.
 os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')
 import html
 import json
@@ -198,7 +198,7 @@ class Campaign:
                                          'identity_collision_rejections','node_reboots','gateway_reboots',
                                          'counter_regressions','expected_counter_regressions',
                                          'replays','expected_replays']}
-        # P4 oracle: the node must seal strictly increasing counters in send order, and the
+        # Counter oracle: the node must seal strictly increasing counters in send order, and the
         # gateway must flag exactly the authentic arrivals at or below the highest counter that
         # has already arrived (wire duplicates and reordering), across gateway restarts.
         self.last_sealed_counter = 0
@@ -314,7 +314,7 @@ class Campaign:
                 self.log('replay_no_reply',frame=packet.hex())
             except CounterRegression:
                 # A reordered older frame or different bytes under a used counter: never answered,
-                # never stored, raises the key-reuse alarm (P4).
+                # never stored, raises the key-reuse alarm.
                 self.counts['counter_regressions'] += 1
                 self.log('counter_regression_no_reply',frame=packet.hex())
             except (ValueError,InvalidTag) as exc:

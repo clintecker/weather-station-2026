@@ -1,4 +1,4 @@
-"""Gap G9: the gateway never hands a measured-wrong host time to the node."""
+"""The gateway never hands a measured-wrong host time to the node."""
 import unittest
 try:                                        # first: sets WS0_UNSAFE_FAST_FSYNC before ws0 is imported
     from toolchain import Station
@@ -80,7 +80,7 @@ class ClockTests(unittest.TestCase):
         self.assertLess(rtt, 0.05)
 
     def test_thread_loop_survives_unexpected_errors(self):
-        """GW10: a measurement that raises something other than OSError/ValueError, or a log
+        """A measurement that raises something other than OSError/ValueError, or a log
         callback that fails, must not end the checking loop."""
         from ws0.clock import RETRY_S
         calls, delays = [], []

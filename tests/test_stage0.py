@@ -313,7 +313,7 @@ class TimeReconstruction(StationTest):
   self.assertEqual(rows[4],0)                             # the synchronized reference itself
 
 class NackTests(StationTest):
- """Gap G2: authentic but permanently rejected frames get an authenticated NACK."""
+ """Authentic but permanently rejected frames get an authenticated NACK."""
  def test_collision_is_nacked_recorded_and_dropped_by_node(self):
   from ws0.protocol import KIND_NACK,NACK_COLLISION,frame_kind
   record=self.node.sample(1000)
@@ -353,7 +353,7 @@ class NackTests(StationTest):
 
 
 class DiagnosticsAndEpochFloor(StationTest):
- """Gaps G8 (health reports) and G5 (epoch floor after a wipe)."""
+ """Health reports and the epoch floor after a wipe."""
  def diag(self,epoch,uptime,lost=0):
   from ws0.protocol import DIAG,KIND_DIAG,seal
   return seal(self.node.key,1,KIND_DIAG,self.node.nonces,DIAG.pack(epoch,uptime,1,lost,0,2,3,0,5,0,0x45f43e78,-61,9,2,1))

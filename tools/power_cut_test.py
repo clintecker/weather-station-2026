@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Real power-cut test for the TX node's flash state (failure-modes.md gap G7).
+"""Real power-cut test for the TX node's flash state.
 
 Each cycle: wait for the TX board to boot, read its status, start TEST-FLASH-STORM (continuous
 journal and counter writes), wait a random time, then cut the board's USB power with uhubctl
 (per-port power switching) and restore it. Checked on every boot:
 
-  I3  the transmission counter never goes back: next counter > every counter the storm printed
-  I4  the boot epoch strictly increases
+  --  the transmission counter never goes back: next counter > every counter the storm printed
+  --  the boot epoch strictly increases
   --  the self-test passes and the flash store initializes (no hang, no hard fault)
 
 At the end the gateway database is checked for storm records (epoch 4294967295) and
@@ -132,7 +132,7 @@ def hub_check(args):
 
 
 class Invariants:
-    """The checks across boots (I3, I4, self-test, reset cause) and the run totals."""
+    """The checks across boots (counter never goes back, epoch increases, self-test, reset cause) and the run totals."""
     def __init__(self, expected_reset):
         self.expected_reset = expected_reset
         self.failures, self.last_epoch, self.max_ctr_used = [], None, 0

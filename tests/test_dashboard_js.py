@@ -497,7 +497,7 @@ class DashboardScript(unittest.TestCase):
         self.assertFalse(self.out['token_in_url'])
 
 
-    # -- review of the first version: each of these failed before its fix
+    # -- regressions: each of these failed before its fix
     def test_slide_redraws_nothing_until_the_axis_moves_a_pixel(self):
         self.assertLess(self.out['review']['nodes_idle_minute_24h'], 50)   # was ~1,000 a minute at 24 h
 

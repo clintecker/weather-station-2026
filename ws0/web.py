@@ -68,7 +68,7 @@ TABLES = (
     'CREATE INDEX IF NOT EXISTS gateway_events_time ON gateway_events(station,at)',
     'CREATE INDEX IF NOT EXISTS diag_received ON diagnostics(station,received_at)',
     # One row per '#rx crc' (header decoded, payload CRC failed: the bytes as received) or '#rx hdr'
-    # (header CRC failed: no payload). Throttled like other radio noise (GW6).
+    # (header CRC failed: no payload). Throttled like other radio noise.
     '''CREATE TABLE IF NOT EXISTS rx_faults (id INTEGER PRIMARY KEY AUTOINCREMENT, station TEXT, received_at REAL,
         kind TEXT, length INTEGER, rssi_dbm INTEGER, snr_db INTEGER, data TEXT)''',
     'CREATE INDEX IF NOT EXISTS rx_faults_time ON rx_faults(station,received_at)',
@@ -95,7 +95,7 @@ RX_EVENTS = (('#boot role=rx', 'rx_boot', 'warn'), ('#relisten', 'relisten', 'wa
 # next only after the rate has fallen to half of it.
 RX_FAULT_WINDOW_S = 3600
 RX_FAULT_WARN_PER_H = 30
-# rx_faults rows older than this are deleted (checked hourly by Telemetry.tick): at the GW6 rate
+# rx_faults rows older than this are deleted (checked hourly by Telemetry.tick): at the noise rate
 # limit a flood adds at most ~560 rows an hour, so the table stays bounded.
 RX_FAULT_RETENTION_S = 30 * 86400
 # When the trailing-hour summary changes without a new stored bad reception (old ones leave the
@@ -114,7 +114,7 @@ class SchemaDrift(RuntimeError):
 
 
 class Throttle:
-    """Token bucket per noise class (gateway review GW6). Anyone with a 915 MHz radio can send
+    """Token bucket per noise class. Anyone with a 915 MHz radio can send
     frames that fail authentication, and each one used to add a radio row, an event row and
     receiver.log lines: a sustained flood could fill the disk. Real data (stored observations,
     their ACKs, node health reports) is never throttled; rejected frames, replays and RX drop
@@ -641,7 +641,7 @@ TABLE_ROWS = {
 
 def iter_rows(db, station, table, start, end, limit=-1, offset=0, order='asc'):
     """Rows of one dashboard table in [start, end), as dicts (diagnostics: the decoded report),
-    streamed from the cursor. limit -1: all of them (history never truncates a range; GW11).
+    streamed from the cursor. limit -1: all of them (history never truncates a range).
     db is a Store.reader() connection: never the ingest connection or its lock."""
     column, tiebreak, names = TABLE_ROWS[table]
     direction = 'DESC' if order == 'desc' else 'ASC'
@@ -679,8 +679,8 @@ def stream(handler, hub, cursor):
         return
     handler.close_connection = True
     try:
-        # A client that stops reading would block a write forever and hold one of the stream slots
-        # (gateway review GW8). With a send timeout the write fails and the slot is released.
+        # A client that stops reading would block a write forever and hold one of the stream slots.
+        # With a send timeout the write fails and the slot is released.
         handler.connection.settimeout(STREAM_SEND_TIMEOUT_S)
         handler.send_response(200)
         handler.send_header('Content-Type', 'text/event-stream; charset=utf-8')
@@ -834,8 +834,8 @@ def diagnostic_series(db, station, start, end, max_points):
 
 def radio_series(db, station, start, end, max_points):
     """Radio chart for [start, end). Small ranges: one point per frame. Large ones: buckets
-    averaged inside SQLite, so every frame counts however many there are (gateway review GW11:
-    the rows were fetched with a 100,000 limit and later frames silently fell off the chart)."""
+    averaged inside SQLite, so every frame counts however many there are (a row limit would
+    silently drop the later frames off the chart)."""
     radio = {'bucket_s': 0, 't': [], 'rssi_dbm': [], 'snr_db': [], 'rssi_min': [], 'frames': [],
              'kind': [], 'outcome': [], 'counter': []}
     where = 'station=? AND received_at>=? AND received_at<?'

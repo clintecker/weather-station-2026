@@ -1,4 +1,4 @@
-"""Size-rotated text logs the gateway writes itself (gateway review GW7).
+"""Size-rotated text logs the gateway writes itself.
 
 receiver.log and the service output used to grow without limit. Rotation lives in the gateway,
 not in newsyslog/logrotate, so it works the same on macOS, Linux and Windows and under any service

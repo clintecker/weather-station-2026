@@ -54,7 +54,7 @@ def console_lines(port, deadline):
 
 
 def epoch_floor(directory, station):
-    """Gap G5: one above every boot epoch the gateway has stored for this station, so a
+    """One above every boot epoch the gateway has stored for this station, so a
     wiped and re-provisioned node can never reuse an observation identity."""
     path = directory/'observations.sqlite3'
     if not path.exists():
@@ -70,7 +70,7 @@ def epoch_floor(directory, station):
 
 
 def node_counter_mark(directory):
-    """Review item P4: the gateway's stored high-water mark of the node counter (OBS + DIAG)
+    """The gateway's stored high-water mark of the node counter (OBS + DIAG)
     for this state directory, or None if there is no such state yet."""
     path = directory/'gateway-nonces.sqlite3'
     if not path.exists():
@@ -93,7 +93,7 @@ def print_counter_mark(state):
           f"(counter regressions: {state['counter_regression']})")
     if state['counter_regression']:
         print(f"ALARM: possible key reuse (last offending counter {state['last_regression_counter']}): "
-              're-key the node with a new state directory (failure-modes R5)')
+              're-key the node with a new state directory (re-key procedure in docs/failure-modes.md)')
 
 
 def check_node_counter(fields, state):
@@ -178,7 +178,7 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
     frame = None
 
     def quiet(key):
-        """GW6: True if this noise line is over budget (drop it); else log any suppressed count."""
+        """True if this noise line is over budget (drop it); else log any suppressed count."""
         allowed, suppressed = telemetry.throttle.allow(key,rx_seen)
         telemetry.muted = not allowed
         if allowed and suppressed:
@@ -190,7 +190,7 @@ def handle_receiver_line(gateway, link, line, receiver_log, now=None):
         if text.startswith('#rx obs') and telemetry.muted:
             telemetry.muted = False   # RSSI of a throttled frame
             return
-        # Lines any nearby radio can cause at will (bad packets, CRC errors): rate-limited (GW6).
+        # Lines any nearby radio can cause at will (bad packets, CRC errors): rate-limited.
         # CRC and header failures share one budget; what it drops is counted (fault_summary).
         for prefix, key in (('#rx drop', 'rx_drop'), ('#rx crc', 'rx_fault'), ('#rx hdr', 'rx_fault'),
                             ('#relisten', 'relisten')):
@@ -316,7 +316,7 @@ class Services:
             handle_receiver_line(gateway,self.link,line,self.receiver_log)
         if not self.link.connected:
             time.sleep(0.2)
-        # RX liveness (gap G12): it reports every 60 s; three missed reports = silent.
+        # RX liveness: it reports every 60 s; three missed reports = silent.
         if gateway.receiver and gateway.receiver.get('alive') and \
                 time.time() - gateway.receiver['last_seen'] > 180:
             gateway.receiver['alive'] = False

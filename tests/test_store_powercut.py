@@ -1,4 +1,4 @@
-"""Power-cut tests for the node flash store (review item P3).
+"""Power-cut tests for the node flash store.
 
 firmware/stage0-node/App/node_store.c is compiled for the host over firmware/sim_flash.c, a RAM
 model of the STM32WL flash (erased = all ones, each double-word programmed once, torn programs
@@ -7,7 +7,7 @@ runs a scripted workload (provision, boot epochs, counter blocks, journal append
 abandons, meta-log compaction, journal wrap with losses, storm scrub, WIPE) and, in the sweep,
 cuts power at every flash operation index with every cut outcome, then reboots and checks the
 invariants listed at the top of test_store.c. These are host-model results, not bench evidence
-(the physical G7 storm stays the hardware check).
+(the physical reset-during-write storm, tools/power_cut_test.py, stays the hardware check).
 """
 import re
 import subprocess

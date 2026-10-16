@@ -1,4 +1,4 @@
-"""Size-rotated gateway logs (ws0/logfile.py, gateway review GW7)."""
+"""Size-rotated gateway logs (ws0/logfile.py)."""
 import tempfile
 import threading
 import unittest

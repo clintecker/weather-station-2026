@@ -45,7 +45,7 @@ KEY_REUSE_ALARM = 'possible key reuse: re-key the node'
 class CounterRegression(ValueError):
     """An authentic node frame whose counter is at or below the stored high-water mark and whose
     bytes differ from (or were never seen as) the frame accepted under that counter: the node
-    sealed under a nonce it already used (key reuse, C7-C9)."""
+    sealed under a nonce it already used (key reuse)."""
 
 
 class Replay(ValueError):
@@ -62,8 +62,8 @@ class Gateway:
         self.nonces = Nonces(directory / 'gateway-nonces.sqlite3',self.key,cfg['station_id'],KIND_ACK)
         self.accepted = self.rejected = self.nacked = 0
         self.node_counter = self.nonces.node_counter()  # cached for the HTTP/MQTT threads
-        self.clock = None  # ws0.clock.HostClock when serving hardware (gap G9); None = trust host
-        self.receiver = None  # RX board liveness, set by the serial loop (gap G12)
+        self.clock = None  # ws0.clock.HostClock when serving hardware; None = trust host
+        self.receiver = None  # RX board liveness, set by the serial loop
         self.last_ingested = None  # the observation in the frame just ACKed, for the serve log
         self.last_outcome = None   # what receive() did with the last frame: ack, duplicate, nack, diag
         self.lock = threading.Lock()
@@ -71,7 +71,7 @@ class Gateway:
         self.telemetry = web.Telemetry(self)
 
     def check_counter(self, frame, epoch, sequence, now):
-        """Review item P4. Every node transmission, retries included, gets a fresh, strictly
+        """Every node transmission, retries included, gets a fresh, strictly
         increasing counter from one space shared by OBS and DIAG (firmware store_next_counter;
         WIPE keeps it), so an authentic frame at or below the mark is a replay or nonce reuse.
         It is never answered or stored as data; the raw frame is kept as a rejection."""
@@ -131,7 +131,7 @@ class Gateway:
                 inserted = self.store.ingest(record,now)
             except ValueError as exc:
                 # Authentic but permanently unacceptable: record it, then tell the node to stop
-                # retrying it (gap G2). Commit failures (OSError) still propagate with no reply.
+                # retrying it. Commit failures (OSError) still propagate with no reply.
                 reason = NACK_COLLISION if str(exc) == 'Identity collision' else NACK_INVALID
                 self.store.reject(self.cfg['station'],str(epoch),sequence,
                                   'identity_collision' if reason == NACK_COLLISION else 'invalid_record',
@@ -148,7 +148,7 @@ class Gateway:
                 raise
             try:
                 # Host UTC rides in the authenticated ACK: the node's only time source. A host
-                # clock measured as wrong sends 0 instead: the node then keeps its own clock (G9).
+                # clock measured as wrong sends 0 instead: the node then keeps its own clock.
                 host_utc = int(now)
                 if self.clock and not self.clock.may_issue_time():
                     host_utc = 0
@@ -166,12 +166,12 @@ class Gateway:
                 raise
 
     def receiver_report(self, text, at):
-        """An RX '#alive' or '#boot' line: the receiver is alive (gap G12)."""
+        """An RX '#alive' or '#boot' line: the receiver is alive."""
         self.receiver = {'alive':True,'last_report':web.utc_stamp(at),'last_seen':at,**web.line_fields(text)}
 
     def counter_alarm(self):
-        """Key-reuse alarm (P4). It persists across restarts; the cure is a new key, i.e. a new
-        state directory (runbook R5), which starts with a fresh mark."""
+        """Key-reuse alarm. It persists across restarts; the cure is a new key, i.e. a new
+        state directory (the re-key procedure), which starts with a fresh mark."""
         state = self.node_counter
         return {'alarm':KEY_REUSE_ALARM if state['counter_regression'] else None,
                 'counter_regression':state['counter_regression'],
@@ -290,7 +290,7 @@ def http_server(gateway, port):
             self.wfile.write(data)
     host = web.bind_address(gateway.cfg)
     server_class = BoundedThreadingHTTPServer
-    if ':' in host:   # IPv6 literal: the stock server class is AF_INET only (gateway review GW9)
+    if ':' in host:   # IPv6 literal: the stock server class is AF_INET only
         server_class = type('ThreadingHTTPServerV6',(BoundedThreadingHTTPServer,),{'address_family':socket.AF_INET6})
     server = server_class((host,port),Handler)
     # shutdown() waits up to one poll interval: 0.5 s by default, paid on every gateway stop and
@@ -366,7 +366,7 @@ class MQTT:
         settings = cfg['mqtt']
         if settings.get('username'):
             password = mqtt_password(gateway.directory)
-            if password is None:   # GW12: fail at start, not as a vague broker refusal later
+            if password is None:   # fail at start, not as a vague broker refusal later
                 raise ValueError(f"mqtt.username is set but there is no password: write it to "
                                  f"{Path(gateway.directory) / 'mqtt-password'} or set WS_MQTT_PASSWORD")
             self.client.username_pw_set(settings['username'],password)
@@ -415,7 +415,7 @@ class MQTT:
         diag = self.gateway.store.latest_diagnostic(self.gateway.cfg['station'])
         alarm = self.gateway.counter_alarm()
         if diag or alarm['alarm']:
-            diag = (diag or {}) | alarm  # key-reuse alarm (P4) rides on the diagnostics topic
+            diag = (diag or {}) | alarm  # key-reuse alarm rides on the diagnostics topic
         diagnostics = json.dumps(diag,sort_keys=True) if diag else None
         state = (weather, 'online' if latest['available'] else 'offline', diagnostics)
         if state == self.published and time.time() - self.published_at < self.REFRESH_S:
@@ -429,7 +429,7 @@ class MQTT:
 
     def close(self):
         # Best effort: wait_for_publish raises (RuntimeError, ValueError) if the connection drops
-        # meanwhile; shutdown must still disconnect and stop the network thread (GW12).
+        # meanwhile; shutdown must still disconnect and stop the network thread.
         try:
             if self.client.is_connected():
                 self.client.publish(self.root+'/gateway_availability','offline',qos=1,retain=True).wait_for_publish(timeout=2)

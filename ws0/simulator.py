@@ -74,7 +74,7 @@ class Node:
         return self.acknowledge(packet)
 
     def reject(self,packet):
-        """Authentic NACK: stop retrying that record (gap G2). Only a NACK that echoes a frame
+        """Authentic NACK: stop retrying that record. Only a NACK that echoes a frame
         this node sent is accepted; the gateway has kept the rejected frame."""
         epoch,seq,reason,echo = unpack_reply(unseal(self.key,self.cfg['station_id'],KIND_NACK,packet))
         if echo not in self.sent:

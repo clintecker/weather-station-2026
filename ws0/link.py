@@ -1,4 +1,4 @@
-"""USB serial link to the RX board that survives unplug, replug, and renamed ports (gap G3).
+"""USB serial link to the RX board that survives unplug, replug, and renamed ports.
 
 The RX board is found by its ST-LINK USB serial number, not by its /dev name, which changes
 when the cable moves. Any serial error closes the port and schedules a reconnect with
@@ -79,7 +79,7 @@ class ReceiverLink:
         self.failures = 0
         self.log(f'#gateway serial-open path={path}')
         # End any line the receiver assembled before we (re)connected: an empty line is ignored, and
-        # a partial one is discarded instead of prefixing the next ACK (2026-10-15 review m8).
+        # a partial one is discarded instead of prefixing the next ACK.
         self.write(b'\n')
         return True
 

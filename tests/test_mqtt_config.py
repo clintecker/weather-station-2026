@@ -67,7 +67,7 @@ class ConnectDiagnostics(unittest.TestCase):
 
 class StartAndClose(unittest.TestCase):
     def test_username_without_password_fails_at_start(self):
-        """GW12: refuse to start rather than connect with no password and fail vaguely later."""
+        """Refuse to start rather than connect with no password and fail vaguely later."""
         with tempfile.TemporaryDirectory() as tmp:
             gateway = type('G', (), {'directory': tmp,
                                      'cfg': {'station': 's', 'mqtt': {'username': 'weatherstation'}}})()
@@ -78,7 +78,7 @@ class StartAndClose(unittest.TestCase):
             self.assertIn('mqtt-password', str(exc.exception))
 
     def test_close_survives_a_failed_final_publish(self):
-        """GW12: wait_for_publish raises if the link drops; close must still stop the client."""
+        """wait_for_publish raises if the link drops; close must still stop the client."""
         calls = []
         class Info:
             def wait_for_publish(self, timeout=None):

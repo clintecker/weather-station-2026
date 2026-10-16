@@ -564,7 +564,7 @@ class TxStateMachine(unittest.TestCase):
     # ---- policy: drain, failures, link, health reports, strikes ----
 
     def test_a_missed_reply_allows_one_more_frame_then_stops_the_drain(self):
-        # Strike rule (review M2, option A): after a missed reply one more frame goes, so a record
+        # Strike rule: after a missed reply one more frame goes, so a record
         # the gateway refuses can be told from a lossy link; a second miss in a row stops at once.
         def run(answer):
             n = self.node()

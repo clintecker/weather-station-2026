@@ -8,7 +8,7 @@ Import it before ws0 or gateway, with the dual import every test module uses:
         from tests.toolchain import needs_cc    # python -m unittest tests.<module>
 
 Importing it sets WS0_UNSAFE_FAST_FSYNC=1 (unless already set), so a module run on its own gets the
-same fast, non-durable SQLite as the full suite: unit tests do not claim power-loss durability (G4).
+same fast, non-durable SQLite as the full suite: unit tests do not claim power-loss durability.
 
 The gateway must run on macOS, Linux and Windows. The C firmware tests need a C compiler (`cc`),
 which a Windows host usually lacks, so they skip there. CI sets WS_REQUIRE_CC=1 on Linux and
@@ -16,7 +16,7 @@ macOS so a missing compiler fails instead of silently skipping, and WS_REQUIRE_V
 missing vendor/ fails the Mbed TLS tests instead of skipping them.
 """
 import os
-os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
+os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability
 
 import ctypes
 import importlib.util

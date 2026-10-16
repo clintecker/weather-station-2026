@@ -1,4 +1,4 @@
-"""Review item P4: the gateway detects AES-CCM nonce reuse by the node.
+"""The gateway detects AES-CCM nonce reuse by the node.
 
 The node seals OBS (kind 1) and DIAG (kind 4) frames from one strictly increasing 64-bit
 counter (firmware store_next_counter; WIPE keeps it). The gateway keeps a durable high-water
@@ -6,7 +6,7 @@ mark per key binding. A frame at or below it is never answered or stored; it is 
 rejection and raises a loud status alarm.
 """
 import os
-os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
+os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability
 
 import io
 import tempfile

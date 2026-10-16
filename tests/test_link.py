@@ -1,6 +1,6 @@
-"""Gap G3: the gateway's RX serial link survives unplug, replug and renamed ports."""
+"""The gateway's RX serial link survives unplug, replug and renamed ports."""
 import os
-os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
+os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability
 
 import unittest
 from types import SimpleNamespace

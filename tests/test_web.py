@@ -202,7 +202,7 @@ class EventStream(Fixture):
         self.assertEqual(closed, 6)
 
     def test_ipv6_bind_serves(self):
-        """GW9: an IPv6 http_bind used to crash (the stock server is AF_INET only)."""
+        """An IPv6 http_bind used to crash (the stock server is AF_INET only)."""
         import socket
         if not socket.has_ipv6:
             self.skipTest('no IPv6')
@@ -297,7 +297,7 @@ class EventStream(Fixture):
         self.assertEqual(response.status, 200)
 
     def test_stuck_client_releases_its_slot(self):
-        """GW8: a client that connects and never reads must not hold a stream slot forever."""
+        """A client that connects and never reads must not hold a stream slot forever."""
         import socket
         old = web.STREAM_SEND_TIMEOUT_S
         web.STREAM_SEND_TIMEOUT_S = 0.5
@@ -428,7 +428,7 @@ class History(Fixture):
             t.join()
 
     def test_receiver_history_covers_a_range_past_100000_reports(self):
-        """GW11 for RX reports: a long range is bucketed whole, not cut at a row limit."""
+        """RX reports: a long range is bucketed whole, not cut at a row limit."""
         base, n = 1_700_000_000, 120_000
         station = self.cfg['station']
         with self.gateway.store.db:
@@ -448,7 +448,7 @@ class History(Fixture):
         self.assertNotIn('TEMP B-TREE', plan)
 
     def test_radio_buckets_match_python_and_count_every_frame(self):
-        """GW11: bucketed radio points are computed in SQLite and match the per-row Python rule
+        """Bucketed radio points are computed in SQLite and match the per-row Python rule
         (mean, exact single values, nulls, outcome counts); a range past 100,000 frames is whole."""
         import collections
         import random
@@ -571,7 +571,7 @@ class ServeLoopTelemetry(Fixture):
         return self.gateway.store.db.execute(sql).fetchall()
 
     def test_forged_frame_flood_is_bounded_and_real_data_still_lands(self):
-        """GW6: a flood of junk frames (each with its RSSI line) and RX drop reports writes at most
+        """A flood of junk frames (each with its RSSI line) and RX drop reports writes at most
         the burst, then a summary with the suppressed count; real frames are never throttled."""
         throttle = self.gateway.telemetry.throttle
         burst, rate = throttle.burst, throttle.per_s
@@ -712,7 +712,7 @@ class ServeLoopTelemetry(Fixture):
         self.assertEqual(kinds, ['rx_boot', 'rejected', 'rejected', 'relisten'])
 
     def test_database_failure_never_stops_the_serve_loop(self):
-        """Review GW1 (2026-10-14): SQLite raises sqlite3.OperationalError (disk full, I/O error,
+        """SQLite raises sqlite3.OperationalError (disk full, I/O error,
         locked), not OSError. A failed commit must give no ACK and leave the process running, even
         when the telemetry writes in the error path fail too."""
         import sqlite3
@@ -795,7 +795,7 @@ class ServeLoopTelemetry(Fixture):
         self.assertTrue(self.gateway.receiver['alive'])
         self.assertIsNotNone(self.gateway.store.latest_diagnostic(self.cfg['station']))
 
-    # -- review of rx_faults (2026-10-15) ----------------------------------------------------------
+    # -- rx_faults ------------------------------------------------------------------------------
     def serial_lines(self, data, now=9000):
         """Feed a byte stream through ReceiverLink (as from the RX board's USB serial) into the
         serve loop's line handler."""

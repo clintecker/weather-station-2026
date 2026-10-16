@@ -1,6 +1,6 @@
 """Regression checks for history integrity and freshness failures."""
 import os
-os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability (G4)
+os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability
 
 import tempfile
 import unittest
@@ -292,7 +292,7 @@ class ReadOnlyOpen(unittest.TestCase):
             store.db.close()
 
 class DurabilityTests(unittest.TestCase):
-    """Gap G4: commits must reach stable storage on macOS before an ACK exists."""
+    """Commits must reach stable storage on macOS before an ACK exists."""
     def test_full_flush_pragmas_are_on(self):
         from unittest.mock import patch
         from ws0.protocol import Nonces

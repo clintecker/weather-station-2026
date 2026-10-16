@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bad receptions the RX board reported ('#rx crc', '#rx hdr'), from the gateway database.
 
-Every one is stored in the rx_faults table (ws0/web.py), up to the GW6 rate limit, for
+Every one is stored in the rx_faults table (ws0/web.py), up to the noise rate limit, for
 RX_FAULT_RETENTION_S (30 days). A CRC failure keeps the bytes the radio received; this tool
 classifies each capture:
 
