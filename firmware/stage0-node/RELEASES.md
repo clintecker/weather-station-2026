@@ -14,17 +14,50 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
 
+## 260c9ccbe938 — 2026-10-16 (bench, named constants, literate sources; protocol draft 5)
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (34,832 B) | `daa9bf1dd9cdef93c15966509d6a1247ff5ebccd435206528764ce105b70f063` |
+| `build/rx/stage0-rx.elf` (path-dependent) | `bb7af038655fe5dfe63c17ea1228a65d31a87a93d92abe8cd83968919d488ad2` |
+| `build/tx/stage0-tx.bin` (58,264 B) | `d9ba8546abfa0b96db890a227f58f899bc7b048c9446d7a9f36517371ebe36b0` |
+| `build/tx/stage0-tx.elf` (path-dependent) | `cf2281d879358cd73cb442bb2456c29c87fd84a866c632222f1807994c4b3d8f` |
+
+- Source: commit `260c9ccbe938`. Changes since 809230951ae1:
+  - Magic numbers replaced by named constants and helpers across the firmware, the gateway and the
+    tests; packing uses cursor writes in field order. Frame and flash formats unchanged.
+  - Review and gap IDs removed from comments and live docs.
+  - Literate sources (`*.lit.md`, tangled by `tools/tangle.py`) for node_store, tx_exchange, app_tx,
+    sensor, app_rx, ws_frame and ws_policy, and for the gateway's protocol.py and gateway.py. The
+    generated code is the committed code.
+  - Fixes found on the way: a refused counter reservation now still feeds the link and strike
+    policy with the minute's answers; a health report the radio refused stays due; its refused
+    counter counts as a transmit failure; `ws_key_check` wipes the AES block; `ws_open_reply`
+    returns `WS_FRAME_EINVAL` for a bad station argument. New tests for each, and for five gaps a
+    mutation pass found.
+- Inputs: as a07f498 (vendor pins verified). Flash budget: TX 88.9 %, RX 53.1 %. Stack bound: TX
+  5,784 B (71 %), RX 2,652 B (32 %). `make waits`: OK on both; no heap.
+- Reproducibility: two clean builds gave identical `.bin` hashes.
+- Flashed 2026-10-16 ~19:06Z: RX → board B `0016001E4142500E20353451`, TX → board A
+  `003B00194142500E20353451`; gateway restarted on `run-d6` at the same commit. TX after flashing:
+  `fw=260c9ccbe938`, `kcv=e03059` (key kept), `kat=pass`, `epoch=46`, `ctr=14081`, time trust
+  restored, `check_fails=0`; `#timing` task peak 53 µs, interrupt peak 44 µs, program 93 µs.
+- Bench check 19:07–19:09Z: epoch 46 seq 0–2 stored valid and acknowledged; the reading pending at
+  the flash (epoch 45 seq 214) delivered from the journal. RX `#alive` at 120 s: forwarded 4, acks 3,
+  no drops or failed receptions, task peak 401 µs (`console_task`), interrupt peak 216 µs.
+- Not an H01 release: radio settings are bench values.
+
 ## 809230951ae1 — 2026-10-16 (bench, timing attribution; protocol draft 5)
 
 | Artifact | SHA-256 |
 |---|---|
-| `build/rx/stage0-rx.bin` (34,832 B) | `282e04eecba988a03ed10ba8dbbf38da5bcfd9f5013e57e60fd56ac50017c075
-0ae2c1eb16636bc0d90d984efc31329572ab45f633734eab0762ec465b3f14f0
-feb187ef903b7476ff03d555ff4b3fd41f070340bd8e7fb1f8ba6c3617a759b2
-70abf0b144efbc868be6338bbaa6524679b488e0ad93f06cc1fefcdcd077ca17` |
-| `build/rx/stage0-rx.elf` (path-dependent) | `` |
-| `build/tx/stage0-tx.bin` (58,192 B) | `` |
-| `build/tx/stage0-tx.elf` (path-dependent) | `` |
+| `build/rx/stage0-rx.bin` (34,832 B) | `282e04eecba988a03ed10ba8dbbf38da5bcfd9f5013e57e60fd56ac50017c075` |
+| `build/rx/stage0-rx.elf` (path-dependent) | `feb187ef903b7476ff03d555ff4b3fd41f070340bd8e7fb1f8ba6c3617a759b2` |
+| `build/tx/stage0-tx.bin` (58,192 B) | `0ae2c1eb16636bc0d90d984efc31329572ab45f633734eab0762ec465b3f14f0` |
+| `build/tx/stage0-tx.elf` (path-dependent) | `70abf0b144efbc868be6338bbaa6524679b488e0ad93f06cc1fefcdcd077ca17` |
+
+(Table repaired 2026-10-16: the four hashes had been recorded in one cell. A clean rebuild of
+809230951ae1 reproduced both `.bin` hashes; the `.elf` rows keep the recorded order, rx then tx.)
 
 - Source: commit `809230951ae1`. Changes since 7eb79f64f2bd:
   - Timing attribution (busymon): a task's peak is its own time with the interrupts that ran meanwhile taken out (interrupt time summed once per outermost handler), named after its slowest timed step (`process.alive`, `.relisten`, `.listen`, `.forward`, `.crc`; `report.journal`, `report.send`); the wall time is `task_wall_us` (TX `#timing`, RX STATUS). Host-tested (`firmware/test_busymon.c`).
