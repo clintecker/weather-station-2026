@@ -1,0 +1,239 @@
+# The bench station on breadboards (docs/hardware/bench-station-wiring.md, step 1).
+# The one source of the breadboard map: tools in this directory read it, check it against the
+# wiring guide and the firmware, plan the jumpers, and draw the boards.
+#
+# Holes: board A (signals) or B (power); row a-e, f-j, or a rail: L+ L- (beside row a), R- R+
+# (beside row j); column 1-63. A part's pins sit on one row, from `origin` along `step`
+# (+1: increasing column). Pin orders come from each part's `source`; "bench check" means no
+# manufacturer page shows the order, and the build sheet asks for a check; "passive" means a
+# two-lead part that goes either way round.
+#
+# Mode A (daily, the board on USB) is drawn: the BATTERY POWER shunt is open and the 100 ohm test
+# load is fitted (wiring guide section 5).
+
+version = 1
+split_rails = false   # some 830-point boards break each rail at the centre: set true for those
+
+# The NUCLEO pins this map uses (UM2592; the guide's section 6 checklist still applies).
+# CN6.4 and CN7.16 are the same 3V3 net on the board; CN6.6 and CN6.7 are both GND.
+[nucleo]
+ties = [["CN6.4", "CN7.16"], ["CN6.6", "CN6.7"]]
+
+# ---- board A: signals ----
+
+[[part]]
+id = "BOBW"
+kind = "SparkFun BOB-14021 RJ11 breakout (wind cable)"
+board = "A"
+origin = ["a", 3]
+step = 1
+pins = ["1", "2", "3", "4", "5", "6"]
+labels = ["-", "B", "R", "G", "Y", "-"]
+source = "https://github.com/sparkfun/RJ11_Breakout"
+note = "Inner conductors 3, 4: the cups. Outer 2, 5: the vane (SEN-15901). Check each with a meter"
+
+[[part]]
+id = "BOBR"
+kind = "SparkFun BOB-14021 RJ11 breakout (rain cable)"
+board = "A"
+origin = ["a", 12]
+step = 1
+pins = ["1", "2", "3", "4", "5", "6"]
+labels = ["-", "B", "R", "G", "Y", "-"]
+source = "https://github.com/sparkfun/RJ11_Breakout"
+note = "Inner conductors 3, 4: the bucket switch (SEN-15901). Check with a meter"
+
+[[part]]
+id = "QT"
+kind = "STEMMA QT to male header cable (to the 5-port hub)"
+board = "A"
+origin = ["a", 40]
+step = 1
+pins = ["GND", "V+", "SDA", "SCL"]
+labels = ["black", "red", "blue", "yellow"]
+source = "https://learn.adafruit.com/introducing-adafruit-stemma-qt/technical-specs"
+
+[[part]]
+id = "R1"
+kind = "10 kOhm resistor, cups pull-up"
+board = "A"
+origin = ["g", 4]
+step = 4
+pins = ["1", "2"]
+source = "passive"   # a two-lead part: either way round
+
+[[part]]
+id = "C1"
+kind = "100 nF capacitor, cups filter"
+board = "A"
+origin = ["g", 11]
+step = 1
+pins = ["1", "2"]
+source = "passive"
+
+[[part]]
+id = "R2"
+kind = "10 kOhm resistor, rain pull-up"
+board = "A"
+origin = ["g", 15]
+step = 4
+pins = ["1", "2"]
+source = "passive"
+
+[[part]]
+id = "C2"
+kind = "100 nF capacitor, rain filter"
+board = "A"
+origin = ["g", 22]
+step = 1
+pins = ["1", "2"]
+source = "passive"
+
+[[part]]
+id = "R3"
+kind = "10 kOhm resistor, vane pull-up"
+board = "A"
+origin = ["g", 26]
+step = 4
+pins = ["1", "2"]
+source = "passive"
+
+# ---- board B: power ----
+
+[[part]]
+id = "CHGR"
+kind = "Adafruit bq24074 charger #4755 (11-pin header)"
+board = "B"
+origin = ["a", 3]
+step = 1
+pins = ["GND", "LIPO", "GND2", "OUT", "CHG", "PGOOD", "CE", "ISET", "THERM", "GND3", "VBUS"]
+source = "https://github.com/adafruit/Adafruit-BQ24074-PCB"
+note = "CHG and PGOOD are open drain, active low. CE, ISET and THERM stay unconnected (board defaults)"
+
+[[part]]
+id = "INA"
+kind = "Adafruit INA228 #5832 (8-pin header; I2C on its STEMMA QT cable)"
+board = "B"
+origin = ["a", 20]
+step = 1
+pins = ["VCC", "GND", "SCL", "SDA", "VBUS", "VIN-", "VIN+", "ALERT"]
+source = "https://github.com/adafruit/Adafruit-INA228-PCB"
+note = "The shunt is between VIN+ and VIN-. Check the VBUS jumper on the back"
+
+[[part]]
+id = "GAUGE"
+kind = "Adafruit MAX17048 #5580 (2-pin battery header; I2C on its STEMMA QT cable)"
+board = "B"
+origin = ["a", 32]
+step = 1
+pins = ["VBAT", "GND"]
+source = "https://github.com/adafruit/Adafruit-MAX17048-PCB"
+
+[[part]]
+id = "REG"
+kind = "Pololu S7V8F3 3.3 V regulator #2122"
+board = "B"
+origin = ["a", 38]
+step = 1
+pins = ["SHDN", "VIN", "GND", "VOUT"]
+source = "bench check"
+note = "Pololu gives the four pins but not their order. Read the labels on the back before plugging in"
+
+[[part]]
+id = "SHUNT"
+kind = "2-pin header with shunt: BATTERY POWER, USB UNPLUGGED (open in mode A)"
+board = "B"
+origin = ["a", 46]
+step = 1
+pins = ["1", "2"]
+source = "passive"
+
+[[part]]
+id = "CELL"
+kind = "Battery 6600 mAh #353 on a JST PH pigtail"
+board = "B"
+origin = ["f", 20]
+step = 1
+pins = ["+", "-"]
+source = "bench check"
+note = "JST PH pigtail colours vary: check + and - with a meter before plugging in"
+
+[[part]]
+id = "RLOAD"
+kind = "100 Ohm 1/2 W test load (mode A only)"
+board = "B"
+origin = ["f", 5]
+step = 4
+pins = ["1", "2"]
+source = "passive"
+
+# ---- nets ----
+# `members` are PART.PIN, or N:<header>.<pin> for a NUCLEO pin. `rails` carry the net on a board.
+
+[[net]]
+name = "3V3"
+class = "power"
+members = ["N:CN6.4", "N:CN7.16", "QT.V+", "R1.2", "R2.2", "R3.2", "SHUNT.2"]
+rails = ["A:L+"]
+
+[[net]]
+name = "GND"
+class = "ground"
+members = ["N:CN6.6", "N:CN6.7", "QT.GND", "BOBW.2", "BOBW.3", "BOBR.3", "C1.2", "C2.2",
+           "CHGR.GND", "INA.GND", "GAUGE.GND", "REG.GND", "CELL.-", "RLOAD.2"]
+rails = ["A:L-", "B:L-"]
+
+[[net]]
+name = "I2C_SDA"
+class = "i2c"
+members = ["N:CN5.9", "QT.SDA"]
+
+[[net]]
+name = "I2C_SCL"
+class = "i2c"
+members = ["N:CN5.10", "QT.SCL"]
+
+[[net]]
+name = "CUPS"
+class = "wind"
+members = ["N:CN10.14", "BOBW.4", "R1.1", "C1.1"]
+
+[[net]]
+name = "VANE"
+class = "wind"
+members = ["N:CN7.30", "BOBW.5", "R3.1"]
+
+[[net]]
+name = "RAIN"
+class = "rain"
+members = ["N:CN10.29", "BOBR.4", "R2.1", "C2.1"]
+
+[[net]]
+name = "PGOOD"
+class = "charger"
+members = ["N:CN10.27", "CHGR.PGOOD"]
+
+[[net]]
+name = "CHG"
+class = "charger"
+members = ["N:CN10.25", "CHGR.CHG"]
+
+[[net]]
+name = "CELL_POS"
+class = "power"
+members = ["CELL.+", "INA.VIN+"]
+
+[[net]]
+name = "BATT"
+class = "power"
+members = ["INA.VIN-", "CHGR.LIPO", "GAUGE.VBAT"]
+
+[[net]]
+name = "SYS_OUT"
+class = "power"
+members = ["CHGR.OUT", "REG.VIN", "RLOAD.1"]
+
+[[net]]
+name = "REG_OUT"
+class = "power"
+members = ["REG.VOUT", "SHUNT.1"]

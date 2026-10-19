@@ -10,8 +10,13 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
+HW = ROOT/'hardware'/'bench-breadboard-r0'
 sys.path.insert(0, str(ROOT/'tools'))
+sys.path.insert(0, str(HW/'source'))
 import kicad_env  # noqa: E402
+import wiring  # noqa: E402
+
+DATA = HW/'source'/'wiring.toml'
 
 ENV = kicad_env.find()
 needs_kicad = unittest.skipUnless(ENV, kicad_env.missing())
@@ -31,6 +36,31 @@ class Toolchain(unittest.TestCase):
         self.assertTrue((ENV.router/'py_router'/'route.py').exists())
         subprocess.run([ENV.router_python, ENV.router/'py_router'/'route.py', '--help'],
                        capture_output=True, check=True)
+
+
+class Model(unittest.TestCase):
+    def setUp(self):
+        self.w = wiring.load(DATA)
+
+    def test_strips_join_five_holes(self):
+        self.assertEqual(wiring.strip(('A', 'j', 14)), wiring.strip(('A', 'f', 14)))
+        self.assertNotEqual(wiring.strip(('A', 'j', 14)), wiring.strip(('A', 'e', 14)))
+        self.assertNotEqual(wiring.strip(('A', 'j', 14)), wiring.strip(('A', 'j', 15)))
+        self.assertEqual(wiring.strip(('A', 'e', 14)), 'A:a-e:14')
+
+    def test_split_rails_are_two_nets(self):
+        self.assertNotEqual(wiring.strip(('A', 'L+', 1), True), wiring.strip(('A', 'L+', 63), True))
+        self.assertEqual(wiring.strip(('A', 'L+', 1), False), wiring.strip(('A', 'L+', 63), False))
+
+    def test_every_part_pin_lands_on_its_own_hole(self):
+        holes = [h for part in self.w.parts.values() for h in part.pins.values()]
+        self.assertEqual(len(holes), len(set(holes)))
+
+    def test_the_data_loads_and_names_its_sources(self):
+        for part in self.w.parts.values():
+            self.assertTrue(part.source.startswith('https://') or part.source in ('bench check', 'passive'), part.id)
+        for net in ('I2C_SDA', 'I2C_SCL', 'CUPS', 'VANE', 'RAIN', 'PGOOD', 'CHG', '3V3', 'GND'):
+            self.assertIn(net, self.w.nets)
 
 
 if __name__ == '__main__':
