@@ -15,6 +15,9 @@ import kicad_env
 
 BOX_W = 25.4        # mm, the width of a module box
 TEXT = 1.27
+FIELD_UPRIGHT = 90   # a field angle that reads upright on a symbol turned 90 degrees; KiCad also
+                     # mirrors the alignment of a turned symbol's fields, so those pass justify='right'
+NODE = 35.56        # mm from a breakout pin to its signal node: room for the reed switch and its label
 NET_POWER = {'3V3': '+3V3', 'GND': 'GND'}     # nets drawn with power symbols (net names +3V3, GND)
 METER = ('SW_CUPS', 'SW_RAIN', 'VANE_R')     # the weather meter's own parts, on its cables
 
@@ -63,7 +66,7 @@ class Sheet:
             self.lib[lib_id] = block
             self.pins_of[lib_id] = _pins_of(block)
 
-    def place(self, ref, lib_id, x, y, rot=0, value=None, hide=False, fields=None):
+    def place(self, ref, lib_id, x, y, rot=0, value=None, hide=False, fields=None, field_angle=0, justify='left'):
         """Place a symbol; returns {pin number: (x, y)} on the sheet (y down). fields: where the
         reference and value go (x, y of the reference; the value below it), else beside the symbol."""
         value = value or ref
@@ -71,10 +74,10 @@ class Sheet:
         fx, fy = fields or (x + 2.54, y - 1.27)
         self.items.append(
             f'(symbol (lib_id "{lib_id}") (at {x:.2f} {y:.2f} {rot}) (unit 1) (in_bom yes) (on_board yes) (dnp no) '
-            f'(uuid {uid(ref)}) (property "Reference" "{ref}" (at {fx:.2f} {fy:.2f} 0) '
-            f'(effects (font (size {TEXT} {TEXT})) (justify left){h})) '
-            f'(property "Value" "{value}" (at {fx:.2f} {fy + 2.54:.2f} 0) '
-            f'(effects (font (size {TEXT} {TEXT})) (justify left){h})) '
+            f'(uuid {uid(ref)}) (property "Reference" "{ref}" (at {fx:.2f} {fy:.2f} {field_angle}) '
+            f'(effects (font (size {TEXT} {TEXT})) (justify {justify}){h})) '
+            f'(property "Value" "{value}" (at {fx:.2f} {fy + 2.54:.2f} {field_angle}) '
+            f'(effects (font (size {TEXT} {TEXT})) (justify {justify}){h})) '
             f'(instances (project "bench-breadboard" (path "/{uid("root")}" (reference "{ref}") (unit 1)))))')
         return {num: (round(x + _rotate(p, rot)[0], 2), round(y - _rotate(p, rot)[1], 2))
                 for num, p in self.pins_of[lib_id].items()}
@@ -161,7 +164,8 @@ def _gnd_below(s, p, dx):
 
 def _signal(s, node, net, r_ref, c_ref):
     """At node: a 10k pull-up to 3V3 above; a 100 nF filter to GND below (if c_ref); then a label."""
-    r = s.place(r_ref, 'Device:R', node[0], node[1] - 7.62, 180, '10k')     # pin 1 (the signal) at the bottom
+    r = s.place(r_ref, 'Device:R', node[0], node[1] - 7.62, 180, '10k',      # pin 1 (the signal) at the bottom
+                fields=(node[0] + 2.54, node[1] - 8.89), justify='right')
     s.wire(node, r['1'])
     s.power('3V3', r['2'])
     end = right(node, 10.16)
@@ -177,7 +181,8 @@ def _signal(s, node, net, r_ref, c_ref):
 def _reed(s, ref, p_low, p_high, what):
     """The meter's reed switch across two breakout pins (p_low above p_high, 15.24 mm apart)."""
     x = p_low[0] + 12.7
-    sw = s.place(ref, 'Switch:SW_Reed', x, (p_low[1] + p_high[1])/2, 90, what)
+    sw = s.place(ref, 'Switch:SW_Reed', x, (p_low[1] + p_high[1])/2, 90, what,
+                 fields=(x + 3.81, (p_low[1] + p_high[1])/2 - 1.27), field_angle=FIELD_UPRIGHT, justify='right')
     top, bottom = sorted(sw.values(), key=lambda q: q[1])
     s.wire(p_low, right(p_low, 12.7), top)
     s.wire(p_high, right(p_high, 12.7), bottom)
@@ -216,29 +221,30 @@ def schematic(w):
     _gnd_below(s, b['2'], 5.08)
     q = _gnd_below(s, b['3'], 5.08)
     s.junction(q)
-    node = _reed(s, 'SW_CUPS', b['3'], b['4'], 'cup reed switch')
+    node = _reed(s, 'SW_CUPS', b['3'], b['4'], 'reed switch')
     s.junction(node)
-    _signal(s, right(b['4'], 25.4), 'CUPS', 'R1', 'C1')
-    s.wire(node, right(b['4'], 25.4))
-    s.junction(right(b['4'], 25.4))
+    _signal(s, right(b['4'], NODE), 'CUPS', 'R1', 'C1')
+    s.wire(node, right(b['4'], NODE))
+    s.junction(right(b['4'], NODE))
     vx = right(b['5'], 12.7)
-    vr = s.place('VANE_R', 'Device:R_Variable', vx[0], vx[1] + 7.62, 180, 'vane resistors')
+    vr = s.place('VANE_R', 'Device:R_Variable', vx[0], vx[1] + 7.62, 0, 'vane resistors',   # pin 1 (the signal) on top
+                 fields=(vx[0] + 3.81, vx[1] + 6.35))
     s.wire(b['5'], vx, vr['1'])
     s.power('GND', vr['2'])
     s.junction(vx)
-    _signal(s, right(b['5'], 55.88), 'VANE', 'R3', None)
-    s.wire(vx, right(b['5'], 55.88))
-    s.junction(right(b['5'], 55.88))
+    _signal(s, right(b['5'], NODE + 30.48), 'VANE', 'R3', None)
+    s.wire(vx, right(b['5'], NODE + 30.48))
+    s.junction(right(b['5'], NODE + 30.48))
 
     # Rain: the bucket switch (pins 3, 4) on the rain cable's breakout.
     b = meter(s, w, 'BOBR', (101.6, 142.24), ['3', '4'], 'RJ11 breakout, rain cable')
     q = _gnd_below(s, b['3'], 5.08)
     s.junction(q)
-    node = _reed(s, 'SW_RAIN', b['3'], b['4'], 'bucket reed switch')
+    node = _reed(s, 'SW_RAIN', b['3'], b['4'], 'reed switch')
     s.junction(node)
-    _signal(s, right(b['4'], 25.4), 'RAIN', 'R2', 'C2')
-    s.wire(node, right(b['4'], 25.4))
-    s.junction(right(b['4'], 25.4))
+    _signal(s, right(b['4'], NODE), 'RAIN', 'R2', 'C2')
+    s.wire(node, right(b['4'], NODE))
+    s.junction(right(b['4'], NODE))
 
     # The STEMMA QT hub: power from the NUCLEO, I2C to PA11 and PA12.
     q = module(s, w, 'QT', (231.14, 45.72), [], ['GND', 'V+', 'SDA', 'SCL'], 5.08, 'STEMMA QT cable to the 5-port hub')
