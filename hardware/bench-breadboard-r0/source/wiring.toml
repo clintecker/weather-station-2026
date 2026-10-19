@@ -169,15 +169,19 @@ source = "passive"
 
 # ---- nets ----
 # `members` are PART.PIN, or N:<header>.<pin> for a NUCLEO pin. `rails` carry the net on a board.
+# `mcu` names the STM32WL pin (or 3V3, GND) of a net that reaches the NUCLEO: it is checked against
+# the wiring guide's section 2 table and against the firmware's pin constants.
 
 [[net]]
 name = "3V3"
+mcu = "3V3"
 class = "power"
 members = ["N:CN6.4", "N:CN7.16", "QT.V+", "R1.2", "R2.2", "R3.2", "SHUNT.2"]
 rails = ["A:L+"]
 
 [[net]]
 name = "GND"
+mcu = "GND"
 class = "ground"
 members = ["N:CN6.6", "N:CN6.7", "QT.GND", "BOBW.2", "BOBW.3", "BOBR.3", "C1.2", "C2.2",
            "CHGR.GND", "INA.GND", "GAUGE.GND", "REG.GND", "CELL.-", "RLOAD.2"]
@@ -185,36 +189,43 @@ rails = ["A:L-", "B:L-"]
 
 [[net]]
 name = "I2C_SDA"
+mcu = "PA11"
 class = "i2c"
 members = ["N:CN5.9", "QT.SDA"]
 
 [[net]]
 name = "I2C_SCL"
+mcu = "PA12"
 class = "i2c"
 members = ["N:CN5.10", "QT.SCL"]
 
 [[net]]
 name = "CUPS"
+mcu = "PC0"
 class = "wind"
 members = ["N:CN10.14", "BOBW.4", "R1.1", "C1.1"]
 
 [[net]]
 name = "VANE"
+mcu = "PB2"
 class = "wind"
 members = ["N:CN7.30", "BOBW.5", "R3.1"]
 
 [[net]]
 name = "RAIN"
+mcu = "PB5"
 class = "rain"
 members = ["N:CN10.29", "BOBR.4", "R2.1", "C2.1"]
 
 [[net]]
 name = "PGOOD"
+mcu = "PB8"
 class = "charger"
 members = ["N:CN10.27", "CHGR.PGOOD"]
 
 [[net]]
 name = "CHG"
+mcu = "PB10"
 class = "charger"
 members = ["N:CN10.25", "CHGR.CHG"]
 

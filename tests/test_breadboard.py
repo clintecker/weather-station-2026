@@ -17,6 +17,8 @@ import kicad_env  # noqa: E402
 import wiring  # noqa: E402
 
 DATA = HW/'source'/'wiring.toml'
+GUIDE = ROOT/'docs'/'hardware'/'bench-station-wiring.md'
+APP = ROOT/'firmware'/'stage0-node'/'App'
 
 ENV = kicad_env.find()
 needs_kicad = unittest.skipUnless(ENV, kicad_env.missing())
@@ -61,6 +63,34 @@ class Model(unittest.TestCase):
             self.assertTrue(part.source.startswith('https://') or part.source in ('bench check', 'passive'), part.id)
         for net in ('I2C_SDA', 'I2C_SCL', 'CUPS', 'VANE', 'RAIN', 'PGOOD', 'CHG', '3V3', 'GND'):
             self.assertIn(net, self.w.nets)
+
+
+class Checks(unittest.TestCase):
+    def setUp(self):
+        self.w = wiring.load(DATA)
+
+    def test_the_model_agrees_with_the_wiring_guide(self):
+        self.assertEqual(wiring.check_guide(self.w, GUIDE), [])
+
+    def test_the_model_agrees_with_the_firmware(self):
+        self.assertEqual(wiring.check_firmware(self.w, APP), [])
+
+    def test_a_moved_firmware_pin_is_found(self):
+        import shutil
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            app = Path(tmp)
+            shutil.copy(APP/'i2c_bus.lit.md', app)
+            text = (APP/'board_inputs.c').read_text()
+            line = next(ln for ln in text.splitlines() if ln.startswith('#define RAIN_PIN'))
+            (app/'board_inputs.c').write_text(text.replace(line, line.replace('GPIO_PIN_5', 'GPIO_PIN_6')))
+            problems = wiring.check_firmware(self.w, app)
+        self.assertTrue(any('RAIN_PIN' in p for p in problems), problems)
+
+    def test_a_header_the_guide_does_not_list_is_found(self):
+        self.w.nets['RAIN'] = ['N:CN10.31' if m == 'N:CN10.29' else m for m in self.w.nets['RAIN']]
+        problems = wiring.check_guide(self.w, GUIDE)
+        self.assertTrue(any('Rain gauge' in p for p in problems), problems)
 
 
 if __name__ == '__main__':

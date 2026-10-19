@@ -4,6 +4,7 @@ A hole is (board, row, column). Board 'A' or 'B'; row 'a'..'j' or a rail 'L+', '
 'R-', 'R+' (beside row j); column 1..63. A NUCLEO pin is ('N', header, pin), for example
 ('N', 'CN10', 14). Standard library only: the repository Python reads this, KiCad's Python reads
 the layout.json that make.py writes from it."""
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +38,7 @@ class Wiring:
     nets: dict          # net name -> list of 'PART.PIN' or 'N:CN10.14'
     net_class: dict     # net name -> class
     rails: dict         # net name -> list of rail ids such as 'A:L+'
+    mcu: dict           # net name -> STM32WL pin ('PC0'), or '3V3'/'GND', for a net that reaches the NUCLEO
     ties: tuple         # NUCLEO pins joined on the board itself
     split_rails: bool
 
@@ -121,8 +123,68 @@ def load(path):
     nets = {n['name']: list(n['members']) for n in data['net']}
     w = Wiring(parts=parts, nets=nets, net_class={n['name']: n['class'] for n in data['net']},
                rails={n['name']: list(n.get('rails', [])) for n in data['net']},
+               mcu={n['name']: n['mcu'] for n in data['net'] if 'mcu' in n},
                ties=tuple(tuple(t) for t in data['nucleo']['ties']), split_rails=data['split_rails'])
     for members in nets.values():
         for m in members:
             hole_xy(member_hole(w, m))   # an unknown part, pin, header or column fails here
     return w
+
+
+# ---- checks against the wiring guide and the firmware ----
+
+# The firmware's pin constants and the net each one serves. board_inputs.c gives the port in a
+# comment (/* PC0 */); the I2C pins in i2c_bus.lit.md are on GPIOA.
+FIRMWARE = {'board_inputs.c': {'CUPS_PIN': 'CUPS', 'VANE_PIN': 'VANE', 'RAIN_PIN': 'RAIN',
+                               'PGOOD_PIN': 'PGOOD', 'CHG_PIN': 'CHG'},
+            'i2c_bus.lit.md': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL'}}
+PIN_DEFINE = re.compile(r'^#define (\w+_PIN) GPIO_PIN_(\d+)\b(?:.*?/\* P([A-H])(\d+) \*/)?', re.M)
+
+
+def nucleo_headers(w, net):
+    return [m[2:] for m in w.nets[net] if m.startswith('N:')]
+
+
+def guide_rows(guide):
+    """The section 2 table of the wiring guide: (function, pins, headers) for each row."""
+    text = Path(guide).read_text()
+    section = text.split('\n## 2.', 1)[1].split('\n## ', 1)[0]
+    rows = []
+    for line in section.splitlines():
+        cells = [c.strip() for c in line.strip().strip('|').split('|')]
+        if len(cells) == 4 and cells[0] not in ('Function', '') and not set(cells[0]) <= set('-'):
+            rows.append((cells[0], [p.strip() for p in cells[1].split(',')], cells[2]))
+    return rows
+
+
+def check_guide(w, guide):
+    """Each net that reaches the NUCLEO: its pin has a row in the guide, and that row lists one of
+    the headers the model uses for it."""
+    rows = guide_rows(guide)
+    problems = []
+    for net, mcu in sorted(w.mcu.items()):
+        headers = nucleo_headers(w, net)
+        row = next((r for r in rows if mcu in r[1]), None)
+        if row is None:
+            problems.append(f'{net} ({mcu}): no row in the wiring guide section 2 table')
+        elif not any(re.search(rf'\b{re.escape(h)}\b', row[2]) for h in headers):
+            problems.append(f'{row[0]} ({mcu}): the model uses {", ".join(headers)}; the guide lists "{row[2]}"')
+    return problems
+
+
+def check_firmware(w, app):
+    """Each firmware pin constant names the same port and pin as the model's net."""
+    problems = []
+    for file, constants in FIRMWARE.items():
+        found = {m.group(1): m for m in PIN_DEFINE.finditer((Path(app)/file).read_text())}
+        for const, net in constants.items():
+            m = found.get(const)
+            if m is None:
+                problems.append(f'{file}: no {const}')
+                continue
+            port = m.group(3) or 'A'    # the I2C pins are on GPIOA
+            if m.group(4) is not None and m.group(4) != m.group(2):
+                problems.append(f'{file}: {const} is GPIO_PIN_{m.group(2)} but its comment says P{port}{m.group(4)}')
+            if f'P{port}{m.group(2)}' != w.mcu.get(net):
+                problems.append(f'{file}: {const} is P{port}{m.group(2)}; the model has {w.mcu.get(net)} for {net}')
+    return problems
