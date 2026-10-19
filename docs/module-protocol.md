@@ -557,7 +557,7 @@ The health report carries the 7 battery channels: 16 bytes of values and 2 bytes
 | Module | Channels | Scale and air width | Bytes |
 |---|---|---|---:|
 | battery and charger | voltage | −3, 2 bytes | 2 |
-| | 4 energy and charge counters | −2, 3 bytes each | 12 |
+| | 4 energy and charge counters | −3 (1 mWh, 1 mAh), 3 bytes each, wrapping at 16,777 Wh or Ah | 12 |
 | | state of charge, charger state | 0, 1 byte each | 2 |
 | **Total** | 7 | | **16** |
 
