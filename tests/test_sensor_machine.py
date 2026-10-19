@@ -1,6 +1,6 @@
-"""The interrupt-driven SHT45 driver (firmware/stage0-node/App/sensor.c, as built) on the host.
+"""The SHT45 driver (firmware/stage0-node/App/sensor.c, as built) on the shared I2C bus (App/i2c_bus.c).
 
-firmware/host/sensor_harness.c simulates ST's timer rounding, the sequencer, the I2C completions and
+firmware/host/sensor_harness.c and i2c_sim.c simulate ST's timer rounding, the sequencer, the I2C completions and
 a sensor that answers, NACKs, hangs, sends a bad CRC or holds SDA low. Every case must end in
 exactly one done() with the documented code, never wait, and leave the bus ready for the next
 measurement. Host-model results, not bench evidence."""
@@ -25,7 +25,8 @@ class SensorMachine(unittest.TestCase):
         fw = ROOT/'firmware'
         lib = host_library(cls, 'sensormachine', '-I', fw/'host/include', '-I', fw/'stage0-node/App',
                            '-I', fw/'stage0-node/Core/Inc', '-I', fw, '-I', fw/'common',
-                           fw/'host/sensor_harness.c', fw/'host/sim_core.c', fw/'stage0-node/App/sensor.c', fw/'stage0-node/App/busymon.c',
+                           '-I', fw/'host', fw/'host/sensor_harness.c', fw/'host/sim_core.c', fw/'host/i2c_sim.c', fw/'host/i2c_models.c',
+                           fw/'stage0-node/App/sensor.c', fw/'stage0-node/App/i2c_bus.c', fw/'stage0-node/App/busymon.c',
                            fw/'stage0.c', fw/'common/ws_check.c')
         cls.library = lib._name
         cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)

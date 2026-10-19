@@ -39,7 +39,7 @@ APP_SRC = $(BOARD_CORE_SRC) $(BOARD_SYS_SRC) \
           $(BOARD_RADIO_SRC)
 ifeq ($(ROLE),tx)
 APP_SRC += App/tx_exchange.c App/tx_policy.c App/tx_time.c App/tx_console.c App/selftest.c \
-           App/node_store.c App/flash_stm32wl.c App/sensor.c $(ROOT)/firmware/stage0.c \
+           App/node_store.c App/flash_stm32wl.c App/sensor.c App/i2c_bus.c $(ROOT)/firmware/stage0.c \
            $(ROOT)/firmware/common/ws_frame.c $(ROOT)/firmware/common/ws_obs.c $(ROOT)/firmware/common/ws_policy.c
 endif
 

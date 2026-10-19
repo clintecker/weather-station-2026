@@ -22,7 +22,7 @@
  * header. tests/test_check.py keeps this table, the numbers and every such file under 1024 lines.
  *    1 App/app_tx.c        2 App/tx_exchange.c   3 App/tx_policy.c     4 App/tx_console.c
  *    5 App/node_store.c    6 App/sensor.c        7 App/app_rx.c        8 App/console.c
- *    9 App/watchdog.c     10 App/busymon.c      11 common/ws_policy.c */
+ *    9 App/watchdog.c     10 App/busymon.c      11 common/ws_policy.c  12 App/i2c_bus.c */
 #ifndef WS_CHECK_FILE
 #error "define WS_CHECK_FILE (the file's number, listed above) before including ws_check.h"
 #endif

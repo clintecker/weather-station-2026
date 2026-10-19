@@ -16,10 +16,12 @@ void HAL_NVIC_ClearPendingIRQ(IRQn_Type irq);
 typedef struct { int unused; } GPIO_TypeDef;
 extern GPIO_TypeDef host_gpioa;
 #define GPIOA (&host_gpioa)
+#define GPIO_PIN_9  (1U << 9)
 #define GPIO_PIN_11 (1U << 11)
 #define GPIO_PIN_12 (1U << 12)
 typedef enum { GPIO_PIN_RESET, GPIO_PIN_SET } GPIO_PinState;
-enum { GPIO_MODE_AF_OD = 1, GPIO_MODE_OUTPUT_OD = 2, GPIO_PULLUP = 1, GPIO_SPEED_FREQ_LOW = 0, GPIO_AF4_I2C2 = 4 };
+enum { GPIO_MODE_AF_OD = 1, GPIO_MODE_OUTPUT_OD = 2, GPIO_MODE_OUTPUT_PP = 3, GPIO_NOPULL = 0, GPIO_PULLUP = 1,
+       GPIO_SPEED_FREQ_LOW = 0, GPIO_AF4_I2C2 = 4 };
 typedef struct { uint32_t Pin, Mode, Pull, Speed, Alternate; } GPIO_InitTypeDef;
 void HAL_GPIO_Init(GPIO_TypeDef *port, GPIO_InitTypeDef *init);
 void HAL_GPIO_DeInit(GPIO_TypeDef *port, uint32_t pins);
@@ -48,11 +50,14 @@ HAL_StatusTypeDef HAL_I2C_DeInit(I2C_HandleTypeDef *hi2c);
 HAL_StatusTypeDef HAL_I2CEx_ConfigAnalogFilter(I2C_HandleTypeDef *hi2c, uint32_t filter);
 HAL_StatusTypeDef HAL_I2C_Master_Transmit_IT(I2C_HandleTypeDef *hi2c, uint16_t addr, uint8_t *data, uint16_t size);
 HAL_StatusTypeDef HAL_I2C_Master_Receive_IT(I2C_HandleTypeDef *hi2c, uint16_t addr, uint8_t *data, uint16_t size);
+#define I2C_MEMADD_SIZE_8BIT 1U
+HAL_StatusTypeDef HAL_I2C_Mem_Read_IT(I2C_HandleTypeDef *hi2c, uint16_t addr, uint16_t mem, uint16_t mem_size, uint8_t *data, uint16_t size);
 void HAL_I2C_EV_IRQHandler(I2C_HandleTypeDef *hi2c);
 void HAL_I2C_ER_IRQHandler(I2C_HandleTypeDef *hi2c);
 void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c);
 void HAL_I2C_MspDeInit(I2C_HandleTypeDef *hi2c);
 void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c);
 void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c);
+void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c);
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c);
 #endif

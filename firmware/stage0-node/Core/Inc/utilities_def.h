@@ -81,7 +81,8 @@ typedef enum
   CFG_SEQ_Task_Sample,         /* weather-station-2026: one 15-s sample (every 4th makes the minute report) */
   CFG_SEQ_Task_Watchdog,       /* weather-station-2026: supervised IWDG refresh (main loop) */
   CFG_SEQ_Task_Storm,          /* weather-station-2026: bench-only flash write storm (power-cut test) */
-  CFG_SEQ_Task_Sensor,         /* weather-station-2026: a finished SHT45 measurement (App/sensor.c) */
+  CFG_SEQ_Task_Sensor,         /* weather-station-2026: the SHT45 measurement steps (App/sensor.c) */
+  CFG_SEQ_Task_I2c,            /* weather-station-2026: a finished I2C transfer on the shared bus (App/i2c_bus.c) */
 
   /* USER CODE END CFG_SEQ_Task_Id_t */
   CFG_SEQ_Task_NBR
