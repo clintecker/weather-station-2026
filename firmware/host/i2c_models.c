@@ -98,8 +98,43 @@ static int reg_read(int kind, int dev, uint8_t reg, uint8_t *data, uint16_t n)
   return 0;
 }
 
+/* DEVK_INA228 (datasheet section 7.6) and DEVK_MAX17048: the registers the battery module reads. The
+   INA228 current reads 0 until SHUNT_CAL holds the module's value (1966: 10 uA, 15 mOhm). */
+typedef struct { int32_t uv, ua; uint16_t cal; uint8_t soc; } power_dev_t;
+static power_dev_t pdev[I2C_SIM_DEVICES];
+void model_ina228_set(int dev, int32_t uv, int32_t ua) { pdev[dev].uv = uv; pdev[dev].ua = ua; }
+void model_max17048_set(int dev, uint8_t soc) { pdev[dev].soc = soc; }
+
+static void put(uint8_t *data, uint16_t n, uint32_t v)
+{
+  for (uint16_t i = 0; i < n; i++) data[i] = (uint8_t)(v >> (8U * (n - 1U - i)));
+}
+
+static int ina228_read(int dev, uint8_t reg, uint8_t *data, uint16_t n)
+{
+  const power_dev_t *p = &pdev[dev];
+  uint32_t vbus = (uint32_t)((int64_t)p->uv * 16 / 3125) << 4;
+  uint32_t cur = p->cal == 1966 ? ((uint32_t)(p->ua / 10) << 4) & 0xFFFFFFU : 0U;
+  if (reg == 0x3E && n == 2) put(data, n, 0x5449);
+  else if (reg == 0x3F && n == 2) put(data, n, 0x2281);
+  else if (reg == 0x05 && n == 3) put(data, n, vbus);
+  else if (reg == 0x07 && n == 3) put(data, n, cur);
+  else return -1;
+  return 0;
+}
+
+static int max17048_read(int dev, uint8_t reg, uint8_t *data, uint16_t n)
+{
+  if (n != 2) return -1;
+  if (reg == 0x08) put(data, n, 0x0012);
+  else if (reg == 0x04) put(data, n, (uint32_t)pdev[dev].soc << 8);
+  else return -1;
+  return 0;
+}
+
 int model_write(int kind, int dev, const uint8_t *data, uint16_t n)
 {
+  if (kind == DEVK_INA228) { if (n != 3 || data[0] != 0x02) return -1; pdev[dev].cal = (uint16_t)(data[1] << 8 | data[2]); return 0; }
   switch (kind)
   {
     case DEVK_TEST: memcpy(test_written[dev], data, n < I2C_SIM_BUF ? n : I2C_SIM_BUF); return 0;
@@ -126,6 +161,8 @@ int model_mem_read(int kind, int dev, uint8_t reg, uint8_t *data, uint16_t n)
   switch (kind)
   {
     case DEVK_BMP581: case DEVK_LTR390: return reg_read(kind, dev, reg, data, n);
+    case DEVK_INA228: return ina228_read(dev, reg, data, n);
+    case DEVK_MAX17048: return max17048_read(dev, reg, data, n);
     case DEVK_TEST: for (uint16_t i = 0; i < n; i++) data[i] = (uint8_t)(reg + i); return 0;
     default: return -1;
   }
@@ -138,4 +175,5 @@ void model_reset(int kind, int dev)
   if (kind == DEVK_SHTC3) shtc3[dev] = (shtc3_t){ .t_raw = 0x8000, .rh_raw = 0x8000, .asleep = 1 };
   if (kind == DEVK_BMP581) regdev[dev] = (regdev_t){ .id = 0x50 };
   if (kind == DEVK_LTR390) regdev[dev] = (regdev_t){ .id = 0xB2 };
+  if (kind == DEVK_INA228 || kind == DEVK_MAX17048) pdev[dev] = (power_dev_t){ 0 };
 }

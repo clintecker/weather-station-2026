@@ -15,7 +15,7 @@ try:
 except ImportError:
     from tests.toolchain import ROOT, host_library, needs_cc    # python -m unittest tests.<module>
 
-DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390 = 2, 3, 4, 5
+DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228, DEVK_MAX17048 = 2, 3, 4, 5, 6, 7
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY = range(5)
 P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH, P_POWER, P_WIND, P_RAIN = range(1, 8)
 GOOD, PARTIAL, SUSPECT, MISSING = range(4)
@@ -30,7 +30,7 @@ def module_sources():
     return ['-I', fw/'host/include', '-I', fw/'host', '-I', app, '-I', fw/'stage0-node/Core/Inc', '-I', fw,
             '-I', fw/'common', fw/'host/wsmp_harness.c', fw/'host/sim_core.c', fw/'host/i2c_sim.c',
             fw/'host/i2c_models.c', app/'i2c_bus.c', app/'busymon.c', app/'wsmp_local.c', app/'mod_th.c',
-            app/'mod_mean.c', app/'mod_reg.c',
+            app/'mod_mean.c', app/'mod_reg.c', app/'mod_power.c',
             fw/'stage0.c', fw/'common/ws_check.c', fw/'common/wsmp.c']
 
 
@@ -296,6 +296,82 @@ class Ltr390(SingleMean, Harness):
         lib.h_ltr390_set(dev, (1 << 20) - 1)
         lib.h_run(MINUTE)
         self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0)[0], (1 << 20) - 1)
+
+
+class Power(Conformance, Harness):
+    """The battery and charger module (WSMP section 4.4, type 5): INA228, MAX17048, bq24074 pins."""
+    PORT, TYPE, CHANNELS = P_POWER, 5, 7
+    DEVICES = [(DEVK_INA228, 0x40), (DEVK_MAX17048, 0x36)]
+    PGOOD, CHG = 1, 2                     # board_charger_pins(): bit 0 PGOOD asserted, bit 1 CHG asserted
+
+    def station(self, devices):
+        lib, devs = super().station(devices)
+        if DEVK_INA228 in devs:
+            lib.h_ina228_set(devs[DEVK_INA228], 4_000_000, 0)      # 4.000 V, no current
+        if DEVK_MAX17048 in devs:
+            lib.h_max17048_set(devs[DEVK_MAX17048], 87)
+        return lib, devs
+
+    def slots(self, snap):
+        return [self.slot(snap, i) for i in range(7)]
+
+    def test_charge_and_discharge_counters(self):
+        lib, devs = self.station(self.DEVICES)
+        ina = devs[DEVK_INA228]
+        lib.h_ina228_set(ina, 4_000_000, 500_000)                  # +500 mA (charging) at 4.000 V for 60 s
+        lib.h_run(MINUTE)
+        lib.h_ina228_set(ina, 4_000_000, -250_000)                 # -250 mA for 120 s
+        lib.h_run(2 * MINUTE)
+        s = self.slots(self.latch(lib, self.PORT, 1))
+        # Energy in, energy out, charge in, charge out: whole mWh and mAh since boot. Each sample's
+        # current counts over the time since the previous sample, so the first minute holds 59 s:
+        # in 59 s x 2 W = 32.8 mWh and 59 s x 0.5 A = 8.19 mAh; out 120 s x 1 W = 33.3 mWh, 8.33 mAh.
+        self.assertEqual([s[i][0] for i in (1, 2, 3, 4)], [32, 33, 8, 8])
+        lib.h_ina228_set(ina, 4_000_000, 500_000)
+        lib.h_run(MINUTE)
+        s = self.slots(self.latch(lib, self.PORT, 2))
+        self.assertEqual([s[i][0] for i in (1, 3)], [66, 16])       # 119 s: 66.1 mWh, 16.53 mAh: the remainder was kept
+        self.assertEqual(s[0][:1], (4000,))                         # voltage mean, 1 mV
+
+    def test_counters_never_reset_at_latch(self):
+        lib, devs = self.station(self.DEVICES)
+        lib.h_ina228_set(devs[DEVK_INA228], 4_000_000, 1_000_000)
+        lib.h_run(MINUTE)
+        a = self.slots(self.latch(lib, self.PORT, 1))
+        lib.h_run(MINUTE)
+        b = self.slots(self.latch(lib, self.PORT, 2))
+        self.assertEqual((a[3][0], b[3][0]), (16, 33))              # 59 s then 119 s at 1 A: 16.4, 33.1 mAh
+
+    def test_charger_states_from_pins(self):
+        lib, _ = self.station(self.DEVICES)
+        for pins, state in ((0, 0), (self.PGOOD | self.CHG, 1), (self.PGOOD, 2), (self.CHG, 0)):
+            with self.subTest(pins=pins):
+                lib.h_charger_pins(pins)
+                lib.h_run(MINUTE)
+                self.assertEqual(self.slots(self.latch(lib, self.PORT, 10 + pins))[6][0], state)
+
+    def test_soc_point_and_missing_without_gauge(self):
+        lib, _ = self.station(self.DEVICES)
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slots(self.latch(lib, self.PORT, 1))[5][0], 87)
+        lib, _ = self.station([(DEVK_INA228, 0x40)])
+        lib.h_run(MINUTE)
+        s = self.slots(self.latch(lib, self.PORT, 1))
+        self.assertEqual(s[5][2], MISSING)
+        self.assertNotEqual(s[0][2], MISSING)                      # the module is present without its gauge
+        self.assertEqual(lib.h_probe(self.PORT), 1)
+
+    def test_absent_without_the_monitor(self):
+        lib, _ = self.station([(DEVK_MAX17048, 0x36)])
+        lib.h_run(MINUTE)
+        self.assertEqual(lib.h_probe(self.PORT), 0)
+
+    def test_voltage_is_good_after_the_first_window(self):
+        lib, _ = self.station(self.DEVICES)
+        lib.h_run(MINUTE)
+        self.latch(lib, self.PORT, 1)
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slots(self.latch(lib, self.PORT, 2))[0][1:], (60, GOOD))   # one a second
 
 
 if __name__ == '__main__':

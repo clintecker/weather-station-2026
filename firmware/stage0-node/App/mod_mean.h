@@ -12,6 +12,7 @@ typedef struct {
   uint8_t n, latched;
   uint16_t last_token;
   uint32_t start_ms;
+  uint32_t period_ms;   /* the sample period behind the quality: 0 means WSMP_SAMPLE_MS */
   uint8_t frozen[WSMP_SNAPSHOT_LEN];
 } mean_win;
 
@@ -22,4 +23,13 @@ void mean_add(mean_win *w, const int32_t v[MEAN_CHANNELS]);   /* one valid sampl
    window starts at now_ms. desc is the module's descriptor block (for the descriptor tag). */
 void mean_latch(mean_win *w, uint16_t token, uint32_t now_ms, uint32_t boot_id, const uint8_t desc[WSMP_DESC_BLOCK_LEN],
                 unsigned channels);
+/* The two halves of mean_latch, for a module with more slots than means: mean_close returns 0 for a
+   retry; otherwise it fills snap (header, the mean slots) and starts the next window. The module
+   adds its other slots, then mean_store packs snap as the frozen snapshot. */
+int mean_close(mean_win *w, uint16_t token, uint32_t now_ms, uint32_t boot_id, const uint8_t desc[WSMP_DESC_BLOCK_LEN],
+               unsigned channels, wsmp_snapshot *snap);
+void mean_store(mean_win *w, const wsmp_snapshot *snap);
+/* The quality of a slot that is not a mean, for the window just closed: good, partial in the first
+   window, missing without a sample. */
+uint8_t mean_quality(const wsmp_snapshot *snap, unsigned samples);
 #endif

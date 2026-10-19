@@ -78,6 +78,11 @@ void h_reg_set_id(int dev, int id) { model_reg_set_id(dev, (uint8_t)id); }
 void h_reg_power_cycle(int dev) { model_reg_power_cycle(dev); }
 void h_bmp581_set(int dev, uint32_t pa64) { model_reg_set_data(dev, pa64); }
 void h_ltr390_set(int dev, uint32_t counts) { model_reg_set_data(dev, counts); }
+void h_ina228_set(int dev, int32_t uv, int32_t ua) { model_ina228_set(dev, uv, ua); }
+void h_max17048_set(int dev, int soc) { model_max17048_set(dev, (uint8_t)soc); }
+static int charger_pins;
+int board_charger_pins(void) { return charger_pins; }
+void h_charger_pins(int pins) { charger_pins = pins; }
 /* The SHT45 conversion of the driver in use (firmware/stage0.c), as the test's oracle for one sample. */
 int h_sht45_parse(int t_raw, int h_raw, int16_t *t, uint16_t *h)
 {
