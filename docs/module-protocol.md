@@ -1,6 +1,9 @@
-# WSMP: the Weather Station Module Protocol
+# DATAVANE5K: the Weather Station Module Protocol (WSMP)
 
 Version 1.0, draft of 2026-10-18. Status: normative design, not implemented yet.
+
+DATAVANE5K is the trade name of WSMP, the Weather Station Module Protocol. The technical name stays
+WSMP: in the code, in the requirement IDs (WSMP-L1 and so on) and in the registry.
 
 WSMP is the contract between a weather station and its sensor modules. It also defines how the
 station tells the gateway what the module data means. Every module must conform to it. This applies
