@@ -13,7 +13,7 @@ electrical source of truth. This package adds no circuit.
 | [`renders/board-b.png`](renders/board-b.png) | board B, power: charger, INA228, fuel gauge, regulator, battery, test load, the BATTERY POWER shunt |
 | [`renders/overview.png`](renders/overview.png) | both boards and the jumpers to the NUCLEO headers (not to scale) |
 | [`renders/3d-top.png`](renders/3d-top.png), [`renders/3d-angle.png`](renders/3d-angle.png) | KiCad 10's 3D view |
-| [`renders/schematic.pdf`](renders/schematic.pdf) | the wiring schematic |
+| [`renders/schematic.pdf`](renders/schematic.pdf) | the wiring schematic, drawn as circuits with KiCad's own symbols. The meter's reed switches and vane resistors are drawn across the RJ11 breakout pins their cables reach |
 
 The third breadboard stays spare (for the W25Q128 flash later).
 

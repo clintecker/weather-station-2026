@@ -307,8 +307,12 @@ class Outputs(unittest.TestCase):
             name = re.search(r'\(name "([^"]+)"\)', block)[1].lstrip('/')
             if not name.startswith('unconnected'):
                 got[name] = set(re.findall(r'\(ref "([^"]+)"\)', block))
+        import build_schematic
         w = wiring.load(DATA)
-        want = {n: {('NUCLEO' if m.startswith('N:') else m.split('.')[0]) for m in members} for n, members in w.nets.items()}
+        want = {build_schematic.NET_POWER.get(n, n).lstrip('+'):
+                {('NUCLEO' if m.startswith('N:') else m.split('.')[0]) for m in members} for n, members in w.nets.items()}
+        # The meter's own switches and vane resistors are drawn across the breakout pins: not breadboard parts.
+        got = {n.lstrip('+'): refs - set(build_schematic.METER) for n, refs in got.items()}
         self.assertEqual(got, want)
 
     def test_renders_exist_and_are_current(self):
