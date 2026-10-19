@@ -16,6 +16,7 @@ enum i2c_client { I2C_C_SHT45, I2C_C_BMP581, I2C_C_LTR390, I2C_C_SHTC3, I2C_C_IN
 #define I2C_ECRC       (-4)
 #define I2C_ESTUCK     (-5)   /* SDA still low after the recovery */
 #define I2C_ETIMEOUT   (-6)   /* the transfer did not finish within its guard */
+#define I2C_EBUS       (-7)   /* a bus error, lost arbitration, or a HAL refusal: a bus fault, not an absence */
 
 void i2c_bus_init(void);
 /* Queues one transfer of client c to the 7-bit address addr7:

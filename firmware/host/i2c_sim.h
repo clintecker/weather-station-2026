@@ -9,7 +9,8 @@
 #include "sim_core.h"
 
 enum i2c_sim_kind { DEVK_TEST = 1, DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228, DEVK_MAX17048 };
-enum i2c_sim_mode { DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY, DM_HANG_READ };
+enum i2c_sim_mode { DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY, DM_HANG_READ,
+                    DM_BUS_ERROR };   /* a bus error (HAL_I2C_ERROR_BERR), as noise or a misplaced START gives */
 #define I2C_SIM_DEVICES 8
 #define I2C_SIM_BUF 16
 

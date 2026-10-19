@@ -19,6 +19,7 @@ except ImportError:
 
 DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228, DEVK_MAX17048 = 2, 3, 4, 5, 6, 7
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY = range(5)
+DM_BUS_ERROR = 6
 P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH, P_POWER, P_WIND, P_RAIN = range(1, 8)
 GOOD, PARTIAL, SUSPECT, MISSING = range(4)
 FLAG_FIRST, FLAG_LONG = 1, 2
@@ -206,6 +207,12 @@ class TempHumidity(Conformance):
         snap = self.latch(lib, self.PORT, 2)
         self.assertEqual(self.slot(snap, 0), (0, 0, MISSING))
         self.assertEqual(lib.h_probe(self.PORT), 0)
+
+    def test_a_bus_error_is_a_bus_fault_not_an_absence(self):
+        lib, dev = self.good_station()
+        lib.h_device_mode(dev, DM_BUS_ERROR, 0, 1)
+        lib.h_run(15_000)
+        self.assertEqual(lib.h_probe(self.PORT), -1)               # WSMP-P3: the module stays in the layout
 
     def test_a_read_nack_is_a_bus_fault_not_an_absence(self):
         lib, dev = self.good_station()

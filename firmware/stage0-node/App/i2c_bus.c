@@ -120,7 +120,9 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) { if (hi2c == &hi2c2) fi
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
-  if (hi2c == &hi2c2) finish(xfers[cur].txlen == 0 ? I2C_ENACK_DATA : I2C_ENACK_ADDR);
+  if (hi2c != &hi2c2) return;
+  if (!(hi2c->ErrorCode & HAL_I2C_ERROR_AF)) finish(I2C_EBUS);
+  else finish(xfers[cur].txlen == 0 ? I2C_ENACK_DATA : I2C_ENACK_ADDR);
 }
 static void on_guard(void *ctx) { (void)ctx; finish(I2C_ETIMEOUT); }
 
@@ -147,7 +149,7 @@ static void kick(void)
   st = S_XFER;
   (void)WS_CHECK(UTIL_TIMER_Start(&guard_timer) == UTIL_TIMER_OK);   /* stopped by finish() */
   hal_refused = hal_start(&xfers[cur]) != HAL_OK;
-  if (hal_refused) finish(I2C_ENACK_ADDR);
+  if (hal_refused) finish(I2C_EBUS);
 }
 
 /* The four forms of i2c_bus.h: write, read, a register address and then a read, or recover only. */
@@ -208,7 +210,7 @@ static void deliver(int rc)
 
 static int may_be_stuck(int rc)
 {
-  return rc == I2C_ETIMEOUT || hal_refused || HAL_GPIO_ReadPin(GPIOA, SDA_PIN) != GPIO_PIN_SET;
+  return rc == I2C_ETIMEOUT || rc == I2C_EBUS || hal_refused || HAL_GPIO_ReadPin(GPIOA, SDA_PIN) != GPIO_PIN_SET;
 }
 
 static void bus_task(void)

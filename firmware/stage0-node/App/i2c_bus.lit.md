@@ -25,7 +25,7 @@ python3 tools/tangle.py --check firmware/stage0-node/App/i2c_bus.lit.md    # com
 | One result | each submitted transfer gets exactly one `i2c_bus_done`, from the main loop | every test in `tests/test_i2c_bus.py` |
 | Refusal | a client with a transfer queued or running gets -1 at once | `test_a_second_submit_from_a_busy_client_is_refused` |
 | Guard | a transfer that does not finish within 30 ms ends with `I2C_ETIMEOUT`. A completion after it changes nothing | `test_guard_timeout_reports_etimeout`, `test_a_completion_after_the_guard_is_ignored` |
-| Recovery | after a transfer that can leave the bus stuck (a timeout, a HAL refusal, or SDA still low) the bus clocks SDA free and starts the peripheral again before the next transfer. SDA that stays low gives `I2C_ESTUCK`. A clean NACK costs no recovery | `test_each_failure_has_its_code_and_recovers_the_bus`, `test_held_sda_is_clocked_free_or_reported_stuck`, `test_an_absent_device_costs_no_recovery` |
+| Recovery | after a transfer that can leave the bus stuck (a timeout, a HAL refusal, a bus error, or SDA still low) the bus clocks SDA free and starts the peripheral again before the next transfer. SDA that stays low gives `I2C_ESTUCK`. A clean NACK costs no recovery | `test_each_failure_has_its_code_and_recovers_the_bus`, `test_held_sda_is_clocked_free_or_reported_stuck`, `test_an_absent_device_costs_no_recovery` |
 | Isolation | a failure of one client's device does not fail the other clients' transfers | `test_unplug_mid_transfer_recovers_and_spares_other_clients` |
 
 A transfer has one of three forms (`i2c_bus.h`):
@@ -184,8 +184,10 @@ static void finish(int rc)
 }
 ```
 
-The completion callbacks are ST's. An error during a read-only transfer is `I2C_ENACK_DATA`: the
-device answered its command and then did not deliver. Every other error is `I2C_ENACK_ADDR`.
+The completion callbacks are ST's. Only a NACK (`HAL_I2C_ERROR_AF`) gives a NACK code. During a
+read-only transfer it is `I2C_ENACK_DATA`: the device answered its command and then did not deliver.
+Otherwise it is `I2C_ENACK_ADDR`. Any other error (a bus error, lost arbitration, an overrun) is
+`I2C_EBUS`: a bus fault (WSMP-P3), which a module must not take for an absence.
 
 ```c {#callbacks}
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
@@ -197,7 +199,9 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) { if (hi2c == &hi2c2) fi
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
-  if (hi2c == &hi2c2) finish(xfers[cur].txlen == 0 ? I2C_ENACK_DATA : I2C_ENACK_ADDR);
+  if (hi2c != &hi2c2) return;
+  if (!(hi2c->ErrorCode & HAL_I2C_ERROR_AF)) finish(I2C_EBUS);
+  else finish(xfers[cur].txlen == 0 ? I2C_ENACK_DATA : I2C_ENACK_ADDR);
 }
 static void on_guard(void *ctx) { (void)ctx; finish(I2C_ETIMEOUT); }
 
@@ -232,7 +236,7 @@ static void kick(void)
   st = S_XFER;
   (void)WS_CHECK(UTIL_TIMER_Start(&guard_timer) == UTIL_TIMER_OK);   /* stopped by finish() */
   hal_refused = hal_start(&xfers[cur]) != HAL_OK;
-  if (hal_refused) finish(I2C_ENACK_ADDR);
+  if (hal_refused) finish(I2C_EBUS);
 }
 
 /* The four forms of i2c_bus.h: write, read, a register address and then a read, or recover only. */
@@ -313,7 +317,7 @@ static void deliver(int rc)
 
 static int may_be_stuck(int rc)
 {
-  return rc == I2C_ETIMEOUT || hal_refused || HAL_GPIO_ReadPin(GPIOA, SDA_PIN) != GPIO_PIN_SET;
+  return rc == I2C_ETIMEOUT || rc == I2C_EBUS || hal_refused || HAL_GPIO_ReadPin(GPIOA, SDA_PIN) != GPIO_PIN_SET;
 }
 
 static void bus_task(void)

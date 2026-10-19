@@ -8,7 +8,7 @@
 #include "i2c_sim.h"
 #include "stm32wlxx_hal.h"
 
-enum { DONE_NONE, DONE_TX, DONE_RX, DONE_MEMRX, DONE_ERROR };
+enum { DONE_NONE, DONE_TX, DONE_RX, DONE_MEMRX, DONE_ERROR, DONE_BUS_ERROR };   /* DONE_ERROR: a NACK */
 typedef struct { int kind, mode, present, sda_hold; uint8_t addr7; uint32_t latency_ms, writes; } sim_dev;
 static sim_dev devs[I2C_SIM_DEVICES];
 static int ndevs, i2c_inited, irq_enabled, pending_kind, power_on;
@@ -90,7 +90,8 @@ static void complete_in(int kind, const sim_dev *d)
    the device to serve, or NULL if the fault decides the outcome. */
 static int faulty(const sim_dev *d, int is_read)
 {
-  return d->mode == DM_HANG || d->mode == DM_NACK_ADDR || (is_read && (d->mode == DM_NACK_DATA || d->mode == DM_HANG_READ));
+  return d->mode == DM_HANG || d->mode == DM_NACK_ADDR || d->mode == DM_BUS_ERROR ||
+         (is_read && (d->mode == DM_NACK_DATA || d->mode == DM_HANG_READ));
 }
 
 static sim_dev *begin(uint16_t addr, int is_read)
@@ -99,6 +100,7 @@ static sim_dev *begin(uint16_t addr, int is_read)
   transfers++; started_at = sim_now();
   if (d && d->sda_hold && faulty(d, is_read)) sda_release_at = scl_edges + d->sda_hold;
   if (!d || d->mode == DM_NACK_ADDR) { complete_in(DONE_ERROR, d); return NULL; }
+  if (d->mode == DM_BUS_ERROR) { complete_in(DONE_BUS_ERROR, d); return NULL; }
   if (d->mode == DM_HANG || (is_read && d->mode == DM_HANG_READ)) return NULL;
   return d;
 }
@@ -163,7 +165,7 @@ static void i2c_fire(void)
     if (kind == DONE_RX) HAL_I2C_MasterRxCpltCallback(handle);
     else HAL_I2C_MemRxCpltCallback(handle);
   }
-  else HAL_I2C_ErrorCallback(handle);
+  else { handle->ErrorCode = kind == DONE_BUS_ERROR ? HAL_I2C_ERROR_BERR : HAL_I2C_ERROR_AF; HAL_I2C_ErrorCallback(handle); }
 }
 const sim_source i2c_sim_source = { i2c_pending, i2c_fire, SIM_IRQ_I2C2_EV };
 

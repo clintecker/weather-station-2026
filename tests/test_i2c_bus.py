@@ -17,7 +17,8 @@ except ImportError:
 
 DEVK_TEST = 1
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY = range(5)
-OK, ENACK_ADDR, ENACK_DATA, ESTUCK, ETIMEOUT = 0, -2, -3, -5, -6
+DM_BUS_ERROR = 6                                   # i2c_sim.h: a bus error (BERR), not a NACK
+OK, ENACK_ADDR, ENACK_DATA, ESTUCK, ETIMEOUT, EBUS = 0, -2, -3, -5, -6, -7
 SHT45, BMP581, LTR390 = 0, 1, 2
 ADDR = {SHT45: 0x44, BMP581: 0x47, LTR390: 0x53}
 
@@ -93,10 +94,13 @@ class I2cBus(unittest.TestCase):
     def test_each_failure_has_its_code_and_recovers_the_bus(self):
         # A transfer that can leave the bus stuck (a timeout, a HAL refusal) is followed by the recovery.
         # A clean NACK, with SDA free, is not: absent modules are probed often, and a recovery each time
-        # would only churn the bus. SDA held low after a NACK still recovers (the next test).
+        # would only churn the bus. SDA held low after a NACK still recovers (the next test). Only a NACK
+        # (HAL_I2C_ERROR_AF) is a NACK code: a bus error or a HAL refusal is a bus fault (WSMP-P3), never
+        # "absent".
         for mode, reg, rc, recoveries in ((DM_NACK_ADDR, True, ENACK_ADDR, 0), (DM_NACK_ADDR, False, ENACK_DATA, 0),
                                           (DM_NACK_DATA, False, ENACK_DATA, 0), (DM_HANG, True, ETIMEOUT, 1),
-                                          (DM_BUSY, True, ENACK_ADDR, 1)):
+                                          (DM_BUSY, True, EBUS, 1), (DM_BUS_ERROR, True, EBUS, 1),
+                                          (DM_BUS_ERROR, False, EBUS, 1)):
             with self.subTest(mode=mode, reg=reg):
                 lib, devs = self.bus()
                 lib.h_device_mode(devs[SHT45], mode, 0, 1)

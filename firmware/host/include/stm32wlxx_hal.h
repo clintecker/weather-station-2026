@@ -44,7 +44,10 @@ typedef struct { uint32_t Timing, OwnAddress1, AddressingMode, DualAddressMode, 
 typedef struct __I2C_HandleTypeDef {
   I2C_TypeDef *Instance; I2C_InitTypeDef Init;
   HAL_StatusTypeDef (*XferISR)(struct __I2C_HandleTypeDef *hi2c, uint32_t flags, uint32_t sources);
+  volatile uint32_t ErrorCode;
 } I2C_HandleTypeDef;
+#define HAL_I2C_ERROR_BERR 0x00000001U
+#define HAL_I2C_ERROR_AF   0x00000004U
 HAL_StatusTypeDef HAL_I2C_Init(I2C_HandleTypeDef *hi2c);
 HAL_StatusTypeDef HAL_I2C_DeInit(I2C_HandleTypeDef *hi2c);
 HAL_StatusTypeDef HAL_I2CEx_ConfigAnalogFilter(I2C_HandleTypeDef *hi2c, uint32_t filter);
