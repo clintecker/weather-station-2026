@@ -43,8 +43,6 @@ enum {
 #define WS_F(i) ((uint32_t)1 << (i))
 #define WS_F_TEMPERATURE_C WS_F(WS_FI_TEMPERATURE_C)
 #define WS_F_HUMIDITY_PCT  WS_F(WS_FI_HUMIDITY_PCT)
-#define WS_F_TH_SUMMARY (WS_F(WS_FI_TEMPERATURE_MIN_C) | WS_F(WS_FI_TEMPERATURE_MAX_C) | \
-                         WS_F(WS_FI_HUMIDITY_MIN_PCT) | WS_F(WS_FI_HUMIDITY_MAX_PCT) | WS_F(WS_FI_TH_SAMPLES))
 #define WS_FIELDS_DEFINED  (WS_F(WS_FI_COUNT) - 1U)
 
 /* Catalog v1 (docs/protocol-design.md section 5.3), the only copy of each field's width in

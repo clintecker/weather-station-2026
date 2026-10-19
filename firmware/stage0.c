@@ -35,32 +35,6 @@ int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN],int16_t *centi_c,uint
  *centi_c=(int16_t)t; *centi_rh=(uint16_t)h;
  return 0; /* Outputs are unchanged on failure; caller must emit invalid flags. */
 }
-/* Explicit packing avoids structure padding and alignment assumptions. */
-void ws_th_reset(ws_th_window *w) { memset(w,0,sizeof *w); }
-static void th_extrema(ws_th_window *w,int16_t t,uint16_t h) {
- if(!w->n) { w->t_min=w->t_max=t; w->h_min=w->h_max=h; return; }
- if(t<w->t_min) w->t_min=t;
- if(t>w->t_max) w->t_max=t;
- if(h<w->h_min) w->h_min=h;
- if(h>w->h_max) w->h_max=h;
-}
-void ws_th_add(ws_th_window *w,int valid,int16_t t,uint16_t h) {
- if(!valid||t<WS_TEMP_MIN_CENTI||t>WS_TEMP_MAX_CENTI||w->n>=UINT8_MAX) return;
- if(h>WS_RH_MAX_CENTI) h=WS_RH_MAX_CENTI;
- th_extrema(w,t,h);
- w->t_sum+=t; w->h_sum+=h; w->n++;
-}
-/* floor((2*sum + n) / (2n)): round half up, also for negative sums (C division truncates, and
- * den > 0, so a negative inexact quotient is one too high). 32-bit arithmetic: ws_th_add counts at
- * most 255 samples of -4000..12500 (T) or 0..10000 (RH), so |2*sum + n| stays far below 2^31. */
-_Static_assert(2LL*UINT8_MAX*WS_TEMP_MAX_CENTI+UINT8_MAX < INT32_MAX && 2LL*UINT8_MAX*WS_TEMP_MIN_CENTI > INT32_MIN,"T/RH window sums fit 32-bit mean arithmetic");
-static int32_t mean_half_up(int32_t sum,uint8_t n) {
- int32_t num=2*sum+n, den=2*(int32_t)n, q=num/den;
- if(num%den!=0&&num<0) q--;
- return q;
-}
-int ws_th_mean_t(const ws_th_window *w,int16_t *t) { if(!w->n) return 0; *t=(int16_t)mean_half_up(w->t_sum,w->n); return 1; }
-int ws_th_mean_h(const ws_th_window *w,uint16_t *h) { if(!w->n) return 0; *h=(uint16_t)mean_half_up(w->h_sum,w->n); return 1; }
 /* One step per half period of 100 kHz SCL; the caller waits >= WS_I2C_HALF_US between steps. */
 enum { REC_CHECK, REC_HIGH, REC_STOP_SDA_LOW, REC_STOP_SCL_HIGH, REC_STOP_SDA_HIGH, REC_DONE };
 void ws_i2c_recover_begin(ws_i2c_rec *s,const ws_i2c_pins *p) {

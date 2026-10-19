@@ -621,18 +621,18 @@ class TxStateMachine(unittest.TestCase):
         self.assertEqual(n.lib.h_resets(), 0)
         n.advance(1)
         self.assertEqual(n.lib.h_resets(), 1)
-        starts = n.lib.h_sensor_starts()               # (the harness does not really reset)
+        starts = n.lib.h_sht45_writes()               # (the harness does not really reset)
         n.advance(MINUTE_MS)
-        self.assertEqual(n.lib.h_sensor_starts(), starts)
+        self.assertEqual(n.lib.h_sht45_writes(), starts)
 
     def test_flash_storm_stops_sampling_and_exchanges(self):
         n = self.node(storm=True)
         n.advance_to(FIRST_REPORT_MS - 5)              # the minute's 4th measurement is in flight
         n.lib.h_line(b'TEST-FLASH-STORM')
         self.assertIn('#storm start', n.out())
-        frames, starts = n.sent(), n.lib.h_sensor_starts()
+        frames, starts = n.sent(), n.lib.h_sht45_writes()
         n.advance(3 * MINUTE_MS)
-        self.assertEqual((n.sent(), n.lib.h_sensor_starts()), (frames, starts))
+        self.assertEqual((n.sent(), n.lib.h_sht45_writes()), (frames, starts))
         self.assertNotIn('#sample ', n.out())
         self.assertEqual(n.lib.h_healthy(), 1)         # sampling stopped on purpose: not a fault
 
@@ -873,11 +873,11 @@ class TxStateMachine(unittest.TestCase):
         n.advance_to(minute(0))
         self.assertRegex(n.out(), r'#sample epoch=\d+ seq=0 .* valid=0 rc=0 n=0 ')   # the report still comes
         n.lib.h_sensor(0, 1)                           # every transfer now hangs: the bus guard ends each one
-        starts = n.lib.h_sensor_starts()
+        starts = n.lib.h_sht45_writes()
         n.advance(2 * MINUTE_MS)
         out = n.out()
         self.assertEqual(len(re.findall(r'#sample epoch=\d+ seq=[12] .* valid=0 ', out)), 2)   # every minute
-        self.assertGreaterEqual(n.lib.h_sensor_starts() - starts, 7)   # the module retries every 15 s
+        self.assertGreaterEqual(n.lib.h_sht45_writes() - starts, 7)   # the module retries every 15 s
         self.assertEqual(n.lib.h_healthy(), 1)
 
     # ---- everything at once ----

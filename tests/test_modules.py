@@ -168,6 +168,17 @@ class TempHumidity(Conformance):
         self.assertEqual(signed16(self.slot(snap, 0)[0] & 0xFFFF), (sum(ts) * 2 + 4) // 8)
         self.assertEqual(self.slot(snap, 1)[0], (sum(hs) * 2 + 4) // 8)
 
+    def test_mean_rounds_half_up_below_zero(self):
+        # Below zero the mean rounds to the nearest (half up), not toward zero as C division does:
+        # -1, -2, -2, -2 is -1.75, so -2 (truncation would give -1).
+        lib, dev = self.good_station()
+        near_zero = range(16_800, 16_900)                          # T = -45 + 175 S / 2^16 crosses 0 here
+        raw = {self.expected(lib, r, 0x8000)[0]: r for r in near_zero}
+        for t_raw in (raw[-1], raw[-2], raw[-2], raw[-2]):
+            self.set(lib, dev, t_raw, 0x8000)
+            lib.h_run(15_000)
+        self.assertEqual(signed16(self.slot(self.latch(lib, self.PORT, 2), 0)[0] & 0xFFFF), -2)
+
     def test_three_samples_is_partial(self):
         lib, dev = self.good_station()
         lib.h_run(15_000)

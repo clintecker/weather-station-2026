@@ -335,21 +335,23 @@ Value = (code − offset) / scale. INVALID is the field's all-ones code (`0xFF`,
 | 26–31 | reserved | — | — | — | must be zero | — | — | — |
 
 All 26 fields together are 56 bytes. Thus the largest plaintext is 78 bytes, and the largest frame
-is 94 bytes. The current build has drivers for fields 0, 1 and 21–25. Fields 21–25 first shipped
-in release `586001994b09`. The catalog fixes the other fields now, so later builds need no wire
+is 94 bytes. The current build (the WSMP bench station) fills the fields of the local modules in its layout
+(`App/wsmp_catalog_map.c`). The catalog fixes the other fields now, so later builds need no wire
 change. The counter fields (6 and 13–16) start at 0 when their epoch starts.
 
-**15-second sampling.** The node reads the SHT45 every 15 s (`SAMPLE_PERIOD_MS`). It sends one
-observation per minute, after the 4th sample (`SAMPLES_PER_REPORT`). With fields 21–25 present:
+**15-second sampling.** Each module samples on its own schedule (the air module every 15 s). The
+node latches the modules once a minute, on the 4th 15-s tick (`SAMPLES_PER_REPORT`), and sends one
+observation:
 - `temperature_c` and `humidity_pct` are the **mean** of the minute's valid samples. The node
-  rounds half up, in integers (`ws_th_mean_*`, `firmware/stage0.c`).
-- Fields 21–24 are the extrema of those samples.
+  rounds half up, in integers (`mean_of`, `firmware/stage0-node/App/mod_mean.c`).
+- Fields 21–24 (the minute extremes) are not sent. The gateway derives extremes from the means
+  (WSMP rule 6, `docs/module-protocol.md`).
 - Field 25 is the number of valid samples.
 
 The node does not count a sample outside −40.00 to 125.00 °C. It clamps humidity to 0–100 %
-before it counts the sample. With no valid sample, fields 0, 1 and 21–24 are INVALID, and field 25
-is 0. `th_samples` is metadata. It does not count towards the record's `quality`. Thus a dead
-sensor still gives `sensor_fault`.
+before it counts the sample. With no valid sample, fields 0 and 1 are INVALID, and field 25 is 0.
+`th_samples` is metadata. It does not count towards the record's `quality`. Thus a dead sensor
+still gives `sensor_fault`.
 
 ### 5.4 Encoding rules
 
@@ -359,7 +361,7 @@ sensor still gives `sensor_fault`.
 | A value out of range gives **INVALID**. It is never clamped. | `Field.code()`, `ws_code_temp_centi` (temperature outside −40.00 to 125.00 °C) |
 | Exception: relative humidity (fields 1, 20, 23 and 24) is **clamped** to 0–100 %. | `Field.code()`, `ws_code_rh_centi` |
 | `wind_dir_deg` wraps modulo 360 before the range check. | `Field.code()` |
-| No sample or a sensor fault gives INVALID. After any SHT45 fault, the node sends **both** temperature and humidity as INVALID. | `obs_codes()` in `App/app_tx.c` |
+| No sample or a sensor fault gives INVALID. When the air module's window has no valid sample, the node sends **both** temperature and humidity as INVALID. | `th()` in `App/wsmp_catalog_map.c` |
 | A wind direction needs a valid speed. If `wind_speed_ms` is INVALID, `wind_dir_deg` must be INVALID. CALM is not permitted either. | `ws_obs_encode`, `_check_wind` |
 | Decoding is exact. (code − offset) is an integer before the single division. Thus no floating-point noise reaches the stored JSON. | `Field.value()` |
 

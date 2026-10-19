@@ -343,7 +343,7 @@ The node's configuration header (`firmware/stage0-node/App/node_fields.h`) names
 fields with one constant:
 
 ```c
-#define WS_NODE_FIELDS (WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT | WS_F_TH_SUMMARY)
+#define WS_NODE_FIELDS WS_F_WSMP_BENCH   /* the fields the WSMP local modules can fill */
 ```
 
 `WS_OBS_PLAIN_MAX` = 22 + the sum of the widths of those fields.

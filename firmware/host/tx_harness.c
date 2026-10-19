@@ -201,7 +201,7 @@ uint32_t h_last_rx_timeout(void) { return last_rx_timeout; }
 int h_last_frame(uint8_t *buf) { memcpy(buf, last_frame, (size_t)last_frame_len); return last_frame_len; }
 uint32_t h_flash_ops_during_radio(void) { return flash_ops_during_radio; }
 uint32_t h_flash_erases(void) { return flash_erases; }
-int h_sensor_starts(void) { return (int)i2c_sim_writes(sht45); }   /* SHT45 commands attempted */
+int h_sht45_writes(void) { return (int)i2c_sim_writes(sht45); }   /* SHT45 commands attempted */
 /* rc -2: the SHT45 does not answer its address; hang 1: every transfer hangs until the bus guard. */
 void h_sensor(int rc, int hang) { i2c_sim_mode(sht45, hang ? DM_HANG : rc ? DM_NACK_ADDR : DM_OK, 0, 1); }
 void h_radio_send_fails(int n) { radio_send_fails = n; }
