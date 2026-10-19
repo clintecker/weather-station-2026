@@ -44,7 +44,8 @@ class Registry(unittest.TestCase):
                          [(9, 2), (11, 6), (12, 6), (13, 6), (14, 6), (15, 1), (16, 10)])
         self.assertEqual([tuple(c) for c in r.MODULE_TYPES[6]['channels']], [(17, 6), (5, 7), (6, 8), (6, 9)])
         self.assertEqual(r.MODULE_TYPES[6]['factors'], {'ums_per_hz': 666980, 'gust_ms': 3000})
-        self.assertEqual(r.MODULE_TYPES[7]['factors'], {'um_per_tip': 279400})
+        self.assertEqual(r.MODULE_TYPES[7]['factors'], {'nm_per_tip': 279400})   # 0.2794 mm per tip; the unit is in the name
+        self.assertAlmostEqual(r.MODULE_TYPES[7]['factors']['nm_per_tip'] * 1e-6, 0.2794)
         self.assertEqual(r.REGISTRY_VERSION, 1)
 
     def test_every_channel_unit_is_canonical(self):
@@ -105,7 +106,7 @@ int main(void) {
   const wsmp_type_entry *t = wsmp_type(WSMP_T_WIND);
   printf("%u %u %u %u %u\n", (unsigned)wsmp_canonical_unit(WSMP_Q_WIND_FROM_DIRECTION), (unsigned)t->channels,
          (unsigned)t->ch[0].quantity, (unsigned)t->ch[1].kind, (unsigned)t->report_class);
-  printf("%lu %lu %u %d\n", (unsigned long)WSMP_WIND_UMS_PER_HZ, (unsigned long)WSMP_RAIN_UM_PER_TIP,
+  printf("%lu %lu %u %d\n", (unsigned long)WSMP_WIND_UMS_PER_HZ, (unsigned long)WSMP_RAIN_NM_PER_TIP,
          (unsigned)wsmp_canonical_unit(99), wsmp_type(99) == 0);
   return 0;
 }'''

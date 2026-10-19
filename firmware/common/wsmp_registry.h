@@ -67,7 +67,7 @@
 #define WSMP_POWER_STATE_FAULT 3
 #define WSMP_WIND_UMS_PER_HZ 666980UL
 #define WSMP_WIND_GUST_MS 3000UL
-#define WSMP_RAIN_UM_PER_TIP 279400UL
+#define WSMP_RAIN_NM_PER_TIP 279400UL
 
 typedef struct { uint16_t quantity; uint8_t kind; } wsmp_type_ch;
 typedef struct { uint16_t type; uint8_t schema, channels, report_class; wsmp_type_ch ch[8]; } wsmp_type_entry;

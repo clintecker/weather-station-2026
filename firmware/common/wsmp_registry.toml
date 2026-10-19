@@ -380,4 +380,4 @@ schema = 1
 report_class = "minute"
 role = "outside"
 channels = [[7, 6]]
-factors = { um_per_tip = 279400 }
+factors = { nm_per_tip = 279400 }   # 0.2794 mm

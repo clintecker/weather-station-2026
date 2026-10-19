@@ -210,5 +210,5 @@ MODULE_TYPES = {1: {'name': 'air temperature and humidity',
      'schema': 1,
      'report_class': 'minute',
      'role': 'outside',
-     'factors': {'um_per_tip': 279400},
+     'factors': {'nm_per_tip': 279400},
      'channels': [(7, 6)]}}
