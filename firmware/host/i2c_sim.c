@@ -29,6 +29,7 @@ int i2c_sim_add(int kind, uint8_t addr7)
   return ndevs++;
 }
 void i2c_sim_remove(int dev) { if (dev >= 0 && dev < ndevs) devs[dev].present = 0; }
+void i2c_sim_restore(int dev) { if (dev >= 0 && dev < ndevs) devs[dev].present = 1; }
 void i2c_sim_mode(int dev, int mode, int sda_hold_edges, uint32_t latency_ms)
 {
   if (dev < 0 || dev >= ndevs) return;

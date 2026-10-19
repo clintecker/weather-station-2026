@@ -15,6 +15,7 @@ enum i2c_sim_mode { DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY, DM_HANG
 
 int i2c_sim_add(int kind, uint8_t addr7);   /* returns the device index, or -1 */
 void i2c_sim_remove(int dev);               /* unplugged: no answer at its address */
+void i2c_sim_restore(int dev);              /* plugged in again */
 void i2c_sim_mode(int dev, int mode, int sda_hold_edges, uint32_t latency_ms);
 extern const sim_source i2c_sim_source;
 

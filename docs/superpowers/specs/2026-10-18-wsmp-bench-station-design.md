@@ -119,8 +119,10 @@ Timing:
   quarter-second bins. The vane is read every second.
 - Rain: one interrupt for each tip, then the lockout.
 - Battery: the INA228 integrates by itself. The module reads it at the latch.
-- The latch is at second 50 of the UTC minute when the station trusts its time. Otherwise it is on
-  the station's own minute, and the reading shows that its time is not trusted.
+- The latch is on the station's existing minute report (the fourth 15-s tick after boot) in this
+  sub-project. The latch at second 50 of the UTC minute (WSMP-T1) arrives with sub-project 4, which
+  moves the whole minute to UTC. (Ruling at the plan review, 2026-10-18: the current timing is what
+  `tests/test_tx_machine.py` pins, and moving it is sub-project 4's change.)
 - Flash writes still happen only while the radio is idle. There is still no blocking wait
   (`make waits`).
 

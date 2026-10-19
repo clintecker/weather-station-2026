@@ -14,6 +14,7 @@ int watchdog_healthy(void) { return 1; }   /* sim_core.c's watchdog; this harnes
 void h_advance(uint32_t ms) { sim_advance(ms); }
 int h_add_device(int kind, int addr7) { return i2c_sim_add(kind, (uint8_t)addr7); }
 void h_remove_device(int dev) { i2c_sim_remove(dev); }
+void h_restore_device(int dev) { i2c_sim_restore(dev); }
 void h_device_mode(int dev, int mode, int sda_hold, uint32_t latency_ms) { i2c_sim_mode(dev, mode, sda_hold, latency_ms); }
 uint32_t h_transfers(void) { return i2c_sim_transfers(); }
 uint32_t h_deinits(void) { return i2c_sim_deinits(); }
@@ -102,6 +103,21 @@ void h_vane_mv(int mv) { vane = (uint16_t)mv; }
 #include "mod_rain.h"
 void h_rain_tip(void) { mod_rain_tip(now_ms()); }
 void h_rain_enable(int on) { mod_rain_set_enabled(on); }
+#ifdef WSMP_HOST
+#include "wsmp_host.h"
+void h_host_init(void) { wsmp_host_init(); }
+void h_host_run(uint32_t ms) { for (uint32_t t = 0; t < ms; t += WSMP_TICK_MS) { wsmp_host_tick(now_ms()); sim_advance(WSMP_TICK_MS); } }
+void h_host_latch(uint32_t utc) { wsmp_host_latch(utc, now_ms()); }
+int h_host_state(int port) { return wsmp_host_state((enum wsmp_port)port); }
+int h_host_has_snapshot(int port) { return wsmp_host_snapshot((enum wsmp_port)port) != NULL; }
+int h_host_slot_quality(int port, int i)
+{
+  const wsmp_snapshot *s = wsmp_host_snapshot((enum wsmp_port)port);
+  return s ? s->slot[i].quality : -1;
+}
+uint32_t h_host_changes(int port) { return wsmp_host_changes((enum wsmp_port)port); }
+unsigned h_host_line(char *buf, unsigned len) { return wsmp_host_modules_line(buf, len); }
+#endif
 /* The SHT45 conversion of the driver in use (firmware/stage0.c), as the test's oracle for one sample. */
 int h_sht45_parse(int t_raw, int h_raw, int16_t *t, uint16_t *h)
 {
