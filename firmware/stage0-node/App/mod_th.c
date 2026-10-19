@@ -53,10 +53,11 @@ static void submit(enum th_unit u, const uint8_t *tx, uint8_t txlen, uint8_t *rx
   (void)WS_CHECK(i2c_bus_submit(client(u), addr(u), tx, txlen, rx, rxlen) == 0);
 }
 
-void mod_th_init(uint32_t boot_id)
+void mod_th_init(uint32_t boot_id, uint32_t now_ms)
 {
   boot = boot_id;
   memset(th, 0, sizeof th);
+  for (unsigned u = 0; u < TH_COUNT; u++) mean_reset(&th[u].win, now_ms);
 }
 
 /* The next step of the sample in progress, or the start of the next sample when it is due. */

@@ -12,7 +12,7 @@
 
 enum reg_unit { REG_PRESSURE, REG_UVA, REG_COUNT };
 
-void mod_reg_init(uint32_t boot_id);
+void mod_reg_init(uint32_t boot_id, uint32_t now_ms);
 void mod_reg_tick(enum reg_unit u, uint32_t now_ms);
 int mod_reg_probe(enum reg_unit u, uint16_t *seq);
 void mod_reg_identity(enum reg_unit u, uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN]);

@@ -8,7 +8,7 @@
 
 enum th_unit { TH_AIR, TH_ENCL, TH_COUNT };
 
-void mod_th_init(uint32_t boot_id);
+void mod_th_init(uint32_t boot_id, uint32_t now_ms);
 void mod_th_tick(enum th_unit u, uint32_t now_ms);
 int mod_th_probe(enum th_unit u, uint16_t *seq);
 void mod_th_identity(enum th_unit u, uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN]);

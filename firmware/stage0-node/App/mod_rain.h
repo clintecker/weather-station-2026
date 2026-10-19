@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include "wsmp.h"
 
-void mod_rain_init(uint32_t boot_id, int enabled);
+void mod_rain_init(uint32_t boot_id, int enabled, uint32_t now_ms);
 void mod_rain_set_enabled(int on);
 void mod_rain_tip(uint32_t now_ms);   /* from the EXTI5 interrupt (App/board_inputs.c) */
 void mod_rain_tick(uint32_t now_ms);

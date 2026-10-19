@@ -12,7 +12,7 @@
    board, App/board_inputs.c, or a host harness defines it). */
 int board_charger_pins(void);
 
-void mod_power_init(uint32_t boot_id);
+void mod_power_init(uint32_t boot_id, uint32_t now_ms);
 void mod_power_tick(uint32_t now_ms);
 int mod_power_probe(uint16_t *seq);
 void mod_power_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN]);

@@ -15,13 +15,13 @@ static uint16_t probe_seq;
 static uint32_t next_probe_ms, boot;
 static mean_win win;   /* the window header and the latch rule; it holds no means */
 
-void mod_rain_init(uint32_t boot_id, int on)
+void mod_rain_init(uint32_t boot_id, int on, uint32_t now_ms)
 {
   boot = boot_id;
   tips = 0; have_tip = 0; last_tip_ms = 0;
   enabled = on;
   probe_seq = 0; next_probe_ms = 0;
-  mean_reset(&win);
+  mean_reset(&win, now_ms);
 }
 
 void mod_rain_set_enabled(int on) { enabled = on; }

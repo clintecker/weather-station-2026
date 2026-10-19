@@ -160,4 +160,9 @@ Run these on the breadboard after the UM2592 check. The console is the ST-LINK v
 | Mode A | remove and connect the charger input | the charge counters move in each direction |
 | Mode B | run on the battery for one hour | readings reach the gateway every minute |
 
+**A vane input with nothing wired floats.** Without the vane circuit, PB2 has no pull-up, and its
+reading can look like a vane position. Then `MODULES` shows `wind=active` with no vane. The
+firmware cannot tell this from a real vane. Fit the 10 kΩ pull-up from PB2 to 3.3 V (section 3),
+and the input reads "no vane" until the vane is connected.
+
 The 24-hour acceptance run follows on the protoboard. The spec's section 6 gives its criteria.

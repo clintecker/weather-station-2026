@@ -52,10 +52,11 @@ static void submit(enum reg_unit u, const uint8_t *tx, uint8_t txlen, uint8_t *r
   (void)WS_CHECK(i2c_bus_submit(parts[u].client, parts[u].addr, tx, txlen, rx, rxlen) == 0);
 }
 
-void mod_reg_init(uint32_t boot_id)
+void mod_reg_init(uint32_t boot_id, uint32_t now_ms)
 {
   boot = boot_id;
   memset(reg, 0, sizeof reg);
+  for (unsigned u = 0; u < REG_COUNT; u++) mean_reset(&reg[u].win, now_ms);
 }
 
 void mod_reg_tick(enum reg_unit u, uint32_t now_ms)

@@ -11,13 +11,13 @@
 #include "mod_wind.h"
 #include "ws_check.h"
 
-void local_init(uint32_t boot_id)
+void local_init(uint32_t boot_id, uint32_t now_ms)
 {
-  mod_th_init(boot_id);
-  mod_reg_init(boot_id);
-  mod_power_init(boot_id);
-  mod_wind_init(boot_id);
-  mod_rain_init(boot_id, 0);   /* the application applies the stored setting (store_rain_enabled) */
+  mod_th_init(boot_id, now_ms);
+  mod_reg_init(boot_id, now_ms);
+  mod_power_init(boot_id, now_ms);
+  mod_wind_init(boot_id, now_ms);
+  mod_rain_init(boot_id, 0, now_ms);   /* the application applies the stored setting (store_rain_enabled) */
   i2c_bus_init();
 }
 

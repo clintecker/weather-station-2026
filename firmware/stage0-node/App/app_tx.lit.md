@@ -277,7 +277,7 @@ station host starts with every port Absent, and the 250 ms module timer starts.
 static void modules_start(void)
 {
   board_inputs_init();
-  local_init(node.boot_epoch);
+  local_init(node.boot_epoch, clock_ms());
   mod_rain_set_enabled(store_rain_enabled());
   wsmp_host_init();
   (void)UTIL_TIMER_Create(&module_timer, WSMP_TICK_MS, UTIL_TIMER_PERIODIC, on_module_timer, NULL);

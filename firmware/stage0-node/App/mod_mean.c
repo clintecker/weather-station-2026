@@ -5,7 +5,11 @@
 
 #define LONG_WINDOW_MS 90000U   /* WSMP-T3: no latch for more than 90 s */
 
-void mean_reset(mean_win *w) { memset(w, 0, sizeof *w); }
+void mean_reset(mean_win *w, uint32_t now_ms)
+{
+  memset(w, 0, sizeof *w);
+  w->start_ms = now_ms;   /* the board clock does not start at 0 after a warm reset */
+}
 
 void mean_add(mean_win *w, const int32_t v[MEAN_CHANNELS])
 {

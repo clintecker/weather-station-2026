@@ -73,10 +73,11 @@ static void step(power_step next, enum i2c_client c, const uint8_t *reg, uint8_t
   submit(c, reg, 1, pw.buf, len);
 }
 
-void mod_power_init(uint32_t boot_id)
+void mod_power_init(uint32_t boot_id, uint32_t now_ms)
 {
   boot = boot_id;
   memset(&pw, 0, sizeof pw);
+  mean_reset(&pw.win, now_ms);
   pw.cal_needed = 1;
   pw.win.period_ms = POWER_PERIOD_MS;
 }

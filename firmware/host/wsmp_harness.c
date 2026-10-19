@@ -52,7 +52,7 @@ int h_rx(int client, int i) { return rx[client][i]; }
 #include "wsmp.h"
 #include "wsmp_local.h"
 static uint32_t now_ms(void) { return (uint32_t)sim_ms(); }
-void h_init(uint32_t boot) { local_init(boot); }
+void h_init(uint32_t boot) { local_init(boot, now_ms()); }
 uint32_t h_now_ms(void) { return now_ms(); }
 void h_tick_all(void) { for (int p = P_AIR_TH; p < P_COUNT; p++) local_tick((enum wsmp_port)p, now_ms()); }
 /* ms of station time: a module tick for every port, then the clock moves one tick. */

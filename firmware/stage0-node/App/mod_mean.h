@@ -16,7 +16,7 @@ typedef struct {
   uint8_t frozen[WSMP_SNAPSHOT_LEN];
 } mean_win;
 
-void mean_reset(mean_win *w);                          /* empty, never latched */
+void mean_reset(mean_win *w, uint32_t now_ms);         /* empty, never latched, open from now_ms */
 void mean_add(mean_win *w, const int32_t v[MEAN_CHANNELS]);   /* one valid sample of every channel */
 /* WSMP-L1 to L3. A retry (the last token again) changes nothing. Otherwise the window freezes into
    the snapshot (token, boot ID, length, flags, the channel means and their quality) and the next

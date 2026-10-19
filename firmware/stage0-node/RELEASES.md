@@ -14,6 +14,42 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
 
+## cc2766a38c61 — 2026-10-19 (bench, DATAVANE5K local modules, new flash layout; protocol draft 5)
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (34,832 B) | `2ee8dfdec48fb6addd68d51e5c3ef3ba4032e97bcab481465037fcb1ffcc4f6a` |
+| `build/tx/stage0-tx.bin` (73,976 B) | `874b0b2cffe2c70173584717276b9023eb6970870441c6b168a827dbd2b93bca` |
+
+The `.elf` hashes were not recorded. They are path-dependent and informational only.
+
+- Source: commit `cc2766a38c61`. Changes since 260c9ccbe938:
+  - Flash layout: firmware pages 0–54 (110 KB), journal 55–124, meta 125–126, provisioning 127.
+    The budget base is now 112,640 B.
+  - The TX reads its sensors as DATAVANE5K (WSMP 1.0) local modules (`docs/module-protocol.md`):
+    a shared interrupt-driven I2C bus, seven local modules, the station host (presence, admission,
+    latch) and a map onto today's catalog. The old sensor driver is removed.
+  - Console: `MODULES`, `SENSOR rain on` and `SENSOR rain off`.
+- Inputs: as a07f498 (vendor pins verified). Flash budget: TX 65.7 %, RX 30.9 %. Stack bound: TX
+  6,360 B (78 %). `make waits`: OK on both; no heap.
+- Reproducibility: two clean builds gave identical `.bin` hashes.
+- Flashed 2026-10-19 by Clint, with the flash-layout migration (`docs/runbook-moving-boards.md`,
+  "Changing the flash layout"): `run-d6` archived as `run-d6-archive-2026-10-19`; RX → board B
+  `0016001E4142500E20353451`, TX → board A `003B00194142500E20353451`; TX `WIPE`; `ws0 init run-d7`;
+  TX provisioned with a new key (`kcv=6e30cf`, `epoch=1`); gateway started on `run-d7` at
+  15:07:13Z.
+- Bench check (only an SHT45 on the bus): epoch 1 seq 0–2 accepted, 0 rejects, no
+  `counter-regression` lines. Seq 1: 20.88 °C, 33.99 %. Seq 2: 20.89 °C, 34.2 %, quality valid.
+  `#modules air_th=active … wind=active rain=absent`.
+- Two faults found on the bench:
+  - Seq 0 had no temperature (`sensor_fault`). The modules opened their first window at clock 0,
+    but the clock keeps counting across a warm reset. The first window looked longer than 90 s, so
+    the map sent no means. Fixed in the next commit (`test_first_reading_after_a_warm_reset_is_a_minute`).
+    This release keeps the fault: one reading after each reset.
+  - `wind=active` with no vane wired. PB2 floats without the vane's 10 kΩ pull-up, so its reading
+    looks like a vane position. Not a firmware fault: see `docs/hardware/bench-station-wiring.md`, section 8.
+- Not an H01 release: radio settings are bench values.
+
 ## 260c9ccbe938 — 2026-10-16 (bench, named constants, literate sources; protocol draft 5)
 
 | Artifact | SHA-256 |

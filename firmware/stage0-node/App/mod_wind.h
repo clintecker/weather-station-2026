@@ -12,7 +12,7 @@
 uint16_t board_pulse_count(void);
 int board_vane_mv(uint16_t *mv);
 
-void mod_wind_init(uint32_t boot_id);
+void mod_wind_init(uint32_t boot_id, uint32_t now_ms);
 void mod_wind_tick(uint32_t now_ms);
 int mod_wind_probe(uint16_t *seq);
 void mod_wind_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN]);

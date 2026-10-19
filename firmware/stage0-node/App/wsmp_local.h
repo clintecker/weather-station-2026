@@ -11,7 +11,7 @@ enum wsmp_port { P_AIR_TH = 1, P_PRESSURE, P_UVA, P_ENCL_TH, P_POWER, P_WIND, P_
 #define WSMP_SAMPLE_MS 15000U    /* the temperature, humidity, pressure and UVA modules sample this often */
 
 /* Starts every local module. boot_id is the station's boot epoch (WSMP-I2). */
-void local_init(uint32_t boot_id);
+void local_init(uint32_t boot_id, uint32_t now_ms);
 /* One step of the module's own schedule: sampling and the probe that goes with it. */
 void local_tick(enum wsmp_port p, uint32_t now_ms);
 /* The latest probe: 1 present, 0 absent, -1 bus fault. seq changes with every probe. */

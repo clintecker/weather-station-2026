@@ -179,6 +179,22 @@ class CatalogMap(unittest.TestCase):
         _, v = self.minute(lib)
         self.assertEqual(v['temperature_c'], 42.5)
 
+    def test_first_reading_after_a_warm_reset_is_a_minute(self):
+        # The board's clock keeps counting across a warm reset (PROVISION, WIPE, a reflash), so the
+        # modules start at a large clock_ms(). Their first window is the time since they started,
+        # not since 0: the first reading has its temperature (found on the bench, 2026-10-19).
+        type(self).count += 1
+        path = Path(self.tmp.name)/f'map{self.count}.so'
+        shutil.copy(self.library, path)
+        lib = ctypes.CDLL(str(path))
+        lib.h_advance(5_000_000)   # the clock before the modules start
+        lib.h_add_device(DEVK_SHT45, ADDR[DEVK_SHT45])
+        lib.h_init(7)
+        lib.h_vane_mv(3_300)
+        lib.h_host_init()
+        _, v = self.minute(lib)
+        self.assertEqual(v['temperature_c'], 42.5)
+
     def test_charger_states_map_to_pins(self):
         for pins, state_pins in ((0, 0), (PGOOD, PGOOD), (PGOOD | CHG, PGOOD | CHG)):
             with self.subTest(pins=pins):
