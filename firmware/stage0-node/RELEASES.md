@@ -14,6 +14,35 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
 
+## 04fcc656938d — 2026-10-19 (bench, review fixes; protocol draft 5)
+
+| Artifact | SHA-256 |
+|---|---|
+| `build/rx/stage0-rx.bin` (34,832 B) | `63cc60294ab098a4694c12b2e6374de0c7242cc6325ee70e7efd13b7028a82a7` |
+| `build/tx/stage0-tx.bin` (74,464 B) | `c6f48dd4a12ad435270a4f35451b434c6a6d35932df1f8d0a80586e4064eee6c` |
+
+- Source: commit `04fcc656938d`. Changes since cc2766a38c61, from a four-reviewer review of the
+  branch (GitHub issues #1–#11):
+  - d3f84bb: modules start their windows and schedules at init. A warm reset late in the clock's
+    range had stopped every module until the clock wrapped. 6925f2a fixed the first window.
+  - The INA228 charge and energy come from its accumulators (#2). The ADC calibrates (#3). The
+    cup input filters bounce (#4). Each still needs its bench check.
+  - Map, host, bus and module fixes (#5, #6, #11): fault qualities are missing, admission is
+    pure and checks the digest, a saturated window is long, I2C bus errors are bus faults, and
+    the gauge, vane and rain module items.
+  - Registry tables are stored once (#7, −176 B). Serial ports are held exclusively (#8).
+  - CI is green again: a GCC sign-compare in a fuzz target, and a reverse DNS lookup at HTTP
+    bind.
+- Inputs: as a07f498. Flash budget: TX 66.1 %, RX 30.9 %. Stack bound: TX 6,360 B (78 %).
+  `make waits`: OK on both, no heap.
+- Reproducibility: two clean builds gave identical `.bin` hashes.
+- Flashed by Clint: d3f84bb (TX only, epoch 2, seq 0 had its temperature: 22.30 °C), then
+  04fcc65 (TX only, 2026-10-19 ~17:28Z). The RX stays on cc2766a38c61, and its code did not
+  change. TX after the flash: `fw=04fcc656938d`, `kcv=6e30cf`, `kat=pass`, `epoch=3`,
+  `check_fails=0`. Epoch 3 seq 0 was acknowledged at 23.34 °C (partial: the first window).
+  The gateway (`run-d7`) shows 0 rejections across epochs 1–3.
+- Not an H01 release: radio settings are bench values.
+
 ## cc2766a38c61 — 2026-10-19 (bench, DATAVANE5K local modules, new flash layout; protocol draft 5)
 
 | Artifact | SHA-256 |
