@@ -72,29 +72,22 @@
 typedef struct { uint16_t quantity; uint8_t kind; } wsmp_type_ch;
 typedef struct { uint16_t type; uint8_t schema, channels, report_class; wsmp_type_ch ch[8]; } wsmp_type_entry;
 
-/* The canonical unit of a quantity (WSMP-G3), 0 for an unknown quantity. */
-static const uint8_t wsmp_unit_of[18] = { 0, 1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10, 10, 11, 11, 2, 12, 13 };
-static inline uint8_t wsmp_canonical_unit(uint16_t quantity)
-{
-  return quantity < sizeof wsmp_unit_of ? wsmp_unit_of[quantity] : 0U;
+/* The tables are initializers only: firmware/common/wsmp.c holds the one copy of each. */
+/* The canonical unit of each quantity (WSMP-G3), indexed by the quantity code. */
+#define WSMP_UNIT_OF_COUNT 18U
+#define WSMP_UNIT_OF_INIT { 0, 1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10, 10, 11, 11, 2, 12, 13 }
+#define WSMP_TYPE_COUNT 7U
+#define WSMP_TYPES_INIT { \
+  { 1, 1, 2, WSMP_RC_MINUTE, { { 1, 2 }, { 2, 2 } } }, \
+  { 2, 1, 1, WSMP_RC_MINUTE, { { 3, 2 } } }, \
+  { 3, 1, 1, WSMP_RC_MINUTE, { { 8, 2 } } }, \
+  { 4, 1, 2, WSMP_RC_MINUTE, { { 1, 2 }, { 2, 2 } } }, \
+  { 5, 1, 7, WSMP_RC_HEALTH, { { 9, 2 }, { 11, 6 }, { 12, 6 }, { 13, 6 }, { 14, 6 }, { 15, 1 }, { 16, 10 } } }, \
+  { 6, 1, 4, WSMP_RC_MINUTE, { { 17, 6 }, { 5, 7 }, { 6, 8 }, { 6, 9 } } }, \
+  { 7, 1, 1, WSMP_RC_MINUTE, { { 7, 6 } } }, \
 }
 
-#define WSMP_TYPE_COUNT 7U
-static const wsmp_type_entry wsmp_types[WSMP_TYPE_COUNT] = {
-  { 1, 1, 2, WSMP_RC_MINUTE, { { 1, 2 }, { 2, 2 } } },
-  { 2, 1, 1, WSMP_RC_MINUTE, { { 3, 2 } } },
-  { 3, 1, 1, WSMP_RC_MINUTE, { { 8, 2 } } },
-  { 4, 1, 2, WSMP_RC_MINUTE, { { 1, 2 }, { 2, 2 } } },
-  { 5, 1, 7, WSMP_RC_HEALTH, { { 9, 2 }, { 11, 6 }, { 12, 6 }, { 13, 6 }, { 14, 6 }, { 15, 1 }, { 16, 10 } } },
-  { 6, 1, 4, WSMP_RC_MINUTE, { { 17, 6 }, { 5, 7 }, { 6, 8 }, { 6, 9 } } },
-  { 7, 1, 1, WSMP_RC_MINUTE, { { 7, 6 } } },
-};
-/* The registry entry of a module type, NULL for an unknown type. */
-static inline const wsmp_type_entry *wsmp_type(uint16_t type)
-{
-  for (size_t i = 0; i < WSMP_TYPE_COUNT; i++)   /* bound: WSMP_TYPE_COUNT entries */
-    if (wsmp_types[i].type == type) return &wsmp_types[i];
-  return NULL;
-}
+uint8_t wsmp_canonical_unit(uint16_t quantity);       /* 0 for an unknown quantity */
+const wsmp_type_entry *wsmp_type(uint16_t type);      /* NULL for an unknown type */
 
 #endif

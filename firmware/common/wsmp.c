@@ -92,6 +92,18 @@ int wsmp_unpack_desc(const uint8_t in[WSMP_DESC_BLOCK_LEN], unsigned n, wsmp_des
   return zero(in + n * WSMP_DESC_LEN, (size_t)(WSMP_MAX_CHANNELS - n) * WSMP_DESC_LEN) ? WSMP_OK : WSMP_ERESERVED;
 }
 
+static const uint8_t unit_of[WSMP_UNIT_OF_COUNT] = WSMP_UNIT_OF_INIT;
+static const wsmp_type_entry types[WSMP_TYPE_COUNT] = WSMP_TYPES_INIT;
+
+uint8_t wsmp_canonical_unit(uint16_t quantity) { return quantity < WSMP_UNIT_OF_COUNT ? unit_of[quantity] : 0U; }
+
+const wsmp_type_entry *wsmp_type(uint16_t type)
+{
+  for (unsigned i = 0; i < WSMP_TYPE_COUNT; i++)   /* bound: WSMP_TYPE_COUNT entries */
+    if (types[i].type == type) return &types[i];
+  return NULL;
+}
+
 static int desc_one_ok(const wsmp_desc *d)
 {
   uint8_t unit = wsmp_canonical_unit(d->quantity);

@@ -196,6 +196,23 @@ kind, the canonical unit, a scale of −6 to +6 and a width of 1 to 4 bytes. The
 channel list with the registry entry of the module type. The entry must exist, have the same schema
 and the same number of channels, and list the same quantity and kind in each position.
 
+The registry tables come from `wsmp_registry.h` as initializers. This file holds the one copy of
+each, so every user of the lookups shares it.
+
+```c {#registry}
+static const uint8_t unit_of[WSMP_UNIT_OF_COUNT] = WSMP_UNIT_OF_INIT;
+static const wsmp_type_entry types[WSMP_TYPE_COUNT] = WSMP_TYPES_INIT;
+
+uint8_t wsmp_canonical_unit(uint16_t quantity) { return quantity < WSMP_UNIT_OF_COUNT ? unit_of[quantity] : 0U; }
+
+const wsmp_type_entry *wsmp_type(uint16_t type)
+{
+  for (unsigned i = 0; i < WSMP_TYPE_COUNT; i++)   /* bound: WSMP_TYPE_COUNT entries */
+    if (types[i].type == type) return &types[i];
+  return NULL;
+}
+```
+
 ```c {#desc-check}
 static int desc_one_ok(const wsmp_desc *d)
 {
@@ -371,6 +388,8 @@ int wsmp_text_ok(const uint8_t *p, size_t n)
 <<desc>>
 
 <<desc-unpack>>
+
+<<registry>>
 
 <<desc-check>>
 

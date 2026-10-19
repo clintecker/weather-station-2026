@@ -86,17 +86,16 @@ def header_text(reg):
     out += ['', 'typedef struct { uint16_t quantity; uint8_t kind; } wsmp_type_ch;',
             'typedef struct { uint16_t type; uint8_t schema, channels, report_class; '
             f'wsmp_type_ch ch[{MAX_CHANNELS}]; }} wsmp_type_entry;', '',
-            '/* The canonical unit of a quantity (WSMP-G3), 0 for an unknown quantity. */',
-            f'static const uint8_t wsmp_unit_of[{top + 1}] = {{ {", ".join(map(str, units))} }};',
-            'static inline uint8_t wsmp_canonical_unit(uint16_t quantity)',
-            '{', '  return quantity < sizeof wsmp_unit_of ? wsmp_unit_of[quantity] : 0U;', '}', '',
+            '/* The tables are initializers only: firmware/common/wsmp.c holds the one copy of each. */',
+            '/* The canonical unit of each quantity (WSMP-G3), indexed by the quantity code. */',
+            f'#define WSMP_UNIT_OF_COUNT {top + 1}U',
+            f'#define WSMP_UNIT_OF_INIT {{ {", ".join(map(str, units))} }}',
             f'#define WSMP_TYPE_COUNT {len(reg["module_type"])}U',
-            'static const wsmp_type_entry wsmp_types[WSMP_TYPE_COUNT] = {']
-    out += [c_type_entry(row) for row in reg['module_type']]
-    out += ['};', '/* The registry entry of a module type, NULL for an unknown type. */',
-            'static inline const wsmp_type_entry *wsmp_type(uint16_t type)', '{',
-            '  for (size_t i = 0; i < WSMP_TYPE_COUNT; i++)   /* bound: WSMP_TYPE_COUNT entries */',
-            '    if (wsmp_types[i].type == type) return &wsmp_types[i];', '  return NULL;', '}', '', '#endif', '']
+            '#define WSMP_TYPES_INIT { \\']
+    out += [c_type_entry(row) + ' \\' for row in reg['module_type']]
+    out += ['}', '',
+            'uint8_t wsmp_canonical_unit(uint16_t quantity);       /* 0 for an unknown quantity */',
+            'const wsmp_type_entry *wsmp_type(uint16_t type);      /* NULL for an unknown type */', '', '#endif', '']
     return '\n'.join(out)
 
 

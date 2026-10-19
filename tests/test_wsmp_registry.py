@@ -97,11 +97,16 @@ class Registry(unittest.TestCase):
             self.assertEqual(p.returncode, 1)
             self.assertIn('append-only', p.stderr)
 
+    def test_the_header_holds_no_tables(self):
+        # A static const table in a header is copied into every file that uses it: the tables are
+        # initializer macros here, and wsmp.c holds the one copy.
+        self.assertNotIn('static const', HEADER.read_text())
+
     @needs_cc
     def test_c_header_compiles_and_agrees(self):
         src = r'''
 #include <stdio.h>
-#include "wsmp_registry.h"
+#include "wsmp.h"
 int main(void) {
   const wsmp_type_entry *t = wsmp_type(WSMP_T_WIND);
   printf("%u %u %u %u %u\n", (unsigned)wsmp_canonical_unit(WSMP_Q_WIND_FROM_DIRECTION), (unsigned)t->channels,
@@ -113,7 +118,8 @@ int main(void) {
         with tempfile.TemporaryDirectory() as tmp:
             c, exe = Path(tmp) / 'p.c', Path(tmp) / 'p'
             c.write_text(src)
-            subprocess.run([*CC_STRICT, '-I', str(HEADER.parent), str(c), '-o', str(exe)], check=True)
+            subprocess.run([*CC_STRICT, '-I', str(HEADER.parent), str(c), str(HEADER.parent / 'wsmp.c'), '-o', str(exe)],
+                           check=True)
             out = subprocess.run([str(exe)], capture_output=True, text=True, check=True).stdout.split('\n')
         self.assertEqual(out[0], '5 4 17 7 0')        # deg; 4 channels; pulses; gust; minute class = 0
         self.assertEqual(out[1], '666980 279400 0 1')
