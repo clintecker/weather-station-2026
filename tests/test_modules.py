@@ -54,13 +54,16 @@ class Harness(unittest.TestCase):
         cls.addClassCleanup(cls.tmp.cleanup)
         cls.count = 0
 
-    def station(self, devices):
-        """A fresh station (its own copy of the library: statics start at zero) with these devices."""
+    def station(self, devices, start_ms=0):
+        """A fresh station (its own copy of the library: statics start at zero) with these devices.
+        start_ms is the clock when the modules start: a warm reset does not set the board clock to 0."""
         type(self).count += 1
         path = Path(self.tmp.name)/f'm{self.count}.so'
         shutil.copy(self.library, path)
         lib = ctypes.CDLL(str(path))
         lib.h_now_ms.restype = ctypes.c_uint32
+        lib.h_advance.argtypes = [ctypes.c_uint32]
+        lib.h_advance(start_ms)
         devs = {kind: lib.h_add_device(kind, addr) for kind, addr in devices}
         lib.h_init(BOOT)
         self.addCleanup(lambda: self.assertEqual((lib.h_pin_errors(), lib.ws_check_count()), (0, 0)))
@@ -94,6 +97,14 @@ class Conformance:
         self.assertNotEqual(be(idb, 8, 8), 0)
         self.assertEqual(be(idb, 20, 4), BOOT)                     # WSMP-I2: the station's boot epoch
         self.assertEqual(lib.h_desc_check(self.PORT), 0)           # the descriptors pass WSMP-D7
+
+    def test_a_reset_late_in_the_clock_still_samples(self):
+        # clock_ms() wraps after 49 days and is signed-compared, so a reset in its upper half
+        # (24.9 to 49.7 days after power-up) must not leave the first deadline 2^31 ms away.
+        lib, _ = self.station(self.DEVICES, start_ms=0x8000_0000 + 1000)
+        seq = lib.h_probe_seq(self.PORT)
+        lib.h_run(MINUTE)
+        self.assertNotEqual(lib.h_probe_seq(self.PORT), seq)
 
     def test_latch_then_read_twice_gives_the_same_bytes(self):
         lib, _ = self.station(self.DEVICES)
@@ -282,8 +293,8 @@ class Bmp581(SingleMean, Harness):
     DEVICES = [(DEVK_BMP581, 0x47)]
     EXPECTED = 10133                                               # 101,325 Pa = 1013.25 hPa, scale -1, half up
 
-    def station(self, devices):
-        lib, devs = super().station(devices)
+    def station(self, devices, start_ms=0):
+        lib, devs = super().station(devices, start_ms)
         lib.h_bmp581_set(devs[DEVK_BMP581], 101_325 * 64)          # PRESS_DATA: Pa x 64 (datasheet 4.3.8)
         return lib, devs
 
@@ -293,8 +304,8 @@ class Ltr390(SingleMean, Harness):
     DEVICES = [(DEVK_LTR390, 0x53)]
     EXPECTED = 123_456
 
-    def station(self, devices):
-        lib, devs = super().station(devices)
+    def station(self, devices, start_ms=0):
+        lib, devs = super().station(devices, start_ms)
         lib.h_ltr390_set(devs[DEVK_LTR390], 123_456)
         return lib, devs
 
@@ -311,8 +322,8 @@ class Power(Conformance, Harness):
     DEVICES = [(DEVK_INA228, 0x40), (DEVK_MAX17048, 0x36)]
     PGOOD, CHG = 1, 2                     # board_charger_pins(): bit 0 PGOOD asserted, bit 1 CHG asserted
 
-    def station(self, devices):
-        lib, devs = super().station(devices)
+    def station(self, devices, start_ms=0):
+        lib, devs = super().station(devices, start_ms)
         if DEVK_INA228 in devs:
             lib.h_ina228_set(devs[DEVK_INA228], 4_000_000, 0)      # 4.000 V, no current
         if DEVK_MAX17048 in devs:
@@ -386,8 +397,8 @@ class Wind(Conformance, Harness):
     PORT, TYPE, CHANNELS = P_WIND, 6, 4
     DEVICES = []
 
-    def station(self, devices):
-        lib, devs = super().station(devices)
+    def station(self, devices, start_ms=0):
+        lib, devs = super().station(devices, start_ms)
         lib.h_vane_mv(wind_ref.vane_mv(0))                         # the vane points north
         return lib, devs
 
@@ -461,8 +472,8 @@ class Rain(Conformance, Harness):
     PORT, TYPE, CHANNELS = P_RAIN, 7, 1
     DEVICES = []
 
-    def station(self, devices):
-        lib, devs = super().station(devices)
+    def station(self, devices, start_ms=0):
+        lib, devs = super().station(devices, start_ms)
         lib.h_rain_enable(1)
         return lib, devs
 

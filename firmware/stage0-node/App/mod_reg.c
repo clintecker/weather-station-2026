@@ -56,7 +56,7 @@ void mod_reg_init(uint32_t boot_id, uint32_t now_ms)
 {
   boot = boot_id;
   memset(reg, 0, sizeof reg);
-  for (unsigned u = 0; u < REG_COUNT; u++) mean_reset(&reg[u].win, now_ms);
+  for (unsigned u = 0; u < REG_COUNT; u++) { mean_reset(&reg[u].win, now_ms); reg[u].next_sample_ms = now_ms; }
 }
 
 void mod_reg_tick(enum reg_unit u, uint32_t now_ms)

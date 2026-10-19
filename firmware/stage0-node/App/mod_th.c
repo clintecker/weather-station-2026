@@ -57,7 +57,7 @@ void mod_th_init(uint32_t boot_id, uint32_t now_ms)
 {
   boot = boot_id;
   memset(th, 0, sizeof th);
-  for (unsigned u = 0; u < TH_COUNT; u++) mean_reset(&th[u].win, now_ms);
+  for (unsigned u = 0; u < TH_COUNT; u++) { mean_reset(&th[u].win, now_ms); th[u].next_sample_ms = now_ms; }
 }
 
 /* The next step of the sample in progress, or the start of the next sample when it is due. */

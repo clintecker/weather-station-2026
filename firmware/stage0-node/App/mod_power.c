@@ -78,6 +78,7 @@ void mod_power_init(uint32_t boot_id, uint32_t now_ms)
   boot = boot_id;
   memset(&pw, 0, sizeof pw);
   mean_reset(&pw.win, now_ms);
+  pw.next_ms = now_ms;
   pw.cal_needed = 1;
   pw.win.period_ms = POWER_PERIOD_MS;
 }

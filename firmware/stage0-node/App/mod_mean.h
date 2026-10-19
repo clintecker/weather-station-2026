@@ -16,7 +16,9 @@ typedef struct {
   uint8_t frozen[WSMP_SNAPSHOT_LEN];
 } mean_win;
 
-void mean_reset(mean_win *w, uint32_t now_ms);         /* empty, never latched, open from now_ms */
+/* Empty, never latched, open from now_ms. Every module also starts its schedule at now_ms: the clock
+   is compared signed, and after a warm reset it can be anywhere in its 49-day range. */
+void mean_reset(mean_win *w, uint32_t now_ms);
 void mean_add(mean_win *w, const int32_t v[MEAN_CHANNELS]);   /* one valid sample of every channel */
 /* WSMP-L1 to L3. A retry (the last token again) changes nothing. Otherwise the window freezes into
    the snapshot (token, boot ID, length, flags, the channel means and their quality) and the next

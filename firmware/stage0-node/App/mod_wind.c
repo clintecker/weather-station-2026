@@ -53,6 +53,7 @@ void mod_wind_init(uint32_t boot_id, uint32_t now_ms)
   boot = boot_id;
   memset(&wd, 0, sizeof wd);
   mean_reset(&wd.win, now_ms);
+  wd.next_vane_ms = now_ms;
 }
 
 /* Two reads that agree, of at most three. Returns 0 if the counter moved between every read. */
