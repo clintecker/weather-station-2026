@@ -1,0 +1,18 @@
+#ifndef MOD_RAIN_H
+#define MOD_RAIN_H
+/* The rain module (WSMP module type 7): the SEN-15901 tipping bucket on the PB5 interrupt. A bucket
+ * tip closes a reed switch once; a closure within 100 ms of the counted one is its bounce. The gauge
+ * is a bare switch, so the station cannot see it: the stored setting (store_rain_enabled) is its
+ * presence (WSMP-P1). The channel is the tip counter since boot. */
+#include <stdint.h>
+#include "wsmp.h"
+
+void mod_rain_init(uint32_t boot_id, int enabled);
+void mod_rain_set_enabled(int on);
+void mod_rain_tip(uint32_t now_ms);   /* from the EXTI5 interrupt (App/board_inputs.c) */
+void mod_rain_tick(uint32_t now_ms);
+int mod_rain_probe(uint16_t *seq);
+void mod_rain_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN]);
+void mod_rain_latch(uint16_t token, uint32_t now_ms);
+void mod_rain_snapshot(uint8_t snap[WSMP_SNAPSHOT_LEN]);
+#endif

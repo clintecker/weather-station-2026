@@ -39,6 +39,8 @@ int store_next_counter(uint64_t *counter); /* one per transmission; refuses past
 int store_epoch_floor(uint32_t floor);     /* after WIPE: raise the epoch base (never lowers) */
 int store_note_abandoned(void);            /* persist one more abandoned record */
 uint32_t store_abandoned_total(void);
+int store_rain_set(int on);                /* the rain module setting (WSMP-P1), kept across reboots */
+int store_rain_enabled(void);              /* 1 if the rain module is on */
 
 /* Journal of observation plaintexts (WS_OBS_PLAIN_MAX bytes, node_fields.h), retained until an
  * authenticated ACK. A slot is the plaintext rounded up to double-words, a commit double-word

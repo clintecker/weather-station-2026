@@ -99,6 +99,9 @@ void h_pulses_add(int n) { pulse_counter = (uint16_t)(pulse_counter + n); }
 void h_pulse_counter_set(int v) { pulse_counter = (uint16_t)v; }
 void h_pulse_tear(int n) { pulse_tears = n; }
 void h_vane_mv(int mv) { vane = (uint16_t)mv; }
+#include "mod_rain.h"
+void h_rain_tip(void) { mod_rain_tip(now_ms()); }
+void h_rain_enable(int on) { mod_rain_set_enabled(on); }
 /* The SHT45 conversion of the driver in use (firmware/stage0.c), as the test's oracle for one sample. */
 int h_sht45_parse(int t_raw, int h_raw, int16_t *t, uint16_t *h)
 {

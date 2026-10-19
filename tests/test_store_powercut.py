@@ -127,6 +127,21 @@ class StorePowerCut(unittest.TestCase):
         self.assertEqual(s['wipes'], '1')
         self.assertGreater(int(s['max_counter']), 3 * 256, 'counters crossed reservation blocks')
 
+    def test_rain_setting_latest_wins(self):
+        """The rain setting (WSMP-P1, store_rain_set): the last value set wins across reboots and two
+        meta compactions, survives WIPE, and setting the same value again writes nothing."""
+        out, counts, s = self.run_driver('full', 'functional', '1')
+        self.assertEqual((counts, s['guard_failures']), ({}, '0'), out)
+        self.assertEqual(s['rain'], '1', 'the workload ends with rain on (set before the WIPE)')
+
+    def test_rain_setting_survives_torn_append(self):
+        """Review Focus 5: a power cut inside the rain setting's write leaves the old or the new value,
+        never a third, at every cut point and outcome of the sweep."""
+        out, counts, s = self.run_driver('small', 'sweep', '1')
+        self.assertNotIn('rain_setting', counts, out)
+        self.assertNotIn('rain_after_wipe', counts, out)
+        self.assertGreater(int(s['rain_cuts']), 0, 'some cuts landed inside a rain write')
+
     def test_unknown_mode_rejected(self):
         """A mistyped mode must not silently run as a sweep (it used to)."""
         proc = subprocess.run([self.exe['small'], 'sweeep', '1'], capture_output=True, text=True, timeout=60)

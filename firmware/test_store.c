@@ -92,7 +92,7 @@ static uint32_t cyc[MAXREC], ncyc;
 static uint8_t present[MAXREC];
 
 enum { OP_NONE, OP_INIT, OP_PROVISION, OP_EPOCH, OP_FLOOR, OP_COUNTER, OP_APPEND, OP_ACK,
-       OP_ABANDON_ACK, OP_NOTE, OP_SCRUB, OP_WIPE };
+       OP_ABANDON_ACK, OP_NOTE, OP_SCRUB, OP_WIPE, OP_RAIN };
 static struct { int op; uint32_t rec; } infl;
 static int cut_happened;   /* the next power_cycle follows a power cut */
 static int fault_op = OP_NONE; /* store call in flight when the injected cut or failure hit */
@@ -106,6 +106,7 @@ static struct {
  int cfg; uint32_t station; uint8_t key[WS_KEY_LEN];
  uint32_t try_station; uint8_t try_key[WS_KEY_LEN];
  int wipe_uncertain;      /* a WIPE returned an error: some pages may be erased */
+ int rain, rain_next;     /* the rain setting the application knows, and the one being written */
  uint32_t wipes, boots;
 } M;
 
@@ -153,6 +154,12 @@ static int do_epoch(void) {
 static void do_floor(uint32_t f) {
  infl.op = OP_FLOOR; int rc = store_epoch_floor(f); infl.op = OP_NONE;
  if (!rc && f > M.max_epoch) M.max_epoch = f;
+}
+static uint64_t rain_cuts;   /* sweep: cuts that landed inside a rain setting write */
+static void do_rain(int on) {
+ M.rain_next = on;
+ infl.op = OP_RAIN; int rc = store_rain_set(on); infl.op = OP_NONE;
+ if (!rc) M.rain = on;
 }
 static void do_note(void) {
  infl.op = OP_NOTE; store_note_abandoned(); infl.op = OP_NONE;
@@ -305,6 +312,13 @@ static void power_cycle(void) {
   CHECK("abandoned_mismatch", ab == M.aband_seen, "abandoned %u, application saw %u", (unsigned)ab, (unsigned)M.aband_seen);
  CHECK("abandoned_jump", ab <= M.aband_seen + 1, "abandoned %u after %u", (unsigned)ab, (unsigned)M.aband_seen);
  M.aband_seen = ab;
+ /* The rain setting is latest-wins: after a cut during its write, the old or the new value, never
+    another; otherwise the value the application last set. */
+ int rain = store_rain_enabled();
+ int rain_in_flight = (cut_happened || err_mode) && infl.op == OP_RAIN;
+ if (cut_happened && infl.op == OP_RAIN) rain_cuts++;
+ CHECK("rain_setting", rain == M.rain || (rain_in_flight && rain == M.rain_next), "rain %d, application set %d", rain, M.rain);
+ M.rain = rain;
  CHECK("counter_repeat", store_counter_next() > M.max_counter, "next %llu after %llu",
        (unsigned long long)store_counter_next(), (unsigned long long)M.max_counter);
  check_config(store_journal_pending());
@@ -351,6 +365,7 @@ static void workload(int wrap) {
   if (i % 3 == 0) do_epoch();
   else if (i % 3 == 1) { if (i % 30 == 1) do_note(); else do_epoch(); }
   else if (i % 15 == 2) do_counters(300);
+  else if (i % 37 == 5) do_rain(i % 2);
   else do_epoch();
   if (i == 300) power_cycle();
  }
@@ -366,7 +381,9 @@ static void workload(int wrap) {
  /* Account for any wrap losses before the WIPE: afterwards a missing record reads as wiped, so a
     loss left unchecked here would make the exact lost count disagree (seen with 56-byte slots). */
  sync_now();
+ do_rain(1);
  do_wipe(); power_cycle();             /* WIPE reboots; meta must survive it */
+ CHECK("rain_after_wipe", store_rain_enabled() == 1, "rain %d after WIPE", store_rain_enabled());
  do_provision(1002, 2); power_cycle();
  for (int i = 0; i < 20; i++) obs_cycle();
  power_cycle();
@@ -386,6 +403,7 @@ static int guards(void) {
  if (store_next_epoch(&e) != STORE_ENOTREADY) { printf("GUARD next_epoch\n"); bad++; }
  if (store_epoch_floor(5) != STORE_ENOTREADY) { printf("GUARD epoch_floor\n"); bad++; }
  if (store_note_abandoned() != STORE_ENOTREADY || store_abandoned_total() != 0) { printf("GUARD note_abandoned\n"); bad++; }
+ if (store_rain_set(1) != STORE_ENOTREADY || store_rain_enabled() != 0) { printf("GUARD rain_set\n"); bad++; }
  if (store_journal_append(p, &r) != STORE_ENOTREADY) { printf("GUARD append\n"); bad++; }
  r.page = 0; r.slot = 0;
  if (store_journal_ack(r) != STORE_ENOTREADY) { printf("GUARD ack\n"); bad++; }
@@ -431,6 +449,19 @@ static int foreign_layout(void) {
  return bad;
 }
 
+/* ---- the rain setting: the last value set wins, across reboots ---- */
+static int rain_latest(void) {
+ int bad = 0;
+ sim_flash_reset(&S);
+ if (store_meta_init()) { printf("RAIN init\n"); return 1; }
+ if (store_rain_set(1) || store_rain_set(0) || store_rain_set(1) || store_rain_enabled() != 1) { printf("RAIN on-off-on\n"); bad++; }
+ if (store_meta_init() || store_rain_enabled() != 1) { printf("RAIN on after reboot\n"); bad++; }
+ uint64_t progs = S.progs;
+ if (store_rain_set(1) || S.progs != progs) { printf("RAIN setting the same value wrote flash\n"); bad++; }
+ if (store_rain_set(0) || store_meta_init() || store_rain_enabled() != 0) { printf("RAIN off after reboot\n"); bad++; }
+ return bad;
+}
+
 /* ---- run-time checks (firmware/common/ws_check.h) ---- */
 /* A jref_t outside the journal (none ever comes from the store) is refused by read and ack: each
    failed check is counted, the first one's site is node_store.c's, and the pending set is untouched. */
@@ -469,18 +500,18 @@ int main(int argc, char **argv) {
  setvbuf(stdout, NULL, _IOLBF, 0);
  sim_flash_reset(&S);
  if (!strcmp(mode, "functional")) {
-  int g = guards() + counter_limit() + foreign_layout() + checks();
+  int g = guards() + counter_limit() + foreign_layout() + rain_latest() + checks();
   sim_flash_reset(&S); model_reset();
   workload(wrap);
   uint32_t ma = S.page_erases[WS_META_PAGE_A - SIM_FIRST_PAGE], mb = S.page_erases[WS_META_PAGE_B - SIM_FIRST_PAGE];
   uint32_t j0 = S.page_erases[WS_JOURNAL_FIRST - SIM_FIRST_PAGE], cfg = S.page_erases[WS_CONFIG_PAGE - SIM_FIRST_PAGE];
   snprintf(buf, sizeof buf, "guard_failures=%d ops=%llu progs=%llu erases=%llu meta_erases=%u,%u journal0_erases=%u config_erases=%u "
            "lost=%u abandoned=%u max_counter=%llu max_epoch=%u records=%u boots=%u wipes=%u zero_overwrites=%llu "
-           "ecc_reads=%llu",
+           "ecc_reads=%llu rain=%d",
            g, (unsigned long long)S.ops, (unsigned long long)S.progs, (unsigned long long)S.erases,
            (unsigned)ma, (unsigned)mb, (unsigned)j0, (unsigned)cfg, (unsigned)M.lost_seen, (unsigned)M.aband_seen,
            (unsigned long long)M.max_counter, (unsigned)M.max_epoch, (unsigned)nrec, (unsigned)M.boots, (unsigned)M.wipes,
-           (unsigned long long)S.zero_overwrites, (unsigned long long)S.ecc_reads);
+           (unsigned long long)S.zero_overwrites, (unsigned long long)S.ecc_reads, store_rain_enabled());
   summary(buf);
   return 0;
  }
@@ -514,10 +545,11 @@ int main(int argc, char **argv) {
   }
  }
  snprintf(buf, sizeof buf, "cut_points=%llu runs=%llu prog_cuts=%llu erase_cuts=%llu erase_ops=%llu erase_variants=%d "
-          "zero_overwrites=%llu ecc_reads=%llu",
+          "zero_overwrites=%llu ecc_reads=%llu rain_cuts=%llu",
           (unsigned long long)nops, (unsigned long long)runs, (unsigned long long)cuts_prog, (unsigned long long)cuts_erase,
           (unsigned long long)erase_ops, (int)SIM_ERASE_VARIANTS,
-          (unsigned long long)(zero_ow + S.zero_overwrites), (unsigned long long)(ecc_reads + S.ecc_reads));
+          (unsigned long long)(zero_ow + S.zero_overwrites), (unsigned long long)(ecc_reads + S.ecc_reads),
+          (unsigned long long)rain_cuts);
  summary(buf);
  return 0;
 }

@@ -5,6 +5,7 @@
 #include <string.h>
 #include "i2c_bus.h"
 #include "mod_power.h"
+#include "mod_rain.h"
 #include "mod_reg.h"
 #include "mod_th.h"
 #include "mod_wind.h"
@@ -16,6 +17,7 @@ void local_init(uint32_t boot_id)
   mod_reg_init(boot_id);
   mod_power_init(boot_id);
   mod_wind_init(boot_id);
+  mod_rain_init(boot_id, 0);   /* the application applies the stored setting (store_rain_enabled) */
   i2c_bus_init();
 }
 
@@ -43,6 +45,7 @@ void local_tick(enum wsmp_port p, uint32_t now_ms)
   if (r != REG_COUNT) mod_reg_tick(r, now_ms);
   if (p == P_POWER) mod_power_tick(now_ms);
   if (p == P_WIND) mod_wind_tick(now_ms);
+  if (p == P_RAIN) mod_rain_tick(now_ms);
 }
 
 int local_probe_result(enum wsmp_port p, uint16_t *seq)
@@ -53,6 +56,7 @@ int local_probe_result(enum wsmp_port p, uint16_t *seq)
   if (u != TH_COUNT) return mod_th_probe(u, seq);
   if (p == P_POWER) return mod_power_probe(seq);
   if (p == P_WIND) return mod_wind_probe(seq);
+  if (p == P_RAIN) return mod_rain_probe(seq);
   return r != REG_COUNT ? mod_reg_probe(r, seq) : 0;
 }
 
@@ -65,6 +69,7 @@ void local_identity(enum wsmp_port p, uint8_t id[WSMP_IDENTITY_LEN], uint8_t des
   if (r != REG_COUNT) mod_reg_identity(r, id, desc);
   if (p == P_POWER) mod_power_identity(id, desc);
   if (p == P_WIND) mod_wind_identity(id, desc);
+  if (p == P_RAIN) mod_rain_identity(id, desc);
 }
 
 void local_latch(enum wsmp_port p, uint16_t token, uint32_t utc, uint32_t now_ms)
@@ -76,6 +81,7 @@ void local_latch(enum wsmp_port p, uint16_t token, uint32_t utc, uint32_t now_ms
   if (r != REG_COUNT) mod_reg_latch(r, token, now_ms);
   if (p == P_POWER) mod_power_latch(token, now_ms);
   if (p == P_WIND) mod_wind_latch(token, now_ms);
+  if (p == P_RAIN) mod_rain_latch(token, now_ms);
 }
 
 void local_snapshot(enum wsmp_port p, uint8_t snap[WSMP_SNAPSHOT_LEN])
@@ -87,6 +93,7 @@ void local_snapshot(enum wsmp_port p, uint8_t snap[WSMP_SNAPSHOT_LEN])
   if (r != REG_COUNT) mod_reg_snapshot(r, snap);
   if (p == P_POWER) mod_power_snapshot(snap);
   if (p == P_WIND) mod_wind_snapshot(snap);
+  if (p == P_RAIN) mod_rain_snapshot(snap);
 }
 
 /* The completion of a bus transfer (i2c_bus.h): to the module that owns the client. */

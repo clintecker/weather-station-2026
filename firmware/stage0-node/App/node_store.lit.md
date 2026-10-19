@@ -311,6 +311,7 @@ packet-beta
 | `0xC2` | `META_CTR` | highest counter reserved (inclusive) |
 | `0xD1` | `META_LOST` | cumulative records overwritten while pending |
 | `0xD2` | `META_ABAND` | cumulative records abandoned after a NACK or at the strike limit |
+| `0xA1` | `META_RAIN` | the rain module setting: bit 0 is "on" (WSMP-P1). Each change writes the next value |
 
 The strike limit is in `ws_policy.h`. A record gets a strike when it stays unanswered while a later
 frame of the same exchange gets an answer.
@@ -321,6 +322,7 @@ frame of the same exchange gets an answer.
 #define META_CTR   0xC2U
 #define META_LOST  0xD1U /* cumulative journal overflow losses */
 #define META_ABAND 0xD2U /* cumulative abandoned records (NACK / strike limit) */
+#define META_RAIN  0xA1U /* the rain module setting: bit 0 on, latest wins through a rising value */
 #define META_TYPE_SHIFT 56U                                  /* type: bits 63-56, value: bits 55-0 */
 #define META_VALUE_MAX ((1ULL << META_TYPE_SHIFT) - 1U)
 #define META_DWORDS (WS_PAGE_SIZE / WS_DW_BYTES)
@@ -340,6 +342,7 @@ static uint32_t meta_active, meta_pos, meta_gen;
 static uint32_t max_epoch;
 static uint64_t ctr_reserved, ctr_next;
 static uint32_t lost_total, abandoned_total;
+static uint32_t rain_setting;
 ```
 
 ### Boot
@@ -360,6 +363,7 @@ static void meta_absorb(uint64_t v) {
  case META_CTR: if (val > ctr_reserved) ctr_reserved = val; break;
  case META_LOST: raise32(&lost_total, val); break;
  case META_ABAND: raise32(&abandoned_total, val); break;
+ case META_RAIN: raise32(&rain_setting, val); break;
  default: break;
  }
 }
@@ -409,7 +413,7 @@ int store_meta_init(void) {
  uint32_t ga = 0, gb = 0, la = 0, lb = 0;
  int va, vb;
  meta_ready = 0;
- max_epoch = 0; ctr_reserved = 0; lost_total = 0; abandoned_total = 0;
+ max_epoch = 0; ctr_reserved = 0; lost_total = 0; abandoned_total = 0; rain_setting = 0;
  va = meta_scan(WS_META_PAGE_A, &ga, &la) == STORE_OK;
  vb = meta_scan(WS_META_PAGE_B, &gb, &lb) == STORE_OK;
  if (!va && !vb) {
@@ -497,7 +501,8 @@ static int meta_compact(void) {
  uint32_t other = meta_active == WS_META_PAGE_A ? WS_META_PAGE_B : WS_META_PAGE_A;
  uint32_t a = WS_PAGE_ADDR(other);
  const uint64_t rec[] = { meta_word(META_EPOCH, max_epoch), meta_word(META_CTR, ctr_reserved),
-                          meta_word(META_LOST, lost_total), meta_word(META_ABAND, abandoned_total) };
+                          meta_word(META_LOST, lost_total), meta_word(META_ABAND, abandoned_total),
+                          meta_word(META_RAIN, rain_setting) };
  int bad = 0;
  if (rd64(a, &bad) != ERASED && prog64(a, 0)) return STORE_EFLASH;
  if (erase_page(other)) return STORE_EFLASH;
@@ -566,6 +571,26 @@ int store_note_abandoned(void) {
  return STORE_OK;
 }
 uint32_t store_abandoned_total(void) { return abandoned_total; }
+```
+
+**Rain setting.** The rain gauge is a bare switch, so the station cannot detect it (WSMP-P1). The
+operator turns the rain module on and off with a console command, and the node keeps the setting.
+The meta log keeps only maxima, so the setting is a rising value whose bit 0 is "on". A change
+writes the next value, which has the other parity. Recovery takes the highest value, which is the
+last one written. A cut write leaves the old value or the new one, never another. The same setting
+again writes nothing.
+
+```c {#rain}
+int store_rain_set(int on) {
+ if (!meta_ready) return STORE_ENOTREADY;
+ if ((rain_setting & 1U) == (on ? 1U : 0U)) return STORE_OK;
+ if (rain_setting == UINT32_MAX) return STORE_EEXHAUSTED;
+ int rc = meta_append(META_RAIN, (uint64_t)rain_setting + 1);
+ if (rc) return rc;
+ rain_setting++;
+ return STORE_OK;
+}
+int store_rain_enabled(void) { return (int)(rain_setting & 1U); }
 ```
 
 **Counter.** One record per transmission would fill a meta page every 255 frames. So the log
@@ -1166,6 +1191,8 @@ come flash access, provisioning, the meta log and the journal, each after the st
 <<next-epoch>>
 <<epoch-floor>>
 <<abandoned>>
+
+<<rain>>
 
 <<next-counter>>
 

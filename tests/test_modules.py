@@ -32,7 +32,7 @@ def module_sources():
     return ['-I', fw/'host/include', '-I', fw/'host', '-I', app, '-I', fw/'stage0-node/Core/Inc', '-I', fw,
             '-I', fw/'common', fw/'host/wsmp_harness.c', fw/'host/sim_core.c', fw/'host/i2c_sim.c',
             fw/'host/i2c_models.c', app/'i2c_bus.c', app/'busymon.c', app/'wsmp_local.c', app/'mod_th.c',
-            app/'mod_mean.c', app/'mod_reg.c', app/'mod_power.c', app/'mod_wind.c',
+            app/'mod_mean.c', app/'mod_reg.c', app/'mod_power.c', app/'mod_wind.c', app/'mod_rain.c',
             fw/'stage0.c', fw/'common/ws_check.c', fw/'common/wsmp.c']
 
 
@@ -449,6 +449,57 @@ class Wind(Conformance, Harness):
         lib.h_vane_mv(wind_ref.vane_mv(4))
         lib.h_run(2_000)
         self.assertEqual(lib.h_probe(self.PORT), 1)
+
+
+class Rain(Conformance, Harness):
+    """The rain module (WSMP section 4.4, type 7): tips with a 100 ms lockout, on by a stored setting."""
+    PORT, TYPE, CHANNELS = P_RAIN, 7, 1
+    DEVICES = []
+
+    def station(self, devices):
+        lib, devs = super().station(devices)
+        lib.h_rain_enable(1)
+        return lib, devs
+
+    def tips(self, lib, gaps_ms):
+        for gap in gaps_ms:
+            lib.h_rain_tip()
+            lib.h_advance(gap)
+
+    def test_twenty_tips_count_twenty(self):
+        lib, _ = self.station([])
+        self.tips(lib, [200] * 20)
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 1), 0)[0], 20)
+
+    def test_bounce_inside_lockout_is_one_tip(self):
+        lib, _ = self.station([])
+        self.tips(lib, [5, 30, 64, 1])                             # 0, 5, 35 and 99 ms: one bucket tip
+        lib.h_advance(200)
+        self.tips(lib, [1])                                        # 300 ms: the next tip
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 1), 0)[0], 2)
+
+    def test_counter_never_resets_at_latch(self):
+        lib, _ = self.station([])
+        self.tips(lib, [200] * 3)
+        lib.h_run(MINUTE)
+        self.latch(lib, self.PORT, 1)
+        self.tips(lib, [200] * 4)
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0)[:2], (7, 1))
+
+    def test_disabled_is_absent(self):
+        lib, _ = self.station([])
+        lib.h_rain_enable(0)
+        lib.h_run(2_000)
+        self.assertEqual(lib.h_probe(self.PORT), 0)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 1), 0)[2], MISSING)
+        lib.h_rain_enable(1)
+        seq = lib.h_probe_seq(self.PORT)
+        lib.h_run(2_000)
+        self.assertEqual(lib.h_probe(self.PORT), 1)
+        self.assertNotEqual(lib.h_probe_seq(self.PORT), seq)      # the setting is probed again, so it debounces
 
 
 if __name__ == '__main__':
