@@ -92,7 +92,14 @@ def main(layout_path, out):
         text(board, part['id'], part['label_x'], part['label_y'])
     for label in layout['labels']:
         text(board, label['text'], label['x'], label['y'], label.get('size', TEXT))
-    for m in layout['models']:
+    rect(board, *layout['outline'], k.Edge_Cuts, 0.1)
+    k.SaveBoard(out, board)
+
+
+def add_models(pcb, view_path, out):
+    """The 3D view: the routed board with a padless footprint for each 3D model (view.json)."""
+    board = k.LoadBoard(pcb)
+    for m in json.loads(open(view_path).read()):
         f = stamp(k.FOOTPRINT(board))
         f.SetReference(m['ref'])
         f.SetValue(m['ref'])
@@ -107,9 +114,11 @@ def main(layout_path, out):
             model.m_Rotation = k.VECTOR3D(0, 0, spec['rot'])
             f.Add3DModel(model)
         board.Add(f)
-    rect(board, *layout['outline'], k.Edge_Cuts, 0.1)
     k.SaveBoard(out, board)
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2])
+    if sys.argv[1] == '--add-models':
+        add_models(sys.argv[2], sys.argv[3], sys.argv[4])
+    else:
+        main(sys.argv[1], sys.argv[2])

@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT/'tools'))
 import build_schematic  # noqa: E402
 import kicad_env  # noqa: E402
 import models  # noqa: E402
+import pcb_read  # noqa: E402
 import render  # noqa: E402
 import wiring  # noqa: E402
 
@@ -58,7 +59,7 @@ def model_footprints(w):
             ref = f'3D_{part.id}_{i}'
             if box is None:
                 out.append({'ref': ref, 'x': pins[0][0], 'y': pins[0][1], 'box': None,
-                            'models': [{'file': f'{models.KICAD3D}/{file}', 'z': 0.0, 'rot': rot}]})
+                            'models': [{'file': f'{models.KICAD3D}/{file}', 'z': models.BREADBOARD_H, 'rot': rot}]})
             else:
                 out.append({'ref': ref, 'x': cx + box[0], 'y': cy + box[1], 'box': list(box),
                             'models': [{'file': f'${{KIPRJMOD}}/models/{ref}.wrl', 'z': box[5], 'rot': 0}]})
@@ -107,7 +108,7 @@ def layout(w, jumpers):
     ys = [h['y'] for f in footprints for h in f['holes']]
     outline = [min(xs) - MARGIN, min(ys) - MARGIN - 4, max(xs) + MARGIN, max(ys) + MARGIN]
     return {'jumper_nets': [j.id for j in jumpers], 'footprints': footprints, 'boards': boards, 'parts': parts,
-            'labels': labels, 'outline': outline, 'models': model_footprints(w),
+            'labels': labels, 'outline': outline,
             'jumpers': [{'id': j.id, 'net': j.net, 'class': w.net_class[j.net],
                          'a': list(wiring.hole_xy(j.a)), 'b': list(wiring.hole_xy(j.b)),
                          'a_name': where(j.a), 'b_name': where(j.b)} for j in jumpers]}
@@ -206,17 +207,57 @@ def build_all(out):
     print(f'make.py: {len(jumpers)} jumpers routed, DRC and ERC clean, written to {out}')
 
 
-RENDER_3D = {'3d-top.png': ['--side', 'top'],
+def presentation_models(w, lay, pcb, models_dir):
+    """The 3D view's footprints: the parts, the NUCLEO headers, each breadboard body and each jumper
+    wire along its routed path. Writes the generated .wrl files into models_dir."""
+    out = model_footprints(w)
+    for header, (_x, cols, n) in wiring.HEADERS.items():
+        x, y = wiring.hole_xy(('N', header, 1))
+        file, rot = models.header_model(n // cols, cols, along_columns=False)
+        out.append({'ref': f'3D_{header}', 'x': x, 'y': y, 'box': None,
+                    'models': [{'file': f'{models.KICAD3D}/{file}', 'z': 0.0, 'rot': rot}]})
+    for b in lay['boards']:
+        board = b['id']
+        holes = [wiring.hole_xy(h) for h in wiring.board_holes(board)]
+        x0 = wiring.BOARD_X[board]
+        rails = [(x0, x0 + wiring.BOARD_WIDTH, wiring._row_y(row) + off, colour)
+                 for row, off, colour in (('L+', -1.6, 'red'), ('L-', 1.6, 'blue'), ('R-', -1.6, 'blue'), ('R+', 1.6, 'red'))]
+        ref = f'3D_BREADBOARD_{board}'
+        models.write_breadboard(models_dir/f'{ref}.wrl', x0 - 4.0, -4.0, x0 + wiring.BOARD_WIDTH + 4.0,
+                                wiring.BOARD_HEIGHT + 4.0, holes, rails)
+        out.append({'ref': ref, 'x': 0.0, 'y': 0.0, 'box': None,
+                    'models': [{'file': f'${{KIPRJMOD}}/models/{ref}.wrl', 'z': 0.0, 'rot': 0}]})
+    copper = pcb_read.copper_by_net(pcb)
+    for i, j in enumerate(lay['jumpers']):
+        rgb = tuple(c/255 for c in render.COLOURS[j['class']])
+        segments = [(p, q) for p, q, _layer in copper[j['id']]['segments']]
+        ref = f'3D_{j["id"]}'
+        models.write_jumper(models_dir/f'{ref}.wrl', segments, [tuple(j['a']), tuple(j['b'])],
+                            models.WIRE_Z + 0.4*(i % 4), rgb)
+        out.append({'ref': ref, 'x': 0.0, 'y': 0.0, 'box': None,
+                    'models': [{'file': f'${{KIPRJMOD}}/models/{ref}.wrl', 'z': 0.0, 'rot': 0}]})
+    return out
+
+
+RENDER_3D = {'3d-top.png': ['--side', 'top', '--zoom', '1.1'],
              '3d-angle.png': ['--side', 'top', '--perspective', '--rotate', '-35,0,15', '--zoom', '1.3']}
 
 
 def outputs(env, w, jumpers, out):
     """Everything else from the routed board: models, schematic (ERC), build sheet, renders."""
     lay = json.loads((out/'layout.json').read_text())
-    (out/'models').mkdir(exist_ok=True)
-    for m in lay['models']:
+    shutil.rmtree(out/'models', ignore_errors=True)   # no model of an earlier build stays
+    (out/'models').mkdir()
+    view = presentation_models(w, lay, out/f'{NAME}.kicad_pcb', out/'models')
+    for m in view:
         if m['box']:
             models.write_box(out/'models'/f'{m["ref"]}.wrl', m['box'])
+    (out/'models'/'view.json').write_text(json.dumps(view, indent=1, sort_keys=True))
+    view_pcb = out/f'{NAME}-3d.kicad_pcb'
+    run([env.python, SOURCE/'build_pcb.py', '--add-models', out/f'{NAME}.kicad_pcb', out/'models'/'view.json', view_pcb],
+        'build_pcb.py --add-models')
+    stable_uuids(view_pcb)
+    shutil.copy(out/f'{NAME}.kicad_pro', out/f'{NAME}-3d.kicad_pro')
     sch = out/f'{NAME}.kicad_sch'
     build_schematic.write(w, sch)
     run([env.cli, 'sch', 'erc', '--format', 'json', '--severity-error', '--exit-code-violations',
@@ -226,9 +267,9 @@ def outputs(env, w, jumpers, out):
     renders = out/'renders'
     render.render_all(lay, out/f'{NAME}.kicad_pcb', renders)
     run([env.cli, 'sch', 'export', 'pdf', '--output', renders/'schematic.pdf', sch], 'schematic PDF')
-    for name, view in RENDER_3D.items():
+    for name, angle in RENDER_3D.items():
         run([env.cli, 'pcb', 'render', '--quality', 'high', '--width', '3000', '--height', '1400',
-             '--background', 'opaque', *view, '--output', renders/name, out/f'{NAME}.kicad_pcb'], f'render {name}')
+             '--background', 'opaque', *angle, '--output', renders/name, view_pcb], f'render {name}')
 
 
 def main(argv=None):

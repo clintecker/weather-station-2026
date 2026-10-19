@@ -1,0 +1,1019 @@
+[
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x06_P2.54mm_Vertical.step",
+    "rot": -90,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_BOBW_0",
+  "x": 5.08,
+  "y": 7.62
+ },
+ {
+  "box": [
+   0,
+   9.0,
+   21.6,
+   20.6,
+   1.6,
+   11.0,
+   [
+    0.7,
+    0.08,
+    0.08
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_BOBW_1.wrl",
+    "rot": 0,
+    "z": 11.0
+   }
+  ],
+  "ref": "3D_BOBW_1",
+  "x": 11.43,
+  "y": 16.62
+ },
+ {
+  "box": [
+   0,
+   13.5,
+   14.0,
+   13.0,
+   11.5,
+   12.6,
+   [
+    0.9,
+    0.88,
+    0.8
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_BOBW_2.wrl",
+    "rot": 0,
+    "z": 12.6
+   }
+  ],
+  "ref": "3D_BOBW_2",
+  "x": 11.43,
+  "y": 21.12
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x06_P2.54mm_Vertical.step",
+    "rot": -90,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_BOBR_0",
+  "x": 27.94,
+  "y": 7.62
+ },
+ {
+  "box": [
+   0,
+   9.0,
+   21.6,
+   20.6,
+   1.6,
+   11.0,
+   [
+    0.7,
+    0.08,
+    0.08
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_BOBR_1.wrl",
+    "rot": 0,
+    "z": 11.0
+   }
+  ],
+  "ref": "3D_BOBR_1",
+  "x": 34.29,
+  "y": 16.62
+ },
+ {
+  "box": [
+   0,
+   13.5,
+   14.0,
+   13.0,
+   11.5,
+   12.6,
+   [
+    0.9,
+    0.88,
+    0.8
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_BOBR_2.wrl",
+    "rot": 0,
+    "z": 12.6
+   }
+  ],
+  "ref": "3D_BOBR_2",
+  "x": 34.29,
+  "y": 21.12
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x04_P2.54mm_Vertical.step",
+    "rot": -90,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_QT_0",
+  "x": 99.06,
+  "y": 7.62
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step",
+    "rot": 0,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_R1_0",
+  "x": 7.62,
+  "y": 27.94
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Capacitor_THT.3dshapes/C_Disc_D3.0mm_W2.0mm_P2.50mm.step",
+    "rot": 0,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_C1_0",
+  "x": 25.4,
+  "y": 27.94
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step",
+    "rot": 0,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_R2_0",
+  "x": 35.56,
+  "y": 27.94
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Capacitor_THT.3dshapes/C_Disc_D3.0mm_W2.0mm_P2.50mm.step",
+    "rot": 0,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_C2_0",
+  "x": 53.34,
+  "y": 27.94
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step",
+    "rot": 0,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_R3_0",
+  "x": 63.5,
+  "y": 27.94
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x11_P2.54mm_Vertical.step",
+    "rot": -90,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_CHGR_0",
+  "x": 182.56,
+  "y": 7.62
+ },
+ {
+  "box": [
+   0,
+   15.0,
+   38.1,
+   33.0,
+   1.6,
+   11.0,
+   [
+    0.1,
+    0.1,
+    0.12
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_CHGR_1.wrl",
+    "rot": 0,
+    "z": 11.0
+   }
+  ],
+  "ref": "3D_CHGR_1",
+  "x": 195.25999999999996,
+  "y": 22.62
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x08_P2.54mm_Vertical.step",
+    "rot": -90,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_INA_0",
+  "x": 225.73999999999998,
+  "y": 7.62
+ },
+ {
+  "box": [
+   0,
+   8.6,
+   25.4,
+   20.3,
+   1.6,
+   11.0,
+   [
+    0.1,
+    0.1,
+    0.12
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_INA_1.wrl",
+    "rot": 0,
+    "z": 11.0
+   }
+  ],
+  "ref": "3D_INA_1",
+  "x": 234.63,
+  "y": 16.22
+ },
+ {
+  "box": [
+   0,
+   14.5,
+   10.5,
+   7.0,
+   8.5,
+   12.6,
+   [
+    0.15,
+    0.35,
+    0.8
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_INA_2.wrl",
+    "rot": 0,
+    "z": 12.6
+   }
+  ],
+  "ref": "3D_INA_2",
+  "x": 234.63,
+  "y": 22.12
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x02_P2.54mm_Vertical.step",
+    "rot": -90,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_GAUGE_0",
+  "x": 256.21999999999997,
+  "y": 7.62
+ },
+ {
+  "box": [
+   0,
+   -6.5,
+   25.4,
+   20.3,
+   1.6,
+   11.0,
+   [
+    0.1,
+    0.1,
+    0.12
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_GAUGE_1.wrl",
+    "rot": 0,
+    "z": 11.0
+   }
+  ],
+  "ref": "3D_GAUGE_1",
+  "x": 257.49,
+  "y": 1.12
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x04_P2.54mm_Vertical.step",
+    "rot": -90,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_REG_0",
+  "x": 271.46,
+  "y": 7.62
+ },
+ {
+  "box": [
+   0,
+   7.0,
+   11.0,
+   17.0,
+   1.6,
+   11.0,
+   [
+    0.1,
+    0.25,
+    0.6
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_REG_1.wrl",
+    "rot": 0,
+    "z": 11.0
+   }
+  ],
+  "ref": "3D_REG_1",
+  "x": 275.27,
+  "y": 14.620000000000001
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x02_P2.54mm_Vertical.step",
+    "rot": -90,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_SHUNT_0",
+  "x": 291.78,
+  "y": 7.62
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_JST.3dshapes/JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical.step",
+    "rot": 0,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_CELL_0",
+  "x": 225.73999999999998,
+  "y": 25.400000000000002
+ },
+ {
+  "box": [
+   75.0,
+   52.0,
+   54.0,
+   69.0,
+   18.0,
+   0.0,
+   [
+    0.75,
+    0.75,
+    0.8
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_CELL_1.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_CELL_1",
+  "x": 302.01,
+  "y": 77.4
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step",
+    "rot": 0,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_RLOAD_0",
+  "x": 187.64,
+  "y": 25.400000000000002
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_2x19_P2.54mm_Vertical.step",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_CN7",
+  "x": 142.07999999999998,
+  "y": 63.18
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x08_P2.54mm_Vertical.step",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_CN6",
+  "x": 157.32,
+  "y": 63.18
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x10_P2.54mm_Vertical.step",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_CN5",
+  "x": 177.64,
+  "y": 63.18
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_2x19_P2.54mm_Vertical.step",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_CN10",
+  "x": 192.88,
+  "y": 63.18
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_BREADBOARD_A.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_BREADBOARD_A",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_BREADBOARD_B.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_BREADBOARD_B",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W1.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W1",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W2.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W2",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W3.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W3",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W4.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W4",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W5.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W5",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W6.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W6",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W7.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W7",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W8.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W8",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W9.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W9",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W10.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W10",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W11.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W11",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W12.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W12",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W13.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W13",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W14.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W14",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W15.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W15",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W16.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W16",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W17.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W17",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W18.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W18",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W19.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W19",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W20.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W20",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W21.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W21",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W22.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W22",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W23.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W23",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W24.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W24",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W25.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W25",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W26.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W26",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W27.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W27",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W28.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W28",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W29.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W29",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W30.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W30",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W31.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W31",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W32.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W32",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W33.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W33",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W34.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W34",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W35.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W35",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W36.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W36",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W37.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W37",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W38.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W38",
+  "x": 0.0,
+  "y": 0.0
+ }
+]

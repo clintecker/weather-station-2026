@@ -54,9 +54,12 @@ the router, the KiCad tests skip and say what is missing. Two builds give identi
   hole is a pad with no net, so the router only finds the path. The model proves the wiring itself.
 - Jumpers are drawn as copper traces: KiCad has no flying wires. The two copper layers are only
   drawing layers, as wires cross freely.
-- The 3D view uses KiCad's own models where its library has one (resistors, capacitors, pin
-  headers, the JST plug). Breakout boards, the RJ11 jack and the battery are boxes at their real
-  outlines, from the parts' design files.
+- The 3D view (`bench-breadboard-3d.kicad_pcb`, a copy of the routed board with 3D models only)
+  uses KiCad's own models where its library has one (resistors, capacitors, pin headers, the JST
+  plug, the NUCLEO's headers). KiCad has no breadboard, so `source/models.py` writes one: an
+  830-point body 8.5 mm tall with its holes and rail stripes. Each jumper is a wire 2 mm above it
+  along its routed path, with legs into its two holes. Breakout boards, the RJ11 jacks and the
+  battery are boxes at their real outlines, from the parts' design files.
 - Mode A, the daily mode, is drawn: the BATTERY POWER shunt is open and the 100 Ω load is fitted.
 
 ## Decisions
