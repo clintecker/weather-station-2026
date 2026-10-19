@@ -134,6 +134,16 @@ class Conformance:
         self.assertEqual(be(b, 4, 2), 65_535)                       # two minutes: the length saturates ...
         self.assertEqual(b[6] & FLAG_LONG, FLAG_LONG)               # ... and the window is flagged long (WSMP-T3)
 
+    def test_a_window_too_long_for_its_field_is_long(self):
+        # 70 s fits no u16 of ms: the length saturates, and a saturated length sets the long flag
+        # (WSMP section 6), or a reader would divide by 65.5 s.
+        lib, _ = self.station(self.DEVICES)
+        lib.h_run(MINUTE)
+        self.latch(lib, self.PORT, 1)
+        lib.h_run(70_000)
+        b = self.latch(lib, self.PORT, 2)
+        self.assertEqual((be(b, 4, 2), b[6] & FLAG_LONG), (65_535, FLAG_LONG))
+
 
 class TempHumidity(Conformance):
     """The SHT45 and SHTC3 modules: means of the 15-s samples (WSMP section 4.4, types 1 and 4)."""

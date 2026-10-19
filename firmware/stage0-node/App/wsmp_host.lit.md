@@ -89,8 +89,9 @@ void wsmp_host_init(void)
 
 ## 3. Admission
 
-`wsmp_host_admit` checks the identity block (WSMP-I1) and the descriptors against the registry
-(WSMP-D7). Then it adds the module's minute-class bytes to those of the modules already in the
+`wsmp_host_admit` checks the identity block (WSMP-I1), its digest of the descriptor block, and the
+descriptors against the registry (WSMP-D7). It changes no port: `identify` writes the module's share
+of the budget only when the module is admitted. Then it adds the module's minute-class bytes to those of the modules already in the
 layout or admitted, and compares the total with the radio budget (WSMP-A1). The health-class battery
 module goes in the health report, so it does not count.
 
@@ -112,21 +113,29 @@ static int fits(enum wsmp_port p, unsigned values, unsigned channels)
   return values + wsmp_quality_bytes(channels) <= WSMP_HOST_BUDGET;
 }
 
-int wsmp_host_admit(enum wsmp_port p, const uint8_t id[WSMP_IDENTITY_LEN], const uint8_t desc[WSMP_DESC_BLOCK_LEN])
+typedef struct { uint8_t values, channels, report_class; } share_t;   /* a module's part of the budget */
+
+static int admission(enum wsmp_port p, const uint8_t id[WSMP_IDENTITY_LEN], const uint8_t desc[WSMP_DESC_BLOCK_LEN],
+                     share_t *share)
 {
   wsmp_identity ident;
   wsmp_desc d[WSMP_MAX_CHANNELS];
-  if (wsmp_unpack_identity(id, &ident) != WSMP_OK || wsmp_unpack_desc(desc, ident.channels, d) != WSMP_OK ||
+  if (wsmp_unpack_identity(id, &ident) != WSMP_OK || ident.desc_digest != wsmp_crc32c(desc, WSMP_DESC_BLOCK_LEN) ||
+      wsmp_unpack_desc(desc, ident.channels, d) != WSMP_OK ||
       wsmp_desc_check(d, ident.channels, ident.type, ident.schema) != WSMP_OK)
     return WH_QUARANTINED;
   const wsmp_type_entry *type = wsmp_type(ident.type);
   if (!type) return WH_QUARANTINED;   /* wsmp_desc_check already found it; this keeps the pointer checked */
-  port_t *s = &ports[p];
-  s->values = (uint8_t)wsmp_values_bytes(d, ident.channels);
-  s->channels = ident.channels;
-  s->report_class = type->report_class;
-  if (s->report_class == WSMP_RC_MINUTE && !fits(p, s->values, s->channels)) return WH_REFUSED;
+  *share = (share_t){ .values = (uint8_t)wsmp_values_bytes(d, ident.channels), .channels = ident.channels,
+                      .report_class = type->report_class };
+  if (share->report_class == WSMP_RC_MINUTE && !fits(p, share->values, share->channels)) return WH_REFUSED;
   return WH_ADMITTED;
+}
+
+int wsmp_host_admit(enum wsmp_port p, const uint8_t id[WSMP_IDENTITY_LEN], const uint8_t desc[WSMP_DESC_BLOCK_LEN])
+{
+  share_t share;
+  return admission(p, id, desc, &share);
 }
 ```
 
@@ -138,8 +147,10 @@ The host looks at a port's probe only when the module has probed again (its sequ
 static void identify(enum wsmp_port p, port_t *s)
 {
   uint8_t id[WSMP_IDENTITY_LEN], desc[WSMP_DESC_BLOCK_LEN];
+  share_t share;
   local_identity(p, id, desc);
-  s->state = (uint8_t)wsmp_host_admit(p, id, desc);
+  s->state = (uint8_t)admission(p, id, desc, &share);
+  if (s->state == WH_ADMITTED) { s->values = share.values; s->channels = share.channels; s->report_class = share.report_class; }
   s->timed = 0;
 }
 

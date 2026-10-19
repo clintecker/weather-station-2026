@@ -144,6 +144,26 @@ class Host(unittest.TestCase):
         bad = bytearray(idb); bad[2] = 2                            # WSMP major version 2
         self.assertEqual(lib.wsmp_host_admit(P_AIR_TH, (ctypes.c_uint8 * 32)(*bad), desc), QUARANTINED)
 
+    def test_a_descriptor_digest_that_does_not_match_quarantines(self):
+        # WSMP-I1: the identity's digest is the CRC-32C of the descriptor block; a pair that does not
+        # match (a corrupt read, blocks from two modules) is not admitted.
+        lib, _ = self.station([])
+        idb, desc = (ctypes.c_uint8 * 32)(), (ctypes.c_uint8 * 48)()
+        lib.h_identity(P_AIR_TH, idb, desc)
+        bad = bytearray(idb); bad[29] ^= 1                          # the digest's last byte (offset 26-29)
+        self.assertEqual(lib.wsmp_host_admit(P_AIR_TH, (ctypes.c_uint8 * 32)(*bad), desc), QUARANTINED)
+
+    def test_admit_is_a_check_that_changes_no_port(self):
+        # Calling the check on a port in the layout must not change that port's share of the budget.
+        lib, _ = self.station([DEVK_SHT45, DEVK_BMP581], budget=8)
+        self.minutes(lib, 1)
+        idb, desc = (ctypes.c_uint8 * 32)(), (ctypes.c_uint8 * 48)()
+        lib.h_identity(P_POWER, idb, desc)                         # the health-class battery module's blocks
+        self.assertEqual(lib.wsmp_host_admit(P_AIR_TH, idb, desc), ADMITTED)
+        lib.h_add_device(DEVK_LTR390, ADDR[DEVK_LTR390])
+        self.minutes(lib, 2)
+        self.assertEqual(lib.h_host_state(P_UVA), REFUSED)         # air TH still takes its 5 bytes
+
     def line(self, lib):
         buf = ctypes.create_string_buffer(200)
         n = lib.h_host_line(buf, 200)

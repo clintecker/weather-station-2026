@@ -3,8 +3,6 @@
 #include <string.h>
 #include "wsmp_local.h"
 
-#define LONG_WINDOW_MS 90000U   /* WSMP-T3: no latch for more than 90 s */
-
 void mean_reset(mean_win *w, uint32_t now_ms)
 {
   memset(w, 0, sizeof *w);
@@ -48,7 +46,10 @@ static void header(const mean_win *w, wsmp_snapshot *snap, uint16_t token, uint3
   snap->token = token;
   snap->boot16 = (uint16_t)boot_id;
   snap->window_ms = window_ms > UINT16_MAX ? UINT16_MAX : (uint16_t)window_ms;
-  snap->flags = (uint8_t)((w->latched ? 0U : WSMP_FLAG_FIRST_WINDOW) | (window_ms > LONG_WINDOW_MS ? WSMP_FLAG_LONG_WINDOW : 0U));
+  /* Long: a length its u16 field cannot hold (WSMP section 6). That also covers WSMP-T3, no latch
+     for more than 90 s. */
+  int is_long = window_ms > UINT16_MAX;
+  snap->flags = (uint8_t)((w->latched ? 0U : WSMP_FLAG_FIRST_WINDOW) | (is_long ? WSMP_FLAG_LONG_WINDOW : 0U));
   snap->desc_tag = (uint8_t)wsmp_crc32c(desc, WSMP_DESC_BLOCK_LEN);
 }
 
