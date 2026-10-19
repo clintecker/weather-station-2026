@@ -80,6 +80,7 @@ void h_reg_power_cycle(int dev) { model_reg_power_cycle(dev); }
 void h_bmp581_set(int dev, uint32_t pa64) { model_reg_set_data(dev, pa64); }
 void h_ltr390_set(int dev, uint32_t counts) { model_reg_set_data(dev, counts); }
 void h_ina228_set(int dev, int32_t uv, int32_t ua) { model_ina228_set(dev, uv, ua); }
+void h_ina228_power_cycle(int dev) { model_ina228_power_cycle(dev); }
 void h_max17048_set(int dev, int soc) { model_max17048_set(dev, (uint8_t)soc); }
 static int charger_pins;
 int board_charger_pins(void) { return charger_pins; }

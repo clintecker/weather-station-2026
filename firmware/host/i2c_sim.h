@@ -44,5 +44,6 @@ void model_reg_set_id(int dev, uint8_t id);
 void model_reg_power_cycle(int dev);
 void model_reg_set_data(int dev, uint32_t data);
 void model_ina228_set(int dev, int32_t uv, int32_t ua);
+void model_ina228_power_cycle(int dev);
 void model_max17048_set(int dev, uint8_t soc);
 #endif

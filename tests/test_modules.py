@@ -341,15 +341,44 @@ class Power(Conformance, Harness):
         lib.h_ina228_set(ina, 4_000_000, -250_000)                 # -250 mA for 120 s
         lib.h_run(2 * MINUTE)
         s = self.slots(self.latch(lib, self.PORT, 1))
-        # Energy in, energy out, charge in, charge out: whole mWh and mAh since boot. Each sample's
-        # current counts over the time since the previous sample, so the first minute holds 59 s:
-        # in 59 s x 2 W = 32.8 mWh and 59 s x 0.5 A = 8.19 mAh; out 120 s x 1 W = 33.3 mWh, 8.33 mAh.
-        self.assertEqual([s[i][0] for i in (1, 2, 3, 4)], [32, 33, 8, 8])
+        # Energy in, energy out, charge in, charge out: whole mWh and mAh since boot, from the INA228's
+        # own accumulators. Each 1 s step counts as in or out by the sign of its charge. In: the 60 s
+        # at +0.5 A, 33.3 mWh and 8.33 mAh. Out: 119 s at -0.25 A up to the last sample before the
+        # latch, 33.1 mWh and 8.26 mAh.
+        self.assertEqual([s[i][0] for i in (1, 2, 3, 4)], [33, 33, 8, 8])
         lib.h_ina228_set(ina, 4_000_000, 500_000)
         lib.h_run(MINUTE)
         s = self.slots(self.latch(lib, self.PORT, 2))
         self.assertEqual([s[i][0] for i in (1, 3)], [66, 16])       # 119 s: 66.1 mWh, 16.53 mAh: the remainder was kept
         self.assertEqual(s[0][:1], (4000,))                         # voltage mean, 1 mV
+
+    def test_a_burst_between_samples_is_counted(self):
+        # A 250 ms load between two 1 s samples (a LoRa transmission) never coincides with a sample:
+        # only the part's accumulators see it. 40 bursts of 4 A x 0.25 s = 40 A s = 11.1 mAh.
+        lib, devs = self.station(self.DEVICES)
+        ina = devs[DEVK_INA228]
+        lib.h_run(1000)
+        for _ in range(40):
+            lib.h_run(250)                                         # from a sample to 0.25 s after it
+            lib.h_ina228_set(ina, 4_000_000, -4_000_000)
+            lib.h_run(250)
+            lib.h_ina228_set(ina, 4_000_000, 0)
+            lib.h_run(500)
+        lib.h_run(1000)                                            # the sample after the last burst
+        s = self.slots(self.latch(lib, self.PORT, 1))
+        self.assertEqual((s[4][0], s[3][0]), (11, 0))              # charge out, charge in
+
+    def test_a_silent_reset_of_the_monitor_recalibrates(self):
+        # A brown-out clears SHUNT_CAL and the accumulators with no bus error. The module sees the
+        # wrong SHUNT_CAL, calibrates again and counts on from a new base: at most one step is lost.
+        lib, devs = self.station(self.DEVICES)
+        ina = devs[DEVK_INA228]
+        lib.h_ina228_set(ina, 4_000_000, 1_000_000)
+        lib.h_run(30_000)
+        lib.h_ina228_power_cycle(ina)
+        lib.h_run(30_000)
+        s = self.slots(self.latch(lib, self.PORT, 1))
+        self.assertIn(s[3][0], (15, 16))                           # 1 A for 57 to 59 s: 15.8 to 16.4 mAh
 
     def test_counters_never_reset_at_latch(self):
         lib, devs = self.station(self.DEVICES)

@@ -1,12 +1,15 @@
 /* The battery and charger module (mod_power.h).
  *   INA228 at 0x40 (datasheet section 7.6): MANUFACTURER_ID 0x3E = 0x5449, DEVICE_ID 0x3F >> 4 =
- *   0x228. SHUNT_CAL 0x02 = 13107.2e6 x CURRENT_LSB x R_shunt with CURRENT_LSB = 10 uA. VBUS 0x05 and
- *   CURRENT 0x07 are 24-bit registers whose top 20 bits hold the value: VBUS 195.3125 uV a count,
- *   CURRENT signed, CURRENT_LSB a count.
+ *   0x228. SHUNT_CAL 0x02 = 13107.2e6 x CURRENT_LSB x R_shunt with CURRENT_LSB = 10 uA. VBUS 0x05 is a
+ *   24-bit register whose top 20 bits hold the value, 195.3125 uV a count. ENERGY 0x09 (40-bit
+ *   unsigned, 16 x 3.2 x CURRENT_LSB = 512 uW s a count) and CHARGE 0x0A (40-bit signed,
+ *   CURRENT_LSB = 10 uA s a count) are the part's own accumulators: they integrate every conversion,
+ *   so a load between two samples (a radio burst) is counted.
  *   MAX17048 at 0x36: VERSION 0x08 & 0xFFF0 = 0x0010, SOC 0x04 high byte in whole %.
- * Charge and energy integrate in 64-bit uA ms and uW ms, so the counters (whole mAh and mWh) lose
- * nothing to rounding. A sample's current counts over the time since the previous good sample; the
- * first sample after a failure counts over no time. */
+ * Each 1 s step adds its accumulator increments to "in" or "out" by the sign of its charge. Each
+ * sample first reads SHUNT_CAL back: a wrong value means the part was reset (a brown-out, a re-plug)
+ * with its accumulators, so the module identifies it, calibrates it and takes a new base. The step
+ * after a failure or a calibration counts nothing. */
 #define WS_CHECK_FILE 16
 #include "mod_power.h"
 #include <string.h>
@@ -27,7 +30,13 @@
 #define REG_DEVICE 0x3FU
 #define REG_SHUNT_CAL 0x02U
 #define REG_VBUS 0x05U
-#define REG_CURRENT 0x07U
+#define REG_ENERGY 0x09U
+#define REG_CHARGE 0x0AU
+#define ACC_LEN 5U                     /* the 40-bit accumulators */
+#define ACC_MASK 0xFFFFFFFFFFULL
+#define ACC_SIGN 0x8000000000ULL
+#define CHARGE_UAS 10LL                /* uA s a CHARGE count */
+#define ENERGY_UWS 512LL               /* uW s an ENERGY count */
 #define REG_VERSION 0x08U
 #define REG_SOC 0x04U
 #define MAX17048_VERSION_MASK 0xFFF0U
@@ -37,29 +46,32 @@
 #define VBUS_UV_NUM 3125               /* 195.3125 uV = 3125 / 16 uV */
 #define VBUS_UV_DEN 16
 #define VALUE_SHIFT 4U                 /* the 20-bit value sits in bits 23-4 */
-#define UA_MS_PER_MAH 3600000000LL     /* 1 mA for 1 h */
-#define UW_MS_PER_MWH 3600000000LL
-#define UV_UA_PER_UW 1000000LL
+#define UAS_PER_MAH 3600000LL          /* 1 mA for 1 h */
+#define UWS_PER_MWH 3600000LL
+#define UV_PER_MV 1000
 #define CHANNELS 7U
 #define SOC_MAX_PCT 100U              /* the registry range of the state of charge */
 
-typedef enum { ST_IDLE, ST_MANUFACTURER, ST_DEVICE, ST_CAL, ST_VBUS, ST_CURRENT, ST_VERSION, ST_SOC } power_step;
+typedef enum { ST_IDLE, ST_CAL_CHECK, ST_MANUFACTURER, ST_DEVICE, ST_CAL, ST_VBUS, ST_ENERGY, ST_CHARGE, ST_VERSION,
+               ST_SOC } power_step;
 typedef struct {
   power_step step;
-  uint32_t next_ms, sample_ms, last_ms;
+  uint32_t next_ms;
   int have_last, cal_needed, gauge_ok, probe;
   unsigned samples_since_gauge;
   uint16_t probe_seq;
-  uint8_t buf[3], cal[3];
-  int64_t uv, charge_in, charge_out, energy_in, energy_out;   /* uV, then uA ms and uW ms */
+  uint8_t buf[ACC_LEN], cal[3];
+  uint64_t energy_raw, last_energy, last_charge;   /* the accumulators at this and the previous sample */
+  int64_t uv, charge_in, charge_out, energy_in, energy_out;   /* uV, then uA s and uW s */
   uint8_t soc;
   mean_win win;   /* the voltage mean, in mV */
 } power_t;
 
 static power_t pw;
 static uint32_t boot;
-static const uint8_t reg_manufacturer = REG_MANUFACTURER, reg_device = REG_DEVICE, reg_vbus = REG_VBUS,
-                     reg_current = REG_CURRENT, reg_version = REG_VERSION, reg_soc = REG_SOC;
+static const uint8_t reg_manufacturer = REG_MANUFACTURER, reg_device = REG_DEVICE, reg_shunt_cal = REG_SHUNT_CAL,
+                     reg_vbus = REG_VBUS, reg_energy = REG_ENERGY, reg_charge = REG_CHARGE, reg_version = REG_VERSION,
+                     reg_soc = REG_SOC;
 
 static void submit(enum i2c_client c, const uint8_t *tx, uint8_t txlen, uint8_t *rx, uint8_t rxlen)
 {
@@ -88,12 +100,13 @@ void mod_power_tick(uint32_t now_ms)
   if (pw.step != ST_IDLE || (int32_t)(now_ms - pw.next_ms) < 0) return;
   pw.next_ms += POWER_PERIOD_MS;
   if ((int32_t)(now_ms - pw.next_ms) >= 0) pw.next_ms = now_ms + POWER_PERIOD_MS;   /* fell behind: resync */
-  pw.sample_ms = now_ms;
-  step(ST_MANUFACTURER, I2C_C_INA228, &reg_manufacturer, 2);
+  if (pw.cal_needed) step(ST_MANUFACTURER, I2C_C_INA228, &reg_manufacturer, 2);
+  else step(ST_CAL_CHECK, I2C_C_INA228, &reg_shunt_cal, 2);
 }
 
 static uint16_t be16(const uint8_t *p) { return (uint16_t)(p[0] << 8 | p[1]); }
 static uint32_t be24(const uint8_t *p) { return (uint32_t)p[0] << 16 | (uint32_t)p[1] << 8 | p[2]; }
+static uint64_t be40(const uint8_t *p) { return (uint64_t)p[0] << 32 | (uint64_t)be24(p + 1) << 8 | p[4]; }
 
 static void monitor_failed(int rc)
 {
@@ -114,19 +127,30 @@ static void identified(void)
     return;
   }
   if ((be16(pw.buf) >> VALUE_SHIFT) != INA228_DEVICE) { monitor_failed(I2C_ENACK_ADDR); return; }
-  if (!pw.cal_needed) { step(ST_VBUS, I2C_C_INA228, &reg_vbus, 3); return; }
   pw.cal[0] = REG_SHUNT_CAL; pw.cal[1] = (uint8_t)(INA228_SHUNT_CAL >> 8); pw.cal[2] = (uint8_t)INA228_SHUNT_CAL;
   pw.step = ST_CAL;
   submit(I2C_C_INA228, pw.cal, sizeof pw.cal, NULL, 0);
 }
 
-static void integrate(int64_t ua)
+/* SHUNT_CAL as the module wrote it, or the part was reset since: identify and calibrate it again. */
+static void cal_checked(void)
 {
-  int64_t dt = pw.have_last ? (int64_t)(pw.sample_ms - pw.last_ms) : 0;
-  int64_t uw = pw.uv * ua / UV_UA_PER_UW;
-  if (ua >= 0) { pw.charge_in += ua * dt; pw.energy_in += uw * dt; }
-  else { pw.charge_out -= ua * dt; pw.energy_out -= uw * dt; }
-  pw.last_ms = pw.sample_ms;
+  if (be16(pw.buf) == INA228_SHUNT_CAL) { step(ST_VBUS, I2C_C_INA228, &reg_vbus, 3); return; }
+  pw.cal_needed = 1;
+  pw.have_last = 0;
+  step(ST_MANUFACTURER, I2C_C_INA228, &reg_manufacturer, 2);
+}
+
+/* The increments since the previous sample, wrapped to 40 bits, into "in" or "out" by the sign of the
+   charge. The first sample after a failure or a calibration is only the new base. */
+static void accumulate(uint64_t charge_raw)
+{
+  uint64_t de = (pw.energy_raw - pw.last_energy) & ACC_MASK, dq_raw = (charge_raw - pw.last_charge) & ACC_MASK;
+  int64_t dq = (dq_raw & ACC_SIGN) ? (int64_t)dq_raw - (int64_t)(ACC_MASK + 1U) : (int64_t)dq_raw;
+  if (pw.have_last && dq >= 0) { pw.charge_in += dq * CHARGE_UAS; pw.energy_in += (int64_t)de * ENERGY_UWS; }
+  else if (pw.have_last) { pw.charge_out -= dq * CHARGE_UAS; pw.energy_out += (int64_t)de * ENERGY_UWS; }
+  pw.last_energy = pw.energy_raw;
+  pw.last_charge = charge_raw;
   pw.have_last = 1;
 }
 
@@ -135,12 +159,17 @@ static void measured(void)
   if (pw.step == ST_VBUS)
   {
     pw.uv = (int64_t)(be24(pw.buf) >> VALUE_SHIFT) * VBUS_UV_NUM / VBUS_UV_DEN;
-    step(ST_CURRENT, I2C_C_INA228, &reg_current, 3);
+    step(ST_ENERGY, I2C_C_INA228, &reg_energy, ACC_LEN);
     return;
   }
-  int32_t raw = (int32_t)(be24(pw.buf) << 8) >> (8 + VALUE_SHIFT);   /* sign-extend the 24-bit register */
-  integrate((int64_t)raw * INA228_CURRENT_LSB_UA);
-  mean_add(&pw.win, (const int32_t[MEAN_CHANNELS]){ (int32_t)(pw.uv / 1000), 0 });
+  if (pw.step == ST_ENERGY)
+  {
+    pw.energy_raw = be40(pw.buf);
+    step(ST_CHARGE, I2C_C_INA228, &reg_charge, ACC_LEN);
+    return;
+  }
+  accumulate(be40(pw.buf));
+  mean_add(&pw.win, (const int32_t[MEAN_CHANNELS]){ (int32_t)((pw.uv + UV_PER_MV / 2) / UV_PER_MV), 0 });
   pw.probe = 1;
   pw.probe_seq++;
   if (++pw.samples_since_gauge < GAUGE_EVERY && pw.gauge_ok) { pw.step = ST_IDLE; return; }
@@ -162,13 +191,19 @@ static void gauge_done(int rc)
   pw.step = ST_IDLE;
 }
 
+static void monitor_done(void)
+{
+  if (pw.step == ST_CAL_CHECK) cal_checked();
+  else if (pw.step == ST_MANUFACTURER || pw.step == ST_DEVICE) identified();
+  else if (pw.step == ST_CAL) { pw.cal_needed = 0; pw.have_last = 0; step(ST_VBUS, I2C_C_INA228, &reg_vbus, 3); }
+  else if (WS_CHECK(pw.step == ST_VBUS || pw.step == ST_ENERGY || pw.step == ST_CHARGE)) measured();
+}
+
 void mod_power_i2c_done(int rc)
 {
-  if (pw.step == ST_VERSION || pw.step == ST_SOC) { gauge_done(rc); return; }
-  if (rc) { monitor_failed(rc); return; }
-  if (pw.step == ST_MANUFACTURER || pw.step == ST_DEVICE) identified();
-  else if (pw.step == ST_CAL) { pw.cal_needed = 0; step(ST_VBUS, I2C_C_INA228, &reg_vbus, 3); }
-  else if (WS_CHECK(pw.step == ST_VBUS || pw.step == ST_CURRENT)) measured();
+  if (pw.step == ST_VERSION || pw.step == ST_SOC) gauge_done(rc);
+  else if (rc) monitor_failed(rc);
+  else monitor_done();
 }
 
 int mod_power_probe(uint16_t *seq)
@@ -215,8 +250,8 @@ void mod_power_latch(uint16_t token, uint32_t now_ms)
   unsigned samples = pw.win.n;
   mod_power_identity(id, desc);
   if (!mean_close(&pw.win, token, now_ms, boot, desc, 1, &snap)) return;
-  const int64_t totals[4] = { pw.energy_in / UW_MS_PER_MWH, pw.energy_out / UW_MS_PER_MWH,
-                              pw.charge_in / UA_MS_PER_MAH, pw.charge_out / UA_MS_PER_MAH };
+  const int64_t totals[4] = { pw.energy_in / UWS_PER_MWH, pw.energy_out / UWS_PER_MWH,
+                              pw.charge_in / UAS_PER_MAH, pw.charge_out / UAS_PER_MAH };
   uint8_t q = mean_quality(&snap, samples);
   for (unsigned i = 0; i < 4; i++) snap.slot[1 + i] = (wsmp_slot){ .value = (uint32_t)totals[i], .count = (uint16_t)samples, .quality = q };
   snap.slot[5] = (wsmp_slot){ .value = pw.soc, .count = (uint16_t)pw.gauge_ok, .quality = mean_quality(&snap, (unsigned)pw.gauge_ok) };

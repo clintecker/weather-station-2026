@@ -101,10 +101,33 @@ static int reg_read(int kind, int dev, uint8_t reg, uint8_t *data, uint16_t n)
 }
 
 /* DEVK_INA228 (datasheet section 7.6) and DEVK_MAX17048: the registers the battery module reads. The
-   INA228 current reads 0 until SHUNT_CAL holds the module's value (1966: 10 uA, 15 mOhm). */
-typedef struct { int32_t uv, ua; uint16_t cal; uint8_t soc; } power_dev_t;
+   INA228 current reads 0 until SHUNT_CAL holds the module's value (1966: 10 uA, 15 mOhm). Its
+   accumulators integrate continuously, as the part's do in continuous conversion: CHARGE (0x0A, 40-bit
+   signed) in CURRENT_LSB seconds (10 uA s), ENERGY (0x09, 40-bit unsigned) in 16 x 3.2 x CURRENT_LSB
+   joules (512 uW s), of the absolute power. A power cycle clears them and SHUNT_CAL. */
+#define INA228_CAL 1966U
+#define CHARGE_UA_UNITS (10LL * 1000 * SIM_UNITS_PER_MS)     /* 10 uA s in uA x sim units */
+#define ENERGY_UW_UNITS (512LL * 1000 * SIM_UNITS_PER_MS)    /* 512 uW s in uW x sim units */
+typedef struct { int32_t uv, ua; uint16_t cal; uint8_t soc; int64_t charge, energy; uint64_t at; } power_dev_t;
 static power_dev_t pdev[I2C_SIM_DEVICES];
-void model_ina228_set(int dev, int32_t uv, int32_t ua) { pdev[dev].uv = uv; pdev[dev].ua = ua; }
+static void ina228_advance(power_dev_t *p)
+{
+  uint64_t now = sim_now();
+  int64_t dt = (int64_t)(now - p->at);
+  p->at = now;
+  if (p->cal != INA228_CAL) return;
+  int64_t ua = p->ua, uw = (int64_t)p->uv * (ua < 0 ? -ua : ua) / 1000000;
+  p->charge += ua * dt;
+  p->energy += uw * dt;
+}
+void model_ina228_set(int dev, int32_t uv, int32_t ua) { ina228_advance(&pdev[dev]); pdev[dev].uv = uv; pdev[dev].ua = ua; }
+/* A brown-out or a quick re-plug: the registers return to their reset values, with no bus error. */
+void model_ina228_power_cycle(int dev)
+{
+  power_dev_t *p = &pdev[dev];
+  ina228_advance(p);
+  *p = (power_dev_t){ .uv = p->uv, .ua = p->ua, .soc = p->soc, .at = sim_now() };
+}
 void model_max17048_set(int dev, uint8_t soc) { pdev[dev].soc = soc; }
 
 static void put(uint8_t *data, uint16_t n, uint32_t v)
@@ -112,17 +135,32 @@ static void put(uint8_t *data, uint16_t n, uint32_t v)
   for (uint16_t i = 0; i < n; i++) data[i] = (uint8_t)(v >> (8U * (n - 1U - i)));
 }
 
+static void put40(uint8_t *data, uint64_t v)
+{
+  for (unsigned i = 0; i < 5U; i++) data[i] = (uint8_t)(v >> (8U * (4U - i)));
+}
+
+/* The 40-bit accumulators: 1 if reg is one of them (and fills data). */
+static int ina228_accumulator(const power_dev_t *p, uint8_t reg, uint8_t *data)
+{
+  if (reg == 0x09) put40(data, (uint64_t)(p->energy / ENERGY_UW_UNITS));
+  else if (reg == 0x0A) put40(data, (uint64_t)(p->charge / CHARGE_UA_UNITS) & 0xFFFFFFFFFFULL);
+  else return 0;
+  return 1;
+}
+
 static int ina228_read(int dev, uint8_t reg, uint8_t *data, uint16_t n)
 {
-  const power_dev_t *p = &pdev[dev];
-  uint32_t vbus = (uint32_t)((int64_t)p->uv * 16 / 3125) << 4;
-  uint32_t cur = p->cal == 1966 ? ((uint32_t)(p->ua / 10) << 4) & 0xFFFFFFU : 0U;
-  if (reg == 0x3E && n == 2) put(data, n, 0x5449);
-  else if (reg == 0x3F && n == 2) put(data, n, 0x2281);
-  else if (reg == 0x05 && n == 3) put(data, n, vbus);
-  else if (reg == 0x07 && n == 3) put(data, n, cur);
-  else return -1;
-  return 0;
+  power_dev_t *p = &pdev[dev];
+  ina228_advance(p);
+  if (n == 5) return ina228_accumulator(p, reg, data) ? 0 : -1;
+  const struct { uint8_t reg; uint16_t n; uint32_t v; } regs[] = {
+    { 0x3E, 2, 0x5449 }, { 0x3F, 2, 0x2281 }, { 0x02, 2, p->cal },
+    { 0x05, 3, (uint32_t)((int64_t)p->uv * 16 / 3125) << 4 },
+    { 0x07, 3, p->cal == INA228_CAL ? ((uint32_t)(p->ua / 10) << 4) & 0xFFFFFFU : 0U } };
+  for (unsigned i = 0; i < sizeof regs / sizeof regs[0]; i++)
+    if (regs[i].reg == reg && regs[i].n == n) { put(data, n, regs[i].v); return 0; }
+  return -1;
 }
 
 static int max17048_read(int dev, uint8_t reg, uint8_t *data, uint16_t n)
@@ -136,7 +174,13 @@ static int max17048_read(int dev, uint8_t reg, uint8_t *data, uint16_t n)
 
 int model_write(int kind, int dev, const uint8_t *data, uint16_t n)
 {
-  if (kind == DEVK_INA228) { if (n != 3 || data[0] != 0x02) return -1; pdev[dev].cal = (uint16_t)(data[1] << 8 | data[2]); return 0; }
+  if (kind == DEVK_INA228)
+  {
+    if (n != 3 || data[0] != 0x02) return -1;
+    ina228_advance(&pdev[dev]);
+    pdev[dev].cal = (uint16_t)(data[1] << 8 | data[2]);
+    return 0;
+  }
   switch (kind)
   {
     case DEVK_TEST: memcpy(test_written[dev], data, n < I2C_SIM_BUF ? n : I2C_SIM_BUF); return 0;
@@ -177,5 +221,5 @@ void model_reset(int kind, int dev)
   if (kind == DEVK_SHTC3) shtc3[dev] = (shtc3_t){ .t_raw = 0x8000, .rh_raw = 0x8000, .asleep = 1 };
   if (kind == DEVK_BMP581) regdev[dev] = (regdev_t){ .id = 0x50 };
   if (kind == DEVK_LTR390) regdev[dev] = (regdev_t){ .id = 0xB2 };
-  if (kind == DEVK_INA228 || kind == DEVK_MAX17048) pdev[dev] = (power_dev_t){ 0 };
+  if (kind == DEVK_INA228 || kind == DEVK_MAX17048) pdev[dev] = (power_dev_t){ .at = sim_now() };
 }
