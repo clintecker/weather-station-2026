@@ -45,6 +45,9 @@ class Fuzz(unittest.TestCase):
     def test_obs(self):
         self.run_target('obs')
 
+    def test_wsmp(self):
+        self.run_target('wsmp')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -72,7 +72,8 @@ def header_text(reg):
     for table in TABLES:
         out += [f'#define WSMP_{PREFIX[table]}_{row["id"]} {row["code"]}' for row in reg[table]]
         out.append('')
-    out += ['#define WSMP_RC_MINUTE 0', '#define WSMP_RC_HEALTH 1', '']
+    out += ['#define WSMP_RC_MINUTE 0', '#define WSMP_RC_HEALTH 1',
+            f'#define WSMP_KIND_MAX {max(row["code"] for row in reg["kind"])}U', '']
     for row in reg['module_type']:
         for key, value in row.get('factors', {}).items():
             out.append(f'#define WSMP_{row["id"]}_{key.upper()} {value}UL')
