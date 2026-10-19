@@ -1,0 +1,383 @@
+# The WSMP registry (docs/module-protocol.md section 4). The single source of every WSMP code.
+# tools/wsmp_registry.py generates firmware/common/wsmp_registry.h and ws0/wsmp_registry.py from it.
+# Codes are append-only (WSMP-G1): tools/wsmp_registry.lock refuses a removed or renamed code.
+
+version = 1
+
+# ---- quantities (section 4.1): code, name, canonical unit code, CF standard name, physical range ----
+[[quantity]]
+code = 1
+name = "air temperature"
+id = "AIR_TEMPERATURE"
+unit = 1
+cf = "air_temperature"
+range = [-80, 60]
+ha = { device_class = "temperature", state_class = "measurement" }
+
+[[quantity]]
+code = 2
+name = "relative humidity"
+id = "RELATIVE_HUMIDITY"
+unit = 2
+cf = "relative_humidity"
+range = [0, 100]
+ha = { device_class = "humidity", state_class = "measurement" }
+note = "with respect to water, also below 0 degC"
+
+[[quantity]]
+code = 3
+name = "station air pressure"
+id = "STATION_PRESSURE"
+unit = 3
+cf = "surface_air_pressure"
+range = [300, 1100]
+ha = { device_class = "atmospheric_pressure", state_class = "measurement" }
+note = "at the barometer height, not reduced to sea level"
+
+[[quantity]]
+code = 4
+name = "wind speed"
+id = "WIND_SPEED"
+unit = 4
+cf = "wind_speed"
+range = [0, 75]
+ha = { device_class = "wind_speed", state_class = "measurement" }
+
+[[quantity]]
+code = 5
+name = "wind gust speed"
+id = "WIND_GUST"
+unit = 4
+cf = "wind_speed_of_gust"
+range = [0, 100]
+ha = { device_class = "wind_speed", state_class = "measurement" }
+
+[[quantity]]
+code = 6
+name = "wind from direction"
+id = "WIND_FROM_DIRECTION"
+unit = 5
+cf = "wind_from_direction"
+range = [0, 360]
+ha = { device_class = "wind_direction", state_class = "measurement_angle" }
+note = "clockwise from true north, the direction the wind comes from"
+
+[[quantity]]
+code = 7
+name = "rain gauge tips"
+id = "RAIN_TIPS"
+unit = 6
+cf = ""
+range = [0, 4294967295]
+ha = { device_class = "", state_class = "total_increasing" }
+note = "raw tips, the module type gives mm per tip"
+
+[[quantity]]
+code = 8
+name = "UVA sensor counts"
+id = "UVA_COUNTS"
+unit = 7
+cf = ""
+range = [0, 1048576]
+ha = { device_class = "", state_class = "measurement" }
+note = "raw, never reported as UV index"
+
+[[quantity]]
+code = 9
+name = "battery voltage"
+id = "BATTERY_VOLTAGE"
+unit = 8
+cf = ""
+range = [0, 30]
+ha = { device_class = "voltage", state_class = "measurement" }
+
+[[quantity]]
+code = 10
+name = "battery current"
+id = "BATTERY_CURRENT"
+unit = 9
+cf = ""
+range = [-20, 20]
+ha = { device_class = "current", state_class = "measurement" }
+note = "positive while charging"
+
+[[quantity]]
+code = 11
+name = "energy into the battery"
+id = "ENERGY_IN"
+unit = 10
+cf = ""
+range = [0, 4294967295]
+ha = { device_class = "energy", state_class = "total_increasing" }
+
+[[quantity]]
+code = 12
+name = "energy out of the battery"
+id = "ENERGY_OUT"
+unit = 10
+cf = ""
+range = [0, 4294967295]
+ha = { device_class = "energy", state_class = "total_increasing" }
+
+[[quantity]]
+code = 13
+name = "charge into the battery"
+id = "CHARGE_IN"
+unit = 11
+cf = ""
+range = [0, 4294967295]
+ha = { device_class = "", state_class = "total_increasing" }
+
+[[quantity]]
+code = 14
+name = "charge out of the battery"
+id = "CHARGE_OUT"
+unit = 11
+cf = ""
+range = [0, 4294967295]
+ha = { device_class = "", state_class = "total_increasing" }
+
+[[quantity]]
+code = 15
+name = "battery state of charge"
+id = "STATE_OF_CHARGE"
+unit = 2
+cf = ""
+range = [0, 100]
+ha = { device_class = "battery", state_class = "measurement" }
+
+[[quantity]]
+code = 16
+name = "charger state"
+id = "CHARGER_STATE"
+unit = 12
+cf = ""
+range = [0, 255]
+ha = { device_class = "enum", state_class = "" }
+
+[[quantity]]
+code = 17
+name = "anemometer pulses"
+id = "ANEMOMETER_PULSES"
+unit = 13
+cf = ""
+range = [0, 4294967295]
+ha = { device_class = "", state_class = "" }
+note = "raw cup pulses, the module type gives m/s per Hz"
+
+# ---- units (section 4.2) ----
+[[unit]]
+code = 1
+name = "degree Celsius"
+id = "CEL"
+ucum = "Cel"
+dimension = "temperature"
+
+[[unit]]
+code = 2
+name = "percent"
+id = "PERCENT"
+ucum = "%"
+dimension = "ratio"
+
+[[unit]]
+code = 3
+name = "hectopascal"
+id = "HPA"
+ucum = "hPa"
+dimension = "pressure"
+
+[[unit]]
+code = 4
+name = "metre per second"
+id = "M_PER_S"
+ucum = "m/s"
+dimension = "speed"
+
+[[unit]]
+code = 5
+name = "degree"
+id = "DEG"
+ucum = "deg"
+dimension = "plane angle"
+
+[[unit]]
+code = 6
+name = "tip"
+id = "TIP"
+ucum = "{tip}"
+dimension = "count"
+
+[[unit]]
+code = 7
+name = "count"
+id = "COUNT"
+ucum = "{count}"
+dimension = "count"
+
+[[unit]]
+code = 8
+name = "volt"
+id = "VOLT"
+ucum = "V"
+dimension = "voltage"
+
+[[unit]]
+code = 9
+name = "ampere"
+id = "AMPERE"
+ucum = "A"
+dimension = "current"
+
+[[unit]]
+code = 10
+name = "watt hour"
+id = "WATT_HOUR"
+ucum = "W.h"
+dimension = "energy"
+
+[[unit]]
+code = 11
+name = "ampere hour"
+id = "AMPERE_HOUR"
+ucum = "A.h"
+dimension = "charge"
+
+[[unit]]
+code = 12
+name = "state"
+id = "STATE"
+ucum = "{state}"
+dimension = "enumeration"
+
+[[unit]]
+code = 13
+name = "pulse"
+id = "PULSE"
+ucum = "{pulse}"
+dimension = "count"
+
+# ---- kinds (section 4.3) ----
+[[kind]]
+code = 1
+name = "point"
+id = "POINT"
+
+[[kind]]
+code = 2
+name = "mean"
+id = "MEAN"
+
+[[kind]]
+code = 3
+name = "minimum"
+id = "MIN"
+
+[[kind]]
+code = 4
+name = "maximum"
+id = "MAX"
+
+[[kind]]
+code = 5
+name = "sum"
+id = "SUM"
+
+[[kind]]
+code = 6
+name = "counter"
+id = "COUNTER"
+
+[[kind]]
+code = 7
+name = "gust"
+id = "GUST"
+
+[[kind]]
+code = 8
+name = "vector east sum"
+id = "VEC_EAST"
+
+[[kind]]
+code = 9
+name = "vector north sum"
+id = "VEC_NORTH"
+
+[[kind]]
+code = 10
+name = "state"
+id = "STATE"
+
+# ---- module types (section 4.4): channels are [quantity, kind] pairs, in channel order ----
+[[module_type]]
+code = 1
+name = "air temperature and humidity"
+id = "AIR_TH"
+part = "SHT45"
+schema = 1
+report_class = "minute"
+role = "outside air"
+channels = [[1, 2], [2, 2]]
+
+[[module_type]]
+code = 2
+name = "air pressure"
+id = "PRESSURE"
+part = "BMP581"
+schema = 1
+report_class = "minute"
+role = "enclosure"
+channels = [[3, 2]]
+
+[[module_type]]
+code = 3
+name = "UVA"
+id = "UVA"
+part = "LTR390"
+schema = 1
+report_class = "minute"
+role = "outside"
+channels = [[8, 2]]
+
+[[module_type]]
+code = 4
+name = "enclosure temperature and humidity"
+id = "ENCL_TH"
+part = "SHTC3"
+schema = 1
+report_class = "minute"
+role = "enclosure"
+channels = [[1, 2], [2, 2]]
+
+[[module_type]]
+code = 5
+name = "battery and charger"
+id = "POWER"
+part = "INA228, MAX17048, bq24074"
+schema = 1
+report_class = "health"
+role = "battery"
+channels = [[9, 2], [11, 6], [12, 6], [13, 6], [14, 6], [15, 1], [16, 10]]
+states = ["off", "charging", "done", "fault"]
+
+[[module_type]]
+code = 6
+name = "wind"
+id = "WIND"
+part = "SparkFun SEN-15901"
+schema = 1
+report_class = "minute"
+role = "outside"
+channels = [[17, 6], [5, 7], [6, 8], [6, 9]]
+factors = { ums_per_hz = 666980, gust_ms = 3000 }
+
+[[module_type]]
+code = 7
+name = "rain"
+id = "RAIN"
+part = "SparkFun SEN-15901"
+schema = 1
+report_class = "minute"
+role = "outside"
+channels = [[7, 6]]
+factors = { um_per_tip = 279400 }

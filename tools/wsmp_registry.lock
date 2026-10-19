@@ -1,0 +1,48 @@
+# WSMP codes once given (WSMP-G1, append-only). tools/wsmp_registry.py adds new ones.
+quantity 1 air temperature
+quantity 2 relative humidity
+quantity 3 station air pressure
+quantity 4 wind speed
+quantity 5 wind gust speed
+quantity 6 wind from direction
+quantity 7 rain gauge tips
+quantity 8 UVA sensor counts
+quantity 9 battery voltage
+quantity 10 battery current
+quantity 11 energy into the battery
+quantity 12 energy out of the battery
+quantity 13 charge into the battery
+quantity 14 charge out of the battery
+quantity 15 battery state of charge
+quantity 16 charger state
+quantity 17 anemometer pulses
+unit 1 degree Celsius
+unit 2 percent
+unit 3 hectopascal
+unit 4 metre per second
+unit 5 degree
+unit 6 tip
+unit 7 count
+unit 8 volt
+unit 9 ampere
+unit 10 watt hour
+unit 11 ampere hour
+unit 12 state
+unit 13 pulse
+kind 1 point
+kind 2 mean
+kind 3 minimum
+kind 4 maximum
+kind 5 sum
+kind 6 counter
+kind 7 gust
+kind 8 vector east sum
+kind 9 vector north sum
+kind 10 state
+module_type 1 air temperature and humidity
+module_type 2 air pressure
+module_type 3 UVA
+module_type 4 enclosure temperature and humidity
+module_type 5 battery and charger
+module_type 6 wind
+module_type 7 rain
