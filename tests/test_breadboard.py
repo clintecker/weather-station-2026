@@ -93,5 +93,72 @@ class Checks(unittest.TestCase):
         self.assertTrue(any('Rain gauge' in p for p in problems), problems)
 
 
+def with_part(w, part):
+    """The model with one part added or replaced."""
+    import dataclasses
+    return dataclasses.replace(w, parts={**w.parts, part.id: part})
+
+
+class Jumpers(unittest.TestCase):
+    def setUp(self):
+        self.w = wiring.load(DATA)
+
+    def test_the_plan_connects_every_net_and_nothing_else(self):
+        self.assertEqual(wiring.prove(self.w, wiring.plan_jumpers(self.w)), [])
+
+    def test_no_jumper_lands_on_a_part_pin(self):
+        pins = {h for part in self.w.parts.values() for h in part.pins.values()}
+        ends = [h for j in wiring.plan_jumpers(self.w) for h in (j.a, j.b)]
+        self.assertFalse(pins & {h for h in ends if h[0] != 'N'})
+        self.assertEqual(len(ends), len(set(ends)), 'one wire per hole')
+
+    def test_a_shared_strip_is_a_short(self):
+        import dataclasses
+        r3 = self.w.parts['R3']
+        moved = dataclasses.replace(r3, pins={**r3.pins, '1': ('A', 'b', 6)})   # onto the cups strip
+        with self.assertRaises(wiring.PlanError) as e:
+            wiring.plan_jumpers(with_part(self.w, moved))
+        self.assertIn('short', str(e.exception))
+        for name in ('BOBW.4 (CUPS)', 'R3.1 (VANE)', 'A:a-e:6'):
+            self.assertIn(name, str(e.exception))
+
+    def test_prove_finds_a_short_that_a_jumper_makes(self):
+        jumpers = wiring.plan_jumpers(self.w)
+        cups = next(j for j in jumpers if j.net == 'CUPS' and j.a[0] != 'N' and j.b[0] != 'N')
+        vane = next(j for j in jumpers if j.net == 'VANE' and j.a[0] != 'N')
+        bad = wiring.Jumper(id='WX', net='CUPS', a=cups.a, b=vane.a)
+        problems = wiring.prove(self.w, jumpers + [bad])
+        self.assertTrue(any('short' in p and 'CUPS' in p and 'VANE' in p for p in problems), problems)
+
+    def test_a_full_strip_is_refused(self):
+        fill = wiring.Part(id='FILL', kind='test', board='A', origin=('A', 'b', 6),
+                           pins={str(i): ('A', row, 6) for i, row in enumerate('bcde')},
+                           labels=(), source='passive', note='')
+        with self.assertRaises(wiring.PlanError) as e:
+            wiring.plan_jumpers(with_part(self.w, fill))
+        self.assertIn('A:a-e:6', str(e.exception))
+
+    def test_split_rails_get_a_bridge(self):
+        import dataclasses
+        w = dataclasses.replace(self.w, split_rails=True)
+        jumpers = wiring.plan_jumpers(w)
+        halves = {wiring.strip(j.a, True) for j in jumpers} | {wiring.strip(j.b, True) for j in jumpers}
+        bridge = [j for j in jumpers if {wiring.strip(j.a, True), wiring.strip(j.b, True)} == {'A:L+:1', 'A:L+:2'}]
+        self.assertTrue(bridge or {'A:L+:1', 'A:L+:2'} <= halves, 'both halves of the 3V3 rail are joined')
+        self.assertEqual(wiring.prove(w, jumpers), [])
+
+    def test_a_required_link_is_one_jumper(self):
+        # The guide feeds the regulator's output to the NUCLEO's 3V3 pin CN7.16 (section 5).
+        jumpers = wiring.plan_jumpers(self.w)
+        shunt = wiring.strip(self.w.parts['SHUNT'].pins['2'])
+        self.assertTrue(any({wiring.strip(j.a), wiring.strip(j.b)} == {shunt, 'N:CN7.16'} for j in jumpers))
+
+    def test_jumpers_are_numbered_in_build_order(self):
+        jumpers = wiring.plan_jumpers(self.w)
+        self.assertEqual([j.id for j in jumpers], [f'W{i}' for i in range(1, len(jumpers) + 1)])
+        order = [wiring.jumper_stage(j) for j in jumpers]
+        self.assertEqual(order, sorted(order))
+
+
 if __name__ == '__main__':
     unittest.main()

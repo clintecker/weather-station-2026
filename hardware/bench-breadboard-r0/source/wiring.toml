@@ -167,6 +167,14 @@ step = 4
 pins = ["1", "2"]
 source = "passive"
 
+# ---- required jumpers ----
+# The guide feeds the regulator output, through the BATTERY POWER shunt, to the NUCLEO's 3V3 pin
+# CN7.16 (section 5). Left to the planner, this net could take a shorter path through board A.
+
+[[link]]
+a = "SHUNT.2"
+b = "N:CN7.16"
+
 # ---- nets ----
 # `members` are PART.PIN, or N:<header>.<pin> for a NUCLEO pin. `rails` carry the net on a board.
 # `mcu` names the STM32WL pin (or 3V3, GND) of a net that reaches the NUCLEO: it is checked against

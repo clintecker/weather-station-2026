@@ -40,6 +40,7 @@ class Wiring:
     rails: dict         # net name -> list of rail ids such as 'A:L+'
     mcu: dict           # net name -> STM32WL pin ('PC0'), or '3V3'/'GND', for a net that reaches the NUCLEO
     ties: tuple         # NUCLEO pins joined on the board itself
+    links: tuple        # (member, member) pairs the wiring guide wants as one jumper
     split_rails: bool
 
 
@@ -66,6 +67,7 @@ BOARD_X = {'A': 0.0, 'B': BOARD_WIDTH + BOARD_GAP}
 # are 2 x 19, pin 1 at the top, odd pins in the left column. CN5 (10 pins) and CN6 (8 pins) are
 # single rows, pin 1 at the top.
 NUCLEO_Y = BOARD_HEIGHT + NUCLEO_GAP
+NUCLEO_X = BOARD_WIDTH + BOARD_GAP/2 - 25.4   # under the gap between the boards
 HEADERS = {'CN7': (0.0, 2, 38), 'CN6': (15.24, 1, 8), 'CN5': (35.56, 1, 10), 'CN10': (50.8, 2, 38)}
 
 
@@ -76,7 +78,7 @@ def hole_xy(h):
         i = h[2] - 1
         if not 0 <= i < n:
             raise ValueError(f'{h[1]} has no pin {h[2]}')
-        return (x0 + (i % cols)*PITCH, NUCLEO_Y + (i // cols)*PITCH)
+        return (NUCLEO_X + x0 + (i % cols)*PITCH, NUCLEO_Y + (i // cols)*PITCH)
     board, row, col = h
     if not 1 <= col <= COLUMNS:
         raise ValueError(f'no column {col}')
@@ -124,10 +126,14 @@ def load(path):
     w = Wiring(parts=parts, nets=nets, net_class={n['name']: n['class'] for n in data['net']},
                rails={n['name']: list(n.get('rails', [])) for n in data['net']},
                mcu={n['name']: n['mcu'] for n in data['net'] if 'mcu' in n},
-               ties=tuple(tuple(t) for t in data['nucleo']['ties']), split_rails=data['split_rails'])
+               ties=tuple(tuple(t) for t in data['nucleo']['ties']),
+               links=tuple((k['a'], k['b']) for k in data.get('link', [])), split_rails=data['split_rails'])
     for members in nets.values():
         for m in members:
             hole_xy(member_hole(w, m))   # an unknown part, pin, header or column fails here
+    for a, b in w.links:
+        if not any(a in m and b in m for m in nets.values()):
+            raise ValueError(f'link {a} - {b}: not two members of one net')
     return w
 
 
@@ -187,4 +193,175 @@ def check_firmware(w, app):
                 problems.append(f'{file}: {const} is GPIO_PIN_{m.group(2)} but its comment says P{port}{m.group(4)}')
             if f'P{port}{m.group(2)}' != w.mcu.get(net):
                 problems.append(f'{file}: {const} is P{port}{m.group(2)}; the model has {w.mcu.get(net)} for {net}')
+    return problems
+
+
+# ---- jumpers and the connectivity proof ----
+
+class PlanError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class Jumper:
+    id: str
+    net: str
+    a: tuple
+    b: tuple
+
+
+STAGES = ('A', 'B', 'A-B', 'NUCLEO')   # the build order: each board, then between them, then the NUCLEO
+
+
+def jumper_stage(j):
+    """(stage, net): the order the build sheet lists jumpers in."""
+    boards = {j.a[0], j.b[0]}
+    stage = 'NUCLEO' if 'N' in boards else (boards.pop() if len(boards) == 1 else 'A-B')
+    return (STAGES.index(stage), j.net)
+
+
+class _Union:
+    def __init__(self):
+        self.parent = {}
+
+    def find(self, x):
+        self.parent.setdefault(x, x)
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
+
+    def join(self, a, b):
+        self.parent[self.find(a)] = self.find(b)
+
+
+def _key(w, h, ties):
+    """The group a hole belongs to: its strip, with NUCLEO pins that the board ties merged."""
+    return ties.find(strip(h, w.split_rails))
+
+
+def _tie_union(w):
+    u = _Union()
+    for tie in w.ties:
+        for pin in tie[1:]:
+            u.join(f'N:{pin}', f'N:{tie[0]}')
+    return u
+
+
+def _holes_of(w, key, ties):
+    """The holes of a group: a strip's holes, or the NUCLEO pins of a tie."""
+    if key.startswith('N:'):
+        pins = [p for p in ties.parent if ties.find(p) == key] or [key]
+        return [('N', p[2:].split('.')[0], int(p[2:].split('.')[1])) for p in sorted(set(pins))]
+    board = key.split(':')[0]
+    return [h for h in board_holes(board) if strip(h, w.split_rails) == key]
+
+
+def _distance(p, q):
+    (x1, y1), (x2, y2) = hole_xy(p), hole_xy(q)
+    return ((x1 - x2)**2 + (y1 - y2)**2) ** 0.5
+
+
+def _groups(w, net, ties):
+    keys = {_key(w, member_hole(w, m), ties) for m in w.nets[net]}
+    for rail in w.rails[net]:
+        board, row = rail.split(':')
+        keys |= {strip((board, row, 1), w.split_rails), strip((board, row, COLUMNS), w.split_rails)}
+    return sorted(keys)
+
+
+def _refuse_shared_strips(w):
+    """A strip that holds pins of two nets is a short before any jumper: name both pins."""
+    owner = {}
+    for net, members in sorted(w.nets.items()):
+        for m in members:
+            if m.startswith('N:'):
+                continue
+            key = strip(member_hole(w, m), w.split_rails)
+            other = owner.setdefault(key, (net, m))
+            if other[0] != net:
+                raise PlanError(f'short: {other[1]} ({other[0]}) and {m} ({net}) share strip {key}')
+
+
+def plan_jumpers(w):
+    """The jumpers that join each net's strips: a minimum spanning tree over the net's groups, each
+    edge a wire between two free holes (never a part pin, one wire a hole)."""
+    ties = _tie_union(w)
+    _refuse_shared_strips(w)
+    used = {h for part in w.parts.values() for h in part.pins.values() if h[0] != 'N'}
+    planned = []
+    for net in sorted(w.nets):
+        groups = _groups(w, net, ties)
+        free = {g: [h for h in _holes_of(w, g, ties) if h not in used] for g in groups}
+        for g, holes in free.items():
+            if not holes:
+                raise PlanError(f'net {net}: no free hole on strip {g}')
+        cluster = {g: g for g in groups}
+        for a, b in w.links:   # the guide's required jumpers go in first
+            if a in w.nets[net] and b in w.nets[net]:
+                ga, gb = _key(w, member_hole(w, a), ties), _key(w, member_hole(w, b), ties)
+                ends = [[member_hole(w, m)] if m.startswith('N:') else free[g] for m, g in ((a, ga), (b, gb))]
+                _, p, q = min((_distance(p, q), p, q) for p in ends[0] for q in ends[1] if p not in used and q not in used)
+                used |= {p, q}
+                planned.append(Jumper(id='', net=net, a=p, b=q))
+                old = cluster[gb]
+                cluster = {g: cluster[ga] if c == old else c for g, c in cluster.items()}
+        joined = [g for g in groups if cluster[g] == cluster[groups[0]]]
+        while len(joined) < len(groups):   # Prim; ties broken by the strip ids
+            best = None
+            for g in joined:
+                for h in groups:
+                    if h in joined:
+                        continue
+                    pair = min(((_distance(p, q), p, q) for p in free[g] for q in free[h] if p not in used and q not in used),
+                               default=None)
+                    if pair is None:
+                        raise PlanError(f'net {net}: no free hole on strip {g if not any(p not in used for p in free[g]) else h}')
+                    cand = (pair[0], g, h, pair[1], pair[2])
+                    if best is None or cand < best:
+                        best = cand
+            _, g, h, p, q = best
+            used |= {p, q}
+            planned.append(Jumper(id='', net=net, a=p, b=q))
+            joined += [g for g in groups if cluster[g] == cluster[h] and g not in joined]
+    planned.sort(key=lambda j: (jumper_stage(j), hole_xy(j.a), hole_xy(j.b)))
+    return [Jumper(id=f'W{i}', net=j.net, a=j.a, b=j.b) for i, j in enumerate(planned, 1)]
+
+
+def connectivity(w, jumpers):
+    """Which part and NUCLEO pins the strips, the jumpers and the NUCLEO ties join: a list of sets of
+    'PART.PIN' / 'N:CN10.14', one per joined group that holds a pin."""
+    u = _tie_union(w)
+    pins = {}
+    for part in w.parts.values():
+        for name, h in part.pins.items():
+            pins[f'{part.id}.{name}'] = h
+    for net in w.nets.values():
+        for m in net:
+            if m.startswith('N:'):
+                pins[m] = member_hole(w, m)
+    for j in jumpers:
+        u.join(strip(j.a, w.split_rails), strip(j.b, w.split_rails))
+    groups = {}
+    for name, h in pins.items():
+        groups.setdefault(u.find(strip(h, w.split_rails)), set()).add(name)
+    return list(groups.values())
+
+
+def prove(w, jumpers):
+    """Problems where the board's connectivity differs from the declared nets: a net in pieces, two
+    nets joined (a short), or a pin that joins a net it does not belong to."""
+    net_of = {m: net for net, members in w.nets.items() for m in members}
+    problems = []
+    for group in connectivity(w, jumpers):
+        nets = sorted({net_of[m] for m in group if m in net_of})
+        if len(nets) > 1:
+            problems.append(f'short: {" and ".join(nets)} are joined ({", ".join(sorted(group))})')
+        strays = sorted(m for m in group if m not in net_of)
+        if nets and strays:
+            problems.append(f'stray: {", ".join(strays)} joined to {nets[0]}')
+    for net, members in sorted(w.nets.items()):
+        pieces = [g for g in connectivity(w, jumpers) if g & set(members)]
+        if len(pieces) > 1:
+            problems.append(f'open: {net} is in {len(pieces)} pieces')
     return problems
