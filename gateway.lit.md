@@ -90,7 +90,8 @@ FAR_FUTURE = 253402300800   # 10000-01-01T00:00:00Z: the open end of a time rang
 ## 3. Durability
 
 `full_flush` configures a connection so that each commit reaches stable storage. `Store`, `Nonces`
-in `ws0/protocol.py` and `ws0/simulator.py` call it on every connection that they open.
+in `ws0/protocol.py` and `ws0/simulator.py` call it on every connection that they open for
+writing. The read-only connections of `reader` and `open_read_only` (section 10) do not need it.
 
 SQLite has two journal modes that matter here. The rollback journal is the default. The
 write-ahead log (WAL) appends each commit to a separate `-wal` file. `fsync` is the system call that

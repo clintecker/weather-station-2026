@@ -1,8 +1,10 @@
 # Simulation harness for the bench data path
 
-Run `python -m ws0.harness --output my-results` from the project root. The harness uses the
-installed gateway dependencies and a virtual clock. It uses no device, radio transmission,
-network listener, MQTT broker or cloud service.
+Run `python -m ws0.harness --output my-results` from the project root. Without `--output`, the
+harness writes to `simulation-results/`. `--minutes` sets the sampling minutes (default 1,440).
+The built-in suite needs at least 120 minutes. `--scenario <file>` runs one JSON scenario instead
+of the built-in suite. The harness uses the installed gateway dependencies and a virtual clock.
+It uses no device, radio transmission, network listener, MQTT broker or cloud service.
 
 The harness tests the protocol and the gateway before and between hardware runs. It cannot
 replace the 24-hour delivery test on the real boards (H01, [`H01-checklist.md`](H01-checklist.md)).
@@ -86,8 +88,9 @@ sample. An observation is timely only when both conditions hold:
   clock,
 - its first commit occurs within 120 s of acquisition.
 
-Like the firmware, the simulated node has no trusted clock after a boot until its first
-authentic ACK. Those samples rely on gateway reconstruction. The report gives them as
+After a boot, the simulated node has no trusted clock until its first authentic ACK. Those
+samples rely on gateway reconstruction. The firmware does the same after a power loss. After a
+warm reset, the firmware can keep its clock (`protocol-stack.md` section 11.3.1). The report gives them as
 `reconstructed_time_samples` and `unresolved_time_samples`.
 
 The harness counts sensor faults separately. Transport timeliness alone is not evidence that the
@@ -106,7 +109,7 @@ The drain model is simpler than the firmware:
 | Behavior | Simulated node | Board firmware |
 |---|---|---|
 | Backlog per minute | Up to 5, every minute, also while the link is down | Up to 5 in the NORMAL energy state, capped by airtime (`backlog_limit`, `firmware/common/ws_policy.c`) |
-| Missed ACK | The minute's drain continues | The minute's drain stops at the first missed ACK |
+| Missed ACK | The minute's drain continues | The node sends one more frame, then stops the minute's drain. A second miss in a row or a transmit timeout stops it at once |
 | Link down | No change | After 3 silent minutes the node enters PROBING: live reading only, no backlog (`radio-energy-policy.md` §6) |
 
 The harness does not model PROBING. Its outage latencies and drain times are therefore not

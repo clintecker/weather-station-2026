@@ -3,8 +3,9 @@
 `wsmp.c` packs and checks the data blocks of WSMP, the Weather Station Module Protocol
 (`docs/module-protocol.md`). A module gives its identity, its descriptors and one snapshot each
 minute. The station reads them, and this file turns the bytes into structures and back. It also
-checks the descriptors against the registry (`wsmp_registry.h`), computes CRC-32C and the radio
-budget, and maps quality codes.
+checks the descriptors against the registry, computes CRC-32C and the radio budget, and maps
+quality codes. `tools/wsmp_registry.py` generates the registry header `wsmp_registry.h` from
+`wsmp_registry.toml`.
 
 The file has no state, no HAL call and no heap. The station uses it now. The remote module adapter
 will use the same file later, so both ends of the cable share one implementation.
@@ -22,10 +23,26 @@ python3 tools/tangle.py --check firmware/common/wsmp.lit.md    # committed .c ==
 | Property | Guarantee | Checked by |
 |---|---|---|
 | Layout | every block has the byte layout of WSMP section 6. Every integer is big-endian | `test_snapshot_round_trip_matches_the_wsmp_layout`, `test_identity_refuses_bad_magic_and_major` |
-| Refusal | an unpack function refuses a reserved bit, a bad magic, a wrong major version, a zero serial and a channel count out of range. It returns a negative `WSMP_E*` code | `test_snapshot_refuses_a_set_reserved_byte`, `test_identity_refuses_bad_magic_and_major`, `fuzz_wsmp` |
-| Registry | `wsmp_desc_check` accepts exactly the descriptors of the registry entry. It refuses each case of WSMP-D7 with its own code | `test_desc_check_accepts_the_registry_entry`, `test_desc_check_refuses_each_wsmp_d7_case` |
+| Refusal | an unpack function refuses a reserved bit, an undefined flag bit, a bad magic, a wrong major version, a zero serial and a channel count out of range. It returns a negative `WSMP_E*` code | `test_snapshot_refuses_a_set_reserved_byte`, `test_snapshot_refuses_an_undefined_flag`, `test_identity_refuses_bad_magic_and_major`, `test_identity_refuses_0_or_9_channels`, `fuzz_wsmp` |
+| Registry | `wsmp_desc_check` accepts exactly the descriptors of the registry entry. With `wsmp_unpack_desc`, which finds a set reserved bit, it refuses each case of WSMP-D7 with its own code | `test_desc_check_accepts_the_registry_entry`, `test_desc_check_refuses_each_wsmp_d7_case`, `test_desc_check_refuses_widths_kinds_and_counts_out_of_range` |
 | Round trip | unpack, then pack, gives back the same bytes for every accepted block | `test_snapshot_round_trip_matches_the_wsmp_layout`, `fuzz_wsmp` |
 | Budget | the value bytes are the sum of the air widths. The quality bytes are 2 bits a channel, rounded up to a byte | `test_budget_bytes_for_the_bench_station` |
+| Quality | each snapshot quality maps to its 2-bit radio code. An unknown code maps to "missing" | `test_quality_air_table` |
+| CRC and text | CRC-32C gives the standard check value. Metadata text passes only the WSMP-M1 characters | `test_crc32c_known_vector`, `test_text_ok_charset` |
+
+The error codes are:
+
+| Code | Value | Meaning |
+|---|---:|---|
+| `WSMP_OK` | 0 | the block or the descriptors are accepted |
+| `WSMP_EMAGIC` | −1 | the identity magic is not 0x5753 |
+| `WSMP_EVERSION` | −2 | the WSMP major version is not 1 |
+| `WSMP_ECODE` | −3 | an unknown quantity, or a kind of 0 or above `WSMP_KIND_MAX` |
+| `WSMP_EUNIT` | −4 | the unit is not the canonical unit of the quantity |
+| `WSMP_ESCALE` | −5 | the scale is outside −6 to +6 |
+| `WSMP_ERESERVED` | −6 | a reserved bit or byte is set, or an undefined flag bit |
+| `WSMP_ETYPE` | −7 | an unknown module type, a different schema, or a channel list that differs from the entry |
+| `WSMP_ELEN` | −8 | a width outside 1 to 4, a channel count outside 1 to 8, or a zero serial |
 
 The tests are in `tests/test_wsmp_core.py`. The fuzz target is `firmware/fuzz/fuzz_wsmp.c`.
 
@@ -194,7 +211,8 @@ int wsmp_unpack_desc(const uint8_t in[WSMP_DESC_BLOCK_LEN], unsigned n, wsmp_des
 `wsmp_desc_check` applies WSMP-D7. It first checks each descriptor by itself: a known quantity and
 kind, the canonical unit, a scale of −6 to +6 and a width of 1 to 4 bytes. Then it compares the
 channel list with the registry entry of the module type. The entry must exist, have the same schema
-and the same number of channels, and list the same quantity and kind in each position.
+and the same number of channels, and list the same quantity and kind in each position. A failure of
+the channel list is `WSMP_ETYPE`.
 
 The registry tables come from `wsmp_registry.h` as initializers. This file holds the one copy of
 each, so every user of the lookups shares it.

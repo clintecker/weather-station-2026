@@ -100,8 +100,9 @@ Example: the boot self-test vector (`KAT_OBS` in `App/selftest.c`, key `000102�
 
 The gateway checks the length, version, kind and station **before** it decrypts
 (`plain_lengths()`, `unseal()`). It drops a frame that fails a check or the tag, and it sends no
-reply. Thus an outsider cannot make the gateway send a NACK. The current node build sends 51-byte
-observations: temperature and humidity with the minute summary (section 5.3).
+reply. Thus an outsider cannot make the gateway send a NACK. The current node build (the WSMP
+bench field set) sends observations of up to 77 bytes. Their length depends on the modules in the
+layout (section 5.1).
 
 ## 2. Counters and limits
 
@@ -259,13 +260,19 @@ packet-beta
 | 22 | *k* | The present fields in increasing *i*. Each is a big-endian unsigned integer of its catalog width. |
 
 The plaintext length is 22 + the widths of the present fields (`WS_OBS_PLAIN_LEN(bitmap)`,
-`ws_obs_plain_len()`). The current build sends fields 0, 1 and 21–25 (bitmap `0x03E00003`). Its
-plaintext is 22 + 13 = **35 bytes**, and its frame is 51 bytes.
+`ws_obs_plain_len()`). The current build can send 18 fields: 0–6, 9, 11, 13–20 and 25
+(`WS_F_WSMP_BENCH`, bitmap `0x021FEA7F`). With every module in the layout, its plaintext is
+22 + 39 = **61 bytes**, and its frame is 77 bytes.
 
-**Presence rule.** The build alone decides which fields are present (`WS_NODE_FIELDS` in
-`App/node_fields.h`). A reading never changes it. The node sends a faulted field with its INVALID
-code and never leaves it out. Thus the frame length does not show a sensor fault. The gateway
-rejects a bitmap of 0.
+**Presence rule.**
+- The build sets the fields that a record can carry (`WS_NODE_FIELDS` in `App/node_fields.h`).
+- The modules in the layout set the fields that a record carries (`wsmp_map_obs()` in
+  `App/wsmp_catalog_map.c`). An active or suspect module puts all its fields in the bitmap.
+- The node sends a faulted field or a missing channel with its INVALID code. It never leaves the
+  field out. Thus a sensor fault does not change the frame length.
+- A module that leaves the layout removes its fields, and the frame becomes shorter.
+- With no module in the layout, the record carries fields 0 and 1 as INVALID and field 25 as 0.
+- The gateway rejects a bitmap of 0.
 
 Example: the encoder's known answer (`tests/test_obs.py`, `selftest_kat` in `App/selftest.c`).
 Epoch 1, sequence 2, UTC 1791991189, uptime 300 s, energy state NORMAL, temperature −12.34 °C,
@@ -308,35 +315,36 @@ Value = (code − offset) / scale. INVALID is the field's all-ones code (`0xFF`,
 |---:|---|---:|---|---:|---|---|---|---|
 | 0 | `temperature_c` | 2 | 0.01 °C | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | **built** (SHT45) |
 | 1 | `humidity_pct` | 2 | 0.01 % | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | **built** (SHT45) |
-| 2 | `pressure_hpa` | 2 | 0.1 hPa | −3000 | 0–8000 | 300.0 to 1100.0 | `0xFFFF` INVALID | defined, not built |
-| 3 | `wind_speed_ms` | 2 | 0.1 m/s | 0 | 0–750 | 0 to 75.0, mean over the minute | `0xFFFF` INVALID | defined |
-| 4 | `wind_gust_ms` | 2 | 0.1 m/s | 0 | 0–750 | 0 to 75.0, highest 3-s mean | `0xFFFF` INVALID | defined |
-| 5 | `wind_dir_deg` | 2 | 1° | 0 | 0–359 | 0 to 359, wraps modulo 360 | `0xFFFE` CALM, `0xFFFF` INVALID | defined |
-| 6 | `rain_tips` | 3 | tips since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | defined |
+| 2 | `pressure_hpa` | 2 | 0.1 hPa | −3000 | 0–8000 | 300.0 to 1100.0 | `0xFFFF` INVALID | **built** (BMP581) |
+| 3 | `wind_speed_ms` | 2 | 0.1 m/s | 0 | 0–750 | 0 to 75.0, mean over the minute | `0xFFFF` INVALID | **built** (SEN-15901) |
+| 4 | `wind_gust_ms` | 2 | 0.1 m/s | 0 | 0–750 | 0 to 75.0, highest 3-s mean | `0xFFFF` INVALID | **built** (SEN-15901) |
+| 5 | `wind_dir_deg` | 2 | 1° | 0 | 0–359 | 0 to 359, wraps modulo 360 | `0xFFFE` CALM, `0xFFFF` INVALID | **built** (SEN-15901) |
+| 6 | `rain_tips` | 3 | tips since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | **built** (SEN-15901) |
 | 7 | `uv_index` | 1 | 0.1 UVI | 0 | 0–250 | 0 to 25.0 | `0xFF` INVALID | defined |
 | 8 | `irradiance_wm2` | 2 | 1 W/m² | 0 | 0–2000 | 0 to 2000 | `0xFFFF` INVALID | defined |
-| 9 | `uva_raw` | 3 | sensor counts | 0 | 0–1,048,575 (2^20 − 1) | raw, never reported as UV index | `0xFFFFFF` INVALID | defined |
+| 9 | `uva_raw` | 3 | sensor counts | 0 | 0–1,048,575 (2^20 − 1) | raw, never reported as UV index | `0xFFFFFF` INVALID | **built** (LTR390) |
 | 10 | `qualifiers` | 4 | 2 bits per field 0–15: 0 ok, 1 suspected icing, 2 delayed melt, 3 outside the qualified envelope | — | any u32 | — | none (never INVALID) | defined |
-| 11 | `batt_mv` | 2 | 1 mV | 0 | 0–65,534 | 0 to 65,534 | `0xFFFF` INVALID | defined |
-| 12 | `batt_current_ma` | 2 | 0.1 mA, positive = into the cells | 32768 | 0–65,534 | −3276.8 to +3276.6 | `0xFFFF` INVALID | defined |
-| 13 | `energy_in_mwh` | 3 | mWh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | defined |
-| 14 | `energy_out_mwh` | 3 | mWh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | defined |
-| 15 | `charge_in_mah` | 3 | mAh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | defined |
-| 16 | `charge_out_mah` | 3 | mAh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | defined |
-| 17 | `soc_gauge_pct` | 1 | 1 %, fuel-gauge estimate | 0 | 0–100 | 0 to 100 | `0xFF` INVALID | defined |
-| 18 | `charger_pins` | 1 | bit 0 PGOOD, bit 1 CHG | 0 | 0–3 | raw pins | `0xFF` INVALID | defined |
-| 19 | `enclosure_temp_c` | 2 | as field 0 | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | defined |
-| 20 | `enclosure_rh_pct` | 2 | as field 1 | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | defined |
-| 21 | `temperature_min_c` | 2 | as field 0: lowest valid 15-s sample of the minute | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | **built** |
-| 22 | `temperature_max_c` | 2 | as field 0: highest | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | **built** |
-| 23 | `humidity_min_pct` | 2 | as field 1: lowest | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | **built** |
-| 24 | `humidity_max_pct` | 2 | as field 1: highest | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | **built** |
-| 25 | `th_samples` | 1 | valid temperature and humidity samples behind fields 0, 1 and 21–24 (metadata) | 0 | 0–60 | count | `0xFF` INVALID | **built** |
+| 11 | `batt_mv` | 2 | 1 mV | 0 | 0–65,534 | 0 to 65,534 | `0xFFFF` INVALID | **built** (INA228) |
+| 12 | `batt_current_ma` | 2 | 0.1 mA, positive = into the cells | 32768 | 0–65,534 | −3276.8 to +3276.6 | `0xFFFF` INVALID | defined, not sent |
+| 13 | `energy_in_mwh` | 3 | mWh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | **built** (INA228) |
+| 14 | `energy_out_mwh` | 3 | mWh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | **built** (INA228) |
+| 15 | `charge_in_mah` | 3 | mAh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | **built** (INA228) |
+| 16 | `charge_out_mah` | 3 | mAh since boot | 0 | 0–16,777,214 | counter | `0xFFFFFF` INVALID | **built** (INA228) |
+| 17 | `soc_gauge_pct` | 1 | 1 %, fuel-gauge estimate | 0 | 0–100 | 0 to 100 | `0xFF` INVALID | **built** (MAX17048) |
+| 18 | `charger_pins` | 1 | bit 0 PGOOD, bit 1 CHG | 0 | 0–3 | raw pins | `0xFF` INVALID | **built** (power module charger state) |
+| 19 | `enclosure_temp_c` | 2 | as field 0 | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | **built** (SHTC3) |
+| 20 | `enclosure_rh_pct` | 2 | as field 1 | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | **built** (SHTC3) |
+| 21 | `temperature_min_c` | 2 | as field 0: lowest valid 15-s sample of the minute | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | defined, not sent |
+| 22 | `temperature_max_c` | 2 | as field 0: highest | 4000 | 0–16500 | −40.00 to 125.00 | `0xFFFF` INVALID | defined, not sent |
+| 23 | `humidity_min_pct` | 2 | as field 1: lowest | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | defined, not sent |
+| 24 | `humidity_max_pct` | 2 | as field 1: highest | 0 | 0–10000 | 0 to 100.00 | `0xFFFF` INVALID | defined, not sent |
+| 25 | `th_samples` | 1 | valid temperature and humidity samples behind fields 0, 1 and 21–24 (metadata) | 0 | 0–60 | count | `0xFF` INVALID | **built** (SHT45 module) |
 | 26–31 | reserved | — | — | — | must be zero | — | — | — |
 
 All 26 fields together are 56 bytes. Thus the largest plaintext is 78 bytes, and the largest frame
-is 94 bytes. The current build (the WSMP bench station) fills the fields of the local modules in its layout
-(`App/wsmp_catalog_map.c`). The catalog fixes the other fields now, so later builds need no wire
+is 94 bytes. The current build (the WSMP bench station) fills the fields of the local modules in its
+layout (`App/wsmp_catalog_map.c`). "Built" in the table names the module that fills the field.
+"Defined, not sent" fields are in the catalog, but the current build does not send them. The catalog fixes the other fields now, so later builds need no wire
 change. The counter fields (6 and 13–16) start at 0 when their epoch starts.
 
 **15-second sampling.** Each module samples on its own schedule (the air module every 15 s). The
@@ -344,8 +352,10 @@ node latches the modules once a minute, on the 4th 15-s tick (`SAMPLES_PER_REPOR
 observation:
 - `temperature_c` and `humidity_pct` are the **mean** of the minute's valid samples. The node
   rounds half up, in integers (`mean_of`, `firmware/stage0-node/App/mod_mean.c`).
-- Fields 21–24 (the minute extremes) are not sent. The gateway derives extremes from the means
-  (WSMP rule 6, `docs/module-protocol.md`).
+- Fields 21–24 (the minute extremes) are not sent. WSMP-H8 (`docs/module-protocol.md`) gives the
+  gateway the task to derive extremes from the means. The gateway does not do this yet.
+- Field 12 (battery current) is not sent. WSMP-H8 also gives its derivation to the gateway. The
+  gateway does not do this yet.
 - Field 25 is the number of valid samples.
 
 The node does not count a sample outside −40.00 to 125.00 °C. It clamps humidity to 0–100 %
@@ -419,8 +429,9 @@ schema is closed: no other keys are permitted.
 - `partial`: some present fields are `null`.
 - `sensor_fault`: every present field is `null`.
 
-For the current build, a sensor fault gives `temperature_c: null, humidity_pct: null,
-quality: "sensor_fault"`.
+For the current build, an air-module fault gives `temperature_c: null` and `humidity_pct: null`.
+The record's `quality` is then `partial` while other present fields have values. It is
+`sensor_fault` only when every present field is `null`.
 
 **Availability per field.** `/v1/observations/latest` reports `fields_available` and the unit for
 each field. Home Assistant gets one entity per field. Each entity is unavailable when its own value
@@ -470,16 +481,19 @@ The receiver ignores `\r`.
 
 | Direction | Line | Rule |
 |---|---|---|
-| RX to host | Lowercase hex of one received frame | Only if `ws_air_frame_ok()` accepts the frame: version 5, and kind 1 with 39–94 bytes (78–188 hex digits) or kind 4 with 48 bytes (96 digits). The current observation is 102 digits. Any other frame gives `#rx drop len= rssi= snr=`. |
+| RX to host | Lowercase hex of one received frame | Only if `ws_air_frame_ok()` accepts the frame: version 5, and kind 1 with 39–94 bytes (78–188 hex digits) or kind 4 with 48 bytes (96 digits). An observation of the current build is at most 154 digits (77 bytes). Any other frame gives `#rx drop len= rssi= snr=`. |
 | RX to host | `#…` | Diagnostics: `#rx obs rssi= snr=` after each forwarded frame, `#rx crc len= rssi= snr= data=` and `#rx hdr rssi=` for bad receptions, `#alive` every 60 s, `#boot`, `#status`, `#watchdog …`, `#tx busy`, `#host reject len=`, and others |
 | host to RX | 66 hex digits | One ACK or NACK. The RX board transmits it once with the uplink radio settings. Only if `ws_host_reply_ok()` accepts it: exactly 33 bytes, version 5, kind 2 or 3. Any other line gives `#host reject len=`. |
 | host to RX | `STATUS`, `TEST-HANG`, `TEST-FAULT` | Commands. The RX board ignores lines that start with `#`. |
 
-- A line is at most 256 bytes on both sides (`WS_LINE_MAX`, `ws0/link.py`). The receiver discards a
-  longer line whole.
+- The RX board accepts a host line of at most 256 bytes (`WS_LINE_MAX`, `firmware/common/ws_console.h`).
+  The gateway accepts an RX line of at most 1,024 characters (`MAX_LINE`, `ws0/link.py`). Each side
+  discards a longer line whole.
 - The bridge prints the largest catalog frame (94 bytes) whole (`hex_print` in `App/console.c`). A
-  static assert checks it against the 256-byte trace buffer. The bridge reports anything longer as
-  `#error` and never prints a truncated line.
+  static assert checks it against the 640-byte trace buffer (`UTIL_ADV_TRACE_TMP_BUF_SIZE`). The
+  bridge reports anything longer as `#error` and never prints a truncated line.
+- The gateway holds the serial port exclusively (`open_port()` in `ws0/link.py`). A second program
+  that opens the port fails. It cannot take lines from the same buffer.
 - The gateway writes every `#` line to `receiver.log`. It never decodes such a line as a frame. It
   reads `#alive` and `#boot role=rx` only for receiver liveness. It marks the receiver silent after
   180 s. It logs each frame and its reply (`frame <hex> -> ack <hex>`, `-> nack <hex>`,
@@ -492,8 +506,8 @@ The receiver ignores `\r`.
 Radio settings (`App/radio_cfg.h`): 915.0 MHz LoRa, 500 kHz bandwidth, spreading factor 7 (SF7),
 coding rate 4/5, 8-symbol preamble, explicit header, CRC on, 0 dBm (bench), symbol timeout off.
 [`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md) gives the regulatory basis.
-At SF7, a 51-byte observation takes 25.7 ms on air, a 33-byte ACK takes 18.0 ms, and a 48-byte
-health report takes 24.4 ms (`protocol-stack.md` section 8.2).
+At SF7, a 77-byte observation (the widest of the current build) takes 34.6 ms on air, a 33-byte
+ACK takes 18.0 ms, and a 48-byte health report takes 24.4 ms (`protocol-stack.md` section 8.2).
 
 One minute of the exchange, with the link LINKED (`App/tx_exchange.c`):
 
@@ -525,8 +539,9 @@ sequenceDiagram
   ([`radio-energy-policy.md`](radio-energy-policy.md)): 20, 5, 0 and 0 for SURPLUS, NORMAL,
   CONSERVE and CRITICAL. The bench prototype is fixed at NORMAL, so *N* = 5.
 - A radio-time budget per minute also caps *N*: 15, 5, 2 and 0 s. The firmware estimates one
-  exchange as observation airtime + ACK airtime + 300 ms. That is 26 + 18 + 300 = **344 ms** at SF7
-  (`exchange_ms` in `App/tx_policy.c`, `ws_lora_airtime_ms()` in `firmware/common/ws_policy.c`).
+  exchange as observation airtime + ACK airtime + 300 ms. It uses the widest observation frame of
+  the build (`OBS_FRAME_MAX`). That is 35 + 18 + 300 = **353 ms** at SF7 (`exchange_ms` in
+  `App/tx_policy.c`, `ws_lora_airtime_ms()` in `firmware/common/ws_policy.c`).
 - CONSERVE sends only the live reading, at most every 300 s. CRITICAL journals and does not send.
 - After each frame, the node listens up to 2000 ms for the reply. It waits 50 ms before each frame.
 - A missed reply ends that minute's drain one frame later. A second miss in a row, or a transmit

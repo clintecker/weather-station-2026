@@ -140,7 +140,7 @@ def build_sheet(w, jumpers):
         pins = ', '.join(f'{n}: {where(h)[2:]}' for n, h in part.pins.items())
         out.append(f'| {part.id} | {part.kind} | {part.board} | {pins} | {part.source} |')
     out += ['', '## 2. Jumpers', '', 'Each jumper is one wire between the two holes. Colour by class: '
-            'i2c blue, wind green, rain cyan, charger orange, power red, ground black.', '']
+            'i2c blue, wind green, rain cyan, charger orange, power red, ground black.']
     stage = None
     for j in jumpers:
         s = wiring.jumper_stage(j)[0]
@@ -152,12 +152,17 @@ def build_sheet(w, jumpers):
     for part in w.parts.values():
         if part.source == 'bench check' or part.note:
             out.append(f'- **{part.id}** ({part.kind}): {part.note or "check the pin order on the part"}.')
-    out += ['- **Rails:** some 830-point boards split each rail at the centre. If yours do, set '
+    to_3v3 = ' and '.join(j.id for j in jumpers if 'N' in (j.a[0], j.b[0]) and ('N', 'CN6', 4) in (j.a, j.b))
+    out += [f'- **3V3, not 5 V:** {to_3v3} goes to CN6.4 (3V3). On the Arduino power header the next pin, '
+            'CN6.5, is 5 V: check the hole against UM2592 Table 17 before you push the wire in.',
+            '- **Rails:** some 830-point boards split each rail at the centre. If yours do, set '
             '`split_rails = true` in `source/wiring.toml` and rebuild: the plan then bridges the halves.',
             '- **NUCLEO headers:** the positions follow the wiring guide. Tick its section 6 checklist '
             'against UM2592 first. The drawing of the headers is not to scale.',
-            '- **PGOOD and CHG voltage:** the bq24074 breakout pulls these pins up through its status LEDs '
-            'toward its output (about 4.4 to 5 V). Confirm in the STM32WL55 datasheet that PB8 and PB10 '
+            '- **PGOOD and CHG voltage:** on the bq24074 breakout each status LED and its 10 kOhm resistor '
+            'run from the charger output OUT to the pin (PGOOD: D1 and R11. CHG: D3 and R7. Source: '
+            'adafruit/Adafruit-BQ24074-PCB). With the LED off, the pin goes toward OUT, up to about 5 V '
+            'on USB. Confirm in the STM32WL55 datasheet that PB8 and PB10 '
             f'are 5 V tolerant (FT) before you connect {" and ".join(nucleo_jumpers(jumpers, ("CHG", "PGOOD")))}.',
             '- **Mode A is drawn:** the BATTERY POWER shunt is open and the 100 ohm load is fitted. For mode B, '
             'follow the wiring guide section 5.', '']

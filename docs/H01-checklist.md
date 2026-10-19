@@ -3,7 +3,7 @@
 H01 is the 24-hour delivery test: at least 1,426 of 1,440 one-minute readings reach the gateway within 120 s, plus a restart and outage matrix.
 Its acceptance criteria come from the v0.2 product and technical requirements (PRD/TRD), section 3 (Stage 0) and section 12 (H01).
 
-Stage 0 is the first stage of the plan ([`next-stages-plan.md`](next-stages-plan.md)): two development boards on USB power, one temperature/humidity sensor, and the gateway. H01 is the gate that ends Stage 0. Stage 1 (main battery pack, charger and solar) does not start before H01 passes.
+Stage 0 is the first stage of the plan ([`next-stages-plan.md`](next-stages-plan.md)): two development boards on USB power, the bench sensor modules, and the gateway. The TX reads its sensors as WSMP local modules ([`module-protocol.md`](module-protocol.md)). H01 is the gate that ends Stage 0. Stage 1 (main battery pack, charger and solar) does not start before H01 passes.
 
 **Status: NOT RUN.** Simulated observations cannot satisfy this test.
 
@@ -41,7 +41,7 @@ A fault-test phase can run separately from the placement run. Its intervals neve
 - `/v1/status` shows `"alarm": null` before the run starts and after it ends.
   - A non-null alarm means possible key reuse (`failure-modes.md` §8.2). Causes: a restored flash backup, two boards that share a key, or a key reused after a WIPE.
   - `ws0 provision-node` prints the gateway's counter high-water mark. It refuses a board at or below the mark.
-- **Wire and verify the SHT45 sensor first.** The transmitter (TX) console must show a CRC-checked valid reading. The unplug test must show `sensor_fault`, then recovery.
+- **Wire and verify the SHT45 sensor first.** It is the air temperature and humidity module (`App/mod_th.c`). The H01 verdict counts a reading as valid only when its temperature and humidity are valid. The transmitter (TX) console must show a CRC-checked valid reading (`#sample … valid=1`). The unplug test must show `sensor_fault`, then recovery.
   - Without a sensor every reading is a `sensor_fault`. The verdict is then FAIL by design (see `evidence/soak-a07f498-2026-10-13/`).
 - **Secure the USB cables. Run no debugger sessions during the run.**
   - A USB dropout of about 1 s makes the ST-LINK reset its board (`reset=pin`). A debugger session can also reset TX.
@@ -50,7 +50,8 @@ A fault-test phase can run separately from the placement run. Its intervals neve
   - On firmware before release `0f456040fe54`, a WIPE restarts the nonce counter.
   - A key used before that release, or on another board, can repeat nonces.
 - Do not run bench fault-injection commands (`TEST-HANG`, `TEST-FLASH-STORM`) on the boards under test during the placement run.
-- Run firmware from release `0f456040fe54` or later.
+- Run firmware from release `0f456040fe54` or later. Name the release in the evidence (`firmware/stage0-node/RELEASES.md`).
+  - On 2026-10-19 the TX runs `04fcc656938d` and the RX runs `cc2766a38c61`. Both are bench releases, not H01 releases: their radio settings are bench values.
   - In the NORMAL energy state (always on USB), this firmware keeps sending the live reading every minute while it probes a silent link. An outage therefore costs no extra late intervals (`failure-modes.md` §3.3).
   - Earlier releases backed off up to 15 min.
 
@@ -80,7 +81,7 @@ Score the run with:
     --start <UTC, e.g. 2026-10-15T00:00:00Z> --hours 24 --output evidence/h01-<date>
 ```
 
-- Always give `--db` and `--station` explicitly. The defaults (`run-hw/observations.sqlite3`, `station-01`) may not match the run, and a wrong station scores 0 intervals.
+- Always give `--db` and `--station` explicitly. The defaults (`run-hw/observations.sqlite3`, `station-01`) may not match the run, and a wrong station scores 0 intervals. On 2026-10-19 the gateway runs from `run-d7`, and `run-hw` does not exist.
 - `--output` must be a new directory. The tool refuses an existing one.
 - The exit code is 0 for PASS and 1 for FAIL.
 - The tool applies these rules to the gateway database. It writes `report.json` and `report.md`.

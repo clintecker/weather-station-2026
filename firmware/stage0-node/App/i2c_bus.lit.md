@@ -23,19 +23,31 @@ python3 tools/tangle.py --check firmware/stage0-node/App/i2c_bus.lit.md    # com
 |---|---|---|
 | Order | the bus runs one transfer at a time, in submission order | `test_clients_are_served_in_order_one_at_a_time` |
 | One result | each submitted transfer gets exactly one `i2c_bus_done`, from the main loop | every test in `tests/test_i2c_bus.py` |
-| Refusal | a client with a transfer queued or running gets -1 at once | `test_a_second_submit_from_a_busy_client_is_refused` |
-| Guard | a transfer that does not finish within 30 ms ends with `I2C_ETIMEOUT`. A completion after it changes nothing | `test_guard_timeout_reports_etimeout`, `test_a_completion_after_the_guard_is_ignored` |
-| Recovery | after a transfer that can leave the bus stuck (a timeout, a HAL refusal, a bus error, or SDA still low) the bus clocks SDA free and starts the peripheral again before the next transfer. SDA that stays low gives `I2C_ESTUCK`. A clean NACK costs no recovery | `test_each_failure_has_its_code_and_recovers_the_bus`, `test_held_sda_is_clocked_free_or_reported_stuck`, `test_an_absent_device_costs_no_recovery` |
+| Refusal | a client with a transfer queued or running gets -1 at once. A transfer that is not one of the four forms also gets -1 | `test_a_second_submit_from_a_busy_client_is_refused`, `test_a_bad_form_is_refused` |
+| Guard | a transfer that does not finish within 30 ms ends with `I2C_ETIMEOUT`. A completion after it changes nothing | `test_guard_timeout_reports_etimeout`, `test_a_completion_after_the_guard_is_ignored`, `test_a_completion_at_the_guard_instant_counts_once` |
+| Recovery | after a transfer that can leave the bus stuck (a timeout, a HAL refusal, a bus error, or SDA still low) the bus clocks SDA free and starts the peripheral again before the next transfer. SDA that stays low gives `I2C_ESTUCK`. A clean NACK costs no recovery. A recover-only request reports 0 or `I2C_ESTUCK` | `test_each_failure_has_its_code_and_recovers_the_bus`, `test_held_sda_is_clocked_free_or_reported_stuck`, `test_an_absent_device_costs_no_recovery`, `test_a_recovery_request_clocks_the_bus_and_reports_once` |
 | Isolation | a failure of one client's device does not fail the other clients' transfers | `test_unplug_mid_transfer_recovers_and_spares_other_clients` |
 
-A transfer has one of three forms (`i2c_bus.h`):
+A transfer has one of four forms (`i2c_bus.h`):
 
 | Form | Use | HAL call |
 |---|---|---|
 | write only | a command (SHT45, SHTC3) or a register write | `HAL_I2C_Master_Transmit_IT` |
 | read only | the reply after a command | `HAL_I2C_Master_Receive_IT` |
 | register read: one address byte, then a read with a repeated start | BMP581, LTR390, INA228, MAX17048 | `HAL_I2C_Mem_Read_IT` |
-| recover only: no bytes | a module that saw a bad checksum (the SHT45) | none: the stuck-bus recovery of section 7 |
+| recover only: no bytes | a module that saw a bad checksum (the SHT45 or the SHTC3) | none: the stuck-bus recovery of section 7 |
+
+The completion codes (`i2c_bus.h`) are:
+
+| Code | Value | Meaning |
+|---|---:|---|
+| `I2C_OK` | 0 | the transfer completed |
+| `I2C_ENACK_ADDR` | −2 | no acknowledgment of the address or the command: absent, or not ready |
+| `I2C_ENACK_DATA` | −3 | the read failed after the address |
+| `I2C_ECRC` | −4 | a bad checksum. A module sets it, the bus never does |
+| `I2C_ESTUCK` | −5 | SDA is still low after the recovery |
+| `I2C_ETIMEOUT` | −6 | the transfer did not finish within its 30 ms guard |
+| `I2C_EBUS` | −7 | a bus error, lost arbitration, an overrun, or a HAL refusal. A bus fault, not an absence |
 
 ## 2. Hardware and constants
 
@@ -146,9 +158,9 @@ stateDiagram-v2
   S_IDLE --> S_XFER: a client is queued, start its transfer
   S_IDLE --> S_RECOVER: a recover-only request is next
   S_XFER --> S_DONE: complete, bus_rc 0
-  S_XFER --> S_DONE: I2C error -2 or -3, guard -6, HAL refused -2
+  S_XFER --> S_DONE: NACK -2 or -3, bus error -7, guard -6, HAL refused -7
   S_DONE --> S_IDLE: bus task, bus_rc 0 or a clean NACK, i2c_bus_done(c, bus_rc)
-  S_DONE --> S_RECOVER: bus task, timeout, HAL refusal or SDA low
+  S_DONE --> S_RECOVER: bus task, timeout, bus error, HAL refusal or SDA low
   S_RECOVER --> S_RECOVER: step timer, more steps left
   S_RECOVER --> S_RECOVERED: step timer, last step
   S_RECOVERED --> S_IDLE: bus task, i2c_start, i2c_bus_done(c, -5 or bus_rc)
@@ -300,8 +312,8 @@ static void recover_begin(void)
 
 The bus task runs in the main loop. It reports a good transfer at once, and a clean NACK too: an
 absent module answers every probe with one, and the bus is free afterwards. After a failure that can
-leave the bus stuck (the guard ended it, the HAL refused it, or SDA is still low) it first recovers
-the bus, then reports the failure. `deliver` frees the client before it calls
+leave the bus stuck, it first recovers the bus, then reports the failure. Such a failure is a guard
+timeout, a bus error, a HAL refusal, or SDA still low. `deliver` frees the client before it calls
 `i2c_bus_done`, so the module can submit its next transfer from the completion. Then `kick` starts
 the next transfer in the queue.
 

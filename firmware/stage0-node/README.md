@@ -14,16 +14,17 @@ The wire protocol is in [`docs/protocol.md`](../../docs/protocol.md), protocol v
 
 ```mermaid
 flowchart LR
-  SHT45["SHT45 sensor"] -->|"I2C2"| TX["TX board A<br/>sensor node"]
+  I2C["I2C2 sensors: SHT45, SHTC3, BMP581,<br/>LTR390, INA228, MAX17048"] -->|"I2C2"| TX["TX board A<br/>sensor node"]
+  PINS["Cups, vane, rain gauge,<br/>charger pins"] -->|"LPTIM1, ADC, EXTI, GPIO"| TX
   TX -->|"LoRa: observation, health report"| RX["RX board B<br/>USB bridge"]
   RX -->|"LoRa: ACK or NACK"| TX
   RX -->|"USB serial: hex lines"| GW["Gateway ws0 serve"]
   GW -->|"USB serial: ACK or NACK hex line"| RX
 ```
 
-**Status (2026-10-16):**
+**Status (2026-10-19):**
 
-- Release `260c9ccbe938` ([`RELEASES.md`](RELEASES.md)) is on both boards since 2026-10-16. The gateway runs on the run directory `run-d6` (key check value `e03059`).
+- The TX runs release `04fcc656938d` ([`RELEASES.md`](RELEASES.md)), flashed on 2026-10-19. The RX runs release `cc2766a38c61`. The RX code did not change between the two releases. The gateway runs on the run directory `run-d7` (key check value `6e30cf`).
 - A release that changes the frame format needs a **fresh key**. Run `WIPE ERASE-ALL-NODE-STATE` on the TX, create a new run directory, then run `provision-node` (protocol.md section 2).
 - Always flash **both** boards. Boards with different protocol versions drop each other's frames.
 - The SHT45 is wired to the morpho pins. It gave valid readings on 2026-10-14 ([`docs/hardware/nucleo-wl55jc-bringup.md`](../../docs/hardware/nucleo-wl55jc-bringup.md), "SHT45 first light").
@@ -63,6 +64,7 @@ Makefile variables and targets:
 | `CUBE` | `../../vendor/STM32CubeWL` | The STM32CubeWL checkout that `tools/fetch-vendor.sh` creates. |
 | `TOOLCHAIN` | `~/.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin` | The directory that holds `arm-none-eabi-gcc`. |
 | `BUILD` | `build/<role>` | The build directory. CI uses separate ones for the analyzer builds. |
+| `FLASH_BUDGET_PCT` | `90` | The link fails when code and initialized data use more than this percentage of the 112,640 B firmware region ([`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
 | `ANALYZE` | unset | `1` adds GCC's static analyzer (`-fanalyzer`) to our own C. Our C always builds with a strict warning set and `-Werror`. |
 | `all` (default target) | | Builds the `.elf` and `.bin`. Then prints the size, the flash budget line and the `.bin` SHA-256. |
 | `flash` | | Builds if necessary. Then OpenOCD programs the `.elf` (connect under reset) and verifies it. |
@@ -74,7 +76,7 @@ The firmware version string (`fw=` in `#boot`/`#status`) is `git describe --alwa
 
 ## Source files
 
-`App/` holds this project's own code. The board support is in `../board/nucleo-wl55jc`. Portable logic (no HAL) lives in `firmware/common/` and `firmware/stage0.c`, so the host tests run it unchanged. `firmware/host/` builds the role modules over a simulated board. One shared core, `sim_core.c`, supplies the clock, ST's timer server and sequencer, and the event loop. The tests are `tests/test_tx_machine.py`, `tests/test_rx_machine.py`, and for the local modules `tests/test_i2c_bus.py`, `tests/test_modules.py`, `tests/test_wsmp_host.py` and `tests/test_wsmp_map.py`.
+`App/` holds this project's own code. The board support is in `../board/nucleo-wl55jc`. Portable logic (no HAL) lives in `firmware/common/` and `firmware/stage0.c`, so the host tests run it unchanged. `firmware/host/` builds the role modules over a simulated board. One shared core, `sim_core.c`, supplies the clock, ST's timer server and sequencer, and the event loop. The tests are `tests/test_tx_machine.py`, `tests/test_rx_machine.py`, and for the local modules `tests/test_i2c_bus.py`, `tests/test_modules.py`, `tests/test_wsmp_host.py`, `tests/test_wsmp_map.py` and `tests/test_board_inputs.py`.
 
 [`docs/firmware-event-model.md`](../../docs/firmware-event-model.md) tells how the code runs: interrupts, timers, tasks and the exchange state machine. [`docs/power-of-ten.md`](../../docs/power-of-ten.md) tells how the code meets NASA/JPL's Power of Ten rules, and where it does not.
 
@@ -89,10 +91,10 @@ The firmware version string (`fw=` in `#boot`/`#status`) is `git describe --alwa
 | `App/tx_node.h` | TX | The interface of `app_tx.c`: this boot's identity and run state, read-only to the other modules (`node_state()`). The key and station live in `tx_exchange.c` (`exchange_load_identity`). That is the only module that seals and opens frames. |
 | `App/node_store.c` | TX | Flash: provisioning, the monotonic epoch and counter log, the observation journal. |
 | `App/flash_stm32wl.c` | TX | The internal-flash driver behind `node_store.c`. |
-| `App/i2c_bus.c` | TX | The shared I2C2 bus of the local modules: one transfer at a time in submission order, a 30 ms guard, the stuck-bus recovery when the bus may be stuck. Literate source `i2c_bus.lit.md`. |
+| `App/i2c_bus.c` | TX | The shared I2C2 bus of the local modules: one transfer at a time in submission order, a 30 ms guard, the stuck-bus recovery when the bus may be stuck. Only an acknowledge failure is a NACK. A bus error, lost arbitration or a HAL refusal is `I2C_EBUS` (-7), a bus fault (`App/i2c_bus.h`). Literate source `i2c_bus.lit.md`. |
 | `App/wsmp_host.c` | TX | The station side of DATAVANE5K (WSMP, [`docs/module-protocol.md`](../../docs/module-protocol.md)): presence, admission against the registry and the radio budget, the minute latch, the flap limit. Literate source `wsmp_host.lit.md`. |
 | `App/wsmp_local.c` | TX | The local module dispatch: one `switch` on the port for each operation. |
-| `App/mod_th.c`, `mod_reg.c`, `mod_power.c`, `mod_wind.c`, `mod_rain.c`, `mod_mean.c` | TX | The modules: SHT45 and SHTC3; BMP581 and LTR390; INA228, MAX17048 and the charger pins; cups and vane; rain. `mod_mean.c` is their shared minute window. |
+| `App/mod_th.c`, `mod_reg.c`, `mod_power.c`, `mod_wind.c`, `mod_rain.c`, `mod_mean.c` | TX | The modules: SHT45 and SHTC3; BMP581 and LTR390; INA228, MAX17048 and the charger pins; cups and vane; rain. `mod_mean.c` is their shared minute window. `mod_power.c` takes charge and energy from the INA228's own accumulators (CHARGE and ENERGY registers), so a load between two samples also counts. |
 | `App/wsmp_catalog_map.c` | TX | The interim map from the module snapshots to today's observation catalog (until WSMP reaches the radio). |
 | `App/board_inputs.c` | TX | The cup counter (LPTIM1, PC0), the vane ADC (PB2), the rain interrupt (PB5), the charger pins (PB8, PB10). Wiring: [`docs/hardware/bench-station-wiring.md`](../../docs/hardware/bench-station-wiring.md). |
 | `App/node_fields.h` | TX | The catalog fields that this build can send (`WS_F_WSMP_BENCH`); a reading carries those of its modules. |
@@ -109,7 +111,7 @@ The firmware version string (`fw=` in `#boot`/`#status`) is `git describe --alwa
 | `firmware/common/ws_policy.c` | TX | The transmission policy as pure functions: LoRa airtime, link state, the minute's backlog, strikes (`firmware/test_tx_policy.c`). |
 | `firmware/common/ws_console.c` | both | Line assembly, hex, command lookup (`ws_cmd_find`), and the RX frame checks in both directions. |
 | `firmware/common/ws_check.c` | both | `WS_CHECK`: run-time checks with a recovery at the call site. Keeps the failure count and the first site (`docs/power-of-ten.md`). |
-| `firmware/stage0.c` | TX | SHT45 parsing, the temperature and humidity window, the I2C recovery waveform, the link gate, `PROVISION` parsing, failure runs. |
+| `firmware/stage0.c` | TX | SHT45 parsing and its CRC-8, the I2C recovery waveform, the link gate, `PROVISION` parsing, failure runs. |
 
 ## Provision and run (host)
 
@@ -154,12 +156,12 @@ The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac a
 
 | Board | Output | Commands |
 |---|---|---|
-| TX | Lines that start with `#` (glossary below). | `STATUS`, `KAT`, `MODULES` (each local module's state), `SENSOR rain on` / `SENSOR rain off` (the rain gauge cannot be detected: this stores whether it is fitted), `PROVISION <station_id> <32 hex key> [epoch_floor]` (decimal ID 1–65535, only when unprovisioned, reboots on success), `WIPE ERASE-ALL-NODE-STATE` (reboots), `TEST-HANG` (bench: proves the watchdog), `TEST-FAULT` (bench: proves crash recording), `TEST-FLASH-STORM` (bench: continuous flash writes for power-cut tests. Pauses sampling. Ends at reboot.) |
+| TX | Lines that start with `#` (glossary below). | `STATUS`, `KAT`, `MODULES` (each local module's state), `SENSOR rain on` / `SENSOR rain off` (the rain gauge cannot be detected: this stores in flash whether it is fitted, so it waits for the radio as WIPE does), `PROVISION <station_id> <32 hex key> [epoch_floor]` (decimal ID 1–65535, only when unprovisioned, reboots on success), `WIPE ERASE-ALL-NODE-STATE` (reboots), `TEST-HANG` (bench: proves the watchdog), `TEST-FAULT` (bench: proves crash recording), `TEST-FLASH-STORM` (bench: continuous flash writes for power-cut tests. Pauses sampling. Ends at reboot.) |
 | RX | One lowercase hex line per received observation frame (39–94 bytes; at most 77 for the WSMP bench field set) **or health-report** frame (48 bytes). Also `#` diagnostics (below). | `STATUS`, `TEST-HANG`, `TEST-FAULT`, or one hex **ACK or NACK** line from the host (exactly 33 bytes = 66 hex digits). The RX ignores lines that start with `#`. The RX discards these lines whole: a line with a byte outside printable ASCII, a line longer than 256 characters, and a line that lost a character (a receive error, or a line that arrived while the previous line still waited). |
 
 ### Frame layout
 
-Every frame has an 8-byte header in clear text, the encrypted plaintext and an 8-byte tag ([`docs/protocol.md`](../../docs/protocol.md) section 1, `firmware/common/ws_frame.h`). Byte 0 holds the protocol version (5) in its high nibble and the kind in its low nibble. So byte 0 is `0x51` (observation), `0x52` (ACK), `0x53` (NACK) or `0x54` (health report). This diagram shows an observation frame of the temperature and humidity build, in bit offsets:
+Every frame has an 8-byte header in clear text, the encrypted plaintext and an 8-byte tag ([`docs/protocol.md`](../../docs/protocol.md) section 1, `firmware/common/ws_frame.h`). Byte 0 holds the protocol version (5) in its high nibble and the kind in its low nibble. So byte 0 is `0x51` (observation), `0x52` (ACK), `0x53` (NACK) or `0x54` (health report). This diagram shows the largest observation frame of the WSMP bench field set (every module in the layout, 77 bytes), in bit offsets:
 
 ```mermaid
 packet-beta
@@ -167,8 +169,8 @@ packet-beta
   4-7: "kind"
   8-23: "station ID (u16)"
   24-63: "transmission counter (u40)"
-  64-343: "encrypted observation plaintext (35 bytes)"
-  344-407: "CCM tag (8 bytes)"
+  64-551: "encrypted observation plaintext (61 bytes)"
+  552-615: "CCM tag (8 bytes)"
 ```
 
 ### TX console glossary (`App/tx_console.c`, `App/app_tx.c`, `App/tx_exchange.c`)
@@ -226,11 +228,11 @@ Other lines:
 | `#sample epoch= seq= uptime= valid= rc= n= t= rh= time= utc= journal= pending= lost=` | One line per minute, at the latch of every module (the 4th 15-s tick). `n` is the outside-air module's number of valid 15-s samples, `t`/`rh` their mean in 0.01 °C and 0.01 % (0 when `valid=0`, which also means the module is not in the layout). `rc` is always 0: the latch does not wait for a sensor. The reading carries the catalog fields of every module in the layout ([`docs/hardware/bench-station-wiring.md`](../../docs/hardware/bench-station-wiring.md), `App/wsmp_catalog_map.c`). |
 | `#fault kind= pc= lr= cfsr= hfsr= bfar= count=` | Both roles, after `#boot`, only if the previous run crashed (see Crash records). |
 | `#modules air_th= pressure= uva= encl_th= power= wind= rain=` | Each local module's state (`absent`, `probing`, `admitted`, `active`, `suspect`, `quarantined`, `refused`). Printed once with the first report, and by `MODULES`. |
-| `#sensor rain=on` / `#sensor rain=off` | `SENSOR rain on/off` stored the setting. |
+| `#sensor rain=on` / `#sensor rain=off` | `SENSOR rain on/off` stored the setting. The station host admits the rain module after two probes. `#error sensor rc=` means that the store refused the setting. |
 | `#watchdog N journal failures in a row` / `#watchdog N transmit failures in a row` | TX: more than 10 consecutive journal-append failures (`tx_fail_run`) or transmission failures (`tx_air_run`). The watchdog then resets the board. |
 | `#boot-retry: reset in 600 s` | TX: the storage init or the epoch reservation failed at boot. The board resets one time after 10 minutes, only if the self-test passed. |
 | `#ack epoch= seq= found= time_sync= rssi= snr= pending=` | An authentic ACK. `rssi` is the received signal strength and `snr` the signal-to-noise ratio. `time_sync=1`: the firmware set the clock from this ACK. |
-| `#ack none epoch= seq=` | No reply came within the 2 s window. The reading stays journaled. This minute's backlog drain stops. |
+| `#ack none epoch= seq=` | No reply came within the 2 s window. The reading stays journaled. The drain sends one more frame, then stops. A second miss in a row stops it at once. |
 | `#ack damaged payload; still listening` / `#ack damaged header; still listening` | A packet in the ACK window failed its payload CRC or its header CRC. The node listens until the window ends ([`docs/firmware-event-model.md`](../../docs/firmware-event-model.md)). |
 | `#ack reject len= rssi= snr=` | A reply failed authentication. |
 | `#nack epoch= seq= reason= abandoned=` | An authentic NACK for the frame just sent. The node abandons the record. Reason 1 = collision, 2 = invalid (`ws_frame.h`). |
@@ -242,8 +244,8 @@ Other lines:
 | `#busy previous exchange still running; reading held until it ends` | The minute's reading waits in RAM and is not sent this minute. The firmware writes flash only while the radio is idle. |
 | `#held journaled seq= rc= pending=` | The firmware journaled a held reading when the radio went idle (`rc=0`: ok). The next minute sends it as backlog. |
 | `#kat pass\|FAIL`, `#wipe ok\|ERROR`, `#provisioned station= kcv= epoch_floor=`, `#unprovisioned: …`, `#test-hang: …` | Command replies. |
-| `#storm start ctr=`, `#storm writes= ctr= burned=`, `#storm-scrub dropped=` | TEST-FLASH-STORM progress (every 256 writes), and the boot cleanup of storm slots. |
-| `#error <what>` | `journal-read`, `counter-reserve`, `seal`, `radio-busy`, `journal-ack`, `tx-timeout`, `unexpected event= state=`, `held-lost seq=` (a third reading during a hung exchange replaced the oldest held reading), `busy (radio exchange or reboot in progress); retry` (WIPE, PROVISION or TEST-FLASH-STORM during an exchange), `store-init`, `epoch-reserve`, `self-test failed; not transmitting`. Also the command errors `already-provisioned`, `journal-not-empty` (pending records from an old key or flash layout: WIPE first), `usage: …` (also for a malformed key), `epoch-floor`, `provision rc=`, `unknown command`. |
+| `#storm start ctr=`, `#storm writes= ctr= burned=`, `#storm done writes=`, `#storm-scrub dropped=` | TEST-FLASH-STORM progress (every 256 writes), the end at the write cap, and the boot cleanup of storm slots. |
+| `#error <what>` | `journal-read`, `counter-reserve`, `seal`, `radio-busy`, `journal-ack`, `tx-timeout`, `unexpected event= state=`, `held-lost seq=` (a third reading during a hung exchange replaced the oldest held reading), `busy (radio exchange or reboot in progress); retry` (WIPE, PROVISION, SENSOR rain or TEST-FLASH-STORM during an exchange), `store-init`, `epoch-reserve`, `self-test failed; not transmitting`. Also the command errors `already-provisioned`, `journal-not-empty` (pending records from an old key or flash layout: WIPE first), `usage: …` (also for a malformed key), `epoch-floor`, `provision rc=`, `sensor rc=`, `unknown command`. |
 
 ### Crash records (`App/fault.c`, both roles)
 
@@ -285,12 +287,12 @@ A crash is a Cortex-M4 HardFault, or an NMI other than a flash ECC error. The fa
 
 This section summarizes `App/tx_policy.c` and `firmware/common/ws_policy.c`. The approved policy is in [`docs/radio-energy-policy.md`](../../docs/radio-energy-policy.md).
 
-- **Each minute:** the live reading goes first. Then at most 5 older pending readings go (energy state NORMAL). A cap of about 5 s of estimated radio time per minute also limits the total. Each frame gets one 2 s ACK window. A missed reply ends that minute's drain.
+- **Each minute:** the live reading goes first. Then at most 5 older pending readings go (energy state NORMAL). A cap of about 5 s of estimated radio time per minute also limits the total. Each frame gets one 2 s ACK window. After a missed reply the drain sends one more frame. A second miss in a row, or a transmit failure, ends the drain (`App/tx_exchange.c`, `FRAMES_AFTER_MISS`).
 - **Link probing:** after 3 minutes with no reply, the link state becomes `probing`. Then the node sends only the live reading, with no backlog. In SURPLUS and NORMAL (always on the bench prototype), the live reading still goes every minute. Only CONSERVE probes at 2, 4 and 8 minutes, then every 15 minutes (since `0f456040fe54`, `ws_link_may_send()` in `firmware/stage0.c`). All other readings stay journaled. Any reply returns the link to `linked`.
 - **Health report** (kind 4): the node sends it every 15 minutes and at each link-state change, also while probing (since `0f456040fe54`). The node sends it one time only. It has no journal entry and no ACK.
 - **Strike limit:** the node abandons a record (`#abandon`) after 10 unanswered tries, when the gateway answers other frames in the same exchange.
 
-One minute with an answered reading, a lost reply and a health report:
+One minute with an answered reading, two lost replies and a health report:
 
 ```mermaid
 sequenceDiagram
@@ -304,7 +306,9 @@ sequenceDiagram
   RX->>TX: ACK frame
   Note over TX: #ack, slot marked acknowledged, clock set from the ACK
   TX->>RX: observation frame, older pending reading
-  Note over TX: no reply within the 2 s window: #ack none, the drain stops
+  Note over TX: no reply within the 2 s window: #ack none
+  TX->>RX: observation frame, one more pending reading
+  Note over TX: a second miss in a row: the drain stops
   TX->>RX: health report, when due
   RX->>GW: hex line over USB
   Note over TX,GW: no ACK for a health report
@@ -320,7 +324,7 @@ stateDiagram-v2
 
 **Watchdog:** the independent watchdog (IWDG) resets the board after about 8 s without a refresh. Only the main loop refreshes it, and only while the role shows real progress:
 
-- TX: a sample came within the last 150 s, and no exchange outlasts its bound ([`docs/firmware-event-model.md`](../../docs/firmware-event-model.md)).
+- TX: a sample came within the last 150 s, and no exchange outlasts its bound ([`docs/firmware-event-model.md`](../../docs/firmware-event-model.md)). For a stuck exchange, the check first calls `sampling_stop()`, which stops the 15-s sample timer and the 250 ms module timer. Then it puts the radio in standby and journals the held readings. Then it lets the watchdog reset the board (`#watchdog radio exchange stuck; …`).
 - RX: the radio listens, or it finishes a transmission in less than 5 s. The RX makes one re-arm attempt first.
 
 Every boot prints the reset cause.
@@ -355,7 +359,7 @@ flowchart LR
 
 | Pages | Use |
 |---|---|
-| 0–54 (110 KB) | The firmware. The linker script enforces this limit. Release d3f84bb8a8d8: TX image 74,104 B, RX 34,832 B ([`RELEASES.md`](RELEASES.md), [`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
+| 0–54 (110 KB) | The firmware. The linker script enforces this limit. Release 04fcc656938d: TX image 74,464 B (66.1 %), RX 34,832 B (30.9 %) ([`RELEASES.md`](RELEASES.md), [`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
 | 55–124 | The journal ring: 70 pages × 25 slots of 80 bytes (the WSMP bench field set). |
 | 125–126 | The monotonic log, pages A and B: boot epoch, counter reservations (blocks of 256), the `lost`/`abandoned` totals. Recovery takes the maximum. Compaction writes its header last. |
 | 127 | Config: station ID, key, KCV. The firmware writes the magic double-word last. |
@@ -376,9 +380,7 @@ packet-beta
 
 ### Field set of a build (`App/node_fields.h`)
 
-One constant names the catalog fields that this build can measure. The default is every field the
-WSMP local modules can fill (`App/wsmp_catalog_map.c`). A reading carries only the fields of the
-modules in the layout (its own bitmap); the journal slot fits the widest:
+One constant names the catalog fields that this build can measure. The default is every field that the WSMP local modules can fill (`App/wsmp_catalog_map.c`). A reading carries only the fields of the modules in the layout (its own bitmap). The journal slot fits the widest reading:
 
 ```c
 #ifndef WS_NODE_FIELDS
@@ -419,4 +421,5 @@ Power-fail behaviour: a test ran 70 reset cycles during flash writes and passed 
 - Time-sync accuracy: the node takes the host's commit time, up to about 1 s late. The node trusts it for 6 h, then marks it unknown.
 - Time across resets: a warm reset keeps time trust (RTC backup registers DR3/DR4. ST's SysTime uses DR0–DR2). A test cleared the backup domain with a backup-domain reset (`docs/hardware/nucleo-wl55jc-bringup.md`). The gateway then reconstructed times from the `uptime` field, which every record carries. Open question: does a real power loss clear the backup domain on this board (`docs/protocol-stack.md` §11.3.1)?
 - `LOW_POWER_DISABLE=1`, because the bench prototype has USB power. Power work belongs to the battery and solar build (Stage 1 of the staged plan, [`docs/next-stages-plan.md`](../../docs/next-stages-plan.md)).
-- The SHT45 driver uses I2C2 on PA11/PA12 at 100 kHz with stuck-bus recovery.
+- The I2C modules share I2C2 on PA11/PA12 at 100 kHz, with stuck-bus recovery (`App/i2c_bus.c`).
+- The INA228 charge and energy, the vane ADC calibration and the cup bounce filter (release `04fcc656938d`) still need their bench checks ([`RELEASES.md`](RELEASES.md)).

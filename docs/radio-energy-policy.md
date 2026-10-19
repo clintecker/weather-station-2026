@@ -47,14 +47,15 @@ The current values are datasheet-class assumptions: transmit (TX) ≈ 100 mA at 
 | Quantity | SF7 | SF10 | SF12 |
 |---|---:|---:|---:|
 | Airtime, 56-byte frame (previous format, protocol version 4) | 27 ms | 164 ms | 576 ms |
-| Airtime, 51-byte observation (current format) | 26 ms | 154 ms | 535 ms |
+| Airtime, 51-byte observation (T/RH with the minute summary, protocol version 5 before the WSMP modules) | 26 ms | 154 ms | 535 ms |
+| Airtime, 77-byte observation (widest record of the current bench build) | 35 ms | 206 ms | 699 ms |
 | Charge per **delivered** reading (TX + short ACK window) | ≈ 3 mC | ≈ 18 mC | ≈ 62 mC |
 | Charge per **failed** attempt (TX + full 2 s window) | ≈ 13 mC | ≈ 26 mC | ≈ 68 mC |
 | One day of live readings (1,440 delivered), at 3.3 V | ≈ 0.004 Wh | ≈ 0.024 Wh | ≈ 0.08 Wh |
 | **A full journal** (4,743 readings, previous format) delivered | ≈ 0.013 Wh | ≈ 0.08 Wh | ≈ **0.27 Wh** |
 | One day of failed attempts at the old fixed rule (3 per minute) | ≈ 0.05 Wh | ≈ 0.10 Wh | ≈ **0.27 Wh** |
 
-SF is the LoRa spreading factor. The charge and Wh rows were computed for the previous format: 56-byte frames and ACKs, and a journal of 4,743 readings. Current frames take less airtime (the 51-byte observation takes 154 ms at SF10, against 164 ms, and the ACK is 33 bytes). The current journal holds 2,484 readings. Thus these rows are upper bounds for the current format.
+SF is the LoRa spreading factor. The charge and Wh rows were computed for the previous format: 56-byte frames and ACKs, and a journal of 4,743 readings. The ACK is now 33 bytes. A current record carries only the fields of the modules present, so its frame is at most 77 bytes in the bench build (`OBS_FRAME_MAX`, `App/tx_exchange.h`). A 77-byte frame takes about 20–30 % more airtime than a 56-byte frame. Thus the per-reading rows can be low by that amount. The current journal holds 1,725 readings (69 usable pages × 25 slots, `App/flash_layout.h`). Thus the full-journal row stays an upper bound.
 
 Core budget: ≤ 0.25 W average = **6 Wh/day**. Main pack: about **200 Wh nominal**, reserve ≥ 50.4 Wh (product specification section 4).
 
@@ -197,9 +198,9 @@ While PROBING, the node sends only the live reading, with no backlog. With healt
 
 **Timeliness effect:** with healthy energy, there is no effect beyond the outage itself. The live reading goes every minute. Thus the gateway receives the first minute after the link returns on time, and the backlog drains at up to 5 per minute. In CONSERVE, readings acquired between the return of the link and the next probe (up to 14) are late because of the back-off. That is acceptable there, because CONSERVE protects the pack, and H01 runs in NORMAL.
 
-**Asymmetric link:** the node decides the link state from replies only. Frames can reach the gateway while its ACKs do not reach the node (`failure-modes.md`, asymmetric link). Then the node enters PROBING. With healthy energy, the live reading still reaches the gateway every minute, so the data stays timely. The backlog cannot drain (no ACKs). Thus unacknowledged records accumulate in the journal. The journal overwrites them after about 41 hours, although the gateway already holds them. The health report (also sent while probing, link field = probing) shows this state to the operator.
+**Asymmetric link:** the node decides the link state from replies only. Frames can reach the gateway while its ACKs do not reach the node (`failure-modes.md`, asymmetric link). Then the node enters PROBING. With healthy energy, the live reading still reaches the gateway every minute, so the data stays timely. The backlog cannot drain (no ACKs). Thus unacknowledged records accumulate in the journal. The journal overwrites them after about 28.7 hours (1,725 one-minute records), although the gateway already holds them. The health report (also sent while probing, link field = probing) shows this state to the operator.
 
-**Airtime cap per minute (all states):** The firmware calculates the exchange time from the spreading factor: observation airtime + ACK airtime + a **fixed 300 ms** turnaround allowance (`TURNAROUND_MS` in `App/tx_policy.c`, "conservative"). The firmware does not measure it per exchange. Gateway database commits were measured at ≤ 16 ms. The node sends no more frames in a minute than the cap allows. With the current frames (51-byte observation, 33-byte ACK), a 5 s cap at SF12 allows 4 exchanges (5000 / (535 + 412 + 300) = 5000 / 1247 ms). At SF7 (26 + 18 + 300 = 344 ms per exchange), the 5 s NORMAL cap allows 14, so the NORMAL limit of 5 applies. The 15 s SURPLUS cap allows the configured maximum of 20. The cap counts answered exchanges. A failed exchange costs about 2 s plus airtime, and the drain stops one frame after it.
+**Airtime cap per minute (all states):** The firmware calculates the exchange time from the spreading factor: observation airtime + ACK airtime + a **fixed 300 ms** turnaround allowance (`TURNAROUND_MS` in `App/tx_policy.c`, "conservative"). The firmware does not measure it per exchange. Gateway database commits were measured at ≤ 16 ms. The node sends no more frames in a minute than the cap allows. The firmware uses the widest observation frame of the build (`OBS_FRAME_MAX`: 77 bytes in the bench build) and the 33-byte ACK. A 5 s cap at SF12 then allows 3 exchanges (5000 / (699 + 412 + 300) = 5000 / 1411 ms). At SF7 (35 + 18 + 300 = 353 ms per exchange), the 5 s NORMAL cap allows 14, so the NORMAL limit of 5 applies. The 15 s SURPLUS cap allows the configured maximum of 20. The cap counts answered exchanges. A failed exchange costs about 2 s plus airtime, and the drain stops one frame after it.
 
 ---
 

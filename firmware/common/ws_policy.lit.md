@@ -147,8 +147,8 @@ when `sf` is 2 and `DE` is 1.
 ### Worked example
 
 `radio_cfg.h` sets spreading factor 7 (SF7), 500 kHz, an 8-symbol preamble and coding rate 4/5
-(`cr` = 1). `firmware/test_tx_policy.c` pins the time of this build's 51-byte observation frame at
-these settings to 26 ms. It pins a 42-byte frame to 22 ms.
+(`cr` = 1). `firmware/test_tx_policy.c` pins the time of a 51-byte frame at these settings to
+26 ms. It pins a 42-byte frame to 22 ms. The worked example uses the 51-byte frame.
 
 | Step | Value |
 |---|---|
@@ -161,12 +161,13 @@ these settings to 26 ms. It pins a 42-byte frame to 22 ms.
 | time | 401 × 128 000 000 / 500 000 = 102 656 quarter-µs, / 4000 = 25 ms truncated |
 | result | 25 + 1 = **26 ms** (formula: 25.664 ms) |
 
-The same steps give 18 ms for the 33-byte ACK (`WS_ACK_FRAME_LEN`). The default field set gives a
-35-byte plaintext and 16 bytes of frame overhead. So `OBS_FRAME_MAX` is the 51-byte frame above.
+The same steps give 18 ms for the 33-byte ACK (`WS_ACK_FRAME_LEN`). The default field set (the
+WSMP bench field set) gives a 61-byte plaintext and 16 bytes of frame overhead. So `OBS_FRAME_MAX`
+(`App/tx_exchange.h`) is 77 bytes. The same steps give 35 ms for it (formula: 34.624 ms).
 
 `App/tx_policy.c` (`policy_init`) adds the observation airtime, the ACK airtime and
 `TURNAROUND_MS` (300 ms) into `exchange_ms`. `exchange_ms` is the radio time of one answered
-exchange. With a 51-byte observation, it is 26 + 18 + 300 = 344 ms.
+exchange. With the 77-byte observation, it is 35 + 18 + 300 = 353 ms.
 
 The test's second fixed value covers DE = 1. 10 bytes at SF12 and 125 kHz give 992 ms (formula:
 991.2 ms). The test also compares the function with a floating-point copy of the formula. It
@@ -363,16 +364,16 @@ exchange longer than the cap still gives `by_airtime` = 1 and a backlog of 0. An
 drain in `App/tx_exchange.c` sends one more frame after a miss (`FRAMES_AFTER_MISS`) and then
 stops. So the budget counts answered exchanges only.
 
-With the 344 ms exchange of section 3:
+With the 353 ms exchange of section 3:
 
-| State | Cap / 344 ms | Backlog limit | Queue (`MAX_QUEUE - 1`) | Result |
+| State | Cap / 353 ms | Backlog limit | Queue (`MAX_QUEUE - 1`) | Result |
 |---|---|---|---|---|
-| `SURPLUS` | 43 frames | 20 | 20 | 20 |
+| `SURPLUS` | 42 frames | 20 | 20 | 20 |
 | `NORMAL` | 14 frames | 5 | 20 | 5 |
 | `CONSERVE` | 5 frames | 0 | 20 | 0, at most every 300 s |
 
-At SF7 the per-state limit binds, not the airtime. At SF12 the airtime binds.
-`docs/radio-energy-policy.md` section 6 computes 4 exchanges in the 5 s `NORMAL` cap.
+At SF7 the per-state limit binds, not the airtime. At SF12 the airtime binds. At SF12 and 500 kHz,
+one exchange takes 699 + 412 + 300 = 1411 ms, so the 5 s `NORMAL` cap allows 3 exchanges.
 
 ```c {#minute-backlog}
 int ws_minute_backlog(int energy, const ws_link *l, uint32_t now_s, uint32_t last_send_s, uint32_t exchange_ms,
@@ -535,7 +536,7 @@ Semtech's formula, not from the code under test:
 
 | Test | What it checks |
 |---|---|
-| `airtime` | The formula over SF7–SF12, three bandwidths and payloads 0–255. 51 bytes at SF7/500 kHz give 26 ms, 42 bytes 22 ms. 10 bytes at SF12/125 kHz give 992 ms |
+| `airtime` | The formula over SF7–SF12, three bandwidths and payloads 0–255. 51 bytes at SF7/500 kHz give 26 ms, 42 bytes give 22 ms. 10 bytes at SF12/125 kHz give 992 ms |
 | `link` | Two silent minutes stay linked. The third starts probing. The back-off is 240, 480, 900, 900 s. A reply relinks and resets the count |
 | `minute` | The backlog per state (20, 5, 0). `CRITICAL` and unknown codes send nothing. The 300 s `CONSERVE` interval. Probing sends the live reading only. The airtime cap, `max_backlog` and a clock wrap |
 | `strike_targets` | the three `replied` patterns of section 6, and an empty exchange |

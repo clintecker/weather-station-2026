@@ -22,7 +22,7 @@ What `WIPE ERASE-ALL-NODE-STATE` erases depends on the firmware (`App/node_store
 
 | After a WIPE, provision with… | Safe? |
 |---|---|
-| a **new** key (`ws0 init --hardware` into a new directory) | Yes, always |
+| a **new** key (`python -m ws0 init --hardware` into a new directory) | Yes, always |
 | a key used only on this board, with a counter that never went back since its first use. This means no WIPE under firmware older than `0f456040fe54` after that first use. Example: the office key `b7142e`, first used after the morning wipe | Yes: the counter only went up |
 | a key that TX used before a WIPE on firmware older than `0f456040fe54`, or a key used on another board. Example: the key in `run-hw`, used before the morning office wipe | **No**: it can repeat nonces already sent on air |
 
@@ -46,13 +46,16 @@ Never move it by git, chat or email.
 ## Know which key TX has
 
 ```sh
+.venv/bin/python tools/console.py 003B00194142500E20353451 STATUS   # read kcv=… in the #status line
+# or interactively:
 .venv/bin/python -m serial.tools.list_ports -v            # TX = SER=003B00194142500E20353451
 .venv/bin/python -m serial.tools.miniterm /dev/cu.usbmodem<TX> 115200
-#   type STATUS; read kcv=… (Ctrl-] quits)
+#   type STATUS and read kcv=… (Ctrl-] quits)
 ```
 
-The key check value (KCV) identifies a key without showing it. Known value: office `run-office`
-(2026-10-13) = `b7142e`. The repo does not record the value of the home `run-hw` key. Compute it
+The key check value (KCV) identifies a key without showing it. Known values: office `run-office`
+(2026-10-13) = `b7142e`, `run-d5` (2026-10-14) = `5618eb`, `run-d7` (2026-10-19) = `6e30cf`
+(`firmware/stage0-node/RELEASES.md`). The repo does not record the value of the home `run-hw` key. Compute it
 on the home Mac. The gateway's KCV is `key_check()` of the key in `gateway.json`
 (`ws0/__main__.py`).
 
@@ -90,9 +93,9 @@ tools/deploy/macos/install.sh install run-office 0016001E4142500E20353451
 
 ### Make a new key
 
-1. `ws0 init --hardware --station station-01 --station-id 1 --directory run-<new>`.
+1. `.venv/bin/python -m ws0 init --hardware --station station-01 --station-id 1 --directory run-<new>`.
 2. On TX, send `WIPE ERASE-ALL-NODE-STATE`.
-3. `ws0 provision-node --directory run-<new> --serial /dev/cu.usbmodem<TX>`.
+3. `.venv/bin/python -m ws0 provision-node --directory run-<new> --serial /dev/cu.usbmodem<TX>`.
 
 Readings then start a new history in the new directory.
 
@@ -106,12 +109,12 @@ nonces. Therefore a layout change always gets a new key, in a new run directory:
 1. Stop the gateway.
 2. Archive the old run directory. Its key is retired: never provision it again.
 3. Flash RX, then TX (`firmware/stage0-node/RELEASES.md`, "How to cut a release", step 5).
-4. Clint sends `WIPE ERASE-ALL-NODE-STATE` on TX. It erases every journal page (they still hold
-   journal pages of the old layout) and the provisioning page.
-5. `ws0 init --hardware --station station-01 --station-id 1 --directory run-<new>`. This makes a
-   new key.
-6. `ws0 provision-node --directory run-<new> --serial /dev/cu.usbmodem<TX>`.
-7. `ws0 serve --directory run-<new> --serial-number <RX serial>`.
+4. Clint sends `WIPE ERASE-ALL-NODE-STATE` on TX. It erases every journal page and the
+   provisioning page. These pages still hold data of the old layout.
+5. `.venv/bin/python -m ws0 init --hardware --station station-01 --station-id 1 --directory run-<new>`.
+   This makes a new key.
+6. `.venv/bin/python -m ws0 provision-node --directory run-<new> --serial /dev/cu.usbmodem<TX>`.
+7. `.venv/bin/python -m ws0 serve --directory run-<new> --serial-number <RX serial>`.
 
 Then do the checks below. `STATUS` on TX also shows `epoch=1` and a counter near 1.
 
@@ -122,7 +125,8 @@ refuses with `#error journal-not-empty (WIPE first)` while old records are pendi
 ## Checks after any move
 
 - `STATUS` on TX shows `provisioned=1` and the expected `kcv`.
-- The gateway log shows frames accepted and none rejected: run `tools/status.py --directory <dir>`.
+- The gateway status shows frames accepted and none rejected: run
+  `.venv/bin/python tools/status.py --directory <dir>`.
   `accepted_this_process` rises, and `rejected_this_process` stays 0.
 - TX shows a green LED after each blue flash (ACK received).
 

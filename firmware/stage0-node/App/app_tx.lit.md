@@ -1,11 +1,11 @@
 # app_tx: TX node boot, sampling and the minute report
 
 `app_tx.c` boots the transmitting node (the TX node) and runs its sampling. The station's sensors
-are WSMP local modules (`docs/module-protocol.md`, DATAVANE5K): each samples on its own schedule, and
-a 250 ms tick drives them (`wsmp_host.c`). Every 15 s the sample task counts a tick; the 4th latches
-every module and makes the minute's observation from their snapshots (`wsmp_catalog_map.c`). It
-journals the observation in flash and passes it to the radio exchange (`tx_exchange.c`). It also tells the
-watchdog task whether to refresh the watchdog.
+are WSMP local modules (`docs/module-protocol.md`, DATAVANE5K). Each module samples on its own
+schedule, and a 250 ms tick drives them (`wsmp_host.c`). Every 15 s the sample task counts a tick.
+The 4th tick latches every module and makes the minute's observation from their snapshots
+(`wsmp_catalog_map.c`). The file journals the observation in flash and passes it to the radio
+exchange (`tx_exchange.c`). It also tells the watchdog task whether to refresh the watchdog.
 
 This document is the source. `tools/tangle.py` generates `app_tx.c` from the code chunks below. The
 repository also holds the generated file, so the build, the static analysers and the host tests read
@@ -58,7 +58,7 @@ the red LED on, prints one line and stops the boot:
 
 ```mermaid
 flowchart TD
-  A["stackmon_paint, busymon_init, leds_init, exchange_init"] --> B["register the sample task (sample_timed), tx_console_init"]
+  A["stackmon_paint, busymon_init, leds_init, exchange_init"] --> B["register the sample task (sample_timed) and the module task (module_tick_timed), tx_console_init"]
   B --> C["node.boot_s = clock_s(), policy_init, watchdog_start"]
   C --> D["node.kat_ok = selftest_kat(), print #boot, fault_report"]
   D --> E{"store_meta_init and store_journal_init succeed?"}
@@ -71,7 +71,7 @@ flowchart TD
   I -- no --> I1["tx_status, #error self-test failed"]
   I -- yes --> J{"store_next_epoch succeeds?"}
   J -- no --> J1["#error epoch-reserve"]
-  J -- yes --> K["modules_start: local modules, rain setting, station host, the 250 ms module timer"]
+  J -- yes --> K["modules_start: board inputs, local modules, rain setting, station host, the 250 ms module timer"]
   K --> L["node.running = 1, tx_status, start the 15-s periodic sample_timer, post the sample task"]
   E1 --> R{"boot_retry: node.kat_ok?"}
   J1 --> R
@@ -199,10 +199,10 @@ void SubghzApp_Init(void)
 
 ### From the sample timer to the minute report
 
-Two timers drive sampling. The module timer fires every 250 ms (`WSMP_TICK_MS`); its task runs one
-step of every local module through the station host. The sample timer fires every 15 s; its 4th tick
-latches every module and calls `minute_report` (section 4). The latch never waits for a sensor: a
-module that has not finished a sample simply has one sample fewer in its window.
+Two timers drive sampling. The module timer fires every 250 ms (`WSMP_TICK_MS`). Its task runs one
+step of every local module through the station host. The sample timer fires every 15 s. Its 4th
+tick latches every module and calls `minute_report` (section 4). The latch never waits for a
+sensor. A module that has not finished a sample has one sample fewer in its window.
 
 ```mermaid
 flowchart TD
@@ -269,9 +269,10 @@ static void on_module_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_S
 ### Starting the modules
 
 `modules_start` runs once a boot, after the epoch is reserved. It sets up the board inputs (the cup
-counter, the vane ADC, the rain interrupt, the charger pins); then the modules take the boot epoch as
-their boot ID (WSMP-I2). The rain module is on only if the stored setting says so (WSMP-P1). The
-station host starts with every port Absent, and the 250 ms module timer starts.
+counter, the vane ADC, the rain interrupt and the charger pins). Then `local_init(node.boot_epoch,
+clock_ms())` starts the modules, which take the boot epoch as their boot ID (WSMP-I2). The rain
+module is on only if the stored setting says so (WSMP-P1). The station host starts with every port
+Absent, and the 250 ms module timer starts.
 
 ```c {#modules-start}
 static void modules_start(void)
@@ -352,10 +353,10 @@ static void minute_report(int src)
 
 A minute without a valid outside-air mean increments `node.sensor_faults`, for any reason (a failing
 or absent air module, or its first window). It keeps rising for a dead sensor after its module goes
-absent; `MODULES` tells the reasons apart. The function returns 1
+absent. `MODULES` tells the reasons apart. The function returns 1
 only if the encoder wrote exactly the length of the reading's own bitmap (`WS_OBS_PLAIN_LEN`).
 `minute_report` wraps the result in `WS_CHECK`, because the map's codes always encode. The journal
-slot holds `WS_OBS_PLAIN_MAX` bytes, the widest reading; a record's length comes from its bitmap.
+slot holds `WS_OBS_PLAIN_MAX` bytes, the widest reading. A record's length comes from its bitmap.
 
 The `ws_obs_t` is `static`. Only the sequencer runs `minute_encode`, and it never re-enters. Its
 call chain is the deepest one that `tools/stack_report.py` counts.
@@ -372,7 +373,7 @@ static int minute_encode(minute_t *m, uint8_t *plain)
   m->utc = time_utc();
   m->uptime = node_uptime_s(); /* always sent: the gateway reconstructs time from it */
   /* static: only the sequencer runs this, and it never re-enters. It is on the deepest callback
-     chain, which tools/stack_report.py counts four times (a 104-byte record cost ~416 B). */
+     chain, which tools/stack_report.py counts four times (a 128-byte record would cost ~512 B). */
   static ws_obs_t o;
   o = (ws_obs_t){ .epoch = node.boot_epoch, .seq = node.next_seq, .utc = m->utc, .uptime = m->uptime,
                   .energy = (uint8_t)energy_state() };
@@ -429,7 +430,7 @@ static int journal_or_hold(const uint8_t *plain, int encoded, int busy, jref_t *
 #sample epoch=E seq=S uptime=U valid=0|1 rc=SRC n=SAMPLES t=T rh=H time=synchronized|unknown utc=UTC journal=ok|held|ERROR pending=P lost=L
 ```
 
-`rc` is 0: the latch does not wait for a sensor, so no sample code reaches the report. `t` and `rh`
+`rc` is always 0. The latch does not wait for a sensor, so no sample code reaches the report. `t` and `rh`
 are the outside-air means, 0 when the minute is not valid. `pending` and
 `lost` come from `store_journal_pending` and `store_journal_lost`.
 
@@ -751,9 +752,10 @@ before its first caller.
 `tests/test_tx_machine.py` builds `app_tx.c` with the other TX modules and the real `node_store.c`
 into a host library. `firmware/host/tx_harness.c` simulates the clock, the timers, the sequencer, the
 radio and the flash. The real WSMP modules run on the I2C bus model (`firmware/host/i2c_sim.c` and
-`firmware/host/i2c_models.c`) with one simulated SHT45. At its end, every test checks three things.
-No flash operation ran while the radio was busy. No test started a running timer again. No
-`WS_CHECK` failed.
+`firmware/host/i2c_models.c`) with one simulated SHT45. At its end, every test checks four things.
+No flash operation ran while the radio was busy. No test started a running timer again. No radio
+command ran without the radio interrupt masked. No `WS_CHECK` failed. Each test without the flash
+storm also checks that the main-loop tasks settled.
 
 | Test | What it checks in this file |
 |---|---|
@@ -770,9 +772,8 @@ No flash operation ran while the radio was busy. No test started a running timer
 | `test_three_hours_of_mixed_link_keep_every_invariant` | a healthy watchdog check at every step and a `#sample` every minute |
 
 `tests/test_modules.py` and `tests/test_i2c_bus.py` check the modules and the shared bus on their
-own. `tests/test_stage0.py` runs `firmware/test_policy.c`. That test checks `ws_failrun`: it trips
-at the 11th failure, resets on success and saturates. It also checks that the window means round
-half up.
+own. `tests/test_stage0.py` runs `firmware/test_policy.c`. That test checks `ws_failrun`. The run
+trips at the 11th failure, resets on success and saturates.
 
 No host test covers the boot failure paths (`#error store-init`, `#unprovisioned`, `#error self-test
 failed`, `#error epoch-reserve`, `#boot-retry`) or `SAMPLING_STALL_S`.

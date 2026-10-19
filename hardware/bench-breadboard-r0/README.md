@@ -5,7 +5,9 @@ The bench station's sensor suite on three 830-point breadboards, wired to the TX
 [`docs/hardware/bench-station-wiring.md`](../../docs/hardware/bench-station-wiring.md). That guide is the
 electrical source of truth. This package adds no circuit.
 
-**To build, open [`build-sheet.md`](build-sheet.md)** and the renders:
+**To build, open [`build-sheet.md`](build-sheet.md)** and the renders. Before you place a wire, tick
+the wiring guide's section 6 checklist against UM2592. Then do the build sheet's bench checks
+before you connect power.
 
 | Render | Shows |
 |---|---|
@@ -39,13 +41,15 @@ flowchart LR
 ## Regenerate
 
 ```sh
-tools/fetch-router.sh                                       # once: KiCadRoutingTools v0.23.1, pinned
+tools/fetch-router.sh                                       # once: KiCadRoutingTools v0.23.1, pinned (macOS arm64 only)
 .venv/bin/python hardware/bench-breadboard-r0/source/make.py all
 .venv/bin/python -m unittest tests.test_breadboard
 ```
 
-KiCad 10 comes from `KICAD_APP` (default: the 10.0.6 disk image on the bench Mac). Without KiCad or
-the router, the KiCad tests skip and say what is missing. Two builds give identical files.
+KiCad 10 comes from `KICAD_APP` (default: the 10.0.6 disk image on the bench Mac,
+`tools/kicad_env.py`). The router's prebuilt binary is for macOS arm64, so `tools/fetch-router.sh`
+skips on other hosts. Without KiCad or the router, the KiCad tests skip and say what is missing.
+Two builds give identical files (`test_generation_is_deterministic`). The suite has 33 tests.
 
 ## How the model works
 
@@ -60,6 +64,8 @@ the router, the KiCad tests skip and say what is missing. Two builds give identi
   830-point body 8.5 mm tall with its holes and rail stripes. Each jumper is a wire 2 mm above it
   along its routed path, with legs into its two holes. Breakout boards, the RJ11 jacks and the
   battery are boxes at their real outlines, from the parts' design files.
+- Each breakout's header sits on row a, and its board overhangs outward, over the rails and off the
+  edge. No jumper or part uses a hole under a breakout (`test_no_jumper_lands_under_a_breakout`).
 - Mode A, the daily mode, is drawn: the BATTERY POWER shunt is open and the 100 Ω load is fitted.
 
 ## Decisions
@@ -71,14 +77,20 @@ the router, the KiCad tests skip and say what is missing. Two builds give identi
   guide's section 5 says (a `[[link]]` in `wiring.toml`).
 - **RJ11** is the weather meter's own cable connector (SparkFun SEN-15901). The BOB-14021 breakouts
   are its sockets. Your RJ45 module cables are a later step (`docs/module-protocol.md`).
+- **The meter's reed switches and vane resistors** are inside the SEN-15901. The meter circuits on
+  board A add only R1–R3 and C1–C2.
+- **PGOOD and CHG voltage** is a bench check: confirm that PB8 and PB10 are 5 V tolerant before you
+  connect their jumpers (the build sheet's bench checks).
 
 ## Parts still to get
 
 Not ordered:
 
-- three 10 kΩ resistors, two 100 nF capacitors, one 100 Ω ½ W resistor;
-- jumper wires (male-male for the boards, male-female for the NUCLEO's morpho pins);
-- a STEMMA QT to male header cable;
-- a JST PH 2-pin pigtail for the battery.
+- three 10 kΩ resistors, two 100 nF capacitors, one 100 Ω ½ W resistor
+- jumper wires: male-male on the breadboards and into the NUCLEO's female Arduino headers (CN5,
+  CN6: W29, W33, W34, W35), male-female onto its male morpho pins (CN7, CN10)
+- a STEMMA QT to male header cable
+- a JST PH 2-pin pigtail for the battery
 
-You do not need a second BOB-14021. One product is a panel of two boards (SparkFun's design files).
+You do not need a second BOB-14021. One product is a panel of two boards (SparkFun's design files):
+one for the wind cable, one for the rain cable.

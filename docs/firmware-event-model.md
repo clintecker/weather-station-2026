@@ -1,7 +1,7 @@
 # Firmware event model (both board roles)
 
 This page describes how the firmware in `firmware/stage0-node` runs on both boards. The
-transmitter (TX) is the station node with the sensor. The receiver (RX) is the bridge on the
+transmitter (TX) is the station node with the sensors. The receiver (RX) is the bridge on the
 gateway's USB cable. The code comments point to this page.
 
 On 2026-10-15 Clint decided that the firmware is interrupt and event driven throughout. At run
@@ -14,8 +14,8 @@ The firmware has no real-time operating system (RTOS). Three kinds of code run:
 
 | Kind | Examples | Runs until |
 |---|---|---|
-| Interrupt handler | radio (`SUBGHZ_Radio`, priority 0), RTC alarm (all `UTIL_TIMER` callbacks, priority 0, run with interrupts masked), I2C2, USART2, direct memory access (DMA) (priority 2) | it returns. A handler copies data, starts the next hardware step or timer, and posts an event or a task. A handler never formats console lines. The main loop prints the RX `#alive` report |
-| Sequencer task (main loop) | `process` (radio events), `sample`, `module_tick`, `bus_task` (I2C), `console_task`, `check` (watchdog) | it returns. One task runs at a time. A task is never re-entered |
+| Interrupt handler | radio (`SUBGHZ_Radio`, priority 0), RTC alarm (all `UTIL_TIMER` callbacks, priority 0, run with interrupts masked), I2C2, USART2, direct memory access (DMA), and on TX the wind vane ADC and the rain gauge EXTI9_5 (priority 2) | it returns. A handler copies data, starts the next hardware step or timer, and posts an event or a task. A handler never formats console lines. The main loop prints the RX `#alive` report |
+| Sequencer task (main loop) | `process` (radio events), `sample`, `module_tick`, `bus_task` (I2C), `console_task`, `check` (watchdog), and the bench-only flash storm | it returns. One task runs at a time. A task is never re-entered |
 | Idle | `UTIL_SEQ_Idle` → low-power mode | the next interrupt |
 
 A task never waits for time. When something must happen later, the task starts a timer and
@@ -70,17 +70,19 @@ stateDiagram-v2
   S_IDLE --> S_RECOVER : a recovery-only request is queued
   S_XFER --> S_DONE : transfer complete, guard stops
   S_XFER --> S_DONE : I2C error, HAL refusal or 30 ms guard timeout
-  S_DONE --> S_IDLE : bus_task, success or a failure with SDA high, i2c_bus_done with the code
-  S_DONE --> S_RECOVER : bus_task, timeout, HAL refusal or SDA low
+  S_DONE --> S_IDLE : bus_task, success or a NACK with SDA high, i2c_bus_done with the code
+  S_DONE --> S_RECOVER : bus_task, timeout, bus error, HAL refusal or SDA low
   S_RECOVER --> S_RECOVER : one pin step per timer tick
   S_RECOVER --> S_RECOVERED : recovery finished
   S_RECOVERED --> S_IDLE : bus_task, I2C re-initialised, i2c_bus_done with the code
 ```
 
-- The 30 ms guard timer ends a transfer that never completes (`rc=-6`). The guard is longer than a
-  flash page erase, because an erase delays the I2C interrupt.
-- The stuck-bus recovery runs only when the bus can be stuck. These are a timeout, a HAL refusal,
-  or SDA low after a failure. An address NACK from an absent sensor costs no recovery.
+- The 30 ms guard timer ends a transfer that never completes (`I2C_ETIMEOUT`, -6). The guard is
+  longer than a flash page erase, because an erase delays the I2C interrupt.
+- Only an acknowledge failure is a NACK (`I2C_ENACK_ADDR` -2, `I2C_ENACK_DATA` -3). A bus error,
+  lost arbitration or a HAL refusal is `I2C_EBUS` (-7), a bus fault (`App/i2c_bus.h`).
+- The stuck-bus recovery runs only when the bus can be stuck. These are a timeout, `I2C_EBUS`, or
+  SDA low after a failure. An address NACK from an absent sensor costs no recovery.
 - A module can also ask for the recovery alone. The temperature and humidity modules do this after
   a bad CRC.
 - The recovery (`ws_i2c_recover_step`) runs one pin step per timer tick. One tick is about 2–3 ms.
@@ -193,17 +195,18 @@ The watchdog check requires a busy exchange to end within its worst case:
 
 When the exchange passes this bound, the check does these steps:
 
-1. It stops sampling.
+1. It stops sampling. `sampling_stop()` stops the 15-second sample timer and the 250 ms module
+   timer, so no module starts another bus transfer.
 2. It stops the gap and ACK timers, puts the radio in standby and ends the exchange.
 3. It journals any held reading, because the radio is now idle.
 4. It keeps failing, so the watchdog resets the board (`#watchdog radio exchange stuck; …`).
 
 ### Console commands during an exchange
 
-The console refuses the commands that write flash (WIPE, PROVISION, TEST-FLASH-STORM) during an
-exchange or a pending reboot. The reply is `#error busy …; retry`.
+The console refuses the commands that write flash (WIPE, PROVISION, `SENSOR rain on/off`,
+TEST-FLASH-STORM) during an exchange or a pending reboot. The reply is `#error busy …; retry`.
 
-A commanded reboot (WIPE, PROVISION) stops sampling and resets from a 200 ms timer. The firmware
+A commanded reboot (WIPE, PROVISION) stops sampling (both timers) and resets from a 200 ms timer. The firmware
 creates this timer once at boot. The delay lets the console send the reply first. The console
 refuses a second reboot command while one is pending.
 
@@ -282,7 +285,7 @@ These stalls come from the hardware. The firmware cannot avoid them.
 
 | Stall | Bound | When it happens |
 |---|---|---|
-| Flash page erase | STM32WL55 datasheet (DS13293) t_ERASE: about 22 ms typical, about 24.5 ms maximum (the datasheet values as recalled in review). Measured on the board: 22,057 µs (`erase_peak_us`, release 586001994b09). The CPU cannot fetch from flash during an erase, so interrupts start late by up to that time | Start of a journal page (every 36 readings), meta-page compaction, WIPE, PROVISION, TEST-FLASH-STORM. Always with the radio idle (see below) |
+| Flash page erase | STM32WL55 datasheet (DS13293) t_ERASE: about 22 ms typical, about 24.5 ms maximum (the datasheet values as recalled in review). Measured on the board: 22,057 µs (`erase_peak_us`, release 586001994b09). The CPU cannot fetch from flash during an erase, so interrupts start late by up to that time | Start of a journal page (every 25 readings, the 80-byte slots of the WSMP bench field set), meta-page compaction, WIPE, PROVISION, TEST-FLASH-STORM. Always with the radio idle (see below) |
 | Flash double-word program | DS13293 t_PROG: about 82 µs typical, about 91 µs maximum (same caveat) | Journal append, ACK mark, counter reservation. Always with the radio idle |
 | Radio SPI and BUSY handshakes in ST's driver | ST's loop counters bound them (`stm32wlxx_hal_subghz.c`). Microseconds per command, about 3.5 ms on wake with calibration (`tools/blocking_report.py` table) | Every radio command. Included in `task_peak_us` and `isr_peak_us` |
 | RTC sub-second double read, UART start-up flags | `timer_if.c` reads the sub-second register until two reads agree. The register changes every 30.5 µs. The UART waits for TEACK and REACK at start | Timer reads, console start |
@@ -295,8 +298,8 @@ this in every test, a hung radio included.
 The board measures these stalls. `#timing` reports `erase_peak_us`, `prog_peak_us`, the longest
 task and the longest interrupt handler. The data watch and trace unit (DWT) cycle counter provides
 the times (`App/busymon.h`). `isr_peak_us` times how long a handler runs. It does not include an
-interrupt's late start during an erase. No measured values are recorded yet. They come with the
-reflash.
+interrupt's late start during an erase. `firmware/stage0-node/RELEASES.md` records the measured
+values of each release. An example is release 586001994b09: erase 22,057 µs, program 93 µs.
 
 ## How we know
 

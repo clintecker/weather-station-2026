@@ -2,8 +2,8 @@
 
 `node_store.c` keeps the durable state of the transmitting node (the TX node) in the internal flash
 of the STM32WL55. That state is the provisioning record (station id and AES key), the monotonic
-values and the journal. The monotonic values are the boot epoch, the transmission counter and the
-lost and abandoned totals. The journal holds the observations that the gateway has not acknowledged
+values, the rain module setting and the journal. The monotonic values are the boot epoch, the
+transmission counter and the lost and abandoned totals. The journal holds the observations that the gateway has not acknowledged
 yet. Every function in the file tolerates a power cut at any flash operation.
 
 This document is the source. `tools/tangle.py` generates `node_store.c` from the code chunks below.
@@ -332,7 +332,8 @@ frame of the same exchange gets an answer.
 static uint64_t meta_word(uint32_t type, uint64_t value) { return (uint64_t)type << META_TYPE_SHIFT | value; }
 ```
 
-RAM state: the active page, the next free position and the generation, and the four maxima.
+RAM state: the active page, the next free position and the generation, and the five maxima
+(epoch, counter reservation, lost total, abandoned total and rain setting).
 `ctr_next` is the next counter to return. It stays at or below `ctr_reserved + 1`, because the log
 reserves counters in blocks (see "Reserve before use").
 
@@ -455,7 +456,7 @@ static int meta_append(uint32_t type, uint64_t value) {
 
 ### Compaction
 
-When the active page is full, `meta_compact` writes the four maxima as new records into the other
+When the active page is full, `meta_compact` writes the five maxima as new records into the other
 page. Then it makes that page active with the next generation:
 
 ```mermaid
@@ -465,11 +466,11 @@ flowchart TD
     S1 -- ok --> S2
     R -- yes --> S2["2. erase the other page"]
     S2 -- fails --> E
-    S2 -- ok --> S3["3. program EPOCH, CTR, LOST and ABAND at positions 1-4"]
+    S2 -- ok --> S3["3. program EPOCH, CTR, LOST, ABAND and RAIN at positions 1-5"]
     S3 -- fails --> E
     S3 -- ok --> S4["4. program the header WSM1 with generation + 1"]
     S4 -- fails --> E
-    S4 -- ok --> M["RAM: active = other page, generation + 1, position 5"]
+    S4 -- ok --> M["RAM: active = other page, generation + 1, position 6"]
 ```
 
 A cut after each step leaves these pages for the next boot:
@@ -667,12 +668,12 @@ config:
 ---
 packet-beta
 0-63: "position 0: plaintext bytes 0-7 (epoch, sequence)"
-64-255: "positions 1-3: plaintext bytes 8-31"
-256-319: "position 4: plaintext bytes 32-34, then zero padding"
-320-335: "COMMIT_POS: SLOT_MAGIC 0x4A53 (bits 63-48)"
-336-351: "COMMIT_POS: CRC-16 of the plaintext (bits 47-32)"
-352-383: "COMMIT_POS: zero (bits 31-0)"
-384-447: "ACK_POS: erased = pending, 0 = acknowledged"
+64-447: "positions 1-6: plaintext bytes 8-55"
+448-511: "position 7: plaintext bytes 56-60, then zero padding"
+512-527: "COMMIT_POS 8: SLOT_MAGIC 0x4A53 (bits 63-48)"
+528-543: "COMMIT_POS 8: CRC-16 of the plaintext (bits 47-32)"
+544-575: "COMMIT_POS 8: zero (bits 31-0)"
+576-639: "ACK_POS 9: erased = pending, 0 = acknowledged"
 ```
 
 The plaintext takes `JOURNAL_PLAIN_DW` double-words, zero-padded. The slot size follows the build's
@@ -1222,8 +1223,8 @@ come flash access, provisioning, the meta log and the journal, each after the st
 
 `firmware/test_store.c` runs a scripted workload over `firmware/sim_flash.c`. The workload
 provisions, reserves boot epochs and counter blocks, and appends and acknowledges journal records.
-It also abandons records, compacts the meta log twice, wraps the journal with losses, scrubs the
-storm epoch and runs WIPE. It runs in three modes:
+It also abandons records, changes the rain setting, compacts the meta log twice, wraps the journal
+with losses, scrubs the storm epoch and runs WIPE. It runs in three modes:
 
 | Mode | What it does |
 |---|---|

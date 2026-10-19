@@ -5,7 +5,7 @@ Safety-Critical Code" (IEEE Computer, June 2006) to our firmware C "where it mak
 gives the status of each rule. It lists what complies, the deviations we keep and why, and what CI
 enforces. It describes the tree as of the commit that last changed this page.
 
-"TX" is the transmitter, the station node with the sensor. "RX" is the receiver, the bridge on the
+"TX" is the transmitter, the station node with the sensors. "RX" is the receiver, the bridge on the
 gateway's USB cable. Both roles build from `firmware/stage0-node`.
 
 **Scope.** The rules apply to our C in both roles:
@@ -20,8 +20,8 @@ The rules do not apply to:
 - The host harnesses and test programs (`firmware/host`, `firmware/test_*.c`, `firmware/fuzz`).
   These run on the PC and may allocate, recurse or use `longjmp`.
 
-Size of the scope: 26 C files, 320 functions (counted by lizard, headers included), 2,146
-non-comment lines of code (lizard NLOC).
+Size of the scope: 38 C files, 501 functions (counted by lizard 1.24.1, headers included), 4,475
+non-comment lines of code (lizard NLOC). Counted on 2026-10-19 at `04fcc65`.
 
 ## Summary
 
@@ -31,10 +31,10 @@ non-comment lines of code (lizard NLOC).
 | 2 | A fixed upper bound on every loop | **Complies with documented deviations** (2 deliberate hangs) | `tools/loop_bounds.py` (in `tools/code_shape.sh`, CI host job) |
 | 3 | No dynamic allocation after initialisation | **Complies** (none at all) | The link fails if an allocator is linked (`NO_HEAP=1`, CI firmware job). `-Wvla -Walloca` |
 | 4 | No function longer than 60 lines | **Complies** (also cyclomatic complexity ≤ 10) | `tools/code_shape.sh` (lizard), CI host job |
-| 5 | Assertions: at least two per function, with an explicit recovery | **Partial**: a check facility with a defined recovery at 41 sites (about 0.1 per function, below the target, argued below) | Every host harness test requires zero failed checks. Tests make checks fail on purpose |
+| 5 | Assertions: at least two per function, with an explicit recovery | **Partial**: a check facility with a defined recovery at 41 sites (about 0.08 per function, below the target, argued below) | Every host harness test requires zero failed checks. Tests make checks fail on purpose |
 | 6 | Data at the smallest possible scope | **Complies** (one shared variable left, set by an interrupt) | Review. `-Wmissing-declarations`, `-Wredundant-decls`, Cppcheck `variableScope` |
 | 7 | Check every non-void result and check parameters | **Complies with documented deviations** (`memcpy`/`memset`, `APP_PRINTF`, ST's void radio API) | `(void)` casts with reasons, `WS_CHECK` at module boundaries, review |
-| 8 | Preprocessor: includes and simple macros only | **Complies with documented deviations** (an X-macro catalog, one token-pasting wrapper, `__LINE__` in `WS_CHECK`, 6 conditional-compilation switches) | Review. `-Wundef`, `-Wunused-macros` |
+| 8 | Preprocessor: includes and simple macros only | **Complies with documented deviations** (an X-macro catalog, one token-pasting wrapper, `__LINE__` in `WS_CHECK`, 7 conditional-compilation switches) | Review. `-Wundef`, `-Wunused-macros` |
 | 9 | One level of dereference and no function pointers | **Complies with documented deviations** (ST's callback APIs, and `ws_i2c_pins`, the pin interface that the stuck-bus recovery drives on the board and in its host test) | Review. `tools/stack_report.py` accounts for every pointer call |
 | 10 | All warnings on, zero warnings, static analysis every day | **Complies** (every push, not daily) | `-Werror` strict set, GCC `-fanalyzer`, Cppcheck, all in CI |
 
@@ -58,11 +58,12 @@ See rule 2.
 
 ## Rule 2: every loop has a fixed upper bound
 
-**Complies with documented deviations.** The scope has 49 loops:
+**Complies with documented deviations.** The scope has 84 loops (counted with
+`tools/loop_bounds.py`'s own rules on 2026-10-19):
 
-- 38 are counting loops whose header states the bound (`for (i = 0; i < n; i++)`). The bound is a
+- 66 are counting loops whose header states the bound (`for (i = 0; i < n; i++)`). The bound is a
   constant or a parameter whose maximum the caller fixes.
-- The other 11 carry a `bound:` comment that says what bounds them. Two examples:
+- The other 18 carry a `bound:` comment that says what bounds them. Two examples:
   - the journal scrub (`App/node_store.c`, `store_journal_scrub`). It makes at most
     `JOURNAL_CAPACITY` passes, and each match moves the index past its slot.
   - `ws_hex_decode` (`common/ws_console.c`). It makes at most `max + 1` passes.
@@ -119,8 +120,8 @@ static or on the stack, with a size fixed at compile time.
   `firmware/board/nucleo-wl55jc/board.mk`) the link fails if `malloc`, `calloc`, `realloc`, `free`,
   their `_r` forms or `_sbrk` are linked in. Both images pass ("no heap: no allocator linked").
 - `-Wvla` and `-Walloca` (strict set) forbid stack allocation of run-time size.
-- `tools/stack_report.py` bounds the stack statically: TX 5,744 B, RX 2,588 B of the 8,192 B that
-  the linker reserves. The firmware also measures it at run time (`stack_peak` on `#counts` and
+- `tools/stack_report.py` bounds the stack statically: TX 6,360 B, RX 2,652 B of the 8,192 B that
+  the linker reserves (2026-10-19, `04fcc65`). The firmware also measures it at run time (`stack_peak` on `#counts` and
   `#alive`).
 - Note: the shared linker script still reserves 512 B of heap (`_Min_Heap_Size`) that nothing
   uses. It is board code shared with `firmware/rangetest`, so we leave it as it is.
@@ -129,13 +130,13 @@ static or on the stack, with a size fixed at compile time.
 
 **Complies.** `tools/code_shape.sh` runs lizard with `-L 60` (lines per function) and `-C 10`
 (cyclomatic complexity, stricter than the rule asks). It runs over the scope and the host
-harnesses. It also runs jscpd, which finds copied code. The check runs in the CI host job. The 320
-functions average 6.7 lines and a cyclomatic complexity of 3.0.
+harnesses. It also runs jscpd, which finds copied code. The check runs in the CI host job. The 501
+functions average 7.0 lines (NLOC) and a cyclomatic complexity of 2.9.
 
 ## Rule 5: assertions with an explicit recovery
 
-**Partial.** The facility, its reporting and its tests comply. The density (0.11 per function) is
-far below Holzmann's 2 per function. This is deliberate.
+**Partial.** The facility, its reporting and its tests comply. The density (41 sites over 501
+functions, 0.08 per function) is far below Holzmann's 2 per function. This is deliberate.
 
 ### The facility
 
@@ -201,7 +202,8 @@ TX has 40 sites and RX has 7. Some files are in both roles.
 
 ### Tests
 
-Every test of the TX, RX and sensor harnesses and every power-cut sweep requires zero failed checks.
+Every test of the TX, RX, I2C bus and WSMP module harnesses and every power-cut sweep requires zero
+failed checks.
 The invariants are therefore checked on every simulated step. This includes the 3-hour randomised
 TX links and the 6-hour RX run.
 
@@ -219,16 +221,16 @@ and recovers:
 
 ### Why the density is lower than 2 per function
 
-- **Cost.** A check costs 12–20 B of flash. TX uses 51.7 % of its 110 KB region. The final
-  station's features need an estimated 18–33 KB of the 26 KB below the 75 % headroom target. The
-  sites cost about 660 B with the facility and its reporting (measured at 35 sites). Holzmann's
-  density over TX's 287 functions would be about 570 checks, roughly 9 KB. That is too large a
-  share of the headroom.
-- **Small functions.** Most of the 320 functions are too small to have an invariant worth a
+- **Cost.** A check costs 12–20 B of flash. TX uses 66.1 % of its 110 KB region. Only 10,016 B
+  remain below the 75 % headroom target, and the final station's features need an estimated
+  18–33 KB ([`docs/firmware-budget.md`](firmware-budget.md)). The sites cost about 660 B with the
+  facility and its reporting (measured at 35 sites). Holzmann's density over the 481 functions in
+  the TX files would be about 960 checks, roughly 15 KB. That is more than the headroom.
+- **Small functions.** Most of the 501 functions are too small to have an invariant worth a
   run-time check. Examples are one-line accessors, timer and radio callbacks that post an event
-  bit, and the timed task wrappers. 170 functions are non-trivial (cyclomatic complexity ≥ 3 or
-  ≥ 8 lines). 29 of them hold a check. These 29 are the functions that index arrays, write flash or
-  move a state machine.
+  bit, and the timed task wrappers. 266 functions are non-trivial (cyclomatic complexity ≥ 3 or
+  ≥ 8 lines). 38 of them hold a check. These 38 are the functions that index arrays, write flash,
+  submit bus transfers or move a state machine.
 - **Pure code validates its input.** The portable pure code (`ws_frame.c`, `ws_obs.c`,
   `ws_console.c`, `stage0.c`) validates every input and returns an error. That is its recovery.
   This code is fuzzed (`firmware/fuzz`, libFuzzer in CI) and unit tested. A `WS_CHECK` there would
@@ -325,10 +327,14 @@ Deviations kept, with the reason:
   functions are ordinary C that GCC, lizard and the stack and blocking reports see.
 - `WS_CHECK` must be a macro, because it records its caller's `__LINE__`.
 - `APP_PRINTF` (board `sys_app.h`) is variadic. It came from ST.
-- Conditional compilation uses six switches. Each is a build variant or a guard:
+- Conditional compilation uses seven switches. Each is a build variant or a guard:
   - `WS_FIELD_BUILD` leaves out the bench commands (`bench.c`, `tx_console.c`).
   - `WS_NODE_FIELDS` selects the build's field set (`node_fields.h`).
-  - `WS_JOURNAL_PAGES` lets host tests shrink the journal (`flash_layout.h`).
+  - `WS_JOURNAL_PAGES` lets host tests shrink the journal (`flash_layout.h`). Without it,
+    `flash_layout.h` defines `WS_JOURNAL_DEFAULT`, and `node_store.c` then checks the 24-hour
+    capacity of the board's ring.
+  - `WSMP_HOST_BUDGET` lets a test build make the station host's radio budget smaller
+    (`wsmp_host.c`).
   - `WS_FW_BUILD_ID` and `WS_CHECK_FILE` cause `#error` if the build or the file did not define
     them.
   - `DEBUGGER_ENABLED` (`watchdog.c`) is ST's switch.
@@ -416,7 +422,8 @@ array of string pointers.
   - no blocking call reachable at run time (`make waits`, `tools/blocking_report.py`).
   - function size and duplication, loop bounds, no heap, and the flash budget.
   - reproducible builds.
-  - libFuzzer on the four input parsers.
+  - libFuzzer on the five input parsers (`firmware/fuzz`: console, observation, PROVISION, reply
+    and WSMP).
   - the host harnesses under UBSan, and under ASan where it can be preloaded.
 
 Deviation: "daily" becomes "every push". Every tool is pinned, so a run on unchanged code repeats
@@ -424,7 +431,8 @@ the last result. A schedule would add nothing. CI analyses every change before i
 
 ## What this cost
 
-Measured from clean trees (same version-string length) before (`1947b40`) and after this work:
+Measured from clean trees (same version-string length) before (`1947b40`) and after this work. The
+percentages are of the 64 KB firmware region of that time:
 
 | | Before | After | Change |
 |---|---|---|---|
@@ -433,4 +441,4 @@ Measured from clean trees (same version-string length) before (`1947b40`) and af
 | TX worst-case stack (`make stack`) | 5,648 B | 5,744 B | +96 B (of 8,192 B) |
 | RX worst-case stack | 2,588 B | 2,588 B | 0 |
 
-After this work, TX stayed 1,238 B below the 90 % guard.
+After this work, TX stayed 1,238 B below the 90 % guard of the 64 KB region.

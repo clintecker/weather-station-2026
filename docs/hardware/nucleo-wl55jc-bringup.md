@@ -6,7 +6,7 @@ Two new NUCLEO-WL55JC1 boards came straight from ST, with default jumpers and fa
 
 ## Summary
 
-- **Current state (2026-10-13): the boards run the bench prototype firmware, release `9e3d38f08e8b`.** Board A is the TX (transmitter), board B is the RX (receiver). See [`firmware/stage0-node/RELEASES.md`](../../firmware/stage0-node/RELEASES.md).
+- **State on 2026-10-13: the boards ran the bench prototype firmware, release `9e3d38f08e8b`.** Board A is the TX (transmitter), board B is the RX (receiver). This log stops on 2026-10-14. [`firmware/stage0-node/RELEASES.md`](../../firmware/stage0-node/RELEASES.md) records what each board runs now. On 2026-10-19 that was `04fcc656938d` on TX and `cc2766a38c61` on RX.
 - During the office range walk, the boards ran the bench tool `firmware/rangetest` instead. See [Office session](#office-session-2026-10-13).
 - PingPong was the first smoke test (2026-10-12, 915.0 MHz, LoRa SF7 / 500 kHz, 0 dBm). At about 30 cm it gave an RSSI of about −27 dBm and an SNR of 12 dB. See [PingPong link test](#pingpong-link-test).
 - `docs/hardware/factory-firmware/` holds the factory firmware backups. The two boards' images are byte-identical.
@@ -38,7 +38,7 @@ Both boards:
 | FLASH_OPTR | `0x3FFFF0AA` → read-out protection (RDP) Level 0 (unprotected) |
 | Firmware | identical on both, SHA-256 `d6365d91…5cf5f8c`, 57,836 bytes used |
 
-`docs/hardware/factory-firmware/nucleo-wl55jc-factory-concentrator-v1.0.bin` is a backup of the factory image. It is a full 256 KB (262,144-byte) flash dump. A restore therefore also overwrites pages 55–127. **That erases the node state of the weather-station firmware: the key, the counters and the journal.** After a restore, provision the TX board with a **new** key. Never reuse a key after its counter was reset (see `docs/runbook-moving-boards.md`). Restore the image with:
+`docs/hardware/factory-firmware/nucleo-wl55jc-factory-concentrator-v1.0.bin` is a backup of the factory image. It is a full 256 KB (262,144-byte) flash dump. A restore therefore also overwrites pages 55–127, where the weather-station firmware keeps its node state (`App/flash_layout.h`). **That erases the node state of the weather-station firmware: the key, the counters and the journal.** After a restore, provision the TX board with a **new** key. Never reuse a key after its counter was reset (see `docs/runbook-moving-boards.md`). Restore the image with:
 
 ```sh
 openocd -f interface/stlink.cfg -c "adapter serial <SERIAL>" -f target/stm32wlx.cfg \
@@ -404,6 +404,8 @@ Clint approved two changes: the gateway reconstructs the time of a reading taken
 - Hazard: CN7.18 (5 V) sits directly below CN7.16 (3V3).
 - Hardware verification still to do: a CRC-checked reading, an unplug while running (expect `sensor_fault`, then recovery), then a release.
 - The spare 592 cable allows the planned USB cable-swap test for the reset dropouts.
+- Later note: the bench station does not use these morpho pins for I2C. Its STEMMA QT hub connects to
+  CN5.9, CN5.10, CN6.4 and CN6.6 ([`bench-station-wiring.md`](bench-station-wiring.md), section 2).
 
 ```mermaid
 flowchart LR

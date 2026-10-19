@@ -37,8 +37,8 @@ The system has three physical units:
 flowchart LR
   subgraph TX["TX board, sensor node"]
     direction TB
-    S["SHT45 sensor<br/>I²C address 0x44"] --> M["Observation<br/>35 bytes"]
-    M --> J[("Flash journal<br/>2,484 slots")]
+    S["Sensor modules<br/>SHT45 at I²C 0x44 and others"] --> M["Observation<br/>up to 61 bytes"]
+    M --> J[("Flash journal<br/>1,725 slots")]
     J --> E["AES-128-CCM seal<br/>Mbed TLS"]
     E --> R1["LoRa modem<br/>915 MHz, 500 kHz, SF7"]
   end
@@ -52,7 +52,7 @@ flowchart LR
     V --> D[("SQLite<br/>commit")]
     D --> A["Seal ACK<br/>with host UTC"]
   end
-  R1 -- "51-byte frame, air" --> R2
+  R1 -- "frame up to 77 bytes, air" --> R2
   H -- "USB, ST-LINK virtual COM port" --> U
   A -- "hex line" --> H
   R2 -. "33-byte ACK, air" .-> R1
@@ -65,10 +65,10 @@ Each layer has one job. A layer does not depend on the internal details of a dif
 | # | Layer | Format | Where | Section |
 |---|---|---|---|---|
 | 1 | Sensor bus | I²C, 6-byte reply with CRC-8 | TX | [3](#3-layer-1--sensor-bus-i2c) |
-| 2 | Observation record | 22-byte head + catalog fields (35 bytes for the current build), big-endian | TX, gateway | [4](#4-layer-2--observation-record) |
-| 3 | Journal | 56-byte flash slots (current build) | TX | [5](#5-layer-3--flash-journal) |
+| 2 | Observation record | 22-byte head + catalog fields (up to 61 bytes for the current build), big-endian | TX, gateway | [4](#4-layer-2--observation-record) |
+| 3 | Journal | 80-byte flash slots (current build) | TX | [5](#5-layer-3--flash-journal) |
 | 4 | Identity and counters | Epoch, sequence, 40-bit counter | TX, gateway | [6](#6-layer-4--identity-and-counters) |
-| 5 | Secure frame | 8 + 35 + 8 bytes for the current build, AES-128-CCM | TX, gateway | [7](#7-layer-5--secure-frame-aes-128-ccm) |
+| 5 | Secure frame | 8 + up to 61 + 8 bytes for the current build, AES-128-CCM | TX, gateway | [7](#7-layer-5--secure-frame-aes-128-ccm) |
 | 6 | Radio | LoRa packet, 915 MHz | TX, RX | [8](#8-layer-6--radio-lora) |
 | 7 | Exchange | Send, ACK window, retry | TX, RX, gateway | [9](#9-layer-7--exchange-and-retry) |
 | 8 | USB serial | Hex text lines | RX, gateway | [10](#10-layer-8--usb-serial-link) |
@@ -188,25 +188,25 @@ packet-beta
 | 12 | 4 | Uptime | Seconds since the TX board booted. **Always present.** Time sync does not change it. Section 11.3 uses it. |
 | 16 | 1 | Flags | Bit 0: time known (must equal UTC ≠ 0). Bits 1–2: energy state (0 SURPLUS, 1 NORMAL, 2 CONSERVE, 3 CRITICAL). Bits 3–7: 0. |
 | 17 | 1 | Calibration revision | 0 in the current build. |
-| 18 | 4 | Field bitmap | Bit *i* set = catalog field *i* follows. Current build: `0x03E00003` (fields 0, 1 and 21–25). |
+| 18 | 4 | Field bitmap | Bit *i* set = catalog field *i* follows. Current build: at most `0x021FEA7F` (section 4.2). |
 
 ### 4.2 Fields
 
-The present fields follow the head, in increasing bit order. Each field has a fixed width from the **field catalog** (`firmware/common/ws_obs.h`, `ws0/fields.py`). [`protocol.md`](protocol.md) section 5.3 has the full table. The current build sends seven fields:
+The present fields follow the head, in increasing bit order. Each field has a fixed width from the **field catalog** (`firmware/common/ws_obs.h`, `ws0/fields.py`). [`protocol.md`](protocol.md) section 5.3 has the full table. The current build is the WSMP bench station. It can send 18 fields (`WS_F_WSMP_BENCH` in `App/node_fields.h`). Each module in the layout adds its fields (`App/wsmp_catalog_map.c`):
 
-| Bit | Field | Bytes | Code | Valid range | INVALID |
-|---:|---|---:|---|---|---|
-| 0 | `temperature_c` | 2 | 0.01 °C + 4000 (so −40.00 °C = 0). Mean of the minute's valid samples. | 0–16500 = −40.00 to 125.00 °C | `0xFFFF` |
-| 1 | `humidity_pct` | 2 | 0.01 %. Mean of the minute's valid samples. | 0–10000 = 0 to 100.00 % | `0xFFFF` |
-| 21 | `temperature_min_c` | 2 | as bit 0: the lowest valid sample | as bit 0 | `0xFFFF` |
-| 22 | `temperature_max_c` | 2 | as bit 0: the highest valid sample | as bit 0 | `0xFFFF` |
-| 23 | `humidity_min_pct` | 2 | as bit 1: the lowest valid sample | as bit 1 | `0xFFFF` |
-| 24 | `humidity_max_pct` | 2 | as bit 1: the highest valid sample | as bit 1 | `0xFFFF` |
-| 25 | `th_samples` | 1 | count of valid samples in the minute | 0–60 | `0xFF` |
+| Module | Bits | Fields | Bytes |
+|---|---|---|---:|
+| Air temperature and humidity (SHT45) | 0, 1, 25 | `temperature_c`, `humidity_pct` (means of the minute's valid samples), `th_samples` | 5 |
+| Pressure (BMP581) | 2 | `pressure_hpa` | 2 |
+| Wind (SEN-15901) | 3, 4, 5 | `wind_speed_ms`, `wind_gust_ms`, `wind_dir_deg` | 6 |
+| Rain (SEN-15901) | 6 | `rain_tips` | 3 |
+| UVA (LTR390) | 9 | `uva_raw` | 3 |
+| Power (INA228, MAX17048, charger state) | 11, 13–18 | `batt_mv`, `energy_in_mwh`, `energy_out_mwh`, `charge_in_mah`, `charge_out_mah`, `soc_gauge_pct`, `charger_pins` | 16 |
+| Enclosure temperature and humidity (SHTC3) | 19, 20 | `enclosure_temp_c`, `enclosure_rh_pct` | 4 |
 
-Thus the current record is 22 + 13 = **35 bytes**.
+With every module in the layout, the record is 22 + 39 = **61 bytes**. The current build does not send the minute extremes (bits 21–24) or the battery current (bit 12).
 
-- **Every field has its own INVALID code**: its all-ones value. A sensor fault, a missing sample, or an out-of-range reading gives INVALID. The node never leaves a field out because of a fault. Only the build decides which fields are present (`App/node_fields.h`). Thus a fault does not change the frame length.
+- **Every field has its own INVALID code**: its all-ones value. A sensor fault, a missing sample, or an out-of-range reading gives INVALID. The node never leaves a field out because of a fault. Thus a fault does not change the frame length. A module that leaves the layout removes its fields, and the frame becomes shorter.
 - **Out of range is INVALID, not clamped.** A temperature outside −40.00 to 125.00 °C becomes INVALID (`ws_code_temp_centi`). Relative humidity is the exception. It is clamped to 0–100 % (`ws_code_rh_centi`), as Sensirion recommends.
 - **One SHT45 fault invalidates both temperature and humidity.** The two values come from one I²C reply.
 - **INVALID codes are impossible values.** A reader that forgets to check gets 615.35 °C (`0xFFFF` − 4000, in 0.01 °C) or 655.35 %. Range checks reject both.
@@ -232,7 +232,7 @@ The STM32WL55JC has 256 KB of flash in 128 pages of 2 KB. The flash programs 64 
 | Pages | Size | Contents |
 |---|---|---|
 | 0–54 | 110 KB | Firmware. The linker script enforces this limit. |
-| 55–124 | 140 KB | Journal ring: 70 pages × 36 slots (current build) |
+| 55–124 | 140 KB | Journal ring: 70 pages × 25 slots (current build) |
 | 125–126 | 4 KB | Monotonic log, two pages (A and B): epochs, counter reservations, lost total, abandoned total |
 | 127 | 2 KB | Configuration: station ID, key, key check value (KCV) |
 
@@ -242,22 +242,22 @@ A firmware update programs only pages 0–54. The configuration, the counters, a
 
 The fields that the build measures set the slot size (`App/node_fields.h`, section 4). A slot is the observation plaintext rounded up to whole double-words, plus a commit double-word and an ACK double-word (`JOURNAL_SLOT_BYTES` in `App/node_store.h`).
 
-For the current build, the plaintext is 35 bytes. It rounds up to 5 double-words (40 bytes). Thus a slot is 40 + 8 + 8 = **56 bytes**.
+For the current build, the widest plaintext is 61 bytes. It rounds up to 8 double-words (64 bytes). Thus a slot is 64 + 8 + 8 = **80 bytes**.
 
 ```mermaid
 packet-beta
-  0-319: "observation plaintext, 35 bytes, padded with 0x00 (double-words 0-4)"
-  320-383: "commit word: magic 0x4A53 + CRC-16 (double-word 5)"
-  384-447: "ACK word: all 0xFF pending, all 0x00 acknowledged (double-word 6)"
+  0-511: "observation plaintext, up to 61 bytes, padded with 0x00 (double-words 0-7)"
+  512-575: "commit word: magic 0x4A53 + CRC-16 (double-word 8)"
+  576-639: "ACK word: all 0xFF pending, all 0x00 acknowledged (double-word 9)"
 ```
 
 | Double-word | Bytes | Contents | Programmed |
 |---:|---:|---|---|
-| 0–4 | 40 | Observation plaintext (35 bytes), padded with `0x00` | First |
-| 5 | 8 | Commit word: magic `0x4A53` + CRC-16/CCITT of the 35 plaintext bytes | Second |
-| 6 | 8 | ACK word: all `0xFF` = pending, all `0x00` = acknowledged | When the ACK arrives |
+| 0–7 | 64 | Observation plaintext (up to 61 bytes), padded with `0x00` | First |
+| 8 | 8 | Commit word: magic `0x4A53` + CRC-16/CCITT of the plaintext bytes | Second |
+| 9 | 8 | ACK word: all `0xFF` = pending, all `0x00` = acknowledged | When the ACK arrives |
 
-Each journal page starts with an 8-byte header: a 32-bit magic and a 32-bit page sequence number. Then the page has (2048 − 8) / 56 = 36.4, so **36 slots**. The magic is `"WSJ"` plus the slot size in its low byte: `0x57534A38` (`WSJ8`, because 56 = `0x38` = ASCII `8`). The firmware ignores a page with another magic at boot and recycles it by the normal erase-before-reuse. Examples are a page from an older journal format, or a page from a build whose field set gives another slot size. The firmware never reads such a page as data. When the firmware reads a record back, its own field bitmap gives its length (`ws_obs_plain_len`).
+Each journal page starts with an 8-byte header: a 32-bit magic and a 32-bit page sequence number. Then the page has (2048 − 8) / 80 = 25.5, so **25 slots**. The magic is `"WSJ"` plus the slot size in its low byte: `0x57534A50` (`WSJP`, because 80 = `0x50` = ASCII `P`). The firmware ignores a page with another magic at boot and recycles it by the normal erase-before-reuse. Examples are a page from an older journal format, or a page from a build whose field set gives another slot size. The firmware never reads such a page as data. When the firmware reads a record back, its own field bitmap gives its length (`ws_obs_plain_len`).
 
 ### 5.3 Slot life cycle
 
@@ -292,7 +292,7 @@ If the ECC (error-correcting code) error is in the ACK word only, the firmware c
 
 ### 5.5 Capacity
 
-One of the 70 journal pages is always being recycled. The journal therefore holds at least 69 pages × 36 slots = **2,484 observations**. At one observation each minute, this is 2,484 / 60 = **41.4 hours** without an ACK. A build with more fields has larger slots and fewer of them. The full proof-of-concept field set needs 80-byte slots, 25 per page, 1,725 records, about 28.8 hours. A build with every catalog field needs 96-byte slots, 21 per page, 1,449 records, **24.2 hours**. A compile-time check in `node_store.c` keeps this 24-hour floor. When the ring is full, the firmware erases the oldest page. It counts each pending observation on that page as `lost`.
+One of the 70 journal pages is always being recycled. The journal therefore holds at least 69 pages × 25 slots = **1,725 observations**. At one observation each minute, this is 1,725 / 60 = **28.75 hours** without an ACK. A build with more fields has larger slots and fewer of them. The full proof-of-concept field set also needs 80-byte slots. A build with every catalog field needs 96-byte slots, 21 per page, 1,449 records, **24.2 hours**. A compile-time check in `node_store.c` keeps this 24-hour floor. When the ring is full, the firmware erases the oldest page. It counts each pending observation on that page as `lost`.
 
 > **Caution:** The 30-day buffer requirement (test H11) needs external SPI NOR flash. The internal journal does not satisfy H11.
 
@@ -370,18 +370,18 @@ packet-beta
 
 | Kind | Plaintext *n* | Frame |
 |---|---:|---:|
-| Observation, current build | 35 | **51 bytes** |
+| Observation, current build | up to 61 | **up to 77 bytes** |
 | Observation, any build | 23 to 78 | 39 to 94 bytes |
 | ACK, NACK | 17 | **33 bytes** |
 | Health report | 32 | **48 bytes** |
 
-The current observation frame:
+The current observation frame, with every module in the layout:
 
 ```mermaid
 packet-beta
   0-63: "header (8 bytes, AAD)"
-  64-343: "ciphertext of the 35-byte observation"
-  344-407: "CCM tag (8 bytes)"
+  64-551: "ciphertext of the 61-byte observation"
+  552-615: "CCM tag (8 bytes)"
 ```
 
 ### 7.2 Nonce and associated data
@@ -519,11 +519,11 @@ The symbol time is `Ts = 2^SF / BW = 128 / 500 kHz = 0.256 ms`. This formula giv
 
 | Frame | PL | ceil(…) | n | Preamble (8 + 4.25) | **Total** |
 |---|---:|---|---:|---:|---:|
-| Observation (current build) | 51 | ceil(424 / 28) = 16 | 88 | 12.25 symbols | 100.25 × 0.256 = **25.7 ms** |
+| Observation (current build, widest) | 77 | ceil(632 / 28) = 23 | 123 | 12.25 symbols | 135.25 × 0.256 = **34.6 ms** |
 | ACK / NACK | 33 | ceil(280 / 28) = 10 | 58 | 12.25 symbols | 70.25 × 0.256 = **18.0 ms** |
 | Health report | 48 | ceil(400 / 28) = 15 | 83 | 12.25 symbols | 95.25 × 0.256 = **24.4 ms** |
 
-At SF12, the same frames take 534.5 ms (observation), 411.6 ms (ACK) and 493.6 ms (health report). Airtime increases in steps of 4 × SF bits: about every 3–4 bytes at SF7. The firmware uses the same formula (`ws_lora_airtime_ms()` in `firmware/common/ws_policy.c`). It rounds up to whole milliseconds: 26 ms and 18 ms at SF7.
+At SF12, the same frames take 698.4 ms (observation), 411.6 ms (ACK) and 493.6 ms (health report). Airtime increases in steps of 4 × SF bits: about every 3–4 bytes at SF7. The firmware uses the same formula (`ws_lora_airtime_ms()` in `firmware/common/ws_policy.c`). It rounds up to whole milliseconds: 35 ms and 18 ms at SF7.
 
 The formula is in Semtech AN1200.13 and the SX1261/2 datasheet [[SX126X]](#SX126X). You can also use an online calculator [[AIRTIME]](#AIRTIME).
 
@@ -574,13 +574,13 @@ sequenceDiagram
   participant GW as Gateway (ws0)
   participant DB as SQLite
   Note over TX: 4th 15-s sample of the minute
-  TX->>TX: Encode 35 bytes
+  TX->>TX: Encode the observation (up to 61 bytes)
   TX->>TX: Write journal slot (store before send)
   TX->>TX: Queue = live + up to N oldest pending
   rect rgba(80,140,255,0.12)
   Note over TX,DB: Live observation first
   TX->>TX: Wait 50 ms, reserve counter, seal frame
-  TX-)RX: Observation frame (51 B, 25.7 ms)
+  TX-)RX: Observation frame (up to 77 B, 34.6 ms)
   TX->>TX: TxDone, open receive window (2,000 ms)
   RX->>GW: hex line, then "#rx obs rssi snr"
   GW->>GW: Authenticate, check counter, validate
@@ -639,7 +639,7 @@ stateDiagram-v2
 ### 9.3 Rules
 
 - **Live first.** The current observation goes first. The backlog cannot delay new data.
-- **Bounded backlog.** Each minute sends N old observations at most (section 9.4). At NORMAL (N = 5), a full 41-hour journal (2,484 records) clears in approximately 8.3 hours (2,484 / 5 = 497 minutes). In CONSERVE (N = 0) the backlog does not clear. The 30-day buffer test (H11) must examine this rate.
+- **Bounded backlog.** Each minute sends N old observations at most (section 9.4). At NORMAL (N = 5), a full 28.75-hour journal (1,725 records) clears in approximately 5.75 hours (1,725 / 5 = 345 minutes). In CONSERVE (N = 0) the backlog does not clear. The 30-day buffer test (H11) must examine this rate.
 - **A retry is the same data.** A retry has the same identity and a new counter. The gateway stores it once and sends the ACK again.
 - **The RX board does not decide.** It forwards frames with the correct version, kind and length. Upstream, that is an observation of 39–94 bytes or a 48-byte health report (`ws_air_frame_ok`). Downstream, it is a 33-byte ACK or NACK (`ws_host_reply_ok`). It does not check the tag. It has no key.
 - **Any authentic ACK clears its own slot.** An ACK can arrive late. It still clears the correct slot.
@@ -655,7 +655,7 @@ Source: [`radio-energy-policy.md`](radio-energy-policy.md), `App/tx_policy.c` an
 | CONSERVE | 0 | 2 s | Live reading only, at most every 300 s |
 | CRITICAL | 0 | 0 | Nothing is sent. Readings stay in the journal. |
 
-- **Airtime cap.** The firmware estimates one answered exchange as observation airtime + ACK airtime + 300 ms. That is 26 + 18 + 300 = 344 ms at SF7 and 500 kHz (`exchange_ms` in `App/tx_policy.c`). The number of frames in a minute is limited to the radio time ÷ 344 ms. For the 5 s NORMAL cap that is 14, so the NORMAL backlog limit of 5 applies. The live reading always fits.
+- **Airtime cap.** The firmware estimates one answered exchange as observation airtime + ACK airtime + 300 ms. It uses the widest observation frame of the build (`OBS_FRAME_MAX`). That is 35 + 18 + 300 = 353 ms at SF7 and 500 kHz (`exchange_ms` in `App/tx_policy.c`). The number of frames in a minute is limited to the radio time ÷ 353 ms. For the 5 s NORMAL cap that is 14, so the NORMAL backlog limit of 5 applies. The live reading always fits.
 - **The drain stops one frame after a miss.** If a frame gets no reply, the node sends one more frame of the planned queue, then stops. A second miss in a row, or a transmit timeout, stops it at once. The one more frame lets a strike tell a record that the gateway refuses from a lossy link (section 9.5).
 - **PROBING.** After 3 consecutive minutes with no answer, the link state becomes PROBING. The node then sends the live reading only, with no backlog. In SURPLUS and NORMAL, the live reading still goes every minute, so the bench prototype always sends every minute. Only CONSERVE waits 120 s, 240 s and 480 s, then every 900 s (`ws_link_may_send()` in `firmware/stage0.c`, changed 2026-10-13). Any answer to a sent frame makes the link LINKED again. The node also sends the health report while probing, with link state 1.
 
@@ -685,7 +685,7 @@ A record leaves the journal without an ACK in three cases. The node counts each 
 |---|---|---|
 | Observation frame lost on air | No ACK in 2 s. Red LED on TX. | Next minute: sent again as backlog |
 | ACK lost on air | Gateway has the row. TX keeps the slot. | Next minute: duplicate. Gateway gives the ACK again. No second row. |
-| Gateway not running | RX prints the frame. Nobody answers. | TX keeps observations for about 41 hours |
+| Gateway not running | RX prints the frame. Nobody answers. | TX keeps observations for about 28 hours |
 | Database commit fails | No ACK | TX keeps the slot and sends it again |
 | Authentic frame, identity collision or invalid record | Gateway stores the frame in `rejections`. It sends a NACK. | TX abandons the record (section 9.5) |
 | Gateway silent for 3 minutes | TX goes to PROBING | Live reading every minute in SURPLUS and NORMAL. Probes after 120, 240 and 480 s, then every 900 s, in CONSERVE. The backlog drains after the link returns. |
@@ -709,11 +709,13 @@ flowchart LR
 
 The ST-LINK on each Nucleo board makes the USB virtual COM port. The port name changes when you move the cable. **Identify a board by its ST-LINK serial number, not by its port name.**
 
+The gateway opens the port exclusively (`open_port()` in `ws0/link.py`). On macOS and Linux, pyserial locks the port with `flock`. A second program that opens the same port fails. Thus it cannot take lines from the gateway's buffer and lose frames. After a serial error, the gateway closes the port. It opens the port again after a back-off of 1, 2, 4, 8, then 15 s.
+
 ### 10.2 Line format
 
 | Direction | Line | Meaning |
 |---|---|---|
-| RX to host | Lowercase hex digits + `\n`: 102 for a current observation (51 bytes), 96 for a health report (48 bytes). Any observation of 39–94 bytes is forwarded. | One observation or health-report frame (kind 1 or 4) |
+| RX to host | Lowercase hex digits + `\n`: up to 154 for a current observation (up to 77 bytes), 96 for a health report (48 bytes). Any observation of 39–94 bytes is forwarded. | One observation or health-report frame (kind 1 or 4) |
 | RX to host | `#rx obs rssi=-23 snr=13` | Diagnostic for the line before (also printed for kind 4) |
 | RX to host | `#rx drop …`, `#rx crc …`, `#rx hdr …`, `#tx timeout`, `#tx busy`, `#host reject …`, `#boot …`, `#status …`, `#watchdog radio not listening; re-arming` | Diagnostics |
 | RX to host | `#alive uptime=… forwarded=… dropped=… acks=… diag=… listening=…` | Every 60 s. The gateway marks the receiver silent after 180 s without it. |
@@ -722,7 +724,7 @@ The ST-LINK on each Nucleo board makes the USB virtual COM port. The port name c
 
 Rules:
 
-- A line is 256 bytes or less. The gateway discards a longer line.
+- The RX board accepts a host line of 256 bytes or less (`WS_LINE_MAX`). The gateway accepts an RX line of 1,024 characters or less (`MAX_LINE` in `ws0/link.py`). Each side discards a longer line whole.
 - A line that starts with `#` is a diagnostic. The gateway writes it to `receiver.log` in its run directory (`--directory`, for example `run-hw/` at home or `run-office/` at the office). It never decodes it as a frame. It reads the fields of `#alive` and `#boot role=rx` only for receiver liveness.
 - The gateway writes each frame and its ACK or NACK to `receiver.log`, with the UTC time (`frame <hex> -> ack <hex>` or `-> nack <hex>`, and health reports as `diag <hex>`). This file is evidence for H01.
 - The serial read timeout is 50 ms. The gateway answers a frame immediately. (The TX ACK window is 2 s.)
@@ -867,7 +869,7 @@ Rules:
 
 | Interface | Address | Notes |
 |---|---|---|
-| HTTP API | `127.0.0.1:8088`, bearer token | `/v1/status`, `/v1/observations/latest`, `/v1/observations` (JSON or CSV) |
+| HTTP API | `127.0.0.1:8088` (`http_bind`, `http_port` in `gateway.json`), bearer token | `/v1/status`, `/v1/observations/latest`, `/v1/observations` (JSON or CSV), and the dashboard endpoints ([`web-dashboard.md`](web-dashboard.md)). At most 32 connections at a time. |
 | MQTT | `weatherstation/v1/{station}/…` | Off by default. Home Assistant discovery is available. Verified against a local Mosquitto broker on 2026-10-13 (`evidence/mqtt-local-broker-2026-10-13/`). Not yet tested against the real Home Assistant broker. |
 
 See [`openapi.json`](openapi.json) and the firmware README ([`../firmware/stage0-node/README.md`](../firmware/stage0-node/README.md)).
@@ -896,7 +898,7 @@ packet-beta
   272-335: "tag 212d7f2e95a5e34f"
 ```
 
-The gateway opens it with the station key. The plaintext is 26 bytes. It has temperature and humidity only (bitmap `0x00000003`), not the minute summary of the current build:
+The gateway opens it with the station key. The plaintext is 26 bytes. It has temperature and humidity only (bitmap `0x00000003`), not the field set of the current build:
 
 ```mermaid
 packet-beta
@@ -984,7 +986,7 @@ EOF
 | Nonce reuse after a key is used again | The gateway raises the key-reuse alarm for an authentic frame at or below its counter mark whose bytes differ from the frame it accepted under that counter (section 11.1) | Detected, not prevented: re-key |
 | RX board is compromised | RX has no key. It can only drop or delay frames. | Drop = backlog. Delay = late data. |
 | Key extraction from the TX board | **None on the bench prototype.** Readout protection (RDP) is at level 0 (`FLASH_OPTR` = `0x3FFFF0AA` on both boards, [`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), board inventory). The key is in plain flash. | Use RDP level 1 or higher before field use |
-| Radio jamming | None (physical layer) | The backlog survives about 41 hours |
+| Radio jamming | None (physical layer) | The backlog survives about 28 hours |
 
 ---
 
@@ -1036,7 +1038,7 @@ When you change the protocol, do these steps:
 | <a id="RM0453"></a>RM0453 | ST, STM32WL5x reference manual (flash, ECC, SUBGHZ radio) — <https://www.st.com/en/microcontrollers-microprocessors/stm32wl55jc.html> (Documentation tab) |
 | CubeWL | ST, STM32CubeWL v1.6.0 (HAL, SubGHz_Phy, Mbed TLS) — <https://github.com/STMicroelectronics/STM32CubeWL> |
 | <a id="SX126X"></a>SX126X | Semtech SX1261/2 (the radio core in STM32WL): time-on-air formula, sync word, symbol timeout — <https://www.semtech.com/products/wireless-rf/lora-connect/sx1262> |
-| <a id="AIRTIME"></a>AIRTIME | LoRa airtime calculator (select US915, 500 kHz, SF7, 51 bytes) — <https://avbentem.github.io/airtime-calculator/> |
+| <a id="AIRTIME"></a>AIRTIME | LoRa airtime calculator (select US915, 500 kHz, SF7, 77 bytes) — <https://avbentem.github.io/airtime-calculator/> |
 | <a id="RP002"></a>RP002 | LoRa Alliance, *RP002 Regional Parameters* — <https://resources.lora-alliance.org/technical-specifications> |
 | <a id="FCC247"></a>FCC247 | 47 CFR §15.247 — <https://www.ecfr.gov/current/title-47/chapter-I/subchapter-A/part-15/subpart-C/section-15.247> |
 | <a id="FCC249"></a>FCC249 | 47 CFR §15.249 — <https://www.ecfr.gov/current/title-47/chapter-I/subchapter-A/part-15/subpart-C/section-15.249> |

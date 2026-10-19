@@ -72,7 +72,7 @@ flowchart TB
 
 ## Measure when the parts arrive
 
-The parameters marked `MEASURE` at the top of `source/build.py` are estimates. Check them and rebuild:
+The parameters marked `MEASURE` at the top of `source/build.py` are estimates. `BATTERY` comes from the product page and is not marked, but check it too. Check them and rebuild:
 
 | Parameter | Now | Check against |
 |---|---|---|

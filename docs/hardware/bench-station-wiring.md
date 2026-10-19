@@ -28,7 +28,7 @@ flowchart LR
     PB2["PB2: ADC IN4"]
     PB5["PB5: EXTI5"]
     PB8["PB8, PB10: inputs"]
-    PA9["PA9: sensor power enable"]
+    PA9["PA9: sensor power enable (protoboard only)"]
     V33["3V3 (CN6.4), GND (CN6.6)"]
   end
   HUB["STEMMA QT hub"] --- SHT45["SHT45 0x44 (outside air)"]
@@ -54,9 +54,9 @@ flowchart LR
 | Anemometer | PC0 | morpho CN10.14 | the circuit of section 3 |
 | Wind vane | PB2 | CN7.30 (A1 in most examples, A0 in one) | the circuit of section 3 |
 | Rain gauge | PB5 | CN9.5 or morpho CN10.29 | the circuit of section 3 |
-| bq24074 PGOOD | PB8 | D5, CN9.6 or morpho CN10.27 | direct; the internal pull-up does the rest |
-| bq24074 CHG | PB10 | morpho CN10.25 | direct |
-| Sensor 3.3 V switch | PA9 | D9, CN5.2 or morpho CN10.19 | protoboard only: the enable of a high-side load switch, high = on |
+| bq24074 PGOOD | PB8 | D5, CN9.6 or morpho CN10.27 | direct. The internal pull-up does the rest. Check 5 V tolerance first (section 6) |
+| bq24074 CHG | PB10 | morpho CN10.25 | direct. Check 5 V tolerance first (section 6) |
+| Sensor 3.3 V switch | PA9 | D9, CN5.2 or morpho CN10.19 | protoboard only: the enable of a high-side load switch, high = on. Not on the breadboard |
 
 Keep these pins free:
 
@@ -75,8 +75,12 @@ Keep these pins free:
 
 The SparkFun SEN-15901 has two RJ11 cables. The wind cable comes from the vane and carries both the
 vane and the cups (the cups plug into the vane). The rain cable comes from the gauge. Use the SparkFun
-RJ11 breakout (BOB-14021) for each. **Check which RJ11 conductors carry which switch against the
+RJ11 breakout (BOB-14021) for each. One BOB-14021 is a panel of two boards, so one order gives
+both breakouts. **Check which RJ11 conductors carry which switch against the
 SparkFun datasheet and the breakout's silkscreen before you wire.**
+
+The reed switches and the vane resistors are inside the SEN-15901. You add only the pull-ups and
+the capacitors in the table below.
 
 | Input | Circuit |
 |---|---|
@@ -92,11 +96,14 @@ An unplugged vane reads near 3.3 V, and the firmware treats that as "no vane".
 
 | Part | Connection |
 |---|---|
-| bq24074 charger breakout | input from its own USB charger (mode A) or solar later. Its BAT terminal to the cell |
+| bq24074 charger breakout | input from its own USB charger (mode A) or solar later. Its LIPO pin (the chip's BAT) to the cell, through the INA228 shunt |
 | 6,600 mAh Li-ion cell | through the INA228 shunt: the shunt sits in the cell's positive lead |
 | INA228 | on the STEMMA QT hub. Its shunt in the cell's positive lead |
 | MAX17048 | on the STEMMA QT hub. Its cell input across the cell |
 | Grounds | the battery chain's ground to the NUCLEO's ground. The I2C bus needs it |
+
+The cell ends in a JST PH plug. On the breadboard, plug it into a JST PH 2-pin pigtail. Pigtail
+colours vary, so check + and − with a meter before you connect it.
 
 ## 5. Power modes
 
@@ -127,11 +134,15 @@ Check each item in ST's NUCLEO-WL55JC1 user manual (UM2592) and tick it here. A 
 match is moved before any soldering, and the firmware pin constants (`App/board_inputs.c`,
 `App/i2c_bus.lit.md`) change with it.
 
-- [ ] PA11 and PA12 on CN5.9 and CN5.10 (D14, D15), no solder bridge in the path.
+- [x] PA11 and PA12 on CN5.9 and CN5.10 (D14, D15), no solder bridge in the path. Checked
+  against UM2592 Rev 4 Table 17 on 2026-10-12, with CN6.4 = 3V3 and CN6.6 = GND
+  ([bring-up log](nucleo-wl55jc-bringup.md#verified-on-hardware)).
 - [ ] PC0 on morpho CN10.14, free of any board function.
 - [ ] PB2 header position (CN7.30 and whether it is A0 or A1), no solder bridge in the path.
 - [ ] PB5 header position, free of any board function.
 - [ ] PB8 and PB10 header positions, free of any board function.
+- [ ] PB8 and PB10 are 5 V tolerant (FT) in the STM32WL55 datasheet. Check this before you connect
+  PGOOD and CHG. The breadboard build sheet's bench checks give the reason.
 - [ ] PA9 header position, free of any board function.
 - [ ] The jumper settings that let CN7.16 power the board in mode B, with the ST-LINK off.
 - [ ] No other solder bridge connects any of these pins to an on-board part.
@@ -149,7 +160,12 @@ The firmware decodes the 16 vane positions from voltages computed from the Spark
 
 ## 8. Bench checks
 
-Run these on the breadboard after the UM2592 check. The console is the ST-LINK virtual COM port.
+Run these on the breadboard after the UM2592 check. The console is the ST-LINK virtual COM port
+(115200 8N1). To send one line and print the replies, find the TX board by its ST-LINK serial number:
+
+```sh
+.venv/bin/python tools/console.py 003B00194142500E20353451 MODULES
+```
 
 | Check | How | Expected |
 |---|---|---|

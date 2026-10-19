@@ -28,7 +28,6 @@ row a) and R- and R+ (beside row j). The renders are in `renders/`.
 
 Each jumper is one wire between the two holes. Colour by class: i2c blue, wind green, rain cyan, charger orange, power red, ground black.
 
-
 ### Board A
 
 | Jumper | From | To | Net | Class |
@@ -97,7 +96,8 @@ Do these before you connect power.
 - **INA** (Adafruit INA228 #5832 (8-pin header; I2C on its STEMMA QT cable)): The shunt is between VIN+ and VIN-. Check the VBUS jumper on the back.
 - **REG** (Pololu S7V8F3 3.3 V regulator #2122): Pololu gives the four pins but not their order. Read the labels on the back before plugging in.
 - **CELL** (Battery 6600 mAh #353 on a JST PH pigtail): JST PH pigtail colours vary: check + and - with a meter before plugging in.
+- **3V3, not 5 V:** W29 goes to CN6.4 (3V3). On the Arduino power header the next pin, CN6.5, is 5 V: check the hole against UM2592 Table 17 before you push the wire in.
 - **Rails:** some 830-point boards split each rail at the centre. If yours do, set `split_rails = true` in `source/wiring.toml` and rebuild: the plan then bridges the halves.
 - **NUCLEO headers:** the positions follow the wiring guide. Tick its section 6 checklist against UM2592 first. The drawing of the headers is not to scale.
-- **PGOOD and CHG voltage:** the bq24074 breakout pulls these pins up through its status LEDs toward its output (about 4.4 to 5 V). Confirm in the STM32WL55 datasheet that PB8 and PB10 are 5 V tolerant (FT) before you connect W31 and W36.
+- **PGOOD and CHG voltage:** on the bq24074 breakout each status LED and its 10 kOhm resistor run from the charger output OUT to the pin (PGOOD: D1 and R11. CHG: D3 and R7. Source: adafruit/Adafruit-BQ24074-PCB). With the LED off, the pin goes toward OUT, up to about 5 V on USB. Confirm in the STM32WL55 datasheet that PB8 and PB10 are 5 V tolerant (FT) before you connect W31 and W36.
 - **Mode A is drawn:** the BATTERY POWER shunt is open and the 100 ohm load is fitted. For mode B, follow the wiring guide section 5.

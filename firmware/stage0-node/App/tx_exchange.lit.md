@@ -439,8 +439,9 @@ qn = 21: 116 s
 ```
 
 `exchange_overdue(now_s)` is true when an exchange runs and more than `exchange_limit_s` has passed
-since `exchange_start_s`. `watchdog_healthy` (`app_tx.c`) then calls `exchange_abort` (section 9)
-and lets the watchdog reset the board.
+since `exchange_start_s`. `watchdog_healthy` (`app_tx.c`) then calls `sampling_stop`, which stops
+the sample and module timers. Next it calls `exchange_abort` (section 9) and lets the watchdog reset
+the board.
 
 The first frame also waits for the gap. The previous exchange can put the radio to sleep in the same
 main-loop pass. The chip needs time to enter sleep before the firmware wakes it.
@@ -1110,12 +1111,14 @@ against `firmware/host/tx_harness.c`. The harness simulates the clock, ST's time
 radio that behaves like ST's driver, the SHT45 temperature and humidity sensor, and the flash under
 the real `node_store.c`. The test build adds the undefined-behaviour sanitizer (UBSan) to the
 library. `TxUnderAddressSanitizer` runs the suite again under the address sanitizer (ASan) where the
-platform allows the preload of its runtime. At its end, every test also checks four things:
+platform allows the preload of its runtime. At its end, every test also checks these things:
 
 - No flash operation ran while the radio was busy.
 - The firmware did not start a timer that was already running.
 - No radio command ran without the radio interrupt masked.
 - No `WS_CHECK` failed.
+- The main-loop tasks settled. Tests of the flash storm skip this check, because the storm task
+  posts itself again.
 
 | Area | Tests |
 |---|---|

@@ -1,6 +1,6 @@
 # Fuzzing the node's input parsers
 
-These targets cover the code that reads input from outside the node: radio replies and console lines. They give that code malformed input under AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan). They also check properties that must hold for every input.
+These targets cover the code that reads input from outside the node: radio replies, console lines and sensor module blocks. They give that code malformed input under AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan). They also check properties that must hold for every input.
 
 | Target | Code under test | Properties beyond "no memory error" |
 |---|---|---|
@@ -8,8 +8,9 @@ These targets cover the code that reads input from outside the node: radio repli
 | `provision` | `ws_parse_provision` (`firmware/stage0.c`): the `PROVISION` arguments. | On success: the station is 1–65,535 (the frame header holds 2 bytes for it). The epoch floor is in range. The key equals the 32 hex digits typed. Only digits come after the optional space. |
 | `console` | `ws_line_feed`, `ws_hex_decode`, `ws_host_reply_ok`, `ws_air_frame_ok` (`firmware/common/ws_console.c`), then `ws_parse_provision`. The input is a raw UART byte stream as either board receives it. | Lines are 1–256 bytes with no `\n`/`\r`. The line buffer is cleared after each line. A hex decode is exactly half the line. Only a 33-byte ACK/NACK of protocol version 5 passes the RX check toward the radio. Only valid observation and health-report lengths pass the RX check toward the host. |
 | `obs` | `ws_obs_encode` (`firmware/common/ws_obs.c`): any records, with codes biased to the edges, INVALID and CALM. | The encoder accepts exactly the records that an independent copy of the specification's catalog accepts. Accepted records have the length, header and big-endian fields of the specification. |
+| `wsmp` | The WSMP core (`firmware/common/wsmp.c`): the unpack functions for the identity, descriptor and snapshot blocks, `wsmp_desc_check` and `wsmp_text_ok`. Byte 0 of the input selects the block. | Each unpack function accepts exactly the blocks that `docs/module-protocol.md` sections 4–6 allow. A re-pack of an accepted block gives the same bytes. `wsmp_desc_check` accepts exactly the registry entry of a module type. The oracle is an independent copy of the specification. |
 
-The boards run the same functions (`App/console.c`, `App/app_rx.c`, `App/tx_console.c`, `App/tx_exchange.c`).
+The boards run the same functions (`App/console.c`, `App/app_rx.c`, `App/tx_console.c`, `App/tx_exchange.c`, `App/wsmp_host.c`).
 
 ## Run
 

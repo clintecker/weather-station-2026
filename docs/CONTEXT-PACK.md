@@ -1,7 +1,8 @@
 # Context pack: resume the bench prototype on a new machine
 
 Written 2026-10-13 for picking the work up at the office with the two boards. Updated 2026-10-14
-for protocol version 5, and 2026-10-16 for the current release. Give this file to a fresh Claude
+for protocol version 5, 2026-10-16 for release `260c9ccbe938`, and 2026-10-19 for the DATAVANE5K
+bench station and release `04fcc656938d`. Give this file to a fresh Claude
 Code session first. Links to the deeper documents are at the end.
 
 ## 1. What this project is
@@ -9,8 +10,8 @@ Code session first. Links to the deeper documents are at the end.
 A home weather station.
 
 - The sensor node is a NUCLEO-WL55JC1 development board (STM32WL microcontroller with a LoRa
-  radio). It sends one temperature and relative-humidity (T/RH) reading a minute over encrypted
-  LoRa to a receiver board on USB.
+  radio). It sends one reading a minute over encrypted LoRa to a receiver board on USB. The reading
+  holds temperature and relative humidity (T/RH), plus the fields of the other bench station modules.
 - A Python gateway (`ws0`) stores the readings in SQLite. Later it feeds Home Assistant (HA) over
   MQTT.
 - The two boards are the transmitter (TX, the sensor node) and the receiver (RX).
@@ -38,17 +39,25 @@ flowchart LR
 
 ## 2. Where things stand (on `master`)
 
-- **Firmware release `260c9ccbe938`** (2026-10-16) is on both boards
-  (`firmware/stage0-node/RELEASES.md`). The gateway runs on run directory `run-d6`. The key check
-  value (KCV) of its key is `e03059`.
+- **Firmware release `04fcc656938d`** (2026-10-19) is on TX. RX stays on `cc2766a38c61`, because
+  the RX code did not change (`firmware/stage0-node/RELEASES.md`). The gateway runs on run directory
+  `run-d7`. The key check value (KCV) of its key is `6e30cf`.
   - Check `STATUS` on each board before you rely on it. **No rebuild is needed** to resume.
   - TX = board A, ST-LINK serial `003B00194142500E20353451`.
   - RX = board B, ST-LINK serial `0016001E4142500E20353451`.
   - Identify boards by serial number. Port names change between machines.
+- **Sensors:** the TX reads its sensors as DATAVANE5K local modules (WSMP 1.0,
+  `docs/module-protocol.md`). There are seven modules: outside air, pressure, UVA, enclosure, power,
+  wind and rain (`App/mod_*.c`, `App/wsmp_host.c`). The wiring is in
+  `docs/hardware/bench-station-wiring.md`. The breadboard map is `hardware/bench-breadboard-r0/`.
+  - At the bench check of `cc2766a38c61`, only the SHT45 was on the bus.
+  - GitHub issues #2, #3 and #4 (INA228 accumulators, vane ADC calibration, cup input filter) are
+    fixed in firmware. They stay open until their bench checks pass.
 - **Protocol version 5.** Spec: `docs/protocol.md`. Design rationale: `docs/protocol-design.md`.
   - Encryption: AES-128-CCM with an 8-byte header (version and kind, station u16, counter u40)
     and an 8-byte tag.
-  - Observation frame: 51 bytes for the T/RH build with the minute summary. It has a 22-byte
+  - Observation frame: 51 bytes for a T/RH-only field set. The WSMP bench field set gives at most
+    77 bytes (`firmware/stage0-node/README.md`). It has a 22-byte
     head, a field bitmap and catalog fields. Each field has its own INVALID code.
   - ACK and NACK frames: 33 bytes. The ACK carries the host time.
   - Health report: 48 bytes, every 15 min.
@@ -57,19 +66,22 @@ flowchart LR
     version-5 release (`bc5e6ede429c`) was installed that way.
   - Keys and run directories from protocol version 4 (`run-hw/`, `run-office/`) are retired.
     `run-d5` is archived as `run-d5-archive-2026-10-15/`.
+  - The flash-layout change of `cc2766a38c61` also needed a fresh key. `run-d6` is archived as
+    `run-d6-archive-2026-10-19/` (`docs/runbook-moving-boards.md`, "Changing the flash layout").
 - **Radio:** 915.0 MHz, 500 kHz bandwidth, spreading factor (SF) 7, coding rate 4/5, 0 dBm (bench).
 - **Bench-verified:**
-  - the journal: about 41 hours of outage buffer in internal flash (2,484 records of 56 bytes; 24 hours for a station with every sensor),
+  - the journal: about 28.7 hours of outage buffer in internal flash (1,725 slots of 80 bytes for the WSMP bench field set, 24 hours for a station with every sensor),
   - durable counters and the watchdog,
   - the reset-during-write test (70 cycles),
   - outage recovery with link back-off, NACK, and gateway auto-reconnect,
   - the host clock check and RX liveness,
-  - MQTT against a local broker (currently **disabled**),
+  - MQTT against a local broker. `run-d7/gateway.json` now enables MQTT to the Home Assistant
+    broker. No record yet shows the entities in Home Assistant,
   - the H01 scorer `tools/h01_report.py`.
 - **Latest soak evidence:** `evidence/soak-a07f498-2026-10-13/`. Over 9 h, 549 of 549 minutes
   arrived on time, with median latency 1.5 s, 0 lost and 0 missed ACKs.
-- **Tests:** `WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests` gave **137**
-  passing on 2026-10-14. One SNTP test needs the network.
+- **Tests:** `WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests` gave **595**
+  passing, none skipped, on 2026-10-19 (commit 09e6cea). One SNTP test needs the network.
   - Run `tools/fetch-vendor.sh` first. Without `vendor/`, the tests skip the C-against-Python
     crypto tests.
 - **Other checks** (all in CI, `.github/workflows/ci.yml`):
@@ -77,13 +89,14 @@ flowchart LR
     `pip install -r requirements-dev.txt`. CI runs it on Linux only.
   - Fuzzing of the node's input parsers: `make -C firmware/fuzz check`. The targets are `reply`
     (envelope open and seal limits), `provision`, `console` (line assembly, hex decode, RX up/down
-    filters) and `obs` (the observation encoder). `tests/test_fuzz.py` runs them on every test
+    filters), `obs` (the observation encoder) and `wsmp` (the WSMP module blocks). `tests/test_fuzz.py` runs them on every test
     run. CI also runs libFuzzer for 60 s per target (`firmware/fuzz/README.md`).
   - The C host tests (`test_policy`, `test_sensor`, the flash power-cut tests) and the fuzzers
     run under AddressSanitizer and UndefinedBehaviorSanitizer (not on Windows).
   - Firmware builds: GCC `-fanalyzer` on our files, the worst-case stack bound (`make stack`:
-    TX 71 %, RX 32 % of 8 KB for `260c9ccbe938`), and no blocking wait reachable at run time
+    TX 78 % of 8 KB for `04fcc656938d`. Its release record gives no RX figure), and no blocking wait reachable at run time
     (`make waits`, `docs/firmware-budget.md` §Blocking waits).
+  - `tools/gates.sh` runs these gates locally, one line per gate (not libFuzzer).
 
 ## 3. Moving the boards: the radio key stays on the gateway machine
 
@@ -144,8 +157,8 @@ flowchart TD
 ```sh
 git clone https://github.com/clintecker/weather-station-2026 && cd weather-station-2026
 python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt   # or: uv venv && uv pip install -r requirements.txt
-sh tools/fetch-vendor.sh                                                  # needed for 7 of the tests
-WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expect 137 OK, none skipped (needs network for one SNTP test)
+sh tools/fetch-vendor.sh                                                  # needed for the C-against-Python crypto tests
+WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expect 595 OK, none skipped (needs network for one SNTP test)
 
 # Plug both boards in, then find their ports. Each board is one /dev/cu.usbmodem*.
 # This lists each port with its ST-LINK serial (SER=...):
@@ -154,16 +167,17 @@ WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expec
 # Wipe and re-provision TX with a new key (115200 8N1 console):
 .venv/bin/python -m serial.tools.miniterm /dev/cu.usbmodem<TX> 115200
 #   type: WIPE ERASE-ALL-NODE-STATE   (TX reboots with solid red LED3 = unprovisioned). Ctrl-] to quit.
-.venv/bin/python -m ws0 init --hardware --station station-01 --station-id 1 --directory run-office
-.venv/bin/python -m ws0 provision-node --directory run-office --serial /dev/cu.usbmodem<TX>
-.venv/bin/python -m ws0 serve --directory run-office --serial-number 0016001E4142500E20353451
+.venv/bin/python -m ws0 init --hardware --station station-01 --station-id 1 --directory run-<name>
+.venv/bin/python -m ws0 provision-node --directory run-<name> --serial /dev/cu.usbmodem<TX>
+.venv/bin/python -m ws0 serve --directory run-<name> --serial-number 0016001E4142500E20353451
 # API: http://127.0.0.1:8088/v1/status. One reading a minute; blue LED flash, then green = ACKed.
 ```
 
-- `run-office/` matches the `run*/` ignore rule, so nobody can commit it by accident.
+- Use a new run directory (`run-<name>`) for each new key: `ws0 init` refuses one that exists. Every
+  `run*/` directory matches the ignore rule, so nobody can commit it by accident.
 - For a long run, install the launchd agent:
-  `tools/deploy/macos/install.sh install run-office 0016001E4142500E20353451`.
-- Keep the Mac awake (`caffeinate -dimsu`).
+  `tools/deploy/macos/install.sh install run-<name> 0016001E4142500E20353451`.
+- The office gateway Mac is a desktop that stays on all the time: no keep-awake step is needed.
 
 ## 5. Full setup (only to change or rebuild firmware)
 
@@ -183,7 +197,7 @@ WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expec
 - **Build and flash:**
   - `cd firmware/stage0-node && make ROLE=rx flash SERIAL=0016001E4142500E20353451`. Then do the
     same with `ROLE=tx` and the TX serial.
-  - Flashing keeps the provisioning and the journal.
+  - Flashing keeps the provisioning and the journal, if the flash layout does not change.
   - Record every release in `firmware/stage0-node/RELEASES.md`. H01 evidence must name a release.
 
 ## 6. Next steps, in order
@@ -202,8 +216,9 @@ flowchart TD
 2. **SHT45 sensor (Adafruit 6174), delivered 2026-10-13** with a 4397 STEMMA QT-to-female-socket
    cable, 1954 female/male jumpers and a spare Micro-B cable. *Wired 2026-10-14 on the morpho
    pins, with valid readings (`docs/hardware/nucleo-wl55jc-bringup.md`, "SHT45 first light").
-   Release `bc5e6ede429c` still had two open checks: the sensor-unplug behaviour (`null` T/RH,
-   `quality=sensor_fault`) and the first health report (build ID, ACK RSSI/SNR).*
+   On release `bc5e6ede429c` the sensor-unplug check passed (`null` T/RH, `quality=sensor_fault`,
+   then recovery. See the bring-up log, "Release bc5e6ede429c"). The first health report (build ID,
+   ACK RSSI/SNR) had no record then.*
    - Wiring (Arduino headers): SDA → CN5.9 (D14/PA11), SCL → CN5.10 (D15/PA12), 3V3 → CN6.4,
      GND → CN6.6. The bus is I2C2 at 100 kHz.
    - **The 4397's female sockets do not fit the female Arduino headers.** No-solder route: plug
@@ -223,6 +238,10 @@ flowchart TD
 5. **H01:** the 24-hour run plus the restart and outage matrix. Score it with
    `tools/h01_report.py --db <run dir>/observations.sqlite3 --station station-01 --start <UTC> --hours 24 --output evidence/h01-<date>`.
    Use the run directory that the gateway actually served. `--db` defaults to `run-hw/`.
+
+**Bench station (beside the steps above):** build it from
+`hardware/bench-breadboard-r0/build-sheet.md`. Then do the bench checks of GitHub issues #2, #3
+and #4. The `cc2766a38c61` section of `RELEASES.md` lists two bench faults found so far.
 
 **SHT45 test plan:** `docs/firmware-review-2026-10-13.md` §2.
 
@@ -269,6 +288,10 @@ energy state. It does not model the drain stop or the PROBING link state
 | `docs/protocol.md` | Wire format, protocol version 5 (normative) |
 | `docs/protocol-design.md` | Why the format looks the way it does (design rationale, reviews) |
 | `docs/protocol-stack.md` | Layered explanation with diagrams |
+| `docs/module-protocol.md` | DATAVANE5K, the module protocol WSMP 1.0 (normative) |
+| `docs/hardware/bench-station-wiring.md` | Bench station wiring to the TX board |
+| `hardware/bench-breadboard-r0/` | Breadboard map: `build-sheet.md`, renders, KiCad 10 model (`source/make.py`) |
+| `docs/poc-shopping-list.md` | Off-the-shelf parts for the bench station |
 | `docs/failure-modes.md` | Failure modes and effects (FMEA), loss budget, recovery runbook, open issues |
 | `docs/radio-energy-policy.md` | Approved send and back-off policy for battery and solar |
 | `docs/H01-checklist.md` | The 24-hour delivery test |
@@ -278,12 +301,17 @@ energy state. It does not model the drain stop or the PROBING link state
 | `firmware/stage0-node/RELEASES.md` | Release hashes |
 | `docs/firmware-review-2026-10-13.md` | Firmware review roadmap (§2: SHT45 test plan) |
 | `docs/firmware-budget.md` | Flash, RAM and radio budget, measured. Layout v2 and payload plan |
+| `docs/firmware-event-model.md` | How the firmware runs on both boards |
+| `docs/power-of-ten.md` | The firmware against the Power of Ten rules |
+| `docs/lora-firmware-update-study.md` | Design study: firmware updates over LoRa (nothing built) |
+| `docs/superpowers/` | Design specifications and implementation plans |
 | `docs/runbook-home-assistant.md` | MQTT and Home Assistant setup, password file, running the gateway on macOS, Linux, Windows |
 | `docs/runbook-moving-boards.md` | Moving boards between gateways without key or nonce reuse |
 | `docs/simulation-harness.md` | Simulation harness model and limits |
 | `docs/web-dashboard.md` | Live dashboard served by the gateway |
 | `docs/openapi.json` | Gateway HTTP API |
 | `firmware/rangetest/README.md` | Range-test bench tool |
+| `hardware/poc-enclosure-r1/` | Printed enclosure parts for the proof of concept |
 | `hardware/chicago-test-hardware-r0/` | Chicago test hardware, revision 0: build and order guide, manufacturing files |
 | `tools/README.md` | Every tool in `tools/` |
 | `evidence/` | Every bench run, dated |

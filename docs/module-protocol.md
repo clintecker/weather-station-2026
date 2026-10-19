@@ -1,8 +1,8 @@
 # DATAVANE5K: the Weather Station Module Protocol (WSMP)
 
 Version 1.0, draft of 2026-10-18. Status: normative design. The station side is implemented for
-local modules (the bench station, `firmware/stage0-node/App/wsmp_host.lit.md`); the radio part
-(section 11) and remote modules are not.
+local modules (the bench station, `firmware/stage0-node/App/wsmp_host.lit.md`). These parts are not
+implemented: the radio part (section 11), remote modules, and the UTC latch time (WSMP-T1).
 
 DATAVANE5K is the trade name of WSMP, the Weather Station Module Protocol. The technical name stays
 WSMP: in the code, in the requirement IDs (WSMP-L1 and so on) and in the registry.
@@ -92,13 +92,18 @@ The design has seven rules:
 
 ## 4. The registry
 
-The registry is one machine-readable file in the repository. A tool generates the C header for the
-station and the module firmware, and the Python module for the gateway, from that file. The
-generated files are committed, as `tools/tangle.py` does for literate sources. The tables in this
-section are the initial content.
+The registry is one machine-readable file in the repository: `firmware/common/wsmp_registry.toml`.
+The tool `tools/wsmp_registry.py` generates two files from it. `firmware/common/wsmp_registry.h` is
+the C header for the station and the module firmware. `ws0/wsmp_registry.py` is the Python module
+for the gateway. The generated files are committed, as `tools/tangle.py` does for literate sources.
+The header holds the code tables as initializers only. `firmware/common/wsmp.c` holds the one copy
+of each table. The tables in this section are the initial content.
 
 - **WSMP-G1.** Codes are append-only. A code is never reused. A change of meaning, unit or scale
-  basis gets a new code.
+  basis gets a new code. The lock file `tools/wsmp_registry.lock` enforces this rule. It records
+  each code with its name, the unit of each quantity, and the channels of each (module type, schema)
+  pair. `tools/wsmp_registry.py --check` fails when a locked entry is removed or changed. A new
+  schema of a module type can have new channels.
 - **WSMP-G2.** Code 0 means "none" in every table.
 - **WSMP-G3.** Every quantity has exactly one canonical unit. A module MUST report that unit.
 - **WSMP-G4.** The registry has a version number. The gateway records the registry version with each
@@ -175,8 +180,11 @@ enclosure). The station owner can change the role in the gateway configuration.
 | 3 | UVA | LTR390 | 1 | 8/mean | minute | outside | — |
 | 4 | enclosure temperature and humidity | SHTC3 | 1 | 1/mean, 2/mean | minute | enclosure | — |
 | 5 | battery and charger | INA228, MAX17048, bq24074 | 1 | 9/mean, 11/counter, 12/counter, 13/counter, 14/counter, 15/point, 16/state | health | battery | charger states: 0 off, 1 charging, 2 done, 3 fault |
-| 6 | wind | SparkFun SEN-15901 | 1 | 17/counter, 5/gust, 6/vector east sum, 6/vector north sum | minute | outside | 0.667 m/s per Hz, gust running mean 3 s |
+| 6 | wind | SparkFun SEN-15901 | 1 | 17/counter, 5/gust, 6/vector east sum, 6/vector north sum | minute | outside | 0.66698 m/s per Hz, gust running mean 3 s |
 | 7 | rain | SparkFun SEN-15901 | 1 | 7/counter | minute | outside | 0.2794 mm per tip |
+
+The registry file gives each factor as an integer in a small unit: `ums_per_hz = 666980` (µm/s per
+Hz) and `gust_ms = 3000` for wind, and `nm_per_tip = 279400` (nm per tip) for rain.
 
 The registry keeps the codes that no module type uses now, for example battery current (10) and the
 kinds minimum, maximum and sum. The gateway derives them (WSMP-H8). A later module type can use
@@ -383,14 +391,23 @@ stateDiagram-v2
     Active --> Suspect: a read fails
     Suspect --> Active: next read succeeds
     Suspect --> Absent: 3 latches without a good read (new descriptor set)
-    Quarantined --> Absent: module removed, or operator clears it
+    Quarantined --> Absent: module removed, operator clears it, or a flap quarantine ends
     Refused --> Absent: module removed
 ```
 
+In Identifying, the station checks three things. The identity block must pass WSMP-I1. The
+descriptor digest in the identity block must equal the CRC-32C of the descriptor block. The
+descriptors must pass WSMP-D7. A module that fails one check is quarantined. The admission check
+changes no port state. The station records the module's share of the radio budget only when it
+admits the module.
+
 - **WSMP-P1. Presence.**
   - A remote port shows presence by its module-present loop (a 10 kΩ resistor across pins 3 and 6).
-  - A local I2C module shows presence by an acknowledgment at its address and a correct chip ID register.
-  - The local wind module shows presence by a vane reading inside the vane's voltage band.
+  - A local I2C module shows presence by a successful sample. An address NACK means absent. Any
+    other failure is a bus fault (WSMP-P3). The BMP581, LTR390 and INA228 drivers also check a chip
+    ID register. Another chip at the address is absent.
+  - The local wind module shows presence by a vane voltage of 3.2 V or less. A higher voltage is an
+    open vane.
   - The local rain module cannot show presence, so the operator enables it by a stored console setting.
 - **WSMP-P2. Debounce.** The station MUST see two good probes in a row before it identifies a module.
   It MUST miss three latches in a row before it removes a module.
@@ -426,11 +443,14 @@ of a window from two snapshots.
 
 - **WSMP-T1. Windows on UTC.** The station latches at second 50 of each UTC minute. A window
   therefore runs from :50 to :50. The reading of the minute carries the UTC time of the end of the
-  window.
+  window. The bench station does not do this yet. It latches every fourth 15-second sample tick of
+  its own clock (`app_tx.c`).
 - **WSMP-T2. Read deadline.** The station MUST read all snapshots within 5 s after the latch. A
   remote module MUST answer a request within 20 ms.
 - **WSMP-T3. Missed latch.** A module without a latch for more than 90 s keeps aggregating. Its next
-  snapshot sets flag bit 1 and shows the real window length.
+  snapshot sets flag bit 1 and shows the real window length. The length field saturates at
+  65,535 ms (section 6.4). A module therefore sets flag bit 1 for every window longer than 65,535 ms.
+  This includes every window of more than 90 s.
 - **WSMP-T4. Free-running sampling.** A module samples on its own clock at the sample period in its
   metadata. The latch sets only the window boundaries.
 
@@ -444,6 +464,7 @@ Quality in the snapshot is one byte. The radio carries 2 bits:
 | 3 | 3 | missing: no valid sample. The value is not used |
 | 4 | 1 | warming up: the sensor is not stable yet |
 | 5 | 3 | sensor fault |
+| 6 to 255 | 3 | unknown code: the radio carries it as missing |
 
 - **WSMP-Q1.** A partial or missing minute is never counted as a good minute in the 24-hour delivery
   test.
@@ -460,13 +481,20 @@ module, through one interface:
 | `latch(token, utc)` | freezes the snapshot and starts the next window (WSMP-L1 to L3) |
 | `read_snapshot(snapshot)` | copies the frozen snapshot |
 
+In the bench station these operations are `local_probe_result`, `local_identity`, `local_latch` and
+`local_snapshot` (`firmware/stage0-node/App/wsmp_local.h`). `local_tick` runs each module's own
+schedule every 250 ms (`WSMP_TICK_MS`).
+
 - **WSMP-B1.** The station code that polls a local module and the code that polls a remote module are
   the same above this interface. A remote module is one implementation of the interface that sends
   Modbus requests.
 - **WSMP-B2.** A local I2C driver probes only in its own probe slot, never while its sensor measures.
   (The SHT45 does not acknowledge its address during a measurement. That is not an absence.)
-- **WSMP-B3.** After a bus fault, the station frees the bus with nine SCL clocks and a stop
-  condition. Then it probes each module again.
+- **WSMP-B3.** After a transfer that can leave the bus stuck, the station frees the bus. Such a
+  transfer ends in a timeout, a bus error, a HAL refusal, or SDA held low. The station clocks SCL
+  until SDA is free, at most nine times, and then sends a stop condition. A clean NACK gets no
+  recovery. The modules then probe again on their own schedules
+  (`firmware/stage0-node/App/i2c_bus.lit.md`).
 
 ## 11. From the station to the gateway
 
@@ -663,7 +691,7 @@ modules, these host tests cover part of the table:
 | Quality | each module's absent and out-of-range tests | |
 | Metadata | | all: no local module has a metadata block |
 | Fuzzing | `firmware/fuzz/fuzz_wsmp.c` | |
-| Station behaviour | `tests/test_wsmp_host.py`, `tests/test_wsmp_map.py` | the power cut during a set change |
+| Station behaviour | `tests/test_wsmp_host.py`, `tests/test_wsmp_map.py`, `tests/test_i2c_bus.py` | descriptor sets and generations (E1–E3, not implemented yet), the budget report in the health report (P5), remote presence and power (P1, P7) |
 | Gateway behaviour | | all: the gateway does not decode WSMP yet |
 
 ## 15. Open items

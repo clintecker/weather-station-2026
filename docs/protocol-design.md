@@ -49,7 +49,8 @@ spreading factor 7 (SF7), and every 6 bytes at SF12.
 
 | Frame | Previous format | This format | SF7 | SF12 |
 |---|---:|---:|---:|---:|
-| Observation, temperature and humidity with the minute summary (the current build) | — | **51 B** | 25.7 ms | 534.5 ms |
+| Observation, WSMP bench field set with every module in the layout (the current build) | — | **77 B** | 34.6 ms | 698.4 ms |
+| Observation, temperature and humidity with the minute summary (the previous bench build) | — | 51 B | 25.7 ms | 534.5 ms |
 | Observation, temperature and humidity only (the first build of this format) | 56 B | 42 B | 21.8 ms | 452.6 ms |
 | Observation, PRD Core weather set | — | 56 B | 26.9 ms | 575.5 ms |
 | Observation, full proof-of-concept station (weather, battery and enclosure, section 5.5) | — | 78 B | 34.6 ms | 698.4 ms |
@@ -154,8 +155,9 @@ target cover it.
 ### 3.6 What an eavesdropper sees
 
 An eavesdropper sees the kind, the station ID, the counter, the frame length and the timing. A
-reading never changes which fields are present (section 5.1). Thus the length does not show sensor
-faults. The kind byte tells a NACK from an ACK. The previous format also showed this.
+sensor fault never changes which fields are present (section 5.1). Thus the length does not show
+sensor faults. The length does show which modules are in the layout. The kind byte tells a NACK
+from an ACK. The previous format also showed this.
 
 ## 4. Fixed plaintexts
 
@@ -229,11 +231,13 @@ The present fields follow the 22-byte header, in increasing bit order. The flags
 3–7 are zero. `protocol.md` section 5.1 has the full table.
 
 **Presence rule:**
-- Only the build configuration decides which fields are present. A later build can add a fixed
-  schedule keyed on the sequence number. For example, it can send the power fields with every 5th
-  sequence.
-- A reading never changes which fields are present. The node sends a faulted field with its
-  INVALID code and never leaves it out. "Absent" means "not sent in this record by design".
+- The build configuration decides which fields a record can carry. On the WSMP bench, the modules
+  in the layout decide which of them a record carries (`App/wsmp_catalog_map.c`).
+- A later build can add a fixed schedule keyed on the sequence number. For example, it can send
+  the power fields with every 5th sequence.
+- A sensor fault never changes which fields are present. The node sends a faulted field with its
+  INVALID code and never leaves it out. "Absent" means "not sent in this record by design, or its
+  module is not in the layout".
 - The gateway rejects a bitmap of 0.
 
 **Every observation covers exactly one minute**, in every energy state:
@@ -280,7 +284,9 @@ The bench prototype runs on USB power. It always sends 1 (NORMAL).
     last journaled minute (up to about 59 s of tips).
 
 The "First build" column names the hardware that first carries each field. "Bench prototype" is
-the current USB-powered build. "Full station" is the full proof-of-concept station.
+the first USB-powered build, with the SHT45 only. "Full station" is the full proof-of-concept
+station. The current WSMP bench build already carries most "full station" fields from hobby
+breakout modules (see below).
 
 | *i* | Field | Bytes | Unit and step | Range (codes) | Special codes | First build |
 |---:|---|---:|---|---|---|---|
@@ -305,7 +311,7 @@ the current USB-powered build. "Full station" is the full proof-of-concept stati
 | 18 | `charger_pins` | 1 | raw bq24074 pins: bit 0 PGOOD (input power good), bit 1 CHG (charging), bits 2–7 zero | 0 to 3 | 0xFF INVALID | full station |
 | 19 | `enclosure_temp_c` | 2 | as `temperature_c` | as field 0 | 0xFFFF INVALID | full station (SHTC3) |
 | 20 | `enclosure_rh_pct` | 2 | as `humidity_pct` | as field 1 | 0xFFFF INVALID | full station (SHTC3) |
-| 21–24 | `temperature_min_c`, `temperature_max_c`, `humidity_min_pct`, `humidity_max_pct` | 2 each | as fields 0 and 1: extrema of the minute's valid 15-s samples | as fields 0 and 1 | 0xFFFF INVALID | **bench prototype** |
+| 21–24 | `temperature_min_c`, `temperature_max_c`, `humidity_min_pct`, `humidity_max_pct` | 2 each | as fields 0 and 1: extrema of the minute's valid 15-s samples | as fields 0 and 1 | 0xFFFF INVALID | **bench prototype** (the WSMP bench does not send them) |
 | 25 | `th_samples` | 1 | count of valid samples behind fields 0, 1 and 21–24 (metadata) | 0 to 60 | 0xFF INVALID | **bench prototype** |
 | 26–31 | reserved | — | — | must be zero | — | — |
 
@@ -316,10 +322,11 @@ description in the gateway configuration.
 
 The WSMP bench station (`firmware/stage0-node/App/wsmp_catalog_map.c`, from 2026-10-18) fills this
 catalog from its local modules. A reading carries the fields of the modules in the layout. It does
-not send fields 21–24: the gateway derives extremes from the minute means (DATAVANE5K rule 6,
-[`module-protocol.md`](module-protocol.md)). It does not send field 12: the battery charge counters
-count whole mAh, which is too coarse for a one-minute mean current, so the gateway derives the
-current from the counters over longer times.
+not send fields 21–24. WSMP-H8 ([`module-protocol.md`](module-protocol.md)) gives the gateway the
+task to derive extremes from the minute means. It does not send field 12. The battery charge
+counters count whole mAh, which is too coarse for a one-minute mean current. WSMP-H8 gives the
+gateway the task to derive the current from the counters over longer times. The gateway does not
+derive these values yet.
 
 ### 5.4 One valid encoding per reading
 
@@ -354,7 +361,8 @@ record's length from the record's own bitmap.
 
 | Build | Plaintext | Frame | Slot | Records (69 of 70 pages) | Outage buffer |
 |---|---:|---:|---:|---:|---:|
-| Bench prototype (temperature and humidity with the minute summary) | 35 B | 51 B | 56 B | 2,484 | 41.4 h |
+| WSMP bench field set (the current build: fields 0–6, 9, 11, 13–20, 25) | 61 B | 77 B | 80 B | 1,725 | 28.8 h |
+| Previous bench build (temperature and humidity with the minute summary) | 35 B | 51 B | 56 B | 2,484 | 41.4 h |
 | Full station (fields 0–6, 9, 11–20) | 62 B | 78 B | 80 B | 1,725 | 28.8 h |
 | Every catalog field | 78 B | 94 B | 96 B | 1,449 | 24.2 h |
 
@@ -439,8 +447,9 @@ Record the release in `RELEASES.md` and the image size in `firmware-budget.md`.
 
 ## 8. Not in this design
 
-- Drivers for fields other than temperature and humidity. The catalog is fixed now. Each sensor's
-  driver comes with its hardware.
+- Drivers for fields 7 and 8. The WSMP bench has drivers for the other measured fields. It does
+  not send fields 12 and 21–24 (section 5.3). The catalog is fixed now. Each sensor's driver comes
+  with its hardware.
 - Rain tips that are durable per tip (test H06), the qualifier logic (requirement R10 detection),
   and calibration sets other than revision 0.
 - Delta or cross-record compression. Each record must stand alone, because any record can be lost

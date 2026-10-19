@@ -10,12 +10,13 @@ Do you resume the bench work? Start with [`docs/CONTEXT-PACK.md`](docs/CONTEXT-P
 - Releases: [`firmware/stage0-node/RELEASES.md`](firmware/stage0-node/RELEASES.md).
 - Moving boards between gateways: [`docs/runbook-moving-boards.md`](docs/runbook-moving-boards.md).
 - Tools: [`tools/README.md`](tools/README.md).
+- Every other document and package: [Where things are](#where-things-are).
 
 The data path with the boards:
 
 ```mermaid
 flowchart LR
-  S["SHT45 sensor"] -->|"I2C"| TX["TX board<br/>sensor node"]
+  S["Sensor modules<br/>SHT45 and the bench station"] -->|"I2C, GPIO, ADC"| TX["TX board<br/>sensor node"]
   TX -->|"LoRa: encrypted observation"| RX["RX board<br/>USB bridge"]
   RX -->|"USB serial: hex line"| GW["Gateway<br/>ws0 serve"]
   GW --> DB[("SQLite")]
@@ -73,7 +74,7 @@ Run these commands in a second terminal. They act only on the simulator:
 # Interrupt transport; leave demo running so it journals new observations.
 touch run-demo/link-down
 # After three missed reporting intervals, status becomes unavailable.
-# Restore the path: live data is sent first, then at most two queued records/minute.
+# Restore the path: live data is sent first, then at most five queued records/minute.
 rm run-demo/link-down
 
 # Make the next sensor samples explicitly invalid.
@@ -96,14 +97,16 @@ Both boards run the firmware in [`firmware/stage0-node/`](firmware/stage0-node/R
 
 The TX board must be unprovisioned. `WIPE ERASE-ALL-NODE-STATE` on its console erases it. Never provision a wiped TX board again with a key that it used before ([`docs/runbook-moving-boards.md`](docs/runbook-moving-boards.md)).
 
+Use a new run directory (here `run-<name>`) each time you make a new key. `ws0 init` refuses a directory that exists.
+
 ```sh
-python -m ws0 init --hardware --station station-01 --station-id 1 --directory run-office
-python -m ws0 provision-node --directory run-office --serial /dev/cu.usbmodem<TX>
-python -m ws0 serve --directory run-office --serial-number <RX ST-LINK serial>
-python tools/status.py --directory run-office
+.venv/bin/python -m ws0 init --hardware --station station-01 --station-id 1 --directory run-<name>
+.venv/bin/python -m ws0 provision-node --directory run-<name> --serial /dev/cu.usbmodem<TX>
+.venv/bin/python -m ws0 serve --directory run-<name> --serial-number <RX ST-LINK serial>
+.venv/bin/python tools/status.py --directory run-<name>
 ```
 
-`serve` writes receiver diagnostics to `run-office/receiver.log`. For unattended runs, use the launchd agent (`tools/deploy/macos/install.sh`) or the systemd unit (`tools/deploy/linux/ws0-gateway.service`). See [`tools/README.md`](tools/README.md). For Home Assistant, see [`docs/runbook-home-assistant.md`](docs/runbook-home-assistant.md).
+`serve` writes receiver diagnostics to `run-<name>/receiver.log`. For unattended runs, use the launchd agent (`tools/deploy/macos/install.sh`) or the systemd unit (`tools/deploy/linux/ws0-gateway.service`). See [`tools/README.md`](tools/README.md). For Home Assistant, see [`docs/runbook-home-assistant.md`](docs/runbook-home-assistant.md).
 
 The gateway runs on macOS and Linux. Windows has low priority.
 
@@ -138,7 +141,7 @@ To turn on MQTT:
 1. Stop the service.
 2. Edit `run-demo/gateway.json`. Set `mqtt.enabled` to true and set the broker hostname and port.
 3. Add `mqtt.username` if the broker needs it. Set `mqtt.tls` for a TLS broker.
-4. Put the password in the environment variable `WS_MQTT_PASSWORD`. The source code does not store it.
+4. Put the password in the environment variable `WS_MQTT_PASSWORD`, or in the file `<run dir>/mqtt-password`. The source code does not store it.
 5. Start the service again. The gateway reads the configuration only at start.
 
 You must configure the broker in Home Assistant first. This repository changed no Home Assistant instance and no broker. The simulated device appears as **simulation-01**.
@@ -163,12 +166,13 @@ A test against a local Mosquitto broker verified discovery, last will and reconn
 - Optional MQTT snapshots, availability and Home Assistant discovery.
 - USB serial input from the RX board (`ws0 serve`), with the ACK/NACK return path.
 - Portable C code for the SHT45: acquisition, CRC check and conversion.
-- TX and RX firmware (`firmware/stage0-node/`): a flash journal of about 41 hours (24 hours for a station with every sensor), durable counters and epochs, a watchdog, and provisioning over USB.
+- The TX reads its sensors as DATAVANE5K local modules: the module protocol WSMP ([`docs/module-protocol.md`](docs/module-protocol.md)). There are seven modules: outside air, pressure, UVA, enclosure, power, wind and rain (`firmware/stage0-node/App/mod_*.c`, `App/wsmp_host.c`).
+- TX and RX firmware (`firmware/stage0-node/`): a flash journal of about 28.7 hours (1,725 records of the bench field set, 24 hours for a station with every sensor), durable counters and epochs, a watchdog, and provisioning over USB.
 - Python and C tests that target failures, and recorded validation output.
 
 ## Current state and open work
 
-Release `260c9ccbe938` is built, recorded in [`firmware/stage0-node/RELEASES.md`](firmware/stage0-node/RELEASES.md) and flashed to both boards (2026-10-16). On the earlier release `a07f498273f7`, a 9-hour bench soak delivered 549 of 549 minutes on time (`evidence/soak-a07f498-2026-10-13/`).
+The releases are recorded in [`firmware/stage0-node/RELEASES.md`](firmware/stage0-node/RELEASES.md). The TX runs release `04fcc656938d` (flashed 2026-10-19). The RX runs release `cc2766a38c61`, because the RX code did not change. The gateway serves run directory `run-d7`. On the earlier release `a07f498273f7`, a 9-hour bench soak delivered 549 of 549 minutes on time (`evidence/soak-a07f498-2026-10-13/`).
 
 The radio settings are bench values (`firmware/stage0-node/App/radio_cfg.h`): 915.0 MHz, 500 kHz bandwidth, spreading factor 7, coding rate 4/5, 0 dBm.
 
@@ -178,16 +182,26 @@ Open before the 24-hour delivery test:
 - The link budget at the real placement, the antennas and the current measurements.
 - The 24-hour run with its restart and outage matrix.
 
+Open bench checks of the DATAVANE5K bench station (GitHub issues #2, #3 and #4, label `needs-bench`):
+
+- #2: the INA228 charge and energy accumulators.
+- #3: the wind vane ADC calibration.
+- #4: the anemometer input filter on PC0.
+
+The bench station wiring is in [`docs/hardware/bench-station-wiring.md`](docs/hardware/bench-station-wiring.md). The breadboard map is in [`hardware/bench-breadboard-r0/`](hardware/bench-breadboard-r0/README.md).
+
 Simulation cannot pass the 24-hour delivery test. The 30-day on-device storage requirement belongs to the later qualification H11. The ordered next steps are in [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) §6.
 
 ## Tests
 
 ```sh
-sh tools/fetch-vendor.sh   # pinned STM32CubeWL + Mbed TLS; without it 7 C-vs-Python crypto tests skip
+sh tools/fetch-vendor.sh   # pinned STM32CubeWL + Mbed TLS; without it the tests that need Mbed TLS skip
 WS0_UNSAFE_FAST_FSYNC=1 python -m unittest discover -s tests -v
 ```
 
-One SNTP test needs the network and skips without it. The C tests need `cc` (Apple Command Line Tools on macOS). The 1,440-record test uses accelerated virtual timestamps, not 24 hours of real time. `evidence/validation.txt` is a historical record: 28 tests at commit 8aca123.
+On 2026-10-19 at commit 09e6cea, 595 tests passed with none skipped. One SNTP test needs the network and skips without it. The C tests need `cc` (Apple Command Line Tools on macOS). The 1,440-record test uses accelerated virtual timestamps, not 24 hours of real time. `evidence/validation.txt` is a historical record: 28 tests at commit 8aca123.
+
+`tools/gates.sh` runs the CI gates locally on macOS or Linux: ruff, code shape, cppcheck, two clean firmware builds, analysis, the tests and the fuzzers.
 
 `WS0_UNSAFE_FAST_FSYNC=1` is **only for tests**. It sets SQLite `synchronous=OFF` and turns off `fullfsync`, so a commit does not survive a power loss. Never set it for a gateway that acknowledges real data.
 
@@ -207,4 +221,28 @@ The host counters persist in SQLite. On the TX board, the counters and boot epoc
 
 See [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) §6. The battery and solar build (Stage 1: power and pack state) starts only after the 24-hour delivery test passes.
 
-The PCB and print orders that exist are aids for the prototype. The first USB-powered data path on the development boards does not need them. This repository adds no solar power, pack control, RJ45/Modbus abstraction, heater or shared charging.
+The PCB and print orders that exist are aids for the prototype. The first USB-powered data path on the development boards does not need them. This repository adds no solar power, pack control, RJ45/Modbus abstraction, heater or shared charging. The bench station only reads a charger's status pins and a battery monitor.
+
+## Where things are
+
+| Path | What |
+|---|---|
+| [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) | Where to start: state, setup and next steps. §8 maps every document |
+| [`docs/next-stages-plan.md`](docs/next-stages-plan.md) | Stages 0–3, their gates and the parts plan |
+| [`docs/H01-checklist.md`](docs/H01-checklist.md) | The 24-hour delivery test |
+| [`docs/protocol.md`](docs/protocol.md), [`docs/protocol-design.md`](docs/protocol-design.md), [`docs/protocol-stack.md`](docs/protocol-stack.md) | The radio protocol: specification, design rationale, layered explanation |
+| [`docs/module-protocol.md`](docs/module-protocol.md) | DATAVANE5K, the module protocol WSMP |
+| [`docs/hardware/bench-station-wiring.md`](docs/hardware/bench-station-wiring.md) | How the bench station sensors connect to the TX board |
+| [`docs/hardware/nucleo-wl55jc-bringup.md`](docs/hardware/nucleo-wl55jc-bringup.md) | Board bring-up log |
+| [`docs/failure-modes.md`](docs/failure-modes.md) | Failure modes, loss budget, recovery runbook |
+| [`docs/firmware-budget.md`](docs/firmware-budget.md), [`docs/firmware-event-model.md`](docs/firmware-event-model.md), [`docs/power-of-ten.md`](docs/power-of-ten.md) | Firmware budgets, run-time model, coding rules |
+| [`docs/runbook-moving-boards.md`](docs/runbook-moving-boards.md), [`docs/runbook-home-assistant.md`](docs/runbook-home-assistant.md) | Runbooks |
+| [`docs/superpowers/`](docs/superpowers/) | Design specifications and implementation plans |
+| [`ws0/`](ws0/), [`gateway.py`](gateway.py) | The gateway package and its SQLite store |
+| [`firmware/`](firmware/README.md) | Board firmware, fuzz targets and the range-test tool |
+| [`tools/`](tools/README.md) | Scripts, CI gates and service files |
+| [`tests/`](tests/) | Python and C tests |
+| [`hardware/bench-breadboard-r0/`](hardware/bench-breadboard-r0/README.md) | Breadboard map of the bench station: build sheet, renders, KiCad model |
+| [`hardware/chicago-test-hardware-r0/`](hardware/chicago-test-hardware-r0/README.md) | Test PCB and bench fixtures, revision 0 |
+| [`hardware/poc-enclosure-r1/`](hardware/poc-enclosure-r1/README.md) | Printed enclosure parts for the proof of concept |
+| [`evidence/`](evidence/README.md) | Every bench run, dated |

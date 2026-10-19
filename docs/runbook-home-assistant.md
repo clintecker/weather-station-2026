@@ -66,7 +66,9 @@ Recent HA versions call add-ons "Apps", so menu names can differ on older versio
 
    On Windows, create `run-office\mqtt-password` with the password on the first line.
 4. Start the gateway. The gateway logs a refused login or a TLS problem as
-   `#gateway mqtt connect refused: <reason>` (stderr, or `serve.out` under launchd).
+   `#gateway mqtt connect refused: <reason>` (stderr, or `serve.out` under launchd). If
+   `mqtt.username` is set and no password is found, the gateway does not start. Its error names
+   the password file.
 5. In HA, open Settings → Devices & services → MQTT. A device named after the station
    (`station-01`) appears. It has one sensor for each field of the newest reading. Before the
    first reading, it has Temperature (°C) and Humidity (%). With both of these fields, the gateway
@@ -92,15 +94,20 @@ Root topic `weatherstation/v1/<station>`. All messages are retained, QoS 1 (`ws0
 |---|---|
 | `homeassistant/sensor/<station>_<field>/config` (for example `…_temperature_c/config`) | HA discovery. The gateway publishes it again on every broker connect, and when a new field appears |
 | `…/weather` | Latest observation and the derived values (JSON), on change and every 300 s |
-| `…/availability` | `online` / `offline` from the reading's age |
+| `…/availability` | `online` when the latest reading is available: younger than 180 s, with a known and bounded clock, and not a `sensor_fault` record. Else `offline` |
 | `…/gateway_availability` | `online` after connect. `offline` at a clean stop, and as the last will, so HA marks the station unavailable if the gateway dies |
-| `…/diagnostics` | Node health report and the key-reuse alarm, if any |
+| `…/diagnostics` | Node health report and the key-reuse alarm. The gateway publishes this topic only when it has a health report or an alarm |
 
 A sensor shows as available only when all three conditions hold:
 
 - `…/availability` is `online`,
 - `…/gateway_availability` is `online`,
 - the sensor's field is not null in the latest `…/weather` message. A faulted sensor therefore shows as unavailable, never as a number.
+
+Since-boot counters (rain tips, energy and charge) have the state class `total_increasing`. The
+other sensors have `measurement`. The power, enclosure, UVA raw and sample-count sensors are diagnostic
+entities (`DIAGNOSTIC_FIELDS` in `ws0/fields.py`). The gateway publishes `…/weather` and
+`…/availability` on change and every 300 s.
 
 ## Run the gateway unattended
 

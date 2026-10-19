@@ -393,8 +393,10 @@ flowchart TD
 
 **Why the code never recreates the state.** A new file starts at counter 0, so its first counter
 is 1. The key already used counter 1 and every counter up to the lost value. A silent new file
-would repeat nonces under the same key. Only `provision` in `ws0/__main__.py` passes
-`create=True`, and it generates a new key in the same step. The error text names that remedy.
+would repeat nonces under the same key. Two callers pass `create=True`. `provision` in
+`ws0/__main__.py` (the `init` command) generates a new key in the same step. The error text names
+that remedy. The simulation harness (`ws0/harness.py`) creates fresh state in a new state
+directory for each scenario. It uses a fixed public test key, never a deployment key.
 
 **Why the binding.** The binding is a hash of the key, station and kind. Step 6 fails in three
 cases: the file was copied from another station, the key is different, or the kind is wrong. So

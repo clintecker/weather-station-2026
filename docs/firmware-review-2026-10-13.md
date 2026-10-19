@@ -2,6 +2,8 @@
 
 Scope: `firmware/stage0-node`, `firmware/common`, `firmware/stage0.c`, the `ws0/` gateway contract and the tests. Four specialist reviews (38 findings) went through skeptic verification. Only claims that survived are kept, and the key ones were re-read in the code for this synthesis.
 
+> **Note, 2026-10-19:** this review is a historical record. Its file and line references point to the code of 2026-10-13. Since then, the TX reads its sensors as WSMP local modules ([`module-protocol.md`](module-protocol.md)), and the old `sensor.c` driver is gone. Flash layout v2 gives the firmware 110 KB, not 64 KB. The RX relistens after 16 silent minutes, not 5 (`App/app_rx.c`). For the current state, see [`failure-modes.md`](failure-modes.md) §10 (open issues, including P17) and `firmware/stage0-node/RELEASES.md` (current release `04fcc656938d`).
+
 ---
 
 > **Status, 2026-10-13 evening (release `0f456040fe54`):** implemented: P1 (WIPE keeps counters and

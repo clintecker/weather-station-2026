@@ -149,8 +149,15 @@ has something to show. Demo values are not evidence.
 - By default the server listens on **127.0.0.1 only**.
   - `http_bind` in `gateway.json` (an IP address, for example `"0.0.0.0"` or a LAN address) is the
     only way to listen elsewhere. The gateway then prints a warning at every start.
+  - An IPv6 address is also permitted (for example `"::1"`). A host name is refused.
   - The API is plain HTTP, so the token would cross the network in clear text. Prefer the SSH
     tunnel above.
+- The server does not look up the host name at start (no reverse DNS). A slow DNS server thus
+  cannot delay the gateway start.
+- The server accepts at most 32 connections at a time (`HTTP_MAX_CONNECTIONS` in
+  `ws0/service.py`). It closes a connection above this limit at once. A request must arrive within
+  10 s (`HTTP_TIMEOUT_S`). Thus slow or half-open clients cannot use all threads and file
+  descriptors.
 - The server sends the page itself (`/`, `/dashboard`, `/static/…`) without authentication. The
   page contains no data. It is a fixed list of files, and no request path reaches the file
   system. Every `/v1/` endpoint, the event stream included, needs

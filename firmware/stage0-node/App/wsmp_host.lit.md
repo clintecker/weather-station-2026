@@ -18,15 +18,18 @@ python3 tools/tangle.py --check firmware/stage0-node/App/wsmp_host.lit.md    # c
 
 | Rule | Meaning here | Checked by (`tests/test_wsmp_host.py`) |
 |---|---|---|
-| WSMP-P2, debounce | two good probes in a row admit; three latches without a good read remove | `test_two_probes_then_admitted_at_next_latch`, `test_three_missed_latches_then_absent`, `test_a_good_read_ends_suspect` |
+| WSMP-P2, debounce | two good probes in a row admit. Three latches without a good read remove | `test_two_probes_then_admitted_at_next_latch`, `test_three_missed_latches_then_absent`, `test_a_good_read_ends_suspect` |
 | WSMP-P3, bus faults | a bus fault makes the quality "missing" and keeps the port in the layout | `test_bus_fault_keeps_layout` |
 | WSMP-P4, at the latch | a newly admitted module joins at the next latch | `test_two_probes_then_admitted_at_next_latch` |
-| WSMP-P5, budget | the minute-class modules must fit the radio budget; a module that does not is refused | `test_admission_refuses_over_budget`, `test_the_health_class_does_not_count_in_the_budget` |
+| WSMP-P5, budget | the minute-class modules must fit the radio budget. A module that does not fit is refused | `test_admission_refuses_over_budget`, `test_the_health_class_does_not_count_in_the_budget` |
 | WSMP-P6, flaps | more than 4 joins and leaves in an hour quarantine the port for an hour | `test_flap_limit_quarantines_for_an_hour` |
-| WSMP-D7, I1 | a bad identity or bad descriptors quarantine the module | `test_bad_descriptor_quarantines` |
+| WSMP-D7, I1 | a bad identity, a descriptor digest that does not match, or bad descriptors quarantine the module | `test_bad_descriptor_quarantines`, `test_a_descriptor_digest_that_does_not_match_quarantines` |
+| Admission check | `wsmp_host_admit` changes no port state | `test_admit_is_a_check_that_changes_no_port` |
+| Console line | `#modules` lists the state of every port | `test_modules_line_lists_every_port` |
 
 A local module cannot fail a snapshot read: the read is a copy. So a "good read" here is a latch at
-which the module's last probe did not report it absent. A bus fault (probe -1) counts as a good read,
+which the module's last probe did not report it absent. The snapshot must also unpack and carry the
+latch's token. A bus fault (probe -1) counts as a good read,
 so WSMP-P3 holds.
 
 ## 2. States
@@ -44,11 +47,14 @@ stateDiagram-v2
     Active --> Suspect: latch, probe absent
     Suspect --> Active: latch, probe not absent
     Suspect --> Absent: third latch without a good read (a leave)
-    Active --> Quarantined: fifth join or leave within an hour
+    Admitted --> Quarantined: next latch, the join is the fifth change within an hour
+    Suspect --> Quarantined: third missed latch, the leave is the fifth change within an hour
     Quarantined --> Absent: an hour later (flaps), or module removed (bad blocks)
     Refused --> Absent: module removed
 ```
 
+A join that quarantines the port goes from Admitted through Active to Quarantined in one latch.
+That latch does not latch the port.
 Identifying (WSMP section 7) happens inside one step here: the blocks of a local module are at hand,
 so the second good probe identifies and decides at once.
 
@@ -90,10 +96,10 @@ void wsmp_host_init(void)
 ## 3. Admission
 
 `wsmp_host_admit` checks the identity block (WSMP-I1), its digest of the descriptor block, and the
-descriptors against the registry (WSMP-D7). It changes no port: `identify` writes the module's share
-of the budget only when the module is admitted. Then it adds the module's minute-class bytes to those of the modules already in the
-layout or admitted, and compares the total with the radio budget (WSMP-A1). The health-class battery
-module goes in the health report, so it does not count.
+descriptors against the registry (WSMP-D7). It changes no port. `identify` writes the module's share
+of the budget only when the module is admitted. A minute-class module's bytes are then added to the
+bytes of the minute-class modules that are admitted or in the layout. The total must fit the radio
+budget (WSMP-A1). The health-class battery module goes in the health report, so it does not count.
 
 ```c {#admit}
 static int in_layout(const port_t *s)
@@ -196,7 +202,7 @@ void wsmp_host_tick(uint32_t now_ms)
 ## 5. The latch
 
 Each latch has a new token (WSMP-L3). A module admitted since the last latch joins now. Each module
-of the layout is latched and its snapshot read. A join or a leave is a change of the layout; the
+of the layout is latched and its snapshot read. A join or a leave is a change of the layout. The
 fifth change within an hour quarantines the port for an hour (WSMP-P6).
 
 ```c {#latch}

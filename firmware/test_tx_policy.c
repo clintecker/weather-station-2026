@@ -26,7 +26,8 @@ static void airtime(void) {
     uint32_t got = ws_lora_airtime_ms((uint32_t)pl, (uint32_t)sf, (uint32_t)bws[b], 8, 1);
     assert(got >= ref && got <= ref + 1.0);            /* rounded up, by at most 1 ms */
    }
- assert(ws_lora_airtime_ms(51, 7, 500000, 8, 1) == 26);  /* this build's observation frame: 25.7 ms at SF7/500 kHz */
+ assert(ws_lora_airtime_ms(51, 7, 500000, 8, 1) == 26);  /* the T/RH-only frame: 25.7 ms at SF7/500 kHz */
+ assert(ws_lora_airtime_ms(77, 7, 500000, 8, 1) == 35);  /* the WSMP bench build's widest frame (OBS_FRAME_MAX): 34.6 ms */
  assert(ws_lora_airtime_ms(42, 7, 500000, 8, 1) == 22);  /* 21.8 ms */
  assert(ws_lora_airtime_ms(10, 12, 125000, 8, 1) == 992);   /* low data rate optimisation: 991.2 ms */
 }

@@ -13,6 +13,8 @@ Two kinds of number appear here:
 
 The diagrams on this page show the proposal. They do not show built code.
 
+> **Note, 2026-10-19:** some facts changed after this study. Flash layout v2 is built (2026-10-16): firmware pages 0–54 (110 KB) from `0x08000000`, journal 55–124, node state 125–127 (`App/flash_layout.h`). It does not reserve pages for a bootloader, so the layout below needs one more wired layout change. The TX image is now 74,464 B (release `04fcc656938d`, `firmware/stage0-node/RELEASES.md`). That is about 333 chunks, so the full-image times in §3.4 are about 1.4 times longer. The size figures of 2026-10-14 below are kept as the study measured them.
+
 ## 0. Short answer
 
 **Yes, for the station.** The station is the transmitting board (TX). It can fetch a signed image over
@@ -25,7 +27,7 @@ works over SSH.
 | Question | Answer |
 |---|---|
 | Is it legal at our radio settings? | Yes. We transmit as a §15.247(a)(2) "digital modulation" system (500 kHz bandwidth). That class has **no dwell-time or duty-cycle limit**. The rules limit only power and power density (§3) |
-| How long does a full image take? | Today's TX image is 54 KB. It needs **about 40 s of radio time at SF7** and about 8 min at SF12. Inside the existing per-minute air-time cap it takes **about 9 min at SF7**, 40 min at SF10 and 4 h at SF12 (§3.4) |
+| How long does a full image take? | The TX image of 2026-10-14 was 54 KB (74,464 B on 2026-10-19). It needs **about 40 s of radio time at SF7** and about 8 min at SF12. Inside the existing per-minute air-time cap it takes **about 9 min at SF7**, 40 min at SF10 and 4 h at SF12 (§3.4) |
 | How much do delta updates save? | A **binary diff** holds only the changes. Between real releases it measured **1.0–7.4 KB** instead of 54 KB (§3.5). A typical fix then takes seconds of air time |
 | Does the RX need the 16 MB flash for this? | **No.** The gateway keeps the image. It streams the image through the RX, a few chunks per request (§4.3) |
 | Energy | A full update uses less than 0.01 Wh. The core budget is 6 Wh/day (§4.6) |
@@ -36,7 +38,7 @@ works over SSH.
 Three things come first:
 
 - The 24-hour delivery test passes (H01, [`H01-checklist.md`](H01-checklist.md)).
-- Flash layout v2 is built ([`firmware-budget.md`](firmware-budget.md)).
+- Flash layout v2 is built ([`firmware-budget.md`](firmware-budget.md)). Done 2026-10-16.
 - The SPI NOR flash for the 30-day buffer is built (requirement H11, [`next-stages-plan.md`](next-stages-plan.md)).
 
 Updates over the air come after those three.
@@ -65,8 +67,8 @@ Updates over the air come after those three.
 | Fact | Value | Source |
 |---|---|---|
 | Microcontroller | STM32WL55JC: a Cortex-M4 at 48 MHz plus an unused Cortex-M0+. 256 KB flash in 128 pages of 2 KB. 64 KB RAM | `App/flash_layout.h`, [`firmware-budget.md`](firmware-budget.md) |
-| TX image | **53,752 B** (release `bc5e6ede429c`), 82.0 % of its 64 KB region. 54,384 B with the 15-s sampling, which was not yet released | [`RELEASES.md`](../firmware/stage0-node/RELEASES.md), [`firmware-budget.md`](firmware-budget.md) |
-| RX image | 31,696 B | [`RELEASES.md`](../firmware/stage0-node/RELEASES.md) |
+| TX image | **74,464 B** (release `04fcc656938d`), 66.1 % of its 110 KB region. At the time of the study: 53,752 B (release `bc5e6ede429c`), 82.0 % of the 64 KB region of that time | [`RELEASES.md`](../firmware/stage0-node/RELEASES.md), [`firmware-budget.md`](firmware-budget.md) |
+| RX image | 34,832 B (releases `cc2766a38c61` and `04fcc656938d`). 31,696 B at the time of the study | [`RELEASES.md`](../firmware/stage0-node/RELEASES.md) |
 | Final TX image budget | The features of the later build stages (Stages 1–3 in [`next-stages-plan.md`](next-stages-plan.md)) add an estimated 18–33 KB. Layout v2 (2026-10-16) grew the application region to 110 KB. The target is at most 75 % used | [`firmware-budget.md`](firmware-budget.md) |
 | Flash map now | Pages 0–54 code (110 KB), 55–124 journal, 125–126 counter and epoch log, 127 key. "A firmware update programs only pages 0–54" | [`protocol-stack.md`](protocol-stack.md) §5.1 |
 | Radio | 915.0 MHz, LoRa, **500 kHz**, SF7, coding rate 4/5, 8-symbol preamble, explicit header, CRC on, 0 dBm (bench). "Never bandwidth below 500 kHz" | `App/radio_cfg.h` |
@@ -263,11 +265,11 @@ flowchart LR
 | Install time | A swap of up to 110 KB | A copy of up to 192 KB takes about 4 s. That is 96 page erases at about 23 ms each (measured by WIPE), plus about 2 s of 8-byte programming (an estimate) |
 | Zephyr's default for this board | 48 KB MCUboot + 98 KB + 100 KB slots, all internal [ZEPHYR-DTS] | — |
 
-Two internal slots squeeze the firmware budget that flash layout v2 is about to fix. The NOR chip
+Two internal slots squeeze the firmware budget that flash layout v2 (built 2026-10-16) grew to 110 KB. The NOR chip
 arrives anyway for the 30-day buffer (H11). Its 16 MB is far more than needed. **Recommended: staging
 in NOR, then copy in.**
 
-Proposed internal flash map. It becomes part of flash layout v2.
+Proposed internal flash map. Flash layout v2 did not include it, so it needs a later wired layout change.
 
 ```mermaid
 flowchart LR
@@ -285,7 +287,7 @@ flowchart LR
 | 8–9 | 4 KB | Boot-status log in two pages. It is append-only, like today's counter log. It holds the install request, the trial state, the boots left and the rollback floor |
 | 10–105 | 192 KB | Application slot: a signed header (manifest and signature), then the image. Vector table at `0x08005000` (`VECT_TAB_OFFSET`) |
 | 106–119 | 28 KB | Reserved |
-| 120–127 | 16 KB | Node state at the top of flash, as flash layout v2 already plans: key page, counter and epoch log A/B, spare. **The bootloader never writes here** |
+| 120–127 | 16 KB | Node state at the top of flash, as in flash layout v2 (which uses pages 125–127: counter and epoch log A/B and the key page). **The bootloader never writes here** |
 
 Proposed NOR map (16 MB):
 
@@ -323,7 +325,7 @@ RX bridge changes (estimate: under 1 KB of code):
 | Change | Why |
 |---|---|
 | Accept the new downlink kind and its length in `ws_host_reply_ok()`. Accept the request kind in `ws_air_frame_ok()` | Today only 33-byte ACK and NACK frames go down, and only observations and health reports go up |
-| Raise the line limit from 256 to at least 512 characters (C `WS_LINE_MAX`, Python `ws0/link.py`) | A 246-byte chunk is 492 hex characters |
+| Raise the C line limit `WS_LINE_MAX` (`firmware/common/ws_console.h`) from 256 to at least 512 characters. The Python side (`ws0/link.py`, `MAX_LINE`) already accepts 1,024 | A 246-byte chunk is 492 hex characters |
 | Print `#tx done` after each transmission | The RX drops input while it holds a line. So the gateway sends the next chunk only after this line. The host keeps control of the pace |
 
 Nobody updates the RX over the air. It sits next to the gateway Mac on USB with its ST-LINK. So
@@ -594,10 +596,10 @@ its power-cut tests or grows past about 16 KB. Do not use LoRaWAN FUOTA.
 Every step needs three things first: the 24-hour delivery test (H01) passed, flash layout v2 built,
 and the NOR journal for the 30-day buffer (H11) built.
 
-**Accommodation now, at no code cost:** when you design layout v2, reserve pages 0–9 for a future
-bootloader and boot-status log. Put the application vector table at `0x08005000`. This matches the
-PRD rule "documented accommodation where cheap". Without it, updates added later need one more wired
-layout change.
+**Accommodation, at no code cost:** reserve pages 0–9 for a future bootloader and boot-status log.
+Put the application vector table at `0x08005000`. This matches the PRD rule "documented
+accommodation where cheap". Flash layout v2 (2026-10-16) did not make this reservation. Its
+application starts at `0x08000000`. Updates added later therefore need one more wired layout change.
 
 ```mermaid
 flowchart LR
