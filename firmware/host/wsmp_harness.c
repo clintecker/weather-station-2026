@@ -115,6 +115,13 @@ int h_host_slot_quality(int port, int i)
   const wsmp_snapshot *s = wsmp_host_snapshot((enum wsmp_port)port);
   return s ? s->slot[i].quality : -1;
 }
+/* Test only: every slot of the port's stored snapshot gets quality q, as a module that reports a
+   fault (or a code this station does not know) would send it. */
+void h_host_force_quality(int port, int q)
+{
+  wsmp_snapshot *s = (wsmp_snapshot *)(uintptr_t)wsmp_host_snapshot((enum wsmp_port)port);
+  for (unsigned i = 0; s && i < WSMP_MAX_CHANNELS; i++) s->slot[i].quality = (uint8_t)q;
+}
 uint32_t h_host_changes(int port) { return wsmp_host_changes((enum wsmp_port)port); }
 unsigned h_host_line(char *buf, unsigned len) { return wsmp_host_modules_line(buf, len); }
 #ifdef WSMP_MAP

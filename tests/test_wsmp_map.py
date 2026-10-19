@@ -129,6 +129,30 @@ class CatalogMap(unittest.TestCase):
         self.assertIsNone(v['wind_dir_deg'])
         self.assertFalse(v['wind_calm'])
 
+    def test_wind_speed_returns_one_minute_after_a_long_window(self):
+        # A long window (a skipped latch) has no speed, but its pulse counter is still good: the next
+        # minute takes its increment from it (WSMP-T3 drops rates, not counters).
+        lib, _ = self.station([DEVK_SHT45])
+        self.minute(lib)
+        lib.h_host_run(2 * MINUTE)                                 # no latch: the next window is long
+        _, v = self.minute(lib)
+        self.assertIsNone(v['wind_speed_ms'])
+        _, v = self.minute(lib, 5)
+        self.assertIsNotNone(v['wind_speed_ms'])
+
+    def test_a_fault_or_unknown_quality_goes_invalid(self):
+        # WSMP section 9: quality 5 (fault) and unknown codes are "missing" on the radio.
+        for q in (5, 9):
+            with self.subTest(quality=q):
+                lib, _ = self.station([DEVK_SHT45, DEVK_INA228])
+                self.minute(lib)
+                self.minute(lib)
+                lib.h_host_force_quality(1, q)                     # the air module's slots
+                lib.h_host_force_quality(5, q)                     # the power module's slots
+                _, v = self.reading(lib)
+                self.assertIsNone(v['temperature_c'])
+                self.assertIsNone(v['energy_in_mwh'])
+
     def test_calm_direction(self):
         lib, _ = self.station([DEVK_SHT45])
         self.minute(lib)

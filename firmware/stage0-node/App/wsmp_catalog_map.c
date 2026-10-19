@@ -21,12 +21,13 @@
 #define PINS_CHG 0x02U
 #define RAD_TO_DEG 57.29577951f
 
-/* A channel without a usable value: missing, or a mean, gust or rate over a window longer than a
-   minute (WSMP-T3, for example the first window after a quarantine). Counters stay usable: they do
-   not depend on the window. */
+/* A counter without a usable value: its quality is "missing" on the radio (WSMP section 9: missing,
+   fault, or a code this station does not know). A mean, gust or rate is also unusable over a window
+   longer than a minute (WSMP-T3, for example the first window after a quarantine). Counters stay
+   usable there: they do not depend on the window. */
+static int counter_missing(const wsmp_snapshot *s, unsigned i) { return wsmp_quality_air(s->slot[i].quality) == WSMP_QUAL_MISSING; }
 static int long_window(const wsmp_snapshot *s) { return (s->flags & WSMP_FLAG_LONG_WINDOW) != 0; }
-static int missing(const wsmp_snapshot *s, unsigned i) { return s->slot[i].quality == WSMP_QUAL_MISSING || long_window(s); }
-static int counter_missing(const wsmp_snapshot *s, unsigned i) { return s->slot[i].quality == WSMP_QUAL_MISSING; }
+static int missing(const wsmp_snapshot *s, unsigned i) { return counter_missing(s, i) || long_window(s); }
 /* Every code goes in only if its field can hold it; anything else is INVALID, so a reading always
    encodes (an out-of-range code would fail the minute, and ten such minutes trip the watchdog). */
 static void put(ws_obs_t *o, unsigned field, uint32_t code)
@@ -83,7 +84,7 @@ static uint32_t speed_deci(const wsmp_snapshot *s, int *known)
 {
   uint32_t inc = s->slot[0].value - prev_pulses;
   *known = have_prev && prev_boot == s->boot16 && !missing(s, 0) && s->window_ms > 0;
-  have_prev = !missing(s, 0);
+  have_prev = !counter_missing(s, 0);   /* a long window's counter is still a base for the next */
   prev_pulses = s->slot[0].value;
   prev_boot = s->boot16;
   if (!*known) return 0;
