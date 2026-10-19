@@ -83,6 +83,22 @@ void h_max17048_set(int dev, int soc) { model_max17048_set(dev, (uint8_t)soc); }
 static int charger_pins;
 int board_charger_pins(void) { return charger_pins; }
 void h_charger_pins(int pins) { charger_pins = pins; }
+/* The cup counter (LPTIM1, 16 bits) and the vane ADC. A tear makes the counter move by one pulse
+   right after the next read, as a pulse that arrives between two reads does. */
+static uint16_t pulse_counter;
+static int pulse_tears;
+static uint16_t vane;
+uint16_t board_pulse_count(void)
+{
+  uint16_t v = pulse_counter;
+  if (pulse_tears > 0) { pulse_counter++; pulse_tears--; }
+  return v;
+}
+int board_vane_mv(uint16_t *mv) { *mv = vane; return 1; }
+void h_pulses_add(int n) { pulse_counter = (uint16_t)(pulse_counter + n); }
+void h_pulse_counter_set(int v) { pulse_counter = (uint16_t)v; }
+void h_pulse_tear(int n) { pulse_tears = n; }
+void h_vane_mv(int mv) { vane = (uint16_t)mv; }
 /* The SHT45 conversion of the driver in use (firmware/stage0.c), as the test's oracle for one sample. */
 int h_sht45_parse(int t_raw, int h_raw, int16_t *t, uint16_t *h)
 {

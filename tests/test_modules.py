@@ -12,8 +12,10 @@ from pathlib import Path
 
 try:
     from toolchain import ROOT, host_library, needs_cc          # python -m unittest discover -s tests
+    import wsmp_wind_ref as wind_ref
 except ImportError:
     from tests.toolchain import ROOT, host_library, needs_cc    # python -m unittest tests.<module>
+    from tests import wsmp_wind_ref as wind_ref
 
 DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228, DEVK_MAX17048 = 2, 3, 4, 5, 6, 7
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY = range(5)
@@ -30,7 +32,7 @@ def module_sources():
     return ['-I', fw/'host/include', '-I', fw/'host', '-I', app, '-I', fw/'stage0-node/Core/Inc', '-I', fw,
             '-I', fw/'common', fw/'host/wsmp_harness.c', fw/'host/sim_core.c', fw/'host/i2c_sim.c',
             fw/'host/i2c_models.c', app/'i2c_bus.c', app/'busymon.c', app/'wsmp_local.c', app/'mod_th.c',
-            app/'mod_mean.c', app/'mod_reg.c', app/'mod_power.c',
+            app/'mod_mean.c', app/'mod_reg.c', app/'mod_power.c', app/'mod_wind.c',
             fw/'stage0.c', fw/'common/ws_check.c', fw/'common/wsmp.c']
 
 
@@ -372,6 +374,81 @@ class Power(Conformance, Harness):
         self.latch(lib, self.PORT, 1)
         lib.h_run(MINUTE)
         self.assertEqual(self.slots(self.latch(lib, self.PORT, 2))[0][1:], (60, GOOD))   # one a second
+
+
+class Wind(Conformance, Harness):
+    """The wind module (WSMP section 4.4, type 6): cup pulses, 3-s gust, vane vector sums."""
+    PORT, TYPE, CHANNELS = P_WIND, 6, 4
+    DEVICES = []
+
+    def station(self, devices):
+        lib, devs = super().station(devices)
+        lib.h_vane_mv(wind_ref.vane_mv(0))                         # the vane points north
+        return lib, devs
+
+    def slots(self, snap):
+        return [self.slot(snap, i) for i in range(4)]
+
+    def second_window(self, lib, per_tick=None, position=0):
+        """The first window is partial; return the snapshot of the next minute."""
+        lib.h_run(MINUTE)
+        self.latch(lib, self.PORT, 1)
+        lib.h_vane_mv(wind_ref.vane_mv(position))
+        bins = []
+        for i in range(MINUTE // 250):
+            n = per_tick(i) if per_tick else 0
+            bins.append(n)
+            lib.h_pulses_add(n)
+            lib.h_run(250)
+        return self.slots(self.latch(lib, self.PORT, 2)), bins
+
+    def test_pulse_counter_and_gust_match_reference(self):
+        lib, _ = self.station([])
+        s, bins = self.second_window(lib, lambda i: (i * 7) % 5 + (9 if 100 <= i < 108 else 0))
+        self.assertEqual(s[0][0], sum(bins))                       # the counter since boot (no pulses before)
+        self.assertEqual(s[1][0], wind_ref.gust_centi(bins))
+        self.assertEqual(s[1][2], GOOD)
+
+    def test_vector_sums_for_each_of_16_positions(self):
+        for position in range(16):
+            with self.subTest(position=position):
+                lib, _ = self.station([])
+                s, _ = self.second_window(lib, position=position)
+                east, north = wind_ref.unit_vector_centi(position)
+                self.assertEqual((s[2][1], s[3][1]), (60, 60))         # one vane sample a second
+                self.assertEqual((signed16(s[2][0] & 0xFFFF), signed16(s[3][0] & 0xFFFF)), (60 * east, 60 * north))
+
+    def test_337_and_22_degrees_average_to_north(self):
+        lib, _ = self.station([])
+        lib.h_run(MINUTE)
+        self.latch(lib, self.PORT, 1)
+        for position in (15, 1) * 30:                              # 337.5 and 22.5 degrees, a second each
+            lib.h_vane_mv(wind_ref.vane_mv(position))
+            lib.h_run(1000)
+        s = self.slots(self.latch(lib, self.PORT, 2))
+        self.assertEqual(signed16(s[2][0] & 0xFFFF), 0)            # never by averaging angles: east cancels
+        self.assertGreater(signed16(s[3][0] & 0xFFFF), 0)          # the mean points north
+
+    def test_counter_wrap_and_torn_read(self):
+        # Review Focus 3: the 16-bit counter wraps between two reads, and one read changes between
+        # the read and its confirming read. The total stays exact.
+        lib, _ = self.station([])
+        lib.h_pulse_counter_set(65_530)
+        lib.h_run(250)
+        lib.h_pulses_add(26)                                       # 65,530 -> 20: across the wrap
+        lib.h_pulse_tear(1)                                        # the next read sees the counter move once
+        lib.h_run(MINUTE)
+        s = self.slots(self.latch(lib, self.PORT, 1))
+        self.assertEqual(s[0][0], 26 + 1)                          # the 26 pulses and the one that tore the read
+
+    def test_no_vane_is_absent(self):
+        lib, _ = self.station([])
+        lib.h_vane_mv(3_300)                                       # unplugged: the pull-up reads the rail
+        lib.h_run(2_000)
+        self.assertEqual(lib.h_probe(self.PORT), 0)
+        lib.h_vane_mv(wind_ref.vane_mv(4))
+        lib.h_run(2_000)
+        self.assertEqual(lib.h_probe(self.PORT), 1)
 
 
 if __name__ == '__main__':
