@@ -204,13 +204,17 @@ jobs:
             "build/libfuzzer-$1" "build/corpus-$1" "corpus/$1" -max_total_time=60 -print_final_stats=1 \
               -artifact_prefix="build/crash-$1-" > "build/fuzz-$1.log" 2>&1
           }
+          # The targets come from the Makefile, so a new target is fuzzed without a change here.
+          targets=$(make -s targets)
           fail=0
-          for pair in "reply provision" "console obs"; do
+          set -- $targets
+          while [ $# -gt 0 ]; do
             pids=""
-            for t in $pair; do fuzz "$t" & pids="$pids $!"; done
+            for t in $1 ${2:-}; do fuzz "$t" & pids="$pids $!"; done
             for pid in $pids; do wait "$pid" || fail=1; done
+            shift; if [ $# -gt 0 ]; then shift; fi
           done
-          for t in reply provision console obs; do echo "::group::fuzz $t"; cat "build/fuzz-$t.log"; echo "::endgroup::"; done
+          for t in $targets; do echo "::group::fuzz $t"; cat "build/fuzz-$t.log"; echo "::endgroup::"; done
           exit $fail
 
       - name: Print sizes

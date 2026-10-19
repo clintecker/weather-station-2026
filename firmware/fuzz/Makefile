@@ -42,4 +42,7 @@ check: all
 clean:
 	rm -rf build
 
-.PHONY: all check libfuzzer clean
+targets:   # the target names, for CI
+	@echo $(TARGETS)
+
+.PHONY: all check libfuzzer clean targets
