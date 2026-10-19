@@ -2,6 +2,11 @@
 # The one source of the breadboard map: tools in this directory read it, check it against the
 # wiring guide and the firmware, plan the jumpers, and draw the boards.
 #
+# A breakout's `body` is its board outline [dx, dy, w, d] in mm: the centre's offset from the centre
+# of its pins (+dy down the rows), its width along the columns and its depth along the rows. Each
+# breakout's header sits on row a and its board overhangs outward, over the rails and off the edge:
+# no jumper or part may use a hole under a body. Sizes from the parts' design files.
+#
 # Holes: board A (signals) or B (power); row a-e, f-j, or a rail: L+ L- (beside row a), R- R+
 # (beside row j); column 1-63. A part's pins sit on one row, from `origin` along `step`
 # (+1: increasing column). Pin orders come from each part's `source`; "bench check" means no
@@ -27,6 +32,7 @@ kind = "SparkFun BOB-14021 RJ11 breakout (wind cable)"
 board = "A"
 origin = ["a", 3]
 step = 1
+body = [0.0, -9.0, 21.6, 20.6]
 pins = ["1", "2", "3", "4", "5", "6"]
 labels = ["-", "B", "R", "G", "Y", "-"]
 source = "https://github.com/sparkfun/RJ11_Breakout"
@@ -38,6 +44,7 @@ kind = "SparkFun BOB-14021 RJ11 breakout (rain cable)"
 board = "A"
 origin = ["a", 12]
 step = 1
+body = [0.0, -9.0, 21.6, 20.6]
 pins = ["1", "2", "3", "4", "5", "6"]
 labels = ["-", "B", "R", "G", "Y", "-"]
 source = "https://github.com/sparkfun/RJ11_Breakout"
@@ -106,6 +113,7 @@ kind = "Adafruit bq24074 charger #4755 (11-pin header)"
 board = "B"
 origin = ["a", 3]
 step = 1
+body = [0.0, -15.2, 38.1, 33.0]
 pins = ["GND", "LIPO", "GND2", "OUT", "CHG", "PGOOD", "CE", "ISET", "THERM", "GND3", "VBUS"]
 source = "https://github.com/adafruit/Adafruit-BQ24074-PCB"
 note = "CHG and PGOOD are open drain, active low. CE, ISET and THERM stay unconnected (board defaults)"
@@ -116,6 +124,7 @@ kind = "Adafruit INA228 #5832 (8-pin header; I2C on its STEMMA QT cable)"
 board = "B"
 origin = ["a", 20]
 step = 1
+body = [0.0, -8.9, 25.4, 20.3]
 pins = ["VCC", "GND", "SCL", "SDA", "VBUS", "VIN-", "VIN+", "ALERT"]
 source = "https://github.com/adafruit/Adafruit-INA228-PCB"
 note = "The shunt is between VIN+ and VIN-. Check the VBUS jumper on the back"
@@ -126,6 +135,7 @@ kind = "Adafruit MAX17048 #5580 (2-pin battery header; I2C on its STEMMA QT cabl
 board = "B"
 origin = ["a", 32]
 step = 1
+body = [0.0, -1.3, 25.4, 20.3]
 pins = ["VBAT", "GND"]
 source = "https://github.com/adafruit/Adafruit-MAX17048-PCB"
 
@@ -135,6 +145,7 @@ kind = "Pololu S7V8F3 3.3 V regulator #2122"
 board = "B"
 origin = ["a", 38]
 step = 1
+body = [0.0, -7.2, 11.0, 17.0]
 pins = ["SHDN", "VIN", "GND", "VOUT"]
 source = "bench check"
 note = "Pololu gives the four pins but not their order. Read the labels on the back before plugging in"
@@ -174,6 +185,16 @@ source = "passive"
 [[link]]
 a = "SHUNT.2"
 b = "N:CN7.16"
+
+# The hub's power and ground come straight from the NUCLEO (section 2: CN6.4, CN6.6), so the
+# sensors' ground does not return through the power board's load path.
+[[link]]
+a = "QT.V+"
+b = "N:CN6.4"
+
+[[link]]
+a = "QT.GND"
+b = "N:CN6.6"
 
 # ---- nets ----
 # `members` are PART.PIN, or N:<header>.<pin> for a NUCLEO pin. `rails` carry the net on a board.

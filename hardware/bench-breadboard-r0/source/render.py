@@ -13,6 +13,7 @@ HOLE = (175, 175, 175)
 PART = (90, 60, 140)
 BACKGROUND = (250, 250, 247)
 BOARD = (236, 236, 230)
+BODY = (228, 222, 240)   # a breakout's overhanging board
 
 
 def _font(size):
@@ -37,6 +38,9 @@ def draw(layout, copper, view, out, title):
         for h in f['holes']:
             cx, cy = px(h['x'], h['y'])
             d.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=HOLE)
+    for part in layout['parts']:   # a breakout's board overhangs: no wire goes under it
+        if part.get('body'):
+            d.rectangle([*px(*part['body'][:2]), *px(*part['body'][2:])], fill=BODY, outline=(170, 150, 200), width=2)
     for part in layout['parts']:
         d.rectangle([*px(*part['box'][:2]), *px(*part['box'][2:])], outline=PART, width=3)
         for x, y in part['pins'].values():
@@ -87,7 +91,9 @@ def render_all(layout, pcb, outdir):
     boards = {b['id']: b for b in layout['boards']}
     for bid, name in (('A', 'board-a.png'), ('B', 'board-b.png')):
         b = boards[bid]
-        draw(layout, copper, (b['x1'] - 8, b['y1'] - 12, b['x2'] + 8, b['y2'] + 8), outdir/name,
+        top = min([b['y1']] + [p['body'][1] for p in layout['parts'] if p['board'] == bid and p.get('body')])
+        draw(layout, copper, (b['x1'] - 8, top - 14, b['x2'] + 8, b['y2'] + 8), outdir/name,
              f'Bench breadboard map, {b["label"]} (jumpers to the NUCLEO continue in overview.png)')
-    draw(layout, copper, (full[0], full[1] - 6, full[2], full[3] + 6), outdir/'overview.png',
+    top = min([full[1]] + [p['body'][1] for p in layout['parts'] if p.get('body')])
+    draw(layout, copper, (full[0], top - 14, full[2], full[3] + 6), outdir/'overview.png',
          'Bench breadboard map: both boards and the NUCLEO-WL55JC1 headers (not to scale)')

@@ -33,16 +33,16 @@ Each jumper is one wire between the two holes. Colour by class: i2c blue, wind g
 
 | Jumper | From | To | Net | Class |
 |---|---|---|---|---|
-| W1 | A:L+8 | A:f8 | 3V3 | power |
-| W2 | A:L+19 | A:f19 | 3V3 | power |
+| W1 | A:h19 | A:h8 | 3V3 | power |
+| W2 | A:L+20 | A:f19 | 3V3 | power |
 | W3 | A:L+30 | A:f30 | 3V3 | power |
 | W4 | A:L+41 | A:b41 | 3V3 | power |
 | W5 | A:d6 | A:f11 | CUPS | wind |
 | W6 | A:e6 | A:f4 | CUPS | wind |
-| W7 | A:L-4 | A:b4 | GND | ground |
-| W8 | A:c4 | A:c5 | GND | ground |
-| W9 | A:L-14 | A:b14 | GND | ground |
-| W10 | A:e14 | A:f12 | GND | ground |
+| W7 | A:b5 | A:b4 | GND | ground |
+| W8 | A:h12 | A:e5 | GND | ground |
+| W9 | A:e14 | A:f12 | GND | ground |
+| W10 | A:L-20 | A:b14 | GND | ground |
 | W11 | A:L-23 | A:f23 | GND | ground |
 | W12 | A:L-40 | A:b40 | GND | ground |
 | W13 | A:e15 | A:f15 | RAIN | rain |
@@ -53,15 +53,15 @@ Each jumper is one wire between the two holes. Colour by class: i2c blue, wind g
 
 | Jumper | From | To | Net | Class |
 |---|---|---|---|---|
-| W16 | B:b25 | B:b32 | BATT | power |
-| W17 | B:c25 | B:c4 | BATT | power |
+| W16 | B:b25 | B:b4 | BATT | power |
+| W17 | B:e25 | B:e32 | BATT | power |
 | W18 | B:e26 | B:g20 | CELL_POS | power |
-| W19 | B:L-3 | B:b3 | GND | ground |
-| W20 | B:e3 | B:g9 | GND | ground |
-| W21 | B:L-21 | B:b21 | GND | ground |
-| W22 | B:e21 | B:g21 | GND | ground |
-| W23 | B:L-33 | B:b33 | GND | ground |
-| W24 | B:L-40 | B:b40 | GND | ground |
+| W19 | B:e3 | B:g9 | GND | ground |
+| W20 | B:h9 | B:h21 | GND | ground |
+| W21 | B:b21 | B:L-18 | GND | ground |
+| W22 | B:g21 | B:e21 | GND | ground |
+| W23 | B:e40 | B:e33 | GND | ground |
+| W24 | B:L-42 | B:b40 | GND | ground |
 | W25 | B:b41 | B:b46 | REG_OUT | power |
 | W26 | B:e6 | B:g5 | SYS_OUT | power |
 | W27 | B:b39 | B:b6 | SYS_OUT | power |
@@ -70,17 +70,17 @@ Each jumper is one wire between the two holes. Colour by class: i2c blue, wind g
 
 | Jumper | From | To | Net | Class |
 |---|---|---|---|---|
-| W28 | A:L-63 | B:L-1 | GND | ground |
+| W28 | A:L-63 | B:b3 | GND | ground |
 
 ### To the NUCLEO
 
 | Jumper | From | To | Net | Class |
 |---|---|---|---|---|
-| W29 | A:L+63 | NUCLEO CN6.4 | 3V3 | power |
+| W29 | A:e41 | NUCLEO CN6.4 | 3V3 | power |
 | W30 | B:e47 | NUCLEO CN7.16 | 3V3 | power |
 | W31 | B:e7 | NUCLEO CN10.25 | CHG | charger |
 | W32 | A:j11 | NUCLEO CN10.14 | CUPS | wind |
-| W33 | B:j9 | NUCLEO CN6.6 | GND | ground |
+| W33 | A:e40 | NUCLEO CN6.6 | GND | ground |
 | W34 | A:e43 | NUCLEO CN5.10 | I2C_SCL | i2c |
 | W35 | A:e42 | NUCLEO CN5.9 | I2C_SDA | i2c |
 | W36 | B:e8 | NUCLEO CN10.27 | PGOOD | charger |

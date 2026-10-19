@@ -2,6 +2,7 @@
 
 The model tests use only the repository Python. The KiCad tests need KiCad 10 and the pinned
 KiCadRoutingTools (tools/fetch-router.sh); without them they skip and say why."""
+import dataclasses
 import os
 import subprocess
 import sys
@@ -198,6 +199,56 @@ class Board(unittest.TestCase):
     def test_generation_is_deterministic(self):
         again = build(Path(self.tmp.name)/'two')
         self.assertEqual(again.read_bytes(), self.pcb.read_bytes())
+
+
+class Review(unittest.TestCase):
+    """Findings of the final review (2026-10-19)."""
+    def setUp(self):
+        self.w = wiring.load(DATA)
+
+    def test_the_build_sheet_needs_no_pillow(self):
+        # CI runs the model tests without Pillow on macOS: make.py must import it only to render.
+        code = (f'import sys; sys.path.insert(0, {str(HW/"source")!r}); sys.modules["PIL"] = None; '
+                'import make, wiring; w = wiring.load(make.DATA); make.build_sheet(w, wiring.plan_jumpers(w))')
+        r = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+
+    def test_no_jumper_lands_under_a_breakout(self):
+        covered = {h for part in self.w.parts.values() for h in wiring.covered(part)}
+        self.assertTrue(covered, 'the breakouts have bodies')
+        ends = {h for j in wiring.plan_jumpers(self.w) for h in (j.a, j.b)}
+        self.assertFalse(ends & covered, sorted(ends & covered))
+
+    def test_a_part_under_a_breakout_is_refused(self):
+        r1 = self.w.parts['R1']
+        bob_body = sorted(wiring.covered(self.w.parts['BOBW']))
+        free = next(h for h in bob_body if h not in set(self.w.parts['BOBW'].pins.values()) and h[1] in 'abcdefghij')
+        moved = dataclasses.replace(r1, pins={'1': free, '2': r1.pins['2']})
+        with self.assertRaises(wiring.PlanError) as e:
+            wiring.plan_jumpers(with_part(self.w, moved))
+        self.assertIn('under BOBW', str(e.exception))
+
+    def test_a_signal_on_a_second_wrong_header_is_found(self):
+        self.w.nets['CUPS'].append('N:CN10.31')
+        problems = wiring.check_guide(self.w, GUIDE)
+        self.assertTrue(any('Anemometer' in p for p in problems), problems)
+
+    def test_a_nucleo_net_without_an_mcu_pin_is_refused(self):
+        import tempfile
+        text = DATA.read_text().replace('name = "CHG"\nmcu = "PB10"\n', 'name = "CHG"\n')
+        with tempfile.NamedTemporaryFile('w', suffix='.toml', delete=False) as f:
+            f.write(text)
+        self.addCleanup(os.unlink, f.name)
+        with self.assertRaises(ValueError) as e:
+            wiring.load(f.name)
+        self.assertIn('CHG', str(e.exception))
+
+    def test_the_hub_returns_straight_to_the_nucleo(self):
+        # Wiring guide section 2: hub power on CN6.4 and CN6.6, not through the power board's load path.
+        strips = {frozenset({wiring.strip(j.a), wiring.strip(j.b)}) for j in wiring.plan_jumpers(self.w)}
+        qt = self.w.parts['QT'].pins
+        self.assertIn(frozenset({wiring.strip(qt['GND']), 'N:CN6.6'}), strips)
+        self.assertIn(frozenset({wiring.strip(qt['V+']), 'N:CN6.4'}), strips)
 
 
 class Sheet(unittest.TestCase):

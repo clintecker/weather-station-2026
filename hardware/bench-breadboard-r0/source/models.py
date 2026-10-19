@@ -21,14 +21,14 @@ TERMINAL = (0.15, 0.35, 0.80)
 BATTERY = (0.75, 0.75, 0.80)
 
 # Boxes: (dx, dy, w, d, h, z, colour). dx, dy: the box centre from the centre of the part's pins
-# (+dy is down the breadboard, into its rows). w along the columns, d along the rows.
-BOXES = {
-    'BOB': [(0, 9.0, 21.6, 20.6, PCB, HEADER_Z, SPARKFUN_RED), (0, 13.5, 14.0, 13.0, 11.5, HEADER_Z + PCB, JACK)],
-    'CHGR': [(0, 15.0, 38.1, 33.0, PCB, HEADER_Z, BOARD_BLACK)],
-    'INA': [(0, 8.6, 25.4, 20.3, PCB, HEADER_Z, BOARD_BLACK), (0, 14.5, 10.5, 7.0, 8.5, HEADER_Z + PCB, TERMINAL)],
-    'GAUGE': [(0, -6.5, 25.4, 20.3, PCB, HEADER_Z, BOARD_BLACK)],
-    'REG': [(0, 7.0, 11.0, 17.0, PCB, HEADER_Z, POLOLU_BLUE)],
-    'CELL': [(75.0, 52.0, 54.0, 69.0, 18.0, 0.0, BATTERY)],   # on the bench beside board B, on its pigtail
+# (+dy is down the breadboard, into its rows). w along the columns, d along the rows. A breakout's
+# board is its `body` in wiring.toml (the same outline the jumper planner keeps clear); BOARD_COLOUR
+# gives its colour, and EXTRA the parts on it.
+BOARD_COLOUR = {'BOB': SPARKFUN_RED, 'CHGR': BOARD_BLACK, 'INA': BOARD_BLACK, 'GAUGE': BOARD_BLACK, 'REG': POLOLU_BLUE}
+EXTRA = {
+    'BOB': [(0, -13.5, 14.0, 13.0, 11.5, HEADER_Z + PCB, JACK)],          # the RJ11 jack, at the outer end
+    'INA': [(0, -14.5, 10.5, 7.0, 8.5, HEADER_Z + PCB, TERMINAL)],        # the screw terminal
+    'CELL': [(75.0, 52.0, 54.0, 69.0, 18.0, 0.0, BATTERY)],               # on the bench beside board B
 }
 # KiCad's own models: (file, rotation about z in degrees) for parts by kind.
 KICAD = {
@@ -60,7 +60,10 @@ def models_for(part):
     elif n >= 2:
         out.append((*header_model(n), None))
     key = 'BOB' if part.id.startswith('BOB') else part.id
-    out += [(None, 0, box) for box in BOXES.get(key, [])]
+    if part.body is not None:
+        dx, dy, w, d = part.body
+        out.append((None, 0, (dx, dy, w, d, PCB, HEADER_Z, BOARD_COLOUR[key])))
+    out += [(None, 0, box) for box in EXTRA.get(key, [])]
     return out
 
 

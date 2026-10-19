@@ -21,12 +21,10 @@ HW = SOURCE.parent
 ROOT = HW.parent.parent
 sys.path.insert(0, str(SOURCE))
 sys.path.insert(0, str(ROOT/'tools'))
-import build_schematic  # noqa: E402
 import kicad_env  # noqa: E402
-import models  # noqa: E402
-import pcb_read  # noqa: E402
-import render  # noqa: E402
 import wiring  # noqa: E402
+# build_schematic, models, pcb_read and render (Pillow) load only to draw: the checks and the build
+# sheet need the standard library alone (CI runs those tests without Pillow).
 
 DATA = SOURCE/'wiring.toml'
 GUIDE = ROOT/'docs'/'hardware'/'bench-station-wiring.md'
@@ -51,6 +49,7 @@ def checked():
 def model_footprints(w):
     """The 3D models of each part, on footprints with no pads: [{ref, x, y, models: [{file, z, rot}]}].
     A box's VRML file is models/<ref>.wrl next to the board."""
+    import models
     out = []
     for part in w.parts.values():
         pins = [wiring.hole_xy(h) for h in part.pins.values()]
@@ -96,6 +95,7 @@ def layout(w, jumpers):
     for part in w.parts.values():
         box = _part_box(part)
         parts.append({'id': part.id, 'kind': part.kind, 'board': part.board, 'box': box,
+                      'body': wiring.body_rect(part),
                       'label_x': box[0] + 1.0, 'label_y': box[1] - 1.0,
                       'pins': {n: wiring.hole_xy(h) for n, h in part.pins.items()}})
     labels = []
@@ -106,7 +106,8 @@ def layout(w, jumpers):
     labels.append({'text': 'NUCLEO-WL55JC1 headers: check against UM2592, not to scale', 'x': nx + 25, 'y': ny - 6})
     xs = [h['x'] for f in footprints for h in f['holes']]
     ys = [h['y'] for f in footprints for h in f['holes']]
-    outline = [min(xs) - MARGIN, min(ys) - MARGIN - 4, max(xs) + MARGIN, max(ys) + MARGIN]
+    tops = [wiring.body_rect(p)[1] for p in w.parts.values() if p.body is not None]
+    outline = [min(xs) - MARGIN, min(ys + tops) - MARGIN - 4, max(xs) + MARGIN, max(ys) + MARGIN]
     return {'jumper_nets': [j.id for j in jumpers], 'footprints': footprints, 'boards': boards, 'parts': parts,
             'labels': labels, 'outline': outline,
             'jumpers': [{'id': j.id, 'net': j.net, 'class': w.net_class[j.net],
@@ -210,6 +211,9 @@ def build_all(out):
 def presentation_models(w, lay, pcb, models_dir):
     """The 3D view's footprints: the parts, the NUCLEO headers, each breadboard body and each jumper
     wire along its routed path. Writes the generated .wrl files into models_dir."""
+    import models
+    import pcb_read
+    import render
     out = model_footprints(w)
     for header, (_x, cols, n) in wiring.HEADERS.items():
         x, y = wiring.hole_xy(('N', header, 1))
@@ -245,6 +249,9 @@ RENDER_3D = {'3d-top.png': ['--side', 'top', '--zoom', '1.1'],
 
 def outputs(env, w, jumpers, out):
     """Everything else from the routed board: models, schematic (ERC), build sheet, renders."""
+    import build_schematic
+    import models
+    import render
     lay = json.loads((out/'layout.json').read_text())
     shutil.rmtree(out/'models', ignore_errors=True)   # no model of an earlier build stays
     (out/'models').mkdir()

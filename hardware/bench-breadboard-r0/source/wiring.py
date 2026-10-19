@@ -30,6 +30,7 @@ class Part:
     labels: tuple
     source: str
     note: str
+    body: tuple = None  # (dx, dy, w, d) in mm: the board outline, from the centre of the pins
 
 
 @dataclass(frozen=True)
@@ -116,7 +117,31 @@ def _part(t):
     step = t['step']
     pins = {name: (t['board'], row, col + i*step) for i, name in enumerate(t['pins'])}
     return Part(id=t['id'], kind=t['kind'], board=t['board'], origin=(t['board'], row, col), pins=pins,
-                labels=tuple(t.get('labels', ())), source=t['source'], note=t.get('note', ''))
+                labels=tuple(t.get('labels', ())), source=t['source'], note=t.get('note', ''),
+                body=tuple(t['body']) if 'body' in t else None)
+
+
+BODY_MARGIN = 0.8   # mm: a hole this close to a board's edge cannot take a wire either
+
+
+def body_rect(part):
+    """The outline of a part's board (x1, y1, x2, y2) in mm, or None for a part without one."""
+    if part.body is None:
+        return None
+    dx, dy, w, d = part.body
+    xs, ys = zip(*(hole_xy(h) for h in part.pins.values()))
+    cx, cy = sum(xs)/len(xs) + dx, sum(ys)/len(ys) + dy
+    return (cx - w/2, cy - d/2, cx + w/2, cy + d/2)
+
+
+def covered(part):
+    """The holes under a part's board, other than its own pins: no wire or part can use them."""
+    r = body_rect(part)
+    if r is None:
+        return set()
+    m = BODY_MARGIN
+    return {h for h in board_holes(part.board)
+            if r[0] - m <= hole_xy(h)[0] <= r[2] + m and r[1] - m <= hole_xy(h)[1] <= r[3] + m} - set(part.pins.values())
 
 
 def load(path):
@@ -134,6 +159,9 @@ def load(path):
     for a, b in w.links:
         if not any(a in m and b in m for m in nets.values()):
             raise ValueError(f'link {a} - {b}: not two members of one net')
+    for net, members in nets.items():
+        if any(m.startswith('N:') for m in members) and net not in w.mcu:
+            raise ValueError(f'net {net} reaches the NUCLEO but names no `mcu` pin to check')
     return w
 
 
@@ -145,6 +173,9 @@ FIRMWARE = {'board_inputs.c': {'CUPS_PIN': 'CUPS', 'VANE_PIN': 'VANE', 'RAIN_PIN
                                'PGOOD_PIN': 'PGOOD', 'CHG_PIN': 'CHG'},
             'i2c_bus.lit.md': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL'}}
 PIN_DEFINE = re.compile(r'^#define (\w+_PIN) GPIO_PIN_(\d+)\b(?:.*?/\* P([A-H])(\d+) \*/)?', re.M)
+
+
+POWER_PINS = ('3V3', 'GND')   # power nets use several NUCLEO pins the board ties; a signal uses one
 
 
 def nucleo_headers(w, net):
@@ -173,7 +204,7 @@ def check_guide(w, guide):
         row = next((r for r in rows if mcu in r[1]), None)
         if row is None:
             problems.append(f'{net} ({mcu}): no row in the wiring guide section 2 table')
-        elif not any(re.search(rf'\b{re.escape(h)}\b', row[2]) for h in headers):
+        elif not (any if mcu in POWER_PINS else all)(re.search(rf'\b{re.escape(h)}\b', row[2]) for h in headers):
             problems.append(f'{row[0]} ({mcu}): the model uses {", ".join(headers)}; the guide lists "{row[2]}"')
     return problems
 
@@ -283,12 +314,24 @@ def _refuse_shared_strips(w):
                 raise PlanError(f'short: {other[1]} ({other[0]}) and {m} ({net}) share strip {key}')
 
 
+def _refuse_parts_under_bodies(w):
+    """A part pin under another part's board cannot be plugged in."""
+    for part in w.parts.values():
+        under = covered(part)
+        for other in w.parts.values():
+            for name, h in other.pins.items():
+                if other.id != part.id and h in under:
+                    raise PlanError(f'{other.id}.{name} at {h[0]}:{h[1]}{h[2]} is under {part.id}')
+
+
 def plan_jumpers(w):
     """The jumpers that join each net's strips: a minimum spanning tree over the net's groups, each
     edge a wire between two free holes (never a part pin, one wire a hole)."""
     ties = _tie_union(w)
     _refuse_shared_strips(w)
+    _refuse_parts_under_bodies(w)
     used = {h for part in w.parts.values() for h in part.pins.values() if h[0] != 'N'}
+    used |= {h for part in w.parts.values() for h in covered(part)}
     planned = []
     for net in sorted(w.nets):
         groups = _groups(w, net, ties)
@@ -316,10 +359,13 @@ def plan_jumpers(w):
                     pair = min(((_distance(p, q), p, q) for p in free[g] for q in free[h] if p not in used and q not in used),
                                default=None)
                     if pair is None:
-                        raise PlanError(f'net {net}: no free hole on strip {g if not any(p not in used for p in free[g]) else h}')
+                        continue   # this pair of groups has no free holes left: another may join them
                     cand = (pair[0], g, h, pair[1], pair[2])
                     if best is None or cand < best:
                         best = cand
+            if best is None:
+                full = sorted(g for g in groups if not any(p not in used for p in free[g]))
+                raise PlanError(f'net {net}: no free hole on strip {", ".join(full)}')
             _, g, h, p, q = best
             used |= {p, q}
             planned.append(Jumper(id='', net=net, a=p, b=q))
