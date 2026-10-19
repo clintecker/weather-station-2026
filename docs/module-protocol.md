@@ -68,7 +68,7 @@ The design has seven rules:
 5. **Nothing is lost by a change.** The station keeps every descriptor set that a pending journal
    record uses. The gateway can therefore decode every record, also after a database restore.
 6. **Modules aggregate only what needs their samples.** A module computes a value only if the value
-   needs the samples inside one window, for example a mean of 4 samples or a 3-second gust. Every
+   needs the samples inside one window. Examples are a mean of 4 samples and a 3-second gust. Every
    other statistic is the gateway's work: means over several minutes, extremes, rates and totals.
    Counts travel raw. The gateway keeps the raw values, so it can compute the statistics again
    with better rules later.
@@ -159,8 +159,8 @@ adds the sums of several windows to get a mean over a longer time. It never aver
 
 ### 4.4 Module types
 
-A module type entry fixes the channels that a module of that type gives, its report class, the
-default role, and the factors that the gateway needs. The role tells where the quantity is measured (outside air,
+A module type entry fixes four things: the channels that a module of that type gives, its report
+class, the default role, and the factors that the gateway needs. The role tells where the quantity is measured (outside air,
 enclosure). The station owner can change the role in the gateway configuration.
 
 | Code | Module type | Part | Schema | Channels (quantity / kind) | Report class | Role | Factors |
@@ -621,8 +621,9 @@ The margin in the minute reading is 32 bytes. That is room for later sensors.
 | Protection | every contact protected. The supply blocked against reverse current |
 | Boot | the module answers Modbus within 2 s after it gets power |
 
-The STM32WL55 has three UARTs, and the console uses one. A station without a UART multiplexer
-therefore has at most two remote ports.
+The STM32WL55 has three UARTs, and the console uses one. On the NUCLEO-WL55JC1 only USART1 has
+free pins (PB6 and PB7): LPUART1 shares its pins with the console or the anemometer counter. A
+station without a UART multiplexer therefore has one remote port.
 
 ## 14. Conformance
 
@@ -651,6 +652,6 @@ driver in the host build of the station firmware. A module release MUST include 
 | Wind direction on the radio | The module MUST give both vector sums (section 4.4). Whether the radio reading also carries a mean direction is not decided. |
 | Rain tips across a power loss | A local rain module loses the tips of an unfinished window at a power cut. Capability bit 1 shows whether counters survive. Persistent counting is a later step (PRD test H06, FRAM is the fallback). |
 | Siting and calibration archive | The gateway will keep a dated record of each module's installation: height, shield, vane north offset, barometer height. It will also keep each module's calibration coefficients. This is needed before outdoor use. |
-| Remote ports beyond two | Needs a UART multiplexer or a different station microcontroller. |
+| Remote ports beyond one | Needs a UART multiplexer or a different station microcontroller. |
 | Module authentication | Not in WSMP 1.0 (WSMP-X1). |
 | Health-class data is best effort | The health report has no journal entry and no reply. A lost report loses that report's voltage, state of charge and charger state. The energy and charge counters are cumulative, so the totals stay exact. Journaling the health report is possible if this proves too lossy. |
