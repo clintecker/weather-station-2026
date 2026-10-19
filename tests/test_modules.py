@@ -1,8 +1,8 @@
 """The station's local WSMP modules (firmware/stage0-node/App/wsmp_local.c and mod_*.c) on the host.
 
 firmware/host/wsmp_harness.c runs the modules on the shared I2C bus (App/i2c_bus.c) and the host bus
-model (firmware/host/i2c_sim.c). The Conformance mixin holds the WSMP section 14 checks that every
-module passes; each module class adds its own cases. Expected values come from docs/module-protocol.md
+model (firmware/host/i2c_sim.c). The Conformance mixin holds the subset of the WSMP section 14 checks
+that the host build can run (section 14 lists what it does not cover yet) for every module; each module class adds its own cases. Expected values come from docs/module-protocol.md
 and the parts' datasheets. Host-model results, not bench evidence."""
 import ctypes
 import shutil

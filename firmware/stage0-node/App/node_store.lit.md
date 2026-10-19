@@ -635,11 +635,12 @@ int store_next_counter(uint64_t *counter) {
 
 Pages 55–124 form a ring of `WS_JOURNAL_PAGES` pages. The host sweeps build the ring with 3 pages
 so that it wraps. Each page has an 8-byte header followed by fixed-size slots. In the default build
-(35-byte plaintext) a 2048-byte page holds 36 slots of 56 bytes and leaves 24 bytes unused:
+(the WSMP bench field set, 61-byte plaintext) a 2048-byte page holds 25 slots of 80 bytes and leaves
+40 bytes unused:
 
 ```mermaid
 flowchart LR
-    H["header, 8 B"] --> S0["slot 0, 56 B"] --> S1["slot 1, 56 B"] --> D["..."] --> S35["slot 35, 56 B"] --> U["unused, 24 B"]
+    H["header, 8 B"] --> S0["slot 0, 80 B"] --> S1["slot 1, 80 B"] --> D["..."] --> S24["slot 24, 80 B"] --> U["unused, 40 B"]
 ```
 
 The page header, most significant bit on the left:

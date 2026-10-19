@@ -456,7 +456,7 @@ module, through one interface:
 | Operation | Does |
 |---|---|
 | `probe()` | checks presence (WSMP-P1) without changing the sensor state |
-| `identify(identity, descriptors, metadata)` | fills the three blocks, byte for byte as section 6 defines |
+| `identify(identity, descriptors)` | fills the identity and descriptor blocks, byte for byte as section 6 defines. A module that sets capability bit 0 also fills its metadata block. The bench station's local modules have no metadata block |
 | `latch(token, utc)` | freezes the snapshot and starts the next window (WSMP-L1 to L3) |
 | `read_snapshot(snapshot)` | copies the frozen snapshot |
 
@@ -649,6 +649,22 @@ driver in the host build of the station firmware. A module release MUST include 
 | Fuzzing | X2 | random and malformed blocks into the station parser, one million cases, no fault |
 | Station behaviour | P1–P8, E1–E3 | bench and simulator: plug and unplug modules, flap a presence loop, cut the power during a set change |
 | Gateway behaviour | E5–E8, H1–H8 | simulator: lose fragments, restore a database during a backlog, move a module between stations, check every derived value against a reference computation |
+
+**Status (2026-10-19).** The conformance tool does not exist yet. For the bench station's local
+modules, these host tests cover part of the table:
+
+| Area | Covered by | Not covered yet |
+|---|---|---|
+| Identity | `tests/test_modules.py`, `Conformance.test_identity_fields` | the reboot that changes the boot ID |
+| Registry | `test_identity_fields` (WSMP-D7), `tests/test_wsmp_core.py`, `tests/test_wsmp_registry.py` | |
+| Register map | | all: no remote module yet |
+| Snapshot, Latch | the `Conformance` latch tests, each module's own tests | the reply time |
+| Counters | the wind and rain tests | counts across a reboot (C1, C2) |
+| Quality | each module's absent and out-of-range tests | |
+| Metadata | | all: no local module has a metadata block |
+| Fuzzing | `firmware/fuzz/fuzz_wsmp.c` | |
+| Station behaviour | `tests/test_wsmp_host.py`, `tests/test_wsmp_map.py` | the power cut during a set change |
+| Gateway behaviour | | all: the gateway does not decode WSMP yet |
 
 ## 15. Open items
 

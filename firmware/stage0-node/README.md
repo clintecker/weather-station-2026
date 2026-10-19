@@ -155,7 +155,7 @@ The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac a
 | Board | Output | Commands |
 |---|---|---|
 | TX | Lines that start with `#` (glossary below). | `STATUS`, `KAT`, `MODULES` (each local module's state), `SENSOR rain on` / `SENSOR rain off` (the rain gauge cannot be detected: this stores whether it is fitted), `PROVISION <station_id> <32 hex key> [epoch_floor]` (decimal ID 1–65535, only when unprovisioned, reboots on success), `WIPE ERASE-ALL-NODE-STATE` (reboots), `TEST-HANG` (bench: proves the watchdog), `TEST-FAULT` (bench: proves crash recording), `TEST-FLASH-STORM` (bench: continuous flash writes for power-cut tests. Pauses sampling. Ends at reboot.) |
-| RX | One lowercase hex line per received observation frame (39–94 bytes, 51 for the temperature and humidity build) **or health-report** frame (48 bytes). Also `#` diagnostics (below). | `STATUS`, `TEST-HANG`, `TEST-FAULT`, or one hex **ACK or NACK** line from the host (exactly 33 bytes = 66 hex digits). The RX ignores lines that start with `#`. The RX discards these lines whole: a line with a byte outside printable ASCII, a line longer than 256 characters, and a line that lost a character (a receive error, or a line that arrived while the previous line still waited). |
+| RX | One lowercase hex line per received observation frame (39–94 bytes; at most 77 for the WSMP bench field set) **or health-report** frame (48 bytes). Also `#` diagnostics (below). | `STATUS`, `TEST-HANG`, `TEST-FAULT`, or one hex **ACK or NACK** line from the host (exactly 33 bytes = 66 hex digits). The RX ignores lines that start with `#`. The RX discards these lines whole: a line with a byte outside printable ASCII, a line longer than 256 characters, and a line that lost a character (a receive error, or a line that arrived while the previous line still waited). |
 
 ### Frame layout
 
@@ -355,49 +355,53 @@ flowchart LR
 
 | Pages | Use |
 |---|---|
-| 0–54 (110 KB) | The firmware. The linker script enforces this limit. Release 260c9ccbe938: TX image 58,264 B, RX 34,832 B ([`RELEASES.md`](RELEASES.md), [`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
-| 55–124 | The journal ring: 70 pages × 36 slots of 56 bytes (temperature and humidity build). |
+| 0–54 (110 KB) | The firmware. The linker script enforces this limit. Release d3f84bb8a8d8: TX image 74,104 B, RX 34,832 B ([`RELEASES.md`](RELEASES.md), [`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
+| 55–124 | The journal ring: 70 pages × 25 slots of 80 bytes (the WSMP bench field set). |
 | 125–126 | The monotonic log, pages A and B: boot epoch, counter reservations (blocks of 256), the `lost`/`abandoned` totals. Recovery takes the maximum. Compaction writes its header last. |
 | 127 | Config: station ID, key, KCV. The firmware writes the magic double-word last. |
 
-**Slot:** the observation plaintext rounded up to whole 8-byte double-words, then a commit double-word (magic + CRC-16 of the plaintext) and an ACK double-word (`App/node_store.h`). For the temperature and humidity build: 35 → 40 + 8 + 8 = **56 bytes**. After the 8-byte page header, a page holds (2048 − 8) / 56 = **36 slots**. Bit offsets of one slot:
+**Slot:** the observation plaintext rounded up to whole 8-byte double-words, then a commit double-word (magic + CRC-16 of the plaintext) and an ACK double-word (`App/node_store.h`). For the WSMP bench field set (`WS_F_WSMP_BENCH`): 61 → 64 + 8 + 8 = **80 bytes**. After the 8-byte page header, a page holds (2048 − 8) / 80 = **25 slots**. Bit offsets of one slot:
 
 ```mermaid
 packet-beta
-  0-279: "observation plaintext (35 bytes)"
-  280-319: "padding to a double-word (5 bytes)"
-  320-383: "commit double-word: magic + CRC-16"
-  384-447: "ACK double-word"
+  0-487: "observation plaintext (61 bytes)"
+  488-511: "padding to a double-word (3 bytes)"
+  512-575: "commit double-word: magic + CRC-16"
+  576-639: "ACK double-word"
 ```
 
-**Capacity: at least 69 × 36 = 2,484 observations, about 41 hours** of one-minute readings without an ACK. One of the 70 pages is always being recycled, so it does not count. When the journal is full, the firmware erases the oldest page and counts its unacknowledged records in `lost`. The layout keeps 24 hours for a station with every catalog field (a compile-time check in `node_store.c`). Each slot needs a separately programmed ACK double-word, which costs space. The 30-day storage requirement (H11, 16 MB of external SPI NOR flash) remains future work.
+**Capacity: at least 69 × 25 = 1,725 observations, about 28.7 hours** of one-minute readings without an ACK. One of the 70 pages is always being recycled, so it does not count. When the journal is full, the firmware erases the oldest page and counts its unacknowledged records in `lost`. The layout keeps 24 hours for a station with every catalog field (a compile-time check in `node_store.c`). Each slot needs a separately programmed ACK double-word, which costs space. The 30-day storage requirement (H11, 16 MB of external SPI NOR flash) remains future work.
 
-**Page magic:** `"WSJ"` + the slot size in the low byte (`0x57534A38` for 56-byte slots, `App/node_store.c`). At boot the firmware ignores a page with any other magic, for example a page from a build with another field set or another protocol version. Later it recycles that page. It never misreads it.
+**Page magic:** `"WSJ"` + the slot size in the low byte (`0x57534A50` for 80-byte slots, `App/node_store.c`). At boot the firmware ignores a page with any other magic, for example a page from a build with another field set or another protocol version. Later it recycles that page. It never misreads it.
 
 ### Field set of a build (`App/node_fields.h`)
 
-One constant names the catalog fields that this build measures:
+One constant names the catalog fields that this build can measure. The default is every field the
+WSMP local modules can fill (`App/wsmp_catalog_map.c`). A reading carries only the fields of the
+modules in the layout (its own bitmap); the journal slot fits the widest:
 
 ```c
-#define WS_NODE_FIELDS (WS_F_TEMPERATURE_C | WS_F_HUMIDITY_PCT | WS_F_TH_SUMMARY)  /* T/RH: 15-s samples, minute mean + extrema */
+#ifndef WS_NODE_FIELDS
+#define WS_NODE_FIELDS WS_F_WSMP_BENCH   /* T/RH, pressure, wind, rain, UVA, battery, enclosure T/RH */
+#endif
 ```
 
 Everything else follows at compile time:
 
-- `WS_OBS_PLAIN_MAX`, the record length: 22 + the field widths. 35 B with the temperature and humidity summary.
+- `WS_OBS_PLAIN_MAX`, the record length: 22 + the field widths. 61 B for the WSMP bench field set.
 - The frame length: the record length + 16 B.
 - The journal slot size and the slots per page (`App/node_store.h`).
 - The page magic.
 - The airtime estimate per exchange.
 
-To add a sensor, add its `WS_F_…` bit here and fill its `o.code[…]` in `obs_codes()` (`App/app_tx.c`). The catalog (`firmware/common/ws_obs.c`, `ws0/fields.py`) already defines all 26 fields. The gateway needs no change.
+To add a sensor, add a WSMP local module, add its fields' `WS_F_…` bits here, and fill their codes in `App/wsmp_catalog_map.c`. The catalog (`firmware/common/ws_obs.c`, `ws0/fields.py`) already defines all 26 fields. The gateway needs no change.
 
 What a different field set does to the journal:
 
 - If the slot size changes, the page magic changes. So at the first boot the firmware **ignores every journal page of the old build and recycles it**. It never sends the records that were still pending in those pages.
-- If the slot size stays the same, the firmware reads the old pages. An example is a small addition: one 1-byte field makes 36 bytes, which still rounds up to a 56-byte slot. But the firmware checks each old record's CRC over the new record length. That check almost always fails. The firmware then counts the record as `burned` and does not send it.
+- If the slot size stays the same, the firmware reads the old pages. An example is a small addition: one 1-byte field makes 62 bytes, which still rounds up to an 80-byte slot. But the firmware checks each old record's CRC over the new record length. That check almost always fails. The firmware then counts the record as `burned` and does not send it.
 - In both cases, drain the journal (`pending=0` in `STATUS`) before you flash a build with another field set.
-- Capacity falls as records grow. For example, the full proof-of-concept field set (62-byte record) gives 80-byte slots, 25 per page, 1,725 records, about 28.8 hours. Every catalog field gives 96-byte slots, 21 per page, 1,449 records, 24.2 hours.
+- Capacity falls as records grow. For example, the WSMP bench field set (61-byte record) gives 80-byte slots, 25 per page, 1,725 records, about 28.7 hours. Every catalog field gives 96-byte slots, 21 per page, 1,449 records, 24.2 hours.
 - The static asserts in `node_store.c` stop the build if a slot no longer fits a page or the low byte of the page magic (under 256 B).
 
 Power-fail behaviour: a test ran 70 reset cycles during flash writes and passed (`evidence/g7-reset-during-write-2026-10-13/`). **Nobody has tested a true power removal yet.** That test is deferred (see `docs/failure-modes.md`).
