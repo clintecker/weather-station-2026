@@ -98,9 +98,7 @@ void mod_power_init(uint32_t boot_id, uint32_t now_ms)
 
 void mod_power_tick(uint32_t now_ms)
 {
-  if (pw.step != ST_IDLE || (int32_t)(now_ms - pw.next_ms) < 0) return;
-  pw.next_ms += POWER_PERIOD_MS;
-  if ((int32_t)(now_ms - pw.next_ms) >= 0) pw.next_ms = now_ms + POWER_PERIOD_MS;   /* fell behind: resync */
+  if (pw.step != ST_IDLE || !mean_due(&pw.next_ms, now_ms, POWER_PERIOD_MS)) return;
   if (pw.cal_needed) step(ST_MANUFACTURER, I2C_C_INA228, &reg_manufacturer, 2);
   else step(ST_CAL_CHECK, I2C_C_INA228, &reg_shunt_cal, 2);
 }
@@ -227,15 +225,17 @@ static void descriptors(wsmp_desc d[CHANNELS])
   d[6] = (wsmp_desc){ .quantity = WSMP_Q_CHARGER_STATE, .unit = WSMP_U_STATE, .scale = 0, .width = 1, .kind = WSMP_K_STATE };
 }
 
-void mod_power_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN])
+static void desc_block(uint8_t desc[WSMP_DESC_BLOCK_LEN])
 {
   wsmp_desc d[CHANNELS];
   descriptors(d);
   wsmp_pack_desc(d, CHANNELS, desc);
-  wsmp_identity ident = { .type = WSMP_T_POWER, .schema = 1, .channels = CHANNELS, .fw_major = 1, .fw_minor = 0,
-                          .serial = WSMP_LOCAL_SERIAL(P_POWER, WSMP_T_POWER), .boot_id = boot,
-                          .desc_digest = wsmp_crc32c(desc, WSMP_DESC_BLOCK_LEN) };
-  wsmp_pack_identity(&ident, id);
+}
+
+void mod_power_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN])
+{
+  desc_block(desc);
+  local_pack_identity(P_POWER, WSMP_T_POWER, CHANNELS, boot, desc, id);
 }
 
 /* The bq24074 state (registry, module type 5): off without input power, charging while CHG is
@@ -249,10 +249,10 @@ static uint32_t charger_state(void)
 
 void mod_power_latch(uint16_t token, uint32_t now_ms)
 {
-  uint8_t id[WSMP_IDENTITY_LEN], desc[WSMP_DESC_BLOCK_LEN];
+  uint8_t desc[WSMP_DESC_BLOCK_LEN];
   wsmp_snapshot snap;
   unsigned samples = pw.win.n;
-  mod_power_identity(id, desc);
+  desc_block(desc);
   if (!mean_close(&pw.win, token, now_ms, boot, desc, 1, &snap)) return;
   const int64_t totals[4] = { pw.energy_in / UWS_PER_MWH, pw.energy_out / UWS_PER_MWH,
                               pw.charge_in / UAS_PER_MAH, pw.charge_out / UAS_PER_MAH };

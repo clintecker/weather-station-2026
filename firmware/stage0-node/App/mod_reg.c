@@ -63,9 +63,7 @@ void mod_reg_tick(enum reg_unit u, uint32_t now_ms)
 {
   reg_t *s = &reg[u];
   if (s->step == ST_READY) { s->step = ST_DATA; submit(u, &parts[u].data_reg, 1, s->data, DATA_LEN); return; }
-  if (s->step != ST_IDLE || (int32_t)(now_ms - s->next_sample_ms) < 0) return;
-  s->next_sample_ms += WSMP_SAMPLE_MS;
-  if ((int32_t)(now_ms - s->next_sample_ms) >= 0) s->next_sample_ms = now_ms + WSMP_SAMPLE_MS;   /* fell behind: resync */
+  if (s->step != ST_IDLE || !mean_due(&s->next_sample_ms, now_ms, WSMP_SAMPLE_MS)) return;
   s->step = ST_ID;
   submit(u, &parts[u].id_reg, 1, &s->id, 1);
 }
@@ -119,16 +117,13 @@ int mod_reg_probe(enum reg_unit u, uint16_t *seq)
 void mod_reg_identity(enum reg_unit u, uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN])
 {
   wsmp_pack_desc(&parts[u].desc, 1, desc);
-  wsmp_identity ident = { .type = parts[u].type, .schema = 1, .channels = 1, .fw_major = 1, .fw_minor = 0,
-                          .serial = WSMP_LOCAL_SERIAL(parts[u].port, parts[u].type), .boot_id = boot,
-                          .desc_digest = wsmp_crc32c(desc, WSMP_DESC_BLOCK_LEN) };
-  wsmp_pack_identity(&ident, id);
+  local_pack_identity(parts[u].port, parts[u].type, 1, boot, desc, id);
 }
 
 void mod_reg_latch(enum reg_unit u, uint16_t token, uint32_t now_ms)
 {
-  uint8_t id[WSMP_IDENTITY_LEN], desc[WSMP_DESC_BLOCK_LEN];
-  mod_reg_identity(u, id, desc);
+  uint8_t desc[WSMP_DESC_BLOCK_LEN];
+  wsmp_pack_desc(&parts[u].desc, 1, desc);
   mean_latch(&reg[u].win, token, now_ms, boot, desc, 1);
 }
 

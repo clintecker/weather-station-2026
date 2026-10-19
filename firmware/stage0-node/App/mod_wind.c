@@ -129,7 +129,7 @@ int mod_wind_probe(uint16_t *seq)
   return wd.probe;
 }
 
-void mod_wind_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN])
+static void desc_block(uint8_t desc[WSMP_DESC_BLOCK_LEN])
 {
   const wsmp_desc d[CHANNELS] = {
     { .quantity = WSMP_Q_ANEMOMETER_PULSES, .unit = WSMP_U_PULSE, .scale = 0, .width = 2, .kind = WSMP_K_COUNTER },
@@ -137,10 +137,12 @@ void mod_wind_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLO
     { .quantity = WSMP_Q_WIND_FROM_DIRECTION, .unit = WSMP_U_DEG, .scale = -2, .width = 2, .is_signed = 1, .kind = WSMP_K_VEC_EAST },
     { .quantity = WSMP_Q_WIND_FROM_DIRECTION, .unit = WSMP_U_DEG, .scale = -2, .width = 2, .is_signed = 1, .kind = WSMP_K_VEC_NORTH } };
   wsmp_pack_desc(d, CHANNELS, desc);
-  wsmp_identity ident = { .type = WSMP_T_WIND, .schema = 1, .channels = CHANNELS, .fw_major = 1, .fw_minor = 0,
-                          .serial = WSMP_LOCAL_SERIAL(P_WIND, WSMP_T_WIND), .boot_id = boot,
-                          .desc_digest = wsmp_crc32c(desc, WSMP_DESC_BLOCK_LEN) };
-  wsmp_pack_identity(&ident, id);
+}
+
+void mod_wind_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN])
+{
+  desc_block(desc);
+  local_pack_identity(P_WIND, WSMP_T_WIND, CHANNELS, boot, desc, id);
 }
 
 static uint8_t vane_quality(const wsmp_snapshot *snap)
@@ -152,9 +154,9 @@ static uint8_t vane_quality(const wsmp_snapshot *snap)
 
 void mod_wind_latch(uint16_t token, uint32_t now_ms)
 {
-  uint8_t id[WSMP_IDENTITY_LEN], desc[WSMP_DESC_BLOCK_LEN];
+  uint8_t desc[WSMP_DESC_BLOCK_LEN];
   wsmp_snapshot snap;
-  mod_wind_identity(id, desc);
+  desc_block(desc);
   if (!mean_close(&wd.win, token, now_ms, boot, desc, 0, &snap)) return;
   uint8_t q = mean_quality(&snap, wd.ticks);
   uint32_t gust = (uint32_t)(((uint64_t)wd.gust_max * WSMP_WIND_UMS_PER_HZ * 2U + GUST_S * CENTI_UMS) / (2U * GUST_S * CENTI_UMS));

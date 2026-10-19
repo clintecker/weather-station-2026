@@ -9,6 +9,14 @@ void mean_reset(mean_win *w, uint32_t now_ms)
   w->start_ms = now_ms;   /* the board clock does not start at 0 after a warm reset */
 }
 
+int mean_due(uint32_t *next_ms, uint32_t now_ms, uint32_t period_ms)
+{
+  if ((int32_t)(now_ms - *next_ms) < 0) return 0;
+  *next_ms += period_ms;
+  if ((int32_t)(now_ms - *next_ms) >= 0) *next_ms = now_ms + period_ms;   /* fell behind: resync */
+  return 1;
+}
+
 void mean_add(mean_win *w, const int32_t v[MEAN_CHANNELS])
 {
   if (w->n == UINT8_MAX) return;   /* 255 samples is far above a window's 4 (or 60 for the vane) */

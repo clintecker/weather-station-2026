@@ -11,6 +11,15 @@
 #include "mod_wind.h"
 #include "ws_check.h"
 
+void local_pack_identity(enum wsmp_port p, uint16_t type, uint8_t channels, uint32_t boot_id,
+                         const uint8_t desc[WSMP_DESC_BLOCK_LEN], uint8_t id[WSMP_IDENTITY_LEN])
+{
+  const wsmp_identity ident = { .type = type, .schema = 1, .channels = channels, .fw_major = 1, .fw_minor = 0,
+                                .serial = WSMP_LOCAL_SERIAL(p, type), .boot_id = boot_id,
+                                .desc_digest = wsmp_crc32c(desc, WSMP_DESC_BLOCK_LEN) };
+  wsmp_pack_identity(&ident, id);
+}
+
 void local_init(uint32_t boot_id, uint32_t now_ms)
 {
   mod_th_init(boot_id, now_ms);

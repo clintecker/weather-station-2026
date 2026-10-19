@@ -66,9 +66,7 @@ void mod_th_tick(enum th_unit u, uint32_t now_ms)
   th_t *s = &th[u];
   if (s->step == ST_AWAKE) { s->step = ST_MEASURE; submit(u, shtc3_measure, TH_CMD_LEN, NULL, 0); return; }
   if (s->step == ST_READY) { s->step = ST_READ; submit(u, NULL, 0, s->reply, TH_REPLY_LEN); return; }
-  if (s->step != ST_IDLE || (int32_t)(now_ms - s->next_sample_ms) < 0) return;
-  s->next_sample_ms += WSMP_SAMPLE_MS;
-  if ((int32_t)(now_ms - s->next_sample_ms) >= 0) s->next_sample_ms = now_ms + WSMP_SAMPLE_MS;   /* fell behind: resync */
+  if (s->step != ST_IDLE || !mean_due(&s->next_sample_ms, now_ms, WSMP_SAMPLE_MS)) return;
   if (u == TH_AIR) { s->step = ST_MEASURE; submit(u, sht45_measure, sizeof sht45_measure, NULL, 0); }
   else { s->step = ST_WAKE; submit(u, shtc3_wake, TH_CMD_LEN, NULL, 0); }
 }
@@ -137,21 +135,23 @@ static void descriptors(wsmp_desc d[2])
   d[1] = (wsmp_desc){ .quantity = WSMP_Q_RELATIVE_HUMIDITY, .unit = WSMP_U_PERCENT, .scale = -2, .width = 2, .is_signed = 0, .kind = WSMP_K_MEAN };
 }
 
-void mod_th_identity(enum th_unit u, uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN])
+static void desc_block(uint8_t desc[WSMP_DESC_BLOCK_LEN])
 {
   wsmp_desc d[2];
   descriptors(d);
   wsmp_pack_desc(d, 2, desc);
-  wsmp_identity ident = { .type = type(u), .schema = 1, .channels = 2, .fw_major = 1, .fw_minor = 0,
-                          .serial = WSMP_LOCAL_SERIAL(port(u), type(u)), .boot_id = boot,
-                          .desc_digest = wsmp_crc32c(desc, WSMP_DESC_BLOCK_LEN) };
-  wsmp_pack_identity(&ident, id);
+}
+
+void mod_th_identity(enum th_unit u, uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN])
+{
+  desc_block(desc);
+  local_pack_identity(port(u), type(u), 2, boot, desc, id);
 }
 
 void mod_th_latch(enum th_unit u, uint16_t token, uint32_t now_ms)
 {
-  uint8_t id[WSMP_IDENTITY_LEN], desc[WSMP_DESC_BLOCK_LEN];
-  mod_th_identity(u, id, desc);
+  uint8_t desc[WSMP_DESC_BLOCK_LEN];
+  desc_block(desc);
   mean_latch(&th[u].win, token, now_ms, boot, desc, 2);
 }
 

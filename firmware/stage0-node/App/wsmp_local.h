@@ -25,4 +25,7 @@ void local_snapshot(enum wsmp_port p, uint8_t snap[WSMP_SNAPSHOT_LEN]);
 
 /* The serial number of a local module: never 0, unique for each port and type of one station. */
 #define WSMP_LOCAL_SERIAL(port, type) (0x575300000000ULL | (uint64_t)(port) << 8 | (uint64_t)(type))
+/* The identity block of a local module (schema 1, firmware 1.0) whose packed descriptor block is desc. */
+void local_pack_identity(enum wsmp_port p, uint16_t type, uint8_t channels, uint32_t boot_id,
+                         const uint8_t desc[WSMP_DESC_BLOCK_LEN], uint8_t id[WSMP_IDENTITY_LEN]);
 #endif

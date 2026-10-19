@@ -50,21 +50,23 @@ int mod_rain_probe(uint16_t *seq)
   return enabled;
 }
 
-void mod_rain_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN])
+static void desc_block(uint8_t desc[WSMP_DESC_BLOCK_LEN])
 {
   const wsmp_desc d = { .quantity = WSMP_Q_RAIN_TIPS, .unit = WSMP_U_TIP, .scale = 0, .width = 2, .kind = WSMP_K_COUNTER };
   wsmp_pack_desc(&d, 1, desc);
-  wsmp_identity ident = { .type = WSMP_T_RAIN, .schema = 1, .channels = 1, .fw_major = 1, .fw_minor = 0,
-                          .serial = WSMP_LOCAL_SERIAL(P_RAIN, WSMP_T_RAIN), .boot_id = boot,
-                          .desc_digest = wsmp_crc32c(desc, WSMP_DESC_BLOCK_LEN) };
-  wsmp_pack_identity(&ident, id);
+}
+
+void mod_rain_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN])
+{
+  desc_block(desc);
+  local_pack_identity(P_RAIN, WSMP_T_RAIN, 1, boot, desc, id);
 }
 
 void mod_rain_latch(uint16_t token, uint32_t now_ms)
 {
-  uint8_t id[WSMP_IDENTITY_LEN], desc[WSMP_DESC_BLOCK_LEN];
+  uint8_t desc[WSMP_DESC_BLOCK_LEN];
   wsmp_snapshot snap;
-  mod_rain_identity(id, desc);
+  desc_block(desc);
   if (!mean_close(&win, token, now_ms, boot, desc, 0, &snap)) return;
   snap.slot[0] = (wsmp_slot){ .value = tips, .count = (uint16_t)(enabled ? 1 : 0),
                               .quality = mean_quality(&snap, enabled ? 1U : 0U) };
