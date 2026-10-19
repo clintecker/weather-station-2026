@@ -12,7 +12,7 @@ worst case: every station at spreading factor 12 (SF12) on a 500 kHz channel.
 |---|---|
 | Receiver | one RX bridge with one radio, one channel. No multi-channel gateway hardware. |
 | Spreading factor | one network-wide SF for every station and the RX bridge, set in the gateway config. |
-| Station | full sensor set: 78-byte observation plaintext, 94-byte frame. |
+| Station | full sensor set. Its modules follow WSMP ([`docs/module-protocol.md`](../../module-protocol.md)). The minute reading of the bench station is about 46 bytes of plaintext (a 62-byte frame). The radio ceiling stays a 78-byte plaintext in a 94-byte frame. |
 | Traffic | one live reading a minute per station, as today. |
 | Reliable | every station meets the 24-hour delivery test (H01, `docs/H01-checklist.md`): at least 99 % of minutes committed within 120 s. |
 | Backlog | live readings come first. Backlog drains only in spare capacity, with no deadline. |
@@ -65,6 +65,10 @@ milliseconds, for a 94-byte frame and the 40-byte ACK of section 5:
 - **Live slots** are slots 0 to 15. Each station uses its own every minute, so a live reading
   never contends with another transmission.
 - **Pool slots** are the rest, plus any live slot no station uses. The gateway grants them.
+- **Slots stay sized for the 94-byte ceiling.** The WSMP minute reading is smaller: a 62-byte frame
+  takes 617 ms at SF12. The ceiling lets any slot carry a health report with the battery channels
+  (about 68 bytes), a descriptor-set fragment or a later sensor. A slot sized for the real frame
+  (1,320 ms at SF12, 45 slots) is a later option.
 - Slot k of a minute starts at the UTC minute + k × slot length.
 - The guard covers clock error and timing jitter. The 150 ms turnaround is a target that
   sub-project 3 measures (section 10). If it misses, the slot grows: 1.6 s at SF12 still gives
@@ -142,7 +146,8 @@ closes the open "blind 2 s ACK window" issue in `docs/failure-modes.md`.
 ## 5. Protocol version 6
 
 Unchanged: the frame header layout (the version nibble becomes 6), the nonce, AES-CCM, the
-observation catalog and the health report.
+observation catalog and the health report. WSMP replaces the catalog in its own later protocol step
+(sub-project 7). Version 6 changes only the time sync, so a failed test points at one change.
 
 **ACK and NACK plaintext: 17 bytes become 24 bytes.** The frame grows from 33 to 40 bytes.
 
@@ -212,7 +217,7 @@ Journal capacity. Opening a page erases the oldest one, so 69 pages always hold 
 
 | Build | Plaintext | Slot | Slots a page | Records retained | Outage buffer |
 |---|---:|---:|---:|---:|---:|
-| full station | 78 B | 96 B | 21 | 1,449 | 24.2 h |
+| full station (the 78-byte radio ceiling) | 78 B | 96 B | 21 | 1,449 | 24.2 h |
 | temperature and humidity | 35 B | 56 B | 36 | 2,484 | 41.4 h |
 
 ### 6.2 Sampling on the UTC minute
@@ -365,6 +370,11 @@ flowchart LR
   S1["1. Flash layout:<br/>110 KB firmware, 24 h journal"] --> S3
   S2["2. Multi-station gateway"] --> S3
   S3["3. Protocol version 6 time sync:<br/>24-byte ACK, scheduled ACK, time module"] --> S4
+  S1 --> S6
+  S6["6. WSMP bench station:<br/>local modules, registry, snapshots"] --> S7
+  S3 --> S7
+  S2 --> S7
+  S7["7. WSMP on the radio:<br/>descriptor sets, gateway decoding"] --> S5
   S4["4. Slots: live and pool slots,<br/>grants, join, UTC sampling"] --> S5
   S5["5. Scale validation:<br/>16-node simulation, bench"]
 ```
@@ -372,12 +382,23 @@ flowchart LR
 1. **Flash layout.** Firmware region 110 KB, a 70-page journal, the state pages at the top of
    flash. A prerequisite for the firmware work, and useful on its own.
 2. **Multi-station gateway.** Station table, key files, routing, per-station provisioning,
-   dashboard, MQTT and Home Assistant. Useful on its own: 2 or 3 stations on today's protocol.
+   dashboard, MQTT and Home Assistant. Useful on its own: 2 or 3 stations on today's protocol. It
+   uses the WSMP entity rule now (`<station>_<role>_<quantity>_<kind>`, WSMP-H1), so the Home
+   Assistant history survives sub-project 7.
 3. **Protocol version 6 time sync.** The 24-byte ACK, the four-timestamp exchange, the RX bridge's
    scheduled ACKs and timestamps, and the node time module. Still one station, so the time sync can
    be proved on the bench before slots exist.
 4. **Slots.** Live and pool slots, grants, join, UTC-aligned sampling, removing the drain and
    probing logic, and the gateway scheduler.
-5. **Scale validation.** The 16-node simulation and bench runs against the acceptance table.
+5. **Scale validation.** The 16-node simulation and bench runs against the acceptance table, with
+   WSMP readings.
+6. **WSMP bench station.** The Plan B parts as local WSMP modules on one station: the registry file
+   and its generator, the module driver interface, presence and admission, the latch at :50 and
+   the snapshots. Until sub-project 7, the station maps its channels onto today's catalog fields, so
+   the readings reach the gateway on today's protocol.
+7. **WSMP on the radio.** The generation in the reading in place of the field bitmap, descriptor-set
+   frames and their journal records, the health-class channels in the health report, and gateway
+   decoding, derived values and Home Assistant mapping (WSMP sections 11 and 12).
 
-Sub-projects 1 and 2 do not depend on each other and can run in either order.
+Sub-projects 1 and 2 do not depend on each other and can run in either order. Sub-project 6 needs
+only sub-project 1, so it can run beside 2 and 3.

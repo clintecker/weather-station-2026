@@ -29,7 +29,7 @@ flowchart LR
 |---|---|---|---|
 | 0 | The data path: sensor node → LoRa → receiver → gateway → database, on the bench with USB power | H01, the 24-hour delivery test: ≥ 1,426 of 1,440 readings within 120 s, plus a restart and outage matrix | SHT45 reading on the bench (2026-10-14). Next: protocol version 5 (`protocol-design.md`), then H01 on that release |
 | 1 | Main power and pack state: battery pack, charger, solar, pack monitoring | H02, pack energy accounting: pack Ah/Wh within 5 %. H03, cold and solar endurance: 168 h at −35 °C, cold-charge inhibit, dawn recovery, a 7-day deficit recovered in ≤ 3 solar days | Parts planned below. Building waits for H01 |
-| 2 | One wired sensor module on a sealed RJ45 port | H04, the port test: power, faults, 10 m cable, 10⁶ transactions | Long-lead parts identified |
+| 2 | One wired sensor module on a sealed RJ45 port | H04, the port test: power, faults, 10 m cable, 10⁶ transactions | Long-lead parts identified. Every module follows WSMP ([`module-protocol.md`](module-protocol.md)), which replaces the PRD §11 register map |
 | 3 | The complete unheated sensor set | H05 (defined in PRD §12). H06, the rain acceptance test. H07, UV index sensor qualification. H11, 30-day on-device storage | Instruments identified |
 
 The PRD allows planning and sourcing Stage 1 now ("plan and source the stage-1 pack and chamber

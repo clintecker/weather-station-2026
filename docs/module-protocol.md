@@ -34,6 +34,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY have the meanings of RF
 | Descriptor set | All descriptors of all present modules of one station, with a generation number. |
 | Registry | The versioned list of codes for quantities, units, kinds and module types (section 4). |
 | Generation | A number that the station gives to each different descriptor set. |
+| Report class | How often a module's channels go to the gateway: every minute in the reading, or every 15 minutes in the health report. The module type sets it. |
 
 ## 2. Overview
 
@@ -53,7 +54,7 @@ flowchart LR
   REG -.-> R1
 ```
 
-The design has five rules:
+The design has seven rules:
 
 1. **One contract.** A local and a remote module give the same identity, descriptors, snapshot and
    metadata. The station handles them the same way.
@@ -66,6 +67,14 @@ The design has five rules:
    its generation and the registry. Labels, ranges and part numbers are optional extras.
 5. **Nothing is lost by a change.** The station keeps every descriptor set that a pending journal
    record uses. The gateway can therefore decode every record, also after a database restore.
+6. **Modules aggregate only what needs their samples.** A module computes a value only if the value
+   needs the samples inside one window, for example a mean of 4 samples or a 3-second gust. Every
+   other statistic is the gateway's work: means over several minutes, extremes, rates and totals.
+   Counts travel raw. The gateway keeps the raw values, so it can compute the statistics again
+   with better rules later.
+7. **Each channel goes as often as it changes.** Weather goes every minute. Slow data (the battery)
+   goes in the 15-minute health report. The station still latches and reads every module every
+   minute, so the polling stays uniform.
 
 ## 3. Versioning
 
@@ -110,6 +119,7 @@ section are the initial content.
 | 14 | charge out of the battery | A.h | 0 to 2³²−1 | counter |
 | 15 | battery state of charge | % | 0 to 100 | |
 | 16 | charger state | {state} | 0 to 255 | the module type lists the states |
+| 17 | anemometer pulses | {pulse} | 0 to 2³²−1 | raw cup pulses, the module type gives m/s per Hz |
 
 ### 4.2 Units
 
@@ -127,6 +137,7 @@ section are the initial content.
 | 10 | W.h | energy |
 | 11 | A.h | charge |
 | 12 | {state} | enumeration |
+| 13 | {pulse} | count |
 
 ### 4.3 Kinds
 
@@ -148,27 +159,34 @@ adds the sums of several windows to get a mean over a longer time. It never aver
 
 ### 4.4 Module types
 
-A module type entry fixes the channels that a module of that type gives, the default role, and the
-factors that the gateway needs. The role tells where the quantity is measured (outside air,
+A module type entry fixes the channels that a module of that type gives, its report class, the
+default role, and the factors that the gateway needs. The role tells where the quantity is measured (outside air,
 enclosure). The station owner can change the role in the gateway configuration.
 
-| Code | Module type | Part | Schema | Channels (quantity / kind) | Role | Factors |
-|---:|---|---|---:|---|---|---|
-| 1 | air temperature and humidity | SHT45 | 1 | 1/mean, 1/min, 1/max, 2/mean, 2/min, 2/max | outside air | — |
-| 2 | air pressure | BMP581 | 1 | 3/mean | enclosure | — |
-| 3 | UVA | LTR390 | 1 | 8/mean | outside | — |
-| 4 | enclosure temperature and humidity | SHTC3 | 1 | 1/mean, 2/mean | enclosure | — |
-| 5 | battery and charger | INA228, MAX17048, bq24074 | 1 | 9/mean, 10/mean, 11/counter, 12/counter, 13/counter, 14/counter, 15/point, 16/state | battery | charger states: 0 off, 1 charging, 2 done, 3 fault |
-| 6 | wind | SparkFun SEN-15901 | 1 | 4/mean, 5/gust, 6/vector east sum, 6/vector north sum | outside | 0.667 m/s per Hz, gust running mean 3 s |
-| 7 | rain | SparkFun SEN-15901 | 1 | 7/counter | outside | 0.2794 mm per tip |
+| Code | Module type | Part | Schema | Channels (quantity / kind) | Report class | Role | Factors |
+|---:|---|---|---:|---|---|---|---|
+| 1 | air temperature and humidity | SHT45 | 1 | 1/mean, 2/mean | minute | outside air | — |
+| 2 | air pressure | BMP581 | 1 | 3/mean | minute | enclosure | — |
+| 3 | UVA | LTR390 | 1 | 8/mean | minute | outside | — |
+| 4 | enclosure temperature and humidity | SHTC3 | 1 | 1/mean, 2/mean | minute | enclosure | — |
+| 5 | battery and charger | INA228, MAX17048, bq24074 | 1 | 9/mean, 11/counter, 12/counter, 13/counter, 14/counter, 15/point, 16/state | health | battery | charger states: 0 off, 1 charging, 2 done, 3 fault |
+| 6 | wind | SparkFun SEN-15901 | 1 | 17/counter, 5/gust, 6/vector east sum, 6/vector north sum | minute | outside | 0.667 m/s per Hz, gust running mean 3 s |
+| 7 | rain | SparkFun SEN-15901 | 1 | 7/counter | minute | outside | 0.2794 mm per tip |
+
+The registry keeps the codes that no module type uses now, for example battery current (10) and the
+kinds minimum, maximum and sum. The gateway derives them (WSMP-H8). A later module type can use
+them, for example a sensor that measures faster than the station polls.
 
 - **WSMP-G5.** A module MUST give the channels of its module type entry, in that order.
 - **WSMP-G6.** A module MUST apply its own calibration before it reports a value. The calibration
   revision in its metadata identifies the coefficients. The gateway keeps the coefficients in its
   calibration archive.
-- **WSMP-G7.** Some values need a computation over time, for example a mean speed or a gust. The
-  module computes them with the factors of its module type. A pure count (rain tips) travels raw. The gateway
-  converts it with the module type's factor.
+- **WSMP-G7.** A module computes only values that need its samples inside one window (rule 6). It
+  uses the factors of its module type for them, for example for the gust. A count travels raw: rain
+  tips and cup pulses. The gateway converts a count with the module type's factor.
+- **WSMP-G8.** The report class of the module type decides where the channels go. A minute-class
+  channel goes in every reading. A health-class channel goes in the health report, from the latest
+  snapshot.
 
 ## 5. The descriptor
 
@@ -504,35 +522,46 @@ sequenceDiagram
 - **WSMP-E8.** The gateway stores a reading of an unknown generation raw and asks for the set. It
   keeps at most 1,440 raw readings for each station and raises an alarm when the limit is near.
 - **WSMP-E9.** The radio protocol carries the set in its own frame kind, and the request flag in the
-  ACK. The radio protocol specification defines those frames. This is a later step, after the radio
+  ACK. The health report also carries the generation, because it holds the health-class channels. The radio protocol specification defines those frames. This is a later step, after the radio
   time sync.
 
 ### 11.3 The reading on the radio
 
-A radio reading carries the generation in place of today's field bitmap. The values follow in
-descriptor-set order. Each value takes its descriptor's air width, big-endian. Then come the
+A radio reading carries the generation in place of today's field bitmap. The values of the
+minute-class channels follow in descriptor-set order. Each value takes its descriptor's air width, big-endian. Then come the
 quality codes, 2 bits for each channel, most significant bits first, padded with 0 to a whole byte.
 
 - **WSMP-A1.** The values and quality bits of one reading MUST fit the radio value budget. The budget
-  is 58 bytes in the planned radio format: a 78-byte plaintext less a 20-byte header.
+  is 58 bytes in the planned radio format: a 78-byte plaintext less a 20-byte header. The
+  health-class channels MUST fit the space that the radio protocol gives them in the health report.
 - **WSMP-A2.** A channel with quality "missing" still takes its place, so the positions never shift.
 
-The bench station with every module of section 4.4 takes 23 channels. With these descriptors it
-takes 49 bytes of values and 6 bytes of quality (46 bits), which is 55 of 58 bytes:
+The bench station with every module of section 4.4 has 18 channels. The minute reading carries 11
+of them: 23 bytes of values and 3 bytes of quality (22 bits). That is 26 of 58 bytes:
 
 | Module | Channels | Scale and air width | Bytes |
 |---|---|---|---:|
-| air temperature and humidity | 3 temperature, 3 humidity | −2, 2 bytes each | 12 |
+| air temperature and humidity | temperature mean, humidity mean | −2, 2 bytes each | 4 |
 | air pressure | 1 | −1, 2 bytes (0.1 hPa) | 2 |
 | UVA | 1 | 0, 3 bytes | 3 |
 | enclosure temperature and humidity | 2 | −2, 2 bytes each | 4 |
-| battery and charger | voltage, current, 4 counters, state of charge, state | −3 and 2 bytes; −3 and 2 bytes; −2 and 3 bytes each; 0 and 1 byte; 0 and 1 byte | 18 |
-| wind | mean, gust, east sum, north sum | −2, 2 bytes each (60 vane samples give sums within ±6,000) | 8 |
+| wind | pulse counter, gust, east sum, north sum | 0, −2, −2, −2, 2 bytes each | 8 |
 | rain | tip counter | 0, 2 bytes | 2 |
-| **Total** | 23 | | **49** |
+| **Total** | 11 | | **23** |
 
-The margin is 3 bytes. A new module type therefore needs a smaller width elsewhere or a larger
-radio budget.
+The 2-byte pulse counter wraps at 65,536. A 75 m/s wind gives about 6,700 pulses a minute, so one
+missed reading never loses a wrap. Sixty vane samples give vector sums within ±6,000 at scale −2.
+
+The health report carries the 7 battery channels: 16 bytes of values and 2 bytes of quality.
+
+| Module | Channels | Scale and air width | Bytes |
+|---|---|---|---:|
+| battery and charger | voltage | −3, 2 bytes | 2 |
+| | 4 energy and charge counters | −2, 3 bytes each | 12 |
+| | state of charge, charger state | 0, 1 byte each | 2 |
+| **Total** | 7 | | **16** |
+
+The margin in the minute reading is 32 bytes. That is room for later sensors.
 
 ### 11.4 The gateway: decoding and publishing
 
@@ -548,6 +577,18 @@ radio budget.
   alarm. The gateway publishes the one on the lower port.
 - **WSMP-H7. Removal.** A removed module makes its entities unavailable. The gateway never deletes
   their discovery records, so their history stays.
+- **WSMP-H8. Derived values.** The gateway derives the statistics that modules do not send:
+
+  | Derived value | From |
+  |---|---|
+  | mean wind speed over a reading | pulse increment × factor ÷ elapsed time |
+  | mean wind direction over any period | the added vector sums (section 4.3) |
+  | rain in mm, hourly and daily totals | tip increments × factor |
+  | hourly and daily extremes of temperature and humidity | the extremes of the minute means |
+  | battery current and power | charge and energy increments ÷ elapsed time |
+
+  The gateway stores the raw values. It records the version of each derivation rule with the derived
+  value, so it can compute the value again with a later rule.
 
 ## 12. Security
 
@@ -601,7 +642,7 @@ driver in the host build of the station firmware. A module release MUST include 
 | Metadata | M1–M3 | read the metadata block, check the text and the ranges |
 | Fuzzing | X2 | random and malformed blocks into the station parser, one million cases, no fault |
 | Station behaviour | P1–P8, E1–E3 | bench and simulator: plug and unplug modules, flap a presence loop, cut the power during a set change |
-| Gateway behaviour | E5–E8, H1–H7 | simulator: lose fragments, restore a database during a backlog, move a module between stations |
+| Gateway behaviour | E5–E8, H1–H8 | simulator: lose fragments, restore a database during a backlog, move a module between stations, check every derived value against a reference computation |
 
 ## 15. Open items
 
@@ -612,3 +653,4 @@ driver in the host build of the station firmware. A module release MUST include 
 | Siting and calibration archive | The gateway will keep a dated record of each module's installation: height, shield, vane north offset, barometer height. It will also keep each module's calibration coefficients. This is needed before outdoor use. |
 | Remote ports beyond two | Needs a UART multiplexer or a different station microcontroller. |
 | Module authentication | Not in WSMP 1.0 (WSMP-X1). |
+| Health-class data is best effort | The health report has no journal entry and no reply. A lost report loses that report's voltage, state of charge and charger state. The energy and charge counters are cumulative, so the totals stay exact. Journaling the health report is possible if this proves too lossy. |
