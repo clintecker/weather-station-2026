@@ -117,6 +117,17 @@ int h_host_slot_quality(int port, int i)
 }
 uint32_t h_host_changes(int port) { return wsmp_host_changes((enum wsmp_port)port); }
 unsigned h_host_line(char *buf, unsigned len) { return wsmp_host_modules_line(buf, len); }
+#ifdef WSMP_MAP
+#include "wsmp_catalog_map.h"
+/* The minute's reading as app_tx.c builds it: the map, then the encoder. */
+int h_map_reading(uint8_t *out, unsigned cap)
+{
+  ws_obs_t o = { .epoch = 1, .seq = 1 };
+  wsmp_map_summary sum;
+  wsmp_map_obs(&o, &sum);
+  return ws_obs_encode(&o, out, cap);
+}
+#endif
 #endif
 /* The SHT45 conversion of the driver in use (firmware/stage0.c), as the test's oracle for one sample. */
 int h_sht45_parse(int t_raw, int h_raw, int16_t *t, uint16_t *h)

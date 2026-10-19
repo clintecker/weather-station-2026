@@ -94,6 +94,7 @@ static volatile bus_state st = S_IDLE;
 static volatile int bus_rc, recover_rc;
 static enum i2c_client cur;            /* the client of the transfer on the bus */
 static int failed_rc;                  /* the failed transfer's code, reported after the recovery */
+static int hal_refused;                /* the HAL refused to start the transfer on the bus */
 static UTIL_TIMER_Object_t guard_timer, step_timer;
 static ws_i2c_rec rec;
 
@@ -145,7 +146,8 @@ static void kick(void)
   if (xfers[cur].txlen == 0 && xfers[cur].rxlen == 0) { failed_rc = I2C_OK; recover_begin(); return; }
   st = S_XFER;
   (void)WS_CHECK(UTIL_TIMER_Start(&guard_timer) == UTIL_TIMER_OK);   /* stopped by finish() */
-  if (hal_start(&xfers[cur]) != HAL_OK) finish(I2C_ENACK_ADDR);
+  hal_refused = hal_start(&xfers[cur]) != HAL_OK;
+  if (hal_refused) finish(I2C_ENACK_ADDR);
 }
 
 /* The four forms of i2c_bus.h: write, read, a register address and then a read, or recover only. */
@@ -204,12 +206,17 @@ static void deliver(int rc)
   kick();
 }
 
+static int may_be_stuck(int rc)
+{
+  return rc == I2C_ETIMEOUT || hal_refused || HAL_GPIO_ReadPin(GPIOA, SDA_PIN) != GPIO_PIN_SET;
+}
+
 static void bus_task(void)
 {
   if (st == S_DONE)
   {
-    if (bus_rc != I2C_OK) { failed_rc = bus_rc; recover_begin(); return; }
-    deliver(I2C_OK);
+    if (bus_rc != I2C_OK && may_be_stuck(bus_rc)) { failed_rc = bus_rc; recover_begin(); return; }
+    deliver(bus_rc);
   }
   else if (WS_CHECK(st == S_RECOVERED))   /* the task is posted only with S_DONE or S_RECOVERED */
   {

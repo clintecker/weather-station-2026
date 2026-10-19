@@ -1,6 +1,7 @@
 /* GENERATED from app_tx.lit.md by tools/tangle.py: do not edit. Edit the document, then run
  * tools/tangle.py firmware/stage0-node/App/app_tx.lit.md (tests/test_tangle.py checks this file). */
-/* TX node of the bench prototype: one SHT45 observation per minute. The node journals each
+/* TX node of the bench station: one observation per minute from its WSMP local modules
+ * (docs/module-protocol.md, App/wsmp_host.h). The node journals each
  * observation in flash before it transmits it. The journal keeps the record until the gateway
  * sends an authenticated ACK or NACK, or until the strike rule abandons it (ws_policy.h). Each
  * minute sends the live observation first. Then it sends older pending records as the energy and
@@ -9,6 +10,7 @@
  * lists the other TX modules. */
 #define WS_CHECK_FILE 1
 #include <string.h>
+#include "board_inputs.h"
 #include "busymon.h"
 #include "clock.h"
 #include "fault.h"
@@ -16,7 +18,7 @@
 #include "node_store.h"
 #include "radio_cfg.h"
 #include "selftest.h"
-#include "sensor.h"
+#include "mod_rain.h"
 #include "stackmon.h"
 #include "stage0.h"
 #include "stm32_seq.h"
@@ -34,8 +36,11 @@
 #include "ws_be.h"
 #include "ws_check.h"
 #include "ws_obs.h"
+#include "wsmp_catalog_map.h"
+#include "wsmp_host.h"
+#include "wsmp_local.h"
 
-#define SAMPLE_PERIOD_MS    15000U  /* one temperature and humidity sample (product spec, section 9) */
+#define SAMPLE_PERIOD_MS    15000U  /* the minute's ticks; the modules sample on their own (product spec, section 9) */
 #define SAMPLES_PER_REPORT  4U
 /* A TX node that keeps failing must not look healthy. Above this many failures in a row, the
  * watchdog resets the board, and the reset runs Radio.Init again. The two runs are journal appends
@@ -45,7 +50,7 @@
 /* A storage failure at boot can be transient. A reset after 10 minutes retries the boot once. */
 #define BOOT_RETRY_MS       (10UL * CLOCK_MS_PER_MIN)
 
-static UTIL_TIMER_Object_t sample_timer, boot_retry_timer;
+static UTIL_TIMER_Object_t sample_timer, module_timer, boot_retry_timer;
 static uint32_t last_sample_s;   /* the watchdog check reads it as proof of progress */
 /* This boot's identity and run state. Only this file writes it. The other TX modules read it
    through node_state() (docs/power-of-ten.md, rule 6). */
@@ -54,38 +59,15 @@ const tx_node_t *node_state(void) { return &node; }
 uint32_t node_uptime_s(void) { return clock_s() - node.boot_s; }
 int node_selftest(void) { node.kat_ok = selftest_kat(); return node.kat_ok; }
 
-/* The minute's 15-s samples. The product spec, section 9, asks for coverage, mean and extrema. */
-static ws_th_window th_window;
-static unsigned th_ticks;
-static int sensor_reported;   /* the first reading after boot prints a #sensor line */
-static int stuck;             /* the exchange outlasted its bound. The watchdog resets the board */
+static unsigned sample_ticks;
+static int modules_reported;   /* the first report prints the #modules line */
+static int stuck;              /* the exchange outlasted its bound. The watchdog resets the board */
 
 void sampling_stop(void)
 {
   node.running = 0;
   (void)UTIL_TIMER_Stop(&sample_timer);
-}
-
-/* The observation format is in docs/protocol-design.md, section 5. ws_code_* marks an
-   out-of-range temperature INVALID and clamps humidity. A sensor fault sends every field as
-   INVALID and never leaves a field out. The summary fields reach the frame only if the build's
-   bitmap includes them (WS_F_TH_SUMMARY in node_fields.h). */
-static void obs_codes(ws_obs_t *o, int valid, int16_t t, uint16_t h)
-{
-  static const uint8_t th_fields[] = { WS_FI_TEMPERATURE_C, WS_FI_HUMIDITY_PCT, WS_FI_TEMPERATURE_MIN_C,
-                                       WS_FI_TEMPERATURE_MAX_C, WS_FI_HUMIDITY_MIN_PCT, WS_FI_HUMIDITY_MAX_PCT };
-  o->code[WS_FI_TH_SAMPLES] = th_window.n > WS_TH_SAMPLES_MAX ? WS_TH_SAMPLES_MAX : th_window.n;
-  if (!valid)
-  {
-    for (unsigned i = 0; i < sizeof th_fields; i++) o->code[th_fields[i]] = ws_obs_invalid(th_fields[i]);
-    return;
-  }
-  o->code[WS_FI_TEMPERATURE_C] = ws_code_temp_centi(t);
-  o->code[WS_FI_HUMIDITY_PCT] = ws_code_rh_centi(h);
-  o->code[WS_FI_TEMPERATURE_MIN_C] = ws_code_temp_centi(th_window.t_min);
-  o->code[WS_FI_TEMPERATURE_MAX_C] = ws_code_temp_centi(th_window.t_max);
-  o->code[WS_FI_HUMIDITY_MIN_PCT] = ws_code_rh_centi(th_window.h_min);
-  o->code[WS_FI_HUMIDITY_MAX_PCT] = ws_code_rh_centi(th_window.h_max);
+  (void)UTIL_TIMER_Stop(&module_timer);
 }
 
 /* Readings that a minute produced while the previous minute's exchange still ran. The firmware
@@ -144,27 +126,32 @@ static void minute_send(const jref_t *live)
   if (backlog >= 0) exchange_start(live, (unsigned)backlog);
 }
 
-/* The minute's observation, built from its samples. */
+/* The minute's observation, built from the modules' snapshots. */
 typedef struct { int valid; int16_t t; uint16_t h; uint32_t utc, uptime; unsigned samples; } minute_t;
 
 /* Builds and encodes the minute's observation into plain (WS_OBS_PLAIN_MAX bytes). Returns 0 if
-   it did not encode. Starts the next minute's window. */
+   it did not encode. */
 static int minute_encode(minute_t *m, uint8_t *plain)
 {
-  m->t = 0; m->h = 0;
-  m->valid = ws_th_mean_t(&th_window, &m->t) && ws_th_mean_h(&th_window, &m->h);
+  wsmp_map_summary sum;
   m->utc = time_utc();
   m->uptime = node_uptime_s(); /* always sent: the gateway reconstructs time from it */
-  if (!m->valid) node.sensor_faults++;
   /* static: only the sequencer runs this, and it never re-enters. It is on the deepest callback
      chain, which tools/stack_report.py counts four times (a 104-byte record cost ~416 B). */
   static ws_obs_t o;
   o = (ws_obs_t){ .epoch = node.boot_epoch, .seq = node.next_seq, .utc = m->utc, .uptime = m->uptime,
-                  .energy = (uint8_t)energy_state(), .bitmap = WS_NODE_FIELDS };
-  obs_codes(&o, m->valid, m->t, m->h);
-  m->samples = th_window.n;
-  ws_th_reset(&th_window);
-  return ws_obs_encode(&o, plain, WS_OBS_PLAIN_MAX) == (int)WS_OBS_PLAIN_MAX;
+                  .energy = (uint8_t)energy_state() };
+  wsmp_map_obs(&o, &sum);
+  m->valid = sum.th_valid; m->t = sum.t; m->h = sum.h; m->samples = sum.th_samples;
+  if (!m->valid) node.sensor_faults++;
+  if (!modules_reported)
+  {
+    char line[WSMP_MODULES_LINE_MAX];
+    modules_reported = 1;
+    (void)wsmp_host_modules_line(line, sizeof line);
+    APP_PRINTF("%s\n", line);
+  }
+  return ws_obs_encode(&o, plain, WS_OBS_PLAIN_MAX) == (int)WS_OBS_PLAIN_LEN(o.bitmap);
 }
 
 /* Journals the encoded reading now, or holds it while the radio is busy. held_flush() counts a
@@ -207,30 +194,23 @@ static void minute_report(int src)
   busymon_step_end(s, "report.send");
 }
 
-void sensor_done(int src, int16_t t, uint16_t h)
-{
-  if (!node.running || stuck) return;   /* drop a result that ends after sampling stopped (reboot, storm, stuck radio) */
-  if (!sensor_reported)
-  {
-    sensor_reported = 1;
-    if (src) { APP_PRINTF("#sensor fault rc=%d (see sensor.h for codes)\n", src); }
-    else { APP_PRINTF("#sensor ok t=%d rh=%u\n", t, h); }
-  }
-  ws_th_add(&th_window, src == 0, t, h);
-  if (++th_ticks < SAMPLES_PER_REPORT) return;   /* the minute's report follows its last sample */
-  th_ticks = 0;
-  minute_report(src);
-}
-
-/* Every 15 s: start one measurement. sensor_done() gets its result ~11 ms later. */
+/* Every 15 s; the 4th tick latches every module and makes the minute's report. */
 static void sample(void)
 {
   last_sample_s = clock_s();
-  if (sensor_start()) sensor_done(-1, 0, 0);   /* the previous measurement still runs: a missed sample */
+  if (++sample_ticks < SAMPLES_PER_REPORT) return;
+  sample_ticks = 0;
+  if (!node.running || stuck) return;   /* no report after sampling stopped (reboot, storm, stuck radio) */
+  wsmp_host_latch(time_utc(), clock_ms());
+  minute_report(0);
 }
 BUSYMON_TASK(sample)
 
+static void module_tick(void) { if (node.running && !stuck) wsmp_host_tick(clock_ms()); }
+BUSYMON_TASK(module_tick)
+
 static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
+static void on_module_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sensor, CFG_SEQ_Prio_0); }
 
 /* Watchdog health: the node must make real progress, not only run its main loop. */
 int watchdog_healthy(void)
@@ -283,6 +263,16 @@ static int boot_ready(void)
   return 1;
 }
 
+static void modules_start(void)
+{
+  board_inputs_init();
+  local_init(node.boot_epoch);
+  mod_rain_set_enabled(store_rain_enabled());
+  wsmp_host_init();
+  (void)UTIL_TIMER_Create(&module_timer, WSMP_TICK_MS, UTIL_TIMER_PERIODIC, on_module_timer, NULL);
+  (void)UTIL_TIMER_Start(&module_timer);
+}
+
 void SubghzApp_Init(void)
 {
   stackmon_paint();
@@ -290,6 +280,7 @@ void SubghzApp_Init(void)
   leds_init();
   exchange_init();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample_timed);
+  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sensor, UTIL_SEQ_RFU, module_tick_timed);
   tx_console_init();
 
   node.boot_s = clock_s();
@@ -300,7 +291,7 @@ void SubghzApp_Init(void)
              watchdog_reset_cause(), node.kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, (unsigned)WS_LORA_BANDWIDTH, (unsigned)WS_LORA_SF, WS_TX_POWER_DBM);
   fault_report();
   if (!boot_ready()) return;
-  sensor_init();
+  modules_start();
   node.running = 1;
   last_sample_s = clock_s();
   tx_status();

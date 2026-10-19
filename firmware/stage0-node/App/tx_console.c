@@ -19,6 +19,8 @@
 #include "utilities_def.h"
 #include "watchdog.h"
 #include "ws_check.h"
+#include "mod_rain.h"
+#include "wsmp_host.h"
 #include "ws_obs.h"
 #include "ws_policy.h"
 
@@ -161,8 +163,26 @@ static void provision(char *line)
 
 /* From CMD_STORM on, a command writes flash: never during a radio exchange or a pending reboot
    (flash is only written with the radio idle, docs/firmware-event-model.md); the operator retries. */
-enum { CMD_STATUS, CMD_KAT, CMD_STORM, CMD_WIPE, CMD_PROVISION, CMD_COUNT };
-static const char *const command[CMD_COUNT] = { "STATUS", "KAT", "TEST-FLASH-STORM", "WIPE ERASE-ALL-NODE-STATE", "PROVISION " };
+enum { CMD_STATUS, CMD_KAT, CMD_MODULES, CMD_STORM, CMD_WIPE, CMD_PROVISION, CMD_RAIN_ON, CMD_RAIN_OFF, CMD_COUNT };
+static const char *const command[CMD_COUNT] = { "STATUS", "KAT", "MODULES", "TEST-FLASH-STORM", "WIPE ERASE-ALL-NODE-STATE",
+                                                "PROVISION ", "SENSOR rain on", "SENSOR rain off" };
+
+/* SENSOR rain on|off: the rain gauge cannot be detected, so the operator sets it (WSMP-P1). The node
+   stores the setting and applies it at once; the station host admits the module after two probes. */
+static void rain_setting(int on)
+{
+  int rc = store_rain_set(on);
+  if (rc) { APP_PRINTF("#error sensor rc=%d\n", rc); return; }
+  mod_rain_set_enabled(on);
+  APP_PRINTF("#sensor rain=%s\n", on ? "on" : "off");
+}
+
+static void modules_line(void)
+{
+  char line[WSMP_MODULES_LINE_MAX];
+  (void)wsmp_host_modules_line(line, sizeof line);
+  APP_PRINTF("%s\n", line);
+}
 
 static int refused(int cmd, char *line)
 {
@@ -172,22 +192,40 @@ static int refused(int cmd, char *line)
   return 1;
 }
 
-void console_line(char *line)
+/* The commands that only read (before CMD_STORM in the table). */
+static void read_command(int cmd)
 {
-  bench_command(line);   /* TEST-FAULT, TEST-HANG (not in a field build) */
-  int cmd = ws_cmd_find(command, CMD_COUNT, line);
-  if (refused(cmd, line)) return;
   switch (cmd)
   {
     case CMD_STATUS: tx_status(); break;
     case CMD_KAT: APP_PRINTF("#kat %s\n", node_selftest() ? "pass" : "FAIL"); break;
+    case CMD_MODULES: modules_line(); break;
+    default: APP_PRINTF("#error unknown command\n"); break;
+  }
+}
+
+/* The commands that write flash (from CMD_STORM on): refused() already kept them off a busy radio. */
+static void flash_command(int cmd, char *line)
+{
+  switch (cmd)
+  {
 #ifndef WS_FIELD_BUILD   /* bench only: a field image has no flash write load */
     case CMD_STORM: storm_start(); break;
 #endif
     case CMD_WIPE: APP_PRINTF("#wipe %s\n", store_wipe() ? "ERROR" : "ok"); reboot_soon(); break;
     case CMD_PROVISION: provision(line); break;
+    case CMD_RAIN_ON: case CMD_RAIN_OFF: rain_setting(cmd == CMD_RAIN_ON); break;
     default: APP_PRINTF("#error unknown command\n"); break;
   }
+}
+
+void console_line(char *line)
+{
+  bench_command(line);   /* TEST-FAULT, TEST-HANG (not in a field build) */
+  int cmd = ws_cmd_find(command, CMD_COUNT, line);
+  if (refused(cmd, line)) return;
+  if (cmd < CMD_STORM) read_command(cmd);
+  else flash_command(cmd, line);
 }
 
 void tx_console_init(void)

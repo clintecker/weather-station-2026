@@ -13,17 +13,19 @@ static uint8_t test_written[I2C_SIM_DEVICES][I2C_SIM_BUF];
    flagged (the driver must wait). An unknown command is a NACK. */
 typedef struct { uint16_t t_raw, rh_raw; int bad_crc; uint64_t measured_at; } sht45_t;
 static sht45_t sht45[I2C_SIM_DEVICES];
-static int sht45_too_early;
+static int sht45_too_early, sht45_commands;
 #define SHT45_READY_MS 9U
 void model_sht45_set(int dev, uint16_t t_raw, uint16_t rh_raw, int bad_crc)
 {
   sht45[dev].t_raw = t_raw; sht45[dev].rh_raw = rh_raw; sht45[dev].bad_crc = bad_crc;
 }
 int model_sht45_read_too_early(void) { return sht45_too_early; }
+int model_sht45_commands(void) { return sht45_commands; }
 
 static int sht45_write(int dev, const uint8_t *data, uint16_t n)
 {
   if (n != 1 || data[0] != WS_SHT45_MEASURE) return -1;
+  sht45_commands++;
   sht45[dev].measured_at = sim_now();
   return 0;
 }

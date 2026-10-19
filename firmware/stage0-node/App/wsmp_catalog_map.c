@@ -1,0 +1,156 @@
+/* The interim map (wsmp_catalog_map.h). Each module's fields enter the bitmap only while the module
+ * is in the layout. A missing channel gives the field's INVALID code (the catalog cannot carry the
+ * WSMP qualities "partial" and "suspect"; MODULES and the health report show them). Left out:
+ *   - the minute extremes (fields 21-24): the gateway derives extremes from the means (WSMP rule 6);
+ *   - the battery current (field 12): the charge counters count whole mAh, so one minute would read
+ *     a 40 mA load as 0 or 60 mA; the gateway derives the current over longer times (WSMP-H8).
+ * The wind speed is the pulse increment since the previous reading of the same module boot times
+ * the registry factor; the first reading after a (re)start has no speed and no direction. */
+#include "wsmp_catalog_map.h"
+#include <math.h>
+#include "wsmp_host.h"
+
+#define PRESSURE_OFFSET_DECI_HPA 3000U   /* field 2: 0.1 hPa, offset 300.0 hPa */
+#define PRESSURE_TOP 8000U
+#define WIND_TOP_DECI 750U               /* 75.0 m/s */
+#define CALM_DECI 5U                     /* below 0.5 m/s */
+#define DEG_FULL 360
+#define UMS_PER_DECI_MS 100000ULL        /* um/s in 0.1 m/s */
+#define MS_PER_S 1000ULL
+#define PINS_PGOOD 0x01U
+#define PINS_CHG 0x02U
+#define RAD_TO_DEG 57.29577951f
+
+static int missing(const wsmp_snapshot *s, unsigned i) { return s->slot[i].quality == WSMP_QUAL_MISSING; }
+static void put(ws_obs_t *o, unsigned field, uint32_t code) { o->bitmap |= WS_F(field); o->code[field] = code; }
+static void invalid(ws_obs_t *o, unsigned field) { put(o, field, ws_obs_invalid(field)); }
+
+/* A mean of temperature (slot t) and humidity (slot h) into two catalog fields. */
+static void th(ws_obs_t *o, const wsmp_snapshot *s, unsigned ft, unsigned fh)
+{
+  if (missing(s, 0)) { invalid(o, ft); invalid(o, fh); return; }
+  put(o, ft, ws_code_temp_centi((int32_t)s->slot[0].value));
+  put(o, fh, ws_code_rh_centi((int32_t)s->slot[1].value));
+}
+
+static void air(ws_obs_t *o, wsmp_map_summary *sum)
+{
+  const wsmp_snapshot *s = wsmp_host_snapshot(P_AIR_TH);
+  if (!s) return;
+  th(o, s, WS_FI_TEMPERATURE_C, WS_FI_HUMIDITY_PCT);
+  unsigned n = missing(s, 0) ? 0U : s->slot[0].count;
+  put(o, WS_FI_TH_SAMPLES, n > WS_TH_SAMPLES_MAX ? WS_TH_SAMPLES_MAX : n);
+  sum->th_valid = !missing(s, 0);
+  sum->t = sum->th_valid ? (int16_t)(int32_t)s->slot[0].value : 0;
+  sum->h = sum->th_valid ? (uint16_t)s->slot[1].value : 0U;
+  sum->th_samples = n;
+}
+
+static void pressure_uva_enclosure(ws_obs_t *o)
+{
+  const wsmp_snapshot *p = wsmp_host_snapshot(P_PRESSURE), *u = wsmp_host_snapshot(P_UVA), *e = wsmp_host_snapshot(P_ENCL_TH);
+  if (p)
+  {
+    uint32_t v = p->slot[0].value;
+    if (missing(p, 0) || v < PRESSURE_OFFSET_DECI_HPA || v - PRESSURE_OFFSET_DECI_HPA > PRESSURE_TOP) invalid(o, WS_FI_PRESSURE_HPA);
+    else put(o, WS_FI_PRESSURE_HPA, v - PRESSURE_OFFSET_DECI_HPA);
+  }
+  if (u)
+  {
+    if (missing(u, 0)) invalid(o, WS_FI_UVA_RAW);
+    else put(o, WS_FI_UVA_RAW, u->slot[0].value);
+  }
+  if (e) th(o, e, WS_FI_ENCLOSURE_TEMP_C, WS_FI_ENCLOSURE_RH_PCT);
+}
+
+/* The previous pulse counter of the same module boot, for the speed. */
+static uint32_t prev_pulses;
+static uint16_t prev_boot;
+static int have_prev;
+
+static uint32_t speed_deci(const wsmp_snapshot *s, int *known)
+{
+  uint32_t inc = s->slot[0].value - prev_pulses;
+  *known = have_prev && prev_boot == s->boot16 && !missing(s, 0) && s->window_ms > 0;
+  have_prev = !missing(s, 0);
+  prev_pulses = s->slot[0].value;
+  prev_boot = s->boot16;
+  if (!*known) return 0;
+  uint64_t num = (uint64_t)inc * WSMP_WIND_UMS_PER_HZ * MS_PER_S * 2U, den = (uint64_t)s->window_ms * UMS_PER_DECI_MS * 2U;
+  return (uint32_t)((num + den / 2U) / den);
+}
+
+static uint32_t direction(const wsmp_snapshot *s)
+{
+  float d = atan2f((float)(int32_t)s->slot[2].value, (float)(int32_t)s->slot[3].value) * RAD_TO_DEG;
+  int deg = (int)lroundf(d);
+  if (deg < 0) deg += DEG_FULL;
+  return (uint32_t)(deg % DEG_FULL);
+}
+
+static void wind(ws_obs_t *o)
+{
+  const wsmp_snapshot *s = wsmp_host_snapshot(P_WIND);
+  if (!s) { have_prev = 0; return; }
+  int known;
+  uint32_t speed = speed_deci(s, &known);
+  if (!known || speed > WIND_TOP_DECI) { invalid(o, WS_FI_WIND_SPEED_MS); invalid(o, WS_FI_WIND_DIR_DEG); }
+  else
+  {
+    put(o, WS_FI_WIND_SPEED_MS, speed);
+    if (speed < CALM_DECI) put(o, WS_FI_WIND_DIR_DEG, WS_WIND_DIR_CALM);
+    else if (missing(s, 2)) invalid(o, WS_FI_WIND_DIR_DEG);
+    else put(o, WS_FI_WIND_DIR_DEG, direction(s));
+  }
+  uint32_t gust = (s->slot[1].value + 5U) / 10U;   /* 0.01 m/s to 0.1 m/s, half up */
+  if (missing(s, 1) || gust > WIND_TOP_DECI) invalid(o, WS_FI_WIND_GUST_MS);
+  else put(o, WS_FI_WIND_GUST_MS, gust);
+}
+
+static void rain(ws_obs_t *o)
+{
+  const wsmp_snapshot *s = wsmp_host_snapshot(P_RAIN);
+  if (!s) return;
+  if (missing(s, 0)) invalid(o, WS_FI_RAIN_TIPS);
+  else put(o, WS_FI_RAIN_TIPS, s->slot[0].value % ws_obs_invalid(WS_FI_RAIN_TIPS));   /* wraps below INVALID */
+}
+
+static uint32_t charger_pins(uint32_t state)
+{
+  if (state == WSMP_POWER_STATE_CHARGING) return PINS_PGOOD | PINS_CHG;
+  if (state == WSMP_POWER_STATE_DONE) return PINS_PGOOD;
+  return state == WSMP_POWER_STATE_OFF ? 0U : ws_obs_invalid(WS_FI_CHARGER_PINS);
+}
+
+static void power(ws_obs_t *o)
+{
+  static const unsigned counter_field[4] = { WS_FI_ENERGY_IN_MWH, WS_FI_ENERGY_OUT_MWH, WS_FI_CHARGE_IN_MAH, WS_FI_CHARGE_OUT_MAH };
+  const wsmp_snapshot *s = wsmp_host_snapshot(P_POWER);
+  if (!s) return;
+  if (missing(s, 0)) invalid(o, WS_FI_BATT_MV); else put(o, WS_FI_BATT_MV, s->slot[0].value);
+  for (unsigned i = 0; i < 4; i++)
+  {
+    uint32_t top = ws_obs_invalid(counter_field[i]);
+    if (missing(s, 1 + i)) invalid(o, counter_field[i]);
+    else put(o, counter_field[i], s->slot[1 + i].value % top);   /* wraps like the 3-byte field */
+  }
+  if (missing(s, 5)) invalid(o, WS_FI_SOC_GAUGE_PCT); else put(o, WS_FI_SOC_GAUGE_PCT, s->slot[5].value);
+  if (missing(s, 6)) invalid(o, WS_FI_CHARGER_PINS); else put(o, WS_FI_CHARGER_PINS, charger_pins(s->slot[6].value));
+}
+
+void wsmp_map_obs(ws_obs_t *o, wsmp_map_summary *sum)
+{
+  *sum = (wsmp_map_summary){ 0 };
+  o->bitmap = 0;
+  air(o, sum);
+  pressure_uva_enclosure(o);
+  wind(o);
+  rain(o);
+  power(o);
+  if (o->bitmap) return;
+  /* No module in the layout: the air fields go INVALID, as before WSMP, so the reading still encodes
+     (the catalog refuses an empty bitmap) and the gateway sees the minute. */
+  invalid(o, WS_FI_TEMPERATURE_C);
+  invalid(o, WS_FI_HUMIDITY_PCT);
+  put(o, WS_FI_TH_SAMPLES, 0);
+}

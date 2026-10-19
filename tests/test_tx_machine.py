@@ -29,20 +29,23 @@ from ws0.protocol import (KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, frame_counte
 STATION = 7
 KEY = bytes(range(16, 32))
 R_SLEEP, R_STANDBY, R_TX, R_RX = range(4)
-SOURCES = ['host/tx_harness.c', 'host/sim_core.c', 'sim_flash.c', 'stage0.c',
+SOURCES = ['host/tx_harness.c', 'host/sim_core.c', 'host/i2c_sim.c', 'host/i2c_models.c', 'sim_flash.c', 'stage0.c',
            *(f'stage0-node/App/{name}.c' for name in ('app_tx', 'tx_exchange', 'tx_policy', 'tx_time', 'tx_console', 'selftest',
-                                                      'node_store', 'busymon', 'clock', 'events', 'bench')),
-           *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy', 'ws_check'))]
+                                                      'node_store', 'busymon', 'clock', 'events', 'bench', 'i2c_bus',
+                                                      'wsmp_local', 'wsmp_host', 'wsmp_catalog_map', 'mod_th', 'mod_mean',
+                                                      'mod_reg', 'mod_power', 'mod_wind', 'mod_rain')),
+           *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy', 'ws_check', 'wsmp'))]
 ASAN_ENV = 'WS_TX_ASAN'   # set by TxUnderAddressSanitizer for its child run
 
 # What the firmware must do (docs/firmware-event-model.md, docs/radio-energy-policy.md, and the
 # product spec's sampling section). Written here once, from the specification, not read back from
 # the firmware. A test that took its expectations from the code under test could not notice the
 # code changing them.
-SENSOR_MS = 10              # the harness SHT45's measurement time
 SAMPLE_MS = 15_000
 MINUTE_MS = 60_000
-FIRST_REPORT_MS = 3 * SAMPLE_MS + SENSOR_MS   # samples at 0, 15, 30, 45 s; the report follows the 4th
+# The 15-s ticks come at 0, 15, 30 and 45 s; the 4th latches every WSMP module and makes the report
+# at once (docs/superpowers/specs/2026-10-18-wsmp-bench-station-design.md section 4).
+FIRST_REPORT_MS = 3 * SAMPLE_MS
 ACK_WINDOW_MS = 2000
 GAP_MS = 50                 # before every frame of an exchange, the first included (radio sleep -> wake)
 TX_TIMEOUT_MS = 3000        # ST driver's transmit timeout (radio_cfg.h WS_TX_TIMEOUT_MS)
@@ -217,7 +220,7 @@ class TxStateMachine(unittest.TestCase):
         mbed = [MBEDTLS/'library'/f'{n}.c' for n in ('aes', 'ccm', 'block_cipher', 'platform_util', 'constant_time')]
         # UBSan works in a library ctypes loads; ASan needs its runtime loaded first (TxUnderAddressSanitizer).
         san = SAN if os.environ.get(ASAN_ENV) == '1' else [f.replace('address,', '') for f in SAN]
-        lib = host_library(cls, 'txmachine', *san, '-I', fw/'host/include', '-I', fw/'stage0-node/App',
+        lib = host_library(cls, 'txmachine', *san, '-I', fw/'host/include', '-I', fw/'host', '-I', fw/'stage0-node/App',
                            '-I', fw/'stage0-node/Core/Inc', '-I', fw, '-I', fw/'common', '-I', MBEDTLS/'include',
                            '-DMBEDTLS_CONFIG_FILE="ws_mbedtls_config.h"', '-DWS_FW_VERSION="host"',
                            '-DWS_FW_BUILD_ID=0UL', *[fw/s for s in SOURCES], *mbed)
@@ -266,9 +269,10 @@ class TxStateMachine(unittest.TestCase):
     def test_minute_exchange_then_health_report_after_a_gap(self):
         n = self.node()
         self.assertIn('#boot role=tx', n.out())
-        n.advance(SENSOR_MS + 5)
-        self.assertIn('#sensor ok t=2150 rh=4500', n.out())
         n.advance_to(minute(0))
+        out = n.out()
+        self.assertRegex(out, r'#sample epoch=\d+ seq=0 uptime=\d+ valid=1 rc=0 n=3 t=2150 rh=4500 ')   # 3 samples by 45 s
+        self.assertIn('#modules air_th=active', out)            # the first report names the modules
         self.assertEqual((n.sent(), n.radio()), (1, R_TX))
         n.advance(n.air)                               # TxDone: the ACK window opens
         # Rx(0): no driver timer (ST's is left running by a CRC error); the firmware's own ends the window
@@ -578,6 +582,33 @@ class TxStateMachine(unittest.TestCase):
         n.lib.h_line(b'PROVISION 9 ' + b'11' * 16)
         self.assertIn('#provisioned station=9 ', n.out())
 
+    def test_modules_console_line(self):
+        n = self.node()
+        n.advance(20_000)                              # two good SHT45 probes: admitted, active at the latch
+        n.out()
+        n.lib.h_line(b'MODULES')
+        self.assertEqual(n.out(), '#modules air_th=admitted pressure=absent uva=absent encl_th=absent '
+                                  'power=absent wind=absent rain=absent\n')
+
+    def test_sensor_rain_command_is_stored_and_waits_for_the_radio(self):
+        n = self.node()
+        n.out()                                        # the boot lines
+        n.lib.h_line(b'SENSOR rain on')
+        self.assertEqual(n.out(), '#sensor rain=on\n')
+        n.advance(3_000)                               # the setting is probed once a second: two good probes
+        n.lib.h_line(b'MODULES')
+        self.assertIn(' rain=admitted', n.out())
+        self.window(n)                                 # during an exchange a flash write must wait
+        n.lib.h_line(b'SENSOR rain off')
+        self.assertIn('#error busy', n.out())
+        n.advance(5000)
+        n.out()                                        # the exchange's own lines
+        n.lib.h_line(b'SENSOR rain off')
+        self.assertEqual(n.out(), '#sensor rain=off\n')
+        for bad in (b'SENSOR rain', b'SENSOR rain maybe', b'SENSOR wind on'):
+            n.lib.h_line(bad)
+            self.assertEqual(n.out(), '#error unknown command\n', bad)
+
     def test_commanded_reboot_comes_from_a_timer_and_stops_sampling(self):
         n = self.node()
         n.advance(100)
@@ -836,15 +867,18 @@ class TxStateMachine(unittest.TestCase):
 
     # ---- sensor ----
 
-    def test_sensor_failure_and_a_measurement_that_never_ends(self):
+    def test_a_failing_or_hung_sensor_never_stalls_the_minute(self):
         n = self.node()
-        n.lib.h_sensor(-2, 0)
-        n.advance(20)
-        self.assertIn('#sensor fault rc=-2', n.out())
-        n.lib.h_sensor(0, 1)                           # the 15 s measurement never completes (a driver bug:
-        n.advance(MINUTE_MS)                           # sensor.c's guard timer makes it impossible) ...
-        self.assertRegex(n.out(), r'#sample .* valid=0 rc=-1 n=0 ')  # ... later ones are refused, not waited for
-        self.assertEqual((n.lib.h_sensor_starts(), n.lib.h_healthy()), (2, 1))
+        n.lib.h_sensor(-2, 0)                          # the SHT45 does not answer its address: never admitted
+        n.advance_to(minute(0))
+        self.assertRegex(n.out(), r'#sample epoch=\d+ seq=0 .* valid=0 rc=0 n=0 ')   # the report still comes
+        n.lib.h_sensor(0, 1)                           # every transfer now hangs: the bus guard ends each one
+        starts = n.lib.h_sensor_starts()
+        n.advance(2 * MINUTE_MS)
+        out = n.out()
+        self.assertEqual(len(re.findall(r'#sample epoch=\d+ seq=[12] .* valid=0 ', out)), 2)   # every minute
+        self.assertGreaterEqual(n.lib.h_sensor_starts() - starts, 7)   # the module retries every 15 s
+        self.assertEqual(n.lib.h_healthy(), 1)
 
     # ---- everything at once ----
 

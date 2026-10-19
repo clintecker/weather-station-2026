@@ -200,7 +200,7 @@ void mod_power_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BL
    asserted, done after it. A fault is not readable from the two pins. */
 static uint32_t charger_state(void)
 {
-  int pins = board_charger_pins();
+  unsigned pins = (unsigned)board_charger_pins();
   if (!(pins & POWER_PGOOD)) return WSMP_POWER_STATE_OFF;
   return (pins & POWER_CHG) ? WSMP_POWER_STATE_CHARGING : WSMP_POWER_STATE_DONE;
 }

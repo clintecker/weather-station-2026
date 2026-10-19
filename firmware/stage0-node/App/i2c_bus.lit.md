@@ -25,7 +25,7 @@ python3 tools/tangle.py --check firmware/stage0-node/App/i2c_bus.lit.md    # com
 | One result | each submitted transfer gets exactly one `i2c_bus_done`, from the main loop | every test in `tests/test_i2c_bus.py` |
 | Refusal | a client with a transfer queued or running gets -1 at once | `test_a_second_submit_from_a_busy_client_is_refused` |
 | Guard | a transfer that does not finish within 30 ms ends with `I2C_ETIMEOUT`. A completion after it changes nothing | `test_guard_timeout_reports_etimeout`, `test_a_completion_after_the_guard_is_ignored` |
-| Recovery | after any failed transfer the bus clocks SDA free and starts the peripheral again before the next transfer. SDA that stays low gives `I2C_ESTUCK` | `test_each_failure_has_its_code_and_recovers_the_bus`, `test_held_sda_is_clocked_free_or_reported_stuck` |
+| Recovery | after a transfer that can leave the bus stuck (a timeout, a HAL refusal, or SDA still low) the bus clocks SDA free and starts the peripheral again before the next transfer. SDA that stays low gives `I2C_ESTUCK`. A clean NACK costs no recovery | `test_each_failure_has_its_code_and_recovers_the_bus`, `test_held_sda_is_clocked_free_or_reported_stuck`, `test_an_absent_device_costs_no_recovery` |
 | Isolation | a failure of one client's device does not fail the other clients' transfers | `test_unplug_mid_transfer_recovers_and_spares_other_clients` |
 
 A transfer has one of three forms (`i2c_bus.h`):
@@ -165,6 +165,7 @@ static volatile bus_state st = S_IDLE;
 static volatile int bus_rc, recover_rc;
 static enum i2c_client cur;            /* the client of the transfer on the bus */
 static int failed_rc;                  /* the failed transfer's code, reported after the recovery */
+static int hal_refused;                /* the HAL refused to start the transfer on the bus */
 static UTIL_TIMER_Object_t guard_timer, step_timer;
 static ws_i2c_rec rec;
 
@@ -229,7 +230,8 @@ static void kick(void)
   if (xfers[cur].txlen == 0 && xfers[cur].rxlen == 0) { failed_rc = I2C_OK; recover_begin(); return; }
   st = S_XFER;
   (void)WS_CHECK(UTIL_TIMER_Start(&guard_timer) == UTIL_TIMER_OK);   /* stopped by finish() */
-  if (hal_start(&xfers[cur]) != HAL_OK) finish(I2C_ENACK_ADDR);
+  hal_refused = hal_start(&xfers[cur]) != HAL_OK;
+  if (hal_refused) finish(I2C_ENACK_ADDR);
 }
 
 /* The four forms of i2c_bus.h: write, read, a register address and then a read, or recover only. */
@@ -291,8 +293,10 @@ static void recover_begin(void)
 
 ## 8. The bus task
 
-The bus task runs in the main loop. It reports a good transfer at once. After a failure it first
-recovers the bus, then reports the failure. `deliver` frees the client before it calls
+The bus task runs in the main loop. It reports a good transfer at once, and a clean NACK too: an
+absent module answers every probe with one, and the bus is free afterwards. After a failure that can
+leave the bus stuck (the guard ended it, the HAL refused it, or SDA is still low) it first recovers
+the bus, then reports the failure. `deliver` frees the client before it calls
 `i2c_bus_done`, so the module can submit its next transfer from the completion. Then `kick` starts
 the next transfer in the queue.
 
@@ -306,12 +310,17 @@ static void deliver(int rc)
   kick();
 }
 
+static int may_be_stuck(int rc)
+{
+  return rc == I2C_ETIMEOUT || hal_refused || HAL_GPIO_ReadPin(GPIOA, SDA_PIN) != GPIO_PIN_SET;
+}
+
 static void bus_task(void)
 {
   if (st == S_DONE)
   {
-    if (bus_rc != I2C_OK) { failed_rc = bus_rc; recover_begin(); return; }
-    deliver(I2C_OK);
+    if (bus_rc != I2C_OK && may_be_stuck(bus_rc)) { failed_rc = bus_rc; recover_begin(); return; }
+    deliver(bus_rc);
   }
   else if (WS_CHECK(st == S_RECOVERED))   /* the task is posted only with S_DONE or S_RECOVERED */
   {

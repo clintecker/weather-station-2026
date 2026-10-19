@@ -91,13 +91,17 @@ class I2cBus(unittest.TestCase):
         self.assertEqual(self.read(lib), OK)               # the bus works afterwards
 
     def test_each_failure_has_its_code_and_recovers_the_bus(self):
-        for mode, reg, rc in ((DM_NACK_ADDR, True, ENACK_ADDR), (DM_NACK_ADDR, False, ENACK_DATA),
-                              (DM_NACK_DATA, False, ENACK_DATA), (DM_HANG, True, ETIMEOUT), (DM_BUSY, True, ENACK_ADDR)):
+        # A transfer that can leave the bus stuck (a timeout, a HAL refusal) is followed by the recovery.
+        # A clean NACK, with SDA free, is not: absent modules are probed often, and a recovery each time
+        # would only churn the bus. SDA held low after a NACK still recovers (the next test).
+        for mode, reg, rc, recoveries in ((DM_NACK_ADDR, True, ENACK_ADDR, 0), (DM_NACK_ADDR, False, ENACK_DATA, 0),
+                                          (DM_NACK_DATA, False, ENACK_DATA, 0), (DM_HANG, True, ETIMEOUT, 1),
+                                          (DM_BUSY, True, ENACK_ADDR, 1)):
             with self.subTest(mode=mode, reg=reg):
                 lib, devs = self.bus()
                 lib.h_device_mode(devs[SHT45], mode, 0, 1)
                 self.assertEqual(self.read(lib, reg=reg), rc)
-                self.assertEqual(lib.h_deinits(), 1)        # the recovery ran ...
+                self.assertEqual(lib.h_deinits(), recoveries)   # the recovery ran when it had to ...
                 self.assertEqual(lib.h_i2c_ready(), 1)      # ... and the peripheral is back
                 self.assertLess(lib.h_log_ms(0), 120)
                 lib.h_device_mode(devs[SHT45], DM_OK, 0, 1)
@@ -107,6 +111,13 @@ class I2cBus(unittest.TestCase):
         lib, devs = self.bus()
         lib.h_remove_device(devs[SHT45])
         self.assertEqual(self.read(lib), ENACK_ADDR)
+
+    def test_an_absent_device_costs_no_recovery(self):
+        lib, devs = self.bus()
+        lib.h_remove_device(devs[SHT45])
+        for _ in range(5):
+            self.assertEqual(self.read(lib), ENACK_ADDR)
+        self.assertEqual((lib.h_deinits(), lib.h_scl_edges()), (0, 0))
 
     def test_held_sda_is_clocked_free_or_reported_stuck(self):
         lib, devs = self.bus()

@@ -119,10 +119,12 @@ int wsmp_host_admit(enum wsmp_port p, const uint8_t id[WSMP_IDENTITY_LEN], const
   if (wsmp_unpack_identity(id, &ident) != WSMP_OK || wsmp_unpack_desc(desc, ident.channels, d) != WSMP_OK ||
       wsmp_desc_check(d, ident.channels, ident.type, ident.schema) != WSMP_OK)
     return WH_QUARANTINED;
+  const wsmp_type_entry *type = wsmp_type(ident.type);
+  if (!type) return WH_QUARANTINED;   /* wsmp_desc_check already found it; this keeps the pointer checked */
   port_t *s = &ports[p];
   s->values = (uint8_t)wsmp_values_bytes(d, ident.channels);
   s->channels = ident.channels;
-  s->report_class = wsmp_type(ident.type)->report_class;   /* wsmp_desc_check found the type */
+  s->report_class = type->report_class;
   if (s->report_class == WSMP_RC_MINUTE && !fits(p, s->values, s->channels)) return WH_REFUSED;
   return WH_ADMITTED;
 }
@@ -239,12 +241,13 @@ const wsmp_snapshot *wsmp_host_snapshot(enum wsmp_port p)
 int wsmp_host_state(enum wsmp_port p) { return ports[p].state; }
 uint32_t wsmp_host_changes(enum wsmp_port p) { return ports[p].changes; }
 
-/* Appends "<a><b>" at buf + n, truncated to the buffer; returns the new length. */
-static unsigned append(char *buf, unsigned len, unsigned n, const char *a, const char *b)
+/* Appends text at buf + n, truncated to the buffer (len - 1 characters and the terminator); returns
+   the new length. */
+static unsigned append(char *buf, unsigned len, unsigned n, const char *text)
 {
-  int w = snprintf(buf + n, len - n, "%s%s", a, b);
-  if (w < 0) return n;
-  return n + (unsigned)w < len ? n + (unsigned)w : len - 1U;
+  for (const char *c = text; *c && n + 1U < len; c++) buf[n++] = *c;   /* bound: len - 1 characters */
+  buf[n] = 0;
+  return n;
 }
 
 unsigned wsmp_host_modules_line(char *buf, unsigned len)
@@ -253,8 +256,8 @@ unsigned wsmp_host_modules_line(char *buf, unsigned len)
   static const char *const state[] = { "absent", "probing", "identifying", "admitted", "active", "suspect",
                                        "quarantined", "refused" };
   if (len == 0) return 0;
-  unsigned n = append(buf, len, 0, "#modules", "");
-  for (unsigned q = P_AIR_TH; q < P_COUNT; q++) n = append(buf, len, n, name[q], state[ports[q].state]);
+  unsigned n = append(buf, len, 0, "#modules");
+  for (unsigned q = P_AIR_TH; q < P_COUNT; q++) n = append(buf, len, append(buf, len, n, name[q]), state[ports[q].state]);
   return n;
 }
 ```
@@ -263,7 +266,6 @@ unsigned wsmp_host_modules_line(char *buf, unsigned len)
 
 ```c {#wsmp_host.c}
 #include "wsmp_host.h"
-#include <stdio.h>
 #include <string.h>
 
 <<constants>>

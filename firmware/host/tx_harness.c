@@ -5,9 +5,10 @@
  * there), with timer periods in exact milliseconds (sim_config.timer_exact_ms: the tests state their
  * expectations in whole ms). tests/test_tx_machine.py drives it through ctypes. This file adds the
  * TX node's devices: a radio that finishes a transmission after TX_AIR_MS and times out a receive
- * window on its own, the SHT45 (a measurement ends 10 ms after it starts, with a result the test
- * chooses; App/sensor.c itself is tested by firmware/host/sensor_harness.c), and the flash
- * (firmware/sim_flash.c under the real App/node_store.c).
+ * window on its own, the WSMP local modules (the real App/wsmp_host.c and mod_*.c on the shared I2C
+ * bus and the host bus model firmware/host/i2c_sim.c, with one SHT45 whose behaviour the test
+ * chooses; no vane, cups, rain gauge or charger), and the flash (firmware/sim_flash.c under the real
+ * App/node_store.c).
  *
  * The radio follows ST's SubGHz_Phy (radio.c, stm32wlxx_hal_subghz.c) as
  * written, not an idealised radio:
@@ -35,7 +36,8 @@
 #include "node_store.h"
 #include "radio.h"
 #include "radio_cfg.h"
-#include "sensor.h"
+#include "i2c_sim.h"
+#include "stage0.h"
 #include "sim_core.h"
 #include "sim_flash.h"
 #include "stm32_seq.h"
@@ -47,7 +49,7 @@
 #define TX_AIR_MS 30U   /* an observation frame at SF7/500 kHz is ~30 ms on air */
 
 static const sim_source radio_source;
-const sim_config sim_cfg = { .name = "tx_harness", .sources = (const sim_source *const[]){ &radio_source, NULL },
+const sim_config sim_cfg = { .name = "tx_harness", .sources = (const sim_source *const[]){ &radio_source, &i2c_sim_source, NULL },
                              .timer_exact_ms = 1, .primask_leak_fatal = 1 };
 /* Not modelled here, deliberately: the watchdog's own 1 s check (the tests call the health test at
    the instants they choose, h_healthy; rx_harness.c models the check). A reset is counted. */
@@ -142,34 +144,34 @@ int ws_flash_erase(uint32_t p) { check_radio_idle(); flash_erases++; return sim_
 /* ---- the USB console: the test hands over whole lines (h_line) ---- */
 void console_init(void) {}
 
-/* ---- SHT45: a measurement ends WS-defined 10 ms after it starts, through the sensor task ---- */
-static int sensor_busy, sensor_rc, sensor_hang, sensor_starts;
-static int16_t sensor_t = 2150;
-static uint16_t sensor_h = 4500;
-static UTIL_TIMER_Object_t sensor_timer;
-static void sensor_task(void)
+/* ---- the local modules' devices: one SHT45 on the bus model; no vane, cups, rain gauge or charger ---- */
+static int sht45 = -1;
+/* The raw SHT45 words that read as 21.50 C and 45.00 %RH, found through the driver's own conversion. */
+static uint16_t raw_for(int want, int is_rh)
 {
-  sensor_busy = 0;
-  sensor_done(sensor_rc, sensor_rc ? 0 : sensor_t, sensor_rc ? 0 : sensor_h);
-}
-static void on_sensor_timer(void *arg) { (void)arg; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sensor, CFG_SEQ_Prio_0); }
-void sensor_init(void)
-{
-  UTIL_TIMER_Create(&sensor_timer, 10, UTIL_TIMER_ONESHOT, on_sensor_timer, NULL);
-  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sensor, UTIL_SEQ_RFU, sensor_task);
-}
-int sensor_start(void)
-{
-  if (sensor_busy) return -1;
-  sensor_busy = 1; sensor_starts++;
-  if (!sensor_hang) UTIL_TIMER_Start(&sensor_timer);
+  for (uint32_t raw = 0; raw <= UINT16_MAX; raw++)
+  {
+    uint8_t b[WS_SHT45_REPLY_LEN] = { (uint8_t)(raw >> 8), (uint8_t)raw, 0, (uint8_t)(raw >> 8), (uint8_t)raw, 0 };
+    int16_t t; uint16_t h;
+    b[2] = ws_crc8(b, 2); b[5] = ws_crc8(b + 3, 2);
+    if (ws_sht45_parse(b, &t, &h) == 0 && (is_rh ? (int)h : (int)t) == want) return (uint16_t)raw;
+  }
   return 0;
 }
+static void sensor_device(void)
+{
+  if (sht45 < 0) sht45 = i2c_sim_add(DEVK_SHT45, WS_SHT45_ADDR);
+  model_sht45_set(sht45, raw_for(2150, 0), raw_for(4500, 1), 0);
+}
+void board_inputs_init(void) {}
+int board_charger_pins(void) { return 0; }
+uint16_t board_pulse_count(void) { return 0; }
+int board_vane_mv(uint16_t *mv) { *mv = 0; return 0; }   /* no vane: no conversion, never present */
 
 /* ---- the API tests/test_tx_machine.py uses ---- */
 /* Move the clock ms forward, firing every timer and radio event due on the way. */
 void h_advance(uint32_t ms) { sim_advance(ms); }
-void h_reset(void) { sim_flash_reset(&S); }
+void h_reset(void) { sim_flash_reset(&S); sensor_device(); }
 int h_provision(uint32_t station, const uint8_t key[WS_KEY_LEN])
 {
   uint8_t kcv[WS_KCV_LEN];
@@ -199,8 +201,9 @@ uint32_t h_last_rx_timeout(void) { return last_rx_timeout; }
 int h_last_frame(uint8_t *buf) { memcpy(buf, last_frame, (size_t)last_frame_len); return last_frame_len; }
 uint32_t h_flash_ops_during_radio(void) { return flash_ops_during_radio; }
 uint32_t h_flash_erases(void) { return flash_erases; }
-int h_sensor_starts(void) { return sensor_starts; }
-void h_sensor(int rc, int hang) { sensor_rc = rc; sensor_hang = hang; }
+int h_sensor_starts(void) { return (int)i2c_sim_writes(sht45); }   /* SHT45 commands attempted */
+/* rc -2: the SHT45 does not answer its address; hang 1: every transfer hangs until the bus guard. */
+void h_sensor(int rc, int hang) { i2c_sim_mode(sht45, hang ? DM_HANG : rc ? DM_NACK_ADDR : DM_OK, 0, 1); }
 void h_radio_send_fails(int n) { radio_send_fails = n; }
 void h_flash_prog_fails(int on) { prog_fails = on; }
 void h_radio_hang(int on) { radio_hang = on; }

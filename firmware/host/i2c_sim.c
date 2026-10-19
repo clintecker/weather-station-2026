@@ -9,7 +9,7 @@
 #include "stm32wlxx_hal.h"
 
 enum { DONE_NONE, DONE_TX, DONE_RX, DONE_MEMRX, DONE_ERROR };
-typedef struct { int kind, mode, present, sda_hold; uint8_t addr7; uint32_t latency_ms; } sim_dev;
+typedef struct { int kind, mode, present, sda_hold; uint8_t addr7; uint32_t latency_ms, writes; } sim_dev;
 static sim_dev devs[I2C_SIM_DEVICES];
 static int ndevs, i2c_inited, irq_enabled, pending_kind, power_on;
 static uint64_t pending_due, started_at;
@@ -115,6 +115,7 @@ HAL_StatusTypeDef HAL_I2C_Master_Transmit_IT(I2C_HandleTypeDef *hi2c, uint16_t a
 {
   (void)hi2c;
   if (!bus_free()) return HAL_BUSY;
+  if (find(addr)) find(addr)->writes++;   /* a write attempt, served or not */
   sim_dev *d = begin(addr, 0);
   if (d) complete_in(model_write(d->kind, (int)(d - devs), data, size) ? DONE_ERROR : DONE_TX, d);
   return HAL_OK;
@@ -167,6 +168,7 @@ static void i2c_fire(void)
 const sim_source i2c_sim_source = { i2c_pending, i2c_fire, SIM_IRQ_I2C2_EV };
 
 uint32_t i2c_sim_transfers(void) { return transfers; }
+uint32_t i2c_sim_writes(int dev) { return dev >= 0 && dev < ndevs ? devs[dev].writes : 0U; }
 uint32_t i2c_sim_deinits(void) { return deinits; }
 int i2c_sim_scl_edges(void) { return scl_edges; }
 int i2c_sim_ready(void) { return i2c_inited && irq_enabled; }

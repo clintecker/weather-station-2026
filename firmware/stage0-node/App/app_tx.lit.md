@@ -1,8 +1,10 @@
 # app_tx: TX node boot, sampling and the minute report
 
-`app_tx.c` boots the transmitting node (the TX node) and runs its sampling. It reads the SHT45
-sensor every 15 s. It builds one observation per minute from four samples. It journals the
-observation in flash and passes it to the radio exchange (`tx_exchange.c`). It also tells the
+`app_tx.c` boots the transmitting node (the TX node) and runs its sampling. The station's sensors
+are WSMP local modules (`docs/module-protocol.md`, DATAVANE5K): each samples on its own schedule, and
+a 250 ms tick drives them (`wsmp_host.c`). Every 15 s the sample task counts a tick; the 4th latches
+every module and makes the minute's observation from their snapshots (`wsmp_catalog_map.c`). It
+journals the observation in flash and passes it to the radio exchange (`tx_exchange.c`). It also tells the
 watchdog task whether to refresh the watchdog.
 
 This document is the source. `tools/tangle.py` generates `app_tx.c` from the code chunks below. The
@@ -22,21 +24,22 @@ Chunks appear in reading order. The root chunk (section 7) puts them in C order.
 
 | Behaviour | Checked by (`tests/test_tx_machine.py`) |
 |---|---|
-| The node samples at 0, 15, 30 and 45 s after boot. The minute's report follows the 4th sample | `test_minute_exchange_then_health_report_after_a_gap` |
+| The 15-s ticks come at 0, 15, 30 and 45 s after boot. The 4th latches every module and makes the report at once | `test_minute_exchange_then_health_report_after_a_gap` |
 | The node never writes flash while the radio transmits or receives | every test: `node()` asserts `h_flash_ops_during_radio() == 0` |
 | The node holds a reading made during an exchange in RAM. It journals the reading when the radio goes idle | `test_a_reading_made_during_an_exchange_is_journaled_when_the_radio_goes_idle` |
 | The node holds at most `HELD_MAX` (2) readings. A third drops the oldest and counts it in `held_lost` | `test_held_readings_keep_the_newest_when_more_minutes_wait` |
 | An exchange that outlasts its bound stops the radio and journals the held readings. From then on the watchdog check fails | `test_a_radio_that_never_finishes_trips_the_exchange_bound` |
 | More than `TX_FAIL_LIMIT` (10) transmit failures in a row fail the watchdog check. One success clears the run | `test_transmit_failures_in_a_row_trip_the_watchdog_and_a_tx_done_clears_them` |
 | A command that stops sampling (reboot, `TEST-FLASH-STORM`) keeps the watchdog check healthy | `test_commanded_reboot_comes_from_a_timer_and_stops_sampling`, `test_flash_storm_stops_sampling_and_exchanges` |
-| A sensor fault sends every temperature and humidity field as INVALID. A measurement still running at the next sample counts as a missed sample (`rc=-1`) | `test_sensor_failure_and_a_measurement_that_never_ends` |
+| A module without valid data sends its fields INVALID. A failing or hung sensor never stalls or skips the minute | `test_a_failing_or_hung_sensor_never_stalls_the_minute` |
 | The node uses a sequence number once, even when its journal write fails | none (code only: `minute_report`) |
 | A boot that fails in storage or in the epoch reservation resets after 10 min. An unprovisioned board or a failed self-test does not reset | none (code only: `boot_ready`, `boot_retry`) |
 
 The generated file opens with a summary:
 
 ```c {#abstract}
-/* TX node of the bench prototype: one SHT45 observation per minute. The node journals each
+/* TX node of the bench station: one observation per minute from its WSMP local modules
+ * (docs/module-protocol.md, App/wsmp_host.h). The node journals each
  * observation in flash before it transmits it. The journal keeps the record until the gateway
  * sends an authenticated ACK or NACK, or until the strike rule abandons it (ws_policy.h). Each
  * minute sends the live observation first. Then it sends older pending records as the energy and
@@ -68,8 +71,8 @@ flowchart TD
   I -- no --> I1["tx_status, #error self-test failed"]
   I -- yes --> J{"store_next_epoch succeeds?"}
   J -- no --> J1["#error epoch-reserve"]
-  J -- yes --> K["sensor_init, node.running = 1, last_sample_s = clock_s()"]
-  K --> L["tx_status, start the 15-s periodic sample_timer, post the sample task"]
+  J -- yes --> K["modules_start: local modules, rain setting, station host, the 250 ms module timer"]
+  K --> L["node.running = 1, tx_status, start the 15-s periodic sample_timer, post the sample task"]
   E1 --> R{"boot_retry: node.kat_ok?"}
   J1 --> R
   R -- yes --> R1["print #boot-retry, one-shot timer calls NVIC_SystemReset after 10 min"]
@@ -171,6 +174,7 @@ void SubghzApp_Init(void)
   leds_init();
   exchange_init();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample_timed);
+  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sensor, UTIL_SEQ_RFU, module_tick_timed);
   tx_console_init();
 
   node.boot_s = clock_s();
@@ -181,7 +185,7 @@ void SubghzApp_Init(void)
              watchdog_reset_cause(), node.kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, (unsigned)WS_LORA_BANDWIDTH, (unsigned)WS_LORA_SF, WS_TX_POWER_DBM);
   fault_report();
   if (!boot_ready()) return;
-  sensor_init();
+  modules_start();
   node.running = 1;
   last_sample_s = clock_s();
   tx_status();
@@ -195,110 +199,89 @@ void SubghzApp_Init(void)
 
 ### From the sample timer to the minute report
 
-The sample timer fires every 15 s. Each fourth result closes the minute and calls `minute_report`
-(section 4):
+Two timers drive sampling. The module timer fires every 250 ms (`WSMP_TICK_MS`); its task runs one
+step of every local module through the station host. The sample timer fires every 15 s; its 4th tick
+latches every module and calls `minute_report` (section 4). The latch never waits for a sensor: a
+module that has not finished a sample simply has one sample fewer in its window.
 
 ```mermaid
 flowchart TD
-  T["sample_timer fires every 15 s, in the timer interrupt"] --> P["on_sample_timer posts the sample task"]
+  M["module_timer every 250 ms"] --> MT["module_tick: wsmp_host_tick(clock_ms())"]
+  T["sample_timer every 15 s, in the timer interrupt"] --> P["on_sample_timer posts the sample task"]
   P --> S["sample() in the main loop: last_sample_s = clock_s()"]
-  S --> SS{"sensor_start() returns 0?"}
-  SS -- "no, -1" --> MISS["sensor_done(-1, 0, 0): a missed sample"]
-  SS -- yes --> MEAS["sensor.c measures and later calls sensor_done(src, t, h)"]
-  MISS --> D{"node.running and not stuck?"}
-  MEAS --> D
-  D -- no --> DROP["return: the result is dropped"]
-  D -- yes --> F["first result after boot only: print #sensor"]
-  F --> ADD["ws_th_add(&th_window, src == 0, t, h)"]
-  ADD --> N{"++th_ticks reached 4?"}
-  N -- no --> WAIT["return and wait for the next sample"]
-  N -- yes --> R["th_ticks = 0, minute_report(src)"]
+  S --> N{"++sample_ticks reached 4?"}
+  N -- no --> WAIT["return"]
+  N -- yes --> D{"node.running and not stuck?"}
+  D -- no --> DROP["return: no report"]
+  D -- yes --> L["wsmp_host_latch(time_utc(), clock_ms())"]
+  L --> R["minute_report(0)"]
 ```
 
-### The sample timer
+### The timers
 
-The timer period is `SAMPLE_PERIOD_MS` (15 000 ms). Every `SAMPLES_PER_REPORT`-th (4th) sample
+The sample period is `SAMPLE_PERIOD_MS` (15 000 ms). Every `SAMPLES_PER_REPORT`-th (4th) tick
 closes the minute. The product spec (Weather Station v0.2 PRD, section 9) sets this sampling.
 
 ```c {#sample-constants}
-#define SAMPLE_PERIOD_MS    15000U  /* one temperature and humidity sample (product spec, section 9) */
+#define SAMPLE_PERIOD_MS    15000U  /* the minute's ticks; the modules sample on their own (product spec, section 9) */
 #define SAMPLES_PER_REPORT  4U
 ```
 
 ```c {#timers}
-static UTIL_TIMER_Object_t sample_timer, boot_retry_timer;
+static UTIL_TIMER_Object_t sample_timer, module_timer, boot_retry_timer;
 static uint32_t last_sample_s;   /* the watchdog check reads it as proof of progress */
 ```
 
-`on_sample_timer` runs in the timer interrupt and only posts the sample task. The sequencer runs
-`sample` in the main loop. `sample` records `last_sample_s`, which the watchdog check reads as proof
-of progress. Then it starts one measurement. `sensor_start` returns at once. The result arrives
-later in `sensor_done`. It arrives about 11 ms after the start, or 15–100 ms after a bus failure
-(`sensor.h`). If the previous measurement has not finished, `sensor_start` returns -1. `sample` then
-reports a missed sample through `sensor_done(-1, 0, 0)`. `BUSYMON_TASK(sample)` defines
-`sample_timed`, the timed wrapper that `SubghzApp_Init` registers.
+`on_sample_timer` and `on_module_timer` run in the timer interrupt and only post their tasks. The
+sequencer runs `sample` and `module_tick` in the main loop. `sample` records `last_sample_s`, which
+the watchdog check reads as proof of progress. `BUSYMON_TASK` defines the timed wrappers that
+`SubghzApp_Init` registers.
+
+The sample task counts the minute's ticks. `modules_reported` makes the first report print the
+`#modules` line. The watchdog check sets `stuck` when an exchange outlasts its bound (section 6).
+
+```c {#sampling-state}
+static unsigned sample_ticks;
+static int modules_reported;   /* the first report prints the #modules line */
+static int stuck;              /* the exchange outlasted its bound. The watchdog resets the board */
+```
 
 ```c {#sample-timer}
-/* Every 15 s: start one measurement. sensor_done() gets its result ~11 ms later. */
+/* Every 15 s; the 4th tick latches every module and makes the minute's report. */
 static void sample(void)
 {
   last_sample_s = clock_s();
-  if (sensor_start()) sensor_done(-1, 0, 0);   /* the previous measurement still runs: a missed sample */
+  if (++sample_ticks < SAMPLES_PER_REPORT) return;
+  sample_ticks = 0;
+  if (!node.running || stuck) return;   /* no report after sampling stopped (reboot, storm, stuck radio) */
+  wsmp_host_latch(time_utc(), clock_ms());
+  minute_report(0);
 }
 BUSYMON_TASK(sample)
 
+static void module_tick(void) { if (node.running && !stuck) wsmp_host_tick(clock_ms()); }
+BUSYMON_TASK(module_tick)
+
 static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
+static void on_module_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sensor, CFG_SEQ_Prio_0); }
 ```
 
-### The temperature and humidity window
+### Starting the modules
 
-`th_window` collects the minute's samples (`ws_th_window`, `firmware/stage0.c`). `th_ticks` counts
-sample results since the last report. `sensor_reported` makes the first result after boot print one
-`#sensor` line. The watchdog check sets `stuck` when an exchange outlasts its bound (section 6).
+`modules_start` runs once a boot, after the epoch is reserved. It sets up the board inputs (the cup
+counter, the vane ADC, the rain interrupt, the charger pins); then the modules take the boot epoch as
+their boot ID (WSMP-I2). The rain module is on only if the stored setting says so (WSMP-P1). The
+station host starts with every port Absent, and the 250 ms module timer starts.
 
-```c {#window-state}
-/* The minute's 15-s samples. The product spec, section 9, asks for coverage, mean and extrema. */
-static ws_th_window th_window;
-static unsigned th_ticks;
-static int sensor_reported;   /* the first reading after boot prints a #sensor line */
-static int stuck;             /* the exchange outlasted its bound. The watchdog resets the board */
-```
-
-`ws_th_add` keeps the window's count, sums, minimum and maximum:
-
-| Input | Effect |
-|---|---|
-| `src != 0` (sensor fault or missed sample) | ignored |
-| temperature outside `WS_TEMP_MIN_CENTI`..`WS_TEMP_MAX_CENTI` (-40.00..125.00 °C) | ignored |
-| relative humidity above `WS_RH_MAX_CENTI` (100.00 %) | clamped to 100.00 % |
-| 255 samples already counted | ignored |
-
-`ws_th_mean_t` and `ws_th_mean_h` round the mean half up. They return 0 for an empty window.
-
-### sensor_done
-
-`sensor.c` calls `sensor_done` once per measurement. It does the following:
-
-1. Return at once if sampling stopped (`node.running == 0`) or the radio is stuck. This drops a
-   measurement that ends after `sampling_stop`, or after the watchdog check aborted an exchange.
-2. On the first result after boot, print `#sensor ok t=... rh=...` or `#sensor fault rc=...`.
-3. Add the sample to the window.
-4. On the 4th result, reset `th_ticks` and call `minute_report` with this result's code.
-
-```c {#sensor-done}
-void sensor_done(int src, int16_t t, uint16_t h)
+```c {#modules-start}
+static void modules_start(void)
 {
-  if (!node.running || stuck) return;   /* drop a result that ends after sampling stopped (reboot, storm, stuck radio) */
-  if (!sensor_reported)
-  {
-    sensor_reported = 1;
-    if (src) { APP_PRINTF("#sensor fault rc=%d (see sensor.h for codes)\n", src); }
-    else { APP_PRINTF("#sensor ok t=%d rh=%u\n", t, h); }
-  }
-  ws_th_add(&th_window, src == 0, t, h);
-  if (++th_ticks < SAMPLES_PER_REPORT) return;   /* the minute's report follows its last sample */
-  th_ticks = 0;
-  minute_report(src);
+  board_inputs_init();
+  local_init(node.boot_epoch);
+  mod_rain_set_enabled(store_rain_enabled());
+  wsmp_host_init();
+  (void)UTIL_TIMER_Create(&module_timer, WSMP_TICK_MS, UTIL_TIMER_PERIODIC, on_module_timer, NULL);
+  (void)UTIL_TIMER_Start(&module_timer);
 }
 ```
 
@@ -306,12 +289,12 @@ void sensor_done(int src, int16_t t, uint16_t h)
 
 ### Order of operations
 
-`minute_report` runs from `sensor_done` on the minute's 4th sample. `journal_or_hold` decides
+`minute_report` runs from `sample` on the minute's 4th tick, right after the latch. `journal_or_hold` decides
 between the journal and RAM:
 
 ```mermaid
 flowchart TD
-  E["minute_encode: means, extrema and time into plain[]. Reset the window"] --> B["busy = exchange_busy()"]
+  E["minute_encode: the snapshots and time into plain[]"] --> B["busy = exchange_busy()"]
   B --> J{"encoded?"}
   J -- no --> RCE["rc = REC_ENOTENCODED. Note a journal failure"]
   J -- yes --> H{"busy?"}
@@ -356,82 +339,55 @@ static void minute_report(int src)
 
 ### Encoding
 
-`minute_encode` fills a `minute_t`. It encodes the observation into `WS_OBS_PLAIN_MAX` bytes:
+`minute_encode` fills a `minute_t` and encodes the observation:
 
 | Field | Source |
 |---|---|
-| `valid` | both means exist, so at least one sample was valid |
-| `t`, `h` | the window's means (0 when not valid) |
+| `bitmap`, `code[]` | `wsmp_map_obs`: the fields of the modules in the layout (`wsmp_catalog_map.c`) |
+| `valid`, `t`, `h`, `samples` | the outside-air module's means and sample count, for `#sample` |
 | `utc` | `time_utc()`: 0 while the time is unknown |
 | `uptime` | `node_uptime_s()`: always sent. The gateway reconstructs time from it |
 | `epoch`, `seq` | `node.boot_epoch`, `node.next_seq` |
 | `energy` | `energy_state()` |
-| `bitmap` | `WS_NODE_FIELDS`, the build's field set (`node_fields.h`) |
-| `samples` | the window's count, for `#sample` |
 
-A minute that is not valid increments `node.sensor_faults`. The function resets the window before it
-returns, so the next minute starts empty. It returns 1 only if the encoder wrote exactly
-`WS_OBS_PLAIN_MAX` bytes. `minute_report` wraps the result in `WS_CHECK`, because the codes come from
-this file and always encode.
+A minute without a valid outside-air mean increments `node.sensor_faults`. The function returns 1
+only if the encoder wrote exactly the length of the reading's own bitmap (`WS_OBS_PLAIN_LEN`).
+`minute_report` wraps the result in `WS_CHECK`, because the map's codes always encode. The journal
+slot holds `WS_OBS_PLAIN_MAX` bytes, the widest reading; a record's length comes from its bitmap.
 
 The `ws_obs_t` is `static`. Only the sequencer runs `minute_encode`, and it never re-enters. Its
 call chain is the deepest one that `tools/stack_report.py` counts.
 
 ```c {#minute-encode}
-/* The minute's observation, built from its samples. */
+/* The minute's observation, built from the modules' snapshots. */
 typedef struct { int valid; int16_t t; uint16_t h; uint32_t utc, uptime; unsigned samples; } minute_t;
 
 /* Builds and encodes the minute's observation into plain (WS_OBS_PLAIN_MAX bytes). Returns 0 if
-   it did not encode. Starts the next minute's window. */
+   it did not encode. */
 static int minute_encode(minute_t *m, uint8_t *plain)
 {
-  m->t = 0; m->h = 0;
-  m->valid = ws_th_mean_t(&th_window, &m->t) && ws_th_mean_h(&th_window, &m->h);
+  wsmp_map_summary sum;
   m->utc = time_utc();
   m->uptime = node_uptime_s(); /* always sent: the gateway reconstructs time from it */
-  if (!m->valid) node.sensor_faults++;
   /* static: only the sequencer runs this, and it never re-enters. It is on the deepest callback
      chain, which tools/stack_report.py counts four times (a 104-byte record cost ~416 B). */
   static ws_obs_t o;
   o = (ws_obs_t){ .epoch = node.boot_epoch, .seq = node.next_seq, .utc = m->utc, .uptime = m->uptime,
-                  .energy = (uint8_t)energy_state(), .bitmap = WS_NODE_FIELDS };
-  obs_codes(&o, m->valid, m->t, m->h);
-  m->samples = th_window.n;
-  ws_th_reset(&th_window);
-  return ws_obs_encode(&o, plain, WS_OBS_PLAIN_MAX) == (int)WS_OBS_PLAIN_MAX;
-}
-```
-
-`obs_codes` sets the temperature and humidity codes. The observation format is in
-`docs/protocol-design.md`, section 5. `WS_FI_TH_SAMPLES` is the window's count, clamped to
-`WS_TH_SAMPLES_MAX` (60). Without a valid sample, every temperature and humidity field gets its
-INVALID code (`ws_obs_invalid`). No field is left out. With valid samples, the mean, minimum and
-maximum go through `ws_code_temp_centi` and `ws_code_rh_centi`. The summary fields reach the frame
-only if the build's bitmap includes them (`WS_F_TH_SUMMARY` in `node_fields.h`).
-
-```c {#obs-codes}
-/* The observation format is in docs/protocol-design.md, section 5. ws_code_* marks an
-   out-of-range temperature INVALID and clamps humidity. A sensor fault sends every field as
-   INVALID and never leaves a field out. The summary fields reach the frame only if the build's
-   bitmap includes them (WS_F_TH_SUMMARY in node_fields.h). */
-static void obs_codes(ws_obs_t *o, int valid, int16_t t, uint16_t h)
-{
-  static const uint8_t th_fields[] = { WS_FI_TEMPERATURE_C, WS_FI_HUMIDITY_PCT, WS_FI_TEMPERATURE_MIN_C,
-                                       WS_FI_TEMPERATURE_MAX_C, WS_FI_HUMIDITY_MIN_PCT, WS_FI_HUMIDITY_MAX_PCT };
-  o->code[WS_FI_TH_SAMPLES] = th_window.n > WS_TH_SAMPLES_MAX ? WS_TH_SAMPLES_MAX : th_window.n;
-  if (!valid)
+                  .energy = (uint8_t)energy_state() };
+  wsmp_map_obs(&o, &sum);
+  m->valid = sum.th_valid; m->t = sum.t; m->h = sum.h; m->samples = sum.th_samples;
+  if (!m->valid) node.sensor_faults++;
+  if (!modules_reported)
   {
-    for (unsigned i = 0; i < sizeof th_fields; i++) o->code[th_fields[i]] = ws_obs_invalid(th_fields[i]);
-    return;
+    char line[WSMP_MODULES_LINE_MAX];
+    modules_reported = 1;
+    (void)wsmp_host_modules_line(line, sizeof line);
+    APP_PRINTF("%s\n", line);
   }
-  o->code[WS_FI_TEMPERATURE_C] = ws_code_temp_centi(t);
-  o->code[WS_FI_HUMIDITY_PCT] = ws_code_rh_centi(h);
-  o->code[WS_FI_TEMPERATURE_MIN_C] = ws_code_temp_centi(th_window.t_min);
-  o->code[WS_FI_TEMPERATURE_MAX_C] = ws_code_temp_centi(th_window.t_max);
-  o->code[WS_FI_HUMIDITY_MIN_PCT] = ws_code_rh_centi(th_window.h_min);
-  o->code[WS_FI_HUMIDITY_MAX_PCT] = ws_code_rh_centi(th_window.h_max);
+  return ws_obs_encode(&o, plain, WS_OBS_PLAIN_MAX) == (int)WS_OBS_PLAIN_LEN(o.bitmap);
 }
 ```
+
 
 ### Journal or hold
 
@@ -471,7 +427,8 @@ static int journal_or_hold(const uint8_t *plain, int encoded, int busy, jref_t *
 #sample epoch=E seq=S uptime=U valid=0|1 rc=SRC n=SAMPLES t=T rh=H time=synchronized|unknown utc=UTC journal=ok|held|ERROR pending=P lost=L
 ```
 
-`rc` is the 4th sample's sensor code. `t` and `rh` are 0 when the minute is not valid. `pending` and
+`rc` is 0: the latch does not wait for a sensor, so no sample code reaches the report. `t` and `rh`
+are the outside-air means, 0 when the minute is not valid. `pending` and
 `lost` come from `store_journal_pending` and `store_journal_lost`.
 
 ```c {#sample-line}
@@ -652,7 +609,8 @@ when the boot stopped, when a commanded reboot is pending, or during a flash sto
 `exchange_overdue` is true when an exchange is busy for longer than its bound (section 5). The check
 then does the following, in this order:
 
-1. Set `stuck`. From now on `sensor_done` ignores results and every check returns 0.
+1. Set `stuck`. From now on the sample task makes no report, the module tick does nothing, and every
+   check returns 0.
 2. Stop the sample timer.
 3. Call `exchange_abort`. It stops the gap and ACK timers, puts the radio in standby and marks the
    exchange idle. Then it calls `held_flush`, which journals the held readings with the radio idle.
@@ -691,14 +649,15 @@ int watchdog_healthy(void)
 ### sampling_stop
 
 The console calls `sampling_stop` for a commanded reboot and for `TEST-FLASH-STORM`. It clears
-`node.running` and stops the sample timer. The watchdog check then stops expecting samples.
-`sensor_done` drops a measurement that is still running.
+`node.running` and stops both timers. The watchdog check then stops expecting samples. A module
+transfer still on the bus finishes, and nothing reads its result.
 
 ```c {#sampling-stop}
 void sampling_stop(void)
 {
   node.running = 0;
   (void)UTIL_TIMER_Stop(&sample_timer);
+  (void)UTIL_TIMER_Stop(&module_timer);
 }
 ```
 
@@ -711,6 +670,7 @@ before its first caller.
 <<abstract>>
 #define WS_CHECK_FILE 1
 #include <string.h>
+#include "board_inputs.h"
 #include "busymon.h"
 #include "clock.h"
 #include "fault.h"
@@ -718,7 +678,7 @@ before its first caller.
 #include "node_store.h"
 #include "radio_cfg.h"
 #include "selftest.h"
-#include "sensor.h"
+#include "mod_rain.h"
 #include "stackmon.h"
 #include "stage0.h"
 #include "stm32_seq.h"
@@ -736,6 +696,9 @@ before its first caller.
 #include "ws_be.h"
 #include "ws_check.h"
 #include "ws_obs.h"
+#include "wsmp_catalog_map.h"
+#include "wsmp_host.h"
+#include "wsmp_local.h"
 
 <<sample-constants>>
 <<fail-limit>>
@@ -744,11 +707,9 @@ before its first caller.
 <<timers>>
 <<node-state>>
 
-<<window-state>>
+<<sampling-state>>
 
 <<sampling-stop>>
-
-<<obs-codes>>
 
 <<held-buffer>>
 <<stall>>
@@ -769,8 +730,6 @@ before its first caller.
 
 <<minute-report>>
 
-<<sensor-done>>
-
 <<sample-timer>>
 
 <<watchdog-healthy>>
@@ -778,6 +737,8 @@ before its first caller.
 <<boot-retry>>
 
 <<boot-ready>>
+
+<<modules-start>>
 
 <<init>>
 ```

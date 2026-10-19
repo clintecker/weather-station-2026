@@ -25,7 +25,7 @@
 #define SHTC3_ROUND (1UL << 15)
 #define SHTC3_SHIFT 16U
 
-typedef enum { ST_IDLE, ST_WAKE, ST_AWAKE, ST_MEASURE, ST_READY, ST_READ, ST_SLEEP } th_step;
+typedef enum { ST_IDLE, ST_WAKE, ST_AWAKE, ST_MEASURE, ST_READY, ST_READ, ST_SLEEP, ST_RECOVER } th_step;
 typedef struct {
   th_step step;
   uint32_t next_sample_ms;
@@ -88,7 +88,15 @@ static void read_done(enum th_unit u, th_t *s)
 {
   int16_t t = 0; uint16_t h = 0;
   int rc = u == TH_AIR ? ws_sht45_parse(s->reply, &t, &h) : mod_shtc3_parse(s->reply, &t, &h);
-  if (rc) { sample_failed(s, rc); return; }
+  if (rc)
+  {
+    /* A bad checksum is not a bus failure, so the bus did not recover by itself. Ask for the
+       recovery, as the earlier SHT45 driver did after every failure. */
+    sample_failed(s, rc);
+    s->step = ST_RECOVER;
+    submit(u, NULL, 0, NULL, 0);
+    return;
+  }
   if (h > WS_RH_MAX_CENTI) h = WS_RH_MAX_CENTI;
   if (t >= WS_TEMP_MIN_CENTI && t <= WS_TEMP_MAX_CENTI) mean_add(&s->win, (const int32_t[MEAN_CHANNELS]){ t, h });
   probe(s, 1);
@@ -100,7 +108,7 @@ static void read_done(enum th_unit u, th_t *s)
 void mod_th_i2c_done(enum th_unit u, int rc)
 {
   th_t *s = &th[u];
-  if (s->step == ST_SLEEP) { s->step = ST_IDLE; return; }   /* a failed sleep command costs only power */
+  if (s->step == ST_SLEEP || s->step == ST_RECOVER) { s->step = ST_IDLE; return; }   /* a failed sleep costs only power */
   if (rc) { sample_failed(s, rc); return; }
   if (s->step == ST_WAKE) s->step = ST_AWAKE;
   else if (s->step == ST_MEASURE) s->step = ST_READY;

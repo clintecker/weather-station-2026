@@ -21,6 +21,7 @@ extern const sim_source i2c_sim_source;
 
 /* Counters and state for the tests. */
 uint32_t i2c_sim_transfers(void);
+uint32_t i2c_sim_writes(int dev);          /* write attempts addressed to one device */
 uint32_t i2c_sim_deinits(void);
 int i2c_sim_scl_edges(void);
 int i2c_sim_ready(void);
@@ -36,6 +37,7 @@ void model_reset(int kind, int dev);
 /* The SHT45 model: the raw words it answers, a bad RH checksum, and whether a read came too early. */
 void model_sht45_set(int dev, uint16_t t_raw, uint16_t rh_raw, int bad_crc);
 int model_sht45_read_too_early(void);
+int model_sht45_commands(void);   /* measure commands that reached an SHT45 */
 void model_shtc3_set(int dev, uint16_t t_raw, uint16_t rh_raw);
 int model_shtc3_asleep(int dev);
 void model_reg_set_id(int dev, uint8_t id);

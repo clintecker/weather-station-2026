@@ -20,5 +20,6 @@ int wsmp_host_state(enum wsmp_port p);
 int wsmp_host_admit(enum wsmp_port p, const uint8_t id[WSMP_IDENTITY_LEN], const uint8_t desc[WSMP_DESC_BLOCK_LEN]);
 uint32_t wsmp_host_changes(enum wsmp_port p);   /* how often the port joined or left the layout */
 /* The MODULES console line, "#modules air_th=active ..."; returns its length (at most len - 1). */
+#define WSMP_MODULES_LINE_MAX 160U   /* the longest line: every port with its longest state */
 unsigned wsmp_host_modules_line(char *buf, unsigned len);
 #endif

@@ -209,11 +209,16 @@ class Sht45(TempHumidity, Harness):
         self.assertEqual(lib.h_sht45_parse(t_raw, h_raw, ctypes.byref(t), ctypes.byref(h)), 0)
         return t.value, h.value
 
-    def test_a_bad_crc_is_a_bus_fault(self):
+    def test_a_bad_crc_is_a_bus_fault_and_recovers_the_bus(self):
         lib, dev = self.good_station()
+        deinits = lib.h_deinits()
         lib.h_sht45_set(dev, 0x8000, 0x8000, 1)
         lib.h_run(15_000)
         self.assertEqual(lib.h_probe(self.PORT), -1)
+        self.assertEqual(lib.h_deinits(), deinits + 1)              # as the earlier driver: one recovery
+        lib.h_sht45_set(dev, 0x8000, 0x8000, 0)
+        lib.h_run(15_000)
+        self.assertEqual(lib.h_probe(self.PORT), 1)                 # the next sample is good
 
 
 class Shtc3(TempHumidity, Harness):

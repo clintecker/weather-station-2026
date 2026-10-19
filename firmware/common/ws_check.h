@@ -21,7 +21,7 @@
  * A file that uses WS_CHECK defines its number first: #define WS_CHECK_FILE <n>, then includes this
  * header. tests/test_check.py keeps this table, the numbers and every such file under 1024 lines.
  *    1 App/app_tx.c        2 App/tx_exchange.c   3 App/tx_policy.c     4 App/tx_console.c
- *    5 App/node_store.c    6 App/sensor.c        7 App/app_rx.c        8 App/console.c
+ *    5 App/node_store.c    6 (was App/sensor.c)  7 App/app_rx.c        8 App/console.c
  *    9 App/watchdog.c     10 App/busymon.c      11 common/ws_policy.c  12 App/i2c_bus.c
  *   13 App/mod_th.c      14 App/wsmp_local.c   15 App/mod_reg.c      16 App/mod_power.c */
 #ifndef WS_CHECK_FILE

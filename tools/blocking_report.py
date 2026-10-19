@@ -162,6 +162,12 @@ ALLOWED = {
         'RSF after the next shadow-register copy, <= 2 RTCCLK cycles = 61 us (RM0461 RTC '
         'register synchronization); HAL timeout 1 s',
         f'{HAL}/stm32wlxx_hal_rtc.c: polls RTC_ICSR.RSF on HAL_GetTick.'),
+    # ADC enable handshake (App/board_inputs.c, the wind vane: HAL_ADC_Start_IT once a second).
+    'ADC_Enable': (
+        'ADRDY a few ADC clock cycles after ADEN (RM0453 ADC enable sequence); the HAL bounds it with '
+        'ADC_ENABLE_TIMEOUT = 2 ms. The ADC stays enabled between conversions (no auto power-off), so '
+        'later calls find it ready and return at once',
+        f'{HAL}/stm32wlxx_hal_adc.c: polls ADC_FLAG_RDY on HAL_GetTick, at most ADC_ENABLE_TIMEOUT.'),
     # UART enable handshakes (vcom_Resume runs after every STOP2 wake-up; vcom_Init is a driver slot).
     'UART_WaitOnFlagUntilTimeout': (
         'only reached through UART_CheckIdleState / HAL_UARTEx_StopModeWakeUpSourceConfig here: '
