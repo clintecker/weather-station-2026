@@ -13,6 +13,8 @@ Other documents:
 - [`protocol-design.md`](protocol-design.md) gives the design rationale.
 - [`protocol-stack.md`](protocol-stack.md) tells how each layer operates end to end: sensor,
   journal, encryption, LoRa, USB, SQLite and time.
+- [`module-protocol.md`](module-protocol.md) is WSMP, the contract between the station and its
+  sensor modules (draft, not implemented yet).
 
 The node sends LoRa packets directly to the receiver. One packet carries one frame. A frame is an
 observation, a health report, an acknowledgment (ACK) or a negative acknowledgment (NACK). There is
