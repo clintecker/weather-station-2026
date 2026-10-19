@@ -35,4 +35,6 @@ void model_reset(int kind, int dev);
 /* The SHT45 model: the raw words it answers, a bad RH checksum, and whether a read came too early. */
 void model_sht45_set(int dev, uint16_t t_raw, uint16_t rh_raw, int bad_crc);
 int model_sht45_read_too_early(void);
+void model_shtc3_set(int dev, uint16_t t_raw, uint16_t rh_raw);
+int model_shtc3_asleep(int dev);
 #endif

@@ -46,4 +46,39 @@ int h_log_client(int i) { return i >= 0 && i < nlog ? log_client[i] : -1; }
 int h_log_rc(int i) { return i >= 0 && i < nlog ? log_rc[i] : 99; }
 uint32_t h_log_ms(int i) { return i >= 0 && i < nlog ? (uint32_t)(log_at[i] / SIM_UNITS_PER_MS) : 0U; }
 int h_rx(int client, int i) { return rx[client][i]; }
+#else
+#include "stage0.h"
+#include "wsmp.h"
+#include "wsmp_local.h"
+static uint32_t now_ms(void) { return (uint32_t)sim_ms(); }
+void h_init(uint32_t boot) { local_init(boot); }
+uint32_t h_now_ms(void) { return now_ms(); }
+void h_tick_all(void) { for (int p = P_AIR_TH; p < P_COUNT; p++) local_tick((enum wsmp_port)p, now_ms()); }
+/* ms of station time: a module tick for every port, then the clock moves one tick. */
+void h_run(uint32_t ms) { for (uint32_t t = 0; t < ms; t += WSMP_TICK_MS) { h_tick_all(); sim_advance(WSMP_TICK_MS); } }
+void h_latch(int port, int token, uint32_t utc) { local_latch((enum wsmp_port)port, (uint16_t)token, utc, now_ms()); }
+void h_snapshot(int port, uint8_t *out) { local_snapshot((enum wsmp_port)port, out); }
+void h_identity(int port, uint8_t *id, uint8_t *desc) { local_identity((enum wsmp_port)port, id, desc); }
+int h_probe(int port) { uint16_t seq; return local_probe_result((enum wsmp_port)port, &seq); }
+int h_probe_seq(int port) { uint16_t seq; (void)local_probe_result((enum wsmp_port)port, &seq); return seq; }
+/* The module's own descriptors against the registry (WSMP-D7). */
+int h_desc_check(int port)
+{
+  uint8_t id[WSMP_IDENTITY_LEN], desc[WSMP_DESC_BLOCK_LEN];
+  wsmp_identity ident; wsmp_desc d[WSMP_MAX_CHANNELS];
+  local_identity((enum wsmp_port)port, id, desc);
+  int rc = wsmp_unpack_identity(id, &ident);
+  if (rc == WSMP_OK) rc = wsmp_unpack_desc(desc, ident.channels, d);
+  return rc == WSMP_OK ? wsmp_desc_check(d, ident.channels, ident.type, ident.schema) : rc;
+}
+void h_sht45_set(int dev, int t_raw, int h_raw, int bad) { model_sht45_set(dev, (uint16_t)t_raw, (uint16_t)h_raw, bad); }
+void h_shtc3_set(int dev, int t_raw, int h_raw) { model_shtc3_set(dev, (uint16_t)t_raw, (uint16_t)h_raw); }
+int h_shtc3_asleep(int dev) { return model_shtc3_asleep(dev); }
+/* The SHT45 conversion of the driver in use (firmware/stage0.c), as the test's oracle for one sample. */
+int h_sht45_parse(int t_raw, int h_raw, int16_t *t, uint16_t *h)
+{
+  uint8_t b[WS_SHT45_REPLY_LEN] = { (uint8_t)(t_raw >> 8), (uint8_t)t_raw, 0, (uint8_t)(h_raw >> 8), (uint8_t)h_raw, 0 };
+  b[2] = ws_crc8(b, 2); b[5] = ws_crc8(b + 3, 2);
+  return ws_sht45_parse(b, t, h);
+}
 #endif

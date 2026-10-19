@@ -38,12 +38,42 @@ static int sht45_read(int dev, uint8_t *data, uint16_t n)
   return 0;
 }
 
+/* DEVK_SHTC3 (datasheet sections 5.4-5.9): wake 0x3517, measure 0x7866 (normal mode, T first, no clock
+   stretching), sleep 0xB098. A command other than wake while asleep is a NACK; a read before a
+   measurement is a NACK. */
+typedef struct { uint16_t t_raw, rh_raw; int asleep, measured; } shtc3_t;
+static shtc3_t shtc3[I2C_SIM_DEVICES];
+void model_shtc3_set(int dev, uint16_t t_raw, uint16_t rh_raw) { shtc3[dev].t_raw = t_raw; shtc3[dev].rh_raw = rh_raw; }
+int model_shtc3_asleep(int dev) { return shtc3[dev].asleep; }
+
+static int shtc3_write(int dev, const uint8_t *data, uint16_t n)
+{
+  uint16_t cmd = n == 2 ? (uint16_t)(data[0] << 8 | data[1]) : 0;
+  shtc3_t *s = &shtc3[dev];
+  if (cmd == 0x3517) { s->asleep = 0; return 0; }
+  if (s->asleep) return -1;
+  if (cmd == 0x7866) { s->measured = 1; return 0; }
+  if (cmd == 0xB098) { s->asleep = 1; s->measured = 0; return 0; }
+  return -1;
+}
+
+static int shtc3_read(int dev, uint8_t *data, uint16_t n)
+{
+  shtc3_t *s = &shtc3[dev];
+  if (n != 6 || s->asleep || !s->measured) return -1;
+  data[0] = (uint8_t)(s->t_raw >> 8); data[1] = (uint8_t)s->t_raw; data[2] = ws_crc8(data, 2);
+  data[3] = (uint8_t)(s->rh_raw >> 8); data[4] = (uint8_t)s->rh_raw; data[5] = ws_crc8(data + 3, 2);
+  s->measured = 0;
+  return 0;
+}
+
 int model_write(int kind, int dev, const uint8_t *data, uint16_t n)
 {
   switch (kind)
   {
     case DEVK_TEST: memcpy(test_written[dev], data, n < I2C_SIM_BUF ? n : I2C_SIM_BUF); return 0;
     case DEVK_SHT45: return sht45_write(dev, data, n);
+    case DEVK_SHTC3: return shtc3_write(dev, data, n);
     default: return -1;
   }
 }
@@ -54,6 +84,7 @@ int model_read(int kind, int dev, uint8_t *data, uint16_t n)
   {
     case DEVK_TEST: for (uint16_t i = 0; i < n; i++) data[i] = (uint8_t)(0xA0U + i); return 0;
     case DEVK_SHT45: return sht45_read(dev, data, n);
+    case DEVK_SHTC3: return shtc3_read(dev, data, n);
     default: return -1;
   }
 }
@@ -72,4 +103,5 @@ void model_reset(int kind, int dev)
 {
   if (kind == DEVK_TEST) memset(test_written[dev], 0, sizeof test_written[dev]);
   if (kind == DEVK_SHT45) sht45[dev] = (sht45_t){ .t_raw = 0x8000, .rh_raw = 0x8000 };
+  if (kind == DEVK_SHTC3) shtc3[dev] = (shtc3_t){ .t_raw = 0x8000, .rh_raw = 0x8000, .asleep = 1 };
 }
