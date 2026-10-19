@@ -1,6 +1,6 @@
 /* The simulated board every host harness shares (firmware/host/sim_core.c): the clock, ST's timer
  * server and sequencer, the CMSIS stand-ins, the RTC, the watchdog, the board stubs, the console
- * capture and the event loop. A harness (tx_harness.c, rx_harness.c, sensor_harness.c) adds only its
+ * capture and the event loop. A harness (tx_harness.c, rx_harness.c, wsmp_harness.c) adds only its
  * role's devices: it defines `sim_cfg`, and each device that raises interrupts on its own is a
  * sim_source the event loop serves in time order. */
 #ifndef HOST_SIM_CORE_H
@@ -19,7 +19,7 @@
 #define SIM_IRQ(prio, num) ((uint32_t)(prio) << 8 | (uint32_t)(num))
 #define SIM_IRQ_RTC_ALARM SIM_IRQ(0, 42)   /* rtc.c: priority 0; the timer server's alarm */
 #define SIM_IRQ_SUBGHZ    SIM_IRQ(0, 50)   /* subghz.c: priority 0 */
-#define SIM_IRQ_I2C2_EV   SIM_IRQ(2, 32)   /* sensor.c: priority 2 */
+#define SIM_IRQ_I2C2_EV   SIM_IRQ(2, 32)   /* i2c_bus.c: priority 2 */
 typedef struct {
   int (*pending)(uint64_t *at);   /* 1 if an interrupt is coming, and when (units) */
   void (*fire)(void);             /* raise it (interrupt context) */

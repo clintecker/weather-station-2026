@@ -314,6 +314,13 @@ minute's valid samples. Fields 21–24 carry their extrema. Field 25 tells how m
 valid (PRD section 9: coverage and extrema). The calibration revision maps to the sampling
 description in the gateway configuration.
 
+The WSMP bench station (`firmware/stage0-node/App/wsmp_catalog_map.c`, from 2026-10-18) fills this
+catalog from its local modules. A reading carries the fields of the modules in the layout. It does
+not send fields 21–24: the gateway derives extremes from the minute means (DATAVANE5K rule 6,
+[`module-protocol.md`](module-protocol.md)). It does not send field 12: the battery charge counters
+count whole mAh, which is too coarse for a one-minute mean current, so the gateway derives the
+current from the counters over longer times.
+
 ### 5.4 One valid encoding per reading
 
 The gateway rejects an authenticated observation with NACK reason 2 if it:

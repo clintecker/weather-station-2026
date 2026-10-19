@@ -211,8 +211,9 @@ flowchart TD
      CN10.9, red 3V3 → CN7.16 (not CN7.18, which is 5 V). Positions and source:
      `docs/protocol-stack.md` §3.1. Alternative: solder the breakout's header strip and use the
      1954 jumpers on CN5/CN6. Wire with TX unplugged.
-   - The firmware sensor driver exists (`firmware/stage0-node/App/sensor.c`: I2C2, stuck-bus
-     recovery). Its CRC and fault handling are unit-tested.
+   - The firmware reads the SHT45 through its WSMP module (`firmware/stage0-node/App/mod_th.c`).
+     The shared I2C2 bus with the stuck-bus recovery is `App/i2c_bus.c`. Host tests cover the CRC
+     and fault handling.
    - Verify a CRC-checked reading, plus the unplug and fault behaviour. Then cut a new release.
 3. **Home Assistant.** The steps are in `docs/runbook-home-assistant.md`. They need Clint's
    broker host, port, TLS on/off and user name. The password goes in a private file, not in chat.

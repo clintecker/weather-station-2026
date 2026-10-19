@@ -2,7 +2,7 @@
 #undef NDEBUG /* the checks below are assert()s: keep them in every build */
 #include <assert.h>
 #include <string.h>
-/* SHT45 reply parsing: conversion, RH clamp, and both CRCs (App/sensor.c does the bus steps). */
+/* SHT45 reply parsing: conversion, RH clamp, and both CRCs (App/mod_th.c does the bus steps). */
 static void reply(uint8_t r[WS_SHT45_REPLY_LEN], uint16_t st, uint16_t srh) {
  r[0]=(uint8_t)(st>>8); r[1]=(uint8_t)st; r[2]=ws_crc8(r,2);
  r[3]=(uint8_t)(srh>>8); r[4]=(uint8_t)srh; r[5]=ws_crc8(r+3,2);

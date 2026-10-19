@@ -1,6 +1,8 @@
 # DATAVANE5K: the Weather Station Module Protocol (WSMP)
 
-Version 1.0, draft of 2026-10-18. Status: normative design, not implemented yet.
+Version 1.0, draft of 2026-10-18. Status: normative design. The station side is implemented for
+local modules (the bench station, `firmware/stage0-node/App/wsmp_host.lit.md`); the radio part
+(section 11) and remote modules are not.
 
 DATAVANE5K is the trade name of WSMP, the Weather Station Module Protocol. The technical name stays
 WSMP: in the code, in the requirement IDs (WSMP-L1 and so on) and in the registry.

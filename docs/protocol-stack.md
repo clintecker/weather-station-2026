@@ -108,7 +108,7 @@ The SHT45 breakout (Adafruit 6174) connects to I2C2 of the STM32WL55. The pins c
 
 On CN10, the odd pins are the inner column. On CN7, the odd pins are the outer column (board edge).
 
-The bus speed is 100 kHz (standard mode). The timing register value is `0x20303E5D` at PCLK1 = 48 MHz. The 10 kΩ resistors on the breakout are the bus pull-ups. The internal pull-ups of the MCU (about 40 kΩ) are also on. Thus an unplugged breakout leaves the lines defined, and the read fails as a clean address NACK (`App/sensor.c`, changed 2026-10-13).
+The bus speed is 100 kHz (standard mode). The timing register value is `0x20303E5D` at PCLK1 = 48 MHz. The 10 kΩ resistors on the breakout are the bus pull-ups. The internal pull-ups of the MCU (about 40 kΩ) are also on. Thus an unplugged breakout leaves the lines defined, and the transfer fails as a clean address NACK. The I2C setup is in `App/i2c_bus.c`.
 
 ### 3.2 Measurement transaction
 
@@ -120,7 +120,7 @@ sequenceDiagram
   participant MCU as STM32WL55 (I2C2 master)
   participant SHT as SHT45 (0x44)
   MCU->>SHT: Write 0xFD (high precision, heater off)
-  Note over MCU,SHT: Wait 10 ms (measurement time)
+  Note over MCU,SHT: Wait one module tick (250 ms) or more
   MCU->>SHT: Read 6 bytes
   SHT-->>MCU: T_msb T_lsb CRC, RH_msb RH_lsb CRC
   Note over MCU: Check both CRC-8 values<br/>then convert to 0.01 units
@@ -135,24 +135,25 @@ The firmware converts the raw values to integers. It does not use floating point
 
 ### 3.3 Faults
 
-If the write, the read, or a CRC check fails, the function returns an error. The function does not change the output values. Every `#sample` line prints the code (`App/sensor.h`) as `rc=`:
+If the write, the read, or a CRC check fails, the transfer or the parser returns an error. The parser does not change the output values. The bus codes are in `App/i2c_bus.h`:
 
-| `rc` | Meaning |
+| Code | Meaning |
 |---:|---|
 | 0 | ok |
-| −2 | address NACK (sensor absent, or a wiring fault) |
-| −3 | read NACK |
-| −4 | CRC mismatch |
+| −2 | address or command NACK (sensor absent or not ready, or a wiring fault) |
+| −3 | the read failed after the address |
+| −4 | CRC mismatch (the module sets this code) |
 | −5 | bus still stuck after recovery |
+| −6 | the transfer did not finish within its 30 ms guard |
 
-At boot, the TX board makes one test reading. It prints `#sensor ok t=… rh=…` or `#sensor fault rc=…`. After a fault, the observation carries the **INVALID** code for both temperature and humidity (section 4.2). The gateway stores them as `null`, with `quality=sensor_fault`. The system never shows an invalid reading as a real value.
+The `#sample` line does not print these codes. The module turns a failed sample into its probe result. An address NACK means absent. Any other failure is a bus fault. The first minute's report prints a `#modules` line with the state of each module port, for example `#modules air_th=active …`. The `MODULES` console command prints the same line. While the air module is active, a minute without a valid air sample gives the **INVALID** code for both temperature and humidity (section 4.2). If the air module is not active, the observation leaves out its fields. The air fields are then **INVALID** only when the observation has no other field. The gateway stores them as `null`, with `quality=sensor_fault`. The system never shows an invalid reading as a real value.
 
-After a bus fault, the firmware does a bus recovery. A sensor can hold SDA low if it resets during a byte. The recovery does these steps:
+After a failure that can leave the bus stuck, the firmware does a bus recovery. These failures are a guard timeout, a HAL refusal, or SDA low after the failure. A sensor can hold SDA low if it resets during a byte. The temperature and humidity modules also ask for a recovery after a bad CRC. The recovery does these steps:
 
 1. Release both lines (output latch high). Then make SCL and SDA GPIO open-drain outputs. Thus the takeover never drives SCL low.
 2. Give up to 9 clock pulses on SCL until the sensor releases SDA.
 3. Make a STOP condition: SDA low while SCL is low, SCL high, then SDA high.
-4. Start the I²C peripheral again. If SDA was still held low, the read reports −5.
+4. Start the I²C peripheral again. If SDA was still held low, the transfer reports −5.
 
 The pin sequence is `ws_i2c_recover()` in `firmware/stage0.c`. A host test checks it against a model of the open-drain bus (`firmware/test_policy.c`). The test requires exactly one STOP, no accidental START, and an idle bus at the end. It covers a free bus and a device that holds SDA for 1 to 9 clocks. Before 2026-10-13, the routine left SCL low when SDA was not stuck. Thus its STOP was not a real STOP.
 

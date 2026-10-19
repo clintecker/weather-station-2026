@@ -15,7 +15,7 @@ The firmware has no real-time operating system (RTOS). Three kinds of code run:
 | Kind | Examples | Runs until |
 |---|---|---|
 | Interrupt handler | radio (`SUBGHZ_Radio`, priority 0), RTC alarm (all `UTIL_TIMER` callbacks, priority 0, run with interrupts masked), I2C2, USART2, direct memory access (DMA) (priority 2) | it returns. A handler copies data, starts the next hardware step or timer, and posts an event or a task. A handler never formats console lines. The main loop prints the RX `#alive` report |
-| Sequencer task (main loop) | `process` (radio events), `sample`, `sensor_task`, `console_task`, `check` (watchdog) | it returns. One task runs at a time. A task is never re-entered |
+| Sequencer task (main loop) | `process` (radio events), `sample`, `module_tick`, `bus_task` (I2C), `console_task`, `check` (watchdog) | it returns. One task runs at a time. A task is never re-entered |
 | Idle | `UTIL_SEQ_Idle` → low-power mode | the next interrupt |
 
 A task never waits for time. When something must happen later, the task starts a timer and
@@ -27,7 +27,7 @@ flowchart LR
   ISR -->|"sets an event bit (events_post)"| BITS["Pending event bits"]
   ISR -->|"posts the task (UTIL_SEQ_SetTask)"| SEQ["Sequencer, main loop"]
   BITS --> SEQ
-  SEQ -->|"runs one task"| TASK["Task: process, sample, sensor_task, console_task, check"]
+  SEQ -->|"runs one task"| TASK["Task: process, sample, module_tick, bus_task, console_task, check"]
   TASK -->|"takes and clears the bits (events_take)"| BITS
   TASK -->|"starts a timer, then returns"| TIMER["UTIL_TIMER on the RTC alarm"]
   TIMER -->|"alarm interrupt"| ISR
@@ -42,36 +42,56 @@ ticks and makes it at least 3 ticks (`timer_if.c`). A timer can also start up to
 The periods on this page are the values that the code requests. `HAL_GetTick()` also counts these
 ticks, not milliseconds. The firmware therefore measures time with `SysTimeGetMcuTime()`.
 
-## TX: sampling (`App/app_tx.c`, `App/sensor.c`)
+## TX: sampling (`App/app_tx.c`, `App/wsmp_host.c`, `App/i2c_bus.c`)
 
-A 15-second periodic timer posts the `sample` task. `sample` starts one SHT45 measurement and
-returns. The measurement is a chain of interrupts and timers in `App/sensor.c`:
+Two periodic timers drive the sampling. Neither task waits for a measurement:
+
+- A 250 ms module timer posts the `module_tick` task (`CFG_SEQ_Task_Sensor`). This task calls
+  `wsmp_host_tick()`. The station host gives each local module one tick and then reads its probe
+  result.
+- A 15-second sample timer posts the `sample` task. `sample` counts the ticks. The 4th tick latches
+  every module and makes the minute's report.
+
+The `sample` task also runs once at boot. The first report therefore comes at 45,000 ms. The report
+uses the snapshots that the latch froze. It does not wait for an I2C transfer.
+
+Each module does at most one bus step per tick. The temperature and humidity modules
+(`App/mod_th.c`) start a sample every 15 s. The SHT45 module writes the measure command on one tick.
+It reads the reply on a later tick, at least 250 ms after the command. The SHT45 needs at most
+8.3 ms.
+
+The modules share one I2C bus (`App/i2c_bus.c`). A module submits a transfer. The bus queues the
+transfers and runs one at a time, in submission order:
 
 ```mermaid
 stateDiagram-v2
   [*] --> S_IDLE
-  S_IDLE --> S_CMD : sensor_start, command write in I2C interrupt mode, guard timer starts
-  S_CMD --> S_MEASURE : write complete, guard stops, 11 ms measurement timer starts
-  S_MEASURE --> S_READ : measurement timer, reply read starts, guard timer starts
-  S_READ --> S_DONE : read complete
-  S_CMD --> S_DONE : I2C error or 30 ms guard timeout
-  S_READ --> S_DONE : I2C error or 30 ms guard timeout
-  S_DONE --> S_IDLE : sensor_task, CRC good, sensor_done with the result
-  S_DONE --> S_RECOVER : sensor_task, transfer or CRC failed
+  S_IDLE --> S_XFER : a transfer is queued, it starts in I2C interrupt mode, guard timer starts
+  S_IDLE --> S_RECOVER : a recovery-only request is queued
+  S_XFER --> S_DONE : transfer complete, guard stops
+  S_XFER --> S_DONE : I2C error, HAL refusal or 30 ms guard timeout
+  S_DONE --> S_IDLE : bus_task, success or a failure with SDA high, i2c_bus_done with the code
+  S_DONE --> S_RECOVER : bus_task, timeout, HAL refusal or SDA low
   S_RECOVER --> S_RECOVER : one pin step per timer tick
   S_RECOVER --> S_RECOVERED : recovery finished
-  S_RECOVERED --> S_IDLE : sensor_task, I2C re-initialised, sensor_done with the error
+  S_RECOVERED --> S_IDLE : bus_task, I2C re-initialised, i2c_bus_done with the code
 ```
 
-- The 11 ms measurement timer is at least 9.8 ms after rounding. The SHT45 needs at most 8.3 ms.
 - The 30 ms guard timer ends a transfer that never completes (`rc=-6`). The guard is longer than a
   flash page erase, because an erase delays the I2C interrupt.
-- After a failure, the stuck-bus recovery (`ws_i2c_recover_step`) runs one pin step per timer
-  tick. One tick is about 2–3 ms. The whole recovery takes about 15–70 ms.
-- `sensor_task` gives the result to `sensor_done()` in `App/app_tx.c`.
+- The stuck-bus recovery runs only when the bus can be stuck. These are a timeout, a HAL refusal,
+  or SDA low after a failure. An address NACK from an absent sensor costs no recovery.
+- A module can also ask for the recovery alone. The temperature and humidity modules do this after
+  a bad CRC.
+- The recovery (`ws_i2c_recover_step`) runs one pin step per timer tick. One tick is about 2–3 ms.
+  The whole recovery takes about 15–70 ms.
+- `bus_task` (`CFG_SEQ_Task_I2c`) gives the code to `i2c_bus_done()`. `App/wsmp_local.c` passes it
+  to the module that owns the transfer. The bus then starts the next queued transfer.
+- A module turns a failed sample into its probe result. An address NACK means absent. Any other
+  failure is a bus fault.
 
-Every 4th sample makes the minute's report. `sensor_done()` journals the report in flash. If the
-transmit policy allows a send this minute, it then starts the exchange.
+`minute_report()` in `App/app_tx.c` journals the report in flash. If the transmit policy allows a
+send this minute, it then starts the exchange.
 
 ## TX: flash is written only with the radio idle
 
@@ -282,9 +302,10 @@ reflash.
 
 | Check | What it proves | Where |
 |---|---|---|
-| Host state-machine harness | Runs the real `app_tx.c` and its modules (`tx_exchange.c`, `tx_policy.c`, `tx_time.c`, `tx_console.c`, `selftest.c`) over a simulated clock, timers, sequencer, flash, SHT45 and radio. The simulated radio follows ST's driver: a CRC failure is RxDone + RxError, and driver timeouts leave the radio transmitting or receiving. The tests prove these points: gaps are timers. Every state ends. Damaged packets do not end the window early. Flash commands wait for the exchange. Every (state, event) pair outside the table is only counted. Two events pending together are handled in bit order. Only the ACK for the frame just sent ends a window or sets the clock. A counter reservation swept across a whole exchange never meets a busy radio. The drain, link, health-report, strike and watchdog policies (transmit-failure run, exchange bound) behave as documented. A reading made while an exchange hangs is held in RAM, journaled when the radio goes idle and sent as backlog. A third held reading replaces the oldest and is counted. 3-hour randomised links with 5 fixed seeds include lost ACKs whose windows run out, NACKs, junk, CRC and header failures, another frame's ACK, transmit timeouts and send failures. These runs give no unexpected event. The radio state matches the exchange state, the watchdog check stays healthy, and no flash write happens while the radio transmits or receives. Timers and sequencer have ST's semantics. The suite builds with UBSan and reruns under ASan where the runtime can be preloaded | `firmware/host/tx_harness.c` over `firmware/host/sim_core.c`, `tests/test_tx_machine.py` |
+| Host state-machine harness | Runs the real `app_tx.c` and its modules (`tx_exchange.c`, `tx_policy.c`, `tx_time.c`, `tx_console.c`, `selftest.c`) over a simulated clock, timers, sequencer, flash and radio. The real WSMP modules run on the I2C bus model with one simulated SHT45. The simulated radio follows ST's driver: a CRC failure is RxDone + RxError, and driver timeouts leave the radio transmitting or receiving. The tests prove these points: gaps are timers. Every state ends. Damaged packets do not end the window early. Flash commands wait for the exchange. Every (state, event) pair outside the table is only counted. Two events pending together are handled in bit order. Only the ACK for the frame just sent ends a window or sets the clock. A counter reservation swept across a whole exchange never meets a busy radio. The drain, link, health-report, strike and watchdog policies (transmit-failure run, exchange bound) behave as documented. A reading made while an exchange hangs is held in RAM, journaled when the radio goes idle and sent as backlog. A third held reading replaces the oldest and is counted. 3-hour randomised links with 5 fixed seeds include lost ACKs whose windows run out, NACKs, junk, CRC and header failures, another frame's ACK, transmit timeouts and send failures. These runs give no unexpected event. The radio state matches the exchange state, the watchdog check stays healthy, and no flash write happens while the radio transmits or receives. Timers and sequencer have ST's semantics. The suite builds with UBSan and reruns under ASan where the runtime can be preloaded | `firmware/host/tx_harness.c` over `firmware/host/sim_core.c`, `tests/test_tx_machine.py` |
 | Host RX bridge harness | Runs the real `app_rx.c` and `console.c` over 1/1024 s ticks with ST's timer server, the sequencer, a continuous-receive radio that follows ST's driver, the console UART interrupt, the trace FIFO and the watchdog's health check. The tests prove these points: every valid frame is forwarded once as hex. CRC-failed packets are never forwarded and are logged whole. Header failures are logged. Nothing re-arms the radio after a failure. Only a valid host ACK or NACK is transmitted, and the radio listens again after it. The main loop prints `#alive`. Relisten and watchdog recovery behave as documented. A reference model checks a 6-hour randomised run line by line. A mutation pass plants 47 bugs and the tests catch all but one equivalent mutant. Review findings not yet fixed are `expectedFailure` tests | `firmware/host/rx_harness.c` over `firmware/host/sim_core.c`, `tests/test_rx_machine.py` |
-| Host sensor-driver harness | Runs the real `sensor.c` over ST-rounded timers and a simulated I2C bus and SHT45. Each measurement gives one `sensor_done()` with the documented code for success, NACKs, bad CRC, hangs and a busy bus. The recovery clocks a held SDA line free or reports it stuck. A completion at the guard's instant cannot overwrite the timeout. The read never comes before 9 ms | `firmware/host/sensor_harness.c` over `firmware/host/sim_core.c`, `tests/test_sensor_machine.py` |
+| Host I2C bus harness | Runs the real `i2c_bus.c` over ST-rounded timers and a host model of ST's HAL I2C with many devices. Each transfer gives one `i2c_bus_done()` with the documented code for success, NACKs, hangs and a held SDA line. The recovery clocks a held SDA line free or reports it stuck. An absent device costs no recovery. A completion at the guard's instant counts once. Clients are served in order, one at a time, and a busy client's second submit is refused | `firmware/host/wsmp_harness.c` and `firmware/host/i2c_sim.c` over `firmware/host/sim_core.c`, `tests/test_i2c_bus.py` |
+| Host WSMP module and station-host harness | Runs the real local modules (`wsmp_local.c`, `mod_*.c`), the station host (`wsmp_host.c`) and the catalog map (`wsmp_catalog_map.c`) on the same bus model. The tests check the module conformance cases, the mean windows and the latch. They also check presence, admission, the flap limit and the map round trip through the gateway's decoder | `firmware/host/wsmp_harness.c`, `firmware/host/i2c_models.c`, `tests/test_modules.py`, `tests/test_wsmp_host.py`, `tests/test_wsmp_map.py` |
 | Build-time wait check | No interrupt handler or task in the linked image can reach a blocking call (`HAL_Delay`, blocking HAL I2C/UART/SPI, …). Every user of a timeout loop is classified | `tools/blocking_report.py`, `make ROLE=… waits`, CI |
 | Run-time timing | TX `#timing` reports the peaks of tasks, handlers and flash stalls since boot. RX `#alive` reports tasks and handlers, and the gateway stores them. A task's peak is its own time, with the time of interrupts that ran meanwhile taken out. Interrupt time is summed once per outermost handler. The peak is named after the task's slowest timed step. `task_wall_us` gives the wall time with interrupts included (TX `#timing`, RX STATUS). SysTick, NMI and HardFault are not timed. `firmware/test_busymon.c` tests this on the host | `App/busymon.c` |
 | Run-time checks | The board checks invariants of our own code: state-machine preconditions, indexes before buffers, flash writes inside the node-state pages, and timer starts that must not be refused. Each site has a recovery. The firmware counts failures and records the first site (TX `#counts`, RX `STATUS`). Every host harness test requires zero failures | `WS_CHECK`, `firmware/common/ws_check.h`, [`docs/power-of-ten.md`](power-of-ten.md) rule 5 |

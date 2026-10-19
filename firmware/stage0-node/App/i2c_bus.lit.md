@@ -144,10 +144,11 @@ static enum i2c_client fifo_pop(void)
 stateDiagram-v2
   [*] --> S_IDLE
   S_IDLE --> S_XFER: a client is queued, start its transfer
+  S_IDLE --> S_RECOVER: a recover-only request is next
   S_XFER --> S_DONE: complete, bus_rc 0
   S_XFER --> S_DONE: I2C error -2 or -3, guard -6, HAL refused -2
-  S_DONE --> S_IDLE: bus task, bus_rc 0, i2c_bus_done(c, 0)
-  S_DONE --> S_RECOVER: bus task, bus_rc not 0
+  S_DONE --> S_IDLE: bus task, bus_rc 0 or a clean NACK, i2c_bus_done(c, bus_rc)
+  S_DONE --> S_RECOVER: bus task, timeout, HAL refusal or SDA low
   S_RECOVER --> S_RECOVER: step timer, more steps left
   S_RECOVER --> S_RECOVERED: step timer, last step
   S_RECOVERED --> S_IDLE: bus task, i2c_start, i2c_bus_done(c, -5 or bus_rc)

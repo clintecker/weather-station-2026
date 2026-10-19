@@ -2,7 +2,8 @@
 #define I2C_BUS_H
 /* The shared I2C2 bus of the station's local WSMP modules (App/i2c_bus.lit.md): PA11 SDA, PA12 SCL,
  * 100 kHz. One transfer is on the bus at a time, in submission order, each with a 30 ms guard. After
- * any failed transfer the bus runs the stuck-bus recovery before the next transfer. Nothing waits. */
+ * a transfer that may leave the bus stuck (a timeout, a HAL refusal, or SDA still low) the bus runs
+ * the stuck-bus recovery before the next transfer. A clean NACK costs none. Nothing waits. */
 #include <stdint.h>
 
 /* One client for each I2C module. A client has at most one transfer queued or running. */

@@ -747,30 +747,33 @@ before its first caller.
 
 `tests/test_tx_machine.py` builds `app_tx.c` with the other TX modules and the real `node_store.c`
 into a host library. `firmware/host/tx_harness.c` simulates the clock, the timers, the sequencer, the
-radio, the SHT45 and the flash. At its end, every test checks three things. No flash operation ran
-while the radio was busy. No test started a running timer again. No `WS_CHECK` failed.
+radio and the flash. The real WSMP modules run on the I2C bus model (`firmware/host/i2c_sim.c` and
+`firmware/host/i2c_models.c`) with one simulated SHT45. At its end, every test checks three things.
+No flash operation ran while the radio was busy. No test started a running timer again. No
+`WS_CHECK` failed.
 
 | Test | What it checks in this file |
 |---|---|
-| `test_minute_exchange_then_health_report_after_a_gap` | `#boot` and `#sensor ok`, then the first minute's frame |
+| `test_minute_exchange_then_health_report_after_a_gap` | `#boot`, the first `#sample` line with `valid=1 n=3 t=2150 rh=4500`, the `#modules` line, then the first minute's frame |
 | `test_a_reading_made_during_an_exchange_is_journaled_when_the_radio_goes_idle` | `journal=held`, the `#busy` line, `#held journaled` after the exchange ends, then the reading sent as backlog |
 | `test_held_readings_keep_the_newest_when_more_minutes_wait` | two held readings, a third drops the oldest (`held_lost=1`), the rest journaled oldest first |
 | `test_a_radio_that_never_finishes_trips_the_exchange_bound` | the exchange bound to the second, standby radio, held readings journaled, no sampling until the reset |
 | `test_transmit_failures_in_a_row_trip_the_watchdog_and_a_tx_done_clears_them` | healthy for 10 failures, unhealthy at the 11th, healthy again after one transmission |
-| `test_commanded_reboot_comes_from_a_timer_and_stops_sampling` | no sensor start after `sampling_stop` |
+| `test_commanded_reboot_comes_from_a_timer_and_stops_sampling` | no new SHT45 command after `sampling_stop` |
 | `test_flash_storm_stops_sampling_and_exchanges` | no `#sample` and a healthy watchdog check while sampling is stopped |
-| `test_sensor_failure_and_a_measurement_that_never_ends` | `#sensor fault rc=-2`, `valid=0 rc=-1 n=0` for missed samples |
+| `test_a_failing_or_hung_sensor_never_stalls_the_minute` | an SHT45 that does not answer its address gives `valid=0 rc=0 n=0`, and the report still comes. Hung transfers give a `#sample` every minute, and the module retries |
+| `test_modules_console_line` | `MODULES` prints the state of every port |
+| `test_sensor_rain_command_is_stored_and_waits_for_the_radio` | `SENSOR rain on` stores the setting, the rain module is admitted, and the command waits for the exchange |
 | `test_three_hours_of_mixed_link_keep_every_invariant` | a healthy watchdog check at every step and a `#sample` every minute |
 
-`tests/test_sensor_machine.py` checks the driver side of `sensor_done`. It checks one call per
-measurement with the documented code. It checks that `sensor_start` refuses a start while busy
-(`test_a_start_while_busy_is_refused_at_once`). `tests/test_stage0.py` runs `firmware/test_policy.c`.
-That test checks `ws_failrun`: it trips at the 11th failure, resets on success and saturates. It
-also checks that the window means round half up.
+`tests/test_modules.py` and `tests/test_i2c_bus.py` check the modules and the shared bus on their
+own. `tests/test_stage0.py` runs `firmware/test_policy.c`. That test checks `ws_failrun`: it trips
+at the 11th failure, resets on success and saturates. It also checks that the window means round
+half up.
 
 No host test covers the boot failure paths (`#error store-init`, `#unprovisioned`, `#error self-test
 failed`, `#error epoch-reserve`, `#boot-retry`) or `SAMPLING_STALL_S`.
 
 ```sh
-.venv/bin/python -m unittest tests.test_tx_machine tests.test_sensor_machine tests.test_stage0 tests.test_tangle
+.venv/bin/python -m unittest tests.test_tx_machine tests.test_modules tests.test_i2c_bus tests.test_stage0 tests.test_tangle
 ```

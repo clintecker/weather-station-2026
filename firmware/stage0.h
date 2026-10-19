@@ -8,7 +8,7 @@
    WS_SHT45_MEASURE to WS_SHT45_ADDR, wait WS_SHT45_MEASURE_MS, then read WS_SHT45_REPLY_LEN bytes.
    11 ms: ST's timer rounds down to 1/1024 s ticks and can start up to a tick late, so this waits
    at least ~9.8 ms. The firmware
-   does each step from an interrupt or timer (App/sensor.c); ws_sht45_parse checks both CRCs and
+   does each step on a 250 ms module tick (App/mod_th.c); ws_sht45_parse checks both CRCs and
    converts: 0, or WS_SHT45_ECRC on a CRC mismatch (outputs untouched). */
 #define WS_SHT45_ECRC (-4)
 #define WS_SHT45_ADDR       0x44

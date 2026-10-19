@@ -31,7 +31,7 @@ non-comment lines of code (lizard NLOC).
 | 2 | A fixed upper bound on every loop | **Complies with documented deviations** (2 deliberate hangs) | `tools/loop_bounds.py` (in `tools/code_shape.sh`, CI host job) |
 | 3 | No dynamic allocation after initialisation | **Complies** (none at all) | The link fails if an allocator is linked (`NO_HEAP=1`, CI firmware job). `-Wvla -Walloca` |
 | 4 | No function longer than 60 lines | **Complies** (also cyclomatic complexity ≤ 10) | `tools/code_shape.sh` (lizard), CI host job |
-| 5 | Assertions: at least two per function, with an explicit recovery | **Partial**: a check facility with a defined recovery at 36 sites (0.11 per function, below the target, argued below) | Every host harness test requires zero failed checks. Tests make checks fail on purpose |
+| 5 | Assertions: at least two per function, with an explicit recovery | **Partial**: a check facility with a defined recovery at 41 sites (about 0.1 per function, below the target, argued below) | Every host harness test requires zero failed checks. Tests make checks fail on purpose |
 | 6 | Data at the smallest possible scope | **Complies** (one shared variable left, set by an interrupt) | Review. `-Wmissing-declarations`, `-Wredundant-decls`, Cppcheck `variableScope` |
 | 7 | Check every non-void result and check parameters | **Complies with documented deviations** (`memcpy`/`memset`, `APP_PRINTF`, ST's void radio API) | `(void)` casts with reasons, `WS_CHECK` at module boundaries, review |
 | 8 | Preprocessor: includes and simple macros only | **Complies with documented deviations** (an X-macro catalog, one token-pasting wrapper, `__LINE__` in `WS_CHECK`, 6 conditional-compilation switches) | Review. `-Wundef`, `-Wunused-macros` |
@@ -87,7 +87,7 @@ Changes for this rule (commit "every loop has a stated upper bound"):
   shifted until the batch was empty. A stray bit would then have been handled with an event name
   past the end of `ev_name`. A stray bit is now also a `WS_CHECK` failure (rule 5).
 - `firmware/stage0.c` `ws_i2c_recover` (host tests): at most `WS_I2C_RECOVER_STEPS` (23) steps. On
-  the board, the same sequence runs one step per timer tick (`App/sensor.c` `on_step`), with the
+  the board, the same sequence runs one step per timer tick (`App/i2c_bus.c` `on_step`), with the
   same bound.
 
 The console line bounds the string loops (`parse_u32` in `stage0.c`, `strlen` and `strncmp` in
@@ -184,18 +184,19 @@ with their own counters (`ack_rejects`, `#rx drop`, `#host reject`, `burned`,
 `#error journal-read`). This code is plentiful and is already "an assertion with a recovery" in
 Holzmann's sense. This page does not count it.
 
-### The 36 sites
+### The 41 sites
 
-TX has 35 sites and RX has 7. Some files are in both roles.
+TX has 40 sites and RX has 7. Some files are in both roles.
 
 | Kind | Sites (file, function) | Recovery |
 |---|---|---|
-| State-machine preconditions | `tx_exchange.c`: `exchange_start` (no exchange running), `handle` (an unknown state is idle), `process` (only `EV_*` bits). `sensor.c` `sensor_task` (posted only in `S_DONE` or `S_RECOVERED`) | refuse the start, back to idle, drop the stray bits, or do nothing |
+| State-machine preconditions | `tx_exchange.c`: `exchange_start` (no exchange running), `handle` (an unknown state is idle), `process` (only `EV_*` bits). `i2c_bus.c` `bus_task` (posted only in `S_DONE` or `S_RECOVERED`) | refuse the start, back to idle, drop the stray bits, or do nothing |
 | Index and length bounds before a buffer is used | `tx_exchange.c` `send_current` (`qi < qn`), `mark_replied` (`qi`), `exchange_start` (backlog fits the queue). `tx_policy.c` `policy_exchange_end` (`n` fits `struck[]`). `app_tx.c` `held_count`. `node_store.c` `store_journal_read` and `_ack` (the ref is a journal slot, checked before it indexes the pending bitmap). `busymon.c` `busymon_end` (`kind`), `busymon_isr_exit` (an exit has its enter). `console.c` `hex_print` (frame length). `ws_policy.c` `ws_strike_note` (table size), `ws_link_probe_interval` (`probe_step`) | end the exchange, skip the write, clamp, or refuse (-1) |
 | Flash writes stay in the node-state pages | `node_store.c` `prog64`, `erase_page`: every program and erase lies inside pages 55–127 (never the firmware) and is double-word aligned | refused like a failed flash operation, which every caller already handles |
 | Our own data must encode or seal | `app_tx.c` `minute_report` (`ws_obs_encode`). `tx_exchange.c` `send_obs`, `send_diag` (`ws_seal_kind` with a provisioned station and a reserved counter) | `journal=ERROR`, or the item is skipped as for a local send failure |
-| ST timer starts that must not be refused | `tx_exchange.c` gap and ACK-window timers. `sensor.c` guard, measurement and step timers. `tx_console.c` reboot timer. `app_rx.c` `#alive` timer. `watchdog.c` check timer. ST refuses a start only for a running timer | the running timer still delivers its event. The reboot timer resets at once instead |
-| HAL results that should not fail for our arguments | `sensor.c` `i2c_start` (`HAL_I2C_Init`, analog filter). `watchdog.c` `HAL_IWDG_Init`, which can return `HAL_TIMEOUT` if the internal low-speed oscillator (LSI) never settles. `console.c` `console_init` (`vcom_ReceiveInit`) | the next transfer fails and the bus recovery re-initialises. The independent watchdog (IWDG) takes the values when its update completes. The console re-arms the receive once, and the RX health check also re-arms it |
+| ST timer starts that must not be refused | `tx_exchange.c` gap and ACK-window timers. `i2c_bus.c` guard and step timers. `tx_console.c` reboot timer. `app_rx.c` `#alive` timer. `watchdog.c` check timer. ST refuses a start only for a running timer | the running timer still delivers its event. The reboot timer resets at once instead |
+| HAL results that should not fail for our arguments | `i2c_bus.c` `i2c_start` (`HAL_I2C_Init`, analog filter). `watchdog.c` `HAL_IWDG_Init`, which can return `HAL_TIMEOUT` if the internal low-speed oscillator (LSI) never settles. `console.c` `console_init` (`vcom_ReceiveInit`) | the next transfer fails and the bus recovery re-initialises. The independent watchdog (IWDG) takes the values when its update completes. The console re-arms the receive once, and the RX health check also re-arms it |
+| Local module steps | `mod_th.c`, `mod_reg.c`, `mod_power.c`: the bus takes each submitted transfer (`i2c_bus_submit` returns 0: one step at a time), and a completion arrives in a step that expects one. `wsmp_local.c` `i2c_bus_done`: the completion belongs to a known client | the sample counts as failed and the module waits for its next sample |
 | Policy inputs | `ws_policy.c` `ws_lora_airtime_ms` (spreading factor, bandwidth, coding rate) | a whole minute: the live reading only, no division by zero |
 
 ### Tests
@@ -346,7 +347,7 @@ of indirection in the PROVISION parser"):
   - the flash primitives (`ws_flash_read64`, `prog64`, `erase` in `App/flash_layout.h`). These were
     a table of three pointers.
   - the console line handler (`console_line`).
-  - the sensor's result (`sensor_done`).
+  - the completion of an I2C transfer (`i2c_bus_done`, defined in `App/wsmp_local.c`).
   - the watchdog health test (`watchdog_healthy`).
 - The PROVISION parser no longer advances a cursor through a `const char **`.
 
@@ -358,7 +359,7 @@ Deviations kept:
   such as `HAL_I2C_MasterTxCpltCallback`, are link-time overrides, not pointers.
 - **`ws_i2c_pins`** (`stage0.h`) is a `const` table of pin functions behind the I2C stuck-bus
   recovery waveform. With this table, the same `ws_i2c_recover_step` is host-tested with simulated
-  pins (`firmware/test_policy.c`) and drives the real pins in `sensor.c`. A link-time seam would
+  pins (`firmware/test_policy.c`) and drives the real pins in `i2c_bus.c`. A link-time seam would
   force every build that links `stage0.c` (the fuzzers, the host tests) to define pin stubs.
 
 How the stack bound treats indirect calls: `tools/stack_report.py` follows direct calls exactly. A

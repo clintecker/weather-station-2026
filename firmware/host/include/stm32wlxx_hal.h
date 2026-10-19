@@ -1,5 +1,5 @@
-/* Host stand-in for the STM32WL HAL: what the TX modules and App/sensor.c use. The I2C, GPIO and NVIC
-   functions are implemented by firmware/host/sensor_harness.c. */
+/* Host stand-in for the STM32WL HAL: what the TX modules and App/i2c_bus.c use. The I2C, GPIO and NVIC
+   functions are implemented by firmware/host/i2c_sim.c. */
 #ifndef HOST_STM32WLXX_HAL_H
 #define HOST_STM32WLXX_HAL_H
 #include <stddef.h>
