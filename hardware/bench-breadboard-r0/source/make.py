@@ -120,6 +120,11 @@ def where(h):
     return f'NUCLEO {h[1]}.{h[2]}' if h[0] == 'N' else f'{h[0]}:{h[1]}{h[2]}'
 
 
+def nucleo_jumpers(jumpers, nets):
+    """The ids of the jumpers that take these nets to the NUCLEO."""
+    return [j.id for j in jumpers if j.net in nets and 'N' in (j.a[0], j.b[0])]
+
+
 STAGE_TITLE = {0: 'Board A', 1: 'Board B', 2: 'Between the boards', 3: 'To the NUCLEO'}
 
 
@@ -151,6 +156,9 @@ def build_sheet(w, jumpers):
             '`split_rails = true` in `source/wiring.toml` and rebuild: the plan then bridges the halves.',
             '- **NUCLEO headers:** the positions follow the wiring guide. Tick its section 6 checklist '
             'against UM2592 first. The drawing of the headers is not to scale.',
+            '- **PGOOD and CHG voltage:** the bq24074 breakout pulls these pins up through its status LEDs '
+            'toward its output (about 4.4 to 5 V). Confirm in the STM32WL55 datasheet that PB8 and PB10 '
+            f'are 5 V tolerant (FT) before you connect {" and ".join(nucleo_jumpers(jumpers, ("CHG", "PGOOD")))}.',
             '- **Mode A is drawn:** the BATTERY POWER shunt is open and the 100 ohm load is fitted. For mode B, '
             'follow the wiring guide section 5.', '']
     return '\n'.join(out)

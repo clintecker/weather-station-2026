@@ -99,4 +99,5 @@ Do these before you connect power.
 - **CELL** (Battery 6600 mAh #353 on a JST PH pigtail): JST PH pigtail colours vary: check + and - with a meter before plugging in.
 - **Rails:** some 830-point boards split each rail at the centre. If yours do, set `split_rails = true` in `source/wiring.toml` and rebuild: the plan then bridges the halves.
 - **NUCLEO headers:** the positions follow the wiring guide. Tick its section 6 checklist against UM2592 first. The drawing of the headers is not to scale.
+- **PGOOD and CHG voltage:** the bq24074 breakout pulls these pins up through its status LEDs toward its output (about 4.4 to 5 V). Confirm in the STM32WL55 datasheet that PB8 and PB10 are 5 V tolerant (FT) before you connect W31 and W36.
 - **Mode A is drawn:** the BATTERY POWER shunt is open and the 100 ohm load is fitted. For mode B, follow the wiring guide section 5.
