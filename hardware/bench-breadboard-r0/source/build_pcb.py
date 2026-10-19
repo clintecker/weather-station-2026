@@ -92,6 +92,21 @@ def main(layout_path, out):
         text(board, part['id'], part['label_x'], part['label_y'])
     for label in layout['labels']:
         text(board, label['text'], label['x'], label['y'], label.get('size', TEXT))
+    for m in layout['models']:
+        f = stamp(k.FOOTPRINT(board))
+        f.SetReference(m['ref'])
+        f.SetValue(m['ref'])
+        f.Reference().SetVisible(False)
+        f.Value().SetVisible(False)
+        f.SetAttributes(k.FP_EXCLUDE_FROM_BOM | k.FP_EXCLUDE_FROM_POS_FILES)
+        f.SetPosition(xy(m['x'], m['y']))
+        for spec in m['models']:
+            model = k.FP_3DMODEL()
+            model.m_Filename = spec['file']
+            model.m_Offset = k.VECTOR3D(0, 0, spec['z'])
+            model.m_Rotation = k.VECTOR3D(0, 0, spec['rot'])
+            f.Add3DModel(model)
+        board.Add(f)
     rect(board, *layout['outline'], k.Edge_Cuts, 0.1)
     k.SaveBoard(out, board)
 

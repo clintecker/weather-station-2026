@@ -200,5 +200,74 @@ class Board(unittest.TestCase):
         self.assertEqual(again.read_bytes(), self.pcb.read_bytes())
 
 
+class Sheet(unittest.TestCase):
+    def setUp(self):
+        import make
+        self.w = wiring.load(DATA)
+        self.jumpers = wiring.plan_jumpers(self.w)
+        self.sheet = make.build_sheet(self.w, self.jumpers)
+
+    def test_the_build_sheet_lists_every_jumper_once(self):
+        import make
+        lines = [ln for ln in self.sheet.splitlines() if ln.startswith('| W')]
+        self.assertEqual([ln.split('|')[1].strip() for ln in lines], [j.id for j in self.jumpers])
+        for ln, j in zip(lines, self.jumpers, strict=True):
+            self.assertIn(f'{make.where(j.a)} | {make.where(j.b)}', ln)
+            self.assertIn(j.net, ln)
+
+    def test_the_build_sheet_lists_every_bench_check(self):
+        checks = self.sheet.split('## Bench checks', 1)[1]
+        for part in self.w.parts.values():
+            if part.source == 'bench check':
+                self.assertIn(part.id, checks)
+        self.assertIn('split', checks)
+        self.assertIn('UM2592', checks)
+
+    def test_the_committed_build_sheet_is_current(self):
+        self.assertEqual((HW/'build-sheet.md').read_text(), self.sheet)
+
+
+@needs_kicad
+class Outputs(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.out = Path(cls.tmp.name)
+        build(cls.out)
+
+    def test_the_schematic_passes_erc(self):
+        import json
+        report = self.out/'erc.json'
+        subprocess.run([ENV.cli, 'sch', 'erc', '--format', 'json', '--severity-error', '--output', report,
+                        self.out/'bench-breadboard.kicad_sch'], check=True, capture_output=True)
+        errors = [v for sheet in json.loads(report.read_text())['sheets'] for v in sheet['violations']]
+        self.assertEqual(errors, [])
+
+    def test_the_schematic_nets_equal_the_model(self):
+        import re
+        net = self.out/'n.net'
+        subprocess.run([ENV.cli, 'sch', 'export', 'netlist', '--output', net, self.out/'bench-breadboard.kicad_sch'],
+                       check=True, capture_output=True)
+        text = net.read_text().split('(nets', 1)[1]
+        got = {}
+        for block in text.split('(net\n')[1:]:
+            name = re.search(r'\(name "([^"]+)"\)', block)[1].lstrip('/')
+            if not name.startswith('unconnected'):
+                got[name] = set(re.findall(r'\(ref "([^"]+)"\)', block))
+        w = wiring.load(DATA)
+        want = {n: {('NUCLEO' if m.startswith('N:') else m.split('.')[0]) for m in members} for n, members in w.nets.items()}
+        self.assertEqual(got, want)
+
+    def test_renders_exist_and_are_current(self):
+        for name in ('board-a.png', 'board-b.png', 'overview.png', 'schematic.pdf', '3d-top.png', '3d-angle.png'):
+            with self.subTest(name=name):
+                self.assertTrue((self.out/'renders'/name).stat().st_size > 1000)
+        for name in ('board-a.png', 'board-b.png', 'overview.png'):
+            with self.subTest(current=name):
+                self.assertEqual((self.out/'renders'/name).read_bytes(), (HW/'renders'/name).read_bytes())
+
+
 if __name__ == '__main__':
     unittest.main()

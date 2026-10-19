@@ -15,3 +15,5 @@ vendor/
 .venv-cad/
 .DS_Store
 .claude/
+# KiCad local view settings
+*.kicad_prl

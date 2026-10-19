@@ -11,7 +11,9 @@ projects. Some of those examples disagree about header positions.
 ## 1. Build steps
 
 1. **Breadboard and jumper wires.** Prove the pin map and the readings. Not for the 24-hour run:
-   jumpers work loose.
+   jumpers work loose. The hole-by-hole map is
+   [`hardware/bench-breadboard-r0/build-sheet.md`](../../hardware/bench-breadboard-r0/build-sheet.md), with
+   [renders](../../hardware/bench-breadboard-r0/README.md) of both boards.
 2. **Soldered protoboard** (for example Adafruit Perma-Proto). The same circuit, plus the sensor
    power switch and the power shunt header. The 24-hour acceptance run uses this build.
 3. **Custom PCB.** A later revision of the sensor-interface board. A separate project.

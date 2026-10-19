@@ -2,3 +2,4 @@
 ruff==0.8.6
 lizard==1.24.1
 cppcheck==1.5.3   # the Cppcheck 2.22.0 wheel (tools/cppcheck.sh)
+Pillow==11.3.0   # hardware/bench-breadboard-r0 renders (tests/test_breadboard.py)
