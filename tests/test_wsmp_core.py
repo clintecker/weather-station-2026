@@ -125,6 +125,33 @@ class Core(unittest.TestCase):
         with self.subTest('trailing descriptor not zero'):
             self.assertEqual(self.lib.t_desc_check_bytes(block(AIR_TH + desc(1, 1, 0, 1, 0, 1)), 2, 1, 1), -6)
 
+    def test_desc_check_refuses_widths_kinds_and_counts_out_of_range(self):
+        # WSMP section 5: a width of 1 to 4 bytes, a kind of 1 to 10, at most 8 channels.
+        for width in range(5, 9):
+            with self.subTest(width=width):
+                b = desc(1, 1, -2, width, 1, 2) + AIR_TH[6:]
+                self.assertEqual(self.lib.t_desc_check_bytes(block(b), 2, 1, 1), -8)       # WSMP_ELEN
+        for kind in (0, 11):
+            with self.subTest(kind=kind):
+                b = desc(1, 1, -2, 2, 1, kind) + AIR_TH[6:]
+                self.assertEqual(self.lib.t_desc_check_bytes(block(b), 2, 1, 1), -3)       # WSMP_ECODE
+        with self.subTest('9 channels'):
+            self.assertEqual(self.lib.t_desc_check_bytes(block(AIR_TH), 9, 1, 1), -8)
+
+    def test_identity_refuses_0_or_9_channels(self):
+        out = (ctypes.c_uint8 * 32)()
+        self.lib.t_pack_identity(1, 1, 2, ctypes.c_uint64(1), 9, 0, out)
+        for channels in (0, 9):
+            with self.subTest(channels=channels):
+                bad = bytearray(out); bad[7] = channels
+                self.assertEqual(self.lib.t_identity_check((ctypes.c_uint8 * 32)(*bad)), -8)
+
+    def test_snapshot_refuses_an_undefined_flag(self):
+        for bit in (0x08, 0x80):                                    # flags 0-2 are defined (WSMP section 6)
+            with self.subTest(bit=bit):
+                raw = self.snapshot(token=1, boot16=1, window=60000, flags=bit, tag=0, values=[5], counts=[1], quality=[0])
+                self.assertEqual(self.lib.t_snapshot_round_trip((ctypes.c_uint8 * 72)(*raw), (ctypes.c_uint8 * 72)()), -6)
+
     def test_crc32c_known_vector(self):
         self.lib.wsmp_crc32c.restype = ctypes.c_uint32
         self.assertEqual(self.lib.wsmp_crc32c(b'123456789', 9), 0xE3069283)

@@ -5,7 +5,9 @@ models the EXTI pending flags, the GPIO input levels and the ADC result. The sha
 serves the rain gauge on line 5, and the board also unmasks line 6 (button B3, PC6): the handler must
 clear every line it owns, or one press re-enters the interrupt forever."""
 import ctypes
+import tempfile
 import unittest
+from pathlib import Path
 
 try:
     from toolchain import ROOT, host_library, needs_cc          # python -m unittest discover -s tests
@@ -155,8 +157,6 @@ class BoardInputs(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         app = ROOT/'firmware/stage0-node/App'
-        import tempfile
-        from pathlib import Path
         cls.stub = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.stub.cleanup)
         (Path(cls.stub.name)/'stm32wlxx_hal.h').write_text(HAL_STUB)

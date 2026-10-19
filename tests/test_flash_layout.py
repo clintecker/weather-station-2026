@@ -41,7 +41,8 @@ class FlashLayout(unittest.TestCase):
         self.assertEqual(re.search(r'^APP_FLASH_BYTES \?= (\d+)', mk, re.M)[1], '112640')
 
     def test_a_full_station_keeps_24_hours(self):
-        pages, slots = layout('-DWS_NODE_FIELDS=WS_FIELDS_DEFINED')[2], layout('-DWS_NODE_FIELDS=WS_FIELDS_DEFINED')[6]
+        full = layout('-DWS_NODE_FIELDS=WS_FIELDS_DEFINED')
+        pages, slots = full[2], full[6]
         self.assertEqual(slots, 21)
         self.assertGreaterEqual((pages - 1) * slots, 1440)
 

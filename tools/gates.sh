@@ -1,9 +1,11 @@
 #!/bin/sh
-# Every CI gate (.github/workflows/ci.yml), run locally from the repository root; one line per gate.
+# The CI gates (.github/workflows/ci.yml), run locally from the repository root; one line per gate.
+# Not here: the libFuzzer step (it needs a clang with libFuzzer; CI runs it). Added here: a 1M-run
+# standalone fuzz of every target and the Power of Ten rule 1 grep. Works on macOS and Linux.
 # Usage: tools/gates.sh   (exit status 0 only if every gate passes)
 R=$(cd "$(dirname "$0")/.." && pwd); cd "$R" || exit 1
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-export PATH="${WS_GATES_PATH:+$WS_GATES_PATH:}$R/.venv/bin:$PATH" WS_REQUIRE_VENDOR=1
+export PATH="${WS_GATES_PATH:+$WS_GATES_PATH:}$R/.venv/bin:$PATH" WS_REQUIRE_VENDOR=1 WS_REQUIRE_CC=1   # as CI: a skip fails
 # Tools CI installs from requirements-dev.txt: if the virtualenv lacks one, run the pinned version through uvx.
 mkdir -p "$T/bin"; export PATH="$PATH:$T/bin"
 for tool in lizard cppcheck; do
@@ -16,10 +18,11 @@ gate() { name=$1; shift; if out=$("$@" 2>&1); then echo "PASS  $name"; else echo
 gate "ruff" ruff check
 gate "code shape (lizard, jscpd, loop bounds, tangle, registry)" tools/code_shape.sh
 gate "cppcheck" tools/cppcheck.sh
+sha256() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }   # Linux, macOS
 twice() {
   cd firmware/stage0-node || return 1
   for pass in 1 2; do make clean >/dev/null; make ROLE=rx -j8 >/dev/null || return 1; make ROLE=tx -j8 > "$T/tx.log" || { cat "$T/tx.log"; return 1; }
-    shasum -a 256 build/rx/stage0-rx.bin build/tx/stage0-tx.bin > "$T/bin-$pass.sha256"; done
+    sha256 build/rx/stage0-rx.bin build/tx/stage0-tx.bin > "$T/bin-$pass.sha256"; done
   grep "flash budget" "$T/tx.log"; diff "$T/bin-1.sha256" "$T/bin-2.sha256"
 }
 gate "two clean builds, identical .bin (budget, no heap)" twice
@@ -32,7 +35,7 @@ wt() { cd firmware/stage0-node && make ROLE=rx BUILD=build/analyze-rx waits && m
 gate "no blocking waits" wt
 gate "unit tests (with firmware C)" python -m unittest discover -s tests
 fz() {
-  n=$(sed -n 's/^TARGETS *= *//p' firmware/fuzz/Makefile | wc -w | tr -d ' ')
+  n=$(make -s --no-print-directory -C firmware/fuzz targets | wc -w | tr -d ' ')
   rm -rf firmware/fuzz/build && make -C firmware/fuzz check RUNS=1000000 | grep -c "fuzz ok" | grep -qx "$n"
 }
 gate "fuzz (standalone, 1M runs per target)" fz
