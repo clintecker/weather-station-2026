@@ -7,6 +7,7 @@ import json
 import os
 import socket
 import sys
+import socketserver
 import threading
 import time
 from http import HTTPStatus
@@ -207,6 +208,12 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
     def __init__(self, *args, **kwargs):
         self.slots = threading.BoundedSemaphore(HTTP_MAX_CONNECTIONS)
         super().__init__(*args, **kwargs)
+
+    def server_bind(self):
+        """HTTPServer.server_bind also looks up the host's name (socket.getfqdn, reverse DNS) for a
+        display name nobody reads. With slow DNS that blocked the gateway's start for over 20 s."""
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):

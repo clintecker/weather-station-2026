@@ -152,6 +152,21 @@ class StaticAndAuth(Fixture):
 
 
 class EventStream(Fixture):
+    def test_the_server_starts_without_a_dns_lookup(self):
+        # http.server's server_bind calls socket.getfqdn (reverse DNS) only for a display name. With
+        # slow DNS (the macOS CI runner) it blocked the gateway's start for over 20 s.
+        import socket
+        from unittest import mock
+        from http.server import BaseHTTPRequestHandler
+        from ws0.service import BoundedThreadingHTTPServer
+        with mock.patch.object(socket, 'getfqdn', side_effect=AssertionError('reverse DNS at start')):
+            server = BoundedThreadingHTTPServer(('127.0.0.1', 0), BaseHTTPRequestHandler)
+        try:
+            self.assertEqual(server.server_name, '127.0.0.1')
+            self.assertEqual(server.server_port, server.socket.getsockname()[1])
+        finally:
+            server.server_close()
+
     def test_half_open_requests_cannot_exhaust_the_server(self):
         """Security audit: slowloris. Half-sent requests are capped and time out, so an
         authorised request gets through once they are dropped."""
