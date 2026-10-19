@@ -1,5 +1,6 @@
 """Failure tests. Accelerated records are not evidence for the physical 24-hour delivery test (H01)."""
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -417,8 +418,10 @@ class CommandLineTests(unittest.TestCase):
    (directory/'link-down').touch()
    log=Path(tmp)/'serve.log'
    windows=sys.platform=='win32'
+   # PYTHONFAULTHANDLER: if the demo does not stop, SIGABRT makes it print every thread's stack, and
+   # the failure shows where it hangs (it did on the macOS CI runner only).
    proc=subprocess.Popen([sys.executable,'-m','ws0','demo','--directory',str(directory),'--log-file',str(log)],
-                         stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                         stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={**os.environ,'PYTHONFAULTHANDLER':'1'},
                          creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if windows else 0)
    try:
     deadline=time.monotonic()+20
@@ -427,7 +430,11 @@ class CommandLineTests(unittest.TestCase):
    finally:
     proc.send_signal(signal.CTRL_BREAK_EVENT if windows else signal.SIGINT)
     try: out,err=proc.communicate(timeout=10)
-    except subprocess.TimeoutExpired: proc.kill(); proc.communicate(); raise
+    except subprocess.TimeoutExpired:
+     proc.send_signal(signal.SIGABRT) if not windows else proc.kill()
+     out,err=proc.communicate()
+     tail=log.read_text(errors='replace')[-2000:] if log.exists() else '(no log)'
+     self.fail(f'ws0 demo did not stop within 10 s of SIGINT\n--- log tail ---\n{tail}\n--- stderr ---\n{err.decode(errors="replace")[-6000:]}')
    self.assertEqual(proc.returncode,0)
    self.assertEqual((out,err),(b'',b''))                          # everything went to the log file
    lines=log.read_text().splitlines()

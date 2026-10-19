@@ -22,7 +22,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   FUZZ_CHECK(isxdigit((unsigned char)c));
   int v = isdigit((unsigned char)c) ? c - '0' : tolower((unsigned char)c) - 'a' + 10;
   uint8_t byte = key[i / SPEC_HEX_PER_BYTE];
-  FUZZ_CHECK(v == (i % SPEC_HEX_PER_BYTE ? byte & ((1U << SPEC_NIBBLE_BITS) - 1U) : byte >> SPEC_NIBBLE_BITS));
+  FUZZ_CHECK((unsigned)v == (i % SPEC_HEX_PER_BYTE ? byte & ((1U << SPEC_NIBBLE_BITS) - 1U) : byte >> SPEC_NIBBLE_BITS));
  }
  const char *rest = text + digits + 1 + SPEC_KEY_HEX_DIGITS;
  FUZZ_CHECK(*rest == 0 || (*rest == ' ' && strspn(rest + 1, "0123456789") == strlen(rest + 1) && rest[1]));
