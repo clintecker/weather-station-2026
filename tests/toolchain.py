@@ -70,6 +70,42 @@ def host_library(owner, name, *args, files=None):
     return ctypes.CDLL(str(lib))
 
 
+# The bus and the local modules (firmware/stage0-node/App): every host build of the station side links
+# them. A new module is added here, and in the Makefile.
+WSMP_APP = ('i2c_bus', 'busymon', 'wsmp_local', 'mod_th', 'mod_mean', 'mod_reg', 'mod_power', 'mod_wind', 'mod_rain')
+
+
+def wsmp_sources(app=WSMP_APP):
+    """The flags and sources of a WSMP harness build (firmware/host/wsmp_harness.c) over these App files."""
+    fw = ROOT/'firmware'
+    a = fw/'stage0-node/App'
+    return ['-I', fw/'host/include', '-I', fw/'host', '-I', a, '-I', fw/'stage0-node/Core/Inc', '-I', fw,
+            '-I', fw/'common', fw/'host/wsmp_harness.c', fw/'host/sim_core.c', fw/'host/i2c_sim.c',
+            fw/'host/i2c_models.c', *(a/f'{name}.c' for name in app), fw/'stage0.c', fw/'common/ws_check.c',
+            fw/'common/wsmp.c']
+
+
+def fresh_copy(owner, library):
+    """A new copy of a built host library, loaded on its own, so every static starts at zero. owner is
+    the TestCase class; its copies share one temp directory, removed by a class cleanup."""
+    if '_fresh' not in owner.__dict__:
+        tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        owner.addClassCleanup(tmp.cleanup)
+        owner._fresh = [Path(tmp.name), 0]
+    owner._fresh[1] += 1
+    path = owner._fresh[0]/f'{Path(library).stem}-{owner._fresh[1]}.so'
+    shutil.copy(library, path)
+    return ctypes.CDLL(str(path))
+
+
+def fresh_station(test, library):
+    """fresh_copy of a WSMP harness library for one test, which then fails if the run left a pin error
+    on the I2C model or a failed WS_CHECK."""
+    lib = fresh_copy(type(test), library)
+    test.addCleanup(lambda: test.assertEqual((lib.h_pin_errors(), lib.ws_check_count()), (0, 0)))
+    return lib
+
+
 def check_site(source, needle):
     """The site a failed WS_CHECK reports (firmware/common/ws_check.h), 'file:line', for the check on the
     one line of firmware/<source> that contains needle: read from the source, so a moved line moves it."""

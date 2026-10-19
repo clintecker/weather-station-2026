@@ -15,13 +15,11 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
-from pathlib import Path
 try:                                        # first: sets WS0_UNSAFE_FAST_FSYNC before ws0 is imported
-    from toolchain import MBEDTLS, ROOT, SAN, check_site, host_library, needs_cc, needs_vendor
+    from toolchain import MBEDTLS, ROOT, SAN, WSMP_APP, check_site, fresh_copy, host_library, needs_cc, needs_vendor
 except ImportError:
-    from tests.toolchain import MBEDTLS, ROOT, SAN, check_site, host_library, needs_cc, needs_vendor
+    from tests.toolchain import MBEDTLS, ROOT, SAN, WSMP_APP, check_site, fresh_copy, host_library, needs_cc, needs_vendor
 from ws0.fields import decode
 from ws0.protocol import (KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, frame_counter, frame_kind, pack_reply, seal,
                           unseal)
@@ -31,9 +29,8 @@ KEY = bytes(range(16, 32))
 R_SLEEP, R_STANDBY, R_TX, R_RX = range(4)
 SOURCES = ['host/tx_harness.c', 'host/sim_core.c', 'host/i2c_sim.c', 'host/i2c_models.c', 'sim_flash.c', 'stage0.c',
            *(f'stage0-node/App/{name}.c' for name in ('app_tx', 'tx_exchange', 'tx_policy', 'tx_time', 'tx_console', 'selftest',
-                                                      'node_store', 'busymon', 'clock', 'events', 'bench', 'i2c_bus',
-                                                      'wsmp_local', 'wsmp_host', 'wsmp_catalog_map', 'mod_th', 'mod_mean',
-                                                      'mod_reg', 'mod_power', 'mod_wind', 'mod_rain')),
+                                                      'node_store', 'clock', 'events', 'bench', 'wsmp_host',
+                                                      'wsmp_catalog_map', *WSMP_APP)),
            *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy', 'ws_check', 'wsmp'))]
 ASAN_ENV = 'WS_TX_ASAN'   # set by TxUnderAddressSanitizer for its child run
 
@@ -91,10 +88,8 @@ class Replies:
 
 class Node:
     """One fresh boot of the firmware: its own copy of the library, so every static starts at zero."""
-    def __init__(self, library, tmp, provision=True, seed=0):
-        path = Path(tmp)/f'node{random.getrandbits(48):x}.so'
-        shutil.copy(library, path)
-        self.lib = ctypes.CDLL(str(path))
+    def __init__(self, library, owner, provision=True, seed=0):
+        self.lib = fresh_copy(owner, library)
         self.lib.h_output.restype = ctypes.c_char_p
         for name in ('h_now', 'h_send_at', 'h_last_rx_timeout', 'h_flash_ops_during_radio', 'h_flash_erases',
                      'h_tx_air_ms', 'h_timer_start_refused'):
@@ -225,12 +220,10 @@ class TxStateMachine(unittest.TestCase):
                            '-DMBEDTLS_CONFIG_FILE="ws_mbedtls_config.h"', '-DWS_FW_VERSION="host"',
                            '-DWS_FW_BUILD_ID=0UL', *[fw/s for s in SOURCES], *mbed)
         cls.library = lib._name
-        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        cls.addClassCleanup(cls.tmp.cleanup)
 
     def node(self, storm=False, provision=True, seed=0):
         """A fresh node, with the invariants every test must keep checked at its end."""
-        node = Node(self.library, self.tmp.name, provision, seed)
+        node = Node(self.library, type(self), provision, seed)
         self.addCleanup(lambda: self.assertEqual(node.lib.h_flash_ops_during_radio(), 0, 'flash written while the radio was busy'))
         self.addCleanup(lambda: self.assertEqual(node.lib.h_timer_start_refused(), 0, 'a running timer was started again (ST ignores that)'))
         self.addCleanup(lambda: self.assertEqual(node.lib.h_unmasked_radio_calls(), 0, 'a radio command without the radio interrupt masked'))
@@ -251,7 +244,7 @@ class TxStateMachine(unittest.TestCase):
         timer is already running when the minute's exchange starts it, so ST refuses the start. The check
         is counted, its recovery is that the running timer's event still comes, so the exchange goes on
         (10 ms early here), and #counts reports the count and the site of the first failure."""
-        n = Node(self.library, self.tmp.name)       # not self.node(): this test makes a start be refused
+        n = Node(self.library, type(self))          # not self.node(): this test makes a start be refused
         n.advance_to(FIRST_REPORT_MS - 10)
         self.assertEqual(n.lib.h_start_timer(GAP_MS), 1)
         n.advance_to(minute(0) - 10)                   # the report at FIRST_REPORT_MS; its gap timer was running

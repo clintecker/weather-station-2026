@@ -16,15 +16,13 @@ import ctypes
 import os
 import random
 import re
-import shutil
-import tempfile
 import unittest
 from collections import Counter
 from pathlib import Path
 try:
-    from toolchain import ROOT, check_site, host_library, needs_cc
+    from toolchain import ROOT, check_site, fresh_copy, host_library, needs_cc
 except ImportError:
-    from tests.toolchain import ROOT, check_site, host_library, needs_cc
+    from tests.toolchain import ROOT, check_site, fresh_copy, host_library, needs_cc
 
 RF_IDLE, RF_RX_RUNNING, RF_TX_RUNNING = range(3)
 TX_NORMAL, TX_STUCK, TX_HANG = range(3)
@@ -45,10 +43,8 @@ def fields(line):
 
 class Bridge:
     """One fresh boot of the RX firmware: its own copy of the library, so every static starts at zero."""
-    def __init__(self, library, tmp, start_s=0, before_boot=None):
-        path = Path(tmp)/f'rx{random.getrandbits(48):x}.so'
-        shutil.copy(library, path)
-        self.lib = lib = ctypes.CDLL(str(path))
+    def __init__(self, library, owner, start_s=0, before_boot=None):
+        self.lib = lib = fresh_copy(owner, library)
         lib.h_output.restype = ctypes.c_char_p
         for name in ('h_now_ms', 'h_now_ticks'):
             getattr(lib, name).restype = ctypes.c_uint64
@@ -161,11 +157,9 @@ class RxStateMachine(unittest.TestCase):
                            '-I', fw/'stage0-node/Core/Inc', '-I', fw, '-I', fw/'common', '-DHOST_RADIO_GETSTATUS',
                            '-DWS_FW_VERSION="host"', app, *[fw/s for s in SOURCES])
         cls.library = lib._name
-        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        cls.addClassCleanup(cls.tmp.cleanup)
 
     def bridge(self, start_s=0, drops_ok=False, before_boot=None, check_fails=0):
-        b = Bridge(self.library, self.tmp.name, start_s, before_boot)
+        b = Bridge(self.library, type(self), start_s, before_boot)
         self.rnd = random.Random(self.id())
 
         def checks():

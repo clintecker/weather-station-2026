@@ -5,16 +5,13 @@ model (firmware/host/i2c_sim.c). The Conformance mixin holds the subset of the W
 that the host build can run (section 14 lists what it does not cover yet) for every module; each module class adds its own cases. Expected values come from docs/module-protocol.md
 and the parts' datasheets. Host-model results, not bench evidence."""
 import ctypes
-import shutil
-import tempfile
 import unittest
-from pathlib import Path
 
 try:
-    from toolchain import ROOT, host_library, needs_cc          # python -m unittest discover -s tests
+    from toolchain import ROOT, WSMP_APP, fresh_station, host_library, needs_cc, wsmp_sources          # python -m unittest discover -s tests
     import wsmp_wind_ref as wind_ref
 except ImportError:
-    from tests.toolchain import ROOT, host_library, needs_cc    # python -m unittest tests.<module>
+    from tests.toolchain import ROOT, WSMP_APP, fresh_station, host_library, needs_cc, wsmp_sources    # python -m unittest tests.<module>
     from tests import wsmp_wind_ref as wind_ref
 
 DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228, DEVK_MAX17048 = 2, 3, 4, 5, 6, 7
@@ -27,16 +24,6 @@ BOOT = 0x0102_0304
 MINUTE = 60_000
 
 
-def module_sources():
-    fw = ROOT/'firmware'
-    app = fw/'stage0-node/App'
-    return ['-I', fw/'host/include', '-I', fw/'host', '-I', app, '-I', fw/'stage0-node/Core/Inc', '-I', fw,
-            '-I', fw/'common', fw/'host/wsmp_harness.c', fw/'host/sim_core.c', fw/'host/i2c_sim.c',
-            fw/'host/i2c_models.c', app/'i2c_bus.c', app/'busymon.c', app/'wsmp_local.c', app/'mod_th.c',
-            app/'mod_mean.c', app/'mod_reg.c', app/'mod_power.c', app/'mod_wind.c', app/'mod_rain.c',
-            fw/'stage0.c', fw/'common/ws_check.c', fw/'common/wsmp.c']
-
-
 def be(b, i, n):
     return int.from_bytes(b[i:i + n], 'big')
 
@@ -45,29 +32,31 @@ def signed16(v):
     return v - 0x10000 if v & 0x8000 else v
 
 
+class Sources(unittest.TestCase):
+    def test_the_firmware_builds_every_module_the_tests_build(self):
+        # tests/toolchain.py WSMP_APP and the Makefile list the same App files: a module added to one
+        # and not the other is either untested or not in the firmware.
+        makefile = (ROOT/'firmware/stage0-node/Makefile').read_text()
+        for name in WSMP_APP:
+            self.assertIn(f'App/{name}.c', makefile)
+
+
 @needs_cc
 class Harness(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        lib = host_library(cls, 'modules', *module_sources())
+        lib = host_library(cls, 'modules', *wsmp_sources())
         cls.library = lib._name
-        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        cls.addClassCleanup(cls.tmp.cleanup)
-        cls.count = 0
 
     def station(self, devices, start_ms=0):
         """A fresh station (its own copy of the library: statics start at zero) with these devices.
         start_ms is the clock when the modules start: a warm reset does not set the board clock to 0."""
-        type(self).count += 1
-        path = Path(self.tmp.name)/f'm{self.count}.so'
-        shutil.copy(self.library, path)
-        lib = ctypes.CDLL(str(path))
+        lib = fresh_station(self, self.library)
         lib.h_now_ms.restype = ctypes.c_uint32
         lib.h_advance.argtypes = [ctypes.c_uint32]
         lib.h_advance(start_ms)
         devs = {kind: lib.h_add_device(kind, addr) for kind, addr in devices}
         lib.h_init(BOOT)
-        self.addCleanup(lambda: self.assertEqual((lib.h_pin_errors(), lib.ws_check_count()), (0, 0)))
         return lib, devs
 
     def snapshot(self, lib, port):

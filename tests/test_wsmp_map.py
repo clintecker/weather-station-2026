@@ -4,18 +4,13 @@ The real modules, station host and map run on the host bus model; each reading i
 firmware/common/ws_obs.c and decoded by the gateway's own decoder (ws0/fields.py), so the round trip
 checks both ends. Expected values come from the spec's table and the parts' datasheets."""
 import ctypes
-import shutil
-import tempfile
 import unittest
-from pathlib import Path
 
 try:
-    from toolchain import ROOT, host_library, needs_cc          # python -m unittest discover -s tests
-    from test_modules import module_sources
+    from toolchain import ROOT, fresh_station, host_library, needs_cc, wsmp_sources          # python -m unittest discover -s tests
     import wsmp_wind_ref as wind_ref
 except ImportError:
-    from tests.toolchain import ROOT, host_library, needs_cc    # python -m unittest tests.<module>
-    from tests.test_modules import module_sources
+    from tests.toolchain import ROOT, fresh_station, host_library, needs_cc, wsmp_sources    # python -m unittest tests.<module>
     from tests import wsmp_wind_ref as wind_ref
 from ws0 import fields
 
@@ -32,18 +27,12 @@ class CatalogMap(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         app = ROOT/'firmware/stage0-node/App'
-        cls.library = host_library(cls, 'wsmpmap', '-DWSMP_HOST', '-DWSMP_MAP', *module_sources(), app/'wsmp_host.c',
+        cls.library = host_library(cls, 'wsmpmap', '-DWSMP_HOST', '-DWSMP_MAP', *wsmp_sources(), app/'wsmp_host.c',
                                    app/'wsmp_catalog_map.c', ROOT/'firmware/common/ws_obs.c')._name
-        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        cls.addClassCleanup(cls.tmp.cleanup)
-        cls.count = 0
 
     def station(self, kinds, vane=None, rain=True):
         vane = wind_ref.vane_mv(4) if vane is None else vane
-        type(self).count += 1
-        path = Path(self.tmp.name)/f'map{self.count}.so'
-        shutil.copy(self.library, path)
-        lib = ctypes.CDLL(str(path))
+        lib = fresh_station(self, self.library)
         devs = {k: lib.h_add_device(k, ADDR[k]) for k in kinds}
         lib.h_init(7)
         if DEVK_BMP581 in devs:
@@ -58,7 +47,6 @@ class CatalogMap(unittest.TestCase):
         lib.h_rain_enable(1 if rain else 0)
         lib.h_charger_pins(PGOOD | CHG)
         lib.h_host_init()
-        self.addCleanup(lambda: self.assertEqual((lib.h_pin_errors(), lib.ws_check_count()), (0, 0)))
         return lib, devs
 
     def minute(self, lib, pulses_per_tick=0):
@@ -209,6 +197,7 @@ class CatalogMap(unittest.TestCase):
             codes, v = self.minute(lib)
             if lib.h_host_state(1) == 4:                       # active again: this reading is its first
                 break
+        self.assertEqual(lib.h_host_state(1), 4, 'the module is active again after the hour')
         self.assertIsNone(v['temperature_c'], 'the first reading after the quarantine is not a minute mean')
         _, v = self.minute(lib)
         self.assertEqual(v['temperature_c'], 42.5)
@@ -217,10 +206,7 @@ class CatalogMap(unittest.TestCase):
         # The board's clock keeps counting across a warm reset (PROVISION, WIPE, a reflash), so the
         # modules start at a large clock_ms(). Their first window is the time since they started,
         # not since 0: the first reading has its temperature (found on the bench, 2026-10-19).
-        type(self).count += 1
-        path = Path(self.tmp.name)/f'map{self.count}.so'
-        shutil.copy(self.library, path)
-        lib = ctypes.CDLL(str(path))
+        lib = fresh_station(self, self.library)                   # with the invariants every station keeps
         lib.h_advance(5_000_000)   # the clock before the modules start
         lib.h_add_device(DEVK_SHT45, ADDR[DEVK_SHT45])
         lib.h_init(7)

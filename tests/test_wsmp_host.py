@@ -5,17 +5,12 @@ It runs over the real local modules and the host bus model (firmware/host/wsmp_h
 three missed latches before removal, a bus fault keeps the layout, a module joins at the next latch,
 the flap limit, the radio budget and quarantine. Host-model results, not bench evidence."""
 import ctypes
-import shutil
-import tempfile
 import unittest
-from pathlib import Path
 
 try:
-    from toolchain import ROOT, host_library, needs_cc          # python -m unittest discover -s tests
-    from test_modules import module_sources
+    from toolchain import ROOT, fresh_station, host_library, needs_cc, wsmp_sources          # python -m unittest discover -s tests
 except ImportError:
-    from tests.toolchain import ROOT, host_library, needs_cc    # python -m unittest tests.<module>
-    from tests.test_modules import module_sources
+    from tests.toolchain import ROOT, fresh_station, host_library, needs_cc, wsmp_sources    # python -m unittest tests.<module>
 
 DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228 = 2, 3, 4, 5, 6
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA = 0, 1, 2
@@ -26,7 +21,7 @@ ADDR = {DEVK_SHT45: 0x44, DEVK_SHTC3: 0x70, DEVK_BMP581: 0x47, DEVK_LTR390: 0x53
 
 
 def host_sources():
-    return [*module_sources(), ROOT/'firmware/stage0-node/App/wsmp_host.c']
+    return [*wsmp_sources(), ROOT/'firmware/stage0-node/App/wsmp_host.c']
 
 
 @needs_cc
@@ -36,20 +31,13 @@ class Host(unittest.TestCase):
         cls.libs = {budget: host_library(cls, f'host{budget}', '-DWSMP_HOST', f'-DWSMP_HOST_BUDGET={budget}',
                                          *host_sources())._name
                     for budget in (58, 8)}
-        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        cls.addClassCleanup(cls.tmp.cleanup)
-        cls.count = 0
 
     def station(self, kinds, budget=58):
-        type(self).count += 1
-        path = Path(self.tmp.name)/f'h{self.count}.so'
-        shutil.copy(self.libs[budget], path)
-        lib = ctypes.CDLL(str(path))
+        lib = fresh_station(self, self.libs[budget])
         devs = {k: lib.h_add_device(k, ADDR[k]) for k in kinds}
         lib.h_init(7)
         lib.h_vane_mv(3_300)                                   # no vane on the bench unless a test fits one
         lib.h_host_init()
-        self.addCleanup(lambda: self.assertEqual((lib.h_pin_errors(), lib.ws_check_count()), (0, 0)))
         return lib, devs
 
     def minutes(self, lib, n, latch=True):

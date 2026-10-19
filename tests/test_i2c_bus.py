@@ -5,15 +5,12 @@ firmware/host/i2c_sim.c models ST's HAL I2C with many devices; firmware/host/wsm
 the documented code, never wait, and leave the bus ready. The cases of the earlier SHT45 driver
 (tests/test_sensor_machine.py) appear here for one client. Host-model results, not bench evidence."""
 import ctypes
-import shutil
-import tempfile
 import unittest
-from pathlib import Path
 
 try:
-    from toolchain import ROOT, host_library, needs_cc          # python -m unittest discover -s tests
+    from toolchain import fresh_station, host_library, needs_cc, wsmp_sources          # python -m unittest discover -s tests
 except ImportError:
-    from tests.toolchain import ROOT, host_library, needs_cc    # python -m unittest tests.<module>
+    from tests.toolchain import fresh_station, host_library, needs_cc, wsmp_sources    # python -m unittest tests.<module>
 
 DEVK_TEST = 1
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY = range(5)
@@ -23,34 +20,19 @@ SHT45, BMP581, LTR390 = 0, 1, 2
 ADDR = {SHT45: 0x44, BMP581: 0x47, LTR390: 0x53}
 
 
-def bus_sources():
-    fw = ROOT/'firmware'
-    return ['-I', fw/'host/include', '-I', fw/'host', '-I', fw/'stage0-node/App', '-I', fw/'stage0-node/Core/Inc',
-            '-I', fw, '-I', fw/'common', fw/'host/wsmp_harness.c', fw/'host/sim_core.c', fw/'host/i2c_sim.c',
-            fw/'host/i2c_models.c', fw/'stage0-node/App/i2c_bus.c', fw/'stage0-node/App/busymon.c', fw/'stage0.c',
-            fw/'common/ws_check.c']
-
-
 @needs_cc
 class I2cBus(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        lib = host_library(cls, 'i2cbus', '-DWSMP_BUS_ONLY', *bus_sources())
+        lib = host_library(cls, 'i2cbus', '-DWSMP_BUS_ONLY', *wsmp_sources(('i2c_bus', 'busymon')))
         cls.library = lib._name
-        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        cls.addClassCleanup(cls.tmp.cleanup)
-        cls.count = 0
 
     def bus(self, *clients):
         """A fresh bus (its own copy of the library: statics start at zero), one test device each."""
-        type(self).count += 1
-        path = Path(self.tmp.name)/f'b{self.count}.so'
-        shutil.copy(self.library, path)
-        lib = ctypes.CDLL(str(path))
+        lib = fresh_station(self, self.library)
         lib.h_log_ms.restype = ctypes.c_uint32
         lib.h_init()
         devs = {c: lib.h_add_device(DEVK_TEST, ADDR[c]) for c in clients or (SHT45,)}
-        self.addCleanup(lambda: self.assertEqual((lib.h_pin_errors(), lib.ws_check_count()), (0, 0)))
         return lib, devs
 
     def read(self, lib, client=SHT45, ms=200, n=6, reg=True):
