@@ -6,8 +6,11 @@
     tools/wsmp_registry.py --check   exit 1 if a generated file is stale or a locked code changed
 
 The source is firmware/common/wsmp_registry.toml. Codes are append-only (WSMP-G1): the lock file
-names every code once given, and a code that disappears or changes its name stops the build.
+names every code once given, and pins its meaning: each quantity's unit, and each module type's
+channels for each schema. A code that disappears, changes its name or unit, or changes the channels
+of a schema it already has stops the build. A new schema may bring new channels.
 """
+import argparse
 import pprint
 import sys
 import tomllib
@@ -19,6 +22,8 @@ HEADER = ROOT / 'firmware' / 'common' / 'wsmp_registry.h'
 PYTHON = ROOT / 'ws0' / 'wsmp_registry.py'
 LOCK = ROOT / 'tools' / 'wsmp_registry.lock'
 TABLES = ('quantity', 'unit', 'kind', 'module_type')
+MEANING = ('quantity_unit', 'type_schema')   # lock-only tables: what a code means, beside its name
+UNIT_CODE_MAX = 255                          # wsmp_unit_of and the descriptor's unit are one byte
 PREFIX = {'quantity': 'Q', 'unit': 'U', 'kind': 'K', 'module_type': 'T'}
 REPORT_CLASSES = ('minute', 'health')
 BANNER = 'GENERATED from firmware/common/wsmp_registry.toml by tools/wsmp_registry.py. Do not edit.'
@@ -40,24 +45,42 @@ def lock_entries():
         for line in LOCK.read_text().splitlines():
             if line.strip() and not line.startswith('#'):
                 table, code, name = line.split(None, 2)
-                entries[(table, int(code))] = name
+                entries[(table, code if table == 'type_schema' else int(code))] = name
     return entries
+
+
+def channels_text(row):
+    return ' '.join(f'{q}/{k}' for q, k in row['channels'])
+
+
+def current(reg):
+    """Every lock entry the registry gives now: the names, then the meanings."""
+    now = {(table, row['code']): row['name'] for table in TABLES for row in reg[table]}
+    now.update({('quantity_unit', row['code']): str(row['unit']) for row in reg['quantity']})
+    now.update({('type_schema', f'{row["code"]}.{row["schema"]}'): channels_text(row) for row in reg['module_type']})
+    return now
+
+
+def lock_order(entry):
+    (table, code), _ = entry
+    return ((TABLES + MEANING).index(table), tuple(map(int, str(code).split('.'))))
 
 
 def lock_text(reg, old):
     entries = dict(old)
-    for table in TABLES:
-        for row in reg[table]:
-            entries.setdefault((table, row['code']), row['name'])
-    lines = ['# WSMP codes once given (WSMP-G1, append-only). tools/wsmp_registry.py adds new ones.']
-    lines += [f'{t} {c} {n}' for (t, c), n in sorted(entries.items(), key=lambda e: (TABLES.index(e[0][0]), e[0][1]))]
+    for key, value in current(reg).items():
+        entries.setdefault(key, value)
+    lines = ['# WSMP codes once given (WSMP-G1, append-only), with their meaning: quantity_unit <quantity> <unit>',
+             '# and type_schema <type>.<schema> <quantity>/<kind> per channel. tools/wsmp_registry.py adds new ones.']
+    lines += [f'{t} {c} {n}' for (t, c), n in sorted(entries.items(), key=lock_order)]
     return '\n'.join(lines) + '\n'
 
 
 def lock_violations(reg, old):
-    now = {(table, row['code']): row['name'] for table in TABLES for row in reg[table]}
-    return [f'{t} {c} "{n}" was removed or renamed (codes are append-only, WSMP-G1)'
-            for (t, c), n in old.items() if now.get((t, c)) != n]
+    """Locked entries the registry broke. A type's old schema may be gone: a new one replaced it."""
+    now = current(reg)
+    return [f'{t} {c} "{n}" was removed or changed (codes are append-only, WSMP-G1)'
+            for (t, c), n in old.items() if now.get((t, c), None if t != 'type_schema' else n) != n]
 
 
 def c_type_entry(row):
@@ -114,6 +137,20 @@ def python_text(reg):
             f'KINDS = {fmt(k)}\n\nMODULE_TYPES = {fmt(t)}\n')
 
 
+def check_codes(reg):
+    """The ranges the generated C relies on: kinds 1..WSMP_KIND_MAX with no gap, one-byte units, and
+    a known unit for each quantity."""
+    kinds = {row['code'] for row in reg['kind']}
+    if kinds != set(range(1, max(kinds) + 1)):
+        sys.exit('wsmp_registry: kind codes must run from 1 with no gap (wsmp.c checks 1..WSMP_KIND_MAX)')
+    units = {row['code'] for row in reg['unit']}
+    if max(units) > UNIT_CODE_MAX:
+        sys.exit(f'wsmp_registry: unit codes must be {UNIT_CODE_MAX} or less (one byte)')
+    for row in reg['quantity']:
+        if row['unit'] not in units:
+            sys.exit(f'wsmp_registry: quantity {row["code"]} names an unknown unit {row["unit"]}')
+
+
 def check_channels(reg):
     quantities = {row['code'] for row in reg['quantity']}
     kinds = {row['code'] for row in reg['kind']}
@@ -126,8 +163,11 @@ def check_channels(reg):
 
 
 def main(argv):
-    check = argv[1:] == ['--check']
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument('--check', action='store_true', help='exit 1 if a generated file is stale or a locked code changed')
+    check = ap.parse_args(argv[1:]).check
     reg = load()
+    check_codes(reg)
     check_channels(reg)
     old = lock_entries()
     bad = lock_violations(reg, old)

@@ -35,7 +35,7 @@ enum { WSMP_QUAL_GOOD, WSMP_QUAL_PARTIAL, WSMP_QUAL_SUSPECT, WSMP_QUAL_MISSING, 
 #define WSMP_CAP_PERSISTENT 0x0002U
 
 enum { WSMP_OK = 0, WSMP_EMAGIC = -1, WSMP_EVERSION = -2, WSMP_ECODE = -3, WSMP_EUNIT = -4,
-       WSMP_ESCALE = -5, WSMP_ERESERVED = -6, WSMP_ETYPE = -7, WSMP_ELEN = -8, WSMP_ETEXT = -9 };
+       WSMP_ESCALE = -5, WSMP_ERESERVED = -6, WSMP_ETYPE = -7, WSMP_ELEN = -8 };
 
 typedef struct { uint16_t quantity; uint8_t unit; int8_t scale; uint8_t width, is_signed, kind; } wsmp_desc;
 typedef struct {

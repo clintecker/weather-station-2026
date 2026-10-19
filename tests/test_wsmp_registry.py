@@ -48,19 +48,24 @@ class Registry(unittest.TestCase):
         self.assertAlmostEqual(r.MODULE_TYPES[7]['factors']['nm_per_tip'] * 1e-6, 0.2794)
         self.assertEqual(r.REGISTRY_VERSION, 1)
 
-    def test_every_channel_unit_is_canonical(self):
+    def test_every_channel_names_a_known_quantity_and_kind(self):
         r = self.r
         for t in r.MODULE_TYPES.values():
             for quantity, kind in t['channels']:
                 self.assertIn(quantity, r.QUANTITIES)
                 self.assertIn(kind, r.KINDS)
 
+    def test_every_quantity_has_a_known_canonical_unit(self):
+        for code, q in self.r.QUANTITIES.items():
+            self.assertIn(q['unit'], self.r.UNITS, f'quantity {code}')
+
     def test_codes_are_append_only(self):
         lock = {}
         for line in LOCK.read_text().splitlines():
             if line.strip() and not line.startswith('#'):
                 table, code, name = line.split(None, 2)
-                lock[(table, int(code))] = name
+                if table in ('quantity', 'unit', 'kind', 'module_type'):   # the names; the rest pins meaning
+                    lock[(table, int(code))] = name
         tables = {'quantity': self.r.QUANTITIES, 'unit': self.r.UNITS, 'kind': self.r.KINDS,
                   'module_type': self.r.MODULE_TYPES}
         for (table, code), name in lock.items():
@@ -96,6 +101,59 @@ class Registry(unittest.TestCase):
                                cwd=copy, capture_output=True, text=True)
             self.assertEqual(p.returncode, 1)
             self.assertIn('append-only', p.stderr)
+
+    def edited(self, *edits, args=('--check',)):
+        """Runs the tool on a copy of the registry with each (old, new) text edit applied to the TOML."""
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / 'repo'
+            for rel in ('firmware/common/wsmp_registry.toml', 'firmware/common/wsmp_registry.h',
+                        'ws0/wsmp_registry.py', 'tools/wsmp_registry.py', 'tools/wsmp_registry.lock'):
+                (copy / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(ROOT / rel, copy / rel)
+            t = copy / 'firmware/common/wsmp_registry.toml'
+            text = t.read_text()
+            for old, new in edits:
+                self.assertIn(old, text)
+                text = text.replace(old, new, 1)
+            t.write_text(text)
+            return subprocess.run([sys.executable, str(copy / 'tools/wsmp_registry.py'), *args],
+                                  cwd=copy, capture_output=True, text=True)
+
+    def test_lock_refuses_a_new_unit_for_a_quantity(self):
+        # WSMP-G1: a change of unit is a change of meaning, which needs a new quantity code.
+        p = self.edited(('name = "air temperature"\nid = "AIR_TEMPERATURE"\nunit = 1',
+                         'name = "air temperature"\nid = "AIR_TEMPERATURE"\nunit = 2'))
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn('append-only', p.stderr)
+
+    def test_lock_refuses_new_channels_without_a_new_schema(self):
+        p = self.edited(('schema = 1\nreport_class = "minute"\nrole = "outside air"\nchannels = [[1, 2], [2, 2]]',
+                         'schema = 1\nreport_class = "minute"\nrole = "outside air"\nchannels = [[1, 2], [2, 1]]'))
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn('append-only', p.stderr)
+
+    def test_a_new_schema_may_change_the_channels(self):
+        p = self.edited(('schema = 1\nreport_class = "minute"\nrole = "outside air"\nchannels = [[1, 2], [2, 2]]',
+                         'schema = 2\nreport_class = "minute"\nrole = "outside air"\nchannels = [[1, 2], [2, 1]]'),
+                        args=())
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_a_quantity_with_an_unknown_unit_is_refused_cleanly(self):
+        p = self.edited(('id = "AIR_TEMPERATURE"\nunit = 1', 'id = "AIR_TEMPERATURE"\nunit = 99'))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('unknown unit', p.stderr)
+        self.assertNotIn('Traceback', p.stderr)
+
+    def test_kind_codes_without_a_gap(self):
+        # wsmp.c checks a kind as 1..WSMP_KIND_MAX, so a gap would pass a code with no name.
+        p = self.edited(('[[kind]]\ncode = 2\n', '[[kind]]\ncode = 20\n'))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('kind codes', p.stderr)
+
+    def test_an_unknown_argument_is_refused(self):
+        p = run_tool('--chek')
+        self.assertEqual(p.returncode, 2)
+        self.assertIn('usage', p.stderr)
 
     def test_the_header_holds_no_tables(self):
         # A static const table in a header is copied into every file that uses it: the tables are
