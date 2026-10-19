@@ -11,7 +11,6 @@
 #include "wsmp_host.h"
 
 #define PRESSURE_OFFSET_DECI_HPA 3000U   /* field 2: 0.1 hPa, offset 300.0 hPa */
-#define PRESSURE_TOP 8000U
 #define WIND_TOP_DECI 750U               /* 75.0 m/s */
 #define CALM_DECI 5U                     /* below 0.5 m/s */
 #define DEG_FULL 360
@@ -64,7 +63,7 @@ static void pressure_uva_enclosure(ws_obs_t *o)
   if (p)
   {
     uint32_t v = p->slot[0].value;
-    if (missing(p, 0) || v < PRESSURE_OFFSET_DECI_HPA || v - PRESSURE_OFFSET_DECI_HPA > PRESSURE_TOP) invalid(o, WS_FI_PRESSURE_HPA);
+    if (missing(p, 0) || v < PRESSURE_OFFSET_DECI_HPA) invalid(o, WS_FI_PRESSURE_HPA);   /* put() refuses above the top */
     else put(o, WS_FI_PRESSURE_HPA, v - PRESSURE_OFFSET_DECI_HPA);
   }
   if (u)

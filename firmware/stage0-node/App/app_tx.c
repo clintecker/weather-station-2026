@@ -224,7 +224,7 @@ int watchdog_healthy(void)
     /* Stop sampling and the radio, and journal any held reading with the radio idle. Then the
        watchdog resets the board, and the reset loses no reading. */
     stuck = 1;
-    (void)UTIL_TIMER_Stop(&sample_timer);
+    sampling_stop();
     exchange_abort();
     APP_PRINTF("#watchdog radio exchange stuck; radio stopped, held readings journaled, resetting\n");
     return 0;

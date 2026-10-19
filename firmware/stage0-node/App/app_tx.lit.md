@@ -350,7 +350,9 @@ static void minute_report(int src)
 | `epoch`, `seq` | `node.boot_epoch`, `node.next_seq` |
 | `energy` | `energy_state()` |
 
-A minute without a valid outside-air mean increments `node.sensor_faults`. The function returns 1
+A minute without a valid outside-air mean increments `node.sensor_faults`, for any reason (a failing
+or absent air module, or its first window). It keeps rising for a dead sensor after its module goes
+absent; `MODULES` tells the reasons apart. The function returns 1
 only if the encoder wrote exactly the length of the reading's own bitmap (`WS_OBS_PLAIN_LEN`).
 `minute_report` wraps the result in `WS_CHECK`, because the map's codes always encode. The journal
 slot holds `WS_OBS_PLAIN_MAX` bytes, the widest reading; a record's length comes from its bitmap.
@@ -590,7 +592,7 @@ flowchart TD
   R -- yes --> ST{"now - last_sample_s > SAMPLING_STALL_S?"}
   ST -- yes --> U
   ST -- no --> O{"exchange_overdue(now)?"}
-  O -- yes --> AB["stuck = 1, stop sample_timer, exchange_abort, print #watchdog radio exchange stuck"]
+  O -- yes --> AB["stuck = 1, sampling_stop, exchange_abort, print #watchdog radio exchange stuck"]
   AB --> U
   O -- no --> JF{"node.journal_fails run > TX_FAIL_LIMIT?"}
   JF -- yes --> PJ["print #watchdog N journal failures in a row"]
@@ -611,7 +613,8 @@ then does the following, in this order:
 
 1. Set `stuck`. From now on the sample task makes no report, the module tick does nothing, and every
    check returns 0.
-2. Stop the sample timer.
+2. Call `sampling_stop`: it stops the sample timer and the module timer, so nothing wakes the board
+   until the reset.
 3. Call `exchange_abort`. It stops the gap and ACK timers, puts the radio in standby and marks the
    exchange idle. Then it calls `held_flush`, which journals the held readings with the radio idle.
 4. Print `#watchdog radio exchange stuck; radio stopped, held readings journaled, resetting` and
@@ -632,7 +635,7 @@ int watchdog_healthy(void)
     /* Stop sampling and the radio, and journal any held reading with the radio idle. Then the
        watchdog resets the board, and the reset loses no reading. */
     stuck = 1;
-    (void)UTIL_TIMER_Stop(&sample_timer);
+    sampling_stop();
     exchange_abort();
     APP_PRINTF("#watchdog radio exchange stuck; radio stopped, held readings journaled, resetting\n");
     return 0;

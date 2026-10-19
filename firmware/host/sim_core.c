@@ -155,6 +155,13 @@ static void timer_fire(void)   /* UTIL_TIMER_IRQ_Handler, one expired timer at a
 }
 static const sim_source timer_source = { timer_pending, timer_fire, SIM_IRQ_RTC_ALARM };
 uint32_t h_timer_start_refused(void) { return timer_start_refused; }
+/* How many timers of this period are armed: a stopped periodic timer no longer wakes the board. */
+int h_timers_armed(uint32_t period)
+{
+  int n = 0;
+  for (UTIL_TIMER_Object_t *t = timers; t; t = t->next) n += t->period == period && in_list(t);
+  return n;
+}
 
 /* ---- sequencer ---- */
 static uint32_t task_set, clear_list;

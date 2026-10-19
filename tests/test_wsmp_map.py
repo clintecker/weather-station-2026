@@ -153,6 +153,16 @@ class CatalogMap(unittest.TestCase):
                 self.assertIsNone(v['temperature_c'])
                 self.assertIsNone(v['energy_in_mwh'])
 
+    def test_pressure_outside_the_field_goes_invalid(self):
+        # Field 2 holds 300.0 to 1100.0 hPa: below and above it the reading is INVALID, never clamped.
+        for pa, expected in ((29_990, None), (30_000, 300.0), (110_000, 1100.0), (110_010, None)):
+            with self.subTest(pa=pa):
+                lib, devs = self.station([DEVK_SHT45, DEVK_BMP581])
+                lib.h_bmp581_set(devs[DEVK_BMP581], pa * 64)
+                self.minute(lib)
+                _, v = self.minute(lib)
+                self.assertEqual(v['pressure_hpa'], expected)
+
     def test_calm_direction(self):
         lib, _ = self.station([DEVK_SHT45])
         self.minute(lib)

@@ -199,7 +199,7 @@ packet-beta
 | `lost` | Total readings that a journal overflow dropped. Persists across resets. |
 | `burned` | Journal slots found torn or unusable since boot. |
 | `abandoned` | Total records given up after a NACK or the strike limit. Persists across resets. |
-| `sent`, `acked`, `no_ack`, `ack_rejects`, `sensor_faults` | Counters since boot. `acked` counts ACKs that matched a journal record. `ack_rejects` counts replies that failed authentication, plus NACKs for a frame other than the frame just sent. |
+| `sent`, `acked`, `no_ack`, `ack_rejects`, `sensor_faults` | Counters since boot. `acked` counts ACKs that matched a journal record. `ack_rejects` counts replies that failed authentication, plus NACKs for a frame other than the frame just sent. `sensor_faults` counts minutes without a valid outside-air mean, for any reason: a failing SHT45, an absent air module, or the first window after it joins. A dead sensor keeps it rising after its module goes absent. `MODULES` tells the reasons apart. |
 | `held_lost` | Readings dropped since boot because RAM already held two readings during a hung exchange ([`docs/firmware-event-model.md`](../../docs/firmware-event-model.md)). 0 in normal operation. |
 | `tx_fail_run` | Consecutive journal-append failures. |
 | `tx_air_run` | Consecutive transmission failures: a refused counter, a refused `Radio.Send`, or a TxTimeout. Only a TxDone clears it. When either run goes above 10, the watchdog resets the board. |

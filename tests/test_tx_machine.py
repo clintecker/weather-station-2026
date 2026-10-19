@@ -748,6 +748,7 @@ class TxStateMachine(unittest.TestCase):
                 self.assertEqual(n.lib.h_healthy(), 0)
                 self.assertIn('#watchdog radio exchange stuck; radio stopped, held readings journaled, resetting', n.out())
                 self.assertEqual(n.radio(), R_STANDBY)    # the hung transmission is stopped
+                self.assertEqual((n.lib.h_timers_armed(15_000), n.lib.h_timers_armed(250)), (0, 0))   # sampling stopped
                 frames = n.sent()
                 self.assertEqual(n.lib.h_flash_ops_during_radio(), 0)
                 journaled = n.status()['pending']
