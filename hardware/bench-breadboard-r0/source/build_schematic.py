@@ -197,8 +197,9 @@ def schematic(w):
     s = Sheet()
     _std(s)
     s.text('Bench station on breadboards: the circuits of docs/hardware/bench-station-wiring.md', 25.4, 15.24, 2.0)
-    s.text('SW_CUPS, SW_RAIN and VANE_R are inside the SEN-15901 weather meter: its cables plug into the RJ11 breakouts.',
+    s.text('SW_CUPS, SW_RAIN and VANE_R are built into the SEN-15901 weather meter (not parts to fit): they reach the',
            25.4, 20.32)
+    s.text('breadboard through the meter\'s two RJ11 cables, which plug into the BOBW and BOBR breakouts.', 25.4, 23.5)
 
     # The NUCLEO: each pin to a label or a power symbol.
     net_of = {m: net for net, members in w.nets.items() for m in members}
@@ -221,13 +222,13 @@ def schematic(w):
     _gnd_below(s, b['2'], 5.08)
     q = _gnd_below(s, b['3'], 5.08)
     s.junction(q)
-    node = _reed(s, 'SW_CUPS', b['3'], b['4'], 'reed switch')
+    node = _reed(s, 'SW_CUPS', b['3'], b['4'], 'in the anemometer')
     s.junction(node)
     _signal(s, right(b['4'], NODE), 'CUPS', 'R1', 'C1')
     s.wire(node, right(b['4'], NODE))
     s.junction(right(b['4'], NODE))
     vx = right(b['5'], 12.7)
-    vr = s.place('VANE_R', 'Device:R_Variable', vx[0], vx[1] + 7.62, 0, 'vane resistors',   # pin 1 (the signal) on top
+    vr = s.place('VANE_R', 'Device:R_Variable', vx[0], vx[1] + 7.62, 0, 'in the wind vane',   # pin 1 (the signal) on top
                  fields=(vx[0] + 3.81, vx[1] + 6.35))
     s.wire(b['5'], vx, vr['1'])
     s.power('GND', vr['2'])
@@ -240,7 +241,7 @@ def schematic(w):
     b = meter(s, w, 'BOBR', (101.6, 142.24), ['3', '4'], 'RJ11 breakout, rain cable')
     q = _gnd_below(s, b['3'], 5.08)
     s.junction(q)
-    node = _reed(s, 'SW_RAIN', b['3'], b['4'], 'reed switch')
+    node = _reed(s, 'SW_RAIN', b['3'], b['4'], 'in the rain gauge')
     s.junction(node)
     _signal(s, right(b['4'], NODE), 'RAIN', 'R2', 'C2')
     s.wire(node, right(b['4'], NODE))
