@@ -21,8 +21,19 @@
 #define PINS_CHG 0x02U
 #define RAD_TO_DEG 57.29577951f
 
-static int missing(const wsmp_snapshot *s, unsigned i) { return s->slot[i].quality == WSMP_QUAL_MISSING; }
-static void put(ws_obs_t *o, unsigned field, uint32_t code) { o->bitmap |= WS_F(field); o->code[field] = code; }
+/* A channel without a usable value: missing, or a mean, gust or rate over a window longer than a
+   minute (WSMP-T3, for example the first window after a quarantine). Counters stay usable: they do
+   not depend on the window. */
+static int long_window(const wsmp_snapshot *s) { return (s->flags & WSMP_FLAG_LONG_WINDOW) != 0; }
+static int missing(const wsmp_snapshot *s, unsigned i) { return s->slot[i].quality == WSMP_QUAL_MISSING || long_window(s); }
+static int counter_missing(const wsmp_snapshot *s, unsigned i) { return s->slot[i].quality == WSMP_QUAL_MISSING; }
+/* Every code goes in only if its field can hold it; anything else is INVALID, so a reading always
+   encodes (an out-of-range code would fail the minute, and ten such minutes trip the watchdog). */
+static void put(ws_obs_t *o, unsigned field, uint32_t code)
+{
+  o->bitmap |= WS_F(field);
+  o->code[field] = ws_obs_code_ok(field, code) ? code : ws_obs_invalid(field);
+}
 static void invalid(ws_obs_t *o, unsigned field) { put(o, field, ws_obs_invalid(field)); }
 
 /* A mean of temperature (slot t) and humidity (slot h) into two catalog fields. */
@@ -111,7 +122,7 @@ static void rain(ws_obs_t *o)
 {
   const wsmp_snapshot *s = wsmp_host_snapshot(P_RAIN);
   if (!s) return;
-  if (missing(s, 0)) invalid(o, WS_FI_RAIN_TIPS);
+  if (counter_missing(s, 0)) invalid(o, WS_FI_RAIN_TIPS);
   else put(o, WS_FI_RAIN_TIPS, s->slot[0].value % ws_obs_invalid(WS_FI_RAIN_TIPS));   /* wraps below INVALID */
 }
 
@@ -131,11 +142,11 @@ static void power(ws_obs_t *o)
   for (unsigned i = 0; i < 4; i++)
   {
     uint32_t top = ws_obs_invalid(counter_field[i]);
-    if (missing(s, 1 + i)) invalid(o, counter_field[i]);
+    if (counter_missing(s, 1 + i)) invalid(o, counter_field[i]);
     else put(o, counter_field[i], s->slot[1 + i].value % top);   /* wraps like the 3-byte field */
   }
   if (missing(s, 5)) invalid(o, WS_FI_SOC_GAUGE_PCT); else put(o, WS_FI_SOC_GAUGE_PCT, s->slot[5].value);
-  if (missing(s, 6)) invalid(o, WS_FI_CHARGER_PINS); else put(o, WS_FI_CHARGER_PINS, charger_pins(s->slot[6].value));
+  if (counter_missing(s, 6)) invalid(o, WS_FI_CHARGER_PINS); else put(o, WS_FI_CHARGER_PINS, charger_pins(s->slot[6].value));
 }
 
 void wsmp_map_obs(ws_obs_t *o, wsmp_map_summary *sum)

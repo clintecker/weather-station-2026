@@ -136,6 +136,49 @@ class CatalogMap(unittest.TestCase):
         self.assertEqual(v['wind_speed_ms'], 0.0)
         self.assertTrue(v.get('wind_calm'))                        # CALM below 0.5 m/s
 
+    def test_a_gauge_above_100_percent_still_encodes(self):
+        # The MAX17048 reports 101 % and more near full charge. The reading must still encode
+        # (field 17 tops at 100), or every minute fails and the watchdog reboots the board.
+        for soc in (101, 255):
+            with self.subTest(soc=soc):
+                lib, devs = self.station([DEVK_INA228, DEVK_MAX17048])
+                lib.h_max17048_set(devs[DEVK_MAX17048], soc)
+                self.minute(lib)
+                _, v = self.minute(lib)
+                self.assertEqual(v['soc_gauge_pct'], 100)
+
+    def test_a_code_out_of_its_field_range_goes_invalid(self):
+        # Any value the catalog cannot hold becomes INVALID, never a reading that fails to encode:
+        # here a battery voltage above the field's 65.534 V.
+        lib, devs = self.station([DEVK_INA228])
+        lib.h_ina228_set(devs[DEVK_INA228], 70_000_000, 0)
+        self.minute(lib)
+        _, v = self.minute(lib)
+        self.assertIsNone(v['batt_mv'])
+
+    def test_no_stale_mean_after_a_quarantine(self):
+        # A flapping module is quarantined for an hour while it keeps sampling. The first reading
+        # after it rejoins must not report that hour-long window as the minute's value (WSMP-T3:
+        # a long window is not a minute), and the next minute is normal again.
+        lib, devs = self.station([DEVK_SHT45], vane=3_300, rain=False)
+        dev = devs[DEVK_SHT45]
+        for _ in range(3):                                     # join, leave: the 5th change quarantines
+            self.minute(lib)
+            lib.h_remove_device(dev)
+            for _ in range(3):
+                self.minute(lib)
+            lib.h_restore_device(dev)
+        for _ in range(3):
+            self.minute(lib)                                   # the module leaves the layout: quarantined
+        self.assertEqual(lib.h_host_state(1), 6)               # the air module is quarantined
+        for _ in range(70):                                    # the hour, with the sensor sampling
+            codes, v = self.minute(lib)
+            if lib.h_host_state(1) == 4:                       # active again: this reading is its first
+                break
+        self.assertIsNone(v['temperature_c'], 'the first reading after the quarantine is not a minute mean')
+        _, v = self.minute(lib)
+        self.assertEqual(v['temperature_c'], 42.5)
+
     def test_charger_states_map_to_pins(self):
         for pins, state_pins in ((0, 0), (PGOOD, PGOOD), (PGOOD | CHG, PGOOD | CHG)):
             with self.subTest(pins=pins):

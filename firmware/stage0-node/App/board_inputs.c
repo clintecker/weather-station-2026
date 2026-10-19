@@ -147,4 +147,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t pin)
 void ADC_IRQHandler(void);        /* vector table names (startup_stm32wl55jcix.s) */
 void EXTI9_5_IRQHandler(void);
 void ADC_IRQHandler(void) { HAL_ADC_IRQHandler(&hadc); }
-void EXTI9_5_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(RAIN_PIN); }
+/* EXTI9_5 serves lines 5 to 9. The board's own GPIO setup also arms line 6 (button B3, PC6), so the
+   handler serves every line: a pending line it skipped would re-enter this interrupt forever. Only
+   the rain gauge's line reaches a module (HAL_GPIO_EXTI_Callback). */
+void EXTI9_5_IRQHandler(void)
+{
+  static const uint16_t lines[] = { GPIO_PIN_5, GPIO_PIN_6, GPIO_PIN_7, GPIO_PIN_8, GPIO_PIN_9 };
+  for (unsigned i = 0; i < sizeof lines / sizeof lines[0]; i++) HAL_GPIO_EXTI_IRQHandler(lines[i]);
+}

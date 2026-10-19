@@ -41,6 +41,7 @@
 #define UW_MS_PER_MWH 3600000000LL
 #define UV_UA_PER_UW 1000000LL
 #define CHANNELS 7U
+#define SOC_MAX_PCT 100U              /* the registry range of the state of charge */
 
 typedef enum { ST_IDLE, ST_MANUFACTURER, ST_DEVICE, ST_CAL, ST_VBUS, ST_CURRENT, ST_VERSION, ST_SOC } power_step;
 typedef struct {
@@ -154,7 +155,7 @@ static void gauge_done(int rc)
     step(ST_SOC, I2C_C_MAX17048, &reg_soc, 2);
     return;
   }
-  pw.soc = pw.buf[0];
+  pw.soc = pw.buf[0] > SOC_MAX_PCT ? SOC_MAX_PCT : pw.buf[0];   /* ModelGauge reads 101 % and more near full */
   pw.gauge_ok = 1;
   pw.step = ST_IDLE;
 }
