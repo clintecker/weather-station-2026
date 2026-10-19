@@ -160,5 +160,45 @@ class Jumpers(unittest.TestCase):
         self.assertEqual(order, sorted(order))
 
 
+MAKE = HW/'source'/'make.py'
+
+
+def build(out):
+    """make.py all into out; returns the routed board's path."""
+    subprocess.run([sys.executable, MAKE, 'all', '--out', out], check=True, capture_output=True, text=True)
+    return Path(out)/'bench-breadboard.kicad_pcb'
+
+
+@needs_kicad
+class Board(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.pcb = build(Path(cls.tmp.name)/'one')
+        cls.w = wiring.load(DATA)
+
+    def test_the_routed_board_passes_drc(self):
+        import json
+        report = Path(self.tmp.name)/'drc.json'
+        subprocess.run([ENV.cli, 'pcb', 'drc', '--format', 'json', '--severity-error', '--output', report, self.pcb],
+                       check=True, capture_output=True)
+        r = json.loads(report.read_text())
+        self.assertEqual(r['violations'], [])
+        self.assertEqual(r['unconnected_items'], [])
+
+    def test_each_jumper_is_routed_between_its_planned_holes(self):
+        import pcb_read
+        copper = pcb_read.copper_by_net(self.pcb)
+        for j in wiring.plan_jumpers(self.w):
+            with self.subTest(jumper=j.id):
+                self.assertTrue(pcb_read.joins(copper[j.id], wiring.hole_xy(j.a), wiring.hole_xy(j.b)), j)
+
+    def test_generation_is_deterministic(self):
+        again = build(Path(self.tmp.name)/'two')
+        self.assertEqual(again.read_bytes(), self.pcb.read_bytes())
+
+
 if __name__ == '__main__':
     unittest.main()
