@@ -79,7 +79,7 @@ SparkFun datasheet and the breakout's silkscreen before you wire.**
 | Input | Circuit |
 |---|---|
 | Cups to PC0 | one side of the reed switch to GND. The other side to PC0, with a 10 kΩ pull-up to 3.3 V and 100 nF from PC0 to GND (a 1 ms filter against contact bounce) |
-| Rain to PB5 | the same: 10 kΩ pull-up to 3.3 V, 100 nF to GND. The firmware also ignores a second closure within 100 ms |
+| Rain to PB5 | the same: 10 kΩ pull-up to 3.3 V, 100 nF to GND. The firmware also ignores an edge within 100 ms of the previous edge, so a chattering contact counts once |
 | Vane to PB2 | one side of the vane to GND. The other side to PB2, with a 10 kΩ pull-up to 3.3 V. No capacitor |
 
 A 75 m/s wind gives about 112 cup pulses a second. The 1 ms filter passes that easily. The vane and

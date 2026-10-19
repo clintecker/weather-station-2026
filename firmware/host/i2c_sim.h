@@ -22,6 +22,7 @@ extern const sim_source i2c_sim_source;
 
 /* Counters and state for the tests. */
 uint32_t i2c_sim_transfers(void);
+uint32_t i2c_sim_addr_transfers(int addr7);
 uint32_t i2c_sim_writes(int dev);          /* write attempts addressed to one device */
 uint32_t i2c_sim_deinits(void);
 int i2c_sim_scl_edges(void);

@@ -8,7 +8,7 @@
 #define LOCKOUT_MS 100U
 #define PROBE_PERIOD_MS 1000U
 
-static volatile uint32_t tips, last_tip_ms;
+static volatile uint32_t tips, last_edge_ms;
 static volatile int have_tip;
 static int enabled;
 static uint16_t probe_seq;
@@ -18,7 +18,7 @@ static mean_win win;   /* the window header and the latch rule; it holds no mean
 void mod_rain_init(uint32_t boot_id, int on, uint32_t now_ms)
 {
   boot = boot_id;
-  tips = 0; have_tip = 0; last_tip_ms = 0;
+  tips = 0; have_tip = 0; last_edge_ms = 0;
   enabled = on;
   probe_seq = 0; next_probe_ms = now_ms;
   mean_reset(&win, now_ms);
@@ -28,10 +28,12 @@ void mod_rain_set_enabled(int on) { enabled = on; }
 
 void mod_rain_tip(uint32_t now_ms)
 {
-  if (have_tip && now_ms - last_tip_ms < LOCKOUT_MS) return;   /* the bounce of the counted closure */
+  /* The lockout runs from the last edge, counted or not: a contact that chatters (on closing or on a
+     slow release) counts once, however long it chatters with gaps under 100 ms. */
+  int bounce = have_tip && now_ms - last_edge_ms < LOCKOUT_MS;
   have_tip = 1;
-  last_tip_ms = now_ms;
-  tips++;
+  last_edge_ms = now_ms;
+  if (!bounce) tips++;
 }
 
 /* The setting is probed once a second, so the station debounces it like any presence (WSMP-P2). */

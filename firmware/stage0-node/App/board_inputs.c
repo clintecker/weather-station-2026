@@ -21,11 +21,13 @@
 #define COUNTER_PERIOD 0xFFFFU    /* LPTIM1 counts freely over 16 bits */
 #define ADC_FULL_SCALE 4095U
 #define VDDA_MV 3300U             /* the vane's pull-up uses the same supply: the reading is a ratio */
+#define VANE_RESTART_CALLS 3U     /* calls without a result (1 s apart) before the conversion starts again */
 
 static LPTIM_HandleTypeDef hlptim1;
 static ADC_HandleTypeDef hadc;
 static volatile uint16_t vane_raw;
 static volatile int vane_ready;
+static unsigned vane_waits;   /* calls since the last result */
 
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_LPTIM_MspInit(LPTIM_HandleTypeDef *h)
@@ -120,7 +122,14 @@ uint16_t board_pulse_count(void) { return (uint16_t)HAL_LPTIM_ReadCounter(&hlpti
 
 int board_vane_mv(uint16_t *mv)
 {
-  if (!vane_ready) return 0;
+  if (!vane_ready)
+  {
+    /* A conversion takes about 20 us. No result for three calls means its start was refused: start
+       it again. A start while one runs is refused harmlessly (HAL_BUSY). */
+    if (++vane_waits >= VANE_RESTART_CALLS) { vane_waits = 0; (void)HAL_ADC_Start_IT(&hadc); }
+    return 0;
+  }
+  vane_waits = 0;
   vane_ready = 0;
   *mv = (uint16_t)((uint32_t)vane_raw * VDDA_MV / ADC_FULL_SCALE);
   (void)HAL_ADC_Start_IT(&hadc);   /* the next conversion; its interrupt sets vane_ready */

@@ -17,6 +17,7 @@ void h_remove_device(int dev) { i2c_sim_remove(dev); }
 void h_restore_device(int dev) { i2c_sim_restore(dev); }
 void h_device_mode(int dev, int mode, int sda_hold, uint32_t latency_ms) { i2c_sim_mode(dev, mode, sda_hold, latency_ms); }
 uint32_t h_transfers(void) { return i2c_sim_transfers(); }
+uint32_t h_addr_transfers(int addr7) { return i2c_sim_addr_transfers(addr7); }
 uint32_t h_deinits(void) { return i2c_sim_deinits(); }
 int h_scl_edges(void) { return i2c_sim_scl_edges(); }
 int h_i2c_ready(void) { return i2c_sim_ready(); }

@@ -17,6 +17,7 @@ static uint8_t *rx_dest;
 static uint8_t rx_buf[I2C_SIM_BUF];
 static uint16_t rx_len;
 static uint32_t transfers, deinits;
+static uint32_t addr_transfers[128];   /* transfers to each 7-bit address, a device there or not */
 static I2C_HandleTypeDef *handle;
 GPIO_TypeDef host_gpioa;
 I2C_TypeDef host_i2c2;
@@ -98,6 +99,7 @@ static sim_dev *begin(uint16_t addr, int is_read)
 {
   sim_dev *d = find(addr);
   transfers++; started_at = sim_now();
+  addr_transfers[(addr >> 1) & 0x7FU]++;
   if (d && d->sda_hold && faulty(d, is_read)) sda_release_at = scl_edges + d->sda_hold;
   if (!d || d->mode == DM_NACK_ADDR) { complete_in(DONE_ERROR, d); return NULL; }
   if (d->mode == DM_BUS_ERROR) { complete_in(DONE_BUS_ERROR, d); return NULL; }
@@ -170,6 +172,7 @@ static void i2c_fire(void)
 const sim_source i2c_sim_source = { i2c_pending, i2c_fire, SIM_IRQ_I2C2_EV };
 
 uint32_t i2c_sim_transfers(void) { return transfers; }
+uint32_t i2c_sim_addr_transfers(int addr7) { return addr_transfers[addr7 & 0x7F]; }
 uint32_t i2c_sim_writes(int dev) { return dev >= 0 && dev < ndevs ? devs[dev].writes : 0U; }
 uint32_t i2c_sim_deinits(void) { return deinits; }
 int i2c_sim_scl_edges(void) { return scl_edges; }

@@ -100,7 +100,7 @@ GPIO_TypeDef stub_gpiob, stub_gpioc;
 LPTIM_TypeDef stub_lptim1;
 ADC_TypeDef stub_adc;
 static uint32_t exti_pending;
-static int tips, adc_starts, adc_calibrated_first = -1;
+static int tips, adc_starts, adc_fail_next, adc_calibrated_first = -1;
 static uint32_t lptim_sample_time;
 static uint32_t adc_value;
 static ADC_HandleTypeDef *adc;
@@ -119,7 +119,13 @@ HAL_StatusTypeDef HAL_LPTIM_Counter_Start(LPTIM_HandleTypeDef *h, uint32_t perio
 uint32_t HAL_LPTIM_ReadCounter(const LPTIM_HandleTypeDef *h) { (void)h; return 1234; }
 HAL_StatusTypeDef HAL_ADC_Init(ADC_HandleTypeDef *h) { adc = h; HAL_ADC_MspInit(h); return HAL_OK; }
 HAL_StatusTypeDef HAL_ADC_ConfigChannel(ADC_HandleTypeDef *h, ADC_ChannelConfTypeDef *c) { (void)h; (void)c; return HAL_OK; }
-HAL_StatusTypeDef HAL_ADC_Start_IT(ADC_HandleTypeDef *h) { (void)h; if (adc_calibrated_first < 0) adc_calibrated_first = 0; adc_starts++; return HAL_OK; }
+HAL_StatusTypeDef HAL_ADC_Start_IT(ADC_HandleTypeDef *h)
+{
+  (void)h; if (adc_calibrated_first < 0) adc_calibrated_first = 0;
+  adc_starts++;
+  if (adc_fail_next) { adc_fail_next = 0; return HAL_ERROR; }
+  return HAL_OK;
+}
 HAL_StatusTypeDef HAL_ADCEx_Calibration_Start(ADC_HandleTypeDef *h) { (void)h; if (adc_calibrated_first < 0) adc_calibrated_first = 1; return HAL_OK; }
 uint32_t HAL_ADC_GetValue(const ADC_HandleTypeDef *h) { (void)h; return adc_value; }
 void HAL_ADC_IRQHandler(ADC_HandleTypeDef *h) { HAL_ADC_ConvCpltCallback(h); }
@@ -135,6 +141,7 @@ int t_tips(void) { return tips; }
 void t_pins(uint32_t idr) { stub_gpiob.idr = idr; }
 void t_adc_done(uint32_t value) { adc_value = value; ADC_IRQHandler(); }
 int t_adc_starts(void) { return adc_starts; }
+void t_adc_fail_next(void) { adc_fail_next = 1; }
 int t_adc_calibrated_first(void) { return adc_calibrated_first; }
 uint32_t t_lptim_sample_time(void) { return lptim_sample_time; }
 int t_vane(uint16_t *mv) { return board_vane_mv(mv); }
@@ -188,6 +195,19 @@ class BoardInputs(unittest.TestCase):
         # 9 ms period of 112 Hz (75 m/s), far above reed bounce.
         LPTIM_CLOCKSAMPLETIME_8TRANSITIONS = 4                         # its value in HAL_STUB's enum
         self.assertEqual(self.lib.t_lptim_sample_time(), LPTIM_CLOCKSAMPLETIME_8TRANSITIONS)
+
+    def test_a_refused_conversion_start_is_tried_again(self):
+        # One refused HAL_ADC_Start_IT must not leave the vane without results until a reboot.
+        mv = ctypes.c_uint16()
+        self.lib.t_adc_done(1000)
+        self.lib.t_adc_fail_next()
+        self.assertEqual(self.lib.t_vane(ctypes.byref(mv)), 1)          # takes the result; the restart is refused
+        starts = self.lib.t_adc_starts()
+        for _ in range(3):                                              # three 1-s vane samples with no result
+            self.assertEqual(self.lib.t_vane(ctypes.byref(mv)), 0)
+        self.assertEqual(self.lib.t_adc_starts(), starts + 1)           # then the conversion starts again
+        self.lib.t_adc_done(1000)
+        self.assertEqual(self.lib.t_vane(ctypes.byref(mv)), 1)
 
     def test_vane_reading_and_restart(self):
         mv = ctypes.c_uint16()

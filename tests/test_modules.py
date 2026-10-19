@@ -21,7 +21,7 @@ DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228, DEVK_MAX17048 = 2
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY = range(5)
 DM_BUS_ERROR = 6
 P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH, P_POWER, P_WIND, P_RAIN = range(1, 8)
-GOOD, PARTIAL, SUSPECT, MISSING = range(4)
+GOOD, PARTIAL, SUSPECT, MISSING, WARMING_UP, FAULT = range(6)
 FLAG_FIRST, FLAG_LONG = 1, 2
 BOOT = 0x0102_0304
 MINUTE = 60_000
@@ -436,6 +436,22 @@ class Power(Conformance, Harness):
         self.assertNotEqual(s[0][2], MISSING)                      # the module is present without its gauge
         self.assertEqual(lib.h_probe(self.PORT), 1)
 
+    def test_an_absent_gauge_is_tried_every_15_s(self):
+        lib, _ = self.station([(DEVK_INA228, 0x40)])
+        lib.h_run(MINUTE)
+        self.assertEqual(lib.h_addr_transfers(0x36), 4)            # at 0, 15, 30 and 45 s, not every second
+
+    def test_a_gauge_bus_fault_is_a_fault_not_an_absence(self):
+        lib, devs = self.station(self.DEVICES)
+        lib.h_run(MINUTE)
+        self.latch(lib, self.PORT, 1)
+        lib.h_device_mode(devs[DEVK_MAX17048], DM_BUS_ERROR, 0, 1)
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slots(self.latch(lib, self.PORT, 2))[5][2], FAULT)
+        lib.h_remove_device(devs[DEVK_MAX17048])
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slots(self.latch(lib, self.PORT, 3))[5][2], MISSING)   # an absent gauge is missing
+
     def test_absent_without_the_monitor(self):
         lib, _ = self.station([(DEVK_MAX17048, 0x36)])
         lib.h_run(MINUTE)
@@ -550,6 +566,15 @@ class Rain(Conformance, Harness):
         self.tips(lib, [5, 30, 64, 1])                             # 0, 5, 35 and 99 ms: one bucket tip
         lib.h_advance(200)
         self.tips(lib, [1])                                        # 300 ms: the next tip
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 1), 0)[0], 2)
+
+    def test_a_late_release_bounce_is_not_a_tip(self):
+        # The lockout runs from the last edge: a slow tip whose contact chatters for longer than 100 ms
+        # (edges 80 ms apart) is still one tip.
+        lib, _ = self.station([])
+        self.tips(lib, [80, 80, 300])                              # 0, 80, 160 ms, then 460 ms: two tips
+        self.tips(lib, [1])
         lib.h_run(MINUTE)
         self.assertEqual(self.slot(self.latch(lib, self.PORT, 1), 0)[0], 2)
 

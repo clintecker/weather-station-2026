@@ -57,7 +57,7 @@ typedef enum { ST_IDLE, ST_CAL_CHECK, ST_MANUFACTURER, ST_DEVICE, ST_CAL, ST_VBU
 typedef struct {
   power_step step;
   uint32_t next_ms;
-  int have_last, cal_needed, gauge_ok, probe;
+  int have_last, cal_needed, gauge_ok, gauge_fault, probe;   /* gauge_fault: its last read was a bus fault */
   unsigned samples_since_gauge;
   uint16_t probe_seq;
   uint8_t buf[ACC_LEN], cal[3];
@@ -92,6 +92,7 @@ void mod_power_init(uint32_t boot_id, uint32_t now_ms)
   mean_reset(&pw.win, now_ms);
   pw.next_ms = now_ms;
   pw.cal_needed = 1;
+  pw.samples_since_gauge = GAUGE_EVERY - 1U;   /* the first sample reads the gauge */
   pw.win.period_ms = POWER_PERIOD_MS;
 }
 
@@ -172,14 +173,17 @@ static void measured(void)
   mean_add(&pw.win, (const int32_t[MEAN_CHANNELS]){ (int32_t)((pw.uv + UV_PER_MV / 2) / UV_PER_MV), 0 });
   pw.probe = 1;
   pw.probe_seq++;
-  if (++pw.samples_since_gauge < GAUGE_EVERY && pw.gauge_ok) { pw.step = ST_IDLE; return; }
+  if (++pw.samples_since_gauge < GAUGE_EVERY) { pw.step = ST_IDLE; return; }   /* present or not: every 15 s */
   pw.samples_since_gauge = 0;
   step(ST_VERSION, I2C_C_MAX17048, &reg_version, 2);
 }
 
+/* A NACK or another part at the gauge's address is an absent gauge (its slot is missing); any other
+   failure is a bus fault (its slot's quality is fault). */
 static void gauge_done(int rc)
 {
-  if (rc) { pw.gauge_ok = 0; pw.step = ST_IDLE; return; }
+  if (rc) { pw.gauge_ok = 0; pw.gauge_fault = rc != I2C_ENACK_ADDR && rc != I2C_ENACK_DATA; pw.step = ST_IDLE; return; }
+  pw.gauge_fault = 0;
   if (pw.step == ST_VERSION)
   {
     if ((be16(pw.buf) & MAX17048_VERSION_MASK) != MAX17048_VERSION) { pw.gauge_ok = 0; pw.step = ST_IDLE; return; }
@@ -254,7 +258,8 @@ void mod_power_latch(uint16_t token, uint32_t now_ms)
                               pw.charge_in / UAS_PER_MAH, pw.charge_out / UAS_PER_MAH };
   uint8_t q = mean_quality(&snap, samples);
   for (unsigned i = 0; i < 4; i++) snap.slot[1 + i] = (wsmp_slot){ .value = (uint32_t)totals[i], .count = (uint16_t)samples, .quality = q };
-  snap.slot[5] = (wsmp_slot){ .value = pw.soc, .count = (uint16_t)pw.gauge_ok, .quality = mean_quality(&snap, (unsigned)pw.gauge_ok) };
+  uint8_t soc_q = pw.gauge_fault ? (uint8_t)WSMP_QUAL_FAULT : mean_quality(&snap, (unsigned)pw.gauge_ok);
+  snap.slot[5] = (wsmp_slot){ .value = pw.soc, .count = (uint16_t)pw.gauge_ok, .quality = soc_q };
   snap.slot[6] = (wsmp_slot){ .value = charger_state(), .count = 1, .quality = mean_quality(&snap, 1) };
   mean_store(&pw.win, &snap);
 }
