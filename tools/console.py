@@ -4,7 +4,7 @@
     .venv/bin/python tools/console.py 003B00194142500E20353451 "WIPE ERASE-ALL-NODE-STATE" --seconds 8
 
 PROVISION is refused: a key on a command line ends up in shell history. Use `ws0 provision-node`.
-Only one program can hold a port, so this never works on RX while `ws0 serve` runs.
+The port is held exclusively: on RX while `ws0 serve` runs, the open fails (and the gateway loses no bytes).
 """
 import argparse
 import sys
@@ -34,7 +34,7 @@ def main(argv=None):
     device = find_port(args.serial_number)
     if device is None:
         sys.exit(f'console.py: no board with ST-LINK serial {args.serial_number}')
-    with serial.Serial(device, BAUD, timeout=0.3) as port:
+    with serial.Serial(device, BAUD, timeout=0.3, exclusive=True) as port:
         port.reset_input_buffer()
         port.write(args.line.encode('ascii') + b'\n')
         end = time.monotonic() + args.seconds

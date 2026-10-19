@@ -63,7 +63,7 @@ def fields(line):
 def read_status(device, timeout=15):
     """Open the TX console, ask STATUS, return (boot lines, status fields)."""
     lines, status = [], None
-    with serial.Serial(device, BAUD, timeout=0.3) as p:
+    with serial.Serial(device, BAUD, timeout=0.3, exclusive=True) as p:
         end = time.monotonic() + timeout
         asked = False
         while time.monotonic() < end and status is None:
@@ -81,7 +81,7 @@ def read_status(device, timeout=15):
 def storm_then_cut(device, cut, run_s):
     """Start the storm, collect its progress lines, cut power at the deadline."""
     seen = []
-    with serial.Serial(device, BAUD, timeout=0.05) as p:
+    with serial.Serial(device, BAUD, timeout=0.05, exclusive=True) as p:
         p.write(b'TEST-FLASH-STORM\n')
         end = time.monotonic() + run_s
         while time.monotonic() < end:

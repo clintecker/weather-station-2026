@@ -145,7 +145,7 @@ def main():
             time.sleep(0.5)
             continue
         try:
-            port = serial.Serial(path, BAUD, timeout=0.2)
+            port = serial.Serial(path, BAUD, timeout=0.2, exclusive=True)
         except serial.SerialException:
             time.sleep(0.5)
             continue

@@ -1,5 +1,6 @@
 """The gateway's RX serial link survives unplug, replug and renamed ports."""
 import os
+from pathlib import Path
 os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability
 
 import unittest
@@ -9,7 +10,7 @@ try:
     from toolchain import StreamPort
 except ImportError:
     from tests.toolchain import StreamPort
-from ws0.link import BACKOFF_S, MAX_LINE, ReceiverLink
+from ws0.link import BACKOFF_S, MAX_LINE, ReceiverLink, open_port
 
 RX = '0016001E4142500E20353451'
 
@@ -134,3 +135,23 @@ class LinkTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipIf(os.name != 'posix', 'flock locking is POSIX')
+class ExclusivePort(unittest.TestCase):
+    """Two programs on one board's port would take lines from the same buffer and lose frames."""
+
+    def test_a_second_open_of_a_held_port_fails(self):
+        main, sub = os.openpty()
+        self.addCleanup(os.close, main); self.addCleanup(os.close, sub)
+        with open_port(os.ttyname(sub), timeout=0.05):
+            with self.assertRaises(serial.SerialException):
+                open_port(os.ttyname(sub), timeout=0.05)
+        open_port(os.ttyname(sub), timeout=0.05).close()             # free again after the first closes
+
+    def test_every_serial_opener_holds_the_port(self):
+        root = Path(__file__).resolve().parent.parent
+        for path in [*root.glob('ws0/*.py'), *root.glob('tools/*.py')]:
+            for n, line in enumerate(path.read_text().splitlines(), 1):
+                if 'serial.Serial(' in line:
+                    self.assertIn('exclusive=True', line, f'{path.name}:{n}')

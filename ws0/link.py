@@ -17,6 +17,13 @@ BACKOFF_S = (1, 2, 4, 8, 15)
 MAX_LINE = 1024
 
 
+def open_port(path, timeout, write_timeout=1):
+    """A board's serial port, held exclusively (pyserial uses flock on POSIX). A second program that
+    opens it fails, instead of taking lines from the same buffer and losing frames."""
+    import serial
+    return serial.Serial(path, BAUD, timeout=timeout, write_timeout=write_timeout, exclusive=True)
+
+
 class ReceiverLink:
     def __init__(self, device=None, serial_number=None, log=print, opener=None, ports=None, clock=time.monotonic):
         if not device and not serial_number:
@@ -24,7 +31,7 @@ class ReceiverLink:
         import serial
         from serial.tools import list_ports
         self.device, self.serial_number, self.log, self.clock = device, serial_number, log, clock
-        self.opener = opener or (lambda path: serial.Serial(path, BAUD, timeout=0.05, write_timeout=1))
+        self.opener = opener or (lambda path: open_port(path, timeout=0.05))
         self.ports = ports or list_ports.comports
         self.errors = (serial.SerialException, OSError)
         self.port = None

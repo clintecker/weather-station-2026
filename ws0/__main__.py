@@ -15,7 +15,7 @@ from gateway import MINUTE_S
 from .protocol import EPOCH_RESERVED, KCV_LEN, KEY_LEN, KIND_ACK, KIND_OBS, Nonces
 from .service import API_TOKEN_MIN, CounterRegression, Gateway, MQTT, Replay, http_server, load_config
 from .simulator import BACKLOG_PER_MINUTE, DemoReceiver, Node
-from .link import BAUD, ReceiverLink
+from .link import ReceiverLink, open_port
 from .clock import HostClock
 from .logfile import RotatingLog
 from .web import SchemaDrift, line_fields, utc_stamp
@@ -116,9 +116,8 @@ def check_node_counter(fields, state):
 def provision_node(cfg, device, floor=0, counter_state=None):
     """Wired provisioning: write station ID and key to an unprovisioned TX board, then
     confirm by key check value. Never wipes; a provisioned board must be wiped explicitly."""
-    import serial
     expected = key_check(bytes.fromhex(cfg['radio_key']))
-    with serial.Serial(device,BAUD,timeout=0.5,write_timeout=1) as port:
+    with open_port(device, timeout=0.5) as port:
         port.reset_input_buffer()
         port.write(b'STATUS\n')
         status = next((l for l in console_lines(port,time.monotonic()+3) if l.startswith('#status role=')),None)
