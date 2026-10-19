@@ -58,7 +58,9 @@ static void cups_init(void)
   hlptim1.Init.Clock.Source = LPTIM_CLOCKSOURCE_APBCLOCK_LPOSC;
   hlptim1.Init.Clock.Prescaler = LPTIM_PRESCALER_DIV1;
   hlptim1.Init.UltraLowPowerClock.Polarity = LPTIM_CLOCKPOLARITY_FALLING;   /* a closing reed pulls PC0 low */
-  hlptim1.Init.UltraLowPowerClock.SampleTime = LPTIM_CLOCKSAMPLETIME_DIRECTTRANSITION;
+  /* An edge counts after 8 equal samples of the LSE kernel clock (244 us): reed bounce does not count,
+     and 112 Hz (75 m/s, a 9 ms period) passes with a wide margin. */
+  hlptim1.Init.UltraLowPowerClock.SampleTime = LPTIM_CLOCKSAMPLETIME_8TRANSITIONS;
   hlptim1.Init.Trigger.Source = LPTIM_TRIGSOURCE_SOFTWARE;
   hlptim1.Init.OutputPolarity = LPTIM_OUTPUTPOLARITY_HIGH;
   hlptim1.Init.UpdateMode = LPTIM_UPDATE_IMMEDIATE;
@@ -89,8 +91,10 @@ static void vane_init(void)
   hadc.Init.TriggerFrequencyMode = ADC_TRIGGER_FREQ_LOW;
   ADC_ChannelConfTypeDef ch = { .Channel = ADC_CHANNEL_4, .Rank = ADC_REGULAR_RANK_1, .SamplingTime = ADC_SAMPLINGTIME_COMMON_1 };
   if (HAL_ADC_Init(&hadc) != HAL_OK || HAL_ADC_ConfigChannel(&hadc, &ch) != HAL_OK) return;
-  /* No offset calibration: HAL_ADCEx_Calibration_Start busy-waits (make waits). The vane needs only to
-     tell 16 positions apart, the closest about 90 mV apart; the offset error is a few mV. */
+  /* The offset calibration, once, before the first conversion: the closest vane positions are 30 mV
+     apart (891 and 1000 ohm), a margin of 15 mV. Its wait is bounded (tools/blocking_report.py). If it
+     fails, the vane still reads, with the factory offset. */
+  (void)HAL_ADCEx_Calibration_Start(&hadc);
   (void)HAL_ADC_Start_IT(&hadc);
 }
 

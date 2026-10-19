@@ -53,6 +53,7 @@ typedef struct { int unused; } LPTIM_TypeDef;
 extern LPTIM_TypeDef stub_lptim1;
 #define LPTIM1 (&stub_lptim1)
 enum { LPTIM_CLOCKSOURCE_APBCLOCK_LPOSC, LPTIM_PRESCALER_DIV1, LPTIM_CLOCKPOLARITY_FALLING, LPTIM_CLOCKSAMPLETIME_DIRECTTRANSITION,
+       LPTIM_CLOCKSAMPLETIME_8TRANSITIONS,
        LPTIM_TRIGSOURCE_SOFTWARE, LPTIM_OUTPUTPOLARITY_HIGH, LPTIM_UPDATE_IMMEDIATE, LPTIM_COUNTERSOURCE_EXTERNAL,
        LPTIM_INPUT1SOURCE_GPIO, LPTIM_INPUT2SOURCE_GPIO };
 typedef struct { uint32_t Source, Prescaler; } LPTIM_ClockConfigTypeDef;
@@ -81,6 +82,7 @@ typedef struct { uint32_t Channel, Rank, SamplingTime; } ADC_ChannelConfTypeDef;
 HAL_StatusTypeDef HAL_ADC_Init(ADC_HandleTypeDef *h);
 HAL_StatusTypeDef HAL_ADC_ConfigChannel(ADC_HandleTypeDef *h, ADC_ChannelConfTypeDef *c);
 HAL_StatusTypeDef HAL_ADC_Start_IT(ADC_HandleTypeDef *h);
+HAL_StatusTypeDef HAL_ADCEx_Calibration_Start(ADC_HandleTypeDef *h);
 uint32_t HAL_ADC_GetValue(const ADC_HandleTypeDef *h);
 void HAL_ADC_IRQHandler(ADC_HandleTypeDef *h);
 void HAL_ADC_MspInit(ADC_HandleTypeDef *h);
@@ -98,7 +100,8 @@ GPIO_TypeDef stub_gpiob, stub_gpioc;
 LPTIM_TypeDef stub_lptim1;
 ADC_TypeDef stub_adc;
 static uint32_t exti_pending;
-static int tips, adc_starts;
+static int tips, adc_starts, adc_calibrated_first = -1;
+static uint32_t lptim_sample_time;
 static uint32_t adc_value;
 static ADC_HandleTypeDef *adc;
 void HAL_GPIO_Init(GPIO_TypeDef *port, GPIO_InitTypeDef *init) { (void)port; (void)init; }
@@ -111,12 +114,13 @@ void HAL_GPIO_EXTI_IRQHandler(uint16_t pin)
 void HAL_NVIC_SetPriority(IRQn_Type irq, uint32_t pre, uint32_t sub) { (void)irq; (void)pre; (void)sub; }
 void HAL_NVIC_EnableIRQ(IRQn_Type irq) { (void)irq; }
 HAL_StatusTypeDef HAL_RCCEx_PeriphCLKConfig(RCC_PeriphCLKInitTypeDef *clk) { (void)clk; return HAL_OK; }
-HAL_StatusTypeDef HAL_LPTIM_Init(LPTIM_HandleTypeDef *h) { HAL_LPTIM_MspInit(h); return HAL_OK; }
+HAL_StatusTypeDef HAL_LPTIM_Init(LPTIM_HandleTypeDef *h) { lptim_sample_time = h->Init.UltraLowPowerClock.SampleTime; HAL_LPTIM_MspInit(h); return HAL_OK; }
 HAL_StatusTypeDef HAL_LPTIM_Counter_Start(LPTIM_HandleTypeDef *h, uint32_t period) { (void)h; (void)period; return HAL_OK; }
 uint32_t HAL_LPTIM_ReadCounter(const LPTIM_HandleTypeDef *h) { (void)h; return 1234; }
 HAL_StatusTypeDef HAL_ADC_Init(ADC_HandleTypeDef *h) { adc = h; HAL_ADC_MspInit(h); return HAL_OK; }
 HAL_StatusTypeDef HAL_ADC_ConfigChannel(ADC_HandleTypeDef *h, ADC_ChannelConfTypeDef *c) { (void)h; (void)c; return HAL_OK; }
-HAL_StatusTypeDef HAL_ADC_Start_IT(ADC_HandleTypeDef *h) { (void)h; adc_starts++; return HAL_OK; }
+HAL_StatusTypeDef HAL_ADC_Start_IT(ADC_HandleTypeDef *h) { (void)h; if (adc_calibrated_first < 0) adc_calibrated_first = 0; adc_starts++; return HAL_OK; }
+HAL_StatusTypeDef HAL_ADCEx_Calibration_Start(ADC_HandleTypeDef *h) { (void)h; if (adc_calibrated_first < 0) adc_calibrated_first = 1; return HAL_OK; }
 uint32_t HAL_ADC_GetValue(const ADC_HandleTypeDef *h) { (void)h; return adc_value; }
 void HAL_ADC_IRQHandler(ADC_HandleTypeDef *h) { HAL_ADC_ConvCpltCallback(h); }
 uint32_t clock_ms(void) { return 0; }
@@ -131,6 +135,8 @@ int t_tips(void) { return tips; }
 void t_pins(uint32_t idr) { stub_gpiob.idr = idr; }
 void t_adc_done(uint32_t value) { adc_value = value; ADC_IRQHandler(); }
 int t_adc_starts(void) { return adc_starts; }
+int t_adc_calibrated_first(void) { return adc_calibrated_first; }
+uint32_t t_lptim_sample_time(void) { return lptim_sample_time; }
 int t_vane(uint16_t *mv) { return board_vane_mv(mv); }
 '''
 
@@ -171,6 +177,17 @@ class BoardInputs(unittest.TestCase):
             with self.subTest(idr=idr):
                 self.lib.t_pins(idr)
                 self.assertEqual(self.lib.board_charger_pins(), pins)
+
+    def test_the_adc_is_calibrated_before_its_first_conversion(self):
+        # The closest vane positions are 30 mV apart (891 and 1000 ohm on a 10 kOhm pull-up): the
+        # offset error of an uncalibrated ADC is too close to the 15 mV margin.
+        self.assertEqual(self.lib.t_adc_calibrated_first(), 1)
+
+    def test_the_cup_input_filters_contact_bounce(self):
+        # 8 equal samples of the 32.768 kHz kernel clock (244 us) before an edge counts: far below the
+        # 9 ms period of 112 Hz (75 m/s), far above reed bounce.
+        LPTIM_CLOCKSAMPLETIME_8TRANSITIONS = 4                         # its value in HAL_STUB's enum
+        self.assertEqual(self.lib.t_lptim_sample_time(), LPTIM_CLOCKSAMPLETIME_8TRANSITIONS)
 
     def test_vane_reading_and_restart(self):
         mv = ctypes.c_uint16()

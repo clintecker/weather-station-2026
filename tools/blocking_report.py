@@ -168,6 +168,16 @@ ALLOWED = {
         'ADC_ENABLE_TIMEOUT = 2 ms. The ADC stays enabled between conversions (no auto power-off), so '
         'later calls find it ready and return at once',
         f'{HAL}/stm32wlxx_hal_adc.c: polls ADC_FLAG_RDY on HAL_GetTick, at most ADC_ENABLE_TIMEOUT.'),
+    # ADC offset calibration (App/board_inputs.c, the wind vane: once, at the modules' start).
+    'HAL_ADCEx_Calibration_Start': (
+        '8 calibrations of about 82 ADC clock cycles each, about 60 us at 12 MHz (RM0453 ADC '
+        'calibration); each wait is bounded by ADC_CALIBRATION_TIMEOUT = 178,176 loop passes, and the '
+        'final disable by ADC_DISABLE_TIMEOUT = 2 ms. Runs once at init',
+        f'{HAL}/stm32wlxx_hal_adc_ex.c: counts loop passes, then polls ADEN on HAL_GetTick.'),
+    'ADC_Disable': (
+        'ADDIS clears ADEN within a few ADC clock cycles (RM0453 ADC disable sequence); the HAL bounds it '
+        'with ADC_DISABLE_TIMEOUT = 2 ms. Only reached from the calibration at init',
+        f'{HAL}/stm32wlxx_hal_adc.c: polls ADEN on HAL_GetTick, at most ADC_DISABLE_TIMEOUT.'),
     # UART enable handshakes (vcom_Resume runs after every STOP2 wake-up; vcom_Init is a driver slot).
     'UART_WaitOnFlagUntilTimeout': (
         'only reached through UART_CheckIdleState / HAL_UARTEx_StopModeWakeUpSourceConfig here: '
