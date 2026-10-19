@@ -37,4 +37,7 @@ void model_sht45_set(int dev, uint16_t t_raw, uint16_t rh_raw, int bad_crc);
 int model_sht45_read_too_early(void);
 void model_shtc3_set(int dev, uint16_t t_raw, uint16_t rh_raw);
 int model_shtc3_asleep(int dev);
+void model_reg_set_id(int dev, uint8_t id);
+void model_reg_power_cycle(int dev);
+void model_reg_set_data(int dev, uint32_t data);
 #endif

@@ -74,6 +74,10 @@ int h_desc_check(int port)
 void h_sht45_set(int dev, int t_raw, int h_raw, int bad) { model_sht45_set(dev, (uint16_t)t_raw, (uint16_t)h_raw, bad); }
 void h_shtc3_set(int dev, int t_raw, int h_raw) { model_shtc3_set(dev, (uint16_t)t_raw, (uint16_t)h_raw); }
 int h_shtc3_asleep(int dev) { return model_shtc3_asleep(dev); }
+void h_reg_set_id(int dev, int id) { model_reg_set_id(dev, (uint8_t)id); }
+void h_reg_power_cycle(int dev) { model_reg_power_cycle(dev); }
+void h_bmp581_set(int dev, uint32_t pa64) { model_reg_set_data(dev, pa64); }
+void h_ltr390_set(int dev, uint32_t counts) { model_reg_set_data(dev, counts); }
 /* The SHT45 conversion of the driver in use (firmware/stage0.c), as the test's oracle for one sample. */
 int h_sht45_parse(int t_raw, int h_raw, int16_t *t, uint16_t *h)
 {

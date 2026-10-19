@@ -15,7 +15,7 @@ try:
 except ImportError:
     from tests.toolchain import ROOT, host_library, needs_cc    # python -m unittest tests.<module>
 
-DEVK_SHT45, DEVK_SHTC3 = 2, 3
+DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390 = 2, 3, 4, 5
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY = range(5)
 P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH, P_POWER, P_WIND, P_RAIN = range(1, 8)
 GOOD, PARTIAL, SUSPECT, MISSING = range(4)
@@ -30,6 +30,7 @@ def module_sources():
     return ['-I', fw/'host/include', '-I', fw/'host', '-I', app, '-I', fw/'stage0-node/Core/Inc', '-I', fw,
             '-I', fw/'common', fw/'host/wsmp_harness.c', fw/'host/sim_core.c', fw/'host/i2c_sim.c',
             fw/'host/i2c_models.c', app/'i2c_bus.c', app/'busymon.c', app/'wsmp_local.c', app/'mod_th.c',
+            app/'mod_mean.c', app/'mod_reg.c',
             fw/'stage0.c', fw/'common/ws_check.c', fw/'common/wsmp.c']
 
 
@@ -228,6 +229,73 @@ class Shtc3(TempHumidity, Harness):
         lib, dev = self.good_station()
         lib.h_run(15_000)
         self.assertEqual(lib.h_shtc3_asleep(dev), 1)
+
+
+class SingleMean(Conformance):
+    """The pressure and UVA modules: one mean channel each (WSMP section 4.4, types 2 and 3)."""
+    CHANNELS = 1
+
+    def good_station(self):
+        lib, devs = self.station(self.DEVICES)
+        lib.h_run(MINUTE)
+        first = self.latch(lib, self.PORT, 1)
+        self.assertEqual(self.slot(first, 0)[2], PARTIAL)          # the first window after boot
+        return lib, devs[self.KIND]
+
+    def test_mean_of_four_samples(self):
+        lib, dev = self.good_station()
+        lib.h_run(MINUTE)
+        snap = self.latch(lib, self.PORT, 2)
+        self.assertEqual(self.slot(snap, 0), (self.EXPECTED, 4, GOOD))
+
+    def test_wrong_chip_id_is_absent(self):
+        lib, dev = self.good_station()
+        lib.h_reg_set_id(dev, self.WRONG_ID)
+        lib.h_run(15_000)
+        self.assertEqual(lib.h_probe(self.PORT), 0)
+        lib.h_run(MINUTE - 15_000)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0), (0, 0, MISSING))   # every sample saw the wrong chip
+
+    def test_absent_is_missing(self):
+        lib, dev = self.good_station()
+        lib.h_remove_device(dev)
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0), (0, 0, MISSING))
+        self.assertEqual(lib.h_probe(self.PORT), 0)
+
+    def test_replug_configures_the_part_again(self):
+        lib, dev = self.good_station()
+        lib.h_reg_power_cycle(dev)                                 # the part forgets its configuration
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0), (self.EXPECTED, 4, GOOD))
+
+
+class Bmp581(SingleMean, Harness):
+    PORT, TYPE, KIND, WRONG_ID = P_PRESSURE, 2, DEVK_BMP581, 0x51
+    DEVICES = [(DEVK_BMP581, 0x47)]
+    EXPECTED = 10133                                               # 101,325 Pa = 1013.25 hPa, scale -1, half up
+
+    def station(self, devices):
+        lib, devs = super().station(devices)
+        lib.h_bmp581_set(devs[DEVK_BMP581], 101_325 * 64)          # PRESS_DATA: Pa x 64 (datasheet 4.3.8)
+        return lib, devs
+
+
+class Ltr390(SingleMean, Harness):
+    PORT, TYPE, KIND, WRONG_ID = P_UVA, 3, DEVK_LTR390, 0xB1
+    DEVICES = [(DEVK_LTR390, 0x53)]
+    EXPECTED = 123_456
+
+    def station(self, devices):
+        lib, devs = super().station(devices)
+        lib.h_ltr390_set(devs[DEVK_LTR390], 123_456)
+        return lib, devs
+
+    def test_counts_are_20_bit(self):
+        lib, dev = self.good_station()
+        lib.h_ltr390_set(dev, (1 << 20) - 1)
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0)[0], (1 << 20) - 1)
 
 
 if __name__ == '__main__':

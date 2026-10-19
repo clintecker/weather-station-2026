@@ -67,6 +67,37 @@ static int shtc3_read(int dev, uint8_t *data, uint16_t n)
   return 0;
 }
 
+/* DEVK_BMP581 and DEVK_LTR390: register parts. A register write is [register, value]. The data
+   registers answer the set value (little-endian) only while the part is configured as the module
+   needs; otherwise they read 0. A power cycle clears the configuration. */
+typedef struct { uint8_t id, osr, odr, main_ctrl; uint32_t data; } regdev_t;
+static regdev_t regdev[I2C_SIM_DEVICES];
+void model_reg_set_id(int dev, uint8_t id) { regdev[dev].id = id; }
+void model_reg_power_cycle(int dev) { regdev[dev].osr = regdev[dev].odr = regdev[dev].main_ctrl = 0; }
+void model_reg_set_data(int dev, uint32_t data) { regdev[dev].data = data; }
+
+static int reg_write(int kind, int dev, const uint8_t *data, uint16_t n)
+{
+  regdev_t *r = &regdev[dev];
+  if (n != 2) return -1;
+  if (kind == DEVK_BMP581 && data[0] == 0x36) r->osr = data[1];
+  else if (kind == DEVK_BMP581 && data[0] == 0x37) r->odr = data[1];
+  else if (kind == DEVK_LTR390 && data[0] == 0x00) r->main_ctrl = data[1];
+  return 0;
+}
+
+static int reg_read(int kind, int dev, uint8_t reg, uint8_t *data, uint16_t n)
+{
+  const regdev_t *r = &regdev[dev];
+  int id_reg = kind == DEVK_BMP581 ? 0x01 : 0x06, data_reg = kind == DEVK_BMP581 ? 0x20 : 0x10;
+  int ready = kind == DEVK_BMP581 ? (r->osr == 0x40 && r->odr == 0x82) : r->main_ctrl == 0x0A;
+  uint32_t v = ready ? r->data : 0U;
+  if (reg == id_reg && n == 1) { data[0] = r->id; return 0; }
+  if (reg != data_reg || n != 3) return -1;
+  data[0] = (uint8_t)v; data[1] = (uint8_t)(v >> 8); data[2] = (uint8_t)(v >> 16);
+  return 0;
+}
+
 int model_write(int kind, int dev, const uint8_t *data, uint16_t n)
 {
   switch (kind)
@@ -74,6 +105,7 @@ int model_write(int kind, int dev, const uint8_t *data, uint16_t n)
     case DEVK_TEST: memcpy(test_written[dev], data, n < I2C_SIM_BUF ? n : I2C_SIM_BUF); return 0;
     case DEVK_SHT45: return sht45_write(dev, data, n);
     case DEVK_SHTC3: return shtc3_write(dev, data, n);
+    case DEVK_BMP581: case DEVK_LTR390: return reg_write(kind, dev, data, n);
     default: return -1;
   }
 }
@@ -91,9 +123,9 @@ int model_read(int kind, int dev, uint8_t *data, uint16_t n)
 
 int model_mem_read(int kind, int dev, uint8_t reg, uint8_t *data, uint16_t n)
 {
-  (void)dev;
   switch (kind)
   {
+    case DEVK_BMP581: case DEVK_LTR390: return reg_read(kind, dev, reg, data, n);
     case DEVK_TEST: for (uint16_t i = 0; i < n; i++) data[i] = (uint8_t)(reg + i); return 0;
     default: return -1;
   }
@@ -104,4 +136,6 @@ void model_reset(int kind, int dev)
   if (kind == DEVK_TEST) memset(test_written[dev], 0, sizeof test_written[dev]);
   if (kind == DEVK_SHT45) sht45[dev] = (sht45_t){ .t_raw = 0x8000, .rh_raw = 0x8000 };
   if (kind == DEVK_SHTC3) shtc3[dev] = (shtc3_t){ .t_raw = 0x8000, .rh_raw = 0x8000, .asleep = 1 };
+  if (kind == DEVK_BMP581) regdev[dev] = (regdev_t){ .id = 0x50 };
+  if (kind == DEVK_LTR390) regdev[dev] = (regdev_t){ .id = 0xB2 };
 }

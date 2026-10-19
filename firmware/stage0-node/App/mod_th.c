@@ -9,15 +9,16 @@
 #include "mod_th.h"
 #include <string.h>
 #include "i2c_bus.h"
+#include "mod_mean.h"
 #include "stage0.h"
 #include "ws_check.h"
+#include "ws_obs.h"   /* WS_TEMP_MIN_CENTI, WS_TEMP_MAX_CENTI, WS_RH_MAX_CENTI */
 #include "wsmp_local.h"
 
 #define SHTC3_ADDR 0x70U
 #define TH_REPLY_LEN 6U
 #define TH_CMD_LEN 2U
 #define TH_WORD_LEN 2U
-#define LONG_WINDOW_MS 90000U   /* WSMP-T3 */
 #define SHTC3_T_SPAN_CENTI 17500
 #define SHTC3_T_OFFSET_CENTI (-4500)
 #define SHTC3_RH_SPAN_CENTI 10000
@@ -27,13 +28,11 @@
 typedef enum { ST_IDLE, ST_WAKE, ST_AWAKE, ST_MEASURE, ST_READY, ST_READ, ST_SLEEP } th_step;
 typedef struct {
   th_step step;
-  uint32_t next_sample_ms, window_start_ms;
-  ws_th_window win;
+  uint32_t next_sample_ms;
+  mean_win win;
   int probe;
-  uint16_t probe_seq, last_token;
-  int latched;
+  uint16_t probe_seq;
   uint8_t reply[TH_REPLY_LEN];
-  uint8_t frozen[WSMP_SNAPSHOT_LEN];
 } th_t;
 
 static th_t th[TH_COUNT];
@@ -90,7 +89,8 @@ static void read_done(enum th_unit u, th_t *s)
   int16_t t = 0; uint16_t h = 0;
   int rc = u == TH_AIR ? ws_sht45_parse(s->reply, &t, &h) : mod_shtc3_parse(s->reply, &t, &h);
   if (rc) { sample_failed(s, rc); return; }
-  ws_th_add(&s->win, 1, t, h);
+  if (h > WS_RH_MAX_CENTI) h = WS_RH_MAX_CENTI;
+  if (t >= WS_TEMP_MIN_CENTI && t <= WS_TEMP_MAX_CENTI) mean_add(&s->win, (const int32_t[MEAN_CHANNELS]){ t, h });
   probe(s, 1);
   if (u == TH_AIR) { s->step = ST_IDLE; return; }
   s->step = ST_SLEEP;
@@ -139,45 +139,11 @@ void mod_th_identity(enum th_unit u, uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc
   wsmp_pack_identity(&ident, id);
 }
 
-static uint8_t window_quality(const th_t *s, uint32_t window_ms)
-{
-  uint32_t expected = window_ms / WSMP_SAMPLE_MS;
-  if (s->win.n == 0) return WSMP_QUAL_MISSING;
-  if (!s->latched || s->win.n < expected) return WSMP_QUAL_PARTIAL;
-  return WSMP_QUAL_GOOD;
-}
-
-static void freeze(enum th_unit u, th_t *s, uint16_t token, uint32_t window_ms)
-{
-  uint8_t id[WSMP_IDENTITY_LEN], desc[WSMP_DESC_BLOCK_LEN];
-  int16_t t = 0; uint16_t h = 0;
-  wsmp_snapshot snap;
-  memset(&snap, 0, sizeof snap);
-  mod_th_identity(u, id, desc);
-  snap.token = token;
-  snap.boot16 = (uint16_t)boot;
-  snap.window_ms = window_ms > UINT16_MAX ? UINT16_MAX : (uint16_t)window_ms;
-  snap.flags = (uint8_t)((s->latched ? 0U : WSMP_FLAG_FIRST_WINDOW) | (window_ms > LONG_WINDOW_MS ? WSMP_FLAG_LONG_WINDOW : 0U));
-  snap.desc_tag = (uint8_t)wsmp_crc32c(desc, WSMP_DESC_BLOCK_LEN);
-  uint8_t q = window_quality(s, window_ms);
-  if (ws_th_mean_t(&s->win, &t) && ws_th_mean_h(&s->win, &h))
-  {
-    snap.slot[0] = (wsmp_slot){ .value = (uint32_t)(int32_t)t, .count = s->win.n, .quality = q };
-    snap.slot[1] = (wsmp_slot){ .value = h, .count = s->win.n, .quality = q };
-  }
-  else snap.slot[0].quality = snap.slot[1].quality = WSMP_QUAL_MISSING;
-  wsmp_pack_snapshot(&snap, s->frozen);
-}
-
 void mod_th_latch(enum th_unit u, uint16_t token, uint32_t now_ms)
 {
-  th_t *s = &th[u];
-  if (s->latched && token == s->last_token) return;   /* WSMP-L3: a retry */
-  freeze(u, s, token, now_ms - s->window_start_ms);
-  ws_th_reset(&s->win);
-  s->window_start_ms = now_ms;
-  s->last_token = token;
-  s->latched = 1;
+  uint8_t id[WSMP_IDENTITY_LEN], desc[WSMP_DESC_BLOCK_LEN];
+  mod_th_identity(u, id, desc);
+  mean_latch(&th[u].win, token, now_ms, boot, desc, 2);
 }
 
-void mod_th_snapshot(enum th_unit u, uint8_t snap[WSMP_SNAPSHOT_LEN]) { memcpy(snap, th[u].frozen, WSMP_SNAPSHOT_LEN); }
+void mod_th_snapshot(enum th_unit u, uint8_t snap[WSMP_SNAPSHOT_LEN]) { memcpy(snap, th[u].win.frozen, WSMP_SNAPSHOT_LEN); }
