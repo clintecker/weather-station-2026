@@ -157,7 +157,8 @@ flowchart TD
 
 ### The received frame
 
-One buffer holds the last valid frame. The callback writes it, and `take_events` copies it out.
+One buffer holds the last frame that passed the radio's CRC check. `forward` checks it as an air
+frame later (`ws_air_frame_ok`). The callback writes it, and `take_events` copies it out.
 
 ```c {#rx-buffer}
 static RadioEvents_t events;
@@ -212,7 +213,9 @@ ST's hardware abstraction layer (HAL) calls RxDone for a packet whose payload CR
 calls RxError in the same interrupt. `ws_radio_take_crc_error` (`App/radio_cfg.c`) reads and clears
 the HAL's CRC flag. The RxDone branch of the diagram above shows the order of operations.
 
-A replaced frame is real data loss. `process` reports it at once with `#rx frame-lost`
+A replaced frame is usually real data loss. It may also be a frame that `forward` would have
+dropped, since the air-frame check comes later; `n_frames_lost` counts both. `process` reports it
+at once with `#rx frame-lost`
 (`test_a_frame_replaced_before_forwarding_is_counted`).
 
 ```c {#on-rx-done}

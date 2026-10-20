@@ -1,5 +1,7 @@
 # Weather Station: bench prototype software
 
+A home weather station, at its first stage. A sensor node (an STM32WL NUCLEO board) reads its sensors once a minute and sends the reading over encrypted LoRa to a second board on USB. A Python gateway (`ws0`) stores each reading in SQLite, acknowledges it over the radio, and serves it over a local HTTP API, a web dashboard and optional MQTT for Home Assistant. This repository holds the firmware, the gateway, the tests, a fault-injection simulator, the bench hardware files and the dated evidence of each bench run.
+
 Authority: the **Weather Station v0.2 product and technical requirements document (PRD/TRD), 8 October 2026**, sections 3, 9, 11 and the 24-hour delivery test (H01).
 
 Status: this repository holds the Python gateway (`ws0`) and the firmware for two NUCLEO-WL55JC1 boards (`firmware/stage0-node/`). Both are built, flashed and tested on the bench. The bench prototype is Stage 0 of the staged plan ([`docs/next-stages-plan.md`](docs/next-stages-plan.md)). **Stage 0 is not complete. The 24-hour delivery test (H01, [`docs/H01-checklist.md`](docs/H01-checklist.md)) has NOT RUN.**
@@ -64,7 +66,9 @@ Times in records are Unix seconds UTC. `from` is inclusive and `to` is exclusive
 
 A sample with an unknown clock gets a reconstructed UTC time with an uncertainty. The gateway makes it when a synchronized sample from the same boot epoch exists. Until then the effective time is null. SQLite keeps the sample, but `/v1/observations` never returns it.
 
-A page holds at most 1,000 rows. [`docs/openapi.json`](docs/openapi.json) describes the interface.
+A page holds at most 1,000 rows. [`docs/openapi.json`](docs/openapi.json) describes the interface, including the dashboard routes.
+
+The same port serves a live dashboard at `http://127.0.0.1:8088/`. It asks for the same token ([`docs/web-dashboard.md`](docs/web-dashboard.md)).
 
 ## Test failures while the demo runs
 
@@ -172,7 +176,7 @@ A test against a local Mosquitto broker verified discovery, last will and reconn
 
 ## Current state and open work
 
-The releases are recorded in [`firmware/stage0-node/RELEASES.md`](firmware/stage0-node/RELEASES.md). The TX runs release `04fcc656938d` (flashed 2026-10-19). The RX runs release `cc2766a38c61`, because the RX code did not change. The gateway serves run directory `run-d7`. On the earlier release `a07f498273f7`, a 9-hour bench soak delivered 549 of 549 minutes on time (`evidence/soak-a07f498-2026-10-13/`).
+The releases are recorded in [`firmware/stage0-node/RELEASES.md`](firmware/stage0-node/RELEASES.md). The TX runs release `04fcc656938d` (flashed 2026-10-19). The RX runs release `cc2766a38c61`, because the RX code did not change. The gateway serves run directory `run-d7`. On the earlier release `a07f498273f7`, a 9-hour bench soak delivered 549 of 549 minutes on time (`evidence/soak-a07f498-2026-10-13/`). Two lab rehearsals scored with the H01 rules followed: 1,440 of 1,440 intervals on time on release `bc5e6ede429c` (`evidence/h01-rehearsal-2026-10-14/`), and 960 of 960 over 16 hours on release `7eb79f64f2bd` (`evidence/h01-rehearsal-2026-10-15/`, ended early). Neither is H01: both ran with bench radio settings, away from the intended placement.
 
 The radio settings are bench values (`firmware/stage0-node/App/radio_cfg.h`): 915.0 MHz, 500 kHz bandwidth, spreading factor 7, coding rate 4/5, 0 dBm.
 
@@ -199,7 +203,7 @@ sh tools/fetch-vendor.sh   # pinned STM32CubeWL + Mbed TLS; without it the tests
 WS0_UNSAFE_FAST_FSYNC=1 python -m unittest discover -s tests -v
 ```
 
-On 2026-10-19 at commit 09e6cea, 595 tests passed with none skipped. One SNTP test needs the network and skips without it. The C tests need `cc` (Apple Command Line Tools on macOS). The 1,440-record test uses accelerated virtual timestamps, not 24 hours of real time. `evidence/validation.txt` is a historical record: 28 tests at commit 8aca123.
+On 2026-10-19 at commit 09e6cea, 595 tests passed with none skipped. One SNTP test needs the network and skips without it. The C tests need `cc` (Apple Command Line Tools on macOS). The dashboard script tests need `node`. The breadboard-map model tests need KiCad 10 and `tools/fetch-router.sh`. Each skips and says why when its tool is missing. [`tests/README.md`](tests/README.md) lists what each test file covers and the environment variables. The 1,440-record test uses accelerated virtual timestamps, not 24 hours of real time. `evidence/validation.txt` is a historical record: 28 tests at commit 8aca123.
 
 `tools/gates.sh` runs the CI gates locally on macOS or Linux: ruff, code shape, cppcheck, two clean firmware builds, analysis, the tests and the fuzzers.
 
@@ -238,11 +242,20 @@ The PCB and print orders that exist are aids for the prototype. The first USB-po
 | [`docs/firmware-budget.md`](docs/firmware-budget.md), [`docs/firmware-event-model.md`](docs/firmware-event-model.md), [`docs/power-of-ten.md`](docs/power-of-ten.md) | Firmware budgets, run-time model, coding rules |
 | [`docs/runbook-moving-boards.md`](docs/runbook-moving-boards.md), [`docs/runbook-home-assistant.md`](docs/runbook-home-assistant.md) | Runbooks |
 | [`docs/superpowers/`](docs/superpowers/) | Design specifications and implementation plans |
-| [`ws0/`](ws0/), [`gateway.py`](gateway.py) | The gateway package and its SQLite store |
+| [`ws0/`](ws0/README.md), [`gateway.py`](gateway.py) | The gateway package and its SQLite store |
+| `*.lit.md` ([`gateway.lit.md`](gateway.lit.md), [`ws0/protocol.lit.md`](ws0/protocol.lit.md), nine under `firmware/`) | Literate sources. Each is the source of the committed `.c` or `.py` file it generates (`tools/tangle.py`). Edit the document, not the generated file |
 | [`firmware/`](firmware/README.md) | Board firmware, fuzz targets and the range-test tool |
 | [`tools/`](tools/README.md) | Scripts, CI gates and service files |
-| [`tests/`](tests/) | Python and C tests |
+| [`tests/`](tests/README.md) | Python and C tests |
+| [`examples/scenarios/`](examples/scenarios/) | Two scenario files for `ws0.harness --scenario`: `custom-outage.json` (240 minutes, an outage and a reboot; edit it) and `short-baseline.json` (10 minutes, the negative-control fixture) |
+| [`simulation-results/`](simulation-results/) | The committed output of an older harness campaign: 12 scenarios at commit 8aca123 ([Run the simulation harness](#run-the-simulation-harness)) |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | CI ([`tools/README.md`](tools/README.md#ci)) |
+| `requirements.txt`, `requirements-dev.txt`, `ruff.toml` | Pinned gateway dependencies; pinned lint, code-shape, Cppcheck and Pillow for development and CI; the ruff bug rules |
+| `VALIDATION.txt` | A four-line pointer to the historical validation record. Its test count is out of date: use [Tests](#tests) |
+| [`.pcba-workflow/circuit-review.md`](.pcba-workflow/circuit-review.md) | Circuit review of `hardware/chicago-test-hardware-r0` (2026-10-13) |
+| `vendor/` (git-ignored) | Pinned third-party checkouts: STM32CubeWL with Mbed TLS (`tools/fetch-vendor.sh`), KiCadRoutingTools and its Python environment `krt-venv` (`tools/fetch-router.sh`). Never edit; fetch again |
+| `run-*/` (git-ignored) | Gateway run directories. Each holds one radio key and its data: `gateway.json` (key, API token, settings), `observations.sqlite3`, the nonce state `gateway-nonces.sqlite3`, logs such as `receiver.log`, and an optional `mqtt-password`. One directory per key. `run-demo` is the simulator's. On the bench Mac, `run-d7` is current, `run-d5-archive-2026-10-15/` and `run-d6-archive-2026-10-19/` are archived, and `run-office/` is retired ([`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) §2). Keep them private; never commit them |
 | [`hardware/bench-breadboard-r0/`](hardware/bench-breadboard-r0/README.md) | Breadboard map of the bench station: build sheet, renders, KiCad model |
-| [`hardware/chicago-test-hardware-r0/`](hardware/chicago-test-hardware-r0/README.md) | Test PCB and bench fixtures, revision 0 |
+| [`hardware/chicago-test-hardware-r0/`](hardware/chicago-test-hardware-r0/README.md) | Test PCB and bench fixtures, revision 0. Corrections: [`hardware/chicago-test-hardware-r0-ERRATA.md`](hardware/chicago-test-hardware-r0-ERRATA.md) |
 | [`hardware/poc-enclosure-r1/`](hardware/poc-enclosure-r1/README.md) | Printed enclosure parts for the proof of concept |
 | [`evidence/`](evidence/README.md) | Every bench run, dated |

@@ -490,7 +490,7 @@ the design document with the `AESCCM` class of the `cryptography` library.
 | `test_vectors_follow_the_spec` | the OBS, ACK and NACK known-answer vectors follow the design document's construction |
 | `test_known_answer_vectors` | C and Python seal and open the vectors to the same bytes and values |
 | `test_random_agreement_both_directions` | 300 random keys, stations and counters: C seals what Python seals, and C opens what Python seals |
-| `test_counter_and_station_limits` | the C code refuses station 0 and 65536, counter 0, 2^40 and 2^64 − 1, kinds 0, 5 and 15, and a 256-byte frame. A refused C buffer is all zero |
+| `test_counter_and_station_limits` | the C code refuses station 0 and 65536, counter 0, 2^40 and 2^64 − 1, kinds 0, 5 and 15, and a 256-byte frame. After a station or counter refusal the C buffer is all zero (`fuzz_reply` checks it for every refusal) |
 | `test_reply_rejections` | a wrong tag, station, key, kind, length or version fails. A NACK with its kind byte changed to ACK fails the tag |
 | `test_diagnostic_frame_agreement` | a sealed health report frame matches Python, and `unseal` in `ws0/protocol.py` does not accept it as an observation |
 | `test_diag_plaintext_matches_python` | `ws_diag_pack` equals `DIAG.pack` for zeros, extremes and 200 random reports |
@@ -499,10 +499,11 @@ the design document with the `AESCCM` class of the `cryptography` library.
 
 `firmware/fuzz/fuzz_reply.c` passes arbitrary bytes to `ws_open_reply`. `tests/test_fuzz.py`
 (`test_reply`) runs it. Only the two genuine self-test frames may open. The fuzzer then seals with
-a station, counter, kind and plaintext that it chooses, biased to 0, 1, each limit and one past it.
+a station, counter, kind and plaintext that it chooses. The station and the counter are biased to 0,
+1, each limit and one past it. The kind is 0 to 5, so two invalid kinds occur.
 A value out of range must return a negative code. It must also leave all of `out` zero, including
 8 bytes past any frame. An accepted value must give the design document's header and length. An
-ACK or NACK must open to the same values.
+ACK or NACK for station 1 with a 17-byte plaintext must open to the same values.
 
 `selftest_kat` (`App/selftest.c`) is the known-answer test. It runs on the TX board at boot
 (`App/app_tx.c`). It seals the observation vector and checks that `ws_seal_kind` refuses counter
