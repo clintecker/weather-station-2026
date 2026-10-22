@@ -41,6 +41,7 @@ found a problem with one, the problem is an open question in section 11, with a 
 | Before any board | A bench test sets the real cable limit: 3 m, then 5 m, of 6-conductor flat cable. Scope rise time ≤ 1000 ns at 100 kHz. A long error-count loop |
 | Open (Clint) | Sealing RJ11 on an IP66 box. Likely: the jacks inside, glands that fit flat cable |
 | v1 module identity (2026-10-21) | **Every v1 module board carries a programmed ID EEPROM** (OQ-6, decided). Its record gives each sensor a serial that follows it across ports and to v2 |
+| Identity is normalized (2026-10-21) | **No port sensor is ever without an ID EEPROM.** On the breadboard each sensor gets an EEPROM breakout on its own mux channel; in v2 the adapter takes only a whole v1 module board, never a bare sensor board |
 | v2 (later, maybe) | RS-485 over RJ45, as WSMP section 13 and Stage 2 describe: an adapter MCU per module, Modbus, eFuse-protected 10–18 V port power, sealed Amphenol RJF544, 10 m outdoor Cat6 |
 
 ## 2. Goals, non-goals and anti-goals
@@ -126,9 +127,9 @@ flowchart LR
   HUB --- MAX["MAX17048 0x36"]
   HUB --- SHTC["SHTC3 0x70"]
   HUB --- MUX["mux, set to 0x71"]
-  MUX -- "ch0" --> SHT["SHT45 0x44"]
-  MUX -- "ch1" --> LTR["LTR390 0x53"]
-  MUX -- "ch2" --> BMP["BMP581 0x47"]
+  MUX -- "ch0" --> SHT["SHT45 0x44<br/>+ ID EEPROM 0x50"]
+  MUX -- "ch1" --> LTR["LTR390 0x53<br/>+ ID EEPROM 0x50"]
+  MUX -- "ch2" --> BMP["BMP581 0x47<br/>+ ID EEPROM 0x50"]
   MUX -. "ch3 to ch7" .-> SP["empty: future ports, cable-test fixture"]
 ```
 
@@ -136,6 +137,13 @@ flowchart LR
   Daisy-chaining by the boards' second sockets also works. The topology is what matters: the three
   base-only parts and the mux are upstream; each external sensor is alone on a channel.
 - The channel numbers above are my call. Any assignment works, but firmware and wiring must agree.
+- **Every channel's sensor has its ID EEPROM from phase 1 on** (decision: identity is normalized).
+  On the breadboard it is a STEMMA QT EEPROM breakout (a 24LC32-class part at 0x50, for example
+  Adafruit's 24LC32 board; check its address and write-protect jumper), chained from the sensor
+  board's second QT socket. All channels' EEPROMs share 0x50; only one channel is selected at a time,
+  and nothing upstream uses 0x50. Each one is programmed once with its sensor's record (section 6.7).
+  When the sensor moves onto its v1 module board, the record is copied to that board's EEPROM, so the
+  serial does not change.
 - **The breadboard itself does not change.** Board A keeps one STEMMA QT cable to the hub
   ([`build-sheet.md`](../../../hardware/bench-breadboard-r0/build-sheet.md), part QT). The mux lives
   on the QT chain, off the breadboard. The meter circuits on board A stay as they are.
@@ -555,9 +563,9 @@ SHT45 modules is invisible.
   or 2. This is why every v1 module board carries a programmed EEPROM (OQ-6).
 - **A missing or invalid record is a fault, not a normal case.** The station still admits the module
   (its readings stay useful, and one bad part never stops a sensor), takes the serial from sources 2
-  and 3, and raises a port status flag, `NO_RECORD`, that the gateway shows. The only expected
-  record-less sensors are bare Adafruit boards: on the phase 1 breadboard, and in a v2 adapter's
-  STEMMA QT socket.
+  and 3, and raises a port status flag, `NO_RECORD`, that the gateway shows. There is no expected
+  record-less case: the breadboard has an EEPROM per sensor (section 4.1) and a v2 adapter takes only
+  a v1 module board (section 7). `NO_RECORD` always means a missing, blank or failed EEPROM.
 
 **Port numbers.** Today a port number is a module type (1 = outside air … 7 = rain). In v1 a port
 number is a place. Proposal (my call; it only has to be stable):
@@ -609,10 +617,8 @@ flowchart LR
   subgraph AD["Adapter module (v2)"]
     IN["input protection<br/>3.3 V regulator (TBD)"] --> C0["STM32C011<br/>Modbus slave, WSMP blocks"]
     C0 --> XA["THVD2410"]
-    C0 -- "local I2C, pull-ups here" --> QT["STEMMA QT socket"]
-    C0 -- "same local I2C" --> V1J["v1-compatible RJ11 6P6C port<br/>(OQ-9)"]
+    C0 -- "local I2C, pull-ups here" --> V1J["v1-compatible RJ11 6P6C port<br/>(OQ-9)"]
   end
-  QT --> SB["Adafruit sensor board"]
   V1J -- "short cable" --> V1M["v1 module board, unchanged"]
 ```
 
@@ -622,9 +628,10 @@ flowchart LR
   (its header says so).
 - **Calibration moves into the module.** WSMP-G6 ("a module applies its own calibration") is met
   natively, with coefficients in the adapter's flash.
-- **Identity.** Serial: the precedence of section 6.7 (**Serial rules**): the v1 EEPROM record's
-  serial if the sensor brought one, else the sensor's own serial, else one derived from the MCU's
-  unique device ID (check that the STM32C011 has one). The last is a fallback bound to the adapter. Boot ID: the adapter's own, kept
+- **Identity.** Serial: the precedence of section 6.7 (**Serial rules**). The adapter takes only a v1
+  module board, so the serial normally comes from that board's EEPROM record. The sensor's own serial,
+  then one derived from the MCU's unique device ID (check that the STM32C011 has one), are only the
+  `NO_RECORD` fault fallbacks; the last is bound to the adapter. Boot ID: the adapter's own, kept
   in its flash (WSMP-I2).
 - **Same module type codes.** A v2 SHT45 module reports type 1, schema 1, the same channels and
   descriptors as a v1 one. The gateway entity ID (WSMP-H1) has no binding, port or serial in it, so
@@ -646,16 +653,15 @@ flowchart LR
 flowchart TD
   A["v1 module on an RJ11 port<br/>(local, passive)"] --> Q{"run longer than the v1 limit,<br/>or a pulse or analog instrument?"}
   Q -- no --> STAY["stays v1"]
-  Q -- yes --> B["add a v2 adapter:<br/>the v1 module plugs into its RJ11 port or QT socket"]
+  Q -- yes --> B["add a v2 adapter:<br/>the v1 module board plugs into its RJ11 port"]
   B --> C["the adapter on a sealed RJ45 port<br/>(remote, Modbus)"]
   C --> D["same module type and descriptors:<br/>same entity IDs, history kept.<br/>Same serial: from the module's EEPROM"]
   D --> E["new port number: new descriptor set and generation<br/>(normal WSMP behaviour)"]
 ```
 
-- **A v1 sensor becomes a v2 module by adding an adapter.** Two ways, both supported by the adapter
-  sketch of section 7: the Adafruit sensor board moves to the adapter's STEMMA QT socket, or the whole
-  v1 module board plugs into the adapter's v1-compatible RJ11 port with a short cable. The second
-  keeps the v1 board, its EEPROM and its serial. The adapter's RJ11 port is the base port circuit of
+- **A v1 sensor becomes a v2 module by adding an adapter.** One way only (identity is normalized):
+  the whole v1 module board plugs into the adapter's v1-compatible RJ11 port with a short cable. It
+  keeps the v1 board, its EEPROM and its serial. The adapter has no bare STEMMA QT socket. The adapter's RJ11 port is the base port circuit of
   section 6.2. The design carries over, but the qualification does not: the adapter has its own
   controller, pull-ups and bus load, so its RJ11 port is retested (a short-cable run of the H04a
   loop) as part of H04b.
@@ -725,7 +731,7 @@ Most important first. Each has my recommendation.
 | OQ-6 | **ID EEPROM on v1 module boards?** | **Decided (Clint, 2026-10-21): fitted and programmed on every module board.** A single-address, 2-byte-addressed part. A missing or invalid record is admitted with the `NO_RECORD` flag (section 6.7). It gives each sensor a serial that survives port moves and the move to v2 |
 | OQ-7 | **Sealing RJ11 on the IP66 box** | Option A of section 6.8: jacks inside, split-insert glands or a cable-entry frame. Prefer a round jacketed cable if it passes the cable test, and re-run the test on it |
 | OQ-8 | **Is v2 scheduled?** | No. v1 replaces the PRD's Stage 2 RJ45 port. v2 is built only when a needed run exceeds the v1 limit, or an instrument needs an adapter (pulse, analog, or a remote head). The long-lead v2 parts are not ordered for v1 |
-| OQ-9 | **What does a v2 adapter accept?** | Both, on one local bus: a STEMMA QT socket (for a bare Adafruit board) and a v1-compatible RJ11 port (for a whole v1 module board, keeping its EEPROM serial) |
+| OQ-9 | **What does a v2 adapter accept?** | **Decided (Clint, 2026-10-21): only a whole v1 module board**, on a v1-compatible RJ11 port, keeping its EEPROM serial. No bare STEMMA QT socket, so every v2 sensor has an EEPROM record too |
 | OQ-10 | **v1 and v2 ports on one base?** | Allowed, with distinct connectors and separate port-number ranges. No dual-use jack. v1 adds no v2 hardware beyond keeping USART1 free |
 | OQ-11 | **Identical jacks with different pinouts.** PRD §6 and Appendix A forbid "a different pinout on an identical external jack". v1 sensor ports and meter ports share the 6-position RJ11 jack | Amend the PRD: allowed when the cross-mate analysis shows no power reaches the wrong device and H04a's cross-mate tests pass, with labels and coloured cables |
 | OQ-12 | **Telephone-line misuse.** Does H04a test 48 V on the centre pair (an RJ11 port plugged into a phone line)? | Yes, once, with a current-limited bench supply, as H04 does with its 24/48 V injector. Declare it outside the operating contract |
