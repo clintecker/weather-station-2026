@@ -62,7 +62,18 @@ class Gateway:
         self.cfg, self.directory = cfg, directory
         self.key = bytes.fromhex(cfg['radio_key'])
         self.store = Store(directory / 'observations.sqlite3')
-        self.nonces = Nonces(directory / 'gateway-nonces.sqlite3',self.key,cfg['station_id'],KIND_ACK)
+        try:
+            self.nonces = Nonces(directory / 'gateway-nonces.sqlite3',self.key,cfg['station_id'],KIND_ACK)
+        except BaseException:
+            self.store.db.close()
+            raise
+        try:
+            self._init_state(cfg)
+        except BaseException:  # e.g. SchemaDrift: an open handle would keep the files locked (Windows)
+            self.close()
+            raise
+
+    def _init_state(self, cfg):
         self.accepted = self.rejected = self.nacked = 0
         self.node_counter = self.nonces.node_counter()  # cached for the HTTP/MQTT threads
         self.clock = None  # ws0.clock.HostClock when serving hardware; None = trust host

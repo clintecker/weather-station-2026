@@ -34,7 +34,7 @@ class Sites(unittest.TestCase):
         found = users()
         self.assertTrue(found)
         for path, number in found.items():
-            name = str(path.relative_to(FW/'stage0-node' if 'stage0-node' in path.parts else FW))
+            name = path.relative_to(FW/'stage0-node' if 'stage0-node' in path.parts else FW).as_posix()
             self.assertIsNotNone(number, f'{name} uses WS_CHECK without #define WS_CHECK_FILE')
             self.assertEqual(listed.get(number), name, f'{name} is not number {number} in ws_check.h')
             self.assertLess(len(path.read_text().splitlines()), 1024, f'{name}: a site keeps 10 bits of line')

@@ -151,7 +151,7 @@ def banner(doc_path, root):
     """Two comment lines in the root's language: C (/* */) or Python (#)."""
     rel = doc_path.resolve().relative_to(ROOT) if doc_path.resolve().is_relative_to(ROOT) else doc_path
     first = f'GENERATED from {rel.name} by tools/tangle.py: do not edit. Edit the document, then run'
-    second = f'tools/tangle.py {rel} (tests/test_tangle.py checks this file).'
+    second = f'tools/tangle.py {rel.as_posix()} (tests/test_tangle.py checks this file).'
     if str(root).endswith('.py'):
         return [f'# {first}', f'# {second}']
     return [f'/* {first}', f' * {second} */']
@@ -159,13 +159,14 @@ def banner(doc_path, root):
 
 def tangle(doc_path, lines_mode=False):
     """{root path: text} for every root chunk of the document."""
-    chunks = chunks_of(parse(doc_path.read_text()))
+    chunks = chunks_of(parse(doc_path.read_text(encoding='utf-8')))
     validate(chunks)
     roots = [n for n in chunks if is_root(n)]
     if not roots:
         raise LitError(f'{doc_path}: no root chunk (a name with a dot, e.g. {{#node_store.c}})')
     # --lines names the document by its absolute path, so a debugger finds it from any build directory.
-    name = str(doc_path.resolve()) if lines_mode else doc_path.name
+    # Forward slashes: a backslash in a #line string is a C escape (C:\Users -> unknown escape '\U').
+    name = doc_path.resolve().as_posix() if lines_mode else doc_path.name
     return {doc_path.parent/r: '\n'.join(banner(doc_path, r) + squeeze(expand(chunks, r, name, lines_mode))) + '\n'
             for r in roots}
 
@@ -180,7 +181,7 @@ def check(docs):
     stale = 0
     for doc in docs:
         for path, text in tangle(doc).items():
-            have = path.read_text() if path.exists() else ''
+            have = path.read_text(encoding='utf-8') if path.exists() else ''
             if have != text:
                 stale += 1
                 diff = difflib.unified_diff(have.splitlines(), text.splitlines(), str(path), f'{doc} (tangled)', lineterm='', n=1)
@@ -214,7 +215,7 @@ def slug(text):
 class Weaver:
     def __init__(self, doc_path):
         self.doc = doc_path
-        self.blocks = parse(doc_path.read_text())
+        self.blocks = parse(doc_path.read_text(encoding='utf-8'))
         self.chunks = chunks_of(self.blocks)
         validate(self.chunks)
         self.used = uses(self.chunks)
@@ -363,7 +364,7 @@ class Weaver:
             else:
                 body.append(self.code(*b[1:]))
         title = next((t for lvl, _, t in toc), self.doc.stem)
-        h1 = re.search(r'^#\s+(.*)$', self.doc.read_text(), re.M)
+        h1 = re.search(r'^#\s+(.*)$', self.doc.read_text(encoding='utf-8'), re.M)
         title = h1[1].strip() if h1 else title
         nav = ''.join(f'<li class="l{lvl}"><a href="#{hid}">{self.inline(t)}</a></li>' for lvl, hid, t in toc)
         index = ''.join(f'<li>{self.ref(n)}' + (f' <span class="muted">used in {", ".join(self.ref(p) for p in sorted(set(self.used[n])))}</span>' if n in self.used else ' <span class="muted">root</span>') + '</li>'
@@ -462,19 +463,19 @@ def main(argv=None):
         if a.weave:
             if len(a.docs) != 1:
                 ap.error('--weave takes one document')
-            a.weave.write_text(Weaver(a.docs[0]).page())
+            a.weave.write_text(Weaver(a.docs[0]).page(), encoding='utf-8')
             print(f'woven: {a.weave}')
             return 0
         if a.lines:
             roots = tangle(a.docs[0], lines_mode=True)
             if not a.output or len(roots) != 1 or len(a.docs) != 1:
                 ap.error('--lines writes one root of one document to -o OUT (never over the committed file)')
-            a.output.write_text(next(iter(roots.values())))
+            a.output.write_text(next(iter(roots.values())), encoding='utf-8')
             return 0
         for doc in a.docs:
             for path, text in tangle(doc).items():
-                if not path.exists() or path.read_text() != text:
-                    path.write_text(text)
+                if not path.exists() or path.read_text(encoding='utf-8') != text:
+                    path.write_text(text, encoding='utf-8')
                     print(f'tangled: {path}')
         return 0
     except LitError as e:

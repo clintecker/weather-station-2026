@@ -26,7 +26,7 @@ class Committed(unittest.TestCase):
         for doc in docs:
             for path, text in tangle.tangle(doc).items():
                 self.assertTrue(path.exists(), f'{path} is not committed; run tools/tangle.py {doc}')
-                self.assertEqual(path.read_text(), text, f'{path} differs from {doc}: edit the document and '
+                self.assertEqual(path.read_text(encoding='utf-8'), text, f'{path} differs from {doc}: edit the document and '
                                  f'run tools/tangle.py {doc.relative_to(ROOT)}')
                 self.assertTrue(text.startswith(('/* GENERATED from ', '# GENERATED from ')), 'the banner says where the file comes from')
 
@@ -35,7 +35,7 @@ class Rules(unittest.TestCase):
     def tangled(self, doc, lines=False):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'t.lit.md'
-            path.write_text(doc)
+            path.write_text(doc, encoding='utf-8')
             return {p.name: t.split('\n', 2)[2] for p, t in tangle.tangle(path, lines).items()}
 
     def test_references_are_indented_and_definitions_joined_in_document_order(self):
@@ -58,7 +58,7 @@ class Rules(unittest.TestCase):
     def test_mermaid_blocks_become_diagrams_and_load_mermaid_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'t.lit.md'
-            path.write_text(f'# T\n\n{F}mermaid\nstateDiagram-v2\n  a --> b\n{F}\n\n{F}c {{#t.c}}\nint x;\n{F}\n')
+            path.write_text(f'# T\n\n{F}mermaid\nstateDiagram-v2\n  a --> b\n{F}\n\n{F}c {{#t.c}}\nint x;\n{F}\n', encoding='utf-8')
             page = tangle.Weaver(path).page()
         self.assertIn('<pre class="mermaid">stateDiagram-v2\n  a --&gt; b</pre>', page)
         self.assertEqual(page.count('mermaid@'), 1)
@@ -66,7 +66,7 @@ class Rules(unittest.TestCase):
     def test_a_python_root_gets_a_python_banner(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'t.lit.md'
-            path.write_text(f'{F}python {{#out.py}}\nx = 1 << 2\n{F}\n')
+            path.write_text(f'{F}python {{#out.py}}\nx = 1 << 2\n{F}\n', encoding='utf-8')
             (text,) = tangle.tangle(path).values()
         first, second, body = text.split('\n', 2)
         self.assertTrue(first.startswith('# GENERATED from t.lit.md') and second.startswith('# tools/tangle.py'))
@@ -80,8 +80,8 @@ class Rules(unittest.TestCase):
     def test_check_reports_a_stale_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             doc = Path(tmp)/'t.lit.md'
-            doc.write_text(f'{F}c {{#t.c}}\nint x;\n{F}\n')
-            (Path(tmp)/'t.c').write_text('int x; /* edited by hand */\n')
+            doc.write_text(f'{F}c {{#t.c}}\nint x;\n{F}\n', encoding='utf-8')
+            (Path(tmp)/'t.c').write_text('int x; /* edited by hand */\n', encoding='utf-8')
             with open(Path(tmp)/'log', 'w') as log, unittest.mock.patch('sys.stdout', log), \
                  unittest.mock.patch('sys.stderr', log):
                 self.assertEqual(tangle.main(['--check', str(doc)]), 1)
@@ -112,7 +112,7 @@ class LineBuild(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)/'node_store_lines.c'
             self.assertEqual(tangle.main(['--lines', '-o', str(out), str(app/'node_store.lit.md')]), 0)
-            self.assertIn('#line ', out.read_text())
+            self.assertIn('#line ', out.read_text(encoding='utf-8'))
             subprocess.run([*CC_STRICT, '-fsyntax-only', '-I', str(app), '-I', str(ROOT/'firmware/common'),
                             '-I', str(ROOT/'firmware'), str(out)], check=True)
 

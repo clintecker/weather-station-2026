@@ -445,7 +445,7 @@ class DashboardScript(unittest.TestCase):
             script = Path(tmp) / 'harness.js'
             script.write_text(HARNESS)
             result = subprocess.run([node, str(script), str(ROOT / 'ws0' / 'static' / 'app.js')],
-                                    capture_output=True, text=True, timeout=120)
+                                    capture_output=True, text=True, encoding='utf-8', timeout=120)
         if result.returncode:
             raise AssertionError(f'harness failed:\n{result.stderr}')
         cls.out = json.loads(result.stdout)
