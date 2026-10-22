@@ -18,6 +18,7 @@ rejections. Evidence goes to a new directory: --output must not exist.
 Needs: uhubctl, and a hub that really switches VBUS per port (verify with --check first).
 """
 import argparse
+import contextlib
 import json
 import random
 import re
@@ -178,9 +179,9 @@ class Invariants:
 
 def gateway_check(path, started):
     """(storm records stored, rejections since the start): storm records must never be sent."""
-    db = sqlite3.connect(path)
-    storm_rows = db.execute("SELECT count(*) FROM observations WHERE session='4294967295'").fetchone()[0]
-    rejections = db.execute('SELECT count(*) FROM rejections WHERE received_at>=?', (started,)).fetchone()[0]
+    with contextlib.closing(sqlite3.connect(path)) as db:   # closed: an open handle locks the file on Windows
+        storm_rows = db.execute("SELECT count(*) FROM observations WHERE session='4294967295'").fetchone()[0]
+        rejections = db.execute('SELECT count(*) FROM rejections WHERE received_at>=?', (started,)).fetchone()[0]
     return storm_rows, rejections
 
 

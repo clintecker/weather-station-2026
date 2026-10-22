@@ -74,32 +74,36 @@ class Nonces:
         if create and path.exists():
             raise ValueError('Refusing to overwrite nonce state')
         self.db = sqlite3.connect(path)
-        full_flush(self.db)  # WAL and synchronous=FULL. On macOS, also flush the drive cache
-        self.db.execute('CREATE TABLE IF NOT EXISTS nonce (binding TEXT, counter INTEGER)')
-        binding = hashlib.sha256(key + struct.pack('>IB', station, kind)).hexdigest()
-        row = self.db.execute('SELECT binding FROM nonce').fetchone()
-        if create:
-            with self.db:
-                self.db.execute('INSERT INTO nonce VALUES (?,0)', (binding,))
-        elif not row or row[0] != binding:
-            raise ValueError('Nonce state/key/endpoint mismatch')
-        self.station, self.kind = station, kind
-        if kind == KIND_ACK:
-            # The gateway's high-water mark of the node's counter space. Observations and health
-            # reports share that space. The mark lives here, in state that is never restored from a
-            # backup, so a restore of the observations can never lower it.
-            self.node_binding = hashlib.sha256(key + struct.pack('>IB', station, KIND_OBS)).hexdigest()
-            self.db.execute('CREATE TABLE IF NOT EXISTS node_counter (binding TEXT PRIMARY KEY, '
-                            'max_counter INTEGER NOT NULL, regressions INTEGER NOT NULL, '
-                            'last_regression INTEGER, last_regression_at REAL, replays INTEGER NOT NULL DEFAULT 0)')
-            # SHA-256 of every authentic node frame accepted as fresh, by counter. A later frame with the
-            # same counter and the same bytes is a replay (harmless). Different bytes under one counter
-            # are a repeated nonce (docs/protocol-design.md section 6).
-            self.db.execute('CREATE TABLE IF NOT EXISTS node_frames (binding TEXT, counter INTEGER, digest TEXT, '
-                            'PRIMARY KEY(binding, counter))')
-            with self.db:
-                self.db.execute('INSERT OR IGNORE INTO node_counter (binding,max_counter,regressions) VALUES (?,0,0)',
-                                (self.node_binding,))
+        try:
+            full_flush(self.db)  # WAL and synchronous=FULL. On macOS, also flush the drive cache
+            self.db.execute('CREATE TABLE IF NOT EXISTS nonce (binding TEXT, counter INTEGER)')
+            binding = hashlib.sha256(key + struct.pack('>IB', station, kind)).hexdigest()
+            row = self.db.execute('SELECT binding FROM nonce').fetchone()
+            if create:
+                with self.db:
+                    self.db.execute('INSERT INTO nonce VALUES (?,0)', (binding,))
+            elif not row or row[0] != binding:
+                raise ValueError('Nonce state/key/endpoint mismatch')
+            self.station, self.kind = station, kind
+            if kind == KIND_ACK:
+                # The gateway's high-water mark of the node's counter space. Observations and health
+                # reports share that space. The mark lives here, in state that is never restored from a
+                # backup, so a restore of the observations can never lower it.
+                self.node_binding = hashlib.sha256(key + struct.pack('>IB', station, KIND_OBS)).hexdigest()
+                self.db.execute('CREATE TABLE IF NOT EXISTS node_counter (binding TEXT PRIMARY KEY, '
+                                'max_counter INTEGER NOT NULL, regressions INTEGER NOT NULL, '
+                                'last_regression INTEGER, last_regression_at REAL, replays INTEGER NOT NULL DEFAULT 0)')
+                # SHA-256 of every authentic node frame accepted as fresh, by counter. A later frame with the
+                # same counter and the same bytes is a replay (harmless). Different bytes under one counter
+                # are a repeated nonce (docs/protocol-design.md section 6).
+                self.db.execute('CREATE TABLE IF NOT EXISTS node_frames (binding TEXT, counter INTEGER, digest TEXT, '
+                                'PRIMARY KEY(binding, counter))')
+                with self.db:
+                    self.db.execute('INSERT OR IGNORE INTO node_counter (binding,max_counter,regressions) VALUES (?,0,0)',
+                                    (self.node_binding,))
+        except BaseException:   # the caller never gets self.db: close it, or the file stays locked (Windows)
+            self.db.close()
+            raise
 
     def node_counter(self):
         """Return the stored node-counter high-water mark and regression record (gateway only)."""

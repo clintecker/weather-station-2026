@@ -413,17 +413,21 @@ def __init__(self, path, key, station, kind, create=False):
     if create and path.exists():
         raise ValueError('Refusing to overwrite nonce state')
     self.db = sqlite3.connect(path)
-    full_flush(self.db)  # WAL and synchronous=FULL. On macOS, also flush the drive cache
-    self.db.execute('CREATE TABLE IF NOT EXISTS nonce (binding TEXT, counter INTEGER)')
-    binding = hashlib.sha256(key + struct.pack('>IB', station, kind)).hexdigest()
-    row = self.db.execute('SELECT binding FROM nonce').fetchone()
-    if create:
-        with self.db:
-            self.db.execute('INSERT INTO nonce VALUES (?,0)', (binding,))
-    elif not row or row[0] != binding:
-        raise ValueError('Nonce state/key/endpoint mismatch')
-    self.station, self.kind = station, kind
-    <<node-counter-tables>>
+    try:
+        full_flush(self.db)  # WAL and synchronous=FULL. On macOS, also flush the drive cache
+        self.db.execute('CREATE TABLE IF NOT EXISTS nonce (binding TEXT, counter INTEGER)')
+        binding = hashlib.sha256(key + struct.pack('>IB', station, kind)).hexdigest()
+        row = self.db.execute('SELECT binding FROM nonce').fetchone()
+        if create:
+            with self.db:
+                self.db.execute('INSERT INTO nonce VALUES (?,0)', (binding,))
+        elif not row or row[0] != binding:
+            raise ValueError('Nonce state/key/endpoint mismatch')
+        self.station, self.kind = station, kind
+        <<node-counter-tables>>
+    except BaseException:   # the caller never gets self.db: close it, or the file stays locked (Windows)
+        self.db.close()
+        raise
 ```
 
 ### Reserving a counter

@@ -78,8 +78,12 @@ flowchart LR
   - MQTT against a local broker. `run-d7/gateway.json` now enables MQTT to the Home Assistant
     broker. No record yet shows the entities in Home Assistant,
   - the H01 scorer `tools/h01_report.py`.
-- **Latest soak evidence:** `evidence/soak-a07f498-2026-10-13/`. Over 9 h, 549 of 549 minutes
+- **Soak evidence:** `evidence/soak-a07f498-2026-10-13/`. Over 9 h, 549 of 549 minutes
   arrived on time, with median latency 1.5 s, 0 lost and 0 missed ACKs.
+- **Latest long runs:** two lab rehearsals scored with the H01 rules, neither of them H01 (bench
+  radio settings, not the intended placement). `evidence/h01-rehearsal-2026-10-14/`: release
+  `bc5e6ede429c`, 1,440 of 1,440 intervals on time. `evidence/h01-rehearsal-2026-10-15/`: release
+  `7eb79f64f2bd`, ended at 16 h, 960 of 960. Both: median latency 1.5 s, maximum 2.0 s.
 - **Tests:** `WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests` gave **595**
   passing, none skipped, on 2026-10-19 (commit 09e6cea). One SNTP test needs the network.
   - Run `tools/fetch-vendor.sh` first. Without `vendor/`, the tests skip the C-against-Python
@@ -314,4 +318,6 @@ energy state. It does not model the drain stop or the PROBING link state
 | `hardware/poc-enclosure-r1/` | Printed enclosure parts for the proof of concept |
 | `hardware/chicago-test-hardware-r0/` | Chicago test hardware, revision 0: build and order guide, manufacturing files |
 | `tools/README.md` | Every tool in `tools/` |
+| `tests/README.md` | What each test file covers, what it needs, when it skips |
+| `ws0/README.md` | The gateway modules |
 | `evidence/` | Every bench run, dated |
