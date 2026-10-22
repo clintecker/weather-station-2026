@@ -234,9 +234,11 @@ flowchart TD
      The shared I2C2 bus with the stuck-bus recovery is `App/i2c_bus.c`. Host tests cover the CRC
      and fault handling.
    - Verify a CRC-checked reading, plus the unplug and fault behaviour. Then cut a new release.
-3. **Home Assistant.** The steps are in `docs/runbook-home-assistant.md`. They need Clint's
-   broker host, port, TLS on/off and user name. The password goes in a private file, not in chat.
-   H01 requires an HA entity.
+3. **Home Assistant.** The steps are in `docs/runbook-home-assistant.md`. *Done 2026-10-22: the
+   gateway logs in to the HA Mosquitto add-on as the dedicated HA user `weatherstation` (port 1883,
+   no TLS; host and password in `run-d7/`), and HA shows the `station-01` device with its 11
+   entities (`evidence/ha-broker-2026-10-22/`).* Still to see: the entities updating live, at the
+   next hardware session. H01 requires an HA entity.
 4. **Placement.** Check the link in both directions at the real TX and RX locations. Then tune
    SF and power.
 5. **H01:** the 24-hour run plus the restart and outage matrix. Score it with
