@@ -529,7 +529,7 @@ are refused: one module per port.
 | Field | Source |
 |---|---|
 | magic, WSMP version | the station |
-| module type, schema | the probe table. A valid EEPROM record must agree, or the module is quarantined |
+| module type, schema | the probe table gives the type; the schema is the one the WSMP registry (section 4.4) assigns to that type. A valid EEPROM record must agree on both, or the module is quarantined |
 | serial | 1. the EEPROM record. 2. Else the sensor's own serial number, if it has one (the SHT4x does; the BMP581 and LTR390: **TBD**). 3. Else `WSMP_LOCAL_SERIAL(port, type)`, as today. Sources 1 and 2 travel with the module; source 3 is bound to the port (see **Serial rules** below) |
 | firmware version and build | the station's |
 | boot ID | proposed: changes at each admission of the port. A passive module has no clock of its own, so a re-plug is its "boot". This keeps WSMP-I2's intent (a counter series never spans a power loss) for any future passive module with a counter |
@@ -554,7 +554,8 @@ The fuzz target `wsmp` grows to cover it. Two cases, never treated alike:
 - **No usable record**: no ACK at 0x50, a blank part, a wrong magic, a bad CRC or a malformed field.
   The module is admitted with the `NO_RECORD` flag (see **Serial rules**).
 - **A valid record that disagrees**: the CRC and every field check pass, but its module type or
-  schema differs from the probed part. That is an identity conflict, not a failed part: the module
+  schema differs from the probed part (the type from the probe table, the schema from the WSMP
+  registry entry for that type, section 4.4). That is an identity conflict, not a failed part: the module
   is quarantined, not absent, until the record or the sensor is corrected.
 
 **Why every module board has one** (OQ-6, decided 2026-10-21): it gives each physical sensor a serial that survives a move to
@@ -728,7 +729,7 @@ The PRD's H04 is one test of one RJ45 RS-485 port. This spec proposes to split i
 | PORT-3, 4, 10 | the phase 2 cable test (section 5); H04a at temperature |
 | PORT-5 | H04a: a shorted port supply trips the limit, the station stays up; reversed-cable case |
 | PORT-7 | host test: plug at a random time, in the layout within 90 s; bench: 20 plugs |
-| PORT-13 | host tests: probe table, EEPROM record parsing, a valid record with a mismatching type quarantines, a missing, blank or corrupt record admits with `NO_RECORD`; fuzzing of the record parser (WSMP-X2) |
+| PORT-13 | host tests: probe table, EEPROM record parsing, a valid record with a mismatching type or schema quarantines, a missing, blank or corrupt record admits with `NO_RECORD`; fuzzing of the record parser (WSMP-X2) |
 | WSMP conformance | a new row in WSMP section 14 for the I2C port binding |
 
 ## 11. Open questions for Clint
@@ -796,7 +797,7 @@ gives the proposed wording.
 | `docs/module-protocol.md` §12, WSMP-X2 | "A fuzz test MUST cover the station's parser of every block." | "… of every block and of the passive module record." |
 | `docs/module-protocol.md` §12, WSMP-X4 | "Before a remote port is used outdoors …" | "Before any external port (I2C or remote) is used outdoors …" |
 | `docs/module-protocol.md` §13, title and first line | "## 13. Remote modules (the RJ45 binding)" | "## 13. Remote modules (the RJ45 binding, v2)", and first line: "v1 has no remote ports. v1 external modules use the I2C port binding (section 10.1)." |
-| `docs/module-protocol.md` §14, conformance table | no I2C port row | add: "I2C port binding \| P1, P3, P9, B3, X2 \| plug at random times, hold SDA and SCL low on one channel, check the other channels; a valid module record whose type disagrees quarantines; a missing or corrupt record admits with NO_RECORD" |
+| `docs/module-protocol.md` §14, conformance table | no I2C port row | add: "I2C port binding \| P1, P3, P9, B3, X2 \| plug at random times, hold SDA and SCL low on one channel, check the other channels; a valid module record whose type or schema disagrees quarantines; a missing or corrupt record admits with NO_RECORD" |
 | `docs/module-protocol.md` §15, open items | "Remote ports beyond one \| Needs a UART multiplexer or a different station microcontroller." | "Remote ports beyond one (v2) \| …". Add: "I2C port cable limit \| set by the cable test (spec 2026-10-21 §5)." |
 | `docs/next-stages-plan.md` §1, diagram | `S2 -- "H04 passes" --> S3` | `S2 -- "H04a passes" --> S3` |
 | `docs/next-stages-plan.md` §1, Stage 2 row | "One wired sensor module on a sealed RJ45 port \| H04, the port test: power, faults, 10 m cable, 10⁶ transactions" | "One wired sensor module on an RJ11 I2C port (v1) \| H04a, the I2C port test: the qualified cable length, faults, cross-mating, 10⁶ transactions. (H04b, the RS-485 port test, moves to v2.)" |
