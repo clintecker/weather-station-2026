@@ -249,7 +249,7 @@ flowchart LR
 | Fall time | ≤ 300 ns | my addition: the standard-mode limit |
 | Low level at the receiver | ≤ 0.4 V | my addition. 0.3 × 3.3 V ≈ 1.0 V is the input threshold; 0.4 V keeps margin for ground offset |
 | Error loop (step 4, no plug events) | 10⁶ transactions, **0 undetected corruption and 0 detected errors** | my proposal (OQ-2). Zero in 10⁶ bounds the error rate below about 3 × 10⁻⁶ at 95 % confidence |
-| Hot-plug (step 5, 20 events) | detected errors only within a plug event (from unplug until the port is admitted again), and 0 undetected corruption. After each replug the port is admitted again within two probes. No reset, and the other ports keep reading | WSMP-P2 |
+| Hot-plug (step 5, 20 events) | detected errors only within a plug event (from unplug until the port is admitted again), and 0 undetected corruption. After each replug the port is admitted again within two probes. No reset, and the other ports keep reading | WSMP-P2 (admission); PORT-6; live mating per the proposed WSMP-P9 (OQ-5), not current WSMP (WSMP-P7 covers remote ports only) |
 
 ### 5.4 What each result changes
 
