@@ -42,6 +42,7 @@ found a problem with one, the problem is an open question in section 11, with a 
 | Open (Clint) | Sealing RJ11 on an IP66 box. Likely: the jacks inside, glands that fit flat cable |
 | v1 module identity (2026-10-21) | **Every v1 module board carries a programmed ID EEPROM** (OQ-6, decided). Its record gives each module (module board plus its sensor board) a serial that follows it across ports and to v2. A sensor-board swap gets a new serial |
 | Identity is normalized (2026-10-21) | **No port sensor is ever without an ID EEPROM.** On the breadboard each sensor gets an EEPROM breakout on its own mux channel; in v2 the adapter takes only a whole v1 module board, never a bare sensor board |
+| Meter identity (2026-10-22) | **The SEN-15901 meters carry no ID EEPROM in v1.** They are not port sensors: reed switches and a resistor network on the meter ports (12 wind, 13 rain), no electronics. The meter's serial is the binding fallback, and a meter swap is invisible, by decision: one meter per station, rarely swapped, and its calibration is fixed by the hardware (2.4 km/h per Hz, 0.2794 mm per tip). The vane's north offset depends on the mounting, not the meter, so it belongs in the station's own configuration. **If v2 is built (OQ-8), the meter gets an adapter MCU at the mast** (section 7, "a pulse or analog instrument"), which presents it as an ordinary module with its own EEPROM. A base EEPROM beside the meter port is rejected: it names the port, not the meter |
 | v2 (later, maybe) | RS-485 over RJ45, as WSMP section 13 and Stage 2 describe: an adapter MCU per module, Modbus, eFuse-protected 10–18 V port power, sealed Amphenol RJF544, 10 m outdoor Cat6 |
 
 ## 2. Goals, non-goals and anti-goals
@@ -579,7 +580,8 @@ SHT45 modules is invisible.
   (its readings stay useful, and one bad part never stops a sensor), takes the serial from sources 2
   and 3, and raises a port status flag, `NO_RECORD`, that the gateway shows. There is no expected
   record-less case: the breadboard has an EEPROM per sensor (section 4.1) and a v2 adapter takes only
-  a v1 module board (section 7). `NO_RECORD` always means a missing, blank, corrupt or failed
+  a v1 module board (section 7). The meter ports are not module ports and are outside this rule: the
+  SEN-15901 has no record in v1, by decision (section 1, "Meter identity"), and raises no `NO_RECORD`. `NO_RECORD` always means a missing, blank, corrupt or failed
   EEPROM. A valid record whose type disagrees is quarantined instead (section 6.7, above).
 
 **Port numbers.** Today a port number is a module type (1 = outside air … 7 = rain). In v1 a port
