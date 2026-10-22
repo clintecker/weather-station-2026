@@ -22,9 +22,8 @@ flowchart LR
 | MQTT password | **Not in `gateway.json`, and never in chat or git.** Put it in a file `mqtt-password` in the run directory (first line), or in the `WS_MQTT_PASSWORD` environment variable. The variable wins if it is set (`mqtt_password()` in `ws0/service.py`) |
 
 The run directory (for example `run-office/`) already holds the radio key. Git ignores it
-(`run*/`). On macOS and Linux, the gateway warns if other users can read `mqtt-password`. On
-Windows, protect the run directory with folder permissions. The POSIX permission check does not
-apply there.
+(`run*/`). The gateway warns if other users can read `mqtt-password`. The gateway runs on macOS
+and Linux; Windows is not supported.
 
 ## Set up the broker in Home Assistant OS (Clint's setup)
 
@@ -64,7 +63,6 @@ Recent HA versions call add-ons "Apps", so menu names can differ on older versio
    ( umask 077; printf '%s\n' '<password>' > run-office/mqtt-password )
    ```
 
-   On Windows, create `run-office\mqtt-password` with the password on the first line.
 4. Start the gateway. The gateway logs a refused login or a TLS problem as
    `#gateway mqtt connect refused: <reason>` (stderr, or `serve.out` under launchd). If
    `mqtt.username` is set and no password is found, the gateway does not start. Its error names
@@ -115,6 +113,5 @@ entities (`DIAGNOSTIC_FIELDS` in `ws0/fields.py`). The gateway publishes `…/we
 |---|---|
 | macOS | `tools/deploy/macos/install.sh install <run dir> <RX ST-LINK serial>` (LaunchAgent. It restarts the gateway on exit) |
 | Linux | `tools/deploy/linux/ws0-gateway.service` (systemd unit. See the comments in the file) |
-| Windows | The project ships no wrapper yet. Run `python -m ws0 serve --directory <run dir> --serial-number <RX serial>` from Task Scheduler ("At log on", "Restart if the task fails"), or wrap it with a service manager such as NSSM. Not yet tested. |
 
-All three read the password from the run directory, so no OS-specific secret store is involved.
+Both read the password from the run directory, so no OS-specific secret store is involved.

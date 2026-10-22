@@ -112,7 +112,7 @@ Use a new run directory (here `run-<name>`) each time you make a new key. `ws0 i
 
 `serve` writes receiver diagnostics to `run-<name>/receiver.log`. For unattended runs, use the launchd agent (`tools/deploy/macos/install.sh`) or the systemd unit (`tools/deploy/linux/ws0-gateway.service`). See [`tools/README.md`](tools/README.md). For Home Assistant, see [`docs/runbook-home-assistant.md`](docs/runbook-home-assistant.md).
 
-The gateway runs on macOS and Linux. Windows has low priority.
+The gateway runs on macOS and Linux. Windows is not supported.
 
 ## Run the simulation harness
 
