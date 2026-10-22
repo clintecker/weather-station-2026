@@ -19,17 +19,14 @@ permissions:
   contents: read
 
 jobs:
-  # The gateway must run on macOS, Linux and Windows. Linux and macOS also build and test the
-  # firmware C on the host (they require cc and the vendor sources). Windows runs the gateway tests
-  # only; the C tests skip there (tests/toolchain.py). Windows is not yet gating while its first
-  # runs shake out platform issues (POSIX permission bits, signals).
+  # The gateway runs on macOS and Linux; both also build and test the firmware C on the host
+  # (they require cc and the vendor sources). Windows is not supported.
   host:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,30 +64,21 @@ jobs:
       # vendor/ is git-ignored. Cache it keyed on the pin list; fetch-vendor.sh always re-verifies
       # every pinned commit and that no vendored file changed, so a stale or tampered cache fails here rather than in the tests.
       - name: Cache vendor sources
-        if: runner.os != 'Windows'
         uses: actions/cache@v4
         with:
           path: vendor
           key: vendor-${{ hashFiles('tools/fetch-vendor.sh') }}
 
       - name: Fetch and verify pinned vendor sources
-        if: runner.os != 'Windows'
         run: sh tools/fetch-vendor.sh
 
       # WS_REQUIRE_VENDOR=1 / WS_REQUIRE_CC=1 turn "vendor missing" and "no C compiler" skips into
       # failures, so the C-vs-Python agreement and firmware host tests can never silently drop out
       # of CI. One SNTP test needs network and skips without it.
       - name: Unit tests (with firmware C)
-        if: runner.os != 'Windows'
         env:
           WS_REQUIRE_VENDOR: '1'
           WS_REQUIRE_CC: '1'
-          WS0_UNSAFE_FAST_FSYNC: '1'
-        run: python -m unittest discover -s tests -v
-
-      - name: Unit tests (gateway only)
-        if: runner.os == 'Windows'
-        env:
           WS0_UNSAFE_FAST_FSYNC: '1'
         run: python -m unittest discover -s tests -v
 

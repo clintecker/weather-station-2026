@@ -96,7 +96,7 @@ flowchart LR
     filters), `obs` (the observation encoder) and `wsmp` (the WSMP module blocks). `tests/test_fuzz.py` runs them on every test
     run. CI also runs libFuzzer for 60 s per target (`firmware/fuzz/README.md`).
   - The C host tests (`test_policy`, `test_sensor`, the flash power-cut tests) and the fuzzers
-    run under AddressSanitizer and UndefinedBehaviorSanitizer (not on Windows).
+    run under AddressSanitizer and UndefinedBehaviorSanitizer.
   - Firmware builds: GCC `-fanalyzer` on our files, the worst-case stack bound (`make stack`:
     TX 78 % of 8 KB for `04fcc656938d`. Its release record gives no RX figure), and no blocking wait reachable at run time
     (`make waits`, `docs/firmware-budget.md` §Blocking waits).
@@ -309,7 +309,7 @@ energy state. It does not model the drain stop or the PROBING link state
 | `docs/power-of-ten.md` | The firmware against the Power of Ten rules |
 | `docs/lora-firmware-update-study.md` | Design study: firmware updates over LoRa (nothing built) |
 | `docs/superpowers/` | Design specifications and implementation plans |
-| `docs/runbook-home-assistant.md` | MQTT and Home Assistant setup, password file, running the gateway on macOS, Linux, Windows |
+| `docs/runbook-home-assistant.md` | MQTT and Home Assistant setup, password file, running the gateway on macOS and Linux |
 | `docs/runbook-moving-boards.md` | Moving boards between gateways without key or nonce reuse |
 | `docs/simulation-harness.md` | Simulation harness model and limits |
 | `docs/web-dashboard.md` | Live dashboard served by the gateway |
