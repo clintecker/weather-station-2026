@@ -232,7 +232,10 @@ flowchart LR
      corruption that a CRC cannot (the EEPROM has no CRC).
    - 10⁶ transactions at each length that is to qualify. At about 1.5 ms each this is roughly
      25 minutes *(estimate)*.
-5. **Hot-plug.** During the loop, unplug and replug the module end 20 times.
+5. **Hot-plug, a separate trial.** The 10⁶-transaction run of step 4 has no plug events. Afterwards,
+   with the same loop running, unplug and replug the module end 20 times, at least 30 s apart. Log
+   each event's time, so every error can be assigned to a plug event or not. Judged by the hot-plug
+   criterion below, not by the error-loop one.
 6. **10 m, informational.** One scope capture and a short loop, to see where the limit is. It is not
    a v1 criterion.
 7. Record the results under `evidence/cable-test-<date>/`: the setup, the cable's make and type,
@@ -245,8 +248,8 @@ flowchart LR
 | Rise time, 30–70 %, SDA and SCL, both ends | ≤ 1000 ns | Clint; the I2C standard-mode limit |
 | Fall time | ≤ 300 ns | my addition: the standard-mode limit |
 | Low level at the receiver | ≤ 0.4 V | my addition. 0.3 × 3.3 V ≈ 1.0 V is the input threshold; 0.4 V keeps margin for ground offset |
-| Error loop | 10⁶ transactions, **0 undetected corruption and 0 detected errors** | my proposal (OQ-2). Zero in 10⁶ bounds the error rate below about 3 × 10⁻⁶ at 95 % confidence |
-| Hot-plug | errors only during a plug event. The port is admitted again within two probes. No reset | WSMP-P2 |
+| Error loop (step 4, no plug events) | 10⁶ transactions, **0 undetected corruption and 0 detected errors** | my proposal (OQ-2). Zero in 10⁶ bounds the error rate below about 3 × 10⁻⁶ at 95 % confidence |
+| Hot-plug (step 5, 20 events) | detected errors only within a plug event (from unplug until the port is admitted again), and 0 undetected corruption. After each replug the port is admitted again within two probes. No reset, and the other ports keep reading | WSMP-P2 |
 
 ### 5.4 What each result changes
 
@@ -345,13 +348,16 @@ flowchart LR
   MUXCH["mux channel n<br/>SDn, SCn"] --> PU["pull-ups to the switched port 3.3 V<br/>4.7 kΩ (or the cable-test value)"]
   SW --> PU
   PU --> R["series R 33–100 Ω"]
-  R --> TVS["low-capacitance TVS to GND<br/>(part TBD, pF counts in the budget)"]
-  TVS --> J["RJ11 6P6C jack, pins 2 and 4"]
+  R --> J["RJ11 6P6C jack, pins 2 and 4"]
+  R --> TVS["low-capacitance TVS, shunt to GND<br/>(part TBD, pF counts in the budget)"]
+  TVS --> GND["GND"]
   V33["3.3 V rail"] --> SW["load switch with current limit<br/>(part TBD)"]
   EN["enable n<br/>(GPIO or upstream expander)"] --> SW
-  SW --> TVSP["TVS on the port supply"] --> J1["jack pin 1"]
+  SW --> J1["jack pin 1"]
+  SW --> TVSP["TVS on the port supply, shunt to GND"]
+  TVSP --> GND
   INTN["INT n: pull-up to port 3.3 V, series R, TVS<br/>not routed to the MCU in v1"] --> J5["jack pin 5"]
-  GND["GND"] --> J36["jack pins 3 and 6"]
+  GND --> J36["jack pins 3 and 6"]
 ```
 
 - **One mux channel per port** (PORT-2). The mux isolates every other port from a fault on this one.
@@ -454,8 +460,16 @@ stateDiagram-v2
   the probe table (section 6.7), as one short burst of transfers in its probe slot. Two good probes in
   a row admit the module (WSMP-P2), so admission takes 15–30 s, and the module joins the layout at the
   next latch (up to 60 s later). A newly plugged module is in the readings within 90 s.
-- **Port faults are reported.** A faulted port, or a device at an address that is not in the table,
-  shows in the `MODULES` line and later in the health report. A port fault never changes the
+- **Unknown-device scan** (my call). The probe table alone cannot see a device at another address,
+  so a port that stays absent also gets a bounded scan: once at boot, then at most once every
+  15 min, in its probe slot. It addresses 0x08–0x77 except the table addresses and every address on
+  the upstream bus (the mux, the battery monitor, the enclosure sensor: they answer through any
+  selected channel), a fixed list built from the board's upstream table, not learned. Each address
+  gets a zero-length write, and the whole scan is about 110 address bytes, under 15 ms at 100 kHz
+  *(estimate)*. An ACK marks the port "unknown device at 0xNN". It is never admitted (WSMP-P3).
+  Whether a zero-length write is harmless to every part we might meet is **TBD**.
+- **Port faults are reported.** A faulted port, or a device the scan found at an address that is not
+  in the table, shows in the `MODULES` line and later in the health report. A port fault never changes the
   descriptor set by itself (WSMP-P3).
 
 ### 6.7 Presence, identity and descriptors for a passive module
@@ -501,7 +515,7 @@ are refused: one module per port.
 |---|---|
 | magic, WSMP version | the station |
 | module type, schema | the probe table. An EEPROM record must agree, or the module is quarantined |
-| serial | 1. the EEPROM record. 2. Else the sensor's own serial number, if it has one (the SHT4x does; the BMP581 and LTR390: **TBD**). 3. Else `WSMP_LOCAL_SERIAL(port, type)`, as today |
+| serial | 1. the EEPROM record. 2. Else the sensor's own serial number, if it has one (the SHT4x does; the BMP581 and LTR390: **TBD**). 3. Else `WSMP_LOCAL_SERIAL(port, type)`, as today. Sources 1 and 2 travel with the module; source 3 is bound to the port (see **Serial rules** below) |
 | firmware version and build | the station's |
 | boot ID | proposed: changes at each admission of the port. A passive module has no clock of its own, so a re-plug is its "boot". This keeps WSMP-I2's intent (a counter series never spans a power loss) for any future passive module with a counter |
 | capabilities | bit 0 set if the EEPROM record carries metadata. Bit 1 clear |
@@ -525,6 +539,20 @@ The fuzz target `wsmp` grows to cover it. A bad record makes the module quaranti
 another port, and later to a v2 adapter. The gateway's planned calibration and siting archive
 (WSMP section 15) needs exactly that. Without it, a module's serial is its port, and a swap of two
 SHT45 modules is invisible.
+
+**Serial rules** (they hold for v1 ports and v2 adapters alike, section 7):
+- One precedence everywhere: EEPROM record, then the sensor's own serial, then a binding-derived
+  fallback. A v2 adapter uses the same order, so a module whose serial came from source 1 or 2 keeps
+  it on any v1 port and behind a v2 adapter.
+- A fallback serial (v1: `WSMP_LOCAL_SERIAL(port, type)`; v2: from the adapter MCU's unique ID)
+  names the binding, not the sensor. Moving such a module gives it a new serial, by design. Nobody
+  aliases the old serial to the new one: the station and the gateway cannot tell a moved module from
+  a swapped one, and a wrong alias would attach one sensor's calibration and siting record to another.
+- Home Assistant history does not depend on the serial: the WSMP-H1 entity ID has no port and no
+  serial in it, so it continues across moves for every module (section 2).
+- A module whose calibration or siting record must follow it across ports or to v2 needs source 1
+  or 2. This is why OQ-6 fits the EEPROM by default; a module without one and without a sensor serial
+  is fine where only the readings matter.
 
 **Port numbers.** Today a port number is a module type (1 = outside air … 7 = rain). In v1 a port
 number is a place. Proposal (my call; it only has to be stable):
@@ -589,8 +617,9 @@ flowchart LR
   (its header says so).
 - **Calibration moves into the module.** WSMP-G6 ("a module applies its own calibration") is met
   natively, with coefficients in the adapter's flash.
-- **Identity.** Serial: the v1 EEPROM record's serial if the sensor brought one, otherwise one derived
-  from the MCU's unique device ID (check that the STM32C011 has one). Boot ID: the adapter's own, kept
+- **Identity.** Serial: the precedence of section 6.7 (**Serial rules**): the v1 EEPROM record's
+  serial if the sensor brought one, else the sensor's own serial, else one derived from the MCU's
+  unique device ID (check that the STM32C011 has one). The last is a fallback bound to the adapter. Boot ID: the adapter's own, kept
   in its flash (WSMP-I2).
 - **Same module type codes.** A v2 SHT45 module reports type 1, schema 1, the same channels and
   descriptors as a v1 one. The gateway entity ID (WSMP-H1) has no binding, port or serial in it, so
@@ -614,7 +643,7 @@ flowchart TD
   Q -- no --> STAY["stays v1"]
   Q -- yes --> B["add a v2 adapter:<br/>the v1 module plugs into its RJ11 port or QT socket"]
   B --> C["the adapter on a sealed RJ45 port<br/>(remote, Modbus)"]
-  C --> D["same module type and descriptors:<br/>same entity IDs, history kept.<br/>Same serial if the EEPROM was fitted"]
+  C --> D["same module type and descriptors:<br/>same entity IDs, history kept.<br/>Same serial if the EEPROM was fitted<br/>or the sensor has its own serial"]
   D --> E["new port number: new descriptor set and generation<br/>(normal WSMP behaviour)"]
 ```
 
