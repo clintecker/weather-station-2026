@@ -22,8 +22,10 @@ flowchart LR
 | MQTT password | **Not in `gateway.json`, and never in chat or git.** Put it in a file `mqtt-password` in the run directory (first line), or in the `WS_MQTT_PASSWORD` environment variable. The variable wins if it is set (`mqtt_password()` in `ws0/service.py`) |
 
 The run directory (for example `run-office/`) already holds the radio key. Git ignores it
-(`run*/`). The gateway warns if other users can read `mqtt-password`. The gateway runs on macOS
-and Linux; Windows is not supported.
+(`run*/`). When the gateway reads `mqtt-password`, it warns if the file has any group or other
+permission bits set. It checks only the POSIX mode bits (not ACLs), and it skips the check when
+`WS_MQTT_PASSWORD` supplies the password. The gateway runs on macOS and Linux; Windows is not
+supported.
 
 ## Set up the broker in Home Assistant OS (Clint's setup)
 

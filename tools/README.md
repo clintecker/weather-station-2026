@@ -42,16 +42,16 @@ flowchart TD
 
 `.github/workflows/ci.yml` runs on every push and pull request. You can also start it by hand (`workflow_dispatch`, with an optional commit to build).
 
-- **host**: runs on Linux, macOS and Windows with Python 3.12. Windows does not gate the result yet. On Linux the job first runs ruff, `tools/code_shape.sh` and `tools/cppcheck.sh`. On Linux and macOS it runs `sh tools/fetch-vendor.sh` (cached, always verified again), then `WS_REQUIRE_VENDOR=1 WS_REQUIRE_CC=1 WS0_UNSAFE_FAST_FSYNC=1 python -m unittest discover -s tests`. With `WS_REQUIRE_VENDOR=1` and `WS_REQUIRE_CC=1`, a missing `vendor/` or a missing C compiler fails the C tests and does not skip them. On Windows the job runs the gateway tests only.
+- **host**: runs on Linux and macOS with Python 3.12 (Windows is not supported). On Linux the job first runs ruff, `tools/code_shape.sh` and `tools/cppcheck.sh`. Then it runs `sh tools/fetch-vendor.sh` (cached, always verified again), then `WS_REQUIRE_VENDOR=1 WS_REQUIRE_CC=1 WS0_UNSAFE_FAST_FSYNC=1 python -m unittest discover -s tests`. With `WS_REQUIRE_VENDOR=1` and `WS_REQUIRE_CC=1`, a missing `vendor/` or a missing C compiler fails the C tests and does not skip them.
 - **firmware**: installs xPack arm-none-eabi-gcc 15.2.1-1.1 (linux-x64, SHA-256 pinned in the workflow). It builds `ROLE=rx` and `ROLE=tx` two times from `make clean` and fails if the `.bin` hashes differ. The flash budget check of the Makefile runs at each link. The job uploads the bins and maps as the `stage0-firmware` artifact.
 - The firmware job can find a section for the built commit in `firmware/stage0-node/RELEASES.md`, read from the default branch. It then compares the `.bin` hashes with the recorded ones and reports a match or a mismatch. This check never fails the job. To check an old release again, run the workflow by hand with that commit.
 
 ```mermaid
 flowchart TD
-  P["push, pull request or manual run"] --> H["host job<br/>Linux, macOS, Windows"]
+  P["push, pull request or manual run"] --> H["host job<br/>Linux, macOS"]
   P --> F["firmware job<br/>Linux"]
   H --> H1["Linux only: ruff, code_shape.sh, cppcheck.sh"]
-  H1 --> H2["Linux and macOS: fetch-vendor.sh"]
+  H1 --> H2["fetch-vendor.sh"]
   H2 --> H3["unit tests"]
   F --> F1["install pinned xPack GCC"]
   F1 --> F2["fetch-vendor.sh"]

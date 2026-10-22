@@ -358,8 +358,8 @@ def discovery(cfg, names=DEFAULT_DISCOVERY):
 def mqtt_password(directory):
     """Broker password: WS_MQTT_PASSWORD if set, else the first line of <run dir>/mqtt-password.
 
-    A file in the private run directory works the same on macOS, Linux and Windows and under any
-    service manager (launchd, systemd, Task Scheduler), and stays out of gateway.json and git."""
+    A file in the private run directory works the same on macOS and Linux and under any service
+    manager (launchd, systemd), and stays out of gateway.json and git."""
     if os.environ.get('WS_MQTT_PASSWORD'):
         return os.environ['WS_MQTT_PASSWORD']
     path = Path(directory) / 'mqtt-password'
