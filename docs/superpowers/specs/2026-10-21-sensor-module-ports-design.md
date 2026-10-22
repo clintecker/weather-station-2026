@@ -40,6 +40,7 @@ found a problem with one, the problem is an open question in section 11, with a 
 | v1 meter ports | Stay as they are (the SEN-15901's RJ11 6P4C cables on GPIO and ADC) |
 | Before any board | A bench test sets the real cable limit: 3 m, then 5 m, of 6-conductor flat cable. Scope rise time ≤ 1000 ns at 100 kHz. A long error-count loop |
 | Open (Clint) | Sealing RJ11 on an IP66 box. Likely: the jacks inside, glands that fit flat cable |
+| v1 module identity (2026-10-21) | **Every v1 module board carries a programmed ID EEPROM** (OQ-6, decided). Its record gives each sensor a serial that follows it across ports and to v2 |
 | v2 (later, maybe) | RS-485 over RJ45, as WSMP section 13 and Stage 2 describe: an adapter MCU per module, Modbus, eFuse-protected 10–18 V port power, sealed Amphenol RJF544, 10 m outdoor Cat6 |
 
 ## 2. Goals, non-goals and anti-goals
@@ -194,7 +195,7 @@ flowchart LR
   J1 -- "6-conductor flat cable<br/>0.3 m, 3 m, 5 m (10 m informational)" --> J2["BOB-14021 as RJ11 jack"]
   subgraph M["Module side"]
     J2 --- QT["STEMMA QT pigtail"]
-    QT --- S["SHT45 board, pull-ups cut<br/>(+ ID EEPROM if fitted)"]
+    QT --- S["SHT45 board, pull-ups cut<br/>+ ID EEPROM (every module board)"]
   end
   SC1["scope probe, base end"] -.- RS
   SC2["scope probe, module end"] -.- J2
@@ -228,7 +229,7 @@ flowchart LR
 4. **Error-count loop.** A test build of the station firmware runs CRC-checked transactions on the
    port and counts the results: OK, address NACK, data NACK, bad CRC, timeout, bus error, recovery.
    - SHT45: the serial-number read and the measurement read. Both carry a CRC.
-   - With an ID EEPROM fitted: write a fixed pattern once, then read it back and compare. This finds
+   - The module's ID EEPROM: write a fixed pattern once, then read it back and compare. This finds
      corruption that a CRC cannot (the EEPROM has no CRC).
    - 10⁶ transactions at each length that is to qualify. At about 1.5 ms each this is roughly
      25 minutes *(estimate)*.
@@ -308,11 +309,11 @@ Other results:
 flowchart LR
   J["RJ11 6P6C jack"] --> ESD["ESD protection on the module side<br/>(part TBD, optional)"]
   ESD --> QT["STEMMA QT socket"]
-  ESD --> EE["ID EEPROM 0x50<br/>(optional, OQ-6)"]
+  ESD --> EE["ID EEPROM 0x50<br/>(fitted on every board, OQ-6)"]
   QT -- "short QT cable or direct mount" --> SB["Adafruit sensor board<br/>(SHT45, LTR390, BMP581)"]
 ```
 
-- The module board is passive: a jack, a STEMMA QT socket, an optional ID EEPROM, optional ESD
+- The module board is passive: a jack, a STEMMA QT socket, an ID EEPROM (always fitted), optional ESD
   parts, and no pull-ups. The sensor stays on its own Adafruit breakout. So the sensor part can be
   swapped without a new board.
 - **Pull-ups to cut.** Each Adafruit breakout's pull-ups are removed (cut jumper or removed
@@ -483,15 +484,15 @@ port the station finds out what is plugged in.
 sequenceDiagram
     participant H as Station host
     participant P as Port n (mux channel)
-    participant E as ID EEPROM 0x50 (optional)
+    participant E as ID EEPROM 0x50
     H->>P: probe the table addresses, one per slot
     P-->>H: ACK at 0x44 and the SHT4x answers its serial read
     H->>E: read the module record
     alt record present and valid
         E-->>H: magic, module type, serial, calibration revision, part number
         H->>H: the record's type must match the probed part, else quarantine
-    else no EEPROM or no valid record
-        H->>H: type from the probe table, serial from the part or from the port
+    else no EEPROM or no valid record (a fault on a v1 module board)
+        H->>H: type from the probe table, serial from the part or from the port, flag NO_RECORD
     end
     H->>H: second good probe, then admission (identity, descriptors, budget)
 ```
@@ -535,7 +536,7 @@ Rule 3 of WSMP (codes, not text, carry meaning) and WSMP-X3 (no text as identity
 The station parses it into a fixed structure and checks every length, code and character (WSMP-X2).
 The fuzz target `wsmp` grows to cover it. A bad record makes the module quarantined, not absent.
 
-**Why the EEPROM is worth it** (OQ-6): it gives each physical sensor a serial that survives a move to
+**Why every module board has one** (OQ-6, decided 2026-10-21): it gives each physical sensor a serial that survives a move to
 another port, and later to a v2 adapter. The gateway's planned calibration and siting archive
 (WSMP section 15) needs exactly that. Without it, a module's serial is its port, and a swap of two
 SHT45 modules is invisible.
@@ -551,8 +552,12 @@ SHT45 modules is invisible.
 - Home Assistant history does not depend on the serial: the WSMP-H1 entity ID has no port and no
   serial in it, so it continues across moves for every module (section 2).
 - A module whose calibration or siting record must follow it across ports or to v2 needs source 1
-  or 2. This is why OQ-6 fits the EEPROM by default; a module without one and without a sensor serial
-  is fine where only the readings matter.
+  or 2. This is why every v1 module board carries a programmed EEPROM (OQ-6).
+- **A missing or invalid record is a fault, not a normal case.** The station still admits the module
+  (its readings stay useful, and one bad part never stops a sensor), takes the serial from sources 2
+  and 3, and raises a port status flag, `NO_RECORD`, that the gateway shows. The only expected
+  record-less sensors are bare Adafruit boards: on the phase 1 breadboard, and in a v2 adapter's
+  STEMMA QT socket.
 
 **Port numbers.** Today a port number is a module type (1 = outside air … 7 = rain). In v1 a port
 number is a place. Proposal (my call; it only has to be stable):
@@ -643,7 +648,7 @@ flowchart TD
   Q -- no --> STAY["stays v1"]
   Q -- yes --> B["add a v2 adapter:<br/>the v1 module plugs into its RJ11 port or QT socket"]
   B --> C["the adapter on a sealed RJ45 port<br/>(remote, Modbus)"]
-  C --> D["same module type and descriptors:<br/>same entity IDs, history kept.<br/>Same serial if the EEPROM was fitted<br/>or the sensor has its own serial"]
+  C --> D["same module type and descriptors:<br/>same entity IDs, history kept.<br/>Same serial: from the module's EEPROM"]
   D --> E["new port number: new descriptor set and generation<br/>(normal WSMP behaviour)"]
 ```
 
@@ -681,7 +686,7 @@ flowchart TD
 | PORT-10 | The cable length is at most the qualified length from the cable test |
 | PORT-11 | Sensor cables are straight through and tested (or the pinout is reversal-safe, OQ-1) |
 | PORT-12 | Sensor and meter ports are labelled, and sensor cables are coloured differently |
-| PORT-13 | A passive module's identity follows section 6.7. An EEPROM record is optional and checked |
+| PORT-13 | A passive module's identity follows section 6.7. Every v1 module board carries a programmed, checked EEPROM record; a module without a valid one is admitted with the `NO_RECORD` flag |
 
 ## 10. Tests: what replaces or splits H04
 
@@ -703,7 +708,7 @@ The PRD's H04 is one test of one RJ45 RS-485 port. This spec proposes to split i
 | PORT-3, 4, 10 | the phase 2 cable test (section 5); H04a at temperature |
 | PORT-5 | H04a: a shorted port supply trips the limit, the station stays up; reversed-cable case |
 | PORT-7 | host test: plug at a random time, in the layout within 90 s; bench: 20 plugs |
-| PORT-13 | host tests: probe table, EEPROM record parsing, type mismatch quarantines; fuzzing of the record parser (WSMP-X2) |
+| PORT-13 | host tests: probe table, EEPROM record parsing, type mismatch quarantines, a missing or bad record admits with `NO_RECORD`; fuzzing of the record parser (WSMP-X2) |
 | WSMP conformance | a new row in WSMP section 14 for the I2C port binding |
 
 ## 11. Open questions for Clint
@@ -717,7 +722,7 @@ Most important first. Each has my recommendation.
 | OQ-3 | **Where does the BMP581 go?** The registry gives pressure the role "enclosure", but the decision list puts only INA228, MAX17048 and SHTC3 on the base | On the base, upstream of the mux, like the SHTC3. Pressure is measured fine in a vented box, it saves a port and a cable, and it needs no change to the registry role. If it must be modular, put it on a short port inside the box |
 | OQ-4 | **How many sensor ports on the v1 base?** | Four RJ11 sensor ports on channels 0–3 (the PRD's "four positions"); channels 4–7 not fitted. With four base modules this reaches the WSMP limit of 8 modules. If the BMP581 goes on the base (OQ-3), either use only three ports or raise WSMP-P8 to 9 modules (the 24-channel and radio-budget limits still hold: 18 channels today). I recommend raising P8 to 12 modules, since the channel and byte budgets are the real limits |
 | OQ-5 | **Port power policy.** The PRD says ports are off by default, enabled only for a commissioned module type, and never live-mated. Apply that to 3.3 V I2C ports? | No for v1: ports on by default, live mating tolerated, automatic discovery. Commissioning stays optional: a configured expected type raises an alarm on a mismatch. Keep the PRD rule for v2 10–18 V ports |
-| OQ-6 | **ID EEPROM on v1 module boards?** | Footprint on every board, fitted by default. A single-address, 2-byte-addressed part. The firmware treats it as optional. It gives each sensor a serial that survives port moves and the move to v2 |
+| OQ-6 | **ID EEPROM on v1 module boards?** | **Decided (Clint, 2026-10-21): fitted and programmed on every module board.** A single-address, 2-byte-addressed part. A missing or invalid record is admitted with the `NO_RECORD` flag (section 6.7). It gives each sensor a serial that survives port moves and the move to v2 |
 | OQ-7 | **Sealing RJ11 on the IP66 box** | Option A of section 6.8: jacks inside, split-insert glands or a cable-entry frame. Prefer a round jacketed cable if it passes the cable test, and re-run the test on it |
 | OQ-8 | **Is v2 scheduled?** | No. v1 replaces the PRD's Stage 2 RJ45 port. v2 is built only when a needed run exceeds the v1 limit, or an instrument needs an adapter (pulse, analog, or a remote head). The long-lead v2 parts are not ordered for v1 |
 | OQ-9 | **What does a v2 adapter accept?** | Both, on one local bus: a STEMMA QT socket (for a bare Adafruit board) and a v1-compatible RJ11 port (for a whole v1 module board, keeping its EEPROM serial) |
@@ -767,7 +772,7 @@ gives the proposed wording.
 | `docs/module-protocol.md` §7, WSMP-P8 | "A station has at most 8 modules and 24 channels." | only if OQ-4 raises it: "… at most 12 modules and 24 channels." (`wsmp_host` and the descriptor-set size of WSMP-E4 change with it) |
 | `docs/module-protocol.md` §7, new WSMP-P9 | — | "**WSMP-P9. I2C port power.** An I2C port gets 3.3 V through a current limit that the station switches. The station switches it off and on to recover a stuck channel. Live mating is tolerated. (WSMP-P7 stays the rule for remote ports.)" |
 | `docs/module-protocol.md` §10, WSMP-B3 | "… at most nine times, and then sends a stop condition. A clean NACK gets no recovery." | add: "On an I2C port the station runs this with the failing channel selected. If SDA stays low, it resets the multiplexer, then switches the port's power off and on, then backs off (spec 2026-10-21 §6.6)." |
-| `docs/module-protocol.md`, new §10.1 | — | "**10.1 Passive modules on I2C ports (the RJ11 binding).**" The probe table, the identity sources, the optional module record at 0x50, the multiplexer rules and the port numbers, from section 6.7 of this spec |
+| `docs/module-protocol.md`, new §10.1 | — | "**10.1 Passive modules on I2C ports (the RJ11 binding).**" The probe table, the identity sources, the module record at 0x50 (on every v1 module board), the multiplexer rules and the port numbers, from section 6.7 of this spec |
 | `docs/module-protocol.md` §12, WSMP-X2 | "A fuzz test MUST cover the station's parser of every block." | "… of every block and of the passive module record." |
 | `docs/module-protocol.md` §12, WSMP-X4 | "Before a remote port is used outdoors …" | "Before any external port (I2C or remote) is used outdoors …" |
 | `docs/module-protocol.md` §13, title and first line | "## 13. Remote modules (the RJ45 binding)" | "## 13. Remote modules (the RJ45 binding, v2)", and first line: "v1 has no remote ports. v1 external modules use the I2C port binding (section 10.1)." |
