@@ -40,7 +40,7 @@ found a problem with one, the problem is an open question in section 11, with a 
 | v1 meter ports | Stay as they are (the SEN-15901's RJ11 6P4C cables on GPIO and ADC) |
 | Before any board | A bench test sets the real cable limit: 3 m, then 5 m, of 6-conductor flat cable. Scope rise time ≤ 1000 ns at 100 kHz. A long error-count loop |
 | Open (Clint) | Sealing RJ11 on an IP66 box. Likely: the jacks inside, glands that fit flat cable |
-| v1 module identity (2026-10-21) | **Every v1 module board carries a programmed ID EEPROM** (OQ-6, decided). Its record gives each sensor a serial that follows it across ports and to v2 |
+| v1 module identity (2026-10-21) | **Every v1 module board carries a programmed ID EEPROM** (OQ-6, decided). Its record gives each module (module board plus its sensor board) a serial that follows it across ports and to v2. A sensor-board swap gets a new serial |
 | Identity is normalized (2026-10-21) | **No port sensor is ever without an ID EEPROM.** On the breadboard each sensor gets an EEPROM breakout on its own mux channel; in v2 the adapter takes only a whole v1 module board, never a bare sensor board |
 | v2 (later, maybe) | RS-485 over RJ45, as WSMP section 13 and Stage 2 describe: an adapter MCU per module, Modbus, eFuse-protected 10–18 V port power, sealed Amphenol RJF544, 10 m outdoor Cat6 |
 
@@ -143,7 +143,8 @@ flowchart LR
   board's second QT socket. All channels' EEPROMs share 0x50; only one channel is selected at a time,
   and nothing upstream uses 0x50. Each one is programmed once with its sensor's record (section 6.7).
   When the sensor moves onto its v1 module board, the record is copied to that board's EEPROM, so the
-  serial does not change.
+  serial does not change. On the breadboard each EEPROM breakout and its sensor board are a labelled
+  pair; replacing either one means a new record with a new serial.
 - **The breadboard itself does not change.** Board A keeps one STEMMA QT cable to the hub
   ([`build-sheet.md`](../../../hardware/bench-breadboard-r0/build-sheet.md), part QT). The mux lives
   on the QT chain, off the breadboard. The meter circuits on board A stay as they are.
@@ -237,8 +238,10 @@ flowchart LR
 4. **Error-count loop.** A test build of the station firmware runs CRC-checked transactions on the
    port and counts the results: OK, address NACK, data NACK, bad CRC, timeout, bus error, recovery.
    - SHT45: the serial-number read and the measurement read. Both carry a CRC.
-   - The module's ID EEPROM: write a fixed pattern once, then read it back and compare. This finds
-     corruption that a CRC cannot (the EEPROM has no CRC).
+   - The test module's ID EEPROM: write a fixed pattern once, then read it back and compare. This
+     finds corruption that a CRC cannot (the EEPROM has no CRC). The cable-test module is a fixture,
+     not a fielded module: its write-protect is opened by a jumper, and the pattern goes only to the
+     record's reserved test page, never to the record itself.
    - 10⁶ transactions at each length that is to qualify. At about 1.5 ms each this is roughly
      25 minutes *(estimate)*.
 5. **Hot-plug, a separate trial.** The 10⁶-transaction run of step 4 has no plug events. Afterwards,
@@ -323,7 +326,10 @@ flowchart LR
 
 - The module board is passive: a jack, a STEMMA QT socket, an ID EEPROM (always fitted), optional ESD
   parts, and no pull-ups. The sensor stays on its own Adafruit breakout. So the sensor part can be
-  swapped without a new board.
+  swapped without a new board, but **not without a new serial**: the EEPROM's serial names the
+  module assembly (this module board with this sensor board), so a sensor-board swap includes
+  reprogramming the EEPROM with a new serial on the programming fixture. Otherwise the replacement
+  would inherit the old sensor's calibration and siting record.
 - **Pull-ups to cut.** Each Adafruit breakout's pull-ups are removed (cut jumper or removed
   resistors). **Verify for each board**: some STEMMA QT breakouts carry a regulator and a level
   shifter, with pull-ups on both sides of the shifter. Cutting one jumper may leave the other side
@@ -523,7 +529,7 @@ are refused: one module per port.
 | Field | Source |
 |---|---|
 | magic, WSMP version | the station |
-| module type, schema | the probe table. An EEPROM record must agree, or the module is quarantined |
+| module type, schema | the probe table. A valid EEPROM record must agree, or the module is quarantined |
 | serial | 1. the EEPROM record. 2. Else the sensor's own serial number, if it has one (the SHT4x does; the BMP581 and LTR390: **TBD**). 3. Else `WSMP_LOCAL_SERIAL(port, type)`, as today. Sources 1 and 2 travel with the module; source 3 is bound to the port (see **Serial rules** below) |
 | firmware version and build | the station's |
 | boot ID | proposed: changes at each admission of the port. A passive module has no clock of its own, so a re-plug is its "boot". This keeps WSMP-I2's intent (a counter series never spans a power loss) for any future passive module with a counter |
@@ -539,10 +545,17 @@ Rule 3 of WSMP (codes, not text, carry meaning) and WSMP-X3 (no text as identity
 - the serial (u64, not 0);
 - a calibration revision for each channel, and the part number and labels in the WSMP-M1 character
   set. These map onto the metadata block (section 6.5 of WSMP).
-- a CRC-32C over the record.
+- a CRC-32C over the record;
+- one reserved page at the end of the part, outside the record and its CRC, for the cable test's
+  write and read-back (section 5.2). Fielded modules never write it.
 
 The station parses it into a fixed structure and checks every length, code and character (WSMP-X2).
-The fuzz target `wsmp` grows to cover it. A bad record makes the module quarantined, not absent.
+The fuzz target `wsmp` grows to cover it. Two cases, never treated alike:
+- **No usable record**: no ACK at 0x50, a blank part, a wrong magic, a bad CRC or a malformed field.
+  The module is admitted with the `NO_RECORD` flag (see **Serial rules**).
+- **A valid record that disagrees**: the CRC and every field check pass, but its module type or
+  schema differs from the probed part. That is an identity conflict, not a failed part: the module
+  is quarantined, not absent, until the record or the sensor is corrected.
 
 **Why every module board has one** (OQ-6, decided 2026-10-21): it gives each physical sensor a serial that survives a move to
 another port, and later to a v2 adapter. The gateway's planned calibration and siting archive
@@ -561,11 +574,12 @@ SHT45 modules is invisible.
   serial in it, so it continues across moves for every module (section 2).
 - A module whose calibration or siting record must follow it across ports or to v2 needs source 1
   or 2. This is why every v1 module board carries a programmed EEPROM (OQ-6).
-- **A missing or invalid record is a fault, not a normal case.** The station still admits the module
+- **No usable record is a fault, not a normal case.** The station still admits the module
   (its readings stay useful, and one bad part never stops a sensor), takes the serial from sources 2
   and 3, and raises a port status flag, `NO_RECORD`, that the gateway shows. There is no expected
   record-less case: the breadboard has an EEPROM per sensor (section 4.1) and a v2 adapter takes only
-  a v1 module board (section 7). `NO_RECORD` always means a missing, blank or failed EEPROM.
+  a v1 module board (section 7). `NO_RECORD` always means a missing, blank, corrupt or failed
+  EEPROM. A valid record whose type disagrees is quarantined instead (section 6.7, above).
 
 **Port numbers.** Today a port number is a module type (1 = outside air … 7 = rain). In v1 a port
 number is a place. Proposal (my call; it only has to be stable):
@@ -714,7 +728,7 @@ The PRD's H04 is one test of one RJ45 RS-485 port. This spec proposes to split i
 | PORT-3, 4, 10 | the phase 2 cable test (section 5); H04a at temperature |
 | PORT-5 | H04a: a shorted port supply trips the limit, the station stays up; reversed-cable case |
 | PORT-7 | host test: plug at a random time, in the layout within 90 s; bench: 20 plugs |
-| PORT-13 | host tests: probe table, EEPROM record parsing, type mismatch quarantines, a missing or bad record admits with `NO_RECORD`; fuzzing of the record parser (WSMP-X2) |
+| PORT-13 | host tests: probe table, EEPROM record parsing, a valid record with a mismatching type quarantines, a missing, blank or corrupt record admits with `NO_RECORD`; fuzzing of the record parser (WSMP-X2) |
 | WSMP conformance | a new row in WSMP section 14 for the I2C port binding |
 
 ## 11. Open questions for Clint
@@ -782,7 +796,7 @@ gives the proposed wording.
 | `docs/module-protocol.md` §12, WSMP-X2 | "A fuzz test MUST cover the station's parser of every block." | "… of every block and of the passive module record." |
 | `docs/module-protocol.md` §12, WSMP-X4 | "Before a remote port is used outdoors …" | "Before any external port (I2C or remote) is used outdoors …" |
 | `docs/module-protocol.md` §13, title and first line | "## 13. Remote modules (the RJ45 binding)" | "## 13. Remote modules (the RJ45 binding, v2)", and first line: "v1 has no remote ports. v1 external modules use the I2C port binding (section 10.1)." |
-| `docs/module-protocol.md` §14, conformance table | no I2C port row | add: "I2C port binding \| P1, P3, P9, B3, X2 \| plug at random times, hold SDA and SCL low on one channel, check the other channels; a bad module record quarantines" |
+| `docs/module-protocol.md` §14, conformance table | no I2C port row | add: "I2C port binding \| P1, P3, P9, B3, X2 \| plug at random times, hold SDA and SCL low on one channel, check the other channels; a valid module record whose type disagrees quarantines; a missing or corrupt record admits with NO_RECORD" |
 | `docs/module-protocol.md` §15, open items | "Remote ports beyond one \| Needs a UART multiplexer or a different station microcontroller." | "Remote ports beyond one (v2) \| …". Add: "I2C port cable limit \| set by the cable test (spec 2026-10-21 §5)." |
 | `docs/next-stages-plan.md` §1, diagram | `S2 -- "H04 passes" --> S3` | `S2 -- "H04a passes" --> S3` |
 | `docs/next-stages-plan.md` §1, Stage 2 row | "One wired sensor module on a sealed RJ45 port \| H04, the port test: power, faults, 10 m cable, 10⁶ transactions" | "One wired sensor module on an RJ11 I2C port (v1) \| H04a, the I2C port test: the qualified cable length, faults, cross-mating, 10⁶ transactions. (H04b, the RS-485 port test, moves to v2.)" |
