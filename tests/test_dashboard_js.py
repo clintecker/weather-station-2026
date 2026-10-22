@@ -443,7 +443,7 @@ class DashboardScript(unittest.TestCase):
             raise unittest.SkipTest('node not installed')
         with tempfile.TemporaryDirectory() as tmp:
             script = Path(tmp) / 'harness.js'
-            script.write_text(HARNESS)
+            script.write_text(HARNESS, encoding='utf-8')   # it has µ and ·; Windows' default is cp1252
             result = subprocess.run([node, str(script), str(ROOT / 'ws0' / 'static' / 'app.js')],
                                     capture_output=True, text=True, encoding='utf-8', timeout=120)
         if result.returncode:
