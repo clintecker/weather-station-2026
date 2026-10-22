@@ -10,9 +10,9 @@ Import it before ws0 or gateway, with the dual import every test module uses:
 Importing it sets WS0_UNSAFE_FAST_FSYNC=1 (unless already set), so a module run on its own gets the
 same fast, non-durable SQLite as the full suite: unit tests do not claim power-loss durability.
 
-The gateway must run on macOS, Linux and Windows. The C firmware tests need a C compiler (`cc`),
-which a Windows host usually lacks, so they skip there. CI sets WS_REQUIRE_CC=1 on Linux and
-macOS so a missing compiler fails instead of silently skipping, and WS_REQUIRE_VENDOR=1 so a
+The gateway runs on macOS and Linux (Windows is not supported). The C firmware tests need a C
+compiler (`cc`) and skip without one. CI sets WS_REQUIRE_CC=1 so a missing compiler fails
+instead of silently skipping, and WS_REQUIRE_VENDOR=1 so a
 missing vendor/ fails the Mbed TLS tests instead of skipping them.
 """
 import os
@@ -44,7 +44,7 @@ needs_vendor = unittest.skipUnless(MBEDTLS.exists() or REQUIRE_VENDOR, 'run tool
 
 # Host C test programs run under AddressSanitizer + UBSan: an out-of-bounds write or signed overflow
 # in the firmware's pure code fails the test instead of passing silently.
-# MinGW gcc (the Windows CI runner's cc) has no sanitizer runtime; there the tests run without them.
+# MinGW gcc (Windows; not supported, not in CI) has no sanitizer runtime; there the tests run without them.
 SAN = [] if sys.platform == 'win32' else ['-g', '-fsanitize=address,undefined', '-fno-sanitize-recover=all',
                                           '-fno-omit-frame-pointer']
 
