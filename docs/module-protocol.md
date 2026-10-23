@@ -532,13 +532,25 @@ packet-beta
   0-15: "generation"
   16-23: "module count"
   24-31: "reserved, 0"
-  32-63: "digest: CRC-32C of the module entries"
+  32-63: "digest: CRC-32C of every byte after the header"
   64-71: "module 0: port"
   72-87: "module 0: module type"
   88-95: "module 0: schema"
   96-103: "module 0: channel count"
-  104-127: "module 0: descriptors (6 B each) ..."
+  104-167: "module 0: serial"
+  168-175: "module 0: id_flags"
+  176-207: "module 0: record_crc"
+  208-255: "module 0: descriptors (6 B each) ..."
 ```
+
+Each module entry is 18 bytes, then its descriptors. The entry carries the module's identity
+(sensor module ports design, section 6.7): `serial` (u64), `id_flags` (u8: the identity flags' low
+byte, the serial source in bits 0–1 and the record status in bits 4–7; bits 2–3 reserved, 0) and
+`record_crc` (u32: the applied record's CRC-32C, 0 when no record is applied). The digest is the
+CRC-32C of every byte after the 8-byte header: the entries and their descriptors. A changed serial or record CRC gives a new set and generation
+(the WSMP-C1 boundary). A reader refuses a set reserved bit or byte, an undefined record status, a
+length that differs from what the entries give, and ports that are not strictly increasing
+(`firmware/common/wsmp.lit.md` section 9; the gateway's twin is `ws0/wsmp_set.py`).
 
 - **WSMP-E1. Generation.** The station gives a new descriptor set the next generation number. The
   number MUST NOT be reused under the same station key. The station keeps it in flash, as it keeps
@@ -550,7 +562,8 @@ packet-beta
   set that a pending journal record uses. Before it erases a journal page that holds a set still in
   use, it writes that set again. It keeps at most 8 sets in use. If a change needs a ninth, the
   station refuses the change until the journal drains, and reports it.
-- **WSMP-E4. Size.** A full set is at most 8 + 8 × 5 + 24 × 6 = 192 bytes.
+- **WSMP-E4. Size.** A full set is at most 8 + 8 × 18 + 24 × 6 = 296 bytes (6 fragments at 58 bytes;
+  the radio protocol's fragment count for a full set grows with it, WSMP-E9).
 
 ### 11.2 Delivery to the gateway
 

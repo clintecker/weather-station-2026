@@ -353,3 +353,120 @@ uint8_t wsmp_id_flags(uint8_t source, uint8_t status)
 {
   return (uint8_t)((source & REC_SOURCE_MASK) | (status & REC_STATUS_MASK) << REC_STATUS_SHIFT);
 }
+
+static uint8_t *pack_entry_set(uint8_t *p, const wsmp_set_module *m)
+{
+  p = ws_write_u8(p, m->port);
+  p = ws_write_be16(p, m->type);
+  p = ws_write_u8(p, m->schema);
+  p = ws_write_u8(p, m->channels);
+  p = ws_write_be(p, m->serial, sizeof m->serial);
+  p = ws_write_u8(p, m->id_flags);
+  p = ws_write_be32(p, m->record_crc);
+  uint8_t block[WSMP_DESC_BLOCK_LEN];
+  wsmp_pack_desc(m->desc, m->channels, block);
+  size_t n = (size_t)m->channels * WSMP_DESC_LEN;
+  memcpy(p, block, n);
+  return p + n;
+}
+
+/* Power of Ten rule 5: the counts bound the writes into out[WSMP_SET_MAX_LEN]. A set outside them is a
+   bug of the caller; the recovery is to pack nothing (length 0), which no reader accepts. */
+static int set_fits(const wsmp_set *s)
+{
+  unsigned total = 0;
+  if (s->count > WSMP_SET_MODULES_MAX) return 0;
+  for (unsigned i = 0; i < s->count; i++)
+  {
+    if (s->m[i].channels == 0U || s->m[i].channels > WSMP_MAX_CHANNELS) return 0;
+    total += s->m[i].channels;
+  }
+  return total <= WSMP_SET_CHANNELS_MAX;
+}
+
+unsigned wsmp_pack_set(const wsmp_set *s, uint8_t out[WSMP_SET_MAX_LEN])
+{
+  if (!set_fits(s)) return 0;
+  uint8_t *p = out + WSMP_SET_HEAD_LEN;
+  for (unsigned i = 0; i < s->count; i++) p = pack_entry_set(p, &s->m[i]);
+  unsigned len = (unsigned)(p - out);
+  uint8_t *h = ws_write_be16(out, s->generation);
+  h = ws_write_u8(h, s->count);
+  h = ws_write_u8(h, 0U);
+  (void)ws_write_be32(h, wsmp_crc32c(out + WSMP_SET_HEAD_LEN, len - WSMP_SET_HEAD_LEN));
+  return len;
+}
+
+#define SET_FLAGS_RESERVED 0x0CU                       /* id_flags bits 2-3 */
+#define SET_STATUS_MAX     WSMP_REC_SENSOR_CHANGED     /* the last defined record status */
+
+static int unpack_entry_set(const uint8_t **pp, const uint8_t *end, wsmp_set_module *m, unsigned *total)
+{
+  const uint8_t *p = *pp;
+  if ((size_t)(end - p) < WSMP_SET_ENTRY_LEN) return WSMP_ELEN;
+  m->port = p[0];
+  m->type = ws_get_be16(p + 1);
+  m->schema = p[3];
+  m->channels = p[4];
+  m->serial = ws_get_be64(p + 5, sizeof m->serial);
+  m->id_flags = p[13];
+  m->record_crc = ws_get_be32(p + 14);
+  p += WSMP_SET_ENTRY_LEN;
+  if (m->channels == 0U || m->channels > WSMP_MAX_CHANNELS || m->serial == 0U) return WSMP_ELEN;
+  *total += m->channels;
+  if (*total > WSMP_SET_CHANNELS_MAX) return WSMP_ELEN;
+  if ((m->id_flags & SET_FLAGS_RESERVED) != 0U || (m->id_flags >> REC_STATUS_SHIFT) > SET_STATUS_MAX) return WSMP_ERESERVED;
+  size_t n = (size_t)m->channels * WSMP_DESC_LEN;
+  if ((size_t)(end - p) < n) return WSMP_ELEN;
+  uint8_t block[WSMP_DESC_BLOCK_LEN] = { 0 };
+  memcpy(block, p, n);
+  *pp = p + n;
+  return wsmp_unpack_desc(block, m->channels, m->desc);
+}
+
+static int unpack_head_set(const uint8_t *in, size_t len, wsmp_set *s)
+{
+  if (len < WSMP_SET_HEAD_LEN || len > WSMP_SET_MAX_LEN) return WSMP_ELEN;
+  s->generation = ws_get_be16(in);
+  s->count = in[2];
+  s->digest = ws_get_be32(in + 4);
+  if (in[3] != 0U) return WSMP_ERESERVED;
+  return s->count > WSMP_SET_MODULES_MAX ? WSMP_ELEN : WSMP_OK;
+}
+
+int wsmp_unpack_set(const uint8_t *in, size_t len, wsmp_set *s)
+{
+  int head = unpack_head_set(in, len, s);
+  if (head != WSMP_OK) return head;
+  const uint8_t *p = in + WSMP_SET_HEAD_LEN, *end = in + len;
+  unsigned total = 0;
+  for (unsigned i = 0; i < s->count; i++)
+  {
+    int rc = unpack_entry_set(&p, end, &s->m[i], &total);
+    if (rc != WSMP_OK) return rc;
+    if (i > 0U && s->m[i].port <= s->m[i - 1U].port) return WSMP_ETYPE;
+  }
+  if (p != end) return WSMP_ELEN;
+  return wsmp_crc32c(in + WSMP_SET_HEAD_LEN, len - WSMP_SET_HEAD_LEN) == s->digest ? WSMP_OK : WSMP_EDIGEST;
+}
+
+static int module_ok_set(const wsmp_set *s, unsigned i)
+{
+  const wsmp_set_module *m = &s->m[i];
+  int rc = wsmp_desc_check(m->desc, m->channels, m->type, m->schema);
+  if (rc != WSMP_OK) return rc;
+  if ((m->serial >> REC_NS_SHIFT) != (m->id_flags & REC_SOURCE_MASK)) return WSMP_ETYPE;
+  for (unsigned j = 0; j < i; j++)
+    if (s->m[j].type == m->type) return WSMP_ETYPE;
+  return WSMP_OK;
+}
+
+int wsmp_set_check(const wsmp_set *s)
+{
+  for (unsigned i = 0; i < s->count && i < WSMP_SET_MODULES_MAX; i++)
+  {
+    int rc = module_ok_set(s, i);
+    if (rc != WSMP_OK) return rc;
+  }
+  return WSMP_OK;
+}

@@ -51,6 +51,9 @@ class Fuzz(unittest.TestCase):
     def test_record(self):
         self.run_target('record')
 
+    def test_set(self):
+        self.run_target('set')
+
 
 if __name__ == '__main__':
     unittest.main()

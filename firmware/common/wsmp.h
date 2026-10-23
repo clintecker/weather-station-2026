@@ -35,7 +35,7 @@ enum { WSMP_QUAL_GOOD, WSMP_QUAL_PARTIAL, WSMP_QUAL_SUSPECT, WSMP_QUAL_MISSING, 
 #define WSMP_CAP_PERSISTENT 0x0002U
 
 enum { WSMP_OK = 0, WSMP_EMAGIC = -1, WSMP_EVERSION = -2, WSMP_ECODE = -3, WSMP_EUNIT = -4,
-       WSMP_ESCALE = -5, WSMP_ERESERVED = -6, WSMP_ETYPE = -7, WSMP_ELEN = -8 };
+       WSMP_ESCALE = -5, WSMP_ERESERVED = -6, WSMP_ETYPE = -7, WSMP_ELEN = -8, WSMP_EDIGEST = -9 };
 
 typedef struct { uint16_t quantity; uint8_t unit; int8_t scale; uint8_t width, is_signed, kind; } wsmp_desc;
 typedef struct {
@@ -91,4 +91,29 @@ uint8_t wsmp_record_parse(const uint8_t in[WSMP_RECORD_LEN], wsmp_record *r);
 void wsmp_record_pack(const wsmp_record *r, uint8_t out[WSMP_RECORD_LEN]);
 /* The identity flags' low byte, the descriptor set's id_flags: source in bits 0-1, status in 4-7. */
 uint8_t wsmp_id_flags(uint8_t source, uint8_t status);
+
+/* The descriptor set (WSMP section 11.1, wsmp.lit.md section 9): a header, then one entry for each
+ * module in increasing port order, each followed by its descriptors. Big-endian. */
+#define WSMP_SET_HEAD_LEN      8U
+#define WSMP_SET_ENTRY_LEN     18U    /* port, type, schema, channels, serial, id_flags, record_crc */
+#define WSMP_SET_MODULES_MAX   8U     /* WSMP-P8 */
+#define WSMP_SET_CHANNELS_MAX  24U    /* WSMP-P8 */
+#define WSMP_SET_MAX_LEN (WSMP_SET_HEAD_LEN + WSMP_SET_MODULES_MAX * WSMP_SET_ENTRY_LEN + \
+                          WSMP_SET_CHANNELS_MAX * WSMP_DESC_LEN)   /* 296 bytes, WSMP-E4 */
+typedef struct {
+  uint8_t port, schema, channels, id_flags;   /* id_flags: wsmp_id_flags(source, status) */
+  uint16_t type;
+  uint64_t serial;
+  uint32_t record_crc;                         /* the applied record's CRC-32C; 0 when none is applied */
+  wsmp_desc desc[WSMP_MAX_CHANNELS];
+} wsmp_set_module;
+typedef struct { uint16_t generation; uint8_t count; uint32_t digest; wsmp_set_module m[WSMP_SET_MODULES_MAX]; } wsmp_set;
+/* Writes the set with its digest; returns its length (at most WSMP_SET_MAX_LEN), or 0 and nothing for
+   a set outside the counts (more than 8 modules, channels outside 1-8, more than 24 in all). */
+unsigned wsmp_pack_set(const wsmp_set *s, uint8_t out[WSMP_SET_MAX_LEN]);
+/* WSMP_OK, or the first fault (wsmp.lit.md section 9): WSMP_ELEN, WSMP_ERESERVED, WSMP_ETYPE, WSMP_EDIGEST. */
+int wsmp_unpack_set(const uint8_t *in, size_t len, wsmp_set *s);
+/* WSMP-E7: every module of an unpacked set passes the registry check (WSMP-D7, its code); WSMP_ETYPE
+   for a serial namespace that is not its source, or a module type twice (v1: one module per type). */
+int wsmp_set_check(const wsmp_set *s);
 #endif
