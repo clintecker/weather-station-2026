@@ -7,6 +7,7 @@
  * The pin map must be checked against UM2592 before the protoboard (the wiring guide's checklist). */
 #include "board_inputs.h"
 #include "clock.h"
+#include "i2c_bus.h"
 #include "mod_power.h"
 #include "mod_rain.h"
 #include "mod_wind.h"
@@ -143,6 +144,11 @@ int board_charger_pins(void)
   if (HAL_GPIO_ReadPin(GPIOB, CHG_PIN) == GPIO_PIN_RESET) pins |= (int)POWER_CHG;
   return pins;
 }
+
+/* The mux RESET line (i2c_bus.h). Its NUCLEO pin is TBD: it must pass the UM2592 checklist of the
+   wiring guide first (sensor module ports design, section 4.1). Until it is wired the pulse does
+   nothing, and a channel whose device holds SDA stays stuck until it is unplugged (section 4.3). */
+void i2c_bus_mux_reset_line(int asserted) { (void)asserted; }
 
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *h)
