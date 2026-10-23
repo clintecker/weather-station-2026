@@ -381,3 +381,36 @@ report_class = "minute"
 role = "outside"
 channels = [[7, 6]]
 factors = { nm_per_tip = 279400 }   # 0.2794 mm
+
+# ---- calibration of module record major 1 (docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md
+# section 6.9), frozen: a later record minor may only widen a bound, never tighten it. A quantity not
+# listed takes no record calibration (an entry for it is CAL_REJECTED). Integers at the channel's
+# scale: offset_bound is +-, gains in ppm, margins below and above the quantity's physical range
+# (section 4.1, converted to the scale by the generator). ----
+[[calibration]]
+quantity = 1        # air temperature, 0.01 degC: +-2 degC, gain 0.98-1.02
+scale = -2
+offset_bound = 200
+gain = [980000, 1020000]
+margin = [0, 0]
+
+[[calibration]]
+quantity = 2        # relative humidity, 0.01 %: +-10 %RH, gain 0.90-1.10, 3 % crop margin each side
+scale = -2
+offset_bound = 1000
+gain = [900000, 1100000]
+margin = [300, 300]
+
+[[calibration]]
+quantity = 3        # station air pressure, 0.1 hPa: +-5 hPa, gain 0.99-1.01
+scale = -1
+offset_bound = 50
+gain = [990000, 1010000]
+margin = [0, 0]
+
+[[calibration]]
+quantity = 8        # UVA counts: +-16 counts (dark count), gain 0.1-10 (a window in front)
+scale = 0
+offset_bound = 16
+gain = [100000, 10000000]
+margin = [16, 0]

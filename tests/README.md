@@ -20,12 +20,13 @@ WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests     # 595
 | `test_stage0.py`, `test_store_powercut.py`, `test_flash_layout.py` | Portable sensor code, the flash store under simulated power cuts, the flash layout against the linker script |
 | `test_tx_machine.py`, `test_rx_machine.py`, `test_i2c_bus.py`, `test_board_inputs.py`, `test_busymon.py`, `test_check.py` | The TX and RX firmware as built, over a simulated board and I2C bus |
 | `test_wsmp_core.py`, `test_wsmp_host.py`, `test_wsmp_map.py`, `test_wsmp_registry.py`, `test_modules.py` | The module protocol WSMP and the seven bench station modules |
+| `test_wsmp_record.py`, `test_wsmp_cal.py` | Module identity on the sensor ports (spec 2026-10-21 sections 6.7, 6.9): the module record v1.0, its calibration and the rounding helper, and the admission verdict |
 | `test_fuzz.py` | Short fuzz runs of the input parsers under AddressSanitizer and UBSan (`firmware/fuzz/`) |
 | `test_rangetest.py` | The range-test firmware's packet format and settings handshake |
 | `test_h01_report.py`, `test_rx_faults_tool.py`, `test_power_cut_tool.py`, `test_stack_report.py`, `test_blocking_report.py`, `test_loop_bounds.py`, `test_tangle.py` | The tools in `tools/` |
 | `test_breadboard.py` | The breadboard map `hardware/bench-breadboard-r0/` against the wiring guide and the firmware pins |
 
-Helpers, not tests: `toolchain.py` (skip rules, host C builds, a provisioned test station) and `wsmp_wind_ref.py` (wind reference values written from the datasheet, independent of `mod_wind.c`).
+Helpers, not tests: `toolchain.py` (skip rules, host C builds, a provisioned test station) `wsmp_wind_ref.py` (wind reference values written from the datasheet, independent of `mod_wind.c`) and `wsmp_record_ref.py` (the module record, CRC-32C, calibration and rounding written from the spec, independent of the C; integer arithmetic only). Data: `ws_div_round_vectors.csv`, the rounding golden vectors that the C helper and the Python reference must both give.
 
 ## What a test needs, and when it skips
 

@@ -42,7 +42,8 @@ static void identity(const uint8_t *in)
   FUZZ_CHECK((rc == WSMP_OK) == ok);
   if (rc != WSMP_OK) return;
   wsmp_pack_identity(&id, back);
-  FUZZ_CHECK(memcmp(back, in, 3) == 0 && back[3] == 0 && memcmp(back + 4, in + 4, 26) == 0 && back[30] == 0 && back[31] == 0);
+  /* the minor is this station's; the identity flags (register 0x000F, bytes 30-31) are kept as read */
+  FUZZ_CHECK(memcmp(back, in, 3) == 0 && back[3] == 0 && memcmp(back + 4, in + 4, 28) == 0);
 }
 
 static void snapshot(const uint8_t *in)

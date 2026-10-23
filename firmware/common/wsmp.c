@@ -29,7 +29,7 @@ void wsmp_pack_identity(const wsmp_identity *id, uint8_t out[WSMP_IDENTITY_LEN])
   p = ws_write_be32(p, id->boot_id);
   p = ws_write_be16(p, id->caps);
   p = ws_write_be32(p, id->desc_digest);
-  memset(p, 0, (size_t)(out + WSMP_IDENTITY_LEN - p));
+  (void)ws_write_be16(p, id->id_flags);
 }
 
 int wsmp_unpack_identity(const uint8_t in[WSMP_IDENTITY_LEN], wsmp_identity *id)
@@ -51,6 +51,7 @@ int wsmp_unpack_identity(const uint8_t in[WSMP_IDENTITY_LEN], wsmp_identity *id)
   id->caps = ws_get_be16(in + 24);
   (void)ws_read_be32(in + 26, &v);
   id->desc_digest = v;
+  id->id_flags = ws_get_be16(in + 30);
   if (id->channels == 0 || id->channels > WSMP_MAX_CHANNELS || id->serial == 0) return WSMP_ELEN;
   return WSMP_OK;
 }
@@ -71,12 +72,14 @@ void wsmp_pack_desc(const wsmp_desc *d, unsigned n, uint8_t out[WSMP_DESC_BLOCK_
   }
 }
 
-static int zero(const uint8_t *p, size_t n)
+static int every(const uint8_t *p, size_t n, uint8_t v)
 {
   for (size_t i = 0; i < n; i++)
-    if (p[i]) return 0;
+    if (p[i] != v) return 0;
   return 1;
 }
+
+static int zero(const uint8_t *p, size_t n) { return every(p, n, 0); }
 
 int wsmp_unpack_desc(const uint8_t in[WSMP_DESC_BLOCK_LEN], unsigned n, wsmp_desc *d)
 {
@@ -94,6 +97,7 @@ int wsmp_unpack_desc(const uint8_t in[WSMP_DESC_BLOCK_LEN], unsigned n, wsmp_des
 
 static const uint8_t unit_of[WSMP_UNIT_OF_COUNT] = WSMP_UNIT_OF_INIT;
 static const wsmp_type_entry types[WSMP_TYPE_COUNT] = WSMP_TYPES_INIT;
+static const wsmp_cal_limits cal_limits[WSMP_CAL_COUNT] = WSMP_CAL_INIT;
 
 uint8_t wsmp_canonical_unit(uint16_t quantity) { return quantity < WSMP_UNIT_OF_COUNT ? unit_of[quantity] : 0U; }
 
@@ -101,6 +105,13 @@ const wsmp_type_entry *wsmp_type(uint16_t type)
 {
   for (unsigned i = 0; i < WSMP_TYPE_COUNT; i++)   /* bound: WSMP_TYPE_COUNT entries */
     if (types[i].type == type) return &types[i];
+  return NULL;
+}
+
+const wsmp_cal_limits *wsmp_cal_limits_of(uint16_t quantity)
+{
+  for (unsigned i = 0; i < WSMP_CAL_COUNT; i++)   /* bound: WSMP_CAL_COUNT entries */
+    if (cal_limits[i].quantity == quantity) return &cal_limits[i];
   return NULL;
 }
 
@@ -209,4 +220,134 @@ int wsmp_text_ok(const uint8_t *p, size_t n)
     i++;
   }
   return zero(p + i, n - i);
+}
+
+#define REC_MAGIC      0x57534D52UL   /* "WSMR" */
+#define REC_BLANK      0xFFU          /* an erased EEPROM */
+#define REC_NS_SHIFT   56U            /* the serial's top byte is its namespace */
+#define REC_SERIAL_LOW 0x00FFFFFFFFFFFFFFULL
+#define REC_ENTRY_LEN  16U
+#define REC_STATUS_SHIFT 4U
+#define REC_SOURCE_MASK  0x03U
+#define REC_STATUS_MASK  0x0FU
+enum { AT_MAJOR = 0x04, AT_MINOR = 0x05, AT_LENGTH = 0x06, AT_TYPE = 0x08, AT_HW = 0x0A, AT_FLAGS = 0x0B,
+       AT_SERIAL = 0x0C, AT_BIND_KIND = 0x14, AT_RESERVED1 = 0x15, AT_BIND = 0x18, AT_PROGRAMMED = 0x1C,
+       AT_PART = 0x20, AT_RESERVED2 = 0x30, AT_CAL = 0x40, AT_RESERVED3 = 0x70, AT_CRC = 0x7C };
+enum { RESERVED1_LEN = 3, RESERVED2_LEN = 16, RESERVED3_LEN = 12 };
+/* In an entry: the reserved byte after the kind, and the two after the revision. */
+enum { ENTRY_KIND = 2, ENTRY_RES_A = 3, ENTRY_REVISION = 4, ENTRY_RES_B = 6, ENTRY_RES_C = 7, ENTRY_OFFSET = 8,
+       ENTRY_GAIN = 12 };
+
+static uint8_t record_head(const uint8_t *in)
+{
+  if (every(in, WSMP_RECORD_LEN, REC_BLANK)) return WSMP_REC_BLANK;
+  if (ws_get_be32(in) != REC_MAGIC) return WSMP_REC_NO_MAGIC;
+  if (in[AT_MAJOR] != WSMP_RECORD_MAJOR) return WSMP_REC_VERSION;
+  if (ws_get_be16(in + AT_LENGTH) != WSMP_RECORD_LEN) return WSMP_REC_MALFORMED;
+  if (wsmp_crc32c(in, AT_CRC) != ws_get_be32(in + AT_CRC)) return WSMP_REC_CRC;
+  return WSMP_REC_APPLIED;
+}
+
+static void entry_fields(const uint8_t *p, wsmp_cal_entry *e)
+{
+  *e = (wsmp_cal_entry){ .quantity = ws_get_be16(p), .kind = p[ENTRY_KIND], .revision = ws_get_be16(p + ENTRY_REVISION),
+                         .offset = (int32_t)ws_get_be32(p + ENTRY_OFFSET), .gain = ws_get_be32(p + ENTRY_GAIN) };
+}
+
+static void record_fields(const uint8_t *in, wsmp_record *r)
+{
+  r->minor = in[AT_MINOR];
+  r->type = ws_get_be16(in + AT_TYPE);
+  r->hw_rev = in[AT_HW];
+  r->flags = in[AT_FLAGS];
+  r->serial = ws_get_be64(in + AT_SERIAL, sizeof r->serial);
+  r->bind_kind = in[AT_BIND_KIND];
+  r->bind_value = ws_get_be32(in + AT_BIND);
+  r->programmed = ws_get_be32(in + AT_PROGRAMMED);
+  memcpy(r->part, in + AT_PART, WSMP_RECORD_PART_LEN);
+  for (unsigned i = 0; i < WSMP_RECORD_CAL_N; i++) entry_fields(in + AT_CAL + i * REC_ENTRY_LEN, &r->cal[i]);
+  r->crc = ws_get_be32(in + AT_CRC);
+}
+
+static int serial_ok(uint64_t serial)
+{
+  uint64_t low = serial & REC_SERIAL_LOW;
+  return (serial >> REC_NS_SHIFT) == WSMP_SRC_RECORD && low != 0 && low != REC_SERIAL_LOW;
+}
+
+static int bind_ok(const wsmp_record *r)
+{
+  if (r->bind_kind > WSMP_BIND_SHT4X) return 0;
+  if (r->bind_kind == WSMP_BIND_NONE && r->bind_value != 0) return 0;
+  return r->type != WSMP_T_AIR_TH || r->bind_kind == WSMP_BIND_SHT4X;
+}
+
+static int reserved_ok(const uint8_t *in)
+{
+  return in[AT_FLAGS] == 0 && zero(in + AT_RESERVED1, RESERVED1_LEN) && zero(in + AT_RESERVED2, RESERVED2_LEN) &&
+         zero(in + AT_RESERVED3, RESERVED3_LEN);
+}
+
+static int entries_ok(const uint8_t *in, int check_reserved)
+{
+  for (unsigned i = 0; i < WSMP_RECORD_CAL_N; i++)
+  {
+    const uint8_t *p = in + AT_CAL + i * REC_ENTRY_LEN;
+    if (zero(p, REC_ENTRY_LEN)) continue;   /* unused: skipped before any check */
+    if (p[ENTRY_KIND] > WSMP_KIND_MAX) return 0;
+    if (check_reserved && (p[ENTRY_RES_A] | p[ENTRY_RES_B] | p[ENTRY_RES_C]) != 0) return 0;
+  }
+  return 1;
+}
+
+static uint8_t record_body(const uint8_t *in, const wsmp_record *r)
+{
+  int minor0 = r->minor == 0;
+  int ok = serial_ok(r->serial) && wsmp_type(r->type) != NULL && bind_ok(r) &&
+           wsmp_text_ok(r->part, WSMP_RECORD_PART_LEN) && (!minor0 || reserved_ok(in)) && entries_ok(in, minor0);
+  return ok ? (uint8_t)WSMP_REC_APPLIED : (uint8_t)WSMP_REC_MALFORMED;
+}
+
+uint8_t wsmp_record_parse(const uint8_t in[WSMP_RECORD_LEN], wsmp_record *r)
+{
+  uint8_t status = record_head(in);
+  if (status != WSMP_REC_APPLIED) return status;
+  record_fields(in, r);
+  return record_body(in, r);
+}
+
+static uint8_t *pack_entry(uint8_t *p, const wsmp_cal_entry *e)
+{
+  p = ws_write_be16(p, e->quantity);
+  p = ws_write_u8(p, e->kind);
+  p = ws_write_u8(p, 0);
+  p = ws_write_be16(p, e->revision);
+  p = ws_write_be16(p, 0);
+  p = ws_write_be32(p, (uint32_t)e->offset);
+  return ws_write_be32(p, e->gain);
+}
+
+void wsmp_record_pack(const wsmp_record *r, uint8_t out[WSMP_RECORD_LEN])
+{
+  memset(out, 0, WSMP_RECORD_LEN);
+  uint8_t *p = ws_write_be32(out, REC_MAGIC);
+  p = ws_write_u8(p, WSMP_RECORD_MAJOR);
+  p = ws_write_u8(p, r->minor);
+  p = ws_write_be16(p, WSMP_RECORD_LEN);
+  p = ws_write_be16(p, r->type);
+  p = ws_write_u8(p, r->hw_rev);
+  p = ws_write_u8(p, r->flags);
+  p = ws_write_be(p, r->serial, sizeof r->serial);
+  p = ws_write_u8(p, r->bind_kind) + RESERVED1_LEN;
+  p = ws_write_be32(p, r->bind_value);
+  p = ws_write_be32(p, r->programmed);
+  memcpy(p, r->part, WSMP_RECORD_PART_LEN);
+  p = out + AT_CAL;
+  for (unsigned i = 0; i < WSMP_RECORD_CAL_N; i++) p = pack_entry(p, &r->cal[i]);
+  ws_put_be32(out + AT_CRC, wsmp_crc32c(out, AT_CRC));
+}
+
+uint8_t wsmp_id_flags(uint8_t source, uint8_t status)
+{
+  return (uint8_t)((source & REC_SOURCE_MASK) | (status & REC_STATUS_MASK) << REC_STATUS_SHIFT);
 }

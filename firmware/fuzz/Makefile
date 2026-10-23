@@ -9,7 +9,7 @@ CC      ?= cc
 CLANG   ?= clang
 RUNS    ?= 200000
 SEED    ?= 1
-TARGETS  = reply provision console obs wsmp
+TARGETS  = reply provision console obs wsmp record
 SAN      = -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
 CFLAGS   = -std=c11 -g -O1 -Wall -Wextra -Werror -I. -I$(ROOT)/firmware -I$(ROOT)/firmware/common \
            -I$(MBEDTLS)/include -DMBEDTLS_CONFIG_FILE='"ws_mbedtls_config.h"'
@@ -20,6 +20,7 @@ SRC_provision = fuzz_provision.c $(ROOT)/firmware/stage0.c
 SRC_console   = fuzz_console.c $(ROOT)/firmware/common/ws_console.c $(ROOT)/firmware/stage0.c
 SRC_obs       = fuzz_obs.c $(ROOT)/firmware/common/ws_obs.c
 SRC_wsmp      = fuzz_wsmp.c $(ROOT)/firmware/common/wsmp.c
+SRC_record    = fuzz_record.c $(addprefix $(ROOT)/firmware/common/,wsmp.c wsmp_cal.c wsmp_ident.c)
 
 all: $(addprefix build/standalone-,$(TARGETS))
 

@@ -48,6 +48,20 @@ class Registry(unittest.TestCase):
         self.assertAlmostEqual(r.MODULE_TYPES[7]['factors']['nm_per_tip'] * 1e-6, 0.2794)
         self.assertEqual(r.REGISTRY_VERSION, 1)
 
+    def test_calibration_table_of_record_major_1(self):
+        # Spec 2026-10-21 section 6.9, frozen for major 1: bounds at the channel's scale, the physical
+        # range (WSMP section 4.1) at that scale, and the crop margins.
+        cal = self.r.CALIBRATION
+        self.assertEqual(sorted(cal), [1, 2, 3, 8])
+        self.assertEqual(cal[1], {'scale': -2, 'offset_bound': 200, 'gain_min': 980_000, 'gain_max': 1_020_000,
+                                  'range_min': -8_000, 'range_max': 6_000, 'margin_below': 0, 'margin_above': 0})
+        self.assertEqual(cal[2], {'scale': -2, 'offset_bound': 1_000, 'gain_min': 900_000, 'gain_max': 1_100_000,
+                                  'range_min': 0, 'range_max': 10_000, 'margin_below': 300, 'margin_above': 300})
+        self.assertEqual(cal[3], {'scale': -1, 'offset_bound': 50, 'gain_min': 990_000, 'gain_max': 1_010_000,
+                                  'range_min': 3_000, 'range_max': 11_000, 'margin_below': 0, 'margin_above': 0})
+        self.assertEqual(cal[8], {'scale': 0, 'offset_bound': 16, 'gain_min': 100_000, 'gain_max': 10_000_000,
+                                  'range_min': 0, 'range_max': 1_048_576, 'margin_below': 16, 'margin_above': 0})
+
     def test_every_channel_names_a_known_quantity_and_kind(self):
         r = self.r
         for t in r.MODULE_TYPES.values():

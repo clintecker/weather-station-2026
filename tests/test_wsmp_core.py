@@ -47,6 +47,13 @@ void t_pack_identity(unsigned type, unsigned schema, unsigned channels, uint64_t
   id.fw_major = 1; id.fw_minor = 2; id.fw_build = 3; id.boot_id = boot; id.caps = 1; id.desc_digest = digest;
   wsmp_pack_identity(&id, out);
 }
+void t_pack_identity_flags(unsigned id_flags, uint8_t out[WSMP_IDENTITY_LEN])
+{
+  wsmp_identity id; memset(&id, 0, sizeof id);
+  id.type = 1; id.schema = 1; id.channels = 2; id.serial = 1; id.id_flags = (uint16_t)id_flags;
+  wsmp_pack_identity(&id, out);
+}
+int t_identity_flags(const uint8_t in[WSMP_IDENTITY_LEN]) { wsmp_identity id; return wsmp_unpack_identity(in, &id) == WSMP_OK ? id.id_flags : -1; }
 unsigned t_values_bytes(const uint8_t block[WSMP_DESC_BLOCK_LEN], unsigned n)
 {
   wsmp_desc d[WSMP_MAX_CHANNELS];
@@ -178,6 +185,16 @@ class Core(unittest.TestCase):
         self.assertEqual(self.lib.t_identity_check((ctypes.c_uint8 * 32)(*bad)), 0)
         bad = bytearray(raw); bad[8:16] = bytes(8)                   # serial 0 is not allowed
         self.assertEqual(self.lib.t_identity_check((ctypes.c_uint8 * 32)(*bad)), -8)
+
+    def test_identity_flags_at_register_0x000f(self):
+        # Spec 2026-10-21 section 6.7: register 0x000F (bytes 30-31) holds the identity flags; its low
+        # byte is the descriptor set's id_flags. Serial source 2 (sensor), record status 8 (SENSOR_CHANGED).
+        out = (ctypes.c_uint8 * 32)()
+        self.lib.t_pack_identity_flags(0x82, out)
+        self.assertEqual(bytes(out)[30:32].hex(), '0082')
+        self.assertEqual(self.lib.t_identity_flags(out), 0x82)
+        self.lib.t_pack_identity_flags(0, out)
+        self.assertEqual(bytes(out)[30:32], bytes(2))                 # an on-board module: port serial, no record
 
     def test_budget_bytes_for_the_bench_station(self):
         # WSMP 11.3: air TH 4, pressure 2, UVA 3, enclosure TH 4, wind 8, rain 2 = 23 bytes of values

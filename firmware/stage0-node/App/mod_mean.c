@@ -1,6 +1,7 @@
 /* The minute window of a mean-type local module (mod_mean.h). */
 #include "mod_mean.h"
 #include <string.h>
+#include "ws_round.h"
 #include "wsmp_local.h"
 
 void mean_reset(mean_win *w, uint32_t now_ms)
@@ -24,14 +25,9 @@ void mean_add(mean_win *w, const int32_t v[MEAN_CHANNELS])
   w->n++;
 }
 
-/* floor((2 sum + n) / (2 n)): the mean rounded half up, also for a negative sum. */
-static int32_t mean_of(int32_t sum, uint8_t n)
-{
-  int64_t num = 2 * (int64_t)sum + n, den = 2 * (int64_t)n;
-  int64_t q = num / den;
-  if (num % den != 0 && num < 0) q--;
-  return (int32_t)q;
-}
+/* The mean rounded half up, also for a negative sum: the station's one rounding helper (ws_round.h).
+   |sum / n| <= |sum|, so the result fits int32. */
+static int32_t mean_of(int32_t sum, uint8_t n) { return (int32_t)ws_div_round(sum, n); }
 
 static uint8_t quality(const mean_win *w, uint32_t window_ms)
 {
