@@ -235,10 +235,11 @@ flowchart TD
      and fault handling.
    - Verify a CRC-checked reading, plus the unplug and fault behaviour. Then cut a new release.
 3. **Home Assistant.** The steps are in `docs/runbook-home-assistant.md`. *Done 2026-10-22: the
-   gateway logs in to the HA Mosquitto add-on as the dedicated HA user `weatherstation` (port 1883,
-   no TLS; host and password in `run-d7/`), and HA shows the `station-01` device with its 11
-   entities (`evidence/ha-broker-2026-10-22/`).* Still to see: the entities updating live, at the
-   next hardware session. H01 requires an HA entity.
+   dedicated HA user `weatherstation` logs in to the HA Mosquitto add-on (port 1883, no TLS; host
+   and password in `run-d7/`), checked with a read-only client; the gateway published discovery
+   during run-d7, and HA shows the `station-01` device with its 11 entities
+   (`evidence/ha-broker-2026-10-22/`).* Still to see, at the next hardware session: the gateway
+   logging in with the rotated password, and the entities updating live. H01 requires an HA entity.
 4. **Placement.** Check the link in both directions at the real TX and RX locations. Then tune
    SF and power.
 5. **H01:** the 24-hour run plus the restart and outage matrix. Score it with

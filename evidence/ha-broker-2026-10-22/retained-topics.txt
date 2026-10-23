@@ -1,0 +1,18 @@
+# Read-only subscribe to homeassistant/# and weatherstation/# (2026-10-22, gateway off)
+# Topic names only; payloads not recorded. Client ID ws-evidence-topics-ro.
+retained homeassistant/sensor/station-01_dew_point_c/config
+retained homeassistant/sensor/station-01_humidity_max_pct/config
+retained homeassistant/sensor/station-01_humidity_min_pct/config
+retained homeassistant/sensor/station-01_humidity_pct/config
+retained homeassistant/sensor/station-01_temperature_c/config
+retained homeassistant/sensor/station-01_temperature_max_c/config
+retained homeassistant/sensor/station-01_temperature_min_c/config
+retained homeassistant/sensor/station-01_th_samples/config
+retained homeassistant/sensor/station-01_wind_dir_deg/config
+retained homeassistant/sensor/station-01_wind_gust_ms/config
+retained homeassistant/sensor/station-01_wind_speed_ms/config
+retained weatherstation/v1/station-01/availability
+retained weatherstation/v1/station-01/diagnostics
+retained weatherstation/v1/station-01/gateway_availability
+retained weatherstation/v1/station-01/weather
+total 15

@@ -45,8 +45,9 @@ Recent HA versions call add-ons "Apps", so menu names can differ on older versio
 3. **Enable the MQTT integration:** Settings → Devices & services. MQTT appears as a discovered
    integration. Select it, keep discovery on, and submit.
 4. **Gateway settings:**
-   - `host` = the HA machine's IP or Tailscale name. Not `core-mosquitto` or
-     `homeassistant.local`: those names resolve only inside HA,
+   - `host` = the HA machine's IP or Tailscale name. Not `core-mosquitto` (it resolves only
+     inside HA). `homeassistant.local` needs mDNS from the gateway host to the HA machine, so
+     prefer the IP or the Tailscale name,
    - `port` 1883,
    - `tls` false (TLS on 8883 needs the add-on's `certfile` and `keyfile`),
    - `username` = the user from step 2.

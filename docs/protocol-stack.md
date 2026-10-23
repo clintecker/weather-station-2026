@@ -870,7 +870,7 @@ Rules:
 | Interface | Address | Notes |
 |---|---|---|
 | HTTP API | `127.0.0.1:8088` (`http_bind`, `http_port` in `gateway.json`), bearer token | `/v1/status`, `/v1/observations/latest`, `/v1/observations` (JSON or CSV), and the dashboard endpoints ([`web-dashboard.md`](web-dashboard.md)). At most 32 connections at a time. |
-| MQTT | `weatherstation/v1/{station}/…` | Off by default. Home Assistant discovery is available. Verified against a local Mosquitto broker on 2026-10-13 (`evidence/mqtt-local-broker-2026-10-13/`). Not yet tested against the real Home Assistant broker. |
+| MQTT | `weatherstation/v1/{station}/…` | Off by default. Home Assistant discovery is available. Verified against a local Mosquitto broker on 2026-10-13 (`evidence/mqtt-local-broker-2026-10-13/`). Login and discovery verified against the real Home Assistant broker on 2026-10-22 (`evidence/ha-broker-2026-10-22/`). Not tested: TLS, entities updating live. |
 
 See [`openapi.json`](openapi.json) and the firmware README ([`../firmware/stage0-node/README.md`](../firmware/stage0-node/README.md)).
 
