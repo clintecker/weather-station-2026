@@ -141,6 +141,8 @@ class Record(unittest.TestCase):
             'type 1 without a sensor bind': ref.record(bind_kind=0, bind_value=0),
             'bind kind 2 (unknown)': ref.record(bind_kind=2),
             'bind value with kind 0': ref.record(module_type=3, bind_kind=0, bind_value=5),
+            'kind 1 on type 2 (the BMP581 has no readable serial)': ref.record(module_type=2, bind_kind=1),
+            'kind 1 on type 3 (the LTR390 has no readable serial)': ref.record(module_type=3, bind_kind=1, part=b'ADA-LTR390'),
             'part number character': ref.record(part=b'ADA;SHT45'),
             'part number after its padding': ref.record(part=b'ADA\0SHT45'),
             'flags byte': ref.record(flags=1),
@@ -167,6 +169,7 @@ class Record(unittest.TestCase):
             'serial value 1': ref.record(serial=0x0100_0000_0000_0001),
             'serial value all ones but one': ref.record(serial=0x01FF_FFFF_FFFF_FFFE),
             'part number of exactly 16 characters': ref.record(part=b'ABCDEFGHIJKLMNOP'),
+            'empty part number (the station accepts it; the fixture does not)': ref.record(part=b''),
             'minor 1 with reserved bytes and flags set': broken(ref.record(minor=1, flags=0x80), 0x30, 7),
             'an all-zero entry between two used ones': ref.record(cal=[(1, 2, 1, 5, 1_000_000), (0, 0, 0, 0, 0),
                                                                        (2, 0, 1, 5, 1_000_000)]),
@@ -175,6 +178,16 @@ class Record(unittest.TestCase):
         for name, record in cases.items():
             with self.subTest(name):
                 self.assertEqual(self.parse(record)[0], ref.APPLIED)
+
+    def test_sensor_bind_against_the_reference(self):
+        # Kind 1 iff the type's part has a readable sensor serial (type 1 in v1), at any value and minor.
+        for t in ref.CHANNELS:
+            for kind, value in ((0, 0), (0, 1), (1, 0), (1, SHT_SERIAL), (2, 0)):
+                for minor in (0, 1):
+                    with self.subTest(type=t, kind=kind, value=value, minor=minor):
+                        want = ref.APPLIED if ref.bind_ok(t, kind, value) else ref.MALFORMED
+                        record = ref.record(module_type=t, bind_kind=kind, bind_value=value, minor=minor)
+                        self.assertEqual(self.parse(record)[0], want)
 
     def test_minor_1_round_trip_keeps_the_known_fields(self):
         st, back, serial, _ = self.parse(broken(ref.record(minor=1), 0x70, 9))
@@ -267,6 +280,16 @@ class Verdict(unittest.TestCase):
     def test_cal_rejected_still_meets_the_duplicate_steps(self):
         bad = ref.record(cal=[(9, 0, 1, 0, 1_000_000)])
         self.expect(self.verdict(bad, held=[(1, 1, 0x01A1B2C3D4E5F607, 1)]), verdict=DUP_SERIAL, status=ref.CAL_REJECTED, crc=0)
+
+    def test_kind_1_on_a_uva_record_is_no_record_malformed(self):
+        uva = ref.record(module_type=3, bind_kind=1, bind_value=SHT_SERIAL)
+        self.expect(self.verdict(uva, probed=3, ss=None, port=5), verdict=ADMIT, status=ref.MALFORMED,
+                    source=ref.SRC_PORT, serial=ref.port_serial(5, 3), crc=0)
+
+    def test_revision_0_entry_is_cal_rejected_with_crc_0(self):
+        bad = ref.record(cal=[(1, 2, 0, 5, 1_000_000)])
+        self.expect(self.verdict(bad), verdict=ADMIT, status=ref.CAL_REJECTED, source=ref.SRC_RECORD,
+                    serial=0x01A1B2C3D4E5F607, crc=0)
 
     def test_only_holding_modules_on_other_ports_count(self):
         held = [(2, 1, 0x01A1B2C3D4E5F607, 1),                      # this port itself

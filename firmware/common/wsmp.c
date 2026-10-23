@@ -13,6 +13,7 @@
 #define CRC32C_POLY      0x82F63B78UL   /* the reflected Castagnoli polynomial */
 #define CRC32C_INIT      0xFFFFFFFFUL
 #define TEXT_PAD         0U
+#define ID_FLAGS_RESERVED 0xFF0CU   /* identity flags: bits 2-3 and 8-15 */
 
 void wsmp_pack_identity(const wsmp_identity *id, uint8_t out[WSMP_IDENTITY_LEN])
 {
@@ -53,6 +54,7 @@ int wsmp_unpack_identity(const uint8_t in[WSMP_IDENTITY_LEN], wsmp_identity *id)
   id->desc_digest = v;
   id->id_flags = ws_get_be16(in + 30);
   if (id->channels == 0 || id->channels > WSMP_MAX_CHANNELS || id->serial == 0) return WSMP_ELEN;
+  if ((id->id_flags & ID_FLAGS_RESERVED) != 0) return WSMP_ERESERVED;
   return WSMP_OK;
 }
 
@@ -279,7 +281,7 @@ static int bind_ok(const wsmp_record *r)
 {
   if (r->bind_kind > WSMP_BIND_SHT4X) return 0;
   if (r->bind_kind == WSMP_BIND_NONE && r->bind_value != 0) return 0;
-  return r->type != WSMP_T_AIR_TH || r->bind_kind == WSMP_BIND_SHT4X;
+  return (r->bind_kind == WSMP_BIND_SHT4X) == (r->type == WSMP_T_AIR_TH);
 }
 
 static int reserved_ok(const uint8_t *in)

@@ -6,11 +6,13 @@
  * Properties, checked against an independent reading of
  * docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md sections 6.7 and 6.9:
  *  - wsmp_record_parse returns exactly the status of the spec's ordered checks 2-6;
- *  - wsmp_cal_check accepts exactly the entries the frozen table allows (check 7);
+ *  - wsmp_cal_check accepts exactly the entries the frozen table allows (check 7: a table quantity, a
+ *    (quantity, kind) that is a channel of the type or kind 0 over one, revision not 0, within bounds);
  *  - an accepted minor-0 record packs back to the same bytes; any accepted record packs to one that
  *    parses again;
- *  - the verdict's serial namespace is its source, id_flags is source and status, a record CRC is
- *    reported only for an applied record, and a quarantine is exactly a valid record of another type;
+ *  - the verdict's serial namespace is its source, id_flags is source and status, record_crc is the
+ *    record's CRC exactly when the record is applied (valid, of the probed type, its bind confirmed,
+ *    its calibration accepted) and 0 otherwise, and a quarantine is exactly a valid record of another type;
  *  - no memory error (ASan/UBSan). */
 #include <string.h>
 #include "fuzz.h"
@@ -29,9 +31,13 @@
 #define SPEC_PART 16U
 enum { S_APPLIED, S_READ, S_BLANK, S_NO_MAGIC, S_VERSION, S_MALFORMED, S_CRC, S_CAL_REJECTED, S_SENSOR_CHANGED };
 
-/* WSMP section 4.4 again: the quantities of each module type's channels (0 ends a list). */
-static const uint8_t spec_quantities[SPEC_TYPES][8] = {
-  { 1, 2 }, { 3 }, { 8 }, { 1, 2 }, { 9, 11, 12, 13, 14, 15, 16 }, { 17, 5, 6 }, { 7 } };
+/* WSMP section 4.4 again: each module type's channels as quantity and kind pairs (0, 0 ends a list). */
+static const uint8_t spec_channels[SPEC_TYPES][8][2] = {
+  { { 1, 2 }, { 2, 2 } }, { { 3, 2 } }, { { 8, 2 } }, { { 1, 2 }, { 2, 2 } },
+  { { 9, 2 }, { 11, 6 }, { 12, 6 }, { 13, 6 }, { 14, 6 }, { 15, 1 }, { 16, 10 } },
+  { { 17, 6 }, { 5, 7 }, { 6, 8 }, { 6, 9 } }, { { 7, 6 } } };
+/* Section 6.9, check 6: the one module type whose part has a serial to bind (kind 1), the SHT4x. */
+#define SPEC_SERIAL_TYPE 1U
 /* Section 6.9's table: quantity, offset bound, gain min, gain max. */
 static const uint32_t spec_cal[4][4] = { { 1, 200, 980000, 1020000 }, { 2, 1000, 900000, 1100000 },
                                          { 3, 50, 990000, 1010000 }, { 8, 16, 100000, 10000000 } };
@@ -94,7 +100,7 @@ static int spec_structure(const uint8_t *r)
   unsigned type = be(r + 8, 2), kind = r[20];
   int minor0 = r[5] == 0;
   if (r[12] != 1 || all(r + 13, 7, 0) || all(r + 13, 7, 0xFF)) return 0;
-  if (type < 1 || type > SPEC_TYPES || kind > 1 || (kind == 0 && be(r + 24, 4)) || (type == 1 && kind != 1)) return 0;
+  if (type < 1 || type > SPEC_TYPES || kind > 1 || (kind == 0 && be(r + 24, 4)) || (type == SPEC_SERIAL_TYPE) != (kind == 1)) return 0;
   if (!spec_part(r + SPEC_PART_AT)) return 0;
   if (minor0 && (r[11] || !all(r + 21, 3, 0) || !all(r + 48, 16, 0) || !all(r + 112, 12, 0))) return 0;
   return spec_entries(r, minor0);
@@ -115,11 +121,13 @@ static int spec_used(const uint8_t *p) { return !all(p, 3, 0) || !all(p + 4, 2, 
 
 static int spec_entry_ok(const uint8_t *p, unsigned type)
 {
-  unsigned q = be(p, 2);
+  unsigned q = be(p, 2), k = p[2], revision = be(p + 4, 2);
   int32_t offset = (int32_t)be(p + 8, 4);
   uint32_t gain = be(p + 12, 4);
   int in_type = 0;
-  for (unsigned i = 0; i < 8; i++) in_type |= q != 0 && spec_quantities[type - 1][i] == q;
+  for (unsigned i = 0; i < 8; i++)
+    in_type |= q != 0 && spec_channels[type - 1][i][0] == q && (k == 0 || spec_channels[type - 1][i][1] == k);
+  if (revision == 0) return 0;   /* 0 is an uncorrected channel's revision */
   for (unsigned i = 0; i < 4; i++)
     if (spec_cal[i][0] == q)
       return in_type && offset >= -(int32_t)spec_cal[i][1] && offset <= (int32_t)spec_cal[i][1] && gain >= spec_cal[i][2] &&
@@ -143,7 +151,7 @@ static int spec_cal_ok(const uint8_t *r)
   return 1;
 }
 
-static void verdict(const uint8_t *r, const uint8_t *probe, int status)
+static void verdict(const uint8_t *r, const uint8_t *probe, int status, int cal_ok)
 {
   const wsmp_observed o = { .port = (uint8_t)(1U + probe[1] % 8U), .read_ok = (uint8_t)(probe[2] & 1U),
                             .has_sensor_serial = (uint8_t)((probe[2] >> 1) & 1U), .probed_type = (uint16_t)(1U + probe[0] % SPEC_TYPES),
@@ -154,8 +162,11 @@ static void verdict(const uint8_t *r, const uint8_t *probe, int status)
   wsmp_identify(&o, &h, 1, &v);
   FUZZ_CHECK(v.id_flags == (v.source | v.status << 4));
   FUZZ_CHECK(v.serial >> 56 == v.source && v.serial != 0);
-  FUZZ_CHECK((v.record_crc != 0) <= (v.status == S_APPLIED && v.source == WSMP_SRC_RECORD));
   int conflict = o.read_ok && status == S_APPLIED && be(r + 8, 2) != o.probed_type;
+  int bound = r[20] == 0 || (o.has_sensor_serial && o.sensor_serial == be(r + 24, 4));
+  int applied = o.read_ok && status == S_APPLIED && !conflict && bound && cal_ok;
+  FUZZ_CHECK(v.record_crc == (applied ? be(r + SPEC_CRC_AT, 4) : 0U));
+  FUZZ_CHECK((v.status == S_APPLIED && !conflict) == applied);
   FUZZ_CHECK((v.verdict == WSMP_V_TYPE_CONFLICT) == conflict);
   if (!o.read_ok) FUZZ_CHECK(v.status == S_READ && v.source != WSMP_SRC_RECORD);
   if (v.verdict == WSMP_V_DUP_SERIAL) FUZZ_CHECK(v.serial == h.serial && v.holder_port == h.port && h.port != o.port);
@@ -174,14 +185,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     for (unsigned i = 0; i < 4; i++) in[SPEC_CRC_AT + i] = (uint8_t)(crc >> (24 - 8 * i));
   }
   int status = spec_status(in);
+  int cal_ok = status == S_APPLIED && spec_cal_ok(in);
   FUZZ_CHECK(wsmp_record_parse(in, &r) == status);
   if (status == S_APPLIED)
   {
-    FUZZ_CHECK((wsmp_cal_check(&r) == S_APPLIED) == spec_cal_ok(in));
+    FUZZ_CHECK((wsmp_cal_check(&r) == S_APPLIED) == cal_ok);
     wsmp_record_pack(&r, back);
     if (in[5] == 0) FUZZ_CHECK(memcmp(back, in, SPEC_LEN) == 0);
     FUZZ_CHECK(wsmp_record_parse(back, &r) == S_APPLIED);
   }
-  verdict(in, in + SPEC_LEN, status);
+  verdict(in, in + SPEC_LEN, status, cal_ok);
   return 0;
 }

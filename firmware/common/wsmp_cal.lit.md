@@ -26,7 +26,7 @@ python3 tools/tangle.py --check firmware/common/wsmp_cal.lit.md    # committed .
 
 | Property | Guarantee | Checked by |
 |---|---|---|
-| Bounds | an entry is accepted exactly when its quantity is in the table and among the module type's channels, and its offset and gain are within the table's bounds, edges included | `test_bounds_edges_of_the_frozen_table`, `test_entries_rejected_by_check_7`, `fuzz_record` |
+| Bounds | an entry is accepted exactly when its quantity is in the table, its (quantity, kind) matches a channel of the module type (kind 0: any channel of the quantity), its revision is not 0, and its offset and gain are within the table's bounds, edges included; at any minor | `test_bounds_edges_of_the_frozen_table`, `test_entries_rejected_by_check_7`, `test_every_key_against_the_reference`, `test_unknown_quantity_is_rejected_at_any_minor`, `fuzz_record` |
 | Unique | two used entries with the same (quantity, kind) are `CAL_REJECTED`. An all-zero entry is skipped | `test_entries_rejected_by_check_7`, `test_entries_accepted` |
 | Precedence | a channel (q, k) takes the entry (q, k), else (q, 0), else none | `test_precedence_q_k_over_q_0` |
 | Rounding | `ws_div_round` gives the golden vectors that the Python reference gives, half up, also below zero | `tests/test_wsmp_cal.py` `Rounding` |
@@ -53,6 +53,16 @@ An entry is *used* unless every field is 0. The parser has already skipped an al
 bytes; a minor above 0 may set an entry's reserved bytes, which the structure does not keep, and
 this station ignores what it does not know.
 
+Check 7 itself is strict at any minor (spec section 6.9): an entry for a quantity this firmware's
+table does not know is `CAL_REJECTED` even under a higher minor, so stations are upgraded before
+records that use a widened table are fielded. A used entry must also:
+
+- match a channel of the module type: (q, k) a channel with that quantity and kind, (q, 0) any
+  channel of the quantity. The channels are the registry's for the type (`wsmp_type`), so an entry
+  can never name a channel the module does not report;
+- carry a calibration revision other than 0. Revision 0 is what an uncorrected channel reports
+  (section 4), so an applied entry with it could not be told from no correction (WSMP-G6).
+
 The spec's check "a kind-0 entry over channels of different scales" cannot fail with this table:
 the table gives one scale per quantity, and the module drivers report every channel of a quantity
 at that scale. The driver change that wires calibration in must keep that true (a channel whose
@@ -64,17 +74,17 @@ static int is_used(const wsmp_cal_entry *e)
   return e->quantity != 0 || e->kind != 0 || e->revision != 0 || e->offset != 0 || e->gain != 0;
 }
 
-static int has_quantity(const wsmp_type_entry *t, uint16_t quantity)
+static int has_channel(const wsmp_type_entry *t, uint16_t quantity, uint8_t kind)
 {
   for (unsigned i = 0; i < t->channels && i < WSMP_MAX_CHANNELS; i++)
-    if (t->ch[i].quantity == quantity) return 1;
+    if (t->ch[i].quantity == quantity && (kind == 0 || t->ch[i].kind == kind)) return 1;
   return 0;
 }
 
 static int entry_ok(const wsmp_type_entry *t, const wsmp_cal_entry *e)
 {
   const wsmp_cal_limits *l = wsmp_cal_limits_of(e->quantity);
-  if (l == NULL || !has_quantity(t, e->quantity)) return 0;
+  if (l == NULL || e->revision == 0 || !has_channel(t, e->quantity, e->kind)) return 0;
   if (e->offset < -l->offset_bound || e->offset > l->offset_bound) return 0;
   return e->gain >= l->gain_min && e->gain <= l->gain_max;
 }

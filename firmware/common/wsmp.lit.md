@@ -30,7 +30,7 @@ python3 tools/tangle.py --check firmware/common/wsmp.lit.md    # committed .c ==
 | Budget | the value bytes are the sum of the air widths. The quality bytes are 2 bits a channel, rounded up to a byte | `test_budget_bytes_for_the_bench_station` |
 | Quality | each snapshot quality maps to its 2-bit radio code. An unknown code maps to "missing" | `test_quality_air_table` |
 | CRC and text | CRC-32C gives the standard check value. Metadata text passes only the WSMP-M1 characters | `test_crc32c_known_vector`, `test_text_ok_charset` |
-| Identity flags | the identity block carries the identity flags in register 0x000F, packed and unpacked unchecked | `test_identity_flags_at_register_0x000f`, `fuzz_wsmp` |
+| Identity flags | the identity block carries the identity flags in register 0x000F; unpack refuses a set reserved bit (2–3, 8–15) with `WSMP_ERESERVED` | `test_identity_flags_at_register_0x000f`, `test_identity_refuses_reserved_id_flag_bits`, `fuzz_wsmp` |
 | Module record | `wsmp_record_parse` applies checks 2–6 of the record in the spec's order and returns the first failure as a record status. An accepted record of minor 0 packs back to the same 128 bytes | `tests/test_wsmp_record.py`, `fuzz_record` |
 
 The error codes are:
@@ -68,6 +68,7 @@ top 3 bits as width − 1. The sign takes the next bit.
 #define CRC32C_POLY      0x82F63B78UL   /* the reflected Castagnoli polynomial */
 #define CRC32C_INIT      0xFFFFFFFFUL
 #define TEXT_PAD         0U
+#define ID_FLAGS_RESERVED 0xFF0CU   /* identity flags: bits 2-3 and 8-15 */
 ```
 
 ## 3. Identity block
@@ -125,8 +126,9 @@ void wsmp_pack_identity(const wsmp_identity *id, uint8_t out[WSMP_IDENTITY_LEN])
 
 The unpack function refuses a block that the station must not admit (WSMP-I1): a wrong magic, a
 different major version, a channel count outside 1 to 8, or a zero serial. A higher minor version is
-accepted (WSMP-V2). The identity flags are read, not checked: a later minor version may give their
-reserved bits a meaning.
+accepted (WSMP-V2). The identity flags' reserved bits (2–3 and 8–15) must be 0: a set one is
+`WSMP_ERESERVED` (spec section 6.7, "identity flags"), so a reason the station does not know never
+reaches the gateway as a known one.
 
 ```c {#identity-unpack}
 int wsmp_unpack_identity(const uint8_t in[WSMP_IDENTITY_LEN], wsmp_identity *id)
@@ -150,6 +152,7 @@ int wsmp_unpack_identity(const uint8_t in[WSMP_IDENTITY_LEN], wsmp_identity *id)
   id->desc_digest = v;
   id->id_flags = ws_get_be16(in + 30);
   if (id->channels == 0 || id->channels > WSMP_MAX_CHANNELS || id->serial == 0) return WSMP_ELEN;
+  if ((id->id_flags & ID_FLAGS_RESERVED) != 0) return WSMP_ERESERVED;
   return WSMP_OK;
 }
 ```
@@ -436,7 +439,7 @@ station reads the 128 bytes in one transfer before it knows anything else.
 | 0x0A | 1 | board revision | informational |
 | 0x0B | 1 | flags | 0 when the minor is 0 |
 | 0x0C | 8 | serial | top byte 0x01, low 56 bits neither 0 nor all ones |
-| 0x14 | 1 | sensor-bind kind | 0 none, 1 SHT4x serial; module type 1 must have 1 |
+| 0x14 | 1 | sensor-bind kind | 0 none, 1 SHT4x serial; 1 exactly on module type 1 (the only part with a readable serial) |
 | 0x15 | 3 | reserved | 0 |
 | 0x18 | 4 | sensor-bind value | 0 when the kind is 0 |
 | 0x1C | 4 | programming time | informational |
@@ -514,12 +517,14 @@ static void record_fields(const uint8_t *in, wsmp_record *r)
 
 Check 6 is every structural rule of the table; any failure is MALFORMED. The serial must be in the
 record namespace (0x01) with a low part that is neither 0 nor all ones. The module type must be in
-the registry. The sensor bind must be a known kind, have no value without a kind, and module type 1
-(the SHT45) must bind its sensor. The part number must be WSMP-M1 text. With minor 0, the flags and
+the registry. The sensor bind must be a known kind and have no value without a kind. Kind 1 (the SHT4x
+serial) is required on module type 1 (the SHT45) and refused on every other type: their parts have no
+serial the station can read (types 2 and 3 in v1), so a bind there could never be confirmed. The part number must be WSMP-M1 text;
+an empty one (16 zero bytes) is accepted, though the programming fixture refuses to write it. With minor 0, the flags and
 every reserved byte must be 0, an entry's reserved bytes included; a later minor may give them a
 meaning, so they are not checked then. A used entry's kind must be 0 or a registry kind, whatever
-the minor. The quantity is not checked here: an entry for a quantity outside the calibration table
-is check 7, CAL_REJECTED (`wsmp_cal.c`).
+the minor. The quantity, the revision and the match with the type's channels are not checked here:
+they are check 7, CAL_REJECTED (`wsmp_cal.c`).
 
 ```c {#record-body}
 static int serial_ok(uint64_t serial)
@@ -532,7 +537,7 @@ static int bind_ok(const wsmp_record *r)
 {
   if (r->bind_kind > WSMP_BIND_SHT4X) return 0;
   if (r->bind_kind == WSMP_BIND_NONE && r->bind_value != 0) return 0;
-  return r->type != WSMP_T_AIR_TH || r->bind_kind == WSMP_BIND_SHT4X;
+  return (r->bind_kind == WSMP_BIND_SHT4X) == (r->type == WSMP_T_AIR_TH);
 }
 
 static int reserved_ok(const uint8_t *in)

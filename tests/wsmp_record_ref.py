@@ -25,6 +25,16 @@ CAL = {
     8: (16, 100_000, 10_000_000, 0, 1_048_576, 16, 0),             # UVA counts
 }
 
+# WSMP section 4.4: each module type's channels as (quantity, kind).
+CHANNELS = {
+    1: ((1, 2), (2, 2)), 2: ((3, 2),), 3: ((8, 2),), 4: ((1, 2), (2, 2)),
+    5: ((9, 2), (11, 6), (12, 6), (13, 6), (14, 6), (15, 1), (16, 10)),
+    6: ((17, 6), (5, 7), (6, 8), (6, 9)), 7: ((7, 6),),
+}
+# Sensor-bind kind 1 (the SHT4x serial, command 0x89) is required exactly for the module types whose part
+# has a readable sensor serial: type 1 in v1 (section 6.9, check 6). On any other type it is MALFORMED.
+SENSOR_SERIAL_TYPES = frozenset({1})
+
 VECTORS = Path(__file__).resolve().parent/'ws_div_round_vectors.csv'
 
 
@@ -105,3 +115,31 @@ def sensor_serial(module_type, serial32):
 def port_serial(port, module_type):
     """Namespace 0x00, WSMP_LOCAL_SERIAL(port, type) of wsmp_local.h."""
     return 0x5753_0000_0000 | port << 8 | module_type
+
+
+def bind_ok(module_type, kind, value):
+    """Check 6's sensor-bind rules: a known kind, no value without a kind, kind 1 iff the type's part has a serial."""
+    if kind not in (0, 1) or (kind == 0 and value != 0):
+        return False
+    return (kind == 1) == (module_type in SENSOR_SERIAL_TYPES)
+
+
+def entry_ok(module_type, quantity, kind, revision, offset, gain):
+    """Check 7 for one used entry, at any minor: a quantity in the table, a (quantity, kind) that matches a
+    channel of the type (kind 0 matches every channel of the quantity), revision not 0 (it means
+    uncorrected), the offset and gain within the table's bounds."""
+    if quantity not in CAL or revision == 0:
+        return False
+    if not any(q == quantity and (kind == 0 or k == kind) for q, k in CHANNELS.get(module_type, ())):
+        return False
+    off, gmin, gmax = CAL[quantity][:3]
+    return -off <= offset <= off and gmin <= gain <= gmax
+
+
+def check7(module_type, entries):
+    """APPLIED or CAL_REJECTED for the (quantity, kind, revision, offset, gain) entries; all-zero ones skipped."""
+    used = [e for e in entries if any(e)]
+    keys = [(q, k) for q, k, *_ in used]
+    if len(set(keys)) != len(keys) or not all(entry_ok(module_type, *e) for e in used):
+        return CAL_REJECTED
+    return APPLIED

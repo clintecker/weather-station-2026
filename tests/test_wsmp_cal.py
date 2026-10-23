@@ -127,6 +127,11 @@ class Cal(unittest.TestCase):
             'duplicate (2, 0)': (1, [(2, 0, 1, 0, 1_000_000), (0, 0, 0, 0, 0), (2, 0, 2, 5, 1_000_000)]),
             'one good entry, one bad': (1, [(1, 2, 1, 0, 1_000_000), (2, 2, 1, 1_001, 1_000_000)]),
             'gain 0': (1, [(1, 2, 1, 0, 0)]),
+            'revision 0 on a used entry (0 means uncorrected)': (1, [(1, 2, 0, 5, 1_000_000)]),
+            'revision 0 with kind 0': (3, [(8, 0, 0, 0, 1_000_000)]),
+            '(1, 1): type 1 has no point temperature': (1, [(1, 1, 1, 0, 1_000_000)]),
+            '(8, 6): type 3 has no UVA counter': (3, [(8, 6, 1, 0, 1_000_000)]),
+            '(3, 10): kind 10 on pressure': (2, [(3, 10, 1, 0, 1_000_000)]),
         }
         for name, (t, cal) in cases.items():
             with self.subTest(name):
@@ -142,6 +147,31 @@ class Cal(unittest.TestCase):
         for name, (t, cal) in cases.items():
             with self.subTest(name):
                 self.assertEqual(self.check(t, cal), ref.APPLIED)
+
+    def test_revision_edges(self):
+        self.assertEqual(self.check(1, [(1, 2, 1, 0, 1_000_000)]), ref.APPLIED)
+        self.assertEqual(self.check(1, [(1, 2, 0xFFFF, 0, 1_000_000)]), ref.APPLIED)
+        self.assertEqual(self.check(1, [(1, 2, 0, 0, 1_000_000)]), ref.CAL_REJECTED)
+
+    def test_unknown_quantity_is_rejected_at_any_minor(self):
+        # Check 7 is strict: a higher minor may widen the table only for a station that knows it.
+        for minor in (0, 1, 255):
+            for t, cal in ((1, [(4, 0, 1, 0, 1_000_000)]), (6, [(5, 7, 1, 0, 1_000_000)]), (1, [(99, 2, 1, 0, 1_000_000)])):
+                with self.subTest(minor=minor, type=t, cal=cal):
+                    kw = {'bind_kind': 0, 'bind_value': 0} if t != 1 else {}
+                    record = ref.record(module_type=t, cal=cal, minor=minor, **kw)
+                    self.assertEqual(self.lib.t_cal_check(buf(record)), ref.CAL_REJECTED)
+
+    def test_every_key_against_the_reference(self):
+        # Every (type, quantity, kind) a table quantity can take, with a revision of 0 and 1, against
+        # check 7 of the reference: (q, k) must match a channel of the type, (q, 0) any of the quantity.
+        for t in ref.CHANNELS:
+            for q in ref.CAL:
+                for k in range(0, 11):
+                    for revision in (0, 1):
+                        e = (q, k, revision, 0, ref.CAL[q][1])
+                        with self.subTest(type=t, entry=e):
+                            self.assertEqual(self.check(t, [e]), ref.check7(t, [e]))
 
     def test_precedence_q_k_over_q_0(self):
         r = rec(1, [(1, 0, 1, 100, 1_000_000), (1, 2, 5, 10, 1_000_000)])

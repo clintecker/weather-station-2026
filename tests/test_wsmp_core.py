@@ -196,6 +196,19 @@ class Core(unittest.TestCase):
         self.lib.t_pack_identity_flags(0, out)
         self.assertEqual(bytes(out)[30:32], bytes(2))                 # an on-board module: port serial, no record
 
+    def test_identity_refuses_reserved_id_flag_bits(self):
+        # Spec 2026-10-21 section 6.7: bits 2-3 and 8-15 of the identity flags are reserved, 0; a reader
+        # rejects them (WSMP_ERESERVED). Every defined bit (0-1 the source, 4-7 the status) is accepted.
+        out = (ctypes.c_uint8 * 32)()
+        for flags in (0x0004, 0x0008, 0x0100, 0x8000, 0xFFFF):
+            with self.subTest(flags=hex(flags)):
+                self.lib.t_pack_identity_flags(flags, out)
+                self.assertEqual(self.lib.t_identity_check(out), -6)
+                self.assertEqual(self.lib.t_identity_flags(out), -1)
+        self.lib.t_pack_identity_flags(0xF3, out)
+        self.assertEqual(self.lib.t_identity_check(out), 0)
+        self.assertEqual(self.lib.t_identity_flags(out), 0xF3)
+
     def test_budget_bytes_for_the_bench_station(self):
         # WSMP 11.3: air TH 4, pressure 2, UVA 3, enclosure TH 4, wind 8, rain 2 = 23 bytes of values
         pressure, uva, rain = desc(3, 3, -1, 2, 0, 2), desc(8, 7, 0, 3, 0, 2), desc(7, 6, 0, 2, 0, 6)

@@ -9,9 +9,10 @@
 
 #define WSMP_CAL_UNITY 1000000L   /* a gain of 1, in ppm */
 
-/* Check 7: WSMP_REC_APPLIED, or WSMP_REC_CAL_REJECTED for a used entry whose quantity is not in the
-   table or not among the module type's channels, an offset or gain outside the table's bounds, or
-   two entries with the same (quantity, kind). r passed wsmp_record_parse. */
+/* Check 7, strict at any minor: WSMP_REC_APPLIED, or WSMP_REC_CAL_REJECTED for a used entry whose
+   quantity is not in the table, whose (quantity, kind) matches no channel of the module type (kind 0:
+   any channel of the quantity), whose revision is 0, or whose offset or gain is outside the table's
+   bounds, or for two entries with the same (quantity, kind). r passed wsmp_record_parse. */
 uint8_t wsmp_cal_check(const wsmp_record *r);
 /* The entry for a channel (quantity, kind) of an applied record: (quantity, kind) wins over
    (quantity, 0). NULL: the channel is reported uncorrected, calibration revision 0. */

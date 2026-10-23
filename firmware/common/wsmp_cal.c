@@ -9,17 +9,17 @@ static int is_used(const wsmp_cal_entry *e)
   return e->quantity != 0 || e->kind != 0 || e->revision != 0 || e->offset != 0 || e->gain != 0;
 }
 
-static int has_quantity(const wsmp_type_entry *t, uint16_t quantity)
+static int has_channel(const wsmp_type_entry *t, uint16_t quantity, uint8_t kind)
 {
   for (unsigned i = 0; i < t->channels && i < WSMP_MAX_CHANNELS; i++)
-    if (t->ch[i].quantity == quantity) return 1;
+    if (t->ch[i].quantity == quantity && (kind == 0 || t->ch[i].kind == kind)) return 1;
   return 0;
 }
 
 static int entry_ok(const wsmp_type_entry *t, const wsmp_cal_entry *e)
 {
   const wsmp_cal_limits *l = wsmp_cal_limits_of(e->quantity);
-  if (l == NULL || !has_quantity(t, e->quantity)) return 0;
+  if (l == NULL || e->revision == 0 || !has_channel(t, e->quantity, e->kind)) return 0;
   if (e->offset < -l->offset_bound || e->offset > l->offset_bound) return 0;
   return e->gain >= l->gain_min && e->gain <= l->gain_max;
 }
