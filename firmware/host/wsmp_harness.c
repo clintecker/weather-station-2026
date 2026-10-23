@@ -74,6 +74,22 @@ int h_desc_check(int port)
   return rc == WSMP_OK ? wsmp_desc_check(d, ident.channels, ident.type, ident.schema) : rc;
 }
 void h_sht45_set(int dev, int t_raw, int h_raw, int bad) { model_sht45_set(dev, (uint16_t)t_raw, (uint16_t)h_raw, bad); }
+/* The SHT45's serial (command 0x89): bad 1 gives a bad CRC, bad 2 a NACK of the command. */
+void h_sht45_set_serial(int dev, uint32_t serial, int bad) { model_sht45_set_serial(dev, serial, bad); }
+int h_sht45_interleaved(void) { return model_sht45_interleaved(); }
+int h_sht45_read_too_early(void) { return model_sht45_read_too_early(); }
+#include "mod_th.h"
+void h_th_serial_request(void) { mod_th_serial_request(TH_AIR); }
+int h_th_serial_result(uint32_t *serial) { return mod_th_serial_result(TH_AIR, serial); }
+/* Binds the port's driver to a new module whose applied record has one calibration entry (quantity
+   0: no record applied). */
+void h_bind(int port, int quantity, int kind, int32_t offset, uint32_t gain)
+{
+  wsmp_record r;
+  memset(&r, 0, sizeof r);
+  r.cal[0] = (wsmp_cal_entry){ .quantity = (uint16_t)quantity, .kind = (uint8_t)kind, .revision = 1, .offset = offset, .gain = gain };
+  local_bind((enum wsmp_port)port, quantity ? &r : NULL, now_ms());
+}
 void h_shtc3_set(int dev, int t_raw, int h_raw) { model_shtc3_set(dev, (uint16_t)t_raw, (uint16_t)h_raw); }
 int h_shtc3_asleep(int dev) { return model_shtc3_asleep(dev); }
 void h_reg_set_id(int dev, int id) { model_reg_set_id(dev, (uint8_t)id); }
@@ -139,7 +155,7 @@ int h_map_reading(uint8_t *out, unsigned cap)
 #endif
 #endif
 /* The SHT45 conversion of the driver in use (firmware/stage0.c), as the test's oracle for one sample. */
-int h_sht45_parse(int t_raw, int h_raw, int16_t *t, uint16_t *h)
+int h_sht45_parse(int t_raw, int h_raw, int32_t *t, int32_t *h)
 {
   uint8_t b[WS_SHT45_REPLY_LEN] = { (uint8_t)(t_raw >> 8), (uint8_t)t_raw, 0, (uint8_t)(h_raw >> 8), (uint8_t)h_raw, 0 };
   b[2] = ws_crc8(b, 2); b[5] = ws_crc8(b + 3, 2);

@@ -152,7 +152,7 @@ static uint16_t raw_for(int want, int is_rh)
   for (uint32_t raw = 0; raw <= UINT16_MAX; raw++)
   {
     uint8_t b[WS_SHT45_REPLY_LEN] = { (uint8_t)(raw >> 8), (uint8_t)raw, 0, (uint8_t)(raw >> 8), (uint8_t)raw, 0 };
-    int16_t t; uint16_t h;
+    int32_t t, h;
     b[2] = ws_crc8(b, 2); b[5] = ws_crc8(b + 3, 2);
     if (ws_sht45_parse(b, &t, &h) == 0 && (is_rh ? (int)h : (int)t) == want) return (uint16_t)raw;
   }

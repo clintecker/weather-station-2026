@@ -9,34 +9,60 @@
 static uint8_t test_written[I2C_SIM_DEVICES][I2C_SIM_BUF];
 
 /* DEVK_SHT45 (datasheet section 4): command 0xFD starts a measurement of up to 8.3 ms; a read then
-   gives the T word, its CRC, the RH word, its CRC. A read sooner than 9 ms after the command is
-   flagged (the driver must wait). An unknown command is a NACK. */
-typedef struct { uint16_t t_raw, rh_raw; int bad_crc; uint64_t measured_at; } sht45_t;
+   gives the T word, its CRC, the RH word, its CRC. Command 0x89 makes the next read give the serial,
+   high word first, in the same form. A read sooner than 9 ms after a measure command is flagged (the
+   driver must wait), and so is a 0x89 between a measure command and its read. An unknown command is
+   a NACK. */
+typedef struct { uint16_t t_raw, rh_raw; int bad_crc, serial_bad, measuring, serial_next; uint32_t serial; uint64_t measured_at; } sht45_t;
 static sht45_t sht45[I2C_SIM_DEVICES];
-static int sht45_too_early, sht45_commands;
+static int sht45_too_early, sht45_commands, sht45_interleaved;
 #define SHT45_READY_MS 9U
 void model_sht45_set(int dev, uint16_t t_raw, uint16_t rh_raw, int bad_crc)
 {
   sht45[dev].t_raw = t_raw; sht45[dev].rh_raw = rh_raw; sht45[dev].bad_crc = bad_crc;
 }
+void model_sht45_set_serial(int dev, uint32_t serial, int bad) { sht45[dev].serial = serial; sht45[dev].serial_bad = bad; }
 int model_sht45_read_too_early(void) { return sht45_too_early; }
 int model_sht45_commands(void) { return sht45_commands; }
+int model_sht45_interleaved(void) { return sht45_interleaved; }
 
 static int sht45_write(int dev, const uint8_t *data, uint16_t n)
 {
+  sht45_t *s = &sht45[dev];
+  if (n == 1 && data[0] == WS_SHT4X_SERIAL)
+  {
+    if (s->serial_bad == 2) return -1;
+    if (s->measuring) sht45_interleaved = 1;
+    s->serial_next = 1;
+    return 0;
+  }
   if (n != 1 || data[0] != WS_SHT45_MEASURE) return -1;
   sht45_commands++;
-  sht45[dev].measured_at = sim_now();
+  s->measured_at = sim_now();
+  s->measuring = 1;
+  s->serial_next = 0;
   return 0;
+}
+
+static void words(uint8_t *data, uint16_t a, uint16_t b, int bad)
+{
+  data[0] = (uint8_t)(a >> 8); data[1] = (uint8_t)a; data[2] = ws_crc8(data, 2);
+  data[3] = (uint8_t)(b >> 8); data[4] = (uint8_t)b; data[5] = (uint8_t)(ws_crc8(data + 3, 2) ^ (bad ? 1U : 0U));
 }
 
 static int sht45_read(int dev, uint8_t *data, uint16_t n)
 {
+  sht45_t *s = &sht45[dev];
   if (n != WS_SHT45_REPLY_LEN) return -1;
-  if (sim_now() - sht45[dev].measured_at < (uint64_t)SHT45_READY_MS * SIM_UNITS_PER_MS) sht45_too_early = 1;
-  data[0] = (uint8_t)(sht45[dev].t_raw >> 8); data[1] = (uint8_t)sht45[dev].t_raw; data[2] = ws_crc8(data, 2);
-  data[3] = (uint8_t)(sht45[dev].rh_raw >> 8); data[4] = (uint8_t)sht45[dev].rh_raw;
-  data[5] = (uint8_t)(ws_crc8(data + 3, 2) ^ (sht45[dev].bad_crc ? 1U : 0U));
+  if (s->serial_next)
+  {
+    s->serial_next = 0;
+    words(data, (uint16_t)(s->serial >> 16), (uint16_t)s->serial, s->serial_bad == 1);
+    return 0;
+  }
+  if (sim_now() - s->measured_at < (uint64_t)SHT45_READY_MS * SIM_UNITS_PER_MS) sht45_too_early = 1;
+  s->measuring = 0;
+  words(data, s->t_raw, s->rh_raw, s->bad_crc);
   return 0;
 }
 

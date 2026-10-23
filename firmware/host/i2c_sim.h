@@ -40,6 +40,9 @@ void model_reset(int kind, int dev);
 void model_sht45_set(int dev, uint16_t t_raw, uint16_t rh_raw, int bad_crc);
 int model_sht45_read_too_early(void);
 int model_sht45_commands(void);   /* measure commands that reached an SHT45 */
+/* The serial its 0x89 read gives: bad 1 a bad CRC, bad 2 a NACK of the command. */
+void model_sht45_set_serial(int dev, uint32_t serial, int bad);
+int model_sht45_interleaved(void);   /* a 0x89 came between a measure command and its read */
 void model_shtc3_set(int dev, uint16_t t_raw, uint16_t rh_raw);
 int model_shtc3_asleep(int dev);
 void model_reg_set_id(int dev, uint8_t id);

@@ -9,7 +9,9 @@
    11 ms: ST's timer rounds down to 1/1024 s ticks and can start up to a tick late, so this waits
    at least ~9.8 ms. The firmware
    does each step on a 250 ms module tick (App/mod_th.c); ws_sht45_parse checks both CRCs and
-   converts: 0, or WS_SHT45_ECRC on a CRC mismatch (outputs untouched). */
+   converts: 0, or WS_SHT45_ECRC on a CRC mismatch (outputs untouched). The values are raw and
+   signed (RH runs from -6 to 119 %): the caller calibrates, then crops (sensor module ports design,
+   section 6.9). */
 #define WS_SHT45_ECRC (-4)
 #define WS_SHT45_ADDR       0x44
 #define WS_SHT45_MEASURE    0xfd
@@ -22,7 +24,13 @@
 #define WS_SHT45_T_SPAN_CENTI    17500
 #define WS_SHT45_RH_OFFSET_CENTI (-600)
 #define WS_SHT45_RH_SPAN_CENTI   12500
-int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN], int16_t *centi_c, uint16_t *centi_rh);
+int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN], int32_t *centi_c, int32_t *centi_rh);
+/* The SHT4x serial number: write WS_SHT4X_SERIAL, then read WS_SHT45_REPLY_LEN bytes, two words with
+   their CRCs as a measurement's (SHT4x datasheet section 4.4; from the review, not checked against the
+   datasheet here). The step that read them, never the bytes, decides which parser reads them: 0 with
+   *serial (high word first), or WS_SHT45_ECRC (*serial untouched). */
+#define WS_SHT4X_SERIAL 0x89
+int ws_sht4x_serial_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN], uint32_t *serial);
 uint8_t ws_crc8(const uint8_t *, size_t);
 /* Stuck-bus recovery as a pin sequence, so the waveform is host-tested (I2C-bus spec UM10204
    section 3.1.16). Pins are open-drain: level 1 releases the line. The caller sets both lines

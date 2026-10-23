@@ -81,6 +81,14 @@ void local_identity(enum wsmp_port p, uint8_t id[WSMP_IDENTITY_LEN], uint8_t des
   if (p == P_RAIN) mod_rain_identity(id, desc);
 }
 
+void local_bind(enum wsmp_port p, const wsmp_record *applied, uint32_t now_ms)
+{
+  enum th_unit u = th_unit(p);
+  enum reg_unit r = reg_unit(p);
+  if (u != TH_COUNT) mod_th_bind(u, applied, now_ms);
+  if (r != REG_COUNT) mod_reg_bind(r, applied, now_ms);
+}
+
 void local_latch(enum wsmp_port p, uint16_t token, uint32_t utc, uint32_t now_ms)
 {
   enum th_unit u = th_unit(p);

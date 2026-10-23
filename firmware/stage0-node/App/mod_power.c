@@ -251,7 +251,7 @@ void mod_power_latch(uint16_t token, uint32_t now_ms)
 {
   uint8_t desc[WSMP_DESC_BLOCK_LEN];
   wsmp_snapshot snap;
-  unsigned samples = pw.win.n;
+  unsigned samples = pw.win.n[0];
   desc_block(desc);
   if (!mean_close(&pw.win, token, now_ms, boot, desc, 1, &snap)) return;
   const int64_t totals[4] = { pw.energy_in / UWS_PER_MWH, pw.energy_out / UWS_PER_MWH,

@@ -82,7 +82,7 @@ def wsmp_sources(app=WSMP_APP):
     return ['-I', fw/'host/include', '-I', fw/'host', '-I', a, '-I', fw/'stage0-node/Core/Inc', '-I', fw,
             '-I', fw/'common', fw/'host/wsmp_harness.c', fw/'host/sim_core.c', fw/'host/i2c_sim.c',
             fw/'host/i2c_models.c', *(a/f'{name}.c' for name in app), fw/'stage0.c', fw/'common/ws_check.c',
-            fw/'common/wsmp.c']
+            fw/'common/wsmp.c', fw/'common/wsmp_cal.c', fw/'common/wsmp_ident.c']
 
 
 def fresh_copy(owner, library):

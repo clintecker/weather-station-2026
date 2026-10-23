@@ -18,5 +18,7 @@ int mod_reg_probe(enum reg_unit u, uint16_t *seq);
 void mod_reg_identity(enum reg_unit u, uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN]);
 void mod_reg_latch(enum reg_unit u, uint16_t token, uint32_t now_ms);
 void mod_reg_snapshot(enum reg_unit u, uint8_t snap[WSMP_SNAPSHOT_LEN]);
+/* Binds the unit to a newly admitted module: a fresh window and the calibration of applied (NULL: none). */
+void mod_reg_bind(enum reg_unit u, const wsmp_record *applied, uint32_t now_ms);
 void mod_reg_i2c_done(enum reg_unit u, int rc);
 #endif
