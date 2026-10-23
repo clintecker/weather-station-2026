@@ -179,7 +179,7 @@ static void rain_setting(int on)
 
 static void modules_line(void)
 {
-  char line[WSMP_MODULES_LINE_MAX];
+  static char line[WSMP_MODULES_LINE_MAX];   /* static: off the stack; only the console task prints it */
   (void)wsmp_host_modules_line(line, sizeof line);
   APP_PRINTF("%s\n", line);
 }

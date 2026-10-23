@@ -52,6 +52,7 @@
 
 static UTIL_TIMER_Object_t sample_timer, module_timer, boot_retry_timer;
 static uint32_t last_sample_s;   /* the watchdog check reads it as proof of progress */
+static volatile uint32_t sample_fired_ms;   /* clock_ms() when the sample timer last fired (its interrupt) */
 /* This boot's identity and run state. Only this file writes it. The other TX modules read it
    through node_state() (docs/power-of-ten.md, rule 6). */
 static tx_node_t node;
@@ -146,7 +147,7 @@ static int minute_encode(minute_t *m, uint8_t *plain)
   if (!m->valid) node.sensor_faults++;
   if (!modules_reported)
   {
-    char line[WSMP_MODULES_LINE_MAX];
+    static char line[WSMP_MODULES_LINE_MAX];   /* static: off the deepest callback chain's stack, as o */
     modules_reported = 1;
     (void)wsmp_host_modules_line(line, sizeof line);
     APP_PRINTF("%s\n", line);
@@ -213,11 +214,17 @@ static void minute_report(int src)
   busymon_step_end(s, "report.send");
 }
 
-/* Every 15 s; the 4th tick latches every module and makes the minute's report. */
+/* Every 15 s; the 4th tick latches every module and makes the minute's report. The other ticks tell the
+   station host when that latch is due, counted from when the timer fired, for its pre-latch slot (the
+   latch then sets the next itself, a minute after it was due). */
 static void sample(void)
 {
   last_sample_s = clock_s();
-  if (++sample_ticks < SAMPLES_PER_REPORT) return;
+  if (++sample_ticks < SAMPLES_PER_REPORT)
+  {
+    wsmp_host_next_latch(sample_fired_ms + (SAMPLES_PER_REPORT - sample_ticks) * SAMPLE_PERIOD_MS);
+    return;
+  }
   sample_ticks = 0;
   if (!node.running || stuck) return;   /* no report after sampling stopped (reboot, storm, stuck radio) */
   wsmp_host_latch(time_utc(), clock_ms());
@@ -228,7 +235,12 @@ BUSYMON_TASK(sample)
 static void module_tick(void) { if (node.running && !stuck) wsmp_host_tick(clock_ms()); }
 BUSYMON_TASK(module_tick)
 
-static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
+static void on_sample_timer(void *ctx)
+{
+  (void)ctx;
+  sample_fired_ms = clock_ms();   /* the tick's own time: the task may run later */
+  UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0);
+}
 static void on_module_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sensor, CFG_SEQ_Prio_0); }
 
 /* Watchdog health: the node must make real progress, not only run its main loop. */

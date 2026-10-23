@@ -22,6 +22,7 @@ void mod_th_bind(enum th_unit u, const wsmp_record *applied, uint32_t boot_id, u
 /* While held the unit starts no new sample (a sample due waits, its phase kept); a step in progress
    finishes. Idle: no step in progress. An identity read holds the unit and waits for idle. */
 void mod_th_hold(enum th_unit u, int on);
+void mod_th_set_boot(enum th_unit u, uint32_t boot_id);   /* a new boot ID, the window kept */
 int mod_th_idle(enum th_unit u);
 /* The SHT45's own serial (command 0x89), read as a step of the driver's step machine, started only
    from its idle state, so never between a measure command and its read (section 6.7). A sample that

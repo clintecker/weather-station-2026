@@ -25,6 +25,9 @@ void local_latch(enum wsmp_port p, uint16_t token, uint32_t utc, uint32_t now_ms
    is applied, else NULL) gives its calibration. A port without a port-module driver ignores it. */
 void local_bind(enum wsmp_port p, const wsmp_record *applied, uint32_t boot_id, uint32_t now_ms);
 uint32_t local_boot_epoch(void);   /* the station's boot epoch of local_init */
+/* A port module's new boot ID without a new window: a matched identity check cleared its possibly-
+   replugged flag (section 6.7). */
+void local_set_boot(enum wsmp_port p, uint32_t boot_id);
 /* The identity an I2C port module was admitted with (section 6.7): its serial, the identity flags
    (wsmp_id_flags) and the capabilities (bit 0: a valid record). The identity block carries them. */
 void local_set_identity(enum wsmp_port p, uint64_t serial, uint16_t id_flags, uint16_t caps);

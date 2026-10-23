@@ -410,7 +410,12 @@ admits the module.
     open vane.
   - The local rain module cannot show presence, so the operator enables it by a stored console setting.
 - **WSMP-P2. Debounce.** The station MUST see two good probes in a row before it identifies a module.
-  It MUST miss three latches in a row before it removes a module.
+  It MUST miss three latches in a row before it removes a module. On an I2C port the station also
+  removes a module when the holder check of another port's duplicate finds it gone (two address
+  NACKs, a confirmed different identity, or a Faulted or operator-disabled port), when its pre-latch
+  identity check confirms a change, or after 60 latches in a row with its possibly-replugged flag set
+  and its identity unverified (sensor module ports design, section 6.7). In Suspect, a latch with a
+  good read but an unverified identity neither counts as missed nor breaks the run.
 - **WSMP-P3. Bus faults.** A bus fault (for example SDA held low) sets the quality of the affected
   channels to missing. It MUST NOT change the descriptor set by itself.
 - **WSMP-P4. Layout changes at the latch only.** A new descriptor set takes effect at a latch. A
@@ -423,6 +428,19 @@ admits the module.
 - **WSMP-P7. Remote power.** A remote port gets power only after its presence loop is valid. The port
   loses power when the loop opens or a port fault occurs. There is no live mating.
 - **WSMP-P8. Module limit.** A station has at most 8 modules and 24 channels.
+- **WSMP-P10. Re-identification.** An I2C module's identity (record serial and CRC, sensor serial, as
+  seen at admission) is checked in a pre-latch slot before each latch, from the driver's idle state;
+  a confirmed change ends the port at that latch with the window missing, then the new module is
+  admitted (a record that no longer parses, or an EEPROM that no longer answers, is confirmed by two
+  full reads that agree with each other). After a missed probe or a failed data read, windows are
+  missing until a check matches at a latch whose data read is good.
+  An unverified check never changes the port's state, except the timeout: 60 latches in a row with
+  the flag set and no check matching end the port, in any state, and it rejoins. For any module with
+  its own identity block (remote, or behind a v2 adapter): a snapshot whose boot ID differs from the
+  one admitted makes the station re-read the identity and descriptor blocks; a changed serial, type
+  or descriptor digest is a leave and a join. At most one module of each type is admitted (v1); a
+  duplicate runs the holder check in the holder driver's step machine. The bench station implements
+  the I2C part (`App/wsmp_host.lit.md` section 5.1, `App/port_id.c`); the remote part is not built.
 
 ## 8. Counters and module identity
 
@@ -452,7 +470,9 @@ of a window from two snapshots.
   65,535 ms (section 6.4). A module therefore sets flag bit 1 for every window longer than 65,535 ms.
   This includes every window of more than 90 s.
 - **WSMP-T4. Free-running sampling.** A module samples on its own clock at the sample period in its
-  metadata. The latch sets only the window boundaries.
+  metadata. The latch sets only the window boundaries. Exception: an I2C port module's driver starts
+  no sample in the 3 s before a latch; a sample due then is deferred to just after the latch, keeping
+  the sampling phase, so every window keeps its sample count (sensor module ports design, section 6.7).
 
 Quality in the snapshot is one byte. The radio carries 2 bits:
 

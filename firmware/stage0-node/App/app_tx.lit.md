@@ -202,15 +202,19 @@ void SubghzApp_Init(void)
 Two timers drive sampling. The module timer fires every 250 ms (`WSMP_TICK_MS`). Its task runs one
 step of every local module through the station host. The sample timer fires every 15 s. Its 4th
 tick latches every module and calls `minute_report` (section 4). The latch never waits for a
-sensor. A module that has not finished a sample has one sample fewer in its window.
+sensor. A module that has not finished a sample has one sample fewer in its window. Each of the
+other ticks tells the host when the latch is due (`wsmp_host_next_latch`): the host's pre-latch slot
+starts 3 s before it, and holds the port modules' samples for their identity checks (sensor module
+ports design, section 6.7). The time told is counted from when the timer fired (`sample_fired_ms`,
+taken in its interrupt), not from when the task ran: a task that runs late does not move the slot.
 
 ```mermaid
 flowchart TD
   M["module_timer every 250 ms"] --> MT["module_tick: wsmp_host_tick(clock_ms())"]
-  T["sample_timer every 15 s, in the timer interrupt"] --> P["on_sample_timer posts the sample task"]
+  T["sample_timer every 15 s, in the timer interrupt"] --> P["on_sample_timer notes the time and posts the sample task"]
   P --> S["sample() in the main loop: last_sample_s = clock_s()"]
   S --> N{"++sample_ticks reached 4?"}
-  N -- no --> WAIT["return"]
+  N -- no --> WAIT["wsmp_host_next_latch: the latch is due (4 - ticks) x 15 s after the tick fired"]
   N -- yes --> D{"node.running and not stuck?"}
   D -- no --> DROP["return: no report"]
   D -- yes --> L["wsmp_host_latch(time_utc(), clock_ms())"]
@@ -230,6 +234,7 @@ closes the minute. The product spec (Weather Station v0.2 PRD, section 9) sets t
 ```c {#timers}
 static UTIL_TIMER_Object_t sample_timer, module_timer, boot_retry_timer;
 static uint32_t last_sample_s;   /* the watchdog check reads it as proof of progress */
+static volatile uint32_t sample_fired_ms;   /* clock_ms() when the sample timer last fired (its interrupt) */
 ```
 
 `on_sample_timer` and `on_module_timer` run in the timer interrupt and only post their tasks. The
@@ -247,11 +252,17 @@ static int stuck;              /* the exchange outlasted its bound. The watchdog
 ```
 
 ```c {#sample-timer}
-/* Every 15 s; the 4th tick latches every module and makes the minute's report. */
+/* Every 15 s; the 4th tick latches every module and makes the minute's report. The other ticks tell the
+   station host when that latch is due, counted from when the timer fired, for its pre-latch slot (the
+   latch then sets the next itself, a minute after it was due). */
 static void sample(void)
 {
   last_sample_s = clock_s();
-  if (++sample_ticks < SAMPLES_PER_REPORT) return;
+  if (++sample_ticks < SAMPLES_PER_REPORT)
+  {
+    wsmp_host_next_latch(sample_fired_ms + (SAMPLES_PER_REPORT - sample_ticks) * SAMPLE_PERIOD_MS);
+    return;
+  }
   sample_ticks = 0;
   if (!node.running || stuck) return;   /* no report after sampling stopped (reboot, storm, stuck radio) */
   wsmp_host_latch(time_utc(), clock_ms());
@@ -262,7 +273,12 @@ BUSYMON_TASK(sample)
 static void module_tick(void) { if (node.running && !stuck) wsmp_host_tick(clock_ms()); }
 BUSYMON_TASK(module_tick)
 
-static void on_sample_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0); }
+static void on_sample_timer(void *ctx)
+{
+  (void)ctx;
+  sample_fired_ms = clock_ms();   /* the tick's own time: the task may run later */
+  UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sample, CFG_SEQ_Prio_0);
+}
 static void on_module_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Sensor, CFG_SEQ_Prio_0); }
 ```
 
@@ -382,7 +398,7 @@ static int minute_encode(minute_t *m, uint8_t *plain)
   if (!m->valid) node.sensor_faults++;
   if (!modules_reported)
   {
-    char line[WSMP_MODULES_LINE_MAX];
+    static char line[WSMP_MODULES_LINE_MAX];   /* static: off the deepest callback chain's stack, as o */
     modules_reported = 1;
     (void)wsmp_host_modules_line(line, sizeof line);
     APP_PRINTF("%s\n", line);

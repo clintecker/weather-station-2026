@@ -58,6 +58,7 @@ int model_sht45_commands(void);   /* measure commands that reached an SHT45 */
 void model_sht45_set_serial(int dev, uint32_t serial, int bad);
 void model_sht45_serial_fail_next(int dev, int n);   /* the next n serial replies have a bad CRC */
 int model_sht45_interleaved(void);   /* a 0x89 came between a measure command and its read */
+int model_sht45_serial_commands(void);   /* 0x89 commands that reached an SHT45 */
 void model_shtc3_set(int dev, uint16_t t_raw, uint16_t rh_raw);
 int model_shtc3_asleep(int dev);
 void model_reg_set_id(int dev, uint8_t id);
@@ -76,5 +77,7 @@ int model_mux_reads(void);
    is i & 0xFF at address i. */
 void model_eeprom_write(int dev, uint16_t at, const uint8_t *data, uint16_t n);
 void model_eeprom_fail_next(int dev, int n);      /* the next n reads NACK their data */
+void model_eeprom_fail_after(int dev, int skip, int n);   /* the next skip reads are served, then n NACK */
 void model_eeprom_corrupt_next(int dev, int n);   /* the next n reads that cover byte 0x20 flip a bit of it */
+void model_eeprom_corrupt_at(int dev, uint16_t at, int n);   /* the same for byte at */
 #endif

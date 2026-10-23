@@ -106,6 +106,14 @@ void local_bind(enum wsmp_port p, const wsmp_record *applied, uint32_t boot_id, 
   if (r != REG_COUNT) mod_reg_bind(r, applied, boot_id, now_ms);
 }
 
+void local_set_boot(enum wsmp_port p, uint32_t boot_id)
+{
+  enum th_unit u = th_unit(p);
+  enum reg_unit r = reg_unit(p);
+  if (u != TH_COUNT) mod_th_set_boot(u, boot_id);
+  if (r != REG_COUNT) mod_reg_set_boot(r, boot_id);
+}
+
 void local_hold(enum wsmp_port p, int on)
 {
   enum th_unit u = th_unit(p);

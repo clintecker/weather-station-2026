@@ -41,7 +41,9 @@ int h_mux_ok(void) { return i2c_bus_mux_ok(); }
 int h_phantoms(void) { return i2c_bus_phantoms(); }
 void h_eeprom_write(int dev, int at, const uint8_t *data, int n) { model_eeprom_write(dev, (uint16_t)at, data, (uint16_t)n); }
 void h_eeprom_fail_next(int dev, int n) { model_eeprom_fail_next(dev, n); }
+void h_eeprom_fail_after(int dev, int skip, int n) { model_eeprom_fail_after(dev, skip, n); }
 void h_eeprom_corrupt_next(int dev, int n) { model_eeprom_corrupt_next(dev, n); }
+void h_eeprom_corrupt_at(int dev, int at, int n) { model_eeprom_corrupt_at(dev, (uint16_t)at, n); }
 
 #ifdef WSMP_BUS_ONLY
 #define LOG_MAX 64
@@ -97,6 +99,8 @@ void h_sht45_set_serial(int dev, uint32_t serial, int bad) { model_sht45_set_ser
 void h_sht45_serial_fail_next(int dev, int n) { model_sht45_serial_fail_next(dev, n); }
 int h_sht45_interleaved(void) { return model_sht45_interleaved(); }
 int h_sht45_read_too_early(void) { return model_sht45_read_too_early(); }
+int h_sht45_commands(void) { return model_sht45_commands(); }
+int h_sht45_serial_commands(void) { return model_sht45_serial_commands(); }
 #include "mod_th.h"
 void h_th_serial_request(void) { mod_th_serial_request(TH_AIR); }
 int h_th_serial_result(uint32_t *serial) { return mod_th_serial_result(TH_AIR, serial); }
@@ -142,7 +146,9 @@ void h_rain_tip(void) { mod_rain_tip(now_ms()); }
 void h_rain_enable(int on) { mod_rain_set_enabled(on); }
 #ifdef WSMP_HOST
 #include "wsmp_host.h"
-void h_host_init(void) { wsmp_host_init(); }
+/* The host, with its first latch a minute from now (as app_tx.c tells it at each sample tick). */
+void h_host_init(void) { wsmp_host_init(); wsmp_host_next_latch(now_ms() + 60000U); }
+void h_host_next_latch(uint32_t at_ms) { wsmp_host_next_latch(at_ms); }
 void h_host_run(uint32_t ms) { for (uint32_t t = 0; t < ms; t += WSMP_TICK_MS) { wsmp_host_tick(now_ms()); sim_advance(WSMP_TICK_MS); } }
 void h_host_latch(uint32_t utc) { wsmp_host_latch(utc, now_ms()); }
 int h_host_state(int port) { return wsmp_host_state((enum wsmp_port)port); }
@@ -163,6 +169,16 @@ void h_host_force_quality(int port, int q)
 {
   wsmp_snapshot *s = (wsmp_snapshot *)(uintptr_t)wsmp_host_snapshot((enum wsmp_port)port);
   for (unsigned i = 0; s && i < WSMP_MAX_CHANNELS; i++) s->slot[i].quality = (uint8_t)q;
+}
+int h_host_slot_count(int port, int i)
+{
+  const wsmp_snapshot *s = wsmp_host_snapshot((enum wsmp_port)port);
+  return s ? s->slot[i].count : -1;
+}
+int h_host_snap_boot(int port)
+{
+  const wsmp_snapshot *s = wsmp_host_snapshot((enum wsmp_port)port);
+  return s ? s->boot16 : -1;
 }
 uint32_t h_host_changes(int port) { return wsmp_host_changes((enum wsmp_port)port); }
 unsigned h_host_line(char *buf, unsigned len) { return wsmp_host_modules_line(buf, len); }

@@ -138,6 +138,7 @@ void mod_reg_bind(enum reg_unit u, const wsmp_record *applied, uint32_t boot_id,
 }
 
 void mod_reg_hold(enum reg_unit u, int on) { reg[u].hold = (uint8_t)(on != 0); }
+void mod_reg_set_boot(enum reg_unit u, uint32_t boot_id) { reg[u].boot_id = boot_id; }
 int mod_reg_idle(enum reg_unit u) { return reg[u].step == ST_IDLE; }
 
 void mod_reg_id_check(enum reg_unit u)
