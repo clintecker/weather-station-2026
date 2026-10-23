@@ -182,6 +182,12 @@ int h_host_snap_boot(int port)
 }
 uint32_t h_host_changes(int port) { return wsmp_host_changes((enum wsmp_port)port); }
 unsigned h_host_line(char *buf, unsigned len) { return wsmp_host_modules_line(buf, len); }
+/* The layout's descriptor set, packed (generation 0); returns its length. */
+unsigned h_host_set(uint8_t out[WSMP_SET_MAX_LEN]) { wsmp_set set; (void)wsmp_host_set(&set, NULL); return wsmp_pack_set(&set, out); }
+unsigned h_host_set_dropped(void) { wsmp_set set; unsigned d = 0; (void)wsmp_host_set(&set, &d); return d; }
+unsigned h_host_ident_line(unsigned i, char *buf, unsigned len) { wsmp_set set; (void)wsmp_host_set(&set, NULL); return wsmp_host_ident_line(&set, i, buf, len); }
+/* Breaks a port's identity block (serial 0, which no unpack accepts), as a bug would. */
+void h_break_identity(int port) { local_set_identity((enum wsmp_port)port, 0, 0, 0); }
 #ifdef WSMP_MAP
 #include "wsmp_catalog_map.h"
 /* The minute's reading as app_tx.c builds it: the map, then the encoder. */

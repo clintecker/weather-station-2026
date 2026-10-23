@@ -177,11 +177,22 @@ static void rain_setting(int on)
   APP_PRINTF("#sensor rain=%s\n", on ? "on" : "off");
 }
 
+/* #modules, then one #ident line for each module of the descriptor set (the serial, its source, the
+   record status and the applied record's CRC: what the gateway will get, WSMP section 11.1). */
 static void modules_line(void)
 {
   static char line[WSMP_MODULES_LINE_MAX];   /* static: off the stack; only the console task prints it */
+  static wsmp_set set;                       /* static for the same reason: about 700 bytes */
   (void)wsmp_host_modules_line(line, sizeof line);
   APP_PRINTF("%s\n", line);
+  unsigned dropped = 0;
+  (void)wsmp_host_set(&set, &dropped);
+  for (unsigned i = 0; i < set.count && i < WSMP_SET_MODULES_MAX; i++)
+  {
+    (void)wsmp_host_ident_line(&set, i, line, sizeof line);
+    APP_PRINTF("%s\n", line);
+  }
+  if (dropped) APP_PRINTF("#ident dropped=%u\n", dropped);
 }
 
 static int refused(int cmd, char *line)

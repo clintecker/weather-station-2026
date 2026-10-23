@@ -538,3 +538,78 @@ unsigned wsmp_host_modules_line(char *buf, unsigned len)
   }
   return n;
 }
+
+static int set_entry(enum wsmp_port p, const port_t *s, wsmp_set_module *m)
+{
+  uint8_t id[WSMP_IDENTITY_LEN], desc[WSMP_DESC_BLOCK_LEN];
+  wsmp_identity ident;
+  local_identity(p, id, desc);
+  if (wsmp_unpack_identity(id, &ident) != WSMP_OK || wsmp_unpack_desc(desc, ident.channels, m->desc) != WSMP_OK)
+    return 0;   /* admission unpacked the same blocks, so this is a bug: left out, and counted (dropped) */
+  m->port = (uint8_t)p;
+  m->type = ident.type;
+  m->schema = ident.schema;
+  m->channels = ident.channels;
+  m->serial = ident.serial;
+  m->id_flags = (uint8_t)ident.id_flags;
+  m->record_crc = port_id_is_port(p) && s->status == WSMP_REC_APPLIED && s->with_record ? s->rec_crc : 0U;
+  return 1;
+}
+
+unsigned wsmp_host_set(wsmp_set *set, unsigned *dropped)
+{
+  unsigned lost = 0;
+  memset(set, 0, sizeof *set);
+  for (unsigned q = P_AIR_TH; q < P_COUNT && set->count < WSMP_SET_MODULES_MAX; q++)
+  {
+    if (!in_layout(&ports[q])) continue;
+    if (set_entry((enum wsmp_port)q, &ports[q], &set->m[set->count])) set->count++;
+    else lost++;
+  }
+  if (dropped) *dropped = lost;
+  return set->count;
+}
+
+#define HEX_DIGITS 16U
+#define NIBBLE_BITS 4U
+
+/* v as `digits` lowercase hex digits. */
+static unsigned append_hex(char *buf, unsigned len, unsigned n, uint64_t v, unsigned digits)
+{
+  char text[HEX_DIGITS + 1U];
+  for (unsigned i = 0; i < digits && i < HEX_DIGITS; i++)
+    text[i] = "0123456789abcdef"[(v >> (NIBBLE_BITS * (digits - 1U - i))) & 0x0FU];
+  text[digits < HEX_DIGITS ? digits : HEX_DIGITS] = 0;
+  return append(buf, len, n, text);
+}
+
+/* v (at most 65535) in decimal. */
+static unsigned append_dec(char *buf, unsigned len, unsigned n, unsigned v)
+{
+  char text[6];
+  unsigned i = sizeof text - 1U;
+  text[i] = 0;
+  do { text[--i] = (char)('0' + v % DECIMAL); v /= DECIMAL; } while (v && i > 0U);   /* bound: 5 digits */
+  return append(buf, len, n, text + i);
+}
+
+unsigned wsmp_host_ident_line(const wsmp_set *set, unsigned i, char *buf, unsigned len)
+{
+  static const char *const source[] = { "port", "record", "sensor", "adapter" };
+  static const char *const status[] = { "applied", "READ", "BLANK", "NO_MAGIC", "VERSION", "MALFORMED", "CRC",
+                                        "CAL_REJECTED", "SENSOR_CHANGED" };
+  if (len == 0) return 0;
+  buf[0] = 0;
+  if (i >= set->count || i >= WSMP_SET_MODULES_MAX) return 0;
+  const wsmp_set_module *m = &set->m[i];
+  unsigned st = (unsigned)(m->id_flags >> 4);
+  /* a module that never has a record (source port, status 0: the meters, power) shows "none" */
+  const char *status_text = (m->id_flags & 0x03U) == WSMP_SRC_PORT && st == WSMP_REC_APPLIED ? "none"
+                            : st < sizeof status / sizeof status[0] ? status[st] : "?";
+  unsigned n = append_dec(buf, len, append(buf, len, 0, "#ident port="), m->port);
+  n = append_dec(buf, len, append(buf, len, n, " type="), m->type);
+  n = append_hex(buf, len, append(buf, len, n, " serial="), m->serial, HEX_DIGITS);
+  n = append(buf, len, append(buf, len, n, " source="), source[m->id_flags & 0x03U]);
+  n = append(buf, len, append(buf, len, n, " status="), status_text);
+  return append_hex(buf, len, append(buf, len, n, " crc="), m->record_crc, 8U);
+}

@@ -580,8 +580,13 @@ class TxStateMachine(unittest.TestCase):
         n.advance(20_000)                              # two good SHT45 probes: admitted, active at the latch
         n.out()
         n.lib.h_line(b'MODULES')
-        self.assertEqual(n.out(), '#modules air_th=admitted pressure=absent uva=absent encl_th=absent '
-                                  'power=absent wind=absent rain=absent\n')
+        out = n.out().splitlines()
+        self.assertEqual(out[0], '#modules air_th=admitted pressure=absent uva=absent encl_th=absent '
+                                 'power=absent wind=absent rain=absent')
+        # the descriptor set's identity entry (WSMP section 11.1): no EEPROM on this bench model, so
+        # the SHT45's own serial (source sensor) and NO_RECORD reason READ, no record CRC
+        self.assertEqual(len(out), 2)
+        self.assertRegex(out[1], r'^#ident port=1 type=1 serial=02[0-9a-f]{14} source=sensor status=READ crc=00000000$')
 
     def test_sensor_rain_command_is_stored_and_waits_for_the_radio(self):
         n = self.node()
