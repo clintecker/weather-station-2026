@@ -41,8 +41,8 @@ found a problem with one, the problem is an open question in section 11, with a 
 | Before any board | A bench test sets the real cable limit: 3 m, then 5 m, of 6-conductor flat cable. Scope rise time ≤ 1000 ns at 100 kHz. A long error-count loop |
 | Open (Clint) | Sealing RJ11 on an IP66 box. Likely: the jacks inside, glands that fit flat cable |
 | v1 module identity (2026-10-21) | **Every v1 module board carries a programmed ID EEPROM** (OQ-6, decided). Its record gives each module (module board plus its sensor board) a serial that follows it across ports and to v2. A sensor-board swap gets a new serial |
-| Identity is normalized (2026-10-21) | **No port sensor is ever without an ID EEPROM.** On the breadboard each sensor gets an EEPROM breakout on its own mux channel; in v2 the adapter takes only a whole v1 module board, never a bare sensor board |
-| Meter identity (2026-10-22) | **The SEN-15901 meters carry no ID EEPROM in v1.** They are not port sensors: reed switches and a resistor network on the meter ports (12 wind, 13 rain), no electronics. The meter's serial is the binding fallback, and a meter swap is invisible, by decision: one meter per station, rarely swapped, and its calibration is fixed by the hardware (2.4 km/h per Hz, 0.2794 mm per tip). The vane's north offset depends on the mounting, not the meter, so it belongs in the station's own configuration. **If v2 is built (OQ-8), the meter gets an adapter MCU at the mast** (section 7, "a pulse or analog instrument"), which presents it as an ordinary module with its own EEPROM. A base EEPROM beside the meter port is rejected: it names the port, not the meter |
+| Identity is normalized (2026-10-21) | **No port sensor is ever without an ID EEPROM.** On the breadboard each sensor gets an EEPROM breakout on its own mux channel; in v2 an I2C sensor's adapter takes only a whole v1 module board, never a bare sensor board. The meters are the one exception ("Meter identity", below) |
+| Meter identity (2026-10-22) | **The SEN-15901 meters carry no ID EEPROM in v1.** They are not I2C port sensors: reed switches and a resistor network on the meter ports (12 wind, 13 rain), no electronics. Their serial is the binding fallback, and a meter swap is invisible, by decision: one kit per station, rarely swapped, and its calibration is fixed by the hardware (2.4 km/h per Hz, 0.2794 mm per tip). The vane's north offset depends on the mounting, not the meter, so it belongs in the siting archive (WSMP section 15), keyed to the wind port; the binding-fallback serial is stable per port. **If v2 is built (OQ-8; section 8, "a pulse or analog instrument"), each meter gets a meter adapter at the mast** (section 7): an adapter MCU that counts the reed pulses or reads the vane directly, with its own EEPROM, wired permanently to that meter's cable so the pair is one unit and a new meter means a new adapter record. A base EEPROM beside the meter port is rejected: it names the port, not the meter |
 | v2 (later, maybe) | RS-485 over RJ45, as WSMP section 13 and Stage 2 describe: an adapter MCU per module, Modbus, eFuse-protected 10–18 V port power, sealed Amphenol RJF544, 10 m outdoor Cat6 |
 
 ## 2. Goals, non-goals and anti-goals
@@ -580,9 +580,9 @@ SHT45 modules is invisible.
   (its readings stay useful, and one bad part never stops a sensor), takes the serial from sources 2
   and 3, and raises a port status flag, `NO_RECORD`, that the gateway shows. There is no expected
   record-less case: the breadboard has an EEPROM per sensor (section 4.1) and a v2 adapter takes only
-  a v1 module board (section 7). The meter ports are not module ports and are outside this rule: the
-  SEN-15901 has no record in v1, by decision (section 1, "Meter identity"), and raises no `NO_RECORD`. `NO_RECORD` always means a missing, blank, corrupt or failed
-  EEPROM. A valid record whose type disagrees is quarantined instead (section 6.7, above).
+  a v1 module board (section 7). The meter ports (12, 13) are not I2C module ports and are outside
+  this rule: the SEN-15901 has no record in v1, by decision (section 1, "Meter identity"), and raises
+  no `NO_RECORD`. `NO_RECORD` always means a missing, blank, corrupt or failed EEPROM. A valid record whose type disagrees is quarantined instead (section 6.7, above).
 
 **Port numbers.** Today a port number is a module type (1 = outside air … 7 = rain). In v1 a port
 number is a place. Proposal (my call; it only has to be stable):
@@ -645,11 +645,17 @@ flowchart LR
   (its header says so).
 - **Calibration moves into the module.** WSMP-G6 ("a module applies its own calibration") is met
   natively, with coefficients in the adapter's flash.
-- **Identity.** Serial: the precedence of section 6.7 (**Serial rules**). The adapter takes only a v1
-  module board, so the serial normally comes from that board's EEPROM record. The sensor's own serial,
+- **Identity.** Serial: the precedence of section 6.7 (**Serial rules**). An I2C sensor's adapter takes
+  only a v1 module board, so the serial normally comes from that board's EEPROM record. The sensor's own serial,
   then one derived from the MCU's unique device ID (check that the STM32C011 has one), are only the
   `NO_RECORD` fault fallbacks; the last is bound to the adapter. Boot ID: the adapter's own, kept
   in its flash (WSMP-I2).
+- **Meter adapters (v2 only).** The one adapter without an RJ11 port: it is wired permanently to
+  one SEN-15901 meter's cable at the mast, counts the reed pulses (wind, rain) or reads the vane's
+  resistor network, and carries its own programmed EEPROM, so its serial comes from source 1 like a
+  module board's. Adapter and meter are one unit; a replaced meter gets a new adapter record. Moving
+  a meter from v1 to v2 changes its serial (binding fallback to EEPROM); the entity ID has none, so
+  history continues.
 - **Same module type codes.** A v2 SHT45 module reports type 1, schema 1, the same channels and
   descriptors as a v1 one. The gateway entity ID (WSMP-H1) has no binding, port or serial in it, so
   Home Assistant history continues.
@@ -670,13 +676,15 @@ flowchart LR
 flowchart TD
   A["v1 module on an RJ11 port<br/>(local, passive)"] --> Q{"run longer than the v1 limit,<br/>or a pulse or analog instrument?"}
   Q -- no --> STAY["stays v1"]
-  Q -- yes --> B["add a v2 adapter:<br/>the v1 module board plugs into its RJ11 port"]
+  Q -- "yes, I2C module" --> B["add a v2 adapter:<br/>the v1 module board plugs into its RJ11 port"]
+  Q -- "yes, SEN-15901 meter" --> M["a meter adapter at the mast,<br/>wired to the meter, own EEPROM"]
+  M --> C
   B --> C["the adapter on a sealed RJ45 port<br/>(remote, Modbus)"]
-  C --> D["same module type and descriptors:<br/>same entity IDs, history kept.<br/>Same serial: from the module's EEPROM"]
+  C --> D["same module type and descriptors:<br/>same entity IDs, history kept.<br/>Same serial: from the module's EEPROM<br/>(a meter's changes: see Meter adapters)"]
   D --> E["new port number: new descriptor set and generation<br/>(normal WSMP behaviour)"]
 ```
 
-- **A v1 sensor becomes a v2 module by adding an adapter.** One way only (identity is normalized):
+- **A v1 I2C sensor becomes a v2 module by adding an adapter.** One way only (identity is normalized):
   the whole v1 module board plugs into the adapter's v1-compatible RJ11 port with a short cable. It
   keeps the v1 board, its EEPROM and its serial. The adapter has no bare STEMMA QT socket. The adapter's RJ11 port is the base port circuit of
   section 6.2. The design carries over, but the qualification does not: the adapter has its own
@@ -709,7 +717,7 @@ flowchart TD
 | PORT-10 | The cable length is at most the qualified length from the cable test |
 | PORT-11 | Sensor cables are straight through and tested (or the pinout is reversal-safe, OQ-1) |
 | PORT-12 | Sensor and meter ports are labelled, and sensor cables are coloured differently |
-| PORT-13 | A passive module's identity follows section 6.7. Every v1 module board carries a programmed, checked EEPROM record; a module without a valid one is admitted with the `NO_RECORD` flag |
+| PORT-13 | A passive module's identity on an I2C sensor port (1–8) follows section 6.7. Every v1 module board carries a programmed, checked EEPROM record; a module without a valid one is admitted with the `NO_RECORD` flag. The meter ports (12, 13) have no record in v1 and raise no `NO_RECORD` (section 1, "Meter identity") |
 
 ## 10. Tests: what replaces or splits H04
 
@@ -731,7 +739,7 @@ The PRD's H04 is one test of one RJ45 RS-485 port. This spec proposes to split i
 | PORT-3, 4, 10 | the phase 2 cable test (section 5); H04a at temperature |
 | PORT-5 | H04a: a shorted port supply trips the limit, the station stays up; reversed-cable case |
 | PORT-7 | host test: plug at a random time, in the layout within 90 s; bench: 20 plugs |
-| PORT-13 | host tests: probe table, EEPROM record parsing, a valid record with a mismatching type or schema quarantines, a missing, blank or corrupt record admits with `NO_RECORD`; fuzzing of the record parser (WSMP-X2) |
+| PORT-13 | host tests: probe table, EEPROM record parsing, a valid record with a mismatching type or schema quarantines, a missing, blank or corrupt record admits with `NO_RECORD`; the meter ports raise no `NO_RECORD`; fuzzing of the record parser (WSMP-X2) |
 | WSMP conformance | a new row in WSMP section 14 for the I2C port binding |
 
 ## 11. Open questions for Clint
