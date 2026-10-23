@@ -16,9 +16,13 @@ void mod_th_latch(enum th_unit u, uint16_t token, uint32_t now_ms);
 void mod_th_snapshot(enum th_unit u, uint8_t snap[WSMP_SNAPSHOT_LEN]);
 void mod_th_i2c_done(enum th_unit u, int rc);
 /* Binds the unit to a newly admitted module (sensor module ports design, section 6.7): a fresh window,
-   and the calibration of applied, the module's record if its status is applied, else NULL. The
+   the module's boot ID, and the calibration of applied, the module's record if its status is applied, else NULL. The
    enclosure sensor is on the base, not a port module: it takes no calibration. */
-void mod_th_bind(enum th_unit u, const wsmp_record *applied, uint32_t now_ms);
+void mod_th_bind(enum th_unit u, const wsmp_record *applied, uint32_t boot_id, uint32_t now_ms);
+/* While held the unit starts no new sample (a sample due waits, its phase kept); a step in progress
+   finishes. Idle: no step in progress. An identity read holds the unit and waits for idle. */
+void mod_th_hold(enum th_unit u, int on);
+int mod_th_idle(enum th_unit u);
 /* The SHT45's own serial (command 0x89), read as a step of the driver's step machine, started only
    from its idle state, so never between a measure command and its read (section 6.7). A sample that
    falls due meanwhile waits for it and keeps its phase. */

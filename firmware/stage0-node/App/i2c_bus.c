@@ -93,7 +93,8 @@ static enum i2c_client fifo_pop(void)
 #define UPSTREAM 0xFFU
 static const uint8_t channel_of[I2C_C_COUNT] = { [I2C_C_SHT45] = 0, [I2C_C_LTR390] = 1, [I2C_C_BMP581] = 2,
                                                  [I2C_C_SHTC3] = UPSTREAM, [I2C_C_INA228] = UPSTREAM,
-                                                 [I2C_C_MAX17048] = UPSTREAM };
+                                                 [I2C_C_MAX17048] = UPSTREAM, [I2C_C_REC_AIR] = 0,
+                                                 [I2C_C_REC_UVA] = 1, [I2C_C_REC_PRESSURE] = 2 };
 static const uint8_t phantom_addr[I2C_PHANTOM_COUNT] = { 0x44, 0x47, 0x53, 0x50 };
 
 typedef enum { OP_SELECT, OP_SELECT_CHECK, OP_XFER, OP_RECOVER, OP_DESELECT, OP_DESELECT_CHECK, OP_PROBE } op_kind;

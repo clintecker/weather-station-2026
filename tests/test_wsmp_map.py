@@ -189,8 +189,9 @@ class CatalogMap(unittest.TestCase):
 
     def test_no_stale_mean_after_a_quarantine(self):
         # A flapping module is quarantined for an hour while it keeps sampling. The first reading
-        # after it rejoins must not report that hour-long window as the minute's value (WSMP-T3:
-        # a long window is not a minute), and the next minute is normal again.
+        # after it rejoins must not report that hour-long window as the minute's value (WSMP-T3): the
+        # driver's window starts afresh at the admission (the bind, ports design section 6.7), so the
+        # first reading holds only the samples since then, and the next minute is normal again.
         lib, devs = self.station([DEVK_SHT45], vane=3_300, rain=False)
         dev = devs[DEVK_SHT45]
         for _ in range(3):                                     # join, leave: the 5th change quarantines
@@ -207,7 +208,8 @@ class CatalogMap(unittest.TestCase):
             if lib.h_host_state(1) == 4:                       # active again: this reading is its first
                 break
         self.assertEqual(lib.h_host_state(1), 4, 'the module is active again after the hour')
-        self.assertIsNone(v['temperature_c'], 'the first reading after the quarantine is not a minute mean')
+        self.assertEqual(v['temperature_c'], 42.5)
+        self.assertLess(v['th_samples'], 4, 'the first reading after the quarantine holds only the samples since the bind')
         _, v = self.minute(lib)
         self.assertEqual(v['temperature_c'], 42.5)
 

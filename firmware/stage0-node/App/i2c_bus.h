@@ -12,8 +12,11 @@
  * a mux RESET pulse, the deselect and its read-back, then the phantom check. */
 #include <stdint.h>
 
-/* One client for each I2C module. A client has at most one transfer queued or running. */
-enum i2c_client { I2C_C_SHT45, I2C_C_BMP581, I2C_C_LTR390, I2C_C_SHTC3, I2C_C_INA228, I2C_C_MAX17048, I2C_C_COUNT };
+/* One client for each I2C module, and one for each port module's record EEPROM (0x50 on the port's
+   channel). A client has at most one transfer queued or running. */
+enum i2c_client { I2C_C_SHT45, I2C_C_BMP581, I2C_C_LTR390, I2C_C_SHTC3, I2C_C_INA228, I2C_C_MAX17048,
+                  I2C_C_REC_AIR, I2C_C_REC_PRESSURE, I2C_C_REC_UVA, I2C_C_COUNT };
+#define I2C_EID        (-8)   /* a module's own code: a part answered with another chip ID */
 
 #define I2C_MUX_ADDR 0x71U   /* not the default 0x70: the SHTC3 is there (ports design, section 3) */
 #define I2C_RX_MAX 128U      /* the longest read: a whole module record (section 6.9) */

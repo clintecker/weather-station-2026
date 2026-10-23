@@ -227,14 +227,19 @@ static int mux_read(uint8_t *data, uint16_t n)
 /* DEVK_EEPROM (24LC32A): 4 KiB; a read past the end wraps to 0, as the part's address counter does. */
 #define EEPROM_LEN 4096U
 static uint8_t eeprom[I2C_SIM_DEVICES][EEPROM_LEN];
+static int eeprom_fails[I2C_SIM_DEVICES], eeprom_corrupts[I2C_SIM_DEVICES];
 void model_eeprom_write(int dev, uint16_t at, const uint8_t *data, uint16_t n)
 {
   for (uint16_t i = 0; i < n; i++) eeprom[dev][(at + i) % EEPROM_LEN] = data[i];
 }
+void model_eeprom_fail_next(int dev, int n) { eeprom_fails[dev] = n; }
+void model_eeprom_corrupt_next(int dev, int n) { eeprom_corrupts[dev] = n; }
 
 static int eeprom_read(int dev, uint16_t at, uint8_t *data, uint16_t n)
 {
+  if (eeprom_fails[dev] > 0) { eeprom_fails[dev]--; return -1; }
   for (uint16_t i = 0; i < n; i++) data[i] = eeprom[dev][(at + i) % EEPROM_LEN];
+  if (eeprom_corrupts[dev] > 0 && n > 0x20U - at && at <= 0x20U) { eeprom_corrupts[dev]--; data[0x20U - at] ^= 1U; }
   return 0;
 }
 
@@ -294,5 +299,8 @@ void model_reset(int kind, int dev)
   if (kind == DEVK_LTR390) regdev[dev] = (regdev_t){ .id = 0xB2 };
   if (kind == DEVK_INA228 || kind == DEVK_MAX17048) pdev[dev] = (power_dev_t){ .at = sim_now() };
   if (kind == DEVK_EEPROM)
+  {
     for (unsigned i = 0; i < EEPROM_LEN; i++) eeprom[dev][i] = (uint8_t)i;
+    eeprom_fails[dev] = eeprom_corrupts[dev] = 0;
+  }
 }

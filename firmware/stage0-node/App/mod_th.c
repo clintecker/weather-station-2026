@@ -38,7 +38,8 @@ typedef struct {
   int probe;
   uint16_t probe_seq;
   uint8_t reply[TH_REPLY_LEN];
-  uint8_t serial_wanted;
+  uint8_t serial_wanted, hold;           /* hold: no new sample (an identity read runs) */
+  uint32_t boot_id;                       /* the module's boot ID (section 6.7) */
   int serial_rc;                          /* mod_th_serial_result */
   uint32_t serial;
   uint8_t calibrated[MEAN_CHANNELS];      /* cal[i] applies to channel i */
@@ -46,7 +47,6 @@ typedef struct {
 } th_t;
 
 static th_t th[TH_COUNT];
-static uint32_t boot;
 static const uint8_t sht45_measure[1] = { WS_SHT45_MEASURE };
 static const uint8_t sht45_serial[1] = { WS_SHT4X_SERIAL };
 static const uint16_t quantity[MEAN_CHANNELS] = { WSMP_Q_AIR_TEMPERATURE, WSMP_Q_RELATIVE_HUMIDITY };
@@ -67,9 +67,8 @@ static void submit(enum th_unit u, const uint8_t *tx, uint8_t txlen, uint8_t *rx
 
 void mod_th_init(uint32_t boot_id, uint32_t now_ms)
 {
-  boot = boot_id;
   memset(th, 0, sizeof th);
-  for (unsigned u = 0; u < TH_COUNT; u++) { mean_reset(&th[u].win, now_ms); th[u].next_sample_ms = now_ms; }
+  for (unsigned u = 0; u < TH_COUNT; u++) { mean_reset(&th[u].win, now_ms); th[u].next_sample_ms = now_ms; th[u].boot_id = boot_id; }
 }
 
 /* The next step of the sample in progress, or the start of the next sample when it is due. */
@@ -86,7 +85,7 @@ void mod_th_tick(enum th_unit u, uint32_t now_ms)
     submit(u, sht45_serial, sizeof sht45_serial, NULL, 0);
     return;
   }
-  if (!mean_due(&s->next_sample_ms, now_ms, WSMP_SAMPLE_MS)) return;
+  if (s->hold || !mean_due(&s->next_sample_ms, now_ms, WSMP_SAMPLE_MS)) return;   /* held: the sample waits */
   if (u == TH_AIR) { s->step = ST_MEASURE; submit(u, sht45_measure, sizeof sht45_measure, NULL, 0); }
   else { s->step = ST_WAKE; submit(u, shtc3_wake, TH_CMD_LEN, NULL, 0); }
 }
@@ -168,10 +167,11 @@ void mod_th_i2c_done(enum th_unit u, int rc)
   else if (WS_CHECK(s->step == ST_READ)) read_done(u, s);
 }
 
-void mod_th_bind(enum th_unit u, const wsmp_record *applied, uint32_t now_ms)
+void mod_th_bind(enum th_unit u, const wsmp_record *applied, uint32_t boot_id, uint32_t now_ms)
 {
   th_t *s = &th[u];
   mean_reset(&s->win, now_ms);
+  s->boot_id = boot_id;
   for (unsigned i = 0; i < MEAN_CHANNELS; i++)
   {
     const wsmp_cal_entry *e = u == TH_AIR && applied ? wsmp_cal_find(applied, quantity[i], WSMP_K_MEAN) : NULL;
@@ -186,6 +186,9 @@ void mod_th_serial_request(enum th_unit u)
   th[u].serial_wanted = 1;
   th[u].serial_rc = 0;
 }
+
+void mod_th_hold(enum th_unit u, int on) { th[u].hold = (uint8_t)(on != 0); }
+int mod_th_idle(enum th_unit u) { return th[u].step == ST_IDLE; }
 
 int mod_th_serial_result(enum th_unit u, uint32_t *serial)
 {
@@ -224,14 +227,14 @@ static void desc_block(uint8_t desc[WSMP_DESC_BLOCK_LEN])
 void mod_th_identity(enum th_unit u, uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN])
 {
   desc_block(desc);
-  local_pack_identity(port(u), type(u), 2, boot, desc, id);
+  local_pack_identity(port(u), type(u), 2, th[u].boot_id, desc, id);
 }
 
 void mod_th_latch(enum th_unit u, uint16_t token, uint32_t now_ms)
 {
   uint8_t desc[WSMP_DESC_BLOCK_LEN];
   desc_block(desc);
-  mean_latch(&th[u].win, token, now_ms, boot, desc, 2);
+  mean_latch(&th[u].win, token, now_ms, th[u].boot_id, desc, 2);
 }
 
 void mod_th_snapshot(enum th_unit u, uint8_t snap[WSMP_SNAPSHOT_LEN]) { memcpy(snap, th[u].win.frozen, WSMP_SNAPSHOT_LEN); }

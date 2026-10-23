@@ -171,7 +171,7 @@ static enum i2c_client fifo_pop(void)
 ## 5. Channels and jobs
 
 The static channel map of phase 1 (section 4.1 of the ports design): the SHT45 on channel 0, the
-LTR390 on channel 1, the BMP581 on channel 2. The SHTC3, INA228 and MAX17048 are upstream of the mux
+LTR390 on channel 1, the BMP581 on channel 2, each with its record EEPROM (0x50, its own client). The SHTC3, INA228 and MAX17048 are upstream of the mux
 and never on a port (PORT-9). The phantom table is the port probe table and the record EEPROM
 (section 6.7): no upstream part may answer at them (PORT-15).
 
@@ -196,7 +196,8 @@ pulses the mux RESET once and deselects again; if that fails too the job ends, a
 #define UPSTREAM 0xFFU
 static const uint8_t channel_of[I2C_C_COUNT] = { [I2C_C_SHT45] = 0, [I2C_C_LTR390] = 1, [I2C_C_BMP581] = 2,
                                                  [I2C_C_SHTC3] = UPSTREAM, [I2C_C_INA228] = UPSTREAM,
-                                                 [I2C_C_MAX17048] = UPSTREAM };
+                                                 [I2C_C_MAX17048] = UPSTREAM, [I2C_C_REC_AIR] = 0,
+                                                 [I2C_C_REC_UVA] = 1, [I2C_C_REC_PRESSURE] = 2 };
 static const uint8_t phantom_addr[I2C_PHANTOM_COUNT] = { 0x44, 0x47, 0x53, 0x50 };
 
 typedef enum { OP_SELECT, OP_SELECT_CHECK, OP_XFER, OP_RECOVER, OP_DESELECT, OP_DESELECT_CHECK, OP_PROBE } op_kind;

@@ -38,6 +38,9 @@ int h_mux_reads(void) { return model_mux_reads(); }
 int h_bus_ready(void) { return i2c_bus_ready(); }
 int h_mux_ok(void) { return i2c_bus_mux_ok(); }
 int h_phantoms(void) { return i2c_bus_phantoms(); }
+void h_eeprom_write(int dev, int at, const uint8_t *data, int n) { model_eeprom_write(dev, (uint16_t)at, data, (uint16_t)n); }
+void h_eeprom_fail_next(int dev, int n) { model_eeprom_fail_next(dev, n); }
+void h_eeprom_corrupt_next(int dev, int n) { model_eeprom_corrupt_next(dev, n); }
 
 #ifdef WSMP_BUS_ONLY
 #define LOG_MAX 64
@@ -102,7 +105,7 @@ void h_bind(int port, int quantity, int kind, int32_t offset, uint32_t gain)
   wsmp_record r;
   memset(&r, 0, sizeof r);
   r.cal[0] = (wsmp_cal_entry){ .quantity = (uint16_t)quantity, .kind = (uint8_t)kind, .revision = 1, .offset = offset, .gain = gain };
-  local_bind((enum wsmp_port)port, quantity ? &r : NULL, now_ms());
+  local_bind((enum wsmp_port)port, quantity ? &r : NULL, local_boot_epoch(), now_ms());
 }
 void h_shtc3_set(int dev, int t_raw, int h_raw) { model_shtc3_set(dev, (uint16_t)t_raw, (uint16_t)h_raw); }
 int h_shtc3_asleep(int dev) { return model_shtc3_asleep(dev); }
@@ -142,6 +145,11 @@ void h_host_run(uint32_t ms) { for (uint32_t t = 0; t < ms; t += WSMP_TICK_MS) {
 void h_host_latch(uint32_t utc) { wsmp_host_latch(utc, now_ms()); }
 int h_host_state(int port) { return wsmp_host_state((enum wsmp_port)port); }
 int h_host_has_snapshot(int port) { return wsmp_host_snapshot((enum wsmp_port)port) != NULL; }
+uint32_t h_host_slot_value(int port, int i)
+{
+  const wsmp_snapshot *s = wsmp_host_snapshot((enum wsmp_port)port);
+  return s ? s->slot[i].value : 0xFFFFFFFFU;
+}
 int h_host_slot_quality(int port, int i)
 {
   const wsmp_snapshot *s = wsmp_host_snapshot((enum wsmp_port)port);

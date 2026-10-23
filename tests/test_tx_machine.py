@@ -264,7 +264,7 @@ class TxStateMachine(unittest.TestCase):
         self.assertIn('#boot role=tx', n.out())
         n.advance_to(minute(0))
         out = n.out()
-        self.assertRegex(out, r'#sample epoch=\d+ seq=0 uptime=\d+ valid=1 rc=0 n=3 t=2150 rh=4500 ')   # 3 samples by 45 s
+        self.assertRegex(out, r'#sample epoch=\d+ seq=0 uptime=\d+ valid=1 rc=0 n=1 t=2150 rh=4500 ')   # the window starts at the admission (~16 s): the 30 s sample
         self.assertIn('#modules air_th=active', out)            # the first report names the modules
         self.assertEqual((n.sent(), n.radio()), (1, R_TX))
         n.advance(n.air)                               # TxDone: the ACK window opens
