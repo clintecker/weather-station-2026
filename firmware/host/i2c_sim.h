@@ -56,6 +56,7 @@ int model_sht45_read_too_early(void);
 int model_sht45_commands(void);   /* measure commands that reached an SHT45 */
 /* The serial its 0x89 read gives: bad 1 a bad CRC, bad 2 a NACK of the command. */
 void model_sht45_set_serial(int dev, uint32_t serial, int bad);
+void model_sht45_serial_fail_next(int dev, int n);   /* the next n serial replies have a bad CRC */
 int model_sht45_interleaved(void);   /* a 0x89 came between a measure command and its read */
 void model_shtc3_set(int dev, uint16_t t_raw, uint16_t rh_raw);
 int model_shtc3_asleep(int dev);
@@ -67,6 +68,7 @@ void model_ina228_power_cycle(int dev);
 void model_max17048_set(int dev, uint8_t soc);
 /* DEVK_MUX: the control register is written and read back as one byte; xor spoils the read-back. */
 void model_mux_readback_xor(uint8_t xor_mask);
+void model_mux_readback_xor_idle(uint8_t xor_mask);   /* the read-back of mask 0 only */
 int model_mux_write_count(void);
 int model_mux_writes(int i);                /* the i-th value written (the first 64), or -1 */
 int model_mux_reads(void);

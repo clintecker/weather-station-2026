@@ -13,7 +13,7 @@ static uint8_t test_written[I2C_SIM_DEVICES][I2C_SIM_BUF];
    high word first, in the same form. A read sooner than 9 ms after a measure command is flagged (the
    driver must wait), and so is a 0x89 between a measure command and its read. An unknown command is
    a NACK. */
-typedef struct { uint16_t t_raw, rh_raw; int bad_crc, serial_bad, measuring, serial_next; uint32_t serial; uint64_t measured_at; } sht45_t;
+typedef struct { uint16_t t_raw, rh_raw; int bad_crc, serial_bad, serial_fails, measuring, serial_next; uint32_t serial; uint64_t measured_at; } sht45_t;
 static sht45_t sht45[I2C_SIM_DEVICES];
 static int sht45_too_early, sht45_commands, sht45_interleaved;
 #define SHT45_READY_MS 9U
@@ -22,6 +22,7 @@ void model_sht45_set(int dev, uint16_t t_raw, uint16_t rh_raw, int bad_crc)
   sht45[dev].t_raw = t_raw; sht45[dev].rh_raw = rh_raw; sht45[dev].bad_crc = bad_crc;
 }
 void model_sht45_set_serial(int dev, uint32_t serial, int bad) { sht45[dev].serial = serial; sht45[dev].serial_bad = bad; }
+void model_sht45_serial_fail_next(int dev, int n) { sht45[dev].serial_fails = n; }
 int model_sht45_read_too_early(void) { return sht45_too_early; }
 int model_sht45_commands(void) { return sht45_commands; }
 int model_sht45_interleaved(void) { return sht45_interleaved; }
@@ -57,7 +58,8 @@ static int sht45_read(int dev, uint8_t *data, uint16_t n)
   if (s->serial_next)
   {
     s->serial_next = 0;
-    words(data, (uint16_t)(s->serial >> 16), (uint16_t)s->serial, s->serial_bad == 1);
+    words(data, (uint16_t)(s->serial >> 16), (uint16_t)s->serial, s->serial_bad == 1 || s->serial_fails > 0);
+    if (s->serial_fails > 0) s->serial_fails--;
     return 0;
   }
   if (sim_now() - s->measured_at < (uint64_t)SHT45_READY_MS * SIM_UNITS_PER_MS) sht45_too_early = 1;
@@ -200,9 +202,10 @@ static int max17048_read(int dev, uint8_t reg, uint8_t *data, uint16_t n)
 
 /* DEVK_MUX (TCA9548A, datasheet section 8.6.1): one control register, a bit for each channel. */
 #define MUX_LOG 64
-static uint8_t mux_xor;
+static uint8_t mux_xor, mux_xor_idle;
 static int mux_log[MUX_LOG], nmux_log, nmux_reads;
 void model_mux_readback_xor(uint8_t xor_mask) { mux_xor = xor_mask; }
+void model_mux_readback_xor_idle(uint8_t xor_mask) { mux_xor_idle = xor_mask; }   /* only with no channel selected */
 int model_mux_write_count(void) { return nmux_log; }
 int model_mux_writes(int i) { return i >= 0 && i < nmux_log && i < MUX_LOG ? mux_log[i] : -1; }
 int model_mux_reads(void) { return nmux_reads; }
@@ -220,7 +223,7 @@ static int mux_read(uint8_t *data, uint16_t n)
 {
   if (n != 1) return -1;
   nmux_reads++;
-  data[0] = (uint8_t)(i2c_sim_mux_mask() ^ mux_xor);
+  data[0] = (uint8_t)(i2c_sim_mux_mask() ^ mux_xor ^ (i2c_sim_mux_mask() == 0U ? mux_xor_idle : 0U));
   return 0;
 }
 

@@ -254,11 +254,44 @@ class I2cBus(unittest.TestCase):
         self.assertEqual(self.read(lib), OK)
         self.assertEqual(lib.h_mux_ok(), 1)
 
-    def test_an_absent_mux_is_a_bus_fault_for_the_ports_only(self):
+    def test_a_deselect_that_never_reads_back_fails_the_port_client(self):
+        # The select and the transfer took, but the deselect read-back fails, then fails again after
+        # the mux RESET: a channel may still be selected, so the port client gets a bus fault.
+        lib, _ = self.bus(SHT45)
+        lib.h_mux_readback_xor_idle(0x80)
+        self.assertEqual(self.read(lib), EBUS)
+        self.assertEqual((lib.h_mux_resets(), lib.h_mux_ok()), (2, 0))
+
+    def test_an_upstream_job_deselects_first_while_the_mux_is_not_ok(self):
+        # After a deselect that never read back, an upstream job deselects and checks the read-back
+        # first, and runs its transfer only after a good one (which makes the mux ok again).
+        lib, _ = self.bus(SHT45, SHTC3)
+        lib.h_mux_readback_xor_idle(0x80)
+        self.assertEqual(self.read(lib, SHT45), EBUS)
+        lib.h_mux_readback_xor_idle(0)
+        writes, reads = lib.h_mux_write_count(), lib.h_mux_reads()
+        self.assertEqual(self.read(lib, SHTC3), OK)
+        self.assertEqual((lib.h_mux_write_count() - writes, lib.h_mux_writes(writes)), (1, 0))
+        self.assertEqual((lib.h_mux_reads() - reads, lib.h_mux_ok()), (1, 1))
+        writes = lib.h_mux_write_count()
+        self.assertEqual(self.read(lib, SHTC3), OK)               # the mux is ok: a bare transfer again
+        self.assertEqual(lib.h_mux_write_count(), writes)
+
+    def test_an_upstream_job_is_refused_while_the_deselect_does_not_read_back(self):
+        lib, _ = self.bus(SHT45, SHTC3)
+        lib.h_mux_readback_xor_idle(0x80)
+        self.assertEqual(self.read(lib, SHT45), EBUS)
+        before = lib.h_addr_transfers(ADDR[SHTC3])
+        self.assertEqual(self.read(lib, SHTC3), EBUS)
+        self.assertEqual(lib.h_addr_transfers(ADDR[SHTC3]), before)   # never touched
+        self.assertEqual(lib.h_mux_ok(), 0)
+
+    def test_an_absent_mux_is_a_bus_fault_for_every_client(self):
+        # An absent mux never reads back a deselect, so no client can know that no channel is selected.
         lib, devs = self.bus(SHT45, SHTC3)
         lib.h_remove_device(lib.h_mux_device())
         self.assertEqual(self.read(lib, SHT45), EBUS)
-        self.assertEqual(self.read(lib, SHTC3), OK)
+        self.assertEqual(self.read(lib, SHTC3), EBUS)
 
     def test_held_sda_after_the_recovery_pulses_the_mux_reset(self):
         # Step 2 of section 6.6: the channel's device still holds SDA after the 9 clocks, and with it

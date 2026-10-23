@@ -33,7 +33,7 @@ python3 tools/tangle.py --check firmware/stage0-node/App/i2c_bus.lit.md    # com
 | Guard | a transfer that does not finish within its guard (30 ms, plus 90 µs for each byte on the bus) ends with `I2C_ETIMEOUT`. A completion after it changes nothing | `test_guard_timeout_reports_etimeout`, `test_the_guard_grows_with_the_transfer`, `test_a_completion_after_the_guard_is_ignored`, `test_a_completion_at_the_guard_instant_counts_once` |
 | Recovery | after a transfer that can leave the bus stuck (a timeout, a HAL refusal, a bus error, or SDA still low) the bus clocks SDA free, with the client's channel still selected, and starts the peripheral again before the next transfer. SDA that stays low gives `I2C_ESTUCK` and a mux RESET pulse. A clean NACK costs no recovery. A recover-only request reports 0 or `I2C_ESTUCK` | `test_each_failure_has_its_code_and_recovers_the_bus`, `test_held_sda_is_clocked_free_or_reported_stuck`, `test_an_absent_device_costs_no_recovery`, `test_a_recovery_request_clocks_the_bus_and_reports_once` |
 | Isolation | a failure of one client's device does not fail the other clients' transfers | `test_unplug_mid_transfer_recovers_and_spares_other_clients` |
-| Channels | a port client's transfer is preceded by the mux write of its channel and its read-back, and followed by the deselect (0x00) and its read-back. An upstream client's transfer runs only with every channel deselected. A mux that does not read back gives the port client `I2C_EBUS` | `test_a_port_transfer_selects_then_deselects`, `test_upstream_parts_are_served_with_no_channel_selected`, `test_a_mux_that_does_not_read_back_is_a_bus_fault` |
+| Channels | a port client's transfer is preceded by the mux write of its channel and its read-back, and followed by the deselect (0x00) and its read-back. An upstream client's transfer runs only with every channel deselected. A mux that does not read back gives the port client `I2C_EBUS`, also when only its deselect does not. After a deselect that never read back, each upstream job deselects and checks first, and gets `I2C_EBUS` without its transfer while the read-back fails | `test_a_port_transfer_selects_then_deselects`, `test_upstream_parts_are_served_with_no_channel_selected`, `test_a_mux_that_does_not_read_back_is_a_bus_fault`, `test_a_deselect_that_never_reads_back_fails_the_port_client`, `test_an_upstream_job_deselects_first_while_the_mux_is_not_ok`, `test_an_upstream_job_is_refused_while_the_deselect_does_not_read_back`, `test_an_absent_mux_is_a_bus_fault_for_every_client` |
 | Boot | before any client transfer: a mux RESET pulse, mask 0x00 written and read back, then the phantom check: every probe-table address and 0x50, probed with every channel deselected. An address that answers is a phantom: the port client at it is refused (`I2C_ENACK_ADDR`, no bus traffic) for that boot | `test_boot_order`, `test_a_phantom_address_is_removed_for_the_boot` |
 | Record reads | a 2-byte word address (the 24LC32A) and up to 128 bytes in one read | `test_a_word_address_read_of_128_bytes` |
 
@@ -182,15 +182,21 @@ ever runs inside `i2c_bus_submit`.
 
 | Job | Plan |
 |---|---|
-| upstream client | the transfer (or the recovery, for a recover-only request) |
+| upstream client | the transfer (or the recovery, for a recover-only request). While the mux is not known to be deselected (`mux_ok` 0): deselect, deselect check, then the transfer |
 | port client | select (write the channel's bit), select check (read it back), the transfer or the recovery, deselect (write 0x00), deselect check (read it back) |
 | port client at a phantom address | none: `I2C_ENACK_ADDR`, without bus traffic |
 | boot | (a mux RESET pulse first) deselect, deselect check, then a zero-length write to each phantom-table address |
 
 A select that fails or does not read back skips the transfer: the client gets `I2C_EBUS` (a port
 fault, never an absence), and the deselect still runs. A deselect that fails or does not read back
-pulses the mux RESET once and deselects again; if that fails too the job ends, and
-`i2c_bus_mux_ok` reports a mux that does not read back. Every channel burst (here one transfer) therefore ends with no channel selected.
+pulses the mux RESET once and deselects again; if that fails too the job ends with `I2C_EBUS`, and
+`mux_ok` is 0 (`i2c_bus_mux_ok`): a channel may still be selected. A port client whose transfer
+took still gets `I2C_EBUS` then. While `mux_ok` is 0 every upstream job starts with a deselect and
+its read-back, with the same one RESET retry; if the read-back still fails, the upstream client gets
+`I2C_EBUS` and its device is never touched, so an upstream part is never served with a port device
+joined to the bus. Only a deselect that reads back 0x00 sets `mux_ok` again. Every channel burst
+(here one transfer) therefore ends with no channel selected, or with the bus refusing the upstream
+parts until it is.
 
 ```c {#jobs}
 #define UPSTREAM 0xFFU
@@ -253,7 +259,12 @@ static void plan_client(enum i2c_client c)
   const xfer_t *x = &xfers[c];
   op_kind work = x->txlen == 0 && x->rxlen == 0 ? OP_RECOVER : OP_XFER;
   plan_start(JOB_CLIENT);
-  if (channel_of[c] == UPSTREAM) { plan_add(work); return; }
+  if (channel_of[c] == UPSTREAM)
+  {
+    if (!mux_ok) plan_deselect();   /* a deselect that never read back: check it first */
+    plan_add(work);
+    return;
+  }
   if (work == OP_XFER && is_phantom(x->addr7)) { job_rc = I2C_ENACK_ADDR; return; }   /* an empty plan */
   mux_mask = (uint8_t)(1U << channel_of[c]);
   plan_add(OP_SELECT);
@@ -502,9 +513,9 @@ static int mux_took(op_kind k, int rc)
 static void mux_done(op_kind k, int rc)
 {
   int is_select = k == OP_SELECT || k == OP_SELECT_CHECK;
-  if (mux_took(k, rc)) { if (k != OP_SELECT && k != OP_DESELECT) mux_ok = 1; return; }
+  if (mux_took(k, rc)) { if (k == OP_DESELECT_CHECK) mux_ok = 1; return; }
   if (is_select) { job_rc = I2C_EBUS; plan_at = deselect_at; return; }   /* never the transfer */
-  if (reset_tried) { mux_ok = 0; plan_at = plan_len; return; }   /* the job ends: no second RESET */
+  if (reset_tried) { mux_ok = 0; job_rc = I2C_EBUS; plan_at = plan_len; return; }   /* the job ends: no second RESET */
   reset_tried = 1;
   mux_reset_pulse();
   plan_at = deselect_at;

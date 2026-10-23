@@ -80,7 +80,10 @@ static void fallback_serial(const wsmp_observed *o, wsmp_verdict *v)
 
 A bind of kind 1 matches only a sensor serial that was read and is equal. A record that binds a sensor
 whose serial could not be read cannot be confirmed, so it counts as changed: its calibration is never
-applied to a sensor it may not belong to.
+applied to a sensor it may not belong to. The station never asks for that verdict: a sensor serial
+that fails its 3 tries leaves the identification incomplete, and no verdict is decided from it
+(`App/port_id.c`, ports design section 6.7, step 3b). So on the station `SENSOR_CHANGED` means a
+serial that was read and differs; the rule here keeps the function safe on its own.
 
 ```c {#bind}
 static int bind_matches(const wsmp_record *r, const wsmp_observed *o)

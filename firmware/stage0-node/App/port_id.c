@@ -3,7 +3,9 @@
  * completion or a module tick; nothing waits.
  *   Identify: hold the driver, wait for its idle state, read the record (3 tries back to back on a
  *   transfer error; a CRC failure is read once more), then the sensor's serial as the driver's own
- *   step (the SHT45's 0x89), then release the driver.
+ *   step (the SHT45's 0x89, 3 tries back to back), then release the driver. A sensor serial that
+ *   failed all 3 tries leaves the identification incomplete: a read error is not a verdict, so the
+ *   host decides nothing and identifies again at the next probe slot.
  *   Holder check: hold, wait for idle, the driver's ID check (two address NACKs back to back: gone;
  *   another chip: gone), then, for a module admitted with a record, its serial at 0x0C (8 bytes); a
  *   different serial is confirmed by a full read that parses and names another serial. A sensor
@@ -18,6 +20,7 @@
 
 #define REC_ADDR 0x50U
 #define REC_TRIES 3U
+#define SERIAL_TRIES 3U   /* the sensor serial (0x89), back to back like the record */
 #define ID_NACKS 2U
 #define SERIAL_AT 0x0CU   /* the record's serial (section 6.9) */
 #define SERIAL_LEN 8U
@@ -30,7 +33,7 @@ typedef enum { JOB_IDENTIFY, JOB_HOLDER } pi_job;
 typedef struct {
   pi_step step;
   pi_job job;
-  uint8_t tries, crc_reread, read_ok, has_serial, nacks, gone;
+  uint8_t tries, crc_reread, read_ok, has_serial, nacks, gone, serial_tries, incomplete;
   uint32_t sensor_serial;
   port_id_expect expect;
   uint8_t word[WORD_LEN];
@@ -64,7 +67,7 @@ static void start(enum wsmp_port p, pi_job job)
 {
   pi_t *s = eng(p);
   s->job = job; s->step = PI_WAIT;
-  s->tries = s->crc_reread = s->read_ok = s->has_serial = s->nacks = s->gone = 0;
+  s->tries = s->crc_reread = s->read_ok = s->has_serial = s->nacks = s->gone = s->serial_tries = s->incomplete = 0;
   s->sensor_serial = 0;
   local_hold(p, 1);
 }
@@ -134,6 +137,16 @@ static void holder_id(enum wsmp_port p, int r, uint32_t serial)
   rec_read(p, SERIAL_AT, SERIAL_LEN);
 }
 
+/* The identification's sensor serial: a failed read is tried again back to back (3 tries); after the
+   third the identification is incomplete, not a verdict. */
+static void serial_done(enum wsmp_port p, int r, uint32_t serial)
+{
+  pi_t *s = eng(p);
+  if (r != 1 && ++s->serial_tries < SERIAL_TRIES) { local_id_check(p); return; }
+  s->has_serial = r == 1; s->sensor_serial = serial; s->incomplete = r != 1;
+  finish(p);
+}
+
 static int waits_on_driver(pi_step step) { return step == PI_SERIAL || step == PI_H_ID || step == PI_H_SERIAL2; }
 
 void port_id_tick(enum wsmp_port p)
@@ -146,8 +159,8 @@ void port_id_tick(enum wsmp_port p)
   r = local_id_result(p, &serial);
   if (r == 0) return;   /* the driver's step still runs */
   if (s->step == PI_H_ID) { holder_id(p, r, serial); return; }
-  if (s->step == PI_SERIAL) { s->has_serial = r == 1; s->sensor_serial = serial; }
-  else s->gone = r == 1 && serial == s->sensor_serial && serial != s->expect.sensor_serial;   /* PI_H_SERIAL2 */
+  if (s->step == PI_SERIAL) { serial_done(p, r, serial); return; }
+  s->gone = r == 1 && serial == s->sensor_serial && serial != s->expect.sensor_serial;   /* PI_H_SERIAL2 */
   finish(p);
 }
 
@@ -186,5 +199,7 @@ void port_id_observed(enum wsmp_port p, wsmp_observed *o)
   *o = (wsmp_observed){ .port = (uint8_t)p, .read_ok = s->read_ok, .has_sensor_serial = s->has_serial,
                         .probed_type = local_type(p), .record = s->img, .sensor_serial = s->sensor_serial };
 }
+
+int port_id_incomplete(enum wsmp_port p) { return eng(p)->incomplete; }
 
 int port_id_holder_result(enum wsmp_port p) { return eng(p)->gone ? PORT_ID_GONE : PORT_ID_PRESENT; }

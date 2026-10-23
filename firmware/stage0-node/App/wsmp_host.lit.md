@@ -26,7 +26,7 @@ python3 tools/tangle.py --check firmware/stage0-node/App/wsmp_host.lit.md    # c
 | WSMP-D7, I1 | a bad identity, a descriptor digest that does not match, or bad descriptors quarantine the module | `test_bad_descriptor_quarantines`, `test_a_descriptor_digest_that_does_not_match_quarantines` |
 | Admission check | `wsmp_host_admit` changes no port state | `test_admit_is_a_check_that_changes_no_port` |
 | Console line | `#modules` lists the state of every port, and the verdict of a port refused as a duplicate or quarantined for a type conflict | `test_modules_line_lists_every_port`, `test_a_type_conflict_is_quarantined_until_the_module_is_removed` |
-| Identification (ports design, section 6.7) | an I2C port module is identified across steps (App/port_id.c): the record read (3 tries, a CRC failure read once more), the sensor serial, then the verdict order of `wsmp_identify`. Its identity block carries the verdict's serial, identity flags and capabilities, and the boot ID (station epoch << 8 \| the port's admission count); its driver is bound with the applied record's calibration | `Identity` in `tests/test_wsmp_host.py` |
+| Identification (ports design, section 6.7) | an I2C port module is identified across steps (App/port_id.c): the record read (3 tries, a CRC failure read once more), the sensor serial (3 tries), then the verdict order of `wsmp_identify`. A sensor serial that fails its 3 tries is no verdict: the port stays Identifying, counts it (`#modules`: `(incomplete=N)`) and identifies again at its next probe. Its identity block carries the verdict's serial, identity flags and capabilities, and the boot ID (station epoch << 8 \| the port's admission count); its driver is bound with the applied record's calibration | `Identity` in `tests/test_wsmp_host.py` |
 | Duplicates | the holder check (App/port_id.c) ends a gone holder at once and admits the newcomer; a present holder refuses it (`DUP_SERIAL`, `DUP_TYPE`). A refusal is re-evaluated at every latch, after all ports' latches, in port order | `test_a_moved_module_ends_its_gone_holder_at_once`, `test_a_present_holder_refuses_the_newcomer`, `test_a_duplicate_serial_at_boot_the_lower_port_wins_until_it_leaves` |
 | Boot hold | the verdicts of the port modules wait until every port module has probed twice (two station-wide 15 s rounds; at most three rounds), then they are decided in port order, so the lower port wins | `test_a_duplicate_serial_at_boot_the_lower_port_wins_until_it_leaves` |
 | Removal of a refused or quarantined module | it keeps probing; two missed probes in a row make it Absent | `test_a_refused_port_needs_two_missed_probes_to_be_absent` |
@@ -45,6 +45,8 @@ stateDiagram-v2
     Probing --> Absent: a probe fails
     Probing --> Identifying: second good probe, an I2C port module
     Identifying --> Admitted: verdict admit, checks pass, data fits
+    Identifying --> Identifying: the sensor serial failed 3 tries, identified again at the next probe
+    Identifying --> Absent: that probe fails
     Identifying --> Quarantined: TYPE_CONFLICT
     Identifying --> Refused: a duplicate whose holder is present
     Refused --> Admitted: a latch's re-evaluation, the holder gone
@@ -85,6 +87,8 @@ port module (ports 1-3 of the static channel map) is identified across steps, se
 #define BOOT_SHIFT 8U                      /* the boot ID: epoch << 8 | admission count (section 6.7) */
 #define COUNT_MASK 0xFFU
 #define CAP_RECORD 1U                      /* identity capabilities bit 0: a valid record */
+#define COUNT_MAX 255U                     /* the incomplete counter saturates */
+#define DECIMAL 10U
 ```
 
 ```c {#state}
@@ -102,6 +106,7 @@ typedef struct {
   uint8_t holder, checking;                    /* a duplicate's holder port, and its check running */
   uint8_t admissions, missed_probes, rounds;   /* rounds: probes since boot, for the boot hold */
   uint8_t with_record, has_sensor_serial;
+  uint8_t id_wait, incomplete;                 /* an incomplete identification waits for the next probe; how many */
   uint64_t serial, rec_serial;
   uint32_t sensor_serial;
 } port_t;
@@ -214,9 +219,19 @@ static void on_probe_waiting(port_t *s, uint32_t now_ms)
   s->missed_probes = 0;
 }
 
+/* Identifying, after an incomplete identification (section 4.1): the next probe identifies again,
+   unless it failed. */
+static void on_probe_retry(enum wsmp_port p, port_t *s)
+{
+  s->id_wait = 0;
+  if (s->probe != PROBE_PRESENT) { s->good = 0; s->state = WH_ABSENT; return; }
+  port_id_identify(p);
+}
+
 static void on_probe(enum wsmp_port p, port_t *s, uint32_t now_ms)
 {
   if (s->state == WH_ABSENT || s->state == WH_PROBING) on_probe_presence(p, s);
+  else if (s->state == WH_IDENTIFYING && s->id_wait) on_probe_retry(p, s);
   else if (s->state == WH_ADMITTED || s->state == WH_REFUSED || s->state == WH_QUARANTINED) on_probe_waiting(s, now_ms);
   /* Active and Suspect: the latch decides */
 }
@@ -267,6 +282,13 @@ against the modules Admitted, Active or Suspect on the other ports:
 | `TYPE_CONFLICT` | Quarantined until the module is removed |
 | `DUP_SERIAL`, `DUP_TYPE` | the holder check on the holder's port. Gone: the holder is ended (Absent, a leave) and the verdict is decided again. Present: Refused, re-evaluated at every latch |
 | admit | the registry and budget checks of section 3 with the verdict's identity; once admitted, the driver is bound to the module: a fresh window, the boot ID, the applied record's calibration |
+
+A read error is not a verdict. When the sensor serial (the SHT45's 0x89) failed its 3 tries back to
+back, the identification is incomplete: no verdict is decided, so a module is never `SENSOR_CHANGED`
+(and never loses its calibration) because one read failed. The port stays Identifying, counts the
+incomplete identification (the `#modules` line shows `(incomplete=N)` after the port's state), and
+identifies again at its next probe, or goes Absent if that probe fails. A port waiting so does not
+hold the verdicts of the higher ports.
 
 ```c {#identify}
 static int valid_record(uint8_t status)
@@ -344,11 +366,12 @@ static void decide(enum wsmp_port p, port_t *s, int recheck, uint32_t now_ms)
 
 static void end_holder(port_t *h, uint32_t now_ms);
 
-/* 1 while a lower port is still identifying: verdicts are decided in port order. */
+/* 1 while a lower port is still identifying: verdicts are decided in port order. A port waiting for
+   its next probe after an incomplete identification does not count. */
 static int lower_identifying(enum wsmp_port p)
 {
   for (unsigned q = P_AIR_TH; q < (unsigned)p; q++)
-    if (ports[q].state == WH_IDENTIFYING) return 1;
+    if (ports[q].state == WH_IDENTIFYING && !ports[q].id_wait) return 1;
   return 0;
 }
 
@@ -356,7 +379,14 @@ static void identifying(enum wsmp_port p, port_t *s, int held, uint32_t now_ms)
 {
   if (!s->checking)
   {
-    if (!held && port_id_state(p) == PORT_ID_DONE && !lower_identifying(p)) decide(p, s, 0, now_ms);
+    if (s->id_wait || port_id_state(p) != PORT_ID_DONE) return;
+    if (port_id_incomplete(p))   /* no verdict: identified again at the next probe */
+    {
+      s->id_wait = 1;
+      if (s->incomplete < COUNT_MAX) s->incomplete++;
+      return;
+    }
+    if (!held && !lower_identifying(p)) decide(p, s, 0, now_ms);
     return;
   }
   if (port_id_state((enum wsmp_port)s->holder) != PORT_ID_DONE) return;
@@ -466,12 +496,32 @@ static const char *state_name(const port_t *s)
   return by_verdict ? verdict[s->reason] : state[s->state];
 }
 
+/* "(incomplete=N)": the port's incomplete identifications (section 4.1), when there were any. */
+static unsigned append_incomplete(char *buf, unsigned len, unsigned n, unsigned count)
+{
+  static const char head[] = "(incomplete=";
+  char text[sizeof head + 4U];   /* up to 3 digits and ')' */
+  unsigned i = sizeof head - 1U;
+  if (count == 0) return n;
+  memcpy(text, head, i);
+  if (count >= DECIMAL * DECIMAL) text[i++] = (char)('0' + count / (DECIMAL * DECIMAL));
+  if (count >= DECIMAL) text[i++] = (char)('0' + count / DECIMAL % DECIMAL);
+  text[i++] = (char)('0' + count % DECIMAL);
+  text[i++] = ')';
+  text[i] = 0;
+  return append(buf, len, n, text);
+}
+
 unsigned wsmp_host_modules_line(char *buf, unsigned len)
 {
   static const char *const name[P_COUNT] = { "", " air_th=", " pressure=", " uva=", " encl_th=", " power=", " wind=", " rain=" };
   if (len == 0) return 0;
   unsigned n = append(buf, len, 0, "#modules");
-  for (unsigned q = P_AIR_TH; q < P_COUNT; q++) n = append(buf, len, append(buf, len, n, name[q]), state_name(&ports[q]));
+  for (unsigned q = P_AIR_TH; q < P_COUNT; q++)
+  {
+    n = append(buf, len, append(buf, len, n, name[q]), state_name(&ports[q]));
+    n = append_incomplete(buf, len, n, ports[q].incomplete);
+  }
   return n;
 }
 ```

@@ -150,7 +150,12 @@ static void plan_client(enum i2c_client c)
   const xfer_t *x = &xfers[c];
   op_kind work = x->txlen == 0 && x->rxlen == 0 ? OP_RECOVER : OP_XFER;
   plan_start(JOB_CLIENT);
-  if (channel_of[c] == UPSTREAM) { plan_add(work); return; }
+  if (channel_of[c] == UPSTREAM)
+  {
+    if (!mux_ok) plan_deselect();   /* a deselect that never read back: check it first */
+    plan_add(work);
+    return;
+  }
   if (work == OP_XFER && is_phantom(x->addr7)) { job_rc = I2C_ENACK_ADDR; return; }   /* an empty plan */
   mux_mask = (uint8_t)(1U << channel_of[c]);
   plan_add(OP_SELECT);
@@ -329,9 +334,9 @@ static int mux_took(op_kind k, int rc)
 static void mux_done(op_kind k, int rc)
 {
   int is_select = k == OP_SELECT || k == OP_SELECT_CHECK;
-  if (mux_took(k, rc)) { if (k != OP_SELECT && k != OP_DESELECT) mux_ok = 1; return; }
+  if (mux_took(k, rc)) { if (k == OP_DESELECT_CHECK) mux_ok = 1; return; }
   if (is_select) { job_rc = I2C_EBUS; plan_at = deselect_at; return; }   /* never the transfer */
-  if (reset_tried) { mux_ok = 0; plan_at = plan_len; return; }   /* the job ends: no second RESET */
+  if (reset_tried) { mux_ok = 0; job_rc = I2C_EBUS; plan_at = plan_len; return; }   /* the job ends: no second RESET */
   reset_tried = 1;
   mux_reset_pulse();
   plan_at = deselect_at;

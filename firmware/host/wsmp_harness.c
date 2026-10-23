@@ -32,6 +32,7 @@ int h_mux_mask(void) { return i2c_sim_mux_mask(); }
 uint32_t h_mux_resets(void) { return i2c_sim_mux_resets(); }
 uint32_t h_upstream_with_channel(void) { return i2c_sim_upstream_with_channel(); }
 void h_mux_readback_xor(int x) { model_mux_readback_xor((uint8_t)x); }
+void h_mux_readback_xor_idle(int x) { model_mux_readback_xor_idle((uint8_t)x); }
 int h_mux_write_count(void) { return model_mux_write_count(); }
 int h_mux_writes(int i) { return model_mux_writes(i); }
 int h_mux_reads(void) { return model_mux_reads(); }
@@ -93,6 +94,7 @@ int h_desc_check(int port)
 void h_sht45_set(int dev, int t_raw, int h_raw, int bad) { model_sht45_set(dev, (uint16_t)t_raw, (uint16_t)h_raw, bad); }
 /* The SHT45's serial (command 0x89): bad 1 gives a bad CRC, bad 2 a NACK of the command. */
 void h_sht45_set_serial(int dev, uint32_t serial, int bad) { model_sht45_set_serial(dev, serial, bad); }
+void h_sht45_serial_fail_next(int dev, int n) { model_sht45_serial_fail_next(dev, n); }
 int h_sht45_interleaved(void) { return model_sht45_interleaved(); }
 int h_sht45_read_too_early(void) { return model_sht45_read_too_early(); }
 #include "mod_th.h"

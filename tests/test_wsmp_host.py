@@ -271,6 +271,38 @@ class Identity(unittest.TestCase):
         self.assertEqual((ident['serial'], ident['flags'], ident['caps']), (ref.sensor_serial(1, SERIAL32), 0x82, 1))
         self.assertEqual(self.slot0(lib, P_AIR_TH), 4250)
 
+    def test_a_failed_sensor_serial_read_is_retried_back_to_back(self):
+        # A read error is not a verdict: one failed 0x89 read is tried again, and the module is
+        # admitted with its record's serial and calibration, never SENSOR_CHANGED.
+        rec = sht_record(cal=[(1, 0, 1, 100, 1_000_000)])
+        lib, devs = self.boot([(P_AIR_TH, DEVK_SHT45, rec)])
+        lib.h_sht45_serial_fail_next(devs[P_AIR_TH][0], 1)
+        self.minutes(lib, 2)
+        self.assertEqual(lib.h_host_state(P_AIR_TH), ACTIVE)
+        self.assertEqual(self.identity(lib, P_AIR_TH)['flags'], 0x01)
+        self.assertEqual(self.identity(lib, P_AIR_TH)['serial'], REC_SERIAL)
+        self.assertEqual(self.slot0(lib, P_AIR_TH), 4250 + 100)
+
+    def test_three_failed_sensor_serial_reads_give_no_verdict_until_the_next_probe_slot(self):
+        rec = sht_record(cal=[(1, 0, 1, 100, 1_000_000)])
+        lib, devs = self.boot([(P_AIR_TH, DEVK_SHT45, rec)])
+        lib.h_sht45_serial_fail_next(devs[P_AIR_TH][0], 3)
+        lib.h_host_run(30_000)                                 # two probes, then the reads: 0x89 fails 3 times
+        self.assertEqual(lib.h_host_state(P_AIR_TH), IDENTIFYING)
+        self.assertIn(b'air_th=identifying(incomplete=1)', self.line(lib))
+        self.minutes(lib, 2)                                   # the next probe slot identifies it again
+        self.assertEqual(lib.h_host_state(P_AIR_TH), ACTIVE)
+        self.assertEqual(self.identity(lib, P_AIR_TH)['flags'], 0x01)
+        self.assertEqual(self.slot0(lib, P_AIR_TH), 4250 + 100)
+
+    def test_a_sensor_serial_that_was_read_and_differs_is_sensor_changed(self):
+        rec = sht_record(bind_value=SERIAL32 + 1, cal=[(1, 0, 1, 100, 1_000_000)])
+        lib, devs = self.boot([(P_AIR_TH, DEVK_SHT45, rec)])
+        lib.h_sht45_serial_fail_next(devs[P_AIR_TH][0], 1)
+        self.minutes(lib, 2)
+        self.assertEqual(self.identity(lib, P_AIR_TH)['flags'], 0x82)
+        self.assertEqual(self.slot0(lib, P_AIR_TH), 4250)
+
     def test_a_type_conflict_is_quarantined_until_the_module_is_removed(self):
         lib, devs = self.boot([(P_AIR_TH, DEVK_SHT45, ltr_record())])
         self.minutes(lib, 1)

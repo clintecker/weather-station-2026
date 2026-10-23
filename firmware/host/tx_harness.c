@@ -203,6 +203,7 @@ uint32_t h_flash_ops_during_radio(void) { return flash_ops_during_radio; }
 uint32_t h_flash_erases(void) { return flash_erases; }
 int h_sht45_writes(void) { return (int)i2c_sim_writes(sht45); }   /* SHT45 commands attempted */
 /* rc -2: the SHT45 does not answer its address; hang 1: every transfer hangs until the bus guard. */
+void h_sht45_rh_raw(int raw) { model_sht45_set(sht45, raw_for(2150, 0), (uint16_t)raw, 0); }   /* the temperature stays 21.50 C */
 void h_sensor(int rc, int hang) { i2c_sim_mode(sht45, hang ? DM_HANG : rc ? DM_NACK_ADDR : DM_OK, 0, 1); }
 void h_radio_send_fails(int n) { radio_send_fails = n; }
 void h_flash_prog_fails(int on) { prog_fails = on; }

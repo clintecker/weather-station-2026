@@ -20,6 +20,8 @@
 #define BOOT_SHIFT 8U                      /* the boot ID: epoch << 8 | admission count (section 6.7) */
 #define COUNT_MASK 0xFFU
 #define CAP_RECORD 1U                      /* identity capabilities bit 0: a valid record */
+#define COUNT_MAX 255U                     /* the incomplete counter saturates */
+#define DECIMAL 10U
 
 typedef struct {
   uint8_t state, good, missed, timed;          /* timed: a flap quarantine that ends by itself */
@@ -35,6 +37,7 @@ typedef struct {
   uint8_t holder, checking;                    /* a duplicate's holder port, and its check running */
   uint8_t admissions, missed_probes, rounds;   /* rounds: probes since boot, for the boot hold */
   uint8_t with_record, has_sensor_serial;
+  uint8_t id_wait, incomplete;                 /* an incomplete identification waits for the next probe; how many */
   uint64_t serial, rec_serial;
   uint32_t sensor_serial;
 } port_t;
@@ -168,11 +171,12 @@ static void decide(enum wsmp_port p, port_t *s, int recheck, uint32_t now_ms)
 
 static void end_holder(port_t *h, uint32_t now_ms);
 
-/* 1 while a lower port is still identifying: verdicts are decided in port order. */
+/* 1 while a lower port is still identifying: verdicts are decided in port order. A port waiting for
+   its next probe after an incomplete identification does not count. */
 static int lower_identifying(enum wsmp_port p)
 {
   for (unsigned q = P_AIR_TH; q < (unsigned)p; q++)
-    if (ports[q].state == WH_IDENTIFYING) return 1;
+    if (ports[q].state == WH_IDENTIFYING && !ports[q].id_wait) return 1;
   return 0;
 }
 
@@ -180,7 +184,14 @@ static void identifying(enum wsmp_port p, port_t *s, int held, uint32_t now_ms)
 {
   if (!s->checking)
   {
-    if (!held && port_id_state(p) == PORT_ID_DONE && !lower_identifying(p)) decide(p, s, 0, now_ms);
+    if (s->id_wait || port_id_state(p) != PORT_ID_DONE) return;
+    if (port_id_incomplete(p))   /* no verdict: identified again at the next probe */
+    {
+      s->id_wait = 1;
+      if (s->incomplete < COUNT_MAX) s->incomplete++;
+      return;
+    }
+    if (!held && !lower_identifying(p)) decide(p, s, 0, now_ms);
     return;
   }
   if (port_id_state((enum wsmp_port)s->holder) != PORT_ID_DONE) return;
@@ -228,9 +239,19 @@ static void on_probe_waiting(port_t *s, uint32_t now_ms)
   s->missed_probes = 0;
 }
 
+/* Identifying, after an incomplete identification (section 4.1): the next probe identifies again,
+   unless it failed. */
+static void on_probe_retry(enum wsmp_port p, port_t *s)
+{
+  s->id_wait = 0;
+  if (s->probe != PROBE_PRESENT) { s->good = 0; s->state = WH_ABSENT; return; }
+  port_id_identify(p);
+}
+
 static void on_probe(enum wsmp_port p, port_t *s, uint32_t now_ms)
 {
   if (s->state == WH_ABSENT || s->state == WH_PROBING) on_probe_presence(p, s);
+  else if (s->state == WH_IDENTIFYING && s->id_wait) on_probe_retry(p, s);
   else if (s->state == WH_ADMITTED || s->state == WH_REFUSED || s->state == WH_QUARANTINED) on_probe_waiting(s, now_ms);
   /* Active and Suspect: the latch decides */
 }
@@ -351,11 +372,31 @@ static const char *state_name(const port_t *s)
   return by_verdict ? verdict[s->reason] : state[s->state];
 }
 
+/* "(incomplete=N)": the port's incomplete identifications (section 4.1), when there were any. */
+static unsigned append_incomplete(char *buf, unsigned len, unsigned n, unsigned count)
+{
+  static const char head[] = "(incomplete=";
+  char text[sizeof head + 4U];   /* up to 3 digits and ')' */
+  unsigned i = sizeof head - 1U;
+  if (count == 0) return n;
+  memcpy(text, head, i);
+  if (count >= DECIMAL * DECIMAL) text[i++] = (char)('0' + count / (DECIMAL * DECIMAL));
+  if (count >= DECIMAL) text[i++] = (char)('0' + count / DECIMAL % DECIMAL);
+  text[i++] = (char)('0' + count % DECIMAL);
+  text[i++] = ')';
+  text[i] = 0;
+  return append(buf, len, n, text);
+}
+
 unsigned wsmp_host_modules_line(char *buf, unsigned len)
 {
   static const char *const name[P_COUNT] = { "", " air_th=", " pressure=", " uva=", " encl_th=", " power=", " wind=", " rain=" };
   if (len == 0) return 0;
   unsigned n = append(buf, len, 0, "#modules");
-  for (unsigned q = P_AIR_TH; q < P_COUNT; q++) n = append(buf, len, append(buf, len, n, name[q]), state_name(&ports[q]));
+  for (unsigned q = P_AIR_TH; q < P_COUNT; q++)
+  {
+    n = append(buf, len, append(buf, len, n, name[q]), state_name(&ports[q]));
+    n = append_incomplete(buf, len, n, ports[q].incomplete);
+  }
   return n;
 }

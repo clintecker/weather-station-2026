@@ -18,7 +18,7 @@ enum { PORT_ID_PRESENT, PORT_ID_GONE };
 int port_id_is_port(enum wsmp_port p);   /* 1 for an I2C port module (ports 1-8 of the design) */
 void port_id_init(void);
 /* The identification of a newly probed module: the record (3 tries back to back, a CRC failure read
-   once more), then the sensor serial if the part has one. */
+   once more), then the sensor serial if the part has one (3 tries back to back). */
 void port_id_identify(enum wsmp_port p);
 /* The holder check of the module admitted on p with the identity e (section 6.7, "Checking the
    holder"): gone only on two address NACKs back to back, a different part, or a confirmed different
@@ -26,6 +26,9 @@ void port_id_identify(enum wsmp_port p);
 void port_id_holder(enum wsmp_port p, const port_id_expect *e);
 void port_id_tick(enum wsmp_port p);     /* every module tick, after the driver's */
 int port_id_state(enum wsmp_port p);
+/* After an identification: 1 if it is incomplete (the sensor serial failed 3 tries back to back), so
+   no verdict may be decided from it (a read error is not a verdict); identify again later. */
+int port_id_incomplete(enum wsmp_port p);
 /* After an identification: what it saw, for wsmp_identify. o->record points into the port's buffer,
    valid until the port's next identity read. */
 void port_id_observed(enum wsmp_port p, wsmp_observed *o);

@@ -861,6 +861,14 @@ class TxStateMachine(unittest.TestCase):
 
     # ---- sensor ----
 
+    def test_a_missing_humidity_shows_as_missing_on_the_sample_line(self):
+        # RH beyond its crop margin (119 %) is suspect and leaves only its own channel: the temperature
+        # stays valid, and the console shows the humidity as missing, not as 0.
+        n = self.node()
+        n.lib.h_sht45_rh_raw(0xFFFF)
+        n.advance_to(minute(0))
+        self.assertRegex(n.out(), r'#sample epoch=\d+ seq=0 uptime=\d+ valid=1 rc=0 n=1 t=2150 rh=- ')
+
     def test_a_failing_or_hung_sensor_never_stalls_the_minute(self):
         n = self.node()
         n.lib.h_sensor(-2, 0)                          # the SHT45 does not answer its address: never admitted

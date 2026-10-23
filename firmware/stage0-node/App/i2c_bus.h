@@ -56,6 +56,6 @@ void i2c_bus_power(int on);
    board defines it; its pin is TBD (ports design, section 4.1). */
 void i2c_bus_mux_reset_line(int asserted);
 int i2c_bus_ready(void);           /* 1 once the boot job is done */
-int i2c_bus_mux_ok(void);          /* 0 after a mux write that did not read back, until one does */
+int i2c_bus_mux_ok(void);          /* 0 until a deselect reads back 0x00, and after one that failed with its RESET retry */
 uint8_t i2c_bus_phantoms(void);    /* the phantom check's result, a bit for each I2C_PH_* address */
 #endif

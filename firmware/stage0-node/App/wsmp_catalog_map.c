@@ -55,7 +55,8 @@ static void air(ws_obs_t *o, wsmp_map_summary *sum)
   put(o, WS_FI_TH_SAMPLES, n > WS_TH_SAMPLES_MAX ? WS_TH_SAMPLES_MAX : n);
   sum->th_valid = !missing(s, 0);
   sum->t = sum->th_valid ? (int16_t)(int32_t)s->slot[0].value : 0;
-  sum->h = sum->th_valid && !missing(s, 1) ? (uint16_t)s->slot[1].value : 0U;
+  sum->h_valid = sum->th_valid && !missing(s, 1);   /* RH can be missing with a valid temperature */
+  sum->h = sum->h_valid ? (uint16_t)s->slot[1].value : 0U;
   sum->th_samples = n;
 }
 
