@@ -171,6 +171,13 @@ static void verdict(const uint8_t *r, const uint8_t *probe, int status, int cal_
   if (!o.read_ok) FUZZ_CHECK(v.status == S_READ && v.source != WSMP_SRC_RECORD);
   if (v.verdict == WSMP_V_DUP_SERIAL) FUZZ_CHECK(v.serial == h.serial && v.holder_port == h.port && h.port != o.port);
   if (v.verdict == WSMP_V_DUP_TYPE) FUZZ_CHECK(o.probed_type == h.type && v.holder_port == h.port && h.port != o.port);
+  if (!conflict && h.port != o.port)   /* the converse: a holder on another port is never missed, serial before type */
+  {
+    if (v.serial == h.serial) FUZZ_CHECK(v.verdict == WSMP_V_DUP_SERIAL);
+    else if (o.probed_type == h.type) FUZZ_CHECK(v.verdict == WSMP_V_DUP_TYPE);
+    else FUZZ_CHECK(v.verdict == WSMP_V_ADMIT);
+  }
+  if (!conflict && h.port == o.port) FUZZ_CHECK(v.verdict == WSMP_V_ADMIT);
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)

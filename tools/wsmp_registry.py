@@ -206,7 +206,8 @@ def check_calibration(reg):
         if q not in quantities or q in seen or not -6 <= row['scale'] <= 0:
             sys.exit(f'wsmp_registry: calibration of quantity {q}: a known quantity, once, with a scale of -6 to 0')
         seen.add(q)
-        c = calibration(reg)[q]
+    table = calibration(reg)   # every row's quantity is known, so this cannot raise
+    for q, c in table.items():
         if not (0 < c['gain_min'] <= c['gain_max'] < 2**32 and c['offset_bound'] >= 0 and min(row['margin']) >= 0):
             sys.exit(f'wsmp_registry: calibration of quantity {q}: bounds out of order or negative')
         if not all(INT32[0] <= c[k] <= INT32[1] for k in ('offset_bound', 'range_min', 'range_max', 'margin_below', 'margin_above')):

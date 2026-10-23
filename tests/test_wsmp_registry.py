@@ -158,6 +158,13 @@ class Registry(unittest.TestCase):
         self.assertIn('unknown unit', p.stderr)
         self.assertNotIn('Traceback', p.stderr)
 
+    def test_a_calibration_row_with_an_unknown_quantity_is_refused_cleanly(self):
+        # A valid row comes first, so the bounds checks must not run before every row's quantity is checked.
+        p = self.edited(('quantity = 2        # relative humidity', 'quantity = 999      # relative humidity'))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('a known quantity', p.stderr)
+        self.assertNotIn('Traceback', p.stderr)
+
     def test_kind_codes_without_a_gap(self):
         # wsmp.c checks a kind as 1..WSMP_KIND_MAX, so a gap would pass a code with no name.
         p = self.edited(('[[kind]]\ncode = 2\n', '[[kind]]\ncode = 20\n'))

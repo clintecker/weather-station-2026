@@ -195,8 +195,7 @@ class Cal(unittest.TestCase):
                     want = ref.crop(1, ref.apply(raw, offset, gain))
                     got = self.sample(rec(1, [(1, 2, 1, offset, gain)]), 1, 2, raw)
                     self.assertEqual(got[1], GOOD if want[1] else SUSPECT)
-                    if want[1]:
-                        self.assertEqual(got[0], want[0])
+                    self.assertEqual(got[0], want[0])   # suspect values are clamped too
 
     def test_uva_negative_offset_at_night_crops_to_0(self):
         r = rec(3, [(8, 2, 1, -5, 1_000_000)])
@@ -230,8 +229,7 @@ class Cal(unittest.TestCase):
                     want = ref.crop(quantity, v)
                     got = self.crop(quantity, v)
                     self.assertEqual(got[1], GOOD if want[1] else SUSPECT)
-                    if want[1]:
-                        self.assertEqual(got[0], want[0])
+                    self.assertEqual(got[0], want[0])   # suspect values are clamped too
 
     def test_quantity_outside_the_table_is_not_cropped(self):
         self.assertEqual(self.crop(4, 9_999), (9_999, GOOD))

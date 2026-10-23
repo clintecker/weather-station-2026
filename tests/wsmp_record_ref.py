@@ -98,13 +98,10 @@ def apply(raw, offset, gain):
 
 
 def crop(quantity, value):
-    """(value, good): cropped to the physical range within the margin, else (value, False), suspect."""
+    """(value, good): always clamped to the physical range (wsmp_cal_crop); good within the margin,
+    suspect beyond it."""
     _, _, _, lo, hi, below, above = CAL[quantity]
-    if lo - below <= value < lo:
-        return lo, True
-    if hi < value <= hi + above:
-        return hi, True
-    return value, lo <= value <= hi
+    return min(max(value, lo), hi), lo - below <= value <= hi + above
 
 
 def sensor_serial(module_type, serial32):
