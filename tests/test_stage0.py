@@ -28,6 +28,7 @@ def fake_mqtt(gateway):
  publisher=object.__new__(MQTT); publisher.gateway=gateway; publisher.client=Fake()
  publisher.root='weatherstation/v1/simulation-01'; publisher.published=None; publisher.published_at=0.0
  publisher.advertised={'temperature_c','humidity_pct','dew_point_c'}
+ publisher.advertised_types=set(); publisher.published_modules=None
  return publisher
 
 

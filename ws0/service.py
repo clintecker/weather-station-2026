@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from gateway import Store
 from . import web
+from .descsets import ALARMS_SHOWN, DescriptorSets, module_discovery, modules_payload, station_key
 import sqlite3
 import struct
 from .fields import BY_NAME, DERIVED, DIAGNOSTIC_FIELDS, ENERGY, LABELS, MEASURED
@@ -83,6 +84,8 @@ class Gateway:
         self.lock = threading.Lock()
         self.hub = web.EventHub()  # live events for the dashboard stream (GET /v1/events)
         self.telemetry = web.Telemetry(self)
+        self.descsets = DescriptorSets(self.directory / 'descriptor-sets.sqlite3')
+        self.station_key = station_key(cfg['station_id'], self.key)   # sets live under the station key (WSMP-E1)
 
     def check_counter(self, frame, epoch, sequence, now):
         """Every node transmission, retries included, gets a fresh, strictly increasing
@@ -191,9 +194,35 @@ class Gateway:
                 'counter_regression':state['counter_regression'],
                 'last_regression_counter':state['last_regression_counter']}
 
+    def receive_descriptor_set(self, raw, now=None):
+        """A whole descriptor set from the station (WSMP-E5 to E7). The radio frame kind that carries
+        it and its fragments is WSMP-E9, a later step; this is where it will hand the set over. A
+        conflict (E6) or a failed check (E7) is an alarm: on stderr now, and on the diagnostics topic."""
+        now = time.time() if now is None else now
+        with self.lock:
+            result = self.descsets.accept(self.station_key, raw, now)
+        if result['outcome'] in ('conflict', 'registry'):
+            print(f"#gateway alarm descriptor set {result['outcome']}: {result['detail']}", file=sys.stderr, flush=True)
+        return result
+
+    def note_generation(self, generation, counter):
+        """The generation that an authenticated reading or health report with this frame counter carries
+        (WSMP section 11.3, with WSMP-E9): the newest by counter names the current set."""
+        self.descsets.note_generation(self.station_key, generation, counter)
+
+    def modules(self):
+        """The current set's modules, type id -> serial, source, record status; None without a current set."""
+        return modules_payload(self.descsets.current(self.station_key))
+
+    def descriptor_set_alarms(self):
+        """The newest descriptor-set alarms (WSMP-E6, E7), for the diagnostics topic."""
+        return self.descsets.alarms(self.station_key)[:ALARMS_SHOWN]
+
     def close(self):
         self.store.db.close()
         self.nonces.db.close()
+        if getattr(self, 'descsets', None):
+            self.descsets.close()
 
     def status(self):
         """Expose no credentials or raw keys in diagnostics."""
@@ -319,6 +348,8 @@ def http_server(gateway, port):
     return server
 
 
+MODULES_UNPUBLISHED = object()   # nothing sent on …/modules on this connection yet
+
 DEFAULT_DISCOVERY = ('temperature_c','humidity_pct')   # advertised before the first reading
 
 
@@ -396,6 +427,8 @@ class MQTT:
         self.published = None   # (weather payload, availability) last sent; None forces a send
         self.published_at = 0.0
         self.advertised = set()  # catalog fields with an HA discovery entry on this connection
+        self.advertised_types = set()   # module type ids with an HA discovery entry on this connection
+        self.published_modules = MODULES_UNPUBLISHED
         self.client.connect_async(settings['host'],settings.get('port',1883),keepalive=30)
         self.client.loop_start()
 
@@ -405,6 +438,8 @@ class MQTT:
             print(f'#gateway mqtt connect refused: {reason}',file=sys.stderr,flush=True)
             return
         self.advertised = set()
+        self.advertised_types = set()
+        self.published_modules = MODULES_UNPUBLISHED
         self.advertise(self.gateway.store.latest(self.gateway.cfg['station']).get('observation'))
         # Set availability from actual age before advertising a live gateway.
         self.published = None
@@ -436,9 +471,13 @@ class MQTT:
         alarm = self.gateway.counter_alarm()
         if diag or alarm['alarm']:
             diag = (diag or {}) | alarm  # key-reuse alarm rides on the diagnostics topic
+        set_alarms = self.gateway.descriptor_set_alarms()
+        if set_alarms:                   # so do descriptor-set conflicts and failed checks (WSMP-E6, E7)
+            diag = (diag or {}) | {'descriptor_set_alarms': set_alarms}
         diagnostics = json.dumps(diag,sort_keys=True) if diag else None
         state = (weather, 'online' if latest['available'] else 'offline', diagnostics)
         if state == self.published and time.time() - self.published_at < self.REFRESH_S:
+            self.publish_modules()   # on change only, independent of the weather's publish cadence
             return
         if weather:
             self.client.publish(self.root+'/weather',weather,qos=1,retain=True)
@@ -446,6 +485,25 @@ class MQTT:
             self.client.publish(self.root+'/diagnostics',diagnostics,qos=1,retain=True)
         self.client.publish(self.root+'/availability',state[1],qos=1,retain=True)
         self.published, self.published_at = state, time.time()
+        self.publish_modules()
+
+    def publish_modules(self):
+        """The current descriptor set's module identities (retained), with discovery for new type ids.
+        A current set with no module publishes {}. Without a current set, an empty retained message
+        clears …/modules (once), so a stale payload from an earlier run never stays."""
+        modules = self.gateway.modules()
+        if modules == self.published_modules:
+            return
+        if modules is None:
+            self.client.publish(self.root+'/modules','',qos=1,retain=True)
+            self.published_modules = None
+            return
+        for topic,payload in module_discovery(self.gateway.cfg,sorted(set(modules) - self.advertised_types),
+                                              self.root).items():
+            self.client.publish(topic,json.dumps(payload),qos=1,retain=True)
+        self.advertised_types |= set(modules)
+        self.client.publish(self.root+'/modules',json.dumps(modules,sort_keys=True),qos=1,retain=True)
+        self.published_modules = modules
 
     def close(self):
         # Best effort: wait_for_publish raises (RuntimeError, ValueError) if the connection drops

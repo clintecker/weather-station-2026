@@ -101,7 +101,9 @@ Root topic `weatherstation/v1/<station>`. All messages are retained, QoS 1 (`ws0
 | `…/weather` | Latest observation and the derived values (JSON), on change and every 300 s |
 | `…/availability` | `online` when the latest reading is available: younger than 180 s, with a known and bounded clock, and not a `sensor_fault` record. Else `offline` |
 | `…/gateway_availability` | `online` after connect. `offline` at a clean stop, and as the last will, so HA marks the station unavailable if the gateway dies |
-| `…/diagnostics` | Node health report and the key-reuse alarm. The gateway publishes this topic only when it has a health report or an alarm |
+| `…/diagnostics` | Node health report, the key-reuse alarm and the newest descriptor-set alarms (`descriptor_set_alarms`: a different set under a held generation, WSMP-E6, or a set that failed its check, WSMP-E7; also on stderr). The gateway publishes this topic only when it has a health report or an alarm |
+| `…/modules` | The modules of the station's current descriptor set (WSMP section 11.1): the set of the generation that the station's newest frame carries (by its authenticated counter). By module type id (`air_th`, `pressure`, …): port, type, serial (16 hex digits; the top byte is its namespace), serial source, record status (`applied`, a `NO_RECORD` reason, `CAL_REJECTED`, `SENSOR_CHANGED`, or `none` for a module that never has a record) and record CRC. On change only; `{}` when the current set has no module; an empty retained message, which clears the topic, when there is no current set (also once after each broker connect, so a stale payload never stays). Not yet sent by a station: readings carry the generation, and the radio the set, from WSMP-E9 on |
+| `homeassistant/sensor/<station>_module_<type id>/config` | HA discovery for one diagnostic sensor per module type id: its state is the record status, the rest are attributes. The ID has no port and no serial in it (WSMP-H1), so a module that moves keeps its entity |
 
 A sensor shows as available only when all three conditions hold:
 
