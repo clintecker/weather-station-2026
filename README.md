@@ -182,7 +182,7 @@ The radio settings are bench values (`firmware/stage0-node/App/radio_cfg.h`): 91
 
 Open before the 24-hour delivery test:
 
-- Home Assistant against the real broker.
+- Home Assistant entities updating live, with the gateway logging in on the rotated password (login and discovery were checked on 2026-10-22).
 - The link budget at the real placement, the antennas and the current measurements.
 - The 24-hour run with its restart and outage matrix.
 

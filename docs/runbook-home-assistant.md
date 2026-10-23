@@ -2,10 +2,11 @@
 
 The gateway publishes to an MQTT broker. Home Assistant (HA) finds the station through MQTT
 discovery. The gateway was tested against a local Mosquitto broker
-(`evidence/mqtt-local-broker-2026-10-13/`), then against Clint's Home Assistant: the HA-user login
-and the `station-01` device with its entities are verified (`evidence/ha-broker-2026-10-22/`).
-TLS is not verified: that broker has no certificate. Entities updating live is checked at the
-next hardware session ([`CONTEXT-PACK.md`](CONTEXT-PACK.md) §6, step 3).
+(`evidence/mqtt-local-broker-2026-10-13/`), then against Clint's Home Assistant: the HA user's login (checked with a read-only client) and
+the `station-01` device with its entities, from the gateway's run-d7 discovery, are verified
+(`evidence/ha-broker-2026-10-22/`). TLS is not verified: that broker has no certificate. The
+gateway logging in on the rotated password and entities updating live are checked at the next
+hardware session ([`CONTEXT-PACK.md`](CONTEXT-PACK.md) §6, step 3).
 
 ```mermaid
 flowchart LR

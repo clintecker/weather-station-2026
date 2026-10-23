@@ -3,7 +3,7 @@
 Broker: the Mosquitto add-on on Clint's Home Assistant OS VM, port 1883, no TLS (8883 has no
 certificate configured). The add-on's own login list is empty, so it authenticates against Home
 Assistant user accounts. The gateway uses a dedicated, non-administrator HA user `weatherstation`.
-The broker host and the password live only in the run directory (`run-d7/`, git-ignored).
+The gateway's copies of the broker host and the password are kept only in the run directory (`run-d7/`, git-ignored); Home Assistant keeps the account's credentials itself.
 
 The gateway first published to this broker during the `run-d7` session (ended 2026-10-19 21:58 UTC).
 This record was made with the hardware off: a read-only MQTT client (its own client ID, so it did
