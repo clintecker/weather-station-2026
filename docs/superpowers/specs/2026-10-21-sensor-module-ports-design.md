@@ -1,6 +1,8 @@
 # Sensor module ports: design
 
-Status: design draft, 2026-10-21. Not reviewed by Clint. Not implemented. Nothing has been ordered.
+Status: design, revised after an adversarial review on 2026-10-22. Approved by Clint for
+implementation subject to a second adversarial review passing. Not implemented. Nothing has been
+ordered.
 This spec plans how sensors attach to the station, in three steps: the breadboard now, the v1
 production station (STEMMA QT sensor modules on RJ11 I2C ports), and a possible v2 (RS-485 over
 RJ45). It changes no normative document. Section 13 lists the changes that the normative documents
@@ -42,7 +44,10 @@ found a problem with one, the problem is an open question in section 11, with a 
 | Open (Clint) | Sealing RJ11 on an IP66 box. Likely: the jacks inside, glands that fit flat cable |
 | v1 module identity (2026-10-21) | **Every v1 module board carries a programmed ID EEPROM** (OQ-6, decided). Its record gives each module (module board plus its sensor board) a serial that follows it across ports and to v2. A sensor-board swap gets a new serial |
 | Identity is normalized (2026-10-21) | **No port sensor is ever without an ID EEPROM.** On the breadboard each sensor gets an EEPROM breakout on its own mux channel; in v2 an I2C sensor's adapter takes only a whole v1 module board, never a bare sensor board. The meters are the one exception ("Meter identity", below) |
-| Meter identity (2026-10-22) | **The SEN-15901 meters carry no ID EEPROM in v1.** They are not I2C port sensors: reed switches and a resistor network on the meter ports (12 wind, 13 rain), no electronics. Their serial is the binding fallback, and a meter swap is invisible, by decision: one kit per station, rarely swapped, and its calibration is fixed by the hardware (2.4 km/h per Hz, 0.2794 mm per tip). The vane's north offset depends on the mounting, not the meter, so it belongs in the siting archive (WSMP section 15) as part of the vane's installation record, not keyed to a serial or port number. A v1-to-v2 migration (new port, new serial) adds a dated installation entry that carries the offset over unless the vane was remounted, so the offset is never orphaned. **If v2 is built (OQ-8; section 8, "a pulse or analog instrument"), each meter gets a meter adapter at the mast** (section 7): an adapter MCU that counts the reed pulses or reads the vane directly, with its own EEPROM, wired permanently to that meter's cable so the pair is one unit and a new meter means a new adapter record. A base EEPROM beside the meter port is rejected: it names the port, not the meter |
+| Meter identity (2026-10-22) | **The SEN-15901 meters carry no ID EEPROM in v1.** They are not I2C port sensors: reed switches and a resistor network on the meter ports (12 wind, 13 rain), no electronics. The meter ports' serial is the binding fallback `WSMP_LOCAL_SERIAL(port, type)`, which names the port, not the meter, and a meter swap is invisible, by decision: one kit per station, rarely swapped, and its calibration is fixed by the hardware (2.4 km/h per Hz, 0.2794 mm per tip). The vane's north offset depends on the mounting, not the meter, so it belongs in the siting archive (WSMP section 15) as part of the vane's installation record, keyed by (station, role), not by a serial or port number (section 13.1). A v1-to-v2 migration (new port, new serial) adds a dated installation entry that carries the offset over unless the vane was remounted, so the offset is never orphaned. **If v2 is built (OQ-8; section 8, "a pulse or analog instrument"), each meter gets a meter adapter at the mast** (section 7): an adapter MCU that counts the reed pulses or reads the vane directly, with its own EEPROM, wired permanently to that meter's cable so the pair is one unit and a new meter means a new adapter record. A base EEPROM beside the meter port is rejected: it names the port, not the meter |
+| Calibration in the record (2026-10-22) | **Per-sensor calibration coefficients live in the module's EEPROM record**: an offset and a gain for each (quantity, kind) (section 6.9). The station applies them before it reports a value, so a passive module meets WSMP-G6, and they travel with the serial across ports and to v2. A v2 adapter reads them from the board's record and keeps no per-sensor data in its flash |
+| One module per type (2026-10-22) | **A v1 station has at most one module of each module type.** A second module of a type that is already admitted is refused with the port status `DUP_TYPE` (section 6.7). Per-port driver instances, which several modules of one type would need, are a v2 item |
+| ID EEPROM part (2026-10-22) | **24LC32A** (Microchip, 4 KiB): one address, 0x50 with A0–A2 tied to GND, a 2-byte word address, 32-byte pages. WP is pulled up to VCC through 10 kΩ (write-protected), with a fixture pad that pulls it low for programming (section 6.1) |
 | v2 (later, maybe) | RS-485 over RJ45, as WSMP section 13 and Stage 2 describe: an adapter MCU per module, Modbus, eFuse-protected 10–18 V port power, sealed Amphenol RJF544, 10 m outdoor Cat6 |
 
 ## 2. Goals, non-goals and anti-goals
@@ -142,10 +147,12 @@ flowchart LR
   On the breadboard it is a STEMMA QT EEPROM breakout (a 24LC32-class part at 0x50, for example
   Adafruit's 24LC32 board; check its address and write-protect jumper), chained from the sensor
   board's second QT socket. All channels' EEPROMs share 0x50; only one channel is selected at a time,
-  and nothing upstream uses 0x50. Each one is programmed once with its sensor's record (section 6.7).
+  and nothing upstream uses 0x50. Each one is programmed once with its sensor's record (section 6.9),
+  then write-protected: WP strapped to VCC (the breakout's default WP state is **TBD**; check it).
   When the sensor moves onto its v1 module board, the record is copied to that board's EEPROM, so the
-  serial does not change. On the breadboard each EEPROM breakout and its sensor board are a labelled
-  pair; replacing either one means a new record with a new serial.
+  serial does not change, and the breakout's copy is invalidated (section 6.9, **Copying a record**):
+  two live EEPROMs never carry one serial. On the breadboard each EEPROM breakout and its sensor
+  board are a labelled pair; replacing the sensor board means a new record with a new serial.
 - **The breadboard itself does not change.** Board A keeps one STEMMA QT cable to the hub
   ([`build-sheet.md`](../../../hardware/bench-breadboard-r0/build-sheet.md), part QT). The mux lives
   on the QT chain, off the breadboard. The meter circuits on board A stay as they are.
@@ -168,11 +175,13 @@ channel. The phase 2 test measures exactly that combination.
 
 Smallest change: a **static channel map**.
 - `i2c_bus` (`firmware/stage0-node/App/i2c_bus.lit.md`) gets a channel for each client. Before a
-  transfer to a client on another channel, the bus writes the mux control register, and reads it back
-  to check it. Upstream clients (INA228, MAX17048, SHTC3) need no channel and work with any channel
-  selected.
+  transfer to a client on a channel, the bus writes the mux control register, and reads it back
+  to check it. After the burst it deselects every channel (writes 0x00 and reads it back). Upstream
+  clients (INA228, MAX17048, SHTC3) are served only with no channel selected (section 6.5).
 - The stuck-bus recovery (WSMP-B3) runs with the failing channel still selected, then deselects all
-  channels (section 6.6).
+  channels (section 6.6). The breadboard has no per-port power switch, so step 3 of the ladder (the
+  power cycle) does not exist there: a channel still stuck after mux RESET stays faulted until
+  unplugged.
 - The module drivers stay as they are. Discovery (a port finds out which sensor it holds) is a v1
   step (section 6.7).
 - The host test harness gets a register model of the mux.
@@ -242,13 +251,16 @@ flowchart LR
    - The test module's ID EEPROM: write a fixed pattern once, then read it back and compare. This
      finds corruption that a CRC cannot (the EEPROM has no CRC). The cable-test module is a fixture,
      not a fielded module: its write-protect is opened by a jumper, and the pattern goes only to the
-     record's reserved test page, never to the record itself.
+     test page (section 6.9), never to the record itself. A fielded module is write-protected, so
+     H04a counts its CRC-checked record reads instead.
    - 10⁶ transactions at each length that is to qualify. At about 1.5 ms each this is roughly
      25 minutes *(estimate)*.
 5. **Hot-plug, a separate trial.** The 10⁶-transaction run of step 4 has no plug events. Afterwards,
    with the same loop running, unplug and replug the module end 20 times, at least 30 s apart. Log
-   each event's time, so every error can be assigned to a plug event or not. Judged by the hot-plug
-   criterion below, not by the error-loop one.
+   each event's time, so every error can be assigned to a plug event or not. Then swap two modules
+   between two ports 4 times, at least 30 min apart (a swap is a leave and a join on each port, and
+   WSMP-P6 quarantines a port after more than 4 descriptor-set changes in an hour). Judged by the
+   hot-plug criterion below, not by the error-loop one.
 6. **10 m, informational.** One scope capture and a short loop, to see where the limit is. It is not
    a v1 criterion.
 7. Record the results under `evidence/cable-test-<date>/`: the setup, the cable's make and type,
@@ -262,7 +274,7 @@ flowchart LR
 | Fall time | ≤ 300 ns | my addition: the standard-mode limit |
 | Low level at the receiver | ≤ 0.4 V | my addition. 0.3 × 3.3 V ≈ 1.0 V is the input threshold; 0.4 V keeps margin for ground offset |
 | Error loop (step 4, no plug events) | 10⁶ transactions, **0 undetected corruption and 0 detected errors** | my proposal (OQ-2). Zero in 10⁶ bounds the error rate below about 3 × 10⁻⁶ at 95 % confidence |
-| Hot-plug (step 5, 20 events) | detected errors only within a plug event (from unplug until the port is admitted again), and 0 undetected corruption. After each replug the port is admitted again within two probes. No reset, and the other ports keep reading | WSMP-P2 (admission); PORT-6; live mating per the proposed WSMP-P9 (OQ-5), not current WSMP (WSMP-P7 covers remote ports only) |
+| Hot-plug (step 5, 20 replugs and 4 swaps) | detected errors only within a plug event (from unplug until the port reads again), and 0 undetected corruption. **Same module replugged:** the port's first good read after the replug re-identifies it (section 6.7, **Re-identification**): same serial, new boot ID, no descriptor-set change. **Swap:** each port re-identifies within one read of the replug, sees a different serial, and gives a leave and a join: the new module is admitted within two probes, with a new descriptor set. No reset, and the other ports keep reading | WSMP-P2 (admission); PORT-6, PORT-16; live mating per the proposed WSMP-P9 (OQ-5), not current WSMP (WSMP-P7 covers remote ports only) |
 
 ### 5.4 What each result changes
 
@@ -330,7 +342,9 @@ flowchart LR
   swapped without a new board, but **not without a new serial**: the EEPROM's serial names the
   module assembly (this module board with this sensor board), so a sensor-board swap includes
   reprogramming the EEPROM with a new serial on the programming fixture. Otherwise the replacement
-  would inherit the old sensor's calibration and siting record.
+  would inherit the old sensor's calibration and siting record. For the SHT45, the record also binds
+  the sensor's own serial (section 6.9, `sensor_bind`), so a swap without reprogramming is caught
+  (`SENSOR_CHANGED`, section 6.7) and the old coefficients are never applied.
 - **Pull-ups to cut.** Each Adafruit breakout's pull-ups are removed (cut jumper or removed
   resistors). **Verify for each board**: some STEMMA QT breakouts carry a regulator and a level
   shifter, with pull-ups on both sides of the shifter. Cutting one jumper may leave the other side
@@ -340,8 +354,10 @@ flowchart LR
   pins tied low uses 0x50. Larger single-byte-address parts use extra addresses for their page bits:
   a 24C04 takes 0x50–0x51, a 24C08 0x50–0x53, a 24C16 0x50–0x57. The last two collide with the LTR390
   at 0x53. A part with 2-byte addressing (24C32-class) keeps
-  one address and holds the whole record of section 6.7. The part is **TBD**. Its write-protect pin
-  is tied to protect, and is opened only on the programming fixture.
+  one address and holds the whole record of section 6.9. **The part is the 24LC32A** (decided
+  2026-10-22, section 1). WP is pulled up to VCC through 10 kΩ, so the whole array is write-protected
+  in the field. A fixture pad on WP lets the programming fixture pull it low; a hard tie to VCC could
+  not be opened by a fixture. The station has no write path to 0x50 (section 6.9).
 - The module housing, the shield cartridge and the UV window are out of scope here.
 
 ### 6.2 The base port
@@ -436,6 +452,14 @@ current. OQ-12 asks whether H04a tests this, as the PRD's H04 tests a 24/48 V in
 - A plug event on the selected channel can corrupt the transfer in progress. The bus reports an
   error, recovers that channel, and the module probes again (WSMP-B2, B3). A plug event on another
   channel does nothing to the bus: the mux keeps that channel open.
+- **GND mating last is not analysed (open, M9 of the 2026-10-22 review).** RJ11 has no staggered
+  contacts. If pin 1 (3.3 V) and SDA or SCL touch before both GND pins, the sensor's ground floats up
+  and current can flow through its SDA and SCL clamp diodes into a line held low, limited only by the
+  series resistor. Whether that exceeds the sensor's, the mux's or the STM32's injection-current
+  limit is **TBD** from their datasheets *(Hypothesis: it can)*. Twenty random plugs may never hit
+  this order, so H04a gets a deliberate case: a switch in the GND conductor, opened, the cable
+  plugged, then GND closed (section 10). If it fails, the fix (a larger series resistor, module-side
+  clamps, or a power-last plug sequence) is decided then.
 - PRD §6 says "power off the port before connecting or disconnecting a module" and "no live mating".
   That rule was written for 10–18 V RS-485 ports. For a 3.3 V current-limited I2C port it costs
   usability and buys little. OQ-5 asks Clint to confirm that v1 departs from it.
@@ -443,13 +467,17 @@ current. OQ-12 asks whether H04a tests this, as the PRD's H04 tests a 24/48 V in
 ### 6.5 Scheduling on the mux
 
 - Only one channel is selected at a time. The bus queue of `i2c_bus` serves transfers in order. A
-  transfer whose client is on another channel first writes the mux (one byte) and reads it back.
-- Upstream parts are reachable with any channel selected. The bus still finishes the current
-  transfer before it serves them, as today.
+  transfer whose client is on a channel first writes the mux (one byte) and reads it back.
+- **After every channel burst the bus deselects all channels** (writes 0x00 and reads it back).
+  Upstream parts are served only with no channel selected. So a plug event or a latch-up on a port
+  can never corrupt an INA228 or MAX17048 transfer, a foreign device on a port can never answer at an
+  upstream address, and a bus stuck with no channel selected is an upstream fault, not a port fault.
+- **A channel whose port power is off is never selected.** With its pull-ups unpowered, selecting it
+  would load the upstream bus through the channel's pull-ups to a 0 V rail.
 - The SHT45 does not answer during a measurement (WSMP-B2). That stays a per-module rule; the mux
   does not change it.
-- Each channel switch costs a few hundred microseconds at 100 kHz *(estimate)*. The station reads
-  four ports in well under the 5 s read deadline (WSMP-T2).
+- Each channel switch, and each deselect, costs a few hundred microseconds at 100 kHz *(estimate)*.
+  The station reads four ports in well under the 5 s read deadline (WSMP-T2).
 
 ### 6.6 Recovery, rescan and port faults
 
@@ -473,17 +501,26 @@ stateDiagram-v2
 - Step 3 is new: switching the port's power off and on clears a latched-up sensor.
 - The back-off times are my call. A faulted port costs no bus time between attempts.
 - **Rescan.** Every 15 s (my call: the station's sample tick), an empty port probes every address in
-  the probe table (section 6.7), as one short burst of transfers in its probe slot. Two good probes in
+  the probe table (section 6.7), as one burst of transfers in its probe slot (one burst per slot,
+  every table address in it). Two good probes in
   a row admit the module (WSMP-P2), so admission takes 15–30 s, and the module joins the layout at the
   next latch (up to 60 s later). A newly plugged module is in the readings within 90 s.
 - **Unknown-device scan** (my call). The probe table alone cannot see a device at another address,
   so a port that stays absent also gets a bounded scan: once at boot, then at most once every
   15 min, in its probe slot. It addresses 0x08–0x77 except the table addresses and every address on
   the upstream bus (the mux, the battery monitor, the enclosure sensor: they answer through any
-  selected channel), a fixed list built from the board's upstream table, not learned. Each address
-  gets a zero-length write, and the whole scan is about 110 address bytes, under 15 ms at 100 kHz
-  *(estimate)*. An ACK marks the port "unknown device at 0xNN". It is never admitted (WSMP-P3).
-  Whether a zero-length write is harmless to every part we might meet is **TBD**.
+  selected channel), a fixed list built from the board's upstream table, not learned, and except
+  0x50. Each address gets a zero-length write, and the whole scan is about 110 address bytes, under
+  15 ms at 100 kHz *(estimate)*. An ACK marks the port "unknown device at 0xNN". It is never admitted
+  (WSMP-P3). Whether a zero-length write is harmless to every part we might meet is **TBD**. A port
+  whose 0x50 answers with a valid record but whose probe finds no sensor reports "record present,
+  sensor missing", with the module type the record names.
+- **No phantom modules** (PORT-15). No probe-table or scan address may answer with every channel
+  deselected. At boot, with mux mask 0x00, the station probes every probe-table address and 0x50;
+  any that answers is removed from the port probe table and the scan for that boot and reported as
+  an upstream conflict. A build-time check asserts that the upstream table and the probe table share
+  no address. Otherwise an upstream device (for example a BMP581 on the base, OQ-3) answers through
+  every selected channel, and every empty port is admitted as that module.
 - **Port faults are reported.** A faulted port, or a device the scan found at an address that is not
   in the table, shows in the `MODULES` line and later in the health report. A port fault never changes the
   descriptor set by itself (WSMP-P3).
@@ -500,16 +537,19 @@ sequenceDiagram
     participant H as Station host
     participant P as Port n (mux channel)
     participant E as ID EEPROM 0x50
-    H->>P: probe the table addresses, one per slot
+    H->>P: probe slot: one burst of every table address
     P-->>H: ACK at 0x44 and the SHT4x answers its serial read
-    H->>E: read the module record
-    alt record present and valid
-        E-->>H: magic, module type, serial, calibration revision, part number
-        H->>H: the record's type must match the probed part, else quarantine
-    else no EEPROM or no valid record (a fault on a v1 module board)
-        H->>H: type from the probe table, serial from the part or from the port, flag NO_RECORD
+    H->>E: read the module record (128 B, section 6.9)
+    alt record valid
+        E-->>H: magic, version, module type, serial, sensor bind, calibration
+        H->>H: type must match the probed part, else quarantine TYPE_CONFLICT
+        H->>H: sensor bind must match the live sensor, else SENSOR_CHANGED
+    else read error
+        H->>H: retry in the next probe slots, at most 3 tries, then NO_RECORD (READ)
+    else content fails a check
+        H->>H: NO_RECORD with its reason, serial from the sensor or the port
     end
-    H->>H: second good probe, then admission (identity, descriptors, budget)
+    H->>H: second good probe, then admission (type and serial unique, descriptors, budget)
 ```
 
 **Probe table** (the module types already in the registry, WSMP section 4.4):
@@ -517,57 +557,93 @@ sequenceDiagram
 | Address | Check | Module type |
 |---|---|---|
 | 0x44 | the SHT4x serial-number read with a good CRC (verify the command in the datasheet) | 1, air temperature and humidity |
-| 0x46 or 0x47 | BMP581 CHIP_ID = 0x50 (as `App/mod_reg.c` does today) | 2, air pressure |
-| 0x53 | LTR390 part ID (as today) | 3, UVA |
+| 0x46 or 0x47 | BMP581 CHIP_ID = 0x50 (as `App/mod_reg.c` does today). **Only if the BMP581 is a port module** (OQ-3); if it goes on the base, upstream of the mux, type 2 leaves the port probe table and the phantom rule (section 6.6) would remove it anyway | 2, air pressure |
+| 0x53 | LTR390 PART_ID register 0x06, high nibble = 0xB (part number). The low nibble is the revision and is not compared (`App/mod_reg.c` today compares the whole byte, 0xB2: change it, section 13.3; the nibble split is from memory of the datasheet, verify) | 3, UVA |
 
 **Presence** (a proposed bullet for WSMP-P1): an I2C port shows presence by a successful probe of a
 table address on its mux channel, with the part's ID check. NACK at every table address means
 absent. SDA or SCL held low on the channel is a port fault (WSMP-P3). Two table parts on one port
-are refused: one module per port.
+are refused: one module per port. A module whose type is already admitted on another port is
+refused with the port status `DUP_TYPE` (one module per type in v1, section 1); the first one stays.
 
 **Identity block**, filled by the station's driver as today, from these sources:
 
 | Field | Source |
 |---|---|
 | magic, WSMP version | the station |
-| module type, schema | the probe table gives the type; the schema is the one the WSMP registry (section 4.4) assigns to that type. A valid EEPROM record must agree on both, or the module is quarantined |
-| serial | 1. the EEPROM record. 2. Else the sensor's own serial number, if it has one (the SHT4x does; the BMP581 and LTR390: **TBD**). 3. Else `WSMP_LOCAL_SERIAL(port, type)`, as today. Sources 1 and 2 travel with the module; source 3 is bound to the port (see **Serial rules** below) |
+| module type, schema | the probe table gives the type; the schema is the one the station's registry (WSMP section 4.4) assigns to that type. The record carries the type only, never a schema: a schema is a property of the driver and registry, so a firmware schema change never invalidates fielded records. A valid record whose type differs is quarantined |
+| serial | 1. the EEPROM record (namespace 0x01). 2. Else derived from the sensor's own serial number, if it has one (namespace 0x02; the SHT4x does; the BMP581 and LTR390: **TBD**). 3. Else `WSMP_LOCAL_SERIAL(port, type)`, as today (namespace 0x00). Sources 1 and 2 travel with the module; source 3 is bound to the port (see **Serial rules** below) |
 | firmware version and build | the station's |
-| boot ID | proposed: changes at each admission of the port. A passive module has no clock of its own, so a re-plug is its "boot". This keeps WSMP-I2's intent (a counter series never spans a power loss) for any future passive module with a counter |
-| capabilities | bit 0 set if the EEPROM record carries metadata. Bit 1 clear |
+| boot ID | `(station boot epoch << 8) \| (admission count of the port, mod 256)`, u32. The admission count goes up at each admission of the port and at each Suspect → Active transition (the module may have lost power). A passive module has no clock of its own, so a re-plug is its "boot". This keeps WSMP-I2's intent (a counter series never spans a power loss) for any future passive module with a counter. The snapshot carries the low 16 bits; with 8 bits of admission count a wrap needs 256 re-plugs inside one station boot, and the epoch part changes at every station boot |
+| identity flags (register 0x000F, now reserved) | bits 0–1 serial source (0 port, 1 record, 2 sensor); bit 2 `NO_RECORD`; bit 3 `SENSOR_CHANGED`; bits 4–7 the `NO_RECORD` reason code (section 6.9); bits 8–15 0. The low byte is the descriptor set's `id_flags`, so the reason reaches the gateway. Proposed WSMP edit, section 13.1 |
+| capabilities | bit 0 set if the record is valid (it fills the metadata block: part number and calibration revisions). Bit 1 clear |
 | descriptor digest | computed, as today |
 
 **Descriptors** come from the driver and the registry, as today. They never come from the EEPROM.
 Rule 3 of WSMP (codes, not text, carry meaning) and WSMP-X3 (no text as identity) hold.
 
-**The module record** in the EEPROM (layout to be defined in a WSMP annex; my proposal):
-- a magic and a record version;
-- the module type and schema codes;
-- the serial (u64, not 0);
-- a calibration revision for each channel, and the part number and labels in the WSMP-M1 character
-  set. These map onto the metadata block (section 6.5 of WSMP).
-- a CRC-32C over the record;
-- one reserved page at the end of the part, outside the record and its CRC, for the cable test's
-  write and read-back (section 5.2). Fielded modules never write it.
+**The module record** in the EEPROM is defined in section 6.9 (Module record v1.0). The station
+parses it into a fixed structure and checks every length, code and character (WSMP-X2). The fuzz
+target `wsmp` grows to cover it. The verdicts, never treated alike:
 
-The station parses it into a fixed structure and checks every length, code and character (WSMP-X2).
-The fuzz target `wsmp` grows to cover it. Two cases, never treated alike:
-- **No usable record**: no ACK at 0x50, a blank part, a wrong magic, a bad CRC or a malformed field.
-  The module is admitted with the `NO_RECORD` flag (see **Serial rules**).
-- **A valid record that disagrees**: the CRC and every field check pass, but its module type or
-  schema differs from the probed part (the type from the probe table, the schema from the WSMP
-  registry entry for that type, section 4.4). That is an identity conflict, not a failed part: the module
-  is quarantined, not absent, until the record or the sensor is corrected.
+| Verdict | When | Result |
+|---|---|---|
+| `NO_RECORD` (READ) | no ACK at 0x50, or a transfer error, on 3 tries across probe slots. A single read error is not a verdict: it is retried | admitted with the flag; serial from source 2 or 3 |
+| `NO_RECORD` (BLANK, NO_MAGIC, VERSION, MALFORMED, CRC) | the record was read but fails a content check (section 6.9, **Checks**). A CRC failure is read once more before the verdict | admitted with the flag; serial from source 2 or 3 |
+| `TYPE_CONFLICT` quarantine | a valid record whose module type differs from the probed part | quarantined, not absent |
+| `SENSOR_CHANGED` | a valid record whose sensor bind differs from the live sensor's serial (a sensor-board swap without reprogramming) | admitted with the flag and the source-2 serial; the record's calibration is **not** applied (factory calibration, revision 0) |
+| `DUP_SERIAL` quarantine | the serial equals that of a module already admitted on this station | the later module is quarantined; the first stays |
+| `DUP_TYPE` refusal | the module type is already admitted on another port (one per type, section 1) | refused; the first stays |
+| admit | otherwise | serial from the record (source 1), record calibration applied |
+
+A quarantine for `TYPE_CONFLICT` or `DUP_SERIAL` is released only by removing the module (WSMP §7:
+Quarantined → Absent). "Operator clears it" would re-quarantine at once, so it does not apply to
+these two; the record is corrected off the station, on the programming fixture.
+
+**Re-identification** (PORT-16). A module can be swapped between two reads without one failed read,
+and an unplugged module stays Suspect for up to 3 latches, so admission alone does not see a swap:
+- On every Suspect → Active transition, and once per latch for every active I2C module, the station
+  re-reads the record's serial (8 bytes at 0x0C, about 1 ms) and, for an SHT4x, the sensor's serial
+  (command 0x89, verify).
+- An unchanged serial keeps the module; a Suspect → Active transition still gives a new boot ID (the
+  module may have lost power).
+- **A changed serial is a leave and a join**: the port goes Absent (new descriptor set at the next
+  latch), then the new module is probed and admitted as any new module, with a new boot ID.
+- A read error during re-identification counts as a failed read (Active → Suspect), not as a
+  changed serial.
 
 **Why every module board has one** (OQ-6, decided 2026-10-21): it gives each physical sensor a serial that survives a move to
-another port, and later to a v2 adapter. The gateway's planned calibration and siting archive
-(WSMP section 15) needs exactly that. Without it, a module's serial is its port, and a swap of two
-SHT45 modules is invisible.
+another port, and later to a v2 adapter, and it carries the sensor's calibration (section 1). The
+gateway's planned calibration and siting archive (WSMP section 15) needs the serial. Without it, a
+module's serial is its port, and a swap of two SHT45 modules is invisible.
+
+**The serial reaches the gateway** (B1 of the 2026-10-22 review). Today no frame carries a module
+serial: the WSMP section 11.1 descriptor-set entry is port, type, schema and channel count. Each
+module entry gains `serial` (u64) and `id_flags` (u8: the identity flags' low byte above, with the `NO_RECORD` reason), so a
+swap gives a new set and generation, which is the gateway's series boundary for WSMP-C1 and C4, and
+the archive can key calibration and siting history by serial. WSMP-E4 becomes 8 + 8 × 14 + 24 × 6 =
+264 bytes (Calculated; 320 if OQ-4 raises P8 to 12). The fragment size is not defined yet
+(WSMP-E9); at the roughly 64 bytes per fragment of the WSMP section 11.2 example, a full set takes 5
+fragments instead of 3–4. The edits are in section 13.1.
 
 **Serial rules** (they hold for v1 ports and v2 adapters alike, section 7):
 - One precedence everywhere: EEPROM record, then the sensor's own serial, then a binding-derived
   fallback. A v2 adapter uses the same order, so a module whose serial came from source 1 or 2 keeps
-  it on any v1 port and behind a v2 adapter.
+  it on any v1 port and behind a v2 adapter. The serial may change only at admission or at
+  re-identification (a leave and a join), never silently between reads.
+- **Namespaces.** The serial's top byte names its source, so the sources never collide:
+
+  | Top byte | Source | Low 56 bits |
+  |---|---|---|
+  | 0x00 | station-bound fallback, `WSMP_LOCAL_SERIAL(port, type)` (its value `0x575300000000 \| port << 8 \| type` already has a zero top byte) | unique only within one station |
+  | 0x01 | programmed record (source 1) | random, from the programming fixture's CSPRNG, never 0 and never all ones, logged in the serial ledger (section 6.9) |
+  | 0x02 | the sensor's own serial (source 2) | module type (16 bits) and the sensor's serial (SHT4x: 32 bits), zero-padded |
+  | 0x03 | v2 adapter MCU unique ID (fallback) | the low 56 bits of FNV-1a-64 over the 12 UID bytes (section 7) |
+
+- **Duplicates.** Two admitted modules with one serial on one station: the later one is quarantined
+  (`DUP_SERIAL`). One namespace-0x01 or 0x02 serial active on two stations at once is a gateway
+  alarm. Namespace-0x00 serials repeat across stations by design, so the gateway always pairs a
+  serial with its station key.
 - A fallback serial (v1: `WSMP_LOCAL_SERIAL(port, type)`; v2: from the adapter MCU's unique ID)
   names the binding, not the sensor. Moving such a module gives it a new serial, by design. Nobody
   aliases the old serial to the new one: the station and the gateway cannot tell a moved module from
@@ -578,11 +654,14 @@ SHT45 modules is invisible.
   or 2. This is why every v1 module board carries a programmed EEPROM (OQ-6).
 - **No usable record is a fault, not a normal case.** The station still admits the module
   (its readings stay useful, and one bad part never stops a sensor), takes the serial from sources 2
-  and 3, and raises a port status flag, `NO_RECORD`, that the gateway shows. There is no expected
-  record-less case: the breadboard has an EEPROM per sensor (section 4.1) and a v2 adapter takes only
-  a v1 module board (section 7). The meter ports (12, 13) are not I2C module ports and are outside
-  this rule: the SEN-15901 has no record in v1, by decision (section 1, "Meter identity"), and raises
-  no `NO_RECORD`. `NO_RECORD` always means a missing, blank, corrupt or failed EEPROM. A valid record whose type disagrees is quarantined instead (section 6.7, above).
+  and 3, applies no record calibration, and raises the flag `NO_RECORD` with its reason in the
+  identity flags, which reach the gateway in the descriptor set. There is no expected record-less
+  case: the breadboard has an EEPROM per sensor (section 4.1) and an I2C sensor's v2 adapter takes
+  only a v1 module board (section 7). The meter ports (12, 13) are not I2C module ports and are
+  outside this rule: the SEN-15901 has no record in v1, by decision (section 1, "Meter identity"),
+  and raises no `NO_RECORD`.
+- **On an I2C module port, `NO_RECORD` always means a missing, blank, corrupt or unreadable
+  EEPROM.** A valid record whose type disagrees is quarantined instead (the verdict table above).
 
 **Port numbers.** Today a port number is a module type (1 = outside air … 7 = rain). In v1 a port
 number is a place. Proposal (my call; it only has to be stable):
@@ -595,6 +674,11 @@ number is a place. Proposal (my call; it only has to be stable):
 | 11 | air pressure, BMP581, if it goes on the base (OQ-3) |
 | 12, 13 | meter ports: wind, rain |
 | 14 and up | reserved for v2 remote ports |
+
+**One-time serial change at the renumbering.** The base modules move (enclosure 4 → 10, battery
+5 → 9, wind 6 → 12, rain 7 → 13), so their namespace-0x00 serials change at the firmware upgrade
+that brings in these numbers. Each starts a new counter series once (WSMP-C3); the entity IDs have
+no port or serial, so Home Assistant history continues. Note it in that release's notes.
 
 The station's limit stays 8 modules and 24 channels (WSMP-P8). With four base modules (battery,
 enclosure, wind, rain), four sensor ports reach it exactly. With the BMP581 on the base (OQ-3), there
@@ -614,6 +698,105 @@ PG-9 gland ([`docs/poc-shopping-list.md`](../../poc-shopping-list.md), caveats).
 
 Recommendation (OQ-7): option A, with a round jacketed 6-conductor cable if one passes the cable
 test, because round cable seals in standard glands. Re-run the cable test on that cable.
+
+### 6.9 Module record v1.0 (proposed as WSMP section 10.1)
+
+The record in every v1 module board's 24LC32A (section 1). Section 13.1 proposes it as WSMP section
+10.1's record. **All integers are big-endian** (as WSMP section 6). The record is L bytes at word
+address 0x000, page-aligned; L = 128 in v1.0 (pages 0–3).
+
+| Offset | Size | Field | Rule |
+|---|---|---|---|
+| 0x00 | 4 | magic | `57 53 4D 52` ("WSMR") |
+| 0x04 | 1 | format major | 1. A station accepts only its own major |
+| 0x05 | 1 | format minor | 0. A higher minor is accepted: it may only add fields in bytes that are reserved here, covered by the CRC; this station ignores them |
+| 0x06 | 2 | L, record length | a multiple of 32, 128 to 1024 |
+| 0x08 | 2 | module type | registry code (WSMP section 4.4). **No schema** (section 6.7) |
+| 0x0A | 1 | module-board hardware revision | informational |
+| 0x0B | 1 | flags | 0 in 1.0 |
+| 0x0C | 8 | serial | top byte 0x01; low 56 bits random, not 0, not all ones (section 6.7, **Namespaces**) |
+| 0x14 | 1 | sensor-bind kind | 0 none; 1 SHT4x serial (command 0x89) |
+| 0x15 | 3 | reserved | 0 |
+| 0x18 | 4 | sensor-bind value | the bound sensor's serial; 0 when the kind is 0 |
+| 0x1C | 4 | programming time | UTC seconds; informational, never identity |
+| 0x20 | 16 | part number | WSMP-M1 characters, padded with 0 |
+| 0x30 | 16 | reserved | 0 |
+| 0x40 | 48 | calibration, 3 entries of 16 B | see below |
+| 0x70 | 12 | reserved | 0 |
+| 0x7C | 4 | CRC-32C | over bytes 0x00 to L − 5, stored at L − 4 |
+
+**Calibration entry** (16 B; decided 2026-10-22, section 1). Keyed by (quantity, kind), never by
+channel number, so a later schema that adds or reorders channels does not move a coefficient.
+
+| Offset | Size | Field |
+|---|---|---|
+| +0 | 2 | quantity (registry code) |
+| +2 | 1 | kind (registry code); 0 means every kind of that quantity |
+| +3 | 1 | reserved, 0 |
+| +4 | 2 | calibration revision (u16; it fills the metadata block's per-channel calibration revision, WSMP section 6.5) |
+| +6 | 1 | offset scale, s8: the power of ten of the offset, in the quantity's canonical unit |
+| +7 | 1 | reserved, 0 |
+| +8 | 4 | offset, s32 |
+| +12 | 4 | gain, u32, in ppm (1,000,000 = unity) |
+
+An unused entry is all zero (WSMP-G2). The station applies `value × gain / 10⁶ + offset × 10^scale`
+to every sample of a matching channel before it reports it (WSMP-G6), with the module type's own
+sample arithmetic. A channel with no matching entry is reported uncorrected, revision 0. With
+`SENSOR_CHANGED` or `NO_RECORD`, no entry is applied.
+
+**CRC.** `wsmp_crc32c` (`firmware/common/wsmp.c`): CRC-32C (Castagnoli), reflected polynomial
+0x82F63B78, initial value and final XOR 0xFFFFFFFF. Check value: CRC-32C of the ASCII string
+`123456789` = 0xE3069283 (computed with `wsmp_crc32c`, 2026-10-22). An all-zero or all-0xFF record
+cannot pass it.
+
+**Read.** One transfer: write the word address 0x0000 (2 bytes), repeated start, read L bytes.
+128 B is about 12 ms at 100 kHz *(estimate)*, inside the 30 ms bus guard. Re-identification
+(section 6.7) reads only the serial: word address 0x000C, 8 bytes.
+
+**Checks, in order** (the first failure decides; the reason code goes in identity-flag bits 4–7: 1 READ, 2 BLANK, 3 NO_MAGIC, 4 VERSION, 5 MALFORMED, 6 CRC; 0 means no `NO_RECORD`):
+1. No ACK at 0x50, or a transfer error → retry in the next probe slots; after 3 tries `NO_RECORD`
+   (READ).
+2. Every byte 0xFF → BLANK. Magic wrong → NO_MAGIC.
+3. Major not 1 → VERSION.
+4. L not a multiple of 32, or outside 128–1024 → MALFORMED.
+5. CRC fails → read once more; still failing → CRC.
+6. A field check fails → MALFORMED: serial top byte not 0x01, or its low 56 bits 0 or all ones;
+   module type not in the station's registry; sensor-bind kind unknown, or value nonzero with kind 0;
+   part number outside WSMP-M1 or not 0-padded; a reserved byte nonzero when the minor is 0; a
+   calibration entry with an unknown quantity or kind, a gain outside 900,000–1,100,000 ppm, an
+   offset scale outside −6 to 0, or an offset larger than 10 % of the quantity's registry range (my
+   call), or two entries with the same (quantity, kind).
+7. Type differs from the probed part → quarantine `TYPE_CONFLICT`.
+8. Sensor bind set and different from the live sensor → admit, `SENSOR_CHANGED`, source-2 serial.
+9. Serial already admitted on this station → quarantine `DUP_SERIAL`.
+10. Otherwise admit with the record's serial and calibration.
+
+A record can at worst flag `NO_RECORD` or quarantine a port. Parsing happens only at admission and
+re-identification, and never resets the station.
+
+**The station never writes 0x50.** `i2c_bus` has no write path to that address on a port channel;
+WP holds the array in any case.
+
+**Test page.** Page 127 (word addresses 0xFE0–0xFFF), outside the record and its CRC, is the cable
+test's write-and-read-back page (section 5.2). It is written only on the cable-test fixture with WP
+opened. On a fielded, write-protected module it is never written; H04a counts CRC-checked record
+reads there instead.
+
+**Programming fixture** (a host tool, section 13.3):
+1. WP pad pulled low. Write the record page by page (32-byte pages, 5 ms write cycle per page;
+   24LC32A datasheet, verify).
+2. Read back the whole record and the CRC; byte-compare with what was written. Any difference: the
+   board is rejected and the serial is not used.
+3. Append the serial, module type, sensor-bind value, board revision, date and fixture operator to
+   the serial ledger (a CSV in the repository, path chosen at implementation). A serial is never
+   reused, even for a rejected board.
+4. Release WP. Read the record once more through a station-style parse (section 6.9, **Checks**):
+   it must admit.
+
+**Copying a record** (breadboard breakout to module board, section 4.1): write the record to the
+new EEPROM, verify it as above, then **invalidate the source** by overwriting its magic with
+`00 00 00 00` and reading that back. Two live EEPROMs never carry one serial. If the source cannot
+be invalidated, the copy gets a new serial instead.
 
 ## 7. v2: RS-485 over RJ45, and I2C sensors behind an adapter
 
@@ -643,17 +826,22 @@ flowchart LR
   (`mod_th.c`, `mod_reg.c`), on its own `i2c_bus` implementation. It serves the WSMP blocks as Modbus
   registers (WSMP section 6). The WSMP core `firmware/common/wsmp.c` is already portable for this
   (its header says so).
-- **Calibration moves into the module.** WSMP-G6 ("a module applies its own calibration") is met
-  natively, with coefficients in the adapter's flash.
+- **Calibration travels with the board.** The adapter reads the coefficients from the v1 board's
+  record (section 6.9) and applies them (WSMP-G6). Its flash holds no per-sensor data, so a board
+  swapped behind an adapter never inherits the previous sensor's coefficients.
 - **Identity.** Serial: the precedence of section 6.7 (**Serial rules**). An I2C sensor's adapter takes
   only a v1 module board, so the serial normally comes from that board's EEPROM record. The sensor's own serial,
-  then one derived from the MCU's unique device ID (check that the STM32C011 has one), are only the
+  then one derived from the MCU's unique device ID (namespace 0x03: the low 56 bits of FNV-1a-64 over
+  the 12 bytes of the STM32C0's 96-bit UID; the UID is from memory of RM0490, verify), are only the
   `NO_RECORD` fault fallbacks; the last is bound to the adapter. Boot ID: the adapter's own, kept
-  in its flash (WSMP-I2).
+  in its flash (WSMP-I2). **A board change behind a powered adapter is a reboot**: the adapter
+  re-reads the record serial once per latch, and on a change it takes a new boot ID and new
+  identity, so descriptors never change under a running module (WSMP-D6).
 - **Meter adapters (v2 only).** The one adapter without an RJ11 port: it is wired permanently to
   one SEN-15901 meter's cable at the mast, counts the reed pulses (wind, rain) or reads the vane's
   resistor network, and carries its own programmed EEPROM, so its serial comes from source 1 like a
-  module board's. Adapter and meter are one unit; a replaced meter gets a new adapter record. Moving
+  module board's, and its calibration (zero in practice: the SEN-15901 factors are fixed) is in that
+  record. Adapter and meter are one unit; a replaced meter gets a new adapter record. Moving
   a meter from v1 to v2 changes its serial (binding fallback to EEPROM); the entity ID has none, so
   history continues.
 - **Same module type codes.** A v2 SHT45 module reports type 1, schema 1, the same channels and
@@ -717,7 +905,10 @@ flowchart TD
 | PORT-10 | The cable length is at most the qualified length from the cable test |
 | PORT-11 | Sensor cables are straight through and tested (or the pinout is reversal-safe, OQ-1) |
 | PORT-12 | Sensor and meter ports are labelled, and sensor cables are coloured differently |
-| PORT-13 | A passive module's identity on an I2C sensor port (1–8) follows section 6.7. Every v1 module board carries a programmed, checked EEPROM record; a module without a valid one is admitted with the `NO_RECORD` flag. The meter ports (12, 13) have no record in v1 and raise no `NO_RECORD` (section 1, "Meter identity") |
+| PORT-13 | A passive module's identity on an I2C sensor port (1–8) follows section 6.7, and its record section 6.9. Every v1 module board carries a record written and read-back-verified on the programming fixture, with its serial in the serial ledger; a module without a valid one is admitted with the `NO_RECORD` flag and its reason. The serial and identity flags reach the gateway in the descriptor set. The meter ports (12, 13) have no record in v1 and raise no `NO_RECORD` (section 1, "Meter identity") |
+| PORT-14 | At most one module of each module type per station (v1). A second one is refused with `DUP_TYPE`; a second module with an admitted serial is quarantined with `DUP_SERIAL` |
+| PORT-15 | Upstream parts are served only with every channel deselected; every channel burst ends with a deselect. No probe-table or scan address answers with every channel deselected (checked at boot and at build time). A channel with its port power off is never selected |
+| PORT-16 | An active I2C module is re-identified at every Suspect → Active transition and once per latch. A changed serial is a leave and a join |
 
 ## 10. Tests: what replaces or splits H04
 
@@ -727,8 +918,8 @@ The PRD's H04 is one test of one RJ45 RS-485 port. This spec proposes to split i
 |---|---|---|
 | "10 m chosen cable" | the qualified length from the cable test, on the final cable type | 10 m Cat6, as the PRD |
 | "full operating span and temperature range" | 3.3 V supply span (**TBD**), and the PRD's temperature range with the final cable | 10–18 V, PRD range |
-| "≥ 10⁶ error-checked transactions, no undetected corruption" | 10⁶ CRC-checked or read-back-checked I2C transactions. 0 undetected corruption, 0 detected errors | as the PRD, on Modbus |
-| "shorted/wet pairs and open presence loop cannot reset core" | each conductor shorted to GND and to 3.3 V, a wet jack, SDA or SCL held low. No reset; the other ports and the upstream parts keep reading | as the PRD |
+| "≥ 10⁶ error-checked transactions, no undetected corruption" | 10⁶ CRC-checked or read-back-checked I2C transactions (on a fielded, write-protected module: CRC-checked record reads, not the test page). 0 undetected corruption, 0 detected errors | as the PRD, on Modbus |
+| "shorted/wet pairs and open presence loop cannot reset core" | each conductor shorted to GND and to 3.3 V, a wet jack, SDA or SCL held low. **GND mating last** (section 6.4): a switch in the GND conductor, the cable plugged with it open, then closed. No reset; no damage; the other ports and the upstream parts keep reading | as the PRD |
 | "24/48 V injector and network-fixture misuse" | cross-mating (section 6.3): meter cables in sensor ports, modules in meter ports, a reversed cable. A current-limited 48 V source on pins 3–4 if OQ-12 says yes | as the PRD, plus an RJ11 v1 cable in the RJ45 port (section 8) |
 | "freeze pinout/cable/termination" | freeze pinout, pull-up value, series resistor, TVS, cable type and length | as the PRD |
 
@@ -739,7 +930,10 @@ The PRD's H04 is one test of one RJ45 RS-485 port. This spec proposes to split i
 | PORT-3, 4, 10 | the phase 2 cable test (section 5); H04a at temperature |
 | PORT-5 | H04a: a shorted port supply trips the limit, the station stays up; reversed-cable case |
 | PORT-7 | host test: plug at a random time, in the layout within 90 s; bench: 20 plugs |
-| PORT-13 | host tests: probe table, EEPROM record parsing, a valid record with a mismatching type or schema quarantines, a missing, blank or corrupt record admits with `NO_RECORD`; the meter ports raise no `NO_RECORD`; fuzzing of the record parser (WSMP-X2) |
+| PORT-13 | host tests: probe table; record parsing of every check of section 6.9 in order, each `NO_RECORD` reason (READ only after 3 tries, CRC only after a re-read); a higher minor is accepted and another major gives VERSION; a valid record with a different type quarantines `TYPE_CONFLICT`; a sensor-bind mismatch gives `SENSOR_CHANGED` with no calibration applied; calibration applied by (quantity, kind) and kind 0 for every kind; a module moved from port 1 to port 3 keeps its serial; the serial precedence and namespaces; the serial and flags in the descriptor set; quarantine released only by removal; the meter ports raise no `NO_RECORD`; fuzzing of the record parser against an independent copy of the layout (WSMP-X2). Fixture: write, read-back compare, ledger entry, station-style parse |
+| PORT-14 | host tests: two SHT45 modules on two ports, the second refused `DUP_TYPE`; two modules with one record serial, the second quarantined `DUP_SERIAL`. Gateway simulator: one serial on two stations raises the alarm |
+| PORT-15 | host tests with the mux model: every burst ends with mask 0x00; upstream transfers never see a channel selected; an upstream device at a probe address is removed from the table at boot and reported; a port with power off is never selected. Build-time assertion on the address tables |
+| PORT-16 | host tests: replug of the same module within 3 latches gives a new boot ID and no set change; a swap within one read gives a leave and a join; a read error during re-identification is a failed read. Bench: the swap trials of section 5.2 step 5 |
 | WSMP conformance | a new row in WSMP section 14 for the I2C port binding |
 
 ## 11. Open questions for Clint
@@ -750,13 +944,13 @@ Most important first. Each has my recommendation.
 |---|---|---|
 | OQ-1 | **Reversed cables.** With the proposed pinout, a reversed 6P6C cord (pin 1 to pin 6, the usual telephone-cord wiring) powers the sensor backwards (section 6.3). Keep the pinout and guard against it, or change it? | Change to a reversal-safe pinout: **1 = 3.3 V, 2 = SDA, 3 = GND, 4 = GND, 5 = SCL, 6 = 3.3 V**. A reversed cable then maps 3.3 V to 3.3 V, GND to GND, and only swaps SDA and SCL (harmless: nothing answers). A 4-conductor plug still never meets 3.3 V, and SDA and SCL are now two grounds apart. The cost is the INT/spare pin, which no v1 driver uses. **One cross-mate case gets worse:** a sensor module in the wind port puts its GND on the cups net (no pulses, speed 0) and its unpowered SCL clamp on the vane net, which can pull the vane voltage into a valid window. The wind module then looks present, with speed 0 and a false direction. The interim catalog map reports CALM below 0.5 m/s, so the direction is not published, but the vector sums are wrong. Firmware can flag "vane steady and no pulses for a long time" as suspect. Redo the section 6.3 table for whichever pinout is chosen. If INT must stay: keep the pinout, add reverse-polarity protection on every module board (part **TBD**), set the port current limit low enough to survive the reversed case, and allow only tested straight cables |
 | OQ-2 | **H04 split.** Split H04 into H04a (v1 I2C port, the Stage 2 gate) and H04b (v2 RS-485 port, unchanged)? Zero detected errors in 10⁶ transactions for H04a? | Yes to both. Zero is the strict reading of "never loosen a test criterion" and is cheap to run |
-| OQ-3 | **Where does the BMP581 go?** The registry gives pressure the role "enclosure", but the decision list puts only INA228, MAX17048 and SHTC3 on the base | On the base, upstream of the mux, like the SHTC3. Pressure is measured fine in a vented box, it saves a port and a cable, and it needs no change to the registry role. If it must be modular, put it on a short port inside the box |
+| OQ-3 | **Where does the BMP581 go?** The registry gives pressure the role "enclosure", but the decision list puts only INA228, MAX17048 and SHTC3 on the base | On the base, upstream of the mux, like the SHTC3. Pressure is measured fine in a vented box, it saves a port and a cable, and it needs no change to the registry role. If it must be modular, put it on a short port inside the box. **Either way it is never both:** on the base, type 2 leaves the port probe table (section 6.7), or every empty port would see it (the phantom rule, section 6.6) |
 | OQ-4 | **How many sensor ports on the v1 base?** | Four RJ11 sensor ports on channels 0–3 (the PRD's "four positions"); channels 4–7 not fitted. With four base modules this reaches the WSMP limit of 8 modules. If the BMP581 goes on the base (OQ-3), either use only three ports or raise WSMP-P8 to 9 modules (the 24-channel and radio-budget limits still hold: 18 channels today). I recommend raising P8 to 12 modules, since the channel and byte budgets are the real limits |
 | OQ-5 | **Port power policy.** The PRD says ports are off by default, enabled only for a commissioned module type, and never live-mated. Apply that to 3.3 V I2C ports? | No for v1: ports on by default, live mating tolerated, automatic discovery. Commissioning stays optional: a configured expected type raises an alarm on a mismatch. Keep the PRD rule for v2 10–18 V ports |
-| OQ-6 | **ID EEPROM on v1 module boards?** | **Decided (Clint, 2026-10-21): fitted and programmed on every module board.** A single-address, 2-byte-addressed part. A missing or invalid record is admitted with the `NO_RECORD` flag (section 6.7). It gives each sensor a serial that survives port moves and the move to v2 |
+| OQ-6 | **ID EEPROM on v1 module boards?** | **Decided (Clint, 2026-10-21): fitted and programmed on every module board.** The part is the 24LC32A (decided 2026-10-22). A missing or invalid record is admitted with the `NO_RECORD` flag (section 6.7). It gives each sensor a serial that survives port moves and the move to v2, and carries its calibration (section 6.9) |
 | OQ-7 | **Sealing RJ11 on the IP66 box** | Option A of section 6.8: jacks inside, split-insert glands or a cable-entry frame. Prefer a round jacketed cable if it passes the cable test, and re-run the test on it |
 | OQ-8 | **Is v2 scheduled?** | No. v1 replaces the PRD's Stage 2 RJ45 port. v2 is built only when a needed run exceeds the v1 limit, or an instrument needs an adapter (pulse, analog, or a remote head). The long-lead v2 parts are not ordered for v1 |
-| OQ-9 | **What does a v2 adapter accept?** | **Decided (Clint, 2026-10-21): only a whole v1 module board**, on a v1-compatible RJ11 port, keeping its EEPROM serial. No bare STEMMA QT socket, so every v2 sensor has an EEPROM record too |
+| OQ-9 | **What does a v2 adapter accept?** | **Decided (Clint, 2026-10-21): only a whole v1 module board**, on a v1-compatible RJ11 port, keeping its EEPROM serial. No bare STEMMA QT socket, so every v2 I2C sensor has an EEPROM record too. The one exception is the SEN-15901 meter adapter (section 1, "Meter identity"; section 7), which carries its own record |
 | OQ-10 | **v1 and v2 ports on one base?** | Allowed, with distinct connectors and separate port-number ranges. No dual-use jack. v1 adds no v2 hardware beyond keeping USART1 free |
 | OQ-11 | **Identical jacks with different pinouts.** PRD §6 and Appendix A forbid "a different pinout on an identical external jack". v1 sensor ports and meter ports share the 6-position RJ11 jack | Amend the PRD: allowed when the cross-mate analysis shows no power reaches the wrong device and H04a's cross-mate tests pass, with labels and coloured cables |
 | OQ-12 | **Telephone-line misuse.** Does H04a test 48 V on the centre pair (an RJ11 port plugged into a phone line)? | Yes, once, with a current-limited bench supply, as H04 does with its 24/48 V injector. Declare it outside the operating contract |
@@ -774,9 +968,13 @@ Most important first. Each has my recommendation.
   informational run.
 - The recovery back-off times (1 s off; 1 min doubling to 15 min).
 - The rescan period of 15 s.
-- The proposed boot-ID rule for passive modules (changes at each admission).
-- The module record's content in the EEPROM.
-- Left to the builder: the exact parts (mux board, load switch, TVS, EEPROM, jacks, cable), the GPIO
+- The boot-ID formula for passive modules (section 6.7).
+- The module record layout (section 6.9, from the 2026-10-22 review's proposal), its calibration
+  bounds (gain 0.9–1.1, offset within 10 % of the range), the serial namespaces and the FNV-1a fold
+  for the v2 adapter UID.
+- Re-identification once per latch (section 6.7), and the swap trials of section 5.2 step 5.
+- Left to the builder: the exact parts (mux board, load switch, TVS, jacks, cable; the EEPROM is
+  the 24LC32A), the GPIO
   for mux RESET and the port enables (after the UM2592 check), the module board layout, the firmware
   structure of discovery within the Power of Ten rules (a switch on the module type, no function
   pointers), and the host test design.
@@ -797,18 +995,26 @@ gives the proposed wording.
 | `docs/module-protocol.md` §1, "Local module" | "A module that runs as a driver on the station's microcontroller. The bench station uses local modules." | "A module whose driver runs on the station's microcontroller: an on-board part, or a passive module on an I2C port. The bench station uses local modules." |
 | `docs/module-protocol.md` §1, "Remote module" | "… behind an RJ45 port, reached by Modbus." | "… behind an RJ45 port, reached by Modbus (v2)." |
 | `docs/module-protocol.md` §2, diagram | local module and remote module only | add a node "passive I2C module (RJ11 port, mux channel)" with the edge "same contract, local driver" to the host |
-| `docs/module-protocol.md` §6.1, WSMP-I2 | "A local module uses the station's own boot epoch." | add: "A passive module on an I2C port gets a new boot ID at each admission of its port." |
+| `docs/module-protocol.md` §6.1, identity table, register 0x000F | "reserved \| 0" | "identity flags \| bits 0–1 serial source (0 port, 1 record, 2 sensor), bit 2 NO_RECORD, bit 3 SENSOR_CHANGED, bits 4–7 the NO_RECORD reason code (1 READ, 2 BLANK, 3 NO_MAGIC, 4 VERSION, 5 MALFORMED, 6 CRC), bits 8–15 0; 0 for a module that is not on an I2C port" |
+| `docs/module-protocol.md` §6.1, serial row | "u64, unique for the module, never 0" | add: "The top byte names the source: 0x00 station-bound (unique within one station), 0x01 programmed record, 0x02 derived from the sensor, 0x03 derived from an adapter's unique ID (spec 2026-10-21 §6.7)." |
+| `docs/module-protocol.md` §6.1, WSMP-I2 | "A local module uses the station's own boot epoch." | add: "A passive module on an I2C port has boot ID `(station boot epoch << 8) \| (admission count of the port mod 256)`; the count goes up at each admission and at each Suspect → Active transition of the port." |
+| `docs/module-protocol.md` §4, WSMP-G6 | "The gateway keeps the coefficients in its calibration archive." | add: "A passive module's coefficients are in its module record (section 10.1); the station applies them. The gateway archives them by serial." |
+| `docs/module-protocol.md` §7, state diagram and Identifying | no record checks; "Quarantined --> Absent: module removed, operator clears it, or a flap quarantine ends" | add the verdicts of spec §6.7 (TYPE_CONFLICT and DUP_SERIAL quarantine, DUP_TYPE refusal, NO_RECORD and SENSOR_CHANGED admission); add "Active --> Absent: re-identification sees a different serial (a leave and a join)"; for TYPE_CONFLICT and DUP_SERIAL, release only by removal |
+| `docs/module-protocol.md` §7, new WSMP-P10 | — | "**WSMP-P10. Re-identification.** The station re-reads an I2C module's serial at every Suspect → Active transition and once per latch. A changed serial is a leave and a join. At most one module of each type is admitted (v1)." |
+| `docs/module-protocol.md` §11.1, module entry and WSMP-E4 | entry: port, module type, schema, channel count; "8 + 8 × 5 + 24 × 6 = 192 bytes" | entry adds `serial` (u64) and `id_flags` (u8, the identity flags' low byte); "8 + 8 × 14 + 24 × 6 = 264 bytes" (320 if P8 becomes 12). A changed serial gives a new set and generation (WSMP-C1 boundary). The radio protocol's fragment count for a full set grows with it (WSMP-E9) |
 | `docs/module-protocol.md` §7, WSMP-P1 | four bullets (remote, local I2C, wind, rain) | add: "A module on an I2C port shows presence by a successful probe of an address in the probe table (section 10.1) on its multiplexer channel, with the part's ID check. NACK at every table address means absent. SDA or SCL held low on the channel is a port fault (WSMP-P3)." |
 | `docs/module-protocol.md` §7, WSMP-P3 | "… MUST NOT change the descriptor set by itself." | add: "On an I2C port, a fault of one channel MUST NOT stop the other channels or the upstream bus." |
 | `docs/module-protocol.md` §7, WSMP-P8 | "A station has at most 8 modules and 24 channels." | only if OQ-4 raises it: "… at most 12 modules and 24 channels." (`wsmp_host` and the descriptor-set size of WSMP-E4 change with it) |
 | `docs/module-protocol.md` §7, new WSMP-P9 | — | "**WSMP-P9. I2C port power.** An I2C port gets 3.3 V through a current limit that the station switches. The station switches it off and on to recover a stuck channel. Live mating is tolerated. (WSMP-P7 stays the rule for remote ports.)" |
 | `docs/module-protocol.md` §10, WSMP-B3 | "… at most nine times, and then sends a stop condition. A clean NACK gets no recovery." | add: "On an I2C port the station runs this with the failing channel selected. If SDA stays low, it resets the multiplexer, then switches the port's power off and on, then backs off (spec 2026-10-21 §6.6)." |
-| `docs/module-protocol.md`, new §10.1 | — | "**10.1 Passive modules on I2C ports (the RJ11 binding).**" The probe table, the identity sources, the module record at 0x50 (on every v1 module board), the multiplexer rules and the port numbers, from section 6.7 of this spec |
+| `docs/module-protocol.md`, new §10.1 | — | "**10.1 Passive modules on I2C ports (the RJ11 binding).**" The probe table, the identity sources and verdicts, re-identification, the module record v1.0 at 0x50 on every v1 module board (layout, checks, CRC, programming and copying: spec §6.9), the multiplexer rules (deselect after every burst, upstream only with no channel selected, no phantom addresses) and the port numbers, from sections 6.5–6.9 of this spec |
 | `docs/module-protocol.md` §12, WSMP-X2 | "A fuzz test MUST cover the station's parser of every block." | "… of every block and of the passive module record." |
+| `docs/module-protocol.md` §12, WSMP-X3 | "Nothing that a module supplies becomes a file name, a database key, an MQTT topic or a template. Identifiers use only station, role, quantity and kind codes." | add: "A module serial (a u64 number, never text) MAY be a database key of the gateway's archive, as a bound parameter, never in a name, topic or template." |
 | `docs/module-protocol.md` §12, WSMP-X4 | "Before a remote port is used outdoors …" | "Before any external port (I2C or remote) is used outdoors …" |
 | `docs/module-protocol.md` §13, title and first line | "## 13. Remote modules (the RJ45 binding)" | "## 13. Remote modules (the RJ45 binding, v2)", and first line: "v1 has no remote ports. v1 external modules use the I2C port binding (section 10.1)." |
-| `docs/module-protocol.md` §14, conformance table | no I2C port row | add: "I2C port binding \| P1, P3, P9, B3, X2 \| plug at random times, hold SDA and SCL low on one channel, check the other channels; a valid module record whose type or schema disagrees quarantines; a missing or corrupt record admits with NO_RECORD" |
+| `docs/module-protocol.md` §14, conformance table | no I2C port row | add: "I2C port binding \| P1, P3, P9, P10, B3, X2 \| plug at random times, hold SDA and SCL low on one channel, check the other channels; swap two modules between reads; every record verdict of spec §6.7; serial and flags in the descriptor set" |
 | `docs/module-protocol.md` §15, open items | "Remote ports beyond one \| Needs a UART multiplexer or a different station microcontroller." | "Remote ports beyond one (v2) \| …". Add: "I2C port cable limit \| set by the cable test (spec 2026-10-21 §5)." |
+| `docs/module-protocol.md` §15, "Siting and calibration archive" | "a dated record of each module's installation" | add: "An installation record is keyed by (station, role); calibration history by serial. A migration that changes a module's port or serial adds a dated installation entry and carries the siting values over." |
 | `docs/next-stages-plan.md` §1, diagram | `S2 -- "H04 passes" --> S3` | `S2 -- "H04a passes" --> S3` |
 | `docs/next-stages-plan.md` §1, Stage 2 row | "One wired sensor module on a sealed RJ45 port \| H04, the port test: power, faults, 10 m cable, 10⁶ transactions" | "One wired sensor module on an RJ11 I2C port (v1) \| H04a, the I2C port test: the qualified cable length, faults, cross-mating, 10⁶ transactions. (H04b, the RS-485 port test, moves to v2.)" |
 | `docs/next-stages-plan.md` §2, STM32C0116-DK and RJF544 rows | Stage "2" | Stage "v2 (not scheduled)". Add under the table: "v1 needs neither." |
@@ -854,14 +1060,27 @@ gives the proposed wording.
 
 Not documentation contradictions, but the work this design implies. Each literate file changes in its
 `.lit.md`, never in the generated `.c`.
-- `firmware/stage0-node/App/i2c_bus.lit.md`: a channel for each client, the mux write and read-back,
-  recovery per channel, mux RESET, port power cycling.
+- `firmware/stage0-node/App/i2c_bus.lit.md`: a channel for each port client, the mux write and
+  read-back, a deselect after every burst, upstream transfers only with mask 0x00, recovery per
+  channel, mux RESET, port power cycling. Interface limits to lift: `HAL_I2C_Mem_Read_IT` with
+  `I2C_MEMADD_SIZE_8BIT` takes a 1-byte register address and the 24LC32A needs 2; `txlen == 0 &&
+  rxlen == 0` is reserved for recovery, so the scan's zero-length write needs its own request kind;
+  `rxlen` is a `uint8_t` (128 B fits; a record of L > 255 would not) and the 30 ms guard covers a
+  128 B read (about 12 ms) but not 255 B at 100 kHz with margin.
 - `firmware/stage0-node/App/wsmp_local.h` and `wsmp_local.c`: ports as places (section 6.7), the probe
-  table, a driver bound to a port at admission.
+  table, the boot-time phantom check, a driver bound to a port at admission, the record parser and
+  verdicts (section 6.9), re-identification, calibration applied by (quantity, kind), one module per
+  type. v1 keeps one driver instance per part (`enum i2c_client`, `mod_th`'s TH_AIR and TH_ENCL);
+  per-port instances are a v2 item.
+- `firmware/stage0-node/App/mod_reg.c`: compare the LTR390 PART_ID's high nibble only.
 - `firmware/stage0-node/App/wsmp_host.lit.md`: the port table for the new port numbers; port faults
-  in the `MODULES` line.
-- `firmware/fuzz/fuzz_wsmp.c`: the module record parser.
-- `tests/`: a mux model in the TX harness; isolation, recovery and discovery tests.
+  and identity flags in the `MODULES` line; serial and `id_flags` in each descriptor-set entry.
+- The gateway (`ws0`): decode the larger descriptor-set entry; show `NO_RECORD`, `SENSOR_CHANGED`,
+  `DUP_SERIAL`, `DUP_TYPE` and `TYPE_CONFLICT`; alarm on one serial active on two stations.
+- A programming-fixture tool and the serial ledger (section 6.9).
+- `firmware/fuzz/fuzz_wsmp.c`: the module record parser, against an independent copy of the layout.
+- `tests/`: a mux model in the TX harness; isolation, recovery, discovery, re-identification and
+  record tests (section 10).
 
 ## 14. What I could not verify
 
@@ -877,3 +1096,8 @@ Not documentation contradictions, but the work this design implies. Each literat
   exact H04 and §6 wording should be checked against Clint's current copy before the edits of
   section 13.1 are made.
 - Whether a Davis 6410 needs a supply conductor on its cable (OQ-13).
+- The 24LC32A details used in section 6.9 (32-byte page, 5 ms write cycle, WP protecting the whole
+  array, 2-byte word address), the Adafruit 24LC32 breakout's default WP state, the LTR390 PART_ID
+  nibble split, the SHT4x serial command 0x89 and the STM32C0's 96-bit UID: from memory or the
+  review, not checked against the datasheets here.
+- The currents when GND mates last (section 6.4): not analysed; H04a tests it.
