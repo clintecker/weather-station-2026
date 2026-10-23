@@ -152,7 +152,7 @@ static uint16_t raw_for(int want, int is_rh)
   for (uint32_t raw = 0; raw <= UINT16_MAX; raw++)
   {
     uint8_t b[WS_SHT45_REPLY_LEN] = { (uint8_t)(raw >> 8), (uint8_t)raw, 0, (uint8_t)(raw >> 8), (uint8_t)raw, 0 };
-    int16_t t; uint16_t h;
+    int32_t t, h;
     b[2] = ws_crc8(b, 2); b[5] = ws_crc8(b + 3, 2);
     if (ws_sht45_parse(b, &t, &h) == 0 && (is_rh ? (int)h : (int)t) == want) return (uint16_t)raw;
   }
@@ -203,6 +203,7 @@ uint32_t h_flash_ops_during_radio(void) { return flash_ops_during_radio; }
 uint32_t h_flash_erases(void) { return flash_erases; }
 int h_sht45_writes(void) { return (int)i2c_sim_writes(sht45); }   /* SHT45 commands attempted */
 /* rc -2: the SHT45 does not answer its address; hang 1: every transfer hangs until the bus guard. */
+void h_sht45_rh_raw(int raw) { model_sht45_set(sht45, raw_for(2150, 0), (uint16_t)raw, 0); }   /* the temperature stays 21.50 C */
 void h_sensor(int rc, int hang) { i2c_sim_mode(sht45, hang ? DM_HANG : rc ? DM_NACK_ADDR : DM_OK, 0, 1); }
 void h_radio_send_fails(int n) { radio_send_fails = n; }
 void h_flash_prog_fails(int on) { prog_fails = on; }

@@ -18,22 +18,35 @@ int mean_due(uint32_t *next_ms, uint32_t now_ms, uint32_t period_ms)
   return 1;
 }
 
+void mean_add_q(mean_win *w, const int32_t v[MEAN_CHANNELS], const uint8_t q[MEAN_CHANNELS])
+{
+  for (unsigned i = 0; i < MEAN_CHANNELS; i++)
+  {
+    if (q[i] != WSMP_QUAL_GOOD) { w->suspect[i] = 1; continue; }
+    if (w->n[i] == UINT8_MAX) continue;   /* 255 samples is far above a window's 4 (or 60 for the vane) */
+    w->sum[i] += v[i];
+    w->n[i]++;
+  }
+}
+
 void mean_add(mean_win *w, const int32_t v[MEAN_CHANNELS])
 {
-  if (w->n == UINT8_MAX) return;   /* 255 samples is far above a window's 4 (or 60 for the vane) */
-  for (unsigned i = 0; i < MEAN_CHANNELS; i++) w->sum[i] += v[i];
-  w->n++;
+  static const uint8_t good[MEAN_CHANNELS] = { WSMP_QUAL_GOOD, WSMP_QUAL_GOOD };
+  mean_add_q(w, v, good);
 }
 
 /* The mean rounded half up, also for a negative sum: the station's one rounding helper (ws_round.h).
    |sum / n| <= |sum|, so the result fits int32. */
 static int32_t mean_of(int32_t sum, uint8_t n) { return (int32_t)ws_div_round(sum, n); }
 
-static uint8_t quality(const mean_win *w, uint32_t window_ms)
+/* A channel's quality: missing without a sample in its sum, else suspect if a sample was (over
+   partial), else partial in the first window or short of samples, else good. */
+static uint8_t quality(const mean_win *w, unsigned ch, uint32_t window_ms)
 {
   uint32_t period = w->period_ms ? w->period_ms : WSMP_SAMPLE_MS;
-  if (w->n == 0) return WSMP_QUAL_MISSING;
-  if (!w->latched || w->n < window_ms / period) return WSMP_QUAL_PARTIAL;
+  if (w->n[ch] == 0) return WSMP_QUAL_MISSING;
+  if (w->suspect[ch]) return WSMP_QUAL_SUSPECT;
+  if (!w->latched || w->n[ch] < window_ms / period) return WSMP_QUAL_PARTIAL;
   return WSMP_QUAL_GOOD;
 }
 
@@ -63,12 +76,13 @@ int mean_close(mean_win *w, uint16_t token, uint32_t now_ms, uint32_t boot_id, c
   if (w->latched && token == w->last_token) return 0;   /* WSMP-L3: a retry */
   uint32_t window_ms = now_ms - w->start_ms;
   header(w, snap, token, window_ms, boot_id, desc);
-  uint8_t q = quality(w, window_ms);
   for (unsigned i = 0; i < channels && i < MEAN_CHANNELS; i++)
-    snap->slot[i] = w->n ? (wsmp_slot){ .value = (uint32_t)mean_of(w->sum[i], w->n), .count = w->n, .quality = q }
-                         : (wsmp_slot){ .quality = WSMP_QUAL_MISSING };
+    snap->slot[i] = w->n[i] ? (wsmp_slot){ .value = (uint32_t)mean_of(w->sum[i], w->n[i]), .count = w->n[i],
+                                           .quality = quality(w, i, window_ms) }
+                            : (wsmp_slot){ .quality = WSMP_QUAL_MISSING };
   memset(w->sum, 0, sizeof w->sum);
-  w->n = 0;
+  memset(w->n, 0, sizeof w->n);
+  memset(w->suspect, 0, sizeof w->suspect);
   w->start_ms = now_ms;
   w->last_token = token;
   w->latched = 1;

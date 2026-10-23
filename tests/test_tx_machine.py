@@ -31,7 +31,7 @@ SOURCES = ['host/tx_harness.c', 'host/sim_core.c', 'host/i2c_sim.c', 'host/i2c_m
            *(f'stage0-node/App/{name}.c' for name in ('app_tx', 'tx_exchange', 'tx_policy', 'tx_time', 'tx_console', 'selftest',
                                                       'node_store', 'clock', 'events', 'bench', 'wsmp_host',
                                                       'wsmp_catalog_map', *WSMP_APP)),
-           *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy', 'ws_check', 'wsmp'))]
+           *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy', 'ws_check', 'wsmp', 'wsmp_cal', 'wsmp_ident'))]
 ASAN_ENV = 'WS_TX_ASAN'   # set by TxUnderAddressSanitizer for its child run
 
 # What the firmware must do (docs/firmware-event-model.md, docs/radio-energy-policy.md, and the
@@ -264,7 +264,7 @@ class TxStateMachine(unittest.TestCase):
         self.assertIn('#boot role=tx', n.out())
         n.advance_to(minute(0))
         out = n.out()
-        self.assertRegex(out, r'#sample epoch=\d+ seq=0 uptime=\d+ valid=1 rc=0 n=3 t=2150 rh=4500 ')   # 3 samples by 45 s
+        self.assertRegex(out, r'#sample epoch=\d+ seq=0 uptime=\d+ valid=1 rc=0 n=1 t=2150 rh=4500 ')   # the window starts at the admission (~16 s): the 30 s sample
         self.assertIn('#modules air_th=active', out)            # the first report names the modules
         self.assertEqual((n.sent(), n.radio()), (1, R_TX))
         n.advance(n.air)                               # TxDone: the ACK window opens
@@ -860,6 +860,14 @@ class TxStateMachine(unittest.TestCase):
         self.assertNotIn('#abandon', n.log)
 
     # ---- sensor ----
+
+    def test_a_missing_humidity_shows_as_missing_on_the_sample_line(self):
+        # RH beyond its crop margin (119 %) is suspect and leaves only its own channel: the temperature
+        # stays valid, and the console shows the humidity as missing, not as 0.
+        n = self.node()
+        n.lib.h_sht45_rh_raw(0xFFFF)
+        n.advance_to(minute(0))
+        self.assertRegex(n.out(), r'#sample epoch=\d+ seq=0 uptime=\d+ valid=1 rc=0 n=1 t=2150 rh=- ')
 
     def test_a_failing_or_hung_sensor_never_stalls_the_minute(self):
         n = self.node()

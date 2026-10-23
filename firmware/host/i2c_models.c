@@ -9,34 +9,62 @@
 static uint8_t test_written[I2C_SIM_DEVICES][I2C_SIM_BUF];
 
 /* DEVK_SHT45 (datasheet section 4): command 0xFD starts a measurement of up to 8.3 ms; a read then
-   gives the T word, its CRC, the RH word, its CRC. A read sooner than 9 ms after the command is
-   flagged (the driver must wait). An unknown command is a NACK. */
-typedef struct { uint16_t t_raw, rh_raw; int bad_crc; uint64_t measured_at; } sht45_t;
+   gives the T word, its CRC, the RH word, its CRC. Command 0x89 makes the next read give the serial,
+   high word first, in the same form. A read sooner than 9 ms after a measure command is flagged (the
+   driver must wait), and so is a 0x89 between a measure command and its read. An unknown command is
+   a NACK. */
+typedef struct { uint16_t t_raw, rh_raw; int bad_crc, serial_bad, serial_fails, measuring, serial_next; uint32_t serial; uint64_t measured_at; } sht45_t;
 static sht45_t sht45[I2C_SIM_DEVICES];
-static int sht45_too_early, sht45_commands;
+static int sht45_too_early, sht45_commands, sht45_interleaved;
 #define SHT45_READY_MS 9U
 void model_sht45_set(int dev, uint16_t t_raw, uint16_t rh_raw, int bad_crc)
 {
   sht45[dev].t_raw = t_raw; sht45[dev].rh_raw = rh_raw; sht45[dev].bad_crc = bad_crc;
 }
+void model_sht45_set_serial(int dev, uint32_t serial, int bad) { sht45[dev].serial = serial; sht45[dev].serial_bad = bad; }
+void model_sht45_serial_fail_next(int dev, int n) { sht45[dev].serial_fails = n; }
 int model_sht45_read_too_early(void) { return sht45_too_early; }
 int model_sht45_commands(void) { return sht45_commands; }
+int model_sht45_interleaved(void) { return sht45_interleaved; }
 
 static int sht45_write(int dev, const uint8_t *data, uint16_t n)
 {
+  sht45_t *s = &sht45[dev];
+  if (n == 1 && data[0] == WS_SHT4X_SERIAL)
+  {
+    if (s->serial_bad == 2) return -1;
+    if (s->measuring) sht45_interleaved = 1;
+    s->serial_next = 1;
+    return 0;
+  }
   if (n != 1 || data[0] != WS_SHT45_MEASURE) return -1;
   sht45_commands++;
-  sht45[dev].measured_at = sim_now();
+  s->measured_at = sim_now();
+  s->measuring = 1;
+  s->serial_next = 0;
   return 0;
+}
+
+static void words(uint8_t *data, uint16_t a, uint16_t b, int bad)
+{
+  data[0] = (uint8_t)(a >> 8); data[1] = (uint8_t)a; data[2] = ws_crc8(data, 2);
+  data[3] = (uint8_t)(b >> 8); data[4] = (uint8_t)b; data[5] = (uint8_t)(ws_crc8(data + 3, 2) ^ (bad ? 1U : 0U));
 }
 
 static int sht45_read(int dev, uint8_t *data, uint16_t n)
 {
+  sht45_t *s = &sht45[dev];
   if (n != WS_SHT45_REPLY_LEN) return -1;
-  if (sim_now() - sht45[dev].measured_at < (uint64_t)SHT45_READY_MS * SIM_UNITS_PER_MS) sht45_too_early = 1;
-  data[0] = (uint8_t)(sht45[dev].t_raw >> 8); data[1] = (uint8_t)sht45[dev].t_raw; data[2] = ws_crc8(data, 2);
-  data[3] = (uint8_t)(sht45[dev].rh_raw >> 8); data[4] = (uint8_t)sht45[dev].rh_raw;
-  data[5] = (uint8_t)(ws_crc8(data + 3, 2) ^ (sht45[dev].bad_crc ? 1U : 0U));
+  if (s->serial_next)
+  {
+    s->serial_next = 0;
+    words(data, (uint16_t)(s->serial >> 16), (uint16_t)s->serial, s->serial_bad == 1 || s->serial_fails > 0);
+    if (s->serial_fails > 0) s->serial_fails--;
+    return 0;
+  }
+  if (sim_now() - s->measured_at < (uint64_t)SHT45_READY_MS * SIM_UNITS_PER_MS) sht45_too_early = 1;
+  s->measuring = 0;
+  words(data, s->t_raw, s->rh_raw, s->bad_crc);
   return 0;
 }
 
@@ -172,17 +200,66 @@ static int max17048_read(int dev, uint8_t reg, uint8_t *data, uint16_t n)
   return 0;
 }
 
+/* DEVK_MUX (TCA9548A, datasheet section 8.6.1): one control register, a bit for each channel. */
+#define MUX_LOG 64
+static uint8_t mux_xor, mux_xor_idle;
+static int mux_log[MUX_LOG], nmux_log, nmux_reads;
+void model_mux_readback_xor(uint8_t xor_mask) { mux_xor = xor_mask; }
+void model_mux_readback_xor_idle(uint8_t xor_mask) { mux_xor_idle = xor_mask; }   /* only with no channel selected */
+int model_mux_write_count(void) { return nmux_log; }
+int model_mux_writes(int i) { return i >= 0 && i < nmux_log && i < MUX_LOG ? mux_log[i] : -1; }
+int model_mux_reads(void) { return nmux_reads; }
+
+static int mux_write(const uint8_t *data, uint16_t n)
+{
+  if (n != 1) return -1;
+  if (nmux_log < MUX_LOG) mux_log[nmux_log] = data[0];
+  nmux_log++;
+  i2c_sim_mux_set_mask(data[0]);
+  return 0;
+}
+
+static int mux_read(uint8_t *data, uint16_t n)
+{
+  if (n != 1) return -1;
+  nmux_reads++;
+  data[0] = (uint8_t)(i2c_sim_mux_mask() ^ mux_xor ^ (i2c_sim_mux_mask() == 0U ? mux_xor_idle : 0U));
+  return 0;
+}
+
+/* DEVK_EEPROM (24LC32A): 4 KiB; a read past the end wraps to 0, as the part's address counter does. */
+#define EEPROM_LEN 4096U
+static uint8_t eeprom[I2C_SIM_DEVICES][EEPROM_LEN];
+static int eeprom_fails[I2C_SIM_DEVICES], eeprom_corrupts[I2C_SIM_DEVICES];
+void model_eeprom_write(int dev, uint16_t at, const uint8_t *data, uint16_t n)
+{
+  for (uint16_t i = 0; i < n; i++) eeprom[dev][(at + i) % EEPROM_LEN] = data[i];
+}
+void model_eeprom_fail_next(int dev, int n) { eeprom_fails[dev] = n; }
+void model_eeprom_corrupt_next(int dev, int n) { eeprom_corrupts[dev] = n; }
+
+static int eeprom_read(int dev, uint16_t at, uint8_t *data, uint16_t n)
+{
+  if (eeprom_fails[dev] > 0) { eeprom_fails[dev]--; return -1; }
+  for (uint16_t i = 0; i < n; i++) data[i] = eeprom[dev][(at + i) % EEPROM_LEN];
+  if (eeprom_corrupts[dev] > 0 && n > 0x20U - at && at <= 0x20U) { eeprom_corrupts[dev]--; data[0x20U - at] ^= 1U; }
+  return 0;
+}
+
+static int ina228_write(int dev, const uint8_t *data, uint16_t n)
+{
+  if (n != 3 || data[0] != 0x02) return -1;
+  ina228_advance(&pdev[dev]);
+  pdev[dev].cal = (uint16_t)(data[1] << 8 | data[2]);
+  return 0;
+}
+
 int model_write(int kind, int dev, const uint8_t *data, uint16_t n)
 {
-  if (kind == DEVK_INA228)
-  {
-    if (n != 3 || data[0] != 0x02) return -1;
-    ina228_advance(&pdev[dev]);
-    pdev[dev].cal = (uint16_t)(data[1] << 8 | data[2]);
-    return 0;
-  }
   switch (kind)
   {
+    case DEVK_MUX: return mux_write(data, n);
+    case DEVK_INA228: return ina228_write(dev, data, n);
     case DEVK_TEST: memcpy(test_written[dev], data, n < I2C_SIM_BUF ? n : I2C_SIM_BUF); return 0;
     case DEVK_SHT45: return sht45_write(dev, data, n);
     case DEVK_SHTC3: return shtc3_write(dev, data, n);
@@ -198,17 +275,19 @@ int model_read(int kind, int dev, uint8_t *data, uint16_t n)
     case DEVK_TEST: for (uint16_t i = 0; i < n; i++) data[i] = (uint8_t)(0xA0U + i); return 0;
     case DEVK_SHT45: return sht45_read(dev, data, n);
     case DEVK_SHTC3: return shtc3_read(dev, data, n);
+    case DEVK_MUX: return mux_read(data, n);
     default: return -1;
   }
 }
 
-int model_mem_read(int kind, int dev, uint8_t reg, uint8_t *data, uint16_t n)
+int model_mem_read(int kind, int dev, uint16_t reg, uint8_t *data, uint16_t n)
 {
   switch (kind)
   {
-    case DEVK_BMP581: case DEVK_LTR390: return reg_read(kind, dev, reg, data, n);
-    case DEVK_INA228: return ina228_read(dev, reg, data, n);
-    case DEVK_MAX17048: return max17048_read(dev, reg, data, n);
+    case DEVK_BMP581: case DEVK_LTR390: return reg_read(kind, dev, (uint8_t)reg, data, n);
+    case DEVK_INA228: return ina228_read(dev, (uint8_t)reg, data, n);
+    case DEVK_MAX17048: return max17048_read(dev, (uint8_t)reg, data, n);
+    case DEVK_EEPROM: return eeprom_read(dev, reg, data, n);
     case DEVK_TEST: for (uint16_t i = 0; i < n; i++) data[i] = (uint8_t)(reg + i); return 0;
     default: return -1;
   }
@@ -222,4 +301,9 @@ void model_reset(int kind, int dev)
   if (kind == DEVK_BMP581) regdev[dev] = (regdev_t){ .id = 0x50 };
   if (kind == DEVK_LTR390) regdev[dev] = (regdev_t){ .id = 0xB2 };
   if (kind == DEVK_INA228 || kind == DEVK_MAX17048) pdev[dev] = (power_dev_t){ .at = sim_now() };
+  if (kind == DEVK_EEPROM)
+  {
+    for (unsigned i = 0; i < EEPROM_LEN; i++) eeprom[dev][i] = (uint8_t)i;
+    eeprom_fails[dev] = eeprom_corrupts[dev] = 0;
+  }
 }

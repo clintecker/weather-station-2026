@@ -72,7 +72,7 @@ def host_library(owner, name, *args, files=None):
 
 # The bus and the local modules (firmware/stage0-node/App): every host build of the station side links
 # them. A new module is added here, and in the Makefile.
-WSMP_APP = ('i2c_bus', 'busymon', 'wsmp_local', 'mod_th', 'mod_mean', 'mod_reg', 'mod_power', 'mod_wind', 'mod_rain')
+WSMP_APP = ('i2c_bus', 'busymon', 'wsmp_local', 'port_id', 'mod_th', 'mod_mean', 'mod_reg', 'mod_power', 'mod_wind', 'mod_rain')
 
 
 def wsmp_sources(app=WSMP_APP):
@@ -82,7 +82,7 @@ def wsmp_sources(app=WSMP_APP):
     return ['-I', fw/'host/include', '-I', fw/'host', '-I', a, '-I', fw/'stage0-node/Core/Inc', '-I', fw,
             '-I', fw/'common', fw/'host/wsmp_harness.c', fw/'host/sim_core.c', fw/'host/i2c_sim.c',
             fw/'host/i2c_models.c', *(a/f'{name}.c' for name in app), fw/'stage0.c', fw/'common/ws_check.c',
-            fw/'common/wsmp.c']
+            fw/'common/wsmp.c', fw/'common/wsmp_cal.c', fw/'common/wsmp_ident.c']
 
 
 def fresh_copy(owner, library):

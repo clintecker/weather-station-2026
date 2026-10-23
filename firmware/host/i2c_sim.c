@@ -9,9 +9,13 @@
 #include "stm32wlxx_hal.h"
 
 enum { DONE_NONE, DONE_TX, DONE_RX, DONE_MEMRX, DONE_ERROR, DONE_BUS_ERROR };   /* DONE_ERROR: a NACK */
-typedef struct { int kind, mode, present, sda_hold; uint8_t addr7; uint32_t latency_ms, writes; } sim_dev;
+typedef struct { int kind, mode, present, sda_hold, channel; uint8_t addr7; uint32_t latency_ms, writes; } sim_dev;
 static sim_dev devs[I2C_SIM_DEVICES];
-static int ndevs, i2c_inited, irq_enabled, pending_kind, power_on;
+static int ndevs, i2c_inited, irq_enabled, pending_kind, power_on, mux_dev = -1;
+static uint8_t mux_mask;
+static uint32_t mux_resets, upstream_with_channel;
+#define ADDR_LOG 64
+static int addr_log[ADDR_LOG], naddr_log;
 static uint64_t pending_due, started_at;
 static uint8_t *rx_dest;
 static uint8_t rx_buf[I2C_SIM_BUF];
@@ -22,13 +26,29 @@ static I2C_HandleTypeDef *handle;
 GPIO_TypeDef host_gpioa;
 I2C_TypeDef host_i2c2;
 
-int i2c_sim_add(int kind, uint8_t addr7)
+int i2c_sim_add_on(int kind, uint8_t addr7, int channel)
 {
   if (ndevs >= I2C_SIM_DEVICES) return -1;
-  devs[ndevs] = (sim_dev){ .kind = kind, .mode = DM_OK, .present = 1, .addr7 = addr7, .latency_ms = 1 };
+  devs[ndevs] = (sim_dev){ .kind = kind, .mode = DM_OK, .present = 1, .addr7 = addr7, .latency_ms = 1, .channel = channel };
   model_reset(kind, ndevs);
   return ndevs++;
 }
+int i2c_sim_add(int kind, uint8_t addr7)
+{
+  int channel = addr7 == 0x44 ? 0 : addr7 == 0x53 ? 1 : (addr7 == 0x47 || addr7 == 0x46) ? 2 : I2C_SIM_UPSTREAM;
+  return i2c_sim_add_on(kind, addr7, channel);
+}
+/* The board's mux, there from the peripheral's first start (a test may remove it). */
+static void board_mux(void)
+{
+  if (mux_dev < 0) mux_dev = i2c_sim_add_on(DEVK_MUX, 0x71, I2C_SIM_UPSTREAM);
+}
+int i2c_sim_mux_device(void) { return mux_dev; }
+uint8_t i2c_sim_mux_mask(void) { return mux_mask; }
+void i2c_sim_mux_set_mask(uint8_t mask) { mux_mask = mask; }
+uint32_t i2c_sim_mux_resets(void) { return mux_resets; }
+uint32_t i2c_sim_upstream_with_channel(void) { return upstream_with_channel; }
+int i2c_sim_addr_log(int i) { return i >= 0 && i < naddr_log ? addr_log[i] : -1; }
 void i2c_sim_remove(int dev) { if (dev >= 0 && dev < ndevs) devs[dev].present = 0; }
 void i2c_sim_restore(int dev) { if (dev >= 0 && dev < ndevs) devs[dev].present = 1; }
 void i2c_sim_mode(int dev, int mode, int sda_hold_edges, uint32_t latency_ms)
@@ -43,7 +63,7 @@ void HAL_NVIC_EnableIRQ(IRQn_Type irq) { (void)irq; irq_enabled = 1; }
 void HAL_NVIC_DisableIRQ(IRQn_Type irq) { (void)irq; irq_enabled = 0; }
 void HAL_NVIC_ClearPendingIRQ(IRQn_Type irq) { (void)irq; pending_kind = DONE_NONE; }
 HAL_StatusTypeDef HAL_RCCEx_PeriphCLKConfig(RCC_PeriphCLKInitTypeDef *clk) { (void)clk; return HAL_OK; }
-HAL_StatusTypeDef HAL_I2C_Init(I2C_HandleTypeDef *hi2c) { handle = hi2c; HAL_I2C_MspInit(hi2c); i2c_inited = 1; return HAL_OK; }
+HAL_StatusTypeDef HAL_I2C_Init(I2C_HandleTypeDef *hi2c) { board_mux(); handle = hi2c; HAL_I2C_MspInit(hi2c); i2c_inited = 1; return HAL_OK; }
 HAL_StatusTypeDef HAL_I2C_DeInit(I2C_HandleTypeDef *hi2c)
 {
   HAL_I2C_MspDeInit(hi2c); i2c_inited = 0; deinits++;
@@ -73,11 +93,21 @@ GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *port, uint32_t pin)
   return (sda_out && scl_edges >= sda_release_at) ? GPIO_PIN_SET : GPIO_PIN_RESET;
 }
 
+/* ---- the mux RESET line (i2c_bus.h): the mask clears, and a held SDA is no longer joined ---- */
+void i2c_bus_mux_reset_line(int asserted)
+{
+  if (!asserted) return;
+  mux_resets++;
+  mux_mask = 0;
+  sda_release_at = scl_edges;
+}
+
 /* ---- transfers ---- */
+static int on_bus(const sim_dev *d) { return d->channel < 0 || (mux_mask >> d->channel & 1U); }
 static sim_dev *find(uint16_t addr)
 {
   for (int i = 0; i < ndevs; i++)
-    if (devs[i].present && devs[i].addr7 == (addr >> 1)) return &devs[i];
+    if (devs[i].present && devs[i].addr7 == (addr >> 1) && on_bus(&devs[i])) return &devs[i];
   return NULL;
 }
 
@@ -95,11 +125,21 @@ static int faulty(const sim_dev *d, int is_read)
          (is_read && (d->mode == DM_NACK_DATA || d->mode == DM_HANG_READ));
 }
 
+/* Counts a transfer: the parts' (not the mux's), each address's, the address log, and an upstream
+   part addressed with a channel selected. */
+static void count(uint16_t addr, const sim_dev *d)
+{
+  if ((addr >> 1) != 0x71U) transfers++;
+  addr_transfers[(addr >> 1) & 0x7FU]++;
+  if (naddr_log < ADDR_LOG) addr_log[naddr_log++] = addr >> 1;
+  if (d && d->channel < 0 && d->kind != DEVK_MUX && mux_mask) upstream_with_channel++;
+}
+
 static sim_dev *begin(uint16_t addr, int is_read)
 {
   sim_dev *d = find(addr);
-  transfers++; started_at = sim_now();
-  addr_transfers[(addr >> 1) & 0x7FU]++;
+  started_at = sim_now();
+  count(addr, d);
   if (d && d->sda_hold && faulty(d, is_read)) sda_release_at = scl_edges + d->sda_hold;
   if (!d || d->mode == DM_NACK_ADDR) { complete_in(DONE_ERROR, d); return NULL; }
   if (d->mode == DM_BUS_ERROR) { complete_in(DONE_BUS_ERROR, d); return NULL; }
@@ -145,11 +185,12 @@ HAL_StatusTypeDef HAL_I2C_Master_Receive_IT(I2C_HandleTypeDef *hi2c, uint16_t ad
 HAL_StatusTypeDef HAL_I2C_Mem_Read_IT(I2C_HandleTypeDef *hi2c, uint16_t addr, uint16_t mem, uint16_t mem_size,
                                       uint8_t *data, uint16_t size)
 {
-  (void)hi2c; (void)mem_size;
+  uint16_t at = mem_size == I2C_MEMADD_SIZE_16BIT ? mem : (uint8_t)mem;
   if (!bus_free()) return HAL_BUSY;
+  (void)hi2c;
   rx_dest = data; rx_len = size < I2C_SIM_BUF ? size : I2C_SIM_BUF;
   sim_dev *d = begin(addr, 1);
-  if (d) read_into(d, data, size, model_mem_read(d->kind, (int)(d - devs), (uint8_t)mem, rx_buf, rx_len));
+  if (d) read_into(d, data, size, model_mem_read(d->kind, (int)(d - devs), at, rx_buf, rx_len));
   if (pending_kind == DONE_RX) pending_kind = DONE_MEMRX;
   return HAL_OK;
 }

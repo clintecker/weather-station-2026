@@ -36,12 +36,14 @@ static void put(ws_obs_t *o, unsigned field, uint32_t code)
 }
 static void invalid(ws_obs_t *o, unsigned field) { put(o, field, ws_obs_invalid(field)); }
 
-/* A mean of temperature (slot t) and humidity (slot h) into two catalog fields. */
+/* A mean of temperature (slot 0) and humidity (slot 1) into two catalog fields. Each channel has its
+   own sample count (a suspect sample leaves only its own channel), so each slot is checked alone. */
 static void th(ws_obs_t *o, const wsmp_snapshot *s, unsigned ft, unsigned fh)
 {
-  if (missing(s, 0)) { invalid(o, ft); invalid(o, fh); return; }
-  put(o, ft, ws_code_temp_centi((int32_t)s->slot[0].value));
-  put(o, fh, ws_code_rh_centi((int32_t)s->slot[1].value));
+  if (missing(s, 0)) invalid(o, ft);
+  else put(o, ft, ws_code_temp_centi((int32_t)s->slot[0].value));
+  if (missing(s, 1)) invalid(o, fh);
+  else put(o, fh, ws_code_rh_centi((int32_t)s->slot[1].value));
 }
 
 static void air(ws_obs_t *o, wsmp_map_summary *sum)
@@ -53,7 +55,8 @@ static void air(ws_obs_t *o, wsmp_map_summary *sum)
   put(o, WS_FI_TH_SAMPLES, n > WS_TH_SAMPLES_MAX ? WS_TH_SAMPLES_MAX : n);
   sum->th_valid = !missing(s, 0);
   sum->t = sum->th_valid ? (int16_t)(int32_t)s->slot[0].value : 0;
-  sum->h = sum->th_valid ? (uint16_t)s->slot[1].value : 0U;
+  sum->h_valid = sum->th_valid && !missing(s, 1);   /* RH can be missing with a valid temperature */
+  sum->h = sum->h_valid ? (uint16_t)s->slot[1].value : 0U;
   sum->th_samples = n;
 }
 

@@ -40,6 +40,13 @@ class Sources(unittest.TestCase):
         for name in WSMP_APP:
             self.assertIn(f'App/{name}.c', makefile)
 
+    def test_the_firmware_builds_the_identity_code_with_its_warnings(self):
+        # The module record, calibration and verdict code (slice 1) is in the firmware build, so the
+        # firmware's full warning set and -fanalyzer apply to it, not only the host tests' flags.
+        makefile = (ROOT/'firmware/stage0-node/Makefile').read_text()
+        for name in ('wsmp', 'wsmp_cal', 'wsmp_ident'):
+            self.assertIn(f'$(ROOT)/firmware/common/{name}.c', makefile)
+
 
 @needs_cc
 class Harness(unittest.TestCase):
@@ -76,6 +83,15 @@ class Harness(unittest.TestCase):
 
 class Conformance:
     """WSMP section 14 for one local module. A subclass sets PORT, TYPE, CHANNELS and DEVICES."""
+
+    def bound_station(self, quantity, kind, offset, gain):
+        """A station whose port driver was bound at boot to a module with one calibration entry, past
+        its first (partial) window."""
+        lib, devs = self.station(self.DEVICES)
+        lib.h_bind(self.PORT, quantity, kind, offset, gain)
+        lib.h_run(MINUTE)
+        self.latch(lib, self.PORT, 1)
+        return lib, devs[self.KIND]
 
     def test_identity_fields(self):
         lib, _ = self.station(self.DEVICES)
@@ -233,9 +249,124 @@ class Sht45(TempHumidity, Harness):
         lib.h_sht45_set(dev, t_raw, h_raw, 0)
 
     def expected(self, lib, t_raw, h_raw):
-        t, h = ctypes.c_int16(), ctypes.c_uint16()
+        # The parser's raw value, then the crop of a port module (RH 0 to 100 %; these words are inside it).
+        t, h = ctypes.c_int32(), ctypes.c_int32()
         self.assertEqual(lib.h_sht45_parse(t_raw, h_raw, ctypes.byref(t), ctypes.byref(h)), 0)
-        return t.value, h.value
+        return t.value, min(max(h.value, 0), 10_000)
+
+    # RH = -6 + 125 S / 65535 and T = -45 + 175 S / 65535 (SHT4x datasheet 4.6), in 0.01.
+    RH_MINUS_2, RH_102, RH_MINUS_6, RH_119, T_70 = 2097, 56_622, 0, 0xFFFF, 43_065
+
+    def quarter(self, lib, dev, samples):
+        """One window of four samples, (t_raw, h_raw) each, then the latch's (temperature, RH) slots."""
+        for raw in samples:
+            self.set(lib, dev, *raw)
+            lib.h_run(15_000)
+        snap = self.latch(lib, self.PORT, 2)
+        return self.slot(snap, 0), self.slot(snap, 1)
+
+    def test_rh_within_the_crop_margin_is_cropped_and_good(self):
+        # Section 6.9: -3 to 0 % reports 0 % good, 100 to 103 % reports 100 % good.
+        for h_raw, want in ((self.RH_MINUS_2, 0), (self.RH_102, 10_000)):
+            with self.subTest(h_raw=h_raw):
+                lib, dev = self.good_station()
+                _, rh = self.quarter(lib, dev, [(0x8000, h_raw)] * 4)
+                self.assertEqual(rh, (want, 4, GOOD))
+
+    def test_rh_beyond_the_margin_is_suspect_and_out_of_the_sum(self):
+        # One suspect RH sample: the RH mean is the other three's, its quality suspect, and the
+        # temperature keeps all four samples (per-channel counts, PORT-19).
+        for h_raw in (self.RH_MINUS_6, self.RH_119):
+            with self.subTest(h_raw=h_raw):
+                lib, dev = self.good_station()
+                t, rh = self.quarter(lib, dev, [(0x8000, 0x8000)] * 3 + [(0x8000, h_raw)])
+                self.assertEqual(rh, (self.expected(lib, 0x8000, 0x8000)[1], 3, SUSPECT))
+                self.assertEqual(t[1:], (4, GOOD))
+
+    def test_a_window_of_only_suspect_samples_is_missing(self):
+        lib, dev = self.good_station()
+        t, rh = self.quarter(lib, dev, [(0x8000, self.RH_MINUS_6)] * 4)
+        self.assertEqual(rh, (0, 0, MISSING))
+        self.assertEqual(t[1:], (4, GOOD))
+
+    def test_suspect_wins_over_partial(self):
+        lib, devs = self.station(self.DEVICES)
+        self.set(lib, devs[self.KIND], 0x8000, self.RH_MINUS_6)
+        lib.h_run(15_000)
+        self.set(lib, devs[self.KIND], 0x8000, 0x8000)
+        lib.h_run(MINUTE - 15_000)
+        first = self.latch(lib, self.PORT, 1)                      # the first window: partial, but ...
+        self.assertEqual(self.slot(first, 1)[1:], (3, SUSPECT))   # ... a suspect sample wins
+        self.assertEqual(self.slot(first, 0)[1:], (4, PARTIAL))
+
+    def test_air_temperature_above_its_physical_range_is_suspect(self):
+        # A port module's air temperature crops to the registry's -80 to 60 C, margin 0.
+        lib, dev = self.good_station()
+        t, rh = self.quarter(lib, dev, [(0x8000, 0x8000)] * 3 + [(self.T_70, 0x8000)])
+        self.assertEqual(t[1:], (3, SUSPECT))
+        self.assertEqual(rh[1:], (4, GOOD))
+
+    def test_calibration_comes_before_the_crop(self):
+        # RH 99 % + 3.00 % is 102 %: 100 % good. + 5.00 % is 104 %: suspect. Temperature + 1.00 C.
+        rh99 = round(105 * 65535 / 125)                            # 99.0 %RH
+        for offset, want in ((300, (10_000, 4, GOOD)), (500, (0, 0, MISSING))):
+            with self.subTest(offset=offset):
+                lib, dev = self.bound_station(2, 0, offset, 1_000_000)
+                _, rh = self.quarter(lib, dev, [(0x8000, rh99)] * 4)
+                self.assertEqual(rh, want)
+        lib, dev = self.bound_station(1, 2, 100, 1_000_000)
+        t, _ = self.quarter(lib, dev, [(0x8000, 0x8000)] * 4)
+        self.assertEqual(t, (4250 + 100, 4, GOOD))
+
+    def test_a_bind_starts_a_fresh_window(self):
+        # Section 6.7: the driver's window is reset at the bind, so no sample of the old module is in
+        # the new module's first window.
+        lib, dev = self.good_station()
+        lib.h_run(30_000)
+        lib.h_bind(self.PORT, 0, 0, 0, 0)
+        lib.h_run(MINUTE)
+        snap = self.latch(lib, self.PORT, 2)
+        self.assertEqual(snap[6] & FLAG_FIRST, FLAG_FIRST)
+        self.assertEqual(self.slot(snap, 0)[1], 4)
+
+    def serial(self, lib):
+        v = ctypes.c_uint32()
+        rc = lib.h_th_serial_result(ctypes.byref(v))
+        return rc, v.value
+
+    def test_the_serial_read(self):
+        lib, dev = self.good_station()
+        lib.h_sht45_set_serial(dev, 0x1234_ABCD, 0)
+        lib.h_th_serial_request()
+        self.assertEqual(self.serial(lib)[0], 0)                   # requested, not yet read
+        lib.h_run(1000)
+        self.assertEqual(self.serial(lib), (1, 0x1234_ABCD))
+
+    def test_the_serial_read_never_splits_a_measurement(self):
+        # Section 6.7: the 0x89 read is a step from ST_IDLE, never between 0xFD and its 6-byte read;
+        # a sample that falls due during it is deferred, not lost.
+        lib, dev = self.good_station()
+        lib.h_sht45_set_serial(dev, 0x0102_0304, 0)
+        lib.h_tick_all()                                           # a sample starts (0xFD) ...
+        lib.h_th_serial_request()                                  # ... and the serial is asked for
+        lib.h_run(MINUTE - 250)
+        self.assertEqual(self.serial(lib), (1, 0x0102_0304))
+        self.assertEqual(lib.h_sht45_interleaved(), 0)
+        self.assertEqual(lib.h_sht45_read_too_early(), 0)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0)[1:], (4, GOOD))
+
+    def test_a_failed_serial_read_is_not_a_probe(self):
+        # A failed identity read is not absence and not a missed probe: the probe stays as it was.
+        for bad, rc in ((1, -4), (2, -2)):
+            with self.subTest(bad=bad):
+                lib, dev = self.good_station()
+                lib.h_sht45_set_serial(dev, 0x0102_0304, bad)
+                lib.h_run(5000)                                    # between two samples
+                seq = lib.h_probe_seq(self.PORT)
+                lib.h_th_serial_request()
+                lib.h_run(1000)
+                self.assertEqual(self.serial(lib)[0], rc)
+                self.assertEqual((lib.h_probe_seq(self.PORT), lib.h_probe(self.PORT)), (seq, 1))
 
     def test_a_bad_crc_is_a_bus_fault_and_recovers_the_bus(self):
         lib, dev = self.good_station()
@@ -259,6 +390,14 @@ class Shtc3(TempHumidity, Harness):
     def expected(self, lib, t_raw, h_raw):
         # SHTC3 datasheet section 5.11: T = -45 + 175 S/2^16, RH = 100 S/2^16; in 0.01, rounded half up.
         return (17500 * t_raw + 32768) // 65536 - 4500, (10000 * h_raw + 32768) // 65536
+
+    def test_the_enclosure_sensor_keeps_its_125_c_check(self):
+        # An on-board module keeps today's checks (section 6.9): 70 C is not cropped or suspect.
+        lib, dev = self.good_station()
+        t70 = (7000 + 4500) * 65536 // 17500
+        lib.h_shtc3_set(dev, t70, 0x8000)
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0), (self.expected(lib, t70, 0x8000)[0], 4, GOOD))
 
     def test_the_sensor_sleeps_between_samples(self):
         lib, dev = self.good_station()
@@ -317,7 +456,7 @@ class Bmp581(SingleMean, Harness):
 
 
 class Ltr390(SingleMean, Harness):
-    PORT, TYPE, KIND, WRONG_ID = P_UVA, 3, DEVK_LTR390, 0xB1
+    PORT, TYPE, KIND, WRONG_ID = P_UVA, 3, DEVK_LTR390, 0xA2
     DEVICES = [(DEVK_LTR390, 0x53)]
     EXPECTED = 123_456
 
@@ -325,6 +464,29 @@ class Ltr390(SingleMean, Harness):
         lib, devs = super().station(devices, start_ms)
         lib.h_ltr390_set(devs[DEVK_LTR390], 123_456)
         return lib, devs
+
+    def test_only_the_part_number_nibble_of_part_id_is_compared(self):
+        # PART_ID 0x06: the high nibble is the part number (0xB), the low nibble the revision.
+        for part_id in (0xB0, 0xB1, 0xB3):
+            with self.subTest(part_id=part_id):
+                lib, dev = self.good_station()
+                lib.h_reg_set_id(dev, part_id)
+                lib.h_run(MINUTE)
+                self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0), (self.EXPECTED, 4, GOOD))
+
+    def test_a_dark_count_offset_never_goes_negative(self):
+        # Section 6.9: a UVA offset of -5 on night readings of 0 to 2 gives 0 (margin 16 below), never
+        # a negative mean that would pack as 16,777,212 in 3 unsigned bytes.
+        lib, dev = self.bound_station(8, 0, -5, 1_000_000)
+        lib.h_ltr390_set(dev, 2)
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0), (0, 4, GOOD))
+
+    def test_a_gain_above_the_range_is_suspect_not_wrapped(self):
+        lib, dev = self.bound_station(8, 0, 0, 10_000_000)
+        lib.h_ltr390_set(dev, 200_000)
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0), (0, 0, MISSING))
 
     def test_counts_are_20_bit(self):
         lib, dev = self.good_station()

@@ -24,6 +24,24 @@ int h_i2c_ready(void) { return i2c_sim_ready(); }
 int h_pin_errors(void) { return i2c_sim_pin_errors(); }
 int h_power(void) { return i2c_sim_power(); }
 int h_complete_at_guard(int error) { return i2c_sim_complete_at_guard(error); }
+/* The mux and the boot job (App/i2c_bus.lit.md section 5). */
+int h_add_on(int kind, int addr7, int channel) { return i2c_sim_add_on(kind, (uint8_t)addr7, channel); }
+int h_addr_log(int i) { return i2c_sim_addr_log(i); }
+int h_mux_device(void) { return i2c_sim_mux_device(); }
+int h_mux_mask(void) { return i2c_sim_mux_mask(); }
+uint32_t h_mux_resets(void) { return i2c_sim_mux_resets(); }
+uint32_t h_upstream_with_channel(void) { return i2c_sim_upstream_with_channel(); }
+void h_mux_readback_xor(int x) { model_mux_readback_xor((uint8_t)x); }
+void h_mux_readback_xor_idle(int x) { model_mux_readback_xor_idle((uint8_t)x); }
+int h_mux_write_count(void) { return model_mux_write_count(); }
+int h_mux_writes(int i) { return model_mux_writes(i); }
+int h_mux_reads(void) { return model_mux_reads(); }
+int h_bus_ready(void) { return i2c_bus_ready(); }
+int h_mux_ok(void) { return i2c_bus_mux_ok(); }
+int h_phantoms(void) { return i2c_bus_phantoms(); }
+void h_eeprom_write(int dev, int at, const uint8_t *data, int n) { model_eeprom_write(dev, (uint16_t)at, data, (uint16_t)n); }
+void h_eeprom_fail_next(int dev, int n) { model_eeprom_fail_next(dev, n); }
+void h_eeprom_corrupt_next(int dev, int n) { model_eeprom_corrupt_next(dev, n); }
 
 #ifdef WSMP_BUS_ONLY
 #define LOG_MAX 64
@@ -41,7 +59,7 @@ int h_submit(int client, int addr7, int txlen, int reg, int rxlen)
   memset(rx[client], 0, sizeof rx[client]);
   tx[client][0] = (uint8_t)reg;
   for (int i = 1; i < txlen && i < I2C_SIM_BUF; i++) tx[client][i] = (uint8_t)i;
-  return i2c_bus_submit((enum i2c_client)client, (uint8_t)addr7, tx[client], (uint8_t)txlen, rx[client], (uint8_t)rxlen);
+  return i2c_bus_submit((enum i2c_client)client, (uint8_t)addr7, tx[client], (uint8_t)txlen, rx[client], (uint16_t)rxlen);
 }
 int h_log_count(void) { return nlog; }
 int h_log_client(int i) { return i >= 0 && i < nlog ? log_client[i] : -1; }
@@ -74,6 +92,23 @@ int h_desc_check(int port)
   return rc == WSMP_OK ? wsmp_desc_check(d, ident.channels, ident.type, ident.schema) : rc;
 }
 void h_sht45_set(int dev, int t_raw, int h_raw, int bad) { model_sht45_set(dev, (uint16_t)t_raw, (uint16_t)h_raw, bad); }
+/* The SHT45's serial (command 0x89): bad 1 gives a bad CRC, bad 2 a NACK of the command. */
+void h_sht45_set_serial(int dev, uint32_t serial, int bad) { model_sht45_set_serial(dev, serial, bad); }
+void h_sht45_serial_fail_next(int dev, int n) { model_sht45_serial_fail_next(dev, n); }
+int h_sht45_interleaved(void) { return model_sht45_interleaved(); }
+int h_sht45_read_too_early(void) { return model_sht45_read_too_early(); }
+#include "mod_th.h"
+void h_th_serial_request(void) { mod_th_serial_request(TH_AIR); }
+int h_th_serial_result(uint32_t *serial) { return mod_th_serial_result(TH_AIR, serial); }
+/* Binds the port's driver to a new module whose applied record has one calibration entry (quantity
+   0: no record applied). */
+void h_bind(int port, int quantity, int kind, int32_t offset, uint32_t gain)
+{
+  wsmp_record r;
+  memset(&r, 0, sizeof r);
+  r.cal[0] = (wsmp_cal_entry){ .quantity = (uint16_t)quantity, .kind = (uint8_t)kind, .revision = 1, .offset = offset, .gain = gain };
+  local_bind((enum wsmp_port)port, quantity ? &r : NULL, local_boot_epoch(), now_ms());
+}
 void h_shtc3_set(int dev, int t_raw, int h_raw) { model_shtc3_set(dev, (uint16_t)t_raw, (uint16_t)h_raw); }
 int h_shtc3_asleep(int dev) { return model_shtc3_asleep(dev); }
 void h_reg_set_id(int dev, int id) { model_reg_set_id(dev, (uint8_t)id); }
@@ -112,6 +147,11 @@ void h_host_run(uint32_t ms) { for (uint32_t t = 0; t < ms; t += WSMP_TICK_MS) {
 void h_host_latch(uint32_t utc) { wsmp_host_latch(utc, now_ms()); }
 int h_host_state(int port) { return wsmp_host_state((enum wsmp_port)port); }
 int h_host_has_snapshot(int port) { return wsmp_host_snapshot((enum wsmp_port)port) != NULL; }
+uint32_t h_host_slot_value(int port, int i)
+{
+  const wsmp_snapshot *s = wsmp_host_snapshot((enum wsmp_port)port);
+  return s ? s->slot[i].value : 0xFFFFFFFFU;
+}
 int h_host_slot_quality(int port, int i)
 {
   const wsmp_snapshot *s = wsmp_host_snapshot((enum wsmp_port)port);
@@ -139,7 +179,7 @@ int h_map_reading(uint8_t *out, unsigned cap)
 #endif
 #endif
 /* The SHT45 conversion of the driver in use (firmware/stage0.c), as the test's oracle for one sample. */
-int h_sht45_parse(int t_raw, int h_raw, int16_t *t, uint16_t *h)
+int h_sht45_parse(int t_raw, int h_raw, int32_t *t, int32_t *h)
 {
   uint8_t b[WS_SHT45_REPLY_LEN] = { (uint8_t)(t_raw >> 8), (uint8_t)t_raw, 0, (uint8_t)(h_raw >> 8), (uint8_t)h_raw, 0 };
   b[2] = ws_crc8(b, 2); b[5] = ws_crc8(b + 3, 2);

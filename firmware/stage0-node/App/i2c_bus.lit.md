@@ -9,6 +9,12 @@ The file came out of `sensor.lit.md`, the earlier driver for the SHT45 alone. It
 peripheral setup, its guard timer, its critical sections and its stuck-bus recovery. The difference
 is the queue: a transfer now belongs to a client, and the clients take turns.
 
+Phase 1 of the sensor module ports (`docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md`,
+sections 4.3, 6.5 and 6.6) puts an 8-channel I2C multiplexer (a PCA9548 or TCA9548A at 0x71) on the
+bus, with each external sensor alone on a channel: a **static channel map**. The bus selects a
+client's channel before its transfer and deselects every channel after it, so the upstream parts
+(SHTC3, INA228, MAX17048) are served only with no channel selected.
+
 This document is the source. `tools/tangle.py` generates `i2c_bus.c` from the code chunks below. The
 header `i2c_bus.h` is a plain file.
 
@@ -23,19 +29,23 @@ python3 tools/tangle.py --check firmware/stage0-node/App/i2c_bus.lit.md    # com
 |---|---|---|
 | Order | the bus runs one transfer at a time, in submission order | `test_clients_are_served_in_order_one_at_a_time` |
 | One result | each submitted transfer gets exactly one `i2c_bus_done`, from the main loop | every test in `tests/test_i2c_bus.py` |
-| Refusal | a client with a transfer queued or running gets -1 at once. A transfer that is not one of the four forms also gets -1 | `test_a_second_submit_from_a_busy_client_is_refused`, `test_a_bad_form_is_refused` |
-| Guard | a transfer that does not finish within 30 ms ends with `I2C_ETIMEOUT`. A completion after it changes nothing | `test_guard_timeout_reports_etimeout`, `test_a_completion_after_the_guard_is_ignored`, `test_a_completion_at_the_guard_instant_counts_once` |
-| Recovery | after a transfer that can leave the bus stuck (a timeout, a HAL refusal, a bus error, or SDA still low) the bus clocks SDA free and starts the peripheral again before the next transfer. SDA that stays low gives `I2C_ESTUCK`. A clean NACK costs no recovery. A recover-only request reports 0 or `I2C_ESTUCK` | `test_each_failure_has_its_code_and_recovers_the_bus`, `test_held_sda_is_clocked_free_or_reported_stuck`, `test_an_absent_device_costs_no_recovery`, `test_a_recovery_request_clocks_the_bus_and_reports_once` |
+| Refusal | a client with a transfer queued or running gets -1 at once. A transfer that is not one of the five forms also gets -1 | `test_a_second_submit_from_a_busy_client_is_refused`, `test_a_bad_form_is_refused` |
+| Guard | a transfer that does not finish within its guard (30 ms, plus 90 µs for each byte on the bus) ends with `I2C_ETIMEOUT`. A completion after it changes nothing | `test_guard_timeout_reports_etimeout`, `test_the_guard_grows_with_the_transfer`, `test_a_completion_after_the_guard_is_ignored`, `test_a_completion_at_the_guard_instant_counts_once` |
+| Recovery | after a transfer that can leave the bus stuck (a timeout, a HAL refusal, a bus error, or SDA still low) the bus clocks SDA free, with the client's channel still selected, and starts the peripheral again before the next transfer. SDA that stays low gives `I2C_ESTUCK` and a mux RESET pulse. A clean NACK costs no recovery. A recover-only request reports 0 or `I2C_ESTUCK` | `test_each_failure_has_its_code_and_recovers_the_bus`, `test_held_sda_is_clocked_free_or_reported_stuck`, `test_an_absent_device_costs_no_recovery`, `test_a_recovery_request_clocks_the_bus_and_reports_once` |
 | Isolation | a failure of one client's device does not fail the other clients' transfers | `test_unplug_mid_transfer_recovers_and_spares_other_clients` |
+| Channels | a port client's transfer is preceded by the mux write of its channel and its read-back, and followed by the deselect (0x00) and its read-back. An upstream client's transfer runs only with every channel deselected. A mux that does not read back gives the port client `I2C_EBUS`, also when only its deselect does not. After a deselect that never read back, each upstream job deselects and checks first, and gets `I2C_EBUS` without its transfer while the read-back fails | `test_a_port_transfer_selects_then_deselects`, `test_upstream_parts_are_served_with_no_channel_selected`, `test_a_mux_that_does_not_read_back_is_a_bus_fault`, `test_a_deselect_that_never_reads_back_fails_the_port_client`, `test_an_upstream_job_deselects_first_while_the_mux_is_not_ok`, `test_an_upstream_job_is_refused_while_the_deselect_does_not_read_back`, `test_an_absent_mux_is_a_bus_fault_for_every_client` |
+| Boot | before any client transfer: a mux RESET pulse, mask 0x00 written and read back, then the phantom check: every probe-table address and 0x50, probed with every channel deselected. An address that answers is a phantom: the port client at it is refused (`I2C_ENACK_ADDR`, no bus traffic) for that boot | `test_boot_order`, `test_a_phantom_address_is_removed_for_the_boot` |
+| Record reads | a 2-byte word address (the 24LC32A) and up to 128 bytes in one read | `test_a_word_address_read_of_128_bytes` |
 
-A transfer has one of four forms (`i2c_bus.h`):
+A transfer has one of five forms (`i2c_bus.h`):
 
 | Form | Use | HAL call |
 |---|---|---|
 | write only | a command (SHT45, SHTC3) or a register write | `HAL_I2C_Master_Transmit_IT` |
 | read only | the reply after a command | `HAL_I2C_Master_Receive_IT` |
-| register read: one address byte, then a read with a repeated start | BMP581, LTR390, INA228, MAX17048 | `HAL_I2C_Mem_Read_IT` |
-| recover only: no bytes | a module that saw a bad checksum (the SHT45 or the SHTC3) | none: the stuck-bus recovery of section 7 |
+| register read: one address byte, then a read with a repeated start | BMP581, LTR390, INA228, MAX17048 | `HAL_I2C_Mem_Read_IT`, 8-bit address |
+| word-address read: two address bytes, high first, then a read with a repeated start | the module record EEPROM (24LC32A) | `HAL_I2C_Mem_Read_IT`, 16-bit address |
+| recover only: no bytes | a module that saw a bad checksum (the SHT45 or the SHTC3) | none: the stuck-bus recovery of section 8 |
 
 The completion codes (`i2c_bus.h`) are:
 
@@ -46,26 +56,34 @@ The completion codes (`i2c_bus.h`) are:
 | `I2C_ENACK_DATA` | −3 | the read failed after the address |
 | `I2C_ECRC` | −4 | a bad checksum. A module sets it, the bus never does |
 | `I2C_ESTUCK` | −5 | SDA is still low after the recovery |
-| `I2C_ETIMEOUT` | −6 | the transfer did not finish within its 30 ms guard |
-| `I2C_EBUS` | −7 | a bus error, lost arbitration, an overrun, or a HAL refusal. A bus fault, not an absence |
+| `I2C_ETIMEOUT` | −6 | the transfer did not finish within its guard |
+| `I2C_EBUS` | −7 | a bus error, lost arbitration, an overrun, a HAL refusal, or a mux that did not take the channel. A bus fault, not an absence |
 
 ## 2. Hardware and constants
 
 I2C2 uses PA11 (SDA) and PA12 (SCL) at 100 kHz, as before. PA9 switches the sensor supply on the
-protoboard. On the breadboard PA9 is not connected.
+protoboard. On the breadboard PA9 is not connected. The mux RESET line is a board seam
+(`i2c_bus_mux_reset_line`): its pin is **TBD** (section 4.1 of the ports design).
+
+The guard grows with the transfer. The base, 30 ms, covers the longest transfer of the first
+driver (a 7-byte reply, about 0.8 ms at 100 kHz) and a flash page erase (24.5 ms max), which stalls
+the I2C interrupt; ST's timer rounds down to 1/1024 s ticks. Each byte on the bus (9 bit times) adds
+90 µs, rounded down to whole ms, so the short transfers keep their 30 ms and a 128-byte record read
+(131 bytes, about 12 ms) gets 41 ms, more than the 37 ms it needs with the erase stall.
 
 ```c {#constants}
 #define SDA_PIN GPIO_PIN_11
 #define SCL_PIN GPIO_PIN_12
 #define POWER_PIN GPIO_PIN_9
-/* No transfer completes later than this. The longest is a 7-byte reply, ~0.8 ms at 100 kHz. The
-   guard is longer than a flash page erase (24.5 ms max), which stalls the I2C interrupt. ST's timer
-   rounds down to 1/1024 s ticks. */
-#define I2C_GUARD_MS 30
+#define I2C_GUARD_MS 30U
+#define I2C_BYTE_US 90U        /* one byte and its acknowledge at 100 kHz */
+#define US_PER_MS 1000U
 #define I2C_IRQ_PRIORITY 2   /* below the radio and the RTC (0), like the console UART */
 /* 100 kHz standard mode at PCLK1 = 48 MHz (same value as ST's NUCLEO-WL55JC I2C examples). */
 #define I2C_TIMING 0x20303E5DU
 #define REG_ADDR_LEN 1U
+#define WORD_ADDR_LEN 2U
+#define BYTE_BITS 8U
 #define HAL_ADDR(a7) ((uint16_t)((a7) << 1))   /* ST's HAL takes the 7-bit address shifted left */
 ```
 
@@ -129,7 +147,7 @@ numbers gives the order. The main loop alone touches the queue: modules submit f
 bus starts and ends transfers from its task. The interrupts touch only the bus state.
 
 ```c {#queue}
-typedef struct { const uint8_t *tx; uint8_t *rx; uint8_t addr7, txlen, rxlen; } xfer_t;
+typedef struct { const uint8_t *tx; uint8_t *rx; uint8_t addr7, txlen; uint16_t rxlen; } xfer_t;
 static xfer_t xfers[I2C_C_COUNT];
 static uint8_t busy[I2C_C_COUNT];      /* 1: the client's transfer is queued or running */
 static uint8_t fifo[I2C_C_COUNT];
@@ -150,20 +168,129 @@ static enum i2c_client fifo_pop(void)
 }
 ```
 
-## 5. State machine
+## 5. Channels and jobs
+
+The static channel map of phase 1 (section 4.1 of the ports design): the SHT45 on channel 0, the
+LTR390 on channel 1, the BMP581 on channel 2, each with its record EEPROM (0x50, its own client). The SHTC3, INA228 and MAX17048 are upstream of the mux
+and never on a port (PORT-9). The phantom table is the port probe table and the record EEPROM
+(section 6.7): no upstream part may answer at them (PORT-15).
+
+The bus serves **jobs**. A job is a short plan of operations on the bus: a client's transfer with
+the mux operations around it, or the boot sequence. One operation is on the bus at a time, and each
+ends in the bus task, which then runs the next one. A job ends in the bus task too, so no completion
+ever runs inside `i2c_bus_submit`.
+
+| Job | Plan |
+|---|---|
+| upstream client | the transfer (or the recovery, for a recover-only request). While the mux is not known to be deselected (`mux_ok` 0): deselect, deselect check, then the transfer |
+| port client | select (write the channel's bit), select check (read it back), the transfer or the recovery, deselect (write 0x00), deselect check (read it back) |
+| port client at a phantom address | none: `I2C_ENACK_ADDR`, without bus traffic |
+| boot | (a mux RESET pulse first) deselect, deselect check, then a zero-length write to each phantom-table address |
+
+A select that fails or does not read back skips the transfer: the client gets `I2C_EBUS` (a port
+fault, never an absence), and the deselect still runs. A deselect that fails or does not read back
+pulses the mux RESET once and deselects again; if that fails too the job ends with `I2C_EBUS`, and
+`mux_ok` is 0 (`i2c_bus_mux_ok`): a channel may still be selected. A port client whose transfer
+took still gets `I2C_EBUS` then. While `mux_ok` is 0 every upstream job starts with a deselect and
+its read-back, with the same one RESET retry; if the read-back still fails, the upstream client gets
+`I2C_EBUS` and its device is never touched, so an upstream part is never served with a port device
+joined to the bus. Only a deselect that reads back 0x00 sets `mux_ok` again. Every channel burst
+(here one transfer) therefore ends with no channel selected, or with the bus refusing the upstream
+parts until it is.
+
+```c {#jobs}
+#define UPSTREAM 0xFFU
+static const uint8_t channel_of[I2C_C_COUNT] = { [I2C_C_SHT45] = 0, [I2C_C_LTR390] = 1, [I2C_C_BMP581] = 2,
+                                                 [I2C_C_SHTC3] = UPSTREAM, [I2C_C_INA228] = UPSTREAM,
+                                                 [I2C_C_MAX17048] = UPSTREAM, [I2C_C_REC_AIR] = 0,
+                                                 [I2C_C_REC_UVA] = 1, [I2C_C_REC_PRESSURE] = 2 };
+static const uint8_t phantom_addr[I2C_PHANTOM_COUNT] = { 0x44, 0x47, 0x53, 0x50 };
+
+typedef enum { OP_SELECT, OP_SELECT_CHECK, OP_XFER, OP_RECOVER, OP_DESELECT, OP_DESELECT_CHECK, OP_PROBE } op_kind;
+typedef enum { JOB_NONE, JOB_BOOT, JOB_CLIENT } job_kind;
+#define PLAN_MAX 8U
+static op_kind plan[PLAN_MAX];
+static unsigned plan_len, plan_at, deselect_at;
+static job_kind job;
+static int job_rc;                       /* the client's result */
+static uint8_t mux_tx, mux_rx, mux_mask, reset_tried, probe_at, phantoms, booted, mux_ok;
+
+static void plan_add(op_kind k)
+{
+  if (plan_len < PLAN_MAX) plan[plan_len++] = k;
+}
+
+static void plan_start(job_kind k)
+{
+  job = k; plan_len = 0; plan_at = 0; job_rc = I2C_OK; reset_tried = 0;
+}
+
+static void mux_reset_pulse(void)
+{
+  i2c_bus_mux_reset_line(1);
+  i2c_bus_mux_reset_line(0);   /* the TCA9548A needs 6 ns low: one write after the other is longer */
+}
+
+static int is_phantom(uint8_t addr7)
+{
+  for (unsigned i = 0; i < I2C_PHANTOM_COUNT; i++)
+    if ((phantoms >> i & 1U) && phantom_addr[i] == addr7) return 1;
+  return 0;
+}
+
+static void plan_deselect(void)
+{
+  deselect_at = plan_len;
+  plan_add(OP_DESELECT);
+  plan_add(OP_DESELECT_CHECK);
+}
+
+static void plan_boot(void)
+{
+  plan_start(JOB_BOOT);
+  mux_reset_pulse();
+  plan_deselect();
+  for (unsigned i = 0; i < I2C_PHANTOM_COUNT; i++) plan_add(OP_PROBE);
+  probe_at = 0;
+}
+
+static void plan_client(enum i2c_client c)
+{
+  const xfer_t *x = &xfers[c];
+  op_kind work = x->txlen == 0 && x->rxlen == 0 ? OP_RECOVER : OP_XFER;
+  plan_start(JOB_CLIENT);
+  if (channel_of[c] == UPSTREAM)
+  {
+    if (!mux_ok) plan_deselect();   /* a deselect that never read back: check it first */
+    plan_add(work);
+    return;
+  }
+  if (work == OP_XFER && is_phantom(x->addr7)) { job_rc = I2C_ENACK_ADDR; return; }   /* an empty plan */
+  mux_mask = (uint8_t)(1U << channel_of[c]);
+  plan_add(OP_SELECT);
+  plan_add(OP_SELECT_CHECK);
+  plan_add(work);
+  plan_deselect();
+}
+```
+
+## 6. State machine
 
 ```mermaid
 stateDiagram-v2
   [*] --> S_IDLE
-  S_IDLE --> S_XFER: a client is queued, start its transfer
-  S_IDLE --> S_RECOVER: a recover-only request is next
+  S_IDLE --> S_XFER: a job starts, its first operation is a transfer
+  S_IDLE --> S_RECOVER: its first operation is a recovery
   S_XFER --> S_DONE: complete, bus_rc 0
   S_XFER --> S_DONE: NACK -2 or -3, bus error -7, guard -6, HAL refused -7
-  S_DONE --> S_IDLE: bus task, bus_rc 0 or a clean NACK, i2c_bus_done(c, bus_rc)
+  S_DONE --> S_XFER: bus task, the job's next operation
   S_DONE --> S_RECOVER: bus task, timeout, bus error, HAL refusal or SDA low
   S_RECOVER --> S_RECOVER: step timer, more steps left
   S_RECOVER --> S_RECOVERED: step timer, last step
-  S_RECOVERED --> S_IDLE: bus task, i2c_start, i2c_bus_done(c, -5 or bus_rc)
+  S_RECOVERED --> S_XFER: bus task, i2c_start, the job's next operation
+  S_DONE --> S_END: the plan is done
+  S_RECOVERED --> S_END: the plan is done
+  S_END --> S_IDLE: bus task, i2c_bus_done(c, job_rc), or the boot is done
 ```
 
 `finish(rc)` is the one way out of `S_XFER`, as in the earlier driver. It runs in a critical
@@ -173,10 +300,11 @@ preempt the I2C interrupt (priority 2). So when a read completes in the instant 
 the guard wins and the result is `I2C_ETIMEOUT`.
 
 ```c {#states}
-typedef enum { S_IDLE, S_XFER, S_DONE, S_RECOVER, S_RECOVERED } bus_state;
+typedef enum { S_IDLE, S_XFER, S_DONE, S_RECOVER, S_RECOVERED, S_END } bus_state;
 static volatile bus_state st = S_IDLE;
 static volatile int bus_rc, recover_rc;
-static enum i2c_client cur;            /* the client of the transfer on the bus */
+static enum i2c_client cur;            /* the client of the job on the bus */
+static xfer_t op;                      /* the transfer on the bus */
 static int failed_rc;                  /* the failed transfer's code, reported after the recovery */
 static int hal_refused;                /* the HAL refused to start the transfer on the bus */
 static UTIL_TIMER_Object_t guard_timer, step_timer;
@@ -198,8 +326,9 @@ static void finish(int rc)
 
 The completion callbacks are ST's. Only a NACK (`HAL_I2C_ERROR_AF`) gives a NACK code. During a
 read-only transfer it is `I2C_ENACK_DATA`: the device answered its command and then did not deliver.
-Otherwise it is `I2C_ENACK_ADDR`. Any other error (a bus error, lost arbitration, an overrun) is
-`I2C_EBUS`: a bus fault (WSMP-P3), which a module must not take for an absence.
+Otherwise it is `I2C_ENACK_ADDR`, also for a zero-length write (a probe). Any other error (a bus
+error, lost arbitration, an overrun) is `I2C_EBUS`: a bus fault (WSMP-P3), which a module must not
+take for an absence.
 
 ```c {#callbacks}
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
@@ -213,7 +342,7 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
   if (hi2c != &hi2c2) return;
   if (!(hi2c->ErrorCode & HAL_I2C_ERROR_AF)) finish(I2C_EBUS);
-  else finish(xfers[cur].txlen == 0 ? I2C_ENACK_DATA : I2C_ENACK_ADDR);
+  else finish(op.txlen == 0 && op.rxlen > 0 ? I2C_ENACK_DATA : I2C_ENACK_ADDR);
 }
 static void on_guard(void *ctx) { (void)ctx; finish(I2C_ETIMEOUT); }
 
@@ -223,11 +352,12 @@ void I2C2_EV_IRQHandler(void) { BUSYMON_ISR("I2C2_EV", HAL_I2C_EV_IRQHandler(&hi
 void I2C2_ER_IRQHandler(void) { BUSYMON_ISR("I2C2_ER", HAL_I2C_ER_IRQHandler(&hi2c2)); }
 ```
 
-## 6. Starting a transfer
+## 7. Starting an operation
 
-`kick` starts the next queued transfer when the bus is idle. A transfer without bytes asks for the
-recovery alone, and its result is 0 or `I2C_ESTUCK`. Otherwise the guard starts first, so a transfer
-that never completes still ends. ST's HAL takes non-const buffers but only reads a transmit buffer.
+`run_op` starts the plan's next operation, or, when the plan is done, posts the end of the job.
+A transfer starts its guard first, so a transfer that never completes still ends. ST's HAL takes
+non-const buffers but only reads a transmit buffer. A zero-length write (a probe) sends the address
+and a STOP.
 
 ```c {#start}
 static HAL_StatusTypeDef hal_start(const xfer_t *x)
@@ -235,31 +365,68 @@ static HAL_StatusTypeDef hal_start(const xfer_t *x)
   uint16_t a = HAL_ADDR(x->addr7);
   if (x->rxlen == 0) return HAL_I2C_Master_Transmit_IT(&hi2c2, a, (uint8_t *)(uintptr_t)x->tx, x->txlen);
   if (x->txlen == 0) return HAL_I2C_Master_Receive_IT(&hi2c2, a, x->rx, x->rxlen);
+  if (x->txlen == WORD_ADDR_LEN)
+    return HAL_I2C_Mem_Read_IT(&hi2c2, a, (uint16_t)((unsigned)x->tx[0] << BYTE_BITS | x->tx[1]), I2C_MEMADD_SIZE_16BIT,
+                               x->rx, x->rxlen);
   return HAL_I2C_Mem_Read_IT(&hi2c2, a, x->tx[0], I2C_MEMADD_SIZE_8BIT, x->rx, x->rxlen);
+}
+
+static uint32_t guard_ms(const xfer_t *x)
+{
+  return I2C_GUARD_MS + ((uint32_t)x->txlen + x->rxlen + 1U) * I2C_BYTE_US / US_PER_MS;   /* + the address byte */
+}
+
+static void start_xfer(const xfer_t *x)
+{
+  op = *x;
+  st = S_XFER;
+  (void)WS_CHECK(UTIL_TIMER_SetPeriod(&guard_timer, guard_ms(x)) == UTIL_TIMER_OK);   /* the timer is stopped */
+  (void)WS_CHECK(UTIL_TIMER_Start(&guard_timer) == UTIL_TIMER_OK);                    /* stopped by finish() */
+  hal_refused = hal_start(&op) != HAL_OK;
+  if (hal_refused) finish(I2C_EBUS);
 }
 
 static void recover_begin(void);
 
+static void start_mux(int read)
+{
+  start_xfer(read ? &(xfer_t){ .rx = &mux_rx, .addr7 = I2C_MUX_ADDR, .rxlen = 1 }
+                  : &(xfer_t){ .tx = &mux_tx, .addr7 = I2C_MUX_ADDR, .txlen = 1 });
+}
+
+static void run_op(void)
+{
+  if (plan_at >= plan_len) { st = S_END; post(); return; }
+  switch (plan[plan_at])
+  {
+    case OP_SELECT: mux_tx = mux_mask; start_mux(0); break;
+    case OP_DESELECT: mux_tx = 0; start_mux(0); break;
+    case OP_SELECT_CHECK: case OP_DESELECT_CHECK: mux_rx = 0xFFU; start_mux(1); break;
+    case OP_XFER: start_xfer(&xfers[cur]); break;
+    case OP_RECOVER: failed_rc = I2C_OK; recover_begin(); break;
+    default: start_xfer(&(xfer_t){ .tx = &mux_tx, .addr7 = phantom_addr[probe_at] }); break;   /* OP_PROBE */
+  }
+}
+
 static void kick(void)
 {
-  if (st != S_IDLE || fifo_len == 0) return;
-  cur = fifo_pop();
-  if (xfers[cur].txlen == 0 && xfers[cur].rxlen == 0) { failed_rc = I2C_OK; recover_begin(); return; }
-  st = S_XFER;
-  (void)WS_CHECK(UTIL_TIMER_Start(&guard_timer) == UTIL_TIMER_OK);   /* stopped by finish() */
-  hal_refused = hal_start(&xfers[cur]) != HAL_OK;
-  if (hal_refused) finish(I2C_EBUS);
+  if (st != S_IDLE || job != JOB_NONE) return;
+  if (!booted) plan_boot();
+  else if (fifo_len == 0) return;
+  else { cur = fifo_pop(); plan_client(cur); }
+  run_op();
 }
 
-/* The four forms of i2c_bus.h: write, read, a register address and then a read, or recover only. */
-static int form_ok(const uint8_t *tx, uint8_t txlen, const uint8_t *rx, uint8_t rxlen)
+/* The five forms of i2c_bus.h: write, read, a register address and then a read, a word address and
+   then a read, or recover only. */
+static int form_ok(const uint8_t *tx, uint8_t txlen, const uint8_t *rx, uint16_t rxlen)
 {
   if (rxlen == 0) return txlen == 0 || tx != NULL;
-  if (txlen == 0) return rx != NULL;
-  return txlen == REG_ADDR_LEN && tx && rx;
+  if (txlen == 0) return rx != NULL && rxlen <= I2C_RX_MAX;
+  return (txlen == REG_ADDR_LEN || txlen == WORD_ADDR_LEN) && tx && rx && rxlen <= I2C_RX_MAX;
 }
 
-int i2c_bus_submit(enum i2c_client c, uint8_t addr7, const uint8_t *tx, uint8_t txlen, uint8_t *rx, uint8_t rxlen)
+int i2c_bus_submit(enum i2c_client c, uint8_t addr7, const uint8_t *tx, uint8_t txlen, uint8_t *rx, uint16_t rxlen)
 {
   if ((unsigned)c >= I2C_C_COUNT || !form_ok(tx, txlen, rx, rxlen) || busy[c]) return -1;
   xfers[c] = (xfer_t){ .tx = tx, .rx = rx, .addr7 = addr7, .txlen = txlen, .rxlen = rxlen };
@@ -270,12 +437,17 @@ int i2c_bus_submit(enum i2c_client c, uint8_t addr7, const uint8_t *tx, uint8_t 
 }
 ```
 
-## 7. Stuck-bus recovery
+## 8. Stuck-bus recovery
 
 A device reset or unplugged in the middle of a byte can hold SDA low. The recovery takes the pins
 over, clocks SCL until SDA is free and sends a real STOP. It is `ws_i2c_recover_step()` in
 `firmware/stage0.c`, which `firmware/test_policy.c` tests on the host. One step runs at each tick of
-the step timer, so the recovery takes about 15–70 ms and never waits.
+the step timer, so the recovery takes about 15–70 ms and never waits. It runs with the failing
+client's channel still selected (step 1 of section 6.6). If SDA stays low, the device on that
+channel holds the upstream bus too, through the mux: the mux RESET pulse deselects it in hardware
+(step 2), so the upstream parts are back at once, and the client gets `I2C_ESTUCK`. Step 3, the
+port's power cycle, and the Faulted state with its back-off do not exist on the breadboard, which
+has no port power switch.
 
 ```c {#recovery}
 static void pin_scl(void *c, int level) { (void)c; HAL_GPIO_WritePin(GPIOA, SCL_PIN, level ? GPIO_PIN_SET : GPIO_PIN_RESET); }
@@ -308,23 +480,54 @@ static void recover_begin(void)
 }
 ```
 
-## 8. The bus task
+## 9. The bus task
 
-The bus task runs in the main loop. It reports a good transfer at once, and a clean NACK too: an
-absent module answers every probe with one, and the bus is free afterwards. After a failure that can
-leave the bus stuck, it first recovers the bus, then reports the failure. Such a failure is a guard
-timeout, a bus error, a HAL refusal, or SDA still low. `deliver` frees the client before it calls
-`i2c_bus_done`, so the module can submit its next transfer from the completion. Then `kick` starts
-the next transfer in the queue.
+The bus task runs in the main loop. After a failure that can leave the bus stuck (a guard timeout,
+a bus error, a HAL refusal, or SDA still low) it first recovers the bus. A clean NACK costs no
+recovery: an absent module answers every probe with one, and the bus is free afterwards. Then
+`op_done` takes the operation's result into the job and runs the next operation.
+
+`end_job` frees the client before it calls `i2c_bus_done`, so the module can submit its next
+transfer from the completion. Then `kick` starts the next job in the queue.
 
 ```c {#task}
-static void deliver(int rc)
+static void end_job(void)
 {
+  job_kind was = job;
   enum i2c_client c = cur;
-  busy[c] = 0;
+  job = JOB_NONE;
   st = S_IDLE;
-  i2c_bus_done(c, rc);
+  if (was == JOB_BOOT) booted = 1;
+  else { busy[c] = 0; i2c_bus_done(c, job_rc); }
   kick();
+}
+
+/* A mux write, or its read-back: 1 when it took. */
+static int mux_took(op_kind k, int rc)
+{
+  if (rc != I2C_OK) return 0;
+  if (k == OP_SELECT_CHECK) return mux_rx == mux_mask;
+  return k != OP_DESELECT_CHECK || mux_rx == 0U;
+}
+
+static void mux_done(op_kind k, int rc)
+{
+  int is_select = k == OP_SELECT || k == OP_SELECT_CHECK;
+  if (mux_took(k, rc)) { if (k == OP_DESELECT_CHECK) mux_ok = 1; return; }
+  if (is_select) { job_rc = I2C_EBUS; plan_at = deselect_at; return; }   /* never the transfer */
+  if (reset_tried) { mux_ok = 0; job_rc = I2C_EBUS; plan_at = plan_len; return; }   /* the job ends: no second RESET */
+  reset_tried = 1;
+  mux_reset_pulse();
+  plan_at = deselect_at;
+}
+
+static void op_done(int rc)
+{
+  op_kind k = plan[plan_at++];
+  if (k == OP_XFER || k == OP_RECOVER) job_rc = rc;
+  else if (k == OP_PROBE) { if (rc == I2C_OK) phantoms |= (uint8_t)(1U << probe_at); probe_at++; }
+  else mux_done(k, rc);
+  run_op();
 }
 
 static int may_be_stuck(int rc)
@@ -334,24 +537,28 @@ static int may_be_stuck(int rc)
 
 static void bus_task(void)
 {
+  if (st == S_END) { end_job(); return; }
   if (st == S_DONE)
   {
     if (bus_rc != I2C_OK && may_be_stuck(bus_rc)) { failed_rc = bus_rc; recover_begin(); return; }
-    deliver(bus_rc);
+    op_done(bus_rc);
   }
-  else if (WS_CHECK(st == S_RECOVERED))   /* the task is posted only with S_DONE or S_RECOVERED */
+  else if (WS_CHECK(st == S_RECOVERED))   /* the task is posted only with S_DONE, S_RECOVERED or S_END */
   {
     i2c_start();
-    deliver(recover_rc ? I2C_ESTUCK : failed_rc);
+    if (recover_rc) mux_reset_pulse();   /* step 2: SDA still low, the mux lets the upstream bus go */
+    op_done(recover_rc ? I2C_ESTUCK : failed_rc);
   }
 }
 BUSYMON_TASK(bus_task)
 ```
 
-## 9. Initialisation and power
+## 10. Initialisation, power and status
 
 `i2c_bus_init` creates the timers, registers the task and starts the peripheral. It also drives PA9
-high, so the sensor supply is on by default.
+high, so the sensor supply is on by default. Then the boot job starts at once: the mux RESET pulse,
+the deselect and its read-back, and the phantom check, before any client transfer. A client may
+submit at any time; its transfer waits in the queue until the boot job is done.
 
 ```c {#init}
 void i2c_bus_power(int on) { HAL_GPIO_WritePin(GPIOA, POWER_PIN, on ? GPIO_PIN_SET : GPIO_PIN_RESET); }
@@ -367,10 +574,15 @@ void i2c_bus_init(void)
   HAL_GPIO_WritePin(GPIOA, POWER_PIN, GPIO_PIN_SET);
   HAL_GPIO_Init(GPIOA, &gpio);
   i2c_start();
+  kick();   /* the boot job */
 }
+
+int i2c_bus_ready(void) { return booted; }
+int i2c_bus_mux_ok(void) { return mux_ok; }
+uint8_t i2c_bus_phantoms(void) { return phantoms; }
 ```
 
-## 10. The file
+## 11. The file
 
 ```c {#i2c_bus.c}
 #define WS_CHECK_FILE 12
@@ -389,6 +601,8 @@ void i2c_bus_init(void)
 <<msp>>
 
 <<queue>>
+
+<<jobs>>
 
 <<states>>
 

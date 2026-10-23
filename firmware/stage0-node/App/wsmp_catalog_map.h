@@ -7,7 +7,7 @@
 #include "ws_obs.h"
 
 /* What the minute's #sample line reports about the outside air. */
-typedef struct { int th_valid; int16_t t; uint16_t h; unsigned th_samples; } wsmp_map_summary;
+typedef struct { int th_valid, h_valid; int16_t t; uint16_t h; unsigned th_samples; } wsmp_map_summary;   /* h_valid: RH not missing */
 
 /* Fills o->bitmap and o->code[] from the snapshots of every port in the layout (wsmp_host.h):
    the fields of the modules in the layout, INVALID where a channel is missing. */

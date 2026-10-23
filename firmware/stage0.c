@@ -25,15 +25,18 @@ static int sht45_word(const uint8_t *b, uint16_t *raw) {
  if(ws_crc8(b,WS_SHT45_WORD_LEN)!=b[WS_SHT45_WORD_LEN]) return -1;
  *raw=ws_get_be16(b); return 0;
 }
-int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN],int16_t *centi_c,uint16_t *centi_rh) {
+int ws_sht45_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN],int32_t *centi_c,int32_t *centi_rh) {
  uint16_t rt, rh;
  if(sht45_word(bytes,&rt)||sht45_word(bytes+WS_SHT45_WORD_LEN+1,&rh)) return WS_SHT45_ECRC;
- int32_t t=sht45_scale(rt,WS_SHT45_T_OFFSET_CENTI,WS_SHT45_T_SPAN_CENTI);
- int32_t h=sht45_scale(rh,WS_SHT45_RH_OFFSET_CENTI,WS_SHT45_RH_SPAN_CENTI);
- if(h<0) h=0;
- if(h>WS_RH_MAX_CENTI) h=WS_RH_MAX_CENTI;
- *centi_c=(int16_t)t; *centi_rh=(uint16_t)h;
+ *centi_c=sht45_scale(rt,WS_SHT45_T_OFFSET_CENTI,WS_SHT45_T_SPAN_CENTI);
+ *centi_rh=sht45_scale(rh,WS_SHT45_RH_OFFSET_CENTI,WS_SHT45_RH_SPAN_CENTI);
  return 0; /* Outputs are unchanged on failure; caller must emit invalid flags. */
+}
+int ws_sht4x_serial_parse(const uint8_t bytes[WS_SHT45_REPLY_LEN],uint32_t *serial) {
+ uint16_t hi, lo;
+ if(sht45_word(bytes,&hi)||sht45_word(bytes+WS_SHT45_WORD_LEN+1,&lo)) return WS_SHT45_ECRC;
+ *serial=(uint32_t)hi<<(CHAR_BIT*WS_SHT45_WORD_LEN)|lo;
+ return 0;
 }
 /* One step per half period of 100 kHz SCL; the caller waits >= WS_I2C_HALF_US between steps. */
 enum { REC_CHECK, REC_HIGH, REC_STOP_SDA_LOW, REC_STOP_SCL_HIGH, REC_STOP_SDA_HIGH, REC_DONE };

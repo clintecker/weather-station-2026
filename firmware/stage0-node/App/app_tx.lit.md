@@ -363,7 +363,7 @@ call chain is the deepest one that `tools/stack_report.py` counts.
 
 ```c {#minute-encode}
 /* The minute's observation, built from the modules' snapshots. */
-typedef struct { int valid; int16_t t; uint16_t h; uint32_t utc, uptime; unsigned samples; } minute_t;
+typedef struct { int valid, h_valid; int16_t t; uint16_t h; uint32_t utc, uptime; unsigned samples; } minute_t;
 
 /* Builds and encodes the minute's observation into plain (WS_OBS_PLAIN_MAX bytes). Returns 0 if
    it did not encode. */
@@ -378,7 +378,7 @@ static int minute_encode(minute_t *m, uint8_t *plain)
   o = (ws_obs_t){ .epoch = node.boot_epoch, .seq = node.next_seq, .utc = m->utc, .uptime = m->uptime,
                   .energy = (uint8_t)energy_state() };
   wsmp_map_obs(&o, &sum);
-  m->valid = sum.th_valid; m->t = sum.t; m->h = sum.h; m->samples = sum.th_samples;
+  m->valid = sum.th_valid; m->h_valid = sum.h_valid; m->t = sum.t; m->h = sum.h; m->samples = sum.th_samples;
   if (!m->valid) node.sensor_faults++;
   if (!modules_reported)
   {
@@ -427,19 +427,41 @@ static int journal_or_hold(const uint8_t *plain, int encoded, int busy, jref_t *
 `sample_line` prints one line per minute:
 
 ```text
-#sample epoch=E seq=S uptime=U valid=0|1 rc=SRC n=SAMPLES t=T rh=H time=synchronized|unknown utc=UTC journal=ok|held|ERROR pending=P lost=L
+#sample epoch=E seq=S uptime=U valid=0|1 rc=SRC n=SAMPLES t=T rh=H|- time=synchronized|unknown utc=UTC journal=ok|held|ERROR pending=P lost=L
 ```
 
 `rc` is always 0. The latch does not wait for a sensor, so no sample code reaches the report. `t` and `rh`
-are the outside-air means, 0 when the minute is not valid. `pending` and
+are the outside-air means; `t` is 0 when the minute is not valid. `valid` is the temperature's: the
+relative humidity can be missing on its own (a suspect sample leaves only its own channel), so `rh`
+is `-` whenever it is missing (and when the minute is not valid), never a 0 that reads as a
+measurement. The radio frame marks it missing as before. `pending` and
 `lost` come from `store_journal_pending` and `store_journal_lost`.
 
 ```c {#sample-line}
+#define RH_DIGITS 5U   /* up to 65535 */
+#define DECIMAL 10U
+
+/* The line's RH: its decimal value, or "-" when it is missing. */
+static const char *rh_text(const minute_t *m, char buf[RH_DIGITS + 1U])
+{
+  unsigned v = m->h, i = RH_DIGITS;
+  if (!m->valid || !m->h_valid) return "-";
+  buf[i] = 0;
+  for (unsigned k = 0; k < RH_DIGITS; k++)
+  {
+    buf[--i] = (char)('0' + v % DECIMAL);
+    v /= DECIMAL;
+    if (v == 0) break;
+  }
+  return buf + i;
+}
+
 static void sample_line(const minute_t *m, int src, int rc, int busy)
 {
-  APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d n=%u t=%d rh=%u time=%s utc=%u journal=%s pending=%u lost=%u\n",
+  char rh[RH_DIGITS + 1U];
+  APP_PRINTF("#sample epoch=%u seq=%u uptime=%u valid=%d rc=%d n=%u t=%d rh=%s time=%s utc=%u journal=%s pending=%u lost=%u\n",
              (unsigned)node.boot_epoch, (unsigned)node.next_seq, (unsigned)m->uptime, m->valid, src, m->samples,
-             m->valid ? m->t : 0, m->valid ? m->h : 0U, m->utc ? "synchronized" : "unknown", (unsigned)m->utc,
+             m->valid ? m->t : 0, rh_text(m, rh), m->utc ? "synchronized" : "unknown", (unsigned)m->utc,
              rc ? "ERROR" : busy ? "held" : "ok", (unsigned)store_journal_pending(), (unsigned)store_journal_lost());
 }
 ```
