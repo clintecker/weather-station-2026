@@ -188,6 +188,7 @@ void mod_th_serial_request(enum th_unit u)
 }
 
 void mod_th_hold(enum th_unit u, int on) { th[u].hold = (uint8_t)(on != 0); }
+void mod_th_set_boot(enum th_unit u, uint32_t boot_id) { th[u].boot_id = boot_id; }
 int mod_th_idle(enum th_unit u) { return th[u].step == ST_IDLE; }
 
 int mod_th_serial_result(enum th_unit u, uint32_t *serial)

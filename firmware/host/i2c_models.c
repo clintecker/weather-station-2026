@@ -15,7 +15,7 @@ static uint8_t test_written[I2C_SIM_DEVICES][I2C_SIM_BUF];
    a NACK. */
 typedef struct { uint16_t t_raw, rh_raw; int bad_crc, serial_bad, serial_fails, measuring, serial_next; uint32_t serial; uint64_t measured_at; } sht45_t;
 static sht45_t sht45[I2C_SIM_DEVICES];
-static int sht45_too_early, sht45_commands, sht45_interleaved;
+static int sht45_too_early, sht45_commands, sht45_interleaved, sht45_serial_commands;
 #define SHT45_READY_MS 9U
 void model_sht45_set(int dev, uint16_t t_raw, uint16_t rh_raw, int bad_crc)
 {
@@ -26,6 +26,7 @@ void model_sht45_serial_fail_next(int dev, int n) { sht45[dev].serial_fails = n;
 int model_sht45_read_too_early(void) { return sht45_too_early; }
 int model_sht45_commands(void) { return sht45_commands; }
 int model_sht45_interleaved(void) { return sht45_interleaved; }
+int model_sht45_serial_commands(void) { return sht45_serial_commands; }
 
 static int sht45_write(int dev, const uint8_t *data, uint16_t n)
 {
@@ -33,6 +34,7 @@ static int sht45_write(int dev, const uint8_t *data, uint16_t n)
   if (n == 1 && data[0] == WS_SHT4X_SERIAL)
   {
     if (s->serial_bad == 2) return -1;
+    sht45_serial_commands++;
     if (s->measuring) sht45_interleaved = 1;
     s->serial_next = 1;
     return 0;
@@ -231,18 +233,21 @@ static int mux_read(uint8_t *data, uint16_t n)
 #define EEPROM_LEN 4096U
 static uint8_t eeprom[I2C_SIM_DEVICES][EEPROM_LEN];
 static int eeprom_fails[I2C_SIM_DEVICES], eeprom_corrupts[I2C_SIM_DEVICES];
+static uint16_t eeprom_corrupt_at[I2C_SIM_DEVICES];   /* the byte the next corrupted reads flip */
 void model_eeprom_write(int dev, uint16_t at, const uint8_t *data, uint16_t n)
 {
   for (uint16_t i = 0; i < n; i++) eeprom[dev][(at + i) % EEPROM_LEN] = data[i];
 }
 void model_eeprom_fail_next(int dev, int n) { eeprom_fails[dev] = n; }
-void model_eeprom_corrupt_next(int dev, int n) { eeprom_corrupts[dev] = n; }
+void model_eeprom_corrupt_next(int dev, int n) { model_eeprom_corrupt_at(dev, 0x20U, n); }
+void model_eeprom_corrupt_at(int dev, uint16_t at, int n) { eeprom_corrupt_at[dev] = at; eeprom_corrupts[dev] = n; }
 
 static int eeprom_read(int dev, uint16_t at, uint8_t *data, uint16_t n)
 {
   if (eeprom_fails[dev] > 0) { eeprom_fails[dev]--; return -1; }
   for (uint16_t i = 0; i < n; i++) data[i] = eeprom[dev][(at + i) % EEPROM_LEN];
-  if (eeprom_corrupts[dev] > 0 && n > 0x20U - at && at <= 0x20U) { eeprom_corrupts[dev]--; data[0x20U - at] ^= 1U; }
+  uint16_t c = eeprom_corrupt_at[dev];
+  if (eeprom_corrupts[dev] > 0 && at <= c && n > c - at) { eeprom_corrupts[dev]--; data[c - at] ^= 1U; }
   return 0;
 }
 

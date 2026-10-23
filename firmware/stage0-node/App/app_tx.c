@@ -213,11 +213,16 @@ static void minute_report(int src)
   busymon_step_end(s, "report.send");
 }
 
-/* Every 15 s; the 4th tick latches every module and makes the minute's report. */
+/* Every 15 s; the 4th tick latches every module and makes the minute's report. The other ticks tell the
+   station host when that latch is due, for its pre-latch slot (the latch then sets the next itself). */
 static void sample(void)
 {
   last_sample_s = clock_s();
-  if (++sample_ticks < SAMPLES_PER_REPORT) return;
+  if (++sample_ticks < SAMPLES_PER_REPORT)
+  {
+    wsmp_host_next_latch(clock_ms() + (SAMPLES_PER_REPORT - sample_ticks) * SAMPLE_PERIOD_MS);
+    return;
+  }
   sample_ticks = 0;
   if (!node.running || stuck) return;   /* no report after sampling stopped (reboot, storm, stuck radio) */
   wsmp_host_latch(time_utc(), clock_ms());

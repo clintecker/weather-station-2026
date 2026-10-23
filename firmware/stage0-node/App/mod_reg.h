@@ -23,6 +23,7 @@ void mod_reg_snapshot(enum reg_unit u, uint8_t snap[WSMP_SNAPSHOT_LEN]);
 void mod_reg_bind(enum reg_unit u, const wsmp_record *applied, uint32_t boot_id, uint32_t now_ms);
 /* As mod_th's: no new sample while held; idle with no step in progress. */
 void mod_reg_hold(enum reg_unit u, int on);
+void mod_reg_set_boot(enum reg_unit u, uint32_t boot_id);   /* a new boot ID, the window kept */
 int mod_reg_idle(enum reg_unit u);
 /* The ID check of an identity read, a step from idle: the chip ID register read alone. Its result: 0
    while it waits or runs, 1 the part's ID, I2C_EID another chip, or the bus code. Never a probe. */

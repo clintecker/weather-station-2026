@@ -202,7 +202,10 @@ void SubghzApp_Init(void)
 Two timers drive sampling. The module timer fires every 250 ms (`WSMP_TICK_MS`). Its task runs one
 step of every local module through the station host. The sample timer fires every 15 s. Its 4th
 tick latches every module and calls `minute_report` (section 4). The latch never waits for a
-sensor. A module that has not finished a sample has one sample fewer in its window.
+sensor. A module that has not finished a sample has one sample fewer in its window. Each of the
+other ticks tells the host when the latch is due (`wsmp_host_next_latch`): the host's pre-latch slot
+starts 3 s before it, and holds the port modules' samples for their identity checks (sensor module
+ports design, section 6.7).
 
 ```mermaid
 flowchart TD
@@ -210,7 +213,7 @@ flowchart TD
   T["sample_timer every 15 s, in the timer interrupt"] --> P["on_sample_timer posts the sample task"]
   P --> S["sample() in the main loop: last_sample_s = clock_s()"]
   S --> N{"++sample_ticks reached 4?"}
-  N -- no --> WAIT["return"]
+  N -- no --> WAIT["wsmp_host_next_latch: the latch is due in (4 - ticks) x 15 s"]
   N -- yes --> D{"node.running and not stuck?"}
   D -- no --> DROP["return: no report"]
   D -- yes --> L["wsmp_host_latch(time_utc(), clock_ms())"]
@@ -247,11 +250,16 @@ static int stuck;              /* the exchange outlasted its bound. The watchdog
 ```
 
 ```c {#sample-timer}
-/* Every 15 s; the 4th tick latches every module and makes the minute's report. */
+/* Every 15 s; the 4th tick latches every module and makes the minute's report. The other ticks tell the
+   station host when that latch is due, for its pre-latch slot (the latch then sets the next itself). */
 static void sample(void)
 {
   last_sample_s = clock_s();
-  if (++sample_ticks < SAMPLES_PER_REPORT) return;
+  if (++sample_ticks < SAMPLES_PER_REPORT)
+  {
+    wsmp_host_next_latch(clock_ms() + (SAMPLES_PER_REPORT - sample_ticks) * SAMPLE_PERIOD_MS);
+    return;
+  }
   sample_ticks = 0;
   if (!node.running || stuck) return;   /* no report after sampling stopped (reboot, storm, stuck radio) */
   wsmp_host_latch(time_utc(), clock_ms());
