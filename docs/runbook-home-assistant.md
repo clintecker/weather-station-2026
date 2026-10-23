@@ -2,8 +2,11 @@
 
 The gateway publishes to an MQTT broker. Home Assistant (HA) finds the station through MQTT
 discovery. The gateway was tested against a local Mosquitto broker
-(`evidence/mqtt-local-broker-2026-10-13/`). A real HA instance, TLS and broker authentication are
-not yet verified ([`CONTEXT-PACK.md`](CONTEXT-PACK.md) §6, step 3).
+(`evidence/mqtt-local-broker-2026-10-13/`), then against Clint's Home Assistant: the HA user's login (checked with a read-only client) and
+the `station-01` device with its entities, from the gateway's run-d7 discovery, are verified
+(`evidence/ha-broker-2026-10-22/`). TLS is not verified: that broker has no certificate. The
+gateway logging in on the rotated password and entities updating live are checked at the next
+hardware session ([`CONTEXT-PACK.md`](CONTEXT-PACK.md) §6, step 3).
 
 ```mermaid
 flowchart LR
@@ -43,7 +46,9 @@ Recent HA versions call add-ons "Apps", so menu names can differ on older versio
 3. **Enable the MQTT integration:** Settings → Devices & services. MQTT appears as a discovered
    integration. Select it, keep discovery on, and submit.
 4. **Gateway settings:**
-   - `host` = the HA machine's address (for example `homeassistant.local` or its IP),
+   - `host` = the HA machine's IP or Tailscale name. Not `core-mosquitto` (it resolves only
+     inside HA). `homeassistant.local` needs mDNS from the gateway host to the HA machine, so
+     prefer the IP or the Tailscale name,
    - `port` 1883,
    - `tls` false (TLS on 8883 needs the add-on's `certfile` and `keyfile`),
    - `username` = the user from step 2.

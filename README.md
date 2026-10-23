@@ -158,7 +158,7 @@ Its sensors are available only while the gateway health and the measurement fres
 
 The two measurement sensors meet the weather-data integration requirement of the bench prototype. The gateway does not make a forecast or composite weather entity, because no data supports one.
 
-A test against a local Mosquitto broker verified discovery, last will and reconnect (`evidence/mqtt-local-broker-2026-10-13/`). Nobody has tested a real Home Assistant instance, TLS or broker authentication yet. Use a separate station ID and key for hardware. Never use the demo state to provision real boards.
+A test against a local Mosquitto broker verified discovery, last will and reconnect (`evidence/mqtt-local-broker-2026-10-13/`). Against Clint's Home Assistant, the HA-user broker login and the device's discovery are verified (`evidence/ha-broker-2026-10-22/`). TLS is not tested. Use a separate station ID and key for hardware. Never use the demo state to provision real boards.
 
 ## What is implemented
 
@@ -182,7 +182,7 @@ The radio settings are bench values (`firmware/stage0-node/App/radio_cfg.h`): 91
 
 Open before the 24-hour delivery test:
 
-- Home Assistant against the real broker.
+- Home Assistant entities updating live, with the gateway logging in on the rotated password (login and discovery were checked on 2026-10-22).
 - The link budget at the real placement, the antennas and the current measurements.
 - The 24-hour run with its restart and outage matrix.
 

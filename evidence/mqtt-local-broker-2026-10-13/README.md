@@ -11,5 +11,6 @@ gateway (station-01) under launchd. Capture: `mosquitto_sub -v -t '#'` (`capture
 | Broker restart | gateway reconnected and republished discovery/state ~18 s after the broker came back |
 | Found and fixed | gateway republished identical retained state every second (~172k messages/day); now publishes on change plus every 300 s |
 
-Not tested: a real Home Assistant instance (needs Clint's broker/HA details), TLS, broker auth.
+Not tested here: a real Home Assistant instance, TLS, broker auth. The HA instance and broker auth
+were checked on 2026-10-22 (`../ha-broker-2026-10-22/`).
 MQTT was disabled again on the live gateway after the test.

@@ -15,6 +15,7 @@ None of this is an H01 pass. H01 (the 24-hour placement run) has not been run.
 | `g13-outage-2026-10-13/` | TX console during a bench link outage: PROBING back-off and backlog drain (G13) |
 | `g7-reset-during-write-2026-10-13/` | 70 NRST resets during flash writes: G7 part A, PASS |
 | `mqtt-local-broker-2026-10-13/` | Gateway against a local Mosquitto broker: discovery, last will, republish |
+| `ha-broker-2026-10-22/` | Gateway against Clint's Home Assistant broker: HA-user login, retained discovery, the `station-01` device in HA |
 | `h01-rehearsal-2026-10-14/` | 24 h lab rehearsal of release `bc5e6ede429c`, scored with `tools/h01_report.py`: 1,440 of 1,440 intervals on time. Office lab, not the intended placement: not H01 |
 | `h01-rehearsal-2026-10-15/` | Lab rehearsal of release `7eb79f64f2bd`, ended at 16 h: 960 of 960 intervals on time. Bench desk: not H01. The RX `process` peak of 1.9 ms seen here was removed in release `809230951ae1` (`firmware/stage0-node/RELEASES.md`) |
 | `soak-a07f498-2026-10-13/` | 9 h bench soak of firmware a07f498 (transport only; sensor not wired) |
