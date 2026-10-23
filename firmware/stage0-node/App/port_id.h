@@ -48,7 +48,8 @@ void port_id_slot(enum wsmp_port p, int on);
 /* The identity check of the module admitted on p with the identity e: from the driver's idle state,
    before any identification or holder check that has not begun. The parts: the sensor serial (a
    different one read twice), then the record as admission saw it (applied or SENSOR_CHANGED: the
-   serial at 0x0C and the CRC at 0x7C, a difference confirmed by a full read; READ: a NACK at 0x50
+   serial at 0x0C and the CRC at 0x7C, a difference confirmed by a full read that is a valid record,
+   or by two full reads that agree with each other on an invalid image or a NACK; READ: a NACK at 0x50
    agrees, a valid record is a change; a content NO_RECORD or CAL_REJECTED: the CRC-32C of the whole
    image, a different one read twice and parsed as at admission). */
 void port_id_check(enum wsmp_port p, const port_id_expect *e);

@@ -440,8 +440,11 @@ order; then the identity-check results (section 5.1), in port order; then the re
 refused duplicates, in port order. The check's outcome is read before the transitions, because two
 of them depend on it: a Suspect module whose read was good returns to Active only with a matched
 check (an unverified one neither raises nor resets its missed-latch count), and a module whose
-flag a matched check clears takes its new boot ID before its snapshot is frozen, so the window that
-may span the replug already carries it. An Admitted module whose check confirmed a change does not
+flag a matched check clears takes its new boot ID in the snapshot this latch froze, so the window
+that may span the replug already carries it. A matched check clears the flag only at a latch whose
+read was good: the transition returns the outcome the identity result takes, unverified when the
+read failed, so an unplugged module whose check agrees (a READ module's NACK at 0x50) keeps its flag
+and boot ID until it is back. An Admitted module whose check confirmed a change does not
 join: it ends without a change of the layout.
 
 ```c {#latch}
@@ -472,8 +475,9 @@ static void end_port(port_t *h, uint32_t now_ms)
 }
 
 /* A good read (WSMP-P2) ends Suspect only with a matched check; good but unverified, the missed-latch
-   count is neither raised nor reset. An on-board module has no check: its outcome is "matched". */
-static void latch_one(enum wsmp_port p, port_t *s, int outcome, uint32_t utc, uint32_t now_ms)
+   count is neither raised nor reset. An on-board module has no check: its outcome is "matched".
+   Returns 1 if the latch's read was good. */
+static int latch_one(enum wsmp_port p, port_t *s, int outcome, uint32_t utc, uint32_t now_ms)
 {
   uint8_t raw[WSMP_SNAPSHOT_LEN];
   local_latch(p, token, utc, now_ms);
@@ -481,14 +485,16 @@ static void latch_one(enum wsmp_port p, port_t *s, int outcome, uint32_t utc, ui
   int read_ok = wsmp_unpack_snapshot(raw, &s->snap) == WSMP_OK && s->snap.token == token;
   s->have_snap = read_ok;
   int good = read_ok && s->probe != PROBE_ABSENT;
-  if (good && s->state == WH_SUSPECT && outcome != PORT_ID_MATCHED) return;
-  if (good) { s->state = WH_ACTIVE; s->missed = 0; return; }
+  if (good && s->state == WH_SUSPECT && outcome != PORT_ID_MATCHED) return 1;
+  if (good) { s->state = WH_ACTIVE; s->missed = 0; return 1; }
   s->state = WH_SUSPECT;
-  if (++s->missed < MISSED_LATCHES) return;
+  if (++s->missed < MISSED_LATCHES) return 0;
   s->state = WH_ABSENT;
   s->have_snap = 0;
   s->good = 0;
+  s->unverified = 0;
   layout_change(s, now_ms);
+  return 0;
 }
 
 /* The outcome of the port's identity check at this latch: unverified if it was not asked for or has not
@@ -500,20 +506,26 @@ static int outcome_of(enum wsmp_port p, const port_t *s)
   return r == PORT_ID_CHECKING ? PORT_ID_UNVERIFIED : r;
 }
 
-/* A matched check clears the flag: the module may have been replugged, so it takes a new boot ID (the
-   port's admission count goes up), before this latch freezes its snapshot. */
+/* A matched check at a good latch clears the flag: the module may have been replugged, so it takes a
+   new boot ID (the port's admission count goes up), the snapshot this latch froze included. */
 static void new_boot(enum wsmp_port p, port_t *s)
 {
   s->admissions++;
-  local_set_boot(p, local_boot_epoch() << BOOT_SHIFT | (s->admissions & COUNT_MASK));
+  uint32_t boot = local_boot_epoch() << BOOT_SHIFT | (s->admissions & COUNT_MASK);
+  local_set_boot(p, boot);
+  s->snap.boot16 = (uint16_t)boot;
 }
 
-static void transition(enum wsmp_port p, port_t *s, int outcome, uint32_t utc, uint32_t now_ms)
+/* Returns the outcome the identity result takes: a latch whose read failed (a missed probe or sample
+   read) never matches, so an unplugged module whose check agrees (a READ module's NACK) keeps its flag. */
+static int transition(enum wsmp_port p, port_t *s, int outcome, uint32_t utc, uint32_t now_ms)
 {
   if (s->state == WH_ADMITTED && outcome != PORT_ID_CHANGED) { s->state = WH_ACTIVE; s->missed = 0; layout_change(s, now_ms); }
-  if (s->state != WH_ACTIVE && s->state != WH_SUSPECT) return;
+  if (s->state != WH_ACTIVE && s->state != WH_SUSPECT) return outcome;
+  int good = latch_one(p, s, outcome, utc, now_ms);
+  if (outcome == PORT_ID_MATCHED && !good) return PORT_ID_UNVERIFIED;
   if (s->replug && outcome == PORT_ID_MATCHED) new_boot(p, s);
-  latch_one(p, s, outcome, utc, now_ms);
+  return outcome;
 }
 
 /* The window just frozen is published as missing: every slot. */
@@ -540,6 +552,15 @@ void wsmp_host_next_latch(uint32_t at_ms)
   latch_known = 1;
 }
 
+/* When this latch was due: the latch predicted, unless it comes early (before it: the schedule was not
+   what was told) or a whole period late; then now. The next is due a period after it, so a sample task
+   that runs late does not move the slot. */
+static uint32_t due_at(uint32_t now_ms)
+{
+  uint32_t late = now_ms - next_latch;
+  return latch_known && (int32_t)late >= 0 && late < LATCH_MS ? next_latch : now_ms;
+}
+
 void wsmp_host_latch(uint32_t utc, uint32_t now_ms)
 {
   int outcome[P_COUNT];
@@ -553,8 +574,8 @@ void wsmp_host_latch(uint32_t utc, uint32_t now_ms)
     ports[q].check_on = 0;
   }
   slot_on = 0;
-  wsmp_host_next_latch(now_ms + LATCH_MS);
-  for (unsigned q = P_AIR_TH; q < P_COUNT; q++) transition((enum wsmp_port)q, &ports[q], outcome[q], utc, now_ms);
+  wsmp_host_next_latch(due_at(now_ms) + LATCH_MS);
+  for (unsigned q = P_AIR_TH; q < P_COUNT; q++) outcome[q] = transition((enum wsmp_port)q, &ports[q], outcome[q], utc, now_ms);
   for (unsigned q = P_AIR_TH; q < P_COUNT; q++)
     if (port_id_is_port((enum wsmp_port)q)) identity_result(&ports[q], outcome[q], now_ms);
   for (unsigned q = P_AIR_TH; q < P_COUNT; q++)
@@ -574,13 +595,13 @@ every Admitted, Active and Suspect port module:
 
 | Rule | Here | Checked by (`Reidentify` in `tests/test_wsmp_host.py`) |
 |---|---|---|
-| The slot | it starts `WSMP_HOST_SLOT_MS` (3 s) before the next latch, which app_tx.c gives at each sample tick (`wsmp_host_next_latch`) and each latch sets a minute on, and ends with the latch. In it a port-module driver starts no new sample: one that falls due waits until the first tick after the latch, its period's phase kept (`mean_due`). On-board drivers sample as usual | `test_the_slot_keeps_every_windows_sample_count`, `test_no_port_module_sample_starts_in_the_slot_and_the_check_never_splits_one` |
+| The slot | it starts `WSMP_HOST_SLOT_MS` (3 s) before the next latch, which app_tx.c gives at each sample tick (`wsmp_host_next_latch`, counted from when the sample timer fired) and each latch sets a minute after the latch was due (`due_at`: a late latch keeps the schedule, an early one restarts it from now), and ends with the latch. A latch before its slot has no check: unverified. In it a port-module driver starts no new sample: one that falls due waits until the first tick after the latch, its period's phase kept (`mean_due`). On-board drivers sample as usual | `test_the_slot_keeps_every_windows_sample_count`, `test_no_port_module_sample_starts_in_the_slot_and_the_check_never_splits_one`, `test_a_latch_before_its_slot_is_unverified`, `test_a_late_latch_keeps_the_schedule`, `test_the_next_latch_told_by_the_application_moves_the_slot` |
 | Priority | the check begins from the driver's idle state; an identification or a holder check that has not begun waits until the latch, one already running finishes first | `test_the_identity_check_has_priority_over_a_holder_check` |
-| The check | against what admission saw (App/port_id.c): changed, matched or unverified (also a check not finished by the latch) | `test_a_check_that_cannot_finish_by_the_latch_is_unverified`, the swap, recalibration, corruption and record tests |
+| The check | against what admission saw (App/port_id.c): changed, matched or unverified (also a check not finished by the latch, which finishes after it and is forgotten). An applied record whose confirming full read is not a valid record is read twice: two that agree (same image, or both NACK) are a change, two that disagree unverified | `test_a_check_that_cannot_finish_by_the_latch_is_unverified`, `test_a_check_still_running_at_the_latch_finishes_after_it_unverified`, `test_an_applied_record_swapped_for_a_blank_eeprom_ends_the_port`, `test_an_applied_record_whose_full_reads_both_nack_ends_the_port`, `test_an_applied_record_whose_full_reads_disagree_is_unverified`, the swap, recalibration, corruption and record tests |
 | Changed | the port ends at that latch, its window not published (Absent: no snapshot); it is probed and admitted as any new module | `test_an_sht45_board_swap_ends_the_port_at_the_next_latch`, `test_a_changed_record_crc_with_the_same_serial_is_a_leave_and_a_join` |
-| The flag | a missed probe or a failed sample read of a module in the layout sets it, an identity-check read never; while it is set and the check is unverified the window is published as missing; a matched check clears it and gives a new boot ID | `test_a_noticed_replug_is_missing_until_a_matched_check_then_a_new_boot_id`, `test_a_failed_identity_check_read_alone_does_not_set_the_flag` |
-| Unverified | never moves the port; `#modules` shows `(unverified=N)` from 3 latches in a row | `test_an_eeprom_that_nacks_intermittently_keeps_the_port_published` |
-| Timeout | 60 latches in a row flagged and unverified end the port in any state; it rejoins as a new module | `test_a_suspect_module_with_good_reads_and_unverified_checks_times_out_once`, `test_an_active_bmp581_whose_eeprom_dies_then_one_read_fails` |
+| The flag | a missed probe or a failed sample read of a module in the layout sets it, an identity-check read never; while it is set and the check is unverified the window is published as missing; a matched check at a latch whose read is good clears it and gives a new boot ID (a latch whose read failed never matches: `transition`) | `test_a_noticed_replug_is_missing_until_a_matched_check_then_a_new_boot_id`, `test_a_failed_identity_check_read_alone_does_not_set_the_flag`, `test_an_unplugged_read_module_takes_one_new_boot_id_per_replug` |
+| Unverified | never moves the port; `#modules` shows `(unverified=N)` from 3 latches in a row; a removal resets it | `test_an_eeprom_that_nacks_intermittently_keeps_the_port_published`, `test_a_module_removed_by_three_missed_latches_shows_no_unverified_count` |
+| Timeout | 60 latches in a row flagged and unverified end the port in any state; it rejoins as a new module | `test_a_suspect_module_with_good_reads_and_unverified_checks_times_out_once`, `test_an_active_bmp581_whose_eeprom_dies_then_one_read_fails`, `test_a_match_partway_through_resets_the_timeout_run` |
 | Suspect | a good read with an unverified check neither raises nor resets the missed-latch count | `test_miss_good_unverified_miss_good_unverified_miss_removes_the_module` |
 
 The slot is defined from the latch time, not from a sample: sampling is free-running (WSMP-T4). A

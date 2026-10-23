@@ -41,6 +41,7 @@ int h_mux_ok(void) { return i2c_bus_mux_ok(); }
 int h_phantoms(void) { return i2c_bus_phantoms(); }
 void h_eeprom_write(int dev, int at, const uint8_t *data, int n) { model_eeprom_write(dev, (uint16_t)at, data, (uint16_t)n); }
 void h_eeprom_fail_next(int dev, int n) { model_eeprom_fail_next(dev, n); }
+void h_eeprom_fail_after(int dev, int skip, int n) { model_eeprom_fail_after(dev, skip, n); }
 void h_eeprom_corrupt_next(int dev, int n) { model_eeprom_corrupt_next(dev, n); }
 void h_eeprom_corrupt_at(int dev, int at, int n) { model_eeprom_corrupt_at(dev, (uint16_t)at, n); }
 

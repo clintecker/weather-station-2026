@@ -431,7 +431,9 @@ admits the module.
 - **WSMP-P10. Re-identification.** An I2C module's identity (record serial and CRC, sensor serial, as
   seen at admission) is checked in a pre-latch slot before each latch, from the driver's idle state;
   a confirmed change ends the port at that latch with the window missing, then the new module is
-  admitted. After a missed probe or a failed data read, windows are missing until a check matches.
+  admitted (a record that no longer parses, or an EEPROM that no longer answers, is confirmed by two
+  full reads that agree with each other). After a missed probe or a failed data read, windows are
+  missing until a check matches at a latch whose data read is good.
   An unverified check never changes the port's state, except the timeout: 60 latches in a row with
   the flag set and no check matching end the port, in any state, and it rejoins. For any module with
   its own identity block (remote, or behind a v2 adapter): a snapshot whose boot ID differs from the

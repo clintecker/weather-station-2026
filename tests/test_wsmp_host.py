@@ -800,5 +800,190 @@ class Reidentify(unittest.TestCase):
         self.assertEqual(lib.h_host_changes(P_PRESSURE), changes)
 
 
+    # -- an applied record whose full read cannot be parsed (section 6.7, the applied row) ---------------
+
+    def swap_in_slot(self, lib, setup):
+        """Runs half a minute, calls setup() (the swap), then runs to the latch and latches."""
+        lib.h_host_run(30_000)
+        setup()
+        lib.h_host_run(30_000)
+        lib.h_host_latch(1_792_000_000)
+
+    def test_an_applied_record_swapped_for_a_blank_eeprom_ends_the_port(self):
+        lib, devs = self.boot([(P_PRESSURE, DEVK_BMP581, bmp_record(cal=[(3, 0, 1, 10, 1_000_000)]))])
+        self.minutes(lib, 2)
+        self.assertEqual(self.slot0(lib, P_PRESSURE), BMP_VALUE + 10)
+        _, ee = devs[P_PRESSURE]
+        changes = lib.h_host_changes(P_PRESSURE)
+        self.swap_in_slot(lib, lambda: lib.h_eeprom_write(ee, 0, bytes([0xFF]) * 128, 128))   # no missed probe
+        self.assertEqual(lib.h_host_state(P_PRESSURE), ABSENT)   # two full reads that agree: a change
+        self.assertEqual(lib.h_host_has_snapshot(P_PRESSURE), 0)  # the window is missing
+        self.minutes(lib, 2)
+        self.assertEqual(lib.h_host_state(P_PRESSURE), ACTIVE)
+        self.assertEqual(self.identity(lib, P_PRESSURE)['flags'], 0x20)   # NO_RECORD (BLANK)
+        self.assertEqual(self.slot0(lib, P_PRESSURE), BMP_VALUE)          # no calibration
+        self.assertEqual(lib.h_host_changes(P_PRESSURE), changes + 2)
+
+    def test_an_applied_record_whose_full_reads_both_nack_ends_the_port(self):
+        lib, devs = self.boot([(P_PRESSURE, DEVK_BMP581, bmp_record(cal=[(3, 0, 1, 10, 1_000_000)]))])
+        self.minutes(lib, 2)
+        _, ee = devs[P_PRESSURE]
+        changes = lib.h_host_changes(P_PRESSURE)
+
+        def gone_after_the_short_read():
+            lib.h_eeprom_corrupt_at(ee, 0x0F, 1)               # the 8-byte serial read differs ...
+            lib.h_eeprom_fail_after(ee, 1, 2)                  # ... then both full reads NACK at 0x50
+        self.swap_in_slot(lib, gone_after_the_short_read)
+        self.assertEqual(lib.h_host_state(P_PRESSURE), ABSENT)
+        self.assertEqual(lib.h_host_has_snapshot(P_PRESSURE), 0)
+        lib.h_remove_device(ee)                                # the module that joins has no EEPROM
+        self.minutes(lib, 2)
+        self.assertEqual(lib.h_host_state(P_PRESSURE), ACTIVE)
+        self.assertEqual(self.identity(lib, P_PRESSURE)['flags'], 0x10)   # NO_RECORD (READ)
+        self.assertEqual(self.slot0(lib, P_PRESSURE), BMP_VALUE)
+        self.assertEqual(lib.h_host_changes(P_PRESSURE), changes + 2)
+
+    def test_an_applied_record_whose_full_reads_disagree_is_unverified(self):
+        lib, devs = self.boot([(P_PRESSURE, DEVK_BMP581, bmp_record(cal=[(3, 0, 1, 10, 1_000_000)]))])
+        self.minutes(lib, 2)
+        _, ee = devs[P_PRESSURE]
+        changes = lib.h_host_changes(P_PRESSURE)
+        blank = bytes([0xFF]) * 128
+        lib.h_eeprom_write(ee, 0, blank, 128)
+        setups = (lambda: lib.h_eeprom_corrupt_at(ee, 0x40, 1),   # the first full read differs from the second
+                  lambda: lib.h_eeprom_fail_after(ee, 1, 1),      # a NACK, then a blank image
+                  lambda: lib.h_eeprom_corrupt_at(ee, 0x40, 1))
+        for setup in setups:
+            self.swap_in_slot(lib, setup)
+            self.assertEqual(lib.h_host_state(P_PRESSURE), ACTIVE)
+            self.assertFalse(self.withheld(lib, P_PRESSURE))   # no flag: published as usual
+        self.assertIn(b'pressure=active(unverified=3)', self.line(lib))
+        self.assertEqual(lib.h_host_changes(P_PRESSURE), changes)
+
+    # -- the counters and the flag at the edges ----------------------------------------------------------
+
+    def test_a_module_removed_by_three_missed_latches_shows_no_unverified_count(self):
+        lib, devs = self.boot([(P_PRESSURE, DEVK_BMP581, bmp_record())])
+        self.minutes(lib, 2)
+        bmp, ee = devs[P_PRESSURE]
+        lib.h_remove_device(ee)
+        self.minutes(lib, 3)
+        self.assertIn(b'pressure=active(unverified=3)', self.line(lib))
+        lib.h_remove_device(bmp)
+        self.minutes(lib, 3)
+        self.assertEqual(lib.h_host_state(P_PRESSURE), ABSENT)
+        self.assertNotIn(b'unverified', self.line(lib))
+
+    def test_an_unplugged_read_module_takes_one_new_boot_id_per_replug(self):
+        lib, devs = self.boot([(P_PRESSURE, DEVK_BMP581, None)])
+        self.minutes(lib, 2)
+        bmp, _ = devs[P_PRESSURE]
+        boot = self.identity(lib, P_PRESSURE)['boot']
+        self.assertEqual(boot, EPOCH << 8 | 1)
+        for _replug in (1, 2):
+            lib.h_remove_device(bmp)
+            for _ in range(2):                                 # missed latches: the NACK at 0x50 never matches
+                self.minutes(lib, 1)
+                self.assertEqual(lib.h_host_state(P_PRESSURE), SUSPECT)
+                self.assertEqual(self.identity(lib, P_PRESSURE)['boot'], boot)
+            lib.h_restore_device(bmp)
+            self.minutes(lib, 1)
+            self.assertEqual(lib.h_host_state(P_PRESSURE), ACTIVE)
+            boot += 1
+            self.assertEqual(self.identity(lib, P_PRESSURE)['boot'], boot)   # once
+            self.assertEqual(lib.h_host_snap_boot(P_PRESSURE), boot & 0xFFFF)
+            self.assertFalse(self.withheld(lib, P_PRESSURE))
+            self.minutes(lib, 2)
+            self.assertEqual(self.identity(lib, P_PRESSURE)['boot'], boot)
+
+    def test_a_match_partway_through_resets_the_timeout_run(self):
+        lib, devs = self.boot([(P_PRESSURE, DEVK_BMP581, bmp_record())])
+        self.minutes(lib, 2)
+        bmp, ee = devs[P_PRESSURE]
+        changes = lib.h_host_changes(P_PRESSURE)
+        lib.h_remove_device(ee)
+        self.nack_one_sample(lib, bmp, DM_NACK_DATA)           # the flag, the check unverified: run 1
+        self.minutes(lib, 29)                                  # run 30
+        self.assertTrue(self.withheld(lib, P_PRESSURE))
+        lib.h_restore_device(ee)
+        self.minutes(lib, 1)                                   # matched: the flag cleared, the run reset
+        self.assertFalse(self.withheld(lib, P_PRESSURE))
+        lib.h_remove_device(ee)
+        self.nack_one_sample(lib, bmp, DM_NACK_DATA)           # a new run: 1
+        for _ in range(58):
+            self.minutes(lib, 1)
+            self.assertEqual(lib.h_host_state(P_PRESSURE), ACTIVE)
+            self.assertTrue(self.withheld(lib, P_PRESSURE))
+        self.assertEqual(lib.h_host_changes(P_PRESSURE), changes)
+        self.minutes(lib, 1)                                   # the 60th of this run
+        self.assertEqual(lib.h_host_state(P_PRESSURE), ABSENT)
+
+    def test_a_check_still_running_at_the_latch_finishes_after_it_unverified(self):
+        lib, devs = self.boot([(P_PRESSURE, DEVK_BMP581, bmp_record())])
+        self.minutes(lib, 2)
+        _, ee = devs[P_PRESSURE]
+        changes = lib.h_host_changes(P_PRESSURE)
+        lib.h_device_mode(ee, DM_OK, 0, 4_000)                 # the slot's reads take 4 s each
+        for n in range(1, 4):
+            self.minutes(lib, 1)                               # the check is on the bus at the latch
+            self.assertEqual(lib.h_host_state(P_PRESSURE), ACTIVE)
+            self.assertFalse(self.withheld(lib, P_PRESSURE))
+            self.assertEqual(b'pressure=active(unverified=3)' in self.line(lib), n == 3)
+        lib.h_host_run(10_000)                                 # the last check finishes after its latch ...
+        lib.h_device_mode(ee, DM_OK, 0, 1)
+        lib.h_host_run(MINUTE - 10_000)
+        lib.h_host_latch(1_792_000_000)                        # ... and the next latch has its own check
+        self.assertNotIn(b'unverified', self.line(lib))
+        self.assertEqual(lib.h_host_slot_count(P_PRESSURE, 0), 4)
+        self.assertEqual(lib.h_host_changes(P_PRESSURE), changes)
+
+    # -- the latch schedule --------------------------------------------------------------------------------
+
+    def serial_checks(self, lib, ms):
+        before = lib.h_sht45_serial_commands()
+        lib.h_host_run(ms)
+        return lib.h_sht45_serial_commands() - before
+
+    def test_a_latch_before_its_slot_is_unverified(self):
+        lib, _ = self.boot([(P_AIR_TH, DEVK_SHT45, sht_record())])
+        self.minutes(lib, 2)
+        changes = lib.h_host_changes(P_AIR_TH)
+        for n in range(1, 4):
+            self.assertEqual(self.serial_checks(lib, MINUTE - SLOT_MS - 1_000), 0)   # an early latch: no slot
+            lib.h_host_latch(1_792_000_000)
+            self.assertEqual(lib.h_host_state(P_AIR_TH), ACTIVE)
+            self.assertFalse(self.withheld(lib, P_AIR_TH))
+            self.assertEqual(b'air_th=active(unverified=3)' in self.line(lib), n == 3)
+        self.minutes(lib, 1)
+        self.assertNotIn(b'unverified', self.line(lib))
+        self.assertEqual(lib.h_host_changes(P_AIR_TH), changes)
+
+    def test_a_late_latch_keeps_the_schedule(self):
+        # The sample task ran 2 s late: the next latch is still due a minute after this one was due.
+        lib, _ = self.boot([(P_AIR_TH, DEVK_SHT45, sht_record())])
+        self.minutes(lib, 2)
+        lib.h_host_run(MINUTE + 2_000)
+        lib.h_host_latch(1_792_000_000)
+        self.assertEqual(self.serial_checks(lib, MINUTE - 2_000 - SLOT_MS - 250), 0)
+        self.assertEqual(self.serial_checks(lib, 1_000), 1)    # the slot opens 3 s before the scheduled latch
+        lib.h_host_run(SLOT_MS - 750)
+        lib.h_host_latch(1_792_000_000)
+        self.assertEqual(lib.h_host_state(P_AIR_TH), ACTIVE)
+        self.assertNotIn(b'unverified', self.line(lib))
+
+    def test_the_next_latch_told_by_the_application_moves_the_slot(self):
+        lib, _ = self.boot([(P_AIR_TH, DEVK_SHT45, sht_record())])
+        self.minutes(lib, 2)
+        lib.h_now_ms.restype = ctypes.c_uint32
+        lib.h_host_next_latch(lib.h_now_ms() + 20_000)
+        self.assertEqual(self.serial_checks(lib, 20_000 - SLOT_MS - 250), 0)
+        self.assertEqual(self.serial_checks(lib, 1_000), 1)
+        lib.h_host_run(SLOT_MS - 750)
+        lib.h_host_latch(1_792_000_000)
+        self.assertEqual(lib.h_host_state(P_AIR_TH), ACTIVE)
+        self.assertFalse(self.withheld(lib, P_AIR_TH))
+        self.assertEqual(self.serial_checks(lib, MINUTE - SLOT_MS - 250), 0)   # then a minute from that latch
+        self.assertEqual(self.serial_checks(lib, 1_000), 1)
+
 if __name__ == '__main__':
     unittest.main()

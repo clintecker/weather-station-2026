@@ -77,6 +77,7 @@ int model_mux_reads(void);
    is i & 0xFF at address i. */
 void model_eeprom_write(int dev, uint16_t at, const uint8_t *data, uint16_t n);
 void model_eeprom_fail_next(int dev, int n);      /* the next n reads NACK their data */
+void model_eeprom_fail_after(int dev, int skip, int n);   /* the next skip reads are served, then n NACK */
 void model_eeprom_corrupt_next(int dev, int n);   /* the next n reads that cover byte 0x20 flip a bit of it */
 void model_eeprom_corrupt_at(int dev, uint16_t at, int n);   /* the same for byte at */
 #endif

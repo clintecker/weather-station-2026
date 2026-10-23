@@ -232,19 +232,21 @@ static int mux_read(uint8_t *data, uint16_t n)
 /* DEVK_EEPROM (24LC32A): 4 KiB; a read past the end wraps to 0, as the part's address counter does. */
 #define EEPROM_LEN 4096U
 static uint8_t eeprom[I2C_SIM_DEVICES][EEPROM_LEN];
-static int eeprom_fails[I2C_SIM_DEVICES], eeprom_corrupts[I2C_SIM_DEVICES];
+static int eeprom_fails[I2C_SIM_DEVICES], eeprom_corrupts[I2C_SIM_DEVICES], eeprom_skips[I2C_SIM_DEVICES];
 static uint16_t eeprom_corrupt_at[I2C_SIM_DEVICES];   /* the byte the next corrupted reads flip */
 void model_eeprom_write(int dev, uint16_t at, const uint8_t *data, uint16_t n)
 {
   for (uint16_t i = 0; i < n; i++) eeprom[dev][(at + i) % EEPROM_LEN] = data[i];
 }
-void model_eeprom_fail_next(int dev, int n) { eeprom_fails[dev] = n; }
+void model_eeprom_fail_next(int dev, int n) { eeprom_fails[dev] = n; eeprom_skips[dev] = 0; }
+void model_eeprom_fail_after(int dev, int skip, int n) { eeprom_fails[dev] = n; eeprom_skips[dev] = skip; }
 void model_eeprom_corrupt_next(int dev, int n) { model_eeprom_corrupt_at(dev, 0x20U, n); }
 void model_eeprom_corrupt_at(int dev, uint16_t at, int n) { eeprom_corrupt_at[dev] = at; eeprom_corrupts[dev] = n; }
 
 static int eeprom_read(int dev, uint16_t at, uint8_t *data, uint16_t n)
 {
-  if (eeprom_fails[dev] > 0) { eeprom_fails[dev]--; return -1; }
+  if (eeprom_skips[dev] > 0) eeprom_skips[dev]--;
+  else if (eeprom_fails[dev] > 0) { eeprom_fails[dev]--; return -1; }
   for (uint16_t i = 0; i < n; i++) data[i] = eeprom[dev][(at + i) % EEPROM_LEN];
   uint16_t c = eeprom_corrupt_at[dev];
   if (eeprom_corrupts[dev] > 0 && at <= c && n > c - at) { eeprom_corrupts[dev]--; data[c - at] ^= 1U; }

@@ -38,7 +38,7 @@
 typedef enum { PI_IDLE, PI_WAIT, PI_REC, PI_SERIAL, PI_H_ID, PI_H_SHORT, PI_H_FULL, PI_H_SERIAL2, PI_DONE } pi_step;
 typedef enum { JOB_IDENTIFY, JOB_HOLDER } pi_job;
 /* The identity check's lane: its steps, and how each part ended. */
-typedef enum { C_IDLE, C_WAIT, C_SERIAL, C_SERIAL2, C_SHORT_SERIAL, C_SHORT_CRC, C_FULL, C_READ, C_IMG1, C_IMG2, C_DONE } pc_step;
+typedef enum { C_IDLE, C_WAIT, C_SERIAL, C_SERIAL2, C_SHORT_SERIAL, C_SHORT_CRC, C_FULL, C_FULL2, C_READ, C_IMG1, C_IMG2, C_DONE } pc_step;
 typedef enum { PART_AGREES, PART_CHANGED, PART_FAILED, PART_PENDING } pc_part;   /* pending: its next read is out */
 typedef struct {
   pi_step step;
@@ -49,8 +49,8 @@ typedef struct {
   uint8_t slot;
   /* The identity check: */
   pc_step cstep;
-  uint8_t agreed, changed, c_has_serial;
-  uint32_t c_serial, c_img;     /* the sensor serial it read; the CRC-32C of its first full read */
+  uint8_t agreed, changed, c_has_serial, c_nack;
+  uint32_t c_serial, c_img;     /* the sensor serial it read; the CRC-32C of its first full read (c_nack: it NACKed) */
   port_id_expect cexpect;
   uint8_t word[WORD_LEN];
   uint8_t img[WSMP_RECORD_LEN];
@@ -344,25 +344,48 @@ static int check_tick(enum wsmp_port p)
 }
 
 /* Applied or SENSOR_CHANGED at admission: the 8-byte serial, then the CRC; a difference is confirmed
-   by a full read that is structurally valid and names another serial or CRC. */
-static pc_part check_short(enum wsmp_port p)
+   by a full read that is structurally valid and names another serial or CRC. A full read that is not a
+   valid record (blank, corrupt, or a NACK at 0x50) is read once more: two that agree with each other
+   (the same image by its CRC-32C, or both NACKed) differ from the record admitted, a change; two that
+   disagree, or another failure, are unverified. */
+static pc_part same_full(const pi_t *s, int nack, uint32_t crc)
+{
+  return nack == s->c_nack && crc == s->c_img ? PART_CHANGED : PART_FAILED;
+}
+
+static pc_part valid_full(const pi_t *s, const wsmp_record *r)
+{
+  return r->serial != s->cexpect.serial || r->crc != s->cexpect.rec_crc ? PART_CHANGED : PART_AGREES;
+}
+
+static pc_part check_full(enum wsmp_port p, int rc)
 {
   pi_t *s = eng(p);
   wsmp_record r;
+  int nack = rc == I2C_ENACK_ADDR;
+  if (rc != I2C_OK && !nack) return PART_FAILED;
+  uint32_t crc = nack ? 0U : wsmp_crc32c(s->img, WSMP_RECORD_LEN);
+  if (s->cstep == C_FULL2) return same_full(s, nack, crc);
+  if (!nack && wsmp_record_parse(s->img, &r) == WSMP_REC_APPLIED) return valid_full(s, &r);
+  s->c_nack = (uint8_t)nack; s->c_img = crc;
+  c_read(p, C_FULL2, 0, WSMP_RECORD_LEN);
+  return PART_PENDING;
+}
+
+static pc_part check_short(enum wsmp_port p, int rc)
+{
+  const pi_t *s = eng(p);
+  if (s->cstep == C_FULL || s->cstep == C_FULL2) return check_full(p, rc);
+  if (rc != I2C_OK) return PART_FAILED;
   if (s->cstep == C_SHORT_SERIAL)
   {
     if (ws_get_be64(s->img, SERIAL_LEN) != s->cexpect.serial) c_read(p, C_FULL, 0, WSMP_RECORD_LEN);
     else c_read(p, C_SHORT_CRC, CRC_AT, CRC_LEN);
     return PART_PENDING;
   }
-  if (s->cstep == C_SHORT_CRC)
-  {
-    if (ws_get_be32(s->img) == s->cexpect.rec_crc) return PART_AGREES;
-    c_read(p, C_FULL, 0, WSMP_RECORD_LEN);
-    return PART_PENDING;
-  }
-  if (wsmp_record_parse(s->img, &r) != WSMP_REC_APPLIED) return PART_FAILED;   /* a CRC failure on a confirming read */
-  return r.serial != s->cexpect.serial || r.crc != s->cexpect.rec_crc ? PART_CHANGED : PART_AGREES;
+  if (ws_get_be32(s->img) == s->cexpect.rec_crc) return PART_AGREES;
+  c_read(p, C_FULL, 0, WSMP_RECORD_LEN);
+  return PART_PENDING;
 }
 
 /* A content NO_RECORD or CAL_REJECTED at admission: the image's CRC-32C. A different one is read again;
@@ -403,9 +426,9 @@ static void check_i2c_done(enum wsmp_port p, int rc)
   pc_step was = eng(p)->cstep;
   pc_part r;
   if (was == C_READ) r = check_read(p, rc);
+  else if (was != C_IMG1 && was != C_IMG2) r = check_short(p, rc);
   else if (rc != I2C_OK) r = PART_FAILED;
-  else if (was == C_IMG1 || was == C_IMG2) r = check_image(p);
-  else r = check_short(p);
+  else r = check_image(p);
   if (r == PART_PENDING) return;
   part(p, r);
   check_done(p);
