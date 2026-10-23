@@ -48,6 +48,20 @@ class Registry(unittest.TestCase):
         self.assertAlmostEqual(r.MODULE_TYPES[7]['factors']['nm_per_tip'] * 1e-6, 0.2794)
         self.assertEqual(r.REGISTRY_VERSION, 1)
 
+    def test_calibration_table_of_record_major_1(self):
+        # Spec 2026-10-21 section 6.9, frozen for major 1: bounds at the channel's scale, the physical
+        # range (WSMP section 4.1) at that scale, and the crop margins.
+        cal = self.r.CALIBRATION
+        self.assertEqual(sorted(cal), [1, 2, 3, 8])
+        self.assertEqual(cal[1], {'scale': -2, 'offset_bound': 200, 'gain_min': 980_000, 'gain_max': 1_020_000,
+                                  'range_min': -8_000, 'range_max': 6_000, 'margin_below': 0, 'margin_above': 0})
+        self.assertEqual(cal[2], {'scale': -2, 'offset_bound': 1_000, 'gain_min': 900_000, 'gain_max': 1_100_000,
+                                  'range_min': 0, 'range_max': 10_000, 'margin_below': 300, 'margin_above': 300})
+        self.assertEqual(cal[3], {'scale': -1, 'offset_bound': 50, 'gain_min': 990_000, 'gain_max': 1_010_000,
+                                  'range_min': 3_000, 'range_max': 11_000, 'margin_below': 0, 'margin_above': 0})
+        self.assertEqual(cal[8], {'scale': 0, 'offset_bound': 16, 'gain_min': 100_000, 'gain_max': 10_000_000,
+                                  'range_min': 0, 'range_max': 1_048_576, 'margin_below': 16, 'margin_above': 0})
+
     def test_every_channel_names_a_known_quantity_and_kind(self):
         r = self.r
         for t in r.MODULE_TYPES.values():
@@ -143,6 +157,19 @@ class Registry(unittest.TestCase):
         self.assertEqual(p.returncode, 1)
         self.assertIn('unknown unit', p.stderr)
         self.assertNotIn('Traceback', p.stderr)
+
+    def test_a_calibration_row_with_an_unknown_quantity_is_refused_cleanly(self):
+        # A valid row comes first, so the bounds checks must not run before every row's quantity is checked.
+        p = self.edited(('quantity = 2        # relative humidity', 'quantity = 999      # relative humidity'))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('a known quantity', p.stderr)
+        self.assertNotIn('Traceback', p.stderr)
+
+    def test_a_negative_margin_on_an_earlier_row_is_refused(self):
+        p = self.edited(('quantity = 2        # relative humidity', 'quantity = 2        # relative humidity'),
+                        ('margin = [300, 300]', 'margin = [-1, 300]'))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('bounds out of order or negative', p.stderr)
 
     def test_kind_codes_without_a_gap(self):
         # wsmp.c checks a kind as 1..WSMP_KIND_MAX, so a gap would pass a code with no name.

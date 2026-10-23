@@ -48,6 +48,9 @@ class Fuzz(unittest.TestCase):
     def test_wsmp(self):
         self.run_target('wsmp')
 
+    def test_record(self):
+        self.run_target('record')
+
 
 if __name__ == '__main__':
     unittest.main()

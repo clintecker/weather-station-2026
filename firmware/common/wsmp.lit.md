@@ -3,8 +3,9 @@
 `wsmp.c` packs and checks the data blocks of WSMP, the Weather Station Module Protocol
 (`docs/module-protocol.md`). A module gives its identity, its descriptors and one snapshot each
 minute. The station reads them, and this file turns the bytes into structures and back. It also
-checks the descriptors against the registry, computes CRC-32C and the radio budget, and maps
-quality codes. `tools/wsmp_registry.py` generates the registry header `wsmp_registry.h` from
+checks the descriptors against the registry, parses and packs the module record v1.0 of a module
+board's ID EEPROM (`docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md` section 6.9),
+computes CRC-32C and the radio budget, and maps quality codes. `tools/wsmp_registry.py` generates the registry header `wsmp_registry.h` from
 `wsmp_registry.toml`.
 
 The file has no state, no HAL call and no heap. The station uses it now. The remote module adapter
@@ -29,6 +30,8 @@ python3 tools/tangle.py --check firmware/common/wsmp.lit.md    # committed .c ==
 | Budget | the value bytes are the sum of the air widths. The quality bytes are 2 bits a channel, rounded up to a byte | `test_budget_bytes_for_the_bench_station` |
 | Quality | each snapshot quality maps to its 2-bit radio code. An unknown code maps to "missing" | `test_quality_air_table` |
 | CRC and text | CRC-32C gives the standard check value. Metadata text passes only the WSMP-M1 characters | `test_crc32c_known_vector`, `test_text_ok_charset` |
+| Identity flags | the identity block carries the identity flags in register 0x000F; unpack refuses a set reserved bit (2–3, 8–15) with `WSMP_ERESERVED` | `test_identity_flags_at_register_0x000f`, `test_identity_refuses_reserved_id_flag_bits`, `fuzz_wsmp` |
+| Module record | `wsmp_record_parse` applies checks 2–6 of the record in the spec's order and returns the first failure as a record status. An accepted record of minor 0 packs back to the same 128 bytes | `tests/test_wsmp_record.py`, `fuzz_record` |
 
 The error codes are:
 
@@ -44,7 +47,11 @@ The error codes are:
 | `WSMP_ETYPE` | −7 | an unknown module type, a different schema, or a channel list that differs from the entry |
 | `WSMP_ELEN` | −8 | a width outside 1 to 4, a channel count outside 1 to 8, or a zero serial |
 
-The tests are in `tests/test_wsmp_core.py`. The fuzz target is `firmware/fuzz/fuzz_wsmp.c`.
+The record parser returns a record status instead (`WSMP_REC_*`, section 9 below), because the
+status goes to the gateway in the identity flags.
+
+The tests are in `tests/test_wsmp_core.py` and `tests/test_wsmp_record.py`. The fuzz targets are
+`firmware/fuzz/fuzz_wsmp.c` and `firmware/fuzz/fuzz_record.c`.
 
 ## 2. Constants
 
@@ -61,6 +68,7 @@ top 3 bits as width − 1. The sign takes the next bit.
 #define CRC32C_POLY      0x82F63B78UL   /* the reflected Castagnoli polynomial */
 #define CRC32C_INIT      0xFFFFFFFFUL
 #define TEXT_PAD         0U
+#define ID_FLAGS_RESERVED 0xFF0CU   /* identity flags: bits 2-3 and 8-15 */
 ```
 
 ## 3. Identity block
@@ -88,8 +96,13 @@ packet-beta
   160-191: "boot ID"
   192-207: "capabilities"
   208-239: "descriptor digest"
-  240-255: "reserved, 0"
+  240-255: "identity flags"
 ```
+
+The identity flags (register 0x000F, reserved and 0 before the module ports design) tell where the
+serial came from and what became of the module record: the serial source in bits 0–1, the record
+status in bits 4–7, the rest 0. Their low byte goes to the gateway as the descriptor set's
+`id_flags`. A module without a record (an on-board module) has 0.
 
 ```c {#identity}
 void wsmp_pack_identity(const wsmp_identity *id, uint8_t out[WSMP_IDENTITY_LEN])
@@ -107,13 +120,15 @@ void wsmp_pack_identity(const wsmp_identity *id, uint8_t out[WSMP_IDENTITY_LEN])
   p = ws_write_be32(p, id->boot_id);
   p = ws_write_be16(p, id->caps);
   p = ws_write_be32(p, id->desc_digest);
-  memset(p, 0, (size_t)(out + WSMP_IDENTITY_LEN - p));
+  (void)ws_write_be16(p, id->id_flags);
 }
 ```
 
 The unpack function refuses a block that the station must not admit (WSMP-I1): a wrong magic, a
 different major version, a channel count outside 1 to 8, or a zero serial. A higher minor version is
-accepted (WSMP-V2). The reserved bytes are not checked, because a later minor version may use them.
+accepted (WSMP-V2). The identity flags' reserved bits (2–3 and 8–15) must be 0: a set one is
+`WSMP_ERESERVED` (spec section 6.7, "identity flags"), so a reason the station does not know never
+reaches the gateway as a known one.
 
 ```c {#identity-unpack}
 int wsmp_unpack_identity(const uint8_t in[WSMP_IDENTITY_LEN], wsmp_identity *id)
@@ -135,7 +150,9 @@ int wsmp_unpack_identity(const uint8_t in[WSMP_IDENTITY_LEN], wsmp_identity *id)
   id->caps = ws_get_be16(in + 24);
   (void)ws_read_be32(in + 26, &v);
   id->desc_digest = v;
+  id->id_flags = ws_get_be16(in + 30);
   if (id->channels == 0 || id->channels > WSMP_MAX_CHANNELS || id->serial == 0) return WSMP_ELEN;
+  if ((id->id_flags & ID_FLAGS_RESERVED) != 0) return WSMP_ERESERVED;
   return WSMP_OK;
 }
 ```
@@ -184,12 +201,14 @@ descriptor after the last channel, is `WSMP_ERESERVED`. The registry check comes
 `wsmp_desc_check`.
 
 ```c {#desc-unpack}
-static int zero(const uint8_t *p, size_t n)
+static int every(const uint8_t *p, size_t n, uint8_t v)
 {
   for (size_t i = 0; i < n; i++)
-    if (p[i]) return 0;
+    if (p[i] != v) return 0;
   return 1;
 }
+
+static int zero(const uint8_t *p, size_t n) { return every(p, n, 0); }
 
 int wsmp_unpack_desc(const uint8_t in[WSMP_DESC_BLOCK_LEN], unsigned n, wsmp_desc *d)
 {
@@ -220,6 +239,7 @@ each, so every user of the lookups shares it.
 ```c {#registry}
 static const uint8_t unit_of[WSMP_UNIT_OF_COUNT] = WSMP_UNIT_OF_INIT;
 static const wsmp_type_entry types[WSMP_TYPE_COUNT] = WSMP_TYPES_INIT;
+static const wsmp_cal_limits cal_limits[WSMP_CAL_COUNT] = WSMP_CAL_INIT;
 
 uint8_t wsmp_canonical_unit(uint16_t quantity) { return quantity < WSMP_UNIT_OF_COUNT ? unit_of[quantity] : 0U; }
 
@@ -229,7 +249,18 @@ const wsmp_type_entry *wsmp_type(uint16_t type)
     if (types[i].type == type) return &types[i];
   return NULL;
 }
+
+const wsmp_cal_limits *wsmp_cal_limits_of(uint16_t quantity)
+{
+  for (unsigned i = 0; i < WSMP_CAL_COUNT; i++)   /* bound: WSMP_CAL_COUNT entries */
+    if (cal_limits[i].quantity == quantity) return &cal_limits[i];
+  return NULL;
+}
 ```
+
+The calibration table of record major 1 (`wsmp_cal_limits_of`) is a registry table too: the
+generator writes it from the TOML's `[[calibration]]` rows, with each quantity's physical range
+converted to the channel scale. `wsmp_cal.c` applies it.
 
 ```c {#desc-check}
 static int desc_one_ok(const wsmp_desc *d)
@@ -390,7 +421,208 @@ int wsmp_text_ok(const uint8_t *p, size_t n)
 }
 ```
 
-## 8. The file
+## 8. Module record v1.0
+
+Every v1 module board carries a 24LC32A EEPROM whose first 128 bytes are the module record
+(`docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md` section 6.9, proposed as WSMP
+section 10.1). It gives the module a serial that follows it across ports, binds it to its sensor and
+carries the sensor's calibration. Every integer is big-endian. The length is fixed in major 1: the
+station reads the 128 bytes in one transfer before it knows anything else.
+
+| Offset | Size | Field | Rule |
+|---|---|---|---|
+| 0x00 | 4 | magic | `57 53 4D 52` ("WSMR") |
+| 0x04 | 1 | format major | 1 |
+| 0x05 | 1 | format minor | 0; a higher minor is accepted and its reserved bytes are not checked |
+| 0x06 | 2 | record length | 128 |
+| 0x08 | 2 | module type | in the registry |
+| 0x0A | 1 | board revision | informational |
+| 0x0B | 1 | flags | 0 when the minor is 0 |
+| 0x0C | 8 | serial | top byte 0x01, low 56 bits neither 0 nor all ones |
+| 0x14 | 1 | sensor-bind kind | 0 none, 1 SHT4x serial; 1 exactly on module type 1 (the only part with a readable serial) |
+| 0x15 | 3 | reserved | 0 |
+| 0x18 | 4 | sensor-bind value | 0 when the kind is 0 |
+| 0x1C | 4 | programming time | informational |
+| 0x20 | 16 | part number | WSMP-M1 text padded with zero bytes (`wsmp_text_ok`) |
+| 0x30 | 16 | reserved | 0 |
+| 0x40 | 48 | calibration | 3 entries of 16 bytes |
+| 0x70 | 12 | reserved | 0 |
+| 0x7C | 4 | CRC-32C | over 0x00–0x7B |
+
+A calibration entry is quantity (2), kind (1, 0 for every kind), reserved (1), calibration revision
+(2), reserved (2), offset (s32, at the channel's scale) and gain (u32, ppm). An all-zero entry is
+unused.
+
+```c {#record-layout}
+#define REC_MAGIC      0x57534D52UL   /* "WSMR" */
+#define REC_BLANK      0xFFU          /* an erased EEPROM */
+#define REC_NS_SHIFT   56U            /* the serial's top byte is its namespace */
+#define REC_SERIAL_LOW 0x00FFFFFFFFFFFFFFULL
+#define REC_ENTRY_LEN  16U
+#define REC_STATUS_SHIFT 4U
+#define REC_SOURCE_MASK  0x03U
+#define REC_STATUS_MASK  0x0FU
+enum { AT_MAJOR = 0x04, AT_MINOR = 0x05, AT_LENGTH = 0x06, AT_TYPE = 0x08, AT_HW = 0x0A, AT_FLAGS = 0x0B,
+       AT_SERIAL = 0x0C, AT_BIND_KIND = 0x14, AT_RESERVED1 = 0x15, AT_BIND = 0x18, AT_PROGRAMMED = 0x1C,
+       AT_PART = 0x20, AT_RESERVED2 = 0x30, AT_CAL = 0x40, AT_RESERVED3 = 0x70, AT_CRC = 0x7C };
+enum { RESERVED1_LEN = 3, RESERVED2_LEN = 16, RESERVED3_LEN = 12 };
+/* In an entry: the reserved byte after the kind, and the two after the revision. */
+enum { ENTRY_KIND = 2, ENTRY_RES_A = 3, ENTRY_REVISION = 4, ENTRY_RES_B = 6, ENTRY_RES_C = 7, ENTRY_OFFSET = 8,
+       ENTRY_GAIN = 12 };
+```
+
+**Checks, in order.** The first failure decides (section 6.9). Check 1, a read that fails three
+times, never reaches the parser, and the spec's second read after a CRC failure is the caller's: it
+reads again and parses again. Checks 2 to 5 look at the bytes before any field is trusted. An erased
+EEPROM (every byte 0xFF) is BLANK and anything else without the magic, an all-zero one included, is
+NO_MAGIC. The length is checked before the CRC, since a record of another length has its CRC
+elsewhere.
+
+```c {#record-head}
+static uint8_t record_head(const uint8_t *in)
+{
+  if (every(in, WSMP_RECORD_LEN, REC_BLANK)) return WSMP_REC_BLANK;
+  if (ws_get_be32(in) != REC_MAGIC) return WSMP_REC_NO_MAGIC;
+  if (in[AT_MAJOR] != WSMP_RECORD_MAJOR) return WSMP_REC_VERSION;
+  if (ws_get_be16(in + AT_LENGTH) != WSMP_RECORD_LEN) return WSMP_REC_MALFORMED;
+  if (wsmp_crc32c(in, AT_CRC) != ws_get_be32(in + AT_CRC)) return WSMP_REC_CRC;
+  return WSMP_REC_APPLIED;
+}
+```
+
+Once the CRC holds, the fields are read into the structure:
+
+```c {#record-fields}
+static void entry_fields(const uint8_t *p, wsmp_cal_entry *e)
+{
+  *e = (wsmp_cal_entry){ .quantity = ws_get_be16(p), .kind = p[ENTRY_KIND], .revision = ws_get_be16(p + ENTRY_REVISION),
+                         .offset = (int32_t)ws_get_be32(p + ENTRY_OFFSET), .gain = ws_get_be32(p + ENTRY_GAIN) };
+}
+
+static void record_fields(const uint8_t *in, wsmp_record *r)
+{
+  r->minor = in[AT_MINOR];
+  r->type = ws_get_be16(in + AT_TYPE);
+  r->hw_rev = in[AT_HW];
+  r->flags = in[AT_FLAGS];
+  r->serial = ws_get_be64(in + AT_SERIAL, sizeof r->serial);
+  r->bind_kind = in[AT_BIND_KIND];
+  r->bind_value = ws_get_be32(in + AT_BIND);
+  r->programmed = ws_get_be32(in + AT_PROGRAMMED);
+  memcpy(r->part, in + AT_PART, WSMP_RECORD_PART_LEN);
+  for (unsigned i = 0; i < WSMP_RECORD_CAL_N; i++) entry_fields(in + AT_CAL + i * REC_ENTRY_LEN, &r->cal[i]);
+  r->crc = ws_get_be32(in + AT_CRC);
+}
+```
+
+Check 6 is every structural rule of the table; any failure is MALFORMED. The serial must be in the
+record namespace (0x01) with a low part that is neither 0 nor all ones. The module type must be in
+the registry. The sensor bind must be a known kind and have no value without a kind. Kind 1 (the SHT4x
+serial) is required on module type 1 (the SHT45) and refused on every other type: their parts have no
+serial the station can read (types 2 and 3 in v1), so a bind there could never be confirmed. The part number must be WSMP-M1 text;
+an empty one (16 zero bytes) is accepted, though the programming fixture refuses to write it. With minor 0, the flags and
+every reserved byte must be 0, an entry's reserved bytes included; a later minor may give them a
+meaning, so they are not checked then. A used entry's kind must be 0 or a registry kind, whatever
+the minor. The quantity, the revision and the match with the type's channels are not checked here:
+they are check 7, CAL_REJECTED (`wsmp_cal.c`).
+
+```c {#record-body}
+static int serial_ok(uint64_t serial)
+{
+  uint64_t low = serial & REC_SERIAL_LOW;
+  return (serial >> REC_NS_SHIFT) == WSMP_SRC_RECORD && low != 0 && low != REC_SERIAL_LOW;
+}
+
+static int bind_ok(const wsmp_record *r)
+{
+  if (r->bind_kind > WSMP_BIND_SHT4X) return 0;
+  if (r->bind_kind == WSMP_BIND_NONE && r->bind_value != 0) return 0;
+  return (r->bind_kind == WSMP_BIND_SHT4X) == (r->type == WSMP_T_AIR_TH);
+}
+
+static int reserved_ok(const uint8_t *in)
+{
+  return in[AT_FLAGS] == 0 && zero(in + AT_RESERVED1, RESERVED1_LEN) && zero(in + AT_RESERVED2, RESERVED2_LEN) &&
+         zero(in + AT_RESERVED3, RESERVED3_LEN);
+}
+
+static int entries_ok(const uint8_t *in, int check_reserved)
+{
+  for (unsigned i = 0; i < WSMP_RECORD_CAL_N; i++)
+  {
+    const uint8_t *p = in + AT_CAL + i * REC_ENTRY_LEN;
+    if (zero(p, REC_ENTRY_LEN)) continue;   /* unused: skipped before any check */
+    if (p[ENTRY_KIND] > WSMP_KIND_MAX) return 0;
+    if (check_reserved && (p[ENTRY_RES_A] | p[ENTRY_RES_B] | p[ENTRY_RES_C]) != 0) return 0;
+  }
+  return 1;
+}
+
+static uint8_t record_body(const uint8_t *in, const wsmp_record *r)
+{
+  int minor0 = r->minor == 0;
+  int ok = serial_ok(r->serial) && wsmp_type(r->type) != NULL && bind_ok(r) &&
+           wsmp_text_ok(r->part, WSMP_RECORD_PART_LEN) && (!minor0 || reserved_ok(in)) && entries_ok(in, minor0);
+  return ok ? (uint8_t)WSMP_REC_APPLIED : (uint8_t)WSMP_REC_MALFORMED;
+}
+
+uint8_t wsmp_record_parse(const uint8_t in[WSMP_RECORD_LEN], wsmp_record *r)
+{
+  uint8_t status = record_head(in);
+  if (status != WSMP_REC_APPLIED) return status;
+  record_fields(in, r);
+  return record_body(in, r);
+}
+```
+
+The encoder is for the programming fixture and the tests. It writes the layout in order with the
+cursor helpers, leaves every reserved byte 0 and seals the CRC. So an accepted record of minor 0
+packs back to its own bytes.
+
+```c {#record-pack}
+static uint8_t *pack_entry(uint8_t *p, const wsmp_cal_entry *e)
+{
+  p = ws_write_be16(p, e->quantity);
+  p = ws_write_u8(p, e->kind);
+  p = ws_write_u8(p, 0);
+  p = ws_write_be16(p, e->revision);
+  p = ws_write_be16(p, 0);
+  p = ws_write_be32(p, (uint32_t)e->offset);
+  return ws_write_be32(p, e->gain);
+}
+
+void wsmp_record_pack(const wsmp_record *r, uint8_t out[WSMP_RECORD_LEN])
+{
+  memset(out, 0, WSMP_RECORD_LEN);
+  uint8_t *p = ws_write_be32(out, REC_MAGIC);
+  p = ws_write_u8(p, WSMP_RECORD_MAJOR);
+  p = ws_write_u8(p, r->minor);
+  p = ws_write_be16(p, WSMP_RECORD_LEN);
+  p = ws_write_be16(p, r->type);
+  p = ws_write_u8(p, r->hw_rev);
+  p = ws_write_u8(p, r->flags);
+  p = ws_write_be(p, r->serial, sizeof r->serial);
+  p = ws_write_u8(p, r->bind_kind) + RESERVED1_LEN;
+  p = ws_write_be32(p, r->bind_value);
+  p = ws_write_be32(p, r->programmed);
+  memcpy(p, r->part, WSMP_RECORD_PART_LEN);
+  p = out + AT_CAL;
+  for (unsigned i = 0; i < WSMP_RECORD_CAL_N; i++) p = pack_entry(p, &r->cal[i]);
+  ws_put_be32(out + AT_CRC, wsmp_crc32c(out, AT_CRC));
+}
+```
+
+The identity flags' low byte joins the serial source and the record status. It is the descriptor
+set's `id_flags` and the low byte of identity register 0x000F (section 3).
+
+```c {#id-flags}
+uint8_t wsmp_id_flags(uint8_t source, uint8_t status)
+{
+  return (uint8_t)((source & REC_SOURCE_MASK) | (status & REC_STATUS_MASK) << REC_STATUS_SHIFT);
+}
+```
+
+## 9. The file
 
 ```c {#wsmp.c}
 #include "wsmp.h"
@@ -422,4 +654,16 @@ int wsmp_text_ok(const uint8_t *p, size_t n)
 <<budget>>
 
 <<text>>
+
+<<record-layout>>
+
+<<record-head>>
+
+<<record-fields>>
+
+<<record-body>>
+
+<<record-pack>>
+
+<<id-flags>>
 ```

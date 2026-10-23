@@ -1,7 +1,7 @@
 #ifndef WSMP_H
 #define WSMP_H
 /* WSMP core (docs/module-protocol.md, firmware/common/wsmp.lit.md): the module blocks, their checks
- * against the registry, CRC-32C and the radio budget. Portable C: no HAL, no heap, no state. The
+ * against the registry, the module record v1.0, CRC-32C and the radio budget. Portable C: no HAL, no heap, no state. The
  * station and, later, the remote module adapter use the same file. */
 #include <stddef.h>
 #include <stdint.h>
@@ -41,6 +41,7 @@ typedef struct { uint16_t quantity; uint8_t unit; int8_t scale; uint8_t width, i
 typedef struct {
   uint16_t type; uint8_t schema, channels, fw_major, fw_minor;
   uint16_t fw_build, caps; uint64_t serial; uint32_t boot_id, desc_digest;
+  uint16_t id_flags;   /* register 0x000F: wsmp_id_flags() in the low byte, the high byte 0 */
 } wsmp_identity;
 typedef struct { uint32_t value; uint16_t count; uint8_t quality; } wsmp_slot;
 typedef struct { uint16_t token, boot16, window_ms; uint8_t flags, desc_tag; wsmp_slot slot[WSMP_MAX_CHANNELS]; } wsmp_snapshot;
@@ -58,4 +59,36 @@ uint8_t wsmp_quality_air(uint8_t quality);        /* snapshot quality to the 2-b
 unsigned wsmp_values_bytes(const wsmp_desc *d, unsigned n);
 unsigned wsmp_quality_bytes(unsigned channels);   /* 2 bits a channel, padded to a byte */
 int wsmp_text_ok(const uint8_t *p, size_t n);     /* WSMP-M1: 1 if the padded text is allowed */
+
+/* Module record v1.0, the 128 bytes at word address 0 of a module board's ID EEPROM
+ * (docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md section 6.9). Big-endian. */
+#define WSMP_RECORD_LEN      128U
+#define WSMP_RECORD_MAJOR    1U
+#define WSMP_RECORD_PART_LEN 16U
+#define WSMP_RECORD_CAL_N    3U
+#define WSMP_BIND_NONE       0U
+#define WSMP_BIND_SHT4X      1U   /* the SHT4x's own serial (command 0x89) */
+
+/* Record status: identity-flag bits 4-7. READ to CRC are NO_RECORD reasons (section 6.9, Checks). */
+enum { WSMP_REC_APPLIED, WSMP_REC_READ, WSMP_REC_BLANK, WSMP_REC_NO_MAGIC, WSMP_REC_VERSION, WSMP_REC_MALFORMED,
+       WSMP_REC_CRC, WSMP_REC_CAL_REJECTED, WSMP_REC_SENSOR_CHANGED };
+/* Serial source: identity-flag bits 0-1, and also the serial's top byte (its namespace, section 6.7). */
+enum { WSMP_SRC_PORT, WSMP_SRC_RECORD, WSMP_SRC_SENSOR, WSMP_SRC_ADAPTER };
+
+typedef struct { uint16_t quantity, revision; uint8_t kind; int32_t offset; uint32_t gain; } wsmp_cal_entry;
+typedef struct {
+  uint16_t type; uint8_t minor, hw_rev, flags, bind_kind;
+  uint64_t serial; uint32_t bind_value, programmed, crc;
+  uint8_t part[WSMP_RECORD_PART_LEN];
+  wsmp_cal_entry cal[WSMP_RECORD_CAL_N];   /* an all-zero entry is unused */
+} wsmp_record;
+
+/* Checks 2-6 of section 6.9, in order: WSMP_REC_APPLIED (the record is structurally valid; check 7,
+   the calibration, is wsmp_cal_check) or the first failure, BLANK to MALFORMED. r is filled once the
+   CRC passes. Check 1 (READ) and the second read after a CRC failure are the caller's. */
+uint8_t wsmp_record_parse(const uint8_t in[WSMP_RECORD_LEN], wsmp_record *r);
+/* The record's bytes: magic, major 1, r->minor, length 128, its fields, reserved bytes 0, the CRC. */
+void wsmp_record_pack(const wsmp_record *r, uint8_t out[WSMP_RECORD_LEN]);
+/* The identity flags' low byte, the descriptor set's id_flags: source in bits 0-1, status in 4-7. */
+uint8_t wsmp_id_flags(uint8_t source, uint8_t status);
 #endif

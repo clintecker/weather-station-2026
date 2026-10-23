@@ -87,7 +87,22 @@ typedef struct { uint16_t type; uint8_t schema, channels, report_class; wsmp_typ
   { 7, 1, 1, WSMP_RC_MINUTE, { { 7, 6 } } }, \
 }
 
+/* The calibration table of module record major 1 (frozen; a later minor may only widen a bound):
+   integers at the channel scale, gains in ppm, the physical range and its crop margins. */
+typedef struct {
+  uint16_t quantity; int8_t scale; int32_t offset_bound; uint32_t gain_min, gain_max;
+  int32_t range_min, range_max, margin_below, margin_above;
+} wsmp_cal_limits;
+#define WSMP_CAL_COUNT 4U
+#define WSMP_CAL_INIT { \
+  { 1, -2, 200, 980000UL, 1020000UL, -8000, 6000, 0, 0 }, \
+  { 2, -2, 1000, 900000UL, 1100000UL, 0, 10000, 300, 300 }, \
+  { 3, -1, 50, 990000UL, 1010000UL, 3000, 11000, 0, 0 }, \
+  { 8, 0, 16, 100000UL, 10000000UL, 0, 1048576, 16, 0 }, \
+}
+
 uint8_t wsmp_canonical_unit(uint16_t quantity);       /* 0 for an unknown quantity */
 const wsmp_type_entry *wsmp_type(uint16_t type);      /* NULL for an unknown type */
+const wsmp_cal_limits *wsmp_cal_limits_of(uint16_t quantity);   /* NULL: no record calibration */
 
 #endif

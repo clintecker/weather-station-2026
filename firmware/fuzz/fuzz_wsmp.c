@@ -37,12 +37,15 @@ static void identity(const uint8_t *in)
   uint8_t back[SPEC_IDENTITY];
   int serial = 0;
   for (unsigned i = 8; i < 16; i++) serial |= in[i];
-  int ok = in[0] == SPEC_MAGIC0 && in[1] == SPEC_MAGIC1 && in[2] == SPEC_MAJOR && in[7] >= 1 && in[7] <= SPEC_CHANNELS && serial;
+  /* identity flags (bytes 30-31): bits 8-15 and 2-3 reserved, 0 (spec 2026-10-21 section 6.7) */
+  int ok = in[0] == SPEC_MAGIC0 && in[1] == SPEC_MAGIC1 && in[2] == SPEC_MAJOR && in[7] >= 1 && in[7] <= SPEC_CHANNELS && serial &&
+           in[30] == 0 && (in[31] & 0x0CU) == 0;
   int rc = wsmp_unpack_identity(in, &id);
   FUZZ_CHECK((rc == WSMP_OK) == ok);
   if (rc != WSMP_OK) return;
   wsmp_pack_identity(&id, back);
-  FUZZ_CHECK(memcmp(back, in, 3) == 0 && back[3] == 0 && memcmp(back + 4, in + 4, 26) == 0 && back[30] == 0 && back[31] == 0);
+  /* the minor is this station's; the identity flags (register 0x000F, bytes 30-31) are kept as read */
+  FUZZ_CHECK(memcmp(back, in, 3) == 0 && back[3] == 0 && memcmp(back + 4, in + 4, 28) == 0);
 }
 
 static void snapshot(const uint8_t *in)
