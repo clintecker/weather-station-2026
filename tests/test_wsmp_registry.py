@@ -165,6 +165,12 @@ class Registry(unittest.TestCase):
         self.assertIn('a known quantity', p.stderr)
         self.assertNotIn('Traceback', p.stderr)
 
+    def test_a_negative_margin_on_an_earlier_row_is_refused(self):
+        p = self.edited(('quantity = 2        # relative humidity', 'quantity = 2        # relative humidity'),
+                        ('margin = [300, 300]', 'margin = [-1, 300]'))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('bounds out of order or negative', p.stderr)
+
     def test_kind_codes_without_a_gap(self):
         # wsmp.c checks a kind as 1..WSMP_KIND_MAX, so a gap would pass a code with no name.
         p = self.edited(('[[kind]]\ncode = 2\n', '[[kind]]\ncode = 20\n'))
