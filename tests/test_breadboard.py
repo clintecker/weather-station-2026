@@ -118,7 +118,7 @@ class Jumpers(unittest.TestCase):
                 continue
             pts = paths[j.id]
             self.assertEqual((pts[0], pts[-1]), (wiring.hole_xy(j.a), wiring.hole_xy(j.b)), j.id)
-            for p, q in zip(pts, pts[1:]):
+            for p, q in zip(pts, pts[1:], strict=False):   # consecutive points
                 self.assertTrue(abs(p[0] - q[0]) < 1e-9 or abs(p[1] - q[1]) < 1e-9, f'{j.id}: {p} to {q} is not square')
                 segments.append((j.id, p, q))
 
