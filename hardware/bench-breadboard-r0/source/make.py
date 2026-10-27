@@ -130,7 +130,9 @@ def layout(w, jumpers):
             'labels': labels, 'outline': outline,
             'jumpers': [{'id': j.id, 'net': j.net, 'class': w.net_class[j.net],
                          'a': list(wiring.hole_xy(j.a)), 'b': list(wiring.hole_xy(j.b)),
-                         'a_name': where(j.a), 'b_name': where(j.b)} for j in jumpers]}
+                         'a_name': where(j.a), 'b_name': where(j.b),
+                         # A wire between boards, or to the NUCLEO, hops over in the air: drawn straight.
+                         'flying': j.a[0] != j.b[0]} for j in jumpers]}
 
 
 def where(h):
@@ -269,7 +271,8 @@ def presentation_models(w, lay, pcb, models_dir):
     copper = pcb_read.copper_by_net(pcb)
     for i, j in enumerate(lay['jumpers']):
         rgb = tuple(c/255 for c in render.COLOURS[j['class']])
-        segments = [(p, q) for p, q, _layer in copper[j['id']]['segments']]
+        segments = ([(tuple(j['a']), tuple(j['b']))] if j['flying']
+                    else [(p, q) for p, q, _layer in copper[j['id']]['segments']])
         ref = f'3D_{j["id"]}'
         models.write_jumper(models_dir/f'{ref}.wrl', segments, [tuple(j['a']), tuple(j['b'])],
                             models.WIRE_Z + 0.4*(i % 4), rgb)

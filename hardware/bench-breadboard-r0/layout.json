@@ -16547,6 +16547,7 @@
    ],
    "b_name": "A:b41",
    "class": "power",
+   "flying": false,
    "id": "W1",
    "net": "3V3"
   },
@@ -16562,6 +16563,7 @@
    ],
    "b_name": "A:f30",
    "class": "power",
+   "flying": false,
    "id": "W2",
    "net": "3V3"
   },
@@ -16577,6 +16579,7 @@
    ],
    "b_name": "A:f19",
    "class": "power",
+   "flying": false,
    "id": "W3",
    "net": "3V3"
   },
@@ -16592,6 +16595,7 @@
    ],
    "b_name": "A:h8",
    "class": "power",
+   "flying": false,
    "id": "W4",
    "net": "3V3"
   },
@@ -16607,6 +16611,7 @@
    ],
    "b_name": "A:f11",
    "class": "wind",
+   "flying": false,
    "id": "W5",
    "net": "CUPS"
   },
@@ -16622,6 +16627,7 @@
    ],
    "b_name": "A:f4",
    "class": "wind",
+   "flying": false,
    "id": "W6",
    "net": "CUPS"
   },
@@ -16637,6 +16643,7 @@
    ],
    "b_name": "A:b40",
    "class": "ground",
+   "flying": false,
    "id": "W7",
    "net": "GND"
   },
@@ -16652,6 +16659,7 @@
    ],
    "b_name": "A:f23",
    "class": "ground",
+   "flying": false,
    "id": "W8",
    "net": "GND"
   },
@@ -16667,6 +16675,7 @@
    ],
    "b_name": "A:b14",
    "class": "ground",
+   "flying": false,
    "id": "W9",
    "net": "GND"
   },
@@ -16682,6 +16691,7 @@
    ],
    "b_name": "A:f12",
    "class": "ground",
+   "flying": false,
    "id": "W10",
    "net": "GND"
   },
@@ -16697,6 +16707,7 @@
    ],
    "b_name": "A:e5",
    "class": "ground",
+   "flying": false,
    "id": "W11",
    "net": "GND"
   },
@@ -16712,6 +16723,7 @@
    ],
    "b_name": "A:b4",
    "class": "ground",
+   "flying": false,
    "id": "W12",
    "net": "GND"
   },
@@ -16727,6 +16739,7 @@
    ],
    "b_name": "A:f15",
    "class": "rain",
+   "flying": false,
    "id": "W13",
    "net": "RAIN"
   },
@@ -16742,6 +16755,7 @@
    ],
    "b_name": "A:h22",
    "class": "rain",
+   "flying": false,
    "id": "W14",
    "net": "RAIN"
   },
@@ -16757,6 +16771,7 @@
    ],
    "b_name": "A:f26",
    "class": "wind",
+   "flying": false,
    "id": "W15",
    "net": "VANE"
   },
@@ -16772,6 +16787,7 @@
    ],
    "b_name": "B:c51",
    "class": "power",
+   "flying": false,
    "id": "W16",
    "net": "BATT"
   },
@@ -16787,6 +16803,7 @@
    ],
    "b_name": "B:g31",
    "class": "power",
+   "flying": false,
    "id": "W17",
    "net": "BATT"
   },
@@ -16802,6 +16819,7 @@
    ],
    "b_name": "B:g39",
    "class": "power",
+   "flying": false,
    "id": "W18",
    "net": "CELL_POS"
   },
@@ -16817,6 +16835,7 @@
    ],
    "b_name": "B:g53",
    "class": "ground",
+   "flying": false,
    "id": "W19",
    "net": "GND"
   },
@@ -16832,6 +16851,7 @@
    ],
    "b_name": "B:c50",
    "class": "ground",
+   "flying": false,
    "id": "W20",
    "net": "GND"
   },
@@ -16847,6 +16867,7 @@
    ],
    "b_name": "B:c42",
    "class": "ground",
+   "flying": false,
    "id": "W21",
    "net": "GND"
   },
@@ -16862,6 +16883,7 @@
    ],
    "b_name": "B:g40",
    "class": "ground",
+   "flying": false,
    "id": "W22",
    "net": "GND"
   },
@@ -16877,6 +16899,7 @@
    ],
    "b_name": "B:h32",
    "class": "ground",
+   "flying": false,
    "id": "W23",
    "net": "GND"
   },
@@ -16892,6 +16915,7 @@
    ],
    "b_name": "B:b16",
    "class": "ground",
+   "flying": false,
    "id": "W24",
    "net": "GND"
   },
@@ -16907,6 +16931,7 @@
    ],
    "b_name": "B:b8",
    "class": "power",
+   "flying": false,
    "id": "W25",
    "net": "REG_OUT"
   },
@@ -16922,6 +16947,7 @@
    ],
    "b_name": "B:e53",
    "class": "power",
+   "flying": false,
    "id": "W26",
    "net": "SYS_OUT"
   },
@@ -16937,6 +16963,7 @@
    ],
    "b_name": "B:g49",
    "class": "power",
+   "flying": false,
    "id": "W27",
    "net": "SYS_OUT"
   },
@@ -16952,6 +16979,7 @@
    ],
    "b_name": "C:c23",
    "class": "power",
+   "flying": true,
    "id": "W28",
    "net": "3V3"
   },
@@ -16967,6 +16995,7 @@
    ],
    "b_name": "B:L-63",
    "class": "ground",
+   "flying": true,
    "id": "W29",
    "net": "GND"
   },
@@ -16982,6 +17011,7 @@
    ],
    "b_name": "C:c22",
    "class": "ground",
+   "flying": true,
    "id": "W30",
    "net": "GND"
   },
@@ -16997,6 +17027,7 @@
    ],
    "b_name": "NUCLEO CN6.4",
    "class": "power",
+   "flying": true,
    "id": "W31",
    "net": "3V3"
   },
@@ -17012,6 +17043,7 @@
    ],
    "b_name": "NUCLEO CN7.16",
    "class": "power",
+   "flying": true,
    "id": "W32",
    "net": "3V3"
   },
@@ -17027,6 +17059,7 @@
    ],
    "b_name": "NUCLEO CN10.25",
    "class": "charger",
+   "flying": true,
    "id": "W33",
    "net": "CHG"
   },
@@ -17042,6 +17075,7 @@
    ],
    "b_name": "NUCLEO CN10.14",
    "class": "wind",
+   "flying": true,
    "id": "W34",
    "net": "CUPS"
   },
@@ -17057,6 +17091,7 @@
    ],
    "b_name": "NUCLEO CN6.6",
    "class": "ground",
+   "flying": true,
    "id": "W35",
    "net": "GND"
   },
@@ -17072,6 +17107,7 @@
    ],
    "b_name": "NUCLEO CN5.10",
    "class": "i2c",
+   "flying": true,
    "id": "W36",
    "net": "I2C_SCL"
   },
@@ -17087,6 +17123,7 @@
    ],
    "b_name": "NUCLEO CN5.9",
    "class": "i2c",
+   "flying": true,
    "id": "W37",
    "net": "I2C_SDA"
   },
@@ -17102,6 +17139,7 @@
    ],
    "b_name": "NUCLEO CN10.17",
    "class": "display",
+   "flying": true,
    "id": "W38",
    "net": "OLED_CS"
   },
@@ -17117,6 +17155,7 @@
    ],
    "b_name": "NUCLEO CN10.21",
    "class": "display",
+   "flying": true,
    "id": "W39",
    "net": "OLED_DC"
   },
@@ -17132,6 +17171,7 @@
    ],
    "b_name": "NUCLEO CN10.15",
    "class": "display",
+   "flying": true,
    "id": "W40",
    "net": "OLED_DIN"
   },
@@ -17147,6 +17187,7 @@
    ],
    "b_name": "NUCLEO CN10.23",
    "class": "display",
+   "flying": true,
    "id": "W41",
    "net": "OLED_RST"
   },
@@ -17162,6 +17203,7 @@
    ],
    "b_name": "NUCLEO CN10.11",
    "class": "display",
+   "flying": true,
    "id": "W42",
    "net": "OLED_SCLK"
   },
@@ -17177,6 +17219,7 @@
    ],
    "b_name": "NUCLEO CN10.27",
    "class": "charger",
+   "flying": true,
    "id": "W43",
    "net": "PGOOD"
   },
@@ -17192,6 +17235,7 @@
    ],
    "b_name": "NUCLEO CN10.29",
    "class": "rain",
+   "flying": true,
    "id": "W44",
    "net": "RAIN"
   },
@@ -17207,6 +17251,7 @@
    ],
    "b_name": "NUCLEO CN7.30",
    "class": "wind",
+   "flying": true,
    "id": "W45",
    "net": "VANE"
   }
