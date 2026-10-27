@@ -9,12 +9,19 @@ mkdir -p "$dir"
 ADA=https://raw.githubusercontent.com/adafruit/Adafruit_CAD_Parts/c128bceb1f96b6ea8b68f250bda986ba85da24ea
 
 fetch() {   # name url sha256
-  if [ ! -f "$dir/$1" ]; then
-    curl -fsSL -o "$dir/$1.part" "$2"
-    mv "$dir/$1.part" "$dir/$1"
+  if [ -f "$dir/$1" ]; then   # already fetched: verify the pin again
+    sum=$(shasum -a 256 "$dir/$1" | awk '{print $1}')
+    [ "$sum" = "$3" ] || { echo "$1 has SHA-256 $sum, expected $3: delete it and re-run" >&2; exit 1; }
+    return 0
   fi
-  sum=$(shasum -a 256 "$dir/$1" | awk '{print $1}')
-  [ "$sum" = "$3" ] || { echo "$1 has SHA-256 $sum, expected $3" >&2; exit 1; }
+  curl -fsSL -o "$dir/$1.part" "$2"
+  sum=$(shasum -a 256 "$dir/$1.part" | awk '{print $1}')
+  if [ "$sum" != "$3" ]; then   # never install a file that fails its pin: make.py would use it
+    rm -f "$dir/$1.part"
+    echo "$1 downloaded with SHA-256 $sum, expected $3: not installed" >&2
+    exit 1
+  fi
+  mv "$dir/$1.part" "$dir/$1"
 }
 
 fetch chgr-4755.step "$ADA/4755%20USB%20Solar%20Charger/4755%20USB%20Solar%20Charger.step" \

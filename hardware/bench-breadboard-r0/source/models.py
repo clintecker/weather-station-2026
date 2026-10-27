@@ -68,8 +68,8 @@ def header_model(pins, rows=1, along_columns=True):
 
 
 def models_for(part):
-    """[(kicad file or None, rotation, box or None)] for one part. The KiCad model sits at the first
-    pin, as its footprint's origin is pin 1; a box sits at the centre of the pins."""
+    """[(kicad file or None, rotation, box or None)] for one part. make.py anchors the KiCad model on
+    the part's left-most pin (the drawing is mirrored); a box sits at the centre of the pins."""
     n = len(part.pins)
     kind = part.kind.lower()
     if 'resistor' in kind or 'ohm' in kind and 'load' in kind:

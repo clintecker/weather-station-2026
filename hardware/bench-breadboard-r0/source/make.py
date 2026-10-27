@@ -114,10 +114,12 @@ def layout(w, jumpers):
     for header, (_x0, cols, _n) in wiring.HEADERS.items():
         x, y = wiring.hole_xy(('N', header, 1))
         labels.append({'text': header, 'x': x + 0.6*(cols - 1)*2.54, 'y': y - 2.5})
-    for board in ('A', 'B'):   # the column numbers printed on the board, below row j's rails
+    # The column numbers printed on the board, below row j's rails: centred on the column (KiCad centres
+    # its text; render.py centres labels marked so), past the 3D breadboard body's edge (BOARD_HEIGHT + 4).
+    for board in ('A', 'B'):
         for col in (1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 63):
             x, _y = wiring.hole_xy((board, 'R+', col))
-            labels.append({'text': str(col), 'x': x + 5.4, 'y': wiring.BOARD_HEIGHT + 4.0})
+            labels.append({'text': str(col), 'x': x, 'y': wiring.BOARD_HEIGHT + 6.0, 'centre': True})
     nx, ny = wiring.hole_xy(('N', 'CN7', 1))
     labels.append({'text': 'NUCLEO-WL55JC1 headers: check against UM2592, not to scale', 'x': nx + 25, 'y': ny - 6})
     xs = [h['x'] for f in footprints for h in f['holes']]

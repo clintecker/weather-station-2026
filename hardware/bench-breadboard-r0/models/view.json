@@ -14,6 +14,31 @@
  },
  {
   "box": [
+   0.0,
+   -9.0,
+   21.6,
+   20.6,
+   1.6,
+   11.0,
+   [
+    0.7,
+    0.08,
+    0.08
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_BOBW_1.wrl",
+    "rot": 0,
+    "z": 11.0
+   }
+  ],
+  "ref": "3D_BOBW_1",
+  "x": 146.04999999999998,
+  "y": -1.38
+ },
+ {
+  "box": [
    0,
    -13.5,
    14.0,
@@ -28,12 +53,12 @@
   ],
   "models": [
    {
-    "file": "${KIPRJMOD}/models/3D_BOBW_1.wrl",
+    "file": "${KIPRJMOD}/models/3D_BOBW_2.wrl",
     "rot": 0,
     "z": 12.6
    }
   ],
-  "ref": "3D_BOBW_1",
+  "ref": "3D_BOBW_2",
   "x": 146.04999999999998,
   "y": -5.88
  },
@@ -52,6 +77,31 @@
  },
  {
   "box": [
+   0.0,
+   -9.0,
+   21.6,
+   20.6,
+   1.6,
+   11.0,
+   [
+    0.7,
+    0.08,
+    0.08
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_BOBR_1.wrl",
+    "rot": 0,
+    "z": 11.0
+   }
+  ],
+  "ref": "3D_BOBR_1",
+  "x": 123.19,
+  "y": -1.38
+ },
+ {
+  "box": [
    0,
    -13.5,
    14.0,
@@ -66,12 +116,12 @@
   ],
   "models": [
    {
-    "file": "${KIPRJMOD}/models/3D_BOBR_1.wrl",
+    "file": "${KIPRJMOD}/models/3D_BOBR_2.wrl",
     "rot": 0,
     "z": 12.6
    }
   ],
-  "ref": "3D_BOBR_1",
+  "ref": "3D_BOBR_2",
   "x": 123.19,
   "y": -5.88
  },
