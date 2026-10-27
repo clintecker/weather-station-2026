@@ -31,6 +31,7 @@ python3 tools/tangle.py --check firmware/common/wsmp.lit.md    # committed .c ==
 | Quality | each snapshot quality maps to its 2-bit radio code. An unknown code maps to "missing" | `test_quality_air_table` |
 | CRC and text | CRC-32C gives the standard check value. Metadata text passes only the WSMP-M1 characters | `test_crc32c_known_vector`, `test_text_ok_charset` |
 | Identity flags | the identity block carries the identity flags in register 0x000F; unpack refuses a set reserved bit (2–3, 8–15) with `WSMP_ERESERVED` | `test_identity_flags_at_register_0x000f`, `test_identity_refuses_reserved_id_flag_bits`, `fuzz_wsmp` |
+| Descriptor set | `wsmp_unpack_set` accepts exactly the layout of WSMP section 11.1 with the identity entry (serial, `id_flags`, `record_crc`), and refuses each fault of section 9 with its own code; an accepted set packs back to the same bytes; `wsmp_set_check` is the registry check of every module | `tests/test_wsmp_set.py`, `fuzz_wsmp` |
 | Module record | `wsmp_record_parse` applies checks 2–6 of the record in the spec's order and returns the first failure as a record status. An accepted record of minor 0 packs back to the same 128 bytes | `tests/test_wsmp_record.py`, `fuzz_record` |
 
 The error codes are:
@@ -45,7 +46,8 @@ The error codes are:
 | `WSMP_ESCALE` | −5 | the scale is outside −6 to +6 |
 | `WSMP_ERESERVED` | −6 | a reserved bit or byte is set, or an undefined flag bit |
 | `WSMP_ETYPE` | −7 | an unknown module type, a different schema, or a channel list that differs from the entry |
-| `WSMP_ELEN` | −8 | a width outside 1 to 4, a channel count outside 1 to 8, or a zero serial |
+| `WSMP_ELEN` | −8 | a width outside 1 to 4, a channel count outside 1 to 8, or a zero serial; a descriptor set of the wrong length, or with too many modules or channels |
+| `WSMP_EDIGEST` | −9 | a descriptor set whose digest does not match its entries |
 
 The record parser returns a record status instead (`WSMP_REC_*`, section 9 below), because the
 status goes to the gateway in the identity flags.
@@ -622,7 +624,188 @@ uint8_t wsmp_id_flags(uint8_t source, uint8_t status)
 }
 ```
 
-## 9. The file
+## 9. Descriptor set
+
+The descriptor set (WSMP section 11.1) is what the station tells the gateway about its modules: one
+header, then one entry for each module in the layout, in increasing port order, each followed by its
+descriptors. The entry carries the module's identity (sensor module ports design section 6.7, "The
+serial reaches the gateway"): its serial, the identity flags' low byte and the applied record's
+CRC-32C. A header is 8 bytes and an entry 18, so a full set (8 modules, 24 channels) is
+8 + 8 × 18 + 24 × 6 = 296 bytes (WSMP-E4).
+
+```mermaid
+---
+config:
+  packet:
+    bitsPerRow: 64
+---
+packet-beta
+  0-15: "generation"
+  16-23: "module count"
+  24-31: "reserved, 0"
+  32-63: "digest: CRC-32C of everything after the header"
+  64-71: "entry: port"
+  72-87: "module type"
+  88-95: "schema"
+  96-103: "channel count"
+  104-167: "serial"
+  168-175: "id_flags"
+  176-207: "record_crc"
+  208-255: "descriptor 1 (6 B), then one for each further channel"
+```
+
+`id_flags` is the serial source in bits 0–1 and the record status in bits 4–7 (`wsmp_id_flags`);
+bits 2–3 are reserved. `record_crc` is 0 whenever no record is applied. The digest covers every
+byte after the header, so a set and its digest name each other.
+
+`wsmp_pack_set` writes the set and its digest and returns its length. The caller builds the set from
+admitted modules, so it is within the counts that `wsmp_unpack_set` accepts. A set with more than 8
+modules, a channel count outside 1–8 or more than 24 channels is a bug of the caller: the function
+checks the counts first (Power of Ten rule 5) and then packs nothing and returns 0.
+
+```c {#set-pack}
+static uint8_t *pack_entry_set(uint8_t *p, const wsmp_set_module *m)
+{
+  p = ws_write_u8(p, m->port);
+  p = ws_write_be16(p, m->type);
+  p = ws_write_u8(p, m->schema);
+  p = ws_write_u8(p, m->channels);
+  p = ws_write_be(p, m->serial, sizeof m->serial);
+  p = ws_write_u8(p, m->id_flags);
+  p = ws_write_be32(p, m->record_crc);
+  uint8_t block[WSMP_DESC_BLOCK_LEN];
+  wsmp_pack_desc(m->desc, m->channels, block);
+  size_t n = (size_t)m->channels * WSMP_DESC_LEN;
+  memcpy(p, block, n);
+  return p + n;
+}
+
+/* Power of Ten rule 5: the counts bound the writes into out[WSMP_SET_MAX_LEN]. A set outside them is a
+   bug of the caller; the recovery is to pack nothing (length 0), which no reader accepts. */
+static int set_fits(const wsmp_set *s)
+{
+  unsigned total = 0;
+  if (s->count > WSMP_SET_MODULES_MAX) return 0;
+  for (unsigned i = 0; i < s->count; i++)
+  {
+    if (s->m[i].channels == 0U || s->m[i].channels > WSMP_MAX_CHANNELS) return 0;
+    total += s->m[i].channels;
+  }
+  return total <= WSMP_SET_CHANNELS_MAX;
+}
+
+unsigned wsmp_pack_set(const wsmp_set *s, uint8_t out[WSMP_SET_MAX_LEN])
+{
+  if (!set_fits(s)) return 0;
+  uint8_t *p = out + WSMP_SET_HEAD_LEN;
+  for (unsigned i = 0; i < s->count; i++) p = pack_entry_set(p, &s->m[i]);
+  unsigned len = (unsigned)(p - out);
+  uint8_t *h = ws_write_be16(out, s->generation);
+  h = ws_write_u8(h, s->count);
+  h = ws_write_u8(h, 0U);
+  (void)ws_write_be32(h, wsmp_crc32c(out + WSMP_SET_HEAD_LEN, len - WSMP_SET_HEAD_LEN));
+  return len;
+}
+```
+
+`wsmp_unpack_set` reads a set of `len` bytes. It refuses, with its own code:
+
+| Fault | Code |
+|---|---|
+| shorter than its header, or not exactly the length its entries give | `WSMP_ELEN` |
+| more than 8 modules, a channel count outside 1–8, more than 24 channels in all, a zero serial | `WSMP_ELEN` |
+| a non-zero reserved byte, reserved `id_flags` bits 2–3, an undefined record status (9–15), a reserved descriptor bit | `WSMP_ERESERVED` |
+| ports not strictly increasing (a port twice, or out of order) | `WSMP_ETYPE` |
+| a digest that does not match | `WSMP_EDIGEST` |
+
+A set with no module is valid: every port may be empty. The registry check is separate
+(`wsmp_set_check`, WSMP-E7), so the gateway can store a set that fails it for diagnosis.
+
+```c {#set-unpack}
+#define SET_FLAGS_RESERVED 0x0CU                       /* id_flags bits 2-3 */
+#define SET_STATUS_MAX     WSMP_REC_SENSOR_CHANGED     /* the last defined record status */
+
+static int unpack_entry_set(const uint8_t **pp, const uint8_t *end, wsmp_set_module *m, unsigned *total)
+{
+  const uint8_t *p = *pp;
+  if ((size_t)(end - p) < WSMP_SET_ENTRY_LEN) return WSMP_ELEN;
+  m->port = p[0];
+  m->type = ws_get_be16(p + 1);
+  m->schema = p[3];
+  m->channels = p[4];
+  m->serial = ws_get_be64(p + 5, sizeof m->serial);
+  m->id_flags = p[13];
+  m->record_crc = ws_get_be32(p + 14);
+  p += WSMP_SET_ENTRY_LEN;
+  if (m->channels == 0U || m->channels > WSMP_MAX_CHANNELS || m->serial == 0U) return WSMP_ELEN;
+  *total += m->channels;
+  if (*total > WSMP_SET_CHANNELS_MAX) return WSMP_ELEN;
+  if ((m->id_flags & SET_FLAGS_RESERVED) != 0U || (m->id_flags >> REC_STATUS_SHIFT) > SET_STATUS_MAX) return WSMP_ERESERVED;
+  size_t n = (size_t)m->channels * WSMP_DESC_LEN;
+  if ((size_t)(end - p) < n) return WSMP_ELEN;
+  uint8_t block[WSMP_DESC_BLOCK_LEN] = { 0 };
+  memcpy(block, p, n);
+  *pp = p + n;
+  return wsmp_unpack_desc(block, m->channels, m->desc);
+}
+
+static int unpack_head_set(const uint8_t *in, size_t len, wsmp_set *s)
+{
+  if (len < WSMP_SET_HEAD_LEN || len > WSMP_SET_MAX_LEN) return WSMP_ELEN;
+  s->generation = ws_get_be16(in);
+  s->count = in[2];
+  s->digest = ws_get_be32(in + 4);
+  if (in[3] != 0U) return WSMP_ERESERVED;
+  return s->count > WSMP_SET_MODULES_MAX ? WSMP_ELEN : WSMP_OK;
+}
+
+int wsmp_unpack_set(const uint8_t *in, size_t len, wsmp_set *s)
+{
+  int head = unpack_head_set(in, len, s);
+  if (head != WSMP_OK) return head;
+  const uint8_t *p = in + WSMP_SET_HEAD_LEN, *end = in + len;
+  unsigned total = 0;
+  for (unsigned i = 0; i < s->count; i++)
+  {
+    int rc = unpack_entry_set(&p, end, &s->m[i], &total);
+    if (rc != WSMP_OK) return rc;
+    if (i > 0U && s->m[i].port <= s->m[i - 1U].port) return WSMP_ETYPE;
+  }
+  if (p != end) return WSMP_ELEN;
+  return wsmp_crc32c(in + WSMP_SET_HEAD_LEN, len - WSMP_SET_HEAD_LEN) == s->digest ? WSMP_OK : WSMP_EDIGEST;
+}
+```
+
+`wsmp_set_check` is the gateway's WSMP-E7 for an unpacked set. Each module must pass the registry
+check (WSMP-D7, its own code). Two identity rules of the sensor module ports design (section 6.7)
+give `WSMP_ETYPE`: a serial's namespace (its top byte) is its source (`id_flags` bits 0–1), and v1
+admits at most one module of each type (the design's proposed WSMP-P10 text), so a type twice in one
+set is refused.
+
+```c {#set-check}
+static int module_ok_set(const wsmp_set *s, unsigned i)
+{
+  const wsmp_set_module *m = &s->m[i];
+  int rc = wsmp_desc_check(m->desc, m->channels, m->type, m->schema);
+  if (rc != WSMP_OK) return rc;
+  if ((m->serial >> REC_NS_SHIFT) != (m->id_flags & REC_SOURCE_MASK)) return WSMP_ETYPE;
+  for (unsigned j = 0; j < i; j++)
+    if (s->m[j].type == m->type) return WSMP_ETYPE;
+  return WSMP_OK;
+}
+
+int wsmp_set_check(const wsmp_set *s)
+{
+  for (unsigned i = 0; i < s->count && i < WSMP_SET_MODULES_MAX; i++)
+  {
+    int rc = module_ok_set(s, i);
+    if (rc != WSMP_OK) return rc;
+  }
+  return WSMP_OK;
+}
+```
+
+## 10. The file
 
 ```c {#wsmp.c}
 #include "wsmp.h"
@@ -666,4 +849,10 @@ uint8_t wsmp_id_flags(uint8_t source, uint8_t status)
 <<record-pack>>
 
 <<id-flags>>
+
+<<set-pack>>
+
+<<set-unpack>>
+
+<<set-check>>
 ```

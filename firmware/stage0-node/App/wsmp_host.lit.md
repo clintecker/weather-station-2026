@@ -26,6 +26,7 @@ python3 tools/tangle.py --check firmware/stage0-node/App/wsmp_host.lit.md    # c
 | WSMP-D7, I1 | a bad identity, a descriptor digest that does not match, or bad descriptors quarantine the module | `test_bad_descriptor_quarantines`, `test_a_descriptor_digest_that_does_not_match_quarantines` |
 | Admission check | `wsmp_host_admit` changes no port state | `test_admit_is_a_check_that_changes_no_port` |
 | Console line | `#modules` lists the state of every port, and the verdict of a port refused as a duplicate or quarantined for a type conflict | `test_modules_line_lists_every_port`, `test_a_type_conflict_is_quarantined_until_the_module_is_removed` |
+| Descriptor set (WSMP section 11.1) | `wsmp_host_set` builds the set of the layout: every port that is Admitted, Active or Suspect, in increasing port order, with the identity entry of the ports design (section 6.7): the identity block's serial and `id_flags`, and the applied record's CRC (0 unless the record is applied). The generation is the caller's (WSMP-E1 to E3 come with the journal and radio work). `MODULES` prints one `#ident` line for each module of the set, and `#ident dropped=N` for modules left out (a bug) | `test_the_set_carries_each_modules_identity`, `test_a_cal_rejected_record_has_crc_0`, `test_a_suspect_module_stays_in_the_set`, `test_a_module_whose_blocks_do_not_unpack_is_counted`, `test_a_changed_record_crc_changes_the_set`, `test_the_ident_lines_follow_the_set` |
 | Identification (ports design, section 6.7) | an I2C port module is identified across steps (App/port_id.c): the record read (3 tries, a CRC failure read once more), the sensor serial (3 tries), then the verdict order of `wsmp_identify`. A sensor serial that fails its 3 tries is no verdict: the port stays Identifying, counts it (`#modules`: `(incomplete=N)`) and identifies again at its next probe. Its identity block carries the verdict's serial, identity flags and capabilities, and the boot ID (station epoch << 8 \| the port's admission count); its driver is bound with the applied record's calibration | `Identity` in `tests/test_wsmp_host.py` |
 | Duplicates | the holder check (App/port_id.c) ends a gone holder at once and admits the newcomer; a present holder refuses it (`DUP_SERIAL`, `DUP_TYPE`). A refusal is re-evaluated at every latch, after all ports' latches, in port order | `test_a_moved_module_ends_its_gone_holder_at_once`, `test_a_present_holder_refuses_the_newcomer`, `test_a_duplicate_serial_at_boot_the_lower_port_wins_until_it_leaves` |
 | Boot hold | the verdicts of the port modules wait until every port module has probed twice (two station-wide 15 s rounds; at most three rounds), then they are decided in port order, so the lower port wins | `test_a_duplicate_serial_at_boot_the_lower_port_wins_until_it_leaves` |
@@ -698,7 +699,106 @@ unsigned wsmp_host_modules_line(char *buf, unsigned len)
 }
 ```
 
-## 7. The file
+## 7. The descriptor set
+
+`wsmp_host_set` describes the layout (WSMP section 11.1) for the gateway: one entry for each module
+that is Admitted, Active or Suspect, in increasing port order. The type, schema, serial, identity
+flags and descriptors come from the module's identity and descriptor blocks, so the set says what
+admission checked. `record_crc` is the applied record's CRC (sensor module ports design, section
+6.7): 0 for a module without a record, and 0 when its record is not applied (`NO_RECORD`,
+`SENSOR_CHANGED`, `CAL_REJECTED`). A swap or a new record therefore gives a different set. The
+caller numbers it (WSMP-E1); the generation stays 0 here. The caller builds the set after the
+minute's latch steps (`wsmp_host_latch`): an Admitted module joins the readings at that latch
+(WSMP-P4), so the set built then is the one the latch's readings follow. A module whose blocks no
+longer unpack is a bug, never a silent gap: it is left out and counted in `*dropped`, which
+`MODULES` prints as `#ident dropped=N`.
+
+```c {#set}
+static int set_entry(enum wsmp_port p, const port_t *s, wsmp_set_module *m)
+{
+  uint8_t id[WSMP_IDENTITY_LEN], desc[WSMP_DESC_BLOCK_LEN];
+  wsmp_identity ident;
+  local_identity(p, id, desc);
+  if (wsmp_unpack_identity(id, &ident) != WSMP_OK || wsmp_unpack_desc(desc, ident.channels, m->desc) != WSMP_OK)
+    return 0;   /* admission unpacked the same blocks, so this is a bug: left out, and counted (dropped) */
+  m->port = (uint8_t)p;
+  m->type = ident.type;
+  m->schema = ident.schema;
+  m->channels = ident.channels;
+  m->serial = ident.serial;
+  m->id_flags = (uint8_t)ident.id_flags;
+  m->record_crc = port_id_is_port(p) && s->status == WSMP_REC_APPLIED && s->with_record ? s->rec_crc : 0U;
+  return 1;
+}
+
+unsigned wsmp_host_set(wsmp_set *set, unsigned *dropped)
+{
+  unsigned lost = 0;
+  memset(set, 0, sizeof *set);
+  for (unsigned q = P_AIR_TH; q < P_COUNT && set->count < WSMP_SET_MODULES_MAX; q++)
+  {
+    if (!in_layout(&ports[q])) continue;
+    if (set_entry((enum wsmp_port)q, &ports[q], &set->m[set->count])) set->count++;
+    else lost++;
+  }
+  if (dropped) *dropped = lost;
+  return set->count;
+}
+```
+
+`MODULES` prints one line for module `i` of the set:
+`#ident port=1 type=1 serial=0123456789abcdef source=record status=applied crc=deadbeef`. A module
+that never has a record (source `port` with status 0: the meters and the power module) shows
+`status=none`. The
+gateway's names for the source and the status are the same (`ws0/wsmp_set.py`).
+
+```c {#ident-line}
+#define HEX_DIGITS 16U
+#define NIBBLE_BITS 4U
+
+/* v as `digits` lowercase hex digits. */
+static unsigned append_hex(char *buf, unsigned len, unsigned n, uint64_t v, unsigned digits)
+{
+  char text[HEX_DIGITS + 1U];
+  for (unsigned i = 0; i < digits && i < HEX_DIGITS; i++)
+    text[i] = "0123456789abcdef"[(v >> (NIBBLE_BITS * (digits - 1U - i))) & 0x0FU];
+  text[digits < HEX_DIGITS ? digits : HEX_DIGITS] = 0;
+  return append(buf, len, n, text);
+}
+
+/* v (at most 65535) in decimal. */
+static unsigned append_dec(char *buf, unsigned len, unsigned n, unsigned v)
+{
+  char text[6];
+  unsigned i = sizeof text - 1U;
+  text[i] = 0;
+  do { text[--i] = (char)('0' + v % DECIMAL); v /= DECIMAL; } while (v && i > 0U);   /* bound: 5 digits */
+  return append(buf, len, n, text + i);
+}
+
+unsigned wsmp_host_ident_line(const wsmp_set *set, unsigned i, char *buf, unsigned len)
+{
+  static const char *const source[] = { "port", "record", "sensor", "adapter" };
+  static const char *const status[] = { "applied", "READ", "BLANK", "NO_MAGIC", "VERSION", "MALFORMED", "CRC",
+                                        "CAL_REJECTED", "SENSOR_CHANGED" };
+  if (len == 0) return 0;
+  buf[0] = 0;
+  if (i >= set->count || i >= WSMP_SET_MODULES_MAX) return 0;
+  const wsmp_set_module *m = &set->m[i];
+  unsigned st = (unsigned)(m->id_flags >> 4);
+  /* a module that never has a record (source port, status 0: the meters, power) shows "none" */
+  const char *status_text = (m->id_flags & 0x03U) == WSMP_SRC_PORT && st == WSMP_REC_APPLIED ? "none"
+                            : st < sizeof status / sizeof status[0] ? status[st] : "?";
+  unsigned n = append_dec(buf, len, append(buf, len, 0, "#ident port="), m->port);
+  n = append_dec(buf, len, append(buf, len, n, " type="), m->type);
+  n = append_hex(buf, len, append(buf, len, n, " serial="), m->serial, HEX_DIGITS);
+  n = append(buf, len, append(buf, len, n, " source="), source[m->id_flags & 0x03U]);
+  n = append(buf, len, append(buf, len, n, " status="), status_text);
+  return append_hex(buf, len, append(buf, len, n, " crc="), m->record_crc, 8U);
+}
+```
+
+## 8. The file
 
 ```c {#wsmp_host.c}
 #include "wsmp_host.h"
@@ -720,4 +820,8 @@ unsigned wsmp_host_modules_line(char *buf, unsigned len)
 <<latch>>
 
 <<queries>>
+
+<<set>>
+
+<<ident-line>>
 ```

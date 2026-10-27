@@ -26,4 +26,14 @@ uint32_t wsmp_host_changes(enum wsmp_port p);   /* how often the port joined or 
 #define WSMP_MODULES_LINE_MAX 256U   /* the longest line: every port with its longest state, the I2C ports with
                                        (incomplete=255)(unverified=255) */
 unsigned wsmp_host_modules_line(char *buf, unsigned len);
+/* The descriptor set of the layout (WSMP section 11.1, with the identity entry of the sensor module
+   ports design, section 6.7): every Admitted, Active or Suspect port in increasing port order. The
+   generation is left 0 for the caller (WSMP-E1), which builds the set after the minute's latch steps
+   (wsmp_host_latch): an Admitted module joins the readings at that latch. Returns the module count;
+   *dropped (if not NULL) counts layout modules whose blocks did not unpack (a bug), left out. */
+unsigned wsmp_host_set(wsmp_set *set, unsigned *dropped);
+/* Module i of a set as a console line, "#ident port=1 type=1 serial=<16 hex> source=record
+   status=applied crc=<8 hex>"; returns its length (0 past the last module). */
+#define WSMP_IDENT_LINE_MAX 112U
+unsigned wsmp_host_ident_line(const wsmp_set *set, unsigned i, char *buf, unsigned len);
 #endif

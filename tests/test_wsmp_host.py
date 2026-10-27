@@ -7,12 +7,16 @@ the flap limit, the radio budget and quarantine. Host-model results, not bench e
 import ctypes
 import unittest
 
+from ws0 import wsmp_set
+
 try:
     from toolchain import ROOT, fresh_station, host_library, needs_cc, wsmp_sources          # python -m unittest discover -s tests
     import wsmp_record_ref as ref
+    import wsmp_wind_ref as wind_ref
 except ImportError:
     from tests.toolchain import ROOT, fresh_station, host_library, needs_cc, wsmp_sources    # python -m unittest tests.<module>
     from tests import wsmp_record_ref as ref
+    from tests import wsmp_wind_ref as wind_ref
 
 DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228 = 2, 3, 4, 5, 6
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_BUS_ERROR = 0, 1, 2, 6
@@ -551,6 +555,109 @@ class Reidentify(unittest.TestCase):
         self.assertEqual(lib.h_host_state(P_AIR_TH), ACTIVE)
         self.assertEqual(self.identity(lib, P_AIR_TH)['serial'], REC_SERIAL + 2)
         self.assertEqual(lib.h_host_changes(P_AIR_TH), changes + 2)
+
+    def descriptor_set(self, lib):
+        out = (ctypes.c_uint8 * 296)()
+        n = lib.h_host_set(out)                 # fill the buffer first, then copy it
+        return wsmp_set.unpack(bytes(out)[:n])
+
+    def ident_lines(self, lib):
+        lines, buf = [], ctypes.create_string_buffer(112)
+        for i in range(8):
+            if not lib.h_host_ident_line(i, buf, 112):
+                break
+            lines.append(buf.value)
+        return lines
+
+    def test_the_set_carries_each_modules_identity(self):
+        # WSMP section 11.1 with the identity entry of the ports design (section 6.7): an applied record
+        # gives its serial and CRC, a module without an EEPROM its fallback serial, NO_RECORD (READ)
+        # and CRC 0; the set passes the gateway's registry check (WSMP-E7)
+        rec = sht_record(cal=[(1, 0, 1, 100, 1_000_000)])
+        lib, _ = self.boot([(P_AIR_TH, DEVK_SHT45, rec), (P_PRESSURE, DEVK_BMP581, None)])
+        self.minutes(lib, 2)
+        s = self.descriptor_set(lib)
+        self.assertIsNone(wsmp_set.check(s))
+        air, pressure = s.modules
+        self.assertEqual((air.port, air.type, air.serial, air.source, air.status, air.record_crc),
+                         (P_AIR_TH, 1, REC_SERIAL, 'record', 'applied', int.from_bytes(rec[0x7C:0x80], 'big')))
+        self.assertEqual((pressure.port, pressure.type, pressure.serial, pressure.source, pressure.status,
+                          pressure.no_record, pressure.record_crc),
+                         (P_PRESSURE, 2, ref.port_serial(P_PRESSURE, 2), 'port', 'READ', True, 0))
+
+    def test_a_module_whose_record_is_not_applied_has_crc_0(self):
+        # SENSOR_CHANGED: a valid record bound to another SHT4x serial; serial from the sensor, CRC 0
+        lib, _ = self.boot([(P_AIR_TH, DEVK_SHT45, sht_record(bind_value=SERIAL32 + 1))])
+        self.minutes(lib, 2)
+        (air,) = self.descriptor_set(lib).modules
+        self.assertEqual((air.serial, air.source, air.status, air.record_crc),
+                         (ref.sensor_serial(1, SERIAL32), 'sensor', 'SENSOR_CHANGED', 0))
+
+    def test_a_changed_record_crc_changes_the_set(self):
+        lib, devs = self.boot([(P_AIR_TH, DEVK_SHT45, sht_record(cal=[(1, 0, 1, 100, 1_000_000)]))])
+        self.minutes(lib, 2)
+        before = self.descriptor_set(lib)
+        rec = sht_record(cal=[(1, 0, 2, 50, 1_000_000)])     # recalibrated on the fixture, same serial
+        lib.h_eeprom_write(devs[P_AIR_TH][1], 0, rec, len(rec))
+        self.minutes(lib, 1)
+        self.assertEqual(self.descriptor_set(lib).modules, ())          # left at the latch
+        self.minutes(lib, 2)
+        after = self.descriptor_set(lib)
+        self.assertEqual(after.modules[0].serial, before.modules[0].serial)
+        self.assertEqual(after.modules[0].record_crc, int.from_bytes(rec[0x7C:0x80], 'big'))
+        self.assertNotEqual(after.digest, before.digest)                 # a new set: the WSMP-C1 boundary
+
+    def test_a_cal_rejected_record_has_crc_0(self):
+        # a structurally valid record whose calibration fails check 7: its serial is kept, no CRC
+        lib, _ = self.boot([(P_PRESSURE, DEVK_BMP581, bmp_record(cal=[(3, 0, 1, 500, 1_000_000)]))])
+        self.minutes(lib, 2)
+        (pressure,) = self.descriptor_set(lib).modules
+        self.assertEqual((pressure.serial, pressure.source, pressure.status, pressure.record_crc),
+                         (REC_SERIAL + 0x100, 'record', 'CAL_REJECTED', 0))
+
+    def test_a_suspect_module_stays_in_the_set(self):
+        lib, devs = self.boot([(P_AIR_TH, DEVK_SHT45, sht_record())])
+        self.minutes(lib, 2)
+        lib.h_device_mode(devs[P_AIR_TH][0], DM_NACK_ADDR, 0, 1)
+        self.minutes(lib, 1)
+        self.assertEqual(lib.h_host_state(P_AIR_TH), SUSPECT)
+        self.assertEqual([m.serial for m in self.descriptor_set(lib).modules], [REC_SERIAL])
+
+    def test_a_module_whose_blocks_do_not_unpack_is_counted(self):
+        # a bug, never a silent gap: left out of the set and counted (#ident dropped=N)
+        lib, _ = self.boot([(P_AIR_TH, DEVK_SHT45, sht_record()), (P_PRESSURE, DEVK_BMP581, None)])
+        self.minutes(lib, 2)
+        self.assertEqual(lib.h_host_set_dropped(), 0)
+        lib.h_break_identity(P_PRESSURE)
+        self.assertEqual([m.port for m in self.descriptor_set(lib).modules], [P_AIR_TH])
+        self.assertEqual(lib.h_host_set_dropped(), 1)
+
+    def test_a_module_that_never_has_a_record_shows_status_none(self):
+        lib, _ = self.boot([(P_AIR_TH, DEVK_SHT45, sht_record())])
+        lib.h_vane_mv(wind_ref.vane_mv(0))                    # the wind module: a meter, no record in v1
+        self.minutes(lib, 3)
+        self.assertEqual(lib.h_host_state(P_WIND), ACTIVE)
+        self.assertEqual(self.ident_lines(lib)[-1],
+                         b'#ident port=6 type=6 serial=%016x source=port status=none crc=00000000' % ref.port_serial(P_WIND, 6))
+
+    def test_only_the_layout_is_in_the_set(self):
+        # a quarantined port (a type conflict) and a probing one are not in the layout, so not in the set
+        lib, _ = self.boot([(P_AIR_TH, DEVK_SHT45, ltr_record()), (P_UVA, DEVK_LTR390, ltr_record(serial=REC_SERIAL + 1))])
+        self.minutes(lib, 2)
+        self.assertEqual([lib.h_host_state(p) for p in (P_AIR_TH, P_UVA)], [QUARANTINED, ACTIVE])
+        self.plug(lib, P_PRESSURE, DEVK_BMP581)
+        lib.h_host_run(750)
+        self.assertEqual(lib.h_host_state(P_PRESSURE), PROBING)
+        self.assertEqual([m.port for m in self.descriptor_set(lib).modules], [P_UVA])
+
+    def test_the_ident_lines_follow_the_set(self):
+        rec = sht_record()
+        lib, _ = self.boot([(P_AIR_TH, DEVK_SHT45, rec), (P_PRESSURE, DEVK_BMP581, None)])
+        self.minutes(lib, 2)
+        crc = rec[0x7C:0x80].hex().encode()
+        self.assertEqual(self.ident_lines(lib), [
+            b'#ident port=1 type=1 serial=%016x source=record status=applied crc=%s' % (REC_SERIAL, crc),
+            b'#ident port=2 type=2 serial=%016x source=port status=READ crc=00000000' % ref.port_serial(P_PRESSURE, 2)])
 
     def test_a_changed_record_crc_with_the_same_serial_is_a_leave_and_a_join(self):
         lib, devs = self.boot([(P_AIR_TH, DEVK_SHT45, sht_record(cal=[(1, 0, 1, 100, 1_000_000)]))])
