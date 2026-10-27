@@ -6,6 +6,7 @@ Adafruit-INA228-PCB and Adafruit-MAX17048-PCB (25.4 x 20.3), Pololu #2122 (11 x 
 battery (69 x 54 x 18)."""
 from pathlib import Path
 
+VENDOR = Path(__file__).resolve().parents[3]/'vendor'/'cad'   # tools/fetch-cad.sh
 KICAD3D = '${KICAD10_3DMODEL_DIR}'
 BREADBOARD_H = 8.5                # an 830-point breadboard body is 8.5 mm tall
 HEADER_Z = BREADBOARD_H + 2.5     # a breakout's header pins go into the breadboard: its plastic is 2.5 mm
@@ -30,6 +31,27 @@ EXTRA = {
     'INA': [(0, -14.5, 10.5, 7.0, 8.5, HEADER_Z + PCB, TERMINAL)],        # the screw terminal
     'CELL': [(75.0, 52.0, 54.0, 69.0, 18.0, 0.0, BATTERY)],               # on the bench beside board B
 }
+# The makers' own models (tools/fetch-cad.sh), used in place of the boxes when fetched:
+# part id -> (file, the model's hole at the left end of the header (x, y) in its own mm, the pin on that
+# hole). Each model lies board-up with its header along its near edge, labels upright, as each part
+# sits on the bench: the left-hand hole takes the part's highest column. Holes measured from the files.
+REAL = {
+    'CHGR': ('chgr-4755.step', (6.35, 2.54), 'VBUS'),
+    'INA': ('ina-5832.step', (3.81, 2.54), 'VCC'),
+    'GAUGE': ('gauge-5580.step', (6.35, 2.54), 'VIN'),
+    'REG': ('reg-2122.step', (1.91, 1.27), 'VOUT'),
+}
+CELL_MODEL = ('cell-353.step', (35.0, 27.0))   # the cell's centre in its own mm
+
+
+def real_model(part_id):
+    """(KiCad path, (hx, hy), pin) of a maker's model, or None if it is not fetched."""
+    if part_id not in REAL or not (VENDOR/REAL[part_id][0]).exists():
+        return None
+    file, hole, pin = REAL[part_id]
+    return (f'${{KIPRJMOD}}/../../vendor/cad/{file}', hole, pin)
+
+
 # KiCad's own models: (file, rotation about z in degrees) for parts by kind.
 KICAD = {
     'resistor': ('Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step', 0),
@@ -46,8 +68,8 @@ def header_model(pins, rows=1, along_columns=True):
 
 
 def models_for(part):
-    """[(kicad file or None, rotation, box or None)] for one part. The KiCad model sits at the first
-    pin, as its footprint's origin is pin 1; a box sits at the centre of the pins."""
+    """[(kicad file or None, rotation, box or None)] for one part. make.py anchors the KiCad model on
+    the part's left-most pin (the drawing is mirrored); a box sits at the centre of the pins."""
     n = len(part.pins)
     kind = part.kind.lower()
     if 'resistor' in kind or 'ohm' in kind and 'load' in kind:
@@ -55,11 +77,15 @@ def models_for(part):
     if 'capacitor' in kind:
         return [(*KICAD['capacitor'], None)]
     out = []
-    if part.id == 'CELL':
+    if part.id in ('CELL', 'GBAT'):
         out.append((*KICAD['jst'], None))
     elif n >= 2:
         out.append((*header_model(n), None))
     key = 'BOB' if part.id.startswith('BOB') else part.id
+    if real_model(part.id):
+        return out   # the maker's model replaces the box and its extras (model_footprints places it)
+    if part.id == 'CELL' and (VENDOR/CELL_MODEL[0]).exists():
+        return out
     if part.body is not None:
         dx, dy, w, d = part.body
         out.append((None, 0, (dx, dy, w, d, PCB, HEADER_Z, BOARD_COLOUR[key])))
@@ -80,7 +106,7 @@ def write_box(path, box):
 
 U = 1/2.54                        # KiCad reads .wrl in units of 0.1 inch
 BODY = (0.96, 0.96, 0.93)
-HOLE_DARK = (0.18, 0.18, 0.18)
+HOLE_DARK = (0.06, 0.06, 0.06)
 RAIL_RED, RAIL_BLUE = (0.85, 0.15, 0.15), (0.15, 0.30, 0.85)
 
 
@@ -110,7 +136,7 @@ def write_breadboard(path, x1, y1, x2, y2, holes, rails):
     out = ['#VRML V2.0 utf8\n',
            f'Transform {{ translation {_v(cx, cy, h/2)} children [ Shape {{ {_material(BODY)} '
            f'geometry Box {{ size {w*U:.4f} {d*U:.4f} {h*U:.4f} }} }} ] }}\n',
-           _quads(holes, h + 0.02, 0.45, HOLE_DARK)]
+           _quads(holes, h + 0.15, 0.55, HOLE_DARK)]
     for rx1, rx2, ry, colour in rails:
         tiles = [(rx1 + i*1.0, ry) for i in range(int((rx2 - rx1)/1.0) + 1)]
         out.append(_quads(tiles, h + 0.02, 0.5, RAIL_RED if colour == 'red' else RAIL_BLUE))

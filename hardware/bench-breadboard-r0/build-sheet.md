@@ -16,13 +16,14 @@ row a) and R- and R+ (beside row j). The renders are in `renders/`.
 | R2 | 10 kOhm resistor, rain pull-up | A | 1: g15, 2: g19 | passive |
 | C2 | 100 nF capacitor, rain filter | A | 1: g22, 2: g23 | passive |
 | R3 | 10 kOhm resistor, vane pull-up | A | 1: g26, 2: g30 | passive |
-| CHGR | Adafruit bq24074 charger #4755 (11-pin header) | B | GND: a3, LIPO: a4, GND2: a5, OUT: a6, CHG: a7, PGOOD: a8, CE: a9, ISET: a10, THERM: a11, GND3: a12, VBUS: a13 | https://github.com/adafruit/Adafruit-BQ24074-PCB |
-| INA | Adafruit INA228 #5832 (8-pin header; I2C on its STEMMA QT cable) | B | VCC: a20, GND: a21, SCL: a22, SDA: a23, VBUS: a24, VIN-: a25, VIN+: a26, ALERT: a27 | https://github.com/adafruit/Adafruit-INA228-PCB |
-| GAUGE | Adafruit MAX17048 #5580 (2-pin battery header; I2C on its STEMMA QT cable) | B | VBAT: a32, GND: a33 | https://github.com/adafruit/Adafruit-MAX17048-PCB |
-| REG | Pololu S7V8F3 3.3 V regulator #2122 | B | SHDN: a38, VIN: a39, GND: a40, VOUT: a41 | bench check |
-| SHUNT | 2-pin header with shunt: BATTERY POWER, USB UNPLUGGED (open in mode A) | B | 1: a46, 2: a47 | passive |
-| CELL | Battery 6600 mAh #353 on a JST PH pigtail | B | +: f20, -: f21 | bench check |
-| RLOAD | 100 Ohm 1/2 W test load (mode A only) | B | 1: f5, 2: f9 | passive |
+| CHGR | Adafruit bq24074 charger #4755 (11-pin header) | B | GND: a50, LIPO: a51, GND2: a52, OUT: a53, CHG: a54, PGOOD: a55, CE: a56, ISET: a57, THERM: a58, GND3: a59, VBUS: a60 | https://github.com/adafruit/Adafruit-BQ24074-PCB |
+| INA | Adafruit INA228 #5832 (8-pin header; I2C on its STEMMA QT cable) | B | VCC: a43, GND: a42, SCL: a41, SDA: a40, VBUS: a39, VIN-: a38, VIN+: a37, ALERT: a36 | https://github.com/adafruit/Adafruit-INA228-PCB |
+| GAUGE | Adafruit MAX17048 #5580 (6-pin header, held in place only; I2C on its STEMMA QT cable) | B | VIN: a30, GND: a29, SCL: a28, SDA: a27, INT: a26, QSTART: a25 | https://learn.adafruit.com/adafruit-max17048-lipoly-liion-fuel-gauge-and-battery-monitor/pinouts |
+| GBAT | JST PH 2-pin pigtail into one of the gauge's battery sockets | B | +: f31, -: f32 | bench check |
+| REG | Pololu S7V8F3 3.3 V regulator #2122 | B | SHDN: a14, VIN: a15, GND: a16, VOUT: a17 | bench check |
+| SHUNT | 2-pin header with shunt: BATTERY POWER, USB UNPLUGGED (open in mode A) | B | 1: a8, 2: a9 | passive |
+| CELL | Battery 6600 mAh #353 on a JST PH pigtail | B | +: f39, -: f40 | bench check |
+| RLOAD | 100 Ohm 1/2 W test load (mode A only) | B | 1: f49, 2: f53 | passive |
 
 ## 2. Jumpers
 
@@ -32,18 +33,18 @@ Each jumper is one wire between the two holes. Colour by class: i2c blue, wind g
 
 | Jumper | From | To | Net | Class |
 |---|---|---|---|---|
-| W1 | A:h19 | A:h8 | 3V3 | power |
-| W2 | A:L+20 | A:f19 | 3V3 | power |
-| W3 | A:L+30 | A:f30 | 3V3 | power |
-| W4 | A:L+41 | A:b41 | 3V3 | power |
+| W1 | A:L+41 | A:b41 | 3V3 | power |
+| W2 | A:L+30 | A:f30 | 3V3 | power |
+| W3 | A:L+20 | A:f19 | 3V3 | power |
+| W4 | A:h19 | A:h8 | 3V3 | power |
 | W5 | A:d6 | A:f11 | CUPS | wind |
 | W6 | A:e6 | A:f4 | CUPS | wind |
-| W7 | A:b5 | A:b4 | GND | ground |
-| W8 | A:h12 | A:e5 | GND | ground |
-| W9 | A:e14 | A:f12 | GND | ground |
-| W10 | A:L-20 | A:b14 | GND | ground |
-| W11 | A:L-23 | A:f23 | GND | ground |
-| W12 | A:L-40 | A:b40 | GND | ground |
+| W7 | A:L-40 | A:b40 | GND | ground |
+| W8 | A:L-23 | A:f23 | GND | ground |
+| W9 | A:L-20 | A:b14 | GND | ground |
+| W10 | A:e14 | A:f12 | GND | ground |
+| W11 | A:h12 | A:e5 | GND | ground |
+| W12 | A:b5 | A:b4 | GND | ground |
 | W13 | A:e15 | A:f15 | RAIN | rain |
 | W14 | A:h15 | A:h22 | RAIN | rain |
 | W15 | A:e7 | A:f26 | VANE | wind |
@@ -52,38 +53,38 @@ Each jumper is one wire between the two holes. Colour by class: i2c blue, wind g
 
 | Jumper | From | To | Net | Class |
 |---|---|---|---|---|
-| W16 | B:b25 | B:b4 | BATT | power |
-| W17 | B:e25 | B:e32 | BATT | power |
-| W18 | B:e26 | B:g20 | CELL_POS | power |
-| W19 | B:e3 | B:g9 | GND | ground |
-| W20 | B:h9 | B:h21 | GND | ground |
-| W21 | B:b21 | B:L-18 | GND | ground |
-| W22 | B:g21 | B:e21 | GND | ground |
-| W23 | B:e40 | B:e33 | GND | ground |
-| W24 | B:L-42 | B:b40 | GND | ground |
-| W25 | B:b41 | B:b46 | REG_OUT | power |
-| W26 | B:e6 | B:g5 | SYS_OUT | power |
-| W27 | B:b39 | B:b6 | SYS_OUT | power |
+| W16 | B:c38 | B:c51 | BATT | power |
+| W17 | B:e38 | B:g31 | BATT | power |
+| W18 | B:e37 | B:g39 | CELL_POS | power |
+| W19 | B:e50 | B:g53 | GND | ground |
+| W20 | B:L-47 | B:c50 | GND | ground |
+| W21 | B:L-45 | B:c42 | GND | ground |
+| W22 | B:e42 | B:g40 | GND | ground |
+| W23 | B:h40 | B:h32 | GND | ground |
+| W24 | B:L-19 | B:b16 | GND | ground |
+| W25 | B:b17 | B:b8 | REG_OUT | power |
+| W26 | B:h49 | B:e53 | SYS_OUT | power |
+| W27 | B:e15 | B:g49 | SYS_OUT | power |
 
 ### Between the boards
 
 | Jumper | From | To | Net | Class |
 |---|---|---|---|---|
-| W28 | A:L-63 | B:b3 | GND | ground |
+| W28 | A:c4 | B:L-63 | GND | ground |
 
 ### To the NUCLEO
 
 | Jumper | From | To | Net | Class |
 |---|---|---|---|---|
 | W29 | A:e41 | NUCLEO CN6.4 | 3V3 | power |
-| W30 | B:e47 | NUCLEO CN7.16 | 3V3 | power |
-| W31 | B:e7 | NUCLEO CN10.25 | CHG | charger |
-| W32 | A:j11 | NUCLEO CN10.14 | CUPS | wind |
+| W30 | B:e9 | NUCLEO CN7.16 | 3V3 | power |
+| W31 | B:e54 | NUCLEO CN10.25 | CHG | charger |
+| W32 | A:j4 | NUCLEO CN10.14 | CUPS | wind |
 | W33 | A:e40 | NUCLEO CN6.6 | GND | ground |
 | W34 | A:e43 | NUCLEO CN5.10 | I2C_SCL | i2c |
 | W35 | A:e42 | NUCLEO CN5.9 | I2C_SDA | i2c |
-| W36 | B:e8 | NUCLEO CN10.27 | PGOOD | charger |
-| W37 | A:j22 | NUCLEO CN10.29 | RAIN | rain |
+| W36 | B:e55 | NUCLEO CN10.27 | PGOOD | charger |
+| W37 | A:j15 | NUCLEO CN10.29 | RAIN | rain |
 | W38 | A:j26 | NUCLEO CN7.30 | VANE | wind |
 
 ## Bench checks
@@ -92,9 +93,11 @@ Do these before you connect power.
 
 - **BOBW** (SparkFun BOB-14021 RJ11 breakout (wind cable)): Inner conductors 3, 4: the cups. Outer 2, 5: the vane (SEN-15901). Check each with a meter.
 - **BOBR** (SparkFun BOB-14021 RJ11 breakout (rain cable)): Inner conductors 3, 4: the bucket switch (SEN-15901). Check with a meter.
-- **CHGR** (Adafruit bq24074 charger #4755 (11-pin header)): CHG and PGOOD are open drain, active low. CE, ISET and THERM stay unconnected (board defaults).
-- **INA** (Adafruit INA228 #5832 (8-pin header; I2C on its STEMMA QT cable)): The shunt is between VIN+ and VIN-. Check the VBUS jumper on the back.
-- **REG** (Pololu S7V8F3 3.3 V regulator #2122): Pololu gives the four pins but not their order. Read the labels on the back before plugging in.
+- **CHGR** (Adafruit bq24074 charger #4755 (11-pin header)): Labels upright, board over the rails: VBUS at column 60, GND at 50. CHG and PGOOD are open drain, active low. CE, ISET and THERM stay unconnected (board defaults).
+- **INA** (Adafruit INA228 #5832 (8-pin header; I2C on its STEMMA QT cable)): Labels upright: VIN (VCC) at column 43, ALRT at 36. The shunt is between VIN+ and VIN-. Check the VBUS jumper on the back.
+- **GAUGE** (Adafruit MAX17048 #5580 (6-pin header, held in place only; I2C on its STEMMA QT cable)): Labels upright: VIN at column 30, QStart at 25. No wire goes to the header. The battery goes in through a JST PH socket (GBAT); leave the other socket empty.
+- **GBAT** (JST PH 2-pin pigtail into one of the gauge's battery sockets): Pigtail colours vary: check + and - against the marks beside the gauge's socket.
+- **REG** (Pololu S7V8F3 3.3 V regulator #2122): Back labels, top to bottom: VOUT, GND (square pad), VIN, SHDN. Front up, over the rails: VOUT at column 17, SHDN at 14.
 - **CELL** (Battery 6600 mAh #353 on a JST PH pigtail): JST PH pigtail colours vary: check + and - with a meter before plugging in.
 - **3V3, not 5 V:** W29 goes to CN6.4 (3V3). On the Arduino power header the next pin, CN6.5, is 5 V: check the hole against UM2592 Table 17 before you push the wire in.
 - **Rails:** some 830-point boards split each rail at the centre. If yours do, set `split_rails = true` in `source/wiring.toml` and rebuild: the plan then bridges the halves.
