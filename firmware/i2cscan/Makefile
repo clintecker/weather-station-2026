@@ -14,6 +14,10 @@ APP_SRC = $(BOARD_CORE_SRC) \
           $(BOARD_APP_SRC) \
           App/i2cscan.c \
           App/bench_regs.c \
+          App/bench_screen.c \
+          App/oled.c \
+          App/oled_fb.c \
+          App/font5x7.c \
           $(BOARD_RADIO_SRC) \
           $(BOARD_SYS_SRC)
 
@@ -23,6 +27,6 @@ DEFS      = -DDEBUG -DVERBOSE_LEVEL=VLEVEL_M
 OPT       = -Og
 
 # Our own C builds with the strict warning set and -Werror.
-STRICT_SRC = App/i2cscan.c App/bench_regs.c
+STRICT_SRC = App/i2cscan.c App/bench_regs.c App/bench_screen.c App/oled.c App/oled_fb.c App/font5x7.c
 
 include $(BOARD)/board.mk

@@ -3,6 +3,8 @@
 Pure C, compiled for the host. Not bench evidence: the tool's readings are checked against a meter on
 the bench (firmware/i2cscan/README.md)."""
 import ctypes
+import subprocess
+import sys
 import unittest
 try:
     from toolchain import ROOT, host_library, needs_cc          # python -m unittest discover -s tests
@@ -111,6 +113,110 @@ class BenchRegs(unittest.TestCase):
         self.assertEqual(self.fixed(1, 10, 0), '?')                           # 10^10 is past the limit
         self.assertEqual(self.fixed(1, 0, 10), '?')
         self.assertEqual(self.fixed(1, 0, 10, n=1), '')
+
+
+APP = ROOT/'firmware/i2cscan/App'
+OLED_W, OLED_H = 128, 64
+
+
+class View(ctypes.Structure):
+    _fields_ = [('found', ctypes.c_uint8*5), ('nfound', ctypes.c_uint), ('ina_ok', ctypes.c_int),
+                ('ua', ctypes.c_int32), ('vbus_uv', ctypes.c_int32), ('gauge_ok', ctypes.c_int),
+                ('vcell_uv', ctypes.c_int32), ('soc_mpct', ctypes.c_int32), ('crate_mpct_h', ctypes.c_int32)]   # bench_view
+
+
+@needs_cc
+class BenchScreen(unittest.TestCase):
+    """The OLED frame buffer, font and layout (oled_fb.c, font5x7.c, bench_screen.c)."""
+    @classmethod
+    def setUpClass(cls):
+        cls.lib = host_library(cls, 'bench_screen', '-I', APP, APP/'oled_fb.c', APP/'font5x7.c',
+                               APP/'bench_screen.c', APP/'bench_regs.c')
+        cls.lib.oled_text.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        cls.lib.oled_set.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        cls.lib.oled_get.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+        cls.lib.ssd1325_column.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p]
+        cls.lib.bench_screen.argtypes = [ctypes.c_void_p, ctypes.POINTER(View)]
+
+    def fb(self):
+        return ctypes.create_string_buffer(OLED_W*OLED_H//8)
+
+    def lit(self, fb):
+        return {(x, y) for y in range(OLED_H) for x in range(OLED_W) if self.lib.oled_get(fb, x, y)}
+
+    def test_font_file_is_current(self):
+        script = ROOT/'firmware/i2cscan/tools/make_font.py'
+        self.assertEqual(subprocess.run([sys.executable, script, '--check']).returncode, 0)
+
+    def test_glyph_pixels(self):
+        fb = self.fb()
+        self.assertEqual(self.lib.oled_text(fb, 10, 20, b'1', 1), 16)
+        art = '..#.. .##.. ..#.. ..#.. ..#.. ..#.. .###.'.split()
+        want = {(10 + c, 20 + r) for r, row in enumerate(art) for c, ch in enumerate(row) if ch == '#'}
+        self.assertEqual(self.lit(fb), want)
+
+    def test_scale_and_unknown_characters(self):
+        fb, ref = self.fb(), self.fb()
+        self.assertEqual(self.lib.oled_text(fb, 0, 0, b'x~', 2), 24)     # neither is in the font
+        self.lib.oled_text(ref, 0, 0, b'??', 2)
+        self.assertEqual(fb.raw, ref.raw)
+        self.assertEqual(len(self.lit(ref)), 2*4*len(self.lit_of(b'?')))  # each font pixel is 2 x 2
+
+    def lit_of(self, text):
+        fb = self.fb()
+        self.lib.oled_text(fb, 0, 0, text, 1)
+        return self.lit(fb)
+
+    def test_off_screen_is_ignored(self):
+        fb = self.fb()
+        for x, y in ((-1, 0), (0, -1), (OLED_W, 0), (0, OLED_H), (10**6, 10**6)):
+            self.lib.oled_set(fb, x, y, 1)
+            self.assertEqual(self.lib.oled_get(fb, x, y), 0)
+        self.assertEqual(fb.raw, bytes(len(fb.raw)))
+        self.lib.oled_text(fb, 120, 60, b'888', 2)                       # clipped, not wrapped
+        self.assertTrue(all(x >= 120 and y >= 60 for x, y in self.lit(fb)))
+
+    def test_ssd1325_column_order(self):
+        fb = self.fb()
+        for x, y in ((0, 0), (1, 5), (126, 63), (127, 63)):
+            self.lib.oled_set(fb, x, y, 1)
+        col = ctypes.create_string_buffer(OLED_H)
+        self.lib.ssd1325_column(fb, 0, col)
+        self.assertEqual(col.raw[0], 0xF0)          # x = 0: the left pixel, high nibble
+        self.assertEqual(col.raw[5], 0x0F)          # x = 1: the right pixel, low nibble
+        self.assertEqual(sum(1 for b in col.raw if b), 2)
+        self.lib.ssd1325_column(fb, 63, col)
+        self.assertEqual(col.raw[63], 0xFF)
+        self.assertEqual(sum(1 for b in col.raw if b), 1)
+
+    def expected(self, lines):
+        fb = self.fb()
+        for y, text, scale in lines:
+            self.lib.oled_text(fb, 0, y, text, scale)
+        return fb.raw
+
+    def test_screen_with_both_parts(self):
+        v = View((0x36, 0x40, 0, 0, 0), 2, 1, 37604, 3845898, 1, 3846015, 78398, -624)
+        fb = self.fb()
+        self.lib.bench_screen(fb, ctypes.byref(v))
+        self.assertEqual(fb.raw, self.expected([(0, b'I2C 36 40', 1), (11, b'+37.60mA', 2), (31, b'VBUS 3.8459V', 1),
+                                                (42, b'CELL 3.8460V 78.4%', 1), (53, b'RATE -0.62%/h', 1)]))
+
+    def test_screen_with_nothing_on_the_bus(self):
+        v = View((0,)*5, 0, 0, 0, 0, 0, 0, 0, 0)
+        fb = self.fb()
+        self.lib.bench_screen(fb, ctypes.byref(v))
+        self.assertEqual(fb.raw, self.expected([(0, b'I2C NONE', 1), (11, b'NO INA228', 2), (42, b'NO GAUGE', 1)]))
+
+    def test_screen_with_more_addresses_than_fit(self):
+        v = View((0x36, 0x3C, 0x40, 0x44, 0x47), 7, 0, 0, 0, 0, 0, 0, 0)
+        fb = self.fb()
+        self.lib.bench_screen(fb, ctypes.byref(v))
+        self.assertEqual(fb.raw, self.expected([(0, b'I2C 36 3C 40 44 47 +', 1), (11, b'NO INA228', 2),
+                                                (42, b'NO GAUGE', 1)]))
+        # The "+" is the 20th character (x 114-118) and must be on the screen, not clipped.
+        plus = {(x, y) for x in range(114, 120) for y in range(7) if self.lib.oled_get(fb, x, y)}
+        self.assertEqual(plus, {(x + 114, y) for x, y in self.lit_of(b'+')})
 
 
 if __name__ == '__main__':

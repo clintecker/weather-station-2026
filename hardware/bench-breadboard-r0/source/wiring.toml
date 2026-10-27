@@ -193,6 +193,35 @@ step = 4
 pins = ["1", "2"]
 source = "passive"
 
+# ---- board C: display ----
+
+# The 20-pin header reads pin 20 at the left and pin 1 at the right with the screen facing you, so pin 1
+# takes the lowest column (step +1). The board hangs outward over the rails like the breakouts; its
+# outline is Adafruit's 85 x 58 mm with the header 2.8 mm from the near edge and 1.35 mm toward pin 1
+# from the middle (measured from a photo of the bench module, to about 1 mm).
+[[part]]
+id = "OLED"
+kind = "Adafruit 2.7in 128x64 OLED #2674 (SSD1325, SPI mode: R19 and R21 fitted)"
+board = "C"
+origin = ["a", 22]
+step = 1
+body = [-1.35, -26.0, 85.0, 58.0]
+pins = ["GND", "VCC", "NC3", "DC", "WR", "RD", "SCLK", "DIN", "D2", "D3", "D4", "D5", "D6", "D7", "CS", "RST",
+        "NC17", "NC18", "NC19", "FG"]
+source = "https://learn.adafruit.com/2-7-monochrome-128x64-oled-display-module/pinouts"
+note = "SPI mode needs R19 and R21 fitted and R18 and R20 empty on the back. Pin 1 (GND) at column 22, pin 20 (frame ground) at 41. Only GND, VCC, DC, SCLK, DIN, CS and RST are wired; FG may stay open"
+
+# The kit's 220 uF capacitor, in the strips of the OLED's GND (column 22) and 3.3 V (column 23).
+[[part]]
+id = "COLED"
+kind = "220 uF electrolytic capacitor, OLED supply"
+board = "C"
+origin = ["e", 23]
+step = -1
+pins = ["+", "-"]
+source = "bench check"
+note = "Polarised: + (the longer lead) in column 23 with the OLED's 3.3 V, the striped - lead in column 22 with its GND"
+
 # ---- required jumpers ----
 # The guide feeds the regulator output, through the BATTERY POWER shunt, to the NUCLEO's 3V3 pin
 # CN7.16 (section 5). Left to the planner, this net could take a shorter path through board A.
@@ -220,7 +249,7 @@ b = "N:CN6.6"
 name = "3V3"
 mcu = "3V3"
 class = "power"
-members = ["N:CN6.4", "N:CN7.16", "QT.V+", "R1.2", "R2.2", "R3.2", "SHUNT.2"]
+members = ["N:CN6.4", "N:CN7.16", "QT.V+", "R1.2", "R2.2", "R3.2", "SHUNT.2", "OLED.VCC", "COLED.+"]
 rails = ["A:L+"]
 
 [[net]]
@@ -228,7 +257,7 @@ name = "GND"
 mcu = "GND"
 class = "ground"
 members = ["N:CN6.6", "N:CN6.7", "QT.GND", "BOBW.2", "BOBW.3", "BOBR.3", "C1.2", "C2.2",
-           "CHGR.GND", "INA.GND", "GBAT.-", "REG.GND", "CELL.-", "RLOAD.2"]
+           "CHGR.GND", "INA.GND", "GBAT.-", "REG.GND", "CELL.-", "RLOAD.2", "OLED.GND", "COLED.-"]
 rails = ["A:L-", "B:L-"]
 
 [[net]]
@@ -292,3 +321,34 @@ members = ["CHGR.OUT", "REG.VIN", "RLOAD.1"]
 name = "REG_OUT"
 class = "power"
 members = ["REG.VOUT", "SHUNT.1"]
+
+# The OLED on SPI1 (firmware/i2cscan/App/oled.h). Morpho CN10 odd pins, UM2592 Rev 4 Table 18.
+[[net]]
+name = "OLED_SCLK"
+mcu = "PA5"
+class = "display"
+members = ["N:CN10.11", "OLED.SCLK"]
+
+[[net]]
+name = "OLED_DIN"
+mcu = "PA7"
+class = "display"
+members = ["N:CN10.15", "OLED.DIN"]
+
+[[net]]
+name = "OLED_CS"
+mcu = "PA4"
+class = "display"
+members = ["N:CN10.17", "OLED.CS"]
+
+[[net]]
+name = "OLED_DC"
+mcu = "PC2"
+class = "display"
+members = ["N:CN10.21", "OLED.DC"]
+
+[[net]]
+name = "OLED_RST"
+mcu = "PC1"
+class = "display"
+members = ["N:CN10.23", "OLED.RST"]

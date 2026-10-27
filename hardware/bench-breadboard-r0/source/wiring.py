@@ -16,7 +16,7 @@ RAILS = ('L+', 'L-', 'R-', 'R+')
 RAIL_SPLIT_AFTER = 31             # a split rail's halves meet between columns 31 and 32
 CHANNEL = 7.62                    # mm between rows e and f
 RAIL_GAP = 5.08                   # mm from row a to rail L-, and from row j to rail R-
-BOARD_GAP = 20.0                  # mm between boards A and B
+BOARD_GAP = 20.0                  # mm between neighbouring boards
 NUCLEO_GAP = 20.0                 # mm below board A to the NUCLEO headers
 
 
@@ -62,7 +62,8 @@ def _row_y(row):
 
 BOARD_HEIGHT = _row_y('R+')
 BOARD_WIDTH = (COLUMNS - 1)*PITCH
-BOARD_X = {'A': 0.0, 'B': BOARD_WIDTH + BOARD_GAP}
+BOARDS = ('A', 'B', 'C')          # left to right on the bench: signals, power, display
+BOARD_X = {b: i*(BOARD_WIDTH + BOARD_GAP) for i, b in enumerate(BOARDS)}
 
 # The NUCLEO headers, drawn beside board A for wiring only (not to scale). Morpho CN7 and CN10
 # are 2 x 19, pin 1 at the top, odd pins in the left column. CN5 (10 pins) and CN6 (8 pins) are
@@ -243,13 +244,13 @@ class Jumper:
     b: tuple
 
 
-STAGES = ('A', 'B', 'A-B', 'NUCLEO')   # the build order: each board, then between them, then the NUCLEO
+STAGES = (*BOARDS, 'between', 'NUCLEO')   # the build order: each board, then between them, then the NUCLEO
 
 
 def jumper_stage(j):
     """(stage, net): the order the build sheet lists jumpers in."""
     boards = {j.a[0], j.b[0]}
-    stage = 'NUCLEO' if 'N' in boards else (boards.pop() if len(boards) == 1 else 'A-B')
+    stage = 'NUCLEO' if 'N' in boards else (boards.pop() if len(boards) == 1 else 'between')
     return (STAGES.index(stage), j.net)
 
 

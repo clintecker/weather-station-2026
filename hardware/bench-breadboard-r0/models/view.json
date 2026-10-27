@@ -386,6 +386,82 @@
   "box": null,
   "models": [
    {
+    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x20_P2.54mm_Vertical.step",
+    "rot": -90,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_OLED_0",
+  "x": 410.84,
+  "y": 7.62
+ },
+ {
+  "box": [
+   -1.35,
+   -26.0,
+   85.0,
+   58.0,
+   1.6,
+   11.0,
+   [
+    0.1,
+    0.45,
+    0.2
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_OLED_1.wrl",
+    "rot": 0,
+    "z": 11.0
+   }
+  ],
+  "ref": "3D_OLED_1",
+  "x": 433.61999999999995,
+  "y": -18.38
+ },
+ {
+  "box": [
+   -0.6,
+   -26.6,
+   74.0,
+   46.0,
+   5.0,
+   12.6,
+   [
+    0.04,
+    0.04,
+    0.06
+   ]
+  ],
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_OLED_2.wrl",
+    "rot": 0,
+    "z": 12.6
+   }
+  ],
+  "ref": "3D_OLED_2",
+  "x": 434.36999999999995,
+  "y": -18.98
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KICAD10_3DMODEL_DIR}/Capacitor_THT.3dshapes/C_Disc_D3.0mm_W2.0mm_P2.50mm.step",
+    "rot": 0,
+    "z": 8.5
+   }
+  ],
+  "ref": "3D_COLED_0",
+  "x": 456.55999999999995,
+  "y": 17.78
+ },
+ {
+  "box": null,
+  "models": [
+   {
     "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_2x19_P2.54mm_Vertical.step",
     "rot": 0,
     "z": 0.0
@@ -457,6 +533,19 @@
    }
   ],
   "ref": "3D_BREADBOARD_B",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_BREADBOARD_C.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_BREADBOARD_C",
   "x": 0.0,
   "y": 0.0
  },
@@ -951,6 +1040,97 @@
    }
   ],
   "ref": "3D_W38",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W39.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W39",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W40.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W40",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W41.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W41",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W42.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W42",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W43.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W43",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W44.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W44",
+  "x": 0.0,
+  "y": 0.0
+ },
+ {
+  "box": null,
+  "models": [
+   {
+    "file": "${KIPRJMOD}/models/3D_W45.wrl",
+    "rot": 0,
+    "z": 0.0
+   }
+  ],
+  "ref": "3D_W45",
   "x": 0.0,
   "y": 0.0
  }

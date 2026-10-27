@@ -29,6 +29,7 @@ flowchart LR
     PB5["PB5: EXTI5"]
     PB8["PB8, PB10: inputs"]
     PA9["PA9: sensor power enable (protoboard only)"]
+    SPI["SPI1 to the bench OLED: PA5, PA7, PA4, PC2, PC1 (bench only)"]
     V33["3V3 (CN6.4), GND (CN6.6)"]
   end
   HUB["STEMMA QT hub"] --- SHT45["SHT45 0x44 (outside air)"]
@@ -57,6 +58,11 @@ flowchart LR
 | bq24074 PGOOD | PB8 | D5, CN9.6 or morpho CN10.27 | direct. The internal pull-up does the rest. Check 5 V tolerance first (section 6) |
 | bq24074 CHG | PB10 | morpho CN10.25 | direct. Check 5 V tolerance first (section 6) |
 | Sensor 3.3 V switch | PA9 | D9, CN5.2 or morpho CN10.19 | protoboard only: the enable of a high-side load switch, high = on. Not on the breadboard |
+| Bench OLED SCLK | PA5 | D13, CN5.6 or morpho CN10.11 | bench only (board C): SPI1 clock to OLED pin 7. `firmware/i2cscan/App/oled.h` |
+| Bench OLED DIN | PA7 | D11, CN5.4 or morpho CN10.15 | bench only: SPI1 data to OLED pin 8 |
+| Bench OLED CS | PA4 | D10, CN5.3 or morpho CN10.17 | bench only: chip select to OLED pin 15, low while sending |
+| Bench OLED DC | PC2 | D8, CN5.1 or morpho CN10.21 | bench only: data/command to OLED pin 4 |
+| Bench OLED RST | PC1 | D7, CN9.8 or morpho CN10.23 | bench only: reset to OLED pin 16, low = reset |
 
 Keep these pins free:
 
