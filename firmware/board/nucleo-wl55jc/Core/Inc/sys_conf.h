@@ -81,7 +81,7 @@ extern "C" {
   * @note  0: LowPowerMode enabled. MCU enters stop2 mode, 1: LowPowerMode disabled. MCU enters sleep mode only
   */
 /* weather-station-2026: default 1 (the bench prototype is USB powered: keep UART RX and timing simple); a project
-   overrides it with -DLOW_POWER_DISABLE=0 in its Makefile (the bench tools keep ST's stop2 default). */
+   overrides it with -DLOW_POWER_DISABLE=0 in its Makefile (rangetest keeps ST's stop2 default; i2cscan keeps 1). */
 #ifndef LOW_POWER_DISABLE
 #define LOW_POWER_DISABLE                    1
 #endif
