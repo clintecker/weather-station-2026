@@ -299,8 +299,9 @@ def schematic(w):
     s.power('3V3', right(shunt['2'], 7.62), 270)
 
     # The bench OLED on SPI1 (board C) and the kit's 220 uF across its supply.
-    s.text('Bench OLED on SPI1, board C (firmware/i2cscan/App/oled.h). SPI mode: R19 and R21 fitted.', 96.52, 200.66)
-    o = module(s, w, 'OLED', (111.76, 215.9), ['VCC', 'GND'], ['SCLK', 'DIN', 'CS', 'DC', 'RST'], 5.08,
+    s.text('Bench OLED on SPI1, board C (firmware/i2cscan/App/oled.h).', 147.32, 190.5)
+    s.text('SPI mode: R19 and R21 fitted on its back.', 147.32, 194.31)
+    o = module(s, w, 'OLED', (175.26, 210.82), ['VCC', 'GND'], ['SCLK', 'DIN', 'CS', 'DC', 'RST'], 2.54,
                'Adafruit #2674 2.7in OLED (SSD1325)')
     vq = right(o['VCC'], -5.08)
     s.wire(o['VCC'], vq, (vq[0], vq[1] - 5.08))
@@ -309,7 +310,7 @@ def schematic(w):
     for pin, net in (('SCLK', 'OLED_SCLK'), ('DIN', 'OLED_DIN'), ('CS', 'OLED_CS'), ('DC', 'OLED_DC'), ('RST', 'OLED_RST')):
         s.wire(o[pin], right(o[pin], 10.16))
         s.label(net, right(o[pin], 10.16))
-    c = s.place('COLED', 'Device:C', 91.44, 223.52, 0, '220 uF (+ to 3V3)')
+    c = s.place('COLED', 'Device:C', 139.7, 215.9, 0, '220 uF (+ to 3V3)')
     s.power('3V3', c['1'])
     s.power('GND', c['2'])
 
