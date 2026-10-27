@@ -5,12 +5,13 @@ A first check of the I2C2 bus on the NUCLEO-WL55JC1, for board B of the bench br
 the INA228 and the MAX17048 read what the meter reads? Not the weather-station firmware and not H01
 evidence.
 
-The tool **only reads**: it writes no register of any part, so the node firmware finds every part as
-it left it. It does not use the radio.
+On I2C the tool **only reads**: it writes no register of any I2C part, so the node firmware finds
+every part as it left it. It writes only to the OLED, on its own SPI bus. It does not use the radio.
 
 ## What it prints
 
-At start, and again whenever a scan finds nothing:
+At start, after a `#oled` line with the display's SPI clock (see "The OLED" below), and again
+whenever a scan finds nothing:
 
 ```
 #lines SDA=high SCL=high: pull-ups present
@@ -87,4 +88,40 @@ Press the black RESET button (B4) to see the start lines again. Ctrl-] quits min
 | `i=` the wrong sign | VIN+ and VIN- swapped on the breadboard (W16, W18) |
 | `i=` near zero with a load fitted | the cell is not in the shunt's path: is it on the pigtail at B:f39/f40 and not the charger's own JST socket? |
 
-The SSD1305 OLED (0x3C or 0x3D) is named in the scan when it is on the bus. The tool does not drive it yet.
+## The OLED
+
+The same readings appear on the bench OLED, redrawn once a second: Adafruit #2674, 2.7" 128 x 64,
+SSD1325 controller, on **SPI1** (not I2C, so it is not in the scan).
+
+```
+I2C 36 40
++37.60mA                (twice the size)
+VBUS 3.8459V
+CELL 3.8460V 78.4%
+RATE -0.62%/h
+```
+
+**Interface:** the module must be in SPI mode: on its back, **R19 and R21 fitted, R18 and R20 empty**
+(Adafruit's guide; the module may ship in 8-bit mode with R18 and R20 fitted).
+
+| OLED pin | Signal | NUCLEO | Arduino name, MCU pin |
+|---|---|---|---|
+| 1 | GND | GND rail | |
+| 2 | 3.3 V in (100-150 mA) | 3V3 rail (board A L+) | |
+| 4 | DC | CN5.1 | D8, PC2 |
+| 7 | SCLK | CN5.6 | D13, PA5 (SPI1_SCK) |
+| 8 | DIN | CN5.4 | D11, PA7 (SPI1_MOSI) |
+| 15 | CS | CN5.3 | D10, PA4 |
+| 16 | RST | CN9.8 | D7, PC1 |
+| 3, 5, 6, 9-14, 17-19 | not used | leave empty | |
+| 20 | frame ground (the metal case) | GND, or leave open | |
+
+The pins are from UM2592 Rev 4, Table 17. D9 (PA9) is not used for reset: the protoboard switches
+the sensors' 3.3 V with it. Put the kit's 220 uF capacitor across the OLED's 3.3 V and GND (+ to
+3.3 V). The display draws 50-150 mA from the NUCLEO's 3V3.
+
+The SPI clock is the fastest step at or below 1 MHz (Adafruit: the SSD1325 needs 1 MHz or less); the
+start line prints it. The set-up commands are Adafruit's for this module (Adafruit_SSD1325_Library).
+SPI is write only, so the tool cannot tell whether a display is there: if the screen stays dark,
+check the 3.3 V at pin 2, the five signal wires, and R19/R21. `#oled SPI timeout` means SPI1 itself
+stalled, not the display.

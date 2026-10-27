@@ -1,10 +1,13 @@
 /* I2C bench tool (README.md): checks the bus lines, lists every address that answers on I2C2, then
- * prints the INA228 and MAX17048 readings once a second and lists the bus again every 10 s.
+ * prints the INA228 and MAX17048 readings once a second and lists the bus again every 10 s. The same
+ * readings go to the bench OLED on SPI1 (oled.h), redrawn once a second.
  * It only reads: no register of any part is written, so the node firmware later finds every part as
  * it left it. Blocking HAL transfers with a short timeout, from one sequencer task: a bench tool, not
  * the node (stage0-node/App/i2c_bus.c is the interrupt-driven bus). */
 #include <string.h>
 #include "bench_regs.h"
+#include "bench_screen.h"
+#include "oled.h"
 #include "stm32_seq.h"
 #include "stm32_timer.h"
 #include "stm32wlxx_hal.h"
@@ -34,6 +37,9 @@ static UTIL_TIMER_Object_t tick_timer;
 static unsigned ticks, lines;
 static int64_t shunt_sum, vbus_sum;   /* the INA228 counts of this line's samples (ina228_count) */
 static unsigned samples, misses;
+static bench_view view;   /* the latest readings, for the OLED */
+static oled_fb screen;
+static int oled_failed;   /* the last frame timed out: said once, until a frame goes through again */
 
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
@@ -99,10 +105,12 @@ static void scan_line(void)
   for (uint8_t a = FIRST_ADDR; a <= LAST_ADDR; a++)
   {
     if (HAL_I2C_IsDeviceReady(&hi2c2, (uint16_t)(a << 1), PROBE_TRIES, XFER_TIMEOUT_MS) != HAL_OK) continue;
+    if (found < BENCH_SCREEN_MAX_FOUND) view.found[found] = a;
     found++;
     APP_PRINTF("#scan 0x%02X %s\n", a, bench_part_name(a));
   }
   APP_PRINTF("#scan %u found\n", found);
+  view.nfound = found;
   if (!found) lines_line();
 }
 
@@ -147,6 +155,7 @@ static void ina_line(void)
 {
   uint16_t mfr, dev, die;
   char v[NUM_MAX], mv[NUM_MAX], ma[NUM_MAX], c[NUM_MAX];
+  view.ina_ok = 0;
   if (read16(INA228_ADDR, INA_MANUFACTURER, &mfr) || read16(INA228_ADDR, INA_DEVICE, &dev)
       || read16(INA228_ADDR, INA_DIETEMP, &die)) { APP_PRINTF("#ina228 no answer at 0x40\n"); bus_restart(); return; }
   if (!ina228_ids_match(mfr, dev)) { APP_PRINTF("#ina228 0x40 is not an INA228 (ids %04X %04X)\n", mfr, dev); return; }
@@ -154,6 +163,9 @@ static void ina_line(void)
   uint32_t shunt = ina228_raw24(bench_mean(shunt_sum, samples));
   uint32_t vbus = ina228_raw24(bench_mean(vbus_sum, samples));
   int32_t ua = ina228_current_ua(shunt, BENCH_SHUNT_MOHM);
+  view.ina_ok = 1;
+  view.ua = ua;
+  view.vbus_uv = ina228_vbus_uv(vbus);
   APP_PRINTF("#ina228 vbus=%s V shunt=%s mV i=%s mA (%s) die=%s C\n",
              bench_fixed(v, sizeof v, ina228_vbus_uv(vbus), 2, 4, 0),
              bench_fixed(mv, sizeof mv, ina228_vshunt_nv(shunt), 3, 3, 1),
@@ -166,14 +178,27 @@ static void gauge_line(void)
 {
   uint16_t version, vcell, soc, crate;
   char v[NUM_MAX], pct[NUM_MAX], rate[NUM_MAX];
+  view.gauge_ok = 0;
   if (read16(MAX17048_ADDR, GAUGE_VERSION, &version) || read16(MAX17048_ADDR, GAUGE_VCELL, &vcell)
       || read16(MAX17048_ADDR, GAUGE_SOC, &soc) || read16(MAX17048_ADDR, GAUGE_CRATE, &crate))
   { APP_PRINTF("#gauge no answer at 0x36\n"); bus_restart(); return; }
   if (!max17048_version_match(version)) { APP_PRINTF("#gauge 0x36 is not a MAX17048 (version %04X)\n", version); return; }
+  view.gauge_ok = 1;
+  view.vcell_uv = max17048_vcell_uv(vcell);
+  view.soc_mpct = max17048_soc_mpct(soc);
+  view.crate_mpct_h = max17048_crate_mpct_h(crate);
   APP_PRINTF("#gauge vcell=%s V soc=%s %% rate=%s %%/h\n",
              bench_fixed(v, sizeof v, max17048_vcell_uv(vcell), 2, 4, 0),
              bench_fixed(pct, sizeof pct, max17048_soc_mpct(soc), 2, 1, 0),
              bench_fixed(rate, sizeof rate, max17048_crate_mpct_h(crate), 1, 2, 1));
+}
+
+static void screen_update(void)
+{
+  bench_screen(&screen, &view);
+  int failed = oled_show(&screen) != 0;
+  if (failed && !oled_failed) APP_PRINTF("#oled SPI timeout: the frame was not sent\n");
+  oled_failed = failed;
 }
 
 static void tick_task(void)
@@ -183,6 +208,7 @@ static void tick_task(void)
   ticks = 0;
   ina_line();
   gauge_line();
+  screen_update();
   shunt_sum = vbus_sum = 0;
   samples = misses = 0;
   if (++lines >= LINES_PER_SCAN) { lines = 0; scan_line(); }
@@ -198,9 +224,13 @@ void SubghzApp_Init(void)
 {
   APP_PRINTF("\nI2CSCAN (weather-station-2026 bench tool): I2C2 SDA=PA11 (D14) SCL=PA12 (D15), 100 kHz, read only\n");
   APP_PRINTF("#help i>0: current out of the battery; i<0: into it (shunt %d mOhm in the cell + lead)\n", BENCH_SHUNT_MOHM);
+  oled_init();
+  APP_PRINTF("#oled SSD1325 on SPI1 at %u Hz: SCLK PA5 (D13), DIN PA7 (D11), CS PA4 (D10), DC PC2 (D8), RST PC1 (D7)."
+             " Write only: check the screen\n", oled_spi_hz());
   bus_start();
   lines_line();
   scan_line();
+  screen_update();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Scan, UTIL_SEQ_RFU, tick_task);
   (void)UTIL_TIMER_Create(&tick_timer, TICK_MS, UTIL_TIMER_PERIODIC, on_tick, NULL);
   (void)UTIL_TIMER_Start(&tick_timer);
