@@ -55,12 +55,25 @@ const char *bench_part_name(uint8_t addr7)
   }
 }
 
+int32_t bench_mean(int64_t sum, unsigned n)
+{
+  if (n == 0) return 0;
+  int64_t half = (int64_t)n / 2;
+  return (int32_t)((sum < 0 ? sum - half : sum + half) / (int64_t)n);
+}
+
 char *bench_fixed(char *out, size_t n, int32_t value, unsigned drop, unsigned decimals, int sign)
 {
   char digits[24];   /* |INT32_MIN| has 10 digits, plus a point, padding zeros and a sign */
   size_t len = 0, k = 0;
   int64_t v = value;
   uint64_t div = 1;
+  if (drop > BENCH_FIXED_MAX_DIGITS || decimals > BENCH_FIXED_MAX_DIGITS)
+  {
+    if (n > 1) { out[0] = '?'; out[1] = '\0'; }
+    else if (n == 1) out[0] = '\0';
+    return out;
+  }
   for (unsigned i = 0; i < drop; i++) div *= 10U;
   uint64_t mag = (uint64_t)(v < 0 ? -v : v);
   mag = (mag + div / 2) / div;   /* rounds half away from zero; div = 1 leaves it unchanged */

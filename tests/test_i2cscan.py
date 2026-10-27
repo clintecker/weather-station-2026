@@ -80,6 +80,16 @@ class BenchRegs(unittest.TestCase):
         self.assertFalse(self.lib.max17048_version_match(0x0000))
         self.assertFalse(self.lib.max17048_version_match(0xFFFF))          # a stuck-high bus reads all ones
 
+    def test_mean_rounds_to_nearest(self):
+        self.lib.bench_mean.restype = ctypes.c_int32
+        self.lib.bench_mean.argtypes = [ctypes.c_int64, ctypes.c_uint]
+        self.assertEqual(self.lib.bench_mean(7, 4), 2)          # 1.75
+        self.assertEqual(self.lib.bench_mean(-7, 4), -2)        # not -1: no bias toward zero
+        self.assertEqual(self.lib.bench_mean(6, 4), 2)          # 1.5 rounds away from zero
+        self.assertEqual(self.lib.bench_mean(-6, 4), -2)
+        self.assertEqual(self.lib.bench_mean(4 * 1805 + 1, 4), 1805)
+        self.assertEqual(self.lib.bench_mean(5, 0), 0)
+
     def test_part_names(self):
         self.assertEqual(self.lib.bench_part_name(0x36), b'MAX17048 gauge')
         self.assertEqual(self.lib.bench_part_name(0x40), b'INA228 battery monitor')
@@ -98,6 +108,9 @@ class BenchRegs(unittest.TestCase):
         self.assertEqual(self.fixed(7, 0, 0), '7')
         self.assertEqual(self.fixed(-2147483647 - 1, 0, 3), '-2147483.648')   # INT32_MIN
         self.assertEqual(self.fixed(123456, 0, 2, n=5), '1234')               # truncated, terminated
+        self.assertEqual(self.fixed(1, 10, 0), '?')                           # 10^10 is past the limit
+        self.assertEqual(self.fixed(1, 0, 10), '?')
+        self.assertEqual(self.fixed(1, 0, 10, n=1), '')
 
 
 if __name__ == '__main__':

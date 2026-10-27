@@ -71,16 +71,18 @@ static void bus_start(void)
     APP_PRINTF("#error i2c init\n");
 }
 
-/* The idle levels of SDA and SCL as plain inputs with no pull: high on both means a powered breakout's
-   pull-ups hold the bus; low means no pull-up (hub unpowered or cable out) or a part holding the line. */
+/* The idle levels of SDA and SCL as inputs with the weak internal pull-down (about 40 kOhm): a breakout's
+   pull-up (10 kOhm or less) still reads high, and an unconnected line reads low instead of floating. High
+   on both means a powered breakout holds the bus up; low means no pull-up (hub unpowered or cable out)
+   or a part holding the line. */
 static void lines_line(void)
 {
   (void)HAL_I2C_DeInit(&hi2c2);
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  GPIO_InitTypeDef gpio = { .Pin = SDA_PIN | SCL_PIN, .Mode = GPIO_MODE_INPUT, .Pull = GPIO_NOPULL,
+  GPIO_InitTypeDef gpio = { .Pin = SDA_PIN | SCL_PIN, .Mode = GPIO_MODE_INPUT, .Pull = GPIO_PULLDOWN,
                             .Speed = GPIO_SPEED_FREQ_LOW };
   HAL_GPIO_Init(GPIOA, &gpio);
-  HAL_Delay(2U);   /* a floating line drifts; a pulled-up one is high at once */
+  HAL_Delay(2U);   /* lets the pins settle after the switch from the I2C peripheral */
   int sda = HAL_GPIO_ReadPin(GPIOA, SDA_PIN) == GPIO_PIN_SET;
   int scl = HAL_GPIO_ReadPin(GPIOA, SCL_PIN) == GPIO_PIN_SET;
   APP_PRINTF("#lines SDA=%s SCL=%s: %s\n", sda ? "high" : "LOW", scl ? "high" : "LOW",
@@ -149,8 +151,8 @@ static void ina_line(void)
       || read16(INA228_ADDR, INA_DIETEMP, &die)) { APP_PRINTF("#ina228 no answer at 0x40\n"); bus_restart(); return; }
   if (!ina228_ids_match(mfr, dev)) { APP_PRINTF("#ina228 0x40 is not an INA228 (ids %04X %04X)\n", mfr, dev); return; }
   if (!samples) { APP_PRINTF("#ina228 no samples this second (%u failed)\n", misses); return; }
-  uint32_t shunt = ina228_raw24((int32_t)(shunt_sum / (int64_t)samples));
-  uint32_t vbus = ina228_raw24((int32_t)(vbus_sum / (int64_t)samples));
+  uint32_t shunt = ina228_raw24(bench_mean(shunt_sum, samples));
+  uint32_t vbus = ina228_raw24(bench_mean(vbus_sum, samples));
   int32_t ua = ina228_current_ua(shunt, BENCH_SHUNT_MOHM);
   APP_PRINTF("#ina228 vbus=%s V shunt=%s mV i=%s mA (%s) die=%s C\n",
              bench_fixed(v, sizeof v, ina228_vbus_uv(vbus), 2, 4, 0),

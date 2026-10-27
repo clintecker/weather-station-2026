@@ -31,9 +31,15 @@ int max17048_version_match(uint16_t version);
 /* The part normally at a 7-bit address on this bench, or "?" (bench-station-wiring.md). */
 const char *bench_part_name(uint8_t addr7);
 
+/* sum / n rounded to the nearest whole number, halves away from zero; 0 when n is 0. */
+int32_t bench_mean(int64_t sum, unsigned n);
+
+#define BENCH_FIXED_MAX_DIGITS 9U   /* the most decimals, or dropped digits, bench_fixed takes */
+
 /* value / 10^decimals as text with that many decimals and a '-' when negative ("+" when sign is set and
    value > 0), rounded to the last digit shown from `value` in units of 10^-(decimals + drop). Writes at
-   most n bytes including the terminator; returns out. */
+   most n bytes including the terminator; returns out. "?" when drop or decimals exceed
+   BENCH_FIXED_MAX_DIGITS. */
 char *bench_fixed(char *out, size_t n, int32_t value, unsigned drop, unsigned decimals, int sign);
 
 #endif
