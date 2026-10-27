@@ -15,6 +15,7 @@ HW = ROOT/'hardware'/'bench-breadboard-r0'
 sys.path.insert(0, str(ROOT/'tools'))
 sys.path.insert(0, str(HW/'source'))
 import kicad_env  # noqa: E402
+import flying  # noqa: E402
 import wiring  # noqa: E402
 
 DATA = HW/'source'/'wiring.toml'
@@ -106,6 +107,31 @@ class Jumpers(unittest.TestCase):
 
     def test_the_plan_connects_every_net_and_nothing_else(self):
         self.assertEqual(wiring.prove(self.w, wiring.plan_jumpers(self.w)), [])
+
+    def test_flying_wires_go_down_and_over_without_sharing_a_line(self):
+        jumpers = wiring.plan_jumpers(self.w)
+        paths = flying.plan(jumpers)
+        self.assertEqual(set(paths), {j.id for j in jumpers if j.a[0] != j.b[0]})
+        segments = []
+        for j in jumpers:
+            if j.id not in paths:
+                continue
+            pts = paths[j.id]
+            self.assertEqual((pts[0], pts[-1]), (wiring.hole_xy(j.a), wiring.hole_xy(j.b)), j.id)
+            for p, q in zip(pts, pts[1:], strict=False):   # consecutive points
+                self.assertTrue(abs(p[0] - q[0]) < 1e-9 or abs(p[1] - q[1]) < 1e-9, f'{j.id}: {p} to {q} is not square')
+                segments.append((j.id, p, q))
+
+        def overlap(s, t):   # two collinear segments sharing more than a point
+            (_i, p, q), (_k, r, u) = s, t
+            for axis in (0, 1):
+                other = 1 - axis
+                if all(abs(v[other] - p[other]) < 1e-6 for v in (q, r, u)):
+                    lo, hi = sorted((p[axis], q[axis])), sorted((r[axis], u[axis]))
+                    return min(lo[1], hi[1]) - max(lo[0], hi[0]) > 1e-6
+            return False
+        clashes = [(s[0], t[0]) for n, s in enumerate(segments) for t in segments[n + 1:] if s[0] != t[0] and overlap(s, t)]
+        self.assertEqual(clashes, [])
 
     def test_no_jumper_lands_on_a_part_pin(self):
         pins = {h for part in self.w.parts.values() for h in part.pins.values()}

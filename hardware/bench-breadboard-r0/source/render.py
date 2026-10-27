@@ -55,7 +55,8 @@ def draw(layout, copper, view, out, title):
         d.text((x, y), t['text'], fill=(60, 60, 60), font=small)
     for j in layout['jumpers']:
         colour = COLOURS[j['class']]
-        segments = ([(j['a'], j['b'], None)] if j.get('flying')   # between boards: straight, as it hops over
+        path = j.get('path')   # between boards or to the NUCLEO: down and over (flying.py)
+        segments = ([(p, q, None) for p, q in zip(path, path[1:])] if path
                     else copper.get(j['id'], {'segments': []})['segments'])
         for p, q, _layer in segments:
             d.line([*px(*p), *px(*q)], fill=colour, width=4)

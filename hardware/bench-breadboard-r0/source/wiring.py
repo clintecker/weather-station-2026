@@ -17,7 +17,7 @@ RAIL_SPLIT_AFTER = 31             # a split rail's halves meet between columns 3
 CHANNEL = 7.62                    # mm between rows e and f
 RAIL_GAP = 5.08                   # mm from row a to rail L-, and from row j to rail R-
 BOARD_GAP = 20.0                  # mm between neighbouring boards
-NUCLEO_GAP = 20.0                 # mm below board A to the NUCLEO headers
+NUCLEO_GAP = 34.0                 # mm below the boards to the NUCLEO headers: room for flying.py's lanes
 
 
 @dataclass(frozen=True)

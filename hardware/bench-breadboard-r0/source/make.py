@@ -22,6 +22,7 @@ ROOT = HW.parent.parent
 sys.path.insert(0, str(SOURCE))
 sys.path.insert(0, str(ROOT/'tools'))
 import kicad_env  # noqa: E402
+import flying  # noqa: E402
 import wiring  # noqa: E402
 # build_schematic, models, pcb_read and render (Pillow) load only to draw: the checks and the build
 # sheet need the standard library alone (CI runs those tests without Pillow).
@@ -89,6 +90,7 @@ def _part_box(part):
 def layout(w, jumpers):
     """Everything build_pcb.py and the renderer draw, in mm."""
     end_net = {h: j.id for j in jumpers for h in (j.a, j.b)}
+    paths = flying.plan(jumpers)
     footprints = []
     for board in wiring.BOARDS:
         holes = [{'name': hole_name(h), 'x': round(wiring.hole_xy(h)[0], 4), 'y': round(wiring.hole_xy(h)[1], 4),
@@ -120,8 +122,9 @@ def layout(w, jumpers):
         for col in (1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 63):
             x, _y = wiring.hole_xy((board, 'R+', col))
             labels.append({'text': str(col), 'x': x, 'y': wiring.BOARD_HEIGHT + 6.0, 'centre': True})
-    nx, ny = wiring.hole_xy(('N', 'CN7', 1))
-    labels.append({'text': 'NUCLEO-WL55JC1 headers: check against UM2592, not to scale', 'x': nx + 25, 'y': ny - 6})
+    nx, _ny = wiring.hole_xy(('N', 'CN7', 1))
+    bottom = max(wiring.hole_xy(('N', h, n))[1] for h, (_x, _c, n) in wiring.HEADERS.items())
+    labels.append({'text': 'NUCLEO-WL55JC1 headers: check against UM2592, not to scale', 'x': nx + 25, 'y': bottom + 5})
     xs = [h['x'] for f in footprints for h in f['holes']]
     ys = [h['y'] for f in footprints for h in f['holes']]
     tops = [wiring.body_rect(p)[1] for p in w.parts.values() if p.body is not None]
@@ -131,8 +134,9 @@ def layout(w, jumpers):
             'jumpers': [{'id': j.id, 'net': j.net, 'class': w.net_class[j.net],
                          'a': list(wiring.hole_xy(j.a)), 'b': list(wiring.hole_xy(j.b)),
                          'a_name': where(j.a), 'b_name': where(j.b),
-                         # A wire between boards, or to the NUCLEO, hops over in the air: drawn straight.
-                         'flying': j.a[0] != j.b[0]} for j in jumpers]}
+                         # A wire between boards, or to the NUCLEO, hops over in the air: drawn down
+                         # and over (flying.py) instead of along the router's path.
+                         'path': [[round(x, 4), round(y, 4)] for x, y in paths.get(j.id, [])]} for j in jumpers]}
 
 
 def where(h):
@@ -271,7 +275,7 @@ def presentation_models(w, lay, pcb, models_dir):
     copper = pcb_read.copper_by_net(pcb)
     for i, j in enumerate(lay['jumpers']):
         rgb = tuple(c/255 for c in render.COLOURS[j['class']])
-        segments = ([(tuple(j['a']), tuple(j['b']))] if j['flying']
+        segments = (list(zip(map(tuple, j['path']), map(tuple, j['path'][1:]))) if j['path']
                     else [(p, q) for p, q, _layer in copper[j['id']]['segments']])
         ref = f'3D_{j["id"]}'
         models.write_jumper(models_dir/f'{ref}.wrl', segments, [tuple(j['a']), tuple(j['b'])],
