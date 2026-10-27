@@ -24,10 +24,12 @@ row a) and R- and R+ (beside row j). The renders are in `renders/`.
 | SHUNT | 2-pin header with shunt: BATTERY POWER, USB UNPLUGGED (open in mode A) | B | 1: a8, 2: a9 | passive |
 | CELL | Battery 6600 mAh #353 on a JST PH pigtail | B | +: f39, -: f40 | bench check |
 | RLOAD | 100 Ohm 1/2 W test load (mode A only) | B | 1: f49, 2: f53 | passive |
+| OLED | Adafruit 2.7in 128x64 OLED #2674 (SSD1325, SPI mode: R19 and R21 fitted) | C | GND: a22, VCC: a23, NC3: a24, DC: a25, WR: a26, RD: a27, SCLK: a28, DIN: a29, D2: a30, D3: a31, D4: a32, D5: a33, D6: a34, D7: a35, CS: a36, RST: a37, NC17: a38, NC18: a39, NC19: a40, FG: a41 | https://learn.adafruit.com/2-7-monochrome-128x64-oled-display-module/pinouts |
+| COLED | 220 uF electrolytic capacitor, OLED supply | C | +: e23, -: e22 | bench check |
 
 ## 2. Jumpers
 
-Each jumper is one wire between the two holes. Colour by class: i2c blue, wind green, rain cyan, charger orange, power red, ground black.
+Each jumper is one wire between the two holes. Colour by class: i2c blue, wind green, rain cyan, charger orange, display purple, power red, ground black.
 
 ### Board A
 
@@ -70,22 +72,29 @@ Each jumper is one wire between the two holes. Colour by class: i2c blue, wind g
 
 | Jumper | From | To | Net | Class |
 |---|---|---|---|---|
-| W28 | A:c4 | B:L-63 | GND | ground |
+| W28 | B:c9 | C:c23 | 3V3 | power |
+| W29 | A:c4 | B:L-63 | GND | ground |
+| W30 | B:L-1 | C:c22 | GND | ground |
 
 ### To the NUCLEO
 
 | Jumper | From | To | Net | Class |
 |---|---|---|---|---|
-| W29 | A:e41 | NUCLEO CN6.4 | 3V3 | power |
-| W30 | B:e9 | NUCLEO CN7.16 | 3V3 | power |
-| W31 | B:e54 | NUCLEO CN10.25 | CHG | charger |
-| W32 | A:j4 | NUCLEO CN10.14 | CUPS | wind |
-| W33 | A:e40 | NUCLEO CN6.6 | GND | ground |
-| W34 | A:e43 | NUCLEO CN5.10 | I2C_SCL | i2c |
-| W35 | A:e42 | NUCLEO CN5.9 | I2C_SDA | i2c |
-| W36 | B:e55 | NUCLEO CN10.27 | PGOOD | charger |
-| W37 | A:j15 | NUCLEO CN10.29 | RAIN | rain |
-| W38 | A:j26 | NUCLEO CN7.30 | VANE | wind |
+| W31 | A:e41 | NUCLEO CN6.4 | 3V3 | power |
+| W32 | B:e9 | NUCLEO CN7.16 | 3V3 | power |
+| W33 | B:e54 | NUCLEO CN10.25 | CHG | charger |
+| W34 | A:j4 | NUCLEO CN10.14 | CUPS | wind |
+| W35 | A:e40 | NUCLEO CN6.6 | GND | ground |
+| W36 | A:e43 | NUCLEO CN5.10 | I2C_SCL | i2c |
+| W37 | A:e42 | NUCLEO CN5.9 | I2C_SDA | i2c |
+| W38 | C:e36 | NUCLEO CN10.17 | OLED_CS | display |
+| W39 | C:e25 | NUCLEO CN10.21 | OLED_DC | display |
+| W40 | C:e29 | NUCLEO CN10.15 | OLED_DIN | display |
+| W41 | C:e37 | NUCLEO CN10.23 | OLED_RST | display |
+| W42 | C:e28 | NUCLEO CN10.11 | OLED_SCLK | display |
+| W43 | B:e55 | NUCLEO CN10.27 | PGOOD | charger |
+| W44 | A:j15 | NUCLEO CN10.29 | RAIN | rain |
+| W45 | A:j26 | NUCLEO CN7.30 | VANE | wind |
 
 ## Bench checks
 
@@ -99,8 +108,10 @@ Do these before you connect power.
 - **GBAT** (JST PH 2-pin pigtail into one of the gauge's battery sockets): Pigtail colours vary: check + and - against the marks beside the gauge's socket.
 - **REG** (Pololu S7V8F3 3.3 V regulator #2122): Back labels, top to bottom: VOUT, GND (square pad), VIN, SHDN. Front up, over the rails: VOUT at column 17, SHDN at 14.
 - **CELL** (Battery 6600 mAh #353 on a JST PH pigtail): JST PH pigtail colours vary: check + and - with a meter before plugging in.
-- **3V3, not 5 V:** W29 goes to CN6.4 (3V3). On the Arduino power header the next pin, CN6.5, is 5 V: check the hole against UM2592 Table 17 before you push the wire in.
+- **OLED** (Adafruit 2.7in 128x64 OLED #2674 (SSD1325, SPI mode: R19 and R21 fitted)): SPI mode needs R19 and R21 fitted and R18 and R20 empty on the back. Pin 1 (GND) at column 22, pin 20 (frame ground) at 41. Only GND, VCC, DC, SCLK, DIN, CS and RST are wired; FG may stay open.
+- **COLED** (220 uF electrolytic capacitor, OLED supply): Polarised: + (the longer lead) in column 23 with the OLED's 3.3 V, the striped - lead in column 22 with its GND.
+- **3V3, not 5 V:** W31 goes to CN6.4 (3V3). On the Arduino power header the next pin, CN6.5, is 5 V: check the hole against UM2592 Table 17 before you push the wire in.
 - **Rails:** some 830-point boards split each rail at the centre. If yours do, set `split_rails = true` in `source/wiring.toml` and rebuild: the plan then bridges the halves.
 - **NUCLEO headers:** the positions follow the wiring guide. Tick its section 6 checklist against UM2592 first. The drawing of the headers is not to scale.
-- **PGOOD and CHG voltage:** on the bq24074 breakout each status LED and its 10 kOhm resistor run from the charger output OUT to the pin (PGOOD: D1 and R11. CHG: D3 and R7. Source: adafruit/Adafruit-BQ24074-PCB). With the LED off, the pin goes toward OUT, up to about 5 V on USB. Confirm in the STM32WL55 datasheet that PB8 and PB10 are 5 V tolerant (FT) before you connect W31 and W36.
+- **PGOOD and CHG voltage:** on the bq24074 breakout each status LED and its 10 kOhm resistor run from the charger output OUT to the pin (PGOOD: D1 and R11. CHG: D3 and R7. Source: adafruit/Adafruit-BQ24074-PCB). With the LED off, the pin goes toward OUT, up to about 5 V on USB. Confirm in the STM32WL55 datasheet that PB8 and PB10 are 5 V tolerant (FT) before you connect W33 and W43.
 - **Mode A is drawn:** the BATTERY POWER shunt is open and the 100 ohm load is fitted. For mode B, follow the wiring guide section 5.

@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 import pcb_read
 
 SCALE = 8                 # pixels per mm
-COLOURS = {'i2c': (30, 90, 220), 'wind': (20, 150, 60), 'rain': (0, 160, 190), 'charger': (230, 130, 0),
+COLOURS = {'i2c': (30, 90, 220), 'wind': (20, 150, 60), 'rain': (0, 160, 190), 'charger': (230, 130, 0), 'display': (140, 60, 170),
            'power': (210, 30, 30), 'ground': (20, 20, 20)}
 HOLE = (175, 175, 175)
 PART = (90, 60, 140)
@@ -94,11 +94,11 @@ def render_all(layout, pcb, outdir):
     outdir.mkdir(parents=True, exist_ok=True)
     full = layout['outline']
     boards = {b['id']: b for b in layout['boards']}
-    for bid, name in (('A', 'board-a.png'), ('B', 'board-b.png')):
+    for bid, name in (('A', 'board-a.png'), ('B', 'board-b.png'), ('C', 'board-c.png')):
         b = boards[bid]
         top = min([b['y1']] + [p['body'][1] for p in layout['parts'] if p['board'] == bid and p.get('body')])
         draw(layout, copper, (b['x1'] - 8, top - 14, b['x2'] + 8, b['y2'] + 8), outdir/name,
              f'Bench breadboard map, {b["label"]} (jumpers to the NUCLEO continue in overview.png)')
     top = min([full[1]] + [p['body'][1] for p in layout['parts'] if p.get('body')])
     draw(layout, copper, (full[0], top - 14, full[2], full[3] + 6), outdir/'overview.png',
-         'Bench breadboard map: both boards and the NUCLEO-WL55JC1 headers (not to scale)')
+         'Bench breadboard map: the three boards and the NUCLEO-WL55JC1 headers (not to scale)')

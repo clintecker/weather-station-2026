@@ -316,10 +316,10 @@ class Outputs(unittest.TestCase):
         self.assertEqual(got, want)
 
     def test_renders_exist_and_are_current(self):
-        for name in ('board-a.png', 'board-b.png', 'overview.png', 'schematic.pdf', '3d-top.png', '3d-angle.png'):
+        for name in ('board-a.png', 'board-b.png', 'board-c.png', 'overview.png', 'schematic.pdf', '3d-top.png', '3d-angle.png'):
             with self.subTest(name=name):
                 self.assertTrue((self.out/'renders'/name).stat().st_size > 1000)
-        for name in ('board-a.png', 'board-b.png', 'overview.png'):
+        for name in ('board-a.png', 'board-b.png', 'board-c.png', 'overview.png'):
             with self.subTest(current=name):
                 self.assertEqual((self.out/'renders'/name).read_bytes(), (HW/'renders'/name).read_bytes())
 

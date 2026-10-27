@@ -25,11 +25,15 @@ BATTERY = (0.75, 0.75, 0.80)
 # (+dy is down the breadboard, into its rows). w along the columns, d along the rows. A breakout's
 # board is its `body` in wiring.toml (the same outline the jumper planner keeps clear); BOARD_COLOUR
 # gives its colour, and EXTRA the parts on it.
-BOARD_COLOUR = {'BOB': SPARKFUN_RED, 'CHGR': BOARD_BLACK, 'INA': BOARD_BLACK, 'GAUGE': BOARD_BLACK, 'REG': POLOLU_BLUE}
+OLED_GREEN = (0.10, 0.45, 0.20)
+GLASS = (0.04, 0.04, 0.06)
+BOARD_COLOUR = {'BOB': SPARKFUN_RED, 'CHGR': BOARD_BLACK, 'INA': BOARD_BLACK, 'GAUGE': BOARD_BLACK, 'REG': POLOLU_BLUE,
+                'OLED': OLED_GREEN}
 EXTRA = {
     'BOB': [(0, -13.5, 14.0, 13.0, 11.5, HEADER_Z + PCB, JACK)],          # the RJ11 jack, at the outer end
     'INA': [(0, -14.5, 10.5, 7.0, 8.5, HEADER_Z + PCB, TERMINAL)],        # the screw terminal
     'CELL': [(75.0, 52.0, 54.0, 69.0, 18.0, 0.0, BATTERY)],               # on the bench beside board B
+    'OLED': [(-0.6, -26.6, 74.0, 46.0, 5.0, HEADER_Z + PCB, GLASS)],      # the glass (Adafruit #2674: 74 x 46 x 5 mm)
 }
 # The makers' own models (tools/fetch-cad.sh), used in place of the boxes when fetched:
 # part id -> (file, the model's hole at the left end of the header (x, y) in its own mm, the pin on that

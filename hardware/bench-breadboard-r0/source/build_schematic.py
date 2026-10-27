@@ -298,12 +298,27 @@ def schematic(w):
     s.wire(shunt['2'], right(shunt['2'], 7.62))
     s.power('3V3', right(shunt['2'], 7.62), 270)
 
+    # The bench OLED on SPI1 (board C) and the kit's 220 uF across its supply.
+    s.text('Bench OLED on SPI1, board C (firmware/i2cscan/App/oled.h). SPI mode: R19 and R21 fitted.', 96.52, 200.66)
+    o = module(s, w, 'OLED', (111.76, 215.9), ['VCC', 'GND'], ['SCLK', 'DIN', 'CS', 'DC', 'RST'], 5.08,
+               'Adafruit #2674 2.7in OLED (SSD1325)')
+    vq = right(o['VCC'], -5.08)
+    s.wire(o['VCC'], vq, (vq[0], vq[1] - 5.08))
+    s.power('3V3', (vq[0], vq[1] - 5.08))
+    _gnd_below(s, o['GND'], -5.08)
+    for pin, net in (('SCLK', 'OLED_SCLK'), ('DIN', 'OLED_DIN'), ('CS', 'OLED_CS'), ('DC', 'OLED_DC'), ('RST', 'OLED_RST')):
+        s.wire(o[pin], right(o[pin], 10.16))
+        s.label(net, right(o[pin], 10.16))
+    c = s.place('COLED', 'Device:C', 91.44, 223.52, 0, '220 uF (+ to 3V3)')
+    s.power('3V3', c['1'])
+    s.power('GND', c['2'])
+
     # Power flags: the 3V3 and GND nets are driven from outside this sheet (the NUCLEO's regulator).
-    s.flag((25.4, 119.38))
-    s.power('3V3', (25.4, 119.38))
-    s.flag((40.64, 119.38))
-    s.power('GND', (40.64, 119.38))
-    s.text('PWR_FLAG: 3V3 and GND come from the NUCLEO.', 25.4, 127.0)
+    s.flag((25.4, 160.02))
+    s.power('3V3', (25.4, 160.02))
+    s.flag((40.64, 160.02))
+    s.power('GND', (40.64, 160.02))
+    s.text('PWR_FLAG: 3V3 and GND come from the NUCLEO.', 25.4, 167.64)
     return s.file('Bench breadboard wiring')
 
 

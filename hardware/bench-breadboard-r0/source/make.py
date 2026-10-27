@@ -90,7 +90,7 @@ def layout(w, jumpers):
     """Everything build_pcb.py and the renderer draw, in mm."""
     end_net = {h: j.id for j in jumpers for h in (j.a, j.b)}
     footprints = []
-    for board in ('A', 'B'):
+    for board in wiring.BOARDS:
         holes = [{'name': hole_name(h), 'x': round(wiring.hole_xy(h)[0], 4), 'y': round(wiring.hole_xy(h)[1], 4),
                   'net': end_net.get(h)} for h in wiring.board_holes(board)]
         footprints.append({'ref': f'BB_{board}', 'holes': holes})
@@ -99,7 +99,7 @@ def layout(w, jumpers):
         {'name': hole_name(h), 'x': round(wiring.hole_xy(h)[0], 4), 'y': round(wiring.hole_xy(h)[1], 4),
          'net': end_net.get(h)} for h in nucleo]})
     boards = []
-    for board, label in (('A', 'BOARD A: SIGNALS'), ('B', 'BOARD B: POWER')):
+    for board, label in (('A', 'BOARD A: SIGNALS'), ('B', 'BOARD B: POWER'), ('C', 'BOARD C: DISPLAY')):
         x0 = wiring.BOARD_X[board]
         boards.append({'id': board, 'label': label, 'x1': x0 - 2.54, 'y1': -2.54,
                        'x2': x0 + wiring.BOARD_WIDTH + 2.54, 'y2': wiring.BOARD_HEIGHT + 2.54})
@@ -116,7 +116,7 @@ def layout(w, jumpers):
         labels.append({'text': header, 'x': x + 0.6*(cols - 1)*2.54, 'y': y - 2.5})
     # The column numbers printed on the board, below row j's rails: centred on the column (KiCad centres
     # its text; render.py centres labels marked so), past the 3D breadboard body's edge (BOARD_HEIGHT + 4).
-    for board in ('A', 'B'):
+    for board in wiring.BOARDS:
         for col in (1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 63):
             x, _y = wiring.hole_xy((board, 'R+', col))
             labels.append({'text': str(col), 'x': x, 'y': wiring.BOARD_HEIGHT + 6.0, 'centre': True})
@@ -143,7 +143,7 @@ def nucleo_jumpers(jumpers, nets):
     return [j.id for j in jumpers if j.net in nets and 'N' in (j.a[0], j.b[0])]
 
 
-STAGE_TITLE = {0: 'Board A', 1: 'Board B', 2: 'Between the boards', 3: 'To the NUCLEO'}
+STAGE_TITLE = {0: 'Board A', 1: 'Board B', 2: 'Board C', 3: 'Between the boards', 4: 'To the NUCLEO'}
 
 
 def build_sheet(w, jumpers):
@@ -158,7 +158,7 @@ def build_sheet(w, jumpers):
         pins = ', '.join(f'{n}: {where(h)[2:]}' for n, h in part.pins.items())
         out.append(f'| {part.id} | {part.kind} | {part.board} | {pins} | {part.source} |')
     out += ['', '## 2. Jumpers', '', 'Each jumper is one wire between the two holes. Colour by class: '
-            'i2c blue, wind green, rain cyan, charger orange, power red, ground black.']
+            'i2c blue, wind green, rain cyan, charger orange, display purple, power red, ground black.']
     stage = None
     for j in jumpers:
         s = wiring.jumper_stage(j)[0]
