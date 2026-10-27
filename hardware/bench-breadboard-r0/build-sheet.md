@@ -115,3 +115,4 @@ Do these before you connect power.
 - **NUCLEO headers:** the positions follow the wiring guide. Tick its section 6 checklist against UM2592 first. The drawing of the headers is not to scale.
 - **PGOOD and CHG voltage:** on the bq24074 breakout each status LED and its 10 kOhm resistor run from the charger output OUT to the pin (PGOOD: D1 and R11. CHG: D3 and R7. Source: adafruit/Adafruit-BQ24074-PCB). With the LED off, the pin goes toward OUT, up to about 5 V on USB. Confirm in the STM32WL55 datasheet that PB8 and PB10 are 5 V tolerant (FT) before you connect W33 and W43.
 - **Mode A is drawn:** the BATTERY POWER shunt is open and the 100 ohm load is fitted. For mode B, follow the wiring guide section 5.
+- **OLED wires:** W38, W39, W40, W41, W42 run from board C to CN10: use female-to-male jumpers of about 30 cm. In mode B unplug W28 (the OLED's 3.3 V), or the INA228 counts the display's 50-150 mA with the battery current.

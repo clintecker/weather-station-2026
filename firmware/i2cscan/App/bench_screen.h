@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include "oled_fb.h"
 
-#define BENCH_SCREEN_MAX_FOUND 6   /* addresses shown on the top line (21 characters wide) */
+#define BENCH_SCREEN_MAX_FOUND 5   /* addresses on the top line: "I2C", five, and " +" fit its 21 characters */
 
 typedef struct {
   uint8_t found[BENCH_SCREEN_MAX_FOUND];   /* the last scan's addresses, ascending */

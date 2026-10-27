@@ -122,6 +122,10 @@ the sensors' 3.3 V with it. Put the kit's 220 uF capacitor across the OLED's 3.3
 
 The SPI clock is the fastest step at or below 1 MHz (Adafruit: the SSD1325 needs 1 MHz or less); the
 start line prints it. The set-up commands are Adafruit's for this module (Adafruit_SSD1325_Library).
+**Mode B (battery only):** the OLED's 50-150 mA comes from the same 3.3 V the regulator makes from the
+cell, so the INA228's current then includes the display. Unplug the OLED's 3.3 V wire (named in the
+build sheet's bench checks) for mode B battery readings. Mode A, the daily setup with the NUCLEO on USB, is not affected.
+
 SPI is write only, so the tool cannot tell whether a display is there: if the screen stays dark,
 check the 3.3 V at pin 2, the five signal wires, and R19/R21. `#oled SPI timeout` means SPI1 itself
 stalled, not the display.

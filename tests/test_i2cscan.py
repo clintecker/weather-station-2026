@@ -120,7 +120,7 @@ OLED_W, OLED_H = 128, 64
 
 
 class View(ctypes.Structure):
-    _fields_ = [('found', ctypes.c_uint8*6), ('nfound', ctypes.c_uint), ('ina_ok', ctypes.c_int),
+    _fields_ = [('found', ctypes.c_uint8*5), ('nfound', ctypes.c_uint), ('ina_ok', ctypes.c_int),
                 ('ua', ctypes.c_int32), ('vbus_uv', ctypes.c_int32), ('gauge_ok', ctypes.c_int),
                 ('vcell_uv', ctypes.c_int32), ('soc_mpct', ctypes.c_int32), ('crate_mpct_h', ctypes.c_int32)]   # bench_view
 
@@ -196,24 +196,27 @@ class BenchScreen(unittest.TestCase):
         return fb.raw
 
     def test_screen_with_both_parts(self):
-        v = View((0x36, 0x40, 0, 0, 0, 0), 2, 1, 37604, 3845898, 1, 3846015, 78398, -624)
+        v = View((0x36, 0x40, 0, 0, 0), 2, 1, 37604, 3845898, 1, 3846015, 78398, -624)
         fb = self.fb()
         self.lib.bench_screen(fb, ctypes.byref(v))
         self.assertEqual(fb.raw, self.expected([(0, b'I2C 36 40', 1), (11, b'+37.60mA', 2), (31, b'VBUS 3.8459V', 1),
                                                 (42, b'CELL 3.8460V 78.4%', 1), (53, b'RATE -0.62%/h', 1)]))
 
     def test_screen_with_nothing_on_the_bus(self):
-        v = View((0,)*6, 0, 0, 0, 0, 0, 0, 0, 0)
+        v = View((0,)*5, 0, 0, 0, 0, 0, 0, 0, 0)
         fb = self.fb()
         self.lib.bench_screen(fb, ctypes.byref(v))
         self.assertEqual(fb.raw, self.expected([(0, b'I2C NONE', 1), (11, b'NO INA228', 2), (42, b'NO GAUGE', 1)]))
 
     def test_screen_with_more_addresses_than_fit(self):
-        v = View((0x36, 0x3C, 0x40, 0x44, 0x47, 0x53), 7, 0, 0, 0, 0, 0, 0, 0)
+        v = View((0x36, 0x3C, 0x40, 0x44, 0x47), 7, 0, 0, 0, 0, 0, 0, 0)
         fb = self.fb()
         self.lib.bench_screen(fb, ctypes.byref(v))
-        self.assertEqual(fb.raw, self.expected([(0, b'I2C 36 3C 40 44 47 53 +', 1), (11, b'NO INA228', 2),
+        self.assertEqual(fb.raw, self.expected([(0, b'I2C 36 3C 40 44 47 +', 1), (11, b'NO INA228', 2),
                                                 (42, b'NO GAUGE', 1)]))
+        # The "+" is the 20th character (x 114-118) and must be on the screen, not clipped.
+        plus = {(x, y) for x in range(114, 120) for y in range(7) if self.lib.oled_get(fb, x, y)}
+        self.assertEqual(plus, {(x + 114, y) for x, y in self.lit_of(b'+')})
 
 
 if __name__ == '__main__':

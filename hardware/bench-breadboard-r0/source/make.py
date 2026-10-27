@@ -183,7 +183,11 @@ def build_sheet(w, jumpers):
             'on USB. Confirm in the STM32WL55 datasheet that PB8 and PB10 '
             f'are 5 V tolerant (FT) before you connect {" and ".join(nucleo_jumpers(jumpers, ("CHG", "PGOOD")))}.',
             '- **Mode A is drawn:** the BATTERY POWER shunt is open and the 100 ohm load is fitted. For mode B, '
-            'follow the wiring guide section 5.', '']
+            'follow the wiring guide section 5.',
+            f'- **OLED wires:** {", ".join(nucleo_jumpers(jumpers, ("OLED_SCLK", "OLED_DIN", "OLED_CS", "OLED_DC", "OLED_RST")))} '
+            'run from board C to CN10: use female-to-male jumpers of about 30 cm. In mode B unplug '
+            f'{" and ".join(j.id for j in jumpers if j.net == "3V3" and "C" in (j.a[0], j.b[0]))} (the OLED\'s 3.3 V), '
+            'or the INA228 counts the display\'s 50-150 mA with the battery current.', '']
     return '\n'.join(out)
 
 
