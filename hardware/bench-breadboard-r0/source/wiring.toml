@@ -111,50 +111,65 @@ source = "passive"
 id = "CHGR"
 kind = "Adafruit bq24074 charger #4755 (11-pin header)"
 board = "B"
-origin = ["a", 3]
+origin = ["a", 50]
 step = 1
-body = [0.0, -15.2, 38.1, 33.0]
+body = [0.0, -13.97, 38.1, 33.02]   # from the maker's model: 2.54 mm past the header toward row b
 pins = ["GND", "LIPO", "GND2", "OUT", "CHG", "PGOOD", "CE", "ISET", "THERM", "GND3", "VBUS"]
 source = "https://github.com/adafruit/Adafruit-BQ24074-PCB"
-note = "CHG and PGOOD are open drain, active low. CE, ISET and THERM stay unconnected (board defaults)"
+note = "Labels upright, board over the rails: VBUS at column 60, GND at 50. CHG and PGOOD are open drain, active low. CE, ISET and THERM stay unconnected (board defaults)"
 
+# The INA228 and the gauge read their labels left to right as the columns fall (step -1): with the
+# board upright and over the rails, the first label sits on the higher column.
 [[part]]
 id = "INA"
 kind = "Adafruit INA228 #5832 (8-pin header; I2C on its STEMMA QT cable)"
 board = "B"
-origin = ["a", 20]
-step = 1
-body = [0.0, -8.9, 25.4, 20.3]
+origin = ["a", 43]
+step = -1
+body = [0.0, -7.62, 25.4, 20.32]   # from the maker's model: 2.54 mm past the header toward row b
 pins = ["VCC", "GND", "SCL", "SDA", "VBUS", "VIN-", "VIN+", "ALERT"]
 source = "https://github.com/adafruit/Adafruit-INA228-PCB"
-note = "The shunt is between VIN+ and VIN-. Check the VBUS jumper on the back"
+note = "Labels upright: VIN (VCC) at column 43, ALRT at 36. The shunt is between VIN+ and VIN-. Check the VBUS jumper on the back"
 
+# The gauge's header carries no battery pin: VIN, SCL and SDA come on its STEMMA QT cable, and the
+# cell reaches it through one of its two JST PH sockets (GBAT). The header only holds it in place.
 [[part]]
 id = "GAUGE"
-kind = "Adafruit MAX17048 #5580 (2-pin battery header; I2C on its STEMMA QT cable)"
+kind = "Adafruit MAX17048 #5580 (6-pin header, held in place only; I2C on its STEMMA QT cable)"
 board = "B"
-origin = ["a", 32]
+origin = ["a", 30]
+step = -1
+body = [0.0, -7.62, 25.4, 20.32]   # from the maker's model: 2.54 mm past the header toward row b
+pins = ["VIN", "GND", "SCL", "SDA", "INT", "QSTART"]
+source = "https://learn.adafruit.com/adafruit-max17048-lipoly-liion-fuel-gauge-and-battery-monitor/pinouts"
+note = "Labels upright: VIN at column 30, QStart at 25. No wire goes to the header. The battery goes in through a JST PH socket (GBAT); leave the other socket empty"
+
+[[part]]
+id = "GBAT"
+kind = "JST PH 2-pin pigtail into one of the gauge's battery sockets"
+board = "B"
+origin = ["f", 31]
 step = 1
-body = [0.0, -1.3, 25.4, 20.3]
-pins = ["VBAT", "GND"]
-source = "https://github.com/adafruit/Adafruit-MAX17048-PCB"
+pins = ["+", "-"]
+source = "bench check"
+note = "Pigtail colours vary: check + and - against the marks beside the gauge's socket"
 
 [[part]]
 id = "REG"
 kind = "Pololu S7V8F3 3.3 V regulator #2122"
 board = "B"
-origin = ["a", 38]
+origin = ["a", 14]
 step = 1
-body = [0.0, -7.2, 11.0, 17.0]
+body = [0.0, -6.985, 11.43, 16.51]   # from the maker's model: 1.27 mm past the header
 pins = ["SHDN", "VIN", "GND", "VOUT"]
 source = "bench check"
-note = "Pololu gives the four pins but not their order. Read the labels on the back before plugging in"
+note = "Back labels, top to bottom: VOUT, GND (square pad), VIN, SHDN. Front up, over the rails: VOUT at column 17, SHDN at 14"
 
 [[part]]
 id = "SHUNT"
 kind = "2-pin header with shunt: BATTERY POWER, USB UNPLUGGED (open in mode A)"
 board = "B"
-origin = ["a", 46]
+origin = ["a", 8]
 step = 1
 pins = ["1", "2"]
 source = "passive"
@@ -163,7 +178,7 @@ source = "passive"
 id = "CELL"
 kind = "Battery 6600 mAh #353 on a JST PH pigtail"
 board = "B"
-origin = ["f", 20]
+origin = ["f", 39]
 step = 1
 pins = ["+", "-"]
 source = "bench check"
@@ -173,7 +188,7 @@ note = "JST PH pigtail colours vary: check + and - with a meter before plugging 
 id = "RLOAD"
 kind = "100 Ohm 1/2 W test load (mode A only)"
 board = "B"
-origin = ["f", 5]
+origin = ["f", 49]
 step = 4
 pins = ["1", "2"]
 source = "passive"
@@ -213,7 +228,7 @@ name = "GND"
 mcu = "GND"
 class = "ground"
 members = ["N:CN6.6", "N:CN6.7", "QT.GND", "BOBW.2", "BOBW.3", "BOBR.3", "C1.2", "C2.2",
-           "CHGR.GND", "INA.GND", "GAUGE.GND", "REG.GND", "CELL.-", "RLOAD.2"]
+           "CHGR.GND", "INA.GND", "GBAT.-", "REG.GND", "CELL.-", "RLOAD.2"]
 rails = ["A:L-", "B:L-"]
 
 [[net]]
@@ -266,7 +281,7 @@ members = ["CELL.+", "INA.VIN+"]
 [[net]]
 name = "BATT"
 class = "power"
-members = ["INA.VIN-", "CHGR.LIPO", "GAUGE.VBAT"]
+members = ["INA.VIN-", "CHGR.LIPO", "GBAT.+"]
 
 [[net]]
 name = "SYS_OUT"

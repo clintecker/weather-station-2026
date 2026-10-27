@@ -14,6 +14,7 @@ PART = (90, 60, 140)
 BACKGROUND = (250, 250, 247)
 BOARD = (236, 236, 230)
 BODY = (228, 222, 240)   # a breakout's overhanging board
+KEY_BAND = 48             # pixels below the view for the colour key
 
 
 def _font(size):
@@ -27,7 +28,8 @@ def _font(size):
 def draw(layout, copper, view, out, title):
     """view: (x1, y1, x2, y2) in mm. Writes out (PNG)."""
     x1, y1, x2, y2 = view
-    img = Image.new('RGB', (int((x2 - x1)*SCALE), int((y2 - y1)*SCALE)), BACKGROUND)
+    # The view, then a band of its own for the colour key, so the key never covers a label.
+    img = Image.new('RGB', (int((x2 - x1)*SCALE), int((y2 - y1)*SCALE) + KEY_BAND), BACKGROUND)
     d = ImageDraw.Draw(img)
     px = lambda x, y: ((x - x1)*SCALE, (y - y1)*SCALE)   # noqa: E731
     small, label, big = _font(int(1.6*SCALE)), _font(int(1.8*SCALE)), _font(int(2.6*SCALE))
@@ -46,8 +48,11 @@ def draw(layout, copper, view, out, title):
         for x, y in part['pins'].values():
             cx, cy = px(x, y)
             d.ellipse([cx - 5, cy - 5, cx + 5, cy + 5], fill=PART)
-    for t in layout['labels']:
-        d.text(px(t['x'] - 6, t['y'] - 1.5), t['text'], fill=(60, 60, 60), font=small)
+    for t in layout['labels']:   # left-aligned 6 mm before x, or centred on x
+        x, y = px(t['x'] - (0 if t.get('centre') else 6), t['y'] - 1.5)
+        if t.get('centre'):
+            x -= d.textlength(t['text'], font=small)/2
+        d.text((x, y), t['text'], fill=(60, 60, 60), font=small)
     for j in layout['jumpers']:
         colour = COLOURS[j['class']]
         for p, q, _layer in copper.get(j['id'], {'segments': []})['segments']:

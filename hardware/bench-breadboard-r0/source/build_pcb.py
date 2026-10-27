@@ -110,7 +110,7 @@ def add_models(pcb, view_path, out):
         for spec in m['models']:
             model = k.FP_3DMODEL()
             model.m_Filename = spec['file']
-            model.m_Offset = k.VECTOR3D(0, 0, spec['z'])
+            model.m_Offset = k.VECTOR3D(spec.get('dx', 0), spec.get('dy', 0), spec['z'])
             model.m_Rotation = k.VECTOR3D(0, 0, spec['rot'])
             f.Add3DModel(model)
         board.Add(f)
