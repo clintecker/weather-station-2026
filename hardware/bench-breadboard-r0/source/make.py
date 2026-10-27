@@ -56,12 +56,24 @@ def model_footprints(w):
         cx, cy = sum(x for x, _ in pins)/len(pins), sum(y for _, y in pins)/len(pins)
         for i, (file, rot, box) in enumerate(models.models_for(part)):
             ref = f'3D_{part.id}_{i}'
-            if box is None:
-                out.append({'ref': ref, 'x': pins[0][0], 'y': pins[0][1], 'box': None,
+            if box is None:   # KiCad's models run to the right from their pin 1: anchor on the left-most pin
+                left = min(pins)
+                out.append({'ref': ref, 'x': left[0], 'y': left[1], 'box': None,
                             'models': [{'file': f'{models.KICAD3D}/{file}', 'z': models.BREADBOARD_H, 'rot': rot}]})
             else:
                 out.append({'ref': ref, 'x': cx + box[0], 'y': cy + box[1], 'box': list(box),
                             'models': [{'file': f'${{KIPRJMOD}}/models/{ref}.wrl', 'z': box[5], 'rot': 0}]})
+        real = models.real_model(part.id)
+        if real:   # its left-hand header hole on the pin it carries, the board on its header
+            file, (hx, hy), pin = real
+            x, y = wiring.hole_xy(part.pins[pin])
+            out.append({'ref': f'3D_{part.id}_maker', 'x': x, 'y': y, 'box': None,
+                        'models': [{'file': file, 'z': models.HEADER_Z, 'rot': 0, 'dx': -hx, 'dy': -hy}]})
+        if part.id == 'CELL' and (models.VENDOR/models.CELL_MODEL[0]).exists():   # on the bench beside board B
+            file, (mx, my) = models.CELL_MODEL
+            out.append({'ref': '3D_CELL_maker', 'x': cx + 75.0, 'y': cy + 52.0, 'box': None,
+                        'models': [{'file': f'${{KIPRJMOD}}/../../vendor/cad/{file}', 'z': 0.0, 'rot': 0,
+                                    'dx': -mx, 'dy': -my}]})
     return out
 
 
@@ -102,6 +114,10 @@ def layout(w, jumpers):
     for header, (_x0, cols, _n) in wiring.HEADERS.items():
         x, y = wiring.hole_xy(('N', header, 1))
         labels.append({'text': header, 'x': x + 0.6*(cols - 1)*2.54, 'y': y - 2.5})
+    for board in ('A', 'B'):   # the column numbers printed on the board, below row j's rails
+        for col in (1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 63):
+            x, _y = wiring.hole_xy((board, 'R+', col))
+            labels.append({'text': str(col), 'x': x + 5.4, 'y': wiring.BOARD_HEIGHT + 4.0})
     nx, ny = wiring.hole_xy(('N', 'CN7', 1))
     labels.append({'text': 'NUCLEO-WL55JC1 headers: check against UM2592, not to scale', 'x': nx + 25, 'y': ny - 6})
     xs = [h['x'] for f in footprints for h in f['holes']]

@@ -42,6 +42,7 @@ flowchart LR
 
 ```sh
 tools/fetch-router.sh                                       # once: KiCadRoutingTools v0.23.1, pinned (macOS arm64 only)
+tools/fetch-cad.sh                                          # once: the makers' 3D models of board B's parts, pinned
 .venv/bin/python hardware/bench-breadboard-r0/source/make.py all
 .venv/bin/python -m unittest tests.test_breadboard
 ```
@@ -49,6 +50,8 @@ tools/fetch-router.sh                                       # once: KiCadRouting
 KiCad 10 comes from `KICAD_APP` (default: the 10.0.6 disk image on the bench Mac,
 `tools/kicad_env.py`). The router's prebuilt binary is for macOS arm64, so `tools/fetch-router.sh`
 skips on other hosts. Without KiCad or the router, the KiCad tests skip and say what is missing.
+Without `vendor/cad` (`tools/fetch-cad.sh`), the 3D view draws plain boxes for the breakouts and the cell
+instead of the makers' models; the committed renders use the makers' models.
 Two builds give identical files (`test_generation_is_deterministic`). The suite has 33 tests.
 
 ## How the model works

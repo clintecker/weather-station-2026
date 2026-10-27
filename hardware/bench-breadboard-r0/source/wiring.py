@@ -83,7 +83,9 @@ def hole_xy(h):
     board, row, col = h
     if not 1 <= col <= COLUMNS:
         raise ValueError(f'no column {col}')
-    return (BOARD_X[board] + (col - 1)*PITCH, _row_y(row))
+    # Drawn as the board lies on the bench with row a at the top: the printed numbers then run from
+    # 63 at the left to 1 at the right.
+    return (BOARD_X[board] + (COLUMNS - col)*PITCH, _row_y(row))
 
 
 def strip(h, split_rails=False):
