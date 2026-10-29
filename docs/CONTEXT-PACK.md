@@ -318,6 +318,8 @@ energy state. It does not model the drain stop or the PROBING link state
 | `docs/web-dashboard.md` | Live dashboard served by the gateway |
 | `docs/openapi.json` | Gateway HTTP API |
 | `firmware/rangetest/README.md` | Range-test bench tool |
+| `firmware/i2cscan/README.md` | I2C bench tool: bus scan, INA228 and MAX17048 readings |
+| `firmware/benchlink/README.md` | Bench telemetry link: the power breadboard's readings over plain LoRa, its logger and dashboard, its watchdog drills |
 | `hardware/poc-enclosure-r1/` | Printed enclosure parts for the proof of concept |
 | `hardware/chicago-test-hardware-r0/` | Chicago test hardware, revision 0: build and order guide, manufacturing files |
 | `tools/README.md` | Every tool in `tools/` |

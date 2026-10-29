@@ -63,6 +63,8 @@ flowchart LR
 | Bench OLED CS | PA4 | D10, CN5.3 or morpho CN10.17 | bench only: chip select to OLED pin 15, low while sending |
 | Bench OLED DC | PC2 | D8, CN5.1 or morpho CN10.21 | bench only: data/command to OLED pin 4 |
 | Bench OLED RST | PC1 | D7, CN9.8 or morpho CN10.23 | bench only: reset to OLED pin 16, low = reset |
+| Bench charge current | PB1 | A0, CN8.1 | bench only (the bench link, `firmware/benchlink`): the bq24074 ISET pin, direct |
+| Bench charger input | PA10 | A2, CN8.3 | bench only (the bench link): the bq24074 VBUS through a 20 kohm / 10 kohm divider (VBUS / 3) |
 
 Keep these pins free:
 
@@ -147,8 +149,10 @@ match is moved before any soldering, and the firmware pin constants (`App/board_
 - [ ] PB2 header position (CN7.30 and whether it is A0 or A1), no solder bridge in the path.
 - [ ] PB5 header position, free of any board function.
 - [ ] PB8 and PB10 header positions, free of any board function.
-- [ ] PB8 and PB10 are 5 V tolerant (FT) in the STM32WL55 datasheet. Check this before you connect
-  PGOOD and CHG. The breadboard build sheet's bench checks give the reason.
+- [x] PB8 and PB10 are 5 V tolerant (FT) in the STM32WL55 datasheet: FT_f in DS13293 Rev 5 Table 20,
+  checked 2026-10-28. Above VDD + 0.3 V the internal pull-up must be off (Table 26, note 3). CHG and
+  PGOOD measured at most 2.9 V on the bench (their LEDs pull them up from OUT), below that limit. The
+  breadboard build sheet's bench checks give the reason for the check.
 - [ ] PA9 header position, free of any board function.
 - [ ] The jumper settings that let CN7.16 power the board in mode B, with the ST-LINK off.
 - [ ] No other solder bridge connects any of these pins to an on-board part.
