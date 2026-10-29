@@ -10,6 +10,7 @@
 | `stage0-node/` | The weather-station firmware, TX and RX roles. It keeps its own `Core/Src/stm32wlxx_it.c` (the flash error-correction hook in the non-maskable interrupt handler, and the HardFault record). |
 | `rangetest/` | The bench range-test tool ([`rangetest/README.md`](rangetest/README.md)). |
 | `i2cscan/` | The bench I2C tool: bus scan, INA228 and MAX17048 readings ([`i2cscan/README.md`](i2cscan/README.md)). |
+| `benchlink/` | The bench telemetry link: the TX sends the power breadboard's readings and the air every 5 s over plain LoRa, the RX prints them, both under a supervised watchdog ([`benchlink/README.md`](benchlink/README.md)). It keeps its own `Core/Src/stm32wlxx_it.c` too: the HardFault and NMI record, without the flash error-correction hook. |
 | `common/` | Frame, observation and console code, and the WSMP core (`wsmp.c`, which also parses the module record v1.0 of a module board's ID EEPROM) with its generated registry (`wsmp_registry.h` from `wsmp_registry.toml`). The module-port identity code: record calibration (`wsmp_cal.c`), the admission verdict (`wsmp_ident.c`) and the shared rounding helper (`ws_round.h`); not linked into the firmware until the port drivers use them. The firmware and the host tests share it. |
 | `host/` | The host harnesses that run the role modules over a simulated board (`sim_core.c`). The sensor modules run over a simulated I2C bus with device models (`i2c_sim.c`, `i2c_models.c`). |
 | `fuzz/` | Host fuzz targets for the input parsers ([`fuzz/README.md`](fuzz/README.md)). |
@@ -22,6 +23,7 @@ flowchart TD
   NM["stage0-node/Makefile<br/>ROLE=tx or rx"] -->|"include"| BMK["board/nucleo-wl55jc/board.mk"]
   RM["rangetest/Makefile"] -->|"include"| BMK
   IM["i2cscan/Makefile"] -->|"include"| BMK
+  BLM["benchlink/Makefile<br/>ROLE=tx or rx"] -->|"include"| BMK
   BMK --> BC["board code: Core, startup, SubGHz_Phy/Target"]
   BMK --> LD["linker script<br/>110 KB application region"]
   NM --> APP["stage0-node/App"]

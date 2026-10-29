@@ -149,13 +149,15 @@ jobs:
           fi
           echo "Reproducible: both clean builds gave identical .bin hashes."
 
-      # The bench tools firmware/rangetest and firmware/i2cscan are not released, but they must keep
-      # compiling: they share the board code, linker script and build rules with the node
-      # (firmware/board/nucleo-wl55jc).
+      # The bench tools firmware/rangetest, firmware/i2cscan and firmware/benchlink are not released,
+      # but they must keep compiling: they share the board code, linker script and build rules with
+      # the node (firmware/board/nucleo-wl55jc).
       - name: Build bench firmware
         run: |
           make -C firmware/rangetest BUILD=build/ci -j"$(nproc)"
           make -C firmware/i2cscan BUILD=build/ci -j"$(nproc)"
+          make -C firmware/benchlink ROLE=tx BUILD=build/ci-tx -j"$(nproc)"
+          make -C firmware/benchlink ROLE=rx BUILD=build/ci-rx -j"$(nproc)"
 
       # Our C already builds with a strict warning set and -Werror (board.mk STRICT). ANALYZE=1
       # adds GCC's static analyzer (-fanalyzer) to our files only; any finding fails the build.

@@ -23,6 +23,8 @@ WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests     # 595
 | `test_wsmp_record.py`, `test_wsmp_cal.py` | Module identity on the sensor ports (spec 2026-10-21 sections 6.7, 6.9): the module record v1.0, its calibration and the rounding helper, and the admission verdict |
 | `test_fuzz.py` | Short fuzz runs of the input parsers under AddressSanitizer and UBSan (`firmware/fuzz/`) |
 | `test_rangetest.py` | The range-test firmware's packet format and settings handshake |
+| `test_i2cscan.py` | The I2C bench tool's register decoding against the datasheet scale factors, and its OLED text |
+| `test_benchlink.py` | The bench telemetry link: its packet and SHT45 code against the logger's decoder; the logger's rows, events and main loop (a scripted port and a fake clock); the console logger; the dashboard's charge count, gaps, CSV reading and HTTP handler |
 | `test_h01_report.py`, `test_rx_faults_tool.py`, `test_power_cut_tool.py`, `test_stack_report.py`, `test_blocking_report.py`, `test_loop_bounds.py`, `test_tangle.py` | The tools in `tools/` |
 | `test_breadboard.py` | The breadboard map `hardware/bench-breadboard-r0/` against the wiring guide and the firmware pins |
 

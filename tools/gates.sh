@@ -28,6 +28,8 @@ twice() {
 gate "two clean builds, identical .bin (budget, no heap)" twice
 gate "bench firmware (rangetest)" make -C firmware/rangetest BUILD=build/ci -j8
 gate "bench firmware (i2cscan)" make -C firmware/i2cscan BUILD=build/ci -j8
+bl() { make -C firmware/benchlink ROLE=tx BUILD=build/ci-tx -j8 && make -C firmware/benchlink ROLE=rx BUILD=build/ci-rx -j8; }
+gate "bench firmware (benchlink)" bl
 an() { cd firmware/stage0-node && make ROLE=rx ANALYZE=1 BUILD=build/analyze-rx -j8 && make ROLE=tx ANALYZE=1 BUILD=build/analyze-tx -j8; }
 gate "gcc -fanalyzer" an
 st() { cd firmware/stage0-node && make ROLE=rx BUILD=build/analyze-rx stack && make ROLE=tx BUILD=build/analyze-tx stack; }

@@ -1,4 +1,4 @@
-# Common build for every NUCLEO-WL55JC1 project (stage0-node, rangetest).
+# Common build for every NUCLEO-WL55JC1 project (stage0-node, rangetest, i2cscan, benchlink).
 #
 # The board directory holds the ST CubeMX/CubeIDE template code all projects share: Core/ (HAL init,
 # UART, RTC, low power), startup/, SubGHz_Phy/Target/ and the linker script (110 KB application
