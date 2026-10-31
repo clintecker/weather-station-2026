@@ -36,7 +36,7 @@ from pathlib import Path
 
 from gateway import DAY_S, FAR_FUTURE, HOUR_S, MINUTE_S
 
-from .fields import BY_NAME, FIELDS, LABELS, MEASURED
+from .fields import BY_NAME, DIAGNOSTIC_FIELDS, FIELDS, LABELS, MEASURED
 from .protocol import HEADER_LEN, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, frame_counter, frame_kind
 
 STATIC = Path(__file__).parent / 'static'
@@ -780,8 +780,12 @@ def observation_series(db, station, start, end, max_points):
     present = {name for r, _, _ in records for name in MEASURED if name in r}
     names = [f.name for f in FIELDS if f.name in present]
     bucket = _bucket_of(end - start, len(records), max_points)
+    # 'diagnostic': every catalog field that describes the station, not the weather (fields.py
+    # DIAGNOSTIC_FIELDS), present or not, with its label: the page splits its tiles and charts
+    # with it and names a rail that this build does not measure.
+    diagnostic = [f.name for f in FIELDS if f.name in DIAGNOSTIC_FIELDS]
     obs = {'bucket_s': bucket, 'fields': names, 'units': {n: BY_NAME[n].unit for n in names},
-           'labels': {n: LABELS[n] for n in names},
+           'labels': {n: LABELS[n] for n in (*names, *diagnostic)}, 'diagnostic': diagnostic,
            'unknown_time_count': unknown, 't': [], 'basis': [], 'quality': [], 'session': [],
            'values': {n: [] for n in names}}
     for t, group in _groups(records, lambda r: r[1], start, bucket):
@@ -822,18 +826,23 @@ def receiver_series(db, station, start, end, max_points):
     return alive
 
 
-DIAGNOSTIC_STATE = ('epoch', 'firmware_build', 'energy_state', 'link')
+# Health-report keys whose every change survives thinning: the state bands and boot markers of the
+# page (power telemetry design section 10.2; the charger status, stage and active-input bands are
+# drawCharger in static/app.js). A report from before a key existed lacks it (None).
+DIAGNOSTIC_STATE = ('epoch', 'firmware_build', 'energy_state', 'link', 'reset_cause', 'charger_charging',
+                    'charger_input_power_ok', 'charger_fault', 'charger_stage', 'charger_active_input')
 
 
 def diagnostic_series(db, station, start, end, max_points):
-    """Node health reports, thinned past max_points; every change of epoch, firmware, energy or
-    link state is kept, as are the first and last report."""
+    """Node health reports, thinned past max_points; every change of a DIAGNOSTIC_STATE key (epoch,
+    firmware, energy, link, reset cause, charger state) is kept, as are the first and last report."""
     diags = rows_between(db, station, 'diagnostics', start, end)
     if len(diags) <= max_points:
         return diags
     step = math.ceil(len(diags) / max_points)
     return [d for i, d in enumerate(diags)
-            if i % step == 0 or i == len(diags) - 1 or any(d[k] != diags[i - 1][k] for k in DIAGNOSTIC_STATE)]
+            if i % step == 0 or i == len(diags) - 1
+            or any(d.get(k) != diags[i - 1].get(k) for k in DIAGNOSTIC_STATE)]
 
 
 def radio_series(db, station, start, end, max_points):

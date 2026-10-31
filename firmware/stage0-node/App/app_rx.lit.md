@@ -830,7 +830,8 @@ int watchdog_healthy(void)
 4. `leds_init`, `Radio.Init`, `ws_radio_configure(1)` for continuous receive.
 5. It registers the process task.
 6. `console_init`.
-7. `watchdog_start`.
+7. `watchdog_start`, then `fault_boot_note` counts the boot in backup register DR12 (zeroed first
+   when the reset cause is power-on; `fault.h`).
 8. It prints `#boot` and calls `fault_report`.
 9. It starts the 1-minute alive timer.
 10. `listen`, `stackmon_seed`.
@@ -860,6 +861,8 @@ void SubghzApp_Init(void)
   /* After console_init: vcom_ReceiveInit waits until the UART is idle. A host that streams
      without gaps could make that wait longer than the watchdog period. */
   watchdog_start();
+  /* The boot counter (DR12), once a boot and before fault_report; a power-on restarts it. */
+  fault_boot_note(watchdog_reset_code() == WS_RESET_POWER);
   /* A leading newline ends any line that a reset cut off, so #boot starts on a new line. */
   APP_PRINTF("\n#boot role=rx fw=%s reset=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION, watchdog_reset_cause(),
              (unsigned)WS_RF_FREQUENCY_HZ, (unsigned)WS_LORA_BANDWIDTH, (unsigned)WS_LORA_SF, WS_TX_POWER_DBM);

@@ -1,6 +1,7 @@
 """Bench telemetry link (firmware/benchlink): the C packet and SHT45 helpers against the logger's decoder;
-the logger (tools/benchlink_log.py): its rows, the events that explain a gap, its main loop against a
-scripted port and a fake clock, and CSV preparation; the console logger (tools/benchlink_console.py); and
+the logger (tools/benchlink_log.py): its rows and constants, the events that explain a gap, its main loop
+against a scripted port and a fake clock, its logger_start provenance (hashes, preflight status) and CSV
+preparation; the console logger (tools/benchlink_console.py); and
 the dashboard (tools/benchlink_dash.py): the charge count, its gap bridging, the gap list, CSV reading
 and the HTTP handler.
 
@@ -17,13 +18,18 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from pathlib import Path
 from unittest import mock
 
 import serial
 try:
-    from toolchain import ROOT, host_library, load_tool, needs_cc          # python -m unittest discover -s tests
+    from toolchain import ROOT, c_function, host_library, load_tool, needs_cc, sensor_power_problems
 except ImportError:
-    from tests.toolchain import ROOT, host_library, load_tool, needs_cc    # python -m unittest tests.<module>
+    from tests.toolchain import ROOT, c_function, host_library, load_tool, needs_cc, sensor_power_problems
+try:
+    import test_preflight as PF                                            # the preflight block fixtures
+except ImportError:
+    from tests import test_preflight as PF
 
 APP = ROOT/'firmware/benchlink/App'
 LOG = load_tool('benchlink_log')
@@ -83,9 +89,12 @@ class Packet(unittest.TestCase):
         out = (ctypes.c_int64 * 24)()
         return list(out) if self.lib.shim_unpack(raw, len(raw), out) == 0 else None
 
-    def test_layout_is_version_3_of_78_bytes(self):
+    def test_layout_is_version_4_of_78_bytes(self):
         raw = self.packed()
-        self.assertEqual(raw[:3], b'WB\x03')
+        self.assertEqual(raw[:3], b'WB\x04')
+        self.assertEqual(LOG.decode(raw)['version'], 4)
+        self.assertEqual(LOG.BL_VERSION, 4)
+        self.assertIn(f'#define BL_VERSION {LOG.BL_VERSION}U', (APP/'bl_pkt.h').read_text())
         self.assertEqual(struct.unpack_from('<H', raw, 76)[0], LOG.crc16(raw[:76]))
 
     def test_crc_is_ccitt_false(self):
@@ -131,10 +140,24 @@ class Packet(unittest.TestCase):
         self.assertEqual((p['seq'], p['vin_uv'], p['samples'], p['misses']), (5, None, 20, 3))
 
     def test_c_refuses_another_version_with_a_good_crc(self):
+        for v in (2, 3):
+            raw = bytearray(self.packed())
+            raw[2] = v
+            struct.pack_into('<H', raw, 76, LOG.crc16(bytes(raw[:76])))
+            self.assertIsNone(self.unpack(bytes(raw)), v)
+
+    def test_version_3_still_decodes_with_its_version(self):
         raw = bytearray(self.packed())
-        raw[2] = 2
+        raw[2] = 3
         struct.pack_into('<H', raw, 76, LOG.crc16(bytes(raw[:76])))
-        self.assertIsNone(self.unpack(bytes(raw)))
+        p = LOG.decode(bytes(raw))
+        self.assertEqual((p['version'], p['seq'], p['boots']), (3, 0x01020304, 513))
+
+    def test_an_unknown_version_is_refused(self):
+        raw = bytearray(self.packed())
+        raw[2] = 5
+        struct.pack_into('<H', raw, 76, LOG.crc16(bytes(raw[:76])))
+        self.assertIsNone(LOG.decode(bytes(raw)))
 
     def test_an_unknown_reset_code_is_kept_as_a_number(self):
         raw = bytearray(self.packed())
@@ -170,12 +193,14 @@ class Sht45(unittest.TestCase):
         self.assertEqual(self.lib.sht45_rh_mpct(32768), -6000 + 125000 * 32768 // 65535)
 
 
-def packet_hex(seq, flags=0x3F, uptime=100, reset=1, boots=1, **fields):
-    """A valid v3 packet as the RX prints it, built in Python (no C compiler needed)."""
-    vals = dict(vout_uv=3_800_000, iset_uv=890_000, iset_min_uv=0, iset_max_uv=2_225_000, vcell_uv=3_900_000,
+def packet_hex(seq, flags=0x3F, uptime=100, reset=1, boots=1, version=4, **fields):
+    """A valid packet (v4 unless given; v3 has the same layout) as the RX prints it, built in Python (no C
+    compiler needed). The ISET values are PB1 node voltages: 0.4 A and 1.0 A with the default R_ISET
+    1000 ohm and gain 0.990099."""
+    vals = dict(vout_uv=3_800_000, iset_uv=990_099, iset_min_uv=0, iset_max_uv=2_475_248, vcell_uv=3_900_000,
                 vin_uv=5_000_000)
     vals.update(fields)
-    body = b'WB\x03' + bytes([flags]) + struct.pack('<II', seq, uptime)
+    body = b'WB' + bytes([version, flags]) + struct.pack('<II', seq, uptime)
     body += struct.pack('<12i', *(vals.get(f, 0) for f in LOG.FIELDS)) + bytes([20, 0])
     body += struct.pack('<BBHHHHI', reset, 0, boots, 0, 0, 0, 0)
     return (body + struct.pack('<H', LOG.crc16(body))).hex()
@@ -203,6 +228,84 @@ class Rows(unittest.TestCase):
         for k in ('charge_ma', 'load_ma', 'vout_v', 'vcell_v', 'temp_c', 'vin_v'):
             self.assertNotIn(k, r)
         self.assertEqual((r['ina'], r['adc'], r['pgood']), (0, 0, 0))
+        self.assertNotIn('battery_ma', r)
+
+    def test_a_clipped_reading_is_empty_as_on_the_node(self):
+        """The node marks charger_input_mv INVALID at an oversampled 4080 or more (power_regs.h adc_clipped,
+        spec section 9.5); benchlink flags the interval and the logger leaves the column empty, so the
+        acceptance drill (spec section 12.2) never compares 9.9 V against INVALID."""
+        r = LOG.row(LOG.decode(bytes.fromhex(packet_hex(1, flags=0x3F | LOG.VIN_CLIP, vin_uv=9_900_000))), -45, 12, 0)
+        self.assertNotIn('vin_v', r)
+        self.assertEqual(r['charge_ma'], 400.0)
+        r = LOG.row(LOG.decode(bytes.fromhex(packet_hex(1, flags=0x3F | LOG.ISET_CLIP))), -45, 12, 0)
+        self.assertNotIn('charge_ma', r)
+        self.assertEqual(r['vin_v'], 5.0)
+        self.assertLessEqual(set(r), set(LOG.COLUMNS))
+        hdr = (APP/'bl_pkt.h').read_text()
+        self.assertIn(f'#define BL_F_VIN_CLIP  0x{LOG.VIN_CLIP:02X}U', hdr)
+        self.assertIn(f'#define BL_F_ISET_CLIP 0x{LOG.ISET_CLIP:02X}U', hdr)
+        src = (APP/'benchlink.c').read_text()
+        self.assertIn('if (adc_clipped((uint16_t)raw)) *clipped = 1;', src)
+        self.assertIn('pin_uv(ADC_CHANNEL_6, &vin_clip)', src)
+
+    def test_battery_current_is_the_shunt_current_turned_once(self):
+        """ishunt_ma stays raw (+ into VIN+, out of the cell with the official orientation); battery_ma is
+        + into the cell (spec section 3.1)."""
+        for ua, raw, bat in ((250_000, 250.0, -250.0), (-400_000, -400.0, 400.0), (0, 0.0, 0.0)):
+            r = LOG.row(LOG.decode(bytes.fromhex(packet_hex(1, ishunt_ua=ua))), -45, 12, 0)
+            self.assertEqual((r['ishunt_ma'], r['battery_ma']), (raw, bat))
+        self.assertEqual(str(LOG.battery_ma(0.0)), '0.0')   # not '-0.0' in the CSV
+        self.assertEqual(LOG.battery_ma(LOG.battery_ma(12.5)), 12.5)
+
+    def test_version_3_keeps_its_own_meaning(self):
+        """Before change A (version 3 and older) byte 20 was the charger's ISET pin itself and the shunt was
+        not in the official orientation: no ISET gain, and no battery_ma (its sign turn is change A's).
+        ishunt_ma stays raw in every version."""
+        for v in (1, 2, 3):
+            body = b'WB' + bytes([v, 0x3F]) + struct.pack('<II', 1, 100)
+            n = 11 if v == 1 else 12
+            body += struct.pack(f'<{n}i', *(dict(ishunt_ua=250_000, iset_uv=900_000).get(f, 0) for f in LOG.FIELDS[:n]))
+            body += bytes([20, 0]) + (struct.pack('<BBHHHHI', 1, 0, 1, 0, 0, 0, 0) if v == 3 else b'')
+            r = LOG.row(LOG.decode(body + struct.pack('<H', LOG.crc16(body))), -45, 12, 0)
+            self.assertEqual((r['charge_ma'], r['ishunt_ma']), (360.0, 250.0), v)    # 400 x 0.9 V / 1000
+            self.assertNotIn('battery_ma', r)
+            self.assertLessEqual(set(r), set(LOG.COLUMNS))
+        r = LOG.row(LOG.decode(bytes.fromhex(packet_hex(1, iset_uv=900_000, ishunt_ua=250_000))), -45, 12, 0)
+        self.assertEqual((r['charge_ma'], r['battery_ma']), (round(400 * 0.9 / 0.990099, 2), -250.0))   # v4
+
+    def test_the_first_packet_names_its_version(self):
+        got = []
+        w = LOG.Watch(lambda *a: got.append(a), 0.0)
+        LOG.handle(line(1, version=3), 1.0, w, lambda *a: None)
+        self.assertEqual(got[0][0], 'tx_first_packet')
+        self.assertIn('version=3 (before change A: ISET pin, no battery_ma)', got[0][1])
+        got.clear()
+        w = LOG.Watch(lambda *a: got.append(a), 0.0)
+        LOG.handle(line(1), 1.0, w, lambda *a: None)
+        self.assertIn('version=4', got[0][1])
+        self.assertNotIn('before change A', got[0][1])
+
+    def test_the_constants_are_options(self):
+        raw = LOG.decode(bytes.fromhex(packet_hex(1)))
+        self.assertEqual(LOG.CAL, LOG.Cal(1000.0, 400.0, 100.0, 0.990099))   # record 1.4 (R9) and M2
+        r = LOG.row(raw, -45, 12, 0, LOG.Cal(r_iset_ohm=500.0, k_iset=400.0, r_load_ohm=50.0))
+        self.assertEqual((r['charge_ma'], r['charge_max_ma'], r['load_ma']), (800.0, 2000.0, 76.0))
+        r = LOG.row(raw, -45, 12, 0, LOG.Cal(k_iset=200.0))
+        self.assertEqual(r['charge_ma'], 200.0)
+        w = mock.Mock(last=None)
+        r = LOG.handle(line(1), 1.0, w, lambda *a: None, LOG.Cal(r_load_ohm=200.0))
+        self.assertEqual(r['load_ma'], 19.0)
+        self.assertEqual(LOG.positive('890'), 890.0)
+        for bad in ('0', '-1', 'inf', 'nan'):
+            with self.assertRaises(LOG.argparse.ArgumentTypeError):
+                LOG.positive(bad)
+
+    def test_the_iset_gain_divides_the_node_voltage(self):
+        """charge_ma = K x (iset_uv / gain) / R_ISET: iset_uv is the PB1 node behind 10 kOhm and 1 MOhm."""
+        raw = LOG.decode(bytes.fromhex(packet_hex(1, iset_uv=900_000)))
+        self.assertEqual(LOG.row(raw, -45, 12, 0)['charge_ma'], round(400 * 0.9 / 0.990099, 2))   # 363.6
+        self.assertEqual(LOG.row(raw, -45, 12, 0, LOG.Cal(iset_gain=1.0))['charge_ma'], 360.0)
+        self.assertEqual(LOG.row(raw, -45, 12, 0, LOG.Cal(iset_gain=0.9))['charge_ma'], 400.0)
 
 
 class Clock:
@@ -489,6 +592,14 @@ class PrepareCsv(Base):
         self.assertTrue(os.path.exists(f'{self.out}.before-{len(LOG.COLUMNS)}-columns'))
         self.assertEqual(LOG.prepare_csv(self.out), '')   # current header: left alone
 
+    def test_an_older_header_gets_battery_ma_from_its_shunt_current(self):
+        old = [c for c in LOG.COLUMNS if c != 'battery_ma']
+        cells = lambda ishunt: [ishunt if c == 'ishunt_ma' else '1' for c in old]
+        self.write(old, cells('12.5'), cells(''), cells('x'))
+        LOG.prepare_csv(self.out)
+        self.assertEqual([r['battery_ma'] for r in self.read()], ['-12.5', '', ''])   # blank or unreadable: blank
+        self.assertEqual([r['ishunt_ma'] for r in self.read()], ['12.5', '', 'x'])     # the raw column is kept
+
     def test_a_row_wider_than_its_header_is_trimmed(self):
         old = LOG.COLUMNS[:-7]
         self.write(old, ['1'] * (len(old) + 2))
@@ -519,6 +630,70 @@ class PrepareCsv(Base):
         ev = LOG.Events(os.path.join(self.dir, 'missing-dir', 'e.csv'))
         ev('logger_error', 'x')   # prints and notifies instead
         self.assertTrue(any('events file unwritable' in s for s in self.sent))
+
+
+class Start(Base):
+    """main(): the logger_start detail carries the constants, the model and build-sheet hashes and the
+    preflight status (decision record D6), and the CSV header stays COLUMNS."""
+
+    def setUp(self):
+        super().setUp()
+        hw = Path(self.dir)/'hw'
+        (hw/'source').mkdir(parents=True)
+        self.model, self.sheet = hw/'source'/'wiring.toml', hw/'build-sheet.md'
+        self.model.write_text(PF.MODEL)
+        self.sheet.write_text(PF.SHEET)
+        self.notes = Path(self.dir)/'notes.md'
+
+    def start(self, *extra):
+        argv = ['benchlink_log.py', '--serial-number', 'X', '--out', self.out, '--model', str(self.model), *extra]
+        with mock.patch.object(LOG.sys, 'argv', argv), \
+                mock.patch.object(LOG.Logger, 'run', side_effect=KeyboardInterrupt):
+            self.assertEqual(LOG.main(), 0)
+        starts = [d for e, d in self.events() if e == 'logger_start']
+        self.assertEqual(len(starts), 1)
+        return dict(kv.split('=', 1) for kv in starts[0].split() if '=' in kv)
+
+    def block(self):
+        pf = PF.PreflightTests()
+        pf.model, pf.sheet, pf.notes = self.model, self.sheet, self.notes
+        pf.write()
+
+    def test_the_constants_and_hashes(self):
+        d = self.start('--iset-gain', '0.98')
+        self.assertEqual((d['r_iset'], d['k_iset'], d['iset_gain']), ('1000', '400', '0.98'))
+        self.assertEqual(d['model_hash'], PF.checklist.blob_sha1(self.model))
+        self.assertEqual(d['sheet_hash'], PF.checklist.blob_sha1(self.sheet))
+        self.assertEqual(d['preflight'], 'missing')   # no --preflight
+
+    def test_the_preflight_status(self):
+        self.assertEqual(self.start('--preflight', str(self.notes))['preflight'], 'missing')   # no such file
+        self.block()
+        os.remove(self.ev.path)
+        self.assertEqual(self.start('--preflight', str(self.notes))['preflight'], 'valid')
+        self.sheet.write_text(PF.SHEET + 'regenerated\n')
+        os.remove(self.ev.path)
+        self.assertEqual(self.start('--preflight', str(self.notes))['preflight'], 'stale')
+
+    def test_an_unreadable_model_still_starts(self):
+        self.model.unlink()
+        d = self.start()
+        self.assertEqual(d['model_hash'], 'unreadable')
+        self.assertEqual(d['sheet_hash'], PF.checklist.blob_sha1(self.sheet))
+
+    def test_the_csv_header_is_unchanged(self):
+        """The hashes stay out of the CSV: prepare_csv() would set a live file aside on a new header."""
+        self.assertEqual(LOG.COLUMNS, (
+            'utc', 'local', 'rssi', 'snr', 'seq', 'gap', 'uptime_s', 'ina', 'gauge', 'sht', 'pgood', 'chg', 'adc',
+            'charge_ma', 'charge_min_ma', 'charge_max_ma', 'load_ma', 'vout_v', 'vcell_v', 'soc_pct',
+            'rate_pct_h', 'temp_c', 'rh_pct', 'ina_die_c', 'ishunt_ma', 'battery_ma', 'samples', 'misses',
+            'vin_v', 'reset', 'boots', 'faults', 'fault_pc', 'tx_timeouts', 'i2c_restarts', 'i2c_unsticks'))
+        with open(self.out, 'w', newline='') as f:
+            csv.writer(f).writerow(LOG.COLUMNS)
+        self.start()
+        self.assertNotIn('csv_prepared', self.names())
+        with open(self.out, newline='') as f:
+            self.assertEqual(next(csv.reader(f)), list(LOG.COLUMNS))
 
 
 class Console(unittest.TestCase):
@@ -590,16 +765,57 @@ class Dashboard(unittest.TestCase):
                          [[5.0, 100.0, '', -1.0], [100.0, 200.0, 'power', None], [205.0, 300.0, 'restart', None]])
         self.assertEqual(DASH.gaps(full, 150, {}), [[100.0, 200.0, 'power', None], [205.0, 300.0, 'restart', None]])
 
-    def csv_file(self, d, times, extra=''):
+    def csv_file(self, d, times, extra='', battery=None, columns=LOG.COLUMNS):
+        """A logger CSV: 38 mA load, no charge (the estimate is -38 mA throughout), battery_ma = battery."""
         path = os.path.join(d, 'run.csv')
         with open(path, 'w', newline='') as f:
-            w = csv.DictWriter(f, fieldnames=LOG.COLUMNS)
+            w = csv.DictWriter(f, fieldnames=columns, extrasaction='ignore')
             w.writeheader()
             for i, t in enumerate(times):
                 w.writerow(dict(utc=f'2026-10-29T00:{t // 60:02d}:{t % 60:02d}+00:00', seq=i, reset='watchdog',
-                                load_ma=38.0, vout_v=3.8, vcell_v=3.8, pgood=i % 2, chg=0, charge_ma=0.0))
+                                load_ma=38.0, vout_v=3.8, vcell_v=3.8, pgood=i % 2, chg=0, charge_ma=0.0,
+                                battery_ma=battery))
             f.write(extra)
         return path
+
+    def test_the_measured_current_wins_over_the_estimate(self):
+        self.assertEqual(DASH.battery_ma(self.r(0, battery_ma=120.0)), 120.0)
+        self.assertEqual(DASH.battery_ma(self.r(0, battery_ma=0.0)), 0.0)    # a measured zero is not missing
+        self.assertEqual(DASH.battery_ma(self.r(0, battery_ma=None)), -38.0)
+        self.assertEqual(DASH.estimate_ma(self.r(0, battery_ma=120.0)), -38.0)
+
+    def test_shunt_from_switches_to_the_measured_current_at_its_moment(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = self.csv_file(d, (0, 5, 10, 15), battery=120.0)
+            t5 = DASH.read_rows(path, 0.0)[0][1]['t']
+            j = DASH.load(path, 0, 1500, 0.0, 0.0, t5)
+            ci = j['cols'].index
+            self.assertEqual([r[ci('battery_ma')] for r in j['rows']], [None, 120.0, 120.0, 120.0])   # at it: measured
+            self.assertEqual(j['shunt_from'], t5)
+            self.assertEqual(j['marks'], [[t5, 'shunt in battery path']])
+            # the count: 5 s at the -38 mA estimate, then 10 s at +120 mA measured (trapezoids)
+            q = [r[ci('q_mah')] for r in j['rows']]
+            self.assertAlmostEqual(q[1], (-38.0 + 120.0) / 2 * 5 / 3600)
+            self.assertAlmostEqual(q[3] - q[1], 120.0 * 10 / 3600)
+            self.assertEqual(DASH.load(path, t5, 1500, 0.0, 0.0, t5)['marks'], [])   # not after the range start
+
+    def test_without_shunt_from_every_row_is_the_estimate(self):
+        with tempfile.TemporaryDirectory() as d:
+            j = DASH.load(self.csv_file(d, (0, 5), battery=120.0), 0, 1500, 0.0, 0.0)
+        ci = j['cols'].index
+        self.assertEqual([r[ci('battery_ma')] for r in j['rows']], [None, None])
+        self.assertEqual((j['shunt_from'], j['marks']), (None, []))
+        self.assertAlmostEqual(j['rows'][-1][ci('q_mah')], -38.0 * 5 / 3600)
+        json.dumps(j, allow_nan=False)   # no Infinity reaches the page
+
+    def test_an_old_header_csv_falls_back_to_the_estimate(self):
+        old = [c for c in LOG.COLUMNS if c != 'battery_ma']
+        with tempfile.TemporaryDirectory() as d:
+            j = DASH.load(self.csv_file(d, (0, 5), battery=120.0, columns=old), 0, 1500, 0.0, 0.0, 0.0)
+        ci = j['cols'].index
+        self.assertEqual((j['total'], j['skipped']), (2, 0))
+        self.assertEqual([r[ci('battery_ma')] for r in j['rows']], [None, None])
+        self.assertAlmostEqual(j['rows'][-1][ci('q_mah')], -38.0 * 5 / 3600)
 
     def test_load_reads_a_logger_csv(self):
         with tempfile.TemporaryDirectory() as d:
@@ -655,12 +871,35 @@ class Dashboard(unittest.TestCase):
             base = f'http://127.0.0.1:{srv.server_address[1]}'
             j = json.loads(urllib.request.urlopen(base + '/data?since=0').read())
             self.assertEqual((j['total'], j['sources'], j['sources_error'], j['anchor']), (2, [], '', None))
+            self.assertIsNone(j['shunt_from'])
             self.assertIn(b'<title>', urllib.request.urlopen(base + '/').read())
             for url, code in (('/nope', 404), ('/data?since=abc', 500)):
                 with self.assertRaises(urllib.error.HTTPError) as e:
                     urllib.request.urlopen(base + url)
                 self.assertEqual(e.exception.code, code)
             self.assertIn('ValueError', json.loads(e.exception.read())['error'])
+
+
+class SensorPower(unittest.TestCase):
+    """From bench-bb-r0.3 the hub's QT V+ is the PA9 load switch's output (record 4.6, 6.1): the benchlink TX
+    drives PA9 high before its first bus access, or the SHT45 is unpowered under benchlink (step 1 exit 2).
+    wiring.py check_firmware checks only that POWER_PIN is PA9."""
+
+    def setUp(self):
+        self.src = (APP/'benchlink.c').read_text()
+        tx = self.src.index('#ifdef BL_ROLE_tx\n')
+        self.rx = self.src.index('#else   /* BL_ROLE_rx */', tx)
+        self.init = c_function(self.src, 'static void role_init(void)', tx)
+        self.at = self.src.index('static void role_init(void)', tx)
+
+    def test_the_tx_drives_pa9_high_before_the_bus_starts(self):
+        self.assertLess(self.at, self.rx)            # the TX role's init, not the RX one's
+        self.assertEqual(sensor_power_problems(self.src, self.init), [])
+
+    def test_the_check_sees_a_missing_drive(self):
+        self.assertTrue(sensor_power_problems(self.src, self.init.replace('  sensors_on();\n', '')))
+        low = self.src.replace('POWER_PIN, GPIO_PIN_SET', 'POWER_PIN, GPIO_PIN_RESET')
+        self.assertTrue(sensor_power_problems(low, self.init))
 
 
 if __name__ == '__main__':

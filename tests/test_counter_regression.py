@@ -18,7 +18,8 @@ from pathlib import Path
 from unittest import mock
 
 from ws0.harness import Campaign, Scenario
-from ws0.protocol import COUNTER_AT, COUNTER_BYTES, COUNTER_MAX, DIAG, HEADER_LEN, KIND_DIAG, Nonces, frame_counter, seal
+from ws0.protocol import (COUNTER_AT, COUNTER_BYTES, COUNTER_MAX, HEADER_LEN, KIND_DIAG, SIGNAL_NONE, Nonces, frame_counter,
+                          pack_diag, seal)
 from ws0.service import CounterRegression, Replay, Gateway
 from ws0.simulator import Node
 from ws0 import __main__ as cli
@@ -28,7 +29,8 @@ ALARM = 'possible key reuse: re-key the node'
 
 
 def diag_payload(uptime, epoch=1):
-    return DIAG.pack(epoch, uptime, 0, 0, 0, 0, 0, 0, 1, 0, 0, -128, -128, 0, 1)
+    return pack_diag(epoch=epoch, uptime=uptime, pending=0, lost=0, torn=0, abandoned=0, no_ack=0, rejects=0,
+                     reset_cause=1, link=0, build=0, rssi=SIGNAL_NONE, snr=SIGNAL_NONE, crashes=0, energy=1)
 
 
 class CounterRegressionTests(unittest.TestCase):

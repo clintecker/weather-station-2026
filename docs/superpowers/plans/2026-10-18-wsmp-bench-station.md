@@ -10,6 +10,32 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-18-wsmp-bench-station-design.md`, implementing the station side of `docs/module-protocol.md` (WSMP 1.0).
 
+> **Amended 2026-10-29 (power telemetry).** The power part of this plan is superseded by
+> `docs/superpowers/specs/2026-10-29-power-telemetry-design.md` and its plan
+> `docs/superpowers/plans/2026-10-29-power-telemetry.md`. The changes that touch this plan:
+>
+> | Item | Was (this plan) | Now |
+> |---|---|---|
+> | Pins | no power ADC | PB1 = ISET (ADC1_IN5, CN8.1, A0) and PA10 = charger VBUS divider 20 kΩ / 10 kΩ (ADC1_IN6, CN8.3, A2), VIN = 3 × the pin; both analog, no pull (pin table below). *Amended 2026-10-30 (BP M2): ISET reaches PB1 through 10 kΩ at the charger, with 100 nF and 1 MΩ to logic ground at PB1 (gain 990099 ppm until the per-board fit); VIN = the pin × the measured ratio (`POWER_VIN_DIVIDER_PPM`, 3 nominal)* |
+> | Pack | battery of the bench station | 1S3P Li-ion, 3 × 2,200 mAh = 6,600 mAh, 3.0–4.2 V |
+> | Task 6 module | `mod_power`, type 5 "battery and charger", port `P_POWER`, health class | drivers in `App/power_acq.{c,h}` (rail table in `App/power_config.h`), WSMP face in `App/mod_power.{c,h}`: type 8 battery (port `P_BATTERY` 5) and type 9 power rails (port `P_RAILS` 8), both minute class; type 5 frozen in the registry |
+> | Slow battery items | WSMP health channels | the version 6 health report, through `mod_power_health()` |
+> | WSMP | 1.0, `WSMP_RADIO_BUDGET 58` | 1.1 (quality 6 "not fitted"), `WSMP_RADIO_BUDGET 60` (WSMP-A1) |
+> | I2C topology | one I2C2 bus (PA11/PA12) | the same bus through a passive STEMMA QT hub: `WS_I2C_MUX` 0 is the default (official phase A); the mux profile of the 2026-10-21 ports work is `WS_I2C_MUX` 1 |
+>
+> Bench lessons that apply to every power task: keep the battery path short and low resistance (a
+> 0.2 Ω breadboard path ended 1 A charges early); the MAX17048 senses the cell, not OUT; the INA228
+> VBUS jumper goes to OUT. CHG (PB10) and PGOOD (PB8) are FT_f inputs with the internal pull-ups on:
+> the pin must stay below VDD + 0.3 V (the bench measured at most 2.9 V).
+
+> **Superseded pins, 2026-10-30** (build-progression record
+> `docs/superpowers/specs/2026-10-29-build-progression-decisions.md` decision N2, approved by Clint on
+> 2026-10-30 in its section 7.1; change B). Cups: PC0 → **PB5** (LPTIM1_IN1 on AF1; Arduino D4,
+> CN9.5). Rain: PB5 → **PB4** (EXTI4; Arduino A3, CN8.4), so the rain handler is `EXTI4_IRQHandler`,
+> not `EXTI9_5_IRQHandler`. The pin table and Tasks 8 and 10 below keep the 2026-10-18 pins as
+> history. The firmware (`firmware/stage0-node/App/board_inputs.c`) and the breadboard model use the
+> new pins.
+
 ## Global Constraints
 
 - Greenfield: no back-compat, every board reflashed together.
@@ -34,10 +60,12 @@
 | Function | Pin |
 |---|---|
 | I2C2 SDA / SCL | PA11 / PA12 (AF4) |
-| anemometer, LPTIM1 IN1 | PC0 (AF1) |
-| rain, EXTI5 | PB5 |
+| anemometer, LPTIM1 IN1 | PC0 (AF1); *superseded 2026-10-30 (N2): PB5 (LPTIM1_IN1 AF1, D4, CN9.5)* |
+| rain, EXTI5 | PB5; *superseded 2026-10-30 (N2): PB4 (EXTI4, A3, CN8.4)* |
 | vane, ADC IN4 | PB2 |
-| bq24074 PGOOD / CHG | PB8 / PB10, inputs with pull-up |
+| bq24074 ISET, ADC1_IN5 (added 2026-10-29) | PB1 (CN8.1, A0), analog, no pull. *Amended 2026-10-30 (BP M2): through 10 kΩ at the charger end, with 100 nF and 1 MΩ to logic ground at PB1* |
+| charger VBUS divider 20 kΩ / 10 kΩ, ADC1_IN6 (added 2026-10-29) | PA10 (CN8.3, A2), analog, no pull; VIN = 3 × pin. *Amended 2026-10-30 (BP M2): × the measured ratio, `POWER_VIN_DIVIDER_PPM` (3 nominal)* |
+| bq24074 PGOOD / CHG | PB8 / PB10, inputs with pull-up (FT_f: stay below VDD + 0.3 V; CHG also counts edges on EXTI10 since 2026-10-29) |
 | sensor 3.3 V switch | PA9, output |
 
 ## Ruling for Clint (spec deviation, to confirm at the plan review)
@@ -224,6 +252,17 @@ class Shtc3(Conformance, unittest.TestCase): PORT = 4
 
 ### Task 6: The battery and charger module
 
+> **Amended 2026-10-29.** This task is superseded. The power drivers are `App/power_acq.{c,h}` with
+> the rail table in `App/power_config.h` (INA228 rails read every second through SHUNT_CAL check,
+> VBUS and CHARGE; MAX17048 every 15 s; ISET, the charger input divider and VREFINT from the
+> board ADC sequence in `App/board_inputs.c`). `App/mod_power.{c,h}` is now only the WSMP face: the
+> battery module (type 8, port `P_BATTERY`) and the power rails module (type 9, port `P_RAILS`),
+> both minute class, plus `mod_power_health()` for the health report. The battery current sign is
+> + into the cell (the phase A INA228 counts the other way, so the rail table applies sign −1). The
+> charge and energy counters now come from the INA228 CHARGE register and the cell voltage, not from
+> V × I sums of VBUS. Tasks B15 and B18 of `docs/superpowers/plans/2026-10-29-power-telemetry.md`
+> hold the current work; the text below is the record of the original task.
+
 **Files:** Create `App/mod_power.{c,h}`; modify `i2c_sim.c` (INA228, MAX17048), `wsmp_harness.c` (GPIO fake for PB8/PB10); test `tests/test_modules.py`.
 
 **Interfaces:** Port `P_POWER`, module type 5, health class. Once a second: read VBUS and CURRENT; integrate signed V × I × dt into energy in/out and I × dt into charge in/out (counters since boot at scale −3: 1 mWh and 1 mAh. The module keeps the remainder below one step internally, so no charge is lost to rounding; the INA228 CHARGE register is a cross-check only). At the latch: voltage mean (scale −3 V), the four counters, SoC point (MAX17048, 1 %), charger state from PGOOD/CHG (0 off: PGOOD high; 1 charging: both low; 2 done: PGOOD low, CHG high; 3 fault: not decodable). The module is present when INA228 is present; MAX17048 absent makes only SoC missing.
@@ -256,7 +295,7 @@ def test_no_vane_is_absent(self)
 
 **Files:** Create `App/mod_rain.{c,h}`; modify `firmware/stage0-node/App/node_store.lit.md` (regenerate `node_store.{c,h}`), `firmware/test_store.c`, `tests/test_store_powercut.py`; test `tests/test_modules.py`.
 
-**Interfaces:** Port `P_RAIN`, type 7. EXTI5 counts tips with a 100 ms lockout; counter since boot, air width 2. Presence = the stored setting (WSMP-P1).
+**Interfaces:** Port `P_RAIN`, type 7. EXTI5 (*superseded 2026-10-30, N2: EXTI4 on PB4*) counts tips with a 100 ms lockout; counter since boot, air width 2. Presence = the stored setting (WSMP-P1).
 - `node_store`: a new meta record `META_RAIN 0xA1`, kept like the other maxima. `int store_rain_set(int on);` writes the next value whose bit 0 equals `on` (the smallest value above the current maximum with that parity), so the max-only meta log keeps "latest wins". `int store_rain_enabled(void);` returns bit 0 of the maximum. Compaction carries it like the others.
 
 - [ ] **Step 1: Failing tests:** `test_twenty_tips_count_twenty`, `test_bounce_inside_lockout_is_one_tip`, `test_disabled_is_absent`; in `test_store.c` + `tests/test_store_powercut.py`: `test_rain_setting_latest_wins` and `test_rain_setting_survives_torn_append` (Review Focus 5: the power-cut sweep over the append keeps either the old or the new setting, never a third state).
@@ -280,7 +319,7 @@ def test_no_vane_is_absent(self)
 
 **Files:**
 - Create: `firmware/stage0-node/App/wsmp_catalog_map.{c,h}`
-- Modify: `App/app_tx.lit.md` (replace `sensor_start`/`sensor_done`/`th_window` with a 250 ms module tick and the minute latch on the existing fourth-tick phase; encode with the reading's own bitmap and compare with `ws_obs_plain_len`), `App/node_fields.h` (`WS_NODE_FIELDS` = every field of spec section 5), `App/tx_console.c` (`MODULES`, `SENSOR rain on|off`), board init (`Core/Src/gpio.c` and a new `App/board_inputs.c` for PC0 AF1 LPTIM1, PB2 analog, PB5 EXTI with `EXTI9_5_IRQHandler`, PB8/PB10 inputs, PA9 output), `Core/Inc/stm32wlxx_hal_conf.h` (enable ADC and LPTIM), `firmware/stage0-node/Makefile` (`HAL_EXTRA += adc adc_ex lptim`, the new sources, drop `App/sensor.c`), `firmware/host/tx_harness.c` and `tests/test_tx_machine.py` (the SHT45 now through `i2c_sim`)
+- Modify: `App/app_tx.lit.md` (replace `sensor_start`/`sensor_done`/`th_window` with a 250 ms module tick and the minute latch on the existing fourth-tick phase; encode with the reading's own bitmap and compare with `ws_obs_plain_len`), `App/node_fields.h` (`WS_NODE_FIELDS` = every field of spec section 5), `App/tx_console.c` (`MODULES`, `SENSOR rain on|off`), board init (`Core/Src/gpio.c` and a new `App/board_inputs.c` for PC0 AF1 LPTIM1, PB2 analog, PB5 EXTI with `EXTI9_5_IRQHandler` (*superseded pins 2026-10-30, N2: PB5 AF1 LPTIM1 and PB4 EXTI with `EXTI4_IRQHandler`*), PB8/PB10 inputs, PA9 output), `Core/Inc/stm32wlxx_hal_conf.h` (enable ADC and LPTIM), `firmware/stage0-node/Makefile` (`HAL_EXTRA += adc adc_ex lptim`, the new sources, drop `App/sensor.c`), `firmware/host/tx_harness.c` and `tests/test_tx_machine.py` (the SHT45 now through `i2c_sim`)
 - Delete: `App/sensor.lit.md`, `sensor.c`, `sensor.h`, `firmware/host/sensor_harness.c`, `tests/test_sensor_machine.py` (its cases live in `tests/test_i2c_bus.py` and `tests/test_modules.py`)
 - Test: `tests/test_wsmp_map.py`, `tests/test_tx_machine.py`
 
@@ -296,7 +335,7 @@ def test_no_vane_is_absent(self)
 
 **Files:** Create `docs/hardware/bench-station-wiring.md`; modify `firmware/stage0-node/README.md` (pin table, console commands `MODULES` and `SENSOR`), `docs/module-protocol.md` (a status line: station side implemented for local modules), `docs/protocol-design.md` (this build does not send fields 21–24).
 
-- `bench-station-wiring.md` holds: the breadboard and protoboard wiring per spec section 2 (with the resistor and filter values), the power modes and the switching table of spec section 3, the UM2592 checklist (every pin, header position, solder bridge, the CN7.16 power jumpers), and the vane window measurement procedure. Mermaid for the wiring blocks.
+- `bench-station-wiring.md` holds: the breadboard and protoboard wiring per spec section 2 (with the resistor and filter values), the power modes and the switching table of spec section 3, the UM2592 checklist (every pin, header position, solder bridge, the CN7.16 power jumpers; *amended 2026-10-30, record N3: the mode-B entry at steps 1 and 2 is CN6.4, the same 3V3 net*), and the vane window measurement procedure. Mermaid for the wiring blocks.
 
 - [ ] **Step 1:** Write the docs. **Step 2:** validate the Mermaid blocks with Mermaid 11.4.1 (the version `tools/tangle.py` loads; a Node + jsdom check) → `0 failed`; the STE checks (sentences ≤ 25 words, no prose semicolons). **Step 3: Commit** — `git commit -m "Docs: bench station wiring, power modes, console commands"`.
 

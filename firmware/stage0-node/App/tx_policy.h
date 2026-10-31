@@ -5,13 +5,15 @@
 /* The node's transmission policy state (docs/radio-energy-policy.md); the decisions themselves
  * are pure functions in firmware/common/ws_policy.c. */
 
-/* Energy state (WS_ENERGY_*): the bench prototype is USB powered, so it is fixed at NORMAL. The
-   battery and solar build will feed pack/charger/solar telemetry in here. Unknown energy must map
-   to CONSERVE (fail closed). */
+/* Energy state (WS_ENERGY_*): fixed at NORMAL. The node measures its battery and charger (power
+   telemetry design), but the thresholds are deferred to the energy-policy work (design 9.9, open
+   decision D1: measured loads and the pack reserve); that work feeds the pack, charger and solar
+   telemetry in here. Unknown energy must map to CONSERVE (fail closed). */
 int energy_state(void);
-void policy_init(void);   /* at boot: the airtime estimate of one answered exchange */
+void policy_init(void);   /* at boot: the airtime of one answered exchange and of a health report */
 /* What this minute may send: -1 nothing (the reading stays journaled), else how many backlog
-   frames may follow the live reading. A minute that may send counts as the last send. */
+   frames may follow the live reading. A minute whose health report follows the exchange reserves
+   its airtime first (design 6.4). A minute that may send counts as the last send. */
 int policy_minute_backlog(void);
 /* End of a minute's exchange: strikes for the unanswered records (only if the gateway answered
    something, replied[i] for queue[i]) and the link state. */

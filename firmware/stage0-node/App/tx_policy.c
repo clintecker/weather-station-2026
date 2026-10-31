@@ -17,14 +17,20 @@ _Static_assert(WS_BACKLOG_MAX <= MAX_QUEUE - 1U, "the send queue holds the live 
 #define STRIKE_LIMIT  10U
 #define STRIKE_SLOTS  6
 #define DIAG_PERIOD_S 900U
+#define MINUTE_S      60U
+_Static_assert(DIAG_PERIOD_S > MINUTE_S, "a health report period longer than a minute");
 
 static ws_link link;
 static uint32_t last_send_s;   /* the last minute that sent: the CONSERVE interval and the probe schedule count from it */
 static uint32_t exchange_ms;   /* estimated radio time of one answered exchange */
+static uint32_t diag_ms;       /* the health report's airtime: reserved in a minute whose report follows */
 static ws_strike strikes[STRIKE_SLOTS];
 static int diag_due = 1;       /* a health report right after boot */
 static uint32_t last_diag_s;
 
+/* NORMAL until the energy-policy work sets the thresholds (power telemetry design 9.9, open decision
+   D1): they need measured loads and the owner's call on the pack reserve, although the node now
+   measures its battery. */
 int energy_state(void) { return WS_ENERGY_NORMAL; }
 int policy_probing(void) { return link.probing; }
 uint32_t policy_silent_minutes(void) { return link.silent; }
@@ -36,12 +42,20 @@ void policy_init(void)
   uint32_t bw = bw_hz[WS_LORA_BANDWIDTH];
   exchange_ms = ws_lora_airtime_ms(OBS_FRAME_MAX, WS_LORA_SF, bw, WS_LORA_PREAMBLE, WS_LORA_CR) +
                 ws_lora_airtime_ms(WS_ACK_FRAME_LEN, WS_LORA_SF, bw, WS_LORA_PREAMBLE, WS_LORA_CR) + TURNAROUND_MS;
+  diag_ms = ws_lora_airtime_ms(WS_DIAG_FRAME_LEN, WS_LORA_SF, bw, WS_LORA_PREAMBLE, WS_LORA_CR);
 }
+
+/* Will a health report follow this minute's exchange? Due now, or due before the next minute
+   starts: last_diag_s is stamped after an exchange, so 15 minutes later the minute starts a few
+   seconds before the report falls due, and the report goes at that exchange's end
+   (finish_exchange, tx_exchange.c). A link-state change decides at the exchange's end: no reserve. */
+static int diag_follows(uint32_t now_s) { return diag_due || now_s - last_diag_s > DIAG_PERIOD_S - MINUTE_S; }
 
 int policy_minute_backlog(void)
 {
   uint32_t now = clock_s();
-  int backlog = ws_minute_backlog(energy_state(), &link, now, last_send_s, exchange_ms, MAX_QUEUE - 1U);
+  uint32_t reserve_ms = diag_follows(now) ? diag_ms : 0U;   /* power telemetry design 6.4 */
+  int backlog = ws_minute_backlog(energy_state(), &link, now, last_send_s, exchange_ms, reserve_ms, MAX_QUEUE - 1U);
   if (backlog >= 0) last_send_s = now;
   return backlog;
 }

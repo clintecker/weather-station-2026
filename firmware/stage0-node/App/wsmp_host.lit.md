@@ -21,11 +21,11 @@ python3 tools/tangle.py --check firmware/stage0-node/App/wsmp_host.lit.md    # c
 | WSMP-P2, debounce | two good probes in a row admit. Three latches without a good read remove | `test_two_probes_then_admitted_at_next_latch`, `test_three_missed_latches_then_absent`, `test_a_good_read_ends_suspect` |
 | WSMP-P3, bus faults | a bus fault makes the quality "missing" and keeps the port in the layout | `test_bus_fault_keeps_layout` |
 | WSMP-P4, at the latch | a newly admitted module joins at the next latch | `test_two_probes_then_admitted_at_next_latch` |
-| WSMP-P5, budget | the minute-class modules must fit the radio budget. A module that does not fit is refused | `test_admission_refuses_over_budget`, `test_the_health_class_does_not_count_in_the_budget` |
+| WSMP-P5, budget | the minute-class modules must fit the radio budget (60 B). A module that does not fit is refused | `test_admission_refuses_over_budget`, `test_the_whole_station_fits_the_budget`, `test_no_module_is_health_class` |
 | WSMP-P6, flaps | more than 4 joins and leaves in an hour quarantine the port for an hour | `test_flap_limit_quarantines_for_an_hour` |
 | WSMP-D7, I1 | a bad identity, a descriptor digest that does not match, or bad descriptors quarantine the module | `test_bad_descriptor_quarantines`, `test_a_descriptor_digest_that_does_not_match_quarantines` |
 | Admission check | `wsmp_host_admit` changes no port state | `test_admit_is_a_check_that_changes_no_port` |
-| Console line | `#modules` lists the state of every port, and the verdict of a port refused as a duplicate or quarantined for a type conflict | `test_modules_line_lists_every_port`, `test_a_type_conflict_is_quarantined_until_the_module_is_removed` |
+| Console line | `#modules` lists the state of every port, and the verdict of a port refused as a duplicate or quarantined for a type conflict. Its longest text, every port with the longest name and the I2C port modules with both counts at 255, is 268 characters for the 8 ports: `WSMP_MODULES_LINE_MAX` (272) holds it and its NUL, and a `_Static_assert` on `LINE_WORST` stops a build where it would not | `test_modules_line_lists_every_port`, `test_the_longest_modules_line_fits`, `test_a_type_conflict_is_quarantined_until_the_module_is_removed` |
 | Descriptor set (WSMP section 11.1) | `wsmp_host_set` builds the set of the layout: every port that is Admitted, Active or Suspect, in increasing port order, with the identity entry of the ports design (section 6.7): the identity block's serial and `id_flags`, and the applied record's CRC (0 unless the record is applied). The generation is the caller's (WSMP-E1 to E3 come with the journal and radio work). `MODULES` prints one `#ident` line for each module of the set, and `#ident dropped=N` for modules left out (a bug) | `test_the_set_carries_each_modules_identity`, `test_a_cal_rejected_record_has_crc_0`, `test_a_suspect_module_stays_in_the_set`, `test_a_module_whose_blocks_do_not_unpack_is_counted`, `test_a_changed_record_crc_changes_the_set`, `test_the_ident_lines_follow_the_set` |
 | Identification (ports design, section 6.7) | an I2C port module is identified across steps (App/port_id.c): the record read (3 tries, a CRC failure read once more), the sensor serial (3 tries), then the verdict order of `wsmp_identify`. A sensor serial that fails its 3 tries is no verdict: the port stays Identifying, counts it (`#modules`: `(incomplete=N)`) and identifies again at its next probe. Its identity block carries the verdict's serial, identity flags and capabilities, and the boot ID (station epoch << 8 \| the port's admission count); its driver is bound with the applied record's calibration | `Identity` in `tests/test_wsmp_host.py` |
 | Duplicates | the holder check (App/port_id.c) ends a gone holder at once and admits the newcomer; a present holder refuses it (`DUP_SERIAL`, `DUP_TYPE`). A refusal is re-evaluated at every latch, after all ports' latches, in port order | `test_a_moved_module_ends_its_gone_holder_at_once`, `test_a_present_holder_refuses_the_newcomer`, `test_a_duplicate_serial_at_boot_the_lower_port_wins_until_it_leaves` |
@@ -70,8 +70,11 @@ stateDiagram-v2
 
 A join that quarantines the port goes from Admitted through Active to Quarantined in one latch.
 That latch does not latch the port.
-For an on-board module (power, enclosure, wind, rain) Identifying (WSMP section 7) happens inside
-one step: its blocks are at hand, so the second good probe identifies and decides at once. An I2C
+For an on-board module (battery, rails, enclosure, wind, rain) Identifying (WSMP section 7) happens
+inside one step: its blocks are at hand, so the second good probe identifies and decides at once. The
+battery (port 5) and rails (port 8) modules are base-board modules fixed by `WS_POWER_PROFILE`: their
+probe always reports present, so they join the layout at boot and never leave it, whatever their parts
+answer (`docs/superpowers/specs/2026-10-29-power-telemetry-design.md` section 8.5). An I2C
 port module (ports 1-3 of the static channel map) is identified across steps, section 4 below.
 
 ```c {#constants}
@@ -149,7 +152,26 @@ void wsmp_host_init(void)
 descriptors against the registry (WSMP-D7). It changes no port. `identify` writes the module's share
 of the budget only when the module is admitted. A minute-class module's bytes are then added to the
 bytes of the minute-class modules that are admitted or in the layout. The total must fit the radio
-budget (WSMP-A1). The health-class battery module goes in the health report, so it does not count.
+budget (WSMP-A1), `WSMP_RADIO_BUDGET` = 60 B: the planned plaintext (80 B) less a 20-byte header.
+
+No module type is health class (power telemetry design section 8.2). The slow power values (SOC, its
+rate, the charger status, die temperatures, VDDA, the charger-reported measurements) reach the health
+report through `mod_power_health()`, not through WSMP channels, so nothing here checks a health-class
+module against the health report. The `report_class` test below stays for a later health-class type.
+The whole station is at the WSMP-P8 limits: 8 modules and 24 minute channels, whose 53 value bytes and
+6 quality bytes (59 B) fit the 60 B budget.
+
+| Module (port) | Channels | Value bytes |
+|---|---:|---:|
+| air temperature and humidity (1) | 2 | 4 |
+| pressure (2) | 1 | 2 |
+| UVA (3) | 1 | 3 |
+| enclosure temperature and humidity (4) | 2 | 4 |
+| battery (5) | 6 | 16 |
+| wind (6) | 4 | 8 |
+| rain (7) | 1 | 2 |
+| power rails (8) | 7 | 14 |
+| **total** | **24** | **53** + 6 quality = 59 |
 
 ```c {#admit}
 static int in_layout(const port_t *s)
@@ -659,12 +681,27 @@ static unsigned append(char *buf, unsigned len, unsigned n, const char *text)
   return n;
 }
 
-/* A port's state, or the verdict behind a refusal or a quarantine (section 6.7: console only in v1). */
+/* The #modules line's longest text (WSMP_MODULES_LINE_MAX, wsmp_host.h): the head and every port's
+   label, every port with the longest state or verdict name (NAME_LONGEST), and the I2C port modules
+   (port_id_is_port: ports P_AIR_TH to P_UVA) with both counts at their limit, COUNT_MAX. */
+#define LINE_HEAD "#modules"
+#define NAME_LONGEST "type_conflict"
+#define COUNT_LONGEST "(incomplete=255)"   /* "(unverified=255)" is as long */
+static const char *const line_label[P_COUNT] = { "", " air_th=", " pressure=", " uva=", " encl_th=", " battery=",
+                                                 " wind=", " rain=", " rails=" };   /* LINE_WORST sums them */
+#define LINE_WORST (sizeof LINE_HEAD - 1U + sizeof(" air_th=" " pressure=" " uva=" " encl_th=" " battery=" \
+                    " wind=" " rain=" " rails=") - 1U + (P_COUNT - 1U) * (sizeof NAME_LONGEST - 1U) \
+                    + (P_UVA - P_AIR_TH + 1U) * 2U * (sizeof COUNT_LONGEST - 1U))
+_Static_assert(COUNT_MAX == 255U, "COUNT_LONGEST holds the counters' limit");
+_Static_assert(LINE_WORST < WSMP_MODULES_LINE_MAX, "the longest #modules line and its terminator fit");
+
+/* A port's state, or the verdict behind a refusal or a quarantine (section 6.7: console only in v1).
+   No name is longer than NAME_LONGEST (test_the_longest_modules_line_fits). */
 static const char *state_name(const port_t *s)
 {
   static const char *const state[] = { "absent", "probing", "identifying", "admitted", "active", "suspect",
                                        "quarantined", "refused" };
-  static const char *const verdict[] = { "", "type_conflict", "dup_serial", "dup_type" };
+  static const char *const verdict[] = { "", NAME_LONGEST, "dup_serial", "dup_type" };
   int by_verdict = (s->state == WH_REFUSED || s->state == WH_QUARANTINED) && s->reason != WSMP_V_ADMIT;
   return by_verdict ? verdict[s->reason] : state[s->state];
 }
@@ -685,18 +722,33 @@ static unsigned append_count(char *buf, unsigned len, unsigned n, const char hea
 
 unsigned wsmp_host_modules_line(char *buf, unsigned len)
 {
-  static const char *const name[P_COUNT] = { "", " air_th=", " pressure=", " uva=", " encl_th=", " power=", " wind=", " rain=" };
   if (len == 0) return 0;
-  unsigned n = append(buf, len, 0, "#modules");
+  unsigned n = append(buf, len, 0, LINE_HEAD);
   for (unsigned q = P_AIR_TH; q < P_COUNT; q++)
   {
     const port_t *s = &ports[q];
-    n = append(buf, len, append(buf, len, n, name[q]), state_name(s));
+    n = append(buf, len, append(buf, len, n, line_label[q]), state_name(s));
     if (s->incomplete) n = append_count(buf, len, n, "(incomplete=", s->incomplete);
     if (s->unverified >= UNVERIFIED_SHOWN) n = append_count(buf, len, n, "(unverified=", s->unverified);
   }
   return n;
 }
+
+#ifdef WSMP_HOST
+/* Test only (a host build, -DWSMP_HOST): every port quarantined for a type conflict, the longest name,
+   and the I2C port modules, the only ports that count, with both counts at their limit: the line of
+   LINE_WORST, for test_the_longest_modules_line_fits. */
+void wsmp_host_worst_line(void)
+{
+  for (unsigned q = P_AIR_TH; q < P_COUNT; q++)
+  {
+    ports[q].state = WH_QUARANTINED;
+    ports[q].reason = WSMP_V_TYPE_CONFLICT;
+    ports[q].incomplete = port_id_is_port((enum wsmp_port)q) ? COUNT_MAX : 0U;
+    ports[q].unverified = port_id_is_port((enum wsmp_port)q) ? COUNT_MAX : 0U;
+  }
+}
+#endif
 ```
 
 ## 7. The descriptor set
@@ -748,7 +800,7 @@ unsigned wsmp_host_set(wsmp_set *set, unsigned *dropped)
 
 `MODULES` prints one line for module `i` of the set:
 `#ident port=1 type=1 serial=0123456789abcdef source=record status=applied crc=deadbeef`. A module
-that never has a record (source `port` with status 0: the meters and the power module) shows
+that never has a record (source `port` with status 0: the meters and the battery and rails modules) shows
 `status=none`. The
 gateway's names for the source and the status are the same (`ws0/wsmp_set.py`).
 
@@ -786,7 +838,7 @@ unsigned wsmp_host_ident_line(const wsmp_set *set, unsigned i, char *buf, unsign
   if (i >= set->count || i >= WSMP_SET_MODULES_MAX) return 0;
   const wsmp_set_module *m = &set->m[i];
   unsigned st = (unsigned)(m->id_flags >> 4);
-  /* a module that never has a record (source port, status 0: the meters, power) shows "none" */
+  /* a module that never has a record (source port, status 0: the meters, battery, rails) shows "none" */
   const char *status_text = (m->id_flags & 0x03U) == WSMP_SRC_PORT && st == WSMP_REC_APPLIED ? "none"
                             : st < sizeof status / sizeof status[0] ? status[st] : "?";
   unsigned n = append_dec(buf, len, append(buf, len, 0, "#ident port="), m->port);

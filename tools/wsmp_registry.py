@@ -7,8 +7,9 @@
 
 The source is firmware/common/wsmp_registry.toml. Codes are append-only (WSMP-G1): the lock file
 names every code once given, and pins its meaning: each quantity's unit, and each module type's
-channels for each schema. A code that disappears, changes its name or unit, or changes the channels
-of a schema it already has stops the build. A new schema may bring new channels.
+channels, report class, role and state names for each schema. A code that disappears, changes its name
+or unit, or changes the channels, report class, role or states of a schema it already has stops the
+build. A new schema may bring new channels and new metadata.
 """
 import argparse
 import pprint
@@ -22,7 +23,8 @@ HEADER = ROOT / 'firmware' / 'common' / 'wsmp_registry.h'
 PYTHON = ROOT / 'ws0' / 'wsmp_registry.py'
 LOCK = ROOT / 'tools' / 'wsmp_registry.lock'
 TABLES = ('quantity', 'unit', 'kind', 'module_type')
-MEANING = ('quantity_unit', 'type_schema')   # lock-only tables: what a code means, beside its name
+MEANING = ('quantity_unit', 'type_schema', 'type_meta')   # lock-only tables: what a code means, beside its name
+PER_SCHEMA = ('type_schema', 'type_meta')                  # keyed by '<type>.<schema>'
 UNIT_CODE_MAX = 255                          # wsmp_unit_of and the descriptor's unit are one byte
 PREFIX = {'quantity': 'Q', 'unit': 'U', 'kind': 'K', 'module_type': 'T'}
 REPORT_CLASSES = ('minute', 'health')
@@ -46,7 +48,7 @@ def lock_entries():
         for line in LOCK.read_text().splitlines():
             if line.strip() and not line.startswith('#'):
                 table, code, name = line.split(None, 2)
-                entries[(table, code if table == 'type_schema' else int(code))] = name
+                entries[(table, code if table in PER_SCHEMA else int(code))] = name
     return entries
 
 
@@ -54,11 +56,18 @@ def channels_text(row):
     return ' '.join(f'{q}/{k}' for q, k in row['channels'])
 
 
+def meta_text(row):
+    """The type_meta value: '<report class> <role>', then '[<state> ...]' when the type has states."""
+    states = row.get('states', [])
+    return f'{row["report_class"]} {row["role"]}' + (f' [{" ".join(states)}]' if states else '')
+
+
 def current(reg):
     """Every lock entry the registry gives now: the names, then the meanings."""
     now = {(table, row['code']): row['name'] for table in TABLES for row in reg[table]}
     now.update({('quantity_unit', row['code']): str(row['unit']) for row in reg['quantity']})
     now.update({('type_schema', f'{row["code"]}.{row["schema"]}'): channels_text(row) for row in reg['module_type']})
+    now.update({('type_meta', f'{row["code"]}.{row["schema"]}'): meta_text(row) for row in reg['module_type']})
     return now
 
 
@@ -71,17 +80,19 @@ def lock_text(reg, old):
     entries = dict(old)
     for key, value in current(reg).items():
         entries.setdefault(key, value)
-    lines = ['# WSMP codes once given (WSMP-G1, append-only), with their meaning: quantity_unit <quantity> <unit>',
-             '# and type_schema <type>.<schema> <quantity>/<kind> per channel. tools/wsmp_registry.py adds new ones.']
+    lines = ['# WSMP codes once given (WSMP-G1, append-only), with their meaning: quantity_unit <quantity> <unit>,',
+             '# type_schema <type>.<schema> <quantity>/<kind> per channel, and',
+             '# type_meta <type>.<schema> <report class> <role> [<state> ...]. tools/wsmp_registry.py adds new ones.']
     lines += [f'{t} {c} {n}' for (t, c), n in sorted(entries.items(), key=lock_order)]
     return '\n'.join(lines) + '\n'
 
 
 def lock_violations(reg, old):
-    """Locked entries the registry broke. A type's old schema may be gone: a new one replaced it."""
+    """Locked entries the registry broke. A type's old schema may be gone (its channels and metadata with
+    it): a new one replaced it. A removed type is caught by its module_type line."""
     now = current(reg)
     return [f'{t} {c} "{n}" was removed or changed (codes are append-only, WSMP-G1)'
-            for (t, c), n in old.items() if now.get((t, c), None if t != 'type_schema' else n) != n]
+            for (t, c), n in old.items() if now.get((t, c), None if t not in PER_SCHEMA else n) != n]
 
 
 def calibration(reg):
@@ -185,12 +196,22 @@ def check_codes(reg):
             sys.exit(f'wsmp_registry: quantity {row["code"]} names an unknown unit {row["unit"]}')
 
 
+def meta_ok(row):
+    """The role and state names fit a type_meta lock line: a role with no bracket, one-word states."""
+    states = row.get('states', [])
+    role_ok = bool(row['role'].strip()) and not any(c in row['role'] for c in '[]\n')
+    return role_ok and all(s and not any(c in s for c in '[] \n') for s in states)
+
+
 def check_channels(reg):
     quantities = {row['code'] for row in reg['quantity']}
     kinds = {row['code'] for row in reg['kind']}
     for row in reg['module_type']:
         if not 1 <= len(row['channels']) <= MAX_CHANNELS or row['report_class'] not in REPORT_CLASSES:
             sys.exit(f'wsmp_registry: module type {row["code"]}: 1-{MAX_CHANNELS} channels and a known report class')
+        if not meta_ok(row):
+            sys.exit(f'wsmp_registry: module type {row["code"]}: a role and one-word state names, no brackets '
+                     '(the lock records them on one line)')
         for quantity, kind in row['channels']:
             if quantity not in quantities or kind not in kinds:
                 sys.exit(f'wsmp_registry: module type {row["code"]} names an unknown quantity or kind')

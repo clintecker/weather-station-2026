@@ -122,6 +122,34 @@ Until step 6, TX is not provisioned: the old journal data on the provisioning pa
 a provisioning record. So TX sends nothing from the old layout. If step 4 is skipped, PROVISION
 refuses with `#error journal-not-empty (WIPE first)` while old records are pending.
 
+## Changing the protocol version or the journal slot
+
+A release that changes a format (the protocol version, the observation catalog, the health report
+or the journal slot size; for example protocol version 5 to 6) needs more than a layout change.
+Version 6 is such a release: its node field set is 77 bytes of plaintext, so the journal slot grows
+from 80 B to 96 B (power telemetry design section 7). The slot size is part of the journal page
+magic, so the first boot of the new image finds no page of its own format and **recycles every old
+journal page**: any record still pending is gone. The TX and RX roles share `WS_FRAME_VERSION`, so a
+board left on the old version drops every frame of the new one, and a gateway of the old release
+refuses the new records (`RECORD_VERSION` in `gateway.py`).
+
+The procedure is the power telemetry design's section 4 release procedure, written out as steps
+a to g of "When the release changes a format" in `firmware/stage0-node/RELEASES.md`. In short:
+
+0. **Drain first.** Keep the old gateway running on the old release until the TX console shows
+   `pending=0` (`STATUS` or `#counts`). Do not move, re-key or reflash a TX that still has pending
+   records: the WIPE and the new page magic both discard them for good.
+1. Clint sends `WIPE ERASE-ALL-NODE-STATE` on TX.
+2. Flash RX, then TX, **from the same release**.
+3. `init` a new run directory (a new key). The old directory and its database stay with the old
+   release; there is no migration. Never reuse the live run directory or an evidence directory.
+4. `provision-node` with the new key; start the gateway of the same release on the new directory.
+5. Record the release (protocol version, field set, power phase and rails, I2C profile, old and new
+   run directories, one-time actions such as Home Assistant entities to remove).
+
+A move between gateways that also crosses a format change does both: drain on the old gateway,
+then follow this section on the new one.
+
 ## Checks after any move
 
 - `STATUS` on TX shows `provisioned=1` and the expected `kcv`.
@@ -129,6 +157,14 @@ refuses with `#error journal-not-empty (WIPE first)` while old records are pendi
   `.venv/bin/python tools/status.py --directory <dir>`.
   `accepted_this_process` rises, and `rejected_this_process` stays 0.
 - TX shows a green LED after each blue flash (ACK received).
+- **The versions match.** The TX and RX `#boot` lines show the same `fw=` release, and TX shows
+  `kat=pass` (the known-answer vectors carry the protocol version byte, so a TX built for another
+  version fails `kat=` and does not transmit). The gateway is the same release: its records carry
+  `version` equal to `RECORD_VERSION` (`gateway.py`), visible in `/v1/observations/latest`. Frames of
+  another version show up in `tools/rx_faults.py` as "ours (previous version)", never as stored
+  readings.
+- After a format change, the first health report arrives within 15 minutes and is 64 bytes
+  (version 6): `/v1/status` `node_diagnostics` carries `boots_since_power_up` and the power keys.
 
 ## Bench notes
 
@@ -137,3 +173,13 @@ refuses with `#error journal-not-empty (WIPE first)` while old records are pendi
   runs, do not touch them.
 - Port names (`/dev/cu.usbmodem…`) follow the USB socket, not the board. Always identify a board
   by its ST-LINK serial number.
+- **USB topology** (build-progression record H8, 7.1 Q5). On 2026-10-28/29 both NUCLEOs shared one
+  hub, and unplugging one stalled the other's serial port on the Mac: open but silent (record F6).
+  - The RX gateway NUCLEO goes alone on a direct Mac port. Never unplug or replug it during a run.
+  - The TX and any other bench board go on another port or hub. Replug them only there, at the
+    board end.
+  - Label each USB cable with its board's ST-LINK serial number.
+  - Acceptance (H8(d)): log both boards, unplug and replug the TX 5 times, and find no gap in the
+    RX log. Use a powered hub only if this test fails.
+  - If the RX port still goes silent, the gateway reopens it after 90 s of silence (doubling to
+    400 s) and logs a `serial-reopen` event; `receiver-silent` at 180 s stays the outer alarm.

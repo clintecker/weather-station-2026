@@ -1,8 +1,9 @@
 """The TX node's event-driven firmware (firmware/stage0-node/App/app_tx.c and the tx_*.c modules, as built) on the host.
 
 firmware/host/tx_harness.c simulates the board: a virtual clock, timers and sequencer with ST's
-semantics, a radio that follows ST's SubGHz_Phy driver, the SHT45, and the flash under the real
-node_store.c. These tests check the exchange state machine (docs/firmware-event-model.md): every
+semantics, a radio that follows ST's SubGHz_Phy driver, the official phase A I2C bus (a STEMMA QT hub,
+-DWS_I2C_MUX=0, with the SHT45 at 0x44, the battery INA228 at 0x40 and the MAX17048 at 0x36), the
+board ADC and charger pins, and the flash under the real node_store.c. These tests check the exchange state machine (docs/firmware-event-model.md): every
 state is left by an event that is certain to come, gaps are timers (no busy-wait), unexpected
 events are counted, flash is never written while the radio is busy, and the link, health-report,
 strike and watchdog policies. Every loop is bounded by simulated time, so a regression fails
@@ -21,8 +22,9 @@ try:                                        # first: sets WS0_UNSAFE_FAST_FSYNC 
 except ImportError:
     from tests.toolchain import MBEDTLS, ROOT, SAN, WSMP_APP, check_site, fresh_copy, host_library, needs_cc, needs_vendor
 from ws0.fields import decode
-from ws0.protocol import (KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, frame_counter, frame_kind, pack_reply, seal,
-                          unseal)
+from ws0.fields import ENERGY
+from ws0.protocol import (CHARGER_NONE, I16_NONE, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, RESET_CAUSES, U16_NONE,
+                          diag_problems, frame_counter, frame_kind, pack_reply, seal, unpack_diag, unseal)
 
 STATION = 7
 KEY = bytes(range(16, 32))
@@ -31,7 +33,7 @@ SOURCES = ['host/tx_harness.c', 'host/sim_core.c', 'host/i2c_sim.c', 'host/i2c_m
            *(f'stage0-node/App/{name}.c' for name in ('app_tx', 'tx_exchange', 'tx_policy', 'tx_time', 'tx_console', 'selftest',
                                                       'node_store', 'clock', 'events', 'bench', 'wsmp_host',
                                                       'wsmp_catalog_map', *WSMP_APP)),
-           *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy', 'ws_check', 'wsmp', 'wsmp_cal', 'wsmp_ident'))]
+           *(f'common/{name}.c' for name in ('ws_console', 'ws_frame', 'ws_obs', 'ws_policy', 'ws_check', 'wsmp', 'wsmp_cal', 'wsmp_ident', 'power_regs'))]
 ASAN_ENV = 'WS_TX_ASAN'   # set by TxUnderAddressSanitizer for its child run
 
 # What the firmware must do (docs/firmware-event-model.md, docs/radio-energy-policy.md, and the
@@ -50,7 +52,13 @@ REBOOT_DELAY_MS = 200
 TX_FAIL_LIMIT = 10          # transmit failures in a row the watchdog tolerates
 STRIKE_LIMIT = 10
 LINK_K_SILENT = 3
-NORMAL_BACKLOG = 5          # backlog frames per minute at NORMAL energy (the bench prototype is USB powered)
+# Backlog frames per minute at NORMAL energy (the energy state stays NORMAL until the energy-policy
+# work, power telemetry design 9.9). Re-derived for the widest version-6 frame (design 5.4, 6.4) at the
+# harness's SF7 / 500 kHz: one answered exchange is the 93-byte observation (42 ms; formula 41.0) +
+# the 33-byte ACK (18 ms) + 300 ms turnaround = 360 ms, so the 5 s cap allows 5000 // 360 = 13
+# exchanges, and (5000 - 36) // 360 = 13 with the 80-byte health report's 36 ms reserved. NORMAL's own
+# limit of 5 binds in every minute.
+NORMAL_BACKLOG = 5
 DIAG_PERIOD_MS = 900_000
 EVENTS = ['tx-done', 'tx-timeout', 'rx-done', 'rx-timeout', 'rx-error', 'gap', 'ack-end']
 # The radio in each exchange state (a gap after a refused first Send still has the radio asleep).
@@ -88,7 +96,7 @@ class Replies:
 
 class Node:
     """One fresh boot of the firmware: its own copy of the library, so every static starts at zero."""
-    def __init__(self, library, owner, provision=True, seed=0):
+    def __init__(self, library, owner, provision=True, seed=0, before_boot=None):
         self.lib = fresh_copy(owner, library)
         self.lib.h_output.restype = ctypes.c_char_p
         for name in ('h_now', 'h_send_at', 'h_last_rx_timeout', 'h_flash_ops_during_radio', 'h_flash_erases',
@@ -105,6 +113,8 @@ class Node:
             raise RuntimeError('tx_harness: seeding the simulated journal failed')
         if provision and self.lib.h_provision(STATION, key) != 0:
             raise RuntimeError('tx_harness: provisioning the simulated flash failed')
+        if before_boot:
+            before_boot(self.lib)           # the backup registers, reset cause and parts a test chooses
         self.lib.h_boot()
 
     def out(self):
@@ -153,6 +163,13 @@ class Node:
             raise AssertionError(f'the last frame is kind {frame_kind(frame)}, not an observation')
         head, _ = decode(unseal(KEY, STATION, KIND_OBS, frame))
         return frame, head
+
+    def health_report(self):
+        """The last frame, a health report, opened as the gateway opens it: raw values by C member name."""
+        frame = self.frame()
+        if frame_kind(frame) != KIND_DIAG:
+            raise AssertionError(f'the last frame is kind {frame_kind(frame)}, not a health report')
+        return unpack_diag(unseal(KEY, STATION, KIND_DIAG, frame))
 
     def reply_packet(self, kind=KIND_ACK, utc=1_792_000_000, echo=None, seq=None):
         """The gateway's authentic reply to the frame just sent (or, with echo/seq, to another one)."""
@@ -218,12 +235,12 @@ class TxStateMachine(unittest.TestCase):
         lib = host_library(cls, 'txmachine', *san, '-I', fw/'host/include', '-I', fw/'host', '-I', fw/'stage0-node/App',
                            '-I', fw/'stage0-node/Core/Inc', '-I', fw, '-I', fw/'common', '-I', MBEDTLS/'include',
                            '-DMBEDTLS_CONFIG_FILE="ws_mbedtls_config.h"', '-DWS_FW_VERSION="host"',
-                           '-DWS_FW_BUILD_ID=0UL', *[fw/s for s in SOURCES], *mbed)
+                           '-DWS_FW_BUILD_ID=0UL', '-DWS_I2C_MUX=0', *[fw/s for s in SOURCES], *mbed)
         cls.library = lib._name
 
-    def node(self, storm=False, provision=True, seed=0):
+    def node(self, storm=False, provision=True, seed=0, before_boot=None):
         """A fresh node, with the invariants every test must keep checked at its end."""
-        node = Node(self.library, type(self), provision, seed)
+        node = Node(self.library, type(self), provision, seed, before_boot)
         self.addCleanup(lambda: self.assertEqual(node.lib.h_flash_ops_during_radio(), 0, 'flash written while the radio was busy'))
         self.addCleanup(lambda: self.assertEqual(node.lib.h_timer_start_refused(), 0, 'a running timer was started again (ST ignores that)'))
         self.addCleanup(lambda: self.assertEqual(node.lib.h_unmasked_radio_calls(), 0, 'a radio command without the radio interrupt masked'))
@@ -551,7 +568,8 @@ class TxStateMachine(unittest.TestCase):
         n.out()
         n.lib.h_line(b'KAT')
         self.assertEqual(n.out(), '#kat pass\n')
-        for line in (b'STATUS ', b'status', b'KAT2', b'PROVISION', b'WIPE', b'TEST-FLASH-STORMS', b'TEST-HANGS', b''):
+        for line in (b'STATUS ', b'status', b'KAT2', b'PROVISION', b'WIPE', b'TEST-FLASH-STORMS', b'TEST-HANGS',
+                     b'TEST-SENSOR-POWER 1', b''):
             n.lib.h_line(line)
             self.assertEqual(n.out(), '#error unknown command\n', line)
         n.lib.h_line(b'PROVISION 9 ' + b'00' * 16)     # arguments follow the name's space
@@ -581,12 +599,16 @@ class TxStateMachine(unittest.TestCase):
         n.out()
         n.lib.h_line(b'MODULES')
         out = n.out().splitlines()
+        # the battery and rails modules are present in every power profile (power telemetry design 8.5)
         self.assertEqual(out[0], '#modules air_th=admitted pressure=absent uva=absent encl_th=absent '
-                                 'power=absent wind=absent rain=absent')
-        # the descriptor set's identity entry (WSMP section 11.1): no EEPROM on this bench model, so
-        # the SHT45's own serial (source sensor) and NO_RECORD reason READ, no record CRC
-        self.assertEqual(len(out), 2)
+                                 'battery=admitted wind=absent rain=absent rails=admitted')
+        # the descriptor set's identity entries (WSMP section 11.1): no EEPROM on the hub, so the SHT45's
+        # own serial (source sensor) and NO_RECORD reason READ, no record CRC; the two base-board power
+        # modules (ports 5 and 8, types 8 and 9) are the firmware's own, with no record
+        self.assertEqual(len(out), 4)
         self.assertRegex(out[1], r'^#ident port=1 type=1 serial=02[0-9a-f]{14} source=sensor status=READ crc=00000000$')
+        self.assertRegex(out[2], r'^#ident port=5 type=8 serial=[0-9a-f]{16} source=port status=none crc=00000000$')
+        self.assertRegex(out[3], r'^#ident port=8 type=9 serial=[0-9a-f]{16} source=port status=none crc=00000000$')
 
     def test_sensor_rain_command_is_stored_and_waits_for_the_radio(self):
         n = self.node()
@@ -633,6 +655,100 @@ class TxStateMachine(unittest.TestCase):
         self.assertEqual((n.sent(), n.lib.h_sht45_writes()), (frames, starts))
         self.assertNotIn('#sample ', n.out())
         self.assertEqual(n.lib.h_healthy(), 1)         # sampling stopped on purpose: not a fault
+
+    def test_sensor_power_cycles_pa9_from_a_timer_and_ends_high(self):
+        # Build-progression record, step 1 exit criterion 9 (change C): PA9 low for WSMP_SAMPLE_MS + 1 s,
+        # then high as long, 10 times; one #test line per edge, paced by a timer (the command does not
+        # wait), then a summary. A half outlasts the 15 s sample period, so each line's ack and fail
+        # (the parts that answered and failed in the half that ended there, bit c for enum i2c_client c)
+        # are the evidence: in every low half the switched SHT45 NACKs and never answers, in every high
+        # half it answers again, and the INA228 (0x40) and the MAX17048 on the unswitched branch answer
+        # in every half and never fail. A second request during the run is refused; PA9 ends high.
+        half_ms, cycles = 16000, 10
+        SHT45, MONITORS = 1 << 0, 1 << 4 | 1 << 8      # enum i2c_client: SHT45, INA228, MAX17048
+        n = self.node()
+        n.advance(1000)
+        n.out()
+
+        def tests():
+            return [line for line in n.out().splitlines() if line.startswith('#test sensor-power')]
+
+        def masks(line):
+            m = re.search(r' ack=0x([0-9a-f]{3}) fail=0x([0-9a-f]{3})$', line)
+            self.assertIsNotNone(m, line)
+            return int(m.group(1), 16), int(m.group(2), 16)
+
+        def check_half(line, was_high, k):             # the half that ended at this line
+            ack, fail = masks(line)
+            if was_high:
+                self.assertEqual(ack & SHT45, SHT45, k)    # found again (a sample that straddled the edge may fail)
+            else:
+                self.assertEqual((ack & SHT45, fail & SHT45), (0, SHT45), k)   # addressed, and only NACKs
+            self.assertEqual((ack & MONITORS, fail & MONITORS), (MONITORS, 0), k)
+
+        def edge(k):                                   # edge k (0-based): low on even k, high on odd k
+            return rf'^#test sensor-power cycle={k // 2 + 1} pa9={k % 2} recoveries=0 stuck=0 ack=0x[0-9a-f]{{3}} fail=0x[0-9a-f]{{3}}$'
+        n.lib.h_line(b'TEST-SENSOR-POWER')
+        lines = tests()
+        self.assertEqual(len(lines), 1)
+        self.assertRegex(lines[0], edge(0))
+        self.assertEqual(masks(lines[0]), (0, 0))      # the first line's half is empty
+        self.assertEqual(n.lib.h_pa9(), 0)
+        n.lib.h_line(b'TEST-SENSOR-POWER')             # a second request while the run is in progress
+        self.assertEqual(n.out(), '#error busy (sensor-power test in progress); retry\n')
+        for k in range(1, 2 * cycles):
+            n.advance(half_ms - 1)
+            self.assertEqual((tests(), n.lib.h_pa9()), ([], (k - 1) % 2), k)   # each half lasts its 16 s
+            n.advance(1)
+            lines.extend(got := tests())
+            self.assertEqual(len(got), 1, k)
+            self.assertRegex(got[0], edge(k))
+            check_half(got[0], (k - 1) % 2 == 1, k)
+            self.assertEqual(n.lib.h_pa9(), k % 2)
+        n.advance(half_ms)                             # the last high half, then the summary
+        done = tests()
+        self.assertEqual(len(done), 1)
+        self.assertRegex(done[0], rf'^#test sensor-power done cycles={cycles} pa9=1 recoveries=0 stuck=0 ')
+        check_half(done[0], True, 'done')
+        self.assertEqual((len(lines), n.lib.h_pa9()), (2 * cycles, 1))
+        n.advance(MINUTE_MS)                           # nothing more; the SHT45 is found again
+        self.assertEqual((tests(), n.lib.h_pa9()), ([], 1))
+        n.lib.h_line(b'MODULES')
+        self.assertRegex(n.out(), r' air_th=(admitted|active) ')   # admitted, or already latched since
+        n.lib.h_line(b'TEST-SENSOR-POWER')             # a finished run allows a new one
+        self.assertRegex(tests()[0], edge(0))
+
+    def test_the_status_line_carries_meter_link(self):
+        # Build-progression record M7 (dated note 2026-10-30): the counter link verdict is the new key
+        # meter_link=, the worst of the wind and rain verdicts. link= stays the radio link policy, which
+        # ws0 and the provisioning tools read.
+        LINK_CUPS, LINK_RAIN = 0, 1                    # enum board_link (App/board_inputs.h)
+        n = self.node()
+        n.advance(1000)
+        first = n.status()
+        self.assertEqual(first['meter_link'], 'ok')
+        self.assertIn(first['link'], ('probing', 'linked'))
+        lows = n.lib.h_link_low
+        steps = (('cups-suspect', lambda: lows(LINK_CUPS, 3)),                 # three lows, no cup pulse
+                 ('vane-out-of-table', lambda: n.lib.h_vane_mv(3300)),         # an open vane pair: the rail
+                 ('cups-open', lambda: lows(LINK_CUPS, 24 * 4 + 1)),           # 24 h of lows
+                 ('cups-open', lambda: n.lib.h_line(b'SENSOR rain off')),      # no gauge: no rain verdict ...
+                 ('cups-open', lambda: lows(LINK_RAIN, 3)),
+                 ('rain-open', lambda: n.lib.h_line(b'SENSOR rain on')),       # ... and with it, three lows
+                 ('cups-open', lambda: n.lib.h_edge(LINK_RAIN)))              # a tip since the last probe
+        for want, step in steps:
+            with self.subTest(want=want):
+                step()
+                n.advance(2000)                        # the vane is read once a second
+                status = n.status()
+                self.assertEqual(status['meter_link'], want)
+                self.assertEqual(status['link'], first['link'])   # the radio's key is untouched
+        n.lib.h_edge(LINK_CUPS)
+        n.lib.h_vane_mv(-1)
+        self.assertEqual(n.status()['meter_link'], 'vane-out-of-table')   # the last vane reading stands
+        n.lib.h_vane_mv(2031)                          # an in-table reading again (16 kOhm, 225 degrees)
+        n.advance(2000)
+        self.assertEqual(n.status()['meter_link'], 'ok')
 
     # ---- policy: drain, failures, link, health reports, strikes ----
 
@@ -823,6 +939,162 @@ class TxStateMachine(unittest.TestCase):
         self.assertLess(diags[0], minute(1))           # the first right after boot
         for a, b in zip(diags, diags[1:], strict=False):
             self.assertTrue(DIAG_PERIOD_MS - 1000 <= b - a < DIAG_PERIOD_MS + MINUTE_MS, diags)   # whole RTC seconds
+
+    # ---- the health report's contents (power telemetry design sections 6.1-6.3, 9.8) ----
+
+    def first_health_report(self, n, rssi=-40, snr=10):
+        """Answer minute 0's live frame; the health report follows after its gap. Returns it decoded,
+        after checking that it is canonical (the node never sends anything else)."""
+        self.window(n)
+        n.rx(n.reply_packet(), rssi, snr)
+        n.advance(GAP_MS + 1)
+        self.assertEqual((n.radio(), n.sends()[-1][1]), (R_TX, KIND_DIAG))
+        d = n.health_report()
+        self.assertEqual(diag_problems(d), ())
+        return d
+
+    def test_the_health_report_carries_every_field_from_cached_values(self):
+        """Phase A with input power absent (PGOOD and CHG deasserted): every one of the 64 bytes, decoded
+        with ws0.protocol.unseal and unpack_diag. The expectations come from the design, not the code:
+        VDDA is the VREFINT result; the hottest (here the only) INA228 die in 0.1 C; the gauge SOC as
+        read (1/256 %) and its rate (0.208 %/h a CRATE count, in 0.1 %/h); charger status 0 (no power
+        good, not charging, no fault, stage and input not reported); no charger-reported values except
+        the charge current, which is 0 mA while PGOOD is deasserted; the fitted byte 0x2F (VDDA, the
+        INA228 die, the gauge, the CHG/PGOOD pins and ISET: phase A, design section 6.1)."""
+        crash_pc = 0x0800_1235
+
+        def board(lib):
+            lib.h_fault_count(2)
+            lib.h_fault_pc(ctypes.c_uint32(crash_pc))
+            lib.h_power_adc(2000, 1500, 1500, 3297)   # ISET, VIN divider, VREFINT raw, VDDA mV
+            lib.h_ina228_die(30_000)                  # 30.000 C: 3840 DIETEMP counts of 7.8125 m C
+            lib.h_gauge_soc_256(80 * 256 + 128)       # 80.5 %
+            lib.h_gauge_rate(-10_400)                 # -50 CRATE counts: -10.4 %/h
+        n = self.node(before_boot=board)
+        d = self.first_health_report(n, rssi=-61, snr=7)
+        self.assertRegex(n.out(), r'#diag sent pending=0 lost=0 torn=0 abandoned=0 no_ack=0 crash_pc=08001235 boots=1 '
+                                  r'tx_timeouts=0 i2c_recoveries=0 vdda_mv=3297 monitor_temp=300 soc=20608 soc_rate=-104 '
+                                  r'charger_status=0 chg_input_mv=65535 chg_input_ma=-32768 chg_batt_mv=65535 '
+                                  r'chg_batt_ma=0 chg_temp=-32768 pack_temp=-32768 fitted=47\n')
+        status = n.status()
+        uptime = d.pop('uptime')
+        self.assertIn(uptime, (n.now() // 1000 - 1, n.now() // 1000))
+        self.assertEqual(d, {
+            'epoch': int(status['epoch']), 'pending': 0, 'lost': 0, 'torn': 0, 'abandoned': 0, 'no_ack': 0,
+            'rejects': 0, 'reset_cause': RESET_CAUSES.index('power'), 'link': 0, 'build': 0, 'rssi': -61, 'snr': 7,
+            'crashes': 2, 'energy': ENERGY.index('normal'),
+            'crash_pc': crash_pc, 'boots': 1, 'tx_timeouts': 0, 'i2c_recoveries': 0, 'vdda_mv': 3297,
+            'monitor_temp': 300, 'soc': 80 * 256 + 128, 'soc_rate': -104, 'charger_status': 0, 'fitted': 0x2F,
+            'chg_input_mv': U16_NONE, 'chg_input_ma': I16_NONE, 'chg_batt_mv': U16_NONE, 'chg_batt_ma': 0,
+            'chg_temp': I16_NONE, 'pack_temp': I16_NONE})
+        self.assertEqual(n.lib.h_boot_notes(), 1)    # one boot note a boot (fault_boot_note)
+
+    def test_the_health_report_charger_status_and_iset_while_charging(self):
+        """PGOOD and CHG asserted: bits 0 and 1 (stage and input 0: the pins cannot tell), and the
+        charge current from ISET, I = 400 x V_ISET / R_ISET (SLUS810 eq. 3, R_ISET 1000 ohm), V_ISET the
+        12-bit result scaled by VDDA over the 10k/1M network's gain (POWER_ISET_GAIN_PPM 990099)."""
+        iset_raw, vdda = 1000, 3300
+
+        def board(lib):
+            lib.h_charger_pins(0x03)                  # POWER_PGOOD | POWER_CHG (mod_power.h)
+            lib.h_power_adc(iset_raw, 1500, 1500, vdda)
+        n = self.node(before_boot=board)
+        d = self.first_health_report(n)
+        self.assertEqual(d['charger_status'], 0x03)
+        v_iset = iset_raw * vdda / 4095 / 1000 / 0.990099   # V at the charger's ISET pin
+        self.assertAlmostEqual(d['chg_batt_ma'], 400 * v_iset / 1000 * 1000, delta=1)
+        self.assertEqual(d['vdda_mv'], vdda)
+
+    def test_the_health_report_has_none_codes_for_what_is_not_there(self):
+        """No gauge on the bus (it NACKs) and no ADC sequence yet: SOC and its rate, VDDA and the charge
+        current are their none codes, never 0; the INA228's die temperature still comes."""
+        n = self.node(before_boot=lambda lib: lib.h_gauge_present(0))
+        d = self.first_health_report(n)
+        self.assertEqual((d['soc'], d['soc_rate'], d['vdda_mv'], d['chg_batt_ma']), (U16_NONE, I16_NONE, U16_NONE, I16_NONE))
+        self.assertEqual(d['monitor_temp'], 250)      # the model's default 25.000 C
+        self.assertNotEqual(d['charger_status'], CHARGER_NONE)
+        self.assertEqual(d['fitted'], 0x2F)          # fitted: so the gateway reads these none codes as faults
+
+    def test_the_health_report_counts_saturate(self):
+        """The counts clamp, never wrap: crashes (1 byte) at 255, boots since power-up at 0xFFFF (a pin
+        reset keeps DR12), and the TX-timeout total at 0xFFFF on both timeout paths. The crash PC
+        0xFFFFFFFF (an untrusted stacked frame) goes as it is."""
+        def board(lib):
+            lib.h_reset_code(RESET_CAUSES.index('pin'))
+            lib.h_boots(0xFFFF)
+            lib.h_fault_count(300)
+            lib.h_fault_pc(ctypes.c_uint32(0xFFFF_FFFF))
+        n = self.node(before_boot=board)
+        n.lib.h_tx_timeouts_preset(0xFFFE)
+        n.advance_to(minute(0) + 5)
+        n.lib.h_tx_timeout()                          # the observation's timeout: 0xFFFF
+        n.advance(GAP_MS)
+        d = n.health_report()
+        self.assertEqual((d['crashes'], d['boots'], d['tx_timeouts'], d['crash_pc'], d['reset_cause']),
+                         (255, 0xFFFF, 0xFFFF, 0xFFFF_FFFF, RESET_CAUSES.index('pin')))
+        self.assertEqual(diag_problems(d), ())
+        n.lib.h_tx_timeout()                          # the health report's own timeout: still 0xFFFF
+        self.assertEqual(n.status()['tx_timeouts'], '65535')
+
+    def test_every_transmit_timeout_is_counted_and_reported(self):
+        """Both EV_TX_TIMEOUT paths count (design section 6.2): the live frame's timeout is in the
+        report that follows; that report's own timeout is in #counts and in the next report. A TxDone
+        never clears the total, unlike the failure run."""
+        n = self.node()
+        n.advance_to(minute(0) + 5)
+        n.lib.h_tx_timeout()
+        n.advance(GAP_MS)
+        self.assertEqual(n.health_report()['tx_timeouts'], 1)
+        n.lib.h_tx_timeout()                          # the health report times out too
+        self.assertEqual((n.status()['tx_timeouts'], n.status()['tx_air_run']), ('2', '2'))
+        start = n.sent()
+        n.serve(DIAG_PERIOD_MS + MINUTE_MS)           # answered minutes, then the next health report
+        diags = n.sends(start, KIND_DIAG)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(n.status()['tx_air_run'], '0')
+        self.assertIn(' tx_timeouts=2 ', re.findall(r'#diag sent [^\n]*', n.log)[-1] + ' ')
+
+    def test_the_health_report_carries_the_i2c_recoveries(self):
+        """A hung SHT45 makes the bus guard end its transfers and recover the bus; the report carries the
+        same total as #counts, and the stuck count and mux resets stay on #counts only (0 on the hub)."""
+        n = self.node()
+        n.lib.h_sensor(0, 1)                          # every transfer hangs until the bus guard
+        d = self.first_health_report(n)
+        recoveries = n.lib.h_i2c_recoveries()
+        self.assertGreater(d['i2c_recoveries'], 0)
+        self.assertEqual(d['i2c_recoveries'], recoveries)
+        status = n.status()
+        self.assertEqual((status['i2c_recoveries'], status['mux_resets']), (str(recoveries), '0'))
+        self.assertIn('i2c_stuck', status)
+
+    # ---- the minute observation's power fields (power telemetry design 3.2, 5.4) ----
+
+    def test_the_minute_observation_carries_the_phase_a_power_fields(self):
+        """Phase A fills the battery voltage (11, the gauge's VCELL), the battery current (12), the four
+        battery energy and charge counters (13-16), the load voltage (26, the battery INA228's VBUS on
+        OUT) and the charger input voltage (28, PA10 x the divider ratio); the slots phase A cannot fill (27, 29,
+        30, 32, 33) and the retired 17 and 18 are absent. Values from the design: the INA228 current is +
+        from VIN+ to VIN-, the battery sign is -1, so -250 mA through the shunt is +250 mA into the cell
+        (offset binary, code = mA + 32768); 26 is the VBUS as set; 28 is 3 x the divider's 12-bit result
+        scaled by VDDA."""
+        vin_raw, vdda = 1500, 3297
+
+        def board(lib):
+            lib.h_ina228_set(4_000_000, -250_000)    # 4.000 V on VBUS (OUT), -250 mA VIN+ to VIN-
+            lib.h_power_adc(2000, vin_raw, 1500, vdda)
+        n = self.node(before_boot=board)
+        self.window(n)
+        _, codes = decode(unseal(KEY, STATION, KIND_OBS, n.frame()))
+        power = {11, 12, 13, 14, 15, 16, 26, 28}
+        self.assertLessEqual(power, set(codes))
+        self.assertFalse({17, 18, 27, 29, 30, 32, 33} & set(codes))
+        self.assertTrue(3000 <= codes[11] <= 4200, codes[11])     # a cell voltage, mV, not INVALID
+        self.assertEqual(codes[12], 32768 + 250)
+        self.assertEqual(codes[26], 4000)
+        self.assertAlmostEqual(codes[28], 3 * vin_raw * vdda / 4095, delta=1)
+        self.assertGreater(codes[13], 0)                           # charging: energy and charge in only
+        self.assertGreater(codes[15], 0)
+        self.assertEqual((codes[14], codes[16]), (0, 0))
 
     def test_strikes_need_an_answer_after_the_missed_record(self):
         # A refused record (seq 0) earns a strike only when a frame sent after it is answered. Each

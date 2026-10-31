@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define WSMP_REGISTRY_VERSION 1
+#define WSMP_REGISTRY_VERSION 2
 
 #define WSMP_Q_AIR_TEMPERATURE 1
 #define WSMP_Q_RELATIVE_HUMIDITY 2
@@ -23,6 +23,13 @@
 #define WSMP_Q_STATE_OF_CHARGE 15
 #define WSMP_Q_CHARGER_STATE 16
 #define WSMP_Q_ANEMOMETER_PULSES 17
+#define WSMP_Q_LOAD_VOLTAGE 18
+#define WSMP_Q_LOAD_CURRENT 19
+#define WSMP_Q_CHARGER_INPUT_VOLTAGE 20
+#define WSMP_Q_SOLAR_VOLTAGE 21
+#define WSMP_Q_SOLAR_CURRENT 22
+#define WSMP_Q_USB_VOLTAGE 23
+#define WSMP_Q_USB_CURRENT 24
 
 #define WSMP_U_CEL 1
 #define WSMP_U_PERCENT 2
@@ -56,6 +63,8 @@
 #define WSMP_T_POWER 5
 #define WSMP_T_WIND 6
 #define WSMP_T_RAIN 7
+#define WSMP_T_BATTERY 8
+#define WSMP_T_POWER_RAILS 9
 
 #define WSMP_RC_MINUTE 0
 #define WSMP_RC_HEALTH 1
@@ -74,9 +83,9 @@ typedef struct { uint16_t type; uint8_t schema, channels, report_class; wsmp_typ
 
 /* The tables are initializers only: firmware/common/wsmp.c holds the one copy of each. */
 /* The canonical unit of each quantity (WSMP-G3), indexed by the quantity code. */
-#define WSMP_UNIT_OF_COUNT 18U
-#define WSMP_UNIT_OF_INIT { 0, 1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10, 10, 11, 11, 2, 12, 13 }
-#define WSMP_TYPE_COUNT 7U
+#define WSMP_UNIT_OF_COUNT 25U
+#define WSMP_UNIT_OF_INIT { 0, 1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10, 10, 11, 11, 2, 12, 13, 8, 9, 8, 8, 9, 8, 9 }
+#define WSMP_TYPE_COUNT 9U
 #define WSMP_TYPES_INIT { \
   { 1, 1, 2, WSMP_RC_MINUTE, { { 1, 2 }, { 2, 2 } } }, \
   { 2, 1, 1, WSMP_RC_MINUTE, { { 3, 2 } } }, \
@@ -85,6 +94,8 @@ typedef struct { uint16_t type; uint8_t schema, channels, report_class; wsmp_typ
   { 5, 1, 7, WSMP_RC_HEALTH, { { 9, 2 }, { 11, 6 }, { 12, 6 }, { 13, 6 }, { 14, 6 }, { 15, 1 }, { 16, 10 } } }, \
   { 6, 1, 4, WSMP_RC_MINUTE, { { 17, 6 }, { 5, 7 }, { 6, 8 }, { 6, 9 } } }, \
   { 7, 1, 1, WSMP_RC_MINUTE, { { 7, 6 } } }, \
+  { 8, 1, 6, WSMP_RC_MINUTE, { { 9, 2 }, { 10, 2 }, { 11, 6 }, { 12, 6 }, { 13, 6 }, { 14, 6 } } }, \
+  { 9, 1, 7, WSMP_RC_MINUTE, { { 18, 2 }, { 19, 2 }, { 20, 2 }, { 21, 2 }, { 22, 2 }, { 23, 2 }, { 24, 2 } } }, \
 }
 
 /* The calibration table of module record major 1 (frozen; a later minor may only widen a bound):

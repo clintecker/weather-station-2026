@@ -5,11 +5,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "i2c_bus.h"   /* WS_I2C_MUX, the bus profile: the model follows the firmware's */
 #include "i2c_sim.h"
 #include "stm32wlxx_hal.h"
 
 enum { DONE_NONE, DONE_TX, DONE_RX, DONE_MEMRX, DONE_ERROR, DONE_BUS_ERROR };   /* DONE_ERROR: a NACK */
-typedef struct { int kind, mode, present, sda_hold, channel; uint8_t addr7; uint32_t latency_ms, writes; } sim_dev;
+typedef struct { int kind, mode, present, sda_hold, channel, switched; uint8_t addr7; uint32_t latency_ms, writes; } sim_dev;
 static sim_dev devs[I2C_SIM_DEVICES];
 static int ndevs, i2c_inited, irq_enabled, pending_kind, power_on, mux_dev = -1;
 static uint8_t mux_mask;
@@ -33,15 +34,22 @@ int i2c_sim_add_on(int kind, uint8_t addr7, int channel)
   model_reset(kind, ndevs);
   return ndevs++;
 }
+/* The static channel map of the mux profile, for a part of the probe table. The upstream kinds (the
+   SHTC3, INA228, MAX17048 and the mux itself) never go behind a channel, whatever their address: an
+   INA228 strapped to 0x44, 0x46 or 0x47 stays upstream. */
+static int port_channel(int kind, uint8_t addr7)
+{
+  if (kind == DEVK_SHTC3 || kind == DEVK_INA228 || kind == DEVK_MAX17048 || kind == DEVK_MUX) return I2C_SIM_UPSTREAM;
+  return addr7 == 0x44 ? 0 : addr7 == 0x53 ? 1 : (addr7 == 0x47 || addr7 == 0x46) ? 2 : I2C_SIM_UPSTREAM;
+}
 int i2c_sim_add(int kind, uint8_t addr7)
 {
-  int channel = addr7 == 0x44 ? 0 : addr7 == 0x53 ? 1 : (addr7 == 0x47 || addr7 == 0x46) ? 2 : I2C_SIM_UPSTREAM;
-  return i2c_sim_add_on(kind, addr7, channel);
+  return i2c_sim_add_on(kind, addr7, WS_I2C_MUX ? port_channel(kind, addr7) : I2C_SIM_UPSTREAM);
 }
-/* The board's mux, there from the peripheral's first start (a test may remove it). */
+/* The board's mux, there from the peripheral's first start (a test may remove it); none on the hub. */
 static void board_mux(void)
 {
-  if (mux_dev < 0) mux_dev = i2c_sim_add_on(DEVK_MUX, 0x71, I2C_SIM_UPSTREAM);
+  if (WS_I2C_MUX && mux_dev < 0) mux_dev = i2c_sim_add_on(DEVK_MUX, 0x71, I2C_SIM_UPSTREAM);
 }
 int i2c_sim_mux_device(void) { return mux_dev; }
 uint8_t i2c_sim_mux_mask(void) { return mux_mask; }
@@ -51,6 +59,7 @@ uint32_t i2c_sim_upstream_with_channel(void) { return upstream_with_channel; }
 int i2c_sim_addr_log(int i) { return i >= 0 && i < naddr_log ? addr_log[i] : -1; }
 void i2c_sim_remove(int dev) { if (dev >= 0 && dev < ndevs) devs[dev].present = 0; }
 void i2c_sim_restore(int dev) { if (dev >= 0 && dev < ndevs) devs[dev].present = 1; }
+void i2c_sim_switched(int dev, int switched) { if (dev >= 0 && dev < ndevs) devs[dev].switched = switched != 0; }
 void i2c_sim_mode(int dev, int mode, int sda_hold_edges, uint32_t latency_ms)
 {
   if (dev < 0 || dev >= ndevs) return;
@@ -103,7 +112,9 @@ void i2c_bus_mux_reset_line(int asserted)
 }
 
 /* ---- transfers ---- */
-static int on_bus(const sim_dev *d) { return d->channel < 0 || (mux_mask >> d->channel & 1U); }
+/* On the bus: powered (an unswitched device always; a switched one only while PA9 is high) and
+   upstream or behind a selected channel. */
+static int on_bus(const sim_dev *d) { return (!d->switched || power_on) && (d->channel < 0 || (mux_mask >> d->channel & 1U)); }
 static sim_dev *find(uint16_t addr)
 {
   for (int i = 0; i < ndevs; i++)

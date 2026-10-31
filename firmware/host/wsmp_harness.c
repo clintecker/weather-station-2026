@@ -121,18 +121,39 @@ void h_bmp581_set(int dev, uint32_t pa64) { model_reg_set_data(dev, pa64); }
 void h_ltr390_set(int dev, uint32_t counts) { model_reg_set_data(dev, counts); }
 void h_ina228_set(int dev, int32_t uv, int32_t ua) { model_ina228_set(dev, uv, ua); }
 void h_ina228_power_cycle(int dev) { model_ina228_power_cycle(dev); }
+void h_ina228_die(int dev, int32_t mc) { model_ina228_die(dev, mc); }
 void h_max17048_set(int dev, int soc) { model_max17048_set(dev, (uint8_t)soc); }
+void h_max17048_cell(int32_t uv) { model_max17048_cell(uv); }
+void h_max17048_rate(int32_t mpct_h) { model_max17048_rate(mpct_h); }
 static int charger_pins;
 int board_charger_pins(void) { return charger_pins; }
 void h_charger_pins(int pins) { charger_pins = pins; }
+/* The battery (P_BATTERY) and rails (P_RAILS) modules (App/mod_power.h): the build's power profile
+   (App/power_config.h, -DWS_POWER_PROFILE), the WSMP port of each, and the health accessor's cached
+   values in ws_diag_t order: vdda_mv, soc, chg_input_mv, chg_batt_mv, monitor_temp, soc_rate,
+   chg_input_ma, chg_batt_ma, chg_temp, pack_temp, charger_status (each widened to int32). */
+#include "mod_power.h"
+#include "power_config.h"
+int h_power_profile(void) { return WS_POWER_PROFILE; }
+int h_port_battery(void) { return P_BATTERY; }
+int h_port_rails(void) { return P_RAILS; }
+void h_power_health(int32_t out[11])
+{
+  power_health_t h;
+  mod_power_health(&h);
+  const int32_t v[11] = { h.vdda_mv, h.soc, h.chg_input_mv, h.chg_batt_mv, h.monitor_temp, h.soc_rate, h.chg_input_ma,
+                          h.chg_batt_ma, h.chg_temp, h.pack_temp, h.charger_status };
+  memcpy(out, v, sizeof v);
+}
 /* The cup counter (LPTIM1, 16 bits) and the vane ADC. A tear makes the counter move by one pulse
-   right after the next read, as a pulse that arrives between two reads does. */
-static uint16_t pulse_counter;
+   right after the next read, as a pulse that arrives between two reads does. probe_pulses stands for
+   App/board_inputs.c's cups_offset: the link probe's own pulses, out of the count. */
+static uint16_t pulse_counter, probe_pulses;
 static int pulse_tears;
 static uint16_t vane;
 uint16_t board_pulse_count(void)
 {
-  uint16_t v = pulse_counter;
+  uint16_t v = (uint16_t)(pulse_counter - probe_pulses);
   if (pulse_tears > 0) { pulse_counter++; pulse_tears--; }
   return v;
 }
@@ -141,6 +162,18 @@ void h_pulses_add(int n) { pulse_counter = (uint16_t)(pulse_counter + n); }
 void h_pulse_counter_set(int v) { pulse_counter = (uint16_t)v; }
 void h_pulse_tear(int n) { pulse_tears = n; }
 void h_vane_mv(int mv) { vane = (uint16_t)mv; }
+/* The link probe seams (board_inputs.h): the probes' low run and a real edge since the last probe, as
+   the test sets them; h_probe_pulses(n) is a probe on an open cups link that LPTIM1 counted n times,
+   taken out of the count as board_inputs.c does. */
+#include "board_inputs.h"
+static unsigned link_lows[BOARD_LINK_COUNT];
+static int link_edge[BOARD_LINK_COUNT];
+unsigned board_link_lows(enum board_link link) { return link < BOARD_LINK_COUNT ? link_lows[link] : 0U; }
+int board_link_edge_seen(enum board_link link) { return link < BOARD_LINK_COUNT && link_edge[link]; }
+void h_link_low(int link, unsigned n) { link_lows[link] = n; link_edge[link] = 0; }
+void h_edge(int link) { link_edge[link] = 1; }
+void h_probe_pulses(int n) { pulse_counter = (uint16_t)(pulse_counter + n); probe_pulses = (uint16_t)(probe_pulses + n); }
+int h_meter_link(void) { int w = (int)mod_wind_link(), r = (int)mod_rain_link(); return r > w ? r : w; }
 #include "mod_rain.h"
 void h_rain_tip(void) { mod_rain_tip(now_ms()); }
 void h_rain_enable(int on) { mod_rain_set_enabled(on); }
@@ -182,6 +215,8 @@ int h_host_snap_boot(int port)
 }
 uint32_t h_host_changes(int port) { return wsmp_host_changes((enum wsmp_port)port); }
 unsigned h_host_line(char *buf, unsigned len) { return wsmp_host_modules_line(buf, len); }
+void h_host_worst_line(void) { wsmp_host_worst_line(); }
+unsigned h_modules_line_max(void) { return WSMP_MODULES_LINE_MAX; }
 /* The layout's descriptor set, packed (generation 0); returns its length. */
 unsigned h_host_set(uint8_t out[WSMP_SET_MAX_LEN]) { wsmp_set set; (void)wsmp_host_set(&set, NULL); return wsmp_pack_set(&set, out); }
 unsigned h_host_set_dropped(void) { wsmp_set set; unsigned d = 0; (void)wsmp_host_set(&set, &d); return d; }

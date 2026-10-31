@@ -30,6 +30,14 @@ static void airtime(void) {
  assert(ws_lora_airtime_ms(77, 7, 500000, 8, 1) == 35);  /* the WSMP bench build's widest frame (OBS_FRAME_MAX): 34.6 ms */
  assert(ws_lora_airtime_ms(42, 7, 500000, 8, 1) == 22);  /* 21.8 ms */
  assert(ws_lora_airtime_ms(10, 12, 125000, 8, 1) == 992);   /* low data rate optimisation: 991.2 ms */
+ /* The frames of the node's exchange (power telemetry design 5.4, 6.4), 500 kHz: the widest
+    observation (OBS_FRAME_MAX, 77 + 16 = 93 B), the ACK (33 B) and the health report (64 + 16 = 80 B). */
+ assert(ws_lora_airtime_ms(93, 7, 500000, 8, 1) == 42);   /* 41.024 ms */
+ assert(ws_lora_airtime_ms(33, 7, 500000, 8, 1) == 18);   /* 17.984 ms */
+ assert(ws_lora_airtime_ms(80, 7, 500000, 8, 1) == 36);   /* 35.904 ms */
+ assert(ws_lora_airtime_ms(93, 12, 500000, 8, 1) == 822); /* 821.248 ms */
+ assert(ws_lora_airtime_ms(33, 12, 500000, 8, 1) == 412); /* 411.648 ms */
+ assert(ws_lora_airtime_ms(80, 12, 500000, 8, 1) == 740); /* 739.328 ms */
 }
 
 static void link(void) {
@@ -58,30 +66,64 @@ static void minute(void) {
  ws_link linked = { 0 }, probing = { .probing = 1, .next_probe_s = 5000 };
  uint32_t one = 100;   /* ms per answered exchange: no airtime limit below 15 s / 5 s */
  /* Backlog per energy state while linked (docs/radio-energy-policy.md): 20, 5, 0; CRITICAL silent. */
- assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &linked, 4000, 3940, one, 20) == 20);
- assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, one, 20) == 5);
- assert(ws_minute_backlog(WS_ENERGY_CRITICAL, &linked, 4000, 3000, one, 20) == -1);
- assert(ws_minute_backlog(4, &linked, 4000, 3000, one, 20) == -1);   /* unknown energy: never sends */
- assert(ws_minute_backlog(-1, &linked, 4000, 3000, one, 20) == -1);
+ assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &linked, 4000, 3940, one, 0, 20) == 20);
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, one, 0, 20) == 5);
+ assert(ws_minute_backlog(WS_ENERGY_CRITICAL, &linked, 4000, 3000, one, 0, 20) == -1);
+ assert(ws_minute_backlog(4, &linked, 4000, 3000, one, 0, 20) == -1);   /* unknown energy: never sends */
+ assert(ws_minute_backlog(-1, &linked, 4000, 3000, one, 0, 20) == -1);
  /* CONSERVE: live reading only, at most every 300 s. */
- assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &linked, 4000, 3701, one, 20) == -1);
- assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &linked, 4000, 3700, one, 20) == 0);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &linked, 4000, 3701, one, 0, 20) == -1);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &linked, 4000, 3700, one, 0, 20) == 0);
  /* Probing: the live reading every minute with healthy energy; CONSERVE waits for the probe time. */
- assert(ws_minute_backlog(WS_ENERGY_NORMAL, &probing, 4000, 3940, one, 20) == 0);
- assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &probing, 4000, 3940, one, 20) == 0);
- assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &probing, 4999, 3000, one, 20) == -1);
- assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &probing, 5000, 3000, one, 20) == 0);
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &probing, 4000, 3940, one, 0, 20) == 0);
+ assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &probing, 4000, 3940, one, 0, 20) == 0);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &probing, 4999, 3000, one, 0, 20) == -1);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &probing, 5000, 3000, one, 0, 20) == 0);
  /* The airtime budget (15 s, 5 s, 2 s per minute) caps the frames; the live reading always goes. */
- assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, 1000, 20) == 4);   /* 5 frames of 1 s */
- assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &linked, 4000, 3940, 1000, 20) == 14);
- assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, 6000, 20) == 0);  /* over budget: live only */
- assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, 0, 20) == 0);     /* no estimate: live only */
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, 1000, 0, 20) == 4);   /* 5 frames of 1 s */
+ assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &linked, 4000, 3940, 1000, 0, 20) == 14);
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, 6000, 0, 20) == 0);  /* over budget: live only */
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, 0, 0, 20) == 0);     /* no estimate: live only */
  /* And the send queue. */
- assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &linked, 4000, 3940, one, 7) == 7);
+ assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &linked, 4000, 3940, one, 0, 7) == 7);
  /* Wrap-safe: the next probe time is compared as a signed difference. */
  ws_link wrap = { .probing = 1, .next_probe_s = 10 };
- assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &wrap, 0xFFFFFFF0u, 0, one, 20) == -1);
- assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &wrap, 11, 0xFFFFFE00u, one, 20) == 0);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &wrap, 0xFFFFFFF0u, 0, one, 0, 20) == -1);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &wrap, 11, 0xFFFFFE00u, one, 0, 20) == 0);
+}
+
+/* The health report's airtime is reserved from the minute's cap when a report follows the exchange
+ * (power telemetry design 6.4): by_airtime = cap > reserve ? (cap - reserve) / exchange : 0, and
+ * backlog = by_airtime > 1 ? min(backlog, by_airtime - 1) : 0. One answered exchange is the
+ * observation + the ACK + 300 ms turnaround; the airtimes are those of airtime() above.
+ *   SF7:  42 + 18 + 300 = 360 ms (formula 41.0 + 18.0 + 300 = 359.0); report 36 ms.
+ *   SF12: 822 + 412 + 300 = 1534 ms (formula 821.2 + 411.6 + 300 = 1532.8); report 740 ms. */
+static void health_reserve(void) {
+ ws_link linked = { 0 };
+ const uint32_t sf7 = 42 + 18 + 300, sf7_diag = 36, sf12 = 822 + 412 + 300, sf12_diag = 740;
+ assert(sf7 == 360 && sf12 == 1534);
+ /* SF7: 5000 / 360 = 13 exchanges, (5000 - 36) / 360 = 13 in a health minute: NORMAL's 5 binds. */
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, sf7, 0, 20) == 5);
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, sf7, sf7_diag, 20) == 5);
+ /* SURPLUS: 15000 / 360 = 41, (15000 - 36) / 360 = 41: its 20 binds. */
+ assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &linked, 4000, 3940, sf7, sf7_diag, 20) == 20);
+ /* SF12 NORMAL: 5000 / 1534 = 3 exchanges (backlog 2); (5000 - 740) / 1534 = 4260 / 1534 = 2 (backlog 1). */
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, sf12, 0, 20) == 2);
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, sf12, sf12_diag, 20) == 1);
+ /* SF12 CONSERVE: 2000 / 1534 = 1; (2000 - 740) / 1534 = 0: the live reading only, never a wrapped
+    count. Live + report = 1534 + 740 = 2274 ms, over the 2 s cap once per health report (R3). */
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &linked, 4000, 3700, sf12, 0, 20) == 0);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &linked, 4000, 3700, sf12, sf12_diag, 20) == 0);
+ /* A reserve at or above the cap: by_airtime = 0, the live reading only (no unsigned wrap). */
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, sf7, 5000, 20) == 0);
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, sf7, 5001, 20) == 0);
+ assert(ws_minute_backlog(WS_ENERGY_SURPLUS, &linked, 4000, 3940, sf7, UINT32_MAX, 20) == 0);
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, 0, 5000, 20) == 0);
+ /* Just inside: 5000 - 4279 = 721 = 2 x 360 + 1: by_airtime 2, backlog 1. */
+ assert(ws_minute_backlog(WS_ENERGY_NORMAL, &linked, 4000, 3940, sf7, 4279, 20) == 1);
+ /* The energy and link gates still come first. */
+ assert(ws_minute_backlog(WS_ENERGY_CRITICAL, &linked, 4000, 3000, sf7, sf7_diag, 20) == -1);
+ assert(ws_minute_backlog(WS_ENERGY_CONSERVE, &linked, 4000, 3701, sf12, sf12_diag, 20) == -1);
 }
 
 /* Only an answer AFTER an unanswered frame earns it a strike. */
@@ -131,6 +173,7 @@ int main(void) {
  airtime();
  link();
  minute();
+ health_reserve();
  strikes();
  strike_targets();
  assert(!strcmp(ws_energy_name(WS_ENERGY_NORMAL), "normal") && !strcmp(ws_energy_name(4), "?"));

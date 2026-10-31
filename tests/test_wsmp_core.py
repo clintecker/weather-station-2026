@@ -61,6 +61,14 @@ unsigned t_values_bytes(const uint8_t block[WSMP_DESC_BLOCK_LEN], unsigned n)
 }
 '''
 
+CONSTS = r'''
+unsigned t_not_fitted(void) { return WSMP_QUAL_NOT_FITTED; }
+unsigned t_missing(void) { return WSMP_QUAL_MISSING; }
+unsigned t_major(void) { return WSMP_VERSION_MAJOR; }
+unsigned t_minor(void) { return WSMP_VERSION_MINOR; }
+unsigned t_budget(void) { return WSMP_RADIO_BUDGET; }
+'''
+
 # Descriptor bytes (WSMP section 5, bit 0 = most significant): quantity u16, unit, scale (signed),
 # then one byte with (width - 1) in its top 3 bits, signed in the next bit and 4 reserved bits, then kind.
 def desc(quantity, unit, scale, width, signed, kind):
@@ -80,7 +88,7 @@ class Core(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         fw = ROOT/'firmware'
-        cls.lib = host_library(cls, 'wsmp', '-Wconversion', '-Wsign-conversion', '-I', fw/'common', fw/'common'/'wsmp.c', files={'shim.c': SHIM})
+        cls.lib = host_library(cls, 'wsmp', '-Wconversion', '-Wsign-conversion', '-I', fw/'common', fw/'common'/'wsmp.c', files={'shim.c': SHIM + CONSTS})
 
     def snapshot(self, **kw):
         values = kw.get('values', [])
@@ -164,14 +172,29 @@ class Core(unittest.TestCase):
         self.assertEqual(self.lib.wsmp_crc32c(b'123456789', 9), 0xE3069283)
 
     def test_quality_air_table(self):
-        self.assertEqual([self.lib.wsmp_quality_air(q) for q in range(6)], [0, 1, 2, 3, 1, 3])
+        self.assertEqual([self.lib.wsmp_quality_air(q) for q in range(7)], [0, 1, 2, 3, 1, 3, 3])
         self.assertEqual(self.lib.wsmp_quality_air(200), 3)        # an unknown code is "missing"
+
+    def test_not_fitted_is_quality_6_and_missing_on_the_radio(self):
+        # Power telemetry spec 2026-10-29 section 8.3: snapshot quality 6 "not fitted" (WSMP 1.1)
+        # travels as radio code 3 "missing"; the distinction holds locally only.
+        self.assertEqual(self.lib.t_not_fitted(), 6)
+        self.assertEqual(self.lib.wsmp_quality_air(self.lib.t_not_fitted()), self.lib.t_missing())
+        self.assertEqual(self.lib.t_missing(), 3)
+
+    def test_version_1_1_and_radio_budget_60(self):
+        # Power telemetry spec 2026-10-29 sections 8.3-8.4: WSMP 1.1; WSMP-A1's budget is the planned
+        # plaintext (80 B) less a 20-byte header, and the station's 24 channels need 53 + 6 = 59 bytes.
+        self.assertEqual((self.lib.t_major(), self.lib.t_minor()), (1, 1))
+        self.assertEqual(self.lib.t_budget(), 80 - 20)
+        self.assertLessEqual(53 + self.lib.wsmp_quality_bytes(24), self.lib.t_budget())
+        self.assertEqual(self.lib.wsmp_quality_bytes(24), 6)
 
     def test_identity_refuses_bad_magic_and_major(self):
         out = (ctypes.c_uint8 * 32)()
         self.lib.t_pack_identity(1, 1, 2, ctypes.c_uint64(0x0102030405060708), 9, 0xDEADBEEF, out)
         raw = bytes(out)
-        self.assertEqual(raw[:4].hex(), '57530100')                  # "WS", version 1.0
+        self.assertEqual(raw[:4].hex(), '57530101')                  # "WS", version 1.1
         self.assertEqual(raw[4:8].hex(), '00010102')                 # type 1, schema 1, 2 channels
         self.assertEqual(raw[8:16].hex(), '0102030405060708')
         self.assertEqual(raw[20:24].hex(), '00000009')               # boot ID

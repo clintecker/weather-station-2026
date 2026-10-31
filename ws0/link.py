@@ -4,6 +4,14 @@ The RX board is found by its ST-LINK USB serial number, not by its /dev name, wh
 when the cable moves. Any serial error closes the port and schedules a reconnect with
 back-off; the gateway keeps serving its API meanwhile. The TX board journals everything
 while the link is down, so a reconnect loses no data.
+
+A port can also stay open and deliver nothing (decision record H8(f),
+docs/superpowers/specs/2026-10-29-build-progression-decisions.md): after SILENT_REOPEN_S with no
+byte the link closes and reopens the same path at once, without back-off and without counting a
+failure. The wait doubles after each reopen that brings nothing back, up to SILENT_REOPEN_MAX_S,
+and returns to SILENT_REOPEN_S on any line. The RX prints '#alive' every 60 s
+(firmware/stage0-node/App/app_rx.c), so a working link never waits that long; the gateway's
+receiver-silent alarm (ws0/__main__.py RECEIVER_SILENT_S) stays the outer alarm.
 """
 import time
 
@@ -15,6 +23,8 @@ BACKOFF_S = (1, 2, 4, 8, 15)
 # Anything longer is not from our firmware (garbled stream, wrong device): it is dropped whole,
 # up to and including its newline, so its tail is never taken for a line of its own.
 MAX_LINE = 1024
+SILENT_REOPEN_S = 90        # open port, no byte for this long: reopen it in place (H8 f)
+SILENT_REOPEN_MAX_S = 400   # the doubled wait stops here
 
 
 def open_port(path, timeout, write_timeout=1):
@@ -41,6 +51,8 @@ class ReceiverLink:
         self.failures = 0
         self.retry_at = 0.0
         self.reconnects = 0
+        self.last_byte = 0.0            # clock() of the last byte read, or of the last (re)open
+        self.silent_s = SILENT_REOPEN_S  # current open-but-silent threshold
 
     @property
     def connected(self):
@@ -85,6 +97,7 @@ class ReceiverLink:
         if self.failures:
             self.reconnects += 1
         self.failures = 0
+        self.last_byte = self.clock()
         self.log(f'#gateway serial-open path={path}')
         # End any line the receiver assembled before we (re)connected: an empty line is ignored, and
         # a partial one is discarded instead of prefixing the next ACK.
@@ -101,7 +114,9 @@ class ReceiverLink:
             self._drop(f'read:{type(exc).__name__}')
             return []
         if not fragment:
+            self._reopen_if_silent()
             return []
+        self.last_byte = self.clock()
         if self.discarding:   # the rest of an oversized line
             self.discarding = not fragment.endswith(b'\n')
             return []
@@ -109,6 +124,7 @@ class ReceiverLink:
         if self.buffer.endswith(b'\n'):
             line, self.buffer = self.buffer[:-1], b''
             if len(line) <= MAX_LINE:
+                self.silent_s = SILENT_REOPEN_S
                 return [line.strip()]
         elif len(self.buffer) > MAX_LINE:
             self.buffer, self.discarding = b'', True
@@ -116,6 +132,28 @@ class ReceiverLink:
             return []
         self.log('#gateway rejected oversized serial line')
         return []
+
+    def _reopen_if_silent(self):
+        """Open port, nothing for silent_s: close and reopen the same path in place. Not a
+        failure and no back-off; only an open error falls back to _drop and its back-off."""
+        silent = self.clock() - self.last_byte
+        if silent < self.silent_s:
+            return
+        self.silent_s = min(self.silent_s * 2, SILENT_REOPEN_MAX_S)
+        self.log(f'#gateway serial-reopen path={self.path} silent_s={int(silent)} next_s={self.silent_s}')
+        try:
+            self.port.close()
+        except self.errors:
+            pass
+        self.port, self.buffer, self.discarding = None, b'', False
+        try:
+            self.port = self.opener(self.path)
+        except self.errors as exc:
+            self.port = None
+            self._drop(f'reopen-failed:{type(exc).__name__}')
+            return
+        self.last_byte = self.clock()
+        self.write(b'\n')   # end any partial line on the receiver, as _connect does
 
     def write(self, data):
         """True if written. On failure the link reconnects; the node retries the frame."""

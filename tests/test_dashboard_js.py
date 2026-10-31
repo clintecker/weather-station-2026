@@ -171,37 +171,58 @@ function makeWorld() {
 
 // ---------------------------------------------------------------- fixtures
 const FIELDS = ['temperature_c', 'humidity_pct', 'pressure_hpa', 'wind_speed_ms', 'wind_gust_ms', 'wind_dir_deg', 'rain_tips', 'batt_mv'];
-const LABELS = { temperature_c: 'Temperature', humidity_pct: 'Humidity', pressure_hpa: 'Pressure', wind_speed_ms: 'Wind speed', wind_gust_ms: 'Wind gust', wind_dir_deg: 'Wind direction', rain_tips: 'Rain tips', batt_mv: 'Battery voltage', th_samples: 'T/RH samples per minute' };
-const UNITS = { temperature_c: '°C', humidity_pct: '%', pressure_hpa: 'hPa', wind_speed_ms: 'm/s', wind_gust_ms: 'm/s', wind_dir_deg: '°', rain_tips: null, batt_mv: 'mV', th_samples: null };
-const value = (name, i) => (name === 'wind_dir_deg' ? (i * 37) % 360 : name === 'rain_tips' ? Math.floor(i / 10) : 10 + Math.sin(i / 50) * 5);
+const LABELS = { temperature_c: 'Temperature', humidity_pct: 'Humidity', pressure_hpa: 'Pressure', wind_speed_ms: 'Wind speed', wind_gust_ms: 'Wind gust', wind_dir_deg: 'Wind direction', rain_tips: 'Rain tips', batt_mv: 'Battery voltage', th_samples: 'T/RH samples per minute',
+  batt_current_ma: 'Battery current (+ charging)', energy_in_mwh: 'Energy in', energy_out_mwh: 'Energy out', charge_in_mah: 'Charge in', charge_out_mah: 'Charge out',
+  load_mv: 'Load voltage', load_current_ma: 'Load current', charger_input_mv: 'Charger input voltage (source not identified)', solar_mv: 'Solar input voltage',
+  solar_current_ma: 'Solar input current', usb_mv: 'USB-C input voltage', usb_current_ma: 'USB-C input current' };
+const UNITS = { temperature_c: '°C', humidity_pct: '%', pressure_hpa: 'hPa', wind_speed_ms: 'm/s', wind_gust_ms: 'm/s', wind_dir_deg: '°', rain_tips: null, batt_mv: 'mV', th_samples: null,
+  batt_current_ma: 'mA', load_mv: 'mV', load_current_ma: 'mA', charger_input_mv: 'mV', solar_mv: 'mV', solar_current_ma: 'mA', usb_mv: 'mV', usb_current_ma: 'mA' };
+// The gateway's DIAGNOSTIC_FIELDS in catalog order, as /v1/history sends them (observations.diagnostic).
+const DIAGNOSTIC = ['batt_mv', 'batt_current_ma', 'energy_in_mwh', 'energy_out_mwh', 'charge_in_mah', 'charge_out_mah', 'th_samples', 'load_mv', 'load_current_ma', 'charger_input_mv', 'solar_mv', 'solar_current_ma', 'usb_mv', 'usb_current_ma'];
+const value = (name, i) => (name === 'wind_dir_deg' ? (i * 37) % 360 : name === 'rain_tips' ? Math.floor(i / 10) : name === 'batt_current_ma' ? Math.round(Math.sin(i / 50) * 800) : 10 + Math.sin(i / 50) * 5);
+// Version 6 health-report keys (design section 6.1) of a phase A node: charger-reported input, battery voltage and temperatures are none.
+const V6 = { last_crash_pc: '08001234', boots_since_power_up: 3, tx_timeouts_since_boot: 2, i2c_recoveries_since_boot: 1, mcu_supply_mv: 3297, power_monitor_temp_c: 27.5,
+  battery_soc_pct: 81.25, battery_soc_rate_pct_h: -1.5, charger_input_power_ok: true, charger_charging: true, charger_fault: false, charger_stage: null, charger_active_input: null,
+  charger_reported_input_mv: null, charger_reported_input_ma: null, charger_reported_battery_mv: null, charger_reported_battery_ma: 640, charger_temp_c: null, pack_temp_c: null,
+  power_not_measured: ['charger_active_input', 'charger_reported_battery_mv', 'charger_reported_input_ma', 'charger_reported_input_mv', 'charger_stage', 'charger_temp_c', 'pack_temp_c'],
+  power_sensor_faults: [] };
+// A phase C node (fitted 0x3F): the n-th report walks through the charge stages, and the last ones
+// report no input (night, design section 6.3).
+const PHASE_C_STAGES = ['precharge', 'cc', 'cv', 'topoff', 'terminated', 'not_charging'];
+const V6_PHASE_C = (n) => Object.assign({}, V6, { charger_stage: PHASE_C_STAGES[Math.min(n, 5)], charger_active_input: n < 5 ? 'solar' : 'no_input',
+  power_not_measured: ['pack_temp_c'], charger_reported_input_mv: 5000, charger_reported_input_ma: 0, charger_reported_battery_mv: 4100, charger_temp_c: 30 });
+// The same node with a dead fuel gauge: SOC and its rate are none in a fitted slot, a sensor fault.
+const V6_DEAD_GAUGE = Object.assign({}, V6, { last_crash_pc: 'ffffffff', battery_soc_pct: null, battery_soc_rate_pct_h: null, power_sensor_faults: ['battery_soc_pct', 'battery_soc_rate_pct_h'] });
 function history(from, to, opts = {}) {
   const fields = opts.fields || FIELDS;
   const step = opts.step || 60;
   const ts = [];
   for (let t = Math.ceil(from / step) * step; t < to; t += step) ts.push(t);
-  const obs = { bucket_s: opts.obsBucket || 0, fields, units: Object.fromEntries(fields.map((f) => [f, UNITS[f]])), labels: Object.fromEntries(fields.map((f) => [f, LABELS[f]])), unknown_time_count: 0, t: ts.slice(), basis: ts.map(() => 'synchronized'), quality: ts.map(() => 'valid'), session: ts.map(() => 7), values: Object.fromEntries(fields.map((f) => [f, ts.map((_, i) => value(f, i))])) };
+  const invalid = opts.invalid || [];
+  const obs = { bucket_s: opts.obsBucket || 0, fields, units: Object.fromEntries(fields.map((f) => [f, UNITS[f]])), labels: Object.fromEntries([...fields, ...DIAGNOSTIC].map((f) => [f, LABELS[f]])), diagnostic: DIAGNOSTIC, unknown_time_count: 0, t: ts.slice(), basis: ts.map(() => 'synchronized'), quality: ts.map(() => (invalid.length ? 'partial' : 'valid')), session: ts.map(() => 7), values: Object.fromEntries(fields.map((f) => [f, ts.map((_, i) => (invalid.includes(f) ? null : value(f, i)))])) };
   const rb = opts.radioBucket || 0;
   const radio = { bucket_s: rb, t: ts.slice(), rssi_dbm: ts.map(() => -80), snr_db: ts.map(() => 9), rssi_min: ts.map(() => -80), frames: ts.map(() => (rb ? 5 : 1)), kind: ts.map(() => (rb ? null : 'obs')), outcome: ts.map(() => (rb ? { ack: 5 } : 'ack')), counter: ts.map((_, i) => (rb ? null : i)) };
   const receiver = { bucket_s: 0, t: ts.slice(), uptime_s: ts.map((_, i) => i * 60), forwarded: ts.map((_, i) => i), dropped: ts.map(() => 0), acks: ts.map((_, i) => i), diag: ts.map(() => 0), listening: ts.map(() => 1), relistens: ts.map(() => 0), uart_errors: ts.map(() => 0), stack_peak: ts.map(() => 900) };
-  const diagnostics = ts.filter((_, i) => i % 15 === 0).map((t, i) => ({ received_at: t, epoch: 7, firmware_build: 'b1', reset_cause: 'power', uptime_s: i * 900, link: 'linked', energy_state: 'normal', journal_pending: 0, journal_lost_total: 0, missed_acks_since_boot: 0, crashes_since_power_up: 0, abandoned_total: 0, ack_rssi_dbm: -70, ack_snr_db: 8 }));
+  const diagnostics = ts.filter((_, i) => i % 15 === 0).map((t, i) => Object.assign({ received_at: t, epoch: 7, firmware_build: 'b1', reset_cause: 'power', uptime_s: i * 900, link: 'linked', energy_state: 'normal', journal_pending: 0, journal_lost_total: 0, missed_acks_since_boot: 0, crashes_since_power_up: 0, abandoned_total: 0, ack_rssi_dbm: -70, ack_snr_db: 8 }, opts.v6 === true ? V6 : typeof opts.v6 === 'function' ? opts.v6(i) : opts.v6 || {}));
   return { from, to, server_time: to, observations: obs, diagnostics, radio, receiver, events: [{ id: 1, at: from + 60, source: 'gateway', kind: 'start', level: 'info', text: '#gateway start demo' }] };
 }
-function statusAt(t) {
-  const obs = Object.fromEntries(FIELDS.map((f) => [f, value(f, 3)]));
+function statusAt(t, opts = {}) {
+  const fields = opts.fields || FIELDS;
+  const obs = Object.fromEntries(fields.map((f) => [f, (opts.invalid || []).includes(f) ? null : value(f, 3)]));
   Object.assign(obs, { session: 7, sequence: 99, quality: 'valid', energy_state: 'normal', wind_calm: false });
   return {
     station: 'ws-test', mode: 'demo', alarm: null, node_counter: { max_node_counter: 5, counter_regression: 0 }, accepted_this_process: 3, rejected_this_process: 0, nacked_this_process: 0, host_clock: null,
-    node_diagnostics: { received_at: t - 30, epoch: 7, firmware_build: 'b1', uptime_s: 1000, reset_cause: 'power', link: 'linked', energy_state: 'normal', journal_pending: 0, journal_lost_total: 0, journal_torn_slots: 0, abandoned_total: 0, missed_acks_since_boot: 0, rejected_replies_since_boot: 0, crashes_since_power_up: 0, ack_rssi_dbm: -70, ack_snr_db: 8 },
+    node_diagnostics: Object.assign({ received_at: t - 30, epoch: 7, firmware_build: 'b1', uptime_s: 1000, reset_cause: 'power', link: 'linked', energy_state: 'normal', journal_pending: 0, journal_lost_total: 0, journal_torn_slots: 0, abandoned_total: 0, missed_acks_since_boot: 0, rejected_replies_since_boot: 0, crashes_since_power_up: 0, ack_rssi_dbm: -70, ack_snr_db: 8 }, opts.v6 === true ? V6 : opts.v6 || {}),
     receiver: { alive: true, last_seen: t - 5, uptime: 100, fw: 'rx1', forwarded: 1, dropped: 0, acks: 1, diag: 0, listening: '1', relistens: 0, uart_errors: 0, stack_peak: 900 },
-    latest: { available: true, reason: 'fresh', fields_available: Object.fromEntries(FIELDS.map((f) => [f, true])), age_seconds: 10, received_at: t - 10, observation: obs, derived: {}, effective_sampled_at: t - 10, time_basis: 'synchronized', time_uncertainty_s: 0.5, units: Object.fromEntries(FIELDS.filter((f) => UNITS[f]).map((f) => [f, UNITS[f]])) },
+    latest: { available: true, reason: 'fresh', fields_available: Object.fromEntries(fields.map((f) => [f, true])), age_seconds: 10, received_at: t - 10, observation: obs, derived: {}, effective_sampled_at: t - 10, time_basis: 'synchronized', time_uncertainty_s: 0.5, units: Object.fromEntries(fields.filter((f) => UNITS[f]).map((f) => [f, UNITS[f]])), labels: Object.fromEntries(fields.map((f) => [f, LABELS[f]])) },
   };
 }
 function parseRange(url) {
   const q = new URLSearchParams(url.split('?')[1]);
   return [Date.parse(q.get('from')) / 1000, Date.parse(q.get('to')) / 1000];
 }
-async function boot(W, histFn) {
-  W.responses['/v1/status'] = statusAt(T0);
+async function boot(W, histFn, status) {
+  W.responses['/v1/status'] = status || statusAt(T0);
   W.responses['/v1/radio'] = { rows: [] };
   W.responses['/v1/gateway/events'] = { rows: [] };
   W.responses.history = histFn || ((url) => { const [f, t] = parseRange(url); return history(f, t); });
@@ -428,7 +449,82 @@ async function review() {
       dashed_line: W.find(fig, (n) => n.tagName === 'path' && /\bline\b/.test(n.className) && /\bdash\b/.test(n.className)).length,
     };
   }
+  {  // (8) an open but silent serial port reopened in place (H8 f): a marker on the receiver charts
+    const W = makeWorld();
+    await boot(W, (url) => {
+      const [f, t] = parseRange(url); const h = history(f, t);
+      h.events.push({ id: 2, at: t - 1800, source: 'gateway', kind: 'serial-reopen', level: 'warn', text: '#gateway serial-reopen path=/dev/x silent_s=90 next_s=180' });
+      return h;
+    });
+    // a marker's tooltip is '<label> · <time>' (drawMarkers)
+    const labels = (box) => W.find(W.byId(box), (n) => n.tagName === 'title').map((n) => n.textContent.split(' · ')[0]);
+    r.serial_reopen = { rx: labels('c-rx'), sensors: labels('c-sensors') };
+  }
+  r.power = await powerView();
   return r;
+}
+
+// Power telemetry (design section 10.2): a phase A node with the charger input voltage INVALID.
+async function powerView() {
+  const P = ['temperature_c', 'humidity_pct', 'batt_mv', 'batt_current_ma', 'energy_in_mwh', 'load_mv', 'charger_input_mv'];
+  const texts = (root, cls) => W.find(root, (n) => n.className === cls).map((n) => n.textContent);
+  const kid = (box, label) => { const kids = W.byId(box).children; const i = kids.findIndex((n) => n.textContent === label); return i < 0 ? null : kids[i + 1].textContent; };
+  const legend = (fig) => (fig ? W.find(fig, (n) => n.className === 'legend').map((n) => n.textContent).join(' | ') : null);
+  const ROWS = ['Last crash PC', 'Boots since power-up', 'Radio TX timeouts since boot', 'I2C bus recoveries since boot', 'MCU supply (VDDA)',
+    'Power monitor die temperature', 'Battery state of charge (gauge)', 'State of charge rate (+ charging)', 'Charger status', 'Charger active input',
+    'Charger-reported input', 'Charger-reported battery', 'Charger die temperature', 'Pack temperature'];
+  const out = {};
+  let W = makeWorld();
+  await boot(W, (url) => { const [f, t] = parseRange(url); return history(f, t, { fields: P, invalid: ['charger_input_mv'], v6: true }); },
+    statusAt(T0, { fields: P, invalid: ['charger_input_mv'], v6: true }));
+  const tile = (box) => W.find(W.byId(box), (n) => n.className === 'tile').map((t) => [texts(t, 'label')[0], texts(t, 'flag')[0] || null]);
+  const bat = chartBy(W, 'c-power', 'Battery current');
+  out.v6 = {
+    weather_tiles: tile('readings'), station_tiles: tile('readings-station'), station_head_hidden: W.byId('readings-station-head').hidden,
+    sensor_titles: sensorTitles(W), headings: W.find(W.byId('c-power'), (n) => n.tagName === 'h4').map((n) => n.textContent),
+    absent_rails: texts(W.byId('c-power'), 'muted small absent-rail'),
+    absent_slots: W.find(W.byId('c-power'), (n) => n.attrs['data-absent'] === 'true').map((f) => f.textContent),
+    battery_current: { zero_lines: W.find(bat, (n) => n.className === 'zeroline').length, legend: legend(bat), labels: texts(bat, 'zero-label') },
+    charger_input_legend: legend(chartBy(W, 'c-power', 'Charger input voltage')),
+    charger_input_empty: texts(chartBy(W, 'c-power', 'Charger input voltage'), 'empty'),
+    charger_titles: W.find(W.byId('c-charger'), (n) => n.className === 'ct').map((n) => n.textContent),
+    charger_status_legend: legend(chartBy(W, 'c-charger', 'Charger status')),
+    charger_stage_legend: legend(chartBy(W, 'c-charger', 'Charger stage')),
+    charger_input_band_legend: legend(chartBy(W, 'c-charger', 'Charger active input')),
+    soc_rate_zero: W.find(chartBy(W, 'c-charger', 'State of charge rate'), (n) => n.className === 'zeroline').length,
+    reported_input_empty: texts(chartBy(W, 'c-charger', 'Charger-reported input voltage'), 'empty'),
+    node_charts: W.find(W.byId('c-node'), (n) => n.className === 'ct').map((n) => n.textContent),
+    table: Object.fromEntries(ROWS.map((k) => [k, kid('node', k)])),
+  };
+  // A phase A node with a dead fuel gauge: a sensor fault, never "not measured in this build".
+  W = makeWorld();
+  await boot(W, (url) => { const [f, t] = parseRange(url); return history(f, t, { fields: P, v6: V6_DEAD_GAUGE }); },
+    statusAt(T0, { fields: P, v6: V6_DEAD_GAUGE }));
+  out.dead_gauge = {
+    table: Object.fromEntries(ROWS.map((k) => [k, kid('node', k)])),
+    soc_empty: texts(chartBy(W, 'c-charger', 'State of charge'), 'empty'),
+  };
+  // A phase C node: every stage step and the night's 'no input' get their own band state.
+  W = makeWorld();
+  await boot(W, (url) => { const [f, t] = parseRange(url); return history(f, t, { fields: P, v6: V6_PHASE_C }); },
+    statusAt(T0, { fields: P, v6: V6_PHASE_C(9) }));
+  out.phase_c = {
+    stage_legend: legend(chartBy(W, 'c-charger', 'Charger stage')),
+    input_legend: legend(chartBy(W, 'c-charger', 'Charger active input')),
+    table_input: kid('node', 'Charger active input'), table_status: kid('node', 'Charger status'),
+  };
+  // A version 5 report (older firmware) and a range with no power field at all.
+  W = makeWorld();
+  await boot(W, (url) => { const [f, t] = parseRange(url); return history(f, t, { fields: ['temperature_c'] }); }, statusAt(T0, { fields: ['temperature_c'] }));
+  out.v5 = {
+    table: Object.fromEntries(ROWS.map((k) => [k, kid('node', k)])),
+    absent_rails: texts(W.byId('c-power'), 'muted small absent-rail'),
+    soc_empty: texts(chartBy(W, 'c-charger', 'State of charge'), 'empty'),
+    charger_status_legend: legend(chartBy(W, 'c-charger', 'Charger status')),
+    charger_stage_legend: legend(chartBy(W, 'c-charger', 'Charger stage')),
+    station_head_hidden: W.byId('readings-station-head').hidden,
+  };
+  return out;
 }
 
 main().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
@@ -534,6 +630,11 @@ class DashboardScript(unittest.TestCase):
         self.assertEqual(r['overruns'], ['3', 'warning'])
         self.assertEqual(r['moved_on'], ['0 CRC · 0 header (4 more dropped by the rate limit in the last hour)', 'warning'])
 
+    def test_serial_reopen_event_draws_a_receiver_marker(self):
+        r = self.out['review']['serial_reopen']
+        self.assertIn('serial reopen', r['rx'])
+        self.assertNotIn('serial reopen', r['sensors'])   # rx group only (MARKER_GROUPS)
+
     def test_snapshot_failure_is_shown_retried_and_reloaded_on_resume(self):
         r = self.out['review']['snapshot_failure']
         self.assertIn('Could not load', r['note'])
@@ -547,6 +648,103 @@ class DashboardScript(unittest.TestCase):
         self.assertIn('dash', r['swatch'][0].split())
         css = (ROOT / 'ws0' / 'static' / 'app.css').read_text()
         self.assertRegex(css, r'\.sw\.dash\s*\{[^}]*repeating-linear-gradient')
+
+    # -- power telemetry (design section 10.2)
+    def test_readings_split_into_weather_and_station_tiles(self):
+        r = self.out['review']['power']['v6']
+        self.assertEqual(r['weather_tiles'], [['Temperature', None], ['Humidity', None]])
+        self.assertEqual(r['station_tiles'], [
+            ['Battery voltage', None], ['Battery current (+ charging)', None], ['Energy in', None], ['Load voltage', None],
+            ['Charger input voltage (source not identified)', 'sensor fault']])     # present and INVALID
+        self.assertFalse(r['station_head_hidden'])
+        self.assertTrue(self.out['review']['power']['v5']['station_head_hidden'])
+        self.assertEqual(r['sensor_titles'], ['Temperature', 'Humidity'])           # power fields: the power group
+
+    def test_power_rails_pair_voltage_and_current(self):
+        r = self.out['review']['power']['v6']
+        self.assertEqual(r['headings'], ['Battery', 'Load (system)', 'Charger input (source not identified)',
+                                         'Battery energy and charge since boot'])
+        # rails absent from every record: one line each; a missing slot of a measured rail: a placeholder
+        self.assertEqual(r['absent_rails'], ['Solar input: not measured in this build',
+                                             'USB-C input: not measured in this build'])
+        self.assertEqual(r['absent_slots'], ['Load currentnot measured in this build', 'Energy outnot measured in this build',
+                                             'Charge innot measured in this build', 'Charge outnot measured in this build'])
+        self.assertEqual(self.out['review']['power']['v5']['absent_rails'], [
+            'Battery: not measured in this build', 'Load (system): not measured in this build',
+            'Charger input (source not identified): not measured in this build', 'Solar input: not measured in this build',
+            'USB-C input: not measured in this build', 'Battery energy and charge since boot: not measured in this build'])
+
+    def test_not_measured_is_not_a_sensor_fault(self):
+        r = self.out['review']['power']['v6']
+        self.assertIn('sensor fault', r['charger_input_legend'])       # present, INVALID: a fault band
+        self.assertEqual(r['charger_input_empty'], ['Sensor fault: no valid reading in this range'])
+        self.assertFalse(any('sensor fault' in s for s in r['absent_slots'] + r['absent_rails']))
+
+    def test_battery_current_is_signed_with_a_zero_line(self):
+        b = self.out['review']['power']['v6']['battery_current']
+        self.assertEqual(b['zero_lines'], 1)
+        self.assertEqual(b['labels'], ['charging', 'discharging'])
+        self.assertIn('above 0: charging · below 0: discharging', b['legend'])
+        self.assertEqual(self.out['review']['power']['v6']['soc_rate_zero'], 1)
+
+    def test_charger_status_band_and_health_report_charts(self):
+        r = self.out['review']['power']['v6']
+        for title in ('State of charge', 'State of charge rate', 'Charger status', 'Charger active input',
+                      'Charger-reported charge current', 'Pack temperature'):
+            self.assertIn(title, r['charger_titles'])
+        self.assertEqual(r['charger_status_legend'], 'charging')
+        self.assertEqual(r['reported_input_empty'], ['Not measured in this build'])
+        for title in ('MCU supply (VDDA)', 'Boots since power-up', 'Radio TX timeouts since boot',
+                      'I2C bus recoveries since boot', 'Power monitor die temperature'):
+            self.assertIn(title, r['node_charts'])
+        v5 = self.out['review']['power']['v5']
+        self.assertEqual(v5['soc_empty'], ['Not in these health reports (older firmware)'])
+        self.assertEqual(v5['charger_status_legend'], 'not in report')
+        self.assertEqual(v5['charger_stage_legend'], 'not in report')
+
+    def test_stage_and_input_bands_follow_the_fitted_byte(self):
+        """Design sections 6.1 and 10.2 (PT-X40): in phase A the stage and active input are listed in
+        power_not_measured, so their bands say so instead of 'not reported'; in phase C each stage step
+        that DIAGNOSTIC_STATE keeps gets its own band state, and code 3 reads 'no input'."""
+        r = self.out['review']['power']['v6']
+        self.assertIn('Charger stage', r['charger_titles'])
+        self.assertEqual(r['charger_stage_legend'], 'not measured in this build')
+        self.assertEqual(r['charger_input_band_legend'], 'not measured in this build')
+        c = self.out['review']['power']['phase_c']
+        # one legend: its swatch labels, in first-seen order, run together in textContent
+        self.assertEqual(c['stage_legend'], ''.join(('pre-charge', 'constant current', 'constant voltage', 'top-off', 'terminated',
+                                                     'not charging')))
+        self.assertEqual(c['input_legend'], 'solarno input')
+        self.assertEqual(c['table_input'], 'no input')
+        self.assertEqual(c['table_status'], 'input power good, charging, stage not charging')
+
+    def test_node_health_table_has_the_version_6_keys(self):
+        table = dict(self.out['review']['power']['v6']['table'])
+        # numbers go through toLocaleString: separators follow node's locale
+        self.assertRegex(table.pop('MCU supply (VDDA)'), r'^3\D?297 mV$')
+        self.assertRegex(table.pop('Power monitor die temperature'), r'^27\D5 °C$')
+        self.assertRegex(table.pop('Battery state of charge (gauge)'), r'^81\D3 %$')
+        self.assertRegex(table.pop('State of charge rate (+ charging)'), r'^\D1\D5 %/h$')
+        self.assertEqual(table, {
+            'Last crash PC': '0x08001234', 'Boots since power-up': '3', 'Radio TX timeouts since boot': '2',
+            'I2C bus recoveries since boot': '1',
+            'Charger status': 'input power good, charging', 'Charger active input': 'not measured in this build',
+            'Charger-reported input': 'not measured in this build · not measured in this build',
+            'Charger-reported battery': 'not measured in this build · 640 mA',
+            'Charger die temperature': 'not measured in this build', 'Pack temperature': 'not measured in this build'})
+        # an older (version 5) report has none of them: '—', never a guess
+        self.assertEqual(set(self.out['review']['power']['v5']['table'].values()), {'—'})
+
+    def test_a_dead_gauge_is_a_sensor_fault_not_absent(self):
+        """The fitted byte (design section 6.1): a phase A node whose MAX17048 is dead sends SOC and its
+        rate as none in fitted slots, so the dashboard says sensor fault, never 'not measured in this build'."""
+        r = self.out['review']['power']['dead_gauge']
+        self.assertEqual(r['table']['Battery state of charge (gauge)'], 'sensor fault')
+        self.assertEqual(r['table']['State of charge rate (+ charging)'], 'sensor fault')
+        self.assertEqual(r['table']['Pack temperature'], 'not measured in this build')
+        # its last crash had an untrusted stacked frame: text, never shown as the address 0xffffffff
+        self.assertEqual(r['table']['Last crash PC'], 'crash, frame not trusted (no PC)')
+        self.assertEqual(r['soc_empty'], ['Sensor fault (no value in these health reports)'])
 
     def test_history_request_times_out_and_is_retried(self):
         r = self.out['review']['hung_request']

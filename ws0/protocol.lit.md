@@ -1,7 +1,9 @@
 # protocol: the radio frame on the gateway side
 
-`protocol.py` builds and opens the radio frames of protocol version 5. The design notes for this
-format are in `docs/protocol-design.md`.
+`protocol.py` builds and opens the radio frames of protocol version 6. The design notes for this
+format are in `docs/protocol-design.md`; version 6 (catalog version 2 observations and the 64-byte
+health report) is defined by the power telemetry design,
+`docs/superpowers/specs/2026-10-29-power-telemetry-design.md` sections 4–6.
 
 The module builds four parts of a frame:
 
@@ -42,7 +44,8 @@ them in file order.
 | Node counter mark | the gateway commits the mark before it acts on the frame. The mark survives restarts. An unauthenticated frame never moves it | `tests/test_counter_regression.py`: `test_mark_is_raised_before_commit`, `test_mark_survives_gateway_restart`, `test_unauthenticated_frame_never_moves_the_mark` |
 | Replay | the gateway counts an exact copy of an accepted frame. It raises no alarm | `test_replayed_obs_gets_no_reply_and_is_not_stored`, `test_exact_duplicate_of_latest_frame_is_not_answered` |
 | Regression | any other authentic frame at or below the mark raises the key-reuse alarm | `test_same_counter_different_bytes_alarms`, `test_older_frame_never_seen_still_alarms`, `test_wipe_and_reuse_alarms_on_first_frame` |
-| Unseal | `unseal` refuses the wrong length, version, kind or station before it decrypts | `test_reply_rejections`, `test_diagnostic_frame_agreement` |
+| Unseal | `unseal` refuses the wrong length, version, kind or station before it decrypts | `test_reply_rejections`, `test_diagnostic_frame_agreement`, `test_version_6_byte0` |
+| Health report by name | `pack_diag` and `unpack_diag` use the C member names; no caller depends on the tuple order of `DIAG`. `diag_problems` names every broken canonical rule | `test_pack_diag_by_name`, `test_diag_layout_matches_the_spec`, `test_diag_canonical_rules` |
 
 The counter is the AES-CCM nonce. Two different plaintexts under one key and one nonce lose their
 confidentiality and their authenticity. The allocator rules in section 5 and the mark in section 6
@@ -55,7 +58,7 @@ package (OpenSSL). `gateway.py` supplies `full_flush` (the SQLite durability set
 `validate` (the gateway record schema).
 
 ```python {#module-docstring}
-"""Binary radio protocol, version 5, gateway side. All integers are big-endian (network byte order).
+"""Binary radio protocol, version 6, gateway side. All integers are big-endian (network byte order).
 
 AES-CCM comes from cryptography (OpenSSL). This module does not implement it.
 The firmware reserves each counter durably before use (firmware/stage0-node/App/node_store.c).
@@ -90,7 +93,7 @@ does not encrypt it. The header in bits:
 
 ```mermaid
 packet-beta
-0-3: "version (5)"
+0-3: "version (6)"
 4-7: "kind"
 8-23: "station (u16)"
 24-63: "counter (u40)"
@@ -98,7 +101,7 @@ packet-beta
 
 | Offset | Bytes | Constant | Contents |
 |---:|---:|---|---|
-| 0 | 1 | `VERSION_SHIFT`, `KIND_MASK` | `VERSION` (5) in the high nibble, kind in the low nibble |
+| 0 | 1 | `VERSION_SHIFT`, `KIND_MASK` | `VERSION` (6) in the high nibble, kind in the low nibble: 0x61 OBS, 0x62 ACK, 0x63 NACK, 0x64 DIAG |
 | 1 | 2 | `STATION_AT`, `STATION_BYTES` | station id, 1 to `STATION_MAX` (65535) |
 | 3 | 5 | `COUNTER_AT`, `COUNTER_BYTES` | transmission counter, 1 to `COUNTER_MAX` (2^40 − 1) |
 | 8 | n | `HEADER_LEN` | AES-128-CCM ciphertext of the kind's plaintext |
@@ -109,8 +112,9 @@ The tag length is a fixed constant. The code never infers it from the frame leng
 ```python {#envelope}
 # Envelope (docs/protocol-design.md section 3): byte 0 = version << 4 | kind, then station u16
 # and counter u40. The ciphertext and an 8-byte CCM tag follow. firmware/common/ws_frame.c builds
-# the same bytes. tests/test_frame.py compares them byte for byte.
-VERSION = 5
+# the same bytes. tests/test_frame.py compares them byte for byte. Version 6: catalog v2
+# observations and the 64-byte health report. Both node roles and the gateway must match.
+VERSION = 6
 ```
 
 The key, the key check value and two reserved values that other modules use:
@@ -189,8 +193,10 @@ def _header_and_nonce(kind, station, counter):
 ### Reading the header
 
 `frame_kind` returns the kind only when the high nibble is `VERSION`. It returns `None` for an
-empty packet or another version. A frame of the older version 4 format starts with `0x57`. That
-byte reads as version 5, kind 7, and no caller accepts kind 7.
+empty packet or another version. A version 5 frame starts with `0x51` to `0x54`, and a frame of the
+older version 4 format with `0x57`: both read as version 5, so `frame_kind` returns `None`. A
+mismatched end therefore drops the frames as another version and never NACKs them; the node keeps
+the records in its journal until both ends match (power telemetry design section 4).
 
 `frame_counter` reads the counter field. It checks nothing. Callers use it on a frame that `unseal`
 authenticated. `unseal` also uses it to rebuild the nonce.
@@ -212,10 +218,10 @@ def frame_counter(packet):
 
 | Kind | Name | Sender | Counter space | Plaintext |
 |---:|---|---|---|---|
-| 1 | `KIND_OBS` | node | node | observation, 23 to 78 bytes (section 8) |
+| 1 | `KIND_OBS` | node | node | observation, 23 to 94 bytes (section 8) |
 | 2 | `KIND_ACK` | gateway | gateway | reply, 17 bytes |
 | 3 | `KIND_NACK` | gateway | gateway | reply, 17 bytes |
-| 4 | `KIND_DIAG` | node | node | health report (`DIAG`), 32 bytes |
+| 4 | `KIND_DIAG` | node | node | health report (`DIAG`), 64 bytes |
 
 ```python {#kinds}
 KIND_OBS, KIND_ACK, KIND_NACK, KIND_DIAG = 1, 2, 3, 4
@@ -285,8 +291,10 @@ NACK_COLLISION, NACK_INVALID = 1, 2
 ### Health report (DIAG)
 
 The health report tells the gateway the node's state. The node sends it once and expects no reply.
-The node does not keep it in its journal, and the gateway does not answer it. The struct is
-`>IIHIHHHHBBIbbBB`, 32 bytes:
+The node does not keep it in its journal, and the gateway does not answer it. Version 6 makes it a
+fixed 64 bytes (power telemetry design section 6.1): the first 32 bytes keep their version 5
+layout, and bytes 32–63 carry the slow power and station items. The struct is
+`>IIHIHHHHBBIbbBBIHHHHhHhBBHhHhhh`:
 
 ```mermaid
 packet-beta
@@ -305,40 +313,202 @@ packet-beta
 232-239: "ACK SNR, dB (i8)"
 240-247: "crashes since power-up (u8)"
 248-255: "energy state (u8)"
+256-287: "last crash PC (u32)"
+288-303: "boots since power-up (u16)"
+304-319: "TX timeouts since boot (u16)"
+320-335: "I2C recoveries since boot (u16)"
+336-351: "MCU supply, mV (u16)"
+352-367: "power-monitor die temp, 0.1 C (i16)"
+368-383: "gauge SOC, 1/256 % (u16)"
+384-399: "gauge SOC rate, 0.1 %/h (i16)"
+400-407: "charger status (u8)"
+408-415: "fitted (u8, bit 7 reserved, 0)"
+416-431: "charger input, mV (u16)"
+432-447: "charger input, mA (i16)"
+448-463: "charger battery, mV (u16)"
+464-479: "charger charge current, mA (i16)"
+480-495: "charger die temp, 0.1 C (i16)"
+496-511: "pack temp, 0.1 C (i16)"
 ```
 
-| Offset | Bytes | Field |
-|---:|---:|---|
-| 0 | 4 | epoch |
-| 4 | 4 | uptime (s) |
-| 8 | 2 | journal pending |
-| 10 | 4 | journal lost total (cumulative, persisted) |
-| 14 | 2 | torn slots present |
-| 16 | 2 | abandoned total (cumulative, persisted) |
-| 18 | 2 | missed ACKs since boot |
-| 20 | 2 | rejected replies since boot |
-| 22 | 1 | reset cause, an index into `RESET_CAUSES` |
-| 23 | 1 | link state, an index into `LINK_STATES` |
-| 24 | 4 | firmware build id: the first 4 bytes of the release commit |
-| 28 | 1 | RSSI of the last authentic ACK, signed dBm. `SIGNAL_NONE` = none yet |
-| 29 | 1 | SNR of the last authentic ACK, signed dB. `SIGNAL_NONE` = none yet |
-| 30 | 1 | crashes since power-up |
-| 31 | 1 | energy state, an index into `fields.ENERGY` |
+| Offset | Bytes | Name (`DIAG_FIELDS`, the C member) | Field | None code |
+|---:|---:|---|---|---|
+| 0 | 4 | `epoch` | epoch | — |
+| 4 | 4 | `uptime` | uptime (s) | — |
+| 8 | 2 | `pending` | journal pending | — |
+| 10 | 4 | `lost` | journal lost total (cumulative, persisted) | — |
+| 14 | 2 | `torn` | torn slots present | — |
+| 16 | 2 | `abandoned` | abandoned total (cumulative, persisted) | — |
+| 18 | 2 | `no_ack` | missed ACKs since boot | — |
+| 20 | 2 | `rejects` | rejected replies since boot | — |
+| 22 | 1 | `reset_cause` | reset cause, an index into `RESET_CAUSES` | — |
+| 23 | 1 | `link` | link state, an index into `LINK_STATES` | — |
+| 24 | 4 | `build` | firmware build id: the first 4 bytes of the release commit | — |
+| 28 | 1 | `rssi` | RSSI of the last authentic ACK, signed dBm | `SIGNAL_NONE` (−128) |
+| 29 | 1 | `snr` | SNR of the last authentic ACK, signed dB | `SIGNAL_NONE` (−128) |
+| 30 | 1 | `crashes` | crashes since power-up | — |
+| 31 | 1 | `energy` | energy state, an index into `fields.ENERGY` | — |
+| 32 | 4 | `crash_pc` | PC of the last crash since power-up; 0xFFFFFFFF = the stacked frame was not trusted | `CRASH_PC_NONE` (0) |
+| 36 | 2 | `boots` | boots since power-up, saturating | — |
+| 38 | 2 | `tx_timeouts` | radio TX timeouts since boot, saturating | — |
+| 40 | 2 | `i2c_recoveries` | I2C bus recoveries started since boot, saturating | — |
+| 42 | 2 | `vdda_mv` | MCU supply VDDA, mV | `U16_NONE` (0xFFFF) |
+| 44 | 2 | `monitor_temp` | power-monitor die temperature, 0.1 °C (the hottest fitted monitor) | `I16_NONE` (−32768) |
+| 46 | 2 | `soc` | gauge state of charge, 1/256 % | `U16_NONE` |
+| 48 | 2 | `soc_rate` | gauge state-of-charge rate, 0.1 %/h, + while charging | `I16_NONE` |
+| 50 | 1 | `charger_status` | charger status byte (below) | `CHARGER_NONE` (0xFF) |
+| 51 | 1 | `fitted` | the sources this build has (`FIT_*` bits, below) | — |
+| 52 | 2 | `chg_input_mv` | charger-reported input voltage, mV | `U16_NONE` |
+| 54 | 2 | `chg_input_ma` | charger-reported input current, 1 mA, + into the charger | `I16_NONE` |
+| 56 | 2 | `chg_batt_mv` | charger-reported battery voltage, mV | `U16_NONE` |
+| 58 | 2 | `chg_batt_ma` | charger-reported charge current, 1 mA, + into the cell | `I16_NONE` |
+| 60 | 2 | `chg_temp` | charger die temperature, 0.1 °C | `I16_NONE` |
+| 62 | 2 | `pack_temp` | pack temperature, 0.1 °C | `I16_NONE` |
+
+The fields say what is measured, not which part measures it, so a later phase fills a slot without
+a format change. A slot that a build or phase cannot fill carries its none code; the gateway maps
+every none code to `null`. Byte 51, the fitted byte, says why a slot is `null`: its bit for the slot
+set means the build has a source, so the none code is a sensor fault; clear means the slot is not
+measured in this build (design section 6.1).
+
+| Bit | Constant | Slots |
+|---|---|---|
+| 0 | `FIT_MCU_SUPPLY` | `vdda_mv` |
+| 1 | `FIT_MONITOR_TEMP` | `monitor_temp` |
+| 2 | `FIT_GAUGE` | `soc`, `soc_rate` |
+| 3 | `FIT_CHARGER_STATUS` | `charger_status` bits 0–2 (power good, charging, fault) |
+| 4 | `FIT_CHARGER_REGS` | `charger_status` stage and active input, `chg_input_mv`, `chg_input_ma`, `chg_batt_mv`, `chg_temp` |
+| 5 | `FIT_CHARGE_CURRENT` | `chg_batt_ma` |
+| 6 | `FIT_PACK_TEMP` | `pack_temp` |
+| 7 | — | reserved, must be 0 |
+
+`ws_frame.h` defines the same bits as `WS_FIT_*`. Phases A and B send 0x2F (bits 0, 1, 2, 3, 5).
 
 `ws_diag_pack` in the firmware writes the same bytes (`test_diag_plaintext_matches_python`). The
 order of `RESET_CAUSES` follows `ws_reset_t` in `watchdog.h` (`test_reset_cause_numbering`).
 `service.py` maps an index past the end of a table to `'unknown'`.
 
 ```python {#diag-layout}
-# Health report (kind 4, docs/protocol-design.md section 4). The node sends it once: no journal,
-# no ACK. Fields: epoch, uptime s, journal pending, lost (cumulative, persisted), torn slots
-# present, abandoned (cumulative, persisted), missed ACKs and rejected replies since boot, reset
-# cause, link state, firmware build ID (first 4 bytes of the release commit), the signal of the
-# last authentic ACK as the node heard it (RSSI dBm, SNR dB, -128 = none yet), crashes since
-# power-up, energy state.
-DIAG = struct.Struct('>IIHIHHHHBBIbbBB')
+# Health report (kind 4, docs/protocol-design.md section 4; power telemetry design section 6.1).
+# The node sends it once: no journal, no ACK. 64 bytes; DIAG_FIELDS names each value by its C
+# member in ws_diag_t (firmware/common/ws_frame.h). Callers use pack_diag and unpack_diag, never
+# the tuple order of DIAG.
+DIAG = struct.Struct('>IIHIHHHHBBIbbBBIHHHHhHhBBHhHhhh')
+DIAG_FIELDS = ('epoch', 'uptime', 'pending', 'lost', 'torn', 'abandoned', 'no_ack', 'rejects', 'reset_cause',
+               'link', 'build', 'rssi', 'snr', 'crashes', 'energy',
+               'crash_pc', 'boots', 'tx_timeouts', 'i2c_recoveries', 'vdda_mv', 'monitor_temp', 'soc', 'soc_rate',
+               'charger_status', 'fitted', 'chg_input_mv', 'chg_input_ma', 'chg_batt_mv', 'chg_batt_ma',
+               'chg_temp', 'pack_temp')
 RESET_CAUSES = ('unknown','power','pin','brownout','software','watchdog','lowpower','option-bytes')
 LINK_STATES = ('linked','probing')
+```
+
+The none codes and the defaults of the version 6 fields. A signed none code is the type's minimum,
+an unsigned one is all ones. The three station counts have no none code (the firmware fills them in
+every phase); their default is 0. `CRASH_PC_UNTRUSTED` is a value, not a none code: the gateway
+shows it as a PC.
+
+```python {#diag-none}
+U16_NONE, I16_NONE, CHARGER_NONE = 0xFFFF, -0x8000, 0xFF     # no value; the fitted byte says why
+FIT_MCU_SUPPLY, FIT_MONITOR_TEMP, FIT_GAUGE, FIT_CHARGER_STATUS = 0x01, 0x02, 0x04, 0x08
+FIT_CHARGER_REGS, FIT_CHARGE_CURRENT, FIT_PACK_TEMP, FIT_RESERVED = 0x10, 0x20, 0x40, 0x80
+CRASH_PC_NONE, CRASH_PC_UNTRUSTED = 0, 0xFFFFFFFF            # no crash since power-up; frame not trusted
+DIAG_DEFAULTS = dict(crash_pc=CRASH_PC_NONE, boots=0, tx_timeouts=0, i2c_recoveries=0, vdda_mv=U16_NONE,
+                     monitor_temp=I16_NONE, soc=U16_NONE, soc_rate=I16_NONE, charger_status=CHARGER_NONE,
+                     fitted=0, chg_input_mv=U16_NONE, chg_input_ma=I16_NONE, chg_batt_mv=U16_NONE,
+                     chg_batt_ma=I16_NONE, chg_temp=I16_NONE, pack_temp=I16_NONE)
+```
+
+`pack_diag(**fields)` packs by name. The fifteen version 5 fields are required. A version 6 field
+that the caller leaves out gets its default from `DIAG_DEFAULTS` (its none code; `fitted` 0, nothing
+fitted).
+An unknown or missing name raises `TypeError`; a value its field cannot hold raises `struct.error`.
+`unpack_diag(payload)` returns a `dict` of the raw values by `DIAG_FIELDS` name. It raises
+`ValueError('Wrong health report length')` for any length other than `DIAG.size`. It applies no
+rule: `diag_problems` does.
+
+```python {#pack-diag}
+def pack_diag(**values):
+    """Health report plaintext from named values (DIAG_FIELDS). Missing version 6 fields get their
+    none codes, fitted gets 0."""
+    unknown = set(values) - set(DIAG_FIELDS)
+    missing = set(DIAG_FIELDS) - set(values) - set(DIAG_DEFAULTS)
+    if unknown or missing:
+        raise TypeError(f'pack_diag: unknown {sorted(unknown)}, missing {sorted(missing)}')
+    merged = {**DIAG_DEFAULTS, **values}
+    return DIAG.pack(*(merged[name] for name in DIAG_FIELDS))
+```
+
+```python {#unpack-diag}
+def unpack_diag(payload):
+    """Raw health report values by C member name (DIAG_FIELDS). No rule is applied."""
+    if len(payload) != DIAG.size:
+        raise ValueError('Wrong health report length')
+    return dict(zip(DIAG_FIELDS, DIAG.unpack(payload), strict=True))
+```
+
+The charger status byte (power telemetry design section 6.3):
+
+| Bits | Constant | Meaning |
+|---|---|---|
+| 0 | `CHG_POWER_GOOD` | input power good |
+| 1 | `CHG_CHARGING` | charging |
+| 2 | `CHG_FAULT` | fault |
+| 3–5 | `CHG_STAGE_SHIFT`, `CHARGER_STAGES` | 0 not reported, 1 `precharge` (pre-charge or trickle), 2 `cc`, 3 `cv`, 4 `topoff`, 5 `terminated`, 6 `not_charging`, 7 reserved |
+| 6–7 | `CHG_INPUT_SHIFT`, `CHARGER_INPUTS` | active input: 0 not reported, 1 `solar`, 2 `usb_c`, 3 `no_input` (the charger reports that no input powers it) |
+
+`ws_frame.h` defines the same bits as `WS_CHG_*`. Phase A fills bits 0–2 from the PGOOD and CHG
+pins, with stage 0 and input 0. Phase C fills the stage and the active input from the BQ25798; the
+active input is what attributes the BQ25798's input current to the solar or the USB-C rail. Input 3,
+`no_input`, is a reading, not a gap: the charger has neither VAC1 nor VAC2 (every night on solar with
+USB-C unplugged), so both source rails carry 0 mA (design section 3.2). It is canonical; "not
+reported" stays 0.
+
+```python {#charger-bits}
+CHG_POWER_GOOD, CHG_CHARGING, CHG_FAULT = 0x01, 0x02, 0x04
+CHG_STAGE_SHIFT, CHG_INPUT_SHIFT, CHG_FIELD_MASK = 3, 6, 0x07
+CHARGER_STAGES = (None, 'precharge', 'cc', 'cv', 'topoff', 'terminated', 'not_charging')   # 7: reserved
+CHARGER_INPUTS = (None, 'solar', 'usb_c', 'no_input')                                     # all four codes valid
+```
+
+**Canonical rules** (power telemetry design section 6.1). The node never sends a non-canonical
+report. A health report is never answered, so the gateway keeps every other value of a report that
+breaks a rule:
+
+| Rule | Problem string | Gateway action |
+|---|---|---|
+| fitted bit 7 is 0 | `'fitted bit 7 set'` | log a warning, store the report (the bit carries no meaning) |
+| a status byte other than `CHARGER_NONE` has a stage of 0–6 | `'charger stage 7'` | log a warning, store the five charger keys as `null` |
+
+Every active input code (0–3) is canonical. Code 3 was reserved until 2026-10-29 (design section
+6.3); it now means "no input", so phase C needs no change to these rules.
+
+`diag_problems(d)` takes the `dict` of `unpack_diag` and returns the broken rules as a tuple of
+these strings, empty when the report is canonical. `charger_keys(status)` returns the five
+gateway charger keys: all `None` for `CHARGER_NONE` or a non-canonical byte, otherwise the three
+booleans, the stage name (`None` for "not reported") and the input name (`None` for "not
+reported", `'no_input'` for code 3).
+
+```python {#diag-problems}
+def diag_problems(d):
+    """The canonical rules that an unpacked health report breaks; empty when it is canonical."""
+    status = d['charger_status']
+    problems = ('fitted bit 7 set',) if d['fitted'] & FIT_RESERVED else ()
+    if status != CHARGER_NONE and status >> CHG_STAGE_SHIFT & CHG_FIELD_MASK >= len(CHARGER_STAGES):
+        problems += ('charger stage 7',)
+    return problems
+```
+
+```python {#charger-keys}
+def charger_keys(status):
+    """The five gateway charger keys of a status byte. All None for no status or an invalid byte."""
+    stage, source = status >> CHG_STAGE_SHIFT & CHG_FIELD_MASK, status >> CHG_INPUT_SHIFT
+    if status == CHARGER_NONE or stage >= len(CHARGER_STAGES):
+        return dict(charger_input_power_ok=None, charger_charging=None, charger_fault=None, charger_stage=None,
+                    charger_active_input=None)
+    return dict(charger_input_power_ok=bool(status & CHG_POWER_GOOD), charger_charging=bool(status & CHG_CHARGING),
+                charger_fault=bool(status & CHG_FAULT), charger_stage=CHARGER_STAGES[stage],
+                charger_active_input=CHARGER_INPUTS[source])
 ```
 
 ## 5. Nonces: the durable counter allocator
@@ -662,14 +832,17 @@ Plaintext length = frame length − `HEADER_LEN` − `TAG_LEN`.
 
 | Kind | Plaintext bytes | Frame bytes |
 |---|---|---|
-| OBS | `fields.HEAD_LEN + 1` (23) to `fields.HEAD_LEN + fields.fields_len(fields.DEFINED)` (78) | 39 to 94 |
+| OBS | `fields.HEAD_LEN + 1` (23) to `fields.HEAD_LEN + fields.fields_len(fields.DEFINED)` (94, every catalog version 2 field with the extension word) | 39 to 110 |
 | ACK | `REPLY_LEN` (17) | 33 |
 | NACK | `REPLY_LEN` (17) | 33 |
-| DIAG | `DIAG.size` (32) | 48 |
+| DIAG | `DIAG.size` (64) | 80 |
 | other | none | `unseal` refuses every length |
 
 The observation range covers every field bitmap of the full catalog, not only the bitmap of one
-build. The smallest field adds one byte. So `unseal` refuses an observation plaintext with no
+build: `fields.fields_len` counts the 2-byte extension word when an extension field is present, so
+the upper end is the record with every field (94 B; a node build sends at most 80 B, design section
+5.4). The smallest field adds one byte; an extension-only record (header, extension word, one
+2-byte field) is 26 B, inside the range. So `unseal` refuses an observation plaintext with no
 field. The exact observation length depends on the encrypted field bitmap. So `fields.decode`
 checks it after decryption.
 
@@ -708,7 +881,7 @@ flowchart TD
 | Step | Check | On failure |
 |---|---|---|
 | 1 | plaintext length is in `plain_lengths(kind)` | `ValueError('Wrong frame length')` |
-| 2 | `frame_kind(packet) == kind`: version 5 and this kind | `ValueError('Unexpected frame header')` |
+| 2 | `frame_kind(packet) == kind`: version 6 and this kind | `ValueError('Unexpected frame header')` |
 | 3 | the station field equals `station` | `ValueError('Unexpected frame header')` |
 | 4 | `_header_and_nonce` from (kind, station, header counter): the counter is 1 to `COUNTER_MAX` | `ValueError('Station, counter or kind out of range')` |
 | 5 | AES-CCM decrypt with the rebuilt header as AAD | `cryptography.exceptions.InvalidTag` |
@@ -817,7 +990,21 @@ The root chunk puts the chunks in the order of the committed `protocol.py`.
 
 <<kinds>>
 <<diag-layout>>
+<<diag-none>>
+<<charger-bits>>
 <<nack-reasons>>
+
+
+<<pack-diag>>
+
+
+<<unpack-diag>>
+
+
+<<diag-problems>>
+
+
+<<charger-keys>>
 
 
 <<nonces-class>>
@@ -854,8 +1041,8 @@ The root chunk puts the chunks in the order of the committed `protocol.py`.
 
 | File | What it checks |
 |---|---|
-| `tests/test_frame.py`, `FrameAgreement` | builds `firmware/common/ws_frame.c` with Mbed TLS. Known-answer vectors made from the design (`test_vectors_follow_the_spec`). Python and C on the same vectors (`test_known_answer_vectors`). 300 random keys, stations and counters in both directions (`test_random_agreement_both_directions`). Field limits on both sides (`test_counter_and_station_limits`). `Nonces.next` at `COUNTER_MAX` (`test_gateway_allocator_stops_at_the_limit`). Reply rejections (`test_reply_rejections`). Health report frames and plaintext (`test_diagnostic_frame_agreement`, `test_diag_plaintext_matches_python`) |
-| `tests/test_frame.py`, `FirmwareTables` | the transmitter self-test vectors in `App/selftest.c` (`test_selftest_vectors`) and the `RESET_CAUSES` order (`test_reset_cause_numbering`) |
+| `tests/test_frame.py`, `FrameAgreement` | builds `firmware/common/ws_frame.c` with Mbed TLS. Known-answer vectors made from the design (`test_vectors_follow_the_spec`). Python and C on the same vectors (`test_known_answer_vectors`). 300 random keys, stations and counters in both directions (`test_random_agreement_both_directions`). Field limits on both sides (`test_counter_and_station_limits`). `Nonces.next` at `COUNTER_MAX` (`test_gateway_allocator_stops_at_the_limit`). Reply rejections (`test_reply_rejections`). Health report frames and plaintext (`test_diagnostic_frame_agreement`, `test_diag_plaintext_matches_python`). Version 6 byte 0 (`test_version_6_byte0`) |
+| `tests/test_frame.py`, `FirmwareTables` | the transmitter self-test vectors in `App/selftest.c` (`test_selftest_vectors`), the `RESET_CAUSES` order (`test_reset_cause_numbering`), the 64-byte layout against the spec and `ws_diag_t` (`test_diag_layout_matches_the_spec`, `test_diag_mirror_matches_the_header`), `pack_diag`, `unpack_diag`, `diag_problems` and `charger_keys` (`test_pack_diag_by_name`, `test_diag_canonical_rules`) |
 | `tests/test_counter_regression.py` | every verdict of section 6 through `Gateway.receive`, the counter space that observations and health reports share (`test_obs_and_diag_share_one_counter_space`), restart and write-ahead behaviour, and harness runs that must never raise the alarm |
 | `tests/test_stage0.py` | `test_nonce_restart_and_missing_state`, `test_invalid_authentic_record_is_nacked` |
 | `tests/test_gateway.py` | `test_full_flush_pragmas_are_on` |

@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "board_inputs.h"
 #include "fault.h"
 #include "leds.h"
 #include "rtc.h"
@@ -264,8 +265,21 @@ static void wd_iwdg(void)
   if (!sim_cfg.watchdog_periodic || !wd_started) return;
   if (sim_ticks() - wd_refreshed > 8U * 1024U) { wd_resets++; wd_refreshed = sim_ticks(); }
 }
-ws_reset_t watchdog_reset_code(void) { return WS_RESET_POWER; }
-const char *watchdog_reset_cause(void) { return "power"; }
+/* The reset cause of this boot: power-on unless a test sets another (h_reset_code, before the boot).
+   The names are watchdog.c's, indexed by code. */
+static ws_reset_t reset_code = WS_RESET_POWER;
+static const char *const reset_name[] = {
+  [WS_RESET_UNKNOWN] = "unknown", [WS_RESET_POWER] = "power", [WS_RESET_PIN] = "pin",
+  [WS_RESET_BROWNOUT] = "brownout", [WS_RESET_SOFTWARE] = "software", [WS_RESET_WATCHDOG] = "watchdog",
+  [WS_RESET_LOWPOWER] = "lowpower", [WS_RESET_OPTION_BYTES] = "option-bytes" };
+_Static_assert(sizeof reset_name / sizeof reset_name[0] == WS_RESET_COUNT, "one name per reset code");
+ws_reset_t watchdog_reset_code(void) { return reset_code; }
+const char *watchdog_reset_cause(void) { return reset_name[reset_code]; }
+void h_reset_code(int code)
+{
+  if (code < 0 || code >= (int)WS_RESET_COUNT) fatal("h_reset_code: no such reset code");
+  reset_code = (ws_reset_t)code;
+}
 int h_healthy(void) { return watchdog_healthy(); }
 uint32_t h_wd_resets(void) { return wd_resets; }
 uint32_t h_wd_unhealthy(void) { return wd_unhealthy; }
@@ -277,8 +291,25 @@ static int resets;
 void leds_init(void) {}
 void led_flash(led_t led, uint32_t ms) { (void)ms; led_flashes[led]++; }
 void led_set(led_t led, int on) { (void)led; (void)on; }
+/* The crash record and the boot counter (App/fault.c, tested on its own by tests/test_fault.py): the
+   backup registers as plain values a test sets (h_fault_count, h_fault_pc, h_boots). fault_boot_note
+   keeps fault.c's rule: zeroed on a power-on, then one more, saturating at 0xFFFF; h_boot_notes
+   counts the calls (one a boot). */
+static uint32_t crash_count, crash_pc, boots, boot_notes;
 void fault_report(void) {}
-uint32_t fault_count(void) { return 0; }
+uint32_t fault_count(void) { return crash_count; }
+uint32_t fault_last_pc(void) { return crash_count ? crash_pc : 0U; }
+void fault_boot_note(int power_on)
+{
+  boot_notes++;
+  if (power_on) boots = 0;
+  if (boots < 0xFFFFU) boots++;
+}
+uint32_t fault_boots(void) { return boots; }
+void h_fault_count(uint32_t n) { crash_count = n; }
+void h_fault_pc(uint32_t pc) { crash_pc = pc; }
+void h_boots(uint32_t n) { boots = n; }
+uint32_t h_boot_notes(void) { return boot_notes; }
 void stackmon_paint(void) {}
 uint32_t stackmon_peak(void) { return 0; }
 uint32_t stackmon_peak_step(void) { return 0; }
@@ -290,6 +321,30 @@ void NVIC_SystemReset(void)
 }
 uint32_t h_led_flashes(int led) { return led_flashes[led]; }
 int h_resets(void) { return resets; }
+
+/* ---- the board ADC and the CHG edge counter (App/board_inputs.h) ----
+   Defined here once, as every harness links this file. Until h_power_adc() sets a sequence there is
+   none (-1), as on the board before the first one completes. Then, as on the board, a new sequence has
+   completed by every call (the readers poll it at 1 s, a sequence takes about 0.9 ms) with the values
+   h_power_adc() last set; h_power_adc_stall(1) stops the sequences, so every call returns the last one
+   again with its sequence number, as when the ADC interrupt stops or every start is refused. */
+static board_power_adc_t power_adc;
+static int power_adc_stalled;
+static uint32_t charger_edges;
+int board_power_adc(board_power_adc_t *out)
+{
+  if (power_adc.seq == 0U) return -1;
+  if (!power_adc_stalled) power_adc.seq++;
+  *out = power_adc;
+  return 0;
+}
+void h_power_adc_stall(int on) { power_adc_stalled = on; }
+uint32_t board_charger_edges(void) { return charger_edges; }
+void h_power_adc(uint16_t iset, uint16_t vin, uint16_t vref, uint16_t vdda_mv)
+{
+  power_adc = (board_power_adc_t){ .iset_raw = iset, .vin_raw = vin, .vref_raw = vref, .vdda_mv = vdda_mv, .seq = power_adc.seq + 1U };
+}
+void h_charger_edges(uint32_t n) { charger_edges = n; }
 
 /* ---- console capture ---- */
 volatile uint32_t ws_trace_drops;

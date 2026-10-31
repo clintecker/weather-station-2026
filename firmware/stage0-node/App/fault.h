@@ -8,6 +8,17 @@
 void fault_report(void);
 /* Crashes recorded since the board last lost power (the backup domain is cleared then). */
 uint32_t fault_count(void);
+/* The PC of the latest crash since power-up: 0 when fault_count() is 0, else the stacked PC kept
+ * in DR6 (fault_report does not clear it). 0xFFFFFFFF means the stacked frame was not in RAM, so
+ * no PC could be trusted. */
+uint32_t fault_last_pc(void);
+/* The boot counter in backup register DR12, whose only writer this is. Called exactly once a boot
+ * (app_tx, app_rx, benchlink's bl_guard), before fault_report: power_on (the reset cause is
+ * power-on; a brown-out reads as one too, watchdog.h) zeroes it first, then it adds one,
+ * saturating at 0xFFFF. */
+void fault_boot_note(int power_on);
+/* Boots since the board last powered up, counting this one: DR12, at most 0xFFFF. */
+uint32_t fault_boots(void);
 /* Bench: TEST-FAULT reads an address with no memory behind it, which must end in a recorded
  * HardFault and a reset. */
 void fault_test(void) __attribute__((noreturn));

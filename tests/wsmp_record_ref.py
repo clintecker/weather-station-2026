@@ -25,11 +25,15 @@ CAL = {
     8: (16, 100_000, 10_000_000, 0, 1_048_576, 16, 0),             # UVA counts
 }
 
-# WSMP section 4.4: each module type's channels as (quantity, kind).
+# WSMP section 4.4: each module type's channels as (quantity, kind). Types 8 (battery) and 9 (power rails)
+# are copied from the power-telemetry design (docs/superpowers/specs/2026-10-29-power-telemetry-design.md
+# section 8.1), not from the generated registry.
 CHANNELS = {
     1: ((1, 2), (2, 2)), 2: ((3, 2),), 3: ((8, 2),), 4: ((1, 2), (2, 2)),
     5: ((9, 2), (11, 6), (12, 6), (13, 6), (14, 6), (15, 1), (16, 10)),
     6: ((17, 6), (5, 7), (6, 8), (6, 9)), 7: ((7, 6),),
+    8: ((9, 2), (10, 2), (11, 6), (12, 6), (13, 6), (14, 6)),
+    9: ((18, 2), (19, 2), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2)),
 }
 # Sensor-bind kind 1 (the SHT4x serial, command 0x89) is required exactly for the module types whose part
 # has a readable sensor serial: type 1 in v1 (section 6.9, check 6). On any other type it is MALFORMED.

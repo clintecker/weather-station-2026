@@ -4,6 +4,16 @@ This page is a design study, written 2026-10-14. **Nothing here is built. This s
 in the firmware or the gateway.** It answers Clint's question: *"Once both ends of the system have
 their 16 MB flash, can we remotely reprogram units over LoRa somehow?"*
 
+> **Dated note, 2026-10-29: protocol version numbers.** This study was written when version 6 was
+> free. Power telemetry now takes **version 6** (the catalog v2 and the 64-byte health report,
+> [`superpowers/specs/2026-10-29-power-telemetry-design.md`](superpowers/specs/2026-10-29-power-telemetry-design.md)
+> section 4), and the sixteen-stations time sync moves to **version 7** under its "one change per
+> version" rule. The firmware-update kinds of this study (the ACK flag, kinds 5 and 6) therefore take
+> **the next free version after those two (version 8 if both ship first)**, each change getting its
+> own version. Every "version 6" below means "the firmware-update version". The release procedure
+> is the power design's section 4 (drain the journal, WIPE, flash RX and TX from one release, a new
+> run directory, a new key).
+
 Two kinds of number appear here:
 
 - **Measured** numbers come from this repository's builds or from the firmware's own air-time formula.
@@ -377,8 +387,10 @@ session log. After a reset, a link outage or a gateway restart, the next FW-REQ 
 missing. The gateway keeps no session state that matters. It only serves "send me chunks *i…j* of
 bundle *B*".
 
-A proposed wire sketch follows. It needs a new protocol version (version 6). Like every format
-change, version 6 is a wired release of both ends with a new key ([`protocol.md`](protocol.md) §2).
+A proposed wire sketch follows. It needs a new protocol version (written "version 6" in 2026-10-14;
+now the next free version after power telemetry's 6 and the time sync's 7, see the dated note at the
+top). Like every format change, it is a wired release of both ends with a new key
+([`protocol.md`](protocol.md) §2).
 
 | Kind | Direction | Counter space | Plaintext |
 |---|---|---|---|
@@ -615,7 +627,7 @@ flowchart LR
 | **0** Decide | The decisions in §9. A runbook for custody of the signing key | Clint's decisions recorded. PRD amended or not |
 | **1** Bootloader, wired only | Bundle format. `tools/fw_sign.py` (Python `cryptography`). The Makefile adds the signed header. Bootloader (verify, copy in, trial, revert, write protection). A wired console command puts test bundles into NOR | Host tests: a power cut at every erase and program step of the copy and of the boot-status log always ends in a valid image. Bench: a genuine bundle installs. **One flipped byte, a wrong key, a lower security counter and a wrong target are each refused.** 20 resets (reset pin) at random points during the copy always end in a boot. A trial image that hangs (`TEST-HANG`) or never confirms reverts after 3 boots. The key page and the counter log are byte-identical before and after |
 | **2** Transfer over USB | The same FW-REQ and FW-DATA frames. The host sends them over the TX's USB console instead of the radio | A transfer cut at 10 random points, then resumed, finishes with the right hash. AES-CCM refuses a corrupted chunk, and the node fetches it again. The confirm happens on the first acknowledged observation |
-| **3** Over the air, full images | Protocol version 6 (ACK flag, kinds 5 and 6) on both ends, as a wired release with a new key. RX `#tx done` and 512-character lines. ws0 `fw stage`, `fw status`, and progress in `/v1/status`. Trickle mode inside the cap | 54 KB at SF7 NORMAL in at most 12 min. **Every live reading committed within 120 s during the update** (the H01 rule). The update still completes when the gateway drops 20 % of chunks on purpose. A transfer resumes after the RX is unplugged mid-transfer. A deliberately broken signed image never gets an ACK, reverts by itself, and the health report shows it |
+| **3** Over the air, full images | The firmware-update protocol version (ACK flag, kinds 5 and 6; written "version 6" in 2026-10-14, now the next free version after 6 and 7) on both ends, as a wired release with a new key. RX `#tx done` and 512-character lines. ws0 `fw stage`, `fw status`, and progress in `/v1/status`. Trickle mode inside the cap | 54 KB at SF7 NORMAL in at most 12 min. **Every live reading committed within 120 s during the update** (the H01 rule). The update still completes when the gateway drops 20 % of chunks on purpose. A transfer resumes after the RX is unplugged mid-transfer. A deliberately broken signed image never gets an ACK, reverts by itself, and the health report shows it |
 | **4** Delta updates | The gateway makes diffs from released `.bin` files (detools sequential + heatshrink). A diff applier on the node. A base-hash check | The real `45f43e78fe91 → bc5e6ede429c` diff (7.4 KB) rebuilds the exact release hash on the node. The node refuses a diff for the wrong base before the download |
 | **5** Field readiness | Read-out protection level 1, write protection, brown-out reset level. A written runbook for key custody and recovery. Repeat the tests at the H01 radio settings (SF and power) | A 24 h soak with 3 updates and 1 forced revert, while the H01 criterion still passes |
 

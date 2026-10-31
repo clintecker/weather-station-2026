@@ -11,10 +11,12 @@ except ImportError:
     from tests.toolchain import load_tool
 from gateway import Store
 from ws0 import web
+from ws0.protocol import KIND_DIAG, KIND_OBS, VERSION, VERSION_SHIFT
 
 tool = load_tool('rx_faults')
 T = 1_800_000_000
-FRAME = bytes([0x51, 0x00, 0x01, 0, 0, 0, 0, 7]) + bytes(range(34))   # an obs frame as the gateway accepted it
+OBS, DIAG = ((VERSION << VERSION_SHIFT) | k for k in (KIND_OBS, KIND_DIAG))     # byte 0, current version
+FRAME = bytes([OBS, 0x00, 0x01, 0, 0, 0, 0, 7]) + bytes(range(34))   # an obs frame as the gateway accepted it
 
 
 class RxFaultsToolTests(unittest.TestCase):
@@ -34,7 +36,7 @@ class RxFaultsToolTests(unittest.TestCase):
             corrupted[10] ^= 0b101
             corrupted[30] ^= 0x80
             faults = [(T, 'crc', len(FRAME), -95, -4, corrupted.hex()),             # ours, 3 bits off
-                      (T + 100, 'crc', 3, -110, -12, '540001'),                     # ours (diag), nothing near
+                      (T + 100, 'crc', 3, -110, -12, f'{DIAG:02x}0001'),            # ours (diag), nothing near
                       (T + 101, 'crc', 4, -118, -14, '00ff12aa'),                   # foreign
                       (T + 102, 'crc', 0, -120, -15, ''),                           # empty capture
                       (T + 103, 'hdr', None, -121, None, None)]
@@ -60,6 +62,7 @@ class RxFaultsToolTests(unittest.TestCase):
         self.assertEqual(first['match'], {'dt_s': 2.0, 'outcome': 'ack', 'length': len(FRAME), 'bits_differ': 3,
                                           'bits': 8 * len(FRAME), 'counter': 7})
         self.assertEqual((rows['rows'][1]['frame_kind'], rows['rows'][1]['match']), ('diag', None))
+        self.assertEqual({r['frame_version'] for r in rows['rows'][:2]}, {VERSION})
         self.assertEqual({k: rows['summary'][k] for k in ('total', 'crc', 'hdr', 'ours', 'ours_matched',
                                                           'foreign_or_noise', 'median_bits_differ')},
                          {'total': 5, 'crc': 4, 'hdr': 1, 'ours': 2, 'ours_matched': 1, 'foreign_or_noise': 2,
@@ -96,6 +99,31 @@ class RxFaultsToolTests(unittest.TestCase):
         self.assertEqual(rows['rows'][0]['match']['bits_differ'], 4)
         self.assertEqual(rows['summary']['ours_damaged_header'], 1)
         self.assertIn('ours (damaged header)', self.run_tool('--since', tool.iso(T + 4)))
+
+    def test_a_previous_version_capture_is_ours_not_noise(self):
+        """A run keeps its captures for 30 days: one from the previous release (version 5 under
+        version 6) is classified as ours, from the previous version, and never as noise."""
+        old = bytearray(FRAME)
+        old[0] = ((VERSION - 1) << VERSION_SHIFT) | KIND_DIAG
+        nonsense = bytes([((VERSION - 2) << VERSION_SHIFT) | KIND_OBS]) + bytes(range(50, 90))   # two versions back
+        self.add("INSERT INTO rx_faults (station,received_at,kind,length,rssi_dbm,snr_db,data) "
+                 "VALUES ('s',?,'crc',?,-100,-6,?)", (T + 4, len(old), old.hex()), (T + 5, len(nonsense), nonsense.hex()))
+        rows = json.loads(self.run_tool('--json', '--since', tool.iso(T + 4), '--until', tool.iso(T + 6)))
+        first = rows['rows'][0]
+        self.assertEqual((first['class'], first['frame_version'], first['frame_kind'], first['station_id'], first['counter']),
+                         ('ours (previous version)', VERSION - 1, 'diag', 1, 7))
+        self.assertEqual(first['match']['bits_differ'], bin(FRAME[0] ^ old[0]).count('1'))   # byte 0 only
+        self.assertEqual(rows['rows'][1]['class'], 'foreign/noise')
+        self.assertEqual({k: rows['summary'][k] for k in ('ours', 'ours_previous_version', 'ours_matched')},
+                         {'ours': 0, 'ours_previous_version': 1, 'ours_matched': 1})
+        text = self.run_tool('--since', tool.iso(T + 4), '--until', tool.iso(T + 6))
+        self.assertIn(f'1 ours from the previous protocol version ({VERSION - 1})', text)
+        self.assertIn(f'ours (previous version)  diag (version {VERSION - 1}) station=1 counter=7', text)
+
+    def test_the_docstring_names_the_byte_values_of_both_versions(self):
+        for version in (VERSION, VERSION - 1):
+            self.assertIn(f'0x{(version << VERSION_SHIFT) | KIND_OBS:02x} obs', tool.__doc__)
+        self.assertNotIn('{', tool.__doc__)
 
     def test_until_and_limit(self):
         rows = json.loads(self.run_tool('--json', '--until', tool.iso(T + 101)))['rows']

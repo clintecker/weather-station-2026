@@ -2,7 +2,10 @@
 # tools/wsmp_registry.py generates firmware/common/wsmp_registry.h and ws0/wsmp_registry.py from it.
 # Codes are append-only (WSMP-G1): tools/wsmp_registry.lock refuses a removed or renamed code.
 
-version = 1
+# The registry version (WSMP-G4) increments with every release that appends a code. Version 2 appends
+# quantities 18-24 and module types 8 and 9 (docs/superpowers/specs/2026-10-29-power-telemetry-design.md
+# section 8.1).
+version = 2
 
 # ---- quantities (section 4.1): code, name, canonical unit code, CF standard name, physical range ----
 [[quantity]]
@@ -90,6 +93,7 @@ unit = 8
 cf = ""
 range = [0, 30]
 ha = { device_class = "voltage", state_class = "measurement" }
+note = "the cell terminal voltage"
 
 [[quantity]]
 code = 10
@@ -164,6 +168,78 @@ cf = ""
 range = [0, 4294967295]
 ha = { device_class = "", state_class = "" }
 note = "raw cup pulses, the module type gives m/s per Hz"
+
+# Quantities 18-24 (registry version 2): one code per power rail, so the WSMP-H1 entity IDs of the four
+# rails stay distinct without a per-channel role (power-telemetry design section 8.1).
+[[quantity]]
+code = 18
+name = "load voltage"
+id = "LOAD_VOLTAGE"
+unit = 8
+cf = ""
+range = [0, 30]
+ha = { device_class = "voltage", state_class = "measurement" }
+note = "the system rail that supplies the station: the charger output"
+
+[[quantity]]
+code = 19
+name = "load current"
+id = "LOAD_CURRENT"
+unit = 9
+cf = ""
+range = [-20, 20]
+ha = { device_class = "current", state_class = "measurement" }
+note = "positive into the load"
+
+[[quantity]]
+code = 20
+name = "charger input voltage"
+id = "CHARGER_INPUT_VOLTAGE"
+unit = 8
+cf = ""
+range = [0, 30]
+ha = { device_class = "voltage", state_class = "measurement" }
+note = "after the sources join; the source is not identified"
+
+[[quantity]]
+code = 21
+name = "solar input voltage"
+id = "SOLAR_VOLTAGE"
+unit = 8
+cf = ""
+range = [0, 30]
+ha = { device_class = "voltage", state_class = "measurement" }
+note = "upstream of the join"
+
+[[quantity]]
+code = 22
+name = "solar input current"
+id = "SOLAR_CURRENT"
+unit = 9
+cf = ""
+range = [-20, 20]
+ha = { device_class = "current", state_class = "measurement" }
+note = "positive into the station"
+
+[[quantity]]
+code = 23
+name = "USB-C input voltage"
+id = "USB_VOLTAGE"
+unit = 8
+cf = ""
+range = [0, 30]
+ha = { device_class = "voltage", state_class = "measurement" }
+note = "upstream of the join"
+
+[[quantity]]
+code = 24
+name = "USB-C input current"
+id = "USB_CURRENT"
+unit = 9
+cf = ""
+range = [-20, 20]
+ha = { device_class = "current", state_class = "measurement" }
+note = "positive into the station"
 
 # ---- units (section 4.2) ----
 [[unit]]
@@ -349,6 +425,7 @@ report_class = "minute"
 role = "enclosure"
 channels = [[1, 2], [2, 2]]
 
+# Type 5 is frozen: not built from protocol 6 on; kept to decode old descriptor sets (schema 1).
 [[module_type]]
 code = 5
 name = "battery and charger"
@@ -381,6 +458,27 @@ report_class = "minute"
 role = "outside"
 channels = [[7, 6]]
 factors = { nm_per_tip = 279400 }   # 0.2794 mm
+
+# Types 8 and 9 (registry version 2) are named by function; the parts are display metadata only.
+[[module_type]]
+code = 8
+name = "battery"
+id = "BATTERY"
+part = "INA228, MAX17048"
+schema = 1
+report_class = "minute"
+role = "battery"
+channels = [[9, 2], [10, 2], [11, 6], [12, 6], [13, 6], [14, 6]]
+
+[[module_type]]
+code = 9
+name = "power rails"
+id = "POWER_RAILS"
+part = "INA228, charger input divider"
+schema = 1
+report_class = "minute"
+role = "power"
+channels = [[18, 2], [19, 2], [20, 2], [21, 2], [22, 2], [23, 2], [24, 2]]
 
 # ---- calibration of module record major 1 (docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md
 # section 6.9), frozen: a later record minor may only widen a bound, never tighten it. A quantity not

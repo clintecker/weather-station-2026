@@ -40,6 +40,7 @@ layouts and the bridge's line contract.
 | No flash write while the radio is busy | The code reserves counters in the gap state. `app_tx.c` journals a reading made during an exchange when the radio goes idle | every test (`h_flash_ops_during_radio`), `test_a_reading_made_during_an_exchange_is_journaled_when_the_radio_goes_idle` |
 | A failing link sends little | After a missed reply, one more frame goes. Then the drain stops | `test_a_missed_reply_allows_one_more_frame_then_stops_the_drain` |
 | A hung radio is detected | The exchange has a time limit. The watchdog check aborts an exchange that passes it | `test_a_radio_that_never_finishes_trips_the_exchange_bound` |
+| The health report is complete and cheap | `send_diag` fills all 64 bytes from cached values and counters only, with none codes for what the phase cannot fill; every TxTimeout is counted | `test_the_health_report_carries_every_field_from_cached_values`, `test_every_transmit_timeout_is_counted_and_reported` |
 
 ## 2. State machine
 
@@ -186,7 +187,7 @@ without it:
 
 ```c {#build-id}
 /* WS_FW_BUILD_ID is the first 8 hex digits of the release commit (WS_FW_VERSION), or 0 if they
-   are not hex. The Makefile computes it. */
+   are not hex or the tree was dirty (power spec section 8.6). The Makefile computes it. */
 #ifndef WS_FW_BUILD_ID
 #error "WS_FW_BUILD_ID comes from the Makefile"
 #endif
@@ -255,6 +256,7 @@ Only this file writes `tx_counts`. Other modules read it through `exchange_count
 | `ack_rejects` | a packet fails `ws_open_reply`, or a NACK is not for the frame just sent |
 | `unexpected` | an event arrives in a state that does not expect it |
 | `air` | a failure run: a refused counter reservation, a refused send or a TxTimeout adds one. A TxDone clears it |
+| `tx_timeouts` | every TxTimeout, of an observation (`in_sending`) or of a health report (`in_diag_sending`); saturates at 0xFFFF and never clears until a reset. The health report carries it (power telemetry design, sections 6.1 and 6.2) and `#counts` shows it |
 
 Only a TxDone proves that the radio works. `watchdog_healthy` (`app_tx.c`) fails when the `air`
 run passes `TX_FAIL_LIMIT` (10). The watchdog then resets a radio that accepts sends but never
@@ -266,6 +268,21 @@ finishes a frame.
    that the frame left. Failed journal appends have their own run (journal_fails, app_tx.c). */
 static tx_counts_t tx_counts;
 const tx_counts_t *exchange_counts(void) { return &tx_counts; }
+```
+
+`tx_timed_out` is the one handling of a TxTimeout, whichever frame it ended. ST's driver leaves the
+radio transmitting after its timeout, so the radio goes to standby first. Then the code notes a
+transmit failure, counts the timeout (saturating, so the 16-bit total of the health report never
+wraps), flashes the red LED and prints `#error tx-timeout`.
+
+```c {#tx-timed-out}
+static void tx_timed_out(void)
+{
+  ws_radio_standby();               /* the driver's timeout leaves the radio transmitting */
+  ws_failrun_note(&tx_counts.air, 0);
+  if (tx_counts.tx_timeouts < UINT16_MAX) tx_counts.tx_timeouts++;
+  led_flash(LED_RED, LED_FLASH_MS); APP_PRINTF("#error tx-timeout\n");
+}
 ```
 
 ## 4. Identity and key
@@ -584,9 +601,9 @@ static int send_obs(const uint8_t *plain, int plen)
 ### Frame sent
 
 `in_sending` waits for the radio. On TxDone it clears the transmit failure run, starts `ack_timer`
-and listens with no driver timeout. On TxTimeout it puts the radio in standby, because the driver
-leaves the radio transmitting. Then it notes a transmit failure, flashes the red LED, prints
-`#error tx-timeout` and stops the drain. The exchange then ends after this frame.
+and listens with no driver timeout. On TxTimeout it calls `tx_timed_out` (section 3: standby,
+failure noted, timeout counted, red LED, `#error tx-timeout`) and stops the drain. The exchange then
+ends after this frame.
 
 ```c {#in-sending}
 /* The state handlers return 1 if the state expects the event and handled it, else 0. */
@@ -601,9 +618,7 @@ static int in_sending(uint32_t ev)
     return 1;
   }
   if (ev != EV_TX_TIMEOUT) return 0;
-  ws_radio_standby();               /* the driver's timeout leaves the radio transmitting */
-  ws_failrun_note(&tx_counts.air, 0);
-  led_flash(LED_RED, LED_FLASH_MS); APP_PRINTF("#error tx-timeout\n");
+  tx_timed_out();
   stop_drain(); next_item();
   return 1;
 }
@@ -885,9 +900,85 @@ static uint16_t clamp16(uint32_t v) { return v > UINT16_MAX ? UINT16_MAX : (uint
 static int8_t clamp8(int v) { return (int8_t)(v < -INT8_MAX ? -INT8_MAX : v > INT8_MAX ? INT8_MAX : v); }  /* INT8_MIN means "none" */
 ```
 
-`send_diag` fills a `ws_diag_t` from the node state, the journal totals, the meta totals and
-`tx_counts`. It adds the reset cause, the link state, the fault count, the energy state and the
-signal of the last ACK.
+The report is 64 bytes (`WS_DIAG_PLAIN_LEN`; power telemetry design, section 6.1). Its first 32
+bytes keep their version 5 values. The other 32 carry the station items and the slow power values.
+Every value is a cached one: nothing in the radio path touches I2C or the ADC (design section 6.2).
+
+| Bytes | Values | Source (design section 9.8) |
+|---|---|---|
+| 0-31 | epoch, uptime, journal and meta totals, `no_ack`, `ack_rejects`, reset cause, link, crash count, energy state, ACK signal | the node state, `node_store.c`, `tx_counts`, `watchdog.c`, `tx_policy.c`, `fault_count()` |
+| 32 | `crash_pc` | `fault_last_pc()`: 0 without a crash since power-up |
+| 36 | `boots` | `fault_boots()` (DR12), clamped to 0xFFFF |
+| 38 | `tx_timeouts` | `tx_counts.tx_timeouts`, saturating (section 3) |
+| 40 | `i2c_recoveries` | `i2c_bus_recoveries()`, saturating in `i2c_bus.c` |
+| 42-63 | VDDA, power-monitor die temperature, SOC and its rate, charger status, the charger-reported values | `mod_power_health()`: the values of the last latch, each with its none code when the phase or a failed source cannot fill it |
+
+`diag_power` copies `mod_power_health()` member by member: the two structures share names and none
+codes (`mod_power.h`). A charger status byte that is not canonical (stage 7) would be
+a bug in `power_acq.c`; the `WS_CHECK` counts it and the report carries "no status" (0xFF) instead,
+so the node never sends a non-canonical report. `fitted` is the profile's `WS_FIT_*` mask
+(`mod_power.c`): with it the gateway tells a slot this build does not measure from a fitted source
+that failed (`ws_diag_pack` clears its reserved bit 7).
+
+```c {#diag-fill}
+static int charger_status_canonical(uint8_t st)
+{
+  if (st == WS_CHARGER_NONE) return 1;
+  return ((st & WS_CHG_STAGE_MASK) >> WS_CHG_STAGE_SHIFT) != WS_CHG_STAGE_RESERVED;   /* inputs 0-3 all valid */
+}
+
+/* The slow power values of the last latch (mod_power.c), cached: no bus or ADC access here. */
+static void diag_power(ws_diag_t *d)
+{
+  power_health_t h;
+  mod_power_health(&h);
+  d->vdda_mv = h.vdda_mv; d->monitor_temp = h.monitor_temp;
+  d->soc = h.soc; d->soc_rate = h.soc_rate;
+  d->charger_status = WS_CHECK(charger_status_canonical(h.charger_status)) ? h.charger_status : (uint8_t)WS_CHARGER_NONE;
+  d->fitted = h.fitted;
+  d->chg_input_mv = h.chg_input_mv; d->chg_input_ma = h.chg_input_ma;
+  d->chg_batt_mv = h.chg_batt_mv; d->chg_batt_ma = h.chg_batt_ma;
+  d->chg_temp = h.chg_temp; d->pack_temp = h.pack_temp;
+}
+
+/* The station items (design section 9.8): counters and backup registers, read, never measured. */
+static void diag_station(ws_diag_t *d)
+{
+  d->crash_pc = fault_last_pc();
+  d->boots = clamp16(fault_boots());
+  d->tx_timeouts = tx_counts.tx_timeouts;
+  d->i2c_recoveries = i2c_bus_recoveries();
+}
+```
+
+`diag_line` prints the `#diag sent` console line. Its first five keys are the version 5 ones, in
+their old order, so scripts that read them keep working (design section 9.8). The new keys follow,
+named as the `ws_diag_t` members, as raw values with their none codes (`crash_pc` in hex):
+
+```text
+#diag sent pending= lost= torn= abandoned= no_ack= crash_pc= boots= tx_timeouts= i2c_recoveries= vdda_mv=
+           monitor_temp= soc= soc_rate= charger_status= chg_input_mv= chg_input_ma= chg_batt_mv= chg_batt_ma=
+           chg_temp= pack_temp= fitted=
+```
+
+(one line on the console; wrapped here). At its longest it is about 345 characters, inside the
+640-byte print buffer.
+
+```c {#diag-line}
+static void diag_line(const ws_diag_t *d)
+{
+  APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u crash_pc=%08x boots=%u tx_timeouts=%u "
+             "i2c_recoveries=%u vdda_mv=%u monitor_temp=%d soc=%u soc_rate=%d charger_status=%u chg_input_mv=%u "
+             "chg_input_ma=%d chg_batt_mv=%u chg_batt_ma=%d chg_temp=%d pack_temp=%d fitted=%u\n",
+             d->pending, (unsigned)d->lost, d->torn, d->abandoned, d->no_ack, (unsigned)d->crash_pc, d->boots,
+             d->tx_timeouts, d->i2c_recoveries, d->vdda_mv, d->monitor_temp, d->soc, d->soc_rate, d->charger_status,
+             d->chg_input_mv, d->chg_input_ma, d->chg_batt_mv, d->chg_batt_ma, d->chg_temp, d->pack_temp, d->fitted);
+}
+```
+
+`send_diag` fills the first 32 bytes' values from the node state, the journal totals, the meta totals
+and `tx_counts`, with the reset cause, the link state, the fault count, the energy state and the
+signal of the last ACK; then `diag_station` and `diag_power` fill the rest.
 
 | Step | Failure |
 |---|---|
@@ -916,28 +1007,29 @@ static int send_diag(void)
                   .reset_cause = (uint8_t)watchdog_reset_code(), .link = (uint8_t)policy_probing(),
                   .crashes = (uint8_t)(crashes > UINT8_MAX ? UINT8_MAX : crashes), .energy = (uint8_t)energy_state(),
                   .rssi = ack_rssi, .snr = ack_snr };
+  diag_station(&d);
+  diag_power(&d);
   ws_diag_pack(&d, plain);
   if (store_next_counter(&ctr)) { ws_failrun_note(&tx_counts.air, 0); return 0; }
   if (!WS_CHECK(ws_seal_kind(key, identity.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) >= 0)) return 0;
   if (ws_radio_send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_counts.air, 0); return 0; }
   policy_diag_sent(now);   /* only a report that the radio took. A refused one is due next minute */
   tx_state = TX_DIAG_SENDING;
-  APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u\n", d.pending, (unsigned)d.lost, d.torn, d.abandoned, d.no_ack);
+  diag_line(&d);
   return 1;
 }
 ```
 
-`in_diag_sending` ends the exchange on TxDone or TxTimeout. A TxTimeout first puts the radio in
-standby and prints `#error tx-timeout`. Both events note the transmit result, so a report that
-leaves clears the failure run.
+`in_diag_sending` ends the exchange on TxDone or TxTimeout. A TxDone clears the failure run, so a
+report that leaves proves the radio works. A TxTimeout goes through `tx_timed_out`, as in
+`in_sending`: standby first, a transmit failure noted and the timeout counted.
 
 ```c {#in-diag-sending}
 static int in_diag_sending(uint32_t ev)
 {
   if (ev != EV_TX_DONE && ev != EV_TX_TIMEOUT) return 0;
-  if (ev == EV_TX_TIMEOUT) ws_radio_standby();
-  ws_failrun_note(&tx_counts.air, ev == EV_TX_DONE);
-  if (ev == EV_TX_TIMEOUT) { led_flash(LED_RED, LED_FLASH_MS); APP_PRINTF("#error tx-timeout\n"); }
+  if (ev == EV_TX_DONE) ws_failrun_note(&tx_counts.air, 1);
+  else tx_timed_out();
   radio_idle();
   return 1;
 }
@@ -1022,7 +1114,9 @@ the event callbacks, then the functions. Each function comes after the functions
 #include "clock.h"
 #include "events.h"
 #include "fault.h"
+#include "i2c_bus.h"
 #include "leds.h"
+#include "mod_power.h"
 #include "radio.h"
 #include "radio_cfg.h"
 #include "stm32_seq.h"
@@ -1059,11 +1153,17 @@ the event callbacks, then the functions. Each function comes after the functions
 
 <<radio-idle>>
 
+<<tx-timed-out>>
+
 <<abort>>
 
 <<gap-before>>
 
 <<clamps>>
+
+<<diag-fill>>
+
+<<diag-line>>
 
 <<send-diag>>
 
@@ -1108,8 +1208,9 @@ the event callbacks, then the functions. Each function comes after the functions
 
 `tests/test_tx_machine.py` builds the real `app_tx.c`, `tx_exchange.c` and the other TX node modules
 against `firmware/host/tx_harness.c`. The harness simulates the clock, ST's timers and sequencer, a
-radio that behaves like ST's driver, the SHT45 temperature and humidity sensor, and the flash under
-the real `node_store.c`. The test build adds the undefined-behaviour sanitizer (UBSan) to the
+radio that behaves like ST's driver, the official phase A I2C bus (a STEMMA QT hub built with
+`-DWS_I2C_MUX=0`: the SHT45 at 0x44, the battery INA228 at 0x40 and the MAX17048 gauge at 0x36), the
+board ADC and charger pin seams, and the flash under the real `node_store.c`. The test build adds the undefined-behaviour sanitizer (UBSan) to the
 library. `TxUnderAddressSanitizer` runs the suite again under the address sanitizer (ASan) where the
 platform allows the preload of its runtime. At its end, every test also checks these things:
 
@@ -1129,6 +1230,7 @@ platform allows the preload of its runtime. At its end, every test also checks t
 | flash with the radio idle | `test_counter_reservations_never_meet_a_busy_radio`, `test_flash_commands_wait_for_the_radio_exchange` |
 | drain and failures | `test_a_missed_reply_allows_one_more_frame_then_stops_the_drain`, `test_after_a_miss_only_one_more_frame_goes_even_if_it_is_answered`, `test_a_transmit_timeout_stops_the_drain`, `test_a_send_failure_on_a_backlog_frame_moves_on`, `test_a_failed_health_report_ends_the_exchange`, `test_a_health_report_that_leaves_clears_the_transmit_failure_run`, `test_transmit_failures_in_a_row_trip_the_watchdog_and_a_tx_done_clears_them` |
 | time limit, held readings | `test_a_radio_that_never_finishes_trips_the_exchange_bound`, `test_a_reading_made_during_an_exchange_is_journaled_when_the_radio_goes_idle`, `test_held_readings_keep_the_newest_when_more_minutes_wait` |
+| health report contents | `test_the_health_report_carries_every_field_from_cached_values`, `test_the_health_report_charger_status_and_iset_while_charging`, `test_the_health_report_has_none_codes_for_what_is_not_there`, `test_the_health_report_counts_saturate`, `test_every_transmit_timeout_is_counted_and_reported`, `test_the_health_report_carries_the_i2c_recoveries`: each report is opened with `ws0.protocol.unseal`, decoded with `unpack_diag` and checked canonical with `diag_problems` |
 | policy | `test_three_silent_minutes_mean_probing_with_no_backlog_until_a_reply`, `test_a_health_report_at_least_every_15_minutes`, `test_strikes_need_an_answer_after_the_missed_record`, `test_a_lone_refused_record_is_retried_never_abandoned_by_luck`, `test_no_strikes_while_nothing_is_answered` |
 | randomized | `test_three_hours_of_mixed_link_keep_every_invariant`: 3 h with 5 seeds of lost ACKs, NACKs, junk, CRC and header failures, the ACK of another frame, transmit timeouts and refused sends. The radio state must match the exchange state at every step, and no event can be unexpected |
 

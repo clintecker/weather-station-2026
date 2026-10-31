@@ -5,9 +5,19 @@
  *   in the window, times 0.66698 m/s per Hz (registry factor), divided by 3 s.
  *   Vane: 16 positions of the SEN-15901 resistor network with a 10 kOhm pull-up to 3.3 V, decoded to
  *   the nearest position. A reading above 3.2 V is an open vane: absent (WSMP-P1). Each sample adds
- *   100 sin and 100 cos of its direction to the sums (WSMP kinds 8 and 9, scale -2). */
+ *   100 sin and 100 cos of its direction to the sums (WSMP kinds 8 and 9, scale -2). Each position has
+ *   a tolerance band: its resistance +-VANE_TOL_PCT, then +-VANE_ADC_MV (an assumed bench starting
+ *   value: the datasheet gives no tolerance). A reading outside every band stays out of the sums and
+ *   makes the vane slots suspect; it also flags the wind cable or jack (#status
+ *   meter_link=vane-out-of-table), the open vane pair at the pull-up rail included.
+ *   The cups link (build-progression record M7, rows R-6 and R-16): BOARD_LINK_LOWS probes in a row
+ *   that read the link low with no cup pulse since are suspect only (the rotor can stop with the
+ *   magnet holding the reed closed in calm air); they become an open link (fault) when, while they
+ *   last, an in-table vane reading moves to another position (wind but no cup pulse), or after 24 h of
+ *   such probes. Cups and gust slots take the verdict as their quality. */
 #include "mod_wind.h"
 #include <string.h>
+#include "board_inputs.h"
 #include "mod_mean.h"
 #include "wsmp_local.h"
 
@@ -21,13 +31,20 @@
 #define SUPPLY_MV 3300UL
 #define COUNTER_READS 3U
 #define CHANNELS 4U
+#define VANE_TOL_PCT 5UL              /* the band: the network's resistance +-5 % ... */
+#define VANE_ADC_MV 10U               /* ... then +-10 mV for the ADC */
+#define CUPS_LOWS_DAY (86400000UL / BOARD_LINK_PROBE_MS + 1U)   /* probes in a row spanning 24 h */
 #define VANE_MV(r) ((uint16_t)((SUPPLY_MV * (r) + ((r) + PULL_UP_OHM) / 2U) / ((r) + PULL_UP_OHM)))
 
 /* SEN-15901 datasheet: the resistance at each position, clockwise from north in 22.5 degree steps. */
-static const uint16_t vane_mv[POSITIONS] = {
-  VANE_MV(33000UL), VANE_MV(6570UL), VANE_MV(8200UL), VANE_MV(891UL), VANE_MV(1000UL), VANE_MV(688UL),
-  VANE_MV(2200UL), VANE_MV(1410UL), VANE_MV(3900UL), VANE_MV(3140UL), VANE_MV(16000UL), VANE_MV(14120UL),
-  VANE_MV(120000UL), VANE_MV(42120UL), VANE_MV(64900UL), VANE_MV(21880UL) };
+#define VANE_OHMS(X) X(33000UL) X(6570UL) X(8200UL) X(891UL) X(1000UL) X(688UL) X(2200UL) X(1410UL) X(3900UL) \
+                     X(3140UL) X(16000UL) X(14120UL) X(120000UL) X(42120UL) X(64900UL) X(21880UL)
+#define VANE_NOMINAL(r) VANE_MV(r),
+#define VANE_LOW(r) (uint16_t)(VANE_MV((r) * (100UL - VANE_TOL_PCT) / 100UL) - VANE_ADC_MV),
+#define VANE_HIGH(r) (uint16_t)(VANE_MV((r) * (100UL + VANE_TOL_PCT) / 100UL) + VANE_ADC_MV),
+static const uint16_t vane_mv[POSITIONS] = { VANE_OHMS(VANE_NOMINAL) };
+static const uint16_t vane_low[POSITIONS] = { VANE_OHMS(VANE_LOW) };
+static const uint16_t vane_high[POSITIONS] = { VANE_OHMS(VANE_HIGH) };
 /* 100 sin and 100 cos of each position, rounded to the nearest integer. */
 static const int8_t east[POSITIONS] = { 0, 38, 71, 92, 100, 92, 71, 38, 0, -38, -71, -92, -100, -92, -71, -38 };
 static const int8_t north[POSITIONS] = { 100, 92, 71, 38, 0, -38, -71, -92, -100, -92, -71, -38, 0, 38, 71, 92 };
@@ -42,6 +59,10 @@ typedef struct {
   uint32_t vane_n;
   int probe;
   uint16_t probe_seq;
+  uint8_t have_pos, last_pos;   /* the last in-table position */
+  uint8_t vane_out;             /* the last vane reading was outside every band */
+  uint8_t cups_open;            /* the vane moved while the cups link was suspect */
+  uint32_t vane_out_n;          /* out-of-table readings in the window */
   mean_win win;   /* the window header and the latch rule; it holds no means */
 } wind_t;
 
@@ -102,17 +123,61 @@ static unsigned position_of(uint16_t mv)
   return best;
 }
 
-static void vane(void)
+static int in_table(uint16_t mv)
 {
-  uint16_t mv;
-  if (!board_vane_mv(&mv)) return;
-  wd.probe_seq++;
-  if (mv > VANE_OPEN_MV) { wd.probe = 0; return; }
-  unsigned p = position_of(mv);
+  for (unsigned i = 0; i < POSITIONS; i++)
+  {
+    if (mv >= vane_low[i] && mv <= vane_high[i]) return 1;
+  }
+  return 0;
+}
+
+/* The cups link verdict (M7): ok, suspect, or open. */
+static enum meter_link cups_verdict(void)
+{
+  unsigned lows = board_link_lows(BOARD_LINK_CUPS);
+  if (lows < BOARD_LINK_LOWS || board_link_edge_seen(BOARD_LINK_CUPS)) return METER_LINK_OK;
+  return wd.cups_open || lows >= CUPS_LOWS_DAY ? METER_LINK_CUPS_OPEN : METER_LINK_CUPS_SUSPECT;
+}
+
+/* A vane move while the cups link is suspect is wind with no cup pulse: the link is open. The mark
+   lasts as long as the suspect run. */
+static void cups_link(int moved)
+{
+  if (cups_verdict() == METER_LINK_OK) wd.cups_open = 0;
+  else if (moved) wd.cups_open = 1;
+}
+
+/* One in-table sample at position p into the sums; 1 if the vane moved since the last one. */
+static int vane_sample(unsigned p)
+{
+  int moved = wd.have_pos && p != wd.last_pos;
+  wd.have_pos = 1;
+  wd.last_pos = (uint8_t)p;
   wd.east_sum += east[p];
   wd.north_sum += north[p];
   wd.vane_n++;
-  wd.probe = 1;
+  return moved;
+}
+
+static void vane(void)
+{
+  uint16_t mv;
+  int moved = 0;
+  if (!board_vane_mv(&mv)) return;
+  wd.probe_seq++;
+  wd.probe = mv <= VANE_OPEN_MV;
+  wd.vane_out = (uint8_t)!in_table(mv);
+  if (wd.probe && wd.vane_out) wd.vane_out_n++;
+  else if (wd.probe) moved = vane_sample(position_of(mv));
+  cups_link(moved);
+}
+
+enum meter_link mod_wind_link(void)
+{
+  enum meter_link v = cups_verdict();
+  if (v == METER_LINK_CUPS_OPEN) return v;
+  return wd.vane_out ? METER_LINK_VANE_OUT : v;
 }
 
 void mod_wind_tick(uint32_t now_ms)
@@ -145,9 +210,19 @@ void mod_wind_identity(uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLO
   local_pack_identity(P_WIND, WSMP_T_WIND, CHANNELS, boot, desc, id);
 }
 
+/* A slot's quality under a link verdict: fault for an open link; suspect over good or partial
+   for a suspect cups link or an out-of-table vane; otherwise as it was. */
+static uint8_t link_quality(uint8_t q, enum meter_link v)
+{
+  if (v == METER_LINK_CUPS_OPEN) return WSMP_QUAL_FAULT;
+  if (v != METER_LINK_OK && (q == WSMP_QUAL_GOOD || q == WSMP_QUAL_PARTIAL)) return WSMP_QUAL_SUSPECT;
+  return q;
+}
+
 static uint8_t vane_quality(const wsmp_snapshot *snap)
 {
   if (wd.vane_n == 0) return WSMP_QUAL_MISSING;
+  if (wd.vane_out_n) return WSMP_QUAL_SUSPECT;
   if (wd.vane_n < snap->window_ms / VANE_PERIOD_MS) return WSMP_QUAL_PARTIAL;
   return mean_quality(snap, wd.vane_n);
 }
@@ -158,7 +233,7 @@ void mod_wind_latch(uint16_t token, uint32_t now_ms)
   wsmp_snapshot snap;
   desc_block(desc);
   if (!mean_close(&wd.win, token, now_ms, boot, desc, 0, &snap)) return;
-  uint8_t q = mean_quality(&snap, wd.ticks);
+  uint8_t q = link_quality(mean_quality(&snap, wd.ticks), cups_verdict());
   uint32_t gust = (uint32_t)(((uint64_t)wd.gust_max * WSMP_WIND_UMS_PER_HZ * 2U + GUST_S * CENTI_UMS) / (2U * GUST_S * CENTI_UMS));
   uint8_t qv = vane_quality(&snap);
   snap.slot[0] = (wsmp_slot){ .value = wd.total, .count = (uint16_t)wd.ticks, .quality = q };
@@ -167,7 +242,7 @@ void mod_wind_latch(uint16_t token, uint32_t now_ms)
   snap.slot[2] = (wsmp_slot){ .value = (uint32_t)wd.east_sum, .count = (uint16_t)wd.vane_n, .quality = qv };
   snap.slot[3] = (wsmp_slot){ .value = (uint32_t)wd.north_sum, .count = (uint16_t)wd.vane_n, .quality = qv };
   mean_store(&wd.win, &snap);
-  wd.gust_max = 0; wd.ticks = 0; wd.east_sum = 0; wd.north_sum = 0; wd.vane_n = 0;
+  wd.gust_max = 0; wd.ticks = 0; wd.east_sum = 0; wd.north_sum = 0; wd.vane_n = 0; wd.vane_out_n = 0;
 }
 
 void mod_wind_snapshot(uint8_t snap[WSMP_SNAPSHOT_LEN]) { memcpy(snap, wd.win.frozen, WSMP_SNAPSHOT_LEN); }

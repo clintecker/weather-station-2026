@@ -1,6 +1,6 @@
 # GENERATED from protocol.lit.md by tools/tangle.py: do not edit. Edit the document, then run
 # tools/tangle.py ws0/protocol.lit.md (tests/test_tangle.py checks this file).
-"""Binary radio protocol, version 5, gateway side. All integers are big-endian (network byte order).
+"""Binary radio protocol, version 6, gateway side. All integers are big-endian (network byte order).
 
 AES-CCM comes from cryptography (OpenSSL). This module does not implement it.
 The firmware reserves each counter durably before use (firmware/stage0-node/App/node_store.c).
@@ -19,8 +19,9 @@ from . import fields
 
 # Envelope (docs/protocol-design.md section 3): byte 0 = version << 4 | kind, then station u16
 # and counter u40. The ciphertext and an 8-byte CCM tag follow. firmware/common/ws_frame.c builds
-# the same bytes. tests/test_frame.py compares them byte for byte.
-VERSION = 5
+# the same bytes. tests/test_frame.py compares them byte for byte. Version 6: catalog v2
+# observations and the 64-byte health report. Both node roles and the gateway must match.
+VERSION = 6
 KEY_LEN, KCV_LEN = 16, 3                   # AES-128 key. Key check value = AES-ECB(key, 0)[:3]
 SIGNAL_NONE = -128                         # health report RSSI and SNR: no authentic ACK heard yet
 EPOCH_RESERVED = 2**32 - 1                 # the bench storm test's epoch. A real boot never gets it
@@ -53,16 +54,69 @@ def unpack_reply(plain):
 
 
 KIND_OBS, KIND_ACK, KIND_NACK, KIND_DIAG = 1, 2, 3, 4
-# Health report (kind 4, docs/protocol-design.md section 4). The node sends it once: no journal,
-# no ACK. Fields: epoch, uptime s, journal pending, lost (cumulative, persisted), torn slots
-# present, abandoned (cumulative, persisted), missed ACKs and rejected replies since boot, reset
-# cause, link state, firmware build ID (first 4 bytes of the release commit), the signal of the
-# last authentic ACK as the node heard it (RSSI dBm, SNR dB, -128 = none yet), crashes since
-# power-up, energy state.
-DIAG = struct.Struct('>IIHIHHHHBBIbbBB')
+# Health report (kind 4, docs/protocol-design.md section 4; power telemetry design section 6.1).
+# The node sends it once: no journal, no ACK. 64 bytes; DIAG_FIELDS names each value by its C
+# member in ws_diag_t (firmware/common/ws_frame.h). Callers use pack_diag and unpack_diag, never
+# the tuple order of DIAG.
+DIAG = struct.Struct('>IIHIHHHHBBIbbBBIHHHHhHhBBHhHhhh')
+DIAG_FIELDS = ('epoch', 'uptime', 'pending', 'lost', 'torn', 'abandoned', 'no_ack', 'rejects', 'reset_cause',
+               'link', 'build', 'rssi', 'snr', 'crashes', 'energy',
+               'crash_pc', 'boots', 'tx_timeouts', 'i2c_recoveries', 'vdda_mv', 'monitor_temp', 'soc', 'soc_rate',
+               'charger_status', 'fitted', 'chg_input_mv', 'chg_input_ma', 'chg_batt_mv', 'chg_batt_ma',
+               'chg_temp', 'pack_temp')
 RESET_CAUSES = ('unknown','power','pin','brownout','software','watchdog','lowpower','option-bytes')
 LINK_STATES = ('linked','probing')
+U16_NONE, I16_NONE, CHARGER_NONE = 0xFFFF, -0x8000, 0xFF     # no value; the fitted byte says why
+FIT_MCU_SUPPLY, FIT_MONITOR_TEMP, FIT_GAUGE, FIT_CHARGER_STATUS = 0x01, 0x02, 0x04, 0x08
+FIT_CHARGER_REGS, FIT_CHARGE_CURRENT, FIT_PACK_TEMP, FIT_RESERVED = 0x10, 0x20, 0x40, 0x80
+CRASH_PC_NONE, CRASH_PC_UNTRUSTED = 0, 0xFFFFFFFF            # no crash since power-up; frame not trusted
+DIAG_DEFAULTS = dict(crash_pc=CRASH_PC_NONE, boots=0, tx_timeouts=0, i2c_recoveries=0, vdda_mv=U16_NONE,
+                     monitor_temp=I16_NONE, soc=U16_NONE, soc_rate=I16_NONE, charger_status=CHARGER_NONE,
+                     fitted=0, chg_input_mv=U16_NONE, chg_input_ma=I16_NONE, chg_batt_mv=U16_NONE,
+                     chg_batt_ma=I16_NONE, chg_temp=I16_NONE, pack_temp=I16_NONE)
+CHG_POWER_GOOD, CHG_CHARGING, CHG_FAULT = 0x01, 0x02, 0x04
+CHG_STAGE_SHIFT, CHG_INPUT_SHIFT, CHG_FIELD_MASK = 3, 6, 0x07
+CHARGER_STAGES = (None, 'precharge', 'cc', 'cv', 'topoff', 'terminated', 'not_charging')   # 7: reserved
+CHARGER_INPUTS = (None, 'solar', 'usb_c', 'no_input')                                     # all four codes valid
 NACK_COLLISION, NACK_INVALID = 1, 2
+
+
+def pack_diag(**values):
+    """Health report plaintext from named values (DIAG_FIELDS). Missing version 6 fields get their
+    none codes, fitted gets 0."""
+    unknown = set(values) - set(DIAG_FIELDS)
+    missing = set(DIAG_FIELDS) - set(values) - set(DIAG_DEFAULTS)
+    if unknown or missing:
+        raise TypeError(f'pack_diag: unknown {sorted(unknown)}, missing {sorted(missing)}')
+    merged = {**DIAG_DEFAULTS, **values}
+    return DIAG.pack(*(merged[name] for name in DIAG_FIELDS))
+
+
+def unpack_diag(payload):
+    """Raw health report values by C member name (DIAG_FIELDS). No rule is applied."""
+    if len(payload) != DIAG.size:
+        raise ValueError('Wrong health report length')
+    return dict(zip(DIAG_FIELDS, DIAG.unpack(payload), strict=True))
+
+
+def diag_problems(d):
+    """The canonical rules that an unpacked health report breaks; empty when it is canonical."""
+    status = d['charger_status']
+    problems = ('fitted bit 7 set',) if d['fitted'] & FIT_RESERVED else ()
+    if status != CHARGER_NONE and status >> CHG_STAGE_SHIFT & CHG_FIELD_MASK >= len(CHARGER_STAGES):
+        problems += ('charger stage 7',)
+    return problems
+
+
+def charger_keys(status):
+    """The five gateway charger keys of a status byte. All None for no status or an invalid byte."""
+    stage, source = status >> CHG_STAGE_SHIFT & CHG_FIELD_MASK, status >> CHG_INPUT_SHIFT
+    if status == CHARGER_NONE or stage >= len(CHARGER_STAGES):
+        return dict(charger_input_power_ok=None, charger_charging=None, charger_fault=None, charger_stage=None,
+                    charger_active_input=None)
+    return dict(charger_input_power_ok=bool(status & CHG_POWER_GOOD), charger_charging=bool(status & CHG_CHARGING),
+                charger_fault=bool(status & CHG_FAULT), charger_stage=CHARGER_STAGES[stage],
+                charger_active_input=CHARGER_INPUTS[source])
 
 
 class Nonces:

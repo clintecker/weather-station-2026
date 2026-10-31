@@ -5,12 +5,12 @@ os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim p
 import tempfile
 import unittest
 from pathlib import Path
-from gateway import Store
+from gateway import RECORD_VERSION, Store
 
 
 def reading(**updates):
     """Use deterministic simulated UTC times for repeatable age checks."""
-    value = dict(version=5, station='test', session='boot-1', sequence=1, sampled_at=1000, uptime_s=60,
+    value = dict(version=RECORD_VERSION, station='test', session='boot-1', sequence=1, sampled_at=1000, uptime_s=60,
                  time_quality='synchronized', energy_state='normal', calibration_revision=0,
                  temperature_c=20, humidity_pct=40, quality='valid')
     return value | updates
@@ -106,6 +106,57 @@ class GatewayTests(unittest.TestCase):
 
 
 
+# A healthy phase A minute (power telemetry design section 3.2): battery V and signed I, the battery
+# counters, OUT and the unattributed charger input. Load current and the source rails are absent.
+PHASE_A = dict(batt_mv=3912, batt_current_ma=-35, energy_in_mwh=120, energy_out_mwh=88, charge_in_mah=31,
+               charge_out_mah=23, load_mv=3902, charger_input_mv=0)
+SOURCE_RAILS = ('load_current_ma', 'solar_mv', 'solar_current_ma', 'usb_mv', 'usb_current_ma')
+
+
+class PowerQualityTests(unittest.TestCase):
+    """Record quality for 'not measured' (absent) and 'invalid' (design section 5.3)."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(str(Path(self.tmp.name) / 'q.db'))
+
+    def tearDown(self):
+        self.store.db.close()
+        self.tmp.cleanup()
+
+    def test_healthy_phase_a_record_is_valid(self):
+        from ws0.fields import quality
+        record = reading(**PHASE_A)
+        self.assertEqual(quality(record), 'valid')
+        self.assertTrue(self.store.ingest(record, 1001))
+        latest = self.store.latest('test', 1001)
+        self.assertEqual((latest['available'], latest['observation']['batt_current_ma']), (True, -35))
+
+    def test_invalid_battery_current_makes_the_record_partial(self):
+        from ws0.fields import quality
+        record = reading(**(PHASE_A | {'batt_current_ma': None}))
+        self.assertEqual(quality(record), 'partial')
+        with self.assertRaises(ValueError):           # a 'valid' claim with an INVALID field is refused
+            self.store.ingest(record | {'quality': 'valid'})
+        self.assertTrue(self.store.ingest(record | {'quality': 'partial'}, 1001))
+        self.assertFalse(self.store.latest('test', 1001)['fields_available']['batt_current_ma'])
+
+    def test_absent_rails_do_not_change_quality(self):
+        from ws0.fields import quality
+        for base in (reading(**PHASE_A), reading(**(PHASE_A | {'batt_current_ma': None}))):
+            with_rails = base | {name: 0 for name in SOURCE_RAILS}
+            self.assertEqual(quality(base), quality(with_rails))
+            self.assertNotIn('solar_mv', base)                  # absent, not INVALID: not in the record at all
+
+    def test_no_chip_names_in_power_names(self):
+        """Fields and health keys say WHAT is measured, never which part measures it (design section 1)."""
+        import re
+        from ws0.fields import MEASURED
+        from ws0.service import HEALTH_KEYS
+        chip = re.compile(r'(ina|max|bq|sht|ltr|bme|stm|lsm|ads)\d|vrefint|pgood|iset', re.IGNORECASE)
+        for name in (*MEASURED, *HEALTH_KEYS):
+            self.assertIsNone(chip.search(name), name)
+
+
 class ReconstructionTests(unittest.TestCase):
     def test_bounded_update_matches_a_full_rescan(self):
         """A new reference recomputes only the readings between its neighbouring references. After
@@ -167,7 +218,7 @@ class SchemaTests(unittest.TestCase):
             ([], 'Unsupported version'),
             (reading(version=4), 'Unsupported version'),
             (reading(version=True), 'Unsupported version'),
-            (reading(version=5.0), 'Unsupported version'),
+            (reading(version=float(RECORD_VERSION)), 'Unsupported version'),
             ({k: v for k, v in reading().items() if k != 'version'}, 'Unsupported version'),
             (no_quality, 'Missing record fields'),
             (reading(bogus=1), 'Unexpected record fields'),

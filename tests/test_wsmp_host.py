@@ -18,13 +18,14 @@ except ImportError:
     from tests import wsmp_record_ref as ref
     from tests import wsmp_wind_ref as wind_ref
 
-DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228 = 2, 3, 4, 5, 6
+DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228, DEVK_MAX17048 = 2, 3, 4, 5, 6, 7
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_BUS_ERROR = 0, 1, 2, 6
-P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH, P_POWER, P_WIND, P_RAIN = range(1, 8)
-P_COUNT_ = 8
+P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH, P_BATTERY, P_WIND, P_RAIN, P_RAILS = range(1, 9)
+P_COUNT_ = 9
+POWER_PORTS = (P_BATTERY, P_RAILS)                        # base-board modules: always in the layout
 ABSENT, PROBING, IDENTIFYING, ADMITTED, ACTIVE, SUSPECT, QUARANTINED, REFUSED = range(8)
 MINUTE, HOUR = 60_000, 3_600_000
-ADDR = {DEVK_SHT45: 0x44, DEVK_SHTC3: 0x70, DEVK_BMP581: 0x47, DEVK_LTR390: 0x53, DEVK_INA228: 0x40}
+ADDR = {DEVK_SHT45: 0x44, DEVK_SHTC3: 0x70, DEVK_BMP581: 0x47, DEVK_LTR390: 0x53, DEVK_INA228: 0x40, DEVK_MAX17048: 0x36}
 DEVK_EEPROM = 9
 CHANNEL = {P_AIR_TH: 0, P_UVA: 1, P_PRESSURE: 2}         # the static channel map (ports design, section 4.1)
 EPOCH = 7                                                  # the station boot epoch of station()
@@ -40,9 +41,9 @@ class Host(unittest.TestCase):
     def setUpClass(cls):
         cls.libs = {budget: host_library(cls, f'host{budget}', '-DWSMP_HOST', f'-DWSMP_HOST_BUDGET={budget}',
                                          *host_sources())._name
-                    for budget in (58, 8)}
+                    for budget in (60, 59, 58, 8)}
 
-    def station(self, kinds, budget=58):
+    def station(self, kinds, budget=60):
         lib = fresh_station(self, self.libs[budget])
         devs = {k: lib.h_add_device(k, ADDR[k]) for k in kinds}
         lib.h_init(7)
@@ -72,7 +73,16 @@ class Host(unittest.TestCase):
     def test_absent_ports_stay_absent(self):
         lib, _ = self.station([DEVK_SHT45])
         self.minutes(lib, 2)
-        self.assertEqual([lib.h_host_state(p) for p in (P_PRESSURE, P_UVA, P_ENCL_TH, P_POWER, P_WIND, P_RAIN)], [ABSENT] * 6)
+        self.assertEqual([lib.h_host_state(p) for p in (P_PRESSURE, P_UVA, P_ENCL_TH, P_WIND, P_RAIN)], [ABSENT] * 5)
+
+    def test_the_power_modules_are_always_in_the_layout(self):
+        # Base-board modules fixed by the power profile (power telemetry design section 8.5): with no
+        # power part at all they still join, and they never leave.
+        lib, _ = self.station([])
+        self.minutes(lib, 5)
+        self.assertEqual([lib.h_host_state(p) for p in POWER_PORTS], [ACTIVE, ACTIVE])
+        self.assertEqual([lib.h_host_changes(p) for p in POWER_PORTS], [1, 1])                # one join each
+        self.assertEqual([lib.h_host_slot_quality(P_BATTERY, i) for i in range(6)], [3] * 6)  # every slot missing
 
     def test_three_missed_latches_then_absent(self):
         lib, devs = self.station([DEVK_SHT45])
@@ -127,12 +137,35 @@ class Host(unittest.TestCase):
         self.assertEqual([lib.h_host_state(p) for p in (P_AIR_TH, P_PRESSURE, P_UVA)], [ACTIVE, ACTIVE, REFUSED])
         self.assertIn(b'uva=refused', self.line(lib))
 
-    def test_the_health_class_does_not_count_in_the_budget(self):
+    def test_no_module_is_health_class(self):
+        # Power telemetry design section 8.2: the slow power values reach the health report through
+        # mod_power_health, not WSMP channels, so the battery module (16 value bytes and 2 quality
+        # bytes) counts in the budget like every other module: over 8 bytes it is refused.
         lib, _ = self.station([DEVK_SHT45, DEVK_BMP581, DEVK_INA228], budget=8)
         self.minutes(lib, 1)
-        # The battery module (16 bytes) is admitted first: it probes every second. It goes in the health
-        # report, so the minute modules still fit the 8 bytes beside it.
-        self.assertEqual([lib.h_host_state(p) for p in (P_POWER, P_AIR_TH, P_PRESSURE)], [ACTIVE, ACTIVE, ACTIVE])
+        self.assertEqual([lib.h_host_state(p) for p in (P_BATTERY, P_RAILS, P_AIR_TH, P_PRESSURE)],
+                         [REFUSED, REFUSED, ACTIVE, ACTIVE])
+
+    def full_station(self, budget):
+        lib, _ = self.station([DEVK_SHT45, DEVK_BMP581, DEVK_LTR390, DEVK_SHTC3, DEVK_INA228, DEVK_MAX17048], budget=budget)
+        lib.h_vane_mv(wind_ref.vane_mv(0))
+        lib.h_rain_enable(1)
+        self.minutes(lib, 2)
+        return lib
+
+    def test_the_whole_station_fits_the_budget(self):
+        # Design section 8.4 (WSMP-A1, WSMP-P8): 8 modules, 24 minute channels, 53 value bytes and 6
+        # quality bytes: 59 B fit the 60 B budget with a byte to spare, and a 59 B budget exactly; at
+        # 58 B one module is refused.
+        for budget in (60, 59):
+            with self.subTest(budget=budget):
+                lib = self.full_station(budget)
+                self.assertEqual([lib.h_host_state(p) for p in range(P_AIR_TH, P_COUNT_)], [ACTIVE] * 8)
+                s = Reidentify.descriptor_set(self, lib)
+                self.assertEqual((len(s.modules), sum(len(m.descriptors) for m in s.modules)), (8, 24))
+                self.assertEqual(sum(d.width for m in s.modules for d in m.descriptors) + (2 * 24 + 7) // 8, 59)
+        lib = self.full_station(58)
+        self.assertEqual(sorted(lib.h_host_state(p) for p in range(P_AIR_TH, P_COUNT_)), [ACTIVE] * 7 + [REFUSED])
 
     def test_bad_descriptor_quarantines(self):
         lib, _ = self.station([])
@@ -158,7 +191,7 @@ class Host(unittest.TestCase):
         lib, _ = self.station([DEVK_SHT45, DEVK_BMP581], budget=8)
         self.minutes(lib, 1)
         idb, desc = (ctypes.c_uint8 * 32)(), (ctypes.c_uint8 * 48)()
-        lib.h_identity(P_POWER, idb, desc)                         # the health-class battery module's blocks
+        lib.h_identity(P_RAIN, idb, desc)                          # the rain module's blocks: 2 + 1 bytes fit
         self.assertEqual(lib.wsmp_host_admit(P_AIR_TH, idb, desc), ADMITTED)
         lib.h_add_device(DEVK_LTR390, ADDR[DEVK_LTR390])
         self.minutes(lib, 2)
@@ -174,7 +207,23 @@ class Host(unittest.TestCase):
         lib, _ = self.station([DEVK_SHT45])
         self.minutes(lib, 1)
         self.assertEqual(self.line(lib), b'#modules air_th=active pressure=absent uva=absent encl_th=absent '
-                                         b'power=absent wind=absent rain=absent')
+                                         b'battery=active wind=absent rain=absent rails=active')
+
+    def test_the_longest_modules_line_fits(self):
+        # Every port with the longest name, and the I2C port modules (air_th, pressure, uva) with both
+        # counts at their limit: 268 characters, which WSMP_MODULES_LINE_MAX holds with its NUL.
+        lib, _ = self.station([DEVK_SHT45])
+        self.minutes(lib, 1)
+        lib.h_host_worst_line()
+        cap = lib.h_modules_line_max()
+        counts = b'(incomplete=255)(unverified=255)'
+        want = (b'#modules' + b''.join(b' %s=type_conflict%s' % (label, counts if label in (b'air_th', b'pressure', b'uva') else b'')
+                                       for label in (b'air_th', b'pressure', b'uva', b'encl_th', b'battery', b'wind', b'rain', b'rails')))
+        self.assertEqual(len(want), 268)
+        buf = ctypes.create_string_buffer(cap)
+        self.assertEqual(lib.h_host_line(buf, cap), len(want))
+        self.assertEqual(buf.value, want)                     # nothing cut off: the line and its NUL fit
+        self.assertLess(len(want), cap)
 
 
 SERIAL32 = 0x1234_5678                                         # the SHT45's own serial (0x89) in these tests
@@ -561,6 +610,10 @@ class Reidentify(unittest.TestCase):
         n = lib.h_host_set(out)                 # fill the buffer first, then copy it
         return wsmp_set.unpack(bytes(out)[:n])
 
+    def port_modules(self, lib):
+        """The set's modules without the battery and rails modules, which every layout holds."""
+        return tuple(m for m in self.descriptor_set(lib).modules if m.port not in POWER_PORTS)
+
     def ident_lines(self, lib):
         lines, buf = [], ctypes.create_string_buffer(112)
         for i in range(8):
@@ -578,7 +631,11 @@ class Reidentify(unittest.TestCase):
         self.minutes(lib, 2)
         s = self.descriptor_set(lib)
         self.assertIsNone(wsmp_set.check(s))
-        air, pressure = s.modules
+        self.assertEqual([m.port for m in s.modules], [P_AIR_TH, P_PRESSURE, P_BATTERY, P_RAILS])
+        air, pressure, battery, rails = s.modules
+        self.assertEqual([(m.type, m.serial, m.source, m.status) for m in (battery, rails)],
+                         [(8, ref.port_serial(P_BATTERY, 8), 'port', 'applied'),
+                          (9, ref.port_serial(P_RAILS, 9), 'port', 'applied')])   # no record: status 0
         self.assertEqual((air.port, air.type, air.serial, air.source, air.status, air.record_crc),
                          (P_AIR_TH, 1, REC_SERIAL, 'record', 'applied', int.from_bytes(rec[0x7C:0x80], 'big')))
         self.assertEqual((pressure.port, pressure.type, pressure.serial, pressure.source, pressure.status,
@@ -589,7 +646,7 @@ class Reidentify(unittest.TestCase):
         # SENSOR_CHANGED: a valid record bound to another SHT4x serial; serial from the sensor, CRC 0
         lib, _ = self.boot([(P_AIR_TH, DEVK_SHT45, sht_record(bind_value=SERIAL32 + 1))])
         self.minutes(lib, 2)
-        (air,) = self.descriptor_set(lib).modules
+        (air,) = self.port_modules(lib)
         self.assertEqual((air.serial, air.source, air.status, air.record_crc),
                          (ref.sensor_serial(1, SERIAL32), 'sensor', 'SENSOR_CHANGED', 0))
 
@@ -600,7 +657,7 @@ class Reidentify(unittest.TestCase):
         rec = sht_record(cal=[(1, 0, 2, 50, 1_000_000)])     # recalibrated on the fixture, same serial
         lib.h_eeprom_write(devs[P_AIR_TH][1], 0, rec, len(rec))
         self.minutes(lib, 1)
-        self.assertEqual(self.descriptor_set(lib).modules, ())          # left at the latch
+        self.assertEqual(self.port_modules(lib), ())                     # left at the latch
         self.minutes(lib, 2)
         after = self.descriptor_set(lib)
         self.assertEqual(after.modules[0].serial, before.modules[0].serial)
@@ -611,7 +668,7 @@ class Reidentify(unittest.TestCase):
         # a structurally valid record whose calibration fails check 7: its serial is kept, no CRC
         lib, _ = self.boot([(P_PRESSURE, DEVK_BMP581, bmp_record(cal=[(3, 0, 1, 500, 1_000_000)]))])
         self.minutes(lib, 2)
-        (pressure,) = self.descriptor_set(lib).modules
+        (pressure,) = self.port_modules(lib)
         self.assertEqual((pressure.serial, pressure.source, pressure.status, pressure.record_crc),
                          (REC_SERIAL + 0x100, 'record', 'CAL_REJECTED', 0))
 
@@ -621,7 +678,7 @@ class Reidentify(unittest.TestCase):
         lib.h_device_mode(devs[P_AIR_TH][0], DM_NACK_ADDR, 0, 1)
         self.minutes(lib, 1)
         self.assertEqual(lib.h_host_state(P_AIR_TH), SUSPECT)
-        self.assertEqual([m.serial for m in self.descriptor_set(lib).modules], [REC_SERIAL])
+        self.assertEqual([m.serial for m in self.port_modules(lib)], [REC_SERIAL])
 
     def test_a_module_whose_blocks_do_not_unpack_is_counted(self):
         # a bug, never a silent gap: left out of the set and counted (#ident dropped=N)
@@ -629,7 +686,7 @@ class Reidentify(unittest.TestCase):
         self.minutes(lib, 2)
         self.assertEqual(lib.h_host_set_dropped(), 0)
         lib.h_break_identity(P_PRESSURE)
-        self.assertEqual([m.port for m in self.descriptor_set(lib).modules], [P_AIR_TH])
+        self.assertEqual([m.port for m in self.port_modules(lib)], [P_AIR_TH])
         self.assertEqual(lib.h_host_set_dropped(), 1)
 
     def test_a_module_that_never_has_a_record_shows_status_none(self):
@@ -637,8 +694,8 @@ class Reidentify(unittest.TestCase):
         lib.h_vane_mv(wind_ref.vane_mv(0))                    # the wind module: a meter, no record in v1
         self.minutes(lib, 3)
         self.assertEqual(lib.h_host_state(P_WIND), ACTIVE)
-        self.assertEqual(self.ident_lines(lib)[-1],
-                         b'#ident port=6 type=6 serial=%016x source=port status=none crc=00000000' % ref.port_serial(P_WIND, 6))
+        self.assertIn(b'#ident port=6 type=6 serial=%016x source=port status=none crc=00000000' % ref.port_serial(P_WIND, 6),
+                      self.ident_lines(lib))
 
     def test_only_the_layout_is_in_the_set(self):
         # a quarantined port (a type conflict) and a probing one are not in the layout, so not in the set
@@ -648,7 +705,7 @@ class Reidentify(unittest.TestCase):
         self.plug(lib, P_PRESSURE, DEVK_BMP581)
         lib.h_host_run(750)
         self.assertEqual(lib.h_host_state(P_PRESSURE), PROBING)
-        self.assertEqual([m.port for m in self.descriptor_set(lib).modules], [P_UVA])
+        self.assertEqual([m.port for m in self.descriptor_set(lib).modules], [P_UVA, *POWER_PORTS])
 
     def test_the_ident_lines_follow_the_set(self):
         rec = sht_record()
@@ -657,7 +714,9 @@ class Reidentify(unittest.TestCase):
         crc = rec[0x7C:0x80].hex().encode()
         self.assertEqual(self.ident_lines(lib), [
             b'#ident port=1 type=1 serial=%016x source=record status=applied crc=%s' % (REC_SERIAL, crc),
-            b'#ident port=2 type=2 serial=%016x source=port status=READ crc=00000000' % ref.port_serial(P_PRESSURE, 2)])
+            b'#ident port=2 type=2 serial=%016x source=port status=READ crc=00000000' % ref.port_serial(P_PRESSURE, 2),
+            b'#ident port=5 type=8 serial=%016x source=port status=none crc=00000000' % ref.port_serial(P_BATTERY, 8),
+            b'#ident port=8 type=9 serial=%016x source=port status=none crc=00000000' % ref.port_serial(P_RAILS, 9)])
 
     def test_a_changed_record_crc_with_the_same_serial_is_a_leave_and_a_join(self):
         lib, devs = self.boot([(P_AIR_TH, DEVK_SHT45, sht_record(cal=[(1, 0, 1, 100, 1_000_000)]))])

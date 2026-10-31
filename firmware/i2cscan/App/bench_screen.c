@@ -52,7 +52,7 @@ void bench_screen(oled_fb *fb, const bench_view *v)
     (void)oled_text(fb, 0, Y_CURRENT, line, BIG);
 
     line[0] = '\0';
-    append(line, sizeof line, "VBUS ");
+    append(line, sizeof line, "OUT ");   /* the INA228 VBUS: its sense lead on the OUT connector (P5) */
     append(line, sizeof line, bench_fixed(num, sizeof num, v->vbus_uv, 2, 4, 0));
     append(line, sizeof line, "V");
     (void)oled_text(fb, 0, Y_VBUS, line, 1);

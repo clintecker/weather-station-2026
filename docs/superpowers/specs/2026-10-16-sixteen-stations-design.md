@@ -3,6 +3,18 @@
 Status: design, approved section by section on 2026-10-16. Not implemented. Each sub-project in
 section 9 gets its own spec, plan and implementation.
 
+**Amended 2026-10-29** by the power telemetry design
+([`2026-10-29-power-telemetry-design.md`](2026-10-29-power-telemetry-design.md), "PT" below). The
+approved body stands except where a dated note says otherwise:
+
+| Item | Before | After (2026-10-29) | Where |
+|---|---|---|---|
+| Protocol version of the time sync | 6 | **7**: power telemetry takes version 6 (catalog v2, a 64-byte health report); the time sync keeps "one change per version" | section 5, sub-project 3 (section 10); PT section 4 |
+| Radio ceiling of a node build | 78 B plaintext, 94 B frame | **80 B plaintext, 96 B frame** (the journal's per-build ceiling). The 110 B frame of every catalog v2 field is accepted only by the RX bridge and the gateway, never built | section 1, section 3; PT sections 5.4 and 7 |
+| Slot table | sized for 94 B | recomputed for a 96 B frame and the 80 B health frame: SF8 and SF10 slots grow, the others do not | section 3; PT risk R13 |
+| The node's field set (v6) | about 46 B plaintext (62 B frame) | 77 B plaintext, **93 B frame**, every power field of every phase | section 1; PT section 5.4 |
+| Sub-project 7 | WSMP replaces the catalog | also keeps every power quantity's meaning and INVALID code, revisits WSMP-P8 and A1, and adds a set-level "not fitted" marker | section 10; PT sections 8.3 and 8.4, risk R10 |
+
 ## 1. Goal and constraints
 
 Support up to 16 fully equipped stations reliably on one single-channel receiver. Design for the
@@ -12,7 +24,7 @@ worst case: every station at spreading factor 12 (SF12) on a 500 kHz channel.
 |---|---|
 | Receiver | one RX bridge with one radio, one channel. No multi-channel gateway hardware. |
 | Spreading factor | one network-wide SF for every station and the RX bridge, set in the gateway config. |
-| Station | full sensor set. Its modules follow WSMP ([`docs/module-protocol.md`](../../module-protocol.md)). The minute reading of the bench station is about 46 bytes of plaintext (a 62-byte frame). The radio ceiling stays a 78-byte plaintext in a 94-byte frame. |
+| Station | full sensor set. Its modules follow WSMP ([`docs/module-protocol.md`](../../module-protocol.md)). The minute reading of the bench station is about 46 bytes of plaintext (a 62-byte frame). The radio ceiling stays a 78-byte plaintext in a 94-byte frame. *Amended 2026-10-29: the version 6 node field set is 77 B of plaintext (a 93-byte frame), and the per-build ceiling is an 80-byte plaintext in a 96-byte frame (PT section 5.4).* |
 | Traffic | one live reading a minute per station, as today. |
 | Reliable | every station meets the 24-hour delivery test (H01, `docs/H01-checklist.md`): at least 99 % of minutes committed within 120 s. |
 | Backlog | live readings come first. Backlog drains only in spare capacity, with no deadline. |
@@ -50,25 +62,54 @@ A slot holds one exchange: the frame, the gateway turnaround, the ACK and a guar
 slot = frame airtime + 150 ms turnaround + ACK airtime + 100 ms guard
 ```
 
-Airtimes use the firmware's Semtech formula (`firmware/common/ws_policy.c`), rounded up to whole
-milliseconds, for a 94-byte frame and the 40-byte ACK of section 5:
+Airtimes use the firmware's Semtech formula (`ws_lora_airtime_ms` in `firmware/common/ws_policy.c`:
+500 kHz, preamble 8, CR 4/5, explicit header, CRC on), rounded up to whole milliseconds as the
+firmware does (the exact time, truncated, plus 1 ms). **Amended 2026-10-29:** the table is
+recomputed for a **96-byte frame** (the per-build ceiling of the power telemetry design, PT section
+5.4), the 40-byte ACK of section 5, and the **80-byte health report frame** (64 bytes of plaintext,
+PT section 6.1):
 
 | SF | Frame | ACK | Health report | Slot | Slots a minute | Pool slots with 16 live |
 |---|---:|---:|---:|---:|---:|---:|
-| 7 | 42 ms | 21 ms | 25 ms | 313 ms | 191 | 175 |
-| 8 | 72 ms | 39 ms | 44 ms | 361 ms | 166 | 150 |
-| 9 | 134 ms | 72 ms | 78 ms | 456 ms | 131 | 115 |
-| 10 | 237 ms | 134 ms | 144 ms | 621 ms | 96 | 80 |
-| 11 | 452 ms | 247 ms | 268 ms | 949 ms | 63 | 47 |
-| 12 | 822 ms | 453 ms | 494 ms | 1,525 ms | 39 | 23 |
+| 7 | 42 ms | 21 ms | 36 ms | 313 ms | 191 | 175 |
+| 8 | **75 ms** | 39 ms | 65 ms | **364 ms** | **164** | **148** |
+| 9 | 134 ms | 72 ms | 113 ms | 456 ms | 131 | 115 |
+| 10 | **247 ms** | 134 ms | 216 ms | **631 ms** | **95** | **79** |
+| 11 | 452 ms | 247 ms | 391 ms | 949 ms | 63 | 47 |
+| 12 | 822 ms | 453 ms | 740 ms | 1,525 ms | 39 | 23 |
+
+Working (2026-10-29). The payload takes ⌈(8 × PL − 4 × SF + 44) ÷ (4 × SF)⌉ blocks of 5 symbols
+(the low data rate optimisation is off: the longest symbol, SF12 at 500 kHz, is 8.192 ms, under the
+16 ms threshold). Two more payload bytes add a block only where the quotient crosses a whole number:
+
+| SF | Symbol | Blocks, 94 B | Blocks, 96 B | Frame, 94 B | Frame, 96 B | Slot, 94 B → 96 B |
+|---|---:|---:|---:|---:|---:|---:|
+| 7 | 0.256 ms | 28 | 28 | 41.0 ms | 41.0 ms | 313 → 313 ms |
+| 8 | 0.512 ms | 24 | **25** | 71.8 ms | **74.4 ms** | 361 → **364 ms** |
+| 9 | 1.024 ms | 22 | 22 | 133.4 ms | 133.4 ms | 456 → 456 ms |
+| 10 | 2.048 ms | 19 | **20** | 236.0 ms | **246.3 ms** | 621 → **631 ms** |
+| 11 | 4.096 ms | 18 | 18 | 451.6 ms | 451.6 ms | 949 → 949 ms |
+| 12 | 8.192 ms | 16 | 16 | 821.2 ms | 821.2 ms | 1,525 → 1,525 ms |
+
+Slot = frame + 150 ms + ACK + 100 ms, with the frame and the ACK rounded as above (SF8: 75 + 150 + 39
++ 100 = 364 ms; SF10: 247 + 150 + 134 + 100 = 631 ms). Slots a minute = ⌊60,000 ÷ slot⌋. Only SF8
+(166 → 164 slots) and SF10 (96 → 95) change; every SF still has more than 16 live slots plus a pool.
+The health report column now carries the 80-byte frame (it was the 48-byte frame of the 32-byte
+version 5 report); it still fits a slot, which it uses without an ACK. The version 6 node field set
+(a 93-byte frame) takes 42, 72, 129, 237, 432 and 822 ms at SF7 to SF12, inside every slot. The
+numbers were reproduced with a scratch copy of `ws_lora_airtime_ms` that also reproduces the approved
+94-byte table exactly (the 94 B columns above, and its health column for the 48-byte frame: 25, 44,
+78, 144, 268 and 494 ms).
 
 - **Live slots** are slots 0 to 15. Each station uses its own every minute, so a live reading
   never contends with another transmission.
 - **Pool slots** are the rest, plus any live slot no station uses. The gateway grants them.
-- **Slots stay sized for the 94-byte ceiling.** The WSMP minute reading is smaller: a 62-byte frame
-  takes 617 ms at SF12. The ceiling lets any slot carry a health report with the battery channels
+- **Slots stay sized for the per-build ceiling** (94 bytes as approved, 96 bytes since 2026-10-29).
+  The WSMP minute reading is smaller: a 62-byte frame takes 617 ms at SF12. The ceiling lets any slot carry a health report with the battery channels
   (about 68 bytes), a descriptor-set fragment or a later sensor. A slot sized for the real frame
-  (1,320 ms at SF12, 45 slots) is a later option.
+  (1,320 ms at SF12, 45 slots) is a later option. *Amended 2026-10-29: slots are sized for the
+  96-byte per-build ceiling (the table above). The version 6 health report is a fixed 80-byte frame
+  and the node's observation a 93-byte frame; both fit.*
 - Slot k of a minute starts at the UTC minute + k × slot length.
 - The guard covers clock error and timing jitter. The 150 ms turnaround is a target that
   sub-project 3 measures (section 10). If it misses, the slot grows: 1.6 s at SF12 still gives
@@ -143,11 +184,19 @@ node out of its slot.
 millisecond when its ACK arrives, so its receive window shrinks from 2 s to about 50 ms. That
 closes the open "blind 2 s ACK window" issue in `docs/failure-modes.md`.
 
-## 5. Protocol version 6
+## 5. Protocol version 7 (time sync)
 
-Unchanged: the frame header layout (the version nibble becomes 6), the nonce, AES-CCM, the
+*Amended 2026-10-29: this section was approved as "Protocol version 6". The power telemetry design
+(PT section 4) takes version 6 for catalog version 2 and the 64-byte health report, so the time sync
+ships as **version 7** (byte 0 of an observation 0x71, ACK 0x72, NACK 0x73, health report 0x74). The
+rule stays "one change per version": version 7 changes only the time sync. "Unchanged" below means
+unchanged from version 6 (catalog version 2 and the 64-byte health report), and the release
+procedure is PT section 4's (drain the journal, WIPE, flash both boards from one release, new run
+directory, re-provision).*
+
+Unchanged: the frame header layout (the version nibble becomes 7), the nonce, AES-CCM, the
 observation catalog and the health report. WSMP replaces the catalog in its own later protocol step
-(sub-project 7). Version 6 changes only the time sync, so a failed test points at one change.
+(sub-project 7). Version 7 changes only the time sync, so a failed test points at one change.
 
 **ACK and NACK plaintext: 17 bytes become 24 bytes.** The frame grows from 33 to 40 bytes.
 
@@ -219,6 +268,11 @@ Journal capacity. Opening a page erases the oldest one, so 69 pages always hold 
 |---|---:|---:|---:|---:|---:|
 | full station (the 78-byte radio ceiling) | 78 B | 96 B | 21 | 1,449 | 24.2 h |
 | temperature and humidity | 35 B | 56 B | 36 | 2,484 | 41.4 h |
+
+*Amended 2026-10-29:* the journal asserts 24 hours of the build's widest record, not of every
+catalog field (PT section 7). The version 6 node field set (77 B) and the 80-byte per-build ceiling
+both take a 96-byte slot: 21 slots a page, 1,449 records, 24.15 h, as the full-station row. Every
+catalog v2 field (94 B, a 112-byte slot, 20.7 h) is never a build.
 
 ### 6.2 Sampling on the UTC minute
 
@@ -369,7 +423,7 @@ Replay and key-reuse detection run per station. The gateway seals t3 inside the 
 flowchart LR
   S1["1. Flash layout:<br/>110 KB firmware, 24 h journal"] --> S3
   S2["2. Multi-station gateway"] --> S3
-  S3["3. Protocol version 6 time sync:<br/>24-byte ACK, scheduled ACK, time module"] --> S4
+  S3["3. Protocol version 7 time sync:<br/>24-byte ACK, scheduled ACK, time module"] --> S4
   S1 --> S6
   S6["6. WSMP bench station:<br/>local modules, registry, snapshots"] --> S7
   S3 --> S7
@@ -385,9 +439,10 @@ flowchart LR
    dashboard, MQTT and Home Assistant. Useful on its own: 2 or 3 stations on today's protocol. It
    uses the WSMP entity rule now (`<station>_<role>_<quantity>_<kind>`, WSMP-H1), so the Home
    Assistant history survives sub-project 7.
-3. **Protocol version 6 time sync.** The 24-byte ACK, the four-timestamp exchange, the RX bridge's
-   scheduled ACKs and timestamps, and the node time module. Still one station, so the time sync can
-   be proved on the bench before slots exist.
+3. **Protocol version 7 time sync** (approved as version 6; renumbered 2026-10-29, section 5). The
+   24-byte ACK, the four-timestamp exchange, the RX bridge's scheduled ACKs and timestamps, and the
+   node time module. Still one station, so the time sync can be proved on the bench before slots
+   exist.
 4. **Slots.** Live and pool slots, grants, join, UTC-aligned sampling, removing the drain and
    probing logic, and the gateway scheduler.
 5. **Scale validation.** The 16-node simulation and bench runs against the acceptance table, with
@@ -399,6 +454,18 @@ flowchart LR
 7. **WSMP on the radio.** The generation in the reading in place of the field bitmap, descriptor-set
    frames and their journal records, the health-class channels in the health report, and gateway
    decoding, derived values and Home Assistant mapping (WSMP sections 11 and 12).
+   *Amended 2026-10-29 (PT sections 8.2-8.4, risks R2 and R10):* it must also
+   - keep every power quantity's meaning and its INVALID ("not measured" versus "invalid") code as
+     catalog version 2 defines them: battery voltage is the cell, battery current is + into the
+     cell, the load, charger input, solar and USB-C rails keep their quantities 18-24, and the slow
+     items (SOC and rate, charger status, die temperatures, VDDA, the station counters) keep their
+     health-report meaning, whether or not they become health-class channels;
+   - revisit WSMP-P8 and WSMP-A1 first: the power telemetry station sits at the limits (8 modules,
+     24 minute channels, 59 of the 60-byte A1 budget), so any further module or channel needs them
+     raised;
+   - add a set-level "not fitted" marker (for example a per-channel flag in the descriptor set or a
+     profile-dependent channel list) before WSMP readings travel, because the 2-bit radio quality
+     shows snapshot quality 6, "not fitted", as "missing".
 
 Sub-projects 1 and 2 do not depend on each other and can run in either order. Sub-project 6 needs
 only sub-project 1, so it can run beside 2 and 3.

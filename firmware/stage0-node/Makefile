@@ -19,8 +19,10 @@ BOARD      = ../board/nucleo-wl55jc
 MBEDTLS    = $(CUBE)/Middlewares/Third_Party/mbed-crypto
 FW_VERSION:= $(shell git describe --always --dirty --abbrev=12 2>/dev/null || echo unknown)
 # Firmware build ID in the health report, DIAG (docs/protocol.md): the first 8 hex digits of
-# FW_VERSION, or 0 if they are not 8 lowercase hex digits (e.g. "unknown" or a tag name).
-FW_BUILD_ID := $(or $(shell printf '%s\n' '$(FW_VERSION)' | cut -c1-8 | grep -E '^[0-9a-f]{8}$$' | sed 's/^/0x/'),0)
+# FW_VERSION, or 0 ("not identified") if they are not 8 lowercase hex digits (e.g. "unknown" or a
+# tag name) or the tree is dirty: a build with uncommitted changes (a measured constant edited into
+# App/power_config.h, say) must not report the ID of the commit it differs from (power spec 8.6).
+FW_BUILD_ID := $(or $(shell printf '%s\n' '$(FW_VERSION)' | grep -v -e '-dirty$$' | cut -c1-8 | grep -E '^[0-9a-f]{8}$$' | sed 's/^/0x/'),0)
 
 ifeq ($(filter $(ROLE),tx rx),)
 $(error ROLE must be tx or rx)
@@ -40,8 +42,8 @@ APP_SRC = $(BOARD_CORE_SRC) $(BOARD_SYS_SRC) \
 ifeq ($(ROLE),tx)
 APP_SRC += App/tx_exchange.c App/tx_policy.c App/tx_time.c App/tx_console.c App/selftest.c \
            App/node_store.c App/flash_stm32wl.c App/i2c_bus.c App/board_inputs.c App/wsmp_local.c App/port_id.c App/wsmp_host.c \
-           App/wsmp_catalog_map.c App/mod_th.c App/mod_mean.c App/mod_reg.c App/mod_power.c App/mod_wind.c \
-           App/mod_rain.c $(ROOT)/firmware/common/wsmp.c $(ROOT)/firmware/common/wsmp_cal.c \
+           App/wsmp_catalog_map.c App/mod_th.c App/mod_mean.c App/mod_reg.c App/mod_power.c App/power_acq.c App/mod_wind.c \
+           App/mod_rain.c $(ROOT)/firmware/common/power_regs.c $(ROOT)/firmware/common/wsmp.c $(ROOT)/firmware/common/wsmp_cal.c \
            $(ROOT)/firmware/common/wsmp_ident.c $(ROOT)/firmware/stage0.c \
            $(ROOT)/firmware/common/ws_frame.c $(ROOT)/firmware/common/ws_obs.c $(ROOT)/firmware/common/ws_policy.c
 endif

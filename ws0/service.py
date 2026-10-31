@@ -20,9 +20,12 @@ from .descsets import ALARMS_SHOWN, DescriptorSets, module_discovery, modules_pa
 import sqlite3
 import struct
 from .fields import BY_NAME, DERIVED, DIAGNOSTIC_FIELDS, ENERGY, LABELS, MEASURED
-from .protocol import (KEY_LEN, SIGNAL_NONE, DIAG, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, LINK_STATES, NACK_COLLISION, NACK_INVALID,
-                       RESET_CAUSES, STATION_MAX, Nonces, decode_observation, frame_counter, frame_kind, pack_reply, seal,
-                       unseal)
+from .protocol import (CHARGER_INPUTS, CHARGER_STAGES, CRASH_PC_NONE, DIAG, FIT_CHARGE_CURRENT, FIT_CHARGER_REGS,
+                       FIT_CHARGER_STATUS, FIT_GAUGE, FIT_MCU_SUPPLY, FIT_MONITOR_TEMP, FIT_PACK_TEMP, I16_NONE, KEY_LEN,
+                       SIGNAL_NONE, KIND_ACK, KIND_DIAG,
+                       KIND_NACK, KIND_OBS, LINK_STATES, NACK_COLLISION, NACK_INVALID, RESET_CAUSES, STATION_MAX, U16_NONE,
+                       Nonces, charger_keys, decode_observation, diag_problems, frame_counter, frame_kind, pack_reply, seal,
+                       unpack_diag, unseal)
 
 
 def load_config(path):
@@ -44,6 +47,95 @@ def load_config(path):
 
 API_TOKEN_MIN = 32   # characters; ws0 init makes a 43-character token
 KEY_REUSE_ALARM = 'possible key reuse: re-key the node'
+
+
+def _named(value, names):
+    return names[value] if value < len(names) else 'unknown'
+
+
+def _scaled(value, none, divisor):
+    """A health report value in its unit; None for its none code (power telemetry design section 6.1)."""
+    return None if value == none else value / divisor
+
+
+def _plain(value, none):
+    return None if value == none else value
+
+
+def station_keys(d):
+    """The version 5 keys of an unpacked health report (docs/protocol-design.md section 4)."""
+    return {'epoch':d['epoch'],'uptime_s':d['uptime'],'journal_pending':d['pending'],'journal_lost_total':d['lost'],
+            'journal_torn_slots':d['torn'],'abandoned_total':d['abandoned'],'missed_acks_since_boot':d['no_ack'],
+            'rejected_replies_since_boot':d['rejects'],'reset_cause':_named(d['reset_cause'],RESET_CAUSES),
+            'link':_named(d['link'],LINK_STATES),'firmware_build':f"{d['build']:08x}",
+            'ack_rssi_dbm':_plain(d['rssi'],SIGNAL_NONE),'ack_snr_db':_plain(d['snr'],SIGNAL_NONE),
+            'crashes_since_power_up':d['crashes'],'energy_state':_named(d['energy'],ENERGY)}
+
+
+# The gateway keys behind each bit of the fitted byte (design section 6.1, protocol.FIT_*).
+FIT_KEYS = {
+    FIT_MCU_SUPPLY: ('mcu_supply_mv',),
+    FIT_MONITOR_TEMP: ('power_monitor_temp_c',),
+    FIT_GAUGE: ('battery_soc_pct', 'battery_soc_rate_pct_h'),
+    FIT_CHARGER_STATUS: ('charger_input_power_ok', 'charger_charging', 'charger_fault'),
+    FIT_CHARGER_REGS: ('charger_stage', 'charger_active_input', 'charger_reported_input_mv',
+                       'charger_reported_input_ma', 'charger_reported_battery_mv', 'charger_temp_c'),
+    FIT_CHARGE_CURRENT: ('charger_reported_battery_ma',),
+    FIT_PACK_TEMP: ('pack_temp_c',),
+}
+
+
+def why_null(values, fitted):
+    """The power keys that are None, split by the fitted byte: (not measured in this build, sensor
+    fault). A key with a value is in neither; a None key whose bit is set is a fitted source that
+    failed (design section 6.1)."""
+    unmeasured, faults = [], []
+    for bit, keys in FIT_KEYS.items():
+        for key in keys:
+            if values[key] is None:
+                (faults if fitted & bit else unmeasured).append(key)
+    return sorted(unmeasured), sorted(faults)
+
+
+def _crash_pc(pc):
+    """last_crash_pc: None for no crash since power-up (CRASH_PC_NONE); otherwise 8 hex digits, where
+    'ffffffff' (CRASH_PC_UNTRUSTED) says a crash happened but its stacked frame was not trusted, so no PC
+    was recorded (fault.c). The dashboard shows that value as text, never as an address."""
+    if pc == CRASH_PC_NONE:
+        return None
+    return f"{pc:08x}"
+
+
+def power_keys(d):
+    """The version 6 keys at offsets 32-63 (design section 6.1), none codes as None. The charger
+    keys come from protocol.charger_keys; the fitted byte becomes power_not_measured and
+    power_sensor_faults, the None power keys by reason."""
+    values = {'last_crash_pc':_crash_pc(d['crash_pc']),
+            'boots_since_power_up':d['boots'],'tx_timeouts_since_boot':d['tx_timeouts'],
+            'i2c_recoveries_since_boot':d['i2c_recoveries'],'mcu_supply_mv':_plain(d['vdda_mv'],U16_NONE),
+            'power_monitor_temp_c':_scaled(d['monitor_temp'],I16_NONE,10),
+            'battery_soc_pct':_scaled(d['soc'],U16_NONE,256),
+            'battery_soc_rate_pct_h':_scaled(d['soc_rate'],I16_NONE,10),
+            'charger_reported_input_mv':_plain(d['chg_input_mv'],U16_NONE),
+            'charger_reported_input_ma':_plain(d['chg_input_ma'],I16_NONE),
+            'charger_reported_battery_mv':_plain(d['chg_batt_mv'],U16_NONE),
+            'charger_reported_battery_ma':_plain(d['chg_batt_ma'],I16_NONE),
+            'charger_temp_c':_scaled(d['chg_temp'],I16_NONE,10),'pack_temp_c':_scaled(d['pack_temp'],I16_NONE,10),
+            **charger_keys(d['charger_status'])}
+    unmeasured, faults = why_null(values, d['fitted'])
+    return values | {'power_not_measured':unmeasured,'power_sensor_faults':faults}
+
+
+def health_report(payload):
+    """Gateway keys of a health report plaintext, and the canonical rules it breaks (design section
+    6.1). A non-canonical report is kept: charger_keys gives None for a reserved stage or input."""
+    d = unpack_diag(payload)
+    return station_keys(d) | power_keys(d), diag_problems(d)
+
+
+# Every key a stored health report carries (design section 6.1). Disjoint from fields.MEASURED, so a
+# name has one meaning in the API, the dashboard and Home Assistant (design section 10.2).
+HEALTH_KEYS = tuple(health_report(bytes(DIAG.size))[0])
 
 
 class CounterRegression(ValueError):
@@ -112,16 +204,10 @@ class Gateway:
     def receive_diagnostic(self, frame, payload, now):
         """Node health report (kind 4), already authenticated: store; never answered."""
         self.check_counter(frame,struct.unpack_from('>I',payload)[0],None,now)
-        (epoch, uptime, pending, lost, burned, abandoned, no_ack, rejects, reset, link,
-         build, rssi, snr, crashes, energy) = DIAG.unpack(payload)
-        report = {'epoch':epoch,'uptime_s':uptime,'journal_pending':pending,'journal_lost_total':lost,
-                  'journal_torn_slots':burned,'abandoned_total':abandoned,'missed_acks_since_boot':no_ack,
-                  'rejected_replies_since_boot':rejects,
-                  'reset_cause':RESET_CAUSES[reset] if reset < len(RESET_CAUSES) else 'unknown',
-                  'link':LINK_STATES[link] if link < len(LINK_STATES) else 'unknown',
-                  'firmware_build':f'{build:08x}','ack_rssi_dbm':None if rssi == SIGNAL_NONE else rssi,
-                  'ack_snr_db':None if snr == SIGNAL_NONE else snr,'crashes_since_power_up':crashes,
-                  'energy_state':ENERGY[energy] if energy < len(ENERGY) else 'unknown'}
+        report, problems = health_report(payload)
+        if problems:   # never answered, so keep the report; charger keys are already None (design 6.1)
+            print(f"#gateway warning: non-canonical health report (epoch {report['epoch']}, uptime "
+                  f"{report['uptime_s']} s): {', '.join(problems)}",file=sys.stderr,flush=True)
         self.store.diagnostic(self.cfg['station'],report,now)
         self.telemetry.diagnostic(report,now)
         return report
@@ -353,6 +439,76 @@ MODULES_UNPUBLISHED = object()   # nothing sent on …/modules on this connectio
 DEFAULT_DISCOVERY = ('temperature_c','humidity_pct')   # advertised before the first reading
 
 
+def ha_device(cfg):
+    return {'identifiers':[cfg['station']],'name':cfg['station'],
+            'manufacturer':'Weather Station Project','model':'Stage 0 '+cfg['mode']}
+
+
+# Home Assistant entities for the power keys of the health report (power telemetry design section
+# 10.2): key -> (component, name, unit, device class). The station counters stay JSON-only.
+HEALTH_ENTITIES = {
+    'battery_soc_pct':('sensor','Battery state of charge (gauge)','%','battery'),
+    'battery_soc_rate_pct_h':('sensor','Battery state of charge rate (gauge)','%/h',None),
+    'charger_charging':('binary_sensor','Charger charging',None,'battery_charging'),
+    'charger_input_power_ok':('binary_sensor','Charger input power good',None,'power'),
+    'charger_fault':('binary_sensor','Charger fault',None,'problem'),
+    'charger_stage':('sensor','Charger stage',None,'enum'),
+    'charger_active_input':('sensor','Charger active input',None,'enum'),
+    'power_monitor_temp_c':('sensor','Power monitor temperature','°C','temperature'),
+    'charger_temp_c':('sensor','Charger temperature','°C','temperature'),
+    'pack_temp_c':('sensor','Battery pack temperature','°C','temperature'),
+    'mcu_supply_mv':('sensor','MCU supply voltage','mV','voltage'),
+    'charger_reported_input_mv':('sensor','Charger-reported input voltage','mV','voltage'),
+    'charger_reported_battery_mv':('sensor','Charger-reported battery voltage','mV','voltage'),
+    'charger_reported_input_ma':('sensor','Charger-reported input current','mA','current'),
+    'charger_reported_battery_ma':('sensor','Charger-reported charge current','mA','current'),
+}
+# A health report is due every 15 minutes (and after boot and each link-state change). Its Home
+# Assistant entities go unavailable once the newest one is older than two periods plus slack, the
+# same limit as the dashboard's "health report overdue" chip (static/app.js DIAG_OVERDUE_S).
+HEALTH_PERIOD_S = 900
+HEALTH_MAX_AGE_S = 2 * HEALTH_PERIOD_S + 100
+HEALTH_OPTIONS = {'charger_stage':[s for s in CHARGER_STAGES if s],'charger_active_input':[s for s in CHARGER_INPUTS if s]}
+
+
+def health_discovery(cfg, keys=tuple(HEALTH_ENTITIES)):
+    """HA entities for health report keys, read from the …/diagnostics topic. Their own namespace:
+    unique_id <station>_diag_<key> and config topic homeassistant/<component>/<station>_diag_<key>/config,
+    so they never overwrite an observation entity <station>_<field>. Available while the gateway is
+    online, the newest report is fresh (…/diagnostics/availability, HEALTH_MAX_AGE_S) and the key is
+    not null in it (an older report without the key: unavailable)."""
+    root = f"weatherstation/v1/{cfg['station']}"
+    result = {}
+    for key in keys:
+        if key not in HEALTH_ENTITIES:
+            continue
+        component, name, unit, ha_class = HEALTH_ENTITIES[key]
+        uid = f"{cfg['station']}_diag_{key}"
+        value = "{{ 'ON' if value_json."+key+" else 'OFF' }}" if component == 'binary_sensor' else '{{ value_json.'+key+' }}'
+        entry = {'name':name,'unique_id':uid,'state_topic':root+'/diagnostics','value_template':value,
+                 'entity_category':'diagnostic',
+                 'availability':[{'topic':root+'/gateway_availability'},{'topic':root+'/diagnostics/availability'},
+                                 {'topic':root+'/diagnostics','value_template':
+                                  "{{ 'online' if value_json.get('"+key+"') is not none else 'offline' }}"}],
+                 'availability_mode':'all','device':ha_device(cfg)}
+        if ha_class:
+            entry['device_class'] = ha_class
+        if unit:
+            entry |= {'unit_of_measurement':unit,'state_class':'measurement'}
+        if key in HEALTH_OPTIONS:
+            entry['options'] = HEALTH_OPTIONS[key]
+        result[f'homeassistant/{component}/{uid}/config'] = entry
+    return result
+
+
+def health_fresh(report, now):
+    """True while the newest health report (latest_diagnostic, with its gateway receipt time) is younger
+    than HEALTH_MAX_AGE_S, so a node that stops sending does not leave its SOC and charger state live."""
+    if not report or report.get('received_at') is None:
+        return False
+    return 0 <= now - report['received_at'] < HEALTH_MAX_AGE_S
+
+
 def discovery(cfg, names=DEFAULT_DISCOVERY):
     """Stable HA identities, one sensor per catalog field the station sends (docs/protocol-design.md section 6).
     Availability needs all three: the reading is fresh, the gateway is up, and this field is not
@@ -371,9 +527,7 @@ def discovery(cfg, names=DEFAULT_DISCOVERY):
                  'availability':[{'topic':root+'/availability'},{'topic':root+'/gateway_availability'},
                                  {'topic':root+'/weather','value_template':
                                   "{{ 'online' if value_json."+field+" is not none else 'offline' }}"}],
-                 'availability_mode':'all',
-                 'device':{'identifiers':[cfg['station']],'name':cfg['station'],
-                           'manufacturer':'Weather Station Project','model':'Stage 0 '+cfg['mode']}}
+                 'availability_mode':'all','device':ha_device(cfg)}
         unit = f.unit if f else DERIVED[field]['unit']
         ha_class = f.ha_class if f else DERIVED[field]['ha_class']
         if unit:
@@ -424,10 +578,11 @@ class MQTT:
         if settings.get('tls'):
             self.client.tls_set()
         self.client.on_connect = self.on_connect
-        self.published = None   # (weather payload, availability) last sent; None forces a send
+        self.published = None   # (weather, availability, diagnostics, health availability) last sent; None forces a send
         self.published_at = 0.0
         self.advertised = set()  # catalog fields with an HA discovery entry on this connection
         self.advertised_types = set()   # module type ids with an HA discovery entry on this connection
+        self.advertised_health = set()  # health report keys with an HA discovery entry on this connection
         self.published_modules = MODULES_UNPUBLISHED
         self.client.connect_async(settings['host'],settings.get('port',1883),keepalive=30)
         self.client.loop_start()
@@ -439,6 +594,7 @@ class MQTT:
             return
         self.advertised = set()
         self.advertised_types = set()
+        self.advertised_health = set()
         self.published_modules = MODULES_UNPUBLISHED
         self.advertise(self.gateway.store.latest(self.gateway.cfg['station']).get('observation'))
         # Set availability from actual age before advertising a live gateway.
@@ -457,6 +613,17 @@ class MQTT:
             self.client.publish(topic,json.dumps(payload),qos=1,retain=True)
         self.advertised |= names
 
+    def advertise_health(self, report):
+        """Discovery for the power keys the newest health report carries and this build measures (design
+        section 10.2), once a connection. A key the report lists in power_not_measured gets no entity,
+        as an observation field the record does not carry gets none; a fitted key that faults does."""
+        report = report or {}
+        unmeasured = set(report.get('power_not_measured') or ())
+        keys = {k for k in report if k in HEALTH_ENTITIES and k not in unmeasured} - self.advertised_health
+        for topic,payload in health_discovery(self.gateway.cfg,sorted(keys)).items():
+            self.client.publish(topic,json.dumps(payload),qos=1,retain=True)
+        self.advertised_health |= keys
+
     REFRESH_S = 300  # republish unchanged retained state this often (cheap keep-fresh)
 
     def tick(self):
@@ -468,6 +635,8 @@ class MQTT:
         # The weather topic carries the reading plus the gateway's derived values (e.g. dew point).
         weather = json.dumps(latest['observation'] | latest.get('derived', {})) if latest.get('observation') else None
         diag = self.gateway.store.latest_diagnostic(self.gateway.cfg['station'])
+        self.advertise_health(diag)
+        health = 'online' if health_fresh(diag, time.time()) else 'offline'
         alarm = self.gateway.counter_alarm()
         if diag or alarm['alarm']:
             diag = (diag or {}) | alarm  # key-reuse alarm rides on the diagnostics topic
@@ -475,7 +644,7 @@ class MQTT:
         if set_alarms:                   # so do descriptor-set conflicts and failed checks (WSMP-E6, E7)
             diag = (diag or {}) | {'descriptor_set_alarms': set_alarms}
         diagnostics = json.dumps(diag,sort_keys=True) if diag else None
-        state = (weather, 'online' if latest['available'] else 'offline', diagnostics)
+        state = (weather, 'online' if latest['available'] else 'offline', diagnostics, health)
         if state == self.published and time.time() - self.published_at < self.REFRESH_S:
             self.publish_modules()   # on change only, independent of the weather's publish cadence
             return
@@ -484,6 +653,7 @@ class MQTT:
         if diagnostics:
             self.client.publish(self.root+'/diagnostics',diagnostics,qos=1,retain=True)
         self.client.publish(self.root+'/availability',state[1],qos=1,retain=True)
+        self.client.publish(self.root+'/diagnostics/availability',health,qos=1,retain=True)
         self.published, self.published_at = state, time.time()
         self.publish_modules()
 

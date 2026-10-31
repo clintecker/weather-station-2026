@@ -2,11 +2,17 @@
 import os
 os.environ.setdefault('WS0_UNSAFE_FAST_FSYNC', '1')  # unit tests do not claim power-loss durability
 
+import contextlib
 import json
 from pathlib import Path
 import tempfile
 import unittest
-from ws0.harness import Campaign,Scenario,assess
+from unittest import mock
+import sqlite3
+from ws0.harness import (BATTERY_MONITOR_FIELDS, PHASE_B_RAILS, Campaign, Scenario, assess, assess_health,
+                         health_mismatches)
+from ws0.service import HEALTH_KEYS
+from ws0.simulator import PHASE_A_POWER, power_state
 
 
 class HarnessTests(unittest.TestCase):
@@ -99,8 +105,8 @@ class VerdictTests(unittest.TestCase):
 
     def test_oracle_and_latency_rules(self):
         self.assertEqual(self.failures({'missing': [[1, 1]], 'unexpected_rows': [[9, 9]], 'payload_mismatches': [[1, 2]],
-                                        'duplicate_rows': 1}),
-                         ['missing', 'unexpected_rows', 'payload_mismatches', 'duplicate_rows'])
+                                        'power_mismatches': [[1, 2]], 'duplicate_rows': 1}),
+                         ['missing', 'unexpected_rows', 'payload_mismatches', 'power_mismatches', 'duplicate_rows'])
         self.assertEqual(self.failures({'latency_target_met': False}, require_latency_target=True),
                          ['live_latency_target'])
         self.assertEqual(self.failures({'latency_target_met': False}), [])
@@ -197,6 +203,10 @@ class ScenarioValidationTests(unittest.TestCase):
             (dict(gateway_reboots=[-1]), 'Reboot outside sampling interval'),
             (dict(gateway_reboots=[1.0]), 'Reboot outside sampling interval'),
             (dict(require_latency_target=True, expect_latency_failure=True), 'Contradictory latency expectations'),
+            (dict(monitor_faults=[[1]]), 'Invalid interval in monitor_faults'),
+            (dict(minutes=10, monitor_faults=[[5, 11]]), 'Out-of-range interval in monitor_faults'),
+            (dict(power_profile='C'), 'power_profile must be A or B'),
+            (dict(power_profile='a'), 'power_profile must be A or B'),
             (dict(name='Bad', minutes=0), 'Scenario name must use lowercase letters, digits, - or _'),
             (dict(minutes=0, ack_loss=2), 'minutes must be an integer from 1 to 10080'),
             (dict(uplink_loss=2, ack_loss=2), 'uplink_loss must be a probability'),
@@ -208,7 +218,8 @@ class ScenarioValidationTests(unittest.TestCase):
                 scenario.validate()
             self.assertEqual(str(caught.exception), message, settings)
         for settings in (dict(), dict(minutes=10080, max_delay_seconds=600, uplink_loss=1, ack_loss=0.0),
-                         dict(minutes=10, link_outages=[[0, 10]], clock_steps=[[0, 1, -5]], node_reboots=[0, 9])):
+                         dict(minutes=10, link_outages=[[0, 10]], clock_steps=[[0, 1, -5]], node_reboots=[0, 9]),
+                         dict(minutes=10, monitor_faults=[[0, 10]], power_profile='B')):
             Scenario(**({'name': 'ok-1_a', 'description': 'd'} | settings)).validate()
 
 
@@ -243,3 +254,141 @@ class AssessTests(unittest.TestCase):
                           result['maximum_ground_truth_latency_seconds']), (25.0, False, 121))
         everything = {k: v for k, v in expected.items() if k[1] < 1}
         self.assertTrue(assess(everything, rows[:1], 2000)['latency_target_met'])
+
+
+class PowerTelemetryTests(unittest.TestCase):
+    """Power telemetry design section 10.2: the phase A power set every minute and the 64-byte health
+    report every 15 minutes, through the real receive path into storage. The values are synthetic."""
+    def run_case(self, scenario, mocks=()):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / 'case'
+            with contextlib.ExitStack() as stack:
+                for target, name, value in mocks:
+                    stack.enter_context(mock.patch.object(target, name, value))
+                result = Campaign(scenario, out).run()
+            db = sqlite3.connect(out / 'observations.sqlite3')
+            rows = [json.loads(p) for (p,) in db.execute('SELECT payload FROM observations ORDER BY session, sequence')]
+            reports = {(session, uptime): json.loads(r) for session, uptime, r in
+                       db.execute('SELECT session, uptime_s, report FROM diagnostics')}
+            db.close()
+            return result, rows, reports
+
+    def test_phase_a_power_set_is_stored_and_phase_b_rails_absent(self):
+        result, rows, _ = self.run_case(Scenario('phase-a', 'Phase A.', minutes=30))
+        self.assertEqual((result['failures'], result['metrics']['power_mismatches']), ([], []))
+        self.assertEqual(len(rows), 30)
+        for row in rows:
+            self.assertTrue(set(PHASE_A_POWER) <= set(row), row)
+            self.assertFalse(set(PHASE_B_RAILS) & set(row), row)       # absent, never null
+            self.assertEqual(row['quality'], 'valid')
+            self.assertTrue(all(row[name] is not None for name in PHASE_A_POWER))
+
+    def test_health_reports_every_15_minutes_with_every_key(self):
+        result, _, reports = self.run_case(Scenario('health', 'Health reports.', minutes=61))
+        self.assertEqual(sorted(reports), [(1, 0), (1, 900), (1, 1800), (1, 2700), (1, 3600)])
+        self.assertEqual(result['health_reports'], {'sent': 5, 'arrived_intact': 5, 'stored': 5,
+                                                    'not_stored': [], 'mismatches': []})
+        start = 1_800_000_000
+        for (_, uptime), report in reports.items():
+            self.assertEqual(set(report), set(HEALTH_KEYS))
+            state = power_state(start + uptime)
+            # Not measured in phase A: present as null (design section 3.3).
+            for name in ('charger_reported_input_mv', 'charger_reported_input_ma', 'charger_reported_battery_mv',
+                         'charger_temp_c', 'pack_temp_c', 'charger_active_input', 'charger_stage', 'last_crash_pc'):
+                self.assertIn(name, report)
+                self.assertIsNone(report[name], name)
+            self.assertEqual(report['charger_reported_battery_ma'], state['charge_ma'])
+            self.assertIs(report['charger_input_power_ok'], state['sun'] > 0)
+            self.assertIs(report['charger_charging'], state['charge_ma'] > 0)
+            self.assertIs(report['charger_fault'], False)
+            self.assertAlmostEqual(report['battery_soc_pct'], state['soc'], delta=1 / 256)
+            self.assertIsInstance(report['mcu_supply_mv'], int)
+            self.assertIsInstance(report['power_monitor_temp_c'], float)
+            self.assertEqual((report['boots_since_power_up'], report['tx_timeouts_since_boot'],
+                              report['i2c_recoveries_since_boot']), (1, 0, 0))
+
+    def test_node_reboot_sends_a_health_report(self):
+        _, _, reports = self.run_case(Scenario('reboot', 'Reboot.', minutes=30, node_reboots=[7]))
+        self.assertEqual(sorted(reports), [(1, 0), (2, 0), (2, 900)])
+        # fault_boot_note (design section 6.2): epoch 1 is a power-on (count 1), the reboot a pin reset
+        # that keeps the count; never a power-on with a count above 1.
+        self.assertEqual((reports[(1, 0)]['reset_cause'], reports[(1, 0)]['boots_since_power_up']), ('power', 1))
+        self.assertEqual((reports[(2, 0)]['reset_cause'], reports[(2, 0)]['boots_since_power_up']), ('pin', 2))
+        self.assertEqual(reports[(2, 0)]['power_sensor_faults'], [])
+
+    def test_faulted_battery_monitor_sends_null_fields_never_absent(self):
+        scenario = Scenario('monitor', 'Battery INA228 fault.', minutes=46, monitor_faults=[[10, 35]],
+                            require_latency_target=True)
+        result, rows, reports = self.run_case(scenario)
+        self.assertEqual(result['failures'], [])
+        for row in rows:
+            faulted = 10 <= row['sequence'] < 35
+            self.assertTrue(set(PHASE_A_POWER) <= set(row), row)
+            self.assertEqual([row[n] is None for n in BATTERY_MONITOR_FIELDS['A']], [faulted] * 6, row)
+            self.assertIsNotNone(row['batt_mv'])            # the gauge still measures the cell
+            self.assertIsNotNone(row['charger_input_mv'])   # the divider is not the INA228
+            self.assertEqual(row['quality'], 'partial' if faulted else 'valid')
+        self.assertIsNone(reports[(1, 900)]['power_monitor_temp_c'])
+        self.assertIsNotNone(reports[(1, 2700)]['power_monitor_temp_c'])
+        self.assertEqual(set(reports[(1, 900)]), set(HEALTH_KEYS))
+
+    def test_phase_b_profile_fills_every_rail(self):
+        result, rows, _ = self.run_case(Scenario('phase-b', 'Phase B.', minutes=20, power_profile='B',
+                                                 monitor_faults=[[5, 10]]))
+        self.assertEqual(result['failures'], [])
+        for row in rows:
+            self.assertTrue(set(PHASE_A_POWER + PHASE_B_RAILS) <= set(row), row)
+            self.assertEqual((row['usb_mv'], row['usb_current_ma']), (0, 0))   # never with solar
+            self.assertIsNotNone(row['load_mv'])     # the load INA228, not the battery one, in phase B
+        self.assertIsNone(rows[6]['batt_current_ma'])
+
+    def test_lost_or_changed_health_reports_fail_the_verdict(self):
+        from ws0 import service
+        result, _, _ = self.run_case(Scenario('dropped', 'Store drops reports.', minutes=20),
+                                     [(service.Gateway, 'receive_diagnostic', lambda *a: None)])
+        self.assertEqual(result['failures'], ['health_reports_not_stored'])
+        self.assertEqual(result['health_reports']['not_stored'], [[1, 0], [1, 900]])
+        real = service.health_report
+        def changed(payload):
+            report, problems = real(payload)
+            return report | {'charger_reported_input_mv': 5000}, problems
+        result, _, _ = self.run_case(Scenario('changed', 'Changed report.', minutes=5),
+                                     [(service, 'health_report', changed)])
+        self.assertEqual(result['failures'], ['health_report_mismatches'])
+        self.assertEqual(result['health_reports']['mismatches'], [[1, 0, 'charger_reported_input_mv']])
+
+    def test_health_oracle(self):
+        sent = {'at': 1_800_000_000, 'epoch': 1, 'uptime': 0, 'monitor_fault': False}
+        state = power_state(sent['at'])
+        good = dict.fromkeys(HEALTH_KEYS) | {
+            'epoch': 1, 'uptime_s': 0, 'boots_since_power_up': 1, 'crashes_since_power_up': 0,
+            'tx_timeouts_since_boot': 0, 'i2c_recoveries_since_boot': 0, 'charger_fault': False,
+            'charger_input_power_ok': state['sun'] > 0, 'charger_charging': state['charge_ma'] > 0,
+            'charger_reported_battery_ma': state['charge_ma'], 'battery_soc_pct': state['soc'],
+            'battery_soc_rate_pct_h': state['soc_rate'], 'mcu_supply_mv': 3300, 'power_monitor_temp_c': 28.0}
+        self.assertEqual(health_mismatches(good, sent), [])
+        self.assertEqual(health_mismatches(good | {'power_monitor_temp_c': None}, sent), ['power_monitor_temp_c'])
+        self.assertEqual(health_mismatches(good, sent | {'monitor_fault': True}), ['power_monitor_temp_c'])
+        self.assertEqual(health_mismatches(good | {'charger_fault': 0}, sent), ['charger_fault'])   # a bool, not 0
+        self.assertEqual(health_mismatches(good | {'battery_soc_pct': state['soc'] + 0.1}, sent), ['battery_soc_pct'])
+        self.assertEqual(health_mismatches(good | {'charger_reported_battery_ma': None}, sent),
+                         ['charger_reported_battery_ma'])
+        self.assertEqual(health_mismatches(good | {'mcu_supply_mv': None}, sent), ['mcu_supply_mv'])
+        missing = {k: v for k, v in good.items() if k != 'charger_active_input'}
+        self.assertEqual(health_mismatches(missing, sent), ['key_set'])
+        self.assertEqual(health_mismatches(good | {'soc_gauge_pct': 50}, sent), ['key_set'])
+        result = assess_health({(1, 0): sent}, [(1, 0, good), (1, 60, good)], {(1, 0), (1, 900)})
+        self.assertEqual((result['stored'], result['not_stored'], result['mismatches']),
+                         (2, [[1, 900]], [[1, 60, 'not_sent']]))
+
+    def test_assess_compares_power_fields(self):
+        record = {'session': '1', 'sequence': 1, 'quality': 'valid', 'time_quality': 'synchronized',
+                  'batt_mv': 3900, 'batt_current_ma': -35}
+        expected = {('1', 1): (record, 1000)}
+        row = record | {'received_at': 1001, '_effective': 1000, '_basis': 'synchronized'}
+        self.assertEqual(assess(expected, [row], 1002)['power_mismatches'], [])
+        for changed in ({'batt_current_ma': 35}, {'batt_current_ma': None}, {'usb_mv': None}):
+            result = assess(expected, [row | changed], 1002)
+            self.assertEqual((result['power_mismatches'], result['payload_mismatches']), ([['1', 1]], [['1', 1]]))
+        absent = {k: v for k, v in row.items() if k != 'batt_current_ma'}
+        self.assertEqual(assess(expected, [absent], 1002)['power_mismatches'], [['1', 1]])

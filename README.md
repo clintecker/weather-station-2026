@@ -138,7 +138,7 @@ A scenario PASS means that its declared recovery and integrity contract passed. 
 
 ## Home Assistant and MQTT
 
-The gateway can publish to MQTT, with Home Assistant discovery for temperature and humidity. MQTT is off by default, so the demo runs without a broker.
+The gateway can publish to MQTT, with Home Assistant discovery for every observation field that the station sends (temperature, humidity and the other bench modules' values; from protocol version 6 also the power rails, as diagnostic entities), for the power keys of the node health report, and one diagnostic sensor per module type ([`docs/runbook-home-assistant.md`](docs/runbook-home-assistant.md), "Power entities"). MQTT is off by default, so the demo runs without a broker.
 
 To turn on MQTT:
 
@@ -156,7 +156,7 @@ Its sensors are available only while the gateway health and the measurement fres
 - A measurement goes offline when it is 180 seconds old.
 - The gateway publishes discovery again when the broker reconnects.
 
-The two measurement sensors meet the weather-data integration requirement of the bench prototype. The gateway does not make a forecast or composite weather entity, because no data supports one.
+The temperature and humidity sensors meet the weather-data integration requirement of the bench prototype. The gateway does not make a forecast or composite weather entity, because no data supports one.
 
 A test against a local Mosquitto broker verified discovery, last will and reconnect (`evidence/mqtt-local-broker-2026-10-13/`). Against Clint's Home Assistant, the HA-user broker login and the device's discovery are verified (`evidence/ha-broker-2026-10-22/`). TLS is not tested. Use a separate station ID and key for hardware. Never use the demo state to provision real boards.
 
@@ -170,8 +170,9 @@ A test against a local Mosquitto broker verified discovery, last will and reconn
 - Optional MQTT snapshots, availability and Home Assistant discovery.
 - USB serial input from the RX board (`ws0 serve`), with the ACK/NACK return path.
 - Portable C code for the SHT45: acquisition, CRC check and conversion.
-- The TX reads its sensors as DATAVANE5K local modules: the module protocol WSMP ([`docs/module-protocol.md`](docs/module-protocol.md)). There are seven modules: outside air, pressure, UVA, enclosure, power, wind and rain (`firmware/stage0-node/App/mod_*.c`, `App/wsmp_host.c`).
-- TX and RX firmware (`firmware/stage0-node/`): a flash journal of about 28.7 hours (1,725 records of the bench field set, 24 hours for a station with every sensor), durable counters and epochs, a watchdog, and provisioning over USB.
+- The TX reads its sensors as DATAVANE5K local modules: the module protocol WSMP ([`docs/module-protocol.md`](docs/module-protocol.md)). The source has eight modules: outside air, pressure, UVA, enclosure, battery, power rails, wind and rain (`firmware/stage0-node/App/mod_*.c`, `App/wsmp_host.c`); the boards' release `04fcc656938d` has seven, with one power module.
+- Power telemetry, protocol version 6 (in the source; no version 6 release yet): the node reads power phase A, the bq24074 charger's ISET, input voltage, CHG and PGOOD, the battery INA228 and the MAX17048 gauge on the 1S3P pack, and sends every minute the battery voltage and signed current, the load voltage and the charger input voltage, and every 15 minutes a 64-byte health report (gauge SOC and rate, charger status, die temperature, MCU supply, reset cause, boot and crash counts, the last crash PC, radio TX timeouts, I2C recoveries). The gateway stores and exposes them (API, dashboard, MQTT). Design: [`docs/superpowers/specs/2026-10-29-power-telemetry-design.md`](docs/superpowers/specs/2026-10-29-power-telemetry-design.md).
+- TX and RX firmware (`firmware/stage0-node/`): a flash journal of at least 1,449 records, about 24.15 hours, of the version 6 node field set (77 bytes in 96-byte slots; the version 5 release `04fcc656938d` held 1,725 records, 28.75 hours; a build whose field set exceeds 80 bytes does not compile), durable counters and epochs, a watchdog, and provisioning over USB.
 - Python and C tests that target failures, and recorded validation output.
 
 ## Current state and open work
@@ -180,17 +181,28 @@ The releases are recorded in [`firmware/stage0-node/RELEASES.md`](firmware/stage
 
 The radio settings are bench values (`firmware/stage0-node/App/radio_cfg.h`): 915.0 MHz, 500 kHz bandwidth, spreading factor 7, coding rate 4/5, 0 dBm.
 
-Open before the 24-hour delivery test:
+Open before the 24-hour delivery test (its preconditions: [`docs/H01-checklist.md`](docs/H01-checklist.md)):
 
+- The step 1 build (breadboard v2) exited on every criterion, mode B for 1 hour included, then the step 2 build (the soldered protoboard, where H01 runs) with a `valid` preflight block that includes the 1 A spans (build-progression record section 3; the build order 1 → 2 (H01) → 1b → 2c → 3 → 4 → 5, record 7.1 Q8).
+- The USB acceptance test H8(d) passed on the H01 topology (the RX alone on a direct Mac port, 7.1 Q5).
+- The ws0 silent-port reopen deployed: the running gateway carries the `ws0/link.py` reopen, loaded by a gateway agent restart (record H8(f)).
 - Home Assistant entities updating live, with the gateway logging in on the rotated password (login and discovery were checked on 2026-10-22).
 - The link budget at the real placement, the antennas and the current measurements.
 - The 24-hour run with its restart and outage matrix.
+- Clint's open decision D2: whether H01 runs on a protocol version 6 (power telemetry) release; recommendation yes ([`docs/next-stages-plan.md`](docs/next-stages-plan.md) §6). The H01 preconditions as written (`meter_link=ok` from the M7 probe, the power phase A exit criteria) can be met only on a version 6 build; a "no" needs a version 5 backport of the M7 probe and the power reading, which no plan carries ([`docs/H01-checklist.md`](docs/H01-checklist.md)).
+
+Open for power phase A (a precondition of H01, not beside it: the step 1 and step 2 builds carry it, and H01's precondition 1 includes its exit criteria; exit criteria in [`docs/next-stages-plan.md`](docs/next-stages-plan.md) §1.1):
+
+- The phase A constants measured (R_ISET, the divider ratio, the TMR strap), the INA228 shunt verified against a series reference, and a version 6 release.
+- The node-against-benchlink acceptance drill with the cell through the shunt.
+- A 1 A charge with the shunt in the battery path that ends in a normal termination.
+- Clint's open decision D1: the 1S3P pack (about 24.4 Wh) against the PRD's energy reserve (about 50.4 Wh).
 
 Open bench checks of the DATAVANE5K bench station (GitHub issues #2, #3 and #4, label `needs-bench`):
 
 - #2: the INA228 charge and energy accumulators.
 - #3: the wind vane ADC calibration.
-- #4: the anemometer input filter on PC0.
+- #4: the anemometer input filter on PB5.
 
 The bench station wiring is in [`docs/hardware/bench-station-wiring.md`](docs/hardware/bench-station-wiring.md). The breadboard map is in [`hardware/bench-breadboard-r0/`](hardware/bench-breadboard-r0/README.md).
 
@@ -223,16 +235,22 @@ The host counters persist in SQLite. On the TX board, the counters and boot epoc
 
 ## Ordered next steps
 
-See [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) §6. The battery and solar build (Stage 1: power and pack state) starts only after the 24-hour delivery test passes.
+See [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) §6. Power phase A (the bq24074 charger and its monitors on the 1S3P pack, read by the node) runs now, on the step 1 and step 2 builds, before H01: H01 runs on the step 2 build only after step 1 exits (build-progression record section 3, 7.1 Q8). Stage 1's gates (H02 pack energy accounting, H03 cold and solar endurance) and its pack, chamber and solar endurance work follow the 24-hour delivery test ([`docs/next-stages-plan.md`](docs/next-stages-plan.md) §1).
 
-The PCB and print orders that exist are aids for the prototype. The first USB-powered data path on the development boards does not need them. This repository adds no solar power, pack control, RJ45/Modbus abstraction, heater or shared charging. The bench station only reads a charger's status pins and a battery monitor.
+The PCB and print orders that exist are aids for the prototype. The first USB-powered data path on the development boards does not need them. This repository adds no charger or pack control, no wired-module port abstraction, no heater and no shared charging. The node measures the power system and never controls it. Power phase A measures the battery (cell voltage and signed current), the load voltage and the charger input voltage, whose source (solar or USB-C) it cannot identify. The final goal is voltage and current of four rails, battery, solar input, USB-C input and load: phase B adds one INA228 per rail, phase C the BQ25798 with its own ADC ([`docs/next-stages-plan.md`](docs/next-stages-plan.md) §1.1–§1.2). USB-C is for bench work and occasional backup charging only, never connected together with solar.
 
 ## Where things are
 
 | Path | What |
 |---|---|
 | [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) | Where to start: state, setup and next steps. §8 maps every document |
-| [`docs/next-stages-plan.md`](docs/next-stages-plan.md) | Stages 0–3, their gates and the parts plan |
+| [`docs/next-stages-plan.md`](docs/next-stages-plan.md) | Stages 0–3, their gates and the parts plan; the power phases A–C, the four rails and the USB-C rule (§1.1–§1.3) |
+| [`docs/superpowers/specs/2026-10-29-power-telemetry-design.md`](docs/superpowers/specs/2026-10-29-power-telemetry-design.md) | Power telemetry design: phases, the per-phase fill table, protocol version 6, the 64-byte health report, node firmware, gateway |
+| [`docs/superpowers/specs/2026-10-29-build-progression-decisions.md`](docs/superpowers/specs/2026-10-29-build-progression-decisions.md) | The build-progression decision record: the steps from the breadboard to the carrier, the NUCLEO pin contract, the step 1 build and shopping, the cascade list. Clint's survey answers (2026-10-30) are in section 7.1 |
+| [`docs/superpowers/plans/2026-10-29-power-telemetry.md`](docs/superpowers/plans/2026-10-29-power-telemetry.md) | Power telemetry implementation plan |
+| [`docs/superpowers/plans/2026-10-29-power-telemetry-issues.md`](docs/superpowers/plans/2026-10-29-power-telemetry-issues.md) | Power telemetry issue catalog: each issue's layer, severity, batch and state |
+| [`docs/superpowers/plans/2026-10-30-build-progression-issues.md`](docs/superpowers/plans/2026-10-30-build-progression-issues.md) | Build progression issue catalog: each issue the decision record and Clint's 2026-10-30 answers caused, by area, severity, batch and state |
+| [`docs/hardware/power-metering.md`](docs/hardware/power-metering.md) | Power metering: rails, monitors, addresses, shunts and sense points in each phase |
 | [`docs/H01-checklist.md`](docs/H01-checklist.md) | The 24-hour delivery test |
 | [`docs/protocol.md`](docs/protocol.md), [`docs/protocol-design.md`](docs/protocol-design.md), [`docs/protocol-stack.md`](docs/protocol-stack.md) | The radio protocol: specification, design rationale, layered explanation |
 | [`docs/module-protocol.md`](docs/module-protocol.md) | DATAVANE5K, the module protocol WSMP |

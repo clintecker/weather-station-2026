@@ -4,10 +4,13 @@
  * the local WSMP modules. It stands in for ST's HAL I2C, GPIO and NVIC calls. A device answers at its
  * 7-bit address; its model (firmware/host/i2c_models.c, a switch on the kind) gives the bytes. Faults:
  * an address NACK, a NACK after the address, a transfer that never completes, a latency, and SDA held
- * low until a number of SCL rising edges during the recovery. The mux (DEVK_MUX at 0x71, added with
- * the peripheral's first start) joins a channel's devices to the bus while its bit is set; a device
- * on no channel is upstream and always on the bus. Its RESET line (i2c_bus_mux_reset_line) clears the
- * mask and lets a held SDA go. */
+ * low until a number of SCL rising edges during the recovery. A device may be on the PA9 switched
+ * sensor branch (i2c_sim_switched): it is off the bus while PA9 is low. The model follows the firmware's bus
+ * profile, WS_I2C_MUX (App/i2c_bus.h, default 0):
+ *   1, the mux: DEVK_MUX at 0x71, added with the peripheral's first start, joins a channel's devices
+ *     to the bus while its bit is set; a device on no channel is upstream and always on the bus. Its
+ *     RESET line (i2c_bus_mux_reset_line) clears the mask and lets a held SDA go.
+ *   0, the STEMMA QT hub: no mux device, and i2c_sim_add puts every device upstream. */
 #include <stdint.h>
 #include "sim_core.h"
 
@@ -19,10 +22,16 @@ enum i2c_sim_mode { DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY, DM_HANG
 #define I2C_SIM_BUF 132                     /* a whole module record and its address */
 #define I2C_SIM_UPSTREAM (-1)
 
-/* returns the device index, or -1. A part of the probe table goes on its channel of the static map
-   (0x44 channel 0, 0x53 channel 1, 0x47 channel 2); any other address is upstream. */
+/* returns the device index, or -1. With the mux, a part of the probe table goes on its channel of the
+   static map (0x44 channel 0, 0x53 channel 1, 0x46 and 0x47 channel 2), except the upstream kinds
+   (DEVK_SHTC3, DEVK_INA228, DEVK_MAX17048), which are upstream at any address, as is every other
+   address. On the hub every device is upstream. */
 int i2c_sim_add(int kind, uint8_t addr7);
 int i2c_sim_add_on(int kind, uint8_t addr7, int channel);   /* channel 0-7, or I2C_SIM_UPSTREAM */
+/* On the PA9 switched branch (build-progression record, step 1 change C): a switched device NACKs its
+   address while the recorded PA9 state (i2c_sim_power) is low. A device is unswitched when added, as
+   the power monitors are (the INA228s and the MAX17048, PORT-9): they answer whatever PA9 does. */
+void i2c_sim_switched(int dev, int switched);
 void i2c_sim_remove(int dev);               /* unplugged: no answer at its address */
 void i2c_sim_restore(int dev);              /* plugged in again */
 void i2c_sim_mode(int dev, int mode, int sda_hold_edges, uint32_t latency_ms);
@@ -39,7 +48,7 @@ int i2c_sim_pin_errors(void);
 int i2c_sim_power(void);                    /* the PA9 sensor supply: 1 on */
 int i2c_sim_complete_at_guard(int error);   /* the transfer in flight ends when its 30 ms guard expires */
 int i2c_sim_addr_log(int i);                /* the address of the i-th transfer (the first 64), or -1 */
-int i2c_sim_mux_device(void);
+int i2c_sim_mux_device(void);               /* the mux's device index, or -1 on the hub */
 uint8_t i2c_sim_mux_mask(void);
 void i2c_sim_mux_set_mask(uint8_t mask);    /* the mux model's register */
 uint32_t i2c_sim_mux_resets(void);          /* RESET pulses */
@@ -64,9 +73,22 @@ int model_shtc3_asleep(int dev);
 void model_reg_set_id(int dev, uint8_t id);
 void model_reg_power_cycle(int dev);
 void model_reg_set_data(int dev, uint32_t data);
+/* The INA228 model (i2c_models.c): each index is one part with its own shunt. uv is the bus
+   voltage at VBUS, ua the true current through the shunt (+ from VIN+ to VIN-). The registers follow
+   from them: VSHUNT = ua x shunt, CURRENT from VSHUNT and the SHUNT_CAL actually written (0 while it
+   is 0; 1966 with the default 15 mOhm shunt gives 10 uA counts), CHARGE and ENERGY integrate CURRENT
+   while the part converts. A power cycle restores the register reset values (SHUNT_CAL 0x1000). */
 void model_ina228_set(int dev, int32_t uv, int32_t ua);
+void model_ina228_shunt(int dev, int32_t uohm);      /* the physical shunt, micro-ohm (default 15000) */
+void model_ina228_die(int dev, int32_t milli_c);     /* DIETEMP, m degC (default 25000) */
 void model_ina228_power_cycle(int dev);
+/* The MAX17048 model: SOC in whole % (dev), or 1/256 %; the cell voltage (uV, default 4.000 V) and
+   the charge rate (m%/h, signed). The part has one address (0x36): the dev-less setters act on every
+   MAX17048. */
 void model_max17048_set(int dev, uint8_t soc);
+void model_max17048_soc_256(uint16_t soc_256);
+void model_max17048_cell(int32_t uv);
+void model_max17048_rate(int32_t mpct_h);
 /* DEVK_MUX: the control register is written and read back as one byte; xor spoils the read-back. */
 void model_mux_readback_xor(uint8_t xor_mask);
 void model_mux_readback_xor_idle(uint8_t xor_mask);   /* the read-back of mask 0 only */

@@ -25,9 +25,9 @@ A chunk is a fenced ` ```c {#name} ` block. A line `<<name>>` inside a chunk inc
 |---|---|---|
 | Range | the code refuses a station, counter, kind or length that its field cannot hold. It never truncates | `test_counter_and_station_limits`, `fuzz_reply`, `obs_ok` in `App/selftest.c` |
 | Refusal | every refusal after the `out` check leaves all `out_cap` bytes of `out` zero | `test_counter_and_station_limits`, `fuzz_reply` |
-| Agreement | a sealed frame equals `ws0/protocol.py` `seal()` and the design document's construction byte for byte | `test_known_answer_vectors`, `test_vectors_follow_the_spec`, `test_random_agreement_both_directions` |
+| Agreement | a sealed frame equals `ws0/protocol.py` `seal()` and the design document's construction byte for byte | `test_known_answer_vectors`, `test_vectors_follow_the_spec`, `test_random_agreement_both_directions`, `test_selftest_vectors` |
 | Opening | only an authentic 33-byte ACK or NACK for the caller's station opens. The function writes the outputs only then | `test_reply_rejections`, `fuzz_reply`, `reply_ok` in `App/selftest.c` |
-| Health report | `ws_diag_pack` writes exactly the bytes of `ws0/protocol.py` `DIAG` | `test_diag_plaintext_matches_python`, `test_diagnostic_frame_agreement` |
+| Health report | `ws_diag_pack` writes exactly the 64 bytes of `ws0/protocol.py` `pack_diag`; bit 7 of byte 51 (the fitted byte) always 0 | `test_diag_plaintext_matches_python`, `test_diag_layout_matches_the_spec`, `test_diagnostic_frame_agreement` |
 | Key check value | the first 3 bytes of AES-128-ECB(key, zero block). ECB is the electronic codebook mode | `test_key_check_value` |
 
 The tests named here are in `tests/test_frame.py` unless the table names another file.
@@ -41,7 +41,7 @@ shows the header bits, most significant bit first:
 
 ```mermaid
 packet-beta
-0-3: "version (5)"
+0-3: "version (6)"
 4-7: "kind"
 8-23: "station (u16)"
 24-63: "counter (u40)"
@@ -49,7 +49,7 @@ packet-beta
 
 | Offset | Bytes | Field | Constant (`ws_frame.h`) |
 |---:|---:|---|---|
-| 0 | 1 | version 5 in bits 7–4, kind in bits 3–0 | `WS_FRAME_BYTE0(kind)` |
+| 0 | 1 | version 6 in bits 7–4, kind in bits 3–0: 0x61 OBS, 0x62 ACK, 0x63 NACK, 0x64 DIAG | `WS_FRAME_VERSION`, `WS_FRAME_BYTE0(kind)` |
 | 1 | 2 | station, 1–65535 | `WS_STATION_BYTES`, `WS_STATION_MAX` |
 | 3 | 5 | transmission counter, 1 to 2^40 − 1 | `WS_COUNTER_OFF`, `WS_COUNTER_BYTES`, `WS_COUNTER_MAX` |
 | 8 | n | CCM ciphertext of the kind's plaintext | |
@@ -60,7 +60,7 @@ packet-beta
 | `WS_KIND_OBS` | 1 | node to gateway | observation (`ws_obs.c`) | 16 + n |
 | `WS_KIND_ACK` | 2 | gateway to node | reply, 17 B (section 5) | 33 |
 | `WS_KIND_NACK` | 3 | gateway to node | reply, 17 B (section 5) | 33 |
-| `WS_KIND_DIAG` | 4 | node to gateway | health report, 32 B (section 7) | 48 |
+| `WS_KIND_DIAG` | 4 | node to gateway | health report, 64 B (section 7) | 80 |
 
 A frame is at most `WS_FRAME_MAX` (255) bytes, one LoRa payload. The header and tag take
 `WS_FRAME_OVERHEAD` (16), which leaves at most 239 plaintext bytes.
@@ -169,8 +169,10 @@ keystream. The exclusive OR (XOR) of their ciphertexts is the XOR of their plain
 plaintext of one frame then reveals the other. `docs/protocol-design.md` section 3.2 counts nonce
 reuse as a total loss of security.
 
-The version is in the AAD but not in the nonce. Protocol version 5 therefore uses a new key
-(`docs/protocol-design.md` section 3.2). No counter used under the previous format meets that key.
+The version is in the AAD but not in the nonce. Each protocol version therefore uses a new key
+(`docs/protocol-design.md` section 3.2; for version 6 the release procedure of the power telemetry
+design, section 4, WIPEs the node and provisions a new key). No counter used under the previous
+format meets that key.
 
 ## 4. Sealing
 
@@ -296,7 +298,7 @@ static void reply_unpack(const uint8_t plain[WS_REPLY_PLAIN_LEN], uint32_t *epoc
 ```mermaid
 flowchart TD
     A{"1. len is 33 (WS_ACK_FRAME_LEN)?"} -- no --> E1["WS_FRAME_EINVAL (-1)"]
-    A -- yes --> B{"2. ws_frame_kind: frame not NULL, version 5, kind ACK or NACK?"}
+    A -- yes --> B{"2. ws_frame_kind: frame not NULL, version 6, kind ACK or NACK?"}
     B -- no --> E2["WS_FRAME_EHEADER (-2)"]
     B -- yes --> C{"3. caller station in 1-65535?"}
     C -- no --> E1
@@ -380,9 +382,12 @@ int ws_key_check(const uint8_t key[WS_KEY_LEN], uint8_t out[WS_KCV_LEN]) {
 
 ## 7. Health report
 
-`ws_diag_pack` writes the 32-byte health report plaintext (kind `WS_KIND_DIAG`,
-`WS_DIAG_PLAIN_LEN`) from a `ws_diag_t`. The order of the writes sets the offsets. The plaintext
-bits, most significant bit first:
+`ws_diag_pack` writes the 64-byte health report plaintext (kind `WS_KIND_DIAG`,
+`WS_DIAG_PLAIN_LEN`) from a `ws_diag_t`. The length is fixed: the RX bridge checks it exactly
+(`ws_console.c`, `WS_DIAG_FRAME_LEN` 80) and so does the gateway (`PLAIN_LENGTHS`). The order of the
+writes sets the offsets. The first 32 bytes keep their version 5 layout; bytes 32–63 are new in
+version 6 (power telemetry design, `docs/superpowers/specs/2026-10-29-power-telemetry-design.md`
+section 6.1). The plaintext bits, most significant bit first:
 
 ```mermaid
 packet-beta
@@ -401,35 +406,111 @@ packet-beta
 232-239: "snr (i8)"
 240-247: "crashes"
 248-255: "energy"
+256-287: "crash_pc (u32)"
+288-303: "boots (u16)"
+304-319: "tx_timeouts (u16)"
+320-335: "i2c_recoveries (u16)"
+336-351: "vdda_mv (u16)"
+352-367: "monitor_temp (i16)"
+368-383: "soc (u16)"
+384-399: "soc_rate (i16)"
+400-407: "charger_status"
+408-415: "fitted (bit 7 reserved, 0)"
+416-431: "chg_input_mv (u16)"
+432-447: "chg_input_ma (i16)"
+448-463: "chg_batt_mv (u16)"
+464-479: "chg_batt_ma (i16)"
+480-495: "chg_temp (i16)"
+496-511: "pack_temp (i16)"
 ```
 
-| Offset | Bytes | `ws_diag_t` field | Contents |
-|---:|---:|---|---|
-| 0 | 4 | `epoch` | boot epoch |
-| 4 | 4 | `uptime` | seconds since boot |
-| 8 | 2 | `pending` | journal records not yet acknowledged |
-| 10 | 4 | `lost` | journal lost total |
-| 14 | 2 | `torn` | torn slots |
-| 16 | 2 | `abandoned` | abandoned total |
-| 18 | 2 | `no_ack` | missed ACKs since boot |
-| 20 | 2 | `rejects` | rejected replies since boot |
-| 22 | 1 | `reset_cause` | reset cause code |
-| 23 | 1 | `link` | link state |
-| 24 | 4 | `build` | first 4 bytes of the release commit hash |
-| 28 | 1 | `rssi` | received signal strength (RSSI) of the last authentic ACK, signed dBm |
-| 29 | 1 | `snr` | signal-to-noise ratio (SNR) of the last authentic ACK, signed dB |
-| 30 | 1 | `crashes` | crash record count |
-| 31 | 1 | `energy` | energy state (`docs/protocol-design.md` section 5.2) |
+| Offset | Bytes | Type | `ws_diag_t` field | Contents | None code |
+|---:|---:|---|---|---|---|
+| 0 | 4 | u32 | `epoch` | boot epoch | — |
+| 4 | 4 | u32 | `uptime` | seconds since boot | — |
+| 8 | 2 | u16 | `pending` | journal records not yet acknowledged | — |
+| 10 | 4 | u32 | `lost` | journal lost total | — |
+| 14 | 2 | u16 | `torn` | torn slots | — |
+| 16 | 2 | u16 | `abandoned` | abandoned total | — |
+| 18 | 2 | u16 | `no_ack` | missed ACKs since boot | — |
+| 20 | 2 | u16 | `rejects` | rejected replies since boot | — |
+| 22 | 1 | u8 | `reset_cause` | reset cause code | — |
+| 23 | 1 | u8 | `link` | link state | — |
+| 24 | 4 | u32 | `build` | first 4 bytes of the release commit hash | — |
+| 28 | 1 | i8 | `rssi` | received signal strength (RSSI) of the last authentic ACK, signed dBm | `WS_SIGNAL_NONE` (−128) |
+| 29 | 1 | i8 | `snr` | signal-to-noise ratio (SNR) of the last authentic ACK, signed dB | `WS_SIGNAL_NONE` (−128) |
+| 30 | 1 | u8 | `crashes` | crash record count | — |
+| 31 | 1 | u8 | `energy` | energy state (`docs/protocol-design.md` section 5.2) | — |
+| 32 | 4 | u32 | `crash_pc` | PC of the last crash since power-up | `WS_CRASH_PC_NONE` (0); 0xFFFFFFFF = the stacked frame was not trusted |
+| 36 | 2 | u16 | `boots` | boots since power-up, saturating | — |
+| 38 | 2 | u16 | `tx_timeouts` | radio TX timeouts since boot, saturating | — |
+| 40 | 2 | u16 | `i2c_recoveries` | I2C bus recoveries started since boot, saturating | — |
+| 42 | 2 | u16 | `vdda_mv` | MCU supply VDDA, mV (from VREFINT) | `WS_U16_NONE` (0xFFFF) |
+| 44 | 2 | i16 | `monitor_temp` | power-monitor die temperature, 0.1 °C, the hottest fitted monitor | `WS_I16_NONE` (−32768) |
+| 46 | 2 | u16 | `soc` | gauge state of charge, 1/256 % (may exceed 100 % near full) | `WS_U16_NONE` |
+| 48 | 2 | i16 | `soc_rate` | gauge state-of-charge rate, 0.1 %/h, + while charging | `WS_I16_NONE` |
+| 50 | 1 | u8 | `charger_status` | charger status byte (table below) | `WS_CHARGER_NONE` (0xFF) |
+| 51 | 1 | u8 | `fitted` | the sources this build has, `WS_FIT_*` bits (table below); written as `fitted & WS_FIT_DEFINED` | — |
+| 52 | 2 | u16 | `chg_input_mv` | charger-reported input voltage, mV | `WS_U16_NONE` |
+| 54 | 2 | i16 | `chg_input_ma` | charger-reported input current, 1 mA, + into the charger | `WS_I16_NONE` |
+| 56 | 2 | u16 | `chg_batt_mv` | charger-reported battery voltage, mV | `WS_U16_NONE` |
+| 58 | 2 | i16 | `chg_batt_ma` | charger-reported charge current, 1 mA, + into the cell | `WS_I16_NONE` |
+| 60 | 2 | i16 | `chg_temp` | charger die temperature, 0.1 °C | `WS_I16_NONE` |
+| 62 | 2 | i16 | `pack_temp` | pack temperature, 0.1 °C | `WS_I16_NONE` |
 
-`ws0/protocol.py` unpacks the same bytes with `struct.Struct('>IIHIHHHHBBIbbBB')`.
+The fields name what is measured, not which part measures it. A slot that a build or a phase
+cannot fill carries its none code (the design's fill table, section 3.3, says which phase fills
+which slot). Signed none codes are the type's minimum, as `WS_SIGNAL_NONE` is for the i8 signal
+fields; unsigned ones are all ones. The gateway reads every none code as `null`.
+
+The fitted byte tells the two reasons for a none code apart, as absent and INVALID do in the
+observation (design section 5.3). Its bit for a slot is set when the build has a source for it, so
+a none code there is a sensor fault; with the bit clear the slot is not measured in this build:
+
+| Bit | Macro | Slots |
+|---|---|---|
+| 0 | `WS_FIT_MCU_SUPPLY` | `vdda_mv` |
+| 1 | `WS_FIT_MONITOR_TEMP` | `monitor_temp` |
+| 2 | `WS_FIT_GAUGE` | `soc`, `soc_rate` |
+| 3 | `WS_FIT_CHARGER_STATUS` | `charger_status` bits 0–2 (power good, charging, fault) |
+| 4 | `WS_FIT_CHARGER_REGS` | `charger_status` stage and active input, `chg_input_mv`, `chg_input_ma`, `chg_batt_mv`, `chg_temp` |
+| 5 | `WS_FIT_CHARGE_CURRENT` | `chg_batt_ma` |
+| 6 | `WS_FIT_PACK_TEMP` | `pack_temp` |
+| 7 | — | reserved, 0 (`WS_FIT_DEFINED` is 0x7F) |
+
+Phases A and B set bits 0, 1, 2, 3 and 5 (0x2F); phase C sets the bits of the parts it has.
+
+The charger status byte (`WS_CHG_*` in `ws_frame.h`, design section 6.3):
+
+| Bits | Macro | Meaning |
+|---|---|---|
+| 0 | `WS_CHG_POWER_GOOD` | input power good |
+| 1 | `WS_CHG_CHARGING` | charging |
+| 2 | `WS_CHG_FAULT` | fault |
+| 3–5 | `WS_CHG_STAGE(s)`, `WS_CHG_STAGE_MASK` | 0 not reported, 1 pre-charge or trickle, 2 constant current, 3 constant voltage, 4 top-off, 5 terminated, 6 not charging, 7 reserved |
+| 6–7 | `WS_CHG_INPUT(i)`, `WS_CHG_INPUT_MASK` | active input: 0 not reported (`WS_CHG_INPUT_NOT_REPORTED`), 1 solar (`WS_CHG_INPUT_SOLAR`, VAC1), 2 USB-C (`WS_CHG_INPUT_USB_C`, VAC2), 3 no input (`WS_CHG_INPUT_NO_INPUT`: the charger reports that neither input powers it) |
+
+**Canonical rules.** The node never sends a non-canonical report:
+
+- Bit 7 of the fitted byte is 0. `ws_diag_pack` writes `fitted & WS_FIT_DEFINED`, so no value of
+  `fitted` can break the rule.
+- A charger status byte other than `WS_CHARGER_NONE` never has stage 7. The caller builds the
+  byte from the macros with stages 0–6. Every active input code 0–3 is canonical: code 3 means
+  "no input" (amended 2026-10-29; it was reserved), so phase C reports a charger with no input
+  without a protocol change. 0xFF stays "no status" because its stage is 7.
+
+A health report is never answered. A gateway that receives a report that breaks a rule keeps every
+other value: it logs a warning for fitted bit 7, and it stores the charger keys as `null` with a warning
+for an invalid status byte (`diag_problems` in `ws0/protocol.py`).
 
 - Each `ws_diag_t` field has its wire width, so the function truncates nothing. The caller clamps
   the counts. The design saturates 16-bit counters at `0xFFFF`.
-- `rssi` and `snr` are `int8_t`. The cast to `uint8_t` writes their two's-complement byte.
-  `WS_SIGNAL_NONE` (`INT8_MIN`) goes out as `0x80`. The gateway reads it as −128, "none yet".
+- The signed fields are cast to their unsigned width, which writes their two's-complement bytes.
+  `WS_SIGNAL_NONE` (`INT8_MIN`) goes out as `0x80`, `WS_I16_NONE` (`INT16_MIN`) as `0x8000`.
 
 ```c {#diag-pack}
-/* Field order and widths: docs/protocol-design.md section 4 and ws0/protocol.py DIAG. */
+/* Field order and widths: docs/protocol-design.md section 4, the power telemetry design section
+   6.1 and ws0/protocol.py DIAG. Byte 51 is the fitted byte; its reserved bit 7 is always 0. */
 void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]) {
  uint8_t *p = ws_write_be32(out, d->epoch);
  p = ws_write_be32(p, d->uptime);
@@ -445,7 +526,23 @@ void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]) {
  p = ws_write_u8(p, (uint8_t)d->rssi);
  p = ws_write_u8(p, (uint8_t)d->snr);
  p = ws_write_u8(p, d->crashes);
- (void)ws_write_u8(p, d->energy);
+ p = ws_write_u8(p, d->energy);
+ p = ws_write_be32(p, d->crash_pc);
+ p = ws_write_be16(p, d->boots);
+ p = ws_write_be16(p, d->tx_timeouts);
+ p = ws_write_be16(p, d->i2c_recoveries);
+ p = ws_write_be16(p, d->vdda_mv);
+ p = ws_write_be16(p, (uint16_t)d->monitor_temp);
+ p = ws_write_be16(p, d->soc);
+ p = ws_write_be16(p, (uint16_t)d->soc_rate);
+ p = ws_write_u8(p, d->charger_status);
+ p = ws_write_u8(p, (uint8_t)(d->fitted & WS_FIT_DEFINED));   /* byte 51: canonical, bit 7 clear */
+ p = ws_write_be16(p, d->chg_input_mv);
+ p = ws_write_be16(p, (uint16_t)d->chg_input_ma);
+ p = ws_write_be16(p, d->chg_batt_mv);
+ p = ws_write_be16(p, (uint16_t)d->chg_batt_ma);
+ p = ws_write_be16(p, (uint16_t)d->chg_temp);
+ (void)ws_write_be16(p, (uint16_t)d->pack_temp);
 }
 ```
 
@@ -487,15 +584,19 @@ the design document with the `AESCCM` class of the `cryptography` library.
 
 | Test | What it checks |
 |---|---|
-| `test_vectors_follow_the_spec` | the OBS, ACK and NACK known-answer vectors follow the design document's construction |
+| `test_vectors_follow_the_spec` | the OBS, ACK and NACK known-answer vectors start with 0x61–0x63 and follow the design document's construction |
+| `test_version_6_byte0` | C and Python seal kinds 1–4 with byte 0 = 0x61–0x64. A version 5 ACK or health report, authentic under its own header, is refused as another version (`WS_FRAME_EHEADER`), and a 32-byte health report has the wrong length |
 | `test_known_answer_vectors` | C and Python seal and open the vectors to the same bytes and values |
 | `test_random_agreement_both_directions` | 300 random keys, stations and counters: C seals what Python seals, and C opens what Python seals |
 | `test_counter_and_station_limits` | the C code refuses station 0 and 65536, counter 0, 2^40 and 2^64 − 1, kinds 0, 5 and 15, and a 256-byte frame. After a station or counter refusal the C buffer is all zero (`fuzz_reply` checks it for every refusal) |
 | `test_reply_rejections` | a wrong tag, station, key, kind, length or version fails. A NACK with its kind byte changed to ACK fails the tag |
-| `test_diagnostic_frame_agreement` | a sealed health report frame matches Python, and `unseal` in `ws0/protocol.py` does not accept it as an observation |
-| `test_diag_plaintext_matches_python` | `ws_diag_pack` equals `DIAG.pack` for zeros, extremes and 200 random reports |
+| `test_diagnostic_frame_agreement` | a sealed 80-byte health report frame matches Python and the design's construction, and `unseal` in `ws0/protocol.py` does not accept it as an observation |
+| `test_diag_plaintext_matches_python` | `ws_diag_pack` equals `pack_diag` field by field for zeros, maxima, minima, none codes and 200 random reports; each member sits at its spec offset; bit 7 of byte 51 is 0 whatever `fitted` holds |
 | `test_key_check_value` | the check value equals AES-ECB of a zero block, `c6a13b` for the self-test key |
-| `test_selftest_vectors` (`FirmwareTables`) | the byte arrays in `App/selftest.c` are the design document's frames |
+| `test_selftest_vectors` (`FirmwareTables`) | the byte arrays in `App/selftest.c` are `selftest_frames()`, the one source of the vectors, in the layout that `python -m tests.test_frame --kat` prints |
+| `test_diag_mirror_matches_the_header` (`FirmwareTables`) | the test's `ctypes` mirror has the members of `ws_diag_t` in `ws_frame.h`, in order and with their types |
+| `test_diag_layout_matches_the_spec` (`FirmwareTables`) | `DIAG` and the none codes are the design's 64-byte table, and `ws_frame.h` defines `WS_FRAME_VERSION` 6, `WS_DIAG_PLAIN_LEN` 64 and the none codes |
+| `test_pack_diag_by_name`, `test_diag_canonical_rules` (`FirmwareTables`) | `pack_diag` defaults and refusals; `diag_problems` on fitted bit 7 and stage 7, empty when canonical; active input 3 decodes as `no_input` |
 
 `firmware/fuzz/fuzz_reply.c` passes arbitrary bytes to `ws_open_reply`. `tests/test_fuzz.py`
 (`test_reply`) runs it. Only the two genuine self-test frames may open. The fuzzer then seals with
@@ -508,6 +609,10 @@ ACK or NACK for station 1 with a 17-byte plaintext must open to the same values.
 `selftest_kat` (`App/selftest.c`) is the known-answer test. It runs on the TX board at boot
 (`App/app_tx.c`). It seals the observation vector and checks that `ws_seal_kind` refuses counter
 2^40. It tries to open the ACK, a tampered ACK and the NACK. `#status` reports the result as `kat=`.
+The version byte is in the AAD, so a version change changes every tag: the vectors are
+regenerated from one source, `selftest_frames()` in `tests/test_frame.py`, with
+`.venv/bin/python -m tests.test_frame --kat`, which prints the three arrays for `selftest.c`. A TX
+board whose vectors do not match its `WS_FRAME_VERSION` fails `kat=` and does not transmit.
 
 ```sh
 .venv/bin/python -m unittest tests.test_frame tests.test_fuzz tests.test_tangle

@@ -500,12 +500,27 @@ static unsigned append(char *buf, unsigned len, unsigned n, const char *text)
   return n;
 }
 
-/* A port's state, or the verdict behind a refusal or a quarantine (section 6.7: console only in v1). */
+/* The #modules line's longest text (WSMP_MODULES_LINE_MAX, wsmp_host.h): the head and every port's
+   label, every port with the longest state or verdict name (NAME_LONGEST), and the I2C port modules
+   (port_id_is_port: ports P_AIR_TH to P_UVA) with both counts at their limit, COUNT_MAX. */
+#define LINE_HEAD "#modules"
+#define NAME_LONGEST "type_conflict"
+#define COUNT_LONGEST "(incomplete=255)"   /* "(unverified=255)" is as long */
+static const char *const line_label[P_COUNT] = { "", " air_th=", " pressure=", " uva=", " encl_th=", " battery=",
+                                                 " wind=", " rain=", " rails=" };   /* LINE_WORST sums them */
+#define LINE_WORST (sizeof LINE_HEAD - 1U + sizeof(" air_th=" " pressure=" " uva=" " encl_th=" " battery=" \
+                    " wind=" " rain=" " rails=") - 1U + (P_COUNT - 1U) * (sizeof NAME_LONGEST - 1U) \
+                    + (P_UVA - P_AIR_TH + 1U) * 2U * (sizeof COUNT_LONGEST - 1U))
+_Static_assert(COUNT_MAX == 255U, "COUNT_LONGEST holds the counters' limit");
+_Static_assert(LINE_WORST < WSMP_MODULES_LINE_MAX, "the longest #modules line and its terminator fit");
+
+/* A port's state, or the verdict behind a refusal or a quarantine (section 6.7: console only in v1).
+   No name is longer than NAME_LONGEST (test_the_longest_modules_line_fits). */
 static const char *state_name(const port_t *s)
 {
   static const char *const state[] = { "absent", "probing", "identifying", "admitted", "active", "suspect",
                                        "quarantined", "refused" };
-  static const char *const verdict[] = { "", "type_conflict", "dup_serial", "dup_type" };
+  static const char *const verdict[] = { "", NAME_LONGEST, "dup_serial", "dup_type" };
   int by_verdict = (s->state == WH_REFUSED || s->state == WH_QUARANTINED) && s->reason != WSMP_V_ADMIT;
   return by_verdict ? verdict[s->reason] : state[s->state];
 }
@@ -526,18 +541,33 @@ static unsigned append_count(char *buf, unsigned len, unsigned n, const char hea
 
 unsigned wsmp_host_modules_line(char *buf, unsigned len)
 {
-  static const char *const name[P_COUNT] = { "", " air_th=", " pressure=", " uva=", " encl_th=", " power=", " wind=", " rain=" };
   if (len == 0) return 0;
-  unsigned n = append(buf, len, 0, "#modules");
+  unsigned n = append(buf, len, 0, LINE_HEAD);
   for (unsigned q = P_AIR_TH; q < P_COUNT; q++)
   {
     const port_t *s = &ports[q];
-    n = append(buf, len, append(buf, len, n, name[q]), state_name(s));
+    n = append(buf, len, append(buf, len, n, line_label[q]), state_name(s));
     if (s->incomplete) n = append_count(buf, len, n, "(incomplete=", s->incomplete);
     if (s->unverified >= UNVERIFIED_SHOWN) n = append_count(buf, len, n, "(unverified=", s->unverified);
   }
   return n;
 }
+
+#ifdef WSMP_HOST
+/* Test only (a host build, -DWSMP_HOST): every port quarantined for a type conflict, the longest name,
+   and the I2C port modules, the only ports that count, with both counts at their limit: the line of
+   LINE_WORST, for test_the_longest_modules_line_fits. */
+void wsmp_host_worst_line(void)
+{
+  for (unsigned q = P_AIR_TH; q < P_COUNT; q++)
+  {
+    ports[q].state = WH_QUARANTINED;
+    ports[q].reason = WSMP_V_TYPE_CONFLICT;
+    ports[q].incomplete = port_id_is_port((enum wsmp_port)q) ? COUNT_MAX : 0U;
+    ports[q].unverified = port_id_is_port((enum wsmp_port)q) ? COUNT_MAX : 0U;
+  }
+}
+#endif
 
 static int set_entry(enum wsmp_port p, const port_t *s, wsmp_set_module *m)
 {
@@ -603,7 +633,7 @@ unsigned wsmp_host_ident_line(const wsmp_set *set, unsigned i, char *buf, unsign
   if (i >= set->count || i >= WSMP_SET_MODULES_MAX) return 0;
   const wsmp_set_module *m = &set->m[i];
   unsigned st = (unsigned)(m->id_flags >> 4);
-  /* a module that never has a record (source port, status 0: the meters, power) shows "none" */
+  /* a module that never has a record (source port, status 0: the meters, battery, rails) shows "none" */
   const char *status_text = (m->id_flags & 0x03U) == WSMP_SRC_PORT && st == WSMP_REC_APPLIED ? "none"
                             : st < sizeof status / sizeof status[0] ? status[st] : "?";
   unsigned n = append_dec(buf, len, append(buf, len, 0, "#ident port="), m->port);

@@ -17,7 +17,7 @@
 #define WS_META_PAGE_B       (WS_CONFIG_PAGE - 1U)   /* append log of monotonic values (epoch, counter reservation) */
 #define WS_META_PAGE_A       (WS_CONFIG_PAGE - 2U)
 #ifndef WS_JOURNAL_PAGES      /* host tests may shrink the ring (tests/test_store_powercut.py) */
-#define WS_JOURNAL_PAGES     70U   /* 24 h for a full station: (70 - 1) x 21 slots */
+#define WS_JOURNAL_PAGES     70U   /* 24 h of the build's widest record: (70 - 1) x slots (node_store.c) */
 #define WS_JOURNAL_DEFAULT   1     /* the board's ring, not a shrunken host test ring */
 #endif
 #define WS_JOURNAL_FIRST     (WS_META_PAGE_A - WS_JOURNAL_PAGES)   /* observation ring, up to meta log A */

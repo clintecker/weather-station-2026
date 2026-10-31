@@ -5,11 +5,17 @@ Every one is stored in the rx_faults table (ws0/web.py), up to the noise rate li
 RX_FAULT_RETENTION_S (30 days). A CRC failure keeps the bytes the radio received; this tool
 classifies each capture:
 
-  * ours          the first byte is one of our frame kinds (version 5: 0x51 obs, 0x52 ack,
-                  0x53 nack, 0x54 diag). The closest authentic frame the gateway accepted within
-                  +-5 s is shown with the bit difference (Hamming distance) to the capture: a few
-                  bits means our frame, corrupted on the air; about half the bits means a
+  * ours          the first byte is one of our frame kinds in the current protocol version:
+                  {current}.
+                  The closest authentic frame the gateway accepted within +-5 s is shown
+                  with the bit difference (Hamming distance) to the capture: a few bits
+                  means our frame, corrupted on the air; about half the bits means a
                   different frame (a retry has a new counter, so new ciphertext).
+  * ours (previous version)
+                  the first byte is one of our frame kinds in the previous protocol version:
+                  {previous}.
+                  A capture retained from the previous release's run, or a board not yet
+                  flashed with this release (the gateway drops its frames). Shown like ours.
   * ours (damaged header)
                   the first byte is not one of our kinds, but an accepted frame within +-5 s
                   differs from the capture in under 10% of its bits: our frame, with the kind
@@ -24,7 +30,7 @@ traceback.
 
   .venv/bin/python tools/rx_faults.py --db run-hw/observations.sqlite3 [--since 2026-10-15T00:00:00Z]
       [--until 2026-10-16T00:00:00Z] [--limit 50] [--json]
-"""
+"""  # {current} and {previous}: the byte-0 values from ws0.protocol, filled in below (kind_bytes)
 import argparse
 import bisect
 import collections
@@ -36,14 +42,26 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from gateway import open_read_only  # noqa: E402
-from ws0.protocol import COUNTER_AT, HEADER_LEN, STATION_AT, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS, VERSION  # noqa: E402
+from ws0.protocol import (COUNTER_AT, HEADER_LEN, STATION_AT, KIND_ACK, KIND_DIAG, KIND_NACK, KIND_OBS,  # noqa: E402
+                          VERSION, VERSION_SHIFT)
 from ws0.web import ACCEPTED_OUTCOMES as ACCEPTED, SchemaDrift, check_schema  # noqa: E402
 
-KINDS = {(VERSION << 4) | k: name for k, name in ((KIND_OBS, 'obs'), (KIND_ACK, 'ack'), (KIND_NACK, 'nack'),
-                                                  (KIND_DIAG, 'diag'))}
+FRAME_KINDS = ((KIND_OBS, 'obs'), (KIND_ACK, 'ack'), (KIND_NACK, 'nack'), (KIND_DIAG, 'diag'))
+PREVIOUS_VERSION = VERSION - 1
+CLASS_BY_VERSION = {VERSION: 'ours', PREVIOUS_VERSION: 'ours (previous version)'}
+KINDS = {(version << VERSION_SHIFT) | k: (version, name)        # byte 0 -> (protocol version, frame kind)
+         for version in CLASS_BY_VERSION for k, name in FRAME_KINDS}
 WINDOW_S = 5
 DAMAGED_HEADER_BITS = 0.10   # a capture this close to an accepted frame is ours, whatever its kind byte
-OURS = ('ours', 'ours (damaged header)')
+OURS = ('ours', 'ours (previous version)', 'ours (damaged header)')
+
+
+def kind_bytes(version):
+    """The byte-0 values of one protocol version, e.g. 'version 6: 0x61 obs, 0x62 ack, 0x63 nack, 0x64 diag'."""
+    return f'version {version}: ' + ', '.join(f'0x{(version << VERSION_SHIFT) | k:02x} {name}' for k, name in FRAME_KINDS)
+
+
+__doc__ = __doc__.format(current=kind_bytes(VERSION), previous=kind_bytes(PREVIOUS_VERSION))
 
 
 def utc(text):
@@ -90,7 +108,9 @@ def classify(fault, accepted):
         return out | {'class': 'foreign/noise'}
     match = closest(fault, data, accepted)
     if data[0] in KINDS:
-        return out | {'class': 'ours', 'frame_kind': KINDS[data[0]], **header(data), 'match': match}
+        version, kind = KINDS[data[0]]
+        return out | {'class': CLASS_BY_VERSION[version], 'frame_version': version, 'frame_kind': kind,
+                      **header(data), 'match': match}
     if match and match['bits_differ'] < DAMAGED_HEADER_BITS * match['bits']:
         return out | {'class': 'ours (damaged header)', 'match': match}
     return out | {'class': 'foreign/noise'}
@@ -130,7 +150,8 @@ def summarize(rows):
     matched = [r for r in rows if r['class'] in OURS and r.get('match')]
     rssi = [r['rssi_dbm'] for r in rows if r['rssi_dbm'] is not None]
     return {'total': len(rows), 'crc': sum(r['kind'] == 'crc' for r in rows), 'hdr': len(by('header')),
-            'ours': len(ours), 'ours_damaged_header': len(by('ours (damaged header)')),
+            'ours': len(ours), 'ours_previous_version': len(by('ours (previous version)')),
+            'ours_damaged_header': len(by('ours (damaged header)')),
             'ours_matched': len(matched), 'foreign_or_noise': len(by('foreign/noise')),
             'median_bits_differ': statistics.median(r['match']['bits_differ'] for r in matched) if matched else None,
             'rssi_dbm_min': min(rssi, default=None), 'rssi_dbm_max': max(rssi, default=None),
@@ -143,8 +164,8 @@ def detail(r):
         return head + '  header CRC failed (no payload)'
     head += f"  snr={r['snr_db']} dB  len={r['length']}  {r['class']}"
     if r['class'] in OURS:
-        if r['class'] == 'ours':
-            head += f"  {r['frame_kind']}" + (f" station={r['station_id']} counter={r['counter']}" if 'counter' in r else '')
+        if 'frame_kind' in r:
+            head += f"  {r['frame_kind']}" + ('' if r['class'] == 'ours' else f" (version {r['frame_version']})") + (f" station={r['station_id']} counter={r['counter']}" if 'counter' in r else '')
         m = r['match']
         head += (f"\n    closest accepted frame {m['dt_s']:+.1f} s ({m['outcome']}, {m['length']} B"
                  + (f", counter={m['counter']}" if 'counter' in m else '')
@@ -159,7 +180,8 @@ def report(rows):
     lines = [f"{s['total']} bad receptions {s['first']} .. {s['last']}: {s['crc']} CRC, {s['hdr']} header",
              f"CRC captures: {s['ours']} look like ours, {s['ours_damaged_header']} ours with a damaged header "
              f"({s['ours_matched']} with an accepted frame within +-{WINDOW_S} s, median {s['median_bits_differ']} "
-             f"bits differ), {s['foreign_or_noise']} foreign/noise",
+             f"bits differ), {s['ours_previous_version']} ours from the previous protocol version "
+             f"({PREVIOUS_VERSION}), {s['foreign_or_noise']} foreign/noise",
              f"RSSI {s['rssi_dbm_min']} .. {s['rssi_dbm_max']} dBm", '']
     return '\n'.join(lines + [detail(r) for r in rows])
 

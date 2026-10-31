@@ -162,13 +162,16 @@ ALLOWED = {
         'RSF after the next shadow-register copy, <= 2 RTCCLK cycles = 61 us (RM0461 RTC '
         'register synchronization); HAL timeout 1 s',
         f'{HAL}/stm32wlxx_hal_rtc.c: polls RTC_ICSR.RSF on HAL_GetTick.'),
-    # ADC enable handshake (App/board_inputs.c, the wind vane: HAL_ADC_Start_IT once a second).
+    # ADC enable handshake (App/board_inputs.c, the board ADC sequence of vane, ISET, charger input and
+    # VREFINT: HAL_ADC_Start_IT from board_vane_mv and board_power_adc, about once a second each).
+    # The sequence adds no other wait: its channels are configured once at init (the VREFINT path
+    # needs no stabilisation loop; only the temperature sensor's has one) and it completes by interrupt.
     'ADC_Enable': (
         'ADRDY a few ADC clock cycles after ADEN (RM0453 ADC enable sequence); the HAL bounds it with '
         'ADC_ENABLE_TIMEOUT = 2 ms. The ADC stays enabled between conversions (no auto power-off), so '
         'later calls find it ready and return at once',
         f'{HAL}/stm32wlxx_hal_adc.c: polls ADC_FLAG_RDY on HAL_GetTick, at most ADC_ENABLE_TIMEOUT.'),
-    # ADC offset calibration (App/board_inputs.c, the wind vane: once, at the modules' start).
+    # ADC offset calibration (App/board_inputs.c, the board ADC sequence: once, at the modules' start).
     'HAL_ADCEx_Calibration_Start': (
         '8 calibrations of about 82 ADC clock cycles each, about 60 us at 12 MHz (RM0453 ADC '
         'calibration); each wait is bounded by ADC_CALIBRATION_TIMEOUT = 178,176 loop passes, and the '

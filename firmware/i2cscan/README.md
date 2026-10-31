@@ -10,7 +10,8 @@ every part as it left it. It writes only to the OLED, on its own SPI bus. It doe
 
 ## What it prints
 
-At start, after a `#oled` line with the display's SPI clock (see "The OLED" below), and again
+At start, after a `#power PA9 (D9) high` line (the sensor load switch on; see "The OLED" below for why)
+and a `#oled` line with the display's SPI clock (see "The OLED" below), and again
 whenever a scan finds nothing:
 
 ```
@@ -34,14 +35,36 @@ Then once a second (the INA228 line averages four samples):
 
 | Field | Meaning |
 |---|---|
-| `vbus` | the voltage at the INA228's VBUS input: the cell voltage when the VBUS jumper on the breakout's back joins it to VIN+ (check it; the build sheet's INA228 row). Near 0 V means the jumper is open and nothing feeds VBUS; the current is still right |
-| `shunt`, `i` | the voltage across the 0.015 ohm shunt, and the current from it. **Positive: out of the battery. Negative: into it (charging).** The shunt is in the cell's + lead: VIN+ to the cell, VIN- to the charger's LIPO pin |
+| `vbus` | the voltage at the INA228's VBUS input, which the official wiring runs on its own sense lead (L_VBUS, from screw terminal X1.2) to the **OUT** lever connector (WAGO_SYS_OUT, the load rail; build-progression record P5), **not the cell**. The back solder jumper from VBUS to VIN+ (SJ1) is open. During a charge OUT sits above the cell (4.3-4.5 V while the cell is below 4.1 V); on battery alone it sits a little below it. Near 0 V means nothing feeds VBUS (the sense lead is out); the current is still right |
+| `shunt`, `i` | the voltage across the 0.015 ohm shunt, and the current from it, in the part's own sign. **Positive: out of the battery. Negative: into it (charging).** The shunt is in the pack's + lead: VIN+ to the CELL+ lever connector (lead L_CELL_INA), VIN- to the BATT lever connector (lead L_INA_BATT) and on to the charger's BATT socket. The node and the benchlink logger turn the sign so that + is into the cell (spec section 3.1) |
 | `die` | the INA228's own temperature |
-| `vcell` | the cell voltage as the gauge measures it on its pigtail (GBAT) |
+| `vcell` | the voltage of the **CELL+ node** (upstream of the shunt) as the gauge measures it on its own lead (L_GAUGE_POS, the red lead of a cut #1131 in its CELL+ position; its minus lead is unconnected and its ground comes over STEMMA QT; record P4, M4). At rest it is the battery voltage; under current it includes the pack-lead drop, I x R_pack |
 | `soc` | the gauge's state-of-charge estimate. Right after the gauge powers up it is a first guess; it settles over the first hours |
 | `rate` | the gauge's charge or discharge rate in % an hour |
 
 In its hibernate mode the gauge measures every 45 s, so `vcell` can stay the same for a while.
+
+**Phase B rail monitors.** After each scan (every 10 s, and once at start) the tool reads each phase B
+INA228 that answers, at the node's addresses (`stage0-node/App/power_config.h` `POWER_ADDR_*`,
+[`power-metering.md`](../../docs/hardware/power-metering.md) section 7), one line each, a single
+reading (not averaged). Phase A has none of them, so it prints nothing:
+
+```
+#scan 0x41 INA228 load monitor (phase B)
+#rail load 0x41 vbus=4.4012 V shunt=+1.020 mV i=+68.00 mA die=25.3 C
+#rail solar 0x45 vbus=6.1020 V shunt=+6.000 mV i=+400.00 mA die=26.0 C
+```
+
+| Rail | Address, strap | `i` positive | `vbus` |
+|---|---|---|---|
+| `load` | 0x41: A0 to VS | from OUT to the load | OUT at the load INA228 |
+| `solar` | 0x45: A0 and A1 to VS | from the panel into the station | the panel's lead, before D4 |
+| `usb-c` | 0x48: A1 to **SDA** (a rework) | from the USB-C source into the station | the USB-C VBUS, before D2 |
+
+`#rail ... is not an INA228` means another part answers there; a rail INA228 missing from the scan
+but a `?` at another address means its strap is wrong (0x48 seen as 0x40 or 0x44: the A1-to-SDA
+wire is open or on the wrong pad). The node's sign for each rail is the same as printed here (power
+spec section 3.1); only the battery rail is turned.
 
 ## Build and flash
 
@@ -67,15 +90,28 @@ Press the black RESET button (B4) to see the start lines again. Ctrl-] quits min
 
 - Mode A: the NUCLEO on USB, the BATTERY POWER link on board B **open**. Never the NUCLEO's USB and
   the battery supply together.
-- The STEMMA QT hub takes **3.3 V from CN6.4** and GND from CN6.6, never the 5 V pin. SDA to PA11
+- The STEMMA QT hub takes **3.3 V from the load switch's output (3V3_SW)**, which PA9 switches and
+  whose input is the unswitched 3V3 from CN6.4 (bench-bb-r0.3, change C), and GND from CN6.6, never the
+  5 V pin. The power monitors take the unswitched 3V3 on their own cable (QTM). SDA to PA11
   (D14, CN5.9), SCL to PA12 (D15, CN5.10) ([`docs/hardware/bench-station-wiring.md`](../../docs/hardware/bench-station-wiring.md)).
 
 ## Checks against the meter
 
 | Tool line | Meter |
 |---|---|
-| `#ina228 ... i=` | the current in series where W26 was: about +37.6 mA with the 100 ohm load and no solar |
-| `#ina228 vbus=` and `#gauge vcell=` | the cell voltage at B:f39 (+) to B:f40 (-); the three agree within a few mV |
+| `#ina228 ... i=` | the Fluke 87V in series in the pack + lead at CELL+ position 1 (record M1; its mA input for the 38 mA load): about +37.6 mA with the 100 ohm load and no source; within 2 % + 2 mA of the meter (build-sheet power check 3: the shunt is verified, not measured). In series only for a short steady reading: its current shunt adds tens to hundreds of milliohms to the battery path (its span limits, build-sheet power check 7: the + span at most 75 mOhm) |
+| `#rail <rail> ... i=` | the 87V the same way, in series in that rail's + lead, at a steady current: within 2 % + 2 mA (build-sheet power check B3) |
+| `#gauge vcell=` | at rest or at the 38 mA load, the meter at the pack plug (back-probed): within 10 mV. At a 1 A charge, the meter across the gauge's own sense points (the CELL+ clamp to the STAR clamp): within 10 mV, the pack-plug difference recorded (build-sheet power check 8) |
+| `#ina228 vbus=` | OUT, on the OUT lever connector (or the charger's OUT header pin, a zero-current test point). With a source charging the cell (below 4.1 V): 4.3-4.5 V and at least 100 mV above `vcell` (build-sheet power check 9). With no source: a little below `vcell` (the charger's battery FET) |
+
+Wiring checks these readings catch:
+
+| Reading | Wiring fault |
+|---|---|
+| `vbus` equals `vcell` within a few mV **while charging** | the INA228's back VBUS-to-VIN+ jumper is closed (VBUS on the cell, and OUT tied to the cell, which bypasses the charger's 4.2 V regulation): cut it (build-sheet power check 1) |
+| `vbus` near 3.3 V, near 0 V, or near the charger's input | the VBUS sense lead (L_VBUS) is on the wrong net (the 3.3 V rail, GND, or VBUS of the charger) or out: it goes to the OUT lever connector |
+| `vcell` reads like `vbus` (4.3-4.5 V while charging) | the gauge senses OUT, not CELL+: its red lead (L_GAUGE_POS) goes in its own CELL+ position, upstream of the shunt |
+| `vcell` differs from the meter across the CELL+ and STAR clamps by more than 10 mV at 1 A | the gauge's lead is not on CELL+, or its ground is not the one the record allows (ground over STEMMA QT only; record P4). A difference against the pack plug of up to I x R_pack + 10 mV is the pack-lead drop, not a fault (record M4) |
 
 ## When it goes wrong
 
@@ -83,10 +119,10 @@ Press the black RESET button (B4) to see the start lines again. Ctrl-] quits min
 |---|---|
 | `#lines SDA=LOW SCL=LOW: no pull-ups` | the hub has no 3.3 V or GND, or the cable to the NUCLEO is out |
 | `#lines ... one line low` | SDA and SCL swapped or one open, or a part holding SDA low (unplug parts one at a time) |
-| `#scan` shows 0x40 but not 0x36 | the gauge's STEMMA QT cable, or its pigtail: the gauge runs from the cell, not from the hub |
+| `#scan` shows 0x40 but not 0x36 | the gauge's STEMMA QT cable, or its CELL+ lead (L_GAUGE_POS): the gauge runs from the cell, not from the hub |
 | `#ina228 0x40 is not an INA228` | another part at 0x40, or the INA228's address jumpers changed |
-| `i=` the wrong sign | VIN+ and VIN- swapped on the breadboard (W16, W18) |
-| `i=` near zero with a load fitted | the cell is not in the shunt's path: is it on the pigtail at B:f39/f40 and not the charger's own JST socket? |
+| `i=` the wrong sign | VIN+ and VIN- swapped at the INA228 screw terminal: L_CELL_INA (from the CELL+ connector) goes to VIN+ (X1.3), L_INA_BATT (to the BATT connector) to VIN- (X1.1) |
+| `i=` near zero with a load fitted | the pack is not in the shunt's path: it is plugged straight into the charger's own BATT socket, which bypasses the shunt (the 2026-10-28/29 fault). The pack connects only through the shunt (build-progression record P3): pack plug, the pack-mating half of a cut #1131 (L_PACK_POS) to the CELL+ lever connector, L_CELL_INA to the INA228 shunt, L_INA_BATT to the BATT lever connector, and the board-mating half of the same #1131 (L_BATT_POS) into the charger's BATT socket; no breadboard contact in the path. The [build sheet](../../hardware/bench-breadboard-r0/build-sheet.md) has the leads (section 3), the joints (section 4) and the span limits (section 5, power check 7) |
 
 ## The OLED
 
@@ -96,7 +132,7 @@ SSD1325 controller, on **SPI1** (not I2C, so it is not in the scan).
 ```
 I2C 36 40
 +37.60mA                (twice the size)
-VBUS 3.8459V
+OUT 3.8459V
 CELL 3.8460V 78.4%
 RATE -0.62%/h
 ```
@@ -104,20 +140,23 @@ RATE -0.62%/h
 **Interface:** the module must be in SPI mode: on its back, **R19 and R21 fitted, R18 and R20 empty**
 (Adafruit's guide; the module may ship in 8-bit mode with R18 and R20 fitted).
 
-| OLED pin | Signal | NUCLEO | Arduino name, MCU pin |
+| OLED pin | Signal | NUCLEO | MCU pin |
 |---|---|---|---|
-| 1 | GND | GND rail | |
-| 2 | 3.3 V in (100-150 mA) | 3V3 rail (board A L+) | |
-| 4 | DC | CN5.1 | D8, PC2 |
-| 7 | SCLK | CN5.6 | D13, PA5 (SPI1_SCK) |
-| 8 | DIN | CN5.4 | D11, PA7 (SPI1_MOSI) |
-| 15 | CS | CN5.3 | D10, PA4 |
-| 16 | RST | CN9.8 | D7, PC1 |
+| 1 | GND | CN10.20, its own lead (L_OLED_GND) | GND |
+| 2 | 3.3 V in (100-150 mA) | CN7.16, its own lead (L_OLED_VCC); unplugged in mode B | 3V3 |
+| 4 | DC | CN10.21 | PC2 (alias D8, CN5.1, stays empty) |
+| 7 | SCLK | CN10.11 | PA5, SPI1_SCK (alias D13, CN5.6, stays empty) |
+| 8 | DIN | CN10.15 | PA7, SPI1_MOSI (alias D11, CN5.4, stays empty) |
+| 15 | CS | CN10.17 | PA4 (alias D10, CN5.3, stays empty) |
+| 16 | RST | CN10.23 | PC1 (alias D7, CN9.8, stays empty) |
 | 3, 5, 6, 9-14, 17-19 | not used | leave empty | |
 | 20 | frame ground (the metal case) | GND, or leave open | |
 
-The pins are from UM2592 Rev 4, Table 17. D9 (PA9) is not used for reset: the protoboard switches
-the sensors' 3.3 V with it. Put the kit's 220 uF capacitor across the OLED's 3.3 V and GND (+ to
+The pins are from UM2592 Rev 4, Tables 17 and 18; the hardware build sheet (`hardware/bench-breadboard-r0/build-sheet.md`) lands each signal on its morpho pin only and the supply pair straight on the NUCLEO, never on a breadboard rail (build-progression record N1, N3). D9 (PA9) is not used for reset: it switches the sensors'
+3.3 V. From bench-bb-r0.3 (build-progression record 4.6, change C) the hub's QT V+ is the load switch's
+output, so this tool drives PA9 high at start (a `#power` line says so) and keeps it high; without it the
+scan would miss every hub sensor, which would sit unpowered on a bus held up by the power monitors'
+pull-ups. Put the kit's 220 uF capacitor across the OLED's 3.3 V and GND (+ to
 3.3 V). The display draws 50-150 mA from the NUCLEO's 3V3.
 
 The SPI clock is the fastest step at or below 1 MHz (Adafruit: the SSD1325 needs 1 MHz or less); the

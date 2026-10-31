@@ -21,7 +21,11 @@ The rules do not apply to:
   These run on the PC and may allocate, recurse or use `longjmp`.
 
 Size of the scope: 38 C files, 501 functions (counted by lizard 1.24.1, headers included), 4,475
-non-comment lines of code (lizard NLOC). Counted on 2026-10-19 at `04fcc65`.
+non-comment lines of code (lizard NLOC). Counted on 2026-10-19 at `04fcc65`. The power telemetry work
+(2026-10-29, [spec](superpowers/specs/2026-10-29-power-telemetry-design.md)) added
+`App/power_acq.c`, `App/power_config.h` and `firmware/common/power_regs.c` and `.h`, and reshaped
+`App/mod_power.c` and `App/board_inputs.c`; the counts on this page that carry a date are from before
+it unless they say otherwise.
 
 ## Summary
 
@@ -34,7 +38,7 @@ non-comment lines of code (lizard NLOC). Counted on 2026-10-19 at `04fcc65`.
 | 5 | Assertions: at least two per function, with an explicit recovery | **Partial**: a check facility with a defined recovery at 41 sites (about 0.08 per function, below the target, argued below) | Every host harness test requires zero failed checks. Tests make checks fail on purpose |
 | 6 | Data at the smallest possible scope | **Complies** (one shared variable left, set by an interrupt) | Review. `-Wmissing-declarations`, `-Wredundant-decls`, Cppcheck `variableScope` |
 | 7 | Check every non-void result and check parameters | **Complies with documented deviations** (`memcpy`/`memset`, `APP_PRINTF`, ST's void radio API) | `(void)` casts with reasons, `WS_CHECK` at module boundaries, review |
-| 8 | Preprocessor: includes and simple macros only | **Complies with documented deviations** (an X-macro catalog, one token-pasting wrapper, `__LINE__` in `WS_CHECK`, 7 conditional-compilation switches) | Review. `-Wundef`, `-Wunused-macros` |
+| 8 | Preprocessor: includes and simple macros only | **Complies with documented deviations** (an X-macro catalog, one token-pasting wrapper, `__LINE__` in `WS_CHECK`, 11 conditional-compilation switches) | Review. `-Wundef`, `-Wunused-macros` |
 | 9 | One level of dereference and no function pointers | **Complies with documented deviations** (ST's callback APIs, and `ws_i2c_pins`, the pin interface that the stuck-bus recovery drives on the board and in its host test) | Review. `tools/stack_report.py` accounts for every pointer call |
 | 10 | All warnings on, zero warnings, static analysis every day | **Complies** (every push, not daily) | `-Werror` strict set, GCC `-fanalyzer`, Cppcheck, all in CI |
 
@@ -187,17 +191,21 @@ Holzmann's sense. This page does not count it.
 
 ### The 41 sites
 
-TX has 40 sites and RX has 7. Some files are in both roles.
+TX has 40 sites and RX has 7. Some files are in both roles. These counts are from `04fcc65`. On
+2026-10-29 `grep -n 'WS_CHECK('` over the scope's `.c` files finds 45 lines at `c7e8860` and 51 with
+the power telemetry changes (`power_acq.c` 6, `mod_power.c` 1, `tx_exchange.c` 11); the table below
+names every kind, including the newer ones.
 
 | Kind | Sites (file, function) | Recovery |
 |---|---|---|
 | State-machine preconditions | `tx_exchange.c`: `exchange_start` (no exchange running), `handle` (an unknown state is idle), `process` (only `EV_*` bits). `i2c_bus.c` `bus_task` (posted only in `S_DONE` or `S_RECOVERED`) | refuse the start, back to idle, drop the stray bits, or do nothing |
 | Index and length bounds before a buffer is used | `tx_exchange.c` `send_current` (`qi < qn`), `mark_replied` (`qi`), `exchange_start` (backlog fits the queue). `tx_policy.c` `policy_exchange_end` (`n` fits `struck[]`). `app_tx.c` `held_count`. `node_store.c` `store_journal_read` and `_ack` (the ref is a journal slot, checked before it indexes the pending bitmap). `busymon.c` `busymon_end` (`kind`), `busymon_isr_exit` (an exit has its enter). `console.c` `hex_print` (frame length). `ws_policy.c` `ws_strike_note` (table size), `ws_link_probe_interval` (`probe_step`) | end the exchange, skip the write, clamp, or refuse (-1) |
 | Flash writes stay in the node-state pages | `node_store.c` `prog64`, `erase_page`: every program and erase lies inside pages 55–127 (never the firmware) and is double-word aligned | refused like a failed flash operation, which every caller already handles |
-| Our own data must encode or seal | `app_tx.c` `minute_report` (`ws_obs_encode`). `tx_exchange.c` `send_obs`, `send_diag` (`ws_seal_kind` with a provisioned station and a reserved counter) | `journal=ERROR`, or the item is skipped as for a local send failure |
+| Our own data must encode or seal | `app_tx.c` `minute_report` (`ws_obs_encode`). `tx_exchange.c` `send_obs`, `send_diag` (`ws_seal_kind` with a provisioned station and a reserved counter), `diag_power` (the cached charger status is a canonical health-report value: no reserved stage or input code) | `journal=ERROR`, or the item is skipped as for a local send failure; a non-canonical charger status goes out as "none" |
 | ST timer starts that must not be refused | `tx_exchange.c` gap and ACK-window timers. `i2c_bus.c` guard and step timers. `tx_console.c` reboot timer. `app_rx.c` `#alive` timer. `watchdog.c` check timer. ST refuses a start only for a running timer | the running timer still delivers its event. The reboot timer resets at once instead |
 | HAL results that should not fail for our arguments | `i2c_bus.c` `i2c_start` (`HAL_I2C_Init`, analog filter). `watchdog.c` `HAL_IWDG_Init`, which can return `HAL_TIMEOUT` if the internal low-speed oscillator (LSI) never settles. `console.c` `console_init` (`vcom_ReceiveInit`) | the next transfer fails and the bus recovery re-initialises. The independent watchdog (IWDG) takes the values when its update completes. The console re-arms the receive once, and the RX health check also re-arms it |
-| Local module steps | `mod_th.c`, `mod_reg.c`, `mod_power.c`: the bus takes each submitted transfer (`i2c_bus_submit` returns 0: one step at a time), and a completion arrives in a step that expects one. `wsmp_local.c` `i2c_bus_done`: the completion belongs to a known client | the sample counts as failed and the module waits for its next sample |
+| Local module steps | `mod_th.c`, `mod_reg.c`: the bus takes each submitted transfer (`i2c_bus_submit` returns 0: one step at a time), and a completion arrives in a step that expects one. `wsmp_local.c` `i2c_bus_done`: the completion belongs to a known client. `port_id.c` (the port modules' identity reads): the bus takes a record read, a completion arrives in a step that expects one (`port_id_i2c_done`), and `port_id_check` does not start a second identity check while one runs | the sample counts as failed and the module waits for its next sample; a stray identity completion is ignored, and a second check request is dropped (the running check completes) |
+| Power acquisition steps | `power_acq.c` (the INA228 rails, the MAX17048 and the board ADC; file 18): `rail_submit` and `gauge_read` (the bus takes the transfer), `rail_done` and `gauge_done` (a completion arrives in a step that expects one), `power_acq_init` (every rail's SHUNT_CAL from `power_config.h` is nonzero), `power_acq_i2c_done` (a completion comes from a client this power profile has a rail for). `mod_power.c` `known` (a module number is the battery or the rails module) | a refused rail transfer fails like a bus error (the rail's window gets a gap and the rail re-calibrates); a refused gauge read or an unexpected completion sends that step back to idle; a stray completion is ignored; an unknown module gets an all-zero identity. The SHUNT_CAL check has no recovery of its own: a wrong `power_config.h` constant would read zero current, and the count on `#counts` names it |
 | Policy inputs | `ws_policy.c` `ws_lora_airtime_ms` (spreading factor, bandwidth, coding rate) | a whole minute: the live reading only, no division by zero |
 
 ### Tests
@@ -232,7 +240,8 @@ and recovers:
   ≥ 8 lines). 38 of them hold a check. These 38 are the functions that index arrays, write flash,
   submit bus transfers or move a state machine.
 - **Pure code validates its input.** The portable pure code (`ws_frame.c`, `ws_obs.c`,
-  `ws_console.c`, `stage0.c`) validates every input and returns an error. That is its recovery.
+  `ws_console.c`, `stage0.c`, and the power conversions `power_regs.c`) validates every input and
+  returns an error or a defined value (`power_regs.c`: 0 for a zero divisor, saturation past int32). That is its recovery.
   This code is fuzzed (`firmware/fuzz`, libFuzzer in CI) and unit tested. A `WS_CHECK` there would
   count legitimate bad input as bugs.
 - **Free checks.** Many invariants are checked where a check costs no flash:
@@ -259,6 +268,11 @@ Changes for this rule (commit "narrow the shared node state"):
 - Cppcheck's `variableScope` findings (two variables, in `ws_line_feed` and `ws_key_check`) were
   narrowed.
 
+The board ADC sequence (`App/board_inputs.c`) shares its results between the ADC interrupt and its
+two readers (`board_vane_mv`, `board_power_adc`) through `done[]` and `done_seq`, which are `static
+volatile` in that file. `board_power_adc` masks the ADC interrupt while it copies one sequence, so it
+never mixes two. The CHG edge count (`chg_edges`) is the same kind. None of them leaves its file.
+
 Kept and documented: `ws_flash_ecc_fault` (`Core/Src/stm32wlxx_it.c`) is the one variable shared
 across files. The NMI handler sets it and the flash read checks it. An interrupt can only report
 through shared state. The board's `ws_trace_drops` (console drops) is the same kind.
@@ -277,6 +291,12 @@ casts it to `(void)`. The reason is next to the cast or listed here:
 - `HAL_RCCEx_PeriphCLKConfig` for I2C2 only selects a clock.
 - `HAL_IWDG_Refresh` always returns `HAL_OK`.
 - `HAL_I2C_DeInit` fails only for a NULL handle.
+- The board ADC sequence (`App/board_inputs.c`): `HAL_ADCEx_Calibration_Start` (if it fails, the
+  inputs read with the factory offset) and `HAL_ADC_Start_IT` (a start while a sequence runs is refused
+  harmlessly with `HAL_BUSY`; a start that was refused or lost shows as no new sequence, and
+  `adc_fresh` starts again after `ADC_RESTART_CALLS` calls). An ADC that did not initialise or configure
+  its four channels is never started, and `board_power_adc` then reports no reading, so the power
+  slots are missing, not wrong.
 - `store_note_abandoned` (twice): a total that failed to persist is only a count. The record is
   acknowledged either way.
 - The bench storm load ignores the results of its writes on purpose.
@@ -327,14 +347,25 @@ Deviations kept, with the reason:
   functions are ordinary C that GCC, lizard and the stack and blocking reports see.
 - `WS_CHECK` must be a macro, because it records its caller's `__LINE__`.
 - `APP_PRINTF` (board `sys_app.h`) is variadic. It came from ST.
-- Conditional compilation uses seven switches. Each is a build variant or a guard:
+- Conditional compilation uses eleven switches. Each is a build variant or a guard:
   - `WS_FIELD_BUILD` leaves out the bench commands (`bench.c`, `tx_console.c`).
   - `WS_NODE_FIELDS` selects the build's field set (`node_fields.h`).
   - `WS_JOURNAL_PAGES` lets host tests shrink the journal (`flash_layout.h`). Without it,
     `flash_layout.h` defines `WS_JOURNAL_DEFAULT`, and `node_store.c` then checks the 24-hour
     capacity of the board's ring.
   - `WSMP_HOST_BUDGET` lets a test build make the station host's radio budget smaller
-    (`wsmp_host.c`).
+    (`wsmp_host.c`). `WSMP_HOST_SLOT_MS` lets a test build shrink the pre-latch slot (default
+    3000 ms, `wsmp_host.c`).
+  - `WSMP_HOST`, defined only by the host test builds, adds one test seam to `wsmp_host.c` and
+    `wsmp_host.h`: `wsmp_host_worst_line`, which puts every port in its longest `#modules` state so
+    `tests/test_wsmp_host.py` can check that the longest line fits `WSMP_MODULES_LINE_MAX`.
+  - `WS_I2C_MUX` selects the I2C bus profile (`App/i2c_bus.h`): 0, the default, is the official
+    phase A STEMMA QT hub; 1 is the ports board's mux, which the existing host tests build
+    (`tests/README.md`, Host build variants). It is used as a value in two constant macros
+    (`i2c_bus.c` `PORT`, `RECORD`), not in `#if`, so both profiles always compile.
+  - `WS_POWER_PROFILE` selects the power build (`App/power_config.h`): 1 phase A (the default),
+    2 phase B with four INA228 rails; 3 (phase C, BQ25798) and any other value stop the build with
+    `#error`. It picks the rail table only; `power_acq.c` has no `#if` of its own.
   - `WS_FW_BUILD_ID` and `WS_CHECK_FILE` cause `#error` if the build or the file did not define
     them.
   - `DEBUGGER_ENABLED` (`watchdog.c`) is ST's switch.
@@ -419,7 +450,9 @@ array of string pointers.
     (`/* cppcheck-suppress … ; ST's … signature */`).
 - **Our own analyses**:
   - worst-case stack (`make stack`).
-  - no blocking call reachable at run time (`make waits`, `tools/blocking_report.py`).
+  - no blocking call reachable at run time (`make waits`, `tools/blocking_report.py`). The board ADC
+    sequence (vane, ISET, charger input, VREFINT) runs by interrupt; its only waits are the HAL's
+    bounded enable handshake and the one offset calibration at start, both listed in `ALLOWED`.
   - function size and duplication, loop bounds, no heap, and the flash budget.
   - reproducible builds.
   - libFuzzer on the five input parsers (`firmware/fuzz`: console, observation, PROVISION, reply

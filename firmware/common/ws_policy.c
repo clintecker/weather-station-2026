@@ -86,13 +86,14 @@ static int minute_may_send(int energy, const ws_link *l, uint32_t now_s, uint32_
 }
 
 int ws_minute_backlog(int energy, const ws_link *l, uint32_t now_s, uint32_t last_send_s, uint32_t exchange_ms,
-                      unsigned max_backlog)
+                      uint32_t reserve_ms, unsigned max_backlog)
 {
  if (!minute_may_send(energy, l, now_s, last_send_s)) return -1;
  unsigned backlog = l->probing ? 0U : backlog_limit[energy];          /* a probe is the live reading */
- unsigned by_airtime = exchange_ms ? airtime_cap_ms[energy] / exchange_ms : 0;
- if (by_airtime == 0) by_airtime = 1;                                  /* the live reading always fits */
- if (backlog + 1 > by_airtime) backlog = by_airtime - 1;
+ uint32_t cap_ms = airtime_cap_ms[energy];
+ uint32_t by_airtime = exchange_ms && cap_ms > reserve_ms ? (cap_ms - reserve_ms) / exchange_ms : 0U;
+ uint32_t fit = by_airtime > 1U ? by_airtime - 1U : 0U;               /* the live reading always goes */
+ if (backlog > fit) backlog = (unsigned)fit;
  if (backlog > max_backlog) backlog = max_backlog;
  return (int)backlog;
 }

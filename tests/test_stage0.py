@@ -17,6 +17,7 @@ from cryptography.exceptions import InvalidTag
 from ws0.protocol import Nonces,unseal
 from ws0.service import MQTT,Replay,discovery,http_server
 from ws0.simulator import Node
+from gateway import RECORD_VERSION
 
 
 def fake_mqtt(gateway):
@@ -28,7 +29,7 @@ def fake_mqtt(gateway):
  publisher=object.__new__(MQTT); publisher.gateway=gateway; publisher.client=Fake()
  publisher.root='weatherstation/v1/simulation-01'; publisher.published=None; publisher.published_at=0.0
  publisher.advertised={'temperature_c','humidity_pct','dew_point_c'}
- publisher.advertised_types=set(); publisher.published_modules=None
+ publisher.advertised_types=set(); publisher.advertised_health=set(); publisher.published_modules=None
  return publisher
 
 
@@ -126,7 +127,7 @@ class PipelineTests(StationTest):
    # A calm reading (wind_calm) and a qualifier must survive the CSV export, not vanish.
    import csv,io
    from ws0 import fields as F
-   calm=dict(version=5,station=self.cfg['station'],session='7',sequence=1,sampled_at=2000,uptime_s=60,
+   calm=dict(version=RECORD_VERSION,station=self.cfg['station'],session='7',sequence=1,sampled_at=2000,uptime_s=60,
              time_quality='synchronized',energy_state='normal',calibration_revision=0,temperature_c=-1.5,
              humidity_pct=90.0,wind_speed_ms=0.0,wind_dir_deg=None,wind_calm=True,
              qualifiers={'temperature_c':'suspected_icing'})
@@ -234,7 +235,7 @@ class ServiceSmokeTests(unittest.TestCase):
   with Station(node=False) as s:
    gateway,cfg=s.gateway,s.cfg
    publisher=fake_mqtt(gateway)
-   record=dict(version=5,station=cfg['station'],session='1',sequence=0,sampled_at=1000,uptime_s=60,
+   record=dict(version=RECORD_VERSION,station=cfg['station'],session='1',sequence=0,sampled_at=1000,uptime_s=60,
                time_quality='synchronized',energy_state='normal',calibration_revision=0,
                temperature_c=20.5,humidity_pct=40,pressure_hpa=1001.3,quality='valid')
    gateway.store.ingest(record,1001)
@@ -257,6 +258,26 @@ class ServiceSmokeTests(unittest.TestCase):
    gateway.receive(node.packet(old),1063)
    self.assertTrue(gateway.last_ingested['duplicate'])
 
+ def test_mqtt_advertises_health_entities_once(self):
+  with Station() as s:
+   gateway,node=s.gateway,s.node
+   gateway.receive(node.packet(node.sample(1000)),1001)
+   gateway.receive(node.diagnostic(1002),1002)
+   publisher=fake_mqtt(gateway); publisher.tick()
+   configs=[m[0][0] for m in publisher.client.messages if m[0][0].startswith('homeassistant/')]
+   self.assertEqual(len(configs),len(set(configs)))
+   health=[c for c in configs if '_diag_' in c]
+   # phase A (fitted 0x2F): no entity for what it cannot measure (charger registers, pack temperature)
+   self.assertEqual(len(health),8)
+   self.assertIn('homeassistant/binary_sensor/simulation-01_diag_charger_charging/config',health)
+   self.assertNotIn('homeassistant/sensor/simulation-01_diag_charger_stage/config',health)
+   self.assertNotIn('homeassistant/sensor/simulation-01_diag_pack_temp_c/config',health)
+   for name in ('batt_mv','charger_input_mv','load_mv'):
+    self.assertIn(f'homeassistant/sensor/simulation-01_{name}/config',configs)
+   publisher.client.messages.clear(); gateway.receive(node.diagnostic(1900),1900)
+   publisher.published_at-=MQTT.REFRESH_S; publisher.tick()
+   self.assertFalse([m for m in publisher.client.messages if m[0][0].startswith('homeassistant/')])
+
  def test_mqtt_stale_payload_and_availability(self):
   from unittest.mock import patch
   with Station() as s:
@@ -264,14 +285,16 @@ class ServiceSmokeTests(unittest.TestCase):
    gateway.receive(node.packet(node.sample(1000)),1001)
    publisher=fake_mqtt(gateway)
    with patch('gateway.time.time',return_value=1180): publisher.tick()
-   self.assertEqual(publisher.client.messages[-1][0][1],'offline')
-   self.assertEqual(json.loads(publisher.client.messages[0][0][1])['sampled_at'],1000)
+   availability=[m[0][1] for m in publisher.client.messages if m[0][0].endswith('simulation-01/availability')]
+   self.assertEqual(availability,['offline'])
+   weather=[m[0][1] for m in publisher.client.messages if m[0][0].endswith('/weather')]   # after the power fields' discovery
+   self.assertEqual(json.loads(weather[0])['sampled_at'],1000)
    sent=len(publisher.client.messages)
    with patch('gateway.time.time',return_value=1181): publisher.tick()   # unchanged: no republish
    self.assertEqual(len(publisher.client.messages),sent)
    publisher.published_at-=MQTT.REFRESH_S                                 # refresh interval elapsed
    with patch('gateway.time.time',return_value=1182): publisher.tick()
-   self.assertEqual(len(publisher.client.messages),sent+2)
+   self.assertEqual(len(publisher.client.messages),sent+3)   # weather, availability, diagnostics/availability
 
 
 class TimeReconstruction(StationTest):
@@ -356,9 +379,93 @@ class NackTests(StationTest):
 
 class DiagnosticsAndEpochFloor(StationTest):
  """Health reports and the epoch floor after a wipe."""
- def diag(self,epoch,uptime,lost=0):
-  from ws0.protocol import DIAG,KIND_DIAG,seal
-  return seal(self.node.key,1,KIND_DIAG,self.node.nonces,DIAG.pack(epoch,uptime,1,lost,0,2,3,0,5,0,0x45f43e78,-61,9,2,1))
+ def diag(self,epoch,uptime,lost=0,**power):
+  from ws0.protocol import KIND_DIAG,pack_diag,seal
+  return seal(self.node.key,1,KIND_DIAG,self.node.nonces,
+              pack_diag(epoch=epoch,uptime=uptime,pending=1,lost=lost,torn=0,abandoned=2,no_ack=3,rejects=0,reset_cause=5,
+                        link=0,build=0x45f43e78,rssi=-61,snr=9,crashes=2,energy=1,**power))
+ def stored(self,frame,now=1000):
+  import contextlib,io
+  err=io.StringIO()
+  with contextlib.redirect_stderr(err): self.assertIsNone(self.gateway.receive(frame,now))
+  return self.gateway.status()['node_diagnostics'],err.getvalue()
+ def test_power_keys_with_values(self):
+  phase_c=dict(crash_pc=0x08001234,boots=7,tx_timeouts=3,i2c_recoveries=65535,vdda_mv=3297,monitor_temp=-125,soc=0x5a80,
+               soc_rate=-17,charger_status=0x01|0x02|3<<3|2<<6,chg_input_mv=5012,chg_input_ma=-40,chg_batt_mv=4080,
+               chg_batt_ma=-32767,chg_temp=415,pack_temp=-200)
+  d,err=self.stored(self.diag(4,600,**phase_c))
+  self.assertEqual(err,'')
+  self.assertEqual({k:d[k] for k in ('last_crash_pc','boots_since_power_up','tx_timeouts_since_boot','i2c_recoveries_since_boot',
+                                     'mcu_supply_mv','power_monitor_temp_c','battery_soc_pct','battery_soc_rate_pct_h')},
+                   dict(last_crash_pc='08001234',boots_since_power_up=7,tx_timeouts_since_boot=3,i2c_recoveries_since_boot=65535,
+                        mcu_supply_mv=3297,power_monitor_temp_c=-12.5,battery_soc_pct=90.5,battery_soc_rate_pct_h=-1.7))
+  self.assertEqual({k:d[k] for k in ('charger_input_power_ok','charger_charging','charger_fault','charger_stage','charger_active_input')},
+                   dict(charger_input_power_ok=True,charger_charging=True,charger_fault=False,charger_stage='cv',charger_active_input='usb_c'))
+  self.assertEqual((d['charger_reported_input_mv'],d['charger_reported_input_ma'],d['charger_reported_battery_mv'],
+                    d['charger_reported_battery_ma'],d['charger_temp_c'],d['pack_temp_c']),(5012,-40,4080,-32767,41.5,-20.0))
+  from ws0.protocol import CRASH_PC_UNTRUSTED
+  d,_=self.stored(self.diag(4,700,crash_pc=CRASH_PC_UNTRUSTED,charger_status=0x04|6<<3|1<<6),1001)
+  self.assertEqual((d['last_crash_pc'],d['charger_fault'],d['charger_stage'],d['charger_active_input']),
+                   ('ffffffff',True,'not_charging','solar'))     # an untrusted frame's PC is kept
+ def test_none_codes_are_null(self):
+  from ws0.service import HEALTH_KEYS
+  d,err=self.stored(self.diag(4,600))      # every version 6 value left at its none code
+  self.assertEqual(err,'')
+  self.assertEqual(set(d)-{'received_at'},set(HEALTH_KEYS))
+  nulls=('last_crash_pc','mcu_supply_mv','power_monitor_temp_c','battery_soc_pct','battery_soc_rate_pct_h','charger_input_power_ok',
+         'charger_charging','charger_fault','charger_stage','charger_active_input','charger_reported_input_mv',
+         'charger_reported_input_ma','charger_reported_battery_mv','charger_reported_battery_ma','charger_temp_c','pack_temp_c')
+  self.assertEqual({k:d[k] for k in nulls},dict.fromkeys(nulls))
+  self.assertEqual((d['boots_since_power_up'],d['tx_timeouts_since_boot'],d['i2c_recoveries_since_boot']),(0,0,0))
+  d,_=self.stored(self.diag(4,700,charger_status=0),1001)     # a phase A byte: stage and input not reported
+  self.assertEqual((d['charger_input_power_ok'],d['charger_charging'],d['charger_fault'],d['charger_stage'],d['charger_active_input']),
+                   (False,False,False,None,None))
+ def test_non_canonical_reports_are_kept_with_a_warning(self):
+  d,err=self.stored(self.diag(4,600,fitted=0x80|0x2F,soc=12800,charger_status=0x03))
+  self.assertIn('fitted bit 7 set',err)
+  self.assertEqual((d['battery_soc_pct'],d['charger_charging'],d['crashes_since_power_up']),(50.0,True,2))   # the report is stored
+  charger=('charger_input_power_ok','charger_charging','charger_fault','charger_stage','charger_active_input')
+  d,err=self.stored(self.diag(4,1601,soc=12800,charger_status=0x03|7<<3),1001)
+  self.assertIn('charger stage 7',err)
+  self.assertEqual({k:d[k] for k in charger},dict.fromkeys(charger))
+  self.assertEqual(d['battery_soc_pct'],50.0)                   # the rest is stored
+  d,err=self.stored(self.diag(4,1602,fitted=0x3F,charger_status=6<<3|3<<6),1002)   # phase C at night: no input
+  self.assertEqual(err,'')
+  self.assertEqual({k:d[k] for k in charger},dict(charger_input_power_ok=False,charger_charging=False,
+                   charger_fault=False,charger_stage='not_charging',charger_active_input='no_input'))
+  self.assertNotIn('charger_active_input',d['power_sensor_faults'])
+ def test_health_keys_and_observation_fields_are_disjoint(self):
+  from ws0.fields import DERIVED,MEASURED
+  from ws0.service import HEALTH_KEYS
+  self.assertEqual(set(HEALTH_KEYS)&(set(MEASURED)|set(DERIVED)),set())
+  self.assertEqual(len(HEALTH_KEYS),len(set(HEALTH_KEYS)))
+  self.assertFalse([n for n in MEASURED if n.startswith('diag_')])   # the HA uid namespaces cannot meet
+ def test_simulated_node_sends_phase_a_power(self):
+  from ws0.simulator import PHASE_A_POWER
+  night,noon=86400*3,86400*3+43200
+  records=[self.node.sample(t) for t in range(night,noon+1,3600)]
+  for r in records:
+   self.assertTrue(set(PHASE_A_POWER)<=set(r)); self.assertEqual(r['quality'],'valid')
+   self.assertFalse({'load_current_ma','solar_mv','solar_current_ma','usb_mv','usb_current_ma'}&set(r))
+  self.assertLess(records[0]['batt_current_ma'],0); self.assertGreater(records[-1]['batt_current_ma'],0)
+  self.assertEqual((records[0]['charger_input_mv'],records[-1]['load_mv']),(0,4400))
+  for name in ('energy_in_mwh','energy_out_mwh','charge_in_mah','charge_out_mah'):
+   self.assertEqual([r[name] for r in records],sorted(r[name] for r in records))
+  self.assertGreater(records[-1]['charge_out_mah'],0); self.assertGreater(records[-1]['charge_in_mah'],0)
+  for r in records: self.gateway.receive(self.node.packet(r),r['uptime_s']+night+1)
+  self.assertEqual(len(self.gateway.store.history(self.cfg['station'],0,10**9)),len(records))
+  frame=self.node.diagnostic(night+30); d,err=self.stored(frame,night+30)
+  self.assertEqual(err,'')
+  self.assertEqual((d['charger_input_power_ok'],d['charger_charging'],d['charger_reported_battery_ma']),(False,False,0))
+  self.assertLessEqual(abs(d['mcu_supply_mv']-3300),10)
+  self.assertLess(d['battery_soc_rate_pct_h'],0)
+  self.assertEqual((d['boots_since_power_up'],d['i2c_recoveries_since_boot'],d['tx_timeouts_since_boot']),(self.node.epoch,0,0))
+  d,_=self.stored(self.node.diagnostic(noon+30),noon+30)
+  self.assertEqual((d['charger_input_power_ok'],d['charger_charging'],d['charger_stage']),(True,True,None))
+  self.assertGreater(d['charger_reported_battery_ma'],0); self.assertGreater(d['battery_soc_rate_pct_h'],0)
+  self.assertIsNone(d['charger_reported_input_mv'])          # not measured in phase A
+  faulted=self.node.sample(noon+60,fault=True)
+  self.assertEqual((faulted['quality'],faulted['batt_current_ma']),('sensor_fault',None))
  def test_report_is_stored_unanswered_and_ordered_by_epoch_uptime(self):
   self.assertIsNone(self.gateway.receive(self.diag(4,600,lost=7),1000))
   late=self.diag(4,300)                       # older report arriving later (delay or replay)

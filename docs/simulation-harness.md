@@ -19,13 +19,14 @@ flowchart TD
     direction TB
     S1["Simulated node samples (faults and clock steps from the scenario)"] --> S2["Send the live frame"]
     S2 --> S3["Send up to 5 backlog frames"]
-    S3 --> Q["Delivery queue: loss, corruption, duplicates, delay"]
-    Q --> G["Gateway: check, commit, then ACK or NACK"]
+    S3 --> H["After boot and every 15 minutes: send a health report"]
+    H --> Q["Delivery queue: loss, corruption, duplicates, delay"]
+    Q --> G["Gateway: check, commit, then ACK or NACK (a health report: store, no reply)"]
     G --> A["Freshness and availability snapshot"]
   end
   M --> MIN
   MIN --> DR["Drain: at most minutes + 120 extra minutes, up to 5 records per minute"]
-  DR --> EV["Compare stored rows with the scheduled observations"]
+  DR --> EV["Compare stored rows with the scheduled observations, stored health reports with the sent ones"]
   EV --> OUT["Per scenario: scenario.json, result.json, trace.jsonl, availability.json, SQLite backup"]
   OUT --> SUM["summary.json and report.html"]
   SUM --> EX{"All scenario contracts passed?"}
@@ -37,13 +38,14 @@ flowchart TD
 
 The real Python components run unchanged:
 
-- observation encode and decode,
+- observation encode and decode, including the power fields and the extension bitmap,
+- health report (kind 4, 64 bytes) pack, decode and storage (`Gateway.receive_diagnostic`),
 - AES-CCM authentication and durable nonce allocation,
 - the node journal and the SQLite storage,
 - commit-before-ACK, backfill, identity deduplication and freshness.
 
-The harness replaces the physical sensor, the clock, packet delivery and selected failure
-sources. A simulated reboot closes and reopens the real node and gateway objects and their
+The harness replaces the physical sensors, the power system, the clock, packet delivery and
+selected failure sources. A simulated reboot closes and reopens the real node and gateway objects and their
 database connections. Packets in flight stay in the delivery queue.
 
 The harness is a discrete-event model. It is not an STM32 instruction emulator or a radio
@@ -56,7 +58,9 @@ flush, because the harness models restarts, not power loss.
 The harness does not model these items:
 
 - radio receive windows, airtime, duty cycle, interference, RSSI and SNR,
-- firmware concurrency, power and current,
+- firmware concurrency,
+- power physics: the power values are synthetic (section "Power telemetry"),
+- health reports after a link-state change, and health reports during the drain,
 - journal overflow,
 - enclosure and environmental effects.
 
@@ -78,6 +82,44 @@ test suite has separate HTTP, C core and mocked MQTT tests.
 | storage-failure | Database commit raises an error, minutes 20–25 | No ACK on a failed commit. The journal keeps the records, and they are recovered later |
 | ack-loss | 50% ACK loss, 15% duplicates | Idempotent storage and eventual journal drainage. At least 99% within 120 s |
 | identity-collision | Authenticated changed payload with an existing identity | The gateway rejects the collision (with an authenticated NACK) and keeps the original observation. At least 99% within 120 s |
+| power-monitor-fault | The battery INA228 fails, minutes 20–40 (`monitor_faults`) | Its fields are stored present as `null`, never absent; the record is `partial`; the health reports keep every key, with `power_monitor_temp_c` `null`. At least 99% within 120 s |
+| phase-b-rails | `power_profile` `B`: every rail, USB-C in the extension bitmap | Every rail stored exactly. At least 99% within 120 s |
+
+Every scenario also checks the power fields and the health reports (section "Power telemetry").
+
+## Power telemetry
+
+The simulated node (`ws0/simulator.py`, `Node.power` and `Node.health`) sends the phase A power
+set of the power telemetry design (`docs/superpowers/specs/2026-10-29-power-telemetry-design.md`
+sections 3 and 6.1). The values follow an invented day/night pattern. They are synthetic, not a
+model of the pack, the charger or the INA228. The harness covers the decode, store and expose
+paths of the power data, not its physics.
+
+| Data | Cadence | Fields or keys | Phase A content |
+|---|---|---|---|
+| Observation | every minute | `batt_mv`, `batt_current_ma` (signed, + charging), `energy_in_mwh`, `energy_out_mwh`, `charge_in_mah`, `charge_out_mah`, `load_mv`, `charger_input_mv` | all present |
+| Observation | every minute | `load_current_ma`, `solar_mv`, `solar_current_ma`, `usb_mv`, `usb_current_ma` | absent (not in the record, never `null`) |
+| Health report | after each node boot, then every 15 minutes, after the minute's exchange | every key of `ws0.service.HEALTH_KEYS` | SOC and rate, charger status, `charger_reported_battery_ma`, monitor temperature, MCU supply, station counters; `charger_reported_input_mv`, `charger_reported_input_ma`, `charger_reported_battery_mv`, `charger_temp_c`, `pack_temp_c`, `charger_stage`, `charger_active_input` and `last_crash_pc` are `null`; the fitted byte is 0x2F (phase A), so those power keys are in `power_not_measured` and `power_sensor_faults` is empty. The first boot (epoch 1) is a power-on with `boots_since_power_up` 1; each simulated reboot is a pin reset that keeps counting (epoch n reports n), as `fault_boot_note` does |
+
+Scenario options (`ws0/harness.py`, `Scenario`):
+
+| Option | Default | Effect |
+|---|---|---|
+| `monitor_faults` | `[]` | Minute intervals in which the battery INA228 fails. Its fields (`batt_current_ma`, the four counters and, in profile `A`, `load_mv`) are sent INVALID and stored `null`. `batt_mv` (the gauge) and `charger_input_mv` (the divider) stay valid. A health report sent in the interval has `power_monitor_temp_c` `null` |
+| `power_profile` | `A` | `A`: the phase A set, the phase B rails absent. `B`: adds the five phase B rails (solar carries the charger input; USB-C 0 mV and 0 mA, never both connected); `load_mv` then comes from the load monitor, so a battery-monitor fault leaves it valid |
+
+What the verdict checks:
+
+| Check | Failure label |
+|---|---|
+| The power fields of every stored row equal the sent ones: same keys present, same values, `null` where the node sent INVALID (`assess`, `power_mismatches`) | `power_mismatches` |
+| Every health report whose frame reached the gateway intact outside an outage is stored once under (epoch, uptime) | `health_reports_not_stored` |
+| Every stored health report was sent, carries exactly the keys of `HEALTH_KEYS`, and matches the simulated truth at its send time: the not-measured keys `null`, the charger booleans, the charger-reported charge current, the SOC within 1/256 % and its rate within 0.05 %/h, the monitor temperature `null` exactly in a monitor fault, the counters | `health_report_mismatches` |
+
+A health report has no journal (design section 6.4): a report that the link loses is not a failure.
+`result.json` gives the counts under `health_reports` (`sent`, `arrived_intact`, `stored`,
+`not_stored`, `mismatches`). A health report uses the node's one frame counter, so the counter and
+replay oracles cover it too.
 
 ## Scoring
 
@@ -93,8 +135,9 @@ samples rely on gateway reconstruction. The firmware does the same after a power
 warm reset, the firmware can keep its clock (`protocol-stack.md` section 11.3.1). The report gives them as
 `reconstructed_time_samples` and `unresolved_time_samples`.
 
-The harness counts sensor faults separately. Transport timeliness alone is not evidence that the
-sensor worked.
+The harness counts sensor faults separately (`sensor_fault_samples`: every sample whose quality
+is not `valid`, so a minute with a failed power monitor counts too). Transport timeliness alone is
+not evidence that the sensor worked.
 
 Each minute, the simulated node sends the live sample first, then up to 5 older samples
 (`BACKLOG_PER_MINUTE` in `ws0/simulator.py`). After the sampling window, the harness allows at
@@ -124,6 +167,7 @@ Copy `examples/scenarios/custom-outage.json` and edit it.
 - Rates are probabilities in [0,1].
 - `seed` sets the packet fault choices.
 - `node_reboots` and `gateway_reboots` list minute indices.
+- `monitor_faults` is a list of intervals; `power_profile` is `A` or `B`.
 
 The harness maps the JSON strictly to the Scenario fields. A misspelled option fails. The harness
 does not ignore it.
@@ -133,7 +177,9 @@ The harness records:
 - every sampled expected identity and its true virtual acquisition time,
 - raw encrypted frame sends, losses, arrivals, rejected packets and ACK events,
 - freshness and availability at the end of every sampling minute,
-- exact comparisons of stored payloads against scheduled observations,
+- exact comparisons of stored payloads against scheduled observations, with the power fields
+  compared on their own,
+- every health report sent, and its comparison with the stored report,
 - new-encryption nonce reuse (wire duplication of identical ciphertext is allowed),
 - pending journal records, late and missing records, duplicate rows and recovery time.
 
@@ -155,8 +201,11 @@ The output contains, per scenario, `scenario.json`, `result.json`, `trace.jsonl`
 results. SQLite file bytes and wall-clock test timings can differ. The archive's source commit
 and SHA256 manifest identify the code and evidence checkpoint.
 
-Tests verify repeatability, outage denominator preservation, commit-failure recovery, detection
-of corrupt or missing data, and a total-loss case that ends with failure.
+Tests (`tests/test_harness.py`) verify repeatability, outage denominator preservation,
+commit-failure recovery, detection of corrupt or missing data, a total-loss case that ends with
+failure, the phase A power set in storage with the phase B rails absent, the 15-minute health
+reports with every key and their `null`s, a health report after a node reboot, the faulted-monitor
+and profile `B` options, and the detection of a dropped or changed health report.
 
 `--negative-control` removes a row from the oracle input on purpose. It proves that the harness
 reports a missing-data failure. It does not change stored evidence or the gateway code. Its

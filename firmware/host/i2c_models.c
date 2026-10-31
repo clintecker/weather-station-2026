@@ -130,35 +130,119 @@ static int reg_read(int kind, int dev, uint8_t reg, uint8_t *data, uint16_t n)
   return 0;
 }
 
-/* DEVK_INA228 (datasheet section 7.6) and DEVK_MAX17048: the registers the battery module reads. The
-   INA228 current reads 0 until SHUNT_CAL holds the module's value (1966: 10 uA, 15 mOhm). Its
-   accumulators integrate continuously, as the part's do in continuous conversion: CHARGE (0x0A, 40-bit
-   signed) in CURRENT_LSB seconds (10 uA s), ENERGY (0x09, 40-bit unsigned) in 16 x 3.2 x CURRENT_LSB
-   joules (512 uW s), of the absolute power. A power cycle clears them and SHUNT_CAL. */
-#define INA228_CAL 1966U
-#define CHARGE_UA_UNITS (10LL * 1000 * SIM_UNITS_PER_MS)     /* 10 uA s in uA x sim units */
-#define ENERGY_UW_UNITS (512LL * 1000 * SIM_UNITS_PER_MS)    /* 512 uW s in uW x sim units */
-typedef struct { int32_t uv, ua; uint16_t cal; uint8_t soc; int64_t charge, energy; uint64_t at; } power_dev_t;
-static power_dev_t pdev[I2C_SIM_DEVICES];
-static void ina228_advance(power_dev_t *p)
+/* DEVK_INA228 (TI SBOS904 / SLYS021A sections 7.6 and 8.1). Each device has its own physical shunt
+   (micro-ohm, default 15000), a true current through it (uA, + from VIN+ to VIN-), a bus voltage and
+   a die temperature, all set by the test; the registers follow from them as on the part:
+     VSHUNT 0x04  ua x shunt in 312.5 nV counts (78.125 nV with CONFIG.ADCRANGE), rounded, 20-bit
+                  signed: 37,604 uA through 15,000 uOhm is 564.06 uV, 1805 counts.
+     CURRENT 0x07 VSHUNT x 4096 / SHUNT_CAL, the SHUNT_CAL actually written: with
+                  CURRENT_LSB = SHUNT_CAL / (13107.2e6 x R) a count is VSHUNT / (R x CURRENT_LSB)
+                  (the x4 of ADCRANGE = 1 cancels the finer VSHUNT step). 0 while SHUNT_CAL is 0;
+                  clipped to the 20-bit signed range. 1805 counts with SHUNT_CAL 1966 is 3761 (37.6 mA).
+     VBUS 0x05    195.3125 uV counts, rounded: 3,845,898 uV is 19691.
+     DIETEMP 0x06 7.8125 m degC counts, 16-bit signed: 24,101 m degC is 3085, -1000 is 0xFF80.
+     POWER 0x08   VBUS x |CURRENT| / 16384 (3.2 x CURRENT_LSB W a count), 24-bit unsigned.
+     ENERGY 0x09  40-bit unsigned, 16 x 3.2 x CURRENT_LSB J a count: the integral of VBUS x |CURRENT|
+                  / 262144 counts a second (4.000 V at 500 mA, SHUNT_CAL 1966: 3906 a second).
+     CHARGE 0x0A  40-bit signed, CURRENT_LSB x 1 s a count: the integral of CURRENT.
+     ids          MANUFACTURER_ID 0x3E = 0x5449, DEVICE_ID 0x3F = 0x2281.
+   The accumulators integrate the CURRENT register value, not the true current, while ADC_CONFIG.MODE
+   converts the shunt continuously (0xA, 0xB, 0xE, 0xF; reset 0xF): the sum over the part's conversions
+   is that integral (the 3 ms conversion grain is not modelled). Their remainders are kept, so a read
+   gives the floor of the integral. CONFIG 0x00 and ADC_CONFIG 0x01 accept writes: CONFIG.RST (bit 15)
+   is a power-on reset, CONFIG.RSTACC (bit 14) clears the accumulators, both self-clearing; ADCRANGE
+   (bit 4) selects the shunt range. SHUNT_CAL 0x02 keeps its 15-bit field. The other writable
+   registers (0x03, 0x0B-0x11) accept and ignore a write; anything else is a NACK. A power cycle
+   (power-on reset) restores the reset values: CONFIG 0, ADC_CONFIG 0xFB68, SHUNT_CAL 0x1000,
+   accumulators 0. Every INA228 index is independent, so several parts at distinct addresses work. */
+#define SIM_UNITS_PER_S ((int64_t)1000 * SIM_UNITS_PER_MS)
+#define INA_CONFIG_RST 0x8000U
+#define INA_CONFIG_RSTACC 0x4000U
+#define INA_CONFIG_KEPT 0x3FF0U             /* CONVDLY, TEMPCOMP, ADCRANGE; bits 3-0 read 0 */
+#define INA_ADCRANGE 0x0010U
+#define INA_ADC_CONFIG_RESET 0xFB68U
+#define INA_SHUNT_CAL_RESET 0x1000U
+#define INA_SHUNT_CAL_FIELD 0x7FFFU
+#define INA_DEFAULT_SHUNT_UOHM 15000
+#define INA_DEFAULT_DIE_MC 25000
+#define INA_COUNT20_MAX 0x7FFFF
+#define INA_COUNT20_MIN (-0x80000)
+#define INA_ENERGY_DIV 262144               /* VBUS counts x CURRENT counts x 1 s per ENERGY count */
+#define INA_POWER_DIV 16384                 /* VBUS counts x CURRENT counts per POWER count */
+#define REG40_MASK 0xFFFFFFFFFFULL
+typedef struct { int32_t uv, ua, shunt_uohm, die_mc; uint16_t cal, config, adc_config;
+                 int64_t charge, charge_frac, energy, energy_frac; uint64_t at; } ina228_t;
+static ina228_t ina[I2C_SIM_DEVICES];
+
+/* a / b rounded half away from zero, for b > 0 */
+static int64_t div_round(int64_t a, int64_t b)
+{
+  return a >= 0 ? (a + b / 2) / b : -((b / 2 - a) / b);
+}
+
+static int64_t clamp64(int64_t v, int64_t lo, int64_t hi) { return v < lo ? lo : v > hi ? hi : v; }
+static int32_t count20(int64_t v) { return (int32_t)clamp64(v, INA_COUNT20_MIN, INA_COUNT20_MAX); }
+static uint32_t raw24(int32_t count) { return ((uint32_t)count & 0xFFFFFU) << 4; }
+static int64_t abs64(int64_t v) { return v < 0 ? -v : v; }
+
+static int32_t ina228_vshunt(const ina228_t *p)
+{
+  int64_t pv = (int64_t)p->ua * p->shunt_uohm;                     /* uA x uOhm = pV */
+  return count20(div_round(pv, (p->config & INA_ADCRANGE) ? 78125 : 312500));
+}
+
+static int32_t ina228_current(const ina228_t *p)
+{
+  if (p->cal == 0U) return 0;
+  return count20(div_round((int64_t)ina228_vshunt(p) * 4096, p->cal));
+}
+
+static int32_t ina228_vbus(const ina228_t *p) { return count20(div_round((int64_t)p->uv * 16, 3125)); }
+static uint16_t ina228_die(const ina228_t *p) { return (uint16_t)clamp64(div_round((int64_t)p->die_mc * 128, 1000), INT16_MIN, INT16_MAX); }
+
+static int ina228_shunt_continuous(const ina228_t *p)
+{
+  unsigned mode = p->adc_config >> 12;
+  return mode == 0xAU || mode == 0xBU || mode == 0xEU || mode == 0xFU;
+}
+
+/* Adds rate x dt / div to a register (count) and its remainder (count x sim units), floor-normalised.
+   rate <= 2^38 and dt split into whole seconds and the rest keep every product inside int64 for
+   gaps of up to 2^25 s between reads. */
+static void accumulate(int64_t *reg, int64_t *frac, int64_t rate, int64_t dt, int64_t div)
+{
+  int64_t whole = rate * (dt / SIM_UNITS_PER_S), unit = div * SIM_UNITS_PER_S;
+  *reg += whole / div;
+  *frac += (whole % div) * SIM_UNITS_PER_S + rate * (dt % SIM_UNITS_PER_S);
+  *reg += *frac / unit;
+  *frac %= unit;
+  if (*frac < 0) { *frac += unit; (*reg)--; }
+}
+
+static void ina228_advance(ina228_t *p)
 {
   uint64_t now = sim_now();
   int64_t dt = (int64_t)(now - p->at);
   p->at = now;
-  if (p->cal != INA228_CAL) return;
-  int64_t ua = p->ua, uw = (int64_t)p->uv * (ua < 0 ? -ua : ua) / 1000000;
-  p->charge += ua * dt;
-  p->energy += uw * dt;
+  if (!ina228_shunt_continuous(p)) return;
+  int32_t cur = ina228_current(p);
+  accumulate(&p->charge, &p->charge_frac, cur, dt, 1);
+  accumulate(&p->energy, &p->energy_frac, abs64(ina228_vbus(p)) * abs64(cur), dt, INA_ENERGY_DIV);
 }
-void model_ina228_set(int dev, int32_t uv, int32_t ua) { ina228_advance(&pdev[dev]); pdev[dev].uv = uv; pdev[dev].ua = ua; }
-/* A brown-out or a quick re-plug: the registers return to their reset values, with no bus error. */
-void model_ina228_power_cycle(int dev)
+
+/* Power-on reset: the registers return to their reset values; the physics (bus, current, shunt,
+   die) stays. */
+static void ina228_por(ina228_t *p)
 {
-  power_dev_t *p = &pdev[dev];
-  ina228_advance(p);
-  *p = (power_dev_t){ .uv = p->uv, .ua = p->ua, .soc = p->soc, .at = sim_now() };
+  *p = (ina228_t){ .uv = p->uv, .ua = p->ua, .shunt_uohm = p->shunt_uohm, .die_mc = p->die_mc,
+                   .cal = INA_SHUNT_CAL_RESET, .adc_config = INA_ADC_CONFIG_RESET, .at = sim_now() };
 }
-void model_max17048_set(int dev, uint8_t soc) { pdev[dev].soc = soc; }
+
+void model_ina228_set(int dev, int32_t uv, int32_t ua) { ina228_advance(&ina[dev]); ina[dev].uv = uv; ina[dev].ua = ua; }
+void model_ina228_shunt(int dev, int32_t uohm) { ina228_advance(&ina[dev]); ina[dev].shunt_uohm = uohm < 0 ? 0 : uohm; }
+void model_ina228_die(int dev, int32_t milli_c) { ina[dev].die_mc = milli_c; }
+/* A brown-out or a quick re-plug: the registers return to their reset values, with no bus error. */
+void model_ina228_power_cycle(int dev) { ina228_advance(&ina[dev]); ina228_por(&ina[dev]); }
 
 static void put(uint8_t *data, uint16_t n, uint32_t v)
 {
@@ -171,33 +255,80 @@ static void put40(uint8_t *data, uint64_t v)
 }
 
 /* The 40-bit accumulators: 1 if reg is one of them (and fills data). */
-static int ina228_accumulator(const power_dev_t *p, uint8_t reg, uint8_t *data)
+static int ina228_accumulator(const ina228_t *p, uint8_t reg, uint8_t *data)
 {
-  if (reg == 0x09) put40(data, (uint64_t)(p->energy / ENERGY_UW_UNITS));
-  else if (reg == 0x0A) put40(data, (uint64_t)(p->charge / CHARGE_UA_UNITS) & 0xFFFFFFFFFFULL);
+  if (reg == 0x09) put40(data, (uint64_t)p->energy & REG40_MASK);
+  else if (reg == 0x0A) put40(data, (uint64_t)p->charge & REG40_MASK);
   else return 0;
   return 1;
 }
 
 static int ina228_read(int dev, uint8_t reg, uint8_t *data, uint16_t n)
 {
-  power_dev_t *p = &pdev[dev];
+  ina228_t *p = &ina[dev];
   ina228_advance(p);
   if (n == 5) return ina228_accumulator(p, reg, data) ? 0 : -1;
+  int32_t cur = ina228_current(p), vbus = ina228_vbus(p);
+  uint32_t power = (uint32_t)clamp64(abs64(vbus) * abs64(cur) / INA_POWER_DIV, 0, 0xFFFFFF);
   const struct { uint8_t reg; uint16_t n; uint32_t v; } regs[] = {
-    { 0x3E, 2, 0x5449 }, { 0x3F, 2, 0x2281 }, { 0x02, 2, p->cal },
-    { 0x05, 3, (uint32_t)((int64_t)p->uv * 16 / 3125) << 4 },
-    { 0x07, 3, p->cal == INA228_CAL ? ((uint32_t)(p->ua / 10) << 4) & 0xFFFFFFU : 0U } };
+    { 0x00, 2, p->config }, { 0x01, 2, p->adc_config }, { 0x02, 2, p->cal },
+    { 0x04, 3, raw24(ina228_vshunt(p)) }, { 0x05, 3, raw24(vbus) }, { 0x06, 2, ina228_die(p) },
+    { 0x07, 3, raw24(cur) }, { 0x08, 3, power }, { 0x3E, 2, 0x5449 }, { 0x3F, 2, 0x2281 } };
   for (unsigned i = 0; i < sizeof regs / sizeof regs[0]; i++)
     if (regs[i].reg == reg && regs[i].n == n) { put(data, n, regs[i].v); return 0; }
   return -1;
 }
 
+static void ina228_write_config(ina228_t *p, uint16_t v)
+{
+  if (v & INA_CONFIG_RST) { ina228_por(p); return; }
+  if (v & INA_CONFIG_RSTACC) p->charge = p->charge_frac = p->energy = p->energy_frac = 0;
+  p->config = (uint16_t)(v & INA_CONFIG_KEPT);
+}
+
+static int ina228_write(int dev, const uint8_t *data, uint16_t n)
+{
+  ina228_t *p = &ina[dev];
+  uint8_t reg = data[0];
+  if (n != 3 || (reg > 0x03 && (reg < 0x0B || reg > 0x11))) return -1;
+  ina228_advance(p);
+  uint16_t v = (uint16_t)(data[1] << 8 | data[2]);
+  if (reg == 0x00) ina228_write_config(p, v);
+  else if (reg == 0x01) p->adc_config = v;
+  else if (reg == 0x02) p->cal = (uint16_t)(v & INA_SHUNT_CAL_FIELD);
+  return 0;
+}
+
+/* DEVK_MAX17048 (Analog Devices MAX17048/9): VERSION 0x08 = 0x0012; VCELL 0x02 in 78.125 uV counts
+   (3,846,015 uV is 49229); SOC 0x04 in 1/256 % (0x4E66 is 78.398 %); CRATE 0x16 two's complement,
+   0.208 %/h a count (-624 m%/h is 0xFFFD). The gauge senses the cell, not the charger output, so its
+   VCELL is set apart from any INA228's VBUS; a reset gauge reads 4.000 V, 0 %, 0 %/h. The part has
+   one fixed address (0x36), so the cell, rate and fine SOC setters act on every MAX17048 index. */
+typedef struct { uint16_t soc_256; int32_t cell_uv, rate_mpct_h; } gauge_t;
+static gauge_t gauge[I2C_SIM_DEVICES];
+#define GAUGE_DEFAULT_CELL_UV 4000000
+void model_max17048_set(int dev, uint8_t soc) { gauge[dev].soc_256 = (uint16_t)(soc << 8); }
+void model_max17048_soc_256(uint16_t soc_256)
+{
+  for (int i = 0; i < I2C_SIM_DEVICES; i++) gauge[i].soc_256 = soc_256;
+}
+void model_max17048_cell(int32_t uv)
+{
+  for (int i = 0; i < I2C_SIM_DEVICES; i++) gauge[i].cell_uv = uv;
+}
+void model_max17048_rate(int32_t mpct_h)
+{
+  for (int i = 0; i < I2C_SIM_DEVICES; i++) gauge[i].rate_mpct_h = mpct_h;
+}
+
 static int max17048_read(int dev, uint8_t reg, uint8_t *data, uint16_t n)
 {
+  const gauge_t *g = &gauge[dev];
   if (n != 2) return -1;
   if (reg == 0x08) put(data, n, 0x0012);
-  else if (reg == 0x04) put(data, n, (uint32_t)pdev[dev].soc << 8);
+  else if (reg == 0x02) put(data, n, (uint32_t)clamp64(div_round((int64_t)g->cell_uv * 128, 10000), 0, 0xFFFF));
+  else if (reg == 0x04) put(data, n, g->soc_256);
+  else if (reg == 0x16) put(data, n, (uint16_t)clamp64(div_round(g->rate_mpct_h, 208), INT16_MIN, INT16_MAX));
   else return -1;
   return 0;
 }
@@ -253,14 +384,6 @@ static int eeprom_read(int dev, uint16_t at, uint8_t *data, uint16_t n)
   return 0;
 }
 
-static int ina228_write(int dev, const uint8_t *data, uint16_t n)
-{
-  if (n != 3 || data[0] != 0x02) return -1;
-  ina228_advance(&pdev[dev]);
-  pdev[dev].cal = (uint16_t)(data[1] << 8 | data[2]);
-  return 0;
-}
-
 int model_write(int kind, int dev, const uint8_t *data, uint16_t n)
 {
   switch (kind)
@@ -307,7 +430,12 @@ void model_reset(int kind, int dev)
   if (kind == DEVK_SHTC3) shtc3[dev] = (shtc3_t){ .t_raw = 0x8000, .rh_raw = 0x8000, .asleep = 1 };
   if (kind == DEVK_BMP581) regdev[dev] = (regdev_t){ .id = 0x50 };
   if (kind == DEVK_LTR390) regdev[dev] = (regdev_t){ .id = 0xB2 };
-  if (kind == DEVK_INA228 || kind == DEVK_MAX17048) pdev[dev] = (power_dev_t){ .at = sim_now() };
+  if (kind == DEVK_INA228)
+  {
+    ina[dev] = (ina228_t){ .shunt_uohm = INA_DEFAULT_SHUNT_UOHM, .die_mc = INA_DEFAULT_DIE_MC };
+    ina228_por(&ina[dev]);
+  }
+  if (kind == DEVK_MAX17048) gauge[dev] = (gauge_t){ .cell_uv = GAUGE_DEFAULT_CELL_UV };
   if (kind == DEVK_EEPROM)
   {
     for (unsigned i = 0; i < EEPROM_LEN; i++) eeprom[dev][i] = (uint8_t)i;

@@ -137,7 +137,7 @@ class Record(unittest.TestCase):
             'serial value 0': ref.record(serial=0x01 << 56),
             'serial value all ones': ref.record(serial=0x01FF_FFFF_FFFF_FFFF),
             'module type 0': ref.record(module_type=0, bind_kind=0, bind_value=0),
-            'module type 8 (not in the registry)': ref.record(module_type=8, bind_kind=0, bind_value=0),
+            'module type 10 (not in the registry)': ref.record(module_type=10, bind_kind=0, bind_value=0),
             'type 1 without a sensor bind': ref.record(bind_kind=0, bind_value=0),
             'bind kind 2 (unknown)': ref.record(bind_kind=2),
             'bind value with kind 0': ref.record(module_type=3, bind_kind=0, bind_value=5),
@@ -166,6 +166,8 @@ class Record(unittest.TestCase):
         cases = {
             'type 3 with kind 0': ref.record(module_type=3, bind_kind=0, bind_value=0, part=b'ADA-LTR390'),
             'type 2 with kind 0': ref.record(module_type=2, bind_kind=0, bind_value=0),
+            'type 8 (battery) with kind 0': ref.record(module_type=8, bind_kind=0, bind_value=0, part=b'INA228'),
+            'type 9 (power rails) with kind 0': ref.record(module_type=9, bind_kind=0, bind_value=0, part=b'INA228'),
             'serial value 1': ref.record(serial=0x0100_0000_0000_0001),
             'serial value all ones but one': ref.record(serial=0x01FF_FFFF_FFFF_FFFE),
             'part number of exactly 16 characters': ref.record(part=b'ABCDEFGHIJKLMNOP'),

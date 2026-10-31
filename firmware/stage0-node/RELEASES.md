@@ -12,7 +12,71 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
 5. Flash RX, then TX: `make ROLE=rx flash SERIAL=<RX serial>`, then the same with `ROLE=tx`. Check that both `#boot` lines show `fw=<12-character commit>`.
 6. Add a section below with the commit, date, hashes, inputs, flash record and radio settings, and commit it.
 
+**When the release changes a format** (the protocol version, the observation catalog, the health report, the journal slot or the flash layout; for example protocol version 5 to 6), steps 5 and 6 become these (the power telemetry spec [`2026-10-29-power-telemetry-design.md`](../../docs/superpowers/specs/2026-10-29-power-telemetry-design.md) section 4; it replaces `docs/protocol-design.md` section 7 for this and every later format change). The TX and RX roles share `WS_FRAME_VERSION`, so a board left on the old version drops every frame of the new one.
+
+| Step | Do | Check |
+|---|---|---|
+| a | **Drain the journal** on the old release: keep the old gateway running until the TX console shows `pending=0` (`STATUS`, `#counts`). | `pending=0`. A WIPE, and the new journal slot size (a new page magic), discard pending records for good. |
+| b | **WIPE** the TX: `WIPE ERASE-ALL-NODE-STATE` (Clint runs it). | `#wipe ok`; the TX reboots with solid red LED3. The counter, epoch and `lost`/`abandoned` totals stay. |
+| c | **Flash both boards from the same release**: RX, then TX (`make ROLE=rx flash SERIAL=<RX serial>`, then `ROLE=tx`). | Both `#boot` lines show the same `fw=`; TX `kat=pass` (the known-answer vectors change with the version byte). |
+| d | **`init` a new run directory** (`python -m ws0 init …`). The old run directory and its database stay with the old release; there is no migration. Never reuse the live run directory or an evidence directory. | A new key; the old directory is untouched. |
+| e | **Provision** the TX: `python -m ws0 provision-node` with the new key. | `#provisioned station= kcv=`; the epoch floor comes from the new run's empty database (0). |
+| f | **Start the gateway** of the same release on the new run directory (`RECORD_VERSION` matches `WS_FRAME_VERSION`). | Seq 0 of the new epoch is stored and acknowledged, 0 rejections. |
+| g | **Record the release below** with, besides step 6's items: the **protocol version**, the **field set** (`WS_NODE_FIELDS` and its plaintext length), the **power wiring phase** (`WS_POWER_PROFILE`: A, B or C) and the **monitored rails** (which of battery, load, charger input, solar and USB-C the build measures), the I2C profile (`WS_I2C_MUX`), the old and new run directories, and the release notes' one-time actions (for example Home Assistant entities to remove). | The entry names all of them. |
+
+A release whose power wiring changes (a new phase, a moved jumper or shunt) also records the bench acceptance drill (power spec section 12.2) and its new evidence run directory.
+
 **Which hashes are reproducible:** the `.bin` hashes are the release identity. They match any clean build of the same commit with the same inputs; a rebuild of a07f498 in another checkout matched (see `docs/hardware/nucleo-wl55jc-bringup.md`, Office session). The `.elf` hashes are informational only. The Makefile compiles with `-g3`, so the ELF debug info embeds absolute source and toolchain paths, and the ELF hash changes with the checkout location. Every build also embeds the commit (`-DWS_FW_VERSION` from `git describe`), so a later commit never reproduces an earlier release.
+
+## Next release (not cut yet): power telemetry, protocol version 6
+
+The branch `feat/power-telemetry` changes formats, so its release follows the format-change steps
+above (drain, WIPE, flash both boards, new run directory, provision, record). What it changes
+(power spec [`2026-10-29-power-telemetry-design.md`](../../docs/superpowers/specs/2026-10-29-power-telemetry-design.md)):
+
+- **Protocol version 6**: byte 0 is 0x61 (observation), 0x62 (ACK), 0x63 (NACK), 0x64 (health
+  report). Version 5 boards and gateways drop its frames; the records wait in the journal until both
+  ends match. Time sync becomes version 7.
+- **Observation catalog version 2**: new fields 26 `load_mv`, 27 `load_current_ma`, 28
+  `charger_input_mv`, 29 `solar_mv`, 30 `solar_current_ma`, 32 `usb_mv`, 33 `usb_current_ma`;
+  bitmap bit 31 is EXT, followed by a 2-byte extension bitmap; field 12 `batt_current_ma` is now
+  1 mA and sent; fields 11 and 13–16 have corrected meanings (the cell voltage from the gauge; energy
+  from ΔQ × VCELL; the sign fixed, see the addendum under `04fcc656938d`); fields 17
+  `soc_gauge_pct` and 18 `charger_pins` are retired (no longer sent).
+- **Health report version 6**: 64 bytes (80 B on air): last crash PC, boots since power-up (DR12),
+  TX timeouts, I2C recoveries, MCU supply (VDDA from VREFINT), power-monitor die temperature, gauge
+  SOC and rate, the charger status byte, the fitted byte (byte 51: which slots the build has a source
+  for, 0x2F in phases A and B, so a `null` is told apart as "not measured" or "sensor fault") and
+  slots for charger-reported values (phase C). A due report's airtime is reserved from the minute's
+  cap.
+- **Field set and journal**: the node field set is 77 B (93 B on air) in every power phase; the
+  journal slot grows from 80 to 96 B (21 a page, 1,449 records, 24.15 h) and the page magic changes,
+  so the first boot recycles every old page.
+- **Node firmware**: `WS_POWER_PROFILE` (phase A default; B builds; C stops), `App/power_acq.c`
+  (INA228 rails, MAX17048, the board ADC, CHG/PGOOD), `firmware/common/power_regs.c` (shared with
+  i2cscan and benchlink), the four-channel ADC sequence (vane, ISET on PB1, charger input on PA10,
+  VREFINT), CHG edges on EXTI10, `WS_I2C_MUX` 0 (the STEMMA QT hub, default), the DR12 boot counter
+  (`fault_boot_note`). The energy state stays NORMAL (thresholds deferred).
+- **WSMP**: registry version 2 (quantities 18–24, types 8 battery and 9 power rails; type 5 frozen),
+  WSMP 1.1 snapshot quality "not fitted", `WSMP_RADIO_BUDGET` 60.
+- **Local serials of ports 5 and 8 change**: port 5 goes from type 5 to type 8
+  (`0x575300000505` to `0x575300000508`) and port 8 is new (`0x575300000809`, type 9)
+  (`App/wsmp_local.h:48-54`). Each starts a new counter series (WSMP-C3).
+- **Home Assistant cleanup**: the retained discovery configs of `soc_gauge_pct` and `charger_pins`
+  from older runs stay in the broker; remove those two entities in Home Assistant by hand. The new
+  health-report entities use their own unique-ID namespace, are advertised only for the keys the
+  build measures (8 in phase A) and go unavailable 1,900 s after the newest health report
+  (`…/diagnostics/availability`).
+- **I2C timing**: `I2C_TIMING` is `0x20323E5D` (SDADEL 2, 146 ns data hold) in the node, i2cscan and
+  benchlink, for the INA228 SDA strap of the phase B USB-C rail (power spec section 9.2).
+- **Sizes, measured 2026-10-29 on the uncommitted branch** ([`docs/firmware-budget.md`](../../docs/firmware-budget.md)):
+  TX 88,160 B (78.3 %, over the 75 % headroom target, under the 90 % guard), RX 34,904 B (31.0 %).
+  Stack bound: TX 6,056 B (74 %), RX 2,780 B (34 %). `make waits`: OK on both, no heap. The release
+  entry records its own numbers.
+- **The entry records**: protocol version 6, field set `WS_F_WSMP_BENCH` (77 B), power wiring phase
+  A (`WS_POWER_PROFILE` 1, the official bench wiring of 2026-10-28/29), I2C profile hub
+  (`WS_I2C_MUX` 0), monitored rails: battery (current, counters; voltage from the gauge), load voltage
+  (OUT) and charger input voltage; load current, solar and USB-C not measured in phase A.
 
 ## 04fcc656938d — 2026-10-19 (bench, review fixes; protocol draft 5)
 
@@ -42,6 +106,33 @@ hashes, flashed to both boards, and recorded here. H01 evidence must name a rele
   `check_fails=0`. Epoch 3 seq 0 was acknowledged at 23.34 °C (partial: the first window).
   The gateway (`run-d7`) shows 0 rejections across epochs 1–3.
 - Not an H01 release: radio settings are bench values.
+
+### Addendum 2026-10-29: battery current sign and the INA228 bench check
+
+- **The battery current sign of this release is reversed for the official wiring.** On 2026-10-28/29
+  the bench telemetry link (`firmware/benchlink`, plain LoRa every 5 s) logged the power breadboard and
+  found the convention: with the official orientation (the cell on the INA228's VIN+, the charger's
+  LIPO terminal on VIN−; [`../benchlink/README.md`](../benchlink/README.md), "Wiring") the INA228
+  counts VIN+ to VIN− as positive, which is current **out of** the cell. This release adds every
+  positive CHARGE delta to "charge in" and its energy to "energy in" (`App/mod_power.c:145-150` at
+  `04fcc656938d`, unchanged up to c7e8860). So with that orientation fields 15 and 16
+  (`charge_in_mah`, `charge_out_mah`) and 13 and 14 (`energy_in_mwh`, `energy_out_mwh`) of this
+  release count a discharge as a charge and the reverse. The energy counters integrate the ENERGY
+  register, VBUS × current, and the official wiring puts VBUS on the charger OUT, not the cell; field
+  11 (`batt_mv`) of this release is the INA228 VBUS of whatever net its jumper sensed (OUT in the
+  official wiring). The finding came from benchlink, not from this node release; this file does not
+  record which stored version 5 records, if any, were taken with that orientation, so read every
+  protocol version 5 power value with this in mind. The fix ships with protocol version 6 (power spec section 3.1): the battery rail's
+  sign is −1 in the rail table (`App/power_config.h`), so + is into the cell; field 11 comes from the
+  MAX17048 on the cell; energy is ΔQ × VCELL.
+- **INA228 bench check: still open.** The charge and energy accumulators of this release (#2) have
+  not been checked with current through the shunt. On 2026-10-28/29 the cell sat in the charger's own
+  LIPO socket, so the INA228's shunt carried no current (`ishunt_ma` about 0 while the cell charged
+  and discharged). The shunt in the battery path is the part of the phase A wiring still to prove: phase
+  A exit criteria 3 and 4 (the node-against-benchlink acceptance drill and a 1 A charge that terminates
+  normally with the shunt in the path; power spec sections 2 and 12.2). The shunt value (15 mΩ) is
+  nominal: build-sheet power check 3 verifies it against a series reference (within 2 % + 2 mA), and
+  only a failed check replaces it (power spec section 8.6, amended 2026-10-29).
 
 ## cc2766a38c61 — 2026-10-19 (bench, DATAVANE5K local modules, new flash layout; protocol draft 5)
 

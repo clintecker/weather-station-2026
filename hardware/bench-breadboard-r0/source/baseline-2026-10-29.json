@@ -1,0 +1,411 @@
+{
+ "connections": [
+  {
+   "a": "A:L+41",
+   "a_at": "",
+   "b": "A:b41",
+   "b_at": "QT.V+",
+   "kind": "jumper",
+   "net": "3V3",
+   "w": "W1"
+  },
+  {
+   "a": "A:L+30",
+   "a_at": "",
+   "b": "A:f30",
+   "b_at": "R3.2",
+   "kind": "jumper",
+   "net": "3V3",
+   "w": "W2"
+  },
+  {
+   "a": "A:L+20",
+   "a_at": "",
+   "b": "A:f19",
+   "b_at": "R2.2",
+   "kind": "jumper",
+   "net": "3V3",
+   "w": "W3"
+  },
+  {
+   "a": "A:h19",
+   "a_at": "R2.2",
+   "b": "A:h8",
+   "b_at": "R1.2",
+   "kind": "jumper",
+   "net": "3V3",
+   "w": "W4"
+  },
+  {
+   "a": "A:d6",
+   "a_at": "BOBW.4",
+   "b": "A:f11",
+   "b_at": "C_CUPS.1",
+   "kind": "jumper",
+   "net": "CUPS",
+   "w": "W5"
+  },
+  {
+   "a": "A:e6",
+   "a_at": "BOBW.4",
+   "b": "A:f4",
+   "b_at": "R1.1",
+   "kind": "jumper",
+   "net": "CUPS",
+   "w": "W6"
+  },
+  {
+   "a": "A:L-40",
+   "a_at": "",
+   "b": "A:b40",
+   "b_at": "QT.GND",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W7"
+  },
+  {
+   "a": "A:L-23",
+   "a_at": "",
+   "b": "A:f23",
+   "b_at": "C_RAIN.2",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W8"
+  },
+  {
+   "a": "A:L-20",
+   "a_at": "",
+   "b": "A:b14",
+   "b_at": "BOBR.3",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W9"
+  },
+  {
+   "a": "A:e14",
+   "a_at": "BOBR.3",
+   "b": "A:f12",
+   "b_at": "C_CUPS.2",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W10"
+  },
+  {
+   "a": "A:h12",
+   "a_at": "C_CUPS.2",
+   "b": "A:e5",
+   "b_at": "BOBW.3",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W11"
+  },
+  {
+   "a": "A:b5",
+   "a_at": "BOBW.3",
+   "b": "A:b4",
+   "b_at": "BOBW.2",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W12"
+  },
+  {
+   "a": "A:e15",
+   "a_at": "BOBR.4",
+   "b": "A:f15",
+   "b_at": "R2.1",
+   "kind": "jumper",
+   "net": "RAIN",
+   "w": "W13"
+  },
+  {
+   "a": "A:h15",
+   "a_at": "R2.1",
+   "b": "A:h22",
+   "b_at": "C_RAIN.1",
+   "kind": "jumper",
+   "net": "RAIN",
+   "w": "W14"
+  },
+  {
+   "a": "A:e7",
+   "a_at": "BOBW.5",
+   "b": "A:f26",
+   "b_at": "R3.1",
+   "kind": "jumper",
+   "net": "VANE",
+   "w": "W15"
+  },
+  {
+   "a": "B:c38",
+   "a_at": "INA.VIN-",
+   "b": "B:c51",
+   "b_at": "CHGR.LIPO",
+   "kind": "jumper",
+   "net": "BATT",
+   "w": "W16"
+  },
+  {
+   "a": "B:e38",
+   "a_at": "INA.VIN-",
+   "b": "B:g31",
+   "b_at": "GBAT.+",
+   "kind": "jumper",
+   "net": "BATT",
+   "w": "W17"
+  },
+  {
+   "a": "B:e37",
+   "a_at": "INA.VIN+",
+   "b": "B:g39",
+   "b_at": "CELL.+",
+   "kind": "jumper",
+   "net": "CELL_POS",
+   "w": "W18"
+  },
+  {
+   "a": "B:e50",
+   "a_at": "CHGR.GND",
+   "b": "B:g53",
+   "b_at": "RLOAD.2",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W19"
+  },
+  {
+   "a": "B:L-47",
+   "a_at": "",
+   "b": "B:c50",
+   "b_at": "CHGR.GND",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W20"
+  },
+  {
+   "a": "B:L-45",
+   "a_at": "",
+   "b": "B:c42",
+   "b_at": "INA.GND",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W21"
+  },
+  {
+   "a": "B:e42",
+   "a_at": "INA.GND",
+   "b": "B:g40",
+   "b_at": "CELL.-",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W22"
+  },
+  {
+   "a": "B:h40",
+   "a_at": "CELL.-",
+   "b": "B:h32",
+   "b_at": "GBAT.-",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W23"
+  },
+  {
+   "a": "B:L-19",
+   "a_at": "",
+   "b": "B:b16",
+   "b_at": "REG.GND",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W24"
+  },
+  {
+   "a": "B:b17",
+   "a_at": "REG.VOUT",
+   "b": "B:b8",
+   "b_at": "SHUNT.1",
+   "kind": "jumper",
+   "net": "REG_OUT",
+   "w": "W25"
+  },
+  {
+   "a": "B:h49",
+   "a_at": "RLOAD.1",
+   "b": "B:e53",
+   "b_at": "CHGR.OUT",
+   "kind": "jumper",
+   "net": "SYS_OUT",
+   "w": "W26"
+  },
+  {
+   "a": "B:e15",
+   "a_at": "REG.VIN",
+   "b": "B:g49",
+   "b_at": "RLOAD.1",
+   "kind": "jumper",
+   "net": "SYS_OUT",
+   "w": "W27"
+  },
+  {
+   "a": "B:c9",
+   "a_at": "SHUNT.2",
+   "b": "C:c23",
+   "b_at": "COLED.+, OLED.VCC",
+   "kind": "jumper",
+   "net": "3V3",
+   "w": "W28"
+  },
+  {
+   "a": "A:c4",
+   "a_at": "BOBW.2",
+   "b": "B:L-63",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W29"
+  },
+  {
+   "a": "B:L-1",
+   "a_at": "",
+   "b": "C:c22",
+   "b_at": "COLED.-, OLED.GND",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W30"
+  },
+  {
+   "a": "A:e41",
+   "a_at": "QT.V+",
+   "b": "NUCLEO CN6.4",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "3V3",
+   "w": "W31"
+  },
+  {
+   "a": "B:e9",
+   "a_at": "SHUNT.2",
+   "b": "NUCLEO CN7.16",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "3V3",
+   "w": "W32"
+  },
+  {
+   "a": "B:e54",
+   "a_at": "CHGR.CHG",
+   "b": "NUCLEO CN10.25",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "CHG",
+   "w": "W33"
+  },
+  {
+   "a": "A:j4",
+   "a_at": "R1.1",
+   "b": "NUCLEO CN10.14",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "CUPS",
+   "w": "W34"
+  },
+  {
+   "a": "A:e40",
+   "a_at": "QT.GND",
+   "b": "NUCLEO CN6.6",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W35"
+  },
+  {
+   "a": "A:e43",
+   "a_at": "QT.SCL",
+   "b": "NUCLEO CN5.10",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "I2C_SCL",
+   "w": "W36"
+  },
+  {
+   "a": "A:e42",
+   "a_at": "QT.SDA",
+   "b": "NUCLEO CN5.9",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "I2C_SDA",
+   "w": "W37"
+  },
+  {
+   "a": "C:e36",
+   "a_at": "OLED.CS",
+   "b": "NUCLEO CN10.17",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "OLED_CS",
+   "w": "W38"
+  },
+  {
+   "a": "C:e25",
+   "a_at": "OLED.DC",
+   "b": "NUCLEO CN10.21",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "OLED_DC",
+   "w": "W39"
+  },
+  {
+   "a": "C:e29",
+   "a_at": "OLED.DIN",
+   "b": "NUCLEO CN10.15",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "OLED_DIN",
+   "w": "W40"
+  },
+  {
+   "a": "C:e37",
+   "a_at": "OLED.RST",
+   "b": "NUCLEO CN10.23",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "OLED_RST",
+   "w": "W41"
+  },
+  {
+   "a": "C:e28",
+   "a_at": "OLED.SCLK",
+   "b": "NUCLEO CN10.11",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "OLED_SCLK",
+   "w": "W42"
+  },
+  {
+   "a": "B:e55",
+   "a_at": "CHGR.PGOOD",
+   "b": "NUCLEO CN10.27",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "PGOOD",
+   "w": "W43"
+  },
+  {
+   "a": "A:j15",
+   "a_at": "R2.1",
+   "b": "NUCLEO CN10.29",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "RAIN",
+   "w": "W44"
+  },
+  {
+   "a": "A:j26",
+   "a_at": "R3.1",
+   "b": "NUCLEO CN7.30",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "VANE",
+   "w": "W45"
+  }
+ ],
+ "revision": "r0, 2026-10-29",
+ "source": "hardware/bench-breadboard-r0/build-sheet.md as committed at c7e8860 (origin/master, 2026-10-29), git blob 7f82e20f3ed233cf1fe464b1224564ffe2c14a7f: the r0 interim sheet the 2026-10-28/29 bench was built from. Parsed once from its jumper and lead tables (that sheet has no lead table); a_at and b_at name the part pins on each end's strip, from its parts table. The D1 as-run deviations (the pack in the charger's BATT socket, the shunt bypassed) are in the README history, not here. Part ids in a_at and b_at follow the current model: the r0 sheet's C1 and C2 (the cups and rain filter capacitors) are C_CUPS and C_RAIN here, so no end reads like pre-run checklist rows C1 and C2."
+}

@@ -23,7 +23,7 @@ QUANTIZATION_S = 2
 # The store never presents a time with a larger error bound as a current measurement.
 CURRENT_MAX_UNCERTAINTY_S = 10
 MINUTE_S, HOUR_S, DAY_S = 60, 3600, 86400
-RECORD_VERSION = 5          # the protocol version (VERSION in ws0/protocol.py)
+RECORD_VERSION = 6          # the protocol version (VERSION in ws0/protocol.py)
 CURRENT_MAX_AGE_S = 180     # a latest reading older than this is not current
 FUTURE_SLACK_S = 5          # a sample time this far after receipt is a wrong clock, not jitter
 UTC_LIMIT = 2**32           # the UTC field of the observation is u32

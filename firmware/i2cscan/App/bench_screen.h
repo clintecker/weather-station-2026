@@ -19,7 +19,7 @@ typedef struct {
 /* Draws the view: the bus on top, the battery current large, then the voltages and the gauge.
      I2C 36 40
      +37.60mA          (twice the size)
-     VBUS 3.8459V
+     OUT 3.8459V       (the INA228 VBUS: its sense lead on the OUT connector, record P5)
      CELL 3.8460V 78.4%
      RATE -0.62%/h */
 void bench_screen(oled_fb *fb, const bench_view *v);

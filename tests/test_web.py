@@ -15,7 +15,7 @@ try:                                        # first: sets WS0_UNSAFE_FAST_FSYNC 
     from toolchain import StationTest, StreamPort
 except ImportError:
     from tests.toolchain import StationTest, StreamPort
-from ws0 import web
+from ws0 import fields, web
 from ws0.link import MAX_LINE, ReceiverLink
 from ws0.__main__ import handle_receiver_line
 from ws0.service import http_server
@@ -352,15 +352,18 @@ class History(Fixture):
         base = 1_700_000_000
         for i in range(10):
             self.observe(base + 60 * i, fault=i in (4, 5))
-        self.observe(base + 60 * 12)   # minutes 10 and 11 missing: a gap, not zeros
+        record = self.observe(base + 60 * 12)   # minutes 10 and 11 missing: a gap, not zeros
         self.serve()
         h = self.get_json('/v1/history?from=2023-11-14T00:00:00Z&to=2023-11-15T00:00:00Z')
         o = h['observations']
         self.assertEqual(o['bucket_s'], 0)
-        self.assertEqual(o['fields'], ['temperature_c', 'humidity_pct'])
+        # the demo node's weather pair and its phase A power set, in catalog order
+        self.assertEqual(o['fields'], [n for n in fields.MEASURED if n in record])
+        self.assertEqual(o['fields'][:2], ['temperature_c', 'humidity_pct'])
         self.assertEqual(o['units']['temperature_c'], '°C')
         self.assertEqual(len(o['t']), 11)
         self.assertEqual(o['values']['temperature_c'][4:6], [None, None])
+        self.assertEqual(o['values']['batt_mv'][4:6], [None, None])   # faulted minutes: INVALID, not absent
         self.assertNotIn(0, o['values']['humidity_pct'])
         self.assertEqual(o['quality'][4], 'sensor_fault')
         self.assertEqual(set(o['basis']), {'synchronized'})
@@ -565,6 +568,119 @@ class History(Fixture):
             self.assertEqual(exc.exception.code, 400, bad)
 
 
+class PowerTelemetry(Fixture):
+    """Power telemetry end to end (design sections 10.1, 10.2 and 14): the new observation fields
+    and health-report keys through every API that carries their kind of data, nulls kept null."""
+    POWER = dict(batt_mv=3912, batt_current_ma=-1234, load_mv=4402, load_current_ma=87, charger_input_mv=None,
+                 solar_mv=5120, solar_current_ma=0, usb_mv=None, usb_current_ma=32766)
+
+    def observe_power(self, t, **values):
+        record = self.node.sample(t) | values
+        record['quality'] = fields.quality(record)
+        self.node.acknowledge(self.gateway.receive(self.node.packet(record), t + 1))
+        return record
+
+    def test_power_fields_reach_observations_latest_history_and_csv(self):
+        import csv
+        t = time.time() - 30
+        self.observe_power(t, **self.POWER)
+        self.serve()
+        row = self.get_json('/v1/observations')['observations'][0]
+        latest = self.get_json('/v1/observations/latest')
+        start = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t - 60))
+        h = self.get_json(f'/v1/history?from={start}')['observations']
+        for name, value in self.POWER.items():
+            self.assertIn(name, row)                          # INVALID is present as null, never dropped
+            self.assertEqual(row[name], value, name)
+            self.assertEqual(latest['observation'][name], value, name)
+            self.assertIn(name, latest['fields_available'])
+            self.assertEqual(h['values'][name], [value], name)
+            self.assertEqual(h['labels'][name], fields.LABELS[name])
+        self.assertEqual(row['quality'], 'partial')          # a present INVALID power field
+        self.assertEqual((h['units']['batt_current_ma'], h['units']['usb_mv']), ('mA', 'mV'))
+        self.assertEqual(h['diagnostic'], [f.name for f in fields.FIELDS if f.name in fields.DIAGNOSTIC_FIELDS])
+        self.assertEqual(h['labels']['soc_gauge_pct'], fields.LABELS['soc_gauge_pct'])   # labelled though absent
+        self.assertNotIn('soc_gauge_pct', h['fields'])       # retired: version 6 builds do not send it
+        with self.get('/v1/observations?format=csv') as r:
+            rows = list(csv.DictReader(io.StringIO(r.read().decode())))
+        self.assertEqual(len(rows), 1)
+        for name, value in self.POWER.items():
+            self.assertEqual(rows[0][name], '' if value is None else str(value), name)
+
+    def test_a_record_without_power_fields_keeps_them_absent(self):
+        t = time.time() - 30
+        record = self.node.sample(t)
+        for name in self.POWER:
+            record.pop(name, None)
+        for name in ('energy_in_mwh', 'energy_out_mwh', 'charge_in_mah', 'charge_out_mah'):
+            record.pop(name, None)
+        record['quality'] = fields.quality(record)
+        self.node.acknowledge(self.gateway.receive(self.node.packet(record), t + 1))
+        self.serve()
+        row = self.get_json('/v1/observations')['observations'][0]
+        self.assertFalse(set(self.POWER) & set(row))            # not measured: absent, not null
+        self.assertEqual(row['quality'], 'valid')
+        start = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t - 60))
+        self.assertEqual(self.get_json(f'/v1/history?from={start}')['observations']['fields'],
+                         ['temperature_c', 'humidity_pct'])
+
+    def diag(self, now, uptime, **values):
+        from ws0.protocol import KIND_DIAG, pack_diag, seal
+        report = pack_diag(epoch=self.node.epoch, uptime=uptime, pending=0, lost=0, torn=0, abandoned=0, no_ack=0,
+                           rejects=0, reset_cause=1, link=0, build=0x5eed0001, rssi=-60, snr=7, crashes=1, energy=1,
+                           **values)
+        self.gateway.receive(seal(self.node.key, self.cfg['station_id'], KIND_DIAG, self.node.nonces, report), now)
+
+    def test_health_keys_reach_diagnostics_status_and_history(self):
+        from ws0.protocol import CHG_CHARGING, CHG_POWER_GOOD, CHG_STAGE_SHIFT, CHG_INPUT_SHIFT
+        from ws0.service import HEALTH_KEYS
+        now = time.time()
+        self.diag(now - 900, 600)                              # every version 6 value at its none code
+        self.diag(now - 1, 1500, crash_pc=0x0800ABCD, boots=4, tx_timeouts=2, i2c_recoveries=1, vdda_mv=3291,
+                  monitor_temp=315, soc=12928, soc_rate=-25,
+                  charger_status=CHG_POWER_GOOD | CHG_CHARGING | 2 << CHG_STAGE_SHIFT | 1 << CHG_INPUT_SHIFT,
+                  chg_batt_ma=640)
+        self.serve()
+        rows = self.get_json('/v1/diagnostics')['rows']
+        want = {'last_crash_pc': '0800abcd', 'boots_since_power_up': 4, 'tx_timeouts_since_boot': 2,
+                'i2c_recoveries_since_boot': 1, 'mcu_supply_mv': 3291, 'power_monitor_temp_c': 31.5,
+                'battery_soc_pct': 50.5, 'battery_soc_rate_pct_h': -2.5, 'charger_input_power_ok': True,
+                'charger_charging': True, 'charger_fault': False, 'charger_stage': 'cc', 'charger_active_input': 'solar',
+                'charger_reported_input_mv': None, 'charger_reported_input_ma': None,
+                'charger_reported_battery_mv': None, 'charger_reported_battery_ma': 640, 'charger_temp_c': None,
+                'pack_temp_c': None}
+        for row in rows:
+            self.assertEqual(set(row) - {'received_at'}, set(HEALTH_KEYS))
+        self.assertEqual({k: rows[1][k] for k in want}, want)
+        nulls = {k: rows[0][k] for k in want if k not in ('boots_since_power_up', 'tx_timeouts_since_boot',
+                                                          'i2c_recoveries_since_boot')}
+        self.assertEqual(nulls, dict.fromkeys(nulls))          # none codes stay null, never 0 or 65535
+        status = self.get_json('/v1/status')['node_diagnostics']
+        self.assertEqual({k: status[k] for k in want}, want)
+        start = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now - 3600))
+        h = self.get_json(f'/v1/history?from={start}')['diagnostics']
+        self.assertEqual([d['charger_reported_battery_ma'] for d in h], [None, 640])
+
+    def test_thinning_keeps_charger_and_reset_cause_changes(self):
+        """Health-report history past max_points keeps every change of the state bands' keys, the charger
+        stage (phase C: precharge, cc, cv, topoff, terminated) among them. A
+        report stored before the version 6 keys existed lacks them, and is compared as None."""
+        base, station = 1_700_000_000, self.cfg['station']
+        changes = {3: dict(charger_charging=True), 5: dict(charger_input_power_ok=False), 7: dict(charger_fault=True),
+                   9: dict(charger_stage='cv'), 10: dict(charger_active_input='usb_c'), 13: dict(reset_cause='watchdog')}
+        state = dict(charger_charging=False, charger_input_power_ok=True, charger_fault=False, charger_stage='cc',
+                     charger_active_input=None, reset_cause='power')
+        for i in range(16):
+            state |= changes.get(i, {})
+            report = {'epoch': 1, 'uptime_s': i, 'firmware_build': 'b', 'link': 'linked', 'energy_state': 'normal'}
+            report |= {'reset_cause': 'power'} if i == 0 else state      # report 0: from older firmware
+            self.gateway.store.diagnostic(station, report, base + i)
+        with self.gateway.store.reader() as db:
+            kept = [d['uptime_s'] for d in web.diagnostic_series(db, station, base, base + 100, 4)]
+        # every 4th, the last, report 1 (the charger keys appear) and each change, the stage's (9) included
+        self.assertEqual(kept, [0, 1, 3, 4, 5, 7, 8, 9, 10, 12, 13, 15])
+
+
 class ServeLoopTelemetry(Fixture):
     class Link:
         def __init__(self):
@@ -673,7 +789,7 @@ class ServeLoopTelemetry(Fixture):
     def test_bad_receptions_api_and_status(self):
         t = self.gateway.telemetry
         now = time.time()
-        t.rx_line('#rx crc len=2 rssi=-100 snr=-7 data=51ff', now - 2)
+        t.rx_line('#rx crc len=2 rssi=-100 snr=-7 data=61ff', now - 2)
         t.rx_line('#rx hdr rssi=-121', now - 1)
         self.serve()
         body = self.get_json('/v1/radio/faults?order=desc&limit=1')
@@ -682,7 +798,7 @@ class ServeLoopTelemetry(Fixture):
         self.assertEqual({k: body['summary'][k] for k in ('window_s', 'crc', 'hdr', 'warn_per_hour', 'throttled')},
                          {'window_s': 3600, 'crc': 1, 'hdr': 1, 'warn_per_hour': web.RX_FAULT_WARN_PER_H,
                           'throttled': 0})
-        self.assertEqual(self.get_json('/v1/radio/faults')['rows'][0]['data'], '51ff')
+        self.assertEqual(self.get_json('/v1/radio/faults')['rows'][0]['data'], '61ff')
         self.assertEqual(self.get_json('/v1/status')['rx_faults']['crc'], 1)
 
     def test_alive_with_word_fields_and_unknown_ones(self):
