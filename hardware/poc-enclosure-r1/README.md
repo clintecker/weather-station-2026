@@ -1,5 +1,7 @@
 # Proof-of-concept enclosure parts R1
 
+> **Parked 2026-11-02.** The enclosure is step 4. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
+
 These are printed parts for the proof-of-concept station built from off-the-shelf parts (2026-10-14). The electronics live in a **bought** IP66 box (Adafruit 905). Everything else is printed:
 
 - a radiation shield for the SHT45, with a replaceable sensor cartridge

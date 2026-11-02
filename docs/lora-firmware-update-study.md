@@ -1,5 +1,7 @@
 # Firmware updates over LoRa: design study
 
+> **Parked 2026-11-02.** This whole study is past step 1. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
+
 This page is a design study, written 2026-10-14. **Nothing here is built. This study changed nothing
 in the firmware or the gateway.** It answers Clint's question: *"Once both ends of the system have
 their 16 MB flash, can we remotely reprogram units over LoRa somehow?"*

@@ -8,7 +8,8 @@ soldered protoboard, the carrier and the field, in the order 1 → 2 (H01) → 1
 breadboard model and generator (`hardware/bench-breadboard-r0`, revisions `bench-bb-r0.1` for change A,
 the power path off the breadboard with the pack, WAGO joints and INA228 shunt in the battery lead (P3);
 `bench-bb-r0.2` for change B, cups PB5 (LPTIM1_IN1, AF1) and rain PB4 (EXTI4) (N2); `bench-bb-r0.3` for
-change C, the PA9 sensor switch and the unswitched STEMMA QT branch), the node and bench firmware, the
+change C, the PA9 sensor switch and the unswitched STEMMA QT branch; *2026-11-02:* the switch deferred to
+the carrier, r0.3 redefined without it), the node and bench firmware, the
 bench tools, gateway and tests (the ws0 silent-port reopen, the preflight tool, the logger and dashboard),
 and the documents: the wiring guide, the ports spec (OQ-14 decided: the v1 base board is a carrier under
 the NUCLEO on morpho, 7.1 Q7), the next-stages plan, the shopping lists, the runbooks and the indexes.
@@ -82,13 +83,13 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | BP-031 | model | major | Regenerate the breadboard outputs for revision bench-bb-r0.1 (change A) | W7-regen-r0.1 | resolved | W7-regen-r0.1 |
 | BP-032 | model | major | Change B in the model: cups PB5 at CN9.5, rain PB4 at CN8.4 (N2 approved) | W8-model-change-b | resolved | W8-model-change-b |
 | BP-033 | model | major | Regenerate the breadboard outputs for revision bench-bb-r0.2 (change B) | W9-regen-r0.2 | resolved | W9-regen-r0.2 |
-| BP-034 | model | major | Change C not modelled: PA9 load switch, unswitched QT branch, SENS_EN and 3V3_SW | W10-model-change-c | resolved | W10-model-change-c |
-| BP-035 | model | major | Regenerate the breadboard outputs for revision bench-bb-r0.3 (change C) | W11-regen-r0.3 | resolved | W11-regen-r0.3 |
+| BP-034 | model | major | Change C not modelled: PA9 load switch, unswitched QT branch, SENS_EN and 3V3_SW | W10-model-change-c | resolved | W10-model-change-c. *2026-11-02: superseded, change C's switch moved to the carrier (record 4.6 dated note)*: r0.3 redefined in place without LSW, 3V3_SW and SENS_EN; the QTM branch kept |
+| BP-035 | model | major | Regenerate the breadboard outputs for revision bench-bb-r0.3 (change C) | W11-regen-r0.3 | resolved | W11-regen-r0.3. *2026-11-02:* regenerated again for the redefined r0.3 (no load switch) |
 | BP-036 | firmware | major | R_ISET 890 Ohm; no ISET gain; integer divider 3; no microvolt ppm helper; stale 'x 3' comments | W2-fw-power-constants | resolved | W2-fw-power-constants |
 | BP-037 | firmware | minor | benchlink: morpho-only pin comments, integer VIN_DIVIDER, ISET comment | W4-fw-benchlink | resolved | W4-fw-benchlink |
 | BP-038 | firmware | major | Change B firmware: cups PB5 (LPTIM1_IN1 AF1), rain PB4 (EXTI4), LDORDY assert | W8-fw-change-b | resolved | W8-fw-change-b |
 | BP-039 | firmware | minor | Mux RESET still 'TBD' though N5 fixed it at PB14 | W8-fw-change-b | resolved | W8-fw-change-b |
-| BP-040 | firmware | major | PA9 sensor switch (change C): no way to run exit 9; stale text; no switched branch in the sim; no harness for the console test | W10-fw-change-c | resolved | W10-fw-change-c |
+| BP-040 | firmware | major | PA9 sensor switch (change C): no way to run exit 9; stale text; no switched branch in the sim; no harness for the console test | W10-fw-change-c | resolved | W10-fw-change-c. *2026-11-02: superseded, change C's switch moved to the carrier (record 4.6 dated note)*: TEST-SENSOR-POWER, the sim's switched branch and the harness stay as the carrier's bench test (step 3); `i2c_bus` power-cycle stays a no-op until the carrier |
 | BP-041 | firmware | major | M7 counter link probe not implemented; the cups probe must not count its own edge; status key collision | W12-fw-link-probe | resolved | W12-fw-link-probe |
 | BP-042 | tools-gateway-tests | major | ws0 has no open-but-silent reopen (H8 f), and the dashboard draws no marker for it | W2-tools-ws0-reopen | resolved | W2-tools-ws0-reopen |
 | BP-043 | tools-gateway-tests | major | tools/preflight.py, tests/test_preflight.py and the shared checklist.py do not exist (D6) | W2-tools-preflight | resolved | W2-tools-preflight |
@@ -117,7 +118,7 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | BP-X03 | completeness | minor | nucleo-wl55jc-bringup.md still says the firmware holds 890 ohm for R_ISET | X1 | resolved | X1 |
 | BP-X04 | completeness | minor | test_i2cscan comment still calls 890 ohm the 1.0 A jumper | X1 | resolved | X1 |
 | BP-X05 | completeness | minor | Record file:line references outside 1.4/N2 now point at the wrong lines | X1 | resolved | X1 |
-| BP-X06 | completeness | major | After change C, benchlink and i2cscan never drive PA9, so the hub's SHT45 stays unpowered (and is back-powered through the bus pull-ups) | X1 | resolved | X1 |
+| BP-X06 | completeness | major | After change C, benchlink and i2cscan never drive PA9, so the hub's SHT45 stays unpowered (and is back-powered through the bus pull-ups) | X1 | resolved | X1. *2026-11-02: superseded, change C's switch moved to the carrier (record 4.6 dated note)*: the firmware still drives PA9 high, harmless with PA9 unconnected at steps 1 and 2 |
 | BP-X07 | completeness | minor | Battery INA228 VBUS at step 1b: next-stages-plan says it stays on OUT; the record, power-metering and the WAGO model move it to CELL+ position 4 | X1 | resolved | X1 |
 | BP-X08 | completeness | minor | Record 4.4 step 5 keeps a board-A-to-board-B ground link that the model removed | X1 | resolved | X1 |
 | BP-X09 | completeness | minor | C11's 'cups count while spinning the cups' has no source in the logger | X1 | resolved | X1 |
@@ -155,7 +156,7 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | BP-X41 | completeness | minor | stage0-node README cites board_inputs.c:3-17 for the pin list, which now runs to line 21 | X3 | resolved | X3 |
 | BP-X42 | completeness | minor | The `Lead` docstring in wiring.py describes only the old heavy battery lead | X3 | resolved | X3 |
 | BP-X43 | completeness | minor | The bring-up log's 'rules of the official wiring' paragraph still describes the battery path as short heavy leads | X3 | resolved | X3 |
-| BP-X44 | completeness | major | Step 1 exit 9 cannot be observed as written: sensors are sampled every 15 s, but each PA9-low half lasts only 2 s | X4 | resolved | X4 |
+| BP-X44 | completeness | major | Step 1 exit 9 cannot be observed as written: sensors are sampled every 15 s, but each PA9-low half lasts only 2 s | X4 | resolved | X4. *2026-11-02: superseded, change C's switch moved to the carrier (record 4.6 dated note)*: exit 9 removed from step 1; the half length carries over to the carrier's port power-cycle test |
 | BP-X45 | completeness | minor | Guide section 6b forbids the meter's current range in the battery path, but the shunt check puts the 87V there | X4 | resolved | X4 |
 | BP-X46 | completeness | minor | 10-19 breadboard design's 'Supersedes' column cites line numbers that match neither the old nor the current text | X4 | resolved | X4 |
 | BP-X47 | completeness | minor | tests/README.md test count is stale | X4 | resolved | X4 |
@@ -165,7 +166,7 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | BP-X51 | completeness | minor | Guide 6b forbids the meter's current range in the battery path, but power check 3 puts the 87V in series there | X4 | resolved | X4 |
 | BP-X52 | completeness | minor | oled.h's wiring comment still lands the OLED signals on the Arduino aliases that the model leaves empty | X4 | resolved | X4 |
 | BP-X53 | completeness | minor | Breadboard README puts the A:L+ rail inside the P1 mode-B chain | X4 | resolved | X4 |
-| BP-X54 | completeness | minor | Change C says it 'mirrors PORT-9', but the SHTC3 that PORT-9 keeps upstream sits on the switched hub branch | X4 | resolved | X4 |
+| BP-X54 | completeness | minor | Change C says it 'mirrors PORT-9', but the SHTC3 that PORT-9 keeps upstream sits on the switched hub branch | X4 | resolved | X4. *2026-11-02: superseded, change C's switch moved to the carrier (record 4.6 dated note)*: the bench has no switched branch now; the carrier keeps the SHTC3 unswitched (PORT-9) |
 | BP-X55 | completeness | minor | power-metering.md names a firmware define that no longer exists and fixes the divider at 3:1 | X4 | resolved | X4 |
 | BP-X56 | completeness | minor | failure-modes 'All down' row still assumes both boards share one USB hub | X4 | resolved | X4 |
 | BP-X57 | completeness | minor | Ports spec: the OQ-14 'decided' row sits outside the open-questions table | X4 | resolved | X4 |

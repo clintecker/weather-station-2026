@@ -5,8 +5,8 @@
  * It only reads: no register of any part is written, so the node firmware later finds every part as
  * it left it. Blocking HAL transfers with a short timeout, from one sequencer task: a bench tool, not
  * the node (stage0-node/App/i2c_bus.c is the interrupt-driven bus). PA9 is driven high at start and stays
- * high: from bench-bb-r0.3 (build-progression record 4.6, change C) the hub's QT V+ is the sensor load
- * switch's output, so the hub's sensors answer the scan only while it is on. */
+ * high: the sensor power enable, carrier only (build-progression record 4.6 dated note, 2026-11-02: change
+ * C's load switch is deferred to the carrier). On the bench PA9 is unconnected, so this is harmless. */
 #include <string.h>
 #include "bench_regs.h"
 #include "bench_screen.h"
@@ -20,8 +20,8 @@
 
 #define SDA_PIN GPIO_PIN_11       /* PA11 = D14, CN5.9 */
 #define SCL_PIN GPIO_PIN_12       /* PA12 = D15, CN5.10 */
-#define POWER_PIN GPIO_PIN_9      /* PA9 = D9, CN5.2 (CN10.19): the sensor load switch's EN, high = on */
-#define POWER_UP_MS 2U            /* the switch's turn-on and the SHT45's 1 ms power-up (its datasheet tPU) */
+#define POWER_PIN GPIO_PIN_9      /* PA9 = D9, CN5.2 (CN10.19): sensor power enable (carrier only), high = on */
+#define POWER_UP_MS 2U            /* a switch's turn-on (carrier) and the SHT45's 1 ms power-up (its datasheet tPU) */
 #define I2C_TIMING 0x20323E5DU    /* 100 kHz at PCLK1 = 48 MHz, SDADEL 2: the node's value (stage0-node/App/i2c_bus.c) */
 #define XFER_TIMEOUT_MS 10U       /* the longest transfer here, 3 bytes, takes ~0.4 ms at 100 kHz */
 #define PROBE_TRIES 1U
@@ -271,7 +271,7 @@ void SubghzApp_Init(void)
 {
   APP_PRINTF("\nI2CSCAN (weather-station-2026 bench tool): I2C2 SDA=PA11 (D14) SCL=PA12 (D15), 100 kHz, read only\n");
   APP_PRINTF("#help i>0: current out of the battery; i<0: into it (shunt %d mOhm in the cell + lead)\n", BENCH_SHUNT_MOHM);
-  APP_PRINTF("#power PA9 (D9) high: the switched sensor branch (3V3_SW) on\n");
+  APP_PRINTF("#power PA9 (D9) high: sensor power enable (carrier only; unconnected on the bench)\n");
   sensors_on();
   oled_init();
   APP_PRINTF("#oled SSD1325 on SPI1 at %u Hz: SCLK PA5 (D13), DIN PA7 (D11), CS PA4 (D10), DC PC2 (D8), RST PC1 (D7)."

@@ -26,9 +26,9 @@ The build steps follow the record's steps (S1), in the order decided on 2026-10-
 
 | Guide build step | Record steps | What is built |
 |---|---|---|
-| 1. Breadboard v2, no solder | 1 | Changes A, B and C (record 4.4-4.6): the force path off the breadboard on JST PH sockets, WAGO 222 lever connectors and the INA228 screw terminal (section 4); the cups and rain remap (PB5, PB4); the PA9 sensor switch from a breakout, the split QT bus and the mode-B hour. **No battery, charge, input or load current through any breadboard contact, header pin or Dupont contact** (record P1); the one exception is the mode-B regulator chain (section 5). Not for the 24-hour run. The hole-by-hole map is the [build sheet](../../hardware/bench-breadboard-r0/build-sheet.md) (`bench-bb-r0.3`), with [renders](../../hardware/bench-breadboard-r0/README.md) of the boards |
+| 1. Breadboard v2, no solder | 1 | Changes A and B (record 4.4, 4.5): the force path off the breadboard on JST PH sockets, WAGO 222 lever connectors and the INA228 screw terminal (section 4); the cups and rain remap (PB5, PB4); the two QT cables (both on the unswitched 3V3) and the mode-B hour. *2026-11-02:* change C, the PA9 sensor switch, is deferred to the carrier board (record 4.6 dated note), so steps 1 and 2 have no sensor power switch and PA9 stays unconnected. **No battery, charge, input or load current through any breadboard contact, header pin or Dupont contact** (record P1); the one exception is the mode-B regulator chain (section 5). Not for the 24-hour run. The hole-by-hole map is the [build sheet](../../hardware/bench-breadboard-r0/build-sheet.md) (`bench-bb-r0.3`), with [renders](../../hardware/bench-breadboard-r0/README.md) of the boards |
 | 2. Soldered protoboard | 2, then 1b, then 2c | Step 2: the Adafruit #196 shield on the NUCLEO and a Perma-Proto module board, signals only, with the three phase-B INA228 positions left empty; the step 1 force harness moves to the plate unchanged (record S2). The 24-hour H01 acceptance run uses this build. Then step 1b: the three extra INA228s on the plate's small breadboard and the same harness, after H01 (7.1 Q1, Q8); they are soldered into the module board only after 1b exits. Then step 2c: the BQ25798EVM on the step 2 harness (record S3) |
-| 3. Carrier PCB and beyond | 3, 4, 5 | The carrier under the NUCLEO on the morpho underside pins (OQ-14, decided 2026-10-30, 7.1 Q7; record N7, S4); its layout waits for the morpho grid from ST's drawing and the chassis outline (*2026-10-30:* the underside pin length and clearance condition is satisfied by Clint's fit test, record 7.1 N7: a standard-height 2.54 mm female socket works). Then the carrier in the enclosure (step 4) and the custom STM32WL55 board (step 5) |
+| 3. Carrier PCB and beyond | 3, 4, 5 | The carrier under the NUCLEO on the morpho underside pins (OQ-14, decided 2026-10-30, 7.1 Q7; record N7, S4), with change C (PA9 switching each sensor port, PORT-5, PORT-9; from 2026-11-02; requirements in `docs/superpowers/specs/2026-11-02-carrier-board-requirements.md`); its layout waits for the morpho grid from ST's drawing and the chassis outline (*2026-10-30:* the underside pin length and clearance condition is satisfied by Clint's fit test, record 7.1 N7: a standard-height 2.54 mm female socket works). Then the carrier in the enclosure (step 4) and the custom STM32WL55 board (step 5) |
 
 ## 2. The connections
 
@@ -43,12 +43,11 @@ flowchart LR
     PB10["PB10 (D6, CN9.7): CHG input, pull-up"]
     PB1["PB1 (A0, CN8.1): ADC1_IN5"]
     PA10["PA10 (A2, CN8.3): ADC1_IN6"]
-    PA9["PA9 (D9, CN5.2): sensor power enable, step 1 change C"]
+    PA9["PA9 (D9, CN5.2): unconnected on steps 1 and 2; the carrier's port power enable (change C)"]
     SPI["SPI1 to the bench OLED: PA5, PA7, PA4, PC2, PC1; its supply on CN7.16 and CN10.20 (bench only)"]
     V33["3V3 (CN6.4, also the mode-B entry), GND (CN6.6; CN6.7 the mode-B return)"]
   end
-  LSW["sensor load switch (breakout), EN = PA9"] -- "3V3_SW (switched)" --- HUB["STEMMA QT hub"]
-  PA9 --- LSW
+  V33 -- "3V3 (unswitched)" --- HUB["STEMMA QT hub"]
   HUB --- SHT45["SHT45 0x44 (outside air)"]
   HUB --- BMP["BMP581 0x47 (pressure)"]
   HUB --- LTR["LTR390 0x53 (UVA)"]
@@ -71,23 +70,24 @@ flowchart LR
   DIV --- PA10
 ```
 
-The SHTC3 (enclosure) and the BMP581 sit on the hub, behind the PA9 switch, so TEST-SENSOR-POWER
-cycles them with the SHT45 and the LTR390. That differs from the carrier: PORT-9 (ports design) keeps
-the SHTC3 upstream and unswitched beside the INA228 and the MAX17048. A bench difference, accepted
-(record 4.6 dated note); the carrier follows PORT-9.
+Nothing on steps 1 and 2 is switched: the hub (with the SHTC3 and the BMP581) and the power monitors
+all run from the unswitched 3V3. *2026-11-02:* change C, the PA9 sensor switch, moved to the carrier
+board (record 4.6 dated note), which follows PORT-9 (ports design): each sensor port switched by PA9,
+the SHTC3 and the power monitors upstream and unswitched. `TEST-SENSOR-POWER` is a carrier test; on
+the breadboard PA9 drives nothing, so firmware that toggles it is harmless.
 
 | Function | Pin | Header (UM2592 Tables 17, 18; section 6) | Wiring |
 |---|---|---|---|
 | I2C SDA, SCL | PA11, PA12 | CN5.9 (D14), CN5.10 (D15) | to the STEMMA QT hub (cable QT) and to the power monitors (cable QTM: the battery INA228, daisy-chained to the MAX17048). The breakouts have the pull-ups |
-| Hub power | 3V3, GND | CN6.4, CN6.6 | 3.3 V only. Never the 5 V pin (CN6.5 is next to CN6.4). 3V3 from CN6.4 only (record N4), split in two (change C, record 4.6, PORT-9): **unswitched** 3V3 (the board-A 3V3 rail, the load switch's IN, the power monitors' cable QTM: always powered) and **switched** 3V3_SW (the load switch's OUT to the hub cable's V+: the sensors, cycled by PA9). GND, SDA and SCL are shared |
-| Mode-B 3V3 entry | 3V3 | CN6.4 (morpho alias CN7.16) | the regulator's output reaches the unswitched board-A 3V3 node (never 3V3_SW) through the BATTERY POWER shunt and the lead L_REG_3V3, which lands in the load switch's IN strip itself (LSW.IN, column 34 on board A; never the A:L+ rail); the CN6.4 jumper from that strip (LK_3V3_CN6_4) carries it in. So the whole chain is REG.VOUT, LK_REG_SHUNT, SHUNT, L_REG_3V3, the LSW.IN strip, LK_3V3_CN6_4, CN6.4: no planner jumper and no rail contact in it (record P1). Dead in mode A with the shunt open (record P1, N3) |
+| Hub power | 3V3, GND | CN6.4, CN6.6 | 3.3 V only. Never the 5 V pin (CN6.5 is next to CN6.4). 3V3 from CN6.4 only (record N4), on two cables: the hub's (QT) and the power monitors' (QTM), both on the unswitched board-A 3V3 (change C, the PA9 switch, is deferred to the carrier: record 4.6, 2026-11-02). GND, SDA and SCL are shared |
+| Mode-B 3V3 entry | 3V3 | CN6.4 (morpho alias CN7.16) | the regulator's output reaches the board-A 3V3 node through the BATTERY POWER shunt and the lead L_REG_3V3, which lands in the hub cable's V+ strip itself (QT.V+, column 41 on board A; never the A:L+ rail); the CN6.4 jumper from that strip (LK_3V3_CN6_4) carries it in. So the whole chain is REG.VOUT, LK_REG_SHUNT, SHUNT, L_REG_3V3, the QT.V+ strip, LK_3V3_CN6_4, CN6.4: no planner jumper and no rail contact in it (record P1). Dead in mode A with the shunt open (record P1, N3) |
 | Mode-B supply return | GND | CN6.7 | 22 AWG solid lead L_NUC_RET into the regulator GND strip on board B, fitted in both modes (record N4) |
 | Anemometer | PB5 | D4, CN9.5 (morpho alias CN10.29) (LPTIM1_IN1, AF1) | the circuit of section 3. Solid 22 AWG jumper into the Arduino header (record N2, N3; change B, record 4.5) |
 | Wind vane | PB2 | A1, CN8.2 (morpho alias CN7.30) (ADC1_IN4) | the circuit of section 3. Solid 22 AWG jumper into the Arduino header (record N3) |
 | Rain gauge | PB4 | A3, CN8.4 (morpho alias CN7.34) (EXTI4) | the circuit of section 3. Solid 22 AWG jumper into the Arduino header (record N2, N3; change B, record 4.5) |
 | bq24074 PGOOD | PB8 | D5, CN9.6 (morpho alias CN10.27) | station: direct, internal pull-up, solid 22 AWG jumper into the Arduino header (record N3). FT_f; with the pull-up on, the pin stays below min(VDD, VDDA) + 0.3 V (section 4.4) |
 | bq24074 CHG | PB10 | D6, CN9.7 (morpho alias CN10.25) | station: direct, internal pull-up, solid 22 AWG jumper into the Arduino header (record N3). FT_f; the same limit as PGOOD (section 4.4) |
-| Sensor power enable | PA9 | D9, CN5.2 (morpho CN10.19) | step 1 change C from a breakout: a solid 22 AWG jumper into the Arduino header to the high-side load switch's EN (SENS_EN), high = on; soldered at step 2 only if proven (exit 9) (record 4.6, R-11, S2) |
+| Sensor power enable | PA9 | D9, CN5.2 (morpho CN10.19) | carrier only (change C, deferred 2026-11-02, record 4.6): unconnected on steps 1 and 2; on the carrier it switches each sensor port (PORT-5), high = on. The firmware may drive it on the bench: harmless |
 | Bench OLED SCLK | PA5 | morpho CN10.11 (Arduino alias D13, CN5.6, stays empty) | bench only (board C): SPI1 clock to OLED pin 7. `firmware/i2cscan/App/oled.h` |
 | Bench OLED DIN | PA7 | morpho CN10.15 (alias D11, CN5.4, stays empty) | bench only: SPI1 data to OLED pin 8 |
 | Bench OLED CS | PA4 | morpho CN10.17 (alias D10, CN5.3, stays empty) | bench only: chip select to OLED pin 15, low while sending |
@@ -100,8 +100,8 @@ the SHTC3 upstream and unswitched beside the INA228 and the MAX17048. A bench di
 Every station signal lands on an ARDUINO female header (CN5, CN6, CN8, CN9) with a solid 22 AWG
 jumper, the positions the step 2 shield uses (record N3). Since change B (record N2, 4.5; model
 `bench-bb-r0.2`) that includes the cups, on D4 (PB5), and the rain gauge, on A3 (PB4); no station
-signal is on a morpho pin. Since change C (record 4.6; `bench-bb-r0.3`) PA9 on D9 (CN5.2) drives the
-sensor load switch. Only the bench OLED uses female Dupont on morpho pins. A morpho alias is the same MCU pin (UM2592 Tables 17, 18); the build sheet never puts a
+signal is on a morpho pin. PA9 (D9, CN5.2) stays empty on steps 1 and 2: change C, the sensor switch,
+is on the carrier (record 4.6, 2026-11-02). Only the bench OLED uses female Dupont on morpho pins. A morpho alias is the same MCU pin (UM2592 Tables 17, 18); the build sheet never puts a
 jumper on one.
 
 - **NO 5V.** Kapton labelled "NO 5V" over CN6.5 and CN6.8 (sockets) and CN7.18, CN7.24, CN7.6 and
@@ -124,7 +124,7 @@ function; "free" pins have none. Headers from UM2592 Tables 17 and 18; board fun
 | PA6 | D12, CN5.5; CN10.13 | free | (SPI1 MISO) | — |
 | PA7 | D11, CN5.4; CN10.15 | allocated, bench only | bench OLED DIN | section 2 |
 | PA8 | CN10.16 | free | candidate: a port enable | — |
-| PA9 | D9, CN5.2; CN10.19 | allocated | sensor power enable (SENS_EN): step 1 change C from a breakout; soldered at step 2 only if proven (exit 9) | section 2 |
+| PA9 | D9, CN5.2; CN10.19 | allocated, carrier only | sensor port power enable (change C, on the carrier from 2026-11-02); unconnected on steps 1 and 2 | section 2 |
 | PA10 | A2, CN8.3; CN7.32 | **power ADC (station)** | charger VBUS divider (VIN_SENSE), ADC1_IN6 | section 4 |
 | PA11, PA12 | D14, CN5.9; D15, CN5.10 (CN10.5, CN10.3) | allocated | I2C2 SDA, SCL | section 2 |
 | PA13, PA14 | CN7.13, CN7.15 | reserved | SWD | UM2592 Table 18 note 3 |
@@ -365,7 +365,7 @@ match is moved before any soldering, and the firmware pin constants (`App/board_
 - [x] PB14 (mux RESET, wired with the mux, `WS_I2C_MUX=1`): A4, CN8.5, and morpho CN7.36 (UM2592
   Tables 17 and 18), free of any board function (Table 19: "ARD_A4 - ADC1_IN1/I2C3_SDA"). FT_fa
   (record N5). Checked 2026-10-30.
-- [x] PA9 (sensor power enable, change C): D9, **CN5.2**, and morpho CN10.19 (UM2592 Tables 17 and
+- [x] PA9 (sensor port power enable, change C, carrier only from 2026-11-02): D9, **CN5.2**, and morpho CN10.19 (UM2592 Tables 17 and
   18), free of any board function (Table 19: "ARD_D9 - TIM1_CH2"). FT_fa. Checked 2026-10-29.
 - [x] The NO-5V pins (record N1, N3): CN6.5 (5V) and CN6.8 (VIN) on the Arduino header; CN7.18 (5V),
   CN7.24 (VIN), CN7.6 (E5V) and **CN10.8 (5V_USB_CHGR)** on morpho (UM2592 Tables 17 and 18). Each
@@ -375,7 +375,7 @@ match is moved before any soldering, and the firmware pin constants (`App/board_
 - [x] Powering the board in mode B from **CN6.4** (record N3): UM2592 section 6.4 and Table 9 allow
   an external 3.3 V (3 to 3.6 V, 1.3 A at most) on CN6.4 or CN7.16 (the same 3V3 net) with no
   jumper change; the ST-LINK is then unpowered and cannot be used. The regulator reaches CN6.4
-  through the SHUNT, L_REG_3V3 and the LSW.IN strip, the board-A 3V3 node (section 5); CN7.16 carries only the OLED's
+  through the SHUNT, L_REG_3V3 and the QT.V+ strip, the board-A 3V3 node (section 5); CN7.16 carries only the OLED's
   VCC lead in mode A, unplugged in mode B. Checked in the manual 2026-10-29; tried on the board by
   step 1 exit 10 (section 8).
 - [ ] No other solder bridge connects any of these pins to an on-board part. UM2592 Table 19 names
@@ -446,7 +446,7 @@ is the ST-LINK virtual COM port (115200 8N1). To send one line and print the rep
 | Cups pulse count (change B; step 1 exit 6) | spin the cups through a counted rotation of 100 pulses; wiggle the CN9.5 jumper while spinning (C11) | the PB5 (LPTIM1_IN1) count agrees with the hand count within ± 1 pulse in 100; vane positions unchanged |
 | Rain on PB4 (change B; step 1 exit 6) | rain on (`SENSOR rain on`); tip the bucket 20 times by hand | 20 more tips, counted on PB4 (EXTI4) |
 | Counter link probe (record M7) | send `STATUS`; then pull the rain jumper at CN8.4 (rain on) and wait for three probes (at boot and every 15 minutes); refit it | `#status ... meter_link=ok`; with the link open, `meter_link=rain-open` and the rain slot's quality fault; `ok` again once the link is refitted. An open cups link in calm air reads `meter_link=cups-suspect`, not a fault. The field is `meter_link=`; `link=` on the same line is the radio link |
-| PA9 power cycle (change C; step 1 exit 9) | send `TEST-SENSOR-POWER` (PA9 low for 16 s and high again, 10 times, a 320 s run: each half outlasts the 15 s sample period, so every part is addressed in it); meter on the switched rail (3V3_SW) | each `#test sensor-power` line's `ack=` and `fail=` name the parts that answered and failed in the half that ended there (0x001 SHT45, 0x002 BMP581, 0x004 LTR390, 0x008 SHTC3, 0x010 INA228 0x40, 0x100 MAX17048; the first line's half is empty). A `pa9=1` line closes a low half; a later `pa9=0` line, and `done`, close a high half. Pass: on each `pa9=1` line no switched sensor is in `ack` and each fitted one is in `fail`; on each later `pa9=0` line and on `done` each is in `ack` again; 0x010 and 0x100 are in every `ack` and never in a `fail`; `recoveries=0 stuck=0` throughout; 3V3_SW reads ≤ 0.5 V with PA9 low; the summary `#test sensor-power done cycles=10 pa9=1 ...`. A failure is recorded and the switch is not soldered at step 2 (record S2) |
+| PA9 power cycle (change C) | carrier only (*2026-11-02*: change C and the old step 1 exit 9 moved to the carrier's bench test, `docs/superpowers/specs/2026-11-02-carrier-board-requirements.md`). Not run on steps 1 and 2: PA9 is unconnected there | — |
 | Mode A | remove and connect the charger input | the battery current is negative (discharge into the test load) without input and positive while charging; the charge counters move in each direction |
 | Mode B hour (step 1 exit 10) | on the breadboard, change to mode B (section 5), pass C15 and C20-C23, and run on the battery for one hour | the station runs from the regulator through the CN6.4 entry, readings reach the gateway every minute, and no reset is logged |
 

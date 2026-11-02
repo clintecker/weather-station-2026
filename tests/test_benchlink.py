@@ -900,9 +900,9 @@ class Dashboard(unittest.TestCase):
 
 
 class SensorPower(unittest.TestCase):
-    """From bench-bb-r0.3 the hub's QT V+ is the PA9 load switch's output (record 4.6, 6.1): the benchlink TX
-    drives PA9 high before its first bus access, or the SHT45 is unpowered under benchlink (step 1 exit 2).
-    wiring.py check_firmware checks only that POWER_PIN is PA9."""
+    """On the carrier PA9 switches the sensor ports (record 4.6; change C, deferred from the breadboard to the
+    carrier on 2026-11-02): the benchlink TX drives PA9 high before its first bus access, or a carrier sensor is
+    unpowered under benchlink. On the breadboard PA9 is unconnected, so the drive is harmless there."""
 
     def setUp(self):
         self.src = (APP/'benchlink.c').read_text()

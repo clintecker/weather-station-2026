@@ -1,5 +1,7 @@
 # Sixteen stations on one receiver: design
 
+> **Parked 2026-11-02.** Only §6.1 (the flash layout) is implemented and current; the rest (time sync, protocol v7, slots) is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
+
 Status: design, approved section by section on 2026-10-16. Not implemented. Each sub-project in
 section 9 gets its own spec, plan and implementation.
 

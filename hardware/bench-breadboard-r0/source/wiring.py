@@ -578,16 +578,17 @@ def load(path):
 # the bench link must use the same MCU pins (spec 2026-10-29 section 11.1). A constant gives its
 # port in a comment that starts with the pin and may go on (/* PB5 = D4, CN9.5 */, /* PB1 = A0, CN8.1: ADC1_IN5 */);
 # without one it is on GPIOA (the I2C pins). Add an entry only for a net the model has. Every bench
-# firmware that drives a modelled pin is here: the node, benchlink, and i2cscan with its OLED (oled.c);
-# PA9 (SENS_EN) in each, since from bench-bb-r0.3 the hub's sensors are powered only while it is high.
+# firmware that drives a modelled pin is here: the node, benchlink, and i2cscan with its OLED (oled.c).
+# Their POWER_PIN (PA9) is not here: the sensor power switch (change C) is deferred to the carrier board
+# (record 4.6, 2026-11-02), so the breadboard model has no SENS_EN net and PA9 is unconnected on it.
 FIRMWARE = {'stage0-node/App/board_inputs.c': {'CUPS_PIN': 'CUPS', 'VANE_PIN': 'VANE', 'RAIN_PIN': 'RAIN',
                                                'PGOOD_PIN': 'PGOOD', 'CHG_PIN': 'CHG',
                                                'ISET_PIN': 'ISET', 'VIN_PIN': 'VIN_SENSE'},
-            'stage0-node/App/i2c_bus.lit.md': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL', 'POWER_PIN': 'SENS_EN'},
+            'stage0-node/App/i2c_bus.lit.md': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL'},
             'benchlink/App/benchlink.c': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL',
                                           'PGOOD_PIN': 'PGOOD', 'CHG_PIN': 'CHG',
-                                          'ISET_PIN': 'ISET', 'VIN_PIN': 'VIN_SENSE', 'POWER_PIN': 'SENS_EN'},
-            'i2cscan/App/i2cscan.c': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL', 'POWER_PIN': 'SENS_EN'},
+                                          'ISET_PIN': 'ISET', 'VIN_PIN': 'VIN_SENSE'},
+            'i2cscan/App/i2cscan.c': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL'},
             'i2cscan/App/oled.c': {'CS_PIN': 'OLED_CS', 'SCK_PIN': 'OLED_SCLK', 'MOSI_PIN': 'OLED_DIN',
                                    'RST_PIN': 'OLED_RST', 'DC_PIN': 'OLED_DC'}}
 PIN_DEFINE = re.compile(r'^#define (\w+_PIN) GPIO_PIN_(\d+)\b(?:.*?/\* P([A-H])(\d+)\b([^\n]*?)\*/)?', re.M)

@@ -105,17 +105,13 @@ class Checks(unittest.TestCase):
         problems = self.firmware_problems('benchlink/App/benchlink.c', move)
         self.assertTrue(any('benchlink.c: CHG_PIN is PB11' in p for p in problems), problems)
 
-    def test_pa9_and_the_oled_pins_are_checked_in_every_bench_firmware(self):
-        # Change C: from bench-bb-r0.3 the hub's sensors are powered only while PA9 is high, so benchlink and
-        # i2cscan drive it too; i2cscan's oled.c drives the OLED nets the model has (record 6.3).
-        for file in ('benchlink/App/benchlink.c', 'i2cscan/App/i2cscan.c'):
-            self.assertEqual(wiring.FIRMWARE[file]['POWER_PIN'], 'SENS_EN')
+    def test_the_oled_pins_are_checked_and_pa9_is_not(self):
+        # Change C (the PA9 sensor switch) is deferred to the carrier (record 4.6, 2026-11-02): the breadboard
+        # has no SENS_EN net, so no firmware's POWER_PIN is checked against it; i2cscan's oled.c drives the
+        # OLED nets the model has (record 6.3).
+        for file, constants in wiring.FIRMWARE.items():
             with self.subTest(file=file):
-                def move(text):
-                    line = next(ln for ln in text.splitlines() if ln.startswith('#define POWER_PIN'))
-                    return text.replace(line, line.replace('GPIO_PIN_9', 'GPIO_PIN_8').replace('PA9', 'PA8'))
-                problems = self.firmware_problems(file, move)
-                self.assertTrue(any(f'{file}: POWER_PIN is PA8' in p for p in problems), problems)
+                self.assertNotIn('POWER_PIN', constants)
         self.assertEqual(set(wiring.FIRMWARE['i2cscan/App/oled.c'].values()),
                          {'OLED_SCLK', 'OLED_DIN', 'OLED_CS', 'OLED_DC', 'OLED_RST'})
         def move_dc(text):
@@ -124,8 +120,11 @@ class Checks(unittest.TestCase):
         problems = self.firmware_problems('i2cscan/App/oled.c', move_dc)
         self.assertTrue(any('oled.c: DC_PIN is PC3' in p for p in problems), problems)
 
-    def test_pa9_has_its_morpho_alias(self):
-        self.assertEqual(wiring.tied_headers(self.w, 'SENS_EN'), {'CN5.2', 'CN10.19'})   # record 4.2
+    def test_pa9_keeps_its_morpho_alias_but_no_net(self):
+        # Record 4.2: the PA9 tie stays in [nucleo] ties (UM2592 Tables 17, 18); PA9 is unconnected (4.6, 2026-11-02).
+        self.assertIn(('CN5.2', 'CN10.19'), set(self.w.ties))
+        self.assertNotIn('SENS_EN', self.w.nets)
+        self.assertNotIn('PA9', self.w.mcu.values())
 
     def test_the_pin_comment_may_go_on(self):
         m = wiring.PIN_DEFINE.search('#define ISET_PIN GPIO_PIN_1         /* PB1 = A0, CN8.1: ADC1_IN5 */')
@@ -253,7 +252,7 @@ class Jumpers(unittest.TestCase):
                 ends = frozenset(wiring.raw_node(self.w, e) for e in (link.a, link.b))
                 self.assertIn(ends, pairs)
         self.assertEqual((self.w.link_info[0].a, self.w.link_info[0].b), ('REG.VOUT', 'SHUNT.1'))
-        self.assertEqual((self.w.link_info[1].a, self.w.link_info[1].b), ('LSW.IN', 'N:CN6.4'))   # unswitched (4.6)
+        self.assertEqual((self.w.link_info[1].a, self.w.link_info[1].b), ('QT.V+', 'N:CN6.4'))   # as r0.2 (4.6, 2026-11-02)
 
     def test_no_link_or_jumper_feeds_cn7_16_from_the_shunt(self):
         # Record N3, 6.1: the SHUNT.2 -> N:CN7.16 link is gone; the mode-B feed enters at CN6.4.
@@ -263,8 +262,8 @@ class Jumpers(unittest.TestCase):
                           if {wiring.strip(j.a), wiring.strip(j.b)} == {shunt, 'N:CN7.16'}])
         feed = next(k for k in self.w.leads if k.id == 'L_REG_3V3')
         self.assertEqual(wiring.raw_node(self.w, feed.a), shunt)
-        # the board-A 3V3 node: the LSW.IN strip, where LK_3V3_CN6_4 starts (record P1 dated note)
-        self.assertEqual(wiring.raw_node(self.w, feed.b), wiring.raw_node(self.w, 'LSW.IN'))
+        # the board-A 3V3 node: the QT.V+ strip, where LK_3V3_CN6_4 starts (record P1; 4.6, 2026-11-02)
+        self.assertEqual(wiring.raw_node(self.w, feed.b), wiring.raw_node(self.w, 'QT.V+'))
         self.assertIn('A:L+', self.w.rails['3V3'])
 
     def test_jumpers_are_numbered_in_build_order(self):
@@ -358,12 +357,11 @@ class Review(unittest.TestCase):
 
     def test_the_hub_returns_straight_to_the_nucleo(self):
         # Wiring guide section 2: hub power on CN6.4 and CN6.6, not through the power board's load path.
-        # Since change C (record 4.6) CN6.4 feeds the load switch's IN, whose OUT is the hub's V+.
+        # Change C (the load switch) is deferred to the carrier (record 4.6, 2026-11-02): CN6.4 feeds the hub's V+.
         strips = {frozenset({wiring.strip(j.a), wiring.strip(j.b)}) for j in wiring.plan_jumpers(self.w)}
         qt = self.w.parts['QT'].pins
         self.assertIn(frozenset({wiring.strip(qt['GND']), 'N:CN6.6'}), strips)
-        self.assertIn(frozenset({wiring.strip(self.w.parts['LSW'].pins['IN']), 'N:CN6.4'}), strips)
-        self.assertNotIn(frozenset({wiring.strip(qt['V+']), 'N:CN6.4'}), strips)
+        self.assertIn(frozenset({wiring.strip(qt['V+']), 'N:CN6.4'}), strips)
         # Record P4, D2: the hub's ground is logic ground. It reaches the power domain (STAR, the pack's
         # minus, the charger's sockets) only through L_TIE: without the TIE the two are apart.
         jumpers = wiring.plan_jumpers(self.w)
@@ -614,9 +612,9 @@ class Drawings(unittest.TestCase):
         bad = dataclasses.replace(next(iter(self.w.joints.values())), kind='WAGO 221-415')
         with self.assertRaises(ValueError):
             models.joint_boxes(bad, wiring.JOINT_PITCH)
-        # A breakout with no maker model and no colour of its own (a later LSW) is a generic board.
-        lsw = dataclasses.replace(self.w.parts['REG'], id='LSW', kind='load-switch breakout')
-        boxes = [b for _f, _r, b in models.models_for(lsw) if b]
+        # A breakout with no maker model and no colour of its own (a later part) is a generic board.
+        later = dataclasses.replace(self.w.parts['REG'], id='XBRK', kind='a later breakout')
+        boxes = [b for _f, _r, b in models.models_for(later) if b]
         self.assertEqual(boxes[0][6], models.GENERIC_BOARD)
 
     def test_no_cell_part_is_left_in_the_drawing_code(self):
@@ -923,11 +921,13 @@ class SheetTier(unittest.TestCase):
         self.assertIn('per-conductor continuity check', bench)
         cn = next(ln for ln in bench.splitlines() if ln.startswith('- **CN5 (D8-D15), CN8 (A0-A5) and CN9 (D0-D7):**'))
         for pin in ('CN8.1 (A0, PB1, ISET)', 'CN8.3 (A2, PA10, VIN_SENSE)', 'CN9.7 (D6, PB10, CHG)', 'CN9.6 (D5, PB8, PGOOD)',
-                    'CN5.2 (D9, PA9, SENS_EN)', 'CN5.9 (D14, PA11, I2C_SDA)', 'CN5.10 (D15, PA12, I2C_SCL)'):
+                    'CN5.9 (D14, PA11, I2C_SDA)', 'CN5.10 (D15, PA12, I2C_SCL)'):
             self.assertIn(pin, cn)
         aliases = cn.split('The morpho aliases of these pins (', 1)[1].split(')', 1)[0].split(', ')
-        for pin in ('CN10.19', 'CN10.5', 'CN10.3', 'CN10.25', 'CN7.28'):
+        for pin in ('CN10.5', 'CN10.3', 'CN10.25', 'CN7.28'):
             self.assertIn(pin, aliases)
+        self.assertNotIn('CN5.2', cn)   # PA9: change C is on the carrier (record 4.6, 2026-11-02)
+        self.assertNotIn('CN10.19', aliases)
         oled = next(ln for ln in bench.splitlines() if ln.startswith('- **OLED wires:**'))
         self.assertIn('Their ARDUINO aliases (CN5.1, CN5.3, CN5.4, CN5.6, CN9.8) stay empty', oled)
         # Record 4.4 step 3, P3, 1.4: the charger's jumpers before power at step 1, not first at step 1b.
@@ -961,11 +961,13 @@ class SheetTier(unittest.TestCase):
 
     def test_each_revision_is_its_own_change(self):
         # Record 6.1: r0.1 = change A (no load switch, the meter on its r0 pins), r0.2 = change B (the two meter
-        # jumpers move), r0.3 = change C (the load switch and the split QT bus); each sheet against the one before.
+        # jumpers move), r0.3 = the second QT cable (QTM); change C, the load switch, was taken out of r0.3 before it
+        # was built (record 4.6, 2026-11-02: deferred to the carrier). Each sheet against the one before.
         r01, r02 = self.frozen('bench-bb-r0.1'), self.frozen('bench-bb-r0.2')
-        for sheet in (r01, r02):
+        for sheet in (r01, r02, self.sheet):
             self.assertNotIn('| LSW |', sheet)
             self.assertNotIn('SENS_EN', sheet)
+        for sheet in (r01, r02):
             self.assertIn('frozen earlier revision', sheet)
         self.assertIn('| CUPS | wind |', r01)
         self.assertIn('NUCLEO CN10.14 | CUPS |', r01)
@@ -975,8 +977,11 @@ class SheetTier(unittest.TestCase):
         self.assertEqual(re.findall(r'^\| jumper \| (\w+) \| [^|]+ \| NUCLEO (\S+) \|$', added, re.M),
                          [('CUPS', 'CN9.5'), ('RAIN', 'CN8.4')])
         _changes, removed, added = self.changes_of(self.sheet, 'bench-bb-r0.2')
-        self.assertIn('| link LK_3V3_CN6_4 | 3V3 | A:e41 (QT.V+) | NUCLEO CN6.4 |', removed)
-        self.assertIn('| jumper | SENS_EN | A:e37 (LSW.EN) | NUCLEO CN5.2 |', added)
+        self.assertNotIn('LK_3V3_CN6_4', removed + added)   # the P1 chain is r0.2's (record 4.6, 2026-11-02)
+        self.assertNotIn('L_REG_3V3', removed + added)
+        self.assertEqual(sorted(re.findall(r'^\| jumper \| (\w+) \| [^|]+ \| [^|]+\((QTM\.[\w+]+)\) \|$', added, re.M)),
+                         [('3V3', 'QTM.V+'), ('GND', 'QTM.GND'), ('I2C_SCL', 'QTM.SCL'), ('I2C_SDA', 'QTM.SDA')])
+        self.assertIn('Nothing.', removed)
         self.assertNotIn('CUPS', removed + added)
 
     def test_station_signals_on_morpho_male_pins_are_dupont_leads(self):
@@ -1072,7 +1077,8 @@ JOINT_POSITIONS = {
 
 
 class ChangeA(unittest.TestCase):
-    """The committed model is step 1 v2, changes A, B and C (record 4.4-4.6, 6.1; bench-bb-r0.3)."""
+    """The committed model is step 1 v2, changes A and B and the QTM cable (record 4.4-4.6, 6.1; bench-bb-r0.3,
+    without change C, which is deferred to the carrier: record 4.6, 2026-11-02)."""
 
     def setUp(self):
         self.w = wiring.load(DATA)
@@ -1149,7 +1155,7 @@ class ChangeA(unittest.TestCase):
         self.assertEqual(self.node(leads['L_TIE'].b), pin['REG.GND'])
         self.assertEqual(self.node(leads['L_NUC_RET'].b), pin['REG.GND'])
         self.assertEqual(self.node(leads['L_REG_3V3'].a), pin['SHUNT.2'])
-        self.assertEqual(self.node(leads['L_REG_3V3'].b), self.node('LSW.IN'))   # P1: no rail run
+        self.assertEqual(self.node(leads['L_REG_3V3'].b), self.node('QT.V+'))   # P1: no rail run
         self.assertEqual(self.node(leads['L_OLED_VCC'].b), pin['OLED.VCC'])
         self.assertEqual(self.node(leads['L_OLED_GND'].b), pin['OLED.GND'])
         self.assertEqual(self.node(leads['L_NTC_THERM'].b), pin['CHGR.THERM'])
@@ -1327,7 +1333,7 @@ class ChangeA(unittest.TestCase):
                                     'header GND and VCC')),
                            ('GAUGE', ('CELL+ position 3', 'insulated', 'STEMMA QT')),
                            ('PACK', ('#1131 pack-mating half, at most 60 mm, no solder',)),
-                           ('REG', ('feeds CN6.4 through the SHUNT, L_REG_3V3 and the LSW.IN strip, the board-A 3V3 node',)),
+                           ('REG', ('feeds CN6.4 through the SHUNT, L_REG_3V3 and the QT.V+ strip, the board-A 3V3 node',)),
                            ('BOBW', ('PRT-00132', 'continuity', '3/4', '2/5')),
                            ('BOBR', ('PRT-00132', 'continuity', '3/4'))):
             for text in texts:
@@ -1394,10 +1400,11 @@ class ChangeB(unittest.TestCase):
         self.assertEqual(wiring.check_firmware(self.w, FIRMWARE), [])
 
 
-class ChangeC(unittest.TestCase):
-    """Change C (record 4.6, R-11, S2, PORT-9; bench-bb-r0.3): PA9 drives a sensor load switch (LSW) on
-    board A; the hub's QT cable takes the switched 3V3_SW, the power monitors' cable QTM the unswitched 3V3;
-    the P1 chain lands on the unswitched node (record 4.4)."""
+class ChangeCDeferred(unittest.TestCase):
+    """Change C (record 4.6, R-11, S2, PORT-9) is deferred to the carrier board (user's decision 2026-11-02;
+    bench-bb-r0.3 redefined in place before it was built): steps 1 and 2 have no sensor power switch. The
+    hub's QT cable and the power monitors' QTM cable are both on the unswitched 3V3; the P1 chain lands on
+    the QT.V+ strip as in r0.2; PA9 is unconnected (the firmware may drive it: harmless)."""
 
     def setUp(self):
         self.w = wiring.load(DATA)
@@ -1406,60 +1413,48 @@ class ChangeC(unittest.TestCase):
     def node(self, end):
         return wiring.raw_node(self.w, end)
 
-    def test_sens_en_is_pa9_at_cn5_2(self):
-        self.assertEqual(self.w.mcu['SENS_EN'], 'PA9')
-        self.assertEqual(sorted(self.w.nets['SENS_EN']), ['LSW.EN', 'N:CN5.2'])
-        self.assertEqual(UM2592['CN5.2'], 'PA9')
-        ends = {h for j in self.jumpers if j.net == 'SENS_EN' for h in (j.a, j.b) if h[0] == 'N'}
-        self.assertEqual(ends, {('N', 'CN5', 2)})   # the Arduino header, never morpho CN10.19
+    def test_there_is_no_sensor_switch(self):
+        self.assertEqual(self.w.revision, 'bench-bb-r0.3')
+        self.assertNotIn('LSW', self.w.parts)
+        for net in ('3V3_SW', 'SENS_EN'):
+            self.assertNotIn(net, self.w.nets)
+        self.assertNotIn('PA9', self.w.mcu.values())
+        ends = {h for j in self.jumpers for h in (j.a, j.b) if h[0] == 'N'}
+        self.assertFalse(ends & {('N', 'CN5', 2), ('N', 'CN10', 19)}, ends)   # PA9 stays empty
 
-    def test_the_parts_of_change_c(self):
-        lsw, qtm, qt = (self.w.parts[p] for p in ('LSW', 'QTM', 'QT'))
-        self.assertEqual((lsw.board, tuple(lsw.pins), lsw.source), ('A', ('IN', 'OUT', 'GND', 'EN'), 'bench check'))
-        for text in ('active-high enable', 'current-limited', '3.3 V', 'headers fitted'):
-            self.assertIn(text, lsw.kind)
-        for text in ('bench check', 'enable pull holds it off at reset (record 4.6 step 2)', 'CN5.2'):
-            self.assertIn(text, lsw.note)
+    def test_the_qtm_branch_is_kept_and_unswitched(self):
+        qtm, qt = self.w.parts['QTM'], self.w.parts['QT']
         self.assertEqual((qtm.board, tuple(qtm.pins)), ('A', ('GND', 'V+', 'SDA', 'SCL')))
-        # Near the hub's cable, in free holes (the planner refuses a part on a used hole).
-        cols = [h[2] for h in qt.pins.values()]
-        for part in (lsw, qtm):
-            with self.subTest(part=part.id):
-                self.assertLessEqual(min(abs(h[2] - c) for h in part.pins.values() for c in cols), 10)
-        self.assertEqual(wiring.prove(self.w, self.jumpers), [])
-
-    def test_the_qt_bus_is_split(self):
         nets = self.w.nets
-        self.assertEqual(sorted(nets['3V3_SW']), ['LSW.OUT', 'QT.V+'])
-        self.assertTrue({'LSW.IN', 'QTM.V+'} <= set(nets['3V3']))
-        self.assertNotIn('QT.V+', nets['3V3'])
-        self.assertTrue({'LSW.GND', 'QTM.GND', 'QT.GND'} <= set(nets['GND']))
+        self.assertTrue({'QT.V+', 'QTM.V+'} <= set(nets['3V3']))
+        self.assertTrue({'QTM.GND', 'QT.GND'} <= set(nets['GND']))
         self.assertTrue({'QT.SDA', 'QTM.SDA'} <= set(nets['I2C_SDA']))
         self.assertTrue({'QT.SCL', 'QTM.SCL'} <= set(nets['I2C_SCL']))
+        cols = [h[2] for h in qt.pins.values()]
+        self.assertLessEqual(min(abs(h[2] - c) for h in qtm.pins.values() for c in cols), 10)
         groups = wiring.connectivity(self.w, self.jumpers)
         hub = next(g for g in groups if 'QT.V+' in g)
-        self.assertEqual(hub, {'LSW.OUT', 'QT.V+'})   # only the switch output feeds the hub
-        monitors = next(g for g in groups if 'QTM.V+' in g)
-        self.assertTrue({'LSW.IN', 'N:CN6.4', 'SHUNT.2'} <= monitors)
+        self.assertTrue({'QTM.V+', 'N:CN6.4', 'SHUNT.2'} <= hub)   # one unswitched 3V3
+        self.assertEqual(wiring.prove(self.w, self.jumpers), [])
 
-    def test_the_p1_chain_never_touches_3v3_sw(self):
-        switched = {self.node(m) for m in self.w.nets['3V3_SW']}
+    def test_the_p1_chain_lands_on_the_qt_v_plus_strip(self):
         link = next(k for k in self.w.link_info if k.id == 'LK_3V3_CN6_4')
         lead = model_lead(self.w, 'L_REG_3V3')
-        for item, end in ((link.id, link.a), (link.id, link.b), (lead.id, lead.a), (lead.id, lead.b)):
-            with self.subTest(item=item, end=end):
-                self.assertNotIn(self.node(end), switched)
         self.assertEqual(self.node(lead.b), self.node(link.a))   # P1: the lead lands where the link starts
+        self.assertEqual(self.node(link.a), self.node('QT.V+'))
+        self.assertEqual(lead.b, 'A:c41')
         self.assertEqual((lead.net, link.exception, lead.exception), ('3V3', 'P1 regulator', 'P1 regulator'))
-        jumper = [j for j in self.jumpers if {wiring.strip(j.a), wiring.strip(j.b)} & switched]
-        self.assertFalse([j for j in jumper if j.net != '3V3_SW'], jumper)
         self.assertEqual(checks.check_lead_geometry(self.w), [])
 
-    def test_power_pin_is_checked(self):
-        self.assertEqual(wiring.FIRMWARE['stage0-node/App/i2c_bus.lit.md']['POWER_PIN'], 'SENS_EN')
+    def test_the_firmware_keeps_pa9_for_the_carrier(self):
+        # i2c_bus, benchlink and i2cscan still name POWER_PIN = PA9 (the carrier's port enable, CN10.19);
+        # the breadboard model does not check it, as it has no SENS_EN.
+        for file in ('stage0-node/App/i2c_bus.lit.md', 'benchlink/App/benchlink.c', 'i2cscan/App/i2cscan.c'):
+            with self.subTest(file=file):
+                found = {m.group(1): m for m in wiring.PIN_DEFINE.finditer((FIRMWARE/file).read_text())}
+                self.assertEqual(found['POWER_PIN'].group(2), '9')
+                self.assertNotIn('POWER_PIN', wiring.FIRMWARE[file])
         self.assertEqual(wiring.check_firmware(self.w, FIRMWARE), [])
-        moved = dataclasses.replace(self.w, mcu={**self.w.mcu, 'SENS_EN': 'PA8'})
-        self.assertTrue(any('POWER_PIN' in p for p in wiring.check_firmware(moved, FIRMWARE)))
 
     def test_every_check_is_clean(self):
         self.assertEqual(checks.run_all(self.w, self.jumpers, ROOT), [])
@@ -1982,17 +1977,20 @@ class GuideBothWays(unittest.TestCase):
         mcu = {k: v for k, v in w.mcu.items() if k != 'CHG'}
         problems = wiring.check_guide_reverse(dataclasses.replace(w, nets=nets, mcu=mcu), GUIDE)
         self.assertTrue(any('(PB10)' in p for p in problems), problems)
-        self.assertFalse(any('(PA9)' in p for p in problems), 'PA9 is SENS_EN in the model (change C)')
+        self.assertFalse(any('(PA9)' in p for p in problems), 'the PA9 row is carrier only (change C deferred)')
 
-    def test_the_pa9_row_is_no_longer_exempt(self):
-        # Record 4.6, 6.5: the guide's PA9 row is step 1 change C, so a model without SENS_EN fails.
+    def test_the_pa9_row_is_carrier_only(self):
+        # Record 4.6 (2026-11-02): change C is deferred to the carrier, so the guide's PA9 row is exempt and the
+        # model, which has no SENS_EN, passes; were the row not exempt, the reverse check would catch it.
         w = wiring.load(DATA)
         row = next(r for r in wiring.guide_table(GUIDE) if r['Pin'] == 'PA9')
-        self.assertNotIn('protoboard only', ' '.join(row.values()).lower())
-        nets = {k: v for k, v in w.nets.items() if k != 'SENS_EN'}
-        mcu = {k: v for k, v in w.mcu.items() if k != 'SENS_EN'}
-        problems = wiring.check_guide_reverse(dataclasses.replace(w, nets=nets, mcu=mcu), GUIDE)
-        self.assertTrue(any('(PA9)' in p for p in problems), problems)
+        self.assertIn('carrier only', row['Wiring'].lower())
+        self.assertNotIn('SENS_EN', w.nets)
+        self.assertFalse(any('(PA9)' in p for p in wiring.check_guide_reverse(w, GUIDE)))
+        text = Path(GUIDE).read_text()
+        line = next(ln for ln in text.splitlines() if ln.startswith('| Sensor power enable | PA9 |'))
+        bare = self.guide(text.replace(line, '| Sensor power enable | PA9 | D9, CN5.2 | a jumper |'))
+        self.assertTrue(any('(PA9)' in p for p in wiring.check_guide_reverse(w, bare)))
 
     def test_a_tied_header_in_a_comment_is_accepted(self):
         w = wiring.load(DATA)

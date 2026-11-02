@@ -373,8 +373,9 @@ class BenchScreen(unittest.TestCase):
 
 
 class SensorPower(unittest.TestCase):
-    """From bench-bb-r0.3 the hub's QT V+ is the PA9 load switch's output (record 4.6): i2cscan drives PA9 high
-    before its first bus access, or the SHT45 is unpowered (wiring.py check_firmware checks only the pin)."""
+    """On the carrier PA9 switches the sensor ports (record 4.6; change C, deferred from the breadboard to the
+    carrier on 2026-11-02): i2cscan drives PA9 high before its first bus access, or a carrier sensor is unpowered.
+    On the breadboard PA9 is unconnected, so the drive is harmless there."""
 
     def setUp(self):
         self.src = (ROOT/'firmware/i2cscan/App/i2cscan.c').read_text()

@@ -147,44 +147,6 @@
     "z": 8.5
    }
   ],
-  "ref": "3D_LSW_0",
-  "x": 66.04,
-  "y": 7.62
- },
- {
-  "box": [
-   0.0,
-   -6.35,
-   17.78,
-   15.24,
-   1.6,
-   11.0,
-   [
-    0.2,
-    0.45,
-    0.3
-   ]
-  ],
-  "models": [
-   {
-    "file": "${KIPRJMOD}/models/3D_LSW_1.wrl",
-    "rot": 0,
-    "z": 11.0
-   }
-  ],
-  "ref": "3D_LSW_1",
-  "x": 69.85,
-  "y": 1.2700000000000005
- },
- {
-  "box": null,
-  "models": [
-   {
-    "file": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x04_P2.54mm_Vertical.step",
-    "rot": -90,
-    "z": 8.5
-   }
-  ],
   "ref": "3D_QTM_0",
   "x": 35.56,
   "y": 7.62
@@ -1341,45 +1303,6 @@
    }
   ],
   "ref": "3D_W32",
-  "x": 0.0,
-  "y": 0.0
- },
- {
-  "box": null,
-  "models": [
-   {
-    "file": "${KIPRJMOD}/models/3D_W33.wrl",
-    "rot": 0,
-    "z": 0.0
-   }
-  ],
-  "ref": "3D_W33",
-  "x": 0.0,
-  "y": 0.0
- },
- {
-  "box": null,
-  "models": [
-   {
-    "file": "${KIPRJMOD}/models/3D_W34.wrl",
-    "rot": 0,
-    "z": 0.0
-   }
-  ],
-  "ref": "3D_W34",
-  "x": 0.0,
-  "y": 0.0
- },
- {
-  "box": null,
-  "models": [
-   {
-    "file": "${KIPRJMOD}/models/3D_W35.wrl",
-    "rot": 0,
-    "z": 0.0
-   }
-  ],
-  "ref": "3D_W35",
   "x": 0.0,
   "y": 0.0
  },

@@ -147,12 +147,14 @@ static void storm(void)
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
 }
 
-/* TEST-SENSOR-POWER (bench only): the PA9 sensor switch test of the build-progression record's step 1
- * exit criterion 9 (change C, section 4.6). SPOWER_CYCLES cycles of PA9 low for SPOWER_HALF_MS, then
+/* TEST-SENSOR-POWER (bench builds; carrier only): the PA9 port power-cycle test of the build-progression
+ * record's step 3 (change C, deferred to the carrier on 2026-11-02, section 4.6 dated note; it was step 1
+ * exit criterion 9). On the breadboard and the protoboard PA9 is unconnected, so it switches nothing
+ * there. SPOWER_CYCLES cycles of PA9 low for SPOWER_HALF_MS, then
  * high for SPOWER_HALF_MS, one #test line per edge, then a summary. A one-shot timer paces the edges;
  * the edges and the lines come from the main loop (lines are printed only there), on the storm's
  * sequencer task. Sampling goes on: the switched sensors drop off and are found again, and the power
- * monitors, on the unswitched QT branch, must read throughout. A half outlasts WSMP_SAMPLE_MS, so
+ * monitors (and the SHTC3), unswitched, must read throughout. A half outlasts WSMP_SAMPLE_MS, so
  * every part is addressed in every half (the INA228s each second, the sensors and the gauge every
  * 15 s). recoveries and stuck count from the command (i2c_bus.h). ack and fail are the parts (bit c for
  * enum i2c_client c, the record clients left out) that answered and that failed in the half that ended

@@ -107,7 +107,7 @@ recommendation (R1–R13) that the decision replaces.
 
 | ID | Decision | Why | Rejected alternatives |
 |---|---|---|---|
-| P1 | **No battery, charge, input or load current through any breadboard contact, header pin or Dupont contact, in any step.** The breadboard carries only sense and logic lines (µA to a few mA). One tolerated exception, in mode B only: **the S7V8F3 regulator's supply chain**. Its input side: the VIN and GND pins (30–60 mA), fed by L_REG_VIN (from the OUT node into the regulator VIN strip) and L_TIE (from STAR into the regulator GND strip), 22 AWG solid, with L_NUC_RET (CN6.7 into the same GND strip) carrying the station return. Its output side, which carries the whole station current (MCU and radio, tens of mA with peaks in TX, plus the sensors): REG.VOUT pin → LK_REG_SHUNT (REG.VOUT → SHUNT.1) → the BATTERY POWER SHUNT header → L_REG_3V3 → the unswitched board-A 3V3 node → LK_3V3_CN6_4 (that node → N:CN6.4) → CN6.4. *Dated note (2026-10-30):* that node is the strip on board A where LK_3V3_CN6_4 starts, and L_REG_3V3 lands in that strip itself: the QT.V+ strip (A:c41) in r0.1 and r0.2 (changes A and B; there is no LSW before change C), the LSW.IN strip (A:c34) from r0.3 (change C), as the r0.3 sheet's Remove and Add lists show. Landing it on the A:L+ rail put a planner jumper (no stable id, renumbered on every regeneration) and two rail contacts into the chain, untagged and never wiggled. D3 check 1 now also checks that each chain member lands where the next one starts (`checks.P1_ORDER`). These are stable ids in the model; the build sheet's W-numbers change on every regeneration (section 4.4). Every member of the chain is tagged `exception = "P1 regulator"` in wiring.toml, and the mode-B rows of section 4.3 (C15, C20–C23) measure it during radio TX. From POWE-1, MEAS-1, HYGI-1, PHAS-2 | every power failure (F1, F4) was a friction contact carrying current. With no current in a contact, its resistance stops mattering: 4 Ω in series with the INA228's VBUS input (about 1 MΩ) is about 4 µV | R4 (doubled or tripled breadboard jumpers): the single header-pin contact stays the weak point, and parallel contacts hide a failing one. R5 (a fresh BB830 as the power fix): new springs still loosen; no BusBoard contact-resistance figure exists. Keeping the 38 mA load in the OUT and GND strips: that is where F4 sat |
+| P1 | **No battery, charge, input or load current through any breadboard contact, header pin or Dupont contact, in any step.** The breadboard carries only sense and logic lines (µA to a few mA). One tolerated exception, in mode B only: **the S7V8F3 regulator's supply chain**. Its input side: the VIN and GND pins (30–60 mA), fed by L_REG_VIN (from the OUT node into the regulator VIN strip) and L_TIE (from STAR into the regulator GND strip), 22 AWG solid, with L_NUC_RET (CN6.7 into the same GND strip) carrying the station return. Its output side, which carries the whole station current (MCU and radio, tens of mA with peaks in TX, plus the sensors): REG.VOUT pin → LK_REG_SHUNT (REG.VOUT → SHUNT.1) → the BATTERY POWER SHUNT header → L_REG_3V3 → the unswitched board-A 3V3 node → LK_3V3_CN6_4 (that node → N:CN6.4) → CN6.4. *Dated note (2026-10-30):* that node is the strip on board A where LK_3V3_CN6_4 starts, and L_REG_3V3 lands in that strip itself: the QT.V+ strip (A:c41) in r0.1 and r0.2 (changes A and B; there is no LSW before change C), the LSW.IN strip (A:c34) from r0.3 (change C), as the r0.3 sheet's Remove and Add lists show (*2026-11-02:* r0.3 is redefined without the load switch, so it lands in the QT.V+ strip (A:c41) too; section 4.6 dated note). Landing it on the A:L+ rail put a planner jumper (no stable id, renumbered on every regeneration) and two rail contacts into the chain, untagged and never wiggled. D3 check 1 now also checks that each chain member lands where the next one starts (`checks.P1_ORDER`). These are stable ids in the model; the build sheet's W-numbers change on every regeneration (section 4.4). Every member of the chain is tagged `exception = "P1 regulator"` in wiring.toml, and the mode-B rows of section 4.3 (C15, C20–C23) measure it during radio TX. From POWE-1, MEAS-1, HYGI-1, PHAS-2 | every power failure (F1, F4) was a friction contact carrying current. With no current in a contact, its resistance stops mattering: 4 Ω in series with the INA228's VBUS input (about 1 MΩ) is about 4 µV | R4 (doubled or tripled breadboard jumpers): the single header-pin contact stays the weak point, and parallel contacts hide a failing one. R5 (a fresh BB830 as the power fix): new springs still loosen; no BusBoard contact-resistance figure exists. Keeping the 38 mA load in the OUT and GND strips: that is where F4 sat |
 | P2 | **Current leaves the bq24074 breakout only through its own JST PH sockets.** BATT: pin 2 is VLIPO (= header LIPO = the chip's BAT), pin 1 GND. SYSOUT: pin 2 is OUT (= header OUT), pin 1 GND. The 11-pin header stays in the breadboard for CHG, PGOOD, ISET and VBUS (to the divider). Header LIPO (a51), OUT (a53) and the three GND pins (a50, a52, a59) each sit alone in their strip: zero-current test points for BAT, OUT and VSS. From POWE-2, MEAS-1 | checked in the Adafruit schematic: BATT and SYSOUT are "JST 2PH SMT-RA" with those nets. JST PH is rated 2 A at 24 AWG, contact resistance 10 mΩ initial, 20 mΩ after environmental tests | Power through the header pins (the failed bench). OUT and GND on female Dupont leads from the header pins to lever connectors (PHAS-2): it keeps a header contact and a Dupont contact in the load path. A Dupont pin in a lever connector: a poor joint |
 | P3 | **Battery + path (no breadboard, no solder, the pack's own lead never cut):** pack plug → pack-mating half of a cut Adafruit #1131 (lead ≤ 60 mm) → WAGO 222-415 **CELL+** → 22 AWG solid ≤ 50 mm → INA228 terminal VIN+ (X1 pin 3) → 15 mΩ shunt → VIN− (X1 pin 1) → 22 AWG solid ≤ 50 mm → WAGO 222-413 **BATT** → board-mating half of the same #1131 (≤ 60 mm) → charger BATT socket. **While the INA228 meters the battery, the pack never plugs into the charger's BATT socket.** Charge current stays at the board default (1A jumper, R_ISET 1 kΩ, 0.89 A typ). Never the 1.5A setting on this pack. **Decided 2026-10-30 (7.1 P3): yes, change A as written**; the direct plug-in of 2026-10-28 is retired. From POWE-3, MEAS-2, PHAS-2 | the BATT socket is the LIPO node, so a pack in it bypasses the shunt (F5). Screw terminals take solid wire only (P7), so stranded pigtails meet the INA228 through a lever connector; that costs one clamp pair (about 2 mΩ) and needs no ferrule crimper. Two #1131 halves from one cable give both pigtails | Pass-through via the MAX17048 board (pragmatist): its trace rating is unpublished, and its ground would sit in the 1 A return. R1 "a Wago on every joint": every extra joint adds resistance inside the BAT sense loop. Cutting the pack lead: it is polarised, rated and behind the pack protection. Ferrules on 26 AWG into the screw terminal (POWE-3/7): needs a crimper and a 0.25 mm² ferrule is oversized for 0.13 mm² |
 | P4 | **Ground: one WAGO 222-415 STAR at pack negative.** Positions: (1) pack − (pack pigtail black), (2) charger BATT − (board pigtail black), (3) the 100 Ω load return, (4) the **TIE**, (5) one spare, kept for step 1b exit (g)'s second 100 Ω (a 222-415 has no sixth position). The TIE is the only conductor between STAR and logic ground, in both power modes: one 22 AWG solid lead, L_TIE, from STAR into the regulator GND strip on breadboard B, which the model's regulator-GND link already joins to the B ground rail. Not connected to anything: the charger SYSOUT pigtail's black lead (insulated, folded back), the MAX17048 pigtail's black lead (insulated; the gauge gets ground over STEMMA QT), the charger header GND pins (test points), and the INA228 header GND and VCC (the INA228 takes power and ground over STEMMA QT). The charger input always comes from a floating wall adapter, never from the Mac or a hub that shares the NUCLEO ground. From POWE-4, MEAS-3, NUCL-4 | every extra path between cell − and NUCLEO ground is a loop that takes a share of the battery return through 28 AWG QT cables and breadboard contacts. A fixed TIE means a mode change never touches ground (MEAS-3's mode-swapped tie can be forgotten). The charger's VSS sits about 1 A × (board pigtail − lead and mating, ≤ 40 mΩ) ≤ 40 mV from STAR during charge: against V_ISET = 2.2 V that is under 2 % of the ISET reading, absorbed by its gain fit (M2) | R3 as a star with several ties, or the gauge's Kelvin minus to STAR (MEAS-3/4): a second tie through gauge → QT → NUCLEO. A tie swapped between CN6.6 and the regulator GND by mode (MEAS-3). No star, ground from the charger header strip (pragmatist). SYSOUT − to STAR (POWE-4): a second parallel conductor between charger GND and STAR, which blurs the − span measurement |
@@ -162,9 +162,9 @@ recommendation (R1–R13) that the decision replaces.
 | ID | Decision | Why | Rejected alternatives |
 |---|---|---|---|
 | S1 | **Seven steps, two axes.** Build steps: **1** breadboard v2 (no solder); **1b** the same bench with profile B, four rails on the bq24074; **2** hand-soldered protoboard (shield + module board), where H01 runs; **2c** BQ25798EVM on the step 2 harness (no solder); **3** carrier PCB under the NUCLEO (v1 base board, BQ25798 only); **4** the carrier in the enclosure, in the field; **5** custom STM32WL55 board (PRD Stage 4). Power profiles A, B, C stay as the power-telemetry spec defines them, selected by `WS_POWER_PROFILE`. **Order, decided 2026-10-30 (7.1 Q1 yes, Q8 H01 first): 1 → 2 (H01) → 1b → 2c → 3 → 4 → 5.** **Gates:** step 2 needs step 1's exit, with the module board's three phase-B INA228 positions **left unpopulated and unwired**. Step 1b runs after step 2's H01 run has passed (`next-stages-plan.md:36` and `H01-checklist.md:6`: Stage 1 power work waits for H01); the INA228 module preparation it needs is allowed (7.1 Q1). It runs on the step 2 plate: the three extra INA228s sit in a small breadboard kept on the plate for their signal pins, on the same lever-connector harness, with no solder beyond module preparation. Only after 1b exits are those three boards moved into their module-board positions and soldered by their headers; 1b's checks are then re-run as a confirmation, never as the first proof. 2c needs H01 passed and 1b's exit. 3's layout needs 2 and 2c exits and the measured NUCLEO underside (S4); the cell count (1S3P, 7.1 Q3) and OQ-14 (7.1 Q7) were decided on 2026-10-30. Guide build step 1 = step 1; build step 2 = steps 2, 1b and 2c; build step 3 = steps 3–5. From PHAS-1, MEAS-14 | Clint's rule puts every proof before the solder that freezes it, including four-rail metering. Profile B on the bq24074 separates two unknowns (the monitors, then the charger). Putting four-rail work (three INA228s, a panel, a 24 h balance) on H01's critical path would reverse a stage gate Clint set; he kept the gate (7.1 Q8) | BQ25798 and four rails together (pragmatist). A soldered bq24074 power board or carrier (throwaway at step 3). 1b in parallel with step 2 on one harness (PHAS-1). 1b before step 2 as the default (the first version of this record): it moved the H01 gate without asking. Running 1b's checks first on the soldered module board (the first version's "Q1 = no" branch): that proves on solder |
-| S2 | **Step 2 form.** The **force path is not re-soldered**: the step 1 JST PH + WAGO + INA228-terminal harness moves unchanged to the step 2 plate, re-measured; step 1b later extends it there (S1). Signals are soldered on two boards, and **every soldered circuit was first proved on the breadboard in step 1** (exit criteria 9 and 10 cover the two that were not in the first version): (a) the **#196 shield** on the NUCLEO, with the circuits that belong at the MCU: ISET's 100 nF and 1 MΩ, the divider's bottom 10 kΩ, the mode-B BATTERY POWER shunt header feeding the shield's 3V3 (CN6.4, the entry step 1 proves), the PA9 sensor load switch **only if step 1's exit 9 passed** (otherwise it is left off and `i2c_bus` keeps its no-op until the mux), the STEMMA QT-to-header leads (unswitched to the power monitors, switched to the hub, as in step 1), and JST-XH headers to (b); (b) a full-size **Perma-Proto module board** laid out like breadboards A and B, with the charger, the battery INA228, the gauge and the regulator soldered by their headers (signals only), **the three phase-B INA228 positions unpopulated and unwired until step 1b exits** (S1), the two BOB-14021 RJ11 breakouts **with the meter pull-ups, RC filters and the vane pull-up beside them at the jack end** (M7), ISET's 10 kΩ and the divider's top 20 kΩ at the charger (so every charger analog node leaves the module board only through its series resistor), and JST-XH leads to the shield. The charger's BATT and SYSOUT sockets stay the only force exits; its header LIPO, OUT and GND pins are soldered to isolated pads (test points). No current-carrying pad or trace on either board except the P1 regulator chain (VIN/GND leads and the 3V3 feed to the shield). From PHAS-6, NUCL-7, HYGI-11 | what passed the 1 A checks carries forward unchanged; soldering a new force path for a charger that leaves at step 3 would be unproven and thrown away. The full-size Perma-Proto mirrors board B hole for hole, so the wiring.toml placement carries over | Charger LIPO/OUT carrying current through soldered pins (POWE-2/3 carry): a new, unproven force path. A Perma-Proto as the main board with morpho flying leads. A half-size module board (the parts need over 50 columns) |
+| S2 | **Step 2 form.** The **force path is not re-soldered**: the step 1 JST PH + WAGO + INA228-terminal harness moves unchanged to the step 2 plate, re-measured; step 1b later extends it there (S1). Signals are soldered on two boards, and **every soldered circuit was first proved on the breadboard in step 1** (exit criterion 10 covers the mode-B entry, which was not in the first version; exit 9 covered the PA9 switch until 2026-11-02, see the dated note): (a) the **#196 shield** on the NUCLEO, with the circuits that belong at the MCU: ISET's 100 nF and 1 MΩ, the divider's bottom 10 kΩ, the mode-B BATTERY POWER shunt header feeding the shield's 3V3 (CN6.4, the entry step 1 proves), ~~the PA9 sensor load switch **only if step 1's exit 9 passed** (otherwise it is left off and `i2c_bus` keeps its no-op until the mux)~~ (superseded 2026-11-02: no sensor switch at step 2), the STEMMA QT-to-header leads (one to the power monitors, one to the hub, both on the unswitched 3V3, as in step 1), and JST-XH headers to (b); (b) a full-size **Perma-Proto module board** laid out like breadboards A and B, with the charger, the battery INA228, the gauge and the regulator soldered by their headers (signals only), **the three phase-B INA228 positions unpopulated and unwired until step 1b exits** (S1), the two BOB-14021 RJ11 breakouts **with the meter pull-ups, RC filters and the vane pull-up beside them at the jack end** (M7), ISET's 10 kΩ and the divider's top 20 kΩ at the charger (so every charger analog node leaves the module board only through its series resistor), and JST-XH leads to the shield. The charger's BATT and SYSOUT sockets stay the only force exits; its header LIPO, OUT and GND pins are soldered to isolated pads (test points). No current-carrying pad or trace on either board except the P1 regulator chain (VIN/GND leads and the 3V3 feed to the shield). *Dated note (2026-11-02):* change C's PA9 sensor load switch (LSW, net 3V3_SW) is **deferred to the carrier** (Clint's decision, 2026-11-02; section 4.6 dated note); steps 1 and 2 have no sensor power switch. PA9 stays unconnected on the shield and `i2c_bus` keeps its power-cycle no-op until the carrier. From PHAS-6, NUCL-7, HYGI-11 | what passed the 1 A checks carries forward unchanged; soldering a new force path for a charger that leaves at step 3 would be unproven and thrown away. The full-size Perma-Proto mirrors board B hole for hole, so the wiring.toml placement carries over | Charger LIPO/OUT carrying current through soldered pins (POWE-2/3 carry): a new, unproven force path. A Perma-Proto as the main board with morpho flying leads. A half-size module board (the parts need over 50 columns) |
 | S3 | **Step 2c**: a BQ25798EVM replaces the bq24074 on the step 2 Wago harness. The bq24074 stays soldered on the module board but is fully disconnected: its BATT and SYSOUT pigtails unplugged, and **its JST-XH signal link (CHG, PGOOD, ISET, VBUS) unplugged** from the shield, so its unpowered !PGOOD pin and LED cannot load PB8, which becomes the BQ25798 /INT. The EVM gets its own JST-XH lead into the shield's charger header with /INT on the PGOOD position (PB8) and the CHG, ISET and VBUS positions open; its I2C joins the unswitched QT branch. The model records the unplugged link and the new lead (`bench-protoboard-r0`). Same four INA228s and addresses; VAC1 = solar, VAC2 = USB-C; the EVM strapped for 1S per its user guide. **Before the pack's lever is closed**, the driver writes and reads back ICHG ≤ 1.0 A (P8's budget and the JST PH 2 A rating; the BQ25798 can charge at up to 5 A), the input current limit ≤ 2 A (the wall adapter) and VREG 4.2 V, with charging held off by the EVM's /CE jumper until the read-back matches; the driver re-writes them after any watchdog or POR reset (verify which registers reset in SLUSDV2). Profile C firmware plus a BQ25798 driver (new work, outside the power-telemetry design). From PHAS-7 | the EVM is a finished board: no solder. With the monitors already trusted from 1b, any discrepancy is the charger's | The BQ25798 straight onto the carrier. 2c before 1b. Leaving the bq24074's link plugged (an unpowered pin on /INT). Trusting the POR charge current |
-| S4 | **Step 3, carrier rev A (OQ-14)**: under the NUCLEO on morpho (N7); BQ25798 only; four INA228s (P10); the MAX17048 (the carrier stays 1S3P, 7.1 Q3); the SHTC3 and the TCA9548A at 0x71 with RESET on PB14, upstream/downstream exactly as the ports spec says; the RJ11 sensor ports and meter ports 12 and 13; connectors per H6; the step 2 shield's and module board's signal circuits. **OQ-14 decided 2026-10-30 (7.1 Q7)**: the v1 base board is this carrier. Entry: steps 2 and 2c exited; the underside pin length and clearance measured on a real NUCLEO-WL55JC1 (N7; *satisfied 2026-10-30* by the fit test in 7.1 N7: a standard-height 2.54 mm female socket works); the morpho grid from ST's NUCLEO-64 mechanical drawing; an outline that fits the redrawn chassis. From PHAS-8, NUCL-9 | the one spin, with the charger that ships | A bq24074 carrier first. Layout during 2c |
+| S4 | **Step 3, carrier rev A (OQ-14)**: under the NUCLEO on morpho (N7); BQ25798 only; four INA228s (P10); the MAX17048 (the carrier stays 1S3P, 7.1 Q3); the SHTC3 and the TCA9548A at 0x71 with RESET on PB14, upstream/downstream exactly as the ports spec says; the RJ11 sensor ports and meter ports 12 and 13; connectors per H6; the step 2 shield's and module board's signal circuits. *Dated note (2026-11-02):* "signal circuits" means the meter pull-ups, RC filters and vane pull-up at the jack end (M7) and the I2C bus, **not** the bq24074-only circuits: the carrier has no ISET network and no VBUS / 3 divider (the BQ25798 reports its own currents and voltages over I2C), so PB1 and PA10 are released and PB10 (CHG) is not wired; PB8 becomes the BQ25798 /INT as at 2c (S3). The carrier also takes change C (deferred from step 1, section 4.6 dated note): PA9 (CN10.19) drives current-limited high-side power per sensor port (PORT-5), the port pull-ups after the switch, the power monitors and the SHTC3 unswitched (PORT-9), with a bench test equivalent to the old exit 9 (step 3). `docs/superpowers/specs/2026-11-02-carrier-board-requirements.md` is the carrier's requirements. **OQ-14 decided 2026-10-30 (7.1 Q7)**: the v1 base board is this carrier. Entry: steps 2 and 2c exited; the underside pin length and clearance measured on a real NUCLEO-WL55JC1 (N7; *satisfied 2026-10-30* by the fit test in 7.1 N7: a standard-height 2.54 mm female socket works); the morpho grid from ST's NUCLEO-64 mechanical drawing; an outline that fits the redrawn chassis. From PHAS-8, NUCL-9 | the one spin, with the charger that ships | A bq24074 carrier first. Layout during 2c |
 | S5 | **Steps 4 and 5.** Step 4: the carrier in the printed chassis in the IP66 box, outdoors; the path metric, the VCELL step flag and the power-balance residual (M6, power form) become health-report alarms. Step 5: the custom STM32WL55 board starts only after step 4 shows the ports and power stage frozen; it keeps the N1 pins, addresses, net names and connector families. From PHAS-9 | the product engineer's and metrologist's order; the enclosure is reprinted once | The custom board before a field run |
 
 ### 2.6 Documentation truth
@@ -227,7 +227,7 @@ differs from the one proposed, the last column says how and why.
 | R-7 | the 1b path metric divides by a ΔI that does not exist in mode A | M6: drop form in mode A; ΔV/ΔI only with PGOOD inactive and a real step; 1b exit adds a deliberate 100 Ω step at LOAD | accepted as proposed |
 | R-8 | leaving the #196's 5V terminal empty does not isolate the 5V net | N6: 5V, VIN, IOREF and AREF header pins not fitted; proto rails traced by meter before any circuit is soldered | accepted as proposed |
 | R-10 | Q1 defaulted to "yes" on soldering, and its "no" branch proved four rails on solder | Q1 defaults to "no, wait for Clint"; phase-B positions unpopulated; 1b only on the breadboard; S1, S2 and step 2 rewritten | accepted as proposed. Superseded 2026-10-30: Clint answered Q1 yes (7.1 Q1) |
-| R-11 | step 2 solders the PA9 switch and the CN6.4 mode-B feed, which step 1 never proved | step 1 change C and exits 9 and 10; the mode-B feed moves to CN6.4 in step 1; the PA9 switch is soldered at step 2 only if exit 9 passes | the proposal's alternative (the shield keeps CN7.16 as the feed) is rejected: the shield cannot reach morpho and step 2's exit forbids Dupont on NUCLEO pins. Exit 9 is written so that a failure defers the switch to the mux instead of failing step 1 |
+| R-11 | step 2 solders the PA9 switch and the CN6.4 mode-B feed, which step 1 never proved | step 1 change C and exits 9 and 10; the mode-B feed moves to CN6.4 in step 1; the PA9 switch is soldered at step 2 only if exit 9 passes | the proposal's alternative (the shield keeps CN7.16 as the feed) is rejected: the shield cannot reach morpho and step 2's exit forbids Dupont on NUCLEO pins. Exit 9 is written so that a failure defers the switch to the mux instead of failing step 1. *Superseded in part 2026-11-02:* the PA9 switch and exit 9 moved to the carrier (section 4.6 dated note); the CN6.4 mode-B feed and exit 10 stay in step 1 |
 | R-12 | a current balance cannot hold across the BQ25798 | M6: current form for profiles A and B, power form with a measured efficiency band from profile C on; 2c and step 4 use the power form | accepted as proposed |
 | R-14 | H01 was made to wait on four-rail work without asking | S1 default restored to the existing gate; Q8 added | accepted as proposed. Confirmed 2026-10-30: H01 first (7.1 Q8) |
 | R-15 | the record resolved OQ-14, Clint's open question | Q7 added; S4 gated on it; cascade says "proposed" | accepted as proposed. Superseded 2026-10-30: Clint decided OQ-14 (7.1 Q7) |
@@ -244,16 +244,19 @@ Summary:
 
 | Step | Built | Power profile | Solder | Proves | Exit gate (short) |
 |---|---|---|---|---|---|
-| 1 | breadboard v2: force path on JST PH + WAGO, signals on the breadboard, NUCLEO on Arduino headers, OLED straight to the NUCLEO, mode-B feed at CN6.4, pins remapped, PA9 switch from a breakout | A (and mode B) | none | the force/sense topology, the budget, the path metric and step flag, the pin map, the mode-B supply chain, the PA9 switch | section 4.3 checklist (both modes), normal termination, 12 h path, two injection cases, gauge agreement, pulse counts, model tests, PA9 power cycle, mode B 1 h |
+| 1 | breadboard v2: force path on JST PH + WAGO, signals on the breadboard, NUCLEO on Arduino headers, OLED straight to the NUCLEO, mode-B feed at CN6.4, pins remapped | A (and mode B) | none | the force/sense topology, the budget, the path metric and step flag, the pin map, the mode-B supply chain | section 4.3 checklist (both modes), normal termination, 12 h path, two injection cases, gauge agreement, pulse counts, model tests, mode B 1 h |
 | 2 | #196 shield + Perma-Proto module board (phase-B INA228 positions empty); force harness unchanged | A | yes | the soldered signal layer; H01 | H01 24 h, mode B 1 h, USB test, re-run checklist |
 | 1b | three more INA228s on the step 2 plate's breadboard and the same harness, after H01 (decided 2026-10-30 (7.1 Q8)) | B | module preparation only (allowed, 7.1 Q1) | four-rail metering, signs, current balance, the D2/D4 OR pair one source at a time | rails vs DMM, 24 h balance with a source change, back-feed both ways, input margin, pull-ups, same-chip ΔV/ΔI on a load step |
 | 2c | BQ25798EVM on the step 2 harness (re-terminated) | C | none | the charger configuration and driver | profile C end to end, 24 h power balance in the measured efficiency band, ADC agreement, TS stop and resume, H02 basis, full C12–C23 re-run |
-| 3 | carrier PCB under the NUCLEO (OQ-14, decided 2026-10-30 (7.1 Q7)) | C | PCB | everything above in copper | all numbers reproduced, H02, the listed H03 bench items, H04a, enclosure fit |
+| 3 | carrier PCB under the NUCLEO (OQ-14, decided 2026-10-30 (7.1 Q7)) | C | PCB | everything above in copper, and the PA9 port power switching (change C, from 2026-11-02) | all numbers reproduced, H02, the listed H03 bench items, H04a, the port power cycle, enclosure fit |
 | 4 | carrier in the enclosure, outdoors | C | — | field behaviour | field run ≥ H01 length without alarm, H03 proper, the chosen sealing tested |
 | 5 | custom STM32WL55 board | C | PCB | integration | re-pass steps 3 and 4 |
 
 The table lists the build order decided 2026-10-30 (7.1 Q1 yes, Q8 H01 first; S1):
 1 → 2 (H01) → 1b → 2c → 3 → 4 → 5.
+
+*Dated note (2026-11-02):* the PA9 sensor switch (change C's load switch, exit 9) left the step 1
+row for the step 3 row (Clint's decision; section 4.6 dated note).
 
 ### Step 1: breadboard v2 (no solder)
 
@@ -261,11 +264,13 @@ The table lists the build order decided 2026-10-30 (7.1 Q1 yes, Q8 H01 first; S1
   SYSOUT sockets, OUT, STAR, TIE); the gauge and VBUS sense leads; ISET and divider parts (M2); the
   NUCLEO signals moved to the Arduino headers (N3); the OLED's supply pair straight to the NUCLEO
   and the mode-B feed moved to CN6.4 (N3); the base plate (H1). Change B: the cups and rain remap
-  (N2). Change C: the PA9 sensor load switch from a pre-assembled breakout, the QT bus split into an
-  unswitched branch (power monitors) and a switched branch (sensor hub), and the mode-B hour. Parts
+  (N2). Change C: the QT bus split into a branch to the power monitors and a branch to the sensor
+  hub, both on the unswitched 3V3, and the mode-B hour. *Dated note (2026-11-02):* change C no longer
+  carries the PA9 sensor load switch or a switched branch; both moved to the carrier (section 4.6
+  dated note). Parts
   and joints are listed in section 4.
-- **Proves.** P1–P9, M1–M7, N1–N4, the mode-B supply chain into CN6.4, the PA9 switch (or proves it
-  must wait for the mux), the build sheet's accuracy.
+- **Proves.** P1–P9, M1–M7, N1–N4, the mode-B supply chain into CN6.4, the build sheet's accuracy.
+  (Until 2026-11-02 also the PA9 switch; it moved to the carrier.)
 - **Carries forward unchanged.** The force harness to steps 1b and 2 (at 2c the BATT and OUT leads
   are re-terminated into the EVM, so 2c re-runs C12–C23 in full), every net name, every MCU pin, the
   CN6.4 mode-B entry, the 0x40 address, the checklist and limits, the path metric, the step flag and
@@ -301,7 +306,9 @@ The table lists the build order decided 2026-10-30 (7.1 Q1 yes, Q8 H01 first; S1
      changes `iset_ohms` first; the fit and the measured resistors likewise go into the model first
      (M2 dated note).
   8. The USB acceptance test H8(d) is run and recorded (a failure buys the hub, it does not block).
-  9. **PA9 sensor switch** (change C): firmware drives PA9 low for 16 s and high again 10 times; each
+  9. *Removed 2026-11-02 (Clint's decision): the PA9 sensor switch moved to the carrier; step 1 has
+     no exit 9 and its number is kept so exit 10 keeps its name. The step 3 port power-cycle test
+     replaces it. The text below is kept as history.* ~~**PA9 sensor switch** (change C): firmware drives PA9 low for 16 s and high again 10 times; each
      time the sensors on the switched branch drop off the bus and are found again, `i2c_bus`'s
      recovery leaves the bus working, and the power monitors on the unswitched branch read throughout
      without a NACK. With PA9 low, the switched rail reads ≤ 0.5 V. *Dated note (2026-10-30):* each
@@ -316,7 +323,7 @@ The table lists the build order decided 2026-10-30 (7.1 Q1 yes, Q8 H01 first; S1
      `fail`; `recoveries=0 stuck=0` throughout. The 87V reads 3V3_SW in a low half. If the switched rail is held higher
      (sensors back-powered through their I/O pins from the live bus) or the bus stalls while they are
      off, the result is recorded, the switch is **not** soldered at step 2, and port power waits for
-     the mux (PORT-5). Either outcome exits this criterion; only an unrecorded result fails it.
+     the mux (PORT-5). Either outcome exits this criterion; only an unrecorded result fails it.~~
   10. **Mode B for 1 hour** (the 10-18 bench check 5, moved here so mode B is proved before solder):
       the station runs from the regulator through the CN6.4 entry, readings reach the gateway every
       minute, the mode-B rows of section 4.3 (C15, C20–C23) pass, and no reset is logged.
@@ -324,7 +331,7 @@ The table lists the build order decided 2026-10-30 (7.1 Q1 yes, Q8 H01 first; S1
   gate H01 (step 2), not soldering.
 - **Docs and drawings true at exit.** `wiring.toml` and its build sheet, renders and schematic
   (step 1 topology, tagged `bench-bb-r0.1` after change A, `bench-bb-r0.2` after change B and
-  `bench-bb-r0.3` after change C); the build sheet's power-path table with its coverage note
+  `bench-bb-r0.3` after change C, redefined in place 2026-11-02 without the load switch); the build sheet's power-path table with its coverage note
   (PATH_CELL_OUT does not cover the pack mating);
   guide sections 2, 4, 5, 6, 6b; benchlink README wiring; `board_inputs.c` and its tests;
   `power_config.h` holding `POWER_R_ISET_OHM 1000`, `POWER_ISET_GAIN_PPM` (the M2 fit) and
@@ -333,6 +340,8 @@ The table lists the build order decided 2026-10-30 (7.1 Q1 yes, Q8 H01 first; S1
   divider); R_ISET confirmed by build-sheet check 2; Clint to confirm (design D4/D5);
   power-telemetry 11.1–11.3 amendments; D1's word rule holds (a repo-wide grep finds "nominally" in
   no document but this record's rule).
+
+> **Parked 2026-11-02.** Steps 1b, 2, 2c, 3, 4 and 5 (from here to section 4) are parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
 
 ### Step 1b: four rails on the bq24074 (profile B)
 
@@ -399,7 +408,8 @@ allowed (7.1 Q1). It is described here, after step 1, because it extends step 1'
 - **Built.** S2: the #196 shield (N6) and the full-size Perma-Proto module board, with the three
   phase-B INA228 positions unpopulated and unwired; the step 1 force harness moved unchanged to the
   same plate; an existing full-size breadboard left on the plate for step 1b's boards (S1; 2026-11-02: no half-size board is bought). Everything soldered here
-  passed step 1 first; the PA9 switch is fitted only if step 1's exit 9 passed.
+  passed step 1 first. ~~the PA9 switch is fitted only if step 1's exit 9 passed.~~ *2026-11-02:* step 2
+  has no PA9 switch (moved to the carrier, section 4.6 dated note); PA9 stays unconnected.
 - **Proves.** The soldered signal layer, mode B on the same CN6.4 entry proved in step 1, the 24 h
   H01 run.
 - **Carries forward unchanged.** The shield's and module board's netlist (they become the carrier's
@@ -451,7 +461,9 @@ allowed (7.1 Q1). It is described here, after step 1, because it extends step 1'
 
 ### Step 3: carrier PCB (v1 base board)
 
-- **Built.** S4 and N7.
+- **Built.** S4 and N7. *Dated note (2026-11-02):* with change C (section 4.6 dated note): PA9
+  (CN10.19) controls current-limited high-side power per sensor port (PORT-5), the port pull-ups
+  supplied after the switch, the power monitors and the SHTC3 unswitched (PORT-9).
 - **Proves.** The topology in copper: force on pours, sense on separate Kelvin traces from the shunts'
   inner pads, a single net-tie between power return and quiet ground at the battery negative pad, all
   shunts high side, no low-side shunt anywhere.
@@ -464,7 +476,11 @@ allowed (7.1 Q1). It is described here, after step 1, because it extends step 1'
   30 minutes (limit 1.7 A, about the P110's short-circuit current, not verified): charging starts and
   the station reports to the gateway without any manual step, within 60 minutes of the ramp's start,
   time recorded; H03 proper (168 h at −35 °C, the 7-day deficit recovered in ≤ 3 solar days) needs the
-  chamber and the field and is a step 4 item; H04a; the sensor-module-ports phase-2 cable test; net
+  chamber and the field and is a step 4 item; H04a; *(2026-11-02)* the port power cycle that replaces
+  step 1's exit 9: PA9 off and on 10 times, each half `WSMP_SAMPLE_MS` + 1 s, the switched ports'
+  sensors drop off and return, the unswitched monitors and the SHTC3 answer throughout, a switched
+  rail reads ≤ 0.5 V with PA9 low (no back-powering through the bus), and `i2c_bus` recovery leaves
+  the bus working; the sensor-module-ports phase-2 cable test; net
   equivalence between circuit.toml and the KiCad schematic; the enclosure fit.
 - **Docs true at exit.** The KiCad schematic and layout; circuit.toml profile C; the ports spec's OQ-14
   recorded as decided 2026-10-30 (7.1 Q7); the chassis redrawn.
@@ -508,8 +524,8 @@ undone)**.
 | 1 | 1 Ω 2 W | injection test (exit criterion 4, both cases) |
 | 2 | SparkFun BOB-14021, each with a PRT-00132 jack and a 6-pin header | owned as one panel of two boards, separated first (4.4 step 4a); the meter cables' RJ11 landings. Jack and header soldered as module preparation (H5; decided 2026-10-30 (7.1 Q6); change A step 4a) |
 | 2 | female-to-male jumper, about 30 cm | the OLED's own VCC (CN7.16) and GND (CN10.20) leads |
-| 1 | pre-assembled high-side load-switch breakout: 3.3 V, current-limited, active-high enable, header pins fitted (part not chosen; the PORT-5 part if chosen by then) | change C, PA9 sensor switch |
-| 1 | STEMMA QT to male header cable (the same kind as the hub's) | change C, the unswitched branch to the power monitors |
+| ~~1~~ | ~~pre-assembled high-side load-switch breakout~~ | *removed 2026-11-02:* change C's switch moved to the carrier |
+| 1 | STEMMA QT to male header cable (the same kind as the hub's) | change C, the branch to the power monitors (unswitched, as is the hub's since 2026-11-02) |
 | 1 | USB-C wall adapter 5 V ≥ 2 A | charger input, floating from the Mac |
 | — | plate, standoffs, foam tape, tie mounts, ties, Kapton, heat-shrink, labels | H1, N3, P4 |
 
@@ -529,7 +545,7 @@ undone)**.
 | Anemometer cups | **PB5** (LPTIM1_IN1, AF1) | D4 CN9.5 | CN10.29 | change B: the cups jumper from CN10.14 to CN9.5 |
 | PGOOD | PB8 | D5 CN9.6 | CN10.27 | **moves**: the PGOOD jumper from CN10.27 to CN9.6 |
 | CHG | PB10 | D6 CN9.7 | CN10.25 | **moves**: the CHG jumper from CN10.25 to CN9.7 |
-| Sensor power enable | PA9 | D9 CN5.2 | CN10.19 | change C: solid, to the load-switch breakout's enable |
+| Sensor power enable | PA9 | D9 CN5.2 | CN10.19 | carrier only (2026-11-02): unconnected at steps 1 and 2; on the carrier it enables the port switches |
 | Bench OLED signals (bench only) | PA5, PA7, PA4, PC2, PC1 | D13, D11, D10, D8, D7 | CN10.11, .15, .17, .21, .23 | unchanged on morpho (the five OLED signal jumpers) |
 | Bench OLED supply (bench only) | 3V3, GND | — | CN7.16, CN10.20 | new, female Dupont straight to the OLED's 3V3 and GND strips on board C; the jumpers SHUNT.2 strip → OLED 3V3 and OLED GND → board-B ground rail removed; the VCC lead is unplugged in mode B |
 | Mode-B 3V3 in | 3V3 | CN6.4 (steps 1 and 2) | CN7.16 (carrier only) | the link SHUNT.2 → N:CN7.16 removed; see the first 3V3 row |
@@ -573,7 +589,7 @@ out, OLED VCC lead unplugged), the DMM on min/max across at least 5 radio TX bur
 |---|---|---|---|
 | C15 | mode B, TX bursts | TIE: STAR to the regulator GND strip | < 1 mV |
 | C20 | as C15 | STAR to CN6.6 | ≤ 3 mV |
-| C21 | as C15 | the regulator's VOUT pin to CN6.4 (the whole P1 output chain: LK_REG_SHUNT, SHUNT, L_REG_3V3, the board-A 3V3 strip where LK_3V3_CN6_4 starts (QT.V+ in r0.1 and r0.2, LSW.IN from r0.3), LK_3V3_CN6_4) | ≤ 10 mV |
+| C21 | as C15 | the regulator's VOUT pin to CN6.4 (the whole P1 output chain: LK_REG_SHUNT, SHUNT, L_REG_3V3, the board-A 3V3 strip where LK_3V3_CN6_4 starts (QT.V+ in every revision; LSW.IN in the r0.3 draft before 2026-11-02), LK_3V3_CN6_4) | ≤ 10 mV |
 | C22 | as C15, between TX bursts | mode-B dV0: gauge VCELL − INA VBUS with the station idle | recorded |
 | C23 | as C15, DMM min/max on C21's span | wiggle L_REG_VIN, LK_REG_SHUNT, the SHUNT, L_REG_3V3, LK_3V3_CN6_4, L_NUC_RET (the CN6.7 lead) and L_TIE, for 30 s each | no reset; no step ≥ 2 mV |
 
@@ -590,7 +606,7 @@ from the previous revision" section says which wires come out. *Dated note (2026
 sheet is the frozen revision's, `hardware/bench-breadboard-r0/revisions/bench-bb-r0.1/build-sheet.md`
 (from `source/revisions/bench-bb-r0.1.toml`, section 6.1): its changes section is against the r0 sheet
 the bench was built from. The top-level `build-sheet.md` is the current revision, r0.3, which also
-builds change C's load switch and QTM branch; it is not the sheet for change A. This section therefore names links
+builds change C's QTM branch (and, before 2026-11-02, its load switch); it is not the sheet for change A. This section therefore names links
 by their stable model ids (LK_REG_SHUNT: REG.VOUT → SHUNT.1; LK_3V3_CN6_4: the unswitched board-A
 3V3 node → N:CN6.4; LK_QT_GND_CN6_6), leads by their ids (L_REG_VIN, L_TIE, L_NUC_RET, L_REG_3V3),
 every other jumper by function and endpoints, and the regulator landings by function (the regulator
@@ -599,6 +615,9 @@ VIN strip, the regulator GND strip), because the model may move REG and SHUNT to
 unswitched board-A 3V3 net (the A:L+ rail, LSW.IN and QTM.V+ are its members, but the chain lands only in the LSW.IN strip, never on the A:L+ rail). *Dated note (2026-10-30):* both land in one
 strip itself, so no planner jumper or rail run sits in the chain (P1 dated note): for change A and B
 (r0.1, r0.2) the QT.V+ strip (A:c41), from change C (r0.3) the LSW.IN strip (A:c34).
+*Dated note (2026-11-02):* with the load switch deferred to the carrier, r0.3 has no LSW and no
+3V3_SW: QT.V+ is on the unswitched 3V3 again, as in r0.2, and L_REG_3V3 and LK_3V3_CN6_4 land in
+the QT.V+ strip (A:c41) in every revision.
 
 1. **Stop and record.** Stop the logger. Unplug the charger input. Unplug the pack from the charger's
    BATT socket. Photograph the bench as it is, and confirm with the meter which topology it had
@@ -690,7 +709,8 @@ strip itself, so no planner jumper or rail run sits in the chain (P1 dated note)
     strip (column 22, with COLED −). Nothing else on board C touches a ground or 3V3 rail. Then a
     22 AWG solid lead, L_REG_3V3, from the SHUNT.2 strip on board B into the QT.V+ strip on
     board A (A:c41), the 3V3 node where LK_3V3_CN6_4 starts (not the A:L+ rail; the r0.1 sheet
-    gives the holes). Change C (section 4.6, the r0.3 sheet) moves both to the LSW.IN strip (A:c34). With the SHUNT open (mode A) this lead
+    gives the holes). ~~Change C (section 4.6, the r0.3 sheet) moves both to the LSW.IN strip (A:c34).~~ (2026-11-02: no
+    longer; both stay in the QT.V+ strip.) With the SHUNT open (mode A) this lead
     is dead.
 14. **Strain relief.** Tie each JST lead to a mount within 30 mm of its housing; tie the pack lead and
     both USB cables at the plate edge.
@@ -723,27 +743,41 @@ After change A's checklist passes and the charge-termination run is done:
 
 ### 4.6 Change C: PA9 sensor switch, split QT bus, mode B hour
 
+*Dated note (2026-11-02):* **the PA9 sensor load switch is deferred to the carrier** (Clint's decision,
+2026-11-02). Steps 1 (breadboard) and 2 (protoboard) have no sensor power switch. The main session's
+call: `bench-bb-r0.3`, never built or released, is **redefined in place** rather than adding r0.4;
+r0.1 and r0.2 under `revisions/` stay frozen and unchanged. In r0.3 now: no LSW part and no 3V3_SW or
+SENS_EN net; the hub cable's V+ (QT.V+) is on the unswitched 3V3 as in r0.2; L_REG_3V3 and
+LK_3V3_CN6_4 land in the QT.V+ strip (A:c41) again, so the P1 chain still has no planner jumper; PA9
+is left unconnected (firmware driving it is harmless). The QTM branch is **kept** (redundant without
+the switch, but harmless; it keeps S3's unswitched branch, the 1b daisy chain, the QTM tests and the
+shopping row). Step 2 below (the second item) and step 4 (exit 9) are dropped; exit 10, the mode-B
+hour, stays. The `i2c_bus` power cycle stays a no-op until the carrier. The carrier takes change C as
+per-port switching (PORT-5, PORT-9, step 3) with a bench test equivalent to exit 9. Items 1-6 below
+are kept as written for history; superseded parts are struck.
+
 After change B. It proves on the breadboard the two circuits step 2 would otherwise solder unproven
 (S2): the PA9 switch and the mode-B entry at CN6.4.
 
 1. **Split the QT bus** (model first, as always). Power monitors on an **unswitched branch**: a
    second QT-to-header cable from the board-A 3V3, GND, SDA and SCL strips to the battery INA228,
    daisy-chained to the MAX17048 (and later the 1b INA228s). Sensors stay on the **hub**, whose QT
-   cable now takes its V+ from the switch output instead of the 3V3 strip. GND, SDA and SCL stay
+   cable now takes its V+ from the switch output instead of the 3V3 strip (*2026-11-02:* no longer; it
+   stays on the 3V3 strip). GND, SDA and SCL stay
    shared. This mirrors PORT-9 for the monitors: upstream and always powered. *Dated note
    (2026-10-30):* it does not mirror PORT-9 for the SHTC3. PORT-9 keeps the SHTC3 upstream with the
    INA228 and the MAX17048, never on a port and never switched (OQ-3 recommends the BMP581 there too);
    on the bench both stay on the hub, behind the switch on 3V3_SW, so exit 9 and TEST-SENSOR-POWER
    cycle them too. Accepted as a bench difference: exit 9 proves the switch and the shared bus, not the
    carrier's power map. The carrier (step 3) follows PORT-9, not the bench: its SHTC3 is unswitched.
-2. **Load switch.** The breakout in board A: IN from the board-A 3V3 node, OUT to the hub cable's V+
+2. ~~**Load switch.** The breakout in board A: IN from the board-A 3V3 node, OUT to the hub cable's V+
    strip, GND to the board-A ground, EN by a solid jumper from **CN5.2** (D9, PA9). Check the
-   breakout's own enable pull resistor holds it off at reset.
-3. Flash the node firmware with the sensor switch enabled in `i2c_bus` (today a no-op on the
-   breadboard), from the same commit as the model change.
-4. Run exit criterion 9 (section 3, step 1). Record the switched-rail voltage with PA9 low, the
+   breakout's own enable pull resistor holds it off at reset.~~ (Removed 2026-11-02.)
+3. ~~Flash the node firmware with the sensor switch enabled in `i2c_bus` (today a no-op on the
+   breadboard), from the same commit as the model change.~~ (Removed 2026-11-02.)
+4. ~~Run exit criterion 9 (section 3, step 1). Record the switched-rail voltage with PA9 low, the
    21 `#test sensor-power` lines (their `ack=` and `fail=` masks are the per-half evidence), and
-   whether the bus kept working, whatever the outcome.
+   whether the bus kept working, whatever the outcome.~~ (Removed 2026-11-02: moved to step 3.)
 5. Mode B: C15 and C20–C23, then exit criterion 10 (one hour on the battery).
 6. Tag the model `bench-bb-r0.3`. *Dated note (2026-10-30):* change C builds from the top-level
    `build-sheet.md` (r0.3), whose changes section is against the r0.2 sheet.
@@ -764,8 +798,8 @@ Buy now (step 1):
 | 2 | 1 MΩ resistor | ISET pull-down; one spare |
 | 2 | 100 nF ceramic capacitor | ISET node; one spare |
 | 2 | 1 Ω 2 W resistor | injection test (both cases); one spare |
-| 2 | pre-assembled high-side load-switch breakout (3.3 V, current-limited, active-high enable, headers fitted; part not chosen) | change C; one spare. Confirm it ships assembled. *2026-10-30:* not yet sourced: DigiKey had no matching breakout with a current limit (the TPS22918EVM was the nearest, and has none) |
-| 1 | STEMMA QT to male header cable | change C, unswitched branch |
+| ~~2~~ | ~~pre-assembled high-side load-switch breakout (3.3 V, current-limited, active-high enable, headers fitted; part not chosen)~~ | *Removed 2026-11-02: change C's switch moved to the carrier; not bought.* change C; one spare. Confirm it ships assembled. *2026-10-30:* not yet sourced: DigiKey had no matching breakout with a current limit (the TPS22918EVM was the nearest, and has none) |
+| 1 | STEMMA QT to male header cable | change C, the power monitors' branch (kept 2026-11-02) |
 | 2 | female-to-male jumper, about 30 cm | OLED supply leads; skip if owned |
 | 1 | USB-C wall adapter, 5 V ≥ 2 A (5.1–5.25 V output preferred) | skip if one is owned |
 | 1 | plywood or MDF, about 30 × 40 cm, 6–9 mm | scrap is fine |
@@ -779,6 +813,8 @@ Buy now (step 1):
 | 1 | wire stripper for 22–26 AWG | skip if owned |
 | 1 | 10 kΩ 1 % resistor | TS stand-in at 25 °C for the step 2c cold-charge test (S3); bought now so it is on hand (7.1 Q4) |
 | 1 | about 39 kΩ 1 % resistor (the computed cold-threshold value: a 10 kΩ B3950 NTC is about 33 kΩ at 0 °C) | TS stand-in past the cold threshold, step 2c; confirm the value against the EVM's TS network first |
+
+> **Parked 2026-11-02.** The later-step parts lists, from here to section 6, are parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
 
 Step 1b (bought with the step 2 list, so the parts are on hand when H01 passes; 7.1 Q1, Q8):
 
@@ -832,12 +868,22 @@ load-switch breakout is not bought: change C moved to the carrier (2026-11-02). 
 Each item names the file, what changes and the decision behind it. "New" files do not exist yet. Nothing
 generated is edited by hand.
 
+*Dated note (2026-11-02):* change C's PA9 load switch is deferred to the carrier (section 4.6 dated
+note). The rows below that make PA9 live at step 1 or say "step 1 exit 9" are superseded as follows:
+`i2c_bus.lit.md`/`i2c_bus.h` keep the power-cycle no-op until the carrier (comments say so);
+TEST-SENSOR-POWER in `tx_console.c` and its tests in `tests/test_tx_machine.py`, the PA9 seam in
+`firmware/host/` and `i2c_bus_outcomes` stay, as the carrier's bench test (step 3), not step 1's;
+`i2cscan.c` and `benchlink.c` may keep driving PA9 high (harmless with PA9 unconnected); the
+breadboard model (6.1) has no LSW, 3V3_SW or SENS_EN, and D3 check 8 no longer holds `POWER_PIN`
+to a model net; the guide's PA9 row is "carrier only".
+
 ### 6.1 Breadboard model and generator (`hardware/bench-breadboard-r0/`)
 
 The model lands as three revisions, each a self-consistent tree with its own regeneration (`make.py
 all` and `sheet`). `bench-bb-r0.1` = change A with the D2–D4 machinery. r0.2 = change B with the N2
 firmware, `tests/test_board_inputs.py`, the guide's cups and rain rows and the READMEs. r0.3 = change C
-with the PA9 firmware. Clint makes the git tags. *Dated note (2026-10-30):* the three revisions were
+with the PA9 firmware (*2026-11-02:* redefined in place without the load switch: the split QT bus and
+the mode-B hour; section 4.6 dated note). Clint makes the git tags. *Dated note (2026-10-30):* the three revisions were
 written in one uncommitted tree, so no commit holds r0.1 or r0.2. They are kept as **frozen models**,
 `source/revisions/bench-bb-r0.1.toml` and `bench-bb-r0.2.toml` (`make.py`'s `HISTORY`), each the whole
 bench as its change leaves it; `make.py sheet` (and `all`) regenerates each one's sheet and
@@ -845,7 +891,8 @@ bench as its change leaves it; `make.py sheet` (and `all`) regenerates each one'
 sheet, `source/baseline-2026-10-29.json`), and the current `wiring.toml` (r0.3) against r0.2. A frozen
 model gets the connectivity proof and the D3 checks; the wiring guide and the firmware are held to the
 current revision only. The r0.1 and r0.2 models land L_REG_3V3 in the QT.V+ strip, where LK_3V3_CN6_4
-starts (P1 dated note; there is no LSW.IN before change C). `tools/preflight.py` checks a block against
+starts (P1 dated note; there is no LSW.IN before change C, and since 2026-11-02 none in r0.3 either:
+r0.3 lands it in the QT.V+ strip too). `tools/preflight.py` checks a block against
 the frozen model and sheet its `revision` names. The tags then mark the bench, not a tree: each is the
 commit at which Clint finished that change on the bench.
 
