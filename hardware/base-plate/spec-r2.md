@@ -13,6 +13,9 @@ Sources are cited as `file:line`. "Build sheet" is `hardware/bench-breadboard-r0
 
 ---
 
+
+> **Citations (updated 2026-11-02).** "Build sheet line N" and "lines N-M" refer to `hardware/bench-breadboard-r0/build-sheet.md` as of commit 7dfb808 (`git show 7dfb808:hardware/bench-breadboard-r0/build-sheet.md`), before change C was removed. Jumper numbers (W1, W2, ...) are renumbered whenever the model is regenerated, so this spec names leads (L_...) and jumper classes instead; take current positions from the current build sheet.
+
 ## 1. Purpose and the one rule
 
 The plate is mechanical. It holds the step 1 bench of the solar LoRa weather station: three breadboards, two NUCLEO-WL55JC1 boards, the 1S3P pack and the lever-connector power harness. That bench runs unattended for days, and a 1 s USB dropout resets the debug board and ruins the run (record H1, line 150).
@@ -100,10 +103,10 @@ NUCLEO-WL55JC1 (MB1389) outline, from UM2592 Rev 4 figures 6 and 7. Seen from th
 | L_REG_VIN, L_TIE | 22 AWG solid | **100** | SYS_OUT 4 / STAR 4 | B:b15 / B:b16 | lines 143-144; record line 156 |
 | L_RLOAD_A, L_RLOAD_B | the load's own leads | **30** | SYS_OUT 2 / STAR 3 | load | lines 138-139 |
 | L_NUC_RET | 22 AWG solid | set by routing (≈ 200) | NUCLEO CN6.7 | B:c16 | line 145 |
-| L_REG_3V3 | 22 AWG solid | set by routing (≈ 250) | B:c9 | A:c34 | line 146 (it names LSW's strip; the lead stays when LSW goes) |
+| L_REG_3V3 | 22 AWG solid | 280 | B:c9 | A:c41 (the QT.V+ strip) | build sheet lead table, row L_REG_3V3 (regenerated 2026-11-02 without change C) |
 | L_OLED_VCC, L_OLED_GND | Dupont | ≈ 300 | NUCLEO CN7.16, CN10.20 | C:c23, C:c22 | lines 147-148, 271 |
-| W26-W30 (OLED signals) | Dupont | ≈ 300 | C:e25-e37 | NUCLEO CN10 | lines 72, 113-117 |
-| W19-W35 to the NUCLEO | 22 AWG solid | ≤ 200 | boards A and B | NUCLEO Arduino headers | lines 104-122; record line 156 |
+| The OLED signal jumpers (class `display` in the build sheet's jumper table) | Dupont | ≈ 300 | board C | NUCLEO CN10 | build sheet jumper table, class `display` |
+| The jumpers to the NUCLEO (every jumper-table row with a NUCLEO header end) | 22 AWG solid | ≤ 200 | boards A and B | NUCLEO Arduino headers | build sheet jumper table; record H7 |
 | QT cables | STEMMA QT | 50-100, 200 where the layout needs it | board A | hub; INA228, then the gauge | record H4, line 153 |
 
 ### 3d. Off the plate
@@ -195,7 +198,7 @@ Start from these points. Section 5 gives the acceptance rule each one must pass;
 | T3 | back | (155, 86), double opening | gauge JST (sense, its own opening); L_REG_VIN and L_TIE (force) | 18-26 / 29 |
 | T4 | back | about (174, 100) | the pack plug to pigtail mating, which floats here | ≤ 15 |
 | T5 | back | on the battery cradle, away from T4 | the NTC pair, on its own | — |
-| T6, T7 | back | (24, 16), and right of board B near (213, 28) | the bundle that crosses the joint: L_REG_3V3, L_NUC_RET, W20/W25/W31/W35, the OLED Duponts, QTM | — |
+| T6, T7 | back | (24, 16), and right of board B near (213, 28) | the bundle that crosses the joint: L_REG_3V3, L_NUC_RET, the board A and B jumpers to the NUCLEO, the OLED Duponts, QTM | — |
 | F1 | front | (65, 182) | QT and QTM cables | 22 |
 | F2 | front | (85, 182), kept from v1 | the bundle that crosses the joint | — |
 | F3, F4 | front | (60, 114), clear of the TX SMA at x 34.9-41.7; and (91, 100) | the TX NUCLEO's jumper bundle (check C19, "jumpers tied"; record N3, line 139) | — |

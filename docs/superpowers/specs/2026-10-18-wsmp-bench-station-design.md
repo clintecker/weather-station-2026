@@ -26,7 +26,7 @@ except where a 2026-10-30 note says otherwise:
 | Sensor ports | the v1 sensor ports are RJ11 (sensor-module-ports spec); there is no RJ45 in v1 | section 1 | H6 |
 | Meter pins | cups on PB5 (LPTIM1_IN1, AF1; Arduino D4, CN9.5), rain on PB4 (EXTI4; Arduino A3, CN8.4); approved 2026-10-30 | section 2 | N2, 7.1 N2 |
 | R_ISET | R9 = 1 kΩ (record 1.4); adopted with change A, read by this workflow from 7.1 P3 "change A as written"; R_ISET confirmed by build-sheet check 2; Clint to confirm (design D4/D5); ICHG = 890 A·Ω ÷ 1 kΩ = 0.89 A typ | section 2 | 1.4 |
-| PA9 switch | proved on the breadboard first (step 1 change C, exit 9); soldered at step 2 only if proven | section 2 | S2 |
+| PA9 switch | ~~proved on the breadboard first (step 1 change C, exit 9); soldered at step 2 only if proven~~ *Superseded 2026-11-02:* change C is deferred to the carrier; steps 1 and 2 have no sensor power switch | section 2 | S2 |
 | Battery chain | no current through a breadboard contact; the gauge on the CELL+ node by its own lead, its minus unconnected, ground over STEMMA QT | section 3 | P1, P3–P5, M4 |
 | Mode B | the regulator feeds CN6.4 at steps 1 and 2 (the same 3V3 net as CN7.16) | section 3 | N3 |
 | Check 5 | mode B for one hour is also step 1 exit 10, on the breadboard | section 6 | S2 |
