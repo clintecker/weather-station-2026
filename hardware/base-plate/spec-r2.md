@@ -59,7 +59,7 @@ Heights used below:
 |---|---|---|---|---|
 | BusBoard BB830 breadboard (A signals, B power, C display) | 3 | 165.1 × 54.6 × 8.5 | Pocket 1.0 deep, +0.3 per side, finger notch at the left end | `measurements.toml:3-16`, `system.py:144-166` |
 | ST NUCLEO-WL55JC1 (MB1389): TX node and RX bridge | 2 | See the outline notes below this table | Edge-held cradle (v1 design) | **ST UM2592 Rev 4 (Nov 2025), figure 7, page 12**, and figure 6, page 11; `measurements.toml:18-41` |
-| NUCLEO USB cable: USB-A to **Micro-B** (Adafruit #592 in the repo's buy list) | 2 | jacket ≈ 4.0 (param); plug length **unmeasured** | Jacket clamp at the front edge | UM2592 page 2 ("USB with Micro-B"), figure 6 (CN1); `hardware/chicago-test-hardware-r0/docs/build-and-order.md:7`; `front_tile.py:38` |
+| NUCLEO USB cable: USB-A to **Micro-B** (Adafruit #592 in the repo's buy list) | 2 | jacket ≈ 4.0 (param); plug length **unmeasured** | Jacket clamp at the front edge | UM2592 page 2 ("USB with Micro-B"), figure 6 (CN1); `front_tile.py:38` |
 
 NUCLEO-WL55JC1 (MB1389) outline, from UM2592 Rev 4 figures 6 and 7. Seen from the top with the USB end toward the user, which is how it lies on the plate:
 
@@ -183,7 +183,7 @@ Each breakout's connectors were placed from the maker's STEP. `models.py:64-73` 
 | **Board A pocket** | 14.0-179.7 (unchanged) | 120.0-175.2 (unchanged) | — | column 63 at x 18.1; row a at 161.6; board edge at 174.9 |
 | QTM header (A a46-a49), QT header (A a40-a43) | 53.7-61.3 and 68.9-76.5 | 161.6 | | |
 | RJ11 jacks (BOBR, BOBW) | 134.3-148.3 and 157.2-171.2 | face at **181.6, facing +y** | 12.6-24.1 | the plugs reach about y 196 (open item 8); they must not pass the joint line at 200 |
-| ~~Carrier reserve~~ | — | — | — | *Removed 2026-11-02:* the step 3 PCB it was kept for is parked. The space is free for the sensor deck (§7a) |
+| ~~PCB reserve~~ | — | — | — | *Removed 2026-11-02:* the later-stage PCB it was kept for is out of scope. The space is free for the sensor deck (§7a) |
 | QT hub and sensor area (flat) | 190-290 | 100-170 | — | open item 9 |
 | Meter-cable jacket clamp | 280-296, running along x | ≈ 185 | ≈ 6 | width = `meter_cable_width` (open item 8) |
 
@@ -293,8 +293,8 @@ Each change gives what to do, why, and an acceptance check the sketch or `nurb c
 
 12. **Turn the three INA228 spots off by default** with `ina_spots=False`. Keep the code; don't print them.
     - *Why:*
-      - Step 1b puts its three INA228s in a breadboard by their signal pins, not on standoffs (record S1, line 164; step 1b "Built", line 343). Since 2026-11-02 that is "one of the full-size breadboards already owned" (record line 793).
-      - Step 1b runs after step 2, on the step 2 plate (record line 339; `bench-station-wiring.md:30`).
+      - Step 1b puts its three INA228s in a breadboard by their signal pins, not on standoffs (record step 1b, "Built"), one of the full-size breadboards already owned.
+      - Step 1b is part of the breadboard build (2026-11-02); where its breadboard sits on this plate is not placed yet (section 8).
       - Their v1 place (x 40-137, local y 168-188) is under the OLED overhang in v1 as well as in r2. The OLED underside is at z 10, and a spot stands about 18 tall.
     - *Check:* the default build has no standoffs; `ina_spots=True` still builds.
 
@@ -355,7 +355,7 @@ Dropped from v1's coupon: the INA228 standoff (change 12).
 2. **USB-C adapter cable:** plug length from the receptacle face to the end of the boot, jacket diameter, and whether the plug is straight.
 3. **NUCLEO USB:** the Micro-B plug length and jacket of the Adafruit #592 cables. Also confirm on the coupon the receptacle position read from UM2592 figure 6 (centre +6.1 from the board centre, underside, axis about z 12.6).
 4. **NUCLEO length and antenna:**
-   - **Verified against ST:** UM2592 Rev 4 (November 2025), figure 7, page 12 gives 70.0 × 64.5. The 64.5 runs from the antenna-end edge to the bottom of the 31.7 mm button tab. That matches v1 (`measurements.toml:23-26`) and the repo (`hardware/chicago-test-hardware-r0/source/render_prototype.py:54`).
+   - **Verified against ST:** UM2592 Rev 4 (November 2025), figure 7, page 12 gives 70.0 × 64.5. The 64.5 runs from the antenna-end edge to the bottom of the 31.7 mm button tab. That matches v1 (`measurements.toml:23-26`).
    - It is a drawing dimension, so check the boards in hand on coupon section 6a.
    - The stop's near face moves 1:1 with `nucleo_length`. A board longer than `nucleo_length + nucleo_clearance` will not drop in. A shorter one leaves that much play toward the USB end, which the cable clamp, not the stop, must take.
    - The stop bears on the antenna-end edge 4 to 18 mm from the left edge, which is the full-length part, clear of the SMA.
@@ -399,8 +399,8 @@ These override anything above that differs.
 
 ## 8. Step 1b and the solar lead clamp
 
-- Step 1b's three INA228s (load 0x41, solar 0x45, USB-C 0x48) go in a full-size breadboard on **the step 2 plate**, with three more lever connectors: LOAD (222-415), SOLAR_IN (222-413) and USB_IN (222-413). It runs after step 2's H01 run (record S1, line 164; lines 343-366, 793). So this plate only keeps a flat reserve (back tile x 207-296, local y 12-75), and the INA228 standoff spots are off (change 12).
-- **What the solar clamp is for in step 1b:** the 6 V panel's own lead, never cut, ends in a 2.1 mm barrel plug. That plug goes into an Adafruit #368 jack-to-terminal adapter, then SOLAR_IN, the solar INA228 and an Adafruit #369 plug into the charger's DC jack (record lines 350-358).
+- Step 1b's three INA228s (load 0x41, solar 0x45, USB-C 0x48) go in a full-size breadboard, with three more lever connectors: LOAD (222-415), SOLAR_IN (222-413) and USB_IN (222-413) (record S1 and step 1b). Step 1b is part of the breadboard build (2026-11-02), but this revision does not place it yet: it keeps a flat reserve (back tile x 207-296, local y 12-75), and the INA228 standoff spots are off (change 12).
+- **What the solar clamp is for in step 1b:** the 6 V panel's own lead, never cut, ends in a 2.1 mm barrel plug. That plug goes into an Adafruit #368 jack-to-terminal adapter, then SOLAR_IN, the solar INA228 and an Adafruit #369 plug into the charger's DC jack (record step 1b, "Built").
   - The clamp grips the panel lead's jacket where it comes onto the plate, so a tug on the outdoor lead stops there and never reaches the #368 screw terminals or the charger's DC jack, which sits in breadboard B.
   - It also serves record P10's unmetered case, where the panel plugs straight into the DC jack.
   - Not used in step 1.

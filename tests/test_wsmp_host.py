@@ -27,7 +27,7 @@ ABSENT, PROBING, IDENTIFYING, ADMITTED, ACTIVE, SUSPECT, QUARANTINED, REFUSED = 
 MINUTE, HOUR = 60_000, 3_600_000
 ADDR = {DEVK_SHT45: 0x44, DEVK_SHTC3: 0x70, DEVK_BMP581: 0x47, DEVK_LTR390: 0x53, DEVK_INA228: 0x40, DEVK_MAX17048: 0x36}
 DEVK_EEPROM = 9
-CHANNEL = {P_AIR_TH: 0, P_UVA: 1, P_PRESSURE: 2}         # the static channel map (ports design, section 4.1)
+CHANNEL = {P_AIR_TH: 0, P_UVA: 1, P_PRESSURE: 2}         # the static channel map (firmware-current-design.md, section 4.1)
 EPOCH = 7                                                  # the station boot epoch of station()
 
 
@@ -240,7 +240,7 @@ def ltr_record(**kw):
 
 @needs_cc
 class Identity(unittest.TestCase):
-    """Identification of an I2C port module (ports design, section 6.7): the record, the verdict order,
+    """Identification of an I2C port module (firmware-current-design.md, section 6.7): the record, the verdict order,
     the holder check, refusals and the boot hold. Each module has its EEPROM at 0x50 on its channel."""
     minutes, line = Host.minutes, Host.line
 
@@ -433,7 +433,7 @@ SLOT_MS = 3_000
 
 @needs_cc
 class Reidentify(unittest.TestCase):
-    """Re-identification before every latch (ports design, section 6.7; PORT-16, PORT-17): the pre-latch
+    """Re-identification before every latch (firmware-current-design.md, section 6.7; PORT-16, PORT-17): the pre-latch
     slot, the identity check against the identity seen at admission, the sticky possibly-replugged
     flag, the unverified counter and the 60-latch timeout. The latches fall every minute from boot."""
     minutes, line = Host.minutes, Host.line
@@ -623,7 +623,7 @@ class Reidentify(unittest.TestCase):
         return lines
 
     def test_the_set_carries_each_modules_identity(self):
-        # WSMP section 11.1 with the identity entry of the ports design (section 6.7): an applied record
+        # WSMP section 11.1 with the identity entry of firmware-current-design.md (section 6.7): an applied record
         # gives its serial and CRC, a module without an EEPROM its fallback serial, NO_RECORD (READ)
         # and CRC 0; the set passes the gateway's registry check (WSMP-E7)
         rec = sht_record(cal=[(1, 0, 1, 100, 1_000_000)])

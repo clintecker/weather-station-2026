@@ -97,7 +97,7 @@ origin = ["c", 6]
 step = -4
 pins = ["1", "2"]
 source = "passive"   # a two-lead part: either way round
-note = "Jack end: R1.1 in BOBW pin 4's own strip (column 6), so no jumper sits between the jack pin and its pull-up (record M7); carried into the step 2 module board"
+note = "Jack end: R1.1 in BOBW pin 4's own strip (column 6), so no jumper sits between the jack pin and its pull-up (record M7)"
 
 [[part]]
 id = "C_CUPS"
@@ -394,7 +394,7 @@ note = "Polarised: + (the longer lead) in column 23 with the OLED's 3.3 V, the s
 # ---- required jumpers ----
 # Each link has a stable `id` (record D2): the build sheet's W-numbers change. The regulator's output
 # reaches the SHUNT on LK_REG_SHUNT; from the SHUNT's far strip L_REG_3V3 (a lead) carries it to the
-# board-A 3V3 node, which LK_3V3_CN6_4 joins to CN6.4, the step 2 shield's 3V3 pin (record P1, N3).
+# board-A 3V3 node, which LK_3V3_CN6_4 joins to CN6.4 (record P1, N3).
 # Before change C that node is the QT.V+ strip: L_REG_3V3 lands in it, where LK_3V3_CN6_4 starts, so the
 # chain holds no planner jumper and no rail run (D3 check 1, P1_ORDER); the A:L+ rail (the pull-ups)
 # hangs off that strip. The hub's ground comes straight from the NUCLEO (CN6.6), so the sensors' ground

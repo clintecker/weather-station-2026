@@ -346,4 +346,4 @@ Not automated. Each step needs Clint's OK for any board action.
 - [ ] **Step 1:** Clint checks the pin map against UM2592 with the checklist of Task 11.
 - [ ] **Step 2:** Cut a release (`firmware/stage0-node/RELEASES.md`, "How to cut a release") and flash both boards after Clint's OK.
 - [ ] **Step 3: Breadboard check** (spec section 6, items 1–5). Record the results and the measured vane windows; put the windows into `mod_wind.c` with a test, commit.
-- [ ] **Step 4: Protoboard 24-hour run.** Acceptance per spec section 6: ≥ 99 % of minutes committed within 120 s, every channel good in ≥ 99 % of minutes, no `WS_CHECK` failure, no unexpected reset. Record it in `RELEASES.md` and `evidence/`.
+- [ ] **Step 4: 24-hour run on the breadboard build** (the H01 run, `docs/H01-checklist.md`). Acceptance per spec section 6: ≥ 99 % of minutes committed within 120 s, every channel good in ≥ 99 % of minutes, no `WS_CHECK` failure, no unexpected reset. Record it in `RELEASES.md` and `evidence/`.

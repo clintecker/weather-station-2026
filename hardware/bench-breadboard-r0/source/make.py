@@ -1032,12 +1032,12 @@ def _checks_6_to_10(w, status):
 def phase_b_checks():
     """The step 1b checks (record step 1b exit criteria, spec 2026-10-29 section 11.3,
     docs/hardware/power-metering.md): the three rail INA228s and the D2/D4 OR pair, before the node runs
-    WS_POWER_PROFILE 2. Their wiring is in the protoboard model, not on this sheet."""
+    WS_POWER_PROFILE 2. Their wiring is not drawn on this sheet yet."""
     return ['', '## Step 1b power checks', '',
-            'Step 1b, after the step 2 H01 run, on the step 2 plate\'s small breadboard (record S1, 7.1 Q8), before '
+            'Step 1b, on the breadboard build (record S1), before '
             'the node runs profile B (`WS_POWER_PROFILE=2`): the load, solar and USB-C INA228s and the board\'s own '
-            'D2/D4 OR pair (record P10). Step 1b is not drawn on this sheet: its wiring belongs to the protoboard '
-            'model (record D7). Checks 1-10 still hold.', '',
+            'D2/D4 OR pair (record P10). Step 1b is not drawn on this sheet: the model does not hold its '
+            'wiring yet. Checks 1-10 still hold.', '',
             'B1. **EN1 and EN2** (charger unpowered): record both solder jumpers of the #4755 again, SJ2 (EN1) and SJ1 '
             '(EN2), as the step 1 bench check "Charger jumpers" first did. The design needs **EN2 high and EN1 low**: the R_ILIM input limit, no VIN-DPM (SLUS810 table '
             '7-2). EN1 = EN2 = high is standby, no charge. EN2 low means a 100 or 500 mA input limit with VIN-DPM: '

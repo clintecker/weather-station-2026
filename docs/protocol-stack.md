@@ -19,7 +19,7 @@ This document describes how one weather observation moves from the sensor to the
 
 Read section 2 first. It gives the full picture. Then read the section for the layer that you must change.
 
-The system described here is the bench prototype. It is Stage 0 of the staged plan in [`next-stages-plan.md`](next-stages-plan.md): two development boards and a gateway computer, on USB power.
+The system described here is the bench prototype. It is the breadboarded development build (Stage 0): two development boards and a gateway computer, on USB power.
 
 ---
 
@@ -110,7 +110,7 @@ On CN10, the odd pins are the inner column. On CN7, the odd pins are the outer c
 
 The bus speed is 100 kHz (standard mode). The timing register value is `0x20323E5D` at PCLK1 = 48 MHz: ST's example value with SDADEL = 2, a 146 ns data hold, which an INA228 strapped to SDA (the USB-C rail at 0x48) needs (power telemetry design section 9.2). The 10 kΩ resistors on the breakout are the bus pull-ups. The internal pull-ups of the MCU (about 40 kΩ) are also on. Thus an unplugged breakout leaves the lines defined, and the transfer fails as a clean address NACK. The I2C setup is in `App/i2c_bus.c`.
 
-**Power parts on the same bus (phase A, the current design).** Two STEMMA QT branches share I2C2's SDA, SCL and ground. A passive STEMMA QT hub connects the SHT45; the battery INA228 (0x40) and the MAX17048 fuel gauge (0x36) are on a second cable (QTM). Both are on the unswitched 3V3 (`hardware/bench-breadboard-r0`, `bench-bb-r0.3`). The PA9 sensor switch (change C) is deferred to the carrier board (build-progression record 4.6, 2026-11-02), where PA9 switches each sensor port and the power monitors stay unswitched (PORT-9); on the bench PA9 is unconnected and the firmware's drive of it is harmless. There is no mux (`WS_I2C_MUX` 0, the firmware default). The INA228 shunt is in the battery path. Its VBUS input senses the charger output (OUT). The gauge senses the cell. The charger signals do not use the bus: ISET on PB1 (ADC1_IN5), the charger input through a 20 kΩ / 10 kΩ divider on PA10 (ADC1_IN6), CHG on PB10 and PGOOD on PB8. Phase B adds one INA228 for each rail (load 0x41, solar 0x45, USB-C 0x48). Source: the power telemetry design, sections 2, 9.1 and 9.2.
+**Power parts on the same bus (phase A, the current design).** Two STEMMA QT branches share I2C2's SDA, SCL and ground. A passive STEMMA QT hub connects the SHT45; the battery INA228 (0x40) and the MAX17048 fuel gauge (0x36) are on a second cable (QTM). Both are on the unswitched 3V3 (`hardware/bench-breadboard-r0`, `bench-bb-r0.3`). The PA9 sensor switch (change C) is not part of the breadboard build (build-progression record 4.6, 2026-11-02), where PA9 switches each sensor port and the power monitors stay unswitched (PORT-9); on the bench PA9 is unconnected and the firmware's drive of it is harmless. There is no mux (`WS_I2C_MUX` 0, the firmware default). The INA228 shunt is in the battery path. Its VBUS input senses the charger output (OUT). The gauge senses the cell. The charger signals do not use the bus: ISET on PB1 (ADC1_IN5), the charger input through a 20 kΩ / 10 kΩ divider on PA10 (ADC1_IN6), CHG on PB10 and PGOOD on PB8. Phase B adds one INA228 for each rail (load 0x41, solar 0x45, USB-C 0x48). Source: the power telemetry design, sections 2, 9.1 and 9.2.
 
 ### 3.2 Measurement transaction
 
@@ -228,7 +228,7 @@ The power fields describe **what is measured**, not which part measures it (the 
 | 29, 30 | `solar_mv`, `solar_current_ma` | 2 bytes each | Absent (phase B: solar INA228, upstream of the join) |
 | 32, 33 | `usb_mv`, `usb_current_ma` | 2 bytes each | Absent (phase B: USB-C INA228, upstream of the join) |
 
-Every current has the range −32,768 to +32,766 mA (codes 0–65534), and `0xFFFF` is INVALID. Every rail voltage has the range 0 to 65,534 mV. Solar and USB-C are never connected together. Only phase B (or the BQ25798 of phase C) can tell their currents apart.
+Every current has the range −32,768 to +32,766 mA (codes 0–65534), and `0xFFFF` is INVALID. Every rail voltage has the range 0 to 65,534 mV. Solar and USB-C are never connected together. Only phase B can tell their currents apart.
 
 - **Absent and INVALID are different.** A field is **absent** when the build has no source for it (`WS_POWER_PROFILE`, `App/power_config.h`). A field is **INVALID** when its source is fitted but failed, or its reading is out of range. The two power modules are always in the layout, so a dead INA228 or gauge gives INVALID fields, never absent ones.
 - **Every field has its own INVALID code**: its all-ones value. A sensor fault, a missing sample, or an out-of-range reading gives INVALID. The node never leaves a field out because of a fault. Thus a fault does not change the frame length. A module that leaves the layout removes its fields, and the frame becomes shorter.
@@ -540,7 +540,7 @@ packet-beta
 | 60 | 2 | Charger die temperature, signed, 0.1 °C. None: −32768. Gateway key `charger_temp_c`. |
 | 62 | 2 | Pack temperature, signed, 0.1 °C. None: −32768. Gateway key `pack_temp_c`. |
 
-The "charger-reported" values are the charger's own measurements. They are not the observation field `charger_input_mv` (field 28, the PA10 divider), and the two never share a name. In phase A, offsets 52–56 and 60–62 have the none code: the bq24074 measures nothing over I2C. Phase C (BQ25798) fills them. The gateway stores each none code as `null`.
+The "charger-reported" values are the charger's own measurements. They are not the observation field `charger_input_mv` (field 28, the PA10 divider), and the two never share a name. In phase A, offsets 52–56 and 60–62 have the none code: the bq24074 measures nothing over I2C, and phase B adds no charger measurement. The gateway stores each none code as `null`.
 
 **Charger status byte (offset 50)** (the power telemetry design, section 6.3):
 
@@ -550,7 +550,7 @@ The "charger-reported" values are the charger's own measurements. They are not t
 | 1 | Charging | CHG asserted steadily (PB10) |
 | 2 | Fault | CHG flashes at about 2 Hz: 3 or more CHG edges in 2 s. Clears after 4 s without an edge. |
 | 3–5 | Charge stage: 0 not reported, 1 pre-charge, 2 constant current, 3 constant voltage, 4 top-off, 5 terminated, 6 not charging, 7 reserved | 0 (the pins cannot tell) |
-| 6–7 | Active input: 0 not reported, 1 solar, 2 USB-C, 3 no input (the charger reports that neither input powers it; phase C at night) | 0 (one VBUS input, the source is not identified) |
+| 6–7 | Active input: 0 not reported, 1 solar, 2 USB-C, 3 no input (the charger reports that neither input powers it) | 0 (one VBUS input, the source is not identified) |
 
 **The fitted byte** (byte 51) says which slots the build has a source for, one bit a group (`WS_FIT_*`; phases A and B send 0x2F). A none code in a fitted slot is a sensor fault; in any other slot it means "not measured in this build". The gateway lists the `null` power keys by reason in `power_not_measured` and `power_sensor_faults` (`docs/protocol.md` section 4).
 
@@ -1114,7 +1114,7 @@ When you change the protocol, do these steps:
 | 5 | Start the gateway of the same release (`VERSION = 6` in `ws0/protocol.py`). | — |
 | 6 | Record the release in `RELEASES.md`: the protocol version, the field set, the power wiring phase and the monitored rails. | — |
 
-Why version 6 is a new version: under version 5, a gateway that was not updated would NACK the new bitmap bits (reason 2), and the node would abandon those records. An RX bridge that was not updated would drop the longer health report. With a new version, a mismatched end drops the frames as another version, so the records stay in the journal until both ends match. The planned time sync becomes version 7.
+Why version 6 is a new version: under version 5, a gateway that was not updated would NACK the new bitmap bits (reason 2), and the node would abandon those records. An RX bridge that was not updated would drop the longer health report. With a new version, a mismatched end drops the frames as another version, so the records stay in the journal until both ends match.
 
 ---
 

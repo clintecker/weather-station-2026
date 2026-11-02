@@ -8,7 +8,7 @@
 
 **Tech Stack:** C (arm-none-eabi-gcc 15.2.1, host cc), GNU ld linker script, Make, Python unittest, the literate source `node_store.lit.md` with `tools/tangle.py`.
 
-**Spec:** `docs/superpowers/specs/2026-10-16-sixteen-stations-design.md`, section 6.1 (sub-project 1 of section 10).
+**Spec:** section 6.1 of the sixteen-stations design, kept in [`docs/firmware-current-design.md`](../../firmware-current-design.md) section 6.1 (the design itself was removed on 2026-11-02; git history has it).
 
 > **Amended 2026-10-29 (power telemetry).** Catalog version 2
 > (`docs/superpowers/specs/2026-10-29-power-telemetry-design.md` section 7) makes every catalog field
@@ -110,7 +110,6 @@
 **Files:**
 - Modify: `docs/firmware-budget.md` (the summary table, the flash-map diagram, "the linker script limits the firmware to pages 0–31")
 - Modify: `docs/protocol-stack.md:233-238` (page table, "a firmware update programs only pages 0–31")
-- Modify: `docs/lora-firmware-update-study.md:71` (flash map now)
 - Modify: `docs/power-of-ten.md:195` (guard range)
 - Modify: `firmware/stage0-node/README.md:41,344-354` (survival note, map diagram, table)
 - Modify: `firmware/rangetest/README.md:52-53`

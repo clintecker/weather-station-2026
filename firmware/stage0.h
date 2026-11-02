@@ -10,7 +10,7 @@
    at least ~9.8 ms. The firmware
    does each step on a 250 ms module tick (App/mod_th.c); ws_sht45_parse checks both CRCs and
    converts: 0, or WS_SHT45_ECRC on a CRC mismatch (outputs untouched). The values are raw and
-   signed (RH runs from -6 to 119 %): the caller calibrates, then crops (sensor module ports design,
+   signed (RH runs from -6 to 119 %): the caller calibrates, then crops (firmware-current-design.md,
    section 6.9). */
 #define WS_SHT45_ECRC (-4)
 #define WS_SHT45_ADDR       0x44

@@ -579,7 +579,7 @@ def load(path):
 # port in a comment that starts with the pin and may go on (/* PB5 = D4, CN9.5 */, /* PB1 = A0, CN8.1: ADC1_IN5 */);
 # without one it is on GPIOA (the I2C pins). Add an entry only for a net the model has. Every bench
 # firmware that drives a modelled pin is here: the node, benchlink, and i2cscan with its OLED (oled.c).
-# Their POWER_PIN (PA9) is not here: the sensor power switch (change C) is deferred to the carrier board
+# Their POWER_PIN (PA9) is not here: the sensor power switch (change C) is not part of the breadboard build
 # (record 4.6, 2026-11-02), so the breadboard model has no SENS_EN net and PA9 is unconnected on it.
 FIRMWARE = {'stage0-node/App/board_inputs.c': {'CUPS_PIN': 'CUPS', 'VANE_PIN': 'VANE', 'RAIN_PIN': 'RAIN',
                                                'PGOOD_PIN': 'PGOOD', 'CHG_PIN': 'CHG',

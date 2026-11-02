@@ -458,7 +458,7 @@
             "x-unit": "mV",
             "x-diagnostic": true,
             "title": "Load voltage",
-            "description": "Load (system rail) voltage: the charger output that supplies the station, mean over the minute. Phase A: the battery INA228 VBUS (on its own sense lead to OUT); phase B: the load INA228; phase C: the load INA228 if fitted, else the BQ25798 VSYS."
+            "description": "Load (system rail) voltage: the charger output that supplies the station, mean over the minute. Phase A: the battery INA228 VBUS (on its own sense lead to OUT); phase B: the load INA228."
           },
           "load_current_ma": {
             "type": [
@@ -471,7 +471,7 @@
             "x-unit": "mA",
             "x-diagnostic": true,
             "title": "Load current",
-            "description": "Load current, + into the load, mean over the minute, -32768 to +32766 mA. Absent in phase A; phase B: the load INA228; phase C: the load INA228 if fitted, else absent."
+            "description": "Load current, + into the load, mean over the minute, -32768 to +32766 mA. Absent in phase A; phase B: the load INA228."
           },
           "charger_input_mv": {
             "type": [
@@ -484,7 +484,7 @@
             "x-unit": "mV",
             "x-diagnostic": true,
             "title": "Charger input voltage (source not identified)",
-            "description": "Charger input voltage after the sources join, measured while the charger draws current, so not the source's open-circuit voltage: with the charger's EN2 low it can sit at VIN-DPM (4.35-4.63 V); with EN2 high (phase B) nothing regulates it, and a source that cannot supply the current is pulled down towards the cell voltage. The source (solar or USB-C) is not identified. Phases A and B: the PA10 divider times 3; phase C: the BQ25798 VBUS."
+            "description": "Charger input voltage after the sources join, measured while the charger draws current, so not the source's open-circuit voltage: with the charger's EN2 low it can sit at VIN-DPM (4.35-4.63 V); with EN2 high (phase B) nothing regulates it, and a source that cannot supply the current is pulled down towards the cell voltage. The source (solar or USB-C) is not identified. Phases A and B: the PA10 divider times 3."
           },
           "solar_mv": {
             "type": [
@@ -497,7 +497,7 @@
             "x-unit": "mV",
             "x-diagnostic": true,
             "title": "Solar input voltage",
-            "description": "Solar input voltage upstream of the join. Absent in phase A (no monitor); phase B: its own INA228. Phase C: that INA228 if fitted, else the BQ25798 VAC1."
+            "description": "Solar input voltage upstream of the join. Absent in phase A (no monitor); phase B: its own INA228."
           },
           "solar_current_ma": {
             "type": [
@@ -510,7 +510,7 @@
             "x-unit": "mA",
             "x-diagnostic": true,
             "title": "Solar input current",
-            "description": "Solar input current, + into the station, -32768 to +32766 mA. Absent in phase A (no monitor); phase B: its own INA228. Phase C without it: the BQ25798 IBUS while solar is the active input, 0 while USB-C is or while there is no input (charger_active_input no_input)."
+            "description": "Solar input current, + into the station, -32768 to +32766 mA. Absent in phase A (no monitor); phase B: its own INA228."
           },
           "usb_mv": {
             "type": [
@@ -523,7 +523,7 @@
             "x-unit": "mV",
             "x-diagnostic": true,
             "title": "USB-C input voltage",
-            "description": "USB-C input voltage upstream of the join (extension field). Absent in phase A (no monitor); phase B: its own INA228. Phase C: that INA228 if fitted, else the BQ25798 VAC2."
+            "description": "USB-C input voltage upstream of the join (extension field). Absent in phase A (no monitor); phase B: its own INA228."
           },
           "usb_current_ma": {
             "type": [
@@ -536,7 +536,7 @@
             "x-unit": "mA",
             "x-diagnostic": true,
             "title": "USB-C input current",
-            "description": "USB-C input current, + into the station, -32768 to +32766 mA (extension field). Absent in phase A (no monitor); phase B: its own INA228. Phase C without it: the BQ25798 IBUS while USB-C is the active input, 0 while solar is or while there is no input (charger_active_input no_input)."
+            "description": "USB-C input current, + into the station, -32768 to +32766 mA (extension field). Absent in phase A (no monitor); phase B: its own INA228."
           },
           "wind_calm": {
             "type": "boolean",
@@ -902,7 +902,7 @@
             "minimum": 0,
             "maximum": 65534,
             "x-unit": "mV",
-            "description": "The charger's own input voltage measurement. Not measured (null) in phases A and B; phase C: BQ25798 VBUS. Not the observation field charger_input_mv (PA10 divider)."
+            "description": "The charger's own input voltage measurement. Not measured (null) in phases A and B. Not the observation field charger_input_mv (PA10 divider)."
           },
           "charger_reported_input_ma": {
             "type": [
@@ -912,7 +912,7 @@
             "minimum": -32767,
             "maximum": 32767,
             "x-unit": "mA",
-            "description": "The charger's own input current, + into the charger. Not measured (null) in phases A and B; phase C: BQ25798 IBUS."
+            "description": "The charger's own input current, + into the charger. Not measured (null) in phases A and B."
           },
           "charger_reported_battery_mv": {
             "type": [
@@ -922,7 +922,7 @@
             "minimum": 0,
             "maximum": 65534,
             "x-unit": "mV",
-            "description": "The charger's own battery voltage. Not measured (null) in phases A and B; phase C: BQ25798 VBAT."
+            "description": "The charger's own battery voltage. Not measured (null) in phases A and B."
           },
           "charger_reported_battery_ma": {
             "type": [
@@ -932,7 +932,7 @@
             "minimum": -32767,
             "maximum": 32767,
             "x-unit": "mA",
-            "description": "Charge current as the charger reports it, + into the cell, mean of the last minute. Phases A and B: the bq24074 ISET pin, I = 400 x V_ISET / R_ISET, while PGOOD is asserted, and 0 while PGOOD is deasserted; null only when no new ADC sequence completed in the minute (the ADC failed or stalled: a sequence already sampled is not counted again) or, while PGOOD is asserted, an ISET reading clipped. Phase C: BQ25798 IBAT."
+            "description": "Charge current as the charger reports it, + into the cell, mean of the last minute. Phases A and B: the bq24074 ISET pin, I = 400 x V_ISET / R_ISET, while PGOOD is asserted, and 0 while PGOOD is deasserted; null only when no new ADC sequence completed in the minute (the ADC failed or stalled: a sequence already sampled is not counted again) or, while PGOOD is asserted, an ISET reading clipped."
           },
           "charger_temp_c": {
             "type": [
@@ -943,7 +943,7 @@
             "maximum": 3276.7,
             "x-unit": "°C",
             "x-resolution": 0.1,
-            "description": "Charger die temperature. Not measured (null) in phases A and B; phase C: BQ25798 TDIE."
+            "description": "Charger die temperature. Not measured (null) in phases A and B."
           },
           "pack_temp_c": {
             "type": [
@@ -954,7 +954,7 @@
             "maximum": 3276.7,
             "x-unit": "°C",
             "x-resolution": 0.1,
-            "description": "Pack temperature. Not measured (null) in phases A and B; phase C: BQ25798 TS (in phase A the NTC goes to the charger only)."
+            "description": "Pack temperature. Not measured (null) in phases A and B (the NTC goes to the charger only)."
           },
           "charger_input_power_ok": {
             "type": [
@@ -996,7 +996,7 @@
               "no_input",
               null
             ],
-            "description": "Active charger input (phase C: VAC1 = solar, VAC2 = USB-C); no_input: the charger reports that neither input powers it (phase C at night with USB-C unplugged; both source currents are then 0); null: not reported (phases A and B: one VBUS, the source is not identified; in phase C a failed charger read, listed in power_sensor_faults), no status, or a non-canonical byte (stage 7)."
+            "description": "Active charger input, for a charger that reports it; no_input: the charger reports that neither input powers it; null: not reported (phases A and B: one VBUS, the source is not identified; a failed charger read, listed in power_sensor_faults), no status, or a non-canonical byte (stage 7)."
           },
           "power_not_measured": {
             "type": "array",

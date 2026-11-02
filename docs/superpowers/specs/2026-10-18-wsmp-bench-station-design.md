@@ -1,7 +1,8 @@
 # WSMP bench station: design
 
-Status: design, approved section by section on 2026-10-18. Not implemented. This is sub-project 6
-of [`2026-10-16-sixteen-stations-design.md`](2026-10-16-sixteen-stations-design.md). It implements
+Status: design, approved section by section on 2026-10-18. Not implemented. This was sub-project 6
+of the sixteen-stations design (removed 2026-11-02; its flash layout, section 6.1, is in
+[`docs/firmware-current-design.md`](../../firmware-current-design.md)). It implements
 the station side of WSMP ([`docs/module-protocol.md`](../../module-protocol.md)) with local modules.
 
 **Amended 2026-10-29** by the power telemetry design
@@ -23,13 +24,12 @@ except where a 2026-10-30 note says otherwise:
 
 | Item | Change (2026-10-30) | Where | BP |
 |---|---|---|---|
-| Sensor ports | the v1 sensor ports are RJ11 (sensor-module-ports spec); there is no RJ45 in v1 | section 1 | H6 |
 | Meter pins | cups on PB5 (LPTIM1_IN1, AF1; Arduino D4, CN9.5), rain on PB4 (EXTI4; Arduino A3, CN8.4); approved 2026-10-30 | section 2 | N2, 7.1 N2 |
 | R_ISET | R9 = 1 kΩ (record 1.4); adopted with change A, read by this workflow from 7.1 P3 "change A as written"; R_ISET confirmed by build-sheet check 2; Clint to confirm (design D4/D5); ICHG = 890 A·Ω ÷ 1 kΩ = 0.89 A typ | section 2 | 1.4 |
-| PA9 switch | ~~proved on the breadboard first (step 1 change C, exit 9); soldered at step 2 only if proven~~ *Superseded 2026-11-02:* change C is deferred to the carrier; steps 1 and 2 have no sensor power switch | section 2 | S2 |
+| PA9 switch | ~~proved on the breadboard first (step 1 change C, exit 9)~~ *Superseded 2026-11-02:* the breadboard build has no sensor power switch; PA9 is unconnected | section 2 | 4.6 |
 | Battery chain | no current through a breadboard contact; the gauge on the CELL+ node by its own lead, its minus unconnected, ground over STEMMA QT | section 3 | P1, P3–P5, M4 |
-| Mode B | the regulator feeds CN6.4 at steps 1 and 2 (the same 3V3 net as CN7.16) | section 3 | N3 |
-| Check 5 | mode B for one hour is also step 1 exit 10, on the breadboard | section 6 | S2 |
+| Mode B | the regulator feeds CN6.4 on the breadboard (the same 3V3 net as CN7.16) | section 3 | N3 |
+| Check 5 | mode B for one hour is also step 1 exit 10, on the breadboard | section 6 | section 3 |
 
 ## 1. Goal
 
@@ -40,9 +40,9 @@ from the first day. A sensor can be plugged in or removed while the station runs
 | | Decision (Clint, 2026-10-18) |
 |---|---|
 | Parts | Plan B: SHT45, BMP581, LTR390, SHTC3, INA228, MAX17048, bq24074 with one Li-ion cell, SparkFun SEN-15901. *Amended 2026-10-29: the cell is a 1S3P pack (3 × 2,200 mAh in parallel, 6,600 mAh, 3.0-4.2 V); the bq24074 is the Adafruit #4755 with its 1.0 A ISET jumper (PT section 1)* |
-| First goal | the bench. Outdoor cabling and RJ45 modules come later. *Amended 2026-10-30 (BP H6): the v1 sensor ports are RJ11 ([`2026-10-21-sensor-module-ports-design.md`](2026-10-21-sensor-module-ports-design.md)); there is no RJ45 in v1. Outdoor cabling still comes later* |
+| First goal | the bench. Outdoor cabling and RJ45 modules come later. *Amended 2026-10-30 (BP H6): there is no RJ45 anywhere. Outdoor cabling still comes later* |
 | Power | two modes: board on USB with the battery chain beside it, and board on the battery |
-| Wiring | breadboard, then a soldered protoboard, then a custom PCB |
+| Wiring | breadboard, then a soldered protoboard, then a custom PCB. *Amended 2026-11-02: the breadboard only; the later stages were removed from the repository (git history has them)* |
 | Module contract | WSMP 1.0, local binding (WSMP section 10) |
 | Radio | today's protocol (version 5). The station maps WSMP channels onto today's catalog fields until sub-project 7. *Amended 2026-10-29: protocol version 6, catalog version 2 (PT sections 4 and 5); the map stays interim* |
 | Remote modules | RS-485 and Modbus per WSMP section 13, later |
@@ -66,7 +66,7 @@ Out of scope:
 | bq24074 PGOOD and CHG | PB8, PB10 | open drain, internal pull-ups |
 | bq24074 ISET (added 2026-10-29) | PB1 (ADC1_IN5, Arduino A0, CN8.1) | straight to ISET, analog, no pull. Charge current I = 400 × V_ISET ÷ R_ISET (SLUS810 section 9.3.5.1; R_ISET about 890 Ω, measured). *Amended 2026-10-30: R_ISET is R9 = 1 kΩ (record 1.4); adopted with change A, read by this workflow from 7.1 P3 "change A as written"; R_ISET confirmed by build-sheet check 2; Clint to confirm (design D4/D5). ICHG = 0.89 A typ; currents logged with 890 Ω read 12 % high.* *Amended 2026-10-30 (BP M2, adopted with change A, read by this workflow from 7.1 P3): no longer a straight wire. ISET → 10 kΩ 1 % at the charger end → the PB1 node, with 100 nF and 1 MΩ to logic ground. The pin reads V_ISET × 1 MΩ ÷ 1.01 MΩ (gain 990099 ppm, `POWER_ISET_GAIN_PPM`) until the per-board fit replaces it. The fit is stored in `wiring.toml` first, as the charger's `iset_gain_ppm`.* |
 | Charger input voltage (added 2026-10-29) | PA10 (ADC1_IN6, Arduino A2, CN8.3) | charger VBUS through 20 kΩ (two 10 kΩ 1 % in series) over 10 kΩ to GND; VIN = 3 × the pin. Analog, no pull. *Amended 2026-10-30 (BP M2): VIN = the pin × the stored ratio, (R4 + R5 + R6) ÷ R6 from the three resistors as measured (`POWER_VIN_DIVIDER_PPM`; 3 nominal), not an integer 3; checked in circuit within 1 %; the bottom resistor to logic ground* |
-| Sensor 3.3 V switch | PA9 | a load switch on the protoboard. Not on the breadboard. *Amended 2026-10-30 (BP S2; step 1 change C, BP 4.6): proved on the breadboard first, from a pre-assembled load-switch breakout (EN from CN5.2, D9), with the STEMMA QT bus split into an unswitched branch (power monitors) and a switched branch (sensor hub); step 1 exit 9. Soldered at step 2 only if exit 9 passed; otherwise port power waits for the mux (PORT-5)*. *Amended 2026-11-02 (BP 4.6 dated note): change C is deferred to the carrier board; neither the breadboard nor the protoboard carries a sensor switch, PA9 is unconnected on them, and the carrier switches each port from PA9 (CN10.19)* |
+| Sensor 3.3 V switch | PA9 | not wired. *Amended 2026-11-02 (BP 4.6 dated note): the breadboard build has no sensor power switch and PA9 is unconnected. The first version's protoboard switch and the breadboard switch of 2026-10-30 (change C, exit 9) were both dropped* |
 | Reserved | USART1 on PB6 and PB7 (one RS-485 port), SPI1 on PA5, PA6 and PA7 (NOR flash) | not wired now |
 
 These pins are in use, and this design must not take them:
@@ -83,7 +83,7 @@ These pins are in use, and this design must not take them:
 | PC14, PC15 | LSE crystal |
 
 - The pin map comes from ST's NUCLEO-WL55JC example projects. ST's board manual (UM2592) must
-  confirm every pin, header position and solder bridge before the protoboard is soldered. The
+  confirm every pin, header position and solder bridge before the station is wired. The
   examples disagree about some header positions.
 - *Amended 2026-10-29 (PT sections 1, 9.5 and 11.1):* the ISET and divider rows above, with CHG and
   PGOOD, are the bench wiring proven on 2026-10-28/29
@@ -98,8 +98,7 @@ These pins are in use, and this design must not take them:
   free pins.
 - *Amended 2026-10-30 (BP N2 and N3; N2 approved by Clint on 2026-10-30, BP 7.1; change B, BP 4.5):*
   the meter inputs move before any solder. Cups PC0 → **PB5** (LPTIM1_IN1 on AF1, the same AF as
-  PC0; Arduino D4, CN9.5). Rain PB5 → **PB4** (EXTI4; Arduino A3, CN8.4). PC0 is morpho-only, so the
-  step 2 shield cannot reach it. PB4's reset function NJTRST is released when the firmware configures
+  PC0; Arduino D4, CN9.5). Rain PB5 → **PB4** (EXTI4; Arduino A3, CN8.4). PC0 is morpho-only. PB4's reset function NJTRST is released when the firmware configures
   the pin (debug is SWD only); `DEBUG_RF_LDORDY_ENABLED` (would drive PB4) and
   `DEBUG_RF_SMPSRDY_ENABLED` (would drive PB2) stay 0 by compile-time assert. Every station signal
   lands on an Arduino female header: vane CN8.2 (A1), PGOOD CN9.6 (D5), CHG CN9.7 (D6), ISET CN8.1,
@@ -112,17 +111,11 @@ These pins are in use, and this design must not take them:
 - A second RS-485 port has no free UART while the console uses USART2. The station has one remote
   port until a UART multiplexer exists. This corrects the PRD's four ports and WSMP section 13.
 
-Build steps:
-1. **Breadboard and jumper wires.** Proves the pin map and the drivers.
-2. **Soldered protoboard** (for example an Adafruit Perma-Proto). Holds the STEMMA QT hub, the
-   SparkFun RJ11 breakout, the pull-ups, filters and divider, the sensor power switch and the power
-   shunt header. It must be ready before the 24-hour acceptance run.
-3. **Custom PCB.** A later revision of the sensor-interface board. A separate project.
-
-*Amended 2026-10-30 (BP section 3, S1, S2, 7.1 Q8):* the build order is step 1 (breadboard v2, no
-solder, no current through a breadboard contact), step 2 (the soldered #196 shield and Perma-Proto
-module board; H01), 1b, 2c, 3 (the carrier PCB under the NUCLEO), 4 and 5. Every circuit soldered at
-step 2 was first proved on the breadboard at step 1.
+Build: **breadboard and jumper wires.** Proves the pin map and the drivers. *Amended 2026-11-02 (BP
+section 3, S1):* the build is step 1 (breadboard v2, no solder, no current through a breadboard
+contact) and step 1b (the four INA228 rails), both on the breadboard. The soldered protoboard and
+custom PCB of the first version, and the later steps of 2026-10-30, were removed from the
+repository (git history has them).
 
 ## 3. Power modes
 
@@ -165,11 +158,11 @@ step 2 was first proved on the breadboard at step 1.
 
 **Mode B, power tests: the battery powers the station.**
 - Cell, bq24074, Pololu S7V8F3 3.3 V regulator, then the board's 3V3 pin (CN7.16) and the sensors.
-  *Amended 2026-10-30 (BP N3, P1): at steps 1 and 2 the regulator feeds **CN6.4**, the Arduino 3V3
-  pin the step 2 shield uses: regulator → the BATTERY POWER shunt → the unswitched board-A 3V3 node →
+  *Amended 2026-10-30 (BP N3, P1): on the breadboard the regulator feeds **CN6.4**, an Arduino 3V3
+  pin: regulator → the BATTERY POWER shunt → the unswitched board-A 3V3 node →
   CN6.4; the station return runs on its own lead from CN6.7. CN6.4 and CN7.16 are one 3V3 net
   (UM2592 Tables 17 and 18). On the bench CN7.16 feeds only the OLED, whose VCC lead is unplugged in
-  mode B. The carrier (step 3) may use CN7.16.*
+  mode B.*
 - The ST-LINK USB is unplugged, so the ST-LINK is off. The operator watches through the radio and
   the gateway.
 - An optional 3.3 V USB-serial adapter on PA2 and PA3 gives the console. Connect only its ground and
@@ -183,11 +176,11 @@ step 2 was first proved on the breadboard at step 1.
 | 2. Remove the 100 Ω test load. | 2. Fit the 100 Ω test load. |
 | 3. Fit the power shunt (regulator output to the 3V3 pin). | 3. Connect the board's USB cable. |
 
-- The protoboard has a two-pin header with one shunt, labelled "BATTERY POWER: USB UNPLUGGED". On
-  the breadboard it is one labelled jumper wire.
+- The power shunt is one labelled jumper wire, "BATTERY POWER: USB UNPLUGGED" (see the 2026-10-30
+  note below).
 - Before the first mode-B run, UM2592 must confirm the jumper settings for powering the board on
   CN7.16.
-- *Amended 2026-10-30 (BP N3, 4.4):* at steps 1 and 2 the shunt is the BATTERY POWER shunt header on
+- *Amended 2026-10-30 (BP N3, 4.4):* on the breadboard the shunt is the BATTERY POWER shunt header on
   breadboard B, and the UM2592 check is for powering the board on CN6.4 (the same 3V3 net as CN7.16).
   Ground is untouched by a mode change: A to B also unplugs the OLED's VCC lead from CN7.16, and B to
   A takes the shunt out before the USB goes in.
@@ -333,12 +326,12 @@ Bench check on the breadboard:
 3. Turning the cups gives a speed and a gust. All 16 vane positions decode.
 4. Twenty tips by hand give exactly twenty tips.
 5. Mode A shows charge and discharge. Mode B runs the station for one hour.
-   *Amended 2026-10-30 (BP S2): the mode-B hour is also step 1 exit 10 (BP section 3), so mode B
+   *Amended 2026-10-30 (BP section 3): the mode-B hour is also step 1 exit 10 (BP section 3), so mode B
    is proved on the breadboard before solder: the station runs from the regulator through the CN6.4
    entry, readings reach the gateway every minute, the mode-B checklist rows pass and no reset is
    logged.*
 
-Acceptance on the protoboard: a 24-hour run with every sensor, measured at the gateway.
+Acceptance on the breadboard build (H01): a 24-hour run with every sensor, measured at the gateway.
 - At least 99 % of minutes committed within 120 s (the H01 measure for this build).
 - Every channel has quality "good" in at least 99 % of minutes.
 - No `WS_CHECK` failure and no unexpected reset.
@@ -348,8 +341,8 @@ Acceptance on the protoboard: a 24-hour run with every sensor, measured at the g
 
 | Item | What to do |
 |---|---|
-| Pin map not confirmed by UM2592 | Check every pin, header position, solder bridge and the CN7.16 power jumpers before the protoboard and before mode B. *Amended 2026-10-30 (BP N3): the mode-B entry at steps 1 and 2 is CN6.4, the same 3V3 net; the checklist also ticks PB4, PB5 and PB14* |
-| Plugging a STEMMA sensor into the live 3.3 V rail | The inrush can glitch the bus or reset the board. The firmware recovers. On the bench, plug gently. The protoboard's power switch allows a controlled power cycle |
+| Pin map not confirmed by UM2592 | Check every pin, header position, solder bridge and the CN7.16 power jumpers before wiring and before mode B. *Amended 2026-10-30 (BP N3): the mode-B entry on the breadboard is CN6.4, the same 3V3 net; the checklist also ticks PB4, PB5 and PB14* |
+| Plugging a STEMMA sensor into the live 3.3 V rail | The inrush can glitch the bus or reset the board. The firmware recovers. On the bench, plug gently |
 | The LPTIM glitch filter with an external clock | Not confirmed. The RC filter is the primary debounce |
 | Vane voltage windows | They depend on the pull-up value. Measure the 16 positions on the bench and put the windows in the wind module type entry |
 | Flash budget | 72 KB is an estimate. The flash guard in every build and the size line of every release watch it |

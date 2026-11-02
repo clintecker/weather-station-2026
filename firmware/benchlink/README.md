@@ -57,7 +57,7 @@ section 2 (SDA CN5.9, SCL CN5.10, 3V3 CN6.4, GND CN6.6), on the TX NUCLEO:
 
 | Signal | TX pin | Header | From |
 |---|---|---|---|
-| Sensor power enable | PA9 | D9, CN5.2 (morpho alias CN10.19) | carrier only: unconnected on the bench (change C's load switch is deferred to the carrier, record 4.6 dated note, 2026-11-02); the hub, the INA228 and the gauge are all on the unswitched 3V3. The TX drives it high at start and keeps it high (`sensors_on`), harmless here |
+| Sensor power enable | PA9 | D9, CN5.2 (morpho alias CN10.19) | not wired: unconnected on the bench (change C's load switch is not part of the breadboard build, record 4.6 dated note, 2026-11-02); the hub, the INA228 and the gauge are all on the unswitched 3V3. The TX drives it high at start and keeps it high (`sensors_on`), harmless here |
 | bq24074 CHG | PB10 | D6, CN9.7 (morpho alias CN10.25) | the charger's CHG pin, direct (internal pull-up) |
 | bq24074 PGOOD | PB8 | D5, CN9.6 (morpho alias CN10.27) | the charger's PGOOD pin, direct (internal pull-up) |
 | Charge current | PB1, ADC1_IN5 | A0, CN8.1 (morpho alias CN7.28) | the charger's ISET pin through 10 kohm 1 % at the charger end (R_ISER) into the PB1 node, which has 100 nF (C_ISET) and 1 Mohm (R_IPD) to logic ground (record M2). The pin reads V_ISET x 1 Mohm / 1.01 Mohm; the firmware sends the pin voltage and the logger applies the gain (`--iset-gain`) |
@@ -348,7 +348,7 @@ failing block does not stop the log; it marks the run "wiring unverified" (recor
 `--preflight` shows the same status and takes dV0 (for `--power-mode`) and R_pack from the block; a stale
 block is shown as a warning and its values are still used; `--dv0` and `--r-pack` override it.
 
-Not here: step 1b's current balance, the same-chip dV/dI and step 2c's power balance need the load,
+Not here: step 1b's current balance and the same-chip dV/dI need the load,
 solar and USB-C INA228s, which the one-INA228 benchlink packet does not carry (record M6, section 6.4).
 
 ## Bench to field

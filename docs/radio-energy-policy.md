@@ -1,17 +1,15 @@
 # Radio transmission policy: energy, link health, and backlog
 
 > **Document type:** Design specification. **Language:** ASD-STE100 style.
-> **Status:** Approved 2026-10-12 (section 9 lists the approved values). The link-health part (section 6) was implemented on 2026-10-13 for the bench prototype. The code is `App/tx_policy.c` over the pure functions in `firmware/common/ws_policy.c`, host-tested in `firmware/test_tx_policy.c`. It has the link states, the probe back-off, live-only probes, the drain stop after a miss, the airtime cap from the configured spreading factor, the health-report airtime reserve (added 2026-10-29, section 6), and an energy-state hook fixed at NORMAL. Bench evidence: `evidence/g13-outage-2026-10-13/`. **Amended 2026-10-29** by the [power telemetry design](superpowers/specs/2026-10-29-power-telemetry-design.md) ("the power design" below): the node now measures its power system in phase A (the 1S3P pack, the bq24074 charger, the battery INA228 and the MAX17048 gauge) and sends it in protocol version 6. The energy state stays NORMAL (`energy_state()`, `App/tx_policy.c:34`) until the thresholds exist. They need the measured loads (H02) and Clint's open decision D1 on the pack reserve (section 3). The energy inputs (section 5) connect then (product specification sections 4–5, tests H02 and H03).
+> **Status:** Approved 2026-10-12 (section 9 lists the approved values). The link-health part (section 6) was implemented on 2026-10-13 for the bench prototype. The code is `App/tx_policy.c` over the pure functions in `firmware/common/ws_policy.c`, host-tested in `firmware/test_tx_policy.c`. It has the link states, the probe back-off, live-only probes, the drain stop after a miss, the airtime cap from the configured spreading factor, the health-report airtime reserve (added 2026-10-29, section 6), and an energy-state hook fixed at NORMAL. Bench evidence: `evidence/g13-outage-2026-10-13/`. **Amended 2026-10-29** by the [power telemetry design](superpowers/specs/2026-10-29-power-telemetry-design.md) ("the power design" below): the node now measures its power system in phase A (the 1S3P pack, the bq24074 charger, the battery INA228 and the MAX17048 gauge) and sends it in protocol version 6. The energy state stays NORMAL (`energy_state()`, `App/tx_policy.c:34`) until the thresholds exist. They need the measured loads (H02) and Clint's open decision D1 on the pack reserve (section 3). The energy-state inputs connect then (product specification sections 4–5, tests H02 and H03). *2026-11-02:* sections 5 (energy state), 8 (changes by stage) and 10 (adaptive spreading factor and power) were removed with the later build stages (git history has them); the other sections keep their numbers.
 > **Related:** [`failure-modes.md`](failure-modes.md) §1.1–1.2 (energy cost of failure), §1.2 (link back-off), §6.1 (power measurement and charger failures), §10 open issues (backlog drain rate, low-voltage inhibit, blind ACK window). [Power telemetry design](superpowers/specs/2026-10-29-power-telemetry-design.md) §2 (phases), §3 (fill table), §6.4 (health airtime), §15 (D1).
 
-In this document, "the product specification" is the Weather Station v0.2 PRD/TRD (product and technical requirements). It names requirements R02 (reporting modes, with conservation reports every 5 minutes) and R03 (the radio never takes the energy of the next 7 days of sampling). Its tests H02 (pack Ah and Wh accounting within 5 %) and H03 (168 hours at −35 °C, with cold-charge inhibit and dawn recovery) apply to the battery and solar build. The staged plan is in [`next-stages-plan.md`](next-stages-plan.md):
+In this document, "the product specification" is the Weather Station v0.2 PRD/TRD (product and technical requirements). It names requirements R02 (reporting modes, with conservation reports every 5 minutes) and R03 (the radio never takes the energy of the next 7 days of sampling). Its tests H02 (pack Ah and Wh accounting within 5 %) and H03 (168 hours at −35 °C, with cold-charge inhibit and dawn recovery) apply to the battery and solar build.
 
-| Stage | Build |
-|---|---|
-| 0 | The bench prototype: two development boards on USB power. It must pass the 24-hour delivery test (H01, [`H01-checklist.md`](H01-checklist.md)). Since 2026-10-29 the TX board also measures the power phase A hardware on the bench (power design section 2) |
-| 1 | The battery and solar build: main power and pack state, in the power phases A (bq24074), B (four INA228 rails) and C (BQ25798) of the power design |
-| 2 | One wired sensor module |
-| 3 | Complete unheated sensing |
+This repository holds the breadboarded development version: two development boards on USB power. It
+must pass the 24-hour delivery test (H01, [`H01-checklist.md`](H01-checklist.md)). Since 2026-10-29
+the TX board also measures the power hardware on the breadboard: phase A, and the four INA228 rails of
+phase B (power design section 2).
 
 ---
 
@@ -78,25 +76,23 @@ Core budget: ≤ 0.25 W average = **6 Wh/day** (product specification section 4)
 
 | Quantity | Value |
 |---|---|
-| Pack | 1S3P Li-ion: three 2,200 mAh cells in parallel. It stays 1S3P into the BQ25798 phase (C) and on the carrier (v1 base board): decided 2026-10-30 (build-progression record section 7.1, Q3) |
+| Pack | 1S3P Li-ion: three 2,200 mAh cells in parallel |
 | Capacity and voltage | 6,600 mAh, 3.0 to 4.2 V, 3.7 V nominal |
 | Energy, nominal | 6.6 Ah × 3.7 V ≈ **24.4 Wh** |
 | Runtime at the 0.25 W core budget, no solar input | 24.4 Wh ÷ 0.25 W ≈ 98 h (about 4.1 days) |
 | Reserve that this policy uses (product specification section 4: ≥ 1.2 × 168 h × core load) | ≥ **50.4 Wh** at 0.25 W (R03: 168 h × 0.25 W = 42 Wh, × 1.2) |
 | Pack against that reserve | about 48 %: the reserve is about twice the pack |
 | Core load whose reserve fits in the pack | ≤ 0.12 W (24.4 ÷ (1.2 × 168)); ≤ 0.10 W with the CONSERVE band (reserve + 20 %, section 9) also inside it |
-| Earlier plan | a 4S4P pack of about 200 Wh ([`next-stages-plan.md`](next-stages-plan.md) section 3). *Amended 2026-10-30:* this row said "The carrier's cell count is open (build-progression record, Q3)". Clint answered Q3 on 2026-10-30: the carrier stays **1S3P** (build-progression record section 7.1), with the BQ25798 at 1S and the MAX17048. The 4S4P plan is not taken |
 
-**Open decision D1 (for Clint; power design section 15).** The 1S3P pack (about 24.4 Wh) is below the reserve that this policy uses (≥ 50.4 Wh). With a reserve larger than the pack, the energy above reserve is negative at every state of charge, and the states of section 5.2 would hold the node in CRITICAL. Options:
+**Open decision D1 (for Clint; power design section 15).** The 1S3P pack (about 24.4 Wh) is below the reserve that this policy uses (≥ 50.4 Wh). With a reserve larger than the pack, the energy above reserve is negative at every state of charge, and the energy states would hold the node in CRITICAL. Options:
 
 | Option | What it means | Cost or risk |
 |---|---|---|
 | a. A lower measured core load | H02 measures the core load. The reserve shrinks with it: at ≤ 0.10 W the reserve and the CONSERVE band fit in 24.4 Wh; at about 0.06 W half the pack stays above the reserve | Depends on the measurement. No hardware change. A load above about 0.12 W leaves the conflict |
-| b. A larger 1S pack for phase C | More cells in parallel: the reserve at 0.25 W alone needs about 13.6 Ah at 3.7 V (7 cells of 2,200 mAh), about 16.3 Ah (8 cells) with the CONSERVE band | Pack, cradle and connector. Charge time: the bq24074 charges at most 1.5 A, so a larger pack wants the BQ25798 (phase C). *Amended 2026-10-30:* not the carrier plan as answered (the carrier stays 1S3P, build-progression record 7.1 Q3); any change of pack is Clint's decision |
-| c. The 4S4P pack of `next-stages-plan.md` (about 200 Wh) | About four times the reserve | The MAX17048 gauges one cell only and the bq24074 is a 1S charger: a new gauge and the BQ25798 at 4S. *Amended 2026-10-30:* not taken for the carrier: Clint answered the build-progression record's Q3 with 1S3P (section 7.1); this row said "The build-progression record's Q3" |
-| d. A PRD deviation | Shorter autonomy for this pack: at 0.25 W the reserve rule (1.2 × hours × load) fits in 24.4 Wh at about 81 h (3.4 days) instead of 168 h, with nothing above it | Weaker cold-weather autonomy. H03 (168 h at −35 °C) fails as written |
+| b. A larger 1S pack | More cells in parallel: the reserve at 0.25 W alone needs about 13.6 Ah at 3.7 V (7 cells of 2,200 mAh), about 16.3 Ah (8 cells) with the CONSERVE band | Pack, cradle and connector. Charge time: the bq24074 charges at most 1.5 A. Any change of pack is Clint's decision |
+| c. A PRD deviation | Shorter autonomy for this pack: at 0.25 W the reserve rule (1.2 × hours × load) fits in 24.4 Wh at about 81 h (3.4 days) instead of 168 h, with nothing above it | Weaker cold-weather autonomy. H03 (168 h at −35 °C) fails as written |
 
-**D1 stays open** after the 2026-10-30 answer to Q3: that answer fixes the carrier's cell count (1S3P), not the reserve conflict, so options a and d remain the open choices unless Clint changes the pack. Until D1 is decided, the energy state stays NORMAL (power design section 9.9), and the thresholds of sections 5.2 and 9 stay unset. The node only reports the measurements (sections 5.1 and 7).
+**D1 stays open.** Unless Clint changes the pack (option b), options a and c remain the open choices. Until D1 is decided, the energy state stays NORMAL (power design section 9.9), and the thresholds of section 9 stay unset. The node only reports the measurements (section 7).
 
 **Conclusions:**
 
@@ -136,57 +132,9 @@ flowchart LR
 
 ---
 
-## 5. Energy state (inputs from the power hardware; always NORMAL until D1 and the thresholds)
+## 5. Energy states (as the firmware implements them)
 
-> **Parked 2026-11-02.** This section is parked; the firmware stays in NORMAL. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
-
-### 5.1 Inputs, by measured quantity and phase
-
-The product specification requires these inputs (sections 4 and 5). The power design (section 2) names the hardware phases: **A** (now) the bq24074 with one input, the battery INA228 (0x40) and the MAX17048 (0x36); **B** phase A plus a load, a solar and a USB-C INA228, each upstream of the point where the sources join; **C** the TI BQ25798 (VAC1 solar, VAC2 USB-C, its own ADC), with or without phase B's monitors. An input is named by what it measures, not by the chip. The field numbers and health keys are those of [`protocol.md`](protocol.md) (catalog version 2, the 64-byte health report); the fill table is power design section 3.
-
-| Input (where it travels) | Phase A | Phase B | Phase C | Use in the policy |
-|---|---|---|---|---|
-| Charger status: input power good, charging, fault (health `charger_input_power_ok`, `charger_charging`, `charger_fault`) | PGOOD (PB8) and CHG (PB10) pins; fault = CHG flashing at about 2 Hz | as A | BQ25798 status registers | Battery full or nearly full (SURPLUS, section 5.2). A fault is reported, not used as a state input |
-| Charge stage (health `charger_stage`) | not measured: the pins cannot tell | not measured | BQ25798 CHG_STAT | `cv`, `topoff` or `terminated`: full or nearly full |
-| Charger input voltage (field 28 `charger_input_mv`) | PA10 × the stored divider ratio (`POWER_VIN_DIVIDER_PPM`, 3 nominal). The source is not identified; under load it can sit at VIN-DPM (4.35–4.63 V) with the charger's EN2 low, or be pulled down towards the cell voltage by a weak source with EN2 high (power-metering §5.4) | as A | BQ25798 VBUS | An input is present |
-| Charger-reported charge current (health `charger_reported_battery_ma`) | ISET (PB1): 400 × V_ISET ÷ R_ISET, ±10 %; 0 mA without PGOOD | as A | BQ25798 IBAT | Cross-check of the battery current |
-| Battery voltage (field 11 `batt_mv`) | MAX17048 VCELL at the CELL+ node (includes the pack-lead drop, I × R_pack; build-progression record M4) | as A | as A | Brown-out margin (voltage under load). The full band (SURPLUS) |
-| Battery current and the charge and energy counters (fields 12–16) | battery INA228, + into the cell | as A | as A | Energy above reserve: the integral with the calibrated capacity (`energy_above_reserve_wh`, H02) |
-| Gauge SOC and SOC rate (health `battery_soc_pct`, `battery_soc_rate_pct_h`) | MAX17048 (over-reads while charging) | as A | as A | Estimate confidence (`estimate_confidence`): a cross-check of the counted energy |
-| Solar input voltage and current (fields 29, 30) | not measured | solar INA228 | solar INA228 if fitted, else BQ25798 VAC1, and IBUS while solar is the active input | Solar input power, W: surplus detection |
-| USB-C input voltage and current (fields 32, 33) | not measured | USB-C INA228 | USB-C INA228 if fitted, else BQ25798 VAC2, and IBUS while USB-C is the active input | External power (bench or backup charging): counts as an input for SURPLUS |
-| Active input (health `charger_active_input`) | not reported | not reported (the two source rails tell it) | BQ25798 input selection: `solar`, `usb_c` or `no_input` | Which source carries the station; `no_input`: the battery does |
-| Load voltage and current (fields 26, 27) | voltage only: the battery INA228 VBUS on OUT | load INA228 | load INA228 if fitted, else BQ25798 VSYS (no current) | The core load of the reserve (H02); input power above the load (SURPLUS, phase B) |
-| Pack temperature (health `pack_temp_c`) | not measured: the NTC goes to the charger's TS pin only | not measured | BQ25798 TS | Cold pack: smaller bursts (CONSERVE) |
-| MCU supply (health `mcu_supply_mv`) | VDDA from VREFINT | as A | as A | Brown-out margin at the MCU ([`failure-modes.md`](failure-modes.md) §10, *No low-voltage inhibit*) |
-
-Energy above reserve and estimate confidence are not sent. The node will compute them from the battery counters, the calibrated capacity and the gauge when D1 sets the reserve.
-
-**Not measured is not unknown.** The fail-closed rule (section 5.2, decision 6) applies to an input that the phase **can** fill: a fitted source that gives INVALID, or an estimate without confidence, makes CONSERVE. An input that the phase **cannot** fill ("not measured": absent from the record by build, or a health none code by design) never forces CONSERVE by itself. The rule that needs it uses the phase's substitute, or does not apply:
-
-| Input the phase cannot fill | Phases | Rule that needs it | Instead |
-|---|---|---|---|
-| Solar input power | A | SURPLUS | the phase A SURPLUS rule (section 5.2) |
-| Charge stage | A, B | SURPLUS | CHG off and steady, with PGOOD (section 5.2) |
-| Pack temperature | A, B | cold pack → CONSERVE | not evaluated by the node. With the NTC fitted correctly, the charger's TS window stops charging outside 0 to 50 °C for the 103AT curve that SLUS810 specifies, about +3.5 to +47 °C for a B = 3950 part ([`failure-modes.md`](failure-modes.md) §6.1). The cold discharge limit is open (power design D3, H03) |
-| Load current | A | the core load of the reserve | the H02 measurement, as a constant |
-
-Without this rule, phase A would stay in CONSERVE for ever: it never measures the solar power or the pack temperature.
-
-### 5.2 States
-
-This diagram is the proposal for the battery and solar build. The firmware does not implement it yet (`energy_state()` returns NORMAL, `App/tx_policy.c:34`). Its SURPLUS entry is written for phase C; the SURPLUS rule below gives each phase's version.
-
-```mermaid
-stateDiagram-v2
-  direction LR
-  SURPLUS --> NORMAL: "solar gone, or battery below the full band"
-  NORMAL --> SURPLUS: "solar above threshold, charger CV or TERMINATED, pack temperature ok"
-  NORMAL --> CONSERVE: "energy above reserve below the CONSERVE threshold, estimate unknown, or pack cold"
-  CONSERVE --> NORMAL: "energy above reserve above the threshold + hysteresis"
-  CONSERVE --> CRITICAL: "energy at reserve"
-  CRITICAL --> CONSERVE: "energy above reserve + hysteresis (solar recovery)"
-```
+The firmware defines four energy states and their limits (`firmware/common/ws_policy.c`), but `energy_state()` always returns NORMAL (`App/tx_policy.c:34`) until the thresholds are set. *Restored 2026-11-02, trimmed to phases A and B, when the later-stage material was removed.*
 
 | State | Meaning | Live reading | Backlog drain | Diagnostics | Radio time cap |
 |---|---|---|---|---|---|
@@ -201,44 +149,17 @@ stateDiagram-v2
 - The node publishes the **reporting mode** (60 s or 300 s), as requirement R02 requires. The gateway must not show a CONSERVE gap as a link failure.
 - **CRITICAL is not a shutdown.** It removes the radio load first. The power system and the BMS protect the pack below that level.
 - The thresholds come from the measured reserve (product specification section 4: ≥ 1.2 × 168 h × measured core load). This document does not invent them. Approved provisional values: CONSERVE below reserve + 20 %, hysteresis 5 %.
-- **An unknown energy state means CONSERVE**, never NORMAL. This is the same fail-closed rule as product specification section 5 ("unknown estimate disables automatic export"). "Unknown" is a fitted input that fails, not an input that the phase does not measure (section 5.1).
+- **An unknown energy state means CONSERVE**, never NORMAL. This is the same fail-closed rule as product specification section 5 ("unknown estimate disables automatic export"). "Unknown" is a fitted input that fails, not an input that the phase does not measure.
 - **No threshold is set yet.** With the 1S3P pack the reserve can exceed the pack (D1, section 3). The firmware stays at NORMAL until D1 and H02.
 
-**SURPLUS rule, per phase** (proposal; its thresholds come with the others, after D1 and H02). Every phase needs all of these: no charger fault; the battery does not discharge over the minute (field 12 ≥ 0 within the INA228 offset); the battery voltage (field 11) in the full band. Then each phase needs its own evidence that an input carries the station and that the charger is in its last stage:
+**SURPLUS rule, per phase** (proposal; its thresholds come with the others, after D1). Every phase needs all of these: no charger fault; the battery does not discharge over the minute (field 12 ≥ 0 within the INA228 offset); the battery voltage (field 11) in the full band. Then each phase needs its own evidence that an input carries the station and that the charger is in its last stage:
 
 | Phase | An input carries the station | The charger is full or nearly full | Pack temperature |
 |---|---|---|---|
 | A | PGOOD asserted, and `charger_input_mv` (field 28) above the threshold. Solar or USB-C: the source is not identified, and either one is energy that the pack does not pay | CHG off and steady: charge done, or a refresh charge (SLUS810 table 9-2). CHG on with about 0 mA is a TS suspend (SLUS810 section 9.3.6), not a full battery | not measured: no condition |
 | B | as A, and the solar power (fields 29 × 30) or the USB-C power (fields 32 × 33) above the threshold and above the load power (fields 26 × 27) | as A | not measured: no condition |
-| C | the solar or the USB-C power above the threshold: the INA228s if fitted, else BQ25798 VBUS × IBUS with the active input | `charger_stage` is `cv`, `topoff` or `terminated` | `pack_temp_c` inside the charge window |
 
 SURPLUS ends when any condition fails: the input goes, the battery starts to discharge, or its voltage leaves the full band.
-
-### 5.3 Typical day (deployment, Chicago winter, illustration)
-
-```mermaid
-gantt
-  title Illustration only: one winter day with a night-time house power outage
-  dateFormat HH:mm
-  axisFormat %H:%M
-  section Energy state
-  NORMAL (battery, night)      :n1, 00:00, 07:30
-  NORMAL (weak sun)            :n2, 07:30, 10:30
-  SURPLUS (sun, battery full)  :crit, s1, 10:30, 14:00
-  NORMAL                       :n3, 14:00, 24:00
-  section Link
-  LINKED                       :l1, 00:00, 01:00
-  PROBING (house power out)    :active, l2, 01:00, 06:00
-  LINKED                       :l3, 06:00, 24:00
-  section Backlog
-  Grows (300 readings)         :b1, 01:00, 06:00
-  Drains 2-5/min (NORMAL)      :b2, 06:00, 08:00
-  Empty                        :b3, 08:00, 24:00
-```
-
-A short outage drains in NORMAL within hours. A long outage (days) drains mostly in the SURPLUS hours near noon.
-
----
 
 ## 6. Link state (implemented on the bench prototype)
 
@@ -256,7 +177,7 @@ stateDiagram-v2
   PROBING --> LINKED: "any reply (ACK or NACK)"
 ```
 
-While PROBING, the node sends only the live reading, with no backlog. With healthy energy (SURPLUS, NORMAL), it sends the live reading **every minute**. Only CONSERVE uses the back-off: 2, 4 and 8 minutes, then 15 minutes, counted from the start of the unanswered exchange. The project owner made this change on 2026-10-13. It removes the risk to H01 that one outage makes up to 14 readings late. It also keeps live data flowing on a one-way link. Code: `ws_link_may_send()` in `firmware/stage0.c`, host-tested in `firmware/test_policy.c`, and used by `ws_minute_backlog()` in `firmware/common/ws_policy.c`. The node is always NORMAL in this phase (section 5). Thus PROBING now means "live reading only, every minute".
+While PROBING, the node sends only the live reading, with no backlog. With healthy energy (SURPLUS, NORMAL), it sends the live reading **every minute**. Only CONSERVE uses the back-off: 2, 4 and 8 minutes, then 15 minutes, counted from the start of the unanswered exchange. The project owner made this change on 2026-10-13. It removes the risk to H01 that one outage makes up to 14 readings late. It also keeps live data flowing on a one-way link. Code: `ws_link_may_send()` in `firmware/stage0.c`, host-tested in `firmware/test_policy.c`, and used by `ws_minute_backlog()` in `firmware/common/ws_policy.c`. The node is always NORMAL in this phase (see the status note above). Thus PROBING now means "live reading only, every minute".
 
 | Parameter | Value | Reason |
 |---|---|---|
@@ -306,20 +227,6 @@ The gateway does **not** tell the node how much to transmit. The node knows its 
 
 ---
 
-## 8. What changes, by stage
-
-> **Parked 2026-11-02.** This section is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
-
-| Stage | Work |
-|---|---|
-| **0 (now)** | Link state machine (*K*, probe back-off, live-only probes, drain stop after a miss). Airtime cap per minute from the spreading factor. Energy-state interface in the firmware, fixed at `NORMAL`. The node reports the link state and the journal counters (kind-4 health report). **Done 2026-10-13.** Note: the Python simulator (`ws0/simulator.py`) drains 5 backlog records per minute, like NORMAL. It does not model PROBING or the drain stop. Thus simulation results do not cover this behaviour. **2026-10-29 (power design):** the node runs power phase A. It reads the CHG and PGOOD pins, ISET, the charger input voltage, the battery INA228, the MAX17048 and VREFINT, and sends them in protocol version 6: the observation fields and the 64-byte health report (section 7). The health-report airtime reserve is in the allowance (section 6). The energy state stays `NORMAL`: no thresholds before D1 and H02. |
-| **1, phase A** (bq24074, 1S3P, one panel or USB-C) | Measure the TX and RX current and the core load (H02). Decide D1 (section 3). Set the thresholds from the measured reserve. Connect the phase A inputs of section 5.1 to the energy-state interface: SURPLUS by the phase A rule (section 5.2); no pack temperature. Test the CONSERVE and CRITICAL transitions with a bench supply and replayed solar profiles (H03). The energy state stays NORMAL until then |
-| **1, phase B** (four INA228 rails) | Add the solar, USB-C and load rails to the SURPLUS rule and the core load. No protocol change: the fields exist. The energy state stays NORMAL until the thresholds exist |
-| **1, phase C** (BQ25798, with or without phase B's monitors) | Add the charge stage and the pack temperature (cold pack → CONSERVE). The BQ25798 ADC cross-checks the INA228s. No protocol change. The energy state stays NORMAL until the thresholds exist |
-| **4 and later** | Tune the SURPLUS thresholds and caps in the field from real winter data. |
-
----
-
 ## 9. Decisions (approved by the project owner, 2026-10-12)
 
 All six proposals below are approved as written. The thresholds in item 4 stay provisional until the H02 and H03 measurements.
@@ -337,23 +244,5 @@ All six proposals below are approved as written. The thresholds in item 4 stay p
 
 - **Health-report airtime reserve.** In a minute whose health report follows the exchange, the report's airtime comes off the cap first, with the saturating form of section 6. Decisions 3 and 5 do not change.
 - **The CONSERVE exception at SF12.** The live exchange plus the health report (2,274 ms in firmware rounding) exceed the 2 s CONSERVE cap once per health report: every 15 minutes and after each link-state change (section 6; power design risk R3).
-- **Decision 6, made precise.** "Unknown" is a fitted input that fails. An input that the phase does not measure uses the substitute of section 5.1.
+- **Decision 6, made precise.** "Unknown" is a fitted input that fails. An input that the phase does not measure is not unknown.
 - **Decision 4 waits for D1.** Its thresholds need a reserve that fits the pack (section 3).
-
-## 10. Open question for the battery and solar build: adaptive spreading factor and power (not approved, not implemented)
-
-> **Parked 2026-11-02.** This section is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
-
-The project owner raised this on 2026-10-13, after the office range walk (`evidence/rangetest-office-2026-10-13/`). Today, the spreading factor and the power are fixed per placement ([`CONTEXT-PACK.md`](CONTEXT-PACK.md) section 6, step 4). This policy caps the airtime and backs off the probes around that fixed spreading factor.
-
-**Idea:** start at, and fall back to, the longest reach (SF12, +22 dBm). Then let the gateway step the node down to cheaper settings while the margin allows. LoRaWAN does this with its adaptive data rate (ADR).
-
-| For | Against |
-|---|---|
-| Energy: SF12 costs about 20× the airtime of SF7 per frame (821 against 41 ms for the 93-byte frame; 576 against 27 ms for the previous 56-byte frame, section 3) | A new failure mode: two ends on different settings cannot hear each other. `firmware/rangetest` needed restart adoption and a lost-contact fallback to the longest reach to stay safe. |
-| Follows a changing link (snow or ice on the antenna) | The airtime cap, *K* and the probe interval (sections 6 and 9) currently assume one spreading factor |
-| A failing link recovers at the longest reach without help | More firmware and gateway state to test |
-
-**Evidence to respect if adopted:** in the office, losses began near 0 dB SNR, not at the −20 dB limit of SF12. They came in bursts (probable in-band interference). Step-down decisions must use the measured delivery rate over a window, not the reported SNR alone.
-
-Decide this in the battery and solar build, when H02 and H03 give the real TX energy per frame. The bench prototype keeps a fixed spreading factor.

@@ -28,7 +28,7 @@ enum i2c_sim_mode { DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY, DM_HANG
    address. On the hub every device is upstream. */
 int i2c_sim_add(int kind, uint8_t addr7);
 int i2c_sim_add_on(int kind, uint8_t addr7, int channel);   /* channel 0-7, or I2C_SIM_UPSTREAM */
-/* On the PA9 switched branch (the carrier's port power, change C; deferred from step 1 on 2026-11-02,
+/* On the PA9 switched branch (per-port power, change C; not built on the breadboard since 2026-11-02,
    build-progression record 4.6 dated note): a switched device NACKs its
    address while the recorded PA9 state (i2c_sim_power) is low. A device is unswitched when added, as
    the power monitors are (the INA228s and the MAX17048, PORT-9): they answer whatever PA9 does. */

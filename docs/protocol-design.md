@@ -58,8 +58,7 @@ spreading factor 7 (SF7), and every 6 bytes at SF12.
 | Frame | Previous format | This format | SF7 | SF12 |
 |---|---:|---:|---:|---:|
 | Observation, phase A power set with every module in the layout (the current hardware) | — | **81 B** | 35.9 ms | 739.3 ms |
-| Observation, phase B or phase C with phase B's monitors (every rail, with the extension word) | — | 93 B | 41.0 ms | 821.2 ms |
-| Observation, phase C alone (no `load_current_ma`) | — | 91 B | 39.7 ms | 821.2 ms |
+| Observation, phase B (every rail, with the extension word) | — | 93 B | 41.0 ms | 821.2 ms |
 | Observation, the node's field set `WS_F_WSMP_BENCH` (the widest record of the current build, `OBS_FRAME_MAX`) | — | **93 B** | 41.0 ms | 821.2 ms |
 | Observation, **per-build ceiling** (the journal rule, section 5.5) | — | 96 B | 41.0 ms | 821.2 ms |
 | Observation, every catalog version 2 field (accepted only by the RX bridge and the gateway; never a build) | — | 110 B | 46.1 ms | 944.1 ms |
@@ -124,9 +123,7 @@ the full table.
   updated would NACK the new bitmap bits (reason 2, `fields.decode`), and the node would abandon
   those records: a permanent loss. An RX bridge that was not updated would drop the longer health
   report silently. With version 6 a mismatched end drops the frames as another version, so the
-  records stay in the journal until both ends match. No new frame kind was added. The time sync of
-  the sixteen-stations design, first planned as version 6, becomes version 7 (one change per
-  version).
+  records stay in the journal until both ends match. No new frame kind was added.
 - The previous header was 16 bytes: the magic `WS`, a version byte, a kind byte, a u32 station
   and a u64 counter. A u16 station ID is sufficient for one gateway. A u40 counter lasts more than
   100,000 years (section 3.2). These two changes save 5 bytes. One byte for version and kind, and
@@ -296,7 +293,7 @@ Why this shape:
 - **A fixed length.** Every slot is always on the wire, with a none code (the type's minimum for a
   signed value, all-ones for an unsigned one) when the build or phase has no source or the source
   failed. A fixed length keeps the RX bridge's exact-length check (`ws_console.c:82`) and the
-  gateway's `PLAIN_LENGTHS`, and a later phase (the BQ25798's own ADC) fills the charger-reported
+  gateway's `PLAIN_LENGTHS`, and a charger with its own ADC could fill the charger-reported
   slots without a format change. In phase A they are none, except the ISET charge current.
 - **Source-agnostic names.** The keys say what is measured (`charger_reported_input_mv`), not which
   chip measures it. The charger-reported keys are named apart from the observation field
@@ -305,7 +302,7 @@ Why this shape:
   value of a report that breaks a rule: fitted bit 7 set gives a warning; a charger status with
   stage 7 gives a warning and `null` charger keys (`diag_problems`, `ws0/protocol.py:102-108`).
   The node never sends either. Active input 3 is canonical: it means "no input" (amended
-  2026-10-29, it was reserved), so phase C can report a charger without input at night.
+  2026-10-29, it was reserved), so a charger that reports its input can say it has none.
 - **"Not measured" and "sensor fault" kept apart.** One none code a slot cannot say why a value is
   missing, so byte 51 (the fitted byte, amended 2026-10-29) carries one bit a group of slots: set
   means the build has a source, so a none code is a fault. The gateway turns it into
@@ -488,9 +485,8 @@ phase needs a format change (power design section 1). The phases are:
 |---|---|---|
 | **A** (current) | Adafruit bq24074 (#4755), one VBUS input | battery INA228 at 0x40 (shunt in the battery path, VBUS on its own sense lead to the charger OUT), MAX17048 at 0x36 on the CELL+ node; the MCU reads ISET (PB1), the charger input divider (PA10), CHG (PB10), PGOOD (PB8) and VREFINT |
 | **B** (four rails) | bq24074 | phase A plus a load INA228 (0x41, on OUT), a solar INA228 (0x45) and a USB-C INA228 (0x48), each upstream of the point where the sources join |
-| **C** (BQ25798) | TI BQ25798: VAC1 = solar, VAC2 = USB-C, its own ADC over I2C | with phase B's INA228s ("C+B") or without them ("C alone") |
 
-Phases B and C may come in either order. The pack is a 1S3P Li-ion pack in every phase (three
+The pack is a 1S3P Li-ion pack in both phases (three
 2,200 mAh cells in parallel, 6,600 mAh, 3.0 to 4.2 V).
 
 **Fields, units, signs and ranges.** Every voltage is 2 bytes at 1 mV (0 to 65,534 mV); every
@@ -516,18 +512,18 @@ version 6 fixes the sign. The names say what is measured; none names a chip.
 **Which source fills each field, per phase** (power design section 3.2). "Absent" = the field is
 not in the record; "INVALID" = the source is fitted but failed.
 
-| Field | Phase A | Phase B | Phase C+B | Phase C alone |
-|---|---|---|---|---|
-| 11 battery voltage | MAX17048 VCELL at the CELL+ node (includes the pack-lead drop; build-progression record M4), mean of the minute's 4 reads | as A | as A | as A |
-| 12 battery current | battery INA228 CHARGE delta ÷ the window's time, sign −1 | as A | as A | as A |
-| 13–16 battery energy and charge | ΔQ of the battery INA228 × VCELL, split by sign; energy INVALID in a minute where a step had no fresh VCELL | as A | as A | as A |
-| 26 load voltage | battery INA228 VBUS (its own sense lead to OUT) | load INA228 VBUS | load INA228 VBUS | BQ25798 VSYS |
-| 27 load current | absent | load INA228 | load INA228 | absent |
-| 28 charger input voltage | PA10 × the stored divider ratio (`POWER_VIN_DIVIDER_PPM`, 3 nominal); the source is not identified | as A (a cross-check of the source rails) | BQ25798 VBUS (the selected input, after its input FETs) | BQ25798 VBUS |
-| 29 solar voltage | absent | solar INA228 VBUS | solar INA228 VBUS | BQ25798 VAC1 |
-| 30 solar current | absent | solar INA228 | solar INA228 | BQ25798 IBUS while solar is the active input, 0 mA while USB-C is or with no input |
-| 32 USB-C voltage | absent | USB-C INA228 VBUS | USB-C INA228 VBUS | BQ25798 VAC2 |
-| 33 USB-C current | absent | USB-C INA228 | USB-C INA228 | BQ25798 IBUS while USB-C is the active input, 0 mA while solar is or with no input |
+| Field | Phase A | Phase B |
+|---|---|---|
+| 11 battery voltage | MAX17048 VCELL at the CELL+ node (includes the pack-lead drop; build-progression record M4), mean of the minute's 4 reads | as A |
+| 12 battery current | battery INA228 CHARGE delta ÷ the window's time, sign −1 | as A |
+| 13–16 battery energy and charge | ΔQ of the battery INA228 × VCELL, split by sign; energy INVALID in a minute where a step had no fresh VCELL | as A |
+| 26 load voltage | battery INA228 VBUS (its own sense lead to OUT) | load INA228 VBUS |
+| 27 load current | absent | load INA228 |
+| 28 charger input voltage | PA10 × the stored divider ratio (`POWER_VIN_DIVIDER_PPM`, 3 nominal); the source is not identified | as A (a cross-check of the source rails) |
+| 29 solar voltage | absent | solar INA228 VBUS |
+| 30 solar current | absent | solar INA228 |
+| 32 USB-C voltage | absent | USB-C INA228 VBUS |
+| 33 USB-C current | absent | USB-C INA228 |
 
 - **The battery voltage stays on the gauge in every phase.** The MAX17048 reads the CELL+ node on
   its own sense lead, which carries no load current, with its ground over STEMMA QT; whenever
@@ -545,9 +541,7 @@ not in the record; "INVALID" = the source is fitted but failed.
   and a weak source is pulled down towards the cell voltage (`hardware/power-metering.md` section
   5.4).
 - **Phase B** puts one monitor upstream of the join on each source, so solar and USB-C current are
-  told apart. **Phase C alone** knows its active input (the BQ25798 switches its input FETs) and
-  reports it in the health report's charger status byte (bits 6–7); that bit attributes IBUS to a
-  rail. With no input (code 3, neither VAC1 nor VAC2 present) both source rails read 0 mA.
+  told apart.
 - **The USB-C rule.** USB-C is for bench work and occasional backup charging only, and is never
   connected at the same time as solar. So at most one source rail carries current. Two source
   rails with current at the same time are a broken operating rule, visible in the data in phases B
@@ -737,9 +731,9 @@ This procedure applies to version 6 and to every later format change (power desi
 - Drivers for fields 7 and 8. The WSMP bench has drivers for the other measured fields. It does
   not send fields 21–24 (section 5.3). The catalog is fixed now. Each sensor's driver comes with
   its hardware.
-- The phase B and phase C hardware and the BQ25798 driver: the catalog and the health report
-  already have their slots (section 5.3, "Power telemetry"); a phase C build stops with `#error`
-  today (`App/power_config.h:35-36`).
+- The phase B hardware (step 1b): the catalog and the health report already have its slots
+  (section 5.3, "Power telemetry"); a power profile other than A or B stops the build with
+  `#error` (`App/power_config.h:35-36`).
 - Gateway analysis and alerts on the power data (two source rails with current, early
   termination, SOC trends), rail energy counters other than the battery's, the window minimum and
   maximum of the currents, and derived rail power.

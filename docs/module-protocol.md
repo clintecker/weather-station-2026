@@ -15,9 +15,7 @@ to a driver on the station's own microcontroller and to a module board on a stat
 
 **Ports in v1 and v2.** Version 1 of the station hardware has two kinds of module: base-board
 modules (drivers on the station's microcontroller, for example the battery and power-rails modules)
-and STEMMA QT sensor modules on RJ11 (6P6C) I2C ports (the
-[sensor module ports design](superpowers/specs/2026-10-21-sensor-module-ports-design.md), section 1:
-"No RJ45 anywhere in v1"). Both are local modules (section 10). A remote module (an adapter
+and STEMMA QT sensor modules on RJ11 (6P6C) I2C ports (no RJ45 anywhere in v1). Both are local modules (section 10). A remote module (an adapter
 microcontroller, RS-485 Modbus over RJ45, section 13) is the **unscheduled v2**: this document keeps
 its binding so that the contract stays the same if v2 is built, but no v1 station has an RJ45 port.
 
@@ -26,13 +24,11 @@ the code or an error in this document. Fix one of them in the same change.
 
 Other documents:
 - [`protocol.md`](protocol.md) is the radio protocol between the station and the gateway.
-- [`superpowers/specs/2026-10-21-sensor-module-ports-design.md`](superpowers/specs/2026-10-21-sensor-module-ports-design.md)
-  gives the v1 RJ11 I2C port hardware. [`next-stages-plan.md`](next-stages-plan.md) and the PRD
-  describe the RJ45 port hardware of the unscheduled v2.
+- [`firmware-current-design.md`](firmware-current-design.md) gives the module identity (section
+  6.7) and the module record (section 6.9) that the station implements, and the mux profile of the
+  I2C bus (sections 4.1, 4.3, 6.5 and 6.6).
 - [`superpowers/specs/2026-10-29-power-telemetry-design.md`](superpowers/specs/2026-10-29-power-telemetry-design.md)
-  gives the power modules (types 8 and 9), the power phases A to C and their fill table.
-- [`superpowers/specs/2026-10-16-sixteen-stations-design.md`](superpowers/specs/2026-10-16-sixteen-stations-design.md)
-  gives the 16-station radio budget that limits the data size.
+  gives the power modules (types 8 and 9), the power phases and their fill table.
 
 ## 1. Words used in this document
 
@@ -98,8 +94,8 @@ The design has seven rules:
    slow power items (state of charge and its rate, charger status, power-monitor die temperature,
    MCU supply voltage, the charger's own measurements) and the station counters are fields of the
    radio protocol's health report, filled by the station's accessors (`mod_power_health()`,
-   `firmware/stage0-node/App/mod_power.c:174`), not WSMP channels. Sub-project 7 of the
-   sixteen-stations design decides whether they become health-class channels on the radio. The
+   `firmware/stage0-node/App/mod_power.c:174`), not WSMP channels. Whether they become health-class channels on the radio is not
+   decided. The
    station still latches and reads every module every minute, so the polling stays uniform.
 
 ## 3. Versioning
@@ -267,21 +263,20 @@ sections 2 and 3.2) fills the channels it has a source for and marks the rest "n
 `firmware/stage0-node/App/power_config.h:29-39`). Phase A: bq24074 charger, one INA228 (0x40) with
 its shunt in the battery path and its VBUS sense on the charger output (OUT), a MAX17048 (0x36)
 on the CELL+ node, the charger input divider on PA10. Phase B adds a load INA228 on OUT and a solar
-and a USB-C INA228, each upstream of the point where the sources join. Phase C: a TI BQ25798 (VAC1
-solar, VAC2 USB-C, its own ADC), with or without phase B's monitors ("C+B" or "C alone").
+and a USB-C INA228, each upstream of the point where the sources join.
 
-| Channel (quantity) | Net | Phase A | Phase B | Phase C |
-|---|---|---|---|---|
-| battery voltage (9) | the cell | MAX17048 VCELL | as phase A | as phase A |
-| battery current (10) | the battery path | battery INA228, charge delta ÷ window time, sign −1 (positive into the cell) | as phase A | as phase A |
-| energy and charge counters (11–14) | the battery path | battery INA228 charge delta (A.h) and charge delta × VCELL (W.h), split by sign; energy missing in a window where a step had no fresh VCELL | as phase A | as phase A |
-| load voltage (18) | charger output (OUT, the system rail) | battery INA228 VBUS (its own sense lead to OUT) | load INA228 VBUS | load INA228 if fitted, else BQ25798 VSYS |
-| load current (19) | OUT to the load | not fitted | load INA228 | load INA228 if fitted, else not fitted |
-| charger input voltage (20) | charger VBUS, after the sources join | PA10 × the stored divider ratio (`POWER_VIN_DIVIDER_PPM`, 3 nominal); the source is not identified | as phase A | BQ25798 VBUS |
-| solar input voltage (21) | solar, upstream of the join | not fitted | solar INA228 VBUS | solar INA228 if fitted, else BQ25798 VAC1 |
-| solar input current (22) | solar, upstream of the join | not fitted | solar INA228 | solar INA228 if fitted, else BQ25798 IBUS while solar is the active input, 0 mA while USB-C is or with no input |
-| USB-C input voltage (23) | USB-C, upstream of the join | not fitted | USB-C INA228 VBUS | USB-C INA228 if fitted, else BQ25798 VAC2 |
-| USB-C input current (24) | USB-C, upstream of the join | not fitted | USB-C INA228 | USB-C INA228 if fitted, else BQ25798 IBUS while USB-C is the active input, 0 mA while solar is or with no input |
+| Channel (quantity) | Net | Phase A | Phase B |
+|---|---|---|---|
+| battery voltage (9) | the cell | MAX17048 VCELL | as phase A |
+| battery current (10) | the battery path | battery INA228, charge delta ÷ window time, sign −1 (positive into the cell) | as phase A |
+| energy and charge counters (11–14) | the battery path | battery INA228 charge delta (A.h) and charge delta × VCELL (W.h), split by sign; energy missing in a window where a step had no fresh VCELL | as phase A |
+| load voltage (18) | charger output (OUT, the system rail) | battery INA228 VBUS (its own sense lead to OUT) | load INA228 VBUS |
+| load current (19) | OUT to the load | not fitted | load INA228 |
+| charger input voltage (20) | charger VBUS, after the sources join | PA10 × the stored divider ratio (`POWER_VIN_DIVIDER_PPM`, 3 nominal); the source is not identified | as phase A |
+| solar input voltage (21) | solar, upstream of the join | not fitted | solar INA228 VBUS |
+| solar input current (22) | solar, upstream of the join | not fitted | solar INA228 |
+| USB-C input voltage (23) | USB-C, upstream of the join | not fitted | USB-C INA228 VBUS |
+| USB-C input current (24) | USB-C, upstream of the join | not fitted | USB-C INA228 |
 
 Phase A cannot tell solar from USB-C: the bq24074 has one input and no monitor sits upstream of the
 join, so the charger input voltage (20) is the only input channel it fills. USB-C is for bench work
@@ -310,7 +305,7 @@ the rail currents are out of scope for types 8 and 9.
   snapshot. In this phase no built module type is health class (type 5, the only health-class type,
   is frozen): the radio protocol's health report carries the slow power items as its own fields
   ([`protocol.md`](protocol.md)), not as WSMP channels. The health class stays defined for
-  sub-project 7.
+  a later protocol revision.
 
 ## 5. The descriptor
 
@@ -532,7 +527,7 @@ admits the module.
   removes a module when the holder check of another port's duplicate finds it gone (two address
   NACKs, a confirmed different identity, or a Faulted or operator-disabled port), when its pre-latch
   identity check confirms a change, or after 60 latches in a row with its possibly-replugged flag set
-  and its identity unverified (sensor module ports design, section 6.7). In Suspect, a latch with a
+  and its identity unverified ([`firmware-current-design.md`](firmware-current-design.md), section 6.7). In Suspect, a latch with a
   good read but an unverified identity neither counts as missed nor breaks the run.
 - **WSMP-P3. Bus faults.** A bus fault (for example SDA held low) sets the quality of the affected
   channels to missing. It MUST NOT change the descriptor set by itself.
@@ -590,7 +585,7 @@ of a window from two snapshots.
 - **WSMP-T4. Free-running sampling.** A module samples on its own clock at the sample period in its
   metadata. The latch sets only the window boundaries. Exception: an I2C port module's driver starts
   no sample in the 3 s before a latch; a sample due then is deferred to just after the latch, keeping
-  the sampling phase, so every window keeps its sample count (sensor module ports design, section 6.7).
+  the sampling phase, so every window keeps its sample count ([`firmware-current-design.md`](firmware-current-design.md), section 6.7).
 
 Quality in the snapshot is one byte. The radio carries 2 bits:
 
@@ -620,8 +615,8 @@ missing, and cannot tell a part that the build lacks from a part that failed.
   test. Not-fitted channels are not counted where the station's own snapshots are evaluated (on the
   station, and through the catalog map in the observation, where they are absent fields). A WSMP
   radio reading cannot make this exclusion, because its quality shows them as missing.
-- **WSMP-Q2. Set-level not-fitted marker (sub-project 7 requirement).** Before WSMP readings travel
-  on the radio (sub-project 7 of the sixteen-stations design), the descriptor set MUST gain a
+- **WSMP-Q2. Set-level not-fitted marker.** Before WSMP readings travel
+  on the radio, the descriptor set MUST gain a
   set-level marker for not-fitted channels, for example a per-channel flag in the descriptor set or a
   profile-dependent channel list, so that the gateway can tell "not fitted" from "missing" (power
   telemetry design, section 8.3, risk R10).
@@ -681,7 +676,7 @@ packet-beta
 ```
 
 Each module entry is 18 bytes, then its descriptors. The entry carries the module's identity
-(sensor module ports design, section 6.7): `serial` (u64), `id_flags` (u8: the identity flags' low
+([`firmware-current-design.md`](firmware-current-design.md), section 6.7): `serial` (u64), `id_flags` (u8: the identity flags' low
 byte, the serial source in bits 0–1 and the record status in bits 4–7; bits 2–3 reserved, 0) and
 `record_crc` (u32: the applied record's CRC-32C, 0 when no record is applied). The digest is the
 CRC-32C of every byte after the 8-byte header: the entries and their descriptors. A changed serial or record CRC gives a new set and generation
@@ -725,7 +720,7 @@ sequenceDiagram
 - **WSMP-E8.** The gateway stores a reading of an unknown generation raw and asks for the set. It
   keeps at most 1,440 raw readings for each station and raises an alarm when the limit is near.
 - **WSMP-E9.** The radio protocol carries the set in its own frame kind, and the request flag in the
-  ACK. If sub-project 7 introduces health-class channels, the health report also carries the
+  ACK. If a later revision introduces health-class channels, the health report also carries the
   generation. The radio protocol specification defines those frames. This is a later step, after
   the radio time sync.
 
@@ -739,7 +734,7 @@ quality codes, 2 bits for each channel, most significant bits first, padded with
   is 60 bytes (`WSMP_RADIO_BUDGET`, `firmware/common/wsmp.h:20`): the planned plaintext less a
   20-byte header, where the planned plaintext is the journal's 80 B per build of protocol version 6
   (power telemetry design, sections 7 and 8.4; it was 58 B from a 78 B plaintext under version 5).
-  Health-class channels, if sub-project 7 introduces them, MUST fit the space that the radio
+  Health-class channels, if a later revision introduces them, MUST fit the space that the radio
   protocol gives them in the health report.
 - **WSMP-A2.** A channel with quality "missing" still takes its place, so the positions never shift.
 
@@ -766,7 +761,7 @@ missed reading never loses a wrap. Sixty vane samples give vector sums within ±
 The station is at the limits: 8 modules and 24 channels (WSMP-P8) and 1 byte under WSMP-A1. The
 power phases add no channels (the rails module has every rail from the start; a phase without a
 source marks the channel not fitted), so the station stays at these limits in every phase. Any
-further module or channel needs WSMP-P8 and WSMP-A1 revised in sub-project 7 (power telemetry
+further module or channel needs WSMP-P8 and WSMP-A1 revised in a later protocol revision (power telemetry
 design, risk R2).
 
 The health report carries no WSMP channels in this phase. The slow power items (state of charge and
@@ -821,7 +816,7 @@ radio TX timeouts, I2C bus recoveries) are fields of the radio protocol's 64-byt
 
 ## 13. Remote modules (the RJ45 binding, unscheduled v2)
 
-This binding is the **unscheduled v2** of the module ports (sensor module ports design, section 1).
+This binding is the **unscheduled v2** of the module ports.
 No v1 station has an RJ45 port: v1 uses the base-board modules and STEMMA QT sensor modules on RJ11
 (6P6C) I2C ports, all local modules (section 10). The binding is kept so that a v2 module gives the
 same contract.
@@ -875,7 +870,7 @@ modules, these host tests cover part of the table:
 | Register map | | all: no remote module yet |
 | Snapshot, Latch | the `Conformance` latch tests, each module's own tests | the reply time |
 | Counters | the wind and rain tests | counts across a reboot (C1, C2) |
-| Quality | each module's absent and out-of-range tests; the power modules' not-fitted, dead-part and bus-fault tests (`tests/test_wsmp_map.py`, `tests/test_modules.py`, `tests/test_power_acq.py`) | Q2, the set-level not-fitted marker: sub-project 7 |
+| Quality | each module's absent and out-of-range tests; the power modules' not-fitted, dead-part and bus-fault tests (`tests/test_wsmp_map.py`, `tests/test_modules.py`, `tests/test_power_acq.py`) | Q2, the set-level not-fitted marker: a later protocol revision |
 | Metadata | | all: no local module has a metadata block |
 | Fuzzing | `firmware/fuzz/fuzz_wsmp.c` | |
 | Station behaviour | `tests/test_wsmp_host.py`, `tests/test_wsmp_map.py`, `tests/test_i2c_bus.py` | descriptor sets and generations (E1–E3, not implemented yet), the budget report in the health report (P5), remote presence and power (P1, P7) |
@@ -890,7 +885,7 @@ modules, these host tests cover part of the table:
 | Siting and calibration archive | The gateway will keep a dated record of each module's installation: height, shield, vane north offset, barometer height. It will also keep each module's calibration coefficients. This is needed before outdoor use. |
 | Remote ports beyond one (v2) | Needs a UART multiplexer or a different station microcontroller. |
 | Module authentication | Not in WSMP 1.0 (WSMP-X1). |
-| Slow power data is best effort | No module type is health class in this phase (rule 7). The battery voltage, current and energy and charge counters are minute channels and are journaled with the reading. The slow items (state of charge and its rate, charger status, die temperature, MCU supply voltage) are health-report fields of the radio protocol: the health report has no journal entry and no reply, so a lost report loses that report's values (power telemetry design, risk R1). Whether they become WSMP health-class channels is decided in sub-project 7. |
-| "Not fitted" on the radio | The 2-bit radio quality carries "not fitted" as "missing" (section 9). Sub-project 7 adds the set-level marker of WSMP-Q2 before WSMP readings travel (power telemetry design, risk R10). |
-| Module and channel limits | The station is at WSMP-P8 (8 modules, 24 channels) and 1 byte under WSMP-A1 (section 11.3). Any further module or channel needs both revised in sub-project 7 (power telemetry design, risk R2). |
+| Slow power data is best effort | No module type is health class in this phase (rule 7). The battery voltage, current and energy and charge counters are minute channels and are journaled with the reading. The slow items (state of charge and its rate, charger status, die temperature, MCU supply voltage) are health-report fields of the radio protocol: the health report has no journal entry and no reply, so a lost report loses that report's values (power telemetry design, risk R1). Whether they become WSMP health-class channels is not decided. |
+| "Not fitted" on the radio | The 2-bit radio quality carries "not fitted" as "missing" (section 9). A later protocol revision adds the set-level marker of WSMP-Q2 before WSMP readings travel (power telemetry design, risk R10). |
+| Module and channel limits | The station is at WSMP-P8 (8 modules, 24 channels) and 1 byte under WSMP-A1 (section 11.3). Any further module or channel needs both revised in a later protocol revision (power telemetry design, risk R2). |
 | Remote modules (RJ45) | The unscheduled v2 (section 13). v1 uses RJ11 I2C ports and base-board modules. |

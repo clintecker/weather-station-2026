@@ -17,7 +17,7 @@ The bus has two profiles, chosen at build time by `WS_I2C_MUX` (section 11; powe
 | 0 (**the firmware default**, the official phase A wiring) | a passive STEMMA QT hub, no mux | every client upstream; no mux boot job, no deselect, no phantom check; the record clients (0x50) complete with `I2C_ENACK_ADDR` without bus traffic |
 | 1 | the ports board: a TCA9548A at 0x71 | the static channel map below |
 
-Phase 1 of the sensor module ports (`docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md`,
+Phase 1 of the sensor module ports (`docs/firmware-current-design.md`,
 sections 4.3, 6.5 and 6.6) puts an 8-channel I2C multiplexer (a PCA9548 or TCA9548A at 0x71) on the
 bus, with each external sensor alone on a channel: a **static channel map**. In the mux profile the
 bus selects a client's channel before its transfer and deselects every channel after it, so the
@@ -46,7 +46,7 @@ python3 tools/tangle.py --check firmware/stage0-node/App/i2c_bus.lit.md    # com
 | Hub profile | no mux traffic at all: the bus is ready at `i2c_bus_init`, with no boot job; every client is served upstream, whatever its address; a record client's transfer ends with `I2C_ENACK_ADDR` and no bus traffic | `test_a_hub_boot_reads_the_power_parts_and_the_sht45`, `test_a_record_client_is_absent_without_bus_traffic`, `test_a_port_address_is_upstream_and_not_a_phantom` |
 | Rail monitors | the four INA228 clients (battery 0x40, load 0x41, solar 0x45, USB-C 0x48) are upstream in both profiles and work side by side | `test_four_ina228_rail_monitors_work_upstream_together` (both profiles), `test_an_ina228_is_never_behind_a_channel` |
 | Counters | `i2c_bus_recoveries` counts each recovery started (recover-only requests included), `i2c_bus_stuck` each that ended with SDA still low, `i2c_bus_mux_resets` each mux RESET pulse (the boot's included). Each saturates at 0xFFFF and never touches the bus | `test_one_hang_is_one_recovery`, `test_held_sda_counts_as_stuck`, `test_held_sda_counts_as_stuck_without_a_mux_reset`, `test_the_counters_saturate`, `test_mux_resets_are_counted` |
-| Outcomes | `i2c_bus_outcomes` gives, and clears, a bit for each client whose own transfer completed with `I2C_OK` (acked) and a bit for each client whose job ended with any other code (failed), since its previous call. A recover-only request sets neither bit unless it ends `I2C_ESTUCK`; a client may have both. It never touches the bus. TEST-SENSOR-POWER reads it at each PA9 edge (the carrier's port power-cycle test, build-progression record step 3; step 1 exit 9 until 2026-11-02) | `test_outcomes_name_the_clients_that_answered_and_failed` |
+| Outcomes | `i2c_bus_outcomes` gives, and clears, a bit for each client whose own transfer completed with `I2C_OK` (acked) and a bit for each client whose job ended with any other code (failed), since its previous call. A recover-only request sets neither bit unless it ends `I2C_ESTUCK`; a client may have both. It never touches the bus. TEST-SENSOR-POWER reads it at each PA9 edge (the port power-cycle test; step 1 exit 9 until 2026-11-02, build-progression record 4.6 dated note) | `test_outcomes_name_the_clients_that_answered_and_failed` |
 | Record reads | a 2-byte word address (the 24LC32A) and up to 128 bytes in one read | `test_a_word_address_read_of_128_bytes` |
 
 A transfer has one of five forms (`i2c_bus.h`):
@@ -74,16 +74,15 @@ The completion codes (`i2c_bus.h`) are:
 ## 2. Hardware and constants
 
 I2C2 uses PA11 (SDA) and PA12 (SCL) at 100 kHz, as before. PA9 (D9, CN5.2; morpho CN10.19) is
-the sensor supply enable, **carrier only**: change C's load switch is deferred to the carrier
-(build-progression record section 4.6, dated note 2026-11-02), so on the breadboard (step 1) and the
-protoboard (step 2) PA9 is unconnected, the hub's sensors are on the unswitched 3V3, and driving the
-pin does nothing. On the carrier PA9 enables the ports' current-limited high-side switches (PORT-5);
-the power monitors (the INA228s and the MAX17048) and the SHTC3 are unswitched (PORT-9, M6), so a
+the sensor supply enable, **not wired**: change C's load switch is not part of the breadboard build
+(build-progression record section 4.6, dated note 2026-11-02), so on the breadboard PA9 is
+unconnected, the hub's sensors are on the unswitched 3V3, and driving the pin does nothing. With
+per-port power PA9 enables the ports' current-limited high-side switches (PORT-5); the power monitors (the INA228s and the MAX17048) and the SHTC3 are unswitched (PORT-9, M6), so a
 PA9 cycle never drops them. The mux RESET line is a board seam
 (`i2c_bus_mux_reset_line`, defined in `board_inputs.c`): it is **PB14** (A4, CN8.5 / morpho CN7.36;
-build-progression record N5, answering the ports design's "TBD" in section 4.1), active low, a
-push-pull output released (high) at boot. It is wired when the mux is (`WS_I2C_MUX=1`), after the
-step 2 shield's incoming check shows A4 not tied to SDA. In the hub profile the call does nothing.
+build-progression record N5, answering the "TBD" in firmware-current-design.md section 4.1), active low, a
+push-pull output released (high) at boot. It is wired when the mux is (`WS_I2C_MUX=1`), once A4 is
+checked not to be tied to SDA. In the hub profile the call does nothing.
 
 The guard grows with the transfer. The base, 30 ms, covers the longest transfer of the first
 driver (a 7-byte reply, about 0.8 ms at 100 kHz) and a flash page erase (24.5 ms max), which stalls
@@ -194,7 +193,7 @@ static enum i2c_client fifo_pop(void)
 
 ## 5. Channels and jobs
 
-The static channel map of phase 1 (section 4.1 of the ports design): the SHT45 on channel 0, the
+The static channel map of phase 1 (section 4.1 of firmware-current-design.md): the SHT45 on channel 0, the
 LTR390 on channel 1, the BMP581 on channel 2, each with its record EEPROM (0x50, its own client).
 The SHTC3, the four INA228 rail monitors and the MAX17048 are upstream of the mux and never on a
 port (PORT-9; power telemetry spec section 9.2). The phantom table is the port probe table and the
@@ -203,7 +202,7 @@ record EEPROM (section 6.7): no upstream part may answer at them (PORT-15).
 `PORT(ch)` and `RECORD(ch)` give the map of the profile (section 11). In the hub profile a port
 sensor is upstream like every other part, and a record client has no path at all (`NO_PATH`): there
 is no record EEPROM on the hub, so its transfer ends with `I2C_ENACK_ADDR` without bus traffic and
-the port module is admitted with `NO_RECORD`, as the ports design allows. The build fails when a
+the port module is admitted with `NO_RECORD`, as firmware-current-design.md (section 6.7) allows. The build fails when a
 client is added without its entry, since a missing entry would read as channel 0.
 
 The counters (`i2c_bus_recoveries`, `i2c_bus_stuck`, `i2c_bus_mux_resets`) live in the main loop
@@ -213,8 +212,8 @@ alone, like the queue, and saturate at 0xFFFF (`count_up`): the health report se
 client's acked bit when its own transfer (never a mux operation or a recovery) completes with
 `I2C_OK`, and `end_job` its failed bit when the job ends with any other code. TEST-SENSOR-POWER
 (`tx_console.c`) reads and clears them at each PA9 edge, so each of its lines names the parts that
-answered, and those that failed, in the half that just ended: the evidence of the carrier's port
-power-cycle test (record step 3; step 1's exit 9 until 2026-11-02).
+answered, and those that failed, in the half that just ended: the evidence of the port power-cycle
+test (step 1's exit 9 until 2026-11-02, record 4.6 dated note).
 
 The bus serves **jobs**. A job is a short plan of operations on the bus: a client's transfer with
 the mux operations around it, or the boot sequence. One operation is on the bus at a time, and each
@@ -502,10 +501,10 @@ client's channel still selected (step 1 of section 6.6). If SDA stays low, the d
 channel holds the upstream bus too, through the mux: the mux RESET pulse deselects it in hardware
 (step 2), so the upstream parts are back at once, and the client gets `I2C_ESTUCK`. Step 3, the
 port's power cycle, and the Faulted state with its back-off do not exist on the breadboard, which
-has no port power switch (since 2026-11-02 change C's PA9 switch is deferred to the carrier, record
-4.6 dated note). On the carrier PA9 (`i2c_bus_power`, section 10) switches the ports' sensors
-together; the power monitors and the SHTC3 are unswitched, so a PA9 cycle never drops them. The
-recovery does not cycle it: the power-cycle step stays a no-op until the carrier. In the hub profile there is no mux: SDA that stays low gives `I2C_ESTUCK`
+has no port power switch (since 2026-11-02 change C's PA9 switch is not part of the breadboard build,
+record 4.6 dated note). With per-port power PA9 (`i2c_bus_power`, section 10) switches the ports'
+sensors together; the power monitors and the SHTC3 are unswitched, so a PA9 cycle never drops them.
+The recovery does not cycle it: the power-cycle step is a no-op. In the hub profile there is no mux: SDA that stays low gives `I2C_ESTUCK`
 and no pulse.
 
 `recover_begin` counts every recovery it starts (`i2c_bus_recoveries`, the health report's I2C
@@ -637,7 +636,7 @@ BUSYMON_TASK(bus_task)
 
 `i2c_bus_init` creates the timers, registers the task and starts the peripheral. It also drives PA9
 high, so the sensor supply is on by default. `i2c_bus_power` only writes the pin: the bench command
-TEST-SENSOR-POWER (`tx_console.c`, the carrier's port power-cycle test) is its one caller, and leaves PA9 high. A
+TEST-SENSOR-POWER (`tx_console.c`, the port power-cycle test) is its one caller, and leaves PA9 high. A
 switched sensor that is off answers no address, a clean NACK that costs no recovery. In the mux profile the boot job starts at once: the mux
 RESET pulse, the deselect and its read-back, and the phantom check, before any client transfer. A
 client may submit at any time; its transfer waits in the queue until the boot job is done. In the hub
@@ -687,7 +686,7 @@ constant only changes the channel map (section 5), the boot (section 10) and the
 
 | | Hub (`WS_I2C_MUX` 0, the default) | Mux (`WS_I2C_MUX` 1) |
 |---|---|---|
-| Hardware | the official phase A wiring on I2C2: the SHT45 on a passive STEMMA QT hub on the unswitched 3V3; the battery INA228 (0x40) and the MAX17048 (0x36) on a second QT cable, also from the unswitched 3V3 (QTM; build-progression record 4.6, PORT-9). PA9 (`POWER_PIN`) is unconnected on the bench (change C's switch is deferred to the carrier, 2026-11-02) | the ports board: a TCA9548A at 0x71, a sensor and its record EEPROM on each channel |
+| Hardware | the official phase A wiring on I2C2: the SHT45 on a passive STEMMA QT hub on the unswitched 3V3; the battery INA228 (0x40) and the MAX17048 (0x36) on a second QT cable, also from the unswitched 3V3 (QTM; build-progression record 4.6, PORT-9). PA9 (`POWER_PIN`) is unconnected on the bench (change C's switch is not part of the breadboard build, 2026-11-02) | the ports board: a TCA9548A at 0x71, a sensor and its record EEPROM on each channel |
 | Boot job | none: `i2c_bus_ready` is 1 when `i2c_bus_init` returns | RESET pulse, deselect, read-back, phantom check |
 | Port sensors (SHT45, LTR390, BMP581) | upstream, at their own addresses | on channels 0, 1, 2 |
 | Record clients (0x50) | `I2C_ENACK_ADDR`, no bus traffic: modules admitted with `NO_RECORD` | read on the port's channel |

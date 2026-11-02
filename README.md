@@ -4,7 +4,7 @@ A home weather station, at its first stage. A sensor node (an STM32WL NUCLEO boa
 
 Authority: the **Weather Station v0.2 product and technical requirements document (PRD/TRD), 8 October 2026**, sections 3, 9, 11 and the 24-hour delivery test (H01).
 
-Status: this repository holds the Python gateway (`ws0`) and the firmware for two NUCLEO-WL55JC1 boards (`firmware/stage0-node/`). Both are built, flashed and tested on the bench. The bench prototype is Stage 0 of the staged plan ([`docs/next-stages-plan.md`](docs/next-stages-plan.md)). **Stage 0 is not complete. The 24-hour delivery test (H01, [`docs/H01-checklist.md`](docs/H01-checklist.md)) has NOT RUN.**
+Status: this repository holds the Python gateway (`ws0`) and the firmware for two NUCLEO-WL55JC1 boards (`firmware/stage0-node/`). Both are built, flashed and tested on the bench. The project is the breadboarded development version (build steps 1 and 1b); the later stages were removed from the repository on 2026-11-02 (git history has them). **The 24-hour delivery test (H01, [`docs/H01-checklist.md`](docs/H01-checklist.md)) has NOT RUN.**
 
 Do you resume the bench work? Start with [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md). Other entry points:
 
@@ -183,15 +183,15 @@ The radio settings are bench values (`firmware/stage0-node/App/radio_cfg.h`): 91
 
 Open before the 24-hour delivery test (its preconditions: [`docs/H01-checklist.md`](docs/H01-checklist.md)):
 
-- The step 1 build (breadboard v2) exited on every criterion, mode B for 1 hour included, then the step 2 build (the soldered protoboard, where H01 runs) with a `valid` preflight block that includes the 1 A spans (build-progression record section 3; the build order 1 → 2 (H01) → 1b → 2c → 3 → 4 → 5, record 7.1 Q8).
+- The step 1 build (breadboard v2) exited on every criterion, mode B for 1 hour included, and the breadboard build, where H01 runs, has a `valid` preflight block that includes the 1 A spans (build-progression record section 3).
 - The USB acceptance test H8(d) passed on the H01 topology (the RX alone on a direct Mac port, 7.1 Q5).
 - The ws0 silent-port reopen deployed: the running gateway carries the `ws0/link.py` reopen, loaded by a gateway agent restart (record H8(f)).
 - Home Assistant entities updating live, with the gateway logging in on the rotated password (login and discovery were checked on 2026-10-22).
 - The link budget at the real placement, the antennas and the current measurements.
 - The 24-hour run with its restart and outage matrix.
-- Clint's open decision D2: whether H01 runs on a protocol version 6 (power telemetry) release; recommendation yes ([`docs/next-stages-plan.md`](docs/next-stages-plan.md) §6). The H01 preconditions as written (`meter_link=ok` from the M7 probe, the power phase A exit criteria) can be met only on a version 6 build; a "no" needs a version 5 backport of the M7 probe and the power reading, which no plan carries ([`docs/H01-checklist.md`](docs/H01-checklist.md)).
+- Clint's open decision D2: whether H01 runs on a protocol version 6 (power telemetry) release; recommendation yes. The H01 preconditions as written (`meter_link=ok` from the M7 probe, the power phase A exit criteria) can be met only on a version 6 build; a "no" needs a version 5 backport of the M7 probe and the power reading, which no plan carries ([`docs/H01-checklist.md`](docs/H01-checklist.md)).
 
-Open for power phase A (a precondition of H01, not beside it: the step 1 and step 2 builds carry it, and H01's precondition 1 includes its exit criteria; exit criteria in [`docs/next-stages-plan.md`](docs/next-stages-plan.md) §1.1):
+Open for power phase A (a precondition of H01, not beside it: the step 1 build carries it, and H01's precondition 1 includes its exit criteria; exit criteria in the [power telemetry design](docs/superpowers/specs/2026-10-29-power-telemetry-design.md) section 2):
 
 - The phase A constants measured (R_ISET, the divider ratio, the TMR strap), the INA228 shunt verified against a series reference, and a version 6 release.
 - The node-against-benchlink acceptance drill with the cell through the shunt.
@@ -235,23 +235,23 @@ The host counters persist in SQLite. On the TX board, the counters and boot epoc
 
 ## Ordered next steps
 
-See [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) §6. Power phase A (the bq24074 charger and its monitors on the 1S3P pack, read by the node) runs now, on the step 1 and step 2 builds, before H01: H01 runs on the step 2 build only after step 1 exits (build-progression record section 3, 7.1 Q8). Stage 1's gates (H02 pack energy accounting, H03 cold and solar endurance) and its pack, chamber and solar endurance work follow the 24-hour delivery test ([`docs/next-stages-plan.md`](docs/next-stages-plan.md) §1).
+See [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) §6. Power phase A (the bq24074 charger and its monitors on the 1S3P pack, read by the node) runs now, on the step 1 build, before H01: H01 runs on the breadboard build only after step 1 exits (build-progression record section 3). Step 1b adds the load, solar and USB-C rails on the same breadboard build.
 
-The PCB and print orders that exist are aids for the prototype. The first USB-powered data path on the development boards does not need them. This repository adds no charger or pack control, no wired-module port abstraction, no heater and no shared charging. The node measures the power system and never controls it. Power phase A measures the battery (cell voltage and signed current), the load voltage and the charger input voltage, whose source (solar or USB-C) it cannot identify. The final goal is voltage and current of four rails, battery, solar input, USB-C input and load: phase B adds one INA228 per rail, phase C the BQ25798 with its own ADC ([`docs/next-stages-plan.md`](docs/next-stages-plan.md) §1.1–§1.2). USB-C is for bench work and occasional backup charging only, never connected together with solar.
+This repository adds no charger or pack control, no wired-module port abstraction, no heater and no shared charging. The node measures the power system and never controls it. Power phase A measures the battery (cell voltage and signed current), the load voltage and the charger input voltage, whose source (solar or USB-C) it cannot identify. The final goal is voltage and current of four rails, battery, solar input, USB-C input and load: phase B (step 1b) adds one INA228 per rail ([`docs/hardware/power-metering.md`](docs/hardware/power-metering.md)). USB-C is for bench work and occasional backup charging only, never connected together with solar.
 
 ## Where things are
 
 | Path | What |
 |---|---|
 | [`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) | Where to start: state, setup and next steps. §8 maps every document |
-| [`docs/next-stages-plan.md`](docs/next-stages-plan.md) | Stages 0–3, their gates and the parts plan; the power phases A–C, the four rails and the USB-C rule (§1.1–§1.3) |
 | [`docs/superpowers/specs/2026-10-29-power-telemetry-design.md`](docs/superpowers/specs/2026-10-29-power-telemetry-design.md) | Power telemetry design: phases, the per-phase fill table, protocol version 6, the 64-byte health report, node firmware, gateway |
-| [`docs/superpowers/specs/2026-10-29-build-progression-decisions.md`](docs/superpowers/specs/2026-10-29-build-progression-decisions.md) | The build-progression decision record: the steps from the breadboard to the carrier, the NUCLEO pin contract, the step 1 build and shopping, the cascade list. Clint's survey answers (2026-10-30) are in section 7.1 |
+| [`docs/superpowers/specs/2026-10-29-build-progression-decisions.md`](docs/superpowers/specs/2026-10-29-build-progression-decisions.md) | The build-progression decision record: build steps 1 and 1b on the breadboard, the NUCLEO pin contract, the step 1 build and shopping, the cascade list. Clint's survey answers (2026-10-30) are in section 7.1 |
 | [`docs/superpowers/plans/2026-10-29-power-telemetry.md`](docs/superpowers/plans/2026-10-29-power-telemetry.md) | Power telemetry implementation plan |
 | [`docs/superpowers/plans/2026-10-29-power-telemetry-issues.md`](docs/superpowers/plans/2026-10-29-power-telemetry-issues.md) | Power telemetry issue catalog: each issue's layer, severity, batch and state |
 | [`docs/superpowers/plans/2026-10-30-build-progression-issues.md`](docs/superpowers/plans/2026-10-30-build-progression-issues.md) | Build progression issue catalog: each issue the decision record and Clint's 2026-10-30 answers caused, by area, severity, batch and state |
 | [`docs/hardware/power-metering.md`](docs/hardware/power-metering.md) | Power metering: rails, monitors, addresses, shunts and sense points in each phase |
 | [`docs/H01-checklist.md`](docs/H01-checklist.md) | The 24-hour delivery test |
+| [`docs/firmware-current-design.md`](docs/firmware-current-design.md) | The design sections the firmware implements: the mux profile, module identity, the module record, the flash layout |
 | [`docs/protocol.md`](docs/protocol.md), [`docs/protocol-design.md`](docs/protocol-design.md), [`docs/protocol-stack.md`](docs/protocol-stack.md) | The radio protocol: specification, design rationale, layered explanation |
 | [`docs/module-protocol.md`](docs/module-protocol.md) | DATAVANE5K, the module protocol WSMP |
 | [`docs/hardware/bench-station-wiring.md`](docs/hardware/bench-station-wiring.md) | How the bench station sensors connect to the TX board |
@@ -270,10 +270,8 @@ The PCB and print orders that exist are aids for the prototype. The first USB-po
 | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | CI ([`tools/README.md`](tools/README.md#ci)) |
 | `requirements.txt`, `requirements-dev.txt`, `ruff.toml` | Pinned gateway dependencies; pinned lint, code-shape, Cppcheck and Pillow for development and CI; the ruff bug rules |
 | `VALIDATION.txt` | A four-line pointer: the historical 28-test record (`evidence/validation.txt`, commit 8aca123) and the command for the current suite (595 tests on 2026-10-19). See [Tests](#tests) |
-| [`.pcba-workflow/circuit-review.md`](.pcba-workflow/circuit-review.md) | Circuit review of `hardware/chicago-test-hardware-r0` (2026-10-13) |
 | `vendor/` (git-ignored) | Pinned third-party checkouts: STM32CubeWL with Mbed TLS (`tools/fetch-vendor.sh`), KiCadRoutingTools and its Python environment `krt-venv` (`tools/fetch-router.sh`). Never edit; fetch again |
 | `run-*/` (git-ignored) | Gateway run directories. Each holds one radio key and its data: `gateway.json` (key, API token, settings), `observations.sqlite3`, the nonce state `gateway-nonces.sqlite3`, logs such as `receiver.log`, and an optional `mqtt-password`. One directory per key. `run-demo` is the simulator's. On the bench Mac, `run-d7` is current, `run-d5-archive-2026-10-15/` and `run-d6-archive-2026-10-19/` are archived, and `run-office/` is retired ([`docs/CONTEXT-PACK.md`](docs/CONTEXT-PACK.md) §2). Keep them private; never commit them |
 | [`hardware/bench-breadboard-r0/`](hardware/bench-breadboard-r0/README.md) | Breadboard map of the bench station: build sheet, renders, KiCad model |
-| [`hardware/chicago-test-hardware-r0/`](hardware/chicago-test-hardware-r0/README.md) | Test PCB and bench fixtures, revision 0. Corrections: [`hardware/chicago-test-hardware-r0-ERRATA.md`](hardware/chicago-test-hardware-r0-ERRATA.md) |
-| [`hardware/poc-enclosure-r1/`](hardware/poc-enclosure-r1/README.md) | Printed enclosure parts for the proof of concept |
+| [`hardware/base-plate/`](hardware/base-plate/spec-r2.md) | The printed bench base plate: its spec |
 | [`evidence/`](evidence/README.md) | Every bench run, dated |

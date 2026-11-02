@@ -1951,7 +1951,7 @@
 (label "I2C_SDA" (at 388.62 55.88 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid 0d9f3533-4f79-5845-b976-9f77465ecb30))
 (wire (pts (xy 378.46 60.96) (xy 388.62 60.96)) (stroke (width 0) (type default)) (uuid 2443048c-d584-5801-a316-92de508a6ab4))
 (label "I2C_SCL" (at 388.62 60.96 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid 8c33e904-2f96-584a-928b-ddbf0b07484e))
-(text "The power monitors (INA228 0x40, MAX17048 0x36) are on QTM; the hub's sensors on QT. Both unswitched: the PA9 sensor switch is on the carrier board" (at 226.06 71.12 0) (effects (font (size 1.27 1.27)) (justify left)) (uuid e0a7c559-cf39-5eb8-a901-bcc0176a0c03))
+(text "The power monitors (INA228 0x40, MAX17048 0x36) are on QTM; the hub's sensors on QT. Both unswitched: there is no PA9 sensor switch" (at 226.06 71.12 0) (effects (font (size 1.27 1.27)) (justify left)) (uuid e0a7c559-cf39-5eb8-a901-bcc0176a0c03))
 (text "The hub feeds the SHT45 (0x44), BMP581 (0x47), LTR390 (0x53) and SHTC3 (0x70), each on its own STEMMA QT cable." (at 226.06 74.93 0) (effects (font (size 1.27 1.27)) (justify left)) (uuid 89653eae-fa5e-5097-915c-b38359c497d9))
 (text "Power chain, mode A (daily): the BATTERY POWER shunt is open, the 100 ohm test load is fitted (guide section 5)." (at 226.06 105.41 0) (effects (font (size 1.27 1.27)) (justify left)) (uuid 1cc169c2-5d8e-52db-836c-7a5598fc500e))
 (text "Leads off the breadboard: force heaviest, sense thinnest, each with its id (table below). A WAGO lever connector is one node; its pins are its positions." (at 226.06 109.22 0) (effects (font (size 1.27 1.27)) (justify left)) (uuid 2fdaec91-9358-5a87-80e4-d55e4c0f3902))

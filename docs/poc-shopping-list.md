@@ -1,11 +1,12 @@
 # Proof-of-concept shopping list
 
-This list holds off-the-shelf parts for building the critical modules now (2026-10-14). Prices and stock come from each store's own product page on that day. The list was written before any order; rows marked **Have** were on the bench by 2026-10-29 (`firmware/benchlink/README.md`). The station's pack is **1S3P**: three 2,200 mAh Li-ion cells in parallel, 6,600 mAh, 3.0-4.2 V, 3.7 V nominal (Clint, 2026-10-29). The carrier (build step 3) stays 1S3P too, decided 2026-10-30 (build-progression record, section 7.1 Q3). The product requirements document (PRD) still names a 4-cell series pack, RS-485 sensor modules and qualified instruments; whether the 1S3P pack meets the PRD's energy reserve is open (power telemetry spec, risk D1). [`next-stages-plan.md`](next-stages-plan.md) describes the long-term design. Prices of rows added on 2026-10-29 are marked **unverified**: they were not checked against a store page that day.
+This list holds off-the-shelf parts for building the critical modules now (2026-10-14). Prices and stock come from each store's own product page on that day. The list was written before any order; rows marked **Have** were on the bench by 2026-10-29 (`firmware/benchlink/README.md`). The station's pack is **1S3P**: three 2,200 mAh Li-ion cells in parallel, 6,600 mAh, 3.0-4.2 V, 3.7 V nominal (Clint, 2026-10-29). The product requirements document (PRD) still names a 4-cell series pack, RS-485 sensor modules and qualified instruments; whether the 1S3P pack meets the PRD's energy reserve is open (power telemetry spec, risk D1). Prices of rows added on 2026-10-29 are marked **unverified**: they were not checked against a store page that day.
 
 The build steps and their parts come from the build-progression decision record
 ([`2026-10-29-build-progression-decisions.md`](superpowers/specs/2026-10-29-build-progression-decisions.md),
 section 3 for the steps, section 5 for the merged shopping list). Clint answered its survey on
-2026-10-30 (its section 7.1); the build order is **1 → 2 (H01) → 1b → 2c → 3 → 4 → 5** (7.1 Q8).
+2026-10-30 (its section 7.1). This list covers the breadboard build: step 1 and step 1b (the four
+INA228 rails), both on the breadboard; later stages were removed from the repository on 2026-11-02.
 
 Everything wires to the TX (transmitter) NUCLEO-WL55JC1. The sensors and power monitors share the I2C2 bus through a STEMMA QT hub. The weather meter uses a few GPIO and ADC pins.
 
@@ -20,7 +21,7 @@ flowchart LR
     CHG -->|"OUT"| REG["S7V8F3 3.3 V buck-boost regulator"]
   end
   subgraph NUCLEO["TX NUCLEO-WL55JC1"]
-    V33["3V3 (CN6.4 at steps 1-2; CN7.16 on the carrier)"]
+    V33["3V3 (CN6.4)"]
     I2C2["I2C2"]
     GPIO["GPIO and ADC pins"]
   end
@@ -33,7 +34,7 @@ flowchart LR
   HUB --- BMP["BMP581 pressure (0x46 or 0x47)"]
   HUB --- UV["LTR390 UVA (0x53)"]
   HUB --- SHTC["SHTC3 enclosure T/RH (0x70)"]
-  HUB -.- PB["phase B, step 1b after H01: INA228 load (0x41), solar (0x45), USB-C (0x48)"]
+  HUB -.- PB["phase B, step 1b: INA228 load (0x41), solar (0x45), USB-C (0x48)"]
   METER["SEN-15901 wind and rain meter"] -->|"RJ11 cables, 2 BOB-14021 breakouts"| GPIO
 ```
 
@@ -47,7 +48,7 @@ flowchart LR
 | Charger thermistor | [Adafruit 10K NTC #372](https://www.adafruit.com/product/372) | $4.00 | In stock | **Needed:** no pack has one. Tape it to the pack, so the charger stops charging in the cold |
 | Solar panel | Voltaic P110 10 W 6 V ([Voltaic direct](https://voltaicsystems.com/10-watt-panel/), or [Adafruit #5369](https://www.adafruit.com/product/5369)) | $65.00 / $64.95 | In stock | Open-circuit voltage 6.94 V, about 8.7 V when cold, under the charger's 10 V limit. Adafruit no longer makes its own 6 V panels. *2026-10-30:* Clint replaced its original 3.5 × 1.1 mm plug with a barrel plug that fits the bq24074's DC jack directly (confirmed: it plugs straight in). The jack is 5.5 × 2.1 mm by inference from Adafruit's #4755 page (it sells a 3.5/1.1 → 5.5/2.1 adapter for the board), not measured: confirm with calipers. Without metering (step 1) the panel plugs straight into the charger. At step 1b its plug goes into an Adafruit #368 screw-terminal jack (step 1b list below; record P10); the panel lead is never cut |
 | Battery | [Adafruit 3.7 V 6600 mAh #353](https://www.adafruit.com/product/353) | $24.50 | **Have** | **1S3P**: three 2,200 mAh cells in parallel, 6,600 mAh, 3.0–4.2 V, 3.7 V nominal, about 24.4 Wh (normal shipping), protected, 69 × 54 × 18 mm. Its JST PH plug mates with the pack-mating half of a cut Adafruit #1131 extension into WAGO **CELL+**, then the INA228 shunt, WAGO **BATT** and the board-mating half into the charger's BATT socket (record P3, decided 2026-10-30, 7.1 P3). The pack's own lead is never cut; it never goes through breadboard strips, and **while the INA228 meters the battery the pack never plugs into the charger's BATT socket** |
-| 3.3 V regulator | [Pololu S7V8F3 #2122](https://www.pololu.com/product/2122) | $9.95 | Active (backorders allowed) | Buck-boost, 2.7–11.8 V in, < 0.1 mA quiescent current. Feeds the NUCLEO's 3V3 at **CN6.4** at steps 1 and 2 (record N3), and at **CN7.16** on the carrier (step 3, record N7); both pins are the same 3V3 net |
+| 3.3 V regulator | [Pololu S7V8F3 #2122](https://www.pololu.com/product/2122) | $9.95 | Active (backorders allowed) | Buck-boost, 2.7–11.8 V in, < 0.1 mA quiescent current. Feeds the NUCLEO's 3V3 at **CN6.4** (record N3); CN6.4 and CN7.16 are the same 3V3 net |
 | Fuel gauge | [Adafruit MAX17048 #5580](https://www.adafruit.com/product/5580) | $5.95 | **Have** | I2C 0x36, about 3–23 µA. Senses the cell voltage at the **CELL+ node**: the board-mating half of a second cut #1131 in one of its JST PH sockets, its red lead in its own CELL+ position, its black lead insulated and unconnected; ground over STEMMA QT (record P4, P5). Never on OUT |
 | Power monitor | [Adafruit INA228 #5832](https://www.adafruit.com/product/5832) | $14.95 | **Have** | Battery rail, I2C 0x40. Shunt: 15 mΩ, 1 %, 2 W (2512) nominal; **shunt: verified, not measured** (build-sheet check 3: the battery current agrees with a series reference within 2 % + 2 mA; only on a fail does a reference-derived value replace 15 mΩ). VBUS on its own 22 AWG solid sense lead into the OUT connector; from step 1b it moves to CELL+. Back jumper SJ1 (VBUS to VIN+) open (record P5) |
 
@@ -77,7 +78,6 @@ that date). Quantities are the quantities ordered, not the rows' needs.
 
 | Part | Qty | Status | Row it covers |
 |---|---:|---|---|
-| TI BQ25798EVM | 2 | **ordered 2026-11-02** | step 2c (moved to step 1's list, 7.1 Q4) |
 | BusBoard BB830 | 5 | **ordered 2026-11-02** | the conditional BB830 (record H2) |
 | 1 Ω 2 W resistor, CPF21R0000FKE36 | 10 | **ordered 2026-11-02** | step 1, injection test |
 | 100 Ω ½ W resistor, MFR50SFTE52-100R | 30 | **ordered 2026-11-02** | step 1b, the deliberate load step (exit g) |
@@ -87,7 +87,7 @@ that date). Quantities are the quantities ordered, not the rows' needs.
 | WAGO 222-413 (3-way) | 20 | **ordered 2026-11-02** | step 1 and 1b lever connectors |
 | WAGO 222-415 (5-way) | 20 | **ordered 2026-11-02** | step 1 and 1b lever connectors |
 | Adafruit #1311 hook-up wire (6 × 25 ft) | 1 | **ordered 2026-11-02** | step 1, 22 AWG solid hook-up wire |
-| Adafruit #4209 STEMMA QT to male header cable | 5 | **ordered 2026-11-02** | the STEMMA QT to male header cables (step 2 shield, the QTM branch) and spares |
+| Adafruit #4209 STEMMA QT to male header cable | 5 | **ordered 2026-11-02** | the STEMMA QT to male header cables (the QTM branch) and spares |
 | 220 µF 16 V radial electrolytic, 2.5 mm pitch, Rubycon 16YXJ220MT16.3X11 | 20 | **ordered 2026-11-02** | the bench OLED; no row in this list names it |
 | 220 µF 16 V radial electrolytic, Panasonic EEU-FC1C221 | 10 | **ordered 2026-11-02** | spare bulk capacitors |
 | Adafruit INA228 #5832 | 5 | **ordered 2026-11-02** | step 1b, the three extra INA228s, and spares |
@@ -95,12 +95,11 @@ that date). Quantities are the quantities ordered, not the rows' needs.
 | Adafruit #369 male 2.1 mm barrel plug to screw terminal | 4 | **ordered 2026-11-02** | step 1b, the solar INA228 into the charger's DC jack |
 | Adafruit #4090 USB-C female breakout (5.1 kΩ CC resistors) + Adafruit #5978 USB-C male plug breakout | 5 each | **ordered 2026-11-02** | step 1b USB-C metering: no inline USB-C screw-terminal pair was found on DigiKey; both breakouts need soldering |
 | Wire stripper/cutter, 11057 | 1 | **ordered 2026-11-02** | tool |
-| high-side load-switch breakout (change C) | 0 | **not bought** | *2026-11-02:* change C moved to the carrier board (step 3); steps 1 and 2 have no sensor power switch, so no breakout is needed |
+| high-side load-switch breakout (change C) | 0 | **not bought** | *2026-11-02:* change C no longer has a sensor power switch (record 4.6 dated note), so no breakout is needed |
 
 A dash means the quantity was not recorded. The screw-terminal RJ11
 breakout is not bought (7.1 Q6), and no breadboard is bought for step 1b (2026-11-02): it uses one of the full-size breadboards already
-owned (three Elegoo, plus two spare BB830s), on the plate where step 2's soldered boards free a position
-(record S1).
+owned (three Elegoo, plus two spare BB830s), on the plate (record S1).
 
 ## Build step 1: breadboard v2 (buy now)
 
@@ -122,7 +121,7 @@ if the bench lacks them.
 | 2 | 1 MΩ resistor | ISET pull-down; one spare |
 | 2 | 100 nF ceramic capacitor | ISET node; one spare |
 | 2 | 1 Ω 2 W resistor | injection test (step 1 exit 4, both cases); one spare |
-| 1 | STEMMA QT to male header cable | change C, the branch to the power monitors (unswitched; *2026-11-02:* the hub's branch is unswitched too, the PA9 load switch moved to the carrier, so no load-switch breakout is listed) |
+| 1 | STEMMA QT to male header cable | change C, the branch to the power monitors (unswitched; *2026-11-02:* the hub's branch is unswitched too, change C has no PA9 load switch, so no load-switch breakout is listed) |
 | 2 | female-to-male jumper, about 30 cm | the bench OLED's own supply pair (VCC CN7.16, GND CN10.20); skip if owned |
 | 1 | USB-C wall adapter, 5 V ≥ 2 A (5.1–5.25 V output preferred) | the charger input, floating from the Mac; skip if one is owned |
 | 1 | plywood or MDF, about 30 × 40 cm, 6–9 mm | the base plate (record H1); scrap is fine |
@@ -134,13 +133,9 @@ if the bench lacks them.
 | 1 | heat-shrink assortment | skip if owned |
 | 1 | cable labels or label tape | ST-LINK serials (record H8) |
 | 1 | wire stripper for 22–26 AWG | skip if owned |
-| 1 | 10 kΩ 1 % resistor | TS stand-in at 25 °C for the step 2c cold-charge test (record S3); bought now so it is on hand (7.1 Q4) |
-| 1 | about 39 kΩ 1 % resistor (the computed cold-threshold value: a 10 kΩ B3950 NTC is about 33 kΩ at 0 °C) | TS stand-in past the cold threshold, step 2c; confirm the value against the EVM's TS network first |
 
 Not on this list, on purpose:
 
-- **BQ25798EVM:** ordered 2026-11-02 (2 units, 7.1 Q4), listed under purchasing status above. It is
-  used at step 2c; its two TS stand-in resistors are the last two rows above.
 - **A meter:** none is bought. The bench meter is a Fluke 87V (600 mV DC range, 0.01 mV in
   high-resolution mode), and the 38 mA screen and the 1 A checks read it directly (7.1 Q2). The shunt
   checks (build-sheet power check 3, B3; step 1b exit a) use the same 87V in series, on its A or mA
@@ -151,28 +146,10 @@ Not on this list, on purpose:
   cut #1131 halves and the WAGO connectors above replace the earlier soldered JST PH socket and heavy
   battery leads (record P3, P7).
 
-## Later build steps
+## Build step 1b: four rails, phase B (on the breadboard)
 
-> **Parked 2026-11-02.** This section is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
-
-Bought later, in the record's order (section 3; 7.1 Q8): step 2 and its H01 run, then step 1b, then
-step 2c, then step 3. Prices are not verified unless a row says so.
-
-### Step 2: soldered protoboard (buy when step 1 exits)
-
-| Qty | Item | Note |
-|---:|---|---|
-| 2 | Adafruit Proto-ScrewShield (Wingshield) R3 kit #196 | one per node plus a spare; Clint may need more (one per node) |
-| 2 | Adafruit Perma-Proto full-size breadboard PCB | module board plus a spare |
-| 1 | Arduino R3 stacking header set | for #196 |
-| 1 | JST-XH 2.5 mm kit: pre-crimped leads, 2-, 5- and 6-pin housings and PCB headers | signal links only |
-| 2 | STEMMA QT to male header cable | soldered into the shield: unswitched branch (power monitors) and switched branch (hub) |
-
-### Step 1b: four rails, phase B (bought with the step 2 list; runs after H01)
-
-Step 1b runs **after step 2's H01 run**, on the step 2 plate and the same lever-connector harness
-(7.1 Q1, Q8; record step 1b). Its parts are bought **with the step 2 list**, so they are on hand when
-H01 passes. Closing the A0/A1 jumpers and fitting the 0x48 rework wire on the three extra INA228s is
+Step 1b is part of the breadboard build: on the same plate and the same lever-connector harness as
+step 1 (record step 1b). Its parts were ordered on 2026-11-02 (purchasing status above). Closing the A0/A1 jumpers and fitting the 0x48 rework wire on the three extra INA228s is
 allowed module preparation (7.1 Q1). **USB-C and solar are never connected at the same time, in any
 test.** Each source joins on the charger board through its own Schottky diode, D2 (USB-C) or D4 (DC
 jack), with EN2 high and EN1 low ([`power-metering.md`](hardware/power-metering.md) section 5.1;
@@ -184,8 +161,8 @@ record P10).
 | WAGO 222-413 (3-way) | 2 | **SOLAR_IN** and **USB_IN**: each source lead and its INA228 VBUS lead | — | already in the step 1 quantity (10) |
 | WAGO 222-415 (5-way) | 1 | **LOAD**: the load INA228's VIN−, the 100 Ω load, the regulator VIN lead (moved from OUT), the load INA VBUS lead and, for exit g only, the second 100 Ω | — | already in the step 1 quantity (6) |
 | 22 AWG solid hook-up wire | as needed | every link between a WAGO, an INA228 screw terminal and an adapter's screw terminal | — | from the step 1 set; screw terminals take solid 22 AWG only (record P7); never breadboard strips |
-| [Adafruit 2.1 mm barrel plug to screw terminal #369](https://www.adafruit.com/product/369) | 1 | the solar INA228's VIN− into the charger's DC jack (X3, then its Schottky D4) | unverified | in DigiKey cart 2026-10-30 (4). Power-metering section 5.1, step 2 |
-| [Adafruit female 2.1 mm DC jack to screw terminal #368](https://www.adafruit.com/product/368) | 1 | takes the panel's 2.1 mm barrel plug (the panel lead is never cut) into SOLAR_IN and the solar INA228's VIN+ | unverified | in DigiKey cart 2026-10-30 (5). Replaces the female 3.5 × 1.1 mm adapter (2026-10-30: Clint swapped the panel's plug; record R-20 superseded). Power-metering section 5.1, step 1 |
+| [Adafruit 2.1 mm barrel plug to screw terminal #369](https://www.adafruit.com/product/369) | 1 | the solar INA228's VIN− into the charger's DC jack (X3, then its Schottky D4) | unverified | in DigiKey cart 2026-10-30 (4). Power-metering section 5.1 |
+| [Adafruit female 2.1 mm DC jack to screw terminal #368](https://www.adafruit.com/product/368) | 1 | takes the panel's 2.1 mm barrel plug (the panel lead is never cut) into SOLAR_IN and the solar INA228's VIN+ | unverified | in DigiKey cart 2026-10-30 (5). Replaces the female 3.5 × 1.1 mm adapter (2026-10-30: Clint swapped the panel's plug; record R-20 superseded). Power-metering section 5.1 |
 | Inline USB-C screw-terminal adapter pair (female and male) | 1 pair | the USB-C INA228 between the wall adapter's VBUS (female, into USB_IN) and a male USB-C plug into the charger's own USB-C (X2, then D2); GND female to male directly | unverified | model not chosen; confirm assembled and 5 V only. *2026-10-30:* no inline USB-C screw-terminal pair was found on DigiKey; **chosen, ordered 2026-11-02 (5 each):** Adafruit #4090 (USB-C female breakout with 5.1 kΩ CC resistors) + Adafruit #5978 (USB-C male plug breakout), both need soldering. **5.1 kΩ Rd from CC1 and from CC2 to GND** on the female (sink) side, fitted if the adapter has none (without Rd a USB-C source never turns VBUS on); no USB PD; data pins unconnected |
 | 5.1 kΩ resistor | 2 | the Rd pair on the female USB-C adapter, if it has none | unverified | |
 | 100 Ω ½ W resistor | 1 | the deliberate load step at LOAD (exit g): its other lead goes to STAR position 5 | unverified | |
@@ -196,39 +173,14 @@ diodes. The board's own D2/D4 pair is the join. Only if the board in hand has EN
 input-margin check (exit d) fails, does power-metering section 5.1 describe a fallback stage; it is
 not on any list.
 
-### Step 2c: BQ25798EVM (ordered)
-
-The BQ25798EVM was ordered on 2026-11-02 (2 units, 7.1 Q4), with the step 1 order: do not buy it again. It is used at
-step 2c on the step 2 harness. Its two TS stand-in resistors are bought now with step 1.
-
-### Step 3: carrier PCB (do not buy yet)
-
-Vishay WSK2512R0100BEA × 4 plus spares; 2 × 19 2.54 mm female sockets × 2 per carrier (*2026-10-30:*
-standard height: a cut-down standard 2.54 mm female header seated fully on the morpho pins with no
-underside part touching, record 7.1 N7; 2 × 19 parts come only at 1000-piece minimums, so standard
-2 × N female headers cut to 2 × 19); XT60 pair (record H6); an inline pack fuse and holder, sized at
-the carrier schematic for the 1S3P path (7.1 Q3); about 3 A solar fuse; 16 AWG silicone wire; the
-cold-rated solar connector (chosen at the schematic).
-
-### Conditional
+## Conditional
 
 One powered USB hub only if the USB acceptance test H8(d) fails; one BusBoard BB830 only if signal
 strips fail repeatedly (record H2; *2026-11-02:* 5 ordered from DigiKey); WAGO 221-413/415, 0.25 mm² insulated ferrules and a ratchet crimper
 only if WAGO's sheet does not cover 26 AWG on the 222 (record P7).
 
-## Housing
-
-> **Parked 2026-11-02.** This section is parked (the enclosure is step 4). It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
-
-| Part | Product | Price | Stock |
-|---|---|---:|---|
-| Electronics box | [Adafruit IP66 enclosure #905](https://www.adafruit.com/product/905) (175 × 125 × 75 mm) | $19.95 | 35 in stock |
-| Cable glands | Adafruit [PG-7 #762](https://www.adafruit.com/product/762), [PG-9 #761](https://www.adafruit.com/product/761) | $1.95 each | In stock |
-| Radiation shield | **Printed:** `hardware/poc-enclosure-r1/` (or buy an [Ambient Weather SRS100LX](https://www.ambientweather.com/amwesrpatean.html), $54.99) | — | — |
-| Printed-part hardware | Rods, nuts, inserts, hose clamps, SMA bulkhead pigtail: see `hardware/poc-enclosure-r1/README.md` | — | — |
-
-**Total for the electronics and sensors above:** about $290, before shipping, the printed parts and
-their hardware. It leaves out the step lists (step 1, 1b, 2 and 3), which are unpriced and unverified.
+**Total for the electronics and sensors above:** about $290, before shipping. It leaves out the step
+lists (step 1 and 1b), which are unpriced and unverified.
 
 ## I2C addresses on I2C2
 
@@ -239,20 +191,17 @@ The diagram above shows the same addresses. INA228 straps from the INA228 datash
 |---|---|---|
 | 0x36 | MAX17048 | A |
 | 0x40 | INA228, battery rail (A1 = GND, A0 = GND, as shipped) | A |
-| 0x41 | INA228, load rail (A1 = GND, A0 = VS) | B, step 1b after H01 |
+| 0x41 | INA228, load rail (A1 = GND, A0 = VS) | B, step 1b |
 | 0x44 | SHT45 (outdoor) | A |
-| 0x45 | INA228, solar rail (A1 = VS, A0 = VS) | B, step 1b after H01 |
+| 0x45 | INA228, solar rail (A1 = VS, A0 = VS) | B, step 1b |
 | 0x46 or 0x47 | BMP581 (check the jumper). The firmware uses 0x47 (`App/mod_reg.c`) | A |
-| 0x48 | INA228, USB-C rail (A1 = SDA, A0 = GND; a rework) | B, step 1b after H01 |
+| 0x48 | INA228, USB-C rail (A1 = SDA, A0 = GND; a rework) | B, step 1b |
 | 0x53 | LTR390 | A |
 | 0x70 | SHTC3 (enclosure) | A |
 
 ## Caveats
 
-- **Cable glands:** the meter cables end in RJ11 plugs. These plugs do not pass through a PG-7 or
-  PG-9 gland. The cables are **never cut** (record H5): use an entry large enough to pass the plug,
-  or a split gland that closes around the cable. The sealing is Clint's choice (sensor-module-ports
-  spec section 6.8), tested at step 4.
+- **Meter cables:** the meter cables end in RJ11 plugs and are **never cut** (record H5).
 - **Battery cut-off:** the pack cuts off at about 3.0 V. The S7V8F3 runs down to 2.7 V, so the
   regulator is not the limit.
 - **ST-LINK USB caveat:** when the 3V3 pin powers the Nucleo (mode B), the on-board ST-LINK (USB

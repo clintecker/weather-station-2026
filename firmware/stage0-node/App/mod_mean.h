@@ -3,7 +3,7 @@
 /* The minute window of a local module whose channels are means of its samples (WSMP kinds "mean"):
  * the sums, the latch with its retry rule (WSMP-L1 to L3), the quality of the window (WSMP section 9)
  * and the frozen snapshot. The temperature, humidity, pressure and UVA modules use it. Each channel
- * keeps its own sample count and suspect flag (sensor module ports design, section 6.9): a suspect
+ * keeps its own sample count and suspect flag (firmware-current-design.md, section 6.9): a suspect
  * sample stays out of its channel's sum and makes the channel suspect, and leaves the other channel. */
 #include <stdint.h>
 #include "wsmp.h"

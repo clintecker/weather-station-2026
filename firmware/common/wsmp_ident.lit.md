@@ -3,7 +3,7 @@
 In v1 a port number is a place, not a module type. When the station finds a module on an I2C port it
 reads the module record from the board's ID EEPROM, maybe the sensor's own serial, and decides: admit
 the module, quarantine it, or (for a duplicate) check the module that holds its serial or type first.
-`docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md` section 6.7 fixes that decision as
+`docs/firmware-current-design.md` section 6.7 fixes that decision as
 an ordered table. This file is that table as one pure function, `wsmp_identify`, with the serial
 rules it needs.
 
@@ -82,7 +82,7 @@ A bind of kind 1 matches only a sensor serial that was read and is equal. A reco
 whose serial could not be read cannot be confirmed, so it counts as changed: its calibration is never
 applied to a sensor it may not belong to. The station never asks for that verdict: a sensor serial
 that fails its 3 tries leaves the identification incomplete, and no verdict is decided from it
-(`App/port_id.c`, ports design section 6.7, step 3b). So on the station `SENSOR_CHANGED` means a
+(`App/port_id.c`, firmware-current-design.md section 6.7, step 3b). So on the station `SENSOR_CHANGED` means a
 serial that was read and differs; the rule here keeps the function safe on its own.
 
 ```c {#bind}

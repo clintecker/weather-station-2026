@@ -13,7 +13,7 @@ void wsmp_host_init(void);                       /* after local_init: every port
 void wsmp_host_tick(uint32_t now_ms);            /* every WSMP_TICK_MS: module ticks and probes */
 void wsmp_host_latch(uint32_t utc, uint32_t now_ms);   /* the minute latch of every port in the layout */
 /* When the next latch is due (the latch timer's): the pre-latch slot starts WSMP_HOST_SLOT_MS before it
-   (sensor module ports design, section 6.7). wsmp_host_latch also sets it a minute on. */
+   (firmware-current-design.md, section 6.7). wsmp_host_latch also sets it a minute on. */
 void wsmp_host_next_latch(uint32_t at_ms);
 /* The last snapshot of a port in the layout (Active or Suspect), or NULL. */
 const wsmp_snapshot *wsmp_host_snapshot(enum wsmp_port p);
@@ -31,7 +31,7 @@ unsigned wsmp_host_modules_line(char *buf, unsigned len);
 void wsmp_host_worst_line(void);   /* test only: every port in its longest state, with its counts */
 #endif
 /* The descriptor set of the layout (WSMP section 11.1, with the identity entry of the sensor module
-   ports design, section 6.7): every Admitted, Active or Suspect port in increasing port order. The
+   firmware-current-design.md, section 6.7): every Admitted, Active or Suspect port in increasing port order. The
    generation is left 0 for the caller (WSMP-E1), which builds the set after the minute's latch steps
    (wsmp_host_latch): an Admitted module joins the readings at that latch. Returns the module count;
    *dropped (if not NULL) counts layout modules whose blocks did not unpack (a bug), left out. */

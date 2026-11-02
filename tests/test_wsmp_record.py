@@ -1,7 +1,7 @@
 """The module record v1.0 and the admission verdict (firmware/common/wsmp.c, wsmp_ident.c).
 
 Expected bytes, statuses and verdicts come from the sensor-module-ports design
-(docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md sections 6.7 and 6.9) through the
+(docs/firmware-current-design.md sections 6.7 and 6.9) through the
 independent reference tests/wsmp_record_ref.py, not from the code under test.
 """
 import ctypes

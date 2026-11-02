@@ -10,7 +10,7 @@ every part as it left it. It writes only to the OLED, on its own SPI bus. It doe
 
 ## What it prints
 
-At start, after a `#power PA9 (D9) high` line (the sensor power enable, carrier only; see "The OLED" below)
+At start, after a `#power PA9 (D9) high` line (the sensor power enable, not wired on the bench; see "The OLED" below)
 and a `#oled` line with the display's SPI clock (see "The OLED" below), and again
 whenever a scan finds nothing:
 
@@ -92,8 +92,8 @@ Press the black RESET button (B4) to see the start lines again. Ctrl-] quits min
   the battery supply together.
 - The STEMMA QT hub takes the **unswitched 3.3 V** from CN6.4 and GND from CN6.6, never the
   5 V pin. The power monitors take the same 3V3 on their own cable (QTM; bench-bb-r0.3, change C).
-  There is no sensor load switch on the bench: change C's PA9 switch is deferred to the carrier
-  (build-progression record 4.6 dated note, 2026-11-02), so PA9 is unconnected. SDA to PA11
+  There is no sensor load switch on the bench: change C's PA9 switch is not part of the breadboard
+  build (build-progression record 4.6 dated note, 2026-11-02), so PA9 is unconnected. SDA to PA11
   (D14, CN5.9), SCL to PA12 (D15, CN5.10) ([`docs/hardware/bench-station-wiring.md`](../../docs/hardware/bench-station-wiring.md)).
 
 ## Checks against the meter
@@ -153,11 +153,10 @@ RATE -0.62%/h
 | 3, 5, 6, 9-14, 17-19 | not used | leave empty | |
 | 20 | frame ground (the metal case) | GND, or leave open | |
 
-The pins are from UM2592 Rev 4, Tables 17 and 18; the hardware build sheet (`hardware/bench-breadboard-r0/build-sheet.md`) lands each signal on its morpho pin only and the supply pair straight on the NUCLEO, never on a breadboard rail (build-progression record N1, N3). D9 (PA9) is not used for reset: on the carrier it switches the
-sensor ports' 3.3 V. Change C's switch is deferred to the carrier (build-progression record 4.6 dated
-note, 2026-11-02), so on the bench PA9 is unconnected; this tool still drives PA9 high at start (a
-`#power` line says so) and keeps it high, which is harmless on the bench and on the carrier keeps the
-port sensors powered for the scan (not back-powered through the bus pull-ups). Put the kit's 220 uF capacitor across the OLED's 3.3 V and GND (+ to
+The pins are from UM2592 Rev 4, Tables 17 and 18; the hardware build sheet (`hardware/bench-breadboard-r0/build-sheet.md`) lands each signal on its morpho pin only and the supply pair straight on the NUCLEO, never on a breadboard rail (build-progression record N1, N3). D9 (PA9) is not used for reset: it is the sensor power enable. Change C's switch is not part of the
+breadboard build (build-progression record 4.6 dated note, 2026-11-02), so on the bench PA9 is
+unconnected; this tool still drives PA9 high at start (a `#power` line says so) and keeps it high,
+which is harmless on the bench. Put the kit's 220 uF capacitor across the OLED's 3.3 V and GND (+ to
 3.3 V). The display draws 50-150 mA from the NUCLEO's 3V3.
 
 The SPI clock is the fastest step at or below 1 MHz (Adafruit: the SSD1325 needs 1 MHz or less); the

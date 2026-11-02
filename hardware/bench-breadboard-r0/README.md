@@ -10,8 +10,8 @@ changes A and B and the second QT cable, sections 4.4-4.6; revision `bench-bb-r0
 current runs on leads between lever connectors, JST PH sockets and screw terminals, never through a
 breadboard contact (record P1); the breadboards carry only signals and sense taps; the NUCLEO's signals
 land on its Arduino headers; the mode-B supply enters at CN6.4; the hub's sensors and the power monitors
-are on two QT cables, both on the unswitched 3V3. Change C, the PA9 sensor switch, is deferred to the
-carrier board (record 4.6 dated note, 2026-11-02): steps 1 and 2 have no sensor power switch. The power design is
+are on two QT cables, both on the unswitched 3V3. Change C, the PA9 sensor switch, is not part of the
+breadboard build (record 4.6 dated note, 2026-11-02): the bench has no sensor power switch. The power design is
 [`docs/superpowers/specs/2026-10-29-power-telemetry-design.md`](../../docs/superpowers/specs/2026-10-29-power-telemetry-design.md)
 sections 11.1 and 11.2, as the record amends them.
 
@@ -53,7 +53,7 @@ flowchart LR
 |---|---|
 | `check_guide` | each NUCLEO pin the map uses is in the wiring guide's section 2 table, on a header the guide lists |
 | `check_guide_reverse` | the other way round (record D3 check 7): each guide row that names a station pin has a model net with that `mcu` pin, unless the row says "protoboard only" or "carrier only" |
-| `check_firmware` | each pin matches the constants in the node's `App/board_inputs.c` and `App/i2c_bus.lit.md`, in the bench link's `App/benchlink.c`, and in i2cscan's `App/i2cscan.c` and `App/oled.c` (the OLED's five SPI and control pins); PA9 (POWER_PIN) is not checked, as the model has no SENS_EN (change C is on the carrier); an ADC input (vane, ISET, VIN_SENSE) uses its pin's ADC1 channel (D3 check 8) |
+| `check_firmware` | each pin matches the constants in the node's `App/board_inputs.c` and `App/i2c_bus.lit.md`, in the bench link's `App/benchlink.c`, and in i2cscan's `App/i2cscan.c` and `App/oled.c` (the OLED's five SPI and control pins); PA9 (POWER_PIN) is not checked, as the model has no SENS_EN (change C is not built); an ADC input (vane, ISET, VIN_SENSE) uses its pin's ADC1 channel (D3 check 8) |
 | `prove` | the strips, the jumpers, the leads, the joints, the ties inside parts and the NUCLEO's own ties join every net, with no short and no stray pin |
 | `checks.check_force_off_breadboard` | D3 check 1: no force lead or force-net member in a breadboard hole, except the P1 regulator chain, tagged member by member |
 | `checks.check_sense_landings` | D3 check 2: no sense lead shares a clamp position with a force lead; each lands on its declared joint |
@@ -96,7 +96,7 @@ tools/fetch-cad.sh                                                     # once: t
   and endpoints, never by W-number (W-numbers change on every regeneration).
 - **Revisions and tags.** The revisions are `bench-bb-r0.1` (change A), `bench-bb-r0.2` (change B, the
   meter pin remap) and `bench-bb-r0.3` (the second QT cable; *2026-11-02:* redefined in place before it was
-  built, without change C, the PA9 sensor switch, which is deferred to the carrier). `source/wiring.toml` is the
+  built, without change C, the PA9 sensor switch, which is not part of the breadboard build). `source/wiring.toml` is the
   current one (r0.3). The earlier ones are **frozen models**, `source/revisions/bench-bb-r0.1.toml` and
   `bench-bb-r0.2.toml` (`make.py`'s `HISTORY`), each the whole bench as its change leaves it, with their
   regenerated sheets in `revisions/<revision>/` (record 6.1 dated note). Each sheet's baseline is the
@@ -107,8 +107,8 @@ tools/fetch-cad.sh                                                     # once: t
   preflight block against the frozen model and sheet its `revision` names. A model change that applies to
   the bench at every revision (a part moved before anything is built) goes into all three models.
   To start a new revision: copy `wiring.toml` to `source/revisions/<its revision>.toml`, add it to
-  `HISTORY`, then bump `wiring.toml`'s `revision`. Clint makes the matching git tags. r0 ends at r0.3:
-  step 1b is in the protoboard model (record D7).
+  `HISTORY`, then bump `wiring.toml`'s `revision`. Clint makes the matching git tags. Step 1b's
+  INA228 rails are not in the model yet.
 
 KiCad 10 comes from `KICAD_APP` (default: the 10.0.6 disk image on the bench Mac,
 `tools/kicad_env.py`). The router's prebuilt binary is for macOS arm64, so `tools/fetch-router.sh`
@@ -154,12 +154,12 @@ Two builds give identical files (`test_generation_is_deterministic`).
 
 ## Decisions
 
-- **PA9 is unconnected** on steps 1 and 2 (*2026-11-02*, record 4.6 dated note): change C, the PA9 sensor
-  load switch, is deferred to the carrier board, where PA9 (CN10.19) switches each sensor port (PORT-5).
+- **PA9 is unconnected** on the breadboard build (*2026-11-02*, record 4.6 dated note): change C, the PA9
+  sensor load switch, is not built.
   The firmware may still drive PA9: harmless here. `bench-bb-r0.3` was redefined in place (it was never
   built); r0.1 and r0.2 stay frozen. The second cable QTM still takes the battery INA228 (0x40) and the
   MAX17048 (0x36) from the same unswitched 3V3 as the hub's cable QT: redundant now, but harmless, and it
-  keeps the step 1b chain and record S3 unchanged (record 4.6, PORT-9).
+  carries the step 1b INA228 daisy chain (record 4.6).
 - **PGOOD and CHG** jumper from the charger's header on board B to the NUCLEO's Arduino header:
   CHG to CN9.7 (D6, PB10), PGOOD to CN9.6 (D5, PB8); their morpho aliases CN10.25 and CN10.27 stay
   empty (record N1, N3).
@@ -227,9 +227,6 @@ these deviations are recorded here, not in that baseline.
 
 The step 1 list is the build-progression record's section 5, "Buy now (step 1)". Against it:
 
-- the BQ25798EVM is already ordered (2026-11-02, 2 units; record 7.1 Q4): do not buy it again; it is
-  used at step 2c;
-- its TS stand-in resistors (10 kΩ 1 % and about 39 kΩ 1 %) are bought now, with step 1;
 - no meter is bought: the Fluke 87V is owned (record 7.1 Q2);
 - no screw-terminal RJ11 breakout: the BOB-14021s are used directly, prepared as above (record 7.1 Q6);
 - no RTMR: TMR is tied to GND (record P9);

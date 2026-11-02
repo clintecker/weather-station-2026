@@ -1,5 +1,5 @@
 """The descriptor set (docs/module-protocol.md section 11.1, with the identity entry of
-docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md section 6.7): the C codec
+docs/firmware-current-design.md section 6.7): the C codec
 (firmware/common/wsmp.c) and the gateway's Python twin (ws0/wsmp_set.py), each against bytes written
 here from the specification, and against each other.
 """
@@ -226,7 +226,7 @@ class DescriptorSet(unittest.TestCase):
 
     def test_the_identity_rules_of_e7(self):
         # the serial's namespace (top byte) is its source (id_flags bits 0-1), and v1 has one module per
-        # type (ports design, section 6.7): both are WSMP_ETYPE in C and a fault in Python
+        # type (firmware-current-design.md, section 6.7): both are WSMP_ETYPE in C and a fault in Python
         cases = {
             'record serial with source port': header(1, 1, entry(1, 1, 2, RECORD_SERIAL, 0x00, 0, AIR_TH)),
             'port serial with source record': header(1, 1, entry(1, 1, 2, PORT_SERIAL, 0x01, 0, AIR_TH)),

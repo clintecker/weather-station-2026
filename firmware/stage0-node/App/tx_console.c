@@ -147,9 +147,9 @@ static void storm(void)
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
 }
 
-/* TEST-SENSOR-POWER (bench builds; carrier only): the PA9 port power-cycle test of the build-progression
- * record's step 3 (change C, deferred to the carrier on 2026-11-02, section 4.6 dated note; it was step 1
- * exit criterion 9). On the breadboard and the protoboard PA9 is unconnected, so it switches nothing
+/* TEST-SENSOR-POWER (bench builds): the PA9 port power-cycle test (change C, not part of the breadboard
+ * build since 2026-11-02, build-progression record section 4.6 dated note; it was step 1 exit
+ * criterion 9). On the breadboard PA9 is unconnected, so it switches nothing
  * there. SPOWER_CYCLES cycles of PA9 low for SPOWER_HALF_MS, then
  * high for SPOWER_HALF_MS, one #test line per edge, then a summary. A one-shot timer paces the edges;
  * the edges and the lines come from the main loop (lines are printed only there), on the storm's

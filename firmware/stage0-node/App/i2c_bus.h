@@ -9,7 +9,7 @@
  *   0 (the firmware default, the official phase A wiring): a passive STEMMA QT hub, no mux. Every
  *     client is upstream; there is no mux boot job, no deselect and no phantom check, and the record
  *     clients (0x50) complete with I2C_ENACK_ADDR without bus traffic (no record EEPROMs on the hub).
- *   1: phase 1 of the sensor module ports (docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md
+ *   1: phase 1 of the sensor module ports (docs/firmware-current-design.md
  *     sections 4.3, 6.5, 6.6): a mux at I2C_MUX_ADDR and a static channel map. A port client's
  *     transfer is preceded by its channel's select and read-back and followed by the deselect (0x00)
  *     and its read-back; upstream clients are served only with no channel selected. At boot, before
@@ -30,7 +30,7 @@ enum i2c_client { I2C_C_SHT45, I2C_C_BMP581, I2C_C_LTR390, I2C_C_SHTC3, I2C_C_IN
                   I2C_C_REC_UVA, I2C_C_COUNT };
 #define I2C_EID        (-8)   /* a module's own code: a part answered with another chip ID */
 
-#define I2C_MUX_ADDR 0x71U   /* not the default 0x70: the SHTC3 is there (ports design, section 3) */
+#define I2C_MUX_ADDR 0x71U   /* not the default 0x70: the SHTC3 is there (firmware-current-design.md, section 4.1) */
 #define I2C_RX_MAX 128U      /* the longest read: a whole module record (section 6.9) */
 
 /* Completion codes. A module adds its own I2C_ECRC after a bad checksum. */
@@ -62,15 +62,15 @@ int i2c_bus_submit(enum i2c_client c, uint8_t addr7, const uint8_t *tx, uint8_t 
 /* The completion of client c's transfer, from the main loop (a link-time seam, Power of Ten rule 9):
    the module layer defines it (App/wsmp_local.c). It may submit the next transfer. */
 void i2c_bus_done(enum i2c_client c, int rc);
-/* The sensor 3.3 V switch on PA9 (D9, CN5.2; morpho CN10.19), 1 on. Carrier only: since 2026-11-02
-   change C's switch is deferred to the carrier (build-progression record section 4.6 dated note), so
-   on the breadboard and the protoboard PA9 is unconnected and driving it does nothing. On the carrier
+/* The sensor 3.3 V switch on PA9 (D9, CN5.2; morpho CN10.19), 1 on. Not wired: since 2026-11-02
+   change C's switch is not part of the breadboard build (build-progression record section 4.6 dated
+   note), so on the breadboard PA9 is unconnected and driving it does nothing. With per-port power
    it enables the ports' current-limited switches (PORT-5); the power monitors (INA228s, MAX17048) and
    the SHTC3 are unswitched (PORT-9), so a PA9 cycle never drops them. */
 void i2c_bus_power(int on);
 /* The mux RESET line, active low on the TCA9548A (a link-time seam): asserted 1, released 0. The
    board defines it (App/board_inputs.c): PB14 (A4, CN8.5 / morpho CN7.36; build-progression record
-   N5), wired when WS_I2C_MUX=1, after the shield's check that A4 is not tied to SDA; a no-op in the
+   N5), wired when WS_I2C_MUX=1, once A4 is checked not to be tied to SDA; a no-op in the
    hub profile. */
 void i2c_bus_mux_reset_line(int asserted);
 int i2c_bus_ready(void);           /* 1 once the boot job is done (at once in the hub profile) */
@@ -87,6 +87,6 @@ uint16_t i2c_bus_mux_resets(void);   /* mux RESET pulses, the boot job's include
    from the main loop; the call clears both masks and never touches the bus. *acked: the client's own
    transfer completed with I2C_OK (a mux operation or a recovery never counts). *failed: its job ended
    with any other code. A client may be in both. TEST-SENSOR-POWER reads it at each PA9 edge (the
-   carrier's port power-cycle test, build-progression record step 3; step 1's exit 9 until 2026-11-02). */
+   port power-cycle test; step 1's exit 9 until 2026-11-02, build-progression record 4.6 dated note). */
 void i2c_bus_outcomes(uint16_t *acked, uint16_t *failed);
 #endif

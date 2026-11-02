@@ -373,8 +373,8 @@ class BenchScreen(unittest.TestCase):
 
 
 class SensorPower(unittest.TestCase):
-    """On the carrier PA9 switches the sensor ports (record 4.6; change C, deferred from the breadboard to the
-    carrier on 2026-11-02): i2cscan drives PA9 high before its first bus access, or a carrier sensor is unpowered.
+    """With per-port power PA9 switches the sensor ports (record 4.6; change C, not part of the breadboard build
+    since 2026-11-02): i2cscan drives PA9 high before its first bus access, or a switched sensor is unpowered.
     On the breadboard PA9 is unconnected, so the drive is harmless there."""
 
     def setUp(self):

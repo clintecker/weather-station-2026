@@ -338,22 +338,20 @@ Adding code:
 
 ## Future features (estimates)
 
-The project builds the station in stages ([`docs/next-stages-plan.md`](next-stages-plan.md)).
-Stage 0 is the data path on the bench prototype. Stage 1 adds main power and battery pack state
-(the battery and solar build). Stage 2 adds one wired sensor module. Stage 3 completes the unheated
-sensing.
+The estimates below are for features the station may still need beyond the breadboarded
+development build. Only the power-telemetry rows are part of the breadboard build (phase A, and
+phase B for step 1b's four rails).
 
-| Feature (stage) | Flash estimate | Notes |
+| Feature | Flash estimate | Notes |
 |---|---|---|
-| Power telemetry, phase A: bq24074, battery INA228, MAX17048, ISET, charger input, CHG/PGOOD, VREFINT, health report v6 (Stage 1) | **Done** (not yet released): +4,400 B TX, +80 B RX against c7e8860 | Measured 2026-10-29 ([Current build](#current-build)). Power code 3,898 B (`power_acq` 2,602, `mod_power` 916, `power_regs` 380); `board_inputs` +492 B for the ADC sequence and CHG edges. Replaces the old "BQ25798, NTCs: 4–7 KB" row, whose 4 KB lower bound it reached |
+| Power telemetry, phase A: bq24074, battery INA228, MAX17048, ISET, charger input, CHG/PGOOD, VREFINT, health report v6 | **Done** (not yet released): +4,400 B TX, +80 B RX against c7e8860 | Measured 2026-10-29 ([Current build](#current-build)). Power code 3,898 B (`power_acq` 2,602, `mod_power` 916, `power_regs` 380); `board_inputs` +492 B for the ADC sequence and CHG edges |
 | Power telemetry, phase B: load, solar and USB-C INA228s (`WS_POWER_PROFILE=2`) | **Measured** in a scratch build: +528 B over phase A (88,688 B, 78.7 %) | Same code, a four-row rail table (`App/power_config.h`); `power_acq` 2,602 → 3,122 B. No protocol, catalog or journal change (the field set already holds every rail) |
-| Power telemetry, phase C: BQ25798 driver (VAC1 solar, VAC2 USB-C, its ADC, status, MPPT set-up), the pack NTC through its TS pin | **estimate**: 2–4 KB | `power_acq` and the shared bus already carry the step machines, windows and health cache; the driver adds the register map and conversions (`power_regs`) and a profile. A profile 3 build stops with `#error` today. NTCs on the MCU are no longer planned (the pack NTC goes to the charger) |
 | SPI NOR journal for the 30-day buffer (requirement H11, 30-day storage) | 6–10 KB | SPI HAL plus a journal backend |
-| RS-485 and Modbus sensor modules (Stage 2) | 4–8 KB, plus a few KB per sensor type | The UART HAL is already linked |
+| RS-485 and Modbus sensor modules | 4–8 KB, plus a few KB per sensor type | The UART HAL is already linked |
 | Low-power sleep, heater control, energy state machine (the thresholds of the power spec section 9.9, D1) | 4–8 KB | Mostly our code. The energy state stays NORMAL until then |
 | Multi-sensor payload | **Done**: +856 B TX against release `45f43e78fe91` | `ws_obs.c` was 676 B. The decoder is on the gateway |
 | WSMP local modules of the bench station | **Done**: +15,712 B TX against release `260c9ccbe938` | Shared I2C bus, seven modules, station host and catalog map (release `cc2766a38c61`) |
-| **Total still to come** | **about 17–31 KB** (phase B 0.5 KB measured, phase C 2–4, SPI NOR 6–10, RS-485 4–8, low power 4–8) | Neither estimate fits below the 90 % guard as it stands (13,216 B left); TX is already 3,680 B over the 75 % target. The phase B step alone fits. The rest needs the measured reserves below (LTO, a larger application region once the journal moves to SPI NOR) |
+| **Total still to come** | **about 15–27 KB** (phase B 0.5 KB measured, SPI NOR 6–10, RS-485 4–8, low power 4–8) | Neither estimate fits below the 90 % guard as it stands (13,216 B left); TX is already 3,680 B over the 75 % target. The phase B step alone fits. The rest needs the measured reserves below (LTO, a larger application region once the journal moves to SPI NOR) |
 
 ## Requirement (Clint, 2026-10-13)
 
@@ -433,8 +431,7 @@ adds 1 ms (41.0 ms counts as 42 ms).
 | ACK / NACK | 17 B | 33 B | 18.0 ms | 61.7 ms | 113.2 ms | 411.6 ms |
 | **Observation, the version 6 node field set `WS_F_WSMP_BENCH`, every module and every power field (today's build, at most; `OBS_FRAME_MAX`)** | 77 B | 93 B | 41.0 ms | 128.3 ms | 236.0 ms | 821.2 ms |
 | Observation, phase A record with every module in the layout (the rails phase A cannot fill are absent) | 65 B | 81 B | 35.9 ms | 118.0 ms | 215.6 ms | 739.3 ms |
-| Observation, phase B or phase C+B record (every rail, with the extension word) | 77 B | 93 B | 41.0 ms | 128.3 ms | 236.0 ms | 821.2 ms |
-| Observation, phase C alone (no `load_current_ma`) | 75 B | 91 B | 39.7 ms | 128.3 ms | 236.0 ms | 821.2 ms |
+| Observation, phase B record (every rail, with the extension word) | 77 B | 93 B | 41.0 ms | 128.3 ms | 236.0 ms | 821.2 ms |
 | **Per-build ceiling** (the journal rule, power spec sections 5.4 and 7; a larger field set does not compile) | 80 B | 96 B | 41.0 ms | 133.4 ms | 246.3 ms | 821.2 ms |
 | **Every catalog version 2 field** (33 fields; accepted by the RX bridge and the gateway, never a build) | 94 B | 110 B | 46.1 ms | 148.7 ms | 277.0 ms | 944.1 ms |
 | **Health report, version 6** (fixed length) | 64 B | 80 B | 35.9 ms | 112.9 ms | 215.6 ms | 739.3 ms |

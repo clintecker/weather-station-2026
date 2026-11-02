@@ -207,7 +207,7 @@ tick latches every module and calls `minute_report` (section 4). The latch never
 sensor. A module that has not finished a sample has one sample fewer in its window. Each of the
 other ticks tells the host when the latch is due (`wsmp_host_next_latch`): the host's pre-latch slot
 starts 3 s before it, and holds the port modules' samples for their identity checks (sensor module
-ports design, section 6.7). The time told is counted from when the timer fired (`sample_fired_ms`,
+firmware-current-design.md, section 6.7). The time told is counted from when the timer fired (`sample_fired_ms`,
 taken in its interrupt), not from when the task ran: a task that runs late does not move the slot.
 
 ```mermaid

@@ -7,18 +7,21 @@ phase A on the bench, protocol version 6 in the source), and 2026-10-30 for the 
 record and Clint's survey answers (its section 7.1). Give this file to a fresh Claude Code session
 first. Links to the deeper documents are at the end.
 
-## 0. Current focus (2026-11-02): step 1 only
+## 0. Current focus (2026-11-02): the breadboarded development version
 
-The work now is **step 1**: the breadboard prototype (`hardware/bench-breadboard-r0`, model
-`bench-bb-r0.3`) mounted on a 3D-printed base plate (the "carrier"), so it is easy to build and move.
-Prove circuits on breadboards and sample boards before designing anything further.
+The project is the **breadboarded development version** of the station: step 1, the breadboard
+prototype (`hardware/bench-breadboard-r0`, model `bench-bb-r0.3`) on a 3D-printed base plate, and
+step 1b, the four INA228 rails on the same breadboard bench (battery 0x40, load 0x41, solar 0x45,
+USB-C 0x48). The firmware, gateway, protocol, tools and tests are the ones that run today.
 
-- **Parked:** every plan past step 1 (steps 1b, 2, 2c, 3 the PCB, 4 the enclosure, 5). Each parked
-  file or section carries a "Parked 2026-11-02" banner. Don't build from those parts or update them
-  to match step 1 changes.
-- **Change C** (the PA9 sensor load switch) is not part of step 1; `i2c_bus` power-cycling is a no-op.
+- **Later stages were removed from the repository on 2026-11-02** (the protoboard, the BQ25798
+  charger, the PCB, the enclosure, the field station, the custom board, sixteen stations); git history
+  has them. The parts of the old designs the firmware implements are in
+  [`firmware-current-design.md`](firmware-current-design.md).
+- **Change C** (the PA9 sensor load switch) is not part of the breadboard build; `i2c_bus`
+  power-cycling is a no-op.
 - **The base plate spec** is `hardware/base-plate/spec-r2.md`. It is written for the nurb CAD project at `~/Documents/nurb/board for weather/`, whose v1 tiles it revises, and it records the user's answers so far in its §7a. Its open items (§7) are what's left to settle before the rebuild.
-- **The parts for step 1** were ordered from DigiKey on 2026-11-02 (`docs/poc-shopping-list.md`,
+- **The parts for steps 1 and 1b** were ordered from DigiKey on 2026-11-02 (`docs/poc-shopping-list.md`,
   "Purchasing status").
 
 ## 1. What this project is
@@ -32,34 +35,22 @@ A home weather station.
   MQTT.
 - The two boards are the transmitter (TX, the sensor node) and the receiver (RX).
 
-The final node runs **unattended on battery and solar, at long range**. Judge every decision for
-that node, not for the USB bench. The node must fail cheaply. Push work to the mains-powered
-gateway.
+The station runs on a battery charged from solar or USB-C; the breadboard version measures that
+power path (steps 1 and 1b). The node must fail cheaply. Push work to the mains-powered gateway.
 
-**Plan of record:** strict stage order ([`next-stages-plan.md`](next-stages-plan.md)).
+**Plan of record:** the breadboard build, steps 1 and 1b
+([`superpowers/specs/2026-10-29-build-progression-decisions.md`](superpowers/specs/2026-10-29-build-progression-decisions.md),
+section 3).
 
-```mermaid
-flowchart LR
-  S0["Stage 0: data path on the bench (now)"] -- "H01 passes" --> S1["Stage 1: main power and pack state"]
-  S1 -- "H02 and H03 pass" --> S2["Stage 2: one wired module"]
-  S2 -- "H04 passes" --> S3["Stage 3: complete unheated sensing"]
-```
-
-- **Stage 0** is the bench data path: TX board → LoRa → RX board → USB → gateway → SQLite, on USB
-  power. Stage 0 ends when **H01**, the 24-hour delivery test, passes.
+- **H01**, the 24-hour delivery test of the data path (TX board → LoRa → RX board → USB → gateway →
+  SQLite, on USB power), runs on the breadboard build.
 - H01 requires 1,440 one-minute intervals in 24 h, with at least 1,426 valid readings committed
   within 120 s, plus a restart and outage matrix (`docs/H01-checklist.md`).
-- **Power phases** (Clint, 2026-10-29; [`next-stages-plan.md`](next-stages-plan.md) §1.1): the
+- **Power phases** (Clint, 2026-10-29; [`hardware/power-metering.md`](hardware/power-metering.md)): the
   pack is **1S3P** (three 2,200 mAh Li-ion cells in parallel, 6,600 mAh, 3.0–4.2 V, about 24.4 Wh).
-  **Phase A** (now): the Adafruit bq24074 charger, one battery INA228 (0x40) and the MAX17048 gauge
-  (0x36) on the cell. **Phase B**: one INA228 per rail. **Phase C**: the TI BQ25798 (two inputs, its
-  own ADC), in either order with B. The final goal is voltage and current of four rails: battery
-  (signed), solar input, USB-C input, load. USB-C is for bench work and backup charging only, never
-  together with solar.
-- **Stage order:** power phase A's telemetry runs now, beside Stage 0, on the USB-powered bench
-  boards. **Stage 1's gates (H02, H03)** and its pack, chamber and solar endurance work follow H01.
-- Stage 2 adds one wired sensor module on an RS-485 port. Stage 3 adds the complete unheated
-  sensor set.
+  **Phase A** (step 1): the Adafruit bq24074 charger, one battery INA228 (0x40) and the MAX17048 gauge
+  (0x36) on the cell. **Phase B** (step 1b): one INA228 per rail: battery (signed), solar input,
+  USB-C input, load. USB-C is for bench work and backup charging only, never together with solar.
 
 ## 2. Where things stand (on `master`)
 
@@ -101,7 +92,7 @@ flowchart LR
   - The flash-layout change of `cc2766a38c61` also needed a fresh key. `run-d6` is archived as
     `run-d6-archive-2026-10-19/` (`docs/runbook-moving-boards.md`, "Changing the flash layout").
 - **Power, phase A.** The MCU pins proven with `firmware/benchlink` on 2026-10-28/29 are the official
-  design, the same on the bench and in the field
+  design
   ([`firmware/benchlink/README.md`](../firmware/benchlink/README.md#wiring), "Wiring"). The wiring
   around them is breadboard v2, step 1 of the build-progression record
   ([`superpowers/specs/2026-10-29-build-progression-decisions.md`](superpowers/specs/2026-10-29-build-progression-decisions.md),
@@ -118,7 +109,7 @@ flowchart LR
   - **State (2026-10-30): breadboard v2 is modelled and pending on the bench.** `wiring.toml` is at
     revision `bench-bb-r0.3` (change A: the power path and NUCLEO headers; change B: cups PB5, rain
     PB4, approved 7.1 N2; change C: the split QT bus and the mode-B hour; *2026-11-02:* the PA9 sensor
-    switch is deferred to the carrier and r0.3 is redefined in place without it), with its build sheet
+    switch left the breadboard build and r0.3 is redefined in place without it), with its build sheet
     and drawings regenerated. The bench itself still has the 2026-10-28/29 as-run topology: the pack in
     the charger's socket, so the shunt was bypassed and those runs' `ishunt` and charge counters are
     invalid (record D1, F5). Change A rebuilds it.
@@ -316,10 +307,9 @@ flowchart TD
    `tools/h01_report.py --db <run dir>/observations.sqlite3 --station station-01 --start <UTC> --hours 24 --output evidence/h01-<date>`.
    Use the run directory that the gateway actually served. `--db` defaults to `run-hw/`.
 
-**The build sequence, decided 2026-10-30** (record section 3, S1; 7.1 Q8 "H01 first"; build order
-1 → 2 (H01) → 1b → 2c → 3 → 4 → 5). It folds in power phase A
-([`next-stages-plan.md`](next-stages-plan.md) §1.1, the power plan
-[`superpowers/plans/2026-10-29-power-telemetry.md`](superpowers/plans/2026-10-29-power-telemetry.md)).
+**The build sequence** (record section 3, S1): step 1, then step 1b, both on the breadboard bench;
+H01 runs on the breadboard build, before 1b's four-rail work (7.1 Q8). It folds in power phase A (the
+power plan [`superpowers/plans/2026-10-29-power-telemetry.md`](superpowers/plans/2026-10-29-power-telemetry.md)).
 Build from `hardware/bench-breadboard-r0/build-sheet.md`: it is the step 1 (breadboard v2) sheet, and
 its "Changes from the previous revision" section says which wires come out and which go in (W-numbers
 change on every regeneration, so that list names ends, not W-numbers).
@@ -348,25 +338,21 @@ change on every regeneration, so that list names ends, not W-numbers).
    step 4a; then exit 6 (100 counted pulses, 20 tips).
 4. **Change C** (record 4.6): the QT bus split into a power-monitor branch and a sensor-hub branch,
    both on the unswitched 3V3, and exit 10 (mode B for one hour on the CN6.4 entry). *2026-11-02:* the
-   PA9 sensor switch and exit 9 moved to the carrier (Clint's decision; record 4.6 dated note); PA9
-   is unconnected at steps 1 and 2.
-5. **Step 2 and H01.** The #196 shield and the Perma-Proto module board (the three phase-B INA228
-   positions empty), the force harness moved unchanged. Then the version 6 release
+   PA9 sensor switch and exit 9 left the breadboard build (Clint's decision; record 4.6 dated note);
+   PA9 is unconnected.
+5. **H01 on the breadboard build.** First the version 6 release
    (`protocol-design.md` section 7: drain, WIPE, flash both boards, `init` a new run directory,
-   `provision-node`; whether H01 runs on it is open decision D2, `next-stages-plan.md` §6,
-   recommendation yes; the H01 preconditions, `meter_link=ok` and the phase A exit criteria, can be
+   `provision-node`; whether H01 runs on it is Clint's open decision D2, power telemetry design
+   section 15, recommendation yes; the H01 preconditions, `meter_link=ok` and the phase A exit criteria, can be
    met only on a version 6 build, so a "no" needs a version 5 backport of the M7 probe and the power
    reading, which no plan carries), the gateway check of every phase A value (`/v1/observations`, the dashboard,
    `…/diagnostics`, the Home Assistant power entities, [`runbook-home-assistant.md`](runbook-home-assistant.md)
    "Power entities"), the acceptance drill (`firmware/benchlink/README.md`, "Acceptance drill"), and
    H01 with its preconditions (`docs/H01-checklist.md`: a valid preflight with the 1 A spans, H8(d),
    the ws0 serial reopen, the counter link probe).
-6. **Then step 1b, then step 2c.** 1b: the load, solar and USB-C INA228s on the step 2 plate's small
-   breadboard, after H01 (INA228 module preparation allowed, 7.1 Q1). 2c: the BQ25798EVM on the step 2
-   harness. The EVM is already ordered (2026-10-30, 7.1 Q4): do not buy it again.
-
-The pack reserve (D1), H02 and H03 come after H01 (H02 basis at 2c, H02 at step 3, H03 proper at
-step 4).
+6. **Then step 1b** (record section 3, step 1b): the load, solar and USB-C INA228s (0x41, 0x45,
+   0x48) on the breadboard beside the battery INA228, with the #368/#369 solar barrel adapters and the
+   #4090/#5978 USB-C breakout pair (INA228 module preparation allowed, 7.1 Q1).
 
 **Bench station checks (beside the steps above):** the bench checks of GitHub issues #2, #3 and #4
 on the step 1 build. The `cc2766a38c61` section of `RELEASES.md` lists two bench faults found so far.
@@ -375,13 +361,13 @@ on the step 1 build. The `cc2766a38c61` section of `RELEASES.md` lists two bench
 
 **Deliberately open:**
 
-- Flash read-out protection (for field use).
-- Brown-out reset level (Stage 1).
+- Flash read-out protection.
+- Brown-out reset level.
 - Clint's open power decisions D1 (the 1S3P pack against the PRD reserve) and D2 (H01 on a version 6
-  release): `next-stages-plan.md` §6.
+  release): power telemetry design section 15.
 - H11, the 30-day storage test: it needs external SPI NOR flash.
 - A timed ACK receive slot.
-- Code space for the final station (`docs/firmware-budget.md`). Keep the STM32WL55JC. Plan flash
+- Code space (`docs/firmware-budget.md`). Keep the STM32WL55JC. Plan flash
   layout v2 with H11. The final image must be ≤ 75 % of its region. Watch the flash guard in
   every build.
 - **True USB power-cut testing** is **deferred by Clint**. Do not raise it.
@@ -412,8 +398,8 @@ energy state. It does not model the drain stop or the PROBING link state
 - **No current through a breadboard contact** (record P1): no battery, charge, input or load current
   through a breadboard contact, header pin or Dupont contact, in any step. The breadboard carries
   sense and logic lines only; the one exception is the tagged mode-B regulator chain.
-- **Prove before solder** (record section 1.2): every connection that gets soldered or laid out in
-  copper is first proven on the no-solder bench, with numbers recorded. Module preparation (header
+- **Prove before solder** (record section 1.2): every connection is first proven on the no-solder
+  bench, with numbers recorded, before anything is soldered. Module preparation (header
   pins, the BOB-14021 jacks, the INA228 address jumpers) is allowed (7.1 Q1, Q6); soldered circuit wiring waits for its proof.
 - **Bench quirks:**
   - The factory ST firmware disables the debug port (SWD), so flashing needs connect-under-reset.
@@ -436,23 +422,22 @@ energy state. It does not model the drain stop or the PROBING link state
 | `tools/preflight.py` | Checks a run's `toml preflight` block against the model and the limits: valid, failing, missing or stale (`tools/README.md`) |
 | `docs/poc-shopping-list.md` | Off-the-shelf parts for the bench station |
 | `docs/failure-modes.md` | Failure modes and effects (FMEA), loss budget, recovery runbook, open issues |
-| `docs/radio-energy-policy.md` | Approved send and back-off policy for battery and solar |
+| `docs/radio-energy-policy.md` | Approved send and back-off policy |
 | `docs/H01-checklist.md` | The 24-hour delivery test |
-| `docs/next-stages-plan.md` | Stages 1–3: parts and plan. §1.1–§1.3: the power phases A, B, C, the four rails, the USB-C rule, phase A's exit criteria |
 | `docs/superpowers/specs/2026-10-29-power-telemetry-design.md` | Power telemetry design: phases, the fill table, protocol version 6, the 64-byte health report, node firmware, gateway |
 | `docs/superpowers/plans/2026-10-29-power-telemetry.md` | Power telemetry implementation plan: its batches and wave gates |
 | `docs/superpowers/plans/2026-10-29-power-telemetry-issues.md` | Power telemetry issue catalog: every issue the power decision caused, by layer, severity, batch and state, and what each open issue still needs |
 | `docs/superpowers/plans/2026-10-30-build-progression-issues.md` | Build progression issue catalog: every issue the build-progression record and its section 7.1 answers caused, by area, severity, batch and state, and what each open issue still needs |
 | `docs/hardware/power-metering.md` | Power metering: rails, monitors, addresses, shunts and sense points in each phase, the phase B join, input voltage limits |
-| `docs/superpowers/specs/2026-10-29-build-progression-decisions.md` | Build progression decision record: breadboard → protoboard → carrier, the bench power path, the NUCLEO pin contract (4.2), the pre-run checklist (4.3), changes A, B and C, the shopping list (5), the cascade (6). Section 7.1 holds Clint's survey answers of 2026-10-30, which govern. Its section 8 (and the power design's section 17) says which rows the power design adopted, deferred or rejected |
+| `docs/superpowers/specs/2026-10-29-build-progression-decisions.md` | Build progression decision record: the breadboard build (steps 1 and 1b), the bench power path, the NUCLEO pin contract (4.2), the pre-run checklist (4.3), changes A, B and C, the shopping list (5), the cascade (6). Section 7.1 holds Clint's survey answers of 2026-10-30, which govern. Its section 8 (and the power design's section 17) says which rows the power design adopted, deferred or rejected |
 | `docs/hardware/nucleo-wl55jc-bringup.md` | Board bring-up trial-and-error log |
 | `firmware/stage0-node/README.md` | Build, console commands, LEDs, flash layout |
 | `firmware/stage0-node/RELEASES.md` | Release hashes |
 | `docs/firmware-review-2026-10-13.md` | Firmware review roadmap (§2: SHT45 test plan) |
 | `docs/firmware-budget.md` | Flash, RAM and radio budget, measured. Layout v2 and payload plan |
 | `docs/firmware-event-model.md` | How the firmware runs on both boards |
+| `docs/firmware-current-design.md` | The sections of the earlier ports and sixteen-stations designs that the firmware implements: the mux profile, module identity, the module record, the flash layout |
 | `docs/power-of-ten.md` | The firmware against the Power of Ten rules |
-| `docs/lora-firmware-update-study.md` | Design study: firmware updates over LoRa (nothing built) |
 | `docs/superpowers/` | Design specifications and implementation plans |
 | `docs/runbook-home-assistant.md` | MQTT and Home Assistant setup, password file, running the gateway on macOS and Linux |
 | `docs/runbook-moving-boards.md` | Moving boards between gateways without key or nonce reuse |
@@ -462,8 +447,6 @@ energy state. It does not model the drain stop or the PROBING link state
 | `firmware/rangetest/README.md` | Range-test bench tool |
 | `firmware/i2cscan/README.md` | I2C bench tool: bus scan, INA228 and MAX17048 readings |
 | `firmware/benchlink/README.md` | Bench telemetry link: the power breadboard's readings over plain LoRa, its logger and dashboard, its watchdog drills |
-| `hardware/poc-enclosure-r1/` | Printed enclosure parts for the proof of concept |
-| `hardware/chicago-test-hardware-r0/` | Chicago test hardware, revision 0: build and order guide, manufacturing files |
 | `tools/README.md` | Every tool in `tools/` |
 | `tests/README.md` | What each test file covers, what it needs, when it skips |
 | `ws0/README.md` | The gateway modules |

@@ -35,19 +35,18 @@ later hardware phase fills without a redesign.
 
 | | Decision (Clint, 2026-10-29) |
 |---|---|
-| Pack | 1S3P Li-ion: three 2,200 mAh cells in parallel, 6,600 mAh, 3.0 to 4.2 V, 3.7 V nominal, about 24.4 Wh. It may stay into the BQ25798 phase |
+| Pack | 1S3P Li-ion: three 2,200 mAh cells in parallel, 6,600 mAh, 3.0 to 4.2 V, 3.7 V nominal, about 24.4 Wh |
 | Current phase | Adafruit bq24074 charger (#4755, 1.0 A ISET jumper, R_ISET about 890 Ω, single VBUS input), one INA228 at 0x40 with its shunt in the battery path and its VBUS sense on the charger OUT, a MAX17048 at 0x36 on the cell, an SHT45, all on I2C2 (PA11 SDA, PA12 SCL) through a STEMMA QT hub. *Amended 2026-10-30 (section 17, record 1.4 and 7.1):* R_ISET = 1 kΩ (R9, behind the 1A jumper; record 1.4), so ICHG = KISET ÷ R_ISET = 890 ÷ 1000 = 0.89 A typ (0.80–0.98 A); ISET currents logged earlier with 890 Ω read 12 % high. Status: adopted with change A, read by this workflow from record 7.1 P3 "change A as written" (record 4.4 steps 11–12 fit the ISET network and store the measured divider); R_ISET confirmed by build-sheet check 2. Clint to confirm (section 15, D4) |
-| Official wiring | the bench wiring of 2026-10-28/29: ISET to PB1 (ADC1_IN5, CN8.1, A0); charger VBUS through 20 kΩ (two 10 kΩ in series) over 10 kΩ to PA10 (ADC1_IN6, CN8.3, A2), VIN = 3 × the pin; CHG to PB10 (CN10.25) and PGOOD to PB8 (CN10.27) with the internal pull-ups; the same MCU pins on the bench and in the field. The node firmware reads all of it. *Amended 2026-10-29 (section 17, record 1.4): the same two pins are also on the Arduino headers, CHG = D6 (CN9.7), PGOOD = D5 (CN9.6) (UM2592 Table 17); no pin changes*. *Amended 2026-10-30 (record 1.4, N1, N3; step 1 change A, record 4.4 step 13):* the official leads land on the Arduino headers: CHG to PB10 at D6 (CN9.7) and PGOOD to PB8 at D5 (CN9.6); CN10.25 and CN10.27 are their morpho aliases (the carrier uses them, record N7). ISET reaches PB1 through the record's M2 network (10 kΩ 1 % at the charger, then a node with 100 nF and 1 MΩ to logic ground, section 9.5), and the divider ratio is the measured one, stored in `power_config.h` (section 8.6): adopted with change A, read by this workflow from record 7.1 P3 "change A as written" (record 4.4 steps 11–12 fit the ISET network and store the measured divider); Clint to confirm (section 15, D5) |
+| Official wiring | the bench wiring of 2026-10-28/29: ISET to PB1 (ADC1_IN5, CN8.1, A0); charger VBUS through 20 kΩ (two 10 kΩ in series) over 10 kΩ to PA10 (ADC1_IN6, CN8.3, A2), VIN = 3 × the pin; CHG to PB10 (CN10.25) and PGOOD to PB8 (CN10.27) with the internal pull-ups; the same MCU pins on the bench and in the field. The node firmware reads all of it. *Amended 2026-10-29 (section 17, record 1.4): the same two pins are also on the Arduino headers, CHG = D6 (CN9.7), PGOOD = D5 (CN9.6) (UM2592 Table 17); no pin changes*. *Amended 2026-10-30 (record 1.4, N1, N3; step 1 change A, record 4.4 step 13):* the official leads land on the Arduino headers: CHG to PB10 at D6 (CN9.7) and PGOOD to PB8 at D5 (CN9.6); CN10.25 and CN10.27 are their morpho aliases. ISET reaches PB1 through the record's M2 network (10 kΩ 1 % at the charger, then a node with 100 nF and 1 MΩ to logic ground, section 9.5), and the divider ratio is the measured one, stored in `power_config.h` (section 8.6): adopted with change A, read by this workflow from record 7.1 P3 "change A as written" (record 4.4 steps 11–12 fit the ISET network and store the measured divider); Clint to confirm (section 15, D5) |
 | Bench lessons | keep the battery path short and low resistance (a 0.2 Ω breadboard path ended 1 A charges early); the gauge senses the cell, not OUT; the INA228 VBUS jumper goes to the intended net |
-| Final goal | voltage and current of four rails: battery (signed), solar input, USB-C input, load. One INA228 per rail at distinct I2C addresses; the BQ25798 ADC later as a cross-check |
+| Final goal | voltage and current of four rails: battery (signed), solar input, USB-C input, load. One INA228 per rail at distinct I2C addresses |
 | USB-C | bench work and occasional backup charging only, never connected together with solar |
 | Wire format | a place for all power data now, source-agnostic (what is measured, not which chip), with "not measured" and "invalid" told apart, so that later phases need no redesign |
 | Cadence | voltages and currents every minute in the observation; slow items every 15 minutes in the health report: power-monitor die temperature, MCU supply voltage (VDDA from VREFINT), reset cause, boot count, crash count and last crash PC, radio TX timeouts, I2C bus recoveries, gauge SOC and rate, CHG/PGOOD state |
 | Gateway | decodes, stores and exposes every new value where the other values are (API, dashboard data, MQTT). Analysis and alerts are out of scope |
 
 Out of scope (section 16 has the full list): gateway analysis and alerts; the energy-state thresholds
-(the energy state stays NORMAL in this phase); the BQ25798 driver; WSMP on the radio (sub-project 7
-of the sixteen-stations design); the phase B and C hardware builds.
+(the energy state stays NORMAL in this phase); WSMP on the radio; the phase B hardware build.
 
 ## 2. Phases
 
@@ -57,11 +56,8 @@ The phases are named once here and used everywhere else (plans, docs, code comme
 |---|---|---|---|---|
 | **A** (current) | bq24074 (#4755), one VBUS input | battery INA228 0x40 (shunt in the battery path, VBUS jumper on OUT), MAX17048 0x36 Kelvin on the cell. *Amended 2026-10-30 (record P4, M4):* the gauge senses the CELL+ node by its red lead; its minus is unconnected and its ground comes over STEMMA QT (section 11.1) | ISET → PB1, VBUS divider → PA10, CHG → PB10, PGOOD → PB8, VREFINT | proven on the bench with `firmware/benchlink` on 2026-10-28/29 **except the shunt in the battery path**: the cell sat in the charger's LIPO socket, so the shunt carried no current. Exit criteria 3 and 4 prove that part. The node firmware reads phase A from this design on |
 | **B** (four rails) | bq24074 | phase A plus a load INA228 (OUT), a solar INA228 and a USB-C INA228, each upstream of the point where the sources join (section 11.3). The firmware no longer reads the battery INA228's VBUS (the load INA228 owns the load voltage); its sense lead may stay on OUT or move to the CELL+ node as a host-side cross-check (section 17, record P5 and M4). *Amended 2026-10-30 (record step 1b, P5, M4; section 17's P5/M4 row):* it moves from OUT to CELL+ position 4 at step 1b, a host-side cross-check only | as phase A | later; the firmware table and the host tests cover it now |
-| **C** (BQ25798) | TI BQ25798: VAC1 = solar, VAC2 = USB-C, its own ADC over I2C, MPPT | with or without phase B's INA228s (section 3.2 says what fills each slot either way) | PB8 = BQ25798 /INT (open drain, active low, the same pull-up rule); /CE strapped low, charging enabled and stopped over I2C; PB1, PA10 and PB10 are released (ISET, the divider and CHG go away; PB10 does not exist on the UFQFPN48 package). *Amended 2026-10-29 (section 17, record N8): this row said PB10 = STAT and PB1, PA10 reserved* | later; only the fill table is defined now |
 
-Phases B and C may come in either order: section 3.2's phase C column defines every slot with and
-without phase B's monitors. The pack may stay 1S3P in every phase. *Amended 2026-10-30 (record
-7.1 Q3):* the carrier (step 3) stays 1S3P; the reserve question stays open (section 15, D1).
+The pack is 1S3P in both phases; the reserve question stays open (section 15, D1).
 
 **Exit criteria of phase A** (all must hold before phase A counts as done):
 1. The node firmware, not only benchlink, reads ISET, the charger input voltage, CHG, PGOOD, the
@@ -93,7 +89,6 @@ without phase B's monitors. The pack may stay 1S3P in every phase. *Amended 2026
 | Battery | current **into the cell** (charging) | cell on VIN+, charger LIPO on VIN−: the part counts VIN+ → VIN− as positive, which is **out of** the cell | −1 (the firmware negates the CHARGE delta) |
 | Load | current into the load | VIN+ at OUT, VIN− towards the load | +1 |
 | Solar, USB-C | current into the station | VIN+ at the source, VIN− towards the charger | +1 |
-| Charger input (phase C, BQ25798 IBUS) | current into the charger | — | as the part reports |
 
 The current node release (04fcc656938d) adds a positive CHARGE delta to "charge in"
 (`mod_power.c:145-150`). With the official orientation that counts a discharge as a charge. The
@@ -103,22 +98,21 @@ RELEASES.md records it against that release.
 ### 3.2 Every-minute values (observation)
 
 "Absent" means that the build has no source for the value: the field is not in the record's bitmap.
-INVALID means that the source is fitted but failed, or its reading is out of range. Phase C has two
-builds: with phase B's INA228s ("C+B") and without them ("C alone"); a cell that names an INA228 "if
-fitted" falls back to the BQ25798 in "C alone".
+INVALID means that the source is fitted but failed, or its reading is out of range.
 
-| Value (field) | Phase A | Phase B | Phase C |
-|---|---|---|---|
-| Battery voltage (`batt_mv`, 11) | MAX17048 VCELL (Kelvin to the cell), mean of the minute's 4 reads | as phase A | as phase A |
-| Battery current (`batt_current_ma`, 12) | battery INA228 CHARGE delta over the window ÷ the window's time, sign −1 | as phase A | as phase A |
-| Battery energy and charge counters (13–16) | ΔQ of the battery INA228 × VCELL, split by sign; energy INVALID in a minute where a step had no fresh VCELL (section 5.2) | as phase A | as phase A |
-| Load voltage (`load_mv`, 26) | battery INA228 VBUS (jumpered to OUT) | load INA228 VBUS | load INA228 VBUS if fitted, else BQ25798 VSYS |
-| Load current (`load_current_ma`, 27) | absent | load INA228 CHARGE delta ÷ time | load INA228 if fitted, else absent |
-| Charger input voltage (`charger_input_mv`, 28) | PA10 divider × 3. **The source (solar or USB-C) is not identified** | as phase A (a cross-check of the source rails) | BQ25798 VBUS (the selected input, after its input FETs) |
-| Solar voltage (`solar_mv`, 29) | absent | solar INA228 VBUS, upstream of the join | solar INA228 if fitted, else BQ25798 VAC1 |
-| Solar current (`solar_current_ma`, 30) | absent | solar INA228 CHARGE delta ÷ time | solar INA228 if fitted, else BQ25798 IBUS while solar is the active input, and 0 mA while USB-C is or while there is no input (the solar input FETs are off) |
-| USB-C voltage (`usb_mv`, 32) | absent | USB-C INA228 VBUS, upstream of the join | USB-C INA228 if fitted, else BQ25798 VAC2 |
-| USB-C current (`usb_current_ma`, 33) | absent | USB-C INA228 CHARGE delta ÷ time | USB-C INA228 if fitted, else BQ25798 IBUS while USB-C is the active input, and 0 mA while solar is or while there is no input |
+| Value (field) | Phase A | Phase B |
+|---|---|---|
+| Battery voltage (`batt_mv`, 11) | MAX17048 VCELL (Kelvin to the cell), mean of the minute's 4 reads | as phase A |
+| Battery current (`batt_current_ma`, 12) | battery INA228 CHARGE delta over the window ÷ the window's time, sign −1 | as phase A |
+| Battery energy and charge counters (13–16) | ΔQ of the battery INA228 × VCELL, split by sign; energy INVALID in a minute where a step had no fresh VCELL (section 5.2) | as phase A |
+| Load voltage (`load_mv`, 26) | battery INA228 VBUS (jumpered to OUT) | load INA228 VBUS |
+| Load current (`load_current_ma`, 27) | absent | load INA228 CHARGE delta ÷ time |
+| Charger input voltage (`charger_input_mv`, 28) | PA10 divider × 3. **The source (solar or USB-C) is not identified** | as phase A (a cross-check of the source rails) |
+| Solar voltage (`solar_mv`, 29) | absent | solar INA228 VBUS, upstream of the join |
+| Solar current (`solar_current_ma`, 30) | absent | solar INA228 CHARGE delta ÷ time |
+| USB-C voltage (`usb_mv`, 32) | absent | USB-C INA228 VBUS, upstream of the join |
+| USB-C current (`usb_current_ma`, 33) | absent | USB-C INA228 CHARGE delta ÷ time |
+
 
 *Amended 2026-10-30 (record P4, M4), the `batt_mv` row's "Kelvin to the cell":* the gauge senses
 the CELL+ node by its red lead; its minus is unconnected and its ground comes over STEMMA QT. The
@@ -139,31 +133,27 @@ row's source, the field definition and the wire format are unchanged.
   upstream of the point where the sources join. The charger input slot exists for exactly that
   reason. The firmware never guesses the source (the benchlink dashboard's panel-specific heuristic
   stays a bench tool, section 12.1).
-- **Phase B** has one monitor per source. **Phase C** knows its active input (the BQ25798 switches
-  its input FETs) and reports it in the charger status byte (section 6.3, bits 6-7), which is what
-  attributes IBUS to a rail in "C alone". **No input** (code 3: neither VAC1 nor VAC2 powers the
-  charger, every night on solar with USB-C unplugged) is a reading, not a gap: in "C alone" both
-  source currents are 0 mA and the source voltages are still VAC1 and VAC2; the system runs from the
-  battery, which the battery and load rails show. *Amended 2026-10-29: code 3 was reserved, which left
-  phase C with no way to send this state.*
+- **Phase B** has one monitor per source. Neither phase reports the active input (the charger
+  status byte, section 6.3, bits 6-7, sends 0, "not reported").
 - Solar and USB-C are never connected together, so at most one source rail carries current. Two
   source rails with current at the same time are a broken operating rule, visible in the data in
-  phases B and C (analysing it is out of scope; phase A cannot see it).
+  phase B (analysing it is out of scope; phase A cannot see it).
 
 ### 3.3 Every-15-minute values (health report)
 
-| Value (health key) | Phase A | Phase B | Phase C |
-|---|---|---|---|
-| Gauge SOC (`battery_soc_pct`), SOC rate (`battery_soc_rate_pct_h`) | MAX17048 SOC 0x04, CRATE 0x16 | as phase A | as phase A |
-| Charger status (`charger_input_power_ok`, `charger_charging`, `charger_fault`, `charger_stage`) | PGOOD and CHG pins (section 6.3) | as phase A | BQ25798 status registers |
-| Charger active input (`charger_active_input`) | not reported | not reported | BQ25798 input selection: `solar`, `usb_c`, or `no_input` when neither input powers the charger |
-| Power-monitor die temperature (`power_monitor_temp_c`) | battery INA228 DIETEMP | the hottest of the four INA228s | the hottest fitted INA228 |
-| MCU supply (`mcu_supply_mv`) | VDDA from VREFINT | as phase A | as phase A |
-| Charger-reported input voltage and current (`charger_reported_input_mv`, `charger_reported_input_ma`) | not measured | not measured | BQ25798 VBUS, IBUS |
-| Charger-reported battery voltage (`charger_reported_battery_mv`) | not measured | not measured | BQ25798 VBAT |
-| Charger-reported charge current (`charger_reported_battery_ma`) | ISET: I = 400 × V_ISET ÷ R_ISET (SLUS810 eq. 3) while PGOOD is asserted; **0 mA while PGOOD is deasserted** (no input, no charge current); none only when the ADC sequence failed, no new sequence completed in the minute, or the reading clipped | as phase A | BQ25798 IBAT |
-| Charger die temperature (`charger_temp_c`) | not measured | not measured | BQ25798 TDIE |
-| Pack temperature (`pack_temp_c`) | not measured (the NTC on THERM goes to the charger only) | not measured | BQ25798 TS |
+| Value (health key) | Phase A | Phase B |
+|---|---|---|
+| Gauge SOC (`battery_soc_pct`), SOC rate (`battery_soc_rate_pct_h`) | MAX17048 SOC 0x04, CRATE 0x16 | as phase A |
+| Charger status (`charger_input_power_ok`, `charger_charging`, `charger_fault`, `charger_stage`) | PGOOD and CHG pins (section 6.3) | as phase A |
+| Charger active input (`charger_active_input`) | not reported | not reported |
+| Power-monitor die temperature (`power_monitor_temp_c`) | battery INA228 DIETEMP | the hottest of the four INA228s |
+| MCU supply (`mcu_supply_mv`) | VDDA from VREFINT | as phase A |
+| Charger-reported input voltage and current (`charger_reported_input_mv`, `charger_reported_input_ma`) | not measured | not measured |
+| Charger-reported battery voltage (`charger_reported_battery_mv`) | not measured | not measured |
+| Charger-reported charge current (`charger_reported_battery_ma`) | ISET: I = 400 × V_ISET ÷ R_ISET (SLUS810 eq. 3) while PGOOD is asserted; **0 mA while PGOOD is deasserted** (no input, no charge current); none only when the ADC sequence failed, no new sequence completed in the minute, or the reading clipped | as phase A |
+| Charger die temperature (`charger_temp_c`) | not measured | not measured |
+| Pack temperature (`pack_temp_c`) | not measured (the NTC on THERM goes to the charger only) | not measured |
+
 
 The "charger-reported" keys carry the charger's own measurements. They are named apart from the
 observation field `charger_input_mv` (field 28), which is a separate measurement (the PA10 divider in
@@ -180,9 +170,6 @@ the ACK/NACK plaintext do not change. No new frame kind is added.
   (reason 2, `fields.decode`), and the node would abandon those records: permanent loss. An RX bridge
   that was not updated would drop the longer health report silently. With version 6 a mismatched end
   drops the frames as another version, so the records stay in the journal until both ends match.
-- **Time sync becomes version 7.** The sixteen-stations design (section 5) planned version 6 for the
-  time sync alone, with the catalog and the health report unchanged. Power telemetry takes version 6;
-  the time sync keeps its rule ("one change per version") as version 7. That spec gets a dated note.
 - **Release procedure** (replaces `protocol-design.md` section 7 for this and every later format
   change):
   0. Drain the journal: wait for `pending=0` on the TX console (a WIPE discards pending records).
@@ -299,8 +286,7 @@ is a counter. Names say what is measured; none names a chip.
 | Record | Plaintext | Frame | SF7 | SF12 |
 |---|---:|---:|---:|---:|
 | Phase A (every module in the layout) | 65 B | 81 B | 35.9 ms | 739.3 ms |
-| Phase B, phase C+B (every rail, with the extension word) | 77 B | 93 B | 41.0 ms | 821.2 ms |
-| Phase C alone (no `load_current_ma`) | 75 B | 91 B | 39.7 ms | 821.2 ms |
+| Phase B (every rail, with the extension word) | 77 B | 93 B | 41.0 ms | 821.2 ms |
 | The node's field set `WS_F_WSMP_BENCH` (widest record, `OBS_FRAME_MAX`) | 77 B | 93 B | 41.0 ms | 821.2 ms |
 | **Per-build ceiling** (the journal rule of section 7) | 80 B | 96 B | 41.0 ms | 821.2 ms |
 | Every catalog v2 field (accepted only by the RX bridge and the gateway; never a build) | 94 B | 110 B | 46.1 ms | 944.1 ms |
@@ -311,8 +297,7 @@ Phase A's 65 B is the v5 bench set (61 B) less fields 17 and 18 (2 B) plus field
 (6 B). The node's field set holds every power field of every phase, so moving between phases changes
 neither the journal slot nor the page magic. **The frame ceiling of a node build is 96 B** (80 B of
 plaintext); the 110 B bound exists only so the RX bridge and the gateway accept any canonical
-record. The sixteen-stations slot table, sized for 94 B, is recomputed for 96 B (at SF8 a 96 B frame
-takes 74.4 ms against 72 ms for 94 B; section 15, R13).
+record.
 
 ## 6. Health report (kind 4), version 6
 
@@ -364,7 +349,7 @@ not measured in this build.
 | 6 | `WS_FIT_PACK_TEMP` / `FIT_PACK_TEMP` | `pack_temp` | clear |
 | 7 | — | reserved, 0 | 0 |
 
-Phases A and B send 0x2F (`mod_power.c` `HEALTH_FITTED`); phase C sets the bits of the parts it has.
+Phases A and B send 0x2F (`mod_power.c` `HEALTH_FITTED`).
 The gateway stores two derived keys: `power_not_measured` (the `null` power keys whose bit is clear)
 and `power_sensor_faults` (the `null` power keys whose bit is set), both sorted lists. The dashboard
 says "sensor fault" for the second and "not measured in this build" for the first; Home Assistant
@@ -406,18 +391,18 @@ breaks one:
 
 ### 6.3 Charger status byte
 
-| Bits | Meaning | Phase A source | Phase C source |
-|---|---|---|---|
-| 0 | input power good | PGOOD asserted | PG_STAT |
-| 1 | charging | CHG asserted steadily | CHG_STAT in trickle, pre-charge, CC, CV or top-off |
-| 2 | fault | CHG flashing at about 2 Hz (SLUS810 section 9.3.5.6 and table 9-2): 3 or more CHG edges within 2 s; clears after 4 s without an edge | any FAULT_STATUS bit |
-| 3–5 | charge stage: 0 not reported, 1 pre-charge or trickle, 2 constant current, 3 constant voltage, 4 top-off, 5 terminated, 6 not charging, 7 reserved (non-canonical) | 0 (the pins cannot tell) | CHG_STAT |
-| 6–7 | active input: 0 not reported, 1 solar input, 2 USB-C input, 3 no input (the charger reports that neither input powers it) | 0 (one VBUS; the source is not identified) | the BQ25798 input selection, mapped to the rail by the fill table (VAC1 = solar, VAC2 = USB-C); 3 when neither VAC1 nor VAC2 is present |
+| Bits | Meaning | Phase A source |
+|---|---|---|
+| 0 | input power good | PGOOD asserted |
+| 1 | charging | CHG asserted steadily |
+| 2 | fault | CHG flashing at about 2 Hz (SLUS810 section 9.3.5.6 and table 9-2): 3 or more CHG edges within 2 s; clears after 4 s without an edge |
+| 3–5 | charge stage: 0 not reported, 1 pre-charge or trickle, 2 constant current, 3 constant voltage, 4 top-off, 5 terminated, 6 not charging, 7 reserved (non-canonical) | 0 (the pins cannot tell) |
+| 6–7 | active input: 0 not reported, 1 solar input, 2 USB-C input, 3 no input (the charger reports that neither input powers it) | 0 (one VBUS; the source is not identified) |
+
 
 0xFF = no charger status (its stage is 7, so it can never be a real status byte). **"Not reported"
 and "no input" are different codes** (amended 2026-10-29): 0 says the input is not reported (phases A
-and B cannot tell it; in a phase C build, whose fitted bit 4 is set, a 0 means the BQ25798 read failed,
-a sensor fault), 3 says the charger reported that no input is present. With the fitted byte, the gateway then never files a normal night without input
+and B cannot tell it), 3 says the charger reported that no input is present. With the fitted byte, the gateway then never files a normal night without input
 under `power_sensor_faults`: code 3 is a value, not `null`. Phase A limits, written into `protocol.md`:
 - CHG is off during a refresh charge after termination (table 9-2), so "not charging" in phase A is
   read together with the battery current and the charger-reported charge current.
@@ -655,8 +640,7 @@ above 0.7 × 3.3 V). An SDA strap needs at least 100 ns of data hold on the addr
 node's I2C2 timing gives SDADEL = 2, 2 × 62.5 ns + 1/48 MHz = 146 ns (`i2c_bus.c` `I2C_TIMING`,
 `tests/test_i2c_bus.py` checks the field), so 0x48 stays. *Amended 2026-10-30 (record 7.1 Q1):*
 this INA228 module preparation (the A0/A1 jumpers on the three extra #5832 boards, the 0x48 wire from
-ADDR1 to SDA) is allowed; step 1b runs on the breadboard harness after H01, and the boards are
-soldered into the module board only after 1b exits.
+ADDR1 to SDA) is allowed; step 1b runs on the breadboard harness.
 
 ### 9.3 Power profile and rail table
 
@@ -673,7 +657,7 @@ allocation (Power of Ten):
 | VBUS net | OUT (fills load voltage) | load: OUT; solar, USB-C: their source; battery: not read (OUT, or CELL+ as a host-side cross-check, section 17). *Amended 2026-10-30:* battery: CELL+ from step 1b (record step 1b; section 17's P5/M4 row), not read by the node |
 | slots | battery current, counters, load voltage | as section 3.2 |
 
-A profile C build stops with `#error` (the BQ25798 driver is a later phase). Host tests build
+A profile C build stops with `#error` (no profile C is designed in this repository). Host tests build
 profile B with four INA228 models to prove the phase B rows need no redesign.
 
 ### 9.4 Acquisition (`App/power_acq.c`)
@@ -745,7 +729,7 @@ existing 250 ms vane tick: IN4 (PB2 vane), IN5 (PB1 ISET), IN6 (PA10 divider), V
   3:1 divider that is a VBUS of 16.5 V with the MCU powered and about 10.8 V with it unpowered. Phase
   A and B panels keep their cold Voc at or below about 10.2 V (the Voltaic P110 is 8.7 V cold). A
   higher-voltage source needs another divider ratio (for example 47 kΩ over 10 kΩ) or a clamp before
-  PA10; in phase C the divider goes away.
+  PA10.
 - **The vane stays ratiometric:** its thresholds (`mod_wind.c:21-30`) and its pull-up share VDDA, so
   it keeps the fixed 3300 "ratio mV". VREFINT scales only the absolute inputs.
 - PB1 and PA10 are analog, no pull. `board_inputs.c` asserts at build time that the debug outputs on
@@ -870,8 +854,8 @@ They reach `/v1/observations`, `/v1/observations/latest`, `/v1/history`, the CSV
   existing ones.
 - **History:** `diagnostic_series` keeps state changes of `charger_charging`, `charger_input_power_ok`,
   `charger_fault`, `charger_stage`, `charger_active_input` and `reset_cause` when it thins
-  (`web.py` `DIAGNOSTIC_STATE`; `charger_stage` added 2026-10-29: phase C moves through precharge,
-  cc, cv, topoff and terminated, and the state band must keep each step).
+  (`web.py` `DIAGNOSTIC_STATE`; `charger_stage` added 2026-10-29: a charger that reports its stage
+  moves through precharge, cc, cv, topoff and terminated, and the state band must keep each step).
 - **Dashboard:** a "power" chart group: per rail V and I paired, battery current signed with a zero
   line, SOC with its rate, and three state bands: the charger status (the three booleans), the
   charge stage (`charger_stage`, so each step `DIAGNOSTIC_STATE` keeps is drawn) and the active input
@@ -974,8 +958,6 @@ termination (0.3 A), inside the termination acceptance of section 2, criterion 4
 
 ### 11.3 Four-rail metering (`docs/hardware/power-metering.md`, new)
 
-> **Parked 2026-11-02.** Four-rail metering is step 1b and is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
-
 - **Rail table:** net, monitor, address, shunt and its power rating, VBUS sense point; the sign
   conventions of section 3.1; the fill table of section 3.
 - **Phase B join** (*amended 2026-10-29, section 17, record P10*): the #4755 already diode-ORs its
@@ -1028,7 +1010,7 @@ termination (0.3 A), inside the termination acceptance of section 2, criterion 4
 *Amended 2026-10-29 (section 17, record M4, M6, M7):* the battery-path metric (the drop form with
 its per-mode zero-current offset dV0), the VCELL step flag, the interface cross-checks (PGOOD against
 the divider, CHG against ISET, ISET against the INA228 current) and the current balance (profiles A
-and B) or power balance (profile C, with a measured efficiency band) are host-side bench tools in the
+and B) are host-side bench tools in the
 benchlink dashboard, not node firmware (risk R8). The path metric covers CELL+ to OUT only, not the
 pack's own mating, which the VCELL step flag covers. Under current the gauge's VCELL is the CELL+
 node, which differs from the pack terminal by I × R_pack (about 25–35 mV at 0.9 A); the tools label
@@ -1073,9 +1055,9 @@ entry.
 | `docs/module-protocol.md` | quantities 18–24, types 8 and 9, type 5 frozen, quality 6 and its radio limit, WSMP 1.1, registry version rule, A1 = 60, P1 power bullets (always present), multi-rail rule, fill table, rule 7/G8/11.3/H8 and section 15 text, RJ45 marked v2 |
 | `docs/radio-energy-policy.md`, `docs/failure-modes.md` | 1S3P pack facts, per-phase inputs, kind-4 question closed, health airtime rule, deferred energy state, new failure rows |
 | `docs/firmware-budget.md`, `firmware/README.md`, `firmware/stage0-node/README.md`, `RELEASES.md` | measured budgets, power inputs, field set, release steps, sign finding |
-| `docs/next-stages-plan.md`, `docs/CONTEXT-PACK.md`, `docs/H01-checklist.md`, `README.md` | phases A–C, stage order, 1S3P, four-rail goal, USB-C rule; document index rows for this spec, its plan and `power-metering.md` |
-| `docs/hardware/*`, `docs/poc-shopping-list.md`, `hardware/*/README.md`, errata | official wiring, power-metering doc, pin budget, bring-up entry, parts |
-| specs and plans of 2026-10-16, 10-18, 10-19, 10-21; flash-layout plan | dated amendment notes; the sixteen-stations slot table recomputed for a 96 B frame |
+| `docs/CONTEXT-PACK.md`, `docs/H01-checklist.md`, `README.md` | phases A and B, 1S3P, four-rail goal, USB-C rule; document index rows for this spec, its plan and `power-metering.md` |
+| `docs/hardware/*`, `docs/poc-shopping-list.md`, `hardware/*/README.md` | official wiring, power-metering doc, pin budget, bring-up entry, parts |
+| specs and plans of 2026-10-18 and 10-19; flash-layout plan | dated amendment notes |
 | `docs/superpowers/plans/2026-10-29-power-telemetry.md` | the implementation plan (the batches of this work and its wave gate) |
 | `docs/openapi.json`, `docs/web-dashboard.md`, `docs/runbook-home-assistant.md`, `docs/simulation-harness.md` | schemas, power view, entities, synthetic power data |
 | `tests/README.md`, `tools/README.md`, `firmware/fuzz/README.md` | new tests, counts, lengths |
@@ -1110,9 +1092,9 @@ empty expected-red set, and the Gates stage then runs `tools/gates.sh`.
 
 | # | Item | Status |
 |---|---|---|
-| D1 | The 1S3P pack is about 24.4 Wh; the PRD reserve (≥ 50.4 Wh, R03 168 h at 0.25 W = 42 Wh) is about twice the pack | **open for Clint**: a lower measured core load, a larger 1S pack for phase C, or a PRD deviation. The energy state stays NORMAL until decided. *Amended 2026-10-30 (record 7.1 Q3):* the carrier stays 1S3P; the reserve question stays open |
-| D2 | Whether H01 runs on a version 6 release | **open for Clint**; recommendation: yes, so the H01 evidence names the shipping protocol. *Amended 2026-10-30:* the build-progression record's step 2 exit and the H01 checklist's preconditions require a version 6 build: precondition 5 needs `#status meter_link=ok` (only the version 6 node prints it, `tx_console.c:62`), precondition 1 needs this design's phase A exit criteria 1–4, which version 5 firmware cannot meet (it reads no power). A "no" needs a version 5 backport of the M7 probe and the phase A power reading (no plan carries one) or a change to the record's step 2 exit |
-| D3 | The 1S3P cells' discharge and charge temperature limits against H03 (−35 °C), and the charge window the NTC actually sets (about +3.5 to +47 °C with a B = 3950 part, section 11.1) | open check in `next-stages-plan.md` section 7 |
+| D1 | The 1S3P pack is about 24.4 Wh; the PRD reserve (≥ 50.4 Wh, R03 168 h at 0.25 W = 42 Wh) is about twice the pack | **open for Clint**: a lower measured core load, a larger 1S pack, or a PRD deviation. The energy state stays NORMAL until decided |
+| D2 | Whether H01 runs on a version 6 release | **open for Clint**; recommendation: yes, so the H01 evidence names the shipping protocol. *Amended 2026-10-30:* the H01 checklist's preconditions require a version 6 build: precondition 5 needs `#status meter_link=ok` (only the version 6 node prints it, `tx_console.c:62`), precondition 1 needs this design's phase A exit criteria 1–4, which version 5 firmware cannot meet (it reads no power). A "no" needs a version 5 backport of the M7 probe and the phase A power reading (no plan carries one) or a change to the H01 checklist's preconditions |
+| D3 | The 1S3P cells' discharge and charge temperature limits against H03 (−35 °C), and the charge window the NTC actually sets (about +3.5 to +47 °C with a B = 3950 part, section 11.1) | open check |
 | D4 | R_ISET: Clint's decision gives about 890 Ω (KISET 890 A·Ω at the 1.0 A label); the Adafruit schematic shows R9 = 1 kΩ behind the 1A jumper, so ICHG is about 0.89 A and an 890 Ω constant reads the ISET current about 12 % high (section 8.6) | **open for Clint**: keep 890 Ω until build-sheet check 2 measures the board, or take the schematic's 1 kΩ as the nominal now (`POWER_R_ISET_OHM`, `tools/benchlink_log.py`). *Amended 2026-10-30:* adopted with change A, read by this workflow from record 7.1 P3 "change A as written" (record 4.4 steps 11–12 fit the ISET network and store the measured divider); R_ISET confirmed by build-sheet check 2. Nominal now `POWER_R_ISET_OHM 1000` (R9 behind the 1A jumper, record 1.4); ICHG 0.89 A typ; ISET currents logged earlier with 890 Ω read 12 % high (section 8.6). **Clint to confirm** |
 | D5 | The record's ISET input network (10 kΩ series, 100 nF, 1 MΩ; gain 1 MΩ ÷ 1.01 MΩ) and measured divider ratio (record M2) change the official wiring of section 1 | **open for Clint** (section 17); until then ISET goes to PB1 directly and `POWER_VIN_DIVIDER` is the integer 3. *Amended 2026-10-30:* adopted with change A, read by this workflow from record 7.1 P3 "change A as written" (record 4.4 steps 11–12 fit the ISET network and store the measured divider); R_ISET confirmed by build-sheet check 2. The ISET network: 10 kΩ 1 % at the charger, then a node with 100 nF and 1 MΩ to logic ground, into PB1 (section 9.5). The firmware gain: 1 MΩ ÷ 1.01 MΩ, times a per-board fit (a CC charge above 200 mA, load off). `power_config.h`: `POWER_R_ISET_OHM 1000`, `POWER_ISET_GAIN_PPM 990099` (nominal until fitted), `POWER_VIN_DIVIDER_PPM 3000000` (nominal until the three divider resistors are measured; checked in circuit within 1 %). **Clint to confirm** |
 | R1 | Health reports are not journaled | accepted (section 6.4) |
@@ -1127,25 +1109,20 @@ empty expected-red set, and the Gates stage then runs `tools/gates.sh`.
 | R10 | "Not fitted" reaches the radio as "missing" in a WSMP reading (section 8.3) | **sub-project 7 requirement**: a set-level not-fitted marker before WSMP readings travel |
 | R11 | The bq24074's default safety timer (4–6 h) is shorter than a 1 A charge of 6.6 Ah from empty; the 2026-10-28 "early end" may have been a timer fault rather than a termination | **closed 2026-10-29**: TMR is tied to GND on the #4755 (timers disabled), so the early end was the battery path (record P9); confirm TMR on the board in hand (build-sheet check 10) |
 | R12 | An INA228 rail measures ±5.24 A at 10 µA a count | enough for phases A and B; a larger rail raises `current_lsb_ua` (section 9.4) |
-| R13 | A 96 B frame (the per-build ceiling) overruns the sixteen-stations slots sized for 94 B at SF8 and SF10 | the slot table is recomputed for 96 B in its dated amendment |
-| R14 | The battery-path metric and VCELL step flag (section 12.1, record M6) are host-side only; a node in the field cannot report a degrading battery path | a health field (path mΩ with its ΔI and a validity bit, the balance residual, the step count) under a later protocol revision, by the carrier (record S5) |
-| R16 | With EN2 high (the mode phase B's D2/D4 join needs, and the expected phase A strap) VIN-DPM does not act, so a panel that cannot supply the charge current is pulled down towards the cell voltage; at low sun the input can fall under VBAT + VIN(DT) and the charger can cycle PGOOD and CHG (analysis, `power-metering.md` section 5.4) | accepted for phases A and B (no rating is exceeded; status churn only), pending the bench check of `power-metering.md` section 5.4 with step 1b; if not accepted, the fallback join with input-voltage regulation, or phase C |
+| R14 | The battery-path metric and VCELL step flag (section 12.1, record M6) are host-side only; a node in the field cannot report a degrading battery path | a health field (path mΩ with its ΔI and a validity bit, the balance residual, the step count) under a later protocol revision |
+| R16 | With EN2 high (the mode phase B's D2/D4 join needs, and the expected phase A strap) VIN-DPM does not act, so a panel that cannot supply the charge current is pulled down towards the cell voltage; at low sun the input can fall under VBAT + VIN(DT) and the charger can cycle PGOOD and CHG (analysis, `power-metering.md` section 5.4) | accepted for phases A and B (no rating is exceeded; status churn only), pending the bench check of `power-metering.md` section 5.4 with step 1b; if not accepted, the fallback join with input-voltage regulation |
 | R15 | The I2C hold time for the SDA-strapped USB-C INA228 (0x48) rests on SDADEL = 2 (146 ns ≥ 100 ns), not yet measured on the bus | scope SDA against SCL on the first phase B bus; an SCL strap (0x43) is the fallback, a `power_config.h` change |
 
 ## 16. Out of scope
 
 - Gateway analysis and alerts (two source rails with current, early termination, SOC trends).
 - Energy-state thresholds and the CONSERVE/CRITICAL transitions (section 9.9, D1).
-- The BQ25798 driver (phase C), the phase B and C hardware builds, and their parts orders.
+- The phase B hardware build and its parts orders.
 - WSMP on the radio (sub-project 7), WSMP health-class channels, the gateway's WSMP entity mapping,
   a registry flag for HA entity categories.
 - Rail energy counters other than the battery's, window minimum and maximum of currents (kinds 3
   and 4 stay unused), derived rail power.
 - Firmware wiring-plausibility checks (R8), brown-out detection (R7).
-- The enclosure's CAD geometry and regenerated parts (`hardware/poc-enclosure-r1`): its README
-  records the requirements (solar and USB-C entries, the charger and monitors next to the battery
-  cradle with a maximum lead length, slots for four INA228s); the geometry change needs a CadQuery
-  session.
 
 ## 17. Reconciliation with the build-progression record (2026-10-29)
 
@@ -1175,18 +1152,16 @@ deferred to Clint.
 | P8 | battery-path limits (+ 75, − 40, pack-side 28 mΩ each, PH 20, clamps 5) | adopted | section 11.2, check 7 |
 | M2 | ISET through 10 kΩ with 100 nF and 1 MΩ at PB1, gain 1 MΩ ÷ 1.01 MΩ × a fit, R_ISET 1000 Ω; divider ratio measured and stored | *2026-10-29:* **deferred to Clint**. *Amended 2026-10-30:* adopted with change A, read by this workflow from record 7.1 P3 "change A as written" (record 4.4 steps 11–12 fit the ISET network and store the measured divider); R_ISET confirmed by build-sheet check 2; Clint to confirm (D5) | it changes the official wiring of section 1 (ISET straight to PB1); D5. When adopted: `power_config.h` gains the gain term and a fractional divider ratio, `board_inputs.c` and benchlink follow, `wiring.toml` adds R_ISER, C_ISET, R_IPD. *2026-10-30:* sections 1 ("Official wiring"), 8.6, 9.5, 11.1 (ISET net, divider) and D5 carry the network, the gain (`POWER_ISET_GAIN_PPM 990099`, nominal until fitted) and the divider (`POWER_VIN_DIVIDER_PPM 3000000`, nominal until measured; checked in circuit within 1 %) |
 | M3 | ADC reference unchanged (VREFINT) | adopted (unchanged) | section 9.5 |
-| M5, M6, M7 (host part) | preflight checklist; path metric with dV0; VCELL step flag; interface cross-checks; current balance (A, B) and power balance (C) | adopted as host-side bench tools | section 12.1, R8, R14; the tools themselves are the record's work package (record 6.4) |
-| M7 (node part) | counter link probe on PB5/PB4 in node firmware | **deferred** (not this design's work). *Amended 2026-10-30:* scheduled before the step 2 H01 run | not power telemetry; it follows the pin remap N2 and is scheduled before the step 2 H01 run (record S1). *2026-10-30:* it is a precondition of the step 2 H01 run (record step 2 exit criteria, M7); its bench status field is named `meter_link=` (record M7), apart from the radio `link=` the TX console already prints (`tx_console.c:62`); no protocol change |
+| M5, M6, M7 (host part) | preflight checklist; path metric with dV0; VCELL step flag; interface cross-checks; current balance (A, B) | adopted as host-side bench tools | section 12.1, R8, R14; the tools themselves are the record's work package (record 6.4) |
+| M7 (node part) | counter link probe on PB5/PB4 in node firmware | **deferred** (not this design's work). *Amended 2026-10-30:* scheduled before the H01 run | not power telemetry; it follows the pin remap N2 and is scheduled before the H01 run. *2026-10-30:* it is a precondition of the H01 run (`docs/H01-checklist.md`, record M7); its bench status field is named `meter_link=` (record M7), apart from the radio `link=` the TX console already prints (`tx_console.c:62`); no protocol change |
 | N1, N4 | the MCU pin contract; pull-up limit VDD + 0.3 V | adopted (unchanged) | sections 1, 9.5 |
 | N2 | cups PC0 → PB5, rain PB5 → PB4 | *2026-10-29:* **deferred (pending)**. *Amended 2026-10-30:* **approved by Clint** (record 7.1); implemented at step 1 change B | step 1 change B, after change A passes (record section 3). `board_inputs.c` keeps PC0 and PB5 until that firmware change, which also moves `wiring.toml`, the READMEs and `tests/test_board_inputs.py` together. The power pins (PB1, PA10, PB8, PB10) do not move. *2026-10-30:* change B (record 4.5) moves the firmware (`CUPS_PIN` PB5, LPTIM1_IN1 on AF1; `RAIN_PIN` PB4, EXTI4), `wiring.toml`, the READMEs and the tests in one commit |
-| N8 | at the BQ25798: PB1, PA10, PB10 released; PB8 = /INT; /CE strapped | adopted | section 2 (phase C row); `next-stages-plan.md`, `bench-station-wiring.md` |
-| N3, N5–N7, H1–H9 | NUCLEO connection method, mux RESET, shield, carrier, hygiene | not part of this design | the record and its cascade |
-| S1–S5 | build steps 1, 1b, 2, 2c, 3, 4, 5 | adopted as the mapping of phases to steps | phase A = steps 1 and 2 (H01 runs on step 2); phase B = step 1b (after H01 by default, record Q8); phase C = steps 2c onward. *Amended 2026-10-30 (record 7.1 Q8):* order decided 2026-10-30, H01 first: 1 → 2 (H01) → 1b → 2c → 3 → 4 → 5 |
+| N3, N5, H1–H8 | NUCLEO connection method, mux RESET, hygiene | not part of this design | the record and its cascade |
+| S1 | build steps 1 and 1b | adopted as the mapping of phases to steps | phase A = step 1; phase B = step 1b; both on the breadboard build, where H01 runs |
 | 6.5 | "section 1 and 2: USB-C never with solar, also in tests (step 1b exit e)" | adopted | sections 1, 3.2 already state it; step 1b's exit tests one source at a time |
 
 *Amended 2026-10-30 (record 7.1):* Clint answered the record's survey on 2026-10-30. The rows above
-carry the effect as dated amendments: N2 approved; the build order decided, H01 first (Q8); the
-carrier stays 1S3P (Q3, D1); INA228 module preparation allowed (Q1, section 9.2). R_ISET 1 kΩ and the
+carry the effect as dated amendments: N2 approved; INA228 module preparation allowed (Q1, section 9.2). R_ISET 1 kΩ and the
 M2 ISET network and measured divider are adopted with change A, read by this workflow from record
 7.1 P3 "change A as written"; no survey question asked about D4 or D5, so both stay "Clint to confirm"
 in section 15. No protocol text, field, size or wire format changes with these amendments.

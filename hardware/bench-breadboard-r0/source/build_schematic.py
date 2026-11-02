@@ -440,12 +440,12 @@ def qt_cable(s, w, ref, at, title, supply):
 
 def sensor_power(s, w):
     """The I2C bus in two branches (record 4.6, PORT-9): the hub's cable QT and the power monitors' cable
-    QTM, both on the unswitched 3V3. Change C, the PA9 sensor load switch, is deferred to the carrier
-    board (record 4.6, 2026-11-02), so neither branch is switched and PA9 is unconnected here."""
+    QTM, both on the unswitched 3V3. Change C, the PA9 sensor load switch, is not part of the
+    breadboard build (record 4.6, 2026-11-02), so neither branch is switched and PA9 is unconnected here."""
     qt_cable(s, w, 'QT', (231.14, 45.72), 'STEMMA QT cable to the 5-port hub', '3V3')
     qt_cable(s, w, 'QTM', (350.52, 45.72), 'STEMMA QT cable to the power monitors', '3V3')
     s.text('The power monitors (INA228 0x40, MAX17048 0x36) are on QTM; the hub\'s sensors on QT. Both unswitched: '
-           'the PA9 sensor switch is on the carrier board', 226.06, 71.12)
+           'there is no PA9 sensor switch', 226.06, 71.12)
     s.text('The hub feeds the SHT45 (0x44), BMP581 (0x47), LTR390 (0x53) and SHTC3 (0x70), each on its own '
            'STEMMA QT cable.', 226.06, 74.93)
 
@@ -504,8 +504,8 @@ def schematic(w):
     s.wire(node, right(b['4'], NODE))
     s.junction(right(b['4'], NODE))
 
-    # The I2C bus in two branches (record 4.6, PORT-9), both on the unswitched 3V3 (change C is deferred to
-    # the carrier, 2026-11-02); I2C to PA11 and PA12.
+    # The I2C bus in two branches (record 4.6, PORT-9), both on the unswitched 3V3 (change C is not
+    # built, 2026-11-02); I2C to PA11 and PA12.
     sensor_power(s, w)
 
     power_chain(s, w)

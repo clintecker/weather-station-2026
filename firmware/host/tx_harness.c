@@ -12,8 +12,8 @@
  * The bus is the official phase A wiring (docs/superpowers/specs/2026-10-29-power-telemetry-design.md
  * sections 2, 9.1 and 9.2), built with -DWS_I2C_MUX=0: a passive STEMMA QT hub, no mux and no record
  * EEPROMs, with every part upstream: the SHT45 (0x44) whose behaviour the test chooses, the battery
- * INA228 (0x40) and the MAX17048 gauge (0x36). As on the carrier (change C, deferred there from step 1
- * on 2026-11-02: build-progression record section 4.6 dated note), the SHT45 is on the PA9 switched branch
+ * INA228 (0x40) and the MAX17048 gauge (0x36). As with per-port power (change C, not built on the
+ * breadboard since 2026-11-02: build-progression record section 4.6 dated note), the SHT45 is on the PA9 switched branch
  * and the power monitors are not; the bench has no switch. No vane, cups or rain gauge
  * (a test may set a vane reading and the counter link probe's seams: h_vane_mv, h_link_low, h_edge). The board ADC (ISET, the
  * charger input divider, VREFINT) and the CHG edge counter are sim_core.c's seams (h_power_adc,
@@ -175,7 +175,7 @@ static uint16_t raw_for(int want, int is_rh)
 static void sensor_device(void)
 {
   if (sht45 < 0) sht45 = i2c_sim_add(DEVK_SHT45, WS_SHT45_ADDR);
-  i2c_sim_switched(sht45, 1);   /* a carrier port's sensor takes V+ after the PA9 switch */
+  i2c_sim_switched(sht45, 1);   /* a switched port's sensor takes V+ after the PA9 switch */
   model_sht45_set(sht45, raw_for(2150, 0), raw_for(4500, 1), 0);
   if (ina228 < 0) ina228 = i2c_sim_add(DEVK_INA228, INA228_BATTERY_ADDR);
   if (gauge < 0) gauge = i2c_sim_add(DEVK_MAX17048, MAX17048_ADDR);

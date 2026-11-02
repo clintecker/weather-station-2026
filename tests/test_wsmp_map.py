@@ -415,7 +415,7 @@ class PhaseA(CatalogMap):
     def test_no_stale_mean_after_a_quarantine(self):
         # A flapping module is quarantined for an hour while it keeps sampling. The first reading
         # after it rejoins must not report that hour-long window as the minute's value (WSMP-T3): the
-        # driver's window starts afresh at the admission (the bind, ports design section 6.7), so the
+        # driver's window starts afresh at the admission (the bind, firmware-current-design.md section 6.7), so the
         # first reading holds only the samples since then, and the next minute is normal again.
         lib, devs = self.station([DEVK_SHT45], vane=3_300, rain=False)
         dev = devs[DEVK_SHT45]

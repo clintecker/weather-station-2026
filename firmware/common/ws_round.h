@@ -1,6 +1,6 @@
 #ifndef WS_ROUND_H
 #define WS_ROUND_H
-/* The one rounding helper of the station (docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md
+/* The one rounding helper of the station (docs/firmware-current-design.md
  * section 6.9, "Rounding"): num / den rounded half up, floor((2 num + den) / (2 den)), for den > 0.
  * The window mean (stage0-node/App/mod_mean.c) and the record calibration (wsmp_cal.c) both use it.
  * Golden vectors shared with the Python reference: tests/ws_div_round_vectors.csv.
