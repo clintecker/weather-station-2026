@@ -486,6 +486,39 @@ def part_rows(w):
     return out
 
 
+# The pre-cut jumper kit on the bench (BOJACK, 14 lengths, 2-125 mm): each length is a span in holes at
+# 2.54 mm, labelled in round mm (2 = 1 hole, 22 = 9 holes, 75 = 30 holes, 125 = 50 holes).
+KIT_SPANS = {1: 2, 2: 5, 3: 7, 4: 10, 5: 12, 6: 15, 7: 17, 8: 20, 9: 22, 10: 25, 20: 50, 30: 75, 40: 100, 50: 125}
+KIT_SLACK = 0.2   # holes: a span this much over a kit size still takes that size (the legs flex)
+KIT_BOW = 1.2     # holes: a kit jumper longer than the span by more than this bows off the board, so cut one
+
+
+def kit_length(j):
+    """The kit jumper for a breadboard-to-breadboard jumper, as its label ('22 mm'): the next size up for a
+    diagonal, or 'cut to fit' with the span when that size would bow (KIT_BOW) or there is none. The NUCLEO
+    jumpers say what they are instead."""
+    if j.b[0] == 'N' or j.a[0] == 'N':
+        h = j.a if j.a[0] == 'N' else j.b
+        return 'Dupont, about 30 cm' if h[1] not in wiring.FEMALE else 'cut to fit from 22 AWG solid'
+    if j.a[0] != j.b[0]:   # hole_xy adds each board's BOARD_X: a length across boards would include it
+        raise ValueError(f'{j.id} joins boards {j.a[0]} and {j.b[0]}: no kit length for that')
+    (ax, ay), (bx, by) = wiring.hole_xy(j.a), wiring.hole_xy(j.b)
+    span = ((ax - bx)**2 + (ay - by)**2)**0.5 / wiring.PITCH
+    fit = [n for n in KIT_SPANS if span - KIT_SLACK <= n <= span + KIT_BOW]
+    if fit:
+        return f'{KIT_SPANS[min(fit)]} mm'
+    return f'cut to fit: {span:.1f} holes ({span*wiring.PITCH:.0f} mm between the legs)'
+
+
+def cut_list(jumpers):
+    """How many of each kit length the sheet uses, shortest first, then the ones cut or Dupont."""
+    counts = {}
+    for j in jumpers:
+        counts[kit_length(j)] = counts.get(kit_length(j), 0) + 1
+    order = sorted(counts, key=lambda k: (not k[0].isdigit(), int(k.split()[0]) if k[0].isdigit() else 0, k))
+    return ['', '### Cut list', '', '| Length | Jumpers |', '|---|---:|'] + [f'| {k} | {counts[k]} |' for k in order]
+
+
 def jumper_rows(w, jumpers):
     colours = ', '.join(f'{c} {name}' for c, name in wiring.NET_CLASSES.items())
     oled = ', '.join(nucleo_jumpers(jumpers, OLED_NETS))
@@ -499,17 +532,21 @@ def jumper_rows(w, jumpers):
                    'revision moves them to the ARDUINO female headers as solid 22 AWG (record 4.5, change B; the '
                    'morpho signal pins bench check).')
     out = ['', '## 2. Jumpers', '', f'Each jumper is one wire between the two holes: pre-cut solid 22 AWG laid flat '
-           f'(record H3).{dupont} Colour by class: {colours}. A link is a jumper the model names by a stable id.']
+           f'(record H3).{dupont} Length is the kit jumper to use (kit_length() in make.py: the BOJACK kit\'s 14 sizes, '
+           f'the next size up for a diagonal); an ARDUINO-header jumper is cut to fit once the base plate fixes '
+           f'where the NUCLEO sits (record H7: at most 200 mm). Colour by class: {colours}. A link is a jumper '
+           f'the model names by a stable id.']
     stage = None
     for j in jumpers:
         s = wiring.jumper_stage(j)[0]
         if s != stage:
             stage = s
-            out += ['', f'### {STAGE_TITLE[s]}', '', '| Jumper | From | To | Net | Class | Link |',
-                    '|---|---|---|---|---|---|']
+            out += ['', f'### {STAGE_TITLE[s]}', '', '| Jumper | From | To | Length | Net | Class | Link |',
+                    '|---|---|---|---|---|---|---|']
         link = link_of(w, j)
-        out.append(f'| {j.id} | {where(j.a)} | {where(j.b)} | {j.net} | {w.net_class[j.net]} | {link.id if link else ""} |')
-    return out
+        out.append(f'| {j.id} | {where(j.a)} | {where(j.b)} | {kit_length(j)} | {j.net} | {w.net_class[j.net]} | '
+                   f'{link.id if link else ""} |')
+    return out + cut_list(jumpers)
 
 
 def lead_ids(w, member):
@@ -797,6 +834,61 @@ def _intro(w, data):
                    'the connectivity proof and the D3 checks only.')
 
 
+# Where everything off the breadboards lives on the bench base plate (hardware/base-plate/spec-r2.md),
+# by model id: every off-board part and every joint needs one (homes_rows() raises otherwise). EXTRA_HOMES
+# are the things the model does not draw.
+PLATE_HOMES = {'PACK': 'battery cradle (strap over it; the + lead exits at the marked end)',
+               'NTC': 'taped to the pack in its cradle; its leads leave by the cradle\'s lead gap',
+               'RLOAD': 'the two raised posts beside its WAGOs, held by its leads, clear of the plastic',
+               'ADAPTER': 'off the plate, at the wall; its cable held by the USB CHG clamp and tie bridge'}
+JOINT_HOME = 'the WAGO row, in its labelled pocket, levers up'
+EXTRA_HOMES = (('NUCLEO TX (the node)', 'its edge cradle on the plate, USB end at the cable exit'),
+               ('NUCLEO RX (the bridge)', 'its edge cradle on the plate, USB end at the cable exit; its USB to a '
+                'Mac port directly, not a hub'),
+               ('spare WAGO 222-413 (the meter splice, check C5)', 'its splice pocket next to CELL_POS while in use, if the plate has one (base plate spec §7 item 13); '
+                'otherwise held by a tie point there'),
+               ('STEMMA QT hub', 'the sensor deck (M2.5 screws on standoffs), fed by the QT cable from board A'),
+               ('STEMMA QT sensors', 'the sensor deck, screwed down, or off the plate on a longer QT cable'),
+               ('wind and rain meters', 'off the plate (outdoors); their RJ11 cables held by the meter clamps'),
+               ('USB cables to the NUCLEOs', 'one clamp and tie bridge each at the cable exit'))
+
+
+def homes_rows(w):
+    """Every part's home: a breadboard (section 1 gives the holes) or a place on the base plate."""
+    missing = [p.id for p in w.parts.values() if p.place_mm and p.id not in PLATE_HOMES]
+    if missing:
+        raise ValueError(f'no base plate home for {missing}: add them to PLATE_HOMES')
+    out = ['', '## 0b. Homes', '', 'Every board and part lives on a breadboard or in its own place on the base '
+           'plate (`hardware/base-plate/spec-r2.md`); nothing is loose on the desk.', '',
+           '| What | Home |', '|---|---|']
+    out += [f'| {p.id} ({p.kind}) | breadboard {p.board} (section 1) |' for p in w.parts.values() if not p.place_mm]
+    out += [f'| {p.id} ({p.kind}) | {PLATE_HOMES[p.id]} |' for p in w.parts.values() if p.place_mm]
+    out += [f'| {j.id} ({j.kind}) | {JOINT_HOME} |' for j in w.joints.values()]
+    return out + [f'| {what} | {home} |' for what, home in EXTRA_HOMES]
+
+
+TEARDOWN = ['', '## 0a. Teardown (before building from this sheet)', '',
+            'Take the old build apart in this order, so that nothing is ever live while you pull it:', '',
+            '1. **Power off.** Unplug the charger\'s USB-C adapter at the wall, then both NUCLEO USB cables.',
+            '2. **The pack:** unplug its JST PH plug from the pigtail. Never cut its lead. From here the pack is the '
+            'only energy on the bench, and its plug is apart.',
+            '3. **The leads (section 3), every one:** open each WAGO lever and pull its lead; unplug the JST PH '
+            'plugs at the charger and the gauge by the plug body, never by the wires; loosen the INA228\'s X1 '
+            'screws and pull its three leads; pull the adapter cable out of the charger\'s USB-C; pull every lead '
+            'that ends in a breadboard hole or a NUCLEO pin (the regulator leads, L_REG_3V3, L_NUC_RET, the OLED '
+            'supply pair, the NTC pair, so the pack and its taped NTC come free together).',
+            '4. **The jumpers:** pull each one straight up with pliers or fingers on the bend. Sort the kit jumpers '
+            'back by length. Keep a cut-to-fit wire only if it is the same span as one in section 2; tag it with '
+            'the holes it joins (for example A:d19-A:d2), never a jumper number: those change whenever the model '
+            'is regenerated.',
+            '5. **The breakouts:** rock each one gently out by its board edges (charger, INA228, gauge, '
+            'regulator, RJ11 breakouts, OLED), never by a header or the screw terminal.',
+            '6. **The breadboards** stay where they are if they already sit in the base plate pockets; otherwise '
+            'peel them off and seat them in the pockets before building.',
+            '7. **Check before building:** with nothing fitted, each board\'s rails read open (OL) to each other '
+            'on the meter. A short means a strand of wire is stuck in a strip: find it before going on.']
+
+
 def build_sheet(w, jumpers, out=HW, data=DATA):
     """The hole-by-hole build sheet (build-sheet.md): the revision and hashes, the changes from the previous
     revision, parts, jumpers, leads, joints, the power path, the C1-C23 checklist, the modes, then the
@@ -806,6 +898,8 @@ def build_sheet(w, jumpers, out=HW, data=DATA):
     out = Path(out)
     lines = ['# Bench breadboard build sheet', '', _intro(w, data), '', *header_rows(w, out, data)]
     lines += change_rows(w, jumpers, load_baseline(w.revision))
+    if Path(data) == Path(DATA):   # the current revision only: the frozen sheets keep what they were
+        lines += TEARDOWN + homes_rows(w)
     lines += part_rows(w) + jumper_rows(w, jumpers) + lead_rows(w) + joint_rows(w)
     lines += path_rows(w) + checklist_rows() + mode_rows(w) + bench_rows(w, jumpers)
     return '\n'.join(lines + power_checks(w, jumpers) + phase_b_checks() + [''])

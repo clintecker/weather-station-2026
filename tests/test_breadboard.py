@@ -675,6 +675,83 @@ class Classes(unittest.TestCase):
         self.assertIn('mystery', str(e.exception))
 
 
+class KitLengths(unittest.TestCase):
+    """The build sheet's Length column (make.kit_length): the BOJACK kit size for a span, the next size up
+    for a diagonal, 'cut to fit' when that size would bow off the board, and the NUCLEO jumpers by kind."""
+
+    def length(self, a, b):
+        import make
+        return make.kit_length(wiring.Jumper(id='W0', net='X', a=a, b=b))
+
+    def test_a_straight_span_takes_its_own_size(self):
+        self.assertEqual(self.length(('A', 'b', 5), ('A', 'b', 4)), '2 mm')      # 1 hole
+        self.assertEqual(self.length(('B', 'b', 17), ('B', 'b', 8)), '22 mm')    # 9 holes
+        self.assertEqual(self.length(('A', 'c', 30), ('A', 'c', 10)), '50 mm')   # 20 holes
+
+    def test_a_diagonal_takes_the_next_size_up(self):
+        self.assertEqual(self.length(('A', 'L-', 20), ('A', 'b', 14)), '17 mm')
+
+    def test_a_span_with_no_size_close_above_is_cut(self):
+        self.assertEqual(self.length(('A', 'd', 19), ('A', 'd', 2)), 'cut to fit: 17.0 holes (43 mm between the legs)')
+        self.assertTrue(self.length(('A', 'c', 63), ('A', 'c', 1)).startswith('cut to fit: 62.0 holes'))
+
+    def test_a_jumper_across_boards_has_no_kit_length(self):
+        with self.assertRaisesRegex(ValueError, 'joins boards A and B'):
+            self.length(('A', 'b', 5), ('B', 'b', 5))
+
+    def test_nucleo_jumpers_say_what_they_are(self):
+        self.assertEqual(self.length(('A', 'e', 41), ('N', 'CN6', 4)), 'cut to fit from 22 AWG solid')
+        self.assertEqual(self.length(('C', 'e', 36), ('N', 'CN10', 17)), 'Dupont, about 30 cm')
+
+    def test_the_cut_list_counts_every_jumper(self):
+        import make
+        jumpers = wiring.plan_jumpers(wiring.load(DATA))
+        rows = [r for r in make.cut_list(jumpers) if re.match(r'^\| [^L-]', r)]
+        self.assertEqual(sum(int(r.rsplit('|', 2)[1]) for r in rows), len(jumpers))
+
+
+class Homes(unittest.TestCase):
+    """Sections 0a and 0b: the teardown and every part's home, in the current sheet only."""
+
+    def setUp(self):
+        import make
+        self.make = make
+        self.w = wiring.load(DATA)
+
+    def test_every_off_board_part_and_joint_has_a_plate_home(self):
+        rows = '\n'.join(self.make.homes_rows(self.w))
+        for part in self.w.parts.values():
+            self.assertIn(f'| {part.id} (', rows)
+            if part.place_mm:
+                self.assertIn(self.make.PLATE_HOMES[part.id], rows)
+            else:
+                self.assertIn(f'| breadboard {part.board} (section 1) |', rows)
+        for joint in self.w.joints:
+            self.assertIn(f'| {joint} (', rows)
+        for what in ('NUCLEO TX', 'NUCLEO RX', 'STEMMA QT hub'):
+            self.assertIn(what, rows)
+
+    def test_an_off_board_part_without_a_home_stops_the_sheet(self):
+        with mock.patch.dict(self.make.PLATE_HOMES, clear=True):
+            with self.assertRaisesRegex(ValueError, 'no base plate home'):
+                self.make.homes_rows(self.w)
+
+    def test_teardown_starts_with_the_power_off_and_the_pack_apart(self):
+        sheet = self.make.build_sheet(self.w, wiring.plan_jumpers(self.w))
+        teardown = sheet.split('## 0a. Teardown', 1)[1].split('\n## ', 1)[0]
+        self.assertLess(teardown.index('Power off'), teardown.index('The pack'))
+        self.assertLess(teardown.index('The pack'), teardown.index('The jumpers'))
+        self.assertIn('## 0b. Homes', sheet)
+        for lead in ('X1 screws', 'adapter cable', 'NTC pair'):
+            self.assertIn(lead, teardown)
+
+    def test_the_frozen_sheets_have_no_teardown_or_homes(self):
+        for rev in ('bench-bb-r0.1', 'bench-bb-r0.2'):
+            sheet = (HW/'revisions'/rev/'build-sheet.md').read_text()
+            self.assertNotIn('## 0a. Teardown', sheet)
+            self.assertNotIn('## 0b. Homes', sheet)
+
+
 class Sheet(unittest.TestCase):
     def setUp(self):
         import make
@@ -970,7 +1047,7 @@ class SheetTier(unittest.TestCase):
         for sheet in (r01, r02):
             self.assertIn('frozen earlier revision', sheet)
         self.assertIn('| CUPS | wind |', r01)
-        self.assertIn('NUCLEO CN10.14 | CUPS |', r01)
+        self.assertIn('NUCLEO CN10.14 | Dupont, about 30 cm | CUPS |', r01)   # a morpho male pin: Dupont
         _changes, removed, added = self.changes_of(r02, 'bench-bb-r0.1')
         self.assertEqual(re.findall(r'^\| jumper \| (\w+) \| [^|]+ \| NUCLEO (\S+) \|$', removed, re.M),
                          [('CUPS', 'CN10.14'), ('RAIN', 'CN10.29')])
@@ -990,8 +1067,8 @@ class SheetTier(unittest.TestCase):
         # ARDUINO alias (CN9.5) left empty. From r0.2 every station signal is on an ARDUINO female header.
         r01 = self.frozen('bench-bb-r0.1')
         jumpers = r01.split('\n## 2. Jumpers', 1)[1].split('\n## ', 1)[0]
-        cups = re.search(r'^\| (W\d+) \| [^|]+ \| NUCLEO CN10\.14 \| CUPS \|', jumpers, re.M).group(1)
-        rain = re.search(r'^\| (W\d+) \| [^|]+ \| NUCLEO CN10\.29 \| RAIN \|', jumpers, re.M).group(1)
+        cups = re.search(r'^\| (W\d+) \| [^|]+ \| NUCLEO CN10\.14 \| Dupont, about 30 cm \| CUPS \|', jumpers, re.M).group(1)
+        rain = re.search(r'^\| (W\d+) \| [^|]+ \| NUCLEO CN10\.29 \| Dupont, about 30 cm \| RAIN \|', jumpers, re.M).group(1)
         self.assertIn(f'the station signals still on the morpho\'s male pins ({cups} (CUPS, CN10.14), {rain} (RAIN, '
                       'CN10.29)) are female-to-male Dupont jumpers too', jumpers)
         check = next(ln for ln in r01.splitlines() if ln.startswith('- **Morpho signal pins:**'))
