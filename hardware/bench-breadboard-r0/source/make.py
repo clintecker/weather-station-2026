@@ -486,8 +486,8 @@ def part_rows(w):
     return out
 
 
-# The pre-cut jumper kit on the bench (BOJACK, 14 lengths, 2-125 mm): each length is a span in holes,
-# labelled in mm rounded down (2 = 1 hole, 22 = 9 holes, 125 = 50 holes).
+# The pre-cut jumper kit on the bench (BOJACK, 14 lengths, 2-125 mm): each length is a span in holes at
+# 2.54 mm, labelled in round mm (2 = 1 hole, 22 = 9 holes, 75 = 30 holes, 125 = 50 holes).
 KIT_SPANS = {1: 2, 2: 5, 3: 7, 4: 10, 5: 12, 6: 15, 7: 17, 8: 20, 9: 22, 10: 25, 20: 50, 30: 75, 40: 100, 50: 125}
 KIT_SLACK = 0.2   # holes: a span this much over a kit size still takes that size (the legs flex)
 KIT_BOW = 1.2     # holes: a kit jumper longer than the span by more than this bows off the board, so cut one
@@ -500,6 +500,8 @@ def kit_length(j):
     if j.b[0] == 'N' or j.a[0] == 'N':
         h = j.a if j.a[0] == 'N' else j.b
         return 'Dupont, about 30 cm' if h[1] not in wiring.FEMALE else 'cut to fit from 22 AWG solid'
+    if j.a[0] != j.b[0]:   # hole_xy adds each board's BOARD_X: a length across boards would include it
+        raise ValueError(f'{j.id} joins boards {j.a[0]} and {j.b[0]}: no kit length for that')
     (ax, ay), (bx, by) = wiring.hole_xy(j.a), wiring.hole_xy(j.b)
     span = ((ax - bx)**2 + (ay - by)**2)**0.5 / wiring.PITCH
     fit = [n for n in KIT_SPANS if span - KIT_SLACK <= n <= span + KIT_BOW]
@@ -531,7 +533,7 @@ def jumper_rows(w, jumpers):
                    'morpho signal pins bench check).')
     out = ['', '## 2. Jumpers', '', f'Each jumper is one wire between the two holes: pre-cut solid 22 AWG laid flat '
            f'(record H3).{dupont} Length is the kit jumper to use (kit_length() in make.py: the BOJACK kit\'s 14 sizes, '
-           f'the next size up for a diagonal); a NUCLEO header jumper is cut to fit once the base plate fixes '
+           f'the next size up for a diagonal); an ARDUINO-header jumper is cut to fit once the base plate fixes '
            f'where the NUCLEO sits (record H7: at most 200 mm). Colour by class: {colours}. A link is a jumper '
            f'the model names by a stable id.']
     stage = None
@@ -870,8 +872,11 @@ TEARDOWN = ['', '## 0a. Teardown (before building from this sheet)', '',
             '1. **Power off.** Unplug the charger\'s USB-C adapter at the wall, then both NUCLEO USB cables.',
             '2. **The pack:** unplug its JST PH plug from the pigtail. Never cut its lead. From here the pack is the '
             'only energy on the bench, and its plug is apart.',
-            '3. **The leads:** open each WAGO lever and pull its lead. Unplug the JST PH plugs at the charger and '
-            'the gauge by the plug body, never by the wires.',
+            '3. **The leads (section 3), every one:** open each WAGO lever and pull its lead; unplug the JST PH '
+            'plugs at the charger and the gauge by the plug body, never by the wires; loosen the INA228\'s X1 '
+            'screws and pull its three leads; pull the adapter cable out of the charger\'s USB-C; pull every lead '
+            'that ends in a breadboard hole or a NUCLEO pin (the regulator leads, L_REG_3V3, L_NUC_RET, the OLED '
+            'supply pair, the NTC pair, so the pack and its taped NTC come free together).',
             '4. **The jumpers:** pull each one straight up with pliers or fingers on the bend. Sort the kit jumpers '
             'back by length. Keep a cut-to-fit wire only if it is the same span as one in section 2; tag it with '
             'the holes it joins (for example A:d19-A:d2), never a jumper number: those change whenever the model '

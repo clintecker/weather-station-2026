@@ -31,7 +31,7 @@ Take the old build apart in this order, so that nothing is ever live while you p
 
 1. **Power off.** Unplug the charger's USB-C adapter at the wall, then both NUCLEO USB cables.
 2. **The pack:** unplug its JST PH plug from the pigtail. Never cut its lead. From here the pack is the only energy on the bench, and its plug is apart.
-3. **The leads:** open each WAGO lever and pull its lead. Unplug the JST PH plugs at the charger and the gauge by the plug body, never by the wires.
+3. **The leads (section 3), every one:** open each WAGO lever and pull its lead; unplug the JST PH plugs at the charger and the gauge by the plug body, never by the wires; loosen the INA228's X1 screws and pull its three leads; pull the adapter cable out of the charger's USB-C; pull every lead that ends in a breadboard hole or a NUCLEO pin (the regulator leads, L_REG_3V3, L_NUC_RET, the OLED supply pair, the NTC pair, so the pack and its taped NTC come free together).
 4. **The jumpers:** pull each one straight up with pliers or fingers on the bend. Sort the kit jumpers back by length. Keep a cut-to-fit wire only if it is the same span as one in section 2; tag it with the holes it joins (for example A:d19-A:d2), never a jumper number: those change whenever the model is regenerated.
 5. **The breakouts:** rock each one gently out by its board edges (charger, INA228, gauge, regulator, RJ11 breakouts, OLED), never by a header or the screw terminal.
 6. **The breadboards** stay where they are if they already sit in the base plate pockets; otherwise peel them off and seat them in the pockets before building.
@@ -114,7 +114,7 @@ Every board and part lives on a breadboard or in its own place on the base plate
 
 ## 2. Jumpers
 
-Each jumper is one wire between the two holes: pre-cut solid 22 AWG laid flat (record H3). One exception: the OLED's signal jumpers from board C to CN10 (W24, W25, W26, W27, W28) are female-to-male Dupont jumpers of about 30 cm on the morpho's male pins, bench OLED only (record N3; the OLED wires bench check). Length is the kit jumper to use (kit_length() in make.py: the BOJACK kit's 14 sizes, the next size up for a diagonal); a NUCLEO header jumper is cut to fit once the base plate fixes where the NUCLEO sits (record H7: at most 200 mm). Colour by class: i2c blue, wind green, rain cyan, charger orange, display purple, power red, ground black, analog pink, battery lead brown. A link is a jumper the model names by a stable id.
+Each jumper is one wire between the two holes: pre-cut solid 22 AWG laid flat (record H3). One exception: the OLED's signal jumpers from board C to CN10 (W24, W25, W26, W27, W28) are female-to-male Dupont jumpers of about 30 cm on the morpho's male pins, bench OLED only (record N3; the OLED wires bench check). Length is the kit jumper to use (kit_length() in make.py: the BOJACK kit's 14 sizes, the next size up for a diagonal); an ARDUINO-header jumper is cut to fit once the base plate fixes where the NUCLEO sits (record H7: at most 200 mm). Colour by class: i2c blue, wind green, rain cyan, charger orange, display purple, power red, ground black, analog pink, battery lead brown. A link is a jumper the model names by a stable id.
 
 ### Board A
 

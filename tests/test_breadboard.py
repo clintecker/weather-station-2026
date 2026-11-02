@@ -695,6 +695,10 @@ class KitLengths(unittest.TestCase):
         self.assertEqual(self.length(('A', 'd', 19), ('A', 'd', 2)), 'cut to fit: 17.0 holes (43 mm between the legs)')
         self.assertTrue(self.length(('A', 'c', 63), ('A', 'c', 1)).startswith('cut to fit: 62.0 holes'))
 
+    def test_a_jumper_across_boards_has_no_kit_length(self):
+        with self.assertRaisesRegex(ValueError, 'joins boards A and B'):
+            self.length(('A', 'b', 5), ('B', 'b', 5))
+
     def test_nucleo_jumpers_say_what_they_are(self):
         self.assertEqual(self.length(('A', 'e', 41), ('N', 'CN6', 4)), 'cut to fit from 22 AWG solid')
         self.assertEqual(self.length(('C', 'e', 36), ('N', 'CN10', 17)), 'Dupont, about 30 cm')
@@ -738,6 +742,14 @@ class Homes(unittest.TestCase):
         self.assertLess(teardown.index('Power off'), teardown.index('The pack'))
         self.assertLess(teardown.index('The pack'), teardown.index('The jumpers'))
         self.assertIn('## 0b. Homes', sheet)
+        for lead in ('X1 screws', 'adapter cable', 'NTC pair'):
+            self.assertIn(lead, teardown)
+
+    def test_the_frozen_sheets_have_no_teardown_or_homes(self):
+        for rev in ('bench-bb-r0.1', 'bench-bb-r0.2'):
+            sheet = (HW/'revisions'/rev/'build-sheet.md').read_text()
+            self.assertNotIn('## 0a. Teardown', sheet)
+            self.assertNotIn('## 0b. Homes', sheet)
 
 
 class Sheet(unittest.TestCase):

@@ -58,7 +58,7 @@ To rebuild the bench from the previous sheet: first take out everything under **
 
 ## 2. Jumpers
 
-Each jumper is one wire between the two holes: pre-cut solid 22 AWG laid flat (record H3). One exception: the OLED's signal jumpers from board C to CN10 (W20, W21, W22, W23, W24) are female-to-male Dupont jumpers of about 30 cm on the morpho's male pins, bench OLED only (record N3; the OLED wires bench check). Length is the kit jumper to use (kit_length() in make.py: the BOJACK kit's 14 sizes, the next size up for a diagonal); a NUCLEO header jumper is cut to fit once the base plate fixes where the NUCLEO sits (record H7: at most 200 mm). Colour by class: i2c blue, wind green, rain cyan, charger orange, display purple, power red, ground black, analog pink, battery lead brown. A link is a jumper the model names by a stable id.
+Each jumper is one wire between the two holes: pre-cut solid 22 AWG laid flat (record H3). One exception: the OLED's signal jumpers from board C to CN10 (W20, W21, W22, W23, W24) are female-to-male Dupont jumpers of about 30 cm on the morpho's male pins, bench OLED only (record N3; the OLED wires bench check). Length is the kit jumper to use (kit_length() in make.py: the BOJACK kit's 14 sizes, the next size up for a diagonal); an ARDUINO-header jumper is cut to fit once the base plate fixes where the NUCLEO sits (record H7: at most 200 mm). Colour by class: i2c blue, wind green, rain cyan, charger orange, display purple, power red, ground black, analog pink, battery lead brown. A link is a jumper the model names by a stable id.
 
 ### Board A
 
