@@ -58,50 +58,65 @@ To rebuild the bench from the previous sheet: first take out everything under **
 
 ## 2. Jumpers
 
-Each jumper is one wire between the two holes: pre-cut solid 22 AWG laid flat (record H3). One exception: the OLED's signal jumpers from board C to CN10 (W20, W21, W22, W23, W24) are female-to-male Dupont jumpers of about 30 cm on the morpho's male pins, bench OLED only (record N3; the OLED wires bench check). Colour by class: i2c blue, wind green, rain cyan, charger orange, display purple, power red, ground black, analog pink, battery lead brown. A link is a jumper the model names by a stable id.
+Each jumper is one wire between the two holes: pre-cut solid 22 AWG laid flat (record H3). One exception: the OLED's signal jumpers from board C to CN10 (W20, W21, W22, W23, W24) are female-to-male Dupont jumpers of about 30 cm on the morpho's male pins, bench OLED only (record N3; the OLED wires bench check). Length is the kit jumper to use (kit_length() in make.py: the BOJACK kit's 14 sizes, the next size up for a diagonal); a NUCLEO header jumper is cut to fit once the base plate fixes where the NUCLEO sits (record H7: at most 200 mm). Colour by class: i2c blue, wind green, rain cyan, charger orange, display purple, power red, ground black, analog pink, battery lead brown. A link is a jumper the model names by a stable id.
 
 ### Board A
 
-| Jumper | From | To | Net | Class | Link |
-|---|---|---|---|---|---|
-| W1 | A:L+41 | A:b41 | 3V3 | power |  |
-| W2 | A:L+20 | A:b19 | 3V3 | power |  |
-| W3 | A:d19 | A:d2 | 3V3 | power |  |
-| W4 | A:L-40 | A:b40 | GND | ground |  |
-| W5 | A:L-20 | A:b14 | GND | ground |  |
-| W6 | A:c14 | A:c5 | GND | ground |  |
-| W7 | A:b5 | A:b4 | GND | ground |  |
+| Jumper | From | To | Length | Net | Class | Link |
+|---|---|---|---|---|---|---|
+| W1 | A:L+41 | A:b41 | 10 mm | 3V3 | power |  |
+| W2 | A:L+20 | A:b19 | 10 mm | 3V3 | power |  |
+| W3 | A:d19 | A:d2 | cut to fit: 17.0 holes (43 mm between the legs) | 3V3 | power |  |
+| W4 | A:L-40 | A:b40 | 7 mm | GND | ground |  |
+| W5 | A:L-20 | A:b14 | 17 mm | GND | ground |  |
+| W6 | A:c14 | A:c5 | 22 mm | GND | ground |  |
+| W7 | A:b5 | A:b4 | 2 mm | GND | ground |  |
 
 ### Board B
 
-| Jumper | From | To | Net | Class | Link |
-|---|---|---|---|---|---|
-| W8 | B:L-63 | B:c62 | GND | ground |  |
-| W9 | B:d62 | B:f59 | GND | ground |  |
-| W10 | B:d16 | B:L-19 | GND | ground |  |
-| W11 | B:e57 | B:g57 | ISET_CHGR | analog |  |
-| W12 | B:b17 | B:b8 | REG_OUT | power | LK_REG_SHUNT |
+| Jumper | From | To | Length | Net | Class | Link |
+|---|---|---|---|---|---|---|
+| W8 | B:L-63 | B:c62 | 10 mm | GND | ground |  |
+| W9 | B:d62 | B:f59 | 12 mm | GND | ground |  |
+| W10 | B:d16 | B:L-19 | 15 mm | GND | ground |  |
+| W11 | B:e57 | B:g57 | 10 mm | ISET_CHGR | analog |  |
+| W12 | B:b17 | B:b8 | 22 mm | REG_OUT | power | LK_REG_SHUNT |
 
 ### To the NUCLEO
 
-| Jumper | From | To | Net | Class | Link |
-|---|---|---|---|---|---|
-| W13 | A:e41 | NUCLEO CN6.4 | 3V3 | power | LK_3V3_CN6_4 |
-| W14 | B:e54 | NUCLEO CN9.7 | CHG | charger |  |
-| W15 | A:d6 | NUCLEO CN9.5 | CUPS | wind |  |
-| W16 | A:e40 | NUCLEO CN6.6 | GND | ground | LK_QT_GND_CN6_6 |
-| W17 | A:e43 | NUCLEO CN5.10 | I2C_SCL | i2c |  |
-| W18 | A:e42 | NUCLEO CN5.9 | I2C_SDA | i2c |  |
-| W19 | B:j58 | NUCLEO CN8.1 | ISET | analog |  |
-| W20 | C:e36 | NUCLEO CN10.17 | OLED_CS | display |  |
-| W21 | C:e25 | NUCLEO CN10.21 | OLED_DC | display |  |
-| W22 | C:e29 | NUCLEO CN10.15 | OLED_DIN | display |  |
-| W23 | C:e37 | NUCLEO CN10.23 | OLED_RST | display |  |
-| W24 | C:e28 | NUCLEO CN10.11 | OLED_SCLK | display |  |
-| W25 | B:e55 | NUCLEO CN9.6 | PGOOD | charger |  |
-| W26 | A:d15 | NUCLEO CN8.4 | RAIN | rain |  |
-| W27 | A:e7 | NUCLEO CN8.2 | VANE | wind |  |
-| W28 | B:c61 | NUCLEO CN8.3 | VIN_SENSE | analog |  |
+| Jumper | From | To | Length | Net | Class | Link |
+|---|---|---|---|---|---|---|
+| W13 | A:e41 | NUCLEO CN6.4 | cut to fit from 22 AWG solid | 3V3 | power | LK_3V3_CN6_4 |
+| W14 | B:e54 | NUCLEO CN9.7 | cut to fit from 22 AWG solid | CHG | charger |  |
+| W15 | A:d6 | NUCLEO CN9.5 | cut to fit from 22 AWG solid | CUPS | wind |  |
+| W16 | A:e40 | NUCLEO CN6.6 | cut to fit from 22 AWG solid | GND | ground | LK_QT_GND_CN6_6 |
+| W17 | A:e43 | NUCLEO CN5.10 | cut to fit from 22 AWG solid | I2C_SCL | i2c |  |
+| W18 | A:e42 | NUCLEO CN5.9 | cut to fit from 22 AWG solid | I2C_SDA | i2c |  |
+| W19 | B:j58 | NUCLEO CN8.1 | cut to fit from 22 AWG solid | ISET | analog |  |
+| W20 | C:e36 | NUCLEO CN10.17 | Dupont, about 30 cm | OLED_CS | display |  |
+| W21 | C:e25 | NUCLEO CN10.21 | Dupont, about 30 cm | OLED_DC | display |  |
+| W22 | C:e29 | NUCLEO CN10.15 | Dupont, about 30 cm | OLED_DIN | display |  |
+| W23 | C:e37 | NUCLEO CN10.23 | Dupont, about 30 cm | OLED_RST | display |  |
+| W24 | C:e28 | NUCLEO CN10.11 | Dupont, about 30 cm | OLED_SCLK | display |  |
+| W25 | B:e55 | NUCLEO CN9.6 | cut to fit from 22 AWG solid | PGOOD | charger |  |
+| W26 | A:d15 | NUCLEO CN8.4 | cut to fit from 22 AWG solid | RAIN | rain |  |
+| W27 | A:e7 | NUCLEO CN8.2 | cut to fit from 22 AWG solid | VANE | wind |  |
+| W28 | B:c61 | NUCLEO CN8.3 | cut to fit from 22 AWG solid | VIN_SENSE | analog |  |
+
+### Cut list
+
+| Length | Jumpers |
+|---|---:|
+| 2 mm | 1 |
+| 7 mm | 1 |
+| 10 mm | 4 |
+| 12 mm | 1 |
+| 15 mm | 1 |
+| 17 mm | 1 |
+| 22 mm | 2 |
+| Dupont, about 30 cm | 5 |
+| cut to fit from 22 AWG solid | 11 |
+| cut to fit: 17.0 holes (43 mm between the legs) | 1 |
 
 ## 3. Leads
 

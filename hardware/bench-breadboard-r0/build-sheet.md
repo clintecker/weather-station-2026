@@ -25,6 +25,62 @@ Nothing.
 | jumper | I2C_SCL | A:b43 (QT.SCL) | A:b49 (QTM.SCL) |
 | jumper | I2C_SDA | A:b42 (QT.SDA) | A:b48 (QTM.SDA) |
 
+## 0a. Teardown (before building from this sheet)
+
+Take the old build apart in this order, so that nothing is ever live while you pull it:
+
+1. **Power off.** Unplug the charger's USB-C adapter at the wall, then both NUCLEO USB cables.
+2. **The pack:** unplug its JST PH plug from the pigtail. Never cut its lead. From here the pack is the only energy on the bench, and its plug is apart.
+3. **The leads:** open each WAGO lever and pull its lead. Unplug the JST PH plugs at the charger and the gauge by the plug body, never by the wires.
+4. **The jumpers:** pull each one straight up with pliers or fingers on the bend. Sort the kit jumpers back by length. Keep a cut-to-fit wire only if it is the same span as one in section 2; tag it with the holes it joins (for example A:d19-A:d2), never a jumper number: those change whenever the model is regenerated.
+5. **The breakouts:** rock each one gently out by its board edges (charger, INA228, gauge, regulator, RJ11 breakouts, OLED), never by a header or the screw terminal.
+6. **The breadboards** stay where they are if they already sit in the base plate pockets; otherwise peel them off and seat them in the pockets before building.
+7. **Check before building:** with nothing fitted, each board's rails read open (OL) to each other on the meter. A short means a strand of wire is stuck in a strip: find it before going on.
+
+## 0b. Homes
+
+Every board and part lives on a breadboard or in its own place on the base plate (`hardware/base-plate/spec-r2.md`); nothing is loose on the desk.
+
+| What | Home |
+|---|---|
+| BOBW (SparkFun BOB-14021 RJ11 breakout (wind cable)) | breadboard A (section 1) |
+| BOBR (SparkFun BOB-14021 RJ11 breakout (rain cable)) | breadboard A (section 1) |
+| QT (STEMMA QT to male header cable (to the 5-port hub)) | breadboard A (section 1) |
+| QTM (STEMMA QT to male header cable (to the power monitors, unswitched)) | breadboard A (section 1) |
+| R1 (10 kOhm resistor, cups pull-up) | breadboard A (section 1) |
+| C_CUPS (100 nF capacitor, cups filter) | breadboard A (section 1) |
+| R2 (10 kOhm resistor, rain pull-up) | breadboard A (section 1) |
+| C_RAIN (100 nF capacitor, rain filter) | breadboard A (section 1) |
+| R3 (10 kOhm resistor, vane pull-up) | breadboard A (section 1) |
+| CHGR (Adafruit bq24074 charger #4755 (11-pin header; BATT and SYSOUT JST PH sockets; USB-C input)) | breadboard B (section 1) |
+| INA (Adafruit INA228 #5832 (8-pin header; X1 screw terminal; I2C on its STEMMA QT cable)) | breadboard B (section 1) |
+| GAUGE (Adafruit MAX17048 #5580 (6-pin header, held in place only; I2C on its STEMMA QT cable)) | breadboard B (section 1) |
+| REG (Pololu S7V8F3 3.3 V regulator #2122) | breadboard B (section 1) |
+| SHUNT (2-pin header with shunt: BATTERY POWER, USB UNPLUGGED (open in mode A)) | breadboard B (section 1) |
+| R4 (10 kOhm 1 % resistor, charger input divider (top, from VBUS)) | breadboard B (section 1) |
+| R5 (10 kOhm 1 % resistor, charger input divider (top, in series with R4)) | breadboard B (section 1) |
+| R6 (10 kOhm 1 % resistor, charger input divider (bottom, to the logic ground rail)) | breadboard B (section 1) |
+| R_ISER (10 kOhm 1 % resistor, ISET series (at the charger)) | breadboard B (section 1) |
+| C_ISET (100 nF capacitor, ISET node filter) | breadboard B (section 1) |
+| R_IPD (1 MOhm resistor, ISET node pull-down) | breadboard B (section 1) |
+| OLED (Adafruit 2.7in 128x64 OLED #2674 (SSD1325, SPI mode: R19 and R21 fitted)) | breadboard C (section 1) |
+| COLED (220 uF electrolytic capacitor, OLED supply) | breadboard C (section 1) |
+| PACK (1S3P 6600 mAh, 3.0-4.2 V (3 x 2200 mAh, #353)) | battery cradle (strap over it; the + lead exits at the marked end) |
+| RLOAD (100 Ohm 1/2 W test load (mode A only)) | the two raised posts beside its WAGOs, held by its leads, clear of the plastic |
+| NTC (10 kOhm NTC thermistor #372 (B = 3950) on THERM, taped to the pack) | taped to the pack in its cradle; its leads leave by the cradle's lead gap |
+| ADAPTER (USB-C wall adapter, 5 V >= 2 A, floating from the Mac) | off the plate, at the wall; its cable held by the USB CHG clamp and tie bridge |
+| WAGO_CELL_POS (WAGO 222-415) | the WAGO row, in its labelled pocket, levers up |
+| WAGO_BATT (WAGO 222-413) | the WAGO row, in its labelled pocket, levers up |
+| WAGO_SYS_OUT (WAGO 222-415) | the WAGO row, in its labelled pocket, levers up |
+| WAGO_STAR (WAGO 222-415) | the WAGO row, in its labelled pocket, levers up |
+| NUCLEO TX (the node) | its edge cradle on the plate, USB end at the cable exit |
+| NUCLEO RX (the bridge) | its edge cradle on the plate, USB end at the cable exit; its USB to a Mac port directly, not a hub |
+| spare WAGO 222-413 (the meter splice, check C5) | its splice pocket next to CELL_POS while in use, if the plate has one (base plate spec §7 item 13); otherwise held by a tie point there |
+| STEMMA QT hub | the sensor deck (M2.5 screws on standoffs), fed by the QT cable from board A |
+| STEMMA QT sensors | the sensor deck, screwed down, or off the plate on a longer QT cable |
+| wind and rain meters | off the plate (outdoors); their RJ11 cables held by the meter clamps |
+| USB cables to the NUCLEOs | one clamp and tie bridge each at the cable exit |
+
 ## 1. Parts
 
 | Part | What | Board | Pins (pin: hole) | Pin order from |
@@ -58,54 +114,69 @@ Nothing.
 
 ## 2. Jumpers
 
-Each jumper is one wire between the two holes: pre-cut solid 22 AWG laid flat (record H3). One exception: the OLED's signal jumpers from board C to CN10 (W24, W25, W26, W27, W28) are female-to-male Dupont jumpers of about 30 cm on the morpho's male pins, bench OLED only (record N3; the OLED wires bench check). Colour by class: i2c blue, wind green, rain cyan, charger orange, display purple, power red, ground black, analog pink, battery lead brown. A link is a jumper the model names by a stable id.
+Each jumper is one wire between the two holes: pre-cut solid 22 AWG laid flat (record H3). One exception: the OLED's signal jumpers from board C to CN10 (W24, W25, W26, W27, W28) are female-to-male Dupont jumpers of about 30 cm on the morpho's male pins, bench OLED only (record N3; the OLED wires bench check). Length is the kit jumper to use (kit_length() in make.py: the BOJACK kit's 14 sizes, the next size up for a diagonal); a NUCLEO header jumper is cut to fit once the base plate fixes where the NUCLEO sits (record H7: at most 200 mm). Colour by class: i2c blue, wind green, rain cyan, charger orange, display purple, power red, ground black, analog pink, battery lead brown. A link is a jumper the model names by a stable id.
 
 ### Board A
 
-| Jumper | From | To | Net | Class | Link |
-|---|---|---|---|---|---|
-| W1 | A:L+47 | A:b47 | 3V3 | power |  |
-| W2 | A:L+41 | A:b41 | 3V3 | power |  |
-| W3 | A:L+20 | A:b19 | 3V3 | power |  |
-| W4 | A:d19 | A:d2 | 3V3 | power |  |
-| W5 | A:L-46 | A:b46 | GND | ground |  |
-| W6 | A:L-40 | A:b40 | GND | ground |  |
-| W7 | A:L-20 | A:b14 | GND | ground |  |
-| W8 | A:c14 | A:c5 | GND | ground |  |
-| W9 | A:b5 | A:b4 | GND | ground |  |
-| W10 | A:b43 | A:b49 | I2C_SCL | i2c |  |
-| W11 | A:b42 | A:b48 | I2C_SDA | i2c |  |
+| Jumper | From | To | Length | Net | Class | Link |
+|---|---|---|---|---|---|---|
+| W1 | A:L+47 | A:b47 | 10 mm | 3V3 | power |  |
+| W2 | A:L+41 | A:b41 | 10 mm | 3V3 | power |  |
+| W3 | A:L+20 | A:b19 | 10 mm | 3V3 | power |  |
+| W4 | A:d19 | A:d2 | cut to fit: 17.0 holes (43 mm between the legs) | 3V3 | power |  |
+| W5 | A:L-46 | A:b46 | 7 mm | GND | ground |  |
+| W6 | A:L-40 | A:b40 | 7 mm | GND | ground |  |
+| W7 | A:L-20 | A:b14 | 17 mm | GND | ground |  |
+| W8 | A:c14 | A:c5 | 22 mm | GND | ground |  |
+| W9 | A:b5 | A:b4 | 2 mm | GND | ground |  |
+| W10 | A:b43 | A:b49 | 15 mm | I2C_SCL | i2c |  |
+| W11 | A:b42 | A:b48 | 15 mm | I2C_SDA | i2c |  |
 
 ### Board B
 
-| Jumper | From | To | Net | Class | Link |
-|---|---|---|---|---|---|
-| W12 | B:L-63 | B:c62 | GND | ground |  |
-| W13 | B:d62 | B:f59 | GND | ground |  |
-| W14 | B:d16 | B:L-19 | GND | ground |  |
-| W15 | B:e57 | B:g57 | ISET_CHGR | analog |  |
-| W16 | B:b17 | B:b8 | REG_OUT | power | LK_REG_SHUNT |
+| Jumper | From | To | Length | Net | Class | Link |
+|---|---|---|---|---|---|---|
+| W12 | B:L-63 | B:c62 | 10 mm | GND | ground |  |
+| W13 | B:d62 | B:f59 | 12 mm | GND | ground |  |
+| W14 | B:d16 | B:L-19 | 15 mm | GND | ground |  |
+| W15 | B:e57 | B:g57 | 10 mm | ISET_CHGR | analog |  |
+| W16 | B:b17 | B:b8 | 22 mm | REG_OUT | power | LK_REG_SHUNT |
 
 ### To the NUCLEO
 
-| Jumper | From | To | Net | Class | Link |
-|---|---|---|---|---|---|
-| W17 | A:e41 | NUCLEO CN6.4 | 3V3 | power | LK_3V3_CN6_4 |
-| W18 | B:e54 | NUCLEO CN9.7 | CHG | charger |  |
-| W19 | A:d6 | NUCLEO CN9.5 | CUPS | wind |  |
-| W20 | A:e40 | NUCLEO CN6.6 | GND | ground | LK_QT_GND_CN6_6 |
-| W21 | A:e43 | NUCLEO CN5.10 | I2C_SCL | i2c |  |
-| W22 | A:e42 | NUCLEO CN5.9 | I2C_SDA | i2c |  |
-| W23 | B:j58 | NUCLEO CN8.1 | ISET | analog |  |
-| W24 | C:e36 | NUCLEO CN10.17 | OLED_CS | display |  |
-| W25 | C:e25 | NUCLEO CN10.21 | OLED_DC | display |  |
-| W26 | C:e29 | NUCLEO CN10.15 | OLED_DIN | display |  |
-| W27 | C:e37 | NUCLEO CN10.23 | OLED_RST | display |  |
-| W28 | C:e28 | NUCLEO CN10.11 | OLED_SCLK | display |  |
-| W29 | B:e55 | NUCLEO CN9.6 | PGOOD | charger |  |
-| W30 | A:d15 | NUCLEO CN8.4 | RAIN | rain |  |
-| W31 | A:e7 | NUCLEO CN8.2 | VANE | wind |  |
-| W32 | B:c61 | NUCLEO CN8.3 | VIN_SENSE | analog |  |
+| Jumper | From | To | Length | Net | Class | Link |
+|---|---|---|---|---|---|---|
+| W17 | A:e41 | NUCLEO CN6.4 | cut to fit from 22 AWG solid | 3V3 | power | LK_3V3_CN6_4 |
+| W18 | B:e54 | NUCLEO CN9.7 | cut to fit from 22 AWG solid | CHG | charger |  |
+| W19 | A:d6 | NUCLEO CN9.5 | cut to fit from 22 AWG solid | CUPS | wind |  |
+| W20 | A:e40 | NUCLEO CN6.6 | cut to fit from 22 AWG solid | GND | ground | LK_QT_GND_CN6_6 |
+| W21 | A:e43 | NUCLEO CN5.10 | cut to fit from 22 AWG solid | I2C_SCL | i2c |  |
+| W22 | A:e42 | NUCLEO CN5.9 | cut to fit from 22 AWG solid | I2C_SDA | i2c |  |
+| W23 | B:j58 | NUCLEO CN8.1 | cut to fit from 22 AWG solid | ISET | analog |  |
+| W24 | C:e36 | NUCLEO CN10.17 | Dupont, about 30 cm | OLED_CS | display |  |
+| W25 | C:e25 | NUCLEO CN10.21 | Dupont, about 30 cm | OLED_DC | display |  |
+| W26 | C:e29 | NUCLEO CN10.15 | Dupont, about 30 cm | OLED_DIN | display |  |
+| W27 | C:e37 | NUCLEO CN10.23 | Dupont, about 30 cm | OLED_RST | display |  |
+| W28 | C:e28 | NUCLEO CN10.11 | Dupont, about 30 cm | OLED_SCLK | display |  |
+| W29 | B:e55 | NUCLEO CN9.6 | cut to fit from 22 AWG solid | PGOOD | charger |  |
+| W30 | A:d15 | NUCLEO CN8.4 | cut to fit from 22 AWG solid | RAIN | rain |  |
+| W31 | A:e7 | NUCLEO CN8.2 | cut to fit from 22 AWG solid | VANE | wind |  |
+| W32 | B:c61 | NUCLEO CN8.3 | cut to fit from 22 AWG solid | VIN_SENSE | analog |  |
+
+### Cut list
+
+| Length | Jumpers |
+|---|---:|
+| 2 mm | 1 |
+| 7 mm | 2 |
+| 10 mm | 5 |
+| 12 mm | 1 |
+| 15 mm | 3 |
+| 17 mm | 1 |
+| 22 mm | 2 |
+| Dupont, about 30 cm | 5 |
+| cut to fit from 22 AWG solid | 11 |
+| cut to fit: 17.0 holes (43 mm between the legs) | 1 |
 
 ## 3. Leads
 
