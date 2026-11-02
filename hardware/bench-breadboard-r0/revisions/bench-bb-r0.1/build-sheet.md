@@ -256,7 +256,7 @@ The station running from the regulator (section 7: NUCLEO USB unplugged, SHUNT f
 |---|---|---|---|---|
 | C15 | before every mode-B run | mode B, TX bursts (NUCLEO USB unplugged, SHUNT fitted, 100 ohm load out, OLED VCC lead unplugged, DMM min/max across at least 5 radio TX bursts) | TIE: STAR to the regulator GND strip | < 1 mV |
 | C20 | before every mode-B run | as C15 | STAR to CN6.6 | <= 3 mV |
-| C21 | before every mode-B run | as C15 | the regulator's VOUT pin to CN6.4 (the whole P1 output chain: LK_REG_SHUNT, SHUNT, L_REG_3V3, the board-A 3V3 strip where LK_3V3_CN6_4 starts (QT.V+ in r0.1 and r0.2, LSW.IN from r0.3), LK_3V3_CN6_4) | <= 10 mV |
+| C21 | before every mode-B run | as C15 | the regulator's VOUT pin to CN6.4 (the whole P1 output chain: LK_REG_SHUNT, SHUNT, L_REG_3V3, the board-A 3V3 strip where LK_3V3_CN6_4 starts (QT.V+; change C, which moved it to the load switch, is deferred to the carrier), LK_3V3_CN6_4) | <= 10 mV |
 | C22 | before every mode-B run | as C15, between TX bursts | mode-B dV0: gauge VCELL - INA VBUS with the station idle | recorded (the block's dv0_mv) |
 | C23 | before every mode-B run | as C15, DMM min/max on C21's span | wiggle L_REG_VIN, LK_REG_SHUNT, the SHUNT, L_REG_3V3, LK_3V3_CN6_4, L_NUC_RET (the CN6.7 lead) and L_TIE, for 30 s each | no reset; no step >= 2 mV |
 

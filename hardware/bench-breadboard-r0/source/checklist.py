@@ -118,8 +118,8 @@ CHECKS = (
     _row('C20', 'B', WHEN_PRE_B, 'as C15', 'STAR to CN6.6', 3.0, 'mV', 'le', ''),
     _row('C21', 'B', WHEN_PRE_B, 'as C15',
          "the regulator's VOUT pin to CN6.4 (the whole P1 output chain: LK_REG_SHUNT, SHUNT, "
-         'L_REG_3V3, the board-A 3V3 strip where LK_3V3_CN6_4 starts (QT.V+ in r0.1 and r0.2, LSW.IN from '
-         'r0.3), LK_3V3_CN6_4)', 10.0, 'mV', 'le', ''),
+         'L_REG_3V3, the board-A 3V3 strip where LK_3V3_CN6_4 starts (QT.V+; change C, which moved it to the load '
+         'switch, is deferred to the carrier), LK_3V3_CN6_4)', 10.0, 'mV', 'le', ''),
     _row('C22', 'B', WHEN_PRE_B, 'as C15, between TX bursts',
          'mode-B dV0: gauge VCELL - INA VBUS with the station idle', None, 'recorded', 'record',
          'recorded (the block\'s dv0_mv)'),

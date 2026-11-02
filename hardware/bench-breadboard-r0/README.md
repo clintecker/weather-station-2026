@@ -6,26 +6,27 @@ The bench station's sensor suite on three 830-point breadboards, wired to the TX
 electrical source of truth for the signals. The model describes the **step 1 v2 target** of the
 build-progression record
 ([`docs/superpowers/specs/2026-10-29-build-progression-decisions.md`](../../docs/superpowers/specs/2026-10-29-build-progression-decisions.md),
-changes A, B and C, sections 4.4-4.6; revision `bench-bb-r0.3` in `source/wiring.toml`): every battery, charge and load
+changes A and B and the second QT cable, sections 4.4-4.6; revision `bench-bb-r0.3` in `source/wiring.toml`): every battery, charge and load
 current runs on leads between lever connectors, JST PH sockets and screw terminals, never through a
 breadboard contact (record P1); the breadboards carry only signals and sense taps; the NUCLEO's signals
-land on its Arduino headers; the mode-B supply enters at CN6.4; the hub's sensors take a PA9-switched
-3V3 while the power monitors stay on the unswitched 3V3 (change C). The power design is
+land on its Arduino headers; the mode-B supply enters at CN6.4; the hub's sensors and the power monitors
+are on two QT cables, both on the unswitched 3V3. Change C, the PA9 sensor switch, is deferred to the
+carrier board (record 4.6 dated note, 2026-11-02): steps 1 and 2 have no sensor power switch. The power design is
 [`docs/superpowers/specs/2026-10-29-power-telemetry-design.md`](../../docs/superpowers/specs/2026-10-29-power-telemetry-design.md)
 sections 11.1 and 11.2, as the record amends them.
 
 **To build, open [`build-sheet.md`](build-sheet.md)** and the renders. That is the current revision,
 `bench-bb-r0.3`. The bench is built one change at a time from the r0 bench, so change A builds from
 [`revisions/bench-bb-r0.1/build-sheet.md`](revisions/bench-bb-r0.1/build-sheet.md), change B from
-[`revisions/bench-bb-r0.2/build-sheet.md`](revisions/bench-bb-r0.2/build-sheet.md) and change C from
-`build-sheet.md` (record 4.4-4.6). Each sheet's "Changes from the previous revision" section says what
+[`revisions/bench-bb-r0.2/build-sheet.md`](revisions/bench-bb-r0.2/build-sheet.md) and the second QT cable
+(QTM) from `build-sheet.md` (record 4.4-4.6). Each sheet's "Changes from the previous revision" section says what
 comes out and what goes in, starting from the sheet before. Before you place a wire, tick the wiring
 guide's section 6 checklist against UM2592. Then do the build sheet's bench checks before you connect
 power, its pre-run checklist (C1-C23), and its power checks 1-10 in order.
 
 | Render | Shows |
 |---|---|
-| [`renders/board-a.png`](renders/board-a.png) | board A, signals: both RJ11 breakouts with the meter pull-ups and filters at the jack end, the PA9 sensor load switch (LSW), the STEMMA QT cable to the hub (switched, QT) and the one to the power monitors (unswitched, QTM) |
+| [`renders/board-a.png`](renders/board-a.png) | board A, signals: both RJ11 breakouts with the meter pull-ups and filters at the jack end, the STEMMA QT cable to the hub (QT) and the one to the power monitors (QTM), both unswitched |
 | [`renders/board-b.png`](renders/board-b.png) | board B: the bq24074 charger's header with its ISET network (R_ISER, C_ISET, R_IPD) and the 20 kΩ/10 kΩ input divider (R4-R6), the INA228, the fuel gauge, the regulator, the BATTERY POWER shunt; off the breadboard, the pack, the 100 Ω load, the NTC, the wall adapter and the four WAGO joints with their leads |
 | [`renders/overview.png`](renders/overview.png) | the boards and the jumpers to the NUCLEO headers (not to scale) |
 | [`renders/3d-top.png`](renders/3d-top.png), [`renders/3d-angle.png`](renders/3d-angle.png) | KiCad 10's 3D view |
@@ -52,7 +53,7 @@ flowchart LR
 |---|---|
 | `check_guide` | each NUCLEO pin the map uses is in the wiring guide's section 2 table, on a header the guide lists |
 | `check_guide_reverse` | the other way round (record D3 check 7): each guide row that names a station pin has a model net with that `mcu` pin, unless the row says "protoboard only" or "carrier only" |
-| `check_firmware` | each pin matches the constants in the node's `App/board_inputs.c` and `App/i2c_bus.lit.md`, in the bench link's `App/benchlink.c`, and in i2cscan's `App/i2cscan.c` and `App/oled.c` (the OLED's five SPI and control pins); PA9 (SENS_EN) is checked in the node, benchlink and i2cscan; an ADC input (vane, ISET, VIN_SENSE) uses its pin's ADC1 channel (D3 check 8) |
+| `check_firmware` | each pin matches the constants in the node's `App/board_inputs.c` and `App/i2c_bus.lit.md`, in the bench link's `App/benchlink.c`, and in i2cscan's `App/i2cscan.c` and `App/oled.c` (the OLED's five SPI and control pins); PA9 (POWER_PIN) is not checked, as the model has no SENS_EN (change C is on the carrier); an ADC input (vane, ISET, VIN_SENSE) uses its pin's ADC1 channel (D3 check 8) |
 | `prove` | the strips, the jumpers, the leads, the joints, the ties inside parts and the NUCLEO's own ties join every net, with no short and no stray pin |
 | `checks.check_force_off_breadboard` | D3 check 1: no force lead or force-net member in a breadboard hole, except the P1 regulator chain, tagged member by member |
 | `checks.check_sense_landings` | D3 check 2: no sense lead shares a clamp position with a force lead; each lands on its declared joint |
@@ -94,7 +95,8 @@ tools/fetch-cad.sh                                                     # once: t
   sheet's **"Changes from the previous revision"** section lists what to remove, then what to add, by net
   and endpoints, never by W-number (W-numbers change on every regeneration).
 - **Revisions and tags.** The revisions are `bench-bb-r0.1` (change A), `bench-bb-r0.2` (change B, the
-  meter pin remap) and `bench-bb-r0.3` (change C, the PA9 sensor switch). `source/wiring.toml` is the
+  meter pin remap) and `bench-bb-r0.3` (the second QT cable; *2026-11-02:* redefined in place before it was
+  built, without change C, the PA9 sensor switch, which is deferred to the carrier). `source/wiring.toml` is the
   current one (r0.3). The earlier ones are **frozen models**, `source/revisions/bench-bb-r0.1.toml` and
   `bench-bb-r0.2.toml` (`make.py`'s `HISTORY`), each the whole bench as its change leaves it, with their
   regenerated sheets in `revisions/<revision>/` (record 6.1 dated note). Each sheet's baseline is the
@@ -152,17 +154,18 @@ Two builds give identical files (`test_generation_is_deterministic`).
 
 ## Decisions
 
-- **PA9** drives the sensor load switch from step 1 change C (exit 9); it is soldered at step 2 only if
-  exit 9 passes; the power monitors are on the unswitched branch. In the model: SENS_EN (PA9 = D9,
-  CN5.2) to LSW.EN; LSW.OUT is 3V3_SW, the hub cable's V+ (QT); the second cable QTM takes the battery
-  INA228 (0x40) and the MAX17048 (0x36) on the unswitched 3V3 (record 4.6, R-11, S2, PORT-9). The
-  load-switch part is not chosen: its pin order is a bench check and its outline an estimate.
+- **PA9 is unconnected** on steps 1 and 2 (*2026-11-02*, record 4.6 dated note): change C, the PA9 sensor
+  load switch, is deferred to the carrier board, where PA9 (CN10.19) switches each sensor port (PORT-5).
+  The firmware may still drive PA9: harmless here. `bench-bb-r0.3` was redefined in place (it was never
+  built); r0.1 and r0.2 stay frozen. The second cable QTM still takes the battery INA228 (0x40) and the
+  MAX17048 (0x36) from the same unswitched 3V3 as the hub's cable QT: redundant now, but harmless, and it
+  keeps the step 1b chain and record S3 unchanged (record 4.6, PORT-9).
 - **PGOOD and CHG** jumper from the charger's header on board B to the NUCLEO's Arduino header:
   CHG to CN9.7 (D6, PB10), PGOOD to CN9.6 (D5, PB8); their morpho aliases CN10.25 and CN10.27 stay
   empty (record N1, N3).
-- **The regulator output feeds the NUCLEO's 3V3 at CN6.4** through the SHUNT, L_REG_3V3 and the LSW.IN strip
-  (A:c34), where L_REG_3V3 and LK_3V3_CN6_4 both land: the unswitched board-A 3V3 net, but never through
-  the A:L+ rail (no planner jumper and no rail contact in the chain; never the hub's switched 3V3_SW; the
+- **The regulator output feeds the NUCLEO's 3V3 at CN6.4** through the SHUNT, L_REG_3V3 and the QT.V+ strip
+  (A:c41), where L_REG_3V3 and LK_3V3_CN6_4 both land: the board-A 3V3 net, but never through
+  the A:L+ rail (no planner jumper and no rail contact in the chain; the
   P1 regulator chain; same 3V3 net as CN7.16); there is no link to CN7.16. Each member of
   the chain (L_REG_VIN, L_TIE, L_NUC_RET, LK_REG_SHUNT, SHUNT, L_REG_3V3, LK_3V3_CN6_4) carries
   `exception = "P1 regulator"` in `wiring.toml`.

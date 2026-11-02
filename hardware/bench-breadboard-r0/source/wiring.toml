@@ -19,9 +19,11 @@
 # WAGO 222 lever connectors are [[joint]]s beside board B; every battery, charge and load current runs
 # on [[lead]]s between joints, sockets and screw terminals, never through a strip (record P1).
 #
-# Change C (record 4.6, R-11, S2, M6, PORT-9; bench-bb-r0.3): the hub's QT cable takes its V+ from the
-# PA9 sensor load switch (LSW, net 3V3_SW); a second QT cable (QTM) feeds the power monitors from the
-# unswitched 3V3, so recovery that cycles PA9 never drops them. The P1 chain lands on the unswitched node.
+# bench-bb-r0.3, redefined 2026-11-02 before it was built (record 4.6 dated note): change C, the PA9 sensor
+# load switch, is deferred to the carrier board, so steps 1 and 2 have no sensor power switch and PA9 is
+# left unconnected. The hub's QT cable takes its V+ from the unswitched board-A 3V3 node, the QT.V+ strip,
+# where the P1 chain lands, as in r0.2. A second QT cable (QTM) still feeds the power monitors from the
+# same 3V3 (now redundant but harmless: it keeps the step 1b chain and record S3 unchanged).
 #
 # Mode A (daily, the board on USB) is drawn: the BATTERY POWER shunt is open and the 100 ohm test
 # load is fitted (wiring guide section 5).
@@ -82,23 +84,10 @@ step = 1
 pins = ["GND", "V+", "SDA", "SCL"]
 labels = ["black", "red", "blue", "yellow"]
 source = "https://learn.adafruit.com/introducing-adafruit-stemma-qt/technical-specs"
-note = "The sensors' branch (record 4.6 step 1): its V+ is the load switch's output (3V3_SW), so PA9 cycles the hub's sensors; GND, SDA and SCL stay shared with QTM"
+note = "The hub's cable: every hub sensor on its V+, the unswitched board-A 3V3 node (change C, the PA9 switch, is deferred to the carrier: record 4.6, 2026-11-02); GND, SDA and SCL shared with QTM"
 
-# Change C (record 4.6 step 2, R-11): the PA9 sensor load switch. The part is not chosen (record 4.1:
-# the PORT-5 part if chosen by then), so its pin order is a bench check and its body is an estimate
-# (about 18 x 15 mm), kept so that no jumper lands under it; re-measure it when the part is chosen.
-[[part]]
-id = "LSW"
-kind = "high-side load-switch breakout: 3.3 V, current-limited, active-high enable, headers fitted (part not chosen)"
-board = "A"
-origin = ["a", 34]
-step = 1
-body = [0.0, -6.35, 17.78, 15.24]   # an estimate (the part is not chosen): over the rails, like the breakouts
-pins = ["IN", "OUT", "GND", "EN"]
-source = "bench check"
-note = """Pin order IN, OUT, GND, EN from column 34 is the model's: check it against the breakout in hand (bench check) and move the model first if it differs. IN from the board-A 3V3 node (LK_3V3_CN6_4 lands on its strip), OUT to the hub cable's V+ strip (3V3_SW), GND to the board-A ground, EN by a solid jumper from CN5.2 (D9, PA9). Check its own enable pull holds it off at reset (record 4.6 step 2): with the NUCLEO in reset, 3V3_SW reads <= 0.5 V (the exit 9 limit). Step 2 carries it only if exit 9 passes (record S2)"""
-
-# The power monitors' branch (record 4.6 step 1, PORT-9): unswitched, always powered.
+# The power monitors' branch (record 4.6 step 1, PORT-9): unswitched, always powered. With change C
+# deferred to the carrier (2026-11-02) the hub's cable is unswitched too; QTM is kept as a second branch.
 [[part]]
 id = "QTM"
 kind = "STEMMA QT to male header cable (to the power monitors, unswitched)"
@@ -241,7 +230,7 @@ step = 1
 body = [0.0, -6.985, 11.43, 16.51]   # from the maker's model: 1.27 mm past the header
 pins = ["SHDN", "VIN", "GND", "VOUT"]
 source = "bench check"
-note = "Back labels, top to bottom: VOUT, GND (square pad), VIN, SHDN. Front up, over the rails: VOUT at column 17, SHDN at 14. Fed from the OUT joint by L_REG_VIN; its GND strip takes the TIE (L_TIE) and the NUCLEO return (L_NUC_RET). It feeds CN6.4 through the SHUNT, L_REG_3V3 and the LSW.IN strip, the board-A 3V3 node where LK_3V3_CN6_4 starts (mode B only; record P1, N3)"
+note = "Back labels, top to bottom: VOUT, GND (square pad), VIN, SHDN. Front up, over the rails: VOUT at column 17, SHDN at 14. Fed from the OUT joint by L_REG_VIN; its GND strip takes the TIE (L_TIE) and the NUCLEO return (L_NUC_RET). It feeds CN6.4 through the SHUNT, L_REG_3V3 and the QT.V+ strip, the board-A 3V3 node where LK_3V3_CN6_4 starts (mode B only; record P1, N3)"
 
 [[part]]
 id = "SHUNT"
@@ -421,9 +410,9 @@ note = "Polarised: + (the longer lead) in column 23 with the OLED's 3.3 V, the s
 # Each link has a stable `id` (record D2): the build sheet's W-numbers change. The regulator's output
 # reaches the SHUNT on LK_REG_SHUNT; from the SHUNT's far strip L_REG_3V3 (a lead) carries it to the
 # board-A 3V3 node, which LK_3V3_CN6_4 joins to CN6.4, the step 2 shield's 3V3 pin (record P1, N3).
-# From r0.3 (change C) that node is the unswitched 3V3, never the hub's switched 3V3_SW (record 4.4):
-# L_REG_3V3 lands in the LSW.IN strip itself, where LK_3V3_CN6_4 starts, so the chain holds no planner
-# jumper and no rail run (D3 check 1, P1_ORDER); the A:L+ rail (the pull-ups, QTM.V+) hangs off that strip. The hub's ground comes straight from the NUCLEO (CN6.6), so the sensors' ground
+# That node is the QT.V+ strip (as in r0.2; change C is deferred to the carrier, record 4.6, 2026-11-02):
+# L_REG_3V3 lands in it, where LK_3V3_CN6_4 starts, so the chain holds no planner jumper and no rail run
+# (D3 check 1, P1_ORDER); the A:L+ rail (the pull-ups, QTM.V+) hangs off that strip. The hub's ground comes straight from the NUCLEO (CN6.6), so the sensors' ground
 # does not return through the power board.
 
 [[link]]
@@ -434,7 +423,7 @@ exception = "P1 regulator"
 
 [[link]]
 id = "LK_3V3_CN6_4"
-a = "LSW.IN"
+a = "QT.V+"
 b = "N:CN6.4"
 exception = "P1 regulator"
 
@@ -453,22 +442,8 @@ b = "N:CN6.6"
 name = "3V3"
 mcu = "3V3"
 class = "power"
-members = ["N:CN6.4", "N:CN7.16", "LSW.IN", "QTM.V+", "R1.2", "R2.2", "R3.2", "SHUNT.2", "OLED.VCC", "COLED.+"]
+members = ["N:CN6.4", "N:CN7.16", "QT.V+", "QTM.V+", "R1.2", "R2.2", "R3.2", "SHUNT.2", "OLED.VCC", "COLED.+"]
 rails = ["A:L+"]
-
-# The hub's switched 3.3 V (change C, record 4.6): the load switch's output to the hub cable's V+.
-[[net]]
-name = "3V3_SW"
-class = "power"
-members = ["LSW.OUT", "QT.V+"]
-
-# The sensor power enable (record 4.2, 4.6): PA9 = D9, CN5.2, to the load switch's EN. Class i2c: it
-# is the sensor bus's own line (i2c_bus drives it), drawn in the bus's colour.
-[[net]]
-name = "SENS_EN"
-mcu = "PA9"
-class = "i2c"
-members = ["N:CN5.2", "LSW.EN"]
 
 # One ground net in two domains (record P4, D2). Power: the pack minus, the charger's BATT and SYSOUT
 # minus and its GND test points, the load return, STAR. Logic: the NUCLEO, the hub, the meter, the
@@ -479,7 +454,7 @@ name = "GND"
 mcu = "GND"
 class = "ground"
 members = ["PACK.-", "CHGR.BATT1", "CHGR.SYSOUT1", "CHGR.GND", "CHGR.GND2", "CHGR.GND3", "RLOAD.2", "J:WAGO_STAR",
-           "N:CN6.6", "N:CN6.7", "N:CN10.20", "QT.GND", "QTM.GND", "LSW.GND", "BOBW.2", "BOBW.3", "BOBR.3", "C_CUPS.2", "C_RAIN.2", "R6.2",
+           "N:CN6.6", "N:CN6.7", "N:CN10.20", "QT.GND", "QTM.GND", "BOBW.2", "BOBW.3", "BOBR.3", "C_CUPS.2", "C_RAIN.2", "R6.2",
            "C_ISET.2", "R_IPD.2", "REG.GND", "OLED.GND", "COLED.-", "NTC.2"]
 rails = ["A:L-", "B:L-"]
 
@@ -823,13 +798,13 @@ note = "the NUCLEO's mode-B supply return: CN6.7 into the regulator GND strip, f
 [[lead]]
 id = "L_REG_3V3"
 a = "B:c9"
-b = "A:c34"
+b = "A:c41"
 role = "force"
 kind = "solid"
 gauge = 22
-length_mm = 250
+length_mm = 280
 exception = "P1 regulator"
-note = "the SHUNT.2 strip to the unswitched board-A 3V3 node, the LSW.IN strip (column 34) where LK_3V3_CN6_4 starts, never the A:L+ rail and never the hub's 3V3_SW: the chain to CN6.4 has no planner jumper (P1). The mode-B feed, dead in mode A with the shunt open (record P1, N3); its length is set by routing, bounded by checks C20 and C21 (H7)"
+note = "the SHUNT.2 strip to the board-A 3V3 node, the QT.V+ strip (column 41) where LK_3V3_CN6_4 starts, never the A:L+ rail: the chain to CN6.4 has no planner jumper (P1). The mode-B feed, dead in mode A with the shunt open (record P1, N3); its length is set by routing, bounded by checks C20 and C21 (H7)"
 
 # The bench OLED's own supply pair (record N3, R-3): straight to the NUCLEO, off every breadboard rail.
 [[lead]]

@@ -122,8 +122,7 @@ if the bench lacks them.
 | 2 | 1 MΩ resistor | ISET pull-down; one spare |
 | 2 | 100 nF ceramic capacitor | ISET node; one spare |
 | 2 | 1 Ω 2 W resistor | injection test (step 1 exit 4, both cases); one spare |
-| 2 | pre-assembled high-side load-switch breakout (3.3 V, current-limited, active-high enable, headers fitted; part not chosen) | change C, the PA9 sensor switch; one spare. Confirm it ships assembled. **Not yet sourced** (2026-10-30): DigiKey had no matching breakout with a current limit; the TPS22918EVM was the nearest and has none |
-| 1 | STEMMA QT to male header cable | change C, the unswitched branch to the power monitors |
+| 1 | STEMMA QT to male header cable | change C, the branch to the power monitors (unswitched; *2026-11-02:* the hub's branch is unswitched too, the PA9 load switch moved to the carrier, so no load-switch breakout is listed) |
 | 2 | female-to-male jumper, about 30 cm | the bench OLED's own supply pair (VCC CN7.16, GND CN10.20); skip if owned |
 | 1 | USB-C wall adapter, 5 V ≥ 2 A (5.1–5.25 V output preferred) | the charger input, floating from the Mac; skip if one is owned |
 | 1 | plywood or MDF, about 30 × 40 cm, 6–9 mm | the base plate (record H1); scrap is fine |
@@ -153,6 +152,8 @@ Not on this list, on purpose:
   battery leads (record P3, P7).
 
 ## Later build steps
+
+> **Parked 2026-11-02.** This section is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
 
 Bought later, in the record's order (section 3; 7.1 Q8): step 2 and its H01 run, then step 1b, then
 step 2c, then step 3. Prices are not verified unless a row says so.
@@ -216,6 +217,8 @@ strips fail repeatedly (record H2; *2026-11-02:* 5 ordered from DigiKey); WAGO 2
 only if WAGO's sheet does not cover 26 AWG on the 222 (record P7).
 
 ## Housing
+
+> **Parked 2026-11-02.** This section is parked (the enclosure is step 4). It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
 
 | Part | Product | Price | Stock |
 |---|---|---:|---|

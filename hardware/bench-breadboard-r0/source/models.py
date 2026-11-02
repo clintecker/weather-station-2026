@@ -3,8 +3,7 @@
 breakout boards, the RJ11 jack, the pack). Sizes in mm, from the parts' design files: SparkFun
 RJ11_Breakout (a 21.6 x 41.1 mm panel of two boards), Adafruit-BQ24074-PCB (38.1 x 33.0),
 Adafruit-INA228-PCB and Adafruit-MAX17048-PCB (25.4 x 20.3), Pololu #2122 (11 x 17), Adafruit #353
-pack (69 x 54 x 18). A breakout with no maker model and no colour of its own (a later part such as
-the load switch LSW) is a generic pre-assembled board (GENERIC_BOARD) on its `body`.
+pack (69 x 54 x 18). A breakout with no maker model and no colour of its own (a later part) is a generic pre-assembled board (GENERIC_BOARD) on its `body`.
 
 Off the breadboard (record D2): a part placed by `place_mm` lies on the bench plate at z 0, its box
 offset from its place point by OFF_BOARD (the pack hangs away from board B, its plug at the point the

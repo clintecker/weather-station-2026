@@ -138,6 +138,8 @@ flowchart LR
 
 ## 5. Energy state (inputs from the power hardware; always NORMAL until D1 and the thresholds)
 
+> **Parked 2026-11-02.** This section is parked; the firmware stays in NORMAL. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
+
 ### 5.1 Inputs, by measured quantity and phase
 
 The product specification requires these inputs (sections 4 and 5). The power design (section 2) names the hardware phases: **A** (now) the bq24074 with one input, the battery INA228 (0x40) and the MAX17048 (0x36); **B** phase A plus a load, a solar and a USB-C INA228, each upstream of the point where the sources join; **C** the TI BQ25798 (VAC1 solar, VAC2 USB-C, its own ADC), with or without phase B's monitors. An input is named by what it measures, not by the chip. The field numbers and health keys are those of [`protocol.md`](protocol.md) (catalog version 2, the 64-byte health report); the fill table is power design section 3.
@@ -306,6 +308,8 @@ The gateway does **not** tell the node how much to transmit. The node knows its 
 
 ## 8. What changes, by stage
 
+> **Parked 2026-11-02.** This section is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
+
 | Stage | Work |
 |---|---|
 | **0 (now)** | Link state machine (*K*, probe back-off, live-only probes, drain stop after a miss). Airtime cap per minute from the spreading factor. Energy-state interface in the firmware, fixed at `NORMAL`. The node reports the link state and the journal counters (kind-4 health report). **Done 2026-10-13.** Note: the Python simulator (`ws0/simulator.py`) drains 5 backlog records per minute, like NORMAL. It does not model PROBING or the drain stop. Thus simulation results do not cover this behaviour. **2026-10-29 (power design):** the node runs power phase A. It reads the CHG and PGOOD pins, ISET, the charger input voltage, the battery INA228, the MAX17048 and VREFINT, and sends them in protocol version 6: the observation fields and the 64-byte health report (section 7). The health-report airtime reserve is in the allowance (section 6). The energy state stays `NORMAL`: no thresholds before D1 and H02. |
@@ -337,6 +341,8 @@ All six proposals below are approved as written. The thresholds in item 4 stay p
 - **Decision 4 waits for D1.** Its thresholds need a reserve that fits the pack (section 3).
 
 ## 10. Open question for the battery and solar build: adaptive spreading factor and power (not approved, not implemented)
+
+> **Parked 2026-11-02.** This section is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
 
 The project owner raised this on 2026-10-13, after the office range walk (`evidence/rangetest-office-2026-10-13/`). Today, the spreading factor and the power are fixed per placement ([`CONTEXT-PACK.md`](CONTEXT-PACK.md) section 6, step 4). This policy caps the airtime and backs off the probes around that fixed spreading factor.
 

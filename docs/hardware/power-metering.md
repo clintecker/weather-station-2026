@@ -66,6 +66,8 @@ than the part's own 1 %.
 
 ### 2.2 Phase B
 
+> **Parked 2026-11-02.** Phase B and C (§2.2-2.3) are parked; phase A (§2.1) is current. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
+
 | Rail | Net (from → to) | Monitor | Address, straps (A1, A0) | Shunt | VBUS sense point | Fills |
 |---|---|---|---|---|---|---|
 | Battery | as phase A | INA228 | 0x40, GND, GND | 15 mΩ, 2 W | its own lead, moved at step 1b from OUT to **CELL+ position 4** (record P5). The node firmware does **not read** it in profile B (the load INA228 owns the load voltage); the host uses it as a cross-check of the cell voltage at CELL+ (spec section 17, record M4) | battery current, counters, energy |
@@ -157,6 +159,8 @@ jack (X3) join at VBUS through its own Schottky diodes D2 and D4 (SK34A), and no
 of that join. Phase B puts one monitor in each source's lead, upstream of the join (section 5).
 
 ## 5. Phase B: the join
+
+> **Parked 2026-11-02.** This section is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
 
 ### 5.1 Topology
 

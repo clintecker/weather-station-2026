@@ -974,6 +974,8 @@ termination (0.3 A), inside the termination acceptance of section 2, criterion 4
 
 ### 11.3 Four-rail metering (`docs/hardware/power-metering.md`, new)
 
+> **Parked 2026-11-02.** Four-rail metering is step 1b and is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
+
 - **Rail table:** net, monitor, address, shunt and its power rating, VBUS sense point; the sign
   conventions of section 3.1; the fill table of section 3.
 - **Phase B join** (*amended 2026-10-29, section 17, record P10*): the #4755 already diode-ORs its

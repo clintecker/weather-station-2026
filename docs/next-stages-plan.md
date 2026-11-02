@@ -1,5 +1,7 @@
 # Next stages: parts and plan
 
+> **Parked 2026-11-02.** This plan is about steps past step 1. Its phase A rows (§1.1 and §3) describe what step 1 runs today; everything else is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
+
 Written 2026-10-14, while the first-revision (R0) test PCBs and printed fixtures are in transit.
 **Nothing has been ordered or quoted.** The authority is the v0.2 product and technical
 requirements (PRD/TRD, `weather-station-v0.2-prd-trd.html`): §3 gives the stage order, §7 the

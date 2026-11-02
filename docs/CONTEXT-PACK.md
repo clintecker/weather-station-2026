@@ -7,6 +7,20 @@ phase A on the bench, protocol version 6 in the source), and 2026-10-30 for the 
 record and Clint's survey answers (its section 7.1). Give this file to a fresh Claude Code session
 first. Links to the deeper documents are at the end.
 
+## 0. Current focus (2026-11-02): step 1 only
+
+The work now is **step 1**: the breadboard prototype (`hardware/bench-breadboard-r0`, model
+`bench-bb-r0.3`) mounted on a 3D-printed base plate (the "carrier"), so it is easy to build and move.
+Prove circuits on breadboards and sample boards before designing anything further.
+
+- **Parked:** every plan past step 1 (steps 1b, 2, 2c, 3 the PCB, 4 the enclosure, 5). Each parked
+  file or section carries a "Parked 2026-11-02" banner. Don't build from those parts or update them
+  to match step 1 changes.
+- **Change C** (the PA9 sensor load switch) is not part of step 1; `i2c_bus` power-cycling is a no-op.
+- **The base plate spec** is `hardware/base-plate/spec-r2.md`. It is written for the nurb CAD project at `~/Documents/nurb/board for weather/`, whose v1 tiles it revises, and it records the user's answers so far in its §7a. Its open items (§7) are what's left to settle before the rebuild.
+- **The parts for step 1** were ordered from DigiKey on 2026-11-02 (`docs/poc-shopping-list.md`,
+  "Purchasing status").
+
 ## 1. What this project is
 
 A home weather station.
@@ -103,7 +117,8 @@ flowchart LR
 
   - **State (2026-10-30): breadboard v2 is modelled and pending on the bench.** `wiring.toml` is at
     revision `bench-bb-r0.3` (change A: the power path and NUCLEO headers; change B: cups PB5, rain
-    PB4, approved 7.1 N2; change C: the PA9 sensor switch and the split QT bus), with its build sheet
+    PB4, approved 7.1 N2; change C: the split QT bus and the mode-B hour; *2026-11-02:* the PA9 sensor
+    switch is deferred to the carrier and r0.3 is redefined in place without it), with its build sheet
     and drawings regenerated. The bench itself still has the 2026-10-28/29 as-run topology: the pack in
     the charger's socket, so the shunt was bypassed and those runs' `ishunt` and charge counters are
     invalid (record D1, F5). Change A rebuilds it.
@@ -331,9 +346,10 @@ change on every regeneration, so that list names ends, not W-numbers).
 3. **Change B** (record 4.5; N2 approved, 7.1 N2): the cups jumper to CN9.5 (PB5), the rain jumper to
    CN8.4 (PB4), the node firmware built from the same commit, landing on the BOB-14021s prepared in
    step 4a; then exit 6 (100 counted pulses, 20 tips).
-4. **Change C** (record 4.6): the PA9 sensor switch from a breakout, the QT bus split into an
-   unswitched branch (power monitors) and a switched one (sensor hub), exit 9 (PA9 cycled 10 times)
-   and exit 10 (mode B for one hour on the CN6.4 entry).
+4. **Change C** (record 4.6): the QT bus split into a power-monitor branch and a sensor-hub branch,
+   both on the unswitched 3V3, and exit 10 (mode B for one hour on the CN6.4 entry). *2026-11-02:* the
+   PA9 sensor switch and exit 9 moved to the carrier (Clint's decision; record 4.6 dated note); PA9
+   is unconnected at steps 1 and 2.
 5. **Step 2 and H01.** The #196 shield and the Perma-Proto module board (the three phase-B INA228
    positions empty), the force harness moved unchanged. Then the version 6 release
    (`protocol-design.md` section 7: drain, WIPE, flash both boards, `init` a new run directory,

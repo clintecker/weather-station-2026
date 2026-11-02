@@ -62,10 +62,11 @@ int i2c_bus_submit(enum i2c_client c, uint8_t addr7, const uint8_t *tx, uint8_t 
 /* The completion of client c's transfer, from the main loop (a link-time seam, Power of Ten rule 9):
    the module layer defines it (App/wsmp_local.c). It may submit the next transfer. */
 void i2c_bus_done(enum i2c_client c, int rc);
-/* The sensor 3.3 V switch on PA9 (D9, CN5.2), 1 on: live from step 1 change C, through a load-switch
-   breakout on the breadboard (build-progression record section 4.6). The power monitors (INA228 0x40,
-   MAX17048) are on the unswitched QT branch, so a PA9 cycle never drops them. If exit criterion 9
-   fails, PA9 stays high and the switch waits for the mux (PORT-5). */
+/* The sensor 3.3 V switch on PA9 (D9, CN5.2; morpho CN10.19), 1 on. Carrier only: since 2026-11-02
+   change C's switch is deferred to the carrier (build-progression record section 4.6 dated note), so
+   on the breadboard and the protoboard PA9 is unconnected and driving it does nothing. On the carrier
+   it enables the ports' current-limited switches (PORT-5); the power monitors (INA228s, MAX17048) and
+   the SHTC3 are unswitched (PORT-9), so a PA9 cycle never drops them. */
 void i2c_bus_power(int on);
 /* The mux RESET line, active low on the TCA9548A (a link-time seam): asserted 1, released 0. The
    board defines it (App/board_inputs.c): PB14 (A4, CN8.5 / morpho CN7.36; build-progression record
@@ -86,6 +87,6 @@ uint16_t i2c_bus_mux_resets(void);   /* mux RESET pulses, the boot job's include
    from the main loop; the call clears both masks and never touches the bus. *acked: the client's own
    transfer completed with I2C_OK (a mux operation or a recovery never counts). *failed: its job ended
    with any other code. A client may be in both. TEST-SENSOR-POWER reads it at each PA9 edge (the
-   build-progression record, step 1 exit criterion 9). */
+   carrier's port power-cycle test, build-progression record step 3; step 1's exit 9 until 2026-11-02). */
 void i2c_bus_outcomes(uint16_t *acked, uint16_t *failed);
 #endif

@@ -64,9 +64,10 @@ class Rails:
         self.assertEqual(counters(lib)[:2], (0, 0))           # an absent part costs no recovery
 
     def test_pa9_cycles_drop_only_the_switched_sensors(self):
-        # Build-progression record, step 1 change C and exit criterion 9: PA9 low 10 times. The SHT45 on
-        # the switched branch drops off (a clean NACK) and is found again; the battery INA228 (0x40) and
-        # the MAX17048 (0x36), on the unswitched QT branch (PORT-9, M6), never NACK; the bus recovers.
+        # The carrier model (change C, deferred from step 1 to the carrier on 2026-11-02; record 4.6
+        # dated note, step 3): PA9 low 10 times. The SHT45 on a switched port drops off (a clean NACK)
+        # and is found again; the battery INA228 (0x40) and the MAX17048 (0x36), unswitched (PORT-9,
+        # M6), never NACK; the bus recovers.
         lib = fresh_station(self, self.library)
         lib.h_init()
         sht45 = lib.h_add_device(DEVK_SHT45, ADDR[SHT45])
@@ -97,7 +98,7 @@ class Rails:
         self.assertEqual(lib.h_power(), 1)
 
     def test_outcomes_name_the_clients_that_answered_and_failed(self):
-        # i2c_bus_outcomes (TEST-SENSOR-POWER's evidence, step 1 exit 9): a bit for each client whose own
+        # i2c_bus_outcomes (TEST-SENSOR-POWER's evidence, the carrier's port power cycle): a bit for each client whose own
         # transfer answered, and one for each whose job failed, since the previous call, which clears
         # them. A recover-only request is neither; the masks never touch the bus.
         lib = fresh_station(self, self.library)

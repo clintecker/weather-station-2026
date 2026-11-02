@@ -468,10 +468,10 @@
    "w": "W1"
   },
   {
-   "a": "A:L+31",
+   "a": "A:L+41",
    "a_at": "",
-   "b": "A:b34",
-   "b_at": "LSW.IN",
+   "b": "A:b41",
+   "b_at": "QT.V+",
    "kind": "jumper",
    "net": "3V3",
    "w": "W2"
@@ -495,22 +495,13 @@
    "w": "W4"
   },
   {
-   "a": "A:b35",
-   "a_at": "LSW.OUT",
-   "b": "A:b41",
-   "b_at": "QT.V+",
-   "kind": "jumper",
-   "net": "3V3_SW",
-   "w": "W5"
-  },
-  {
    "a": "A:L-46",
    "a_at": "",
    "b": "A:b46",
    "b_at": "QTM.GND",
    "kind": "jumper",
    "net": "GND",
-   "w": "W6"
+   "w": "W5"
   },
   {
    "a": "A:L-40",
@@ -519,16 +510,7 @@
    "b_at": "QT.GND",
    "kind": "jumper",
    "net": "GND",
-   "w": "W7"
-  },
-  {
-   "a": "A:c40",
-   "a_at": "QT.GND",
-   "b": "A:c36",
-   "b_at": "LSW.GND",
-   "kind": "jumper",
-   "net": "GND",
-   "w": "W8"
+   "w": "W6"
   },
   {
    "a": "A:L-20",
@@ -537,7 +519,7 @@
    "b_at": "BOBR.3, C_RAIN.2",
    "kind": "jumper",
    "net": "GND",
-   "w": "W9"
+   "w": "W7"
   },
   {
    "a": "A:c14",
@@ -546,7 +528,7 @@
    "b_at": "BOBW.3, C_CUPS.2",
    "kind": "jumper",
    "net": "GND",
-   "w": "W10"
+   "w": "W8"
   },
   {
    "a": "A:b5",
@@ -555,7 +537,7 @@
    "b_at": "BOBW.2",
    "kind": "jumper",
    "net": "GND",
-   "w": "W11"
+   "w": "W9"
   },
   {
    "a": "A:b43",
@@ -564,7 +546,7 @@
    "b_at": "QTM.SCL",
    "kind": "jumper",
    "net": "I2C_SCL",
-   "w": "W12"
+   "w": "W10"
   },
   {
    "a": "A:b42",
@@ -573,7 +555,7 @@
    "b_at": "QTM.SDA",
    "kind": "jumper",
    "net": "I2C_SDA",
-   "w": "W13"
+   "w": "W11"
   },
   {
    "a": "B:L-63",
@@ -582,7 +564,7 @@
    "b_at": "R6.2",
    "kind": "jumper",
    "net": "GND",
-   "w": "W14"
+   "w": "W12"
   },
   {
    "a": "B:d62",
@@ -591,7 +573,7 @@
    "b_at": "C_ISET.2, R_IPD.2",
    "kind": "jumper",
    "net": "GND",
-   "w": "W15"
+   "w": "W13"
   },
   {
    "a": "B:d16",
@@ -600,7 +582,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "GND",
-   "w": "W16"
+   "w": "W14"
   },
   {
    "a": "B:e57",
@@ -609,7 +591,7 @@
    "b_at": "R_ISER.1",
    "kind": "jumper",
    "net": "ISET_CHGR",
-   "w": "W17"
+   "w": "W15"
   },
   {
    "a": "B:b17",
@@ -619,17 +601,17 @@
    "id": "LK_REG_SHUNT",
    "kind": "link",
    "net": "REG_OUT",
-   "w": "W18"
+   "w": "W16"
   },
   {
-   "a": "A:e34",
-   "a_at": "LSW.IN",
+   "a": "A:e41",
+   "a_at": "QT.V+",
    "b": "NUCLEO CN6.4",
    "b_at": "",
    "id": "LK_3V3_CN6_4",
    "kind": "link",
    "net": "3V3",
-   "w": "W19"
+   "w": "W17"
   },
   {
    "a": "B:e54",
@@ -638,7 +620,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "CHG",
-   "w": "W20"
+   "w": "W18"
   },
   {
    "a": "A:d6",
@@ -647,7 +629,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "CUPS",
-   "w": "W21"
+   "w": "W19"
   },
   {
    "a": "A:e40",
@@ -657,7 +639,7 @@
    "id": "LK_QT_GND_CN6_6",
    "kind": "link",
    "net": "GND",
-   "w": "W22"
+   "w": "W20"
   },
   {
    "a": "A:e43",
@@ -666,7 +648,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "I2C_SCL",
-   "w": "W23"
+   "w": "W21"
   },
   {
    "a": "A:e42",
@@ -675,7 +657,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "I2C_SDA",
-   "w": "W24"
+   "w": "W22"
   },
   {
    "a": "B:j58",
@@ -684,7 +666,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "ISET",
-   "w": "W25"
+   "w": "W23"
   },
   {
    "a": "C:e36",
@@ -693,7 +675,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "OLED_CS",
-   "w": "W26"
+   "w": "W24"
   },
   {
    "a": "C:e25",
@@ -702,7 +684,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "OLED_DC",
-   "w": "W27"
+   "w": "W25"
   },
   {
    "a": "C:e29",
@@ -711,7 +693,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "OLED_DIN",
-   "w": "W28"
+   "w": "W26"
   },
   {
    "a": "C:e37",
@@ -720,7 +702,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "OLED_RST",
-   "w": "W29"
+   "w": "W27"
   },
   {
    "a": "C:e28",
@@ -729,7 +711,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "OLED_SCLK",
-   "w": "W30"
+   "w": "W28"
   },
   {
    "a": "B:e55",
@@ -738,7 +720,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "PGOOD",
-   "w": "W31"
+   "w": "W29"
   },
   {
    "a": "A:d15",
@@ -747,16 +729,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "RAIN",
-   "w": "W32"
-  },
-  {
-   "a": "A:e37",
-   "a_at": "LSW.EN",
-   "b": "NUCLEO CN5.2",
-   "b_at": "",
-   "kind": "jumper",
-   "net": "SENS_EN",
-   "w": "W33"
+   "w": "W30"
   },
   {
    "a": "A:e7",
@@ -765,7 +738,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "VANE",
-   "w": "W34"
+   "w": "W31"
   },
   {
    "a": "B:c61",
@@ -774,7 +747,7 @@
    "b_at": "",
    "kind": "jumper",
    "net": "VIN_SENSE",
-   "w": "W35"
+   "w": "W32"
   },
   {
    "a": "PACK.+",
@@ -923,8 +896,8 @@
   {
    "a": "B:c9",
    "a_at": "SHUNT.2",
-   "b": "A:c34",
-   "b_at": "LSW.IN",
+   "b": "A:c41",
+   "b_at": "QT.V+",
    "id": "L_REG_3V3",
    "kind": "lead",
    "net": "3V3"

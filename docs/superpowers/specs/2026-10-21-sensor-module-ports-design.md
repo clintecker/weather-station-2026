@@ -1,5 +1,7 @@
 # Sensor module ports: design
 
+> **Parked 2026-11-02.** Most of this design (cable test, base ports, RJ11 and RJ45 ports, migration) is past step 1. Still current, because the firmware and tests implement them: §4.3 (the mux firmware), §6.7 (module identity) and §6.9 (the module record). It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
+
 Status: design, adversarially reviewed in five rounds on 2026-10-22; approved by Clint for
 implementation. Not implemented. Nothing has been ordered.
 
@@ -22,9 +24,9 @@ rows dated 2026-10-30 in the table below are those amendments; each also has an 
 | WSMP-A1 | 58 bytes (a 78-byte plaintext less a 20-byte header) | **60 bytes** (the 80-byte per-build plaintext less 20) | section 6.7 descriptor-set fragments |
 | v1 base unit (2026-10-30) | OQ-14 open; a carrier under the NUCLEO recommended | **decided by Clint (BP 7.1 Q7)**: the v1 base board is a carrier under the NUCLEO-WL55JC1 on the morpho CN7/CN10 underside pins (BP N7, S4), carrying the four INA228s (0x40, 0x41, 0x45, 0x48), the MAX17048 (the carrier stays 1S3P, BP 7.1 Q3) and the SHTC3 upstream of the mux. Its layout waits for the underside pin length and clearance measured on a real NUCLEO (BP N7). *2026-10-30:* satisfied by Clint's fit test (BP 7.1 N7): a cut-down standard 2.54 mm female header took the morpho pins fully seated with no underside part touching, so a standard-height socket works; the layout waits only for the morpho grid from ST's drawing and the chassis outline | OQ-14 (section 11), section 12 |
 | Mux RESET pin (2026-10-30) | **TBD**, a free GPIO after the UM2592 check | **PB14** (A4, CN8.5 / morpho CN7.36), a direct GPIO, wired when the mux is (`WS_I2C_MUX` 1), after the shield's incoming check shows A4 not tied to SDA (BP N5). The firmware drives it through `i2c_bus_mux_reset_line` (`firmware/stage0-node/App/board_inputs.c`) | sections 4.1, 6.2, 12, 13.2 |
-| Breadboard at step 1 (2026-10-30) | "the breadboard itself does not change" | at step 1 (breadboard v2, BP section 3) power comes off the breadboard (BP P1), and change C adds the PA9 sensor load switch on board A and splits the QT bus into an unswitched monitor branch and a switched sensor branch (BP 4.6) | section 4.1 |
+| Breadboard at step 1 (2026-10-30) | "the breadboard itself does not change" | at step 1 (breadboard v2, BP section 3) power comes off the breadboard (BP P1), and change C ~~adds the PA9 sensor load switch on board A and~~ splits the QT bus into a monitor branch and a sensor branch (BP 4.6). *2026-11-02:* the PA9 switch is deferred to the carrier (Clint's decision, BP 4.6 dated note): both branches stay on the unswitched 3V3 at steps 1 and 2 | section 4.1 |
 | Breadboard pull-ups (2026-10-30) | keep the Adafruit boards' pull-ups; cutting is a v1 step | the INA228 #5832 has **no** pull-up cut jumper: its SDA and SCL pull-ups are one 10 kΩ resistor pack, kept and measured (BP section 1.4) | section 4.2 |
-| PORT-5 evidence (2026-10-30) | none | step 1 exit criterion 9 (BP section 3) records whether a switched sensor rail works without the mux; result pending the bench run | section 6.2 "Port power", PORT-5 |
+| PORT-5 evidence (2026-10-30) | none | step 1 exit criterion 9 (BP section 3) records whether a switched sensor rail works without the mux; result pending the bench run. *Superseded 2026-11-02:* exit 9 is removed from step 1; the evidence is the carrier's port power-cycle bench test (BP step 3) | section 6.2 "Port power", PORT-5 |
 
 This spec plans how sensors attach to the station, in three steps: the breadboard now, the v1
 production station (STEMMA QT sensor modules on RJ11 I2C ports), and a possible v2 (RS-485 over
@@ -197,7 +199,9 @@ flowchart LR
   mirroring PORT-9 for the monitors only: the bench's SHTC3 (and BMP581) stay on the hub, on the
   switched rail, where PORT-9 keeps the SHTC3 upstream and unswitched (BP 4.6 dated note: a bench
   difference, accepted; the carrier follows PORT-9). The mux still lives on the QT chain, off the
-  breadboard.
+  breadboard. *Amended 2026-11-02 (BP 4.6 dated note):* the PA9 load switch is deferred to the
+  carrier; on boards A (step 1) and the step 2 shield both QT branches take the unswitched 3V3 and
+  PA9 is unconnected. Port power switching (PORT-5) is first built and tested on the carrier.
 - **Mux RESET** (active low on the TCA9548A; check the PCA9548 board) goes to a free NUCLEO GPIO, so
   firmware can release a stuck channel (section 6.6). The pin is **TBD**: it must pass the UM2592
   checklist of the wiring guide (section 6 there), like every other pin. Until it is wired, the
@@ -476,6 +480,11 @@ flowchart LR
   *Amended 2026-10-30.* Evidence: step 1 exit criterion 9 (BP section 3) records whether a switched
   sensor rail works without the mux; result pending the bench run. If the switched rail is
   back-powered or the bus stalls, port power waits for the mux.
+  *Amended 2026-11-02:* exit 9 is removed from step 1 (the switch is deferred to the carrier, BP 4.6
+  dated note). The evidence comes from the carrier's bench test (BP step 3): PA9 off and on 10
+  times, the switched ports' sensors drop off and return, the unswitched monitors and SHTC3 answer
+  throughout, a switched rail reads ≤ 0.5 V with PA9 low (no back-powering), and bus recovery leaves
+  the bus working; plus H04a's shorted-port check.
 - **Mux RESET** goes straight to an MCU GPIO. The port enables can go to an upstream I/O expander if
   the MCU runs out of pins. The mux RESET cannot: it is what frees the upstream bus when a channel
   device holds SDA low, and an expander on a stuck bus cannot be reached.
@@ -1169,7 +1178,7 @@ flowchart TD
 | PORT-2 | Each sensor port has its own mux channel. One module per port |
 | PORT-3 | Pull-ups are on the base side only, at the value the cable test sets. Module boards have none |
 | PORT-4 | SDA and SCL have a series resistor (33–100 Ω) and a low-capacitance TVS at the jack |
-| PORT-5 | Port power is 3.3 V through a current-limited load switch that the firmware controls. *Amended 2026-10-30:* Evidence: step 1 exit criterion 9 (BP section 3) records whether a switched sensor rail works without the mux; result pending the bench run |
+| PORT-5 | Port power is 3.3 V through a current-limited load switch that the firmware controls. *Amended 2026-10-30:* Evidence: step 1 exit criterion 9 (BP section 3) records whether a switched sensor rail works without the mux; result pending the bench run. *Amended 2026-11-02:* the switch is deferred to the carrier (PA9, CN10.19); the evidence is the carrier's port power-cycle bench test (BP step 3) |
 | PORT-6 | Live plugging and unplugging never resets the station and never disturbs another port |
 | PORT-7 | An empty port is rescanned every 15 s. A module plugged into an empty port is in the readings within 120 s (about 111 s worst case, section 6.6), unless it is refused or quarantined (section 6.7); a moved module too, since its duplicate verdict checks the old port's holder |
 | PORT-8 | A stuck channel is recovered by the ladder of section 6.6. The upstream parts keep working throughout |

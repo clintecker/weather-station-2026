@@ -135,8 +135,9 @@ def c_function(source, signature, start=0):
 
 
 def sensor_power_problems(source, init):
-    """Problems with the PA9 sensor power drive of a bench firmware (build-progression record 4.6,
-    bench-bb-r0.3: the hub's QT V+ is 3V3_SW, so the SHT45 is powered only while PA9 is high): POWER_PIN is
+    """Problems with the PA9 sensor power drive of a bench firmware (build-progression record 4.6: on the
+    carrier PA9 switches the sensor ports, so a sensor is powered only while PA9 is high; on the breadboard,
+    since change C was deferred to the carrier on 2026-11-02, PA9 is unconnected and the drive is harmless): POWER_PIN is
     GPIO_PIN_9 on PA9; sensors_on() sets it high before it becomes a push-pull output, so it never pulses
     low; the init body `init` calls sensors_on() before its first bus access (bus_start, HAL_I2C_*); and
     nothing ever drives the pin low."""

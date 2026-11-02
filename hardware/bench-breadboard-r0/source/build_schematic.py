@@ -439,20 +439,15 @@ def qt_cable(s, w, ref, at, title, supply):
 
 
 def sensor_power(s, w):
-    """Change C (record 4.6, PORT-9): the load switch LSW from the unswitched 3V3 to 3V3_SW, enabled by
-    SENS_EN (PA9); the hub's cable QT on 3V3_SW; the power monitors' cable QTM on the unswitched 3V3."""
-    qt_cable(s, w, 'QT', (231.14, 45.72), 'STEMMA QT cable to the 5-port hub (switched)', '3V3_SW')
-    lsw = module(s, w, 'LSW', (294.64, 45.72), ['IN', 'EN', 'GND'], ['OUT'], 5.08, 'Sensor load switch (breakout)')
-    s.wire(lsw['IN'], right(lsw['IN'], -7.62))
-    s.power('3V3', right(lsw['IN'], -7.62), 90)
-    _label_out(s, lsw['EN'], 'SENS_EN', -10.16)
-    _ground(s, lsw['GND'], -7.62)
-    _label_out(s, lsw['OUT'], '3V3_SW', 10.16)
-    qt_cable(s, w, 'QTM', (350.52, 45.72), 'STEMMA QT cable to the power monitors (unswitched)', '3V3')
-    s.text('The power monitors (INA228 0x40, MAX17048 0x36) are on QTM, unswitched; the hub\'s sensors are on the '
-           'PA9-switched rail (PORT-9)', 226.06, 71.12)
+    """The I2C bus in two branches (record 4.6, PORT-9): the hub's cable QT and the power monitors' cable
+    QTM, both on the unswitched 3V3. Change C, the PA9 sensor load switch, is deferred to the carrier
+    board (record 4.6, 2026-11-02), so neither branch is switched and PA9 is unconnected here."""
+    qt_cable(s, w, 'QT', (231.14, 45.72), 'STEMMA QT cable to the 5-port hub', '3V3')
+    qt_cable(s, w, 'QTM', (350.52, 45.72), 'STEMMA QT cable to the power monitors', '3V3')
+    s.text('The power monitors (INA228 0x40, MAX17048 0x36) are on QTM; the hub\'s sensors on QT. Both unswitched: '
+           'the PA9 sensor switch is on the carrier board', 226.06, 71.12)
     s.text('The hub feeds the SHT45 (0x44), BMP581 (0x47), LTR390 (0x53) and SHTC3 (0x70), each on its own '
-           'STEMMA QT cable; LSW.EN is SENS_EN, PA9 = D9 CN5.2.', 226.06, 74.93)
+           'STEMMA QT cable.', 226.06, 74.93)
 
 
 def schematic(w):
@@ -509,8 +504,8 @@ def schematic(w):
     s.wire(node, right(b['4'], NODE))
     s.junction(right(b['4'], NODE))
 
-    # The I2C bus split (change C, record 4.6, PORT-9): the hub's cable on the PA9-switched 3V3_SW through
-    # the load switch LSW, the power monitors' cable QTM on the unswitched 3V3; I2C to PA11 and PA12.
+    # The I2C bus in two branches (record 4.6, PORT-9), both on the unswitched 3V3 (change C is deferred to
+    # the carrier, 2026-11-02); I2C to PA11 and PA12.
     sensor_power(s, w)
 
     power_chain(s, w)
