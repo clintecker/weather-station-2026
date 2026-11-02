@@ -20,7 +20,8 @@ INA228 shunt current with its sign turned once (battery_ma() below): + into the 
 (+ into VIN+). The dashboard uses battery_ma only from its --shunt-from moment, when the cell went
 through the shunt. The gain and the sign turn are change A's (packet version 4, BL_VERSION in bl_pkt.h): a
 version 3 or older packet (an old capture, an old TX) keeps its own meaning, iset_uv as the ISET pin and
-battery_ma empty, and tx_first_packet and tx_boot name the version.
+battery_ma empty, and tx_first_packet and tx_boot name the version. Every row records its packet's version
+(the version column), so a row's meaning never depends on when it was logged.
 
 The logger_start event records the constants, the hashes of the breadboard model (--model) and of the
 build-sheet.md beside its source directory, and the run's preflight status (--preflight, the notes holding
@@ -113,7 +114,7 @@ VIN_CLIP, ISET_CLIP = 0x40, 0x80
 COLUMNS = ('utc', 'local', 'rssi', 'snr', 'seq', 'gap', 'uptime_s', *(f for f, _ in FLAGS), 'charge_ma',
            'charge_min_ma', 'charge_max_ma', 'load_ma', 'vout_v', 'vcell_v', 'soc_pct', 'rate_pct_h',
            'temp_c', 'rh_pct', 'ina_die_c', 'ishunt_ma', 'battery_ma', 'samples', 'misses', 'vin_v',
-           'reset', 'boots', 'faults', 'fault_pc', *COUNTERS)
+           'reset', 'boots', 'faults', 'fault_pc', *COUNTERS, 'version')
 EVENT_COLUMNS = ('utc', 'local', 'event', 'detail')
 
 
@@ -162,7 +163,7 @@ def row(p, rssi, snr, gap, cal=CAL):
         return round(cal.k_iset * (uv / gain) / 1e6 / cal.r_iset_ohm * 1000, 2)
     now = datetime.datetime.now(datetime.timezone.utc)
     r = dict(utc=now.isoformat(timespec='seconds'), local=now.astimezone().strftime('%Y-%m-%d %H:%M:%S'),
-             rssi=rssi, snr=snr, seq=p['seq'], gap=gap, uptime_s=p['uptime_s'],
+             rssi=rssi, snr=snr, seq=p['seq'], gap=gap, uptime_s=p['uptime_s'], version=p['version'],
              samples=p['samples'], misses=p['misses'])
     for name, bit in FLAGS:
         r[name] = int(bool(p['flags'] & bit))
@@ -253,7 +254,7 @@ def ends_cut_off(path):
 def prepare_csv(path):
     """Makes `path` ready to append rows with COLUMNS; returns what it did ('' for nothing).
     - An older header (its columns all known) is rewritten to COLUMNS, keeping a copy as
-      <path>.before-<n>-columns. A row without battery_ma gets it from its ishunt_ma (backfill()).
+      <path>.before-<n>-columns. A version 4 row without battery_ma gets it from its ishunt_ma (backfill()).
     - A file with columns this logger does not know, or that cannot be rewritten, is moved aside to
       <path>.set-aside-<time> and a new CSV starts.
     - A last line cut off by an earlier failed write is ended, so the next row does not join onto it."""
@@ -292,10 +293,15 @@ def prepare_csv(path):
 
 
 def backfill(old):
-    """An older row with its battery_ma filled from its ishunt_ma, through the one sign turn (battery_ma()).
-    A blank or unreadable ishunt_ma leaves it blank. Whether the shunt was in the battery path at that
-    moment is the dashboard's --shunt-from, not this."""
-    if not old.get('battery_ma') and old.get('ishunt_ma'):
+    """An older row with its battery_ma filled from its ishunt_ma, through the one sign turn (battery_ma()),
+    only when the row says it came from a version 4 or later packet (change A's orientation). A row with no
+    version (logged before the column existed), an older version, or a blank or unreadable ishunt_ma is left
+    blank. Whether the shunt was in the battery path at that moment is the dashboard's --shunt-from, not this."""
+    try:
+        change_a = int(old.get('version') or 0) >= CHANGE_A_VERSION
+    except ValueError:
+        change_a = False
+    if change_a and not old.get('battery_ma') and old.get('ishunt_ma'):
         with contextlib.suppress(ValueError):
             old['battery_ma'] = battery_ma(float(old['ishunt_ma']))
     return old

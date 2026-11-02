@@ -70,41 +70,44 @@ flowchart LR
 | I2C hub | [Adafruit 5-port STEMMA QT hub #5625](https://www.adafruit.com/product/5625) | $2.50 | In stock |
 | STEMMA QT cables | [Adafruit #4210](https://www.adafruit.com/product/4210) (100 mm), [#4401](https://www.adafruit.com/product/4401) (200 mm) | $0.95, $1.25 | In stock |
 
-## Purchasing status (2026-10-30)
+## Purchasing status (2026-11-02)
 
-From DigiKey, as Clint reported it on 2026-10-30. "In cart" means in Clint's DigiKey cart, not yet
-confirmed submitted. Quantities are the quantities ordered or in the cart, not the rows' needs.
+From DigiKey: the cart Clint built on 2026-10-30 was ordered on 2026-11-02 (nothing was ordered before
+that date). Quantities are the quantities ordered, not the rows' needs.
 
 | Part | Qty | Status | Row it covers |
 |---|---:|---|---|
-| TI BQ25798EVM | 2 | **ordered** | step 2c (moved to step 1's list, 7.1 Q4) |
-| BusBoard BB830 | 5 | **ordered** | the conditional BB830 (record H2) |
-| 1 Ω 2 W resistor, CPF21R0000FKE36 | 10 | **ordered** | step 1, injection test |
-| 100 Ω ½ W resistor, MFR50SFTE52-100R | 30 | **ordered** | step 1b, the deliberate load step (exit g) |
-| 1 MΩ resistor, MFR-25FBF52-1M | 25 | in cart | step 1, ISET pull-down |
-| 0.1 µF ceramic capacitor, C320C104K5R5TA | 5 | in cart | step 1, ISET node (100 nF) |
-| Adafruit #1131 JST PH pigtail | 5 | in cart | step 1, the cut #1131 halves |
-| WAGO 222-413 (3-way) | 20 | in cart | step 1 and 1b lever connectors |
-| WAGO 222-415 (5-way) | 20 | in cart | step 1 and 1b lever connectors |
-| Adafruit #1311 hook-up wire | — | in cart | step 1, 22 AWG solid hook-up wire |
-| Adafruit #4209 | 5 | in cart | no row in this list names it |
-| 220 µF 16 V radial electrolytic, 2.5 mm pitch, Rubycon 16YXJ220MT16.3X11 | — | in cart | the bench OLED; no row in this list names it |
-| Adafruit INA228 #5832 | 4 | in cart | step 1b, the three extra INA228s |
-| Adafruit #368 female 2.1 mm DC jack to screw terminal | 5 | in cart | step 1b, the panel's plug into SOLAR_IN |
-| Adafruit #369 male 2.1 mm barrel plug to screw terminal | 4 | in cart | step 1b, the solar INA228 into the charger's DC jack |
-| Adafruit #4090 USB-C female breakout (5.1 kΩ CC resistors) + Adafruit #5978 USB-C male plug breakout | 1 each | **proposed, not ordered** | step 1b USB-C metering: no inline USB-C screw-terminal pair was found on DigiKey; both breakouts need soldering |
-| high-side load-switch breakout (change C) | 2 | **not yet sourced** | DigiKey had no matching high-side load-switch breakout with a current limit; the TPS22918EVM was the nearest and has no current limit. The part and the design are unchanged |
+| TI BQ25798EVM | 2 | **ordered 2026-11-02** | step 2c (moved to step 1's list, 7.1 Q4) |
+| BusBoard BB830 | 5 | **ordered 2026-11-02** | the conditional BB830 (record H2) |
+| 1 Ω 2 W resistor, CPF21R0000FKE36 | 10 | **ordered 2026-11-02** | step 1, injection test |
+| 100 Ω ½ W resistor, MFR50SFTE52-100R | 30 | **ordered 2026-11-02** | step 1b, the deliberate load step (exit g) |
+| 1 MΩ resistor, MFR-25FBF52-1M | 25 | **ordered 2026-11-02** | step 1, ISET pull-down |
+| 0.1 µF ceramic capacitor, C320C104K5R5TA | 5 | **ordered 2026-11-02** | step 1, ISET node (100 nF) |
+| Adafruit #1131 JST PH pigtail | 5 | **ordered 2026-11-02** | step 1, the cut #1131 halves |
+| WAGO 222-413 (3-way) | 20 | **ordered 2026-11-02** | step 1 and 1b lever connectors |
+| WAGO 222-415 (5-way) | 20 | **ordered 2026-11-02** | step 1 and 1b lever connectors |
+| Adafruit #1311 hook-up wire (6 × 25 ft) | 1 | **ordered 2026-11-02** | step 1, 22 AWG solid hook-up wire |
+| Adafruit #4209 STEMMA QT to male header cable | 5 | **ordered 2026-11-02** | the STEMMA QT to male header cables (step 2 shield, the QTM branch) and spares |
+| 220 µF 16 V radial electrolytic, 2.5 mm pitch, Rubycon 16YXJ220MT16.3X11 | 20 | **ordered 2026-11-02** | the bench OLED; no row in this list names it |
+| 220 µF 16 V radial electrolytic, Panasonic EEU-FC1C221 | 10 | **ordered 2026-11-02** | spare bulk capacitors |
+| Adafruit INA228 #5832 | 5 | **ordered 2026-11-02** | step 1b, the three extra INA228s, and spares |
+| Adafruit #368 female 2.1 mm DC jack to screw terminal | 5 | **ordered 2026-11-02** | step 1b, the panel's plug into SOLAR_IN |
+| Adafruit #369 male 2.1 mm barrel plug to screw terminal | 4 | **ordered 2026-11-02** | step 1b, the solar INA228 into the charger's DC jack |
+| Adafruit #4090 USB-C female breakout (5.1 kΩ CC resistors) + Adafruit #5978 USB-C male plug breakout | 5 each | **ordered 2026-11-02** | step 1b USB-C metering: no inline USB-C screw-terminal pair was found on DigiKey; both breakouts need soldering |
+| Wire stripper/cutter, 11057 | 1 | **ordered 2026-11-02** | tool |
+| high-side load-switch breakout (change C) | 0 | **not bought** | *2026-11-02:* change C moved to the carrier board (step 3); steps 1 and 2 have no sensor power switch, so no breakout is needed |
 
 A dash means the quantity was not recorded. The screw-terminal RJ11
-breakout is not bought (7.1 Q6), and the step 1b half-size breadboard is dropped from the list (2026-10-30). Step 1b still uses the small
-breadboard step 2 leaves on the plate (record S1); that it is an existing one is this workflow's reading.
+breakout is not bought (7.1 Q6), and no breadboard is bought for step 1b (2026-11-02): it uses one of the full-size breadboards already
+owned (three Elegoo, plus two spare BB830s), on the plate where step 2's soldered boards free a position
+(record S1).
 
 ## Build step 1: breadboard v2 (buy now)
 
 Step 1 keeps the signals on the breadboards ([`hardware/bench-breadboard-r0/README.md`](../hardware/bench-breadboard-r0/README.md))
 and takes every force current off them: pack, INA228 shunt, charger and load meet on JST PH pigtails and
 WAGO lever connectors (record section 4, change A). This is the record's "Buy now (step 1)" list (section 5).
-It has no prices or product numbers yet; none is verified (*2026-10-30:* the purchasing status above names the parts ordered or in the cart). Rows marked "skip if owned" are bought only
+It has no prices or product numbers yet; none is verified (*2026-10-30:* the purchasing status above names the parts in the cart). Rows marked "skip if owned" are bought only
 if the bench lacks them.
 
 | Qty | Item | Note |
@@ -137,7 +140,7 @@ if the bench lacks them.
 
 Not on this list, on purpose:
 
-- **BQ25798EVM:** already **ordered on 2026-10-30** (2 units from DigiKey, 7.1 Q4). Do not order it again. It is
+- **BQ25798EVM:** ordered 2026-11-02 (2 units, 7.1 Q4), listed under purchasing status above. It is
   used at step 2c; its two TS stand-in resistors are the last two rows above.
 - **A meter:** none is bought. The bench meter is a Fluke 87V (600 mV DC range, 0.01 mV in
   high-resolution mode), and the 38 mA screen and the 1 A checks read it directly (7.1 Q2). The shunt
@@ -182,7 +185,7 @@ record P10).
 | 22 AWG solid hook-up wire | as needed | every link between a WAGO, an INA228 screw terminal and an adapter's screw terminal | — | from the step 1 set; screw terminals take solid 22 AWG only (record P7); never breadboard strips |
 | [Adafruit 2.1 mm barrel plug to screw terminal #369](https://www.adafruit.com/product/369) | 1 | the solar INA228's VIN− into the charger's DC jack (X3, then its Schottky D4) | unverified | in DigiKey cart 2026-10-30 (4). Power-metering section 5.1, step 2 |
 | [Adafruit female 2.1 mm DC jack to screw terminal #368](https://www.adafruit.com/product/368) | 1 | takes the panel's 2.1 mm barrel plug (the panel lead is never cut) into SOLAR_IN and the solar INA228's VIN+ | unverified | in DigiKey cart 2026-10-30 (5). Replaces the female 3.5 × 1.1 mm adapter (2026-10-30: Clint swapped the panel's plug; record R-20 superseded). Power-metering section 5.1, step 1 |
-| Inline USB-C screw-terminal adapter pair (female and male) | 1 pair | the USB-C INA228 between the wall adapter's VBUS (female, into USB_IN) and a male USB-C plug into the charger's own USB-C (X2, then D2); GND female to male directly | unverified | model not chosen; confirm assembled and 5 V only. *2026-10-30:* no inline USB-C screw-terminal pair was found on DigiKey; **proposed, not ordered:** Adafruit #4090 (USB-C female breakout with 5.1 kΩ CC resistors) + Adafruit #5978 (USB-C male plug breakout), both need soldering. **5.1 kΩ Rd from CC1 and from CC2 to GND** on the female (sink) side, fitted if the adapter has none (without Rd a USB-C source never turns VBUS on); no USB PD; data pins unconnected |
+| Inline USB-C screw-terminal adapter pair (female and male) | 1 pair | the USB-C INA228 between the wall adapter's VBUS (female, into USB_IN) and a male USB-C plug into the charger's own USB-C (X2, then D2); GND female to male directly | unverified | model not chosen; confirm assembled and 5 V only. *2026-10-30:* no inline USB-C screw-terminal pair was found on DigiKey; **chosen, ordered 2026-11-02 (5 each):** Adafruit #4090 (USB-C female breakout with 5.1 kΩ CC resistors) + Adafruit #5978 (USB-C male plug breakout), both need soldering. **5.1 kΩ Rd from CC1 and from CC2 to GND** on the female (sink) side, fitted if the adapter has none (without Rd a USB-C source never turns VBUS on); no USB PD; data pins unconnected |
 | 5.1 kΩ resistor | 2 | the Rd pair on the female USB-C adapter, if it has none | unverified | |
 | 100 Ω ½ W resistor | 1 | the deliberate load step at LOAD (exit g): its other lead goes to STAR position 5 | unverified | |
 | 10 kΩ resistor and two clip leads | 1 | the back-feed test load across each idle source's adapter terminals (exit e) | unverified | skip if owned |
@@ -194,7 +197,7 @@ not on any list.
 
 ### Step 2c: BQ25798EVM (ordered)
 
-The BQ25798EVM was **ordered on 2026-10-30** (2 units, 7.1 Q4): do not buy it again. It is used at
+The BQ25798EVM was ordered on 2026-11-02 (2 units, 7.1 Q4), with the step 1 order: do not buy it again. It is used at
 step 2c on the step 2 harness. Its two TS stand-in resistors are bought now with step 1.
 
 ### Step 3: carrier PCB (do not buy yet)
@@ -209,7 +212,7 @@ cold-rated solar connector (chosen at the schematic).
 ### Conditional
 
 One powered USB hub only if the USB acceptance test H8(d) fails; one BusBoard BB830 only if signal
-strips fail repeatedly (record H2; *2026-10-30:* 5 ordered from DigiKey); WAGO 221-413/415, 0.25 mm² insulated ferrules and a ratchet crimper
+strips fail repeatedly (record H2; *2026-11-02:* 5 ordered from DigiKey); WAGO 221-413/415, 0.25 mm² insulated ferrules and a ratchet crimper
 only if WAGO's sheet does not cover 26 AWG on the 222 (record P7).
 
 ## Housing

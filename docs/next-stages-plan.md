@@ -18,8 +18,8 @@ the rail, monitor and address details are in [`hardware/power-metering.md`](hard
 **Amended 2026-10-30** by the build-progression decision record
 ([`superpowers/specs/2026-10-29-build-progression-decisions.md`](superpowers/specs/2026-10-29-build-progression-decisions.md), "the record") and Clint's survey answers in its section 7.1: the
 station is built in seven steps, mapped onto the stages in §1 "Build steps"; H01 runs first (Q8); the
-carrier (v1 base board) stays **1S3P** (Q3); the **BQ25798EVM was ordered on 2026-10-30, 2 units**
-(Q4), so the note "Nothing has been ordered" above no longer holds for it; the pack connector is
+carrier (v1 base board) stays **1S3P** (Q3); the **BQ25798EVM was ordered on 2026-11-02**, 2 units, with the step 1 order
+(Q4); the pack connector is
 XT60 from step 3 (record H6); v1 sensor ports are **RJ11** and RJ45 is the unscheduled v2 only
 (record H6, sensor-module-ports spec).
 
@@ -67,7 +67,7 @@ step's exit criteria are in record section 3; each step starts only after the pr
 | 1 | breadboard v2, no solder: force path on JST PH and WAGO, signals on the breadboard, NUCLEO on its Arduino headers (record section 4) | A (and mode B) | Stage 0 bench, with power phase A beside it (§1.1) | no PRD gate; the record's section 4.3 checklist gates step 2 |
 | 2 | #196 shield and Perma-Proto module board (phase-B INA228 positions empty); force harness unchanged | A | Stage 0 | **H01** (24 h); passing it opens Stage 1 |
 | 1b | three more INA228s on the step 2 plate's breadboard, same harness; after H01 (decided 2026-10-30, 7.1 Q8; module preparation allowed, 7.1 Q1) | B | Stage 1, power phase B | no PRD gate; four-rail exit (rails against the meter, 24 h balance, back-feed) |
-| 2c | BQ25798EVM on the step 2 harness, no solder (EVM ordered 2026-10-30, 7.1 Q4) | C | Stage 1, power phase C | the **H02 basis** (pack Ah and Wh within 5 % on the bench), profile C end to end |
+| 2c | BQ25798EVM on the step 2 harness, no solder (EVM ordered 2026-11-02, 7.1 Q4) | C | Stage 1, power phase C | the **H02 basis** (pack Ah and Wh within 5 % on the bench), profile C end to end |
 | 3 | carrier PCB under the NUCLEO on morpho (v1 base board; OQ-14 decided 2026-10-30, 7.1 Q7), 1S3P (7.1 Q3); connectors per record H6: XT60 for the pack, a cold-rated solar connector, a USB-C receptacle, RJ11 for the meters and the v1 sensor ports, no RJ45 | C | Stage 1 gates | **H02** and the **H03 bench items** (cold-charge inhibit, dawn recovery); H04a (record section 3) |
 | 4 | the carrier in the enclosure, outdoors | C | Stage 1 complete | **H03 proper** (168 h at −35 °C, 7-day deficit recovered in ≤ 3 solar days) |
 | 5 | custom STM32WL55 board | C | PRD Stage 4 | re-pass of steps 3 and 4 |
@@ -98,7 +98,7 @@ visible in the data of phases B and C ([`hardware/power-metering.md`](hardware/p
 |---|---|---|---|---|---|
 | **A** (current) | Adafruit bq24074 #4755: one VBUS input, 1.0 A ISET jumper, **R_ISET 1 kΩ** (0.89 A typ; KISET 890 A·Ω, I = 400 × V_ISET ÷ R_ISET), 4.2 V fixed | battery INA228 0x40 (shunt in the pack's + lead: pack → cut #1131 pigtail → WAGO CELL+ → INA228 shunt → WAGO BATT → charger BATT socket, record P3; its **VBUS sense lead** into its own position on the OUT connector, SJ1 open, record P5), MAX17048 0x36 with its red lead on the **CELL+ node** (minus unconnected, ground over STEMMA QT; record P4, P5, M4), SHT45 0x44; one WAGO STAR at pack − with one TIE to logic ground (record P4) | ISET → 10 kΩ → PB1 node (100 nF, 1 MΩ) → PB1 (ADC1_IN5, A0 CN8.1, record M2); charger VBUS through 20 kΩ (two 10 kΩ in series) over 10 kΩ → PA10 (ADC1_IN6, A2 CN8.3), VIN = 3 × the pin; **CHG → PB10 (D6 CN9.7; morpho alias CN10.25) and PGOOD → PB8 (D5 CN9.6; morpho alias CN10.27)**, internal pull-ups; VREFINT for VDDA. Step 1 lands every signal on the Arduino female headers and the mode-B supply at CN6.4 (record N3) | the CELL+ node (V), the battery path (I), OUT (V), the charger input after the sources join (V, source not identified), ISET, CHG, PGOOD | Proven on the bench with `firmware/benchlink` on 2026-10-28/29 **except the shunt in the battery path** (the cell sat in the charger's LIPO socket). The node firmware reads it from protocol version 6 on. *Amended 2026-10-30:* this row said R_ISET about 890 Ω, the VBUS jumper on OUT, the gauge Kelvin on the cell, and CHG CN10.25, PGOOD CN10.27. R_ISET 1 kΩ is adopted with change A, read by this workflow from 7.1 P3 ("change A as written"); it is confirmed by build-sheet check 2, and Clint is to confirm it (power design D4/D5). Change A (record 4.4, decided 2026-10-30, 7.1 P3) puts the shunt back in the battery path |
 | **B** (four rails) | bq24074, as phase A | phase A plus a load INA228 0x41 (OUT to the load), a solar INA228 0x45 and a USB-C INA228 0x48, each source monitor upstream of the point where the sources join: the breakout's own Schottky pair D2/D4, with EN2 high and EN1 low on the board (power-metering §5.1; an ideal-diode or power-mux stage only as the fallback if EN2 is low). The battery INA228's VBUS sense lead moves from OUT to CELL+ position 4 (build-progression record step 1b; *dated note 2026-10-30:* it was "stays on OUT", which the record and `power-metering.md` overrule); the firmware no longer reads it (the load INA228 owns the load voltage), and the host tools use it as a cross-check against the gauge | as phase A | the four rails (V and I each) plus the charger input (V) | Step 1b, after H01 (§1 "Build steps"). Its parts are not ordered yet; they are bought with the step 2 list (record section 5). The firmware's rail table and the host tests cover it now |
-| **C** (BQ25798) | TI BQ25798: VAC1 = solar, VAC2 = USB-C, its own ADC over I2C, MPPT. The wire format allows either order with phase B; the build runs B (step 1b) before C (step 2c), record S1 | with phase B's INA228s ("C+B") or without them ("C alone"; §1.2 says what fills each slot either way); the battery INA228 and the gauge stay | PB8 = BQ25798 /INT (open drain, active low, the same internal pull-up and pull-up rule); /CE strapped low, charging stopped and started over I2C; ISET, the divider and CHG go away, so **PB1, PA10 and PB10 are released** (power design §2 and §17, build-progression record N8; amended 2026-10-29: this cell said PB10 = STAT and PB1, PA10 reserved) | C+B: as phase B plus the charger's own VBUS, IBUS, VBAT, IBAT, TDIE, TS. C alone: the cell, the battery path, VSYS, VAC1, VAC2, VBUS, IBUS by active input | Step 2c, after H01 and 1b (§1 "Build steps"). The BQ25798EVM was ordered on 2026-10-30, 2 units (record 7.1 Q4); the driver is not written yet. Only the fill table is defined now (§1.3). *Amended 2026-10-30:* this cell said "Later; not ordered" |
+| **C** (BQ25798) | TI BQ25798: VAC1 = solar, VAC2 = USB-C, its own ADC over I2C, MPPT. The wire format allows either order with phase B; the build runs B (step 1b) before C (step 2c), record S1 | with phase B's INA228s ("C+B") or without them ("C alone"; §1.2 says what fills each slot either way); the battery INA228 and the gauge stay | PB8 = BQ25798 /INT (open drain, active low, the same internal pull-up and pull-up rule); /CE strapped low, charging stopped and started over I2C; ISET, the divider and CHG go away, so **PB1, PA10 and PB10 are released** (power design §2 and §17, build-progression record N8; amended 2026-10-29: this cell said PB10 = STAT and PB1, PA10 reserved) | C+B: as phase B plus the charger's own VBUS, IBUS, VBAT, IBAT, TDIE, TS. C alone: the cell, the battery path, VSYS, VAC1, VAC2, VBUS, IBUS by active input | Step 2c, after H01 and 1b (§1 "Build steps"). The BQ25798EVM was ordered 2026-11-02, 2 units, with the step 1 order (record 7.1 Q4); the driver is not written yet. Only the fill table is defined now (§1.3). *Amended 2026-10-30:* this cell said "Later; not ordered" |
 
 **The phase A wiring is the official design**, the same MCU pins on the bench and in the field. Its
 source is [`firmware/benchlink/README.md`](../firmware/benchlink/README.md#wiring), "Wiring"; the
@@ -170,7 +170,7 @@ Power design §3.3 and §6 have the layout.
 ### 1.3 Phase C: the BQ25798 for a 1S pack
 
 The rows below re-derive the earlier 4S BQ25798 plan for a 1S pack, two inputs, four rails and
-either order with phase B. The BQ25798EVM was ordered on 2026-10-30, 2 units (record 7.1 Q4), for
+either order with phase B. The BQ25798EVM was ordered 2026-11-02, 2 units, with the step 1 order (record 7.1 Q4), for
 step 2c, which follows step 1b (record S1); the BQ25798 driver is outside the power design (its §16).
 *Amended 2026-10-30:* this said "Nothing here is ordered" and allowed either order with phase B; the
 record fixes B (1b) before C (2c).
@@ -195,19 +195,19 @@ record fixes B (1b) before C (2c).
 | **STM32C0116-DK** (development kit for the module adapter's microcontroller) | One distributor snapshot showed a 99-week lead. Buy whatever stock appears | 2 |
 | ~~**Sealed RJ45 pair** (Amphenol RJF544: receptacle RJF54421 + plug RJF5446)~~ | 16-week lead (snapshot). *Amended 2026-10-30:* v1 sensor ports are RJ11 (sensor-module-ports spec; record H6: no RJ45 anywhere in v1). RJ45 is the unscheduled v2 only; do not order this pair for v1 | 2 |
 | **sglux ERYCA UV photodiode quote** (Boston Electronics) | Quote only. It is the one true-UV-index chip for a home-built sensor head (H07) | 3 |
-| BQ25798EVM, TPS62933EVM, TPS26624-25EVM | These TI evaluation modules (EVMs) showed 0 stock or 12-week leads in snapshots. **The BQ25798EVM was ordered on 2026-10-30, 2 units** (record 7.1 Q4), for step 2c (phase C); do not order it again. The TPS62933EVM is not needed for 1S3P (§3) | 1, 2 |
+| BQ25798EVM, TPS62933EVM, TPS26624-25EVM | These TI evaluation modules (EVMs) showed 0 stock or 12-week leads in snapshots. **The BQ25798EVM was ordered on 2026-11-02**, 2 units, with the step 1 order (record 7.1 Q4), for step 2c (phase C). The TPS62933EVM is not needed for 1S3P (§3) | 1, 2 |
 
 ## 3. Stage 1 bill of materials
 
 Phase A's parts are on the bench ([`poc-shopping-list.md`](poc-shopping-list.md), rows marked
 **Have**); phase B's and C's are listed there and in
 [`hardware/power-metering.md`](hardware/power-metering.md). Phase B's are not ordered yet; phase C's
-BQ25798EVM was ordered on 2026-10-30, 2 units (record 7.1 Q4). The rows below are the
+BQ25798EVM was ordered 2026-11-02, 2 units, with the step 1 order (record 7.1 Q4). The rows below are the
 earlier 4S plan, each restated for 1S3P where it changed.
 
 | Item | Part | Price | Notes |
 |---|---|---|---|
-| Charger evaluation (phase C, step 2c) | **TI BQ25798EVM** | ordered 2026-10-30, 2 units (record 7.1 Q4); ~$149–179 (not verified) | 1–4S, charger input (VBUS) 3.6–24 V operating / 30 V absolute maximum, 5 A charge, maximum power point tracking (MPPT), 16-bit ADC, two inputs (VAC1, VAC2). **It ships set for 2S. Set it for 1S before you connect the 1S3P pack** (the 4S plan named JP28 or JP29 as the cell-count jumper; check the 1S setting in the EVM user's guide). Configure it over I2C from the Nucleo board (TI's BQ Studio is Windows-only). *Superseded 2026-10-29:* "move the jumper to 4S" |
+| Charger evaluation (phase C, step 2c) | **TI BQ25798EVM** | ordered 2026-11-02, 2 units, with the step 1 order (record 7.1 Q4); ~$149–179 (not verified) | 1–4S, charger input (VBUS) 3.6–24 V operating / 30 V absolute maximum, 5 A charge, maximum power point tracking (MPPT), 16-bit ADC, two inputs (VAC1, VAC2). **It ships set for 2S. Set it for 1S before you connect the 1S3P pack** (the 4S plan named JP28 or JP29 as the cell-count jumper; check the 1S setting in the EVM user's guide). Configure it over I2C from the Nucleo board (TI's BQ Studio is Windows-only). *Superseded 2026-10-29:* "move the jumper to 4S" |
 | Charger (phases A and B) | **Adafruit bq24074 #4755** | have | 1S only, 4.2 V fixed, 1.0 A ISET jumper (1.5 A maximum), one VBUS input, no MPPT, no ADC. Its CHG, PGOOD and ISET go to the MCU (§1.1) |
 | Pack monitor | **Adafruit 5832** INA228 (or SparkFun SEN-31438 Qwiic) | $14.95 live (SparkFun) | Phase A: one at 0x40 (have). Phase B: three more at 0x41, 0x45 and 0x48 (power-metering §7). The INA228's ENERGY register is unsigned and uses its own VBUS (OUT), so the firmware integrates the battery energy from the signed CHARGE steps × VCELL (finding 5) |
 | Shunt | The Adafruit 5832's own shunt: 15 mΩ, 1 %, 2 W, 2512 (power-metering §2) | on the board | Full scale ±10.9 A at ADCRANGE 0; the firmware's 10 µA current step reads ±5.24 A. Offset at most ±1 µV ÷ 15 mΩ ≈ 0.07 mA, about 0.1 % of the ≈ 68 mA core load (0.25 W ÷ 3.7 V). Nominal; verified against a series reference, not measured (§7, power check 3). *Superseded 2026-10-29:* the Vishay WSK2512R0100BEA 10 mΩ Kelvin shunt and its ≈ 17 mA core load at 14.4 V |
@@ -224,7 +224,7 @@ earlier 4S plan, each restated for 1S3P where it changed.
 ≈ $420–450 plus the pack quote. Phase B's parts (three INA228s, the barrel-plug and USB-C screw-terminal adapters
 for the D2/D4 join, the 5.1 kΩ Rd pair) are priced in `poc-shopping-list.md` (unverified) and not
 ordered yet; they are bought with the step 2 list (record section 5). Phase C's BQ25798EVM was ordered
-on 2026-10-30, 2 units (record 7.1 Q4), and is used at step 2c.
+on 2026-11-02, 2 units (record 7.1 Q4), and is used at step 2c.
 
 ### Bench equipment for H02 and H03
 

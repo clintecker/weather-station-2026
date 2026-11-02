@@ -398,7 +398,7 @@ allowed (7.1 Q1). It is described here, after step 1, because it extends step 1'
 
 - **Built.** S2: the #196 shield (N6) and the full-size Perma-Proto module board, with the three
   phase-B INA228 positions unpopulated and unwired; the step 1 force harness moved unchanged to the
-  same plate; a small breadboard left on the plate for step 1b's boards (S1). Everything soldered here
+  same plate; an existing full-size breadboard left on the plate for step 1b's boards (S1; 2026-11-02: no half-size board is bought). Everything soldered here
   passed step 1 first; the PA9 switch is fitted only if step 1's exit 9 passed.
 - **Proves.** The soldered signal layer, mode B on the same CN6.4 entry proved in step 1, the 24 h
   H01 run.
@@ -787,10 +787,10 @@ Step 1b (bought with the step 2 list, so the parts are on hand when H01 passes; 
 | 3 | Adafruit INA228 #5832 | load 0x41, solar 0x45, USB-C 0x48 |
 | 1 | Adafruit #369 male 2.1 mm DC plug to screw terminal | solar into the charger's DC jack |
 | 1 | Adafruit #368 female 2.1 mm DC jack to screw-terminal adapter | takes the panel's 2.1 mm barrel plug into SOLAR_IN, so the panel lead is never cut. *2026-10-30:* replaces the female 3.5 × 1.1 mm adapter (R-20 superseded): Clint swapped the panel's plug for one that fits the charger's DC jack |
-| 1 pair | inline USB-C screw-terminal adapters: female with 5.1 kΩ Rd, male plug | model not chosen; confirm assembled and 5 V only. *2026-10-30:* no inline USB-C screw-terminal pair found on DigiKey; proposed, not ordered: Adafruit #4090 (USB-C female breakout with 5.1 kΩ CC resistors) + Adafruit #5978 (USB-C male plug breakout), both need soldering |
+| 1 pair | inline USB-C screw-terminal adapters: female with 5.1 kΩ Rd, male plug | model not chosen; confirm assembled and 5 V only. *2026-10-30:* no inline USB-C screw-terminal pair found on DigiKey; chosen instead: Adafruit #4090 (USB-C female breakout with 5.1 kΩ CC resistors) + Adafruit #5978 (USB-C male plug breakout), both need soldering; *2026-11-02:* ordered, 5 each |
 | 1 | 100 Ω ½ W resistor | the deliberate load step at LOAD (exit g) |
 | 1 | 10 kΩ resistor and two clip leads | the back-feed test load (exit e); skip if owned |
-| — | small breadboard (half size) | *dropped from this list 2026-10-30*: not bought. Step 2 leaves a small breadboard on the plate for step 1b's boards (S1, step 2); that it is an existing one is this workflow's reading |
+| — | small breadboard (half size) | *dropped from this list 2026-10-30*: not bought. *2026-11-02:* step 1b uses one of the full-size breadboards already owned (three Elegoo, two spare BB830s), on the plate (S1, step 2) |
 
 Step 2 (buy when step 1 exits):
 
@@ -802,8 +802,8 @@ Step 2 (buy when step 1 exits):
 | 1 | JST-XH 2.5 mm kit: pre-crimped leads, 2-, 5- and 6-pin housings and PCB headers | signal links only |
 | 2 | STEMMA QT to male header cable | soldered into the shield: unswitched branch (power monitors) and switched branch (hub) |
 
-Step 2c (EVM ordered 2026-10-30, Q4): BQ25798EVM: ordered 2026-10-30 (2 units, recorded in Clint's
-inventory), per 7.1 Q4; used at step 2c; do not buy again. Its TS stand-in resistors are on the step 1
+Step 2c (EVM ordered 2026-11-02, Q4): BQ25798EVM: 2 units, ordered 2026-11-02 with the step 1 order,
+per 7.1 Q4; used at step 2c; do not buy again. Its TS stand-in resistors are on the step 1
 list.
 
 Step 3 (do not buy yet): Vishay WSK2512R0100BEA × 4 plus spares; 2 × 19 2.54 mm female sockets × 2
@@ -821,10 +821,10 @@ pre-assembled screw shield for step 1, 0.1 % divider resistors, screw-terminal R
 BRK6P6C-S-FT; 7.1 Q6), a new meter (the Fluke 87V is owned; 7.1 Q2), a calibrated shunt or a DC clamp
 meter for the shunt checks (the 87V in series is the reference: M1 dated note).
 
-*Purchasing status (2026-10-30):* ordered from DigiKey: the 2 BQ25798EVMs (7.1 Q4), 5 BusBoard BB830,
-10 × 1 Ω 2 W (injection test) and 30 × 100 Ω ½ W. The rest of the step 1 and step 1b parts Clint has
-chosen are in his DigiKey cart, not yet confirmed submitted. The inline USB-C pair is proposed, not
-ordered, and change C's load-switch breakout is not yet sourced. `docs/poc-shopping-list.md`
+*Purchasing status (2026-11-02):* ordered from DigiKey on 2026-11-02 (nothing before): the 2 BQ25798EVMs
+(7.1 Q4), 5 BusBoard BB830, 10 × 1 Ω 2 W (injection test), 30 × 100 Ω ½ W and the rest of the step 1 and
+step 1b parts Clint chose, including the USB-C pair (5 × Adafruit #4090 and 5 × #5978). Change C's
+load-switch breakout is not bought: change C moved to the carrier (2026-11-02). `docs/poc-shopping-list.md`
 ("Purchasing status") holds the part numbers and quantities.
 
 ## 6. Cascade: what must change
@@ -921,10 +921,10 @@ commit at which Clint finished that change on the bench.
 | `README.md` (root) | line 202 "the anemometer input filter on PC0" → PB5 | N2 |
 | `docs/superpowers/plans/2026-10-18-wsmp-bench-station.md`, `docs/superpowers/plans/2026-10-19-bench-breadboard-wiring.md` | dated "superseded pins" note (history kept) | N2 |
 | `docs/superpowers/plans/2026-10-29-power-telemetry.md` | the deferred-rows paragraph (`:27–30`) and the fixed-decisions bullet (`:56–63`, "R_ISET about 890 Ω"): dated notes that N2 is approved (7.1 N2) and owned by change B, the M7 probe precedes H01, and R_ISET 1 kΩ and M2 are adopted with change A, read by this workflow from 7.1 P3 'change A as written'; R_ISET confirmed by build-sheet check 2; Clint to confirm (design D4/D5) | N2, M2, M7, section 1.4 |
-| `docs/next-stages-plan.md` | *dated note (2026-10-30):* the phase B row (`:100`): the battery INA228's VBUS sense lead moves from OUT to CELL+ position 4 at step 1b (it said the "VBUS jumper stays on OUT"); the step list 1, 2 (H01), 1b, 2c, 3, 4, 5 against Stages 0–4, decided 2026-10-30 (7.1 Q8): the Stage 1 gate in section 1 (the Stage 1 row at `:41` and the paragraph at `:45–50`: Stage 1 work follows H01) is kept, so 1b, the solar and USB-C rails, runs after H01; H02 basis at 2c, H02 and the bench H03 items at 3, H03 proper at 4; the BQ25798EVM ordered 2026-10-30 (7.1 Q4) and its place at 2c; carrier connectors per H6; the carrier stays 1S3P (7.1 Q3), with telemetry D1 (the pack is about half the PRD reserve) still open; rows that put RJ45 in Stage 2 get a dated note: v1 sensor ports are RJ11 (ports spec), RJ45 is v2 only | S1, S4, H6, 7.1 Q3, Q4, Q8 |
+| `docs/next-stages-plan.md` | *dated note (2026-10-30):* the phase B row (`:100`): the battery INA228's VBUS sense lead moves from OUT to CELL+ position 4 at step 1b (it said the "VBUS jumper stays on OUT"); the step list 1, 2 (H01), 1b, 2c, 3, 4, 5 against Stages 0–4, decided 2026-10-30 (7.1 Q8): the Stage 1 gate in section 1 (the Stage 1 row at `:41` and the paragraph at `:45–50`: Stage 1 work follows H01) is kept, so 1b, the solar and USB-C rails, runs after H01; H02 basis at 2c, H02 and the bench H03 items at 3, H03 proper at 4; the BQ25798EVM ordered 2026-11-02 (7.1 Q4) and its place at 2c; carrier connectors per H6; the carrier stays 1S3P (7.1 Q3), with telemetry D1 (the pack is about half the PRD reserve) still open; rows that put RJ45 in Stage 2 get a dated note: v1 sensor ports are RJ11 (ports spec), RJ45 is v2 only | S1, S4, H6, 7.1 Q3, Q4, Q8 |
 | `docs/radio-energy-policy.md` | `:88` "The carrier's cell count is open (build-progression record, Q3)" and `:96` "The build-progression record's Q3" → the carrier stays 1S3P, decided 2026-10-30 (7.1 Q3) | 7.1 Q3 |
 | `docs/CONTEXT-PACK.md` | section 2 (state: breadboard v2 not built yet, power off the breadboard), section 6 (next steps: model commit, change A, checks, change B, change C, step 2 and H01, then 1b, then 2c), section 7 (working rule: no current through a breadboard contact; prove before solder), section 8 (map: this record, power-metering.md, preflight tool) | all |
-| `docs/poc-shopping-list.md` | "Breadboard build" section (`:68`) replaced by section 5's step 1 list; later steps listed as later; the BQ25798EVM is ordered (2026-10-30, 7.1 Q4: do not buy); its TS stand-in resistors are bought now with step 1; no screw-terminal RJ11 breakout (7.1 Q6); the BOB-14021 jack and header pins soldered now as module preparation (7.1 Q6); no meter purchase (the Fluke 87V is owned, 7.1 Q2); the "JST PH 2-pin socket with short tails (a pigtail)" row (`:87`) replaced; line 43 (Voltaic P110): note its 3.5 × 1.1 mm plug and add the female adapter for step 1b; line 45 (S7V8F3) "Feeds the Nucleo's 3V3 pin (CN7.16)" → "feeds the NUCLEO's 3V3 at CN6.4 (steps 1 and 2) or CN7.16 (carrier)" | section 5, N3, P10, 7.1 Q2, Q4, Q6 |
+| `docs/poc-shopping-list.md` | "Breadboard build" section (`:68`) replaced by section 5's step 1 list; later steps listed as later; the BQ25798EVM is ordered (2026-11-02, 7.1 Q4: do not buy); its TS stand-in resistors are bought now with step 1; no screw-terminal RJ11 breakout (7.1 Q6); the BOB-14021 jack and header pins soldered now as module preparation (7.1 Q6); no meter purchase (the Fluke 87V is owned, 7.1 Q2); the "JST PH 2-pin socket with short tails (a pigtail)" row (`:87`) replaced; line 43 (Voltaic P110): note its 3.5 × 1.1 mm plug and add the female adapter for step 1b; line 45 (S7V8F3) "Feeds the Nucleo's 3V3 pin (CN7.16)" → "feeds the NUCLEO's 3V3 at CN6.4 (steps 1 and 2) or CN7.16 (carrier)" | section 5, N3, P10, 7.1 Q2, Q4, Q6 |
 | `docs/H01-checklist.md` | the Stage 0 gate wording (line 6) stays; H01 runs on step 2, before four-rail work (Q8, decided); preconditions: step 1 exit (including mode B on the CN6.4 entry), preflight pass including the 1 A spans, H8(d) passed, ws0 reopen deployed, counter link probe running | S1, H8, D6, 7.1 Q8 |
 | `docs/runbook-moving-boards.md` | the RX alone on a direct Mac port (7.1 Q5: both NUCLEOs were on one hub when the RX stalled); cable labels by ST-LINK serial; replug only the TX side | H8, 7.1 Q5 |
 | `docs/failure-modes.md` | rows: a contact fault at the pack plug or pack lead (upstream of every sense point: fools the SOC, invisible to PATH_CELL_OUT, caught by the VCELL step flag); a logic-supply return on a breadboard ground rail (the OLED case); force current through a breadboard contact; shunt bypassed by the charger socket; sense lead on the wrong node; a second ground tie; an open counter link; a silent USB port; the `:288` row ("INA228 VBUS jumper on the wrong net, or the gauge on OUT") updated: the gauge's red lead at CELL+ position 3, its minus insulated, ground over QT (P4, M4), and build-sheet check 8 per step 1 exit 5 | F1–F6, P4, M4 |
@@ -957,7 +957,7 @@ in the parent electronics directory, outside this repository.
 | Q1 | Is **INA228 module preparation** allowed before the protoboard: closing the A0/A1 solder jumpers on the three extra #5832 boards and the 0x48 rework wire from the ADDR1 pad to SDA? The #5832 has no address pins on its header (ADDR0/ADDR1 reach VCC only through those jumpers), so this is solder on the breakouts, though no circuit wiring | **no: wait for Clint.** Nothing is soldered on an unanswered question | yes: step 1b runs on the breadboard (after H01 by default, Q8), then the boards are soldered into the module board. No: the module board's phase-B positions stay unpopulated and unwired, 1b waits until Clint allows it (or until an INA228 breakout with address pins on its header is found), and 2c waits for 1b. 1b's proof never moves onto the soldered board | yes: module preparation allowed; 1b on the breadboard harness after H01 |
 | Q2 | Does your multimeter have a **200 mV range** (0.1 mV resolution)? | assume yes | no: the 38 mA screen (C6–C11) loses its resolution, so every joint check happens at 1 A, or buy a meter | Fluke 87V, 600 mV DC range, 0.01 mV in high-resolution mode; read directly; no meter bought |
 | Q3 | **Cell count for the carrier**: stay 1S3P (your telemetry decision) or move to the 4S4P of next-stages-plan? Tied to telemetry D1 (the pack is about half the PRD reserve) | none: step 3 layout waits | the supply, whether the MAX17048 survives, the fuse and connectors | 1S3P: the MAX17048 stays; fuse and connectors for the 1S path (H6) |
-| Q4 | Buy the **BQ25798EVM** now so it is on hand when step 2's H01 run ends, or after step 2 exits? | after step 1b exits | whether 2c can start the day H01 ends | buy now: ordered 2026-10-30 (2 units); do not buy again |
+| Q4 | Buy the **BQ25798EVM** now so it is on hand when step 2's H01 run ends, or after step 2 exits? | after step 1b exits | whether 2c can start the day H01 ends | buy now: ordered 2026-11-02 (2 units); do not buy again |
 | Q5 | Which **Mac USB ports and hubs** are on the bench, and which one was the RX on when it stalled? | RX on a direct port alone | H8's port plan | both NUCLEOs were on one hub; the RX goes alone on a direct Mac port; H8(a)–(b) confirmed, (f) stays |
 | Q6 | Are the **BOB-14021 breakouts already built** with their jacks and header pins? If not, may the jack and headers be soldered onto them as module preparation (H5)? | not built, and not allowed: two pre-assembled BiPOM BRK6P6C-S-FT are used for change B | whether change B needs the BiPOM fallback | not soldered yet; jack and header pins soldered now as module preparation (change A step 4a); no screw-terminal breakout |
 | Q7 | **Confirm OQ-14** (sensor-module-ports spec section 11): is the v1 base unit a carrier board under the NUCLEO, mating the morpho CN7/CN10 underside pins (N7, S4)? | none: step 3 layout waits; the ports spec records the carrier as "proposed" | the step 3 board, its connectors and the GPIO budget | yes: OQ-14 decided; layout waits for the measured underside pin length and clearance (N7) |

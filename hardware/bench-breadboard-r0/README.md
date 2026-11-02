@@ -224,7 +224,7 @@ these deviations are recorded here, not in that baseline.
 
 The step 1 list is the build-progression record's section 5, "Buy now (step 1)". Against it:
 
-- the BQ25798EVM is already ordered (2026-10-30, 2 units; record 7.1 Q4): do not buy it again; it is
+- the BQ25798EVM is already ordered (2026-11-02, 2 units; record 7.1 Q4): do not buy it again; it is
   used at step 2c;
 - its TS stand-in resistors (10 kΩ 1 % and about 39 kΩ 1 %) are bought now, with step 1;
 - no meter is bought: the Fluke 87V is owned (record 7.1 Q2);

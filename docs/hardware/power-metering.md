@@ -25,7 +25,7 @@ Sources read for this page (all as text, never executed):
 |---|---|---|---|
 | **A** | Adafruit bq24074 #4755, one input (VBUS) | battery INA228 0x40, MAX17048 0x36 on CELL+ | steps **1** (breadboard v2; change A rebuilds the battery path per record P3, "yes, change A as written", 7.1) and **2** (protoboard, where H01 runs). The battery shunt is not yet proven at 1 A (spec section 2, exit criteria 3 and 4) |
 | **B** (four rails) | bq24074 | phase A plus load INA228 0x41, solar INA228 0x45, USB-C INA228 0x48 | step **1b**, after H01, on the step 2 plate (7.1 Q8). The INA228 module preparation it needs (A0/A1 jumpers, the 0x48 wire from ADDR1 to SDA) is allowed (7.1 Q1) |
-| **C** (BQ25798) | TI BQ25798: VAC1 = solar, VAC2 = USB-C, its own ADC | with phase B's INA228s ("C+B") or without them ("C alone") | step **2c** (the BQ25798EVM on the step 2 harness) and steps 3-5 after it. The BQ25798EVM was ordered 2026-10-30 (7.1 Q4) |
+| **C** (BQ25798) | TI BQ25798: VAC1 = solar, VAC2 = USB-C, its own ADC | with phase B's INA228s ("C+B") or without them ("C alone") | step **2c** (the BQ25798EVM on the step 2 harness) and steps 3-5 after it. The BQ25798EVM was ordered 2026-11-02 with the step 1 order (7.1 Q4) |
 
 Phase B comes before phase C (record S1, S3): the build order is 1 → 2 (H01) → 1b → 2c → 3 → 4 → 5
 (7.1 Q8). The pack is 1S3P in every phase (7.1 Q3): three 2,200 mAh Li-ion cells in parallel,

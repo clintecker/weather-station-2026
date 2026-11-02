@@ -582,7 +582,7 @@ class PrepareCsv(Base):
             return list(csv.DictReader(f))
 
     def test_older_header_is_rewritten_and_kept(self):
-        old = LOG.COLUMNS[:-7]
+        old = LOG.COLUMNS[:-8]   # before reset ... version
         self.write(old, ['1'] * len(old))
         did = LOG.prepare_csv(self.out)
         self.assertIn('older header rewritten', did)
@@ -594,14 +594,32 @@ class PrepareCsv(Base):
 
     def test_an_older_header_gets_battery_ma_from_its_shunt_current(self):
         old = [c for c in LOG.COLUMNS if c != 'battery_ma']
-        cells = lambda ishunt: [ishunt if c == 'ishunt_ma' else '1' for c in old]
+        cells = lambda ishunt, v='4': [ishunt if c == 'ishunt_ma' else v if c == 'version' else '1' for c in old]
         self.write(old, cells('12.5'), cells(''), cells('x'))
         LOG.prepare_csv(self.out)
         self.assertEqual([r['battery_ma'] for r in self.read()], ['-12.5', '', ''])   # blank or unreadable: blank
         self.assertEqual([r['ishunt_ma'] for r in self.read()], ['12.5', '', 'x'])     # the raw column is kept
 
+    def test_only_a_version_4_row_gets_battery_ma(self):
+        """A row from a version 3 packet, or from before the version column, keeps battery_ma blank: its
+        shunt was not in change A's orientation, or nothing says it was."""
+        old = [c for c in LOG.COLUMNS if c != 'battery_ma']
+        cells = lambda v: ['12.5' if c == 'ishunt_ma' else v if c == 'version' else '1' for c in old]
+        self.write(old, cells('4'), cells('3'), cells(''), cells('x'))
+        LOG.prepare_csv(self.out)
+        self.assertEqual([r['battery_ma'] for r in self.read()], ['-12.5', '', '', ''])
+        no_version = [c for c in old if c != 'version']
+        self.write(no_version, ['12.5' if c == 'ishunt_ma' else '1' for c in no_version])
+        LOG.prepare_csv(self.out)
+        self.assertEqual([(r['version'], r['battery_ma']) for r in self.read()], [('', '')])
+
+    def test_every_row_records_its_packet_version(self):
+        for version in (3, 4):
+            r = LOG.row(dict(version=version, flags=0, seq=1, uptime_s=2, samples=0, misses=0), -45, 12, 0)
+            self.assertEqual(r['version'], version)
+
     def test_a_row_wider_than_its_header_is_trimmed(self):
-        old = LOG.COLUMNS[:-7]
+        old = LOG.COLUMNS[:-8]   # before reset ... version
         self.write(old, ['1'] * (len(old) + 2))
         LOG.prepare_csv(self.out)
         self.assertEqual(self.read()[0]['seq'], '1')
@@ -687,7 +705,8 @@ class Start(Base):
             'utc', 'local', 'rssi', 'snr', 'seq', 'gap', 'uptime_s', 'ina', 'gauge', 'sht', 'pgood', 'chg', 'adc',
             'charge_ma', 'charge_min_ma', 'charge_max_ma', 'load_ma', 'vout_v', 'vcell_v', 'soc_pct',
             'rate_pct_h', 'temp_c', 'rh_pct', 'ina_die_c', 'ishunt_ma', 'battery_ma', 'samples', 'misses',
-            'vin_v', 'reset', 'boots', 'faults', 'fault_pc', 'tx_timeouts', 'i2c_restarts', 'i2c_unsticks'))
+            'vin_v', 'reset', 'boots', 'faults', 'fault_pc', 'tx_timeouts', 'i2c_restarts', 'i2c_unsticks',
+            'version'))
         with open(self.out, 'w', newline='') as f:
             csv.writer(f).writerow(LOG.COLUMNS)
         self.start()
