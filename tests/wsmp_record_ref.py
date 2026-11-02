@@ -1,5 +1,5 @@
 """Reference computations for the module record v1.0, its calibration and the rounding helper, written
-from docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md sections 6.7 and 6.9, independent
+from docs/firmware-current-design.md sections 6.7 and 6.9, independent
 of firmware/common/wsmp.c, wsmp_cal.c and ws_round.h.
 
 Integer arithmetic only: Python's // is floor division, so div_round is the spec's formula as written.

@@ -192,7 +192,7 @@
 ### Task 6: Schematic, renders, build sheet, README
 
 **Files:**
-- Create: `hardware/bench-breadboard-r0/source/build_schematic.py` (repo Python, writes KiCad S-expression text as `chicago-test-hardware-r0/source/build_schematic.py` does)
+- Create: `hardware/bench-breadboard-r0/source/build_schematic.py` (repo Python, writes KiCad S-expression text directly)
 - Create: `hardware/bench-breadboard-r0/source/render.py` (Pillow)
 - Modify: `hardware/bench-breadboard-r0/source/make.py` (`all` also writes the schematic, its PDF, the renders and the build sheet)
 - Create (generated): `bench-breadboard.kicad_sch`, `renders/board-a.png`, `renders/board-b.png`, `renders/schematic.pdf`, `build-sheet.md`

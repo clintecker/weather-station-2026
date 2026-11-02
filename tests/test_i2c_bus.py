@@ -64,8 +64,8 @@ class Rails:
         self.assertEqual(counters(lib)[:2], (0, 0))           # an absent part costs no recovery
 
     def test_pa9_cycles_drop_only_the_switched_sensors(self):
-        # The carrier model (change C, deferred from step 1 to the carrier on 2026-11-02; record 4.6
-        # dated note, step 3): PA9 low 10 times. The SHT45 on a switched port drops off (a clean NACK)
+        # The per-port power model (change C, not part of the breadboard build since 2026-11-02; record
+        # 4.6 dated note): PA9 low 10 times. The SHT45 on a switched port drops off (a clean NACK)
         # and is found again; the battery INA228 (0x40) and the MAX17048 (0x36), unswitched (PORT-9,
         # M6), never NACK; the bus recovers.
         lib = fresh_station(self, self.library)
@@ -98,7 +98,7 @@ class Rails:
         self.assertEqual(lib.h_power(), 1)
 
     def test_outcomes_name_the_clients_that_answered_and_failed(self):
-        # i2c_bus_outcomes (TEST-SENSOR-POWER's evidence, the carrier's port power cycle): a bit for each client whose own
+        # i2c_bus_outcomes (TEST-SENSOR-POWER's evidence, the port power cycle): a bit for each client whose own
         # transfer answered, and one for each whose job failed, since the previous call, which clears
         # them. A recover-only request is neither; the masks never touch the bus.
         lib = fresh_station(self, self.library)
@@ -129,7 +129,7 @@ class Rails:
         lib.h_advance(100)
         self.assertEqual(outcomes(), (0, 1 << SHT45))
         lib.i2c_bus_power(1)
-CHANNEL = {SHT45: 0, LTR390: 1, BMP581: 2}           # the static channel map (ports design, section 4.1)
+CHANNEL = {SHT45: 0, LTR390: 1, BMP581: 2}           # the static channel map (firmware-current-design.md, section 4.1)
 
 
 @needs_cc

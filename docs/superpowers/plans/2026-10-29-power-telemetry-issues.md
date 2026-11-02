@@ -4,7 +4,7 @@ This catalog lists every known issue caused by the power decision of 2026-10-29:
 2200 mAh cells, 6600 mAh) on the Adafruit bq24074 charger in phase A, the proven bench breadboard wiring
 becoming the official design (ISET on PB1, the charger input divider on PA10, CHG on PB10, PGOOD on PB8,
 the INA228 at 0x40 with its shunt in the battery path and VBUS on OUT, the MAX17048 at 0x36 on the cell),
-four metered rails (battery, solar, USB-C, load) as the final goal, the BQ25798 in a later phase, and a
+four metered rails (battery, solar, USB-C, load) as the final goal, and a
 source-agnostic place in the wire protocol for all power data now. The decision cascades through the
 protocol, the WSMP registry, the node firmware, the gateway, the tests, the breadboard model, the bench
 tools and the documents and plans.
@@ -14,30 +14,33 @@ tools and the documents and plans.
 
 Batches `B01`-`B34` are the plan's work batches. Batches `X1`-`X4` are completeness passes that searched
 every layer for drift left after the batches and fixed what they found (issues `PT-X01`-`PT-X45`).
+Rows that concerned only material removed on 2026-11-02 (the later charger phase, the enclosure, the
+old sensor-interface PCB, the stage plan, the later-stage designs and the firmware-update study) were
+dropped from this catalog then; git history has them.
 
 ## Summary
 
-199 issues: 197 resolved, 2 unresolved.
+187 issues: 185 resolved, 2 unresolved.
 
 | Layer | Resolved | Unresolved | Total |
 |---|---:|---:|---:|
-| protocol | 12 | 0 | 12 |
-| wsmp | 10 | 0 | 10 |
+| protocol | 10 | 0 | 10 |
+| wsmp | 9 | 0 | 9 |
 | firmware | 36 | 1 | 37 |
 | gateway | 13 | 0 | 13 |
 | tests | 20 | 0 | 20 |
-| hardware | 27 | 1 | 28 |
-| bench | 5 | 0 | 5 |
+| hardware | 25 | 1 | 26 |
+| bench | 4 | 0 | 4 |
 | docs | 7 | 0 | 7 |
-| plans | 22 | 0 | 22 |
-| completeness | 45 | 0 | 45 |
-| **all** | **197** | **2** | **199** |
+| plans | 19 | 0 | 19 |
+| completeness | 42 | 0 | 42 |
+| **all** | **185** | **2** | **187** |
 
 | Severity | Resolved | Unresolved | Total |
 |---|---:|---:|---:|
-| blocker | 22 | 0 | 22 |
-| major | 95 | 2 | 97 |
-| minor | 80 | 0 | 80 |
+| blocker | 21 | 0 | 21 |
+| major | 88 | 2 | 90 |
+| minor | 76 | 0 | 76 |
 
 ## Issues
 
@@ -48,7 +51,6 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 |---|---|---|---|---|---|---|
 | PT-001 | protocol | blocker | The observation catalog has no room for the four rails (6 free bits for 7 new values) | B01 | resolved | B01 |
 | PT-002 | protocol | major | WS_FIELDS_DEFINED is undefined behaviour at 32 fields and C/Python could drift | B01 | resolved | B01 |
-| PT-003 | protocol | major | Battery current field 12 range (+-3.27 A at 0.1 mA) is too narrow for the BQ25798 phase | B01 | resolved | B01 |
 | PT-004 | protocol | blocker | The journal's 24 h floor is computed from every catalog field and fails above 80 B | B01 | resolved | B01 |
 | PT-005 | tests | minor | test_obs's 'reserved bitmap bit' case uses bit 21, a defined field | B01 | resolved | B01 |
 | PT-006 | protocol | major | Field 11 and fields 13-16 are defined as battery values but v5 builds fill them from OUT | B01 | resolved | B01 |
@@ -71,7 +73,7 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | PT-023 | protocol | blocker | The 32-byte health report has no room for the slow power and diagnostic items | B07 | resolved | B07 |
 | PT-024 | protocol | major | A format change under version 5 would make a stale gateway NACK and the node abandon records | B07 | resolved | B07 |
 | PT-025 | gateway | major | Every health-report producer and consumer depends on DIAG tuple order | B07 | resolved | B07 |
-| PT-026 | protocol | minor | No slot for several INA228 die temperatures, pack temperature or the BQ25798 cross-check values | B07 | resolved | B07 |
+| PT-026 | protocol | minor | No slot for several INA228 die temperatures or the pack temperature | B07 | resolved | B07 |
 | PT-027 | tests | major | Host device models lack the registers, instances and shunt physics the new acquisition reads | B08 | resolved | B08 |
 | PT-028 | hardware | major | wiring.py cannot place CN8 and the flying-wire lanes overflow with two more jumpers | B09 | resolved | B09 |
 | PT-029 | hardware | major | check_firmware cannot check ADC pins, misreads trailing comments and never checks benchlink | B09 | resolved | B09 |
@@ -140,12 +142,10 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | PT-092 | plans | blocker | The 1S3P pack (~24.4 Wh) is below the PRD reserve the energy policy uses (>= 50.4 Wh) | B27 | resolved | B27 |
 | PT-093 | docs | major | radio-energy-policy.md inputs, kind-4 question and airtime tables are stale | B27 | resolved | B27 |
 | PT-094 | docs | major | failure-modes.md has stale power context and no power-telemetry failure rows | B27 | resolved | B27 |
-| PT-095 | plans | blocker | No document names the power phases (A bq24074, B four rails, C BQ25798) | B28 | resolved | B28 |
+| PT-095 | plans | blocker | No document names the power phases (A bq24074, B four rails) | B28 | resolved | B28 |
 | PT-096 | plans | blocker | Stage-order text says power work waits for H01 | B28 | resolved | B28 |
-| PT-097 | plans | blocker | next-stages-plan.md still plans the 4S4P Molicel pack | B28 | resolved | B28 |
 | PT-098 | plans | blocker | The four-rail goal and per-phase coverage are recorded in no plan | B28 | resolved | B28 |
 | PT-099 | plans | major | The USB-C role (bench and backup only, never with solar) is not recorded | B28 | resolved | B28 |
-| PT-100 | plans | major | BQ25798 phase details are not re-derived for 1S, dual input, four rails and either order | B28 | resolved | B28 |
 | PT-101 | plans | minor | Open checks lack the phase A calibration items | B28 | resolved | B28 |
 | PT-102 | plans | major | H01 checklist does not cover the power release | B28 | resolved | B28 |
 | PT-103 | plans | major | CONTEXT-PACK.md does not reflect phase A, the benchlink proof or the power steps | B28 | resolved | B28 |
@@ -154,14 +154,10 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | PT-106 | hardware | major | The wiring guide lacks the official power chain, analog notes, checklist items, pin budget and bench checks | B29 | resolved | B29 |
 | PT-107 | hardware | minor | The bring-up log has no record of the proven power wiring | B29 | resolved | B29 |
 | PT-108 | plans | major | The shopping list has one INA228, no address plan, 4-cell wording and missing divider parts | B29 | resolved | B29 |
-| PT-109 | bench | major | No documented boundary of what moves from the bench to the field, and no acceptance drill | B30 | resolved | B30 |
 | PT-110 | bench | minor | i2cscan docs and OLED describe VBUS as the cell | B30 | resolved | B30 |
-| PT-111 | hardware | minor | chicago-test-hardware-r0 assumes a 4S pack | B30 | resolved | B30 |
-| PT-112 | hardware | minor | poc-enclosure-r1 has no room or entries for the official power design | B30 | resolved | B30 |
 | PT-113 | plans | major | Protocol version sequencing with the planned time-sync version 6 is unrecorded | B31 | resolved | B31 |
 | PT-114 | plans | major | WSMP bench-station spec omits ISET/VIN, the pin limits and the bench lessons; its map and battery-channel notes are stale | B31 | resolved | B31 |
 | PT-115 | plans | major | Bench breadboard spec leaves out ISET, the divider and their firmware check | B31 | resolved | B31 |
-| PT-116 | wsmp | major | The ports spec has one 'battery and charger' port, one upstream INA228 and no address plan for four | B31 | resolved | B31 |
 | PT-117 | plans | major | No implementation plan exists for the power telemetry work; older plans are stale | B32 | resolved | B32 |
 | PT-118 | plans | major | Firmware budget lacks per-phase power estimates and the measured impact | B33 | resolved | B33 |
 | PT-119 | plans | major | stage0-node README describes the old power module, field set and energy state | B33 | resolved | B33 |
@@ -170,12 +166,10 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | PT-122 | tests | minor | Test, tool and Power of Ten docs are stale | B34 | resolved | B34 |
 | PT-123 | gateway | major | Health key 'charger_input_mv' collided with observation field 28 in the API and Home Assistant | B13 | resolved | B13 |
 | PT-124 | firmware | major | An absent power module would turn dead hardware into 'not measured' | B18 | resolved | B18 |
-| PT-125 | protocol | major | Phase C assumed phase B's monitors and BQ25798 IBUS could not be attributed to a rail | B07 | resolved | B07 |
 | PT-126 | protocol | minor | Current range stated as +-32,766 mA while the codec range is -32,768 to +32,766 | B01 | resolved | B01 |
 | PT-127 | firmware | minor | Clipping rule missed partially clipped oversampled values; full scale assumed VDDA = 3.3 V | B15 | resolved | B15 |
 | PT-128 | firmware | minor | Battery energy counters silently undercount when no fresh battery voltage exists | B15 | resolved | B15 |
 | PT-129 | firmware | minor | Health airtime reserve must saturate; the CONSERVE exception happens once per health report | B23 | resolved | B23 |
-| PT-130 | plans | minor | The per-build ceiling rises to a 96 B frame but the sixteen-stations slot table is sized for 94 B | B31 | resolved | B31 |
 | PT-131 | wsmp | minor | 'Not fitted' is indistinguishable from missing on the WSMP radio quality | B26 | resolved | B26 |
 | PT-132 | protocol | minor | Health report reserved bits (byte 51, stage 7, active input 3) had no decode rule | B07 | resolved | B07 |
 | PT-133 | firmware | minor | Phase A charger-reported charge current was ambiguous when PGOOD is deasserted | B15 | resolved | B15 |
@@ -203,7 +197,6 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | PT-X01 | completeness | major | The build-progression decision record's required amendments to the power spec were never applied, so the two design documents still contradict each other | X1 | resolved | X1 |
 | PT-X02 | completeness | minor | protocol.md and the design still describe the bq24074 TMR pin as floating and a safety-timer fault as expected, but the hardware model says TMR is tied to GND | X1 | resolved | X1 |
 | PT-X03 | completeness | minor | USB-C INA228 at 0x48 is fixed in firmware while the I2C hold-time requirement for an SDA-strapped address is unresolved | X1 | resolved | X1 |
-| PT-X04 | completeness | minor | docs/lora-firmware-update-study.md still claims protocol version 6 for the firmware-update kinds | X1 | resolved | X1 |
 | PT-X05 | completeness | minor | docs/firmware-event-model.md is not updated: the 'How we know' table and TxTimeout row miss the power harness, the fault tests and the new counters | X1 | resolved | X1 |
 | PT-X06 | completeness | minor | docs/runbook-moving-boards.md has no procedure for the version 6 format change or the journal slot-size change | X1 | resolved | X1 |
 | PT-X07 | completeness | minor | Home Assistant health-report entities never go stale: a dead node's SOC and charger state stay 'available' indefinitely | X1 | resolved | X1 |
@@ -212,7 +205,6 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | PT-X10 | completeness | major | Health-report none codes mix up 'not measured in this phase' and 'fitted part failed'; the dashboard calls a dead gauge 'not measured by this build' | X1 | resolved | X1 |
 | PT-X11 | completeness | minor | Phase A advertises seven Home Assistant entities that stay unavailable forever | X1 | resolved | X1 |
 | PT-X12 | completeness | minor | Thinning the health history can drop charger_stage changes | X1 | resolved | X1 |
-| PT-X13 | completeness | major | Two documents on this branch disagree about what PB10, PB1 and PA10 do in the BQ25798 phase | X1 | resolved | X1 |
 | PT-X14 | completeness | major | The build-progression record changes the battery-voltage source and the ISET input, against the official design and firmware | X1 | resolved | X1 |
 | PT-X15 | completeness | minor | firmware-event-model.md interrupt table predates the power ADC sequence and the CHG EXTI15_10 handler | X1 | resolved | X1 |
 | PT-X16 | completeness | minor | The simulator sends health reports that the firmware cannot produce: reset cause 'power' with boots_since_power_up = epoch | X1 | resolved | X1 |
@@ -240,7 +232,6 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | PT-X38 | completeness | minor | CONTEXT-PACK 'bench-verified' journal line gives only the version 5 capacity and a false 'every sensor' figure | X3 | resolved | X3 |
 | PT-X39 | completeness | minor | Version 5 journal duration stated as both 28.7 h and 28.8 h | X3 | resolved | X3 |
 | PT-X40 | completeness | minor | Dashboard charger chart ignores the fitted byte for the active-input band and draws no charger-stage band | X4 | resolved | X4 |
-| PT-X41 | completeness | major | Phase C charger status cannot say 'no input active', so a charger with no input at night shows up as a sensor fault | X4 | resolved | X4 |
 | PT-X42 | completeness | minor | OpenAPI null rule for the charge current (ISET) leaves out the stalled-ADC case | X4 | resolved | X4 |
 | PT-X43 | completeness | minor | Health-report byte 51 is still 'reserved, 0' in the two literate packet diagrams | X4 | resolved | X4 |
 | PT-X44 | completeness | minor | The benchlink README's table of where each bench finding went, and failure-modes.md, cite stale lines of the new power code | X4 | resolved | X4 |

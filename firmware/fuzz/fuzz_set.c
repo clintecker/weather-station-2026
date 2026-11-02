@@ -2,7 +2,7 @@
  * arbitrary sets. Byte 0 bit 0 seals the input with a good digest (its CRC-32C over everything after
  * the header), so the checks before the digest's are reached; the rest of the input is the set.
  * Properties, checked against an independent reading of docs/module-protocol.md section 11.1, whose
- * module entry is the one of docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md (section 6.7,
+ * module entry is the one of docs/firmware-current-design.md (section 6.7,
  * "The serial reaches the gateway", and its WSMP edit in section 13.1):
  *  - wsmp_unpack_set accepts exactly the sets the specification allows, and refuses the others with
  *    the code of the first fault (length and counts, reserved bits, port order, digest);

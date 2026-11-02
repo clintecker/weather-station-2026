@@ -1,6 +1,6 @@
 #ifndef WSMP_CAL_H
 #define WSMP_CAL_H
-/* Module record calibration (docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md section
+/* Module record calibration (docs/firmware-current-design.md section
  * 6.9; firmware/common/wsmp_cal.lit.md): check 7 against the frozen table of record major 1, the
  * entry for a channel, v' = ws_div_round(v x gain, 10^6) + offset in int64, and the crop and range
  * check of a port module's channel. Portable C: no HAL, no heap, no state. */

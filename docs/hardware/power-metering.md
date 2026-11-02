@@ -23,13 +23,11 @@ Sources read for this page (all as text, never executed):
 
 | Phase | Charger | Monitors | Build steps (record section 3) |
 |---|---|---|---|
-| **A** | Adafruit bq24074 #4755, one input (VBUS) | battery INA228 0x40, MAX17048 0x36 on CELL+ | steps **1** (breadboard v2; change A rebuilds the battery path per record P3, "yes, change A as written", 7.1) and **2** (protoboard, where H01 runs). The battery shunt is not yet proven at 1 A (spec section 2, exit criteria 3 and 4) |
-| **B** (four rails) | bq24074 | phase A plus load INA228 0x41, solar INA228 0x45, USB-C INA228 0x48 | step **1b**, after H01, on the step 2 plate (7.1 Q8). The INA228 module preparation it needs (A0/A1 jumpers, the 0x48 wire from ADDR1 to SDA) is allowed (7.1 Q1) |
-| **C** (BQ25798) | TI BQ25798: VAC1 = solar, VAC2 = USB-C, its own ADC | with phase B's INA228s ("C+B") or without them ("C alone") | step **2c** (the BQ25798EVM on the step 2 harness) and steps 3-5 after it. The BQ25798EVM was ordered 2026-11-02 with the step 1 order (7.1 Q4) |
+| **A** | Adafruit bq24074 #4755, one input (VBUS) | battery INA228 0x40, MAX17048 0x36 on CELL+ | step **1** (breadboard v2; change A rebuilds the battery path per record P3, "yes, change A as written", 7.1). H01 runs on the breadboard build. The battery shunt is not yet proven at 1 A (spec section 2, exit criteria 3 and 4) |
+| **B** (four rails) | bq24074 | phase A plus load INA228 0x41, solar INA228 0x45, USB-C INA228 0x48 | step **1b**, on the breadboard build (record S1). The INA228 module preparation it needs (A0/A1 jumpers, the 0x48 wire from ADDR1 to SDA) is allowed (7.1 Q1) |
 
-Phase B comes before phase C (record S1, S3): the build order is 1 → 2 (H01) → 1b → 2c → 3 → 4 → 5
-(7.1 Q8). The pack is 1S3P in every phase (7.1 Q3): three 2,200 mAh Li-ion cells in parallel,
-6,600 mAh, 3.0-4.2 V, 3.7 V nominal.
+Phase B extends phase A on the same breadboard build (record S1). The pack is 1S3P in both phases
+(record section 1.3): three 2,200 mAh Li-ion cells in parallel, 6,600 mAh, 3.0-4.2 V, 3.7 V nominal.
 
 **History, not the design.** Phase A as first wired on the bench on 2026-10-28/29
 ([`bench-station-wiring.md`](bench-station-wiring.md) section 4) had the pack plugged straight into
@@ -66,8 +64,6 @@ than the part's own 1 %.
 
 ### 2.2 Phase B
 
-> **Parked 2026-11-02.** Phase B and C (§2.2-2.3) are parked; phase A (§2.1) is current. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
-
 | Rail | Net (from → to) | Monitor | Address, straps (A1, A0) | Shunt | VBUS sense point | Fills |
 |---|---|---|---|---|---|---|
 | Battery | as phase A | INA228 | 0x40, GND, GND | 15 mΩ, 2 W | its own lead, moved at step 1b from OUT to **CELL+ position 4** (record P5). The node firmware does **not read** it in profile B (the load INA228 owns the load voltage); the host uses it as a cross-check of the cell voltage at CELL+ (spec section 17, record M4) | battery current, counters, energy |
@@ -89,20 +85,6 @@ lead, never bundled along a force lead):
 | solar (0x45) | SOLAR_IN |
 | USB-C (0x48) | USB_IN |
 
-### 2.3 Phase C
-
-| Rail | Phase C with phase B's INA228s ("C+B") | Phase C alone |
-|---|---|---|
-| Battery | battery INA228 (0x40) between the pack and the BQ25798 BAT | the same (the battery INA228 stays in every phase) |
-| Load | load INA228 between SYS and the downstream regulators | BQ25798 VSYS for the voltage; load current absent |
-| Solar | solar INA228 before VAC1 | BQ25798 VAC1; IBUS while solar is the active input, else 0 mA (USB-C active, or no input) |
-| USB-C | USB-C INA228 between the receptacle and VAC2 | BQ25798 VAC2; IBUS while USB-C is the active input, else 0 mA (solar active, or no input) |
-| Charger input | BQ25798 VBUS (after its input FETs) | the same |
-
-In phase C, ISET, the divider and CHG go away: PB1, PA10 and PB10 are released (PB10 does not exist
-on the UFQFPN48 package), and PB8 becomes the BQ25798 /INT; /CE stays strapped low and the driver
-stops and starts charging over I2C (spec section 2, record N8).
-
 ## 3. Sign conventions
 
 | Rail | Positive means | INA228 orientation | Firmware sign |
@@ -110,7 +92,6 @@ stops and starts charging over I2C (spec section 2, record N8).
 | Battery | current **into the cell** (charging) | CELL+ on VIN+, BATT (towards the charger's BATT socket) on VIN−: the part counts VIN+ → VIN− as positive, which is **out of** the cell | −1 |
 | Load | current into the load | VIN+ at OUT, VIN− towards the load | +1 |
 | Solar, USB-C | current into the station | VIN+ at the source, VIN− towards the join | +1 |
-| Charger input (phase C, BQ25798 IBUS) | current into the charger | — | as the part reports |
 
 A swapped pair of shunt leads shows as the wrong sign at a known charge or discharge (the acceptance
 drill, spec section 12.2).
@@ -122,33 +103,32 @@ source is fitted but failed or out of range. The firmware never guesses a source
 
 ### 4.1 Every minute (observation)
 
-| Value (field) | A | B | C+B | C alone |
-|---|---|---|---|---|
-| Battery voltage (`batt_mv`, 11) | MAX17048 VCELL | MAX17048 VCELL | MAX17048 VCELL | MAX17048 VCELL |
-| Battery current (`batt_current_ma`, 12) | battery INA228, sign −1 | battery INA228 | battery INA228 | battery INA228 |
-| Battery energy and charge (13-16) | battery INA228 ΔQ × VCELL | as A | as A | as A |
-| Load voltage (`load_mv`, 26) | battery INA228 VBUS (on OUT) | load INA228 VBUS | load INA228 VBUS | BQ25798 VSYS |
-| Load current (`load_current_ma`, 27) | absent | load INA228 | load INA228 | absent |
-| Charger input voltage (`charger_input_mv`, 28) | PA10 × the divider ratio (nominal 3; the measured ratio in `POWER_VIN_DIVIDER_PPM`) | as A | BQ25798 VBUS | BQ25798 VBUS |
-| Solar voltage (`solar_mv`, 29) | absent | solar INA228 VBUS | solar INA228 VBUS | BQ25798 VAC1 |
-| Solar current (`solar_current_ma`, 30) | absent | solar INA228 | solar INA228 | BQ25798 IBUS while solar is active, else 0 mA |
-| USB-C voltage (`usb_mv`, 32) | absent | USB-C INA228 VBUS | USB-C INA228 VBUS | BQ25798 VAC2 |
-| USB-C current (`usb_current_ma`, 33) | absent | USB-C INA228 | USB-C INA228 | BQ25798 IBUS while USB-C is active, else 0 mA |
+| Value (field) | A | B |
+|---|---|---|
+| Battery voltage (`batt_mv`, 11) | MAX17048 VCELL | MAX17048 VCELL |
+| Battery current (`batt_current_ma`, 12) | battery INA228, sign −1 | battery INA228 |
+| Battery energy and charge (13-16) | battery INA228 ΔQ × VCELL | as A |
+| Load voltage (`load_mv`, 26) | battery INA228 VBUS (on OUT) | load INA228 VBUS |
+| Load current (`load_current_ma`, 27) | absent | load INA228 |
+| Charger input voltage (`charger_input_mv`, 28) | PA10 × the divider ratio (nominal 3; the measured ratio in `POWER_VIN_DIVIDER_PPM`) | as A |
+| Solar voltage (`solar_mv`, 29) | absent | solar INA228 VBUS |
+| Solar current (`solar_current_ma`, 30) | absent | solar INA228 |
+| USB-C voltage (`usb_mv`, 32) | absent | USB-C INA228 VBUS |
+| USB-C current (`usb_current_ma`, 33) | absent | USB-C INA228 |
 
 ### 4.2 Every 15 minutes (health report)
 
-| Value (health key) | A | B | C+B | C alone |
-|---|---|---|---|---|
-| Gauge SOC and rate | MAX17048 | MAX17048 | MAX17048 | MAX17048 |
-| Charger status | PGOOD (PB8), CHG (PB10) | as A | BQ25798 status | BQ25798 status |
-| Charger active input | not reported | not reported | BQ25798: `solar`, `usb_c` or `no_input` | BQ25798: `solar`, `usb_c` or `no_input` |
-| Power-monitor die temperature | battery INA228 | hottest of four INA228s | hottest fitted INA228 | battery INA228 |
-| MCU supply | VDDA from VREFINT | as A | as A | as A |
-| Charger-reported input V and I | not measured | not measured | BQ25798 VBUS, IBUS | BQ25798 VBUS, IBUS |
-| Charger-reported battery V | not measured | not measured | BQ25798 VBAT | BQ25798 VBAT |
-| Charger-reported charge current | ISET while PGOOD is asserted, 0 mA without PGOOD | as A | BQ25798 IBAT | BQ25798 IBAT |
-| Charger die temperature | not measured | not measured | BQ25798 TDIE | BQ25798 TDIE |
-| Pack temperature | not measured (the NTC goes to the charger only) | not measured | BQ25798 TS | BQ25798 TS |
+| Value (health key) | A | B |
+|---|---|---|
+| Gauge SOC and rate | MAX17048 | MAX17048 |
+| Charger status | PGOOD (PB8), CHG (PB10) | as A |
+| Power-monitor die temperature | battery INA228 | hottest of four INA228s |
+| MCU supply | VDDA from VREFINT | as A |
+| Charger-reported input V and I | not measured | not measured |
+| Charger-reported battery V | not measured | not measured |
+| Charger-reported charge current | ISET while PGOOD is asserted, 0 mA without PGOOD | as A |
+| Charger die temperature | not measured | not measured |
+| Pack temperature | not measured (the NTC goes to the charger only) | not measured |
 
 A `null` health value is told apart by the report's fitted byte (spec section 6.1): phases A and B
 send 0x2F, so "not measured" rows above are listed in `power_not_measured`, and a `null` in a row
@@ -159,8 +139,6 @@ jack (X3) join at VBUS through its own Schottky diodes D2 and D4 (SK34A), and no
 of that join. Phase B puts one monitor in each source's lead, upstream of the join (section 5).
 
 ## 5. Phase B: the join
-
-> **Parked 2026-11-02.** This section is parked. It is not maintained until step 1 (the breadboard prototype on its printed base plate) is done: do not build from it or update it to match step 1 changes.
 
 ### 5.1 Topology
 
@@ -266,9 +244,8 @@ supplements the load if needed.
 its current limit at 0.3 A, then at 0.1 A (a weak panel's current-source region), into the DC jack
 through the solar INA228, the cell at about 3.7 V. Record whether PGOOD and CHG hold steady or cycle,
 and `charger_input_mv`. A steady charge at the supply's limit passes. A cycle is accepted for phases A
-and B (it costs only status churn at low sun); if it is not accepted, the options are the fallback
-join of section 5.1 with an input-voltage-regulating stage, or phase C (the BQ25798 has input
-voltage regulation and MPPT). Spec section 15, R16.
+and B (it costs only status churn at low sun); if it is not accepted, the option is the fallback
+join of section 5.1 with an input-voltage-regulating stage. Spec section 15, R16.
 
 ## 6. Input voltage limits
 
@@ -289,8 +266,7 @@ clamp, and the ratio changed model first: the new resistors' values (then their 
 R4-R6 in `hardware/bench-breadboard-r0/source/wiring.toml`, then (R4 + R5 + R6) / R6 in ppm into both
 firmware copies, the node's `POWER_VIN_DIVIDER_PPM` (`firmware/stage0-node/App/power_config.h`) and
 benchlink's `VIN_DIVIDER_PPM` (`firmware/benchlink/App/benchlink.c`), in one commit with the sheet
-regenerated (record M2 dated note); D3 check 9 (`checks.check_divider`) holds both to the model. In phase C the divider goes away and
-the BQ25798's own input ratings apply.
+regenerated (record M2 dated note); D3 check 9 (`checks.check_divider`) holds both to the model.
 
 ## 7. Addresses and the bus
 

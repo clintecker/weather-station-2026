@@ -1,6 +1,6 @@
 #ifndef PORT_ID_H
 #define PORT_ID_H
-/* The identity reads of an I2C port module (sensor module ports design, section 6.7): the module
+/* The identity reads of an I2C port module (firmware-current-design.md, section 6.7): the module
  * record at 0x50 on the port's mux channel, the sensor's own serial, and the holder check. Each runs
  * across steps, never waits, and holds the port's driver in its idle state while it runs, so an
  * identity read is never between a measure command and its read (the SHT45's 0x89 is the driver's

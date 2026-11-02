@@ -1,7 +1,7 @@
 """Record calibration and the shared rounding helper (firmware/common/wsmp_cal.c, ws_round.h).
 
 The frozen calibration table, the order (raw, calibration in int64, crop) and the rounding come from
-docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md section 6.9, through the independent
+docs/firmware-current-design.md section 6.9, through the independent
 reference tests/wsmp_record_ref.py. The rounding golden vectors (tests/ws_div_round_vectors.csv) are
 one table for the C helper and the Python reference.
 """

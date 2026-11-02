@@ -1,7 +1,7 @@
 #ifndef WSMP_IDENT_H
 #define WSMP_IDENT_H
 /* The identity and admission verdict of a module found on an I2C port
- * (docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md section 6.7, "Verdicts, in this
+ * (docs/firmware-current-design.md section 6.7, "Verdicts, in this
  * order"; firmware/common/wsmp_ident.lit.md). Pure: the bus reads, the holder check and the state
  * machine around it are the station's. Portable C: no HAL, no heap, no state. */
 #include <stdint.h>

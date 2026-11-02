@@ -65,7 +65,7 @@ unsigned wsmp_quality_bytes(unsigned channels);   /* 2 bits a channel, padded to
 int wsmp_text_ok(const uint8_t *p, size_t n);     /* WSMP-M1: 1 if the padded text is allowed */
 
 /* Module record v1.0, the 128 bytes at word address 0 of a module board's ID EEPROM
- * (docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md section 6.9). Big-endian. */
+ * (docs/firmware-current-design.md section 6.9). Big-endian. */
 #define WSMP_RECORD_LEN      128U
 #define WSMP_RECORD_MAJOR    1U
 #define WSMP_RECORD_PART_LEN 16U

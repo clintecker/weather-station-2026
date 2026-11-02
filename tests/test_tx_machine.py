@@ -657,8 +657,8 @@ class TxStateMachine(unittest.TestCase):
         self.assertEqual(n.lib.h_healthy(), 1)         # sampling stopped on purpose: not a fault
 
     def test_sensor_power_cycles_pa9_from_a_timer_and_ends_high(self):
-        # The carrier's port power-cycle test (record step 3; change C, step 1 exit criterion 9 until it
-        # was deferred to the carrier on 2026-11-02, record 4.6 dated note): PA9 low for WSMP_SAMPLE_MS + 1 s,
+        # The port power-cycle test (change C, step 1 exit criterion 9 until it left the breadboard
+        # build on 2026-11-02, record 4.6 dated note): PA9 low for WSMP_SAMPLE_MS + 1 s,
         # then high as long, 10 times; one #test line per edge, paced by a timer (the command does not
         # wait), then a summary. A half outlasts the 15 s sample period, so each line's ack and fail
         # (the parts that answered and failed in the half that ended there, bit c for enum i2c_client c)

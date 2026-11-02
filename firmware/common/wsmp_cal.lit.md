@@ -4,7 +4,7 @@ A v1 module board carries its sensor's calibration in its module record: up to t
 an offset and a gain for one (quantity, kind) (`wsmp.lit.md` section 8). A passive module cannot
 apply its own calibration, so the station applies it before it reports a value (WSMP-G6). This file
 holds that part of the record rules of
-`docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md` section 6.9:
+`docs/firmware-current-design.md` section 6.9:
 
 - check 7 of the record, against the calibration table frozen for record major 1;
 - which entry a channel takes;

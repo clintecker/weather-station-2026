@@ -3,9 +3,9 @@
 H01 is the 24-hour delivery test: at least 1,426 of 1,440 one-minute readings reach the gateway within 120 s, plus a restart and outage matrix.
 Its acceptance criteria come from the v0.2 product and technical requirements (PRD/TRD), section 3 (Stage 0) and section 12 (H01).
 
-Stage 0 is the first stage of the plan ([`next-stages-plan.md`](next-stages-plan.md)): two development boards on USB power, the bench sensor modules, and the gateway. The TX reads its sensors as WSMP local modules ([`module-protocol.md`](module-protocol.md)). H01 is the gate that ends Stage 0. Power phase A (the bq24074 charger, the 1S3P pack and their monitors, read by the node) runs beside Stage 0 now ([`next-stages-plan.md`](next-stages-plan.md) §1.1); Stage 1's gates (H02, H03) and its pack, chamber and solar endurance work follow H01.
+H01 runs on the breadboard build: two development boards on USB power, the bench sensor modules, and the gateway. The TX reads its sensors as WSMP local modules ([`module-protocol.md`](module-protocol.md)). Power phase A (the bq24074 charger, the 1S3P pack and their monitors, read by the node) runs beside it ([`hardware/power-metering.md`](hardware/power-metering.md) section 1).
 
-**Where H01 runs (decided 2026-10-30).** H01 runs on the step 2 build (the hand-soldered protoboard: shield and module board), before any four-rail work. The build order is 1 → 2 (H01) → 1b → 2c → 3 → 4 → 5 (build-progression record [S1](superpowers/specs/2026-10-29-build-progression-decisions.md#25-build-steps) and section 7.1 Q8, "H01 first"). Step 1b (profile B: the load, solar and USB-C INA228s on the bq24074) starts only after H01 has passed.
+**Where H01 runs.** H01 runs on the breadboard build, after step 1 has exited (build-progression record [S1](superpowers/specs/2026-10-29-build-progression-decisions.md#25-build-steps)). Clint's answer 7.1 Q8 ("H01 first") puts it before step 1b's four-rail work (profile B: the load, solar and USB-C INA228s on the bq24074).
 
 **Status: NOT RUN.** Simulated observations cannot satisfy this test.
 
@@ -22,7 +22,7 @@ flowchart TD
   R --> SC["Score with tools/h01_report.py"]
   SC --> X["Restart and outage matrix"]
   X --> D{"Every criterion met?"}
-  D -- yes --> P["PASS: save the evidence, freeze a checkpoint, then Stage 1's gates H02 and H03"]
+  D -- yes --> P["PASS: save the evidence and freeze a checkpoint"]
   D -- no --> F["Fix placement, link settings or buffering. If necessary, move the receiver or choose a better module"]
   F --> L
 ```
@@ -37,7 +37,7 @@ A fault-test phase can run separately from the placement run. Its intervals neve
 - The declared synchronized acquisition-time source, the clock accuracy and the report period.
 - Raw receiver frames and logs, the SQLite database and the transmitter journal counters.
 - MQTT and Home Assistant (HA) discovery, measurement availability and local API checks.
-- The power wiring phase (A, B, C+B or C alone; [`next-stages-plan.md`](next-stages-plan.md) §1.1) and the monitored rails, as the release's `RELEASES.md` entry records them: which rails the build fills, which are absent, the INA228 addresses, and the measured constants in `App/power_config.h` (R_ISET, divider ratio; a shunt only if it failed its verification) or "nominal", and the firmware build ID (nonzero: a build from a clean commit). Name the TX supply (USB bench power) apart from the power breadboard the node reads.
+- The power wiring phase (A or B; [`hardware/power-metering.md`](hardware/power-metering.md) section 1) and the monitored rails, as the release's `RELEASES.md` entry records them: which rails the build fills, which are absent, the INA228 addresses, and the measured constants in `App/power_config.h` (R_ISET, divider ratio; a shunt only if it failed its verification) or "nominal", and the firmware build ID (nonzero: a build from a clean commit). Name the TX supply (USB bench power) apart from the power breadboard the node reads.
 
 ## Preconditions (build-progression record S1, H8, D6, M7)
 
@@ -46,7 +46,7 @@ Each is recorded in the run notes before the 24-hour run starts. A run that star
 | # | Precondition | How it is shown | Source |
 |---|---|---|---|
 | 1 | Step 1 has exited, every criterion, including exit 10: mode B for 1 hour, the station fed from the regulator through the CN6.4 (3V3) entry | the step 1 exit run's notes | record section 3, step 1 exit criteria |
-| 2 | The step 2 build has a preflight block with status `valid` that includes the 1 A spans (C12–C14, C16–C18: the block sets `step_exit = true` or `rewire = true`, which makes them required) | `.venv/bin/python tools/preflight.py <run notes>` prints `preflight: valid` and exits 0. `stale`, `failing` or `missing` does not meet this precondition | record D6, P8, section 4.3 |
+| 2 | The breadboard build has a preflight block with status `valid` that includes the 1 A spans (C12–C14, C16–C18: the block sets `step_exit = true` or `rewire = true`, which makes them required) | `.venv/bin/python tools/preflight.py <run notes>` prints `preflight: valid` and exits 0. `stale`, `failing` or `missing` does not meet this precondition | record D6, P8, section 4.3 |
 | 3 | The USB acceptance test H8(d) has passed on the H01 topology (below): both boards logged, the TX unplugged and replugged 5 times, no gap in the RX log | the H8(d) record in the run notes | record H8(d) |
 | 4 | The ws0 silent-port reopen is deployed: the running gateway has the `ws0/link.py` reopen (90 s of silence, doubling to 400 s). Clint restarts the gateway agent to load it | Clint's note of the gateway agent restart, made after the reopen landed; the deployed `ws0/link.py` holds `SILENT_REOPEN_S = 90`. A reopen during the run is logged as a `gateway_events` row of kind `serial-reopen` (warn) and drawn on the dashboard as a "serial reopen" marker | record H8(f) |
 | 5 | The counter link probe is running on the TX: `#status` shows `meter_link=ok` | the TX console `#status` line | record M7 |
@@ -68,8 +68,8 @@ Each is recorded in the run notes before the 24-hour run starts. A run that star
 - If TX was wiped, provision it with a **new** key (`docs/runbook-moving-boards.md`).
   - On firmware before release `0f456040fe54`, a WIPE restarts the nonce counter.
   - A key used before that release, or on another board, can repeat nonces.
-- **Power release (open decision D2).** Whether H01 runs on a protocol version 6 release is Clint's decision (power telemetry design [section 15](superpowers/specs/2026-10-29-power-telemetry-design.md#15-risks-and-open-decisions), D2). Recommendation: yes, so that the H01 evidence names the shipping protocol. *Note (2026-10-30):* as the build-progression record stands, the H01 preconditions can be met only on a version 6 build: precondition 5 needs `#status` `meter_link=ok`, which only the version 6 node source prints (`App/tx_console.c:62`; the version 5 status line has no such field), and precondition 1 needs the power-telemetry phase A exit criteria, which version 5 firmware cannot meet because it reads no power. A "no" on D2 therefore also needs a version 5 backport of the M7 counter link probe and of the phase A power reading, which no plan carries, or a change to the record's step 2 exit; without one of those, H01 runs on a version 6 build. A version 6 release changes the frame format, so it needs the release procedure ([`protocol-design.md`](protocol-design.md) section 7: drain, WIPE, flash both boards, new run directory, new key) before the run, never during it.
-- **On a version 6 release, check that the gateway stores the power fields** before the run: `/v1/observations/latest` and the dashboard show each power field of the phase's column ([`next-stages-plan.md`](next-stages-plan.md) §1.2) either as a value (valid), absent when the phase has no source for it (no field, no HA entity), or `null` (INVALID) when its fitted part failed; the newest health report (`…/diagnostics`) carries the power keys. An INVALID power field marks the record "partial", which does not change the verdict: the verdict counts temperature and humidity only (power design section 5.3).
+- **Power release (open decision D2).** Whether H01 runs on a protocol version 6 release is Clint's decision (power telemetry design [section 15](superpowers/specs/2026-10-29-power-telemetry-design.md#15-risks-and-open-decisions), D2). Recommendation: yes, so that the H01 evidence names the shipping protocol. *Note (2026-10-30):* as the build-progression record stands, the H01 preconditions can be met only on a version 6 build: precondition 5 needs `#status` `meter_link=ok`, which only the version 6 node source prints (`App/tx_console.c:62`; the version 5 status line has no such field), and precondition 1 needs the power-telemetry phase A exit criteria, which version 5 firmware cannot meet because it reads no power. A "no" on D2 therefore also needs a version 5 backport of the M7 counter link probe and of the phase A power reading, which no plan carries; without it, H01 runs on a version 6 build. A version 6 release changes the frame format, so it needs the release procedure ([`protocol-design.md`](protocol-design.md) section 7: drain, WIPE, flash both boards, new run directory, new key) before the run, never during it.
+- **On a version 6 release, check that the gateway stores the power fields** before the run: `/v1/observations/latest` and the dashboard show each power field of the phase's column ([`hardware/power-metering.md`](hardware/power-metering.md) section 4) either as a value (valid), absent when the phase has no source for it (no field, no HA entity), or `null` (INVALID) when its fitted part failed; the newest health report (`…/diagnostics`) carries the power keys. An INVALID power field marks the record "partial", which does not change the verdict: the verdict counts temperature and humidity only (power design section 5.3).
 - Do not run bench fault-injection commands (`TEST-HANG`, `TEST-FLASH-STORM`) on the boards under test during the placement run.
 - Run firmware from release `0f456040fe54` or later. Name the release in the evidence (`firmware/stage0-node/RELEASES.md`).
   - On 2026-10-19 the TX runs `04fcc656938d` and the RX runs `cc2766a38c61`. Both are bench releases, not H01 releases: their radio settings are bench values.
@@ -127,6 +127,6 @@ Record the exact test interval and denominator. If you inject faults in the same
 
 ## Decision
 
-H01 passes only when placement latency, identity, time, restarts, stale state and recovery all meet the specification. Save the full evidence set. Freeze a reproducible checkpoint before Stage 1's gates (H02, H03). The verdict criteria above do not change with the power release: the power fields are stored and exposed, never scored.
+H01 passes only when placement latency, identity, time, restarts, stale state and recovery all meet the specification. Save the full evidence set. Freeze a reproducible checkpoint. The verdict criteria above do not change with the power release: the power fields are stored and exposed, never scored.
 
 On failure, fix the antenna placement, the link settings and the buffering. If necessary, move the receiver or select a better qualified radio module. Then test again. Do not introduce a mesh. Do not lower the pass threshold.

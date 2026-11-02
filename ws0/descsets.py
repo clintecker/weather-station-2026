@@ -1,5 +1,5 @@
 """The gateway's descriptor sets (docs/module-protocol.md section 11.2, WSMP-E5 to E7) and what
-it shows of each module's identity (docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md
+it shows of each module's identity (docs/firmware-current-design.md
 section 6.7: the serial, its source, the record status and the record CRC).
 
 A set arrives whole (the radio frame kind and its fragments are WSMP-E9, a later step) and is
@@ -177,7 +177,7 @@ class DescriptorSets:
 
 def type_id(m):
     """The module's name in Home Assistant: its type's registry id (air_th, pressure, ...). v1 admits
-    at most one module of each type (sensor module ports design, section 6.7; the design's proposed
+    at most one module of each type (firmware-current-design.md, section 6.7; the design's proposed
     WSMP-P10 text), and, as WSMP-H1 asks of every entity ID, it holds no port and no serial, so a
     module's entity survives a move to another port."""
     t = reg.MODULE_TYPES.get(m.type)

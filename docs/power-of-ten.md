@@ -364,7 +364,7 @@ Deviations kept, with the reason:
     (`tests/README.md`, Host build variants). It is used as a value in two constant macros
     (`i2c_bus.c` `PORT`, `RECORD`), not in `#if`, so both profiles always compile.
   - `WS_POWER_PROFILE` selects the power build (`App/power_config.h`): 1 phase A (the default),
-    2 phase B with four INA228 rails; 3 (phase C, BQ25798) and any other value stop the build with
+    2 phase B with four INA228 rails; any other value stops the build with
     `#error`. It picks the rail table only; `power_acq.c` has no `#if` of its own.
   - `WS_FW_BUILD_ID` and `WS_CHECK_FILE` cause `#error` if the build or the file did not define
     them.

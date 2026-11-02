@@ -4,7 +4,7 @@ A station describes its modules in one descriptor set: an 8-byte header (generat
 a reserved byte, the CRC-32C digest of everything after the header), then one 18-byte entry for
 each module in increasing port order (port, module type, schema, channel count, serial,
 ``id_flags``, ``record_crc``), each followed by its 6-byte descriptors. The identity fields are the
-sensor module ports design's (docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md,
+sensor module ports design's (docs/firmware-current-design.md,
 section 6.7, "The serial reaches the gateway"). The C twin is ``firmware/common/wsmp.c``
 (``wsmp_pack_set``, ``wsmp_unpack_set``, ``wsmp_set_check``); ``tests/test_wsmp_set.py`` checks the
 two against each other byte for byte.

@@ -93,23 +93,22 @@ otherwise; a key no report carries is "Not in these health reports (older firmwa
 `ws0/static/app.js:1092`). A phase A station with a dead fuel gauge therefore shows a sensor
 fault for SOC, never "not measured".
 
-**Which source fills each rail, by phase** (design section 3.2). Phase A is the current bench and
-field build (bq24074 charger, one INA228 in the battery path, MAX17048 gauge). Phase B adds one
-INA228 per rail. Phase C replaces the charger with the BQ25798: "C+B" keeps phase B's INA228s,
-"C alone" has only the BQ25798.
+**Which source fills each rail, by phase** (design section 3.2). Phase A is the current bench
+build (bq24074 charger, one INA228 in the battery path, MAX17048 gauge). Phase B adds one INA228
+per rail (step 1b of the breadboard build).
 
-| Value (field) | Phase A | Phase B | Phase C+B | Phase C alone |
-|---|---|---|---|---|
-| Battery voltage (`batt_mv`) | MAX17048 VCELL at the CELL+ node (includes the pack-lead drop; record M4) | as A | as A | as A |
-| Battery current (`batt_current_ma`) | battery INA228 | as A | as A | as A |
-| Battery energy and charge (`energy_*_mwh`, `charge_*_mah`) | battery INA228 charge × VCELL | as A | as A | as A |
-| Load voltage (`load_mv`) | battery INA228 VBUS, on its own sense lead to the OUT connector (record P5) | load INA228 | load INA228 | BQ25798 VSYS |
-| Load current (`load_current_ma`) | not measured | load INA228 | load INA228 | not measured |
-| Charger input voltage (`charger_input_mv`) | PA10 × the stored divider ratio (3 nominal); **source not identified** | as A | BQ25798 VBUS | BQ25798 VBUS |
-| Solar voltage (`solar_mv`) | not measured | solar INA228 | solar INA228 | BQ25798 VAC1 |
-| Solar current (`solar_current_ma`) | not measured | solar INA228 | solar INA228 | BQ25798 IBUS while solar is the active input, 0 while USB-C is or with no input |
-| USB-C voltage (`usb_mv`) | not measured | USB-C INA228 | USB-C INA228 | BQ25798 VAC2 |
-| USB-C current (`usb_current_ma`) | not measured | USB-C INA228 | USB-C INA228 | BQ25798 IBUS while USB-C is the active input, 0 while solar is or with no input |
+| Value (field) | Phase A | Phase B |
+|---|---|---|
+| Battery voltage (`batt_mv`) | MAX17048 VCELL at the CELL+ node (includes the pack-lead drop; record M4) | as A |
+| Battery current (`batt_current_ma`) | battery INA228 | as A |
+| Battery energy and charge (`energy_*_mwh`, `charge_*_mah`) | battery INA228 charge × VCELL | as A |
+| Load voltage (`load_mv`) | battery INA228 VBUS, on its own sense lead to the OUT connector (record P5) | load INA228 |
+| Load current (`load_current_ma`) | not measured | load INA228 |
+| Charger input voltage (`charger_input_mv`) | PA10 × the stored divider ratio (3 nominal); **source not identified** | as A |
+| Solar voltage (`solar_mv`) | not measured | solar INA228 |
+| Solar current (`solar_current_ma`) | not measured | solar INA228 |
+| USB-C voltage (`usb_mv`) | not measured | USB-C INA228 |
+| USB-C current (`usb_current_ma`) | not measured | USB-C INA228 |
 
 - **Phase A cannot tell solar from USB-C.** The bq24074 has one input and no monitor sits upstream
   of where the sources join, so the page shows "Charger input (source not identified)" and the
@@ -129,7 +128,7 @@ INA228 per rail. Phase C replaces the charger with the BQ25798: "C+B" keeps phas
 - **Charger state bands** (`drawCharger`, `ws0/static/app.js:1140`): "Charger status" (power good,
   charging, fault, from the three booleans), "Charger stage" (pre-charge, constant current, constant
   voltage, top-off, terminated, not charging) and "Charger active input" (solar, USB-C, or "no input":
-  the charger reports that neither input powers it, phase C at night). The gateway keeps every change
+  the charger reports that neither input powers it). The gateway keeps every change
   of these keys when it thins a long range (`DIAGNOSTIC_STATE`, `ws0/web.py:832-833`), so each stage step
   stays on the band. A `null` stage or input follows the fitted byte like the charts: "not measured in
   this build" in phases A and B (the pins cannot tell them), "sensor fault" when a fitted charger read

@@ -4,7 +4,7 @@
 (`docs/module-protocol.md`). A module gives its identity, its descriptors and one snapshot each
 minute. The station reads them, and this file turns the bytes into structures and back. It also
 checks the descriptors against the registry, parses and packs the module record v1.0 of a module
-board's ID EEPROM (`docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md` section 6.9),
+board's ID EEPROM (`docs/firmware-current-design.md` section 6.9),
 computes CRC-32C and the radio budget, and maps quality codes. `tools/wsmp_registry.py` generates the registry header `wsmp_registry.h` from
 `wsmp_registry.toml`.
 
@@ -445,7 +445,7 @@ int wsmp_text_ok(const uint8_t *p, size_t n)
 ## 8. Module record v1.0
 
 Every v1 module board carries a 24LC32A EEPROM whose first 128 bytes are the module record
-(`docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md` section 6.9, proposed as WSMP
+(`docs/firmware-current-design.md` section 6.9, proposed as WSMP
 section 10.1). It gives the module a serial that follows it across ports, binds it to its sensor and
 carries the sensor's calibration. Every integer is big-endian. The length is fixed in major 1: the
 station reads the 128 bytes in one transfer before it knows anything else.
@@ -647,7 +647,7 @@ uint8_t wsmp_id_flags(uint8_t source, uint8_t status)
 
 The descriptor set (WSMP section 11.1) is what the station tells the gateway about its modules: one
 header, then one entry for each module in the layout, in increasing port order, each followed by its
-descriptors. The entry carries the module's identity (sensor module ports design section 6.7, "The
+descriptors. The entry carries the module's identity (firmware-current-design.md section 6.7, "The
 serial reaches the gateway"): its serial, the identity flags' low byte and the applied record's
 CRC-32C. A header is 8 bytes and an entry 18, so a full set (8 modules, 24 channels) is
 8 + 8 × 18 + 24 × 6 = 296 bytes (WSMP-E4).
@@ -796,7 +796,7 @@ int wsmp_unpack_set(const uint8_t *in, size_t len, wsmp_set *s)
 ```
 
 `wsmp_set_check` is the gateway's WSMP-E7 for an unpacked set. Each module must pass the registry
-check (WSMP-D7, its own code). Two identity rules of the sensor module ports design (section 6.7)
+check (WSMP-D7, its own code). Two identity rules of firmware-current-design.md (section 6.7)
 give `WSMP_ETYPE`: a serial's namespace (its top byte) is its source (`id_flags` bits 0–1), and v1
 admits at most one module of each type (the design's proposed WSMP-P10 text), so a type twice in one
 set is refused.

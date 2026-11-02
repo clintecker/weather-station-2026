@@ -458,10 +458,10 @@ The charger status byte (power telemetry design section 6.3):
 | 6–7 | `CHG_INPUT_SHIFT`, `CHARGER_INPUTS` | active input: 0 not reported, 1 `solar`, 2 `usb_c`, 3 `no_input` (the charger reports that no input powers it) |
 
 `ws_frame.h` defines the same bits as `WS_CHG_*`. Phase A fills bits 0–2 from the PGOOD and CHG
-pins, with stage 0 and input 0. Phase C fills the stage and the active input from the BQ25798; the
-active input is what attributes the BQ25798's input current to the solar or the USB-C rail. Input 3,
-`no_input`, is a reading, not a gap: the charger has neither VAC1 nor VAC2 (every night on solar with
-USB-C unplugged), so both source rails carry 0 mA (design section 3.2). It is canonical; "not
+pins, with stage 0 and input 0. The stage and the active input are for a charger that reports them
+(none is fitted today); the active input would attribute the charger's input current to the solar or
+the USB-C rail. Input 3, `no_input`, is a reading, not a gap: the charger has neither input (every
+night on solar with USB-C unplugged), so both source rails carry 0 mA (design section 3.2). It is canonical; "not
 reported" stays 0.
 
 ```python {#charger-bits}

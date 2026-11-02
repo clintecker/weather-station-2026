@@ -370,8 +370,8 @@ int board_charger_pins(void)
 }
 
 /* The mux RESET line (i2c_bus.h): PB14 (A4, CN8.5 / morpho CN7.36; build-progression record N5),
-   active low on the TCA9548A, wired with the mux (WS_I2C_MUX=1), after the shield's incoming check
-   shows A4 not tied to SDA. In the hub profile (WS_I2C_MUX=0) there is no mux: the call does nothing
+   active low on the TCA9548A, wired with the mux (WS_I2C_MUX=1), once A4 is checked not to be
+   tied to SDA. In the hub profile (WS_I2C_MUX=0) there is no mux: the call does nothing
    and PB14 is not driven. */
 void i2c_bus_mux_reset_line(int asserted)
 {

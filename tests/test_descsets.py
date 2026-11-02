@@ -1,6 +1,6 @@
 """The gateway's descriptor sets (docs/module-protocol.md section 11.2, WSMP-E5 to E7), the current
 set by the newest reading's generation, the two-station serial alarm and the module identities it
-publishes (sensor module ports design, section 6.7). Sets are written byte by byte with
+publishes (firmware-current-design.md, section 6.7). Sets are written byte by byte with
 tests/test_wsmp_set.py's helpers."""
 import contextlib
 import io

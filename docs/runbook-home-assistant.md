@@ -6,7 +6,7 @@ discovery. The gateway was tested against a local Mosquitto broker
 the `station-01` device with its entities, from the gateway's run-d7 discovery, are verified
 (`evidence/ha-broker-2026-10-22/`). TLS is not verified: that broker has no certificate. The
 gateway logging in on the rotated password and entities updating live are checked at the next
-hardware session ([`CONTEXT-PACK.md`](CONTEXT-PACK.md) §6, step 3).
+hardware session ([`CONTEXT-PACK.md`](CONTEXT-PACK.md)).
 
 ```mermaid
 flowchart LR
@@ -127,20 +127,20 @@ sections 3 and 10) adds the station's power data. All of it is diagnostic (entit
 **Every minute, from `…/weather`** (observation fields, `discovery()` in `ws0/service.py:512`;
 unique ID `<station>_<field>`). The gateway creates an entity only for a field that the newest
 reading carries, so a rail this build does not measure has no entity at all. Which phase fills each
-rail (design section 3.2; phase A is the current bq24074 build, B adds one INA228 per rail, C uses
-the BQ25798 with ("C+B") or without ("C alone") phase B's INA228s):
+rail (design section 3.2; phase A is the current bq24074 build, B adds one INA228 per rail, step 1b
+of the breadboard build):
 
-| Field | Entity name | Unit, class | Phase A | Phase B | Phase C+B | Phase C alone |
-|---|---|---|---|---|---|---|
-| `batt_mv` | Battery voltage | mV, voltage | yes (fuel gauge) | yes | yes | yes |
-| `batt_current_ma` | Battery current (+ charging) | mA, current | yes | yes | yes | yes |
-| `energy_in_mwh`, `energy_out_mwh` | Energy in, Energy out | mWh, energy, `total_increasing` | yes | yes | yes | yes |
-| `charge_in_mah`, `charge_out_mah` | Charge in, Charge out | mAh, `total_increasing` | yes | yes | yes | yes |
-| `load_mv` | Load voltage | mV, voltage | yes (charger OUT) | yes | yes | yes (BQ25798 VSYS) |
-| `load_current_ma` | Load current | mA, current | no entity | yes | yes | no entity |
-| `charger_input_mv` | Charger input voltage (source not identified) | mV, voltage | yes | yes | yes (BQ25798 VBUS) | yes (BQ25798 VBUS) |
-| `solar_mv`, `solar_current_ma` | Solar input voltage, Solar input current | mV, mA | no entity | yes | yes | yes (BQ25798 VAC1; IBUS while solar is the active input, else 0) |
-| `usb_mv`, `usb_current_ma` | USB-C input voltage, USB-C input current | mV, mA | no entity | yes | yes | yes (BQ25798 VAC2; IBUS while USB-C is the active input, else 0) |
+| Field | Entity name | Unit, class | Phase A | Phase B |
+|---|---|---|---|---|
+| `batt_mv` | Battery voltage | mV, voltage | yes (fuel gauge) | yes |
+| `batt_current_ma` | Battery current (+ charging) | mA, current | yes | yes |
+| `energy_in_mwh`, `energy_out_mwh` | Energy in, Energy out | mWh, energy, `total_increasing` | yes | yes |
+| `charge_in_mah`, `charge_out_mah` | Charge in, Charge out | mAh, `total_increasing` | yes | yes |
+| `load_mv` | Load voltage | mV, voltage | yes (charger OUT) | yes |
+| `load_current_ma` | Load current | mA, current | no entity | yes |
+| `charger_input_mv` | Charger input voltage (source not identified) | mV, voltage | yes | yes |
+| `solar_mv`, `solar_current_ma` | Solar input voltage, Solar input current | mV, mA | no entity | yes |
+| `usb_mv`, `usb_current_ma` | USB-C input voltage, USB-C input current | mV, mA | no entity | yes |
 
 - **Phase A cannot tell solar from USB-C.** The bq24074 has one input. "Charger input voltage
   (source not identified)" is the voltage after the sources join; there is no solar or USB-C
@@ -166,26 +166,27 @@ radio dies does not leave its last SOC and charger state on screen as live value
 unavailable about 32 minutes after the last report. It does not follow `…/availability` (the
 every-minute reading's 180 s freshness).
 
-| Key | Entity name | Component, unit, class | Phases A and B | Phase C |
-|---|---|---|---|---|
-| `battery_soc_pct` | Battery state of charge (gauge) | sensor, %, battery | yes (MAX17048; can exceed 100 near full) | yes |
-| `battery_soc_rate_pct_h` | Battery state of charge rate (gauge) | sensor, %/h (+ charging) | yes | yes |
-| `charger_charging` | Charger charging | binary_sensor, battery_charging | yes (CHG pin) | yes |
-| `charger_input_power_ok` | Charger input power good | binary_sensor, power | yes (PGOOD pin) | yes |
-| `charger_fault` | Charger fault | binary_sensor, problem | yes (CHG flashing. TMR is tied to GND on the #4755 per its schematic, so the safety timers are disabled: confirm on the board; a fault then means something else, such as TMR strapped differently or an intermittent CHG line) | yes |
-| `charger_stage` | Charger stage | sensor, enum (`precharge`, `cc`, `cv`, `topoff`, `terminated`, `not_charging`) | no entity (the pins cannot tell) | yes |
-| `charger_active_input` | Charger active input | sensor, enum (`solar`, `usb_c`, `no_input`) | no entity (source not identified) | yes |
-| `power_monitor_temp_c` | Power monitor temperature | sensor, °C, temperature | yes (battery INA228; B: hottest of four) | yes |
-| `mcu_supply_mv` | MCU supply voltage | sensor, mV, voltage | yes (VDDA from VREFINT) | yes |
-| `charger_reported_battery_ma` | Charger-reported charge current | sensor, mA, current | yes (bq24074 ISET; 0 while PGOOD is off) | yes (IBAT) |
-| `charger_reported_input_mv`, `charger_reported_input_ma` | Charger-reported input voltage, current | sensor, mV / mA | no entity | yes (VBUS, IBUS) |
-| `charger_reported_battery_mv` | Charger-reported battery voltage | sensor, mV, voltage | no entity | yes (VBAT) |
-| `charger_temp_c`, `pack_temp_c` | Charger temperature, Battery pack temperature | sensor, °C, temperature | no entity | yes (TDIE, TS) |
+| Key | Entity name | Component, unit, class | Phases A and B |
+|---|---|---|---|
+| `battery_soc_pct` | Battery state of charge (gauge) | sensor, %, battery | yes (MAX17048; can exceed 100 near full) |
+| `battery_soc_rate_pct_h` | Battery state of charge rate (gauge) | sensor, %/h (+ charging) | yes |
+| `charger_charging` | Charger charging | binary_sensor, battery_charging | yes (CHG pin) |
+| `charger_input_power_ok` | Charger input power good | binary_sensor, power | yes (PGOOD pin) |
+| `charger_fault` | Charger fault | binary_sensor, problem | yes (CHG flashing. TMR is tied to GND on the #4755 per its schematic, so the safety timers are disabled: confirm on the board; a fault then means something else, such as TMR strapped differently or an intermittent CHG line) |
+| `charger_stage` | Charger stage | sensor, enum (`precharge`, `cc`, `cv`, `topoff`, `terminated`, `not_charging`) | no entity (the pins cannot tell) |
+| `charger_active_input` | Charger active input | sensor, enum (`solar`, `usb_c`, `no_input`) | no entity (source not identified) |
+| `power_monitor_temp_c` | Power monitor temperature | sensor, °C, temperature | yes (battery INA228; B: hottest of four) |
+| `mcu_supply_mv` | MCU supply voltage | sensor, mV, voltage | yes (VDDA from VREFINT) |
+| `charger_reported_battery_ma` | Charger-reported charge current | sensor, mA, current | yes (bq24074 ISET; 0 while PGOOD is off) |
+| `charger_reported_input_mv`, `charger_reported_input_ma` | Charger-reported input voltage, current | sensor, mV / mA | no entity |
+| `charger_reported_battery_mv` | Charger-reported battery voltage | sensor, mV, voltage | no entity |
+| `charger_temp_c`, `pack_temp_c` | Charger temperature, Battery pack temperature | sensor, °C, temperature | no entity |
 
 Every report carries every key, but the gateway advertises an entity only for a key the build
 measures: the report's fitted byte lists the others in `power_not_measured` (power design section
 6.1), as an observation field the record does not carry gets no entity. So phases A and B create
-**8** power entities (the "yes" rows) and phase C up to 15. A key the build measures whose source
+**8** power entities (the "yes" rows); the other seven keys are in the report format, but no
+breadboard build measures them. A key the build measures whose source
 fails (a dead fuel gauge: listed in `power_sensor_faults`) keeps its entity and shows it unavailable.
 If an earlier version 6 test run advertised all fifteen, remove the seven phase A "no entity"
 configs the same way as the retired entities below. The station counters of the report

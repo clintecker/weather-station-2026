@@ -3,7 +3,7 @@
  *   TX, every 250 ms: the INA228 shunt and VBUS, and the ADC on the bq24074 ISET pin (PB1 = A0) and on the
  *   charger's input through its divider (PA10 = A2).
  *   TX, every 5 s: the INA228 die temperature, the MAX17048, the SHT45, the PGOOD/CHG pins, then the
- *   packet (bl_pkt.h). PA9 (sensor power, carrier only) is driven high at start and stays high.
+ *   packet (bl_pkt.h). PA9 (sensor power, not wired on the bench) is driven high at start and stays high.
  *   Blocking HAL transfers with short timeouts from one sequencer task, as in
  *   firmware/i2cscan: a bench tool, not the node.
  *   RX: continuous reception; each packet is printed as "#bl rssi=.. snr=.. len=.. hex=..", and every
@@ -145,10 +145,10 @@ static void common_drills(void)
 #define SHT45_LEN 6U
 #define PGOOD_PIN GPIO_PIN_8        /* PB8 = D5, CN9.6 (CN10.27): low = valid input */
 #define CHG_PIN GPIO_PIN_10         /* PB10 = D6, CN9.7 (CN10.25): low = charging */
-/* The sensor power enable, carrier only (build-progression record 4.6 dated note, 2026-11-02: change C's
-   load switch is deferred to the carrier). On the breadboard and the protoboard PA9 is unconnected and the
-   hub's sensors are on the unswitched 3V3, so driving it is harmless. Driven high at start and never
-   cycled here (the node's TEST-SENSOR-POWER is the carrier's port power-cycle test). */
+/* The sensor power enable (build-progression record 4.6 dated note, 2026-11-02: change C's load switch
+   is not part of the breadboard build). On the breadboard PA9 is unconnected and the hub's sensors are
+   on the unswitched 3V3, so driving it is harmless. Driven high at start and never cycled here (the
+   node's TEST-SENSOR-POWER is the port power-cycle test). */
 #define POWER_PIN GPIO_PIN_9        /* PA9 = D9, CN5.2 (CN10.19): high = the switched sensors on */
 #define ISET_PIN GPIO_PIN_1         /* PB1 = A0, CN8.1: ADC1_IN5 */
 #define VIN_PIN GPIO_PIN_10         /* PA10 = A2, CN8.3: ADC1_IN6, VBUS through R4+R5 (20k) over R6 (10k) */
@@ -491,7 +491,7 @@ int bl_role_check(void)
   return 1;
 }
 
-/* PA9 high before the bus starts, so on the carrier the switched sensors are powered (not back-powered
+/* PA9 high before the bus starts, so with a sensor switch fitted the switched sensors are powered (not back-powered
    through the bus pull-ups) when the first transfer runs; on the bench PA9 is unconnected. The level is set before the pin
    becomes an output, so it never pulses low. */
 static void sensors_on(void)

@@ -14,7 +14,7 @@ stores and exposes every value.
 (an EXT bit announces a 16-bit extension bitmap for fields 32–47) and a fixed 64-byte health
 report. The WSMP registry gains rail quantities 18–24 and module types 8 (battery) and 9 (power
 rails). `App/power_acq.c` reads every INA228 rail, the gauge and the board ADC sequence from a rail
-table in `App/power_config.h` (profiles A, B, C). `App/mod_power.c` is the WSMP face and the health
+table in `App/power_config.h` (profiles A and B). `App/mod_power.c` is the WSMP face and the health
 accessor. The interim catalog map turns the two modules into fields 11–16, 26–30, 32 and 33. A slot
 that the phase cannot fill is "not fitted" and absent from the record; a fitted part that fails
 gives INVALID.
@@ -24,13 +24,13 @@ gives INVALID.
 that change for the bench rebuild. This plan does not take them over wholesale: the design's
 section 17 (and the record's section 8) settles each row. Adopted rows are in this plan's scope as
 documentation amendments and, where they touch code, as completeness fixes (the fitted byte of the
-health report, the I2C SDADEL hold, the HA freshness rule, the phase C pin release). Deferred rows
+health report, the I2C SDADEL hold, the HA freshness rule). Deferred rows
 (R_ISET 1 kΩ, the ISET network M2, the cups/rain remap N2 and the M7 link probe) and the record's
 own work package (the step 1 model commit, D1–D7, the host path metric M6) stay outside this plan
 until Clint answers or the record's step starts.
 *Amended 2026-10-30 (record 7.1; spec §15, §17):* N2 (cups PC0 → PB5, rain PB5 → PB4) was approved
 by Clint on 2026-10-30 (record 7.1) and is owned by step 1 change B (record 4.5), not by this plan.
-The M7 counter link probe is owned by the record's step 2 preconditions (it runs before the H01 run;
+The M7 counter link probe is an H01 precondition (it runs before the H01 run;
 bench status field `meter_link=`). R_ISET 1 kΩ and the M2 ISET network and measured divider are
 adopted with change A, read by this workflow from record 7.1 P3 "change A as written" (record 4.4
 steps 11–12 fit the ISET network and store the measured divider); R_ISET confirmed by build-sheet
@@ -88,7 +88,6 @@ VIN_SENSE, the ADC firmware check). Each carries a dated note.
 |---|---|---|---|
 | A (current) | bq24074, one VBUS input | battery INA228 0x40 (VBUS on OUT), MAX17048 0x36 on the cell; ISET → PB1, divider → PA10, CHG → PB10, PGOOD → PB8, VREFINT | this plan: firmware, protocol, gateway, docs |
 | B (four rails) | bq24074 | phase A plus load 0x41, solar 0x45, USB-C 0x48 INA228s, upstream of the join | host tests only (`WS_POWER_PROFILE` B) |
-| C (BQ25798) | BQ25798, VAC1 solar, VAC2 USB-C | its ADC over I2C, with or without phase B's INA228s | fill table only; a profile C build stops with `#error` |
 
 ## Waves
 
@@ -652,11 +651,12 @@ and resolve each; `tests.test_obs tests.test_frame` stay green.
 ### Task B28: Planning docs: phases, stage order, 1S3P, four rails, USB-C rule
 
 **Governs:** spec §1, §2, §3, §15. **Issues:** PT-095 – PT-104.
-**Files:** `docs/next-stages-plan.md`, `docs/CONTEXT-PACK.md`, `docs/H01-checklist.md`, `README.md`.
+**Files:** `docs/CONTEXT-PACK.md`, `docs/H01-checklist.md`, `README.md` (and the stage plan, removed
+2026-11-02).
 
-- [ ] One authoritative phase A/B/C section with exit criteria; stage order (phase A telemetry runs
-  now, Stage 1 gates follow H01); 4S4P statements restated for 1S3P; D1 and D2 open; document index
-  rows for the spec, this plan and `docs/hardware/power-metering.md`.
+- [ ] One authoritative phase section with exit criteria; the order of the power work against H01;
+  4S4P statements restated for 1S3P; D1 and D2 open; document index rows for the spec, this plan and
+  `docs/hardware/power-metering.md`.
 
 **Verify:** links resolve; no figure contradicts the spec.
 
@@ -672,31 +672,26 @@ and resolve each; `tests.test_obs tests.test_frame` stay green.
 
 **Verify:** `tests.test_breadboard` (`check_guide` reads `bench-station-wiring.md`) stays green.
 
-### Task B30: Bench docs, errata and enclosure requirements
+### Task B30: Bench docs
 
-**Governs:** spec §11, §12. **Issues:** PT-109 – PT-112.
+**Governs:** spec §11, §12. **Issues:** PT-110.
 **Files:** `firmware/benchlink/README.md`, `firmware/i2cscan/README.md`,
-`firmware/i2cscan/App/bench_screen.c`, `hardware/chicago-test-hardware-r0-ERRATA.md`,
-`hardware/poc-enclosure-r1/README.md`.
+`firmware/i2cscan/App/bench_screen.c` (and two later-stage hardware documents, removed 2026-11-02).
 
-- [ ] The benchlink wiring is official; "Bench to field" table (spec §12.1); the acceptance drill
-  (spec §12.2); the raw INA228 sign and the logger's conversion; i2cscan VBUS = OUT; the 1S3P
-  erratum; enclosure power layout requirements (geometry needs a CadQuery session).
+- [ ] The benchlink wiring is official; the acceptance drill (spec §12.2); the raw INA228 sign and
+  the logger's conversion; i2cscan VBUS = OUT.
 
 **Verify:** i2cscan build into a private BUILD directory; `tests.test_i2cscan` (it reads
 `firmware/benchlink/README.md`) stays green; links resolve.
 
-### Task B31: Dated amendments to the 2026-10-16, 10-18, 10-19 and 10-21 specs
+### Task B31: Dated amendments to the 2026-10-18 and 10-19 specs
 
-**Governs:** spec §4, §8.4, §9.1, §9.2, §11. **Issues:** PT-113 – PT-116.
-**Files:** `docs/superpowers/specs/2026-10-16-sixteen-stations-design.md`,
-`docs/superpowers/specs/2026-10-18-wsmp-bench-station-design.md`,
-`docs/superpowers/specs/2026-10-19-bench-breadboard-wiring-design.md`,
-`docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md`.
+**Governs:** spec §4, §8.4, §9.1, §9.2, §11. **Issues:** PT-113 – PT-115.
+**Files:** `docs/superpowers/specs/2026-10-18-wsmp-bench-station-design.md`,
+`docs/superpowers/specs/2026-10-19-bench-breadboard-wiring-design.md` (and the two later-stage
+designs, removed 2026-11-02; their implemented sections are in `docs/firmware-current-design.md`).
 
-- [ ] Version 6 = power telemetry, time sync = version 7; the slot table for a 96 B frame; the pin
-  table and lessons; nets ISET and VIN_SENSE; ports 9 and 14, 8 of 8 modules, 24 channels; the INA228
-  address plan; the hub profile.
+- [ ] The pin table and lessons; nets ISET and VIN_SENSE; the INA228 address plan; the hub profile.
 
 **Verify:** links resolve; no figure contradicts the spec.
 

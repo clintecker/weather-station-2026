@@ -23,7 +23,7 @@ int local_probe_result(enum wsmp_port p, uint16_t *seq);
 void local_identity(enum wsmp_port p, uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc[WSMP_DESC_BLOCK_LEN]);
 /* WSMP-L1 to L3: freeze the snapshot, start the next window. A repeated token is a retry. */
 void local_latch(enum wsmp_port p, uint16_t token, uint32_t utc, uint32_t now_ms);
-/* Binds a port module's driver to a newly admitted module (sensor module ports design, section 6.7):
+/* Binds a port module's driver to a newly admitted module (firmware-current-design.md, section 6.7):
    its window starts afresh, boot_id is its boot ID, and applied (the module's record when its status
    is applied, else NULL) gives its calibration. A port without a port-module driver ignores it. */
 void local_bind(enum wsmp_port p, const wsmp_record *applied, uint32_t boot_id, uint32_t now_ms);

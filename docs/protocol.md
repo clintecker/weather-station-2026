@@ -322,17 +322,17 @@ measured.
 **Fill per power phase** (power design sections 2 and 3.3). Phase A is the current hardware: the
 bq24074 charger, one INA228 on the battery and the MAX17048 gauge on the cell.
 
-| Value | Phase A | Phase B (four INA228 rails) | Phase C (BQ25798) |
-|---|---|---|---|
-| `battery_soc_pct`, `battery_soc_rate_pct_h` | MAX17048 SOC and CRATE | as phase A | as phase A |
-| charger status bits 0–2 | PGOOD and CHG pins | as phase A | BQ25798 status registers |
-| charger stage, active input | 0 (not reported) | 0 (not reported) | BQ25798 |
-| `power_monitor_temp_c` | battery INA228 | the hottest of the four INA228s | the hottest fitted INA228 |
-| `mcu_supply_mv` | VDDA from VREFINT | as phase A | as phase A |
-| `charger_reported_input_mv`, `_input_ma`, `_battery_mv` | none | none | BQ25798 VBUS, IBUS, VBAT |
-| `charger_reported_battery_ma` | ISET (above) | as phase A | BQ25798 IBAT |
-| `charger_temp_c`, `pack_temp_c` | none | none | BQ25798 TDIE, TS |
-| crash PC, boots, TX timeouts, I2C recoveries | every phase | every phase | every phase |
+| Value | Phase A | Phase B (four INA228 rails) |
+|---|---|---|
+| `battery_soc_pct`, `battery_soc_rate_pct_h` | MAX17048 SOC and CRATE | as phase A |
+| charger status bits 0–2 | PGOOD and CHG pins | as phase A |
+| charger stage, active input | 0 (not reported) | 0 (not reported) |
+| `power_monitor_temp_c` | battery INA228 | the hottest of the four INA228s |
+| `mcu_supply_mv` | VDDA from VREFINT | as phase A |
+| `charger_reported_input_mv`, `_input_ma`, `_battery_mv` | none | none |
+| `charger_reported_battery_ma` | ISET (above) | as phase A |
+| `charger_temp_c`, `pack_temp_c` | none | none |
+| crash PC, boots, TX timeouts, I2C recoveries | every phase | every phase |
 
 The "charger-reported" keys carry the charger's own measurements. They are named apart from the
 observation field `charger_input_mv` (field 28, section 5.3), which is a separate measurement (the
@@ -364,18 +364,17 @@ packet-beta
   7: "input power good (bit 0)"
 ```
 
-| Bits | Meaning | Phase A source (bq24074 pins) | Phase C source (BQ25798) |
-|---|---|---|---|
-| 0 | input power good | PGOOD asserted | PG_STAT |
-| 1 | charging | CHG asserted steadily | CHG_STAT in trickle, pre-charge, CC, CV or top-off |
-| 2 | fault | CHG flashing at about 2 Hz (SLUS810 section 9.3.5.6 and table 9-2): 3 or more CHG edges within 2 s; clears after 4 s without an edge (`App/power_acq.c:293-306`) | any FAULT_STATUS bit |
-| 3–5 | charge stage: 0 not reported, 1 pre-charge or trickle, 2 constant current, 3 constant voltage, 4 top-off, 5 terminated, 6 not charging, **7 reserved (not canonical)** | 0 (the pins cannot tell) | CHG_STAT |
-| 6–7 | active input: 0 not reported, 1 solar input, 2 USB-C input, 3 no input (the charger reports that neither input powers it) | 0 (one VBUS input; the source is not identified) | the BQ25798 input selection: VAC1 = solar, VAC2 = USB-C; 3 when neither VAC1 nor VAC2 is present |
+| Bits | Meaning | Phase A source (bq24074 pins) |
+|---|---|---|
+| 0 | input power good | PGOOD asserted |
+| 1 | charging | CHG asserted steadily |
+| 2 | fault | CHG flashing at about 2 Hz (SLUS810 section 9.3.5.6 and table 9-2): 3 or more CHG edges within 2 s; clears after 4 s without an edge (`App/power_acq.c:293-306`) |
+| 3–5 | charge stage: 0 not reported, 1 pre-charge or trickle, 2 constant current, 3 constant voltage, 4 top-off, 5 terminated, 6 not charging, **7 reserved (not canonical)** | 0 (the pins cannot tell) |
+| 6–7 | active input: 0 not reported, 1 solar input, 2 USB-C input, 3 no input (the charger reports that neither input powers it) | 0 (one VBUS input; the source is not identified) |
 
 0xFF = no charger status (its stage is 7). "Not reported" (input 0) and "no input" (input 3) are
-different: 0 says the build cannot tell the input, 3 is the charger's reading that no input is
-present (every night on solar with USB-C unplugged; both source rails then read 0 mA in phase C, the
-fill table of section 5.3). Every input code 0–3 is canonical; code 3 was reserved until
+different: 0 says the build cannot tell the input, 3 is a charger's reading that no input is
+present (no breadboard build reports it). Every input code 0–3 is canonical; code 3 was reserved until
 2026-10-29. C constants: `WS_CHG_*`, `firmware/common/ws_frame.h:96-118`.
 
 Gateway keys (`charger_keys`, `ws0/protocol.py:111-119`): three booleans
@@ -472,8 +471,7 @@ the power fields of the build's phase:
 | Record | Fields | Wire bitmap | Extension | Plaintext | Frame |
 |---|---|---|---|---:|---:|
 | Phase A (the current hardware) | 0–6, 9, 11–16, 19, 20, 25, 26, 28 | `0x1619FA7F` | — | 65 B | 81 B |
-| Phase B, phase C with phase B's monitors (every rail) | 0–6, 9, 11–16, 19, 20, 25–30, 32, 33 | `0xFE19FA7F` | `0x0003` | 77 B | 93 B |
-| Phase C alone (no `load_current_ma`) | as phase B without 27 | `0xF619FA7F` | `0x0003` | 75 B | 91 B |
+| Phase B (every rail) | 0–6, 9, 11–16, 19, 20, 25–30, 32, 33 | `0xFE19FA7F` | `0x0003` | 77 B | 93 B |
 
 The current build's field set (`WS_F_WSMP_BENCH`, `App/node_fields.h:15-29`) holds every power
 field of every phase: fields 0–6, 9, 11–16, 19, 20, 25–30, 32 and 33, **77 bytes** of plaintext
@@ -644,21 +642,20 @@ still gives `sensor_fault`.
 #### Power telemetry: what each phase fills
 
 The power fields describe what is measured, not which part measures it. Each power phase fills the
-fields it has a source for and leaves the others absent (power design section 3.2). "C+B" is phase C
-with phase B's INA228s; "C alone" is phase C without them.
+fields it has a source for and leaves the others absent (power design section 3.2).
 
-| Field | Phase A (current) | Phase B | Phase C+B | Phase C alone |
-|---|---|---|---|---|
-| 11 `batt_mv` | MAX17048 cell voltage | as A | as A | as A |
-| 12 `batt_current_ma` | battery INA228 | as A | as A | as A |
-| 13–16 energy and charge | battery INA228 × cell voltage | as A | as A | as A |
-| 26 `load_mv` | battery INA228 VBUS (its own sense lead to OUT) | load INA228 | load INA228 | BQ25798 VSYS |
-| 27 `load_current_ma` | absent | load INA228 | load INA228 | absent |
-| 28 `charger_input_mv` | PA10 × the stored divider ratio (3 nominal), source not identified | as A | BQ25798 VBUS | BQ25798 VBUS |
-| 29 `solar_mv` | absent | solar INA228 | solar INA228 | BQ25798 VAC1 |
-| 30 `solar_current_ma` | absent | solar INA228 | solar INA228 | BQ25798 IBUS while solar is the active input, else 0 (USB-C active or no input) |
-| 32 `usb_mv` | absent | USB-C INA228 | USB-C INA228 | BQ25798 VAC2 |
-| 33 `usb_current_ma` | absent | USB-C INA228 | USB-C INA228 | BQ25798 IBUS while USB-C is the active input, else 0 (solar active or no input) |
+| Field | Phase A (current) | Phase B |
+|---|---|---|
+| 11 `batt_mv` | MAX17048 cell voltage | as A |
+| 12 `batt_current_ma` | battery INA228 | as A |
+| 13–16 energy and charge | battery INA228 × cell voltage | as A |
+| 26 `load_mv` | battery INA228 VBUS (its own sense lead to OUT) | load INA228 |
+| 27 `load_current_ma` | absent | load INA228 |
+| 28 `charger_input_mv` | PA10 × the stored divider ratio (3 nominal), source not identified | as A |
+| 29 `solar_mv` | absent | solar INA228 |
+| 30 `solar_current_ma` | absent | solar INA228 |
+| 32 `usb_mv` | absent | USB-C INA228 |
+| 33 `usb_current_ma` | absent | USB-C INA228 |
 
 USB-C is for bench work and occasional backup charging only, and it is never connected at the same
 time as solar. So at most one source rail carries current. Phase A cannot tell solar from USB-C:

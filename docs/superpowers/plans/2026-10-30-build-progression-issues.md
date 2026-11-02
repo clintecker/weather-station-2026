@@ -2,17 +2,17 @@
 
 This catalog lists every known issue caused by the build-progression decision record and by Clint's
 survey answers of 2026-10-30 (the record's section 7.1, which overrides every default in its section 7).
-The record moves the bench from the r0 breadboard to breadboard v2 (step 1), then the
-soldered protoboard, the carrier and the field, in the order 1 → 2 (H01) → 1b → 2c → 3 → 4 → 5
-(7.1 Q8). Its decisions cascade through the record itself, the power-telemetry design and plan, the
+The record moves the bench from the r0 breadboard to breadboard v2 (step 1) and adds the four
+metered rails on the same breadboard (step 1b). Later stages were removed from the repository on
+2026-11-02 (git history has them), and with them this catalog's rows that concerned only them.
+Its decisions cascade through the record itself, the power-telemetry design and plan, the
 breadboard model and generator (`hardware/bench-breadboard-r0`, revisions `bench-bb-r0.1` for change A,
 the power path off the breadboard with the pack, WAGO joints and INA228 shunt in the battery lead (P3);
 `bench-bb-r0.2` for change B, cups PB5 (LPTIM1_IN1, AF1) and rain PB4 (EXTI4) (N2); `bench-bb-r0.3` for
-change C, the PA9 sensor switch and the unswitched STEMMA QT branch; *2026-11-02:* the switch deferred to
-the carrier, r0.3 redefined without it), the node and bench firmware, the
+change C, the PA9 sensor switch and the unswitched STEMMA QT branch; *2026-11-02:* the switch removed
+from the breadboard build, r0.3 redefined without it), the node and bench firmware, the
 bench tools, gateway and tests (the ws0 silent-port reopen, the preflight tool, the logger and dashboard),
-and the documents: the wiring guide, the ports spec (OQ-14 decided: the v1 base board is a carrier under
-the NUCLEO on morpho, 7.1 Q7), the next-stages plan, the shopping lists, the runbooks and the indexes.
+and the documents: the wiring guide, the shopping lists, the runbooks and the indexes.
 
 - Decision record: [`../specs/2026-10-29-build-progression-decisions.md`](../specs/2026-10-29-build-progression-decisions.md);
   Clint's survey answers: [section 7.1](../specs/2026-10-29-build-progression-decisions.md#71-clints-answers-2026-10-30)
@@ -25,23 +25,23 @@ batches and fixed what they found (issues `BP-X01`-`BP-X58`).
 
 ## Summary
 
-121 issues: 121 resolved, 0 unresolved.
+116 issues: 116 resolved, 0 unresolved.
 
 | Area | Resolved | Unresolved | Total |
 |---|---:|---:|---:|
-| record | 16 | 0 | 16 |
-| docs | 11 | 0 | 11 |
+| record | 15 | 0 | 15 |
+| docs | 9 | 0 | 9 |
 | model | 24 | 0 | 24 |
 | firmware | 6 | 0 | 6 |
 | tools-gateway-tests | 6 | 0 | 6 |
-| completeness | 58 | 0 | 58 |
-| **all** | **121** | **0** | **121** |
+| completeness | 56 | 0 | 56 |
+| **all** | **116** | **0** | **116** |
 
 | Severity | Resolved | Unresolved | Total |
 |---|---:|---:|---:|
 | blocker | 8 | 0 | 8 |
-| major | 55 | 0 | 55 |
-| minor | 58 | 0 | 58 |
+| major | 52 | 0 | 52 |
+| minor | 56 | 0 | 56 |
 
 ## Issues
 
@@ -52,10 +52,9 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 |---|---|---|---|---|---|---|
 | BP-001 | record | major | Record status line and section 7 still read as open questions with defaults | W1-record-decisions | resolved | W1-record-decisions |
 | BP-002 | record | major | S1, 2.7, D7 and the section 3 roadmap keep the Q1 and Q8 branches; step 1b still points at r0 | W1-record-decisions | resolved | W1-record-decisions |
-| BP-003 | record | major | S4, N7 and step 3 treat OQ-14 and the cell count as open | W1-record-decisions | resolved | W1-record-decisions |
 | BP-004 | record | major | H5 and section 5 keep the BiPOM fallback; no BOB-14021 preparation step | W1-record-decisions | resolved | W1-record-decisions |
 | BP-005 | record | minor | Meter wording is '200 mV range, see Q2' | W1-record-decisions | resolved | W1-record-decisions |
-| BP-006 | record | major | BQ25798EVM status, TS resistors, 1b purchase timing, and the Q3 fuse and connector wording | W1-record-decisions | resolved | W1-record-decisions |
+| BP-006 | record | major | Purchase wording: 1b purchase timing and the TS resistors | W1-record-decisions | resolved | W1-record-decisions |
 | BP-007 | record | major | Section 8: R_ISET, M2 and N2 rows, with D4 and D5 recorded as the workflow's reading | W2-record-cascade | resolved | W2-record-cascade |
 | BP-008 | record | major | 6.5 rows carry 'proposed', 'pending Clint' and Q-default wording, and miss documents | W2-record-cascade | resolved | W2-record-cascade |
 | BP-009 | record | minor | Q5 fact missing from F6 and H8; stale references in 1.4 and N2 | W1-record-decisions | resolved | W1-record-decisions |
@@ -83,13 +82,13 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | BP-031 | model | major | Regenerate the breadboard outputs for revision bench-bb-r0.1 (change A) | W7-regen-r0.1 | resolved | W7-regen-r0.1 |
 | BP-032 | model | major | Change B in the model: cups PB5 at CN9.5, rain PB4 at CN8.4 (N2 approved) | W8-model-change-b | resolved | W8-model-change-b |
 | BP-033 | model | major | Regenerate the breadboard outputs for revision bench-bb-r0.2 (change B) | W9-regen-r0.2 | resolved | W9-regen-r0.2 |
-| BP-034 | model | major | Change C not modelled: PA9 load switch, unswitched QT branch, SENS_EN and 3V3_SW | W10-model-change-c | resolved | W10-model-change-c. *2026-11-02: superseded, change C's switch moved to the carrier (record 4.6 dated note)*: r0.3 redefined in place without LSW, 3V3_SW and SENS_EN; the QTM branch kept |
+| BP-034 | model | major | Change C not modelled: PA9 load switch, unswitched QT branch, SENS_EN and 3V3_SW | W10-model-change-c | resolved | W10-model-change-c. *2026-11-02: superseded, change C's switch removed from the breadboard build (record 4.6 dated note)*: r0.3 redefined in place without LSW, 3V3_SW and SENS_EN; the QTM branch kept |
 | BP-035 | model | major | Regenerate the breadboard outputs for revision bench-bb-r0.3 (change C) | W11-regen-r0.3 | resolved | W11-regen-r0.3. *2026-11-02:* regenerated again for the redefined r0.3 (no load switch) |
 | BP-036 | firmware | major | R_ISET 890 Ohm; no ISET gain; integer divider 3; no microvolt ppm helper; stale 'x 3' comments | W2-fw-power-constants | resolved | W2-fw-power-constants |
 | BP-037 | firmware | minor | benchlink: morpho-only pin comments, integer VIN_DIVIDER, ISET comment | W4-fw-benchlink | resolved | W4-fw-benchlink |
 | BP-038 | firmware | major | Change B firmware: cups PB5 (LPTIM1_IN1 AF1), rain PB4 (EXTI4), LDORDY assert | W8-fw-change-b | resolved | W8-fw-change-b |
 | BP-039 | firmware | minor | Mux RESET still 'TBD' though N5 fixed it at PB14 | W8-fw-change-b | resolved | W8-fw-change-b |
-| BP-040 | firmware | major | PA9 sensor switch (change C): no way to run exit 9; stale text; no switched branch in the sim; no harness for the console test | W10-fw-change-c | resolved | W10-fw-change-c. *2026-11-02: superseded, change C's switch moved to the carrier (record 4.6 dated note)*: TEST-SENSOR-POWER, the sim's switched branch and the harness stay as the carrier's bench test (step 3); `i2c_bus` power-cycle stays a no-op until the carrier |
+| BP-040 | firmware | major | PA9 sensor switch (change C): no way to run exit 9; stale text; no switched branch in the sim; no harness for the console test | W10-fw-change-c | resolved | W10-fw-change-c. *2026-11-02: superseded, change C's switch removed from the breadboard build (record 4.6 dated note)*: TEST-SENSOR-POWER, the sim's switched branch and the harness stay in the code; `i2c_bus` power-cycle stays a no-op on the breadboard |
 | BP-041 | firmware | major | M7 counter link probe not implemented; the cups probe must not count its own edge; status key collision | W12-fw-link-probe | resolved | W12-fw-link-probe |
 | BP-042 | tools-gateway-tests | major | ws0 has no open-but-silent reopen (H8 f), and the dashboard draws no marker for it | W2-tools-ws0-reopen | resolved | W2-tools-ws0-reopen |
 | BP-043 | tools-gateway-tests | major | tools/preflight.py, tests/test_preflight.py and the shared checklist.py do not exist (D6) | W2-tools-preflight | resolved | W2-tools-preflight |
@@ -101,9 +100,7 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | BP-049 | docs | major | bench-station-wiring sections 1, 3-6, 6b and 8 contradict S1/Q8, P2-P7, N3, M7 and Q6 | W13-docs-guide | resolved | W13-docs-guide |
 | BP-050 | docs | minor | Firmware READMEs carry pre-v2 wiring and R_ISET 890 | W13-docs-firmware-readmes | resolved | W13-docs-firmware-readmes |
 | BP-051 | docs | minor | 10-18 and 10-19 specs and plans lack the record's dated notes | W13-docs-old-specs | resolved | W13-docs-old-specs |
-| BP-052 | docs | major | Ports spec: OQ-14 decided, mux RESET PB14, step 1 v2 notes | W13-docs-ports-spec | resolved | W13-docs-ports-spec |
-| BP-053 | docs | major | next-stages-plan and radio-energy-policy: no step list, RJ45 in Stage 2, Q3/Q4/Q8 answers missing | W13-docs-plan | resolved | W13-docs-plan |
-| BP-054 | docs | major | PoC shopping list and enclosure README contradict P3/P7, H5, H9 and 7.1 | W13-docs-shopping | resolved | W13-docs-shopping |
+| BP-054 | docs | major | PoC shopping list contradicts P3/P7, H5 and 7.1 | W13-docs-shopping | resolved | W13-docs-shopping |
 | BP-055 | docs | minor | power-metering.md: phase status, VBUS wiring, phase A rows and the 1b joins | W13-docs-power-metering | resolved | W13-docs-power-metering |
 | BP-056 | docs | major | H01 checklist, runbook, failure-modes and web-dashboard miss H8/Q5, the preconditions and the F1-F6 rows | W13-docs-runbooks | resolved | W13-docs-runbooks |
 | BP-057 | docs | minor | Shared indexes: CONTEXT-PACK, tools/README and tests/README | W13-docs-indexes | resolved | W13-docs-indexes |
@@ -118,8 +115,8 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | BP-X03 | completeness | minor | nucleo-wl55jc-bringup.md still says the firmware holds 890 ohm for R_ISET | X1 | resolved | X1 |
 | BP-X04 | completeness | minor | test_i2cscan comment still calls 890 ohm the 1.0 A jumper | X1 | resolved | X1 |
 | BP-X05 | completeness | minor | Record file:line references outside 1.4/N2 now point at the wrong lines | X1 | resolved | X1 |
-| BP-X06 | completeness | major | After change C, benchlink and i2cscan never drive PA9, so the hub's SHT45 stays unpowered (and is back-powered through the bus pull-ups) | X1 | resolved | X1. *2026-11-02: superseded, change C's switch moved to the carrier (record 4.6 dated note)*: the firmware still drives PA9 high, harmless with PA9 unconnected at steps 1 and 2 |
-| BP-X07 | completeness | minor | Battery INA228 VBUS at step 1b: next-stages-plan says it stays on OUT; the record, power-metering and the WAGO model move it to CELL+ position 4 | X1 | resolved | X1 |
+| BP-X06 | completeness | major | After change C, benchlink and i2cscan never drive PA9, so the hub's SHT45 stays unpowered (and is back-powered through the bus pull-ups) | X1 | resolved | X1. *2026-11-02: superseded, change C's switch removed from the breadboard build (record 4.6 dated note)*: the firmware still drives PA9 high, harmless with PA9 unconnected |
+| BP-X07 | completeness | minor | Battery INA228 VBUS at step 1b: the stage plan says it stays on OUT; the record, power-metering and the WAGO model move it to CELL+ position 4 | X1 | resolved | X1 |
 | BP-X08 | completeness | minor | Record 4.4 step 5 keeps a board-A-to-board-B ground link that the model removed | X1 | resolved | X1 |
 | BP-X09 | completeness | minor | C11's 'cups count while spinning the cups' has no source in the logger | X1 | resolved | X1 |
 | BP-X10 | completeness | minor | NUCLEO tie table and bench check omit the PA9, I2C and OLED Arduino/morpho aliases | X1 | resolved | X1 |
@@ -128,7 +125,6 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | BP-X13 | completeness | minor | 'Not implemented' status in the record and design is false against the worktree | X1 | resolved | X1 |
 | BP-X14 | completeness | major | check_iset and check_divider demand nominal values exactly, so storing the M2 fit or the measured divider breaks D3 checks 8 and 9 | X2 | resolved | X2 |
 | BP-X15 | completeness | major | Shunt verification needs a 'calibrated shunt or DC clamp meter' that no list buys; record M1 and 1b exit (a) still say DMM in series | X2 | resolved | X2 |
-| BP-X16 | completeness | minor | Step 2 exit asks for an open meter link 'reported within one probe period', but M7 and the firmware need three probes | X2 | resolved | X2 |
 | BP-X17 | completeness | minor | power_config.h still says the battery INA228 VBUS lead 'may stay on OUT' at phase B | X2 | resolved | X2 |
 | BP-X18 | completeness | minor | D1's word rule fails: 'Nominally' remains in docs/module-protocol.md | X2 | resolved | X2 |
 | BP-X19 | completeness | minor | 10-18 bench-station spec pin table still wires ISET 'straight to ISET, no pull' with VIN = 3 x pin | X2 | resolved | X2 |
@@ -149,14 +145,14 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | BP-X34 | completeness | minor | Part ids C1 and C2 (the meter capacitors) reuse the checklist row ids C1 and C2 | X3 | resolved | X3 |
 | BP-X35 | completeness | minor | No test pins that benchlink and i2cscan actually drive PA9 high | X3 | resolved | X3 |
 | BP-X36 | completeness | minor | stage0-node README points at board_inputs.c:3-17 for the pin list, which now runs to line 21 | X3 | resolved | X3 |
-| BP-X37 | completeness | major | H01 'release' decision D2 is still open, but the record's step 2 exit and the H01 preconditions already require version 6 node firmware | X3 | resolved | X3 |
+| BP-X37 | completeness | major | H01 'release' decision D2 is still open, but the H01 preconditions already require version 6 node firmware | X3 | resolved | X3 |
 | BP-X38 | completeness | minor | Docs still show the power monitors on the STEMMA QT hub, but change C puts them on the unswitched QTM branch | X3 | resolved | X3 |
 | BP-X39 | completeness | minor | Power-telemetry design cites tx_console.c:50 for the radio `link=` field, which is now at line 62 | X3 | resolved | X3 |
 | BP-X40 | completeness | minor | failure-modes.md names the wrong console line and the wrong line number for i2c_stuck | X3 | resolved | X3 |
 | BP-X41 | completeness | minor | stage0-node README cites board_inputs.c:3-17 for the pin list, which now runs to line 21 | X3 | resolved | X3 |
 | BP-X42 | completeness | minor | The `Lead` docstring in wiring.py describes only the old heavy battery lead | X3 | resolved | X3 |
 | BP-X43 | completeness | minor | The bring-up log's 'rules of the official wiring' paragraph still describes the battery path as short heavy leads | X3 | resolved | X3 |
-| BP-X44 | completeness | major | Step 1 exit 9 cannot be observed as written: sensors are sampled every 15 s, but each PA9-low half lasts only 2 s | X4 | resolved | X4. *2026-11-02: superseded, change C's switch moved to the carrier (record 4.6 dated note)*: exit 9 removed from step 1; the half length carries over to the carrier's port power-cycle test |
+| BP-X44 | completeness | major | Step 1 exit 9 cannot be observed as written: sensors are sampled every 15 s, but each PA9-low half lasts only 2 s | X4 | resolved | X4. *2026-11-02: superseded, change C's switch removed from the breadboard build (record 4.6 dated note)*: exit 9 removed from step 1 |
 | BP-X45 | completeness | minor | Guide section 6b forbids the meter's current range in the battery path, but the shunt check puts the 87V there | X4 | resolved | X4 |
 | BP-X46 | completeness | minor | 10-19 breadboard design's 'Supersedes' column cites line numbers that match neither the old nor the current text | X4 | resolved | X4 |
 | BP-X47 | completeness | minor | tests/README.md test count is stale | X4 | resolved | X4 |
@@ -166,10 +162,9 @@ State `resolved` means the batch named in the note fixed it. An unresolved row's
 | BP-X51 | completeness | minor | Guide 6b forbids the meter's current range in the battery path, but power check 3 puts the 87V in series there | X4 | resolved | X4 |
 | BP-X52 | completeness | minor | oled.h's wiring comment still lands the OLED signals on the Arduino aliases that the model leaves empty | X4 | resolved | X4 |
 | BP-X53 | completeness | minor | Breadboard README puts the A:L+ rail inside the P1 mode-B chain | X4 | resolved | X4 |
-| BP-X54 | completeness | minor | Change C says it 'mirrors PORT-9', but the SHTC3 that PORT-9 keeps upstream sits on the switched hub branch | X4 | resolved | X4. *2026-11-02: superseded, change C's switch moved to the carrier (record 4.6 dated note)*: the bench has no switched branch now; the carrier keeps the SHTC3 unswitched (PORT-9) |
+| BP-X54 | completeness | minor | Change C says it 'mirrors PORT-9', but the SHTC3 that PORT-9 keeps upstream sits on the switched hub branch | X4 | resolved | X4. *2026-11-02: superseded, change C's switch removed from the breadboard build (record 4.6 dated note)*: the bench has no switched branch now |
 | BP-X55 | completeness | minor | power-metering.md names a firmware define that no longer exists and fixes the divider at 3:1 | X4 | resolved | X4 |
 | BP-X56 | completeness | minor | failure-modes 'All down' row still assumes both boards share one USB hub | X4 | resolved | X4 |
-| BP-X57 | completeness | minor | Ports spec: the OQ-14 'decided' row sits outside the open-questions table | X4 | resolved | X4 |
 | BP-X58 | completeness | minor | Root README puts power phase A 'beside' H01 although the record makes it an H01 precondition | X4 | resolved | X4 |
 
 ## Unresolved issues

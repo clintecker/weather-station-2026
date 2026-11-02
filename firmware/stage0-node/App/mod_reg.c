@@ -6,7 +6,7 @@
  *   the revision, not compared). MAIN_CTRL 0x00 = 0x0A (UVS mode, enabled),
  *   18-bit, 100 ms by default. UVS_DATA 0x10-0x12, little-endian, 20 bits of counts.
  * A read one tick (250 ms) after the configuration is past both parts' measurement time. Both are port
- * modules: each sample is calibrated, then cropped and range-checked (sensor module ports design,
+ * modules: each sample is calibrated, then cropped and range-checked (firmware-current-design.md,
  * section 6.9). */
 #define WS_CHECK_FILE 15
 #include "mod_reg.h"

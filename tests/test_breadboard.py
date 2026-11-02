@@ -106,7 +106,7 @@ class Checks(unittest.TestCase):
         self.assertTrue(any('benchlink.c: CHG_PIN is PB11' in p for p in problems), problems)
 
     def test_the_oled_pins_are_checked_and_pa9_is_not(self):
-        # Change C (the PA9 sensor switch) is deferred to the carrier (record 4.6, 2026-11-02): the breadboard
+        # Change C (the PA9 sensor switch) is not part of the breadboard build (record 4.6, 2026-11-02): the breadboard
         # has no SENS_EN net, so no firmware's POWER_PIN is checked against it; i2cscan's oled.c drives the
         # OLED nets the model has (record 6.3).
         for file, constants in wiring.FIRMWARE.items():
@@ -357,7 +357,7 @@ class Review(unittest.TestCase):
 
     def test_the_hub_returns_straight_to_the_nucleo(self):
         # Wiring guide section 2: hub power on CN6.4 and CN6.6, not through the power board's load path.
-        # Change C (the load switch) is deferred to the carrier (record 4.6, 2026-11-02): CN6.4 feeds the hub's V+.
+        # Change C (the load switch) is not part of the breadboard build (record 4.6, 2026-11-02): CN6.4 feeds the hub's V+.
         strips = {frozenset({wiring.strip(j.a), wiring.strip(j.b)}) for j in wiring.plan_jumpers(self.w)}
         qt = self.w.parts['QT'].pins
         self.assertIn(frozenset({wiring.strip(qt['GND']), 'N:CN6.6'}), strips)
@@ -844,11 +844,11 @@ class PhaseAPower(unittest.TestCase):
             self.assertIn(text, checks)
 
     def test_the_step_1b_checks_follow_the_record(self):
-        # Record S1 and 7.1 Q8 (after H01, on the step 2 plate), P10 (no fallback join), step 1b exits (e) and
+        # Record S1 (on the breadboard build), P10 (no fallback join), step 1b exits (e) and
         # (f), 7.1 Q1 (the 0x48 ADDR1-to-SDA wire is allowed module preparation).
         import make
         checks = make.build_sheet(self.w, self.jumpers).split('## Step 1b power checks', 1)[1]
-        self.assertIn("Step 1b, after the step 2 H01 run, on the step 2 plate's small breadboard (record S1, 7.1 Q8)",
+        self.assertIn("Step 1b, on the breadboard build (record S1)",
                       checks)
         self.assertNotIn('fallback', checks)
         b = {ln.split('.', 1)[0]: ln for ln in checks.splitlines() if re.match(r'^B\d\. ', ln)}
@@ -1003,7 +1003,7 @@ class SheetTier(unittest.TestCase):
         aliases = cn.split('The morpho aliases of these pins (', 1)[1].split(')', 1)[0].split(', ')
         for pin in ('CN10.5', 'CN10.3', 'CN10.25', 'CN7.28'):
             self.assertIn(pin, aliases)
-        self.assertNotIn('CN5.2', cn)   # PA9: change C is on the carrier (record 4.6, 2026-11-02)
+        self.assertNotIn('CN5.2', cn)   # PA9: change C is not built (record 4.6, 2026-11-02)
         self.assertNotIn('CN10.19', aliases)
         oled = next(ln for ln in bench.splitlines() if ln.startswith('- **OLED wires:**'))
         self.assertIn('Their ARDUINO aliases (CN5.1, CN5.3, CN5.4, CN5.6, CN9.8) stay empty', oled)
@@ -1039,7 +1039,7 @@ class SheetTier(unittest.TestCase):
     def test_each_revision_is_its_own_change(self):
         # Record 6.1: r0.1 = change A (no load switch, the meter on its r0 pins), r0.2 = change B (the two meter
         # jumpers move), r0.3 = the second QT cable (QTM); change C, the load switch, was taken out of r0.3 before it
-        # was built (record 4.6, 2026-11-02: deferred to the carrier). Each sheet against the one before.
+        # was built (record 4.6, 2026-11-02). Each sheet against the one before.
         r01, r02 = self.frozen('bench-bb-r0.1'), self.frozen('bench-bb-r0.2')
         for sheet in (r01, r02, self.sheet):
             self.assertNotIn('| LSW |', sheet)
@@ -1155,7 +1155,7 @@ JOINT_POSITIONS = {
 
 class ChangeA(unittest.TestCase):
     """The committed model is step 1 v2, changes A and B and the QTM cable (record 4.4-4.6, 6.1; bench-bb-r0.3,
-    without change C, which is deferred to the carrier: record 4.6, 2026-11-02)."""
+    without change C, which is not part of the breadboard build: record 4.6, 2026-11-02)."""
 
     def setUp(self):
         self.w = wiring.load(DATA)
@@ -1478,8 +1478,8 @@ class ChangeB(unittest.TestCase):
 
 
 class ChangeCDeferred(unittest.TestCase):
-    """Change C (record 4.6, R-11, S2, PORT-9) is deferred to the carrier board (user's decision 2026-11-02;
-    bench-bb-r0.3 redefined in place before it was built): steps 1 and 2 have no sensor power switch. The
+    """Change C (record 4.6, R-11, PORT-9) is not part of the breadboard build (user's decision 2026-11-02;
+    bench-bb-r0.3 redefined in place before it was built): the bench has no sensor power switch. The
     hub's QT cable and the power monitors' QTM cable are both on the unswitched 3V3; the P1 chain lands on
     the QT.V+ strip as in r0.2; PA9 is unconnected (the firmware may drive it: harmless)."""
 
@@ -1523,8 +1523,8 @@ class ChangeCDeferred(unittest.TestCase):
         self.assertEqual((lead.net, link.exception, lead.exception), ('3V3', 'P1 regulator', 'P1 regulator'))
         self.assertEqual(checks.check_lead_geometry(self.w), [])
 
-    def test_the_firmware_keeps_pa9_for_the_carrier(self):
-        # i2c_bus, benchlink and i2cscan still name POWER_PIN = PA9 (the carrier's port enable, CN10.19);
+    def test_the_firmware_keeps_pa9(self):
+        # i2c_bus, benchlink and i2cscan still name POWER_PIN = PA9 (the port power enable, CN10.19);
         # the breadboard model does not check it, as it has no SENS_EN.
         for file in ('stage0-node/App/i2c_bus.lit.md', 'benchlink/App/benchlink.c', 'i2cscan/App/i2cscan.c'):
             with self.subTest(file=file):
@@ -2054,10 +2054,10 @@ class GuideBothWays(unittest.TestCase):
         mcu = {k: v for k, v in w.mcu.items() if k != 'CHG'}
         problems = wiring.check_guide_reverse(dataclasses.replace(w, nets=nets, mcu=mcu), GUIDE)
         self.assertTrue(any('(PB10)' in p for p in problems), problems)
-        self.assertFalse(any('(PA9)' in p for p in problems), 'the PA9 row is carrier only (change C deferred)')
+        self.assertFalse(any('(PA9)' in p for p in problems), 'the PA9 row is exempt (change C not built)')
 
-    def test_the_pa9_row_is_carrier_only(self):
-        # Record 4.6 (2026-11-02): change C is deferred to the carrier, so the guide's PA9 row is exempt and the
+    def test_the_pa9_row_is_exempt(self):
+        # Record 4.6 (2026-11-02): change C is not part of the breadboard build, so the guide's PA9 row is exempt and the
         # model, which has no SENS_EN, passes; were the row not exempt, the reverse check would catch it.
         w = wiring.load(DATA)
         row = next(r for r in wiring.guide_table(GUIDE) if r['Pin'] == 'PA9')

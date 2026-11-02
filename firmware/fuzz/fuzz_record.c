@@ -4,7 +4,7 @@
  * checks are reached); bytes 1-128 are the record (padded with zero); the next 8 bytes give the
  * verdict's probe: probed type, port, sensor-serial flag and value, and one holder on another port.
  * Properties, checked against an independent reading of
- * docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md sections 6.7 and 6.9, with the
+ * docs/firmware-current-design.md sections 6.7 and 6.9, with the
  * module types of registry version 2 (types 8 and 9, power telemetry design
  * docs/superpowers/specs/2026-10-29-power-telemetry-design.md sections 8.1 and 8.4):
  *  - wsmp_record_parse returns exactly the status of the spec's ordered checks 2-6;

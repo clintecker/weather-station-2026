@@ -15,7 +15,7 @@ void mod_th_identity(enum th_unit u, uint8_t id[WSMP_IDENTITY_LEN], uint8_t desc
 void mod_th_latch(enum th_unit u, uint16_t token, uint32_t now_ms);
 void mod_th_snapshot(enum th_unit u, uint8_t snap[WSMP_SNAPSHOT_LEN]);
 void mod_th_i2c_done(enum th_unit u, int rc);
-/* Binds the unit to a newly admitted module (sensor module ports design, section 6.7): a fresh window,
+/* Binds the unit to a newly admitted module (firmware-current-design.md, section 6.7): a fresh window,
    the module's boot ID, and the calibration of applied, the module's record if its status is applied, else NULL. The
    enclosure sensor is on the base, not a port module: it takes no calibration. */
 void mod_th_bind(enum th_unit u, const wsmp_record *applied, uint32_t boot_id, uint32_t now_ms);

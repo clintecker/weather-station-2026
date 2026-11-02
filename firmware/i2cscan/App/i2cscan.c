@@ -5,8 +5,8 @@
  * It only reads: no register of any part is written, so the node firmware later finds every part as
  * it left it. Blocking HAL transfers with a short timeout, from one sequencer task: a bench tool, not
  * the node (stage0-node/App/i2c_bus.c is the interrupt-driven bus). PA9 is driven high at start and stays
- * high: the sensor power enable, carrier only (build-progression record 4.6 dated note, 2026-11-02: change
- * C's load switch is deferred to the carrier). On the bench PA9 is unconnected, so this is harmless. */
+ * high: the sensor power enable (build-progression record 4.6 dated note, 2026-11-02: change C's load
+ * switch is not part of the breadboard build). On the bench PA9 is unconnected, so this is harmless. */
 #include <string.h>
 #include "bench_regs.h"
 #include "bench_screen.h"
@@ -20,8 +20,8 @@
 
 #define SDA_PIN GPIO_PIN_11       /* PA11 = D14, CN5.9 */
 #define SCL_PIN GPIO_PIN_12       /* PA12 = D15, CN5.10 */
-#define POWER_PIN GPIO_PIN_9      /* PA9 = D9, CN5.2 (CN10.19): sensor power enable (carrier only), high = on */
-#define POWER_UP_MS 2U            /* a switch's turn-on (carrier) and the SHT45's 1 ms power-up (its datasheet tPU) */
+#define POWER_PIN GPIO_PIN_9      /* PA9 = D9, CN5.2 (CN10.19): sensor power enable (not wired on the bench), high = on */
+#define POWER_UP_MS 2U            /* a switch's turn-on (if fitted) and the SHT45's 1 ms power-up (its datasheet tPU) */
 #define I2C_TIMING 0x20323E5DU    /* 100 kHz at PCLK1 = 48 MHz, SDADEL 2: the node's value (stage0-node/App/i2c_bus.c) */
 #define XFER_TIMEOUT_MS 10U       /* the longest transfer here, 3 bytes, takes ~0.4 ms at 100 kHz */
 #define PROBE_TRIES 1U
