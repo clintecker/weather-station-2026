@@ -23,9 +23,13 @@ int wsmp_host_state(enum wsmp_port p);
 int wsmp_host_admit(enum wsmp_port p, const uint8_t id[WSMP_IDENTITY_LEN], const uint8_t desc[WSMP_DESC_BLOCK_LEN]);
 uint32_t wsmp_host_changes(enum wsmp_port p);   /* how often the port joined or left the layout */
 /* The MODULES console line, "#modules air_th=active ..."; returns its length (at most len - 1). */
-#define WSMP_MODULES_LINE_MAX 256U   /* the longest line: every port with its longest state, the I2C ports with
-                                       (incomplete=255)(unverified=255) */
+#define WSMP_MODULES_LINE_MAX 272U   /* the longest line and its NUL: every port with the longest state or verdict
+                                       name, the I2C ports with (incomplete=255)(unverified=255): 268 characters
+                                       for 8 ports (LINE_WORST, a _Static_assert in wsmp_host.c) */
 unsigned wsmp_host_modules_line(char *buf, unsigned len);
+#ifdef WSMP_HOST
+void wsmp_host_worst_line(void);   /* test only: every port in its longest state, with its counts */
+#endif
 /* The descriptor set of the layout (WSMP section 11.1, with the identity entry of the sensor module
    ports design, section 6.7): every Admitted, Active or Suspect port in increasing port order. The
    generation is left 0 for the caller (WSMP-E1), which builds the set after the minute's latch steps

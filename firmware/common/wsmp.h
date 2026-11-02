@@ -9,7 +9,7 @@
 
 #define WSMP_MAGIC          0x5753U   /* "WS" */
 #define WSMP_VERSION_MAJOR  1U
-#define WSMP_VERSION_MINOR  0U
+#define WSMP_VERSION_MINOR  1U       /* 1.1: snapshot quality 6, not fitted (WSMP-V2) */
 #define WSMP_MAX_CHANNELS   8U
 #define WSMP_IDENTITY_LEN   32U
 #define WSMP_DESC_LEN       6U
@@ -17,7 +17,8 @@
 #define WSMP_SNAPSHOT_HEAD_LEN 8U
 #define WSMP_SLOT_LEN       8U
 #define WSMP_SNAPSHOT_LEN   (WSMP_SNAPSHOT_HEAD_LEN + WSMP_MAX_CHANNELS * WSMP_SLOT_LEN)
-#define WSMP_RADIO_BUDGET   58U       /* bytes of values and quality in one radio reading (WSMP-A1) */
+#define WSMP_RADIO_BUDGET   60U       /* bytes of values and quality in one radio reading (WSMP-A1): the planned
+                                         * plaintext (80 B, the journal's per-build limit) less a 20-byte header */
 #define WSMP_SCALE_MAX      6         /* WSMP-D2: the scale is -6 to +6 */
 #define WSMP_WIDTH_MAX      4U        /* WSMP-D3: 1 to 4 bytes on the radio */
 
@@ -27,8 +28,11 @@
 #define WSMP_FLAG_FAULT        0x04U
 #define WSMP_FLAGS_DEFINED     0x07U
 
-/* Snapshot quality codes (WSMP section 9). */
-enum { WSMP_QUAL_GOOD, WSMP_QUAL_PARTIAL, WSMP_QUAL_SUSPECT, WSMP_QUAL_MISSING, WSMP_QUAL_WARMING_UP, WSMP_QUAL_FAULT };
+/* Snapshot quality codes (WSMP section 9). WSMP_QUAL_NOT_FITTED (6, WSMP 1.1): this hardware build has
+ * no source for the channel; carried as missing (3) on the radio; the distinction holds locally and
+ * through the catalog map only (spec section 8.3, docs/superpowers/specs/2026-10-29-power-telemetry-design.md). */
+enum { WSMP_QUAL_GOOD, WSMP_QUAL_PARTIAL, WSMP_QUAL_SUSPECT, WSMP_QUAL_MISSING, WSMP_QUAL_WARMING_UP, WSMP_QUAL_FAULT,
+       WSMP_QUAL_NOT_FITTED };
 
 /* Identity capability bits (WSMP section 6.1). */
 #define WSMP_CAP_METADATA   0x0001U

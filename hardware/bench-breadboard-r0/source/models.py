@@ -1,9 +1,14 @@
 """The 3D view of each part (renders/3d-*.png): KiCad 10's own model where its library has one
-(resistors, capacitors, pin headers, the JST plug), and a box at the part's real size where it has
-none (the breakout boards, the RJ11 jack, the battery). Sizes in mm, from the parts' design files:
-SparkFun RJ11_Breakout (a 21.6 x 41.1 mm panel of two boards), Adafruit-BQ24074-PCB (38.1 x 33.0),
+(resistors, capacitors, pin headers), and a box at the part's real size where it has none (the
+breakout boards, the RJ11 jack, the pack). Sizes in mm, from the parts' design files: SparkFun
+RJ11_Breakout (a 21.6 x 41.1 mm panel of two boards), Adafruit-BQ24074-PCB (38.1 x 33.0),
 Adafruit-INA228-PCB and Adafruit-MAX17048-PCB (25.4 x 20.3), Pololu #2122 (11 x 17), Adafruit #353
-battery (69 x 54 x 18)."""
+pack (69 x 54 x 18). A breakout with no maker model and no colour of its own (a later part such as
+the load switch LSW) is a generic pre-assembled board (GENERIC_BOARD) on its `body`.
+
+Off the breadboard (record D2): a part placed by `place_mm` lies on the bench plate at z 0, its box
+offset from its place point by OFF_BOARD (the pack hangs away from board B, its plug at the point the
+leads end); a lever connector ([[joint]]) is a box over its drawn positions (JOINT_BOX)."""
 from pathlib import Path
 
 VENDOR = Path(__file__).resolve().parents[3]/'vendor'/'cad'   # tools/fetch-cad.sh
@@ -17,14 +22,19 @@ PCB = 1.6
 BOARD_BLACK = (0.10, 0.10, 0.12)
 SPARKFUN_RED = (0.70, 0.08, 0.08)
 POLOLU_BLUE = (0.10, 0.25, 0.60)
+GENERIC_BOARD = (0.20, 0.45, 0.30)   # a pre-assembled breakout without a maker model or colour here
 JACK = (0.90, 0.88, 0.80)
 TERMINAL = (0.15, 0.35, 0.80)
 BATTERY = (0.75, 0.75, 0.80)
+WAGO_GREY = (0.82, 0.82, 0.80)
+WAGO_ORANGE = (0.95, 0.50, 0.05)
+NTC_BEAD = (0.20, 0.20, 0.25)
+ADAPTER_WHITE = (0.93, 0.93, 0.93)
 
 # Boxes: (dx, dy, w, d, h, z, colour). dx, dy: the box centre from the centre of the part's pins
-# (+dy is down the breadboard, into its rows). w along the columns, d along the rows. A breakout's
-# board is its `body` in wiring.toml (the same outline the jumper planner keeps clear); BOARD_COLOUR
-# gives its colour, and EXTRA the parts on it.
+# (+dy is down the breadboard, into its rows), or from the place point of a part placed by place_mm.
+# w along the columns, d along the rows. A breakout's board is its `body` in wiring.toml (the same
+# outline the jumper planner keeps clear); BOARD_COLOUR gives its colour, and EXTRA the parts on it.
 OLED_GREEN = (0.10, 0.45, 0.20)
 GLASS = (0.04, 0.04, 0.06)
 BOARD_COLOUR = {'BOB': SPARKFUN_RED, 'CHGR': BOARD_BLACK, 'INA': BOARD_BLACK, 'GAUGE': BOARD_BLACK, 'REG': POLOLU_BLUE,
@@ -32,9 +42,25 @@ BOARD_COLOUR = {'BOB': SPARKFUN_RED, 'CHGR': BOARD_BLACK, 'INA': BOARD_BLACK, 'G
 EXTRA = {
     'BOB': [(0, -13.5, 14.0, 13.0, 11.5, HEADER_Z + PCB, JACK)],          # the RJ11 jack, at the outer end
     'INA': [(0, -14.5, 10.5, 7.0, 8.5, HEADER_Z + PCB, TERMINAL)],        # the screw terminal
-    'CELL': [(75.0, 52.0, 54.0, 69.0, 18.0, 0.0, BATTERY)],               # on the bench beside board B
     'OLED': [(-0.6, -26.6, 74.0, 46.0, 5.0, HEADER_Z + PCB, GLASS)],      # the glass (Adafruit #2674: 74 x 46 x 5 mm)
 }
+# Off the breadboard, on the plate (z 0), from each part's place point. The pack's plug end is its place
+# point, so its body hangs away from board B (-y); the NTC bead is taped on the pack's top; the wall
+# adapter is a stand-in box where its cable is drawn from (the adapter itself is at the mains socket).
+PACK_H = 18.0
+OFF_BOARD = {
+    'PACK': [(0.0, -30.0, 69.0, 54.0, PACK_H, 0.0, BATTERY)],
+    'NTC': [(0.0, 0.0, 4.0, 4.0, 3.0, PACK_H, NTC_BEAD)],
+    'ADAPTER': [(0.0, 0.0, 24.0, 24.0, 20.0, 0.0, ADAPTER_WHITE)],
+}
+OFF_BOARD_DEFAULT = (0.0, 0.0, 8.0, 6.0, 4.0, 0.0, GENERIC_BOARD)   # an off-board part not listed above
+# A WAGO 222 lever connector, by kind: its box over the drawn positions (wiring.JOINT_PITCH apart, a
+# drawing pitch), JOINT_D deep and JOINT_H tall, with its levers along the top. Not to scale in width
+# and depth, so the four joints sit apart as placed; about the 222 series' height.
+JOINT_KINDS = ('WAGO 222-413', 'WAGO 222-415')
+JOINT_D = 9.0
+JOINT_H = 8.5
+LEVER_H = 1.5
 # The makers' own models (tools/fetch-cad.sh), used in place of the boxes when fetched:
 # part id -> (file, the model's hole at the left end of the header (x, y) in its own mm, the pin on that
 # hole). Each model lies board-up with its header along its near edge, labels upright, as each part
@@ -45,8 +71,7 @@ REAL = {
     'GAUGE': ('gauge-5580.step', (6.35, 2.54), 'VIN'),
     'REG': ('reg-2122.step', (1.91, 1.27), 'VOUT'),
 }
-CELL_MODEL = ('cell-353.step', (35.0, 27.0))   # the cell's centre in its own mm
-
+PACK_MODEL = ('cell-353.step', (35.0, 27.0))   # the pack's centre in its own mm (Adafruit #353)
 
 def real_model(part_id):
     """(KiCad path, (hx, hy), pin) of a maker's model, or None if it is not fetched."""
@@ -60,41 +85,67 @@ def real_model(part_id):
 KICAD = {
     'resistor': ('Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step', 0),
     'capacitor': ('Capacitor_THT.3dshapes/C_Disc_D3.0mm_W2.0mm_P2.50mm.step', 0),
-    'jst': ('Connector_JST.3dshapes/JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical.step', 0),
 }
 
 
-def header_model(pins, rows=1, along_columns=True):
-    """KiCad's vertical pin header. Its pins run down the board from pin 1; a breakout's header is
-    turned -90 degrees to run along the breadboard's columns; the NUCLEO's stay as drawn."""
-    return (f'Connector_PinHeader_2.54mm.3dshapes/PinHeader_{rows}x{pins:02d}_P2.54mm_Vertical.step',
+def header_model(pins, rows=1, along_columns=True, female=False):
+    """KiCad's vertical pin header, or its pin socket for a female header (the NUCLEO's ARDUINO
+    headers CN5, CN6, CN8). Its pins run down the board from pin 1; a breakout's header is turned
+    -90 degrees to run along the breadboard's columns; the NUCLEO's stay as drawn."""
+    kind = 'PinSocket' if female else 'PinHeader'
+    return (f'Connector_{kind}_2.54mm.3dshapes/{kind}_{rows}x{pins:02d}_P2.54mm_Vertical.step',
             -90 if along_columns else 0)
+
+
+def _is_resistor(kind):
+    return 'resistor' in kind or 'ohm' in kind and 'load' in kind
+
+
+def _off_board(part):
+    """The models of a part placed by place_mm, at its place point on the plate."""
+    if part.id == 'PACK' and (VENDOR/PACK_MODEL[0]).exists():
+        return []   # the maker's model replaces the box (make.py's model_footprints places it)
+    if _is_resistor(part.kind.lower()):
+        return [(*KICAD['resistor'], None)]
+    return [(None, 0, box) for box in OFF_BOARD.get(part.id, [OFF_BOARD_DEFAULT])]
+
+
+def board_colour(key):
+    """A breakout's board colour: its maker's, or GENERIC_BOARD for a pre-assembled breakout without one."""
+    return BOARD_COLOUR.get(key, GENERIC_BOARD)
 
 
 def models_for(part):
     """[(kicad file or None, rotation, box or None)] for one part. make.py anchors the KiCad model on
-    the part's left-most pin (the drawing is mirrored); a box sits at the centre of the pins."""
+    the part's left-most pin (the drawing is mirrored), or on the place point of a part off the
+    breadboard; a box sits at the centre of the pins, or offset from the place point."""
+    if part.place_mm is not None:
+        return _off_board(part)
     n = len(part.pins)
     kind = part.kind.lower()
-    if 'resistor' in kind or 'ohm' in kind and 'load' in kind:
+    if _is_resistor(kind):
         return [(*KICAD['resistor'], None)]
     if 'capacitor' in kind:
         return [(*KICAD['capacitor'], None)]
-    out = []
-    if part.id in ('CELL', 'GBAT'):
-        out.append((*KICAD['jst'], None))
-    elif n >= 2:
-        out.append((*header_model(n), None))
+    out = [(*header_model(n), None)] if n >= 2 else []
     key = 'BOB' if part.id.startswith('BOB') else part.id
     if real_model(part.id):
         return out   # the maker's model replaces the box and its extras (model_footprints places it)
-    if part.id == 'CELL' and (VENDOR/CELL_MODEL[0]).exists():
-        return out
     if part.body is not None:
         dx, dy, w, d = part.body
-        out.append((None, 0, (dx, dy, w, d, PCB, HEADER_Z, BOARD_COLOUR[key])))
+        out.append((None, 0, (dx, dy, w, d, PCB, HEADER_Z, board_colour(key))))
     out += [(None, 0, box) for box in EXTRA.get(key, [])]
     return out
+
+
+def joint_boxes(joint, pitch):
+    """The boxes of a lever connector (a WAGO 222), centred on its drawn positions `pitch` mm apart:
+    the body on the plate and its levers along the top. ValueError for a kind with no box here."""
+    if joint.kind not in JOINT_KINDS:
+        raise ValueError(f'joint {joint.id}: no 3D box for kind {joint.kind!r} (models.JOINT_KINDS)')
+    w = joint.positions*pitch
+    return [(0.0, 0.0, w, JOINT_D, JOINT_H, 0.0, WAGO_GREY),
+            (0.0, -JOINT_D/4, w, JOINT_D/2, LEVER_H, JOINT_H, WAGO_ORANGE)]
 
 
 def write_box(path, box):
@@ -155,7 +206,7 @@ def _prism(corners_bottom, corners_top, rgb):
             f'{", ".join(pts)} ] }} coordIndex [ {faces} ] }} }}\n')
 
 
-def _bar(p, q, z, rgb):
+def _bar(p, q, z, rgb, r=WIRE_R):
     """A square wire piece from p to q (mm) at height z, a little longer than the gap so pieces meet."""
     import math
     dx, dy = q[0] - p[0], q[1] - p[1]
@@ -163,18 +214,17 @@ def _bar(p, q, z, rgb):
     if length < 1e-6:
         return ''
     ux, uy = dx/length, dy/length
-    nx, ny = -uy*WIRE_R, ux*WIRE_R
-    a = (p[0] - ux*WIRE_R, p[1] - uy*WIRE_R)
-    b = (q[0] + ux*WIRE_R, q[1] + uy*WIRE_R)
+    nx, ny = -uy*r, ux*r
+    a = (p[0] - ux*r, p[1] - uy*r)
+    b = (q[0] + ux*r, q[1] + uy*r)
     ring = [(a[0] + nx, a[1] + ny), (b[0] + nx, b[1] + ny), (b[0] - nx, b[1] - ny), (a[0] - nx, a[1] - ny)]
-    return _prism([(x, y, z - WIRE_R) for x, y in ring], [(x, y, z + WIRE_R) for x, y in ring], rgb)
+    return _prism([(x, y, z - r) for x, y in ring], [(x, y, z + r) for x, y in ring], rgb)
 
 
-def _leg(p, z_top, rgb):
-    """The vertical end of a wire, from the breadboard surface up to the wire."""
-    r = WIRE_R
+def _leg(p, z_top, rgb, r=WIRE_R, z_bottom=BREADBOARD_H):
+    """The vertical end of a wire, from the breadboard surface (or z_bottom) up to the wire."""
     ring = [(p[0] - r, p[1] - r), (p[0] + r, p[1] - r), (p[0] + r, p[1] + r), (p[0] - r, p[1] + r)]
-    return _prism([(x, y, BREADBOARD_H) for x, y in ring], [(x, y, z_top + r) for x, y in ring], rgb)
+    return _prism([(x, y, z_bottom) for x, y in ring], [(x, y, z_top + r) for x, y in ring], rgb)
 
 
 def write_jumper(path, segments, ends, z, rgb):
@@ -182,4 +232,40 @@ def write_jumper(path, segments, ends, z, rgb):
     out = ['#VRML V2.0 utf8\n']
     out += [_bar(p, q, z, rgb) for p, q in segments]
     out += [_leg(e, z, rgb) for e in ends]
+    Path(path).write_text(''.join(out))
+
+
+LEAD_Z = HEADER_Z + PCB + 6.0     # a heavy lead runs above the breakouts' boards, terminal to terminal
+INSULATION = 0.8                  # mm added to a lead's copper diameter
+# Where a lead end meets its part, by the end's kind (make.py's layout names it): the top of a lever
+# connector, a NUCLEO header pin's top, a breadboard hole, a terminal on a breakout's board, or a
+# terminal of a part on the plate (the pack's plug, the load's leads).
+END_Z = {'joint': JOINT_H, 'nucleo': 8.5, 'hole': BREADBOARD_H, 'pin': BREADBOARD_H, 'terminal': HEADER_Z + PCB,
+         'off_board': 3.0}
+SLEEVE = (0.05, 0.05, 0.05)       # the heat-shrink over an insulated end
+SLEEVE_L = 6.0                    # mm of sleeve along the lead at that end
+
+
+def lead_radius(awg):
+    """The outer radius (mm) of a stranded hook-up lead of this gauge with its insulation."""
+    return (0.127*92**((36 - awg)/39) + INSULATION)/2
+
+
+def _sleeve(end, other, r):
+    """The heat-shrink over the last SLEEVE_L mm of a lead at an insulated end, a little fatter than it."""
+    import math
+    length = math.dist(end, other) or 1.0
+    k = min(1.0, SLEEVE_L/length)
+    start = (end[0] + (other[0] - end[0])*k, end[1] + (other[1] - end[1])*k)
+    return _bar(start, end, LEAD_Z, SLEEVE, r*1.6)
+
+
+def write_lead(path, a, b, awg, rgb, z=(END_Z['terminal'], END_Z['terminal']), insulated=()):
+    """A lead (wiring.Lead: a pigtail half, a solid lead, a cable or a Dupont jumper): up from end a at its
+    height z[0] (a joint's top, a NUCLEO pin, a hole, a terminal), across at LEAD_Z and down to end b at z[1]. An end named in `insulated`
+    ('a' or 'b') stops in the air under a black sleeve: folded back, it reaches nothing."""
+    r = lead_radius(awg)
+    out = ['#VRML V2.0 utf8\n', _bar(a, b, LEAD_Z, rgb, r)]
+    for name, end, other, z_end in (('a', a, b, z[0]), ('b', b, a, z[1])):
+        out.append(_sleeve(end, other, r) if name in insulated else _leg(end, LEAD_Z, rgb, r, z_end))
     Path(path).write_text(''.join(out))

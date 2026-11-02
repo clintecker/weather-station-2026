@@ -23,6 +23,9 @@ from .web import SchemaDrift, line_fields, utc_stamp
 
 
 RECEIVER_SILENT_S = 180   # no RX #alive (every 60 s) for this long: the receiver is silent
+# The outer alarm. Inside it, ReceiverLink reopens an open but silent port in place after
+# ws0/link.py SILENT_REOPEN_S (90 s, doubling to 400 s); its '#gateway serial-reopen' line reaches
+# Services.note, so receiver.log and a warn row in gateway_events record each reopen.
 
 def provision(directory, hardware=False, station='simulation-01', station_id=1):
     """Generate unique local secrets; existing state is never reset implicitly.

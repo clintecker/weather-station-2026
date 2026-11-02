@@ -103,6 +103,7 @@ Root topic `weatherstation/v1/<station>`. All messages are retained, QoS 1 (`ws0
 | `…/gateway_availability` | `online` after connect. `offline` at a clean stop, and as the last will, so HA marks the station unavailable if the gateway dies |
 | `…/diagnostics` | Node health report, the key-reuse alarm and the newest descriptor-set alarms (`descriptor_set_alarms`: a different set under a held generation, WSMP-E6, or a set that failed its check, WSMP-E7; also on stderr). The gateway publishes this topic only when it has a health report or an alarm |
 | `…/modules` | The modules of the station's current descriptor set (WSMP section 11.1): the set of the generation that the station's newest frame carries (by its authenticated counter). By module type id (`air_th`, `pressure`, …): port, type, serial (16 hex digits; the top byte is its namespace), serial source, record status (`applied`, a `NO_RECORD` reason, `CAL_REJECTED`, `SENSOR_CHANGED`, or `none` for a module that never has a record) and record CRC. On change only; `{}` when the current set has no module; an empty retained message, which clears the topic, when there is no current set (also once after each broker connect, so a stale payload never stays). Not yet sent by a station: readings carry the generation, and the radio the set, from WSMP-E9 on |
+| `homeassistant/<component>/<station>_diag_<key>/config` (`sensor` or `binary_sensor`) | HA discovery for the power keys of the node health report ([Power entities](#power-entities)). Their own unique-ID namespace `<station>_diag_<key>`, so they never overwrite an observation entity `<station>_<field>`. Published once a broker connection for each key the newest health report carries (`advertise_health`, `ws0/service.py:616`) |
 | `homeassistant/sensor/<station>_module_<type id>/config` | HA discovery for one diagnostic sensor per module type id: its state is the record status, the rest are attributes. The ID has no port and no serial in it (WSMP-H1), so a module that moves keeps its entity |
 
 A sensor shows as available only when all three conditions hold:
@@ -113,8 +114,102 @@ A sensor shows as available only when all three conditions hold:
 
 Since-boot counters (rain tips, energy and charge) have the state class `total_increasing`. The
 other sensors have `measurement`. The power, enclosure, UVA raw and sample-count sensors are diagnostic
-entities (`DIAGNOSTIC_FIELDS` in `ws0/fields.py`). The gateway publishes `…/weather` and
+entities (`DIAGNOSTIC_FIELDS` in `ws0/fields.py`); so are the health-report entities ([Power
+entities](#power-entities)). The gateway publishes `…/weather` and
 `…/availability` on change and every 300 s.
+
+## Power entities
+
+Protocol version 6 (design: [`superpowers/specs/2026-10-29-power-telemetry-design.md`](superpowers/specs/2026-10-29-power-telemetry-design.md)
+sections 3 and 10) adds the station's power data. All of it is diagnostic (entity category
+`diagnostic`), so HA lists it under the device's "Diagnostic" section, not with the weather.
+
+**Every minute, from `…/weather`** (observation fields, `discovery()` in `ws0/service.py:512`;
+unique ID `<station>_<field>`). The gateway creates an entity only for a field that the newest
+reading carries, so a rail this build does not measure has no entity at all. Which phase fills each
+rail (design section 3.2; phase A is the current bq24074 build, B adds one INA228 per rail, C uses
+the BQ25798 with ("C+B") or without ("C alone") phase B's INA228s):
+
+| Field | Entity name | Unit, class | Phase A | Phase B | Phase C+B | Phase C alone |
+|---|---|---|---|---|---|---|
+| `batt_mv` | Battery voltage | mV, voltage | yes (fuel gauge) | yes | yes | yes |
+| `batt_current_ma` | Battery current (+ charging) | mA, current | yes | yes | yes | yes |
+| `energy_in_mwh`, `energy_out_mwh` | Energy in, Energy out | mWh, energy, `total_increasing` | yes | yes | yes | yes |
+| `charge_in_mah`, `charge_out_mah` | Charge in, Charge out | mAh, `total_increasing` | yes | yes | yes | yes |
+| `load_mv` | Load voltage | mV, voltage | yes (charger OUT) | yes | yes | yes (BQ25798 VSYS) |
+| `load_current_ma` | Load current | mA, current | no entity | yes | yes | no entity |
+| `charger_input_mv` | Charger input voltage (source not identified) | mV, voltage | yes | yes | yes (BQ25798 VBUS) | yes (BQ25798 VBUS) |
+| `solar_mv`, `solar_current_ma` | Solar input voltage, Solar input current | mV, mA | no entity | yes | yes | yes (BQ25798 VAC1; IBUS while solar is the active input, else 0) |
+| `usb_mv`, `usb_current_ma` | USB-C input voltage, USB-C input current | mV, mA | no entity | yes | yes | yes (BQ25798 VAC2; IBUS while USB-C is the active input, else 0) |
+
+- **Phase A cannot tell solar from USB-C.** The bq24074 has one input. "Charger input voltage
+  (source not identified)" is the voltage after the sources join; there is no solar or USB-C
+  entity. USB-C is for bench work and occasional backup charging only, never together with solar.
+- **Battery current sign:** + into the cell (charging), − out of the cell (discharging), mA. Load
+  and source currents are + into the load or into the station.
+- **Field 11 (`batt_mv`, "Battery voltage") changed meaning in version 6:** it is the cell
+  voltage from the fuel gauge. Under version 5 it was the INA228 VBUS of whatever net its jumper
+  sensed (on the official wiring the charger OUT). HA keeps the history of an entity across the
+  release, because the unique ID `<station>_batt_mv` does not change: values before the version 6
+  release are not the cell voltage. Compare only values after the release date.
+- A present field whose sensor failed is `null`: the entity is unavailable (the three conditions
+  above), never a number.
+
+**Every 15 minutes, from `…/diagnostics`** (health-report keys, `HEALTH_ENTITIES` and
+`health_discovery()` in `ws0/service.py:449` and `:474`; unique ID `<station>_diag_<key>`, config
+topic `homeassistant/<component>/<station>_diag_<key>/config`). An entity is available while
+`…/gateway_availability` is `online`, `…/diagnostics/availability` is `online` and its key is not
+`null` in the newest report. The gateway sets `…/diagnostics/availability` (retained) to `offline`
+once the newest health report is older than 1,900 s (`HEALTH_MAX_AGE_S` in `ws0/service.py`: two
+15-minute reports plus slack, the dashboard's "overdue" limit). So a node that browns out or whose
+radio dies does not leave its last SOC and charger state on screen as live values: they go
+unavailable about 32 minutes after the last report. It does not follow `…/availability` (the
+every-minute reading's 180 s freshness).
+
+| Key | Entity name | Component, unit, class | Phases A and B | Phase C |
+|---|---|---|---|---|
+| `battery_soc_pct` | Battery state of charge (gauge) | sensor, %, battery | yes (MAX17048; can exceed 100 near full) | yes |
+| `battery_soc_rate_pct_h` | Battery state of charge rate (gauge) | sensor, %/h (+ charging) | yes | yes |
+| `charger_charging` | Charger charging | binary_sensor, battery_charging | yes (CHG pin) | yes |
+| `charger_input_power_ok` | Charger input power good | binary_sensor, power | yes (PGOOD pin) | yes |
+| `charger_fault` | Charger fault | binary_sensor, problem | yes (CHG flashing. TMR is tied to GND on the #4755 per its schematic, so the safety timers are disabled: confirm on the board; a fault then means something else, such as TMR strapped differently or an intermittent CHG line) | yes |
+| `charger_stage` | Charger stage | sensor, enum (`precharge`, `cc`, `cv`, `topoff`, `terminated`, `not_charging`) | no entity (the pins cannot tell) | yes |
+| `charger_active_input` | Charger active input | sensor, enum (`solar`, `usb_c`, `no_input`) | no entity (source not identified) | yes |
+| `power_monitor_temp_c` | Power monitor temperature | sensor, °C, temperature | yes (battery INA228; B: hottest of four) | yes |
+| `mcu_supply_mv` | MCU supply voltage | sensor, mV, voltage | yes (VDDA from VREFINT) | yes |
+| `charger_reported_battery_ma` | Charger-reported charge current | sensor, mA, current | yes (bq24074 ISET; 0 while PGOOD is off) | yes (IBAT) |
+| `charger_reported_input_mv`, `charger_reported_input_ma` | Charger-reported input voltage, current | sensor, mV / mA | no entity | yes (VBUS, IBUS) |
+| `charger_reported_battery_mv` | Charger-reported battery voltage | sensor, mV, voltage | no entity | yes (VBAT) |
+| `charger_temp_c`, `pack_temp_c` | Charger temperature, Battery pack temperature | sensor, °C, temperature | no entity | yes (TDIE, TS) |
+
+Every report carries every key, but the gateway advertises an entity only for a key the build
+measures: the report's fitted byte lists the others in `power_not_measured` (power design section
+6.1), as an observation field the record does not carry gets no entity. So phases A and B create
+**8** power entities (the "yes" rows) and phase C up to 15. A key the build measures whose source
+fails (a dead fuel gauge: listed in `power_sensor_faults`) keeps its entity and shows it unavailable.
+If an earlier version 6 test run advertised all fifteen, remove the seven phase A "no entity"
+configs the same way as the retired entities below. The station counters of the report
+(boots since power-up, crashes and last crash PC, radio TX timeouts, I2C recoveries, journal
+counts, reset cause) stay in the `…/diagnostics` JSON only, with no entity: read them there or on
+the dashboard. The full key list with units and `null` rules is the `HealthReport` schema in
+[`openapi.json`](openapi.json).
+
+### Remove the retired entities after the version 6 release
+
+Version 6 builds no longer send `soc_gauge_pct` ("Battery (fuel gauge estimate)") and
+`charger_pins` ("Charger status pins"); the health report replaces them (`battery_soc_pct`, the
+charger binary sensors). The gateway never advertises them again, but their retained discovery
+configs from the version 5 run stay in the broker, and HA keeps showing two unavailable entities.
+After the first version 6 reading has arrived:
+
+1. In HA: Settings → Devices & services → MQTT → Configure → **Publish a packet**.
+2. Topic `homeassistant/sensor/<station>_soc_gauge_pct/config`, payload empty, retain on, Publish.
+   An empty retained discovery message removes the entity and clears the broker's copy.
+3. The same for `homeassistant/sensor/<station>_charger_pins/config`.
+4. Check the device page: the two entities are gone. Their recorded history stays in HA's database
+   until it ages out.
+
+Do this only after the version 6 release: a version 5 gateway would advertise them again.
 
 ## Run the gateway unattended
 

@@ -17,16 +17,17 @@ APP_SRC = $(BOARD_CORE_SRC) \
           App/bl_pkt.c \
           ../stage0-node/App/fault.c \
           ../i2cscan/App/bench_regs.c \
+          ../common/power_regs.c \
           $(BOARD_RADIO_SRC) \
           $(BOARD_SYS_SRC)
 
 IT_SRC    = Core/Src/stm32wlxx_it.c
 HAL_EXTRA = i2c i2c_ex adc adc_ex iwdg
-PROJ_INCS = Core/Inc App ../i2cscan/App
+PROJ_INCS = Core/Inc App ../i2cscan/App ../common   # bench_regs.h, power_regs.h
 EXTRA_INCS = ../stage0-node/App   # fault.h only; searched after everything else
 DEFS      = -DDEBUG -DVERBOSE_LEVEL=VLEVEL_M -DBL_ROLE_$(ROLE)
 OPT       = -Og
 
-STRICT_SRC = App/benchlink.c App/bl_guard.c App/bl_pkt.c
+STRICT_SRC = App/benchlink.c App/bl_guard.c App/bl_pkt.c ../i2cscan/App/bench_regs.c ../common/power_regs.c
 
 include $(BOARD)/board.mk

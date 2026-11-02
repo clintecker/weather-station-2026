@@ -2,11 +2,14 @@
 #define WSMP_LOCAL_H
 /* The station's local WSMP modules (docs/module-protocol.md section 10): one port for each module
  * type of the bench station. Each operation is a switch on the port (no function pointers, Power of
- * Ten rule 9). Every operation runs in the main loop. */
+ * Ten rule 9). Every operation runs in the main loop.
+ * P_BATTERY (5, type 8) and P_RAILS (8, type 9) are the base-board power modules (App/mod_power.h),
+ * present in every power profile (docs/superpowers/specs/2026-10-29-power-telemetry-design.md
+ * section 8.4). Port 5 was P_POWER (type 5, battery and charger) up to protocol version 5. */
 #include <stdint.h>
 #include "wsmp.h"
 
-enum wsmp_port { P_AIR_TH = 1, P_PRESSURE, P_UVA, P_ENCL_TH, P_POWER, P_WIND, P_RAIN, P_COUNT };
+enum wsmp_port { P_AIR_TH = 1, P_PRESSURE, P_UVA, P_ENCL_TH, P_BATTERY, P_WIND, P_RAIN, P_RAILS, P_COUNT };
 #define WSMP_TICK_MS 250U        /* the station calls local_tick for every port this often */
 #define WSMP_SAMPLE_MS 15000U    /* the temperature, humidity, pressure and UVA modules sample this often */
 
@@ -44,7 +47,10 @@ uint16_t local_type(enum wsmp_port p);   /* the module type the port's probe fin
 /* The frozen snapshot of the last latch. */
 void local_snapshot(enum wsmp_port p, uint8_t snap[WSMP_SNAPSHOT_LEN]);
 
-/* The serial number of a local module: never 0, unique for each port and type of one station. */
+/* The serial number of a local module: never 0, unique for each port and type of one station. A port
+   whose module type changes starts a new serial, so a new counter series (WSMP-C3): port 5 went from
+   type 5 to type 8 (0x575300000505 to 0x575300000508) with protocol version 6, and port 8 is new
+   (0x575300000809). */
 #define WSMP_LOCAL_SERIAL(port, type) (0x575300000000ULL | (uint64_t)(port) << 8 | (uint64_t)(type))
 /* The identity block of a local module (schema 1, firmware 1.0) whose packed descriptor block is desc. */
 void local_pack_identity(enum wsmp_port p, uint16_t type, uint8_t channels, uint32_t boot_id,

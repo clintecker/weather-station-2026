@@ -1,7 +1,7 @@
 # i2c_bus: the shared I2C bus of the local modules
 
 `i2c_bus.c` drives I2C2 for every local WSMP module of the bench station: the SHT45, BMP581,
-LTR390, SHTC3, INA228 and MAX17048. A module submits one transfer. The bus runs one transfer at a
+LTR390, SHTC3, the INA228 rail monitors and the MAX17048. A module submits one transfer. The bus runs one transfer at a
 time, in submission order, and reports each result from the main loop. Nothing waits: every step is
 an interrupt or a timer.
 
@@ -9,11 +9,19 @@ The file came out of `sensor.lit.md`, the earlier driver for the SHT45 alone. It
 peripheral setup, its guard timer, its critical sections and its stuck-bus recovery. The difference
 is the queue: a transfer now belongs to a client, and the clients take turns.
 
+The bus has two profiles, chosen at build time by `WS_I2C_MUX` (section 11; power telemetry spec
+`docs/superpowers/specs/2026-10-29-power-telemetry-design.md`, section 9.1):
+
+| `WS_I2C_MUX` | Topology | The bus |
+|---|---|---|
+| 0 (**the firmware default**, the official phase A wiring) | a passive STEMMA QT hub, no mux | every client upstream; no mux boot job, no deselect, no phantom check; the record clients (0x50) complete with `I2C_ENACK_ADDR` without bus traffic |
+| 1 | the ports board: a TCA9548A at 0x71 | the static channel map below |
+
 Phase 1 of the sensor module ports (`docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md`,
 sections 4.3, 6.5 and 6.6) puts an 8-channel I2C multiplexer (a PCA9548 or TCA9548A at 0x71) on the
-bus, with each external sensor alone on a channel: a **static channel map**. The bus selects a
-client's channel before its transfer and deselects every channel after it, so the upstream parts
-(SHTC3, INA228, MAX17048) are served only with no channel selected.
+bus, with each external sensor alone on a channel: a **static channel map**. In the mux profile the
+bus selects a client's channel before its transfer and deselects every channel after it, so the
+upstream parts (SHTC3, the INA228s, MAX17048) are served only with no channel selected.
 
 This document is the source. `tools/tangle.py` generates `i2c_bus.c` from the code chunks below. The
 header `i2c_bus.h` is a plain file.
@@ -31,10 +39,14 @@ python3 tools/tangle.py --check firmware/stage0-node/App/i2c_bus.lit.md    # com
 | One result | each submitted transfer gets exactly one `i2c_bus_done`, from the main loop | every test in `tests/test_i2c_bus.py` |
 | Refusal | a client with a transfer queued or running gets -1 at once. A transfer that is not one of the five forms also gets -1 | `test_a_second_submit_from_a_busy_client_is_refused`, `test_a_bad_form_is_refused` |
 | Guard | a transfer that does not finish within its guard (30 ms, plus 90 µs for each byte on the bus) ends with `I2C_ETIMEOUT`. A completion after it changes nothing | `test_guard_timeout_reports_etimeout`, `test_the_guard_grows_with_the_transfer`, `test_a_completion_after_the_guard_is_ignored`, `test_a_completion_at_the_guard_instant_counts_once` |
-| Recovery | after a transfer that can leave the bus stuck (a timeout, a HAL refusal, a bus error, or SDA still low) the bus clocks SDA free, with the client's channel still selected, and starts the peripheral again before the next transfer. SDA that stays low gives `I2C_ESTUCK` and a mux RESET pulse. A clean NACK costs no recovery. A recover-only request reports 0 or `I2C_ESTUCK` | `test_each_failure_has_its_code_and_recovers_the_bus`, `test_held_sda_is_clocked_free_or_reported_stuck`, `test_an_absent_device_costs_no_recovery`, `test_a_recovery_request_clocks_the_bus_and_reports_once` |
+| Recovery | after a transfer that can leave the bus stuck (a timeout, a HAL refusal, a bus error, or SDA still low) the bus clocks SDA free, with the client's channel (if any) still selected, and starts the peripheral again before the next transfer. SDA that stays low gives `I2C_ESTUCK` and, in the mux profile, a mux RESET pulse. A clean NACK costs no recovery. A recover-only request reports 0 or `I2C_ESTUCK` | `test_each_failure_has_its_code_and_recovers_the_bus`, `test_held_sda_is_clocked_free_or_reported_stuck`, `test_an_absent_device_costs_no_recovery`, `test_a_recovery_request_clocks_the_bus_and_reports_once` |
 | Isolation | a failure of one client's device does not fail the other clients' transfers | `test_unplug_mid_transfer_recovers_and_spares_other_clients` |
-| Channels | a port client's transfer is preceded by the mux write of its channel and its read-back, and followed by the deselect (0x00) and its read-back. An upstream client's transfer runs only with every channel deselected. A mux that does not read back gives the port client `I2C_EBUS`, also when only its deselect does not. After a deselect that never read back, each upstream job deselects and checks first, and gets `I2C_EBUS` without its transfer while the read-back fails | `test_a_port_transfer_selects_then_deselects`, `test_upstream_parts_are_served_with_no_channel_selected`, `test_a_mux_that_does_not_read_back_is_a_bus_fault`, `test_a_deselect_that_never_reads_back_fails_the_port_client`, `test_an_upstream_job_deselects_first_while_the_mux_is_not_ok`, `test_an_upstream_job_is_refused_while_the_deselect_does_not_read_back`, `test_an_absent_mux_is_a_bus_fault_for_every_client` |
-| Boot | before any client transfer: a mux RESET pulse, mask 0x00 written and read back, then the phantom check: every probe-table address and 0x50, probed with every channel deselected. An address that answers is a phantom: the port client at it is refused (`I2C_ENACK_ADDR`, no bus traffic) for that boot | `test_boot_order`, `test_a_phantom_address_is_removed_for_the_boot` |
+| Channels (mux profile) | a port client's transfer is preceded by the mux write of its channel and its read-back, and followed by the deselect (0x00) and its read-back. An upstream client's transfer runs only with every channel deselected. A mux that does not read back gives the port client `I2C_EBUS`, also when only its deselect does not. After a deselect that never read back, each upstream job deselects and checks first, and gets `I2C_EBUS` without its transfer while the read-back fails | `test_a_port_transfer_selects_then_deselects`, `test_upstream_parts_are_served_with_no_channel_selected`, `test_a_mux_that_does_not_read_back_is_a_bus_fault`, `test_a_deselect_that_never_reads_back_fails_the_port_client`, `test_an_upstream_job_deselects_first_while_the_mux_is_not_ok`, `test_an_upstream_job_is_refused_while_the_deselect_does_not_read_back`, `test_an_absent_mux_is_a_bus_fault_for_every_client` |
+| Boot (mux profile) | before any client transfer: a mux RESET pulse, mask 0x00 written and read back, then the phantom check: every probe-table address and 0x50, probed with every channel deselected. An address that answers is a phantom: the port client at it is refused (`I2C_ENACK_ADDR`, no bus traffic) for that boot | `test_boot_order`, `test_a_phantom_address_is_removed_for_the_boot` |
+| Hub profile | no mux traffic at all: the bus is ready at `i2c_bus_init`, with no boot job; every client is served upstream, whatever its address; a record client's transfer ends with `I2C_ENACK_ADDR` and no bus traffic | `test_a_hub_boot_reads_the_power_parts_and_the_sht45`, `test_a_record_client_is_absent_without_bus_traffic`, `test_a_port_address_is_upstream_and_not_a_phantom` |
+| Rail monitors | the four INA228 clients (battery 0x40, load 0x41, solar 0x45, USB-C 0x48) are upstream in both profiles and work side by side | `test_four_ina228_rail_monitors_work_upstream_together` (both profiles), `test_an_ina228_is_never_behind_a_channel` |
+| Counters | `i2c_bus_recoveries` counts each recovery started (recover-only requests included), `i2c_bus_stuck` each that ended with SDA still low, `i2c_bus_mux_resets` each mux RESET pulse (the boot's included). Each saturates at 0xFFFF and never touches the bus | `test_one_hang_is_one_recovery`, `test_held_sda_counts_as_stuck`, `test_held_sda_counts_as_stuck_without_a_mux_reset`, `test_the_counters_saturate`, `test_mux_resets_are_counted` |
+| Outcomes | `i2c_bus_outcomes` gives, and clears, a bit for each client whose own transfer completed with `I2C_OK` (acked) and a bit for each client whose job ended with any other code (failed), since its previous call. A recover-only request sets neither bit unless it ends `I2C_ESTUCK`; a client may have both. It never touches the bus. TEST-SENSOR-POWER reads it at each PA9 edge (build-progression record, step 1 exit 9) | `test_outcomes_name_the_clients_that_answered_and_failed` |
 | Record reads | a 2-byte word address (the 24LC32A) and up to 128 bytes in one read | `test_a_word_address_read_of_128_bytes` |
 
 A transfer has one of five forms (`i2c_bus.h`):
@@ -61,9 +73,16 @@ The completion codes (`i2c_bus.h`) are:
 
 ## 2. Hardware and constants
 
-I2C2 uses PA11 (SDA) and PA12 (SCL) at 100 kHz, as before. PA9 switches the sensor supply on the
-protoboard. On the breadboard PA9 is not connected. The mux RESET line is a board seam
-(`i2c_bus_mux_reset_line`): its pin is **TBD** (section 4.1 of the ports design).
+I2C2 uses PA11 (SDA) and PA12 (SCL) at 100 kHz, as before. PA9 (D9, CN5.2) switches the sensor
+supply from step 1 change C on (build-progression record section 4.6): on the breadboard it drives
+the enable of a load-switch breakout that feeds the STEMMA QT hub's sensors. The power monitors (the
+battery INA228 at 0x40 and the MAX17048) are on the unswitched QT branch (PORT-9, M6), so a PA9 cycle
+never drops them. If the record's step 1 exit criterion 9 fails, PA9 stays high and the sensor
+switch waits for the mux (PORT-5). The mux RESET line is a board seam
+(`i2c_bus_mux_reset_line`, defined in `board_inputs.c`): it is **PB14** (A4, CN8.5 / morpho CN7.36;
+build-progression record N5, answering the ports design's "TBD" in section 4.1), active low, a
+push-pull output released (high) at boot. It is wired when the mux is (`WS_I2C_MUX=1`), after the
+step 2 shield's incoming check shows A4 not tied to SDA. In the hub profile the call does nothing.
 
 The guard grows with the transfer. The base, 30 ms, covers the longest transfer of the first
 driver (a 7-byte reply, about 0.8 ms at 100 kHz) and a flash page erase (24.5 ms max), which stalls
@@ -74,13 +93,17 @@ the I2C interrupt; ST's timer rounds down to 1/1024 s ticks. Each byte on the bu
 ```c {#constants}
 #define SDA_PIN GPIO_PIN_11
 #define SCL_PIN GPIO_PIN_12
-#define POWER_PIN GPIO_PIN_9
+#define POWER_PIN GPIO_PIN_9   /* PA9 = D9, CN5.2 */
 #define I2C_GUARD_MS 30U
 #define I2C_BYTE_US 90U        /* one byte and its acknowledge at 100 kHz */
 #define US_PER_MS 1000U
 #define I2C_IRQ_PRIORITY 2   /* below the radio and the RTC (0), like the console UART */
-/* 100 kHz standard mode at PCLK1 = 48 MHz (same value as ST's NUCLEO-WL55JC I2C examples). */
-#define I2C_TIMING 0x20303E5DU
+/* 100 kHz standard mode at PCLK1 = 48 MHz: ST's NUCLEO-WL55JC example value 0x20303E5D (PRESC 2,
+   SCLDEL 3, SCLH 0x3E, SCLL 0x5D) with SDADEL 2. The data hold is then SDADEL x tPRESC + tI2CCLK =
+   2 x 62.5 ns + 20.8 ns = 146 ns (RM0453 I2C timings), above the 100 ns that the INA228 needs on the
+   address MSB when SDA straps A0 or A1 (SBOS904; the USB-C rail at 0x48), far below the 3.45 us
+   standard-mode limit. tests/test_i2c_bus.py checks the fields. */
+#define I2C_TIMING 0x20323E5DU
 #define REG_ADDR_LEN 1U
 #define WORD_ADDR_LEN 2U
 #define BYTE_BITS 8U
@@ -171,9 +194,25 @@ static enum i2c_client fifo_pop(void)
 ## 5. Channels and jobs
 
 The static channel map of phase 1 (section 4.1 of the ports design): the SHT45 on channel 0, the
-LTR390 on channel 1, the BMP581 on channel 2, each with its record EEPROM (0x50, its own client). The SHTC3, INA228 and MAX17048 are upstream of the mux
-and never on a port (PORT-9). The phantom table is the port probe table and the record EEPROM
-(section 6.7): no upstream part may answer at them (PORT-15).
+LTR390 on channel 1, the BMP581 on channel 2, each with its record EEPROM (0x50, its own client).
+The SHTC3, the four INA228 rail monitors and the MAX17048 are upstream of the mux and never on a
+port (PORT-9; power telemetry spec section 9.2). The phantom table is the port probe table and the
+record EEPROM (section 6.7): no upstream part may answer at them (PORT-15).
+
+`PORT(ch)` and `RECORD(ch)` give the map of the profile (section 11). In the hub profile a port
+sensor is upstream like every other part, and a record client has no path at all (`NO_PATH`): there
+is no record EEPROM on the hub, so its transfer ends with `I2C_ENACK_ADDR` without bus traffic and
+the port module is admitted with `NO_RECORD`, as the ports design allows. The build fails when a
+client is added without its entry, since a missing entry would read as channel 0.
+
+The counters (`i2c_bus_recoveries`, `i2c_bus_stuck`, `i2c_bus_mux_resets`) live in the main loop
+alone, like the queue, and saturate at 0xFFFF (`count_up`): the health report sends the first
+(power telemetry spec section 6.2), the `#status` line all three. Beside them, two client masks
+(`acked`, `failed`) collect the outcomes since the last `i2c_bus_outcomes`: `op_done` sets a
+client's acked bit when its own transfer (never a mux operation or a recovery) completes with
+`I2C_OK`, and `end_job` its failed bit when the job ends with any other code. TEST-SENSOR-POWER
+(`tx_console.c`) reads and clears them at each PA9 edge, so each of its lines names the parts that
+answered, and those that failed, in the half that just ended: the evidence of step 1 exit 9.
 
 The bus serves **jobs**. A job is a short plan of operations on the bus: a client's transfer with
 the mux operations around it, or the boot sequence. One operation is on the bus at a time, and each
@@ -185,6 +224,7 @@ ever runs inside `i2c_bus_submit`.
 | upstream client | the transfer (or the recovery, for a recover-only request). While the mux is not known to be deselected (`mux_ok` 0): deselect, deselect check, then the transfer |
 | port client | select (write the channel's bit), select check (read it back), the transfer or the recovery, deselect (write 0x00), deselect check (read it back) |
 | port client at a phantom address | none: `I2C_ENACK_ADDR`, without bus traffic |
+| record client in the hub profile (`NO_PATH`) | none: `I2C_ENACK_ADDR`, without bus traffic (a recover-only request is served as upstream) |
 | boot | (a mux RESET pulse first) deselect, deselect check, then a zero-length write to each phantom-table address |
 
 A select that fails or does not read back skips the transfer: the client gets `I2C_EBUS` (a port
@@ -200,10 +240,15 @@ parts until it is.
 
 ```c {#jobs}
 #define UPSTREAM 0xFFU
-static const uint8_t channel_of[I2C_C_COUNT] = { [I2C_C_SHT45] = 0, [I2C_C_LTR390] = 1, [I2C_C_BMP581] = 2,
-                                                 [I2C_C_SHTC3] = UPSTREAM, [I2C_C_INA228] = UPSTREAM,
-                                                 [I2C_C_MAX17048] = UPSTREAM, [I2C_C_REC_AIR] = 0,
-                                                 [I2C_C_REC_UVA] = 1, [I2C_C_REC_PRESSURE] = 2 };
+#define NO_PATH 0xFEU                                              /* the hub: no record EEPROM */
+#define PORT(ch) ((uint8_t)(WS_I2C_MUX ? (ch) : UPSTREAM))
+#define RECORD(ch) ((uint8_t)(WS_I2C_MUX ? (ch) : NO_PATH))
+_Static_assert(I2C_C_COUNT == 12, "a new client needs its channel_of entry");
+static const uint8_t channel_of[I2C_C_COUNT] = {
+  [I2C_C_SHT45] = PORT(0), [I2C_C_LTR390] = PORT(1), [I2C_C_BMP581] = PORT(2), [I2C_C_SHTC3] = UPSTREAM,
+  [I2C_C_INA228] = UPSTREAM, [I2C_C_INA_LOAD] = UPSTREAM, [I2C_C_INA_SOLAR] = UPSTREAM, [I2C_C_INA_USB] = UPSTREAM,
+  [I2C_C_MAX17048] = UPSTREAM, [I2C_C_REC_AIR] = RECORD(0), [I2C_C_REC_UVA] = RECORD(1),
+  [I2C_C_REC_PRESSURE] = RECORD(2) };
 static const uint8_t phantom_addr[I2C_PHANTOM_COUNT] = { 0x44, 0x47, 0x53, 0x50 };
 
 typedef enum { OP_SELECT, OP_SELECT_CHECK, OP_XFER, OP_RECOVER, OP_DESELECT, OP_DESELECT_CHECK, OP_PROBE } op_kind;
@@ -214,6 +259,11 @@ static unsigned plan_len, plan_at, deselect_at;
 static job_kind job;
 static int job_rc;                       /* the client's result */
 static uint8_t mux_tx, mux_rx, mux_mask, reset_tried, probe_at, phantoms, booted, mux_ok;
+static uint16_t n_recoveries, n_stuck, n_mux_resets;   /* since boot, saturating */
+static uint16_t acked, failed;           /* clients since the last i2c_bus_outcomes, a bit each */
+_Static_assert(I2C_C_COUNT <= 16, "i2c_bus_outcomes has a 16-bit mask: one bit for each client");
+
+static uint16_t count_up(uint16_t n) { return n == UINT16_MAX ? n : (uint16_t)(n + 1U); }
 
 static void plan_add(op_kind k)
 {
@@ -227,6 +277,7 @@ static void plan_start(job_kind k)
 
 static void mux_reset_pulse(void)
 {
+  n_mux_resets = count_up(n_mux_resets);
   i2c_bus_mux_reset_line(1);
   i2c_bus_mux_reset_line(0);   /* the TCA9548A needs 6 ns low: one write after the other is longer */
 }
@@ -258,15 +309,17 @@ static void plan_client(enum i2c_client c)
 {
   const xfer_t *x = &xfers[c];
   op_kind work = x->txlen == 0 && x->rxlen == 0 ? OP_RECOVER : OP_XFER;
+  uint8_t ch = channel_of[c];
   plan_start(JOB_CLIENT);
-  if (channel_of[c] == UPSTREAM)
+  if (ch == NO_PATH && work == OP_XFER) { job_rc = I2C_ENACK_ADDR; return; }   /* an empty plan */
+  if (ch == UPSTREAM || ch == NO_PATH)
   {
-    if (!mux_ok) plan_deselect();   /* a deselect that never read back: check it first */
+    if (!mux_ok) plan_deselect();   /* a deselect that never read back: check it first (never on the hub) */
     plan_add(work);
     return;
   }
   if (work == OP_XFER && is_phantom(x->addr7)) { job_rc = I2C_ENACK_ADDR; return; }   /* an empty plan */
-  mux_mask = (uint8_t)(1U << channel_of[c]);
+  mux_mask = (uint8_t)(1U << ch);
   plan_add(OP_SELECT);
   plan_add(OP_SELECT_CHECK);
   plan_add(work);
@@ -447,7 +500,15 @@ client's channel still selected (step 1 of section 6.6). If SDA stays low, the d
 channel holds the upstream bus too, through the mux: the mux RESET pulse deselects it in hardware
 (step 2), so the upstream parts are back at once, and the client gets `I2C_ESTUCK`. Step 3, the
 port's power cycle, and the Faulted state with its back-off do not exist on the breadboard, which
-has no port power switch.
+has no port power switch. From step 1 change C the breadboard has one switch for every sensor
+together, PA9 (`i2c_bus_power`, section 10): the power monitors are on the unswitched QT branch, so a
+PA9 cycle never drops them. The recovery does not cycle it. If exit criterion 9 fails, PA9 stays high
+and the switch waits for the mux (PORT-5). In the hub profile there is no mux: SDA that stays low gives `I2C_ESTUCK`
+and no pulse.
+
+`recover_begin` counts every recovery it starts (`i2c_bus_recoveries`, the health report's I2C
+recoveries since boot), and the bus task counts each one that ends with SDA still low
+(`i2c_bus_stuck`). A recovery of a failed transfer and a recover-only request count alike.
 
 ```c {#recovery}
 static void pin_scl(void *c, int level) { (void)c; HAL_GPIO_WritePin(GPIOA, SCL_PIN, level ? GPIO_PIN_SET : GPIO_PIN_RESET); }
@@ -465,6 +526,7 @@ static void on_step(void *ctx)
 
 static void recover_begin(void)
 {
+  n_recoveries = count_up(n_recoveries);
   (void)HAL_I2C_DeInit(&hi2c2);   /* fails only for a NULL handle. The code below takes the pins over anyway */
   /* An abandoned transfer can leave its interrupt pending and its handler set. Neither may run on
      the re-initialised peripheral. */
@@ -498,7 +560,12 @@ static void end_job(void)
   job = JOB_NONE;
   st = S_IDLE;
   if (was == JOB_BOOT) booted = 1;
-  else { busy[c] = 0; i2c_bus_done(c, job_rc); }
+  else
+  {
+    busy[c] = 0;
+    if (job_rc != I2C_OK) failed |= (uint16_t)(1U << c);
+    i2c_bus_done(c, job_rc);
+  }
   kick();
 }
 
@@ -524,10 +591,21 @@ static void mux_done(op_kind k, int rc)
 static void op_done(int rc)
 {
   op_kind k = plan[plan_at++];
-  if (k == OP_XFER || k == OP_RECOVER) job_rc = rc;
+  if (k == OP_XFER || k == OP_RECOVER)
+  {
+    job_rc = rc;
+    if (k == OP_XFER && rc == I2C_OK) acked |= (uint16_t)(1U << cur);   /* the part itself answered */
+  }
   else if (k == OP_PROBE) { if (rc == I2C_OK) phantoms |= (uint8_t)(1U << probe_at); probe_at++; }
   else mux_done(k, rc);
   run_op();
+}
+
+/* A recovery that ended with SDA still low. Step 2 (mux profile): the mux lets the upstream bus go. */
+static void note_stuck(void)
+{
+  n_stuck = count_up(n_stuck);
+  if (WS_I2C_MUX) mux_reset_pulse();
 }
 
 static int may_be_stuck(int rc)
@@ -546,7 +624,7 @@ static void bus_task(void)
   else if (WS_CHECK(st == S_RECOVERED))   /* the task is posted only with S_DONE, S_RECOVERED or S_END */
   {
     i2c_start();
-    if (recover_rc) mux_reset_pulse();   /* step 2: SDA still low, the mux lets the upstream bus go */
+    if (recover_rc) note_stuck();
     op_done(recover_rc ? I2C_ESTUCK : failed_rc);
   }
 }
@@ -556,9 +634,13 @@ BUSYMON_TASK(bus_task)
 ## 10. Initialisation, power and status
 
 `i2c_bus_init` creates the timers, registers the task and starts the peripheral. It also drives PA9
-high, so the sensor supply is on by default. Then the boot job starts at once: the mux RESET pulse,
-the deselect and its read-back, and the phantom check, before any client transfer. A client may
-submit at any time; its transfer waits in the queue until the boot job is done.
+high, so the sensor supply is on by default. `i2c_bus_power` only writes the pin: the bench command
+TEST-SENSOR-POWER (`tx_console.c`, exit criterion 9) is its one caller, and leaves PA9 high. A
+switched sensor that is off answers no address, a clean NACK that costs no recovery. In the mux profile the boot job starts at once: the mux
+RESET pulse, the deselect and its read-back, and the phantom check, before any client transfer. A
+client may submit at any time; its transfer waits in the queue until the boot job is done. In the hub
+profile there is no boot job: the bus is ready, and no channel can be selected (`mux_ok` 1), as soon
+as `i2c_bus_init` returns.
 
 ```c {#init}
 void i2c_bus_power(int on) { HAL_GPIO_WritePin(GPIOA, POWER_PIN, on ? GPIO_PIN_SET : GPIO_PIN_RESET); }
@@ -574,15 +656,52 @@ void i2c_bus_init(void)
   HAL_GPIO_WritePin(GPIOA, POWER_PIN, GPIO_PIN_SET);
   HAL_GPIO_Init(GPIOA, &gpio);
   i2c_start();
-  kick();   /* the boot job */
+  booted = (uint8_t)(WS_I2C_MUX == 0);   /* the hub: nothing to boot */
+  mux_ok = booted;
+  kick();   /* the boot job (the mux profile) */
 }
 
 int i2c_bus_ready(void) { return booted; }
 int i2c_bus_mux_ok(void) { return mux_ok; }
 uint8_t i2c_bus_phantoms(void) { return phantoms; }
+uint16_t i2c_bus_recoveries(void) { return n_recoveries; }
+uint16_t i2c_bus_stuck(void) { return n_stuck; }
+uint16_t i2c_bus_mux_resets(void) { return n_mux_resets; }
+
+void i2c_bus_outcomes(uint16_t *was_acked, uint16_t *was_failed)
+{
+  *was_acked = acked;
+  *was_failed = failed;
+  acked = 0;
+  failed = 0;
+}
 ```
 
-## 11. The file
+## 11. Profiles: hub or mux
+
+`WS_I2C_MUX` (`i2c_bus.h`, default 0) is the one switch. Both profiles compile the same code; the
+constant only changes the channel map (section 5), the boot (section 10) and the step 2 pulse
+(section 8).
+
+| | Hub (`WS_I2C_MUX` 0, the default) | Mux (`WS_I2C_MUX` 1) |
+|---|---|---|
+| Hardware | the official phase A wiring on I2C2: the SHT45 on a passive STEMMA QT hub powered from 3V3_SW (the PA9 load switch, `POWER_PIN`); the battery INA228 (0x40) and the MAX17048 (0x36) on a second QT cable from the unswitched 3V3 (QTM; build-progression record 4.6, PORT-9), so cycling PA9 never drops them | the ports board: a TCA9548A at 0x71, a sensor and its record EEPROM on each channel |
+| Boot job | none: `i2c_bus_ready` is 1 when `i2c_bus_init` returns | RESET pulse, deselect, read-back, phantom check |
+| Port sensors (SHT45, LTR390, BMP581) | upstream, at their own addresses | on channels 0, 1, 2 |
+| Record clients (0x50) | `I2C_ENACK_ADDR`, no bus traffic: modules admitted with `NO_RECORD` | read on the port's channel |
+| SHTC3, INA228 rail monitors, MAX17048 | upstream | upstream, with every channel deselected |
+| Phantom check | none (`i2c_bus_phantoms` 0) | at boot |
+| SDA stuck after a recovery | `I2C_ESTUCK` | `I2C_ESTUCK` and a mux RESET pulse |
+| `i2c_bus_mux_ok`, `i2c_bus_mux_resets` | 1, 0 | as the mux reads back; the pulses |
+
+The target build takes the default; `make ROLE=tx OPT='-Os -DWS_I2C_MUX=1'` builds the mux profile
+(the Makefile has no separate hook for extra defines; `OPT` reaches every compile). The host bus
+model follows the same define (`firmware/host/i2c_sim.c`): with 0 it has no mux and puts every device
+upstream. The existing host builds (`tests/toolchain.py` `wsmp_sources()`, `tests/test_tx_machine.py`)
+pass `-DWS_I2C_MUX=1` so their record and mux tests keep the ports board; `wsmp_sources(mux=0)` is the
+hub variant for the new tests.
+
+## 12. The file
 
 ```c {#i2c_bus.c}
 #define WS_CHECK_FILE 12

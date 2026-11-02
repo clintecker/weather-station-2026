@@ -1,5 +1,6 @@
-# WSMP codes once given (WSMP-G1, append-only), with their meaning: quantity_unit <quantity> <unit>
-# and type_schema <type>.<schema> <quantity>/<kind> per channel. tools/wsmp_registry.py adds new ones.
+# WSMP codes once given (WSMP-G1, append-only), with their meaning: quantity_unit <quantity> <unit>,
+# type_schema <type>.<schema> <quantity>/<kind> per channel, and
+# type_meta <type>.<schema> <report class> <role> [<state> ...]. tools/wsmp_registry.py adds new ones.
 quantity 1 air temperature
 quantity 2 relative humidity
 quantity 3 station air pressure
@@ -17,6 +18,13 @@ quantity 14 charge out of the battery
 quantity 15 battery state of charge
 quantity 16 charger state
 quantity 17 anemometer pulses
+quantity 18 load voltage
+quantity 19 load current
+quantity 20 charger input voltage
+quantity 21 solar input voltage
+quantity 22 solar input current
+quantity 23 USB-C input voltage
+quantity 24 USB-C input current
 unit 1 degree Celsius
 unit 2 percent
 unit 3 hectopascal
@@ -47,6 +55,8 @@ module_type 4 enclosure temperature and humidity
 module_type 5 battery and charger
 module_type 6 wind
 module_type 7 rain
+module_type 8 battery
+module_type 9 power rails
 quantity_unit 1 1
 quantity_unit 2 2
 quantity_unit 3 3
@@ -64,6 +74,13 @@ quantity_unit 14 11
 quantity_unit 15 2
 quantity_unit 16 12
 quantity_unit 17 13
+quantity_unit 18 8
+quantity_unit 19 9
+quantity_unit 20 8
+quantity_unit 21 8
+quantity_unit 22 9
+quantity_unit 23 8
+quantity_unit 24 9
 type_schema 1.1 1/2 2/2
 type_schema 2.1 3/2
 type_schema 3.1 8/2
@@ -71,3 +88,14 @@ type_schema 4.1 1/2 2/2
 type_schema 5.1 9/2 11/6 12/6 13/6 14/6 15/1 16/10
 type_schema 6.1 17/6 5/7 6/8 6/9
 type_schema 7.1 7/6
+type_schema 8.1 9/2 10/2 11/6 12/6 13/6 14/6
+type_schema 9.1 18/2 19/2 20/2 21/2 22/2 23/2 24/2
+type_meta 1.1 minute outside air
+type_meta 2.1 minute enclosure
+type_meta 3.1 minute outside
+type_meta 4.1 minute enclosure
+type_meta 5.1 health battery [off charging done fault]
+type_meta 6.1 minute outside
+type_meta 7.1 minute outside
+type_meta 8.1 minute battery
+type_meta 9.1 minute power

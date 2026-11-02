@@ -70,7 +70,7 @@ Limits and units that the file uses:
 | Constant | Value | Use |
 |---|---|---|
 | `MINUTE_S`, `HOUR_S`, `DAY_S` | 60, 3600, 86400 | `ws0/__main__.py` and `ws0/harness.py` import them |
-| `RECORD_VERSION` | 5 | the only accepted `version`. It equals `VERSION` in `ws0/protocol.py` |
+| `RECORD_VERSION` | 6 | the only accepted `version`. It equals `VERSION` in `ws0/protocol.py`. A run directory belongs to one record version: a version 5 database stays with the version 5 release, with no migration (`docs/protocol-design.md` section 5.7) |
 | `CURRENT_MAX_AGE_S` | 180 | a latest reading of this age or older is not current |
 | `FUTURE_SLACK_S` | 5 | a sample time more than this after its receipt shows a wrong clock |
 | `UTC_LIMIT` | 2^32 | the UTC field of the observation is a u32 |
@@ -79,7 +79,7 @@ Limits and units that the file uses:
 
 ```python {#limits}
 MINUTE_S, HOUR_S, DAY_S = 60, 3600, 86400
-RECORD_VERSION = 5          # the protocol version (VERSION in ws0/protocol.py)
+RECORD_VERSION = 6          # the protocol version (VERSION in ws0/protocol.py)
 CURRENT_MAX_AGE_S = 180     # a latest reading older than this is not current
 FUTURE_SLACK_S = 5          # a sample time this far after receipt is a wrong clock, not jitter
 UTC_LIMIT = 2**32           # the UTC field of the observation is u32
@@ -202,7 +202,7 @@ in order. `SchemaTests.test_each_rule_and_its_message` pins every message and th
 
 | # | Function | Condition | Message |
 |---|---|---|---|
-| 1 | `_check_keys` | a `dict` whose `version` is the `int` 5 (`True` and `5.0` fail) | `Unsupported version` |
+| 1 | `_check_keys` | a `dict` whose `version` is the `int` 6 (`True` and `6.0` fail) | `Unsupported version` |
 | 2 | `_check_keys` | every base key present | `Missing record fields` |
 | 3 | `_check_keys` | no key outside the base keys, the catalog and `wind_calm` | `Unexpected record fields` |
 | 4 | `_check_keys` | `wind_calm` present exactly when `wind_dir_deg` is | `wind_calm goes with wind_dir_deg` |

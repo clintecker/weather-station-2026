@@ -30,11 +30,15 @@ uint32_t ws_link_probe_interval(const ws_link *l);   /* the current back-off ste
  * frames may follow the live reading. The stricter of the energy and link states wins:
  * CRITICAL (or an energy code out of range) never transmits. CONSERVE sends at most every 5
  * minutes (the product spec's conservation reports). Probing sends no backlog. The backlog is
- * capped per energy state, by the minute's airtime budget over exchange_ms (one answered
- * exchange's radio time; the live reading always fits), and by max_backlog (the send queue).
- * last_send_s: the last minute that sent. */
+ * capped per energy state, by the minute's airtime budget, and by max_backlog (the send queue).
+ * The budget is the energy state's cap less reserve_ms (the health report's airtime in a minute
+ * whose report follows the exchange, else 0), over exchange_ms (one answered exchange's radio
+ * time), saturating: a reserve at or above the cap, or an exchange longer than what is left, leaves
+ * the live reading only. The live reading always goes, and so does a due health report: in
+ * CONSERVE at SF12 the two together exceed the 2 s cap once per health report (power telemetry
+ * design 6.4). last_send_s: the last minute that sent. */
 int ws_minute_backlog(int energy, const ws_link *l, uint32_t now_s, uint32_t last_send_s, uint32_t exchange_ms,
-                      unsigned max_backlog);
+                      uint32_t reserve_ms, unsigned max_backlog);
 
 /* Strikes (the safety net against records the gateway keeps refusing): a record that stays
  * unanswered while a frame sent AFTER it in the same exchange is answered gets a strike; at the

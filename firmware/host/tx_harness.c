@@ -6,9 +6,18 @@
  * expectations in whole ms). tests/test_tx_machine.py drives it through ctypes. This file adds the
  * TX node's devices: a radio that finishes a transmission after TX_AIR_MS and times out a receive
  * window on its own, the WSMP local modules (the real App/wsmp_host.c and mod_*.c on the shared I2C
- * bus and the host bus model firmware/host/i2c_sim.c, with one SHT45 whose behaviour the test
- * chooses; no vane, cups, rain gauge or charger), and the flash (firmware/sim_flash.c under the real
- * App/node_store.c).
+ * bus and the host bus model firmware/host/i2c_sim.c), and the flash (firmware/sim_flash.c under the
+ * real App/node_store.c).
+ *
+ * The bus is the official phase A wiring (docs/superpowers/specs/2026-10-29-power-telemetry-design.md
+ * sections 2, 9.1 and 9.2), built with -DWS_I2C_MUX=0: a passive STEMMA QT hub, no mux and no record
+ * EEPROMs, with every part upstream: the SHT45 (0x44) whose behaviour the test chooses, the battery
+ * INA228 (0x40) and the MAX17048 gauge (0x36). As in step 1 change C (build-progression record
+ * section 4.6), the SHT45 is on the PA9 switched branch and the power monitors are not. No vane, cups or rain gauge
+ * (a test may set a vane reading and the counter link probe's seams: h_vane_mv, h_link_low, h_edge). The board ADC (ISET, the
+ * charger input divider, VREFINT) and the CHG edge counter are sim_core.c's seams (h_power_adc,
+ * h_charger_edges); the bq24074 PGOOD and CHG pins are h_charger_pins, deasserted until a test sets
+ * them.
  *
  * The radio follows ST's SubGHz_Phy (radio.c, stm32wlxx_hal_subghz.c) as
  * written, not an idealised radio:
@@ -33,6 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "console.h"
+#include "i2c_bus.h"
 #include "node_store.h"
 #include "radio.h"
 #include "radio_cfg.h"
@@ -44,6 +54,7 @@
 #include "stm32_timer.h"
 #include "subghz_phy_app.h"
 #include "sys_app.h"
+#include "tx_exchange.h"
 #include "utilities_def.h"
 
 #define TX_AIR_MS 30U   /* an observation frame at SF7/500 kHz is ~30 ms on air */
@@ -144,8 +155,10 @@ int ws_flash_erase(uint32_t p) { check_radio_idle(); flash_erases++; return sim_
 /* ---- the USB console: the test hands over whole lines (h_line) ---- */
 void console_init(void) {}
 
-/* ---- the local modules' devices: one SHT45 on the bus model; no vane, cups, rain gauge or charger ---- */
-static int sht45 = -1;
+/* ---- the local modules' devices: the phase A parts on the hub; no vane, cups or rain gauge ---- */
+#define INA228_BATTERY_ADDR 0x40U   /* the battery INA228 (App/power_config.h, phase A) */
+#define MAX17048_ADDR 0x36U
+static int sht45 = -1, ina228 = -1, gauge = -1, charger_pins;
 /* The raw SHT45 words that read as 21.50 C and 45.00 %RH, found through the driver's own conversion. */
 static uint16_t raw_for(int want, int is_rh)
 {
@@ -161,12 +174,23 @@ static uint16_t raw_for(int want, int is_rh)
 static void sensor_device(void)
 {
   if (sht45 < 0) sht45 = i2c_sim_add(DEVK_SHT45, WS_SHT45_ADDR);
+  i2c_sim_switched(sht45, 1);   /* the hub's sensors take V+ from the PA9 load switch */
   model_sht45_set(sht45, raw_for(2150, 0), raw_for(4500, 1), 0);
+  if (ina228 < 0) ina228 = i2c_sim_add(DEVK_INA228, INA228_BATTERY_ADDR);
+  if (gauge < 0) gauge = i2c_sim_add(DEVK_MAX17048, MAX17048_ADDR);
+  if (sht45 < 0 || ina228 < 0 || gauge < 0) { fprintf(stderr, "tx_harness: the bus model refused a part\n"); abort(); }
 }
 void board_inputs_init(void) {}
-int board_charger_pins(void) { return 0; }
+int board_charger_pins(void) { return charger_pins; }
 uint16_t board_pulse_count(void) { return 0; }
-int board_vane_mv(uint16_t *mv) { *mv = 0; return 0; }   /* no vane: no conversion, never present */
+/* No vane: no conversion, never present, until a test sets a reading (h_vane_mv, -1 for none again). */
+static int vane_mv = -1;
+int board_vane_mv(uint16_t *mv) { *mv = (uint16_t)(vane_mv < 0 ? 0 : vane_mv); return vane_mv >= 0; }
+/* The counter link probe seams (board_inputs.h, build-progression record M7), set by the test. */
+#include "board_inputs.h"
+static struct { unsigned lows; int edge; } meter[BOARD_LINK_COUNT];   /* each link's probe state */
+unsigned board_link_lows(enum board_link link) { return link < BOARD_LINK_COUNT ? meter[link].lows : 0U; }
+int board_link_edge_seen(enum board_link link) { return link < BOARD_LINK_COUNT ? meter[link].edge : 0; }
 
 /* ---- the API tests/test_tx_machine.py uses ---- */
 /* Move the clock ms forward, firing every timer and radio event due on the way. */
@@ -205,6 +229,22 @@ int h_sht45_writes(void) { return (int)i2c_sim_writes(sht45); }   /* SHT45 comma
 /* rc -2: the SHT45 does not answer its address; hang 1: every transfer hangs until the bus guard. */
 void h_sht45_rh_raw(int raw) { model_sht45_set(sht45, raw_for(2150, 0), (uint16_t)raw, 0); }   /* the temperature stays 21.50 C */
 void h_sensor(int rc, int hang) { i2c_sim_mode(sht45, hang ? DM_HANG : rc ? DM_NACK_ADDR : DM_OK, 0, 1); }
+/* The phase A power parts (i2c_models.c) and the charger pins (POWER_PGOOD | POWER_CHG, mod_power.h). */
+void h_charger_pins(int pins) { charger_pins = pins; }
+void h_ina228_set(int32_t uv, int32_t ua) { model_ina228_set(ina228, uv, ua); }
+void h_ina228_die(int32_t milli_c) { model_ina228_die(ina228, milli_c); }
+void h_gauge_soc_256(int soc) { model_max17048_soc_256((uint16_t)soc); }
+void h_gauge_rate(int32_t mpct_h) { model_max17048_rate(mpct_h); }
+int h_pa9(void) { return i2c_sim_power(); }   /* the PA9 sensor switch: 1 on */
+/* The meter links (#status meter_link=): probes in a row that read low, a real edge since, the vane. */
+void h_link_low(int link, unsigned n) { meter[link].lows = n; meter[link].edge = 0; }
+void h_edge(int link) { meter[link].edge = 1; }
+void h_vane_mv(int mv) { vane_mv = mv; }
+void h_gauge_present(int on) { if (on) i2c_sim_restore(gauge); else i2c_sim_remove(gauge); }   /* unplugged: NACK */
+/* Preset the saturating TX-timeout total (tx_exchange.h), so a test reaches 0xFFFF without 65,535
+   timed-out frames. tx_counts is a writable static that exchange_counts() hands out read-only. */
+void h_tx_timeouts_preset(uint16_t n) { ((tx_counts_t *)(uintptr_t)exchange_counts())->tx_timeouts = n; }
+uint32_t h_i2c_recoveries(void) { return i2c_bus_recoveries(); }
 void h_radio_send_fails(int n) { radio_send_fails = n; }
 void h_flash_prog_fails(int on) { prog_fails = on; }
 void h_radio_hang(int on) { radio_hang = on; }
@@ -218,11 +258,15 @@ int h_burn(int k)
   while (got < k && store_next_counter(&c) == 0) got++;
   return got;
 }
+/* The firmware timer with this period that was created first (sim_core.c puts the newest at the head):
+   the exchange's ACK window. (The console's TEST-SENSOR-POWER timer had the same 2 s until its half
+   became WSMP_SAMPLE_MS + 1 s; the first-created rule stays.) */
 static UTIL_TIMER_Object_t *firmware_timer(uint32_t period)
 {
+  UTIL_TIMER_Object_t *first = NULL;
   for (UTIL_TIMER_Object_t *p = sim_timers(); p; p = p->next)
-    if (p != &sw_rx_timer && p->period == period) return p;
-  return NULL;
+    if (p != &sw_rx_timer && p->period == period) first = p;
+  return first;
 }
 /* Call the callback of the firmware timer with this period now, running or not: a stale timer event
    in a state that does not expect it. Returns 0 if there is no such timer. */

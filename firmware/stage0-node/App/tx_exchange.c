@@ -11,7 +11,9 @@
 #include "clock.h"
 #include "events.h"
 #include "fault.h"
+#include "i2c_bus.h"
 #include "leds.h"
+#include "mod_power.h"
 #include "radio.h"
 #include "radio_cfg.h"
 #include "stm32_seq.h"
@@ -30,7 +32,7 @@
 #define INTER_FRAME_MS      50U     /* gap before each frame: the RX bridge listens again after its ACK */
 
 /* WS_FW_BUILD_ID is the first 8 hex digits of the release commit (WS_FW_VERSION), or 0 if they
-   are not hex. The Makefile computes it. */
+   are not hex or the tree was dirty (power spec section 8.6). The Makefile computes it. */
 #ifndef WS_FW_BUILD_ID
 #error "WS_FW_BUILD_ID comes from the Makefile"
 #endif
@@ -122,6 +124,14 @@ const char *exchange_state_name(void) { return tx_state_name[tx_state]; }
    and a reading that a minute made in the meantime is journaled now, first. */
 static void radio_idle(void) { tx_state = TX_IDLE; ws_radio_sleep(); held_flush(); }
 
+static void tx_timed_out(void)
+{
+  ws_radio_standby();               /* the driver's timeout leaves the radio transmitting */
+  ws_failrun_note(&tx_counts.air, 0);
+  if (tx_counts.tx_timeouts < UINT16_MAX) tx_counts.tx_timeouts++;
+  led_flash(LED_RED, LED_FLASH_MS); APP_PRINTF("#error tx-timeout\n");
+}
+
 /* The exchange passed its worst case, for example because the radio never finishes. Stop the radio,
    then journal any held reading while the radio is idle. A watchdog reset then loses nothing
    (app_tx.c, watchdog_healthy). */
@@ -144,6 +154,45 @@ static void gap_before(int then)
 static uint16_t clamp16(uint32_t v) { return v > UINT16_MAX ? UINT16_MAX : (uint16_t)v; }
 static int8_t clamp8(int v) { return (int8_t)(v < -INT8_MAX ? -INT8_MAX : v > INT8_MAX ? INT8_MAX : v); }  /* INT8_MIN means "none" */
 
+static int charger_status_canonical(uint8_t st)
+{
+  if (st == WS_CHARGER_NONE) return 1;
+  return ((st & WS_CHG_STAGE_MASK) >> WS_CHG_STAGE_SHIFT) != WS_CHG_STAGE_RESERVED;   /* inputs 0-3 all valid */
+}
+
+/* The slow power values of the last latch (mod_power.c), cached: no bus or ADC access here. */
+static void diag_power(ws_diag_t *d)
+{
+  power_health_t h;
+  mod_power_health(&h);
+  d->vdda_mv = h.vdda_mv; d->monitor_temp = h.monitor_temp;
+  d->soc = h.soc; d->soc_rate = h.soc_rate;
+  d->charger_status = WS_CHECK(charger_status_canonical(h.charger_status)) ? h.charger_status : (uint8_t)WS_CHARGER_NONE;
+  d->fitted = h.fitted;
+  d->chg_input_mv = h.chg_input_mv; d->chg_input_ma = h.chg_input_ma;
+  d->chg_batt_mv = h.chg_batt_mv; d->chg_batt_ma = h.chg_batt_ma;
+  d->chg_temp = h.chg_temp; d->pack_temp = h.pack_temp;
+}
+
+/* The station items (design section 9.8): counters and backup registers, read, never measured. */
+static void diag_station(ws_diag_t *d)
+{
+  d->crash_pc = fault_last_pc();
+  d->boots = clamp16(fault_boots());
+  d->tx_timeouts = tx_counts.tx_timeouts;
+  d->i2c_recoveries = i2c_bus_recoveries();
+}
+
+static void diag_line(const ws_diag_t *d)
+{
+  APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u crash_pc=%08x boots=%u tx_timeouts=%u "
+             "i2c_recoveries=%u vdda_mv=%u monitor_temp=%d soc=%u soc_rate=%d charger_status=%u chg_input_mv=%u "
+             "chg_input_ma=%d chg_batt_mv=%u chg_batt_ma=%d chg_temp=%d pack_temp=%d fitted=%u\n",
+             d->pending, (unsigned)d->lost, d->torn, d->abandoned, d->no_ack, (unsigned)d->crash_pc, d->boots,
+             d->tx_timeouts, d->i2c_recoveries, d->vdda_mv, d->monitor_temp, d->soc, d->soc_rate, d->charger_status,
+             d->chg_input_mv, d->chg_input_ma, d->chg_batt_mv, d->chg_batt_ma, d->chg_temp, d->pack_temp, d->fitted);
+}
+
 /* The health report (kind 4) goes after the minute's exchange. It goes also while the link is
    probing, so its link field can report "probing". It has no journal entry and no receive window.
    Returns 1 if it went on air. Its TxDone or TxTimeout then ends the exchange. */
@@ -159,13 +208,15 @@ static int send_diag(void)
                   .reset_cause = (uint8_t)watchdog_reset_code(), .link = (uint8_t)policy_probing(),
                   .crashes = (uint8_t)(crashes > UINT8_MAX ? UINT8_MAX : crashes), .energy = (uint8_t)energy_state(),
                   .rssi = ack_rssi, .snr = ack_snr };
+  diag_station(&d);
+  diag_power(&d);
   ws_diag_pack(&d, plain);
   if (store_next_counter(&ctr)) { ws_failrun_note(&tx_counts.air, 0); return 0; }
   if (!WS_CHECK(ws_seal_kind(key, identity.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) >= 0)) return 0;
   if (ws_radio_send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_counts.air, 0); return 0; }
   policy_diag_sent(now);   /* only a report that the radio took. A refused one is due next minute */
   tx_state = TX_DIAG_SENDING;
-  APP_PRINTF("#diag sent pending=%u lost=%u torn=%u abandoned=%u no_ack=%u\n", d.pending, (unsigned)d.lost, d.torn, d.abandoned, d.no_ack);
+  diag_line(&d);
   return 1;
 }
 
@@ -340,9 +391,7 @@ static int in_sending(uint32_t ev)
     return 1;
   }
   if (ev != EV_TX_TIMEOUT) return 0;
-  ws_radio_standby();               /* the driver's timeout leaves the radio transmitting */
-  ws_failrun_note(&tx_counts.air, 0);
-  led_flash(LED_RED, LED_FLASH_MS); APP_PRINTF("#error tx-timeout\n");
+  tx_timed_out();
   stop_drain(); next_item();
   return 1;
 }
@@ -364,9 +413,8 @@ static int in_ack_wait(uint32_t ev)
 static int in_diag_sending(uint32_t ev)
 {
   if (ev != EV_TX_DONE && ev != EV_TX_TIMEOUT) return 0;
-  if (ev == EV_TX_TIMEOUT) ws_radio_standby();
-  ws_failrun_note(&tx_counts.air, ev == EV_TX_DONE);
-  if (ev == EV_TX_TIMEOUT) { led_flash(LED_RED, LED_FLASH_MS); APP_PRINTF("#error tx-timeout\n"); }
+  if (ev == EV_TX_DONE) ws_failrun_note(&tx_counts.air, 1);
+  else tx_timed_out();
   radio_idle();
   return 1;
 }

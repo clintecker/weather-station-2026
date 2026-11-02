@@ -2,6 +2,30 @@
 
 Status: design, adversarially reviewed in five rounds on 2026-10-22; approved by Clint for
 implementation. Not implemented. Nothing has been ordered.
+
+**Amended 2026-10-29** by the power telemetry design
+([`2026-10-29-power-telemetry-design.md`](2026-10-29-power-telemetry-design.md), "PT" below,
+sections 8.4, 8.5, 9.1 and 9.2). The approved body stands except where a dated note says otherwise:
+
+**Amended 2026-10-30** by the build-progression decision record
+([`2026-10-29-build-progression-decisions.md`](2026-10-29-build-progression-decisions.md), "BP"
+below: N5, N7, S4, section 3 step 1, section 6.5 and Clint's answers in section 7.1, Q3 and Q7). The
+rows dated 2026-10-30 in the table below are those amendments; each also has an inline note.
+
+| Item | Before | After (2026-10-29) | Where |
+|---|---|---|---|
+| Base power modules | one "battery and charger" module (port 9) with one INA228 | two base modules: **port 9 = battery** (module type 8) and **port 14 = power rails** (module type 9). Both are fixed by the build's power profile (`WS_POWER_PROFILE`) and **always present** for it, never pluggable ports | section 6.7 "Port numbers" |
+| v2 remote ports | 14 and up | **15 and up** | sections 6.7 and 8 |
+| Station limits | at most 7 modules in v1 | **8 of 8 modules and 24 of 24 minute channels** (WSMP-P8), 59 of the 60-byte WSMP-A1 budget | section 6.7, OQ-4 |
+| Base-only power parts | one INA228 at 0x40 | **one INA228 per rail**: battery 0x40, load 0x41, solar 0x45, USB-C 0x48; never 0x44, 0x46 or 0x47. The address plan is part of the PORT-15 build-time assertion | section 1, PORT-9, PORT-15 |
+| Bus topology | the mux on the breadboard (phase 1) | the passive STEMMA QT hub with no mux (`WS_I2C_MUX` 0, the firmware default) is the official phase A topology; the mux design (`WS_I2C_MUX` 1) stays for the ports board | sections 1 and 4 |
+| WSMP-A1 | 58 bytes (a 78-byte plaintext less a 20-byte header) | **60 bytes** (the 80-byte per-build plaintext less 20) | section 6.7 descriptor-set fragments |
+| v1 base unit (2026-10-30) | OQ-14 open; a carrier under the NUCLEO recommended | **decided by Clint (BP 7.1 Q7)**: the v1 base board is a carrier under the NUCLEO-WL55JC1 on the morpho CN7/CN10 underside pins (BP N7, S4), carrying the four INA228s (0x40, 0x41, 0x45, 0x48), the MAX17048 (the carrier stays 1S3P, BP 7.1 Q3) and the SHTC3 upstream of the mux. Its layout waits for the underside pin length and clearance measured on a real NUCLEO (BP N7). *2026-10-30:* satisfied by Clint's fit test (BP 7.1 N7): a cut-down standard 2.54 mm female header took the morpho pins fully seated with no underside part touching, so a standard-height socket works; the layout waits only for the morpho grid from ST's drawing and the chassis outline | OQ-14 (section 11), section 12 |
+| Mux RESET pin (2026-10-30) | **TBD**, a free GPIO after the UM2592 check | **PB14** (A4, CN8.5 / morpho CN7.36), a direct GPIO, wired when the mux is (`WS_I2C_MUX` 1), after the shield's incoming check shows A4 not tied to SDA (BP N5). The firmware drives it through `i2c_bus_mux_reset_line` (`firmware/stage0-node/App/board_inputs.c`) | sections 4.1, 6.2, 12, 13.2 |
+| Breadboard at step 1 (2026-10-30) | "the breadboard itself does not change" | at step 1 (breadboard v2, BP section 3) power comes off the breadboard (BP P1), and change C adds the PA9 sensor load switch on board A and splits the QT bus into an unswitched monitor branch and a switched sensor branch (BP 4.6) | section 4.1 |
+| Breadboard pull-ups (2026-10-30) | keep the Adafruit boards' pull-ups; cutting is a v1 step | the INA228 #5832 has **no** pull-up cut jumper: its SDA and SCL pull-ups are one 10 kΩ resistor pack, kept and measured (BP section 1.4) | section 4.2 |
+| PORT-5 evidence (2026-10-30) | none | step 1 exit criterion 9 (BP section 3) records whether a switched sensor rail works without the mux; result pending the bench run | section 6.2 "Port power", PORT-5 |
+
 This spec plans how sensors attach to the station, in three steps: the breadboard now, the v1
 production station (STEMMA QT sensor modules on RJ11 I2C ports), and a possible v2 (RS-485 over
 RJ45). It changes no normative document. Section 13 lists the changes that the normative documents
@@ -32,12 +56,12 @@ found a problem with one, the problem is an open question in section 11, with a 
 | | Decision (Clint) |
 |---|---|
 | Phase 1, breadboard | The sensors connect to the TX NUCLEO-WL55JC1's I2C2 over STEMMA QT: the 5-port hub (Adafruit 5625), boards daisy-chained by their second QT socket. MAX17048 0x36, INA228 0x40, SHT45 0x44 (outdoor T/RH, in the radiation shield), BMP581 0x47, LTR390 0x53, SHTC3 0x70 (enclosure T/RH). The SEN-15901 wind and rain meter on its two RJ11 (6P4C) cables into SparkFun BOB-14021 breakouts, read by GPIO and ADC |
-| Phase 1 addition | An 8-channel I2C multiplexer (PCA9548 or TCA9548A, for example an Adafruit STEMMA QT board). Each channel stands in for a future port |
+| Phase 1 addition | An 8-channel I2C multiplexer (PCA9548 or TCA9548A, for example an Adafruit STEMMA QT board). Each channel stands in for a future port. *Amended 2026-10-29 (PT section 9.1): the official phase A topology is the passive hub with **no mux** (`WS_I2C_MUX` 0, the firmware default): every client upstream, no mux boot job, no deselect plan, no phantom check, port modules admitted with `NO_RECORD` (READ). The mux design of this spec stays for the ports board (`WS_I2C_MUX` 1, the TCA9548A at 0x71), and the host tests keep both* |
 | v1 modules | Every external sensor goes on its own small module board. The board adapts STEMMA QT to RJ11 (6P6C) |
 | v1 base | The base unit (the collector, in the IP66 box) has one RJ11 port for each sensor. Star topology. Each port on its own mux channel. **No RJ45 anywhere in v1** |
 | v1 port pinout (proposed) | 1 = 3.3 V, 2 = SDA, 3 = GND, 4 = SCL, 5 = INT/spare, 6 = GND |
 | v1 port circuit | One mux channel. 4.7 kΩ pull-ups on the base side (the Adafruit boards' pull-ups are cut). 33–100 Ω series resistor and a TVS diode on SDA and SCL. Current-limited 3.3 V (load switch or PTC). Firmware rescan and 9-clock bus recovery for each channel |
-| v1 base-only parts | INA228, MAX17048 and SHTC3 stay on the base board, upstream of the mux, never on a port |
+| v1 base-only parts | INA228, MAX17048 and SHTC3 stay on the base board, upstream of the mux, never on a port. *Amended 2026-10-29 (PT sections 1 and 9.2): one INA228 per rail on the base, upstream: battery 0x40 (phase A), load 0x41, solar 0x45 and USB-C 0x48 (phase B; the solar and USB-C monitors upstream of the point where the sources join). The extra INA228 boards keep their I2C pull-ups: the #5832 has no pull-up cut jumper (its SDA/SCL pull-ups share one resistor pack with the address pull-downs), so the upstream bus pull-up is measured instead, idle and unpowered, pass at 0.97 kΩ or more (PT section 11.3 as amended, record 1.4; `docs/hardware/power-metering.md` section 7). This note said the extra boards' pull-up jumpers are cut* |
 | v1 meter ports | Stay as they are (the SEN-15901's RJ11 6P4C cables on GPIO and ADC) |
 | Before any board | A bench test sets the real cable limit: 3 m, then 5 m, of 6-conductor flat cable. Scope rise time ≤ 1000 ns at 100 kHz. A long error-count loop |
 | Open (Clint) | Sealing RJ11 on an IP66 box. Likely: the jacks inside, glands that fit flat cable |
@@ -127,6 +151,13 @@ the board in hand. This applies to the breadboard too.
 
 ## 4. Phase 1: the breadboard with the mux
 
+*Amended 2026-10-29 (PT section 9.1):* this section is the **mux profile** (`WS_I2C_MUX` 1), the
+breadboard rehearsal of the ports board. The official current-phase (phase A) breadboard is the hub
+profile (`WS_I2C_MUX` 0): the same parts on the passive STEMMA QT hub with no mux, every client
+upstream. Both profiles build from one source; only the mux profile has the boot job, the deselect
+plan and the phantom check. In phase B the load, solar and USB-C INA228s (0x41, 0x45, 0x48) join the
+upstream side in either profile.
+
 ### 4.1 Topology
 
 ```mermaid
@@ -159,16 +190,32 @@ flowchart LR
 - **The breadboard itself does not change.** Board A keeps one STEMMA QT cable to the hub
   ([`build-sheet.md`](../../../hardware/bench-breadboard-r0/build-sheet.md), part QT). The mux lives
   on the QT chain, off the breadboard. The meter circuits on board A stay as they are.
+  *Amended 2026-10-30 (BP section 3, step 1; 4.4; 4.6):* at step 1 (breadboard v2) the breadboard
+  does change. Power comes off it: no battery, charge, input or load current runs through a
+  breadboard contact (BP P1). At change C a PA9 sensor load switch goes on board A, and the QT bus
+  splits into an unswitched branch (the power monitors) and a switched branch (the sensor hub),
+  mirroring PORT-9 for the monitors only: the bench's SHTC3 (and BMP581) stay on the hub, on the
+  switched rail, where PORT-9 keeps the SHTC3 upstream and unswitched (BP 4.6 dated note: a bench
+  difference, accepted; the carrier follows PORT-9). The mux still lives on the QT chain, off the
+  breadboard.
 - **Mux RESET** (active low on the TCA9548A; check the PCA9548 board) goes to a free NUCLEO GPIO, so
   firmware can release a stuck channel (section 6.6). The pin is **TBD**: it must pass the UM2592
   checklist of the wiring guide (section 6 there), like every other pin. Until it is wired, the
   breadboard has no way out of a channel whose device holds SDA low, other than unplugging.
+  *Amended 2026-10-30 (BP N5):* the pin is **PB14** (A4, CN8.5 / morpho CN7.36), a direct GPIO. It
+  is wired when the mux is (`WS_I2C_MUX` 1), and only after the shield's incoming check shows A4 not
+  tied to SDA. The firmware drives it through `i2c_bus_mux_reset_line`
+  (`firmware/stage0-node/App/board_inputs.c`). In the hub profile (`WS_I2C_MUX` 0) it is not wired.
 
 ### 4.2 Pull-ups on the breadboard
 
 Keep the Adafruit boards' own pull-ups on the breadboard. Each channel then has its sensor board's
 pull-ups, and the upstream bus has those of the hub-side boards. Cutting pull-ups is a v1 and cable-test
 step, not a phase 1 step.
+
+*Amended 2026-10-30 (BP section 1.4):* the INA228 #5832 has **no** pull-up cut jumper. Its SDA and
+SCL pull-ups (and its ADDR0/ADDR1 pull-downs) are one 10 kΩ four-resistor pack, so they cannot be
+cut: they are kept, and the parallel upstream pull-up is measured on the bench.
 
 When a channel is selected, the mux joins it to the upstream bus. The two sets of pull-ups are then
 in parallel, and the capacitances add. So the bus that the NUCLEO sees is upstream plus one
@@ -425,9 +472,15 @@ flowchart LR
 
   The current limit is **TBD**. It must be above the module's peak (a few mA for these sensors,
   *estimate, measure*) and low enough that a reversed or shorted cable does no damage (section 6.3).
+
+  *Amended 2026-10-30.* Evidence: step 1 exit criterion 9 (BP section 3) records whether a switched
+  sensor rail works without the mux; result pending the bench run. If the switched rail is
+  back-powered or the bus stalls, port power waits for the mux.
 - **Mux RESET** goes straight to an MCU GPIO. The port enables can go to an upstream I/O expander if
   the MCU runs out of pins. The mux RESET cannot: it is what frees the upstream bus when a channel
   device holds SDA low, and an expander on a stuck bus cannot be reached.
+  *Amended 2026-10-30 (BP N5, S4):* that GPIO is **PB14** (A4, CN8.5 / morpho CN7.36), on the
+  shield and on the v1 carrier alike.
 - **Labels.** Sensor ports and meter ports use the same 6-position jack. Label them SENSOR 1–n and
   WIND, RAIN, and give the sensor cables a different colour (PORT-12).
 
@@ -747,7 +800,9 @@ coefficients. An entry grows from 5 to 18 bytes. WSMP-E4 becomes 8 + 8 × 18 + 2
 (Calculated; 8 + 12 × 18 + 24 × 6 = 368 if P8 were raised to 12). The fragment payload is not
 defined yet (WSMP-E9); with the same 58 bytes that a reading gets (WSMP-A1: a 78-byte plaintext less
 a 20-byte header), a full set takes at least ⌈296 / 58⌉ = 6 fragments, against at least ⌈192 / 58⌉ = 4 today
-(Calculated, before any fragment header; 7 for 368 B). The WSMP section 11.2 diagram's 3 fragments
+(Calculated, before any fragment header; 7 for 368 B). *Amended 2026-10-29 (PT section 8.4): WSMP-A1
+is now 60 bytes (the 80-byte per-build plaintext less the 20-byte header), so a full set takes at
+least ⌈296 / 60⌉ = 5 fragments (⌈192 / 60⌉ = 4 today, ⌈368 / 60⌉ = 7 for 368 B).* The WSMP section 11.2 diagram's 3 fragments
 illustrate the exchange, not a full set. The radio code has no frame kind for a descriptor set yet:
 `ws_air_frame_ok` (`firmware/common/ws_console.c`) accepts only the observation and diagnostic
 kinds (section 13.3). The WSMP edits are in section 13.1.
@@ -798,14 +853,22 @@ number is a place. Proposal (my call; it only has to be stable):
 | Port numbers | What |
 |---|---|
 | 1–8 | I2C ports on mux channels 0–7, labelled SENSOR 1–8 |
-| 9 | battery and charger (on the base) |
+| 9 | battery and charger (on the base). *Amended 2026-10-29: **battery** (module type 8: cell voltage, battery current, energy and charge counters)* |
 | 10 | enclosure T/RH, SHTC3 (on the base) |
 | 11 | air pressure, BMP581, if it goes on the base (OQ-3) |
 | 12, 13 | meter ports: wind, rain |
-| 14 and up | reserved for v2 remote ports |
+| 14 and up | reserved for v2 remote ports. *Amended 2026-10-29: **14 = power rails** (module type 9, on the base: load, charger input, solar and USB-C voltages and currents); v2 remote ports from **15** and up* |
+
+*Amended 2026-10-29 (PT sections 8.4 and 8.5):* ports 9 and 14 are base-board modules fixed by the
+build's power profile (`WS_POWER_PROFILE`), not pluggable ports. **Both are present in every
+profile, always**, whatever their parts answer: a missing part makes only its own channels missing,
+a bus fault makes them fault, and a channel the profile has no source for carries the snapshot
+quality "not fitted" (6). So a dead INA228 or gauge gives INVALID fields, never absent ones, and
+never changes the descriptor set. Today's local ports (`wsmp_local.h`) are `P_BATTERY` (5) and
+`P_RAILS` (8); the renumbering below moves them to 9 and 14.
 
 **One-time serial change at the renumbering.** The base modules move (enclosure 4 → 10, battery
-5 → 9, wind 6 → 12, rain 7 → 13), so their namespace-0x00 serials change at the firmware upgrade
+5 → 9, wind 6 → 12, rain 7 → 13; *added 2026-10-29:* power rails 8 → 14), so their namespace-0x00 serials change at the firmware upgrade
 that brings in these numbers. Each starts a new counter series once (WSMP-C3); the entity IDs have
 no port or serial, so Home Assistant history continues. The same release also changes the serials
 of the phase-1 port modules: on the static channel map they had namespace-0x00 serials, and with
@@ -816,6 +879,13 @@ v1 has at most three port modules (types 1, 2 and 3), or two with the BMP581 on 
 With four base modules (battery, enclosure, wind, rain) that is at most 7 modules, so P8 is not
 reached in v1. A fourth sensor port is a spare: a free place to move a module to, or for a later
 module type.
+
+*Amended 2026-10-29 (PT section 8.4, risk R2):* the base now has five modules (battery, power rails,
+enclosure, wind, rain), so v1 has **8 of 8 modules** (5 base + 3 port modules, or 6 + 2 with the
+BMP581 on the base) and **24 of 24 minute channels** (the rails module has every rail from the
+start, so no phase adds a channel), with 59 of the 60-byte WSMP-A1 budget. P8 is reached. The fourth
+sensor port stays a place to move a module to; a later module type, or any further module or channel,
+needs WSMP-P8 and A1 revised in sub-project 7 of the sixteen-stations design.
 
 ### 6.8 Sealing (open, Clint's)
 
@@ -1087,7 +1157,8 @@ flowchart TD
   and 6) is not there, so WSMP-P7 never enables port power. H04b must test this case. A sealed RJF544
   receptacle may not admit a bare RJ11 plug at all (**TBD**).
 - **Do not design v1 for v2 beyond these cheap steps:** keep USART1 (PB6, PB7) free, reserve port
-  numbers 14 and up, keep the module board's STEMMA QT side unchanged, and keep the WSMP terms neutral.
+  numbers 15 and up (14 and up as approved; 14 became the power rails module on 2026-10-29), keep the
+  module board's STEMMA QT side unchanged, and keep the WSMP terms neutral.
   The PRD's scope rule allows accommodation "where cheap", not speculative boards.
 
 ## 9. Requirements (v1 port)
@@ -1098,17 +1169,17 @@ flowchart TD
 | PORT-2 | Each sensor port has its own mux channel. One module per port |
 | PORT-3 | Pull-ups are on the base side only, at the value the cable test sets. Module boards have none |
 | PORT-4 | SDA and SCL have a series resistor (33–100 Ω) and a low-capacitance TVS at the jack |
-| PORT-5 | Port power is 3.3 V through a current-limited load switch that the firmware controls |
+| PORT-5 | Port power is 3.3 V through a current-limited load switch that the firmware controls. *Amended 2026-10-30:* Evidence: step 1 exit criterion 9 (BP section 3) records whether a switched sensor rail works without the mux; result pending the bench run |
 | PORT-6 | Live plugging and unplugging never resets the station and never disturbs another port |
 | PORT-7 | An empty port is rescanned every 15 s. A module plugged into an empty port is in the readings within 120 s (about 111 s worst case, section 6.6), unless it is refused or quarantined (section 6.7); a moved module too, since its duplicate verdict checks the old port's holder |
 | PORT-8 | A stuck channel is recovered by the ladder of section 6.6. The upstream parts keep working throughout |
-| PORT-9 | INA228, MAX17048 and SHTC3 are upstream of the mux and never on a port. The mux is not at 0x70 |
+| PORT-9 | INA228, MAX17048 and SHTC3 are upstream of the mux and never on a port. The mux is not at 0x70. *Amended 2026-10-29: every rail's INA228 (0x40, 0x41, 0x45, 0x48) is upstream and never on a port; the battery (9) and power rails (14) modules are always present for their power profile* |
 | PORT-10 | The cable length is at most the qualified length from the cable test |
 | PORT-11 | Sensor cables are straight through and tested (or the pinout is reversal-safe, OQ-1) |
 | PORT-12 | Sensor and meter ports are labelled, and sensor cables are coloured differently |
 | PORT-13 | A passive module's identity on an I2C sensor port (1–8) follows section 6.7, and its record section 6.9. Every v1 module board carries a record written and read-back-verified on the programming fixture, with its serial in the serial ledger; a module without a valid one is admitted with the `NO_RECORD` flag and its reason. The serial and identity flags reach the gateway in the descriptor set. The meter ports (12, 13) have no record in v1 and raise no `NO_RECORD` (section 1, "Meter identity") |
 | PORT-14 | At most one module of each module type per station (v1). A duplicate serial or type runs the holder check (section 6.7) in the holder driver's step machine: holder gone (address NACK twice, a confirmed different identity, or a Faulted or operator-disabled port), it is ended and the newcomer admitted; otherwise the newcomer is refused (`DUP_SERIAL` before `DUP_TYPE`) and re-evaluated at every latch. Never a removal-only quarantine. After a reboot the lower port wins, unless its probes bounced in the first two rounds (section 6.7) |
-| PORT-15 | Upstream parts are served only with every channel deselected; every channel burst ends with a deselect. No probe-table or scan address answers with every channel deselected (checked at boot and at build time). A channel with its port power off is never selected |
+| PORT-15 | Upstream parts are served only with every channel deselected; every channel burst ends with a deselect. No probe-table or scan address answers with every channel deselected (checked at boot and at build time). A channel with its port power off is never selected. *Amended 2026-10-29 (PT section 9.2): the build-time assertion includes the power address plan: the rail INA228 addresses (battery 0x40, load 0x41, solar 0x45, USB-C 0x48) are distinct and never 0x44 (SHT45, a phantom address), 0x46 or 0x47 (BMP581), 0x36 (gauge), 0x50 (ID EEPROM), 0x53 (LTR390), 0x70 (SHTC3) or 0x71 (mux). It holds in the hub profile too, where every client is upstream* |
 | PORT-16 | Every Admitted, Active and Suspect I2C module passes an identity check in the pre-latch slot (3 s before each latch; port-module drivers only; a sample due in the slot is deferred to just after the latch, phase kept), against the identity seen at admission, from its driver's idle state. A confirmed change ends the port at that latch with the window missing; a changed record CRC is a leave and a join. A missed probe or failed data read sets a sticky flag; until a matched check at a latch whose data read is good clears it the window is missing; the clearing latch gives a new boot ID (once per replug); 60 unverified latches in a row with the flag set end the port in any state. A content-`NO_RECORD` or `CAL_REJECTED` module is re-observed by its whole 128-byte image. An applied record whose confirming full read is not a valid record is read twice: two that agree (same image, or both NACK) are a change, two that disagree unverified. Latch order: transitions, identity results, refusals, each in port order |
 | PORT-17 | An unverified identity check never moves a port between Active, Suspect and Absent (except the one-hour timeout of section 6.7); it counts the identity as unverified (console). A READ module's NACK matches. A `NO_RECORD` (READ) module may change to its record once per admission. In Suspect, good-but-unverified latches neither raise nor reset the miss count |
 | PORT-18 | A quarantined or refused port keeps probing its module each probe slot; two missed probes make it Absent |
@@ -1136,7 +1207,7 @@ The PRD's H04 is one test of one RJ45 RS-485 port. This spec proposes to split i
 | PORT-7 | host test: plug at a random time into an empty port, with and without a bounced first probe: in the layout within 120 s; a move to an empty port within 120 s; bench: 20 plugs and the moves of section 5.2 step 5 |
 | PORT-13 | host tests: probe table; record parsing of every check of section 6.9 in order, each `NO_RECORD` reason (READ only after 3 tries in one probe slot, CRC only after a re-read); a record length other than 128 is MALFORMED; a structural fault is MALFORMED and a calibration-only fault is `CAL_REJECTED` with the serial kept and `record_crc` 0; module type 1 without sensor-bind kind 1 is MALFORMED, and kind 1 on types 2 and 3 too; a used calibration entry with revision 0, an entry whose (quantity, kind) matches no channel of the type, and an entry for a quantity unknown to the table under a higher minor are each `CAL_REJECTED`; an empty part number is accepted by the station and refused by the fixture; nonzero reserved identity-flag bits are rejected on unpack; a higher minor is accepted and another major gives VERSION; a valid record with a different type quarantines `TYPE_CONFLICT`; a sensor-bind mismatch gives `SENSOR_CHANGED` with no calibration applied; calibration applied by (quantity, kind) and kind 0 for every kind; a module moved from port 1 to port 3 keeps its serial; the serial precedence and namespaces; the serial and flags in the descriptor set; quarantine released only by removal; the meter ports raise no `NO_RECORD`; fuzzing of the record parser against an independent copy of the layout (WSMP-X2). Fixture: write, read-back compare, ledger entry, station-style parse |
 | PORT-14 | host tests: **a module moved from SENSOR 1 to SENSOR 3 and admitted before SENSOR 1's next latch** (unplug at t = 0, plug at t = 3 s, the latch at t = 50 s): the holder is ended, the newcomer admitted, no quarantine, the newcomer's first window holds none of the old module's samples; **the holder check while the holder SHT45 is measuring** (between 0xFD and its read): it waits for ST_IDLE, the measurement is not disturbed and the holder is not ended; transient holder failures (one NACK, a failed 0x50 or 0x89 read): present, not ended; a Faulted or operator-disabled holder port: gone; a holder in the 1 s off of a recovery power cycle: not gone; two SHT45 modules with different serials both present: the second refused `DUP_TYPE`, admitted once the first is removed; a clone of a **BMP581 or LTR390** module (same record serial and type; an SHT45 clone would be `SENSOR_CHANGED`) present on both ports: refused `DUP_SERIAL`, never `DUP_TYPE`; a holder Admitted but not yet Active; a reboot with two modules of one type: the lower port wins; the same with the lower port's first probe bounced: the higher port wins; a Faulted port does not hold the boot verdicts. Gateway simulator: one serial in two stations' sets raises the alarm after 10 minutes, not before, and not when one of the two stations has been silent for more than 10 minutes |
-| PORT-15 | host tests with the mux model: every burst ends with mask 0x00; upstream transfers never see a channel selected; an upstream device at a probe address is removed from the table at boot and reported; a port with power off is never selected. Build-time assertion on the address tables |
+| PORT-15 | host tests with the mux model: every burst ends with mask 0x00; upstream transfers never see a channel selected; an upstream device at a probe address is removed from the table at boot and reported; a port with power off is never selected. Build-time assertion on the address tables. *Amended 2026-10-29: the assertion covers the four rail INA228 addresses; host tests build the hub profile (`-DWS_I2C_MUX=0`) beside the mux profile, and a profile B build with four INA228 models* |
 | PORT-16 | host tests: **per-window sample counts are unchanged by the slot for every driver** (power, wind, rain, enclosure and each port module, at sample phase 0 and at random phases: a port-module sample due in the slot is deferred and lands in the next window, on-board drivers never wait); the identity check has priority over a newcomer's identification and a holder check on the same driver; the pre-latch slot at every phase of the free-running sample schedule (no port-module sample starts in the slot, the check never runs between 0xFD and its read, a check that cannot finish by the latch is unverified); an SHT45 sensor-board swap inside one window ends the port at that latch with the window missing; a swap where the new module's 0x89 read fails but its record differs is a change; a same-module replug that a probe noticed: windows missing until a matched check, then a new boot ID, no set change; the flag survives a latch whose check is unverified; a swap within one read gives a leave and a join; a changed record CRC with the same serial gives a leave and a join; modules admitted as `NO_RECORD` (READ, BLANK, CRC), `SENSOR_CHANGED` and `CAL_REJECTED` do not flap over 100 latches; one corrupted bit in the 8-byte serial read is not a change (the full read confirms); **an applied BMP581 record swapped, with no missed probe, for a blank EEPROM, or one whose two full reads NACK, ends the port at the next latch with the window missing and the new module is admitted `NO_RECORD` (BLANK, READ); full reads that disagree are unverified**; an unplugged `NO_RECORD` (READ) module keeps its boot ID over its missed latches and takes one new boot ID per replug; a match partway through a flagged run resets the 60-latch timeout; a check still on the bus at the latch is unverified and finishes after it without effect; a latch before its slot is unverified; a late latch keeps the schedule (the next slot opens 3 s before the latch scheduled, not a minute after the late one); the next latch told by the application moves the slot; a module admitted as `NO_RECORD` (CRC) after a transient corruption, or MALFORMED by a field after 0x13, whose full record later reads valid is a change and rejoins with its record; a `CAL_REJECTED` record rewritten with a valid calibration is a change; a corrupt tail that drifts with the same verdict, status and serial is not; two full reads that disagree are unverified; the order within a latch with changes on several ports. Bench: the replugs, swaps and moves of section 5.2 step 5 |
 | PORT-17 | host tests: an EEPROM that NACKs intermittently after admission (every other latch, then for 10 latches, then back) with no missed probe: the port stays Active and published, serial unchanged, unverified shown on the console after 3 latches, no set change; a Suspect module with good reads and an unverified check: its miss count frozen, windows missing, ended after 60 latches and rejoined once; **an Active BMP581 module whose EEPROM dies after admission, then one sample read fails** (flag set, check unverifiable, no sensor serial): windows missing, ended after 60 latches in a row, rejoined as `NO_RECORD` (READ), then published, and its NACK matches from then on; a failed identity-check read alone does not set the flag; **the interleaving miss, good-unverified, miss, good-unverified, miss** removes the module; a module removed by three missed latches shows no unverified count; a module admitted as READ whose record appears changes once and never back on a later NACK; a port fault (channel stuck, port power off) fails every identity check without moving the port; only failed data reads do (WSMP-P2, P3) |
 | PORT-18 | host tests: a `TYPE_CONFLICT` module removed is Absent after two missed probes; a refused module removed is Absent likewise; a refused module stays refused while its holder is present |
@@ -1152,7 +1223,7 @@ Most important first. Each has my recommendation.
 | OQ-1 | **Reversed cables.** With the proposed pinout, a reversed 6P6C cord (pin 1 to pin 6, the usual telephone-cord wiring) powers the sensor backwards (section 6.3). Keep the pinout and guard against it, or change it? | Change to a reversal-safe pinout: **1 = 3.3 V, 2 = SDA, 3 = GND, 4 = GND, 5 = SCL, 6 = 3.3 V**. A reversed cable then maps 3.3 V to 3.3 V, GND to GND, and only swaps SDA and SCL (harmless: nothing answers). A 4-conductor plug still never meets 3.3 V, and SDA and SCL are now two grounds apart. The cost is the INT/spare pin, which no v1 driver uses. **One cross-mate case gets worse:** a sensor module in the wind port puts its GND on the cups net (no pulses, speed 0) and its unpowered SCL clamp on the vane net, which can pull the vane voltage into a valid window. The wind module then looks present, with speed 0 and a false direction. The interim catalog map reports CALM below 0.5 m/s, so the direction is not published, but the vector sums are wrong. Firmware can flag "vane steady and no pulses for a long time" as suspect. Redo the section 6.3 table for whichever pinout is chosen. If INT must stay: keep the pinout, add reverse-polarity protection on every module board (part **TBD**), set the port current limit low enough to survive the reversed case, and allow only tested straight cables |
 | OQ-2 | **H04 split.** Split H04 into H04a (v1 I2C port, the Stage 2 gate) and H04b (v2 RS-485 port, unchanged)? Zero detected errors in 10⁶ transactions for H04a? | Yes to both. Zero is the strict reading of "never loosen a test criterion" and is cheap to run |
 | OQ-3 | **Where does the BMP581 go?** The registry gives pressure the role "enclosure", but the decision list puts only INA228, MAX17048 and SHTC3 on the base | On the base, upstream of the mux, like the SHTC3. Pressure is measured fine in a vented box, it saves a port and a cable, and it needs no change to the registry role. If it must be modular, put it on a short port inside the box. **Either way it is never both:** on the base, type 2 leaves the port probe table (section 6.7), or every empty port would see it (the phantom rule, section 6.6) |
-| OQ-4 | **How many sensor ports on the v1 base?** | Four RJ11 sensor ports on channels 0–3 (the PRD's "four positions"); channels 4–7 not fitted. With one module per type (section 1) at most three are used (two with the BMP581 on the base); the fourth is a spare to move a module to. Base and port modules together are at most 7, so WSMP-P8 (8 modules) is not reached in v1 and need not be raised. Raise it (and per-port driver instances) only with v2 or a fourth port module type |
+| OQ-4 | **How many sensor ports on the v1 base?** | Four RJ11 sensor ports on channels 0–3 (the PRD's "four positions"); channels 4–7 not fitted. With one module per type (section 1) at most three are used (two with the BMP581 on the base); the fourth is a spare to move a module to. Base and port modules together are at most 7, so WSMP-P8 (8 modules) is not reached in v1 and need not be raised. Raise it (and per-port driver instances) only with v2 or a fourth port module type. *Updated 2026-10-29 (PT section 8.4): with the power rails module (port 14) on the base, base and port modules together are **8 of 8**, and the minute channels **24 of 24**. P8 is now reached in v1: four ports stay right, the fourth is still a place to move a module to, but any further module type or channel needs WSMP-P8 and A1 raised (sub-project 7 of the sixteen-stations design), with the descriptor-set size of WSMP-E4* |
 | OQ-5 | **Port power policy.** The PRD says ports are off by default, enabled only for a commissioned module type, and never live-mated. Apply that to 3.3 V I2C ports? | No for v1: ports on by default, live mating tolerated, automatic discovery. Commissioning stays optional: a configured expected type raises an alarm on a mismatch. Keep the PRD rule for v2 10–18 V ports |
 | OQ-6 | **ID EEPROM on v1 module boards?** | **Decided (Clint, 2026-10-21): fitted and programmed on every module board.** The part is the 24LC32A (decided 2026-10-22). A missing or invalid record is admitted with the `NO_RECORD` flag (section 6.7). It gives each sensor a serial that survives port moves and the move to v2, and carries its calibration (section 6.9) |
 | OQ-7 | **Sealing RJ11 on the IP66 box** | Option A of section 6.8: jacks inside, split-insert glands or a cable-entry frame. Prefer a round jacketed cable if it passes the cable test, and re-run the test on it |
@@ -1162,8 +1233,7 @@ Most important first. Each has my recommendation.
 | OQ-11 | **Identical jacks with different pinouts.** PRD §6 and Appendix A forbid "a different pinout on an identical external jack". v1 sensor ports and meter ports share the 6-position RJ11 jack | Amend the PRD: allowed when the cross-mate analysis shows no power reaches the wrong device and H04a's cross-mate tests pass, with labels and coloured cables |
 | OQ-12 | **Telephone-line misuse.** Does H04a test 48 V on the centre pair (an RJ11 port plugged into a phone line)? | Yes, once, with a current-limited bench supply, as H04 does with its 24/48 V injector. Declare it outside the operating contract |
 | OQ-13 | **Stage 3 instruments.** The next-stages plan picks Davis instruments for Stage 3. The meter ports assume the SEN-15901's passive switches. A Davis anemometer's vane needs a supply conductor *(verify)* | Decide at Stage 3. Do not put a supply on meter-port pins 2–5 without redoing the cross-mate analysis of section 6.3 |
-
-| OQ-14 | **What is the v1 base unit physically?** A carrier board under the NUCLEO-WL55JC1, or a custom STM32WL55 board? It sets the GPIO budget (mux RESET, four port enables) and whether an I/O expander is needed | A carrier board for the NUCLEO first. The PRD puts the custom controller in Stage 4, after the port is frozen. Keep the mux RESET on a direct GPIO either way; the port enables may go on an upstream expander |
+| OQ-14 | **What is the v1 base unit physically?** A carrier board under the NUCLEO-WL55JC1, or a custom STM32WL55 board? It sets the GPIO budget (mux RESET, four port enables) and whether an I/O expander is needed | A carrier board for the NUCLEO first. The PRD puts the custom controller in Stage 4, after the port is frozen. Keep the mux RESET on a direct GPIO either way; the port enables may go on an upstream expander. **Decided 2026-10-30 by Clint (BP 7.1 Q7):** the v1 base board is a carrier under the NUCLEO-WL55JC1, on the morpho CN7/CN10 underside pins through two 2 × 19 female sockets (BP N7, S4). It carries the four INA228s (0x40, 0x41, 0x45, 0x48), the MAX17048 (the carrier stays 1S3P, BP 7.1 Q3) and the SHTC3 upstream of the mux, and the mux RESET on PB14 (BP N5). The layout waits for the underside pin length and clearance measured on a real NUCLEO-WL55JC1 (BP N7). *2026-10-30:* satisfied by Clint's fit test (BP 7.1 N7): a standard-height 2.54 mm female socket works; the layout waits only for the morpho grid from ST's drawing and the chassis outline |
 | OQ-15 | **How long are the real runs at the site?** Only the shield's ~2 m is known (R1 enclosure plan) | Measure the planned mounting of the shield, the UV sensor and any other sensor before the cable test, so the test qualifies the lengths that matter |
 
 ## 12. Calls I made (check these while reading)
@@ -1188,7 +1258,8 @@ Most important first. Each has my recommendation.
   the 24LC32A), the GPIO
   for mux RESET and the port enables (after the UM2592 check), the module board layout, the firmware
   structure of discovery within the Power of Ten rules (a switch on the module type, no function
-  pointers), and the host test design.
+  pointers), and the host test design. *Amended 2026-10-30 (BP N5):* the mux RESET GPIO is chosen:
+  PB14 (A4, CN8.5 / morpho CN7.36). The port-enable GPIOs are still the builder's.
 
 ## 13. Consistency change list
 
@@ -1214,7 +1285,7 @@ gives the proposed wording.
 | `docs/module-protocol.md` §7, WSMP-P2 | "It MUST miss three latches in a row before it removes a module." | add: "On an I2C port the station also removes a module when the holder check of another port's duplicate finds it gone (two address NACKs, a confirmed different identity, or a Faulted or operator-disabled port), when its pre-latch identity check confirms a change, or after 60 latches in a row with its possibly-replugged flag set and its identity unverified (spec §6.7). In Suspect, a latch with a good read but an unverified identity neither counts as missed nor breaks the run." |
 | `docs/module-protocol.md` §9, WSMP-T4 | "samples on its own clock … the latch sets only the window boundaries" | add: "Exception: an I2C port module's driver starts no sample in the 3 s before a latch; a sample due then is deferred to just after the latch, keeping the sampling phase, so every window keeps its sample count (spec §6.7)." |
 | `docs/module-protocol.md` §7, new WSMP-P10 | — | "**WSMP-P10. Re-identification.** An I2C module's identity (record serial and CRC, sensor serial, as seen at admission) is checked in a pre-latch slot before each latch, from the driver's idle state; a confirmed change ends the port at that latch with the window missing, then the new module is admitted (a record that no longer parses, or an EEPROM that no longer answers, is confirmed by two full reads that agree with each other). After a missed probe or a failed data read, windows are missing until a check matches at a latch whose data read is good. An unverified check never changes the port's state, except the timeout: 60 latches in a row with the flag set and no check matching end the port, in any state, and it rejoins. For any module with its own identity block (remote, or behind a v2 adapter): a snapshot whose boot ID differs from the one admitted makes the station re-read the identity and descriptor blocks; a changed serial, type or descriptor digest is a leave and a join. At most one module of each type is admitted (v1); a duplicate runs the holder check in the holder driver's step machine." |
-| `docs/module-protocol.md` §11.1, module entry and WSMP-E4 | entry: port, module type, schema, channel count; "8 + 8 × 5 + 24 × 6 = 192 bytes" | entry adds `serial` (u64), `id_flags` (u8, the identity flags' low byte) and `record_crc` (u32, 0 when no record is applied); "8 + 8 × 18 + 24 × 6 = 296 bytes" (6 fragments at 58 bytes). A changed serial or record CRC gives a new set and generation (WSMP-C1 boundary). The radio protocol's fragment count for a full set grows with it (WSMP-E9) |
+| `docs/module-protocol.md` §11.1, module entry and WSMP-E4 | entry: port, module type, schema, channel count; "8 + 8 × 5 + 24 × 6 = 192 bytes" | entry adds `serial` (u64), `id_flags` (u8, the identity flags' low byte) and `record_crc` (u32, 0 when no record is applied); "8 + 8 × 18 + 24 × 6 = 296 bytes" (6 fragments at 58 bytes; *5 at 60 bytes since 2026-10-29*). A changed serial or record CRC gives a new set and generation (WSMP-C1 boundary). The radio protocol's fragment count for a full set grows with it (WSMP-E9) |
 | `docs/module-protocol.md` §7, WSMP-P1 | four bullets (remote, local I2C, wind, rain) | add: "A module on an I2C port shows presence by a successful probe of an address in the probe table (section 10.1) on its multiplexer channel, with the part's ID check. NACK at every table address means absent. SDA or SCL held low on the channel is a port fault (WSMP-P3)." |
 | `docs/module-protocol.md` §7, WSMP-P3 | "… MUST NOT change the descriptor set by itself." | add: "On an I2C port, a fault of one channel MUST NOT stop the other channels or the upstream bus." |
 | `docs/module-protocol.md` §7, WSMP-P8 | "A station has at most 8 modules and 24 channels." | only if OQ-4 raises it: "… at most 12 modules and 24 channels." (`wsmp_host` and the descriptor-set size of WSMP-E4 change with it) |
@@ -1258,8 +1329,8 @@ gives the proposed wording.
 | `docs/poc-shopping-list.md`, intro | "… uses a 4-cell series pack, RS-485 sensor modules and qualified instruments." | "… a 4-cell series pack, sensor modules on RJ11 I2C ports (v1; RS-485 in v2) and qualified instruments." |
 | `docs/poc-shopping-list.md`, diagram and "I2C addresses" table | six parts on the hub | add the mux on the hub, with SHT45, BMP581 (subject to OQ-3) and LTR390 behind it; add "0x71 \| I2C multiplexer (moved from its default 0x70, which the SHTC3 uses)" |
 | `docs/poc-shopping-list.md`, "Storage and wiring" | hub and QT cables | add a row: "I2C multiplexer \| Adafruit STEMMA QT PCA9548 or TCA9548A board (product number and price not verified)" |
-| `docs/hardware/bench-station-wiring.md` §2, diagram and table | six sensors on the hub; "The breakouts have the pull-ups" | the mux on the hub with the three external sensors behind it; add a row "Mux RESET \| TBD \| a free GPIO after the UM2592 check"; note the 0x71 jumper |
-| `docs/hardware/bench-station-wiring.md` §6 | checklist | add "[ ] the mux RESET pin, free of any board function" |
+| `docs/hardware/bench-station-wiring.md` §2, diagram and table | six sensors on the hub; "The breakouts have the pull-ups" | the mux on the hub with the three external sensors behind it; add a row "Mux RESET \| TBD \| a free GPIO after the UM2592 check"; note the 0x71 jumper. *Amended 2026-10-30 (BP N5):* the row reads "Mux RESET \| PB14 \| A4, CN8.5 / morpho CN7.36; wired with the mux (`WS_I2C_MUX` 1), after the shield check shows A4 not tied to SDA" |
+| `docs/hardware/bench-station-wiring.md` §6 | checklist | add "[ ] the mux RESET pin, free of any board function". *Amended 2026-10-30 (BP N5):* that pin is PB14; the item also checks A4 not tied to SDA |
 | `docs/hardware/bench-station-wiring.md` §8 | hot-plug check | add the mux checks of section 4.3 of this spec |
 | `hardware/bench-breadboard-r0/README.md`, "Decisions" | "Your RJ45 module cables are a later step (`docs/module-protocol.md`)." | "The sensor module cables are RJ11 6P6C I2C ports in v1 (`docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md`); RJ45 is v2. The I2C mux sits on the STEMMA QT chain, off the breadboard." |
 | `hardware/poc-enclosure-r1/README.md`, diagram | `CABLE["4-wire cable, about 2 m, JST-SH ends"]` | `CABLE["v1: SHT45 module board, 6-conductor RJ11 cable, length set by the cable test"]` |

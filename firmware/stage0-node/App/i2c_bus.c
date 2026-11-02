@@ -13,13 +13,17 @@
 
 #define SDA_PIN GPIO_PIN_11
 #define SCL_PIN GPIO_PIN_12
-#define POWER_PIN GPIO_PIN_9
+#define POWER_PIN GPIO_PIN_9   /* PA9 = D9, CN5.2 */
 #define I2C_GUARD_MS 30U
 #define I2C_BYTE_US 90U        /* one byte and its acknowledge at 100 kHz */
 #define US_PER_MS 1000U
 #define I2C_IRQ_PRIORITY 2   /* below the radio and the RTC (0), like the console UART */
-/* 100 kHz standard mode at PCLK1 = 48 MHz (same value as ST's NUCLEO-WL55JC I2C examples). */
-#define I2C_TIMING 0x20303E5DU
+/* 100 kHz standard mode at PCLK1 = 48 MHz: ST's NUCLEO-WL55JC example value 0x20303E5D (PRESC 2,
+   SCLDEL 3, SCLH 0x3E, SCLL 0x5D) with SDADEL 2. The data hold is then SDADEL x tPRESC + tI2CCLK =
+   2 x 62.5 ns + 20.8 ns = 146 ns (RM0453 I2C timings), above the 100 ns that the INA228 needs on the
+   address MSB when SDA straps A0 or A1 (SBOS904; the USB-C rail at 0x48), far below the 3.45 us
+   standard-mode limit. tests/test_i2c_bus.py checks the fields. */
+#define I2C_TIMING 0x20323E5DU
 #define REG_ADDR_LEN 1U
 #define WORD_ADDR_LEN 2U
 #define BYTE_BITS 8U
@@ -91,10 +95,15 @@ static enum i2c_client fifo_pop(void)
 }
 
 #define UPSTREAM 0xFFU
-static const uint8_t channel_of[I2C_C_COUNT] = { [I2C_C_SHT45] = 0, [I2C_C_LTR390] = 1, [I2C_C_BMP581] = 2,
-                                                 [I2C_C_SHTC3] = UPSTREAM, [I2C_C_INA228] = UPSTREAM,
-                                                 [I2C_C_MAX17048] = UPSTREAM, [I2C_C_REC_AIR] = 0,
-                                                 [I2C_C_REC_UVA] = 1, [I2C_C_REC_PRESSURE] = 2 };
+#define NO_PATH 0xFEU                                              /* the hub: no record EEPROM */
+#define PORT(ch) ((uint8_t)(WS_I2C_MUX ? (ch) : UPSTREAM))
+#define RECORD(ch) ((uint8_t)(WS_I2C_MUX ? (ch) : NO_PATH))
+_Static_assert(I2C_C_COUNT == 12, "a new client needs its channel_of entry");
+static const uint8_t channel_of[I2C_C_COUNT] = {
+  [I2C_C_SHT45] = PORT(0), [I2C_C_LTR390] = PORT(1), [I2C_C_BMP581] = PORT(2), [I2C_C_SHTC3] = UPSTREAM,
+  [I2C_C_INA228] = UPSTREAM, [I2C_C_INA_LOAD] = UPSTREAM, [I2C_C_INA_SOLAR] = UPSTREAM, [I2C_C_INA_USB] = UPSTREAM,
+  [I2C_C_MAX17048] = UPSTREAM, [I2C_C_REC_AIR] = RECORD(0), [I2C_C_REC_UVA] = RECORD(1),
+  [I2C_C_REC_PRESSURE] = RECORD(2) };
 static const uint8_t phantom_addr[I2C_PHANTOM_COUNT] = { 0x44, 0x47, 0x53, 0x50 };
 
 typedef enum { OP_SELECT, OP_SELECT_CHECK, OP_XFER, OP_RECOVER, OP_DESELECT, OP_DESELECT_CHECK, OP_PROBE } op_kind;
@@ -105,6 +114,11 @@ static unsigned plan_len, plan_at, deselect_at;
 static job_kind job;
 static int job_rc;                       /* the client's result */
 static uint8_t mux_tx, mux_rx, mux_mask, reset_tried, probe_at, phantoms, booted, mux_ok;
+static uint16_t n_recoveries, n_stuck, n_mux_resets;   /* since boot, saturating */
+static uint16_t acked, failed;           /* clients since the last i2c_bus_outcomes, a bit each */
+_Static_assert(I2C_C_COUNT <= 16, "i2c_bus_outcomes has a 16-bit mask: one bit for each client");
+
+static uint16_t count_up(uint16_t n) { return n == UINT16_MAX ? n : (uint16_t)(n + 1U); }
 
 static void plan_add(op_kind k)
 {
@@ -118,6 +132,7 @@ static void plan_start(job_kind k)
 
 static void mux_reset_pulse(void)
 {
+  n_mux_resets = count_up(n_mux_resets);
   i2c_bus_mux_reset_line(1);
   i2c_bus_mux_reset_line(0);   /* the TCA9548A needs 6 ns low: one write after the other is longer */
 }
@@ -149,15 +164,17 @@ static void plan_client(enum i2c_client c)
 {
   const xfer_t *x = &xfers[c];
   op_kind work = x->txlen == 0 && x->rxlen == 0 ? OP_RECOVER : OP_XFER;
+  uint8_t ch = channel_of[c];
   plan_start(JOB_CLIENT);
-  if (channel_of[c] == UPSTREAM)
+  if (ch == NO_PATH && work == OP_XFER) { job_rc = I2C_ENACK_ADDR; return; }   /* an empty plan */
+  if (ch == UPSTREAM || ch == NO_PATH)
   {
-    if (!mux_ok) plan_deselect();   /* a deselect that never read back: check it first */
+    if (!mux_ok) plan_deselect();   /* a deselect that never read back: check it first (never on the hub) */
     plan_add(work);
     return;
   }
   if (work == OP_XFER && is_phantom(x->addr7)) { job_rc = I2C_ENACK_ADDR; return; }   /* an empty plan */
-  mux_mask = (uint8_t)(1U << channel_of[c]);
+  mux_mask = (uint8_t)(1U << ch);
   plan_add(OP_SELECT);
   plan_add(OP_SELECT_CHECK);
   plan_add(work);
@@ -298,6 +315,7 @@ static void on_step(void *ctx)
 
 static void recover_begin(void)
 {
+  n_recoveries = count_up(n_recoveries);
   (void)HAL_I2C_DeInit(&hi2c2);   /* fails only for a NULL handle. The code below takes the pins over anyway */
   /* An abandoned transfer can leave its interrupt pending and its handler set. Neither may run on
      the re-initialised peripheral. */
@@ -319,7 +337,12 @@ static void end_job(void)
   job = JOB_NONE;
   st = S_IDLE;
   if (was == JOB_BOOT) booted = 1;
-  else { busy[c] = 0; i2c_bus_done(c, job_rc); }
+  else
+  {
+    busy[c] = 0;
+    if (job_rc != I2C_OK) failed |= (uint16_t)(1U << c);
+    i2c_bus_done(c, job_rc);
+  }
   kick();
 }
 
@@ -345,10 +368,21 @@ static void mux_done(op_kind k, int rc)
 static void op_done(int rc)
 {
   op_kind k = plan[plan_at++];
-  if (k == OP_XFER || k == OP_RECOVER) job_rc = rc;
+  if (k == OP_XFER || k == OP_RECOVER)
+  {
+    job_rc = rc;
+    if (k == OP_XFER && rc == I2C_OK) acked |= (uint16_t)(1U << cur);   /* the part itself answered */
+  }
   else if (k == OP_PROBE) { if (rc == I2C_OK) phantoms |= (uint8_t)(1U << probe_at); probe_at++; }
   else mux_done(k, rc);
   run_op();
+}
+
+/* A recovery that ended with SDA still low. Step 2 (mux profile): the mux lets the upstream bus go. */
+static void note_stuck(void)
+{
+  n_stuck = count_up(n_stuck);
+  if (WS_I2C_MUX) mux_reset_pulse();
 }
 
 static int may_be_stuck(int rc)
@@ -367,7 +401,7 @@ static void bus_task(void)
   else if (WS_CHECK(st == S_RECOVERED))   /* the task is posted only with S_DONE, S_RECOVERED or S_END */
   {
     i2c_start();
-    if (recover_rc) mux_reset_pulse();   /* step 2: SDA still low, the mux lets the upstream bus go */
+    if (recover_rc) note_stuck();
     op_done(recover_rc ? I2C_ESTUCK : failed_rc);
   }
 }
@@ -386,9 +420,22 @@ void i2c_bus_init(void)
   HAL_GPIO_WritePin(GPIOA, POWER_PIN, GPIO_PIN_SET);
   HAL_GPIO_Init(GPIOA, &gpio);
   i2c_start();
-  kick();   /* the boot job */
+  booted = (uint8_t)(WS_I2C_MUX == 0);   /* the hub: nothing to boot */
+  mux_ok = booted;
+  kick();   /* the boot job (the mux profile) */
 }
 
 int i2c_bus_ready(void) { return booted; }
 int i2c_bus_mux_ok(void) { return mux_ok; }
 uint8_t i2c_bus_phantoms(void) { return phantoms; }
+uint16_t i2c_bus_recoveries(void) { return n_recoveries; }
+uint16_t i2c_bus_stuck(void) { return n_stuck; }
+uint16_t i2c_bus_mux_resets(void) { return n_mux_resets; }
+
+void i2c_bus_outcomes(uint16_t *was_acked, uint16_t *was_failed)
+{
+  *was_acked = acked;
+  *was_failed = failed;
+  acked = 0;
+  failed = 0;
+}

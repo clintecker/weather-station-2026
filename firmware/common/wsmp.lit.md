@@ -27,8 +27,8 @@ python3 tools/tangle.py --check firmware/common/wsmp.lit.md    # committed .c ==
 | Refusal | an unpack function refuses a reserved bit, an undefined flag bit, a bad magic, a wrong major version, a zero serial and a channel count out of range. It returns a negative `WSMP_E*` code | `test_snapshot_refuses_a_set_reserved_byte`, `test_snapshot_refuses_an_undefined_flag`, `test_identity_refuses_bad_magic_and_major`, `test_identity_refuses_0_or_9_channels`, `fuzz_wsmp` |
 | Registry | `wsmp_desc_check` accepts exactly the descriptors of the registry entry. With `wsmp_unpack_desc`, which finds a set reserved bit, it refuses each case of WSMP-D7 with its own code | `test_desc_check_accepts_the_registry_entry`, `test_desc_check_refuses_each_wsmp_d7_case`, `test_desc_check_refuses_widths_kinds_and_counts_out_of_range` |
 | Round trip | unpack, then pack, gives back the same bytes for every accepted block | `test_snapshot_round_trip_matches_the_wsmp_layout`, `fuzz_wsmp` |
-| Budget | the value bytes are the sum of the air widths. The quality bytes are 2 bits a channel, rounded up to a byte | `test_budget_bytes_for_the_bench_station` |
-| Quality | each snapshot quality maps to its 2-bit radio code. An unknown code maps to "missing" | `test_quality_air_table` |
+| Budget | the value bytes are the sum of the air widths. The quality bytes are 2 bits a channel, rounded up to a byte. `WSMP_RADIO_BUDGET` is 60 and the version is 1.1 | `test_budget_bytes_for_the_bench_station`, `test_version_1_1_and_radio_budget_60` |
+| Quality | each snapshot quality maps to its 2-bit radio code. "Not fitted" (6) and an unknown code map to "missing" | `test_quality_air_table`, `test_not_fitted_is_quality_6_and_missing_on_the_radio` |
 | CRC and text | CRC-32C gives the standard check value. Metadata text passes only the WSMP-M1 characters | `test_crc32c_known_vector`, `test_text_ok_charset` |
 | Identity flags | the identity block carries the identity flags in register 0x000F; unpack refuses a set reserved bit (2–3, 8–15) with `WSMP_ERESERVED` | `test_identity_flags_at_register_0x000f`, `test_identity_refuses_reserved_id_flag_bits`, `fuzz_wsmp` |
 | Descriptor set | `wsmp_unpack_set` accepts exactly the layout of WSMP section 11.1 with the identity entry (serial, `id_flags`, `record_crc`), and refuses each fault of section 9 with its own code; an accepted set packs back to the same bytes; `wsmp_set_check` is the registry check of every module | `tests/test_wsmp_set.py`, `fuzz_wsmp` |
@@ -373,8 +373,24 @@ uint32_t wsmp_crc32c(const uint8_t *p, size_t n)
 }
 ```
 
-The radio carries 2 bits of quality (WSMP section 9). "Warming up" becomes "partial", and "sensor
-fault" or an unknown code becomes "missing".
+The radio carries 2 bits of quality (WSMP section 9). The snapshot codes and their radio codes are:
+
+| Snapshot | Name | Radio |
+|---:|---|---:|
+| 0 | good | 0 |
+| 1 | partial | 1 |
+| 2 | suspect | 2 |
+| 3 | missing | 3 |
+| 4 | warming up | 1 (partial) |
+| 5 | sensor fault | 3 (missing) |
+| 6 | not fitted (WSMP 1.1): this hardware build has no source for the channel | 3 (missing) |
+| 7–255 | unknown | 3 (missing) |
+
+"Not fitted" (`WSMP_QUAL_NOT_FITTED`) needs no entry in the table below: it is past the end, so it
+maps to "missing" like an unknown code. The distinction from "missing" holds locally and through
+the catalog map only (a not fitted slot becomes an absent field, a missing one INVALID); a receiver
+of a WSMP radio reading sees both as "missing" (power telemetry spec
+`docs/superpowers/specs/2026-10-29-power-telemetry-design.md` section 8.3).
 
 ```c {#quality}
 uint8_t wsmp_quality_air(uint8_t quality)
@@ -386,6 +402,9 @@ uint8_t wsmp_quality_air(uint8_t quality)
 ```
 
 The radio budget (WSMP-A1) counts the air width of each value and 2 quality bits for each channel.
+The station admits minute-class modules while their sum stays within `WSMP_RADIO_BUDGET`, 60 bytes:
+the planned plaintext (80 B, the journal's per-build limit) less a 20-byte header (power telemetry
+spec section 8.4). The station with the battery and rails modules uses 53 + 6 = 59 bytes.
 
 ```c {#budget}
 unsigned wsmp_values_bytes(const wsmp_desc *d, unsigned n)

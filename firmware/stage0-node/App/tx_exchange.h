@@ -25,6 +25,8 @@ typedef struct {
   uint32_t sent, acked, no_ack, ack_rejects;
   uint32_t unexpected;   /* events in a state that does not expect them */
   ws_failrun air;        /* transmissions that failed in a row */
+  uint16_t tx_timeouts;  /* every radio TxTimeout since boot (observation and health report), saturating
+                            at 0xFFFF: the health report's tx_timeouts (power telemetry design 6.2) */
 } tx_counts_t;
 const tx_counts_t *exchange_counts(void);   /* read-only: only the exchange counts */
 

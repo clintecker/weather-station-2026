@@ -1,0 +1,979 @@
+{
+ "baseline": {
+  "connections": [
+   {
+    "a": "A:L+41",
+    "a_at": "",
+    "b": "A:b41",
+    "b_at": "QT.V+",
+    "kind": "jumper",
+    "net": "3V3",
+    "w": "W1"
+   },
+   {
+    "a": "A:L+20",
+    "a_at": "",
+    "b": "A:b19",
+    "b_at": "R2.2",
+    "kind": "jumper",
+    "net": "3V3",
+    "w": "W2"
+   },
+   {
+    "a": "A:d19",
+    "a_at": "R2.2",
+    "b": "A:d2",
+    "b_at": "R1.2, R3.2",
+    "kind": "jumper",
+    "net": "3V3",
+    "w": "W3"
+   },
+   {
+    "a": "A:L-40",
+    "a_at": "",
+    "b": "A:b40",
+    "b_at": "QT.GND",
+    "kind": "jumper",
+    "net": "GND",
+    "w": "W4"
+   },
+   {
+    "a": "A:L-20",
+    "a_at": "",
+    "b": "A:b14",
+    "b_at": "BOBR.3, C_RAIN.2",
+    "kind": "jumper",
+    "net": "GND",
+    "w": "W5"
+   },
+   {
+    "a": "A:c14",
+    "a_at": "BOBR.3, C_RAIN.2",
+    "b": "A:c5",
+    "b_at": "BOBW.3, C_CUPS.2",
+    "kind": "jumper",
+    "net": "GND",
+    "w": "W6"
+   },
+   {
+    "a": "A:b5",
+    "a_at": "BOBW.3, C_CUPS.2",
+    "b": "A:b4",
+    "b_at": "BOBW.2",
+    "kind": "jumper",
+    "net": "GND",
+    "w": "W7"
+   },
+   {
+    "a": "B:L-63",
+    "a_at": "",
+    "b": "B:c62",
+    "b_at": "R6.2",
+    "kind": "jumper",
+    "net": "GND",
+    "w": "W8"
+   },
+   {
+    "a": "B:d62",
+    "a_at": "R6.2",
+    "b": "B:f59",
+    "b_at": "C_ISET.2, R_IPD.2",
+    "kind": "jumper",
+    "net": "GND",
+    "w": "W9"
+   },
+   {
+    "a": "B:d16",
+    "a_at": "REG.GND",
+    "b": "B:L-19",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "GND",
+    "w": "W10"
+   },
+   {
+    "a": "B:e57",
+    "a_at": "CHGR.ISET",
+    "b": "B:g57",
+    "b_at": "R_ISER.1",
+    "kind": "jumper",
+    "net": "ISET_CHGR",
+    "w": "W11"
+   },
+   {
+    "a": "B:b17",
+    "a_at": "REG.VOUT",
+    "b": "B:b8",
+    "b_at": "SHUNT.1",
+    "id": "LK_REG_SHUNT",
+    "kind": "link",
+    "net": "REG_OUT",
+    "w": "W12"
+   },
+   {
+    "a": "A:e41",
+    "a_at": "QT.V+",
+    "b": "NUCLEO CN6.4",
+    "b_at": "",
+    "id": "LK_3V3_CN6_4",
+    "kind": "link",
+    "net": "3V3",
+    "w": "W13"
+   },
+   {
+    "a": "B:e54",
+    "a_at": "CHGR.CHG",
+    "b": "NUCLEO CN9.7",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "CHG",
+    "w": "W14"
+   },
+   {
+    "a": "A:d6",
+    "a_at": "BOBW.4, C_CUPS.1, R1.1",
+    "b": "NUCLEO CN9.5",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "CUPS",
+    "w": "W15"
+   },
+   {
+    "a": "A:e40",
+    "a_at": "QT.GND",
+    "b": "NUCLEO CN6.6",
+    "b_at": "",
+    "id": "LK_QT_GND_CN6_6",
+    "kind": "link",
+    "net": "GND",
+    "w": "W16"
+   },
+   {
+    "a": "A:e43",
+    "a_at": "QT.SCL",
+    "b": "NUCLEO CN5.10",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "I2C_SCL",
+    "w": "W17"
+   },
+   {
+    "a": "A:e42",
+    "a_at": "QT.SDA",
+    "b": "NUCLEO CN5.9",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "I2C_SDA",
+    "w": "W18"
+   },
+   {
+    "a": "B:j58",
+    "a_at": "C_ISET.1, R_IPD.1, R_ISER.2",
+    "b": "NUCLEO CN8.1",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "ISET",
+    "w": "W19"
+   },
+   {
+    "a": "C:e36",
+    "a_at": "OLED.CS",
+    "b": "NUCLEO CN10.17",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "OLED_CS",
+    "w": "W20"
+   },
+   {
+    "a": "C:e25",
+    "a_at": "OLED.DC",
+    "b": "NUCLEO CN10.21",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "OLED_DC",
+    "w": "W21"
+   },
+   {
+    "a": "C:e29",
+    "a_at": "OLED.DIN",
+    "b": "NUCLEO CN10.15",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "OLED_DIN",
+    "w": "W22"
+   },
+   {
+    "a": "C:e37",
+    "a_at": "OLED.RST",
+    "b": "NUCLEO CN10.23",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "OLED_RST",
+    "w": "W23"
+   },
+   {
+    "a": "C:e28",
+    "a_at": "OLED.SCLK",
+    "b": "NUCLEO CN10.11",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "OLED_SCLK",
+    "w": "W24"
+   },
+   {
+    "a": "B:e55",
+    "a_at": "CHGR.PGOOD",
+    "b": "NUCLEO CN9.6",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "PGOOD",
+    "w": "W25"
+   },
+   {
+    "a": "A:d15",
+    "a_at": "BOBR.4, C_RAIN.1, R2.1",
+    "b": "NUCLEO CN8.4",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "RAIN",
+    "w": "W26"
+   },
+   {
+    "a": "A:e7",
+    "a_at": "BOBW.5, R3.1",
+    "b": "NUCLEO CN8.2",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "VANE",
+    "w": "W27"
+   },
+   {
+    "a": "B:c61",
+    "a_at": "R5.2, R6.1",
+    "b": "NUCLEO CN8.3",
+    "b_at": "",
+    "kind": "jumper",
+    "net": "VIN_SENSE",
+    "w": "W28"
+   },
+   {
+    "a": "PACK.+",
+    "a_at": "",
+    "b": "J:WAGO_CELL_POS.1",
+    "b_at": "",
+    "id": "L_PACK_POS",
+    "kind": "lead",
+    "net": "CELL_POS"
+   },
+   {
+    "a": "PACK.-",
+    "a_at": "",
+    "b": "J:WAGO_STAR.1",
+    "b_at": "",
+    "id": "L_PACK_NEG",
+    "kind": "lead",
+    "net": "GND"
+   },
+   {
+    "a": "J:WAGO_CELL_POS.2",
+    "a_at": "",
+    "b": "INA.X1_VINP",
+    "b_at": "",
+    "id": "L_CELL_INA",
+    "kind": "lead",
+    "net": "CELL_POS"
+   },
+   {
+    "a": "INA.X1_VINM",
+    "a_at": "",
+    "b": "J:WAGO_BATT.1",
+    "b_at": "",
+    "id": "L_INA_BATT",
+    "kind": "lead",
+    "net": "BATT"
+   },
+   {
+    "a": "J:WAGO_BATT.2",
+    "a_at": "",
+    "b": "CHGR.BATT2",
+    "b_at": "",
+    "id": "L_BATT_POS",
+    "kind": "lead",
+    "net": "BATT"
+   },
+   {
+    "a": "CHGR.BATT1",
+    "a_at": "",
+    "b": "J:WAGO_STAR.2",
+    "b_at": "",
+    "id": "L_BATT_NEG",
+    "kind": "lead",
+    "net": "GND"
+   },
+   {
+    "a": "CHGR.SYSOUT2",
+    "a_at": "",
+    "b": "J:WAGO_SYS_OUT.1",
+    "b_at": "",
+    "id": "L_SYSOUT_POS",
+    "kind": "lead",
+    "net": "SYS_OUT"
+   },
+   {
+    "a": "CHGR.SYSOUT1",
+    "a_at": "",
+    "b": "insulated",
+    "b_at": "",
+    "id": "L_SYSOUT_NEG",
+    "kind": "lead",
+    "net": "GND"
+   },
+   {
+    "a": "J:WAGO_SYS_OUT.2",
+    "a_at": "",
+    "b": "RLOAD.1",
+    "b_at": "",
+    "id": "L_RLOAD_A",
+    "kind": "lead",
+    "net": "SYS_OUT"
+   },
+   {
+    "a": "RLOAD.2",
+    "a_at": "",
+    "b": "J:WAGO_STAR.3",
+    "b_at": "",
+    "id": "L_RLOAD_B",
+    "kind": "lead",
+    "net": "GND"
+   },
+   {
+    "a": "GAUGE.BAT1+",
+    "a_at": "",
+    "b": "J:WAGO_CELL_POS.3",
+    "b_at": "",
+    "id": "L_GAUGE_POS",
+    "kind": "lead",
+    "net": "CELL_POS"
+   },
+   {
+    "a": "GAUGE.BAT1-",
+    "a_at": "",
+    "b": "insulated",
+    "b_at": "",
+    "id": "L_GAUGE_NEG",
+    "kind": "lead",
+    "net": "GAUGE_BAT_NEG"
+   },
+   {
+    "a": "INA.X1_VBUS",
+    "a_at": "",
+    "b": "J:WAGO_SYS_OUT.3",
+    "b_at": "",
+    "id": "L_VBUS",
+    "kind": "lead",
+    "net": "SYS_OUT"
+   },
+   {
+    "a": "J:WAGO_SYS_OUT.4",
+    "a_at": "",
+    "b": "B:b15",
+    "b_at": "REG.VIN",
+    "id": "L_REG_VIN",
+    "kind": "lead",
+    "net": "SYS_OUT"
+   },
+   {
+    "a": "J:WAGO_STAR.4",
+    "a_at": "",
+    "b": "B:b16",
+    "b_at": "REG.GND",
+    "id": "L_TIE",
+    "kind": "lead",
+    "net": "GND"
+   },
+   {
+    "a": "NUCLEO CN6.7",
+    "a_at": "",
+    "b": "B:c16",
+    "b_at": "REG.GND",
+    "id": "L_NUC_RET",
+    "kind": "lead",
+    "net": "GND"
+   },
+   {
+    "a": "B:c9",
+    "a_at": "SHUNT.2",
+    "b": "A:c41",
+    "b_at": "QT.V+",
+    "id": "L_REG_3V3",
+    "kind": "lead",
+    "net": "3V3"
+   },
+   {
+    "a": "NUCLEO CN7.16",
+    "a_at": "",
+    "b": "C:c23",
+    "b_at": "COLED.+, OLED.VCC",
+    "id": "L_OLED_VCC",
+    "kind": "lead",
+    "net": "3V3"
+   },
+   {
+    "a": "NUCLEO CN10.20",
+    "a_at": "",
+    "b": "C:c22",
+    "b_at": "COLED.-, OLED.GND",
+    "id": "L_OLED_GND",
+    "kind": "lead",
+    "net": "GND"
+   },
+   {
+    "a": "NTC.1",
+    "a_at": "",
+    "b": "B:c58",
+    "b_at": "CHGR.THERM",
+    "id": "L_NTC_THERM",
+    "kind": "lead",
+    "net": "THERM"
+   },
+   {
+    "a": "NTC.2",
+    "a_at": "",
+    "b": "B:L-46",
+    "b_at": "",
+    "id": "L_NTC_RET",
+    "kind": "lead",
+    "net": "GND"
+   },
+   {
+    "a": "ADAPTER.+",
+    "a_at": "",
+    "b": "CHGR.USBC",
+    "b_at": "",
+    "id": "L_USB_IN",
+    "kind": "lead",
+    "net": "CHGR_IN"
+   }
+  ],
+  "revision": "bench-bb-r0.2"
+ },
+ "connections": [
+  {
+   "a": "A:L+47",
+   "a_at": "",
+   "b": "A:b47",
+   "b_at": "QTM.V+",
+   "kind": "jumper",
+   "net": "3V3",
+   "w": "W1"
+  },
+  {
+   "a": "A:L+31",
+   "a_at": "",
+   "b": "A:b34",
+   "b_at": "LSW.IN",
+   "kind": "jumper",
+   "net": "3V3",
+   "w": "W2"
+  },
+  {
+   "a": "A:L+20",
+   "a_at": "",
+   "b": "A:b19",
+   "b_at": "R2.2",
+   "kind": "jumper",
+   "net": "3V3",
+   "w": "W3"
+  },
+  {
+   "a": "A:d19",
+   "a_at": "R2.2",
+   "b": "A:d2",
+   "b_at": "R1.2, R3.2",
+   "kind": "jumper",
+   "net": "3V3",
+   "w": "W4"
+  },
+  {
+   "a": "A:b35",
+   "a_at": "LSW.OUT",
+   "b": "A:b41",
+   "b_at": "QT.V+",
+   "kind": "jumper",
+   "net": "3V3_SW",
+   "w": "W5"
+  },
+  {
+   "a": "A:L-46",
+   "a_at": "",
+   "b": "A:b46",
+   "b_at": "QTM.GND",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W6"
+  },
+  {
+   "a": "A:L-40",
+   "a_at": "",
+   "b": "A:b40",
+   "b_at": "QT.GND",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W7"
+  },
+  {
+   "a": "A:c40",
+   "a_at": "QT.GND",
+   "b": "A:c36",
+   "b_at": "LSW.GND",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W8"
+  },
+  {
+   "a": "A:L-20",
+   "a_at": "",
+   "b": "A:b14",
+   "b_at": "BOBR.3, C_RAIN.2",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W9"
+  },
+  {
+   "a": "A:c14",
+   "a_at": "BOBR.3, C_RAIN.2",
+   "b": "A:c5",
+   "b_at": "BOBW.3, C_CUPS.2",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W10"
+  },
+  {
+   "a": "A:b5",
+   "a_at": "BOBW.3, C_CUPS.2",
+   "b": "A:b4",
+   "b_at": "BOBW.2",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W11"
+  },
+  {
+   "a": "A:b43",
+   "a_at": "QT.SCL",
+   "b": "A:b49",
+   "b_at": "QTM.SCL",
+   "kind": "jumper",
+   "net": "I2C_SCL",
+   "w": "W12"
+  },
+  {
+   "a": "A:b42",
+   "a_at": "QT.SDA",
+   "b": "A:b48",
+   "b_at": "QTM.SDA",
+   "kind": "jumper",
+   "net": "I2C_SDA",
+   "w": "W13"
+  },
+  {
+   "a": "B:L-63",
+   "a_at": "",
+   "b": "B:c62",
+   "b_at": "R6.2",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W14"
+  },
+  {
+   "a": "B:d62",
+   "a_at": "R6.2",
+   "b": "B:f59",
+   "b_at": "C_ISET.2, R_IPD.2",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W15"
+  },
+  {
+   "a": "B:d16",
+   "a_at": "REG.GND",
+   "b": "B:L-19",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "GND",
+   "w": "W16"
+  },
+  {
+   "a": "B:e57",
+   "a_at": "CHGR.ISET",
+   "b": "B:g57",
+   "b_at": "R_ISER.1",
+   "kind": "jumper",
+   "net": "ISET_CHGR",
+   "w": "W17"
+  },
+  {
+   "a": "B:b17",
+   "a_at": "REG.VOUT",
+   "b": "B:b8",
+   "b_at": "SHUNT.1",
+   "id": "LK_REG_SHUNT",
+   "kind": "link",
+   "net": "REG_OUT",
+   "w": "W18"
+  },
+  {
+   "a": "A:e34",
+   "a_at": "LSW.IN",
+   "b": "NUCLEO CN6.4",
+   "b_at": "",
+   "id": "LK_3V3_CN6_4",
+   "kind": "link",
+   "net": "3V3",
+   "w": "W19"
+  },
+  {
+   "a": "B:e54",
+   "a_at": "CHGR.CHG",
+   "b": "NUCLEO CN9.7",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "CHG",
+   "w": "W20"
+  },
+  {
+   "a": "A:d6",
+   "a_at": "BOBW.4, C_CUPS.1, R1.1",
+   "b": "NUCLEO CN9.5",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "CUPS",
+   "w": "W21"
+  },
+  {
+   "a": "A:e40",
+   "a_at": "QT.GND",
+   "b": "NUCLEO CN6.6",
+   "b_at": "",
+   "id": "LK_QT_GND_CN6_6",
+   "kind": "link",
+   "net": "GND",
+   "w": "W22"
+  },
+  {
+   "a": "A:e43",
+   "a_at": "QT.SCL",
+   "b": "NUCLEO CN5.10",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "I2C_SCL",
+   "w": "W23"
+  },
+  {
+   "a": "A:e42",
+   "a_at": "QT.SDA",
+   "b": "NUCLEO CN5.9",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "I2C_SDA",
+   "w": "W24"
+  },
+  {
+   "a": "B:j58",
+   "a_at": "C_ISET.1, R_IPD.1, R_ISER.2",
+   "b": "NUCLEO CN8.1",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "ISET",
+   "w": "W25"
+  },
+  {
+   "a": "C:e36",
+   "a_at": "OLED.CS",
+   "b": "NUCLEO CN10.17",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "OLED_CS",
+   "w": "W26"
+  },
+  {
+   "a": "C:e25",
+   "a_at": "OLED.DC",
+   "b": "NUCLEO CN10.21",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "OLED_DC",
+   "w": "W27"
+  },
+  {
+   "a": "C:e29",
+   "a_at": "OLED.DIN",
+   "b": "NUCLEO CN10.15",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "OLED_DIN",
+   "w": "W28"
+  },
+  {
+   "a": "C:e37",
+   "a_at": "OLED.RST",
+   "b": "NUCLEO CN10.23",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "OLED_RST",
+   "w": "W29"
+  },
+  {
+   "a": "C:e28",
+   "a_at": "OLED.SCLK",
+   "b": "NUCLEO CN10.11",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "OLED_SCLK",
+   "w": "W30"
+  },
+  {
+   "a": "B:e55",
+   "a_at": "CHGR.PGOOD",
+   "b": "NUCLEO CN9.6",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "PGOOD",
+   "w": "W31"
+  },
+  {
+   "a": "A:d15",
+   "a_at": "BOBR.4, C_RAIN.1, R2.1",
+   "b": "NUCLEO CN8.4",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "RAIN",
+   "w": "W32"
+  },
+  {
+   "a": "A:e37",
+   "a_at": "LSW.EN",
+   "b": "NUCLEO CN5.2",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "SENS_EN",
+   "w": "W33"
+  },
+  {
+   "a": "A:e7",
+   "a_at": "BOBW.5, R3.1",
+   "b": "NUCLEO CN8.2",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "VANE",
+   "w": "W34"
+  },
+  {
+   "a": "B:c61",
+   "a_at": "R5.2, R6.1",
+   "b": "NUCLEO CN8.3",
+   "b_at": "",
+   "kind": "jumper",
+   "net": "VIN_SENSE",
+   "w": "W35"
+  },
+  {
+   "a": "PACK.+",
+   "a_at": "",
+   "b": "J:WAGO_CELL_POS.1",
+   "b_at": "",
+   "id": "L_PACK_POS",
+   "kind": "lead",
+   "net": "CELL_POS"
+  },
+  {
+   "a": "PACK.-",
+   "a_at": "",
+   "b": "J:WAGO_STAR.1",
+   "b_at": "",
+   "id": "L_PACK_NEG",
+   "kind": "lead",
+   "net": "GND"
+  },
+  {
+   "a": "J:WAGO_CELL_POS.2",
+   "a_at": "",
+   "b": "INA.X1_VINP",
+   "b_at": "",
+   "id": "L_CELL_INA",
+   "kind": "lead",
+   "net": "CELL_POS"
+  },
+  {
+   "a": "INA.X1_VINM",
+   "a_at": "",
+   "b": "J:WAGO_BATT.1",
+   "b_at": "",
+   "id": "L_INA_BATT",
+   "kind": "lead",
+   "net": "BATT"
+  },
+  {
+   "a": "J:WAGO_BATT.2",
+   "a_at": "",
+   "b": "CHGR.BATT2",
+   "b_at": "",
+   "id": "L_BATT_POS",
+   "kind": "lead",
+   "net": "BATT"
+  },
+  {
+   "a": "CHGR.BATT1",
+   "a_at": "",
+   "b": "J:WAGO_STAR.2",
+   "b_at": "",
+   "id": "L_BATT_NEG",
+   "kind": "lead",
+   "net": "GND"
+  },
+  {
+   "a": "CHGR.SYSOUT2",
+   "a_at": "",
+   "b": "J:WAGO_SYS_OUT.1",
+   "b_at": "",
+   "id": "L_SYSOUT_POS",
+   "kind": "lead",
+   "net": "SYS_OUT"
+  },
+  {
+   "a": "CHGR.SYSOUT1",
+   "a_at": "",
+   "b": "insulated",
+   "b_at": "",
+   "id": "L_SYSOUT_NEG",
+   "kind": "lead",
+   "net": "GND"
+  },
+  {
+   "a": "J:WAGO_SYS_OUT.2",
+   "a_at": "",
+   "b": "RLOAD.1",
+   "b_at": "",
+   "id": "L_RLOAD_A",
+   "kind": "lead",
+   "net": "SYS_OUT"
+  },
+  {
+   "a": "RLOAD.2",
+   "a_at": "",
+   "b": "J:WAGO_STAR.3",
+   "b_at": "",
+   "id": "L_RLOAD_B",
+   "kind": "lead",
+   "net": "GND"
+  },
+  {
+   "a": "GAUGE.BAT1+",
+   "a_at": "",
+   "b": "J:WAGO_CELL_POS.3",
+   "b_at": "",
+   "id": "L_GAUGE_POS",
+   "kind": "lead",
+   "net": "CELL_POS"
+  },
+  {
+   "a": "GAUGE.BAT1-",
+   "a_at": "",
+   "b": "insulated",
+   "b_at": "",
+   "id": "L_GAUGE_NEG",
+   "kind": "lead",
+   "net": "GAUGE_BAT_NEG"
+  },
+  {
+   "a": "INA.X1_VBUS",
+   "a_at": "",
+   "b": "J:WAGO_SYS_OUT.3",
+   "b_at": "",
+   "id": "L_VBUS",
+   "kind": "lead",
+   "net": "SYS_OUT"
+  },
+  {
+   "a": "J:WAGO_SYS_OUT.4",
+   "a_at": "",
+   "b": "B:b15",
+   "b_at": "REG.VIN",
+   "id": "L_REG_VIN",
+   "kind": "lead",
+   "net": "SYS_OUT"
+  },
+  {
+   "a": "J:WAGO_STAR.4",
+   "a_at": "",
+   "b": "B:b16",
+   "b_at": "REG.GND",
+   "id": "L_TIE",
+   "kind": "lead",
+   "net": "GND"
+  },
+  {
+   "a": "NUCLEO CN6.7",
+   "a_at": "",
+   "b": "B:c16",
+   "b_at": "REG.GND",
+   "id": "L_NUC_RET",
+   "kind": "lead",
+   "net": "GND"
+  },
+  {
+   "a": "B:c9",
+   "a_at": "SHUNT.2",
+   "b": "A:c34",
+   "b_at": "LSW.IN",
+   "id": "L_REG_3V3",
+   "kind": "lead",
+   "net": "3V3"
+  },
+  {
+   "a": "NUCLEO CN7.16",
+   "a_at": "",
+   "b": "C:c23",
+   "b_at": "COLED.+, OLED.VCC",
+   "id": "L_OLED_VCC",
+   "kind": "lead",
+   "net": "3V3"
+  },
+  {
+   "a": "NUCLEO CN10.20",
+   "a_at": "",
+   "b": "C:c22",
+   "b_at": "COLED.-, OLED.GND",
+   "id": "L_OLED_GND",
+   "kind": "lead",
+   "net": "GND"
+  },
+  {
+   "a": "NTC.1",
+   "a_at": "",
+   "b": "B:c58",
+   "b_at": "CHGR.THERM",
+   "id": "L_NTC_THERM",
+   "kind": "lead",
+   "net": "THERM"
+  },
+  {
+   "a": "NTC.2",
+   "a_at": "",
+   "b": "B:L-46",
+   "b_at": "",
+   "id": "L_NTC_RET",
+   "kind": "lead",
+   "net": "GND"
+  },
+  {
+   "a": "ADAPTER.+",
+   "a_at": "",
+   "b": "CHGR.USBC",
+   "b_at": "",
+   "id": "L_USB_IN",
+   "kind": "lead",
+   "net": "CHGR_IN"
+  }
+ ],
+ "revision": "bench-bb-r0.3"
+}

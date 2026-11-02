@@ -205,10 +205,19 @@ td[data-level="critical"] { color: var(--critical-ink); font-weight: 600; }
 .line.c1, .line.c2 { fill: none; }
 .sw.c1 { background: var(--s1); } .sw.c2 { background: var(--s2); }
 .chart .sw.dash { background: repeating-linear-gradient(90deg, var(--s1) 0 4px, transparent 4px 7px); }
+/* Power view (app.js drawPower): a rail spans the row and pairs its voltage and current charts. */
+.rail { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 12px; }
+.rail h4 { grid-column: 1 / -1; margin: 6px 0 0; font-size: 0.88rem; color: var(--ink-2); }
+.absent-rail { grid-column: 1 / -1; margin: 2px 0; }
+.chart.absent p { margin: 6px 0 8px; }
+.chart .zeroline { stroke: var(--ink-2); stroke-width: 1; }
+.chart .zero-label { fill: var(--muted); font-size: 9.5px; }
+.chart .sw.zero { background: var(--ink-2); height: 1px; }
+.st-s2 { fill: var(--s2); } .sw.st-s2 { background: var(--s2); }
 .st-good { fill: var(--good); } .st-warning { fill: var(--warning); } .st-critical { fill: var(--critical); }
-.st-s1 { fill: var(--s1); } .st-s3 { fill: var(--s3); } .st-unknown { fill: var(--axis); }
+.st-s1 { fill: var(--s1); } .st-s3 { fill: var(--s3); } .st-s4 { fill: var(--muted); } .st-unknown { fill: var(--axis); }
 .sw.st-good { background: var(--good); } .sw.st-warning { background: var(--warning); } .sw.st-critical { background: var(--critical); }
-.sw.st-s1 { background: var(--s1); } .sw.st-s3 { background: var(--s3); } .sw.st-unknown { background: var(--axis); }
+.sw.st-s1 { background: var(--s1); } .sw.st-s3 { background: var(--s3); } .sw.st-s4 { background: var(--muted); } .sw.st-unknown { background: var(--axis); }
 .sw.fault { background: var(--fault-band); border: 1px solid var(--critical); }
 .tip {
   position: absolute; pointer-events: none; z-index: 2; background: var(--surface); color: var(--ink);

@@ -23,6 +23,7 @@ try:
     from toolchain import ROOT, check_site, fresh_copy, host_library, needs_cc
 except ImportError:
     from tests.toolchain import ROOT, check_site, fresh_copy, host_library, needs_cc
+from ws0.protocol import HEADER_LEN, KIND_ACK, KIND_DIAG, KIND_MASK, KIND_NACK, KIND_OBS, REPLY_LEN, TAG_LEN, VERSION, VERSION_SHIFT
 
 RF_IDLE, RF_RX_RUNNING, RF_TX_RUNNING = range(3)
 TX_NORMAL, TX_STUCK, TX_HANG = range(3)
@@ -35,6 +36,13 @@ ALIVE_KEYS = ['uptime', 'forwarded', 'dropped', 'acks', 'diag', 'listening', 're
 ALIVE_MS = 60_000
 RELISTEN_S = 17 * 60    # silence > 16 min at a minute report: the first relisten comes at 1020 s
 BOOT_LINE = '\n#boot role=rx fw=host reset=power freq=915000000 bw=2 sf=7 power=0\n'
+ACK_LEN = HEADER_LEN + REPLY_LEN + TAG_LEN     # ACK and NACK frames (the bridge's own value: Bridge.ack_len)
+KIND_UNKNOWN = KIND_DIAG + 1                   # the first kind no frame uses
+
+
+def byte0(kind, version=VERSION):
+    """Byte 0 of a frame: the protocol version in the high nibble, the kind in the low (ws0.protocol)."""
+    return (version << VERSION_SHIFT) | kind
 
 
 def fields(line):
@@ -138,13 +146,13 @@ class Bridge:
 
 
 def obs(rnd, n=None, lo=None, hi=None):
-    """A version-5 observation frame of a length ws_air_frame_ok accepts (contents are opaque to the bridge)."""
+    """A current-version observation frame of a length ws_air_frame_ok accepts (contents are opaque to the bridge)."""
     n = n if n is not None else rnd.randint(lo, hi)
-    return bytes([0x51]) + bytes(rnd.getrandbits(8) for _ in range(n - 1))
+    return bytes([byte0(KIND_OBS)]) + bytes(rnd.getrandbits(8) for _ in range(n - 1))
 
 
-def reply(rnd, kind=2, n=33):
-    return bytes([0x50 | kind]) + bytes(rnd.getrandbits(8) for _ in range(n - 1))
+def reply(rnd, kind=KIND_ACK, n=ACK_LEN):
+    return bytes([byte0(kind)]) + bytes(rnd.getrandbits(8) for _ in range(n - 1))
 
 
 @needs_cc
@@ -181,7 +189,7 @@ class RxStateMachine(unittest.TestCase):
         return obs(self.rnd, n, b.obs_min, b.obs_max)
 
     def diag(self, b):
-        return bytes([0x54]) + bytes(self.rnd.getrandbits(8) for _ in range(b.diag_len - 1))
+        return bytes([byte0(KIND_DIAG)]) + bytes(self.rnd.getrandbits(8) for _ in range(b.diag_len - 1))
 
     def alive_now(self, b):
         """The next #alive report: wait for its timer, then the main loop."""
@@ -192,6 +200,11 @@ class RxStateMachine(unittest.TestCase):
         return lines[0]
 
     # ---- boot ----
+    def test_the_bridge_and_the_gateway_share_the_protocol(self):
+        """The C headers (ws_frame.h, through h_const) and ws0.protocol agree on the version and the ACK length."""
+        b = self.bridge()
+        self.assertEqual((b.version, b.ack_len), (VERSION, ACK_LEN))
+
     def test_boot_listens_in_continuous_receive(self):
         b = self.bridge()
         self.assertEqual(b.out(), BOOT_LINE)
@@ -206,7 +219,7 @@ class RxStateMachine(unittest.TestCase):
     def test_valid_frames_are_forwarded_once_as_lowercase_hex(self):
         b = self.bridge()
         b.out()
-        frames = [self.obs(b, b.obs_min), self.obs(b, b.obs_max), self.obs(b), self.diag(b), bytes([0x51]) + bytes([0xab]) * (b.obs_min - 1)]
+        frames = [self.obs(b, b.obs_min), self.obs(b, b.obs_max), self.obs(b), self.diag(b), bytes([byte0(KIND_OBS)]) + bytes([0xab]) * (b.obs_min - 1)]
         for i, f in enumerate(frames):
             self.assertEqual(b.rx(f, rssi=-40 - i, snr=9 - i), 1)
             self.assertEqual(b.out(), f'{f.hex()}\n#rx obs rssi={-40 - i} snr={9 - i}\n')
@@ -220,12 +233,15 @@ class RxStateMachine(unittest.TestCase):
     def test_invalid_frames_are_dropped_not_forwarded(self):
         b = self.bridge()
         b.out()
-        bad = [bytes([0x41]) + bytes(40),                        # version 4
-               bytes([0x61]) + bytes(40),                        # version 6
+        diag = byte0(KIND_DIAG)
+        bad = [bytes([byte0(KIND_OBS, VERSION - 1)]) + bytes(40),     # the previous version
+               bytes([byte0(KIND_OBS, VERSION + 1)]) + bytes(40),     # the next version
+               bytes([byte0(KIND_DIAG, VERSION - 1)]) + bytes(b.diag_len - 1),
                self.obs(b, b.obs_min - 1), self.obs(b, b.obs_max + 1),
-               bytes([0x54]) + bytes(b.diag_len - 2), bytes([0x54]) + bytes(b.diag_len),
-               reply(self.rnd), reply(self.rnd, kind=3),        # an ACK/NACK heard on air is not forwarded
-               bytes([0x50]) + bytes(40), bytes([0x55]) + bytes(40), b'', bytes([0x51]), self.obs(b, 255)]
+               bytes([diag]) + bytes(b.diag_len - 2), bytes([diag]) + bytes(b.diag_len),
+               reply(self.rnd), reply(self.rnd, kind=KIND_NACK),        # an ACK/NACK heard on air is not forwarded
+               bytes([byte0(0)]) + bytes(40), bytes([byte0(KIND_UNKNOWN)]) + bytes(40), b'', bytes([byte0(KIND_OBS)]),
+               self.obs(b, 255)]
         for f in bad:
             self.assertEqual(b.rx(f, rssi=-70, snr=-3), 1)
             self.assertEqual(b.out(), f'#rx drop len={len(f)} rssi=-70 snr=-3\n')
@@ -379,10 +395,10 @@ class RxStateMachine(unittest.TestCase):
         cases = [(ack.hex()[:-1], -1),                          # odd length
                  ('zz' + ack.hex()[2:], -1),                    # not hex
                  (ack.hex() + '0', -1),
-                 (ack.hex()[:-2], 32), (ack.hex() + '00', 34),  # one byte short / long
+                 (ack.hex()[:-2], ACK_LEN - 1), (ack.hex() + '00', ACK_LEN + 1),  # one byte short / long
                  (ack.hex() + '0000', -1),                      # more than the decode buffer
-                 ('41' + ack.hex()[2:], 33),                    # version 4
-                 ('51' + ack.hex()[2:], 33), ('54' + ack.hex()[2:], 33), ('50' + ack.hex()[2:], 33),   # not ACK/NACK
+                 (f'{byte0(KIND_ACK, VERSION - 1):02x}' + ack.hex()[2:], ACK_LEN),   # the previous version
+                 *((f'{byte0(kind):02x}' + ack.hex()[2:], ACK_LEN) for kind in (KIND_OBS, KIND_DIAG, 0)),   # not ACK/NACK
                  ('hello', -1), ('status', -1), (' ' + ack.hex(), -1), (ack.hex() + ' ', -1), ('0' * 256, -1),
                  ('TEST-FAULTS', -1), ('STATUS ', -1)]
         for text, n in cases:
@@ -572,12 +588,12 @@ class RxStateMachine(unittest.TestCase):
         self.assertIn('#relisten after 999 s', b.out())
 
     def test_a_frame_with_a_kind_above_7_is_not_an_observation(self):
-        # The kind is the low nibble: 0x59 is kind 9, not kind 1 (a 3-bit mask would read it as an
+        # The kind is the low nibble: 0x69 is kind 9, not kind 1 (a 3-bit mask would read it as an
         # observation and forward it).
         b = self.bridge(drops_ok=True)
         b.out()
         f = bytearray(self.obs(b))
-        f[0] = (b.version << 4) | 9
+        f[0] = byte0(9, b.version)
         b.rx(bytes(f))
         out = b.out()
         self.assertIn('#rx drop', out)
@@ -796,11 +812,12 @@ class Mixed:
         lines = []
         if 'rx' in self.pend:
             f, rssi, snr = self.pend['rx']
-            ok = len(f) >= 1 and f[0] >> 4 == self.b.version and (
-                (f[0] & 15 == 1 and self.b.obs_min <= len(f) <= self.b.obs_max) or (f[0] & 15 == 4 and len(f) == self.b.diag_len))
+            kind = f[0] & KIND_MASK if f else None
+            ok = len(f) >= 1 and f[0] >> VERSION_SHIFT == self.b.version and (
+                (kind == KIND_OBS and self.b.obs_min <= len(f) <= self.b.obs_max) or (kind == KIND_DIAG and len(f) == self.b.diag_len))
             if ok:
                 self.n['forwarded'] += 1
-                self.n['diag'] += f[0] & 15 == 4
+                self.n['diag'] += kind == KIND_DIAG
                 lines += [f.hex(), f'#rx obs rssi={rssi} snr={snr}']
             else:
                 self.n['dropped'] += 1
@@ -855,7 +872,7 @@ class Mixed:
             return [f'#status role=rx forwarded={n["forwarded"]} dropped={n["dropped"]} acks={n["acks"]} '
                     f'relistens={n["relistens"]} uart_errors={n["uart_errors"]} check_fails=0 check_first=0:0 task_wall_us=0 task_wall=none']
         size, frame = hex_decode(line, self.b.ack_len + 1)
-        if size != self.b.ack_len or frame[0] not in (0x52, 0x53):
+        if size != self.b.ack_len or frame[0] not in (byte0(KIND_ACK, self.b.version), byte0(KIND_NACK, self.b.version)):
             return [f'#host reject len={size}']
         if self.tx_deadline is not None:
             return ['#tx busy']                             # one ACK on air at a time
@@ -927,7 +944,7 @@ class Mixed:
         r = rnd.random()
         rssi, snr = rnd.randint(-128, -20), rnd.randint(-20, 12)
         if r < 0.45:
-            f = obs(rnd, lo=b.obs_min, hi=b.obs_max) if rnd.random() < 0.8 else bytes([0x54]) + rnd.randbytes(b.diag_len - 1)
+            f = obs(rnd, lo=b.obs_min, hi=b.obs_max) if rnd.random() < 0.8 else bytes([byte0(KIND_DIAG)]) + rnd.randbytes(b.diag_len - 1)
             return 'rx', b.rx, f, rssi, snr
         if r < 0.6:
             f = rnd.choice([rnd.randbytes(rnd.randint(0, 255)), obs(rnd, n=rnd.choice([b.obs_min - 1, b.obs_max + 1])),
@@ -965,7 +982,7 @@ class Mixed:
             b.lib.h_tx_mode(self.tx_mode)
             b.lib.h_send_fails(self.send_fails)
             sends = self.sends
-            f = reply(rnd, kind=rnd.choice([2, 3]))
+            f = reply(rnd, kind=rnd.choice([KIND_ACK, KIND_NACK]))
             self.feed_and_check((f.hex() + rnd.choice(['\n', '\r\n'])).encode(), run_each=True)
             if self.sends > sends:
                 self.t.assertEqual(b.sent(), f)
@@ -975,8 +992,8 @@ class Mixed:
             b.lib.h_send_fails(0)
             return
         if r < 0.8:                                          # a bad host line, a comment, STATUS
-            f = reply(rnd, kind=rnd.choice([1, 2, 3, 4]), n=rnd.choice([32, 33, 34]))
-            text = rnd.choice([f.hex(), f.hex()[1:], '#' + f.hex(), 'STATUS', 'zz' * 33, f.hex().upper()])
+            f = reply(rnd, kind=rnd.choice([KIND_OBS, KIND_ACK, KIND_NACK, KIND_DIAG]), n=rnd.choice([ACK_LEN - 1, ACK_LEN, ACK_LEN + 1]))
+            text = rnd.choice([f.hex(), f.hex()[1:], '#' + f.hex(), 'STATUS', 'zz' * ACK_LEN, f.hex().upper()])
             data = (text + '\n').encode()
         elif r < 0.9:                                        # UART noise
             data = rnd.randbytes(rnd.randint(1, 400))

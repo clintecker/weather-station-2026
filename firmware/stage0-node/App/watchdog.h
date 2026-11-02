@@ -9,8 +9,13 @@ void watchdog_start(void);
 int watchdog_healthy(void);
 /* Reset cause of this boot, read once before the flags are cleared. The codes are the wire
  * numbering of the health report, DIAG (docs/protocol.md, ws0/protocol.py RESET_CAUSES;
- * tests/test_frame.py checks the names). BROWNOUT is never reported: the brownout-reset (BOR) flag
- * is also set at power-on, so both read as POWER. */
+ * tests/test_frame.py checks the names).
+ * Known limitation (power telemetry design, section 9.8 and risk R7): BROWNOUT is never reported.
+ * The brownout-reset (BOR) flag is also set at power-on, and watchdog.c reads it as POWER, so a
+ * brown-out (the supply sagging below the BOR threshold, as a flat pack can) reads as a power-on
+ * reset. It also restarts the boot counter (fault_boot_note(1), fault.h) even if the backup
+ * registers survived the sag, while the crash count and last crash PC (DR5-DR11) are kept then.
+ * Telling the two apart needs brown-out detection the firmware does not have (design section 16). */
 typedef enum {
   WS_RESET_UNKNOWN, WS_RESET_POWER, WS_RESET_PIN, WS_RESET_BROWNOUT, WS_RESET_SOFTWARE, WS_RESET_WATCHDOG,
   WS_RESET_LOWPOWER, WS_RESET_OPTION_BYTES, WS_RESET_COUNT

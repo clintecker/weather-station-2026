@@ -36,6 +36,13 @@ st() { cd firmware/stage0-node && make ROLE=rx BUILD=build/analyze-rx stack && m
 gate "stack bound" st
 wt() { cd firmware/stage0-node && make ROLE=rx BUILD=build/analyze-rx waits && make ROLE=tx BUILD=build/analyze-tx waits; }
 gate "no blocking waits" wt
+vr() {   # the other TX profiles, as CI "TX profile variants": phase B rails and the mux bus
+  cd firmware/stage0-node || return 1
+  for v in "phase-b:-DWS_POWER_PROFILE=2" "mux:-DWS_I2C_MUX=1"; do n="${v%%:*}"; d="${v#*:}"
+    make ROLE=tx ANALYZE=1 OPT="-Os $d" BUILD="build/variant-$n" -j8 >/dev/null && make ROLE=tx OPT="-Os $d" BUILD="build/variant-$n" stack \
+      && make ROLE=tx OPT="-Os $d" BUILD="build/variant-$n" waits || return 1; done
+}
+gate "TX profile variants (phase B, mux bus)" vr
 gate "unit tests (with firmware C)" python -m unittest discover -s tests
 fz() {
   n=$(make -s --no-print-directory -C firmware/fuzz targets | wc -w | tr -d ' ')

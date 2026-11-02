@@ -2,7 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Weather Station Stage 0",
-    "version": "0.3.0"
+    "version": "0.4.0",
+    "description": "Gateway HTTP API of protocol version 6 (power telemetry, docs/superpowers/specs/2026-10-29-power-telemetry-design.md). components.schemas describes the observation record (Observation), the node health report (HealthReport) and the dashboard shapes; tests/test_openapi.py checks them against ws0/fields.py and ws0/service.py."
   },
   "servers": [
     {
@@ -20,6 +21,1572 @@
         "type": "http",
         "scheme": "bearer"
       }
+    },
+    "schemas": {
+      "Observation": {
+        "type": "object",
+        "description": "One stored observation record (closed key set: gateway.py validate). The base keys are always present. A catalog field (x-field-index) is present only when the node build has a source for it. **Absent = not measured in this build** (the field is not in the record bitmap: for example solar_mv in phase A). **null = invalid**: the source is fitted but failed or its reading was out of range (\"sensor fault\", never zero). The power fields are always present in a version 6 node build that fits them, so a dead INA228 or gauge gives null, never absence. x-unit is the unit, x-counter marks since-boot counters (non-decreasing within an epoch), x-diagnostic marks station and power fields (Home Assistant diagnostic entities, fields.DIAGNOSTIC_FIELDS). Signed currents are + into the cell (battery), into the load, or into the station (sources). Retired fields (deprecated) are still decoded; version 6 builds do not send them. The per-phase fill table is in docs/web-dashboard.md.",
+        "required": [
+          "calibration_revision",
+          "energy_state",
+          "quality",
+          "sampled_at",
+          "sequence",
+          "session",
+          "station",
+          "time_quality",
+          "uptime_s",
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 6,
+            "description": "Protocol version of the record (RECORD_VERSION). A run directory holds one version."
+          },
+          "station": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Station name (gateway.json)."
+          },
+          "session": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Boot epoch of the node, as a decimal string."
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295,
+            "description": "Record sequence within the epoch."
+          },
+          "sampled_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 4294967295,
+            "description": "Node UTC, unix seconds; null when time_quality is unknown."
+          },
+          "uptime_s": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295,
+            "x-unit": "s",
+            "description": "Node uptime."
+          },
+          "time_quality": {
+            "enum": [
+              "synchronized",
+              "unknown"
+            ]
+          },
+          "energy_state": {
+            "enum": [
+              "surplus",
+              "normal",
+              "conserve",
+              "critical"
+            ],
+            "description": "Node energy state (NORMAL in this phase: deferred)."
+          },
+          "calibration_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          "quality": {
+            "enum": [
+              "valid",
+              "partial",
+              "sensor_fault"
+            ],
+            "description": "valid: every present measurement valid; partial: some null; sensor_fault: all null. An absent field never counts. A healthy phase A record is valid."
+          },
+          "temperature_c": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": -40.0,
+            "maximum": 125.0,
+            "x-field-index": 0,
+            "x-unit": "°C",
+            "x-resolution": 0.01,
+            "title": "Temperature"
+          },
+          "humidity_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0.0,
+            "maximum": 100.0,
+            "x-field-index": 1,
+            "x-unit": "%",
+            "x-resolution": 0.01,
+            "title": "Humidity"
+          },
+          "pressure_hpa": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 300.0,
+            "maximum": 1100.0,
+            "x-field-index": 2,
+            "x-unit": "hPa",
+            "x-resolution": 0.1,
+            "title": "Pressure"
+          },
+          "wind_speed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0.0,
+            "maximum": 75.0,
+            "x-field-index": 3,
+            "x-unit": "m/s",
+            "x-resolution": 0.1,
+            "title": "Wind speed"
+          },
+          "wind_gust_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0.0,
+            "maximum": 75.0,
+            "x-field-index": 4,
+            "x-unit": "m/s",
+            "x-resolution": 0.1,
+            "title": "Wind gust"
+          },
+          "wind_dir_deg": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 359,
+            "x-field-index": 5,
+            "x-unit": "°",
+            "title": "Wind direction",
+            "description": "Null when INVALID and also when calm (then wind_calm is true)."
+          },
+          "rain_tips": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 16777214,
+            "x-field-index": 6,
+            "x-counter": true,
+            "title": "Rain tips"
+          },
+          "uv_index": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0.0,
+            "maximum": 25.0,
+            "x-field-index": 7,
+            "x-resolution": 0.1,
+            "title": "UV index"
+          },
+          "irradiance_wm2": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2000,
+            "x-field-index": 8,
+            "x-unit": "W/m²",
+            "title": "Solar irradiance"
+          },
+          "uva_raw": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1048575,
+            "x-field-index": 9,
+            "x-diagnostic": true,
+            "title": "UVA raw (not UV index)",
+            "description": "LTR390 counts (20 bit), not a UV index."
+          },
+          "qualifiers": {
+            "type": "object",
+            "x-field-index": 10,
+            "description": "Field 10: per-field qualifiers of fields 0-15, only the ones set.",
+            "propertyNames": {
+              "enum": [
+                "batt_current_ma",
+                "batt_mv",
+                "charge_in_mah",
+                "energy_in_mwh",
+                "energy_out_mwh",
+                "humidity_pct",
+                "irradiance_wm2",
+                "pressure_hpa",
+                "rain_tips",
+                "temperature_c",
+                "uv_index",
+                "uva_raw",
+                "wind_dir_deg",
+                "wind_gust_ms",
+                "wind_speed_ms"
+              ]
+            },
+            "additionalProperties": {
+              "enum": [
+                "suspected_icing",
+                "delayed_melt",
+                "outside_envelope"
+              ]
+            }
+          },
+          "batt_mv": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 65534,
+            "x-field-index": 11,
+            "x-unit": "mV",
+            "x-diagnostic": true,
+            "title": "Battery voltage",
+            "description": "Battery terminal (cell) voltage, mean over the minute: the fuel gauge VCELL at the CELL+ node, in every phase (it includes the pack-lead drop I x R_pack while current flows; build-progression record M4). Null when the gauge is absent or failed (no fallback source). Meaning corrected in version 6: version 5 builds sent the INA228 VBUS of whatever net its jumper sensed (on the official wiring the charger OUT), so version 5 values are not the cell voltage."
+          },
+          "batt_current_ma": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": -32768,
+            "maximum": 32766,
+            "x-field-index": 12,
+            "x-unit": "mA",
+            "x-diagnostic": true,
+            "title": "Battery current (+ charging)",
+            "description": "Battery current, mean over the minute, 1 mA steps. Signed: + into the cell (charging), - out of the cell (discharging). Range -32768 to +32766 mA; outside that it is null. Battery INA228 charge delta over the window divided by its time, in every phase. Never sent before version 6."
+          },
+          "energy_in_mwh": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 16777214,
+            "x-field-index": 13,
+            "x-unit": "mWh",
+            "x-counter": true,
+            "x-diagnostic": true,
+            "title": "Energy in",
+            "description": "mWh into the cell since boot: sum of charge steps times the battery voltage over the steps with positive battery current. Null in a minute in which a step added charge without a fresh battery voltage (the counter then lacks that step for good). Meaning corrected in version 6 (version 5 integrated the INA228 ENERGY register: OUT voltage times current)."
+          },
+          "energy_out_mwh": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 16777214,
+            "x-field-index": 14,
+            "x-unit": "mWh",
+            "x-counter": true,
+            "x-diagnostic": true,
+            "title": "Energy out",
+            "description": "mWh out of the cell since boot, as energy_in_mwh for negative battery current."
+          },
+          "charge_in_mah": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 16777214,
+            "x-field-index": 15,
+            "x-unit": "mAh",
+            "x-counter": true,
+            "x-diagnostic": true,
+            "title": "Charge in",
+            "description": "mAh into the cell since boot (battery current > 0). Sign corrected in version 6."
+          },
+          "charge_out_mah": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 16777214,
+            "x-field-index": 16,
+            "x-unit": "mAh",
+            "x-counter": true,
+            "x-diagnostic": true,
+            "title": "Charge out",
+            "description": "mAh out of the cell since boot (battery current < 0). Sign corrected in version 6."
+          },
+          "soc_gauge_pct": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "x-field-index": 17,
+            "x-unit": "%",
+            "x-diagnostic": true,
+            "deprecated": true,
+            "title": "Battery (fuel gauge estimate)",
+            "description": "Retired: version 6 builds do not send it; still decoded. The health report carries battery_soc_pct (1/256 %) and its rate."
+          },
+          "charger_pins": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 3,
+            "x-field-index": 18,
+            "x-diagnostic": true,
+            "deprecated": true,
+            "title": "Charger status pins",
+            "description": "Retired: version 6 builds do not send it; still decoded. The health report carries the charger status (charger_input_power_ok, charger_charging, charger_fault, charger_stage)."
+          },
+          "enclosure_temp_c": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": -40.0,
+            "maximum": 125.0,
+            "x-field-index": 19,
+            "x-unit": "°C",
+            "x-resolution": 0.01,
+            "x-diagnostic": true,
+            "title": "Enclosure temperature"
+          },
+          "enclosure_rh_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0.0,
+            "maximum": 100.0,
+            "x-field-index": 20,
+            "x-unit": "%",
+            "x-resolution": 0.01,
+            "x-diagnostic": true,
+            "title": "Enclosure humidity"
+          },
+          "temperature_min_c": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": -40.0,
+            "maximum": 125.0,
+            "x-field-index": 21,
+            "x-unit": "°C",
+            "x-resolution": 0.01,
+            "title": "Temperature minimum (minute)"
+          },
+          "temperature_max_c": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": -40.0,
+            "maximum": 125.0,
+            "x-field-index": 22,
+            "x-unit": "°C",
+            "x-resolution": 0.01,
+            "title": "Temperature maximum (minute)"
+          },
+          "humidity_min_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0.0,
+            "maximum": 100.0,
+            "x-field-index": 23,
+            "x-unit": "%",
+            "x-resolution": 0.01,
+            "title": "Humidity minimum (minute)"
+          },
+          "humidity_max_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0.0,
+            "maximum": 100.0,
+            "x-field-index": 24,
+            "x-unit": "%",
+            "x-resolution": 0.01,
+            "title": "Humidity maximum (minute)"
+          },
+          "th_samples": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 60,
+            "x-field-index": 25,
+            "x-diagnostic": true,
+            "title": "T/RH samples per minute",
+            "description": "Valid 15-s T/RH samples in the minute (meta: not counted in quality)."
+          },
+          "load_mv": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 65534,
+            "x-field-index": 26,
+            "x-unit": "mV",
+            "x-diagnostic": true,
+            "title": "Load voltage",
+            "description": "Load (system rail) voltage: the charger output that supplies the station, mean over the minute. Phase A: the battery INA228 VBUS (on its own sense lead to OUT); phase B: the load INA228; phase C: the load INA228 if fitted, else the BQ25798 VSYS."
+          },
+          "load_current_ma": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": -32768,
+            "maximum": 32766,
+            "x-field-index": 27,
+            "x-unit": "mA",
+            "x-diagnostic": true,
+            "title": "Load current",
+            "description": "Load current, + into the load, mean over the minute, -32768 to +32766 mA. Absent in phase A; phase B: the load INA228; phase C: the load INA228 if fitted, else absent."
+          },
+          "charger_input_mv": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 65534,
+            "x-field-index": 28,
+            "x-unit": "mV",
+            "x-diagnostic": true,
+            "title": "Charger input voltage (source not identified)",
+            "description": "Charger input voltage after the sources join, measured while the charger draws current, so not the source's open-circuit voltage: with the charger's EN2 low it can sit at VIN-DPM (4.35-4.63 V); with EN2 high (phase B) nothing regulates it, and a source that cannot supply the current is pulled down towards the cell voltage. The source (solar or USB-C) is not identified. Phases A and B: the PA10 divider times 3; phase C: the BQ25798 VBUS."
+          },
+          "solar_mv": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 65534,
+            "x-field-index": 29,
+            "x-unit": "mV",
+            "x-diagnostic": true,
+            "title": "Solar input voltage",
+            "description": "Solar input voltage upstream of the join. Absent in phase A (no monitor); phase B: its own INA228. Phase C: that INA228 if fitted, else the BQ25798 VAC1."
+          },
+          "solar_current_ma": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": -32768,
+            "maximum": 32766,
+            "x-field-index": 30,
+            "x-unit": "mA",
+            "x-diagnostic": true,
+            "title": "Solar input current",
+            "description": "Solar input current, + into the station, -32768 to +32766 mA. Absent in phase A (no monitor); phase B: its own INA228. Phase C without it: the BQ25798 IBUS while solar is the active input, 0 while USB-C is or while there is no input (charger_active_input no_input)."
+          },
+          "usb_mv": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 65534,
+            "x-field-index": 32,
+            "x-unit": "mV",
+            "x-diagnostic": true,
+            "title": "USB-C input voltage",
+            "description": "USB-C input voltage upstream of the join (extension field). Absent in phase A (no monitor); phase B: its own INA228. Phase C: that INA228 if fitted, else the BQ25798 VAC2."
+          },
+          "usb_current_ma": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": -32768,
+            "maximum": 32766,
+            "x-field-index": 33,
+            "x-unit": "mA",
+            "x-diagnostic": true,
+            "title": "USB-C input current",
+            "description": "USB-C input current, + into the station, -32768 to +32766 mA (extension field). Absent in phase A (no monitor); phase B: its own INA228. Phase C without it: the BQ25798 IBUS while USB-C is the active input, 0 while solar is or while there is no input (charger_active_input no_input)."
+          },
+          "wind_calm": {
+            "type": "boolean",
+            "description": "Present with wind_dir_deg: true when the wind was calm."
+          }
+        }
+      },
+      "ObservationRow": {
+        "description": "A stored observation as /v1/observations returns it: the record plus its time columns.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Observation"
+          },
+          {
+            "type": "object",
+            "required": [
+              "received_at",
+              "effective_sampled_at",
+              "time_basis",
+              "time_uncertainty_s"
+            ],
+            "properties": {
+              "received_at": {
+                "type": "number",
+                "x-unit": "s",
+                "description": "Gateway UTC of receipt, unix seconds."
+              },
+              "effective_sampled_at": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-unit": "s",
+                "description": "Sample time used for ordering and ranges; null while unknown."
+              },
+              "time_basis": {
+                "enum": [
+                  "synchronized",
+                  "reconstructed",
+                  "unknown"
+                ]
+              },
+              "time_uncertainty_s": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-unit": "s"
+              }
+            }
+          }
+        ]
+      },
+      "LatestObservation": {
+        "type": "object",
+        "description": "The latest record by epoch and sequence. Without one: {available: false, reason: \"no_observation\"} only. available needs a fresh reading (younger than 180 s, a known and bounded clock) that is not a sensor_fault record.",
+        "required": [
+          "available",
+          "reason"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "enum": [
+              "no_observation",
+              "future_clock_at_receipt",
+              "unknown_clock",
+              "time_uncertain",
+              "sensor_fault",
+              "fresh",
+              "stale_or_clock_step"
+            ]
+          },
+          "fields_available": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Per present catalog field: fresh and not null."
+          },
+          "age_seconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "received_at": {
+            "type": "number"
+          },
+          "observation": {
+            "$ref": "#/components/schemas/Observation"
+          },
+          "derived": {
+            "type": "object",
+            "description": "Gateway-computed values (dew_point_c), never sent by the node.",
+            "properties": {
+              "dew_point_c": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-unit": "°C"
+              }
+            }
+          },
+          "effective_sampled_at": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "time_basis": {
+            "enum": [
+              "synchronized",
+              "reconstructed",
+              "unknown"
+            ]
+          },
+          "time_uncertainty_s": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "units": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "HealthReport": {
+        "type": "object",
+        "description": "Node health report (kind 4, 64 bytes, every 15 minutes, after boot and after each link-state change) as the gateway stores it (service.receive_diagnostic). Every key is present in a version 6 run directory; null is the field's none code, and the report's fitted byte says why: power_not_measured lists the null power keys this build has no source for, power_sensor_faults those whose fitted source failed. A report that breaks a canonical rule is kept with a warning: fitted bit 7 set, or charger stage 7, which makes its five charger keys null (every active input code is canonical; 3 is no_input). These keys never share a name with an observation field.",
+        "required": [
+          "epoch",
+          "uptime_s",
+          "journal_pending",
+          "journal_lost_total",
+          "journal_torn_slots",
+          "abandoned_total",
+          "missed_acks_since_boot",
+          "rejected_replies_since_boot",
+          "reset_cause",
+          "link",
+          "firmware_build",
+          "ack_rssi_dbm",
+          "ack_snr_db",
+          "crashes_since_power_up",
+          "energy_state",
+          "last_crash_pc",
+          "boots_since_power_up",
+          "tx_timeouts_since_boot",
+          "i2c_recoveries_since_boot",
+          "mcu_supply_mv",
+          "power_monitor_temp_c",
+          "battery_soc_pct",
+          "battery_soc_rate_pct_h",
+          "charger_reported_input_mv",
+          "charger_reported_input_ma",
+          "charger_reported_battery_mv",
+          "charger_reported_battery_ma",
+          "charger_temp_c",
+          "pack_temp_c",
+          "charger_input_power_ok",
+          "charger_charging",
+          "charger_fault",
+          "charger_stage",
+          "charger_active_input",
+          "power_not_measured",
+          "power_sensor_faults"
+        ],
+        "properties": {
+          "epoch": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295,
+            "description": "Boot epoch."
+          },
+          "uptime_s": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295,
+            "x-unit": "s",
+            "description": "Node uptime at the report."
+          },
+          "journal_pending": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Records waiting in the journal."
+          },
+          "journal_lost_total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295,
+            "description": "Records lost from the journal, total."
+          },
+          "journal_torn_slots": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Torn journal slots."
+          },
+          "abandoned_total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Records abandoned after a NACK, total."
+          },
+          "missed_acks_since_boot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "rejected_replies_since_boot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "reset_cause": {
+            "enum": [
+              "unknown",
+              "power",
+              "pin",
+              "brownout",
+              "software",
+              "watchdog",
+              "lowpower",
+              "option-bytes"
+            ]
+          },
+          "link": {
+            "enum": [
+              "linked",
+              "probing",
+              "unknown"
+            ]
+          },
+          "firmware_build": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}$",
+            "description": "Build id, 8 hex digits: the first 8 hex digits of the release commit; 00000000 = not identified (a build from a dirty tree, or without a commit hash)."
+          },
+          "ack_rssi_dbm": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": -127,
+            "maximum": 127,
+            "x-unit": "dBm",
+            "description": "Last authentic ACK as the node heard it; null: none heard yet."
+          },
+          "ack_snr_db": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": -127,
+            "maximum": 127,
+            "x-unit": "dB",
+            "description": "As ack_rssi_dbm."
+          },
+          "crashes_since_power_up": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255,
+            "description": "RTC backup register; a power loss clears it."
+          },
+          "energy_state": {
+            "enum": [
+              "surplus",
+              "normal",
+              "conserve",
+              "critical",
+              "unknown"
+            ]
+          },
+          "last_crash_pc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{8}$",
+            "description": "PC of the last crash since power-up, 8 lowercase hex digits (no 0x); null: no crash since power-up; \"ffffffff\": the stacked frame was not trusted."
+          },
+          "boots_since_power_up": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Boots since power-up (RTC backup register DR12), saturating; a power loss clears it."
+          },
+          "tx_timeouts_since_boot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Radio TX timeouts since boot, saturating."
+          },
+          "i2c_recoveries_since_boot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "I2C stuck-bus recoveries started since boot, saturating."
+          },
+          "mcu_supply_mv": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 65534,
+            "x-unit": "mV",
+            "description": "MCU supply VDDA from VREFINT, mean of the last minute; every phase. Null (a sensor fault, the fitted bit is set) when no new ADC sequence completed in the minute: the ADC failed or stalled, and a sequence already sampled is not counted again."
+          },
+          "power_monitor_temp_c": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": -3276.7,
+            "maximum": 3276.7,
+            "x-unit": "°C",
+            "x-resolution": 0.1,
+            "description": "Die temperature of the hottest fitted INA228, latest read. Phase A: the battery INA228; phase B: the hottest of four."
+          },
+          "battery_soc_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 255.9921875,
+            "x-unit": "%",
+            "x-resolution": 0.00390625,
+            "description": "Fuel gauge state of charge as read (MAX17048 SOC, 1/256 %); can exceed 100 near full. Every phase."
+          },
+          "battery_soc_rate_pct_h": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": -3276.7,
+            "maximum": 3276.7,
+            "x-unit": "%/h",
+            "x-resolution": 0.1,
+            "description": "Fuel gauge SOC rate (CRATE), + while charging, saturating. Every phase."
+          },
+          "charger_reported_input_mv": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 65534,
+            "x-unit": "mV",
+            "description": "The charger's own input voltage measurement. Not measured (null) in phases A and B; phase C: BQ25798 VBUS. Not the observation field charger_input_mv (PA10 divider)."
+          },
+          "charger_reported_input_ma": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": -32767,
+            "maximum": 32767,
+            "x-unit": "mA",
+            "description": "The charger's own input current, + into the charger. Not measured (null) in phases A and B; phase C: BQ25798 IBUS."
+          },
+          "charger_reported_battery_mv": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 65534,
+            "x-unit": "mV",
+            "description": "The charger's own battery voltage. Not measured (null) in phases A and B; phase C: BQ25798 VBAT."
+          },
+          "charger_reported_battery_ma": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": -32767,
+            "maximum": 32767,
+            "x-unit": "mA",
+            "description": "Charge current as the charger reports it, + into the cell, mean of the last minute. Phases A and B: the bq24074 ISET pin, I = 400 x V_ISET / R_ISET, while PGOOD is asserted, and 0 while PGOOD is deasserted; null only when no new ADC sequence completed in the minute (the ADC failed or stalled: a sequence already sampled is not counted again) or, while PGOOD is asserted, an ISET reading clipped. Phase C: BQ25798 IBAT."
+          },
+          "charger_temp_c": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": -3276.7,
+            "maximum": 3276.7,
+            "x-unit": "°C",
+            "x-resolution": 0.1,
+            "description": "Charger die temperature. Not measured (null) in phases A and B; phase C: BQ25798 TDIE."
+          },
+          "pack_temp_c": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": -3276.7,
+            "maximum": 3276.7,
+            "x-unit": "°C",
+            "x-resolution": 0.1,
+            "description": "Pack temperature. Not measured (null) in phases A and B; phase C: BQ25798 TS (in phase A the NTC goes to the charger only)."
+          },
+          "charger_input_power_ok": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Charger input power good (phase A: PGOOD). null: no charger status, or a non-canonical status byte."
+          },
+          "charger_charging": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Charging (phase A: CHG asserted steadily; CHG is off during a refresh charge after termination). null as charger_input_power_ok."
+          },
+          "charger_fault": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Charger fault (phase A: CHG flashing at about 2 Hz). The #4755 ties TMR to GND, so the bq24074 safety timers are disabled (confirm on the board in hand): a phase A fault is then not a timer expiry but something else, such as a battery-path or input fault. null as charger_input_power_ok."
+          },
+          "charger_stage": {
+            "enum": [
+              "precharge",
+              "cc",
+              "cv",
+              "topoff",
+              "terminated",
+              "not_charging",
+              null
+            ],
+            "description": "Charge stage; null: not reported (always in phases A and B: the pins cannot tell), no status, or a non-canonical byte (stage 7)."
+          },
+          "charger_active_input": {
+            "enum": [
+              "solar",
+              "usb_c",
+              "no_input",
+              null
+            ],
+            "description": "Active charger input (phase C: VAC1 = solar, VAC2 = USB-C); no_input: the charger reports that neither input powers it (phase C at night with USB-C unplugged; both source currents are then 0); null: not reported (phases A and B: one VBUS, the source is not identified; in phase C a failed charger read, listed in power_sensor_faults), no status, or a non-canonical byte (stage 7)."
+          },
+          "power_not_measured": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The power keys that are null because this build or phase has no source for them (their fitted bit is clear; design section 6.1), sorted. Phase A: charger_stage, charger_active_input, charger_reported_input_mv, charger_reported_input_ma, charger_reported_battery_mv, charger_temp_c, pack_temp_c. One of mcu_supply_mv, power_monitor_temp_c, battery_soc_pct, battery_soc_rate_pct_h, charger_input_power_ok, charger_charging, charger_fault, charger_stage, charger_active_input, charger_reported_input_mv, charger_reported_input_ma, charger_reported_battery_mv, charger_reported_battery_ma, charger_temp_c, pack_temp_c."
+          },
+          "power_sensor_faults": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The power keys that are null although the build has a source for them (their fitted bit is set): a sensor fault, e.g. a dead fuel gauge gives battery_soc_pct and battery_soc_rate_pct_h. Sorted; empty when every fitted source answered. One of mcu_supply_mv, power_monitor_temp_c, battery_soc_pct, battery_soc_rate_pct_h, charger_input_power_ok, charger_charging, charger_fault, charger_stage, charger_active_input, charger_reported_input_mv, charger_reported_input_ma, charger_reported_battery_mv, charger_reported_battery_ma, charger_temp_c, pack_temp_c."
+          }
+        }
+      },
+      "DiagnosticRow": {
+        "description": "A stored health report as /v1/diagnostics, /v1/history and /v1/status return it.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/HealthReport"
+          },
+          {
+            "type": "object",
+            "required": [
+              "received_at"
+            ],
+            "properties": {
+              "received_at": {
+                "type": "number",
+                "x-unit": "s",
+                "description": "Gateway UTC of receipt."
+              }
+            }
+          }
+        ]
+      },
+      "Status": {
+        "type": "object",
+        "required": [
+          "stage",
+          "h01",
+          "mode",
+          "alarm",
+          "node_counter",
+          "station",
+          "accepted_this_process",
+          "rejected_this_process",
+          "nacked_this_process",
+          "host_clock",
+          "node_diagnostics",
+          "receiver",
+          "rx_faults",
+          "latest"
+        ],
+        "properties": {
+          "stage": {
+            "type": "integer"
+          },
+          "h01": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "alarm": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node_counter": {
+            "type": "object"
+          },
+          "station": {
+            "type": "string"
+          },
+          "accepted_this_process": {
+            "type": "integer"
+          },
+          "rejected_this_process": {
+            "type": "integer"
+          },
+          "nacked_this_process": {
+            "type": "integer"
+          },
+          "host_clock": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "node_diagnostics": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DiagnosticRow"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The newest health report (by epoch and uptime); null before the first."
+          },
+          "receiver": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "rx_faults": {
+            "type": "object"
+          },
+          "latest": {
+            "$ref": "#/components/schemas/LatestObservation"
+          }
+        }
+      },
+      "History": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "server_time",
+          "observations",
+          "diagnostics",
+          "radio",
+          "receiver",
+          "events"
+        ],
+        "properties": {
+          "from": {
+            "type": "number"
+          },
+          "to": {
+            "type": "number"
+          },
+          "server_time": {
+            "type": "number"
+          },
+          "observations": {
+            "$ref": "#/components/schemas/ObservationSeries"
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticRow"
+            },
+            "description": "Health reports in the range, thinned past max_points; every change of epoch, firmware_build, energy_state, link, reset_cause, charger_charging, charger_input_power_ok, charger_fault, charger_stage and charger_active_input is kept."
+          },
+          "radio": {
+            "$ref": "#/components/schemas/RadioSeries"
+          },
+          "receiver": {
+            "$ref": "#/components/schemas/ReceiverSeries"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GatewayEvent"
+            }
+          }
+        }
+      },
+      "ObservationSeries": {
+        "type": "object",
+        "description": "Columnar observations. values holds one array per present catalog field (fields), aligned with t. null is a sensor fault or a bucket with no valid value, never zero. diagnostic lists every station and power field (present or not) and labels covers them, so the page can say \"not measured in this build\" for a rail no record in the range carries.",
+        "required": [
+          "bucket_s",
+          "fields",
+          "units",
+          "labels",
+          "diagnostic",
+          "unknown_time_count",
+          "t",
+          "basis",
+          "quality",
+          "session",
+          "values"
+        ],
+        "properties": {
+          "bucket_s": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0: one point per record; else bucket length."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Catalog fields present, in order."
+          },
+          "units": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "diagnostic": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unknown_time_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "t": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "basis": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "synchronized",
+                "reconstructed"
+              ]
+            }
+          },
+          "quality": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "valid",
+                "partial",
+                "sensor_fault"
+              ]
+            }
+          },
+          "session": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "description": "Bucket mean; counters and wind direction keep the last valid value."
+          }
+        }
+      },
+      "RadioSeries": {
+        "type": "object",
+        "required": [
+          "bucket_s",
+          "t",
+          "rssi_dbm",
+          "snr_db",
+          "rssi_min",
+          "frames",
+          "kind",
+          "outcome",
+          "counter"
+        ],
+        "properties": {
+          "bucket_s": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "t": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "rssi_dbm": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "snr_db": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "rssi_min": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "frames": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "kind": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "outcome": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "object",
+                "null"
+              ]
+            },
+            "description": "One outcome per frame; in a bucket of several frames, {outcome: count}."
+          },
+          "counter": {
+            "type": "array",
+            "items": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "ReceiverSeries": {
+        "type": "object",
+        "description": "RX #alive counters and peaks since the RX board booted, one array per key, aligned with t.",
+        "required": [
+          "bucket_s",
+          "t",
+          "uptime_s",
+          "forwarded",
+          "dropped",
+          "acks",
+          "diag",
+          "listening",
+          "relistens",
+          "uart_errors",
+          "stack_peak",
+          "crc_errors",
+          "hdr_errors",
+          "fault_overruns",
+          "task_peak_us",
+          "task_peak",
+          "isr_peak_us",
+          "isr_peak",
+          "trace_drops"
+        ],
+        "properties": {
+          "bucket_s": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "t": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "uptime_s": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "forwarded": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "dropped": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "acks": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "diag": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "listening": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "relistens": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "uart_errors": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "stack_peak": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "crc_errors": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "hdr_errors": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "fault_overruns": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "task_peak_us": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "task_peak": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "isr_peak_us": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "isr_peak": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          },
+          "trace_drops": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "GatewayEvent": {
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "source",
+          "kind",
+          "level",
+          "text"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "at": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "info",
+              "warn"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      }
     }
   },
   "paths": {
@@ -29,7 +1596,14 @@
         "description": "Includes `alarm` (null, or \"possible key reuse: re-key the node\" once any authentic node frame arrived with a counter at or below the stored high-water mark; it persists across restarts until the node is re-keyed into a new state directory) and `node_counter` {max_node_counter, counter_regression, last_regression_counter, last_regression_at} (review item P4). `rx_faults` {window_s, crc, hdr, last_at, warn_per_hour, throttled}: bad receptions the RX reported in the trailing hour by kind, the rate above which the gateway warns (30/h), and how many the rate limit dropped since the gateway started.",
         "responses": {
           "200": {
-            "description": "JSON response with explicit availability, UTC timestamps and units"
+            "description": "JSON response with explicit availability, UTC timestamps and units",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
           },
           "401": {
             "description": "Missing or incorrect bearer token"
@@ -42,7 +1616,14 @@
         "summary": "Latest sample by epoch and sequence",
         "responses": {
           "200": {
-            "description": "JSON response with explicit availability, UTC timestamps and units"
+            "description": "JSON response with explicit availability, UTC timestamps and units",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LatestObservation"
+                }
+              }
+            }
           },
           "401": {
             "description": "Missing or incorrect bearer token"
@@ -55,7 +1636,42 @@
         "summary": "Time-filtered historical observations",
         "responses": {
           "200": {
-            "description": "JSON response with explicit availability, UTC timestamps and units"
+            "description": "JSON {observations, offset, limit, units}, or text/csv",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "observations",
+                    "offset",
+                    "limit",
+                    "units"
+                  ],
+                  "properties": {
+                    "observations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ObservationRow"
+                      }
+                    },
+                    "offset": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "units": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Unit of every catalog field (\"\" for none), and sampled_at."
+                    }
+                  }
+                }
+              },
+              "text/csv": {}
+            }
           },
           "401": {
             "description": "Missing or incorrect bearer token"
@@ -109,13 +1725,14 @@
               "default": "json"
             }
           }
-        ]
+        ],
+        "description": "Stored records in effective-time order. format=csv: one column per base key, time column and catalog field (empty = absent or null), qualifiers as JSON."
       }
     },
     "/v1/events": {
       "get": {
         "summary": "Live event stream (Server-Sent Events)",
-        "description": "text/event-stream. Each event is `id: <instance>-<n>`, `event: <type>`, one `data:` line of JSON. Types: `hello` {instance, server_time, resumed}; `resync` (the cursor could not be resumed: reload from the history endpoints); `observation` {record, latest}; `diagnostic` (node health report); `radio` (one frame with RSSI/SNR and outcome: ack, duplicate, nack, diag, rejected, commit_failed, dropped_by_rx, unparsed); `rx` (RX #alive report); `rx_fault` (one bad reception: id, received_at, kind crc/hdr, length, rssi_dbm, snr_db, data, and `summary` as in /v1/status rx_faults); `rx_fault_summary` {summary} (the same summary, re-sent at most once a minute when it changed without a new bad reception, e.g. old ones left the trailing hour); `gateway` (gateway or receiver event). A `: heartbeat` comment is sent every 15 s when idle. Resume with the `Last-Event-ID` header (or `since`): events after it are replayed if still buffered (5,000) and from this gateway run, otherwise `resync`. At most 8 streams at once (503 with Retry-After beyond that). Browsers must use fetch() with the Authorization header: EventSource cannot send it.",
+        "description": "text/event-stream. Each event is `id: <instance>-<n>`, `event: <type>`, one `data:` line of JSON. Types: `hello` {instance, server_time, resumed}; `resync` (the cursor could not be resumed: reload from the history endpoints); `observation` {record (an ObservationRow), latest (a LatestObservation)}; `diagnostic` (node health report: a DiagnosticRow); `radio` (one frame with RSSI/SNR and outcome: ack, duplicate, nack, diag, rejected, commit_failed, dropped_by_rx, unparsed); `rx` (RX #alive report); `rx_fault` (one bad reception: id, received_at, kind crc/hdr, length, rssi_dbm, snr_db, data, and `summary` as in /v1/status rx_faults); `rx_fault_summary` {summary} (the same summary, re-sent at most once a minute when it changed without a new bad reception, e.g. old ones left the trailing hour); `gateway` (gateway or receiver event). A `: heartbeat` comment is sent every 15 s when idle. Resume with the `Last-Event-ID` header (or `since`): events after it are replayed if still buffered (5,000) and from this gateway run, otherwise `resync`. At most 8 streams at once (503 with Retry-After beyond that). Browsers must use fetch() with the Authorization header: EventSource cannot send it.",
         "parameters": [
           {
             "name": "since",
@@ -185,7 +1802,14 @@
         ],
         "responses": {
           "200": {
-            "description": "JSON response"
+            "description": "JSON response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/History"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid parameter (time without timezone, range, limit, order)"
@@ -406,7 +2030,7 @@
     "/v1/diagnostics": {
       "get": {
         "summary": "Node health reports (DIAG, every 15 min)",
-        "description": "Decoded reports by arrival time (received_at), including ack_rssi_dbm/ack_snr_db as the node heard the gateway.",
+        "description": "Decoded health reports by arrival time (received_at): every HealthReport key, including ack_rssi_dbm/ack_snr_db as the node heard the gateway and the power keys of protocol version 6.",
         "parameters": [
           {
             "name": "from",
@@ -461,7 +2085,33 @@
         ],
         "responses": {
           "200": {
-            "description": "JSON {rows, offset, limit}"
+            "description": "JSON {rows, offset, limit}",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "rows",
+                    "offset",
+                    "limit"
+                  ],
+                  "properties": {
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiagnosticRow"
+                      }
+                    },
+                    "offset": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid parameter (time without timezone, range, limit, order)"
@@ -475,7 +2125,7 @@
     "/v1/gateway/events": {
       "get": {
         "summary": "Gateway and receiver events",
-        "description": "Table gateway_events: at, source (gateway, rx), kind (start, stop, serial-open, serial-lost, receiver-silent, host-clock, rejected, rx_boot, relisten, rx_faults (hourly count of bad receptions, info), rx-fault-rate (more than 30 in the trailing hour, warn), rx_fault_malformed, suppressed, ...), level (info, warn), text.",
+        "description": "Table gateway_events: at, source (gateway, rx), kind (start, stop, serial-open, serial-lost, serial-reopen (open port silent past the threshold, reopened in place; warn), receiver-silent, host-clock, rejected, rx_boot, relisten, rx_faults (hourly count of bad receptions, info), rx-fault-rate (more than 30 in the trailing hour, warn), rx_fault_malformed, suppressed, ...), level (info, warn), text.",
         "parameters": [
           {
             "name": "from",

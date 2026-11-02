@@ -3,16 +3,21 @@
 firmware/host/i2c_sim.c models ST's HAL I2C with many devices; firmware/host/wsmp_harness.c, built with
 -DWSMP_BUS_ONLY, records every i2c_bus_done. Every transfer must end in exactly one completion with
 the documented code, never wait, and leave the bus ready. The cases of the earlier SHT45 driver
-(tests/test_sensor_machine.py) appear here for one client. Host-model results, not bench evidence."""
+(tests/test_sensor_machine.py) appear here for one client. Host-model results, not bench evidence.
+
+Two profiles (App/i2c_bus.lit.md section 11): I2cBus builds the mux profile (WS_I2C_MUX=1, the ports
+board), I2cBusHub the firmware default (WS_I2C_MUX=0, the official phase A STEMMA QT hub)."""
 import ctypes
+import re
 import unittest
+from pathlib import Path
 
 try:
     from toolchain import fresh_station, host_library, needs_cc, wsmp_sources          # python -m unittest discover -s tests
 except ImportError:
     from tests.toolchain import fresh_station, host_library, needs_cc, wsmp_sources    # python -m unittest tests.<module>
 
-DEVK_TEST, DEVK_MUX, DEVK_EEPROM = 1, 8, 9
+DEVK_TEST, DEVK_SHT45, DEVK_INA228, DEVK_MAX17048, DEVK_MUX, DEVK_EEPROM = 1, 2, 6, 7, 8, 9
 UPSTREAM = -1
 MUX = 0x71
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY = range(5)
@@ -20,15 +25,118 @@ DM_BUS_ERROR = 6                                   # i2c_sim.h: a bus error (BER
 OK, ENACK_ADDR, ENACK_DATA, ESTUCK, ETIMEOUT, EBUS = 0, -2, -3, -5, -6, -7
 SHT45, BMP581, LTR390 = 0, 1, 2
 SHTC3 = 3
+INA_BATT, INA_LOAD, INA_SOLAR, INA_USB, MAX17048, REC_AIR = 4, 5, 6, 7, 8, 9   # enum i2c_client
 ADDR = {SHT45: 0x44, BMP581: 0x47, LTR390: 0x53, SHTC3: 0x70}
+# The rail monitors (power telemetry spec section 9.2): battery, load, solar, USB-C.
+RAILS = {INA_BATT: 0x40, INA_LOAD: 0x41, INA_SOLAR: 0x45, INA_USB: 0x48}
+GAUGE = 0x36
+INA_MANUFACTURER, INA_TI = 0x3E, (0x54, 0x49)        # MANUFACTURER_ID 'TI'
+GAUGE_VERSION, GAUGE_0012 = 0x08, (0x00, 0x12)
+
+
+def counters(lib):
+    """(recoveries, stuck, mux resets) since boot: the bus's own saturating counters (i2c_bus.h)."""
+    for f in (lib.i2c_bus_recoveries, lib.i2c_bus_stuck, lib.i2c_bus_mux_resets):
+        f.restype = ctypes.c_uint16
+    return lib.i2c_bus_recoveries(), lib.i2c_bus_stuck(), lib.i2c_bus_mux_resets()
+
+
+class Rails:
+    """Shared by both profiles: the four INA228 rail monitors, upstream, read side by side."""
+    def test_four_ina228_rail_monitors_work_upstream_together(self):
+        lib = fresh_station(self, self.library)
+        lib.h_init()
+        devs = {c: lib.h_add_device(DEVK_INA228, a) for c, a in RAILS.items()}
+        lib.h_advance(50)
+        for c, a in RAILS.items():
+            self.assertEqual(lib.h_submit(c, a, 1, INA_MANUFACTURER, 2), 0)
+        lib.h_advance(100)
+        self.assertEqual([(lib.h_log_client(i), lib.h_log_rc(i)) for i in range(lib.h_log_count())],
+                         [(c, OK) for c in RAILS])
+        self.assertEqual({c: (lib.h_rx(c, 0), lib.h_rx(c, 1)) for c in RAILS}, {c: INA_TI for c in RAILS})
+        self.assertEqual({a: lib.h_addr_transfers(a) for a in RAILS.values()}, {a: 1 for a in RAILS.values()})
+        self.assertEqual(lib.h_upstream_with_channel(), 0)
+        lib.h_remove_device(devs[INA_SOLAR])                  # one rail absent: only its client sees it
+        for c, a in RAILS.items():
+            self.assertEqual(lib.h_submit(c, a, 1, INA_MANUFACTURER, 2), 0)
+        lib.h_advance(100)
+        self.assertEqual([lib.h_log_rc(i) for i in range(4, 8)], [OK, OK, ENACK_ADDR, OK])
+        self.assertEqual(counters(lib)[:2], (0, 0))           # an absent part costs no recovery
+
+    def test_pa9_cycles_drop_only_the_switched_sensors(self):
+        # Build-progression record, step 1 change C and exit criterion 9: PA9 low 10 times. The SHT45 on
+        # the switched branch drops off (a clean NACK) and is found again; the battery INA228 (0x40) and
+        # the MAX17048 (0x36), on the unswitched QT branch (PORT-9, M6), never NACK; the bus recovers.
+        lib = fresh_station(self, self.library)
+        lib.h_init()
+        sht45 = lib.h_add_device(DEVK_SHT45, ADDR[SHT45])
+        lib.h_add_device(DEVK_INA228, RAILS[INA_BATT])
+        lib.h_add_device(DEVK_MAX17048, GAUGE)
+        lib.i2c_sim_switched(sht45, 1)
+        lib.h_advance(50)                                      # the mux profile's boot job
+
+        def round_of_reads():
+            before = lib.h_log_count()
+            for c, a, reg, n in ((SHT45, ADDR[SHT45], 0xFD, 0), (INA_BATT, RAILS[INA_BATT], INA_MANUFACTURER, 2),
+                                 (MAX17048, GAUGE, GAUGE_VERSION, 2)):
+                self.assertEqual(lib.h_submit(c, a, 1, reg, n), 0)
+            lib.h_advance(100)
+            self.assertEqual(lib.h_log_count(), before + 3, 'exactly one completion per transfer')
+            return {lib.h_log_client(i): lib.h_log_rc(i) for i in range(before, before + 3)}
+
+        for cycle in range(10):
+            lib.i2c_bus_power(0)
+            self.assertEqual(lib.h_power(), 0)
+            self.assertEqual(round_of_reads(), {SHT45: ENACK_ADDR, INA_BATT: OK, MAX17048: OK}, cycle)
+            self.assertEqual((lib.h_rx(INA_BATT, 0), lib.h_rx(INA_BATT, 1)), INA_TI)
+            lib.i2c_bus_power(1)
+            self.assertEqual(round_of_reads(), {SHT45: OK, INA_BATT: OK, MAX17048: OK}, cycle)
+            self.assertEqual((lib.h_rx(MAX17048, 0), lib.h_rx(MAX17048, 1)), GAUGE_0012)
+        self.assertEqual(counters(lib)[:2], (0, 0))           # a switched-off sensor is a clean NACK
+        self.assertEqual(lib.h_upstream_with_channel(), 0)
+        self.assertEqual(lib.h_power(), 1)
+
+    def test_outcomes_name_the_clients_that_answered_and_failed(self):
+        # i2c_bus_outcomes (TEST-SENSOR-POWER's evidence, step 1 exit 9): a bit for each client whose own
+        # transfer answered, and one for each whose job failed, since the previous call, which clears
+        # them. A recover-only request is neither; the masks never touch the bus.
+        lib = fresh_station(self, self.library)
+        lib.h_init()
+        sht45 = lib.h_add_device(DEVK_SHT45, ADDR[SHT45])
+        lib.h_add_device(DEVK_INA228, RAILS[INA_BATT])
+        lib.i2c_sim_switched(sht45, 1)
+        lib.h_advance(50)
+        lib.h_transfers.restype = ctypes.c_uint32
+        acked, failed = ctypes.c_uint16(), ctypes.c_uint16()
+
+        def outcomes():
+            lib.i2c_bus_outcomes(ctypes.byref(acked), ctypes.byref(failed))
+            return acked.value, failed.value
+
+        outcomes()                                             # forget the boot job's (none upstream)
+        self.assertEqual(outcomes(), (0, 0))
+        for c, a, reg, n in ((SHT45, ADDR[SHT45], 0xFD, 0), (INA_BATT, RAILS[INA_BATT], INA_MANUFACTURER, 2),
+                             (INA_LOAD, RAILS[INA_LOAD], INA_MANUFACTURER, 2)):   # the load INA228 is not fitted
+            self.assertEqual(lib.h_submit(c, a, 1, reg, n), 0)
+        lib.h_advance(100)
+        before = lib.h_transfers()
+        self.assertEqual(outcomes(), (1 << SHT45 | 1 << INA_BATT, 1 << INA_LOAD))
+        self.assertEqual((outcomes(), lib.h_transfers()), ((0, 0), before))   # cleared; no bus traffic
+        lib.i2c_bus_power(0)                                   # the switched SHT45 is off: a NACK
+        self.assertEqual(lib.h_submit(SHT45, ADDR[SHT45], 1, 0xFD, 0), 0)
+        self.assertEqual(lib.h_submit(INA_BATT, 0, 0, 0, 0), 0)   # recover only: neither bit
+        lib.h_advance(100)
+        self.assertEqual(outcomes(), (0, 1 << SHT45))
+        lib.i2c_bus_power(1)
 CHANNEL = {SHT45: 0, LTR390: 1, BMP581: 2}           # the static channel map (ports design, section 4.1)
 
 
 @needs_cc
-class I2cBus(unittest.TestCase):
+class I2cBus(Rails, unittest.TestCase):
+    """The mux profile (WS_I2C_MUX=1): the ports board with the TCA9548A at 0x71."""
     @classmethod
     def setUpClass(cls):
-        lib = host_library(cls, 'i2cbus', '-DWSMP_BUS_ONLY', *wsmp_sources(('i2c_bus', 'busymon')))
+        lib = host_library(cls, 'i2cbus', '-DWSMP_BUS_ONLY', *wsmp_sources(('i2c_bus', 'busymon'), mux=1))
         cls.library = lib._name
 
     def bus(self, *clients, boot=True):
@@ -287,7 +395,8 @@ class I2cBus(unittest.TestCase):
         self.assertEqual(lib.h_mux_ok(), 0)
 
     def test_an_absent_mux_is_a_bus_fault_for_every_client(self):
-        # An absent mux never reads back a deselect, so no client can know that no channel is selected.
+        # The mux profile only: an absent mux never reads back a deselect, so no client can know that
+        # no channel is selected. (The hub profile has no mux to miss: I2cBusHub.)
         lib, devs = self.bus(SHT45, SHTC3)
         lib.h_remove_device(lib.h_mux_device())
         self.assertEqual(self.read(lib, SHT45), EBUS)
@@ -311,6 +420,45 @@ class I2cBus(unittest.TestCase):
         self.assertEqual((lib.h_log_count(), lib.h_log_rc(0)), (1, OK))
         self.assertEqual([lib.h_rx(SHT45, i) for i in (0, 1, 126, 127)], [0x01, 0x02, 0x7F, 0x80])
 
+    def test_one_hang_is_one_recovery(self):
+        lib, devs = self.bus()
+        self.assertEqual(counters(lib), (0, 0, 1))           # the boot job's RESET pulse
+        lib.h_device_mode(devs[SHT45], DM_HANG, 0, 1)
+        self.assertEqual(self.read(lib), ETIMEOUT)
+        self.assertEqual((counters(lib), lib.h_deinits()), ((1, 0, 1), 1))
+        lib.h_device_mode(devs[SHT45], DM_NACK_ADDR, 0, 1)
+        self.assertEqual(self.read(lib), ENACK_ADDR)         # a clean NACK: no recovery, no count
+        self.assertEqual(counters(lib), (1, 0, 1))
+
+    def test_held_sda_counts_as_stuck(self):
+        # A held SDA that the 9 clocks free is a recovery, not a stuck one; one that stays low is
+        # both, and in the mux profile it costs a RESET pulse (step 2).
+        for hold, rc, want in ((5, ENACK_ADDR, (1, 0, 1)), (99, ESTUCK, (1, 1, 2))):
+            with self.subTest(hold=hold):
+                lib, devs = self.bus()
+                lib.h_device_mode(devs[SHT45], DM_NACK_ADDR, hold, 1)
+                self.assertEqual(self.read(lib), rc)
+                self.assertEqual(counters(lib), want)
+                self.assertEqual(lib.h_mux_resets(), want[2])
+
+    def test_mux_resets_are_counted(self):
+        # The deselect that never reads back pulses RESET once more (mux_done); the counter follows
+        # the RESET line exactly.
+        lib, _ = self.bus(SHT45)
+        lib.h_mux_readback_xor_idle(0x80)
+        self.assertEqual(self.read(lib), EBUS)
+        self.assertEqual((counters(lib)[2], lib.h_mux_resets()), (2, 2))
+
+    def test_an_ina228_is_never_behind_a_channel(self):
+        # The host model's channel rule keys on the kind: an INA228 at a probe-table address (0x46 is
+        # the BMP581's second address, channel 2 for a port part) stays upstream.
+        lib, _ = self.bus()
+        lib.h_add_device(DEVK_INA228, 0x46)
+        self.assertEqual(lib.h_submit(INA_LOAD, 0x46, 1, INA_MANUFACTURER, 2), 0)
+        lib.h_advance(50)
+        self.assertEqual((lib.h_log_rc(0), lib.h_rx(INA_LOAD, 0), lib.h_rx(INA_LOAD, 1)), (OK, *INA_TI))
+        self.assertEqual((lib.h_mux_write_count(), lib.h_upstream_with_channel()), (1, 0))   # the boot's deselect only
+
     def test_the_guard_grows_with_the_transfer(self):
         # 30 ms plus 90 us a byte: a 128-byte read whose bytes take 38 ms (a slow bus and a flash
         # erase stall) completes; a 6-byte read that slow times out at 30 ms.
@@ -321,5 +469,128 @@ class I2cBus(unittest.TestCase):
                 self.assertEqual(self.read(lib, n=n), rc)
 
 
+@needs_cc
+class I2cBusHub(Rails, unittest.TestCase):
+    """The hub profile (WS_I2C_MUX=0, the firmware default): the official phase A STEMMA QT hub."""
+    @classmethod
+    def setUpClass(cls):
+        lib = host_library(cls, 'i2cbus-hub', '-DWSMP_BUS_ONLY', *wsmp_sources(('i2c_bus', 'busymon'), mux=0))
+        cls.library = lib._name
+
+    def hub(self, *devices):
+        """A fresh hub bus with these (kind, addr7) devices, added by the host model's own rule."""
+        lib = fresh_station(self, self.library)
+        lib.h_transfers.restype = ctypes.c_uint32
+        lib.h_addr_transfers.restype = ctypes.c_uint32
+        devs = [lib.h_add_device(k, a) for k, a in devices]
+        lib.h_init()
+        return lib, devs
+
+    def complete(self, lib, client, addr7, txlen, reg, rxlen, ms=50):
+        before = lib.h_log_count()
+        self.assertEqual(lib.h_submit(client, addr7, txlen, reg, rxlen), 0)
+        lib.h_advance(ms)
+        self.assertEqual(lib.h_log_count(), before + 1, 'exactly one completion per transfer')
+        self.assertEqual(lib.h_log_client(before), client)
+        return lib.h_log_rc(before)
+
+    def assert_no_mux(self, lib):
+        self.assertEqual((lib.h_mux_device(), lib.h_mux_write_count(), lib.h_mux_reads(), lib.h_mux_resets()),
+                         (-1, 0, 0, 0))
+        self.assertEqual((lib.h_addr_transfers(MUX), lib.h_phantoms(), counters(lib)[2]), (0, 0, 0))
+
+    def test_a_hub_boot_reads_the_power_parts_and_the_sht45(self):
+        # Spec section 9.1: the official wiring, INA228 0x40, MAX17048 0x36 and SHT45 0x44 on the hub,
+        # read with no mux, no boot job and no phantom refusal (0x44 answers upstream).
+        lib, _ = self.hub((DEVK_INA228, RAILS[INA_BATT]), (DEVK_MAX17048, GAUGE), (DEVK_SHT45, ADDR[SHT45]))
+        self.assertEqual((lib.h_bus_ready(), lib.h_mux_ok()), (1, 1))     # at once: nothing to boot
+        self.assertEqual(lib.h_transfers(), 0)
+        self.assertEqual(self.complete(lib, INA_BATT, RAILS[INA_BATT], 1, INA_MANUFACTURER, 2), OK)
+        self.assertEqual((lib.h_rx(INA_BATT, 0), lib.h_rx(INA_BATT, 1)), INA_TI)
+        self.assertEqual(self.complete(lib, MAX17048, GAUGE, 1, GAUGE_VERSION, 2), OK)
+        self.assertEqual((lib.h_rx(MAX17048, 0), lib.h_rx(MAX17048, 1)), GAUGE_0012)
+        self.assertEqual(self.complete(lib, SHT45, ADDR[SHT45], 1, 0xFD, 0, ms=20), OK)   # measure, high precision
+        self.assertEqual(self.complete(lib, SHT45, ADDR[SHT45], 0, 0, 6), OK)
+        self.assertEqual((lib.model_sht45_commands(), lib.model_sht45_read_too_early()), (1, 0))
+        self.assertEqual([lib.h_addr_log(i) for i in range(5)], [0x40, GAUGE, 0x44, 0x44, -1])
+        self.assert_no_mux(lib)
+        self.assertEqual(counters(lib), (0, 0, 0))
+
+    def test_a_record_client_is_absent_without_bus_traffic(self):
+        # No record EEPROM on the hub: a record client gets ENACK_ADDR without touching the bus, even
+        # with a part at 0x50, so port_id admits its module with NO_RECORD.
+        lib, _ = self.hub((DEVK_EEPROM, 0x50))
+        self.assertEqual(self.complete(lib, REC_AIR, 0x50, 2, 0x00, 128), ENACK_ADDR)
+        self.assertEqual((lib.h_transfers(), lib.h_addr_transfers(0x50)), (0, 0))
+        self.assertEqual(self.complete(lib, REC_AIR, 0x50, 0, 0, 0, ms=200), OK)   # recover only: served
+        self.assertEqual(counters(lib), (1, 0, 0))
+
+    def test_a_port_address_is_upstream_and_not_a_phantom(self):
+        # Every device is upstream, whatever its address, and no address is refused as a phantom.
+        lib, _ = self.hub(*((DEVK_TEST, a) for a in ADDR.values()))
+        for c, a in ADDR.items():
+            self.assertEqual(self.complete(lib, c, a, 1, 0x20, 2), OK)
+            self.assertEqual((lib.h_rx(c, 0), lib.h_rx(c, 1)), (0x20, 0x21))
+        self.assert_no_mux(lib)
+
+    def test_held_sda_counts_as_stuck_without_a_mux_reset(self):
+        # No mux to let the bus go: SDA held for 15 clocks outlasts the first recovery's 9 (stuck),
+        # and the next recovery frees it (counted, not stuck).
+        lib, devs = self.hub((DEVK_TEST, ADDR[SHT45]))
+        lib.h_device_mode(devs[0], DM_NACK_ADDR, 15, 1)
+        self.assertEqual(self.complete(lib, SHT45, ADDR[SHT45], 1, 0, 6, ms=200), ESTUCK)
+        self.assertEqual(counters(lib), (1, 1, 0))
+        lib.h_device_mode(devs[0], DM_HANG, 0, 1)
+        self.assertEqual(self.complete(lib, SHT45, ADDR[SHT45], 1, 0, 6, ms=200), ETIMEOUT)
+        self.assertEqual(counters(lib), (2, 1, 0))
+        self.assert_no_mux(lib)
+
+    def test_the_counters_saturate(self):
+        # 0xFFFF and no further (the health report's u16, spec section 6.2): one more recovery than
+        # the counter holds, each a recover-only request with SDA held for good (stuck as well).
+        lib, devs = self.hub((DEVK_TEST, ADDR[SHT45]))
+        lib.h_device_mode(devs[0], DM_NACK_ADDR, 1 << 30, 1)
+        self.assertEqual(self.complete(lib, SHT45, ADDR[SHT45], 1, 0, 6, ms=200), ESTUCK)
+        for _ in range(0xFFFF):
+            self.assertEqual(lib.h_submit(SHT45, ADDR[SHT45], 0, 0, 0), 0)
+            lib.h_advance(100)
+        self.assertEqual(lib.h_log_count(), 64)              # the harness log is full; the bus is not
+        self.assertEqual(counters(lib), (0xFFFF, 0xFFFF, 0))
+        self.assertEqual(lib.h_i2c_ready(), 1)
+
+
 if __name__ == '__main__':
     unittest.main()
+
+
+class BusTiming(unittest.TestCase):
+    """The I2C2 timing register (RM0453 I2C timings) at PCLK1 = 48 MHz: 100 kHz standard mode with at
+    least 100 ns of data hold, which the INA228 needs on the address MSB when SDA straps A0 or A1
+    (SBOS904; the USB-C rail at 0x48, power telemetry design section 9.2). The node, i2cscan and
+    benchlink share the value."""
+    ROOT = Path(__file__).resolve().parent.parent
+    PCLK1_HZ = 48_000_000
+
+    def timing(self, path):
+        m = re.search(r'#define I2C_TIMING 0x([0-9A-Fa-f]{8})U', (self.ROOT / path).read_text())
+        self.assertIsNotNone(m, path)
+        return int(m.group(1), 16)
+
+    def test_sdadel_gives_the_ina228_sda_strap_its_hold_time(self):
+        t = self.timing('firmware/stage0-node/App/i2c_bus.c')
+        presc, scldel, sdadel = t >> 28, (t >> 20) & 0xF, (t >> 16) & 0xF
+        scll, sclh = t & 0xFF, (t >> 8) & 0xFF
+        t_clk = 1e9 / self.PCLK1_HZ                      # ns
+        t_presc = (presc + 1) * t_clk
+        hold = sdadel * t_presc + t_clk                  # tSDADEL, RM0453
+        self.assertGreaterEqual(hold, 100.0)
+        self.assertLess(hold, 3450.0)                    # standard-mode tVD;DAT
+        self.assertGreaterEqual((scldel + 1) * t_presc, 250.0)   # tSU;DAT
+        self.assertGreaterEqual((scll + 1) * t_presc, 4700.0)   # standard-mode tLOW
+        self.assertEqual(sclh, 0x3E)                     # ST's example; tHIGH also holds the sync delays
+        self.assertEqual(t, 0x20323E5D)
+
+    def test_the_bench_tools_use_the_node_timing(self):
+        node = self.timing('firmware/stage0-node/App/i2c_bus.c')
+        for path in ('firmware/i2cscan/App/i2cscan.c', 'firmware/benchlink/App/benchlink.c'):
+            self.assertEqual(self.timing(path), node, path)

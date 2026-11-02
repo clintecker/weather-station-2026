@@ -65,6 +65,11 @@ svg { display: block; width: 100%; height: auto; }
 .alarm svg { width: 18px; height: 18px; flex: none; }
 .alarm span { font-weight: 400; color: var(--ink-2); }
 .note { max-width: 1100px; margin: 10px auto 0; color: var(--ink-3); font-size: 12px; }
+.warn { max-width: 1100px; margin: 0 auto 14px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--s4);
+  color: var(--ink); font-size: 13px; }
+.warn[hidden] { display: none; }
+.flagnote { max-width: 1100px; margin: 10px auto 0; color: var(--ink-2); font-size: 12px; }
+.flagnote ul { margin: 4px 0 0; padding-left: 18px; }
 </style>
 </head>
 <body>
@@ -79,22 +84,38 @@ svg { display: block; width: 100%; height: auto; }
   <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2 19 18H1Z" fill="none" stroke="var(--crit)" stroke-width="2" stroke-linejoin="round"/><path d="M10 8v4.5M10 15v.5" stroke="var(--crit)" stroke-width="2" stroke-linecap="round"/></svg>
   <div id="alarmtext"></div>
 </div>
+<div class="warn" id="pfwarn" role="status" hidden></div>
 <section class="flowbox" aria-label="Energy flow">
   <div class="flowhead"><span class="state" id="flowstate">…</span><span class="when" id="flowwhen">…</span></div>
   <svg id="flow" viewBox="0 60 1000 240" role="img" aria-label="Energy flow between input, charger, load and battery"></svg>
 </section>
 <div class="tiles" id="tiles"></div>
 <div class="panels"><svg id="chart" role="img" aria-label="Battery current, cell voltage, charger state, temperature, humidity and radio signal over time"></svg></div>
-<p class="note">Charge current from the bq24074 ISET pin (±10 %), load = OUT ÷ 100 Ω. Every 5 s from the TX; refreshes every 10 s.</p>
+<div class="flagnote" id="flagnote"></div>
+<p class="note" id="note">Charge current from the bq24074 ISET pin (±10 %), load = OUT ÷ the logger's --r-load (100 Ω by default). Every 5 s from the TX; refreshes every 10 s.</p>
 <div id="tip"></div>
 <script>
 (function () {
-  const W = 1080, L = 58, R = 150, PH = 104, GAP = 26, STRIP = 64, TOP = 8;
+  const W = 1080, L = 58, R = 150, PH = 104, GAP = 26, TOP = 8;
+  const stripH = p => p.state.length * 15 + 4;
+  /* the server's derived values and flags beside the CSV columns, so every panel reads them by name */
+  function widen(d) {
+    const extra = [...Object.keys(d.derived || {}), ...(d.flag_keys || [])];
+    d.rows.forEach((r, i) => extra.forEach(k => r.push(((d.derived || {})[k] || (d.flags || {})[k] || [])[i] ?? null)));
+    d.cols = [...d.cols, ...extra];
+    return d;
+  }
   const PANELS = [
     { title: 'Where the current goes (mA): load, plus what goes into the battery', stack: true },
     { title: 'Battery current (mA): + charging, − discharging', signed: true },
-    { title: 'State of charge (%): counted vs the gauge', series: [['soc_cc', '--s1', 'counted'], ['soc_pct', '--s3', 'gauge']], dec: 0 },
-    { title: 'Cell voltage (V)', series: [['vcell_v', '--s1', 'cell']], dec: 3 },
+    { title: 'State of charge (%): counted vs the gauge', series: [['soc_cc', '--s1', 'counted'], ['soc_pct', '--s3', 'gauge']], dec: 0, suspect: true },
+    /* M4: the gauge reads the CELL+ node; the server's label and its VCELL − I × R_pack estimate beside it */
+    { title: 'Cell voltage (V)', label: 'vcell', series: [['vcell_v', '--s1', 'CELL+'], ['vcell_corr_v', '--s3', 'pack est.']], dec: 3 },
+    /* M6 drop form (PATH_CELL_OUT); its basis and coverage note come from the server */
+    { title: 'Path drop (mV): VCELL − VOUT − dV0', label: 'drop_basis', series: [['drop_mv', '--s2', 'drop']], dec: 1 },
+    /* The step 1 flags, each a strip from the server's per-row flag arrays (record M6, M7) */
+    { title: 'Path and interface flags (step 1)', flags: true, state: [['flag_drop', 'drop form (M6)'], ['flag_vcell_step', 'VCELL step (M6)'],
+      ['soc_suspect', 'SOC suspect'], ['flag_pgood', 'PGOOD vs VIN (M7)'], ['flag_chg', 'CHG vs ISET (M7)'], ['flag_iset', 'ISET vs INA (M7)']] },
     { title: 'Input and charger', state: [['@solar', 'Solar'], ['@usb-c', 'USB-C'], ['pgood', 'PGOOD'], ['chg', 'CHG']] },
     { title: 'Temperature (°C)', series: [['temp_c', '--s1', 'temp']], dec: 1 },
     { title: 'Humidity (%)', series: [['rh_pct', '--s1', 'RH']], dec: 1 },
@@ -134,6 +155,27 @@ svg { display: block; width: 100%; height: auto; }
     if (vin >= 4.4 && vin < 5.4 && chg + load > 600) return ['usb-c', 'auto'];
     return ['solar', 'auto'];
   }
+  /* Battery current, + into the cell: { v: mA or null, measured }. Measured = the logger's battery_ma (the INA228
+     shunt, sign turned once by the logger), which the server sends only from --shunt-from on. Otherwise the
+     estimate: + charge while the input is good (PGOOD); - the whole load once PGOOD is off. With PGOOD on and no
+     charge flowing, OUT tells the two cases apart: OUT still well above the cell = the input covers the load
+     (balanced, 0); OUT down near the cell = the battery is helping by an unmeasured amount (null, drawn dashed).
+     The cell voltage comes from the gauge; before it was on the cell, assume balanced. */
+  function batteryAt(r, ci) {
+    const m = r[ci.battery_ma];
+    if (m !== null && m !== undefined) return { v: m, measured: true };
+    const ld = r[ci.load_ma], c = r[ci.charge_ma];
+    if (r[ci.pgood] !== 1) return { v: ld !== null ? (c || 0) - ld : null, measured: false };   /* input bursts still count */
+    if (c !== null && c > 2) return { v: c, measured: false };
+    const helping = r[ci.vcell_v] !== null && r[ci.vout_v] !== null && r[ci.vout_v] - r[ci.vcell_v] < 0.1;
+    return { v: helping ? null : 0, measured: false };
+  }
+  function batteryTitle(rows, ci) {
+    const base = 'Battery current (mA): + charging, − discharging';
+    if (data.shunt_from === null || data.shunt_from === undefined) return `${base} · ISET − load estimate (dashed; no --shunt-from)`;
+    const est = rows.some(r => !batteryAt(r, ci).measured);
+    return est ? `${base} · solid: shunt from ${fmtT(data.shunt_from)}; dashed: ISET − load estimate` : `${base} · INA228 shunt`;
+  }
   /* true when a gap (no packet for over 30 s, from the server's full-resolution rows) lies between two
      plotted points: lines break there instead of joining across it */
   function gapBetween(a, b) { return (data.gaps || []).some(g => g[0] < b && g[1] > a); }
@@ -145,11 +187,12 @@ svg { display: block; width: 100%; height: auto; }
     const x = t => L + (t - t0) / (t1 - t0) * (W - L - R);
     let y0 = TOP; layout = [];
     svg.innerHTML = '';
-    const H = PANELS.reduce((s, p) => s + (p.state ? STRIP + 18 : PH + 18) + GAP, TOP + 18);
+    const H = PANELS.reduce((s, p) => s + (p.state ? stripH(p) + 18 : PH + 18) + GAP, TOP + 18);
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     for (const p of PANELS) {
       const title = p.series && p.series[0][0] === 'soc_cc' && data.anchor
-        ? `State of charge (%): counted from ${fmtT(data.anchor)} (±10 %, gaps estimated) vs the gauge` : p.title;
+        ? `State of charge (%): counted from ${fmtT(data.anchor)} (±10 %, gaps estimated) vs the gauge`
+        : p.signed ? batteryTitle(rows, ci) : p.label && data.labels ? `${p.title} · ${data.labels[p.label]}` : p.title;
       svg.appendChild(el('text', { x: L, y: y0 + 11, class: 't-title' }, title));
       const top = y0 + 18;
       if (p.state) {
@@ -157,7 +200,7 @@ svg { display: block; width: 100%; height: auto; }
           const yy = top + k * 15;
           svg.appendChild(el('rect', { x: L, y: yy, width: W - L - R, height: 11, rx: 2, fill: css('--state-off') }));
           let start = null;
-          const fillc = col === '@solar' ? css('--s4') : col === '@usb-c' ? css('--s7') : css('--state');
+          const fillc = col === '@solar' || col === 'soc_suspect' ? css('--s4') : col === '@usb-c' ? css('--s7') : p.flags ? css('--crit') : css('--state');
           rows.forEach((r, i) => {
             const on = col[0] === '@' ? sourceAt(r)[0] === col.slice(1) : r[ci[col]] === 1;
             if (on && start === null) start = r[0];
@@ -170,22 +213,13 @@ svg { display: block; width: 100%; height: auto; }
           });
           svg.appendChild(el('text', { x: L - 8, y: yy + 9, 'text-anchor': 'end', class: 't-axis' }, name));
         });
-        layout.push({ p, top, bottom: top + STRIP });
-        y0 = top + STRIP + GAP;
+        layout.push({ p, top, bottom: top + stripH(p) });
+        y0 = top + stripH(p) + GAP;
         continue;
       }
       if (p.stack || p.signed) {
         const L_ = r => r[ci.load_ma], C_ = r => r[ci.charge_ma], PG = r => r[ci.pgood] === 1;
-        /* battery current: + charge while the input is good (PGOOD); - the whole load once PGOOD is off. With PGOOD on
-           and no charge flowing, OUT tells the two cases apart: OUT still well above the cell = the panel covers
-           the load (balanced, 0); OUT down near the cell = the battery is helping by an unmeasured amount (null,
-           drawn dashed). The cell voltage comes from the gauge; before it was on the cell, assume balanced. */
-        const helping = r => r[ci.vcell_v] !== null && r[ci.vout_v] !== null && r[ci.vout_v] - r[ci.vcell_v] < 0.1;
-        const bat = r => {
-          if (!PG(r)) return L_(r) !== null ? (C_(r) || 0) - L_(r) : null;   /* input bursts still count */
-          if (C_(r) !== null && C_(r) > 2) return C_(r);
-          return helping(r) ? null : 0;
-        };
+        const bat = r => batteryAt(r, ci).v;
         let lo = 0, hi = 0;
         for (const r of rows) {
           if (p.stack) hi = Math.max(hi, (L_(r) || 0) + (PG(r) ? (C_(r) || 0) : 0));
@@ -220,19 +254,26 @@ svg { display: block; width: 100%; height: auto; }
           }
           labels.push({ y: y(ld(lastR) / 2) + 4, color: '--s2', text: `→ load ${ld(lastR).toFixed(0)}` });
         } else {
-          let d = '', pen = false, dash = '', prevT = null;
+          /* measured (shunt) points in one solid path, estimated ones in a dashed one; a change of kind joins
+             the two at the last point, a gap or an unknown point lifts the pen */
+          const d = { m: '', e: '' };
+          let prev = null, dash = '', prevT = null;
           for (const r of rows) {
-            const b = bat(r);
-            if (prevT !== null && gapBetween(prevT, r[0])) pen = false;
+            const { v: b, measured } = batteryAt(r, ci);
+            if (prevT !== null && gapBetween(prevT, r[0])) prev = null;
             prevT = r[0];
-            if (b === null) { if (PG(r)) dash += (dash ? 'L' : 'M') + x(r[0]).toFixed(1) + ' ' + y(0).toFixed(1); pen = false; continue; }
-            d += (pen ? 'L' : 'M') + x(r[0]).toFixed(1) + ' ' + y(b).toFixed(1); pen = true;
+            if (b === null) { if (PG(r)) dash += (dash ? 'L' : 'M') + x(r[0]).toFixed(1) + ' ' + y(0).toFixed(1); prev = null; continue; }
+            const kind = measured ? 'm' : 'e', pt = x(r[0]).toFixed(1) + ' ' + y(b).toFixed(1);
+            d[kind] += prev && prev.kind === kind ? 'L' + pt : (prev ? 'M' + prev.pt + 'L' : 'M') + pt;
+            prev = { kind, pt };
           }
-          svg.appendChild(el('path', { d, fill: 'none', stroke: css('--s1'), 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+          if (d.m) svg.appendChild(el('path', { d: d.m, fill: 'none', stroke: css('--s1'), 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+          if (d.e) svg.appendChild(el('path', { d: d.e, fill: 'none', stroke: css('--s1'), 'stroke-width': 2, 'stroke-linejoin': 'round',
+            'stroke-dasharray': '5 4', 'stroke-opacity': 0.7 }));
           if (dash) svg.appendChild(el('path', { d: dash, fill: 'none', stroke: css('--ink-3'), 'stroke-width': 2, 'stroke-dasharray': '4 4' }));
-          const b = bat(lastR);
+          const { v: b, measured: bm } = batteryAt(lastR, ci), how = bm ? '' : ' (est.)';
           labels.push({ y: y(b === null ? 0 : b) + 4, color: b === null ? '--ink-3' : '--s1',
-            text: b === null ? 'battery helping (not measured)' : b === 0 ? '≈0, balanced' : (b > 0 ? `+${b.toFixed(0)} in` : `${b.toFixed(0)} out`) });
+            text: b === null ? 'battery helping (not measured)' : b === 0 ? `≈0, balanced${how}` : (b > 0 ? `+${b.toFixed(0)} in${how}` : `${b.toFixed(0)} out${how}`) });
           svg.appendChild(el('text', { x: L + 4, y: y(sc.hi) + 12, class: 't-axis' }, 'charging ↑'));
           svg.appendChild(el('text', { x: L + 4, y: y(sc.lo) - 4, class: 't-axis' }, 'discharging ↓'));
         }
@@ -250,6 +291,18 @@ svg { display: block; width: 100%; height: auto; }
       const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.01 || 0.5;
       const sc = p.domain ? { lo: p.domain[0], hi: p.domain[1], step: 20 } : nice(p.zero ? lo : lo - pad, hi + pad, 4);
       const y = v => top + PH - (Math.max(sc.lo, Math.min(sc.hi, v)) - sc.lo) / (sc.hi - sc.lo) * PH;
+      if (p.suspect && ci.soc_suspect !== undefined) {   /* SOC suspect (M4, M6): shaded where the server raised it */
+        let s0 = null;
+        rows.forEach((r, i) => {
+          const on = r[ci.soc_suspect] === 1;
+          if (on && s0 === null) s0 = r[0];
+          if (s0 !== null && (!on || i === rows.length - 1)) {
+            svg.appendChild(el('rect', { x: x(s0), y: top, width: Math.max(1.5, x(r[0]) - x(s0)), height: PH, fill: css('--s4'), 'fill-opacity': 0.18 }));
+            svg.appendChild(el('text', { x: x(s0) + 3, y: top + 11, class: 't-axis', 'font-weight': 600 }, 'SOC suspect'));
+            s0 = null;
+          }
+        });
+      }
       for (const [b0, b1, name, color] of (p.bands || [])) {
         svg.appendChild(el('rect', { x: L, y: y(b1), width: W - L - R, height: y(b0) - y(b1), fill: color, 'fill-opacity': 0.12 }));
         svg.appendChild(el('text', { x: W - R - 6, y: y(b1) + 12, 'text-anchor': 'end', class: 't-axis', 'font-weight': 600 }, name));
@@ -311,10 +364,15 @@ svg { display: block; width: 100%; height: auto; }
       for (const r of rows) if (Math.abs(r[0] - t) < Math.abs(best[0] - t)) best = r;
       hair.setAttribute('x1', x(best[0])); hair.setAttribute('x2', x(best[0])); hair.setAttribute('visibility', 'visible');
       const v = (c, d, u) => best[ci[c]] === null ? '–' : best[ci[c]].toFixed(d) + u;
+      const bb = batteryAt(best, ci);
       tip.innerHTML = `<b>${fmtTs(best[0])}</b><br>` +
         `<span class="sw" style="background:${css('--s1')}"></span>charge ${v('charge_ma', 0, ' mA')}<br>` +
         `<span class="sw" style="background:${css('--s2')}"></span>load ${v('load_ma', 1, ' mA')}<br>` +
-        `cell ${v('vcell_v', 3, ' V')} · PGOOD ${best[ci.pgood] ? 'on' : 'off'} · CHG ${best[ci.chg] ? 'on' : 'off'}<br>` +
+        `battery ${bb.v === null ? '– (helping, not measured)' : bb.v.toFixed(0) + ' mA ' + (bb.measured ? '(shunt)' : '(est. ISET − load)')}<br>` +
+        `cell ${v('vcell_v', 3, ' V')} (${data.labels ? data.labels.vcell : 'CELL+ node'}) · pack est. ${ci.vcell_corr_v === undefined ? '–' : v('vcell_corr_v', 3, ' V')}<br>` +
+        `drop ${ci.drop_mv === undefined ? '–' : v('drop_mv', 1, ' mV')} · R_path ${ci.r_path_ohm === undefined ? '–' : v('r_path_ohm', 2, ' Ω')}` +
+        ` · V_ISET ${ci.v_iset_v === undefined ? '–' : v('v_iset_v', 3, ' V')}<br>PGOOD ${best[ci.pgood] ? 'on' : 'off'} · CHG ${best[ci.chg] ? 'on' : 'off'}<br>` +
+        `${(data.flag_keys || []).filter(k => best[ci[k]] === 1).map(k => `<b style="color:${css('--crit')}">${data.labels.flags[k]}</b>`).join(' · ') || 'no flag'}<br>` +
         `input ${v('vin_v', 2, ' V')} · ${v('temp_c', 1, ' °C')} · ${v('rh_pct', 1, ' %')} · ${v('rssi', 0, ' dBm')}`;
       tip.style.display = 'block';
       flowShow(best, false);
@@ -327,7 +385,9 @@ svg { display: block; width: 100%; height: auto; }
   function tiles() {
     const r = data.rows[data.rows.length - 1], ci = Object.fromEntries(data.cols.map((c, i) => [c, i]));
     const f = (c, d) => r[ci[c]] === null ? '–' : r[ci[c]].toFixed(d);
-    const items = [['Charge level', r[ci.soc_cc] === null ? '–' : '~' + f('soc_cc', 0), '% ±10'], ['Charge', f('charge_ma', 0), 'mA'], ['Load', f('load_ma', 1), 'mA'], ['Cell', f('vcell_v', 3), 'V'],
+    const b = batteryAt(r, ci);
+    const items = [['Charge level', r[ci.soc_cc] === null ? '–' : '~' + f('soc_cc', 0), '% ±10'], ['Charge', f('charge_ma', 0), 'mA'], ['Load', f('load_ma', 1), 'mA'],
+      ['Battery', b.v === null ? '–' : (b.v > 0 ? '+' : '') + b.v.toFixed(0), b.measured ? 'mA shunt' : 'mA est.'], ['Cell (CELL+ node)', f('vcell_v', 3), 'V'],
       ['Charger', (r[ci.pgood] ? 'PGOOD' : 'no input') + (r[ci.chg] ? ' · CHG' : ''), ''], ['Air', f('temp_c', 1), '°C'], ['Humidity', f('rh_pct', 1), '%']];
     document.getElementById('tiles').innerHTML = items.map(([k, v, u]) =>
       `<div class="tile"><div class="k">${k}</div><div class="v">${v} <span class="u">${u}</span></div></div>`).join('');
@@ -357,7 +417,7 @@ svg { display: block; width: 100%; height: auto; }
     flink('batt', 'M 500 152 L 500 212', '--s1', 518, 188, 'start');
     nodes.panel = fnode(40, 70, 180, 80, 'Input', 'fp');
     nodes.chg = fnode(400, 70, 200, 80, 'bq24074 charger', 'fc');
-    nodes.load = fnode(780, 70, 180, 80, 'Load (100 Ω)', 'fl');
+    nodes.load = fnode(780, 70, 180, 80, 'Load', 'fl');
     nodes.batt = fnode(400, 212, 200, 80, 'Battery 6600 mAh', 'fb');
     const g = el('rect', { x: 556, y: 228, width: 30, height: 48, rx: 4, fill: 'none', stroke: css('--axis') }); flow.appendChild(g);
     nodes.fill = el('rect', { x: 559, y: 273, width: 24, height: 0, rx: 2, fill: css('--s1') }); flow.appendChild(nodes.fill);
@@ -399,6 +459,10 @@ svg { display: block; width: 100%; height: auto; }
       setLink('batt', 0, 1, '≈0 · balanced', false);
       state = 'Input runs the load; the battery is idle';
     }
+    const m = g('battery_ma');
+    if (m !== null && m !== undefined)   /* the shunt measured it: that replaces the estimate above */
+      setLink('batt', Math.abs(m), m >= 0 ? 1 : -1, `${Math.abs(m).toFixed(0)} mA ${m >= 0 ? 'in' : 'out'} · shunt${mw(vc, Math.abs(m))}`, false);
+    else if (!helping) links.batt.val.textContent += ' · est.';
     setLink('load', ld, 1, `${ld.toFixed(0)} mA${mw(vo, ld)}`, false);
     const [src, how] = sourceAt(r);
     const srcName = { 'usb-c': 'USB-C', solar: 'solar' }[src] || 'no input';
@@ -413,6 +477,23 @@ svg { display: block; width: 100%; height: auto; }
     const w = document.getElementById('flowwhen');
     w.textContent = live ? staleNote || 'live' : 'at ' + fmtTs(r[0]);
     w.classList.toggle('live', live && !staleNote);
+  }
+  /* The flag note and the preflight warning: text the server computed, placed as is */
+  const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  function flagNote() {
+    const lb = data.labels || {}, st = data.settings || {}, pf = data.preflight;
+    const w = document.getElementById('pfwarn');
+    w.hidden = !(pf && pf.warning);
+    if (pf && pf.warning) w.innerHTML = `${esc(pf.warning)}${pf.problems.length ? ' · ' + pf.problems.map(esc).join(' · ') : ''}`;
+    const items = [`Cell voltage: ${esc(lb.vcell)}; ${esc(lb.vcell_corr)}.`, `${esc(lb.drop_basis)}. Covers ${esc(lb.drop_coverage)}.`,
+      `Preflight: ${pf ? esc(pf.status) : 'none (--preflight not given)'}.`];
+    if (st.rewrite_iset !== null && st.rewrite_iset !== undefined)
+      items.push(`charge_ma rescaled by ${st.rewrite_iset}/1000 on ${st.rescaled_rows} rows logged at r_iset=${st.rewrite_iset}.`);
+    if (st.events_error) items.push(`events: ${esc(st.events_error)}`);
+    for (const t of (data.terminations || []))
+      items.push(`CHG released ${fmtTs(t.t)} (P9): ${t.i_ma === null ? '–' : t.i_ma.toFixed(0) + ' mA'}, cell ${t.cell_v === null ? '–' : t.cell_v.toFixed(3) + ' V'}: ${esc(t.why)}`);
+    for (const [t, k] of (data.flag_onsets || []).slice(-5)) items.push(`flag raised ${fmtTs(t)}: ${esc((lb.flags || {})[k] || k)}`);
+    document.getElementById('flagnote').innerHTML = '<ul>' + items.map(i => `<li>${i}</li>`).join('') + '</ul>';
   }
   let lastTs = null;
   function animate(ts) {
@@ -457,9 +538,17 @@ svg { display: block; width: 100%; height: auto; }
       if (flowLive && data && data.rows.length) flowShow(null, true);
       return;
     }
-    data = got;
+    data = widen(got);
+    flagNote();
+    const sf = data.shunt_from;
+    document.getElementById('note').textContent = 'Charge current from the bq24074 ISET pin (±10 %), load = OUT ÷ the logger\'s --r-load (100 Ω by default). ' +
+      (sf === null || sf === undefined ? 'Battery current: ISET − load estimate throughout (no --shunt-from), marked est. and dashed. '
+        : `Battery current: the INA228 shunt from ${new Date(sf * 1000).toLocaleString()}; before it, and in rows without it, the ISET − load estimate, marked est. and dashed. `) +
+      'Every 5 s from the TX; refreshes every 10 s.';
     const notes = [];
     if (data.skipped) notes.push(`${data.skipped} unreadable CSV row${data.skipped > 1 ? 's' : ''} skipped (first at line ${data.first_bad_line})`);
+    const evs = (data.settings || {}).events_skipped;
+    if (evs) notes.push(`${evs} unreadable logger_start row${evs > 1 ? 's' : ''} skipped in the events file`);
     if (data.sources_error) notes.push(`sources: ${data.sources_error}`);
     const last = data.last_t, age = last === null ? null : Math.round(Date.now() / 1000 - last);
     document.getElementById('status').textContent =

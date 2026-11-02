@@ -2,7 +2,9 @@
 
 Only time, sensor input, delivery and injected failures are simulated. AES-CCM,
 SQLite commits, nonce allocation, journaling, deduplication and freshness use the
-same implementations as the runnable demo. No RF or power claims follow.
+same implementations as the runnable demo. The power values and health reports are
+synthetic (no power physics): they cover the decode, store and expose paths only.
+No RF or power claims follow.
 """
 from __future__ import annotations
 import argparse
@@ -20,9 +22,10 @@ import sqlite3
 import tempfile
 from cryptography.exceptions import InvalidTag
 from gateway import MINUTE_S
-from .protocol import COUNTER_AT, HEADER_LEN, KEY_LEN, STATION_AT, KIND_ACK, KIND_NACK, KIND_OBS, NACK_COLLISION, Nonces, frame_counter, frame_kind, unpack_reply, unseal
-from .service import CounterRegression, Gateway, Replay
-from .simulator import BACKLOG_PER_MINUTE, Node
+from .protocol import (COUNTER_AT, HEADER_LEN, I16_NONE, KEY_LEN, STATION_AT, KIND_ACK, KIND_NACK, KIND_OBS,
+                       NACK_COLLISION, Nonces, frame_counter, frame_kind, unpack_reply, unseal)
+from .service import HEALTH_KEYS, CounterRegression, Gateway, Replay
+from .simulator import BACKLOG_PER_MINUTE, LOAD_MA, PHASE_A_POWER, Node, power_state
 
 START = 1_800_000_000  # Fixed virtual UTC origin, independent of wall-clock date.
 
@@ -47,6 +50,11 @@ class Scenario:
     clock_steps: list[list[int]] = field(default_factory=list)  # start, end, offset seconds
     node_reboots: list[int] = field(default_factory=list)
     gateway_reboots: list[int] = field(default_factory=list)
+    # Minute spans in which the battery INA228 fails (power telemetry design section 5.3): its
+    # fields stay present as INVALID (null), and the health report's monitor temperature is null.
+    monitor_faults: list[list[int]] = field(default_factory=list)
+    # 'A': the phase A power set, the phase B rails absent. 'B': every rail, with the extension word.
+    power_profile: str = 'A'
     inject_identity_collision: bool = False
     require_latency_target: bool = False
     expect_unavailable: bool = False
@@ -67,6 +75,7 @@ class Scenario:
             for span in getattr(self,name):
                 _require(len(span) == size and all(type(n) is int for n in span), f'Invalid interval in {name}')
                 _require(0 <= span[0] < span[1] <= self.minutes, f'Out-of-range interval in {name}')
+        _require(self.power_profile in POWER_PROFILES, 'power_profile must be A or B')
         for minute in self.node_reboots+self.gateway_reboots:
             _require(_integer_in(minute, 0, self.minutes-1), 'Reboot outside sampling interval')
         _require(not (self.require_latency_target and self.expect_latency_failure),
@@ -77,7 +86,19 @@ NAME_CHARACTERS = 'abcdefghijklmnopqrstuvwxyz0123456789-_'
 PROBABILITIES = ('uplink_loss','ack_loss','corruption','duplicates')
 # Interval lists and their lengths: [start, end) minutes; a clock step adds its offset in seconds.
 SPAN_SIZES = {'link_outages':2,'host_outages':2,'commit_failures':2,'sensor_faults':2,'unknown_clock':2,
-              'clock_steps':3}
+              'clock_steps':3,'monitor_faults':2}
+POWER_PROFILES = ('A','B')
+HEALTH_PERIOD_MINUTES = 15   # after boot, then every 15 minutes (design section 6.4)
+
+# Power telemetry design section 3.2. The phase B rails are absent in phase A (not in the record),
+# never null. The battery INA228 feeds the battery current and counters, and in phase A also the
+# load voltage (its VBUS sense lead goes to OUT); in phase B the load INA228 measures the load voltage.
+PHASE_B_RAILS = ('load_current_ma','solar_mv','solar_current_ma','usb_mv','usb_current_ma')
+POWER_FIELDS = PHASE_A_POWER + PHASE_B_RAILS
+BATTERY_MONITOR_FIELDS = {'A':('batt_current_ma','energy_in_mwh','energy_out_mwh','charge_in_mah','charge_out_mah',
+                               'load_mv'),
+                          'B':('batt_current_ma','energy_in_mwh','energy_out_mwh','charge_in_mah','charge_out_mah')}
+SOLAR_DROP_MV = 30   # synthetic: the solar rail sits a little above the joined charger input
 
 
 def _require(ok, message):
@@ -120,7 +141,7 @@ def assess(expected, rows, now):
     """Account against scheduled samples; never shrink the denominator on failure."""
     by_key = {key(row):row for row in rows}
     missing = [list(k) for k in expected if k not in by_key]
-    mismatches = []
+    mismatches, power_mismatches = [], []
     on_time = unknown = invalid = 0
     latencies = []
     for identity, (expected_record, acquired) in expected.items():
@@ -131,13 +152,16 @@ def assess(expected, rows, now):
             continue
         if {k:v for k,v in row.items() if k not in DERIVED} != expected_record:
             mismatches.append(list(identity))
+        if power_values(row) != power_values(expected_record):
+            power_mismatches.append(list(identity))
         # Ground-truth delivery latency is available to the simulator even for bad clocks.
         latency = row['received_at']-acquired
         latencies.append(latency)
         on_time += int(trustworthy_on_time(row, acquired, latency))
     return {'scheduled':len(expected),'stored':len(rows),'missing':missing,
             'unexpected_rows':[list(k) for k in by_key if k not in expected],
-            'payload_mismatches':mismatches,'duplicate_rows':len(rows)-len(by_key),
+            'payload_mismatches':mismatches,'power_mismatches':power_mismatches,
+            'duplicate_rows':len(rows)-len(by_key),
             'within_120s_with_trustworthy_time':on_time,
             'live_delivery_percent':round(100*on_time/len(expected),4) if expected else 0,
             'latency_target_met':bool(expected) and on_time >= (99*len(expected)+99)//100,
@@ -147,7 +171,66 @@ def assess(expected, rows, now):
             'unresolved_time_samples':sum(r['_basis']=='unknown' for r in rows)}
 
 
-ORACLE_FAILURES = ('missing','unexpected_rows','payload_mismatches','duplicate_rows')
+def power_values(record):
+    """The power fields a record carries: absent keys stay absent, INVALID stays None."""
+    return {name:record[name] for name in POWER_FIELDS if name in record}
+
+
+ORACLE_FAILURES = ('missing','unexpected_rows','payload_mismatches','power_mismatches','duplicate_rows')
+
+# Health report keys that phase A (and phase B) cannot fill (design section 3.3), and the station
+# counters the simulated node never raises: exact expected values.
+HEALTH_NOT_MEASURED = ('charger_reported_input_mv','charger_reported_input_ma','charger_reported_battery_mv',
+                       'charger_temp_c','pack_temp_c','charger_stage','charger_active_input','last_crash_pc')
+SOC_TOLERANCE_PCT = 1/256     # the report carries SOC at 1/256 %
+SOC_RATE_TOLERANCE = 0.05     # and its rate at 0.1 %/h
+
+
+def health_expectation(sent):
+    """Exact values a stored health report must carry, from the simulated truth at its send time;
+    independent of the gateway's mapping code."""
+    state = power_state(sent['at'])
+    return {**dict.fromkeys(HEALTH_NOT_MEASURED),
+            'epoch':sent['epoch'],'uptime_s':sent['uptime'],'boots_since_power_up':sent['epoch'],
+            'crashes_since_power_up':0,'tx_timeouts_since_boot':0,'i2c_recoveries_since_boot':0,
+            'charger_input_power_ok':state['sun'] > 0,'charger_charging':state['charge_ma'] > 0,
+            'charger_fault':False,'charger_reported_battery_ma':state['charge_ma']}
+
+
+def _same(value, expected):
+    return value == expected and type(value) is type(expected)
+
+
+def _close(value, expected, tolerance):
+    return isinstance(value, (int,float)) and not isinstance(value, bool) and abs(value-expected) <= tolerance
+
+
+def health_mismatches(report, sent):
+    """The keys of one stored health report that break the simulated truth (sorted); the key set
+    itself must be exactly HEALTH_KEYS."""
+    if set(report) != set(HEALTH_KEYS):
+        return ['key_set']
+    bad = [k for k,v in health_expectation(sent).items() if not _same(report[k],v)]
+    state = power_state(sent['at'])
+    approximate = (('battery_soc_pct',state['soc'],SOC_TOLERANCE_PCT),
+                   ('battery_soc_rate_pct_h',state['soc_rate'],SOC_RATE_TOLERANCE))
+    bad += [k for k,truth,tolerance in approximate if not _close(report[k],truth,tolerance)]
+    bad += ['mcu_supply_mv'] * (not isinstance(report['mcu_supply_mv'], int))
+    monitor_ok = report['power_monitor_temp_c'] is None if sent['monitor_fault'] else \
+        _close(report['power_monitor_temp_c'],25,15)
+    bad += ['power_monitor_temp_c'] * (not monitor_ok)
+    return sorted(bad)
+
+
+def assess_health(sent, rows, arrived):
+    """Health reports have no journal, so a lost one is accepted. Every stored report must be one
+    that was sent and match it; every report whose frame reached the gateway intact must be stored."""
+    stored = {(session,uptime):report for session,uptime,report in rows}
+    mismatches = [[*identity,*(health_mismatches(report,sent[identity]) if identity in sent else ['not_sent'])]
+                  for identity,report in sorted(stored.items())]
+    return {'sent':len(sent),'arrived_intact':len(arrived),'stored':len(stored),
+            'not_stored':[list(k) for k in sorted(arrived) if k not in stored],
+            'mismatches':[m for m in mismatches if len(m) > 2]}
 
 
 def _wrong_time(snapshot):
@@ -183,6 +266,40 @@ def recovery_expected(scenario):
     return not end_fault and not end_outage
 
 
+class HarnessNode(Node):
+    """The simulator's node with the scenario's power options: the phase B rails (profile B) and a
+    failed battery INA228. The harness sets monitor_fault before each minute's sample."""
+    def __init__(self, cfg, directory, profile):
+        super().__init__(cfg,directory)
+        self.profile = profile
+        self.monitor_fault = False
+
+    def power(self, now, fault=False):
+        values = super().power(now,fault)
+        if self.profile == 'B':
+            values |= phase_b_rails(now,values,fault)
+        if self.monitor_fault:
+            values |= dict.fromkeys(BATTERY_MONITOR_FIELDS[self.profile])
+        return values
+
+    def health(self, now):
+        values = super().health(now)
+        if self.monitor_fault:
+            values['monitor_temp'] = I16_NONE
+        return values
+
+
+def phase_b_rails(now, values, fault):
+    """Synthetic phase B rails: solar carries the charger's input, USB-C is not connected (never both,
+    design section 3.2), the load draws LOAD_MA. A faulted minute sends them INVALID."""
+    if fault:
+        return dict.fromkeys(PHASE_B_RAILS)
+    state = power_state(now)
+    powered = state['sun'] > 0
+    return dict(load_current_ma=LOAD_MA,solar_mv=values['charger_input_mv']+SOLAR_DROP_MV if powered else 0,
+                solar_current_ma=state['charge_ma']+LOAD_MA if powered else 0,usb_mv=0,usb_current_ma=0)
+
+
 class Campaign:
     """A seeded lossy network around genuine persistent node/gateway instances."""
     def __init__(self, scenario: Scenario, output: Path, negative_control=False):
@@ -211,6 +328,12 @@ class Campaign:
         self.highest_arrived_counter = 0
         self.first_arrival = {}   # counter -> bytes of the first authentic frame accepted under it
         self.availability = []
+        # Health reports: sent ones by (epoch, uptime), their exact frames, and those whose frame
+        # reached the gateway unmodified outside an outage (the network's own ground truth).
+        self.diags_sent = {}
+        self.diag_frames = {}
+        self.diags_arrived = set()
+        self.next_diag = 0
 
     def log(self, event, **details):
         """Raw trace contains frames and events, never working deployment credentials."""
@@ -220,17 +343,33 @@ class Campaign:
         return (self.now-START)//MINUTE_S
 
     def allocate_frame(self, record):
-        packet = self.node.packet(record)
+        return self.sealed(self.node.packet(record))
+
+    def sealed(self, packet):
+        """Every node frame (observation or health report) uses one strictly increasing counter."""
         self.track_nonce(packet)
         counter = frame_counter(packet)
         self.node_counter_not_increasing += int(counter <= self.last_sealed_counter)
         self.last_sealed_counter = counter
         return packet
 
+    def send_diagnostic(self, minute):
+        """The health report after boot and every 15 minutes, after the minute's exchange."""
+        if minute < self.next_diag:
+            return
+        self.next_diag = minute+HEALTH_PERIOD_MINUTES
+        packet = self.sealed(self.node.diagnostic(self.now))
+        identity = (self.node.epoch,int(self.now-self.node.boot))
+        self.diags_sent[identity] = {'at':self.now,'epoch':identity[0],'uptime':identity[1],
+                                     'monitor_fault':self.node.monitor_fault}
+        self.diag_frames[packet] = identity
+        self.log('health_report',epoch=identity[0],uptime_s=identity[1])
+        self.send('uplink',packet)
+
     def expect_regression(self, packet):
         """Independent of the gateway: authentic and not above every earlier authentic arrival."""
         try:
-            unseal(bytes.fromhex(self.cfg['radio_key']),self.cfg['station_id'],1,packet)
+            unseal(bytes.fromhex(self.cfg['radio_key']),self.cfg['station_id'],frame_kind(packet),packet)
         except (ValueError,InvalidTag):
             return False
         counter = frame_counter(packet)
@@ -283,6 +422,8 @@ class Campaign:
                 self.counts['outage_drops'] += 1
                 self.log('arrival_drop',direction=direction)
                 continue
+            if packet in self.diag_frames:
+                self.diags_arrived.add(self.diag_frames[packet])
             try:
                 if direction == 'uplink':
                     self.expect_regression(packet)
@@ -298,6 +439,9 @@ class Campaign:
                             del self.gateway.store.ingest   # the class method again
                     else:
                         ack = self.gateway.receive(packet,self.now)
+                    if ack is None:   # a health report is never answered
+                        self.log('health_report_stored',frame=packet.hex())
+                        continue
                     self.track_nonce(ack)
                     if frame_kind(ack) == KIND_NACK:
                         reason = unpack_reply(unseal(bytes.fromhex(self.cfg['radio_key']),1,KIND_NACK,ack))[2]
@@ -333,7 +477,8 @@ class Campaign:
         """Close/reopen real databases; queued wire packets can arrive after reboot."""
         if node:
             self.node.close()
-            self.node = Node(self.cfg,self.state)
+            self.node = HarnessNode(self.cfg,self.state,self.s.power_profile)
+            self.next_diag = self.minute()   # a boot sends a health report
             self.counts['node_reboots'] += 1
             self.log('node_reboot',new_sample_epoch=self.node.epoch)
         if gateway:
@@ -361,7 +506,7 @@ class Campaign:
                     'radio_key':radio_key.hex(),'api_token':'not-a-deployment-token','mqtt':{'enabled':False}}
         for name,kind in [('node',KIND_OBS),('gateway',KIND_ACK)]:
             Nonces(self.state/f'{name}-nonces.sqlite3',radio_key,1,kind,create=True).db.close()
-        self.node = Node(self.cfg,self.state)
+        self.node = HarnessNode(self.cfg,self.state,self.s.power_profile)
         self.gateway = Gateway(self.cfg,self.state)
 
     def sample_minute(self, minute):
@@ -370,6 +515,7 @@ class Campaign:
         self.advance(START+minute*MINUTE_S)
         self.restart(minute in self.s.node_reboots,minute in self.s.gateway_reboots)
         clock_offset = next((offset for start,end,offset in self.s.clock_steps if start<=minute<end),0)
+        self.node.monitor_fault = inside(minute,self.s.monitor_faults)
         record = self.node.sample(self.now,inside(minute,self.s.sensor_faults),clock_offset,
                                   not inside(minute,self.s.unknown_clock))
         self.expected[key(record)] = (record.copy(),self.now)
@@ -383,6 +529,7 @@ class Campaign:
         if self.s.inject_identity_collision and minute == 30:
             altered = record | {'temperature_c':record['temperature_c']+1}
             self.send('uplink',self.allocate_frame(altered))
+        self.send_diagnostic(minute)
         self.advance(START+minute*MINUTE_S+59)
         self.snapshot()
 
@@ -410,9 +557,14 @@ class Campaign:
             rows = rows[1:]
         return rows
 
-    def verdict(self, metrics, pending):
+    def stored_health(self):
+        return [(session,uptime,json.loads(report)) for session,uptime,report in self.gateway.store.db.execute(
+            'SELECT session,uptime_s,report FROM diagnostics')]
+
+    def verdict(self, metrics, pending, health=None):
         """The scenario's failed contracts, in a fixed order; empty means the scenario passed."""
         s, counts, durable = self.s, self.counts, self.gateway.node_counter
+        health = health or {'not_stored':[],'mismatches':[]}
         first_availability_failure = availability_failure(s,self.availability)
         checks = [*((field,metrics[field]) for field in ORACLE_FAILURES),
                   ('unacknowledged_journal_records',pending),
@@ -433,7 +585,9 @@ class Campaign:
                   ('time_not_reconstructed',s.require_time_reconstruction and metrics['unresolved_time_samples']),
                   ('availability_not_recovered',recovery_expected(s) and not self.availability[-1]['available']),
                   ('identity_collision_not_rejected',
-                   s.inject_identity_collision and counts['identity_collision_rejections'] != 1)]
+                   s.inject_identity_collision and counts['identity_collision_rejections'] != 1),
+                  ('health_reports_not_stored',health['not_stored']),
+                  ('health_report_mismatches',health['mismatches'])]
         return [label for label,failed in checks if failed]
 
     def write_evidence(self, result):
@@ -454,10 +608,12 @@ class Campaign:
                     self.sample_minute(minute)
                 drain_periods = self.drain()
                 metrics = assess(self.expected,self.stored_rows(),self.now)
+                health = assess_health(self.diags_sent,self.stored_health(),self.diags_arrived)
                 pending = self.node.db.execute('SELECT count(*) FROM pending').fetchone()[0]
-                failures = self.verdict(metrics,pending)
+                failures = self.verdict(metrics,pending,health)
                 result = {'name':self.s.name,'description':self.s.description,'seed':self.s.seed,
                           'scenario_pass':not failures,'failures':failures,'metrics':metrics,
+                          'health_reports':health,
                           'network':self.counts,'pending_journal':pending,'nonce_collisions':self.nonce_collisions,
                           'counter_regressions':self.counts['counter_regressions'],
                           'expected_counter_regressions':self.counts['expected_counter_regressions'],
@@ -503,6 +659,11 @@ def suite(minutes=1440):
                  ack_loss=.50,duplicates=.15,require_latency_target=True,**common),
         Scenario('identity-collision','An authenticated altered payload reuses an existing sample identity and must be rejected.',
                  inject_identity_collision=True,require_latency_target=True,**common),
+        Scenario('power-monitor-fault','The battery INA228 fails for 20 minutes: its fields stay present as null, '
+                 'the health report keeps its keys with a null monitor temperature.',
+                 monitor_faults=[[20,40]],require_latency_target=True,**common),
+        Scenario('phase-b-rails','Phase B profile: every rail measured, the USB-C rails in the extension word.',
+                 power_profile='B',require_latency_target=True,**common),
     ]
 
 
@@ -515,7 +676,8 @@ def render_report(results, output, minutes):
         rows.append(f"<tr><td><a href='{escape(r['name'])}/result.json'>{escape(r['name'])}</a><small>{escape(r['description'])}</small></td>"
                     f"<td class='{status.lower()}'>{status}</td><td>{m['stored']:,}/{m['scheduled']:,}</td>"
                     f"<td>{m['live_delivery_percent']:.2f}%</td><td>{len(m['missing'])}</td>"
-                    f"<td>{r['nonce_collisions']}</td><td>{r['drain_minutes']}</td></tr>")
+                    f"<td>{r['nonce_collisions']}</td><td>{r['drain_minutes']}</td>"
+                    f"<td>{r['health_reports']['stored']}/{r['health_reports']['sent']}</td></tr>")
     passed=sum(r['scenario_pass'] for r in results)
     content=f'''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Stage 0 simulation campaign</title><style>
@@ -523,12 +685,12 @@ body{{font:16px/1.55 system-ui;background:#f3f5f7;color:#172534;max-width:1150px
 h1{{font-size:34px}}.notice{{background:#fff4d6;padding:18px;border-left:4px solid #bf8500}}table{{border-collapse:collapse;width:100%;background:white;margin:24px 0;font-size:14px}}th,td{{padding:12px;text-align:left;border-bottom:1px solid #ddd}}small{{display:block;max-width:420px;color:#526070}}.pass{{color:#167044;font-weight:bold}}.fail{{color:#bd2828;font-weight:bold}}a{{color:#08677d}}code{{background:#e4e9ee;padding:2px 4px}}
 </style><h1>Stage 0 · simulation campaign</h1><p><b>{passed}/{len(results)} scenario contracts passed.</b> Each scenario schedules {minutes:,} one-minute observations using virtual time.</p>
 <p class="notice"><b>Physical H01: NOT RUN.</b> These are software fault/recovery tests, not measurements of RF range, airtime, current consumption, MCU timing, flash durability or 24-hour real-world reliability.</p>
-<table><thead><tr><th>Scenario</th><th>Contract</th><th>Stored / scheduled</th><th>≤120s + valid clock</th><th>Missing</th><th>Nonce reuse</th><th>Drain minutes</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
+<table><thead><tr><th>Scenario</th><th>Contract</th><th>Stored / scheduled</th><th>≤120s + valid clock</th><th>Missing</th><th>Nonce reuse</th><th>Drain minutes</th><th>Health reports stored / sent</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
 <p>PASS means the scenario's declared integrity/recovery expectations passed. It does not mean every scenario met 99% live delivery. Deliberate outages and clock faults retain their full denominator. Noisy-link scenarios measure delivery; the report does not assume their fault rates match real RF conditions.</p>
 <p>Drain time is additional virtual time after sampling ends, with at most {BACKLOG_PER_MINUTE} queued observations attempted per minute. Real backfill still needs an airtime and receive-window budget.</p>
 <h2>What ran</h2><p>Actual Python gateway, AES-CCM authentication, SQLite commit/ACK boundary, persistent transmitter queue, restart recovery, durable nonce allocator and freshness logic. Seeded network faults are injected after encryption.</p>
 <h2>Evidence</h2><p>Each scenario directory contains <code>scenario.json</code>, <code>result.json</code>, <code>trace.jsonl</code>, <code>availability.json</code> and a committed <code>observations.sqlite3</code> snapshot. The campaign summary is <a href="summary.json">summary.json</a>.</p>
-<h2>Limits</h2><p>Simulation uses host SQLite and public test keys. It does not model RF physics, FCC configuration, duty cycle, firmware power loss mid-flash-write, buffer capacity/overflow, energy use, environmental effects, a live MQTT broker or Home Assistant. Never deploy the deterministic test keys.</p></html>'''
+<h2>Limits</h2><p>Simulation uses host SQLite and public test keys. It does not model RF physics, FCC configuration, duty cycle, firmware power loss mid-flash-write, buffer capacity/overflow, energy use or power physics (the power values and health reports are synthetic), environmental effects, a live MQTT broker or Home Assistant. Never deploy the deterministic test keys.</p></html>'''
     (output/'report.html').write_text(content)
 
 
@@ -549,7 +711,8 @@ def main():
         results.append(result)
         print(f"{s.name}: {'PASS' if result['scenario_pass'] else 'FAIL'}; "
               f"{result['metrics']['live_delivery_percent']:.2f}% timely; "
-              f"{len(result['metrics']['missing'])} missing",flush=True)
+              f"{len(result['metrics']['missing'])} missing; "
+              f"{result['health_reports']['stored']}/{result['health_reports']['sent']} health reports stored",flush=True)
     (args.output/'summary.json').write_text(json.dumps({'physical_H01':'NOT RUN','results':results},indent=2)+'\n')
     render_report(results,args.output,scenarios[0].minutes)
     return 0 if all(r['scenario_pass'] for r in results) else 1

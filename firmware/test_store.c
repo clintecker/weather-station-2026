@@ -490,7 +490,7 @@ static void summary(const char *extra) {
 int main(int argc, char **argv) {
  static jmp_buf jb;
  char buf[512];
- int wrap = argc > 2 ? atoi(argv[2]) : 1;
+ volatile int wrap = argc > 2 ? atoi(argv[2]) : 1;   /* read after setjmp: GCC -Wclobbered */
  if (argc < 2) { fprintf(stderr, "usage: %s functional|sweep|errsweep [wrap]\n", argv[0]); return 2; }
  mode = argv[1];
  if (strcmp(mode, "functional") && strcmp(mode, "sweep") && strcmp(mode, "errsweep")) {

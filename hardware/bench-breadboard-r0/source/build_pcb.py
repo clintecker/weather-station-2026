@@ -4,7 +4,10 @@
 
 Each breadboard is one footprint whose pads are its holes; the NUCLEO headers are another. A pad
 has a jumper's net (W1, W2, ...) if a jumper ends there, else no net: the router routes each jumper
-between its two pads and steers around every other hole."""
+between its two pads and steers around every other hole. The parts and boards are silkscreen outlines
+with their names; off the breadboard (record D2), each lever connector (joint) is an outline with its id
+and kind and its numbered positions, and each part placed by place_mm is its outline with its id. The
+leads carry no copper: they are drawn by render.py and in the 3D view."""
 import itertools
 import json
 import sys
@@ -90,6 +93,11 @@ def main(layout_path, out):
     for part in layout['parts']:
         rect(board, *part['box'], k.F_SilkS, SILK)
         text(board, part['id'], part['label_x'], part['label_y'])
+    for joint in layout.get('joints', []):
+        rect(board, *joint['box'], k.F_SilkS, SILK)
+        text(board, f"{joint['id']} ({joint['kind']})", joint['label_x'], joint['label_y'])
+        for n, (x, y) in enumerate(joint['xy'], start=1):
+            text(board, str(n), x, y, 0.8)
     for label in layout['labels']:
         text(board, label['text'], label['x'], label['y'], label.get('size', TEXT))
     rect(board, *layout['outline'], k.Edge_Cuts, 0.1)

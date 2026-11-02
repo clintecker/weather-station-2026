@@ -13,18 +13,14 @@
 #define IWDG_PRESCALER IWDG_PRESCALER_64
 #define IWDG_RELOAD 4000U
 
-/* RTC backup registers (TAMP->BKPxR), kept while the board has power. DR0-DR2 belong to SysTime
-   (Core/Src/timer_if.c) and DR5-DR11 to the crash record (stage0-node/App/fault.c; DR6 the PC). DR12 holds this boot count. */
-#define BKP(n) ((&TAMP->BKP0R)[n])
-enum { BKP_FAULT_PC = 6, BKP_BOOTS = 12 };
+/* The crash record (DR5-DR11) and the boot counter (DR12) in the RTC backup registers belong to
+   stage0-node/App/fault.c, linked here (Makefile): fault_boot_note() is the boot counter's only writer,
+   so benchlink and the node count boots the same way and never twice. */
 #define U8_MAX 255U
-#define U16_MAX 65535U
 
 static IWDG_HandleTypeDef hiwdg;
 static UTIL_TIMER_Object_t check_timer;
 static uint8_t cause = BL_RESET_UNKNOWN;
-static uint16_t boots;
-static uint32_t fault_pc;
 static const char *const cause_name[] = {
   [BL_RESET_UNKNOWN] = "unknown", [BL_RESET_POWER] = "power", [BL_RESET_PIN] = "pin",
   [BL_RESET_BROWNOUT] = "brownout", [BL_RESET_SOFTWARE] = "software", [BL_RESET_WATCHDOG] = "watchdog",
@@ -58,13 +54,10 @@ static void read_reset_cause(void)
 void bl_guard_start(const char *role)
 {
   read_reset_cause();
-  /* The backup domain is cleared at power-on, so the count restarts with the power. */
-  if (cause == BL_RESET_POWER) BKP(BKP_BOOTS) = 0;
-  if (BKP(BKP_BOOTS) < U16_MAX) BKP(BKP_BOOTS) = BKP(BKP_BOOTS) + 1U;
-  boots = (uint16_t)BKP(BKP_BOOTS);
-  /* fault_report() clears only the magic, so DR6 keeps the PC of the latest crash. */
-  if (fault_count()) fault_pc = BKP(BKP_FAULT_PC);
-  APP_PRINTF("#bl boot role=%s reset=%s boots=%u faults=%u\n", role, cause_name[cause], (unsigned)boots,
+  /* Once a boot, before fault_report(): the count restarts with the power (a brown-out reads as
+     power too, stage0-node/App/watchdog.h). */
+  fault_boot_note(cause == BL_RESET_POWER);
+  APP_PRINTF("#bl boot role=%s reset=%s boots=%u faults=%u\n", role, cause_name[cause], (unsigned)bl_guard_boots(),
              (unsigned)fault_count());
   fault_report();   /* prints "#fault ..." and clears the record */
 #if defined(DEBUGGER_ENABLED) && (DEBUGGER_ENABLED == 1)
@@ -82,6 +75,6 @@ void bl_guard_start(const char *role)
 
 uint8_t bl_guard_reset_code(void) { return cause; }
 const char *bl_guard_reset_name(void) { return cause_name[cause]; }
-uint16_t bl_guard_boots(void) { return boots; }
+uint16_t bl_guard_boots(void) { return (uint16_t)fault_boots(); }   /* saturates at 0xFFFF (fault.c) */
 uint8_t bl_guard_faults(void) { uint32_t n = fault_count(); return (uint8_t)(n > U8_MAX ? U8_MAX : n); }
-uint32_t bl_guard_fault_pc(void) { return fault_pc; }
+uint32_t bl_guard_fault_pc(void) { return fault_last_pc(); }   /* fault_report() keeps the PC */

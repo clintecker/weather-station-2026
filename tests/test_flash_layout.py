@@ -1,5 +1,5 @@
 """The flash layout (firmware/stage0-node/App/flash_layout.h) agrees with the linker script and the
-build's flash budget, and keeps 24 hours of observations for a full station."""
+build's flash budget, and keeps 24 hours of the build's widest observation record."""
 import re
 import subprocess
 import tempfile
@@ -14,15 +14,17 @@ APP = ROOT/'firmware/stage0-node/App'
 PRINT = r'''#include <stdio.h>
 #include "node_store.h"
 int main(void) {
- printf("%lu %u %u %u %u %u %u\n", (unsigned long)WS_FIRMWARE_BYTES, (unsigned)WS_JOURNAL_FIRST, (unsigned)WS_JOURNAL_PAGES,
-        (unsigned)WS_META_PAGE_A, (unsigned)WS_META_PAGE_B, (unsigned)WS_CONFIG_PAGE, (unsigned)JOURNAL_SLOTS_PER_PAGE);
+ printf("%lu %u %u %u %u %u %u %u %u\n", (unsigned long)WS_FIRMWARE_BYTES, (unsigned)WS_JOURNAL_FIRST, (unsigned)WS_JOURNAL_PAGES,
+        (unsigned)WS_META_PAGE_A, (unsigned)WS_META_PAGE_B, (unsigned)WS_CONFIG_PAGE, (unsigned)JOURNAL_SLOTS_PER_PAGE,
+        (unsigned)WS_OBS_PLAIN_MAX, (unsigned)WS_PAGE_SIZE);
  return 0;
 }
 '''
 
 
 def layout(*defines):
-    """(firmware bytes, journal first, journal pages, meta A, meta B, config page, slots per page)."""
+    """(firmware bytes, journal first, journal pages, meta A, meta B, config page, slots per page,
+    the build's widest plaintext, page size)."""
     with tempfile.TemporaryDirectory() as tmp:
         src, exe = Path(tmp)/'p.c', Path(tmp)/'p'
         src.write_text(PRINT)
@@ -40,11 +42,15 @@ class FlashLayout(unittest.TestCase):
         mk = (ROOT/'firmware/board/nucleo-wl55jc/board.mk').read_text()
         self.assertEqual(re.search(r'^APP_FLASH_BYTES \?= (\d+)', mk, re.M)[1], '112640')
 
-    def test_a_full_station_keeps_24_hours(self):
-        full = layout('-DWS_NODE_FIELDS=WS_FIELDS_DEFINED')
-        pages, slots = full[2], full[6]
-        self.assertEqual(slots, 21)
+    def test_the_default_build_keeps_24_hours(self):
+        """The default field set (node_fields.h): the slot is the widest plaintext rounded up to
+        double-words plus the commit and ACK double-words, and 69 pages hold 24 hours of it."""
+        _, _, pages, _, _, _, slots, plain_max, page = layout()
+        dw, header = 8, 8
+        slot = (-(-plain_max // dw) + 2) * dw
+        self.assertEqual(slots, (page - header) // slot)
         self.assertGreaterEqual((pages - 1) * slots, 1440)
+        self.assertLessEqual(plain_max, 80)    # the per-build ceiling (a 96-byte frame)
 
 
 if __name__ == '__main__':

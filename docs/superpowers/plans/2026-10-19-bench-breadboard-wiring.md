@@ -10,6 +10,42 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-19-bench-breadboard-wiring-design.md`
 
+> **Amended 2026-10-29 (power telemetry).** The bench power wiring of 2026-10-28/29
+> (`firmware/benchlink/README.md` "Wiring") is now the official phase A design
+> (`docs/superpowers/specs/2026-10-29-power-telemetry-design.md` sections 2 and 11.1). The model
+> gains these items; tasks B09 (tooling) and B14 (wiring content) of
+> `docs/superpowers/plans/2026-10-29-power-telemetry.md` hold the work.
+>
+> | Item | Change |
+> |---|---|
+> | Nets | `ISET` (bq24074 ISET → PB1, ADC1_IN5, `N:CN8.1`) and `VIN_SENSE` (the 20 kΩ (two 10 kΩ in series) over 10 kΩ divider from `CHGR_VBUS` → PA10, ADC1_IN6, `N:CN8.3`; VIN = 3 × the pin), both class `analog`; `INA.VBUS` in `SYS_OUT` (the VBUS jumper on OUT); the MAX17048 `GBAT` on the cell node, not OUT |
+> | Header | CN8 (1 × 6, female; UM2592 table 17: CN8.1 = A0 = PB1, CN8.3 = A2 = PA10) |
+> | Battery path | short heavy `[[lead]]` entries (cell → INA228 VIN+ → VIN− → charger LIPO), never a breadboard strip: a 0.2 Ω breadboard path ended 1 A charges early |
+> | Firmware check | `check_firmware` also reads `ISET_PIN` and `VIN_PIN` in `stage0-node/App/board_inputs.c` and `benchlink/App/benchlink.c`, and checks that each ADC pin's file selects its channel (`ADC_CHANNEL` in `wiring.py`: PB1 = 5, PB2 = 4, PA10 = 6) |
+> | Parts | three more 10 kΩ (the divider), the 10 kΩ NTC on THERM, the 1S3P 6,600 mAh pack |
+> | Build sheet | checks for ISET and VIN_SENSE before power, the shunt verified against a series reference, the battery-path span limits (+ span ≤ 75 mΩ, − span ≤ 40 mΩ; this said "the shunt resistance" and "the battery-path drop at 1 A (≤ 50 mV)" before PT records M1 and P8), the gauge VCELL against a meter on the cell, INA VBUS = OUT, and a 1 A charge that ends in a normal termination |
+>
+> The PGOOD/CHG pull-up rule replaces "5 V tolerant": PB8 and PB10 are FT_f with the internal
+> pull-ups on, so the pin must stay below VDD + 0.3 V (the bench measured at most 2.9 V).
+
+> **Amended 2026-10-30** (build-progression record
+> `docs/superpowers/specs/2026-10-29-build-progression-decisions.md`, decisions D1–D4, N2, N3, P1–P5,
+> and Clint's answers in its section 7.1). The 2026-10-29 block above stays as history. The current
+> design is the dated 2026-10-30 amendment of the spec. In short:
+>
+> | Item | Change (2026-10-30) |
+> |---|---|
+> | Battery path | not to the charger's LIPO pin: the pack → the cut #1131 pigtail → WAGO CELL+ → INA228 terminal → WAGO BATT → the charger's BATT socket (7.1 P3, change A as written); no current through any breadboard contact except the tagged P1 regulator chain |
+> | Joints and leads | `[[joint]]` (the WAGOs) and role-tagged `[[lead]]`s (force, sense, signal, supply); the gauge on the CELL+ node by its own lead, its minus unconnected, ground over STEMMA QT (not a Kelvin pair on the cell) |
+> | Checks | the D3 checks in `source/checks.py`, all without KiCad |
+> | Headers | station signals on the Arduino female headers CN5, CN6, CN8 and CN9; mode B feeds CN6.4 |
+> | Regeneration | two tiers: `make.py sheet` (no KiCad) on every model commit, `make.py all` at step exits and net changes; the sheet opens with "Changes from the previous revision" |
+> | R_ISET | R9 = 1 kΩ (record 1.4); adopted with change A, read by this workflow from 7.1 P3 "change A as written"; R_ISET confirmed by build-sheet check 2; Clint to confirm (design D4/D5) |
+>
+> **Superseded pins, 2026-10-30** (N2, approved by Clint on 2026-10-30): cups PC0 → **PB5**
+> (LPTIM1_IN1 on AF1; D4, CN9.5), rain PB5 → **PB4** (EXTI4; A3, CN8.4). The task text below keeps the
+> 2026-10-19 pins as history.
+
 ## Global Constraints
 
 - KiCad: 10.0.6. Default app path `/Users/clint/Documents/Codex/2026-10-09/referenced-chatgpt-conversation-this-is-an/work/tools/mount-kicad/KiCad/KiCad.app`, overridable with `KICAD_APP`. Its Python is `Contents/Frameworks/Python.framework/Versions/3.9/bin/python3`, and its CLI is `Contents/MacOS/kicad-cli`.
@@ -76,7 +112,7 @@
   - `test_strips_join_five_holes`: `strip(('A','j',14))` equals `strip(('A','f',14))` and differs from `strip(('A','e',14))` and `strip(('A','j',15))`.
   - `test_split_rails_are_two_nets`: `strip(('A','L+',1), True)` differs from `strip(('A','L+',63), True)`. With `False` they are equal.
   - `test_every_part_pin_lands_on_its_own_hole`: no two pins of all parts share a hole.
-  - `test_the_data_loads_and_names_its_sources`: `load()` succeeds, every `Part.source` is a URL or `'bench check'`, and the nets include `I2C_SDA`, `I2C_SCL`, `CUPS`, `VANE`, `RAIN`, `PGOOD`, `CHG`, `3V3`, `GND`.
+  - `test_the_data_loads_and_names_its_sources`: `load()` succeeds, every `Part.source` is a URL or `'bench check'`, and the nets include `I2C_SDA`, `I2C_SCL`, `CUPS`, `VANE`, `RAIN`, `PGOOD`, `CHG`, `3V3`, `GND`. *Amended 2026-10-29:* and `ISET` and `VIN_SENSE` (PB1 on `N:CN8.1`, PA10 on `N:CN8.3`, class `analog`), now checked by `test_iset_and_vin_sense_are_named_on_cn8` and `test_the_divider_is_20k_over_10k`.
 - [ ] **Step 2: Run** `.venv/bin/python -m unittest tests.test_breadboard -v`. Expected: ImportError (no `wiring.py`).
 - [ ] **Step 3: Write `wiring.toml`.** Take each pin order from its manufacturer page and record the URL in `source`: SparkFun BOB-14021 and the SEN-15901 datasheet (the RJ11 conductors), Adafruit #4755 (bq24074), #5832 (INA228), #5580 (MAX17048), #5625 (STEMMA QT hub) and the Adafruit STEMMA QT to male header cable (its product page), and Pololu #2122 (S7V8F3). A pin order the page does not show gets `source = "bench check"`. The circuits are those of the wiring guide sections 3 and 4: cups and rain each with a 10 kΩ pull-up to 3V3 and 100 nF to GND, and the vane with a 10 kΩ pull-up only. The INA228 shunt sits in the cell's positive lead, and the 100 Ω ½ W load is across the bq24074 output.
 - [ ] **Step 4: Implement `wiring.py`** to the Interfaces above.
@@ -93,6 +129,7 @@
 - Produces `check_guide(w: Wiring, guide: Path) -> list[str]` and `check_firmware(w: Wiring, app: Path) -> list[str]`. Each returns problems (empty if none).
   - `check_guide` reads the section 2 table rows of `bench-station-wiring.md` (Function | Pin | Header | Wiring). For each row the model uses, the NUCLEO header the model picked must appear in the row's Header column. The PA9 row is exempt (ruling). The function also returns a problem for an MCU pin of the model that has no row.
   - `check_firmware` reads `App/board_inputs.c` (`CUPS_PIN`, `VANE_PIN`, `RAIN_PIN`, `PGOOD_PIN`, `CHG_PIN`: the `GPIO_PIN_<n>` value and the `/* P<port><n> */` comment) and `App/i2c_bus.lit.md` (`SDA_PIN`, `SCL_PIN` on GPIOA). The model's MCU pin for each net must match.
+  - *Amended 2026-10-29:* `check_firmware(w, firmware)` takes the `firmware/` directory and reads the files of `wiring.FIRMWARE`: `stage0-node/App/board_inputs.c` also gives `ISET_PIN` → `ISET` and `VIN_PIN` → `VIN_SENSE`, and `benchlink/App/benchlink.c` gives the same pins. The comment may carry trailing text (`/* PB1 = A0, CN8.1: ADC1_IN5 */`). For an ADC pin the check also requires that the file selects the pin's channel (`ADC_CHANNEL_5` for PB1, `ADC_CHANNEL_4` for PB2, `ADC_CHANNEL_6` for PA10), and a comment that names another channel is a problem. Tests: `test_the_model_agrees_with_the_firmware`, `test_an_adc_input_needs_its_channel`, `test_the_firmware_reads_iset_and_vin_on_their_adc_channels`.
 
 - [ ] **Step 1: Write the failing tests:**
   - `test_the_model_agrees_with_the_wiring_guide`: `check_guide(load(...), GUIDE) == []`.
@@ -169,7 +206,7 @@
 - Produces:
   - `build_schematic.py`: one symbol per part with its pins in the manufacturer's order, and a global label of the net name on each connected pin. ERC passes with `kicad-cli sch erc --exit-code-violations`.
   - `render.py <layout.json> <routed.kicad_pcb> <board> <out.png>`: it draws the board's holes (grey), part outlines with ids, and each jumper's routed segments in its net-class colour. It labels each jumper with its id at its midpoint. The NUCLEO headers are labelled "check against UM2592, not to scale". The colours are I2C blue, wind green, rain cyan, charger orange, power red and ground black.
-  - `build-sheet.md`: first the parts, in placement order (part, board, holes, source, and "bench check" items). Then the jumpers in `W` order, one line each: `W7  A:J14 → NUCLEO CN10.14  CUPS (wind)`. It ends with a "Bench checks" list: every part with `source = "bench check"`, the split-rail question, and the UM2592 header check.
+  - `build-sheet.md`: first the parts, in placement order (part, board, holes, source, and "bench check" items). Then the jumpers in `W` order, one line each: `W7  A:J14 → NUCLEO CN10.14  CUPS (wind)` (*superseded 2026-10-30, N2 and N3: CUPS lands on CN9.5, PB5; the sheet now opens with "Changes from the previous revision" and adds the leads, joints and the pre-run checklist*). It ends with a "Bench checks" list: every part with `source = "bench check"`, the split-rail question, and the UM2592 header check.
   - `README.md`: how to regenerate (`tools/fetch-vendor.sh`, then `.venv/bin/python hardware/bench-breadboard-r0/source/make.py all`), what each check proves, the fallback-jumper count, the PA9 ruling, and "Parts still to get" (three 10 kΩ, two 100 nF, one 100 Ω ½ W, jumper wires, a STEMMA QT to header cable, a second BOB-14021).
 
 - [ ] **Step 1: Write the failing tests:**

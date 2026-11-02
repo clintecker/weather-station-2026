@@ -1,58 +1,20 @@
-/* Register decoding for the I2C bench tool: see bench_regs.h for the registers and their units. */
+/* Bench-only helpers (bench_regs.h); the register conversions are in firmware/common/power_regs.c. */
 #include "bench_regs.h"
 
-#define INA228_MANUFACTURER 0x5449U   /* "TI" */
-#define INA228_DEVICE 0x228U
-#define MAX17048_VERSION 0x0010U
-#define MAX17048_VERSION_MASK 0xFFF0U
-
-/* The INA228's 20-bit two's-complement count from the top 20 of 24 bits (the low 4 are reserved). */
-int32_t ina228_count(uint32_t raw24)
-{
-  int32_t count = (int32_t)((raw24 >> 4) & 0xFFFFFU);
-  return count >= 0x80000 ? count - 0x100000 : count;
-}
-
-uint32_t ina228_raw24(int32_t count) { return ((uint32_t)count & 0xFFFFFU) << 4; }
-
-int32_t ina228_vshunt_nv(uint32_t raw24) { return (int32_t)((int64_t)ina228_count(raw24) * 3125 / 10); }
-
-int32_t ina228_vbus_uv(uint32_t raw24) { return (int32_t)((int64_t)ina228_count(raw24) * 3125 / 16); }
-
-/* nV / mOhm = uA. From the count, so the nV rounding does not add to the current's. */
-int32_t ina228_current_ua(uint32_t vshunt_raw24, int32_t shunt_mohm)
-{
-  return (int32_t)((int64_t)ina228_count(vshunt_raw24) * 3125 / (10 * (int64_t)shunt_mohm));
-}
-
-int32_t ina228_dietemp_mc(uint16_t raw16) { return (int32_t)(int16_t)raw16 * 125 / 16; }
-
-int ina228_ids_match(uint16_t manufacturer, uint16_t device)
-{
-  return manufacturer == INA228_MANUFACTURER && (device >> 4) == INA228_DEVICE;
-}
-
-int32_t max17048_vcell_uv(uint16_t raw16) { return (int32_t)raw16 * 625 / 8; }
-
-int32_t max17048_soc_mpct(uint16_t raw16) { return (int32_t)raw16 * 1000 / 256; }
-
-int32_t max17048_crate_mpct_h(uint16_t raw16) { return (int32_t)(int16_t)raw16 * 208; }
-
-int max17048_version_match(uint16_t version) { return (version & MAX17048_VERSION_MASK) == MAX17048_VERSION; }
+/* The parts normally on this bench's bus. The phase B rail INA228s are at the node's addresses
+   (stage0-node/App/power_config.h POWER_ADDR_*; tests/test_i2cscan.py checks them). */
+static const struct { uint8_t addr; const char *name; } PARTS[] = {
+  { 0x36U, "MAX17048 gauge" }, { 0x3CU, "SSD1305 OLED" }, { 0x3DU, "SSD1305 OLED" },
+  { 0x40U, "INA228 battery monitor" }, { 0x41U, "INA228 load monitor (phase B)" },
+  { 0x44U, "SHT45 air" }, { 0x45U, "INA228 solar monitor (phase B)" }, { 0x47U, "BMP581 pressure" },
+  { 0x48U, "INA228 USB-C monitor (phase B)" }, { 0x53U, "LTR390 UV" }, { 0x70U, "SHTC3 enclosure" },
+};
 
 const char *bench_part_name(uint8_t addr7)
 {
-  switch (addr7)
-  {
-    case 0x36: return "MAX17048 gauge";
-    case 0x3C: case 0x3D: return "SSD1305 OLED";
-    case 0x40: return "INA228 battery monitor";
-    case 0x44: return "SHT45 air";
-    case 0x47: return "BMP581 pressure";
-    case 0x53: return "LTR390 UV";
-    case 0x70: return "SHTC3 enclosure";
-    default: return "?";
-  }
+  for (size_t i = 0; i < sizeof PARTS / sizeof PARTS[0]; i++)
+    if (PARTS[i].addr == addr7) return PARTS[i].name;
+  return "?";
 }
 
 int32_t bench_mean(int64_t sum, unsigned n)

@@ -95,7 +95,8 @@ int ws_key_check(const uint8_t key[WS_KEY_LEN], uint8_t out[WS_KCV_LEN]) {
  return rc;
 }
 
-/* Field order and widths: docs/protocol-design.md section 4 and ws0/protocol.py DIAG. */
+/* Field order and widths: docs/protocol-design.md section 4, the power telemetry design section
+   6.1 and ws0/protocol.py DIAG. Byte 51 is the fitted byte; its reserved bit 7 is always 0. */
 void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]) {
  uint8_t *p = ws_write_be32(out, d->epoch);
  p = ws_write_be32(p, d->uptime);
@@ -111,5 +112,21 @@ void ws_diag_pack(const ws_diag_t *d, uint8_t out[WS_DIAG_PLAIN_LEN]) {
  p = ws_write_u8(p, (uint8_t)d->rssi);
  p = ws_write_u8(p, (uint8_t)d->snr);
  p = ws_write_u8(p, d->crashes);
- (void)ws_write_u8(p, d->energy);
+ p = ws_write_u8(p, d->energy);
+ p = ws_write_be32(p, d->crash_pc);
+ p = ws_write_be16(p, d->boots);
+ p = ws_write_be16(p, d->tx_timeouts);
+ p = ws_write_be16(p, d->i2c_recoveries);
+ p = ws_write_be16(p, d->vdda_mv);
+ p = ws_write_be16(p, (uint16_t)d->monitor_temp);
+ p = ws_write_be16(p, d->soc);
+ p = ws_write_be16(p, (uint16_t)d->soc_rate);
+ p = ws_write_u8(p, d->charger_status);
+ p = ws_write_u8(p, (uint8_t)(d->fitted & WS_FIT_DEFINED));   /* byte 51: canonical, bit 7 clear */
+ p = ws_write_be16(p, d->chg_input_mv);
+ p = ws_write_be16(p, (uint16_t)d->chg_input_ma);
+ p = ws_write_be16(p, d->chg_batt_mv);
+ p = ws_write_be16(p, (uint16_t)d->chg_batt_ma);
+ p = ws_write_be16(p, (uint16_t)d->chg_temp);
+ (void)ws_write_be16(p, (uint16_t)d->pack_temp);
 }

@@ -10,10 +10,21 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-16-sixteen-stations-design.md`, section 6.1 (sub-project 1 of section 10).
 
+> **Amended 2026-10-29 (power telemetry).** Catalog version 2
+> (`docs/superpowers/specs/2026-10-29-power-telemetry-design.md` section 7) makes every catalog field
+> 94 B of plaintext: a 112 B slot, 18 slots a page, 1,242 records (20.7 h). The "full station" rule of
+> this plan (`WS_FIELDS_DEFINED`, 21 slots) would fail the build. The rule is now **24 hours of the
+> build's widest record**: `WS_OBS_PLAIN_MAX`, from `WS_NODE_FIELDS`, with the same assertion
+> (`node_store.c:71-76`). A build whose field set exceeds 80 B plaintext (a 96 B frame) does not
+> compile. The version 6 node field set is 77 B: a 96 B slot, 21 slots a page, 1,449 records (24.15 h).
+> The test is now `tests/test_flash_layout.py` `test_the_default_build_keeps_24_hours` (it replaces
+> `test_a_full_station_keeps_24_hours`). The implementation is task B01 of
+> `docs/superpowers/plans/2026-10-29-power-telemetry.md`. The rest of this plan is unchanged.
+
 ## Global Constraints
 
 - Page map (STM32WL55JC, 128 pages of 2 KB): firmware pages 0–54 (110 KB, 112,640 B); journal pages 55–124 (70 pages); meta log A page 125, B page 126; provisioning page 127.
-- A full station (widest catalog, 78-byte plaintext, 96-byte slots, 21 per page) retains at least 1,440 records: (70 − 1) × 21 = 1,449.
+- A full station (widest catalog, 78-byte plaintext, 96-byte slots, 21 per page) retains at least 1,440 records: (70 − 1) × 21 = 1,449. *Amended 2026-10-29:* the rule is now 24 h of the build's widest record (`WS_OBS_PLAIN_MAX`); the version 6 field set is 77 B, 96 B slots, 21 a page, 1,449 records. Every catalog v2 field (94 B) is not a build and gives 1,242 records.
 - `node_store.lit.md` is the source of `node_store.c`. Edit the document, then run `python3 tools/tangle.py firmware/stage0-node/App/node_store.lit.md`.
 - The flash budget guard stays at 90 % of the firmware region.
 - Greenfield: no migration code. Boards are wiped and re-provisioned with a new key.
@@ -58,11 +69,12 @@
 - Produces, in `node_store`'s geometry checks:
   - order `WS_JOURNAL_FIRST + WS_JOURNAL_PAGES == WS_META_PAGE_A < WS_META_PAGE_B < WS_CONFIG_PAGE`;
   - `(uint64_t)WS_STATE_FIRST * WS_PAGE_SIZE >= WS_FIRMWARE_BYTES`;
-  - 24 hours for the widest build: `(WS_JOURNAL_PAGES - 1U) * JOURNAL_SLOTS_PER_PAGE >= 1440U` when `WS_JOURNAL_PAGES` has its default (guard it with the same `#ifndef` the header uses, so the 3-page host sweeps still compile).
+  - 24 hours for the widest build (*amended 2026-10-29:* the build's widest record, `WS_OBS_PLAIN_MAX` from `WS_NODE_FIELDS`, not every catalog field): `(WS_JOURNAL_PAGES - 1U) * JOURNAL_SLOTS_PER_PAGE >= 1440U` when `WS_JOURNAL_PAGES` has its default (guard it with the same `#ifndef` the header uses, so the 3-page host sweeps still compile).
 
 - [ ] **Step 1: Write the failing layout test** — `tests/test_flash_layout.py`, class `FlashLayout`:
   - `test_firmware_region_agrees_everywhere`: compile a tiny host program that includes `flash_layout.h` and prints `WS_FIRMWARE_BYTES WS_JOURNAL_FIRST WS_JOURNAL_PAGES WS_META_PAGE_A WS_META_PAGE_B WS_CONFIG_PAGE` (use `tests/toolchain.py`'s `CC_STRICT` and `ROOT`). Assert they are `112640 55 70 125 126 127`. Parse `LENGTH = (\d+)K` on the FLASH line of the linker script and assert `110`. Parse `APP_FLASH_BYTES \?= (\d+)` in `board.mk` and assert `112640`.
   - `test_a_full_station_keeps_24_hours`: compile with `-DWS_NODE_FIELDS=WS_FIELDS_DEFINED` (the widest catalog, as the `wide` geometry in `tests/test_store_powercut.py` builds it) and print `JOURNAL_SLOTS_PER_PAGE`. Assert that `(WS_JOURNAL_PAGES - 1) * slots >= 1440`, and that slots is 21.
+    *Amended 2026-10-29:* this test is now `test_the_default_build_keeps_24_hours`, "24 h of the build's widest record". It builds the default field set (`node_fields.h`), reads `WS_OBS_PLAIN_MAX` and `JOURNAL_SLOTS_PER_PAGE`, and asserts that the slot count equals the formula (`(page − 8) ÷ ((⌈plain ÷ 8⌉ + 2) × 8)`), that `(WS_JOURNAL_PAGES - 1) * slots >= 1440`, and that the plaintext is at most 80 B. It no longer asserts a fixed 21 or builds `WS_FIELDS_DEFINED`.
 
 - [ ] **Step 2: Run it and see it fail**
 

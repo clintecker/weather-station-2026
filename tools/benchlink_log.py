@@ -1,6 +1,8 @@
 """Log the bench telemetry link (firmware/benchlink) from the RX board's console to a CSV.
 
     .venv/bin/python tools/benchlink_log.py --serial-number <RX ST-LINK serial> --out <file.csv>
+        [--r-iset 1000] [--k-iset 400] [--iset-gain 0.990099] [--r-load 100]
+        [--model hardware/bench-breadboard-r0/source/wiring.toml] [--preflight <run notes.md>]
 
 Each "#bl ... hex=" line from the RX is decoded (layout: firmware/benchlink/App/bl_pkt.h), checked
 (magic, version, CRC) and appended as one CSV row, synced to disk. Missing sequence numbers are counted.
@@ -10,13 +12,28 @@ use and ends a line cut off by an earlier failed write.
 Beside the CSV, <file>-events.csv records what explains a gap (EVENTS below). The logger never exits on
 its own: a failed open, a failed read, a failed write and a line it cannot handle are each recorded and
 retried, and the alert events also raise a macOS notification.
-Derived columns: charge_ma from the bq24074 ISET pin (I = 400 * V_ISET / R_ISET, datasheet eq. 3, R_ISET
-for the board's 1.0 A jumper), load_ma = OUT / 100 ohm (the bench test load; the idle 3.3 V regulator adds
-about 1 mA that this leaves out)."""
+Derived columns: charge_ma from the bq24074 ISET pin (I = K_ISET * V_ISET / R_ISET, datasheet eq. 3,
+--k-iset 400 and --r-iset 1000 ohm, R9 behind the board's 1A jumper; V_ISET = the packet's iset_uv, the
+PB1 node, / --iset-gain, the 10 kOhm and 1 MOhm divider of decision record M2), load_ma = OUT / --r-load (100 ohm, the
+bench test load; the idle 3.3 V regulator adds about 1 mA that this leaves out), and battery_ma, the
+INA228 shunt current with its sign turned once (battery_ma() below): + into the cell. ishunt_ma stays raw
+(+ into VIN+). The dashboard uses battery_ma only from its --shunt-from moment, when the cell went
+through the shunt. The gain and the sign turn are change A's (packet version 4, BL_VERSION in bl_pkt.h): a
+version 3 or older packet (an old capture, an old TX) keeps its own meaning, iset_uv as the ISET pin and
+battery_ma empty, and tx_first_packet and tx_boot name the version. Every row records its packet's version
+(the version column), so a row's meaning never depends on when it was logged.
+
+The logger_start event records the constants, the hashes of the breadboard model (--model) and of the
+build-sheet.md beside its source directory, and the run's preflight status (--preflight, the notes holding
+the `toml preflight` block; tools/preflight.py): valid, stale, failing or missing. They go in the event
+detail, not the CSV header, because prepare_csv() sets a live CSV aside on a header it does not know
+(decision record D6)."""
 import argparse
 import contextlib
 import csv
+import dataclasses
 import datetime
+import importlib.util
 import os
 import re
 import shutil
@@ -25,13 +42,35 @@ import subprocess
 import sys
 import time
 import traceback
+from pathlib import Path
 
 import serial
 from serial.tools import list_ports
 
-R_ISET_OHM = 890.0      # KISET 890 A*ohm / 1.0 A (TI SLUS810N eq. 2): the 1.0 A jumper
-K_ISET = 400.0          # V_ISET = I / 400 * R_ISET (eq. 3)
-R_LOAD_OHM = 100.0
+# R9 = 1 kOhm behind the 1A jumper (decision record 1.4): ICHG = KISET 890 A*ohm / 1000 ohm = 0.89 A typ
+# (SLUS810 eq. 2). Runs logged with the old default 890 read 12 % high. Confirmed by build-sheet check 2.
+# Adopted with change A, read by this workflow from record 7.1 P3; Clint to confirm (design D4).
+R_ISET_OHM = 1000.0     # default of --r-iset
+K_ISET = 400.0          # V_ISET = I / 400 * R_ISET (eq. 3); default of --k-iset
+# The PB1 node over V_ISET: 10 kOhm series at the charger end, 1 MOhm to ground at PB1 (record M2), so
+# 1 MOhm / 1.01 MOhm. Nominal until the per-board fit against the battery INA228 (M2); default of --iset-gain.
+# Adopted with change A, read by this workflow from record 7.1 P3; Clint to confirm (design D4).
+ISET_GAIN = 0.990099
+R_LOAD_OHM = 100.0      # the bench test load on OUT; default of --r-load
+TOOLS = Path(__file__).resolve().parent
+MODEL = TOOLS.parent/'hardware'/'bench-breadboard-r0'/'source'/'wiring.toml'   # default of --model
+
+
+@dataclasses.dataclass(frozen=True)
+class Cal:
+    """The constants of the derived currents (--r-iset, --k-iset, --r-load, --iset-gain)."""
+    r_iset_ohm: float = R_ISET_OHM
+    k_iset: float = K_ISET
+    r_load_ohm: float = R_LOAD_OHM
+    iset_gain: float = ISET_GAIN   # PB1 node / V_ISET
+
+
+CAL = Cal()
 LINE = re.compile(r'#bl rssi=(-?\d+) snr=(-?\d+) len=(\d+) hex=((?:[0-9a-f]{2})*)')
 NOTE = re.compile(r'(#bl (?:boot|rx rearm|rx error|drill)[^\r\n]*|#(?:test-)?fault[ :][^\r\n]*|#error [^\r\n]*)')
 HEARTBEAT = re.compile(r'#bl hb ')
@@ -60,12 +99,22 @@ RESETS = ('unknown', 'power', 'pin', 'brownout', 'software', 'watchdog', 'lowpow
 COUNTERS = ('tx_timeouts', 'i2c_restarts', 'i2c_unsticks')
 FIELDS = ('vout_uv', 'ishunt_ua', 'iset_uv', 'iset_min_uv', 'iset_max_uv', 'ina_die_mc', 'vcell_uv',
           'soc_mpct', 'crate_mpct_h', 'sht_t_mc', 'sht_rh_mpct', 'vin_uv')
-LAYOUT = {1: (11, 60), 2: (12, 64), 3: (12, 78)}   # version: (i32 fields, packet length)
+LAYOUT = {1: (11, 60), 2: (12, 64), 3: (12, 78), 4: (12, 78)}   # version: (i32 fields, packet length)
+# Version 4 (bl_pkt.h BL_VERSION) is version 3's layout with change A's meaning: iset_uv is the PB1 node
+# behind the ISET network (row() divides by --iset-gain) and the shunt sits in the official orientation
+# (row() turns it into battery_ma). Version 3 and older keep their own meaning: iset_uv is the ISET pin
+# (no gain) and battery_ma stays empty, so an old capture or an old TX is never given change A's numbers.
+BL_VERSION = 4
+CHANGE_A_VERSION = 4
+OLD_MEANING = 'before change A: ISET pin, no battery_ma'
 FLAGS = (('ina', 0x01), ('gauge', 0x02), ('sht', 0x04), ('pgood', 0x08), ('chg', 0x10), ('adc', 0x20))
+# A clipped ADC reading in the interval (bl_pkt.h BL_F_VIN_CLIP, BL_F_ISET_CLIP; the node's adc_clipped rule,
+# spec section 9.5): its columns stay empty, as the node sends INVALID. Not CSV columns of their own.
+VIN_CLIP, ISET_CLIP = 0x40, 0x80
 COLUMNS = ('utc', 'local', 'rssi', 'snr', 'seq', 'gap', 'uptime_s', *(f for f, _ in FLAGS), 'charge_ma',
            'charge_min_ma', 'charge_max_ma', 'load_ma', 'vout_v', 'vcell_v', 'soc_pct', 'rate_pct_h',
-           'temp_c', 'rh_pct', 'ina_die_c', 'ishunt_ma', 'samples', 'misses', 'vin_v',
-           'reset', 'boots', 'faults', 'fault_pc', *COUNTERS)
+           'temp_c', 'rh_pct', 'ina_die_c', 'ishunt_ma', 'battery_ma', 'samples', 'misses', 'vin_v',
+           'reset', 'boots', 'faults', 'fault_pc', *COUNTERS, 'version')
 EVENT_COLUMNS = ('utc', 'local', 'event', 'detail')
 
 
@@ -90,7 +139,7 @@ def decode(raw):
     values = dict(zip(FIELDS, struct.unpack_from(f'<{nfields}i', raw, 12), strict=False))   # v1 has no vin_uv
     values.setdefault('vin_uv', None)
     samples, misses = raw[12 + 4 * nfields], raw[13 + 4 * nfields]
-    p = dict(flags=flags, seq=seq, uptime_s=uptime, samples=samples, misses=misses, **values)
+    p = dict(version=raw[2], flags=flags, seq=seq, uptime_s=uptime, samples=samples, misses=misses, **values)
     if raw[2] >= 3:
         reset, faults, boots, *counters, pc = struct.unpack_from('<BBHHHHI', raw, 62)
         p.update(reset=RESETS[reset] if reset < len(RESETS) else str(reset), faults=faults, boots=boots,
@@ -98,23 +147,36 @@ def decode(raw):
     return p
 
 
-def row(p, rssi, snr, gap):
-    def ma(uv):
-        return round(K_ISET * uv / 1e6 / R_ISET_OHM * 1000, 2)
+def battery_ma(ishunt_ma):
+    """The battery current, + into the cell, from the INA228's raw shunt current (+ into VIN+). With the
+    official orientation (docs/superpowers/specs/2026-10-29-power-telemetry-design.md section 3.1: CELL+
+    on VIN+, the charger's BATT socket on VIN-) VIN+ to VIN- is out of the cell, so the sign turns. The only place
+    the bench tools turn it."""
+    return 0.0 - ishunt_ma   # 0.0 - x, not -x: a zero stays 0.0, not -0.0, in the CSV
+
+
+def row(p, rssi, snr, gap, cal=CAL):
+    change_a = p['version'] >= CHANGE_A_VERSION
+    gain = cal.iset_gain if change_a else 1.0   # version 3 and older: iset_uv is the ISET pin itself
+
+    def ma(uv):   # uv is the PB1 node (version 4); V_ISET = uv / iset_gain
+        return round(cal.k_iset * (uv / gain) / 1e6 / cal.r_iset_ohm * 1000, 2)
     now = datetime.datetime.now(datetime.timezone.utc)
     r = dict(utc=now.isoformat(timespec='seconds'), local=now.astimezone().strftime('%Y-%m-%d %H:%M:%S'),
-             rssi=rssi, snr=snr, seq=p['seq'], gap=gap, uptime_s=p['uptime_s'],
+             rssi=rssi, snr=snr, seq=p['seq'], gap=gap, uptime_s=p['uptime_s'], version=p['version'],
              samples=p['samples'], misses=p['misses'])
     for name, bit in FLAGS:
         r[name] = int(bool(p['flags'] & bit))
-    if r['adc']:
+    if r['adc'] and not p['flags'] & ISET_CLIP:
         r.update(charge_ma=ma(p['iset_uv']), charge_min_ma=ma(p['iset_min_uv']), charge_max_ma=ma(p['iset_max_uv']))
     if r['ina']:
-        r.update(vout_v=p['vout_uv'] / 1e6, load_ma=round(p['vout_uv'] / 1e6 / R_LOAD_OHM * 1000, 2),
+        r.update(vout_v=p['vout_uv'] / 1e6, load_ma=round(p['vout_uv'] / 1e6 / cal.r_load_ohm * 1000, 2),
                  ina_die_c=p['ina_die_mc'] / 1e3, ishunt_ma=p['ishunt_ua'] / 1e3)
+        if change_a:   # the sign turn is change A's orientation; an older TX's shunt is left raw only
+            r['battery_ma'] = battery_ma(p['ishunt_ua'] / 1e3)
     if r['gauge']:
         r.update(vcell_v=p['vcell_uv'] / 1e6, soc_pct=p['soc_mpct'] / 1e3, rate_pct_h=p['crate_mpct_h'] / 1e3)
-    if r['adc'] and p['vin_uv'] is not None:
+    if r['adc'] and p['vin_uv'] is not None and not p['flags'] & VIN_CLIP:
         r['vin_v'] = p['vin_uv'] / 1e6
     if r['sht']:
         r.update(temp_c=p['sht_t_mc'] / 1e3, rh_pct=p['sht_rh_mpct'] / 1e3)
@@ -192,7 +254,7 @@ def ends_cut_off(path):
 def prepare_csv(path):
     """Makes `path` ready to append rows with COLUMNS; returns what it did ('' for nothing).
     - An older header (its columns all known) is rewritten to COLUMNS, keeping a copy as
-      <path>.before-<n>-columns.
+      <path>.before-<n>-columns. A version 4 row without battery_ma gets it from its ishunt_ma (backfill()).
     - A file with columns this logger does not know, or that cannot be rewritten, is moved aside to
       <path>.set-aside-<time> and a new CSV starts.
     - A last line cut off by an earlier failed write is ended, so the next row does not join onto it."""
@@ -218,7 +280,7 @@ def prepare_csv(path):
             w.writeheader()
             for old in csv.DictReader(src):
                 old.pop(None, None)   # cells beyond the header
-                w.writerow(old)
+                w.writerow(backfill(old))
         os.replace(path + '.tmp', path)
         done.append(f'older header rewritten, copy at {backup}')
     except (OSError, ValueError, csv.Error) as e:
@@ -228,6 +290,21 @@ def prepare_csv(path):
             os.remove(path + '.tmp')
         done.append(f'cannot use it ({e}); moved to {aside}, starting a new CSV')
     return '; '.join(done)
+
+
+def backfill(old):
+    """An older row with its battery_ma filled from its ishunt_ma, through the one sign turn (battery_ma()),
+    only when the row says it came from a version 4 or later packet (change A's orientation). A row with no
+    version (logged before the column existed), an older version, or a blank or unreadable ishunt_ma is left
+    blank. Whether the shunt was in the battery path at that moment is the dashboard's --shunt-from, not this."""
+    try:
+        change_a = int(old.get('version') or 0) >= CHANGE_A_VERSION
+    except ValueError:
+        change_a = False
+    if change_a and not old.get('battery_ma') and old.get('ishunt_ma'):
+        with contextlib.suppress(ValueError):
+            old['battery_ma'] = battery_ma(float(old['ishunt_ma']))
+    return old
 
 
 class Watch:
@@ -242,6 +319,11 @@ class Watch:
         self.alerted = False
         self.hb_lost = False
 
+    @staticmethod
+    def _version(p):
+        v = p.get('version', '?')
+        return f'version={v}' + (f' ({OLD_MEANING})' if isinstance(v, int) and v < CHANGE_A_VERSION else '')
+
     def _since(self):
         return f"last seq={self.last['seq']}" if self.last else 'none since the logger started'
 
@@ -252,11 +334,12 @@ class Watch:
         prev = self.last
         if prev is None:
             self.ev('tx_first_packet', f"seq={p['seq']} uptime={p['uptime_s']} s reset={p.get('reset', '?')}"
-                    f" boots={p.get('boots', '?')} faults={p.get('faults', '?')}")
+                    f" boots={p.get('boots', '?')} faults={p.get('faults', '?')} {self._version(p)}")
         elif p['seq'] < prev['seq'] or p.get('boots', 0) != prev.get('boots', 0):
             # A reboot: the counter went back, or (v3) the boot count changed. Not the uptime: it wraps.
             self.ev('tx_boot', f"reset={p.get('reset', '?')} boots={p.get('boots', '?')} faults={p.get('faults', '?')}"
-                    f" fault_pc={p.get('fault_pc') or '-'} after seq={prev['seq']} uptime={prev['uptime_s']} s")
+                    f" fault_pc={p.get('fault_pc') or '-'} after seq={prev['seq']} uptime={prev['uptime_s']} s"
+                    f" {self._version(p)}")
         else:
             if p['seq'] > prev['seq'] + 1:
                 self.ev('packets_missed', f"{p['seq'] - prev['seq'] - 1} between seq {prev['seq']} and {p['seq']}")
@@ -317,8 +400,8 @@ class Logger:
     it against a scripted port and a fake clock."""
 
     def __init__(self, serial_number, out, ev, find=port_for, opener=open_port, clock=time.monotonic,
-                 wall=time.time, sleep=time.sleep):
-        self.serial_number, self.out, self.ev = serial_number, out, ev
+                 wall=time.time, sleep=time.sleep, cal=CAL):
+        self.serial_number, self.out, self.ev, self.cal = serial_number, out, ev, cal
         self.find, self.opener, self.clock, self.wall, self.sleep = find, opener, clock, wall, sleep
         self.watch = Watch(ev, clock())
         self.absent = False
@@ -395,7 +478,7 @@ class Logger:
 
     def line(self, line, now):
         try:
-            r = handle(line.decode(errors='replace'), now, self.watch, self.ev)
+            r = handle(line.decode(errors='replace'), now, self.watch, self.ev, self.cal)
         except Exception as e:   # one bad line must never stop the night's log
             self.ev('logger_error', repr(e)[:200])
             return
@@ -431,7 +514,7 @@ class Logger:
         self.csv = self.writer = None
 
 
-def handle(text, now, watch, ev):
+def handle(text, now, watch, ev, cal=CAL):
     """One console line: a heartbeat, a note or a packet. Returns the CSV row of a good packet, else None."""
     if HEARTBEAT.search(text):
         watch.heartbeat(now)
@@ -452,17 +535,77 @@ def handle(text, now, watch, ev):
     last = watch.last
     gap = 0 if last is None or p['seq'] <= last['seq'] else p['seq'] - last['seq'] - 1
     watch.packet(p, now)
-    return row(p, int(m.group(1)), int(m.group(2)), gap)
+    return row(p, int(m.group(1)), int(m.group(2)), gap, cal)
+
+
+def positive(text):
+    """argparse type: a finite float above zero (a resistor or a gain)."""
+    v = float(text)
+    if not 0 < v < float('inf'):
+        raise argparse.ArgumentTypeError(f'must be a finite number above zero: {text}')
+    return v
+
+
+def _preflight_module():
+    """tools/preflight.py as a module (tools/ is scripts, not a package)."""
+    spec = importlib.util.spec_from_file_location('preflight', TOOLS/'preflight.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def provenance(model, notes):
+    """The logger_start detail that ties a run to its drawing: the git blob hashes of the model and of
+    build-sheet.md beside its source directory, and the preflight status of the run's notes ('missing'
+    without notes). Never raises: an unreadable file is logged as such, so the logger still starts."""
+    model = Path(model)
+    sheet = model.parent.parent/'build-sheet.md'
+    try:
+        pf = _preflight_module()
+    except Exception as e:   # a broken preflight.py must not stop the night's log
+        return f'model_hash=? sheet_hash=? preflight=? ({e!r:.120})'
+    hashes = []
+    for name, path in (('model_hash', model), ('sheet_hash', sheet)):
+        try:
+            hashes.append(f'{name}={pf.checklist.blob_sha1(path)}')
+        except OSError as e:
+            hashes.append(f'{name}=unreadable ({path}: {e.strerror})')
+    state = 'missing'
+    if notes:
+        try:
+            state = pf.status(Path(notes), model, sheet)[0]
+        except Exception as e:   # the status is a record, never a reason not to log
+            state = f'failing ({e!r:.120})'
+    return f"{' '.join(hashes)} preflight={state}"
+
+
+def start_detail(cal, model, notes):
+    """The logger_start event detail: the constants and provenance()."""
+    return (f'pid={os.getpid()} r_iset={cal.r_iset_ohm:g} ohm k_iset={cal.k_iset:g} iset_gain={cal.iset_gain:g}'
+            f' r_load={cal.r_load_ohm:g} ohm {provenance(model, notes)}')
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--serial-number', required=True)
     ap.add_argument('--out', required=True)
+    ap.add_argument('--r-iset', type=positive, default=R_ISET_OHM,
+                    help='bq24074 ISET resistor, ohm (default %(default)s: R9 behind the 1A jumper)')
+    ap.add_argument('--k-iset', type=positive, default=K_ISET,
+                    help='bq24074 ISET gain, I = K * V_ISET / R_ISET (default %(default)s, SLUS810 eq. 3)')
+    ap.add_argument('--iset-gain', type=positive, default=ISET_GAIN,
+                    help='the PB1 node over V_ISET (default %(default)s: 1 MOhm / 1.01 MOhm, nominal)')
+    ap.add_argument('--r-load', type=positive, default=R_LOAD_OHM,
+                    help='the test load on OUT, ohm (default %(default)s)')
+    ap.add_argument('--model', default=str(MODEL),
+                    help='the breadboard model whose hash is logged (default %(default)s)')
+    ap.add_argument('--preflight', metavar='NOTES',
+                    help="the run's notes holding the `toml preflight` block (default: none, logged as missing)")
     args = ap.parse_args()
+    cal = Cal(args.r_iset, args.k_iset, args.r_load, args.iset_gain)
     ev = Events(os.path.splitext(args.out)[0] + '-events.csv')
     try:
-        ev('logger_start', f'pid={os.getpid()}')
+        ev('logger_start', start_detail(cal, args.model, args.preflight))
         try:
             did = prepare_csv(args.out)
         except OSError as e:
@@ -470,7 +613,7 @@ def main():
             ev('logger_error', f'cannot prepare {args.out}: {e}')
         if did:
             ev('csv_prepared', did)
-        Logger(args.serial_number, args.out, ev).run()
+        Logger(args.serial_number, args.out, ev, cal=cal).run()
     except KeyboardInterrupt:
         return 0
     except BaseException as e:   # launchd restarts the logger; say why it stopped first

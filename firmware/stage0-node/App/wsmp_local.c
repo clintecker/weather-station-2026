@@ -1,10 +1,13 @@
 /* The station's local WSMP modules (wsmp_local.h): each operation is a switch on the port. Ports
- * without a driver yet answer "absent" and give an empty snapshot. */
+ * without a driver yet answer "absent" and give an empty snapshot. The battery (P_BATTERY) and rails
+ * (P_RAILS) ports share one driver, App/mod_power.c over App/power_acq.c: the battery port's tick runs
+ * it, and both ports report present. */
 #define WS_CHECK_FILE 14
 #include "wsmp_local.h"
 #include <string.h>
 #include "i2c_bus.h"
 #include "mod_power.h"
+#include "power_acq.h"
 #include "mod_rain.h"
 #include "mod_reg.h"
 #include "mod_th.h"
@@ -69,7 +72,7 @@ void local_tick(enum wsmp_port p, uint32_t now_ms)
   enum reg_unit r = reg_unit(p);
   if (u != TH_COUNT) mod_th_tick(u, now_ms);
   if (r != REG_COUNT) mod_reg_tick(r, now_ms);
-  if (p == P_POWER) mod_power_tick(now_ms);
+  if (p == P_BATTERY) mod_power_tick(now_ms);   /* once a tick for both power ports */
   if (p == P_WIND) mod_wind_tick(now_ms);
   if (p == P_RAIN) mod_rain_tick(now_ms);
 }
@@ -80,7 +83,7 @@ int local_probe_result(enum wsmp_port p, uint16_t *seq)
   enum reg_unit r = reg_unit(p);
   *seq = 0;
   if (u != TH_COUNT) return mod_th_probe(u, seq);
-  if (p == P_POWER) return mod_power_probe(seq);
+  if (p == P_BATTERY || p == P_RAILS) return mod_power_probe(seq);
   if (p == P_WIND) return mod_wind_probe(seq);
   if (p == P_RAIN) return mod_rain_probe(seq);
   return r != REG_COUNT ? mod_reg_probe(r, seq) : 0;
@@ -93,7 +96,8 @@ void local_identity(enum wsmp_port p, uint8_t id[WSMP_IDENTITY_LEN], uint8_t des
   memset(id, 0, WSMP_IDENTITY_LEN); memset(desc, 0, WSMP_DESC_BLOCK_LEN);
   if (u != TH_COUNT) mod_th_identity(u, id, desc);
   if (r != REG_COUNT) mod_reg_identity(r, id, desc);
-  if (p == P_POWER) mod_power_identity(id, desc);
+  if (p == P_BATTERY) mod_power_identity(PM_BATTERY, id, desc);
+  if (p == P_RAILS) mod_power_identity(PM_RAILS, id, desc);
   if (p == P_WIND) mod_wind_identity(id, desc);
   if (p == P_RAIN) mod_rain_identity(id, desc);
 }
@@ -150,7 +154,7 @@ int local_id_result(enum wsmp_port p, uint32_t *serial)
 uint16_t local_type(enum wsmp_port p)
 {
   static const uint16_t type[P_COUNT] = { 0, WSMP_T_AIR_TH, WSMP_T_PRESSURE, WSMP_T_UVA, WSMP_T_ENCL_TH,
-                                          WSMP_T_POWER, WSMP_T_WIND, WSMP_T_RAIN };
+                                          WSMP_T_BATTERY, WSMP_T_WIND, WSMP_T_RAIN, WSMP_T_POWER_RAILS };
   return type[p];
 }
 
@@ -161,7 +165,8 @@ void local_latch(enum wsmp_port p, uint16_t token, uint32_t utc, uint32_t now_ms
   (void)utc;   /* the mean windows need only the station's clock */
   if (u != TH_COUNT) mod_th_latch(u, token, now_ms);
   if (r != REG_COUNT) mod_reg_latch(r, token, now_ms);
-  if (p == P_POWER) mod_power_latch(token, now_ms);
+  if (p == P_BATTERY) mod_power_latch(PM_BATTERY, token, now_ms);
+  if (p == P_RAILS) mod_power_latch(PM_RAILS, token, now_ms);
   if (p == P_WIND) mod_wind_latch(token, now_ms);
   if (p == P_RAIN) mod_rain_latch(token, now_ms);
 }
@@ -173,7 +178,8 @@ void local_snapshot(enum wsmp_port p, uint8_t snap[WSMP_SNAPSHOT_LEN])
   memset(snap, 0, WSMP_SNAPSHOT_LEN);
   if (u != TH_COUNT) mod_th_snapshot(u, snap);
   if (r != REG_COUNT) mod_reg_snapshot(r, snap);
-  if (p == P_POWER) mod_power_snapshot(snap);
+  if (p == P_BATTERY) mod_power_snapshot(PM_BATTERY, snap);
+  if (p == P_RAILS) mod_power_snapshot(PM_RAILS, snap);
   if (p == P_WIND) mod_wind_snapshot(snap);
   if (p == P_RAIN) mod_rain_snapshot(snap);
 }
@@ -181,13 +187,15 @@ void local_snapshot(enum wsmp_port p, uint8_t snap[WSMP_SNAPSHOT_LEN])
 /* The completion of a bus transfer (i2c_bus.h): to the module that owns the client. */
 void i2c_bus_done(enum i2c_client c, int rc)
 {
+  /* The power clients are one run in i2c_bus.h: the four INA228 rail monitors, then the gauge. Every
+     one goes to the power acquisition, which owns the parts of both power modules. */
+  if (c >= I2C_C_INA228 && c <= I2C_C_MAX17048) { power_acq_i2c_done(c, rc); return; }
   switch (c)
   {
     case I2C_C_SHT45: mod_th_i2c_done(TH_AIR, rc); break;
     case I2C_C_SHTC3: mod_th_i2c_done(TH_ENCL, rc); break;
     case I2C_C_BMP581: mod_reg_i2c_done(REG_PRESSURE, rc); break;
     case I2C_C_LTR390: mod_reg_i2c_done(REG_UVA, rc); break;
-    case I2C_C_INA228: case I2C_C_MAX17048: mod_power_i2c_done(rc); break;
     case I2C_C_REC_AIR: port_id_i2c_done(P_AIR_TH, rc); break;
     case I2C_C_REC_PRESSURE: port_id_i2c_done(P_PRESSURE, rc); break;
     case I2C_C_REC_UVA: port_id_i2c_done(P_UVA, rc); break;

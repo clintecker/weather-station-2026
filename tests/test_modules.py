@@ -17,9 +17,14 @@ except ImportError:
 DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228, DEVK_MAX17048 = 2, 3, 4, 5, 6, 7
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY = range(5)
 DM_BUS_ERROR = 6
-P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH, P_POWER, P_WIND, P_RAIN = range(1, 8)
-GOOD, PARTIAL, SUSPECT, MISSING, WARMING_UP, FAULT = range(6)
+P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH, P_BATTERY, P_WIND, P_RAIN, P_RAILS = range(1, 9)
+GOOD, PARTIAL, SUSPECT, MISSING, WARMING_UP, FAULT, NOT_FITTED = range(7)
 FLAG_FIRST, FLAG_LONG = 1, 2
+# The counter link probe (App/board_inputs.h, build-progression record M7): enum board_link, enum
+# meter_link (worst last), the low reads in a row that make a verdict, and 24 h of 15-minute probes.
+LINK_CUPS, LINK_RAIN = 0, 1
+METER_OK, CUPS_SUSPECT, VANE_OUT, CUPS_OPEN, RAIN_OPEN = range(5)
+LINK_LOWS, LOWS_DAY = 3, 24 * 4 + 1
 BOOT = 0x0102_0304
 MINUTE = 60_000
 
@@ -98,7 +103,7 @@ class Conformance:
         idb, desc = (ctypes.c_uint8 * 32)(), (ctypes.c_uint8 * 48)()
         lib.h_identity(self.PORT, idb, desc)
         idb = bytes(idb)
-        self.assertEqual(idb[:4], b'WS\x01\x00')
+        self.assertEqual(idb[:4], b'WS\x01\x01')                # WSMP 1.1 (not fitted, WSMP-V2)
         self.assertEqual((be(idb, 4, 2), idb[6], idb[7]), (self.TYPE, 1, self.CHANNELS))
         self.assertNotEqual(be(idb, 8, 8), 0)
         self.assertEqual(be(idb, 20, 4), BOOT)                     # WSMP-I2: the station's boot epoch
@@ -495,97 +500,169 @@ class Ltr390(SingleMean, Harness):
         self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0)[0], (1 << 20) - 1)
 
 
-class Power(Conformance, Harness):
-    """The battery and charger module (WSMP section 4.4, type 5): INA228, MAX17048, bq24074 pins."""
-    PORT, TYPE, CHANNELS = P_POWER, 5, 7
+class PowerStation:
+    """The battery and rails modules (App/mod_power.c over App/power_acq.c; power telemetry design
+    sections 5.3, 8.1, 8.4, 8.5 and 9.6) in the default profile A: the battery INA228 at 0x40 (shunt in
+    the battery path, VBUS on its sense lead to the OUT connector, record P5), the MAX17048 at 0x36 on
+    the CELL+ node (record M4: VCELL includes the pack-lead drop), and the board
+    ADC (ISET, the PA10 charger-input divider, VREFINT) through sim_core.c's h_power_adc."""
     DEVICES = [(DEVK_INA228, 0x40), (DEVK_MAX17048, 0x36)]
+    KIND = DEVK_INA228
     PGOOD, CHG = 1, 2                     # board_charger_pins(): bit 0 PGOOD asserted, bit 1 CHG asserted
+    OUT_UV, CELL_UV = 4_400_000, 3_900_000
 
     def station(self, devices, start_ms=0):
         lib, devs = super().station(devices, start_ms)
+        lib.h_power_health.argtypes = [ctypes.c_int32 * 11]
         if DEVK_INA228 in devs:
-            lib.h_ina228_set(devs[DEVK_INA228], 4_000_000, 0)      # 4.000 V, no current
+            lib.h_ina228_set(devs[DEVK_INA228], self.OUT_UV, 0)    # the charger OUT at 4.400 V, no current
         if DEVK_MAX17048 in devs:
             lib.h_max17048_set(devs[DEVK_MAX17048], 87)
+            lib.h_max17048_cell(self.CELL_UV)                       # the cell at 3.900 V
         return lib, devs
 
-    def slots(self, snap):
-        return [self.slot(snap, i) for i in range(7)]
+    def slots(self, snap, n=None):
+        return [self.slot(snap, i) for i in range(n or self.CHANNELS)]
+
+    def both(self, lib, token):
+        """Latches the battery then the rails module with one token, as the station host does."""
+        return (self.slots(self.latch(lib, P_BATTERY, token), 6), self.slots(self.latch(lib, P_RAILS, token), 7))
+
+    def health(self, lib):
+        out = (ctypes.c_int32 * 11)()
+        lib.h_power_health(out)
+        return dict(zip(HEALTH_KEYS, out, strict=True))
+
+
+HEALTH_KEYS = ('vdda_mv', 'soc', 'chg_input_mv', 'chg_batt_mv', 'monitor_temp', 'soc_rate', 'chg_input_ma',
+               'chg_batt_ma', 'chg_temp', 'pack_temp', 'charger_status')
+U16_NONE, I16_NONE, U8_NONE = 0xFFFF, -32768, 0xFF
+
+
+def signed32(v):
+    return v - (1 << 32) if v & 0x8000_0000 else v
+
+
+def pin_mv(raw, vdda_mv, ratio=1):
+    """power_regs.c: the pin voltage of a 12-bit result, times the divider ratio, in mV half up."""
+    uv = raw * vdda_mv * 1000 // 4095
+    return (uv * ratio + 500) // 1000
+
+
+class Battery(PowerStation, Conformance, Harness):
+    """The battery module (port 5, WSMP type 8): the cell voltage from the gauge, the battery current
+    and the energy and charge counters from the battery INA228."""
+    PORT, TYPE, CHANNELS = P_BATTERY, 8, 6
+
+    def test_the_build_is_profile_a(self):
+        lib, _ = self.station(self.DEVICES)
+        self.assertEqual((lib.h_power_profile(), lib.h_port_battery(), lib.h_port_rails()), (1, P_BATTERY, P_RAILS))
+
+    def test_the_local_serial_is_a_new_series(self):
+        # WSMP-C3 (design section 8.4): the type changed (5 -> 8), so the serial changed once and the
+        # counters start a new series; it is not the type 5 serial of protocol version 5.
+        lib, _ = self.station(self.DEVICES)
+        idb, desc = (ctypes.c_uint8 * 32)(), (ctypes.c_uint8 * 48)()
+        lib.h_identity(P_BATTERY, idb, desc)
+        self.assertEqual(be(bytes(idb), 8, 8), 0x5753_0000_0508)
+        self.assertNotEqual(be(bytes(idb), 8, 8), 0x5753_0000_0505)
 
     def test_charge_and_discharge_counters(self):
         lib, devs = self.station(self.DEVICES)
         ina = devs[DEVK_INA228]
-        lib.h_ina228_set(ina, 4_000_000, 500_000)                  # +500 mA (charging) at 4.000 V for 60 s
+        lib.h_ina228_set(ina, self.OUT_UV, -500_000)               # VIN- -> VIN+: 500 mA into the cell for 60 s
         lib.h_run(MINUTE)
-        lib.h_ina228_set(ina, 4_000_000, -250_000)                 # -250 mA for 120 s
+        lib.h_ina228_set(ina, self.OUT_UV, 250_000)                # VIN+ -> VIN-: 250 mA out of the cell for 120 s
         lib.h_run(2 * MINUTE)
         s = self.slots(self.latch(lib, self.PORT, 1))
-        # Energy in, energy out, charge in, charge out: whole mWh and mAh since boot, from the INA228's
-        # own accumulators. Each 1 s step counts as in or out by the sign of its charge. In: the 60 s
-        # at +0.5 A, 33.3 mWh and 8.33 mAh. Out: 119 s at -0.25 A up to the last sample before the
-        # latch, 33.1 mWh and 8.26 mAh.
-        self.assertEqual([s[i][0] for i in (1, 2, 3, 4)], [33, 33, 8, 8])
-        lib.h_ina228_set(ina, 4_000_000, 500_000)
+        # Energy in, energy out, charge in, charge out: whole mWh and mAh since boot, dQ x the cell's
+        # VCELL (3.900 V), not the OUT voltage. In: 59 to 60 s at 0.5 A, 8.2 to 8.3 mAh and 32 mWh.
+        # Out: 119 to 120 s at 0.25 A, 8.26 to 8.33 mAh and 32.2 to 32.5 mWh.
+        self.assertEqual([s[i][0] for i in (2, 3, 4, 5)], [32, 32, 8, 8])
+        lib.h_ina228_set(ina, self.OUT_UV, -500_000)
         lib.h_run(MINUTE)
         s = self.slots(self.latch(lib, self.PORT, 2))
-        self.assertEqual([s[i][0] for i in (1, 3)], [66, 16])       # 119 s: 66.1 mWh, 16.53 mAh: the remainder was kept
-        self.assertEqual(s[0][:1], (4000,))                         # voltage mean, 1 mV
+        self.assertEqual([s[i][0] for i in (2, 4)], [64, 16])       # the remainder below 1 mAh was kept
+
+    def test_the_battery_current_is_signed_and_positive_while_charging(self):
+        # The mean of a steady minute: the sum of the CHARGE deltas over their time (design section 9.4).
+        lib, devs = self.station(self.DEVICES)
+        ina = devs[DEVK_INA228]
+        for token, (ua, ma) in enumerate(((-1_000_000, 1000), (250_000, -250)), start=1):
+            with self.subTest(ma=ma):
+                lib.h_ina228_set(ina, self.OUT_UV, ua)             # -: VIN- -> VIN+, into the cell (sign -1)
+                lib.h_run(MINUTE)
+                self.latch(lib, self.PORT, 2 * token)              # the minute with the change
+                lib.h_run(MINUTE)
+                value, count, quality = self.slots(self.latch(lib, self.PORT, 2 * token + 1))[1]
+                self.assertEqual((signed32(value), count, quality), (ma, 60, GOOD))
 
     def test_a_burst_between_samples_is_counted(self):
         # A 250 ms load between two 1 s samples (a LoRa transmission) never coincides with a sample:
-        # only the part's accumulators see it. 40 bursts of 4 A x 0.25 s = 40 A s = 11.1 mAh.
+        # only the part's CHARGE accumulator sees it. 40 bursts of 4 A x 0.25 s = 40 A s = 11.1 mAh.
         lib, devs = self.station(self.DEVICES)
         ina = devs[DEVK_INA228]
         lib.h_run(1000)
         for _ in range(40):
             lib.h_run(250)                                         # from a sample to 0.25 s after it
-            lib.h_ina228_set(ina, 4_000_000, -4_000_000)
+            lib.h_ina228_set(ina, self.OUT_UV, 4_000_000)          # 4 A out of the cell
             lib.h_run(250)
-            lib.h_ina228_set(ina, 4_000_000, 0)
+            lib.h_ina228_set(ina, self.OUT_UV, 0)
             lib.h_run(500)
         lib.h_run(1000)                                            # the sample after the last burst
         s = self.slots(self.latch(lib, self.PORT, 1))
-        self.assertEqual((s[4][0], s[3][0]), (11, 0))              # charge out, charge in
+        self.assertEqual((s[5][0], s[4][0]), (11, 0))              # charge out, charge in
 
     def test_a_silent_reset_of_the_monitor_recalibrates(self):
-        # A brown-out clears SHUNT_CAL and the accumulators with no bus error. The module sees the
-        # wrong SHUNT_CAL, calibrates again and counts on from a new base: at most one step is lost.
+        # A brown-out clears SHUNT_CAL and the accumulators with no bus error. The acquisition sees the
+        # wrong SHUNT_CAL, calibrates again and counts on from a new base: at most a step or two is lost.
         lib, devs = self.station(self.DEVICES)
         ina = devs[DEVK_INA228]
-        lib.h_ina228_set(ina, 4_000_000, 1_000_000)
+        lib.h_ina228_set(ina, self.OUT_UV, -1_000_000)
         lib.h_run(30_000)
         lib.h_ina228_power_cycle(ina)
         lib.h_run(30_000)
         s = self.slots(self.latch(lib, self.PORT, 1))
-        self.assertIn(s[3][0], (15, 16))                           # 1 A for 57 to 59 s: 15.8 to 16.4 mAh
+        self.assertIn(s[4][0], (15, 16))                           # 1 A for 56 to 59 s: 15.6 to 16.4 mAh
 
     def test_counters_never_reset_at_latch(self):
         lib, devs = self.station(self.DEVICES)
-        lib.h_ina228_set(devs[DEVK_INA228], 4_000_000, 1_000_000)
+        lib.h_ina228_set(devs[DEVK_INA228], self.OUT_UV, -1_000_000)
         lib.h_run(MINUTE)
         a = self.slots(self.latch(lib, self.PORT, 1))
         lib.h_run(MINUTE)
         b = self.slots(self.latch(lib, self.PORT, 2))
-        self.assertEqual((a[3][0], b[3][0]), (16, 33))              # 59 s then 119 s at 1 A: 16.4, 33.1 mAh
+        self.assertEqual((a[4][0], b[4][0]), (16, 33))              # 59 s then 119 s at 1 A: 16.4, 33.1 mAh
 
-    def test_charger_states_from_pins(self):
-        lib, _ = self.station(self.DEVICES)
-        for pins, state in ((0, 0), (self.PGOOD | self.CHG, 1), (self.PGOOD, 2), (self.CHG, 0)):
-            with self.subTest(pins=pins):
-                lib.h_charger_pins(pins)
-                lib.h_run(MINUTE)
-                self.assertEqual(self.slots(self.latch(lib, self.PORT, 10 + pins))[6][0], state)
-
-    def test_soc_point_and_missing_without_gauge(self):
+    def test_the_cell_voltage_comes_from_the_gauge_not_out(self):
+        # OUT (4.400 V, the INA228's VBUS) and the cell (3.900 V, the gauge's VCELL) are kept apart.
         lib, _ = self.station(self.DEVICES)
         lib.h_run(MINUTE)
-        self.assertEqual(self.slots(self.latch(lib, self.PORT, 1))[5][0], 87)
-        lib, _ = self.station([(DEVK_INA228, 0x40)])
+        self.latch(lib, self.PORT, 1)
         lib.h_run(MINUTE)
-        s = self.slots(self.latch(lib, self.PORT, 1))
-        self.assertEqual(s[5][2], MISSING)
-        self.assertNotEqual(s[0][2], MISSING)                      # the module is present without its gauge
+        self.assertEqual(self.slots(self.latch(lib, self.PORT, 2))[0], (3900, 4, GOOD))   # one read every 15 s
+
+    def test_the_gauge_is_reported_without_the_ina228(self):
+        # Design section 14: a gauge without its INA228 still gives the cell voltage; the module stays
+        # present and only the INA228's slots are missing.
+        lib, _ = self.station([(DEVK_MAX17048, 0x36)])
+        lib.h_run(MINUTE)
+        self.latch(lib, self.PORT, 1)
+        lib.h_run(MINUTE)
+        s = self.slots(self.latch(lib, self.PORT, 2))
         self.assertEqual(lib.h_probe(self.PORT), 1)
+        self.assertEqual(s[0], (3900, 4, GOOD))
+        self.assertEqual([q for _, _, q in s[1:]], [MISSING] * 5)
+
+    def test_present_with_every_part_absent(self):
+        # PT-065, PT-124 (design sections 5.3 and 8.5): the module is fixed by the power profile. With
+        # the INA228 and the gauge both dead it stays present, and every slot is missing (the map then
+        # sends fields 11-16 as INVALID, not absent).
+        lib, _ = self.station([])
+        lib.h_run(MINUTE)
+        self.assertEqual(lib.h_probe(self.PORT), 1)
+        s = self.slots(self.latch(lib, self.PORT, 1))
+        self.assertEqual([q for _, _, q in s], [MISSING] * 6)
 
     def test_an_absent_gauge_is_tried_every_15_s(self):
         lib, _ = self.station([(DEVK_INA228, 0x40)])
@@ -598,22 +675,101 @@ class Power(Conformance, Harness):
         self.latch(lib, self.PORT, 1)
         lib.h_device_mode(devs[DEVK_MAX17048], DM_BUS_ERROR, 0, 1)
         lib.h_run(MINUTE)
-        self.assertEqual(self.slots(self.latch(lib, self.PORT, 2))[5][2], FAULT)
+        s = self.slots(self.latch(lib, self.PORT, 2))
+        self.assertEqual(s[0][2], FAULT)
+        self.assertEqual([q for _, _, q in s[1:]], [GOOD] * 5)     # the INA228's slots are not touched
         lib.h_remove_device(devs[DEVK_MAX17048])
         lib.h_run(MINUTE)
-        self.assertEqual(self.slots(self.latch(lib, self.PORT, 3))[5][2], MISSING)   # an absent gauge is missing
+        self.assertEqual(self.slots(self.latch(lib, self.PORT, 3))[0][2], MISSING)   # an absent gauge is missing
 
-    def test_absent_without_the_monitor(self):
-        lib, _ = self.station([(DEVK_MAX17048, 0x36)])
+    def test_a_monitor_bus_fault_affects_only_its_slots(self):
+        lib, devs = self.station(self.DEVICES)
         lib.h_run(MINUTE)
-        self.assertEqual(lib.h_probe(self.PORT), 0)
+        self.both(lib, 1)
+        lib.h_device_mode(devs[DEVK_INA228], DM_BUS_ERROR, 0, 1)
+        lib.h_run(MINUTE)
+        battery, rails = self.both(lib, 2)
+        self.assertEqual(battery[0], (3900, 4, GOOD))              # the gauge's slot
+        self.assertEqual([q for _, _, q in battery[1:]], [FAULT] * 5)
+        self.assertEqual(rails[0][2], FAULT)                       # the load voltage is the same INA228's VBUS
+        self.assertEqual(lib.h_probe(self.PORT), 1)                # still present (WSMP-P3)
 
-    def test_voltage_is_good_after_the_first_window(self):
+
+class Rails(PowerStation, Conformance, Harness):
+    """The power rails module (port 8, WSMP type 9): load, charger input, solar and USB-C. Profile A
+    fills the load voltage (the battery INA228's VBUS on OUT) and the charger input voltage (the PA10
+    divider); the rest is not fitted."""
+    PORT, TYPE, CHANNELS = P_RAILS, 9, 7
+    VDDA = 3300
+
+    def station(self, devices, start_ms=0):
+        lib, devs = super().station(devices, start_ms)
+        lib.h_power_adc.argtypes = [ctypes.c_uint16] * 4
+        lib.h_power_adc(0, 2048, 1500, self.VDDA)                  # ISET 0, PA10 half scale, VDDA 3.3 V
+        return lib, devs
+
+    def test_the_local_serial_is_a_new_series(self):
+        lib, _ = self.station(self.DEVICES)
+        idb, desc = (ctypes.c_uint8 * 32)(), (ctypes.c_uint8 * 48)()
+        lib.h_identity(P_RAILS, idb, desc)
+        self.assertEqual(be(bytes(idb), 8, 8), 0x5753_0000_0809)   # port 8, type 9 (WSMP-C3)
+
+    def test_profile_a_slots(self):
         lib, _ = self.station(self.DEVICES)
         lib.h_run(MINUTE)
         self.latch(lib, self.PORT, 1)
         lib.h_run(MINUTE)
-        self.assertEqual(self.slots(self.latch(lib, self.PORT, 2))[0][1:], (60, GOOD))   # one a second
+        s = self.slots(self.latch(lib, self.PORT, 2))
+        self.assertEqual(s[0], (4400, 60, GOOD))                   # load voltage: OUT, a read a second
+        self.assertEqual(s[2], (pin_mv(2048, self.VDDA, 3), 60, GOOD))   # charger input: 3 x the PA10 pin
+        self.assertEqual([s[i] for i in (1, 3, 4, 5, 6)], [(0, 0, NOT_FITTED)] * 5)
+
+    def test_not_fitted_slots_stay_not_fitted_with_every_part_absent(self):
+        # Not fitted is a property of the build (WS_POWER_PROFILE), never of a part's state.
+        lib, _ = self.station([])
+        lib.h_power_adc(0, 4095, 1500, self.VDDA)                  # a clipped charger input
+        lib.h_run(MINUTE)
+        self.assertEqual(lib.h_probe(self.PORT), 1)
+        s = self.slots(self.latch(lib, self.PORT, 1))
+        self.assertEqual([q for _, _, q in s], [MISSING, NOT_FITTED, MISSING, NOT_FITTED, NOT_FITTED, NOT_FITTED, NOT_FITTED])
+
+    def test_both_modules_share_the_latch_window(self):
+        # The first module to latch with a token closes the acquisition window; the other copies it, so
+        # the rails module latched second still reports the whole minute.
+        lib, devs = self.station(self.DEVICES)
+        lib.h_run(MINUTE)
+        self.both(lib, 1)
+        lib.h_run(MINUTE)
+        battery, rails = self.both(lib, 2)
+        self.assertEqual((battery[0], rails[0]), ((3900, 4, GOOD), (4400, 60, GOOD)))
+        self.assertEqual(self.slots(self.latch(lib, P_RAILS, 2)), rails)   # a retry: the same values
+
+    def test_the_health_values_are_cached_with_none_codes(self):
+        lib, devs = self.station(self.DEVICES)
+        h = self.health(lib)
+        self.assertEqual(h, {**{k: U16_NONE for k in ('vdda_mv', 'soc', 'chg_input_mv', 'chg_batt_mv')},
+                             **{k: I16_NONE for k in ('monitor_temp', 'soc_rate', 'chg_input_ma', 'chg_batt_ma',
+                                                      'chg_temp', 'pack_temp')},
+                             'charger_status': U8_NONE})       # nothing before the first latch
+        lib.h_ina228_die(devs[DEVK_INA228], 31_250)
+        lib.h_max17048_rate(-2_080)                            # -2.08 %/h, discharging
+        lib.h_charger_pins(0)                                  # no input power: ISET gives 0 mA
+        lib.h_run(MINUTE)
+        self.latch(lib, self.PORT, 1)
+        h = self.health(lib)
+        self.assertEqual((h['vdda_mv'], h['soc'], h['soc_rate'], h['monitor_temp'], h['chg_batt_ma'], h['charger_status']),
+                         (self.VDDA, 87 * 256, -21, 313, 0, 0))
+        self.assertEqual((h['chg_input_mv'], h['chg_batt_mv'], h['chg_input_ma'], h['chg_temp'], h['pack_temp']),
+                         (U16_NONE, U16_NONE, I16_NONE, I16_NONE, I16_NONE))   # no charger ADC before phase C
+
+    def test_the_health_status_follows_the_pins(self):
+        lib, _ = self.station(self.DEVICES)
+        for pins, status in ((self.PGOOD | self.CHG, 0x03), (self.PGOOD, 0x01), (0, 0x00)):
+            with self.subTest(pins=pins):
+                lib.h_charger_pins(pins)
+                lib.h_run(MINUTE)
+                self.latch(lib, self.PORT, 10 + pins)
+                self.assertEqual(self.health(lib)['charger_status'], status)
 
 
 class Wind(Conformance, Harness):
@@ -686,9 +842,92 @@ class Wind(Conformance, Harness):
         lib.h_vane_mv(3_300)                                       # unplugged: the pull-up reads the rail
         lib.h_run(2_000)
         self.assertEqual(lib.h_probe(self.PORT), 0)
+        self.assertEqual(lib.h_meter_link(), VANE_OUT)             # the rail is outside the table too (M7)
         lib.h_vane_mv(wind_ref.vane_mv(4))
         lib.h_run(2_000)
         self.assertEqual(lib.h_probe(self.PORT), 1)
+        self.assertEqual(lib.h_meter_link(), METER_OK)
+
+    # The cups link (record M7, rows R-6 and R-16): the board's probe gives the low run (h_link_low)
+    # and a real edge since the last probe (h_edge).
+    def test_three_lows_are_suspect_not_fault(self):
+        # Calm air with the magnet holding the reed closed reads like an open link: suspect only.
+        for lows, quality, verdict in ((LINK_LOWS - 1, GOOD, METER_OK), (LINK_LOWS, SUSPECT, CUPS_SUSPECT),
+                                       (LOWS_DAY - 1, SUSPECT, CUPS_SUSPECT)):
+            with self.subTest(lows=lows):
+                lib, _ = self.station([])
+                lib.h_link_low(LINK_CUPS, lows)
+                s, _ = self.second_window(lib)
+                self.assertEqual((s[0][2], s[1][2]), (quality, quality))   # the counter and the gust
+                self.assertEqual((s[2][2], s[3][2]), (GOOD, GOOD))         # the vane is not the cups
+                self.assertEqual(lib.h_meter_link(), verdict)
+
+    def test_suspect_becomes_fault_when_the_vane_moves(self):
+        # Wind, but no cup pulse: the link is open.
+        lib, _ = self.station([])
+        lib.h_link_low(LINK_CUPS, LINK_LOWS)
+        s, _ = self.second_window(lib, position=4)                 # north, then east in this window
+        self.assertEqual((s[0][2], s[1][2]), (FAULT, FAULT))
+        self.assertEqual(lib.h_meter_link(), CUPS_OPEN)
+        lib.h_edge(LINK_CUPS)                                      # a real pulse: the link works after all
+        self.assertEqual(lib.h_meter_link(), METER_OK)
+        lib.h_run(2_000)                                           # (a new run takes probes: 30 min at least)
+        lib.h_link_low(LINK_CUPS, LINK_LOWS)                       # a new run, the vane still: suspect again
+        lib.h_run(2_000)
+        self.assertEqual(lib.h_meter_link(), CUPS_SUSPECT)
+
+    def test_suspect_becomes_fault_after_24_hours(self):
+        lib, _ = self.station([])
+        lib.h_link_low(LINK_CUPS, LOWS_DAY)
+        s, _ = self.second_window(lib)
+        self.assertEqual((s[0][2], s[1][2]), (FAULT, FAULT))
+        self.assertEqual(lib.h_meter_link(), CUPS_OPEN)
+
+    def test_a_real_edge_since_the_last_probe_clears_the_verdict(self):
+        lib, _ = self.station([])
+        lib.h_link_low(LINK_CUPS, LOWS_DAY)
+        lib.h_edge(LINK_CUPS)
+        s, _ = self.second_window(lib, lambda i: 1)
+        self.assertEqual((s[0][2], s[1][2]), (GOOD, GOOD))
+        self.assertEqual(lib.h_meter_link(), METER_OK)
+
+    def test_the_probes_own_pulses_are_no_count(self):
+        lib, _ = self.station([])
+
+        def per_tick(i):
+            if i % 60:
+                return 0
+            lib.h_probe_pulses(1)                                  # a probe on an open link: LPTIM1 counted its edge
+            return 2                                               # and two real pulses
+
+        s, bins = self.second_window(lib, per_tick)
+        self.assertEqual(s[0][0], sum(bins))                       # only the real pulses
+
+    def test_a_vane_reading_outside_the_table_is_flagged(self):
+        # Between 21 880 and 33 000 ohm (2299 and 2502 mV at the bands' edges): no position.
+        lib, _ = self.station([])
+        lib.h_run(MINUTE)
+        self.latch(lib, self.PORT, 1)
+        for second in range(60):
+            lib.h_vane_mv(2_400 if second % 10 == 0 else wind_ref.vane_mv(2))
+            lib.h_run(1000)
+        s = self.slots(self.latch(lib, self.PORT, 2))
+        self.assertEqual((s[2][1], s[2][2], s[3][2]), (54, SUSPECT, SUSPECT))   # out of the sums, and suspect
+        self.assertEqual((s[0][2], s[1][2]), (GOOD, GOOD))
+        lib.h_vane_mv(2_400)
+        lib.h_run(1000)
+        self.assertEqual(lib.h_meter_link(), VANE_OUT)
+        lib.h_vane_mv(wind_ref.vane_mv(2))
+        lib.h_run(1000)
+        self.assertEqual(lib.h_meter_link(), METER_OK)
+
+    def test_every_position_is_inside_its_band(self):
+        for position in range(16):
+            with self.subTest(position=position):
+                lib, _ = self.station([])
+                lib.h_vane_mv(wind_ref.vane_mv(position))
+                lib.h_run(2_000)
+                self.assertEqual(lib.h_meter_link(), METER_OK)
 
 
 class Rain(Conformance, Harness):
@@ -737,6 +976,37 @@ class Rain(Conformance, Harness):
         self.tips(lib, [200] * 4)
         lib.h_run(MINUTE)
         self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0)[:2], (7, 1))
+
+    # The rain link (record M7): the reed is open at rest, so three low probes with no tip since is an
+    # open link between the jack-end pull-up and the MCU. mod_rain_link is the rain module's own
+    # verdict (this station's vane reads 0 mV, outside the table, so #status would show the wind's).
+    def test_three_lows_with_no_tip_are_a_fault(self):
+        for lows, quality, verdict in ((LINK_LOWS - 1, GOOD, METER_OK), (LINK_LOWS, FAULT, RAIN_OPEN)):
+            with self.subTest(lows=lows):
+                lib, _ = self.station([])
+                lib.h_link_low(LINK_RAIN, lows)
+                lib.h_run(MINUTE)
+                self.latch(lib, self.PORT, 1)
+                lib.h_run(MINUTE)
+                self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0)[2], quality)
+                self.assertEqual(lib.mod_rain_link(), verdict)
+
+    def test_a_tip_clears_the_fault(self):
+        lib, _ = self.station([])
+        lib.h_link_low(LINK_RAIN, LINK_LOWS)
+        lib.h_run(MINUTE)
+        self.latch(lib, self.PORT, 1)
+        self.tips(lib, [200])
+        lib.h_edge(LINK_RAIN)                                      # the board saw the tip's edge
+        lib.h_run(MINUTE)
+        self.assertEqual(self.slot(self.latch(lib, self.PORT, 2), 0)[::2], (1, GOOD))
+        self.assertEqual(lib.mod_rain_link(), METER_OK)
+
+    def test_a_gauge_switched_off_has_no_link_verdict(self):
+        lib, _ = self.station([])
+        lib.h_rain_enable(0)
+        lib.h_link_low(LINK_RAIN, LINK_LOWS)
+        self.assertEqual(lib.mod_rain_link(), METER_OK)
 
     def test_disabled_is_absent(self):
         lib, _ = self.station([])

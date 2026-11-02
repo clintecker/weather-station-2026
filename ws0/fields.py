@@ -1,7 +1,9 @@
-"""Observation plaintext: field catalog v1, encoder and decoder.
+"""Observation plaintext: field catalog v2, encoder and decoder.
 
-docs/protocol-design.md section 5. The C twin is firmware/common/ws_obs.{c,h};
-tests/test_obs.py checks that both produce and accept the same bytes.
+docs/protocol-design.md section 5 and docs/superpowers/specs/2026-10-29-power-telemetry-design.md
+section 5. The C twin is firmware/common/ws_obs.{c,h}; tests/test_obs.py checks that both produce
+and accept the same bytes. Bitmap bit 31 (EXT) is not a field: it announces a u16 extension bitmap
+after the header whose bit j is field 32 + j.
 """
 import math
 import struct
@@ -10,6 +12,10 @@ from decimal import ROUND_FLOOR, Decimal
 
 HEAD = struct.Struct('>IIIIBBI')       # epoch, sequence, UTC, uptime, flags, calibration, bitmap
 HEAD_LEN = HEAD.size                   # 22
+EXT_WORD = struct.Struct('>H')         # extension bitmap, present only when bit 31 (EXT) is set
+EXT, EXT_SHIFT, INDEX_LIMIT = 31, 32, 48   # EXT bit; extension bit j = field 32 + j; fields 0-47
+BASE_FIELDS = (1 << EXT) - 1           # fields 0-30: the wire bitmap's own bits
+CURRENT_OFFSET = 32768                 # currents: 1 mA, offset binary, -32768..+32766 mA
 ENERGY = ('surplus', 'normal', 'conserve', 'critical')   # the firmware's energy_t numbering
 WIND_DIR_CALM = 0xFFFE
 FLAG_UTC, ENERGY_SHIFT, ENERGY_MASK, FLAGS_RESERVED = 0x01, 1, 0x03, 0xF8   # flags: bit 0 UTC known, bits 1-2 energy
@@ -71,6 +77,7 @@ class Field:
 
 
 T, RH = dict(scale=100, offset=-TEMP_MIN_CENTI, unit='°C', ha_class='temperature'), dict(scale=100, unit='%', ha_class='humidity', clamp=True)
+MV, MA = dict(unit='mV', ha_class='voltage'), dict(offset=CURRENT_OFFSET, unit='mA', ha_class='current')
 FIELDS = (
     Field(0, 'temperature_c', 2, TEMP_CODE_TOP, **T),
     Field(1, 'humidity_pct', 2, RH_MAX_CENTI, **RH),
@@ -83,12 +90,17 @@ FIELDS = (
     Field(8, 'irradiance_wm2', 2, 2000, unit='W/m²', ha_class='irradiance'),
     Field(9, 'uva_raw', 3, 2**20 - 1),   # LTR390 counts (20 bit)
     Field(10, 'qualifiers', 4, 2**32 - 1),   # no INVALID
-    Field(11, 'batt_mv', 2, code_top(2), unit='mV', ha_class='voltage'),
-    Field(12, 'batt_current_ma', 2, code_top(2), scale=10, offset=32768, unit='mA', ha_class='current'),
+    # Battery: 11 is the cell terminal voltage; 12 the battery current, + into the cell (1 mA, offset
+    # binary); 13-16 battery-terminal energy and charge since boot, split by that sign (13 and 14 are
+    # INVALID in a minute where a step had no fresh battery voltage).
+    Field(11, 'batt_mv', 2, code_top(2), **MV),
+    Field(12, 'batt_current_ma', 2, code_top(2), **MA),
     Field(13, 'energy_in_mwh', 3, code_top(3), unit='mWh', ha_class='energy', counter=True),
     Field(14, 'energy_out_mwh', 3, code_top(3), unit='mWh', ha_class='energy', counter=True),
     Field(15, 'charge_in_mah', 3, code_top(3), unit='mAh', counter=True),
     Field(16, 'charge_out_mah', 3, code_top(3), unit='mAh', counter=True),
+    # Retired (version 6 builds do not send them; still decodable, never reused): the health report
+    # carries SOC and the charger status.
     Field(17, 'soc_gauge_pct', 1, 100, unit='%', ha_class='battery'),
     Field(18, 'charger_pins', 1, 3),
     Field(19, 'enclosure_temp_c', 2, TEMP_CODE_TOP, **T),
@@ -101,21 +113,39 @@ FIELDS = (
     Field(23, 'humidity_min_pct', 2, RH_MAX_CENTI, **RH),
     Field(24, 'humidity_max_pct', 2, RH_MAX_CENTI, **RH),
     Field(25, 'th_samples', 1, TH_SAMPLES_MAX, meta=True),
+    # Power rails (catalog v2). Voltages 1 mV; currents 1 mA offset binary, + into the load or station.
+    Field(26, 'load_mv', 2, code_top(2), **MV),
+    Field(27, 'load_current_ma', 2, code_top(2), **MA),
+    Field(28, 'charger_input_mv', 2, code_top(2), **MV),   # after the sources join: source not identified
+    Field(29, 'solar_mv', 2, code_top(2), **MV),
+    Field(30, 'solar_current_ma', 2, code_top(2), **MA),
+    # 31 is EXT, not a field. 32-47 travel in the extension bitmap; 34-47 are reserved.
+    Field(32, 'usb_mv', 2, code_top(2), **MV),
+    Field(33, 'usb_current_ma', 2, code_top(2), **MA),
 )
-DEFINED = (1 << len(FIELDS)) - 1
+DEFINED = sum(1 << f.index for f in FIELDS)
 BY_NAME = {f.name: f for f in FIELDS}
-if any(f.index != i for i, f in enumerate(FIELDS)):   # a check that survives python -O
-    raise ImportError('field catalog indexes must be 0, 1, 2, ... in order')
+BY_INDEX = {f.index: f for f in FIELDS}
+_indexes = [f.index for f in FIELDS]
+if (_indexes != sorted(set(_indexes)) or EXT in BY_INDEX           # checks that survive python -O
+        or not all(0 <= i < INDEX_LIMIT for i in _indexes)):
+    raise ImportError('field catalog indexes must increase strictly, skip 31 (EXT) and stay below 48')
 
 
-def fields_len(bitmap):
-    return sum(f.width for f in FIELDS if bitmap >> f.index & 1)
+def fields_len(mask):
+    """Bytes after the 22-byte header for logical field mask: the extension word when any field
+    32-47 is present, then the fields."""
+    return (EXT_WORD.size if mask >> EXT_SHIFT else 0) + sum(f.width for f in FIELDS if mask >> f.index & 1)
+
+
+def plain_len(mask):
+    return HEAD_LEN + fields_len(mask)
 
 
 def encode(epoch, seq, utc, uptime, energy, cal_rev, codes):
     """codes: {field index: code}. Raises ValueError for anything the decoder would reject."""
-    bitmap = sum(1 << i for i in codes)
-    if not codes or bitmap & ~DEFINED or not 0 <= energy < len(ENERGY):
+    mask = sum(1 << i for i in codes)
+    if not codes or any(i < 0 for i in codes) or mask & ~DEFINED or not 0 <= energy < len(ENERGY):
         raise ValueError('Invalid field set or energy state')
     body = b''
     for f in FIELDS:
@@ -124,7 +154,10 @@ def encode(epoch, seq, utc, uptime, energy, cal_rev, codes):
                 raise ValueError(f'{f.name}: code {codes[f.index]} out of range')
             body += codes[f.index].to_bytes(f.width, 'big')
     _check_wind(codes)
-    return HEAD.pack(epoch, seq, utc, uptime, (FLAG_UTC if utc else 0) | energy << ENERGY_SHIFT, cal_rev, bitmap) + body
+    ext = mask >> EXT_SHIFT
+    head = HEAD.pack(epoch, seq, utc, uptime, (FLAG_UTC if utc else 0) | energy << ENERGY_SHIFT, cal_rev,
+                     mask & BASE_FIELDS | (1 << EXT if ext else 0))
+    return head + (EXT_WORD.pack(ext) if ext else b'') + body
 
 
 def _check_wind(codes):
@@ -140,15 +173,16 @@ def decode(plain):
     if len(plain) < HEAD_LEN:
         raise ValueError('Observation too short')
     epoch, seq, utc, uptime, flags, cal_rev, bitmap = HEAD.unpack_from(plain)
-    if flags & FLAGS_RESERVED or bitmap & ~DEFINED or not bitmap:
+    mask = _mask(plain, bitmap)
+    if flags & FLAGS_RESERVED or mask & ~DEFINED or not mask:
         raise ValueError('Reserved flag or bitmap bits, or no fields')
     if bool(flags & FLAG_UTC) != (utc != 0):
         raise ValueError('Time-known flag does not match UTC')
-    if len(plain) != HEAD_LEN + fields_len(bitmap):
+    if len(plain) != plain_len(mask):
         raise ValueError('Observation length does not match its field bitmap')
-    codes, at = {}, HEAD_LEN
+    codes, at = {}, HEAD_LEN + (EXT_WORD.size if mask >> EXT_SHIFT else 0)
     for f in FIELDS:
-        if bitmap >> f.index & 1:
+        if mask >> f.index & 1:
             code = int.from_bytes(plain[at:at + f.width], 'big')
             if not f.code_ok(code):
                 raise ValueError(f'{f.name}: code {code} out of range')
@@ -159,8 +193,22 @@ def decode(plain):
                 calibration_revision=cal_rev, time_known=bool(flags & FLAG_UTC))
     return head, codes
 
+
+def _mask(plain, bitmap):
+    """The logical field mask of a header: bits 0-30, plus the extension bitmap when EXT is set (an
+    empty extension bitmap is not canonical)."""
+    if not bitmap >> EXT & 1:
+        return bitmap
+    if len(plain) < HEAD_LEN + EXT_WORD.size:
+        raise ValueError('Observation too short for its extension bitmap')
+    ext = EXT_WORD.unpack_from(plain, HEAD_LEN)[0]
+    if not ext:
+        raise ValueError('Extension bitmap announced but empty')
+    return bitmap & BASE_FIELDS | ext << EXT_SHIFT
+
+
 # The qualifiers field holds QUALIFIER_BITS for each of the first QUALIFIABLE_COUNT catalog fields (design 5.3).
-QUALIFIABLE = {f.name: f.index for f in FIELDS[:QUALIFIABLE_COUNT]}
+QUALIFIABLE = {BY_INDEX[i].name: i for i in range(QUALIFIABLE_COUNT)}
 QUALIFIER_MASK = 2**QUALIFIER_BITS - 1
 
 
@@ -168,9 +216,9 @@ def values(codes):
     """{field index: code} -> JSON-ready {name: value}. INVALID -> None; CALM -> None plus wind_calm."""
     out = {}
     for i, code in codes.items():
-        f = FIELDS[i]
+        f = BY_INDEX[i]
         if f.name == 'qualifiers':
-            out['qualifiers'] = {FIELDS[k].name: QUALIFIER[code >> QUALIFIER_BITS * k & QUALIFIER_MASK]
+            out['qualifiers'] = {BY_INDEX[k].name: QUALIFIER[code >> QUALIFIER_BITS * k & QUALIFIER_MASK]
                                  for k in QUALIFIABLE.values() if code >> QUALIFIER_BITS * k & QUALIFIER_MASK}
         elif f.name == 'wind_dir_deg':
             out['wind_calm'] = code == WIND_DIR_CALM
@@ -223,7 +271,8 @@ def dew_point(temperature_c, humidity_pct):
 # Power and enclosure fields describe the station, not the weather: HA diagnostic entities.
 DIAGNOSTIC_FIELDS = frozenset({'batt_mv','batt_current_ma','energy_in_mwh','energy_out_mwh','charge_in_mah',
                                'charge_out_mah','soc_gauge_pct','charger_pins','enclosure_temp_c',
-                               'enclosure_rh_pct','uva_raw','th_samples'})
+                               'enclosure_rh_pct','uva_raw','th_samples','load_mv','load_current_ma',
+                               'charger_input_mv','solar_mv','solar_current_ma','usb_mv','usb_current_ma'})
 
 
 # Display names: Home Assistant entities and dashboard charts (the HA unique_id stays the field name,
@@ -231,13 +280,16 @@ DIAGNOSTIC_FIELDS = frozenset({'batt_mv','batt_current_ma','energy_in_mwh','ener
 LABELS = {'temperature_c':'Temperature','humidity_pct':'Humidity','pressure_hpa':'Pressure',
           'wind_speed_ms':'Wind speed','wind_gust_ms':'Wind gust','wind_dir_deg':'Wind direction',
           'rain_tips':'Rain tips','uv_index':'UV index','irradiance_wm2':'Solar irradiance',
-          'uva_raw':'UVA raw (not UV index)','batt_mv':'Battery voltage','batt_current_ma':'Battery current',
+          'uva_raw':'UVA raw (not UV index)','batt_mv':'Battery voltage','batt_current_ma':'Battery current (+ charging)',
           'energy_in_mwh':'Energy in','energy_out_mwh':'Energy out','charge_in_mah':'Charge in',
           'charge_out_mah':'Charge out','soc_gauge_pct':'Battery (fuel gauge estimate)',
           'charger_pins':'Charger status pins','enclosure_temp_c':'Enclosure temperature',
           'enclosure_rh_pct':'Enclosure humidity','temperature_min_c':'Temperature minimum (minute)',
           'temperature_max_c':'Temperature maximum (minute)','humidity_min_pct':'Humidity minimum (minute)',
           'humidity_max_pct':'Humidity maximum (minute)','th_samples':'T/RH samples per minute',
+          'load_mv':'Load voltage','load_current_ma':'Load current',
+          'charger_input_mv':'Charger input voltage (source not identified)','solar_mv':'Solar input voltage',
+          'solar_current_ma':'Solar input current','usb_mv':'USB-C input voltage','usb_current_ma':'USB-C input current',
           'dew_point_c':'Dew point (derived)'}
 # Published with the weather but computed by the gateway, never sent by the node (fields.derived).
 DERIVED = {'dew_point_c': dict(unit='°C', ha_class='temperature', needs=('temperature_c','humidity_pct'),

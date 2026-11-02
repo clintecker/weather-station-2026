@@ -636,12 +636,12 @@ int store_next_counter(uint64_t *counter) {
 
 Pages 55–124 form a ring of `WS_JOURNAL_PAGES` pages. The host sweeps build the ring with 3 pages
 so that it wraps. Each page has an 8-byte header followed by fixed-size slots. In the default build
-(the WSMP bench field set, 61-byte plaintext) a 2048-byte page holds 25 slots of 80 bytes and leaves
-40 bytes unused:
+(the version 6 node field set, `WS_F_WSMP_BENCH`: a 77-byte plaintext at most) a 2048-byte page
+holds 21 slots of 96 bytes and leaves 24 bytes unused:
 
 ```mermaid
 flowchart LR
-    H["header, 8 B"] --> S0["slot 0, 80 B"] --> S1["slot 1, 80 B"] --> D["..."] --> S24["slot 24, 80 B"] --> U["unused, 40 B"]
+    H["header, 8 B"] --> S0["slot 0, 96 B"] --> S1["slot 1, 96 B"] --> D["..."] --> S20["slot 20, 96 B"] --> U["unused, 24 B"]
 ```
 
 The page header, most significant bit on the left:
@@ -668,17 +668,22 @@ config:
 ---
 packet-beta
 0-63: "position 0: plaintext bytes 0-7 (epoch, sequence)"
-64-447: "positions 1-6: plaintext bytes 8-55"
-448-511: "position 7: plaintext bytes 56-60, then zero padding"
-512-527: "COMMIT_POS 8: SLOT_MAGIC 0x4A53 (bits 63-48)"
-528-543: "COMMIT_POS 8: CRC-16 of the plaintext (bits 47-32)"
-544-575: "COMMIT_POS 8: zero (bits 31-0)"
-576-639: "ACK_POS 9: erased = pending, 0 = acknowledged"
+64-575: "positions 1-8: plaintext bytes 8-71"
+576-639: "position 9: plaintext bytes 72-76, then zero padding"
+640-655: "COMMIT_POS 10: SLOT_MAGIC 0x4A53 (bits 63-48)"
+656-671: "COMMIT_POS 10: CRC-16 of the plaintext (bits 47-32)"
+672-703: "COMMIT_POS 10: zero (bits 31-0)"
+704-767: "ACK_POS 11: erased = pending, 0 = acknowledged"
 ```
 
 The plaintext takes `JOURNAL_PLAIN_DW` double-words, zero-padded. The slot size follows the build's
-field set (`node_fields.h`). The widest catalog gives 78-byte plaintexts, 96-byte slots and 21 slots
-per page, and the host tests build that geometry too. The low byte of the header magic is the slot
+field set (`node_fields.h`): its widest record, `WS_OBS_PLAIN_MAX`, not the whole catalog. A shorter
+record of the same build sits zero-padded in the same slot. The board's ring keeps 24 hours of the
+build's widest record (the check below), which caps a node build at 80 bytes of plaintext (a 96-byte
+slot, 21 slots a page, 69 x 21 = 1,449 records; a 96-byte frame). Every catalog v2 field together
+is 94 bytes, a 112-byte slot and only 18 slots a page (1,242 records, 20.7 hours): the RX bridge and
+the gateway accept such a record, but no node build sends one. The host tests build that geometry
+too, with a shrunken ring. The low byte of the header magic is the slot
 size. So a page written with another slot size reads as "not a journal page". The low 32 bits of
 the header are the page sequence. Each newly opened page gets the next sequence. The head is the
 page with the highest sequence.
@@ -711,11 +716,11 @@ _Static_assert(WS_JOURNAL_FIRST + WS_JOURNAL_PAGES == WS_META_PAGE_A && WS_META_
                "journal, meta and config pages are distinct, in order, and end at the last page");
 _Static_assert(WS_JOURNAL_PAGES >= 2U, "the journal ring has at least two pages");
 #ifdef WS_JOURNAL_DEFAULT
-/* The board's ring keeps 24 h for a full station (every catalog field), whatever this build sends.
-   One page is always being recycled, so it does not count. */
-#define WIDEST_SLOT_BYTES ((((WS_OBS_PLAIN_ALL + WS_DW_BYTES - 1U) / WS_DW_BYTES) + 2U) * WS_DW_BYTES)
-_Static_assert((WS_JOURNAL_PAGES - 1U) * ((WS_PAGE_SIZE - JOURNAL_HDR_BYTES) / WIDEST_SLOT_BYTES) >= 24U * 60U,
-               "the journal keeps 24 hours of a full station's readings");
+/* The board's ring keeps 24 h of this build's widest record (WS_OBS_PLAIN_MAX, from WS_NODE_FIELDS).
+   One page is always being recycled, so it does not count. This is the per-build ceiling: a field
+   set above 80 B of plaintext (a 96 B frame) does not compile. */
+_Static_assert((WS_JOURNAL_PAGES - 1U) * JOURNAL_SLOTS_PER_PAGE >= 24U * 60U,
+               "the journal keeps 24 hours of the build's widest record");
 #endif
 _Static_assert(WS_JOURNAL_PAGES <= UINT16_MAX && JOURNAL_SLOTS_PER_PAGE <= UINT16_MAX, "jref_t page and slot are 16-bit");
 ```

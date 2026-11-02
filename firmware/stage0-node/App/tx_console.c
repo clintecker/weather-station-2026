@@ -2,9 +2,11 @@
 #include "tx_console.h"
 #include <string.h>
 #include "bench.h"
+#include "board_inputs.h"
 #include "busymon.h"
 #include "clock.h"
 #include "console.h"
+#include "i2c_bus.h"
 #include "node_store.h"
 #include "stackmon.h"
 #include "stage0.h"
@@ -16,6 +18,7 @@
 #include "tx_node.h"
 #include "tx_policy.h"
 #include "tx_time.h"
+#include "wsmp_local.h"
 #include "utilities_def.h"
 #include "watchdog.h"
 #include "ws_check.h"
@@ -37,8 +40,19 @@ static const char *u64_text(uint64_t v, char buf[U64_DIGITS + 1])
   return p;
 }
 
+/* meter_link= (build-progression record M7): the worst of the wind and rain link verdicts
+ * (board_inputs.h, worst last). Not link=, which is the radio link policy (probing or linked). */
+static const char *meter_link_text(void)
+{
+  static const char *const name[METER_LINK_COUNT] = { "ok", "cups-suspect", "vane-out-of-table", "cups-open", "rain-open" };
+  enum meter_link wind = mod_wind_link(), rain = mod_rain_link();
+  enum meter_link worst = rain > wind ? rain : wind;
+  return worst < METER_LINK_COUNT ? name[worst] : "ok";
+}
+
 /* Separate lines: one long line was once cut off at the old 256-byte print buffer (now 640) and
- * used to be cut off mid-field. #status keeps the fields provision-node and the gateway parse. */
+ * used to be cut off mid-field. #status keeps the fields provision-node and the gateway parse; a new
+ * field goes at the end. */
 static void status_line(void)
 {
   char ctr_buf[U64_DIGITS + 1], kcv[WS_HEX_PER_BYTE * WS_KCV_LEN + 1];
@@ -46,12 +60,13 @@ static void status_line(void)
   const tx_node_t *n = node_state();
   ws_hex_text(id->kcv, WS_KCV_LEN, kcv);
   APP_PRINTF("#status role=tx fw=%s reset=%s provisioned=%d station=%u kcv=%s kat=%s epoch=%u next_seq=%u "
-             "ctr=%s ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u\n",
+             "ctr=%s ecc=%u link=%s silent=%u energy=%s time=%s utc=%u uptime=%u meter_link=%s\n",
              WS_FW_VERSION, watchdog_reset_cause(), id->provisioned, (unsigned)id->station, kcv,
              n->kat_ok ? "pass" : "FAIL", (unsigned)n->boot_epoch, (unsigned)n->next_seq,
              u64_text(store_counter_next(), ctr_buf), (unsigned)store_ecc_faults(),
              policy_probing() ? "probing" : "linked", (unsigned)policy_silent_minutes(), ws_energy_name(energy_state()),
-             time_valid() ? "synchronized" : "unknown", (unsigned)time_utc(), (unsigned)node_uptime_s());
+             time_valid() ? "synchronized" : "unknown", (unsigned)time_utc(), (unsigned)node_uptime_s(),
+             meter_link_text());
 }
 
 static void counts_line(void)
@@ -59,13 +74,17 @@ static void counts_line(void)
   const tx_counts_t *c = exchange_counts();
   const tx_node_t *n = node_state();
   uint16_t site = ws_check_first();
+  /* tx_timeouts and i2c_recoveries are in the health report too; i2c_stuck (recoveries that ended with
+     SDA still low) and mux_resets (0 on the hub) only here (power telemetry design section 9.8). */
   APP_PRINTF("#counts pending=%u lost=%u burned=%u abandoned=%u sent=%u acked=%u no_ack=%u ack_rejects=%u "
-             "sensor_faults=%u held_lost=%u tx_fail_run=%u tx_air_run=%u stack_peak=%u check_fails=%u check_first=%u:%u\n",
+             "sensor_faults=%u held_lost=%u tx_fail_run=%u tx_air_run=%u stack_peak=%u check_fails=%u check_first=%u:%u "
+             "tx_timeouts=%u i2c_recoveries=%u i2c_stuck=%u mux_resets=%u\n",
              (unsigned)store_journal_pending(), (unsigned)store_journal_lost(),
              (unsigned)store_journal_burned(), (unsigned)store_abandoned_total(), (unsigned)c->sent, (unsigned)c->acked,
              (unsigned)c->no_ack, (unsigned)c->ack_rejects, (unsigned)n->sensor_faults, (unsigned)n->held_lost,
              (unsigned)n->journal_fails.n, (unsigned)c->air.n, (unsigned)stackmon_peak(), (unsigned)ws_check_count(),
-             ws_check_site_file(site), ws_check_site_line(site));
+             ws_check_site_file(site), ws_check_site_line(site), (unsigned)c->tx_timeouts,
+             (unsigned)i2c_bus_recoveries(), (unsigned)i2c_bus_stuck(), (unsigned)i2c_bus_mux_resets());
 }
 
 static void timing_line(void)
@@ -127,7 +146,84 @@ static void storm(void)
                  u64_text(store_counter_next(), ctr_buf), (unsigned)store_journal_burned()); }
   UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0);
 }
-BUSYMON_TASK(storm)
+
+/* TEST-SENSOR-POWER (bench only): the PA9 sensor switch test of the build-progression record's step 1
+ * exit criterion 9 (change C, section 4.6). SPOWER_CYCLES cycles of PA9 low for SPOWER_HALF_MS, then
+ * high for SPOWER_HALF_MS, one #test line per edge, then a summary. A one-shot timer paces the edges;
+ * the edges and the lines come from the main loop (lines are printed only there), on the storm's
+ * sequencer task. Sampling goes on: the switched sensors drop off and are found again, and the power
+ * monitors, on the unswitched QT branch, must read throughout. A half outlasts WSMP_SAMPLE_MS, so
+ * every part is addressed in every half (the INA228s each second, the sensors and the gauge every
+ * 15 s). recoveries and stuck count from the command (i2c_bus.h). ack and fail are the parts (bit c for
+ * enum i2c_client c, the record clients left out) that answered and that failed in the half that ended
+ * at the line (i2c_bus_outcomes); the first line's half is empty. PA9 ends high, also when the timer
+ * is refused. */
+#define SPOWER_CYCLES 10U
+#define SPOWER_EDGES (2U * SPOWER_CYCLES)   /* low, then high, in each cycle */
+#define SPOWER_HALF_MS (WSMP_SAMPLE_MS + 1000U)
+#define SPOWER_PARTS ((1U << I2C_C_REC_AIR) - 1U)   /* the parts' clients, SHT45 to MAX17048 */
+static UTIL_TIMER_Object_t spower_timer;
+static uint8_t spower_running, spower_edges;   /* a run is in progress; edges made so far */
+static volatile uint8_t spower_due;            /* the timer fired: the next edge, or the end */
+static uint16_t spower_rec0, spower_stuck0;   /* the bus counters at the command */
+
+static void on_spower(void *ctx) { (void)ctx; spower_due = 1; UTIL_SEQ_SetTask(1U << CFG_SEQ_Task_Storm, CFG_SEQ_Prio_0); }
+static unsigned spower_recoveries(void) { return (uint16_t)(i2c_bus_recoveries() - spower_rec0); }
+static unsigned spower_stuck(void) { return (uint16_t)(i2c_bus_stuck() - spower_stuck0); }
+/* The half that ends now: the parts that answered (*ack) and failed (*fail) in it. */
+static void spower_half(unsigned *ack, unsigned *fail)
+{
+  uint16_t a, f;
+  i2c_bus_outcomes(&a, &f);
+  *ack = a & SPOWER_PARTS;
+  *fail = f & SPOWER_PARTS;
+}
+
+static void spower_end(const char *how)
+{
+  unsigned ack, fail;
+  spower_half(&ack, &fail);
+  i2c_bus_power(1);
+  spower_running = 0;
+  APP_PRINTF("#test sensor-power %s cycles=%u pa9=1 recoveries=%u stuck=%u ack=0x%03x fail=0x%03x\n", how,
+             (unsigned)(spower_edges / 2U), spower_recoveries(), spower_stuck(), ack, fail);
+}
+
+/* Edge k (0-based): PA9 low on an even k, high on an odd k, in cycle k / 2 + 1. */
+static void spower_edge(void)
+{
+  unsigned high = spower_edges & 1U, ack, fail;
+  spower_half(&ack, &fail);
+  i2c_bus_power((int)high);
+  spower_edges++;
+  APP_PRINTF("#test sensor-power cycle=%u pa9=%u recoveries=%u stuck=%u ack=0x%03x fail=0x%03x\n",
+             (unsigned)((spower_edges + 1U) / 2U), high, spower_recoveries(), spower_stuck(), ack, fail);
+  /* Refused only if already running, which the one edge per expiry excludes: end with PA9 high. */
+  if (!WS_CHECK(UTIL_TIMER_Start(&spower_timer) == UTIL_TIMER_OK)) spower_end("aborted");
+}
+
+static void spower_step(void)
+{
+  if (!spower_due) return;
+  spower_due = 0;
+  if (!spower_running) return;
+  if (spower_edges < SPOWER_EDGES) spower_edge();
+  else spower_end("done");   /* the last high half has run its SPOWER_HALF_MS */
+}
+
+static void spower_start(void)
+{
+  if (spower_running) { APP_PRINTF("#error busy (sensor-power test in progress); retry\n"); return; }
+  spower_running = 1; spower_edges = 0; spower_due = 0;
+  spower_rec0 = i2c_bus_recoveries(); spower_stuck0 = i2c_bus_stuck();
+  { uint16_t a, f; i2c_bus_outcomes(&a, &f); }   /* the first half starts now: forget earlier outcomes */
+  spower_edge();
+}
+
+/* The storm's sequencer task serves both bench loads: utilities_def.h has no task of its own for the
+   sensor-power test. Each part returns at once when its load is idle. */
+static void bench_load(void) { spower_step(); storm(); }
+BUSYMON_TASK(bench_load)
 
 static void storm_start(void)
 {
@@ -163,9 +259,11 @@ static void provision(char *line)
 
 /* From CMD_STORM on, a command writes flash: never during a radio exchange or a pending reboot
    (flash is only written with the radio idle, docs/firmware-event-model.md); the operator retries. */
-enum { CMD_STATUS, CMD_KAT, CMD_MODULES, CMD_STORM, CMD_WIPE, CMD_PROVISION, CMD_RAIN_ON, CMD_RAIN_OFF, CMD_COUNT };
-static const char *const command[CMD_COUNT] = { "STATUS", "KAT", "MODULES", "TEST-FLASH-STORM", "WIPE ERASE-ALL-NODE-STATE",
-                                                "PROVISION ", "SENSOR rain on", "SENSOR rain off" };
+enum { CMD_STATUS, CMD_KAT, CMD_MODULES, CMD_SPOWER, CMD_STORM, CMD_WIPE, CMD_PROVISION, CMD_RAIN_ON, CMD_RAIN_OFF,
+       CMD_COUNT };
+static const char *const command[CMD_COUNT] = { "STATUS", "KAT", "MODULES", "TEST-SENSOR-POWER", "TEST-FLASH-STORM",
+                                                "WIPE ERASE-ALL-NODE-STATE", "PROVISION ", "SENSOR rain on",
+                                                "SENSOR rain off" };
 
 /* SENSOR rain on|off: the rain gauge cannot be detected, so the operator sets it (WSMP-P1). The node
    stores the setting and applies it at once; the station host admits the module after two probes. */
@@ -203,7 +301,7 @@ static int refused(int cmd, char *line)
   return 1;
 }
 
-/* The commands that only read (before CMD_STORM in the table). */
+/* The commands that write no flash (before CMD_STORM in the table). */
 static void read_command(int cmd)
 {
   switch (cmd)
@@ -211,6 +309,9 @@ static void read_command(int cmd)
     case CMD_STATUS: tx_status(); break;
     case CMD_KAT: APP_PRINTF("#kat %s\n", node_selftest() ? "pass" : "FAIL"); break;
     case CMD_MODULES: modules_line(); break;
+#ifndef WS_FIELD_BUILD   /* bench only: a field image never drops the sensor supply */
+    case CMD_SPOWER: spower_start(); break;
+#endif
     default: APP_PRINTF("#error unknown command\n"); break;
   }
 }
@@ -241,7 +342,8 @@ void console_line(char *line)
 
 void tx_console_init(void)
 {
-  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Storm, UTIL_SEQ_RFU, storm_timed);
+  UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Storm, UTIL_SEQ_RFU, bench_load_timed);
   (void)UTIL_TIMER_Create(&reboot_timer, REBOOT_DELAY_MS, UTIL_TIMER_ONESHOT, on_reboot, NULL);
+  (void)UTIL_TIMER_Create(&spower_timer, SPOWER_HALF_MS, UTIL_TIMER_ONESHOT, on_spower, NULL);
   console_init();
 }

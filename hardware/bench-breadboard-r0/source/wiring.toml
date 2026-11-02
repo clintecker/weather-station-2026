@@ -13,16 +13,39 @@
 # manufacturer page shows the order, and the build sheet asks for a check; "passive" means a
 # two-lead part that goes either way round.
 #
+# Step 1 v2 (build-progression record docs/superpowers/specs/2026-10-29-build-progression-decisions.md,
+# change A, section 4.4; schema D2): the pack, the 100 ohm load, the thermistor and the wall adapter are
+# off the breadboard, placed by `place_mm` (mm from board B's origin) with `terminals` only; the four
+# WAGO 222 lever connectors are [[joint]]s beside board B; every battery, charge and load current runs
+# on [[lead]]s between joints, sockets and screw terminals, never through a strip (record P1).
+#
+# Change C (record 4.6, R-11, S2, M6, PORT-9; bench-bb-r0.3): the hub's QT cable takes its V+ from the
+# PA9 sensor load switch (LSW, net 3V3_SW); a second QT cable (QTM) feeds the power monitors from the
+# unswitched 3V3, so recovery that cycles PA9 never drops them. The P1 chain lands on the unswitched node.
+#
 # Mode A (daily, the board on USB) is drawn: the BATTERY POWER shunt is open and the 100 ohm test
 # load is fitted (wiring guide section 5).
 
 version = 1
+revision = "bench-bb-r0.3"
 split_rails = false   # some 830-point boards break each rail at the centre: set true for those
 
-# The NUCLEO pins this map uses (UM2592; the guide's section 6 checklist still applies).
-# CN6.4 and CN7.16 are the same 3V3 net on the board; CN6.6 and CN6.7 are both GND.
+# The NUCLEO pins this map uses (UM2592 Rev 4 Tables 17 and 18; the guide's section 6 checklist still
+# applies). Each tie is one MCU pin or one supply on two header positions:
+#   CN6.4 = CN7.16 (3V3); CN6.6 = CN6.7 = CN10.20 (GND);
+#   CN9.7 = CN10.25 (PB10), CN9.6 = CN10.27 (PB8), CN8.2 = CN7.30 (PB2), CN9.5 = CN10.29 (PB5),
+#   CN8.4 = CN7.34 (PB4), CN8.1 = CN7.28 (PB1), CN8.3 = CN7.32 (PA10), CN8.5 = CN7.36 (PB14);
+#   CN5.2 = CN10.19 (PA9), CN5.9 = CN10.5 (PA11), CN5.10 = CN10.3 (PA12);
+#   the OLED's: CN10.11 = CN5.6 (PA5), CN10.15 = CN5.4 (PA7), CN10.17 = CN5.3 (PA4),
+#   CN10.21 = CN5.1 (PC2), CN10.23 = CN9.8 (PC1).
+# The planner lands a jumper only on a pin a net names, never on its alias (record N1, N3).
 [nucleo]
-ties = [["CN6.4", "CN7.16"], ["CN6.6", "CN6.7"]]
+ties = [["CN6.4", "CN7.16"], ["CN6.6", "CN6.7", "CN10.20"],
+        ["CN9.7", "CN10.25"], ["CN9.6", "CN10.27"], ["CN8.2", "CN7.30"], ["CN9.5", "CN10.29"],
+        ["CN8.4", "CN7.34"], ["CN8.1", "CN7.28"], ["CN8.3", "CN7.32"], ["CN8.5", "CN7.36"],
+        ["CN5.2", "CN10.19"], ["CN5.9", "CN10.5"], ["CN5.10", "CN10.3"],
+        ["CN10.11", "CN5.6"], ["CN10.15", "CN5.4"], ["CN10.17", "CN5.3"], ["CN10.21", "CN5.1"],
+        ["CN10.23", "CN9.8"]]
 
 # ---- board A: signals ----
 
@@ -36,7 +59,7 @@ body = [0.0, -9.0, 21.6, 20.6]
 pins = ["1", "2", "3", "4", "5", "6"]
 labels = ["-", "B", "R", "G", "Y", "-"]
 source = "https://github.com/sparkfun/RJ11_Breakout"
-note = "Inner conductors 3, 4: the cups. Outer 2, 5: the vane (SEN-15901). Check each with a meter"
+note = """Module preparation first (record H5, decided 2026-10-30, 7.1 Q6): the BOB-14021 comes as a panel of two boards; separate it into its two boards (one per meter cable: BOBW, BOBR), then solder one PRT-00132 jack and the 6-pin header onto each board, then do the per-conductor continuity check with the meter cable plugged in: wind 3/4 the cups, 2/5 the vane (SEN-15901). Inner conductors 3, 4: the cups. Outer 2, 5: the vane. The meter cable is never cut"""
 
 [[part]]
 id = "BOBR"
@@ -48,7 +71,7 @@ body = [0.0, -9.0, 21.6, 20.6]
 pins = ["1", "2", "3", "4", "5", "6"]
 labels = ["-", "B", "R", "G", "Y", "-"]
 source = "https://github.com/sparkfun/RJ11_Breakout"
-note = "Inner conductors 3, 4: the bucket switch (SEN-15901). Check with a meter"
+note = """Module preparation first (record H5, decided 2026-10-30, 7.1 Q6): the BOB-14021 comes as a panel of two boards; separate it into its two boards (one per meter cable: BOBW, BOBR), then solder one PRT-00132 jack and the 6-pin header onto each board, then do the per-conductor continuity check with the meter cable plugged in: rain 3/4 the bucket switch (SEN-15901). The meter cable is never cut"""
 
 [[part]]
 id = "QT"
@@ -59,80 +82,144 @@ step = 1
 pins = ["GND", "V+", "SDA", "SCL"]
 labels = ["black", "red", "blue", "yellow"]
 source = "https://learn.adafruit.com/introducing-adafruit-stemma-qt/technical-specs"
+note = "The sensors' branch (record 4.6 step 1): its V+ is the load switch's output (3V3_SW), so PA9 cycles the hub's sensors; GND, SDA and SCL stay shared with QTM"
 
+# Change C (record 4.6 step 2, R-11): the PA9 sensor load switch. The part is not chosen (record 4.1:
+# the PORT-5 part if chosen by then), so its pin order is a bench check and its body is an estimate
+# (about 18 x 15 mm), kept so that no jumper lands under it; re-measure it when the part is chosen.
+[[part]]
+id = "LSW"
+kind = "high-side load-switch breakout: 3.3 V, current-limited, active-high enable, headers fitted (part not chosen)"
+board = "A"
+origin = ["a", 34]
+step = 1
+body = [0.0, -6.35, 17.78, 15.24]   # an estimate (the part is not chosen): over the rails, like the breakouts
+pins = ["IN", "OUT", "GND", "EN"]
+source = "bench check"
+note = """Pin order IN, OUT, GND, EN from column 34 is the model's: check it against the breakout in hand (bench check) and move the model first if it differs. IN from the board-A 3V3 node (LK_3V3_CN6_4 lands on its strip), OUT to the hub cable's V+ strip (3V3_SW), GND to the board-A ground, EN by a solid jumper from CN5.2 (D9, PA9). Check its own enable pull holds it off at reset (record 4.6 step 2): with the NUCLEO in reset, 3V3_SW reads <= 0.5 V (the exit 9 limit). Step 2 carries it only if exit 9 passes (record S2)"""
+
+# The power monitors' branch (record 4.6 step 1, PORT-9): unswitched, always powered.
+[[part]]
+id = "QTM"
+kind = "STEMMA QT to male header cable (to the power monitors, unswitched)"
+board = "A"
+origin = ["a", 46]
+step = 1
+pins = ["GND", "V+", "SDA", "SCL"]
+labels = ["black", "red", "blue", "yellow"]
+source = "https://learn.adafruit.com/introducing-adafruit-stemma-qt/technical-specs"
+note = "The unswitched branch: its V+ from the board-A 3V3 node, to the battery INA228 (0x40), daisy-chained to the MAX17048 (0x36) (and later the step 1b INA228s). GND, SDA and SCL shared with the hub's cable"
+
+# The meter conditioning sits at the jack end (record M7): each pull-up and filter has a lead in its
+# BOB-14021 pin's own strip (checks.check_meter_at_jack), so no jumper sits between the jack pin and its
+# pull-up and the counter link probe tests every jumper from the jack end to the MCU. BOBW's pins are
+# a3-a8 (pin 3 GND at column 5, pin 4 the cups at 6, pin 5 the vane at 7), BOBR's a12-a17 (pin 3 GND at
+# 14, pin 4 the rain at 15). Each filter's other lead goes in the pin 3 (GND) strip beside it.
 [[part]]
 id = "R1"
 kind = "10 kOhm resistor, cups pull-up"
 board = "A"
-origin = ["g", 4]
-step = 4
+origin = ["c", 6]
+step = -4
 pins = ["1", "2"]
 source = "passive"   # a two-lead part: either way round
+note = "Jack end: R1.1 in BOBW pin 4's own strip (column 6), so no jumper sits between the jack pin and its pull-up (record M7); carried into the step 2 module board"
 
 [[part]]
-id = "C1"
+id = "C_CUPS"
 kind = "100 nF capacitor, cups filter"
 board = "A"
-origin = ["g", 11]
-step = 1
+origin = ["e", 6]
+step = -1
 pins = ["1", "2"]
 source = "passive"
+note = "Jack end: across BOBW pins 4 and 3, the cups pair, in their own strips (columns 6 and 5; record M7)"
 
 [[part]]
 id = "R2"
 kind = "10 kOhm resistor, rain pull-up"
 board = "A"
-origin = ["g", 15]
+origin = ["c", 15]
 step = 4
 pins = ["1", "2"]
 source = "passive"
+note = "Jack end: R2.1 in BOBR pin 4's own strip (column 15), so no jumper sits between the jack pin and its pull-up (record M7)"
 
 [[part]]
-id = "C2"
+id = "C_RAIN"
 kind = "100 nF capacitor, rain filter"
 board = "A"
-origin = ["g", 22]
-step = 1
+origin = ["e", 15]
+step = -1
 pins = ["1", "2"]
 source = "passive"
+note = "Jack end: across BOBR pins 4 and 3, the bucket pair, in their own strips (columns 15 and 14; record M7)"
 
 [[part]]
 id = "R3"
 kind = "10 kOhm resistor, vane pull-up"
 board = "A"
-origin = ["g", 26]
-step = 4
+origin = ["b", 7]
+step = -5
 pins = ["1", "2"]
 source = "passive"
+note = "Jack end: R3.1 in BOBW pin 5's own strip (column 7; record M7), R3.2 in R1.2's 3V3 strip (column 2)"
 
 # ---- board B: power ----
+# Step 1 v2, change A (record 4.4): only signals and microamp sense taps use board B's strips. The
+# charger keeps its 11-pin header in the breadboard for CHG, PGOOD, ISET, THERM and VBUS; its LIPO, OUT
+# and GND header pins are zero-current test points (P2). Current leaves the charger only through its
+# BATT and SYSOUT JST PH sockets, on #1131 pigtail halves into the WAGO joints (P3, P6); the INA228
+# takes the battery path on its X1 screw terminal (P3). The one tolerated current in a contact is the
+# regulator's supply chain, tagged "P1 regulator" member by member (P1).
 
 [[part]]
 id = "CHGR"
-kind = "Adafruit bq24074 charger #4755 (11-pin header)"
+kind = "Adafruit bq24074 charger #4755 (11-pin header; BATT and SYSOUT JST PH sockets; USB-C input)"
 board = "B"
 origin = ["a", 50]
 step = 1
 body = [0.0, -13.97, 38.1, 33.02]   # from the maker's model: 2.54 mm past the header toward row b
 pins = ["GND", "LIPO", "GND2", "OUT", "CHG", "PGOOD", "CE", "ISET", "THERM", "GND3", "VBUS"]
+# The sockets and the USB-C receptacle are terminals: BATT pin 1 GND, pin 2 VLIPO (= header LIPO);
+# SYSOUT pin 1 GND, pin 2 OUT (= header OUT) (record P2, from the Adafruit schematic).
+terminals = ["BATT1", "BATT2", "SYSOUT1", "SYSOUT2", "USBC"]
+internal = [["LIPO", "BATT2"], ["OUT", "SYSOUT2"], ["GND", "GND2", "GND3", "BATT1", "SYSOUT1"]]
+test_points = ["GND", "LIPO", "GND2", "OUT", "GND3"]
+# No part-level `domain`: wiring.forbidden_strips would then forbid its CHG and PGOOD strips too. Its GND
+# pins are power ground by their internal tie to BATT1 and L_BATT_NEG into STAR (record P4).
 source = "https://github.com/adafruit/Adafruit-BQ24074-PCB"
-note = "Labels upright, board over the rails: VBUS at column 60, GND at 50. CHG and PGOOD are open drain, active low. CE, ISET and THERM stay unconnected (board defaults)"
+# R_ISET (record 1.4): R9, 1 kOhm, behind the closed 1A jumper. checks.check_iset holds
+# POWER_R_ISET_OHM (power_config.h) and benchlink_log's R_ISET_OHM to it; build-sheet check 2 measures it,
+# and a different reading changes this value first, then the firmware.
+iset_ohms = 1000
+# The ISET gain fit (record M2, 4.4 step 11): unset until the fit, so check_iset holds the firmware to the
+# network's nominal R_IPD / (R_ISER + R_IPD) = 990099 ppm. The fit goes here first, as
+# `iset_gain_ppm = <ppm>` (the PB1 node over V_ISET, the whole gain), then into POWER_ISET_GAIN_PPM and
+# benchlink_log's ISET_GAIN, in one commit.
+# The strap facts are from that repository's Adafruit_BQ24074.sch (master, read 2026-10-29).
+note = """Labels upright, board over the rails: VBUS at column 60, GND at 50. The LIPO, OUT and GND header pins (columns 50-53 and 59) are zero-current test points, each alone in its strip (record P2): current leaves only through the BATT and SYSOUT sockets. CHG and PGOOD are open drain, active low. From the schematic (confirm on the board in hand): R_ISET is 1 kOhm (R9, behind the closed 1A jumper), so ICHG = 890 / 1000 = 0.89 A typ; measure it (check 2). TMR is tied to GND, so all safety timers are disabled (timers disabled: no RTMR, and a long 1 A charge cannot end in a timer fault). ITERM is 0.30 A typ (0.225-0.375 A; record P9). The CHG and PGOOD LED anodes (D3, D1, through R7, R11, 10 kOhm) are on OUT, not VBUS, so a released pin sits near OUT - Vf and the LEDs stay. CE has R8 (10 kOhm) to GND, charging enabled, leave it open. ISET goes to PB1 through the ISET network (R_ISER, C_ISET, R_IPD; record M2). The THERM jumper (closed) ties R10 (10 kOhm) to TS: cut it for the NTC. The input is the breakout's own USB-C from a floating wall adapter (ADAPTER); the USB-C (X2) reaches VBUS through a Schottky diode (D2, SK34A), so VBUS reads the source minus that drop. Only R4's sense tap uses the VBUS header pin"""
 
 # The INA228 and the gauge read their labels left to right as the columns fall (step -1): with the
 # board upright and over the rails, the first label sits on the higher column.
 [[part]]
 id = "INA"
-kind = "Adafruit INA228 #5832 (8-pin header; I2C on its STEMMA QT cable)"
+kind = "Adafruit INA228 #5832 (8-pin header; X1 screw terminal; I2C on its STEMMA QT cable)"
 board = "B"
 origin = ["a", 43]
 step = -1
 body = [0.0, -7.62, 25.4, 20.32]   # from the maker's model: 2.54 mm past the header toward row b
 pins = ["VCC", "GND", "SCL", "SDA", "VBUS", "VIN-", "VIN+", "ALERT"]
+# X1 pin 3 VIN+, pin 2 VBUS, pin 1 VIN- (record P3, P5): the screw terminal is in parallel with the
+# header's VIN+, VBUS and VIN- pins, which stay as zero-current test points.
+terminals = ["X1_VINP", "X1_VBUS", "X1_VINM"]
+internal = [["VIN+", "X1_VINP"], ["VIN-", "X1_VINM"], ["VBUS", "X1_VBUS"]]
+test_points = ["VIN+", "VIN-", "VBUS"]
 source = "https://github.com/adafruit/Adafruit-INA228-PCB"
-note = "Labels upright: VIN (VCC) at column 43, ALRT at 36. The shunt is between VIN+ and VIN-. Check the VBUS jumper on the back"
+note = """Labels upright: VIN (VCC) at column 43, ALRT at 36. The shunt (15 mOhm 1 % 2 W) is between VIN+ and VIN-: the battery path lands on the X1 screw terminal, 22 AWG solid only (record P7), never on the header's strips. VBUS comes over its own sense lead L_VBUS from X1 pin 2 to the OUT joint (record P5). SJ1, the back solder jumper from VBUS to VIN+, must be open: check it by continuity, X1.2 to X1.3 open (pre-run checklist row C1). The I2C pull-ups are one 10 kOhm resistor pack. The header GND and VCC stay unconnected: the INA228 takes power and ground over STEMMA QT (record P4)"""
 
 # The gauge's header carries no battery pin: VIN, SCL and SDA come on its STEMMA QT cable, and the
-# cell reaches it through one of its two JST PH sockets (GBAT). The header only holds it in place.
+# cell reaches it through one of its two JST PH sockets (BAT1). The header only holds it in place.
 [[part]]
 id = "GAUGE"
 kind = "Adafruit MAX17048 #5580 (6-pin header, held in place only; I2C on its STEMMA QT cable)"
@@ -141,18 +228,9 @@ origin = ["a", 30]
 step = -1
 body = [0.0, -7.62, 25.4, 20.32]   # from the maker's model: 2.54 mm past the header toward row b
 pins = ["VIN", "GND", "SCL", "SDA", "INT", "QSTART"]
+terminals = ["BAT1+", "BAT1-"]
 source = "https://learn.adafruit.com/adafruit-max17048-lipoly-liion-fuel-gauge-and-battery-monitor/pinouts"
-note = "Labels upright: VIN at column 30, QStart at 25. No wire goes to the header. The battery goes in through a JST PH socket (GBAT); leave the other socket empty"
-
-[[part]]
-id = "GBAT"
-kind = "JST PH 2-pin pigtail into one of the gauge's battery sockets"
-board = "B"
-origin = ["f", 31]
-step = 1
-pins = ["+", "-"]
-source = "bench check"
-note = "Pigtail colours vary: check + and - against the marks beside the gauge's socket"
+note = """Labels upright: VIN at column 30, QStart at 25. No wire goes to the header. The board-mating half of a cut #1131 in one JST PH socket (BAT1; the other socket empty): its red lead to CELL+ position 3, the cell side of the shunt (record P5); its black lead insulated, folded back. The gauge's ground comes over STEMMA QT (record P4)"""
 
 [[part]]
 id = "REG"
@@ -163,7 +241,7 @@ step = 1
 body = [0.0, -6.985, 11.43, 16.51]   # from the maker's model: 1.27 mm past the header
 pins = ["SHDN", "VIN", "GND", "VOUT"]
 source = "bench check"
-note = "Back labels, top to bottom: VOUT, GND (square pad), VIN, SHDN. Front up, over the rails: VOUT at column 17, SHDN at 14"
+note = "Back labels, top to bottom: VOUT, GND (square pad), VIN, SHDN. Front up, over the rails: VOUT at column 17, SHDN at 14. Fed from the OUT joint by L_REG_VIN; its GND strip takes the TIE (L_TIE) and the NUCLEO return (L_NUC_RET). It feeds CN6.4 through the SHUNT, L_REG_3V3 and the LSW.IN strip, the board-A 3V3 node where LK_3V3_CN6_4 starts (mode B only; record P1, N3)"
 
 [[part]]
 id = "SHUNT"
@@ -173,25 +251,142 @@ origin = ["a", 8]
 step = 1
 pins = ["1", "2"]
 source = "passive"
+exception = "P1 regulator"
+
+# The charger's input divider: VBUS through R4 + R5 (20 kOhm) over R6 (10 kOhm) to PA10, VIN = the pin x
+# (R4 + R5 + R6) / R6, 3 nominal (record M2: each resistor measured, the ratio stored). Each resistor's DMM
+# reading (record 4.4 step 12, before it is fitted) goes on its part here first, as `measured_ohms`, all
+# three together; check_divider then holds POWER_VIN_DIVIDER_PPM and benchlink's VIN_DIVIDER_PPM to the
+# measured ratio. R4 is the only part on the VBUS header
+# pin's strip; R6's bottom goes to the board-B ground rail by a jumper, so the a59 strip keeps GND3 alone.
+[[part]]
+id = "R4"
+kind = "10 kOhm 1 % resistor, charger input divider (top, from VBUS)"
+board = "B"
+origin = ["c", 60]
+step = 3
+pins = ["1", "2"]
+source = "passive"
+ohms = 10000
 
 [[part]]
-id = "CELL"
-kind = "Battery 6600 mAh #353 on a JST PH pigtail"
+id = "R5"
+kind = "10 kOhm 1 % resistor, charger input divider (top, in series with R4)"
 board = "B"
-origin = ["f", 39]
+origin = ["d", 63]
+step = -2
+pins = ["1", "2"]
+source = "passive"
+ohms = 10000
+
+[[part]]
+id = "R6"
+kind = "10 kOhm 1 % resistor, charger input divider (bottom, to the logic ground rail)"
+board = "B"
+origin = ["e", 61]
 step = 1
-pins = ["+", "-"]
+pins = ["1", "2"]
+source = "passive"
+ohms = 10000
+
+# The ISET network (record M2): 10 kOhm 1 % at the charger end, then the PB1 node with 100 nF and
+# 1 MOhm to logic ground. A part's pins sit on one row, so the model puts R_ISER on the f-j side of
+# the ISET column and a short jumper crosses the centre channel from the ISET strip (record 4.4 step 11
+# fits the resistor itself across the channel; either way R_ISER is the first part after the pin).
+[[part]]
+id = "R_ISER"
+kind = "10 kOhm 1 % resistor, ISET series (at the charger)"
+board = "B"
+origin = ["f", 57]
+step = 1
+pins = ["1", "2"]
+source = "passive"
+ohms = 10000
+
+[[part]]
+id = "C_ISET"
+kind = "100 nF capacitor, ISET node filter"
+board = "B"
+origin = ["g", 58]
+step = 1
+pins = ["1", "2"]
+source = "passive"
+
+[[part]]
+id = "R_IPD"
+kind = "1 MOhm resistor, ISET node pull-down"
+board = "B"
+origin = ["h", 58]
+step = 1
+pins = ["1", "2"]
+source = "passive"
+ohms = 1000000
+
+# ---- off board B (record 4.4 steps 2, 6-10): placed by place_mm, terminals only ----
+
+[[part]]
+id = "PACK"
+kind = "1S3P 6600 mAh, 3.0-4.2 V (3 x 2200 mAh, #353)"
+place_mm = [43.5, -62.0]
+terminals = ["+", "-"]
+domain = "power"
 source = "bench check"
-note = "JST PH pigtail colours vary: check + and - with a meter before plugging in"
+note = """1S3P 6600 mAh, 3.0-4.2 V (3.7 V nominal). On the plate beside board B, never in the charger's BATT socket while the INA228 meters the battery (record P3). Its own lead is never cut: it plugs into the #1131 pack-mating half, at most 60 mm, no solder; red to CELL+ position 1, black to STAR position 1. JST PH colours vary: check + and - with a meter before plugging in"""
 
 [[part]]
 id = "RLOAD"
 kind = "100 Ohm 1/2 W test load (mode A only)"
-board = "B"
-origin = ["f", 49]
-step = 4
-pins = ["1", "2"]
+place_mm = [10.5, -34.0]
+terminals = ["1", "2"]
 source = "passive"
+note = "Off the breadboard, between the OUT joint (position 2) and STAR (position 3) on its own leads (record P6). Removed for mode B"
+
+[[part]]
+id = "NTC"
+kind = "10 kOhm NTC thermistor #372 (B = 3950) on THERM, taped to the pack"
+place_mm = [60.0, -75.0]
+terminals = ["1", "2"]
+source = "passive"
+note = """Remove or cut the breakout's fixed 10 kOhm TS resistor first: cut the THERM solder jumper on its back (R10). In parallel TS never exceeds 10 kOhm (0.75 V at 75 uA), the cold trip (2.1 V) never fires and the hot trip moves to about 35 C. Tape the bead to the pack; extend its leads as needed (microamps). Its return goes to the board-B logic ground rail, not STAR, with the TS offset accepted (record D2: up to 40 mV during a 1 A charge, +0.4 C cold and +3.8 C hot). With B = 3950 charging stops below about +3.5 C and above about +47 C, not 0 and 50 C (spec D3)"""
+
+[[part]]
+id = "ADAPTER"
+kind = "USB-C wall adapter, 5 V >= 2 A, floating from the Mac"
+place_mm = [-5.0, -70.0]
+terminals = ["+"]
+source = "bench check"
+note = """The charger's only input in step 1 (record D2, P4): a floating wall adapter on the breakout's own USB-C, never the Mac or a hub that shares the NUCLEO ground. One cable carries the supply and its return into the receptacle; the return reaches the charger's own GND inside the breakout, so the model draws the + only and the adapter adds no ground tie"""
+
+# ---- the lever connectors (record P3, P4, P6; 4.4 step 6): beside board B, in a row ----
+
+[[joint]]
+id = "WAGO_CELL_POS"
+kind = "WAGO 222-415"
+positions = 5
+place_mm = [66.5, -28.0]
+note = "CELL+: 1 pack red, 2 L_CELL_INA, 3 gauge red, 4 reserved for step 1b (the battery INA VBUS lead), 5 spare"
+
+[[joint]]
+id = "WAGO_BATT"
+kind = "WAGO 222-413"
+positions = 3
+place_mm = [48.5, -28.0]
+note = "BATT: 1 L_INA_BATT, 2 board pigtail red (to the charger's BATT socket), 3 spare"
+
+[[joint]]
+id = "WAGO_SYS_OUT"
+kind = "WAGO 222-415"
+positions = 5
+place_mm = [30.5, -40.0]
+note = "OUT: 1 SYSOUT pigtail red, 2 the 100 ohm load, 3 L_VBUS (sense), 4 L_REG_VIN, 5 spare"
+
+[[joint]]
+id = "WAGO_STAR"
+kind = "WAGO 222-415"
+positions = 5
+place_mm = [20.5, -28.0]
+domain = "power"
+note = "STAR at pack negative (record P4): 1 pack black, 2 board pigtail black, 3 the load return, 4 the TIE (L_TIE), 5 spare, kept for step 1b exit (g)"
 
 # ---- board C: display ----
 
@@ -209,7 +404,7 @@ body = [-1.35, -26.0, 85.0, 58.0]
 pins = ["GND", "VCC", "NC3", "DC", "WR", "RD", "SCLK", "DIN", "D2", "D3", "D4", "D5", "D6", "D7", "CS", "RST",
         "NC17", "NC18", "NC19", "FG"]
 source = "https://learn.adafruit.com/2-7-monochrome-128x64-oled-display-module/pinouts"
-note = "SPI mode needs R19 and R21 fitted and R18 and R20 empty on the back. Pin 1 (GND) at column 22, pin 20 (frame ground) at 41. Only GND, VCC, DC, SCLK, DIN, CS and RST are wired; FG may stay open"
+note = "SPI mode needs R19 and R21 fitted and R18 and R20 empty on the back. Pin 1 (GND) at column 22, pin 20 (frame ground) at 41. Only GND, VCC, DC, SCLK, DIN, CS and RST are wired; FG may stay open. Bench only: its supply comes straight from the NUCLEO on its own pair (VCC from CN7.16, GND to CN10.20; record N3), never from a breadboard rail"
 
 # The kit's 220 uF capacitor, in the strips of the OLED's GND (column 22) and 3.3 V (column 23).
 [[part]]
@@ -223,99 +418,183 @@ source = "bench check"
 note = "Polarised: + (the longer lead) in column 23 with the OLED's 3.3 V, the striped - lead in column 22 with its GND"
 
 # ---- required jumpers ----
-# The guide feeds the regulator output, through the BATTERY POWER shunt, to the NUCLEO's 3V3 pin
-# CN7.16 (section 5). Left to the planner, this net could take a shorter path through board A.
+# Each link has a stable `id` (record D2): the build sheet's W-numbers change. The regulator's output
+# reaches the SHUNT on LK_REG_SHUNT; from the SHUNT's far strip L_REG_3V3 (a lead) carries it to the
+# board-A 3V3 node, which LK_3V3_CN6_4 joins to CN6.4, the step 2 shield's 3V3 pin (record P1, N3).
+# From r0.3 (change C) that node is the unswitched 3V3, never the hub's switched 3V3_SW (record 4.4):
+# L_REG_3V3 lands in the LSW.IN strip itself, where LK_3V3_CN6_4 starts, so the chain holds no planner
+# jumper and no rail run (D3 check 1, P1_ORDER); the A:L+ rail (the pull-ups, QTM.V+) hangs off that strip. The hub's ground comes straight from the NUCLEO (CN6.6), so the sensors' ground
+# does not return through the power board.
 
 [[link]]
-a = "SHUNT.2"
-b = "N:CN7.16"
+id = "LK_REG_SHUNT"
+a = "REG.VOUT"
+b = "SHUNT.1"
+exception = "P1 regulator"
 
-# The hub's power and ground come straight from the NUCLEO (section 2: CN6.4, CN6.6), so the
-# sensors' ground does not return through the power board's load path.
 [[link]]
-a = "QT.V+"
+id = "LK_3V3_CN6_4"
+a = "LSW.IN"
 b = "N:CN6.4"
+exception = "P1 regulator"
 
 [[link]]
+id = "LK_QT_GND_CN6_6"
 a = "QT.GND"
 b = "N:CN6.6"
 
 # ---- nets ----
-# `members` are PART.PIN, or N:<header>.<pin> for a NUCLEO pin. `rails` carry the net on a board.
-# `mcu` names the STM32WL pin (or 3V3, GND) of a net that reaches the NUCLEO: it is checked against
-# the wiring guide's section 2 table and against the firmware's pin constants.
+# `members` are PART.PIN (a hole pin or a terminal), N:<header>.<pin> for a NUCLEO pin, or J:<joint> for
+# a lever connector. `rails` carry the net on a board. `mcu` names the STM32WL pin (or 3V3, GND) of a
+# net that reaches the NUCLEO: it is checked against the wiring guide's section 2 table and against the
+# firmware's pin constants.
 
 [[net]]
 name = "3V3"
 mcu = "3V3"
 class = "power"
-members = ["N:CN6.4", "N:CN7.16", "QT.V+", "R1.2", "R2.2", "R3.2", "SHUNT.2", "OLED.VCC", "COLED.+"]
+members = ["N:CN6.4", "N:CN7.16", "LSW.IN", "QTM.V+", "R1.2", "R2.2", "R3.2", "SHUNT.2", "OLED.VCC", "COLED.+"]
 rails = ["A:L+"]
 
+# The hub's switched 3.3 V (change C, record 4.6): the load switch's output to the hub cable's V+.
+[[net]]
+name = "3V3_SW"
+class = "power"
+members = ["LSW.OUT", "QT.V+"]
+
+# The sensor power enable (record 4.2, 4.6): PA9 = D9, CN5.2, to the load switch's EN. Class i2c: it
+# is the sensor bus's own line (i2c_bus drives it), drawn in the bus's colour.
+[[net]]
+name = "SENS_EN"
+mcu = "PA9"
+class = "i2c"
+members = ["N:CN5.2", "LSW.EN"]
+
+# One ground net in two domains (record P4, D2). Power: the pack minus, the charger's BATT and SYSOUT
+# minus and its GND test points, the load return, STAR. Logic: the NUCLEO, the hub, the meter, the
+# regulator, the ISET and divider returns, the OLED and the NTC return. L_TIE is the only conductor
+# between them.
 [[net]]
 name = "GND"
 mcu = "GND"
 class = "ground"
-members = ["N:CN6.6", "N:CN6.7", "QT.GND", "BOBW.2", "BOBW.3", "BOBR.3", "C1.2", "C2.2",
-           "CHGR.GND", "INA.GND", "GBAT.-", "REG.GND", "CELL.-", "RLOAD.2", "OLED.GND", "COLED.-"]
+members = ["PACK.-", "CHGR.BATT1", "CHGR.SYSOUT1", "CHGR.GND", "CHGR.GND2", "CHGR.GND3", "RLOAD.2", "J:WAGO_STAR",
+           "N:CN6.6", "N:CN6.7", "N:CN10.20", "QT.GND", "QTM.GND", "LSW.GND", "BOBW.2", "BOBW.3", "BOBR.3", "C_CUPS.2", "C_RAIN.2", "R6.2",
+           "C_ISET.2", "R_IPD.2", "REG.GND", "OLED.GND", "COLED.-", "NTC.2"]
 rails = ["A:L-", "B:L-"]
+
+# The gauge's BAT1 minus: its own board ground, which reaches logic ground over its STEMMA QT cable (not
+# in this model). The pigtail's black lead is insulated (record P4), so nothing else joins it here.
+[[net]]
+name = "GAUGE_BAT_NEG"
+class = "ground"
+members = ["GAUGE.BAT1-"]
 
 [[net]]
 name = "I2C_SDA"
 mcu = "PA11"
 class = "i2c"
-members = ["N:CN5.9", "QT.SDA"]
+members = ["N:CN5.9", "QT.SDA", "QTM.SDA"]
 
 [[net]]
 name = "I2C_SCL"
 mcu = "PA12"
 class = "i2c"
-members = ["N:CN5.10", "QT.SCL"]
+members = ["N:CN5.10", "QT.SCL", "QTM.SCL"]
 
 [[net]]
 name = "CUPS"
-mcu = "PC0"
+mcu = "PB5"
 class = "wind"
-members = ["N:CN10.14", "BOBW.4", "R1.1", "C1.1"]
+members = ["N:CN9.5", "BOBW.4", "R1.1", "C_CUPS.1"]
 
 [[net]]
 name = "VANE"
 mcu = "PB2"
 class = "wind"
-members = ["N:CN7.30", "BOBW.5", "R3.1"]
+members = ["N:CN8.2", "BOBW.5", "R3.1"]
 
 [[net]]
 name = "RAIN"
-mcu = "PB5"
+mcu = "PB4"
 class = "rain"
-members = ["N:CN10.29", "BOBR.4", "R2.1", "C2.1"]
+members = ["N:CN8.4", "BOBR.4", "R2.1", "C_RAIN.1"]
 
 [[net]]
 name = "PGOOD"
 mcu = "PB8"
 class = "charger"
-members = ["N:CN10.27", "CHGR.PGOOD"]
+members = ["N:CN9.6", "CHGR.PGOOD"]
 
 [[net]]
 name = "CHG"
 mcu = "PB10"
 class = "charger"
-members = ["N:CN10.25", "CHGR.CHG"]
+members = ["N:CN9.7", "CHGR.CHG"]
 
+# The battery path (record P3): pack + -> CELL+ -> INA228 X1.3 (VIN+) -> shunt -> X1.1 (VIN-) -> BATT ->
+# the charger's BATT socket; pack - -> STAR -> the BATT socket's minus. CELL_POS is the cell side of the
+# shunt: the gauge senses it there (record P5).
 [[net]]
 name = "CELL_POS"
-class = "power"
-members = ["CELL.+", "INA.VIN+"]
+class = "battery lead"
+members = ["PACK.+", "J:WAGO_CELL_POS", "INA.X1_VINP", "INA.VIN+", "GAUGE.BAT1+"]
 
 [[net]]
 name = "BATT"
-class = "power"
-members = ["INA.VIN-", "CHGR.LIPO", "GBAT.+"]
+class = "battery lead"
+members = ["INA.X1_VINM", "INA.VIN-", "J:WAGO_BATT", "CHGR.BATT2", "CHGR.LIPO"]
 
+# OUT, the load node (record P6): the SYSOUT socket, the OUT joint, the load, the INA228's VBUS sense
+# (load_mv) and the regulator's input.
 [[net]]
 name = "SYS_OUT"
 class = "power"
-members = ["CHGR.OUT", "REG.VIN", "RLOAD.1"]
+members = ["CHGR.SYSOUT2", "CHGR.OUT", "J:WAGO_SYS_OUT", "RLOAD.1", "INA.X1_VBUS", "INA.VBUS", "REG.VIN"]
+
+# The charger's USB-C input, before its Schottky diode to VBUS.
+[[net]]
+name = "CHGR_IN"
+class = "power"
+members = ["ADAPTER.+", "CHGR.USBC"]
+
+[[net]]
+name = "CHGR_VBUS"
+class = "power"
+members = ["CHGR.VBUS", "R4.1"]
+
+[[net]]
+name = "VIN_DIV"
+class = "analog"
+members = ["R4.2", "R5.1"]
+
+# The charger input voltage: VBUS through the divider on PA10 (ADC1_IN6, A2). VIN = the pin x the stored
+# ratio (POWER_VIN_DIVIDER_PPM / 1e6; 3 nominal, the measured R4-R6 once read: record M2).
+[[net]]
+name = "VIN_SENSE"
+mcu = "PA10"
+class = "analog"
+members = ["R5.2", "R6.1", "N:CN8.3"]
+
+# The charge current (record M2): the charger's ISET pin, then 10 kOhm 1 % at the charger end, then the
+# PB1 node (ADC1_IN5, A0) with 100 nF and 1 MOhm to logic ground. I = 400 x V_ISET / R_ISET (SLUS810
+# 9.3.5.1), with the node's gain: 1 MOhm / 1.01 MOhm until the per-board fit, then the fit, stored as
+# CHGR's `iset_gain_ppm` (record M2).
+[[net]]
+name = "ISET_CHGR"
+class = "analog"
+members = ["CHGR.ISET", "R_ISER.1"]
+
+[[net]]
+name = "ISET"
+mcu = "PB1"
+class = "analog"
+members = ["N:CN8.1", "R_ISER.2", "C_ISET.1", "R_IPD.1"]
+
+[[net]]
+name = "THERM"
+class = "charger"
+members = ["CHGR.THERM", "NTC.1"]
 
 [[net]]
 name = "REG_OUT"
@@ -352,3 +631,256 @@ name = "OLED_RST"
 mcu = "PC1"
 class = "display"
 members = ["N:CN10.23", "OLED.RST"]
+
+# ---- leads ----
+# Off the breadboard, end to end (record D2, 4.4 steps 7-13): no strip carries their current.
+# `role` force (battery, charge or load current), sense (microamps), signal or supply (a logic supply
+# such as the bench OLED's); `kind` pigtail (a #1131 half, 26 AWG assumed: record P7), solid (22 AWG
+# hook-up wire or a part's own lead), cable or dupont; `gauge` in AWG; `length_mm` is the length to cut,
+# at least the drawn span (checks.check_lead_geometry). Record H7: pigtail halves at most 60 mm, solid
+# force links at most 50 mm, L_REG_VIN and L_TIE at most 100 mm; L_REG_3V3 and L_NUC_RET by routing,
+# bounded by checks C20 and C21. Stranded ends go into the WAGO 222s stripped and twisted (P7).
+
+# Battery path (P3) and the pack's minus (P4).
+[[lead]]
+id = "L_PACK_POS"
+a = "PACK.+"
+b = "J:WAGO_CELL_POS.1"
+role = "force"
+kind = "pigtail"
+gauge = 26
+length_mm = 60
+segment = "PATH_PACK_POS"
+note = "cable 1, pack-mating half, red: the pack's plug to CELL+ position 1"
+
+[[lead]]
+id = "L_PACK_NEG"
+a = "PACK.-"
+b = "J:WAGO_STAR.1"
+role = "force"
+kind = "pigtail"
+gauge = 26
+length_mm = 60
+domain = "power"
+segment = "PATH_PACK_NEG"
+note = "cable 1, pack-mating half, black: the pack's plug to STAR position 1"
+
+[[lead]]
+id = "L_CELL_INA"
+a = "J:WAGO_CELL_POS.2"
+b = "INA.X1_VINP"
+role = "force"
+kind = "solid"
+gauge = 22
+length_mm = 50
+segment = "PATH_POS"
+note = "CELL+ position 2 to the INA228 screw terminal X1.3 (VIN+)"
+
+[[lead]]
+id = "L_INA_BATT"
+a = "INA.X1_VINM"
+b = "J:WAGO_BATT.1"
+role = "force"
+kind = "solid"
+gauge = 22
+length_mm = 50
+segment = "PATH_POS"
+note = "the INA228 screw terminal X1.1 (VIN-) to BATT position 1"
+
+[[lead]]
+id = "L_BATT_POS"
+a = "J:WAGO_BATT.2"
+b = "CHGR.BATT2"
+role = "force"
+kind = "pigtail"
+gauge = 26
+length_mm = 60
+segment = "PATH_POS"
+note = "cable 1, board-mating half, red: BATT position 2 to the charger's BATT socket"
+
+[[lead]]
+id = "L_BATT_NEG"
+a = "CHGR.BATT1"
+b = "J:WAGO_STAR.2"
+role = "force"
+kind = "pigtail"
+gauge = 26
+length_mm = 60
+domain = "power"
+segment = "PATH_NEG"
+note = "cable 1, board-mating half, black: the charger's BATT socket to STAR position 2"
+
+# OUT and the load (P6).
+[[lead]]
+id = "L_SYSOUT_POS"
+a = "CHGR.SYSOUT2"
+b = "J:WAGO_SYS_OUT.1"
+role = "force"
+kind = "pigtail"
+gauge = 26
+length_mm = 60
+segment = "PATH_CELL_OUT"
+note = "cable 2, board-mating half, red: the charger's SYSOUT socket to OUT position 1"
+
+[[lead]]
+id = "L_SYSOUT_NEG"
+a = "CHGR.SYSOUT1"
+b = "insulated"
+insulated = true
+role = "force"
+kind = "pigtail"
+gauge = 26
+length_mm = 60
+note = "cable 2, board-mating half, black: insulated with heat-shrink, folded back (record P4)"
+
+[[lead]]
+id = "L_RLOAD_A"
+a = "J:WAGO_SYS_OUT.2"
+b = "RLOAD.1"
+role = "force"
+kind = "solid"
+gauge = 22
+length_mm = 30
+note = "the load's own lead into OUT position 2 (mode A only)"
+
+[[lead]]
+id = "L_RLOAD_B"
+a = "RLOAD.2"
+b = "J:WAGO_STAR.3"
+role = "force"
+kind = "solid"
+gauge = 22
+length_mm = 30
+domain = "power"
+note = "the load's other lead into STAR position 3 (mode A only)"
+
+# Sense leads (P5): microamps, never bundled along a force lead.
+[[lead]]
+id = "L_GAUGE_POS"
+a = "GAUGE.BAT1+"
+b = "J:WAGO_CELL_POS.3"
+role = "sense"
+kind = "pigtail"
+gauge = 26
+length_mm = 60
+note = "cable 3, board-mating half in the gauge's BAT1 socket, red: to CELL+ position 3"
+
+[[lead]]
+id = "L_GAUGE_NEG"
+a = "GAUGE.BAT1-"
+b = "insulated"
+insulated = true
+role = "sense"
+kind = "pigtail"
+gauge = 26
+length_mm = 60
+note = "cable 3, black: insulated with heat-shrink, folded back; the gauge's ground comes over STEMMA QT (record P4)"
+
+[[lead]]
+id = "L_VBUS"
+a = "INA.X1_VBUS"
+b = "J:WAGO_SYS_OUT.3"
+role = "sense"
+kind = "solid"
+gauge = 22
+length_mm = 60
+note = "the INA228 screw terminal X1.2 (VBUS) to OUT position 3, the sense colour: load_mv"
+
+# The regulator's supply chain (record P1): the one tolerated current in a contact, tagged member by member.
+[[lead]]
+id = "L_REG_VIN"
+a = "J:WAGO_SYS_OUT.4"
+b = "B:b15"
+role = "force"
+kind = "solid"
+gauge = 22
+length_mm = 100
+exception = "P1 regulator"
+note = "OUT position 4 into the regulator VIN strip (record P1, P6; H7 at most 100 mm)"
+
+[[lead]]
+id = "L_TIE"
+a = "J:WAGO_STAR.4"
+b = "B:b16"
+role = "force"
+kind = "solid"
+gauge = 22
+length_mm = 100
+exception = "P1 regulator"
+note = "the TIE: STAR position 4 into the regulator GND strip, the only conductor between STAR and logic ground (record P4; H7 at most 100 mm)"
+
+[[lead]]
+id = "L_NUC_RET"
+a = "N:CN6.7"
+b = "B:c16"
+role = "force"
+kind = "solid"
+gauge = 22
+length_mm = 200
+exception = "P1 regulator"
+note = "the NUCLEO's mode-B supply return: CN6.7 into the regulator GND strip, fitted in both modes (record N4); its length is set by routing, bounded by checks C20 and C21 (H7)"
+
+[[lead]]
+id = "L_REG_3V3"
+a = "B:c9"
+b = "A:c34"
+role = "force"
+kind = "solid"
+gauge = 22
+length_mm = 250
+exception = "P1 regulator"
+note = "the SHUNT.2 strip to the unswitched board-A 3V3 node, the LSW.IN strip (column 34) where LK_3V3_CN6_4 starts, never the A:L+ rail and never the hub's 3V3_SW: the chain to CN6.4 has no planner jumper (P1). The mode-B feed, dead in mode A with the shunt open (record P1, N3); its length is set by routing, bounded by checks C20 and C21 (H7)"
+
+# The bench OLED's own supply pair (record N3, R-3): straight to the NUCLEO, off every breadboard rail.
+[[lead]]
+id = "L_OLED_VCC"
+a = "N:CN7.16"
+b = "C:c23"
+role = "supply"
+kind = "dupont"
+gauge = 26
+length_mm = 300
+note = "female-to-male jumper from CN7.16 (3V3) into the OLED's 3V3 strip (column 23, with COLED +); unplugged in mode B"
+
+[[lead]]
+id = "L_OLED_GND"
+a = "N:CN10.20"
+b = "C:c22"
+role = "supply"
+kind = "dupont"
+gauge = 26
+length_mm = 300
+note = "female-to-male jumper from CN10.20 (GND) into the OLED's GND strip (column 22, with COLED -)"
+
+# The thermistor (record D2): off-board at the pack, on sense leads.
+[[lead]]
+id = "L_NTC_THERM"
+a = "NTC.1"
+b = "B:c58"
+role = "sense"
+kind = "solid"
+gauge = 22
+length_mm = 300
+note = "the NTC's lead, extended, into the charger's THERM strip"
+
+[[lead]]
+id = "L_NTC_RET"
+a = "NTC.2"
+b = "B:L-46"
+role = "sense"
+kind = "solid"
+gauge = 22
+length_mm = 300
+domain = "logic"
+note = "the NTC's other lead, extended, to the board-B logic ground rail, not STAR (STAR position 5 stays the step 1b spare)"
+
+# The charger's input (record D2, P4): the floating wall adapter's own cable into the breakout's USB-C.
+[[lead]]
+id = "L_USB_IN"
+a = "ADAPTER.+"
+b = "CHGR.USBC"
+role = "force"
+kind = "cable"
+gauge = 22
+length_mm = 1000
+note = "the wall adapter's USB-C cable into the charger's USB-C receptacle (to VBUS through D2)"

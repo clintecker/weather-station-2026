@@ -59,7 +59,7 @@ the red LED on, prints one line and stops the boot:
 ```mermaid
 flowchart TD
   A["stackmon_paint, busymon_init, leds_init, exchange_init"] --> B["register the sample task (sample_timed) and the module task (module_tick_timed), tx_console_init"]
-  B --> C["node.boot_s = clock_s(), policy_init, watchdog_start"]
+  B --> C["node.boot_s = clock_s(), policy_init, watchdog_start, fault_boot_note"]
   C --> D["node.kat_ok = selftest_kat(), print #boot, fault_report"]
   D --> E{"store_meta_init and store_journal_init succeed?"}
   E -- no --> E1["#error store-init"]
@@ -180,6 +180,8 @@ void SubghzApp_Init(void)
   node.boot_s = clock_s();
   policy_init();
   watchdog_start();
+  /* The boot counter (DR12), once a boot and before fault_report; a power-on restarts it. */
+  fault_boot_note(watchdog_reset_code() == WS_RESET_POWER);
   node.kat_ok = selftest_kat();
   APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
              watchdog_reset_cause(), node.kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, (unsigned)WS_LORA_BANDWIDTH, (unsigned)WS_LORA_SF, WS_TX_POWER_DBM);

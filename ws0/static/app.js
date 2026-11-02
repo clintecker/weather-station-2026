@@ -12,7 +12,10 @@
  * dirty part once, however many events arrived (a reconnect replay is one redraw, not N). The
  * 1 s tick rewrites age texts in place and rebuilds nothing unless a state flips with time.
  * Field names, labels and their order come from the gateway's catalog (/v1/history), not from
- * a table in this file.
+ * a table in this file. The exceptions are the power view's rail table (RAILS: which voltage and
+ * current fields form one rail, docs/superpowers/specs/2026-10-29-power-telemetry-design.md
+ * section 10.1) and the health-report keys it charts (section 6.1); which fields are station
+ * rather than weather values still comes from the gateway (observations.diagnostic).
  */
 'use strict';
 (() => {
@@ -26,12 +29,27 @@
   const MAX_EVENTS = 60;
   const HISTORY_TIMEOUT_MS = 30000;   // a history request that has not answered by then is abandoned
   const SLIDE_S = 60;                 // the following window slides (full redraw) this often
-  const GROUPS = ['sensors', 'link', 'node', 'rx'];   // chart groups, redrawn independently
+  const GROUPS = ['sensors', 'power', 'charger', 'link', 'node', 'rx'];   // chart groups, redrawn independently
+  // The power view: one entry per rail, voltage and current paired (design sections 3.2 and 10.1).
+  // A slot whose field no record in the range carries is "not measured in this build"; a present
+  // field with INVALID values is a sensor fault, drawn as on every other chart.
+  const RAILS = [
+    { name: 'Battery', v: 'batt_mv', i: 'batt_current_ma', signed: true },
+    { name: 'Load (system)', v: 'load_mv', i: 'load_current_ma' },
+    { name: 'Charger input (source not identified)', v: 'charger_input_mv' },
+    { name: 'Solar input', v: 'solar_mv', i: 'solar_current_ma' },
+    { name: 'USB-C input', v: 'usb_mv', i: 'usb_current_ma' },
+    { name: 'Battery energy and charge since boot', v: 'energy_in_mwh', i: 'energy_out_mwh', counters: ['charge_in_mah', 'charge_out_mah'] },
+  ];
+  const POWER_FIELDS = new Set(RAILS.flatMap((r) => [r.v, r.i, ...(r.counters || [])].filter(Boolean)));
+  const NOT_MEASURED = 'not measured in this build';
+  const SIGNED = { above: 'charging', below: 'discharging' };
 
   const S = {
     token: null, running: false, lastId: null, skew: 0, conn: 'off', status: null,
     frames: [], events: [], hist: null, range: { span: 86400 }, abort: null, epoch: 0,
     labels: {},       // field name -> display label, from the gateway catalog (history responses)
+    diagnostic: null, // Set of station (not weather) field names, from the gateway catalog; null until known
     histSeq: 0,       // request sequence: only the newest history request may land
     histLoadedAt: 0,  // Date.now() of the last history request (bucketed reloads are spaced from it)
     histPending: false, histError: null, histBackoff: 2000,
@@ -454,36 +472,44 @@
     }
   }
 
+  // Weather tiles and station/power tiles: the gateway's DIAGNOSTIC_FIELDS (observations.diagnostic
+  // of a history response) say which is which; until one has loaded, every tile is in the first box.
   function renderReadings() {
-    const box = $('readings');
-    clear(box);
+    const box = $('readings'), station = $('readings-station');
+    clear(box); clear(station);
+    $('readings-station-head').hidden = true;
     const latest = S.status && S.status.latest;
     const meta = $('reading-meta');
     if (!latest || !latest.observation) { meta.textContent = 'No observation stored yet.'; return; }
     const obs = latest.observation;
-    const units = latest.units || {};
     const at = latest.effective_sampled_at;
     const age = at === null ? null : now() - at;
     const stale = age === null || age >= STALE_S;
     for (const name of Object.keys(latest.fields_available || {})) {   // catalog order (gateway)
-      let value = obs[name];
-      let state = 'ok', flag = '';
-      if (name === 'wind_dir_deg' && obs.wind_calm) value = 'calm';
-      if (value === null) { state = 'fault'; flag = 'sensor fault'; }
-      else if (stale) { state = 'stale'; flag = 'stale'; }
-      const qual = obs.qualifiers && obs.qualifiers[name];
-      const sub = el('div', { class: 'sub' });
-      if (at === null) sub.textContent = '—'; else ageText(sub, at);
-      box.append(el('div', { class: 'tile', 'data-state': state },
-        el('div', { class: 'label', text: label(name) }),
-        el('div', { class: 'value' }, value === null ? '—' : fmtNum(value), units[name] && value !== null && value !== 'calm' ? el('span', { class: 'unit', text: units[name] }) : null),
-        sub,
-        flag ? el('div', { class: 'flag', text: flag }) : null,
-        qual ? el('div', { class: 'flag', text: qual.replace(/_/g, ' ') }) : null));
+      const isStation = !!S.diagnostic && S.diagnostic.has(name);
+      (isStation ? station : box).append(readingTile(name, obs, latest.units || {}, at, stale));
+      if (isStation) $('readings-station-head').hidden = false;
     }
     meta.textContent = `Sample ${fmtTime(at, true)} · epoch ${obs.session} · sequence ${obs.sequence} · ` +
       `time ${latest.time_basis}${latest.time_uncertainty_s ? ` (±${fmtNum(latest.time_uncertainty_s, 1)} s)` : ''} · ` +
       `quality ${obs.quality} · energy ${obs.energy_state} · received ${fmtTime(latest.received_at, true)}`;
+  }
+
+  function readingTile(name, obs, units, at, stale) {
+    let value = obs[name];
+    let state = 'ok', flag = '';
+    if (name === 'wind_dir_deg' && obs.wind_calm) value = 'calm';
+    if (value === null) { state = 'fault'; flag = 'sensor fault'; }   // present and INVALID
+    else if (stale) { state = 'stale'; flag = 'stale'; }
+    const qual = obs.qualifiers && obs.qualifiers[name];
+    const sub = el('div', { class: 'sub' });
+    if (at === null) sub.textContent = '—'; else ageText(sub, at);
+    return el('div', { class: 'tile', 'data-state': state },
+      el('div', { class: 'label', text: label(name) }),
+      el('div', { class: 'value' }, value === null ? '—' : fmtNum(value), units[name] && value !== null && value !== 'calm' ? el('span', { class: 'unit', text: units[name] }) : null),
+      sub,
+      flag ? el('div', { class: 'flag', text: flag }) : null,
+      qual ? el('div', { class: 'flag', text: qual.replace(/_/g, ' ') }) : null);
   }
 
   function kv(target, rows) {
@@ -515,8 +541,77 @@
       ['Rejected replies since boot', fmtNum(d.rejected_replies_since_boot)],
       ['Crashes since power-up', fmtNum(d.crashes_since_power_up), d.crashes_since_power_up > 0 ? 'warning' : null],
       ['ACK as heard by node', d.ack_rssi_dbm === null ? 'none yet' : `${d.ack_rssi_dbm} dBm, SNR ${d.ack_snr_db} dB`],
+      ...healthRows(d),
     ]);
   }
+  // Version 6 health-report keys (design section 6.1). A report from older firmware lacks them
+  // (undefined: '—'). A key the node sent as its none code is null; the report's fitted byte, as
+  // power_sensor_faults and power_not_measured, says why: a fitted source failed ('sensor fault') or
+  // this build has no source ('not measured in this build'). Without the lists: 'not measured'.
+  const isFault = (d, key) => (d.power_sensor_faults || []).includes(key);
+  function nullText(d, key) {
+    if (isFault(d, key)) return 'sensor fault';
+    if ((d.power_not_measured || []).includes(key)) return NOT_MEASURED;
+    return 'not measured';
+  }
+  function healthValue(d, key, unit, digits) {
+    const v = d[key];
+    if (v === undefined) return '—';
+    if (v === null) return nullText(d, key);
+    return `${fmtNum(v, digits)}${unit ? ` ${unit}` : ''}`;
+  }
+  // A health-table row: label, value, and 'warning' for a sensor fault.
+  const healthRow = (label, d, key, unit, digits) => [label, healthValue(d, key, unit, digits), isFault(d, key) ? 'warning' : null];
+  // A named health key (charger stage, active input) as text, for the node table and a state band:
+  // `older` when an older report lacks it, its name, or why it is null (the fitted byte: 'sensor fault'
+  // or 'not measured in this build'; a null without either list is 'not reported').
+  function stateText(d, key, names, older) {
+    const v = d[key];
+    if (v === undefined) return older;
+    if (v !== null) return names[v] || String(v);
+    return isFault(d, key) || (d.power_not_measured || []).includes(key) ? nullText(d, key) : 'not reported';
+  }
+  // no_input: the charger reports that neither input powers it (phase C at night; design section 6.3).
+  const INPUTS = { solar: 'solar', usb_c: 'USB-C', no_input: 'no input' };
+  const STAGES = { precharge: 'pre-charge', cc: 'constant current', cv: 'constant voltage', topoff: 'top-off',
+    terminated: 'terminated', not_charging: 'not charging' };
+  const inputText = (d) => stateText(d, 'charger_active_input', INPUTS, '—');
+  function chargerText(d) {
+    if (d.charger_input_power_ok === undefined) return '—';
+    if (d.charger_input_power_ok === null) return isFault(d, 'charger_input_power_ok') ? 'sensor fault' : 'not reported';
+    const parts = [d.charger_input_power_ok ? 'input power good' : 'no input power', d.charger_charging ? 'charging' : 'not charging'];
+    if (d.charger_fault) parts.push('fault');
+    if (d.charger_stage) parts.push(`stage ${STAGES[d.charger_stage] || d.charger_stage}`);
+    return parts.join(', ');
+  }
+  // last_crash_pc: null = no crash since power-up; 'ffffffff' (protocol.CRASH_PC_UNTRUSTED) = a crash whose
+  // stacked frame was not in RAM, so no PC was recorded (docs/protocol.md section 4, fault.c).
+  const CRASH_PC_UNTRUSTED = 'ffffffff';
+  function crashPcText(pc) {
+    if (pc === undefined) return '—';
+    if (pc === null) return 'none';
+    return pc === CRASH_PC_UNTRUSTED ? 'crash, frame not trusted (no PC)' : `0x${pc}`;
+  }
+  function healthRows(d) {
+    const count = (k) => [healthValue(d, k, '', 0), d[k] > 0 ? 'warning' : null];
+    return [
+      ['Last crash PC', crashPcText(d.last_crash_pc), d.last_crash_pc ? 'warning' : null],
+      ['Boots since power-up', healthValue(d, 'boots_since_power_up', '', 0)],
+      ['Radio TX timeouts since boot', ...count('tx_timeouts_since_boot')],
+      ['I2C bus recoveries since boot', ...count('i2c_recoveries_since_boot')],
+      healthRow('MCU supply (VDDA)', d, 'mcu_supply_mv', 'mV', 0),
+      healthRow('Power monitor die temperature', d, 'power_monitor_temp_c', '°C', 1),
+      healthRow('Battery state of charge (gauge)', d, 'battery_soc_pct', '%', 1),
+      healthRow('State of charge rate (+ charging)', d, 'battery_soc_rate_pct_h', '%/h', 1),
+      ['Charger status', chargerText(d), d.charger_fault ? 'critical' : isFault(d, 'charger_charging') ? 'warning' : null],
+      ['Charger active input', inputText(d)],
+      ['Charger-reported input', healthPair(d, 'charger_reported_input_mv', 'charger_reported_input_ma')],
+      ['Charger-reported battery', healthPair(d, 'charger_reported_battery_mv', 'charger_reported_battery_ma')],
+      healthRow('Charger die temperature', d, 'charger_temp_c', '°C', 1),
+      healthRow('Pack temperature', d, 'pack_temp_c', '°C', 1),
+    ];
+  }
+  const healthPair = (d, mv, ma) => (d[mv] === undefined && d[ma] === undefined ? '—' : `${healthValue(d, mv, 'mV', 0)} · ${healthValue(d, ma, 'mA', 0)}`);
 
   function renderRx() {
     const rx = S.status && S.status.receiver;
@@ -666,7 +761,7 @@
     o.quality.splice(at, 0, r.quality);
     o.session.splice(at, 0, r.session);
     for (const name of o.fields) o.values[name].splice(at, 0, name in r ? r[name] : null);
-    scheduleHistory('sensors');
+    scheduleHistory('sensors', 'power');
   }
   function addFrame(f) {
     if (S.frames.some((x) => x.id === f.id)) return;
@@ -712,7 +807,7 @@
     if (list.some((x) => x.epoch === d.epoch && x.uptime_s === d.uptime_s)) return;
     list.push(d);
     list.sort((a, b) => a.received_at - b.received_at);
-    scheduleHistory('link', 'node');
+    scheduleHistory('link', 'node', 'charger');
   }
   function addEvent(e) {
     if (S.events.some((x) => x.id === e.id)) return;
@@ -777,6 +872,10 @@
     for (const [add, args] of queued) toHistory(add, ...args);
     const labels = h.observations.labels || {};
     if (Object.keys(labels).some((n) => S.labels[n] !== labels[n])) { Object.assign(S.labels, labels); invalidate('live'); }
+    const diagnostic = h.observations.diagnostic;
+    if (diagnostic && (!S.diagnostic || diagnostic.length !== S.diagnostic.size || diagnostic.some((n) => !S.diagnostic.has(n)))) {
+      S.diagnostic = new Set(diagnostic); invalidate('live');   // the tiles move to their box
+    }
     clearTimeout(histTimer); histTimer = null; histDirty.clear();
     renderHistory();
   }
@@ -858,11 +957,12 @@
       if (e.kind === 'rx_boot') m.push({ t: e.at, label: 'RX boot', group: 'rx' });
       else if (e.kind === 'start') m.push({ t: e.at, label: 'gateway start', group: 'gateway' });
       else if (e.kind === 'serial-lost') m.push({ t: e.at, label: 'serial lost', group: 'rx' });
+      else if (e.kind === 'serial-reopen') m.push({ t: e.at, label: 'serial reopen', group: 'rx' });
       else if (e.kind === 'receiver-silent') m.push({ t: e.at, label: 'RX silent', group: 'rx' });
     }
     return m.sort((a, b) => a.t - b.t);
   }
-  const MARKER_GROUPS = { sensors: ['node', 'gateway'], link: ['node', 'rx'], node: ['node', 'gateway'], rx: ['rx', 'gateway'] };
+  const MARKER_GROUPS = { sensors: ['node', 'gateway'], power: ['node', 'gateway'], charger: ['node', 'gateway'], link: ['node', 'rx'], node: ['node', 'gateway'], rx: ['rx', 'gateway'] };
   let drawn = null;   // what is on screen: { from, to, width, markers: {group: key} }
 
   // Draw the chart groups in `only` (all of them when omitted). A group is redrawn anyway when
@@ -896,16 +996,22 @@
     if (following()) notes.push('following live');
     $('hist-note').textContent = notes.join(' · ');
 
-    const stepChart = (title, unit, t, v, gap, m) => chart({
+    const stepChart = (title, unit, t, v, gap, m, extra) => chart(Object.assign({
       title, unit, from, to, markers: m, integer: true, series: [{ name: title, cls: 'c1', t, v, gap, step: true }],
-    });
+    }, extra));
     const diag = h.diagnostics;
     const dt = diag.map((d) => d.received_at);
+    // One health-report value over time (version 6 keys: older reports lack them).
+    const diagChart = (title, unit, key, m, zero) => chart({
+      title, unit, from, to, markers: m, zero, empty: diagEmpty(diag, key),
+      series: [{ name: title, cls: 'c1', t: dt, v: diag.map((d) => d[key]), gap: 2000, dots: true }],
+    });
     const draw = {
       sensors(box) {
         if (!o.fields.length) box.append(el('p', { class: 'muted small', text: 'No observations with a known time in this range.' }));
         const gap = o.bucket_s ? o.bucket_s * 1.5 : 110;
         for (const name of o.fields) {
+          if (POWER_FIELDS.has(name)) continue;   // drawn in the power group
           const title = label(name);   // S.labels already holds this response's labels
           box.append(chart({
             title, unit: o.units[name], from, to, markers: markers.sensors,
@@ -953,8 +1059,13 @@
           ['Journal pending', 'journal_pending', 'records'], ['Journal lost (total)', 'journal_lost_total', 'records'],
           ['Missed ACKs since boot', 'missed_acks_since_boot', 'count'], ['Crashes since power-up', 'crashes_since_power_up', 'count'],
           ['Boot epoch', 'epoch', ''], ['Abandoned records (total)', 'abandoned_total', 'records'],
-        ]) box.append(stepChart(title, unit, dt, diag.map((d) => d[key]), 2000, m));
+          ['Boots since power-up', 'boots_since_power_up', 'count'], ['Radio TX timeouts since boot', 'tx_timeouts_since_boot', 'count'],
+          ['I2C bus recoveries since boot', 'i2c_recoveries_since_boot', 'count'], ['MCU supply (VDDA)', 'mcu_supply_mv', 'mV'],
+        ]) box.append(stepChart(title, unit, dt, diag.map((d) => d[key]), 2000, m, { empty: diagEmpty(diag, key) }));
+        box.append(diagChart('Power monitor die temperature', '°C', 'power_monitor_temp_c', m));
       },
+      power(box) { drawPower(box, { o, diag, from, to, m: markers.power }); },
+      charger(box) { drawCharger(box, { diag, dt, from, to, m: markers.charger, diagChart }); },
       rx(box) {
         const a = h.receiver;
         if (!a.t.length) { box.append(el('p', { class: 'muted small', text: 'No RX reports in this range (one a minute while the gateway serves a receiver).' })); return; }
@@ -967,12 +1078,85 @@
         ]) if (a[key]) box.append(stepChart(title, unit, a.t, a[key], gap, markers.rx));
       },
     };
-    const BOX = { sensors: 'c-sensors', link: 'c-link', node: 'c-node', rx: 'c-rx' };
+    const BOX = { sensors: 'c-sensors', power: 'c-power', charger: 'c-charger', link: 'c-link', node: 'c-node', rx: 'c-rx' };
     for (const g of groups) {
       const box = $(BOX[g]);
       clear(box);
       draw[g](box);
     }
+  }
+
+  // ---------------------------------------------------------------- power view
+  // What an empty health-report chart says: a key no report in the range carries comes from older
+  // firmware; a key every report sends as its none code is a sensor fault when the reports list it in
+  // power_sensor_faults (its source is fitted), and otherwise not measured by this build.
+  function diagEmpty(diag, key) {
+    if (!diag.length) return 'No health reports in this range';
+    if (diag.every((d) => d[key] === undefined)) return 'Not in these health reports (older firmware)';
+    if (!diag.every((d) => d[key] === null || d[key] === undefined)) return undefined;
+    if (diag.some((d) => isFault(d, key))) return 'Sensor fault (no value in these health reports)';
+    return 'Not measured in this build';
+  }
+  function absentSlot(title) {
+    return el('figure', { class: 'chart absent', 'data-absent': 'true' },
+      el('figcaption', {}, el('span', { class: 'ct', text: title })), el('p', { class: 'muted small', text: NOT_MEASURED }));
+  }
+  function railCharts(rail, a) {
+    const { o, from, to, m } = a;
+    const gap = o.bucket_s ? o.bucket_s * 1.5 : 110;
+    const slots = [rail.v, rail.i, ...(rail.counters || [])].filter(Boolean);
+    if (!slots.some((n) => o.fields.includes(n))) {   // the whole rail: one line, not empty charts
+      return el('p', { class: 'muted small absent-rail', text: `${rail.name}: ${NOT_MEASURED}` });
+    }
+    const div = el('div', { class: 'rail' }, el('h4', { text: rail.name }));
+    for (const name of slots) {
+      const title = label(name);
+      if (!o.fields.includes(name)) { div.append(absentSlot(title)); continue; }
+      div.append(chart({
+        title, unit: o.units[name], from, to, markers: m, zero: rail.signed && name === rail.i ? SIGNED : null,
+        series: [{ name: title, cls: 'c1', t: o.t, v: o.values[name], basis: o.basis, gap, faults: true }],
+      }));
+    }
+    return div;
+  }
+  // Charger status from the health reports' three booleans, as one state per report.
+  function chargerState(d) {
+    if (d.charger_input_power_ok === undefined) return 'not in report';
+    if (d.charger_input_power_ok === null) return isFault(d, 'charger_input_power_ok') ? 'sensor fault' : 'not reported';
+    if (d.charger_fault) return 'fault';
+    if (d.charger_charging) return 'charging';
+    return d.charger_input_power_ok ? 'input power, not charging' : 'no input power';
+  }
+  const CHARGER_CLASSES = { fault: 'st-critical', charging: 'st-s1', 'input power, not charging': 'st-s3', 'no input power': 'st-s2' };
+  // The stage and active-input bands (phase C fills them; phases A and B show 'not measured in this build').
+  const STAGE_CLASSES = { 'pre-charge': 'st-s2', 'constant current': 'st-s1', 'constant voltage': 'st-s3', 'top-off': 'st-good',
+    terminated: 'st-s4', 'sensor fault': 'st-warning' };
+  const INPUT_CLASSES = { solar: 'st-s3', 'USB-C': 'st-s1', 'no input': 'st-s2', 'sensor fault': 'st-warning' };
+  // Every-minute rails (observations): redrawn with the sensors.
+  function drawPower(box, a) {
+    if (!a.o.t.length) box.append(el('p', { class: 'muted small', text: 'No observations with a known time in this range.' }));
+    for (const rail of RAILS) box.append(railCharts(rail, a));
+  }
+  // Every-15-minute power values (health reports): redrawn with the node charts.
+  function drawCharger(box, a) {
+    const { diag, dt, from, to, m, diagChart } = a;
+    const soc = el('div', { class: 'rail' }, el('h4', { text: 'Battery state of charge (fuel gauge, health reports)' }));
+    soc.append(diagChart('State of charge', '%', 'battery_soc_pct', m), diagChart('State of charge rate', '%/h', 'battery_soc_rate_pct_h', m, SIGNED));
+    box.append(soc);
+    const chg = el('div', { class: 'rail' }, el('h4', { text: 'Charger (health reports)' }));
+    if (diag.length) {
+      chg.append(stateChart('Charger status', from, to, dt, diag.map(chargerState), CHARGER_CLASSES, m));
+      chg.append(stateChart('Charger stage', from, to, dt,
+        diag.map((d) => stateText(d, 'charger_stage', STAGES, 'not in report')), STAGE_CLASSES, m));
+      chg.append(stateChart('Charger active input', from, to, dt,
+        diag.map((d) => stateText(d, 'charger_active_input', INPUTS, 'not in report')), INPUT_CLASSES, m));
+    }
+    for (const [title, unit, key] of [
+      ['Charger-reported input voltage', 'mV', 'charger_reported_input_mv'], ['Charger-reported input current', 'mA', 'charger_reported_input_ma'],
+      ['Charger-reported battery voltage', 'mV', 'charger_reported_battery_mv'], ['Charger-reported charge current', 'mA', 'charger_reported_battery_ma'],
+      ['Charger die temperature', '°C', 'charger_temp_c'], ['Pack temperature', '°C', 'pack_temp_c'],
+    ]) chg.append(diagChart(title, unit, key, m));
+    box.append(chg);
   }
 
   // ---------------------------------------------------------------- charts (SVG, no library)
@@ -1036,7 +1220,9 @@
       if (s.skipZero && v === 0) continue;
       if (v < lo) lo = v; if (v > hi) hi = v;
     }
+    if (spec.zero && lo !== Infinity) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }   // the zero line is always in view
     const legend = series.length > 1 ? series.map((s) => [s.cls, s.name]) : [];
+    if (spec.zero) legend.push(['zero', `above 0: ${spec.zero.above} · below 0: ${spec.zero.below}`]);
     if (fault) legend.push(['fault', 'sensor fault', true]);
     if (reconstructed) legend.push(['c1 dash', 'dashed: reconstructed time']);
     const fig = frame(spec, legend);
@@ -1044,7 +1230,9 @@
     fig.append(svg);
     const plotBottom = H - M.b;
     if (lo === Infinity) {
-      svg.append(sv('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle', class: 'empty' }, spec.empty || 'No data in this range'));
+      // A present field whose every reading is INVALID is a sensor fault, not missing data.
+      const text = fault ? 'Sensor fault: no valid reading in this range' : spec.empty || 'No data in this range';
+      svg.append(sv('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle', class: 'empty' }, text));
       drawTimeAxis(svg, from, to, x, W, plotBottom, H - 6);
       return fig;
     }
@@ -1059,6 +1247,11 @@
     }
     drawTimeAxis(svg, from, to, x, W, plotBottom, H - 6);
     drawMarkers(svg, spec.markers || [], from, to, x, M.t - 4, plotBottom, true);
+    if (spec.zero) {
+      svg.append(sv('line', { x1: M.l, x2: W - M.r, y1: y(0), y2: y(0), class: 'zeroline' }));
+      svg.append(sv('text', { x: W - M.r - 2, y: y(0) - 4, 'text-anchor': 'end', class: 'zero-label' }, spec.zero.above));
+      svg.append(sv('text', { x: W - M.r - 2, y: y(0) + 11, 'text-anchor': 'end', class: 'zero-label' }, spec.zero.below));
+    }
 
     for (const s of series) {
       if (s.faults) {

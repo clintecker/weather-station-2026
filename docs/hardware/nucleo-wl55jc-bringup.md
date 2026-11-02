@@ -6,7 +6,7 @@ Two new NUCLEO-WL55JC1 boards came straight from ST, with default jumpers and fa
 
 ## Summary
 
-- **State on 2026-10-13: the boards ran the bench prototype firmware, release `9e3d38f08e8b`.** Board A is the TX (transmitter), board B is the RX (receiver). This log stops on 2026-10-14. [`firmware/stage0-node/RELEASES.md`](../../firmware/stage0-node/RELEASES.md) records what each board runs now. On 2026-10-19 that was `04fcc656938d` on TX and `cc2766a38c61` on RX.
+- **State on 2026-10-13: the boards ran the bench prototype firmware, release `9e3d38f08e8b`.** Board A is the TX (transmitter), board B is the RX (receiver). This log stops on 2026-10-14, apart from the [power wiring entry of 2026-10-28/29](#power-wiring-on-the-bench-2026-10-2829). [`firmware/stage0-node/RELEASES.md`](../../firmware/stage0-node/RELEASES.md) records what each board runs now. On 2026-10-19 that was `04fcc656938d` on TX and `cc2766a38c61` on RX.
 - During the office range walk, the boards ran the bench tool `firmware/rangetest` instead. See [Office session](#office-session-2026-10-13).
 - PingPong was the first smoke test (2026-10-12, 915.0 MHz, LoRa SF7 / 500 kHz, 0 dBm). At about 30 cm it gave an RSSI of about −27 dBm and an SNR of 12 dB. See [PingPong link test](#pingpong-link-test).
 - `docs/hardware/factory-firmware/` holds the factory firmware backups. The two boards' images are byte-identical.
@@ -457,3 +457,50 @@ flowchart LR
   - The epoch stayed 35, so there was no reboot.
   - seq 15 was valid again (29.13 °C, probably warmed by handling).
   - TX: `sensor_faults=11`, `pending=0`, `lost=0`. No sequence gaps, also across a gateway restart at 18:12Z (dashboard deployed).
+
+## Power wiring on the bench (2026-10-28/29)
+
+On 2026-10-28/29 the TX board ran the bench link (`firmware/benchlink`) with the charger's analog and
+status lines wired to it. The wiring and its limits are in
+[`firmware/benchlink/README.md`](../../firmware/benchlink/README.md), sections "Wiring" and "What it
+measures" ("Known limits"). On 2026-10-29 that wiring became the official phase A power design
+([`docs/superpowers/specs/2026-10-29-power-telemetry-design.md`](../superpowers/specs/2026-10-29-power-telemetry-design.md)
+sections 1 and 2; [`bench-station-wiring.md`](bench-station-wiring.md) section 4;
+[`power-metering.md`](power-metering.md)). The run logs belong to Clint and are not copied here.
+
+### Verified
+
+This table is the dated history of the 2026-10-28 wiring. Three rows are superseded (build-progression
+decision record, 2026-10-29): ISET now reaches PB1 through the M2 network (10 kΩ series, 100 nF and
+1 MΩ to logic ground, gain 990099 ppm), not a direct wire; the PA10 divider ratio is measured and stored
+as `POWER_VIN_DIVIDER_PPM` (M2), not taken as 3; and the INA228 VBUS is a sense lead on the OUT
+connector (P5), not a breadboard jumper. The gauge now reads the CELL+ node (M4).
+
+| Item | Result | Reference |
+|---|---|---|
+| ISET on PB1 | the charger's ISET pin, direct, on A0 = CN8.1 (ADC1_IN5), read by the bench link | UM2592 Rev 4 Table 17; benchlink README "Wiring" |
+| Charger input on PA10 | the charger's VBUS through 20 kΩ (two 10 kΩ in series) over 10 kΩ, on A2 = CN8.3 (ADC1_IN6); the bench link multiplies the pin by 3 | UM2592 Rev 4 Table 17; benchlink README "Wiring" |
+| PB8 and PB10 pin type | FT_f (5 V tolerant, Fm+), checked 2026-10-28; with the internal pull-up on, a pin must stay below min(VDD, VDDA) + 0.3 V | DS13293 Rev 5 Table 20, Table 26 note 3 |
+| CHG and PGOOD levels | released, with the firmware's pull-ups on and the charger on USB: at most 2.9 V, below the pull-up limit. Their LEDs pull them up from OUT | benchlink README "Wiring" |
+| Battery path resistance | a battery lead through the breadboard, about 0.2 Ω, made the charger end 1 A charges early. The cell then went into the charger's own LIPO socket as a workaround | benchlink README "Known limits" |
+| Gauge sense point | the MAX17048 must sense the cell itself (its pigtail on the charger's LIPO terminal), not OUT | benchlink README "Wiring" |
+| INA228 VBUS | jumpered to the charger's OUT: its bus voltage is OUT, the load voltage. The jumper must go to the intended net | benchlink README "Wiring" |
+
+The lessons are now rules of the official wiring: the battery path is change A's lead-and-joint path
+off the breadboard (build-progression record P3, 4.4; 7.1 P3, "change A as written"): the pack through
+the cut #1131 pigtail into the WAGO 222 CELL+ joint, 22 AWG solid leads to the INA228's X1 screw
+terminal and on to the BATT joint, then the board-mating pigtail half into the charger's BATT socket,
+with no solder and no breadboard contact. Its pigtail halves, solid leads and lever joints are held to
+record P8's span limits (+ span at most 75 mΩ, − span at most 40 mΩ, each pack-side span at most
+28 mΩ; build-sheet power check 7, pre-run checks C12–C14); the gauge reads the CELL+ node on its own sense lead (record M4: it includes the pack-lead drop); the
+INA228's VBUS lead goes to OUT with its back jumper open (wiring guide section 4).
+
+### Not verified
+
+| Item | Why | Closed by |
+|---|---|---|
+| The shunt in the battery path at 1 A | the cell sat in the charger's LIPO socket, so the INA228's shunt carried no current: its shunt current and the charge counters of those runs mean nothing | spec section 2, exit criteria 3 and 4; build-sheet power checks 3, 7, 9 and 10 |
+| The safety timer | whether an early end was a termination or a timer fault was not established. The #4755 schematic ties TMR to GND (timers disabled); not yet confirmed on the board in hand | wiring guide section 4.3; build-sheet power check 10 |
+| The board's 3V3 in modes A and B | not measured. UM2592 Table 9 allows 3 to 3.6 V on CN6.4 or CN7.16 | a meter on CN6.4 in each mode (wiring guide section 5) |
+| R_ISET and the shunt value | the 1 kΩ and 15 mΩ in the firmware are nominal. *Dated note (2026-10-30):* R_ISET is R9 = 1 kΩ behind the #4755's closed 1A jumper (build-progression record 1.4; ICHG 0.89 A typ): `POWER_R_ISET_OHM 1000U` in `firmware/stage0-node/App/power_config.h` and `R_ISET_OHM = 1000.0` in `tools/benchlink_log.py`, adopted with change A as this workflow reads record 7.1 P3; Clint to confirm (power-telemetry design D4/D5). The runs above were logged with 890 Ω, so their ISET currents read 12 % high | build-sheet power checks 2 and 3 |
+| The node firmware reading the power chain | the bench ran the bench link, not the node; the node releases up to master `c7e8860` read neither ISET nor the divider, and none read the shunt with the official sign | spec section 12.2, the acceptance drill |

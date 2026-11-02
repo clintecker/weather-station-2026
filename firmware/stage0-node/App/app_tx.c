@@ -317,6 +317,8 @@ void SubghzApp_Init(void)
   node.boot_s = clock_s();
   policy_init();
   watchdog_start();
+  /* The boot counter (DR12), once a boot and before fault_report; a power-on restarts it. */
+  fault_boot_note(watchdog_reset_code() == WS_RESET_POWER);
   node.kat_ok = selftest_kat();
   APP_PRINTF("#boot role=tx fw=%s reset=%s kat=%s freq=%u bw=%u sf=%u power=%d\n", WS_FW_VERSION,
              watchdog_reset_cause(), node.kat_ok ? "pass" : "FAIL", (unsigned)WS_RF_FREQUENCY_HZ, (unsigned)WS_LORA_BANDWIDTH, (unsigned)WS_LORA_SF, WS_TX_POWER_DBM);

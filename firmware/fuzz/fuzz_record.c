@@ -4,7 +4,9 @@
  * checks are reached); bytes 1-128 are the record (padded with zero); the next 8 bytes give the
  * verdict's probe: probed type, port, sensor-serial flag and value, and one holder on another port.
  * Properties, checked against an independent reading of
- * docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md sections 6.7 and 6.9:
+ * docs/superpowers/specs/2026-10-21-sensor-module-ports-design.md sections 6.7 and 6.9, with the
+ * module types of registry version 2 (types 8 and 9, power telemetry design
+ * docs/superpowers/specs/2026-10-29-power-telemetry-design.md sections 8.1 and 8.4):
  *  - wsmp_record_parse returns exactly the status of the spec's ordered checks 2-6;
  *  - wsmp_cal_check accepts exactly the entries the frozen table allows (check 7: a table quantity, a
  *    (quantity, kind) that is a channel of the type or kind 0 over one, revision not 0, within bounds);
@@ -25,17 +27,23 @@
 #define SPEC_CAL_AT 64U
 #define SPEC_ENTRY 16U
 #define SPEC_ENTRIES 3U
-#define SPEC_TYPES 7U
+#define SPEC_TYPES 9U   /* registry version 2: types 1-9 */
+/* The station's ports 1-8 (P_AIR_TH 1 ... P_RAILS 8, P_COUNT 9; design section 8.4): the probe and the
+   holder land on every one of them, the power rails port included. */
+#define SPEC_PORTS 8U
 #define SPEC_WSMP_KIND_MAX 10U
 #define SPEC_PART_AT 32U
 #define SPEC_PART 16U
 enum { S_APPLIED, S_READ, S_BLANK, S_NO_MAGIC, S_VERSION, S_MALFORMED, S_CRC, S_CAL_REJECTED, S_SENSOR_CHANGED };
 
-/* WSMP section 4.4 again: each module type's channels as quantity and kind pairs (0, 0 ends a list). */
+/* WSMP section 4.4 again: each module type's channels as quantity and kind pairs (0, 0 ends a list).
+ * Type 8 (battery) and type 9 (power rails) from design section 8.1. */
 static const uint8_t spec_channels[SPEC_TYPES][8][2] = {
   { { 1, 2 }, { 2, 2 } }, { { 3, 2 } }, { { 8, 2 } }, { { 1, 2 }, { 2, 2 } },
   { { 9, 2 }, { 11, 6 }, { 12, 6 }, { 13, 6 }, { 14, 6 }, { 15, 1 }, { 16, 10 } },
-  { { 17, 6 }, { 5, 7 }, { 6, 8 }, { 6, 9 } }, { { 7, 6 } } };
+  { { 17, 6 }, { 5, 7 }, { 6, 8 }, { 6, 9 } }, { { 7, 6 } },
+  { { 9, 2 }, { 10, 2 }, { 11, 6 }, { 12, 6 }, { 13, 6 }, { 14, 6 } },
+  { { 18, 2 }, { 19, 2 }, { 20, 2 }, { 21, 2 }, { 22, 2 }, { 23, 2 }, { 24, 2 } } };
 /* Section 6.9, check 6: the one module type whose part has a serial to bind (kind 1), the SHT4x. */
 #define SPEC_SERIAL_TYPE 1U
 /* Section 6.9's table: quantity, offset bound, gain min, gain max. */
@@ -153,10 +161,10 @@ static int spec_cal_ok(const uint8_t *r)
 
 static void verdict(const uint8_t *r, const uint8_t *probe, int status, int cal_ok)
 {
-  const wsmp_observed o = { .port = (uint8_t)(1U + probe[1] % 8U), .read_ok = (uint8_t)(probe[2] & 1U),
+  const wsmp_observed o = { .port = (uint8_t)(1U + probe[1] % SPEC_PORTS), .read_ok = (uint8_t)(probe[2] & 1U),
                             .has_sensor_serial = (uint8_t)((probe[2] >> 1) & 1U), .probed_type = (uint16_t)(1U + probe[0] % SPEC_TYPES),
                             .record = r, .sensor_serial = be(probe + 3, 4) };
-  const wsmp_port_held h = { .port = (uint8_t)(1U + probe[7] % 8U), .holding = 1, .type = (uint16_t)(1U + probe[7] % SPEC_TYPES),
+  const wsmp_port_held h = { .port = (uint8_t)(1U + probe[7] % SPEC_PORTS), .holding = 1, .type = (uint16_t)(1U + probe[7] % SPEC_TYPES),
                              .serial = be(r + 12, 4) == 0 ? 1U : (uint64_t)be(r + 12, 4) << 32 | be(r + 16, 4) };
   wsmp_verdict v;
   wsmp_identify(&o, &h, 1, &v);

@@ -1,7 +1,12 @@
 /* The rain module (mod_rain.h). The interrupt only counts; the main loop reads the 32-bit count,
- * which the Cortex-M4 reads in one access. */
+ * which the Cortex-M4 reads in one access.
+ * The link (build-progression record M7): the reed is open at rest, so a link probe that reads low
+ * BOARD_LINK_LOWS times in a row with no tip since is an open link between the jack-end pull-up and
+ * the MCU: the slot's quality is fault and #status says meter_link=rain-open, while the gauge is on.
+ * An open beyond the pull-up (the cable, the jack contacts) reads like a dry day: not detectable. */
 #include "mod_rain.h"
 #include <string.h>
+#include "board_inputs.h"
 #include "mod_mean.h"
 #include "wsmp_local.h"
 
@@ -68,9 +73,15 @@ void mod_rain_latch(uint16_t token, uint32_t now_ms)
   wsmp_snapshot snap;
   desc_block(desc);
   if (!mean_close(&win, token, now_ms, boot, desc, 0, &snap)) return;
-  snap.slot[0] = (wsmp_slot){ .value = tips, .count = (uint16_t)(enabled ? 1 : 0),
-                              .quality = mean_quality(&snap, enabled ? 1U : 0U) };
+  uint8_t q = mod_rain_link() == METER_LINK_RAIN_OPEN ? (uint8_t)WSMP_QUAL_FAULT : mean_quality(&snap, enabled ? 1U : 0U);
+  snap.slot[0] = (wsmp_slot){ .value = tips, .count = (uint16_t)(enabled ? 1 : 0), .quality = q };
   mean_store(&win, &snap);
+}
+
+enum meter_link mod_rain_link(void)
+{
+  int open = board_link_lows(BOARD_LINK_RAIN) >= BOARD_LINK_LOWS && !board_link_edge_seen(BOARD_LINK_RAIN);
+  return enabled && open ? METER_LINK_RAIN_OPEN : METER_LINK_OK;
 }
 
 void mod_rain_snapshot(uint8_t snap[WSMP_SNAPSHOT_LEN]) { memcpy(snap, win.frozen, WSMP_SNAPSHOT_LEN); }

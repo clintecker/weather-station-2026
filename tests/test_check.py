@@ -42,6 +42,14 @@ class Sites(unittest.TestCase):
         self.assertEqual(len(set(found.values())), len(found), 'two files share a number')
         self.assertEqual(set(listed), set(found.values()), 'ws_check.h lists a file that has no checks')
 
+    def test_the_power_driver_and_its_wsmp_face_have_their_own_numbers(self):
+        # Power telemetry design section 9.6: App/power_acq.c (the drivers) and App/mod_power.c (the WSMP
+        # face) each have their own WS_CHECK_FILE, so a failed check names the right half.
+        found = users()
+        acq = found.get(FW/'stage0-node/App/power_acq.c')
+        self.assertEqual(acq, 18)
+        self.assertNotEqual(acq, found.get(FW/'stage0-node/App/mod_power.c'))
+
 
 @needs_cc
 class Facility(unittest.TestCase):

@@ -3,7 +3,8 @@
  *   TX, every 250 ms: the INA228 shunt and VBUS, and the ADC on the bq24074 ISET pin (PB1 = A0) and on the
  *   charger's input through its divider (PA10 = A2).
  *   TX, every 5 s: the INA228 die temperature, the MAX17048, the SHT45, the PGOOD/CHG pins, then the
- *   packet (bl_pkt.h). Blocking HAL transfers with short timeouts from one sequencer task, as in
+ *   packet (bl_pkt.h). PA9 (the sensor load switch, change C) is driven high at start and stays high.
+ *   Blocking HAL transfers with short timeouts from one sequencer task, as in
  *   firmware/i2cscan: a bench tool, not the node.
  *   RX: continuous reception; each packet is printed as "#bl rssi=.. snr=.. len=.. hex=..", and every
  *   10 s a heartbeat "#bl hb ..." with the counts and the seconds since the last packet.
@@ -19,7 +20,7 @@
  * B2: crash (expect a software reset and a "#fault" record). B3, TX only: lose the next "transmission
  * done" (expect "#bl radio stuck" and a watchdog reset). */
 #include <string.h>
-#include "bench_regs.h"
+#include "bench_regs.h"   /* and power_regs.h: the INA228, MAX17048 and ADC conversions */
 #include "bl_guard.h"
 #include "bl_pkt.h"
 #include "fault.h"
@@ -134,7 +135,7 @@ static void common_drills(void)
 
 #define SDA_PIN GPIO_PIN_11
 #define SCL_PIN GPIO_PIN_12
-#define I2C_TIMING 0x20303E5DU
+#define I2C_TIMING 0x20323E5DU   /* 100 kHz at PCLK1 = 48 MHz, SDADEL 2 (146 ns hold): the node's value, App/i2c_bus.c */
 #define XFER_TIMEOUT_MS 10U
 #define INA228_ADDR 0x40U
 #define MAX17048_ADDR 0x36U
@@ -142,16 +143,22 @@ static void common_drills(void)
 #define SHT45_MEASURE 0xFDU         /* high repeatability, no heater */
 #define SHT45_WAIT_MS 10U           /* 8.3 ms maximum (datasheet table 4) */
 #define SHT45_LEN 6U
-#define PGOOD_PIN GPIO_PIN_8        /* PB8, CN10.27: low = valid input */
-#define CHG_PIN GPIO_PIN_10         /* PB10, CN10.25: low = charging */
+#define PGOOD_PIN GPIO_PIN_8        /* PB8 = D5, CN9.6 (CN10.27): low = valid input */
+#define CHG_PIN GPIO_PIN_10         /* PB10 = D6, CN9.7 (CN10.25): low = charging */
+/* The sensor load switch's enable (build-progression record 4.6, change C): from bench-bb-r0.3 the hub's
+   QT V+ is the switch's output (3V3_SW), so the SHT45 is powered only while PA9 is high. Driven high at
+   start and never cycled here (the node's TEST-SENSOR-POWER does exit 9); the switch's own pull holds it
+   off while the NUCLEO is in reset. */
+#define POWER_PIN GPIO_PIN_9        /* PA9 = D9, CN5.2 (CN10.19): high = the switched sensors on */
 #define ISET_PIN GPIO_PIN_1         /* PB1 = A0, CN8.1: ADC1_IN5 */
-#define VIN_PIN GPIO_PIN_10         /* PA10 = A2, CN8.3: ADC1_IN6, VBUS through 20k/10k */
-#define VIN_DIVIDER 3
+#define VIN_PIN GPIO_PIN_10         /* PA10 = A2, CN8.3: ADC1_IN6, VBUS through R4+R5 (20k) over R6 (10k) */
+/* The input divider, (R4+R5+R6)/R6 x 1e6: nominal until measured (record 4.4 step 12). checks.check_divider
+   holds it to the model's R4-R6 to the whole ppm, as it holds POWER_VIN_DIVIDER_PPM (stage0-node power_config.h). */
+#define VIN_DIVIDER_PPM 3000000U
 #define ADC_AVG 16U                 /* conversions averaged per ADC reading (ISET, the input, VREFINT) */
 #define ADC_POLL_MS 2U
 #define TICK_MS 250U
 #define TICKS_PER_PACKET 20U        /* 5 s */
-#define UV_PER_MV 1000
 #define TICKS(ms) ((uint32_t)(((uint64_t)(ms) * TICKS_PER_S) / MS_PER_S))
 #define TX_STUCK_MS 5000U           /* a send with neither done nor timeout after this: the radio is stuck */
 #define TX_HEALTH_MS 20000U         /* no packet out for this long: stop feeding the watchdog */
@@ -170,6 +177,7 @@ static int32_t iset_min, iset_max;
 static unsigned samples, misses, adc_samples;
 static uint32_t seq;
 static int adc_ok;
+static int vin_clip, iset_clip;   /* a reading of this interval clipped (BL_F_VIN_CLIP, BL_F_ISET_CLIP) */
 static volatile int tx_busy, drop_done;
 static volatile uint32_t tx_started_ms, last_done_ms;
 static uint16_t tx_timeouts, i2c_restarts, i2c_unsticks;
@@ -299,14 +307,17 @@ static int32_t adc_read(uint32_t channel)
   return (int32_t)(sum / ADC_AVG);
 }
 
-/* A channel in uV at the pin, scaled by VDDA from the factory VREFINT calibration; -1 on a failure. */
-static int32_t pin_uv(uint32_t channel)
+/* A channel in uV at the pin, scaled by VDDA from the factory VREFINT calibration (the node's shared
+   conversions, firmware/common/power_regs.h); -1 on a failure. Sets *clipped when the mean is out of range
+   (adc_clipped, the node's rule: at or above 4080). */
+static int32_t pin_uv(uint32_t channel, int *clipped)
 {
   int32_t vref = adc_read(ADC_CHANNEL_VREFINT);
   int32_t raw = adc_read(channel);
   if (vref <= 0 || raw < 0) return -1;
-  uint32_t vdda_mv = __HAL_ADC_CALC_VREFANALOG_VOLTAGE((uint32_t)vref, ADC_RESOLUTION_12B);
-  return (int32_t)(__HAL_ADC_CALC_DATA_TO_VOLTAGE(vdda_mv, (uint32_t)raw, ADC_RESOLUTION_12B)) * UV_PER_MV;
+  if (adc_clipped((uint16_t)raw)) *clipped = 1;
+  uint32_t vdda_mv = adc_vdda_mv((uint16_t)vref, *VREFINT_CAL_ADDR);
+  return adc_pin_uv((uint16_t)raw, vdda_mv);
 }
 
 static int read_reg(uint8_t addr7, uint8_t reg, uint8_t *b, uint16_t len)
@@ -336,8 +347,8 @@ static void sample(void)
   if (read24(INA228_ADDR, INA_VSHUNT, &shunt) || read24(INA228_ADDR, INA_VBUS, &vbus)) { misses++; bus_restart(); }
   else { shunt_sum += ina228_count(shunt); vbus_sum += ina228_count(vbus); samples++; }
   if (!adc_ok) return;
-  int32_t uv = pin_uv(ADC_CHANNEL_5);
-  int32_t vin = pin_uv(ADC_CHANNEL_6);
+  int32_t uv = pin_uv(ADC_CHANNEL_5, &iset_clip);
+  int32_t vin = pin_uv(ADC_CHANNEL_6, &vin_clip);
   if (uv < 0 || vin < 0) return;
   vin_sum += vin;
   if (!adc_samples || uv < iset_min) iset_min = uv;
@@ -354,7 +365,7 @@ static void read_ina(bl_reading *r)
   if (!ina228_ids_match(mfr, dev) || !samples) return;
   r->flags |= BL_F_INA;
   r->vout_uv = ina228_vbus_uv(ina228_raw24(bench_mean(vbus_sum, samples)));
-  r->ishunt_ua = ina228_current_ua(ina228_raw24(bench_mean(shunt_sum, samples)), BENCH_SHUNT_MOHM);
+  r->ishunt_ua = ina228_current_ua(ina228_raw24(bench_mean(shunt_sum, samples)), BENCH_SHUNT_UOHM);
   r->ina_die_mc = ina228_dietemp_mc(die);
 }
 
@@ -399,8 +410,10 @@ static void send_packet(void)
     r.iset_uv = bench_mean(iset_sum, adc_samples);
     r.iset_min_uv = iset_min;
     r.iset_max_uv = iset_max;
-    r.vin_uv = bench_mean(vin_sum, adc_samples) * VIN_DIVIDER;
+    r.vin_uv = divider_uv_ppm(bench_mean(vin_sum, adc_samples), VIN_DIVIDER_PPM);   /* uV, not mV */
+    r.flags |= (uint8_t)((vin_clip ? BL_F_VIN_CLIP : 0U) | (iset_clip ? BL_F_ISET_CLIP : 0U));
   }
+  vin_clip = iset_clip = 0;
   r.samples = (uint8_t)samples;
   r.misses = (uint8_t)misses;
   r.reset_cause = bl_guard_reset_code();
@@ -478,6 +491,18 @@ int bl_role_check(void)
   return 1;
 }
 
+/* PA9 high before the bus starts, so the switched sensors are powered (not back-powered through the bus
+   pull-ups of the unswitched branch) when the first transfer runs. The level is set before the pin
+   becomes an output, so it never pulses low. */
+static void sensors_on(void)
+{
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  HAL_GPIO_WritePin(GPIOA, POWER_PIN, GPIO_PIN_SET);
+  GPIO_InitTypeDef en = { .Pin = POWER_PIN, .Mode = GPIO_MODE_OUTPUT_PP, .Pull = GPIO_NOPULL,
+                          .Speed = GPIO_SPEED_FREQ_LOW };
+  HAL_GPIO_Init(GPIOA, &en);
+}
+
 static void role_init(void)
 {
   APP_PRINTF("\nBENCHLINK TX (weather-station-2026 bench test, plain LoRa): one %u-byte packet every %u ms\n",
@@ -486,6 +511,7 @@ static void role_init(void)
   GPIO_InitTypeDef pins = { .Pin = PGOOD_PIN | CHG_PIN, .Mode = GPIO_MODE_INPUT, .Pull = GPIO_PULLUP,
                             .Speed = GPIO_SPEED_FREQ_LOW };
   HAL_GPIO_Init(GPIOB, &pins);
+  sensors_on();
   bus_start();
   adc_start();
   events.TxDone = on_tx_done;

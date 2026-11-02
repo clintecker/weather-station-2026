@@ -2,8 +2,10 @@
 
 Written 2026-10-13 for picking the work up at the office with the two boards. Updated 2026-10-14
 for protocol version 5, 2026-10-16 for release `260c9ccbe938`, and 2026-10-19 for the DATAVANE5K
-bench station and release `04fcc656938d`. Give this file to a fresh Claude
-Code session first. Links to the deeper documents are at the end.
+bench station and release `04fcc656938d`, and 2026-10-29 for the power telemetry design (power
+phase A on the bench, protocol version 6 in the source), and 2026-10-30 for the build-progression
+record and Clint's survey answers (its section 7.1). Give this file to a fresh Claude Code session
+first. Links to the deeper documents are at the end.
 
 ## 1. What this project is
 
@@ -33,7 +35,15 @@ flowchart LR
   power. Stage 0 ends when **H01**, the 24-hour delivery test, passes.
 - H01 requires 1,440 one-minute intervals in 24 h, with at least 1,426 valid readings committed
   within 120 s, plus a restart and outage matrix (`docs/H01-checklist.md`).
-- **Stage 1** (main battery pack, charger and solar) does not start before H01 passes.
+- **Power phases** (Clint, 2026-10-29; [`next-stages-plan.md`](next-stages-plan.md) §1.1): the
+  pack is **1S3P** (three 2,200 mAh Li-ion cells in parallel, 6,600 mAh, 3.0–4.2 V, about 24.4 Wh).
+  **Phase A** (now): the Adafruit bq24074 charger, one battery INA228 (0x40) and the MAX17048 gauge
+  (0x36) on the cell. **Phase B**: one INA228 per rail. **Phase C**: the TI BQ25798 (two inputs, its
+  own ADC), in either order with B. The final goal is voltage and current of four rails: battery
+  (signed), solar input, USB-C input, load. USB-C is for bench work and backup charging only, never
+  together with solar.
+- **Stage order:** power phase A's telemetry runs now, beside Stage 0, on the USB-powered bench
+  boards. **Stage 1's gates (H02, H03)** and its pack, chamber and solar endurance work follow H01.
 - Stage 2 adds one wired sensor module on an RS-485 port. Stage 3 adds the complete unheated
   sensor set.
 
@@ -46,21 +56,29 @@ flowchart LR
   - TX = board A, ST-LINK serial `003B00194142500E20353451`.
   - RX = board B, ST-LINK serial `0016001E4142500E20353451`.
   - Identify boards by serial number. Port names change between machines.
-- **Sensors:** the TX reads its sensors as DATAVANE5K local modules (WSMP 1.0,
-  `docs/module-protocol.md`). There are seven modules: outside air, pressure, UVA, enclosure, power,
-  wind and rain (`App/mod_*.c`, `App/wsmp_host.c`). The wiring is in
+- **Sensors:** the TX reads its sensors as DATAVANE5K local modules (WSMP 1.0 on the boards'
+  release, WSMP 1.1 with registry version 2 in the version 6 source; `docs/module-protocol.md`). The boards' release has seven modules: outside air, pressure, UVA,
+  enclosure, power, wind and rain (`App/mod_*.c`, `App/wsmp_host.c`). The version 6 source splits
+  power into two base-board modules, battery and power rails: eight. The wiring is in
   `docs/hardware/bench-station-wiring.md`. The breadboard map is `hardware/bench-breadboard-r0/`.
   - At the bench check of `cc2766a38c61`, only the SHT45 was on the bus.
   - GitHub issues #2, #3 and #4 (INA228 accumulators, vane ADC calibration, cup input filter) are
     fixed in firmware. They stay open until their bench checks pass.
-- **Protocol version 5.** Spec: `docs/protocol.md`. Design rationale: `docs/protocol-design.md`.
+- **Protocol version 6 in the source, version 5 on the boards.** Spec: `docs/protocol.md`. Design
+  rationale: `docs/protocol-design.md`. Version 6 (power telemetry: catalog version 2, the 64-byte
+  health report) reaches the boards only by the release procedure of `protocol-design.md` section 7
+  (drain, WIPE, flash both boards, new run directory, `provision-node`). No version 6 release exists
+  yet.
   - Encryption: AES-128-CCM with an 8-byte header (version and kind, station u16, counter u40)
     and an 8-byte tag.
   - Observation frame: 51 bytes for a T/RH-only field set. The WSMP bench field set gives at most
-    77 bytes (`firmware/stage0-node/README.md`). It has a 22-byte
+    77 bytes in version 5, and 93 bytes (77 bytes of plaintext) in version 6
+    (`firmware/stage0-node/README.md`). It has a 22-byte
     head, a field bitmap and catalog fields. Each field has its own INVALID code.
   - ACK and NACK frames: 33 bytes. The ACK carries the host time.
-  - Health report: 48 bytes, every 15 min.
+  - Health report: every 15 min. Version 6 (in the source, power design §6): 64 bytes of
+    plaintext, an 80-byte frame, with the power and station health values. Version 5 (on the
+    boards): 32 bytes of plaintext, a 48-byte frame.
   - **A frame-format change needs a fresh key.** Send `WIPE ERASE-ALL-NODE-STATE` on TX,
     `init` a new run directory, run `provision-node`, and flash both boards. The first
     version-5 release (`bc5e6ede429c`) was installed that way.
@@ -68,9 +86,44 @@ flowchart LR
     `run-d5` is archived as `run-d5-archive-2026-10-15/`.
   - The flash-layout change of `cc2766a38c61` also needed a fresh key. `run-d6` is archived as
     `run-d6-archive-2026-10-19/` (`docs/runbook-moving-boards.md`, "Changing the flash layout").
+- **Power, phase A.** The MCU pins proven with `firmware/benchlink` on 2026-10-28/29 are the official
+  design, the same on the bench and in the field
+  ([`firmware/benchlink/README.md`](../firmware/benchlink/README.md#wiring), "Wiring"). The wiring
+  around them is breadboard v2, step 1 of the build-progression record
+  ([`superpowers/specs/2026-10-29-build-progression-decisions.md`](superpowers/specs/2026-10-29-build-progression-decisions.md),
+  section 4). The node firmware reads all of it in protocol version 6.
+
+  | Signal | Wiring (breadboard v2) | Record |
+  |---|---|---|
+  | ISET | the charger ISET pin → 10 kΩ 1 % at the charger end → the PB1 node (100 nF and 1 MΩ to logic ground) → PB1 (A0, CN8.1). R_ISET is 1 kΩ (R9 behind the closed 1A jumper; 0.89 A typ): adopted with change A, read by this workflow from 7.1 P3; Clint to confirm (design D4/D5) | 1.4, M2 |
+  | Charger VBUS | 20 kΩ over 10 kΩ → PA10 (A2, CN8.3); each resistor measured, the ratio stored as `POWER_VIN_DIVIDER_PPM` (nominal 3,000,000) | M2 |
+  | CHG, PGOOD | CHG → PB10 on **CN9.7** (D6) and PGOOD → PB8 on **CN9.6** (D5), on the internal pull-ups. CN10.25 and CN10.27 are the same pins on morpho (aliases; the 2026-10-28/29 bench used them) | 1.4, N3 |
+  | Battery INA228 (0x40) | the 15 mΩ shunt in the cell's + lead (CELL+ → VIN+, VIN− → BATT); its **VBUS sense lead runs to the OUT connector** (WAGO OUT position 3); the back VBUS-to-VIN+ jumper (SJ1) open | P3, P5 |
+  | MAX17048 gauge (0x36) | its red lead at the **CELL+ node** (WAGO CELL+ position 3), its minus unconnected, ground over STEMMA QT. Under current it reads the CELL+ node, which includes the pack-lead drop (I × R_pack) | P4, P5, M4 |
+
+  - **State (2026-10-30): breadboard v2 is modelled and pending on the bench.** `wiring.toml` is at
+    revision `bench-bb-r0.3` (change A: the power path and NUCLEO headers; change B: cups PB5, rain
+    PB4, approved 7.1 N2; change C: the PA9 sensor switch and the split QT bus), with its build sheet
+    and drawings regenerated. The bench itself still has the 2026-10-28/29 as-run topology: the pack in
+    the charger's socket, so the shunt was bypassed and those runs' `ishunt` and charge counters are
+    invalid (record D1, F5). Change A rebuilds it.
+  - **Power is off the breadboard (P1).** No battery, charge, input or load current goes through any
+    breadboard contact, header pin or Dupont contact. Current leaves the charger only through its own
+    JST PH sockets (BATT, SYSOUT; P2) to WAGO 222 lever connectors off the board (CELL+, BATT, OUT,
+    STAR; P3, P4, P6). The one tolerated exception is the mode-B regulator supply chain, tagged
+    `P1 regulator` in the model.
+  - Lessons of 2026-10-28/29 (record section 1.1): a 0.2 Ω breadboard path ended 1 A charges early;
+    3–4 Ω of moving contact resistance fooled the gauge's SOC; the gauge and the INA228 VBUS were first
+    on the wrong nodes. The battery-path limits at 1 A (P8): + span at most 75 mΩ, − span at most
+    40 mΩ, each pack-side span at most 28 mΩ (their sum is R_pack).
 - **Radio:** 915.0 MHz, 500 kHz bandwidth, spreading factor (SF) 7, coding rate 4/5, 0 dBm (bench).
 - **Bench-verified:**
-  - the journal: about 28.7 hours of outage buffer in internal flash (1,725 slots of 80 bytes for the WSMP bench field set, 24 hours for a station with every sensor),
+  - the journal, in version 5 on the boards: about 28.75 hours of outage buffer in internal flash
+    (1,725 slots of 80 bytes for the WSMP bench field set). The version 6 source keeps at least
+    1,449 slots of 96 bytes for the 77-byte node field set, about 24.15 hours, not yet on a board
+    (`firmware/stage0-node/README.md`, "Flash layout and outage capacity"). The 24-hour rule holds
+    for the build's widest record (`App/node_store.c:71-76`): a field set above 80 bytes does not
+    compile, so every catalog version 2 field (94 bytes, 20.7 hours) is never a build,
   - durable counters and the watchdog,
   - the reset-during-write test (70 cycles),
   - outage recovery with link back-off, NACK, and gateway auto-reconnect,
@@ -85,7 +138,9 @@ flowchart LR
   `bc5e6ede429c`, 1,440 of 1,440 intervals on time. `evidence/h01-rehearsal-2026-10-15/`: release
   `7eb79f64f2bd`, ended at 16 h, 960 of 960. Both: median latency 1.5 s, maximum 2.0 s.
 - **Tests:** `WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests` gave **595**
-  passing, none skipped, on 2026-10-19 (commit 09e6cea). One SNTP test needs the network.
+  passing, none skipped, on 2026-10-19 (commit 09e6cea). One SNTP test needs the network. The
+  power-telemetry and build-progression work has many more; the current count is in
+  `tests/README.md`.
   - Run `tools/fetch-vendor.sh` first. Without `vendor/`, the tests skip the C-against-Python
     crypto tests.
 - **Other checks** (all in CI, `.github/workflows/ci.yml`):
@@ -162,7 +217,7 @@ flowchart TD
 git clone https://github.com/clintecker/weather-station-2026 && cd weather-station-2026
 python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt   # or: uv venv && uv pip install -r requirements.txt
 sh tools/fetch-vendor.sh                                                  # needed for the C-against-Python crypto tests
-WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expect 595 OK, none skipped (needs network for one SNTP test)
+WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests   # expect all OK, none skipped; the count is in tests/README.md (one SNTP test needs the network)
 
 # Plug both boards in, then find their ports. Each board is one /dev/cu.usbmodem*.
 # This lists each port with its ST-LINK serial (SER=...):
@@ -246,9 +301,59 @@ flowchart TD
    `tools/h01_report.py --db <run dir>/observations.sqlite3 --station station-01 --start <UTC> --hours 24 --output evidence/h01-<date>`.
    Use the run directory that the gateway actually served. `--db` defaults to `run-hw/`.
 
-**Bench station (beside the steps above):** build it from
-`hardware/bench-breadboard-r0/build-sheet.md`. Then do the bench checks of GitHub issues #2, #3
-and #4. The `cc2766a38c61` section of `RELEASES.md` lists two bench faults found so far.
+**The build sequence, decided 2026-10-30** (record section 3, S1; 7.1 Q8 "H01 first"; build order
+1 → 2 (H01) → 1b → 2c → 3 → 4 → 5). It folds in power phase A
+([`next-stages-plan.md`](next-stages-plan.md) §1.1, the power plan
+[`superpowers/plans/2026-10-29-power-telemetry.md`](superpowers/plans/2026-10-29-power-telemetry.md)).
+Build from `hardware/bench-breadboard-r0/build-sheet.md`: it is the step 1 (breadboard v2) sheet, and
+its "Changes from the previous revision" section says which wires come out and which go in (W-numbers
+change on every regeneration, so that list names ends, not W-numbers).
+
+1. **The model commits, then change A** (record 4.4). Every rewire is one commit with `wiring.toml`
+   and the regenerated sheet (D1, D4); Clint makes the tags `bench-bb-r0.1` to `bench-bb-r0.3`.
+   Change A: stop the logger and put a run boundary in the notes (Clint's, record 6.7); the base plate
+   (H1); the cut #1131 pigtails and the WAGO joints, so the pack goes through the INA228 shunt and
+   never into the charger's BATT socket (7.1 P3: change A as written); the sense leads; the ISET
+   network and the measured divider (M2); the CHG, PGOOD and vane jumpers onto the Arduino headers;
+   the OLED's own supply pair; the mode-B feed at CN6.4. Step 4a solders the jack and header pins
+   onto both BOB-14021s as module preparation (7.1 Q6).
+2. **The section 4.3 checks and the exit runs.** C1–C11 and C19 before every mode-A run, C12–C18
+   after every rewire and at every step exit, all read on the Fluke 87V's 600 mV range (7.1 Q2) into
+   the run's `toml preflight` block (`tools/preflight.py`, D6). The build sheet's "Power checks"
+   measure the constants: R_ISET (check 2), the divider ratio, the INA228 shunt **verified** against a
+   series reference (within 2 % + 2 mA; only a fail replaces the nominal 15 mΩ). Measured values go
+   into the model first (`hardware/bench-breadboard-r0/source/wiring.toml`: the charger's `iset_ohms`
+   or `iset_gain_ppm`, R4–R6's `measured_ohms`; record M2 dated note, 4.4 steps 11–12), then into
+   `firmware/stage0-node/App/power_config.h` and the bench link's and logger's copies, with the sheet
+   regenerated, in one commit before the build that carries them (D3 checks 8 and 9 hold the firmware
+   to the model; a dirty-tree build reports firmware build ID 0). Then step 1 exits 2–5: a 1 A charge to P9's normal
+   termination, 12 h of the host path metric, the two injection cases, gauge agreement.
+3. **Change B** (record 4.5; N2 approved, 7.1 N2): the cups jumper to CN9.5 (PB5), the rain jumper to
+   CN8.4 (PB4), the node firmware built from the same commit, landing on the BOB-14021s prepared in
+   step 4a; then exit 6 (100 counted pulses, 20 tips).
+4. **Change C** (record 4.6): the PA9 sensor switch from a breakout, the QT bus split into an
+   unswitched branch (power monitors) and a switched one (sensor hub), exit 9 (PA9 cycled 10 times)
+   and exit 10 (mode B for one hour on the CN6.4 entry).
+5. **Step 2 and H01.** The #196 shield and the Perma-Proto module board (the three phase-B INA228
+   positions empty), the force harness moved unchanged. Then the version 6 release
+   (`protocol-design.md` section 7: drain, WIPE, flash both boards, `init` a new run directory,
+   `provision-node`; whether H01 runs on it is open decision D2, `next-stages-plan.md` §6,
+   recommendation yes; the H01 preconditions, `meter_link=ok` and the phase A exit criteria, can be
+   met only on a version 6 build, so a "no" needs a version 5 backport of the M7 probe and the power
+   reading, which no plan carries), the gateway check of every phase A value (`/v1/observations`, the dashboard,
+   `…/diagnostics`, the Home Assistant power entities, [`runbook-home-assistant.md`](runbook-home-assistant.md)
+   "Power entities"), the acceptance drill (`firmware/benchlink/README.md`, "Acceptance drill"), and
+   H01 with its preconditions (`docs/H01-checklist.md`: a valid preflight with the 1 A spans, H8(d),
+   the ws0 serial reopen, the counter link probe).
+6. **Then step 1b, then step 2c.** 1b: the load, solar and USB-C INA228s on the step 2 plate's small
+   breadboard, after H01 (INA228 module preparation allowed, 7.1 Q1). 2c: the BQ25798EVM on the step 2
+   harness. The EVM is already ordered (2026-10-30, 7.1 Q4): do not buy it again.
+
+The pack reserve (D1), H02 and H03 come after H01 (H02 basis at 2c, H02 at step 3, H03 proper at
+step 4).
+
+**Bench station checks (beside the steps above):** the bench checks of GitHub issues #2, #3 and #4
+on the step 1 build. The `cc2766a38c61` section of `RELEASES.md` lists two bench faults found so far.
 
 **SHT45 test plan:** `docs/firmware-review-2026-10-13.md` §2.
 
@@ -256,6 +361,8 @@ and #4. The `cc2766a38c61` section of `RELEASES.md` lists two bench faults found
 
 - Flash read-out protection (for field use).
 - Brown-out reset level (Stage 1).
+- Clint's open power decisions D1 (the 1S3P pack against the PRD reserve) and D2 (H01 on a version 6
+  release): `next-stages-plan.md` §6.
 - H11, the 30-day storage test: it needs external SPI NOR flash.
 - A timed ACK receive slot.
 - Code space for the final station (`docs/firmware-budget.md`). Keep the STM32WL55JC. Plan flash
@@ -265,6 +372,10 @@ and #4. The `cc2766a38c61` section of `RELEASES.md` lists two bench faults found
 
 **Bench note (2026-10-13):** a USB dropout of about 1 s makes the ST-LINK reset its board (seen
 on both boards). For H01 on USB, secure the cables. Keep hands and debugger sessions off them.
+**USB topology (record H8, 7.1 Q5):** both NUCLEOs were on one hub when the RX's port stalled on
+2026-10-28/29, so the RX goes **alone on a direct Mac port** and is never plugged or unplugged
+during a run; the TX and other bench boards go on another port or hub, replugged only there. Label
+each cable with its ST-LINK serial.
 Range-test tool and findings: `firmware/rangetest/README.md`,
 `evidence/rangetest-office-2026-10-13/`.
 
@@ -282,6 +393,12 @@ energy state. It does not model the drain stop or the PROBING link state
 - Never commit keys, tokens or run databases.
 - Document trials and errors (`docs/hardware/nucleo-wl55jc-bringup.md`).
 - Keep bench tests short: minutes, not hours, unless the test is H01 itself.
+- **No current through a breadboard contact** (record P1): no battery, charge, input or load current
+  through a breadboard contact, header pin or Dupont contact, in any step. The breadboard carries
+  sense and logic lines only; the one exception is the tagged mode-B regulator chain.
+- **Prove before solder** (record section 1.2): every connection that gets soldered or laid out in
+  copper is first proven on the no-solder bench, with numbers recorded. Module preparation (header
+  pins, the BOB-14021 jacks, the INA228 address jumpers) is allowed (7.1 Q1, Q6); soldered circuit wiring waits for its proof.
 - **Bench quirks:**
   - The factory ST firmware disables the debug port (SWD), so flashing needs connect-under-reset.
     Our firmware keeps SWD enabled.
@@ -292,17 +409,26 @@ energy state. It does not model the drain stop or the PROBING link state
 
 | File | What |
 |---|---|
-| `docs/protocol.md` | Wire format, protocol version 5 (normative) |
+| `docs/protocol.md` | Wire format, protocol version 6 (normative): observation catalog version 2 with the extension bitmap, the 64-byte health report with its fitted byte |
 | `docs/protocol-design.md` | Why the format looks the way it does (design rationale, reviews) |
 | `docs/protocol-stack.md` | Layered explanation with diagrams |
-| `docs/module-protocol.md` | DATAVANE5K, the module protocol WSMP 1.0 (normative) |
+| `docs/module-protocol.md` | DATAVANE5K, the module protocol WSMP 1.1 (normative), registry version 2 |
 | `docs/hardware/bench-station-wiring.md` | Bench station wiring to the TX board |
-| `hardware/bench-breadboard-r0/` | Breadboard map: `build-sheet.md`, renders, KiCad 10 model (`source/make.py`) |
+| `hardware/bench-breadboard-r0/` | Breadboard map: `build-sheet.md` (the step 1 v2 sheet, with its "Changes from the previous revision"), renders, KiCad 10 model (`source/make.py`; `make.py sheet` needs no KiCad) |
+| `hardware/bench-breadboard-r0/source/checklist.py` | The pre-run checklist C1–C23 with its pass limits, the P8 budgets, the meter (Fluke 87V, 600 mV range) and the `wiring.toml` blob hash: one source for the build sheet and `tools/preflight.py` |
+| `hardware/bench-breadboard-r0/source/checks.py` | The model checks of record D3 (force leads off the breadboard, the tagged P1 chain, one ground tie, sense landings, the gauge upstream of the shunt, test-point strips, the divider ratio) and the H7 lead lengths |
+| `tools/preflight.py` | Checks a run's `toml preflight` block against the model and the limits: valid, failing, missing or stale (`tools/README.md`) |
 | `docs/poc-shopping-list.md` | Off-the-shelf parts for the bench station |
 | `docs/failure-modes.md` | Failure modes and effects (FMEA), loss budget, recovery runbook, open issues |
 | `docs/radio-energy-policy.md` | Approved send and back-off policy for battery and solar |
 | `docs/H01-checklist.md` | The 24-hour delivery test |
-| `docs/next-stages-plan.md` | Stages 1–3: parts and plan |
+| `docs/next-stages-plan.md` | Stages 1–3: parts and plan. §1.1–§1.3: the power phases A, B, C, the four rails, the USB-C rule, phase A's exit criteria |
+| `docs/superpowers/specs/2026-10-29-power-telemetry-design.md` | Power telemetry design: phases, the fill table, protocol version 6, the 64-byte health report, node firmware, gateway |
+| `docs/superpowers/plans/2026-10-29-power-telemetry.md` | Power telemetry implementation plan: its batches and wave gates |
+| `docs/superpowers/plans/2026-10-29-power-telemetry-issues.md` | Power telemetry issue catalog: every issue the power decision caused, by layer, severity, batch and state, and what each open issue still needs |
+| `docs/superpowers/plans/2026-10-30-build-progression-issues.md` | Build progression issue catalog: every issue the build-progression record and its section 7.1 answers caused, by area, severity, batch and state, and what each open issue still needs |
+| `docs/hardware/power-metering.md` | Power metering: rails, monitors, addresses, shunts and sense points in each phase, the phase B join, input voltage limits |
+| `docs/superpowers/specs/2026-10-29-build-progression-decisions.md` | Build progression decision record: breadboard → protoboard → carrier, the bench power path, the NUCLEO pin contract (4.2), the pre-run checklist (4.3), changes A, B and C, the shopping list (5), the cascade (6). Section 7.1 holds Clint's survey answers of 2026-10-30, which govern. Its section 8 (and the power design's section 17) says which rows the power design adopted, deferred or rejected |
 | `docs/hardware/nucleo-wl55jc-bringup.md` | Board bring-up trial-and-error log |
 | `firmware/stage0-node/README.md` | Build, console commands, LEDs, flash layout |
 | `firmware/stage0-node/RELEASES.md` | Release hashes |

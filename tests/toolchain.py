@@ -72,17 +72,21 @@ def host_library(owner, name, *args, files=None):
 
 # The bus and the local modules (firmware/stage0-node/App): every host build of the station side links
 # them. A new module is added here, and in the Makefile.
-WSMP_APP = ('i2c_bus', 'busymon', 'wsmp_local', 'port_id', 'mod_th', 'mod_mean', 'mod_reg', 'mod_power', 'mod_wind', 'mod_rain')
+WSMP_APP = ('i2c_bus', 'busymon', 'wsmp_local', 'port_id', 'mod_th', 'mod_mean', 'mod_reg', 'mod_power', 'power_acq', 'mod_wind', 'mod_rain')
 
 
-def wsmp_sources(app=WSMP_APP):
-    """The flags and sources of a WSMP harness build (firmware/host/wsmp_harness.c) over these App files."""
+def wsmp_sources(app=WSMP_APP, mux=1):
+    """The flags and sources of a WSMP harness build (firmware/host/wsmp_harness.c) over these App files.
+
+    mux is the I2C bus profile, WS_I2C_MUX (App/i2c_bus.lit.md section 11). The firmware default is 0
+    (the STEMMA QT hub), but these builds pass 1 explicitly so the module, record and calibration tests
+    keep the ports board's mux and record EEPROMs; mux=0 is the hub variant, for new tests only."""
     fw = ROOT/'firmware'
     a = fw/'stage0-node/App'
-    return ['-I', fw/'host/include', '-I', fw/'host', '-I', a, '-I', fw/'stage0-node/Core/Inc', '-I', fw,
+    return [f'-DWS_I2C_MUX={1 if mux else 0}', '-I', fw/'host/include', '-I', fw/'host', '-I', a, '-I', fw/'stage0-node/Core/Inc', '-I', fw,
             '-I', fw/'common', fw/'host/wsmp_harness.c', fw/'host/sim_core.c', fw/'host/i2c_sim.c',
             fw/'host/i2c_models.c', *(a/f'{name}.c' for name in app), fw/'stage0.c', fw/'common/ws_check.c',
-            fw/'common/wsmp.c', fw/'common/wsmp_cal.c', fw/'common/wsmp_ident.c']
+            fw/'common/wsmp.c', fw/'common/wsmp_cal.c', fw/'common/wsmp_ident.c', fw/'common/power_regs.c']
 
 
 def fresh_copy(owner, library):
@@ -115,6 +119,44 @@ def check_site(source, needle):
     if len(lines) != 1:
         raise AssertionError(f'{source}: {len(lines)} WS_CHECK lines contain {needle!r}')
     return f'{file_id}:{lines[0]}'
+
+
+def c_function(source, signature, start=0):
+    """The body of the first C function whose definition line is `signature` (as written, without the
+    brace), at or after `start` in `source`: the text between its braces. The braces of a function body
+    nest only through statements, so counting them finds its end."""
+    head = source.index(signature + '\n{', start)
+    i, depth = head + len(signature) + 1, 0
+    for j in range(i, len(source)):     # bound: the source's length
+        depth += {'{': 1, '}': -1}.get(source[j], 0)
+        if depth == 0:
+            return source[i + 1:j]
+    raise ValueError(f'{signature}: no closing brace')
+
+
+def sensor_power_problems(source, init):
+    """Problems with the PA9 sensor power drive of a bench firmware (build-progression record 4.6,
+    bench-bb-r0.3: the hub's QT V+ is 3V3_SW, so the SHT45 is powered only while PA9 is high): POWER_PIN is
+    GPIO_PIN_9 on PA9; sensors_on() sets it high before it becomes a push-pull output, so it never pulses
+    low; the init body `init` calls sensors_on() before its first bus access (bus_start, HAL_I2C_*); and
+    nothing ever drives the pin low."""
+    problems = []
+    if not re.search(r'^#define POWER_PIN GPIO_PIN_9\b.*/\* PA9\b', source, re.M):
+        problems.append('POWER_PIN is not GPIO_PIN_9 on PA9')
+    body = c_function(source, 'static void sensors_on(void)')
+    high = body.find('HAL_GPIO_WritePin(GPIOA, POWER_PIN, GPIO_PIN_SET);')
+    output = body.find('HAL_GPIO_Init(GPIOA, &en);')
+    if high < 0 or output < 0 or high > output:
+        problems.append('sensors_on() does not set PA9 high before making it an output')
+    if not re.search(r'\.Pin = POWER_PIN, \.Mode = GPIO_MODE_OUTPUT_PP\b', body):
+        problems.append('sensors_on() does not make PA9 a push-pull output')
+    call = init.find('sensors_on();')
+    bus = [i for i in (init.find('bus_start();'), init.find('HAL_I2C_')) if i >= 0]
+    if call < 0 or (bus and call > min(bus)):
+        problems.append('sensors_on() is not called before the first bus access')
+    if re.search(r'POWER_PIN, GPIO_PIN_RESET|HAL_GPIO_TogglePin\(GPIOA, POWER_PIN', source):
+        problems.append('PA9 is driven low somewhere')
+    return problems
 
 
 def load_tool(name):
