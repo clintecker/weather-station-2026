@@ -1,15 +1,19 @@
 /* I2C bench tool (README.md): checks the bus lines, lists every address that answers on I2C2, then
  * prints the INA228 and MAX17048 readings once a second and lists the bus again every 10 s, with one
  * reading of each phase B rail INA228 (load, solar, USB-C) that answers. The same
- * readings go to the bench OLED on SPI1 (oled.h), redrawn once a second.
- * It only reads: no register of any part is written, so the node firmware later finds every part as
- * it left it. Blocking HAL transfers with a short timeout, from one sequencer task: a bench tool, not
+ * readings go to the bench OLED on SPI1 (oled.h), redrawn once a second, with the weather meter inputs
+ * (meters.h: cups, vane and rain on the node's pins), one #meters line a second.
+ * On the power parts it only reads: no INA228 or MAX17048 register is written, so the node firmware
+ * later finds them as it left them. The weather sensors get only what a reading needs (air_line): the
+ * SHT45 and SHTC3 measure commands, the BMP581's oversampling and forced mode, the LTR390's UVS mode,
+ * the node's own values (stage0-node/App/mod_th.c, mod_reg.c); the node sets them again at its start. Blocking HAL transfers with a short timeout, from one sequencer task: a bench tool, not
  * the node (stage0-node/App/i2c_bus.c is the interrupt-driven bus). PA9 is driven high at start and stays
  * high: the sensor power enable (build-progression record 4.6 dated note, 2026-11-02: change C's load
  * switch is not part of the breadboard build). On the bench PA9 is unconnected, so this is harmless. */
 #include <string.h>
 #include "bench_regs.h"
 #include "bench_screen.h"
+#include "meters.h"
 #include "oled.h"
 #include "stm32_seq.h"
 #include "stm32_timer.h"
@@ -39,6 +43,15 @@ static const struct { uint8_t addr; const char *rail; } RAILS[] = {
 #define FIRST_ADDR 0x08U          /* 0x00-0x07 and 0x78-0x7F are reserved (UM10204 table 4) */
 #define LAST_ADDR 0x77U
 #define NUM_MAX 16U
+#define CUPS_UMS_PER_HZ 666980U   /* 0.66698 m/s per Hz (the node's registry factor, mod_wind.c) */
+#define RAIN_TENTH_UM_PER_TIP 2794U   /* 0.2794 mm a tip (SEN-15901), in 10^-4 mm */
+#define WIND_SECONDS 3U           /* the wind speed's window: the node's gust window (mod_wind.c) */
+#define SHT45_ADDR 0x44U
+#define SHTC3_ADDR 0x70U
+#define BMP581_ADDR 0x47U
+#define LTR390_ADDR 0x53U
+#define SHT_REPLY_LEN 6U
+#define DATA3_LEN 3U
 
 enum { INA_VSHUNT = 0x04, INA_VBUS = 0x05, INA_DIETEMP = 0x06, INA_MANUFACTURER = 0x3E, INA_DEVICE = 0x3F };
 enum { GAUGE_VCELL = 0x02, GAUGE_SOC = 0x04, GAUGE_VERSION = 0x08, GAUGE_CRATE = 0x16 };
@@ -50,6 +63,9 @@ static int64_t shunt_sum, vbus_sum;   /* the INA228 counts of this line's sample
 static unsigned samples, misses;
 static bench_view view;   /* the latest readings, for the OLED */
 static oled_fb screen;
+static uint16_t cups_last;   /* meters_cups() at the last #meters line */
+static uint16_t cups_sec[WIND_SECONDS];   /* the pulses of the last WIND_SECONDS seconds, a ring */
+static unsigned cups_at;
 static int oled_failed;   /* the last frame timed out: said once, until a frame goes through again */
 
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
@@ -240,9 +256,86 @@ static void gauge_line(void)
              bench_fixed(rate, sizeof rate, max17048_crate_mpct_h(crate), 1, 2, 1));
 }
 
+/* Once a second: the cup pulses (total, this second's, and the wind over the last 3 s), the vane and the
+   rain tips. */
+static void meters_line(void)
+{
+  uint16_t cups = meters_cups(), mv = 0;
+  uint16_t hz = (uint16_t)(cups - cups_last);
+  cups_last = cups;
+  cups_sec[cups_at] = hz;
+  cups_at = (cups_at + 1U) % WIND_SECONDS;
+  uint32_t pulses = 0;
+  for (unsigned i = 0; i < WIND_SECONDS; i++) pulses += cups_sec[i];
+  uint32_t tips = meters_tips();
+  int vane_ok = meters_vane_mv(&mv);
+  char ms[NUM_MAX], mm[NUM_MAX];
+  view.meters_ok = 1;
+  view.wind_ums = (int32_t)(pulses * CUPS_UMS_PER_HZ / WIND_SECONDS);
+  view.vane = vane_ok ? bench_vane_point(mv) : "ADC?";
+  view.tips = tips;
+  APP_PRINTF("#meters cups=%u hz=%u wind=%s m/s (3 s) vane=%u mV %s rain=%u tips %s mm\n", cups, hz,
+             bench_fixed(ms, sizeof ms, view.wind_ums, 4, 2, 0), vane_ok ? mv : 0U,
+             view.vane, (unsigned)tips, bench_fixed(mm, sizeof mm, (int32_t)(tips * RAIN_TENTH_UM_PER_TIP), 2, 2, 0));
+}
+
+static int write_bytes(uint8_t addr7, const uint8_t *b, uint16_t len)
+{
+  return HAL_I2C_Master_Transmit(&hi2c2, (uint16_t)(addr7 << 1), (uint8_t *)(uintptr_t)b, len, XFER_TIMEOUT_MS) == HAL_OK ? 0 : -1;
+}
+
+static int read_bytes(uint8_t addr7, uint8_t *b, uint16_t len)
+{
+  return HAL_I2C_Master_Receive(&hi2c2, (uint16_t)(addr7 << 1), b, len, XFER_TIMEOUT_MS) == HAL_OK ? 0 : -1;
+}
+
+/* The sensor set-up the readings need, once at start: the BMP581's pressure on at 1x oversampling, the
+   LTR390 in UVS mode (18 bits, 100 ms, gain 3 by default), the SHTC3 woken. Failures show as "NO" rows. */
+static void air_init(void)
+{
+  static const uint8_t bmp_osr[] = { 0x36, 0x40 }, ltr_uvs[] = { 0x00, 0x0A }, shtc3_wake[] = { 0x35, 0x17 };
+  (void)write_bytes(BMP581_ADDR, bmp_osr, sizeof bmp_osr);
+  (void)write_bytes(LTR390_ADDR, ltr_uvs, sizeof ltr_uvs);
+  (void)write_bytes(SHTC3_ADDR, shtc3_wake, sizeof shtc3_wake);
+}
+
+/* Starts the next readings: each sensor has a second to finish (SHT45 8.3 ms, SHTC3 12 ms, BMP581 forced). */
+static void air_trigger(void)
+{
+  static const uint8_t sht45_measure[] = { 0xFD }, shtc3_measure[] = { 0x78, 0x66 }, bmp_forced[] = { 0x37, 0x82 };
+  (void)write_bytes(SHT45_ADDR, sht45_measure, sizeof sht45_measure);
+  (void)write_bytes(SHTC3_ADDR, shtc3_measure, sizeof shtc3_measure);
+  (void)write_bytes(BMP581_ADDR, bmp_forced, sizeof bmp_forced);
+}
+
+/* Once a second: the results of the last trigger, then the next trigger. */
+static void air_line(void)
+{
+  uint8_t b[SHT_REPLY_LEN];
+  char t[NUM_MAX], h[NUM_MAX], bt[NUM_MAX], bh[NUM_MAX], p[NUM_MAX], uv[NUM_MAX];
+  view.air_ok = !read_bytes(SHT45_ADDR, b, SHT_REPLY_LEN) && !bench_sht_parse(b, 0, &view.air_centi_c, &view.air_centi_rh);
+  view.box_ok = !read_bytes(SHTC3_ADDR, b, SHT_REPLY_LEN) && !bench_sht_parse(b, 1, &view.box_centi_c, &view.box_centi_rh);
+  view.press_ok = !read_reg(BMP581_ADDR, 0x20, b, DATA3_LEN);
+  if (view.press_ok) view.press_dhpa = bench_bmp581_dhpa(b);
+  view.uv_ok = !read_reg(LTR390_ADDR, 0x10, b, DATA3_LEN);
+  if (view.uv_ok) view.uv_counts = bench_ltr390_counts(b);
+  if (!view.air_ok || !view.box_ok || !view.press_ok || !view.uv_ok) bus_restart();
+  APP_PRINTF("#air sht45 %s C %s %% | shtc3 %s C %s %% | bmp581 %s hPa | ltr390 uv=%s counts\n",
+             view.air_ok ? bench_fixed(t, sizeof t, view.air_centi_c, 0, 2, 0) : "-",
+             view.air_ok ? bench_fixed(h, sizeof h, view.air_centi_rh, 0, 2, 0) : "-",
+             view.box_ok ? bench_fixed(bt, sizeof bt, view.box_centi_c, 0, 2, 0) : "-",
+             view.box_ok ? bench_fixed(bh, sizeof bh, view.box_centi_rh, 0, 2, 0) : "-",
+             view.press_ok ? bench_fixed(p, sizeof p, view.press_dhpa, 0, 1, 0) : "-",
+             view.uv_ok ? bench_fixed(uv, sizeof uv, (int32_t)view.uv_counts, 0, 0, 0) : "-");
+  air_trigger();
+}
+
+/* The panel is mounted upside down on BB3 (DS1 rot 180): the frame is drawn, then turned before it goes out. */
 static void screen_update(void)
 {
-  bench_screen(&screen, &view);
+  static oled_fb drawn;
+  bench_screen(&drawn, &view);
+  oled_rotate180(&screen, &drawn);
   int failed = oled_show(&screen) != 0;
   if (failed && !oled_failed) APP_PRINTF("#oled SPI timeout: the frame was not sent\n");
   oled_failed = failed;
@@ -255,6 +348,8 @@ static void tick_task(void)
   ticks = 0;
   ina_line();
   gauge_line();
+  meters_line();
+  air_line();
   screen_update();
   shunt_sum = vbus_sum = 0;
   samples = misses = 0;
@@ -269,10 +364,13 @@ static void on_tick(void *ctx)
 
 void SubghzApp_Init(void)
 {
-  APP_PRINTF("\nI2CSCAN (weather-station-2026 bench tool): I2C2 SDA=PA11 (D14) SCL=PA12 (D15), 100 kHz, read only\n");
+  APP_PRINTF("\nI2CSCAN (weather-station-2026 bench tool): I2C2 SDA=PA11 (D14) SCL=PA12 (D15), 100 kHz; power parts read only\n");
   APP_PRINTF("#help i>0: current out of the battery; i<0: into it (shunt %d mOhm in the cell + lead)\n", BENCH_SHUNT_MOHM);
   APP_PRINTF("#power PA9 (D9) high: sensor power enable (carrier only; unconnected on the bench)\n");
   sensors_on();
+  meters_init();
+  cups_last = meters_cups();
+  APP_PRINTF("#meters cups PB5 (D4, LPTIM1), vane PB2 (A1, ADC1_IN4), rain PB4 (A3, EXTI4): spin, turn, tip\n");
   oled_init();
   APP_PRINTF("#oled SSD1325 on SPI1 at %u Hz: SCLK PA5 (D13), DIN PA7 (D11), CS PA4 (D10), DC PC2 (D8), RST PC1 (D7)."
              " Write only: check the screen\n", oled_spi_hz());
@@ -280,6 +378,8 @@ void SubghzApp_Init(void)
   lines_line();
   scan_line();
   rails_line();
+  air_init();
+  air_trigger();
   screen_update();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Scan, UTIL_SEQ_RFU, tick_task);
   (void)UTIL_TIMER_Create(&tick_timer, TICK_MS, UTIL_TIMER_PERIODIC, on_tick, NULL);

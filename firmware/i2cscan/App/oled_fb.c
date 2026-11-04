@@ -54,3 +54,9 @@ void ssd1325_column(const oled_fb *fb, unsigned cp, uint8_t out[OLED_H])
   for (int y = 0; y < OLED_H; y++)
     out[y] = (uint8_t)((oled_get(fb, x, y) ? LIT_LEFT : 0U) | (oled_get(fb, x + 1, y) ? LIT_RIGHT : 0U));
 }
+
+void oled_rotate180(oled_fb *dst, const oled_fb *src)
+{
+  for (int y = 0; y < OLED_H; y++)
+    for (int x = 0; x < OLED_W; x++) oled_set(dst, OLED_W - 1 - x, OLED_H - 1 - y, oled_get(src, x, y));
+}

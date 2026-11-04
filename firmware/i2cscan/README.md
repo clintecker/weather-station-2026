@@ -1,12 +1,16 @@
 # I2C bench tool
 
 A first check of the I2C2 bus on the NUCLEO-WL55JC1, for board B of the bench breadboard
-(`hardware/bench-breadboard-r0`). It answers: are the bus lines pulled up, which parts answer, and do
-the INA228 and the MAX17048 read what the meter reads? Not the weather-station firmware and not H01
-evidence.
+(`hardware/bench-breadboard-r0`, and the r1 bench). It answers: are the bus lines pulled up, which parts
+answer, do the INA228 and the MAX17048 read what the meter reads, and do the weather sensors and the
+weather meter (cups, vane, rain) read at all? Not the weather-station firmware and not H01 evidence.
 
-On I2C the tool **only reads**: it writes no register of any I2C part, so the node firmware finds
-every part as it left it. It writes only to the OLED, on its own SPI bus. It does not use the radio.
+On the **power parts** the tool only reads: it writes no INA228 or MAX17048 register, so the node
+firmware finds them as it left them. The **weather sensors** get only what a reading needs, the node's
+own values (`stage0-node/App/mod_th.c`, `mod_reg.c`): the SHT45 measure command 0xFD, the SHTC3 wake
+0x3517 and measure 0x7866, the BMP581 OSR_CONFIG 0x36 = 0x40 and forced mode ODR_CONFIG 0x37 = 0x82,
+the LTR390 MAIN_CTRL 0x00 = 0x0A (UVS mode). The node sets them again at its start. It also writes the
+OLED, on its own SPI bus. It does not use the radio.
 
 ## What it prints
 
@@ -65,6 +69,24 @@ reading (not averaged). Phase A has none of them, so it prints nothing:
 but a `?` at another address means its strap is wrong (0x48 seen as 0x40 or 0x44: the A1-to-SDA
 wire is open or on the wrong pad). The node's sign for each rail is the same as printed here (power
 spec section 3.1); only the battery rail is turned.
+
+**Weather sensors and meter.** Once a second, after the power lines (each sensor was triggered the
+second before, so the first line after a start shows `-`):
+
+```
+#meters cups=72 hz=2 wind=1.33 m/s (3 s) vane=1486 mV NE rain=2 tips 0.56 mm
+#air sht45 23.10 C 50.80 % | shtc3 22.92 C 52.15 % | bmp581 983.0 hPa | ltr390 uv=0 counts
+```
+
+| Field | Meaning |
+|---|---|
+| `cups`, `hz` | cup pulses since start (LPTIM1 on PB5, 16 bits, wraps) and in the last second: one a turn |
+| `wind` | the pulses of the last 3 s × 0.66698 m/s per Hz (the node's factor) ÷ 3 |
+| `vane` | PB2 in ratio mV and its compass point from the node's table (`mod_wind.c`); `OPEN` above 3200 mV (no vane, cable or jack open), `?` between points |
+| `rain` | tips since start (EXTI4 on PB4, 100 ms lockout as `mod_rain.c`) × 0.2794 mm |
+| `sht45`, `shtc3` | temperature and humidity, both CRCs checked; `-` if no answer or a CRC failed |
+| `bmp581` | station pressure in hPa (not reduced to sea level) |
+| `ltr390` | raw UVS counts (18 bits, 100 ms, gain 3); 0 indoors is normal |
 
 ## Build and flash
 
@@ -128,15 +150,23 @@ Wiring checks these readings catch:
 ## The OLED
 
 The same readings appear on the bench OLED, redrawn once a second: Adafruit #2674, 2.7" 128 x 64,
-SSD1325 controller, on **SPI1** (not I2C, so it is not in the scan).
+SSD1325 controller, on **SPI1** (not I2C, so it is not in the scan). The r1 bench mounts the panel
+upside down (BB3, DS1 at 180°), so the frame is turned 180° before it is sent (`oled_rotate180`).
+Each part's row says `NO <part>` when it did not answer.
 
 ```
-I2C 36 40
-+37.60mA                (twice the size)
-OUT 3.8459V
-CELL 3.8460V 78.4%
-RATE -0.62%/h
+I2C 44 47 53 70
+BATT +37.60mA 3.846V     (INA228 0x40: current, OUT)
+CELL 3.846V 78.4%        (MAX17048)
+AIR 23.10C 50.80%        (SHT45)
+BOX 22.92C 52.15%        (SHTC3, the enclosure)
+P 983.0hPa UV 0          (BMP581; LTR390 counts)
+WIND 1.33m/s NE
+RAIN 2 TIPS 0.56mm
 ```
+
+The display is set up once, at start. If it gets its 3.3 V later (the OLED link's jumper cap fitted
+with the board running), press RESET.
 
 **Interface:** the module must be in SPI mode: on its back, **R19 and R21 fitted, R18 and R20 empty**
 (Adafruit's guide; the module may ship in 8-bit mode with R18 and R20 fitted).

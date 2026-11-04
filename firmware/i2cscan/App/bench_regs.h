@@ -27,4 +27,21 @@ int32_t bench_mean(int64_t sum, unsigned n);
    BENCH_FIXED_MAX_DIGITS. */
 char *bench_fixed(char *out, size_t n, int32_t value, unsigned drop, unsigned decimals, int sign);
 
+/* The wind vane's compass point from its divider reading in "ratio mV" (the ADC count x 3300 / 4095:
+   SEN-15901 network under a 10 kOhm pull-up to 3.3 V, the node's table and bands, stage0-node/App/mod_wind.c):
+   "N" .. "NNW" clockwise; "OPEN" above 3200 mV (no vane, or the cable or jack open); "?" outside every band. */
+const char *bench_vane_point(uint16_t mv);
+
+/* A Sensirion reply: two 16-bit words (temperature, then humidity), each followed by its CRC-8 (poly
+   0x31, init 0xFF). 0 with *centi_c and *centi_rh (0.01 C, 0.01 %RH) set; -1 on a CRC mismatch.
+     shtc3 = 0: SHT45  T = -45 + 175 raw / 65535, RH = -6 + 125 raw / 65535, cropped to 0..100 %
+     shtc3 = 1: SHTC3  T = -45 + 175 raw / 65536, RH = 100 raw / 65536 (its "T first" read, 0x7866) */
+int bench_sht_parse(const uint8_t b[6], int shtc3, int32_t *centi_c, int32_t *centi_rh);
+
+/* The BMP581's PRESS_DATA (0x20-0x22, little-endian, Pa x 64) in 0.1 hPa, rounded half up (as mod_reg.c). */
+int32_t bench_bmp581_dhpa(const uint8_t b[3]);
+
+/* The LTR390's UVS_DATA (0x10-0x12, little-endian): 20 bits of counts. */
+uint32_t bench_ltr390_counts(const uint8_t b[3]);
+
 #endif

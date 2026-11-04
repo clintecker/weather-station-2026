@@ -275,7 +275,12 @@ OLED_W, OLED_H = 128, 64
 class View(ctypes.Structure):
     _fields_ = [('found', ctypes.c_uint8*5), ('nfound', ctypes.c_uint), ('ina_ok', ctypes.c_int),
                 ('ua', ctypes.c_int32), ('vbus_uv', ctypes.c_int32), ('gauge_ok', ctypes.c_int),
-                ('vcell_uv', ctypes.c_int32), ('soc_mpct', ctypes.c_int32), ('crate_mpct_h', ctypes.c_int32)]   # bench_view
+                ('vcell_uv', ctypes.c_int32), ('soc_mpct', ctypes.c_int32), ('crate_mpct_h', ctypes.c_int32),
+                ('meters_ok', ctypes.c_int), ('wind_ums', ctypes.c_int32), ('vane', ctypes.c_char_p),
+                ('tips', ctypes.c_uint32), ('air_ok', ctypes.c_int), ('box_ok', ctypes.c_int),
+                ('press_ok', ctypes.c_int), ('uv_ok', ctypes.c_int), ('air_centi_c', ctypes.c_int32),
+                ('air_centi_rh', ctypes.c_int32), ('box_centi_c', ctypes.c_int32), ('box_centi_rh', ctypes.c_int32),
+                ('press_dhpa', ctypes.c_int32), ('uv_counts', ctypes.c_uint32)]   # bench_view
 
 
 @needs_cc
@@ -348,28 +353,83 @@ class BenchScreen(unittest.TestCase):
             self.lib.oled_text(fb, 0, y, text, scale)
         return fb.raw
 
-    def test_screen_with_both_parts(self):
-        v = View((0x36, 0x40, 0, 0, 0), 2, 1, 37604, 3845898, 1, 3846015, 78398, -624)
+    def rows(self, *lines):
+        return self.expected([(8*i, text, 1) for i, text in enumerate(lines) if text is not None])
+
+    def test_screen_with_everything(self):
+        v = View(found=(0x36, 0x40, 0x44, 0x47, 0x53), nfound=6, ina_ok=1, ua=37604, vbus_uv=3845898, gauge_ok=1,
+                 vcell_uv=3846015, soc_mpct=78398, meters_ok=1, wind_ums=1333960, vane=b'SE', tips=2,
+                 air_ok=1, air_centi_c=2134, air_centi_rh=4521, box_ok=1, box_centi_c=2210, box_centi_rh=4002,
+                 press_ok=1, press_dhpa=10132, uv_ok=1, uv_counts=123)
         fb = self.fb()
         self.lib.bench_screen(fb, ctypes.byref(v))
-        self.assertEqual(fb.raw, self.expected([(0, b'I2C 36 40', 1), (11, b'+37.60mA', 2), (31, b'OUT 3.8459V', 1),
-                                                (42, b'CELL 3.8460V 78.4%', 1), (53, b'RATE -0.62%/h', 1)]))
+        self.assertEqual(fb.raw, self.rows(b'I2C 36 40 44 47 53 +', b'BATT +37.60mA 3.846V', b'CELL 3.846V 78.4%',
+                                           b'AIR 21.34C 45.21%', b'BOX 22.10C 40.02%', b'P 1013.2hPa UV 123',
+                                           b'WIND 1.33m/s SE', b'RAIN 2 TIPS 0.56mm'))
 
     def test_screen_with_nothing_on_the_bus(self):
-        v = View((0,)*5, 0, 0, 0, 0, 0, 0, 0, 0)
+        v = View()
         fb = self.fb()
         self.lib.bench_screen(fb, ctypes.byref(v))
-        self.assertEqual(fb.raw, self.expected([(0, b'I2C NONE', 1), (11, b'NO INA228', 2), (42, b'NO GAUGE', 1)]))
+        self.assertEqual(fb.raw, self.rows(b'I2C NONE', b'BATT NO INA228', b'CELL NO MAX17048', b'AIR NO SHT45',
+                                           b'BOX NO SHTC3', b'P NO BMP581 UV NO'))
 
-    def test_screen_with_more_addresses_than_fit(self):
-        v = View((0x36, 0x3C, 0x40, 0x44, 0x47), 7, 0, 0, 0, 0, 0, 0, 0)
-        fb = self.fb()
-        self.lib.bench_screen(fb, ctypes.byref(v))
-        self.assertEqual(fb.raw, self.expected([(0, b'I2C 36 3C 40 44 47 +', 1), (11, b'NO INA228', 2),
-                                                (42, b'NO GAUGE', 1)]))
-        # The "+" is the 20th character (x 114-118) and must be on the screen, not clipped.
-        plus = {(x, y) for x in range(114, 120) for y in range(7) if self.lib.oled_get(fb, x, y)}
-        self.assertEqual(plus, {(x + 114, y) for x, y in self.lit_of(b'+')})
+    def test_screen_text_has_no_missing_glyphs(self):
+        # Every character the layout draws is in the font: a '?' on the screen is never a glyph gap.
+        chars = (ROOT/'firmware/i2cscan/App/font5x7.c').read_text().split('font5x7_chars[] = "')[1].split('"')[0]
+        for text in (b'BATT +37.60mA 3.846V', b'CELL NO MAX17048', b'P 1013.2hPa UV 123', b'WIND 1.33m/s NNE',
+                     b'RAIN 2 TIPS 0.56mm', b'AIR 21.34C 45.21%'):
+            self.assertTrue(set(text.decode()) <= set(chars), text)
+
+    def test_rotate180(self):
+        fb, out = self.fb(), self.fb()
+        self.lib.oled_set(fb, 0, 0, 1)
+        self.lib.oled_set(fb, 10, 3, 1)
+        self.lib.oled_rotate180.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        self.lib.oled_rotate180(out, fb)
+        self.assertEqual(self.lit(out), {(OLED_W - 1, OLED_H - 1), (OLED_W - 11, OLED_H - 4)})
+
+    def test_sht_parse(self):
+        self.lib.bench_sht_parse.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.POINTER(ctypes.c_int32),
+                                             ctypes.POINTER(ctypes.c_int32)]
+        t, h = ctypes.c_int32(), ctypes.c_int32()
+        def crc(w):
+            x = 0xFF
+            for byte in w:
+                x ^= byte
+                for _ in range(8):
+                    x = ((x << 1) ^ 0x31) & 0xFF if x & 0x80 else (x << 1) & 0xFF
+            return x
+        self.assertEqual(crc(b'\xbe\xef'), 0x92)                 # Sensirion's datasheet example
+        reply = b'\x66\x66' + bytes([crc(b'\x66\x66')]) + b'\x80\x00' + bytes([crc(b'\x80\x00')])
+        self.assertEqual(self.lib.bench_sht_parse(reply, 0, t, h), 0)   # SHT45
+        self.assertEqual((t.value, h.value), (2500, 5650))
+        self.assertEqual(self.lib.bench_sht_parse(reply, 1, t, h), 0)   # SHTC3
+        self.assertEqual((t.value, h.value), (2500, 5000))
+        self.assertEqual(self.lib.bench_sht_parse(reply[:5] + b'\x00', 0, t, h), -1)
+        low = b'\x00\x00' + bytes([crc(b'\x00\x00')]) * 1 + b'\x00\x00' + bytes([crc(b'\x00\x00')])
+        self.assertEqual(self.lib.bench_sht_parse(low, 0, t, h), 0)
+        self.assertEqual((t.value, h.value), (-4500, 0))               # RH cropped at 0, not -6 %
+
+    def test_bmp581_and_ltr390(self):
+        self.lib.bench_bmp581_dhpa.argtypes = [ctypes.c_char_p]
+        self.lib.bench_ltr390_counts.argtypes = [ctypes.c_char_p]
+        self.lib.bench_ltr390_counts.restype = ctypes.c_uint32
+        raw = 101325 * 64                                           # 1013.25 hPa
+        self.assertEqual(self.lib.bench_bmp581_dhpa(raw.to_bytes(3, 'little')), 10133)
+        self.assertEqual(self.lib.bench_ltr390_counts(b'\x7b\x00\xf0'), 123)   # the top nibble is not data
+
+    def test_vane_points(self):
+        # SEN-15901 resistances under 10 kOhm to 3.3 V, clockwise from north (stage0-node/App/mod_wind.c).
+        ohms = (33000, 6570, 8200, 891, 1000, 688, 2200, 1410, 3900, 3140, 16000, 14120, 120000, 42120, 64900, 21880)
+        points = 'N NNE NE ENE E ESE SE SSE S SSW SW WSW W WNW NW NNW'.split()
+        self.lib.bench_vane_point.restype = ctypes.c_char_p
+        self.lib.bench_vane_point.argtypes = [ctypes.c_uint16]
+        for r, want in zip(ohms, points):
+            mv = (3300*r + (r + 10000)//2) // (r + 10000)
+            self.assertEqual(self.lib.bench_vane_point(mv).decode(), want, r)
+        self.assertEqual(self.lib.bench_vane_point(3250), b'OPEN')
+        self.assertEqual(self.lib.bench_vane_point(0), b'?')     # a short: inside no band
 
 
 class SensorPower(unittest.TestCase):
