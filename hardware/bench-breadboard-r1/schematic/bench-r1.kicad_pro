@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "filename": "bench-r1.kicad_pro",
+    "version": 3
+  },
+  "schematic": {
+    "legacy_lib_dir": "",
+    "legacy_lib_list": []
+  },
+  "sheets": [
+    [
+      "a5a323a1-bf05-546a-a9cd-615e199f089c",
+      "Root"
+    ]
+  ],
+  "text_variables": {}
+}

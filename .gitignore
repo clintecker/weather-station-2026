@@ -17,3 +17,6 @@ vendor/
 .claude/
 # KiCad local view settings
 *.kicad_prl
+
+# brainstorming companion mockups (superpowers)
+.superpowers/
