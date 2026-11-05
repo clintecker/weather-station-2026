@@ -169,6 +169,17 @@ tools/deploy/macos/install.sh status      # uninstall: tools/deploy/macos/instal
 
 The Linux equivalent is `tools/deploy/linux/ws0-gateway.service`. Keep the Mac awake during the 24-hour delivery test.
 
+### End-to-end check
+
+With the TX, the RX and `ws0 serve` running, `tools/e2e_check.py` asks the gateway's API for the latest observation and checks every station field (present, valid, in range) and its age:
+
+```sh
+export WS0_API_TOKEN=<api_token from the run directory's gateway.json>
+.venv/bin/python tools/e2e_check.py --power-pending   # until the power rails are wired
+```
+
+It prints one line a field (`ok`, `FAIL`, `pending`) and a summary. Exit 0 means no FAIL. `--url` (default `http://127.0.0.1:8088`) and `--max-age` (default 180 s) are options. The token is read only from `WS0_API_TOKEN`.
+
 `run-hw/` holds secrets and live data. Git ignores it. `serve` appends receiver diagnostics and every frame/ACK pair to `run-hw/receiver.log`.
 
 ## Console (USB serial through the ST-LINK virtual COM port, 115200 8N1)
