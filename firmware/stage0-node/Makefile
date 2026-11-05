@@ -65,10 +65,10 @@ APP_SRC += App/tx_exchange.c App/tx_policy.c App/tx_time.c App/tx_console.c App/
            $(ROOT)/firmware/common/wsmp_ident.c $(ROOT)/firmware/stage0.c \
            $(ROOT)/firmware/common/ws_frame.c $(ROOT)/firmware/common/ws_obs.c $(ROOT)/firmware/common/ws_policy.c
 endif
-# The display: the driver, then the shared frame buffer, drawing and font (firmware/common).
+# The display: the driver, the screens, then the shared frame buffer, drawing and font (firmware/common).
 ifeq ($(WS_BENCH_OLED),1)
-APP_SRC += App/oled_dma.c $(ROOT)/firmware/common/oled_fb.c $(ROOT)/firmware/common/oled_draw.c \
-           $(ROOT)/firmware/common/font5x7.c
+APP_SRC += App/oled_dma.c App/scr_view.c App/scr_interludes.c App/scr_art.c \
+           $(ROOT)/firmware/common/oled_fb.c $(ROOT)/firmware/common/oled_draw.c $(ROOT)/firmware/common/font5x7.c
 endif
 
 HAL_EXTRA = i2c i2c_ex iwdg adc adc_ex lptim
