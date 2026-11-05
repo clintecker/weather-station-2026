@@ -648,7 +648,7 @@ Journal capacity. Opening a page erases the oldest one, so 29 pages always hold 
 | full station (the 78-byte radio ceiling) | 78 B | 96 B | 21 | 609 | 10.1 h |
 | temperature and humidity | 35 B | 56 B | 36 | 1,044 | 17.4 h |
 
-*Amended 2026-10-29:* the journal asserts 24 hours of the build's widest record, not of every
-catalog field (PT section 7). The version 6 node field set (77 B) and the 80-byte per-build ceiling
+*Amended 2026-10-29:* the journal asserts its hours of the build's widest record, not of every
+catalog field (PT section 7): 9.5 h since flash layout v3 (24 h on the 70-page ring before it). The version 6 node field set (77 B) and the 80-byte per-build ceiling
 both take a 96-byte slot: 21 slots a page, 609 records, 10.15 h, as the full-station row. Every
 catalog v2 field (94 B, a 112-byte slot, 8.7 h) is never a build.
