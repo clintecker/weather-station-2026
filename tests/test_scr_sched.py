@@ -58,15 +58,17 @@ void UTIL_SEQ_RegTask(uint32_t mask, uint32_t flags, void (*fn)(void)) { (void)f
 void UTIL_SEQ_SetTask(uint32_t mask, uint32_t prio) { (void)prio; posted |= mask; }
 uint32_t t_timer_period(void) { return timer && timer->running && timer->mode == UTIL_TIMER_PERIODIC ? timer->period : 0; }
 /* One tick: the timer fires (it only posts the task), then the main loop runs what was posted. */
-int t_tick(void)
+void t_adv(uint32_t ms) { t_now += ms; }
+/* A step at the current clock, which does not move. */
+int t_step(void)
 {
-  t_now += timer->period;
   timer->cb(timer->arg);
   int ran = (posted & task_mask) != 0;
   posted = 0;
   if (ran) task();
   return ran;
 }
+int t_tick(void) { t_now += timer->period; return t_step(); }
 
 int t_busy, t_inits, t_sends, t_expands, t_torn, t_faulted;
 static uint8_t txbuf[OLED_FRAME_BYTES];
@@ -392,31 +394,45 @@ class OledApp(unittest.TestCase):
             self.press(1)
         self.assertEqual(got, ['VANE', 'SYSTEM', 'HACK', 'NORMAL'])
 
+    def adv(self, ms):
+        self.lib.t_adv(ms)
+
+    def step_now(self):
+        """A step at the current clock (time does not move): (screen, frame) drawn."""
+        self.assertEqual(self.lib.t_step(), 1)
+        return self.get('t_id'), self.get('t_frame')
+
     def test_bounce_across_a_step_boundary_is_one_press(self):
-        # Edges 20 ms apart with a step between them: one press (the second is bounce). Edges 200 ms apart: two.
+        # B1 goes down, a step takes it, and 20 ms after the first edge the contact bounces: that edge, in the
+        # next step, must not be a second press.
         self.to_normal()
-        self.set('t_now', self.get('t_now') + 110)   # 15 ms before the next tick fires
+        self.adv(115)
         self.press(1)
-        self.set('t_now', self.get('t_now') + 20)
+        self.assertEqual(self.step_now(), (SCREENS.index('SCOPE'), 0))
+        self.adv(20)
         self.press(1)
-        self.set('t_now', self.get('t_now') - 130)
-        self.assertEqual(SCREENS[self.tick()[0]], 'SCOPE')   # the tick between the edges took the first
-        self.assertEqual(self.tick(), (SCREENS.index('SCOPE'), 1))   # the second was dropped: not on to VANE
-        self.set('t_now', self.get('t_now') + 200)
+        self.assertEqual(self.step_now(), (SCREENS.index('SCOPE'), 1))   # not on to the vane
+
+    def test_presses_200_ms_apart_with_a_step_between_are_two(self):
+        self.to_normal()
+        self.adv(115)
         self.press(1)
-        self.set('t_now', self.get('t_now') + 200)
+        self.assertEqual(self.step_now(), (SCREENS.index('SCOPE'), 0))
+        self.adv(200)
         self.press(1)
-        self.assertEqual(SCREENS[self.tick()[0]], 'VANE')   # two real presses in one step are still one event
-        self.assertEqual(self.tick(), (SCREENS.index('VANE'), 1))
+        self.assertEqual(self.step_now(), (SCREENS.index('VANE'), 0))
 
     def test_a_long_bounce_train_stays_one_press(self):
-        # Edges every 30 ms for 300 ms: each is within 50 ms of the one before, so only the first counts.
+        # An edge every 10 ms for 400 ms, steps every 125 ms in between: each edge is within 50 ms of the one
+        # before, so only the first is a press and the scope plays on.
         self.to_normal()
-        for _ in range(10):
+        seen = []
+        for i in range(40):
+            self.adv(10)
             self.press(1)
-            self.set('t_now', self.get('t_now') + 30)
-        self.assertEqual(SCREENS[self.tick()[0]], 'SCOPE')
-        self.assertEqual(self.tick(), (SCREENS.index('SCOPE'), 1))
+            if i % 12 == 11:
+                seen.append(self.step_now())
+        self.assertEqual(seen, [(SCREENS.index('SCOPE'), f) for f in range(len(seen))])
 
     def test_b3_turns_display_off(self):
         # B3: oled_dma_enable(0), and the steps draw nothing; B3 again: oled_dma_enable(1), and drawing resumes.
