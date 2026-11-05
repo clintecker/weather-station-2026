@@ -160,6 +160,7 @@ static void rail_cal_checked(unsigned i)
   if (r->have_base) r->win.gap = 1;
   r->have_base = 0;
   r->cal_needed = 1;
+  r->live_step = r->live_vbus = 0;   /* the screen's values are from before the reset */
   rail_read(i, RS_MANUFACTURER, &reg_manufacturer, 2);
 }
 

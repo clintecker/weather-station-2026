@@ -437,7 +437,7 @@ static void handle(uint32_t ev)
 
 | Step | Action |
 |---|---|
-| 1 | `WS_CHECK` that no exchange runs. If one runs, return. `app_tx.c` holds the reading instead |
+| 1 | `WS_CHECK` that no exchange runs. If one runs, return. `app_tx.c` holds the reading instead. Else tell the bench display (`oled_note_exchange`: this minute's airtime starts again, with or without a live reading) |
 | 2 | clamp `backlog` to `MAX_QUEUE - 1` (20) with a `WS_CHECK` |
 | 3 | queue the live reference first if `live` is not NULL |
 | 4 | append the oldest pending records from `store_journal_oldest`, except `live`. Without a live reference the backlog can also use the live slot |
@@ -467,6 +467,7 @@ main-loop pass. The chip needs time to enter sleep before the firmware wakes it.
 void exchange_start(const jref_t *live, unsigned backlog)
 {
   if (!WS_CHECK(!exchange_busy())) return;   /* app_tx.c holds the reading while an exchange runs */
+  oled_note_exchange();
   if (!WS_CHECK(backlog <= MAX_QUEUE - 1U)) backlog = MAX_QUEUE - 1U;   /* the room in the queue */
   qn = 0; live_n = live != NULL;
   if (live) queue[qn++] = *live;
@@ -541,13 +542,14 @@ A local failure does not count as a missed reply and does not change the drain. 
 
 The bench display hooks (`App/oled_hooks.h`) tell the bench build's OLED what the exchange does:
 `oled_note_sent` when a frame goes on air (here and in `send_diag`), `oled_note_ack` for the ACK to the
-frame just sent (`on_ack`) and `oled_note_no_ack` when its window ends empty (`no_reply`). They run
+frame just sent (`on_ack`) and `oled_note_no_ack` when its window ends empty (`no_reply`), a NACK, a
+transmit timeout or `exchange_abort` ends it. They run
 here, in the exchange's task, and only note the event and copy the frame; the display draws from its
 own task. The frame that plays the packet burst is the minute's live reading, the exchange's first
 (`qi < live_n`: `live_n` is 1 when `exchange_start` queued a live reading, 0 when its journal append
 failed and the queue holds backlog only). Every other frame (the backlog, the one more after a miss,
-the health report) is passed as not live, and the banner only counts it, so a minute without a live
-reading plays no burst. A first frame that fails locally gets no burst that minute. In the field build
+the health report) is passed as `OLED_SENT_BACKLOG` or `OLED_SENT_REPORT`, and the banner only counts it,
+so a minute without a live reading plays no burst. A first frame that fails locally gets no burst that minute. In the field build
 the hooks are empty inline functions, and they take only values the exchange already holds (a call
 such as `store_journal_pending()` as an argument would still run in the field build), so the hooks
 add no code there. The WS_CHECK sites number their lines (`ws_check.h`): a line added above one
@@ -607,7 +609,7 @@ static int send_obs(const uint8_t *plain, int plen)
   sent_seq = ws_obs_seq(plain);
   tx_counts.sent++; led_flash(LED_BLUE, LED_FLASH_MS);
   if (ws_radio_send(frame, (uint8_t)flen) == RADIO_STATUS_OK)
-  { tx_state = TX_SENDING; oled_note_sent(sent_seq, frame, (uint8_t)flen, qi < live_n); return 1; }
+  { tx_state = TX_SENDING; oled_note_sent(sent_seq, frame, (uint8_t)flen, qi < live_n ? OLED_SENT_LIVE : OLED_SENT_BACKLOG); return 1; }
   ws_failrun_note(&tx_counts.air, 0); APP_PRINTF("#error radio-busy\n");
   return 0;
 }
@@ -1003,7 +1005,7 @@ signal of the last ACK; then `diag_station` and `diag_power` fill the rest.
 | seal (`WS_CHECK`) | return 0 |
 | `ws_radio_send` | note a transmit failure, return 0 |
 | `policy_diag_sent(now)`: the report is no longer due | |
-| enter `diag-sending`, `oled_note_sent` (not live: the banner counts it), print `#diag sent`, return 1 | |
+| enter `diag-sending`, `oled_note_sent` (`OLED_SENT_REPORT`: the banner counts it), print `#diag sent`, return 1 | |
 
 A report that failed at any step stays due, so the exchange of the next minute tries again. A
 return of 0 ends the exchange (`in_gap`).
@@ -1031,7 +1033,7 @@ static int send_diag(void)
   if (!WS_CHECK(ws_seal_kind(key, identity.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) >= 0)) return 0;
   if (ws_radio_send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_counts.air, 0); return 0; }
   policy_diag_sent(now);   /* only a report that the radio took. A refused one is due next minute */
-  tx_state = TX_DIAG_SENDING; oled_note_sent(0, frame, (uint8_t)sizeof frame, 0);
+  tx_state = TX_DIAG_SENDING; oled_note_sent(0, frame, (uint8_t)sizeof frame, OLED_SENT_REPORT);
   diag_line(&d);
   return 1;
 }
@@ -1067,7 +1069,8 @@ static void radio_idle(void) { tx_state = TX_IDLE; ws_radio_sleep(); held_flush(
 
 `exchange_abort` ends an exchange that passed its time limit. It stops both timers, puts the radio
 in standby, enters `idle` and journals the held readings while the radio is stopped. A watchdog
-reset that follows then loses no reading.
+reset that follows then loses no reading. The bench display shows a live frame still waiting for its
+reply as not ACKed (`oled_note_no_ack`; the hook ignores any other frame).
 
 ```c {#abort}
 /* The exchange passed its worst case, for example because the radio never finishes. Stop the radio,
@@ -1079,6 +1082,7 @@ void exchange_abort(void)
   (void)UTIL_TIMER_Stop(&ack_timer);
   ws_radio_standby();
   tx_state = TX_IDLE;
+  oled_note_no_ack(sent_seq);   /* the bench display: not ACKed */
   held_flush();
 }
 ```

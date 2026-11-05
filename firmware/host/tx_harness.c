@@ -45,6 +45,7 @@
 #include "console.h"
 #include "i2c_bus.h"
 #include "node_store.h"
+#include "oled_hooks.h"
 #include "radio.h"
 #include "radio_cfg.h"
 #include "i2c_sim.h"
@@ -322,18 +323,28 @@ void h_rx_hdr(void)
   radio_events->RxTimeout();
   sim_run_tasks();
 }
-/* The bench display's hooks (App/oled_hooks.h), built in (WS_BENCH_OLED=1) so a test sees what the exchange tells
-   the display: the sent frames (and how many of them were live) and the no-ACK outcomes. */
-static uint32_t oled_sent_n, oled_live_n, oled_no_ack_n, oled_no_ack_last = 0xFFFFFFFFU;
-void oled_note_sent(uint32_t seq, const uint8_t *frame, uint8_t len, int live)
-{ (void)seq; (void)frame; (void)len; oled_sent_n++; if (live) oled_live_n++; }
-uint32_t h_oled_sent(void) { return oled_sent_n; }
-uint32_t h_oled_lives(void) { return oled_live_n; }
+/* The bench display's hooks (App/oled_hooks.h), built in with WS_BENCH_OLED=1 so a test sees what the exchange
+   tells the display: the exchanges started, the sent frames (how many of them live, how many health reports)
+   and the no-ACK outcomes. The field build (WS_BENCH_OLED=0) has the header's empty inline hooks, and every
+   h_oled_ count reads 0xFFFFFFFF there. */
+static uint32_t oled_exchange_n, oled_sent_n, oled_live_n, oled_report_n, oled_no_ack_n, oled_no_ack_last = 0xFFFFFFFFU;
+#if WS_BENCH_OLED
+void oled_note_exchange(void) { oled_exchange_n++; }
+void oled_note_sent(uint32_t seq, const uint8_t *frame, uint8_t len, int kind)
+{ (void)seq; (void)frame; (void)len; oled_sent_n++; oled_live_n += kind == OLED_SENT_LIVE; oled_report_n += kind == OLED_SENT_REPORT; }
 void oled_note_ack(uint32_t seq, int16_t rssi, int8_t snr) { (void)seq; (void)rssi; (void)snr; }
 void oled_note_no_ack(uint32_t seq) { oled_no_ack_n++; oled_no_ack_last = seq; }
 void oled_app_start(void) {}   /* app_tx starts the display */
-uint32_t h_oled_no_acks(void) { return oled_no_ack_n; }
-uint32_t h_oled_no_ack_seq(void) { return oled_no_ack_last; }
+#define OLED_COUNT(n) (n)
+#else
+#define OLED_COUNT(n) ((void)(n), 0xFFFFFFFFU)
+#endif
+uint32_t h_oled_exchanges(void) { return OLED_COUNT(oled_exchange_n); }
+uint32_t h_oled_sent(void) { return OLED_COUNT(oled_sent_n); }
+uint32_t h_oled_lives(void) { return OLED_COUNT(oled_live_n); }
+uint32_t h_oled_reports(void) { return OLED_COUNT(oled_report_n); }
+uint32_t h_oled_no_acks(void) { return OLED_COUNT(oled_no_ack_n); }
+uint32_t h_oled_no_ack_seq(void) { return OLED_COUNT(oled_no_ack_last); }
 
 /* The driver's transmit timeout: the radio is still transmitting (stuck), no TxDone will come. */
 void h_tx_timeout(void)

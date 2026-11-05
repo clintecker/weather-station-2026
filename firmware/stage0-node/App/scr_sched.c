@@ -66,6 +66,7 @@ void sched_event(enum sched_ev e, uint32_t now_ms)
       else show(next_screen(cur));
       break;
     case EV_B2:
+      if (!on) break;
       paused = !paused;
       if (paused) held = in_order(cur) ? cur : SCR_NORMAL;   /* the screen up stays; a packet or boot one ends first */
       else interlude_at = now_ms + INTERLUDE_EVERY_MS;      /* resumes a full period from now */
@@ -111,3 +112,5 @@ int sched_step(uint32_t now_ms, enum scr_id *id, unsigned *out_frame, int *displ
 }
 
 unsigned sched_extras(void) { return extras; }
+
+int sched_display_on(void) { return on; }

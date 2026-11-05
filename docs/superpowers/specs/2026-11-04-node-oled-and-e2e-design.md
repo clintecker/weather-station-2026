@@ -43,7 +43,7 @@ power, memory and bus bandwidth the node has.
 
 ## Anti-goals
 
-- The OLED must never delay sampling, the radio exchange or the ACK window. A display fault (SPI or DMA error) turns
+- The OLED must never delay sampling, the radio exchange or the ACK window. A display fault (SPI or DMA error, or a DMA that does not end) turns
   the display off and is reported once; it never resets the node or stops a frame.
 - The OLED shows nothing the TX does not itself know. It never claims the website has a reading; an ACK means only
   that the gateway authenticated and journaled that frame.
@@ -119,7 +119,7 @@ All six, drawn only from what the TX knows. Mockups (true scale, real font) are 
 `.superpowers/brainstorm/83868-1793832625/content/` (oled-interludes-v2.html, oled-hack-the-planet.html).
 
 1. **Packet burst**, once per minute's exchange, on its live reading (my call): backlog frames, the extra frame after
-   a missed ACK and the health report do not each get a burst; the ACK banner counts them ("+3 BACKLOG"), so a drain
+   a missed ACK and the health report do not each get a burst; the ACK banner counts them ("+3 BACKLOG", and "+HEALTH" for the report), so a drain
    cannot hold the screen. Before the ACK banner: LoRa up-chirps sweeping across, then the
    frame's real ciphertext scrolling as hex, and a footer of the radio settings (SF, BW, frequency, frame length).
 2. **Wind scope**: the last 30 s of cup pulse rate (4 Hz bins) on a dotted grid, scrolling; speed and gust below.

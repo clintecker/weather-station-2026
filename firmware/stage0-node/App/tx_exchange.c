@@ -142,6 +142,7 @@ void exchange_abort(void)
   (void)UTIL_TIMER_Stop(&ack_timer);
   ws_radio_standby();
   tx_state = TX_IDLE;
+  oled_note_no_ack(sent_seq);   /* the bench display: not ACKed */
   held_flush();
 }
 
@@ -216,7 +217,7 @@ static int send_diag(void)
   if (!WS_CHECK(ws_seal_kind(key, identity.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) >= 0)) return 0;
   if (ws_radio_send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_counts.air, 0); return 0; }
   policy_diag_sent(now);   /* only a report that the radio took. A refused one is due next minute */
-  tx_state = TX_DIAG_SENDING; oled_note_sent(0, frame, (uint8_t)sizeof frame, 0);
+  tx_state = TX_DIAG_SENDING; oled_note_sent(0, frame, (uint8_t)sizeof frame, OLED_SENT_REPORT);
   diag_line(&d);
   return 1;
 }
@@ -262,7 +263,7 @@ static int send_obs(const uint8_t *plain, int plen)
   sent_seq = ws_obs_seq(plain);
   tx_counts.sent++; led_flash(LED_BLUE, LED_FLASH_MS);
   if (ws_radio_send(frame, (uint8_t)flen) == RADIO_STATUS_OK)
-  { tx_state = TX_SENDING; oled_note_sent(sent_seq, frame, (uint8_t)flen, qi < live_n); return 1; }
+  { tx_state = TX_SENDING; oled_note_sent(sent_seq, frame, (uint8_t)flen, qi < live_n ? OLED_SENT_LIVE : OLED_SENT_BACKLOG); return 1; }
   ws_failrun_note(&tx_counts.air, 0); APP_PRINTF("#error radio-busy\n");
   return 0;
 }
@@ -285,6 +286,7 @@ static void send_current(void)
 void exchange_start(const jref_t *live, unsigned backlog)
 {
   if (!WS_CHECK(!exchange_busy())) return;   /* app_tx.c holds the reading while an exchange runs */
+  oled_note_exchange();
   if (!WS_CHECK(backlog <= MAX_QUEUE - 1U)) backlog = MAX_QUEUE - 1U;   /* the room in the queue */
   qn = 0; live_n = live != NULL;
   if (live) queue[qn++] = *live;

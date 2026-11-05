@@ -104,6 +104,31 @@ class ScrView(unittest.TestCase):
         self.assertEqual(len(line), 21)
         self.assertEqual(self.draw('BANNER', 0, v), self.rows(top + ['  SENDING TX 1234', line], (6, 7)))
 
+    def banner_row(self, v):
+        """The banner's first row, as drawn (inverted back to lit text)."""
+        got = self.region(self.draw('BANNER', 0, v), 0, 48, W, 56)
+        return {(x, y) for y in range(48, 56) for x in range(W)} - got
+
+    def test_a_health_report_is_not_backlog(self):
+        # The health report follows the live frame too, but nothing came from the backlog: +HEALTH, not +1 BACKLOG.
+        v = render.demo_view()
+        v.last_seq, v.extra_frames, v.reports = 1234, 0, 1
+        self.assertEqual(self.banner_row(v), self.text(0, 48, '  TX 1234 +HEALTH'))
+        v.extra_frames = 5   # both: the short words, then without the indent, to fit 21 columns
+        self.assertEqual(self.banner_row(v), self.text(0, 48, 'TX 1234 +5 BKLG +HLTH'))
+
+    def test_rows_that_would_overflow_take_a_shorter_form(self):
+        # 21 columns: a 5-digit sequence and a 2-digit backlog, a 22-character wind row, are shortened, not cut.
+        v = render.demo_view()
+        v.last_seq, v.extra_frames, v.reports = 12345, 12, 0
+        self.assertEqual(self.banner_row(v), self.text(0, 48, '  TX 12345 +12 BKLG'))
+        v.last_seq, v.extra_frames, v.reports = 4294967295, 65535, 1   # the widest: drawn as far as it goes
+        self.assertTrue(self.banner_row(v))
+        v.wind.speed_cms, v.wind.gust_cms, v.wind.point = 1234, 2340, 1
+        self.assertEqual(self.region(self.draw('NORMAL', 0, v), 0, 24, W, 32), self.text(0, 24, 'WND 12.3m/s NNE G23.4'))
+        v.wind.point = 2   # a 2-letter point fits as it was
+        self.assertEqual(self.region(self.draw('NORMAL', 0, v), 0, 24, W, 32), self.text(0, 24, 'WIND 12.3m/s NE G23.4'))
+
     def extreme_views(self):
         """Every field at its ends, the parts absent and present, each outcome."""
         lo, hi = render.demo_view(), render.demo_view()

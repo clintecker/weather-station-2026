@@ -28,6 +28,7 @@ FRAMES = {'NORMAL': 1, 'BURST': 16, 'BANNER': 24, 'SCOPE': 64, 'VANE': 64, 'SYST
 EV_SENT_LIVE, EV_SENT_EXTRA, EV_ACK, EV_NO_ACK, EV_B1, EV_B2, EV_B3 = range(7)
 SCR_TX_NONE, SCR_TX_WAIT, SCR_TX_NO_ACK, SCR_TX_ACK = -2, -1, 0, 1
 STEP_MS = 125
+SENT_BACKLOG, SENT_LIVE, SENT_REPORT = range(3)   # enum oled_sent (App/oled_hooks.h)
 
 SHIM = r'''
 #include <string.h>
@@ -113,6 +114,7 @@ unsigned t_view_seq(void) { return t_view.last_seq; }
 unsigned t_view_cipher_len(void) { return t_view.cipher_len; }
 unsigned t_view_cipher(unsigned i) { return t_view.cipher[i]; }
 unsigned t_view_airtime(void) { return t_view.airtime_pct; }
+unsigned t_view_reports(void) { return t_view.reports; }
 '''
 
 
@@ -378,6 +380,24 @@ class Scheduler(unittest.TestCase):
         self.event(EV_B3)
         self.assertEqual(self.step()[0], 1)   # on again, and NORMAL is redrawn
 
+    def test_display_on_is_known_before_the_step(self):
+        # oled_app.c powers the panel before it steps: sched_display_on says what B3 set, at once.
+        self.to_normal()
+        self.assertEqual(self.lib.sched_display_on(), 1)
+        self.event(EV_B3)
+        self.assertEqual(self.lib.sched_display_on(), 0)
+        self.event(EV_B3)
+        self.assertEqual(self.lib.sched_display_on(), 1)
+
+    def test_b2_while_off_does_nothing(self):
+        # Like B1: a B2 press in the dark would pause the rotation unseen. Back on, the interludes still come.
+        self.to_normal()
+        self.event(EV_B3)
+        self.event(EV_B2)
+        self.event(EV_B3)
+        got = self.plays(self.steps(120000 // STEP_MS))
+        self.assertEqual([s for s, _ in got], ['SCOPE'])
+
 
 @needs_cc
 class OledApp(unittest.TestCase):
@@ -435,16 +455,20 @@ class OledApp(unittest.TestCase):
         self.assertEqual(self.tick(), (SCREENS.index('BURST'), 1))
 
     def test_drain_shows_one_burst(self):
-        # The live frame, its ACK, then 5 more (backlog and the health report): one burst, one banner that
-        # counts the 5 and shows the live frame's ACK, then NORMAL.
+        # The live frame, its ACK, then 5 more (4 backlog and the health report): one burst, one banner that
+        # counts the 4 and the report apart and shows the live frame's ACK, then NORMAL.
         self.to_normal()
         cipher = bytes(range(100, 200))
-        self.lib.oled_note_sent(77, cipher, len(cipher), 1)
+        self.lib.oled_note_exchange()
+        self.lib.oled_note_sent(77, cipher, len(cipher), SENT_LIVE)
         seen = [self.tick()]
         self.lib.oled_note_ack(77, -41, 9)
         for i in range(5):
             seen.append(self.tick())
-            self.lib.oled_note_sent(60 + i if i < 4 else 0, bytes(50), 50, 0)   # the last is the health report
+            if i < 4:
+                self.lib.oled_note_sent(60 + i, bytes(50), 50, SENT_BACKLOG)
+            else:
+                self.lib.oled_note_sent(0, bytes(50), 50, SENT_REPORT)   # the last is the health report
             if i < 4:
                 self.lib.oled_note_ack(60 + i, -90, -12)   # the backlog's ACKs leave the live frame's outcome
         for _ in range(16 + 24 + 8 - len(seen)):
@@ -454,12 +478,68 @@ class OledApp(unittest.TestCase):
         banner = [s for s in seen if s[0] == SCREENS.index('BANNER')]
         self.assertEqual(len(banner), 24)
         self.assertEqual(SCREENS[seen[-1][0]], 'NORMAL')
-        self.assertEqual((self.lib.t_view_extras(), self.lib.t_view_acked(), self.lib.t_view_rssi(), self.lib.t_view_snr()),
-                         (5, SCR_TX_ACK, -41, 9))
+        self.assertEqual((self.lib.t_view_extras(), self.lib.t_view_reports(), self.lib.t_view_acked(), self.lib.t_view_rssi(),
+                          self.lib.t_view_snr()), (4, 1, SCR_TX_ACK, -41, 9))   # 4 from the backlog, then the report
         self.assertEqual((self.lib.t_view_seq(), self.lib.t_view_cipher_len()), (77, 96))
         self.assertEqual([self.lib.t_view_cipher(i) for i in range(96)], list(cipher[:96]))
         # Airtime this minute: the shim's airtime is the length in ms, 100 + 5 x 50 = 350 ms of 60 s, rounded up.
         self.assertEqual(self.lib.t_view_airtime(), 1)
+
+    def test_airtime_is_this_minutes_even_without_a_live_frame(self):
+        # Each minute's exchange starts the airtime again (oled_note_exchange), also one whose journal append
+        # failed and that sends backlog only. The shim's airtime is the length in ms.
+        self.to_normal()
+        self.lib.oled_note_exchange()
+        self.lib.oled_note_sent(1, bytes(250), 250, SENT_LIVE)
+        for i in range(11):
+            self.lib.oled_note_sent(100 + i, bytes(250), 250, SENT_BACKLOG)
+        for _ in range(16 + 24 + 8):
+            self.tick()
+        self.assertEqual(self.lib.t_view_airtime(), 5)   # 3000 ms of 60 s
+        self.lib.oled_note_exchange()   # the next minute: no live frame, 4 backlog frames
+        for i in range(4):
+            self.lib.oled_note_sent(200 + i, bytes(150), 150, SENT_BACKLOG)
+        for _ in range(8):
+            self.tick()
+        self.assertEqual(self.lib.t_view_airtime(), 1)   # 600 ms, not 3600 ms on top of the last minute's
+
+    def test_b3_on_redraws_at_once(self):
+        # B3 on: the panel's power command, then NORMAL redrawn at the first step the driver is free, not at the
+        # next 1 s redraw: the panel would show its stale frame until then.
+        self.to_normal()
+        self.press(3)
+        self.tick()
+        draws = self.get('t_draws')
+        for _ in range(3):
+            self.tick()
+        self.press(3)
+        self.tick()   # the shim's driver is free at once
+        self.assertEqual((self.get('t_enabled'), self.get('t_draws'), SCREENS[self.get('t_id')]), (1, draws + 1, 'NORMAL'))
+        # And with a frame still going out (the power command follows it): drawn when the driver is free.
+        self.press(3)
+        self.tick()
+        for _ in range(3):
+            self.tick()
+        draws = self.get('t_draws')
+        self.set('t_busy', 1)
+        self.press(3)
+        self.tick()
+        self.assertEqual((self.get('t_enabled'), self.get('t_draws')), (1, draws))   # B3 reached the driver while busy
+        self.set('t_busy', 0)
+        self.tick()
+        self.assertEqual((self.get('t_draws'), SCREENS[self.get('t_id')]), (draws + 1, 'NORMAL'))
+
+    def test_b3_reaches_a_driver_that_stays_busy(self):
+        # A driver busy for good (a lost DMA interrupt, before its timeout): B3 off and on still reach it.
+        self.to_normal()
+        self.set('t_busy', 1)
+        calls = self.get('t_enable_calls')
+        self.press(3)
+        self.tick()
+        self.assertEqual((self.get('t_enable_calls'), self.get('t_enabled')), (calls + 1, 0))
+        self.press(3)
+        self.tick()
+        self.assertEqual((self.get('t_enable_calls'), self.get('t_enabled')), (calls + 2, 1))
 
     def test_no_ack_for_the_live_frame(self):
         self.to_normal()
@@ -662,7 +742,7 @@ class FieldBuild(unittest.TestCase):
                 syms = subprocess.run([str(nm), str(NODE/build/'app/tx_exchange.o')], capture_output=True, text=True,
                                       check=True).stdout
                 hooks = sorted(line.split()[-1] for line in syms.splitlines() if ' oled_note_' in line)
-                self.assertEqual(hooks, ['oled_note_ack', 'oled_note_no_ack', 'oled_note_sent'] if bench else [])
+                self.assertEqual(hooks, ['oled_note_ack', 'oled_note_exchange', 'oled_note_no_ack', 'oled_note_sent'] if bench else [])
 
     def test_utilities_def_task_only_in_the_bench_build(self):
         # The display's sequencer task id exists only with WS_BENCH_OLED, so the field build's task table

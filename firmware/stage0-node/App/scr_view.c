@@ -8,8 +8,10 @@
  *     BATT +37.6mA 3.85V       the battery INA228 and OUT (NO INA228)
  *     CELL 3.85V 78% CHG       MAX17048, CHG while charging (NO MAX17048)
  *     TX 1233 ACK 58s AGO      the last frame, its outcome, its age
- * The banner inverts the bottom two rows: "  SENDING TX 1234" (or "  TX 1234 +5 BACKLOG" when frames
- * followed the live one), then the outcome, "  ACK -41DBM SNR 13" or "  NO ACK". */
+ * The banner inverts the bottom two rows: "  SENDING TX 1234" (or "  TX 1234 +5 BACKLOG", "+HEALTH"
+ * for a health report, when frames followed the live one), then the outcome, "  ACK -41DBM SNR 13" or
+ * "  NO ACK". A row longer than the 21 columns takes a shorter form (WND for WIND; BKLG, HLTH and no
+ * indent in the banner) rather than lose its last characters. */
 #include "scr_view.h"
 #include <string.h>
 #include "oled_draw.h"
@@ -101,14 +103,22 @@ static void press_row(oled_fb *fb, const scr_view_t *v)
   row(fb, 2, line);
 }
 
-static void wind_rain_rows(oled_fb *fb, const scr_view_t *v)
+static void wind_line(char *line, const char *label, const scr_view_t *v)
 {
-  char line[SCR_LINE] = "WIND ";
+  line[0] = '\0';
+  scr_put(line, label);
   scr_put_dec(line, v->wind.speed_cms, 2, 1, 0);
   scr_put(line, "m/s ");
   scr_put(line, v->wind.point >= 0 && v->wind.point < 16 ? scr_point_names[v->wind.point] : "-");
   scr_put(line, " G");
   scr_put_dec(line, v->wind.gust_cms, 2, 1, 0);
+}
+
+static void wind_rain_rows(oled_fb *fb, const scr_view_t *v)
+{
+  char line[SCR_LINE];
+  wind_line(line, "WIND ", v);
+  if (strlen(line) > SCREEN_COLS) wind_line(line, "WND ", v);   /* 10 m/s or more both, and a 3-letter point */
   row(fb, 3, line);
 
   char rain[SCR_LINE] = "RAIN ";
@@ -167,13 +177,27 @@ static void tx_row(oled_fb *fb, const scr_view_t *v)
   row(fb, 7, line);
 }
 
-static void banner(oled_fb *fb, const scr_view_t *v)
+/* The banner's first row in form 0 (full), 1 (short words) or 2 (short words, no indent). */
+static void banner_line(char *line, const scr_view_t *v, unsigned form)
 {
-  char line[SCR_LINE] = "  ";
-  if (v->extra_frames == 0) scr_put(line, "SENDING ");
+  line[0] = '\0';
+  if (form < 2U) scr_put(line, "  ");
+  if (v->extra_frames == 0 && v->reports == 0) scr_put(line, "SENDING ");
   scr_put(line, "TX ");
   scr_put_uint(line, v->last_seq);
-  if (v->extra_frames != 0) { scr_put(line, " +"); scr_put_uint(line, v->extra_frames); scr_put(line, " BACKLOG"); }
+  if (v->extra_frames != 0) { scr_put(line, " +"); scr_put_uint(line, v->extra_frames); scr_put(line, form ? " BKLG" : " BACKLOG"); }
+  if (v->reports != 0) scr_put(line, form ? " +HLTH" : " +HEALTH");
+}
+
+static void banner(oled_fb *fb, const scr_view_t *v)
+{
+  char line[SCR_LINE];
+  /* bound: 3 forms; the last is drawn as it is */
+  for (unsigned form = 0; form < 3U; form++)
+  {
+    banner_line(line, v, form);
+    if (strlen(line) <= SCREEN_COLS) break;
+  }
   row(fb, BANNER_ROW, line);
 
   char outcome[SCR_LINE] = "  ";

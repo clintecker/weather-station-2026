@@ -32,7 +32,8 @@ typedef struct {
   int last_acked;                         /* SCR_TX_* */
   int16_t ack_rssi;                       /* the ACK's RSSI, dBm */
   int8_t ack_snr;                         /* and SNR, dB */
-  unsigned pending, extra_frames;         /* readings still queued; frames sent after the live one */
+  unsigned pending, extra_frames;         /* readings still queued; backlog frames sent after the live one */
+  unsigned reports;                       /* health reports sent after the live one (0 or 1) */
   uint8_t cipher[96]; uint8_t cipher_len; /* the last frame's bytes, for the burst */
   uint8_t sf, bw_khz_div125; uint32_t freq_khz;   /* radio settings */
   uint8_t flash_pct, ram_pct, stack_pct, journal_pct, airtime_pct;   /* 0..100 */

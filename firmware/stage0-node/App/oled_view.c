@@ -61,12 +61,16 @@ static void fill_node(scr_view_t *v)
   v->modules_active = active;
 }
 
+/* The port is in the layout: the predicate the observation's fields use (wsmp_catalog_map.c). A module
+   identifying, quarantined or refused still samples, but the reading carries none of its values. */
+static int in_layout(enum wsmp_port p) { return wsmp_host_snapshot(p) != NULL; }
+
 static void fill_live(scr_view_t *v)
 {
-  v->air_ok = mod_th_live(TH_AIR, &v->air_c, &v->air_rh);
-  v->box_ok = mod_th_live(TH_ENCL, &v->box_c, &v->box_rh);
-  v->press_ok = mod_reg_live(REG_PRESSURE, &v->press_dhpa);
-  v->uv_ok = mod_reg_live(REG_UVA, &v->uv_counts);
+  v->air_ok = in_layout(P_AIR_TH) && mod_th_live(TH_AIR, &v->air_c, &v->air_rh);
+  v->box_ok = in_layout(P_ENCL_TH) && mod_th_live(TH_ENCL, &v->box_c, &v->box_rh);
+  v->press_ok = in_layout(P_PRESSURE) && mod_reg_live(REG_PRESSURE, &v->press_dhpa);
+  v->uv_ok = in_layout(P_UVA) && mod_reg_live(REG_UVA, &v->uv_counts);
   (void)mod_wind_live(&v->wind);
   v->tips = mod_rain_tips_since_boot();
   power_acq_live(&v->power);

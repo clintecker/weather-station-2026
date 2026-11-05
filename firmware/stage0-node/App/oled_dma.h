@@ -9,8 +9,9 @@
  * Nothing waits: the reset pulse, the settle time and the end of each transfer are UTIL timer
  * callbacks, each transfer a DMA whose transfer-complete interrupt starts the next step. One frame is
  * a window command (DC low), then OLED_FRAME_BYTES of pixels (DC high): about 44 ms at 750 kHz.
- * A DMA transfer error or an SPI error stops the transfers, disables SPI1, prints "#oled fault" once
- * and leaves the display off until oled_dma_enable(1), which starts again from the reset pulse. */
+ * A DMA transfer error, an SPI error or a DMA that does not end within 200 ms stops the transfers,
+ * disables SPI1, prints "#oled fault" once and leaves the display off until oled_dma_enable(1), which
+ * starts again from the reset pulse. */
 #include <stdint.h>
 #include "oled_draw.h"
 

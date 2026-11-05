@@ -100,7 +100,8 @@ class Node:
         self.lib = fresh_copy(owner, library)
         self.lib.h_output.restype = ctypes.c_char_p
         for name in ('h_now', 'h_send_at', 'h_last_rx_timeout', 'h_flash_ops_during_radio', 'h_flash_erases',
-                     'h_tx_air_ms', 'h_timer_start_refused', 'h_oled_no_acks', 'h_oled_no_ack_seq', 'h_oled_sent', 'h_oled_lives'):
+                     'h_tx_air_ms', 'h_timer_start_refused', 'h_oled_no_acks', 'h_oled_no_ack_seq', 'h_oled_sent', 'h_oled_lives',
+                     'h_oled_exchanges', 'h_oled_reports'):
             getattr(self.lib, name).restype = ctypes.c_uint32
         self.air = self.lib.h_tx_air_ms()
         self.replies = Replies()
@@ -224,6 +225,8 @@ class Node:
 @needs_cc
 @needs_vendor
 class TxStateMachine(unittest.TestCase):
+    BENCH_OLED = 1   # the bench build's exchange, with the display hooks; TxStateMachineField builds the field's
+
     @classmethod
     def setUpClass(cls):
         if not MBEDTLS.exists():
@@ -232,10 +235,10 @@ class TxStateMachine(unittest.TestCase):
         mbed = [MBEDTLS/'library'/f'{n}.c' for n in ('aes', 'ccm', 'block_cipher', 'platform_util', 'constant_time')]
         # UBSan works in a library ctypes loads; ASan needs its runtime loaded first (TxUnderAddressSanitizer).
         san = SAN if os.environ.get(ASAN_ENV) == '1' else [f.replace('address,', '') for f in SAN]
-        lib = host_library(cls, 'txmachine', *san, '-I', fw/'host/include', '-I', fw/'host', '-I', fw/'stage0-node/App',
+        lib = host_library(cls, f'txmachine{cls.BENCH_OLED}', *san, '-I', fw/'host/include', '-I', fw/'host', '-I', fw/'stage0-node/App',
                            '-I', fw/'stage0-node/Core/Inc', '-I', fw, '-I', fw/'common', '-I', MBEDTLS/'include',
                            '-DMBEDTLS_CONFIG_FILE="ws_mbedtls_config.h"', '-DWS_FW_VERSION="host"',
-                           '-DWS_FW_BUILD_ID=0UL', '-DWS_I2C_MUX=0', '-DWS_BENCH_OLED=1', *[fw/s for s in SOURCES], *mbed)
+                           '-DWS_FW_BUILD_ID=0UL', '-DWS_I2C_MUX=0', f'-DWS_BENCH_OLED={cls.BENCH_OLED}', *[fw/s for s in SOURCES], *mbed)
         cls.library = lib._name
 
     def node(self, storm=False, provision=True, seed=0, before_boot=None):
@@ -248,6 +251,10 @@ class TxStateMachine(unittest.TestCase):
         if not storm:   # only the storm task re-posts itself forever; anything else is a livelock
             self.addCleanup(lambda: self.assertEqual(node.lib.h_task_saturations(), 0, 'main-loop tasks never settled'))
         return node
+
+    def needs_display(self):
+        if not self.BENCH_OLED:
+            self.skipTest('the field build has no display hooks')
 
     def window(self, n, k=0, into=100):
         """Minute k's live frame is on air and its ACK window has been open `into` ms."""
@@ -387,6 +394,7 @@ class TxStateMachine(unittest.TestCase):
 
     def test_the_bench_display_hears_of_a_transmit_timeout_and_a_nack(self):
         # The live frame (seq 0) times out on air, or is NACKed: the screen must stop showing SENT/WAIT.
+        self.needs_display()
         n = self.node()
         n.advance_to(minute(0) + 5)
         n.lib.h_tx_timeout()
@@ -399,11 +407,14 @@ class TxStateMachine(unittest.TestCase):
     def test_a_minute_without_its_live_reading_plays_no_burst(self):
         # The live frame is the only one the display gets as live (the packet burst); the backlog only counts
         # on the banner. A minute whose journal append failed starts the exchange with the backlog alone
-        # (exchange_start with live NULL): its first frame, a backlog one, is not live either.
+        # (exchange_start with live NULL): its first frame, a backlog one, is not live either. That minute still
+        # starts the display's airtime again (oled_note_exchange), and each health report is sent as one.
+        self.needs_display()
         n = self.node()
         n.advance_to(minute(2) - 1000)                 # two unanswered minutes: a backlog of two
-        sent, lives = n.lib.h_oled_sent(), n.lib.h_oled_lives()
-        self.assertEqual(lives, 2)                     # one live frame a minute
+        sent, lives, exchanges = n.lib.h_oled_sent(), n.lib.h_oled_lives(), n.lib.h_oled_exchanges()
+        self.assertEqual((lives, exchanges), (2, 2))   # one live frame and one exchange a minute
+        self.assertEqual(n.lib.h_oled_reports(), len(re.findall(r'#diag sent', n.log + n.out())))
         n.out()
         n.lib.h_flash_prog_fails(1)
         n.advance_to(minute(2) + n.air + 100)          # the minute's append fails; the backlog's first is on air
@@ -411,6 +422,7 @@ class TxStateMachine(unittest.TestCase):
         out = n.out()
         self.assertIn(' journal=ERROR ', out)
         self.assertEqual((n.lib.h_oled_sent() - sent, n.lib.h_oled_lives() - lives), (1, 0), out)
+        self.assertEqual(n.lib.h_oled_exchanges(), 3)
 
     # ---- events that arrive together, or where no state expects them ----
 
@@ -880,6 +892,7 @@ class TxStateMachine(unittest.TestCase):
                 n = self.node()
                 k = pending                            # `pending` unanswered minutes first
                 n.advance_to(minute(k) - 1)
+                no_acks = n.lib.h_oled_no_acks()
                 n.lib.h_radio_hang(1)
                 n.advance(1)
                 start_s = minute(k) // 1000
@@ -890,6 +903,8 @@ class TxStateMachine(unittest.TestCase):
                 self.assertEqual(n.lib.h_healthy(), 0)
                 self.assertIn('#watchdog radio exchange stuck; radio stopped, held readings journaled, resetting', n.out())
                 self.assertEqual(n.radio(), R_STANDBY)    # the hung transmission is stopped
+                if self.BENCH_OLED:                       # the display stops showing the live frame as SENT
+                    self.assertEqual((n.lib.h_oled_no_acks() - no_acks, n.lib.h_oled_no_ack_seq()), (1, k))
                 self.assertEqual((n.lib.h_timers_armed(15_000), n.lib.h_timers_armed(250)), (0, 0))   # sampling stopped
                 frames = n.sent()
                 self.assertEqual(n.lib.h_flash_ops_during_radio(), 0)
@@ -1246,6 +1261,13 @@ def asan_runtime():
         return None
     path = subprocess.run(['cc', f'-print-file-name={name}'], capture_output=True, text=True).stdout.strip()
     return path if os.path.isabs(path) and os.path.exists(path) else None
+
+
+@needs_cc
+@needs_vendor
+class TxStateMachineField(TxStateMachine):
+    """TxStateMachine again over the field build of the exchange (WS_BENCH_OLED=0: the empty inline hooks)."""
+    BENCH_OLED = 0
 
 
 @needs_cc

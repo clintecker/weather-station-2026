@@ -265,6 +265,26 @@ class PhaseA(unittest.TestCase):
         b.minute()
         self.assertEqual(b.slot(BATT_MA), (800, 60, GOOD))
 
+    def test_a_part_reset_drops_the_live_values(self):
+        # SHUNT_CAL reads back 0: the live current is from before the reset, so the screen shows NO INA228
+        # until a step after the calibration again, never the old current as live (OUT is read afresh).
+        b = self.bench()
+        b.ina(BATTERY, 4.40, -800_000)
+        b.lib.h_run(20_000)
+        self.assertEqual(self.live(b)['batt_ok'], 1)
+        b.lib.h_ina228_power_cycle(b.dev[BATTERY])
+        b.ina(BATTERY, 4.40, -200_000)
+        seen = []
+        for _ in range(3_000 // TICK):
+            b.lib.h_run(TICK)
+            w = self.live(b)
+            seen.append((w['batt_ok'], w['ma_x100'], w['out_mv']))
+        oks = [ok for ok, _, _ in seen]
+        self.assertIn(0, oks, seen)
+        gone = oks.index(0)
+        self.assertTrue(all(ok == 0 or abs(ma - 20_000) < 100 for ok, ma, _ in seen[gone:]), seen)
+        self.assertEqual(seen[-1][0], 1)
+
     def test_out_and_the_cell_are_kept_apart(self):
         """Spec section 3.2: the battery voltage is the gauge's VCELL; the battery INA228's VBUS (on OUT)
         is the load voltage."""

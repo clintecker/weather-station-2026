@@ -3,9 +3,9 @@
  * drives it on the host. App/oled_app.c steps it every 125 ms (8 frames a second) and draws what it says.
  *   boot     BOOT, then HACK, then NORMAL.
  *   NORMAL   redrawn once a second (every 8th step), or at the next step after an ACK or a NO ACK.
- *   rotation one interlude of SCOPE, VANE, SYSTEM, HACK in turn, 120 s after the last one started
- *            (the first 120 s after sched_init), each for scr_frames(id) frames; one that falls due
- *            during a packet waits for NORMAL.
+ *   rotation one interlude of SCOPE, VANE, SYSTEM, HACK in turn, every 120 s at a fixed phase (the
+ *            first 120 s after sched_init), each for scr_frames(id) frames; one that falls due during
+ *            a packet waits for NORMAL, and the next is still due on the phase, not 120 s after it.
  *   packet   EV_SENT_LIVE plays BURST, then BANNER, then NORMAL. It preempts whatever is on (an
  *            interlude yields at its next frame). EV_SENT_EXTRA only counts a frame for the banner.
  * Times are ms of one clock (clock_ms); differences wrap safely. Only in WS_BENCH_OLED=1 builds. */
@@ -20,7 +20,8 @@
    if a packet or boot screen was up, after it ends) is held, plays again from frame 0 each time it ends, and
    comes back after a packet's burst and banner; B1 moves the held screen to the next one; no automatic
    interludes. On resume the held screen plays to its end, NORMAL follows, and the next interlude is a full
-   period away. B3: the display off (sched_step reports display_on 0, the screens go on in step) or on. */
+   period away. B3: the display off (sched_step reports display_on 0, the screens go on in step) or on.
+   While the display is off, B1 and B2 do nothing: no change the user cannot see. */
 enum sched_ev { EV_SENT_LIVE, EV_SENT_EXTRA, EV_ACK, EV_NO_ACK, EV_B1, EV_B2, EV_B3 };
 
 void sched_init(uint32_t now_ms);
@@ -30,4 +31,5 @@ void sched_event(enum sched_ev e, uint32_t now_ms);
    could not send its frame must not be taken: the caller waits for the next tick instead. */
 int sched_step(uint32_t now_ms, enum scr_id *id, unsigned *frame, int *display_on);
 unsigned sched_extras(void);   /* frames sent after the live one, since the last EV_SENT_LIVE */
+int sched_display_on(void);    /* what B3 says, before the step: the caller powers the panel first */
 #endif

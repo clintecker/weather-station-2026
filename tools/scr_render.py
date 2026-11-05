@@ -65,6 +65,7 @@ class View(ctypes.Structure):
                 ('wind', WindLive), ('tips', u32), ('power', PowerLive),
                 ('last_seq', u32), ('last_age_s', u32), ('last_acked', i), ('ack_rssi', ctypes.c_int16),
                 ('ack_snr', ctypes.c_int8), ('pending', ctypes.c_uint), ('extra_frames', ctypes.c_uint),
+                ('reports', ctypes.c_uint),
                 ('cipher', u8 * 96), ('cipher_len', u8),
                 ('sf', u8), ('bw_khz_div125', u8), ('freq_khz', u32),
                 ('flash_pct', u8), ('ram_pct', u8), ('stack_pct', u8), ('journal_pct', u8), ('airtime_pct', u8),

@@ -6,13 +6,15 @@
  *   IDLE <-------------------------------------------------------------------+ (DMA done, drained)
  *   IDLE -send-> WINDOW (DC low) -drained-> PIXELS (DC high) -drained-> IDLE
  *   IDLE -enable(0/1)-> POWER (display off/on command) -drained-> IDLE
- *   any -DMA TE or SPI error-> OFF, faulted
+ *   any -DMA TE, SPI error, or no DMA end within DMA_TIMEOUT_MS-> OFF, faulted
  *
  * A transfer is one DMA1 channel 1 run of bytes into SPI1's data register (CS low throughout). The
  * DMA's transfer-complete interrupt only means the last byte entered SPI1's FIFO: up to 4 bytes and
  * the shift register are still to go (53 us at 750 kHz), and CS and DC may change only after them.
  * So the interrupt arms a 1 ms one-shot, which finds the FIFO empty and SPI1 idle, raises CS and starts
- * the next step; a FIFO still not empty after DRAIN_TRIES of them is a fault, not a wait. */
+ * the next step; a FIFO still not empty after DRAIN_TRIES of them is a fault, not a wait. While the DMA
+ * runs the same timer is its timeout: a transfer-complete interrupt that never comes is a fault too, so
+ * oled_dma_enable(1) can restart the display. */
 #include <string.h>
 #include "busymon.h"
 #include "oled_dma.h"
@@ -26,6 +28,7 @@
 /* Sleep only, never Stop 2: Stop 2 stops SPI1's clock and DMA1, so a frame under way would stall with CS
    low, and the drain timers would find a FIFO that never empties (a fault). */
 _Static_assert(LOW_POWER_DISABLE == 1, "the bench OLED needs LOW_POWER_DISABLE 1: Stop 2 would stall SPI1 and its DMA mid-frame");
+_Static_assert(DEBUG_SUBGHZSPI_MONITORING_ENABLED == 0, "DEBUG_SUBGHZSPI_MONITORING drives PA4-PA7, the OLED's SPI1 pins");
 
 #define CS_PIN GPIO_PIN_4      /* PA4 */
 #define SCK_PIN GPIO_PIN_5     /* PA5, SPI1_SCK AF5 */
@@ -37,6 +40,7 @@ _Static_assert(LOW_POWER_DISABLE == 1, "the bench OLED needs LOW_POWER_DISABLE 1
 #define RESET_SETTLE_MS 500U   /* Adafruit's wait after reset, before the first command */
 #define DRAIN_MS 1U            /* the FIFO and the shift register after the DMA's last byte: 53 us */
 #define DRAIN_TRIES 3U
+#define DMA_TIMEOUT_MS 200U    /* a frame's 4 KB take 44 ms at 750 kHz */
 #define OLED_IRQ_PRIORITY 2U   /* as the console's DMA and the board inputs: below the radio and the RTC */
 #define DMA_CH LL_DMA_CHANNEL_1
 #define CMD_DISPLAY_OFF 0xAEU
@@ -83,6 +87,7 @@ typedef enum { ST_OFF, ST_RESET_LOW, ST_RESET_SETTLE, ST_SETUP, ST_IDLE, ST_WIND
    interrupts off. */
 static volatile oled_state state;
 static volatile uint8_t enabled, faulted, power_pending;
+static volatile uint8_t in_dma;   /* a DMA run is under way: the step timer is its timeout */
 static uint8_t drain_tries;
 static volatile uint8_t inited;   /* oled_dma_init ran: the step timer exists */
 static volatile uint8_t wish_on = 1;   /* the last oled_dma_enable before that */
@@ -99,6 +104,7 @@ static void fault(void)
   state = ST_OFF;
   enabled = 0;
   power_pending = 0;
+  in_dma = 0;
   if (faulted) return;
   faulted = 1;
   APP_PRINTF("#oled fault\n");
@@ -116,6 +122,8 @@ static void start_dma(uint8_t *buf, uint32_t n)
   LL_DMA_ClearFlag_GI1(DMA1);
   LL_DMA_SetMemoryAddress(DMA1, DMA_CH, (uint32_t)(uintptr_t)buf);
   LL_DMA_SetDataLength(DMA1, DMA_CH, n);
+  in_dma = 1;
+  arm(DMA_TIMEOUT_MS);
   LL_DMA_EnableChannel(DMA1, DMA_CH);
   LL_SPI_EnableDMAReq_TX(SPI1);   /* SPI1's empty FIFO requests the first bytes at once */
 }
@@ -165,6 +173,7 @@ static void on_step(void *ctx)
       commands(ST_SETUP, setup, sizeof setup);
       break;
     case ST_SETUP: case ST_WINDOW: case ST_PIXELS: case ST_POWER:   /* draining after the DMA */
+      if (in_dma) { fault(); break; }   /* the DMA's timeout: its transfer-complete interrupt never came */
       if (LL_SPI_GetTxFIFOLevel(SPI1) == LL_SPI_TX_FIFO_EMPTY && !LL_SPI_IsActiveFlag_BSY(SPI1)) { transfer_done(); break; }
       if (++drain_tries >= DRAIN_TRIES) { fault(); break; }
       arm(DRAIN_MS);
@@ -298,6 +307,7 @@ static void dma_irq(void)
   if (!tc || state == ST_OFF) return;
   LL_DMA_DisableChannel(DMA1, DMA_CH);
   LL_SPI_DisableDMAReq_TX(SPI1);
+  in_dma = 0;
   drain_tries = 0;
   arm(DRAIN_MS);
 }

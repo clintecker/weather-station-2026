@@ -34,19 +34,27 @@ static volatile uint32_t edge_ms[4]; /* when button b's last edge came, taken or
 static uint32_t armed;              /* bit b: a step has read button b up since its last press (main loop only) */
 static int powered = 1;             /* what the driver was last told (oled_dma_enable) */
 static uint32_t air_ms;             /* airtime of this minute's frames so far */
+static unsigned reports;            /* health reports sent since the live frame */
 
-void oled_note_sent(uint32_t seq, const uint8_t *frame, uint8_t len, int live)
+void oled_note_exchange(void) { air_ms = 0; }
+
+void oled_note_sent(uint32_t seq, const uint8_t *frame, uint8_t len, int kind)
 {
   uint32_t now = clock_ms();
+  int live = kind == OLED_SENT_LIVE;
   if (live)
   {
-    live_seq = seq; live_s = clock_s(); awaiting = 1; air_ms = 0;
+    live_seq = seq; live_s = clock_s(); awaiting = 1; reports = 0;
     view.last_seq = seq;
     view.last_acked = SCR_TX_WAIT;
     view.cipher_len = (uint8_t)(len < sizeof view.cipher ? len : sizeof view.cipher);
     memcpy(view.cipher, frame, view.cipher_len);
   }
-  else awaiting = 0;   /* the reply that comes next is this frame's */
+  else
+  {
+    awaiting = 0;   /* the reply that comes next is this frame's */
+    if (kind == OLED_SENT_REPORT && reports < UINT16_MAX) reports++;
+  }
   air_ms += oled_view_airtime_ms(len);
   sched_event(live ? EV_SENT_LIVE : EV_SENT_EXTRA, now);
 }
@@ -94,26 +102,26 @@ static void take_buttons(uint32_t now)
   }
 }
 
-/* One step. A busy driver means a frame (or the start-up) is still going out of the send buffer: drawing
-   into it now would tear that frame, so the step waits for the next tick, and the scheduler, not
-   stepped, shows the same frame then. A faulted display costs nothing: the scheduler runs on, no frame is
-   drawn. */
+/* One step. B3 reaches the driver first, busy or not: the panel's power command follows a frame under way,
+   and after a fault (a DMA that never ended, too) on is the whole start-up again. A busy driver means a
+   frame, a power command or the start-up is still going out of the send buffer: drawing into it now would
+   tear that frame, so the step waits for the next tick, and the scheduler, not stepped, shows the same
+   frame then (after B3 on, NORMAL's redraw). A faulted display costs nothing: the scheduler runs on, no
+   frame is drawn. */
 static void step(void)
 {
   enum scr_id id; unsigned frame; int on;
   uint32_t now = clock_ms();
   take_buttons(now);
+  int want = sched_display_on();
+  if (want != powered) { powered = want; oled_dma_enable(want); }
   if (oled_dma_busy()) return;
   int draw = sched_step(now, &id, &frame, &on);
-  if (on != powered)   /* B3: the panel's power command goes out now; its frames follow, or stop */
-  {
-    powered = on;
-    oled_dma_enable(on);
-    return;
-  }
   if (!draw || !on || oled_dma_faulted()) return;
   oled_view_fill(&view, id, frame);
-  view.extra_frames = sched_extras();
+  unsigned extras = sched_extras();   /* every frame after the live one: the backlog and the reports */
+  view.reports = reports;
+  view.extra_frames = extras > reports ? extras - reports : 0U;
   view.last_age_s = clock_s() - live_s;
   uint32_t air_pct = (air_ms * 100U + AIRTIME_OF_MS - 1U) / AIRTIME_OF_MS;   /* rounded up: any airtime shows */
   view.airtime_pct = (uint8_t)(air_pct > 100U ? 100U : air_pct);

@@ -279,7 +279,7 @@ OLED_C = ROOT/'firmware/i2cscan/App/oled.c'
 NODE = ROOT/'firmware/stage0-node'
 TOOLCHAIN_GCC = Path.home()/'.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/arm-none-eabi-gcc'
 HAVE_ARM = TOOLCHAIN_GCC.exists() and (ROOT/'vendor/STM32CubeWL').exists()
-RESET_LOW_MS, RESET_SETTLE_MS, DRAIN_MS = 10, 500, 1
+RESET_LOW_MS, RESET_SETTLE_MS, DRAIN_MS, DMA_TIMEOUT_MS = 10, 500, 1, 200
 FRAME = 4096
 WINDOW = [0x15, 0x00, 0x3F, 0x75, 0x00, 0x3F]
 
@@ -344,7 +344,7 @@ class OledDma(unittest.TestCase):
         self.assertEqual(self.lib.t_transfers(), 1)
         self.assertEqual(list(self.last()), setup_bytes())
         self.assertEqual((self.lib.t_last_dc(), self.lib.t_last_cs()), (0, 0))
-        self.assertEqual(self.lib.t_timer_running(), 0)        # the DMA's interrupt is the next step, not a timer
+        self.assertEqual(self.lib.t_timer_running(), DMA_TIMEOUT_MS)   # the DMA's interrupt is the next step; the timer its timeout
         self.finish()
         self.assertEqual((self.lib.oled_dma_busy(), self.lib.t_cs()), (0, 1))
         self.assertEqual(self.lib.t_spi_br(), 5)               # DIV64: 750 kHz from 48 MHz, at most 1 MHz
@@ -394,6 +394,27 @@ class OledDma(unittest.TestCase):
             fired += 1
             self.assertLess(fired, 10)
         self.assertEqual((self.lib.oled_dma_faulted(), self.lib.t_fault_lines()), (1, 1))
+
+    def test_a_dma_that_never_ends_is_a_fault_and_enable_restarts(self):
+        # A transfer-complete interrupt that never comes: the timeout faults the driver, so it is no longer
+        # busy, and oled_dma_enable(1) (B3 off and on) starts the display again.
+        for during in ('window', 'pixels'):
+            with self.subTest(during=during):
+                self.setUp()
+                self.ready()
+                self.assertEqual(self.lib.oled_dma_send(bytes(FRAME)), 0)
+                if during == 'pixels':
+                    self.finish()
+                self.assertEqual(self.lib.oled_dma_busy(), 1)
+                self.assertEqual(self.lib.t_fire(), DMA_TIMEOUT_MS)
+                self.assertEqual((self.lib.oled_dma_faulted(), self.lib.oled_dma_busy(), self.lib.t_fault_lines()), (1, 0, 1))
+                self.assertEqual((self.lib.t_dma_on(), self.lib.t_cs(), self.lib.t_timer_running()), (0, 1, 0))
+                self.lib.oled_dma_enable(0)
+                self.lib.oled_dma_enable(1)
+                self.assertEqual(self.lib.t_fire(), RESET_LOW_MS)
+                self.assertEqual(self.lib.t_fire(), RESET_SETTLE_MS)
+                self.finish()
+                self.assertEqual(self.lib.oled_dma_send(bytes(FRAME)), 0)
 
     def test_dma_error_disables_display_once(self):
         self.ready()
@@ -496,6 +517,25 @@ class StopTwo(unittest.TestCase):
                 self.assertEqual(r.returncode == 0, ok, r.stderr[-800:])
                 if not ok:
                     self.assertIn('Stop 2 would stall SPI1', r.stderr)
+
+
+@needs_cc
+class SubGhzSpiMonitor(unittest.TestCase):
+    """DEBUG_SUBGHZSPI_MONITORING takes PA4-PA7, the OLED's SPI1 pins: the driver does not compile with it."""
+    def test_subghzspi_monitoring_does_not_compile(self):
+        import tempfile
+        conf = (ROOT/'firmware/board/nucleo-wl55jc/Core/Inc/sys_conf.h').read_text()
+        flags = [str(f) for f in includes(type(self))]
+        for value, ok in ((0, True), (1, False)):
+            with self.subTest(DEBUG_SUBGHZSPI_MONITORING_ENABLED=value), tempfile.TemporaryDirectory() as tmp:
+                text = re.sub(r'(#define DEBUG_SUBGHZSPI_MONITORING_ENABLED\s+)0', rf'\g<1>{value}', conf)
+                self.assertIn('DEBUG_SUBGHZSPI_MONITORING_ENABLED', text)
+                (Path(tmp)/'sys_conf.h').write_text(text)
+                r = subprocess.run([*CC_STRICT, '-fsyntax-only', '-DOLED_DMA_RAM2=', '-I', tmp, *flags, str(SOURCE)],
+                                   capture_output=True, text=True)
+                self.assertEqual(r.returncode == 0, ok, r.stderr[-800:])
+                if not ok:
+                    self.assertIn('PA4-PA7', r.stderr)
 
 
 class FieldBuild(unittest.TestCase):
