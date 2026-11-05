@@ -199,6 +199,16 @@ jobs:
             echo "::endgroup::"
           done
 
+      # The bench build with the OLED (WS_BENCH_OLED=1, App/oled_dma.c) gets the same checks; the field
+      # build must link none of it (make field-check: no oled_, scr_, ssd1325_ or font5x7 symbol).
+      - name: TX bench OLED build and the field check
+        working-directory: firmware/stage0-node
+        run: |
+          make ROLE=tx WS_BENCH_OLED=1 ANALYZE=1 BUILD=build/variant-oled -j"$(nproc)"
+          make ROLE=tx WS_BENCH_OLED=1 BUILD=build/variant-oled stack
+          make ROLE=tx WS_BENCH_OLED=1 BUILD=build/variant-oled waits
+          make field-check
+
       # Coverage-guided fuzzing of the input parsers (firmware/fuzz/README.md), 60 s per target.
       # The unit tests already run the same targets briefly without libFuzzer on every OS.
       - name: Fuzz (libFuzzer)

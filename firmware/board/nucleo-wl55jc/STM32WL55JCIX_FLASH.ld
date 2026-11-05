@@ -179,9 +179,12 @@ SECTIONS
     _eRAM1_region = .;         /* define a global symbol at section end */
   } >RAM1
 
-  /* Data section into "RAM2" Ram type memory: Backup RAM2 dedicated to CM4 */
+  /* Data section into "RAM2" Ram type memory: Backup RAM2 dedicated to CM4.
+     weather-station-2026: NOLOAD, so a buffer placed here (the node's OLED buffers, App/oled_dma.c)
+     takes no flash and is not in the .bin: without it, objcopy -O binary filled the 400 MB from flash
+     to RAM2. Nothing initializes it (the startup code zeroes .bss only). */
   . = ALIGN(8);
-  RAM2_region :
+  RAM2_region (NOLOAD) :
   {
     _sRAM2_region = .;         /* define a global symbol at section start */
     *(.RAM2_region)

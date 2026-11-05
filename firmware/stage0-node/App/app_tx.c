@@ -39,6 +39,12 @@
 #include "wsmp_catalog_map.h"
 #include "wsmp_host.h"
 #include "wsmp_local.h"
+#ifndef WS_BENCH_OLED
+#define WS_BENCH_OLED 0   /* the field build: no display (Makefile) */
+#endif
+#if WS_BENCH_OLED
+#include "oled_dma.h"
+#endif
 
 #define SAMPLE_PERIOD_MS    15000U  /* the minute's ticks; the modules sample on their own (product spec, section 9) */
 #define SAMPLES_PER_REPORT  4U
@@ -309,6 +315,9 @@ void SubghzApp_Init(void)
   stackmon_paint();
   busymon_init();
   leds_init();
+#if WS_BENCH_OLED
+  oled_dma_init();
+#endif
   exchange_init();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample_timed);
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sensor, UTIL_SEQ_RFU, module_tick_timed);

@@ -58,7 +58,7 @@ the red LED on, prints one line and stops the boot:
 
 ```mermaid
 flowchart TD
-  A["stackmon_paint, busymon_init, leds_init, exchange_init"] --> B["register the sample task (sample_timed) and the module task (module_tick_timed), tx_console_init"]
+  A["stackmon_paint, busymon_init, leds_init, oled_dma_init (bench build only), exchange_init"] --> B["register the sample task (sample_timed) and the module task (module_tick_timed), tx_console_init"]
   B --> C["node.boot_s = clock_s(), policy_init, watchdog_start, fault_boot_note"]
   C --> D["node.kat_ok = selftest_kat(), print #boot, fault_report"]
   D --> E{"store_meta_init and store_journal_init succeed?"}
@@ -81,6 +81,11 @@ flowchart TD
   G1 --> X
   I1 --> X
 ```
+
+The bench build (`WS_BENCH_OLED=1`, `App/oled_dma.h`) starts the OLED right after the LEDs, before
+anything can stop the boot, so the display also serves an unprovisioned node. `oled_dma_init` returns
+at once: the panel's reset and set-up run on timers. The field build compiles none of it (an `#if`,
+not a value: the driver's sources are not in that build at all, and `make field-check` proves it).
 
 The watchdog starts before the firmware reads storage. Until sampling starts, `node.running` is 0,
 so `watchdog_healthy` returns 1 (section 6). A node that fails `boot_ready` therefore stays up with
@@ -172,6 +177,9 @@ void SubghzApp_Init(void)
   stackmon_paint();
   busymon_init();
   leds_init();
+#if WS_BENCH_OLED
+  oled_dma_init();
+#endif
   exchange_init();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample_timed);
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sensor, UTIL_SEQ_RFU, module_tick_timed);
@@ -743,6 +751,12 @@ before its first caller.
 #include "wsmp_catalog_map.h"
 #include "wsmp_host.h"
 #include "wsmp_local.h"
+#ifndef WS_BENCH_OLED
+#define WS_BENCH_OLED 0   /* the field build: no display (Makefile) */
+#endif
+#if WS_BENCH_OLED
+#include "oled_dma.h"
+#endif
 
 <<sample-constants>>
 <<fail-limit>>

@@ -65,7 +65,9 @@ Makefile variables and targets:
 | `SERIAL` | none | ST-LINK serial number of the board to program (`flash` target only). |
 | `CUBE` | `../../vendor/STM32CubeWL` | The STM32CubeWL checkout that `tools/fetch-vendor.sh` creates. |
 | `TOOLCHAIN` | `~/.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin` | The directory that holds `arm-none-eabi-gcc`. |
-| `BUILD` | `build/<role>` | The build directory. CI uses separate ones for the analyzer builds. |
+| `BUILD` | `build/<role>` | The build directory (`build/tx-oled` for `WS_BENCH_OLED=1`). CI uses separate ones for the analyzer builds. |
+| `WS_BENCH_OLED` | `0` | `1` is the bench build: the TX drives the bench OLED (`App/oled_dma.h`, SPI1 by DMA on PA4, PA5, PA7, PC1, PC2). `0`, the field build, compiles no display code and leaves those pins alone. TX only. |
+| `WS_POWER_PROFILE` | empty | Sets the `WS_POWER_PROFILE` constant below (`make ROLE=tx WS_POWER_PROFILE=2`); empty keeps its default. The same as passing it through `OPT`. |
 | `FLASH_BUDGET_PCT` | `90` | The link fails when code and initialized data use more than this percentage of the 194,560 B firmware region ([`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
 | `ANALYZE` | unset | `1` adds GCC's static analyzer (`-fanalyzer`) to our own C. Our C always builds with a strict warning set and `-Werror`. |
 | `OPT` | `-Os` | The optimisation flags. The build constants below go here, for example `make ROLE=tx OPT='-Os -DWS_POWER_PROFILE=2'`. |
@@ -74,6 +76,7 @@ Makefile variables and targets:
 | `stack` | | Computes the worst-case stack bound from the GCC call graphs (`tools/stack_report.py`). Fails above the linker's 8 KB reservation. |
 | `waits` | | Checks that nothing busy-waits at run time (`tools/blocking_report.py`). Fails if an interrupt, task, callback or the main loop can reach a banned wait (`HAL_Delay`, blocking HAL I2C/UART/SPI, ...) or an unclassified `HAL_GetTick` poller. Lists the allowed hardware stalls with their bounds, the boot waits and the test-only waits. |
 | `clean` | | Removes `build/` for **both** roles. |
+| `field-check` | | Builds `ROLE=tx` with `WS_BENCH_OLED=0` into `build/tx` and fails if the `.elf` has any `oled_`, `scr_`, `ssd1325_` or `font5x7` symbol. |
 
 Build constants (C macros with a default; pass them through `OPT`):
 
