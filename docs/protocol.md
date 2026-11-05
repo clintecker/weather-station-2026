@@ -126,7 +126,7 @@ The observation bounds differ on purpose:
 | Bound | Plaintext | Frame | Who applies it |
 |---|---:|---:|---|
 | Every catalog version 2 field (`WS_OBS_PLAIN_ALL`, `firmware/common/ws_obs.h:111`) | 94 B | 110 B | the RX bridge (`ws_air_frame_ok`, `firmware/common/ws_console.c:81`) and the gateway (`PLAIN_LENGTHS`) only. No node build sends it. |
-| **Per-build ceiling** | 80 B | **96 B** | every node build: a field set above 80 B of plaintext does not compile (`node_store.c:71-76`, section 5.3) |
+| **Per-build ceiling** | 80 B | **96 B** | every node build: a field set above 80 B of plaintext does not compile (`node_store.c:71-75`, section 5.3) |
 | The node's field set (`WS_F_WSMP_BENCH`, `App/node_fields.h:20-29`; `OBS_FRAME_MAX`) | 77 B | 93 B | the current build's widest record |
 
 The current node build sends observations of up to 93 bytes. Their length depends on the power

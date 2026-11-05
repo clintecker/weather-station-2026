@@ -40,8 +40,8 @@ not measurements.
 
 | Resource | Available | Used now | Status |
 |---|---|---|---|
-| Flash, application region | 190 KB = 194,560 B (pages 0–94, enforced by the linker script) | TX 88,160 B (78.3 %), RX 34,904 B (31.0 %). Before (c7e8860): TX 83,760 B (74.4 %), RX 34,824 B (30.9 %) | Under the 90 % guard (`FLASH_BUDGET_PCT`, `firmware/stage0-node/Makefile:72`): TX has 24,480 B left, 13,216 B below the guard. **TX is 3,680 B over the 75 % headroom target** (84,480 B) since the power telemetry work; see [The plan that makes it fit](#the-plan-that-makes-it-fit) |
-| Flash, node state | 66 KB (pages 95–127) | journal 30 pages, meta log 2 pages, config 1 page. The journal keeps at least 609 slots of 96 B for the version 6 node field set (77 B, power spec section 7): 10.15 h. Before: 1,725 slots of 80 B (61 B, 28.75 h) | `App/flash_layout.h:20` fixes the pages. `App/node_fields.h` sets the slot size. `App/node_store.c:71-76` asserts 9.5 h of the build's widest record, so a field set above 80 B does not compile |
+| Flash, application region | 190 KB = 194,560 B (pages 0–94, enforced by the linker script) | TX 90,264 B (46.4 %), RX 34,904 B (17.9 %), measured 2026-11-04 on layout v3. Before the layout change, in the 110 KB region: TX 88,160 B (78.3 %), RX 34,904 B (31.0 %) | Under the 90 % guard (`FLASH_BUDGET_PCT`, `firmware/stage0-node/Makefile:72`, 175,104 B): TX has 104,296 B left, 84,840 B below the guard and 55,656 B below the 75 % headroom target (145,920 B). The 190 KB region ends the over-target state of the 110 KB region; see [The plan that makes it fit](#the-plan-that-makes-it-fit) |
+| Flash, node state | 66 KB (pages 95–127) | journal 30 pages, meta log 2 pages, config 1 page. The journal keeps at least 609 slots of 96 B for the version 6 node field set (77 B, power spec section 7): 10.15 h. Before layout v3 (70 pages): 1,725 slots of 80 B (61 B, 28.75 h) | `App/flash_layout.h:20` fixes the pages. `App/node_fields.h` sets the slot size. `App/node_store.c:71-75` asserts 9.5 h of the build's widest record, so a field set above 80 B does not compile |
 | RAM | 64 KB (RAM1 32 KB + RAM2 32 KB) | TX: 11,688 B static data (`.data` 32 B + `.bss` 11,656 B; before 10,936 B) + 8 KB reserved stack + 0.5 KB heap, all in RAM1. Worst-case stack estimate 6,056 B of 8,192 B (74 %). RX: 6,040 B static data, stack estimate 2,780 B (34 %) | Ample. RAM2 is unused |
 | CPU | Cortex-M4 at 48 MHz (the Cortex-M0+ core is unused) | A 250 ms module tick (it also starts the board ADC sequence, about 0.9 ms of interrupt-driven conversions), 1 s INA228 steps, 15 s gauge steps, one report and a few frames per minute | No constraint |
 | Radio payload | Up to a 77-byte observation plaintext in a 93-byte frame (the version 6 node field set, every module and every power field). A node build may reach 80 B in a 96-byte frame (the per-build ceiling); the catalog (version 2) allows up to 94 B in a 110-byte frame, accepted by the RX bridge and the gateway only. Health report: 64 B in an 80-byte frame | Temperature and humidity, pressure, wind, rain, UVA, enclosure, battery (voltage, current, energy and charge counters) and the power rails (load, charger input, solar, USB-C) | Not the limit: every catalog field fits in one frame (see [Radio payload](#radio-payload)) |
@@ -74,7 +74,7 @@ flash, so a larger firmware region moves only the journal start. `tests/test_fla
 checks that the header, the linker script and `board.mk` agree.
 
 **The journal** keeps 9.5 hours of the build's widest record (`WS_OBS_PLAIN_MAX`, from
-`WS_NODE_FIELDS`; `App/node_store.c:71-76`; power spec section 7). A slot is the plaintext rounded up
+`WS_NODE_FIELDS`; `App/node_store.c:71-75`; power spec section 7). A slot is the plaintext rounded up
 to 8-byte double-words plus a commit and an ACK double-word; one of the 30 pages is always being
 recycled, so 29 count:
 
@@ -392,7 +392,7 @@ flowchart TD
 3. **Link-time optimisation (LTO) as a measured reserve** (−6.6 KB on TX), if a feature takes TX
    past the 75 % target. **The power telemetry did** (78.3 %, 2026-10-29). The −6.6 KB was measured on
    release `0f456040fe54` (53 KB); re-measure on the current image and bench-check it before a
-   release uses it. Until then the 90 % guard is the binding limit (13,216 B left).
+   release uses it. Until then the 90 % guard is the binding limit (84,840 B left in the 190 KB region of layout v3).
 4. **Budget check** in every build (above), and a size line in every `RELEASES.md` entry.
 5. **Module split.** [`docs/firmware-review-2026-10-13.md`](firmware-review-2026-10-13.md) §4–5
    planned it for after the 24-hour delivery test (H01, [`docs/H01-checklist.md`](H01-checklist.md)).
@@ -449,7 +449,7 @@ adds 1 ms (41.0 ms counts as 42 ms).
   never need a second frame or a second ACK window. The RX bridge forwards observation frames of 39 to
   110 B and health reports of exactly 80 B (`ws_air_frame_ok`, `firmware/common/ws_console.c`).
 - **A node build stops at 96 B.** The journal keeps 9.5 hours of the build's widest record (power spec
-  section 7), so a field set above 80 B of plaintext does not compile (`App/node_store.c:71-76`). The
+  section 7), so a field set above 80 B of plaintext does not compile (`App/node_store.c:71-75`). The
   version 6 node field set is 77 B: 3 B below the ceiling.
 - **The airtime cap sets the backlog drain.** The firmware counts one exchange as the airtime of
   the build's largest observation frame + ACK airtime + 300 ms (`exchange_ms`, `App/tx_policy.c:43`).

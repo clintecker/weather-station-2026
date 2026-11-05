@@ -681,7 +681,7 @@ field set (`node_fields.h`): its widest record, `WS_OBS_PLAIN_MAX`, not the whol
 record of the same build sits zero-padded in the same slot. The board's ring keeps at least 9.5 hours of the
 build's widest record (the check below), which caps a node build at 80 bytes of plaintext (a 96-byte
 slot, 21 slots a page, 29 x 21 = 609 records, about 10.1 hours; a 96-byte frame). Every catalog v2 field together
-is 94 bytes, a 112-byte slot and only 18 slots a page (1,242 records, 20.7 hours): the RX bridge and
+is 94 bytes, a 112-byte slot and only 18 slots a page (522 records, 8.7 hours): the RX bridge and
 the gateway accept such a record, but no node build sends one. The host tests build that geometry
 too, with a shrunken ring. The low byte of the header magic is the slot
 size. So a page written with another slot size reads as "not a journal page". The low 32 bits of
@@ -719,7 +719,7 @@ _Static_assert(WS_JOURNAL_PAGES >= 2U, "the journal ring has at least two pages"
 /* The board's ring keeps 9.5 h of this build's widest record (WS_OBS_PLAIN_MAX, from WS_NODE_FIELDS).
    One page is always being recycled, so it does not count. This is the per-build ceiling: a field
    set above 80 B of plaintext (a 96 B frame) does not compile. */
-_Static_assert((WS_JOURNAL_PAGES - 1U) * JOURNAL_SLOTS_PER_PAGE >= 570U,
+_Static_assert((WS_JOURNAL_PAGES - 1U) * JOURNAL_SLOTS_PER_PAGE >= 570U,   /* 9.5 h at one record a minute */
                "the journal keeps 9.5 hours of the build's widest record");
 #endif
 _Static_assert(WS_JOURNAL_PAGES <= UINT16_MAX && JOURNAL_SLOTS_PER_PAGE <= UINT16_MAX, "jref_t page and slot are 16-bit");

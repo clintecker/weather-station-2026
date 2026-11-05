@@ -22,7 +22,7 @@ make ROLE=rx flash SERIAL=0016001E4142500E20353451   # the RX board
 ```
 
 `make ROLE=tx` alone builds `build/tx/benchlink-tx.elf` and `.bin` (the same for `rx`). Flashing writes
-only the application region: the node's key and journal (pages 55 to 127) survive. To go back to the
+only the application region: the node's key and journal (pages 95 to 127) survive. To go back to the
 node firmware, flash it as in [`../stage0-node/README.md`](../stage0-node/README.md), "Build and flash".
 
 The build shares the board code with the node ([`../board/nucleo-wl55jc/`](../board/nucleo-wl55jc/)),

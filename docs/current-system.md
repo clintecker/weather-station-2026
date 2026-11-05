@@ -614,7 +614,7 @@ replaced only on a fail); `POWER_R_ISET_OHM` 1000; `POWER_ISET_GAIN_PPM` 990099;
 | Toolchain | xPack arm-none-eabi-gcc 15.2.1-1.1; `tools/fetch-vendor.sh` pins STM32CubeWL v1.6.0 and Mbed TLS 3.6.6 | NR:37-42, NR:67 |
 | Outputs | `build/<role>/stage0-<role>.{elf,bin,map}`; prints size, flash budget and `.bin` SHA-256 | NR:64, NR:72 |
 | Targets | `all`, `flash` (OpenOCD, connect under reset, verify), `stack` (worst-case vs 8 KB reservation), `waits` (no reachable busy-wait), `clean` | NR:72-76 |
-| Budget | link fails above 90 % of 194,560 B; v6 build TX 88,160 B (78.3 %), RX 34,904 B (31.0 %) | NR:69, NR:384 |
+| Budget | link fails above 90 % of 194,560 B; v6 build TX 90,264 B (46.4 %), RX 34,904 B (17.9 %) | NR:69, NR:384 |
 | Release | clean tree, fetch-vendor, two clean builds with identical `.bin` hashes, flash RX then TX, check `fw=` on both `#boot`, record in RELEASES.md | REL:6-14 |
 | Format change | drain journal (`pending=0`), WIPE, flash both from the same release, `init` a new run directory, provision with a new key, start a matching gateway, record | REL:16-27 |
 

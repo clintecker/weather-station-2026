@@ -95,7 +95,7 @@ cd firmware/i2cscan
 make flash SERIAL=003B00194142500E20353451
 ```
 
-Flashing writes only the application region. The node's key and journal (pages 55 to 127) survive.
+Flashing writes only the application region. The node's key and journal (pages 95 to 127) survive.
 To go back to the node firmware afterwards, flash it as in
 [`../stage0-node/README.md`](../stage0-node/README.md), "Build and flash".
 

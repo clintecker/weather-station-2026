@@ -596,7 +596,7 @@ The journal stores `WS_OBS_PLAIN_MAX` bytes per slot, plus the commit word and t
 record's length from the record's own bitmap and extension word.
 
 **The journal rule: 9.5 hours of the build's widest record** (power design section 7). The
-compile-time check in `node_store.c:71-76` asserts that the ring keeps 9.5 hours of
+compile-time check in `node_store.c:71-75` asserts that the ring keeps 9.5 hours of
 `WS_OBS_PLAIN_MAX`, the build's widest record. Version 5 asserted 24 hours of every catalog field
 (`WS_OBS_PLAIN_ALL`); catalog version 2 makes that 94 B, a 112 B slot, 18 slots a page and 522
 records, so the build would fail. A build whose field set exceeds **80 B of plaintext (a 96 B

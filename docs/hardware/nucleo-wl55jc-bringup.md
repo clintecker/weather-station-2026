@@ -38,7 +38,7 @@ Both boards:
 | FLASH_OPTR | `0x3FFFF0AA` → read-out protection (RDP) Level 0 (unprotected) |
 | Firmware | identical on both, SHA-256 `d6365d91…5cf5f8c`, 57,836 bytes used |
 
-`docs/hardware/factory-firmware/nucleo-wl55jc-factory-concentrator-v1.0.bin` is a backup of the factory image. It is a full 256 KB (262,144-byte) flash dump. A restore therefore also overwrites pages 55–127, where the weather-station firmware keeps its node state (`App/flash_layout.h`). **That erases the node state of the weather-station firmware: the key, the counters and the journal.** After a restore, provision the TX board with a **new** key. Never reuse a key after its counter was reset (see `docs/runbook-moving-boards.md`). Restore the image with:
+`docs/hardware/factory-firmware/nucleo-wl55jc-factory-concentrator-v1.0.bin` is a backup of the factory image. It is a full 256 KB (262,144-byte) flash dump. A restore therefore also overwrites pages 95–127, where the weather-station firmware keeps its node state (`App/flash_layout.h`). **That erases the node state of the weather-station firmware: the key, the counters and the journal.** After a restore, provision the TX board with a **new** key. Never reuse a key after its counter was reset (see `docs/runbook-moving-boards.md`). Restore the image with:
 
 ```sh
 openocd -f interface/stlink.cfg -c "adapter serial <SERIAL>" -f target/stm32wlx.cfg \
