@@ -23,6 +23,8 @@
 #   NO_HEAP    optional: 1 fails the link if the heap allocator (malloc, free, ... or _sbrk) is linked in
 #   CLEAN_DIR  optional: what `make clean` removes (default $(BUILD))
 #   USAGE_ARGS optional: extra arguments shown in the `make flash` usage line
+#   BUDGET_LABEL optional: what the flash budget line names, "flash budget (<label>): ..." (e.g. the
+#              role and the build flags)
 #
 # Pinned inputs: tools/fetch-vendor.sh (STM32CubeWL v1.6.0 + submodules, Mbed TLS 3.6.6)
 # and xPack arm-none-eabi-gcc 15.2.1-1.1.
@@ -148,8 +150,8 @@ $(TARGET).elf: $(OBJS) $(BOARD)/STM32WL55JCIX_FLASH.ld $(MAKEFILE_LIST)
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@
 ifneq ($(FLASH_BUDGET_PCT),)
-	@$(SIZE) $@ | awk -v lim=$(APP_FLASH_BYTES) -v pct=$(FLASH_BUDGET_PCT) 'NR==2 { used=$$1+$$2; \
-	  printf "flash budget: %d of %d B (%.1f%%, limit %d%%)\n", used, lim, 100*used/lim, pct; \
+	@$(SIZE) $@ | awk -v lim=$(APP_FLASH_BYTES) -v pct=$(FLASH_BUDGET_PCT) -v label='$(if $(BUDGET_LABEL), ($(BUDGET_LABEL)))' 'NR==2 { used=$$1+$$2; \
+	  printf "flash budget%s: %d of %d B (%.1f%%, limit %d%%)\n", label, used, lim, 100*used/lim, pct; \
 	  if (used*100 > lim*pct) { print "error: over the flash budget, see docs/firmware-budget.md"; exit 1 } }'
 endif
 ifeq ($(NO_HEAP),1)

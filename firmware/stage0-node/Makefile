@@ -7,7 +7,10 @@
 #   make ROLE=tx ANALYZE=1               add GCC's static analyzer to our own C (used by CI)
 #   make ROLE=tx WS_BENCH_OLED=1         the bench build with the OLED -> build/tx-oled/stage0-tx.{elf,bin}
 #   make ROLE=tx WS_POWER_PROFILE=2      a power telemetry profile (App/power_config.h; default: its own)
-#   make field-check                     build ROLE=tx without the OLED; fail if any display code is linked
+#   make field-check                     build ROLE=tx without the OLED (build/tx-fieldcheck); fail if any display
+#                                        code is linked
+# WS_BENCH_OLED and WS_POWER_PROFILE are not remembered: pass them to `flash` as to the build (the flash usage
+# line and the budget line name them).
 #
 # The board code (Core/, startup/, SubGHz_Phy/Target/, linker script) and the common build rules
 # live in ../board/nucleo-wl55jc (board.mk). This project keeps its own Core/Src/stm32wlxx_it.c
@@ -50,7 +53,10 @@ BUILD      = build/$(ROLE)$(OLED_SUFFIX)
 TARGET     = $(BUILD)/stage0-$(ROLE)
 # `make clean` removes both roles (build/), or only the BUILD given on the command line.
 CLEAN_DIR  = $(patsubst %/$(ROLE)$(OLED_SUFFIX),%,$(BUILD))
-USAGE_ARGS = ROLE=$(ROLE)
+# What the flash usage line and the budget line name: the role and the flags that change the image.
+USAGE_ARGS = ROLE=$(ROLE) $(if $(filter 1,$(WS_BENCH_OLED)),WS_BENCH_OLED=1) $(if $(WS_POWER_PROFILE),WS_POWER_PROFILE=$(WS_POWER_PROFILE))
+BUDGET_LABEL = $(ROLE)$(if $(WS_POWER_PROFILE),$(comma) profile $(WS_POWER_PROFILE))$(if $(filter 1,$(WS_BENCH_OLED)),$(comma) bench OLED)
+comma := ,
 
 IT_SRC  = Core/Src/stm32wlxx_it.c
 APP_SRC = $(BOARD_CORE_SRC) $(BOARD_SYS_SRC) \
@@ -106,13 +112,15 @@ NO_HEAP = 1
 include $(BOARD)/board.mk
 
 # The field build links no display code (design, "Field builds"): build ROLE=tx with WS_BENCH_OLED=0
-# in its usual directory and fail on any symbol of the driver, the screens or the display library.
+# (and the default power profile) in its own directory, so it never replaces a build in build/tx, and
+# fail on any symbol of the driver, the screens or the display library.
+FIELD_CHECK = build/tx-fieldcheck
 field-check:
-	$(MAKE) ROLE=tx WS_BENCH_OLED=0 BUILD=build/tx
-	@$(NM) build/tx/stage0-tx.elf > build/tx/field-check.nm || { echo "error: nm failed"; exit 1; }
-	@if grep -E ' [A-Za-z] (oled_|scr_|ssd1325_|font5x7)' build/tx/field-check.nm; then \
-	  rm -f build/tx/field-check.nm; echo "error: the field build links display code (WS_BENCH_OLED=0)"; exit 1; fi
-	@rm -f build/tx/field-check.nm
+	$(MAKE) ROLE=tx WS_BENCH_OLED=0 WS_POWER_PROFILE= BUILD=$(FIELD_CHECK)
+	@$(NM) $(FIELD_CHECK)/stage0-tx.elf > $(FIELD_CHECK)/field-check.nm || { echo "error: nm failed"; exit 1; }
+	@if grep -E ' [A-Za-z] (oled_|scr_|ssd1325_|font5x7)' $(FIELD_CHECK)/field-check.nm; then \
+	  rm -f $(FIELD_CHECK)/field-check.nm; echo "error: the field build links display code (WS_BENCH_OLED=0)"; exit 1; fi
+	@rm -f $(FIELD_CHECK)/field-check.nm
 	@echo "field build: no display symbols"
 
 .PHONY: field-check

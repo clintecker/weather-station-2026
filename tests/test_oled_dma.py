@@ -13,6 +13,7 @@ vendor/ (the firmware CI job), and skips without them."""
 import ctypes
 import os
 import re
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -523,6 +524,27 @@ class FieldBuild(unittest.TestCase):
     def test_ram2_is_not_loaded(self):
         # Without NOLOAD, a buffer in RAM2 made objcopy -O binary fill the 400 MB from flash to RAM2.
         self.assertIn('RAM2_region (NOLOAD) :', (ROOT/'firmware/board/nucleo-wl55jc/STM32WL55JCIX_FLASH.ld').read_text())
+
+    @unittest.skipUnless(shutil.which('make'), 'needs make')
+    def test_the_flags_are_named_where_they_matter(self):
+        # make keeps no memory of WS_BENCH_OLED or WS_POWER_PROFILE: the flash usage line and the budget line
+        # name them, and field-check builds into its own directory, never over a build in build/tx.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            show = Path(tmp)/'show.mk'
+            show.write_text('show:\n\t@echo "$(strip $(USAGE_ARGS))|$(BUDGET_LABEL)|$(FIELD_CHECK)"\n')
+            for flags, usage, label in (([], 'ROLE=tx', 'tx'),
+                                        (['WS_BENCH_OLED=1'], 'ROLE=tx WS_BENCH_OLED=1', 'tx, bench OLED'),
+                                        (['WS_POWER_PROFILE=2', 'WS_BENCH_OLED=1'], 'ROLE=tx WS_BENCH_OLED=1 WS_POWER_PROFILE=2',
+                                         'tx, profile 2, bench OLED')):
+                with self.subTest(flags=flags):
+                    r = subprocess.run(['make', '-s', '-C', str(NODE), '-f', 'Makefile', '-f', str(show), 'ROLE=tx', *flags,
+                                        f'BUILD={tmp}/build', 'show'], capture_output=True, text=True)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                    self.assertEqual(r.stdout.strip(), f'{usage}|{label}|build/tx-fieldcheck')
+        board = (ROOT/'firmware/board/nucleo-wl55jc/board.mk').read_text()
+        self.assertIn('printf "flash budget%s: ', board)
+        self.assertIn('usage: make $(strip $(USAGE_ARGS) flash)', board)
 
     def test_the_field_check_greps_every_display_prefix(self):
         # The check itself, read from the Makefile: a renamed prefix must not slip past it.

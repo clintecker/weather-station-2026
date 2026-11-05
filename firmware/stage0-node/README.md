@@ -66,17 +66,17 @@ Makefile variables and targets:
 | `CUBE` | `../../vendor/STM32CubeWL` | The STM32CubeWL checkout that `tools/fetch-vendor.sh` creates. |
 | `TOOLCHAIN` | `~/.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin` | The directory that holds `arm-none-eabi-gcc`. |
 | `BUILD` | `build/<role>` | The build directory (`build/tx-oled` for `WS_BENCH_OLED=1`). CI uses separate ones for the analyzer builds. |
-| `WS_BENCH_OLED` | `0` | `1` is the bench build: the TX drives the bench OLED (`App/oled_app.h`; `App/oled_dma.h`, SPI1 by DMA on PA4, PA5, PA7, PC1, PC2). `0`, the field build, compiles no display code and leaves those pins alone. TX only. |
+| `WS_BENCH_OLED` | `0` | `1` is the bench build: the TX drives the bench OLED (`App/oled_app.h`; `App/oled_dma.h`, SPI1 by DMA on PA4, PA5, PA7, PC1, PC2) and reads the buttons B1–B3 (see "Bench OLED" below). `0`, the field build, compiles no display code and leaves the OLED pins alone; PA0, PA1 and PC6 are still the pull-up falling-edge inputs that the board's GPIO setup makes them (`MX_GPIO_Init`), and their presses do nothing. TX only. |
 | `WS_POWER_PROFILE` | empty | Sets the `WS_POWER_PROFILE` constant below (`make ROLE=tx WS_POWER_PROFILE=2`); empty keeps its default. The same as passing it through `OPT`. |
 | `FLASH_BUDGET_PCT` | `90` | The link fails when code and initialized data use more than this percentage of the 194,560 B firmware region ([`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
 | `ANALYZE` | unset | `1` adds GCC's static analyzer (`-fanalyzer`) to our own C. Our C always builds with a strict warning set and `-Werror`. |
 | `OPT` | `-Os` | The optimisation flags. The build constants below go here, for example `make ROLE=tx OPT='-Os -DWS_POWER_PROFILE=2'`. |
-| `all` (default target) | | Builds the `.elf` and `.bin`. Then prints the size, the flash budget line and the `.bin` SHA-256. |
-| `flash` | | Builds if necessary. Then OpenOCD programs the `.elf` (connect under reset) and verifies it. |
+| `all` (default target) | | Builds the `.elf` and `.bin`. Then prints the size, the flash budget line and the `.bin` SHA-256. The budget line names the role and the flags that change the image: `flash budget (tx, profile 2, bench OLED): N of 194560 B`. |
+| `flash` | | Builds if necessary. Then OpenOCD programs the `.elf` (connect under reset) and verifies it. `WS_BENCH_OLED` and `WS_POWER_PROFILE` are not remembered: give `flash` the same flags as the build you mean (`make ROLE=tx WS_BENCH_OLED=1 WS_POWER_PROFILE=2 flash SERIAL=…`), or it builds and programs the default image. Without `SERIAL` it prints the usage line with those flags. |
 | `stack` | | Computes the worst-case stack bound from the GCC call graphs (`tools/stack_report.py`). Fails above the linker's 8 KB reservation. |
 | `waits` | | Checks that nothing busy-waits at run time (`tools/blocking_report.py`). Fails if an interrupt, task, callback or the main loop can reach a banned wait (`HAL_Delay`, blocking HAL I2C/UART/SPI, ...) or an unclassified `HAL_GetTick` poller. Lists the allowed hardware stalls with their bounds, the boot waits and the test-only waits. |
 | `clean` | | Removes `build/` for **both** roles. |
-| `field-check` | | Builds `ROLE=tx` with `WS_BENCH_OLED=0` into `build/tx` and fails if the `.elf` has any `oled_`, `scr_`, `ssd1325_` or `font5x7` symbol. |
+| `field-check` | | Builds `ROLE=tx` with `WS_BENCH_OLED=0` and the default power profile into its own `build/tx-fieldcheck` (so it never replaces a build in `build/tx`) and fails if the `.elf` has any `oled_`, `scr_`, `ssd1325_` or `font5x7` symbol. |
 
 Build constants (C macros with a default; pass them through `OPT`):
 
@@ -87,6 +87,21 @@ Build constants (C macros with a default; pass them through `OPT`):
 | `WS_NODE_FIELDS` | `WS_F_WSMP_BENCH` | The catalog fields this build can send (`App/node_fields.h`, see "Field set of a build"). |
 
 The firmware version string (`fw=` in `#boot`/`#status`) is `git describe --always --dirty --abbrev=12` at build time. A build from a modified tree reports `…-dirty`. Every commit changes the binary. The firmware build ID in the health report is that string's first 8 hex digits, and **0 ("not identified") for a dirty tree** (`Makefile` `FW_BUILD_ID`): the commit then names every power constant a nonzero ID used, and the observation's power fields name the profile (profile 2 sends the load, solar and USB-C fields; power spec section 8.6). Commit a measured constant before flashing the build that carries it.
+
+### Bench OLED (`WS_BENCH_OLED=1`)
+
+`make ROLE=tx WS_BENCH_OLED=1` builds the TX with the bench OLED (Adafruit #2674, SSD1325) into `build/tx-oled`; flash it with the same flag. Design: [`docs/superpowers/specs/2026-11-04-node-oled-and-e2e-design.md`](../../docs/superpowers/specs/2026-11-04-node-oled-and-e2e-design.md). The display shows the boot splash, HACK THE PLANET, then the normal screen, an interlude about every 2 minutes, and the packet burst and banner for each minute's live reading. The build keeps `LOW_POWER_DISABLE` 1 (sleep only): `App/oled_dma.c` does not compile with Stop 2, which would stall SPI1 and its DMA mid-frame.
+
+| Button | Pin | Press |
+|---|---|---|
+| B1 | PA0 | The next screen: normal, scope, vane, system bars, HACK THE PLANET, normal again. |
+| B2 | PA1 | Pause or resume the rotation. Paused, the screen stays where B1 put it: it plays again from its first frame, comes back after a packet's burst and banner, and B1 moves it on. Resumed, it plays to its end, then normal, and the next interlude is 2 minutes away. |
+| B3 | PC6 | The display off (the display-off command, then no SPI traffic) or on. |
+
+A press counts once: the interrupt drops edges within 50 ms of the last one, and a press needs a 125 ms step to have read the button up since the press before, so a release that bounces is no second press.
+
+- **A missing panel is silent.** SPI1 only transmits (the SSD1325 has no read-back on this wiring), so the TX cannot tell an unplugged or dead panel from a working one: the frames go out, nothing lights, and the console says nothing. Check the wiring ([`docs/hardware/bench-station-wiring.md`](../../docs/hardware/bench-station-wiring.md)) and the 3.3 V at the panel.
+- **After `#oled fault`** (a DMA transfer error or an SPI error) the display stays dark and no frames are drawn. Press B3 twice (off, then on): the second press runs the panel's start-up again from the reset pulse. A reboot does the same.
 
 ## Source files
 
@@ -178,7 +193,13 @@ export WS0_API_TOKEN=<api_token from the run directory's gateway.json>
 .venv/bin/python tools/e2e_check.py --power-pending   # until the power rails are wired
 ```
 
-It prints one line a field (`ok`, `FAIL`, `pending`) and a summary. Exit 0 means no FAIL. `--url` (default `http://127.0.0.1:8088`) and `--max-age` (default 180 s) are options. The token is read only from `WS0_API_TOKEN`.
+It prints one line for the age and one a field, then a summary. A line starts with its status:
+
+- `ok`: present and in range (a power field: valid); `ok (fitted)` for a power field that is valid while `--power-pending` is given (the rail is wired already).
+- `FAIL`: missing, out of range, a gust below the speed, a power field not valid without `--power-pending`; for the age, an observation the gateway holds untimely (`untimely (no effective time)`) or one older than `--max-age` (`stale`).
+- `pending (INVALID, expected)`: a power field not yet valid, with `--power-pending` (`pending (absent, expected)` if the record lacks it).
+
+The power fields are the 13 a version 6 build sends (`WS_F_WSMP_POWER`): `batt_mv`, `batt_current_ma`, `energy_in_mwh`, `energy_out_mwh`, `charge_in_mah`, `charge_out_mah`, `load_mv`, `load_current_ma`, `charger_input_mv`, `solar_mv`, `solar_current_ma`, `usb_mv` and `usb_current_ma` (the USB-C pair). Exit 0 means no FAIL, 1 a FAIL or an error, 2 a usage error or no `WS0_API_TOKEN`. An error (no observation yet, a refused token, an unreachable gateway, a reply that is not JSON) is one line, never a traceback. `--url` (default `http://127.0.0.1:8088`) and `--max-age` (default 180 s) are options. The token is read only from `WS0_API_TOKEN`.
 
 `run-hw/` holds secrets and live data. Git ignores it. `serve` appends receiver diagnostics and every frame/ACK pair to `run-hw/receiver.log`.
 

@@ -14,7 +14,7 @@
 
 - No run-time busy-wait in the node: `make waits` (tools/blocking_report.py) stays OK for ROLE=tx with and without `WS_BENCH_OLED=1`.
 - Our C builds with board.mk's strict warning set and `-Werror`; no dynamic allocation (`NO_HEAP = 1`).
-- `WS_BENCH_OLED` defaults to 0. A field build links no `oled_`/`scr_` symbol and leaves PA4, PA5, PA7, PC1, PC2, PA0, PA1 untouched.
+- `WS_BENCH_OLED` defaults to 0. A field build links no `oled_`/`scr_` symbol and leaves PA4, PA5, PA7, PC1, PC2 untouched; PA0, PA1 and PC6 stay the board's pull-up falling-edge EXTI inputs (`MX_GPIO_Init`), with no vector that acts on them.
 - Display buffers live in RAM2 (`__attribute__((section(".RAM2_region")))`); RAM1 has about 3.5 KB free.
 - OLED: SSD1325, 128 × 64, 4 bits a pixel, 4096 bytes a frame, SPI1 mode 0 at ≤ 1 MHz; PA4 CS, PA5 SCLK, PA7 DIN, PC2 DC, PC1 RST; frames turned 180° (DS1 rot 180).
 - Buttons: B1 PA0 next screen, B2 PA1 pause/resume rotation, B3 PC6 OLED on/off.

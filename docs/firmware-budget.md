@@ -91,7 +91,7 @@ a version 6 image recycles every old page. Drain the journal (`pending=0`) befor
 
 ### Budget check in the build
 
-The build enforces a budget. `make` prints `flash budget: N of 194560 B`. It fails above
+The build enforces a budget. `make` prints `flash budget (tx): N of 194560 B`, naming the role and any flag that changes the image (`flash budget (tx, profile 2, bench OLED): ...`). It fails above
 `FLASH_BUDGET_PCT` (default 90 %) of the application region (`firmware/stage0-node/Makefile`).
 
 ### Current build

@@ -106,8 +106,10 @@ and show the send, then the outcome (ACK with its RSSI and SNR, or NO ACK), for 
 
 ### Field builds
 
-`WS_BENCH_OLED` defaults to 0. Without it the TX carries no display code, leaves PA4, PA5, PA7, PC1, PC2 and the
-buttons as reset left them, and its budget line is the field figure. The bench build and its flag are what
+`WS_BENCH_OLED` defaults to 0. Without it the TX carries no display code and leaves PA4, PA5, PA7, PC1 and PC2 as
+reset left them; the buttons PA0, PA1 and PC6 stay what the board's GPIO setup (`MX_GPIO_Init`) makes them in every
+build, pull-up inputs with a falling-edge EXTI line, and a press does nothing (no EXTI0 or EXTI1 vector; PC6's
+EXTI9_5 vector is served but forwards nothing). Its budget line is the field figure. The bench build and its flag are what
 `RELEASES.md` records for the r1 bench. A `make` check builds both and fails if the field build links any display
 symbol.
 
