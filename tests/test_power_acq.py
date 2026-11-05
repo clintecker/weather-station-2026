@@ -180,6 +180,16 @@ class PhaseA(unittest.TestCase):
         self.assertAlmostEqual(want, 50_000, delta=10)        # the INA228 count quantises 500 mA to 500.02
         self.assertEqual(half_up(0x4E66 * 10, 256), 784)
 
+    def test_power_live_rails_not_fitted_in_phase_a(self):
+        # Phase A has no load, solar or USB-C INA228: the screen says so ("--"), never "pending".
+        b = self.bench()
+        b.ina(BATTERY, 4.40, -500_000)
+        b.lib.h_charger_pins(PGOOD | CHG)
+        b.lib.h_run(20_000)
+        b.lib.h_live()
+        self.assertEqual([[b.lib.h_live_rail(k, w) for w in range(4)] for k in range(3)], [[0, 0, 0, 0]] * 3)
+        self.assertEqual(b.lib.h_live_charger(), 0x03)   # power good, charging (spec section 6.3)
+
     def test_power_live_does_not_change_the_window(self):
         def minute(with_live):
             b = self.bench()
@@ -516,6 +526,22 @@ class PhaseB(unittest.TestCase):
         self.assertEqual(len(set(addrs)), 4)
         self.assertFalse(set(addrs) & RESERVED)
         self.assertTrue(all(lib.h_fitted(s) for s in range(SLOTS)))
+
+    def test_power_live_rails(self):
+        # The screen's load, solar and USB-C rows: each fitted rail's latest step and VBUS; the absent solar
+        # part is fitted but not ok (the screen's "pending"), its values 0.
+        b = Bench(self, self.library, [d for d in PHASE_B if d[1] != SOLAR])
+        b.ina(LOAD, 4.38, 120_000)
+        b.ina(USB, 5.05, 830_000)
+        b.lib.h_charger_pins(PGOOD)
+        b.lib.h_run(20_000)
+        b.lib.h_live()
+        rails = [[b.lib.h_live_rail(k, w) for w in range(4)] for k in range(3)]
+        self.assertEqual([r[:2] for r in rails], [[1, 1], [1, 0], [1, 1]])
+        self.assertAlmostEqual(rails[0][2], 12_000, delta=10)   # 120 mA in 0.01 mA
+        self.assertAlmostEqual(rails[2][2], 83_000, delta=10)
+        self.assertEqual((rails[0][3], rails[1][2:], rails[2][3]), (4380, [0, 0], 5050))
+        self.assertEqual(b.lib.h_live_charger(), 0x01)          # power good, not charging
 
     def test_four_rails_and_one_absent(self):
         b = Bench(self, self.library, [d for d in PHASE_B if d[1] != SOLAR])

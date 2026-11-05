@@ -53,10 +53,14 @@ class WindLive(ctypes.Structure):
                 ('point', ctypes.c_int8), ('bins', ctypes.c_uint8 * 120), ('nbins', ctypes.c_uint8)]
 
 
+class RailLive(ctypes.Structure):
+    _fields_ = [('fitted', ctypes.c_int), ('ok', ctypes.c_int), ('ma_x100', ctypes.c_int32), ('mv', ctypes.c_int32)]
+
+
 class PowerLive(ctypes.Structure):
     _fields_ = [('batt_ok', ctypes.c_int), ('batt_ma_x100', ctypes.c_int32), ('out_mv', ctypes.c_int32),
                 ('gauge_ok', ctypes.c_int), ('vcell_mv', ctypes.c_uint16), ('soc_pct_x10', ctypes.c_uint16),
-                ('charging', ctypes.c_int)]
+                ('charging', ctypes.c_int), ('charger', ctypes.c_uint8), ('rail', RailLive * 3)]
 
 
 class RainHist(ctypes.Structure):

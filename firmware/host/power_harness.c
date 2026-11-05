@@ -52,6 +52,12 @@ int h_live_gauge_ok(void) { return live.gauge_ok; }
 int h_live_vcell_mv(void) { return live.vcell_mv; }
 int h_live_soc_x10(void) { return live.soc_pct_x10; }
 int h_live_charging(void) { return live.charging; }
+int h_live_charger(void) { return live.charger; }
+int h_live_rail(int k, int what)   /* what: 0 fitted, 1 ok, 2 ma_x100, 3 mv */
+{
+  const power_rail_live_t *l = &live.rail[k];
+  return what == 0 ? l->fitted : what == 1 ? l->ok : what == 2 ? (int)l->ma_x100 : (int)l->mv;
+}
 int h_rail_count(void) { return (int)POWER_RAIL_COUNT; }
 int h_rail_addr(int i) { return POWER_RAILS[i].addr; }
 int h_rail_sign(int i) { return POWER_RAILS[i].sign; }

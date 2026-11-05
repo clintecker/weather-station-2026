@@ -372,7 +372,20 @@ void power_acq_live(power_live_t *p)
   p->gauge_ok = g->ok;
   if (g->vcell_ok) p->vcell_mv = (uint16_t)ws_div_round(g->vcell_uv, UV_PER_MV);
   if (g->ok) p->soc_pct_x10 = (uint16_t)ws_div_round((int64_t)g->soc_256 * 10, 256);
-  p->charging = (charger_status() & POWER_STATUS_CHARGING) != 0U;
+  p->charger = charger_status();
+  p->charging = (p->charger & POWER_STATUS_CHARGING) != 0U;
+  static const uint8_t current[PL_RAILS] = { PS_LOAD_MA, PS_SOLAR_MA, PS_USB_MA };
+  for (unsigned k = 0; k < PL_RAILS; k++)   /* bound: the 3 rails beside the battery */
+    for (unsigned i = 0; i < POWER_RAIL_COUNT; i++)   /* bound: the profile's rails */
+    {
+      if (POWER_RAILS[i].current_slot != current[k]) continue;
+      const rail_t *r = &pa.rail[i];
+      power_rail_live_t *l = &p->rail[k];
+      l->fitted = 1;
+      l->ok = r->live_step;
+      l->ma_x100 = r->live_step ? r->live_ma_x100 : 0;
+      l->mv = r->live_step && r->live_vbus ? r->live_vbus_mv : 0;
+    }
 }
 
 int power_acq_fitted(enum power_slot s)

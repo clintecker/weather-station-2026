@@ -88,13 +88,20 @@ void power_acq_latch(uint32_t now_ms, power_window_t *out);
    batt_ok: the battery INA228 has a current step; batt_ma_x100 is that step's mean current in 0.01 mA
    (+ into the cell), out_mv the load rail's latest VBUS (OUT), 0 where the profile reads none.
    gauge_ok: the MAX17048 answered its last read; vcell_mv and soc_pct_x10 (0.1 %) are its values.
-   charging: the bq24074 CHG pin steady (not flashing). A value whose part is not ok reads 0. */
+   charging: the bq24074 CHG pin steady (not flashing); charger: the health report's charger status byte.
+   rail: the load, solar and USB-C INA228s (enum power_live_rail): fitted, the profile has the rail's
+   current slot; ok, its part has a current step; ma_x100 and mv, as the battery's (mv 0 where its VBUS is
+   not read). A value whose part is not ok reads 0. */
+enum power_live_rail { PL_LOAD, PL_SOLAR, PL_USB, PL_RAILS };
+typedef struct { int fitted, ok; int32_t ma_x100, mv; } power_rail_live_t;
 typedef struct {
   int batt_ok;
   int32_t batt_ma_x100, out_mv;
   int gauge_ok;
   uint16_t vcell_mv, soc_pct_x10;
   int charging;
+  uint8_t charger;
+  power_rail_live_t rail[PL_RAILS];
 } power_live_t;
 void power_acq_live(power_live_t *p);
 /* 1 if the profile has a source for the slot. */
