@@ -322,6 +322,16 @@ void h_rx_hdr(void)
   radio_events->RxTimeout();
   sim_run_tasks();
 }
+/* The bench display's hooks (App/oled_hooks.h), built in (WS_BENCH_OLED=1) so a test sees what the exchange tells
+   the display: the sent frames and the no-ACK outcomes. */
+static uint32_t oled_sent_n, oled_no_ack_n, oled_no_ack_last = 0xFFFFFFFFU;
+void oled_note_sent(uint32_t seq, const uint8_t *frame, uint8_t len, int live) { (void)seq; (void)frame; (void)len; (void)live; oled_sent_n++; }
+void oled_note_ack(uint32_t seq, int16_t rssi, int8_t snr) { (void)seq; (void)rssi; (void)snr; }
+void oled_note_no_ack(uint32_t seq) { oled_no_ack_n++; oled_no_ack_last = seq; }
+void oled_app_start(void) {}   /* app_tx starts the display */
+uint32_t h_oled_no_acks(void) { return oled_no_ack_n; }
+uint32_t h_oled_no_ack_seq(void) { return oled_no_ack_last; }
+
 /* The driver's transmit timeout: the radio is still transmitting (stuck), no TxDone will come. */
 void h_tx_timeout(void)
 {

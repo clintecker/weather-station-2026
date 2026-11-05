@@ -328,7 +328,7 @@ static int on_nack(const reply_t *r, int mine)
   mark_replied();
   /* A total that fails to persist is only a count. The journal acknowledges the record either way. */
   if (store_journal_find(r->epoch, r->seq, &ref) == 0 && store_journal_ack(ref) == 0) (void)store_note_abandoned();
-  led_flash(LED_RED, LED_FLASH_LONG_MS);
+  led_flash(LED_RED, LED_FLASH_LONG_MS); oled_note_no_ack(sent_seq);   /* the bench display: not ACKed */
   APP_PRINTF("#nack epoch=%u seq=%u reason=%u abandoned=%u\n", (unsigned)r->epoch, (unsigned)r->seq,
              (unsigned)r->word, (unsigned)store_abandoned_total());
   return 1;
@@ -391,7 +391,7 @@ static int in_sending(uint32_t ev)
     return 1;
   }
   if (ev != EV_TX_TIMEOUT) return 0;
-  tx_timed_out();
+  tx_timed_out(); oled_note_no_ack(sent_seq);   /* the bench display: not ACKed */
   stop_drain(); next_item();
   return 1;
 }

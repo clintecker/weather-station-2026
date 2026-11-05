@@ -100,7 +100,7 @@ class Node:
         self.lib = fresh_copy(owner, library)
         self.lib.h_output.restype = ctypes.c_char_p
         for name in ('h_now', 'h_send_at', 'h_last_rx_timeout', 'h_flash_ops_during_radio', 'h_flash_erases',
-                     'h_tx_air_ms', 'h_timer_start_refused'):
+                     'h_tx_air_ms', 'h_timer_start_refused', 'h_oled_no_acks', 'h_oled_no_ack_seq'):
             getattr(self.lib, name).restype = ctypes.c_uint32
         self.air = self.lib.h_tx_air_ms()
         self.replies = Replies()
@@ -235,7 +235,7 @@ class TxStateMachine(unittest.TestCase):
         lib = host_library(cls, 'txmachine', *san, '-I', fw/'host/include', '-I', fw/'host', '-I', fw/'stage0-node/App',
                            '-I', fw/'stage0-node/Core/Inc', '-I', fw, '-I', fw/'common', '-I', MBEDTLS/'include',
                            '-DMBEDTLS_CONFIG_FILE="ws_mbedtls_config.h"', '-DWS_FW_VERSION="host"',
-                           '-DWS_FW_BUILD_ID=0UL', '-DWS_I2C_MUX=0', *[fw/s for s in SOURCES], *mbed)
+                           '-DWS_FW_BUILD_ID=0UL', '-DWS_I2C_MUX=0', '-DWS_BENCH_OLED=1', *[fw/s for s in SOURCES], *mbed)
         cls.library = lib._name
 
     def node(self, storm=False, provision=True, seed=0, before_boot=None):
@@ -384,6 +384,17 @@ class TxStateMachine(unittest.TestCase):
         self.assertEqual((n.radio(), n.state()), (R_STANDBY, 'gap'))   # the health report is due
         n.advance(5000)
         self.assertEqual(n.status()['unexpected'], '0')
+
+    def test_the_bench_display_hears_of_a_transmit_timeout_and_a_nack(self):
+        # The live frame (seq 0) times out on air, or is NACKed: the screen must stop showing SENT/WAIT.
+        n = self.node()
+        n.advance_to(minute(0) + 5)
+        n.lib.h_tx_timeout()
+        self.assertEqual((n.lib.h_oled_no_acks(), n.lib.h_oled_no_ack_seq()), (1, 0))
+        n = self.node()
+        self.window(n)
+        n.reply(kind=KIND_NACK)
+        self.assertEqual((n.lib.h_oled_no_acks(), n.lib.h_oled_no_ack_seq()), (1, 0))
 
     # ---- events that arrive together, or where no state expects them ----
 

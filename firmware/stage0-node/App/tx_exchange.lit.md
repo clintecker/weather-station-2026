@@ -617,7 +617,8 @@ static int send_obs(const uint8_t *plain, int plen)
 
 `in_sending` waits for the radio. On TxDone it clears the transmit failure run, starts `ack_timer`
 and listens with no driver timeout. On TxTimeout it calls `tx_timed_out` (section 3: standby,
-failure noted, timeout counted, red LED, `#error tx-timeout`) and stops the drain. The exchange then
+failure noted, timeout counted, red LED, `#error tx-timeout`), tells the bench display the frame got no ACK
+(`oled_note_no_ack`) and stops the drain. The exchange then
 ends after this frame.
 
 ```c {#in-sending}
@@ -633,7 +634,7 @@ static int in_sending(uint32_t ev)
     return 1;
   }
   if (ev != EV_TX_TIMEOUT) return 0;
-  tx_timed_out();
+  tx_timed_out(); oled_note_no_ack(sent_seq);   /* the bench display: not ACKed */
   stop_drain(); next_item();
   return 1;
 }
@@ -788,7 +789,7 @@ static int on_ack(const reply_t *r, int mine)
 `ack_rejects`, prints `#nack ignored: not for the frame just sent` and keeps the window open. An
 accepted NACK marks the frame replied. If the search finds the record and its journal ACK succeeds,
 the abandoned total goes up by one. The code ignores a total that fails to persist, because the
-journal acknowledges the record either way. The red LED flashes for `LED_FLASH_LONG_MS` (1000 ms).
+journal acknowledges the record either way. The red LED flashes for `LED_FLASH_LONG_MS` (1000 ms), and the bench display shows the frame as not ACKed (`oled_note_no_ack`).
 
 ```c {#on-nack}
 /* An authentic NACK is a permanent rejection. The node accepts it only for the frame just sent. */
@@ -799,7 +800,7 @@ static int on_nack(const reply_t *r, int mine)
   mark_replied();
   /* A total that fails to persist is only a count. The journal acknowledges the record either way. */
   if (store_journal_find(r->epoch, r->seq, &ref) == 0 && store_journal_ack(ref) == 0) (void)store_note_abandoned();
-  led_flash(LED_RED, LED_FLASH_LONG_MS);
+  led_flash(LED_RED, LED_FLASH_LONG_MS); oled_note_no_ack(sent_seq);   /* the bench display: not ACKed */
   APP_PRINTF("#nack epoch=%u seq=%u reason=%u abandoned=%u\n", (unsigned)r->epoch, (unsigned)r->seq,
              (unsigned)r->word, (unsigned)store_abandoned_total());
   return 1;
