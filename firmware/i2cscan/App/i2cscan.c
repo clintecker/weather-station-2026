@@ -62,7 +62,6 @@ static unsigned ticks, lines;
 static int64_t shunt_sum, vbus_sum;   /* the INA228 counts of this line's samples (ina228_count) */
 static unsigned samples, misses;
 static bench_view view;   /* the latest readings, for the OLED */
-static oled_fb screen;
 static uint16_t cups_last;   /* meters_cups() at the last #meters line */
 static uint16_t cups_sec[WIND_SECONDS];   /* the pulses of the last WIND_SECONDS seconds, a ring */
 static unsigned cups_at;
@@ -334,9 +333,10 @@ static void air_line(void)
 static void screen_update(void)
 {
   static oled_fb drawn;
+  static uint8_t frame[OLED_FRAME_BYTES];
   bench_screen(&drawn, &view);
-  oled_rotate180(&screen, &drawn);
-  int failed = oled_show(&screen) != 0;
+  ssd1325_frame(&drawn, 1, frame);
+  int failed = oled_show(frame) != 0;
   if (failed && !oled_failed) APP_PRINTF("#oled SPI timeout: the frame was not sent\n");
   oled_failed = failed;
 }

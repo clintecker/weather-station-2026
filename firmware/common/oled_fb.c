@@ -1,4 +1,4 @@
-/* The bench OLED's frame buffer, text and SSD1325 pixel order: see oled_fb.h. */
+/* The OLED's frame buffer, text and SSD1325 pixel order: see oled_fb.h. */
 #include "oled_fb.h"
 #include <string.h>
 #include "font5x7.h"
@@ -34,6 +34,7 @@ static const uint8_t *glyph(char c)
 
 int oled_text(oled_fb *fb, int x, int y, const char *s, int scale)
 {
+  /* bound: the characters of s, one a pass */
   for (; *s; s++, x += OLED_CHAR_ADVANCE * scale)
   {
     const uint8_t *rows = glyph(*s);

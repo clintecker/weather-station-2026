@@ -13,10 +13,11 @@
 #ifndef OLED_H_INCLUDED
 #define OLED_H_INCLUDED
 
-#include "oled_fb.h"
+#include <stdint.h>
+#include "oled_draw.h"
 
 void oled_init(void);                    /* the pins, SPI1, a reset pulse and the SSD1325 set-up */
-int oled_show(const oled_fb *fb);       /* one frame (4096 bytes, about 45 ms); 0 or -1 on an SPI timeout */
+int oled_show(const uint8_t frame[OLED_FRAME_BYTES]);   /* one ssd1325_frame (about 45 ms); 0 or -1 on an SPI timeout */
 unsigned oled_spi_hz(void);              /* the SPI clock chosen, for the start line */
 
 #endif

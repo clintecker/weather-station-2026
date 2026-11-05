@@ -125,17 +125,12 @@ void oled_init(void)
   (void)commands(setup, sizeof setup);
 }
 
-int oled_show(const oled_fb *fb)
+int oled_show(const uint8_t frame[OLED_FRAME_BYTES])
 {
-  uint8_t column[OLED_H];
   if (commands(window, sizeof window)) return -1;
   select(1);
   int rc = 0;
-  for (unsigned cp = 0; cp < OLED_COLPAIRS && rc == 0; cp++)
-  {
-    ssd1325_column(fb, cp, column);
-    rc = send(column, sizeof column);
-  }
+  for (unsigned cp = 0; cp < OLED_COLPAIRS && rc == 0; cp++) rc = send(&frame[cp * OLED_H], OLED_H);
   deselect();
   return rc;
 }

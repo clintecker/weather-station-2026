@@ -18,13 +18,14 @@ APP_SRC = $(BOARD_CORE_SRC) \
           App/bench_screen.c \
           App/meters.c \
           App/oled.c \
-          App/oled_fb.c \
-          App/font5x7.c \
+          ../common/oled_fb.c \
+          ../common/oled_draw.c \
+          ../common/font5x7.c \
           $(BOARD_RADIO_SRC) \
           $(BOARD_SYS_SRC)
 
 HAL_EXTRA = i2c i2c_ex adc adc_ex lptim
-PROJ_INCS = Core/Inc App ../common   # power_regs.h (shared with the node and benchlink)
+PROJ_INCS = Core/Inc App ../common   # power_regs.h, oled_fb.h: shared with the node (and benchlink)
 DEFS      = -DDEBUG -DVERBOSE_LEVEL=VLEVEL_M
 OPT       = -Og
 

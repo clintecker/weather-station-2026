@@ -5,8 +5,6 @@ Pure C, compiled for the host. Not bench evidence: the tool's readings are check
 the bench (firmware/i2cscan/README.md)."""
 import ctypes
 import re
-import subprocess
-import sys
 import unittest
 try:
     from toolchain import ROOT, c_function, host_library, needs_cc, sensor_power_problems   # discover -s tests
@@ -285,67 +283,16 @@ class View(ctypes.Structure):
 
 @needs_cc
 class BenchScreen(unittest.TestCase):
-    """The OLED frame buffer, font and layout (oled_fb.c, font5x7.c, bench_screen.c)."""
+    """The bench screen's layout (bench_screen.c) over the shared frame buffer and font (firmware/common)."""
     @classmethod
     def setUpClass(cls):
-        cls.lib = host_library(cls, 'bench_screen', '-I', APP, '-I', COMMON, APP/'oled_fb.c', APP/'font5x7.c',
+        cls.lib = host_library(cls, 'bench_screen', '-I', APP, '-I', COMMON, COMMON/'oled_fb.c', COMMON/'font5x7.c',
                                APP/'bench_screen.c', APP/'bench_regs.c', POWER)
         cls.lib.oled_text.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
-        cls.lib.oled_set.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
-        cls.lib.oled_get.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
-        cls.lib.ssd1325_column.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p]
         cls.lib.bench_screen.argtypes = [ctypes.c_void_p, ctypes.POINTER(View)]
 
     def fb(self):
         return ctypes.create_string_buffer(OLED_W*OLED_H//8)
-
-    def lit(self, fb):
-        return {(x, y) for y in range(OLED_H) for x in range(OLED_W) if self.lib.oled_get(fb, x, y)}
-
-    def test_font_file_is_current(self):
-        script = ROOT/'firmware/i2cscan/tools/make_font.py'
-        self.assertEqual(subprocess.run([sys.executable, script, '--check']).returncode, 0)
-
-    def test_glyph_pixels(self):
-        fb = self.fb()
-        self.assertEqual(self.lib.oled_text(fb, 10, 20, b'1', 1), 16)
-        art = '..#.. .##.. ..#.. ..#.. ..#.. ..#.. .###.'.split()
-        want = {(10 + c, 20 + r) for r, row in enumerate(art) for c, ch in enumerate(row) if ch == '#'}
-        self.assertEqual(self.lit(fb), want)
-
-    def test_scale_and_unknown_characters(self):
-        fb, ref = self.fb(), self.fb()
-        self.assertEqual(self.lib.oled_text(fb, 0, 0, b'x~', 2), 24)     # neither is in the font
-        self.lib.oled_text(ref, 0, 0, b'??', 2)
-        self.assertEqual(fb.raw, ref.raw)
-        self.assertEqual(len(self.lit(ref)), 2*4*len(self.lit_of(b'?')))  # each font pixel is 2 x 2
-
-    def lit_of(self, text):
-        fb = self.fb()
-        self.lib.oled_text(fb, 0, 0, text, 1)
-        return self.lit(fb)
-
-    def test_off_screen_is_ignored(self):
-        fb = self.fb()
-        for x, y in ((-1, 0), (0, -1), (OLED_W, 0), (0, OLED_H), (10**6, 10**6)):
-            self.lib.oled_set(fb, x, y, 1)
-            self.assertEqual(self.lib.oled_get(fb, x, y), 0)
-        self.assertEqual(fb.raw, bytes(len(fb.raw)))
-        self.lib.oled_text(fb, 120, 60, b'888', 2)                       # clipped, not wrapped
-        self.assertTrue(all(x >= 120 and y >= 60 for x, y in self.lit(fb)))
-
-    def test_ssd1325_column_order(self):
-        fb = self.fb()
-        for x, y in ((0, 0), (1, 5), (126, 63), (127, 63)):
-            self.lib.oled_set(fb, x, y, 1)
-        col = ctypes.create_string_buffer(OLED_H)
-        self.lib.ssd1325_column(fb, 0, col)
-        self.assertEqual(col.raw[0], 0xF0)          # x = 0: the left pixel, high nibble
-        self.assertEqual(col.raw[5], 0x0F)          # x = 1: the right pixel, low nibble
-        self.assertEqual(sum(1 for b in col.raw if b), 2)
-        self.lib.ssd1325_column(fb, 63, col)
-        self.assertEqual(col.raw[63], 0xFF)
-        self.assertEqual(sum(1 for b in col.raw if b), 1)
 
     def expected(self, lines):
         fb = self.fb()
@@ -376,18 +323,10 @@ class BenchScreen(unittest.TestCase):
 
     def test_screen_text_has_no_missing_glyphs(self):
         # Every character the layout draws is in the font: a '?' on the screen is never a glyph gap.
-        chars = (ROOT/'firmware/i2cscan/App/font5x7.c').read_text().split('font5x7_chars[] = "')[1].split('"')[0]
+        chars = (COMMON/'font5x7.c').read_text().split('font5x7_chars[] = "')[1].split('"')[0]
         for text in (b'BATT +37.60mA 3.846V', b'CELL NO MAX17048', b'P 1013.2hPa UV 123', b'WIND 1.33m/s NNE',
                      b'RAIN 2 TIPS 0.56mm', b'AIR 21.34C 45.21%'):
             self.assertTrue(set(text.decode()) <= set(chars), text)
-
-    def test_rotate180(self):
-        fb, out = self.fb(), self.fb()
-        self.lib.oled_set(fb, 0, 0, 1)
-        self.lib.oled_set(fb, 10, 3, 1)
-        self.lib.oled_rotate180.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.lib.oled_rotate180(out, fb)
-        self.assertEqual(self.lit(out), {(OLED_W - 1, OLED_H - 1), (OLED_W - 11, OLED_H - 4)})
 
     def test_sht_parse(self):
         self.lib.bench_sht_parse.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.POINTER(ctypes.c_int32),
