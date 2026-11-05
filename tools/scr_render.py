@@ -7,6 +7,7 @@ Each screen is drawn with a demo view (the mockups' values) at a few frames, 4 x
 mockups' amber on black: <screen>-f<frame>.png. tests/test_scr_view.py builds the same library and
 uses the view structure defined here."""
 import ctypes
+import math
 import subprocess
 import sys
 import tempfile
@@ -17,14 +18,18 @@ APP = ROOT/'firmware/stage0-node/App'
 COMMON = ROOT/'firmware/common'
 OUT = ROOT/'.superpowers/sdd/2026-11-04-node-oled-and-e2e/renders'
 W, H = 128, 64
-SCREENS = ['NORMAL', 'BURST', 'BANNER', 'SCOPE', 'VANE', 'RAIN', 'SYSTEM', 'BOOT', 'HACK']   # enum scr_id
+SCREENS = ['HOME', 'BURST', 'BANNER', 'AIR', 'PRESSURE', 'POWER', 'RADIO', 'SCOPE', 'VANE', 'RAIN', 'SYSTEM', 'BOOT',
+           'HACK', 'FORTUNE', 'FROG', 'MATRIX', 'PINBALL']   # enum scr_id
 RAIN_AGE_NONE, RAIN_AGE_MAX_S = 0xFFFFFFFF, 99 * 3600   # App/mod_rain.h
 SCR_TX_NONE, SCR_TX_WAIT, SCR_TX_NO_ACK, SCR_TX_ACK = -2, -1, 0, 1
+SCR_GAP, SCR_NONE_S = -32768, 0xFFFFFFFF
+AIR_HIST, PRESS_HIST, RADIO_HIST = 60, 36, 30
 
 # The screens' sources and their include paths. oled_fb.c is left out: the shim includes it, so a
 # test can see every string drawn (the shim's oled_text checks each character against the font).
 INCLUDES = ['-I', APP, '-I', COMMON, '-I', ROOT/'firmware']
-SOURCES = [APP/'scr_view.c', APP/'scr_interludes.c', APP/'scr_rain.c', APP/'scr_art.c', COMMON/'oled_draw.c', COMMON/'font5x7.c']
+SOURCES = [APP/'scr_view.c', APP/'scr_calc.c', APP/'scr_home.c', APP/'scr_detail.c', APP/'scr_interludes.c', APP/'scr_rain.c',
+           APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', COMMON/'oled_draw.c', COMMON/'font5x7.c']
 SHIM = r'''
 #include <string.h>
 #include "scr_view.h"
@@ -79,7 +84,9 @@ class View(ctypes.Structure):
                 ('sf', u8), ('bw_khz_div125', u8), ('freq_khz', u32),
                 ('flash_pct', u8), ('ram_pct', u8), ('stack_pct', u8), ('journal_pct', u8), ('airtime_pct', u8),
                 ('station', u16), ('epoch', u32), ('modules', ctypes.c_uint), ('modules_active', ctypes.c_uint),
-                ('key_ok', i)]
+                ('key_ok', i), ('utc', u32), ('since_exchange_s', u32), ('air_n', u8), ('press_n', u8), ('radio_n', u8),
+                ('air_hist', ctypes.c_int16 * AIR_HIST), ('press_hist', ctypes.c_int16 * PRESS_HIST),
+                ('radio_rssi', ctypes.c_int16 * RADIO_HIST), ('radio_snr', ctypes.c_int16 * RADIO_HIST)]
 
 
 def build(directory, cc=('cc', '-std=c11', '-Wall', '-Wextra', '-Werror')):
@@ -118,7 +125,62 @@ def demo_view():
     cipher += bytes((i * 37 + 11) & 0xFF for i in range(77 - len(cipher)))
     v.cipher[:len(cipher)] = cipher
     v.cipher_len = len(cipher)
+    v.utc, v.since_exchange_s = NOON_UTC, 26
+    v.power.charger = 0x03   # power good, charging
+    v.power.rail[0].fitted, v.power.rail[0].ok, v.power.rail[0].ma_x100, v.power.rail[0].mv = 1, 1, 4210, 3300
+    v.power.rail[1].fitted = 1                                   # solar: fitted, not answering yet
+    v.power.rail[2].fitted, v.power.rail[2].ok, v.power.rail[2].ma_x100, v.power.rail[2].mv = 1, 1, 21500, 5050
+    history(v, 'air', [2290 + round(40 * math.sin(i / 9)) + i for i in range(60)])
+    history(v, 'press', [9810 + i // 2 for i in range(36)])
+    radio(v, [(-41 - (i * 7) % 9, 13 - (i * 5) % 7) if i % 11 != 6 else None for i in range(30)])
     return v
+
+
+NOON_UTC = 1793901600   # 2026-11-05 18:00 UTC: noon at the bench (SCR_UTC_OFFSET_MIN -360)
+NIGHT_UTC = NOON_UTC + 12 * 3600
+
+
+def history(view, name, samples):
+    """The view's air or press history: samples oldest first, None a gap."""
+    arr = getattr(view, f'{name}_hist')
+    arr[:len(samples)] = [SCR_GAP if x is None else x for x in samples]
+    setattr(view, f'{name}_n', len(samples))
+    return view
+
+
+def radio(view, frames):
+    """The view's last frames: (rssi, snr) for an ACK, None for none."""
+    view.radio_rssi[:len(frames)] = [SCR_GAP if f is None else f[0] for f in frames]
+    view.radio_snr[:len(frames)] = [SCR_GAP if f is None else f[1] for f in frames]
+    view.radio_n = len(frames)
+    return view
+
+
+def weather(view, c=None, rh=None, wind_cms=None, tips10=0, utc=None):
+    """The view with the air, the wind, the tips of the last minutes (all in the newest) and the time set."""
+    if c is not None:
+        view.air_c = c
+    if rh is not None:
+        view.air_rh = rh
+    if wind_cms is not None:
+        view.wind.speed_cms = wind_cms
+    view.rain.per_min[:] = [0] * 59 + [tips10]
+    if utc is not None:
+        view.utc = utc
+    return view
+
+
+def home_views():
+    """HOME in each icon's weather, and with parts and the link missing."""
+    absent = demo_view()
+    absent.air_ok = absent.press_ok = 0
+    absent.last_acked = SCR_TX_NONE
+    noack = weather(demo_view())
+    noack.last_acked, noack.wind.speed_cms, noack.wind.point = SCR_TX_NO_ACK, 30, 2
+    return {'sun': weather(demo_view(), 2190, 4600, 0), 'moon': weather(demo_view(), 1210, 6200, 120, utc=NIGHT_UTC),
+            'cloud': weather(demo_view(), 1480, 9100, 260), 'rain': weather(demo_view(), 1130, 9600, 310, tips10=3),
+            'snow': weather(demo_view(), -420, 8000, 150), 'wind': weather(demo_view(), 1720, 5500, 820),
+            'absent': absent, 'noack': noack}
 
 
 def rain(view, tips, age_s, per_min):
@@ -156,8 +218,54 @@ def png(pixels, path, scale=4):
 
 
 # The frames worth a look: each step of each screen's animation.
-FRAMES = {'NORMAL': [0], 'BURST': [0, 1, 8, 15], 'BANNER': [0], 'SCOPE': [0], 'VANE': [0, 1, 63], 'RAIN': [0], 'SYSTEM': [0, 63],
-          'BOOT': [0, 30, 62], 'HACK': [0, 4, 12, 16, 18, 20, 21]}
+FRAMES = {'HOME': [0, 2, 4, 6], 'BURST': [0, 1, 8, 15], 'BANNER': [0], 'AIR': [0, 7], 'PRESSURE': [7], 'POWER': [7],
+          'RADIO': [0, 7], 'SCOPE': [0], 'VANE': [0, 1, 63], 'RAIN': [0], 'SYSTEM': [0, 63], 'BOOT': [0, 30, 62],
+          'HACK': [0, 4, 12, 16, 18, 20, 21], 'FORTUNE': [0, 6, 30], 'FROG': [0, 20, 40, 44, 60], 'MATRIX': [0, 1, 2],
+          'PINBALL': [0, 20, 32, 33, 63]}
+
+
+def views():
+    """The extra states worth a look: {name: (screen, frame, view)}."""
+    out = {}
+    waiting = demo_view()
+    waiting.last_acked, waiting.last_seq, waiting.extra_frames = SCR_TX_WAIT, 1234, 0
+    out['banner-sending'] = ('BANNER', 0, waiting)
+    noack = demo_view()
+    noack.last_acked, noack.extra_frames = SCR_TX_NO_ACK, 3
+    out['banner-noack-backlog'] = ('BANNER', 0, noack)
+    for name, v in home_views().items():
+        out[f'home-{name}'] = ('HOME', 0, v)
+        if name in ('rain', 'snow', 'wind', 'moon'):
+            out[f'home-{name}-f06'] = ('HOME', 6, v)
+    for name, v in rain_views().items():
+        out[f'rain-{name}'] = ('RAIN', 0, v)
+    gappy = history(demo_view(), 'air', [None] * 20 + [2100 + 3 * i for i in range(25)] + [None] * 3 + [2200] * 7)
+    out['air-gaps'] = ('AIR', 7, gappy)
+    fresh = demo_view()
+    fresh.air_n = fresh.press_n = fresh.radio_n = 0
+    fresh.since_exchange_s = SCR_NONE_S
+    for screen in ('AIR', 'PRESSURE', 'RADIO'):
+        out[f'{screen.lower()}-empty'] = (screen, 7, fresh)
+    falling = history(demo_view(), 'press', [10040 - 2 * i for i in range(36)])
+    falling.press_dhpa = 9968
+    out['pressure-falling'] = ('PRESSURE', 7, falling)
+    steady = history(demo_view(), 'press', [10130 + (i % 3) for i in range(36)])
+    steady.press_dhpa = 10133
+    out['pressure-steady'] = ('PRESSURE', 7, steady)
+    phase_a = demo_view()
+    phase_a.power.charger, phase_a.power.gauge_ok = 0, 0
+    for r in phase_a.power.rail:
+        r.fitted = r.ok = r.ma_x100 = r.mv = 0
+    out['power-phase-a'] = ('POWER', 7, phase_a)
+    for name, v in home_views().items():
+        if name in ('rain', 'snow', 'moon', 'noack'):
+            out[f'frog-{name}'] = ('FROG', 44, v)
+            out[f'fortune-{name}'] = ('FORTUNE', 63, v)
+    out['matrix-rain-f02'] = ('MATRIX', 2, weather(demo_view(), tips10=7))
+    other = demo_view()
+    other.last_seq = 1500
+    out['pinball-seq1500-f40'] = ('PINBALL', 40, other)
+    return out
 
 
 def main(argv):
@@ -173,20 +281,9 @@ def main(argv):
                 path = out/f'{screen.lower()}-f{frame:02d}.png'
                 png(draw(lib, screen, frame, view), path)
                 written.append(path)
-        waiting = demo_view()
-        waiting.last_acked, waiting.last_seq, waiting.extra_frames = SCR_TX_WAIT, 1234, 0
-        png(draw(lib, 'BANNER', 0, waiting), out/'banner-sending.png')
-        noack = demo_view()
-        noack.last_acked, noack.extra_frames = SCR_TX_NO_ACK, 3
-        png(draw(lib, 'BANNER', 0, noack), out/'banner-noack-backlog.png')
-        absent = demo_view()
-        absent.air_ok = absent.box_ok = absent.press_ok = absent.uv_ok = 0
-        absent.power.batt_ok = absent.power.gauge_ok = 0
-        png(draw(lib, 'NORMAL', 0, absent), out/'normal-absent.png')
-        written += [out/'banner-sending.png', out/'banner-noack-backlog.png', out/'normal-absent.png']
-        for name, v in rain_views().items():
-            png(draw(lib, 'RAIN', 0, v), out/f'rain-{name}.png')
-            written.append(out/f'rain-{name}.png')
+        for name, (screen, frame, v) in views().items():
+            png(draw(lib, screen, frame, v), out/f'{name}.png')
+            written.append(out/f'{name}.png')
     for path in written:
         print(path)
     return 0

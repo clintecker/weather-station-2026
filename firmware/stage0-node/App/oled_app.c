@@ -35,8 +35,18 @@ static uint32_t armed;              /* bit b: a step has read button b up since 
 static int powered = 1;             /* what the driver was last told (oled_dma_enable) */
 static uint32_t air_ms;             /* airtime of this minute's frames so far */
 static unsigned reports;            /* health reports sent since the live frame */
+static uint32_t exchange_s;         /* when the minute's exchange last started (clock_s) */
+static int exchanged;               /* one has */
 
-void oled_note_exchange(void) { air_ms = 0; }
+void oled_note_exchange(void) { air_ms = 0; exchange_s = clock_s(); exchanged = 1; }
+
+/* The radio history: every frame's outcome, the live one's or not. */
+static void radio_note(int16_t rssi, int16_t snr)
+{
+  unsigned n = view.radio_n;
+  (void)scr_hist_push(view.radio_snr, SCR_RADIO_HIST, n, snr);
+  view.radio_n = (uint8_t)scr_hist_push(view.radio_rssi, SCR_RADIO_HIST, n, rssi);
+}
 
 void oled_note_sent(uint32_t seq, const uint8_t *frame, uint8_t len, int kind)
 {
@@ -61,6 +71,7 @@ void oled_note_sent(uint32_t seq, const uint8_t *frame, uint8_t len, int kind)
 
 void oled_note_ack(uint32_t seq, int16_t rssi, int8_t snr)
 {
+  radio_note(scr_hist_value(rssi), snr);
   if (!awaiting || seq != live_seq) return;   /* a backlog frame's ACK: the TX row shows the live frame */
   awaiting = 0;
   view.last_acked = SCR_TX_ACK; view.ack_rssi = rssi; view.ack_snr = snr;
@@ -69,6 +80,7 @@ void oled_note_ack(uint32_t seq, int16_t rssi, int8_t snr)
 
 void oled_note_no_ack(uint32_t seq)
 {
+  radio_note(SCR_GAP, 0);
   if (!awaiting || seq != live_seq) return;
   awaiting = 0;
   view.last_acked = SCR_TX_NO_ACK;
@@ -113,6 +125,7 @@ static void step(void)
   enum scr_id id; unsigned frame; int on;
   uint32_t now = clock_ms();
   take_buttons(now);
+  oled_view_sample(&view, now);   /* the histories go on, drawn or not */
   int want = sched_display_on();
   if (want != powered) { powered = want; oled_dma_enable(want); }
   if (oled_dma_busy()) return;
@@ -123,6 +136,7 @@ static void step(void)
   view.reports = reports;
   view.extra_frames = extras > reports ? extras - reports : 0U;
   view.last_age_s = clock_s() - live_s;
+  view.since_exchange_s = exchanged ? clock_s() - exchange_s : SCR_NONE_S;
   uint32_t air_pct = (air_ms * 100U + AIRTIME_OF_MS - 1U) / AIRTIME_OF_MS;   /* rounded up: any airtime shows */
   view.airtime_pct = (uint8_t)(air_pct > 100U ? 100U : air_pct);
   scr_draw(&fb, id, frame, &view);
@@ -142,6 +156,7 @@ void oled_app_start(void)
   sched_init(clock_ms());
   for (unsigned b = 1; b <= 3U; b++) edge_ms[b] = clock_ms() - DEBOUNCE_MS;   /* bound: 3 buttons */
   pressed = 0; armed = 0; powered = 1;   /* armed by the first step that reads each button up */
+  exchanged = 0;
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Oled, UTIL_SEQ_RFU, step_timed);
   (void)UTIL_TIMER_Create(&step_timer, STEP_MS, UTIL_TIMER_PERIODIC, on_step_timer, NULL);
   (void)UTIL_TIMER_Start(&step_timer);

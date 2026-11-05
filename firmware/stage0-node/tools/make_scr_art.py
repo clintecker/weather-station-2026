@@ -3,11 +3,14 @@
     python3 firmware/stage0-node/tools/make_scr_art.py          # rewrite the C file
     python3 firmware/stage0-node/tools/make_scr_art.py --check  # exit 1 if the C file is out of date
 
-They are drawn here with the trigonometry of the approved mockups (.superpowers/sdd/2026-11-04-node-oled-
+The face and the rose are drawn here with the trigonometry of the approved mockups (.superpowers/sdd/2026-11-04-node-oled-
 and-e2e/oledmock: hack.py face(), gen.py vane()), pixel for pixel, so the node needs no floating point:
   - the HACK THE PLANET face: the double ring, the eye patch and its strap, the smile. Not the open eye,
     the wink or the glint: App/scr_interludes.c draws those, they change by frame.
   - the vane compass rose: a dot every 4 degrees and a tick every 45. Not the N or the needle.
+  - the pocket frog (original art, 2026-11-05): its body, the rims of its eyes, its feet and its lily pad.
+    Not the pupils, the blink, the mouth or the tongue: App/scr_silly.c draws those, they change with its mood
+    and by frame.
 tests/test_scr_view.py runs --check."""
 import math
 import sys
@@ -16,6 +19,7 @@ from pathlib import Path
 OUT = Path(__file__).resolve().parents[1]/'App/scr_art.c'
 FACE_CX, FACE_CY = 31, 32      # App/scr_interludes.c draws the eye and the wink around this centre
 ROSE_CX, ROSE_CY, ROSE_R = 32, 33, 26
+FROG_CX, FROG_CY = 32, 44      # App/scr_silly.c draws the pupils at (FROG_CX -+ 10, FROG_CY - 12)
 
 
 class Canvas:
@@ -60,6 +64,29 @@ def rose():
     return c.p
 
 
+def frog():
+    c, cx, cy = Canvas(), FROG_CX, FROG_CY
+    eyes = (cx - 10, cx + 10)
+    inside = lambda x, y: any((x - ex) ** 2 + (y - (cy - 12)) ** 2 < 6.5 ** 2 for ex in eyes)
+    for a in range(0, 360, 2):                         # the body, a double outline, behind the eyes
+        for rx, ry in ((20, 11), (19, 10)):
+            x, y = round(cx + rx * math.cos(math.radians(a))), round(cy + ry * math.sin(math.radians(a)))
+            if not inside(x, y):
+                c.px(x, y)
+    for ex in eyes:                                    # the eyes' rims, sitting on the head
+        for a in range(0, 360, 3):
+            c.px(round(ex + 6 * math.cos(math.radians(a))), round(cy - 12 + 6 * math.sin(math.radians(a))))
+    for sx in (-1, 1):                                 # the front feet, three toes each
+        c.line(cx + sx * 8, cy + 8, cx + sx * 9, cy + 12)
+        for t in (-2, 0, 2):
+            c.line(cx + sx * 9, cy + 12, cx + sx * 9 + t, cy + 13)
+    for a in range(0, 360, 2):                         # the lily pad, a notch at the front
+        if not 80 <= a <= 100:
+            c.px(round(cx + 30 * math.cos(math.radians(a))), round(cy + 15 + 2.5 * math.sin(math.radians(a))))
+    c.line(cx, cy + 15, cx - 4, cy + 17); c.line(cx, cy + 15, cx + 4, cy + 17)
+    return c.p
+
+
 def bitmap(name, pixels):
     """A C bitmap: the rows from the topmost lit one to the lowest, bit 63 the leftmost lit column."""
     x0, y0 = min(x for x, _ in pixels), min(y for _, y in pixels)
@@ -79,6 +106,7 @@ def generate():
              '#include "scr_art.h"', '']
     lines += bitmap('scr_art_face', face())
     lines += bitmap('scr_art_rose', rose())
+    lines += bitmap('scr_art_frog', frog())
     return '\n'.join(lines)
 
 

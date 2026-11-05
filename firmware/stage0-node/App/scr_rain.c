@@ -2,9 +2,9 @@
  *     RAIN          0.56 mm      since boot
  *     2 tips    last 4m ago      since boot; the last tip's age (last -- if none)
  *     RATE  1.7 mm/h (10m)       the last 10 minutes, this one so far among them
- *     (a bar a minute for the last hour, 2 pixels wide, the newest at the right, between two sides and
- *      over an axis; scaled to the largest minute, at least RAIN_MIN_FULL tips)
- *     -60m              now
+ *     (a bar a minute for the last hour, 2 pixels wide, the newest at the right, between two sides, under
+ *      a dotted ceiling and over an axis; the ceiling is the scale, scr_rain_full of the largest minute)
+ *     -60m     16/m     now      the scale in tips a minute, centred
  * A row longer than the 21 columns takes a shorter form: the age "last X" (no "ago"), then "X"; the rate one
  * space after RATE, then without "(10m)". */
 #include "scr_view.h"
@@ -13,12 +13,13 @@
 #include "wsmp_registry.h"
 
 #define RATE_MINUTES 10U
-#define RAIN_MIN_FULL 4U               /* the scale's floor, in tips a minute */
+#define RAIN_MIN_FULL 4U               /* the scale's floor, in tips a minute; it doubles from there */
 #define BARS_X 4                       /* the oldest minute's bar; the newest ends at x 123 */
 #define BAR_W 2
 #define SIDE_L 2
 #define SIDE_R 125
-#define PLOT_TOP 26
+#define CEIL_Y 26                      /* the dotted ceiling: a full-scale bar stops a pixel under it */
+#define PLOT_TOP 28
 #define AXIS_Y 52                      /* the bars stand on it: PLOT_TOP to AXIS_Y - 1 */
 #define BAR_PX ((unsigned)(AXIS_Y - PLOT_TOP))
 #define NM_PER_UM 1000U
@@ -31,6 +32,13 @@ uint32_t scr_rain_rate_umh(const uint8_t *per_min, unsigned n, unsigned minutes)
   uint32_t sum = 0;
   for (unsigned i = from; i < n; i++) sum += per_min[i];
   return (uint32_t)((uint64_t)sum * WSMP_RAIN_NM_PER_TIP * MIN_PER_H / minutes / NM_PER_UM);
+}
+
+unsigned scr_rain_full(unsigned largest)
+{
+  unsigned full = RAIN_MIN_FULL;
+  while (full < largest && full < 256U) full *= 2U;   /* bound: 4 doublings to 64, 6 to 256 (a uint8_t minute) */
+  return full;
 }
 
 unsigned scr_rain_bar_px(unsigned count, unsigned full, unsigned px)
@@ -84,19 +92,36 @@ static void rate_row(oled_fb *fb, const rain_hist_t *h)
   row(fb, 2, line);
 }
 
-static void bars(oled_fb *fb, const rain_hist_t *h)
+/* The bars; returns the scale they were drawn to. */
+static unsigned bars(oled_fb *fb, const rain_hist_t *h)
 {
-  unsigned full = RAIN_MIN_FULL;
+  unsigned largest = 0;
   for (unsigned i = 0; i < RAIN_HIST_MINUTES; i++)
-    if (h->per_min[i] > full) full = h->per_min[i];
-  oled_line(fb, SIDE_L, PLOT_TOP, SIDE_L, AXIS_Y, 0);
-  oled_line(fb, SIDE_R, PLOT_TOP, SIDE_R, AXIS_Y, 0);
+    if (h->per_min[i] > largest) largest = h->per_min[i];
+  unsigned full = scr_rain_full(largest);
+  oled_line(fb, SIDE_L, CEIL_Y, SIDE_L, AXIS_Y, 0);
+  oled_line(fb, SIDE_R, CEIL_Y, SIDE_R, AXIS_Y, 0);
+  oled_line(fb, SIDE_L, CEIL_Y, SIDE_R, CEIL_Y, 1);
   oled_line(fb, SIDE_L, AXIS_Y, SIDE_R, AXIS_Y, 0);
   for (unsigned i = 0; i < RAIN_HIST_MINUTES; i++)
   {
     int px = (int)scr_rain_bar_px(h->per_min[i], full, BAR_PX);
     oled_fill(fb, BARS_X + BAR_W * (int)i, AXIS_Y - px, BAR_W, px, 1);
   }
+  return full;
+}
+
+/* "-60m", the scale centred, "now". */
+static void foot_row(oled_fb *fb, unsigned full)
+{
+  char scale[SCR_LINE] = "", line[SCR_LINE] = "-60m";
+  scr_put_uint(scale, full);
+  scr_put(scale, "/m");
+  scr_pad_to(line, (unsigned)(SCR_COLS - strlen(scale)) / 2U);
+  scr_put(line, scale);
+  scr_pad_to(line, SCR_COLS - 3U);
+  scr_put(line, "now");
+  row(fb, 7, line);
 }
 
 void scr_rain(oled_fb *fb, const scr_view_t *v)
@@ -109,6 +134,5 @@ void scr_rain(oled_fb *fb, const scr_view_t *v)
   row(fb, 0, line);
   count_row(fb, h);
   rate_row(fb, h);
-  bars(fb, h);
-  row(fb, 7, "-60m              now");
+  foot_row(fb, bars(fb, h));
 }

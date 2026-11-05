@@ -7,11 +7,17 @@
 #include <stdint.h>
 #include "scr_view.h"
 
-/* Everything but last_*, ack_*, extra_frames, reports, cipher* and airtime_pct (oled_app.c's). A
+/* Everything but last_*, ack_*, extra_frames, reports, cipher*, airtime_pct, since_exchange_s, radio_* and the
+   histories (oled_app.c's and oled_view_sample's). A
    temperature, humidity, pressure or UV row shows a value only while its port is in the layout (the
    snapshot the observation reads, wsmp_host_snapshot): otherwise the reading carries no value for it,
    and the row says NO <part>. */
 void oled_view_fill(scr_view_t *v, enum scr_id id, unsigned frame);
+/* The display's own histories, at every step whether drawn or not (cheap: two comparisons, and at most two
+   cached reads when a sample is due): the SHT45 into air_hist once a minute, the BMP581 into press_hist
+   every 5 minutes, each from the first call on; SCR_GAP while the port is not in the layout or has no
+   value. No module keeps any of it. */
+void oled_view_sample(scr_view_t *v, uint32_t now_ms);
 /* LoRa time on air of a frame of len bytes at the node's radio settings (radio_cfg.h), ms. */
 uint32_t oled_view_airtime_ms(uint8_t len);
 #endif

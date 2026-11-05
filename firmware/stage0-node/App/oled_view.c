@@ -13,6 +13,7 @@
 #include "stackmon.h"
 #include "tx_exchange.h"
 #include "tx_node.h"
+#include "tx_time.h"
 #include "ws_policy.h"
 #include "wsmp_host.h"
 
@@ -21,6 +22,8 @@
 extern char _sidata[], _sdata[], _edata[], _end[], _estack[], _Min_Heap_Size[], _Min_Stack_Size[];
 
 #define BW_HZ(index) (125000UL << (index))   /* radio_cfg.h's WS_LORA_BANDWIDTH 0:125 1:250 2:500 kHz */
+#define AIR_EVERY_MS 60000U
+#define PRESS_EVERY_MS 300000U
 #define JOURNAL_RECORDS ((WS_JOURNAL_PAGES - 1U) * JOURNAL_SLOTS_PER_PAGE)   /* the ring less the page being erased */
 
 static uint8_t pct(uint32_t used, uint32_t of)
@@ -75,6 +78,26 @@ static void fill_live(scr_view_t *v)
   (void)mod_wind_live(&v->wind);
   mod_rain_history(clock_ms(), &v->rain);
   power_acq_live(&v->power);
+  v->utc = time_utc();
+}
+
+static int sampling;              /* the first sample was taken */
+static uint32_t air_at, press_at; /* when the next falls due (clock_ms) */
+
+void oled_view_sample(scr_view_t *v, uint32_t now_ms)
+{
+  if (!sampling) { sampling = 1; air_at = press_at = now_ms; }
+  int32_t c, rh, p;
+  if (scr_hist_due(now_ms, &air_at, AIR_EVERY_MS))
+  {
+    int ok = in_layout(P_AIR_TH) && mod_th_live(TH_AIR, &c, &rh);
+    v->air_n = (uint8_t)scr_hist_push(v->air_hist, SCR_AIR_HIST, v->air_n, ok ? scr_hist_value(c) : SCR_GAP);
+  }
+  if (scr_hist_due(now_ms, &press_at, PRESS_EVERY_MS))
+  {
+    int ok = in_layout(P_PRESSURE) && mod_reg_live(REG_PRESSURE, &p);
+    v->press_n = (uint8_t)scr_hist_push(v->press_hist, SCR_PRESS_HIST, v->press_n, ok ? scr_hist_value(p) : SCR_GAP);
+  }
 }
 
 void oled_view_fill(scr_view_t *v, enum scr_id id, unsigned frame)

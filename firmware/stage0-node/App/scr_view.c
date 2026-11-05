@@ -1,26 +1,11 @@
-/* The bench screens' layout C, its packet banner, and the text helpers: see scr_view.h. The rows
- * (design spec, "The screen"):
- *     AIR  23.1C  50.8%        SHT45            (AIR NO SHT45)
- *     BOX  22.9C  52.2%        SHTC3            (BOX NO SHTC3)
- *     P 983.0hPa   UV 0        BMP581, LTR390   (P NO BMP581, UV NO)
- *     WIND 1.3m/s NE G2.7      speed, vane point (- out of the table), gust
- *     RAIN 2 TIPS 0.56mm       tips since boot
- *     BATT +37.6mA 3.85V       the battery INA228 and OUT (NO INA228)
- *     CELL 3.85V 78% CHG       MAX17048, CHG while charging (NO MAX17048)
- *     TX 1233 ACK 58s AGO      the last frame, its outcome, its age
- * The banner inverts the bottom two rows: "  SENDING TX 1234" (or "  TX 1234 +5 BACKLOG", "+HEALTH"
- * for a health report, when frames followed the live one), then the outcome, "  ACK -41DBM SNR 13" or
- * "  NO ACK". A row longer than the 21 columns takes a shorter form (WND for WIND; BKLG, HLTH and no
- * indent in the banner) rather than lose its last characters. */
+/* The bench screens' dispatch, their frame counts and the helpers they share: see scr_view.h. */
 #include "scr_view.h"
 #include <string.h>
 #include "oled_draw.h"
+#include "scr_font.h"
 #include "wsmp_registry.h"
 
-#define ROW_PX 8                       /* 7-pixel glyphs and a 1-pixel gap: eight rows */
-#define TH_COL 5                       /* AIR and BOX values start here */
-#define UV_COL 13                      /* "UV" starts here after a pressure */
-#define BANNER_ROW 6
+#define HEADER_PX 8
 #define RAIN_TIPS_MAX 1000000U         /* 279 m of rain: more reads as this */
 #define DEC_DIGITS 24                  /* a uint64_t's 20 digits, a point, a sign */
 #define DEC_MAX 6U                     /* decimals scr_put_dec takes: the buffer holds 20 digits */
@@ -83,160 +68,93 @@ void scr_pad_to(char *line, unsigned col)
   line[used] = '\0';
 }
 
-static void row(oled_fb *fb, int r, const char *text) { (void)oled_text(fb, 0, r * ROW_PX, text, 1); }
 
-/* "<label>  23.1C  50.8%", or "<label> NO <part>". */
-static void th_row(oled_fb *fb, int r, const char *label, const char *part, int ok, int32_t centi_c, int32_t centi_rh)
+int scr_put_lr(char *line, const char *left, const char *right)
 {
-  char line[SCR_LINE] = "";
-  scr_put(line, label);
-  if (!ok) { scr_put(line, " NO "); scr_put(line, part); row(fb, r, line); return; }
-  scr_pad_to(line, TH_COL);
-  scr_put_dec(line, centi_c, 2, 1, 0);
-  scr_put(line, "C  ");
-  scr_put_dec(line, centi_rh, 2, 1, 0);
-  scr_put(line, "%");
-  row(fb, r, line);
-}
-
-static void press_row(oled_fb *fb, const scr_view_t *v)
-{
-  char line[SCR_LINE] = "P ";
-  if (!v->press_ok) scr_put(line, "NO BMP581 UV ");
-  else
-  {
-    scr_put_dec(line, v->press_dhpa, 1, 1, 0);
-    scr_put(line, "hPa ");
-    scr_pad_to(line, UV_COL);
-    scr_put(line, "UV ");
-  }
-  if (!v->uv_ok) scr_put(line, "NO");
-  else scr_put_dec(line, v->uv_counts, 0, 0, 0);
-  row(fb, 2, line);
-}
-
-static void wind_line(char *line, const char *label, const scr_view_t *v)
-{
+  size_t l = strlen(left), r = strlen(right);
+  if (l + 1U + r > SCR_COLS) return 0;
   line[0] = '\0';
-  scr_put(line, label);
-  scr_put_dec(line, v->wind.speed_cms, 2, 1, 0);
-  scr_put(line, "m/s ");
-  scr_put(line, v->wind.point >= 0 && v->wind.point < 16 ? scr_point_names[v->wind.point] : "-");
-  scr_put(line, " G");
-  scr_put_dec(line, v->wind.gust_cms, 2, 1, 0);
+  scr_put(line, left);
+  scr_pad_to(line, (unsigned)(SCR_COLS - r));
+  scr_put(line, right);
+  return 1;
 }
 
-static void wind_rain_rows(oled_fb *fb, const scr_view_t *v)
-{
-  char line[SCR_LINE];
-  wind_line(line, "WIND ", v);
-  if (strlen(line) > SCR_COLS) wind_line(line, "WND ", v);   /* 10 m/s or more both, and a 3-letter point */
-  row(fb, 3, line);
+void scr_row(oled_fb *fb, int y, const char *text) { (void)oled_text(fb, 0, y, text, 1); }
 
-  char rain[SCR_LINE] = "RAIN ";
-  scr_put_uint(rain, v->rain.tips);
-  scr_put(rain, " TIPS ");
-  scr_put_rain_mm(rain, v->rain.tips);
-  scr_put(rain, "mm");
-  row(fb, 4, rain);
+void scr_row_right(oled_fb *fb, int y, const char *text)
+{
+  (void)oled_text(fb, OLED_W - OLED_CHAR_ADVANCE * (int)strlen(text) + 1, y, text, 1);
 }
 
-static void batt_row(oled_fb *fb, const power_live_t *p)
+void scr_header(oled_fb *fb, const char *text)
 {
-  char line[SCR_LINE] = "BATT ";
-  if (!p->batt_ok) scr_put(line, "NO INA228");
-  else
+  (void)oled_text(fb, 0, 0, text, 1);
+  oled_invert(fb, 0, 0, OLED_W, HEADER_PX);
+}
+
+static int big_glyph(char c)
+{
+  const char *at = c ? strchr(scr_big_chars, c) : NULL;
+  return at ? (int)(at - scr_big_chars) : -1;
+}
+
+int scr_big_width(const char *s)
+{
+  int w = 0;
+  /* bound: the characters of s */
+  for (; *s; s++)
   {
-    scr_put_dec(line, p->batt_ma_x100, 2, 1, 1);
-    scr_put(line, "mA");
-    if (p->out_mv != 0) { scr_put(line, " "); scr_put_dec(line, p->out_mv, 3, 2, 0); scr_put(line, "V"); }
+    int g = big_glyph(*s);
+    if (g >= 0) w += (w ? SCR_BIG_GAP : 0) + scr_big_w[g];
   }
-  row(fb, 5, line);
+  return w;
 }
 
-static void cell_row(oled_fb *fb, const power_live_t *p)
+int scr_big_text(oled_fb *fb, int x, int y, const char *s)
 {
-  char line[SCR_LINE] = "CELL ";
-  if (!p->gauge_ok) scr_put(line, "NO MAX17048");
-  else
+  int first = 1;
+  /* bound: the characters of s */
+  for (; *s; s++)
   {
-    scr_put_dec(line, p->vcell_mv, 3, 2, 0);
-    scr_put(line, "V ");
-    scr_put_dec(line, p->soc_pct_x10, 1, 0, 0);
-    scr_put(line, "%");
-    if (p->charging) scr_put(line, " CHG");
+    int g = big_glyph(*s);
+    if (g < 0) continue;
+    if (!first) x += SCR_BIG_GAP;
+    first = 0;
+    for (int r = 0; r < SCR_BIG_H; r++)
+      for (int c = 0; c < scr_big_w[g]; c++)
+        if ((scr_big_rows[g][r] >> (15 - c)) & 1U) oled_set(fb, x + c, y + r, 1);
+    x += scr_big_w[g];
   }
-  row(fb, 6, line);
+  return x;
 }
 
-static void tx_row(oled_fb *fb, const scr_view_t *v)
+void scr_blit(oled_fb *fb, const scr_art *a, int dx, int dy)
 {
-  char line[SCR_LINE] = "TX ";
-  if (v->last_acked == SCR_TX_NONE) { scr_put(line, "NONE YET"); row(fb, 7, line); return; }
-  scr_put_uint(line, v->last_seq);
-  scr_put(line, v->last_acked == SCR_TX_ACK ? " ACK " : v->last_acked == SCR_TX_NO_ACK ? " NO ACK " : " SENT ");
-  scr_put_age(line, v->last_age_s);
-  if (strlen(line) + 4U <= SCR_COLS) scr_put(line, " AGO");
-  row(fb, 7, line);
+  for (unsigned j = 0; j < a->h; j++)
+    for (unsigned i = 0; i < 64U; i++)
+      if ((a->rows[j] >> (63U - i)) & 1U) oled_set(fb, a->x + dx + (int)i, a->y + dy + (int)j, 1);
 }
 
-/* The banner's first row in form 0 (full), 1 (short words) or 2 (short words, no indent). */
-static void banner_line(char *line, const scr_view_t *v, unsigned form)
+int scr_sin20(int p)
 {
-  line[0] = '\0';
-  if (form < 2U) scr_put(line, "  ");
-  if (v->extra_frames == 0 && v->reports == 0) scr_put(line, "SENDING ");
-  scr_put(line, "TX ");
-  scr_put_uint(line, v->last_seq);
-  if (v->extra_frames != 0) { scr_put(line, " +"); scr_put_uint(line, v->extra_frames); scr_put(line, form ? " BKLG" : " BACKLOG"); }
-  if (v->reports != 0) scr_put(line, form ? " +HLTH" : " +HEALTH");
-}
-
-static void banner(oled_fb *fb, const scr_view_t *v)
-{
-  char line[SCR_LINE];
-  /* bound: 3 forms; the last is drawn as it is */
-  for (unsigned form = 0; form < 3U; form++)
-  {
-    banner_line(line, v, form);
-    if (strlen(line) <= SCR_COLS) break;
-  }
-  row(fb, BANNER_ROW, line);
-
-  char outcome[SCR_LINE] = "  ";
-  if (v->last_acked == SCR_TX_ACK)
-  {
-    scr_put(outcome, "ACK ");
-    scr_put_dec(outcome, v->ack_rssi, 0, 0, 0);
-    scr_put(outcome, "DBM SNR ");
-    scr_put_dec(outcome, v->ack_snr, 0, 0, 0);
-  }
-  else if (v->last_acked == SCR_TX_NO_ACK) scr_put(outcome, "NO ACK");
-  row(fb, BANNER_ROW + 1, outcome);
-  oled_invert(fb, 0, BANNER_ROW * ROW_PX, OLED_W, 2 * ROW_PX);
-}
-
-/* Layout C; with_banner: the bottom two rows are the banner's. */
-static void layout_c(oled_fb *fb, const scr_view_t *v, int with_banner)
-{
-  th_row(fb, 0, "AIR", "SHT45", v->air_ok, v->air_c, v->air_rh);
-  th_row(fb, 1, "BOX", "SHTC3", v->box_ok, v->box_c, v->box_rh);
-  press_row(fb, v);
-  wind_rain_rows(fb, v);
-  batt_row(fb, &v->power);
-  if (with_banner) { banner(fb, v); return; }
-  cell_row(fb, &v->power);
-  tx_row(fb, v);
+  static const int8_t quarter[5] = { 0, 8, 14, 18, 20 };
+  p &= 15;
+  if (p <= 4) return quarter[p];
+  if (p <= 8) return quarter[8 - p];
+  if (p <= 12) return -quarter[p - 8];
+  return -quarter[16 - p];
 }
 
 unsigned scr_frames(enum scr_id id)
 {
   switch (id)
   {
-  case SCR_NORMAL: return 1U;
+  case SCR_HOME: return 1U;
   case SCR_BANNER: return 24U;
   case SCR_BURST: return 16U;
   case SCR_HACK: return 24U;
+  case SCR_AIR: case SCR_PRESSURE: case SCR_POWER: case SCR_RADIO: return 8U;
   default: return 64U;
   }
 }
@@ -244,17 +162,25 @@ unsigned scr_frames(enum scr_id id)
 void scr_draw(oled_fb *fb, enum scr_id id, unsigned frame, const scr_view_t *v)
 {
   oled_clear(fb);
-  if (frame >= scr_frames(id)) frame = scr_frames(id) - 1U;
+  if (id != SCR_HOME && id != SCR_BANNER && frame >= scr_frames(id)) frame = scr_frames(id) - 1U;
   switch (id)
   {
   case SCR_BURST: scr_burst(fb, frame, v); break;
-  case SCR_BANNER: layout_c(fb, v, 1); break;
+  case SCR_BANNER: scr_home(fb, frame, v, 1); break;
+  case SCR_AIR: scr_air(fb, frame, v); break;
+  case SCR_PRESSURE: scr_pressure(fb, frame, v); break;
+  case SCR_POWER: scr_power(fb, frame, v); break;
+  case SCR_RADIO: scr_radio(fb, frame, v); break;
   case SCR_SCOPE: scr_scope(fb, v); break;
   case SCR_VANE: scr_vane(fb, frame, v); break;
   case SCR_RAIN: scr_rain(fb, v); break;
   case SCR_SYSTEM: scr_system(fb, frame, v); break;
   case SCR_BOOT: scr_boot(fb, frame, v); break;
   case SCR_HACK: scr_hack(fb, frame); break;
-  default: layout_c(fb, v, 0); break;
+  case SCR_FORTUNE: scr_fortune(fb, frame, v); break;
+  case SCR_FROG: scr_frog(fb, frame, v); break;
+  case SCR_MATRIX: scr_matrix(fb, frame, v); break;
+  case SCR_PINBALL: scr_pinball(fb, frame, v); break;
+  default: scr_home(fb, frame, v, 0); break;
   }
 }

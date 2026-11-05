@@ -1,4 +1,5 @@
-/* The six interludes of the bench screen: see scr_view.h. Each is the approved mockup (.superpowers/sdd/
+/* The packet burst, the boot splash and the first interludes of the bench screen (SCOPE, VANE and SYSTEM are
+ * detail screens too): see scr_view.h. Each is the approved mockup (.superpowers/sdd/
  * 2026-11-04-node-oled-and-e2e/oledmock gen.py and hack.py, design spec "The interludes") ported pixel for
  * pixel where the mockup was fixed, drawn from the view where it showed a reading:
  *   burst   header TX <seq> SF<sf> BW<kHz> (inverted); up-chirps sweeping 8 px a frame; from frame 8
@@ -19,7 +20,6 @@
 #include "font5x7.h"
 #include "scr_art.h"
 
-#define HEADER_PX 8
 #define CHIRP_W 32                     /* one up-chirp, then the next */
 #define CHIRP_STEP 8                   /* pixels the chirps move a frame */
 #define BURST_HEX_FRAME 8              /* the bytes follow the chirps */
@@ -48,19 +48,6 @@ static void put_hex2(char *line, uint8_t b)
   scr_put(line, two);
 }
 
-static void header(oled_fb *fb, const char *text)
-{
-  (void)oled_text(fb, 0, 0, text, 1);
-  oled_invert(fb, 0, 0, OLED_W, HEADER_PX);
-}
-
-static void blit(oled_fb *fb, const scr_art *a)
-{
-  for (unsigned j = 0; j < a->h; j++)
-    for (unsigned i = 0; i < 64U; i++)
-      if ((a->rows[j] >> (63U - i)) & 1U) oled_set(fb, a->x + (int)i, a->y + (int)j, 1);
-}
-
 static void hex_row(oled_fb *fb, int y, const scr_view_t *v, unsigned from)
 {
   char line[SCR_LINE] = "";
@@ -81,7 +68,7 @@ void scr_burst(oled_fb *fb, unsigned frame, const scr_view_t *v)
   scr_put_uint(line, v->sf);
   scr_put(line, " BW");
   scr_put_uint(line, v->bw_khz_div125 * 125U);
-  header(fb, line);
+  scr_header(fb, line);
   int shift = (int)(frame * CHIRP_STEP % CHIRP_W);
   for (int n = 0; n < 5; n++)
   {
@@ -140,17 +127,6 @@ void scr_scope(oled_fb *fb, const scr_view_t *v)
   (void)oled_text(fb, 0, 57, foot, 1);
 }
 
-/* 20 sin(p x 22.5 degrees), rounded: the needle's reach along x for point p (any int, wrapped). */
-static int needle_sin(int p)
-{
-  static const int8_t quarter[5] = { 0, 8, 14, 18, 20 };
-  p &= 15;
-  if (p <= 4) return quarter[p];
-  if (p <= 8) return quarter[8 - p];
-  if (p <= 12) return -quarter[p - 8];
-  return -quarter[16 - p];
-}
-
 static void vane_text(oled_fb *fb, int point, const scr_view_t *v)
 {
   char line[SCR_LINE] = "-";
@@ -168,12 +144,12 @@ static void vane_text(oled_fb *fb, int point, const scr_view_t *v)
 void scr_vane(oled_fb *fb, unsigned frame, const scr_view_t *v)
 {
   int point = v->wind.point >= 0 && v->wind.point < 16 ? v->wind.point : -1;
-  blit(fb, &scr_art_rose);
+  scr_blit(fb, &scr_art_rose, 0, 0);
   (void)oled_text(fb, ROSE_CX - 2, 1, "N", 1);
   if (point >= 0)
   {
     int shown = frame < (unsigned)point ? (int)frame : point;   /* swinging round from N */
-    oled_line(fb, ROSE_CX, ROSE_CY, ROSE_CX + needle_sin(shown), ROSE_CY - needle_sin(shown + 4), 0);
+    oled_line(fb, ROSE_CX, ROSE_CY, ROSE_CX + scr_sin20(shown), ROSE_CY - scr_sin20(shown + 4), 0);
   }
   oled_fill(fb, ROSE_CX - 1, ROSE_CY - 1, 3, 3, 1);
   vane_text(fb, point, v);
@@ -185,7 +161,7 @@ void scr_system(oled_fb *fb, unsigned frame, const scr_view_t *v)
   const uint8_t pct[5] = { v->flash_pct, v->ram_pct, v->stack_pct, v->journal_pct, v->airtime_pct };
   char line[SCR_LINE] = "SYS  WS-NODE  ID ";
   scr_put_uint(line, v->station);
-  header(fb, line);
+  scr_header(fb, line);
   unsigned grown = frame + 1U < BAR_FILL_FRAMES ? frame + 1U : BAR_FILL_FRAMES;
   for (unsigned i = 0; i < 5U; i++)
   {
@@ -278,7 +254,7 @@ static void hack_glitch(oled_fb *fb, unsigned g)
 
 void scr_hack(oled_fb *fb, unsigned frame)
 {
-  blit(fb, &scr_art_face);
+  scr_blit(fb, &scr_art_face, 0, 0);
   face_eye(fb, frame == 16U || frame == 17U, frame == 18U || frame == 19U);
   (void)oled_text(fb, 68, 2, "HACK", 2);
   if (frame >= 4U) (void)oled_text(fb, 74, 21, "THE", 2);

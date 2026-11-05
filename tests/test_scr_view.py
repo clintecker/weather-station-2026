@@ -55,55 +55,116 @@ class ScrView(unittest.TestCase):
         self.assertEqual(subprocess.run([sys.executable, script, '--check']).returncode, 0)
 
     def test_frames(self):
-        want = {'NORMAL': 1, 'BURST': 16, 'BANNER': 24, 'SCOPE': 64, 'VANE': 64, 'RAIN': 64, 'SYSTEM': 64, 'BOOT': 64,
-                'HACK': 24}
+        want = {'HOME': 1, 'BURST': 16, 'BANNER': 24, 'AIR': 8, 'PRESSURE': 8, 'POWER': 8, 'RADIO': 8, 'SCOPE': 64,
+                'VANE': 64, 'RAIN': 64, 'SYSTEM': 64, 'BOOT': 64, 'HACK': 24, 'FORTUNE': 64, 'FROG': 64, 'MATRIX': 64,
+                'PINBALL': 64}
         self.assertEqual({s: self.lib.scr_frames(i) for i, s in enumerate(render.SCREENS)}, want)
 
-    def test_normal_rows(self):
-        self.assertEqual(self.draw('NORMAL'), self.rows([
-            'AIR  23.1C  50.8%', 'BOX  22.9C  52.2%', 'P 983.0hPa   UV 0', 'WIND 1.3m/s NE G2.7',
-            'RAIN 2 TIPS 0.56mm', 'BATT +37.6mA 3.85V', 'CELL 3.85V 78% CHG', 'TX 1233 ACK 58s AGO']))
+    def test_font_file_is_current(self):
+        script = ROOT/'firmware/stage0-node/tools/make_scr_font.py'
+        self.assertEqual(subprocess.run([sys.executable, script, '--check']).returncode, 0)
 
-    def test_absent_parts(self):
-        v = render.demo_view()
-        v.air_ok = v.box_ok = v.press_ok = v.uv_ok = 0
-        v.power.batt_ok = v.power.gauge_ok = 0
-        got = self.draw('NORMAL', 0, v)
-        for i, s in ((0, 'AIR NO SHT45'), (1, 'BOX NO SHTC3'), (2, 'P NO BMP581 UV NO'), (5, 'BATT NO INA228'),
-                     (6, 'CELL NO MAX17048')):
-            self.assertEqual(self.region(got, 0, 8 * i, W, 8 * i + 8), self.text(0, 8 * i, s), s)
+    def big(self, x, y, s):
+        """The pixels of s in the big digits at (x, y), and the x after it."""
+        self.lib.scr_big_text.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+        fb = ctypes.create_string_buffer(W * H // 8)
+        end = self.lib.scr_big_text(fb, x, y, s.encode())
+        return {(px, py) for py in range(H) for px in range(W) if self.lib.oled_get(fb, px, py)}, end
 
-    def test_values_round_and_sign(self):
-        v = render.demo_view()
-        v.air_c, v.air_rh, v.press_dhpa, v.uv_ok, v.uv_counts = -1235, 10000, 10132, 0, 0
-        v.power.batt_ma_x100, v.power.out_mv, v.power.charging = -4, 0, 0
-        v.wind.point, v.last_acked, v.last_age_s = -1, render.SCR_TX_NO_ACK, 600
-        got = self.draw('NORMAL', 0, v)
-        for i, s in ((0, 'AIR  -12.4C  100.0%'), (2, 'P 1013.2hPa  UV NO'), (3, 'WIND 1.3m/s - G2.7'),
-                     (5, 'BATT +0.0mA'), (6, 'CELL 3.85V 78%'), (7, 'TX 1233 NO ACK 10m')):   # no room for AGO
-            self.assertEqual(self.region(got, 0, 8 * i, W, 8 * i + 8), self.text(0, 8 * i, s), s)
+    def big_width(self, s):
+        self.lib.scr_big_width.argtypes = [ctypes.c_char_p]
+        return self.lib.scr_big_width(s.encode())
 
-    def test_nothing_sent_yet(self):
+    def test_big_digits(self):
+        # A digit is 10 wide, the point 3, '-' 8, the degree sign 6, two pixels between; 16 tall; nothing for the rest.
+        self.assertEqual([self.big_width(t) for t in ('8', '21.9', '-12.4^C', '', 'x?')], [10, 39, 69, 0, 0])
+        lit, end = self.big(5, 3, '1')
+        self.assertEqual(end, 15)
+        self.assertEqual((min(y for _, y in lit), max(y for _, y in lit)), (3, 18))
+        self.assertEqual(self.big(0, 0, '1x1')[0], self.big(0, 0, '11')[0])
+
+    def right(self, y, s):
+        """s ending at the screen's right edge."""
+        return self.text(W - 6 * len(s) + 1, y, s)
+
+    def big_right(self, s):
+        return self.big(W - self.big_width(s), 1, s)[0]
+
+    def test_home_rows(self):
+        v = render.weather(render.demo_view(), 2190, 4600, 0)
+        got = self.draw('HOME', 0, v)
+        self.assertEqual(self.region(got, 48, 0, W, 40), self.big_right('21.9^C') | self.right(20, '46% RH') |
+                         self.right(30, '983.0 hPa'))
+        self.assertEqual(self.region(got, 0, 48, W, 56), self.text(0, 48, 'WIND calm  RAIN 0.0'))
+        self.assertEqual(self.region(got, 0, 56, 112, H), self.text(0, 56, '#1233 ACK -41dBm'))   # the bars after
+
+    def test_home_wind_rain_and_link_forms(self):
+        v = render.demo_view()   # 1.3 m/s NE, 2 tips in the hour
+        row6 = lambda v: self.region(self.draw('HOME', 0, v), 0, 48, W, 56)
+        self.assertEqual(row6(v), self.text(0, 48, 'WIND 1.3 NE  RAIN 0.6'))
+        v.wind.speed_cms, v.wind.point, v.rain.per_min[:] = 1234, 1, [9] * 60   # 12.3 NNE, 150.9 mm: the short form
+        self.assertEqual(row6(v), self.text(0, 48, 'W 12.3 NNE R 150.9'))
+        v.wind.point = -1   # out of the table: no point
+        self.assertEqual(row6(v), self.text(0, 48, 'WIND 12.3  RAIN 150.9'))   # 21: the full form fits
+        for acked, seq, rssi, line in ((render.SCR_TX_NONE, 0, 0, 'NO TX YET'), (render.SCR_TX_WAIT, 7, 0, '#7 SENT'),
+                                       (render.SCR_TX_NO_ACK, 7, 0, '#7 NO ACK'),
+                                       (render.SCR_TX_ACK, 12345678, -127, '#12345678 ACK -127'),
+                                       (render.SCR_TX_ACK, 4294967295, -127, '#4294967295 ACK')):
+            with self.subTest(line=line):
+                v.last_acked, v.last_seq, v.ack_rssi = acked, seq, rssi
+                self.assertEqual(self.region(self.draw('HOME', 0, v), 0, 56, 112, H), self.text(0, 56, line))
+
+    def bars_lit(self, v):
+        got = self.draw('HOME', 0, v)
+        return [len(self.region(got, 113 + 5 * b, 56, 116 + 5 * b, 63)) > 3 for b in range(3)]
+
+    def test_home_signal_bars(self):
         v = render.demo_view()
-        v.last_acked = render.SCR_TX_NONE
-        self.assertEqual(self.region(self.draw('NORMAL', 0, v), 0, 56, W, H), self.text(0, 56, 'TX NONE YET'))
+        for rssi, want in ((-41, 3), (-85, 3), (-86, 2), (-100, 2), (-101, 1), (-115, 1), (-116, 0)):
+            v.ack_rssi = rssi
+            self.assertEqual(self.bars_lit(v), [b < want for b in range(3)], rssi)
+        v.last_acked = render.SCR_TX_NO_ACK
+        self.assertEqual(self.bars_lit(v), [False] * 3)
+
+    def test_home_absent_parts(self):
+        v = render.demo_view()
+        v.air_ok = v.press_ok = 0
+        got = self.draw('HOME', 0, v)
+        self.assertEqual(self.region(got, 48, 0, W, 40), self.big_right('--^C') | self.right(20, 'NO SHT45') |
+                         self.right(30, 'NO BMP581'))
+
+    def test_home_icons_animate(self):
+        # Each icon's weather draws its own icon, which moves between frames 0 and 2 (its tick), not between 0 and 1
+        # (HOME is redrawn every second step).
+        icons = {}
+        for name, v in render.home_views().items():
+            if name in ('absent', 'noack'):
+                continue
+            f0 = self.region(self.draw('HOME', 0, v), 0, 0, 48, 44)
+            self.assertTrue(f0, name)
+            self.assertEqual(f0, self.region(self.draw('HOME', 1, v), 0, 0, 48, 44), name)
+            self.assertNotEqual(f0, self.region(self.draw('HOME', 2, v), 0, 0, 48, 44), name)
+            icons[name] = frozenset(f0)
+        self.assertEqual(len(set(icons.values())), 6)
 
     def test_banner(self):
+        # HOME with its bottom two rows inverted: the send, then the outcome.
         v = render.demo_view()
         v.last_seq = 1234
-        top = ['AIR  23.1C  50.8%', 'BOX  22.9C  52.2%', 'P 983.0hPa   UV 0', 'WIND 1.3m/s NE G2.7',
-               'RAIN 2 TIPS 0.56mm', 'BATT +37.6mA 3.85V']
-        self.assertEqual(self.draw('BANNER', 0, v), self.rows(top + ['  SENDING TX 1234', '  ACK -41DBM SNR 13'], (6, 7)))
+        bottom = lambda got: self.region(got, 0, 48, W, H)
+        rows = lambda a, b: self.rows(['', '', '', '', '', '', a, b], (6, 7))
+        self.assertEqual(bottom(self.draw('BANNER', 0, v)), rows('  SENDING TX 1234', '  ACK -41DBM SNR 13'))
+        self.assertEqual(self.region(self.draw('BANNER', 0, v), 0, 0, W, 48), self.region(self.draw('HOME', 0, v), 0, 0, W, 48))
         v.last_acked = render.SCR_TX_WAIT
-        self.assertEqual(self.draw('BANNER', 5, v), self.rows(top + ['  SENDING TX 1234', ''], (6, 7)))
+        self.assertEqual(bottom(self.draw('BANNER', 5, v)), rows('  SENDING TX 1234', ''))
         v.last_acked, v.extra_frames = render.SCR_TX_NO_ACK, 5
-        self.assertEqual(self.draw('BANNER', 23, v), self.rows(top + ['  TX 1234 +5 BACKLOG', '  NO ACK'], (6, 7)))
+        self.assertEqual(bottom(self.draw('BANNER', 23, v)), rows('  TX 1234 +5 BACKLOG', '  NO ACK'))
         # The widest outcome the radio gives (SX126x packet RSSI down to -127 dBm, SNR down to -32 dB) fills the
         # 21 columns exactly: the unit is dBm, and nothing is cut.
         v.last_acked, v.extra_frames, v.ack_rssi, v.ack_snr = render.SCR_TX_ACK, 0, -127, -32
         line = '  ACK -127DBM SNR -32'
         self.assertEqual(len(line), 21)
-        self.assertEqual(self.draw('BANNER', 0, v), self.rows(top + ['  SENDING TX 1234', line], (6, 7)))
+        self.assertEqual(bottom(self.draw('BANNER', 0, v)), rows('  SENDING TX 1234', line))
 
     def banner_row(self, v):
         """The banner's first row, as drawn (inverted back to lit text)."""
@@ -119,16 +180,12 @@ class ScrView(unittest.TestCase):
         self.assertEqual(self.banner_row(v), self.text(0, 48, 'TX 1234 +5 BKLG +HLTH'))
 
     def test_rows_that_would_overflow_take_a_shorter_form(self):
-        # 21 columns: a 5-digit sequence and a 2-digit backlog, a 22-character wind row, are shortened, not cut.
+        # 21 columns: a 5-digit sequence and a 2-digit backlog are shortened, not cut.
         v = render.demo_view()
         v.last_seq, v.extra_frames, v.reports = 12345, 12, 0
         self.assertEqual(self.banner_row(v), self.text(0, 48, '  TX 12345 +12 BKLG'))
         v.last_seq, v.extra_frames, v.reports = 4294967295, 65535, 1   # the widest: drawn as far as it goes
         self.assertTrue(self.banner_row(v))
-        v.wind.speed_cms, v.wind.gust_cms, v.wind.point = 1234, 2340, 1
-        self.assertEqual(self.region(self.draw('NORMAL', 0, v), 0, 24, W, 32), self.text(0, 24, 'WND 12.3m/s NNE G23.4'))
-        v.wind.point = 2   # a 2-letter point fits as it was
-        self.assertEqual(self.region(self.draw('NORMAL', 0, v), 0, 24, W, 32), self.text(0, 24, 'WIND 12.3m/s NE G23.4'))
 
     def extreme_views(self):
         """Every field at its ends, the parts absent and present, each outcome."""
@@ -150,6 +207,18 @@ class ScrView(unittest.TestCase):
         lo.power.batt_ok = lo.power.gauge_ok = lo.power.charging = 1
         hi.rain.tips, hi.rain.last_age_s, hi.rain.per_min[:] = 2**32 - 1, render.RAIN_AGE_MAX_S, [255] * 60
         lo.rain.tips, lo.rain.last_age_s = 0, render.RAIN_AGE_NONE
+        # The histories: full of their extremes, and (the loop above) counts of 255 past their capacity.
+        for v, val in ((hi, 32767), (lo, -32767)):
+            v.air_hist[:], v.press_hist[:] = [val] * 60, [val] * 36
+            v.radio_rssi[:], v.radio_snr[:] = [val] * 30, [val] * 30
+        lo.air_n, lo.press_n, lo.radio_n = 60, 36, 30
+        lo.air_hist[7] = lo.press_hist[0] = lo.radio_rssi[3] = render.SCR_GAP
+        lo.utc, lo.since_exchange_s = 0, render.SCR_NONE_S
+        lo.power.charger, hi.power.charger = 0, 0xFF
+        for r in hi.power.rail:
+            r.fitted, r.ok, r.ma_x100, r.mv = 1, 1, 2**31 - 1, 2**31 - 1
+        for r in lo.power.rail:
+            r.fitted, r.ok, r.ma_x100, r.mv = 1, 1, -2**31, -2**31
         absent = render.demo_view()
         absent.air_ok = absent.box_ok = absent.press_ok = absent.uv_ok = absent.key_ok = 0
         absent.power.batt_ok = absent.power.gauge_ok = 0
@@ -215,7 +284,7 @@ class ScrView(unittest.TestCase):
         return self.region(got, 0, 0, W, 24) | self.region(got, 0, 56, W, H)
 
     def rain_rows(self, *rows):
-        return self.rows([*rows, '', '', '', '', '-60m              now'])
+        return self.rows([*rows, '', '', '', '', '-60m     4/m      now'])   # the scale centred on the row
 
     def test_rain_rows(self):
         self.assertEqual(self.rain_text(self.draw('RAIN')), self.rain_rows(
@@ -257,24 +326,36 @@ class ScrView(unittest.TestCase):
         self.assertEqual(px(1, 255, 26), 1)                                          # one tip is always a bar
         self.assertEqual(px(254, 255, 26), 26)
         self.assertEqual(px(3, 0, 26), 26)
+        full = self.lib.scr_rain_full
+        full.argtypes, full.restype = [ctypes.c_uint], ctypes.c_uint
+        self.assertEqual([full(n) for n in (0, 1, 4, 5, 8, 9, 40, 64, 65, 200, 255, 1000)],
+                         [4, 4, 4, 8, 8, 16, 64, 64, 128, 256, 256, 256])   # steps, never creeps
 
     def bars(self, per_min):
-        """Each minute's lit column heights inside the plot (x 4 + 2 i and the next, y 26 to 51)."""
+        """Each minute's lit column heights inside the plot (x 4 + 2 i and the next, y 28 to 51)."""
         got = self.draw('RAIN', 0, render.rain(render.demo_view(), 99, 0, per_min))
         heights = []
         for i in range(60):
-            cols = [len(self.region(got, x, 26, x + 1, 52)) for x in (4 + 2 * i, 5 + 2 * i)]
+            cols = [len(self.region(got, x, 28, x + 1, 52)) for x in (4 + 2 * i, 5 + 2 * i)]
             self.assertEqual(cols[0], cols[1], i)
             heights.append(cols[0])
         return heights, got
 
     def test_rain_bars(self):
         heights, got = self.bars({59: 4, 0: 1})                # the floor of the scale: 4 tips a minute
-        self.assertEqual(heights, [7] + [0] * 58 + [26])
+        self.assertEqual(heights, [6] + [0] * 58 + [24])
         self.assertTrue({(x, 52) for x in range(2, 126)} <= got)   # the axis
         self.assertTrue({(2, y) for y in range(26, 53)} | {(125, y) for y in range(26, 53)} <= got)
-        heights, _ = self.bars({59: 40, 58: 1, 30: 20})        # scaled to the largest
-        self.assertEqual((heights[59], heights[58], heights[30], sum(heights)), (26, 1, 13, 40))
+        self.assertTrue({(x, 26) for x in range(2, 126, 2)} <= got)              # the dotted ceiling
+        self.assertFalse({(x, 26) for x in range(3, 125, 2)} & got)
+        self.assertFalse({(x, 27) for x in range(3, 125)} & got)                 # a pixel under it, always dark
+        self.assertEqual(self.region(got, 0, 56, W, 64), self.text(0, 56, '-60m     4/m      now'))
+        heights, got = self.bars({59: 40, 58: 1, 30: 20})      # the step that holds the largest: 64
+        self.assertEqual((heights[59], heights[58], heights[30], sum(heights)), (15, 1, 8, 24))
+        self.assertEqual(self.region(got, 0, 56, W, 64), self.text(0, 56, '-60m    64/m      now'))
+        heights, got = self.bars({59: 255})                    # a saturated minute: full height, no further
+        self.assertEqual(heights[59], 24)
+        self.assertEqual(self.region(got, 0, 56, W, 64), self.text(0, 56, '-60m    256/m     now'))
         heights, _ = self.bars({})
         self.assertEqual(heights, [0] * 60)
 
