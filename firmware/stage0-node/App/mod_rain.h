@@ -9,6 +9,7 @@
 
 void mod_rain_init(uint32_t boot_id, int enabled, uint32_t now_ms);
 void mod_rain_set_enabled(int on);
+uint32_t mod_rain_tips_since_boot(void);   /* the counted tips, as the window reports them; read-only */
 void mod_rain_tip(uint32_t now_ms);   /* from the EXTI4 interrupt (App/board_inputs.c) */
 void mod_rain_tick(uint32_t now_ms);
 int mod_rain_probe(uint16_t *seq);

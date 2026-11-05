@@ -23,6 +23,7 @@
 #define BYTE_BITS 8U
 #define BMP581_PA64_PER_DECI_HPA 640U   /* 64 counts a Pa, 10 Pa a 0.1 hPa */
 #define LTR390_COUNT_MASK 0xFFFFFUL     /* 20 bits */
+#define LIVE_MS 30000U                  /* a live value older than this is none */
 
 typedef struct {
   enum i2c_client client; uint8_t addr, id_reg, id, id_mask, data_reg, writes;
@@ -50,6 +51,9 @@ typedef struct {
   int id_rc;            /* mod_reg_id_result */
   uint32_t boot_id;
   wsmp_cal_entry cal;
+  uint32_t now_ms, live_ms;   /* the last tick, and the tick of the latest valid sample */
+  int32_t live;
+  uint8_t live_ok;
 } reg_t;
 
 static reg_t reg[REG_COUNT];
@@ -69,6 +73,7 @@ void mod_reg_init(uint32_t boot_id, uint32_t now_ms)
 void mod_reg_tick(enum reg_unit u, uint32_t now_ms)
 {
   reg_t *s = &reg[u];
+  s->now_ms = now_ms;
   if (s->step == ST_READY) { s->step = ST_DATA; submit(u, &parts[u].data_reg, 1, s->data, DATA_LEN); return; }
   if (s->step != ST_IDLE) return;
   if (s->id_wanted) { s->id_wanted = 0; s->step = ST_IDCHECK; submit(u, &parts[u].id_reg, 1, &s->id, 1); return; }
@@ -123,6 +128,7 @@ void mod_reg_i2c_done(enum reg_unit u, int rc)
     uint8_t q[MEAN_CHANNELS] = { WSMP_QUAL_GOOD, WSMP_QUAL_GOOD };
     q[0] = wsmp_cal_crop(parts[u].desc.quantity, wsmp_cal_apply(s->calibrated ? &s->cal : NULL, value(u, s->data)), &v[0]);
     mean_add_q(&s->win, v, q);
+    if (q[0] == WSMP_QUAL_GOOD) { s->live = v[0]; s->live_ms = s->now_ms; s->live_ok = 1; }
     probe(s, 1);
   }
 }
@@ -133,6 +139,7 @@ void mod_reg_bind(enum reg_unit u, const wsmp_record *applied, uint32_t boot_id,
   const wsmp_cal_entry *e = applied ? wsmp_cal_find(applied, parts[u].desc.quantity, parts[u].desc.kind) : NULL;
   mean_reset(&s->win, now_ms);
   s->boot_id = boot_id;
+  s->live_ok = 0;
   s->calibrated = e != NULL;
   s->cal = e ? *e : (wsmp_cal_entry){ 0 };
 }
@@ -145,6 +152,14 @@ void mod_reg_id_check(enum reg_unit u)
 {
   reg[u].id_wanted = 1;
   reg[u].id_rc = 0;
+}
+
+int mod_reg_live(enum reg_unit u, int32_t *value)
+{
+  const reg_t *s = &reg[u];
+  if (!s->live_ok || s->now_ms - s->live_ms > LIVE_MS) return 0;
+  *value = s->live;
+  return 1;
 }
 
 int mod_reg_id_result(enum reg_unit u) { return reg[u].id_rc; }

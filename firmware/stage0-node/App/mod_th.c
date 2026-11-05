@@ -28,6 +28,7 @@
 #define SHTC3_RH_SPAN_CENTI 10000
 #define SHTC3_ROUND (1UL << 15)
 #define SHTC3_SHIFT 16U
+#define LIVE_MS 30000U                  /* a live value older than this is none */
 
 typedef enum { ST_IDLE, ST_WAKE, ST_AWAKE, ST_MEASURE, ST_READY, ST_READ, ST_SLEEP, ST_RECOVER,
                ST_SERIAL, ST_SERIAL_READY, ST_SERIAL_READ } th_step;
@@ -44,6 +45,9 @@ typedef struct {
   uint32_t serial;
   uint8_t calibrated[MEAN_CHANNELS];      /* cal[i] applies to channel i */
   wsmp_cal_entry cal[MEAN_CHANNELS];
+  uint32_t now_ms, live_ms;               /* the last tick, and the tick of the latest valid sample */
+  int32_t live[MEAN_CHANNELS];
+  uint8_t live_ok;
 } th_t;
 
 static th_t th[TH_COUNT];
@@ -75,6 +79,7 @@ void mod_th_init(uint32_t boot_id, uint32_t now_ms)
 void mod_th_tick(enum th_unit u, uint32_t now_ms)
 {
   th_t *s = &th[u];
+  s->now_ms = now_ms;
   if (s->step == ST_AWAKE) { s->step = ST_MEASURE; submit(u, shtc3_measure, TH_CMD_LEN, NULL, 0); return; }
   if (s->step == ST_READY) { s->step = ST_READ; submit(u, NULL, 0, s->reply, TH_REPLY_LEN); return; }
   if (s->step == ST_SERIAL_READY) { s->step = ST_SERIAL_READ; submit(u, NULL, 0, s->reply, TH_REPLY_LEN); return; }
@@ -110,6 +115,14 @@ static void recover(enum th_unit u, th_t *s)
   submit(u, NULL, 0, NULL, 0);
 }
 
+/* The screen's copy of a sample the window took whole. */
+static void live_keep(th_t *s, const int32_t v[MEAN_CHANNELS])
+{
+  s->live[0] = v[0]; s->live[1] = v[1];
+  s->live_ms = s->now_ms;
+  s->live_ok = 1;
+}
+
 /* A port module's sample (section 6.9): raw, calibration, the crop, then the window check of the
    catalog's temperature field, each channel on its own. */
 static void add_port_sample(th_t *s, const int32_t raw[MEAN_CHANNELS])
@@ -120,6 +133,7 @@ static void add_port_sample(th_t *s, const int32_t raw[MEAN_CHANNELS])
     q[i] = wsmp_cal_crop(quantity[i], wsmp_cal_apply(s->calibrated[i] ? &s->cal[i] : NULL, raw[i]), &v[i]);
   if (v[0] < WS_TEMP_MIN_CENTI || v[0] > WS_TEMP_MAX_CENTI) q[0] = WSMP_QUAL_SUSPECT;
   mean_add_q(&s->win, v, q);
+  if (q[0] == WSMP_QUAL_GOOD && q[1] == WSMP_QUAL_GOOD) live_keep(s, v);
 }
 
 /* The enclosure sensor's sample, with today's checks: RH up to 100 %, a temperature within the
@@ -127,7 +141,9 @@ static void add_port_sample(th_t *s, const int32_t raw[MEAN_CHANNELS])
 static void add_base_sample(th_t *s, int16_t t, uint16_t h)
 {
   if (h > WS_RH_MAX_CENTI) h = WS_RH_MAX_CENTI;
-  if (t >= WS_TEMP_MIN_CENTI && t <= WS_TEMP_MAX_CENTI) mean_add(&s->win, (const int32_t[MEAN_CHANNELS]){ t, h });
+  if (t < WS_TEMP_MIN_CENTI || t > WS_TEMP_MAX_CENTI) return;
+  mean_add(&s->win, (const int32_t[MEAN_CHANNELS]){ t, h });
+  live_keep(s, (const int32_t[MEAN_CHANNELS]){ t, h });
 }
 
 static void read_done(enum th_unit u, th_t *s)
@@ -172,6 +188,7 @@ void mod_th_bind(enum th_unit u, const wsmp_record *applied, uint32_t boot_id, u
   th_t *s = &th[u];
   mean_reset(&s->win, now_ms);
   s->boot_id = boot_id;
+  s->live_ok = 0;
   for (unsigned i = 0; i < MEAN_CHANNELS; i++)
   {
     const wsmp_cal_entry *e = u == TH_AIR && applied ? wsmp_cal_find(applied, quantity[i], WSMP_K_MEAN) : NULL;
@@ -201,6 +218,15 @@ int mod_th_probe(enum th_unit u, uint16_t *seq)
 {
   *seq = th[u].probe_seq;
   return th[u].probe;
+}
+
+int mod_th_live(enum th_unit u, int32_t *centi_c, int32_t *centi_rh)
+{
+  const th_t *s = &th[u];
+  if (!s->live_ok || s->now_ms - s->live_ms > LIVE_MS) return 0;
+  *centi_c = s->live[0];
+  *centi_rh = s->live[1];
+  return 1;
 }
 
 int mod_shtc3_parse(const uint8_t reply[6], int16_t *centi_c, uint16_t *centi_rh)

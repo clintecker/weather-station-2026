@@ -153,6 +153,57 @@ class PhaseA(unittest.TestCase):
         self.assertEqual(b.slot(LOAD_MV)[1], 60)              # the rail every 1 s
         self.assertEqual(b.lib.h_window_ms(), MINUTE)
 
+    def live(self, b):
+        b.lib.h_live()
+        lib = b.lib
+        return {'batt_ok': lib.h_live_batt_ok(), 'ma_x100': lib.h_live_batt_ma_x100(), 'out_mv': lib.h_live_out_mv(),
+                'gauge_ok': lib.h_live_gauge_ok(), 'vcell_mv': lib.h_live_vcell_mv(), 'soc_x10': lib.h_live_soc_x10(),
+                'charging': lib.h_live_charging()}
+
+    def test_power_live_absent_parts(self):
+        b = self.bench([])                                    # no INA228, no gauge answering
+        b.lib.h_charger_pins(PGOOD)
+        b.lib.h_run(20_000)
+        self.assertEqual(self.live(b), {'batt_ok': 0, 'ma_x100': 0, 'out_mv': 0, 'gauge_ok': 0, 'vcell_mv': 0,
+                                        'soc_x10': 0, 'charging': 0})
+
+    def test_power_live_present_parts(self):
+        b = self.bench()
+        b.ina(BATTERY, 4.40, -500_000)                        # +500 mA into the cell, OUT at 4.40 V
+        b.lib.h_max17048_cell(3_900_000)
+        b.lib.h_max17048_soc_256(0x4E66)                      # 78.398 %: 78.4 rounded to 0.1 %
+        b.lib.h_charger_pins(PGOOD | CHG)
+        b.lib.h_run(20_000)
+        want = round(-ina_counts(-500_000) * LSB_UA / 10)     # mA x 100
+        self.assertEqual(self.live(b), {'batt_ok': 1, 'ma_x100': want, 'out_mv': 4400, 'gauge_ok': 1, 'vcell_mv': 3900,
+                                        'soc_x10': half_up(0x4E66 * 10, 256), 'charging': 1})
+        self.assertAlmostEqual(want, 50_000, delta=10)        # the INA228 count quantises 500 mA to 500.02
+        self.assertEqual(half_up(0x4E66 * 10, 256), 784)
+
+    def test_power_live_does_not_change_the_window(self):
+        def minute(with_live):
+            b = self.bench()
+            b.ina(BATTERY, 4.1, -300_000)
+            for _ in range(MINUTE // TICK):
+                b.lib.h_run(TICK)
+                if with_live:
+                    for _ in range(5):
+                        b.lib.h_live()
+            b.lib.h_latch()
+            return [b.slot(s) for s in range(SLOTS)], b.lib.h_soc()
+        self.assertEqual(minute(True), minute(False))
+
+    def test_a_part_that_goes_away_reads_as_absent(self):
+        b = self.bench()
+        b.ina(BATTERY, 4.40, -500_000)
+        b.lib.h_run(20_000)
+        self.assertEqual((self.live(b)['batt_ok'], self.live(b)['gauge_ok']), (1, 1))
+        b.lib.h_remove_device(b.dev[BATTERY])
+        b.lib.h_remove_device(b.dev[GAUGE])
+        b.lib.h_run(40_000)
+        w = self.live(b)
+        self.assertEqual((w['batt_ok'], w['ma_x100'], w['out_mv'], w['gauge_ok'], w['vcell_mv']), (0, 0, 0, 0, 0))
+
     def test_a_current_from_vin_plus_to_vin_minus_is_a_discharge(self):
         """Spec section 3.1: CELL+ on VIN+, the charger's BATT socket on VIN-, so the part's positive count is
         out of the cell; the firmware sign is -1 and the charge goes to charge out."""

@@ -30,6 +30,7 @@ void mod_rain_init(uint32_t boot_id, int on, uint32_t now_ms)
 }
 
 void mod_rain_set_enabled(int on) { enabled = on; }
+uint32_t mod_rain_tips_since_boot(void) { return tips; }
 
 void mod_rain_tip(uint32_t now_ms)
 {

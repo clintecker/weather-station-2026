@@ -174,7 +174,21 @@ void h_link_low(int link, unsigned n) { link_lows[link] = n; link_edge[link] = 0
 void h_edge(int link) { link_edge[link] = 1; }
 void h_probe_pulses(int n) { pulse_counter = (uint16_t)(pulse_counter + n); probe_pulses = (uint16_t)(probe_pulses + n); }
 int h_meter_link(void) { int w = (int)mod_wind_link(), r = (int)mod_rain_link(); return r > w ? r : w; }
+/* The read-only live values for the bench screen (mod_*_live). */
+#include "mod_reg.h"
+#include "mod_wind.h"
+int h_th_live(int unit, int32_t *c, int32_t *rh) { return mod_th_live((enum th_unit)unit, c, rh); }
+int h_reg_live(int unit, int32_t *v) { return mod_reg_live((enum reg_unit)unit, v); }
+static wind_live_t wlive;
+void h_wind_live(void) { (void)mod_wind_live(&wlive); }
+int h_wind_speed(void) { return wlive.speed_cms; }
+int h_wind_gust(void) { return wlive.gust_cms; }
+int h_wind_vane_mv(void) { return wlive.vane_mv; }
+int h_wind_point(void) { return wlive.point; }
+int h_wind_nbins(void) { return wlive.nbins; }
+int h_wind_bin(int i) { return wlive.bins[i]; }
 #include "mod_rain.h"
+uint32_t h_rain_tips(void) { return mod_rain_tips_since_boot(); }
 void h_rain_tip(void) { mod_rain_tip(now_ms()); }
 void h_rain_enable(int on) { mod_rain_set_enabled(on); }
 #ifdef WSMP_HOST

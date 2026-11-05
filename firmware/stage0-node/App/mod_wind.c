@@ -31,6 +31,7 @@
 #define SUPPLY_MV 3300UL
 #define COUNTER_READS 3U
 #define CHANNELS 4U
+#define UMS_PER_CMS 10000U            /* um/s in cm/s */
 #define VANE_TOL_PCT 5UL              /* the band: the network's resistance +-5 % ... */
 #define VANE_ADC_MV 10U               /* ... then +-10 mV for the ADC */
 #define CUPS_LOWS_DAY (86400000UL / BOARD_LINK_PROBE_MS + 1U)   /* probes in a row spanning 24 h */
@@ -55,6 +56,9 @@ typedef struct {
   uint32_t total, ring_sum, gust_max, ticks, ring_count, next_vane_ms;
   uint16_t ring[GUST_BINS];
   unsigned ring_pos;
+  uint8_t live_bins[WIND_LIVE_BINS];   /* the screen's 30 s, saturating counts; not in any window */
+  unsigned live_pos, live_count;
+  uint16_t last_mv;                    /* the latest vane reading */
   int32_t east_sum, north_sum;
   uint32_t vane_n;
   int probe;
@@ -97,6 +101,9 @@ static void bin(uint16_t pulses)
   wd.ring_pos = (wd.ring_pos + 1U) % GUST_BINS;
   if (wd.ring_count < GUST_BINS) wd.ring_count++;
   if (wd.ring_count == GUST_BINS && wd.ring_sum > wd.gust_max) wd.gust_max = wd.ring_sum;
+  wd.live_bins[wd.live_pos] = pulses > UINT8_MAX ? (uint8_t)UINT8_MAX : (uint8_t)pulses;
+  wd.live_pos = (wd.live_pos + 1U) % WIND_LIVE_BINS;
+  if (wd.live_count < WIND_LIVE_BINS) wd.live_count++;
 }
 
 static void cups(void)
@@ -165,6 +172,7 @@ static void vane(void)
   uint16_t mv;
   int moved = 0;
   if (!board_vane_mv(&mv)) return;
+  wd.last_mv = mv;
   wd.probe_seq++;
   wd.probe = mv <= VANE_OPEN_MV;
   wd.vane_out = (uint8_t)!in_table(mv);
@@ -186,6 +194,27 @@ void mod_wind_tick(uint32_t now_ms)
   if ((int32_t)(now_ms - wd.next_vane_ms) < 0) return;
   wd.next_vane_ms = now_ms + VANE_PERIOD_MS;
   vane();
+}
+
+/* Pulses in 3 s as cm/s: Hz x 0.66698 m/s per Hz, rounded. */
+static uint16_t cms_of(uint32_t pulses)
+{
+  uint64_t v = ((uint64_t)pulses * WSMP_WIND_UMS_PER_HZ + GUST_S * UMS_PER_CMS / 2U) / (GUST_S * UMS_PER_CMS);
+  return v > UINT16_MAX ? (uint16_t)UINT16_MAX : (uint16_t)v;
+}
+
+int mod_wind_live(wind_live_t *w)
+{
+  w->speed_cms = cms_of(wd.ring_sum);
+  w->gust_cms = cms_of(wd.gust_max > wd.ring_sum ? wd.gust_max : wd.ring_sum);   /* a ring not yet full counts too */
+  w->vane_mv = wd.last_mv;
+  w->point = in_table(wd.last_mv) ? (int8_t)position_of(wd.last_mv) : (int8_t)-1;
+  w->nbins = (uint8_t)wd.live_count;
+  memset(w->bins, 0, sizeof w->bins);
+  unsigned from = (wd.live_pos + WIND_LIVE_BINS - wd.live_count) % WIND_LIVE_BINS;
+  for (unsigned i = 0; i < wd.live_count; i++)   /* bound: at most 120 bins */
+    w->bins[i] = wd.live_bins[(from + i) % WIND_LIVE_BINS];
+  return 1;
 }
 
 int mod_wind_probe(uint16_t *seq)

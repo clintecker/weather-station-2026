@@ -51,6 +51,8 @@ typedef struct {
   int32_t die_mc;
   uint8_t buf[5], cal[3];
   rail_win win;
+  int32_t live_ma_x100, live_vbus_mv;   /* the latest step's mean current (0.01 mA) and VBUS, for the screen */
+  uint8_t live_step, live_vbus;         /* a step / a VBUS read since the part was last lost */
 } rail_t;
 
 typedef struct {
@@ -120,6 +122,7 @@ static void rail_failed(rail_t *r, int rc)
   r->have_base = 0;
   r->cal_needed = 1;
   r->temp_ok = 0;
+  r->live_step = r->live_vbus = 0;
   r->step = RS_IDLE;
 }
 
@@ -186,6 +189,11 @@ static void rail_charge(unsigned i)
     r->win.dq_uas += uas;
     r->win.covered_ms += pa.now - r->base_ms;
     r->win.steps++;
+    if (pa.now != r->base_ms)
+    {
+      r->live_ma_x100 = (int32_t)ws_div_round(uas * 100, (int64_t)(pa.now - r->base_ms));   /* uA s / ms = mA */
+      r->live_step = 1;
+    }
     if (i == POWER_RAIL_BATTERY) battery_step(uas);
   }
   r->base_charge = raw;
@@ -209,6 +217,7 @@ static void rail_done(unsigned i, int rc)
     case RS_VBUS:
       r->win.vbus_mv += ws_div_round(ina228_vbus_uv(be24(r->buf)), UV_PER_MV);
       r->win.vbus_n++;
+      r->live_vbus_mv = (int32_t)ws_div_round(ina228_vbus_uv(be24(r->buf)), UV_PER_MV); r->live_vbus = 1;
       rail_read(i, RS_CHARGE, &reg_charge, 5);
       break;
     case RS_CHARGE: rail_charge(i); break;
@@ -348,6 +357,21 @@ void power_acq_i2c_done(enum i2c_client c, int rc)
   for (unsigned i = 0; i < POWER_RAIL_COUNT; i++)
     if (POWER_RAILS[i].client == c) { rail_done(i, rc); return; }
   (void)WS_CHECK(0);   /* a client this profile has no rail for never submits: ignore it */
+}
+
+void power_acq_live(power_live_t *p)
+{
+  const rail_t *b = &pa.rail[POWER_RAIL_BATTERY];
+  const gauge_t *g = &pa.gauge;
+  *p = (power_live_t){ 0 };
+  p->batt_ok = b->live_step;
+  p->batt_ma_x100 = b->live_step ? b->live_ma_x100 : 0;
+  for (unsigned i = 0; i < POWER_RAIL_COUNT; i++)
+    if (POWER_RAILS[i].vbus_slot == PS_LOAD_MV && pa.rail[i].live_vbus) p->out_mv = pa.rail[i].live_vbus_mv;
+  p->gauge_ok = g->ok;
+  if (g->vcell_ok) p->vcell_mv = (uint16_t)ws_div_round(g->vcell_uv, UV_PER_MV);
+  if (g->ok) p->soc_pct_x10 = (uint16_t)ws_div_round((int64_t)g->soc_256 * 10, 256);
+  p->charging = (charger_status() & POWER_STATUS_CHARGING) != 0U;
 }
 
 int power_acq_fitted(enum power_slot s)

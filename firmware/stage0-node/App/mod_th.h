@@ -31,6 +31,9 @@ void mod_th_serial_request(enum th_unit u);
 /* 1 with *serial once the read is done, 0 while it waits or runs, or the failure (I2C_E*). A failed
    read is not a probe: it changes no presence. */
 int mod_th_serial_result(enum th_unit u, uint32_t *serial);
+/* The latest valid sample as the window takes it (calibrated, cropped), in 0.01 degC and 0.01 %: 1 if
+   there was one in the last 30 s of module ticks, else 0. Read-only: it changes no window or probe. */
+int mod_th_live(enum th_unit u, int32_t *centi_c, int32_t *centi_rh);
 /* SHTC3 datasheet section 5.11, in 0.01 units rounded half up: 0, or I2C_ECRC on a CRC mismatch. */
 int mod_shtc3_parse(const uint8_t reply[6], int16_t *centi_c, uint16_t *centi_rh);
 #endif

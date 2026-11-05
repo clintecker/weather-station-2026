@@ -84,6 +84,19 @@ void power_acq_tick(uint32_t now_ms);   /* every WSMP_TICK_MS (250 ms); starts w
 void power_acq_i2c_done(enum i2c_client c, int rc);
 /* Closes the window at now_ms into *out and opens the next one. */
 void power_acq_latch(uint32_t now_ms, power_window_t *out);
+/* What the bench screen shows right now, each from the latest read (nothing is closed or reset).
+   batt_ok: the battery INA228 has a current step; batt_ma_x100 is that step's mean current in 0.01 mA
+   (+ into the cell), out_mv the load rail's latest VBUS (OUT), 0 where the profile reads none.
+   gauge_ok: the MAX17048 answered its last read; vcell_mv and soc_pct_x10 (0.1 %) are its values.
+   charging: the bq24074 CHG pin steady (not flashing). A value whose part is not ok reads 0. */
+typedef struct {
+  int batt_ok;
+  int32_t batt_ma_x100, out_mv;
+  int gauge_ok;
+  uint16_t vcell_mv, soc_pct_x10;
+  int charging;
+} power_live_t;
+void power_acq_live(power_live_t *p);
 /* 1 if the profile has a source for the slot. */
 int power_acq_fitted(enum power_slot s);
 #endif

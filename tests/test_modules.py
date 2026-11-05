@@ -262,6 +262,27 @@ class Sht45(TempHumidity, Harness):
     # RH = -6 + 125 S / 65535 and T = -45 + 175 S / 65535 (SHT4x datasheet 4.6), in 0.01.
     RH_MINUS_2, RH_102, RH_MINUS_6, RH_119, T_70 = 2097, 56_622, 0, 0xFFFF, 43_065
 
+    def live(self, lib, unit=0):
+        c, rh = ctypes.c_int32(), ctypes.c_int32()
+        return lib.h_th_live(unit, ctypes.byref(c), ctypes.byref(rh)), c.value, rh.value
+
+    def test_th_live_after_sample(self):
+        # The screen's value is the sample the window took: 25.00 degC and 56.50 %RH.
+        lib, devs = self.station(self.DEVICES)
+        self.assertEqual(self.live(lib)[0], 0)                     # nothing yet
+        self.set(lib, devs[self.KIND], 0x6666, 0x8000)             # -45 + 175 x 26214 / 65535 = 25.00; -6 + 125 x 32768 / 65535 = 56.50
+        lib.h_run(1_000)
+        self.assertEqual(self.live(lib), (1, 2500, 5650))
+
+    def test_th_live_goes_stale(self):
+        lib, devs = self.station(self.DEVICES)
+        self.set(lib, devs[self.KIND], 0x6666, 0x8000)
+        lib.h_run(1_000)
+        self.assertEqual(self.live(lib)[0], 1)
+        lib.h_remove_device(devs[self.KIND])
+        lib.h_run(31_000)                                          # no reply for 31 s
+        self.assertEqual(self.live(lib)[0], 0)
+
     def quarter(self, lib, dev, samples):
         """One window of four samples, (t_raw, h_raw) each, then the latch's (temperature, RH) slots."""
         for raw in samples:
@@ -427,6 +448,19 @@ class SingleMean(Conformance):
         snap = self.latch(lib, self.PORT, 2)
         self.assertEqual(self.slot(snap, 0), (self.EXPECTED, 4, GOOD))
 
+    def live(self, lib):
+        v = ctypes.c_int32()
+        return lib.h_reg_live(self.UNIT, ctypes.byref(v)), v.value
+
+    def test_reg_live_value_and_stale(self):
+        lib, devs = self.station(self.DEVICES)
+        self.assertEqual(self.live(lib)[0], 0)                     # nothing yet
+        lib.h_run(1_000)
+        self.assertEqual(self.live(lib), (1, self.EXPECTED))
+        lib.h_remove_device(devs[self.KIND])
+        lib.h_run(31_000)
+        self.assertEqual(self.live(lib)[0], 0)
+
     def test_wrong_chip_id_is_absent(self):
         lib, dev = self.good_station()
         lib.h_reg_set_id(dev, self.WRONG_ID)
@@ -450,7 +484,7 @@ class SingleMean(Conformance):
 
 
 class Bmp581(SingleMean, Harness):
-    PORT, TYPE, KIND, WRONG_ID = P_PRESSURE, 2, DEVK_BMP581, 0x51
+    PORT, TYPE, KIND, WRONG_ID, UNIT = P_PRESSURE, 2, DEVK_BMP581, 0x51, 0
     DEVICES = [(DEVK_BMP581, 0x47)]
     EXPECTED = 10133                                               # 101,325 Pa = 1013.25 hPa, scale -1, half up
 
@@ -461,7 +495,7 @@ class Bmp581(SingleMean, Harness):
 
 
 class Ltr390(SingleMean, Harness):
-    PORT, TYPE, KIND, WRONG_ID = P_UVA, 3, DEVK_LTR390, 0xA2
+    PORT, TYPE, KIND, WRONG_ID, UNIT = P_UVA, 3, DEVK_LTR390, 0xA2, 1
     DEVICES = [(DEVK_LTR390, 0x53)]
     EXPECTED = 123_456
 
@@ -805,6 +839,56 @@ class Wind(Conformance, Harness):
         self.assertEqual(s[1][0], wind_ref.gust_centi(bins))
         self.assertEqual(s[1][2], GOOD)
 
+    def live(self, lib):
+        lib.h_wind_live()
+        n = lib.h_wind_nbins()
+        return {'speed': lib.h_wind_speed(), 'gust': lib.h_wind_gust(), 'mv': lib.h_wind_vane_mv(),
+                'point': lib.h_wind_point(), 'bins': [lib.h_wind_bin(i) for i in range(n)]}
+
+    def test_wind_live_bins_and_point(self):
+        lib, _ = self.station([])
+        lib.h_vane_mv(595)                                         # 2.2 kOhm on the 10 kOhm pull-up: position 6 (SE, 135 deg)
+        lib.h_run(1_000)                                           # the module needs its first vane read
+        lib.h_pulses_add(8)                                        # 8 pulses in one 250 ms bin
+        lib.h_run(250)
+        w = self.live(lib)
+        self.assertEqual((w['mv'], w['point']), (595, 6))
+        self.assertEqual(w['bins'][-1], 8)
+        self.assertEqual(w['bins'][:-1], [0] * (len(w['bins']) - 1))
+        self.assertEqual(len(w['bins']), 5)                        # 1 s of idle bins and the one with pulses
+
+    def test_wind_live_speed_and_gust(self):
+        lib, _ = self.station([])
+        lib.h_run(250)                                             # the first tick only takes the counter's base
+        for _ in range(12):                                        # 3 s at 8 pulses a bin: 32 Hz x 0.66698 m/s = 21.34 m/s
+            lib.h_pulses_add(8)
+            lib.h_run(250)
+        w = self.live(lib)
+        self.assertEqual((w['speed'], w['gust']), (2134, 2134))
+        lib.h_run(3_000)                                           # calm again: the speed falls, the window's gust stays
+        w = self.live(lib)
+        self.assertEqual((w['speed'], w['gust']), (0, 2134))
+
+    def test_wind_live_before_the_first_vane_reading_and_out_of_table(self):
+        lib, _ = self.station([])
+        lib.h_vane_mv(0)
+        self.assertEqual((self.live(lib)['mv'], self.live(lib)['point']), (0, -1))
+        lib.h_vane_mv(3_300)                                       # an unplugged vane: outside the table
+        lib.h_run(1_000)
+        w = self.live(lib)
+        self.assertEqual((w['mv'], w['point']), (3_300, -1))
+
+    def test_wind_live_bins_saturate_and_keep_30_s(self):
+        lib, _ = self.station([])
+        lib.h_run(250)                                             # the first tick only takes the counter's base
+        self.assertEqual(self.live(lib)['bins'], [0])
+        lib.h_pulses_add(300)
+        lib.h_run(250)
+        self.assertEqual(self.live(lib)['bins'], [0, 255])
+        lib.h_run(40_000)
+        w = self.live(lib)
+        self.assertEqual(w['bins'], [0] * 120)                     # 30 s of bins; the 300 has scrolled out
+
     def test_vector_sums_for_each_of_16_positions(self):
         for position in range(16):
             with self.subTest(position=position):
@@ -945,6 +1029,14 @@ class Rain(Conformance, Harness):
             lib.h_rain_tip()
             lib.h_advance(gap)
 
+    def test_rain_tips_since_boot(self):
+        lib, _ = self.station([])
+        self.tips(lib, [200] * 3)
+        self.assertEqual(lib.h_rain_tips(), 3)
+        lib, _ = self.station([])
+        self.tips(lib, [100 - 1, 500])                             # two closures 99 ms apart: one tip
+        self.assertEqual(lib.h_rain_tips(), 1)
+
     def test_twenty_tips_count_twenty(self):
         lib, _ = self.station([])
         self.tips(lib, [200] * 20)
@@ -1019,6 +1111,39 @@ class Rain(Conformance, Harness):
         lib.h_run(2_000)
         self.assertEqual(lib.h_probe(self.PORT), 1)
         self.assertNotEqual(lib.h_probe_seq(self.PORT), seq)      # the setting is probed again, so it debounces
+
+
+class LiveReads(Harness):
+    """The screen's live accessors read; they never write (mod_*_live)."""
+    DEVICES = [(DEVK_SHT45, 0x44), (DEVK_SHTC3, 0x70), (DEVK_BMP581, 0x47), (DEVK_LTR390, 0x53)]
+
+    def run_station(self, with_live):
+        lib, devs = self.station(self.DEVICES)
+        lib.h_rain_enable(1)
+        lib.h_vane_mv(595)
+        lib.h_sht45_set(devs[DEVK_SHT45], 0x6666, 0x8000, 0)
+        lib.h_shtc3_set(devs[DEVK_SHTC3], 0x6666, 0x8000)
+        lib.h_bmp581_set(devs[DEVK_BMP581], 101_325 * 64)
+        lib.h_ltr390_set(devs[DEVK_LTR390], 123)
+        a, b, c = ctypes.c_int32(), ctypes.c_int32(), ctypes.c_int32()
+        for i in range(MINUTE // 250):
+            lib.h_pulses_add(i % 7)
+            if i % 40 == 0:
+                lib.h_rain_tip()
+            lib.h_run(250)
+            if with_live:
+                for _ in range(5):
+                    for unit in (0, 1):
+                        lib.h_th_live(unit, ctypes.byref(a), ctypes.byref(b))
+                        lib.h_reg_live(unit, ctypes.byref(c))
+                    lib.h_wind_live()
+                    lib.h_rain_tips()
+        return b''.join(self.latch(lib, port, 1) for port in (P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH, P_WIND, P_RAIN))
+
+    def test_live_reads_do_not_change_window(self):
+        plain = self.run_station(False)
+        self.assertEqual(self.run_station(True), plain)
+        self.assertNotEqual(plain, bytes(len(plain)))
 
 
 if __name__ == '__main__':

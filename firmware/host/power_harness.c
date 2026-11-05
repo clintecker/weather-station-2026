@@ -43,6 +43,15 @@ int h_status(void) { return win.slow.charger_status; }
 int h_monitor_temp(void) { return win.slow.monitor_temp; }
 int h_vdda(void) { return win.slow.vdda_mv; }
 int h_chg_batt_ma(void) { return win.slow.chg_batt_ma; }
+static power_live_t live;
+void h_live(void) { power_acq_live(&live); }
+int h_live_batt_ok(void) { return live.batt_ok; }
+int h_live_batt_ma_x100(void) { return live.batt_ma_x100; }
+int h_live_out_mv(void) { return live.out_mv; }
+int h_live_gauge_ok(void) { return live.gauge_ok; }
+int h_live_vcell_mv(void) { return live.vcell_mv; }
+int h_live_soc_x10(void) { return live.soc_pct_x10; }
+int h_live_charging(void) { return live.charging; }
 int h_rail_count(void) { return (int)POWER_RAIL_COUNT; }
 int h_rail_addr(int i) { return POWER_RAILS[i].addr; }
 int h_rail_sign(int i) { return POWER_RAILS[i].sign; }
