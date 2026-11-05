@@ -86,23 +86,30 @@ power, memory and bus bandwidth the node has.
 
 ### The screen
 
-Layout C, 21 characters × 8 rows at 6 × 8 pixels, drawn in a 1-bit 128 × 64 frame buffer (1 KB), turned 180° and
-expanded to the SSD1325's 4-bit column format into a 4 KB send buffer, sent by DMA.
+A 1-bit 128 × 64 frame buffer (1 KB), text in the 5 × 7 font at 6 × 8 pixels (21 columns × 8 rows), turned 180°
+and expanded to the SSD1325's 4-bit column format into a 4 KB send buffer, sent by DMA. Layout C (one text page of
+every reading) was replaced on 2026-11-05 (Clint) by HOME and detail screens:
 
-```
-AIR  23.1C  50.8%        SHT45 (outside air)
-BOX  22.9C  52.2%        SHTC3 (enclosure)
-P 983.0hPa   UV 0        BMP581, LTR390 counts
-WIND 1.3m/s NE G2.7      speed, vane point, gust
-RAIN 2 TIPS 0.56mm       tips since boot
-BATT +37.6mA 3.85V       INA228 0x40 (NO INA228 when absent)
-CELL 3.85V 78% CHG       MAX17048, charger state (NO MAX17048)
-TX 1233 ACK 58s AGO      last frame, its outcome, age
-```
+- **HOME**: the air temperature in 10 × 16 digits (`tools/make_scr_font.py` → `App/scr_font.c`), RH and pressure
+  right of it, a small animated icon, a wind and rain row (the last hour's mm) and the link row (the last frame, its
+  outcome and RSSI, signal bars). The icon is `scr_icon_pick`, in order: rain tips in the last 10 minutes (snow
+  when below 0 °C), below 0 °C snow, wind above 5.0 m/s, RH 85 % or more cloud, the moon by night (06:00–18:00
+  local is day; local is UTC −6 h, fixed, no DST; no synced clock: always day), else the sun. The packet banner
+  inverts the bottom two rows over HOME: the send, then the outcome, for about 3 s.
+- **AIR**: temperature and RH, the Magnus dew point (fixed point), the last hour as a sparkline (a sample a
+  minute, 60).
+- **PRESSURE**: the 3-hour tendency, an arrow (the live value against the oldest of 36 five-minute samples;
+  ±1.0 hPa is rising or falling; under 3 h of history, none) and the sparkline.
+- **POWER**: cell, battery current, load, solar and USB-C rails and the charger, as bars; "pending" for a rail
+  not fitted, "--" for a part absent.
+- **RADIO**: the last 30 frames' RSSI and SNR as bars (a cross for no ACK), the ACK rate, the backlog and the
+  next exchange's countdown.
+- **SCOPE, VANE, RAIN, SYSTEM**: the interludes, also shown as detail screens.
 
-Each row shows the part's name and "NO <part>" when the module is absent. Readings are the node's live values (its
-latest sample of each module), redrawn once a second. Packet banner: when a frame goes out, the bottom two rows invert
-and show the send, then the outcome (ACK with its RSSI and SNR, or NO ACK), for about 3 s.
+Each shows "NO <part>" or "--" when its module is absent or out of the layout. The histories are the display's
+(RAM2, sampled from the live accessors by `oled_view.c` and `oled_app.c`), not the modules', so the field build
+carries none of them. The arithmetic (dew point, tendency, icon, scales, histories, fortune and mood choice) is
+`App/scr_calc.c`, pure and host-tested (`tests/test_scr_calc.py`).
 
 ### Field builds
 
@@ -115,7 +122,7 @@ symbol.
 
 ### The interludes
 
-All seven, drawn only from what the TX knows. Mockups (true scale, real font) are in
+Drawn only from what the TX knows. Mockups (true scale, real font) are in
 `.superpowers/brainstorm/83868-1793832625/content/` (oled-interludes-v2.html, oled-hack-the-planet.html).
 
 1. **Packet burst**, once per minute's exchange, on its live reading (my call): backlog frames, the extra frame after
@@ -134,20 +141,29 @@ All seven, drawn only from what the TX knows. Mockups (true scale, real font) ar
    mm/h, and a bar a minute for the last hour (tips a minute, scaled to the largest, at least 4). The history is
    the rain module's (`mod_rain_history`, in every build: 60 bytes of RAM and the last tip's time).
 
-Timing: one interlude from the rotation (2, 3, 7, 4, 6) about every 2 minutes, about 8 s, at about 8 frames a second.
+8. **Fortune cookie**, **pocket frog**, **digital rain**, **packet pinball** (Clint, 2026-11-05), original art:
+   a fortune chosen by the weather and the link (15 lines, the first condition that holds: no ACK, low cell,
+   rain, frost, heat, wind, damp, dry, falling, rising, calm; the frame number picks among a condition's lines);
+   a frog whose mood follows the icon, which blinks, watches a fly and catches it on an ACK; falling glyphs that
+   speed up with the rain tips of the last 10 minutes; a pinball that lights the ACK bumper when the frame was
+   ACKed.
+
+Timing: one interlude from the rotation (FORTUNE, SCOPE, FROG, VANE, MATRIX, RAIN, PINBALL, SYSTEM, HACK) about
+every 2 minutes on a fixed phase, starting only from HOME, about 8 s, at about 8 frames a second.
 Never during a packet burst or banner (the radio exchange wins); an interlude in progress yields to a packet.
 
 ### The buttons (my call, to confirm)
 
-- **B1**: next screen (normal, then each interlude of the rotation in turn: scope, vane, rain, system, HACK; then back).
-- **B2**: pause or resume the automatic rotation (paused: the screen stays where B1 put it; packets still show).
+- **B1**: next screen, through every one (HOME, the detail screens, the silly ones, HACK; then HOME). The list
+  is its own: the interlude rotation and the HOME/detail cycle do not move with it.
+- **B2**: pause or resume (paused: the screen stays where B1 put it; packets still show).
 - **B3**: OLED on or off (off: no SPI traffic, panel commanded to sleep).
 
 Debounced in software from the existing EXTI lines; a press never blocks.
 
 ### Bandwidth and memory
 
-During an interlude, 8 frames a second of 44 ms is about 35 % of SPI1 time; otherwise one frame a second, about 4 %.
+During an interlude, 8 frames a second of 44 ms is about 35 % of SPI1 time; HOME is redrawn 4 times a second for its icon (about 18 %), a detail screen once a second after its bars grow.
 RAM: 1 KB frame buffer, 4 KB send buffer, small state; about 5.5 KB, all in RAM2 (RAM1 has about 3.5 KB free). Flash: the library, font, screens and
 driver, expected 6-10 KB; inside the new 190 KB region.
 
