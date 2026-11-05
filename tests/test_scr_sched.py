@@ -392,14 +392,31 @@ class OledApp(unittest.TestCase):
             self.press(1)
         self.assertEqual(got, ['VANE', 'SYSTEM', 'HACK', 'NORMAL'])
 
-    def test_a_press_inside_the_debounce_time_of_the_last_is_dropped(self):
-        # A bounce 20 ms after a taken press, landing in the next step (the clock is 125 ms a step here, so move it back).
+    def test_bounce_across_a_step_boundary_is_one_press(self):
+        # Edges 20 ms apart with a step between them: one press (the second is bounce). Edges 200 ms apart: two.
         self.to_normal()
+        self.set('t_now', self.get('t_now') + 110)   # 15 ms before the next tick fires
         self.press(1)
-        self.tick()
-        self.set('t_now', self.get('t_now') - STEP_MS + 20)   # the next tick's clock reads 20 ms after the press
+        self.set('t_now', self.get('t_now') + 20)
         self.press(1)
-        self.assertEqual(SCREENS[self.tick()[0]], 'SCOPE')   # still the first press's screen, frame 1: not skipped on
+        self.set('t_now', self.get('t_now') - 130)
+        self.assertEqual(SCREENS[self.tick()[0]], 'SCOPE')   # the tick between the edges took the first
+        self.assertEqual(self.tick(), (SCREENS.index('SCOPE'), 1))   # the second was dropped: not on to VANE
+        self.set('t_now', self.get('t_now') + 200)
+        self.press(1)
+        self.set('t_now', self.get('t_now') + 200)
+        self.press(1)
+        self.assertEqual(SCREENS[self.tick()[0]], 'VANE')   # two real presses in one step are still one event
+        self.assertEqual(self.tick(), (SCREENS.index('VANE'), 1))
+
+    def test_a_long_bounce_train_stays_one_press(self):
+        # Edges every 30 ms for 300 ms: each is within 50 ms of the one before, so only the first counts.
+        self.to_normal()
+        for _ in range(10):
+            self.press(1)
+            self.set('t_now', self.get('t_now') + 30)
+        self.assertEqual(SCREENS[self.tick()[0]], 'SCOPE')
+        self.assertEqual(self.tick(), (SCREENS.index('SCOPE'), 1))
 
     def test_b3_turns_display_off(self):
         # B3: oled_dma_enable(0), and the steps draw nothing; B3 again: oled_dma_enable(1), and drawing resumes.
@@ -408,6 +425,7 @@ class OledApp(unittest.TestCase):
         self.press(3)
         self.tick()
         self.assertEqual((self.get('t_enable_calls'), self.get('t_enabled')), (calls + 1, 0))
+        self.press(1)   # B1 does nothing while the display is off
         for _ in range(20):
             self.tick()
         self.assertEqual(self.get('t_draws'), draws)
@@ -417,6 +435,7 @@ class OledApp(unittest.TestCase):
         for _ in range(8):   # the step that powered it did not draw; NORMAL is redrawn within a second
             self.tick()
         self.assertGreater(self.get('t_draws'), draws)
+        self.assertEqual(SCREENS[self.get('t_id')], 'NORMAL')   # B1 while off changed nothing
 
     def test_a_press_while_the_driver_is_busy_is_kept(self):
         self.to_normal()

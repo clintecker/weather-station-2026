@@ -15,7 +15,7 @@
 #include "utilities_def.h"
 
 #define STEP_MS        125U     /* 8 frames a second */
-#define DEBOUNCE_MS    50U      /* a button's presses closer than this are one */
+#define DEBOUNCE_MS    50U      /* edges of one button closer than this are one press (contact bounce) */
 #define AIRTIME_OF_MS  60000U   /* the system bars' airtime: this minute's exchange, of a minute */
 
 /* RAM2 (NOLOAD: nothing initializes it, so oled_app_start does); the host test builds with it empty. */
@@ -29,7 +29,7 @@ static UTIL_TIMER_Object_t step_timer;
 static uint32_t live_seq, live_s;   /* the minute's live frame and when it went (clock_s) */
 static int awaiting;                /* its reply has not come yet */
 static volatile uint32_t pressed;   /* bit b: button b went down (set in the EXTI interrupt) */
-static uint32_t pressed_ms[4];      /* when button b's last press was taken */
+static volatile uint32_t edge_ms[4]; /* when button b's last edge came, taken or not */
 static int powered = 1;             /* what the driver was last told (oled_dma_enable) */
 static uint32_t air_ms;             /* airtime of this minute's frames so far */
 
@@ -65,19 +65,22 @@ void oled_note_no_ack(uint32_t seq)
   sched_event(EV_NO_ACK, clock_ms());
 }
 
-void oled_app_button(unsigned b) { if (b >= 1U && b <= 3U) pressed |= 1U << b; }
+/* From the EXTI interrupt: an edge within DEBOUNCE_MS of the button's previous edge is bounce and is dropped
+   (the time is updated either way, so a long bounce train stays one press); otherwise it is a press. */
+void oled_app_button(unsigned b)
+{
+  if (b < 1U || b > 3U) return;
+  uint32_t now = clock_ms();
+  if (now - edge_ms[b] >= DEBOUNCE_MS) pressed |= 1U << b;
+  edge_ms[b] = now;
+}
 
-/* The presses since the last step, to the scheduler: one per button however many edges came, and none
-   within DEBOUNCE_MS of the button's last. The interrupt only sets bits, so taking them is one exchange. */
+/* The presses since the last step, to the scheduler: one per button however many came. */
 static void take_buttons(uint32_t now)
 {
   uint32_t m = __atomic_exchange_n(&pressed, 0U, __ATOMIC_RELAXED);
   for (unsigned b = 1; b <= 3U; b++)   /* bound: 3 buttons */
-  {
-    if (!(m & (1U << b)) || now - pressed_ms[b] < DEBOUNCE_MS) continue;
-    pressed_ms[b] = now;
-    sched_event((enum sched_ev)(EV_B1 + (b - 1U)), now);
-  }
+    if (m & (1U << b)) sched_event((enum sched_ev)(EV_B1 + (b - 1U)), now);
 }
 
 /* One step. A busy driver means a frame (or the start-up) is still going out of the send buffer: drawing
@@ -118,7 +121,7 @@ void oled_app_start(void)
   view.last_acked = SCR_TX_NONE;
   oled_dma_init();
   sched_init(clock_ms());
-  for (unsigned b = 1; b <= 3U; b++) pressed_ms[b] = clock_ms() - DEBOUNCE_MS;   /* bound: 3 buttons */
+  for (unsigned b = 1; b <= 3U; b++) edge_ms[b] = clock_ms() - DEBOUNCE_MS;   /* bound: 3 buttons */
   pressed = 0; powered = 1;
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Oled, UTIL_SEQ_RFU, step_timed);
   (void)UTIL_TIMER_Create(&step_timer, STEP_MS, UTIL_TIMER_PERIODIC, on_step_timer, NULL);
