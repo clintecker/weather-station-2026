@@ -1,6 +1,7 @@
 """tools/e2e_check.py against a stub of the gateway's /v1/observations/latest."""
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -13,18 +14,27 @@ ROOT = Path(__file__).resolve().parent.parent
 TOOL = ROOT / 'tools' / 'e2e_check.py'
 TOKEN = 'stub-token'
 sys.path.insert(0, str(ROOT / 'tools'))
+sys.path.insert(0, str(ROOT))
 import e2e_check  # noqa: E402
+from ws0 import fields  # noqa: E402
 
 POWER = e2e_check.POWER
 
 
+# A v6 record as the gateway stores it (field set WS_F_WSMP_BENCH), written out by hand and not
+# built from the tool's POWER tuple. No soc_gauge_pct or charger_pins: v6 does not send them.
+V6_POWER = dict(batt_mv=3920, batt_current_ma=-12, energy_in_mwh=85, energy_out_mwh=40, charge_in_mah=21,
+                charge_out_mah=10, load_mv=3880, load_current_ma=15, charger_input_mv=5010,
+                solar_mv=5050, solar_current_ma=120, usb_mv=0, usb_current_ma=0)
+V6_REST = dict(temperature_c=21.5, humidity_pct=48.0, th_samples=60, pressure_hpa=1013.2, wind_speed_ms=2.5,
+               wind_gust_ms=4.0, wind_dir_deg=270, wind_calm=False, rain_tips=3, uva_raw=1234,
+               enclosure_temp_c=24.0, enclosure_rh_pct=40.0)
+
+
 def observation(age=10, power=True, **over):
     now = time.time()
-    record = dict(temperature_c=21.5, humidity_pct=48.0, enclosure_temp_c=24.0, enclosure_rh_pct=40.0,
-                  pressure_hpa=1013.2, uva_raw=1234, wind_speed_ms=2.5, wind_gust_ms=4.0, wind_dir_deg=270,
-                  wind_calm=False, rain_tips=3, sampled_at=now - age)
-    for name in POWER:
-        record[name] = (87 if name == 'soc_gauge_pct' else 3900) if power else None
+    record = dict(V6_REST, sampled_at=now - age, quality='valid' if power else 'partial')
+    record.update(V6_POWER if power else dict.fromkeys(V6_POWER))
     record.update(over)
     return {'available': True, 'reason': 'fresh', 'age_seconds': age, 'observation': record,
             'effective_sampled_at': now - age}
@@ -32,7 +42,7 @@ def observation(age=10, power=True, **over):
 
 class Stub:
     """Serves `reply` as (status, body) on a free port; checks the bearer token like the gateway."""
-    def __init__(self, status, body):
+    def __init__(self, status, body, raw=None):
         stub = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -43,9 +53,9 @@ class Stub:
                 stub.paths.append(self.path)
                 ok = self.headers.get('Authorization') == 'Bearer ' + TOKEN
                 code, payload = (status, body) if ok else (401, {'error': 'unauthorized'})
-                data = json.dumps(payload).encode()
+                data = json.dumps(payload).encode() if raw is None else raw
                 self.send_response(code)
-                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Content-Length', str(len(data) + (50 if raw == b'{"observ' else 0)))
                 self.end_headers()
                 self.wfile.write(data)
 
@@ -80,8 +90,9 @@ class E2ECheckTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(stub.paths, ['/v1/observations/latest'])
         fields = [line for line in out.splitlines() if ': ' in line and not line.startswith('e2e')]
-        self.assertGreaterEqual(len(fields), 20)
+        self.assertGreaterEqual(len(fields), 22)
         self.assertTrue(all(line.startswith('ok') for line in fields), out)
+        self.assertNotIn('(fitted)', out)
         self.assertNotIn('FAIL', out)
 
     def test_calm_wind_is_ok(self):
@@ -94,8 +105,24 @@ class E2ECheckTests(unittest.TestCase):
         code, out = run(stub.url, '--power-pending')
         self.assertEqual(code, 0, out)
         for name in POWER:
-            self.assertIn(f'{name}: INVALID', out)
-        self.assertEqual(sum(line.startswith('pending') for line in out.splitlines()), len(POWER))
+            self.assertRegex(out, rf'(?m)^pending \(INVALID, expected\) {name}$')
+        self.assertEqual(sum(line.startswith('pending (INVALID, expected)') for line in out.splitlines()), len(POWER))
+
+    def test_power_pending_accepts_fitted_values(self):
+        stub = self.serve(200, observation(batt_mv=None, batt_current_ma=None))
+        code, out = run(stub.url, '--power-pending')
+        self.assertEqual(code, 0, out)
+        self.assertIn('ok (fitted) load_mv: 3880', out)
+        self.assertIn('pending (INVALID, expected) batt_mv', out)
+
+    def test_power_set_is_what_v6_sends(self):
+        header = (ROOT / 'firmware/stage0-node/App/node_fields.h').read_text()
+        block = re.search(r'#define WS_F_WSMP_POWER \((.*?)\)\n#define', header, re.S).group(1)
+        sent = {m.lower() for m in re.findall(r'WS_FI_(\w+)', block)}
+        self.assertEqual(len(sent), 13)
+        self.assertEqual(set(POWER), sent)
+        self.assertEqual(set(POWER), set(V6_POWER))
+        self.assertTrue(set(POWER) <= set(fields.BY_NAME))
 
     def test_power_invalid_without_flag_fails(self):
         stub = self.serve(200, observation(power=False))
@@ -144,6 +171,29 @@ class E2ECheckTests(unittest.TestCase):
         code, out = run(url)
         self.assertEqual(code, 1, out)
         self.assertEqual(out.strip(), f'FAIL: gateway not reachable at {url}')
+
+    def test_bad_urls_and_replies_never_traceback(self):
+        def one_line(code, out, *needles):
+            self.assertEqual(code, 1, out)
+            self.assertEqual(len(out.strip().splitlines()), 1, out)
+            self.assertNotIn('Traceback', out)
+            for needle in needles:
+                self.assertIn(needle, out)
+        one_line(*run('http://[::1'), 'http')
+        one_line(*run('http://'), 'FAIL')
+        one_line(*run('file:///etc/hosts'), 'http')
+        one_line(*run('ftp://127.0.0.1/'), 'http')
+        one_line(*run('not a url'), 'http')
+        for status, body in ((200, []), (200, 'text'), (200, None), (200, {'available': True})):
+            with self.subTest(body=body):
+                stub = self.serve(status, body)
+                one_line(*run(stub.url), 'FAIL')
+        stub = Stub(200, None, raw=b'garbage, not json')
+        self.addCleanup(stub.close)
+        one_line(*run(stub.url), 'no usable reply')
+        stub = Stub(200, None, raw=b'{"observ')   # Content-Length promises more than is sent
+        self.addCleanup(stub.close)
+        one_line(*run(stub.url), 'FAIL')
 
     def test_token_only_from_env(self):
         stub = self.serve(200, observation())
