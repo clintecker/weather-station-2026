@@ -30,6 +30,6 @@ DEFS      = -DDEBUG -DVERBOSE_LEVEL=VLEVEL_M
 OPT       = -Og
 
 # Our own C builds with the strict warning set and -Werror.
-STRICT_SRC = App/i2cscan.c App/meters.c App/bench_regs.c ../common/power_regs.c App/bench_screen.c App/oled.c App/oled_fb.c App/font5x7.c
+STRICT_SRC = App/i2cscan.c App/meters.c App/bench_regs.c ../common/power_regs.c App/bench_screen.c App/oled.c ../common/oled_fb.c ../common/oled_draw.c ../common/font5x7.c
 
 include $(BOARD)/board.mk
