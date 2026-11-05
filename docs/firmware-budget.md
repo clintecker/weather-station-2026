@@ -80,7 +80,7 @@ recycled, so 29 count:
 
 | Field set | Plaintext | Slot | Slots a page | Records (29 pages) | Hours |
 |---|---:|---:|---:|---:|---:|
-| v5 bench build (release `04fcc656938d`) | 61 B | 80 B | 25 | 725 | 12.08 |
+| v5-size records on this 30-page ring (release `04fcc656938d` itself ran the 70-page ring: 1,725 records, 28.75 h) | 61 B | 80 B | 25 | 725 | 12.08 |
 | **v6 node field set** (phases A–C, today's build) | 77 B | 96 B | 21 | **609** | 10.15 |
 | per-build ceiling | 80 B | 96 B | 21 | 609 | 10.15 |
 | every catalog v2 field (not a build: it would not compile) | 94 B | 112 B | 18 | 522 | 8.7 |
@@ -345,7 +345,7 @@ phase B for step 1b's four rails).
 | Feature | Flash estimate | Notes |
 |---|---|---|
 | Power telemetry, phase A: bq24074, battery INA228, MAX17048, ISET, charger input, CHG/PGOOD, VREFINT, health report v6 | **Done** (not yet released): +4,400 B TX, +80 B RX against c7e8860 | Measured 2026-10-29 ([Current build](#current-build)). Power code 3,898 B (`power_acq` 2,602, `mod_power` 916, `power_regs` 380); `board_inputs` +492 B for the ADC sequence and CHG edges |
-| Power telemetry, phase B: load, solar and USB-C INA228s (`WS_POWER_PROFILE=2`) | **Measured** in a scratch build: +528 B over phase A (88,688 B, 78.7 %) | Same code, a four-row rail table (`App/power_config.h`); `power_acq` 2,602 → 3,122 B. No protocol, catalog or journal change (the field set already holds every rail) |
+| Power telemetry, phase B: load, solar and USB-C INA228s (`WS_POWER_PROFILE=2`) | **Measured** in a scratch build: +528 B over phase A (88,688 B, 78.7 % of the 110 KB region) | Same code, a four-row rail table (`App/power_config.h`); `power_acq` 2,602 → 3,122 B. No protocol, catalog or journal change (the field set already holds every rail) |
 | SPI NOR journal for the 30-day buffer (requirement H11, 30-day storage) | 6–10 KB | SPI HAL plus a journal backend |
 | RS-485 and Modbus sensor modules | 4–8 KB, plus a few KB per sensor type | The UART HAL is already linked |
 | Low-power sleep, heater control, energy state machine (the thresholds of the power spec section 9.9, D1) | 4–8 KB | Mostly our code. The energy state stays NORMAL until then |

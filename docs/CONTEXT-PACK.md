@@ -125,8 +125,9 @@ section 3).
 - **Radio:** 915.0 MHz, 500 kHz bandwidth, spreading factor (SF) 7, coding rate 4/5, 0 dBm (bench).
 - **Bench-verified:**
   - the journal, in version 5 on the boards: about 28.75 hours of outage buffer in internal flash
-    (1,725 slots of 80 bytes for the WSMP bench field set, in the 70-page journal of that release). The version 6 source keeps at least
-    609 slots of 96 bytes for the 77-byte node field set, about 10.15 hours (30-page ring, flash layout v3), not yet on a board
+    (1,725 slots of 80 bytes for the WSMP bench field set, in the 70-page journal of that release).
+    The version 6 source keeps at least 609 slots of 96 bytes for the 77-byte node field set,
+    about 10.15 hours (30-page ring, flash layout v3), not yet on a board
     (`firmware/stage0-node/README.md`, "Flash layout and outage capacity"). The 9.5-hour rule holds
     for the build's widest record (`App/node_store.c`): a field set above 80 bytes does not
     compile, so every catalog version 2 field (94 bytes, 8.7 hours) is never a build,

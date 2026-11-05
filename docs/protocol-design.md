@@ -607,7 +607,7 @@ exists only so that the RX bridge and the gateway accept any canonical record.
 |---|---:|---:|---:|---:|---:|---:|
 | Version 6 node field set (phases A to C, the current build) | 77 B | 93 B | 96 B | 21 | 609 | 10.15 h |
 | Per-build ceiling | 80 B | 96 B | 96 B | 21 | 609 | 10.15 h |
-| Version 5 bench build (fields 0–6, 9, 11, 13–20, 25) | 61 B | 77 B | 80 B | 25 | 725 | 12.08 h |
+| Version 5 field set (fields 0–6, 9, 11, 13–20, 25) on the 30-page ring (the v5 release had 70 pages: 1,725 records, 28.75 h) | 61 B | 77 B | 80 B | 25 | 725 | 12.08 h |
 | Previous bench build (temperature and humidity with the minute summary) | 35 B | 51 B | 56 B | 36 | 1,044 | 17.4 h |
 | Every catalog version 2 field (not a build; does not compile) | 94 B | 110 B | 112 B | 18 | 522 | 8.7 h |
 

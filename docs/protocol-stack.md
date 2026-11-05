@@ -321,7 +321,7 @@ One of the 30 journal pages is always being recycled. The journal therefore hold
 
 | Field set | Plaintext | Slot | Slots a page | Records (29 pages) | Hours |
 |---|---:|---:|---:|---:|---:|
-| Version 5 bench build (for comparison) | 61 B | 80 B | 25 | 725 | 12.08 |
+| Version 5-size records on the 30-page ring (the v5 release itself had 70 pages: 1,725 records, 28.75 h) | 61 B | 80 B | 25 | 725 | 12.08 |
 | Version 6 node field set, phases A–C (current build) | 77 B | 96 B | 21 | 609 | 10.15 |
 | Every catalog version 2 field (never a build) | 94 B | 112 B | 18 | 522 | 8.7 |
 
