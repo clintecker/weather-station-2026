@@ -43,7 +43,7 @@
 #define WS_BENCH_OLED 0   /* the field build: no display (Makefile) */
 #endif
 #if WS_BENCH_OLED
-#include "oled_dma.h"
+#include "oled_app.h"
 #endif
 
 #define SAMPLE_PERIOD_MS    15000U  /* the minute's ticks; the modules sample on their own (product spec, section 9) */
@@ -316,7 +316,7 @@ void SubghzApp_Init(void)
   busymon_init();
   leds_init();
 #if WS_BENCH_OLED
-  oled_dma_init();
+  oled_app_start();
 #endif
   exchange_init();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample_timed);

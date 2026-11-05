@@ -14,7 +14,7 @@
 #include "i2c_bus.h"
 #include "leds.h"
 #include "mod_power.h"
-#include "radio.h"
+#include "oled_hooks.h"
 #include "radio_cfg.h"
 #include "stm32_seq.h"
 #include "stm32_timer.h"
@@ -215,7 +215,7 @@ static int send_diag(void)
   if (!WS_CHECK(ws_seal_kind(key, identity.station, WS_KIND_DIAG, ctr, plain, sizeof plain, frame, sizeof frame) >= 0)) return 0;
   if (ws_radio_send(frame, sizeof frame) != RADIO_STATUS_OK) { ws_failrun_note(&tx_counts.air, 0); return 0; }
   policy_diag_sent(now);   /* only a report that the radio took. A refused one is due next minute */
-  tx_state = TX_DIAG_SENDING;
+  tx_state = TX_DIAG_SENDING; oled_note_sent(0, frame, (uint8_t)sizeof frame, 0);
   diag_line(&d);
   return 1;
 }
@@ -259,9 +259,9 @@ static int send_obs(const uint8_t *plain, int plen)
   if (!WS_CHECK(flen >= 0)) { APP_PRINTF("#error seal\n"); return 0; }   /* a valid station and counter always seal */
   sent_epoch = ws_obs_epoch(plain);
   sent_seq = ws_obs_seq(plain);
-  tx_counts.sent++;
-  led_flash(LED_BLUE, LED_FLASH_MS);
-  if (ws_radio_send(frame, (uint8_t)flen) == RADIO_STATUS_OK) { tx_state = TX_SENDING; return 1; }
+  tx_counts.sent++; led_flash(LED_BLUE, LED_FLASH_MS);
+  if (ws_radio_send(frame, (uint8_t)flen) == RADIO_STATUS_OK)
+  { tx_state = TX_SENDING; oled_note_sent(sent_seq, frame, (uint8_t)flen, qi == 0); return 1; }
   ws_failrun_note(&tx_counts.air, 0); APP_PRINTF("#error radio-busy\n");
   return 0;
 }
@@ -303,7 +303,7 @@ void exchange_start(const jref_t *live, unsigned backlog)
 /* No reply came to the frame just sent. Its record stays journaled for a later retry. */
 static void no_reply(int flash_red)
 {
-  tx_counts.no_ack++;
+  tx_counts.no_ack++; oled_note_no_ack(sent_seq);
   if (flash_red) led_flash(LED_RED, LED_FLASH_MS);
   APP_PRINTF("#ack none epoch=%u seq=%u\n", (unsigned)sent_epoch, (unsigned)sent_seq);
   drain_after_miss();
@@ -349,6 +349,7 @@ static int on_ack(const reply_t *r, int mine)
   APP_PRINTF("#ack epoch=%u seq=%u found=%d time_sync=%d rssi=%d snr=%d pending=%u\n",
              (unsigned)r->epoch, (unsigned)r->seq, found, fresh, rx_rssi, rx_snr,
              (unsigned)store_journal_pending());
+  if (mine) oled_note_ack(r->seq, rx_rssi, rx_snr);
   return mine;
 }
 
@@ -375,8 +376,7 @@ static int handle_reply(void)
 static void window_closed(void)
 {
   (void)UTIL_TIMER_Stop(&ack_timer);
-  batch &= ~EV_ACK_END;
-  events_clear(&pending_ev, EV_ACK_END);
+  batch &= ~EV_ACK_END; events_clear(&pending_ev, EV_ACK_END);
 }
 
 /* The state handlers return 1 if the state expects the event and handled it, else 0. */

@@ -58,7 +58,7 @@ the red LED on, prints one line and stops the boot:
 
 ```mermaid
 flowchart TD
-  A["stackmon_paint, busymon_init, leds_init, oled_dma_init (bench build only), exchange_init"] --> B["register the sample task (sample_timed) and the module task (module_tick_timed), tx_console_init"]
+  A["stackmon_paint, busymon_init, leds_init, oled_app_start (bench build only), exchange_init"] --> B["register the sample task (sample_timed) and the module task (module_tick_timed), tx_console_init"]
   B --> C["node.boot_s = clock_s(), policy_init, watchdog_start, fault_boot_note"]
   C --> D["node.kat_ok = selftest_kat(), print #boot, fault_report"]
   D --> E{"store_meta_init and store_journal_init succeed?"}
@@ -82,9 +82,11 @@ flowchart TD
   I1 --> X
 ```
 
-The bench build (`WS_BENCH_OLED=1`, `App/oled_dma.h`) starts the OLED right after the LEDs, before
-anything can stop the boot, so the display also serves an unprovisioned node. `oled_dma_init` returns
-at once: the panel's reset and set-up run on timers. The field build compiles none of it (an `#if`,
+The bench build (`WS_BENCH_OLED=1`, `App/oled_app.h`) starts the OLED right after the LEDs, before
+anything can stop the boot, so the display also serves an unprovisioned node. `oled_app_start` returns
+at once: the panel's reset and set-up run on timers (`App/oled_dma.h`), and its 125 ms step plays the
+boot splash and then HACK THE PLANET once the panel is ready. Each frame reads the node as it is then,
+so the splash shows the key and the epoch that `boot_ready` found. The field build compiles none of it (an `#if`,
 not a value: the driver's sources are not in that build at all, and `make field-check` proves it).
 
 The watchdog starts before the firmware reads storage. Until sampling starts, `node.running` is 0,
@@ -178,7 +180,7 @@ void SubghzApp_Init(void)
   busymon_init();
   leds_init();
 #if WS_BENCH_OLED
-  oled_dma_init();
+  oled_app_start();
 #endif
   exchange_init();
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Sample, UTIL_SEQ_RFU, sample_timed);
@@ -755,7 +757,7 @@ before its first caller.
 #define WS_BENCH_OLED 0   /* the field build: no display (Makefile) */
 #endif
 #if WS_BENCH_OLED
-#include "oled_dma.h"
+#include "oled_app.h"
 #endif
 
 <<sample-constants>>

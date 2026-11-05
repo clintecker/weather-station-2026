@@ -83,6 +83,9 @@ typedef enum
   CFG_SEQ_Task_Storm,          /* weather-station-2026: bench-only flash write storm (power-cut test) */
   CFG_SEQ_Task_Sensor,         /* weather-station-2026: the 250 ms WSMP module tick (App/app_tx.c) */
   CFG_SEQ_Task_I2c,            /* weather-station-2026: a finished I2C transfer on the shared bus (App/i2c_bus.c) */
+#if defined(WS_BENCH_OLED) && WS_BENCH_OLED
+  CFG_SEQ_Task_Oled,           /* weather-station-2026: the bench OLED's 125 ms step (App/oled_app.c); bench build only */
+#endif
 
   /* USER CODE END CFG_SEQ_Task_Id_t */
   CFG_SEQ_Task_NBR
