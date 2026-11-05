@@ -4,7 +4,7 @@ firmware's own drawing code, to compare by eye with the approved mockups.
     python3 tools/scr_render.py [OUT_DIR]     (default .superpowers/sdd/2026-11-04-node-oled-and-e2e/renders)
 
 Each screen is drawn with a demo view (the mockups' values) at a few frames, 4 x scale, lit pixels in the
-mockups' amber on black: <screen>-f<frame>.png. tests/test_scr_view.py builds the same library and
+mockups' amber on black (a gray screen, MATRIX, at its 16 levels between them): <screen>-f<frame>.png. tests/test_scr_view.py builds the same library and
 uses the view structure defined here."""
 import ctypes
 import math
@@ -29,7 +29,9 @@ AIR_HIST, PRESS_HIST, RADIO_HIST = 60, 36, 30
 # test can see every string drawn (the shim's oled_text checks each character against the font).
 INCLUDES = ['-I', APP, '-I', COMMON, '-I', ROOT/'firmware']
 SOURCES = [APP/'scr_view.c', APP/'scr_calc.c', APP/'scr_home.c', APP/'scr_detail.c', APP/'scr_interludes.c', APP/'scr_rain.c',
-           APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', COMMON/'oled_draw.c', COMMON/'font5x7.c']
+           APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', APP/'scr_kana.c', COMMON/'oled_draw.c',
+           COMMON/'font5x7.c']
+FRAME_BYTES = W * H // 2   # the SSD1325's send order (firmware/common/oled_fb.h): column pair, then row
 SHIM = r'''
 #include <string.h>
 #include "scr_view.h"
@@ -98,6 +100,7 @@ def build(directory, cc=('cc', '-std=c11', '-Wall', '-Wextra', '-Werror')):
                    check=True)
     lib = ctypes.CDLL(str(lib_path))
     lib.scr_draw.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(View)]
+    lib.scr_draw_gray.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(View), ctypes.c_int]
     lib.scr_frames.argtypes = [ctypes.c_int]
     lib.scr_frames.restype = ctypes.c_uint
     lib.oled_get.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
@@ -202,25 +205,57 @@ def rain_views():
             'burst': rain(demo_view(), sum(burst.values()) + 61, 3, burst)}
 
 
+def unpack(frame, rotate180=0):
+    """A frame in send order as {(x, y): level} of its lit pixels, turned back if it was sent turned."""
+    out = {}
+    for i, b in enumerate(frame):
+        cp, y = divmod(i, H)
+        for x, level in ((2 * cp, b >> 4), (2 * cp + 1, b & 15)):
+            if level:
+                out[(W - 1 - x, H - 1 - y) if rotate180 else (x, y)] = level
+    return out
+
+
+def gray(lib, screen, frame, view, rotate180=0):
+    """A gray screen's pixels as {(x, y): level 1-15}; None for a screen scr_draw draws."""
+    out = ctypes.create_string_buffer(FRAME_BYTES)
+    if not lib.scr_draw_gray(out, SCREENS.index(screen), frame, ctypes.byref(view), rotate180):
+        return None
+    return unpack(out.raw, rotate180)
+
+
 def draw(lib, screen, frame, view):
-    """The screen's pixels: a set of (x, y)."""
+    """The screen's pixels: a set of (x, y) (a gray screen's: those lit at any level)."""
+    levels = gray(lib, screen, frame, view)
+    if levels is not None:
+        return set(levels)
     fb = ctypes.create_string_buffer(W * H // 8)
     lib.scr_draw(fb, SCREENS.index(screen), frame, ctypes.byref(view))
     return {(x, y) for y in range(H) for x in range(W) if lib.oled_get(fb, x, y)}
 
 
+def shade(lib, screen, frame, view):
+    """What to render: the gray levels, or the lit pixels at full level."""
+    levels = gray(lib, screen, frame, view)
+    return levels if levels is not None else dict.fromkeys(draw(lib, screen, frame, view), 15)
+
+
 def png(pixels, path, scale=4):
+    """pixels: a set of lit (x, y), or {(x, y): level 0-15}, in the mockups' amber on black."""
     from PIL import Image   # requirements-dev.txt
-    img = Image.new('RGB', (W * scale, H * scale), (5, 7, 10))
-    for x, y in pixels:
-        img.paste((244, 231, 161), (x * scale, y * scale, x * scale + scale, y * scale + scale))
+    bg, lit = (5, 7, 10), (244, 231, 161)
+    img = Image.new('RGB', (W * scale, H * scale), bg)
+    levels = pixels if isinstance(pixels, dict) else dict.fromkeys(pixels, 15)
+    for (x, y), level in levels.items():
+        colour = tuple(round(b + (f - b) * level / 15) for b, f in zip(bg, lit))
+        img.paste(colour, (x * scale, y * scale, x * scale + scale, y * scale + scale))
     img.save(path)
 
 
 # The frames worth a look: each step of each screen's animation.
 FRAMES = {'HOME': [0, 2, 4, 6], 'BURST': [0, 1, 8, 15], 'BANNER': [0], 'AIR': [0, 7], 'PRESSURE': [7], 'POWER': [7],
           'RADIO': [0, 7], 'SCOPE': [0], 'VANE': [0, 1, 63], 'RAIN': [0], 'SYSTEM': [0, 63], 'BOOT': [0, 30, 62],
-          'HACK': [0, 4, 12, 16, 18, 20, 21], 'FORTUNE': [0, 6, 30], 'FROG': [0, 20, 40, 44, 60], 'MATRIX': [0, 1, 2],
+          'HACK': [0, 4, 12, 16, 18, 20, 21], 'FORTUNE': [0, 6, 30], 'FROG': [0, 20, 40, 44, 60], 'MATRIX': [0, 1, 2, 3, 4, 5],
           'PINBALL': [0, 20, 32, 33, 63]}
 
 
@@ -261,7 +296,8 @@ def views():
         if name in ('rain', 'snow', 'moon', 'noack'):
             out[f'frog-{name}'] = ('FROG', 44, v)
             out[f'fortune-{name}'] = ('FORTUNE', 63, v)
-    out['matrix-rain-f02'] = ('MATRIX', 2, weather(demo_view(), tips10=7))
+    for f in (2, 3):
+        out[f'matrix-rain-f{f:02d}'] = ('MATRIX', f, weather(demo_view(), tips10=7))
     other = demo_view()
     other.last_seq = 1500
     out['pinball-seq1500-f40'] = ('PINBALL', 40, other)
@@ -279,10 +315,10 @@ def main(argv):
         for screen, frames in FRAMES.items():
             for frame in frames:
                 path = out/f'{screen.lower()}-f{frame:02d}.png'
-                png(draw(lib, screen, frame, view), path)
+                png(shade(lib, screen, frame, view), path)
                 written.append(path)
         for name, (screen, frame, v) in views().items():
-            png(draw(lib, screen, frame, v), out/f'{name}.png')
+            png(shade(lib, screen, frame, v), out/f'{name}.png')
             written.append(out/f'{name}.png')
     for path in written:
         print(path)

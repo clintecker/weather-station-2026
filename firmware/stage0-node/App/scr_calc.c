@@ -1,6 +1,6 @@
 /* The bench screens' arithmetic and choices (scr_view.h): the display's histories, the dew point, the
- * pressure tendency, HOME's icon, the scales of the sparklines and bars, the fortune cookie and the frog's
- * mood. Pure functions of their arguments (or of the view), integer only. */
+ * pressure tendency, HOME's icon, the scales of the sparklines and bars, the fortune cookie, the frog's
+ * mood and the digital rain's streams. Pure functions of their arguments (or of the view), integer only. */
 #include "scr_view.h"
 #include <string.h>
 
@@ -246,6 +246,47 @@ unsigned scr_matrix_speed(unsigned tips10)
 {
   if (tips10 == 0U) return 1;
   return tips10 < 5U ? 2U : 3U;
+}
+
+/* A stream's cycle: it falls from its delay through the screen and its longest trail, so a stream's last
+   glyph has left the screen before the next cycle's head can show. Positions in quarter glyphs. */
+#define MATRIX_DELAY_MAX 10U
+#define MATRIX_CYCLE (SCR_MATRIX_ROWS + SCR_MATRIX_LEN_MAX + MATRIX_DELAY_MAX)
+#define MATRIX_QUARTERS 4U
+#define MATRIX_RATE_MIN 2U             /* half a glyph to 1.25 a frame when dry, 1 to 2.5 at speed 3 */
+#define MATRIX_RATE_SPAN 4U
+#define MATRIX_TRAIL_TOP 10U           /* the glyph behind the head; the head stands out at 15 */
+
+int scr_matrix_stream(unsigned c, unsigned s, unsigned frame, unsigned speed, int *head, unsigned *len)
+{
+  unsigned id = c * SCR_MATRIX_STREAMS + s;
+  if (s >= SCR_MATRIX_STREAMS || (s == 1U && scr_hash(c, 11) % 2U != 0U)) return 0;
+  uint32_t rate = (MATRIX_RATE_MIN + scr_hash(id, 12) % MATRIX_RATE_SPAN) * (speed + 1U) / 2U;   /* quarter glyphs a frame */
+  uint32_t pos = scr_hash(id, 13) % (MATRIX_CYCLE * MATRIX_QUARTERS) + frame * rate;
+  uint32_t step = pos / MATRIX_QUARTERS, cycle = step / MATRIX_CYCLE;
+  *len = SCR_MATRIX_LEN_MIN + scr_hash(id * 131U + cycle, 15) % (SCR_MATRIX_LEN_MAX - SCR_MATRIX_LEN_MIN + 1U);
+  *head = (int)(step % MATRIX_CYCLE) - (int)(scr_hash(id * 131U + cycle, 14) % (MATRIX_DELAY_MAX + 1U));
+  return 1;
+}
+
+unsigned scr_matrix_fade(int d, unsigned len)
+{
+  if (d < 0 || len < 2U || (unsigned)d >= len) return 0;
+  if (d == 0) return SCR_MATRIX_HEAD;
+  return 1U + (MATRIX_TRAIL_TOP - 1U) * (len - 1U - (unsigned)d) / (len - 2U);
+}
+
+unsigned scr_matrix_level(unsigned c, unsigned r, unsigned frame, unsigned speed)
+{
+  unsigned best = 0;
+  for (unsigned s = 0; s < SCR_MATRIX_STREAMS; s++)   /* bound: 2 streams */
+  {
+    int head; unsigned len;
+    if (!scr_matrix_stream(c, s, frame, speed, &head, &len)) continue;
+    unsigned l = scr_matrix_fade(head - (int)r, len);
+    if (l > best) best = l;
+  }
+  return best;
 }
 
 uint32_t scr_hash(uint32_t a, uint32_t b)

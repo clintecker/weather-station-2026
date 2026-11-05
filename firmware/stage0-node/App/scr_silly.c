@@ -5,8 +5,10 @@
  *            the mouth, sleepy eyes, rain, frost shivers, sweat, wind streaks. It blinks at frames 20-21
  *            and 52, its eyes follow the fly (the last frame sent), and from frame 40 the tongue catches
  *            the fly if that frame was ACKed (a hop, "ACK! yum") or the fly gets away ("no ACK").
- *   matrix   digital rain: a falling stream of glyphs a column, their heads inverted, the speed
- *            scr_matrix_speed of the tips in the last 10 minutes; the tips and the speed in the footer.
+ *   matrix   digital rain, in gray: mirrored katakana-style glyphs (scr_kana.h) on a 21 x 7 grid, a stream or
+ *            two a column (scr_matrix_stream), each its own rate and length, its head full on and its trail
+ *            fading behind it, the glyphs changing now and then; faster by scr_matrix_speed of the tips in
+ *            the last 10 minutes, which a dim footer gives with the speed.
  *   pinball  the frame sent, a small envelope, bounces round the table at a speed and heading the
  *            sequence picks, through the ACK bumper at frame 32; passing the ACK bumper lights it for 3 frames (100 points), the side bumpers score 10; the
  *            flippers kick when it is low on their side. */
@@ -14,6 +16,7 @@
 #include <string.h>
 #include "font5x7.h"
 #include "oled_draw.h"
+#include "scr_kana.h"
 
 #define FORTUNE_ROWS 3U
 #define FORTUNE_CPF 3U                 /* characters typed a frame */
@@ -24,8 +27,11 @@
 #define FROG_MOUTH_Y 39
 #define FROG_TEXT_X 68
 #define FROG_CATCH 40U                 /* the frame the tongue goes out */
-#define MATRIX_COLS 21
-#define MATRIX_GLYPHS "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+#define MATRIX_PITCH_X 6               /* a glyph and its gap, across and down */
+#define MATRIX_PITCH_Y 8
+#define MATRIX_CHANGE_MIN 6U           /* a trail's glyph changes every 6 to 45 frames, its own */
+#define MATRIX_CHANGE_SPAN 40U
+#define MATRIX_FOOTER 3U               /* the footer's level: dim, under the rain */
 #define BALL_X_LO 5
 #define BALL_X_HI 122
 #define BALL_Y_LO 13
@@ -171,23 +177,34 @@ void scr_frog(oled_fb *fb, unsigned frame, const scr_view_t *v)
 
 /* ---- the digital rain ---- */
 
-void scr_matrix(oled_fb *fb, unsigned frame, const scr_view_t *v)
+unsigned scr_matrix_glyph(unsigned c, unsigned r, unsigned frame, int head)
+{
+  unsigned cell = c * SCR_MATRIX_ROWS + r, every = MATRIX_CHANGE_MIN + scr_hash(cell, 21) % MATRIX_CHANGE_SPAN;
+  unsigned epoch = head ? frame : (frame + scr_hash(cell, 22) % every) / every;
+  return scr_hash(cell, epoch * 2U + (head ? 1U : 0U)) % scr_kana_count;
+}
+
+void scr_matrix(uint8_t *out, unsigned frame, const scr_view_t *v, int rotate180)
 {
   unsigned tips = scr_rain_tips(v->rain.per_min, RAIN_HIST_MINUTES, SCR_RAIN_RECENT_MIN), speed = scr_matrix_speed(tips);
-  const unsigned nglyphs = sizeof MATRIX_GLYPHS - 1U;
-  for (unsigned c = 0; c < MATRIX_COLS; c++)
+  for (unsigned c = 0; c < SCR_MATRIX_COLS; c++)   /* bound: 21 columns */
   {
-    unsigned len = 3U + scr_hash(c, 1) % 5U, period = OLED_H + len * 8U + 8U;
-    unsigned fall = (1U + scr_hash(c, 2) % 2U) * speed;
-    int head = (int)((scr_hash(c, 3) % period + frame * fall) % period) - 8;
-    int x = (int)c * OLED_CHAR_ADVANCE + 1;
-    for (unsigned k = 0; k < len; k++)
+    int head[SCR_MATRIX_STREAMS];
+    unsigned len[SCR_MATRIX_STREAMS];
+    for (unsigned s = 0; s < SCR_MATRIX_STREAMS; s++)   /* bound: 2 streams */
+      if (!scr_matrix_stream(c, s, frame, speed, &head[s], &len[s])) len[s] = 0;
+    for (unsigned r = 0; r < SCR_MATRIX_ROWS; r++)   /* bound: 7 rows */
     {
-      int y = head - 8 * (int)k;
-      if (y < -7 || y >= OLED_H - 8) continue;
-      char g[2] = { MATRIX_GLYPHS[scr_hash(c * 97U + (unsigned)(y + 8) / 8U, frame / 3U + k) % nglyphs], '\0' };
-      (void)oled_text(fb, x, y, g, 1);
-      if (k == 0U) oled_invert(fb, x - 1, y - 1, 7, 9);   /* the head */
+      unsigned level = 0;
+      int is_head = 0;
+      for (unsigned s = 0; s < SCR_MATRIX_STREAMS; s++)   /* bound: 2 streams */
+      {
+        unsigned l = scr_matrix_fade(head[s] - (int)r, len[s]);
+        if (l > level) { level = l; is_head = l == SCR_MATRIX_HEAD; }
+      }
+      if (level == 0U) continue;
+      ssd1325_blit4(out, (int)c * MATRIX_PITCH_X + 1, (int)r * MATRIX_PITCH_Y,
+                    scr_kana_rows[scr_matrix_glyph(c, r, frame, is_head)], SCR_KANA_W, SCR_KANA_H, level, rotate180);
     }
   }
   char line[SCR_LINE] = "TIPS ";
@@ -196,9 +213,7 @@ void scr_matrix(oled_fb *fb, unsigned frame, const scr_view_t *v)
   scr_pad_to(line, 13);
   scr_put(line, "SPEED x");
   scr_put_uint(line, speed);
-  oled_fill(fb, 0, OLED_H - 8, OLED_W, 8, 0);
-  scr_row(fb, OLED_H - 8, line);
-  oled_invert(fb, 0, OLED_H - 8, OLED_W, 8);
+  ssd1325_text4(out, 0, OLED_H - FONT5X7_H, line, MATRIX_FOOTER, rotate180);
 }
 
 /* ---- the packet pinball ---- */

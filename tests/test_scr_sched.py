@@ -98,6 +98,16 @@ int t_draws, t_id = -1, t_frame = -1;
 scr_view_t t_view;   /* what the last draw saw */
 void scr_draw(oled_fb *fb, enum scr_id id, unsigned frame, const scr_view_t *v)
 { (void)fb; if (t_busy) t_torn++; t_draws++; t_id = (int)id; t_frame = (int)frame; t_view = *v; }
+/* The gray screens (MATRIX) draw straight into the buffer, turned: recorded as a draw, no expansion. */
+int t_grays, t_gray_rotated;
+int scr_draw_gray(uint8_t *out, enum scr_id id, unsigned frame, const scr_view_t *v, int rotate180)
+{
+  if (id != SCR_MATRIX) return 0;
+  if (t_busy) t_torn++;
+  if (out == txbuf) t_grays++;
+  t_gray_rotated = rotate180; t_draws++; t_id = (int)id; t_frame = (int)frame; t_view = *v;
+  return 1;
+}
 int t_fills;
 void oled_view_fill(scr_view_t *v, enum scr_id id, unsigned frame) { (void)v; (void)id; (void)frame; t_fills++; }
 int t_samples;
@@ -819,6 +829,22 @@ class OledApp(unittest.TestCase):
         self.set('t_busy', 0)
         self.tick()
         self.assertEqual((SCREENS[self.get('t_id')], self.get('t_draws') > draws), ('AIR', True))
+
+    def test_a_gray_screen_draws_into_the_send_buffer(self):
+        # MATRIX draws its gray levels straight into the send buffer, turned as the 1-bit screens are, and
+        # that buffer goes out; nothing is expanded into it. The next screen is 1-bit again.
+        self.to_home()
+        for _ in B1_ORDER[1:B1_ORDER.index('MATRIX') + 1]:
+            self.press(1)
+            self.tick()
+        expands, sends = self.get('t_expands'), self.get('t_sends')
+        self.assertEqual(SCREENS[self.get('t_id')], 'MATRIX')
+        self.tick()
+        self.assertEqual((self.get('t_grays'), self.get('t_gray_rotated')), (2, 1))
+        self.assertEqual((self.get('t_expands'), self.get('t_sends')), (expands, sends + 1))
+        self.press(1)
+        self.tick()
+        self.assertEqual((SCREENS[self.get('t_id')], self.get('t_expands'), self.get('t_grays')), ('PINBALL', expands + 1, 2))
 
     def test_a_faulted_display_is_not_drawn(self):
         # After a fault (oled_dma_send refuses with -2) the step draws nothing: no CPU spent on frames.

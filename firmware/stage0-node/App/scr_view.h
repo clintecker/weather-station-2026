@@ -74,6 +74,10 @@ typedef struct {
 /* Clears fb and draws frame `frame` of screen id (frame counts from 0). HOME and the banner animate for
    ever (their icon); any other screen draws a frame past its last as the last. */
 void scr_draw(oled_fb *fb, enum scr_id id, unsigned frame, const scr_view_t *v);
+/* The screens drawn in gray (MATRIX): clears out, a frame in the SSD1325's send order (oled_draw.h), and
+   draws the frame there turned as ssd1325_frame turns it; 1. Any other screen: 0, out untouched, and
+   scr_draw draws it (scr_draw leaves a gray screen's fb clear). */
+int scr_draw_gray(uint8_t *out, enum scr_id id, unsigned frame, const scr_view_t *v, int rotate180);
 /* Frames in one play as an interlude or a packet screen: BURST 16, BANNER 24, HACK 24, HOME 1, AIR,
    PRESSURE, POWER and RADIO 8 (their bars and lines grow in), the others 64. */
 unsigned scr_frames(enum scr_id id);
@@ -93,7 +97,10 @@ void scr_hack(oled_fb *fb, unsigned frame);
 void scr_rain(oled_fb *fb, const scr_view_t *v);                                    /* scr_rain.c */
 void scr_fortune(oled_fb *fb, unsigned frame, const scr_view_t *v);                 /* scr_silly.c */
 void scr_frog(oled_fb *fb, unsigned frame, const scr_view_t *v);
-void scr_matrix(oled_fb *fb, unsigned frame, const scr_view_t *v);
+/* The digital rain, in gray: out cleared, in send order. scr_matrix_glyph: the glyph (scr_kana.h) at (c, r),
+   each changing now and then on its own, the head's every frame. */
+void scr_matrix(uint8_t *out, unsigned frame, const scr_view_t *v, int rotate180);
+unsigned scr_matrix_glyph(unsigned c, unsigned r, unsigned frame, int head);
 void scr_pinball(oled_fb *fb, unsigned frame, const scr_view_t *v);
 
 /* ---- scr_calc.c: the arithmetic and the choices, every one pure. ---- */
@@ -166,6 +173,22 @@ enum scr_mood scr_frog_mood(const scr_view_t *v);
 extern const char *const scr_mood_names[7];
 /* The digital rain's speed: 1 when dry, 2 with 1 to 4 tips in the last 10 minutes, 3 with more. */
 unsigned scr_matrix_speed(unsigned tips10);
+/* The digital rain's streams, on a grid of SCR_MATRIX_COLS x SCR_MATRIX_ROWS glyphs. Each column has a
+   stream, half of them a second; each stream falls at its own rate (half a glyph to 1.25 a frame when dry,
+   (speed + 1) / 2 times that), then starts again after its own delay with a new length. scr_matrix_stream:
+   stream s of column c at the frame, its head's row (negative: still to come; at least SCR_MATRIX_ROWS:
+   gone) and its length in glyphs (SCR_MATRIX_LEN_MIN to MAX); 0 if the column has no stream s. scr_matrix_fade: the level of the
+   glyph d behind the head of a len-glyph trail, 15 at the head, 10 behind it down to 1 at its tail, 0 off
+   the trail. scr_matrix_level: the level of the glyph at (c, r), the brighter of its column's streams. */
+#define SCR_MATRIX_COLS 21U
+#define SCR_MATRIX_ROWS 7U
+#define SCR_MATRIX_STREAMS 2U
+#define SCR_MATRIX_LEN_MIN 4U
+#define SCR_MATRIX_LEN_MAX 9U
+#define SCR_MATRIX_HEAD 15U
+int scr_matrix_stream(unsigned c, unsigned s, unsigned frame, unsigned speed, int *head, unsigned *len);
+unsigned scr_matrix_fade(int d, unsigned len);
+unsigned scr_matrix_level(unsigned c, unsigned r, unsigned frame, unsigned speed);
 /* A small hash for the screens' noise (the digital rain's glyphs, the pinball's start). */
 uint32_t scr_hash(uint32_t a, uint32_t b);
 

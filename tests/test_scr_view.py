@@ -1,7 +1,9 @@
 """The TX's bench screens (firmware/stage0-node/App/scr_view.c, scr_interludes.c, scr_rain.c, scr_art.c):
 layout C, its packet banner and the seven interludes, drawn from a view and a frame number. Pure C, built for the host
-by tools/scr_render.py (which also renders them to PNG for a look against the mockups)."""
+by tools/scr_render.py (which also renders them to PNG for a look against the mockups). MATRIX is drawn in gray
+(scr_draw_gray), its glyphs from firmware/stage0-node/tools/make_scr_kana.py."""
 import ctypes
+import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -13,6 +15,10 @@ except ImportError:
 
 render = load_tool('scr_render')
 W, H = render.W, render.H
+_spec = importlib.util.spec_from_file_location('make_scr_kana', ROOT/'firmware/stage0-node/tools/make_scr_kana.py')
+kana = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(kana)
+COLS, ROWS, LEN_MIN, LEN_MAX = 21, 7, 4, 9   # App/scr_view.h SCR_MATRIX_*
 
 
 @needs_cc
@@ -358,6 +364,111 @@ class ScrView(unittest.TestCase):
         self.assertEqual(self.region(got, 0, 56, W, 64), self.text(0, 56, '-60m    256/m     now'))
         heights, _ = self.bars({})
         self.assertEqual(heights, [0] * 60)
+
+    # ---- the digital rain ----
+
+    def stream(self, c, s, frame, speed):
+        head, length = ctypes.c_int(), ctypes.c_uint()
+        self.lib.scr_matrix_stream.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,
+                                               ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint)]
+        if not self.lib.scr_matrix_stream(c, s, frame, speed, ctypes.byref(head), ctypes.byref(length)):
+            return None
+        return head.value, length.value
+
+    def level(self, c, r, frame, speed):
+        self.lib.scr_matrix_level.argtypes = [ctypes.c_uint] * 4
+        self.lib.scr_matrix_level.restype = ctypes.c_uint
+        return self.lib.scr_matrix_level(c, r, frame, speed)
+
+    def test_kana_file_is_current(self):
+        script = ROOT/'firmware/stage0-node/tools/make_scr_kana.py'
+        self.assertEqual(subprocess.run([sys.executable, script, '--check']).returncode, 0)
+
+    def test_kana_table(self):
+        # 45 katakana-style glyphs and the 10 digits, all different, each in the table mirrored left to right.
+        names = list(kana.GLYPHS)
+        n = ctypes.c_uint8.in_dll(self.lib, 'scr_kana_count').value
+        table = (ctypes.c_uint8 * 7 * n).in_dll(self.lib, 'scr_kana_rows')
+        self.assertEqual((n, sum(1 for k in names if not k.isdigit()), sum(1 for k in names if k.isdigit())), (55, 45, 10))
+        for i, name in enumerate(names):
+            reads = kana.rows(kana.GLYPHS[name], mirror=False)
+            self.assertEqual(list(table[i]), [int(f'{r:05b}'[::-1], 2) for r in reads], name)
+        self.assertEqual(len({tuple(table[i]) for i in range(n)}), n)
+        self.assertNotEqual(list(table[names.index('a')]), kana.rows(kana.GLYPHS['a'], mirror=False))
+
+    def test_matrix_fade(self):
+        # The head at 15, the glyph behind it 10, falling to 1 at the tail, never rising; dark off the trail.
+        self.lib.scr_matrix_fade.argtypes = [ctypes.c_int, ctypes.c_uint]
+        self.lib.scr_matrix_fade.restype = ctypes.c_uint
+        for length in range(LEN_MIN, LEN_MAX + 1):
+            trail = [self.lib.scr_matrix_fade(d, length) for d in range(-1, length + 1)]
+            self.assertEqual((trail[0], trail[1], trail[2], trail[-2], trail[-1]), (0, 15, 10, 1, 0), length)
+            self.assertEqual(trail[2:-1], sorted(trail[2:-1], reverse=True), length)
+
+    def test_matrix_streams(self):
+        # Every column has a stream, about half a second; the same arguments give the same stream; lengths
+        # stay in range; a head moves down, never up, within a cycle, and further each frame with more rain.
+        seconds = [c for c in range(COLS) if self.stream(c, 1, 0, 1) is not None]
+        self.assertTrue(all(self.stream(c, 0, 0, 1) is not None for c in range(COLS)))
+        self.assertTrue(5 <= len(seconds) <= 16, seconds)
+        self.assertIsNone(self.stream(0, 2, 0, 1))
+        self.assertEqual(self.stream(7, 0, 33, 2), self.stream(7, 0, 33, 2))
+        for speed in (1, 2, 3):
+            for c in range(COLS):
+                prev = None
+                for f in range(64):
+                    st = self.stream(c, 0, f, speed)
+                    self.assertTrue(LEN_MIN <= st[1] <= LEN_MAX, (c, f, st))
+                    self.assertTrue(-10 <= st[0] < ROWS + LEN_MAX + 10, (c, f, st))   # its delay, the screen, its trail
+                    if prev is not None and st[0] >= prev[0]:
+                        self.assertLessEqual(st[0] - prev[0], 3, (c, f))   # at most 2.5 glyphs a frame
+                    prev = st
+        dry = sum(abs(self.stream(c, 0, 9, 1)[0] - self.stream(c, 0, 8, 1)[0]) for c in range(COLS))
+        wet = sum(abs(self.stream(c, 0, 9, 3)[0] - self.stream(c, 0, 8, 3)[0]) for c in range(COLS))
+        self.assertGreater(wet, dry)
+
+    def test_matrix_restarts_dark(self):
+        # A cycle ends with its trail off the screen: no glyph jumps from a trail to a new head's delay.
+        for c in range(COLS):
+            for f in range(1, 400):
+                a, b = self.stream(c, 0, f - 1, 1), self.stream(c, 0, f, 1)
+                if b[0] < a[0]:   # a new cycle
+                    self.assertGreaterEqual(a[0] - (a[1] - 1), ROWS - 2, (c, f, a))   # within a frame's fall
+
+    def test_matrix_gray_frame(self):
+        # The glyphs sit on the 6 x 8 grid at their cells' levels, the head's glyph at 15, the footer dim;
+        # the frame turned is the same picture turned; no other screen draws in gray.
+        v = render.demo_view()
+        for frame in (0, 5, 40):
+            got = render.gray(self.lib, 'MATRIX', frame, v)
+            self.assertEqual(got, render.gray(self.lib, 'MATRIX', frame, v, 1))   # sent turned, turned back
+            self.assertEqual({p: lv for p, lv in got.items() if p[1] >= 56}, dict.fromkeys(self.text(0, 57, 'TIPS 1/10m   SPEED x2'), 3))
+            heads = 0
+            for c in range(COLS):
+                for r in range(ROWS):
+                    cell = {lv for (x, y), lv in got.items() if 6 * c + 1 <= x < 6 * c + 6 and 8 * r <= y < 8 * r + 7}
+                    want = self.level(c, r, frame, 2)
+                    self.assertEqual(cell, {want} if want else set(), (frame, c, r))
+                    heads += want == 15
+            self.assertGreater(heads, 2)
+            self.assertFalse({(x, y) for x, y in got if y < 56 and (x % 6 == 0 or y % 8 == 7)})   # the gaps
+        out = ctypes.create_string_buffer(b'\x55' * render.FRAME_BYTES, render.FRAME_BYTES)
+        self.assertEqual(self.lib.scr_draw_gray(out, render.SCREENS.index('HOME'), 0, ctypes.byref(v), 1), 0)
+        self.assertEqual(out.raw, b'\x55' * render.FRAME_BYTES)
+        self.assertEqual(self.draw('MATRIX', 3, v), set(render.gray(self.lib, 'MATRIX', 3, v)))
+        self.assertEqual(render.gray(self.lib, 'MATRIX', 99, v), render.gray(self.lib, 'MATRIX', 63, v))
+        self.assertEqual(self.missing.value, 0)
+
+    def test_matrix_glyphs_change_now_and_then(self):
+        # A trail's glyph holds for frames at a time; the head's changes every frame, mostly.
+        self.lib.scr_matrix_glyph.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_int]
+        g = self.lib.scr_matrix_glyph
+        trail = sum(g(c, r, f, 0) != g(c, r, f + 1, 0) for c in range(COLS) for r in range(ROWS) for f in range(64))
+        head = sum(g(c, r, f, 1) != g(c, r, f + 1, 1) for c in range(COLS) for r in range(ROWS) for f in range(64))
+        cells = COLS * ROWS * 64
+        self.assertTrue(cells // 50 < trail < cells // 5, trail)
+        self.assertGreater(head, cells * 9 // 10)
+        self.assertTrue(all(g(c, r, f, h) < 55 for c in range(COLS) for r in range(ROWS) for f in (0, 63) for h in (0, 1)))
 
 if __name__ == '__main__':
     unittest.main()

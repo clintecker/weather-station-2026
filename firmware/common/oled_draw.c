@@ -1,5 +1,7 @@
 /* Lines, boxes, circles and the whole-frame SSD1325 order: see oled_draw.h. */
 #include "oled_draw.h"
+#include <string.h>
+#include "font5x7.h"
 
 #define LIT_LEFT 0xF0U    /* full brightness in the high nibble: the left pixel of the pair */
 #define LIT_RIGHT 0x0FU
@@ -99,4 +101,33 @@ void ssd1325_frame(const oled_fb *fb, int rotate180, uint8_t out[OLED_FRAME_BYTE
       if (rotate180) { xl = OLED_W - 1 - xl; xr = OLED_W - 1 - xr; sy = OLED_H - 1 - y; }
       out[cp * OLED_H + y] = (uint8_t)((oled_get(fb, xl, sy) ? LIT_LEFT : 0U) | (oled_get(fb, xr, sy) ? LIT_RIGHT : 0U));
     }
+}
+
+void ssd1325_put4(uint8_t frame[OLED_FRAME_BYTES], int x, int y, unsigned level, int rotate180)
+{
+  if (x < 0 || x >= OLED_W || y < 0 || y >= OLED_H) return;
+  if (rotate180) { x = OLED_W - 1 - x; y = OLED_H - 1 - y; }
+  uint8_t v = (uint8_t)(level > 15U ? 15U : level), *b = &frame[(x / 2) * OLED_H + y];
+  *b = (x & 1) ? (uint8_t)((*b & 0xF0U) | v) : (uint8_t)((*b & 0x0FU) | (uint8_t)(v << 4));
+}
+
+void ssd1325_blit4(uint8_t frame[OLED_FRAME_BYTES], int x, int y, const uint8_t *rows, int w, int h, unsigned level,
+                   int rotate180)
+{
+  if (w > 8) w = 8;
+  /* bound: h rows of at most 8 columns */
+  for (int r = 0; r < h; r++)
+    for (int c = 0; c < w; c++)
+      if ((rows[r] >> (w - 1 - c)) & 1U) ssd1325_put4(frame, x + c, y + r, level, rotate180);
+}
+
+void ssd1325_text4(uint8_t frame[OLED_FRAME_BYTES], int x, int y, const char *s, unsigned level, int rotate180)
+{
+  /* bound: the characters of s, one a pass */
+  for (; *s; s++, x += OLED_CHAR_ADVANCE)
+  {
+    const char *p = strchr(font5x7_chars, *s);
+    if (p == NULL) p = strchr(font5x7_chars, '?');
+    ssd1325_blit4(frame, x, y, font5x7_rows[p - font5x7_chars], FONT5X7_W, FONT5X7_H, level, rotate180);
+  }
 }

@@ -145,7 +145,8 @@ Drawn only from what the TX knows. Mockups (true scale, real font) are in
    a fortune chosen by the weather and the link (15 lines, the first condition that holds: no ACK, low cell,
    rain, frost, heat, wind, damp, dry, falling, rising, calm; the frame number picks among a condition's lines);
    a frog whose mood follows the icon, which blinks, watches a fly and catches it on an ACK; falling glyphs that
-   speed up with the rain tips of the last 10 minutes; a pinball that lights the ACK bumper when the frame was
+   speed up with the rain tips of the last 10 minutes (mirrored katakana-style glyphs in 16 grays, a full-bright
+   head and a fading trail a stream, drawn straight into the send buffer); a pinball that lights the ACK bumper when the frame was
    ACKed.
 
 Timing: one interlude from the rotation (FORTUNE, SCOPE, FROG, VANE, MATRIX, RAIN, PINBALL, SYSTEM, HACK) about

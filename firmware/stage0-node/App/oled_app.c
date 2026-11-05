@@ -139,9 +139,13 @@ static void step(void)
   view.since_exchange_s = exchanged ? clock_s() - exchange_s : SCR_NONE_S;
   uint32_t air_pct = (air_ms * 100U + AIRTIME_OF_MS - 1U) / AIRTIME_OF_MS;   /* rounded up: any airtime shows */
   view.airtime_pct = (uint8_t)(air_pct > 100U ? 100U : air_pct);
-  scr_draw(&fb, id, frame, &view);
-  ssd1325_frame(&fb, 1, oled_dma_buffer());
-  (void)oled_dma_send(oled_dma_buffer());   /* not busy (above), so only a fault refuses it */
+  uint8_t *out = oled_dma_buffer();
+  if (!scr_draw_gray(out, id, frame, &view, 1))   /* a gray screen draws straight into the send buffer */
+  {
+    scr_draw(&fb, id, frame, &view);
+    ssd1325_frame(&fb, 1, out);
+  }
+  (void)oled_dma_send(out);   /* not busy (above), so only a fault refuses it */
 }
 BUSYMON_TASK(step)
 
