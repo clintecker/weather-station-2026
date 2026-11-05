@@ -57,7 +57,7 @@ class OledFb(unittest.TestCase):
         # The node's screens draw these: none may fall back to '?'.
         q = self.fb()
         self.lib.oled_text(q, 0, 0, b'?', 1)
-        for ch in 'z#><:*|dbgoinptelcurkw()':
+        for ch in "z#><:*|dbgoinptelcurkw()fjqvxy,!'":
             fb = self.fb()
             self.lib.oled_text(fb, 0, 0, ch.encode(), 1)
             self.assertNotEqual(fb.raw, q.raw, ch)
@@ -65,7 +65,7 @@ class OledFb(unittest.TestCase):
 
     def test_scale_and_unknown_characters(self):
         fb, ref = self.fb(), self.fb()
-        self.assertEqual(self.lib.oled_text(fb, 0, 0, b'x~', 2), 24)     # neither is in the font
+        self.assertEqual(self.lib.oled_text(fb, 0, 0, b'`~', 2), 24)     # neither is in the font
         self.lib.oled_text(ref, 0, 0, b'??', 2)
         self.assertEqual(fb.raw, ref.raw)
         self.assertEqual(len(self.lit(ref)), 2*4*len(self.lit_of(b'?')))  # each font pixel is 2 x 2
