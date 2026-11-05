@@ -2,8 +2,8 @@
 latest observation and checks every station field (present, valid, in range) and its age.
 
 The token comes only from the environment (WS0_API_TOKEN); this tool opens no file and no serial
-port. One line a field (ok / FAIL / pending), then a summary. Exit 0: no FAIL. 1: a FAIL, a stale
-or missing observation, an auth or connection error. 2: usage. Standard library only.
+port. One line a field (ok / FAIL / pending), then a summary. Exit 0: no FAIL. 1: a FAIL, a stale,
+untimely or missing observation, an auth or connection error. 2: usage. Standard library only.
 """
 import argparse
 import http.client
@@ -92,9 +92,11 @@ def check(reply, power_pending, max_age, now):
     if not isinstance(record, dict):
         raise Failure('reply has no observation')
     lines, good = [], True
-    stamp = reply.get('effective_sampled_at') or record.get('sampled_at')
-    if stamp is None:
-        lines.append('FAIL    age: observation has no timestamp')
+    # The age is the gateway's effective time only: None means it holds the record untimely (an unknown or
+    # rejected clock), and the node's own sampled_at must not stand in for it.
+    stamp = reply.get('effective_sampled_at')
+    if not isinstance(stamp, (int, float)) or isinstance(stamp, bool):
+        lines.append('FAIL    age: untimely (no effective time)')
         good = False
     else:
         age = now - stamp

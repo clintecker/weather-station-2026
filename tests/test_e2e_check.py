@@ -148,6 +148,17 @@ class E2ECheckTests(unittest.TestCase):
         code, out = run(stub.url, '--max-age', '900')
         self.assertEqual(code, 0, out)
 
+    def test_untimely_observation_fails(self):
+        # The gateway holds the record untimely (no effective time: an unknown or rejected clock). Its own
+        # sampled_at is fresh, but the age must not come from it.
+        reply = observation(age=10)
+        reply.update(effective_sampled_at=None, available=False, reason='unknown_clock', age_seconds=None)
+        stub = self.serve(200, reply)
+        code, out = run(stub.url)
+        self.assertEqual(code, 1, out)
+        self.assertIn('FAIL    age: untimely (no effective time)', out)
+        self.assertNotIn('Traceback', out)
+
     def test_no_observation_and_bad_token(self):
         for status, body in ((404, {'error': 'not_found'}),
                              (200, {'available': False, 'reason': 'no_observation'})):
