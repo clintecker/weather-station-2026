@@ -18,9 +18,9 @@ import unittest
 from pathlib import Path
 
 try:
-    from toolchain import ROOT, fresh_copy, host_library, needs_cc          # python -m unittest discover -s tests
+    from toolchain import CC_STRICT, ROOT, fresh_copy, host_library, needs_cc          # python -m unittest discover -s tests
 except ImportError:
-    from tests.toolchain import ROOT, fresh_copy, host_library, needs_cc    # python -m unittest tests.<module>
+    from tests.toolchain import CC_STRICT, ROOT, fresh_copy, host_library, needs_cc    # python -m unittest tests.<module>
 
 HAL_STUB = r'''
 #ifndef STUB_HAL_H
@@ -292,18 +292,23 @@ def setup_bytes():
     return [int(v, 16) for line in lines for v in line.replace(',', ' ').split() if v.startswith('0x')]
 
 
+def includes(owner):
+    """The include flags of an oled_dma.c host build: the stand-ins (written into a directory the owner, a
+    TestCase class, removes), then the node's App and the board's Core/Inc (its sys_conf.h)."""
+    import tempfile
+    stub = tempfile.TemporaryDirectory()
+    owner.addClassCleanup(stub.cleanup)
+    for name, text in (('stm32wlxx_hal.h', HAL_STUB), ('stm32wlxx_ll_dma.h', LL_DMA_STUB), ('stm32wlxx_ll_spi.h', LL_SPI_STUB),
+                       ('stm32_timer.h', TIMER_STUB), ('sys_app.h', SYS_APP_STUB), ('stm32wlxx.h', DEVICE_STUB)):
+        (Path(stub.name)/name).write_text(text)
+    return ['-I', stub.name, '-I', APP, '-I', ROOT/'firmware/common', '-I', ROOT/'firmware/board/nucleo-wl55jc/Core/Inc']
+
+
 @needs_cc
 class OledDma(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import tempfile
-        cls.stub = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(cls.stub.cleanup)
-        for name, text in (('stm32wlxx_hal.h', HAL_STUB), ('stm32wlxx_ll_dma.h', LL_DMA_STUB), ('stm32wlxx_ll_spi.h', LL_SPI_STUB),
-                           ('stm32_timer.h', TIMER_STUB), ('sys_app.h', SYS_APP_STUB), ('stm32wlxx.h', DEVICE_STUB)):
-            (Path(cls.stub.name)/name).write_text(text)
-        cls.built = host_library(cls, 'oleddma', '-DOLED_DMA_RAM2=', '-I', cls.stub.name, '-I', APP, '-I', ROOT/'firmware/common',
-                                 SOURCE, files={'shim.c': SHIM})
+        cls.built = host_library(cls, 'oleddma', '-DOLED_DMA_RAM2=', *includes(cls), SOURCE, files={'shim.c': SHIM})
 
     def setUp(self):
         self.lib = fresh_copy(type(self), self.built._name)
@@ -476,6 +481,20 @@ class OledDma(unittest.TestCase):
         self.assertEqual(self.lib.oled_dma_send(ctypes.addressof(pixels)), 0)
         self.finish()
         self.assertEqual(self.last(), bytes(pixels))
+
+
+@needs_cc
+class StopTwo(unittest.TestCase):
+    """Stop 2 stops SPI1 and DMA1: the driver does not compile with LOW_POWER_DISABLE 0."""
+    def test_low_power_disable_0_does_not_compile(self):
+        flags = [str(f) for f in includes(type(self))]
+        for value, ok in ((1, True), (0, False)):
+            with self.subTest(LOW_POWER_DISABLE=value):
+                r = subprocess.run([*CC_STRICT, '-fsyntax-only', '-DOLED_DMA_RAM2=', f'-DLOW_POWER_DISABLE={value}', *flags, str(SOURCE)],
+                                   capture_output=True, text=True)
+                self.assertEqual(r.returncode == 0, ok, r.stderr[-800:])
+                if not ok:
+                    self.assertIn('Stop 2 would stall SPI1', r.stderr)
 
 
 class FieldBuild(unittest.TestCase):

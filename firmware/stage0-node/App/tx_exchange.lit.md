@@ -238,7 +238,7 @@ identify the frame just sent. A reply must echo them.
 ```c {#queue}
 static jref_t queue[MAX_QUEUE];
 static uint8_t replied[MAX_QUEUE];   /* the gateway answered queue[i] with an ACK or a NACK */
-static unsigned qn, qi;
+static unsigned qn, qi, live_n;   /* live_n: 1 if queue[0] is the minute's live reading */
 static uint32_t exchange_start_s, exchange_limit_s;   /* progress evidence for the watchdog */
 static uint64_t sent_counter;
 static uint32_t sent_epoch, sent_seq;
@@ -468,7 +468,7 @@ void exchange_start(const jref_t *live, unsigned backlog)
 {
   if (!WS_CHECK(!exchange_busy())) return;   /* app_tx.c holds the reading while an exchange runs */
   if (!WS_CHECK(backlog <= MAX_QUEUE - 1U)) backlog = MAX_QUEUE - 1U;   /* the room in the queue */
-  qn = 0;
+  qn = 0; live_n = live != NULL;
   if (live) queue[qn++] = *live;
   qn += store_journal_oldest(queue + qn, backlog + (live ? 0U : 1U), live);
   qi = 0;
@@ -543,15 +543,15 @@ The bench display hooks (`App/oled_hooks.h`) tell the bench build's OLED what th
 `oled_note_sent` when a frame goes on air (here and in `send_diag`), `oled_note_ack` for the ACK to the
 frame just sent (`on_ack`) and `oled_note_no_ack` when its window ends empty (`no_reply`). They run
 here, in the exchange's task, and only note the event and copy the frame; the display draws from its
-own task. The frame that plays the packet burst is the exchange's first, `qi == 0`: the minute's live
-reading (or, if its journal append failed, the oldest pending one in its place). Every later frame
-(the backlog, the one more after a miss, the health report) is passed as not live, and the banner
-only counts it. A first frame that fails locally gets no burst that minute. In the field build the
-hooks are empty inline functions, and the exchange compiles to the same image as without them. The
-WS_CHECK sites number their lines (`ws_check.h`), so the hooks were added without moving any line
-that holds one, and they take only values the exchange already holds (a call such as
-`store_journal_pending()` as an argument would still run in the field build): the field image is
-byte for byte the one before.
+own task. The frame that plays the packet burst is the minute's live reading, the exchange's first
+(`qi < live_n`: `live_n` is 1 when `exchange_start` queued a live reading, 0 when its journal append
+failed and the queue holds backlog only). Every other frame (the backlog, the one more after a miss,
+the health report) is passed as not live, and the banner only counts it, so a minute without a live
+reading plays no burst. A first frame that fails locally gets no burst that minute. In the field build
+the hooks are empty inline functions, and they take only values the exchange already holds (a call
+such as `store_journal_pending()` as an argument would still run in the field build), so the hooks
+add no code there. The WS_CHECK sites number their lines (`ws_check.h`): a line added above one
+changes only its line constant in the image.
 
 The counter reservation can write flash. It runs in the gap state, while the radio is in standby
 or asleep. The flowchart shows `send_current` and `send_obs` together.
@@ -607,7 +607,7 @@ static int send_obs(const uint8_t *plain, int plen)
   sent_seq = ws_obs_seq(plain);
   tx_counts.sent++; led_flash(LED_BLUE, LED_FLASH_MS);
   if (ws_radio_send(frame, (uint8_t)flen) == RADIO_STATUS_OK)
-  { tx_state = TX_SENDING; oled_note_sent(sent_seq, frame, (uint8_t)flen, qi == 0); return 1; }
+  { tx_state = TX_SENDING; oled_note_sent(sent_seq, frame, (uint8_t)flen, qi < live_n); return 1; }
   ws_failrun_note(&tx_counts.air, 0); APP_PRINTF("#error radio-busy\n");
   return 0;
 }
@@ -1135,6 +1135,7 @@ the event callbacks, then the functions. Each function comes after the functions
 #include "leds.h"
 #include "mod_power.h"
 #include "oled_hooks.h"
+#include "radio.h"
 #include "radio_cfg.h"
 #include "stm32_seq.h"
 #include "stm32_timer.h"

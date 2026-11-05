@@ -15,6 +15,7 @@
 #include "leds.h"
 #include "mod_power.h"
 #include "oled_hooks.h"
+#include "radio.h"
 #include "radio_cfg.h"
 #include "stm32_seq.h"
 #include "stm32_timer.h"
@@ -53,7 +54,7 @@ static RadioEvents_t events;
 
 static jref_t queue[MAX_QUEUE];
 static uint8_t replied[MAX_QUEUE];   /* the gateway answered queue[i] with an ACK or a NACK */
-static unsigned qn, qi;
+static unsigned qn, qi, live_n;   /* live_n: 1 if queue[0] is the minute's live reading */
 static uint32_t exchange_start_s, exchange_limit_s;   /* progress evidence for the watchdog */
 static uint64_t sent_counter;
 static uint32_t sent_epoch, sent_seq;
@@ -261,7 +262,7 @@ static int send_obs(const uint8_t *plain, int plen)
   sent_seq = ws_obs_seq(plain);
   tx_counts.sent++; led_flash(LED_BLUE, LED_FLASH_MS);
   if (ws_radio_send(frame, (uint8_t)flen) == RADIO_STATUS_OK)
-  { tx_state = TX_SENDING; oled_note_sent(sent_seq, frame, (uint8_t)flen, qi == 0); return 1; }
+  { tx_state = TX_SENDING; oled_note_sent(sent_seq, frame, (uint8_t)flen, qi < live_n); return 1; }
   ws_failrun_note(&tx_counts.air, 0); APP_PRINTF("#error radio-busy\n");
   return 0;
 }
@@ -285,7 +286,7 @@ void exchange_start(const jref_t *live, unsigned backlog)
 {
   if (!WS_CHECK(!exchange_busy())) return;   /* app_tx.c holds the reading while an exchange runs */
   if (!WS_CHECK(backlog <= MAX_QUEUE - 1U)) backlog = MAX_QUEUE - 1U;   /* the room in the queue */
-  qn = 0;
+  qn = 0; live_n = live != NULL;
   if (live) queue[qn++] = *live;
   qn += store_journal_oldest(queue + qn, backlog + (live ? 0U : 1U), live);
   qi = 0;

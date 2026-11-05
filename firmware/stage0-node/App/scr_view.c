@@ -9,7 +9,7 @@
  *     CELL 3.85V 78% CHG       MAX17048, CHG while charging (NO MAX17048)
  *     TX 1233 ACK 58s AGO      the last frame, its outcome, its age
  * The banner inverts the bottom two rows: "  SENDING TX 1234" (or "  TX 1234 +5 BACKLOG" when frames
- * followed the live one), then the outcome, "  ACK -41DB SNR 13" or "  NO ACK". */
+ * followed the live one), then the outcome, "  ACK -41DBM SNR 13" or "  NO ACK". */
 #include "scr_view.h"
 #include <string.h>
 #include "oled_draw.h"
@@ -181,7 +181,7 @@ static void banner(oled_fb *fb, const scr_view_t *v)
   {
     scr_put(outcome, "ACK ");
     scr_put_dec(outcome, v->ack_rssi, 0, 0, 0);
-    scr_put(outcome, "DB SNR ");
+    scr_put(outcome, "DBM SNR ");
     scr_put_dec(outcome, v->ack_snr, 0, 0, 0);
   }
   else if (v->last_acked == SCR_TX_NO_ACK) scr_put(outcome, "NO ACK");

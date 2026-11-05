@@ -100,7 +100,7 @@ class Node:
         self.lib = fresh_copy(owner, library)
         self.lib.h_output.restype = ctypes.c_char_p
         for name in ('h_now', 'h_send_at', 'h_last_rx_timeout', 'h_flash_ops_during_radio', 'h_flash_erases',
-                     'h_tx_air_ms', 'h_timer_start_refused', 'h_oled_no_acks', 'h_oled_no_ack_seq'):
+                     'h_tx_air_ms', 'h_timer_start_refused', 'h_oled_no_acks', 'h_oled_no_ack_seq', 'h_oled_sent', 'h_oled_lives'):
             getattr(self.lib, name).restype = ctypes.c_uint32
         self.air = self.lib.h_tx_air_ms()
         self.replies = Replies()
@@ -395,6 +395,22 @@ class TxStateMachine(unittest.TestCase):
         self.window(n)
         n.reply(kind=KIND_NACK)
         self.assertEqual((n.lib.h_oled_no_acks(), n.lib.h_oled_no_ack_seq()), (1, 0))
+
+    def test_a_minute_without_its_live_reading_plays_no_burst(self):
+        # The live frame is the only one the display gets as live (the packet burst); the backlog only counts
+        # on the banner. A minute whose journal append failed starts the exchange with the backlog alone
+        # (exchange_start with live NULL): its first frame, a backlog one, is not live either.
+        n = self.node()
+        n.advance_to(minute(2) - 1000)                 # two unanswered minutes: a backlog of two
+        sent, lives = n.lib.h_oled_sent(), n.lib.h_oled_lives()
+        self.assertEqual(lives, 2)                     # one live frame a minute
+        n.out()
+        n.lib.h_flash_prog_fails(1)
+        n.advance_to(minute(2) + n.air + 100)          # the minute's append fails; the backlog's first is on air
+        n.lib.h_flash_prog_fails(0)
+        out = n.out()
+        self.assertIn(' journal=ERROR ', out)
+        self.assertEqual((n.lib.h_oled_sent() - sent, n.lib.h_oled_lives() - lives), (1, 0), out)
 
     # ---- events that arrive together, or where no state expects them ----
 

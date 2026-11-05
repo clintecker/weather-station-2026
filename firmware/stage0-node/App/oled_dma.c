@@ -21,6 +21,11 @@
 #include "stm32wlxx_ll_dma.h"
 #include "stm32wlxx_ll_spi.h"
 #include "sys_app.h"
+#include "sys_conf.h"
+
+/* Sleep only, never Stop 2: Stop 2 stops SPI1's clock and DMA1, so a frame under way would stall with CS
+   low, and the drain timers would find a FIFO that never empties (a fault). */
+_Static_assert(LOW_POWER_DISABLE == 1, "the bench OLED needs LOW_POWER_DISABLE 1: Stop 2 would stall SPI1 and its DMA mid-frame");
 
 #define CS_PIN GPIO_PIN_4      /* PA4 */
 #define SCK_PIN GPIO_PIN_5     /* PA5, SPI1_SCK AF5 */

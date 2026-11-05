@@ -92,11 +92,17 @@ class ScrView(unittest.TestCase):
         v.last_seq = 1234
         top = ['AIR  23.1C  50.8%', 'BOX  22.9C  52.2%', 'P 983.0hPa   UV 0', 'WIND 1.3m/s NE G2.7',
                'RAIN 2 TIPS 0.56mm', 'BATT +37.6mA 3.85V']
-        self.assertEqual(self.draw('BANNER', 0, v), self.rows(top + ['  SENDING TX 1234', '  ACK -41DB SNR 13'], (6, 7)))
+        self.assertEqual(self.draw('BANNER', 0, v), self.rows(top + ['  SENDING TX 1234', '  ACK -41DBM SNR 13'], (6, 7)))
         v.last_acked = render.SCR_TX_WAIT
         self.assertEqual(self.draw('BANNER', 5, v), self.rows(top + ['  SENDING TX 1234', ''], (6, 7)))
         v.last_acked, v.extra_frames = render.SCR_TX_NO_ACK, 5
         self.assertEqual(self.draw('BANNER', 23, v), self.rows(top + ['  TX 1234 +5 BACKLOG', '  NO ACK'], (6, 7)))
+        # The widest outcome the radio gives (SX126x packet RSSI down to -127 dBm, SNR down to -32 dB) fills the
+        # 21 columns exactly: the unit is dBm, and nothing is cut.
+        v.last_acked, v.extra_frames, v.ack_rssi, v.ack_snr = render.SCR_TX_ACK, 0, -127, -32
+        line = '  ACK -127DBM SNR -32'
+        self.assertEqual(len(line), 21)
+        self.assertEqual(self.draw('BANNER', 0, v), self.rows(top + ['  SENDING TX 1234', line], (6, 7)))
 
     def extreme_views(self):
         """Every field at its ends, the parts absent and present, each outcome."""
