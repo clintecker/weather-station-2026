@@ -1,5 +1,8 @@
-/* The rain module (mod_rain.h). The interrupt only counts; the main loop reads the 32-bit count,
- * which the Cortex-M4 reads in one access.
+/* The rain module (mod_rain.h). The interrupt only counts, and notes when the counted tip came (that
+ * first, then the count); the main loop reads both 32-bit words, each in one access on the Cortex-M4.
+ * The tick keeps the per-minute history (mod_rain_history): the tips since the last tick go into the
+ * ring's current minute, after it rolls the ring on by the whole minutes gone (all of it cleared after an
+ * hour or more without a tick).
  * The link (build-progression record M7): the reed is open at rest, so a link probe that reads low
  * BOARD_LINK_LOWS times in a row with no tip since is an open link between the jack-end pull-up and
  * the MCU: the slot's quality is fault and #status says meter_link=rain-open, while the gauge is on.
@@ -12,18 +15,27 @@
 
 #define LOCKOUT_MS 100U
 #define PROBE_PERIOD_MS 1000U
+#define MINUTE_MS 60000U
+#define AGE_MAX_MS (RAIN_AGE_MAX_S * 1000UL)
 
-static volatile uint32_t tips, last_edge_ms;
+static volatile uint32_t tips, last_edge_ms, last_tip_ms;
 static volatile int have_tip;
 static int enabled;
 static uint16_t probe_seq;
 static uint32_t next_probe_ms, boot;
 static mean_win win;   /* the window header and the latch rule; it holds no means */
+static uint8_t per_min[RAIN_HIST_MINUTES];   /* a ring; per_min[now_at] is this minute */
+static unsigned now_at;
+static uint32_t minute_ms;   /* when this minute started */
+static uint32_t tips_seen;   /* the tips the ring has */
+static uint32_t aged_tips;   /* the count when a tick found its last tip RAIN_AGE_MAX_S old (0: none) */
 
 void mod_rain_init(uint32_t boot_id, int on, uint32_t now_ms)
 {
   boot = boot_id;
-  tips = 0; have_tip = 0; last_edge_ms = 0;
+  tips = 0; have_tip = 0; last_edge_ms = 0; last_tip_ms = 0;
+  memset(per_min, 0, sizeof per_min);
+  now_at = 0; minute_ms = now_ms; tips_seen = 0; aged_tips = 0;
   enabled = on;
   probe_seq = 0; next_probe_ms = now_ms;
   mean_reset(&win, now_ms);
@@ -39,15 +51,55 @@ void mod_rain_tip(uint32_t now_ms)
   int bounce = have_tip && now_ms - last_edge_ms < LOCKOUT_MS;
   have_tip = 1;
   last_edge_ms = now_ms;
-  if (!bounce) tips++;
+  if (!bounce) { last_tip_ms = now_ms; tips++; }
+}
+
+/* The ring on to now_ms's minute. A now_ms before this minute's start (an older reading of the clock)
+   moves nothing. */
+static void roll(uint32_t now_ms)
+{
+  uint32_t since = now_ms - minute_ms;
+  if ((int32_t)since < 0) return;
+  uint32_t gone = since / MINUTE_MS;
+  if (gone >= RAIN_HIST_MINUTES) memset(per_min, 0, sizeof per_min);
+  else
+    for (uint32_t i = 0; i < gone; i++)   /* bound: gone < RAIN_HIST_MINUTES */
+    {
+      now_at = (now_at + 1U) % RAIN_HIST_MINUTES;
+      per_min[now_at] = 0;
+    }
+  minute_ms += gone * MINUTE_MS;   /* gone x MINUTE_MS <= since: no overflow */
+}
+
+/* The tips since the last tick into this minute; and a last tip RAIN_AGE_MAX_S old stops ageing (read
+   after the count: a tip in between is a newer last_tip_ms, too young to be aged). */
+static void take_tips(uint32_t now_ms)
+{
+  uint32_t t = tips, add = t - tips_seen;
+  tips_seen = t;
+  uint32_t sum = per_min[now_at] + (add > UINT8_MAX ? UINT8_MAX : add);
+  per_min[now_at] = (uint8_t)(sum > UINT8_MAX ? UINT8_MAX : sum);
+  if (t != 0 && now_ms - last_tip_ms >= AGE_MAX_MS) aged_tips = t;
 }
 
 /* The setting is probed once a second, so the station debounces it like any presence (WSMP-P2). */
 void mod_rain_tick(uint32_t now_ms)
 {
+  roll(now_ms);
+  take_tips(now_ms);
   if ((int32_t)(now_ms - next_probe_ms) < 0) return;
   next_probe_ms = now_ms + PROBE_PERIOD_MS;
   probe_seq++;
+}
+
+/* The count first: a tip after it is a newer last_tip_ms, an age of about 0. */
+void mod_rain_history(uint32_t now_ms, rain_hist_t *out)
+{
+  uint32_t t = tips, age = (now_ms - last_tip_ms) / 1000U;
+  out->tips = t;
+  out->last_age_s = t == 0 ? RAIN_AGE_NONE : t == aged_tips || age > RAIN_AGE_MAX_S ? RAIN_AGE_MAX_S : age;
+  for (unsigned i = 0; i < RAIN_HIST_MINUTES; i++)   /* oldest first: the minute after this one's slot */
+    out->per_min[i] = per_min[(now_at + 1U + i) % RAIN_HIST_MINUTES];
 }
 
 int mod_rain_probe(uint16_t *seq)

@@ -45,7 +45,9 @@ uint32_t ws_lora_airtime_ms(uint32_t payload, uint32_t sf, uint32_t bw_hz, uint3
 int mod_th_live(enum th_unit u, int32_t *centi_c, int32_t *centi_rh) { *centi_c = 2314 + (int)u; *centi_rh = 5080; return 1; }
 int mod_reg_live(enum reg_unit u, int32_t *value) { *value = u == REG_PRESSURE ? 9830 : 7; return 1; }
 int mod_wind_live(wind_live_t *w) { memset(w, 0, sizeof *w); return 1; }
-uint32_t mod_rain_tips_since_boot(void) { return 0; }
+uint32_t clock_ms(void) { return 123456U; }
+uint32_t t_rain_at;   /* the now_ms the view asked the history for */
+void mod_rain_history(uint32_t now_ms, rain_hist_t *out) { memset(out, 0, sizeof *out); out->tips = 7; out->per_min[59] = 3; t_rain_at = now_ms; }
 void power_acq_live(power_live_t *p) { memset(p, 0, sizeof *p); }
 /* The port states, and the snapshot the real wsmp_host.c gives an Active or Suspect port after a latch. */
 int t_state[P_COUNT], t_snap[P_COUNT];
@@ -60,6 +62,8 @@ int t_press_ok(void) { return v.press_ok; }
 int t_uv_ok(void) { return v.uv_ok; }
 int t_air_c(void) { return v.air_c; }
 unsigned t_modules_active(void) { return v.modules_active; }
+unsigned t_rain_tips(void) { return v.rain.tips; }
+unsigned t_rain_now(void) { return v.rain.per_min[59]; }
 '''
 
 
@@ -98,6 +102,11 @@ class OledView(unittest.TestCase):
         self.port(P_ENCL_TH, WH_REFUSED, False)
         self.port(P_PRESSURE, WH_REFUSED, False)
         self.assertEqual(self.oks(), (1, 0, 0, 0))
+
+    def test_rain_history_at_the_clock(self):
+        self.lib.t_fill()
+        self.assertEqual((self.lib.t_rain_tips(), self.lib.t_rain_now()), (7, 3))
+        self.assertEqual(ctypes.c_uint32.in_dll(self.lib, 't_rain_at').value, 123456)
 
 
 if __name__ == '__main__':

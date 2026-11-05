@@ -74,7 +74,8 @@ endif
 # The display: the driver, its application (the step, the view, the scheduler), the screens, then the
 # shared frame buffer, drawing and font (firmware/common).
 ifeq ($(WS_BENCH_OLED),1)
-APP_SRC += App/oled_dma.c App/oled_app.c App/oled_view.c App/scr_sched.c App/scr_view.c App/scr_interludes.c App/scr_art.c \
+APP_SRC += App/oled_dma.c App/oled_app.c App/oled_view.c App/scr_sched.c App/scr_view.c App/scr_interludes.c App/scr_rain.c \
+           App/scr_art.c \
            $(ROOT)/firmware/common/oled_fb.c $(ROOT)/firmware/common/oled_draw.c $(ROOT)/firmware/common/font5x7.c
 endif
 

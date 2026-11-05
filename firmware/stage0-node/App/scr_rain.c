@@ -1,0 +1,114 @@
+/* The rain screen (scr_view.h), from the view's rain history (mod_rain_history):
+ *     RAIN          0.56 mm      since boot
+ *     2 tips    last 4m ago      since boot; the last tip's age (last -- if none)
+ *     RATE  1.7 mm/h (10m)       the last 10 minutes, this one so far among them
+ *     (a bar a minute for the last hour, 2 pixels wide, the newest at the right, between two sides and
+ *      over an axis; scaled to the largest minute, at least RAIN_MIN_FULL tips)
+ *     -60m              now
+ * A row longer than the 21 columns takes a shorter form: the age "last X" (no "ago"), then "X"; the rate one
+ * space after RATE, then without "(10m)". */
+#include "scr_view.h"
+#include <string.h>
+#include "oled_draw.h"
+#include "wsmp_registry.h"
+
+#define RATE_MINUTES 10U
+#define RAIN_MIN_FULL 4U               /* the scale's floor, in tips a minute */
+#define BARS_X 4                       /* the oldest minute's bar; the newest ends at x 123 */
+#define BAR_W 2
+#define SIDE_L 2
+#define SIDE_R 125
+#define PLOT_TOP 26
+#define AXIS_Y 52                      /* the bars stand on it: PLOT_TOP to AXIS_Y - 1 */
+#define BAR_PX ((unsigned)(AXIS_Y - PLOT_TOP))
+#define NM_PER_UM 1000U
+#define MIN_PER_H 60U
+
+uint32_t scr_rain_rate_umh(const uint8_t *per_min, unsigned n, unsigned minutes)
+{
+  if (minutes == 0U) return 0;
+  unsigned from = n > minutes ? n - minutes : 0U;
+  uint32_t sum = 0;
+  for (unsigned i = from; i < n; i++) sum += per_min[i];
+  return (uint32_t)((uint64_t)sum * WSMP_RAIN_NM_PER_TIP * MIN_PER_H / minutes / NM_PER_UM);
+}
+
+unsigned scr_rain_bar_px(unsigned count, unsigned full, unsigned px)
+{
+  if (count == 0U) return 0;
+  if (count >= full) return px;
+  return (count * px + full - 1U) / full;
+}
+
+static void row(oled_fb *fb, int r, const char *text) { (void)oled_text(fb, 0, r * 8, text, 1); }
+
+/* left, then right ending at the last column, at least a space between; 0 if they do not fit. */
+static int put_lr(char *line, const char *left, const char *right)
+{
+  size_t l = strlen(left), r = strlen(right);
+  if (l + 1U + r > SCR_COLS) return 0;
+  line[0] = '\0';
+  scr_put(line, left);
+  scr_pad_to(line, (unsigned)(SCR_COLS - r));
+  scr_put(line, right);
+  return 1;
+}
+
+static void count_row(oled_fb *fb, const rain_hist_t *h)
+{
+  char left[SCR_LINE] = "", age[SCR_LINE] = "", line[SCR_LINE] = "";
+  scr_put_uint(left, h->tips);
+  scr_put(left, h->tips == 1U ? " tip" : " tips");
+  int none = h->last_age_s == RAIN_AGE_NONE;
+  if (none) scr_put(age, "--");
+  else scr_put_age(age, h->last_age_s);
+  char forms[3][SCR_LINE] = { "last ", "last ", "" };
+  scr_put(forms[0], age); scr_put(forms[0], none ? "" : " ago");
+  scr_put(forms[1], age);
+  scr_put(forms[2], age);
+  int fits = 0;
+  for (unsigned f = 0; f < 3U && !fits; f++) fits = put_lr(line, left, forms[f]);   /* bound: 3 forms */
+  row(fb, 1, fits ? line : left);   /* the last fits any count with an age up to RAIN_AGE_MAX_S */
+}
+
+static void rate_row(oled_fb *fb, const rain_hist_t *h)
+{
+  char rate[SCR_LINE] = "", line[SCR_LINE] = "RATE  ";
+  scr_put_dec(rate, scr_rain_rate_umh(h->per_min, RAIN_HIST_MINUTES, RATE_MINUTES), 3, 1, 0);
+  scr_put(rate, " mm/h");
+  size_t n = strlen(rate) + 6U;   /* with "RATE  " */
+  if (n + 6U > SCR_COLS + 1U) { scr_put(line, rate); row(fb, 2, line); return; }
+  if (n + 6U > SCR_COLS) line[5] = '\0';   /* one space, to keep the window's name */
+  scr_put(line, rate);
+  scr_put(line, " (10m)");
+  row(fb, 2, line);
+}
+
+static void bars(oled_fb *fb, const rain_hist_t *h)
+{
+  unsigned full = RAIN_MIN_FULL;
+  for (unsigned i = 0; i < RAIN_HIST_MINUTES; i++)
+    if (h->per_min[i] > full) full = h->per_min[i];
+  oled_line(fb, SIDE_L, PLOT_TOP, SIDE_L, AXIS_Y, 0);
+  oled_line(fb, SIDE_R, PLOT_TOP, SIDE_R, AXIS_Y, 0);
+  oled_line(fb, SIDE_L, AXIS_Y, SIDE_R, AXIS_Y, 0);
+  for (unsigned i = 0; i < RAIN_HIST_MINUTES; i++)
+  {
+    int px = (int)scr_rain_bar_px(h->per_min[i], full, BAR_PX);
+    oled_fill(fb, BARS_X + BAR_W * (int)i, AXIS_Y - px, BAR_W, px, 1);
+  }
+}
+
+void scr_rain(oled_fb *fb, const scr_view_t *v)
+{
+  const rain_hist_t *h = &v->rain;
+  char mm[SCR_LINE] = "", line[SCR_LINE] = "";
+  scr_put_rain_mm(mm, h->tips);
+  scr_put(mm, " mm");
+  (void)put_lr(line, "RAIN", mm);   /* at most "279400.00 mm" (RAIN_TIPS_MAX) */
+  row(fb, 0, line);
+  count_row(fb, h);
+  rate_row(fb, h);
+  bars(fb, h);
+  row(fb, 7, "-60m              now");
+}

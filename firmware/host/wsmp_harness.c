@@ -191,6 +191,11 @@ int h_wind_bin(int i) { return wlive.bins[i]; }
 uint32_t h_rain_tips(void) { return mod_rain_tips_since_boot(); }
 void h_rain_tip(void) { mod_rain_tip(now_ms()); }
 void h_rain_enable(int on) { mod_rain_set_enabled(on); }
+static rain_hist_t rhist;
+void h_rain_history(void) { mod_rain_history(now_ms(), &rhist); }
+uint32_t h_rain_hist_tips(void) { return rhist.tips; }
+uint32_t h_rain_hist_age(void) { return rhist.last_age_s; }
+int h_rain_hist_min(int i) { return rhist.per_min[i]; }
 #ifdef WSMP_HOST
 #include "wsmp_host.h"
 /* The host, with its first latch a minute from now (as app_tx.c tells it at each sample tick). */

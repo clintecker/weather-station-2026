@@ -6,7 +6,7 @@
 #define INTERLUDE_EVERY_MS 120000U   /* one interlude about every 2 minutes (design, "The interludes") */
 #define NORMAL_EVERY       8U        /* steps between NORMAL redraws: once a second at 8 a second */
 
-static const enum scr_id rotation[] = { SCR_SCOPE, SCR_VANE, SCR_SYSTEM, SCR_HACK };
+static const enum scr_id rotation[] = { SCR_SCOPE, SCR_VANE, SCR_RAIN, SCR_SYSTEM, SCR_HACK };
 #define ROTATION_N (sizeof rotation / sizeof rotation[0])
 
 static enum scr_id cur;
@@ -44,7 +44,7 @@ static int in_order(enum scr_id id)
   return id == SCR_NORMAL;
 }
 
-/* B1: the screen after cur in the order NORMAL, SCOPE, VANE, SYSTEM, HACK, NORMAL. A packet or boot
+/* B1: the screen after cur in the order NORMAL, SCOPE, VANE, RAIN, SYSTEM, HACK, NORMAL. A packet or boot
    screen has no place in it: B1 skips to NORMAL. */
 static enum scr_id next_screen(enum scr_id id)
 {

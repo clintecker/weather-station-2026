@@ -3,7 +3,7 @@
  * drives it on the host. App/oled_app.c steps it every 125 ms (8 frames a second) and draws what it says.
  *   boot     BOOT, then HACK, then NORMAL.
  *   NORMAL   redrawn once a second (every 8th step), or at the next step after an ACK or a NO ACK.
- *   rotation one interlude of SCOPE, VANE, SYSTEM, HACK in turn, every 120 s at a fixed phase (the
+ *   rotation one interlude of SCOPE, VANE, RAIN, SYSTEM, HACK in turn, every 120 s at a fixed phase (the
  *            first 120 s after sched_init), each for scr_frames(id) frames; one that falls due during
  *            a packet waits for NORMAL, and the next is still due on the phase, not 120 s after it.
  *   packet   EV_SENT_LIVE plays BURST, then BANNER, then NORMAL. It preempts whatever is on (an
@@ -14,7 +14,7 @@
 #include <stdint.h>
 #include "scr_view.h"
 
-/* EV_B1..EV_B3 are the buttons. B1: the next of NORMAL, SCOPE, VANE, SYSTEM, HACK, then NORMAL again (the
+/* EV_B1..EV_B3 are the buttons. B1: the next of NORMAL, SCOPE, VANE, RAIN, SYSTEM, HACK, then NORMAL again (the
    screen plays from its first frame, then falls back to NORMAL as any interlude). B2: pause or resume the
    rotation. Paused, the screen stays where B1 put it (design, "The buttons"): the one up at the press (NORMAL
    if a packet or boot screen was up, after it ends) is held, plays again from frame 0 each time it ends, and

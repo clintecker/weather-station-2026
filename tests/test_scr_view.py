@@ -1,5 +1,5 @@
-"""The TX's bench screens (firmware/stage0-node/App/scr_view.c, scr_interludes.c, scr_art.c): layout C,
-its packet banner and the six interludes, drawn from a view and a frame number. Pure C, built for the host
+"""The TX's bench screens (firmware/stage0-node/App/scr_view.c, scr_interludes.c, scr_rain.c, scr_art.c):
+layout C, its packet banner and the seven interludes, drawn from a view and a frame number. Pure C, built for the host
 by tools/scr_render.py (which also renders them to PNG for a look against the mockups)."""
 import ctypes
 import subprocess
@@ -55,7 +55,8 @@ class ScrView(unittest.TestCase):
         self.assertEqual(subprocess.run([sys.executable, script, '--check']).returncode, 0)
 
     def test_frames(self):
-        want = {'NORMAL': 1, 'BURST': 16, 'BANNER': 24, 'SCOPE': 64, 'VANE': 64, 'SYSTEM': 64, 'BOOT': 64, 'HACK': 24}
+        want = {'NORMAL': 1, 'BURST': 16, 'BANNER': 24, 'SCOPE': 64, 'VANE': 64, 'RAIN': 64, 'SYSTEM': 64, 'BOOT': 64,
+                'HACK': 24}
         self.assertEqual({s: self.lib.scr_frames(i) for i, s in enumerate(render.SCREENS)}, want)
 
     def test_normal_rows(self):
@@ -147,6 +148,8 @@ class ScrView(unittest.TestCase):
         hi.power.batt_ma_x100, hi.power.out_mv, hi.power.vcell_mv, hi.power.soc_pct_x10 = 2**31 - 1, 2**31 - 1, 0xFFFF, 0xFFFF
         lo.power.batt_ma_x100, lo.power.out_mv = -2**31, -2**31
         lo.power.batt_ok = lo.power.gauge_ok = lo.power.charging = 1
+        hi.rain.tips, hi.rain.last_age_s, hi.rain.per_min[:] = 2**32 - 1, render.RAIN_AGE_MAX_S, [255] * 60
+        lo.rain.tips, lo.rain.last_age_s = 0, render.RAIN_AGE_NONE
         absent = render.demo_view()
         absent.air_ok = absent.box_ok = absent.press_ok = absent.uv_ok = absent.key_ok = 0
         absent.power.batt_ok = absent.power.gauge_ok = 0
@@ -204,6 +207,76 @@ class ScrView(unittest.TestCase):
         self.assertLess(top(xs[-1]), top(xs[0]))
         self.assertEqual(xs[-1], 126)                                    # the newest bin on the right edge
 
+
+    # The rain screen (scr_rain.c): mm and tips since boot, the last tip's age, the rate of the last 10
+    # minutes, and a bar a minute for the last hour.
+    def rain_text(self, got):
+        """The pixels of its text rows: the top three and the bottom one."""
+        return self.region(got, 0, 0, W, 24) | self.region(got, 0, 56, W, H)
+
+    def rain_rows(self, *rows):
+        return self.rows([*rows, '', '', '', '', '-60m              now'])
+
+    def test_rain_rows(self):
+        self.assertEqual(self.rain_text(self.draw('RAIN')), self.rain_rows(
+            'RAIN          0.56 mm', '2 tips    last 4m ago', 'RATE  1.7 mm/h (10m)'))
+        dry = render.rain_views()['dry']
+        self.assertEqual(self.rain_text(self.draw('RAIN', 0, dry)), self.rain_rows(
+            'RAIN          0.00 mm', '0 tips        last --', 'RATE  0.0 mm/h (10m)'))
+
+    def test_rain_age_and_count_forms(self):
+        # The age right-aligned, in a shorter form when the count leaves no room: "last X ago", "last X", "X".
+        for tips, age, left, right in ((1, 45, '1 tip', 'last 45s ago'), (3, 100, '3 tips', 'last 1m ago'),
+                                       (3, 7200, '3 tips', 'last 2h ago'), (12345, 99 * 3600, '12345 tips', 'last 99h'),
+                                       (2**32 - 1, render.RAIN_AGE_MAX_S, '4294967295 tips', '99h')):
+            with self.subTest(tips=tips, age=age):
+                v = render.rain(render.demo_view(), tips, age, {})
+                want = left + right.rjust(21 - len(left))
+                self.assertEqual(self.region(self.draw('RAIN', 0, v), 0, 8, W, 16), self.text(0, 8, want))
+
+    def test_rain_rate(self):
+        rate = self.lib.scr_rain_rate_umh
+        rate.argtypes, rate.restype = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint, ctypes.c_uint], ctypes.c_uint32
+        mins = lambda xs: (ctypes.c_uint8 * len(xs))(*xs)
+        self.assertEqual(rate(mins([0] * 60), 60, 10), 0)
+        self.assertEqual(rate(mins([9] * 50 + [1] + [0] * 9), 60, 10), 1676)        # 0.2794 mm in 10 min: 1.6764 mm/h
+        self.assertEqual(rate(mins([1] * 60), 60, 10), 16764)
+        self.assertEqual(rate(mins([1] * 60), 60, 60), 16764)
+        self.assertEqual(rate(mins([2] * 5), 5, 10), 16764)                         # fewer minutes than asked: the rest none
+        self.assertEqual(rate(mins([255] * 60), 60, 10), 4274820)
+        self.assertEqual(rate(mins([1]), 1, 0), 0)
+        v = render.rain(render.demo_view(), 97, 0, {i: 9 for i in range(50, 60)})   # 150.9 mm/h: one space after RATE
+        self.assertEqual(self.region(self.draw('RAIN', 0, v), 0, 16, W, 24), self.text(0, 16, 'RATE 150.9 mm/h (10m)'))
+        v = render.rain(render.demo_view(), 2550, 0, {i: 255 for i in range(60)})   # too wide for the window's name
+        self.assertEqual(self.region(self.draw('RAIN', 0, v), 0, 16, W, 24), self.text(0, 16, 'RATE  4274.8 mm/h'))
+
+    def test_rain_bar_scale(self):
+        px = self.lib.scr_rain_bar_px
+        px.argtypes, px.restype = [ctypes.c_uint, ctypes.c_uint, ctypes.c_uint], ctypes.c_uint
+        self.assertEqual([px(c, 4, 26) for c in (0, 1, 2, 4, 5)], [0, 7, 13, 26, 26])
+        self.assertEqual(px(1, 255, 26), 1)                                          # one tip is always a bar
+        self.assertEqual(px(254, 255, 26), 26)
+        self.assertEqual(px(3, 0, 26), 26)
+
+    def bars(self, per_min):
+        """Each minute's lit column heights inside the plot (x 4 + 2 i and the next, y 26 to 51)."""
+        got = self.draw('RAIN', 0, render.rain(render.demo_view(), 99, 0, per_min))
+        heights = []
+        for i in range(60):
+            cols = [len(self.region(got, x, 26, x + 1, 52)) for x in (4 + 2 * i, 5 + 2 * i)]
+            self.assertEqual(cols[0], cols[1], i)
+            heights.append(cols[0])
+        return heights, got
+
+    def test_rain_bars(self):
+        heights, got = self.bars({59: 4, 0: 1})                # the floor of the scale: 4 tips a minute
+        self.assertEqual(heights, [7] + [0] * 58 + [26])
+        self.assertTrue({(x, 52) for x in range(2, 126)} <= got)   # the axis
+        self.assertTrue({(2, y) for y in range(26, 53)} | {(125, y) for y in range(26, 53)} <= got)
+        heights, _ = self.bars({59: 40, 58: 1, 30: 20})        # scaled to the largest
+        self.assertEqual((heights[59], heights[58], heights[30], sum(heights)), (26, 1, 13, 40))
+        heights, _ = self.bars({})
+        self.assertEqual(heights, [0] * 60)
 
 if __name__ == '__main__':
     unittest.main()

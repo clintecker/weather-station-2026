@@ -19,7 +19,7 @@ power, memory and bus bandwidth the node has.
 
 ## Goals
 
-1. A **bench build** of the TX node firmware (`WS_BENCH_OLED=1`; Clint, 2026-11-04) drives the OLED with layout C and six interludes (below), without blocking: `make waits`
+1. A **bench build** of the TX node firmware (`WS_BENCH_OLED=1`; Clint, 2026-11-04) drives the OLED with layout C and seven interludes (below), without blocking: `make waits`
    stays clean.
 2. B1, B2 and B3 control the screen (below).
 3. The internal flash is re-split: firmware 95 pages (190 KB), journal 30 pages (about 10 h of backlog), until the
@@ -115,7 +115,7 @@ symbol.
 
 ### The interludes
 
-All six, drawn only from what the TX knows. Mockups (true scale, real font) are in
+All seven, drawn only from what the TX knows. Mockups (true scale, real font) are in
 `.superpowers/brainstorm/83868-1793832625/content/` (oled-interludes-v2.html, oled-hack-the-planet.html).
 
 1. **Packet burst**, once per minute's exchange, on its live reading (my call): backlog frames, the extra frame after
@@ -130,13 +130,16 @@ All six, drawn only from what the TX knows. Mockups (true scale, real font) are 
 6. **HACK THE PLANET**: original pixel art, an eyepatch smiley (double ring, open eye, patch and strap, smile) with
    HACK, THE, PLANET typed in at double size, a wink, a glint on the patch, then a glitch out; about 3 s. It plays
    after the boot splash and in the rotation.
+7. **Rain** (Clint, 2026-11-05): mm and tips since boot, the last tip's age, the rate of the last 10 minutes in
+   mm/h, and a bar a minute for the last hour (tips a minute, scaled to the largest, at least 4). The history is
+   the rain module's (`mod_rain_history`, in every build: 60 bytes of RAM and the last tip's time).
 
-Timing: one interlude from the rotation (2, 3, 4, 6) about every 2 minutes, about 8 s, at about 8 frames a second.
+Timing: one interlude from the rotation (2, 3, 7, 4, 6) about every 2 minutes, about 8 s, at about 8 frames a second.
 Never during a packet burst or banner (the radio exchange wins); an interlude in progress yields to a packet.
 
 ### The buttons (my call, to confirm)
 
-- **B1**: next screen (normal, then each interlude in turn, then back).
+- **B1**: next screen (normal, then each interlude of the rotation in turn: scope, vane, rain, system, HACK; then back).
 - **B2**: pause or resume the automatic rotation (paused: the screen stays where B1 put it; packets still show).
 - **B3**: OLED on or off (off: no SPI traffic, panel commanded to sleep).
 

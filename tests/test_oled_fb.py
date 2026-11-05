@@ -57,7 +57,7 @@ class OledFb(unittest.TestCase):
         # The node's screens draw these: none may fall back to '?'.
         q = self.fb()
         self.lib.oled_text(q, 0, 0, b'?', 1)
-        for ch in 'z#><:*|dbgoinptelcurk':
+        for ch in 'z#><:*|dbgoinptelcurkw()':
             fb = self.fb()
             self.lib.oled_text(fb, 0, 0, ch.encode(), 1)
             self.assertNotEqual(fb.raw, q.raw, ch)

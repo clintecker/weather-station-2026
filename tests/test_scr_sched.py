@@ -23,8 +23,8 @@ APP = NODE/'App'
 TOOLCHAIN_GCC = Path.home()/'.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/arm-none-eabi-gcc'
 HAVE_ARM = TOOLCHAIN_GCC.exists() and (ROOT/'vendor/STM32CubeWL').exists()
 
-SCREENS = ['NORMAL', 'BURST', 'BANNER', 'SCOPE', 'VANE', 'SYSTEM', 'BOOT', 'HACK']   # enum scr_id
-FRAMES = {'NORMAL': 1, 'BURST': 16, 'BANNER': 24, 'SCOPE': 64, 'VANE': 64, 'SYSTEM': 64, 'BOOT': 64, 'HACK': 24}
+SCREENS = ['NORMAL', 'BURST', 'BANNER', 'SCOPE', 'VANE', 'RAIN', 'SYSTEM', 'BOOT', 'HACK']   # enum scr_id
+FRAMES = {'NORMAL': 1, 'BURST': 16, 'BANNER': 24, 'SCOPE': 64, 'VANE': 64, 'RAIN': 64, 'SYSTEM': 64, 'BOOT': 64, 'HACK': 24}
 EV_SENT_LIVE, EV_SENT_EXTRA, EV_ACK, EV_NO_ACK, EV_B1, EV_B2, EV_B3 = range(7)
 SCR_TX_NONE, SCR_TX_WAIT, SCR_TX_NO_ACK, SCR_TX_ACK = -2, -1, 0, 1
 STEP_MS = 125
@@ -86,7 +86,7 @@ int oled_dma_send(const uint8_t frame[OLED_FRAME_BYTES])
 void ssd1325_frame(const oled_fb *fb, int rotate180, uint8_t out[OLED_FRAME_BYTES])
 { (void)fb; (void)rotate180; if (t_busy) t_torn++; if (out == txbuf) t_expands++; }
 
-static const unsigned frames[SCR_COUNT] = { 1, 16, 24, 64, 64, 64, 64, 24 };
+static const unsigned frames[SCR_COUNT] = { 1, 16, 24, 64, 64, 64, 64, 64, 24 };
 unsigned scr_frames(enum scr_id id) { return (unsigned)id < SCR_COUNT ? frames[id] : 1U; }
 int t_draws, t_id = -1, t_frame = -1;
 scr_view_t t_view;   /* what the last draw saw */
@@ -192,10 +192,10 @@ class Scheduler(unittest.TestCase):
         self.to_normal()
         got = self.plays(self.steps(120000 // STEP_MS))
         self.assertEqual(got, [('SCOPE', list(range(64)))])
-        # The rest come in turn, one every 120 s: vane, system bars, HACK THE PLANET, then the scope again.
-        got = self.plays(self.steps(4 * 120000 // STEP_MS))
-        self.assertEqual([s for s, _ in got], ['VANE', 'SYSTEM', 'HACK', 'SCOPE'])
-        self.assertEqual([len(f) for _, f in got], [64, 64, 24, 64])
+        # The rest come in turn, one every 120 s: vane, rain, system bars, HACK THE PLANET, then the scope again.
+        got = self.plays(self.steps(5 * 120000 // STEP_MS))
+        self.assertEqual([s for s, _ in got], ['VANE', 'RAIN', 'SYSTEM', 'HACK', 'SCOPE'])
+        self.assertEqual([len(f) for _, f in got], [64, 64, 64, 24, 64])
 
     def test_normal_redraws_once_a_second(self):
         # NORMAL is drawn at its first step and then every 8th; an ACK redraws it at the next step.
@@ -261,18 +261,18 @@ class Scheduler(unittest.TestCase):
             if self.now == 119000:
                 self.event(EV_SENT_LIVE)   # the first falls due at 120 s, inside the packet: it waits for NORMAL (124 s)
             drawn, screen, frame = self.step()
-            if drawn and frame == 0 and screen in ('SCOPE', 'VANE', 'SYSTEM', 'HACK'):
+            if drawn and frame == 0 and screen in ('SCOPE', 'VANE', 'RAIN', 'SYSTEM', 'HACK'):
                 starts.append(self.now - STEP_MS)
         self.assertEqual(starts, [124000, 240000, 360000, 480000, 600000])
 
     def test_button_bounce_and_wrap(self):
-        # B1 steps NORMAL, SCOPE, VANE, SYSTEM, HACK, NORMAL; the screen it picks plays from its frame 0.
+        # B1 steps NORMAL, SCOPE, VANE, RAIN, SYSTEM, HACK, NORMAL; the screen it picks plays from its frame 0.
         self.to_normal()
         seen = []
-        for _ in range(5):
+        for _ in range(6):
             self.event(EV_B1)
             seen.append(self.step()[1:])
-        self.assertEqual(seen, [('SCOPE', 0), ('VANE', 0), ('SYSTEM', 0), ('HACK', 0), ('NORMAL', 0)])
+        self.assertEqual(seen, [('SCOPE', 0), ('VANE', 0), ('RAIN', 0), ('SYSTEM', 0), ('HACK', 0), ('NORMAL', 0)])
         self.event(EV_B1)
         self.assertEqual(self.step()[1], 'SCOPE')   # round again
 
@@ -323,7 +323,7 @@ class Scheduler(unittest.TestCase):
         self.event(EV_B1)   # paused on the scope: the vane is held now, from its frame 0
         self.assertEqual(self.step()[1:], ('VANE', 0))
         self.assertEqual(self.held_for(200), {'VANE'})
-        for _ in range(3):   # system, HACK, then NORMAL: NORMAL held is NORMAL, as before any B1
+        for _ in range(4):   # rain, system, HACK, then NORMAL: NORMAL held is NORMAL, as before any B1
             self.event(EV_B1)
         self.assertEqual(self.held_for(300000 // STEP_MS), {'NORMAL'})
         self.event(EV_SENT_LIVE)
@@ -561,13 +561,13 @@ class OledApp(unittest.TestCase):
         self.assertEqual(SCREENS[self.get('t_id')], 'NORMAL')
         self.assertEqual(SCREENS[self.tick()[0]], 'SCOPE')
         self.assertEqual(self.tick(), (SCREENS.index('SCOPE'), 1))   # not skipped on to the vane
-        # Five presses (one a step) from NORMAL come round to NORMAL: SCOPE VANE SYSTEM HACK NORMAL.
+        # Six presses (one a step) from NORMAL come round to NORMAL: SCOPE VANE RAIN SYSTEM HACK NORMAL.
         self.press(1)
         got = []
-        for _ in range(4):
+        for _ in range(5):
             got.append(SCREENS[self.tick()[0]])
             self.press(1)
-        self.assertEqual(got, ['VANE', 'SYSTEM', 'HACK', 'NORMAL'])
+        self.assertEqual(got, ['VANE', 'RAIN', 'SYSTEM', 'HACK', 'NORMAL'])
 
     def adv(self, ms):
         self.lib.t_adv(ms)

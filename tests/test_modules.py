@@ -1113,6 +1113,110 @@ class Rain(Conformance, Harness):
         self.assertNotEqual(lib.h_probe_seq(self.PORT), seq)      # the setting is probed again, so it debounces
 
 
+class RainHistory(Harness):
+    """The bench screen's rain history (mod_rain_history): tips a minute for the last hour, in a ring the 250 ms
+    tick rolls on mod_rain_init's minutes, and the time since the last tip. Read-only, like mod_*_live."""
+    DEVICES = []
+
+    def station(self, devices=(), start_ms=0):
+        lib, devs = super().station(list(devices), start_ms)
+        lib.h_rain_hist_tips.restype = lib.h_rain_hist_age.restype = ctypes.c_uint32
+        return lib, devs
+
+    def hist(self, lib):
+        lib.h_rain_history()
+        return [lib.h_rain_hist_min(i) for i in range(60)]
+
+    def tip_then_run(self, lib, n, ms=MINUTE):
+        """n tips 250 ms apart (past the lockout), then the station ticks on to ms after the first."""
+        for _ in range(n):
+            lib.h_rain_tip()
+            lib.h_advance(250)
+        lib.h_run(ms - 250 * n)
+
+    def test_nothing_since_boot(self):
+        lib, _ = self.station()
+        lib.h_run(5 * MINUTE)
+        self.assertEqual(self.hist(lib), [0] * 60)
+        self.assertEqual((lib.h_rain_hist_tips(), lib.h_rain_hist_age()), (0, 0xFFFFFFFF))   # RAIN_AGE_NONE
+
+    def test_minutes_roll_newest_last(self):
+        lib, _ = self.station()
+        self.tip_then_run(lib, 3)    # minute 0: 3 tips
+        self.tip_then_run(lib, 0)    # minute 1: none
+        self.tip_then_run(lib, 5, 30_000)   # minute 2, so far: 5
+        self.assertEqual(self.hist(lib)[-3:], [3, 0, 5])
+        self.assertEqual(sum(self.hist(lib)), 8)
+        lib.h_run(30_250)            # the tick at 3 min: the 5 move back one
+        self.assertEqual(self.hist(lib)[-4:], [3, 0, 5, 0])
+        lib.h_run(56 * MINUTE)       # minute 59: the 3 are the oldest
+        self.assertEqual(self.hist(lib)[0], 3)
+        lib.h_run(MINUTE)            # an hour on: they are gone, the tips since boot are not
+        self.assertEqual(self.hist(lib)[:2], [0, 5])
+        self.assertEqual(lib.h_rain_hist_tips(), 8)
+
+    def test_a_minute_saturates(self):
+        lib, _ = self.station()
+        for _ in range(300):         # 300 tips in 45 s
+            lib.h_rain_tip()
+            lib.h_advance(150)
+        lib.h_run(1_000)
+        h = self.hist(lib)
+        self.assertEqual((h[-1], lib.h_rain_hist_tips()), (255, 300))
+
+    def test_last_tip_age(self):
+        lib, _ = self.station()
+        lib.h_run(10_000)
+        lib.h_rain_tip()
+        lib.h_run(4 * MINUTE)
+        self.hist(lib)
+        self.assertEqual(lib.h_rain_hist_age(), 240)
+        lib.h_rain_tip()
+        lib.h_advance(50)            # a bounce: no tip, and no new age
+        lib.h_rain_tip()
+        lib.h_run(3_000)
+        self.hist(lib)
+        self.assertEqual((lib.h_rain_hist_age(), lib.h_rain_hist_tips()), (3, 2))
+
+    def test_an_old_tip_stops_at_the_cap(self):
+        # 99 h, RAIN_AGE_MAX_S: the age never wraps with the 49-day ms clock.
+        lib, _ = self.station()
+        lib.h_rain_tip()
+        for _ in range(60 * 24):     # 60 days in 1 h steps, a tick each (the cap is found by a tick)
+            lib.h_advance(3_600_000 - 250)
+            lib.h_run(250)
+        self.hist(lib)
+        self.assertEqual(lib.h_rain_hist_age(), 99 * 3600)
+        lib.h_rain_tip()
+        lib.h_run(1_000)
+        self.hist(lib)
+        self.assertEqual(lib.h_rain_hist_age(), 1)
+
+    def test_a_long_gap_clears_and_keeps_the_phase(self):
+        for gap_min in (59, 60, 61, 600):
+            with self.subTest(gap_min=gap_min):
+                lib, _ = self.station()
+                self.tip_then_run(lib, 4, 20_000)   # minute 0, at 20 s
+                lib.h_advance(gap_min * MINUTE)    # no tick for the gap
+                lib.h_run(250)
+                h = self.hist(lib)
+                self.assertEqual(h[0] == 4, gap_min == 59, h)
+                self.assertEqual(sum(h), 4 if gap_min < 60 else 0)
+                lib.h_rain_tip()
+                lib.h_run(40_000 - 250)            # ticks to 59.75 s into the minute: still the same one
+                self.assertEqual(self.hist(lib)[-1], 1)
+                lib.h_run(250)                     # the minutes still start on the minute from init
+                self.assertEqual(self.hist(lib)[-2:], [1, 0])
+
+    def test_the_ms_clock_wraps(self):
+        lib, _ = self.station(start_ms=2**32 - 90_000)   # 90 s before the 32-bit ms clock wraps
+        self.tip_then_run(lib, 2)
+        self.tip_then_run(lib, 1)    # across the wrap
+        self.tip_then_run(lib, 3, 1_000)
+        self.assertEqual(self.hist(lib)[-3:], [2, 1, 3])
+        self.assertLess(lib.h_rain_hist_age(), 2)
+
+
 class LiveReads(Harness):
     """The screen's live accessors read; they never write (mod_*_live)."""
     DEVICES = [(DEVK_SHT45, 0x44), (DEVK_SHTC3, 0x70), (DEVK_BMP581, 0x47), (DEVK_LTR390, 0x53)]
@@ -1138,6 +1242,7 @@ class LiveReads(Harness):
                         lib.h_reg_live(unit, ctypes.byref(c))
                     lib.h_wind_live()
                     lib.h_rain_tips()
+                    lib.h_rain_history()
         return b''.join(self.latch(lib, port, 1) for port in (P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH, P_WIND, P_RAIN))
 
     def test_live_reads_do_not_change_window(self):

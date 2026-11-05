@@ -15,13 +15,12 @@
 #include "scr_view.h"
 #include <string.h>
 #include "oled_draw.h"
+#include "wsmp_registry.h"
 
 #define ROW_PX 8                       /* 7-pixel glyphs and a 1-pixel gap: eight rows */
 #define TH_COL 5                       /* AIR and BOX values start here */
 #define UV_COL 13                      /* "UV" starts here after a pressure */
-#define SCREEN_COLS 21
 #define BANNER_ROW 6
-#define RAIN_TENTH_UM_PER_TIP 2794     /* 0.2794 mm a tip (SEN-15901), in 10^-4 mm */
 #define RAIN_TIPS_MAX 1000000U         /* 279 m of rain: more reads as this */
 #define DEC_DIGITS 24                  /* a uint64_t's 20 digits, a point, a sign */
 #define DEC_MAX 6U                     /* decimals scr_put_dec takes: the buffer holds 20 digits */
@@ -62,6 +61,19 @@ void scr_put_dec(char *line, int64_t v, unsigned in_dec, unsigned out_dec, int p
 }
 
 void scr_put_uint(char *line, uint32_t v) { scr_put_dec(line, v, 0, 0, 0); }
+
+void scr_put_rain_mm(char *line, uint32_t tips)
+{
+  uint32_t t = tips > RAIN_TIPS_MAX ? RAIN_TIPS_MAX : tips;
+  scr_put_dec(line, (int64_t)t * (int64_t)WSMP_RAIN_NM_PER_TIP, 6, 2, 0);   /* 0.2794 mm a tip (SEN-15901) */
+}
+
+void scr_put_age(char *line, uint32_t s)
+{
+  if (s < 100U) { scr_put_uint(line, s); scr_put(line, "s"); }
+  else if (s < 6000U) { scr_put_uint(line, s / 60U); scr_put(line, "m"); }
+  else { scr_put_uint(line, s / 3600U); scr_put(line, "h"); }
+}
 
 void scr_pad_to(char *line, unsigned col)
 {
@@ -118,14 +130,13 @@ static void wind_rain_rows(oled_fb *fb, const scr_view_t *v)
 {
   char line[SCR_LINE];
   wind_line(line, "WIND ", v);
-  if (strlen(line) > SCREEN_COLS) wind_line(line, "WND ", v);   /* 10 m/s or more both, and a 3-letter point */
+  if (strlen(line) > SCR_COLS) wind_line(line, "WND ", v);   /* 10 m/s or more both, and a 3-letter point */
   row(fb, 3, line);
 
   char rain[SCR_LINE] = "RAIN ";
-  uint32_t tips = v->tips > RAIN_TIPS_MAX ? RAIN_TIPS_MAX : v->tips;
-  scr_put_uint(rain, v->tips);
+  scr_put_uint(rain, v->rain.tips);
   scr_put(rain, " TIPS ");
-  scr_put_dec(rain, (int64_t)tips * RAIN_TENTH_UM_PER_TIP, 4, 2, 0);
+  scr_put_rain_mm(rain, v->rain.tips);
   scr_put(rain, "mm");
   row(fb, 4, rain);
 }
@@ -158,22 +169,14 @@ static void cell_row(oled_fb *fb, const power_live_t *p)
   row(fb, 6, line);
 }
 
-/* An age in three characters or so: 58s, then minutes, then hours. */
-static void put_age(char *line, uint32_t s)
-{
-  if (s < 100U) { scr_put_uint(line, s); scr_put(line, "s"); }
-  else if (s < 6000U) { scr_put_uint(line, s / 60U); scr_put(line, "m"); }
-  else { scr_put_uint(line, s / 3600U); scr_put(line, "h"); }
-}
-
 static void tx_row(oled_fb *fb, const scr_view_t *v)
 {
   char line[SCR_LINE] = "TX ";
   if (v->last_acked == SCR_TX_NONE) { scr_put(line, "NONE YET"); row(fb, 7, line); return; }
   scr_put_uint(line, v->last_seq);
   scr_put(line, v->last_acked == SCR_TX_ACK ? " ACK " : v->last_acked == SCR_TX_NO_ACK ? " NO ACK " : " SENT ");
-  put_age(line, v->last_age_s);
-  if (strlen(line) + 4U <= SCREEN_COLS) scr_put(line, " AGO");
+  scr_put_age(line, v->last_age_s);
+  if (strlen(line) + 4U <= SCR_COLS) scr_put(line, " AGO");
   row(fb, 7, line);
 }
 
@@ -196,7 +199,7 @@ static void banner(oled_fb *fb, const scr_view_t *v)
   for (unsigned form = 0; form < 3U; form++)
   {
     banner_line(line, v, form);
-    if (strlen(line) <= SCREEN_COLS) break;
+    if (strlen(line) <= SCR_COLS) break;
   }
   row(fb, BANNER_ROW, line);
 
@@ -248,6 +251,7 @@ void scr_draw(oled_fb *fb, enum scr_id id, unsigned frame, const scr_view_t *v)
   case SCR_BANNER: layout_c(fb, v, 1); break;
   case SCR_SCOPE: scr_scope(fb, v); break;
   case SCR_VANE: scr_vane(fb, frame, v); break;
+  case SCR_RAIN: scr_rain(fb, v); break;
   case SCR_SYSTEM: scr_system(fb, frame, v); break;
   case SCR_BOOT: scr_boot(fb, frame, v); break;
   case SCR_HACK: scr_hack(fb, frame); break;

@@ -1,6 +1,7 @@
 /* The bench screens' view of the node (App/oled_view.h). Main loop only; every value is a cached one
  * that its module keeps (no bus, ADC or flash access here). */
 #include "oled_view.h"
+#include "clock.h"
 #include "flash_layout.h"
 #include "mod_rain.h"
 #include "mod_reg.h"
@@ -72,7 +73,7 @@ static void fill_live(scr_view_t *v)
   v->press_ok = in_layout(P_PRESSURE) && mod_reg_live(REG_PRESSURE, &v->press_dhpa);
   v->uv_ok = in_layout(P_UVA) && mod_reg_live(REG_UVA, &v->uv_counts);
   (void)mod_wind_live(&v->wind);
-  v->tips = mod_rain_tips_since_boot();
+  mod_rain_history(clock_ms(), &v->rain);
   power_acq_live(&v->power);
 }
 
