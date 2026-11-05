@@ -14,8 +14,10 @@
 #include <stdint.h>
 #include "scr_view.h"
 
-/* EV_B1..EV_B3 are the buttons (next screen, pause rotation, display on or off); Task 7 gives them
-   their meaning, until then they change nothing. */
+/* EV_B1..EV_B3 are the buttons. B1: the next of NORMAL, SCOPE, VANE, SYSTEM, HACK, then NORMAL again (the
+   screen plays from its first frame, then falls back to NORMAL as any interlude). B2: pause or resume the
+   rotation (no automatic interludes while paused; packets still show; on resume the next one is a full
+   period away). B3: the display off (sched_step reports display_on 0, the screens go on in step) or on. */
 enum sched_ev { EV_SENT_LIVE, EV_SENT_EXTRA, EV_ACK, EV_NO_ACK, EV_B1, EV_B2, EV_B3 };
 
 void sched_init(uint32_t now_ms);

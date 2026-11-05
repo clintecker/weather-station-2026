@@ -25,7 +25,7 @@ HAVE_ARM = TOOLCHAIN_GCC.exists() and (ROOT/'vendor/STM32CubeWL').exists()
 
 SCREENS = ['NORMAL', 'BURST', 'BANNER', 'SCOPE', 'VANE', 'SYSTEM', 'BOOT', 'HACK']   # enum scr_id
 FRAMES = {'NORMAL': 1, 'BURST': 16, 'BANNER': 24, 'SCOPE': 64, 'VANE': 64, 'SYSTEM': 64, 'BOOT': 64, 'HACK': 24}
-EV_SENT_LIVE, EV_SENT_EXTRA, EV_ACK, EV_NO_ACK = 0, 1, 2, 3
+EV_SENT_LIVE, EV_SENT_EXTRA, EV_ACK, EV_NO_ACK, EV_B1, EV_B2, EV_B3 = range(7)
 SCR_TX_NONE, SCR_TX_WAIT, SCR_TX_NO_ACK, SCR_TX_ACK = -2, -1, 0, 1
 STEP_MS = 125
 
@@ -74,7 +74,8 @@ void oled_dma_init(void) { t_inits++; }
 int oled_dma_busy(void) { return t_busy; }
 int oled_dma_faulted(void) { return t_faulted; }
 uint8_t *oled_dma_buffer(void) { return txbuf; }
-void oled_dma_enable(int on) { (void)on; }
+int t_enable_calls, t_enabled = 1;
+void oled_dma_enable(int on) { t_enable_calls++; t_enabled = on; }
 int oled_dma_send(const uint8_t frame[OLED_FRAME_BYTES])
 { if (t_busy) { t_torn++; return -1; } if (frame != txbuf) return -3; t_sends++; return 0; }
 void ssd1325_frame(const oled_fb *fb, int rotate180, uint8_t out[OLED_FRAME_BYTES])
@@ -225,13 +226,60 @@ class Scheduler(unittest.TestCase):
         self.assertEqual(self.lib.sched_extras(), 0)
 
     def test_the_clock_may_wrap(self):
-        # clock_ms wraps after 49 days: an init just before the wrap still rotates 120 s later.
-        self.now = 0xFFFFFFFF - 5000
+        # clock_ms wraps after 49 days. Init 60 s before the wrap: the 120 s interlude time is already past it
+        # while the clock is still above 0x80000000, where a plain `now >= at` comparison fires at once.
+        self.now = 0xFFFFFFFF - 60000
         self.lib.sched_init(self.now)
         self.to_normal()
-        got = self.plays(self.steps(120000 // STEP_MS))
+        self.assertEqual(self.plays(self.steps(100000 // STEP_MS)), [])   # nothing early, wrap or no wrap
+        got = self.plays(self.steps(20000 // STEP_MS))
         self.assertLess(self.now, 0x80000000)   # the steps did cross the wrap
-        self.assertEqual([s for s, _ in got], ['SCOPE'])
+        self.assertEqual(got, [('SCOPE', list(range(64)))])
+
+    def test_the_interlude_phase_does_not_drift(self):
+        # The interludes start 120 s apart on the clock, not 120 s after the previous one ended its wait for NORMAL:
+        # a packet delays one, the next stays on schedule.
+        self.to_normal()
+        starts = []
+        while self.now < 11000 + 5 * 120000:
+            if self.now == 119000:
+                self.event(EV_SENT_LIVE)   # the first falls due at 120 s, inside the packet: it waits for NORMAL (124 s)
+            drawn, screen, frame = self.step()
+            if drawn and frame == 0 and screen in ('SCOPE', 'VANE', 'SYSTEM', 'HACK'):
+                starts.append(self.now - STEP_MS)
+        self.assertEqual(starts, [124000, 240000, 360000, 480000, 600000])
+
+    def test_button_bounce_and_wrap(self):
+        # B1 steps NORMAL, SCOPE, VANE, SYSTEM, HACK, NORMAL; the screen it picks plays from its frame 0.
+        self.to_normal()
+        seen = []
+        for _ in range(5):
+            self.event(EV_B1)
+            seen.append(self.step()[1:])
+        self.assertEqual(seen, [('SCOPE', 0), ('VANE', 0), ('SYSTEM', 0), ('HACK', 0), ('NORMAL', 0)])
+        self.event(EV_B1)
+        self.assertEqual(self.step()[1], 'SCOPE')   # round again
+
+    def test_pause_stops_rotation(self):
+        self.to_normal()
+        self.event(EV_B2)
+        self.assertEqual(self.plays(self.steps(300000 // STEP_MS)), [])
+        self.event(EV_SENT_LIVE)   # packets still show
+        got = self.plays(self.steps(16 + 24 + 8))
+        self.assertEqual([s for s, _ in got], ['BURST', 'BANNER'])
+        # Resume: the rotation starts a full period from the press, not at once for the time it was held.
+        self.event(EV_B2)
+        self.assertEqual(self.plays(self.steps(110000 // STEP_MS)), [])
+        self.assertEqual([s for s, _ in self.plays(self.steps(20000 // STEP_MS))], ['SCOPE'])
+
+    def test_b3_turns_display_off(self):
+        self.to_normal()
+        self.event(EV_B3)
+        sid, frame, on = ctypes.c_int(), ctypes.c_uint(), ctypes.c_int()
+        self.lib.sched_step(self.now, ctypes.byref(sid), ctypes.byref(frame), ctypes.byref(on))
+        self.assertEqual(on.value, 0)
+        self.event(EV_B3)
+        self.assertEqual(self.step()[0], 1)   # on again, and NORMAL is redrawn
 
 
 @needs_cc
@@ -246,6 +294,7 @@ class OledApp(unittest.TestCase):
         self.lib.oled_note_sent.argtypes = [ctypes.c_uint32, ctypes.c_char_p, ctypes.c_uint8, ctypes.c_int]
         self.lib.oled_note_ack.argtypes = [ctypes.c_uint32, ctypes.c_int16, ctypes.c_int8]
         self.lib.oled_note_no_ack.argtypes = [ctypes.c_uint32]
+        self.lib.oled_app_button.argtypes = [ctypes.c_uint]
         self.lib.oled_app_start()
 
     def set(self, name, value):
@@ -323,6 +372,61 @@ class OledApp(unittest.TestCase):
         self.lib.oled_note_no_ack(5)
         self.tick()
         self.assertEqual(self.lib.t_view_acked(), SCR_TX_NO_ACK)
+
+    def press(self, b):
+        self.lib.oled_app_button(b)
+
+    def test_button_bounce_and_wrap(self):
+        # Three B1 edges within one step are one press; the interrupt only sets a flag (no draw, no event).
+        self.to_normal()
+        for _ in range(3):
+            self.press(1)
+        self.assertEqual(SCREENS[self.get('t_id')], 'NORMAL')
+        self.assertEqual(SCREENS[self.tick()[0]], 'SCOPE')
+        self.assertEqual(self.tick(), (SCREENS.index('SCOPE'), 1))   # not skipped on to the vane
+        # Five presses (one a step) from NORMAL come round to NORMAL: SCOPE VANE SYSTEM HACK NORMAL.
+        self.press(1)
+        got = []
+        for _ in range(4):
+            got.append(SCREENS[self.tick()[0]])
+            self.press(1)
+        self.assertEqual(got, ['VANE', 'SYSTEM', 'HACK', 'NORMAL'])
+
+    def test_a_press_inside_the_debounce_time_of_the_last_is_dropped(self):
+        # A bounce 20 ms after a taken press, landing in the next step (the clock is 125 ms a step here, so move it back).
+        self.to_normal()
+        self.press(1)
+        self.tick()
+        self.set('t_now', self.get('t_now') - STEP_MS + 20)   # the next tick's clock reads 20 ms after the press
+        self.press(1)
+        self.assertEqual(SCREENS[self.tick()[0]], 'SCOPE')   # still the first press's screen, frame 1: not skipped on
+
+    def test_b3_turns_display_off(self):
+        # B3: oled_dma_enable(0), and the steps draw nothing; B3 again: oled_dma_enable(1), and drawing resumes.
+        self.to_normal()
+        calls, draws = self.get('t_enable_calls'), self.get('t_draws')
+        self.press(3)
+        self.tick()
+        self.assertEqual((self.get('t_enable_calls'), self.get('t_enabled')), (calls + 1, 0))
+        for _ in range(20):
+            self.tick()
+        self.assertEqual(self.get('t_draws'), draws)
+        self.press(3)
+        self.tick()
+        self.assertEqual((self.get('t_enable_calls'), self.get('t_enabled')), (calls + 2, 1))
+        for _ in range(8):   # the step that powered it did not draw; NORMAL is redrawn within a second
+            self.tick()
+        self.assertGreater(self.get('t_draws'), draws)
+
+    def test_a_press_while_the_driver_is_busy_is_kept(self):
+        self.to_normal()
+        self.set('t_busy', 1)
+        self.press(1)
+        self.tick()
+        draws = self.get('t_draws')
+        self.set('t_busy', 0)
+        self.tick()
+        self.assertEqual((SCREENS[self.get('t_id')], self.get('t_draws') > draws), ('SCOPE', True))
 
     def test_a_faulted_display_is_not_drawn(self):
         # After a fault (oled_dma_send refuses with -2) the step draws nothing: no CPU spent on frames.

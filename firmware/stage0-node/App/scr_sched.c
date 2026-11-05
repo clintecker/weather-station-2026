@@ -16,6 +16,8 @@ static int redraw;               /* NORMAL changed (an ACK or a NO ACK): draw it
 static uint32_t interlude_at;    /* when the next interlude falls due (clock_ms) */
 static unsigned next_interlude;  /* index into rotation */
 static unsigned extras;          /* frames sent after the live one */
+static int paused;               /* B2: no automatic interludes (packets still show) */
+static int on;                   /* B3: the display is on */
 
 static int reached(uint32_t now_ms, uint32_t at_ms) { return (int32_t)(now_ms - at_ms) >= 0; }
 
@@ -28,17 +30,36 @@ void sched_init(uint32_t now_ms)
   interlude_at = now_ms + INTERLUDE_EVERY_MS;
   next_interlude = 0;
   extras = 0;
+  paused = 0;
+  on = 1;
+}
+
+/* B1: the screen after cur in the order NORMAL, SCOPE, VANE, SYSTEM, HACK, NORMAL. A packet or boot
+   screen has no place in it: B1 skips to NORMAL. */
+static enum scr_id next_screen(enum scr_id id)
+{
+  for (unsigned i = 0; i < ROTATION_N; i++)   /* bound: ROTATION_N, the interludes */
+    if (rotation[i] == id) return i + 1U < ROTATION_N ? rotation[i + 1U] : SCR_NORMAL;
+  return id == SCR_NORMAL ? rotation[0] : SCR_NORMAL;
 }
 
 void sched_event(enum sched_ev e, uint32_t now_ms)
 {
-  (void)now_ms;
   switch (e)
   {
     case EV_SENT_LIVE: show(SCR_BURST); extras = 0; break;   /* preempts whatever is on */
     case EV_SENT_EXTRA: if (extras < UINT16_MAX) extras++; break;
     case EV_ACK: case EV_NO_ACK: redraw = 1; break;   /* the TX row (NORMAL) and the banner show the outcome */
-    default: break;   /* EV_B1..EV_B3: the buttons (Task 7) */
+    case EV_B1: if (on) show(next_screen(cur)); break;
+    case EV_B2:
+      paused = !paused;
+      if (!paused) interlude_at = now_ms + INTERLUDE_EVERY_MS;   /* resumes a full period from now */
+      break;
+    case EV_B3:
+      on = !on;
+      if (on) redraw = 1;   /* the panel was dark: NORMAL comes back at its next step */
+      break;
+    default: break;
   }
 }
 
@@ -52,12 +73,13 @@ static enum scr_id after(enum scr_id id)
 
 int sched_step(uint32_t now_ms, enum scr_id *id, unsigned *out_frame, int *display_on)
 {
-  *display_on = 1;
-  if (cur == SCR_NORMAL && reached(now_ms, interlude_at))
+  *display_on = on;
+  if (cur == SCR_NORMAL && !paused && reached(now_ms, interlude_at))
   {
     show(rotation[next_interlude]);
     next_interlude = (next_interlude + 1U) % ROTATION_N;
-    interlude_at = now_ms + INTERLUDE_EVERY_MS;
+    interlude_at += INTERLUDE_EVERY_MS;   /* a fixed phase: the delay to NORMAL does not drift it */
+    if (reached(now_ms, interlude_at)) interlude_at = now_ms + INTERLUDE_EVERY_MS;   /* far behind: no burst of them */
   }
   *id = cur;
   *out_frame = frame;

@@ -15,6 +15,7 @@
 #include "utilities_def.h"
 
 #define STEP_MS        125U     /* 8 frames a second */
+#define DEBOUNCE_MS    50U      /* a button's presses closer than this are one */
 #define AIRTIME_OF_MS  60000U   /* the system bars' airtime: this minute's exchange, of a minute */
 
 /* RAM2 (NOLOAD: nothing initializes it, so oled_app_start does); the host test builds with it empty. */
@@ -27,6 +28,9 @@ static scr_view_t view OLED_APP_RAM2;
 static UTIL_TIMER_Object_t step_timer;
 static uint32_t live_seq, live_s;   /* the minute's live frame and when it went (clock_s) */
 static int awaiting;                /* its reply has not come yet */
+static volatile uint32_t pressed;   /* bit b: button b went down (set in the EXTI interrupt) */
+static uint32_t pressed_ms[4];      /* when button b's last press was taken */
+static int powered = 1;             /* what the driver was last told (oled_dma_enable) */
 static uint32_t air_ms;             /* airtime of this minute's frames so far */
 
 void oled_note_sent(uint32_t seq, const uint8_t *frame, uint8_t len, int live)
@@ -61,6 +65,21 @@ void oled_note_no_ack(uint32_t seq)
   sched_event(EV_NO_ACK, clock_ms());
 }
 
+void oled_app_button(unsigned b) { if (b >= 1U && b <= 3U) pressed |= 1U << b; }
+
+/* The presses since the last step, to the scheduler: one per button however many edges came, and none
+   within DEBOUNCE_MS of the button's last. The interrupt only sets bits, so taking them is one exchange. */
+static void take_buttons(uint32_t now)
+{
+  uint32_t m = __atomic_exchange_n(&pressed, 0U, __ATOMIC_RELAXED);
+  for (unsigned b = 1; b <= 3U; b++)   /* bound: 3 buttons */
+  {
+    if (!(m & (1U << b)) || now - pressed_ms[b] < DEBOUNCE_MS) continue;
+    pressed_ms[b] = now;
+    sched_event((enum sched_ev)(EV_B1 + (b - 1U)), now);
+  }
+}
+
 /* One step. A busy driver means a frame (or the start-up) is still going out of the send buffer: drawing
    into it now would tear that frame, so the step waits for the next tick, and the scheduler, not
    stepped, shows the same frame then. A faulted display costs nothing: the scheduler runs on, no frame is
@@ -68,8 +87,17 @@ void oled_note_no_ack(uint32_t seq)
 static void step(void)
 {
   enum scr_id id; unsigned frame; int on;
+  uint32_t now = clock_ms();
+  take_buttons(now);
   if (oled_dma_busy()) return;
-  if (!sched_step(clock_ms(), &id, &frame, &on) || !on || oled_dma_faulted()) return;
+  int draw = sched_step(now, &id, &frame, &on);
+  if (on != powered)   /* B3: the panel's power command goes out now; its frames follow, or stop */
+  {
+    powered = on;
+    oled_dma_enable(on);
+    return;
+  }
+  if (!draw || !on || oled_dma_faulted()) return;
   oled_view_fill(&view, id, frame);
   view.extra_frames = sched_extras();
   view.last_age_s = clock_s() - live_s;
@@ -90,6 +118,8 @@ void oled_app_start(void)
   view.last_acked = SCR_TX_NONE;
   oled_dma_init();
   sched_init(clock_ms());
+  for (unsigned b = 1; b <= 3U; b++) pressed_ms[b] = clock_ms() - DEBOUNCE_MS;   /* bound: 3 buttons */
+  pressed = 0; powered = 1;
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Oled, UTIL_SEQ_RFU, step_timed);
   (void)UTIL_TIMER_Create(&step_timer, STEP_MS, UTIL_TIMER_PERIODIC, on_step_timer, NULL);
   (void)UTIL_TIMER_Start(&step_timer);

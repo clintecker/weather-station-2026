@@ -52,6 +52,10 @@
 #include "mod_power.h"
 #include "mod_rain.h"
 #include "mod_wind.h"
+#include "oled_hooks.h"   /* WS_BENCH_OLED, 0 by default */
+#if WS_BENCH_OLED
+#include "oled_app.h"
+#endif
 #include "stm32_timer.h"
 #include "stm32wlxx_hal.h"
 #include "sys_conf.h"
@@ -216,6 +220,18 @@ static void pins_init(void)
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, INPUT_IRQ_PRIORITY, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+#if WS_BENCH_OLED
+  /* The bench OLED's buttons B1 (PA0) and B2 (PA1): falling edge, internal pull-up (the NUCLEO's buttons
+     pull the pin low). B3 is PC6 above. */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  GPIO_InitTypeDef keys = { .Pin = GPIO_PIN_0 | GPIO_PIN_1, .Mode = GPIO_MODE_IT_FALLING, .Pull = GPIO_PULLUP,
+                            .Speed = GPIO_SPEED_FREQ_LOW };
+  HAL_GPIO_Init(GPIOA, &keys);
+  HAL_NVIC_SetPriority(EXTI0_IRQn, INPUT_IRQ_PRIORITY, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+  HAL_NVIC_SetPriority(EXTI1_IRQn, INPUT_IRQ_PRIORITY, 0);
+  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+#endif
 }
 
 /* The mux RESET (PB14), only with the mux: released (high) before it becomes an output, so the mux
@@ -401,10 +417,19 @@ void HAL_GPIO_EXTI_Callback(uint16_t pin)
 {
   if (pin == RAIN_PIN) { rain_edge = 1U; mod_rain_tip(clock_ms()); }
   if (pin == CHG_PIN) chg_edges++;
+#if WS_BENCH_OLED
+  if (pin == GPIO_PIN_0) oled_app_button(1U);   /* B1 */
+  if (pin == GPIO_PIN_1) oled_app_button(2U);   /* B2 */
+  if (pin == GPIO_PIN_6) oled_app_button(3U);   /* B3 */
+#endif
 }
 
 void ADC_IRQHandler(void);        /* vector table names (startup_stm32wl55jcix.s, where EXTI4 is weak) */
 void EXTI4_IRQHandler(void);
+#if WS_BENCH_OLED
+void EXTI0_IRQHandler(void);
+void EXTI1_IRQHandler(void);
+#endif
 void EXTI9_5_IRQHandler(void);
 void EXTI15_10_IRQHandler(void);
 void ADC_IRQHandler(void) { HAL_ADC_IRQHandler(&hadc); }
@@ -416,6 +441,12 @@ static void exti_serve(const uint16_t *lines, unsigned n)
   for (unsigned i = 0; i < n; i++) HAL_GPIO_EXTI_IRQHandler(lines[i]);
 }
 #define EXTI_SERVE(lines) exti_serve((lines), (unsigned)(sizeof (lines) / sizeof (lines)[0]))
+
+#if WS_BENCH_OLED
+/* EXTI0 and EXTI1 own lines 0 and 1 alone: the bench buttons B1 (PA0) and B2 (PA1). */
+void EXTI0_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0); }
+void EXTI1_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1); }
+#endif
 
 /* EXTI4 owns line 4 alone: the rain gauge (PB4). */
 void EXTI4_IRQHandler(void)
