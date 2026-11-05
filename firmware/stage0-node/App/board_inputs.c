@@ -443,6 +443,14 @@ static void exti_serve(const uint16_t *lines, unsigned n)
 #define EXTI_SERVE(lines) exti_serve((lines), (unsigned)(sizeof (lines) / sizeof (lines)[0]))
 
 #if WS_BENCH_OLED
+int board_button_up(unsigned b)
+{
+  if (b == 1U) return HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET;
+  if (b == 2U) return HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET;
+  if (b == 3U) return HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_6) == GPIO_PIN_SET;
+  return 0;
+}
+
 /* EXTI0 and EXTI1 own lines 0 and 1 alone: the bench buttons B1 (PA0) and B2 (PA1). */
 void EXTI0_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0); }
 void EXTI1_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1); }

@@ -16,8 +16,11 @@
 
 /* EV_B1..EV_B3 are the buttons. B1: the next of NORMAL, SCOPE, VANE, SYSTEM, HACK, then NORMAL again (the
    screen plays from its first frame, then falls back to NORMAL as any interlude). B2: pause or resume the
-   rotation (no automatic interludes while paused; packets still show; on resume the next one is a full
-   period away). B3: the display off (sched_step reports display_on 0, the screens go on in step) or on. */
+   rotation. Paused, the screen stays where B1 put it (design, "The buttons"): the one up at the press (NORMAL
+   if a packet or boot screen was up, after it ends) is held, plays again from frame 0 each time it ends, and
+   comes back after a packet's burst and banner; B1 moves the held screen to the next one; no automatic
+   interludes. On resume the held screen plays to its end, NORMAL follows, and the next interlude is a full
+   period away. B3: the display off (sched_step reports display_on 0, the screens go on in step) or on. */
 enum sched_ev { EV_SENT_LIVE, EV_SENT_EXTRA, EV_ACK, EV_NO_ACK, EV_B1, EV_B2, EV_B3 };
 
 void sched_init(uint32_t now_ms);

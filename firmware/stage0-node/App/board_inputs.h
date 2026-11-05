@@ -31,6 +31,10 @@ typedef struct
    (it did not initialise, or VREFINT read 0). A call that takes a new sequence starts the next one. */
 int board_power_adc(board_power_adc_t *out);
 
+/* 1 if bench button b (1 B1 PA0, 2 B2 PA1, 3 B3 PC6) reads up (high: released; the buttons pull the pin
+   low), 0 if down or b is no button. WS_BENCH_OLED=1 builds only: App/oled_app.c reads it each step. */
+int board_button_up(unsigned b);
+
 /* CHG (PB10) edges since boot, both directions, counted by EXTI10: monotonic (it wraps at 2^32). The
    2 Hz fault flash rule (section 6.3) lives in App/power_acq.c. */
 uint32_t board_charger_edges(void);

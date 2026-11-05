@@ -33,8 +33,10 @@ SHIM = r'''
 #include <string.h>
 #include "stm32_seq.h"
 #include "stm32_timer.h"
+#include "board_inputs.h"
 #include "busymon.h"
 #include "clock.h"
+#include "oled_app.h"
 #include "oled_dma.h"
 #include "oled_view.h"
 #include "scr_view.h"
@@ -92,6 +94,16 @@ void scr_draw(oled_fb *fb, enum scr_id id, unsigned frame, const scr_view_t *v)
 int t_fills;
 void oled_view_fill(scr_view_t *v, enum scr_id id, unsigned frame) { (void)v; (void)id; (void)frame; t_fills++; }
 uint32_t oled_view_airtime_ms(uint8_t len) { return len; }
+
+/* The buttons' pins: t_down[b] 1 holds button b down (its pin low). t_bounce_on_read b: the next read of
+   button b's pin first raises an edge, as a release that bounces between the step's take and its read. */
+int t_down[4], t_bounce_on_read;
+int board_button_up(unsigned b)
+{
+  if (b >= 4U) return 0;
+  if (t_bounce_on_read == (int)b) { t_bounce_on_read = 0; oled_app_button(b); }
+  return !t_down[b];
+}
 
 unsigned t_view_extras(void) { return t_view.extra_frames; }
 int t_view_acked(void) { return t_view.last_acked; }
@@ -274,6 +286,89 @@ class Scheduler(unittest.TestCase):
         self.assertEqual(self.plays(self.steps(110000 // STEP_MS)), [])
         self.assertEqual([s for s, _ in self.plays(self.steps(20000 // STEP_MS))], ['SCOPE'])
 
+    def held_for(self, n):
+        """The screens of n steps, as a set."""
+        return {screen for _, screen, _ in self.steps(n)}
+
+    def test_pause_holds_the_b1_screen(self):
+        # The design ("The buttons"): paused, the screen stays where B1 put it. The scope plays to its end and
+        # again from frame 0, three times over, and NORMAL never comes back.
+        self.to_normal()
+        self.event(EV_B1)
+        self.event(EV_B2)
+        got = self.steps(3 * 64)
+        self.assertEqual(self.plays(got), [('SCOPE', list(range(64)))] * 3)
+        self.assertEqual({screen for _, screen, _ in got}, {'SCOPE'})
+        self.assertEqual(self.held_for(300000 // STEP_MS), {'SCOPE'})   # no interlude either
+
+    def test_a_packet_returns_to_the_held_screen(self):
+        self.to_normal()
+        self.event(EV_B1)
+        self.event(EV_B1)   # the vane
+        self.steps(5)
+        self.event(EV_B2)
+        self.steps(10)
+        self.event(EV_SENT_LIVE)   # packets still show, then the vane again, from its frame 0
+        got = self.plays(self.steps(16 + 24 + 64 + 10))
+        self.assertEqual(got[:3], [('BURST', list(range(16))), ('BANNER', list(range(24))), ('VANE', list(range(64)))])
+        self.assertEqual(got[3], ('VANE', list(range(10))))
+
+    def test_b1_while_paused_moves_the_held_screen(self):
+        self.to_normal()
+        self.event(EV_B1)
+        self.event(EV_B2)
+        self.steps(10)
+        self.event(EV_B1)   # paused on the scope: the vane is held now, from its frame 0
+        self.assertEqual(self.step()[1:], ('VANE', 0))
+        self.assertEqual(self.held_for(200), {'VANE'})
+        for _ in range(3):   # system, HACK, then NORMAL: NORMAL held is NORMAL, as before any B1
+            self.event(EV_B1)
+        self.assertEqual(self.held_for(300000 // STEP_MS), {'NORMAL'})
+        self.event(EV_SENT_LIVE)
+        got = self.steps(16 + 24 + 8)
+        self.assertEqual([s for s, _ in self.plays(got)], ['BURST', 'BANNER'])
+        self.assertEqual(got[-1][1], 'NORMAL')
+
+    def test_b1_while_paused_during_a_packet(self):
+        # B1 during the burst while paused: the next screen after the held one, as B1 always leaves a packet.
+        self.to_normal()
+        self.event(EV_B1)
+        self.event(EV_B2)
+        self.event(EV_SENT_LIVE)
+        self.steps(3)
+        self.event(EV_B1)
+        self.assertEqual(self.step()[1:], ('VANE', 0))
+
+    def test_resume_lets_the_held_screen_end(self):
+        # B2 again: the held scope plays to its end, NORMAL follows, and the rotation's next interlude is a full
+        # period after the press.
+        self.to_normal()
+        self.event(EV_B1)
+        self.event(EV_B2)
+        self.steps(64 + 20)   # the second play, at its frame 20
+        self.event(EV_B2)
+        got = self.steps(44 + 8)
+        self.assertEqual(self.plays(got), [('SCOPE', list(range(20, 64)))])
+        self.assertEqual(got[-1][1], 'NORMAL')
+        self.assertEqual(self.plays(self.steps(110000 // STEP_MS)), [])
+        self.assertEqual([s for s, _ in self.plays(self.steps(20000 // STEP_MS))], ['SCOPE'])   # the rotation's first: B1 is no turn of it
+
+    def test_pause_during_an_interlude_holds_it(self):
+        # B2 while the rotation's scope is up: the scope is where the screen is, so it stays.
+        self.to_normal()
+        while self.step()[1:] != ('SCOPE', 30):
+            pass
+        self.event(EV_B2)
+        self.assertEqual(self.held_for(200), {'SCOPE'})
+
+    def test_pause_during_the_boot_screens_holds_normal(self):
+        # A boot screen is in no order B1 knows: the boot splash and HACK play out, then NORMAL is held.
+        self.steps(5)
+        self.event(EV_B2)
+        seen = self.to_normal()
+        self.assertEqual([s for s, _ in self.plays(seen)], ['BOOT', 'HACK'])
+        self.assertEqual(self.held_for(300000 // STEP_MS), {'NORMAL'})
+
     def test_b3_turns_display_off(self):
         self.to_normal()
         self.event(EV_B3)
@@ -433,6 +528,86 @@ class OledApp(unittest.TestCase):
             if i % 12 == 11:
                 seen.append(self.step_now())
         self.assertEqual(seen, [(SCREENS.index('SCOPE'), f) for f in range(len(seen))])
+
+    def hold(self, b, down):
+        """Button b's pin held down (low) or let up."""
+        (ctypes.c_int * 4).in_dll(self.lib, 't_down')[b] = int(down)
+
+    def test_release_bounce_after_the_debounce_is_no_second_press(self):
+        # B1 goes down and a step takes it. 150 ms later, the button still down at every step, the contact
+        # bounces: an edge 150 ms after the press passes the 50 ms edge filter, but no step has read B1 up
+        # since the press, so it is no press. Up, a step sees it, then a real press: the vane.
+        self.to_normal()
+        self.hold(1, True)
+        self.press(1)
+        self.assertEqual(self.step_now(), (SCREENS.index('SCOPE'), 0))
+        self.adv(150)
+        self.press(1)
+        self.assertEqual(self.step_now(), (SCREENS.index('SCOPE'), 1))
+        self.hold(1, False)
+        self.adv(125)
+        self.assertEqual(self.step_now(), (SCREENS.index('SCOPE'), 2))
+        self.adv(100)
+        self.press(1)
+        self.assertEqual(self.step_now(), (SCREENS.index('VANE'), 0))
+
+    def test_release_bounce_before_a_step_saw_it_up(self):
+        # The release and its bounce edge both come between two steps: the step that reads B1 up takes the edge
+        # first, while B1 is not yet armed, so it is no press.
+        self.to_normal()
+        self.hold(1, True)
+        self.press(1)
+        self.assertEqual(self.step_now(), (SCREENS.index('SCOPE'), 0))
+        self.adv(100)
+        self.hold(1, False)
+        self.press(1)
+        self.assertEqual(self.step_now(), (SCREENS.index('SCOPE'), 1))
+        self.adv(200)
+        self.press(1)   # a true second press: a step saw B1 up since the first
+        self.assertEqual(self.step_now(), (SCREENS.index('VANE'), 0))
+
+    def test_a_bounce_between_the_take_and_the_pin_read(self):
+        # B1 reads up, but an edge came after the step took the presses: the release may still be bouncing, so
+        # B1 stays disarmed, and that edge, in the next step, is no press. The step after arms it.
+        self.to_normal()
+        self.hold(1, True)
+        self.press(1)
+        self.assertEqual(self.step_now(), (SCREENS.index('SCOPE'), 0))
+        self.adv(100)
+        self.hold(1, False)
+        ctypes.c_int.in_dll(self.lib, 't_bounce_on_read').value = 1
+        self.assertEqual(self.step_now(), (SCREENS.index('SCOPE'), 1))
+        self.adv(125)
+        self.assertEqual(self.step_now(), (SCREENS.index('SCOPE'), 2))
+        self.adv(125)
+        self.press(1)
+        self.assertEqual(self.step_now(), (SCREENS.index('VANE'), 0))
+
+    def test_each_button_is_armed_on_its_own(self):
+        # B2 held down blocks only B2: B1 presses still count.
+        self.to_normal()
+        self.hold(2, True)
+        self.press(2)
+        self.tick()
+        self.press(1)
+        self.assertEqual(SCREENS[self.tick()[0]], 'SCOPE')
+        self.press(2)   # bounce while B2 is still down: no resume
+        self.tick()
+        for _ in range(64):   # still paused: the scope is held and plays again
+            self.tick()
+        self.assertEqual(SCREENS[self.get('t_id')], 'SCOPE')
+
+    def test_b3_twice_restarts_a_faulted_display(self):
+        # After "#oled fault" the steps draw nothing; B3 (off) then B3 (on) is oled_dma_enable(0), then
+        # oled_dma_enable(1), which runs the driver's start-up again (test_oled_dma.py).
+        self.to_normal()
+        self.set('t_faulted', 1)
+        calls = self.get('t_enable_calls')
+        self.press(3)
+        self.tick()
+        self.press(3)
+        self.tick()
+        self.assertEqual((self.get('t_enable_calls'), self.get('t_enabled')), (calls + 2, 1))
 
     def test_b3_turns_display_off(self):
         # B3: oled_dma_enable(0), and the steps draw nothing; B3 again: oled_dma_enable(1), and drawing resumes.

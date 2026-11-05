@@ -68,7 +68,7 @@ void LL_EXTI_DisableIT_0_31(uint32_t lines);
 void LL_EXTI_EnableIT_0_31(uint32_t lines);
 void stub_exti_clear(uint32_t lines);
 #define __HAL_GPIO_EXTI_CLEAR_IT(lines) stub_exti_clear(lines)
-typedef enum { EXTI4_IRQn = 10, ADC_IRQn = 18, EXTI9_5_IRQn = 22, EXTI15_10_IRQn = 39 } IRQn_Type;
+typedef enum { EXTI0_IRQn = 6, EXTI1_IRQn = 7, EXTI4_IRQn = 10, ADC_IRQn = 18, EXTI9_5_IRQn = 22, EXTI15_10_IRQn = 39 } IRQn_Type;
 void HAL_NVIC_SetPriority(IRQn_Type irq, uint32_t pre, uint32_t sub);
 void HAL_NVIC_EnableIRQ(IRQn_Type irq);
 void HAL_NVIC_DisableIRQ(IRQn_Type irq);
@@ -344,6 +344,7 @@ void t_exti4_irq(void) { EXTI4_IRQHandler(); }
 void t_exti15_10_irq(void) { EXTI15_10_IRQHandler(); }
 int t_tips(void) { return tips; }
 void t_pins(uint32_t idr) { stub_gpiob.idr = idr; }
+void t_idr(int port, uint32_t idr) { (port == 0 ? &stub_gpioa : port == 1 ? &stub_gpiob : &stub_gpioc)->idr = idr; }
 /* One conversion's interrupt; last = it ends the sequence (EOS). */
 void t_adc_conv(uint32_t value, int last) { adc_value = value; stub_adc_isr = last ? ADC_FLAG_EOS : 0U; ADC_IRQHandler(); }
 /* A whole sequence, in rank order: vane, ISET, charger input, VREFINT. */
@@ -410,14 +411,25 @@ def include_flags(stub_dir, *first):
             '-I', ROOT/'firmware', '-I', BOARD_INC]
 
 
-def build(owner, name, *defines):
-    """board_inputs.c and the shim as a host library, with the HAL stand-in (owner is the TestCase class)."""
+# The bench build's button forward (App/oled_app.c is not linked here): the presses it was given.
+BENCH_SHIM = r'''
+#include "oled_app.h"
+unsigned t_presses[4];
+void oled_app_button(unsigned b) { if (b < 4U) t_presses[b]++; }
+'''
+
+
+def build(owner, name, *defines, bench=False):
+    """board_inputs.c and the shim as a host library, with the HAL stand-in (owner is the TestCase class);
+    bench: WS_BENCH_OLED=1, with a stand-in for the display's button forward."""
     owner.stub = tempfile.TemporaryDirectory()
     owner.addClassCleanup(owner.stub.cleanup)
     (Path(owner.stub.name)/'stm32wlxx_hal.h').write_text(HAL_STUB)
     (Path(owner.stub.name)/'stm32_timer.h').write_text(TIMER_STUB)
     # sys_conf.h is the board's own: board_inputs.c asserts its RF debug outputs are off.
-    return host_library(owner, name, *defines, *include_flags(owner.stub.name), SOURCE, WIND, files={'shim.c': SHIM})
+    files = {'shim.c': SHIM, **({'bench.c': BENCH_SHIM} if bench else {})}
+    return host_library(owner, name, *defines, *(('-DWS_BENCH_OLED=1',) if bench else ()), *include_flags(owner.stub.name),
+                        SOURCE, WIND, files=files)
 
 
 class PowerAdc(ctypes.Structure):
@@ -763,6 +775,33 @@ class LinkProbe(unittest.TestCase):
         self.lib.t_refuse_starts(1)
         self.assertEqual(self.lib.t_fire(PROBE_MS), 1)
         self.assertEqual((self.lib.t_pupdr(5), self.lib.t_pupdr(4), self.lib.t_exti_masked(4)), (PUPD_UP, PUPD_UP, 0))
+
+
+@needs_cc
+class BenchButtons(unittest.TestCase):
+    """WS_BENCH_OLED=1: the bench buttons B1 PA0, B2 PA1, B3 PC6, active low (App/oled_app.c reads them up)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.lib = build(cls, 'boardinputs_bench', bench=True)
+        cls.lib.t_init()
+
+    def test_board_button_up_reads_each_pin(self):
+        self.lib.t_idr(PORT['A'], PIN[0] | PIN[1])
+        self.lib.t_idr(PORT['C'], PIN[6])
+        self.assertEqual([self.lib.board_button_up(b) for b in range(5)], [0, 1, 1, 1, 0])   # 0 and 4 are no button
+        for b, (port, pin) in ((1, ('A', 0)), (2, ('A', 1)), (3, ('C', 6))):
+            with self.subTest(b=b):
+                self.lib.t_idr(PORT['A'], PIN[0] | PIN[1])
+                self.lib.t_idr(PORT['C'], PIN[6])
+                self.lib.t_idr(PORT[port], (PIN[0] | PIN[1] if port == 'A' else PIN[6]) & ~PIN[pin])
+                self.assertEqual([self.lib.board_button_up(i) for i in (1, 2, 3)], [int(i != b) for i in (1, 2, 3)])
+
+    def test_pa0_pa1_falling_edge_with_pull_ups(self):
+        for pin in (0, 1):
+            with self.subTest(pin=pin):
+                self.assertEqual(self.lib.t_pin_mode(PORT['A'], pin), ctypes.c_uint32.in_dll(self.lib, 'k_it_falling').value)
+                self.assertEqual(self.lib.t_pin_pull(PORT['A'], pin), ctypes.c_uint32.in_dll(self.lib, 'k_pullup').value)
 
 
 @needs_cc

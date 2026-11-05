@@ -17,6 +17,7 @@ static uint32_t interlude_at;    /* when the next interlude falls due (clock_ms)
 static unsigned next_interlude;  /* index into rotation */
 static unsigned extras;          /* frames sent after the live one */
 static int paused;               /* B2: no automatic interludes (packets still show) */
+static enum scr_id held;         /* while paused: the screen that stays (NORMAL, or one of rotation) */
 static int on;                   /* B3: the display is on */
 
 static int reached(uint32_t now_ms, uint32_t at_ms) { return (int32_t)(now_ms - at_ms) >= 0; }
@@ -31,7 +32,16 @@ void sched_init(uint32_t now_ms)
   next_interlude = 0;
   extras = 0;
   paused = 0;
+  held = SCR_NORMAL;
   on = 1;
+}
+
+/* 1 if id is in B1's order: NORMAL or an interlude of the rotation. */
+static int in_order(enum scr_id id)
+{
+  for (unsigned i = 0; i < ROTATION_N; i++)   /* bound: ROTATION_N, the interludes */
+    if (rotation[i] == id) return 1;
+  return id == SCR_NORMAL;
 }
 
 /* B1: the screen after cur in the order NORMAL, SCOPE, VANE, SYSTEM, HACK, NORMAL. A packet or boot
@@ -50,10 +60,15 @@ void sched_event(enum sched_ev e, uint32_t now_ms)
     case EV_SENT_LIVE: show(SCR_BURST); extras = 0; break;   /* preempts whatever is on */
     case EV_SENT_EXTRA: if (extras < UINT16_MAX) extras++; break;
     case EV_ACK: case EV_NO_ACK: redraw = 1; break;   /* the TX row (NORMAL) and the banner show the outcome */
-    case EV_B1: if (on) show(next_screen(cur)); break;
+    case EV_B1:   /* paused: the held screen moves on, from the held one (a packet screen up or not) */
+      if (!on) break;
+      if (paused) { held = next_screen(held); show(held); }
+      else show(next_screen(cur));
+      break;
     case EV_B2:
       paused = !paused;
-      if (!paused) interlude_at = now_ms + INTERLUDE_EVERY_MS;   /* resumes a full period from now */
+      if (paused) held = in_order(cur) ? cur : SCR_NORMAL;   /* the screen up stays; a packet or boot one ends first */
+      else interlude_at = now_ms + INTERLUDE_EVERY_MS;      /* resumes a full period from now */
       break;
     case EV_B3:
       on = !on;
@@ -63,12 +78,13 @@ void sched_event(enum sched_ev e, uint32_t now_ms)
   }
 }
 
-/* The screen after cur's last frame. */
+/* The screen after cur's last frame. While paused the held screen comes back (and plays again from its
+   frame 0) after the banner and after itself. */
 static enum scr_id after(enum scr_id id)
 {
   if (id == SCR_BOOT) return SCR_HACK;
   if (id == SCR_BURST) return SCR_BANNER;
-  return SCR_NORMAL;   /* HACK after the boot splash, the banner and every interlude */
+  return paused ? held : SCR_NORMAL;   /* HACK after the boot splash, the banner and every interlude */
 }
 
 int sched_step(uint32_t now_ms, enum scr_id *id, unsigned *out_frame, int *display_on)

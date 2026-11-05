@@ -3,6 +3,7 @@
  * task and the hooks both run in the main loop, so they share this state without a lock. */
 #include "oled_app.h"
 #include <string.h>
+#include "board_inputs.h"
 #include "busymon.h"
 #include "clock.h"
 #include "oled_dma.h"
@@ -30,6 +31,7 @@ static uint32_t live_seq, live_s;   /* the minute's live frame and when it went 
 static int awaiting;                /* its reply has not come yet */
 static volatile uint32_t pressed;   /* bit b: button b went down (set in the EXTI interrupt) */
 static volatile uint32_t edge_ms[4]; /* when button b's last edge came, taken or not */
+static uint32_t armed;              /* bit b: a step has read button b up since its last press (main loop only) */
 static int powered = 1;             /* what the driver was last told (oled_dma_enable) */
 static uint32_t air_ms;             /* airtime of this minute's frames so far */
 
@@ -75,12 +77,21 @@ void oled_app_button(unsigned b)
   edge_ms[b] = now;
 }
 
-/* The presses since the last step, to the scheduler: one per button however many came. */
+/* The presses since the last step, to the scheduler: one per button however many came. The EXTI lines see
+   falling edges only, and a contact bounces on release too: a bounce edge more than DEBOUNCE_MS after the
+   press would pass the interrupt's filter as a second press. So a press counts only if a step has read the
+   button up (board_button_up) since the last press it took. The pin is read after the presses are taken: an
+   edge that comes between the two (bit b set again) may be the release bouncing, and the button stays
+   disarmed until a later step reads it up with no edge since. */
 static void take_buttons(uint32_t now)
 {
   uint32_t m = __atomic_exchange_n(&pressed, 0U, __ATOMIC_RELAXED);
   for (unsigned b = 1; b <= 3U; b++)   /* bound: 3 buttons */
-    if (m & (1U << b)) sched_event((enum sched_ev)(EV_B1 + (b - 1U)), now);
+  {
+    uint32_t bit = 1U << b;
+    if ((m & bit) && (armed & bit)) { armed &= ~bit; sched_event((enum sched_ev)(EV_B1 + (b - 1U)), now); }
+    if (board_button_up(b) && !(__atomic_load_n(&pressed, __ATOMIC_RELAXED) & bit)) armed |= bit;
+  }
 }
 
 /* One step. A busy driver means a frame (or the start-up) is still going out of the send buffer: drawing
@@ -122,7 +133,7 @@ void oled_app_start(void)
   oled_dma_init();
   sched_init(clock_ms());
   for (unsigned b = 1; b <= 3U; b++) edge_ms[b] = clock_ms() - DEBOUNCE_MS;   /* bound: 3 buttons */
-  pressed = 0; powered = 1;
+  pressed = 0; armed = 0; powered = 1;   /* armed by the first step that reads each button up */
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_Oled, UTIL_SEQ_RFU, step_timed);
   (void)UTIL_TIMER_Create(&step_timer, STEP_MS, UTIL_TIMER_PERIODIC, on_step_timer, NULL);
   (void)UTIL_TIMER_Start(&step_timer);
