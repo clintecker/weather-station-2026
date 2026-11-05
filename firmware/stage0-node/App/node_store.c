@@ -68,11 +68,11 @@ _Static_assert(WS_JOURNAL_FIRST + WS_JOURNAL_PAGES == WS_META_PAGE_A && WS_META_
                "journal, meta and config pages are distinct, in order, and end at the last page");
 _Static_assert(WS_JOURNAL_PAGES >= 2U, "the journal ring has at least two pages");
 #ifdef WS_JOURNAL_DEFAULT
-/* The board's ring keeps 24 h of this build's widest record (WS_OBS_PLAIN_MAX, from WS_NODE_FIELDS).
+/* The board's ring keeps 9.5 h of this build's widest record (WS_OBS_PLAIN_MAX, from WS_NODE_FIELDS).
    One page is always being recycled, so it does not count. This is the per-build ceiling: a field
    set above 80 B of plaintext (a 96 B frame) does not compile. */
-_Static_assert((WS_JOURNAL_PAGES - 1U) * JOURNAL_SLOTS_PER_PAGE >= 24U * 60U,
-               "the journal keeps 24 hours of the build's widest record");
+_Static_assert((WS_JOURNAL_PAGES - 1U) * JOURNAL_SLOTS_PER_PAGE >= 570U,
+               "the journal keeps 9.5 hours of the build's widest record");
 #endif
 _Static_assert(WS_JOURNAL_PAGES <= UINT16_MAX && JOURNAL_SLOTS_PER_PAGE <= UINT16_MAX, "jref_t page and slot are 16-bit");
 

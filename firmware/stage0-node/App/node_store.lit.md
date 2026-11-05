@@ -57,8 +57,8 @@ Page map (`flash_layout.h`):
 
 | Pages | Contents |
 |---|---|
-| 0–54 | firmware (110 KB, the linker script enforces the limit) |
-| 55–124 | journal, a ring of 70 pages |
+| 0–94 | firmware (190 KB, the linker script enforces the limit) |
+| 95–124 | journal, a ring of 30 pages |
 | 125, 126 | meta log A and B |
 | 127 | provisioning record |
 
@@ -134,7 +134,7 @@ static uint64_t rd64(uint32_t addr, int *bad) {
 <<write-guards>>
 ```
 
-`prog64` and `erase_page` refuse a misaligned program or any address outside pages 55–127. The
+`prog64` and `erase_page` refuse a misaligned program or any address outside pages 95–127. The
 refusal goes through `WS_CHECK` (`firmware/common/ws_check.h`). It returns `STORE_EFLASH`, the same
 code as a failed flash operation, which every caller handles. Only a bug in this file can produce a
 wrong address. The check stops such a bug from erasing firmware pages.
@@ -634,7 +634,7 @@ int store_next_counter(uint64_t *counter) {
 
 ### Format
 
-Pages 55–124 form a ring of `WS_JOURNAL_PAGES` pages. The host sweeps build the ring with 3 pages
+Pages 95–124 form a ring of `WS_JOURNAL_PAGES` pages. The host sweeps build the ring with 3 pages
 so that it wraps. Each page has an 8-byte header followed by fixed-size slots. In the default build
 (the version 6 node field set, `WS_F_WSMP_BENCH`: a 77-byte plaintext at most) a 2048-byte page
 holds 21 slots of 96 bytes and leaves 24 bytes unused:
@@ -678,9 +678,9 @@ packet-beta
 
 The plaintext takes `JOURNAL_PLAIN_DW` double-words, zero-padded. The slot size follows the build's
 field set (`node_fields.h`): its widest record, `WS_OBS_PLAIN_MAX`, not the whole catalog. A shorter
-record of the same build sits zero-padded in the same slot. The board's ring keeps 24 hours of the
+record of the same build sits zero-padded in the same slot. The board's ring keeps at least 9.5 hours of the
 build's widest record (the check below), which caps a node build at 80 bytes of plaintext (a 96-byte
-slot, 21 slots a page, 69 x 21 = 1,449 records; a 96-byte frame). Every catalog v2 field together
+slot, 21 slots a page, 29 x 21 = 609 records, about 10.1 hours; a 96-byte frame). Every catalog v2 field together
 is 94 bytes, a 112-byte slot and only 18 slots a page (1,242 records, 20.7 hours): the RX bridge and
 the gateway accept such a record, but no node build sends one. The host tests build that geometry
 too, with a shrunken ring. The low byte of the header magic is the slot
@@ -716,11 +716,11 @@ _Static_assert(WS_JOURNAL_FIRST + WS_JOURNAL_PAGES == WS_META_PAGE_A && WS_META_
                "journal, meta and config pages are distinct, in order, and end at the last page");
 _Static_assert(WS_JOURNAL_PAGES >= 2U, "the journal ring has at least two pages");
 #ifdef WS_JOURNAL_DEFAULT
-/* The board's ring keeps 24 h of this build's widest record (WS_OBS_PLAIN_MAX, from WS_NODE_FIELDS).
+/* The board's ring keeps 9.5 h of this build's widest record (WS_OBS_PLAIN_MAX, from WS_NODE_FIELDS).
    One page is always being recycled, so it does not count. This is the per-build ceiling: a field
    set above 80 B of plaintext (a 96 B frame) does not compile. */
-_Static_assert((WS_JOURNAL_PAGES - 1U) * JOURNAL_SLOTS_PER_PAGE >= 24U * 60U,
-               "the journal keeps 24 hours of the build's widest record");
+_Static_assert((WS_JOURNAL_PAGES - 1U) * JOURNAL_SLOTS_PER_PAGE >= 570U,
+               "the journal keeps 9.5 hours of the build's widest record");
 #endif
 _Static_assert(WS_JOURNAL_PAGES <= UINT16_MAX && JOURNAL_SLOTS_PER_PAGE <= UINT16_MAX, "jref_t page and slot are 16-bit");
 ```
@@ -1131,7 +1131,7 @@ under older firmware, or on another board, cannot (`docs/runbook-moving-boards.m
 
 ```mermaid
 flowchart TD
-    J["journal_ready = 0: RAM no longer describes flash"] --> E["erase every journal page, 55-124"]
+    J["journal_ready = 0: RAM no longer describes flash"] --> E["erase every journal page, 95-124"]
     E --> Q{"any erase failed?"}
     Q -- yes --> F["STORE_EFLASH, provisioning record kept"]
     Q -- no --> C["erase provisioning page 127, return its result"]
@@ -1237,7 +1237,7 @@ with losses, scrubs the storm epoch and runs WIPE. It runs in three modes:
 | sweep (the power-cut sweep) | for each flash operation index: cuts power there once for each outcome that the model has, reboots, and checks every guarantee in section 1. Program outcomes: old, new, torn. Erase outcomes: none, all, two random partial patterns, partial with unreadable double-words |
 | errsweep (the error sweep) | for each flash operation index: fails that operation like a hardware abstraction layer (HAL) error, continues the workload, and checks. The failed operation leaves flash unchanged, torn or partially erased |
 
-The tests use three geometries: `full` (the board's 70-page journal), `small` (a 3-page journal, so
+The tests use three geometries: `full` (the board's 30-page journal), `small` (a 3-page journal, so
 the sweeps wrap) and `wide` (the widest field catalog, 3 pages). `tests/test_store_powercut.py`
 builds and runs them under AddressSanitizer and UndefinedBehaviorSanitizer. It fails on any
 violation that it does not list as a note. It also runs the four `test_bug_*` regressions named

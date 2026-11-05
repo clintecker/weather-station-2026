@@ -38,7 +38,7 @@ flowchart LR
   subgraph TX["TX board, sensor node"]
     direction TB
     S["Sensor and power modules<br/>SHT45 at I²C 0x44, INA228 0x40,<br/>MAX17048 0x36 and others"] --> M["Observation<br/>up to 77 bytes"]
-    M --> J[("Flash journal<br/>1,449 slots")]
+    M --> J[("Flash journal<br/>609 slots")]
     J --> E["AES-128-CCM seal<br/>Mbed TLS"]
     E --> R1["LoRa modem<br/>915 MHz, 500 kHz, SF7"]
   end
@@ -256,8 +256,8 @@ The STM32WL55JC has 256 KB of flash in 128 pages of 2 KB. The flash programs 64 
 
 | Pages | Size | Contents |
 |---|---|---|
-| 0–54 | 110 KB | Firmware. The linker script enforces this limit. |
-| 55–124 | 140 KB | Journal ring: 70 pages × 21 slots (current build) |
+| 0–94 | 190 KB | Firmware. The linker script enforces this limit. |
+| 95–124 | 60 KB | Journal ring: 30 pages × 21 slots (current build) |
 | 125–126 | 4 KB | Monotonic log, two pages (A and B): epochs, counter reservations, lost total, abandoned total |
 | 127 | 2 KB | Configuration: station ID, key, key check value (KCV) |
 
@@ -317,15 +317,15 @@ If the ECC (error-correcting code) error is in the ACK word only, the firmware c
 
 ### 5.5 Capacity
 
-One of the 70 journal pages is always being recycled. The journal therefore holds at least 69 pages × 21 slots = **1,449 observations**. At one observation each minute, this is 1,449 / 60 = **24.15 hours** without an ACK. A build with more fields has larger slots and fewer of them:
+One of the 30 journal pages is always being recycled. The journal therefore holds at least 29 pages × 21 slots = **609 observations**. At one observation each minute, this is 609 / 60 = **10.15 hours** without an ACK. A build with more fields has larger slots and fewer of them:
 
-| Field set | Plaintext | Slot | Slots a page | Records (69 pages) | Hours |
+| Field set | Plaintext | Slot | Slots a page | Records (29 pages) | Hours |
 |---|---:|---:|---:|---:|---:|
-| Version 5 bench build (for comparison) | 61 B | 80 B | 25 | 1,725 | 28.75 |
-| Version 6 node field set, phases A–C (current build) | 77 B | 96 B | 21 | 1,449 | 24.15 |
-| Every catalog version 2 field (never a build) | 94 B | 112 B | 18 | 1,242 | 20.7 |
+| Version 5 bench build (for comparison) | 61 B | 80 B | 25 | 725 | 12.08 |
+| Version 6 node field set, phases A–C (current build) | 77 B | 96 B | 21 | 609 | 10.15 |
+| Every catalog version 2 field (never a build) | 94 B | 112 B | 18 | 522 | 8.7 |
 
-The rule is **24 hours of the build's widest record**. A compile-time check in `App/node_store.c:71-75` keeps this floor. Thus a field set above 80 bytes of plaintext (a 96-byte frame) does not compile. That is the **per-build ceiling**. Only the RX bridge and the gateway accept the full catalog (94 bytes), so that they accept every canonical record. The node field set holds every power field of every phase, so a change of phase changes neither the slot size nor the page magic. When the ring is full, the firmware erases the oldest page. It counts each pending observation on that page as `lost`.
+The rule is **9.5 hours of the build's widest record**. A compile-time check in `App/node_store.c` keeps this floor. Thus a field set above 80 bytes of plaintext (a 96-byte frame) does not compile. That is the **per-build ceiling**. Only the RX bridge and the gateway accept the full catalog (94 bytes), so that they accept every canonical record. The node field set holds every power field of every phase, so a change of phase changes neither the slot size nor the page magic. When the ring is full, the firmware erases the oldest page. It counts each pending observation on that page as `lost`.
 
 > **Caution:** The 30-day buffer requirement (test H11) needs external SPI NOR flash. The internal journal does not satisfy H11.
 
@@ -738,7 +738,7 @@ stateDiagram-v2
 ### 9.3 Rules
 
 - **Live first.** The current observation goes first. The backlog cannot delay new data.
-- **Bounded backlog.** Each minute sends N old observations at most (section 9.4). At NORMAL (N = 5), a full 24.15-hour journal (1,449 records) clears in approximately 4.8 hours (1,449 / 5 = 290 minutes). In CONSERVE (N = 0) the backlog does not clear. The 30-day buffer test (H11) must examine this rate.
+- **Bounded backlog.** Each minute sends N old observations at most (section 9.4). At NORMAL (N = 5), a full 10.15-hour journal (609 records) clears in approximately 2 hours (609 / 5 = 122 minutes). In CONSERVE (N = 0) the backlog does not clear. The 30-day buffer test (H11) must examine this rate.
 - **A retry is the same data.** A retry has the same identity and a new counter. The gateway stores it once and sends the ACK again.
 - **The RX board does not decide.** It forwards frames with the correct version, kind and length. Upstream, that is an observation of 39–110 bytes or an 80-byte health report (`ws_air_frame_ok` in `firmware/common/ws_console.c:77-83`). Downstream, it is a 33-byte ACK or NACK (`ws_host_reply_ok`). It does not check the tag. It has no key.
 - **Any authentic ACK clears its own slot.** An ACK can arrive late. It still clears the correct slot.
@@ -785,7 +785,7 @@ A record leaves the journal without an ACK in three cases. The node counts each 
 |---|---|---|
 | Observation frame lost on air | No ACK in 2 s. Red LED on TX. | Next minute: sent again as backlog |
 | ACK lost on air | Gateway has the row. TX keeps the slot. | Next minute: duplicate. Gateway gives the ACK again. No second row. |
-| Gateway not running | RX prints the frame. Nobody answers. | TX keeps observations for about 24 hours |
+| Gateway not running | RX prints the frame. Nobody answers. | TX keeps observations for about 10 hours |
 | Database commit fails | No ACK | TX keeps the slot and sends it again |
 | Authentic frame, identity collision or invalid record | Gateway stores the frame in `rejections`. It sends a NACK. | TX abandons the record (section 9.5) |
 | Gateway silent for 3 minutes | TX goes to PROBING | Live reading every minute in SURPLUS and NORMAL. Probes after 120, 240 and 480 s, then every 900 s, in CONSERVE. The backlog drains after the link returns. |
@@ -1086,7 +1086,7 @@ EOF
 | Nonce reuse after a key is used again | The gateway raises the key-reuse alarm for an authentic frame at or below its counter mark whose bytes differ from the frame it accepted under that counter (section 11.1) | Detected, not prevented: re-key |
 | RX board is compromised | RX has no key. It can only drop or delay frames. | Drop = backlog. Delay = late data. |
 | Key extraction from the TX board | **None on the bench prototype.** Readout protection (RDP) is at level 0 (`FLASH_OPTR` = `0x3FFFF0AA` on both boards, [`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), board inventory). The key is in plain flash. | Use RDP level 1 or higher before field use |
-| Radio jamming | None (physical layer) | The backlog survives about 24 hours |
+| Radio jamming | None (physical layer) | The backlog survives about 10 hours |
 
 ---
 

@@ -130,7 +130,7 @@ jobs:
 
       # Same procedure as RELEASES.md steps 3-4: `make clean` removes both roles, then build rx and
       # tx; do it twice and require identical .bin hashes. Each link also runs the Makefile's flash
-      # budget check, which fails the build above 90 % of the 110 KB application region, and the no-heap
+      # budget check, which fails the build above 90 % of the 190 KB application region, and the no-heap
       # check (no malloc & co. linked in; docs/power-of-ten.md rule 3).
       - name: Build both roles twice and compare .bin hashes
         working-directory: firmware/stage0-node

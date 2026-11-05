@@ -1,6 +1,6 @@
 # Bench telemetry link for NUCLEO-WL55JC1 (README.md): ROLE=tx sends the bench's power and air readings
 # every 5 s over plain LoRa; ROLE=rx prints every packet. A test tool, not the station protocol.
-# Flashing writes only the application region: the node's key and journal (pages 55..127) survive.
+# Flashing writes only the application region: the node's key and journal (pages 95..127) survive.
 #
 #   make ROLE=tx|rx                    build build/<role>/benchlink-<role>.elf/.bin
 #   make ROLE=tx|rx flash SERIAL=<stlink serial>

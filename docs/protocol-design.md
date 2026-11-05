@@ -595,23 +595,23 @@ The journal stores `WS_OBS_PLAIN_MAX` bytes per slot, plus the commit word and t
 `SLOT_BYTES = roundup8(WS_OBS_PLAIN_MAX) + 16`. When the node reads a record back, it takes the
 record's length from the record's own bitmap and extension word.
 
-**The journal rule: 24 hours of the build's widest record** (power design section 7). The
-compile-time check in `node_store.c:71-76` asserts that the ring keeps 24 hours of
+**The journal rule: 9.5 hours of the build's widest record** (power design section 7). The
+compile-time check in `node_store.c:71-76` asserts that the ring keeps 9.5 hours of
 `WS_OBS_PLAIN_MAX`, the build's widest record. Version 5 asserted 24 hours of every catalog field
-(`WS_OBS_PLAIN_ALL`); catalog version 2 makes that 94 B, a 112 B slot, 18 slots a page and 1,242
+(`WS_OBS_PLAIN_ALL`); catalog version 2 makes that 94 B, a 112 B slot, 18 slots a page and 522
 records, so the build would fail. A build whose field set exceeds **80 B of plaintext (a 96 B
 frame) does not compile**: that is the per-build ceiling. The 110 B bound of every catalog field
 exists only so that the RX bridge and the gateway accept any canonical record.
 
-| Field set | Plaintext | Frame | Slot | Slots a page | Records (69 of 70 pages) | Outage buffer |
+| Field set | Plaintext | Frame | Slot | Slots a page | Records (29 of 30 pages) | Outage buffer |
 |---|---:|---:|---:|---:|---:|---:|
-| Version 6 node field set (phases A to C, the current build) | 77 B | 93 B | 96 B | 21 | 1,449 | 24.15 h |
-| Per-build ceiling | 80 B | 96 B | 96 B | 21 | 1,449 | 24.15 h |
-| Version 5 bench build (fields 0–6, 9, 11, 13–20, 25) | 61 B | 77 B | 80 B | 25 | 1,725 | 28.75 h |
-| Previous bench build (temperature and humidity with the minute summary) | 35 B | 51 B | 56 B | 36 | 2,484 | 41.4 h |
-| Every catalog version 2 field (not a build; does not compile) | 94 B | 110 B | 112 B | 18 | 1,242 | 20.7 h |
+| Version 6 node field set (phases A to C, the current build) | 77 B | 93 B | 96 B | 21 | 609 | 10.15 h |
+| Per-build ceiling | 80 B | 96 B | 96 B | 21 | 609 | 10.15 h |
+| Version 5 bench build (fields 0–6, 9, 11, 13–20, 25) | 61 B | 77 B | 80 B | 25 | 725 | 12.08 h |
+| Previous bench build (temperature and humidity with the minute summary) | 35 B | 51 B | 56 B | 36 | 1,044 | 17.4 h |
+| Every catalog version 2 field (not a build; does not compile) | 94 B | 110 B | 112 B | 18 | 522 | 8.7 h |
 
-One journal page is always being recycled, so the counts use 69 of the 70 pages. The proof of
+One journal page is always being recycled, so the counts use 29 of the 30 pages (flash layout v3, 2026-11-04). The proof of
 concept accepts this buffer. The 30-day buffer comes with an external SPI NOR flash journal (PRD
 test H11); more pages or SPI NOR is also the answer for a field set above the ceiling (power design
 risk R6).

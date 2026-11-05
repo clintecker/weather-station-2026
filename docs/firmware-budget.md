@@ -40,8 +40,8 @@ not measurements.
 
 | Resource | Available | Used now | Status |
 |---|---|---|---|
-| Flash, application region | 110 KB = 112,640 B (pages 0–54, enforced by the linker script) | TX 88,160 B (78.3 %), RX 34,904 B (31.0 %). Before (c7e8860): TX 83,760 B (74.4 %), RX 34,824 B (30.9 %) | Under the 90 % guard (`FLASH_BUDGET_PCT`, `firmware/stage0-node/Makefile:72`): TX has 24,480 B left, 13,216 B below the guard. **TX is 3,680 B over the 75 % headroom target** (84,480 B) since the power telemetry work; see [The plan that makes it fit](#the-plan-that-makes-it-fit) |
-| Flash, node state | 146 KB (pages 55–127) | journal 70 pages, meta log 2 pages, config 1 page. The journal keeps at least 1,449 slots of 96 B for the version 6 node field set (77 B, power spec section 7): 24.15 h. Before: 1,725 slots of 80 B (61 B, 28.75 h) | `App/flash_layout.h:20` fixes the pages. `App/node_fields.h` sets the slot size. `App/node_store.c:71-76` asserts 24 h of the build's widest record, so a field set above 80 B does not compile |
+| Flash, application region | 190 KB = 194,560 B (pages 0–94, enforced by the linker script) | TX 88,160 B (78.3 %), RX 34,904 B (31.0 %). Before (c7e8860): TX 83,760 B (74.4 %), RX 34,824 B (30.9 %) | Under the 90 % guard (`FLASH_BUDGET_PCT`, `firmware/stage0-node/Makefile:72`): TX has 24,480 B left, 13,216 B below the guard. **TX is 3,680 B over the 75 % headroom target** (84,480 B) since the power telemetry work; see [The plan that makes it fit](#the-plan-that-makes-it-fit) |
+| Flash, node state | 66 KB (pages 95–127) | journal 30 pages, meta log 2 pages, config 1 page. The journal keeps at least 609 slots of 96 B for the version 6 node field set (77 B, power spec section 7): 10.15 h. Before: 1,725 slots of 80 B (61 B, 28.75 h) | `App/flash_layout.h:20` fixes the pages. `App/node_fields.h` sets the slot size. `App/node_store.c:71-76` asserts 9.5 h of the build's widest record, so a field set above 80 B does not compile |
 | RAM | 64 KB (RAM1 32 KB + RAM2 32 KB) | TX: 11,688 B static data (`.data` 32 B + `.bss` 11,656 B; before 10,936 B) + 8 KB reserved stack + 0.5 KB heap, all in RAM1. Worst-case stack estimate 6,056 B of 8,192 B (74 %). RX: 6,040 B static data, stack estimate 2,780 B (34 %) | Ample. RAM2 is unused |
 | CPU | Cortex-M4 at 48 MHz (the Cortex-M0+ core is unused) | A 250 ms module tick (it also starts the board ADC sequence, about 0.9 ms of interrupt-driven conversions), 1 s INA228 steps, 15 s gauge steps, one report and a few frames per minute | No constraint |
 | Radio payload | Up to a 77-byte observation plaintext in a 93-byte frame (the version 6 node field set, every module and every power field). A node build may reach 80 B in a 96-byte frame (the per-build ceiling); the catalog (version 2) allows up to 94 B in a 110-byte frame, accepted by the RX bridge and the gateway only. Health report: 64 B in an 80-byte frame | Temperature and humidity, pressure, wind, rain, UVA, enclosure, battery (voltage, current, energy and charge counters) and the power rails (load, charger input, solar, USB-C) | Not the limit: every catalog field fits in one frame (see [Radio payload](#radio-payload)) |
@@ -49,7 +49,7 @@ not measurements.
 Sources:
 
 - `firmware/board/nucleo-wl55jc/STM32WL55JCIX_FLASH.ld`. Every NUCLEO project shares this linker
-  script. It sets FLASH 110K, RAM1 and RAM2 32K each, heap 0x200 and stack 0x2000. The stack was
+  script. It sets FLASH 190K, RAM1 and RAM2 32K each, heap 0x200 and stack 0x2000. The stack was
   0x800 before the stack work below.
 - `App/flash_layout.h`.
 - `firmware/common/ws_frame.h` (`WS_HEADER_LEN 8`, `WS_TAG_LEN 8`).
@@ -62,7 +62,7 @@ The STM32WL55JC has 256 KB of single-bank flash in 128 pages of 2 KB (`App/flash
 
 ```mermaid
 flowchart LR
-  app["Pages 0–54 at 0x08000000<br/>Firmware, 110 KB"] --- jrnl["Pages 55–124 at 0x0801B800<br/>Journal: observation ring, 70 pages"]
+  app["Pages 0–94 at 0x08000000<br/>Firmware, 190 KB"] --- jrnl["Pages 95–124 at 0x0802F800<br/>Journal: observation ring, 30 pages"]
   jrnl --- meta["Pages 125–126 at 0x0803E800<br/>Meta log A and B: epoch, counter reservation"]
   meta --- cfg["Page 127 at 0x0803F800<br/>Config: station id and key"]
 ```
@@ -73,17 +73,17 @@ script, so a bench-tool image cannot reach the node key or the journal. One cons
 flash, so a larger firmware region moves only the journal start. `tests/test_flash_layout.py`
 checks that the header, the linker script and `board.mk` agree.
 
-**The journal** keeps 24 hours of the build's widest record (`WS_OBS_PLAIN_MAX`, from
+**The journal** keeps 9.5 hours of the build's widest record (`WS_OBS_PLAIN_MAX`, from
 `WS_NODE_FIELDS`; `App/node_store.c:71-76`; power spec section 7). A slot is the plaintext rounded up
-to 8-byte double-words plus a commit and an ACK double-word; one of the 70 pages is always being
-recycled, so 69 count:
+to 8-byte double-words plus a commit and an ACK double-word; one of the 30 pages is always being
+recycled, so 29 count:
 
-| Field set | Plaintext | Slot | Slots a page | Records (69 pages) | Hours |
+| Field set | Plaintext | Slot | Slots a page | Records (29 pages) | Hours |
 |---|---:|---:|---:|---:|---:|
-| v5 bench build (release `04fcc656938d`) | 61 B | 80 B | 25 | 1,725 | 28.75 |
-| **v6 node field set** (phases A–C, today's build) | 77 B | 96 B | 21 | **1,449** | 24.15 |
-| per-build ceiling | 80 B | 96 B | 21 | 1,449 | 24.15 |
-| every catalog v2 field (not a build: it would not compile) | 94 B | 112 B | 18 | 1,242 | 20.7 |
+| v5 bench build (release `04fcc656938d`) | 61 B | 80 B | 25 | 725 | 12.08 |
+| **v6 node field set** (phases A–C, today's build) | 77 B | 96 B | 21 | **609** | 10.15 |
+| per-build ceiling | 80 B | 96 B | 21 | 609 | 10.15 |
+| every catalog v2 field (not a build: it would not compile) | 94 B | 112 B | 18 | 522 | 8.7 |
 
 The slot size changed from 80 to 96 B, so the page magic changed (`"WSJ"` + 0x60): the first boot of
 a version 6 image recycles every old page. Drain the journal (`pending=0`) before flashing it
@@ -91,7 +91,7 @@ a version 6 image recycles every old page. Drain the journal (`pending=0`) befor
 
 ### Budget check in the build
 
-The build enforces a budget. `make` prints `flash budget: N of 112640 B`. It fails above
+The build enforces a budget. `make` prints `flash budget: N of 194560 B`. It fails above
 `FLASH_BUDGET_PCT` (default 90 %) of the application region (`firmware/stage0-node/Makefile`).
 
 ### Current build
@@ -373,7 +373,7 @@ operation. These targets apply until the final design is sized:
 
 ```mermaid
 flowchart TD
-  A["Budget check in every build, size line in every RELEASES.md entry"] --> B{"Does a feature take TX past 75 % of 110 KB?"}
+  A["Budget check in every build, size line in every RELEASES.md entry"] --> B{"Does a feature take TX past 75 % of 190 KB?"}
   B -->|"yes"| C["Use LTO as a measured reserve, −6.6 KB on TX"]
   B -->|"no"| D["SPI NOR journal for the 30-day buffer"]
   C --> D
@@ -381,8 +381,9 @@ flowchart TD
   F["Module split: done as WSMP local modules"] --> G["Sensors are modules behind one interface, App/wsmp_local.h"]
 ```
 
+1. **Flash layout v3 (2026-11-04):** firmware pages 0–94 (190 KB), journal 95–124 (30 pages, about 10 h), meta 125–126, provisioning 127. The 80 KB went from the journal to code for the bench OLED; the journal moves to SPI flash later (item 2). Layout v2 below was the previous layout.
 1. **Flash layout v2 (released in `cc2766a38c61`, 2026-10-19).** Firmware pages 0–54 (110 KB), journal 55–124 (70
-   pages), meta log 125–126, provisioning 127. The internal journal keeps 24 hours for a full
+   pages), meta log 125–126, provisioning 127. The internal journal kept 24 hours for a full
    station. **Constraint:** the key and the transmission counter live in the node-state pages. A
    layout change erases them, so the board must get a new key. Otherwise the board repeats AES-CCM
    nonces ([`docs/runbook-moving-boards.md`](runbook-moving-boards.md)).
@@ -447,7 +448,7 @@ adds 1 ms (41.0 ms counts as 42 ms).
   version 2 field) fits in one LoRa payload (at most 255 B, `WS_FRAME_MAX`). More sensors therefore
   never need a second frame or a second ACK window. The RX bridge forwards observation frames of 39 to
   110 B and health reports of exactly 80 B (`ws_air_frame_ok`, `firmware/common/ws_console.c`).
-- **A node build stops at 96 B.** The journal keeps 24 hours of the build's widest record (power spec
+- **A node build stops at 96 B.** The journal keeps 9.5 hours of the build's widest record (power spec
   section 7), so a field set above 80 B of plaintext does not compile (`App/node_store.c:71-76`). The
   version 6 node field set is 77 B: 3 B below the ceiling.
 - **The airtime cap sets the backlog drain.** The firmware counts one exchange as the airtime of

@@ -556,13 +556,13 @@ ACK fails and counter 2^40 is refused; on failure the board refuses to transmit 
 
 | Pages | Use |
 |---|---|
-| 0-54 (110 KB) | firmware (linker-enforced); a flash rewrites only these |
-| 55-124 | journal ring, 70 pages x 21 slots of 96 B (v6 field set) |
+| 0-94 (190 KB) | firmware (linker-enforced); a flash rewrites only these |
+| 95-124 | journal ring, 30 pages x 21 slots of 96 B (v6 field set) |
 | 125-126 | monotonic log A/B: boot epoch, counter reservations (blocks of 256), lost/abandoned totals |
 | 127 | config: station ID, key, KCV |
 
 Slot = plaintext rounded to 8 B + commit double-word (magic + CRC-16) + ACK double-word; page magic
-"WSJ" + slot size (0x57534A60). Capacity >= 1,449 records, about 24.15 h without ACK; on overflow the
+"WSJ" + slot size (0x57534A60). Capacity >= 609 records, about 10.15 h without ACK; on overflow the
 oldest page is erased and counted `lost` (NR:389-401). Torn writes read back as burned; a torn ACK word
 counts as acknowledged (NR:450-453). 70 reset-during-write cycles passed; **true power removal never
 tested** (NR:448, FM:266).
@@ -614,7 +614,7 @@ replaced only on a fail); `POWER_R_ISET_OHM` 1000; `POWER_ISET_GAIN_PPM` 990099;
 | Toolchain | xPack arm-none-eabi-gcc 15.2.1-1.1; `tools/fetch-vendor.sh` pins STM32CubeWL v1.6.0 and Mbed TLS 3.6.6 | NR:37-42, NR:67 |
 | Outputs | `build/<role>/stage0-<role>.{elf,bin,map}`; prints size, flash budget and `.bin` SHA-256 | NR:64, NR:72 |
 | Targets | `all`, `flash` (OpenOCD, connect under reset, verify), `stack` (worst-case vs 8 KB reservation), `waits` (no reachable busy-wait), `clean` | NR:72-76 |
-| Budget | link fails above 90 % of 112,640 B; v6 build TX 88,160 B (78.3 %), RX 34,904 B (31.0 %) | NR:69, NR:384 |
+| Budget | link fails above 90 % of 194,560 B; v6 build TX 88,160 B (78.3 %), RX 34,904 B (31.0 %) | NR:69, NR:384 |
 | Release | clean tree, fetch-vendor, two clean builds with identical `.bin` hashes, flash RX then TX, check `fw=` on both `#boot`, record in RELEASES.md | REL:6-14 |
 | Format change | drain journal (`pending=0`), WIPE, flash both from the same release, `init` a new run directory, provision with a new key, start a matching gateway, record | REL:16-27 |
 
@@ -663,7 +663,7 @@ CI (`.github/workflows/ci.yml`) adds libFuzzer 60 s a target and compares bins w
 | `firmware/i2cscan` | read-only I2C2 check: pull-ups present, address scan every 10 s, INA228 and MAX17048 readings once a second, phase B rails if present; draws the readings on the bench OLED; drives PA9 high; no radio | `make flash SERIAL=<TX>`; miniterm at 115200 | I2CS:3-9, I2CS:13-67, I2CS:72-84 |
 | `firmware/rangetest` | bidirectional link test about once a second with a 16 B ping-pong; buttons step TX power (+22/+14/+10/0 dBm) and SF (12/10/9/7); boot and fallback SF12/+22 dBm; 915 MHz/500 kHz/CR4/5 fixed; both boards same image | `make flash` both; `tools/rangetest_log.py <serial> <csv>` | RT:3-34, RT:38-45 |
 
-All three link inside the 110 KB firmware region, so the node's key and journal (pages 55-127) survive;
+All three link inside the 190 KB firmware region, so the node's key and journal (pages 95-127) survive;
 reflash the node release afterwards (BL:24-26, I2CS:76-78, RT:51-54).
 
 ---

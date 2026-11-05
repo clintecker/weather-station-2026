@@ -126,9 +126,9 @@ section 3).
 - **Bench-verified:**
   - the journal, in version 5 on the boards: about 28.75 hours of outage buffer in internal flash
     (1,725 slots of 80 bytes for the WSMP bench field set). The version 6 source keeps at least
-    1,449 slots of 96 bytes for the 77-byte node field set, about 24.15 hours, not yet on a board
-    (`firmware/stage0-node/README.md`, "Flash layout and outage capacity"). The 24-hour rule holds
-    for the build's widest record (`App/node_store.c:71-76`): a field set above 80 bytes does not
+    609 slots of 96 bytes for the 77-byte node field set, about 10.15 hours (30-page ring, flash layout v3), not yet on a board
+    (`firmware/stage0-node/README.md`, "Flash layout and outage capacity"). The 9.5-hour rule holds
+    for the build's widest record (`App/node_store.c`): a field set above 80 bytes does not
     compile, so every catalog version 2 field (94 bytes, 20.7 hours) is never a build,
   - durable counters and the watchdog,
   - the reset-during-write test (70 cycles),

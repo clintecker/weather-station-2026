@@ -41,7 +41,7 @@ make ROLE=rx flash SERIAL=0016001E4142500E20353451
 make ROLE=tx flash SERIAL=003B00194142500E20353451
 ```
 
-Flashing rewrites only the firmware region (pages 0–54). Provisioning, counters and the journal (pages 55–127) survive a reflash that keeps the flash layout (verified 2026-10-12 on the previous layout). A release that changes the layout loses them: follow [`docs/runbook-moving-boards.md`](../../docs/runbook-moving-boards.md), "Changing the flash layout". Each build prints the binary SHA-256 at the end.
+Flashing rewrites only the firmware region (pages 0–94). Provisioning, counters and the journal (pages 95–127) survive a reflash that keeps the flash layout (verified 2026-10-12 on the previous layout). A release that changes the layout loses them: follow [`docs/runbook-moving-boards.md`](../../docs/runbook-moving-boards.md), "Changing the flash layout". Each build prints the binary SHA-256 at the end.
 
 A release follows the procedure in [`RELEASES.md`](RELEASES.md), "How to cut a release":
 
@@ -66,7 +66,7 @@ Makefile variables and targets:
 | `CUBE` | `../../vendor/STM32CubeWL` | The STM32CubeWL checkout that `tools/fetch-vendor.sh` creates. |
 | `TOOLCHAIN` | `~/.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin` | The directory that holds `arm-none-eabi-gcc`. |
 | `BUILD` | `build/<role>` | The build directory. CI uses separate ones for the analyzer builds. |
-| `FLASH_BUDGET_PCT` | `90` | The link fails when code and initialized data use more than this percentage of the 112,640 B firmware region ([`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
+| `FLASH_BUDGET_PCT` | `90` | The link fails when code and initialized data use more than this percentage of the 194,560 B firmware region ([`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
 | `ANALYZE` | unset | `1` adds GCC's static analyzer (`-fanalyzer`) to our own C. Our C always builds with a strict warning set and `-Werror`. |
 | `OPT` | `-Os` | The optimisation flags. The build constants below go here, for example `make ROLE=tx OPT='-Os -DWS_POWER_PROFILE=2'`. |
 | `all` (default target) | | Builds the `.elf` and `.bin`. Then prints the size, the flash budget line and the `.bin` SHA-256. |
@@ -374,15 +374,15 @@ The STM32WL55JC has 256 KB of flash in 128 pages of 2 KB (`App/flash_layout.h`):
 
 ```mermaid
 flowchart LR
-  FW["Pages 0–54, 110 KB<br/>firmware"] --- J["Pages 55–124, 70 pages<br/>journal ring"]
+  FW["Pages 0–94, 190 KB<br/>firmware"] --- J["Pages 95–124, 30 pages<br/>journal ring"]
   J --- META["Pages 125–126<br/>monotonic log, A and B"]
   META --- CFG["Page 127<br/>config: station ID, key, KCV"]
 ```
 
 | Pages | Use |
 |---|---|
-| 0–54 (110 KB) | The firmware. The linker script enforces this limit. Release 04fcc656938d: TX image 74,464 B (66.1 %), RX 34,832 B (30.9 %). The protocol version 6 build (power telemetry, 2026-10-29, not yet released): TX 88,160 B (78.3 %), RX 34,904 B (31.0 %) ([`RELEASES.md`](RELEASES.md), [`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
-| 55–124 | The journal ring: 70 pages × 21 slots of 96 bytes (the version 6 node field set; 25 slots of 80 bytes up to protocol version 5). |
+| 0–94 (190 KB) | The firmware. The linker script enforces this limit. Release 04fcc656938d: TX image 74,464 B (66.1 %), RX 34,832 B (30.9 %). The protocol version 6 build (power telemetry, 2026-10-29, not yet released): TX 88,160 B (78.3 %), RX 34,904 B (31.0 %) ([`RELEASES.md`](RELEASES.md), [`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
+| 95–124 | The journal ring: 30 pages × 21 slots of 96 bytes (the version 6 node field set; 25 slots of 80 bytes up to protocol version 5). |
 | 125–126 | The monotonic log, pages A and B: boot epoch, counter reservations (blocks of 256), the `lost`/`abandoned` totals. Recovery takes the maximum. Compaction writes its header last. |
 | 127 | Config: station ID, key, KCV. The firmware writes the magic double-word last. |
 
@@ -396,7 +396,7 @@ packet-beta
   704-767: "ACK double-word"
 ```
 
-**Capacity: at least 69 × 21 = 1,449 observations, about 24.15 hours** of one-minute readings without an ACK (1,725 and 28.75 hours for the version 5 field set). One of the 70 pages is always being recycled, so it does not count. When the journal is full, the firmware erases the oldest page and counts its unacknowledged records in `lost`. The layout keeps 24 hours of the build's widest record (a compile-time check, `App/node_store.c:71-76`): a field set above 80 B of plaintext (a 96 B frame) does not compile. That is the per-build ceiling (power spec sections 5.4 and 7); every catalog version 2 field (94 B) is not a build. Each slot needs a separately programmed ACK double-word, which costs space. The 30-day storage requirement (H11, 16 MB of external SPI NOR flash) remains future work.
+**Capacity: at least 29 × 21 = 609 observations, about 10.15 hours** of one-minute readings without an ACK (725 and 12.08 hours for the version 5 field set). One of the 30 pages is always being recycled, so it does not count. When the journal is full, the firmware erases the oldest page and counts its unacknowledged records in `lost`. The layout keeps 9.5 hours of the build's widest record (a compile-time check, `App/node_store.c`): a field set above 80 B of plaintext (a 96 B frame) does not compile. That is the per-build ceiling (power spec sections 5.4 and 7); every catalog version 2 field (94 B) is not a build. Each slot needs a separately programmed ACK double-word, which costs space. The 30-day storage requirement (H11, 16 MB of external SPI NOR flash) remains future work.
 
 **Page magic:** `"WSJ"` + the slot size in the low byte (`0x57534A60` for 96-byte slots, `0x57534A50` for the 80-byte slots of protocol version 5; `App/node_store.c:51`). The first boot of a version 6 image therefore recycles every version 5 page: drain the journal first. At boot the firmware ignores a page with any other magic, for example a page from a build with another field set or another protocol version. Later it recycles that page. It never misreads it.
 
@@ -442,8 +442,8 @@ What a different field set does to the journal:
 - If the slot size changes, the page magic changes. So at the first boot the firmware **ignores every journal page of the old build and recycles it**. It never sends the records that were still pending in those pages. The move from the version 5 set (80-byte slots) to the version 6 set (96-byte slots) is such a change.
 - If the slot size stays the same, the firmware reads the old pages. An example is a small addition: one 1-byte field makes 78 bytes, which still rounds up to a 96-byte slot. But the firmware checks each old record's CRC over the new record length. That check almost always fails. The firmware then counts the record as `burned` and does not send it.
 - In both cases, drain the journal (`pending=0` in `STATUS`) before you flash a build with another field set.
-- Capacity falls as records grow. The version 6 node field set (77-byte record) gives 96-byte slots, 21 per page, 1,449 records, about 24.15 hours. The version 5 bench field set (61 bytes) gave 80-byte slots, 25 per page, 1,725 records, about 28.75 hours. Every catalog version 2 field (94 bytes) would need 112-byte slots, 18 per page, 1,242 records, 20.7 hours: it does not compile.
-- The static asserts in `node_store.c` stop the build if a slot no longer fits a page or the low byte of the page magic (under 256 B), or if the ring keeps less than 24 hours.
+- Capacity falls as records grow. The version 6 node field set (77-byte record) gives 96-byte slots, 21 per page, 609 records, about 10.15 hours. The version 5 bench field set (61 bytes) gave 80-byte slots, 25 per page, 725 records, about 28.75 hours. Every catalog version 2 field (94 bytes) would need 112-byte slots, 18 per page, 1,242 records, 20.7 hours: it does not compile.
+- The static asserts in `node_store.c` stop the build if a slot no longer fits a page or the low byte of the page magic (under 256 B), or if the ring keeps less than 9.5 hours.
 
 Power-fail behaviour: a test ran 70 reset cycles during flash writes and passed (`evidence/g7-reset-during-write-2026-10-13/`). **Nobody has tested a true power removal yet.** That test is deferred (see `docs/failure-modes.md`).
 

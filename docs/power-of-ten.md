@@ -200,7 +200,7 @@ names every kind, including the newer ones.
 |---|---|---|
 | State-machine preconditions | `tx_exchange.c`: `exchange_start` (no exchange running), `handle` (an unknown state is idle), `process` (only `EV_*` bits). `i2c_bus.c` `bus_task` (posted only in `S_DONE` or `S_RECOVERED`) | refuse the start, back to idle, drop the stray bits, or do nothing |
 | Index and length bounds before a buffer is used | `tx_exchange.c` `send_current` (`qi < qn`), `mark_replied` (`qi`), `exchange_start` (backlog fits the queue). `tx_policy.c` `policy_exchange_end` (`n` fits `struck[]`). `app_tx.c` `held_count`. `node_store.c` `store_journal_read` and `_ack` (the ref is a journal slot, checked before it indexes the pending bitmap). `busymon.c` `busymon_end` (`kind`), `busymon_isr_exit` (an exit has its enter). `console.c` `hex_print` (frame length). `ws_policy.c` `ws_strike_note` (table size), `ws_link_probe_interval` (`probe_step`) | end the exchange, skip the write, clamp, or refuse (-1) |
-| Flash writes stay in the node-state pages | `node_store.c` `prog64`, `erase_page`: every program and erase lies inside pages 55–127 (never the firmware) and is double-word aligned | refused like a failed flash operation, which every caller already handles |
+| Flash writes stay in the node-state pages | `node_store.c` `prog64`, `erase_page`: every program and erase lies inside pages 95–127 (never the firmware) and is double-word aligned | refused like a failed flash operation, which every caller already handles |
 | Our own data must encode or seal | `app_tx.c` `minute_report` (`ws_obs_encode`). `tx_exchange.c` `send_obs`, `send_diag` (`ws_seal_kind` with a provisioned station and a reserved counter), `diag_power` (the cached charger status is a canonical health-report value: no reserved stage or input code) | `journal=ERROR`, or the item is skipped as for a local send failure; a non-canonical charger status goes out as "none" |
 | ST timer starts that must not be refused | `tx_exchange.c` gap and ACK-window timers. `i2c_bus.c` guard and step timers. `tx_console.c` reboot timer. `app_rx.c` `#alive` timer. `watchdog.c` check timer. ST refuses a start only for a running timer | the running timer still delivers its event. The reboot timer resets at once instead |
 | HAL results that should not fail for our arguments | `i2c_bus.c` `i2c_start` (`HAL_I2C_Init`, analog filter). `watchdog.c` `HAL_IWDG_Init`, which can return `HAL_TIMEOUT` if the internal low-speed oscillator (LSI) never settles. `console.c` `console_init` (`vcom_ReceiveInit`) | the next transfer fails and the bus recovery re-initialises. The independent watchdog (IWDG) takes the values when its update completes. The console re-arms the receive once, and the RX health check also re-arms it |
@@ -229,7 +229,7 @@ and recovers:
 
 ### Why the density is lower than 2 per function
 
-- **Cost.** A check costs 12–20 B of flash. TX uses 66.1 % of its 110 KB region. Only 10,016 B
+- **Cost.** A check costs 12–20 B of flash. TX uses 66.1 % of its 110 KB region (since 2026-11-04 the region is 190 KB). Only 10,016 B
   remain below the 75 % headroom target, and the final station's features need an estimated
   18–33 KB ([`docs/firmware-budget.md`](firmware-budget.md)). The sites cost about 660 B with the
   facility and its reporting (measured at 35 sites). Holzmann's density over the 481 functions in

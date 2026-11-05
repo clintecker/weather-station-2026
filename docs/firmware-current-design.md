@@ -628,27 +628,27 @@ firmware region.
 
 ```mermaid
 packet-beta
-  0-54: "pages 0-54: firmware, 110 KB"
-  55-124: "pages 55-124: journal, 70 pages"
+  0-94: "pages 0-94: firmware, 190 KB"
+  95-124: "pages 95-124: journal, 30 pages"
   125-126: "meta log A, B"
   127-127: "provisioning"
 ```
 
 | Pages | Size | Contents |
 |---|---|---|
-| 0–54 | 110 KB | firmware. TX uses 58 KB today, so the 90 % guard leaves about 41 KB for this design and later sensor drivers. |
-| 55–124 | 140 KB | journal: 70 pages |
+| 0–94 | 190 KB | firmware. TX uses 58 KB today, so the 90 % guard leaves about 113 KB for this design and later sensor drivers. |
+| 95–124 | 60 KB | journal: 30 pages |
 | 125–126 | 4 KB | meta log A and B |
 | 127 | 2 KB | provisioning record |
 
-Journal capacity. Opening a page erases the oldest one, so 69 pages always hold records:
+Journal capacity. Opening a page erases the oldest one, so 29 pages always hold records:
 
 | Build | Plaintext | Slot | Slots a page | Records retained | Outage buffer |
 |---|---:|---:|---:|---:|---:|
-| full station (the 78-byte radio ceiling) | 78 B | 96 B | 21 | 1,449 | 24.2 h |
-| temperature and humidity | 35 B | 56 B | 36 | 2,484 | 41.4 h |
+| full station (the 78-byte radio ceiling) | 78 B | 96 B | 21 | 609 | 10.1 h |
+| temperature and humidity | 35 B | 56 B | 36 | 1,044 | 17.4 h |
 
 *Amended 2026-10-29:* the journal asserts 24 hours of the build's widest record, not of every
 catalog field (PT section 7). The version 6 node field set (77 B) and the 80-byte per-build ceiling
-both take a 96-byte slot: 21 slots a page, 1,449 records, 24.15 h, as the full-station row. Every
-catalog v2 field (94 B, a 112-byte slot, 20.7 h) is never a build.
+both take a 96-byte slot: 21 slots a page, 609 records, 10.15 h, as the full-station row. Every
+catalog v2 field (94 B, a 112-byte slot, 8.7 h) is never a build.

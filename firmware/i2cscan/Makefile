@@ -1,7 +1,7 @@
 # Bench I2C tool for NUCLEO-WL55JC1: lists what answers on I2C2 and prints the INA228 and MAX17048
-# readings once a second (README.md). Board code, linker script (110 KB application region) and build
+# readings once a second (README.md). Board code, linker script (190 KB application region) and build
 # rules: ../board/nucleo-wl55jc. Flashing writes only the application region: the node's key and
-# journal (pages 55..127) survive, and flashing the node back restores it.
+# journal (pages 95..127) survive, and flashing the node back restores it.
 #
 #   make                      build build/i2cscan.elf/.bin
 #   make flash SERIAL=<stlink serial>
