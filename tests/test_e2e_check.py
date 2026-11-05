@@ -159,6 +159,38 @@ class E2ECheckTests(unittest.TestCase):
         self.assertIn('FAIL    age: untimely (no effective time)', out)
         self.assertNotIn('Traceback', out)
 
+    def test_gateway_verdict_not_current_fails(self):
+        # Fields in range and a young age, but the gateway itself does not serve the record as current.
+        for reason in ('time_uncertain', 'future_clock_at_receipt', 'sensor_fault', 'stale_or_clock_step'):
+            with self.subTest(reason):
+                reply = observation(age=10)
+                reply.update(available=False, reason=reason)
+                stub = self.serve(200, reply)
+                code, out = run(stub.url)
+                self.assertEqual(code, 1, out)
+                self.assertIn(f'FAIL    gateway: not current ({reason})', out)
+                self.assertIn('e2e: FAILED', out)
+        stub = self.serve(200, observation())
+        code, out = run(stub.url)
+        self.assertEqual(code, 0, out)
+        self.assertIn('ok      gateway: fresh', out)
+
+    def test_age_is_the_gateways(self):
+        # The gateway's clock is 3 min behind this host's: its effective time looks 190 s old here, but its
+        # own age_seconds says 10 s.
+        reply = observation(age=10)
+        reply['effective_sampled_at'] = time.time() - 190
+        stub = self.serve(200, reply)
+        code, out = run(stub.url)
+        self.assertEqual(code, 0, out)
+        self.assertIn('ok      age: 10 s', out)
+        reply['age_seconds'] = 600   # and a stale one by the gateway's clock fails, though it looks fresh here
+        reply['effective_sampled_at'] = time.time() - 10
+        stub = self.serve(200, reply)
+        code, out = run(stub.url)
+        self.assertEqual(code, 1, out)
+        self.assertIn('stale   age: 600 s', out)
+
     def test_no_observation_and_bad_token(self):
         for status, body in ((404, {'error': 'not_found'}),
                              (200, {'available': False, 'reason': 'no_observation'})):

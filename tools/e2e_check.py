@@ -2,8 +2,9 @@
 latest observation and checks every station field (present, valid, in range) and its age.
 
 The token comes only from the environment (WS0_API_TOKEN); this tool opens no file and no serial
-port. One line a field (ok / FAIL / pending), then a summary. Exit 0: no FAIL. 1: a FAIL, a stale,
-untimely or missing observation, an auth or connection error. 2: usage. Standard library only.
+port. The gateway's verdict (available, reason), then one line a field (ok / FAIL / pending), then a
+summary. Exit 0: no FAIL. 1: a FAIL, a record the gateway does not hold current, a stale, untimely or
+missing observation, an auth or connection error. 2: usage. Standard library only.
 """
 import argparse
 import http.client
@@ -92,14 +93,23 @@ def check(reply, power_pending, max_age, now):
     if not isinstance(record, dict):
         raise Failure('reply has no observation')
     lines, good = [], True
+    # The gateway's own verdict first: available false (future clock, time uncertain, sensor fault, stale)
+    # means it does not serve the record as current, whatever the fields hold.
+    if reply.get('available') is True:
+        lines.append(f"ok      gateway: {reply.get('reason', 'available')}")
+    else:
+        lines.append(f"FAIL    gateway: not current ({reply.get('reason', 'no verdict')})")
+        good = False
     # The age is the gateway's effective time only: None means it holds the record untimely (an unknown or
-    # rejected clock), and the node's own sampled_at must not stand in for it.
-    stamp = reply.get('effective_sampled_at')
+    # rejected clock), and the node's own sampled_at must not stand in for it. The gateway's age_seconds
+    # (its clock) wins over this host's, so a skew between the two machines does not move it.
+    stamp, age = reply.get('effective_sampled_at'), reply.get('age_seconds')
     if not isinstance(stamp, (int, float)) or isinstance(stamp, bool):
         lines.append('FAIL    age: untimely (no effective time)')
         good = False
     else:
-        age = now - stamp
+        if not isinstance(age, (int, float)) or isinstance(age, bool):
+            age = now - stamp
         stale = not 0 <= age <= max_age
         good = good and not stale
         lines.append(f"{'stale' if stale else 'ok':<7} age: {age:.0f} s (max {max_age:g} s)")
