@@ -351,8 +351,8 @@ Deviations kept, with the reason:
   - `WS_FIELD_BUILD` leaves out the bench commands (`bench.c`, `tx_console.c`).
   - `WS_NODE_FIELDS` selects the build's field set (`node_fields.h`).
   - `WS_JOURNAL_PAGES` lets host tests shrink the journal (`flash_layout.h`). Without it,
-    `flash_layout.h` defines `WS_JOURNAL_DEFAULT`, and `node_store.c` then checks the 24-hour
-    capacity of the board's ring.
+    `flash_layout.h` defines `WS_JOURNAL_DEFAULT`, and `node_store.c` then checks the 9.5-hour
+    capacity (570 records) of the board's ring.
   - `WSMP_HOST_BUDGET` lets a test build make the station host's radio budget smaller
     (`wsmp_host.c`). `WSMP_HOST_SLOT_MS` lets a test build shrink the pre-latch slot (default
     3000 ms, `wsmp_host.c`).

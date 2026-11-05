@@ -381,7 +381,7 @@ flowchart LR
 
 | Pages | Use |
 |---|---|
-| 0–94 (190 KB) | The firmware. The linker script enforces this limit. Release 04fcc656938d: TX image 74,464 B (66.1 %), RX 34,832 B (30.9 %). The protocol version 6 build (power telemetry, 2026-10-29, not yet released): TX 88,160 B, RX 34,904 B; in the 190 KB region of layout v3 (2026-11-04) the current build is TX 90,264 B (46.4 %), RX 34,904 B (17.9 %) ([`RELEASES.md`](RELEASES.md), [`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
+| 0–94 (190 KB) | The firmware. The linker script enforces this limit. Release 04fcc656938d: TX image 74,464 B (66.1 %), RX 34,832 B (30.9 %). The protocol version 6 build (power telemetry, 2026-10-29, not yet released): TX 88,160 B, RX 34,904 B; in the 190 KB region of layout v3 (2026-11-04) the current default-profile build is TX 90,264 B (46.4 %; the same code is 80.1 % of the old 110 KB region), RX 34,904 B (17.9 %) ([`RELEASES.md`](RELEASES.md), [`docs/firmware-budget.md`](../../docs/firmware-budget.md)). |
 | 95–124 | The journal ring: 30 pages × 21 slots of 96 bytes (the version 6 node field set; 25 slots of 80 bytes up to protocol version 5). |
 | 125–126 | The monotonic log, pages A and B: boot epoch, counter reservations (blocks of 256), the `lost`/`abandoned` totals. Recovery takes the maximum. Compaction writes its header last. |
 | 127 | Config: station ID, key, KCV. The firmware writes the magic double-word last. |

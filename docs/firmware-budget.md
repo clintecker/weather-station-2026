@@ -40,7 +40,7 @@ not measurements.
 
 | Resource | Available | Used now | Status |
 |---|---|---|---|
-| Flash, application region | 190 KB = 194,560 B (pages 0–94, enforced by the linker script) | TX 90,264 B (46.4 %), RX 34,904 B (17.9 %), measured 2026-11-04 on layout v3. Before the layout change, in the 110 KB region: TX 88,160 B (78.3 %), RX 34,904 B (31.0 %) | Under the 90 % guard (`FLASH_BUDGET_PCT`, `firmware/stage0-node/Makefile:72`, 175,104 B): TX has 104,296 B left, 84,840 B below the guard and 55,656 B below the 75 % headroom target (145,920 B). The 190 KB region ends the over-target state of the 110 KB region; see [The plan that makes it fit](#the-plan-that-makes-it-fit) |
+| Flash, application region | 190 KB = 194,560 B (pages 0–94, enforced by the linker script) | Default profile (`WS_POWER_PROFILE` 0), measured 2026-11-04 at e890353 and unchanged by layout v3: TX 90,264 B, RX 34,904 B. In the 190 KB region that is 46.4 % and 17.9 %; the same code was 80.1 % in the 110 KB region. Phase B profile (`OPT='-Os -DWS_POWER_PROFILE=2'`): TX 90,784 B (46.7 %). The 2026-10-29 build (88,160 B, 78.3 % of 110 KB) is the older build behind the per-object tables below | Under the 90 % guard (`FLASH_BUDGET_PCT`, `firmware/stage0-node/Makefile:72`, 175,104 B): TX has 104,296 B left, 84,840 B below the guard and 55,656 B below the 75 % headroom target (145,920 B). In the 110 KB region the same TX was 5,784 B over the 75 % target (84,480 B), which the larger region removes; see [The plan that makes it fit](#the-plan-that-makes-it-fit) |
 | Flash, node state | 66 KB (pages 95–127) | journal 30 pages, meta log 2 pages, config 1 page. The journal keeps at least 609 slots of 96 B for the version 6 node field set (77 B, power spec section 7): 10.15 h. Before layout v3 (70 pages): 1,725 slots of 80 B (61 B, 28.75 h) | `App/flash_layout.h:20` fixes the pages. `App/node_fields.h` sets the slot size. `App/node_store.c:71-75` asserts 9.5 h of the build's widest record, so a field set above 80 B does not compile |
 | RAM | 64 KB (RAM1 32 KB + RAM2 32 KB) | TX: 11,688 B static data (`.data` 32 B + `.bss` 11,656 B; before 10,936 B) + 8 KB reserved stack + 0.5 KB heap, all in RAM1. Worst-case stack estimate 6,056 B of 8,192 B (74 %). RX: 6,040 B static data, stack estimate 2,780 B (34 %) | Ample. RAM2 is unused |
 | CPU | Cortex-M4 at 48 MHz (the Cortex-M0+ core is unused) | A 250 ms module tick (it also starts the board ADC sequence, about 0.9 ms of interrupt-driven conversions), 1 s INA228 steps, 15 s gauge steps, one report and a few frames per minute | No constraint |
@@ -123,7 +123,7 @@ on air, 35.9 ms at SF7). The health report is 64 B (80 B on air).
 | **Linked sections** | 83,613 | 88,013 | +4,400 | alignment fills the rest of the image (+4,400 B) |
 
 The hub (`WS_I2C_MUX` 0, the default) and the mux profile (`OPT='-Os -DWS_I2C_MUX=1'`) link the same
-number of bytes (88,160 B); only the constants differ.
+number of bytes (88,160 B in the 2026-10-29 build); only the constants differ.
 
 The WSMP local modules came with release `cc2766a38c61`. Against the previous release
 `260c9ccbe938`, the TX image grew by 15,712 B (58,264 → 73,976 B). The RX image did not change
@@ -148,7 +148,7 @@ RX 2,276 B (28 %).
 
 ## Where the TX flash goes
 
-Linked sections from the linker map of the 2026-10-29 TX build (`.isr_vector`, `.text`, `.rodata`,
+Linked sections from the linker map of the 2026-10-29 TX build (88,160 B; the code of 2026-11-04 is 90,264 B) (`.isr_vector`, `.text`, `.rodata`,
 `.data`). They sum to 88,013 B. Alignment fills the rest of the 88,160 B image.
 
 ```mermaid
@@ -351,7 +351,7 @@ phase B for step 1b's four rails).
 | Low-power sleep, heater control, energy state machine (the thresholds of the power spec section 9.9, D1) | 4–8 KB | Mostly our code. The energy state stays NORMAL until then |
 | Multi-sensor payload | **Done**: +856 B TX against release `45f43e78fe91` | `ws_obs.c` was 676 B. The decoder is on the gateway |
 | WSMP local modules of the bench station | **Done**: +15,712 B TX against release `260c9ccbe938` | Shared I2C bus, seven modules, station host and catalog map (release `cc2766a38c61`) |
-| **Total still to come** | **about 15–27 KB** (phase B 0.5 KB measured, SPI NOR 6–10, RS-485 4–8, low power 4–8) | Neither estimate fits below the 90 % guard as it stands (13,216 B left); TX is already 3,680 B over the 75 % target. The phase B step alone fits. The rest needs the measured reserves below (LTO, a larger application region once the journal moves to SPI NOR) |
+| **Total still to come** | **about 15–27 KB** (phase B 0.5 KB measured, SPI NOR 6–10, RS-485 4–8, low power 4–8) | Both estimates fit in the 190 KB region: TX is 90,264 B (default profile), so the 90 % guard (175,104 B) leaves 84,840 B and the 75 % target (145,920 B) leaves 55,656 B, against 15–27 KB to come. In the 110 KB region (guard 101,376 B, target 84,480 B) neither fit; the LTO reserve below stays available |
 
 ## Requirement (Clint, 2026-10-13)
 
