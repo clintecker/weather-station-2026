@@ -129,11 +129,11 @@ class View(ctypes.Structure):
 
 
 def build(directory, cc=('cc', '-std=c11', '-Wall', '-Wextra', '-Werror')):
-    """Compile the screens into a shared library in directory and load it."""
+    """Compile the screens into a shared library in directory and load it (SCR_NAMES: scr_defs with the names)."""
     shim = Path(directory)/'scr_shim.c'
     shim.write_text(SHIM)
     lib_path = Path(directory)/'scr_view.so'
-    subprocess.run([*cc, '-shared', '-fPIC', *map(str, INCLUDES), *map(str, SOURCES), str(shim), '-o', str(lib_path)],
+    subprocess.run([*cc, '-shared', '-fPIC', '-DSCR_NAMES', *map(str, INCLUDES), *map(str, SOURCES), str(shim), '-o', str(lib_path)],
                    check=True)
     lib = ctypes.CDLL(str(lib_path))
     lib.scr_draw.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(View)]

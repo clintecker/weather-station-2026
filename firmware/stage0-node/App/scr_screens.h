@@ -33,8 +33,16 @@ enum scr_id { SCR_HOME, SCR_BURST, SCR_BANNER, SCR_AIR, SCR_PRESSURE, SCR_POWER,
 typedef void scr_draw_fn(const oled_surf *s, unsigned frame, const scr_view_t *v);
 #define SCR_F_BASE    1U   /* dwells SCHED_DWELL_STEPS when picked (HOME and the detail screens) */
 #define SCR_F_ENDLESS 2U   /* draws past its frames (HOME, BANNER: the icon); the others clamp to the last */
+/* The screens' names ("HOME") are for tools/scr_render.py, which builds with SCR_NAMES: the image keeps none. */
+#ifdef SCR_NAMES
+#define SCR_NAME(x) x,
+#else
+#define SCR_NAME(x)
+#endif
 typedef struct {
-  const char *name;        /* "HOME": tools/scr_render.py reads these */
+#ifdef SCR_NAMES
+  const char *name;
+#endif
   scr_draw_fn *draw;
   uint8_t frames, anim, every, flags;
 } scr_def;
