@@ -126,13 +126,6 @@ void scr_trace(const oled_surf *s, int x, int top, int w, int h, const scr_serie
   }
 }
 
-void scr_gauge(const oled_surf *s, int x, int y, unsigned fill_px, const scr_gauge_style *st)
-{
-  if (st->boxed) oled_box(s, x, y, st->w, st->h);
-  else oled_line(s, x, y + st->h - 1, x + st->w - 1, y + st->h - 1, 1);   /* the track */
-  oled_fill(s, x + st->inset, y + st->inset, (int)fill_px, st->fill_h, 1);
-}
-
 int scr_sin20(int p)
 {
   static const int8_t quarter[5] = { 0, 8, 14, 18, 20 };

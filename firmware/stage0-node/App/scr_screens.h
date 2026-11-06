@@ -4,7 +4,7 @@
  * and tools/scr_render.py renders every screen to PNG.
  *   App/scr_screens.c     the screens as data: scr_defs[], their names, frames and redraws
  *   App/scr_view.c        scr_draw, the text helpers (scr_view.h)
- *   App/scr_widget.c      labels, series, scales, frames, bars, the trace, gauges, rays, the glitch, drops
+ *   App/scr_widget.c      labels, series, scales, frames, bars, the trace, rays, the glitch, drops
  *   App/scr_calc.c        the arithmetic and the choices: histories, dew point, tendency, icon, scales, fortune
  *   App/scr_home.c        HOME, its condition icons and the banner
  *   App/scr_detail.c      AIR, PRESSURE, POWER, RADIO and their sparklines and bars

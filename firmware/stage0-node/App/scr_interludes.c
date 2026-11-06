@@ -132,8 +132,6 @@ void scr_vane(const oled_surf *s, unsigned frame, const scr_view_t *v)
   vane_text(s, point, v);
 }
 
-static const scr_gauge_style system_bar = { BAR_W, 7, 2, 3, 1 };
-
 void scr_system(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
   static const char *const names[5] = { "FLASH", "RAM", "STACK", "JRNL", "AIR" };
@@ -148,7 +146,8 @@ void scr_system(const oled_surf *s, unsigned frame, const scr_view_t *v)
     oled_row num = { "" };
     oled_put_uint(&num, p);
     scr_label(s, y, names[i], SCR_LEFT);
-    scr_gauge(s, BAR_X, y, scr_grow(BAR_FILL_W * p / 100U, frame, SCR_GROW_FRAMES), &system_bar);
+    oled_box(s, BAR_X, y, BAR_W, 7);   /* a boxed gauge, filled 3 rows tall inside a 2-pixel margin */
+    oled_fill(s, BAR_X + 2, y + 2, (int)scr_grow(BAR_FILL_W * p / 100U, frame, SCR_GROW_FRAMES), 3, 1);
     (void)oled_text(s, 110, y, num.s, 1);
   }
 }

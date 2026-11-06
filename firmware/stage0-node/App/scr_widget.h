@@ -1,5 +1,5 @@
 /* The bench screens' widgets: labels, series over any history, scales, plot frames, bars, the sparkline's
- * trace, gauges, and the motion the screens share (a ray at a compass point, the glitch, falling drops). Each
+ * trace, and the motion the screens share (a ray at a compass point, the glitch, falling drops). Each
  * draws into a place from data: plain functions, no state. Pure C (tests/test_scr_calc.py, test_scr_view.py).
  * Only in WS_BENCH_OLED=1 builds. */
 #ifndef SCR_WIDGET_H
@@ -48,11 +48,6 @@ void scr_bars(const oled_surf *s, int x, int base_y, unsigned px, const scr_seri
    scr_grow(cap, frame, SCR_GROW_FRAMES)). */
 void scr_trace(const oled_surf *s, int x, int top, int w, int h, const scr_series *d, int32_t lo, int32_t hi,
                unsigned slots);
-
-/* A gauge of w x h at (x, y) filled fill_px from x + inset: boxed, the box around it; else a dotted track along
-   its bottom row. POWER's {128, 2, 0, 2, 0}, SYSTEM's {70, 7, 2, 3, 1}. */
-typedef struct { uint8_t w, h, inset, fill_h, boxed; } scr_gauge_style;
-void scr_gauge(const oled_surf *s, int x, int y, unsigned fill_px, const scr_gauge_style *st);
 
 /* 20 sin(p x 22.5 degrees), rounded, for any point p (wrapped): the screens' 16-point compass. */
 int scr_sin20(int p);

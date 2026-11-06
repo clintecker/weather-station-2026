@@ -140,11 +140,11 @@ void scr_pressure(const oled_surf *s, unsigned frame, const scr_view_t *v)
   scr_label(s, FOOT_Y, line.s, SCR_LEFT);
 }
 
-static const scr_gauge_style power_bar = { OLED_W, 2, 0, 2, 0 };
-
+/* A gauge two rows tall across the screen, px of it filled (grown in), on a dotted track along its bottom row. */
 static void bar(const oled_surf *s, int y, unsigned px, unsigned frame)
 {
-  scr_gauge(s, 0, y, scr_grow(px, frame, SCR_GROW_FRAMES), &power_bar);
+  oled_line(s, 0, y + 1, OLED_W - 1, y + 1, 1);
+  oled_fill(s, 0, y, (int)scr_grow(px, frame, SCR_GROW_FRAMES), 2, 1);
 }
 
 static int32_t iabs32(int32_t v) { return v < 0 ? (v == INT32_MIN ? INT32_MAX : -v) : v; }
