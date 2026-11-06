@@ -1,7 +1,6 @@
 /* The drawing surface, its text and its lines, boxes and circles: see oled_draw.h. */
 #include "oled_draw.h"
 #include <string.h>
-#include "font5x7.h"
 
 static int on_screen(int x, int y) { return x >= 0 && x < OLED_W && y >= 0 && y < OLED_H; }
 
@@ -37,30 +36,6 @@ unsigned oled_get(const oled_surf *s, int x, int y)
 }
 
 void oled_set(const oled_surf *s, int x, int y, int on) { oled_level(s, x, y, on ? s->ink : 0U); }
-
-static const uint8_t *glyph(char c)
-{
-  const char *p = strchr(font5x7_chars, c);
-  if (c == '\0' || p == NULL) p = strchr(font5x7_chars, '?');
-  return font5x7_rows[p - font5x7_chars];
-}
-
-int oled_text(const oled_surf *s, int x, int y, const char *str, int scale)
-{
-  /* bound: the characters of str, one a pass */
-  for (; *str; str++, x += OLED_CHAR_ADVANCE * scale)
-  {
-    const uint8_t *rows = glyph(*str);
-    for (int r = 0; r < FONT5X7_H; r++)
-      for (int c = 0; c < FONT5X7_W; c++)
-      {
-        if (!((rows[r] >> (FONT5X7_W - 1 - c)) & 1)) continue;
-        for (int dy = 0; dy < scale; dy++)
-          for (int dx = 0; dx < scale; dx++) oled_set(s, x + c * scale + dx, y + r * scale + dy, 1);
-      }
-  }
-  return x;
-}
 
 static int iabs(int v) { return v < 0 ? -v : v; }
 
@@ -129,13 +104,15 @@ void oled_circle(const oled_surf *s, int cx, int cy, int r)
   }
 }
 
-void oled_disc(const oled_surf *s, int cx, int cy, int r, int on)
+void oled_disc_r2(const oled_surf *s, int cx, int cy, int r, int r2, int on)
 {
   if (r < 0) return;
   for (int j = -r; j <= r; j++)
     for (int i = -r; i <= r; i++)
-      if (i * i + j * j <= r * r + r) oled_set(s, cx + i, cy + j, on);   /* + r: reaches the outline's pixels */
+      if (i * i + j * j <= r2) oled_set(s, cx + i, cy + j, on);
 }
+
+void oled_disc(const oled_surf *s, int cx, int cy, int r, int on) { oled_disc_r2(s, cx, cy, r, r * r + r, on); }
 
 void oled_shift_row(const oled_surf *s, int y, int dx)
 {

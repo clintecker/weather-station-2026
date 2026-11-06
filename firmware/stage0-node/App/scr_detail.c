@@ -12,6 +12,7 @@
 #include "scr_view.h"
 #include <string.h>
 #include "oled_draw.h"
+#include "scr_font.h"
 
 #define GROW_FRAMES 8U
 #define PLOT_TOP 28
@@ -84,7 +85,7 @@ void scr_air(const oled_surf *s, unsigned frame, const scr_view_t *v)
   {
     scr_put_dec(line, v->air_c, 2, 1, 0);
     scr_put(line, "^C");
-    (void)scr_big_text(s, 0, 0, line);
+    (void)oled_draw_text(s, 0, 0, line, &scr_big, &oled_x1);
     line[0] = '\0';
     scr_put_dec(line, v->air_rh, 2, 1, 0);
     scr_put(line, "%");
@@ -136,8 +137,8 @@ void scr_pressure(const oled_surf *s, unsigned frame, const scr_view_t *v)
   if (v->press_ok)
   {
     scr_put_dec(line, v->press_dhpa, 1, 1, 0);
-    int x = scr_big_text(s, 0, 0, line);
-    (void)oled_text(s, x + 3, 9, "hPa", 1);
+    int x = oled_draw_text(s, 0, 0, line, &scr_big, &oled_x1);   /* the pen: after the digits' gap */
+    (void)oled_text(s, x + 1, 9, "hPa", 1);
   }
   else scr_row(s, 4, "P NO BMP581");
   arrow(s, t);

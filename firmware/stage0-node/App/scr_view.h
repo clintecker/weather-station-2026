@@ -2,7 +2,7 @@
  * HOME and its packet banner, the detail screens, the interludes, each drawn from a view of what the TX
  * knows and a frame number. Pure C, no HAL: the host tests check it (tests/test_scr_view.py, test_scr_calc.py)
  * and tools/scr_render.py renders every screen to PNG.
- *   App/scr_view.c        scr_draw, the frame counts, the text and big-digit helpers
+ *   App/scr_view.c        scr_draw, the frame counts, the text helpers
  *   App/scr_calc.c        the arithmetic and the choices: histories, dew point, tendency, icon, scales, fortune
  *   App/scr_home.c        HOME, its condition icons and the banner
  *   App/scr_detail.c      AIR, PRESSURE, POWER, RADIO and their sparklines and bars
@@ -15,6 +15,7 @@
 
 #include <stdint.h>
 #include "oled_draw.h"
+#include "oled_font.h"
 #include "mod_rain.h"
 #include "mod_wind.h"
 #include "power_acq.h"
@@ -217,12 +218,6 @@ int scr_put_lr(char *line, const char *left, const char *right);
 void scr_row(const oled_surf *s, int y, const char *text);             /* at (0, y), scale 1 */
 void scr_row_right(const oled_surf *s, int y, const char *text);       /* ending at the screen's right edge */
 void scr_header(const oled_surf *s, const char *text);                 /* the top row, inverted */
-/* The big digits (scr_font.h) with their top-left at (x, y); returns the x after the text. Characters the
-   font lacks draw as nothing. scr_big_width: the pixels the text takes. */
-int scr_big_text(const oled_surf *s, int x, int y, const char *str);
-int scr_big_width(const char *str);
-/* The drawing a at its place moved by (dx, dy). */
-void scr_blit(const oled_surf *s, const scr_art *a, int dx, int dy);
 /* 20 sin(p x 22.5 degrees), rounded, for any point p (wrapped): the screens' 16-point compass. */
 int scr_sin20(int p);
 extern const char *const scr_point_names[16];   /* the vane's points, 0 N clockwise to 15 NNW */

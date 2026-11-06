@@ -156,7 +156,7 @@ void scr_frog(const oled_surf *s, unsigned frame, const scr_view_t *v)
   int fx, fy;
   fly_at(frame, &fx, &fy);
   if (!acked && frame >= FROG_CATCH) fx += (int)(frame - FROG_CATCH) * 4;   /* away */
-  scr_blit(s, &scr_art_frog, dx, dy);
+  oled_blit(s, scr_art_frog.x + dx, scr_art_frog.y + dy, &scr_art_frog.bits);
   int blink = frame == 20U || frame == 21U || frame == 52U;
   eyes(s, dx, dy, fx, fy, blink || m == MOOD_SLEEPY);
   mouth(s, dx, dy, m);
@@ -181,15 +181,7 @@ unsigned scr_matrix_glyph(unsigned c, unsigned r, unsigned frame, int head)
 {
   unsigned cell = c * SCR_MATRIX_ROWS + r, every = MATRIX_CHANGE_MIN + scr_hash(cell, 21) % MATRIX_CHANGE_SPAN;
   unsigned epoch = head ? frame : (frame + scr_hash(cell, 22) % every) / every;
-  return scr_hash(cell, epoch * 2U + (head ? 1U : 0U)) % scr_kana_count;
-}
-
-/* A glyph's lit pixels (scr_kana.h: bit SCR_KANA_W - 1 the leftmost column) at (x, y), in the surface's ink. */
-static void kana(const oled_surf *s, int x, int y, const uint8_t *rows)
-{
-  for (int r = 0; r < SCR_KANA_H; r++)   /* bound: 7 rows of 5 columns */
-    for (int c = 0; c < SCR_KANA_W; c++)
-      if ((rows[r] >> (SCR_KANA_W - 1 - c)) & 1U) oled_set(s, x + c, y + r, 1);
+  return scr_hash(cell, epoch * 2U + (head ? 1U : 0U)) % scr_kana.n;
 }
 
 void scr_matrix(const oled_surf *s, unsigned frame, const scr_view_t *v)
@@ -213,7 +205,8 @@ void scr_matrix(const oled_surf *s, unsigned frame, const scr_view_t *v)
       }
       if (level == 0U) continue;
       g.ink = (uint8_t)level;
-      kana(&g, (int)c * MATRIX_PITCH_X + 1, (int)r * MATRIX_PITCH_Y, scr_kana_rows[scr_matrix_glyph(c, r, frame, is_head)]);
+      oled_draw_glyph(&g, (int)c * MATRIX_PITCH_X + 1, (int)r * MATRIX_PITCH_Y, &scr_kana, scr_matrix_glyph(c, r, frame, is_head),
+                      &oled_x1);
     }
   }
   char line[SCR_LINE] = "TIPS ";

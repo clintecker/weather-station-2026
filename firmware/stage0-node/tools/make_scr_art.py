@@ -88,7 +88,7 @@ def frog():
 
 
 def bitmap(name, pixels):
-    """A C bitmap: the rows from the topmost lit one to the lowest, bit 63 the leftmost lit column."""
+    """A C bitmap 64 wide (oled_bits): the rows from the topmost lit one to the lowest, bit 63 the leftmost lit column."""
     x0, y0 = min(x for x, _ in pixels), min(y for _, y in pixels)
     w, h = max(x for x, _ in pixels) - x0 + 1, max(y for _, y in pixels) - y0 + 1
     assert w <= 64, (name, w)
@@ -97,7 +97,7 @@ def bitmap(name, pixels):
         bits = sum(1 << (63 - (x - x0)) for x, yy in pixels if yy == y)
         art = ''.join('#' if (x0 + i, y) in pixels else '.' for i in range(w))
         lines.append(f'  0x{bits:016X}U,   /* {art} */')
-    lines += ['};', f'const scr_art {name} = {{ {x0}, {y0}, {h}, {name}_rows }};', '']
+    lines += ['};', f'const scr_art {name} = {{ {x0}, {y0}, {{ 64, {h}, 64, {name}_rows }} }};', '']
     return lines
 
 

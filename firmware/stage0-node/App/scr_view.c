@@ -2,7 +2,6 @@
 #include "scr_view.h"
 #include <string.h>
 #include "oled_draw.h"
-#include "scr_font.h"
 #include "wsmp_registry.h"
 
 #define HEADER_PX 8
@@ -91,49 +90,6 @@ void scr_header(const oled_surf *s, const char *text)
 {
   (void)oled_text(s, 0, 0, text, 1);
   oled_invert(s, 0, 0, OLED_W, HEADER_PX);
-}
-
-static int big_glyph(char c)
-{
-  const char *at = c ? strchr(scr_big_chars, c) : NULL;
-  return at ? (int)(at - scr_big_chars) : -1;
-}
-
-int scr_big_width(const char *str)
-{
-  int w = 0;
-  /* bound: the characters of str */
-  for (; *str; str++)
-  {
-    int g = big_glyph(*str);
-    if (g >= 0) w += (w ? SCR_BIG_GAP : 0) + scr_big_w[g];
-  }
-  return w;
-}
-
-int scr_big_text(const oled_surf *s, int x, int y, const char *str)
-{
-  int first = 1;
-  /* bound: the characters of str */
-  for (; *str; str++)
-  {
-    int g = big_glyph(*str);
-    if (g < 0) continue;
-    if (!first) x += SCR_BIG_GAP;
-    first = 0;
-    for (int r = 0; r < SCR_BIG_H; r++)
-      for (int c = 0; c < scr_big_w[g]; c++)
-        if ((scr_big_rows[g][r] >> (15 - c)) & 1U) oled_set(s, x + c, y + r, 1);
-    x += scr_big_w[g];
-  }
-  return x;
-}
-
-void scr_blit(const oled_surf *s, const scr_art *a, int dx, int dy)
-{
-  for (unsigned j = 0; j < a->h; j++)
-    for (unsigned i = 0; i < 64U; i++)
-      if ((a->rows[j] >> (63U - i)) & 1U) oled_set(s, a->x + dx + (int)i, a->y + dy + (int)j, 1);
 }
 
 int scr_sin20(int p)

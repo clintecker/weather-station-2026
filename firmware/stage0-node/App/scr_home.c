@@ -13,6 +13,7 @@
 #include "scr_view.h"
 #include <string.h>
 #include "oled_draw.h"
+#include "scr_font.h"
 #include "wsmp_registry.h"
 
 #define ICON_CX 20
@@ -123,7 +124,7 @@ static void readings(const oled_surf *s, const scr_view_t *v)
   char t[SCR_LINE] = "", rh[SCR_LINE] = "", p[SCR_LINE] = "";
   if (v->air_ok) { scr_put_dec(t, v->air_c, 2, 1, 0); scr_put(t, "^C"); }
   else scr_put(t, "--^C");
-  (void)scr_big_text(s, OLED_W - scr_big_width(t), TEMP_Y, t);
+  (void)oled_draw_text(s, OLED_W - oled_text_w(t, &scr_big, &oled_x1), TEMP_Y, t, &scr_big, &oled_x1);
   if (v->air_ok) { scr_put_dec(rh, v->air_rh, 2, 0, 0); scr_put(rh, "% RH"); }
   else scr_put(rh, "NO SHT45");
   scr_row_right(s, RH_Y, rh);

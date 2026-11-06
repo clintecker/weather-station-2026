@@ -1,5 +1,5 @@
-"""The shared OLED library (firmware/common/oled_draw.c, font5x7.c): the drawing surface in the SSD1325's pixel
-order, text and drawing primitives. Pure C, compiled for the host; the bench tool and the node both link it. What
+"""The shared OLED library (firmware/common/oled_draw.c, oled_font.c, font5x7.c): the drawing surface in the SSD1325's
+pixel order, drawing primitives, bitmaps, fonts and text. Pure C, compiled for the host; the bench tool and the node both link it. What
 the panel shows is checked by eye on the bench."""
 import ctypes
 import subprocess
@@ -34,7 +34,8 @@ class Surf:
 class OledDraw(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.lib = lib = host_library(cls, 'oled_draw', '-I', COMMON, COMMON/'oled_draw.c', COMMON/'font5x7.c')
+        cls.lib = lib = host_library(cls, 'oled_draw', '-I', COMMON, COMMON/'oled_draw.c', COMMON/'oled_font.c',
+                                          COMMON/'font5x7.c')
         i, p, u = ctypes.c_int, ctypes.c_void_p, ctypes.c_uint
         lib.oled_text.argtypes = [p, i, i, ctypes.c_char_p, i]
         lib.oled_set.argtypes = [p, i, i, i]
@@ -49,6 +50,11 @@ class OledDraw(unittest.TestCase):
         lib.oled_circle.argtypes = [p, i, i, i]
         lib.oled_disc.argtypes = [p, i, i, i, i]
         lib.oled_shift_row.argtypes = [p, i, i]
+        lib.oled_disc_r2.argtypes = [p, i, i, i, i, i]
+        lib.oled_glyph.argtypes = [p, ctypes.c_char]
+        lib.oled_draw_text.argtypes = [p, i, i, ctypes.c_char_p, p, p]
+        lib.oled_text_w.argtypes = [ctypes.c_char_p, p, p]
+        lib.oled_blit.argtypes = [p, i, i, p]
 
     def fb(self, rot180=0, ink=15):
         return Surf(rot180, ink)
@@ -158,6 +164,38 @@ class OledDraw(unittest.TestCase):
         self.assertIn((20, 20), disc)
         self.lib.oled_disc(fb, 20, 20, 5, 0)
         self.assertEqual(self.lit(fb), set())
+
+    def test_disc_r2(self):
+        # oled_disc is r2 = r^2 + r; a smaller r2 leaves the four tips off (HACK's eye: r 4, r2 16).
+        a, b = self.fb(), self.fb()
+        self.lib.oled_disc(a, 20, 20, 4, 1)
+        self.lib.oled_disc_r2(b, 20, 20, 4, 20, 1)
+        self.assertEqual(a.raw, b.raw)
+        c = self.fb()
+        self.lib.oled_disc_r2(c, 20, 20, 4, 16, 1)
+        self.assertEqual(self.lit(c), {(20 + i, 20 + j) for i in range(-4, 5) for j in range(-4, 5) if i*i + j*j <= 16})
+
+    def sym(self, name):
+        return ctypes.addressof(ctypes.c_char.in_dll(self.lib, name))
+
+    def test_one_text_renderer(self):
+        # oled_text is oled_draw_text with font5x7 at x1 or x2; the pen includes the gap, the width does not.
+        a, b = self.fb(), self.fb()
+        self.assertEqual(self.lib.oled_text(a, 3, 4, b'Hi?', 2), 3 + 36)
+        self.assertEqual(self.lib.oled_draw_text(b, 3, 4, b'Hi?', self.sym('font5x7'), self.sym('oled_x2')), 3 + 36)
+        self.assertEqual(a.raw, b.raw)
+        self.assertEqual(self.lib.oled_text_w(b'Hi?', self.sym('font5x7'), self.sym('oled_x1')), 17)
+        self.assertEqual(self.lib.oled_text_w(b'', self.sym('font5x7'), self.sym('oled_x1')), 0)
+        self.assertEqual(self.lib.oled_glyph(self.sym('font5x7'), b'`'), self.lib.oled_glyph(self.sym('font5x7'), b'?'))
+
+    def test_blit_leftmost_is_bit_w_minus_1(self):
+        rows = (ctypes.c_uint16 * 2)(0b100000001, 0b010000000)   # 9 wide
+
+        class Bits(ctypes.Structure):
+            _fields_ = [('w', ctypes.c_uint8), ('h', ctypes.c_uint8), ('bits', ctypes.c_uint8), ('rows', ctypes.c_void_p)]
+        fb = self.fb()
+        self.lib.oled_blit(fb, 10, 20, ctypes.byref(Bits(9, 2, 16, ctypes.addressof(rows))))
+        self.assertEqual(self.lit(fb), {(10, 20), (18, 20), (11, 21)})
 
     def test_shift_row(self):
         fb = self.fb()

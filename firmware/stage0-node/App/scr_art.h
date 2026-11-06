@@ -4,12 +4,12 @@
 #define SCR_ART_H
 
 #include <stdint.h>
+#include "oled_font.h"
 
-/* A drawing at a fixed place on the screen: h rows from (x, y) down, bit 63 of a row at column x. */
+/* A drawing at a fixed place on the screen: its bitmap (64 wide: bit 63 of a row at column x) from (x, y) down. */
 typedef struct {
   int8_t x, y;
-  uint8_t h;
-  const uint64_t *rows;
+  oled_bits bits;
 } scr_art;
 
 extern const scr_art scr_art_face;   /* HACK THE PLANET: ring, patch, strap, smile (no eye) */

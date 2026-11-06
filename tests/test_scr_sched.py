@@ -138,7 +138,7 @@ def build(owner, name):
     return host_library(owner, name, '-DWS_BENCH_OLED=1', '-DOLED_APP_RAM2=', '-I', ROOT/'firmware/host/include', '-I', APP,
                         '-I', NODE/'Core/Inc', '-I', ROOT/'firmware/common', '-I', ROOT/'firmware',
                         APP/'scr_sched.c', APP/'oled_app.c', APP/'scr_calc.c', ROOT/'firmware/common/oled_draw.c',
-                        ROOT/'firmware/common/font5x7.c', files={'shim.c': SHIM})
+                        ROOT/'firmware/common/oled_font.c', ROOT/'firmware/common/font5x7.c', files={'shim.c': SHIM})
 
 
 def ival(lib, name):

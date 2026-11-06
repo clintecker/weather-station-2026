@@ -64,7 +64,7 @@ static const uint64_t scr_art_face_rows[61] = {
   0x000003FBFC000000U,   /* ......................#######.########....................... */
   0x0000000200000000U,   /* ..............................#.............................. */
 };
-const scr_art scr_art_face = { 1, 2, 61, scr_art_face_rows };
+const scr_art scr_art_face = { 1, 2, { 64, 61, 64, scr_art_face_rows } };
 
 static const uint64_t scr_art_rose_rows[53] = {
   0x00000AB500000000U,   /* ....................#.#.#.##.#.#..................... */
@@ -121,7 +121,7 @@ static const uint64_t scr_art_rose_rows[53] = {
   0x00000AB500000000U,   /* ....................#.#.#.##.#.#..................... */
   0x0000002000000000U,   /* ..........................#.......................... */
 };
-const scr_art scr_art_rose = { 6, 7, 53, scr_art_rose_rows };
+const scr_art scr_art_rose = { 6, 7, { 64, 53, 64, scr_art_rose_rows } };
 
 static const uint64_t scr_art_frog_rows[36] = {
   0x00003E0003E00000U,   /* ..................#####...............#####.................. */
@@ -161,4 +161,4 @@ static const uint64_t scr_art_frog_rows[36] = {
   0x7E00001DC00003F0U,   /* .######....................###.###....................######. */
   0x03FFFFA02FFFFE00U,   /* ......###################.#.......#.###################...... */
 };
-const scr_art scr_art_frog = { 2, 26, 36, scr_art_frog_rows };
+const scr_art scr_art_frog = { 2, 26, { 64, 36, 64, scr_art_frog_rows } };

@@ -70,22 +70,27 @@ class ScrView(unittest.TestCase):
         script = ROOT/'firmware/stage0-node/tools/make_scr_font.py'
         self.assertEqual(subprocess.run([sys.executable, script, '--check']).returncode, 0)
 
+    def font(self, name):
+        """The address of a font or style in the library (scr_big, oled_x1, ...)."""
+        return ctypes.addressof(ctypes.c_char.in_dll(self.lib, name))
+
     def big(self, x, y, s):
-        """The pixels of s in the big digits at (x, y), and the x after it."""
-        self.lib.scr_big_text.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+        """The pixels of s in the big digits (oled_draw_text with scr_big) at (x, y), and the pen after it."""
+        p, i = ctypes.c_void_p, ctypes.c_int
+        self.lib.oled_draw_text.argtypes = [p, i, i, ctypes.c_char_p, p, p]
         surf = render.Surf()
-        end = self.lib.scr_big_text(ctypes.byref(surf), x, y, s.encode())
+        end = self.lib.oled_draw_text(ctypes.byref(surf), x, y, s.encode(), self.font('scr_big'), self.font('oled_x1'))
         return set(surf.levels()), end
 
     def big_width(self, s):
-        self.lib.scr_big_width.argtypes = [ctypes.c_char_p]
-        return self.lib.scr_big_width(s.encode())
+        self.lib.oled_text_w.argtypes = [ctypes.c_char_p, ctypes.c_void_p, ctypes.c_void_p]
+        return self.lib.oled_text_w(s.encode(), self.font('scr_big'), self.font('oled_x1'))
 
     def test_big_digits(self):
         # A digit is 10 wide, the point 3, '-' 8, the degree sign 6, two pixels between; 16 tall; nothing for the rest.
         self.assertEqual([self.big_width(t) for t in ('8', '21.9', '-12.4^C', '', 'x?')], [10, 39, 69, 0, 0])
         lit, end = self.big(5, 3, '1')
-        self.assertEqual(end, 15)
+        self.assertEqual(end, 17)   # the pen: the glyph and its gap
         self.assertEqual((min(y for _, y in lit), max(y for _, y in lit)), (3, 18))
         self.assertEqual(self.big(0, 0, '1x1')[0], self.big(0, 0, '11')[0])
 
@@ -387,8 +392,10 @@ class ScrView(unittest.TestCase):
     def test_kana_table(self):
         # 45 katakana-style glyphs and the 10 digits, all different, each in the table mirrored left to right.
         names = list(kana.GLYPHS)
-        n = ctypes.c_uint8.in_dll(self.lib, 'scr_kana_count').value
-        table = (ctypes.c_uint8 * 7 * n).in_dll(self.lib, 'scr_kana_rows')
+        font = render.Font.in_dll(self.lib, 'scr_kana')
+        n = font.n
+        self.assertEqual((font.h, font.w, font.bits, font.gap, font.chars, font.widths), (7, 5, 8, 1, None, None))
+        table = (ctypes.c_uint8 * 7 * n).from_address(font.rows)
         self.assertEqual((n, sum(1 for k in names if not k.isdigit()), sum(1 for k in names if k.isdigit())), (55, 45, 10))
         for i, name in enumerate(names):
             reads = kana.rows(kana.GLYPHS[name], mirror=False)

@@ -2,6 +2,7 @@
 #include "bench_screen.h"
 #include <string.h>
 #include "bench_regs.h"
+#include "oled_font.h"
 
 #define NUM_MAX 16U
 #define LINE_MAX 24U   /* 21 characters fit across at scale 1 */

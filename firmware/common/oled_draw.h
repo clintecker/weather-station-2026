@@ -1,8 +1,7 @@
 /* The bench OLED's drawing surface (Adafruit #2674, SSD1325, 128 x 64, 4 bits a pixel) and everything drawn
- * on it: pixels at a level, lines, boxes, fills, a dot grid, circles, a row shift for the glitch effect, and
- * the 5x7 text, each at the surface's ink (a gray screen draws on a copy with its own). Pure C: the host
- * tests check it (tests/test_oled_draw.py). Everything clips to the
- * screen.
+ * on it: pixels at a level, lines, boxes, fills, a dot grid, circles and a row shift for the glitch effect,
+ * each at the surface's ink (a gray screen draws on a copy with its own); text and bitmaps are oled_font.h.
+ * Pure C: the host tests check it (tests/test_oled_draw.py). Everything clips to the screen.
  *   A surface is a frame in the SSD1325's send order, the order the panel takes it: two pixels a byte (the
  *   left one in the high nibble) and, with the re-map Adafruit's driver sets (0x56: vertical address
  *   increment), each byte after the first one row down, then on to the next column pair: 64 column pairs x
@@ -18,7 +17,6 @@
 #define OLED_COLPAIRS (OLED_W / 2)
 #define OLED_FRAME_BYTES (OLED_COLPAIRS * OLED_H)   /* 4096 */
 #define OLED_FULL 15U
-#define OLED_CHAR_ADVANCE 6   /* 5 columns and a gap */
 
 typedef struct {
   uint8_t *px;       /* OLED_FRAME_BYTES in the SSD1325's send order */
@@ -31,9 +29,6 @@ void oled_clear(const oled_surf *s);
 void oled_level(const oled_surf *s, int x, int y, unsigned level);   /* 0..15, more is 15; off screen ignored */
 unsigned oled_get(const oled_surf *s, int x, int y);                 /* the level; 0 off screen */
 void oled_set(const oled_surf *s, int x, int y, int on);             /* on: s->ink, else 0 */
-/* Draws str with its top-left at (x, y), each font pixel scale x scale; returns the x after the text.
-   Characters the font lacks draw as '?'. */
-int oled_text(const oled_surf *s, int x, int y, const char *str, int scale);
 
 /* A line from (x0, y0) to (x1, y1), both ends lit. dash 0 is solid; otherwise runs of dash lit pixels
    alternate with runs of dash dark ones, counted from (x0, y0). */
@@ -47,8 +42,10 @@ void oled_fill(const oled_surf *s, int x, int y, int w, int h, int on);
 void oled_dotgrid(const oled_surf *s, int x, int y, int w, int h, int step);
 /* The w x h rectangle at (x, y) inverted: a lit pixel goes dark, a dark one takes the ink. */
 void oled_invert(const oled_surf *s, int x, int y, int w, int h);
-/* A circle of radius r around (cx, cy): the outline, and the filled disc (on 1 lit, on 0 dark). */
+/* A circle of radius r around (cx, cy): the outline, and the filled disc (on 1 lit, on 0 dark). oled_disc_r2:
+   the points with i^2 + j^2 <= r2 (|i|, |j| <= r); oled_disc is r2 = r^2 + r, which reaches the outline's pixels. */
 void oled_circle(const oled_surf *s, int cx, int cy, int r);
+void oled_disc_r2(const oled_surf *s, int cx, int cy, int r, int r2, int on);
 void oled_disc(const oled_surf *s, int cx, int cy, int r, int on);
 /* Moves row y dx pixels right (left if negative), levels and all; what leaves the screen is lost, the gap
    is dark. */

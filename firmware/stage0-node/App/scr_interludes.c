@@ -15,7 +15,6 @@
  *   hack    the eyepatch smiley; HACK at frame 0, THE at 4, PLANET at 8; a wink at 16-17, a glint on
  *           the patch at 18-19, a glitch out at 20-23. */
 #include "scr_view.h"
-#include <string.h>
 #include "oled_draw.h"
 #include "font5x7.h"
 #include "scr_art.h"
@@ -144,7 +143,7 @@ static void vane_text(const oled_surf *s, int point, const scr_view_t *v)
 void scr_vane(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
   int point = v->wind.point >= 0 && v->wind.point < 16 ? v->wind.point : -1;
-  scr_blit(s, &scr_art_rose, 0, 0);
+  oled_blit(s, scr_art_rose.x, scr_art_rose.y, &scr_art_rose.bits);
   (void)oled_text(s, ROSE_CX - 2, 1, "N", 1);
   if (point >= 0)
   {
@@ -206,22 +205,10 @@ void scr_boot(const oled_surf *s, unsigned frame, const scr_view_t *v)
   oled_line(s, 0, 62, (int)(frame * (OLED_W - 1U) / 63U), 62, 0);
 }
 
-/* str at double height, each glyph 9 pixels wide (its last column overlapping the one before) on a
-   10-pixel pitch: PLANET fits the 62 pixels beside the face. */
-static void squeezed_text(const oled_surf *s, int x, int y, const char *str)
-{
-  static const uint8_t col_x[FONT5X7_W] = { 0, 2, 4, 6, 7 };
-  /* bound: the characters of str, one a pass */
-  for (; *str; str++, x += PLANET_PITCH)
-  {
-    const char *at = strchr(font5x7_chars, *str);
-    if (at == NULL) continue;
-    const uint8_t *rows = font5x7_rows[at - font5x7_chars];
-    for (int r = 0; r < FONT5X7_H; r++)
-      for (int c = 0; c < FONT5X7_W; c++)
-        if ((rows[r] >> (FONT5X7_W - 1 - c)) & 1U) oled_fill(s, x + col_x[c], y + 2 * r, 2, 2, 1);
-  }
-}
+/* The 5x7 at x2, each glyph 9 pixels wide (its last column overlapping the one before) on a 10-pixel
+   pitch: PLANET fits the 62 pixels beside the face. */
+static const uint8_t squeezed_x[FONT5X7_W] = { 0, 2, 4, 6, 7 };
+static const oled_style squeezed = { 2, 2, PLANET_PITCH, squeezed_x };
 
 static void face_eye(const oled_surf *s, int wink, int glint)
 {
@@ -230,10 +217,7 @@ static void face_eye(const oled_surf *s, int wink, int glint)
     oled_line(s, FACE_CX - 15, FACE_CY - 8, FACE_CX - 7, FACE_CY - 8, 0);
     oled_line(s, FACE_CX - 15, FACE_CY - 7, FACE_CX - 7, FACE_CY - 7, 0);
   }
-  else
-    for (int j = -4; j <= 4; j++)
-      for (int i = -4; i <= 4; i++)
-        if (i * i + j * j <= 16) oled_set(s, FACE_CX - 11 + i, FACE_CY - 8 + j, 1);
+  else oled_disc_r2(s, FACE_CX - 11, FACE_CY - 8, 4, 16, 1);   /* the mockup's eye: r^2, not oled_disc's r^2 + r */
   if (glint)
   {
     oled_set(s, FACE_CX + 8, FACE_CY - 11, 0);
@@ -253,10 +237,10 @@ static void hack_glitch(const oled_surf *s, unsigned g)
 
 void scr_hack(const oled_surf *s, unsigned frame)
 {
-  scr_blit(s, &scr_art_face, 0, 0);
+  oled_blit(s, scr_art_face.x, scr_art_face.y, &scr_art_face.bits);
   face_eye(s, frame == 16U || frame == 17U, frame == 18U || frame == 19U);
   (void)oled_text(s, 68, 2, "HACK", 2);
   if (frame >= 4U) (void)oled_text(s, 74, 21, "THE", 2);
-  if (frame >= 8U) squeezed_text(s, 64, 42, "PLANET");
+  if (frame >= 8U) (void)oled_draw_text(s, 64, 42, "PLANET", &font5x7, &squeezed);
   if (frame >= 20U && frame < 24U) hack_glitch(s, frame - 20U);
 }

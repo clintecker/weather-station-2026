@@ -35,12 +35,12 @@ SCR_TX_NONE, SCR_TX_WAIT, SCR_TX_NO_ACK, SCR_TX_ACK = -2, -1, 0, 1
 SCR_GAP, SCR_NONE_S = -32768, 0xFFFFFFFF
 AIR_HIST, PRESS_HIST, RADIO_HIST = 60, 36, 30
 
-# The screens' sources and their include paths. oled_draw.c is left out: the shim includes it, so a
-# test can see every string drawn (the shim's oled_text checks each character against the font).
+# The screens' sources and their include paths. oled_font.c is left out: the shim includes it, so a
+# test can see every string drawn (the shim's oled_text and oled_draw_text check each character against the font).
 INCLUDES = ['-I', APP, '-I', COMMON, '-I', ROOT/'firmware']
 SOURCES = [APP/'scr_view.c', APP/'scr_calc.c', APP/'scr_home.c', APP/'scr_detail.c', APP/'scr_interludes.c', APP/'scr_rain.c',
            APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', APP/'scr_kana.c',
-           COMMON/'font5x7.c']
+           COMMON/'oled_draw.c', COMMON/'font5x7.c']
 FRAME_BYTES = W * H // 2   # the SSD1325's send order (firmware/common/oled_draw.h): column pair, then row
 JUNK = 0xA5                # what frame() fills the buffer with before a screen draws
 SHIM = r'''
@@ -48,18 +48,29 @@ SHIM = r'''
 #include "scr_view.h"
 #include "font5x7.h"
 #define oled_text real_oled_text
-#include "oled_draw.c"
+#define oled_draw_text real_oled_draw_text
+#include "oled_font.c"
 #undef oled_text
-unsigned shim_missing;          /* characters drawn that the font lacks */
+#undef oled_draw_text
+unsigned shim_missing;          /* characters drawn that the font lacks (a font with chars) */
 char shim_missing_text[64];     /* the last string that had one */
-int oled_text(const oled_surf *surf, int x, int y, const char *s, int scale)
+static void shim_check(const char *s, const oled_font *f)
 {
-  for (const char *c = s; *c; c++)
-    if (strchr(font5x7_chars, *c) == NULL)
+  for (const char *c = s; *c && f->chars; c++)
+    if (strchr(f->chars, *c) == NULL)
     {
       shim_missing++;
       strncpy(shim_missing_text, s, sizeof shim_missing_text - 1);
     }
+}
+int oled_draw_text(const oled_surf *surf, int x, int y, const char *s, const oled_font *f, const oled_style *st)
+{
+  shim_check(s, f);
+  return real_oled_draw_text(surf, x, y, s, f, st);
+}
+int oled_text(const oled_surf *surf, int x, int y, const char *s, int scale)
+{
+  shim_check(s, &font5x7);
   return real_oled_text(surf, x, y, s, scale);
 }
 unsigned shim_view_size(void) { return (unsigned)sizeof(scr_view_t); }
@@ -225,6 +236,13 @@ def unpack(frame, rotate180=0):
             if level:
                 out[(W - 1 - x, H - 1 - y) if rotate180 else (x, y)] = level
     return out
+
+
+class Font(ctypes.Structure):
+    """An oled_font (firmware/common/oled_font.h)."""
+    _fields_ = [('h', ctypes.c_uint8), ('w', ctypes.c_uint8), ('bits', ctypes.c_uint8), ('gap', ctypes.c_uint8),
+                ('n', ctypes.c_uint8), ('chars', ctypes.c_char_p), ('widths', ctypes.c_void_p), ('rows', ctypes.c_void_p),
+                ('missing', ctypes.c_char)]
 
 
 class Surf(ctypes.Structure):

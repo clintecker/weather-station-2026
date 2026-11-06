@@ -303,7 +303,7 @@ class BenchScreen(unittest.TestCase):
     """The bench screen's layout (bench_screen.c) over the shared drawing surface and font (firmware/common)."""
     @classmethod
     def setUpClass(cls):
-        cls.lib = host_library(cls, 'bench_screen', '-I', APP, '-I', COMMON, COMMON/'oled_draw.c', COMMON/'font5x7.c', APP/'bench_screen.c', APP/'bench_regs.c', POWER)
+        cls.lib = host_library(cls, 'bench_screen', '-I', APP, '-I', COMMON, COMMON/'oled_draw.c', COMMON/'oled_font.c', COMMON/'font5x7.c', APP/'bench_screen.c', APP/'bench_regs.c', POWER)
         cls.lib.oled_text.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
         cls.lib.bench_screen.argtypes = [ctypes.c_void_p, ctypes.POINTER(View)]
 
