@@ -285,8 +285,10 @@ class ScrView(unittest.TestCase):
         trace = self.region(self.draw('SCOPE', 0, v) - self.draw('SCOPE', 0, empty), 1, 10, W - 1, 54)
         xs = sorted({x for x, _ in trace})
         top = lambda col: min(y for x, y in trace if x == col)
-        self.assertLess(top(xs[-1]), top(xs[0]))
-        self.assertEqual(xs[-1], 126)                                    # the newest bin on the right edge
+        # The sparkline's trace: slot i of 120 at 1 + 125 i / 119, 0 on the plot's bottom row (53), the largest bin
+        # (15, the scale) on its top row (10).
+        self.assertEqual((xs[0], xs[-1]), (1 + 104 * 125 // 119, 126))   # the oldest of the 16, the newest on the edge
+        self.assertEqual((max(y for x, y in trace if x == xs[0]), top(xs[-1])), (53, 10))
 
 
     # The rain screen (scr_rain.c): mm and tips since boot, the last tip's age, the rate of the last 10

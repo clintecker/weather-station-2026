@@ -5,8 +5,8 @@
  *   burst   header TX <seq> SF<sf> BW<kHz> (inverted); up-chirps sweeping 8 px a frame; from frame 8
  *           the frame's bytes in hex, two rows of seven, a row further each frame; footer AES-CCM
  *           <len>B <MHz> under a dashed rule.
- *   scope   the last 30 s of cup pulses (250 ms bins, newest at the right) on a dotted grid, scaled to
- *           the largest bin (at least 4); the pulse rate of the last 3 s; speed, gust, seconds shown.
+ *   scope   the last 30 s of cup pulses (250 ms bins, newest at the right) on a dotted grid, the
+ *           sparkline's trace (scr_trace) from 0 to the largest bin (at least 4); the pulse rate of the last 3 s; speed, gust, seconds shown.
  *   vane    a compass rose with the needle swinging from N to the vane's point (a point a frame),
  *           its name and degrees, raw millivolts, the table's 16 positions, OK or NO POINT.
  *   system  bars of flash, RAM, stack, journal and this minute's airtime, filling over 8 frames.
@@ -28,7 +28,7 @@
 #define PLOT_BOTTOM 53
 #define PLOT_RIGHT 126
 #define SCOPE_RATE_BINS 12U            /* 3 s of 250 ms bins */
-#define SCOPE_MIN_FULL 4U              /* the scale's floor, in pulses a bin */
+#define SCOPE_MIN_FULL 4               /* the scale's floor, in pulses a bin */
 #define ROSE_CX 32                     /* tools/make_scr_art.py */
 #define ROSE_CY 33
 #define VANE_TEXT_X 66
@@ -78,21 +78,6 @@ void scr_burst(const oled_surf *s, unsigned frame, const scr_view_t *v)
   scr_label(s, 56, foot.s, SCR_LEFT);
 }
 
-static void scope_trace(const oled_surf *s, const scr_series *d)
-{
-  unsigned n = d->n, full = (unsigned)scr_max(d);
-  if (full < SCOPE_MIN_FULL) full = SCOPE_MIN_FULL;
-  int px = 0, py = 0;
-  for (unsigned i = 0; i < n; i++)
-  {
-    int x = PLOT_RIGHT - (int)((n - 1U - i) * (PLOT_RIGHT - PLOT_X) / (WIND_LIVE_BINS - 1U));
-    int y = PLOT_BOTTOM - (int)((unsigned)scr_at(d, i) * (unsigned)(PLOT_BOTTOM - PLOT_TOP) / full);
-    if (i == 0) oled_set(s, x, y, 1);
-    else oled_line(s, px, py, x, y, 0);
-    px = x; py = y;
-  }
-}
-
 void scr_scope(const oled_surf *s, const scr_view_t *v)
 {
   const wind_live_t *w = &v->wind;
@@ -106,7 +91,8 @@ void scr_scope(const oled_surf *s, const scr_view_t *v)
   scr_label(s, 0, line.s, SCR_LEFT);
   scr_frame(s, 0, 9, OLED_W - 1, 54, SCR_EDGE_SOLID, SCR_EDGE_SOLID, 1);
   oled_dotgrid(s, PLOT_X, PLOT_TOP, PLOT_RIGHT, 44, 16);
-  scope_trace(s, &d);
+  int32_t most = scr_max(&d), full = most > SCOPE_MIN_FULL ? most : SCOPE_MIN_FULL;
+  scr_trace(s, PLOT_X, PLOT_TOP, PLOT_RIGHT - PLOT_X + 1, PLOT_BOTTOM - PLOT_TOP + 1, &d, 0, full, SCR_GROW_FRAMES - 1U);
   oled_row foot = { "" };
   oled_put_dec(&foot, w->speed_cms, 2, 1, 0);
   oled_put(&foot, "m/s  G");
