@@ -53,7 +53,7 @@ flowchart LR
 |---|---|
 | `check_guide` | each NUCLEO pin the map uses is in the wiring guide's section 2 table, on a header the guide lists |
 | `check_guide_reverse` | the other way round (record D3 check 7): each guide row that names a station pin has a model net with that `mcu` pin, unless the row says "protoboard only" or "carrier only" |
-| `check_firmware` | each pin matches the constants in the node's `App/board_inputs.c` and `App/i2c_bus.lit.md`, in the bench link's `App/benchlink.c`, and in i2cscan's `App/i2cscan.c` and `App/oled.c` (the OLED's five SPI and control pins); PA9 (POWER_PIN) is not checked, as the model has no SENS_EN (change C is not built); an ADC input (vane, ISET, VIN_SENSE) uses its pin's ADC1 channel (D3 check 8) |
+| `check_firmware` | each pin matches the constants in the node's `App/board_inputs.c` and `App/i2c_bus.lit.md`, in the bench link's `App/benchlink.c`, in i2cscan's `App/i2cscan.c`, and in `board/nucleo-wl55jc/oled_spi1.h` (the OLED's five SPI and control pins, which i2cscan and the node's bench build share); PA9 (POWER_PIN) is not checked, as the model has no SENS_EN (change C is not built); an ADC input (vane, ISET, VIN_SENSE) uses its pin's ADC1 channel (D3 check 8) |
 | `prove` | the strips, the jumpers, the leads, the joints, the ties inside parts and the NUCLEO's own ties join every net, with no short and no stray pin |
 | `checks.check_force_off_breadboard` | D3 check 1: no force lead or force-net member in a breadboard hole, except the P1 regulator chain, tagged member by member |
 | `checks.check_sense_landings` | D3 check 2: no sense lead shares a clamp position with a force lead; each lands on its declared joint |

@@ -107,18 +107,18 @@ class Checks(unittest.TestCase):
 
     def test_the_oled_pins_are_checked_and_pa9_is_not(self):
         # Change C (the PA9 sensor switch) is not part of the breadboard build (record 4.6, 2026-11-02): the breadboard
-        # has no SENS_EN net, so no firmware's POWER_PIN is checked against it; i2cscan's oled.c drives the
-        # OLED nets the model has (record 6.3).
+        # has no SENS_EN net, so no firmware's POWER_PIN is checked against it; the OLED's shared pins
+        # (board/nucleo-wl55jc/oled_spi1.h, i2cscan's and the node's) drive the OLED nets the model has (record 6.3).
         for file, constants in wiring.FIRMWARE.items():
             with self.subTest(file=file):
                 self.assertNotIn('POWER_PIN', constants)
-        self.assertEqual(set(wiring.FIRMWARE['i2cscan/App/oled.c'].values()),
+        self.assertEqual(set(wiring.FIRMWARE['board/nucleo-wl55jc/oled_spi1.h'].values()),
                          {'OLED_SCLK', 'OLED_DIN', 'OLED_CS', 'OLED_DC', 'OLED_RST'})
         def move_dc(text):
-            line = next(ln for ln in text.splitlines() if ln.startswith('#define DC_PIN'))
+            line = next(ln for ln in text.splitlines() if ln.startswith('#define OLED_DC_PIN'))
             return text.replace(line, line.replace('GPIO_PIN_2', 'GPIO_PIN_3').replace('PC2', 'PC3'))
-        problems = self.firmware_problems('i2cscan/App/oled.c', move_dc)
-        self.assertTrue(any('oled.c: DC_PIN is PC3' in p for p in problems), problems)
+        problems = self.firmware_problems('board/nucleo-wl55jc/oled_spi1.h', move_dc)
+        self.assertTrue(any('oled_spi1.h: OLED_DC_PIN is PC3' in p for p in problems), problems)
 
     def test_pa9_keeps_its_morpho_alias_but_no_net(self):
         # Record 4.2: the PA9 tie stays in [nucleo] ties (UM2592 Tables 17, 18); PA9 is unconnected (4.6, 2026-11-02).

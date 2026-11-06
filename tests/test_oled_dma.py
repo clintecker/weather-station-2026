@@ -275,7 +275,8 @@ int t_other_lines(void) { return other_lines; }
 
 APP = ROOT/'firmware/stage0-node/App'
 SOURCE = APP/'oled_dma.c'
-OLED_C = ROOT/'firmware/i2cscan/App/oled.c'
+BOARD = ROOT/'firmware/board/nucleo-wl55jc'
+DRIVER = [SOURCE, BOARD/'oled_spi1.c', ROOT/'firmware/common/ssd1325.c']   # the driver, its pins and SPI1, the panel data
 NODE = ROOT/'firmware/stage0-node'
 TOOLCHAIN_GCC = Path.home()/'.local/opt/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/arm-none-eabi-gcc'
 HAVE_ARM = TOOLCHAIN_GCC.exists() and (ROOT/'vendor/STM32CubeWL').exists()
@@ -285,12 +286,12 @@ WINDOW = [0x15, 0x00, 0x3F, 0x75, 0x00, 0x3F]
 
 
 def setup_bytes():
-    """The set-up sequence of the bench tool's driver (firmware/i2cscan/App/oled.c), which works on this panel."""
-    text = OLED_C.read_text()
-    body = text[text.index('static const uint8_t setup[] = {'):]
-    body = body[body.index('{') + 1:body.index('};')]
-    lines = (line.split('/*')[0] for line in body.splitlines())
-    return [int(v, 16) for line in lines for v in line.replace(',', ' ').split() if v.startswith('0x')]
+    """Adafruit's set-up sequence for this panel (Adafruit_SSD1325_Library, begin()), which the bench tool sends too
+    (firmware/common/ssd1325.c): display off, clock, multiplex, offset, start line, master configuration, re-map,
+    current range, grey-scale table, contrast, row period, phase length, pre-charge, VCOMH, VSL, normal, on."""
+    return [0xAE, 0xB3, 0xF1, 0xA8, 0x3F, 0xA2, 0x4C, 0xA1, 0x00, 0xAD, 0x02, 0xA0, 0x56, 0x86,
+            0xB8, 0x01, 0x11, 0x22, 0x32, 0x43, 0x54, 0x65, 0x76, 0x81, 0x7F, 0xB2, 0x51, 0xB1, 0x55,
+            0xB4, 0x02, 0xB0, 0x28, 0xBE, 0x1C, 0xBF, 0x0F, 0xA4, 0xAF]
 
 
 def includes(owner):
@@ -302,14 +303,14 @@ def includes(owner):
     for name, text in (('stm32wlxx_hal.h', HAL_STUB), ('stm32wlxx_ll_dma.h', LL_DMA_STUB), ('stm32wlxx_ll_spi.h', LL_SPI_STUB),
                        ('stm32_timer.h', TIMER_STUB), ('sys_app.h', SYS_APP_STUB), ('stm32wlxx.h', DEVICE_STUB)):
         (Path(stub.name)/name).write_text(text)
-    return ['-I', stub.name, '-I', APP, '-I', ROOT/'firmware/common', '-I', ROOT/'firmware/board/nucleo-wl55jc/Core/Inc']
+    return ['-I', stub.name, '-I', APP, '-I', ROOT/'firmware/common', '-I', BOARD, '-I', BOARD/'Core/Inc']
 
 
 @needs_cc
 class OledDma(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.built = host_library(cls, 'oleddma', '-DOLED_DMA_RAM2=', *includes(cls), SOURCE, files={'shim.c': SHIM})
+        cls.built = host_library(cls, 'oleddma', '-DOLED_DMA_RAM2=', *includes(cls), *DRIVER, files={'shim.c': SHIM})
 
     def setUp(self):
         self.lib = fresh_copy(type(self), self.built._name)
@@ -483,6 +484,16 @@ class OledDma(unittest.TestCase):
         self.assertEqual(self.lib.oled_dma_send(ctypes.addressof(pixels)), 0)
         self.finish()
         self.assertEqual(self.last(), bytes(pixels))
+
+
+@needs_cc
+class PanelClock(unittest.TestCase):
+    """ssd1325_spi_div_log2 (firmware/common/ssd1325.c), which both drivers' SPI1 clock comes from."""
+    def test_the_fastest_clock_at_most_1_mhz(self):
+        lib = host_library(type(self), 'ssd1325', ROOT/'firmware/common/ssd1325.c')
+        div = lib.ssd1325_spi_div_log2
+        div.argtypes, div.restype = [ctypes.c_uint32], ctypes.c_uint
+        self.assertEqual([div(hz) for hz in (48_000_000, 2_000_000, 2_000_002, 1_000_000, 0, 4_000_000_000)], [6, 1, 2, 1, 1, 8])
 
 
 @needs_cc

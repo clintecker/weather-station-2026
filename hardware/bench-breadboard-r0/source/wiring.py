@@ -578,7 +578,8 @@ def load(path):
 # the bench link must use the same MCU pins (spec 2026-10-29 section 11.1). A constant gives its
 # port in a comment that starts with the pin and may go on (/* PB5 = D4, CN9.5 */, /* PB1 = A0, CN8.1: ADC1_IN5 */);
 # without one it is on GPIOA (the I2C pins). Add an entry only for a net the model has. Every bench
-# firmware that drives a modelled pin is here: the node, benchlink, and i2cscan with its OLED (oled.c).
+# firmware that drives a modelled pin is here: the node, benchlink, i2cscan, and the OLED's pins that i2cscan
+# and the node's bench build share (board/nucleo-wl55jc/oled_spi1.h).
 # Their POWER_PIN (PA9) is not here: the sensor power switch (change C) is not part of the breadboard build
 # (record 4.6, 2026-11-02), so the breadboard model has no SENS_EN net and PA9 is unconnected on it.
 FIRMWARE = {'stage0-node/App/board_inputs.c': {'CUPS_PIN': 'CUPS', 'VANE_PIN': 'VANE', 'RAIN_PIN': 'RAIN',
@@ -589,8 +590,9 @@ FIRMWARE = {'stage0-node/App/board_inputs.c': {'CUPS_PIN': 'CUPS', 'VANE_PIN': '
                                           'PGOOD_PIN': 'PGOOD', 'CHG_PIN': 'CHG',
                                           'ISET_PIN': 'ISET', 'VIN_PIN': 'VIN_SENSE'},
             'i2cscan/App/i2cscan.c': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL'},
-            'i2cscan/App/oled.c': {'CS_PIN': 'OLED_CS', 'SCK_PIN': 'OLED_SCLK', 'MOSI_PIN': 'OLED_DIN',
-                                   'RST_PIN': 'OLED_RST', 'DC_PIN': 'OLED_DC'}}
+            'board/nucleo-wl55jc/oled_spi1.h': {'OLED_CS_PIN': 'OLED_CS', 'OLED_SCK_PIN': 'OLED_SCLK',
+                                                'OLED_MOSI_PIN': 'OLED_DIN', 'OLED_RST_PIN': 'OLED_RST',
+                                                'OLED_DC_PIN': 'OLED_DC'}}
 PIN_DEFINE = re.compile(r'^#define (\w+_PIN) GPIO_PIN_(\d+)\b(?:.*?/\* P([A-H])(\d+)\b([^\n]*?)\*/)?', re.M)
 # The ADC1 channel of each ARDUINO analog pin (UM2592 Table 17: A0..A5 on CN8; A1 = PB2 is the vane).
 ADC_CHANNEL = {'PB1': 5, 'PB2': 4, 'PA10': 6, 'PB4': 3, 'PB14': 1, 'PB13': 0}

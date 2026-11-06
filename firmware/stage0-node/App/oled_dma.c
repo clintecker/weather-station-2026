@@ -1,6 +1,6 @@
-/* The bench OLED on SPI1 by DMA (oled_dma.h). The panel set-up is the bench tool's
- * (firmware/i2cscan/App/oled.c: Adafruit_SSD1325_Library begin(), SSD1325 datasheet section 9), with
- * every wait turned into a step of the state machine below:
+/* The bench OLED on SPI1 by DMA (oled_dma.h). The pins, SPI1 and the panel set-up are the bench tool's
+ * (board/nucleo-wl55jc/oled_spi1.c, common/ssd1325.c), with every wait turned into a step of the state
+ * machine below:
  *
  *   OFF -init/enable(1)-> RESET_LOW -10 ms-> RESET_SETTLE -500 ms-> SETUP -+
  *   IDLE <-------------------------------------------------------------------+ (DMA done, drained)
@@ -18,6 +18,8 @@
 #include <string.h>
 #include "busymon.h"
 #include "oled_dma.h"
+#include "oled_spi1.h"
+#include "ssd1325.h"
 #include "stm32_timer.h"
 #include "stm32wlxx_hal.h"
 #include "stm32wlxx_ll_dma.h"
@@ -30,12 +32,6 @@
 _Static_assert(LOW_POWER_DISABLE == 1, "the bench OLED needs LOW_POWER_DISABLE 1: Stop 2 would stall SPI1 and its DMA mid-frame");
 _Static_assert(DEBUG_SUBGHZSPI_MONITORING_ENABLED == 0, "DEBUG_SUBGHZSPI_MONITORING drives PA4-PA7, the OLED's SPI1 pins");
 
-#define CS_PIN GPIO_PIN_4      /* PA4 */
-#define SCK_PIN GPIO_PIN_5     /* PA5, SPI1_SCK AF5 */
-#define MOSI_PIN GPIO_PIN_7    /* PA7, SPI1_MOSI AF5 */
-#define RST_PIN GPIO_PIN_1     /* PC1 */
-#define DC_PIN GPIO_PIN_2      /* PC2 */
-#define SPI_MAX_HZ 1000000U    /* Adafruit: "The SSD1325 needs to be slowed down to 1MHz" */
 #define RESET_LOW_MS 10U
 #define RESET_SETTLE_MS 500U   /* Adafruit's wait after reset, before the first command */
 #define DRAIN_MS 1U            /* the FIFO and the shift register after the DMA's last byte: 53 us */
@@ -43,8 +39,6 @@ _Static_assert(DEBUG_SUBGHZSPI_MONITORING_ENABLED == 0, "DEBUG_SUBGHZSPI_MONITOR
 #define DMA_TIMEOUT_MS 200U    /* a frame's 4 KB take 44 ms at 750 kHz */
 #define OLED_IRQ_PRIORITY 2U   /* as the console's DMA and the board inputs: below the radio and the RTC */
 #define DMA_CH LL_DMA_CHANNEL_1
-#define CMD_DISPLAY_OFF 0xAEU
-#define CMD_DISPLAY_ON 0xAFU
 #define CMD_MAX 48U
 
 /* Both buffers in RAM2 (RAM1 is nearly full; design, "Bandwidth and memory"). The host test, whose
@@ -55,30 +49,7 @@ _Static_assert(DEBUG_SUBGHZSPI_MONITORING_ENABLED == 0, "DEBUG_SUBGHZSPI_MONITOR
 static uint8_t txbuf[OLED_FRAME_BYTES] OLED_DMA_RAM2;
 static uint8_t cmdbuf[CMD_MAX] OLED_DMA_RAM2;
 
-static const uint8_t setup[] = {
-  CMD_DISPLAY_OFF,
-  0xB3, 0xF1,              /* clock: divide ratio and oscillator frequency */
-  0xA8, 0x3F,              /* multiplex ratio: 64 rows */
-  0xA2, 0x4C,              /* display offset 76 (this panel's COM wiring) */
-  0xA1, 0x00,              /* start line 0 */
-  0xAD, 0x02,              /* master configuration */
-  0xA0, 0x56,              /* re-map: vertical address increment, nibble and COM order for this panel */
-  0x86,                    /* full current range (0x84 + 2) */
-  0xB8, 0x01, 0x11, 0x22, 0x32, 0x43, 0x54, 0x65, 0x76,   /* grey-scale table */
-  0x81, 0x7F,              /* contrast */
-  0xB2, 0x51,              /* row period */
-  0xB1, 0x55,              /* phase length */
-  0xB4, 0x02,              /* pre-charge compensation level */
-  0xB0, 0x28,              /* pre-charge compensation enable */
-  0xBE, 0x1C,              /* VCOMH */
-  0xBF, 0x0F,              /* VSL (0x0D | 0x02) */
-  0xA4,                    /* normal display */
-  CMD_DISPLAY_ON,
-};
-_Static_assert(sizeof setup <= CMD_MAX, "the set-up sequence fits the command buffer");
-
-/* The whole screen as the write window: column pairs 0-63, rows 0-63. */
-static const uint8_t window[] = { 0x15, 0x00, OLED_COLPAIRS - 1, 0x75, 0x00, OLED_H - 1 };
+_Static_assert(SSD1325_SETUP_LEN <= CMD_MAX, "the set-up sequence fits the command buffer");
 
 typedef enum { ST_OFF, ST_RESET_LOW, ST_RESET_SETTLE, ST_SETUP, ST_IDLE, ST_WINDOW, ST_PIXELS, ST_POWER } oled_state;
 
@@ -98,7 +69,7 @@ static void fault(void)
   LL_SPI_DisableIT_ERR(SPI1);   /* an error flag left set cannot raise the interrupt again */
   LL_SPI_Disable(SPI1);
   (void)UTIL_TIMER_Stop(&step_timer);
-  HAL_GPIO_WritePin(GPIOA, CS_PIN, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, OLED_CS_PIN, GPIO_PIN_SET);
   state = ST_OFF;
   enabled = 0;
   power_pending = 0;
@@ -128,8 +99,8 @@ static void start_dma(uint8_t *buf, uint32_t n)
 
 static void select_start(int dc_data, uint8_t *buf, uint32_t n)
 {
-  HAL_GPIO_WritePin(GPIOC, DC_PIN, dc_data ? GPIO_PIN_SET : GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(GPIOA, CS_PIN, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, OLED_DC_PIN, dc_data ? GPIO_PIN_SET : GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, OLED_CS_PIN, GPIO_PIN_RESET);
   start_dma(buf, n);
 }
 
@@ -142,7 +113,7 @@ static void commands(oled_state next, const uint8_t *b, uint32_t n)
 
 static void start_power(void)
 {
-  static const uint8_t off[] = { CMD_DISPLAY_OFF }, on[] = { CMD_DISPLAY_ON };
+  static const uint8_t off[] = { SSD1325_DISPLAY_OFF }, on[] = { SSD1325_DISPLAY_ON };
   power_pending = 0;
   commands(ST_POWER, enabled ? on : off, 1U);
 }
@@ -150,7 +121,7 @@ static void start_power(void)
 /* The last byte of a transfer has left: CS up, then the next step. */
 static void transfer_done(void)
 {
-  HAL_GPIO_WritePin(GPIOA, CS_PIN, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, OLED_CS_PIN, GPIO_PIN_SET);
   if (state == ST_WINDOW) { state = ST_PIXELS; select_start(1, txbuf, OLED_FRAME_BYTES); return; }
   state = ST_IDLE;
   if (power_pending) start_power();
@@ -163,12 +134,12 @@ static void on_step(void *ctx)
   switch (state)
   {
     case ST_RESET_LOW:
-      HAL_GPIO_WritePin(GPIOC, RST_PIN, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(GPIOC, OLED_RST_PIN, GPIO_PIN_SET);
       state = ST_RESET_SETTLE;
       arm(RESET_SETTLE_MS);
       break;
     case ST_RESET_SETTLE:
-      commands(ST_SETUP, setup, sizeof setup);
+      commands(ST_SETUP, ssd1325_setup, SSD1325_SETUP_LEN);
       break;
     case ST_SETUP: case ST_WINDOW: case ST_PIXELS: case ST_POWER:   /* draining after the DMA */
       if (in_dma) { fault(); break; }   /* the DMA's timeout: its transfer-complete interrupt never came */
@@ -182,46 +153,12 @@ static void on_step(void *ctx)
   }
 }
 
-/* The slowest prescaler not above SPI_MAX_HZ from PCLK2 (SPI1 is on APB2): DIV64, 750 kHz at 48 MHz. */
-static uint32_t prescaler(void)
-{
-  static const uint32_t div[] = { LL_SPI_BAUDRATEPRESCALER_DIV2, LL_SPI_BAUDRATEPRESCALER_DIV4,
-                                  LL_SPI_BAUDRATEPRESCALER_DIV8, LL_SPI_BAUDRATEPRESCALER_DIV16,
-                                  LL_SPI_BAUDRATEPRESCALER_DIV32, LL_SPI_BAUDRATEPRESCALER_DIV64,
-                                  LL_SPI_BAUDRATEPRESCALER_DIV128, LL_SPI_BAUDRATEPRESCALER_DIV256 };
-  uint32_t pclk = HAL_RCC_GetPCLK2Freq();
-  unsigned k;
-  for (k = 0; k < 7U && (pclk >> (k + 1U)) > SPI_MAX_HZ; k++) {}
-  return div[k];
-}
-
-/* Pins, SPI1 (mode 0, transmit only, master), DMA1 channel 1 on SPI1_TX, the two interrupts. */
+/* Pins and SPI1 (oled_spi1_init), its error interrupt, DMA1 channel 1 on SPI1_TX and its interrupt. */
 static void hardware(void)
 {
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_SPI1_CLK_ENABLE();
+  (void)oled_spi1_init();
   __HAL_RCC_DMAMUX1_CLK_ENABLE();
   __HAL_RCC_DMA1_CLK_ENABLE();
-  HAL_GPIO_WritePin(GPIOA, CS_PIN, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(GPIOC, RST_PIN | DC_PIN, GPIO_PIN_SET);
-  GPIO_InitTypeDef out = { .Pin = CS_PIN, .Mode = GPIO_MODE_OUTPUT_PP, .Pull = GPIO_NOPULL, .Speed = GPIO_SPEED_FREQ_LOW };
-  HAL_GPIO_Init(GPIOA, &out);
-  out.Pin = RST_PIN | DC_PIN;
-  HAL_GPIO_Init(GPIOC, &out);
-  GPIO_InitTypeDef spi = { .Pin = SCK_PIN | MOSI_PIN, .Mode = GPIO_MODE_AF_PP, .Pull = GPIO_NOPULL,
-                           .Speed = GPIO_SPEED_FREQ_LOW, .Alternate = GPIO_AF5_SPI1 };
-  HAL_GPIO_Init(GPIOA, &spi);
-
-  LL_SPI_Disable(SPI1);
-  LL_SPI_SetMode(SPI1, LL_SPI_MODE_MASTER);
-  LL_SPI_SetTransferDirection(SPI1, LL_SPI_HALF_DUPLEX_TX);   /* nothing received, no receive overrun */
-  LL_SPI_SetClockPolarity(SPI1, LL_SPI_POLARITY_LOW);         /* SPI mode 0, as Adafruit's driver */
-  LL_SPI_SetClockPhase(SPI1, LL_SPI_PHASE_1EDGE);
-  LL_SPI_SetTransferBitOrder(SPI1, LL_SPI_MSB_FIRST);
-  LL_SPI_SetNSSMode(SPI1, LL_SPI_NSS_SOFT);
-  LL_SPI_SetDataWidth(SPI1, LL_SPI_DATAWIDTH_8BIT);
-  LL_SPI_SetBaudRatePrescaler(SPI1, prescaler());
   LL_SPI_ClearFlag_MODF(SPI1);
   LL_SPI_EnableIT_ERR(SPI1);
   LL_SPI_Enable(SPI1);
@@ -247,7 +184,7 @@ static void start_up(void)
   enabled = 1;
   power_pending = 0;
   hardware();
-  HAL_GPIO_WritePin(GPIOC, RST_PIN, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, OLED_RST_PIN, GPIO_PIN_RESET);
   state = ST_RESET_LOW;
   arm(RESET_LOW_MS);
 }
@@ -267,7 +204,7 @@ int oled_dma_send(const uint8_t frame[OLED_FRAME_BYTES])
   __set_PRIMASK(primask);
   if (rc) return rc;
   if (frame != txbuf) memcpy(txbuf, frame, OLED_FRAME_BYTES);
-  commands(ST_WINDOW, window, sizeof window);
+  commands(ST_WINDOW, ssd1325_window, sizeof ssd1325_window);
   return 0;
 }
 

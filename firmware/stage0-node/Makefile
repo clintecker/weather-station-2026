@@ -72,11 +72,12 @@ APP_SRC += App/tx_exchange.c App/tx_policy.c App/tx_time.c App/tx_console.c App/
            $(ROOT)/firmware/common/ws_frame.c $(ROOT)/firmware/common/ws_obs.c $(ROOT)/firmware/common/ws_policy.c
 endif
 # The display: the driver, its application (the step, the view, the scheduler), the screens, then the
-# shared frame buffer, drawing and font (firmware/common).
+# shared frame buffer, drawing, font and panel data (firmware/common) and the pins and SPI1 (the board).
 ifeq ($(WS_BENCH_OLED),1)
 APP_SRC += App/oled_dma.c App/oled_app.c App/oled_view.c App/scr_sched.c App/scr_view.c App/scr_calc.c App/scr_home.c \
            App/scr_detail.c App/scr_interludes.c App/scr_rain.c App/scr_silly.c App/scr_art.c App/scr_font.c App/scr_kana.c \
-           $(ROOT)/firmware/common/oled_fb.c $(ROOT)/firmware/common/oled_draw.c $(ROOT)/firmware/common/font5x7.c
+           $(ROOT)/firmware/common/oled_fb.c $(ROOT)/firmware/common/oled_draw.c $(ROOT)/firmware/common/font5x7.c \
+           $(ROOT)/firmware/common/ssd1325.c $(BOARD)/oled_spi1.c
 endif
 
 HAL_EXTRA = i2c i2c_ex iwdg adc adc_ex lptim
@@ -84,7 +85,7 @@ ifeq ($(ROLE),tx)
 CUBE_EXTRA = $(addprefix $(MBEDTLS)/library/,aes.c ccm.c block_cipher.c platform_util.c constant_time.c)
 endif
 
-PROJ_INCS  = App Core/Inc $(ROOT)/firmware $(ROOT)/firmware/common
+PROJ_INCS  = App Core/Inc $(ROOT)/firmware $(ROOT)/firmware/common $(BOARD)
 EXTRA_INCS = $(MBEDTLS)/include
 
 DEFS = -DWS_ROLE_$(ROLE) -DWS_FW_VERSION=\"$(FW_VERSION)\" -DWS_FW_BUILD_ID=$(FW_BUILD_ID)UL -DMBEDTLS_CONFIG_FILE=\"ws_mbedtls_config.h\"
@@ -100,8 +101,8 @@ OPT  = -Os
 $(BUILD)/app/node_store.o $(BUILD)/app/stage0.o: CFLAGS += -fno-optimize-crc
 
 # Our own C (not ST-generated Core/, not vendor, not the board code) builds with board.mk's strict
-# warning set and -Werror. ANALYZE=1 adds -fanalyzer (used by CI).
-STRICT_SRC = $(filter App/%.c $(ROOT)/firmware/%.c,$(APP_SRC))
+# warning set and -Werror (the board's own oled_spi1.c too). ANALYZE=1 adds -fanalyzer (used by CI).
+STRICT_SRC = $(filter App/%.c $(ROOT)/firmware/%.c $(BOARD)/oled_spi1.c,$(APP_SRC))
 
 # Code-space budget (docs/firmware-budget.md): fail when code + initialized data exceed
 # FLASH_BUDGET_PCT of the 190 KB application region (pages 0-94), well before the linker's hard
