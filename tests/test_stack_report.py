@@ -62,5 +62,28 @@ class Roots(unittest.TestCase):
         self.assertTrue(r['recursion'])
 
 
+def linked_build(tmp, graphs, linked):
+    """A build directory with these app/<name>.ci call graphs and a .map whose link read `linked`."""
+    (Path(tmp)/'app').mkdir()
+    for name, text in graphs.items():
+        (Path(tmp)/'app'/f'{name}.ci').write_text(text)
+    (Path(tmp)/'fw.elf').write_bytes(b'')
+    (Path(tmp)/'fw.map').write_text(''.join(f'LOAD build/x/app/{n}.o\n' for n in linked))
+
+
+class LinkedOnly(unittest.TestCase):
+    def test_a_leftover_call_graph_is_ignored(self):
+        """A .ci left in the build directory by a deleted source (not in the .map) neither adds its
+        frames nor resolves a call: main's call to helper has no call-graph data."""
+        with tempfile.TemporaryDirectory() as tmp:
+            linked_build(tmp, {'app': callgraph({'app.c:main': 8}, [('app.c:main', 'helper')]),
+                               'old': callgraph({'old.c:helper': 5000}, [])}, ['app'])
+            self.assertEqual([p.name for p in stack_report.build_files(tmp, '.ci')], ['app.ci'])
+            with patch.object(stack_report, 'address_taken', return_value=set()):
+                r = stack_report.analyse(tmp)
+        self.assertEqual(r['main_cost'], 8)
+        self.assertEqual(r['missing'], ['helper'])
+
+
 if __name__ == '__main__':
     unittest.main()

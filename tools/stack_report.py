@@ -2,8 +2,9 @@
 
     python3 tools/stack_report.py firmware/stage0-node/build/tx [--limit 2048]
 
-Reads every *.ci file under the build directory: one node per function with its own frame size,
-one edge per call. Computes the deepest path from main and from every interrupt handler.
+Reads the *.ci file of every object the link read (the LOAD lines of the .map beside the .elf, so
+a leftover of a deleted or renamed source is ignored): one node per function with its own frame
+size, one edge per call. Computes the deepest path from main and from every interrupt handler.
 
 Rules (conservative where the graph is incomplete):
 - Only direct calls are followed (exact frame sums). A call through a pointer (callback, the
@@ -47,9 +48,27 @@ BOUNDED_RECURSION = {
 }
 
 
+def linked_objects(build):
+    """{(kind directory, name.o)} of the objects the link read, from the LOAD lines of the .map beside
+    the .elf; None without one (a synthetic build in the tests)."""
+    elf = next(Path(build).glob('*.elf'), None)
+    if elf is None or not elf.with_suffix('.map').exists():
+        return None
+    lines = elf.with_suffix('.map').read_text(errors='replace').splitlines()
+    return {Path(line[5:].strip()).parts[-2:] for line in lines if line.startswith('LOAD ')}
+
+
+def build_files(build, suffix):
+    """The `suffix` files (.ci, .o, .d) under the build directory whose object was linked: a stray
+    one left by a deleted or renamed source must not enter the figures or resolve calls."""
+    linked = linked_objects(build)
+    return sorted(p for p in Path(build).rglob('*' + suffix)
+                  if linked is None or (p.parent.name, p.with_suffix('.o').name) in linked)
+
+
 def load(build):
     frames, kinds, edges, defined_in = {}, {}, {}, {}
-    for ci in sorted(Path(build).rglob('*.ci')):
+    for ci in build_files(build, '.ci'):
         text = ci.read_text(errors='replace')
         for title, label in NODE.findall(text):
             m = SIZE.search(label)
@@ -87,7 +106,7 @@ def address_references(build, toolchain):
     holding those references ({name: {section, ...}})."""
     tool = lambda name: str(Path(toolchain)/f'arm-none-eabi-{name}')
     refs = {}
-    for obj in Path(build).rglob('*.o'):
+    for obj in build_files(build, '.o'):
         out = subprocess.run([tool('objdump'), '-r', str(obj)], capture_output=True, text=True).stdout
         section = ''
         for line in out.splitlines():

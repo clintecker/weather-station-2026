@@ -279,7 +279,7 @@ ORIGIN = {}   # title -> basename of the file defining it (a global's title name
 def origins(build):
     """Each defined function's source file basename, from the .ci node labels."""
     out = {}
-    for ci in sorted(Path(build).rglob('*.ci')):
+    for ci in stack_report.build_files(build, '.ci'):
         for title, path in NODE_FILE.findall(ci.read_text(errors='replace')):
             out.setdefault(title, Path(path).name)
     return out
@@ -307,7 +307,7 @@ def compiled_sources(build):
     """Every source and header compiled into this build, from the make .d files (paths relative to
     the compiler's working directory, recovered from the .o target path)."""
     out = set()
-    for d in Path(build).rglob('*.d'):
+    for d in stack_report.build_files(build, '.d'):
         rule = d.read_text(errors='replace').replace('\\\n', ' ').split('\n', 1)[0]
         target, _, deps = rule.partition(': ')
         base = d.with_suffix('.o')
@@ -355,7 +355,7 @@ EDGE_SITE = re.compile(r'edge: \{ sourcename: "([^"]+)" targetname: "([^"]+)" la
 
 def compile_base(build):
     """The compiler's working directory (the .d targets are relative to it), or None."""
-    for d in sorted(Path(build).rglob('*.d')):
+    for d in stack_report.build_files(build, '.d'):
         target = d.read_text(errors='replace').split(':', 1)[0].strip()
         base = d.with_suffix('.o')
         for _ in Path(target).parts:
@@ -369,7 +369,7 @@ def call_sites(build):
     After inlining, a call site still names the source line, so the function written around it is
     known even when that function no longer exists in the graph."""
     base, sites = compile_base(build), {}
-    for ci in sorted(Path(build).rglob('*.ci')):
+    for ci in stack_report.build_files(build, '.ci'):
         for src, dst, path, line in EDGE_SITE.findall(ci.read_text(errors='replace')):
             p = Path(path)
             p = p if p.is_absolute() or base is None else base/p

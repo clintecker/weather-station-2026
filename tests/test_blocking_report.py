@@ -214,5 +214,20 @@ class DriverTables(unittest.TestCase):
         self.assertTrue(r['failed'])
 
 
+class LinkedOnly(unittest.TestCase):
+    def test_a_leftover_call_graph_resolves_no_call(self):
+        """A .ci left by a deleted source (not in the .map) must not resolve `handle` to its wait."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp)/'app').mkdir()
+            (Path(tmp)/'app'/'it.ci').write_text(callgraph(['it.c:USART2_IRQHandler'],
+                                                           [('it.c:USART2_IRQHandler', 'handle')]))
+            (Path(tmp)/'app'/'old.ci').write_text(callgraph(['old.c:handle'], [('old.c:handle', 'HAL_Delay')]))
+            (Path(tmp)/'fw.elf').write_bytes(b'')
+            (Path(tmp)/'fw.map').write_text('LOAD build/x/app/it.o\n')
+            r = blocking_report.analyse(tmp, taken=set())
+        self.assertFalse(r['failed'])
+        self.assertEqual(r['run'], [])
+
+
 if __name__ == '__main__':
     unittest.main()
