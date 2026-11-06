@@ -36,10 +36,6 @@
 #define RADIO_X 4
 #define RADIO_PITCH 4
 
-static unsigned grown(unsigned frame) { return frame + 1U < GROW_FRAMES ? frame + 1U : GROW_FRAMES; }
-
-static unsigned upto(unsigned n, unsigned cap) { return n > cap ? cap : n; }   /* a count no larger than its history */
-
 /* The sparkline of s (n of cap samples) in the plot, the first `frame`'s share of its slots drawn; the
    sides and a dotted top and bottom around it. Returns how many samples are not gaps, and their range. */
 static unsigned spark(oled_fb *fb, const int16_t *s, unsigned n, unsigned cap, int32_t span, unsigned frame,
@@ -49,10 +45,10 @@ static unsigned spark(oled_fb *fb, const int16_t *s, unsigned n, unsigned cap, i
   oled_line(fb, PLOT_X - 2, PLOT_TOP + PLOT_H, PLOT_X + PLOT_W + 1, PLOT_TOP + PLOT_H, 1);
   oled_line(fb, PLOT_X - 2, PLOT_TOP - 1, PLOT_X - 2, PLOT_TOP + PLOT_H, 0);
   oled_line(fb, PLOT_X + PLOT_W + 1, PLOT_TOP - 1, PLOT_X + PLOT_W + 1, PLOT_TOP + PLOT_H, 0);
-  n = upto(n, cap);
+  n = scr_upto(n, cap);
   unsigned valid = scr_spark_range(s, n, span, lo, hi);
   if (valid == 0U) return 0;
-  unsigned shown = cap * grown(frame) / GROW_FRAMES;
+  unsigned shown = scr_grow(cap, frame, GROW_FRAMES);
   int px = 0, py = 0, prev = 0;
   for (unsigned i = 0; i < n; i++)
   {
@@ -106,7 +102,7 @@ void scr_air(oled_fb *fb, unsigned frame, const scr_view_t *v)
   int32_t lo, hi;
   unsigned valid = spark(fb, v->air_hist, v->air_n, SCR_AIR_HIST, AIR_SPAN, frame, &lo, &hi);
   char foot[SCR_LINE], uv[SCR_LINE] = "UV ";
-  range_text(foot, "1h ", valid, v->air_hist, upto(v->air_n, SCR_AIR_HIST), 2, "C");
+  range_text(foot, "1h ", valid, v->air_hist, scr_upto(v->air_n, SCR_AIR_HIST), 2, "C");
   if (v->uv_ok) scr_put_dec(uv, v->uv_counts, 0, 0, 0);
   else scr_put(uv, "NO");
   if (scr_put_lr(line, foot, uv)) scr_row(fb, FOOT_Y, line);
@@ -152,7 +148,7 @@ void scr_pressure(oled_fb *fb, unsigned frame, const scr_view_t *v)
   int32_t lo, hi;
   unsigned valid = spark(fb, v->press_hist, v->press_n, SCR_PRESS_HIST, PRESS_SPAN, frame, &lo, &hi);
   char foot[SCR_LINE];
-  range_text(foot, "", valid, v->press_hist, upto(v->press_n, SCR_PRESS_HIST), 1, "");
+  range_text(foot, "", valid, v->press_hist, scr_upto(v->press_n, SCR_PRESS_HIST), 1, "");
   if (!scr_put_lr(line, "-3h", "now")) line[0] = '\0';
   size_t at = (SCR_COLS - strlen(foot)) / 2U;   /* the range centred between -3h and now, a space each side */
   if (strlen(foot) + 8U <= SCR_COLS) memcpy(line + at, foot, strlen(foot));
@@ -162,7 +158,7 @@ void scr_pressure(oled_fb *fb, unsigned frame, const scr_view_t *v)
 static void bar(oled_fb *fb, int y, unsigned px, unsigned frame)
 {
   oled_line(fb, 0, y + 1, OLED_W - 1, y + 1, 1);   /* the track */
-  oled_fill(fb, 0, y, (int)(px * grown(frame) / GROW_FRAMES), 2, 1);
+  oled_fill(fb, 0, y, (int)scr_grow(px, frame, GROW_FRAMES), 2, 1);
 }
 
 static int32_t iabs32(int32_t v) { return v < 0 ? (v == INT32_MIN ? INT32_MAX : -v) : v; }
@@ -214,7 +210,7 @@ void scr_power(oled_fb *fb, unsigned frame, const scr_view_t *v)
 
 static void radio_bars(oled_fb *fb, const scr_view_t *v, unsigned frame)
 {
-  unsigned n = upto(v->radio_n, SCR_RADIO_HIST), g = grown(frame);
+  unsigned n = scr_upto(v->radio_n, SCR_RADIO_HIST);
   oled_line(fb, 0, RSSI_TOP + RSSI_PX, OLED_W - 1, RSSI_TOP + RSSI_PX, 1);
   for (unsigned i = 0; i < n; i++)
   {
@@ -225,8 +221,8 @@ static void radio_bars(oled_fb *fb, const scr_view_t *v, unsigned frame)
       oled_line(fb, x + 2, RSSI_TOP + RSSI_PX - 3, x, RSSI_TOP + RSSI_PX - 1, 0);
       continue;
     }
-    int r = (int)(scr_bar_px(v->radio_rssi[i] - RSSI_FLOOR, RSSI_SPAN, RSSI_PX) * g / GROW_FRAMES);
-    int s = (int)(scr_bar_px(v->radio_snr[i] - SNR_FLOOR, SNR_SPAN, SNR_PX) * g / GROW_FRAMES);
+    int r = (int)scr_grow(scr_bar_px(v->radio_rssi[i] - RSSI_FLOOR, RSSI_SPAN, RSSI_PX), frame, GROW_FRAMES);
+    int s = (int)scr_grow(scr_bar_px(v->radio_snr[i] - SNR_FLOOR, SNR_SPAN, SNR_PX), frame, GROW_FRAMES);
     oled_fill(fb, x, RSSI_TOP + RSSI_PX - r, 3, r, 1);
     oled_fill(fb, x, SNR_TOP + SNR_PX - s, 3, s, 1);
   }
@@ -235,7 +231,7 @@ static void radio_bars(oled_fb *fb, const scr_view_t *v, unsigned frame)
 /* form 0 "ACK 28/30 93% BKLG 0", 1 without the percentage, 2 "28/30 Q 0". */
 static void ack_line(char *line, const scr_view_t *v, unsigned form)
 {
-  unsigned n = upto(v->radio_n, SCR_RADIO_HIST), acks = scr_acks(v->radio_rssi, n);
+  unsigned n = scr_upto(v->radio_n, SCR_RADIO_HIST), acks = scr_acks(v->radio_rssi, n);
   line[0] = '\0';
   if (form < 2U) scr_put(line, "ACK ");
   scr_put_uint(line, acks);

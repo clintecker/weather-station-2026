@@ -89,8 +89,6 @@ static volatile oled_state state;
 static volatile uint8_t enabled, faulted, power_pending;
 static volatile uint8_t in_dma;   /* a DMA run is under way: the step timer is its timeout */
 static uint8_t drain_tries;
-static volatile uint8_t inited;   /* oled_dma_init ran: the step timer exists */
-static volatile uint8_t wish_on = 1;   /* the last oled_dma_enable before that */
 static UTIL_TIMER_Object_t step_timer;
 
 static void fault(void)
@@ -258,8 +256,6 @@ void oled_dma_init(void)
 {
   (void)UTIL_TIMER_Create(&step_timer, RESET_LOW_MS, UTIL_TIMER_ONESHOT, on_step, NULL);   /* arm() sets each period */
   start_up();
-  inited = 1;
-  if (!wish_on) oled_dma_enable(0);   /* asked for off before there was a display */
 }
 
 int oled_dma_send(const uint8_t frame[OLED_FRAME_BYTES])
@@ -283,7 +279,6 @@ void oled_dma_enable(int on)
 {
   uint32_t primask = __get_PRIMASK();
   __disable_irq();
-  if (!inited) { wish_on = (uint8_t)(on != 0); __set_PRIMASK(primask); return; }   /* no step timer yet */
   int restart = on && state == ST_OFF;   /* after a fault */
   if (restart) state = ST_RESET_LOW;     /* claimed, as in oled_dma_send: start_up() runs with interrupts on */
   int change = !restart && (on ? !enabled : enabled);

@@ -145,6 +145,10 @@ enum scr_icon { ICON_SUN, ICON_MOON, ICON_CLOUD, ICON_RAIN, ICON_SNOW, ICON_WIND
 #define SCR_CALM_CMS 50U    /* under 0.5 m/s is calm (the protocol's CALM, docs/protocol-design.md) */
 enum scr_icon scr_icon_pick(const scr_view_t *v);
 
+/* v grown in over frames: its share after frame `frame` (counted from 0), all of it from frames - 1 on. */
+static inline unsigned scr_grow(unsigned v, unsigned frame, unsigned frames)
+{ return v * (frame + 1U < frames ? frame + 1U : frames) / frames; }
+static inline unsigned scr_upto(unsigned n, unsigned cap) { return n > cap ? cap : n; }   /* a count within its history */
 /* A bar of v on a scale of full to px pixels: 0 for v <= 0, px at full or more (or full <= 0), otherwise
    rounded up (anything is a pixel). */
 unsigned scr_bar_px(int32_t v, int32_t full, unsigned px);
@@ -196,7 +200,6 @@ uint32_t scr_hash(uint32_t a, uint32_t b);
    minute so far counts as a whole one; fewer than `minutes` of them: the rest had none), in um/h; 0 for
    0 minutes. */
 uint32_t scr_rain_rate_umh(const uint8_t *per_min, unsigned n, unsigned minutes);
-unsigned scr_rain_bar_px(unsigned count, unsigned full, unsigned px);   /* 0 for none, else rounded up, at most px */
 /* The chart's scale for a largest minute of `largest` tips: 4, doubled until it holds it (at most 256), so
    the scale steps rather than creeps and the label stays a round number. */
 unsigned scr_rain_full(unsigned largest);

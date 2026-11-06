@@ -22,10 +22,5 @@ int oled_get(const oled_fb *fb, int x, int y);      /* outside the screen: 0 */
 /* Draws s with its top-left at (x, y), each font pixel scale x scale; returns the x after the text.
    Characters the font lacks draw as '?'. */
 int oled_text(oled_fb *fb, int x, int y, const char *s, int scale);
-/* dst = src turned 180 degrees: (x, y) -> (OLED_W - 1 - x, OLED_H - 1 - y). dst and src must differ. */
-void oled_rotate180(oled_fb *dst, const oled_fb *src);
-/* The 64 bytes of column pair cp (pixels 2cp and 2cp + 1), top row first, full brightness for a lit
-   pixel. */
-void ssd1325_column(const oled_fb *fb, unsigned cp, uint8_t out[OLED_H]);
 
 #endif

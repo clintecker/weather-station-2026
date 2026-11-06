@@ -41,26 +41,7 @@ unsigned scr_rain_full(unsigned largest)
   return full;
 }
 
-unsigned scr_rain_bar_px(unsigned count, unsigned full, unsigned px)
-{
-  if (count == 0U) return 0;
-  if (count >= full) return px;
-  return (count * px + full - 1U) / full;
-}
-
 static void row(oled_fb *fb, int r, const char *text) { (void)oled_text(fb, 0, r * 8, text, 1); }
-
-/* left, then right ending at the last column, at least a space between; 0 if they do not fit. */
-static int put_lr(char *line, const char *left, const char *right)
-{
-  size_t l = strlen(left), r = strlen(right);
-  if (l + 1U + r > SCR_COLS) return 0;
-  line[0] = '\0';
-  scr_put(line, left);
-  scr_pad_to(line, (unsigned)(SCR_COLS - r));
-  scr_put(line, right);
-  return 1;
-}
 
 static void count_row(oled_fb *fb, const rain_hist_t *h)
 {
@@ -75,7 +56,7 @@ static void count_row(oled_fb *fb, const rain_hist_t *h)
   scr_put(forms[1], age);
   scr_put(forms[2], age);
   int fits = 0;
-  for (unsigned f = 0; f < 3U && !fits; f++) fits = put_lr(line, left, forms[f]);   /* bound: 3 forms */
+  for (unsigned f = 0; f < 3U && !fits; f++) fits = scr_put_lr(line, left, forms[f]);   /* bound: 3 forms */
   row(fb, 1, fits ? line : left);   /* the last fits any count with an age up to RAIN_AGE_MAX_S */
 }
 
@@ -105,7 +86,7 @@ static unsigned bars(oled_fb *fb, const rain_hist_t *h)
   oled_line(fb, SIDE_L, AXIS_Y, SIDE_R, AXIS_Y, 0);
   for (unsigned i = 0; i < RAIN_HIST_MINUTES; i++)
   {
-    int px = (int)scr_rain_bar_px(h->per_min[i], full, BAR_PX);
+    int px = (int)scr_bar_px(h->per_min[i], (int32_t)full, BAR_PX);
     oled_fill(fb, BARS_X + BAR_W * (int)i, AXIS_Y - px, BAR_W, px, 1);
   }
   return full;
@@ -130,7 +111,7 @@ void scr_rain(oled_fb *fb, const scr_view_t *v)
   char mm[SCR_LINE] = "", line[SCR_LINE] = "";
   scr_put_rain_mm(mm, h->tips);
   scr_put(mm, " mm");
-  (void)put_lr(line, "RAIN", mm);   /* at most "279400.00 mm" (RAIN_TIPS_MAX) */
+  (void)scr_put_lr(line, "RAIN", mm);   /* at most "279400.00 mm" (RAIN_TIPS_MAX) */
   row(fb, 0, line);
   count_row(fb, h);
   rate_row(fb, h);

@@ -326,8 +326,8 @@ class ScrView(unittest.TestCase):
         self.assertEqual(self.region(self.draw('RAIN', 0, v), 0, 16, W, 24), self.text(0, 16, 'RATE  4274.8 mm/h'))
 
     def test_rain_bar_scale(self):
-        px = self.lib.scr_rain_bar_px
-        px.argtypes, px.restype = [ctypes.c_uint, ctypes.c_uint, ctypes.c_uint], ctypes.c_uint
+        px = self.lib.scr_bar_px
+        px.argtypes, px.restype = [ctypes.c_int32, ctypes.c_int32, ctypes.c_uint], ctypes.c_uint
         self.assertEqual([px(c, 4, 26) for c in (0, 1, 2, 4, 5)], [0, 7, 13, 26, 26])
         self.assertEqual(px(1, 255, 26), 1)                                          # one tip is always a bar
         self.assertEqual(px(254, 255, 26), 26)

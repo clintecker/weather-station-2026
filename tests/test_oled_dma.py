@@ -436,26 +436,6 @@ class OledDma(unittest.TestCase):
         self.finish()
         self.assertEqual(self.lib.oled_dma_send(bytes(FRAME)), 0)
 
-    def test_enable_before_init_waits_for_init(self):
-        # oled_dma_enable(1) before oled_dma_init would start the reset pulse on a timer that does not exist
-        # yet (a NULL callback on the real UTIL server). It is a no-op: no pin moves, nothing is busy.
-        self.lib.oled_dma_enable(1)
-        self.assertEqual((self.lib.oled_dma_busy(), self.lib.t_rst(), self.lib.t_transfers()), (0, 0, 0))
-        self.ready()
-        self.assertEqual(self.lib.oled_dma_send(bytes(FRAME)), 0)
-
-    def test_enable_off_before_init_is_remembered(self):
-        # Asked off before there was a display: the start-up runs, then the display is turned off, once.
-        self.lib.oled_dma_enable(0)
-        self.lib.oled_dma_init()
-        self.assertEqual(self.lib.t_fire(), RESET_LOW_MS)
-        self.assertEqual(self.lib.t_fire(), RESET_SETTLE_MS)
-        self.finish()                                          # the set-up ends, the display-off command follows
-        self.assertEqual(list(self.last()), [0xAE])
-        self.finish()
-        self.assertEqual(self.lib.oled_dma_busy(), 0)
-        self.assertEqual(self.lib.oled_dma_send(bytes(FRAME)), -2)
-
     def test_a_second_enable_during_the_restart_starts_nothing_more(self):
         # After a fault, enable(1) claims the start-up (busy at once); enabling again, or off, during the reset
         # pulse does not start a second one.

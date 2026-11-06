@@ -24,8 +24,6 @@ class OledFb(unittest.TestCase):
         lib.oled_text.argtypes = [p, i, i, ctypes.c_char_p, i]
         lib.oled_set.argtypes = [p, i, i, i]
         lib.oled_get.argtypes = [p, i, i]
-        lib.ssd1325_column.argtypes = [p, u, p]
-        lib.oled_rotate180.argtypes = [p, p]
         lib.oled_line.argtypes = [p, i, i, i, i, u]
         lib.oled_box.argtypes = [p, i, i, i, i]
         lib.oled_fill.argtypes = [p, i, i, i, i, i]
@@ -86,26 +84,6 @@ class OledFb(unittest.TestCase):
         self.assertEqual(fb.raw, bytes(len(fb.raw)))
         self.lib.oled_text(fb, 120, 60, b'888', 2)                       # clipped, not wrapped
         self.assertTrue(all(x >= 120 and y >= 60 for x, y in self.lit(fb)))
-
-    def test_ssd1325_column_order(self):
-        fb = self.fb()
-        for x, y in ((0, 0), (1, 5), (126, 63), (127, 63)):
-            self.lib.oled_set(fb, x, y, 1)
-        col = ctypes.create_string_buffer(OLED_H)
-        self.lib.ssd1325_column(fb, 0, col)
-        self.assertEqual(col.raw[0], 0xF0)          # x = 0: the left pixel, high nibble
-        self.assertEqual(col.raw[5], 0x0F)          # x = 1: the right pixel, low nibble
-        self.assertEqual(sum(1 for b in col.raw if b), 2)
-        self.lib.ssd1325_column(fb, 63, col)
-        self.assertEqual(col.raw[63], 0xFF)
-        self.assertEqual(sum(1 for b in col.raw if b), 1)
-
-    def test_rotate180(self):
-        fb, out = self.fb(), self.fb()
-        self.lib.oled_set(fb, 0, 0, 1)
-        self.lib.oled_set(fb, 10, 3, 1)
-        self.lib.oled_rotate180(out, fb)
-        self.assertEqual(self.lit(out), {(OLED_W - 1, OLED_H - 1), (OLED_W - 11, OLED_H - 4)})
 
     def test_line_endpoints_and_dash(self):
         fb = self.fb()
@@ -179,28 +157,25 @@ class OledFb(unittest.TestCase):
         self.lib.oled_shift_row(fb, 5, OLED_W)                # shifted off the screen
         self.assertEqual(self.lit(fb), {(10, 4)})
 
-    def test_ssd1325_frame_matches_columns(self):
+    def test_ssd1325_frame_order(self):
+        # Column pair, then row; the left pixel of a pair in the high nibble, full brightness for a lit pixel.
         fb = self.fb()
-        self.lib.oled_text(fb, 1, 1, b'TX 0123', 2)
-        self.lib.oled_set(fb, 127, 63, 1)
+        for x, y in ((0, 0), (1, 5), (126, 63), (127, 63)):
+            self.lib.oled_set(fb, x, y, 1)
         out = ctypes.create_string_buffer(4096)
         self.lib.ssd1325_frame(fb, 0, out)
-        col = ctypes.create_string_buffer(OLED_H)
-        for cp in range(OLED_W//2):
-            self.lib.ssd1325_column(fb, cp, col)
-            self.assertEqual(out.raw[cp*64:(cp + 1)*64], col.raw, cp)
+        self.assertEqual((out.raw[0], out.raw[5], out.raw[63*64 + 63]), (0xF0, 0x0F, 0xFF))
+        self.assertEqual(sum(1 for b in out.raw if b), 3)
 
     def test_ssd1325_frame_rotated(self):
-        fb, rot = self.fb(), self.fb()
+        # Turned half a turn: (0, 0) is sent as (127, 63), the right pixel of the last pair; (10, 3) as (117, 60).
+        fb = self.fb()
         self.lib.oled_set(fb, 0, 0, 1)
-        self.lib.oled_rotate180(rot, fb)
-        out, want = ctypes.create_string_buffer(4096), ctypes.create_string_buffer(OLED_H)
+        self.lib.oled_set(fb, 10, 3, 1)
+        out = ctypes.create_string_buffer(4096)
         self.lib.ssd1325_frame(fb, 1, out)
-        self.lib.ssd1325_column(rot, 63, want)              # (127, 63) is the right pixel of the last pair
-        self.assertEqual(out.raw[63*64:], want.raw)
-        self.assertEqual(want.raw[63], 0x0F)
-        self.assertEqual(sum(1 for b in out.raw if b), 1)
-
+        self.assertEqual((out.raw[63*64 + 63], out.raw[58*64 + 60]), (0x0F, 0x0F))
+        self.assertEqual(sum(1 for b in out.raw if b), 2)
 
     def frame(self):
         return ctypes.create_string_buffer(4096)

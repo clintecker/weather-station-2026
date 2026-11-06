@@ -51,7 +51,7 @@ static void put_hex2(char *line, uint8_t b)
 static void hex_row(oled_fb *fb, int y, const scr_view_t *v, unsigned from)
 {
   char line[SCR_LINE] = "";
-  unsigned len = v->cipher_len > sizeof v->cipher ? sizeof v->cipher : v->cipher_len;
+  unsigned len = scr_upto(v->cipher_len, sizeof v->cipher);
   for (unsigned i = 0; i < HEX_PER_ROW; i++)
   {
     if (i != 0) scr_put(line, " ");
@@ -89,7 +89,7 @@ void scr_burst(oled_fb *fb, unsigned frame, const scr_view_t *v)
 
 static void scope_trace(oled_fb *fb, const wind_live_t *w)
 {
-  unsigned n = w->nbins > WIND_LIVE_BINS ? WIND_LIVE_BINS : w->nbins, full = SCOPE_MIN_FULL;
+  unsigned n = scr_upto(w->nbins, WIND_LIVE_BINS), full = SCOPE_MIN_FULL;
   for (unsigned i = 0; i < n; i++)
     if (w->bins[i] > full) full = w->bins[i];
   int px = 0, py = 0;
@@ -106,7 +106,7 @@ static void scope_trace(oled_fb *fb, const wind_live_t *w)
 void scr_scope(oled_fb *fb, const scr_view_t *v)
 {
   const wind_live_t *w = &v->wind;
-  unsigned n = w->nbins > WIND_LIVE_BINS ? WIND_LIVE_BINS : w->nbins, recent = n < SCOPE_RATE_BINS ? n : SCOPE_RATE_BINS;
+  unsigned n = scr_upto(w->nbins, WIND_LIVE_BINS), recent = n < SCOPE_RATE_BINS ? n : SCOPE_RATE_BINS;
   uint32_t sum = 0;
   for (unsigned i = n - recent; i < n; i++) sum += w->bins[i];
   char line[SCR_LINE] = "SCOPE CUPS";
@@ -162,7 +162,6 @@ void scr_system(oled_fb *fb, unsigned frame, const scr_view_t *v)
   char line[SCR_LINE] = "SYS  WS-NODE  ID ";
   scr_put_uint(line, v->station);
   scr_header(fb, line);
-  unsigned grown = frame + 1U < BAR_FILL_FRAMES ? frame + 1U : BAR_FILL_FRAMES;
   for (unsigned i = 0; i < 5U; i++)
   {
     int y = 11 + 10 * (int)i;
@@ -171,7 +170,7 @@ void scr_system(oled_fb *fb, unsigned frame, const scr_view_t *v)
     scr_put_uint(num, p);
     (void)oled_text(fb, 0, y, names[i], 1);
     oled_box(fb, BAR_X, y, BAR_W, 7);
-    oled_fill(fb, BAR_X + 2, y + 2, (int)(BAR_FILL_W * p / 100U * grown / BAR_FILL_FRAMES), 3, 1);
+    oled_fill(fb, BAR_X + 2, y + 2, (int)scr_grow(BAR_FILL_W * p / 100U, frame, BAR_FILL_FRAMES), 3, 1);
     (void)oled_text(fb, 110, y, num, 1);
   }
 }

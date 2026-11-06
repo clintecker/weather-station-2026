@@ -151,7 +151,7 @@ Wiring checks these readings catch:
 
 The same readings appear on the bench OLED, redrawn once a second: Adafruit #2674, 2.7" 128 x 64,
 SSD1325 controller, on **SPI1** (not I2C, so it is not in the scan). The r1 bench mounts the panel
-upside down (BB3, DS1 at 180°), so the frame is turned 180° before it is sent (`oled_rotate180`).
+upside down (BB3, DS1 at 180°), so the frame is sent turned 180° (`ssd1325_frame`'s rotate180).
 Each part's row says `NO <part>` when it did not answer.
 
 ```
