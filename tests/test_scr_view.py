@@ -218,12 +218,13 @@ class ScrView(unittest.TestCase):
         lo.power.batt_ok = lo.power.gauge_ok = lo.power.charging = 1
         hi.rain.tips, hi.rain.last_age_s, hi.rain.per_min[:] = 2**32 - 1, render.RAIN_AGE_MAX_S, [255] * 60
         lo.rain.tips, lo.rain.last_age_s = 0, render.RAIN_AGE_NONE
-        # The histories: full of their extremes, and (the loop above) counts of 255 past their capacity.
+        # The histories: full of their extremes, and counts of 255 past their capacity.
         for v, val in ((hi, 32767), (lo, -32767)):
-            v.air_hist[:], v.press_hist[:] = [val] * 60, [val] * 36
-            v.radio_rssi[:], v.radio_snr[:] = [val] * 30, [val] * 30
-        lo.air_n, lo.press_n, lo.radio_n = 60, 36, 30
-        lo.air_hist[7] = lo.press_hist[0] = lo.radio_rssi[3] = render.SCR_GAP
+            v.air.s[:], v.press.s[:] = [val] * 60, [val] * 36
+            v.radio.rssi[:], v.radio.snr[:] = [val] * 30, [val] * 30
+        lo.air.n, lo.press.n, lo.radio.n = 60, 36, 30
+        hi.air.n = hi.press.n = hi.radio.n = 255
+        lo.air.s[7] = lo.press.s[0] = lo.radio.rssi[3] = lo.radio.snr[3] = render.SCR_GAP
         lo.utc, lo.since_exchange_s = 0, render.SCR_NONE_S
         lo.power.charger, hi.power.charger = 0, 0xFF
         for r in hi.power.rail:
@@ -337,9 +338,9 @@ class ScrView(unittest.TestCase):
         self.assertEqual(px(1, 255, 26), 1)                                          # one tip is always a bar
         self.assertEqual(px(254, 255, 26), 26)
         self.assertEqual(px(3, 0, 26), 26)
-        full = self.lib.scr_rain_full
-        full.argtypes, full.restype = [ctypes.c_uint], ctypes.c_uint
-        self.assertEqual([full(n) for n in (0, 1, 4, 5, 8, 9, 40, 64, 65, 200, 255, 1000)],
+        steps = self.lib.scr_scale_steps
+        steps.argtypes, steps.restype = [ctypes.c_uint] * 3, ctypes.c_uint
+        self.assertEqual([steps(n, 4, 256) for n in (0, 1, 4, 5, 8, 9, 40, 64, 65, 200, 255, 1000)],
                          [4, 4, 4, 8, 8, 16, 64, 64, 128, 256, 256, 256])   # steps, never creeps
 
     def bars(self, per_min):

@@ -74,7 +74,7 @@ void scr_fortune(const oled_surf *s, unsigned frame, const scr_view_t *v)
   uint32_t nums[3] = { v->last_seq % 100U, (v->air_c < 0 ? 0U - (uint32_t)v->air_c : (uint32_t)v->air_c) / 100U % 100U,
                        (uint32_t)(v->air_rh < 0 ? 0 : v->air_rh) / 100U % 100U };
   for (unsigned i = 0; i < 3U; i++) { oled_put_uint(&lucky, nums[i]); oled_put(&lucky, " "); }
-  scr_row(s, 36, lucky.s);
+  scr_label(s, 36, lucky.s, SCR_LEFT);
   cookie(s, frame);
 }
 
@@ -120,30 +120,28 @@ static void mouth(const oled_surf *s, int dx, int dy, enum scr_mood m)
   }
 }
 
-static void weather(const oled_surf *s, enum scr_mood m, unsigned frame)
+static void soggy(const oled_surf *s, unsigned frame) { scr_drops(s, 6, 4, 11, 0, frame * 4U, 17, 60); }
+
+static void sleepy(const oled_surf *s, unsigned frame)
 {
-  switch (m)
-  {
-  case MOOD_SOGGY:
-    for (unsigned i = 0; i < 6U; i++)
-    {
-      int x = 4 + 11 * (int)i, y = (int)((frame * 4U + i * 17U) % 60U);
-      oled_line(s, x, y, x - 1, y + 3, 0);
-    }
-    break;
-  case MOOD_SLEEPY:
-    for (unsigned i = 0; i < 3U; i++)
-      (void)oled_text(s, 48 + 5 * (int)i, 20 - (int)((frame / 4U + i * 3U) % 10U) - 4 * (int)i, "z", 1);
-    break;
-  case MOOD_TOASTY:
-    oled_line(s, 52, 27 + (int)(frame / 2U % 4U), 52, 29 + (int)(frame / 2U % 4U), 0);   /* a sweat drop */
-    break;
-  case MOOD_BREEZY:
-    for (int i = 0; i < 2; i++) oled_line(s, -(int)(frame * 3U % 12U), 6 + 8 * i, 60, 6 + 8 * i, 6);
-    break;
-  default: break;
-  }
+  for (unsigned i = 0; i < 3U; i++)
+    (void)oled_text(s, 48 + 5 * (int)i, 20 - (int)((frame / 4U + i * 3U) % 10U) - 4 * (int)i, "z", 1);
 }
+
+static void toasty(const oled_surf *s, unsigned frame)
+{
+  oled_line(s, 52, 27 + (int)(frame / 2U % 4U), 52, 29 + (int)(frame / 2U % 4U), 0);   /* a sweat drop */
+}
+
+static void breezy(const oled_surf *s, unsigned frame)
+{
+  for (int i = 0; i < 2; i++) oled_line(s, -(int)(frame * 3U % 12U), 6 + 8 * i, 60, 6 + 8 * i, 6);
+}
+
+/* The weather round the frog, by mood (enum scr_mood); none when happy, mopey or chilly. */
+static void (*const weather[])(const oled_surf *, unsigned) = {
+  [MOOD_SLEEPY] = sleepy, [MOOD_SOGGY] = soggy, [MOOD_BREEZY] = breezy, [MOOD_TOASTY] = toasty,
+};
 
 void scr_frog(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
@@ -162,7 +160,7 @@ void scr_frog(const oled_surf *s, unsigned frame, const scr_view_t *v)
   if (acked && (frame == FROG_CATCH || frame == FROG_CATCH + 1U))
     oled_line(s, FROG_MOUTH_X, FROG_MOUTH_Y + 1, fx, fy, 0);   /* the tongue */
   if (!caught) fly(s, fx, fy, frame);
-  weather(s, m, frame);
+  if (weather[m]) weather[m](s, frame);
   oled_row line = { "is " };
   oled_put(&line, scr_mood_names[m]);
   (void)oled_text(s, FROG_TEXT_X, 4, "FROG", 1);
@@ -215,25 +213,18 @@ void scr_matrix(const oled_surf *s, unsigned frame, const scr_view_t *v)
   oled_put(&line, "SPEED x");
   oled_put_uint(&line, speed);
   g.ink = MATRIX_FOOTER;
-  (void)oled_text(&g, 0, OLED_H - FONT5X7_H, line.s, 1);
+  scr_label(&g, OLED_H - FONT5X7_H, line.s, SCR_LEFT);
 }
 
 /* ---- the packet pinball ---- */
-
-static int bounce(int p, int lo, int hi)
-{
-  int span = hi - lo, m = (p - lo) % (2 * span);
-  if (m < 0) m += 2 * span;
-  return lo + (m < span ? m : 2 * span - m);
-}
 
 /* The ball crosses the ACK bumper's centre at PASS_FRAME, its speed and heading from the sequence. */
 static void ball_at(const scr_view_t *v, unsigned t, int *x, int *y)
 {
   uint32_t h = scr_hash(v->last_seq, 7);
   int vx = (int)(2U + h % 2U) * ((h & 4U) ? -1 : 1), vy = (h & 8U) ? 3 : -3, dt = (int)t - PASS_FRAME;
-  *x = bounce(ACK_X + vx * dt, BALL_X_LO, BALL_X_HI);
-  *y = bounce(ACK_Y + vy * dt, BALL_Y_LO, BALL_Y_HI);
+  *x = scr_tri(ACK_X + vx * dt, BALL_X_LO, BALL_X_HI);
+  *y = scr_tri(ACK_Y + vy * dt, BALL_Y_LO, BALL_Y_HI);
 }
 
 static int near(int x, int y, int cx, int cy, int r) { return (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r; }
@@ -281,9 +272,7 @@ void scr_pinball(const oled_surf *s, unsigned frame, const scr_view_t *v)
     oled_disc(s, ACK_X, ACK_Y, ACK_R - 1, 1);
     (void)oled_text(s, ACK_X - 8, ACK_Y - 3, "ACK", 1);
     oled_invert(s, ACK_X - 8, ACK_Y - 3, 17, 7);
-    for (int p = 0; p < 16; p += 2)
-      oled_line(s, ACK_X + scr_sin20(p) * 13 / 20, ACK_Y - scr_sin20(p + 4) * 13 / 20, ACK_X + scr_sin20(p) * 16 / 20,
-                ACK_Y - scr_sin20(p + 4) * 16 / 20, 0);
+    for (int p = 0; p < 16; p += 2) scr_ray(s, ACK_X, ACK_Y, 13, 16, p, 0);
   }
   int x, y;
   ball_at(v, frame, &x, &y);

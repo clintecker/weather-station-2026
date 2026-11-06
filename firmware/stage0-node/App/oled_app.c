@@ -42,9 +42,9 @@ void oled_note_exchange(void) { air_ms = 0; exchange_s = clock_s(); exchanged = 
 /* The radio history: every frame's outcome, the live one's or not. */
 static void radio_note(int16_t rssi, int16_t snr)
 {
-  unsigned n = view.radio_n;
-  (void)scr_hist_push(view.radio_snr, SCR_RADIO_HIST, n, snr);
-  view.radio_n = (uint8_t)scr_hist_push(view.radio_rssi, SCR_RADIO_HIST, n, rssi);
+  unsigned n = view.radio.n;
+  (void)scr_hist_push(view.radio.snr, SCR_RADIO_HIST, n, snr);
+  view.radio.n = (uint8_t)scr_hist_push(view.radio.rssi, SCR_RADIO_HIST, n, rssi);
 }
 
 void oled_note_sent(uint32_t seq, const uint8_t *frame, uint8_t len, int kind)
@@ -79,7 +79,7 @@ void oled_note_ack(uint32_t seq, int16_t rssi, int8_t snr)
 
 void oled_note_no_ack(uint32_t seq)
 {
-  radio_note(SCR_GAP, 0);
+  radio_note(SCR_GAP, SCR_GAP);
   if (!awaiting || seq != live_seq) return;
   awaiting = 0;
   view.last_acked = SCR_TX_NO_ACK;

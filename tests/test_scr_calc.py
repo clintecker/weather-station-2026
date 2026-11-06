@@ -33,8 +33,14 @@ class ScrCalc(unittest.TestCase):
                 'scr_rain_tips': ([ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint, ctypes.c_uint], ctypes.c_uint),
                 'scr_icon_pick': ([V], ctypes.c_int),
                 'scr_bar_px': ([ctypes.c_int32, ctypes.c_int32, ctypes.c_uint], ctypes.c_uint),
-                'scr_spark_range': ([ctypes.POINTER(I16), ctypes.c_uint, ctypes.c_int32, ctypes.POINTER(ctypes.c_int32),
+                'scr_spark_range': ([ctypes.POINTER(render.Series), ctypes.c_int32, ctypes.POINTER(ctypes.c_int32),
                                      ctypes.POINTER(ctypes.c_int32)], ctypes.c_uint),
+                'scr_series_i16': ([ctypes.POINTER(I16), ctypes.c_uint, ctypes.c_uint], render.Series),
+                'scr_series_u8': ([ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint, ctypes.c_uint], render.Series),
+                'scr_at': ([ctypes.POINTER(render.Series), ctypes.c_uint], ctypes.c_int32),
+                'scr_sum_last': ([ctypes.POINTER(render.Series), ctypes.c_uint], ctypes.c_int32),
+                'scr_max': ([ctypes.POINTER(render.Series)], ctypes.c_int32),
+                'scr_scale_steps': ([ctypes.c_uint] * 3, ctypes.c_uint),
                 'scr_spark_y': ([ctypes.c_int32] * 3 + [ctypes.c_int] * 2, ctypes.c_int),
                 'scr_signal_bars': ([I16], ctypes.c_uint),
                 'scr_acks': ([ctypes.POINTER(I16), ctypes.c_uint], ctypes.c_uint),
@@ -51,6 +57,29 @@ class ScrCalc(unittest.TestCase):
         return arr[i].decode()
 
     # ---- the histories ----
+
+    def test_series_over_any_history(self):
+        # One reader for the view's int16_t histories (with gaps) and the modules' uint8_t ones: the count is clamped
+        # to the capacity, a sum of the last k and the largest leave the gaps out.
+        s = (I16 * 5)(4, GAP, -3, 7, 2)
+        d = self.lib.scr_series_i16(s, 9, 5)
+        self.assertEqual((d.i16, d.n, d.cap), (1, 5, 5))
+        self.assertEqual([self.lib.scr_at(ctypes.byref(d), i) for i in range(5)], [4, GAP, -3, 7, 2])
+        self.assertEqual([self.lib.scr_sum_last(ctypes.byref(d), k) for k in (0, 1, 3, 4, 99)], [0, 2, 6, 6, 10])
+        self.assertEqual(self.lib.scr_max(ctypes.byref(d)), 7)
+        m = (ctypes.c_uint8 * 60)(*([0] * 57 + [3, 255, 1]))
+        u = self.lib.scr_series_u8(m, 60, 60)
+        self.assertEqual((u.i16, self.lib.scr_sum_last(ctypes.byref(u), 2), self.lib.scr_max(ctypes.byref(u))), (0, 256, 255))
+        none = self.lib.scr_series_i16(s, 0, 5)
+        self.assertEqual((self.lib.scr_max(ctypes.byref(none)), self.lib.scr_sum_last(ctypes.byref(none), 5)), (0, 0))
+        gaps = self.lib.scr_series_i16((I16 * 2)(GAP, GAP), 2, 2)
+        self.assertEqual(self.lib.scr_max(ctypes.byref(gaps)), 0)
+
+    def test_scale_steps(self):
+        # The floor doubled until it holds the largest, never past the cap: RAIN's scale steps.
+        steps = self.lib.scr_scale_steps
+        self.assertEqual([steps(n, 4, 256) for n in (0, 4, 5, 255, 300)], [4, 4, 8, 256, 256])
+        self.assertEqual([steps(9, 3, 100), steps(9, 0, 100), steps(70, 50, 60)], [12, 16, 100])
 
     def test_hist_push_fills_then_drops_the_oldest(self):
         s = (I16 * 4)()
@@ -183,7 +212,8 @@ class ScrCalc(unittest.TestCase):
     def spark(self, samples, span):
         s = (I16 * len(samples))(*[GAP if x is None else x for x in samples])
         lo, hi = ctypes.c_int32(-1), ctypes.c_int32(-1)
-        n = self.lib.scr_spark_range(s, len(samples), span, ctypes.byref(lo), ctypes.byref(hi))
+        d = self.lib.scr_series_i16(s, len(samples), max(len(samples), 1))
+        n = self.lib.scr_spark_range(ctypes.byref(d), span, ctypes.byref(lo), ctypes.byref(hi))
         return n, lo.value, hi.value
 
     def test_spark_range(self):
@@ -222,7 +252,7 @@ class ScrCalc(unittest.TestCase):
     def test_fortune_follows_the_weather(self):
         w = render.weather
         calm = w(render.demo_view(), 2000, 5000, 100)
-        calm.power.soc_pct_x10, calm.press_n = 780, 0   # no 3 h of pressure: no tendency
+        calm.power.soc_pct_x10, calm.press.n = 780, 0   # no 3 h of pressure: no tendency
         self.assertIn(self.pick(calm), [self.fortune(i) for i in range(11, 15)])
         seen = set()
         for seq in range(8):   # last_seq picks among the calm lines: all four in turn

@@ -38,7 +38,7 @@ AIR_HIST, PRESS_HIST, RADIO_HIST = 60, 36, 30
 # The screens' sources and their include paths. oled_font.c is left out: the shim includes it, so a
 # test can see every string drawn (the shim's oled_text and oled_draw_text check each character against the font).
 INCLUDES = ['-I', APP, '-I', COMMON, '-I', ROOT/'firmware']
-SOURCES = [APP/'scr_view.c', APP/'scr_calc.c', APP/'scr_home.c', APP/'scr_detail.c', APP/'scr_interludes.c', APP/'scr_rain.c',
+SOURCES = [APP/'scr_view.c', APP/'scr_calc.c', APP/'scr_widget.c', APP/'scr_home.c', APP/'scr_detail.c', APP/'scr_interludes.c', APP/'scr_rain.c',
            APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', APP/'scr_kana.c',
            COMMON/'oled_draw.c', COMMON/'oled_row.c', COMMON/'font5x7.c']
 FRAME_BYTES = W * H // 2   # the SSD1325's send order (firmware/common/oled_draw.h): column pair, then row
@@ -96,6 +96,15 @@ class RainHist(ctypes.Structure):
     _fields_ = [('tips', ctypes.c_uint32), ('last_age_s', ctypes.c_uint32), ('per_min', ctypes.c_uint8 * 60)]
 
 
+def hist(cap):
+    """SCR_HIST(cap) (App/scr_view.h): a history's count and its samples."""
+    return type(f'Hist{cap}', (ctypes.Structure,), {'_fields_': [('n', ctypes.c_uint8), ('s', ctypes.c_int16 * cap)]})
+
+
+class RadioHist(ctypes.Structure):
+    _fields_ = [('n', ctypes.c_uint8), ('rssi', ctypes.c_int16 * RADIO_HIST), ('snr', ctypes.c_int16 * RADIO_HIST)]
+
+
 class View(ctypes.Structure):
     i, u8, u16, u32, i32 = ctypes.c_int, ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint32, ctypes.c_int32
     _fields_ = [('air_ok', i), ('box_ok', i), ('press_ok', i), ('uv_ok', i),
@@ -108,9 +117,8 @@ class View(ctypes.Structure):
                 ('sf', u8), ('bw_khz_div125', u8), ('freq_khz', u32),
                 ('flash_pct', u8), ('ram_pct', u8), ('stack_pct', u8), ('journal_pct', u8), ('airtime_pct', u8),
                 ('station', u16), ('epoch', u32), ('modules', ctypes.c_uint), ('modules_active', ctypes.c_uint),
-                ('key_ok', i), ('utc', u32), ('since_exchange_s', u32), ('air_n', u8), ('press_n', u8), ('radio_n', u8),
-                ('air_hist', ctypes.c_int16 * AIR_HIST), ('press_hist', ctypes.c_int16 * PRESS_HIST),
-                ('radio_rssi', ctypes.c_int16 * RADIO_HIST), ('radio_snr', ctypes.c_int16 * RADIO_HIST)]
+                ('key_ok', i), ('utc', u32), ('since_exchange_s', u32),
+                ('air', hist(AIR_HIST)), ('press', hist(PRESS_HIST)), ('radio', RadioHist)]
 
 
 def build(directory, cc=('cc', '-std=c11', '-Wall', '-Wextra', '-Werror')):
@@ -167,17 +175,17 @@ NIGHT_UTC = NOON_UTC + 12 * 3600
 
 def history(view, name, samples):
     """The view's air or press history: samples oldest first, None a gap."""
-    arr = getattr(view, f'{name}_hist')
-    arr[:len(samples)] = [SCR_GAP if x is None else x for x in samples]
-    setattr(view, f'{name}_n', len(samples))
+    h = getattr(view, name)
+    h.s[:len(samples)] = [SCR_GAP if x is None else x for x in samples]
+    h.n = len(samples)
     return view
 
 
 def radio(view, frames):
     """The view's last frames: (rssi, snr) for an ACK, None for none."""
-    view.radio_rssi[:len(frames)] = [SCR_GAP if f is None else f[0] for f in frames]
-    view.radio_snr[:len(frames)] = [SCR_GAP if f is None else f[1] for f in frames]
-    view.radio_n = len(frames)
+    view.radio.rssi[:len(frames)] = [SCR_GAP if f is None else f[0] for f in frames]
+    view.radio.snr[:len(frames)] = [SCR_GAP if f is None else f[1] for f in frames]
+    view.radio.n = len(frames)
     return view
 
 
@@ -236,6 +244,11 @@ def unpack(frame, rotate180=0):
             if level:
                 out[(W - 1 - x, H - 1 - y) if rotate180 else (x, y)] = level
     return out
+
+
+class Series(ctypes.Structure):
+    """A scr_series (App/scr_widget.h): n samples of cap, int16_t (i16) or uint8_t."""
+    _fields_ = [('v', ctypes.c_void_p), ('i16', ctypes.c_uint8), ('n', ctypes.c_uint8), ('cap', ctypes.c_uint8)]
 
 
 class Font(ctypes.Structure):
@@ -314,7 +327,7 @@ def views():
     gappy = history(demo_view(), 'air', [None] * 20 + [2100 + 3 * i for i in range(25)] + [None] * 3 + [2200] * 7)
     out['air-gaps'] = ('AIR', 7, gappy)
     fresh = demo_view()
-    fresh.air_n = fresh.press_n = fresh.radio_n = 0
+    fresh.air.n = fresh.press.n = fresh.radio.n = 0
     fresh.since_exchange_s = SCR_NONE_S
     for screen in ('AIR', 'PRESSURE', 'RADIO'):
         out[f'{screen.lower()}-empty'] = (screen, 7, fresh)

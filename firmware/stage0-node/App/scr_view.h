@@ -3,6 +3,7 @@
  * knows and a frame number. Pure C, no HAL: the host tests check it (tests/test_scr_view.py, test_scr_calc.py)
  * and tools/scr_render.py renders every screen to PNG.
  *   App/scr_view.c        scr_draw, the frame counts, the text helpers
+ *   App/scr_widget.c      labels, series, scales, frames, bars, the trace, gauges, rays, the glitch, drops
  *   App/scr_calc.c        the arithmetic and the choices: histories, dew point, tendency, icon, scales, fortune
  *   App/scr_home.c        HOME, its condition icons and the banner
  *   App/scr_detail.c      AIR, PRESSURE, POWER, RADIO and their sparklines and bars
@@ -17,6 +18,7 @@
 #include "oled_draw.h"
 #include "oled_font.h"
 #include "oled_row.h"
+#include "scr_widget.h"
 #include "mod_rain.h"
 #include "mod_wind.h"
 #include "power_acq.h"
@@ -32,8 +34,9 @@ enum scr_id { SCR_HOME, SCR_BURST, SCR_BANNER, SCR_AIR, SCR_PRESSURE, SCR_POWER,
 #define SCR_TX_ACK    1
 
 /* The histories the display keeps itself (App/oled_view.c and oled_app.c sample the live values into them;
-   no module keeps any of it). Each is oldest first, n of cap; SCR_GAP is a sample with no value. */
-#define SCR_GAP INT16_MIN
+   no module keeps any of it). Each is oldest first, its count n of cap next to it; SCR_GAP (scr_widget.h) is a
+   sample with no value. A screen reads one through a scr_series. */
+#define SCR_HIST(cap) struct { uint8_t n; int16_t s[cap]; }
 #define SCR_AIR_HIST 60U          /* the SHT45 a minute: the last hour */
 #define SCR_PRESS_HIST 36U        /* the BMP581 every 5 minutes: the last 3 h */
 #define SCR_RADIO_HIST 30U        /* the last 30 frames' ACKs */
@@ -66,11 +69,10 @@ typedef struct {
   int key_ok;                             /* the node has its key (the boot splash) */
   uint32_t utc;                           /* time_utc(): UTC seconds, 0 while the clock is not synchronized */
   uint32_t since_exchange_s;              /* since the minute's exchange last started, or SCR_NONE_S */
-  uint8_t air_n, press_n, radio_n;        /* samples in the histories below */
-  int16_t air_hist[SCR_AIR_HIST];         /* the SHT45, 0.01 degC */
-  int16_t press_hist[SCR_PRESS_HIST];     /* the BMP581, 0.1 hPa */
-  int16_t radio_rssi[SCR_RADIO_HIST];     /* each frame's ACK, dBm (SCR_GAP: no ACK) */
-  int16_t radio_snr[SCR_RADIO_HIST];      /* and its SNR, dB */
+  SCR_HIST(SCR_AIR_HIST) air;             /* the SHT45, 0.01 degC */
+  SCR_HIST(SCR_PRESS_HIST) press;         /* the BMP581, 0.1 hPa */
+  struct { uint8_t n; int16_t rssi[SCR_RADIO_HIST], snr[SCR_RADIO_HIST]; } radio;   /* each frame's ACK, dBm and dB
+                                                                                       (SCR_GAP both: no ACK) */
 } scr_view_t;
 
 /* Clears the surface s and draws frame `frame` of screen id (frame counts from 0). HOME and the banner animate for
@@ -143,16 +145,9 @@ enum scr_icon { ICON_SUN, ICON_MOON, ICON_CLOUD, ICON_RAIN, ICON_SNOW, ICON_WIND
 #define SCR_CALM_CMS 50U    /* under 0.5 m/s is calm (the protocol's CALM, docs/protocol-design.md) */
 enum scr_icon scr_icon_pick(const scr_view_t *v);
 
-/* v grown in over frames: its share after frame `frame` (counted from 0), all of it from frames - 1 on. */
-static inline unsigned scr_grow(unsigned v, unsigned frame, unsigned frames)
-{ return v * (frame + 1U < frames ? frame + 1U : frames) / frames; }
-static inline unsigned scr_upto(unsigned n, unsigned cap) { return n > cap ? cap : n; }   /* a count within its history */
 /* A bar of v on a scale of full to px pixels: 0 for v <= 0, px at full or more (or full <= 0), otherwise
    rounded up (anything is a pixel). */
 unsigned scr_bar_px(int32_t v, int32_t full, unsigned px);
-/* The sparkline's scale: the least and largest of the n samples that are not gaps, widened about their
-   middle to at least min_span. Returns how many samples are not gaps (0: lo and hi untouched). */
-unsigned scr_spark_range(const int16_t *s, unsigned n, int32_t min_span, int32_t *lo, int32_t *hi);
 /* v's row in a plot of h rows from top (hi at the top, lo at the bottom), rounded, clipped to the plot. */
 int scr_spark_y(int32_t v, int32_t lo, int32_t hi, int top, int h);
 /* The link line's signal bars for an ACK's RSSI: 3 at -85 dBm or more, 2 at -100, 1 at -115, else 0. */
@@ -198,9 +193,6 @@ uint32_t scr_hash(uint32_t a, uint32_t b);
    minute so far counts as a whole one; fewer than `minutes` of them: the rest had none), in um/h; 0 for
    0 minutes. */
 uint32_t scr_rain_rate_umh(const uint8_t *per_min, unsigned n, unsigned minutes);
-/* The chart's scale for a largest minute of `largest` tips: 4, doubled until it holds it (at most 256), so
-   the scale steps rather than creeps and the label stays a round number. */
-unsigned scr_rain_full(unsigned largest);
 
 /* ---- scr_view.c: the helpers the screens share. Rows are oled_row (oled_row.h). ---- */
 void scr_put_age(oled_row *r, uint32_t s);   /* an age in three characters or so: 58s, then minutes, then hours */
@@ -208,11 +200,6 @@ void scr_put_rain_mm(oled_row *r, uint32_t tips, unsigned decimals);   /* tips a
 /* A form for oled_fit: left and right on one row (oled_put_lr, OLED_COLS), or if they do not fit, both with a
    space between, too long for the row, so that oled_fit goes on to the next form. */
 void scr_form_lr(oled_row *r, const char *left, const char *right);
-void scr_row(const oled_surf *s, int y, const char *text);             /* at (0, y), scale 1 */
-void scr_row_right(const oled_surf *s, int y, const char *text);       /* ending at the screen's right edge */
-void scr_header(const oled_surf *s, const char *text);                 /* the top row, inverted */
-/* 20 sin(p x 22.5 degrees), rounded, for any point p (wrapped): the screens' 16-point compass. */
-int scr_sin20(int p);
 extern const char *const scr_point_names[16];   /* the vane's points, 0 N clockwise to 15 NNW */
 
 #endif

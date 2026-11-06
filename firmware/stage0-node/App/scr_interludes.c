@@ -35,7 +35,6 @@
 #define BAR_X 36
 #define BAR_W 70
 #define BAR_FILL_W 66
-#define BAR_FILL_FRAMES 8U
 #define FACE_CX 31                     /* tools/make_scr_art.py */
 #define FACE_CY 32
 #define PLANET_PITCH 10                /* PLANET at double height, squeezed to fit beside the face */
@@ -43,13 +42,13 @@
 static void hex_row(const oled_surf *s, int y, const scr_view_t *v, unsigned from)
 {
   oled_row line = { "" };
-  unsigned len = scr_upto(v->cipher_len, sizeof v->cipher);
+  unsigned len = v->cipher_len < sizeof v->cipher ? v->cipher_len : sizeof v->cipher;
   for (unsigned i = 0; i < HEX_PER_ROW; i++)
   {
     if (i != 0) oled_put(&line, " ");
     oled_put_hex2(&line, v->cipher[(from + i) % len]);
   }
-  (void)oled_text(s, 0, y, line.s, 1);
+  scr_label(s, y, line.s, SCR_LEFT);
 }
 
 void scr_burst(const oled_surf *s, unsigned frame, const scr_view_t *v)
@@ -76,19 +75,18 @@ void scr_burst(const oled_surf *s, unsigned frame, const scr_view_t *v)
   oled_put(&foot, "B ");
   oled_put_dec(&foot, v->freq_khz, 3, 1, 0);
   oled_put(&foot, "MHz");
-  (void)oled_text(s, 0, 56, foot.s, 1);
+  scr_label(s, 56, foot.s, SCR_LEFT);
 }
 
-static void scope_trace(const oled_surf *s, const wind_live_t *w)
+static void scope_trace(const oled_surf *s, const scr_series *d)
 {
-  unsigned n = scr_upto(w->nbins, WIND_LIVE_BINS), full = SCOPE_MIN_FULL;
-  for (unsigned i = 0; i < n; i++)
-    if (w->bins[i] > full) full = w->bins[i];
+  unsigned n = d->n, full = (unsigned)scr_max(d);
+  if (full < SCOPE_MIN_FULL) full = SCOPE_MIN_FULL;
   int px = 0, py = 0;
   for (unsigned i = 0; i < n; i++)
   {
     int x = PLOT_RIGHT - (int)((n - 1U - i) * (PLOT_RIGHT - PLOT_X) / (WIND_LIVE_BINS - 1U));
-    int y = PLOT_BOTTOM - (int)(w->bins[i] * (unsigned)(PLOT_BOTTOM - PLOT_TOP) / full);
+    int y = PLOT_BOTTOM - (int)((unsigned)scr_at(d, i) * (unsigned)(PLOT_BOTTOM - PLOT_TOP) / full);
     if (i == 0) oled_set(s, x, y, 1);
     else oled_line(s, px, py, x, y, 0);
     px = x; py = y;
@@ -98,17 +96,17 @@ static void scope_trace(const oled_surf *s, const wind_live_t *w)
 void scr_scope(const oled_surf *s, const scr_view_t *v)
 {
   const wind_live_t *w = &v->wind;
-  unsigned n = scr_upto(w->nbins, WIND_LIVE_BINS), recent = n < SCOPE_RATE_BINS ? n : SCOPE_RATE_BINS;
-  uint32_t sum = 0;
-  for (unsigned i = n - recent; i < n; i++) sum += w->bins[i];
+  scr_series d = scr_series_u8(w->bins, w->nbins, WIND_LIVE_BINS);
+  unsigned n = d.n, recent = n < SCOPE_RATE_BINS ? n : SCOPE_RATE_BINS;
+  uint32_t sum = (uint32_t)scr_sum_last(&d, SCOPE_RATE_BINS);
   oled_row line = { "SCOPE CUPS" };
   oled_pad_to(&line, 13);
   oled_put_dec(&line, recent ? sum * 40U / recent : 0U, 1, 1, 0);   /* pulses over recent / 4 s, in 0.1 Hz */
   oled_put(&line, "Hz");
-  (void)oled_text(s, 0, 0, line.s, 1);
-  oled_box(s, 0, 9, OLED_W, 46);
+  scr_label(s, 0, line.s, SCR_LEFT);
+  scr_frame(s, 0, 9, OLED_W - 1, 54, SCR_EDGE_SOLID, SCR_EDGE_SOLID, 1);
   oled_dotgrid(s, PLOT_X, PLOT_TOP, PLOT_RIGHT, 44, 16);
-  scope_trace(s, w);
+  scope_trace(s, &d);
   oled_row foot = { "" };
   oled_put_dec(&foot, w->speed_cms, 2, 1, 0);
   oled_put(&foot, "m/s  G");
@@ -116,7 +114,7 @@ void scr_scope(const oled_surf *s, const scr_view_t *v)
   oled_put(&foot, "  ");
   oled_put_uint(&foot, n / 4U);
   oled_put(&foot, "s");
-  (void)oled_text(s, 0, 57, foot.s, 1);
+  scr_label(s, 57, foot.s, SCR_LEFT);
 }
 
 static void vane_text(const oled_surf *s, int point, const scr_view_t *v)
@@ -141,11 +139,13 @@ void scr_vane(const oled_surf *s, unsigned frame, const scr_view_t *v)
   if (point >= 0)
   {
     int shown = frame < (unsigned)point ? (int)frame : point;   /* swinging round from N */
-    oled_line(s, ROSE_CX, ROSE_CY, ROSE_CX + scr_sin20(shown), ROSE_CY - scr_sin20(shown + 4), 0);
+    scr_ray(s, ROSE_CX, ROSE_CY, 0, 20, shown, 0);
   }
   oled_fill(s, ROSE_CX - 1, ROSE_CY - 1, 3, 3, 1);
   vane_text(s, point, v);
 }
+
+static const scr_gauge_style system_bar = { BAR_W, 7, 2, 3, 1 };
 
 void scr_system(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
@@ -160,9 +160,8 @@ void scr_system(const oled_surf *s, unsigned frame, const scr_view_t *v)
     unsigned p = pct[i] > 100U ? 100U : pct[i];
     oled_row num = { "" };
     oled_put_uint(&num, p);
-    (void)oled_text(s, 0, y, names[i], 1);
-    oled_box(s, BAR_X, y, BAR_W, 7);
-    oled_fill(s, BAR_X + 2, y + 2, (int)scr_grow(BAR_FILL_W * p / 100U, frame, BAR_FILL_FRAMES), 3, 1);
+    scr_label(s, y, names[i], SCR_LEFT);
+    scr_gauge(s, BAR_X, y, scr_grow(BAR_FILL_W * p / 100U, frame, SCR_GROW_FRAMES), &system_bar);
     (void)oled_text(s, 110, y, num.s, 1);
   }
 }
@@ -192,8 +191,7 @@ void scr_boot(const oled_surf *s, unsigned frame, const scr_view_t *v)
   boot_text(s, v);
   if (frame == 28U || frame == 29U || frame >= 60U)
   {
-    for (unsigned i = 0; i < 5U; i++) oled_shift_row(s, sliced[i], 5);
-    oled_invert(s, 0, 27, OLED_W, 3);
+    scr_glitch(s, sliced, 5, 0, 5, 27, 3);
   }
   oled_line(s, 0, 62, (int)(frame * (OLED_W - 1U) / 63U), 62, 0);
 }
@@ -224,8 +222,7 @@ static void hack_glitch(const oled_surf *s, unsigned g)
 {
   static const int8_t sliced[5] = { 8, 9, 30, 31, 50 };
   static const struct { int8_t dy, dx, band; } step[4] = { { 0, 4, 36 }, { 6, -3, 22 }, { 3, 5, 46 }, { -4, -6, 28 } };
-  for (unsigned i = 0; i < 5U; i++) oled_shift_row(s, sliced[i] + step[g].dy, step[g].dx);
-  oled_invert(s, 0, step[g].band, OLED_W, 2);
+  scr_glitch(s, sliced, 5, step[g].dy, step[g].dx, step[g].band, 2);
 }
 
 void scr_hack(const oled_surf *s, unsigned frame)

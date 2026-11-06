@@ -91,12 +91,12 @@ void oled_view_sample(scr_view_t *v, uint32_t now_ms)
   if (scr_hist_due(now_ms, &air_at, AIR_EVERY_MS))
   {
     int ok = in_layout(P_AIR_TH) && mod_th_live(TH_AIR, &c, &rh);
-    v->air_n = (uint8_t)scr_hist_push(v->air_hist, SCR_AIR_HIST, v->air_n, ok ? scr_hist_value(c) : SCR_GAP);
+    v->air.n = (uint8_t)scr_hist_push(v->air.s, SCR_AIR_HIST, v->air.n, ok ? scr_hist_value(c) : SCR_GAP);
   }
   if (scr_hist_due(now_ms, &press_at, PRESS_EVERY_MS))
   {
     int ok = in_layout(P_PRESSURE) && mod_reg_live(REG_PRESSURE, &p);
-    v->press_n = (uint8_t)scr_hist_push(v->press_hist, SCR_PRESS_HIST, v->press_n, ok ? scr_hist_value(p) : SCR_GAP);
+    v->press.n = (uint8_t)scr_hist_push(v->press.s, SCR_PRESS_HIST, v->press.n, ok ? scr_hist_value(p) : SCR_GAP);
   }
 }
 

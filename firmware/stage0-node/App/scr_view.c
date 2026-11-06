@@ -4,7 +4,6 @@
 #include "oled_draw.h"
 #include "wsmp_registry.h"
 
-#define HEADER_PX 8
 #define RAIN_TIPS_MAX 1000000U         /* 279 m of rain: more reads as this */
 
 const char *const scr_point_names[16] = { "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
@@ -29,29 +28,6 @@ void scr_form_lr(oled_row *r, const char *left, const char *right)
   oled_put(r, left);
   oled_put(r, " ");
   oled_put(r, right);
-}
-
-void scr_row(const oled_surf *s, int y, const char *text) { (void)oled_text(s, 0, y, text, 1); }
-
-void scr_row_right(const oled_surf *s, int y, const char *text)
-{
-  (void)oled_text(s, OLED_W - OLED_CHAR_ADVANCE * (int)strlen(text) + 1, y, text, 1);
-}
-
-void scr_header(const oled_surf *s, const char *text)
-{
-  (void)oled_text(s, 0, 0, text, 1);
-  oled_invert(s, 0, 0, OLED_W, HEADER_PX);
-}
-
-int scr_sin20(int p)
-{
-  static const int8_t quarter[5] = { 0, 8, 14, 18, 20 };
-  p &= 15;
-  if (p <= 4) return quarter[p];
-  if (p <= 8) return quarter[8 - p];
-  if (p <= 12) return -quarter[p - 8];
-  return -quarter[16 - p];
 }
 
 unsigned scr_frames(enum scr_id id)

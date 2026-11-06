@@ -32,11 +32,7 @@ static int at_r(int r, int p) { return r * scr_sin20(p) / 20; }   /* r along x a
 static void sun(const oled_surf *s, unsigned tick)
 {
   oled_disc(s, ICON_CX, ICON_CY, 6, 1);
-  for (int k = 0; k < 8; k++)
-  {
-    int p = 2 * k + (int)(tick & 1U), r1 = (k & 1) ? 13 : 15;
-    oled_line(s, ICON_CX + at_r(9, p), ICON_CY - at_r(9, p + 4), ICON_CX + at_r(r1, p), ICON_CY - at_r(r1, p + 4), 0);
-  }
+  for (int k = 0; k < 8; k++) scr_ray(s, ICON_CX, ICON_CY, 9, (k & 1) ? 13 : 15, 2 * k + (int)(tick & 1U), 0);
 }
 
 static void star(const oled_surf *s, int x, int y, int big)
@@ -65,14 +61,12 @@ static void cloud(const oled_surf *s, int cx, int cy)
 
 static int drift(unsigned tick) { static const int8_t d[4] = { -1, 0, 1, 0 }; return d[tick % 4U]; }
 
+static void cloud_icon(const oled_surf *s, unsigned tick) { cloud(s, ICON_CX + drift(tick), ICON_CY); }
+
 static void rain(const oled_surf *s, unsigned tick)
 {
   cloud(s, ICON_CX + drift(tick), ICON_CY - 6);
-  for (unsigned i = 0; i < 4U; i++)
-  {
-    int x = ICON_CX - 9 + 6 * (int)i, y = ICON_CY + 5 + (int)((tick * 3U + i * 5U) % 12U);
-    oled_line(s, x, y, x - 1, y + 3, 0);
-  }
+  scr_drops(s, 4, ICON_CX - 9, 6, ICON_CY + 5, tick * 3U, 5, 12);
 }
 
 static void snow(const oled_surf *s, unsigned tick)
@@ -81,9 +75,9 @@ static void snow(const oled_surf *s, unsigned tick)
   for (int k = 0; k < 8; k++)   /* eight arms, each with two twigs; a sixteenth of a turn each other tick */
   {
     int p = 2 * k + turn, bx = ICON_CX + at_r(6, p), by = ICON_CY - at_r(6, p + 4);
-    oled_line(s, ICON_CX, ICON_CY, ICON_CX + at_r(11, p), ICON_CY - at_r(11, p + 4), 0);
-    oled_line(s, bx, by, bx + at_r(3, p + 2), by - at_r(3, p + 6), 0);
-    oled_line(s, bx, by, bx + at_r(3, p - 2), by - at_r(3, p + 2), 0);
+    scr_ray(s, ICON_CX, ICON_CY, 0, 11, p, 0);
+    scr_ray(s, bx, by, 0, 3, p + 2, 0);
+    scr_ray(s, bx, by, 0, 3, p - 2, 0);
   }
   for (unsigned i = 0; i < 3U; i++)
     oled_set(s, 4 + 18 * (int)i, (int)((tick * 2U + i * 13U) % 38U), 1);   /* flakes falling past it */
@@ -102,18 +96,9 @@ static void wind(const oled_surf *s, unsigned tick)
   oled_set(s, 40, ICON_CY, 0);
 }
 
-static void icon(const oled_surf *s, enum scr_icon i, unsigned tick)
-{
-  switch (i)
-  {
-  case ICON_MOON: moon(s, tick); break;
-  case ICON_CLOUD: cloud(s, ICON_CX + drift(tick), ICON_CY); break;
-  case ICON_RAIN: rain(s, tick); break;
-  case ICON_SNOW: snow(s, tick); break;
-  case ICON_WIND: wind(s, tick); break;
-  default: sun(s, tick); break;
-  }
-}
+static void (*const icons[])(const oled_surf *, unsigned) = {
+  [ICON_SUN] = sun, [ICON_MOON] = moon, [ICON_CLOUD] = cloud_icon, [ICON_RAIN] = rain, [ICON_SNOW] = snow, [ICON_WIND] = wind,
+};
 
 /* ---- the rows ---- */
 
@@ -125,10 +110,10 @@ static void readings(const oled_surf *s, const scr_view_t *v)
   (void)oled_draw_text(s, OLED_W - oled_text_w(t.s, &scr_big, &oled_x1), TEMP_Y, t.s, &scr_big, &oled_x1);
   if (v->air_ok) { oled_put_dec(&rh, v->air_rh, 2, 0, 0); oled_put(&rh, "% RH"); }
   else oled_put(&rh, "NO SHT45");
-  scr_row_right(s, RH_Y, rh.s);
+  scr_label(s, RH_Y, rh.s, SCR_RIGHT);
   if (v->press_ok) { oled_put_dec(&p, v->press_dhpa, 1, 1, 0); oled_put(&p, " hPa"); }
   else oled_put(&p, "NO BMP581");
-  scr_row_right(s, PRESS_Y, p.s);
+  scr_label(s, PRESS_Y, p.s, SCR_RIGHT);
 }
 
 /* form 0 "WIND 1.3 NE  RAIN 0.6", 1 with one space between, 2 "W 1.3 NE R 0.6". */
@@ -187,7 +172,7 @@ static void banner(const oled_surf *s, const scr_view_t *v)
 {
   oled_row line;
   (void)oled_fit(&line, banner_form, v, 3, OLED_COLS);
-  scr_row(s, BANNER_Y, line.s);
+  scr_label(s, BANNER_Y, line.s, SCR_LEFT);
   oled_row outcome = { "  " };
   if (v->last_acked == SCR_TX_ACK)
   {
@@ -197,19 +182,19 @@ static void banner(const oled_surf *s, const scr_view_t *v)
     oled_put_dec(&outcome, v->ack_snr, 0, 0, 0);
   }
   else if (v->last_acked == SCR_TX_NO_ACK) oled_put(&outcome, "NO ACK");
-  scr_row(s, BANNER_Y + 8, outcome.s);
+  scr_label(s, BANNER_Y + 8, outcome.s, SCR_LEFT);
   oled_invert(s, 0, BANNER_Y, OLED_W, 16);
 }
 
 void scr_home(const oled_surf *s, unsigned frame, const scr_view_t *v, int with_banner)
 {
-  icon(s, scr_icon_pick(v), frame / 2U);
+  icons[scr_icon_pick(v)](s, frame / 2U);
   readings(s, v);
   if (with_banner) { banner(s, v); return; }
   oled_row line;
   (void)oled_fit(&line, wind_rain_form, v, 3, OLED_COLS);
-  scr_row(s, WIND_Y, line.s);
+  scr_label(s, WIND_Y, line.s, SCR_LEFT);
   (void)oled_fit(&line, link_form, v, 3, LINK_COLS);
-  scr_row(s, LINK_Y, line.s);
+  scr_label(s, LINK_Y, line.s, SCR_LEFT);
   signal_bars(s, v);
 }

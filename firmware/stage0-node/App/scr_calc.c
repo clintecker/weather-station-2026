@@ -86,8 +86,8 @@ int scr_dew_point(int32_t centi_c, int32_t centi_rh, int32_t *centi_dew)
 enum scr_trend scr_tendency(const scr_view_t *v, int32_t *delta_dhpa)
 {
   *delta_dhpa = 0;
-  if (!v->press_ok || v->press_n < SCR_PRESS_HIST || v->press_hist[0] == SCR_GAP) return TREND_NONE;
-  int64_t d = (int64_t)v->press_dhpa - v->press_hist[0];
+  if (!v->press_ok || v->press.n < SCR_PRESS_HIST || v->press.s[0] == SCR_GAP) return TREND_NONE;
+  int64_t d = (int64_t)v->press_dhpa - v->press.s[0];
   *delta_dhpa = (int32_t)(d > INT32_MAX ? INT32_MAX : d < -INT32_MAX ? -INT32_MAX : d);
   if (*delta_dhpa >= SCR_TREND_DHPA) return TREND_RISING;
   if (*delta_dhpa <= -SCR_TREND_DHPA) return TREND_FALLING;
@@ -105,9 +105,8 @@ int scr_is_day(uint32_t utc, int32_t offset_min)
 
 unsigned scr_rain_tips(const uint8_t *per_min, unsigned n, unsigned minutes)
 {
-  unsigned sum = 0;
-  for (unsigned i = n > minutes ? n - minutes : 0U; i < n; i++) sum += per_min[i];
-  return sum;
+  scr_series d = scr_series_u8(per_min, n, n);
+  return (unsigned)scr_sum_last(&d, minutes);
 }
 
 enum scr_icon scr_icon_pick(const scr_view_t *v)
@@ -125,27 +124,6 @@ unsigned scr_bar_px(int32_t v, int32_t full, unsigned px)
   if (v <= 0) return 0;
   if (full <= 0 || v >= full) return px;
   return (unsigned)(((uint64_t)v * px + (uint64_t)full - 1U) / (uint64_t)full);
-}
-
-unsigned scr_spark_range(const int16_t *s, unsigned n, int32_t min_span, int32_t *lo, int32_t *hi)
-{
-  unsigned valid = 0;
-  int32_t a = 0, b = 0;
-  for (unsigned i = 0; i < n; i++)
-  {
-    if (s[i] == SCR_GAP) continue;
-    if (valid == 0U || s[i] < a) a = s[i];
-    if (valid == 0U || s[i] > b) b = s[i];
-    valid++;
-  }
-  if (valid == 0U) return 0;
-  if (b - a < min_span)
-  {
-    a = (a + b - min_span) / 2;   /* about the middle */
-    b = a + min_span;
-  }
-  *lo = a; *hi = b;
-  return valid;
 }
 
 int scr_spark_y(int32_t v, int32_t lo, int32_t hi, int top, int h)

@@ -14,7 +14,7 @@
    and the row says NO <part>. */
 void oled_view_fill(scr_view_t *v, enum scr_id id, unsigned frame);
 /* The display's own histories, at every step whether drawn or not (cheap: two comparisons, and at most two
-   cached reads when a sample is due): the SHT45 into air_hist once a minute, the BMP581 into press_hist
+   cached reads when a sample is due): the SHT45 into air once a minute, the BMP581 into press
    every 5 minutes, each from the first call on; SCR_GAP while the port is not in the layout or has no
    value. No module keeps any of it. */
 void oled_view_sample(scr_view_t *v, uint32_t now_ms);

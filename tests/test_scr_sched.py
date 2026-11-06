@@ -126,9 +126,9 @@ unsigned t_view_cipher_len(void) { return t_view.cipher_len; }
 unsigned t_view_cipher(unsigned i) { return t_view.cipher[i]; }
 unsigned t_view_airtime(void) { return t_view.airtime_pct; }
 unsigned t_view_reports(void) { return t_view.reports; }
-unsigned t_view_radio_n(void) { return t_view.radio_n; }
-int t_view_radio_rssi(unsigned i) { return t_view.radio_rssi[i]; }
-int t_view_radio_snr(unsigned i) { return t_view.radio_snr[i]; }
+unsigned t_view_radio_n(void) { return t_view.radio.n; }
+int t_view_radio_rssi(unsigned i) { return t_view.radio.rssi[i]; }
+int t_view_radio_snr(unsigned i) { return t_view.radio.snr[i]; }
 unsigned t_view_since_exchange(void) { return t_view.since_exchange_s; }
 '''
 
@@ -137,7 +137,7 @@ def build(owner, name):
     """scr_sched.c and oled_app.c (and the drawing surface) over the shim, as the bench build compiles them (RAM2 placement off)."""
     return host_library(owner, name, '-DWS_BENCH_OLED=1', '-DOLED_APP_RAM2=', '-I', ROOT/'firmware/host/include', '-I', APP,
                         '-I', NODE/'Core/Inc', '-I', ROOT/'firmware/common', '-I', ROOT/'firmware',
-                        APP/'scr_sched.c', APP/'oled_app.c', APP/'scr_calc.c', ROOT/'firmware/common/oled_draw.c',
+                        APP/'scr_sched.c', APP/'oled_app.c', APP/'scr_calc.c', APP/'scr_widget.c', ROOT/'firmware/common/oled_draw.c',
                         ROOT/'firmware/common/oled_font.c', ROOT/'firmware/common/font5x7.c', files={'shim.c': SHIM})
 
 
@@ -648,7 +648,7 @@ class OledApp(unittest.TestCase):
 
     def test_the_radio_history_and_the_exchange_clock(self):
         # Every frame's outcome goes into the radio history, the backlog's and the report's too: an ACK's RSSI and
-        # SNR, a gap for none. The seconds since the minute's exchange started reach the view.
+        # SNR, a gap in both for none. The seconds since the minute's exchange started reach the view.
         self.to_home()
         self.lib.oled_note_exchange()
         self.lib.oled_note_sent(5, bytes(30), 30, SENT_LIVE)
@@ -661,7 +661,7 @@ class OledApp(unittest.TestCase):
             self.tick()
         n = self.lib.t_view_radio_n()
         self.assertEqual([(self.lib.t_view_radio_rssi(i), self.lib.t_view_radio_snr(i)) for i in range(n)],
-                         [(-41, 9), (-32768, 0), (-97, -8)])
+                         [(-41, 9), (-32768, -32768), (-97, -8)])
         self.assertEqual(self.lib.t_view_since_exchange(), 3)
         self.assertGreater(ival(self.lib, 't_samples'), 8 * 3)   # the histories are sampled at every step
         for i in range(40):

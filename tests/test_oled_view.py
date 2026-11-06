@@ -61,10 +61,10 @@ static scr_view_t v;
 void t_fill(void) { memset(&v, 0, sizeof v); oled_view_fill(&v, SCR_HOME, 0); }
 void t_sample(uint32_t now_ms) { oled_view_sample(&v, now_ms); }
 void t_clear(void) { memset(&v, 0, sizeof v); }
-unsigned t_air_n(void) { return v.air_n; }
-unsigned t_press_n(void) { return v.press_n; }
-int t_air_hist(unsigned i) { return v.air_hist[i]; }
-int t_press_hist(unsigned i) { return v.press_hist[i]; }
+unsigned t_air_n(void) { return v.air.n; }
+unsigned t_press_n(void) { return v.press.n; }
+int t_air_hist(unsigned i) { return v.air.s[i]; }
+int t_press_hist(unsigned i) { return v.press.s[i]; }
 uint32_t t_view_utc(void) { return v.utc; }
 int t_air_ok(void) { return v.air_ok; }
 int t_box_ok(void) { return v.box_ok; }
@@ -83,6 +83,7 @@ class OledView(unittest.TestCase):
     def setUpClass(cls):
         cls.built = host_library(cls, 'oledview', '-DWS_BENCH_OLED=1', '-DWS_I2C_MUX=0', '-I', FW/'host/include', '-I', FW/'host',
                                  '-I', APP, '-I', FW/'stage0-node/Core/Inc', '-I', FW, '-I', FW/'common', APP/'oled_view.c', APP/'scr_calc.c',
+                                 APP/'scr_widget.c', FW/'common/oled_draw.c', FW/'common/oled_font.c', FW/'common/font5x7.c',
                                  files={'shim.c': SHIM})
 
     def setUp(self):
