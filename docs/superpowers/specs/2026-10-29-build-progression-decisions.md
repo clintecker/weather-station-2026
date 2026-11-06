@@ -671,7 +671,7 @@ pre-assembled screw shield for step 1, 0.1 % divider resistors, screw-terminal R
 BRK6P6C-S-FT; 7.1 Q6), a new meter (the Fluke 87V is owned; 7.1 Q2), a calibrated shunt or a DC clamp
 meter for the shunt checks (the 87V in series is the reference: M1 dated note).
 
-*Purchasing status (2026-11-02):* ordered from DigiKey on 2026-11-02 (nothing before): 5 BusBoard BB830, 10 × 1 Ω 2 W (injection test), 30 × 100 Ω ½ W and the rest of the step 1 and
+*Purchasing status (2026-11-05):* ordered from DigiKey on 2026-11-02 (nothing before), arrived 2026-11-05 (at home): 5 BusBoard BB830, 10 × 1 Ω 2 W (injection test), 30 × 100 Ω ½ W and the rest of the step 1 and
 step 1b parts Clint chose, including the USB-C pair (5 × Adafruit #4090 and 5 × #5978). Change C's
 load-switch breakout is not bought: the switch left the breadboard build (2026-11-02). `docs/poc-shopping-list.md`
 ("Purchasing status") holds the part numbers and quantities.

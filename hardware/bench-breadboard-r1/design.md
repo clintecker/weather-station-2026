@@ -21,7 +21,7 @@ against the schematic); wire routes [`layout/routing.py`](layout/routing.py); Ki
 
 | Topic | Decision |
 |---|---|
-| Parts | Design around the 2026-11-02 DigiKey order (not yet arrived), plus parts in hand but not in INVENTORY.md: OLED #2674, BOJACK pre-cut jumper kits, 3 Elegoo full-size breadboards (rails continuous), many STEMMA QT cables, a PCA9548 8-port mux #5626 |
+| Parts | Design around the 2026-11-02 DigiKey order (arrived 2026-11-05, at home), plus parts in hand but not in INVENTORY.md: OLED #2674, BOJACK pre-cut jumper kits, 3 Elegoo full-size breadboards (rails continuous), many STEMMA QT cables, a PCA9548 8-port mux #5626 |
 | Metering | Phase B: four INA228 (battery 0x40, load 0x41, solar 0x45, USB-C 0x48) + MAX17048 0x36; firmware `WS_POWER_PROFILE=2` |
 | Bench power modes | Both: A (NUCLEO on ST-LINK USB, 100 ohm test load) and B (pack -> charger -> S7V8F3 -> NUCLEO 3V3 through a removable link) |
 | I2C | Two QT branches from the NUCLEO: sensor branch through the 5-port passive hub; power branch as a QT daisy chain, always powered |

@@ -21,7 +21,7 @@ USB-C 0x48). The firmware, gateway, protocol, tools and tests are the ones that 
 - **Change C** (the PA9 sensor load switch) is not part of the breadboard build; `i2c_bus`
   power-cycling is a no-op.
 - **The base plate spec** is `hardware/base-plate/spec-r2.md`. It is written for the nurb CAD project at `~/Documents/nurb/board for weather/`, whose v1 tiles it revises, and it records the user's answers so far in its §7a. Its open items (§7) are what's left to settle before the rebuild.
-- **The parts for steps 1 and 1b** were ordered from DigiKey on 2026-11-02 (`docs/poc-shopping-list.md`,
+- **The parts for steps 1 and 1b** were ordered from DigiKey on 2026-11-02 and arrived, at home, on 2026-11-05 (`docs/poc-shopping-list.md`,
   "Purchasing status").
 
 ## 1. What this project is

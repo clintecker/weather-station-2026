@@ -71,30 +71,30 @@ flowchart LR
 | I2C hub | [Adafruit 5-port STEMMA QT hub #5625](https://www.adafruit.com/product/5625) | $2.50 | In stock |
 | STEMMA QT cables | [Adafruit #4210](https://www.adafruit.com/product/4210) (100 mm), [#4401](https://www.adafruit.com/product/4401) (200 mm) | $0.95, $1.25 | In stock |
 
-## Purchasing status (2026-11-02)
+## Purchasing status (2026-11-05)
 
 From DigiKey: the cart Clint built on 2026-10-30 was ordered on 2026-11-02 (nothing was ordered before
-that date). Quantities are the quantities ordered, not the rows' needs.
+that date) and arrived, at home, on 2026-11-05 (not yet counted against the order). Quantities are the quantities ordered, not the rows' needs.
 
 | Part | Qty | Status | Row it covers |
 |---|---:|---|---|
-| BusBoard BB830 | 5 | **ordered 2026-11-02** | the conditional BB830 (record H2) |
-| 1 Ω 2 W resistor, CPF21R0000FKE36 | 10 | **ordered 2026-11-02** | step 1, injection test |
-| 100 Ω ½ W resistor, MFR50SFTE52-100R | 30 | **ordered 2026-11-02** | step 1b, the deliberate load step (exit g) |
-| 1 MΩ resistor, MFR-25FBF52-1M | 25 | **ordered 2026-11-02** | step 1, ISET pull-down |
-| 0.1 µF ceramic capacitor, C320C104K5R5TA | 5 | **ordered 2026-11-02** | step 1, ISET node (100 nF) |
-| Adafruit #1131 JST PH pigtail | 5 | **ordered 2026-11-02** | step 1, the cut #1131 halves |
-| WAGO 222-413 (3-way) | 20 | **ordered 2026-11-02** | step 1 and 1b lever connectors |
-| WAGO 222-415 (5-way) | 20 | **ordered 2026-11-02** | step 1 and 1b lever connectors |
-| Adafruit #1311 hook-up wire (6 × 25 ft) | 1 | **ordered 2026-11-02** | step 1, 22 AWG solid hook-up wire |
-| Adafruit #4209 STEMMA QT to male header cable | 5 | **ordered 2026-11-02** | the STEMMA QT to male header cables (the QTM branch) and spares |
-| 220 µF 16 V radial electrolytic, 2.5 mm pitch, Rubycon 16YXJ220MT16.3X11 | 20 | **ordered 2026-11-02** | the bench OLED; no row in this list names it |
-| 220 µF 16 V radial electrolytic, Panasonic EEU-FC1C221 | 10 | **ordered 2026-11-02** | spare bulk capacitors |
-| Adafruit INA228 #5832 | 5 | **ordered 2026-11-02** | step 1b, the three extra INA228s, and spares |
-| Adafruit #368 female 2.1 mm DC jack to screw terminal | 5 | **ordered 2026-11-02** | step 1b, the panel's plug into SOLAR_IN |
-| Adafruit #369 male 2.1 mm barrel plug to screw terminal | 4 | **ordered 2026-11-02** | step 1b, the solar INA228 into the charger's DC jack |
-| Adafruit #4090 USB-C female breakout (5.1 kΩ CC resistors) + Adafruit #5978 USB-C male plug breakout | 5 each | **ordered 2026-11-02** | step 1b USB-C metering: no inline USB-C screw-terminal pair was found on DigiKey; both breakouts need soldering |
-| Wire stripper/cutter, 11057 | 1 | **ordered 2026-11-02** | tool |
+| BusBoard BB830 | 5 | **received 2026-11-05** (ordered 2026-11-02; at home) | the conditional BB830 (record H2) |
+| 1 Ω 2 W resistor, CPF21R0000FKE36 | 10 | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1, injection test |
+| 100 Ω ½ W resistor, MFR50SFTE52-100R | 30 | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1b, the deliberate load step (exit g) |
+| 1 MΩ resistor, MFR-25FBF52-1M | 25 | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1, ISET pull-down |
+| 0.1 µF ceramic capacitor, C320C104K5R5TA | 5 | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1, ISET node (100 nF) |
+| Adafruit #1131 JST PH pigtail | 5 | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1, the cut #1131 halves |
+| WAGO 222-413 (3-way) | 20 | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1 and 1b lever connectors |
+| WAGO 222-415 (5-way) | 20 | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1 and 1b lever connectors |
+| Adafruit #1311 hook-up wire (6 × 25 ft) | 1 | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1, 22 AWG solid hook-up wire |
+| Adafruit #4209 STEMMA QT to male header cable | 5 | **received 2026-11-05** (ordered 2026-11-02; at home) | the STEMMA QT to male header cables (the QTM branch) and spares |
+| 220 µF 16 V radial electrolytic, 2.5 mm pitch, Rubycon 16YXJ220MT16.3X11 | 20 | **received 2026-11-05** (ordered 2026-11-02; at home) | the bench OLED; no row in this list names it |
+| 220 µF 16 V radial electrolytic, Panasonic EEU-FC1C221 | 10 | **received 2026-11-05** (ordered 2026-11-02; at home) | spare bulk capacitors |
+| Adafruit INA228 #5832 | 5 | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1b, the three extra INA228s, and spares |
+| Adafruit #368 female 2.1 mm DC jack to screw terminal | 5 | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1b, the panel's plug into SOLAR_IN |
+| Adafruit #369 male 2.1 mm barrel plug to screw terminal | 4 | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1b, the solar INA228 into the charger's DC jack |
+| Adafruit #4090 USB-C female breakout (5.1 kΩ CC resistors) + Adafruit #5978 USB-C male plug breakout | 5 each | **received 2026-11-05** (ordered 2026-11-02; at home) | step 1b USB-C metering: no inline USB-C screw-terminal pair was found on DigiKey; both breakouts need soldering |
+| Wire stripper/cutter, 11057 | 1 | **received 2026-11-05** (ordered 2026-11-02; at home) | tool |
 | high-side load-switch breakout (change C) | 0 | **not bought** | *2026-11-02:* change C no longer has a sensor power switch (record 4.6 dated note), so no breakout is needed |
 
 A dash means the quantity was not recorded. The screw-terminal RJ11
@@ -149,7 +149,7 @@ Not on this list, on purpose:
 ## Build step 1b: four rails, phase B (on the breadboard)
 
 Step 1b is part of the breadboard build: on the same plate and the same lever-connector harness as
-step 1 (record step 1b). Its parts were ordered on 2026-11-02 (purchasing status above). Closing the A0/A1 jumpers and fitting the 0x48 rework wire on the three extra INA228s is
+step 1 (record step 1b). Its parts were ordered on 2026-11-02 and arrived on 2026-11-05 (purchasing status above). Closing the A0/A1 jumpers and fitting the 0x48 rework wire on the three extra INA228s is
 allowed module preparation (7.1 Q1). **USB-C and solar are never connected at the same time, in any
 test.** Each source joins on the charger board through its own Schottky diode, D2 (USB-C) or D4 (DC
 jack), with EN2 high and EN1 low ([`power-metering.md`](hardware/power-metering.md) section 5.1;

@@ -135,7 +135,7 @@ shunt in the battery path** (PTD:58, BRU:498-507).
 
 ## 3. Hardware inventory
 
-Quantities: INV, counted 2026-10-20/21 unless marked "on order" (DigiKey order 2026-11-02, INV:66-81,
+Quantities: INV, counted 2026-10-20/21 unless marked "received 2026-11-05" (DigiKey order 2026-11-02, at home, not yet counted; INV:66-81,
 INV:417-419). "Interface" and "Address/pins" are the functional connection, not a layout.
 
 ### 3.1 MCU and radio
@@ -158,21 +158,21 @@ PC3/PC4/PC5; LSE crystal PC14/PC15; SWD PA13/PA14; BOOT0 PH3; VCP PA2/PA3.
 | Voltaic P110 solar panel, 10 W, "5 V" (Voltaic: 6 V) | Adafruit #5369 | 1 (INV:20) | solar source | barrel plug (re-terminated by Clint to fit the charger's DC jack) | — | Voc 6.94 V, about 8.7 V cold | jack is 5.5 x 2.1 mm by inference from Adafruit's page, not measured (PM:179-182) |
 | USB-C wall adapter, floating | — (not inventoried) | not listed | bench charger input / backup | USB-C into the charger's own USB-C | — | 5 V >= 2 A | never the Mac or a hub that shares the NUCLEO ground (BSW:243-245, WT:342-347). Inferred: must be a separate, isolated supply |
 | Pololu S7V8F3 3.3 V step-up/step-down | Pololu #2122 | 5 (INV:16) | 3.3 V for the NUCLEO in battery mode | pins SHDN, VIN, GND, VOUT (WT:231) | VIN from charger OUT; VOUT to NUCLEO 3V3 | 2.7-11.8 V in, < 0.1 mA quiescent (SHOP:50; Pololu #2122 page) | pin order is "bench check" (no maker page shows it) (WT:232-233) |
-| 100 ohm 1/2 W resistor | Yageo MFR50SFTE52-100R | 30 on order (INV:418) | fixed test load on OUT, bench mode A | 2 leads | OUT to power ground | — | about 38-40 mA (BSW:301-302); 1/4 W would run at 0.18 W (INV:418) |
-| 1 ohm 2 W resistor | Vishay CPF21R0000FKE36 | 10 on order (INV:417) | fault-injection test of the pack-lead step flag | — | — | — | (SHOP:82) |
+| 100 ohm 1/2 W resistor | Yageo MFR50SFTE52-100R | 30 received 2026-11-05 (INV:418) | fixed test load on OUT, bench mode A | 2 leads | OUT to power ground | — | about 38-40 mA (BSW:301-302); 1/4 W would run at 0.18 W (INV:418) |
+| 1 ohm 2 W resistor | Vishay CPF21R0000FKE36 | 10 received 2026-11-05 (INV:417) | fault-injection test of the pack-lead step flag | — | — | — | (SHOP:82) |
 
 ### 3.3 Power measurement
 
 | Part | Maker # | Qty | Role | Interface | Address / pins | Supply | Notes |
 |---|---|---|---|---|---|---|---|
-| Adafruit INA228 85 V 20-bit power monitor | Adafruit #5832 | 1 on hand (INV:22) + 5 on order (INV:74) | battery rail (phase A); load, solar, USB-C rails (phase B) | I2C over STEMMA QT; X1 screw terminal VIN+ (X1.3), VBUS (X1.2), VIN- (X1.1) in parallel with header VIN+/VBUS/VIN- (WT:201-206) | battery 0x40 (A1 GND, A0 GND, as shipped); load 0x41 (A0 jumper to VS); solar 0x45 (both to VS); USB-C 0x48 (A1 wired to SDA: rework) (PM:297-302) | 3.3 V from QT; 640 µA typ, 1.1 mA max continuous (PM:334) | shunt R1 15 mohm 1 % 2 W 2512 (PM:51-52). SJ1 back jumper VBUS->VIN+ must be **open** on every board (PM:79-82). Header VCC/GND not used: power and ground come over QT (WT:208). I2C pull-ups 10 kohm in a resistor pack shared with the ADDR pull-downs, **no cut jumper** (PM:324-326). Green power LED about 0.13 mA (PM:335-336) |
+| Adafruit INA228 85 V 20-bit power monitor | Adafruit #5832 | 1 on hand (INV:22) + 5 received 2026-11-05 (INV:74) | battery rail (phase A); load, solar, USB-C rails (phase B) | I2C over STEMMA QT; X1 screw terminal VIN+ (X1.3), VBUS (X1.2), VIN- (X1.1) in parallel with header VIN+/VBUS/VIN- (WT:201-206) | battery 0x40 (A1 GND, A0 GND, as shipped); load 0x41 (A0 jumper to VS); solar 0x45 (both to VS); USB-C 0x48 (A1 wired to SDA: rework) (PM:297-302) | 3.3 V from QT; 640 µA typ, 1.1 mA max continuous (PM:334) | shunt R1 15 mohm 1 % 2 W 2512 (PM:51-52). SJ1 back jumper VBUS->VIN+ must be **open** on every board (PM:79-82). Header VCC/GND not used: power and ground come over QT (WT:208). I2C pull-ups 10 kohm in a resistor pack shared with the ADDR pull-downs, **no cut jumper** (PM:324-326). Green power LED about 0.13 mA (PM:335-336) |
 | Adafruit MAX17048 Li-ion fuel gauge | Adafruit #5580 | 1 (INV:21) | cell voltage, SOC, SOC rate | I2C over STEMMA QT; two JST PH BAT sockets; 6-pin header VIN, GND, SCL, SDA, INT, QSTART (WT:219-220) | 0x36 fixed | about 3-23 µA (SHOP:51) | senses CELL+ by the red lead of a JST PH pigtail in one BAT socket; black lead insulated; ground over QT (PM:63) |
 | Adafruit INA228 (phase B rails) | #5832 | see above | phase B | — | 0x41, 0x45, 0x48 | — | in scope for the breadboard build (step 1b): the three extra rails are not wired in the current breadboard model yet |
-| USB-C female breakout (5.1 kohm CC) | Adafruit #4090 | 5 on order (INV:77) | phase B USB-C metering, source side | screw/solder | — | — | sink-configured: 5.1 kohm Rd CC1 and CC2 to GND, 5 V only, no PD; data pins unconnected (PM:240-244). Needs soldering (INV:77) |
-| USB-C male plug breakout | Adafruit #5978 | 5 on order (INV:78) | phase B USB-C metering, charger side | — | — | — | needs soldering (INV:78) |
-| Female 2.1 mm DC jack to screw terminal | Adafruit #368 | 5 on order (INV:75) | phase B: panel plug into the solar meter | — | — | — | (PM:174) |
-| Male 2.1 mm barrel plug to screw terminal | Adafruit #369 | 4 on order (INV:76) | phase B: solar meter into the charger DC jack | — | — | — | (PM:175) |
-| ADC divider and ISET network parts | see 4.5 | — | charger input and charge current sense | — | PA10, PB1 | — | 1 Mohm on order (INV:419); 100 nF C0G/X7R radial on order (INV:66); 10 kohm 1 % from the Yageo kits (INV:82-84) |
+| USB-C female breakout (5.1 kohm CC) | Adafruit #4090 | 5 received 2026-11-05 (INV:77) | phase B USB-C metering, source side | screw/solder | — | — | sink-configured: 5.1 kohm Rd CC1 and CC2 to GND, 5 V only, no PD; data pins unconnected (PM:240-244). Needs soldering (INV:77) |
+| USB-C male plug breakout | Adafruit #5978 | 5 received 2026-11-05 (INV:78) | phase B USB-C metering, charger side | — | — | — | needs soldering (INV:78) |
+| Female 2.1 mm DC jack to screw terminal | Adafruit #368 | 5 received 2026-11-05 (INV:75) | phase B: panel plug into the solar meter | — | — | — | (PM:174) |
+| Male 2.1 mm barrel plug to screw terminal | Adafruit #369 | 4 received 2026-11-05 (INV:76) | phase B: solar meter into the charger DC jack | — | — | — | (PM:175) |
+| ADC divider and ISET network parts | see 4.5 | — | charger input and charge current sense | — | PA10, PB1 | — | 1 Mohm received 2026-11-05 (INV:419); 100 nF C0G/X7R radial received 2026-11-05 (INV:66); 10 kohm 1 % from the Yageo kits (INV:82-84) |
 
 ### 3.4 Sensors
 
@@ -199,19 +199,19 @@ PC3/PC4/PC5; LSE crystal PC14/PC15; SWD PA13/PA14; BOOT0 PH3; VCP PA2/PA3.
 | Part | Maker # | Qty | Role | Interface | Address / pins | Supply | Notes |
 |---|---|---|---|---|---|---|---|
 | Adafruit 2.7" 128 x 64 monochrome OLED | Adafruit #2674 (SSD1325) | **not in INV** (only its capacitor is: INV:72) | bench readout for `i2cscan` | SPI1, write only; 20-pin header (WT:393-394) | see 4.3 | 3.3 V, 50-150 mA (I2CS, "The OLED") | must be in SPI mode: R19 and R21 fitted, R18 and R20 empty (WT:396). 220 µF across its 3.3 V and GND (WT:400-407) |
-| 220 µF 16 V radial electrolytic | Rubycon 16YXJ220MT16.3X11 (and Panasonic EEU-FC1C221) | 20 + 10 on order (INV:72-73) | OLED bulk capacitor | — | — | — | polarised (WT:407) |
+| 220 µF 16 V radial electrolytic | Rubycon 16YXJ220MT16.3X11 (and Panasonic EEU-FC1C221) | 20 + 10 received 2026-11-05 (INV:72-73) | OLED bulk capacitor | — | — | — | polarised (WT:407) |
 
 ### 3.7 Interconnect and build materials
 
 | Part | Maker # | Qty | Role | Notes |
 |---|---|---|---|---|
 | Breadboards | unrecorded size | 3 (INV:34) | build | size not recorded at the count (INV:34, INV:540) |
-| BusBoard BB830 830-point | BB830 | 5 on order (INV:80) | build | some 830-point boards split each rail at the centre (WT:33) |
+| BusBoard BB830 830-point | BB830 | 5 received 2026-11-05 (INV:80) | build | some 830-point boards split each rail at the centre (WT:33) |
 | STEMMA QT cables 100 mm / 200 mm | Adafruit #4210 / #4401 | 1 + 1 (INV:29-30) | I2C | only two on hand for about seven QT boards (INV:29) |
-| STEMMA QT to male header cable | Adafruit #4209 | 5 on order (INV:71) | I2C into the MCU headers | |
-| JST PH 2-pin cable, female | Adafruit #1131 | 5 on order (INV:67) | cut into pack-mating and board-mating pigtail halves for the battery path and gauge sense | |
-| WAGO 222-413 (3-way) / 222-415 (5-way) lever connectors | 222-413 / 222-415 | 20 + 20 on order (INV:68-69) | splices for all battery/charge/load current | accept 22 AWG solid; stranded twisted (WT:617) |
-| 22 AWG solid hook-up wire, 6 colours | Adafruit #1311 | 1 pack on order (INV:70) | force leads and signal jumpers | |
+| STEMMA QT to male header cable | Adafruit #4209 | 5 received 2026-11-05 (INV:71) | I2C into the MCU headers | |
+| JST PH 2-pin cable, female | Adafruit #1131 | 5 received 2026-11-05 (INV:67) | cut into pack-mating and board-mating pigtail halves for the battery path and gauge sense | |
+| WAGO 222-413 (3-way) / 222-415 (5-way) lever connectors | 222-413 / 222-415 | 20 + 20 received 2026-11-05 (INV:68-69) | splices for all battery/charge/load current | accept 22 AWG solid; stranded twisted (WT:617) |
+| 22 AWG solid hook-up wire, 6 colours | Adafruit #1311 | 1 pack received 2026-11-05 (INV:70) | force leads and signal jumpers | |
 | 24 AWG copper hook-up wire, 7 colours | — | 7 rolls, home (INV:448) | jumpers | solid or stranded unrecorded |
 | Male-to-female jumpers | — | 120 (INV:85) | OLED, debug | |
 | 2.54 mm header kit | — | 1 kit (INV:65) | | |
