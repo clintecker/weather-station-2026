@@ -2,7 +2,7 @@
 #include "scr_widget.h"
 #include <string.h>
 #include "oled_font.h"
-#include "scr_view.h"
+#include "scr_calc.h"
 
 #define HEADER_PX 8
 

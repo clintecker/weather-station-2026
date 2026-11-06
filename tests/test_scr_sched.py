@@ -46,7 +46,7 @@ SHIM = r'''
 #include "oled_app.h"
 #include "oled_dma.h"
 #include "oled_view.h"
-#include "scr_view.h"
+#include "scr_screens.h"
 DWT_Type host_dwt;
 bm_span busymon_begin(void) { bm_span s = { 0, 0 }; return s; }
 void busymon_task_end(bm_span s, const char *task) { (void)s; (void)task; }
@@ -90,8 +90,11 @@ void oled_dma_enable(int on) { t_enable_calls++; t_enabled = on; }
 int oled_dma_send(const uint8_t frame[OLED_FRAME_BYTES])
 { if (t_busy) { t_torn++; return -1; } if (frame != txbuf) return -3; t_sends++; return 0; }
 
-static const unsigned frames[SCR_COUNT] = { 1, 16, 24, 8, 8, 8, 8, 64, 64, 64, 64, 64, 24, 64, 64, 64, 64 };
-unsigned scr_frames(enum scr_id id) { return (unsigned)id < SCR_COUNT ? frames[id] : 1U; }
+/* The screens' table (scr_screens.c) is the real one; the screens it names draw nothing. */
+#define SCREEN(f) void f(const oled_surf *s, unsigned frame, const scr_view_t *v) { (void)s; (void)frame; (void)v; }
+SCREEN(scr_home) SCREEN(scr_banner) SCREEN(scr_burst) SCREEN(scr_air) SCREEN(scr_pressure) SCREEN(scr_power)
+SCREEN(scr_radio) SCREEN(scr_scope) SCREEN(scr_vane) SCREEN(scr_rain) SCREEN(scr_system) SCREEN(scr_boot)
+SCREEN(scr_hack) SCREEN(scr_fortune) SCREEN(scr_frog) SCREEN(scr_matrix) SCREEN(scr_pinball)
 int t_draws, t_id = -1, t_frame = -1;
 scr_view_t t_view;   /* what the last draw saw */
 /* t_expands: draws on a surface over the send buffer, turned for the panel. */
@@ -103,6 +106,7 @@ void scr_draw(const oled_surf *s, enum scr_id id, unsigned frame, const scr_view
 }
 int t_fills;
 void oled_view_fill(scr_view_t *v, enum scr_id id, unsigned frame) { (void)v; (void)id; (void)frame; t_fills++; }
+void oled_view_build(scr_view_t *v) { (void)v; }
 int t_samples;
 void oled_view_sample(scr_view_t *v, uint32_t now_ms) { (void)v; (void)now_ms; t_samples++; }
 uint32_t oled_view_airtime_ms(uint8_t len) { return len; }
@@ -137,7 +141,7 @@ def build(owner, name):
     """scr_sched.c and oled_app.c (and the drawing surface) over the shim, as the bench build compiles them (RAM2 placement off)."""
     return host_library(owner, name, '-DWS_BENCH_OLED=1', '-DOLED_APP_RAM2=', '-I', ROOT/'firmware/host/include', '-I', APP,
                         '-I', NODE/'Core/Inc', '-I', ROOT/'firmware/common', '-I', ROOT/'firmware',
-                        APP/'scr_sched.c', APP/'oled_app.c', APP/'scr_calc.c', APP/'scr_widget.c', ROOT/'firmware/common/oled_draw.c',
+                        APP/'scr_sched.c', APP/'oled_app.c', APP/'scr_screens.c', APP/'scr_calc.c', APP/'scr_widget.c', ROOT/'firmware/common/oled_draw.c',
                         ROOT/'firmware/common/oled_font.c', ROOT/'firmware/common/font5x7.c', files={'shim.c': SHIM})
 
 

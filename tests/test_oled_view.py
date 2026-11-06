@@ -58,7 +58,7 @@ static wsmp_snapshot snap;
 int wsmp_host_state(enum wsmp_port p) { return t_state[p]; }
 const wsmp_snapshot *wsmp_host_snapshot(enum wsmp_port p) { return t_snap[p] ? &snap : NULL; }
 static scr_view_t v;
-void t_fill(void) { memset(&v, 0, sizeof v); oled_view_fill(&v, SCR_HOME, 0); }
+void t_fill(void) { memset(&v, 0, sizeof v); oled_view_build(&v); oled_view_fill(&v, SCR_HOME, 0); }
 void t_sample(uint32_t now_ms) { oled_view_sample(&v, now_ms); }
 void t_clear(void) { memset(&v, 0, sizeof v); }
 unsigned t_air_n(void) { return v.air.n; }

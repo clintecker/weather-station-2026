@@ -1,4 +1,4 @@
-/* The rain screen (scr_view.h), from the view's rain history (mod_rain_history):
+/* The rain screen (scr_screens.h), from the view's rain history (mod_rain_history):
  *     RAIN          0.56 mm      since boot
  *     2 tips    last 4m ago      since boot; the last tip's age (last -- if none)
  *     RATE  1.7 mm/h (10m)       the last 10 minutes, this one so far among them
@@ -7,7 +7,7 @@
  *     -60m     16/m     now      the scale in tips a minute, centred
  * A row longer than the 21 columns takes a shorter form: the age "last X" (no "ago"), then "X"; the rate one
  * space after RATE, then without "(10m)". */
-#include "scr_view.h"
+#include "scr_screens.h"
 #include "oled_draw.h"
 #include "wsmp_registry.h"
 
@@ -60,8 +60,9 @@ static void rate_form(oled_row *r, const void *ctx, unsigned form)
 
 static const scr_bars_style minute_bars = { BAR_W, BAR_W, 0, 0 };
 
-void scr_rain(const oled_surf *s, const scr_view_t *v)
+void scr_rain(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
+  (void)frame;
   const rain_hist_t *h = &v->rain;
   oled_row line = { "" }, mm = { "" }, scale = { "" };
   scr_put_rain_mm(&mm, h->tips, 2);

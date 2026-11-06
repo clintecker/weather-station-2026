@@ -1,4 +1,4 @@
-/* The detail screens (scr_view.h), each a closer look at one part of what HOME sums up:
+/* The detail screens (scr_screens.h), each a closer look at one part of what HOME sums up:
  *   AIR       the SHT45 in big digits and its RH; the dew point (scr_dew_point) and the SHTC3; the last
  *             hour, a sample a minute, as a sparkline; its least and largest, and the UV counts.
  *   PRESSURE  the BMP581 in big digits and the 3-hour tendency's arrow (scr_tendency); the change; the
@@ -9,7 +9,7 @@
  *             rate, the backlog; the last ACK's signal and the seconds to the next exchange.
  * A sparkline is scaled to its samples (scr_spark_range, at least 1.0 degC or 1.0 hPa tall), the newest at
  * the right, broken at a gap; the lines and bars grow in over the screen's 8 frames. */
-#include "scr_view.h"
+#include "scr_screens.h"
 #include "oled_draw.h"
 #include "scr_font.h"
 

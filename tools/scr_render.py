@@ -28,8 +28,9 @@ COMMON = ROOT/'firmware/common'
 OUT = ROOT/'.superpowers/sdd/2026-11-04-node-oled-and-e2e/renders'
 GOLDEN = ROOT/'tests/golden/scr_frames.json'
 W, H = 128, 64
-SCREENS = ['HOME', 'BURST', 'BANNER', 'AIR', 'PRESSURE', 'POWER', 'RADIO', 'SCOPE', 'VANE', 'RAIN', 'SYSTEM', 'BOOT',
-           'HACK', 'FORTUNE', 'FROG', 'MATRIX', 'PINBALL']   # enum scr_id
+SCREENS = []    # enum scr_id's names, from App/scr_screens.c's scr_defs (build() reads them)
+ENDLESS = set() # the screens that animate for ever (SCR_F_ENDLESS): digested over 64 frames
+SCR_F_ENDLESS = 2
 RAIN_AGE_NONE, RAIN_AGE_MAX_S = 0xFFFFFFFF, 99 * 3600   # App/mod_rain.h
 SCR_TX_NONE, SCR_TX_WAIT, SCR_TX_NO_ACK, SCR_TX_ACK = -2, -1, 0, 1
 SCR_GAP, SCR_NONE_S = -32768, 0xFFFFFFFF
@@ -38,14 +39,14 @@ AIR_HIST, PRESS_HIST, RADIO_HIST = 60, 36, 30
 # The screens' sources and their include paths. oled_font.c is left out: the shim includes it, so a
 # test can see every string drawn (the shim's oled_text and oled_draw_text check each character against the font).
 INCLUDES = ['-I', APP, '-I', COMMON, '-I', ROOT/'firmware']
-SOURCES = [APP/'scr_view.c', APP/'scr_calc.c', APP/'scr_widget.c', APP/'scr_home.c', APP/'scr_detail.c', APP/'scr_interludes.c', APP/'scr_rain.c',
+SOURCES = [APP/'scr_view.c', APP/'scr_screens.c', APP/'scr_calc.c', APP/'scr_widget.c', APP/'scr_home.c', APP/'scr_detail.c', APP/'scr_interludes.c', APP/'scr_rain.c',
            APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', APP/'scr_kana.c',
            COMMON/'oled_draw.c', COMMON/'oled_row.c', COMMON/'font5x7.c']
 FRAME_BYTES = W * H // 2   # the SSD1325's send order (firmware/common/oled_draw.h): column pair, then row
 JUNK = 0xA5                # what frame() fills the buffer with before a screen draws
 SHIM = r'''
 #include <string.h>
-#include "scr_view.h"
+#include "scr_screens.h"
 #include "font5x7.h"
 #define oled_text real_oled_text
 #define oled_draw_text real_oled_draw_text
@@ -74,6 +75,7 @@ int oled_text(const oled_surf *surf, int x, int y, const char *s, int scale)
   return real_oled_text(surf, x, y, s, scale);
 }
 unsigned shim_view_size(void) { return (unsigned)sizeof(scr_view_t); }
+unsigned shim_screens(void) { return SCR_COUNT; }
 '''
 
 
@@ -103,6 +105,11 @@ def hist(cap):
 
 class RadioHist(ctypes.Structure):
     _fields_ = [('n', ctypes.c_uint8), ('rssi', ctypes.c_int16 * RADIO_HIST), ('snr', ctypes.c_int16 * RADIO_HIST)]
+
+
+class ScrDef(ctypes.Structure):
+    _fields_ = [('name', ctypes.c_char_p), ('draw', ctypes.c_void_p), ('frames', ctypes.c_uint8), ('anim', ctypes.c_uint8),
+                ('every', ctypes.c_uint8), ('flags', ctypes.c_uint8)]   # scr_def (App/scr_screens.h)
 
 
 class View(ctypes.Structure):
@@ -136,6 +143,11 @@ def build(directory, cc=('cc', '-std=c11', '-Wall', '-Wextra', '-Werror')):
     lib.oled_get.restype = ctypes.c_uint
     lib.oled_text.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
     lib.shim_view_size.restype = ctypes.c_uint
+    lib.shim_screens.restype = ctypes.c_uint
+    defs = (ScrDef * lib.shim_screens()).in_dll(lib, 'scr_defs')
+    SCREENS[:] = [d.name.decode() for d in defs]
+    ENDLESS.clear()
+    ENDLESS.update(d.name.decode() for d in defs if d.flags & SCR_F_ENDLESS)
     return lib
 
 
@@ -352,9 +364,6 @@ def views():
     other.last_seq = 1500
     out['pinball-seq1500-f40'] = ('PINBALL', 40, other)
     return out
-
-
-ENDLESS = ('HOME', 'BANNER')   # they animate for ever: digested over 64 frames
 
 
 def digests(lib):

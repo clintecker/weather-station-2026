@@ -1,4 +1,4 @@
-/* The silly interludes (scr_view.h), original art drawn from the readings:
+/* The silly interludes (scr_screens.h), original art drawn from the readings:
  *   fortune  a fortune cookie cracks open; its slip types out the line scr_fortune_pick chose from the
  *            weather and the link, three characters a frame; lucky numbers from the readings.
  *   frog     the pocket frog (scr_art_frog) on its lily pad, its mood from the weather (scr_frog_mood):
@@ -12,7 +12,7 @@
  *   pinball  the frame sent, a small envelope, bounces round the table at a speed and heading the
  *            sequence picks, through the ACK bumper at frame 32; passing the ACK bumper lights it for 3 frames (100 points), the side bumpers score 10; the
  *            flippers kick when it is low on their side. */
-#include "scr_view.h"
+#include "scr_screens.h"
 #include "font5x7.h"
 #include "oled_draw.h"
 #include "scr_kana.h"

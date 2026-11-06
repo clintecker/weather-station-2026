@@ -1,5 +1,5 @@
 /* The packet burst, the boot splash and the first interludes of the bench screen (SCOPE, VANE and SYSTEM are
- * detail screens too): see scr_view.h. Each is the approved mockup (.superpowers/sdd/
+ * detail screens too): see scr_screens.h. Each is the approved mockup (.superpowers/sdd/
  * 2026-11-04-node-oled-and-e2e/oledmock gen.py and hack.py, design spec "The interludes") ported pixel for
  * pixel where the mockup was fixed, drawn from the view where it showed a reading:
  *   burst   header TX <seq> SF<sf> BW<kHz> (inverted); up-chirps sweeping 8 px a frame; from frame 8
@@ -14,7 +14,7 @@
  *           and a sliced-row glitch at frames 28-29 and 60-63.
  *   hack    the eyepatch smiley; HACK at frame 0, THE at 4, PLANET at 8; a wink at 16-17, a glint on
  *           the patch at 18-19, a glitch out at 20-23. */
-#include "scr_view.h"
+#include "scr_screens.h"
 #include "oled_draw.h"
 #include "font5x7.h"
 #include "scr_art.h"
@@ -78,8 +78,9 @@ void scr_burst(const oled_surf *s, unsigned frame, const scr_view_t *v)
   scr_label(s, 56, foot.s, SCR_LEFT);
 }
 
-void scr_scope(const oled_surf *s, const scr_view_t *v)
+void scr_scope(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
+  (void)frame;
   const wind_live_t *w = &v->wind;
   scr_series d = scr_series_u8(w->bins, w->nbins, WIND_LIVE_BINS);
   unsigned n = d.n, recent = n < SCOPE_RATE_BINS ? n : SCOPE_RATE_BINS;
@@ -211,8 +212,9 @@ static void hack_glitch(const oled_surf *s, unsigned g)
   scr_glitch(s, sliced, 5, step[g].dy, step[g].dx, step[g].band, 2);
 }
 
-void scr_hack(const oled_surf *s, unsigned frame)
+void scr_hack(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
+  (void)v;
   oled_blit(s, scr_art_face.x, scr_art_face.y, &scr_art_face.bits);
   face_eye(s, frame == 16U || frame == 17U, frame == 18U || frame == 19U);
   (void)oled_text(s, 68, 2, "HACK", 2);

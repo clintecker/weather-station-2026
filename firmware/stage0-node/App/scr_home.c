@@ -1,4 +1,4 @@
-/* HOME, the base screen, and its packet banner (scr_view.h). The rows:
+/* HOME, the base screen, and its packet banner (scr_screens.h). The rows:
  *     (icon)        21.9^C      the SHT45 in big digits (^ the degree sign); --^C with none
  *                   46% RH      its RH (NO SHT45)
  *                986.5 hPa      the BMP581 (NO BMP581)
@@ -10,7 +10,7 @@
  * followed the live one), then the outcome, "  ACK -41DBM SNR 13" or "  NO ACK". A row longer than its
  * columns takes a shorter form (BKLG, HLTH and no indent in the banner; W and R, then no dBm, on the
  * lower rows) rather than lose its last characters. */
-#include "scr_view.h"
+#include "scr_screens.h"
 #include "oled_draw.h"
 #include "scr_font.h"
 
@@ -186,7 +186,7 @@ static void banner(const oled_surf *s, const scr_view_t *v)
   oled_invert(s, 0, BANNER_Y, OLED_W, 16);
 }
 
-void scr_home(const oled_surf *s, unsigned frame, const scr_view_t *v, int with_banner)
+static void home(const oled_surf *s, unsigned frame, const scr_view_t *v, int with_banner)
 {
   icons[scr_icon_pick(v)](s, frame / 2U);
   readings(s, v);
@@ -198,3 +198,6 @@ void scr_home(const oled_surf *s, unsigned frame, const scr_view_t *v, int with_
   scr_label(s, LINK_Y, line.s, SCR_LEFT);
   signal_bars(s, v);
 }
+
+void scr_home(const oled_surf *s, unsigned frame, const scr_view_t *v) { home(s, frame, v, 0); }
+void scr_banner(const oled_surf *s, unsigned frame, const scr_view_t *v) { home(s, frame, v, 1); }

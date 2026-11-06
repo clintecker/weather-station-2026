@@ -1,7 +1,5 @@
-/* The bench screens' dispatch, their frame counts and the helpers they share: see scr_view.h. */
-#include "scr_view.h"
-#include <string.h>
-#include "oled_draw.h"
+/* The bench screens' dispatch (scr_screens.h) and the text helpers they share (scr_view.h). */
+#include "scr_screens.h"
 #include "wsmp_registry.h"
 
 #define RAIN_TIPS_MAX 1000000U         /* 279 m of rain: more reads as this */
@@ -30,41 +28,9 @@ void scr_form_lr(oled_row *r, const char *left, const char *right)
   oled_put(r, right);
 }
 
-unsigned scr_frames(enum scr_id id)
-{
-  switch (id)
-  {
-  case SCR_HOME: return 1U;
-  case SCR_BANNER: return 24U;
-  case SCR_BURST: return 16U;
-  case SCR_HACK: return 24U;
-  case SCR_AIR: case SCR_PRESSURE: case SCR_POWER: case SCR_RADIO: return 8U;
-  default: return 64U;
-  }
-}
-
 void scr_draw(const oled_surf *s, enum scr_id id, unsigned frame, const scr_view_t *v)
 {
+  const scr_def *d = &scr_defs[(unsigned)id < SCR_COUNT ? id : SCR_HOME];
   oled_clear(s);
-  if (id != SCR_HOME && id != SCR_BANNER && frame >= scr_frames(id)) frame = scr_frames(id) - 1U;
-  switch (id)
-  {
-  case SCR_BURST: scr_burst(s, frame, v); break;
-  case SCR_BANNER: scr_home(s, frame, v, 1); break;
-  case SCR_AIR: scr_air(s, frame, v); break;
-  case SCR_PRESSURE: scr_pressure(s, frame, v); break;
-  case SCR_POWER: scr_power(s, frame, v); break;
-  case SCR_RADIO: scr_radio(s, frame, v); break;
-  case SCR_SCOPE: scr_scope(s, v); break;
-  case SCR_VANE: scr_vane(s, frame, v); break;
-  case SCR_RAIN: scr_rain(s, v); break;
-  case SCR_SYSTEM: scr_system(s, frame, v); break;
-  case SCR_BOOT: scr_boot(s, frame, v); break;
-  case SCR_HACK: scr_hack(s, frame); break;
-  case SCR_FORTUNE: scr_fortune(s, frame, v); break;
-  case SCR_FROG: scr_frog(s, frame, v); break;
-  case SCR_MATRIX: scr_matrix(s, frame, v); break;
-  case SCR_PINBALL: scr_pinball(s, frame, v); break;
-  default: scr_home(s, frame, v, 0); break;
-  }
+  d->draw(s, (d->flags & SCR_F_ENDLESS) || frame < d->frames ? frame : d->frames - 1U, v);
 }

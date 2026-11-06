@@ -37,7 +37,9 @@ static int in_list(enum scr_id id, const enum scr_id *list, unsigned n)
   return 0;
 }
 
-static int is_base(enum scr_id id) { return id == SCR_HOME || in_list(id, details, N_OF(details)); }
+static const scr_def *def(enum scr_id id) { return &scr_defs[(unsigned)id < SCR_COUNT ? id : SCR_HOME]; }
+
+static int is_base(enum scr_id id) { return (def(id)->flags & SCR_F_BASE) != 0U; }
 
 static void play(enum scr_id id) { cur = id; frame = 0; base = 0; steps = scr_frames(id); }
 
@@ -50,17 +52,9 @@ static void pick(enum scr_id id)
   else play(id);
 }
 
-unsigned sched_anim(enum scr_id id)
-{
-  switch (id)
-  {
-  case SCR_VANE: return 16U;   /* the needle swings round from N, a point a frame */
-  case SCR_AIR: case SCR_PRESSURE: case SCR_POWER: case SCR_RADIO: case SCR_SYSTEM: return 8U;   /* the bars grow */
-  default: return 1U;
-  }
-}
+unsigned sched_anim(enum scr_id id) { return def(id)->anim; }
 
-unsigned sched_every(enum scr_id id) { return id == SCR_HOME || id == SCR_SCOPE ? 2U : 8U; }
+unsigned sched_every(enum scr_id id) { return def(id)->every; }
 
 void sched_init(uint32_t now_ms)
 {

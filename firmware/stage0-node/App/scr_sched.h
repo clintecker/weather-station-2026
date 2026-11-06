@@ -18,7 +18,7 @@
 #ifndef SCR_SCHED_H
 #define SCR_SCHED_H
 #include <stdint.h>
-#include "scr_view.h"
+#include "scr_screens.h"
 
 /* EV_B1..EV_B3 are the buttons. B1: the next of every screen, in the order HOME, the detail screens, then
    FORTUNE, FROG, MATRIX, PINBALL, HACK, then HOME again (its own list: the interludes' order is apart). A
@@ -42,8 +42,8 @@ void sched_event(enum sched_ev e, uint32_t now_ms);
 int sched_step(uint32_t now_ms, enum scr_id *id, unsigned *frame, int *display_on);
 unsigned sched_extras(void);   /* frames sent after the live one, since the last EV_SENT_LIVE */
 int sched_display_on(void);    /* what B3 says, before the step: the caller powers the panel first */
-/* A base screen's animation (steps drawn one by one from frame 0: VANE 16, AIR, PRESSURE, POWER, RADIO
-   and SYSTEM 8, else 1) and the steps between its later redraws. */
+/* A base screen's animation (steps drawn one by one from frame 0) and the steps between its later redraws: its
+   scr_defs anim and every. */
 unsigned sched_anim(enum scr_id id);
 unsigned sched_every(enum scr_id id);
 #endif

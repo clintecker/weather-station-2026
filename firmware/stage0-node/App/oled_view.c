@@ -35,7 +35,7 @@ static uint8_t pct(uint32_t used, uint32_t of)
 /* Addresses as integers: the symbols are distinct objects to C, so their pointers do not subtract. */
 #define ADDR(sym) ((uint32_t)(uintptr_t)(sym))
 
-static void fill_build(scr_view_t *v)
+void oled_view_build(scr_view_t *v)
 {
   uint32_t flash = ADDR(_sidata) - WS_FLASH_BASE + (ADDR(_edata) - ADDR(_sdata));
   uint32_t ram = ADDR(_end) - ADDR(_sdata) + ADDR(_Min_Heap_Size) + ADDR(_Min_Stack_Size);
@@ -102,7 +102,6 @@ void oled_view_sample(scr_view_t *v, uint32_t now_ms)
 
 void oled_view_fill(scr_view_t *v, enum scr_id id, unsigned frame)
 {
-  fill_build(v);
   fill_node(v);
   fill_live(v);
   /* The whole stack scan (stackmon_peak) is about 1.5 ms: only once, as the system bars start. */

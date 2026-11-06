@@ -5,11 +5,12 @@
 #ifndef OLED_VIEW_H
 #define OLED_VIEW_H
 #include <stdint.h>
-#include "scr_view.h"
+#include "scr_screens.h"
 
-/* Everything but last_*, ack_*, extra_frames, reports, cipher*, airtime_pct, since_exchange_s, radio_* and the
-   histories (oled_app.c's and oled_view_sample's). A
-   temperature, humidity, pressure or UV row shows a value only while its port is in the layout (the
+/* The build's constants: flash and RAM use, the radio settings. Once, at start (oled_app_start). */
+void oled_view_build(scr_view_t *v);
+/* Everything but the build's constants, last_*, ack_*, extra_frames, reports, cipher*, airtime_pct,
+   since_exchange_s, radio and the histories (oled_app.c's and oled_view_sample's). A temperature, humidity, pressure or UV row shows a value only while its port is in the layout (the
    snapshot the observation reads, wsmp_host_snapshot): otherwise the reading carries no value for it,
    and the row says NO <part>. */
 void oled_view_fill(scr_view_t *v, enum scr_id id, unsigned frame);

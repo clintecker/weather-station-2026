@@ -74,7 +74,7 @@ endif
 # The display: the driver, its application (the step, the view, the scheduler), the screens, then the
 # shared drawing surface, font and panel data (firmware/common) and the pins and SPI1 (the board).
 ifeq ($(WS_BENCH_OLED),1)
-APP_SRC += App/oled_dma.c App/oled_app.c App/oled_view.c App/scr_sched.c App/scr_view.c App/scr_calc.c App/scr_widget.c App/scr_home.c \
+APP_SRC += App/oled_dma.c App/oled_app.c App/oled_view.c App/scr_sched.c App/scr_view.c App/scr_screens.c App/scr_calc.c App/scr_widget.c App/scr_home.c \
            App/scr_detail.c App/scr_interludes.c App/scr_rain.c App/scr_silly.c App/scr_art.c App/scr_font.c App/scr_kana.c \
            $(ROOT)/firmware/common/oled_draw.c $(ROOT)/firmware/common/oled_font.c $(ROOT)/firmware/common/oled_row.c \
            $(ROOT)/firmware/common/font5x7.c \

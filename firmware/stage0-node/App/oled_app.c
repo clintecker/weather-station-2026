@@ -10,7 +10,7 @@
 #include "oled_hooks.h"
 #include "oled_view.h"
 #include "scr_sched.h"
-#include "scr_view.h"
+#include "scr_screens.h"
 #include "stm32_seq.h"
 #include "stm32_timer.h"
 #include "utilities_def.h"
@@ -151,6 +151,7 @@ void oled_app_start(void)
 {
   memset(&view, 0, sizeof view);
   view.last_acked = SCR_TX_NONE;
+  oled_view_build(&view);
   oled_dma_init();
   sched_init(clock_ms());
   for (unsigned b = 1; b <= 3U; b++) edge_ms[b] = clock_ms() - DEBOUNCE_MS;   /* bound: 3 buttons */

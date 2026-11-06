@@ -1,7 +1,7 @@
-/* The bench screens' arithmetic and choices (scr_view.h): the display's histories, the dew point, the
+/* The bench screens' arithmetic and choices (scr_calc.h): the display's histories, the dew point, the
  * pressure tendency, HOME's icon, the scales of the sparklines and bars, the fortune cookie, the frog's
  * mood and the digital rain's streams. Pure functions of their arguments (or of the view), integer only. */
-#include "scr_view.h"
+#include "scr_calc.h"
 #include <string.h>
 
 #define Q16 65536
