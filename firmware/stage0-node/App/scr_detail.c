@@ -39,7 +39,7 @@
    and bottom. */
 static void spark(const oled_surf *s, const scr_series *d, int32_t span, unsigned frame)
 {
-  scr_frame(s, PLOT_X - 2, PLOT_TOP - 1, PLOT_X + PLOT_W + 1, PLOT_TOP + PLOT_H, SCR_EDGE_DOTTED, SCR_EDGE_DOTTED, 1);
+  scr_frame(s, PLOT_X - 2, PLOT_TOP - 1, PLOT_X + PLOT_W + 1, PLOT_TOP + PLOT_H, 1);
   int32_t lo, hi;
   if (scr_spark_range(d, span, &lo, &hi))
     scr_trace(s, PLOT_X, PLOT_TOP, PLOT_W, PLOT_H, d, lo, hi, scr_grow(d->cap, frame, SCR_GROW_FRAMES));
@@ -200,7 +200,7 @@ static void radio_bars(const oled_surf *s, const scr_view_t *v, unsigned frame)
 {
   scr_series rssi = scr_series_i16(v->radio.rssi, v->radio.n, SCR_RADIO_HIST);
   scr_series snr = scr_series_i16(v->radio.snr, v->radio.n, SCR_RADIO_HIST);
-  scr_frame(s, 0, RSSI_TOP + RSSI_PX, OLED_W - 1, RSSI_TOP + RSSI_PX, SCR_EDGE_NONE, SCR_EDGE_DOTTED, 0);
+  oled_line(s, 0, RSSI_TOP + RSSI_PX, OLED_W - 1, RSSI_TOP + RSSI_PX, 1);   /* the RSSI bars' floor, dotted */
   scr_bars(s, RADIO_X, RSSI_TOP + RSSI_PX, RSSI_PX, &rssi, RSSI_FLOOR, RSSI_SPAN, frame, &rssi_bars);   /* x: no ACK */
   scr_bars(s, RADIO_X, SNR_TOP + SNR_PX, SNR_PX, &snr, SNR_FLOOR, SNR_SPAN, frame, &snr_bars);
 }

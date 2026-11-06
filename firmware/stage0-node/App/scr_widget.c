@@ -81,16 +81,10 @@ unsigned scr_spark_range(const scr_series *d, int32_t min_span, int32_t *lo, int
   return valid;
 }
 
-static void edge(const oled_surf *s, int x0, int x1, int y, unsigned kind)
+void scr_frame(const oled_surf *s, int x0, int y0, int x1, int y1, unsigned bottom_dash)
 {
-  if (kind != SCR_EDGE_NONE) oled_line(s, x0, y, x1, y, kind == SCR_EDGE_DOTTED ? 1U : 0U);
-}
-
-void scr_frame(const oled_surf *s, int x0, int y0, int x1, int y1, unsigned top, unsigned bottom, int sides)
-{
-  edge(s, x0, x1, y0, top);
-  edge(s, x0, x1, y1, bottom);
-  if (!sides) return;
+  oled_line(s, x0, y0, x1, y0, 1);
+  oled_line(s, x0, y1, x1, y1, bottom_dash);
   oled_line(s, x0, y0, x0, y1, 0);
   oled_line(s, x1, y0, x1, y1, 0);
 }

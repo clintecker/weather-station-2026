@@ -75,7 +75,7 @@ void scr_rain(const oled_surf *s, unsigned frame, const scr_view_t *v)
   scr_label(s, 2 * SCR_ROW_PX, line.s, SCR_LEFT);
   scr_series d = scr_series_u8(h->per_min, RAIN_HIST_MINUTES, RAIN_HIST_MINUTES);
   unsigned full = scr_scale_steps((unsigned)scr_max(&d), RAIN_MIN_FULL, RAIN_FULL_MAX);
-  scr_frame(s, SIDE_L, CEIL_Y, SIDE_R, AXIS_Y, SCR_EDGE_DOTTED, SCR_EDGE_SOLID, 1);
+  scr_frame(s, SIDE_L, CEIL_Y, SIDE_R, AXIS_Y, 0);
   scr_bars(s, BARS_X, AXIS_Y, BAR_PX, &d, 0, (int32_t)full, 0, &minute_bars);
   oled_put_uint(&scale, full);
   oled_put(&scale, "/m");

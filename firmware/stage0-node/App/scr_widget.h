@@ -33,10 +33,9 @@ unsigned scr_spark_range(const scr_series *d, int32_t min_span, int32_t *lo, int
 static inline unsigned scr_grow(unsigned v, unsigned frame, unsigned frames)
 { return v * (frame + 1U < frames ? frame + 1U : frames) / frames; }
 
-/* A plot's frame: a top and bottom edge from x0 to x1 (none, solid, dotted from x0), and solid sides from y0 to y1
-   if sides. */
-enum { SCR_EDGE_NONE, SCR_EDGE_SOLID, SCR_EDGE_DOTTED };
-void scr_frame(const oled_surf *s, int x0, int y0, int x1, int y1, unsigned top, unsigned bottom, int sides);
+/* A plot's frame from (x0, y0) to (x1, y1): solid sides, a dotted top (from x0) and a bottom dashed as oled_line
+   (the sparkline's dotted, RAIN's solid axis). */
+void scr_frame(const oled_surf *s, int x0, int y0, int x1, int y1, unsigned bottom_dash);
 
 /* Bars standing on base_y, up to px tall: bar i at x + pitch * slot(i), bar_w wide, height scr_bar_px(v - floor,
    span, px), grown by frame if grows. A gap: an x across the bar's foot (gap_x) or nothing. */

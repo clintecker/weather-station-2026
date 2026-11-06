@@ -90,7 +90,7 @@ void scr_scope(const oled_surf *s, unsigned frame, const scr_view_t *v)
   oled_put_dec(&line, (int32_t)(recent ? sum * 40U / recent : 0U), 1, 1, 0);   /* pulses over recent / 4 s, in 0.1 Hz */
   oled_put(&line, "Hz");
   scr_label(s, 0, line.s, SCR_LEFT);
-  scr_frame(s, 0, 9, OLED_W - 1, 54, SCR_EDGE_SOLID, SCR_EDGE_SOLID, 1);
+  oled_box(s, 0, 9, OLED_W, 46);
   oled_dotgrid(s, PLOT_X, PLOT_TOP, PLOT_RIGHT, 44, 16);
   int32_t most = scr_max(&d), full = most > SCOPE_MIN_FULL ? most : SCOPE_MIN_FULL;
   scr_trace(s, PLOT_X, PLOT_TOP, PLOT_RIGHT - PLOT_X + 1, PLOT_BOTTOM - PLOT_TOP + 1, &d, 0, full, d.cap);
