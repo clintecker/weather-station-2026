@@ -36,17 +36,17 @@
 #define RADIO_X 4
 #define RADIO_PITCH 4
 
-/* The sparkline of s (n of cap samples) in the plot, the first `frame`'s share of its slots drawn; the
+/* The sparkline of d (n of cap samples) in the plot, the first `frame`'s share of its slots drawn; the
    sides and a dotted top and bottom around it. Returns how many samples are not gaps, and their range. */
-static unsigned spark(oled_fb *fb, const int16_t *s, unsigned n, unsigned cap, int32_t span, unsigned frame,
+static unsigned spark(const oled_surf *s, const int16_t *d, unsigned n, unsigned cap, int32_t span, unsigned frame,
                       int32_t *lo, int32_t *hi)
 {
-  oled_line(fb, PLOT_X - 2, PLOT_TOP - 1, PLOT_X + PLOT_W + 1, PLOT_TOP - 1, 1);
-  oled_line(fb, PLOT_X - 2, PLOT_TOP + PLOT_H, PLOT_X + PLOT_W + 1, PLOT_TOP + PLOT_H, 1);
-  oled_line(fb, PLOT_X - 2, PLOT_TOP - 1, PLOT_X - 2, PLOT_TOP + PLOT_H, 0);
-  oled_line(fb, PLOT_X + PLOT_W + 1, PLOT_TOP - 1, PLOT_X + PLOT_W + 1, PLOT_TOP + PLOT_H, 0);
+  oled_line(s, PLOT_X - 2, PLOT_TOP - 1, PLOT_X + PLOT_W + 1, PLOT_TOP - 1, 1);
+  oled_line(s, PLOT_X - 2, PLOT_TOP + PLOT_H, PLOT_X + PLOT_W + 1, PLOT_TOP + PLOT_H, 1);
+  oled_line(s, PLOT_X - 2, PLOT_TOP - 1, PLOT_X - 2, PLOT_TOP + PLOT_H, 0);
+  oled_line(s, PLOT_X + PLOT_W + 1, PLOT_TOP - 1, PLOT_X + PLOT_W + 1, PLOT_TOP + PLOT_H, 0);
   n = scr_upto(n, cap);
-  unsigned valid = scr_spark_range(s, n, span, lo, hi);
+  unsigned valid = scr_spark_range(d, n, span, lo, hi);
   if (valid == 0U) return 0;
   unsigned shown = scr_grow(cap, frame, GROW_FRAMES);
   int px = 0, py = 0, prev = 0;
@@ -54,10 +54,10 @@ static unsigned spark(oled_fb *fb, const int16_t *s, unsigned n, unsigned cap, i
   {
     unsigned slot = cap - n + i;
     if (slot >= shown) break;
-    if (s[i] == SCR_GAP) { prev = 0; continue; }
-    int x = PLOT_X + (int)(slot * (PLOT_W - 1U) / (cap - 1U)), y = scr_spark_y(s[i], *lo, *hi, PLOT_TOP, PLOT_H);
-    if (prev) oled_line(fb, px, py, x, y, 0);
-    else oled_set(fb, x, y, 1);
+    if (d[i] == SCR_GAP) { prev = 0; continue; }
+    int x = PLOT_X + (int)(slot * (PLOT_W - 1U) / (cap - 1U)), y = scr_spark_y(d[i], *lo, *hi, PLOT_TOP, PLOT_H);
+    if (prev) oled_line(s, px, py, x, y, 0);
+    else oled_set(s, x, y, 1);
     px = x; py = y; prev = 1;
   }
   return valid;
@@ -77,57 +77,57 @@ static void range_text(char *line, const char *prefix, unsigned valid, const int
   scr_put(line, unit);
 }
 
-void scr_air(oled_fb *fb, unsigned frame, const scr_view_t *v)
+void scr_air(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
   char line[SCR_LINE] = "", left[SCR_LINE] = "DEW ", right[SCR_LINE] = "BOX ";
   if (v->air_ok)
   {
     scr_put_dec(line, v->air_c, 2, 1, 0);
     scr_put(line, "^C");
-    (void)scr_big_text(fb, 0, 0, line);
+    (void)scr_big_text(s, 0, 0, line);
     line[0] = '\0';
     scr_put_dec(line, v->air_rh, 2, 1, 0);
     scr_put(line, "%");
-    scr_row_right(fb, 0, "RH");
-    scr_row_right(fb, 8, line);
+    scr_row_right(s, 0, "RH");
+    scr_row_right(s, 8, line);
   }
-  else scr_row(fb, 4, "AIR NO SHT45");
+  else scr_row(s, 4, "AIR NO SHT45");
   int32_t dew;
   if (v->air_ok && scr_dew_point(v->air_c, v->air_rh, &dew)) { scr_put_dec(left, dew, 2, 1, 0); scr_put(left, "C"); }
   else scr_put(left, "--");
   if (v->box_ok) { scr_put_dec(right, v->box_c, 2, 1, 0); scr_put(right, "C"); }
   else scr_put(right, "--");
-  if (scr_put_lr(line, left, right)) scr_row(fb, 18, line);
-  else scr_row(fb, 18, left);
+  if (scr_put_lr(line, left, right)) scr_row(s, 18, line);
+  else scr_row(s, 18, left);
   int32_t lo, hi;
-  unsigned valid = spark(fb, v->air_hist, v->air_n, SCR_AIR_HIST, AIR_SPAN, frame, &lo, &hi);
+  unsigned valid = spark(s, v->air_hist, v->air_n, SCR_AIR_HIST, AIR_SPAN, frame, &lo, &hi);
   char foot[SCR_LINE], uv[SCR_LINE] = "UV ";
   range_text(foot, "1h ", valid, v->air_hist, scr_upto(v->air_n, SCR_AIR_HIST), 2, "C");
   if (v->uv_ok) scr_put_dec(uv, v->uv_counts, 0, 0, 0);
   else scr_put(uv, "NO");
-  if (scr_put_lr(line, foot, uv)) scr_row(fb, FOOT_Y, line);
-  else scr_row(fb, FOOT_Y, foot);
+  if (scr_put_lr(line, foot, uv)) scr_row(s, FOOT_Y, line);
+  else scr_row(s, FOOT_Y, foot);
 }
 
-static void arrow(oled_fb *fb, enum scr_trend t)
+static void arrow(const oled_surf *s, enum scr_trend t)
 {
   const int x = 116, y = 8;
   if (t == TREND_RISING || t == TREND_FALLING)
   {
     int d = t == TREND_RISING ? -1 : 1;   /* the head's way */
-    oled_line(fb, x, y - 7 * d, x, y + 7 * d, 0);
-    oled_line(fb, x - 5, y + 2 * d, x, y + 7 * d, 0);
-    oled_line(fb, x + 5, y + 2 * d, x, y + 7 * d, 0);
+    oled_line(s, x, y - 7 * d, x, y + 7 * d, 0);
+    oled_line(s, x - 5, y + 2 * d, x, y + 7 * d, 0);
+    oled_line(s, x + 5, y + 2 * d, x, y + 7 * d, 0);
   }
   else if (t == TREND_STEADY)
   {
-    oled_line(fb, x - 8, y, x + 8, y, 0);
-    oled_line(fb, x + 3, y - 5, x + 8, y, 0);
-    oled_line(fb, x + 3, y + 5, x + 8, y, 0);
+    oled_line(s, x - 8, y, x + 8, y, 0);
+    oled_line(s, x + 3, y - 5, x + 8, y, 0);
+    oled_line(s, x + 3, y + 5, x + 8, y, 0);
   }
 }
 
-void scr_pressure(oled_fb *fb, unsigned frame, const scr_view_t *v)
+void scr_pressure(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
   static const char *const words[4] = { "TENDENCY -- (3h)", "FALLING ", "STEADY ", "RISING " };
   char line[SCR_LINE] = "";
@@ -136,35 +136,35 @@ void scr_pressure(oled_fb *fb, unsigned frame, const scr_view_t *v)
   if (v->press_ok)
   {
     scr_put_dec(line, v->press_dhpa, 1, 1, 0);
-    int x = scr_big_text(fb, 0, 0, line);
-    (void)oled_text(fb, x + 3, 9, "hPa", 1);
+    int x = scr_big_text(s, 0, 0, line);
+    (void)oled_text(s, x + 3, 9, "hPa", 1);
   }
-  else scr_row(fb, 4, "P NO BMP581");
-  arrow(fb, t);
+  else scr_row(s, 4, "P NO BMP581");
+  arrow(s, t);
   line[0] = '\0';
   scr_put(line, words[t]);
   if (t != TREND_NONE) { scr_put_dec(line, delta, 1, 1, 1); scr_put(line, "hPa/3h"); }
-  scr_row(fb, 18, line);
+  scr_row(s, 18, line);
   int32_t lo, hi;
-  unsigned valid = spark(fb, v->press_hist, v->press_n, SCR_PRESS_HIST, PRESS_SPAN, frame, &lo, &hi);
+  unsigned valid = spark(s, v->press_hist, v->press_n, SCR_PRESS_HIST, PRESS_SPAN, frame, &lo, &hi);
   char foot[SCR_LINE];
   range_text(foot, "", valid, v->press_hist, scr_upto(v->press_n, SCR_PRESS_HIST), 1, "");
   if (!scr_put_lr(line, "-3h", "now")) line[0] = '\0';
   size_t at = (SCR_COLS - strlen(foot)) / 2U;   /* the range centred between -3h and now, a space each side */
   if (strlen(foot) + 8U <= SCR_COLS) memcpy(line + at, foot, strlen(foot));
-  scr_row(fb, FOOT_Y, line);
+  scr_row(s, FOOT_Y, line);
 }
 
-static void bar(oled_fb *fb, int y, unsigned px, unsigned frame)
+static void bar(const oled_surf *s, int y, unsigned px, unsigned frame)
 {
-  oled_line(fb, 0, y + 1, OLED_W - 1, y + 1, 1);   /* the track */
-  oled_fill(fb, 0, y, (int)scr_grow(px, frame, GROW_FRAMES), 2, 1);
+  oled_line(s, 0, y + 1, OLED_W - 1, y + 1, 1);   /* the track */
+  oled_fill(s, 0, y, (int)scr_grow(px, frame, GROW_FRAMES), 2, 1);
 }
 
 static int32_t iabs32(int32_t v) { return v < 0 ? (v == INT32_MIN ? INT32_MAX : -v) : v; }
 
 /* "<name> 12.3mA 3.30V" (plus: signed, + into the cell), or pending, or --; its bar, by the current. */
-static void rail_row(oled_fb *fb, int r, const char *name, const power_rail_live_t *l, int plus, unsigned frame)
+static void rail_row(const oled_surf *s, int r, const char *name, const power_rail_live_t *l, int plus, unsigned frame)
 {
   char line[SCR_LINE] = "";
   int y = POWER_ROW0 + POWER_PITCH * r;
@@ -178,18 +178,18 @@ static void rail_row(oled_fb *fb, int r, const char *name, const power_rail_live
     scr_put(line, "mA");
     if (l->mv != 0) { scr_put(line, " "); scr_put_dec(line, l->mv, 3, 2, 0); scr_put(line, "V"); }
   }
-  scr_row(fb, y, line);
-  bar(fb, y + 8, l->fitted && l->ok ? scr_bar_px(iabs32(l->ma_x100), POWER_FULL_MA_X100, OLED_W) : 0U, frame);
+  scr_row(s, y, line);
+  bar(s, y + 8, l->fitted && l->ok ? scr_bar_px(iabs32(l->ma_x100), POWER_FULL_MA_X100, OLED_W) : 0U, frame);
 }
 
-void scr_power(oled_fb *fb, unsigned frame, const scr_view_t *v)
+void scr_power(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
   const power_live_t *p = &v->power;
   char line[SCR_LINE] = "";
   const char *state = (p->charger & POWER_STATUS_FAULT) ? "CHGR FAULT" : (p->charger & POWER_STATUS_CHARGING) ? "CHARGING"
                       : (p->charger & POWER_STATUS_POWER_GOOD) ? "INPUT OK" : "ON BATTERY";
   (void)scr_put_lr(line, "POWER", state);
-  scr_header(fb, line);
+  scr_header(s, line);
   line[0] = '\0';
   scr_put(line, "CELL  ");
   if (!p->gauge_ok) scr_put(line, "pending");
@@ -200,31 +200,31 @@ void scr_power(oled_fb *fb, unsigned frame, const scr_view_t *v)
     scr_put_dec(line, p->soc_pct_x10, 1, 0, 0);
     scr_put(line, "%");
   }
-  scr_row(fb, POWER_ROW0, line);
-  bar(fb, POWER_ROW0 + 8, p->gauge_ok ? scr_bar_px(p->soc_pct_x10, SOC_FULL_X10, OLED_W) : 0U, frame);
+  scr_row(s, POWER_ROW0, line);
+  bar(s, POWER_ROW0 + 8, p->gauge_ok ? scr_bar_px(p->soc_pct_x10, SOC_FULL_X10, OLED_W) : 0U, frame);
   power_rail_live_t batt = { 1, p->batt_ok, p->batt_ma_x100, p->out_mv };
-  rail_row(fb, 1, "BATT", &batt, 1, frame);
+  rail_row(s, 1, "BATT", &batt, 1, frame);
   static const char *const names[PL_RAILS] = { "LOAD", "SOLAR", "USB" };
-  for (unsigned k = 0; k < PL_RAILS; k++) rail_row(fb, 2 + (int)k, names[k], &p->rail[k], 0, frame);
+  for (unsigned k = 0; k < PL_RAILS; k++) rail_row(s, 2 + (int)k, names[k], &p->rail[k], 0, frame);
 }
 
-static void radio_bars(oled_fb *fb, const scr_view_t *v, unsigned frame)
+static void radio_bars(const oled_surf *s, const scr_view_t *v, unsigned frame)
 {
   unsigned n = scr_upto(v->radio_n, SCR_RADIO_HIST);
-  oled_line(fb, 0, RSSI_TOP + RSSI_PX, OLED_W - 1, RSSI_TOP + RSSI_PX, 1);
+  oled_line(s, 0, RSSI_TOP + RSSI_PX, OLED_W - 1, RSSI_TOP + RSSI_PX, 1);
   for (unsigned i = 0; i < n; i++)
   {
     int x = RADIO_X + RADIO_PITCH * (int)(SCR_RADIO_HIST - n + i);
     if (v->radio_rssi[i] == SCR_GAP)
     {
-      oled_line(fb, x, RSSI_TOP + RSSI_PX - 3, x + 2, RSSI_TOP + RSSI_PX - 1, 0);
-      oled_line(fb, x + 2, RSSI_TOP + RSSI_PX - 3, x, RSSI_TOP + RSSI_PX - 1, 0);
+      oled_line(s, x, RSSI_TOP + RSSI_PX - 3, x + 2, RSSI_TOP + RSSI_PX - 1, 0);
+      oled_line(s, x + 2, RSSI_TOP + RSSI_PX - 3, x, RSSI_TOP + RSSI_PX - 1, 0);
       continue;
     }
     int r = (int)scr_grow(scr_bar_px(v->radio_rssi[i] - RSSI_FLOOR, RSSI_SPAN, RSSI_PX), frame, GROW_FRAMES);
-    int s = (int)scr_grow(scr_bar_px(v->radio_snr[i] - SNR_FLOOR, SNR_SPAN, SNR_PX), frame, GROW_FRAMES);
-    oled_fill(fb, x, RSSI_TOP + RSSI_PX - r, 3, r, 1);
-    oled_fill(fb, x, SNR_TOP + SNR_PX - s, 3, s, 1);
+    int snr = (int)scr_grow(scr_bar_px(v->radio_snr[i] - SNR_FLOOR, SNR_SPAN, SNR_PX), frame, GROW_FRAMES);
+    oled_fill(s, x, RSSI_TOP + RSSI_PX - r, 3, r, 1);
+    oled_fill(s, x, SNR_TOP + SNR_PX - snr, 3, snr, 1);
   }
 }
 
@@ -257,7 +257,7 @@ static void signal_text(char *sig, const scr_view_t *v, unsigned form)
   if (form == 1U) scr_put(sig, "dB");
 }
 
-void scr_radio(oled_fb *fb, unsigned frame, const scr_view_t *v)
+void scr_radio(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
   char line[SCR_LINE] = "RADIO SF";
   scr_put_uint(line, v->sf);
@@ -265,18 +265,18 @@ void scr_radio(oled_fb *fb, unsigned frame, const scr_view_t *v)
   scr_put_uint(line, v->bw_khz_div125 * 125U);
   scr_put(line, " ");
   scr_put_dec(line, v->freq_khz, 3, 1, 0);
-  scr_header(fb, line);
-  radio_bars(fb, v, frame);
+  scr_header(s, line);
+  radio_bars(s, v, frame);
   for (unsigned form = 0; form < 3U; form++)   /* bound: 3 forms; the last is drawn as it is */
   {
     ack_line(line, v, form);
     if (strlen(line) <= SCR_COLS) break;
   }
-  scr_row(fb, 47, line);
+  scr_row(s, 47, line);
   char next[SCR_LINE] = "NEXT ";
-  int32_t s = scr_next_tx_s(v->since_exchange_s);
-  if (s < 0) scr_put(next, "--");
-  else { scr_put_uint(next, (uint32_t)s); scr_put(next, "s"); }
+  int32_t secs = scr_next_tx_s(v->since_exchange_s);
+  if (secs < 0) scr_put(next, "--");
+  else { scr_put_uint(next, (uint32_t)secs); scr_put(next, "s"); }
   char sig[SCR_LINE] = "";
   for (unsigned form = 0; form < 3U; form++)   /* bound: 3 forms; the last always fits */
   {
@@ -285,5 +285,5 @@ void scr_radio(oled_fb *fb, unsigned frame, const scr_view_t *v)
     line[0] = '\0';
     scr_put(line, sig);
   }
-  scr_row(fb, FOOT_Y, line);
+  scr_row(s, FOOT_Y, line);
 }

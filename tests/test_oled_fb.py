@@ -1,6 +1,6 @@
-"""The shared OLED library (firmware/common/oled_fb.c, font5x7.c, oled_draw.c): frame buffer, text, drawing
-primitives and the SSD1325 pixel order. Pure C, compiled for the host; the bench tool and the node both
-link it. What the panel shows is checked by eye on the bench."""
+"""The shared OLED library (firmware/common/oled_draw.c, font5x7.c): the drawing surface in the SSD1325's pixel
+order, text and drawing primitives. Pure C, compiled for the host; the bench tool and the node both link it. What
+the panel shows is checked by eye on the bench."""
 import ctypes
 import subprocess
 import sys
@@ -14,16 +14,33 @@ COMMON = ROOT/'firmware/common'
 OLED_W, OLED_H = 128, 64
 
 
+class SurfStruct(ctypes.Structure):
+    _fields_ = [('px', ctypes.c_void_p), ('rot180', ctypes.c_uint8), ('ink', ctypes.c_uint8)]   # oled_surf
+
+
+class Surf:
+    """An oled_surf over a cleared frame of its own; passed to the library as a pointer to it. raw: the frame."""
+    def __init__(self, rot180=0, ink=15):
+        self.buf = ctypes.create_string_buffer(OLED_W*OLED_H//2)
+        self.s = SurfStruct(ctypes.addressof(self.buf), rot180, ink)
+        self._as_parameter_ = ctypes.byref(self.s)
+
+    @property
+    def raw(self):
+        return self.buf.raw
+
+
 @needs_cc
 class OledFb(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.lib = lib = host_library(cls, 'oled_fb', '-I', COMMON, COMMON/'oled_fb.c', COMMON/'font5x7.c',
-                                     COMMON/'oled_draw.c')
+        cls.lib = lib = host_library(cls, 'oled_draw', '-I', COMMON, COMMON/'oled_draw.c', COMMON/'font5x7.c')
         i, p, u = ctypes.c_int, ctypes.c_void_p, ctypes.c_uint
         lib.oled_text.argtypes = [p, i, i, ctypes.c_char_p, i]
         lib.oled_set.argtypes = [p, i, i, i]
         lib.oled_get.argtypes = [p, i, i]
+        lib.oled_get.restype = u
+        lib.oled_level.argtypes = [p, i, i, u]
         lib.oled_line.argtypes = [p, i, i, i, i, u]
         lib.oled_box.argtypes = [p, i, i, i, i]
         lib.oled_fill.argtypes = [p, i, i, i, i, i]
@@ -32,13 +49,12 @@ class OledFb(unittest.TestCase):
         lib.oled_circle.argtypes = [p, i, i, i]
         lib.oled_disc.argtypes = [p, i, i, i, i]
         lib.oled_shift_row.argtypes = [p, i, i]
-        lib.ssd1325_frame.argtypes = [p, i, p]
         lib.ssd1325_put4.argtypes = [p, i, i, u, i]
         lib.ssd1325_blit4.argtypes = [p, i, i, ctypes.c_char_p, i, i, u, i]
         lib.ssd1325_text4.argtypes = [p, i, i, ctypes.c_char_p, u, i]
 
-    def fb(self):
-        return ctypes.create_string_buffer(OLED_W*OLED_H//8)
+    def fb(self, rot180=0, ink=15):
+        return Surf(rot180, ink)
 
     def lit(self, fb):
         return {(x, y) for y in range(OLED_H) for x in range(OLED_W) if self.lib.oled_get(fb, x, y)}
@@ -105,7 +121,7 @@ class OledFb(unittest.TestCase):
         self.assertEqual(len(self.lit(fb)), 14)
         self.assertEqual(self.lib.oled_get(fb, 4, 3), 0)
         for x, y in ((2, 2), (6, 2), (2, 5), (6, 5), (4, 2), (4, 5), (2, 3), (6, 4)):
-            self.assertEqual(self.lib.oled_get(fb, x, y), 1, (x, y))
+            self.assertEqual(self.lib.oled_get(fb, x, y), 15, (x, y))
 
     def test_fill_and_clear(self):
         fb = self.fb()
@@ -120,7 +136,7 @@ class OledFb(unittest.TestCase):
         before = fb.raw
         self.lib.oled_invert(fb, 2, 2, 20, 10)
         self.assertNotEqual(fb.raw, before)
-        self.assertEqual(self.lib.oled_get(fb, 2, 2), 1)       # a dark pixel lit
+        self.assertEqual(self.lib.oled_get(fb, 2, 2), 15)      # a dark pixel lit, at the ink
         self.lib.oled_invert(fb, 2, 2, 20, 10)
         self.assertEqual(fb.raw, before)
 
@@ -128,7 +144,7 @@ class OledFb(unittest.TestCase):
         fb = self.fb()
         self.lib.oled_dotgrid(fb, 0, 0, 32, 16, 16)
         for x, y in ((0, 0), (16, 0), (0, 2), (2, 0)):
-            self.assertEqual(self.lib.oled_get(fb, x, y), 1, (x, y))
+            self.assertEqual(self.lib.oled_get(fb, x, y), 15, (x, y))
         self.assertEqual(self.lib.oled_get(fb, 1, 1), 0)
 
     def test_circle_and_disc(self):
@@ -157,25 +173,39 @@ class OledFb(unittest.TestCase):
         self.lib.oled_shift_row(fb, 5, OLED_W)                # shifted off the screen
         self.assertEqual(self.lit(fb), {(10, 4)})
 
-    def test_ssd1325_frame_order(self):
-        # Column pair, then row; the left pixel of a pair in the high nibble, full brightness for a lit pixel.
+    def test_send_order(self):
+        # Column pair, then row; the left pixel of a pair in the high nibble, a lit pixel at the ink.
         fb = self.fb()
         for x, y in ((0, 0), (1, 5), (126, 63), (127, 63)):
             self.lib.oled_set(fb, x, y, 1)
-        out = ctypes.create_string_buffer(4096)
-        self.lib.ssd1325_frame(fb, 0, out)
-        self.assertEqual((out.raw[0], out.raw[5], out.raw[63*64 + 63]), (0xF0, 0x0F, 0xFF))
-        self.assertEqual(sum(1 for b in out.raw if b), 3)
+        self.assertEqual((fb.raw[0], fb.raw[5], fb.raw[63*64 + 63]), (0xF0, 0x0F, 0xFF))
+        self.assertEqual(sum(1 for b in fb.raw if b), 3)
 
-    def test_ssd1325_frame_rotated(self):
-        # Turned half a turn: (0, 0) is sent as (127, 63), the right pixel of the last pair; (10, 3) as (117, 60).
-        fb = self.fb()
+    def test_rotated(self):
+        # Turned half a turn: (0, 0) is stored as (127, 63), the right pixel of the last pair; (10, 3) as (117, 60).
+        # Drawing and reading back are in logical coordinates either way.
+        fb = self.fb(rot180=1)
         self.lib.oled_set(fb, 0, 0, 1)
         self.lib.oled_set(fb, 10, 3, 1)
-        out = ctypes.create_string_buffer(4096)
-        self.lib.ssd1325_frame(fb, 1, out)
-        self.assertEqual((out.raw[63*64 + 63], out.raw[58*64 + 60]), (0x0F, 0x0F))
-        self.assertEqual(sum(1 for b in out.raw if b), 2)
+        self.assertEqual((fb.raw[63*64 + 63], fb.raw[58*64 + 60]), (0x0F, 0x0F))
+        self.assertEqual(sum(1 for b in fb.raw if b), 2)
+        self.assertEqual(self.lit(fb), {(0, 0), (10, 3)})
+
+    def test_levels_and_ink(self):
+        # oled_level sets one nibble (more than 15 is 15, off the screen ignored); oled_set writes the ink or 0;
+        # invert takes a lit pixel dark and a dark one to the ink; a shifted row keeps its levels.
+        fb = self.fb(ink=6)
+        self.lib.oled_level(fb, 4, 3, 9)
+        self.lib.oled_set(fb, 5, 3, 1)
+        self.lib.oled_level(fb, 127, 63, 99)
+        self.lib.oled_level(fb, -1, 0, 15)
+        self.assertEqual((fb.raw[2*64 + 3], fb.raw[63*64 + 63], self.lib.oled_get(fb, 4, 3)), (0x96, 0x0F, 9))
+        self.assertEqual(sum(1 for b in fb.raw if b), 2)
+        self.lib.oled_invert(fb, 4, 3, 3, 1)
+        self.assertEqual([self.lib.oled_get(fb, x, 3) for x in (4, 5, 6)], [0, 0, 6])
+        self.lib.oled_level(fb, 4, 3, 9)
+        self.lib.oled_shift_row(fb, 3, 1)
+        self.assertEqual([self.lib.oled_get(fb, x, 3) for x in (4, 5, 6, 7)], [0, 9, 0, 6])
 
     def frame(self):
         return ctypes.create_string_buffer(4096)
@@ -195,23 +225,23 @@ class OledFb(unittest.TestCase):
         self.assertEqual(out.raw[2*64 + 3], 0x06)
 
     def test_put4_rotated(self):
-        # Turned half a turn: (0, 0) is sent as (127, 63), the right pixel of the last pair, as ssd1325_frame sends it.
+        # Turned half a turn: (0, 0) is sent as (127, 63), the right pixel of the last pair, as a turned surface holds it.
         out = self.frame()
         self.lib.ssd1325_put4(out, 0, 0, 7, 1)
         self.lib.ssd1325_put4(out, 1, 0, 3, 1)
         self.assertEqual(out.raw[63*64 + 63], 0x37)
         self.assertEqual(sum(1 for b in out.raw if b), 1)
 
-    def test_put4_matches_ssd1325_frame(self):
-        # A 1-bit picture put pixel by pixel at full level is the frame ssd1325_frame sends, either way up.
-        fb = self.fb()
-        self.lib.oled_text(fb, 1, 1, b'TX 0123', 2)
-        self.lib.oled_circle(fb, 90, 40, 20)
-        self.lib.oled_set(fb, 127, 63, 1)
+    def test_put4_matches_the_surface(self):
+        # A 1-bit picture put pixel by pixel at full level is the frame a surface holds, either way up.
+        pic = self.fb()
+        self.lib.oled_text(pic, 1, 1, b'TX 0123', 2)
+        self.lib.oled_circle(pic, 90, 40, 20)
+        self.lib.oled_set(pic, 127, 63, 1)
         for rot in (0, 1):
-            want, got = self.frame(), self.frame()
-            self.lib.ssd1325_frame(fb, rot, want)
-            for x, y in self.lit(fb):
+            want, got = self.fb(rot), self.frame()
+            for x, y in self.lit(pic):
+                self.lib.oled_set(want, x, y, 1)
                 self.lib.ssd1325_put4(got, x, y, 15, rot)
             self.assertEqual(got.raw, want.raw, rot)
 

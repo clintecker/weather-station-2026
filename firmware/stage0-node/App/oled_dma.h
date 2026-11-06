@@ -18,7 +18,7 @@
 /* Pins, SPI1 and DMA, then the reset pulse and Adafruit's set-up sequence, on timers: it returns at
    once, and oled_dma_busy() is 1 until the panel is ready (about 0.5 s). */
 void oled_dma_init(void);
-/* Starts sending one frame (the SSD1325 layout of ssd1325_frame, oled_draw.h): 0 started, -1 busy
+/* Starts sending one frame (the SSD1325's send order, oled_draw.h): 0 started, -1 busy
    (a frame, a command or the start-up still under way), -2 disabled or faulted. The frame is copied
    first, unless it is oled_dma_buffer() itself, so the caller may reuse it at once. */
 int oled_dma_send(const uint8_t frame[OLED_FRAME_BYTES]);

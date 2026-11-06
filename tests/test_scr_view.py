@@ -35,9 +35,9 @@ class ScrView(unittest.TestCase):
         return render.draw(self.lib, screen, frame, view if view is not None else render.demo_view())
 
     def text(self, x, y, s, scale=1):
-        fb = ctypes.create_string_buffer(W * H // 8)
-        self.lib.oled_text(fb, x, y, s.encode(), scale)
-        return {(px, py) for py in range(H) for px in range(W) if self.lib.oled_get(fb, px, py)}
+        surf = render.Surf()
+        self.lib.oled_text(ctypes.byref(surf), x, y, s.encode(), scale)
+        return set(surf.levels())
 
     def rows(self, rows, inverted=()):
         """The pixels of up to 8 text rows at y = 8 i; rows in `inverted` lit behind dark text."""
@@ -73,9 +73,9 @@ class ScrView(unittest.TestCase):
     def big(self, x, y, s):
         """The pixels of s in the big digits at (x, y), and the x after it."""
         self.lib.scr_big_text.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
-        fb = ctypes.create_string_buffer(W * H // 8)
-        end = self.lib.scr_big_text(fb, x, y, s.encode())
-        return {(px, py) for py in range(H) for px in range(W) if self.lib.oled_get(fb, px, py)}, end
+        surf = render.Surf()
+        end = self.lib.scr_big_text(ctypes.byref(surf), x, y, s.encode())
+        return set(surf.levels()), end
 
     def big_width(self, s):
         self.lib.scr_big_width.argtypes = [ctypes.c_char_p]

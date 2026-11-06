@@ -35,26 +35,26 @@ static void append_uint(char *dst, size_t n, uint32_t v)
   append_fixed(dst, n, (int32_t)(v > INT32_MAX ? INT32_MAX : v), 0, 0, 0);
 }
 
-static void row(oled_fb *fb, int r, const char *text) { (void)oled_text(fb, 0, r * ROW_PX, text, 1); }
+static void row(const oled_surf *s, int r, const char *text) { (void)oled_text(s, 0, r * ROW_PX, text, 1); }
 
 /* "<label> " then the temperature and humidity, or "<label> NO <part>". */
-static void th_row(oled_fb *fb, int r, const char *label, const char *part, int ok, int32_t centi_c, int32_t centi_rh)
+static void th_row(const oled_surf *s, int r, const char *label, const char *part, int ok, int32_t centi_c, int32_t centi_rh)
 {
   char line[LINE_MAX] = "";
   append(line, sizeof line, label);
-  if (!ok) { append(line, sizeof line, " NO "); append(line, sizeof line, part); row(fb, r, line); return; }
+  if (!ok) { append(line, sizeof line, " NO "); append(line, sizeof line, part); row(s, r, line); return; }
   append(line, sizeof line, " ");
   append_fixed(line, sizeof line, centi_c, 0, 2, 0);
   append(line, sizeof line, "C ");
   append_fixed(line, sizeof line, centi_rh, 0, 2, 0);
   append(line, sizeof line, "%");
-  row(fb, r, line);
+  row(s, r, line);
 }
 
-void bench_screen(oled_fb *fb, const bench_view *v)
+void bench_screen(const oled_surf *s, const bench_view *v)
 {
   char line[LINE_MAX];
-  oled_clear(fb);
+  oled_clear(s);
 
   line[0] = '\0';
   append(line, sizeof line, "I2C");
@@ -65,7 +65,7 @@ void bench_screen(oled_fb *fb, const bench_view *v)
     append_hex2(line, sizeof line, v->found[i]);
   }
   if (v->nfound > BENCH_SCREEN_MAX_FOUND) append(line, sizeof line, " +");
-  row(fb, ROW_BUS, line);
+  row(s, ROW_BUS, line);
 
   line[0] = '\0';
   append(line, sizeof line, "BATT ");
@@ -77,7 +77,7 @@ void bench_screen(oled_fb *fb, const bench_view *v)
     append_fixed(line, sizeof line, v->vbus_uv, 3, 3, 0);   /* the INA228 VBUS: its sense lead on OUT (P5) */
     append(line, sizeof line, "V");
   }
-  row(fb, ROW_BATT, line);
+  row(s, ROW_BATT, line);
 
   line[0] = '\0';
   append(line, sizeof line, "CELL ");
@@ -89,10 +89,10 @@ void bench_screen(oled_fb *fb, const bench_view *v)
     append_fixed(line, sizeof line, v->soc_mpct, 2, 1, 0);
     append(line, sizeof line, "%");
   }
-  row(fb, ROW_CELL, line);
+  row(s, ROW_CELL, line);
 
-  th_row(fb, ROW_AIR, "AIR", "SHT45", v->air_ok, v->air_centi_c, v->air_centi_rh);
-  th_row(fb, ROW_BOX, "BOX", "SHTC3", v->box_ok, v->box_centi_c, v->box_centi_rh);
+  th_row(s, ROW_AIR, "AIR", "SHT45", v->air_ok, v->air_centi_c, v->air_centi_rh);
+  th_row(s, ROW_BOX, "BOX", "SHTC3", v->box_ok, v->box_centi_c, v->box_centi_rh);
 
   line[0] = '\0';
   append(line, sizeof line, "P ");
@@ -101,7 +101,7 @@ void bench_screen(oled_fb *fb, const bench_view *v)
   append(line, sizeof line, " UV ");
   if (!v->uv_ok) append(line, sizeof line, "NO");
   else append_uint(line, sizeof line, v->uv_counts);
-  row(fb, ROW_PRESS, line);
+  row(s, ROW_PRESS, line);
 
   if (!v->meters_ok) return;
   line[0] = '\0';
@@ -109,7 +109,7 @@ void bench_screen(oled_fb *fb, const bench_view *v)
   append_fixed(line, sizeof line, v->wind_ums, 4, 2, 0);
   append(line, sizeof line, "m/s ");
   append(line, sizeof line, v->vane ? v->vane : "?");
-  row(fb, ROW_WIND, line);
+  row(s, ROW_WIND, line);
 
   line[0] = '\0';
   append(line, sizeof line, "RAIN ");
@@ -117,5 +117,5 @@ void bench_screen(oled_fb *fb, const bench_view *v)
   append(line, sizeof line, " TIPS ");
   append_fixed(line, sizeof line, (int32_t)(v->tips > 100000U ? 100000U : v->tips) * RAIN_TENTH_UM_PER_TIP, 2, 2, 0);
   append(line, sizeof line, "mm");
-  row(fb, ROW_RAIN, line);
+  row(s, ROW_RAIN, line);
 }

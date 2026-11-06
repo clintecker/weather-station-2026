@@ -1,9 +1,9 @@
-/* What the bench OLED shows: the latest readings laid out on the 128 x 64 frame buffer. Pure C. */
+/* What the bench OLED shows: the latest readings laid out on the 128 x 64 drawing surface. Pure C. */
 #ifndef BENCH_SCREEN_H
 #define BENCH_SCREEN_H
 
 #include <stdint.h>
-#include "oled_fb.h"
+#include "oled_draw.h"
 
 #define BENCH_SCREEN_MAX_FOUND 5   /* addresses on the top line: "I2C", five, and " +" fit its 21 characters */
 
@@ -32,6 +32,6 @@ typedef struct {
      P 1013.2hPa UV 123     (BMP581; LTR390 counts)
      WIND 1.33m/s SE
      RAIN 2 TIPS 0.56mm */
-void bench_screen(oled_fb *fb, const bench_view *v);
+void bench_screen(const oled_surf *s, const bench_view *v);
 
 #endif

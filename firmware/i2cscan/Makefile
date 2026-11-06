@@ -18,7 +18,6 @@ APP_SRC = $(BOARD_CORE_SRC) \
           App/bench_screen.c \
           App/meters.c \
           App/oled.c \
-          ../common/oled_fb.c \
           ../common/oled_draw.c \
           ../common/font5x7.c \
           ../common/ssd1325.c \
@@ -27,12 +26,12 @@ APP_SRC = $(BOARD_CORE_SRC) \
           $(BOARD_SYS_SRC)
 
 HAL_EXTRA = i2c i2c_ex adc adc_ex lptim
-PROJ_INCS = Core/Inc App ../common $(BOARD)   # power_regs.h, oled_fb.h, ssd1325.h, oled_spi1.h: shared with the node
+PROJ_INCS = Core/Inc App ../common $(BOARD)   # power_regs.h, oled_draw.h, ssd1325.h, oled_spi1.h: shared with the node
 DEFS      = -DDEBUG -DVERBOSE_LEVEL=VLEVEL_M
 OPT       = -Og
 
 # Our own C builds with the strict warning set and -Werror.
-STRICT_SRC = App/i2cscan.c App/meters.c App/bench_regs.c ../common/power_regs.c App/bench_screen.c App/oled.c ../common/oled_fb.c ../common/oled_draw.c ../common/font5x7.c \
+STRICT_SRC = App/i2cscan.c App/meters.c App/bench_regs.c ../common/power_regs.c App/bench_screen.c App/oled.c ../common/oled_draw.c ../common/font5x7.c \
              ../common/ssd1325.c $(BOARD)/oled_spi1.c
 
 include $(BOARD)/board.mk

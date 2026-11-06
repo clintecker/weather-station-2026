@@ -17,7 +17,7 @@
 #include "oled_draw.h"
 
 void oled_init(void);                    /* the pins, SPI1, a reset pulse and the SSD1325 set-up */
-int oled_show(const uint8_t frame[OLED_FRAME_BYTES]);   /* one ssd1325_frame (about 45 ms); 0 or -1 on an SPI timeout */
+int oled_show(const uint8_t frame[OLED_FRAME_BYTES]);   /* one frame in send order (about 45 ms); 0 or -1 on an SPI timeout */
 unsigned oled_spi_hz(void);              /* the SPI clock chosen, for the start line */
 
 #endif

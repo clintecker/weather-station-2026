@@ -80,17 +80,17 @@ int scr_put_lr(char *line, const char *left, const char *right)
   return 1;
 }
 
-void scr_row(oled_fb *fb, int y, const char *text) { (void)oled_text(fb, 0, y, text, 1); }
+void scr_row(const oled_surf *s, int y, const char *text) { (void)oled_text(s, 0, y, text, 1); }
 
-void scr_row_right(oled_fb *fb, int y, const char *text)
+void scr_row_right(const oled_surf *s, int y, const char *text)
 {
-  (void)oled_text(fb, OLED_W - OLED_CHAR_ADVANCE * (int)strlen(text) + 1, y, text, 1);
+  (void)oled_text(s, OLED_W - OLED_CHAR_ADVANCE * (int)strlen(text) + 1, y, text, 1);
 }
 
-void scr_header(oled_fb *fb, const char *text)
+void scr_header(const oled_surf *s, const char *text)
 {
-  (void)oled_text(fb, 0, 0, text, 1);
-  oled_invert(fb, 0, 0, OLED_W, HEADER_PX);
+  (void)oled_text(s, 0, 0, text, 1);
+  oled_invert(s, 0, 0, OLED_W, HEADER_PX);
 }
 
 static int big_glyph(char c)
@@ -99,41 +99,41 @@ static int big_glyph(char c)
   return at ? (int)(at - scr_big_chars) : -1;
 }
 
-int scr_big_width(const char *s)
+int scr_big_width(const char *str)
 {
   int w = 0;
-  /* bound: the characters of s */
-  for (; *s; s++)
+  /* bound: the characters of str */
+  for (; *str; str++)
   {
-    int g = big_glyph(*s);
+    int g = big_glyph(*str);
     if (g >= 0) w += (w ? SCR_BIG_GAP : 0) + scr_big_w[g];
   }
   return w;
 }
 
-int scr_big_text(oled_fb *fb, int x, int y, const char *s)
+int scr_big_text(const oled_surf *s, int x, int y, const char *str)
 {
   int first = 1;
-  /* bound: the characters of s */
-  for (; *s; s++)
+  /* bound: the characters of str */
+  for (; *str; str++)
   {
-    int g = big_glyph(*s);
+    int g = big_glyph(*str);
     if (g < 0) continue;
     if (!first) x += SCR_BIG_GAP;
     first = 0;
     for (int r = 0; r < SCR_BIG_H; r++)
       for (int c = 0; c < scr_big_w[g]; c++)
-        if ((scr_big_rows[g][r] >> (15 - c)) & 1U) oled_set(fb, x + c, y + r, 1);
+        if ((scr_big_rows[g][r] >> (15 - c)) & 1U) oled_set(s, x + c, y + r, 1);
     x += scr_big_w[g];
   }
   return x;
 }
 
-void scr_blit(oled_fb *fb, const scr_art *a, int dx, int dy)
+void scr_blit(const oled_surf *s, const scr_art *a, int dx, int dy)
 {
   for (unsigned j = 0; j < a->h; j++)
     for (unsigned i = 0; i < 64U; i++)
-      if ((a->rows[j] >> (63U - i)) & 1U) oled_set(fb, a->x + dx + (int)i, a->y + dy + (int)j, 1);
+      if ((a->rows[j] >> (63U - i)) & 1U) oled_set(s, a->x + dx + (int)i, a->y + dy + (int)j, 1);
 }
 
 int scr_sin20(int p)
@@ -168,28 +168,28 @@ int scr_draw_gray(uint8_t *out, enum scr_id id, unsigned frame, const scr_view_t
   return 1;
 }
 
-void scr_draw(oled_fb *fb, enum scr_id id, unsigned frame, const scr_view_t *v)
+void scr_draw(const oled_surf *s, enum scr_id id, unsigned frame, const scr_view_t *v)
 {
-  oled_clear(fb);
+  oled_clear(s);
   if (id != SCR_HOME && id != SCR_BANNER && frame >= scr_frames(id)) frame = scr_frames(id) - 1U;
   switch (id)
   {
-  case SCR_BURST: scr_burst(fb, frame, v); break;
-  case SCR_BANNER: scr_home(fb, frame, v, 1); break;
-  case SCR_AIR: scr_air(fb, frame, v); break;
-  case SCR_PRESSURE: scr_pressure(fb, frame, v); break;
-  case SCR_POWER: scr_power(fb, frame, v); break;
-  case SCR_RADIO: scr_radio(fb, frame, v); break;
-  case SCR_SCOPE: scr_scope(fb, v); break;
-  case SCR_VANE: scr_vane(fb, frame, v); break;
-  case SCR_RAIN: scr_rain(fb, v); break;
-  case SCR_SYSTEM: scr_system(fb, frame, v); break;
-  case SCR_BOOT: scr_boot(fb, frame, v); break;
-  case SCR_HACK: scr_hack(fb, frame); break;
-  case SCR_FORTUNE: scr_fortune(fb, frame, v); break;
-  case SCR_FROG: scr_frog(fb, frame, v); break;
+  case SCR_BURST: scr_burst(s, frame, v); break;
+  case SCR_BANNER: scr_home(s, frame, v, 1); break;
+  case SCR_AIR: scr_air(s, frame, v); break;
+  case SCR_PRESSURE: scr_pressure(s, frame, v); break;
+  case SCR_POWER: scr_power(s, frame, v); break;
+  case SCR_RADIO: scr_radio(s, frame, v); break;
+  case SCR_SCOPE: scr_scope(s, v); break;
+  case SCR_VANE: scr_vane(s, frame, v); break;
+  case SCR_RAIN: scr_rain(s, v); break;
+  case SCR_SYSTEM: scr_system(s, frame, v); break;
+  case SCR_BOOT: scr_boot(s, frame, v); break;
+  case SCR_HACK: scr_hack(s, frame); break;
+  case SCR_FORTUNE: scr_fortune(s, frame, v); break;
+  case SCR_FROG: scr_frog(s, frame, v); break;
   case SCR_MATRIX: break;   /* gray: scr_draw_gray */
-  case SCR_PINBALL: scr_pinball(fb, frame, v); break;
-  default: scr_home(fb, frame, v, 0); break;
+  case SCR_PINBALL: scr_pinball(s, frame, v); break;
+  default: scr_home(s, frame, v, 0); break;
   }
 }

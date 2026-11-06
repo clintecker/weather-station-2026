@@ -329,13 +329,12 @@ static void air_line(void)
   air_trigger();
 }
 
-/* The panel is mounted upside down on BB3 (DS1 rot 180): the frame is drawn, then turned before it goes out. */
+/* The panel is mounted upside down on BB3 (DS1 rot 180): the frame is drawn turned, as it goes out. */
 static void screen_update(void)
 {
-  static oled_fb drawn;
   static uint8_t frame[OLED_FRAME_BYTES];
-  bench_screen(&drawn, &view);
-  ssd1325_frame(&drawn, 1, frame);
+  oled_surf s = oled_surf_on(frame, 1);
+  bench_screen(&s, &view);
   int failed = oled_show(frame) != 0;
   if (failed && !oled_failed) APP_PRINTF("#oled SPI timeout: the frame was not sent\n");
   oled_failed = failed;

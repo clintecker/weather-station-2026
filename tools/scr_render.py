@@ -35,23 +35,23 @@ SCR_TX_NONE, SCR_TX_WAIT, SCR_TX_NO_ACK, SCR_TX_ACK = -2, -1, 0, 1
 SCR_GAP, SCR_NONE_S = -32768, 0xFFFFFFFF
 AIR_HIST, PRESS_HIST, RADIO_HIST = 60, 36, 30
 
-# The screens' sources and their include paths. oled_fb.c is left out: the shim includes it, so a
+# The screens' sources and their include paths. oled_draw.c is left out: the shim includes it, so a
 # test can see every string drawn (the shim's oled_text checks each character against the font).
 INCLUDES = ['-I', APP, '-I', COMMON, '-I', ROOT/'firmware']
 SOURCES = [APP/'scr_view.c', APP/'scr_calc.c', APP/'scr_home.c', APP/'scr_detail.c', APP/'scr_interludes.c', APP/'scr_rain.c',
-           APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', APP/'scr_kana.c', COMMON/'oled_draw.c',
+           APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', APP/'scr_kana.c',
            COMMON/'font5x7.c']
-FRAME_BYTES = W * H // 2   # the SSD1325's send order (firmware/common/oled_fb.h): column pair, then row
+FRAME_BYTES = W * H // 2   # the SSD1325's send order (firmware/common/oled_draw.h): column pair, then row
 SHIM = r'''
 #include <string.h>
 #include "scr_view.h"
 #include "font5x7.h"
 #define oled_text real_oled_text
-#include "oled_fb.c"
+#include "oled_draw.c"
 #undef oled_text
 unsigned shim_missing;          /* characters drawn that the font lacks */
 char shim_missing_text[64];     /* the last string that had one */
-int oled_text(oled_fb *fb, int x, int y, const char *s, int scale)
+int oled_text(const oled_surf *surf, int x, int y, const char *s, int scale)
 {
   for (const char *c = s; *c; c++)
     if (strchr(font5x7_chars, *c) == NULL)
@@ -59,7 +59,7 @@ int oled_text(oled_fb *fb, int x, int y, const char *s, int scale)
       shim_missing++;
       strncpy(shim_missing_text, s, sizeof shim_missing_text - 1);
     }
-  return real_oled_text(fb, x, y, s, scale);
+  return real_oled_text(surf, x, y, s, scale);
 }
 unsigned shim_view_size(void) { return (unsigned)sizeof(scr_view_t); }
 '''
@@ -111,10 +111,10 @@ def build(directory, cc=('cc', '-std=c11', '-Wall', '-Wextra', '-Werror')):
     lib = ctypes.CDLL(str(lib_path))
     lib.scr_draw.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(View)]
     lib.scr_draw_gray.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(View), ctypes.c_int]
-    lib.ssd1325_frame.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
     lib.scr_frames.argtypes = [ctypes.c_int]
     lib.scr_frames.restype = ctypes.c_uint
     lib.oled_get.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+    lib.oled_get.restype = ctypes.c_uint
     lib.oled_text.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
     lib.shim_view_size.restype = ctypes.c_uint
     return lib
@@ -235,30 +235,35 @@ def gray(lib, screen, frame, view, rotate180=0):
     return unpack(out.raw, rotate180)
 
 
-def draw(lib, screen, frame, view):
-    """The screen's pixels: a set of (x, y) (a gray screen's: those lit at any level)."""
-    levels = gray(lib, screen, frame, view)
-    if levels is not None:
-        return set(levels)
-    fb = ctypes.create_string_buffer(W * H // 8)
-    lib.scr_draw(fb, SCREENS.index(screen), frame, ctypes.byref(view))
-    return {(x, y) for y in range(H) for x in range(W) if lib.oled_get(fb, x, y)}
+class Surf(ctypes.Structure):
+    """An oled_surf (firmware/common/oled_draw.h) over a frame of its own, cleared: pass byref(surf)."""
+    _fields_ = [('px', ctypes.c_void_p), ('rot180', ctypes.c_uint8), ('ink', ctypes.c_uint8)]
+
+    def __init__(self, rot180=0, ink=15):
+        self.buf = ctypes.create_string_buffer(FRAME_BYTES)
+        super().__init__(ctypes.addressof(self.buf), rot180, ink)
+
+    def levels(self):
+        """{(x, y): level} of the lit pixels, as drawn (turned back if the surface is turned)."""
+        return unpack(self.buf.raw, self.rot180)
 
 
 def frame(lib, screen, frame, view):
     """The frame as the TX sends it (App/oled_app.c): 4096 bytes in the SSD1325's order, turned for the panel."""
-    out = ctypes.create_string_buffer(FRAME_BYTES)
-    if not lib.scr_draw_gray(out, SCREENS.index(screen), frame, ctypes.byref(view), 1):
-        fb = ctypes.create_string_buffer(W * H // 8)
-        lib.scr_draw(fb, SCREENS.index(screen), frame, ctypes.byref(view))
-        lib.ssd1325_frame(fb, 1, out)
-    return out.raw
+    surf = Surf(1)
+    if not lib.scr_draw_gray(surf.buf, SCREENS.index(screen), frame, ctypes.byref(view), 1):
+        lib.scr_draw(ctypes.byref(surf), SCREENS.index(screen), frame, ctypes.byref(view))
+    return surf.buf.raw
 
 
-def shade(lib, screen, frame, view):
-    """What to render: the gray levels, or the lit pixels at full level."""
-    levels = gray(lib, screen, frame, view)
-    return levels if levels is not None else dict.fromkeys(draw(lib, screen, frame, view), 15)
+def shade(lib, screen, frame_no, view):
+    """What to render: {(x, y): level} of the lit pixels (1-bit screens at 15), the right way up."""
+    return unpack(frame(lib, screen, frame_no, view), 1)
+
+
+def draw(lib, screen, frame_no, view):
+    """The screen's lit pixels, at any level: a set of (x, y)."""
+    return set(shade(lib, screen, frame_no, view))
 
 
 def png(pixels, path, scale=4):

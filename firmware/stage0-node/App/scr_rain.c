@@ -41,9 +41,9 @@ unsigned scr_rain_full(unsigned largest)
   return full;
 }
 
-static void row(oled_fb *fb, int r, const char *text) { (void)oled_text(fb, 0, r * 8, text, 1); }
+static void row(const oled_surf *s, int r, const char *text) { (void)oled_text(s, 0, r * 8, text, 1); }
 
-static void count_row(oled_fb *fb, const rain_hist_t *h)
+static void count_row(const oled_surf *s, const rain_hist_t *h)
 {
   char left[SCR_LINE] = "", age[SCR_LINE] = "", line[SCR_LINE] = "";
   scr_put_uint(left, h->tips);
@@ -57,43 +57,43 @@ static void count_row(oled_fb *fb, const rain_hist_t *h)
   scr_put(forms[2], age);
   int fits = 0;
   for (unsigned f = 0; f < 3U && !fits; f++) fits = scr_put_lr(line, left, forms[f]);   /* bound: 3 forms */
-  row(fb, 1, fits ? line : left);   /* the last fits any count with an age up to RAIN_AGE_MAX_S */
+  row(s, 1, fits ? line : left);   /* the last fits any count with an age up to RAIN_AGE_MAX_S */
 }
 
-static void rate_row(oled_fb *fb, const rain_hist_t *h)
+static void rate_row(const oled_surf *s, const rain_hist_t *h)
 {
   char rate[SCR_LINE] = "", line[SCR_LINE] = "RATE  ";
   scr_put_dec(rate, scr_rain_rate_umh(h->per_min, RAIN_HIST_MINUTES, RATE_MINUTES), 3, 1, 0);
   scr_put(rate, " mm/h");
   size_t n = strlen(rate) + 6U;   /* with "RATE  " */
-  if (n + 6U > SCR_COLS + 1U) { scr_put(line, rate); row(fb, 2, line); return; }
+  if (n + 6U > SCR_COLS + 1U) { scr_put(line, rate); row(s, 2, line); return; }
   if (n + 6U > SCR_COLS) line[5] = '\0';   /* one space, to keep the window's name */
   scr_put(line, rate);
   scr_put(line, " (10m)");
-  row(fb, 2, line);
+  row(s, 2, line);
 }
 
 /* The bars; returns the scale they were drawn to. */
-static unsigned bars(oled_fb *fb, const rain_hist_t *h)
+static unsigned bars(const oled_surf *s, const rain_hist_t *h)
 {
   unsigned largest = 0;
   for (unsigned i = 0; i < RAIN_HIST_MINUTES; i++)
     if (h->per_min[i] > largest) largest = h->per_min[i];
   unsigned full = scr_rain_full(largest);
-  oled_line(fb, SIDE_L, CEIL_Y, SIDE_L, AXIS_Y, 0);
-  oled_line(fb, SIDE_R, CEIL_Y, SIDE_R, AXIS_Y, 0);
-  oled_line(fb, SIDE_L, CEIL_Y, SIDE_R, CEIL_Y, 1);
-  oled_line(fb, SIDE_L, AXIS_Y, SIDE_R, AXIS_Y, 0);
+  oled_line(s, SIDE_L, CEIL_Y, SIDE_L, AXIS_Y, 0);
+  oled_line(s, SIDE_R, CEIL_Y, SIDE_R, AXIS_Y, 0);
+  oled_line(s, SIDE_L, CEIL_Y, SIDE_R, CEIL_Y, 1);
+  oled_line(s, SIDE_L, AXIS_Y, SIDE_R, AXIS_Y, 0);
   for (unsigned i = 0; i < RAIN_HIST_MINUTES; i++)
   {
     int px = (int)scr_bar_px(h->per_min[i], (int32_t)full, BAR_PX);
-    oled_fill(fb, BARS_X + BAR_W * (int)i, AXIS_Y - px, BAR_W, px, 1);
+    oled_fill(s, BARS_X + BAR_W * (int)i, AXIS_Y - px, BAR_W, px, 1);
   }
   return full;
 }
 
 /* "-60m", the scale centred, "now". */
-static void foot_row(oled_fb *fb, unsigned full)
+static void foot_row(const oled_surf *s, unsigned full)
 {
   char scale[SCR_LINE] = "", line[SCR_LINE] = "-60m";
   scr_put_uint(scale, full);
@@ -102,18 +102,18 @@ static void foot_row(oled_fb *fb, unsigned full)
   scr_put(line, scale);
   scr_pad_to(line, SCR_COLS - 3U);
   scr_put(line, "now");
-  row(fb, 7, line);
+  row(s, 7, line);
 }
 
-void scr_rain(oled_fb *fb, const scr_view_t *v)
+void scr_rain(const oled_surf *s, const scr_view_t *v)
 {
   const rain_hist_t *h = &v->rain;
   char mm[SCR_LINE] = "", line[SCR_LINE] = "";
   scr_put_rain_mm(mm, h->tips);
   scr_put(mm, " mm");
   (void)scr_put_lr(line, "RAIN", mm);   /* at most "279400.00 mm" (RAIN_TIPS_MAX) */
-  row(fb, 0, line);
-  count_row(fb, h);
-  rate_row(fb, h);
-  foot_row(fb, bars(fb, h));
+  row(s, 0, line);
+  count_row(s, h);
+  rate_row(s, h);
+  foot_row(s, bars(s, h));
 }

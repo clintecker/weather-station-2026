@@ -271,6 +271,22 @@ APP =ROOT/'firmware/i2cscan/App'
 OLED_W, OLED_H = 128, 64
 
 
+class SurfStruct(ctypes.Structure):
+    _fields_ = [('px', ctypes.c_void_p), ('rot180', ctypes.c_uint8), ('ink', ctypes.c_uint8)]   # oled_surf (oled_draw.h)
+
+
+class Surf:
+    """An oled_surf over a cleared frame of its own, passed to the library as a pointer to it. raw: the frame."""
+    def __init__(self, rot180=0):
+        self.buf = ctypes.create_string_buffer(OLED_W*OLED_H//2)
+        self.s = SurfStruct(ctypes.addressof(self.buf), rot180, 15)
+        self._as_parameter_ = ctypes.byref(self.s)
+
+    @property
+    def raw(self):
+        return self.buf.raw
+
+
 class View(ctypes.Structure):
     _fields_ = [('found', ctypes.c_uint8*5), ('nfound', ctypes.c_uint), ('ina_ok', ctypes.c_int),
                 ('ua', ctypes.c_int32), ('vbus_uv', ctypes.c_int32), ('gauge_ok', ctypes.c_int),
@@ -284,17 +300,15 @@ class View(ctypes.Structure):
 
 @needs_cc
 class BenchScreen(unittest.TestCase):
-    """The bench screen's layout (bench_screen.c) over the shared frame buffer and font (firmware/common)."""
+    """The bench screen's layout (bench_screen.c) over the shared drawing surface and font (firmware/common)."""
     @classmethod
     def setUpClass(cls):
-        cls.lib = host_library(cls, 'bench_screen', '-I', APP, '-I', COMMON, COMMON/'oled_fb.c', COMMON/'oled_draw.c',
-                               COMMON/'font5x7.c', APP/'bench_screen.c', APP/'bench_regs.c', POWER)
+        cls.lib = host_library(cls, 'bench_screen', '-I', APP, '-I', COMMON, COMMON/'oled_draw.c', COMMON/'font5x7.c', APP/'bench_screen.c', APP/'bench_regs.c', POWER)
         cls.lib.oled_text.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
         cls.lib.bench_screen.argtypes = [ctypes.c_void_p, ctypes.POINTER(View)]
-        cls.lib.ssd1325_frame.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
 
-    def fb(self):
-        return ctypes.create_string_buffer(OLED_W*OLED_H//8)
+    def fb(self, rot180=0):
+        return Surf(rot180)
 
     def expected(self, lines):
         fb = self.fb()
@@ -323,7 +337,7 @@ class BenchScreen(unittest.TestCase):
         self.assertEqual(fb.raw, self.rows(b'I2C NONE', b'BATT NO INA228', b'CELL NO MAX17048', b'AIR NO SHT45',
                                            b'BOX NO SHTC3', b'P NO BMP581 UV NO'))
 
-    # Four views, each frame hashed as i2cscan sends it (App/i2cscan.c: drawn, then turned for the panel): a refactor
+    # Four views, each frame hashed as i2cscan sends it (App/i2cscan.c: drawn turned, for the panel): a refactor
     # of the drawing code keeps every hash, a deliberate change updates them here.
     GOLDEN = {'everything': 'cd110f612b27a962', 'nothing': '20b91cd48a2da55d', 'zero': 'dca2c19b3c844812',
               'cold': '1df2d072d3d8e2bc'}
@@ -342,10 +356,9 @@ class BenchScreen(unittest.TestCase):
         return {'everything': everything, 'nothing': View(), 'zero': zero, 'cold': cold}
 
     def sent(self, v):
-        fb, out = self.fb(), ctypes.create_string_buffer(OLED_W*OLED_H//2)
+        fb = self.fb(rot180=1)
         self.lib.bench_screen(fb, ctypes.byref(v))
-        self.lib.ssd1325_frame(fb, 1, out)
-        return hashlib.sha256(out.raw).hexdigest()[:16]
+        return hashlib.sha256(fb.raw).hexdigest()[:16]
 
     def test_frames_are_as_they_were(self):
         got = {name: self.sent(v) for name, v in self.golden_views().items()}

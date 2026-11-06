@@ -48,7 +48,7 @@ static void put_hex2(char *line, uint8_t b)
   scr_put(line, two);
 }
 
-static void hex_row(oled_fb *fb, int y, const scr_view_t *v, unsigned from)
+static void hex_row(const oled_surf *s, int y, const scr_view_t *v, unsigned from)
 {
   char line[SCR_LINE] = "";
   unsigned len = scr_upto(v->cipher_len, sizeof v->cipher);
@@ -57,10 +57,10 @@ static void hex_row(oled_fb *fb, int y, const scr_view_t *v, unsigned from)
     if (i != 0) scr_put(line, " ");
     put_hex2(line, v->cipher[(from + i) % len]);
   }
-  (void)oled_text(fb, 0, y, line, 1);
+  (void)oled_text(s, 0, y, line, 1);
 }
 
-void scr_burst(oled_fb *fb, unsigned frame, const scr_view_t *v)
+void scr_burst(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
   char line[SCR_LINE] = "TX ";
   scr_put_uint(line, v->last_seq);
@@ -68,26 +68,26 @@ void scr_burst(oled_fb *fb, unsigned frame, const scr_view_t *v)
   scr_put_uint(line, v->sf);
   scr_put(line, " BW");
   scr_put_uint(line, v->bw_khz_div125 * 125U);
-  scr_header(fb, line);
+  scr_header(s, line);
   int shift = (int)(frame * CHIRP_STEP % CHIRP_W);
   for (int n = 0; n < 5; n++)
   {
     int x0 = n * CHIRP_W - shift;
-    oled_line(fb, x0, 30, x0 + CHIRP_W - 1, 11, 0);
-    oled_line(fb, x0 + CHIRP_W - 1, 11, x0 + CHIRP_W - 1, 30, 1);
+    oled_line(s, x0, 30, x0 + CHIRP_W - 1, 11, 0);
+    oled_line(s, x0 + CHIRP_W - 1, 11, x0 + CHIRP_W - 1, 30, 1);
   }
   if (frame >= BURST_HEX_FRAME && v->cipher_len != 0)
-    for (unsigned r = 0; r < 2U; r++) hex_row(fb, 35 + 9 * (int)r, v, (frame - BURST_HEX_FRAME + r) * HEX_PER_ROW);
-  oled_line(fb, 0, 53, OLED_W - 1, 53, 2);
+    for (unsigned r = 0; r < 2U; r++) hex_row(s, 35 + 9 * (int)r, v, (frame - BURST_HEX_FRAME + r) * HEX_PER_ROW);
+  oled_line(s, 0, 53, OLED_W - 1, 53, 2);
   char foot[SCR_LINE] = "AES-CCM ";
   scr_put_uint(foot, v->cipher_len);
   scr_put(foot, "B ");
   scr_put_dec(foot, v->freq_khz, 3, 1, 0);
   scr_put(foot, "MHz");
-  (void)oled_text(fb, 0, 56, foot, 1);
+  (void)oled_text(s, 0, 56, foot, 1);
 }
 
-static void scope_trace(oled_fb *fb, const wind_live_t *w)
+static void scope_trace(const oled_surf *s, const wind_live_t *w)
 {
   unsigned n = scr_upto(w->nbins, WIND_LIVE_BINS), full = SCOPE_MIN_FULL;
   for (unsigned i = 0; i < n; i++)
@@ -97,13 +97,13 @@ static void scope_trace(oled_fb *fb, const wind_live_t *w)
   {
     int x = PLOT_RIGHT - (int)((n - 1U - i) * (PLOT_RIGHT - PLOT_X) / (WIND_LIVE_BINS - 1U));
     int y = PLOT_BOTTOM - (int)(w->bins[i] * (unsigned)(PLOT_BOTTOM - PLOT_TOP) / full);
-    if (i == 0) oled_set(fb, x, y, 1);
-    else oled_line(fb, px, py, x, y, 0);
+    if (i == 0) oled_set(s, x, y, 1);
+    else oled_line(s, px, py, x, y, 0);
     px = x; py = y;
   }
 }
 
-void scr_scope(oled_fb *fb, const scr_view_t *v)
+void scr_scope(const oled_surf *s, const scr_view_t *v)
 {
   const wind_live_t *w = &v->wind;
   unsigned n = scr_upto(w->nbins, WIND_LIVE_BINS), recent = n < SCOPE_RATE_BINS ? n : SCOPE_RATE_BINS;
@@ -113,10 +113,10 @@ void scr_scope(oled_fb *fb, const scr_view_t *v)
   scr_pad_to(line, 13);
   scr_put_dec(line, recent ? sum * 40U / recent : 0U, 1, 1, 0);   /* pulses over recent / 4 s, in 0.1 Hz */
   scr_put(line, "Hz");
-  (void)oled_text(fb, 0, 0, line, 1);
-  oled_box(fb, 0, 9, OLED_W, 46);
-  oled_dotgrid(fb, PLOT_X, PLOT_TOP, PLOT_RIGHT, 44, 16);
-  scope_trace(fb, w);
+  (void)oled_text(s, 0, 0, line, 1);
+  oled_box(s, 0, 9, OLED_W, 46);
+  oled_dotgrid(s, PLOT_X, PLOT_TOP, PLOT_RIGHT, 44, 16);
+  scope_trace(s, w);
   char foot[SCR_LINE] = "";
   scr_put_dec(foot, w->speed_cms, 2, 1, 0);
   scr_put(foot, "m/s  G");
@@ -124,58 +124,58 @@ void scr_scope(oled_fb *fb, const scr_view_t *v)
   scr_put(foot, "  ");
   scr_put_uint(foot, n / 4U);
   scr_put(foot, "s");
-  (void)oled_text(fb, 0, 57, foot, 1);
+  (void)oled_text(s, 0, 57, foot, 1);
 }
 
-static void vane_text(oled_fb *fb, int point, const scr_view_t *v)
+static void vane_text(const oled_surf *s, int point, const scr_view_t *v)
 {
   char line[SCR_LINE] = "-";
   if (point >= 0) { line[0] = '\0'; scr_put(line, scr_point_names[point]); scr_put(line, " "); scr_put_uint(line, (unsigned)point * 45U / 2U); }
-  (void)oled_text(fb, VANE_TEXT_X, 4, "VANE", 1);
-  (void)oled_text(fb, VANE_TEXT_X, 16, line, 1);
+  (void)oled_text(s, VANE_TEXT_X, 4, "VANE", 1);
+  (void)oled_text(s, VANE_TEXT_X, 16, line, 1);
   char mv[SCR_LINE] = "";
   scr_put_uint(mv, v->wind.vane_mv);
   scr_put(mv, "mV");
-  (void)oled_text(fb, VANE_TEXT_X, 32, mv, 1);
-  (void)oled_text(fb, VANE_TEXT_X, 44, "16 POS", 1);
-  (void)oled_text(fb, VANE_TEXT_X, 56, point >= 0 ? "OK" : "NO POINT", 1);
+  (void)oled_text(s, VANE_TEXT_X, 32, mv, 1);
+  (void)oled_text(s, VANE_TEXT_X, 44, "16 POS", 1);
+  (void)oled_text(s, VANE_TEXT_X, 56, point >= 0 ? "OK" : "NO POINT", 1);
 }
 
-void scr_vane(oled_fb *fb, unsigned frame, const scr_view_t *v)
+void scr_vane(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
   int point = v->wind.point >= 0 && v->wind.point < 16 ? v->wind.point : -1;
-  scr_blit(fb, &scr_art_rose, 0, 0);
-  (void)oled_text(fb, ROSE_CX - 2, 1, "N", 1);
+  scr_blit(s, &scr_art_rose, 0, 0);
+  (void)oled_text(s, ROSE_CX - 2, 1, "N", 1);
   if (point >= 0)
   {
     int shown = frame < (unsigned)point ? (int)frame : point;   /* swinging round from N */
-    oled_line(fb, ROSE_CX, ROSE_CY, ROSE_CX + scr_sin20(shown), ROSE_CY - scr_sin20(shown + 4), 0);
+    oled_line(s, ROSE_CX, ROSE_CY, ROSE_CX + scr_sin20(shown), ROSE_CY - scr_sin20(shown + 4), 0);
   }
-  oled_fill(fb, ROSE_CX - 1, ROSE_CY - 1, 3, 3, 1);
-  vane_text(fb, point, v);
+  oled_fill(s, ROSE_CX - 1, ROSE_CY - 1, 3, 3, 1);
+  vane_text(s, point, v);
 }
 
-void scr_system(oled_fb *fb, unsigned frame, const scr_view_t *v)
+void scr_system(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
   static const char *const names[5] = { "FLASH", "RAM", "STACK", "JRNL", "AIR" };
   const uint8_t pct[5] = { v->flash_pct, v->ram_pct, v->stack_pct, v->journal_pct, v->airtime_pct };
   char line[SCR_LINE] = "SYS  WS-NODE  ID ";
   scr_put_uint(line, v->station);
-  scr_header(fb, line);
+  scr_header(s, line);
   for (unsigned i = 0; i < 5U; i++)
   {
     int y = 11 + 10 * (int)i;
     unsigned p = pct[i] > 100U ? 100U : pct[i];
     char num[SCR_LINE] = "";
     scr_put_uint(num, p);
-    (void)oled_text(fb, 0, y, names[i], 1);
-    oled_box(fb, BAR_X, y, BAR_W, 7);
-    oled_fill(fb, BAR_X + 2, y + 2, (int)scr_grow(BAR_FILL_W * p / 100U, frame, BAR_FILL_FRAMES), 3, 1);
-    (void)oled_text(fb, 110, y, num, 1);
+    (void)oled_text(s, 0, y, names[i], 1);
+    oled_box(s, BAR_X, y, BAR_W, 7);
+    oled_fill(s, BAR_X + 2, y + 2, (int)scr_grow(BAR_FILL_W * p / 100U, frame, BAR_FILL_FRAMES), 3, 1);
+    (void)oled_text(s, 110, y, num, 1);
   }
 }
 
-static void boot_text(oled_fb *fb, const scr_view_t *v)
+static void boot_text(const oled_surf *s, const scr_view_t *v)
 {
   char link[SCR_LINE] = "LINK ";
   scr_put_dec(link, v->freq_khz, 3, 1, 0);
@@ -188,75 +188,75 @@ static void boot_text(oled_fb *fb, const scr_view_t *v)
   scr_put_uint(mods, v->modules_active);
   scr_put(mods, "/");
   scr_put_uint(mods, v->modules);
-  (void)oled_text(fb, 10, 6, "WS-NODE  BOOT", 1);
-  (void)oled_text(fb, 10, 18, link, 1);
-  (void)oled_text(fb, 10, 30, key, 1);
-  (void)oled_text(fb, 10, 42, mods, 1);
+  (void)oled_text(s, 10, 6, "WS-NODE  BOOT", 1);
+  (void)oled_text(s, 10, 18, link, 1);
+  (void)oled_text(s, 10, 30, key, 1);
+  (void)oled_text(s, 10, 42, mods, 1);
 }
 
-void scr_boot(oled_fb *fb, unsigned frame, const scr_view_t *v)
+void scr_boot(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
   static const int8_t sliced[5] = { 8, 9, 20, 21, 33 };
-  boot_text(fb, v);
+  boot_text(s, v);
   if (frame == 28U || frame == 29U || frame >= 60U)
   {
-    for (unsigned i = 0; i < 5U; i++) oled_shift_row(fb, sliced[i], 5);
-    oled_invert(fb, 0, 27, OLED_W, 3);
+    for (unsigned i = 0; i < 5U; i++) oled_shift_row(s, sliced[i], 5);
+    oled_invert(s, 0, 27, OLED_W, 3);
   }
-  oled_line(fb, 0, 62, (int)(frame * (OLED_W - 1U) / 63U), 62, 0);
+  oled_line(s, 0, 62, (int)(frame * (OLED_W - 1U) / 63U), 62, 0);
 }
 
-/* s at double height, each glyph 9 pixels wide (its last column overlapping the one before) on a
+/* str at double height, each glyph 9 pixels wide (its last column overlapping the one before) on a
    10-pixel pitch: PLANET fits the 62 pixels beside the face. */
-static void squeezed_text(oled_fb *fb, int x, int y, const char *s)
+static void squeezed_text(const oled_surf *s, int x, int y, const char *str)
 {
   static const uint8_t col_x[FONT5X7_W] = { 0, 2, 4, 6, 7 };
-  /* bound: the characters of s, one a pass */
-  for (; *s; s++, x += PLANET_PITCH)
+  /* bound: the characters of str, one a pass */
+  for (; *str; str++, x += PLANET_PITCH)
   {
-    const char *at = strchr(font5x7_chars, *s);
+    const char *at = strchr(font5x7_chars, *str);
     if (at == NULL) continue;
     const uint8_t *rows = font5x7_rows[at - font5x7_chars];
     for (int r = 0; r < FONT5X7_H; r++)
       for (int c = 0; c < FONT5X7_W; c++)
-        if ((rows[r] >> (FONT5X7_W - 1 - c)) & 1U) oled_fill(fb, x + col_x[c], y + 2 * r, 2, 2, 1);
+        if ((rows[r] >> (FONT5X7_W - 1 - c)) & 1U) oled_fill(s, x + col_x[c], y + 2 * r, 2, 2, 1);
   }
 }
 
-static void face_eye(oled_fb *fb, int wink, int glint)
+static void face_eye(const oled_surf *s, int wink, int glint)
 {
   if (wink)
   {
-    oled_line(fb, FACE_CX - 15, FACE_CY - 8, FACE_CX - 7, FACE_CY - 8, 0);
-    oled_line(fb, FACE_CX - 15, FACE_CY - 7, FACE_CX - 7, FACE_CY - 7, 0);
+    oled_line(s, FACE_CX - 15, FACE_CY - 8, FACE_CX - 7, FACE_CY - 8, 0);
+    oled_line(s, FACE_CX - 15, FACE_CY - 7, FACE_CX - 7, FACE_CY - 7, 0);
   }
   else
     for (int j = -4; j <= 4; j++)
       for (int i = -4; i <= 4; i++)
-        if (i * i + j * j <= 16) oled_set(fb, FACE_CX - 11 + i, FACE_CY - 8 + j, 1);
+        if (i * i + j * j <= 16) oled_set(s, FACE_CX - 11 + i, FACE_CY - 8 + j, 1);
   if (glint)
   {
-    oled_set(fb, FACE_CX + 8, FACE_CY - 11, 0);
-    oled_set(fb, FACE_CX + 9, FACE_CY - 11, 0);
-    oled_set(fb, FACE_CX + 8, FACE_CY - 10, 0);
+    oled_set(s, FACE_CX + 8, FACE_CY - 11, 0);
+    oled_set(s, FACE_CX + 9, FACE_CY - 11, 0);
+    oled_set(s, FACE_CX + 8, FACE_CY - 10, 0);
   }
 }
 
 /* Frame 20 is the mockup's glitch; 21-23 slice other rows the other way. */
-static void hack_glitch(oled_fb *fb, unsigned g)
+static void hack_glitch(const oled_surf *s, unsigned g)
 {
   static const int8_t sliced[5] = { 8, 9, 30, 31, 50 };
   static const struct { int8_t dy, dx, band; } step[4] = { { 0, 4, 36 }, { 6, -3, 22 }, { 3, 5, 46 }, { -4, -6, 28 } };
-  for (unsigned i = 0; i < 5U; i++) oled_shift_row(fb, sliced[i] + step[g].dy, step[g].dx);
-  oled_invert(fb, 0, step[g].band, OLED_W, 2);
+  for (unsigned i = 0; i < 5U; i++) oled_shift_row(s, sliced[i] + step[g].dy, step[g].dx);
+  oled_invert(s, 0, step[g].band, OLED_W, 2);
 }
 
-void scr_hack(oled_fb *fb, unsigned frame)
+void scr_hack(const oled_surf *s, unsigned frame)
 {
-  scr_blit(fb, &scr_art_face, 0, 0);
-  face_eye(fb, frame == 16U || frame == 17U, frame == 18U || frame == 19U);
-  (void)oled_text(fb, 68, 2, "HACK", 2);
-  if (frame >= 4U) (void)oled_text(fb, 74, 21, "THE", 2);
-  if (frame >= 8U) squeezed_text(fb, 64, 42, "PLANET");
-  if (frame >= 20U && frame < 24U) hack_glitch(fb, frame - 20U);
+  scr_blit(s, &scr_art_face, 0, 0);
+  face_eye(s, frame == 16U || frame == 17U, frame == 18U || frame == 19U);
+  (void)oled_text(s, 68, 2, "HACK", 2);
+  if (frame >= 4U) (void)oled_text(s, 74, 21, "THE", 2);
+  if (frame >= 8U) squeezed_text(s, 64, 42, "PLANET");
+  if (frame >= 20U && frame < 24U) hack_glitch(s, frame - 20U);
 }

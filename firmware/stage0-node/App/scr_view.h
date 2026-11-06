@@ -14,7 +14,7 @@
 #define SCR_VIEW_H
 
 #include <stdint.h>
-#include "oled_fb.h"
+#include "oled_draw.h"
 #include "mod_rain.h"
 #include "mod_wind.h"
 #include "power_acq.h"
@@ -71,37 +71,37 @@ typedef struct {
   int16_t radio_snr[SCR_RADIO_HIST];      /* and its SNR, dB */
 } scr_view_t;
 
-/* Clears fb and draws frame `frame` of screen id (frame counts from 0). HOME and the banner animate for
+/* Clears the surface s and draws frame `frame` of screen id (frame counts from 0). HOME and the banner animate for
    ever (their icon); any other screen draws a frame past its last as the last. */
-void scr_draw(oled_fb *fb, enum scr_id id, unsigned frame, const scr_view_t *v);
+void scr_draw(const oled_surf *s, enum scr_id id, unsigned frame, const scr_view_t *v);
 /* The screens drawn in gray (MATRIX): clears out, a frame in the SSD1325's send order (oled_draw.h), and
-   draws the frame there turned as ssd1325_frame turns it; 1. Any other screen: 0, out untouched, and
-   scr_draw draws it (scr_draw leaves a gray screen's fb clear). */
+   draws the frame there turned as a turned surface holds it; 1. Any other screen: 0, out untouched, and
+   scr_draw draws it (scr_draw leaves a gray screen's surface clear). */
 int scr_draw_gray(uint8_t *out, enum scr_id id, unsigned frame, const scr_view_t *v, int rotate180);
 /* Frames in one play as an interlude or a packet screen: BURST 16, BANNER 24, HACK 24, HOME 1, AIR,
    PRESSURE, POWER and RADIO 8 (their bars and lines grow in), the others 64. */
 unsigned scr_frames(enum scr_id id);
 
-/* The screens, for scr_draw. Each draws on a cleared fb. */
-void scr_home(oled_fb *fb, unsigned frame, const scr_view_t *v, int with_banner);   /* scr_home.c */
-void scr_air(oled_fb *fb, unsigned frame, const scr_view_t *v);                     /* scr_detail.c */
-void scr_pressure(oled_fb *fb, unsigned frame, const scr_view_t *v);
-void scr_power(oled_fb *fb, unsigned frame, const scr_view_t *v);
-void scr_radio(oled_fb *fb, unsigned frame, const scr_view_t *v);
-void scr_burst(oled_fb *fb, unsigned frame, const scr_view_t *v);                   /* scr_interludes.c */
-void scr_scope(oled_fb *fb, const scr_view_t *v);
-void scr_vane(oled_fb *fb, unsigned frame, const scr_view_t *v);
-void scr_system(oled_fb *fb, unsigned frame, const scr_view_t *v);
-void scr_boot(oled_fb *fb, unsigned frame, const scr_view_t *v);
-void scr_hack(oled_fb *fb, unsigned frame);
-void scr_rain(oled_fb *fb, const scr_view_t *v);                                    /* scr_rain.c */
-void scr_fortune(oled_fb *fb, unsigned frame, const scr_view_t *v);                 /* scr_silly.c */
-void scr_frog(oled_fb *fb, unsigned frame, const scr_view_t *v);
+/* The screens, for scr_draw. Each draws on a cleared surface. */
+void scr_home(const oled_surf *s, unsigned frame, const scr_view_t *v, int with_banner);   /* scr_home.c */
+void scr_air(const oled_surf *s, unsigned frame, const scr_view_t *v);                     /* scr_detail.c */
+void scr_pressure(const oled_surf *s, unsigned frame, const scr_view_t *v);
+void scr_power(const oled_surf *s, unsigned frame, const scr_view_t *v);
+void scr_radio(const oled_surf *s, unsigned frame, const scr_view_t *v);
+void scr_burst(const oled_surf *s, unsigned frame, const scr_view_t *v);                   /* scr_interludes.c */
+void scr_scope(const oled_surf *s, const scr_view_t *v);
+void scr_vane(const oled_surf *s, unsigned frame, const scr_view_t *v);
+void scr_system(const oled_surf *s, unsigned frame, const scr_view_t *v);
+void scr_boot(const oled_surf *s, unsigned frame, const scr_view_t *v);
+void scr_hack(const oled_surf *s, unsigned frame);
+void scr_rain(const oled_surf *s, const scr_view_t *v);                                    /* scr_rain.c */
+void scr_fortune(const oled_surf *s, unsigned frame, const scr_view_t *v);                 /* scr_silly.c */
+void scr_frog(const oled_surf *s, unsigned frame, const scr_view_t *v);
 /* The digital rain, in gray: out cleared, in send order. scr_matrix_glyph: the glyph (scr_kana.h) at (c, r),
    each changing now and then on its own, the head's every frame. */
 void scr_matrix(uint8_t *out, unsigned frame, const scr_view_t *v, int rotate180);
 unsigned scr_matrix_glyph(unsigned c, unsigned r, unsigned frame, int head);
-void scr_pinball(oled_fb *fb, unsigned frame, const scr_view_t *v);
+void scr_pinball(const oled_surf *s, unsigned frame, const scr_view_t *v);
 
 /* ---- scr_calc.c: the arithmetic and the choices, every one pure. ---- */
 
@@ -218,15 +218,15 @@ void scr_put_rain_mm(char *line, uint32_t tips);   /* tips as mm, 2 decimals, "m
 /* left, then right ending at the last column, at least a space between; 0 (line untouched) if they do
    not fit. */
 int scr_put_lr(char *line, const char *left, const char *right);
-void scr_row(oled_fb *fb, int y, const char *text);             /* at (0, y), scale 1 */
-void scr_row_right(oled_fb *fb, int y, const char *text);       /* ending at the screen's right edge */
-void scr_header(oled_fb *fb, const char *text);                 /* the top row, inverted */
+void scr_row(const oled_surf *s, int y, const char *text);             /* at (0, y), scale 1 */
+void scr_row_right(const oled_surf *s, int y, const char *text);       /* ending at the screen's right edge */
+void scr_header(const oled_surf *s, const char *text);                 /* the top row, inverted */
 /* The big digits (scr_font.h) with their top-left at (x, y); returns the x after the text. Characters the
    font lacks draw as nothing. scr_big_width: the pixels the text takes. */
-int scr_big_text(oled_fb *fb, int x, int y, const char *s);
-int scr_big_width(const char *s);
+int scr_big_text(const oled_surf *s, int x, int y, const char *str);
+int scr_big_width(const char *str);
 /* The drawing a at its place moved by (dx, dy). */
-void scr_blit(oled_fb *fb, const scr_art *a, int dx, int dy);
+void scr_blit(const oled_surf *s, const scr_art *a, int dx, int dy);
 /* 20 sin(p x 22.5 degrees), rounded, for any point p (wrapped): the screens' 16-point compass. */
 int scr_sin20(int p);
 extern const char *const scr_point_names[16];   /* the vane's points, 0 N clockwise to 15 NNW */

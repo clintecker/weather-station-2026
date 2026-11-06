@@ -2,7 +2,7 @@
 
 scr_sched.c is pure: the tests step it as oled_app.c does, every 125 ms. oled_app.c is compiled unchanged
 against a shim (below) that stands in for the DMA driver (a busy flag the test holds, the sends and
-expansions it counts), the screens (scr_draw records what it was asked to draw, and the view it saw), the
+draws into it it counts), the screens (scr_draw records what it was asked to draw, and the view it saw), the
 node's view (oled_view.c, which only reads the modules), ST's timer and sequencer, and the clock.
 
 The field build (WS_BENCH_OLED=0, the default) must keep the exchange's hooks empty: its tx_exchange.o
@@ -89,15 +89,18 @@ int t_enable_calls, t_enabled = 1;
 void oled_dma_enable(int on) { t_enable_calls++; t_enabled = on; }
 int oled_dma_send(const uint8_t frame[OLED_FRAME_BYTES])
 { if (t_busy) { t_torn++; return -1; } if (frame != txbuf) return -3; t_sends++; return 0; }
-void ssd1325_frame(const oled_fb *fb, int rotate180, uint8_t out[OLED_FRAME_BYTES])
-{ (void)fb; (void)rotate180; if (t_busy) t_torn++; if (out == txbuf) t_expands++; }
 
 static const unsigned frames[SCR_COUNT] = { 1, 16, 24, 8, 8, 8, 8, 64, 64, 64, 64, 64, 24, 64, 64, 64, 64 };
 unsigned scr_frames(enum scr_id id) { return (unsigned)id < SCR_COUNT ? frames[id] : 1U; }
 int t_draws, t_id = -1, t_frame = -1;
 scr_view_t t_view;   /* what the last draw saw */
-void scr_draw(oled_fb *fb, enum scr_id id, unsigned frame, const scr_view_t *v)
-{ (void)fb; if (t_busy) t_torn++; t_draws++; t_id = (int)id; t_frame = (int)frame; t_view = *v; }
+/* t_expands: draws of a 1-bit screen on a surface over the send buffer, turned for the panel. */
+void scr_draw(const oled_surf *s, enum scr_id id, unsigned frame, const scr_view_t *v)
+{
+  if (t_busy) t_torn++;
+  if (s->px == txbuf && s->rot180) t_expands++;
+  t_draws++; t_id = (int)id; t_frame = (int)frame; t_view = *v;
+}
 /* The gray screens (MATRIX) draw straight into the buffer, turned: recorded as a draw, no expansion. */
 int t_grays, t_gray_rotated;
 int scr_draw_gray(uint8_t *out, enum scr_id id, unsigned frame, const scr_view_t *v, int rotate180)
@@ -141,10 +144,11 @@ unsigned t_view_since_exchange(void) { return t_view.since_exchange_s; }
 
 
 def build(owner, name):
-    """scr_sched.c and oled_app.c over the shim, as the bench build compiles them (RAM2 placement off)."""
+    """scr_sched.c and oled_app.c (and the drawing surface) over the shim, as the bench build compiles them (RAM2 placement off)."""
     return host_library(owner, name, '-DWS_BENCH_OLED=1', '-DOLED_APP_RAM2=', '-I', ROOT/'firmware/host/include', '-I', APP,
                         '-I', NODE/'Core/Inc', '-I', ROOT/'firmware/common', '-I', ROOT/'firmware',
-                        APP/'scr_sched.c', APP/'oled_app.c', APP/'scr_calc.c', files={'shim.c': SHIM})
+                        APP/'scr_sched.c', APP/'oled_app.c', APP/'scr_calc.c', ROOT/'firmware/common/oled_draw.c',
+                        ROOT/'firmware/common/font5x7.c', files={'shim.c': SHIM})
 
 
 def ival(lib, name):
@@ -522,8 +526,7 @@ class OledApp(unittest.TestCase):
 
     def test_packet_waits_for_frame_in_flight(self):
         # A frame is still going out (oled_dma_busy) when the live frame is sent: the hook draws nothing,
-        # the tick that finds the driver busy does nothing (no draw, no expansion into the buffer being
-        # sent, no send), and the burst starts at the next tick, from its frame 0.
+        # the tick that finds the driver busy does nothing (no draw into the buffer being sent, no send), and the burst starts at the next tick, from its frame 0.
         self.to_home()
         draws, sends = self.get('t_draws'), self.get('t_sends')
         self.set('t_busy', 1)
@@ -832,7 +835,7 @@ class OledApp(unittest.TestCase):
 
     def test_a_gray_screen_draws_into_the_send_buffer(self):
         # MATRIX draws its gray levels straight into the send buffer, turned as the 1-bit screens are, and
-        # that buffer goes out; nothing is expanded into it. The next screen is 1-bit again.
+        # that buffer goes out; scr_draw does not draw over it. The next screen is 1-bit again.
         self.to_home()
         for _ in B1_ORDER[1:B1_ORDER.index('MATRIX') + 1]:
             self.press(1)

@@ -23,7 +23,6 @@
 #ifndef OLED_APP_RAM2
 #define OLED_APP_RAM2 __attribute__((section(".RAM2_region")))
 #endif
-static oled_fb fb OLED_APP_RAM2;
 static scr_view_t view OLED_APP_RAM2;
 
 static UTIL_TIMER_Object_t step_timer;
@@ -140,11 +139,8 @@ static void step(void)
   uint32_t air_pct = (air_ms * 100U + AIRTIME_OF_MS - 1U) / AIRTIME_OF_MS;   /* rounded up: any airtime shows */
   view.airtime_pct = (uint8_t)(air_pct > 100U ? 100U : air_pct);
   uint8_t *out = oled_dma_buffer();
-  if (!scr_draw_gray(out, id, frame, &view, 1))   /* a gray screen draws straight into the send buffer */
-  {
-    scr_draw(&fb, id, frame, &view);
-    ssd1325_frame(&fb, 1, out);
-  }
+  oled_surf s = oled_surf_on(out, 1);   /* drawn into the send buffer, turned: the panel is upside down */
+  if (!scr_draw_gray(out, id, frame, &view, 1)) scr_draw(&s, id, frame, &view);
   (void)oled_dma_send(out);   /* not busy (above), so only a fault refuses it */
 }
 BUSYMON_TASK(step)
@@ -153,7 +149,6 @@ static void on_step_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_SEQ
 
 void oled_app_start(void)
 {
-  memset(&fb, 0, sizeof fb);
   memset(&view, 0, sizeof view);
   view.last_acked = SCR_TX_NONE;
   oled_dma_init();
