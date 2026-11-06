@@ -53,6 +53,19 @@ class ScrView(unittest.TestCase):
     def region(pixels, x0, y0, x1, y1):
         return {(x, y) for x, y in pixels if x0 <= x < x1 and y0 <= y < y1}
 
+    def test_rain_mm_matches_the_nanometres(self):
+        """scr_put_rain_mm rounds 0.1 um once, at the decimals shown: the text tips x 279400 nm rounded half up
+        gives, to RAIN_TIPS_MAX (1e6 tips) and past it (clamped)."""
+        class Row(ctypes.Structure):
+            _fields_ = [('s', ctypes.c_char * 24)]
+        self.lib.scr_put_rain_mm.argtypes = [ctypes.POINTER(Row), ctypes.c_uint32, ctypes.c_uint]
+        for d in (1, 2):
+            for tips in [*range(3000), 17, 999_999, 1_000_000, 1_000_001, 0xFFFFFFFF]:
+                m = (min(tips, 1_000_000) * 279400 + 10 ** (6 - d) // 2) // 10 ** (6 - d)
+                r = Row()
+                self.lib.scr_put_rain_mm(r, tips, d)
+                self.assertEqual(r.s.decode(), f'{m // 10 ** d}.{m % 10 ** d:0{d}d}', (tips, d))
+
     def test_check_view_layout(self):
         self.assertEqual(self.lib.shim_view_size(), ctypes.sizeof(render.View))
 

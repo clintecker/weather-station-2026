@@ -53,7 +53,7 @@ static void rate_form(oled_row *r, const void *ctx, unsigned form)
 {
   const rain_hist_t *h = ctx;
   oled_put(r, form == 1U ? "RATE " : "RATE  ");
-  oled_put_dec(r, scr_rain_rate_umh(h->per_min, RAIN_HIST_MINUTES, RATE_MINUTES), 3, 1, 0);
+  oled_put_dec(r, (int32_t)scr_rain_rate_umh(h->per_min, RAIN_HIST_MINUTES, RATE_MINUTES), 3, 1, 0);
   oled_put(r, " mm/h");
   if (form < 2U) oled_put(r, " (10m)");
 }

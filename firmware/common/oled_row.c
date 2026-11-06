@@ -2,8 +2,8 @@
 #include "oled_row.h"
 #include <string.h>
 
-#define DEC_DIGITS 24                  /* a uint64_t's 20 digits, a point, a sign */
-#define DEC_MAX 6U                     /* decimals oled_put_dec takes: the buffer holds 20 digits */
+#define DEC_DIGITS 13                  /* a uint32_t's 10 digits, a point, a sign, the end */
+#define DEC_MAX 6U                     /* decimals oled_put_dec takes */
 
 void oled_put(oled_row *r, const char *s)
 {
@@ -13,18 +13,20 @@ void oled_put(oled_row *r, const char *s)
   r->s[used] = '\0';
 }
 
-void oled_put_dec(oled_row *r, int64_t v, unsigned in_dec, unsigned out_dec, unsigned flags)
+/* m (the magnitude, minus: of a negative value) as oled_put_dec. m + div / 2 cannot wrap: m is at most 2^31
+   with decimals to drop (oled_put_dec), and div is 1 without (oled_put_uint). */
+static void put_mag(oled_row *r, uint32_t m, int minus, unsigned in_dec, unsigned out_dec, unsigned flags)
 {
   if (in_dec > DEC_MAX) in_dec = DEC_MAX;
   if (out_dec > in_dec) out_dec = in_dec;
-  uint64_t m = v < 0 ? (uint64_t)0 - (uint64_t)v : (uint64_t)v, div = 1;
+  uint32_t div = 1;
   for (unsigned i = out_dec; i < in_dec; i++) div *= 10U;
   m = (m + div / 2U) / div;
-  int negative = v < 0 && m != 0;
+  int negative = minus && m != 0;
   char num[DEC_DIGITS];
   unsigned at = DEC_DIGITS - 1, digits = 0;
   num[at] = '\0';
-  /* bound: at most 20 digits and a point; at > 1 throughout, as a uint64_t has 20 digits */
+  /* bound: at most 10 digits and a point (or out_dec + 1 digits, out_dec <= 6); at > 1 throughout */
   do
   {
     if (out_dec != 0 && digits == out_dec) num[--at] = '.';
@@ -37,7 +39,12 @@ void oled_put_dec(oled_row *r, int64_t v, unsigned in_dec, unsigned out_dec, uns
   oled_put(r, &num[at]);
 }
 
-void oled_put_uint(oled_row *r, uint32_t v) { oled_put_dec(r, v, 0, 0, 0); }
+void oled_put_dec(oled_row *r, int32_t v, unsigned in_dec, unsigned out_dec, unsigned flags)
+{
+  put_mag(r, v < 0 ? 0U - (uint32_t)v : (uint32_t)v, v < 0, in_dec, out_dec, flags);
+}
+
+void oled_put_uint(oled_row *r, uint32_t v) { put_mag(r, v, 0, 0, 0, 0); }
 
 void oled_put_hex2(oled_row *r, uint8_t b)
 {

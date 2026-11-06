@@ -81,8 +81,9 @@ void bench_screen(const oled_surf *s, const bench_view *v)
   line = (oled_row){ "RAIN " };
   oled_put_uint(&line, v->tips);
   oled_put(&line, " TIPS ");
-  oled_put_dec(&line, (int64_t)(v->tips > RAIN_TIPS_MAX ? RAIN_TIPS_MAX : v->tips) * (int64_t)WSMP_RAIN_NM_PER_TIP, 6,
-               2, 0);
+  /* 0.2794 mm a tip, 2794 in 0.1 um, in 0.01 mm rounded as oled_put_dec does: at most 2.8e8, in 32 bits */
+  oled_put_dec(&line, (int32_t)(((v->tips > RAIN_TIPS_MAX ? RAIN_TIPS_MAX : v->tips) * (WSMP_RAIN_NM_PER_TIP / 100U) + 50U) / 100U),
+               2, 2, 0);
   oled_put(&line, "mm");
   row(s, ROW_RAIN, &line);
 }

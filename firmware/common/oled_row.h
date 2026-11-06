@@ -14,7 +14,7 @@ void oled_put(oled_row *r, const char *s);
 /* v with in_dec decimals (<= 6) shown with out_dec (<= in_dec), rounded half away from zero; a '-' only on a
    value that does not round to 0. OLED_PLUS: a '+' on any other. */
 #define OLED_PLUS 1U
-void oled_put_dec(oled_row *r, int64_t v, unsigned in_dec, unsigned out_dec, unsigned flags);
+void oled_put_dec(oled_row *r, int32_t v, unsigned in_dec, unsigned out_dec, unsigned flags);
 void oled_put_uint(oled_row *r, uint32_t v);
 void oled_put_hex2(oled_row *r, uint8_t b);
 void oled_pad_to(oled_row *r, unsigned col);   /* spaces up to column col */

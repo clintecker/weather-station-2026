@@ -73,7 +73,7 @@ void scr_burst(const oled_surf *s, unsigned frame, const scr_view_t *v)
   oled_row foot = { "AES-CCM " };
   oled_put_uint(&foot, v->cipher_len);
   oled_put(&foot, "B ");
-  oled_put_dec(&foot, v->freq_khz, 3, 1, 0);
+  oled_put_dec(&foot, (int32_t)v->freq_khz, 3, 1, 0);
   oled_put(&foot, "MHz");
   scr_label(s, 56, foot.s, SCR_LEFT);
 }
@@ -87,7 +87,7 @@ void scr_scope(const oled_surf *s, unsigned frame, const scr_view_t *v)
   uint32_t sum = (uint32_t)scr_sum_last(&d, SCOPE_RATE_BINS);
   oled_row line = { "SCOPE CUPS" };
   oled_pad_to(&line, 13);
-  oled_put_dec(&line, recent ? sum * 40U / recent : 0U, 1, 1, 0);   /* pulses over recent / 4 s, in 0.1 Hz */
+  oled_put_dec(&line, (int32_t)(recent ? sum * 40U / recent : 0U), 1, 1, 0);   /* pulses over recent / 4 s, in 0.1 Hz */
   oled_put(&line, "Hz");
   scr_label(s, 0, line.s, SCR_LEFT);
   scr_frame(s, 0, 9, OLED_W - 1, 54, SCR_EDGE_SOLID, SCR_EDGE_SOLID, 1);
@@ -156,7 +156,7 @@ void scr_system(const oled_surf *s, unsigned frame, const scr_view_t *v)
 static void boot_text(const oled_surf *s, const scr_view_t *v)
 {
   oled_row link = { "LINK " };
-  oled_put_dec(&link, v->freq_khz, 3, 1, 0);
+  oled_put_dec(&link, (int32_t)v->freq_khz, 3, 1, 0);
   oled_put(&link, " SF");
   oled_put_uint(&link, v->sf);
   oled_row key = { "" };

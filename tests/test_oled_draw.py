@@ -295,7 +295,8 @@ class OledRow(unittest.TestCase):
         cls.lib = lib = host_library(cls, 'oled_row', '-I', COMMON, COMMON/'oled_row.c')
         r, s, u = ctypes.POINTER(Row), ctypes.c_char_p, ctypes.c_uint
         lib.oled_put.argtypes = [r, s]
-        lib.oled_put_dec.argtypes = [r, ctypes.c_int64, u, u, u]
+        lib.oled_put_dec.argtypes = [r, ctypes.c_int32, u, u, u]
+        lib.oled_put_uint.argtypes = [r, ctypes.c_uint32]
         lib.oled_put_hex2.argtypes = [r, ctypes.c_uint8]
         lib.oled_pad_to.argtypes = [r, u]
         lib.oled_put_lr.argtypes = [r, s, s, u]
@@ -319,6 +320,11 @@ class OledRow(unittest.TestCase):
         self.assertEqual([self.dec(1234, 2, 1), self.dec(-1235, 2, 1), self.dec(-4, 2, 1), self.dec(0, 2, 2, 1),
                           self.dec(-4, 2, 1, 1), self.dec(5, 1, 0), self.dec(7, 0, 0, 1)],
                          ['12.3', '-12.4', '0.0', '+0.00', '+0.0', '1', '+7'])
+        self.assertEqual([self.dec(-2**31, 0, 0), self.dec(2**31 - 1, 6, 6), self.dec(-2**31, 6, 2)],
+                         ['-2147483648', '2147.483647', '-2147.48'])
+        r = Row()
+        self.lib.oled_put_uint(r, 2**32 - 1)
+        self.assertEqual(r.s, b'4294967295')
         r = Row()
         self.lib.oled_put_hex2(r, 0xA4)
         self.assertEqual(r.s, b'A4')

@@ -249,7 +249,7 @@ void scr_radio(const oled_surf *s, unsigned frame, const scr_view_t *v)
   oled_put(&line, " BW");
   oled_put_uint(&line, v->bw_khz_div125 * 125U);
   oled_put(&line, " ");
-  oled_put_dec(&line, v->freq_khz, 3, 1, 0);
+  oled_put_dec(&line, (int32_t)v->freq_khz, 3, 1, 0);
   scr_header(s, line.s);
   radio_bars(s, v, frame);
   (void)oled_fit(&line, ack_form, v, 3, OLED_COLS);
