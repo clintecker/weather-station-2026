@@ -134,6 +134,7 @@ unsigned t_view_radio_n(void) { return t_view.radio.n; }
 int t_view_radio_rssi(unsigned i) { return t_view.radio.rssi[i]; }
 int t_view_radio_snr(unsigned i) { return t_view.radio.snr[i]; }
 unsigned t_view_since_exchange(void) { return t_view.since_exchange_s; }
+unsigned t_base(unsigned id) { return (scr_defs[id].flags & SCR_F_BASE) != 0U; }
 '''
 
 
@@ -229,6 +230,11 @@ class Scheduler(unittest.TestCase):
         self.to_home()
         got = [s for s, n in self.runs(self.steps(DWELL - 1 + 2 * DWELL * 12)) if s != 'HOME' and n == DWELL]
         self.assertEqual(got[:9], DETAILS + ['AIR'])
+
+    def test_the_base_screens_are_home_and_the_detail_list(self):
+        # scr_defs' SCR_F_BASE (a screen B1 picks dwells) and scr_sched.c's details[] (the detail list, pinned by
+        # test_the_detail_list_goes_round) must name the same screens.
+        self.assertEqual([s for i, s in enumerate(SCREENS) if self.lib.t_base(i)], ['HOME', *DETAILS])
 
     def test_base_screens_redraw(self):
         # HOME: every second step (its icon at 4 frames a second); AIR: its 8 frames of growing lines, then
