@@ -121,14 +121,21 @@ $(STRICT_OBJS): CFLAGS += $(STRICT)
 
 all: $(TARGET).bin
 
-# -MMD tracks headers, not flags: rewrite flags.txt when the compile flags change (a new
-# FW_VERSION after a commit, a different DEFS) so every object rebuilds, and relink when the
-# linker script or a makefile changes. Otherwise `make` without `clean` kept an old version string.
-FLAGS_FILE := $(BUILD)/flags.txt
-ifeq ($(filter clean,$(MAKECMDGOALS)),)
-$(shell mkdir -p $(BUILD) && printf '%s\n' '$(CFLAGS) $(LDFLAGS)' | cmp -s - $(FLAGS_FILE) || printf '%s\n' '$(CFLAGS) $(LDFLAGS)' > $(FLAGS_FILE))
-endif
-$(OBJS): $(FLAGS_FILE)
+# -MMD tracks headers, not flags: each object has a .flags file beside it holding the flags it
+# compiles with (CFLAGS with its target-specific additions: STRICT, ANALYZE, a project's per-object
+# flags such as -fno-optimize-crc), rewritten only when they change, so the object rebuilds when its
+# own flags do (a new FW_VERSION after a commit, a different DEFS). link.flags does the same for the
+# link, and the .elf relinks when the linker script or a makefile changes. A .flags file is a
+# prerequisite of its object only, so it sees that object's target-specific CFLAGS.
+OBJ_FLAGS = $(OBJS:.o=.flags)
+$(foreach o,$(OBJS),$(eval $(o): $(o:.o=.flags)))
+$(OBJ_FLAGS): FLAGS_OF = $(CFLAGS)
+$(BUILD)/app/startup.flags: FLAGS_OF = $(CPU)
+$(BUILD)/link.flags: FLAGS_OF = $(LDFLAGS)
+$(OBJ_FLAGS) $(BUILD)/link.flags: FORCE
+	@mkdir -p $(dir $@)
+	@printf '%s\n' '$(FLAGS_OF)' | cmp -s - $@ || printf '%s\n' '$(FLAGS_OF)' > $@
+FORCE:
 
 # One explicit rule per source (no vpath), so a project file can never be shadowed by a board or
 # vendor file of the same name.
@@ -146,7 +153,7 @@ $(BUILD)/app/startup.o: $(ASM_SRC)
 
 APP_FLASH_BYTES ?= 194560
 
-$(TARGET).elf: $(OBJS) $(BOARD)/STM32WL55JCIX_FLASH.ld $(MAKEFILE_LIST)
+$(TARGET).elf: $(OBJS) $(BUILD)/link.flags $(BOARD)/STM32WL55JCIX_FLASH.ld $(MAKEFILE_LIST)
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@
 ifneq ($(FLASH_BUDGET_PCT),)
@@ -189,4 +196,4 @@ clean:
 # A failed check after the link (flash budget, no heap) must not leave an .elf the next make trusts.
 .DELETE_ON_ERROR:
 
-.PHONY: all flash clean stack waits
+.PHONY: all flash clean stack waits FORCE

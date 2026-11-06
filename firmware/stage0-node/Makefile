@@ -37,7 +37,7 @@ endif
 # The bench OLED (App/oled_dma.h; docs/superpowers/specs/2026-11-04-node-oled-and-e2e-design.md):
 # WS_BENCH_OLED=1 builds the display into the TX, 0 (the field build, the default) leaves it out with
 # its pins. The bench build has its own directory, so neither build ever links the other's objects
-# (flags.txt in board.mk would rebuild them all anyway when the flags differ).
+# (each object's .flags file in board.mk would rebuild it anyway when its flags differ).
 WS_BENCH_OLED ?= 0
 ifeq ($(filter $(WS_BENCH_OLED),0 1),)
 $(error WS_BENCH_OLED must be 0 or 1)
