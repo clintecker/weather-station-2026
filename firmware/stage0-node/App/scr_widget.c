@@ -116,14 +116,13 @@ void scr_bars(const oled_surf *s, int x, int base_y, unsigned px, const scr_seri
 }
 
 void scr_trace(const oled_surf *s, int x, int top, int w, int h, const scr_series *d, int32_t lo, int32_t hi,
-               unsigned frame)
+               unsigned slots)
 {
-  unsigned shown = scr_grow(d->cap, frame, SCR_GROW_FRAMES);
   int px = 0, py = 0, prev = 0;
   for (unsigned i = 0; i < d->n; i++)
   {
     unsigned slot = d->cap - d->n + i;
-    if (slot >= shown) break;
+    if (slot >= slots) break;
     int32_t v = scr_at(d, i);
     if (v == SCR_GAP) { prev = 0; continue; }
     int sx = x + (int)(slot * (unsigned)(w - 1) / (d->cap - 1U)), sy = scr_spark_y(v, lo, hi, top, h);

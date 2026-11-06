@@ -45,9 +45,10 @@ void scr_bars(const oled_surf *s, int x, int base_y, unsigned px, const scr_seri
               unsigned frame, const scr_bars_style *st);
 
 /* The sparkline: sample i at x + slot(i) (w - 1) / (cap - 1), at scr_spark_y in [top, top + h), joined to the one
-   before unless a gap breaks the line, only the first scr_grow(cap, frame) slots drawn. */
+   before unless a gap breaks the line, only the first `slots` slots drawn (cap: all; growing in:
+   scr_grow(cap, frame, SCR_GROW_FRAMES)). */
 void scr_trace(const oled_surf *s, int x, int top, int w, int h, const scr_series *d, int32_t lo, int32_t hi,
-               unsigned frame);
+               unsigned slots);
 
 /* A gauge of w x h at (x, y) filled fill_px from x + inset: boxed, the box around it; else a dotted track along
    its bottom row. POWER's {128, 2, 0, 2, 0}, SYSTEM's {70, 7, 2, 3, 1}. */

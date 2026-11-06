@@ -41,7 +41,8 @@ static void spark(const oled_surf *s, const scr_series *d, int32_t span, unsigne
 {
   scr_frame(s, PLOT_X - 2, PLOT_TOP - 1, PLOT_X + PLOT_W + 1, PLOT_TOP + PLOT_H, SCR_EDGE_DOTTED, SCR_EDGE_DOTTED, 1);
   int32_t lo, hi;
-  if (scr_spark_range(d, span, &lo, &hi)) scr_trace(s, PLOT_X, PLOT_TOP, PLOT_W, PLOT_H, d, lo, hi, frame);
+  if (scr_spark_range(d, span, &lo, &hi))
+    scr_trace(s, PLOT_X, PLOT_TOP, PLOT_W, PLOT_H, d, lo, hi, scr_grow(d->cap, frame, SCR_GROW_FRAMES));
 }
 
 /* "<prefix> lo..hi<unit>" with dec decimals of in_dec, or "<prefix> --". */

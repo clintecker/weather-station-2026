@@ -93,7 +93,7 @@ void scr_scope(const oled_surf *s, unsigned frame, const scr_view_t *v)
   scr_frame(s, 0, 9, OLED_W - 1, 54, SCR_EDGE_SOLID, SCR_EDGE_SOLID, 1);
   oled_dotgrid(s, PLOT_X, PLOT_TOP, PLOT_RIGHT, 44, 16);
   int32_t most = scr_max(&d), full = most > SCOPE_MIN_FULL ? most : SCOPE_MIN_FULL;
-  scr_trace(s, PLOT_X, PLOT_TOP, PLOT_RIGHT - PLOT_X + 1, PLOT_BOTTOM - PLOT_TOP + 1, &d, 0, full, SCR_GROW_FRAMES - 1U);
+  scr_trace(s, PLOT_X, PLOT_TOP, PLOT_RIGHT - PLOT_X + 1, PLOT_BOTTOM - PLOT_TOP + 1, &d, 0, full, d.cap);
   oled_row foot = { "" };
   oled_put_dec(&foot, w->speed_cms, 2, 1, 0);
   oled_put(&foot, "m/s  G");
