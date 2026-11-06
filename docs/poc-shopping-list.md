@@ -124,7 +124,7 @@ if the bench lacks them.
 | 1 | STEMMA QT to male header cable | change C, the branch to the power monitors (unswitched; *2026-11-02:* the hub's branch is unswitched too, change C has no PA9 load switch, so no load-switch breakout is listed) |
 | 2 | female-to-male jumper, about 30 cm | the bench OLED's own supply pair (VCC CN7.16, GND CN10.20); skip if owned |
 | 1 | USB-C wall adapter, 5 V ≥ 2 A (5.1–5.25 V output preferred) | the charger input, floating from the Mac; skip if one is owned |
-| 1 | plywood or MDF, about 30 × 40 cm, 6–9 mm | the base plate (record H1); scrap is fine |
+| 0 | ~~plywood or MDF, about 30 × 40 cm, 6–9 mm~~ | not bought: *2026-11-05:* the base plate is 3D printed instead (`hardware/base-plate/spec-r2.md`, two tiles) |
 | 1 | nylon standoff kit, M2.5 and M3 | |
 | 1 | double-sided foam mounting tape | |
 | 1 pack (20) | adhesive cable-tie mounts | |

@@ -144,7 +144,7 @@ recommendation (R1–R13) that the decision replaces.
 
 | ID | Decision | Why | Rejected alternatives |
 |---|---|---|---|
-| H1 | **Base plate (R7), mandatory now**: one plywood or MDF plate about 30 × 40 cm, 6–9 mm. Both NUCLEOs on nylon standoffs; breadboards by their adhesive; INA228, gauge and hub on foam tape or M2.5 standoffs; the lever connectors glued down in a row beside board B; adhesive tie mounts within 30 mm of every JST mating, the pack lead and both USB cables. The pack lies flat in a marked spot. From HYGI-4, PHAS-14 | a tug stops at an anchor, never at a contact. CONTEXT-PACK records that a 1 s USB dropout resets the ST-LINK board | Loose boards (today) |
+| H1 | **Base plate (R7), mandatory now**: one plywood or MDF plate about 30 × 40 cm, 6–9 mm. Both NUCLEOs on nylon standoffs; breadboards by their adhesive; INA228, gauge and hub on foam tape or M2.5 standoffs; the lever connectors glued down in a row beside board B; adhesive tie mounts within 30 mm of every JST mating, the pack lead and both USB cables. The pack lies flat in a marked spot. From HYGI-4, PHAS-14 | a tug stops at an anchor, never at a contact. CONTEXT-PACK records that a 1 s USB dropout resets the ST-LINK board | Loose boards (today) *2026-11-05:* the plate is 3D printed, not plywood or MDF (`hardware/base-plate/spec-r2.md`). |
 | H2 | **R5 rejected.** Keep the existing breadboards for signals. If a signal joint fails the wiggle test, move the part to unused holes; buy one BB830 only if failures repeat in different areas. From HYGI-2 | with P1 in place, breadboard contact resistance affects no measurement | A fresh board "to remove a variable": the variable no longer matters |
 | H3 | **R6, limited.** Every jumper added or moved in changes A and B (section 4) is pre-cut solid 22 AWG laid flat, including all NUCLEO Arduino-header jumpers; headers fully seated and checked by eye. Untouched board-A jumpers stay unless they fail the wiggle test. From HYGI-3, PHAS-14 | removes the springy leads that lever contacts, without rebuilding what works | Rewire everything now. Dupont throughout (the failure-era jumper) |
 | H4 | **R9 accepted as already done**: every I2C part on STEMMA QT through the passive 5625 hub; cables 50–100 mm, 200 mm only where the layout needs it; bench bus under 1 m. From HYGI-5 | a bad I2C contact fails loudly (NACK → suspect → absent) | I2C on breadboard jumpers; an active hub now |
@@ -640,7 +640,7 @@ Buy now (step 1):
 | 1 | STEMMA QT to male header cable | change C, the power monitors' branch (kept 2026-11-02) |
 | 2 | female-to-male jumper, about 30 cm | OLED supply leads; skip if owned |
 | 1 | USB-C wall adapter, 5 V ≥ 2 A (5.1–5.25 V output preferred) | skip if one is owned |
-| 1 | plywood or MDF, about 30 × 40 cm, 6–9 mm | scrap is fine |
+| 1 | plywood or MDF, about 30 × 40 cm, 6–9 mm | scrap is fine. *2026-11-05:* superseded, the plate is 3D printed (`hardware/base-plate/spec-r2.md`) |
 | 1 | nylon standoff kit, M2.5 and M3 | |
 | 1 | double-sided foam mounting tape | |
 | 1 pack (20) | adhesive cable-tie mounts | |
