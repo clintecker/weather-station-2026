@@ -25,4 +25,6 @@ const scr_def scr_defs[] = {
 };
 _Static_assert(sizeof scr_defs / sizeof scr_defs[0] == SCR_COUNT, "a screen for every enum scr_id");
 
-unsigned scr_frames(enum scr_id id) { return (unsigned)id < SCR_COUNT ? scr_defs[id].frames : 1U; }
+const scr_def *scr_def_of(enum scr_id id) { return &scr_defs[(unsigned)id < SCR_COUNT ? id : SCR_HOME]; }
+
+unsigned scr_frames(enum scr_id id) { return scr_def_of(id)->frames; }

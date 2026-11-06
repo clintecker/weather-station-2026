@@ -36,7 +36,7 @@ void scr_form_lr(oled_row *r, const char *left, const char *right)
 
 void scr_draw(const oled_surf *s, enum scr_id id, unsigned frame, const scr_view_t *v)
 {
-  const scr_def *d = &scr_defs[(unsigned)id < SCR_COUNT ? id : SCR_HOME];
+  const scr_def *d = scr_def_of(id);
   oled_clear(s);
   d->draw(s, (d->flags & SCR_F_ENDLESS) || frame < d->frames ? frame : d->frames - 1U, v);
 }

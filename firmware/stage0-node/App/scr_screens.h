@@ -47,6 +47,7 @@ typedef struct {
   uint8_t frames, anim, every, flags;
 } scr_def;
 extern const scr_def scr_defs[SCR_COUNT];
+const scr_def *scr_def_of(enum scr_id id);   /* id's entry, HOME's for an id out of range */
 unsigned scr_frames(enum scr_id id);
 /* Clears the surface s and draws frame `frame` of screen id (frame counts from 0); a screen not SCR_F_ENDLESS
    draws a frame past its last as the last. In scr_view.c, apart from the table, so that the scheduler's host
