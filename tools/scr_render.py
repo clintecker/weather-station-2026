@@ -110,7 +110,6 @@ def build(directory, cc=('cc', '-std=c11', '-Wall', '-Wextra', '-Werror')):
                    check=True)
     lib = ctypes.CDLL(str(lib_path))
     lib.scr_draw.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(View)]
-    lib.scr_draw_gray.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(View), ctypes.c_int]
     lib.scr_frames.argtypes = [ctypes.c_int]
     lib.scr_frames.restype = ctypes.c_uint
     lib.oled_get.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
@@ -227,14 +226,6 @@ def unpack(frame, rotate180=0):
     return out
 
 
-def gray(lib, screen, frame, view, rotate180=0):
-    """A gray screen's pixels as {(x, y): level 1-15}; None for a screen scr_draw draws."""
-    out = ctypes.create_string_buffer(FRAME_BYTES)
-    if not lib.scr_draw_gray(out, SCREENS.index(screen), frame, ctypes.byref(view), rotate180):
-        return None
-    return unpack(out.raw, rotate180)
-
-
 class Surf(ctypes.Structure):
     """An oled_surf (firmware/common/oled_draw.h) over a frame of its own, cleared: pass byref(surf)."""
     _fields_ = [('px', ctypes.c_void_p), ('rot180', ctypes.c_uint8), ('ink', ctypes.c_uint8)]
@@ -251,13 +242,12 @@ class Surf(ctypes.Structure):
 def frame(lib, screen, frame, view):
     """The frame as the TX sends it (App/oled_app.c): 4096 bytes in the SSD1325's order, turned for the panel."""
     surf = Surf(1)
-    if not lib.scr_draw_gray(surf.buf, SCREENS.index(screen), frame, ctypes.byref(view), 1):
-        lib.scr_draw(ctypes.byref(surf), SCREENS.index(screen), frame, ctypes.byref(view))
+    lib.scr_draw(ctypes.byref(surf), SCREENS.index(screen), frame, ctypes.byref(view))
     return surf.buf.raw
 
 
 def shade(lib, screen, frame_no, view):
-    """What to render: {(x, y): level} of the lit pixels (1-bit screens at 15), the right way up."""
+    """What to render: {(x, y): level} of the lit pixels, the right way up."""
     return unpack(frame(lib, screen, frame_no, view), 1)
 
 

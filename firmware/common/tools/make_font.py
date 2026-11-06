@@ -4,7 +4,7 @@ checked. Only the characters the bench screens use; anything else draws as '?'.
     python3 firmware/common/tools/make_font.py          # rewrite the C file
     python3 firmware/common/tools/make_font.py --check  # exit 1 if the C file is out of date
 
-tests/test_oled_fb.py runs --check."""
+tests/test_oled_draw.py runs --check."""
 import sys
 from pathlib import Path
 

@@ -31,7 +31,7 @@ class Surf:
 
 
 @needs_cc
-class OledFb(unittest.TestCase):
+class OledDraw(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.lib = lib = host_library(cls, 'oled_draw', '-I', COMMON, COMMON/'oled_draw.c', COMMON/'font5x7.c')
@@ -49,9 +49,6 @@ class OledFb(unittest.TestCase):
         lib.oled_circle.argtypes = [p, i, i, i]
         lib.oled_disc.argtypes = [p, i, i, i, i]
         lib.oled_shift_row.argtypes = [p, i, i]
-        lib.ssd1325_put4.argtypes = [p, i, i, u, i]
-        lib.ssd1325_blit4.argtypes = [p, i, i, ctypes.c_char_p, i, i, u, i]
-        lib.ssd1325_text4.argtypes = [p, i, i, ctypes.c_char_p, u, i]
 
     def fb(self, rot180=0, ink=15):
         return Surf(rot180, ink)
@@ -207,64 +204,41 @@ class OledFb(unittest.TestCase):
         self.lib.oled_shift_row(fb, 3, 1)
         self.assertEqual([self.lib.oled_get(fb, x, 3) for x in (4, 5, 6, 7)], [0, 9, 0, 6])
 
-    def frame(self):
-        return ctypes.create_string_buffer(4096)
-
-    def test_put4_nibbles(self):
-        # Send order: column pair, then row; the left pixel of a pair in the high nibble. Each put sets its
+    def test_level_nibbles(self):
+        # Send order: column pair, then row; the left pixel of a pair in the high nibble. Each level sets its
         # own nibble only; a level past 15 is 15; off the screen is ignored.
-        out = self.frame()
-        self.lib.ssd1325_put4(out, 4, 3, 9, 0)
-        self.lib.ssd1325_put4(out, 5, 3, 6, 0)
-        self.lib.ssd1325_put4(out, 127, 63, 99, 0)
+        fb = self.fb()
+        self.lib.oled_level(fb, 4, 3, 9)
+        self.lib.oled_level(fb, 5, 3, 6)
+        self.lib.oled_level(fb, 127, 63, 99)
         for x, y in ((-1, 0), (128, 0), (0, -1), (0, 64)):
-            self.lib.ssd1325_put4(out, x, y, 15, 0)
-        self.assertEqual((out.raw[2*64 + 3], out.raw[63*64 + 63]), (0x96, 0x0F))
-        self.assertEqual(sum(1 for b in out.raw if b), 2)
-        self.lib.ssd1325_put4(out, 4, 3, 0, 0)
-        self.assertEqual(out.raw[2*64 + 3], 0x06)
+            self.lib.oled_level(fb, x, y, 15)
+        self.assertEqual((fb.raw[2*64 + 3], fb.raw[63*64 + 63]), (0x96, 0x0F))
+        self.assertEqual(sum(1 for b in fb.raw if b), 2)
+        self.lib.oled_level(fb, 4, 3, 0)
+        self.assertEqual(fb.raw[2*64 + 3], 0x06)
 
-    def test_put4_rotated(self):
-        # Turned half a turn: (0, 0) is sent as (127, 63), the right pixel of the last pair, as a turned surface holds it.
-        out = self.frame()
-        self.lib.ssd1325_put4(out, 0, 0, 7, 1)
-        self.lib.ssd1325_put4(out, 1, 0, 3, 1)
-        self.assertEqual(out.raw[63*64 + 63], 0x37)
-        self.assertEqual(sum(1 for b in out.raw if b), 1)
+    def test_level_rotated(self):
+        # Turned half a turn: (0, 0) is stored as (127, 63), the right pixel of the last pair.
+        fb = self.fb(rot180=1)
+        self.lib.oled_level(fb, 0, 0, 7)
+        self.lib.oled_level(fb, 1, 0, 3)
+        self.assertEqual(fb.raw[63*64 + 63], 0x37)
+        self.assertEqual(sum(1 for b in fb.raw if b), 1)
 
-    def test_put4_matches_the_surface(self):
-        # A 1-bit picture put pixel by pixel at full level is the frame a surface holds, either way up.
-        pic = self.fb()
-        self.lib.oled_text(pic, 1, 1, b'TX 0123', 2)
-        self.lib.oled_circle(pic, 90, 40, 20)
-        self.lib.oled_set(pic, 127, 63, 1)
-        for rot in (0, 1):
-            want, got = self.fb(rot), self.frame()
-            for x, y in self.lit(pic):
-                self.lib.oled_set(want, x, y, 1)
-                self.lib.ssd1325_put4(got, x, y, 15, rot)
-            self.assertEqual(got.raw, want.raw, rot)
+    def test_a_turned_surface_is_the_picture_turned(self):
+        # Anything drawn on a turned surface is, read back, what an unturned one shows, at the same levels.
+        for ink in (15, 4):
+            pics = [self.fb(rot, ink) for rot in (0, 1)]
+            for pic in pics:
+                self.lib.oled_text(pic, 1, 1, b'TX 0123 ~', 2)
+                self.lib.oled_circle(pic, 90, 40, 20)
+                self.lib.oled_set(pic, 127, 63, 1)
+            self.assertEqual(self.levels(pics[1]), self.levels(pics[0]))
+            self.assertEqual(set(self.levels(pics[0]).values()), {ink})
 
-    def test_blit4_and_text4(self):
-        # blit4 puts a bitmap's lit pixels at its level (bit w - 1 the leftmost column), clipped; text4 is
-        # oled_text's pixels, '?' for a character the font lacks.
-        out = self.frame()
-        self.lib.ssd1325_blit4(out, 126, 0, bytes([0b101, 0b010]), 3, 2, 5, 0)
-        self.assertEqual(self.levels(out), {(126, 0): 5, (127, 1): 5})
-        fb, out = self.fb(), self.frame()
-        self.lib.oled_text(fb, 3, 50, b'SPEED x2 ~', 1)
-        self.lib.ssd1325_text4(out, 3, 50, b'SPEED x2 ~', 4, 0)
-        self.assertEqual(self.levels(out), dict.fromkeys(self.lit(fb), 4))
-
-    @staticmethod
-    def levels(out):
-        got = {}
-        for i, b in enumerate(out.raw):
-            cp, y = divmod(i, OLED_H)
-            for x, v in ((2*cp, b >> 4), (2*cp + 1, b & 15)):
-                if v:
-                    got[(x, y)] = v
-        return got
+    def levels(self, fb):
+        return {(x, y): self.lib.oled_get(fb, x, y) for y in range(OLED_H) for x in range(OLED_W) if self.lib.oled_get(fb, x, y)}
 
 
 if __name__ == '__main__':

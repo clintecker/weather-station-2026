@@ -94,22 +94,12 @@ static const unsigned frames[SCR_COUNT] = { 1, 16, 24, 8, 8, 8, 8, 64, 64, 64, 6
 unsigned scr_frames(enum scr_id id) { return (unsigned)id < SCR_COUNT ? frames[id] : 1U; }
 int t_draws, t_id = -1, t_frame = -1;
 scr_view_t t_view;   /* what the last draw saw */
-/* t_expands: draws of a 1-bit screen on a surface over the send buffer, turned for the panel. */
+/* t_expands: draws on a surface over the send buffer, turned for the panel. */
 void scr_draw(const oled_surf *s, enum scr_id id, unsigned frame, const scr_view_t *v)
 {
   if (t_busy) t_torn++;
   if (s->px == txbuf && s->rot180) t_expands++;
   t_draws++; t_id = (int)id; t_frame = (int)frame; t_view = *v;
-}
-/* The gray screens (MATRIX) draw straight into the buffer, turned: recorded as a draw, no expansion. */
-int t_grays, t_gray_rotated;
-int scr_draw_gray(uint8_t *out, enum scr_id id, unsigned frame, const scr_view_t *v, int rotate180)
-{
-  if (id != SCR_MATRIX) return 0;
-  if (t_busy) t_torn++;
-  if (out == txbuf) t_grays++;
-  t_gray_rotated = rotate180; t_draws++; t_id = (int)id; t_frame = (int)frame; t_view = *v;
-  return 1;
 }
 int t_fills;
 void oled_view_fill(scr_view_t *v, enum scr_id id, unsigned frame) { (void)v; (void)id; (void)frame; t_fills++; }
@@ -833,9 +823,9 @@ class OledApp(unittest.TestCase):
         self.tick()
         self.assertEqual((SCREENS[self.get('t_id')], self.get('t_draws') > draws), ('AIR', True))
 
-    def test_a_gray_screen_draws_into_the_send_buffer(self):
-        # MATRIX draws its gray levels straight into the send buffer, turned as the 1-bit screens are, and
-        # that buffer goes out; scr_draw does not draw over it. The next screen is 1-bit again.
+    def test_a_gray_screen_draws_into_the_send_buffer_as_any_other(self):
+        # MATRIX, gray, is drawn as every screen is: by scr_draw, on the send buffer turned for the panel, and
+        # that buffer goes out.
         self.to_home()
         for _ in B1_ORDER[1:B1_ORDER.index('MATRIX') + 1]:
             self.press(1)
@@ -843,11 +833,7 @@ class OledApp(unittest.TestCase):
         expands, sends = self.get('t_expands'), self.get('t_sends')
         self.assertEqual(SCREENS[self.get('t_id')], 'MATRIX')
         self.tick()
-        self.assertEqual((self.get('t_grays'), self.get('t_gray_rotated')), (2, 1))
-        self.assertEqual((self.get('t_expands'), self.get('t_sends')), (expands, sends + 1))
-        self.press(1)
-        self.tick()
-        self.assertEqual((SCREENS[self.get('t_id')], self.get('t_expands'), self.get('t_grays')), ('PINBALL', expands + 1, 2))
+        self.assertEqual((SCREENS[self.get('t_id')], self.get('t_expands'), self.get('t_sends')), ('MATRIX', expands + 1, sends + 1))
 
     def test_a_faulted_display_is_not_drawn(self):
         # After a fault (oled_dma_send refuses with -2) the step draws nothing: no CPU spent on frames.

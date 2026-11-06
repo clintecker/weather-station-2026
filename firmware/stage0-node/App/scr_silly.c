@@ -184,27 +184,36 @@ unsigned scr_matrix_glyph(unsigned c, unsigned r, unsigned frame, int head)
   return scr_hash(cell, epoch * 2U + (head ? 1U : 0U)) % scr_kana_count;
 }
 
-void scr_matrix(uint8_t *out, unsigned frame, const scr_view_t *v, int rotate180)
+/* A glyph's lit pixels (scr_kana.h: bit SCR_KANA_W - 1 the leftmost column) at (x, y), in the surface's ink. */
+static void kana(const oled_surf *s, int x, int y, const uint8_t *rows)
 {
+  for (int r = 0; r < SCR_KANA_H; r++)   /* bound: 7 rows of 5 columns */
+    for (int c = 0; c < SCR_KANA_W; c++)
+      if ((rows[r] >> (SCR_KANA_W - 1 - c)) & 1U) oled_set(s, x + c, y + r, 1);
+}
+
+void scr_matrix(const oled_surf *s, unsigned frame, const scr_view_t *v)
+{
+  oled_surf g = *s;   /* the same frame, its own ink: each glyph at its level */
   unsigned tips = scr_rain_tips(v->rain.per_min, RAIN_HIST_MINUTES, SCR_RAIN_RECENT_MIN), speed = scr_matrix_speed(tips);
   for (unsigned c = 0; c < SCR_MATRIX_COLS; c++)   /* bound: 21 columns */
   {
     int head[SCR_MATRIX_STREAMS];
     unsigned len[SCR_MATRIX_STREAMS];
-    for (unsigned s = 0; s < SCR_MATRIX_STREAMS; s++)   /* bound: 2 streams */
-      if (!scr_matrix_stream(c, s, frame, speed, &head[s], &len[s])) len[s] = 0;
+    for (unsigned k = 0; k < SCR_MATRIX_STREAMS; k++)   /* bound: 2 streams */
+      if (!scr_matrix_stream(c, k, frame, speed, &head[k], &len[k])) len[k] = 0;
     for (unsigned r = 0; r < SCR_MATRIX_ROWS; r++)   /* bound: 7 rows */
     {
       unsigned level = 0;
       int is_head = 0;
-      for (unsigned s = 0; s < SCR_MATRIX_STREAMS; s++)   /* bound: 2 streams */
+      for (unsigned k = 0; k < SCR_MATRIX_STREAMS; k++)   /* bound: 2 streams */
       {
-        unsigned l = scr_matrix_fade(head[s] - (int)r, len[s]);
+        unsigned l = scr_matrix_fade(head[k] - (int)r, len[k]);
         if (l > level) { level = l; is_head = l == SCR_MATRIX_HEAD; }
       }
       if (level == 0U) continue;
-      ssd1325_blit4(out, (int)c * MATRIX_PITCH_X + 1, (int)r * MATRIX_PITCH_Y,
-                    scr_kana_rows[scr_matrix_glyph(c, r, frame, is_head)], SCR_KANA_W, SCR_KANA_H, level, rotate180);
+      g.ink = (uint8_t)level;
+      kana(&g, (int)c * MATRIX_PITCH_X + 1, (int)r * MATRIX_PITCH_Y, scr_kana_rows[scr_matrix_glyph(c, r, frame, is_head)]);
     }
   }
   char line[SCR_LINE] = "TIPS ";
@@ -213,7 +222,8 @@ void scr_matrix(uint8_t *out, unsigned frame, const scr_view_t *v, int rotate180
   scr_pad_to(line, 13);
   scr_put(line, "SPEED x");
   scr_put_uint(line, speed);
-  ssd1325_text4(out, 0, OLED_H - FONT5X7_H, line, MATRIX_FOOTER, rotate180);
+  g.ink = MATRIX_FOOTER;
+  (void)oled_text(&g, 0, OLED_H - FONT5X7_H, line, 1);
 }
 
 /* ---- the packet pinball ---- */

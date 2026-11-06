@@ -74,10 +74,6 @@ typedef struct {
 /* Clears the surface s and draws frame `frame` of screen id (frame counts from 0). HOME and the banner animate for
    ever (their icon); any other screen draws a frame past its last as the last. */
 void scr_draw(const oled_surf *s, enum scr_id id, unsigned frame, const scr_view_t *v);
-/* The screens drawn in gray (MATRIX): clears out, a frame in the SSD1325's send order (oled_draw.h), and
-   draws the frame there turned as a turned surface holds it; 1. Any other screen: 0, out untouched, and
-   scr_draw draws it (scr_draw leaves a gray screen's surface clear). */
-int scr_draw_gray(uint8_t *out, enum scr_id id, unsigned frame, const scr_view_t *v, int rotate180);
 /* Frames in one play as an interlude or a packet screen: BURST 16, BANNER 24, HACK 24, HOME 1, AIR,
    PRESSURE, POWER and RADIO 8 (their bars and lines grow in), the others 64. */
 unsigned scr_frames(enum scr_id id);
@@ -97,9 +93,9 @@ void scr_hack(const oled_surf *s, unsigned frame);
 void scr_rain(const oled_surf *s, const scr_view_t *v);                                    /* scr_rain.c */
 void scr_fortune(const oled_surf *s, unsigned frame, const scr_view_t *v);                 /* scr_silly.c */
 void scr_frog(const oled_surf *s, unsigned frame, const scr_view_t *v);
-/* The digital rain, in gray: out cleared, in send order. scr_matrix_glyph: the glyph (scr_kana.h) at (c, r),
+/* The digital rain, in gray: each glyph at its own level, on a copy of s with its own ink. scr_matrix_glyph: the glyph (scr_kana.h) at (c, r),
    each changing now and then on its own, the head's every frame. */
-void scr_matrix(uint8_t *out, unsigned frame, const scr_view_t *v, int rotate180);
+void scr_matrix(const oled_surf *s, unsigned frame, const scr_view_t *v);
 unsigned scr_matrix_glyph(unsigned c, unsigned r, unsigned frame, int head);
 void scr_pinball(const oled_surf *s, unsigned frame, const scr_view_t *v);
 

@@ -140,7 +140,7 @@ static void step(void)
   view.airtime_pct = (uint8_t)(air_pct > 100U ? 100U : air_pct);
   uint8_t *out = oled_dma_buffer();
   oled_surf s = oled_surf_on(out, 1);   /* drawn into the send buffer, turned: the panel is upside down */
-  if (!scr_draw_gray(out, id, frame, &view, 1)) scr_draw(&s, id, frame, &view);
+  scr_draw(&s, id, frame, &view);
   (void)oled_dma_send(out);   /* not busy (above), so only a fault refuses it */
 }
 BUSYMON_TASK(step)

@@ -147,26 +147,3 @@ void oled_shift_row(const oled_surf *s, int y, int dx)
     oled_level(s, x, y, from >= 0 && from < OLED_W ? row[from] : 0U);
   }
 }
-
-void ssd1325_put4(uint8_t frame[OLED_FRAME_BYTES], int x, int y, unsigned level, int rotate180)
-{
-  oled_surf s = oled_surf_on(frame, rotate180);
-  oled_level(&s, x, y, level);
-}
-
-void ssd1325_blit4(uint8_t frame[OLED_FRAME_BYTES], int x, int y, const uint8_t *rows, int w, int h, unsigned level,
-                   int rotate180)
-{
-  if (w > 8) w = 8;
-  /* bound: h rows of at most 8 columns */
-  for (int r = 0; r < h; r++)
-    for (int c = 0; c < w; c++)
-      if ((rows[r] >> (w - 1 - c)) & 1U) ssd1325_put4(frame, x + c, y + r, level, rotate180);
-}
-
-void ssd1325_text4(uint8_t frame[OLED_FRAME_BYTES], int x, int y, const char *s, unsigned level, int rotate180)
-{
-  /* bound: the characters of s, one a pass */
-  for (; *s; s++, x += OLED_CHAR_ADVANCE)
-    ssd1325_blit4(frame, x, y, glyph(*s), FONT5X7_W, FONT5X7_H, level, rotate180);
-}

@@ -1,7 +1,7 @@
 """The TX's bench screens (firmware/stage0-node/App/scr_view.c, scr_interludes.c, scr_rain.c, scr_art.c):
 layout C, its packet banner and the seven interludes, drawn from a view and a frame number. Pure C, built for the host
 by tools/scr_render.py (which also renders them to PNG for a look against the mockups). MATRIX is drawn in gray
-(scr_draw_gray), its glyphs from firmware/stage0-node/tools/make_scr_kana.py."""
+(its glyphs each at their own ink), its glyphs from firmware/stage0-node/tools/make_scr_kana.py."""
 import ctypes
 import importlib.util
 import subprocess
@@ -435,13 +435,22 @@ class ScrView(unittest.TestCase):
                 if b[0] < a[0]:   # a new cycle
                     self.assertGreaterEqual(a[0] - (a[1] - 1), ROWS - 2, (c, f, a))   # within a frame's fall
 
+    def drawn(self, screen, frame, v, rot180=0, dirty=False):
+        """{(x, y): level} of what scr_draw draws on a surface (turned or not, cleared or full of junk)."""
+        surf = render.Surf(rot180)
+        if dirty:
+            ctypes.memset(surf.buf, 0x55, render.FRAME_BYTES)
+        self.lib.scr_draw(ctypes.byref(surf), render.SCREENS.index(screen), frame, ctypes.byref(v))
+        return surf.levels()
+
     def test_matrix_gray_frame(self):
         # The glyphs sit on the 6 x 8 grid at their cells' levels, the head's glyph at 15, the footer dim;
-        # the frame turned is the same picture turned; no other screen draws in gray.
+        # the frame turned is the same picture turned; scr_draw clears first; the other screens are all 15.
         v = render.demo_view()
         for frame in (0, 5, 40):
-            got = render.gray(self.lib, 'MATRIX', frame, v)
-            self.assertEqual(got, render.gray(self.lib, 'MATRIX', frame, v, 1))   # sent turned, turned back
+            got = self.drawn('MATRIX', frame, v)
+            self.assertEqual(got, self.drawn('MATRIX', frame, v, rot180=1))   # drawn turned, turned back
+            self.assertEqual(got, self.drawn('MATRIX', frame, v, dirty=True))
             self.assertEqual({p: lv for p, lv in got.items() if p[1] >= 56}, dict.fromkeys(self.text(0, 57, 'TIPS 1/10m   SPEED x2'), 3))
             heads = 0
             for c in range(COLS):
@@ -452,11 +461,10 @@ class ScrView(unittest.TestCase):
                     heads += want == 15
             self.assertGreater(heads, 2)
             self.assertFalse({(x, y) for x, y in got if y < 56 and (x % 6 == 0 or y % 8 == 7)})   # the gaps
-        out = ctypes.create_string_buffer(b'\x55' * render.FRAME_BYTES, render.FRAME_BYTES)
-        self.assertEqual(self.lib.scr_draw_gray(out, render.SCREENS.index('HOME'), 0, ctypes.byref(v), 1), 0)
-        self.assertEqual(out.raw, b'\x55' * render.FRAME_BYTES)
-        self.assertEqual(self.draw('MATRIX', 3, v), set(render.gray(self.lib, 'MATRIX', 3, v)))
-        self.assertEqual(render.gray(self.lib, 'MATRIX', 99, v), render.gray(self.lib, 'MATRIX', 63, v))
+        for screen in render.SCREENS:
+            if screen != 'MATRIX':
+                self.assertEqual(set(self.drawn(screen, 7, v).values()), {15}, screen)
+        self.assertEqual(self.drawn('MATRIX', 99, v), self.drawn('MATRIX', 63, v))
         self.assertEqual(self.missing.value, 0)
 
     def test_matrix_glyphs_change_now_and_then(self):

@@ -159,15 +159,6 @@ unsigned scr_frames(enum scr_id id)
   }
 }
 
-int scr_draw_gray(uint8_t *out, enum scr_id id, unsigned frame, const scr_view_t *v, int rotate180)
-{
-  if (id != SCR_MATRIX) return 0;
-  if (frame >= scr_frames(id)) frame = scr_frames(id) - 1U;
-  memset(out, 0, OLED_FRAME_BYTES);
-  scr_matrix(out, frame, v, rotate180);
-  return 1;
-}
-
 void scr_draw(const oled_surf *s, enum scr_id id, unsigned frame, const scr_view_t *v)
 {
   oled_clear(s);
@@ -188,7 +179,7 @@ void scr_draw(const oled_surf *s, enum scr_id id, unsigned frame, const scr_view
   case SCR_HACK: scr_hack(s, frame); break;
   case SCR_FORTUNE: scr_fortune(s, frame, v); break;
   case SCR_FROG: scr_frog(s, frame, v); break;
-  case SCR_MATRIX: break;   /* gray: scr_draw_gray */
+  case SCR_MATRIX: scr_matrix(s, frame, v); break;
   case SCR_PINBALL: scr_pinball(s, frame, v); break;
   default: scr_home(s, frame, v, 0); break;
   }
