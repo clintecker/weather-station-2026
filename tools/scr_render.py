@@ -2,11 +2,20 @@
 firmware's own drawing code, to compare by eye with the approved mockups.
 
     python3 tools/scr_render.py [OUT_DIR]     (default .superpowers/sdd/2026-11-04-node-oled-and-e2e/renders)
+    python3 tools/scr_render.py --digest      every frame's hash, as JSON on stdout
+    python3 tools/scr_render.py --update      the same into tests/golden/scr_frames.json, to accept a change
 
 Each screen is drawn with a demo view (the mockups' values) at a few frames, 4 x scale, lit pixels in the
 mockups' amber on black (a gray screen, MATRIX, at its 16 levels between them): <screen>-f<frame>.png. tests/test_scr_view.py builds the same library and
-uses the view structure defined here."""
+uses the view structure defined here.
+
+The digests are the golden test's (tests/test_scr_golden.py): each frame exactly as the TX sends it (frame(): 4096
+bytes in the SSD1325's order, turned for the panel), for every screen at every frame (0 to 63 for HOME and the banner,
+which animate for ever) in the demo view, and in each state of views() its own screen at every frame and every other
+screen at its first and last."""
 import ctypes
+import hashlib
+import json
 import math
 import subprocess
 import sys
@@ -17,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT/'firmware/stage0-node/App'
 COMMON = ROOT/'firmware/common'
 OUT = ROOT/'.superpowers/sdd/2026-11-04-node-oled-and-e2e/renders'
+GOLDEN = ROOT/'tests/golden/scr_frames.json'
 W, H = 128, 64
 SCREENS = ['HOME', 'BURST', 'BANNER', 'AIR', 'PRESSURE', 'POWER', 'RADIO', 'SCOPE', 'VANE', 'RAIN', 'SYSTEM', 'BOOT',
            'HACK', 'FORTUNE', 'FROG', 'MATRIX', 'PINBALL']   # enum scr_id
@@ -101,6 +111,7 @@ def build(directory, cc=('cc', '-std=c11', '-Wall', '-Wextra', '-Werror')):
     lib = ctypes.CDLL(str(lib_path))
     lib.scr_draw.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(View)]
     lib.scr_draw_gray.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(View), ctypes.c_int]
+    lib.ssd1325_frame.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
     lib.scr_frames.argtypes = [ctypes.c_int]
     lib.scr_frames.restype = ctypes.c_uint
     lib.oled_get.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
@@ -234,6 +245,16 @@ def draw(lib, screen, frame, view):
     return {(x, y) for y in range(H) for x in range(W) if lib.oled_get(fb, x, y)}
 
 
+def frame(lib, screen, frame, view):
+    """The frame as the TX sends it (App/oled_app.c): 4096 bytes in the SSD1325's order, turned for the panel."""
+    out = ctypes.create_string_buffer(FRAME_BYTES)
+    if not lib.scr_draw_gray(out, SCREENS.index(screen), frame, ctypes.byref(view), 1):
+        fb = ctypes.create_string_buffer(W * H // 8)
+        lib.scr_draw(fb, SCREENS.index(screen), frame, ctypes.byref(view))
+        lib.ssd1325_frame(fb, 1, out)
+    return out.raw
+
+
 def shade(lib, screen, frame, view):
     """What to render: the gray levels, or the lit pixels at full level."""
     levels = gray(lib, screen, frame, view)
@@ -304,7 +325,34 @@ def views():
     return out
 
 
+ENDLESS = ('HOME', 'BANNER')   # they animate for ever: digested over 64 frames
+
+
+def digests(lib):
+    """{'<state>/<screen>/<frame>': the first 16 hex digits of the sent frame's SHA-256} (see the docstring)."""
+    demo = demo_view()
+    demo.last_seq = 1234   # as main() renders it
+    states = {'demo': (None, demo), **{name: (screen, v) for name, (screen, _, v) in views().items()}}
+    out = {}
+    for state, (own, view) in states.items():
+        for i, screen in enumerate(SCREENS):
+            n = 64 if screen in ENDLESS else lib.scr_frames(i)
+            for f in (range(n) if own in (None, screen) else sorted({0, n - 1})):
+                out[f'{state}/{screen}/{f:02d}'] = hashlib.sha256(frame(lib, screen, f, view)).hexdigest()[:16]
+    return out
+
+
 def main(argv):
+    if len(argv) > 1 and argv[1] in ('--digest', '--update'):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = json.dumps(digests(build(tmp)), indent=0, sort_keys=True) + '\n'
+        if argv[1] == '--digest':
+            sys.stdout.write(text)
+        else:
+            GOLDEN.parent.mkdir(parents=True, exist_ok=True)
+            GOLDEN.write_text(text)
+            print(GOLDEN)
+        return 0
     out = Path(argv[1]) if len(argv) > 1 else OUT
     out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:

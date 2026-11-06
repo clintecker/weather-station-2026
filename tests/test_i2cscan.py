@@ -4,6 +4,7 @@ used by the node and benchlink) against the datasheet scale factors, and the ben
 Pure C, compiled for the host. Not bench evidence: the tool's readings are checked against a meter on
 the bench (firmware/i2cscan/README.md)."""
 import ctypes
+import hashlib
 import re
 import unittest
 try:
@@ -286,10 +287,11 @@ class BenchScreen(unittest.TestCase):
     """The bench screen's layout (bench_screen.c) over the shared frame buffer and font (firmware/common)."""
     @classmethod
     def setUpClass(cls):
-        cls.lib = host_library(cls, 'bench_screen', '-I', APP, '-I', COMMON, COMMON/'oled_fb.c', COMMON/'font5x7.c',
-                               APP/'bench_screen.c', APP/'bench_regs.c', POWER)
+        cls.lib = host_library(cls, 'bench_screen', '-I', APP, '-I', COMMON, COMMON/'oled_fb.c', COMMON/'oled_draw.c',
+                               COMMON/'font5x7.c', APP/'bench_screen.c', APP/'bench_regs.c', POWER)
         cls.lib.oled_text.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
         cls.lib.bench_screen.argtypes = [ctypes.c_void_p, ctypes.POINTER(View)]
+        cls.lib.ssd1325_frame.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
 
     def fb(self):
         return ctypes.create_string_buffer(OLED_W*OLED_H//8)
@@ -320,6 +322,35 @@ class BenchScreen(unittest.TestCase):
         self.lib.bench_screen(fb, ctypes.byref(v))
         self.assertEqual(fb.raw, self.rows(b'I2C NONE', b'BATT NO INA228', b'CELL NO MAX17048', b'AIR NO SHT45',
                                            b'BOX NO SHTC3', b'P NO BMP581 UV NO'))
+
+    # Four views, each frame hashed as i2cscan sends it (App/i2cscan.c: drawn, then turned for the panel): a refactor
+    # of the drawing code keeps every hash, a deliberate change updates them here.
+    GOLDEN = {'everything': 'cd110f612b27a962', 'nothing': '20b91cd48a2da55d', 'zero': 'dca2c19b3c844812',
+              'cold': '1df2d072d3d8e2bc'}
+
+    @staticmethod
+    def golden_views():
+        everything = View(found=(0x36, 0x40, 0x44, 0x47, 0x53), nfound=6, ina_ok=1, ua=37604, vbus_uv=3845898, gauge_ok=1,
+                          vcell_uv=3846015, soc_mpct=78398, meters_ok=1, wind_ums=1333960, vane=b'SE', tips=2,
+                          air_ok=1, air_centi_c=2134, air_centi_rh=4521, box_ok=1, box_centi_c=2210, box_centi_rh=4002,
+                          press_ok=1, press_dhpa=10132, uv_ok=1, uv_counts=123)
+        zero = View(found=(0x40,), nfound=1, ina_ok=1, ua=4, vbus_uv=0, meters_ok=1, wind_ums=0, vane=None, tips=200000,
+                    press_ok=1, press_dhpa=9871)   # a zero current (Q3 of the visual system design), no vane, rain clamped
+        cold = View(found=(0x44, 0x47, 0x53), nfound=3, ina_ok=1, ua=-125349, vbus_uv=4199999, gauge_ok=1, vcell_uv=4200000,
+                    soc_mpct=100000, meters_ok=1, wind_ums=25010000, vane=b'NNW', tips=99999, air_ok=1, air_centi_c=-1234,
+                    air_centi_rh=10000, box_ok=1, box_centi_c=-5, box_centi_rh=0, uv_ok=1, uv_counts=262143)
+        return {'everything': everything, 'nothing': View(), 'zero': zero, 'cold': cold}
+
+    def sent(self, v):
+        fb, out = self.fb(), ctypes.create_string_buffer(OLED_W*OLED_H//2)
+        self.lib.bench_screen(fb, ctypes.byref(v))
+        self.lib.ssd1325_frame(fb, 1, out)
+        return hashlib.sha256(out.raw).hexdigest()[:16]
+
+    def test_frames_are_as_they_were(self):
+        got = {name: self.sent(v) for name, v in self.golden_views().items()}
+        self.assertEqual(got, self.GOLDEN)
+        self.assertEqual(len(set(got.values())), 4)
 
     def test_screen_text_has_no_missing_glyphs(self):
         # Every character the layout draws is in the font: a '?' on the screen is never a glyph gap.
