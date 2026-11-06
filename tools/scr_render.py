@@ -42,6 +42,7 @@ SOURCES = [APP/'scr_view.c', APP/'scr_calc.c', APP/'scr_home.c', APP/'scr_detail
            APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', APP/'scr_kana.c',
            COMMON/'font5x7.c']
 FRAME_BYTES = W * H // 2   # the SSD1325's send order (firmware/common/oled_draw.h): column pair, then row
+JUNK = 0xA5                # what frame() fills the buffer with before a screen draws
 SHIM = r'''
 #include <string.h>
 #include "scr_view.h"
@@ -240,8 +241,10 @@ class Surf(ctypes.Structure):
 
 
 def frame(lib, screen, frame, view):
-    """The frame as the TX sends it (App/oled_app.c): 4096 bytes in the SSD1325's order, turned for the panel."""
+    """The frame as the TX sends it (App/oled_app.c): 4096 bytes in the SSD1325's order, turned for the panel. The
+    buffer starts as junk, as the send buffer holds the last frame: a screen that does not clear shows."""
     surf = Surf(1)
+    ctypes.memset(surf.buf, JUNK, FRAME_BYTES)
     lib.scr_draw(ctypes.byref(surf), SCREENS.index(screen), frame, ctypes.byref(view))
     return surf.buf.raw
 

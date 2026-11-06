@@ -27,7 +27,7 @@ int oled_dma_send(const uint8_t frame[OLED_FRAME_BYTES]);
 uint8_t *oled_dma_buffer(void);
 int oled_dma_busy(void);
 /* 0: the display-off command (after a frame under way), then no SPI traffic; 1: the display-on
-   command, or after a fault the whole start-up again. */
+   command, or after a fault the whole start-up again. oled_dma_init must have run first. */
 void oled_dma_enable(int on);
 int oled_dma_faulted(void);   /* 1 from a fault until oled_dma_enable(1) */
 #endif

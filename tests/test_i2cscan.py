@@ -357,6 +357,7 @@ class BenchScreen(unittest.TestCase):
 
     def sent(self, v):
         fb = self.fb(rot180=1)
+        ctypes.memset(fb.buf, 0xA5, OLED_W*OLED_H//2)   # the send buffer holds the last frame: the screen clears it
         self.lib.bench_screen(fb, ctypes.byref(v))
         return hashlib.sha256(fb.raw).hexdigest()[:16]
 

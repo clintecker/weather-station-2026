@@ -402,7 +402,7 @@ extern const uint8_t ssd1325_window[6];                                         
 #define SSD1325_DISPLAY_OFF 0xAEU
 #define SSD1325_DISPLAY_ON  0xAFU
 #define SSD1325_SPI_MAX_HZ  1000000U
-unsigned ssd1325_spi_div_log2(uint32_t pclk_hz);   /* the slowest k in 1..8 with pclk >> k <= 1 MHz */
+unsigned ssd1325_spi_div_log2(uint32_t pclk_hz);   /* the least k in 1..8 with pclk >> k <= 1 MHz: the fastest clock */
 ```
 
 The HAL pin and SPI1 setup that both drivers share goes in `board/nucleo-wl55jc/oled_spi1.c`, as
