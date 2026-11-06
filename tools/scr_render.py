@@ -40,7 +40,7 @@ AIR_HIST, PRESS_HIST, RADIO_HIST = 60, 36, 30
 INCLUDES = ['-I', APP, '-I', COMMON, '-I', ROOT/'firmware']
 SOURCES = [APP/'scr_view.c', APP/'scr_calc.c', APP/'scr_home.c', APP/'scr_detail.c', APP/'scr_interludes.c', APP/'scr_rain.c',
            APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', APP/'scr_kana.c',
-           COMMON/'oled_draw.c', COMMON/'font5x7.c']
+           COMMON/'oled_draw.c', COMMON/'oled_row.c', COMMON/'font5x7.c']
 FRAME_BYTES = W * H // 2   # the SSD1325's send order (firmware/common/oled_draw.h): column pair, then row
 JUNK = 0xA5                # what frame() fills the buffer with before a screen draws
 SHIM = r'''

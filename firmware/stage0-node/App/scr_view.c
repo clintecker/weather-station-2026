@@ -6,77 +6,29 @@
 
 #define HEADER_PX 8
 #define RAIN_TIPS_MAX 1000000U         /* 279 m of rain: more reads as this */
-#define DEC_DIGITS 24                  /* a uint64_t's 20 digits, a point, a sign */
-#define DEC_MAX 6U                     /* decimals scr_put_dec takes: the buffer holds 20 digits */
 
 const char *const scr_point_names[16] = { "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
                                           "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW" };
 
-void scr_put(char *line, const char *s)
-{
-  size_t used = strlen(line);
-  /* bound: at most SCR_LINE - 1 characters are kept */
-  while (*s && used + 1 < SCR_LINE) line[used++] = *s++;
-  line[used] = '\0';
-}
-
-void scr_put_dec(char *line, int64_t v, unsigned in_dec, unsigned out_dec, int plus)
-{
-  if (in_dec > DEC_MAX) in_dec = DEC_MAX;
-  if (out_dec > in_dec) out_dec = in_dec;
-  uint64_t m = v < 0 ? (uint64_t)0 - (uint64_t)v : (uint64_t)v, div = 1;
-  for (unsigned i = out_dec; i < in_dec; i++) div *= 10U;
-  m = (m + div / 2U) / div;
-  int negative = v < 0 && m != 0;
-  char num[DEC_DIGITS];
-  unsigned at = DEC_DIGITS - 1, digits = 0;
-  num[at] = '\0';
-  /* bound: at most 20 digits and a point; at > 1 throughout, as a uint64_t has 20 digits */
-  do
-  {
-    if (out_dec != 0 && digits == out_dec) num[--at] = '.';
-    num[--at] = (char)('0' + m % 10U);
-    m /= 10U;
-    digits++;
-  } while (m != 0 || digits <= out_dec);
-  if (negative) num[--at] = '-';
-  else if (plus) num[--at] = '+';
-  scr_put(line, &num[at]);
-}
-
-void scr_put_uint(char *line, uint32_t v) { scr_put_dec(line, v, 0, 0, 0); }
-
-void scr_put_rain_mm(char *line, uint32_t tips)
+void scr_put_rain_mm(oled_row *r, uint32_t tips, unsigned decimals)
 {
   uint32_t t = tips > RAIN_TIPS_MAX ? RAIN_TIPS_MAX : tips;
-  scr_put_dec(line, (int64_t)t * (int64_t)WSMP_RAIN_NM_PER_TIP, 6, 2, 0);   /* 0.2794 mm a tip (SEN-15901) */
+  oled_put_dec(r, (int64_t)t * (int64_t)WSMP_RAIN_NM_PER_TIP, 6, decimals, 0);   /* 0.2794 mm a tip (SEN-15901) */
 }
 
-void scr_put_age(char *line, uint32_t s)
+void scr_put_age(oled_row *r, uint32_t s)
 {
-  if (s < 100U) { scr_put_uint(line, s); scr_put(line, "s"); }
-  else if (s < 6000U) { scr_put_uint(line, s / 60U); scr_put(line, "m"); }
-  else { scr_put_uint(line, s / 3600U); scr_put(line, "h"); }
+  if (s < 100U) { oled_put_uint(r, s); oled_put(r, "s"); }
+  else if (s < 6000U) { oled_put_uint(r, s / 60U); oled_put(r, "m"); }
+  else { oled_put_uint(r, s / 3600U); oled_put(r, "h"); }
 }
 
-void scr_pad_to(char *line, unsigned col)
+void scr_form_lr(oled_row *r, const char *left, const char *right)
 {
-  size_t used = strlen(line);
-  /* bound: at most SCR_LINE - 1 characters */
-  while (used < col && used + 1 < SCR_LINE) line[used++] = ' ';
-  line[used] = '\0';
-}
-
-
-int scr_put_lr(char *line, const char *left, const char *right)
-{
-  size_t l = strlen(left), r = strlen(right);
-  if (l + 1U + r > SCR_COLS) return 0;
-  line[0] = '\0';
-  scr_put(line, left);
-  scr_pad_to(line, (unsigned)(SCR_COLS - r));
-  scr_put(line, right);
-  return 1;
+  if (oled_put_lr(r, left, right, OLED_COLS)) return;
+  oled_put(r, left);
+  oled_put(r, " ");
+  oled_put(r, right);
 }
 
 void scr_row(const oled_surf *s, int y, const char *text) { (void)oled_text(s, 0, y, text, 1); }

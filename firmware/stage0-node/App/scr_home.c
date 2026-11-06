@@ -11,10 +11,8 @@
  * columns takes a shorter form (BKLG, HLTH and no indent in the banner; W and R, then no dBm, on the
  * lower rows) rather than lose its last characters. */
 #include "scr_view.h"
-#include <string.h>
 #include "oled_draw.h"
 #include "scr_font.h"
-#include "wsmp_registry.h"
 
 #define ICON_CX 20
 #define ICON_CY 19
@@ -121,57 +119,45 @@ static void icon(const oled_surf *s, enum scr_icon i, unsigned tick)
 
 static void readings(const oled_surf *s, const scr_view_t *v)
 {
-  char t[SCR_LINE] = "", rh[SCR_LINE] = "", p[SCR_LINE] = "";
-  if (v->air_ok) { scr_put_dec(t, v->air_c, 2, 1, 0); scr_put(t, "^C"); }
-  else scr_put(t, "--^C");
-  (void)oled_draw_text(s, OLED_W - oled_text_w(t, &scr_big, &oled_x1), TEMP_Y, t, &scr_big, &oled_x1);
-  if (v->air_ok) { scr_put_dec(rh, v->air_rh, 2, 0, 0); scr_put(rh, "% RH"); }
-  else scr_put(rh, "NO SHT45");
-  scr_row_right(s, RH_Y, rh);
-  if (v->press_ok) { scr_put_dec(p, v->press_dhpa, 1, 1, 0); scr_put(p, " hPa"); }
-  else scr_put(p, "NO BMP581");
-  scr_row_right(s, PRESS_Y, p);
+  oled_row t = { "" }, rh = { "" }, p = { "" };
+  if (v->air_ok) { oled_put_dec(&t, v->air_c, 2, 1, 0); oled_put(&t, "^C"); }
+  else oled_put(&t, "--^C");
+  (void)oled_draw_text(s, OLED_W - oled_text_w(t.s, &scr_big, &oled_x1), TEMP_Y, t.s, &scr_big, &oled_x1);
+  if (v->air_ok) { oled_put_dec(&rh, v->air_rh, 2, 0, 0); oled_put(&rh, "% RH"); }
+  else oled_put(&rh, "NO SHT45");
+  scr_row_right(s, RH_Y, rh.s);
+  if (v->press_ok) { oled_put_dec(&p, v->press_dhpa, 1, 1, 0); oled_put(&p, " hPa"); }
+  else oled_put(&p, "NO BMP581");
+  scr_row_right(s, PRESS_Y, p.s);
 }
 
 /* form 0 "WIND 1.3 NE  RAIN 0.6", 1 with one space between, 2 "W 1.3 NE R 0.6". */
-static void wind_rain_line(char *line, const scr_view_t *v, unsigned form)
+static void wind_rain_form(oled_row *r, const void *ctx, unsigned form)
 {
-  line[0] = '\0';
-  scr_put(line, form < 2U ? "WIND " : "W ");
-  if (v->wind.speed_cms < SCR_CALM_CMS) scr_put(line, "calm");
+  const scr_view_t *v = ctx;
+  oled_put(r, form < 2U ? "WIND " : "W ");
+  if (v->wind.speed_cms < SCR_CALM_CMS) oled_put(r, "calm");
   else
   {
-    scr_put_dec(line, v->wind.speed_cms, 2, 1, 0);
-    if (v->wind.point >= 0 && v->wind.point < 16) { scr_put(line, " "); scr_put(line, scr_point_names[v->wind.point]); }
+    oled_put_dec(r, v->wind.speed_cms, 2, 1, 0);
+    if (v->wind.point >= 0 && v->wind.point < 16) { oled_put(r, " "); oled_put(r, scr_point_names[v->wind.point]); }
   }
-  scr_put(line, form == 0U ? "  RAIN " : form == 1U ? " RAIN " : " R ");
-  uint32_t tips = scr_rain_tips(v->rain.per_min, RAIN_HIST_MINUTES, RAIN_HIST_MINUTES);
-  scr_put_dec(line, (int64_t)tips * WSMP_RAIN_NM_PER_TIP, 6, 1, 0);
-}
-
-static void wind_rain_row(const oled_surf *s, const scr_view_t *v)
-{
-  char line[SCR_LINE];
-  for (unsigned form = 0; form < 3U; form++)   /* bound: 3 forms; the last is drawn as it is */
-  {
-    wind_rain_line(line, v, form);
-    if (strlen(line) <= SCR_COLS) break;
-  }
-  scr_row(s, WIND_Y, line);
+  oled_put(r, form == 0U ? "  RAIN " : form == 1U ? " RAIN " : " R ");
+  scr_put_rain_mm(r, scr_rain_tips(v->rain.per_min, RAIN_HIST_MINUTES, RAIN_HIST_MINUTES), 1);
 }
 
 /* form 0 "#1233 ACK -41dBm", 1 "#1233 ACK -41", 2 "#1233 ACK". */
-static void link_line(char *line, const scr_view_t *v, unsigned form)
+static void link_form(oled_row *r, const void *ctx, unsigned form)
 {
-  line[0] = '\0';
-  if (v->last_acked == SCR_TX_NONE) { scr_put(line, "NO TX YET"); return; }
-  scr_put(line, "#");
-  scr_put_uint(line, v->last_seq);
-  if (v->last_acked == SCR_TX_WAIT) { scr_put(line, " SENT"); return; }
-  if (v->last_acked != SCR_TX_ACK) { scr_put(line, " NO ACK"); return; }
-  scr_put(line, " ACK");
-  if (form < 2U) { scr_put(line, " "); scr_put_dec(line, v->ack_rssi, 0, 0, 0); }
-  if (form == 0U) scr_put(line, "dBm");
+  const scr_view_t *v = ctx;
+  if (v->last_acked == SCR_TX_NONE) { oled_put(r, "NO TX YET"); return; }
+  oled_put(r, "#");
+  oled_put_uint(r, v->last_seq);
+  if (v->last_acked == SCR_TX_WAIT) { oled_put(r, " SENT"); return; }
+  if (v->last_acked != SCR_TX_ACK) { oled_put(r, " NO ACK"); return; }
+  oled_put(r, " ACK");
+  if (form < 2U) { oled_put(r, " "); oled_put_dec(r, v->ack_rssi, 0, 0, 0); }
+  if (form == 0U) oled_put(r, "dBm");
 }
 
 static void signal_bars(const oled_surf *s, const scr_view_t *v)
@@ -185,49 +171,33 @@ static void signal_bars(const oled_surf *s, const scr_view_t *v)
   }
 }
 
-static void link_row(const oled_surf *s, const scr_view_t *v)
-{
-  char line[SCR_LINE];
-  for (unsigned form = 0; form < 3U; form++)   /* bound: 3 forms; the last is drawn as it is */
-  {
-    link_line(line, v, form);
-    if (strlen(line) <= LINK_COLS) break;
-  }
-  scr_row(s, LINK_Y, line);
-  signal_bars(s, v);
-}
-
 /* The banner's first row in form 0 (full), 1 (short words) or 2 (short words, no indent). */
-static void banner_line(char *line, const scr_view_t *v, unsigned form)
+static void banner_form(oled_row *r, const void *ctx, unsigned form)
 {
-  line[0] = '\0';
-  if (form < 2U) scr_put(line, "  ");
-  if (v->extra_frames == 0 && v->reports == 0) scr_put(line, "SENDING ");
-  scr_put(line, "TX ");
-  scr_put_uint(line, v->last_seq);
-  if (v->extra_frames != 0) { scr_put(line, " +"); scr_put_uint(line, v->extra_frames); scr_put(line, form ? " BKLG" : " BACKLOG"); }
-  if (v->reports != 0) scr_put(line, form ? " +HLTH" : " +HEALTH");
+  const scr_view_t *v = ctx;
+  if (form < 2U) oled_put(r, "  ");
+  if (v->extra_frames == 0 && v->reports == 0) oled_put(r, "SENDING ");
+  oled_put(r, "TX ");
+  oled_put_uint(r, v->last_seq);
+  if (v->extra_frames != 0) { oled_put(r, " +"); oled_put_uint(r, v->extra_frames); oled_put(r, form ? " BKLG" : " BACKLOG"); }
+  if (v->reports != 0) oled_put(r, form ? " +HLTH" : " +HEALTH");
 }
 
 static void banner(const oled_surf *s, const scr_view_t *v)
 {
-  char line[SCR_LINE];
-  for (unsigned form = 0; form < 3U; form++)   /* bound: 3 forms; the last is drawn as it is */
-  {
-    banner_line(line, v, form);
-    if (strlen(line) <= SCR_COLS) break;
-  }
-  scr_row(s, BANNER_Y, line);
-  char outcome[SCR_LINE] = "  ";
+  oled_row line;
+  (void)oled_fit(&line, banner_form, v, 3, OLED_COLS);
+  scr_row(s, BANNER_Y, line.s);
+  oled_row outcome = { "  " };
   if (v->last_acked == SCR_TX_ACK)
   {
-    scr_put(outcome, "ACK ");
-    scr_put_dec(outcome, v->ack_rssi, 0, 0, 0);
-    scr_put(outcome, "DBM SNR ");
-    scr_put_dec(outcome, v->ack_snr, 0, 0, 0);
+    oled_put(&outcome, "ACK ");
+    oled_put_dec(&outcome, v->ack_rssi, 0, 0, 0);
+    oled_put(&outcome, "DBM SNR ");
+    oled_put_dec(&outcome, v->ack_snr, 0, 0, 0);
   }
-  else if (v->last_acked == SCR_TX_NO_ACK) scr_put(outcome, "NO ACK");
-  scr_row(s, BANNER_Y + 8, outcome);
+  else if (v->last_acked == SCR_TX_NO_ACK) oled_put(&outcome, "NO ACK");
+  scr_row(s, BANNER_Y + 8, outcome.s);
   oled_invert(s, 0, BANNER_Y, OLED_W, 16);
 }
 
@@ -236,6 +206,10 @@ void scr_home(const oled_surf *s, unsigned frame, const scr_view_t *v, int with_
   icon(s, scr_icon_pick(v), frame / 2U);
   readings(s, v);
   if (with_banner) { banner(s, v); return; }
-  wind_rain_row(s, v);
-  link_row(s, v);
+  oled_row line;
+  (void)oled_fit(&line, wind_rain_form, v, 3, OLED_COLS);
+  scr_row(s, WIND_Y, line.s);
+  (void)oled_fit(&line, link_form, v, 3, LINK_COLS);
+  scr_row(s, LINK_Y, line.s);
+  signal_bars(s, v);
 }

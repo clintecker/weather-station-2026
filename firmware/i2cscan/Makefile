@@ -20,6 +20,7 @@ APP_SRC = $(BOARD_CORE_SRC) \
           App/oled.c \
           ../common/oled_draw.c \
           ../common/oled_font.c \
+          ../common/oled_row.c \
           ../common/font5x7.c \
           ../common/ssd1325.c \
           $(BOARD)/oled_spi1.c \
@@ -33,6 +34,6 @@ OPT       = -Og
 
 # Our own C builds with the strict warning set and -Werror.
 STRICT_SRC = App/i2cscan.c App/meters.c App/bench_regs.c ../common/power_regs.c App/bench_screen.c App/oled.c ../common/oled_draw.c ../common/oled_font.c ../common/font5x7.c \
-             ../common/ssd1325.c $(BOARD)/oled_spi1.c
+             ../common/oled_row.c ../common/ssd1325.c $(BOARD)/oled_spi1.c
 
 include $(BOARD)/board.mk

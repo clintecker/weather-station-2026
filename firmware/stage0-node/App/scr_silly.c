@@ -13,7 +13,6 @@
  *            sequence picks, through the ACK bumper at frame 32; passing the ACK bumper lights it for 3 frames (100 points), the side bumpers score 10; the
  *            flippers kick when it is low on their side. */
 #include "scr_view.h"
-#include <string.h>
 #include "font5x7.h"
 #include "oled_draw.h"
 #include "scr_kana.h"
@@ -62,20 +61,20 @@ void scr_fortune(const oled_surf *s, unsigned frame, const scr_view_t *v)
   oled_box(s, 0, 0, OLED_W, 31);
   for (unsigned r = 0; r < FORTUNE_ROWS && *text; r++)
   {
-    char line[SCR_LINE] = "";
+    oled_row line = { "" };
     size_t n = 0;
-    /* bound: up to SCR_LINE - 1 characters of one row */
-    while (text[n] && text[n] != '\n' && n + 1U < SCR_LINE) n++;
-    for (size_t i = 0; i < n && shown < typed; i++, shown++) line[i] = text[i];
-    (void)oled_text(s, 2, 3 + 9 * (int)r, line, 1);
+    /* bound: up to OLED_ROW_CAP - 1 characters of one row */
+    while (text[n] && text[n] != '\n' && n + 1U < OLED_ROW_CAP) n++;
+    for (size_t i = 0; i < n && shown < typed; i++, shown++) line.s[i] = text[i];
+    (void)oled_text(s, 2, 3 + 9 * (int)r, line.s, 1);
     text += n;
     if (*text == '\n') text++;
   }
-  char lucky[SCR_LINE] = "LUCKY ";
+  oled_row lucky = { "LUCKY " };
   uint32_t nums[3] = { v->last_seq % 100U, (v->air_c < 0 ? 0U - (uint32_t)v->air_c : (uint32_t)v->air_c) / 100U % 100U,
                        (uint32_t)(v->air_rh < 0 ? 0 : v->air_rh) / 100U % 100U };
-  for (unsigned i = 0; i < 3U; i++) { scr_put_uint(lucky, nums[i]); scr_put(lucky, " "); }
-  scr_row(s, 36, lucky);
+  for (unsigned i = 0; i < 3U; i++) { oled_put_uint(&lucky, nums[i]); oled_put(&lucky, " "); }
+  scr_row(s, 36, lucky.s);
   cookie(s, frame);
 }
 
@@ -164,13 +163,13 @@ void scr_frog(const oled_surf *s, unsigned frame, const scr_view_t *v)
     oled_line(s, FROG_MOUTH_X, FROG_MOUTH_Y + 1, fx, fy, 0);   /* the tongue */
   if (!caught) fly(s, fx, fy, frame);
   weather(s, m, frame);
-  char line[SCR_LINE] = "is ";
-  scr_put(line, scr_mood_names[m]);
+  oled_row line = { "is " };
+  oled_put(&line, scr_mood_names[m]);
   (void)oled_text(s, FROG_TEXT_X, 4, "FROG", 1);
-  (void)oled_text(s, FROG_TEXT_X, 14, line, 1);
-  line[0] = '\0';
-  if (v->air_ok) { scr_put_dec(line, v->air_c, 2, 1, 0); scr_put(line, "C "); scr_put_dec(line, v->air_rh, 2, 0, 0); scr_put(line, "%"); }
-  (void)oled_text(s, FROG_TEXT_X, 28, line, 1);
+  (void)oled_text(s, FROG_TEXT_X, 14, line.s, 1);
+  line.s[0] = '\0';
+  if (v->air_ok) { oled_put_dec(&line, v->air_c, 2, 1, 0); oled_put(&line, "C "); oled_put_dec(&line, v->air_rh, 2, 0, 0); oled_put(&line, "%"); }
+  (void)oled_text(s, FROG_TEXT_X, 28, line.s, 1);
   const char *said = frame < FROG_CATCH ? "watching" : caught ? "ACK! yum" : acked ? "..." : "no ACK";
   (void)oled_text(s, FROG_TEXT_X, 50, said, 1);
 }
@@ -209,14 +208,14 @@ void scr_matrix(const oled_surf *s, unsigned frame, const scr_view_t *v)
                       &oled_x1);
     }
   }
-  char line[SCR_LINE] = "TIPS ";
-  scr_put_uint(line, tips);
-  scr_put(line, "/10m");
-  scr_pad_to(line, 13);
-  scr_put(line, "SPEED x");
-  scr_put_uint(line, speed);
+  oled_row line = { "TIPS " };
+  oled_put_uint(&line, tips);
+  oled_put(&line, "/10m");
+  oled_pad_to(&line, 13);
+  oled_put(&line, "SPEED x");
+  oled_put_uint(&line, speed);
   g.ink = MATRIX_FOOTER;
-  (void)oled_text(&g, 0, OLED_H - FONT5X7_H, line, 1);
+  (void)oled_text(&g, 0, OLED_H - FONT5X7_H, line.s, 1);
 }
 
 /* ---- the packet pinball ---- */
@@ -268,10 +267,10 @@ void scr_pinball(const oled_surf *s, unsigned frame, const scr_view_t *v)
     else if (lit) lit--;
     prev = h;
   }
-  char line[SCR_LINE] = "", num[SCR_LINE] = "SCORE ";
-  scr_put_uint(num, score);
-  (void)scr_put_lr(line, "PINBALL", num);
-  scr_header(s, line);
+  oled_row line = { "" }, num = { "SCORE " };
+  oled_put_uint(&num, score);
+  (void)oled_put_lr(&line, "PINBALL", num.s, OLED_COLS);
+  scr_header(s, line.s);
   oled_box(s, 0, 9, OLED_W, OLED_H - 9);
   oled_circle(s, 30, 24, SIDE_R);
   oled_circle(s, 98, 24, SIDE_R);

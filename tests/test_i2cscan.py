@@ -303,7 +303,8 @@ class BenchScreen(unittest.TestCase):
     """The bench screen's layout (bench_screen.c) over the shared drawing surface and font (firmware/common)."""
     @classmethod
     def setUpClass(cls):
-        cls.lib = host_library(cls, 'bench_screen', '-I', APP, '-I', COMMON, COMMON/'oled_draw.c', COMMON/'oled_font.c', COMMON/'font5x7.c', APP/'bench_screen.c', APP/'bench_regs.c', POWER)
+        cls.lib = host_library(cls, 'bench_screen', '-I', APP, '-I', COMMON, COMMON/'oled_draw.c', COMMON/'oled_font.c', COMMON/'oled_row.c', COMMON/'font5x7.c',
+                              APP/'bench_screen.c', APP/'bench_regs.c', POWER)
         cls.lib.oled_text.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
         cls.lib.bench_screen.argtypes = [ctypes.c_void_p, ctypes.POINTER(View)]
 
@@ -338,8 +339,8 @@ class BenchScreen(unittest.TestCase):
                                            b'BOX NO SHTC3', b'P NO BMP581 UV NO'))
 
     # Four views, each frame hashed as i2cscan sends it (App/i2cscan.c: drawn turned, for the panel): a refactor
-    # of the drawing code keeps every hash, a deliberate change updates them here.
-    GOLDEN = {'everything': 'cd110f612b27a962', 'nothing': '20b91cd48a2da55d', 'zero': 'dca2c19b3c844812',
+    # of the drawing code keeps every hash, a deliberate change updates them here (zero: +0.00mA, step 5).
+    GOLDEN = {'everything': 'cd110f612b27a962', 'nothing': '20b91cd48a2da55d', 'zero': 'abbb00674e31ed12',
               'cold': '1df2d072d3d8e2bc'}
 
     @staticmethod
@@ -360,6 +361,14 @@ class BenchScreen(unittest.TestCase):
         ctypes.memset(fb.buf, 0xA5, OLED_W*OLED_H//2)   # the send buffer holds the last frame: the screen clears it
         self.lib.bench_screen(fb, ctypes.byref(v))
         return hashlib.sha256(fb.raw).hexdigest()[:16]
+
+    def test_a_zero_current_has_its_sign(self):
+        # The node's rule (Q3 of the visual system design): a current that rounds to zero shows as +0.00mA.
+        fb = self.fb()
+        self.lib.bench_screen(fb, ctypes.byref(self.golden_views()['zero']))
+        self.assertEqual(fb.raw, self.rows(b'I2C 40', b'BATT +0.00mA 0.000V', b'CELL NO MAX17048', b'AIR NO SHT45',
+                                           b'BOX NO SHTC3', b'P 987.1hPa UV NO', b'WIND 0.00m/s ?',
+                                           b'RAIN 200000 TIPS 27940.00mm'))
 
     def test_frames_are_as_they_were(self):
         got = {name: self.sent(v) for name, v in self.golden_views().items()}

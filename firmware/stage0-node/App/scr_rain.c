@@ -8,7 +8,6 @@
  * A row longer than the 21 columns takes a shorter form: the age "last X" (no "ago"), then "X"; the rate one
  * space after RATE, then without "(10m)". */
 #include "scr_view.h"
-#include <string.h>
 #include "oled_draw.h"
 #include "wsmp_registry.h"
 
@@ -43,34 +42,30 @@ unsigned scr_rain_full(unsigned largest)
 
 static void row(const oled_surf *s, int r, const char *text) { (void)oled_text(s, 0, r * 8, text, 1); }
 
-static void count_row(const oled_surf *s, const rain_hist_t *h)
+/* form 0 "2 tips    last 4m ago", 1 "last 4m", 2 "4m", 3 the count alone. */
+static void count_form(oled_row *r, const void *ctx, unsigned form)
 {
-  char left[SCR_LINE] = "", age[SCR_LINE] = "", line[SCR_LINE] = "";
-  scr_put_uint(left, h->tips);
-  scr_put(left, h->tips == 1U ? " tip" : " tips");
+  const rain_hist_t *h = ctx;
+  oled_row left = { "" }, age = { "" };
+  oled_put_uint(&left, h->tips);
+  oled_put(&left, h->tips == 1U ? " tip" : " tips");
+  if (form == 3U) { oled_put(r, left.s); return; }
   int none = h->last_age_s == RAIN_AGE_NONE;
-  if (none) scr_put(age, "--");
-  else scr_put_age(age, h->last_age_s);
-  char forms[3][SCR_LINE] = { "last ", "last ", "" };
-  scr_put(forms[0], age); scr_put(forms[0], none ? "" : " ago");
-  scr_put(forms[1], age);
-  scr_put(forms[2], age);
-  int fits = 0;
-  for (unsigned f = 0; f < 3U && !fits; f++) fits = scr_put_lr(line, left, forms[f]);   /* bound: 3 forms */
-  row(s, 1, fits ? line : left);   /* the last fits any count with an age up to RAIN_AGE_MAX_S */
+  if (form < 2U) oled_put(&age, "last ");
+  if (none) oled_put(&age, "--");
+  else scr_put_age(&age, h->last_age_s);
+  if (form == 0U && !none) oled_put(&age, " ago");
+  scr_form_lr(r, left.s, age.s);
 }
 
-static void rate_row(const oled_surf *s, const rain_hist_t *h)
+/* form 0 "RATE  1.7 mm/h (10m)", 1 one space after RATE, 2 without "(10m)". */
+static void rate_form(oled_row *r, const void *ctx, unsigned form)
 {
-  char rate[SCR_LINE] = "", line[SCR_LINE] = "RATE  ";
-  scr_put_dec(rate, scr_rain_rate_umh(h->per_min, RAIN_HIST_MINUTES, RATE_MINUTES), 3, 1, 0);
-  scr_put(rate, " mm/h");
-  size_t n = strlen(rate) + 6U;   /* with "RATE  " */
-  if (n + 6U > SCR_COLS + 1U) { scr_put(line, rate); row(s, 2, line); return; }
-  if (n + 6U > SCR_COLS) line[5] = '\0';   /* one space, to keep the window's name */
-  scr_put(line, rate);
-  scr_put(line, " (10m)");
-  row(s, 2, line);
+  const rain_hist_t *h = ctx;
+  oled_put(r, form == 1U ? "RATE " : "RATE  ");
+  oled_put_dec(r, scr_rain_rate_umh(h->per_min, RAIN_HIST_MINUTES, RATE_MINUTES), 3, 1, 0);
+  oled_put(r, " mm/h");
+  if (form < 2U) oled_put(r, " (10m)");
 }
 
 /* The bars; returns the scale they were drawn to. */
@@ -92,28 +87,20 @@ static unsigned bars(const oled_surf *s, const rain_hist_t *h)
   return full;
 }
 
-/* "-60m", the scale centred, "now". */
-static void foot_row(const oled_surf *s, unsigned full)
-{
-  char scale[SCR_LINE] = "", line[SCR_LINE] = "-60m";
-  scr_put_uint(scale, full);
-  scr_put(scale, "/m");
-  scr_pad_to(line, (unsigned)(SCR_COLS - strlen(scale)) / 2U);
-  scr_put(line, scale);
-  scr_pad_to(line, SCR_COLS - 3U);
-  scr_put(line, "now");
-  row(s, 7, line);
-}
-
 void scr_rain(const oled_surf *s, const scr_view_t *v)
 {
   const rain_hist_t *h = &v->rain;
-  char mm[SCR_LINE] = "", line[SCR_LINE] = "";
-  scr_put_rain_mm(mm, h->tips);
-  scr_put(mm, " mm");
-  (void)scr_put_lr(line, "RAIN", mm);   /* at most "279400.00 mm" (RAIN_TIPS_MAX) */
-  row(s, 0, line);
-  count_row(s, h);
-  rate_row(s, h);
-  foot_row(s, bars(s, h));
+  oled_row line = { "" }, mm = { "" }, scale = { "" };
+  scr_put_rain_mm(&mm, h->tips, 2);
+  oled_put(&mm, " mm");
+  (void)oled_put_lr(&line, "RAIN", mm.s, OLED_COLS);   /* at most "279400.00 mm" (RAIN_TIPS_MAX) */
+  row(s, 0, line.s);
+  (void)oled_fit(&line, count_form, h, 4, OLED_COLS);   /* the last fits any count with an age up to RAIN_AGE_MAX_S */
+  row(s, 1, line.s);
+  (void)oled_fit(&line, rate_form, h, 3, OLED_COLS);
+  row(s, 2, line.s);
+  oled_put_uint(&scale, bars(s, h));
+  oled_put(&scale, "/m");
+  (void)oled_put_lcr(&line, "-60m", scale.s, "now", OLED_COLS);   /* the scale centred */
+  row(s, 7, line.s);
 }

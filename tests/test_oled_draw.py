@@ -1,5 +1,5 @@
-"""The shared OLED library (firmware/common/oled_draw.c, oled_font.c, font5x7.c): the drawing surface in the SSD1325's
-pixel order, drawing primitives, bitmaps, fonts and text. Pure C, compiled for the host; the bench tool and the node both link it. What
+"""The shared OLED library (firmware/common/oled_draw.c, oled_font.c, oled_row.c, font5x7.c): the drawing surface in the
+SSD1325's pixel order, drawing primitives, bitmaps, fonts and text, and the text row builder. Pure C, compiled for the host; the bench tool and the node both link it. What
 the panel shows is checked by eye on the bench."""
 import ctypes
 import subprocess
@@ -278,6 +278,78 @@ class OledDraw(unittest.TestCase):
     def levels(self, fb):
         return {(x, y): self.lib.oled_get(fb, x, y) for y in range(OLED_H) for x in range(OLED_W) if self.lib.oled_get(fb, x, y)}
 
+
+
+class Row(ctypes.Structure):
+    _fields_ = [('s', ctypes.c_char * 24)]   # oled_row (oled_row.h)
+
+
+FORM = ctypes.CFUNCTYPE(None, ctypes.POINTER(Row), ctypes.c_void_p, ctypes.c_uint)
+
+
+@needs_cc
+class OledRow(unittest.TestCase):
+    """The text row builder (firmware/common/oled_row.c), shared by the node's screens and the bench tool."""
+    @classmethod
+    def setUpClass(cls):
+        cls.lib = lib = host_library(cls, 'oled_row', '-I', COMMON, COMMON/'oled_row.c')
+        r, s, u = ctypes.POINTER(Row), ctypes.c_char_p, ctypes.c_uint
+        lib.oled_put.argtypes = [r, s]
+        lib.oled_put_dec.argtypes = [r, ctypes.c_int64, u, u, u]
+        lib.oled_put_hex2.argtypes = [r, ctypes.c_uint8]
+        lib.oled_pad_to.argtypes = [r, u]
+        lib.oled_put_lr.argtypes = [r, s, s, u]
+        lib.oled_put_lcr.argtypes = [r, s, s, s, u]
+        lib.oled_fit.argtypes = [r, FORM, ctypes.c_void_p, u, u]
+        lib.oled_fit.restype = u
+
+    def dec(self, v, i, o, plus=0):
+        r = Row()
+        self.lib.oled_put_dec(r, v, i, o, plus)
+        return r.s.decode()
+
+    def test_put_never_overflows(self):
+        r = Row()
+        self.lib.oled_put(r, b'x' * 40)
+        self.assertEqual(r.s, b'x' * 23)
+        self.lib.oled_pad_to(r, 30)
+        self.assertEqual(len(r.s), 23)
+
+    def test_dec(self):
+        self.assertEqual([self.dec(1234, 2, 1), self.dec(-1235, 2, 1), self.dec(-4, 2, 1), self.dec(0, 2, 2, 1),
+                          self.dec(-4, 2, 1, 1), self.dec(5, 1, 0), self.dec(7, 0, 0, 1)],
+                         ['12.3', '-12.4', '0.0', '+0.00', '+0.0', '1', '+7'])
+        r = Row()
+        self.lib.oled_put_hex2(r, 0xA4)
+        self.assertEqual(r.s, b'A4')
+
+    def lr(self, left, right, cols=21, centre=None):
+        r = Row(b'old')
+        ok = (self.lib.oled_put_lr(r, left, right, cols) if centre is None
+              else self.lib.oled_put_lcr(r, left, centre, right, cols))
+        return ok, r.s.decode()
+
+    def test_left_right_and_centre(self):
+        self.assertEqual(self.lr(b'RAIN', b'0.56 mm'), (1, 'RAIN' + ' ' * 10 + '0.56 mm'))
+        self.assertEqual(self.lr(b'x' * 10, b'y' * 10), (1, 'x' * 10 + ' ' + 'y' * 10))
+        self.assertEqual(self.lr(b'x' * 11, b'y' * 10), (0, 'old'))                     # untouched
+        self.assertEqual(self.lr(b'-60m', b'now', centre=b'16/m'), (1, '-60m    16/m      now'))
+        self.assertEqual(self.lr(b'-3h', b'now', centre=b'c' * 13), (1, '-3h ' + 'c' * 13 + ' now'))
+        self.assertEqual(self.lr(b'-3h', b'now', centre=b'c' * 14), (1, '-3h' + ' ' * 15 + 'now'))   # no space: left out
+
+    def test_fit_takes_the_first_form_that_fits(self):
+        built = []
+
+        @FORM
+        def build(r, ctx, form):
+            built.append(form)
+            self.lib.oled_put(r, b'x' * (25 - 3 * form))
+        r = Row(b'junk')
+        self.assertEqual(self.lib.oled_fit(r, build, None, 4, 18), 3)   # 25, 22, 19 too long; 16 fits
+        self.assertEqual((built, r.s), ([0, 1, 2, 3], b'x' * 16))
+        built.clear()
+        self.assertEqual(self.lib.oled_fit(r, build, None, 2, 10), 1)   # none fits: the last, as built
+        self.assertEqual((built, len(r.s)), ([0, 1], 22))
 
 if __name__ == '__main__':
     unittest.main()

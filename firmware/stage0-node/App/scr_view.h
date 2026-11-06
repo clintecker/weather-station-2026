@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include "oled_draw.h"
 #include "oled_font.h"
+#include "oled_row.h"
 #include "mod_rain.h"
 #include "mod_wind.h"
 #include "power_acq.h"
@@ -162,7 +163,7 @@ int32_t scr_next_tx_s(uint32_t since_exchange_s);
 
 /* The fortune cookie's line, from the readings: the first condition that holds (no ACK, a low cell, rain,
    frost, heat, wind, damp, dry air, falling then rising pressure, else calm), and of its lines the one
-   last_seq picks. Each line is up to 3 rows of up to SCR_COLS characters, split at '\n'. */
+   last_seq picks. Each line is up to 3 rows of up to OLED_COLS characters, split at '\n'. */
 extern const char *const scr_fortunes[];
 #define SCR_FORTUNES 15U
 unsigned scr_fortune_pick(const scr_view_t *v);
@@ -201,20 +202,12 @@ uint32_t scr_rain_rate_umh(const uint8_t *per_min, unsigned n, unsigned minutes)
    the scale steps rather than creeps and the label stays a round number. */
 unsigned scr_rain_full(unsigned largest);
 
-/* ---- scr_view.c: the helpers the screens share. A line is at most SCR_LINE - 1 characters. ---- */
-#define SCR_LINE 24
-#define SCR_COLS 21                          /* characters a row */
-void scr_put(char *line, const char *s);
-/* v, which has in_dec decimals (at most 6), with out_dec <= in_dec of them, rounded half away from
-   zero; plus: a '+' on a value that is not negative. */
-void scr_put_dec(char *line, int64_t v, unsigned in_dec, unsigned out_dec, int plus);
-void scr_put_uint(char *line, uint32_t v);
-void scr_pad_to(char *line, unsigned col);   /* spaces up to column col */
-void scr_put_age(char *line, uint32_t s);   /* an age in three characters or so: 58s, then minutes, then hours */
-void scr_put_rain_mm(char *line, uint32_t tips);   /* tips as mm, 2 decimals, "mm" not included */
-/* left, then right ending at the last column, at least a space between; 0 (line untouched) if they do
-   not fit. */
-int scr_put_lr(char *line, const char *left, const char *right);
+/* ---- scr_view.c: the helpers the screens share. Rows are oled_row (oled_row.h). ---- */
+void scr_put_age(oled_row *r, uint32_t s);   /* an age in three characters or so: 58s, then minutes, then hours */
+void scr_put_rain_mm(oled_row *r, uint32_t tips, unsigned decimals);   /* tips as mm, "mm" not included */
+/* A form for oled_fit: left and right on one row (oled_put_lr, OLED_COLS), or if they do not fit, both with a
+   space between, too long for the row, so that oled_fit goes on to the next form. */
+void scr_form_lr(oled_row *r, const char *left, const char *right);
 void scr_row(const oled_surf *s, int y, const char *text);             /* at (0, y), scale 1 */
 void scr_row_right(const oled_surf *s, int y, const char *text);       /* ending at the screen's right edge */
 void scr_header(const oled_surf *s, const char *text);                 /* the top row, inverted */
