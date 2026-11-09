@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="960" viewBox="0 0 1500 960" font-family="Helvetica, Arial, sans-serif"><title>TX stack r1 block diagram</title><defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><text x="750.0" y="30" font-size="18" fill="#333" text-anchor="middle" font-weight="bold">TX stack r1: block diagram (Wio-E5 mini TX on four SolderFul boards)</text>
+<text x="750.0" y="50" font-size="12" fill="#333" text-anchor="middle" font-weight="normal">Generated from schematic/model.py. Red: power. Blue: I2C. Green: meter lines. Purple: RF. Dashed: battery current (soldered leads only, never a strip).</text>
+<rect x="30" y="80" width="230" height="62" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
+<text x="38" y="98" font-size="13" font-weight="bold">Solar P110</text>
+<text x="38" y="115" font-size="11" fill="#333">Voltaic P110 6 V 10 W (barrel cut at</text>
+<text x="38" y="129" font-size="11" fill="#333">gland, off the stack</text>
+<rect x="30" y="160" width="230" height="50" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
+<text x="38" y="178" font-size="13" font-weight="bold">USB-C adapter 5V</text>
+<text x="38" y="195" font-size="11" fill="#333">wall adapter, &gt;= 2 A</text>
+<rect x="30" y="250" width="230" height="62" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
+<text x="38" y="268" font-size="13" font-weight="bold">1S3P 6600mAh pack</text>
+<text x="38" y="285" font-size="11" fill="#333">Adafruit #353 (own protection board)</text>
+<text x="38" y="299" font-size="11" fill="#333">69 x 54 x 18 mm, beside the stack</text>
+<rect x="300" y="90" width="230" height="110" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
+<text x="308" y="108" font-size="13" font-weight="bold">BQ25798EVM (U1) charger</text>
+<text x="524" y="108" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B4</text>
+<text x="308" y="125" font-size="11" fill="#333">TI SLUUCB5; MPPT from solar</text>
+<text x="308" y="139" font-size="11" fill="#333">I2C 0x6B, INT not wired</text>
+<text x="308" y="153" font-size="11" fill="#333">outline [TBD-MEASURE]</text>
+<text x="308" y="167" font-size="11" fill="#333">rides on B4 (mount TBD)</text>
+<rect x="300" y="240" width="230" height="92" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
+<text x="308" y="258" font-size="13" font-weight="bold">INA228 (U2) shunt 0x40</text>
+<text x="524" y="258" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B4</text>
+<text x="308" y="275" font-size="11" fill="#333">Adafruit #5832, 15 mohm shunt</text>
+<text x="308" y="289" font-size="11" fill="#333">battery leads on the X1 pads</text>
+<text x="308" y="303" font-size="11" fill="#333">header pins 5-7 pulled</text>
+<rect x="300" y="352" width="230" height="62" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
+<text x="308" y="370" font-size="13" font-weight="bold">MAX17048 (U6) gauge 0x36</text>
+<text x="524" y="370" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B4</text>
+<text x="308" y="387" font-size="11" fill="#333">Adafruit #5580</text>
+<text x="308" y="401" font-size="11" fill="#333">VBAT on the JP2 pad (CELL_P)</text>
+<rect x="570" y="90" width="200" height="62" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
+<text x="578" y="108" font-size="13" font-weight="bold">S7V8F3 (U7) 3.3 V</text>
+<text x="764" y="108" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B4</text>
+<text x="578" y="125" font-size="11" fill="#333">Pololu #2122 buck-boost</text>
+<text x="578" y="139" font-size="11" fill="#333">SYS in, +3V3 out</text>
+<path d="M260,110 L300,120" fill="none" stroke="#C0392B" stroke-width="2" marker-end="url(#a)"/>
+<text x="280.0" y="110.0" font-size="11" text-anchor="middle" fill="#C0392B">SOLAR</text>
+<path d="M260,185 L280,185 L280,170 L300,170" fill="none" stroke="#C0392B" stroke-width="2" marker-end="url(#a)"/>
+<text x="282" y="200" font-size="11" text-anchor="start" fill="#C0392B">VUSB</text>
+<path d="M145,312 L145,380 L300,380" fill="none" stroke="#C0392B" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#a)"/>
+<text x="150" y="344" font-size="11" fill="#C0392B" text-anchor="start" font-weight="normal">PACK+ via JST PH pigtail (PG1)</text>
+<text x="150" y="358" font-size="11" fill="#C0392B" text-anchor="start" font-weight="normal">CELL_P to U6 VBAT</text>
+<path d="M260,285 L300,285" fill="none" stroke="#C0392B" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#a)"/>
+<text x="262" y="272" font-size="10" fill="#C0392B" text-anchor="start" font-weight="normal">CELL_P</text>
+<path d="M415,240 L415,200" fill="none" stroke="#C0392B" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#a)"/>
+<text x="420" y="225" font-size="11" text-anchor="start" fill="#C0392B">BAT_P (VIN-)</text>
+<path d="M530,120 L570,120" fill="none" stroke="#C0392B" stroke-width="2" marker-end="url(#a)"/>
+<text x="550.0" y="115.0" font-size="11" text-anchor="middle" fill="#C0392B">SYS</text>
+<text x="150" y="432" font-size="11" fill="#C0392B" text-anchor="start" font-weight="bold">Battery current runs only in</text>
+<text x="150" y="446" font-size="11" fill="#C0392B" text-anchor="start" font-weight="normal">soldered leads: checks 6 (schematic) and L4 (layout)</text>
+<path d="M770,120 L820,120 L820,470" fill="none" stroke="#C0392B" stroke-width="3"/>
+<text x="826" y="330" font-size="12" fill="#C0392B" text-anchor="start" font-weight="bold">+3V3 bus</text>
+<text x="826" y="344" font-size="11" fill="#C0392B" text-anchor="start" font-weight="normal">(bus column)</text>
+<rect x="860" y="90" width="300" height="140" rx="6" fill="#eef3fa" stroke="#2b4a77" stroke-width="1.5"/>
+<text x="868" y="108" font-size="13" font-weight="bold">Wio-E5 mini (A1)</text>
+<text x="1154" y="108" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B3</text>
+<text x="868" y="125" font-size="11" fill="#333">Seeed Wio-E5 mini (113990939), STM32WLE5JC</text>
+<text x="868" y="139" font-size="11" fill="#333">soldered low on B3 (not socketed)</text>
+<text x="868" y="153" font-size="11" fill="#333">I2C2 SDA PA15, SCL PB15 (4.7k on board)</text>
+<text x="868" y="167" font-size="11" fill="#333">MUX_RST PB14</text>
+<text x="868" y="181" font-size="11" fill="#333">CUPS PC0, VANE PB3 (ADC), RAIN PB4</text>
+<text x="868" y="195" font-size="11" fill="#333">SWD 1x5 right angle (J3)</text>
+<path d="M820,160 L860,160" fill="none" stroke="#C0392B" stroke-width="2" marker-end="url(#a)"/>
+<text x="840.0" y="155.0" font-size="11" text-anchor="middle" fill="#C0392B">3V3</text>
+<rect x="1220" y="90" width="250" height="50" rx="6" fill="#f5eef8" stroke="#8E44AD" stroke-width="1.5"/>
+<text x="1228" y="108" font-size="13" font-weight="bold">SMA on the mini</text>
+<text x="1464" y="108" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B3</text>
+<text x="1228" y="125" font-size="11" fill="#333">RF_MINI, edge-mount SMA-K</text>
+<rect x="1220" y="160" width="250" height="50" rx="6" fill="#f5eef8" stroke="#8E44AD" stroke-width="1.5"/>
+<text x="1228" y="178" font-size="13" font-weight="bold">CX1 SMA cable 6in</text>
+<text x="1228" y="195" font-size="11" fill="#333">Amphenol 135110-01-06.00, RG-316</text>
+<rect x="1220" y="230" width="250" height="50" rx="6" fill="#f5eef8" stroke="#8E44AD" stroke-width="1.5"/>
+<text x="1228" y="248" font-size="13" font-weight="bold">AE1 ANT-916-CW-HWR</text>
+<text x="1228" y="265" font-size="11" fill="#333">Linx ANT-916-CW-HWR-SMA (outside, vertical)</text>
+<path d="M1160,115 L1220,115" fill="none" stroke="#8E44AD" stroke-width="2" marker-end="url(#a)"/>
+<text x="1190.0" y="110.0" font-size="11" text-anchor="middle" fill="#8E44AD">LoRa</text>
+<path d="M1345,140 L1345,160" fill="none" stroke="#8E44AD" stroke-width="2" marker-end="url(#a)"/>
+<path d="M1345,210 L1345,230" fill="none" stroke="#8E44AD" stroke-width="2" marker-end="url(#a)"/>
+<text x="1350" y="296" font-size="11" fill="#8E44AD" text-anchor="start" font-weight="normal">bulkhead in the box wall</text>
+<path d="M1010,230 L1010,470 L300,470" fill="none" stroke="#1F5FBF" stroke-width="3"/>
+<text x="1016" y="260" font-size="12" fill="#1F5FBF" text-anchor="start" font-weight="bold">I2C_SDA / I2C_SCL bus column</text>
+<path d="M415,470 L415,414" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
+<path d="M560,470 L560,332 L530,332" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
+<path d="M545,470 L545,160 L530,160" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
+<rect x="860" y="500" width="280" height="62" rx="6" fill="#eef3fa" stroke="#1F5FBF" stroke-width="1.5"/>
+<text x="868" y="518" font-size="13" font-weight="bold">SHTC3 (U5) 0x70</text>
+<text x="1134" y="518" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B3</text>
+<text x="868" y="535" font-size="11" fill="#333">Adafruit #4636, board climate</text>
+<text x="868" y="549" font-size="11" fill="#333">on B3 rows 23-27</text>
+<path d="M1010,470 L1010,500" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
+<rect x="300" y="500" width="400" height="92" rx="6" fill="#eef3fa" stroke="#1F5FBF" stroke-width="1.5"/>
+<text x="308" y="518" font-size="13" font-weight="bold">PCA9548 (U4) mux 0x71</text>
+<text x="694" y="518" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B2</text>
+<text x="308" y="535" font-size="11" fill="#333">Adafruit #5626 (A0 bridged), on a foam pad, wired by its pads</text>
+<text x="308" y="549" font-size="11" fill="#333">RESET from PB14; ch0-3 on the QT sockets</text>
+<text x="308" y="563" font-size="11" fill="#333">QT V+ is VCCIO (not 3V3): folded back on the leads</text>
+<path d="M650,470 L650,500" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
+<text x="656" y="490" font-size="11" fill="#1F5FBF" text-anchor="start" font-weight="normal">upstream</text>
+<rect x="30" y="640" width="260" height="76" rx="6" fill="#eef3fa" stroke="#1F5FBF" stroke-width="1.5"/>
+<text x="38" y="658" font-size="13" font-weight="bold">Port S1: J11 RJ11 + F1 MF-R010</text>
+<text x="284" y="658" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B1</text>
+<text x="38" y="675" font-size="11" fill="#333">QT lead W11 from mux ch0</text>
+<text x="38" y="689" font-size="11" fill="#333">P1_3V3 through the PTC (check 5)</text>
+<text x="38" y="703" font-size="11" fill="#333">BOB-14021 + 87180-066LF</text>
+<path d="M380,592 L380,615 L160,615 L160,640" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
+<rect x="30" y="760" width="260" height="50" rx="6" fill="#f4f6f8" stroke="#555" stroke-width="1.5"/>
+<text x="38" y="778" font-size="13" font-weight="bold">MOD1 TH module 0x50 0x44</text>
+<text x="38" y="795" font-size="11" fill="#333">SHT45 #6174 + 24LC32 EEPROM, Perma-Proto</text>
+<path d="M160,716 L160,760" fill="none" stroke="#555" stroke-width="2" marker-end="url(#a)"/>
+<text x="166" y="742" font-size="11" text-anchor="start" fill="#555">6P cable</text>
+<rect x="320" y="640" width="260" height="76" rx="6" fill="#eef3fa" stroke="#1F5FBF" stroke-width="1.5"/>
+<text x="328" y="658" font-size="13" font-weight="bold">Port S2: J12 RJ11 + F2 MF-R010</text>
+<text x="574" y="658" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B1</text>
+<text x="328" y="675" font-size="11" fill="#333">QT lead W12 from mux ch1</text>
+<text x="328" y="689" font-size="11" fill="#333">P2_3V3 through the PTC (check 5)</text>
+<text x="328" y="703" font-size="11" fill="#333">BOB-14021 + 87180-066LF</text>
+<path d="M450,592 L450,615 L450,615 L450,640" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
+<rect x="320" y="760" width="260" height="50" rx="6" fill="#f4f6f8" stroke="#555" stroke-width="1.5"/>
+<text x="328" y="778" font-size="13" font-weight="bold">MOD2 Baro module 0x50 0x47</text>
+<text x="328" y="795" font-size="11" fill="#333">BMP581 #6407 + 24LC32 EEPROM, Perma-Prot</text>
+<path d="M450,716 L450,760" fill="none" stroke="#555" stroke-width="2" marker-end="url(#a)"/>
+<text x="456" y="742" font-size="11" text-anchor="start" fill="#555">6P cable</text>
+<rect x="610" y="640" width="260" height="76" rx="6" fill="#eef3fa" stroke="#1F5FBF" stroke-width="1.5"/>
+<text x="618" y="658" font-size="13" font-weight="bold">Port S3: J13 RJ11 + F3 MF-R010</text>
+<text x="864" y="658" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B1</text>
+<text x="618" y="675" font-size="11" fill="#333">QT lead W13 from mux ch2</text>
+<text x="618" y="689" font-size="11" fill="#333">P3_3V3 through the PTC (check 5)</text>
+<text x="618" y="703" font-size="11" fill="#333">BOB-14021 + 87180-066LF</text>
+<path d="M520,592 L520,615 L740,615 L740,640" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
+<rect x="610" y="760" width="260" height="50" rx="6" fill="#f4f6f8" stroke="#555" stroke-width="1.5"/>
+<text x="618" y="778" font-size="13" font-weight="bold">MOD3 UV module 0x50 0x53</text>
+<text x="618" y="795" font-size="11" fill="#333">LTR390 #4831 + 24LC32 EEPROM, Perma-Prot</text>
+<path d="M740,716 L740,760" fill="none" stroke="#555" stroke-width="2" marker-end="url(#a)"/>
+<text x="746" y="742" font-size="11" text-anchor="start" fill="#555">6P cable</text>
+<rect x="900" y="640" width="260" height="76" rx="6" fill="#eef3fa" stroke="#1F5FBF" stroke-width="1.5"/>
+<text x="908" y="658" font-size="13" font-weight="bold">Port S4: J14 RJ11 + F4 MF-R010</text>
+<text x="1154" y="658" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B1</text>
+<text x="908" y="675" font-size="11" fill="#333">QT lead W14 from mux ch3</text>
+<text x="908" y="689" font-size="11" fill="#333">P4_3V3 through the PTC (check 5)</text>
+<text x="908" y="703" font-size="11" fill="#333">BOB-14021 + 87180-066LF</text>
+<path d="M590,592 L590,615 L1030,615 L1030,640" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
+<rect x="900" y="760" width="260" height="50" rx="6" fill="#f4f6f8" stroke="#999" stroke-width="1.5"/>
+<text x="908" y="778" font-size="13" font-weight="bold">spare port</text>
+<text x="908" y="795" font-size="11" fill="#333">no module yet</text>
+<path d="M1030,716 L1030,760" fill="none" stroke="#555" stroke-width="2" marker-end="url(#a)"/>
+<text x="1036" y="742" font-size="11" text-anchor="start" fill="#555">6P cable</text>
+<path d="M820,470 L820,628 L30,628" fill="none" stroke="#C0392B" stroke-width="1.5" stroke-dasharray="6 3"/>
+<text x="30" y="624" font-size="11" fill="#C0392B" text-anchor="start" font-weight="normal">+3V3 to each PTC (B1 back + rail, one wire from B2)</text>
+<rect x="1200" y="500" width="270" height="92" rx="6" fill="#eefaf0" stroke="#2CA02C" stroke-width="1.5"/>
+<text x="1208" y="518" font-size="13" font-weight="bold">Meters (B2): J21 wind, J22 rain</text>
+<text x="1464" y="518" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B2</text>
+<text x="1208" y="535" font-size="11" fill="#333">BOB-14021 + 87180-066LF, 10k pull-ups R1-R3</text>
+<text x="1208" y="549" font-size="11" fill="#333">100 nF C1 (cups), C2 (rain)</text>
+<text x="1208" y="563" font-size="11" fill="#333">CUPS PC0, VANE PB3, RAIN PB4</text>
+<rect x="1200" y="640" width="270" height="50" rx="6" fill="#f4f6f8" stroke="#555" stroke-width="1.5"/>
+<text x="1208" y="658" font-size="13" font-weight="bold">SEN-15901 (M1, M2)</text>
+<text x="1208" y="675" font-size="11" fill="#333">wind vane + cups, rain gauge, 6P cables</text>
+<path d="M1335,640 L1335,592" fill="none" stroke="#2CA02C" stroke-width="2" marker-end="url(#a)"/>
+<path d="M1200,545 L1180,545 L1180,200 L1160,200" fill="none" stroke="#2CA02C" stroke-width="2" marker-end="url(#a)"/>
+<text x="1186" y="380" font-size="11" text-anchor="start" fill="#2CA02C">CUPS / VANE / RAIN</text>
+<text x="30" y="850" font-size="12" fill="#333" text-anchor="start" font-weight="bold">Boards (bottom to top): B1 PORTS, 20 mm, B2 METERS, 20 mm, B3 CORE, 10 mm (Sullins socket + header), B4 POWER. Bus column f-j rows 23-30: 3V3, GND, SCL, SDA, MUX_RST, CUPS, VANE, RAIN.</text>
+<text x="30" y="870" font-size="12" fill="#333" text-anchor="start" font-weight="normal">Addresses (check 2): upstream U6 0x36, U2 0x40, U1 0x6B, U5 0x70, U4 0x71; behind the mux, each port: 24LC32 0x50 + its sensor.</text>
+<text x="30" y="890" font-size="12" fill="#333" text-anchor="start" font-weight="normal">GND is common everywhere and is not drawn. Pin maps: schematic/model.py PIN_MAPS, checked against firmware/host/include/board_pins.h (check 7).</text></svg>

@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "filename": "tx-stack-r1.kicad_pro",
+    "version": 3
+  },
+  "schematic": {
+    "legacy_lib_dir": "",
+    "legacy_lib_list": []
+  },
+  "sheets": [
+    [
+      "1f5929cb-3c03-5081-90e5-1cd5098b0f03",
+      "Root"
+    ]
+  ],
+  "text_variables": {}
+}
