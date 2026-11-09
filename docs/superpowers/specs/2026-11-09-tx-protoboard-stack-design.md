@@ -148,11 +148,32 @@ MAX17048 CELL+ ◄── own sense wire at the pack terminal
 If the floor cannot hold the NUCLEO, EVM and pack beside the stack, the first fallback is to mount the
 EVM on top of B4 on its own spacers.
 
-## To buy
+## Parts (ordered 2026-11-09, DigiKey; rows in INVENTORY.md "On order")
 
-- Klein VDV226-011 6P crimper (already on the list).
-- 4 × PG-7 glands (6 entries: 5 sensor cables + solar; 2 on hand).
-- 4 × RJ11 6P PCB jacks (6 needed; the BOB-14021 pair on hand).
+- Ports: 10 × SparkFun BOB-14021 and 20 × Amphenol **87180-066LF** 6P6C jacks. The 87180 replaces the
+  sold-out PRT-00132. The BOB's footprint (SparkFun Eagle: 1.27 mm stagger, rows 6.35 and 8.89 mm from the
+  peg line, 3.25 mm pegs 10.16 mm apart) matches Amphenol's 54601-x06 exactly; the 87180 is Amphenol's
+  listed replacement for it. **Test-fit one jack before soldering.** Base needs 6 BOBs (4 I2C, wind, rain;
+  2 on hand), each outdoor I2C module 1 more.
+- Module ends: 10 × Adafruit Perma-Proto quarter (1608).
+- Per-port protection: 20 × Bourns MF-R010 (100 mA PTC) in each I2C port's 3V3.
+- Stack bus: 12 × Sullins PPPC081LFBN-RC 1×8 sockets. Standoffs from the Hilitchi M2/M3 kit: B1→B2 20 mm
+  (jack height), B2→B3 and B3→B4 10 mm with the male header's plastic slid off (or a 1 mm washer for 11 mm).
+  Stack height about 46 mm.
+- Radio (#35): 5 × Wio-E5 mini, 5 × Linx ANT-916-CW-HWR-SMA, 5 × Amphenol 135110-01-06.00 (SMA bulkhead
+  jack to straight plug, RG-316, 6"): antenna outside, vertical, on the box top or upper wall.
+- NUCLEO fallback: 5 × BusBoard PAD3U, 10 × Sullins PPPC192LFBN-RC (2×19).
+- Passives: 0.1 µF X7R, 10 kΩ 1 %, 1 MΩ, shunts, 2-pin headers.
+- **Not ordered, still needed:** female-to-female jumpers for SWD from the NUCLEO's ST-LINK to the
+  Wio-E5 (Adafruit 266 or equivalent).
+- On hand: glands, a modular crimper, premade RJ11 cables, EEPROMs, the PCA9548 mux.
+
+## Next revision (not now)
+
+A **Molex 0432236113** ganged 1×6 6P6C jack (70.7 × 22.6 × 12.8 mm, 11.38 mm port pitch, contacts staggered
+1.27 mm in rows 2.54 mm apart, a board lock at each end; measured from Molex's STEP model) puts all six
+ports on one edge. Its staggered pins don't fit 0.1" boards, so it waits for the first custom PCB,
+together with the ports exposed under the box.
 
 ## Left to the builder
 
