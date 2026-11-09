@@ -73,7 +73,7 @@ jack and is found at boot.
 Beside the stack on the box floor: the NUCLEO-WL55JC1, the BQ25798EVM and the battery pack.
 
 **Inter-board bus** (single-row header down one column through all four boards): 3V3, GND, SDA, SCL,
-MUX_RST (PB14), CUPS (PB5), VANE (PB2), RAIN (PB4). The builder picks the column; each pin sits in a
+MUX_RST (PB14), CUPS (PB5), VANE (PB2), RAIN (PB4). *On the Wio-E5 mini (#35) these become SDA PA15, SCL PB15, CUPS PC0 (LPTIM1_IN1), VANE PB3 (ADC_IN2); RAIN PB4 and MUX_RST PB14 stay; the console moves to the mini's own USB-C (USART1 PB6/PB7).* The builder picks the column; each pin sits in a
 different row strip.
 
 ## RJ11 pin maps (middle four positions only, so any 4- or 6-conductor straight-through cable works)
