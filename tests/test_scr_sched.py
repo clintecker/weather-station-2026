@@ -26,7 +26,7 @@ HAVE_ARM = TOOLCHAIN_GCC.exists() and (ROOT/'vendor/STM32CubeWL').exists()
 SCREENS = ['HOME', 'BURST', 'BANNER', 'AIR', 'PRESSURE', 'POWER', 'RADIO', 'SCOPE', 'VANE', 'RAIN', 'SYSTEM', 'BOOT',
            'HACK', 'FORTUNE', 'FROG', 'MATRIX', 'PINBALL', 'MODULES']   # enum scr_id
 FRAMES = {'HOME': 1, 'BURST': 16, 'BANNER': 24, 'AIR': 8, 'PRESSURE': 8, 'POWER': 8, 'RADIO': 8, 'SCOPE': 64, 'VANE': 64,
-          'RAIN': 64, 'SYSTEM': 64, 'BOOT': 64, 'HACK': 24, 'FORTUNE': 64, 'FROG': 64, 'MATRIX': 64, 'PINBALL': 64,
+          'RAIN': 64, 'SYSTEM': 64, 'BOOT': 72, 'HACK': 24, 'FORTUNE': 64, 'FROG': 64, 'MATRIX': 64, 'PINBALL': 64,
           'MODULES': 16}
 DETAILS = ['AIR', 'PRESSURE', 'POWER', 'RADIO', 'SCOPE', 'VANE', 'RAIN', 'SYSTEM']
 INTERLUDES = ['FORTUNE', 'SCOPE', 'FROG', 'VANE', 'MATRIX', 'RAIN', 'PINBALL', 'SYSTEM', 'HACK']
@@ -229,10 +229,10 @@ class Scheduler(unittest.TestCase):
         return out
 
     def test_boot_then_hack(self):
-        # From sched_init: the 64 boot splash frames, the checklist's 16 (settled already), then the 24 of HACK THE
+        # From sched_init: the 72 boot splash frames, the checklist's 16 (settled already), then the 24 of HACK THE
         # PLANET, then HOME.
         seen = self.to_home()
-        self.assertEqual(seen, [(1, 'BOOT', f) for f in range(64)] + [(1, 'MODULES', f) for f in range(16)] +
+        self.assertEqual(seen, [(1, 'BOOT', f) for f in range(72)] + [(1, 'MODULES', f) for f in range(16)] +
                          [(1, 'HACK', f) for f in range(24)])
         self.assertEqual(self.lib.sched_check(), CHECK_DONE)
 
@@ -240,7 +240,7 @@ class Scheduler(unittest.TestCase):
         # Not settled: the checklist holds, every frame drawn, its frame counting on; EV_SETTLED at its frame 200
         # ends the wait at the next step, and it shows the outcome for its 16 frames, still counting, then HACK.
         self.boot()
-        self.steps(64)
+        self.steps(FRAMES['BOOT'])
         held = self.steps(200)
         self.assertEqual(held, [(1, 'MODULES', f) for f in range(200)])
         self.assertEqual(self.lib.sched_check(), CHECK_WAIT)
@@ -253,13 +253,13 @@ class Scheduler(unittest.TestCase):
         self.assertEqual(self.to_home()[-1], (1, 'HACK', 23))
 
     def test_the_checklist_ends_at_its_cap(self):
-        # Never settled: the wait ends at the first step at or after 60 s from sched_init (frame 416 of the checklist,
-        # which starts at 8 s), with the outcome TIMEOUT.
+        # Never settled: the wait ends at the first step at or after 60 s from sched_init (frame 408 of the checklist,
+        # which starts at 9 s), with the outcome TIMEOUT.
         self.boot()
         seen = self.to_home()
         modules = [f for _, s, f in seen if s == 'MODULES']
         self.assertEqual(modules, list(range(len(modules))))
-        self.assertEqual(len(modules), (CAP_MS - 64 * STEP_MS) // STEP_MS + 16)
+        self.assertEqual(len(modules), (CAP_MS - FRAMES['BOOT'] * STEP_MS) // STEP_MS + 16)
         self.assertEqual(self.lib.sched_check(), CHECK_TIMEOUT)
 
     def test_settled_during_the_splash(self):
@@ -344,12 +344,12 @@ class Scheduler(unittest.TestCase):
                 self.assertEqual(runs[i + 1][1], 'HOME')
 
     def test_the_interlude_waits_for_home(self):
-        # The first falls due at 120 s while RADIO is up (HOME 13-28 s, AIR, HOME, PRESSURE, HOME, POWER, HOME,
-        # RADIO 118-133 s): it starts at 133 s, where HOME would come, and RADIO keeps its 15 s.
+        # The first falls due at 120 s while RADIO is up (HOME 14-29 s, AIR, HOME, PRESSURE, HOME, POWER, HOME,
+        # RADIO 119-134 s): it starts at 134 s, where HOME would come, and RADIO keeps its 15 s.
         self.to_home()
         runs = self.timed_runs(140000)
-        self.assertIn((118000, 'RADIO', DWELL), runs)
-        self.assertEqual(self.interludes_of(runs)[0], (133000, 'FORTUNE'))
+        self.assertIn((119000, 'RADIO', DWELL), runs)
+        self.assertEqual(self.interludes_of(runs)[0], (134000, 'FORTUNE'))
 
     def test_packet_preempts_an_interlude_and_ends_on_home(self):
         # EV_SENT_LIVE while the fortune cookie is at its frame 10: the next step is BURST frame 0, then the 16 burst
@@ -378,7 +378,7 @@ class Scheduler(unittest.TestCase):
         self.steps(5)
         self.event(EV_SENT_LIVE)
         self.assertEqual(self.step(), (1, 'BOOT', 5))
-        self.steps(58)
+        self.steps(FRAMES['BOOT'] - 6)
         self.steps(30)   # the checklist, waiting
         self.event(EV_SENT_LIVE)
         self.event(EV_SETTLED)
@@ -625,10 +625,10 @@ class OledApp(unittest.TestCase):
         # oled_view_modules at every step tells the scheduler when the ports have their verdicts: until then the
         # checklist holds, the view saying WAIT; then it shows DONE for its 16 frames, and HACK follows.
         self.set('t_settled', 0)
-        for _ in range(64 + 100):
+        for _ in range(FRAMES['BOOT'] + 100):
             self.tick()
         self.assertEqual((SCREENS[self.get('t_id')], self.get('t_frame'), self.lib.t_view_check()), ('MODULES', 99, 0))
-        self.assertEqual(self.get('t_module_calls'), 64 + 100)
+        self.assertEqual(self.get('t_module_calls'), FRAMES['BOOT'] + 100)
         self.set('t_settled', 1)
         self.assertEqual(self.tick(), (SCREENS.index('MODULES'), 100))
         self.assertEqual(self.lib.t_view_check(), 1)   # SCR_CHECK_DONE

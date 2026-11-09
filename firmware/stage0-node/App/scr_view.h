@@ -61,6 +61,7 @@ typedef struct {
   uint8_t port_mark[SCR_PORTS];           /* each local port's SCR_PORT_*, port 1 (AIR) first: the boot checklist */
   uint8_t check;                          /* the checklist's outcome so far: SCR_CHECK_* (the scheduler's) */
   int key_ok;                             /* the node has its key (the boot splash) */
+  char fw[13];                            /* the firmware version (WS_FW_VERSION), its first 12 characters */
   uint32_t utc;                           /* time_utc(): UTC seconds, 0 while the clock is not synchronized */
   uint32_t since_exchange_s;              /* since the minute's exchange last started, or SCR_NONE_S */
   SCR_HIST(SCR_AIR_HIST) air;             /* the SHT45, 0.01 degC */

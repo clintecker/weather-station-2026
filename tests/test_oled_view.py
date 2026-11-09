@@ -75,6 +75,7 @@ int t_uv_ok(void) { return v.uv_ok; }
 int t_air_c(void) { return v.air_c; }
 int t_modules(uint32_t now_ms) { return oled_view_modules(&v, now_ms); }
 unsigned t_mark(unsigned i) { return v.port_mark[i]; }
+const char *t_fw(void) { return v.fw; }
 unsigned t_rain_tips(void) { return v.rain.tips; }
 unsigned t_rain_now(void) { return v.rain.per_min[59]; }
 '''
@@ -84,7 +85,7 @@ unsigned t_rain_now(void) { return v.rain.per_min[59]; }
 class OledView(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.built = host_library(cls, 'oledview', '-DWS_BENCH_OLED=1', '-DWS_I2C_MUX=0', '-I', FW/'host/include', '-I', FW/'host',
+        cls.built = host_library(cls, 'oledview', '-DWS_BENCH_OLED=1', '-DWS_I2C_MUX=0', '-DWS_FW_VERSION="0123456789ab-dirty"', '-I', FW/'host/include', '-I', FW/'host',
                                  '-I', APP, '-I', FW/'stage0-node/Core/Inc', '-I', FW, '-I', FW/'common', APP/'oled_view.c', APP/'scr_calc.c',
                                  APP/'scr_widget.c', FW/'common/oled_draw.c', FW/'common/oled_font.c', FW/'common/font5x7.c',
                                  files={'shim.c': SHIM})
@@ -142,6 +143,12 @@ class OledView(unittest.TestCase):
         self.lib.t_fill()
         self.assertEqual((self.lib.t_rain_tips(), self.lib.t_rain_now()), (7, 3))
         self.assertEqual(ctypes.c_uint32.in_dll(self.lib, 't_rain_at').value, 123456)
+
+    def test_the_firmware_version_for_the_splash(self):
+        # WS_FW_VERSION's first 12 characters (the commit), terminated: a dirty tree's suffix does not fit.
+        self.lib.t_fw.restype = ctypes.c_char_p
+        self.lib.t_fill()
+        self.assertEqual(self.lib.t_fw(), b'0123456789ab')
 
     def test_the_clock(self):
         self.lib.t_fill()

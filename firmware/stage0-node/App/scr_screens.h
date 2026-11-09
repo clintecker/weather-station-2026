@@ -8,7 +8,8 @@
  *   App/scr_calc.c        the arithmetic and the choices: histories, dew point, tendency, icon, scales, fortune
  *   App/scr_home.c        HOME, its condition icons and the banner
  *   App/scr_detail.c      AIR, PRESSURE, POWER, RADIO and their sparklines and bars
- *   App/scr_interludes.c  the packet burst, SCOPE, VANE, SYSTEM, the boot splash and checklist, HACK THE PLANET
+ *   App/scr_interludes.c  the packet burst, SCOPE, VANE, SYSTEM, HACK THE PLANET
+ *   App/scr_boot.c        the LGTM SYSTEMS boot splash and the module checklist (its wordmark: scr_mark.h)
  *   App/scr_rain.c        RAIN
  *   App/scr_silly.c       the fortune cookie, the frog, the digital rain, the packet pinball
  * Only in WS_BENCH_OLED=1 builds. */
@@ -28,7 +29,7 @@ enum scr_id { SCR_HOME, SCR_BURST, SCR_BANNER, SCR_AIR, SCR_PRESSURE, SCR_POWER,
               SCR_RAIN, SCR_SYSTEM, SCR_BOOT, SCR_HACK, SCR_FORTUNE, SCR_FROG, SCR_MATRIX, SCR_PINBALL,
               SCR_MODULES, SCR_COUNT };
 
-/* The screens as data, indexed by enum scr_id. frames: a play's length (scr_frames: BURST 16, BANNER 24, HACK 24,
+/* The screens as data, indexed by enum scr_id. frames: a play's length (scr_frames: BURST 16, BANNER 24, HACK 24, BOOT 72,
    HOME 1, AIR, PRESSURE, POWER and RADIO 8 as their bars and lines grow in, MODULES 16: the boot checklist
    holds until the modules settle, then shows its outcome for these frames; the others 64). A base screen (the
    scheduler, App/scr_sched.h) is drawn at each of its first anim steps, then every `every` steps. */
@@ -59,7 +60,8 @@ void scr_draw(const oled_surf *s, enum scr_id id, unsigned frame, const scr_view
 /* The screens, for scr_defs. Each draws on a cleared surface. */
 scr_draw_fn scr_home, scr_banner;                         /* scr_home.c: HOME, and HOME with the packet banner */
 scr_draw_fn scr_air, scr_pressure, scr_power, scr_radio;  /* scr_detail.c */
-scr_draw_fn scr_burst, scr_scope, scr_vane, scr_system, scr_boot, scr_modules, scr_hack;   /* scr_interludes.c */
+scr_draw_fn scr_burst, scr_scope, scr_vane, scr_system, scr_hack;   /* scr_interludes.c */
+scr_draw_fn scr_boot, scr_modules;                        /* scr_boot.c */
 scr_draw_fn scr_rain;                                     /* scr_rain.c */
 scr_draw_fn scr_fortune, scr_frog, scr_pinball;           /* scr_silly.c */
 /* The digital rain, in gray: each glyph at its own level, on a copy of s with its own ink. scr_matrix_glyph: the

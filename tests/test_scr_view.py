@@ -75,9 +75,13 @@ class ScrView(unittest.TestCase):
 
     def test_frames(self):
         want = {'HOME': 1, 'BURST': 16, 'BANNER': 24, 'AIR': 8, 'PRESSURE': 8, 'POWER': 8, 'RADIO': 8, 'SCOPE': 64,
-                'VANE': 64, 'RAIN': 64, 'SYSTEM': 64, 'BOOT': 64, 'HACK': 24, 'FORTUNE': 64, 'FROG': 64, 'MATRIX': 64,
+                'VANE': 64, 'RAIN': 64, 'SYSTEM': 64, 'BOOT': 72, 'HACK': 24, 'FORTUNE': 64, 'FROG': 64, 'MATRIX': 64,
                 'PINBALL': 64, 'MODULES': 16}
         self.assertEqual({s: self.lib.scr_frames(i) for i, s in enumerate(render.SCREENS)}, want)
+
+    def test_mark_file_is_current(self):
+        script = ROOT/'firmware/stage0-node/tools/make_scr_mark.py'
+        self.assertEqual(subprocess.run([sys.executable, script, '--check']).returncode, 0)
 
     def test_font_file_is_current(self):
         script = ROOT/'firmware/stage0-node/tools/make_scr_font.py'
@@ -290,6 +294,23 @@ class ScrView(unittest.TestCase):
                    and any(yy == y for _, yy in base)]
         self.assertTrue(shifted)
 
+    def test_boot_splash(self):
+        # The tube warms up from a dot; the reveal is in gray (glow, fades); the terminal's rows end typed, the
+        # labels gray, the leaders dim, the values bright, and hand over to the checklist.
+        v = render.demo_view()
+        self.assertTrue(0 < len(render.shade(self.lib, 'BOOT', 0, v)) <= 8)   # a dot and its glow
+        self.assertGreaterEqual(len(set(render.shade(self.lib, 'BOOT', 45, v).values())), 4)
+        got = render.shade(self.lib, 'BOOT', 71, v)
+        row = lambda y, x0, x1: {p: lv for p, lv in got.items() if x0 <= p[0] < x1 and y <= p[1] < y + 7}
+        self.assertEqual(row(10, 0, 42), dict.fromkeys(self.text(0, 10, 'STATION'), 8))
+        self.assertEqual(row(10, 114, W), dict.fromkeys(self.text(114, 10, '17'), 15))
+        self.assertEqual(set(row(10, 48, 108).values()), {3})
+        self.assertEqual(row(46, 54, W), dict.fromkeys(self.text(54, 46, '7b7d58b0c2e4'), 15))
+        self.assertEqual(set(self.region(set(got), 0, 56, 78, H)), self.text(0, 56, '> MODULE SCAN'))
+        nokey = render.demo_view()
+        nokey.key_ok = 0
+        self.assertTrue(self.text(84, 28, 'MISSING') <= set(render.shade(self.lib, 'BOOT', 71, nokey)))
+
     def checklist(self, marks, check, frame=0):
         v = render.demo_view()
         v.port_mark[:], v.check = marks, check
@@ -501,7 +522,8 @@ class ScrView(unittest.TestCase):
 
     def test_matrix_gray_frame(self):
         # The glyphs sit on the 6 x 8 grid at their cells' levels, the head's glyph at 15, the footer dim;
-        # the frame turned is the same picture turned; scr_draw clears first; the other screens are all 15.
+        # the frame turned is the same picture turned; scr_draw clears first; the other screens but the boot splash
+        # (gray too) and the checklist (gray marks; the demo's all OK) are all 15.
         v = render.demo_view()
         for frame in (0, 5, 40):
             got = self.drawn('MATRIX', frame, v)
@@ -518,7 +540,7 @@ class ScrView(unittest.TestCase):
             self.assertGreater(heads, 2)
             self.assertFalse({(x, y) for x, y in got if y < 56 and (x % 6 == 0 or y % 8 == 7)})   # the gaps
         for screen in render.SCREENS:
-            if screen != 'MATRIX':
+            if screen not in ('MATRIX', 'BOOT'):
                 self.assertEqual(set(self.drawn(screen, 7, v).values()), {15}, screen)
         self.assertEqual(self.drawn('MATRIX', 99, v), self.drawn('MATRIX', 63, v))
         self.assertEqual(self.missing.value, 0)

@@ -31,8 +31,8 @@ Parent design: [`2026-11-04-node-oled-and-e2e-design.md`](2026-11-04-node-oled-a
 | VANE | `scr_interludes.c:144` | 64 / 16 / 8 | base, interlude, B1 | art (rose), needle ray swinging, text column |
 | RAIN | `scr_rain.c:127` | 64 / 1 / 8 | base, interlude, B1 | left+right rows with forms, a bar chart with a stepped scale, a dotted ceiling and an axis, left/centre/right foot |
 | SYSTEM | `scr_interludes.c:158` | 64 / 8 / 8 | base, interlude, B1 | header, 5 boxed gauges growing in |
-| BOOT | `scr_interludes.c:198` | 64 | boot | text column, glitch (rows sliced, band inverted), progress line |
-| MODULES | `scr_interludes.c` | 16, held | boot | inverted header left+right, 2 columns of port rows with gray marks, dashed rule, centred foot |
+| BOOT | `scr_boot.c` | 72 (gray) | boot | scanline band, emblem lines and circle at ramped levels, wordmark font with a halo, letterspaced text, typed rows at 3 levels, glitch |
+| MODULES | `scr_boot.c` | 16, held | boot | inverted header left+right, 2 columns of port rows with gray marks, dashed rule, centred foot |
 | HACK | `scr_interludes.c:255` | 24 | interlude, B1 | art (face), eye disc, wink, glint, x2 text, squeezed x2 text, glitch |
 | FORTUNE | `scr_silly.c:58` | 64 | interlude, B1 | box, typewriter rows, discs (cookie) |
 | FROG | `scr_silly.c:149` | 64 | interlude, B1 | art (frog), pupils (discs), mouth polyline, drops, z text, streaks |

@@ -42,8 +42,8 @@ CHECK_WAIT, CHECK_DONE, CHECK_TIMEOUT = range(3)                    # enum scr_c
 # The screens' sources and their include paths. oled_font.c is left out: the shim includes it, so a
 # test can see every string drawn (the shim's oled_text and oled_draw_text check each character against the font).
 INCLUDES = ['-I', APP, '-I', COMMON, '-I', ROOT/'firmware']
-SOURCES = [APP/'scr_view.c', APP/'scr_screens.c', APP/'scr_calc.c', APP/'scr_widget.c', APP/'scr_home.c', APP/'scr_detail.c', APP/'scr_interludes.c', APP/'scr_rain.c',
-           APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', APP/'scr_kana.c',
+SOURCES = [APP/'scr_view.c', APP/'scr_screens.c', APP/'scr_calc.c', APP/'scr_widget.c', APP/'scr_home.c', APP/'scr_detail.c', APP/'scr_interludes.c', APP/'scr_boot.c', APP/'scr_rain.c',
+           APP/'scr_silly.c', APP/'scr_art.c', APP/'scr_font.c', APP/'scr_kana.c', APP/'scr_mark.c',
            COMMON/'oled_draw.c', COMMON/'oled_row.c', COMMON/'font5x7.c']
 FRAME_BYTES = W * H // 2   # the SSD1325's send order (firmware/common/oled_draw.h): column pair, then row
 JUNK = 0xA5                # what frame() fills the buffer with before a screen draws
@@ -127,7 +127,7 @@ class View(ctypes.Structure):
                 ('sf', u8), ('bw_khz_div125', u8), ('freq_khz', u32),
                 ('flash_pct', u8), ('ram_pct', u8), ('stack_pct', u8), ('journal_pct', u8), ('airtime_pct', u8),
                 ('station', u16), ('epoch', u32), ('port_mark', u8 * PORTS), ('check', u8),
-                ('key_ok', i), ('utc', u32), ('since_exchange_s', u32),
+                ('key_ok', i), ('fw', ctypes.c_char * 13), ('utc', u32), ('since_exchange_s', u32),
                 ('air', hist(AIR_HIST)), ('press', hist(PRESS_HIST)), ('radio', RadioHist)]
 
 
@@ -160,7 +160,7 @@ def demo_view():
              press_dhpa=9830, uv_counts=0, last_seq=1233, last_age_s=58, last_acked=SCR_TX_ACK,
              ack_rssi=-41, ack_snr=13, sf=7, bw_khz_div125=4, freq_khz=915000,
              flash_pct=51, ram_pct=38, stack_pct=69, journal_pct=2, airtime_pct=4, station=17, epoch=42,
-             check=CHECK_DONE, key_ok=1)
+             check=CHECK_DONE, key_ok=1, fw=b'7b7d58b0c2e4')
     v.port_mark[:] = [PORT_OK] * PORTS
     v.wind.speed_cms, v.wind.gust_cms, v.wind.vane_mv, v.wind.point = 130, 270, 1486, 2
     bins = [(i // 2) % 2 + (2 if 40 <= i < 56 else 0) + (1 if i % 7 == 3 and i < 100 else 0) for i in range(120)]
@@ -320,7 +320,7 @@ def png(pixels, path, scale=4):
 
 # The frames worth a look: each step of each screen's animation.
 FRAMES = {'HOME': [0, 2, 4, 6], 'BURST': [0, 1, 8, 15], 'BANNER': [0], 'AIR': [0, 7], 'PRESSURE': [7], 'POWER': [7],
-          'RADIO': [0, 7], 'SCOPE': [0], 'VANE': [0, 1, 63], 'RAIN': [0], 'SYSTEM': [0, 63], 'BOOT': [0, 30, 62], 'MODULES': [0],
+          'RADIO': [0, 7], 'SCOPE': [0], 'VANE': [0, 1, 63], 'RAIN': [0], 'SYSTEM': [0, 63], 'BOOT': [0, 3, 5, 9, 12, 21, 30, 45, 47, 56, 71], 'MODULES': [0],
           'HACK': [0, 4, 12, 16, 18, 20, 21], 'FORTUNE': [0, 6, 30], 'FROG': [0, 20, 40, 44, 60], 'MATRIX': [0, 1, 2, 3, 4, 5],
           'PINBALL': [0, 20, 32, 33, 63]}
 
