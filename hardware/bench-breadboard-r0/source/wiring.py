@@ -582,10 +582,12 @@ def load(path):
 # and the node's bench build share (board/nucleo-wl55jc/oled_spi1.h).
 # Their POWER_PIN (PA9) is not here: the sensor power switch (change C) is not part of the breadboard build
 # (record 4.6, 2026-11-02), so the breadboard model has no SENS_EN net and PA9 is unconnected on it.
-FIRMWARE = {'stage0-node/App/board_inputs.c': {'CUPS_PIN': 'CUPS', 'VANE_PIN': 'VANE', 'RAIN_PIN': 'RAIN',
-                                               'PGOOD_PIN': 'PGOOD', 'CHG_PIN': 'CHG',
-                                               'ISET_PIN': 'ISET', 'VIN_PIN': 'VIN_SENSE'},
-            'stage0-node/App/i2c_bus.lit.md': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL'},
+FIRMWARE = {'stage0-node/App/board_inputs.c': {'RAIN_PIN': 'RAIN', 'PGOOD_PIN': 'PGOOD', 'CHG_PIN': 'CHG',
+                                               'VIN_PIN': 'VIN_SENSE'},
+            # The node's pins that differ between boards (issue #35) come from the NUCLEO's board layer.
+            'board/nucleo-wl55jc/Core/Inc/board_pins.h': {'BOARD_CUPS_PIN': 'CUPS', 'BOARD_VANE_PIN': 'VANE',
+                                                          'BOARD_ISET_PIN': 'ISET', 'BOARD_I2C_SDA_PIN': 'I2C_SDA',
+                                                          'BOARD_I2C_SCL_PIN': 'I2C_SCL'},
             'benchlink/App/benchlink.c': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL',
                                           'PGOOD_PIN': 'PGOOD', 'CHG_PIN': 'CHG',
                                           'ISET_PIN': 'ISET', 'VIN_PIN': 'VIN_SENSE'},

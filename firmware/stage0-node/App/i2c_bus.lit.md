@@ -73,7 +73,9 @@ The completion codes (`i2c_bus.h`) are:
 
 ## 2. Hardware and constants
 
-I2C2 uses PA11 (SDA) and PA12 (SCL) at 100 kHz, as before. PA9 (D9, CN5.2; morpho CN10.19) is
+I2C2 uses PA11 (SDA) and PA12 (SCL) at 100 kHz, as before; on the Wio-E5 mini (issue #35) PA15 (SDA) and
+PB15 (SCL), on two ports. The pins come from the board layer (`Core/Inc/board_pins.h`), with the steps
+that set them up: one call for both on the NUCLEO, one for each pin on the mini. PA9 (D9, CN5.2; morpho CN10.19) is
 the sensor supply enable, **not wired**: change C's load switch is not part of the breadboard build
 (build-progression record section 4.6, dated note 2026-11-02), so on the breadboard PA9 is
 unconnected, the hub's sensors are on the unswitched 3V3, and driving the pin does nothing. With
@@ -91,8 +93,8 @@ the I2C interrupt; ST's timer rounds down to 1/1024 s ticks. Each byte on the bu
 (131 bytes, about 12 ms) gets 41 ms, more than the 37 ms it needs with the erase stall.
 
 ```c {#constants}
-#define SDA_PIN GPIO_PIN_11
-#define SCL_PIN GPIO_PIN_12
+#include "board_pins.h"   /* BOARD_I2C_SDA_PIN, BOARD_I2C_SCL_PIN, their ports and steps: the board's */
+/* NUCLEO: PA11 SDA, PA12 SCL. Wio-E5 mini: PA15 SDA, PB15 SCL. Both I2C2, AF4 (issue #35). */
 #define POWER_PIN GPIO_PIN_9   /* PA9 = D9, CN5.2 */
 #define I2C_GUARD_MS 30U
 #define I2C_BYTE_US 90U        /* one byte and its acknowledge at 100 kHz */
@@ -126,10 +128,10 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
   RCC_PeriphCLKInitTypeDef clk = { .PeriphClockSelection = RCC_PERIPHCLK_I2C2,
                                    .I2c2ClockSelection = RCC_I2C2CLKSOURCE_PCLK1 };
   (void)HAL_RCCEx_PeriphCLKConfig(&clk);   /* selects the I2C2 clock only, so it cannot time out */
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  GPIO_InitTypeDef gpio = { .Pin = SDA_PIN | SCL_PIN, .Mode = GPIO_MODE_AF_OD, .Pull = GPIO_PULLUP,
+  BOARD_I2C_GPIO_CLK_ENABLE();
+  GPIO_InitTypeDef gpio = { .Pin = BOARD_I2C_SDA_PIN | BOARD_I2C_SCL_PIN, .Mode = GPIO_MODE_AF_OD, .Pull = GPIO_PULLUP,
                             .Speed = GPIO_SPEED_FREQ_LOW, .Alternate = GPIO_AF4_I2C2 };
-  HAL_GPIO_Init(GPIOA, &gpio);
+  BOARD_I2C_PINS_INIT(&gpio);
   __HAL_RCC_I2C2_CLK_ENABLE();
   HAL_NVIC_SetPriority(I2C2_EV_IRQn, I2C_IRQ_PRIORITY, 0);
   HAL_NVIC_SetPriority(I2C2_ER_IRQn, I2C_IRQ_PRIORITY, 0);
@@ -144,7 +146,7 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef *hi2c)
   HAL_NVIC_DisableIRQ(I2C2_EV_IRQn);
   HAL_NVIC_DisableIRQ(I2C2_ER_IRQn);
   __HAL_RCC_I2C2_CLK_DISABLE();
-  HAL_GPIO_DeInit(GPIOA, SDA_PIN | SCL_PIN);
+  BOARD_I2C_PINS_DEINIT();
 }
 
 static void i2c_start(void)
@@ -512,9 +514,9 @@ recoveries since boot), and the bus task counts each one that ends with SDA stil
 (`i2c_bus_stuck`). A recovery of a failed transfer and a recover-only request count alike.
 
 ```c {#recovery}
-static void pin_scl(void *c, int level) { (void)c; HAL_GPIO_WritePin(GPIOA, SCL_PIN, level ? GPIO_PIN_SET : GPIO_PIN_RESET); }
-static void pin_sda(void *c, int level) { (void)c; HAL_GPIO_WritePin(GPIOA, SDA_PIN, level ? GPIO_PIN_SET : GPIO_PIN_RESET); }
-static int pin_read_sda(void *c) { (void)c; return HAL_GPIO_ReadPin(GPIOA, SDA_PIN) == GPIO_PIN_SET; }
+static void pin_scl(void *c, int level) { (void)c; HAL_GPIO_WritePin(BOARD_I2C_SCL_PORT, BOARD_I2C_SCL_PIN, level ? GPIO_PIN_SET : GPIO_PIN_RESET); }
+static void pin_sda(void *c, int level) { (void)c; HAL_GPIO_WritePin(BOARD_I2C_SDA_PORT, BOARD_I2C_SDA_PIN, level ? GPIO_PIN_SET : GPIO_PIN_RESET); }
+static int pin_read_sda(void *c) { (void)c; return HAL_GPIO_ReadPin(BOARD_I2C_SDA_PORT, BOARD_I2C_SDA_PIN) == GPIO_PIN_SET; }
 static const ws_i2c_pins pins = { 0, pin_scl, pin_sda, pin_read_sda, 0 };
 
 static void on_step(void *ctx)
@@ -533,10 +535,10 @@ static void recover_begin(void)
      the re-initialised peripheral. */
   HAL_NVIC_ClearPendingIRQ(I2C2_EV_IRQn); HAL_NVIC_ClearPendingIRQ(I2C2_ER_IRQn);
   hi2c2.XferISR = NULL;
-  HAL_GPIO_WritePin(GPIOA, SDA_PIN | SCL_PIN, GPIO_PIN_SET);
-  GPIO_InitTypeDef gpio = { .Pin = SDA_PIN | SCL_PIN, .Mode = GPIO_MODE_OUTPUT_OD, .Pull = GPIO_PULLUP,
+  BOARD_I2C_PINS_HIGH();
+  GPIO_InitTypeDef gpio = { .Pin = BOARD_I2C_SDA_PIN | BOARD_I2C_SCL_PIN, .Mode = GPIO_MODE_OUTPUT_OD, .Pull = GPIO_PULLUP,
                             .Speed = GPIO_SPEED_FREQ_LOW };
-  HAL_GPIO_Init(GPIOA, &gpio);
+  BOARD_I2C_PINS_INIT(&gpio);
   st = S_RECOVER;
   ws_i2c_recover_begin(&rec, &pins);
   (void)WS_CHECK(UTIL_TIMER_Start(&step_timer) == UTIL_TIMER_OK);
@@ -611,7 +613,7 @@ static void note_stuck(void)
 
 static int may_be_stuck(int rc)
 {
-  return rc == I2C_ETIMEOUT || rc == I2C_EBUS || hal_refused || HAL_GPIO_ReadPin(GPIOA, SDA_PIN) != GPIO_PIN_SET;
+  return rc == I2C_ETIMEOUT || rc == I2C_EBUS || hal_refused || HAL_GPIO_ReadPin(BOARD_I2C_SDA_PORT, BOARD_I2C_SDA_PIN) != GPIO_PIN_SET;
 }
 
 static void bus_task(void)

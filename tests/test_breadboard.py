@@ -23,6 +23,7 @@ import wiring  # noqa: E402
 DATA = HW/'source'/'wiring.toml'
 GUIDE = ROOT/'docs'/'hardware'/'bench-station-wiring.md'
 FIRMWARE = ROOT/'firmware'
+PINS_H = 'board/nucleo-wl55jc/Core/Inc/board_pins.h'   # the node's board pins (wiring.FIRMWARE; issue #35)
 APP = FIRMWARE/'stage0-node'/'App'
 
 ENV = kicad_env.find()
@@ -152,8 +153,9 @@ class Checks(unittest.TestCase):
     def test_an_adc_input_needs_its_channel(self):
         # UM2592 Table 17: A0 = PB1 = ADC1_IN5, A1 = PB2 = ADC1_IN4 (the vane), A2 = PA10 = ADC1_IN6.
         self.assertEqual((wiring.ADC_CHANNEL['PB1'], wiring.ADC_CHANNEL['PB2'], wiring.ADC_CHANNEL['PA10']), (5, 4, 6))
-        problems = self.firmware_problems('stage0-node/App/board_inputs.c', lambda t: t.replace('ADC_CHANNEL_4', 'ADC_CHANNEL_9'))
-        self.assertTrue(any('VANE_PIN is PB2 (ADC1_IN4)' in p for p in problems), problems)
+        # The node's vane pin and channel come from the NUCLEO's board layer (issue #35).
+        problems = self.firmware_problems(PINS_H, lambda t: t.replace('ADC_CHANNEL_4', 'ADC_CHANNEL_9'))
+        self.assertTrue(any('BOARD_VANE_PIN is PB2 (ADC1_IN4)' in p for p in problems), problems)
 
     def test_a_header_the_guide_does_not_list_is_found(self):
         self.w.nets['RAIN'] = ['N:CN10.31' if m == 'N:CN8.4' else m for m in self.w.nets['RAIN']]
@@ -802,12 +804,14 @@ class PhaseAPower(unittest.TestCase):
         self.jumpers = wiring.plan_jumpers(self.w)
 
     def test_the_firmware_reads_iset_and_vin_on_their_adc_channels(self):
-        for file in ('stage0-node/App/board_inputs.c', 'benchlink/App/benchlink.c'):
-            self.assertEqual((wiring.FIRMWARE[file]['ISET_PIN'], wiring.FIRMWARE[file]['VIN_PIN']), ('ISET', 'VIN_SENSE'))
+        # The node: VIN in board_inputs.c, ISET from the NUCLEO's board layer (issue #35); benchlink: both.
+        self.assertEqual((wiring.FIRMWARE[PINS_H]['BOARD_ISET_PIN'], wiring.FIRMWARE['stage0-node/App/board_inputs.c']['VIN_PIN']),
+                         ('ISET', 'VIN_SENSE'))
+        self.assertEqual((wiring.FIRMWARE['benchlink/App/benchlink.c']['ISET_PIN'], wiring.FIRMWARE['benchlink/App/benchlink.c']['VIN_PIN']),
+                         ('ISET', 'VIN_SENSE'))
         self.assertTrue({'ISET', 'VIN_SENSE'} <= set(wiring.ADC_NETS))
-        problems = Checks.firmware_problems(self, 'stage0-node/App/board_inputs.c',
-                                            lambda t: t.replace('ADC_CHANNEL_5,', 'ADC_CHANNEL_7,'))
-        self.assertTrue(any('ISET_PIN is PB1 (ADC1_IN5)' in p for p in problems), problems)
+        problems = Checks.firmware_problems(self, PINS_H, lambda t: t.replace('ADC_CHANNEL_5', 'ADC_CHANNEL_7'))
+        self.assertTrue(any('BOARD_ISET_PIN is PB1 (ADC1_IN5)' in p for p in problems), problems)
         problems = Checks.firmware_problems(self, 'benchlink/App/benchlink.c',
                                             lambda t: t.replace('pin_uv(ADC_CHANNEL_6,', 'pin_uv(ADC_CHANNEL_7,'))
         self.assertTrue(any('VIN_PIN is PA10 (ADC1_IN6)' in p for p in problems), problems)
@@ -1530,7 +1534,7 @@ class ChangeCDeferred(unittest.TestCase):
             with self.subTest(file=file):
                 found = {m.group(1): m for m in wiring.PIN_DEFINE.finditer((FIRMWARE/file).read_text())}
                 self.assertEqual(found['POWER_PIN'].group(2), '9')
-                self.assertNotIn('POWER_PIN', wiring.FIRMWARE[file])
+                self.assertNotIn('POWER_PIN', wiring.FIRMWARE.get(file, {}))
         self.assertEqual(wiring.check_firmware(self.w, FIRMWARE), [])
 
     def test_every_check_is_clean(self):

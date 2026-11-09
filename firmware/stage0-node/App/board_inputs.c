@@ -46,7 +46,7 @@
  * probe; the count holds still through the window. A real cup pulse inside the window is lost with
  * them: at 75 m/s (112 Hz) that is at most one pulse per probe, under one at any realistic speed.
  * A rain tip inside the window is lost too (the line is masked); no probe ever makes one. */
-#include "board_inputs.h"
+#include "board_inputs.h"   /* and board_pins.h: the pins that differ between boards */
 #include "clock.h"
 #include "i2c_bus.h"
 #include "mod_power.h"
@@ -67,9 +67,12 @@ _Static_assert(DEBUG_RF_BUSY_ENABLED == 0, "DEBUG_RF_BUSY drives PA12, I2C2 SCL"
 _Static_assert(DEBUG_RF_SMPSRDY_ENABLED == 0, "DEBUG_RF_SMPSRDY drives PB2, the wind vane");
 _Static_assert(DEBUG_RF_LDORDY_ENABLED == 0, "DEBUG_RF_LDORDY drives PB4, the rain gauge");
 
-#define CUPS_PIN GPIO_PIN_5       /* PB5 = D4, CN9.5: LPTIM1_IN1 AF1 */
-#define VANE_PIN GPIO_PIN_2       /* PB2 */
-#define ISET_PIN GPIO_PIN_1 /* PB1 */
+/* The board's (Core/Inc/board_pins.h): NUCLEO PB5, PB2 (IN4), PB1 (IN5); Wio-E5 mini PC0, PB3 (IN2), none. */
+#define CUPS_PORT BOARD_CUPS_PORT
+#define CUPS_PIN BOARD_CUPS_PIN   /* LPTIM1_IN1 AF1 */
+#define VANE_PORT BOARD_VANE_PORT
+#define VANE_PIN BOARD_VANE_PIN
+#define ISET_PIN BOARD_ISET_PIN   /* with the vane, on its port; 0 without the charger pins */
 #define VIN_PIN GPIO_PIN_10 /* PA10 */
 #define RAIN_PIN GPIO_PIN_4       /* PB4 = A3, CN8.4: EXTI4 */
 #define PGOOD_PIN GPIO_PIN_8      /* PB8 */
@@ -80,7 +83,7 @@ _Static_assert(DEBUG_RF_LDORDY_ENABLED == 0, "DEBUG_RF_LDORDY drives PB4, the ra
 #define ADC_FULL_SCALE 4095U
 #define RATIO_MV 3300U            /* the vane's pull-up uses VDDA too: its reading is a ratio */
 #define ADC_RESTART_CALLS 3U      /* calls without a new sequence before a start is tried again */
-#define CUPS_BIT 5U               /* CUPS_PIN's position: its two PUPDR bits */
+#define CUPS_BIT BOARD_CUPS_BIT    /* CUPS_PIN's position: its two PUPDR bits */
 #define RAIN_BIT 4U               /* RAIN_PIN's position */
 #define PUPD_MASK 3U              /* RM0453 GPIOx_PUPDR: two bits a pin, 01 pull-up, 10 pull-down */
 #define PUPD_UP 1U
@@ -118,10 +121,10 @@ void HAL_LPTIM_MspInit(LPTIM_HandleTypeDef *h)
   RCC_PeriphCLKInitTypeDef clk = { .PeriphClockSelection = RCC_PERIPHCLK_LPTIM1, .Lptim1ClockSelection = RCC_LPTIM1CLKSOURCE_LSE };
   (void)HAL_RCCEx_PeriphCLKConfig(&clk);
   __HAL_RCC_LPTIM1_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
+  BOARD_CUPS_CLK_ENABLE();
   GPIO_InitTypeDef gpio = { .Pin = CUPS_PIN, .Mode = GPIO_MODE_AF_PP, .Pull = GPIO_PULLUP, .Speed = GPIO_SPEED_FREQ_LOW,
                             .Alternate = GPIO_AF1_LPTIM1 };
-  HAL_GPIO_Init(GPIOB, &gpio);
+  HAL_GPIO_Init(CUPS_PORT, &gpio);
 }
 
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
@@ -132,7 +135,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef *h)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   GPIO_InitTypeDef gpio = { .Pin = VANE_PIN | ISET_PIN, .Mode = GPIO_MODE_ANALOG, .Pull = GPIO_NOPULL };
-  HAL_GPIO_Init(GPIOB, &gpio);
+  HAL_GPIO_Init(VANE_PORT, &gpio);
   gpio.Pin = VIN_PIN;
   HAL_GPIO_Init(GPIOA, &gpio);
   HAL_NVIC_SetPriority(ADC_IRQn, INPUT_IRQ_PRIORITY, 0);
@@ -161,7 +164,7 @@ static void cups_init(void)
    never HAL_ADC_ConfigChannel while ADSTART is set. */
 static int adc_channels(void)
 {
-  static const uint32_t channel[SEQ_LEN] = { ADC_CHANNEL_4, ADC_CHANNEL_5, ADC_CHANNEL_6, ADC_CHANNEL_VREFINT };
+  static const uint32_t channel[SEQ_LEN] = { BOARD_VANE_CHANNEL, BOARD_ISET_CHANNEL, ADC_CHANNEL_6, ADC_CHANNEL_VREFINT };
   static const uint32_t rank_of[SEQ_LEN] = { ADC_REGULAR_RANK_1, ADC_REGULAR_RANK_2, ADC_REGULAR_RANK_3, ADC_REGULAR_RANK_4 };
   for (unsigned i = 0; i < SEQ_LEN; i++)
   {
@@ -206,10 +209,11 @@ static void adc_init(void)
 static void pins_init(void)
 {
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  /* The charger pins only where the board has them: a value, not an #if, so both boards' code compiles. */
   GPIO_InitTypeDef in = { .Pin = PGOOD_PIN, .Mode = GPIO_MODE_INPUT, .Pull = GPIO_PULLUP, .Speed = GPIO_SPEED_FREQ_LOW };
-  HAL_GPIO_Init(GPIOB, &in);
+  if (BOARD_CHARGER_PINS) HAL_GPIO_Init(GPIOB, &in);
   GPIO_InitTypeDef chg = { .Pin = CHG_PIN, .Mode = GPIO_MODE_IT_RISING_FALLING, .Pull = GPIO_PULLUP, .Speed = GPIO_SPEED_FREQ_LOW };
-  HAL_GPIO_Init(GPIOB, &chg);
+  if (BOARD_CHARGER_PINS) HAL_GPIO_Init(GPIOB, &chg);
   GPIO_InitTypeDef rain = { .Pin = RAIN_PIN, .Mode = GPIO_MODE_IT_FALLING, .Pull = GPIO_PULLUP, .Speed = GPIO_SPEED_FREQ_LOW };
   HAL_GPIO_Init(GPIOB, &rain);
   HAL_NVIC_SetPriority(EXTI4_IRQn, INPUT_IRQ_PRIORITY, 0);
@@ -260,12 +264,12 @@ static uint16_t lptim_count(void)
   return a == b ? a : (uint16_t)HAL_LPTIM_ReadCounter(&hlptim1);
 }
 
-/* The pull of one GPIOB pin and nothing else of it: PUPDR only, so the mode, the alternate function and
-   the EXTI line stay as they are. A read-modify-write: at run time only the probe writes GPIOB's PUPDR. */
-static void pull_set(unsigned bit, uint32_t pull)
+/* The pull of one pin and nothing else of it: PUPDR only, so the mode, the alternate function and the
+   EXTI line stay as they are. A read-modify-write: at run time only the probe writes these PUPDRs. */
+static void pull_set(GPIO_TypeDef *port, unsigned bit, uint32_t pull)
 {
   uint32_t shift = 2U * bit;
-  GPIOB->PUPDR = (GPIOB->PUPDR & ~(PUPD_MASK << shift)) | (pull << shift);
+  port->PUPDR = (port->PUPDR & ~(PUPD_MASK << shift)) | (pull << shift);
 }
 
 static void link_note(enum board_link link, int low, int edge)
@@ -280,10 +284,10 @@ static void link_note(enum board_link link, int low, int edge)
 /* Phase 2, at the one-shot's expiry (read = 0 only when the one-shot was refused: restore, no verdict). */
 static void link_probe_end(int read)
 {
-  int cups_low = HAL_GPIO_ReadPin(GPIOB, CUPS_PIN) == GPIO_PIN_RESET;
+  int cups_low = HAL_GPIO_ReadPin(CUPS_PORT, CUPS_PIN) == GPIO_PIN_RESET;
   int rain_low = HAL_GPIO_ReadPin(GPIOB, RAIN_PIN) == GPIO_PIN_RESET;
-  pull_set(CUPS_BIT, PUPD_UP);
-  pull_set(RAIN_BIT, PUPD_UP);
+  pull_set(CUPS_PORT, CUPS_BIT, PUPD_UP);
+  pull_set(GPIOB, RAIN_BIT, PUPD_UP);
   __HAL_GPIO_EXTI_CLEAR_IT(RAIN_PIN);         /* an open link fell while masked: no tip */
   LL_EXTI_EnableIT_0_31(LL_EXTI_LINE_4);
   uint16_t c1 = lptim_count();
@@ -304,8 +308,8 @@ static void link_probe_start(void)
   cups_hold = (uint16_t)(probe_c0 - cups_offset);
   probing = 1U;
   LL_EXTI_DisableIT_0_31(LL_EXTI_LINE_4);
-  pull_set(CUPS_BIT, PUPD_DOWN);
-  pull_set(RAIN_BIT, PUPD_DOWN);
+  pull_set(CUPS_PORT, CUPS_BIT, PUPD_DOWN);
+  pull_set(GPIOB, RAIN_BIT, PUPD_DOWN);
   if (UTIL_TIMER_Start(&link_settle_timer) != UTIL_TIMER_OK) link_probe_end(0);   /* never left pulled down */
 }
 
@@ -380,6 +384,7 @@ uint32_t board_charger_edges(void) { return chg_edges; }
 int board_charger_pins(void)
 {
   int pins = 0;
+  if (!BOARD_CHARGER_PINS) return 0;   /* none fitted: App/power_acq.c reports the charger as none */
   if (HAL_GPIO_ReadPin(GPIOB, PGOOD_PIN) == GPIO_PIN_RESET) pins |= (int)POWER_PGOOD;
   if (HAL_GPIO_ReadPin(GPIOB, CHG_PIN) == GPIO_PIN_RESET) pins |= (int)POWER_CHG;
   return pins;

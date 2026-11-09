@@ -213,7 +213,7 @@ def firmware_pins():
     for c, m in re.findall(r"<- (CN\d+\.\d+) (P[A-H]\d+)", (REPO / "firmware/i2cscan/App/oled.h").read_text()):
         pins[m] = c
     pins.update({"PA11": "CN5.9", "PA12": "CN5.10"}) if "SDA_PIN GPIO_PIN_11" in \
-        (REPO / "firmware/stage0-node/App/i2c_bus.c").read_text() else None
+        (REPO / "firmware/board/nucleo-wl55jc/Core/Inc/board_pins.h").read_text() else None
     return pins
 
 

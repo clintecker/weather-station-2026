@@ -7,6 +7,7 @@
  * firmware/host/sim_core.c defines the power seams once, with the setters h_power_adc() and
  * h_charger_edges(). */
 #include <stdint.h>
+#include "board_pins.h"   /* the board's pins (BOARD_CHARGER_PINS: App/power_acq.c) */
 
 void board_inputs_init(void);
 

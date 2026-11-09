@@ -294,7 +294,7 @@ static void adc_sample(void)
   a->vdda_mv += s.vdda_mv; a->vdda_n++;
   if (adc_clipped(s.vin_raw)) a->vin_clipped = 1;
   else { a->vin_mv += divider_mv_ppm(adc_pin_uv(s.vin_raw, s.vdda_mv), POWER_VIN_DIVIDER_PPM); a->vin_n++; }
-  if (!((unsigned)pa.pin.pins & POWER_PGOOD)) { a->iset_n++; return; }   /* no input, no charge: 0 mA */
+  if (!((unsigned)pa.pin.pins & POWER_PGOOD)) { a->iset_n += BOARD_CHARGER_PINS; return; }   /* no input: 0 mA; no pins: none */
   if (adc_clipped(s.iset_raw)) { a->iset_bad = 1; return; }
   int32_t v_iset_uv = unscale_ppm(adc_pin_uv(s.iset_raw, s.vdda_mv), POWER_ISET_GAIN_PPM);   /* the 10k/1M network */
   a->iset_ma += ws_div_round(iset_charge_ua(v_iset_uv, POWER_R_ISET_OHM), UA_PER_MA);
@@ -322,7 +322,7 @@ static uint8_t charger_status(void)
   uint8_t st = (pins & POWER_PGOOD) ? POWER_STATUS_POWER_GOOD : 0U;   /* CHG without PGOOD is kept */
   if (pa.pin.fault) st |= POWER_STATUS_FAULT;
   else if (pins & POWER_CHG) st |= POWER_STATUS_CHARGING;
-  return st;   /* stage 0 and active input 0: the pins cannot tell (phase A and B) */
+  return BOARD_CHARGER_PINS ? st : (uint8_t)POWER_NONE_U8;   /* stage 0, active input 0: the pins cannot tell */
 }
 
 /* ---- the API ---- */

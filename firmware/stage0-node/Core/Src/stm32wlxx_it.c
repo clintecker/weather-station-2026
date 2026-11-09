@@ -22,6 +22,7 @@
 #include "stm32wlxx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "board_pins.h"   /* weather-station-2026: the console UART (BOARD_CONSOLE_*) */
 #include "busymon.h"   /* weather-station-2026: every handler is timed (App/busymon.h) */
 #include "fault.h"
 #include "flash_layout.h"
@@ -61,8 +62,8 @@ volatile uint8_t ws_flash_ecc_fault; /* weather-station-2026: see NMI_Handler */
 /* External variables --------------------------------------------------------*/
 extern RTC_HandleTypeDef hrtc;
 extern SUBGHZ_HandleTypeDef hsubghz;
-extern DMA_HandleTypeDef hdma_usart2_tx;
-extern UART_HandleTypeDef huart2;
+extern DMA_HandleTypeDef BOARD_CONSOLE_DMA_TX;   /* board_pins.h: the console UART and its TX DMA */
+extern UART_HandleTypeDef BOARD_CONSOLE_UART;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -258,21 +259,21 @@ void DMA1_Channel5_IRQHandler(void)
   /* USER CODE BEGIN DMA1_Channel5_IRQn 0 */
 
   /* USER CODE END DMA1_Channel5_IRQn 0 */
-  BUSYMON_ISR("DMA1_CH5", HAL_DMA_IRQHandler(&hdma_usart2_tx));
+  BUSYMON_ISR("DMA1_CH5", HAL_DMA_IRQHandler(&BOARD_CONSOLE_DMA_TX));
   /* USER CODE BEGIN DMA1_Channel5_IRQn 1 */
 
   /* USER CODE END DMA1_Channel5_IRQn 1 */
 }
 
 /**
-  * @brief This function handles USART2 Interrupt.
+  * @brief This function handles the console UART's interrupt (USART2 on the NUCLEO).
   */
-void USART2_IRQHandler(void)
+void BOARD_CONSOLE_IRQHandler(void)
 {
   /* USER CODE BEGIN USART2_IRQn 0 */
 
   /* USER CODE END USART2_IRQn 0 */
-  BUSYMON_ISR("USART2", HAL_UART_IRQHandler(&huart2));
+  BUSYMON_ISR(BOARD_CONSOLE_NAME, HAL_UART_IRQHandler(&BOARD_CONSOLE_UART));
   /* USER CODE BEGIN USART2_IRQn 1 */
 
   /* USER CODE END USART2_IRQn 1 */
