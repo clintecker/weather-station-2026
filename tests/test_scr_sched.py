@@ -371,8 +371,8 @@ class Scheduler(unittest.TestCase):
         self.to_home()
         self.event(EV_B2)
         self.assertEqual(self.held_for(300000 // STEP_MS), {'HOME'})
-        self.event(EV_SENT_LIVE)   # packets still show
-        self.assertEqual(self.runs(self.steps(16 + 24 + 1)), [('BURST', 16), ('BANNER', 24), ('HOME', 1)])
+        self.event(EV_SENT_LIVE)   # no burst, no banner: HOME stays
+        self.assertEqual(self.held_for(16 + 24 + 1), {'HOME'})
         # Resume: HOME ends its dwell, the cycle goes on; the interludes start a full period from the press.
         self.event(EV_B2)
         runs = self.timed_runs(130000)
@@ -399,16 +399,42 @@ class Scheduler(unittest.TestCase):
             self.event(EV_B1)   # FROG
         self.assertEqual(self.runs(self.steps(3 * 64)), [('FROG', 64)] * 3)
 
-    def test_a_packet_returns_to_the_held_screen(self):
+    def test_a_packet_keeps_the_held_screen(self):
+        # Paused on PRESSURE: a packet plays no burst and no banner; PRESSURE goes on at its frame (no restart
+        # from 0), drawn at the next step though it is between its redraws, then once a second as before.
         self.to_home()
         self.event(EV_B1)
         self.event(EV_B1)   # PRESSURE
         self.steps(5)
         self.event(EV_B2)
-        self.steps(10)
-        self.event(EV_SENT_LIVE)   # packets still show, then PRESSURE again, from its frame 0
-        got = self.runs(self.steps(16 + 24 + DWELL + 10))
-        self.assertEqual(got, [('BURST', 16), ('BANNER', 24), ('PRESSURE', DWELL), ('PRESSURE', 10)])
+        self.steps(12)   # PRESSURE at its frame 17: a step between its once-a-second redraws
+        self.event(EV_SENT_LIVE)
+        got = self.steps(DWELL - 17 + 10)
+        self.assertEqual(got[0], (1, 'PRESSURE', 17))
+        self.assertEqual([d for d, _, _ in got[1:7]], [0] * 6)
+        self.assertEqual(got[7], (1, 'PRESSURE', 24))
+        self.assertEqual(self.runs(got), [('PRESSURE', DWELL - 17), ('PRESSURE', 10)])
+
+    def test_a_packet_does_not_restart_a_held_play(self):
+        # Paused on FROG at its frame 30: the frame counter is not reset by a packet, every frame still drawn.
+        self.to_home()
+        for _ in range(10):
+            self.event(EV_B1)   # ... FORTUNE, FROG
+        self.event(EV_B2)
+        self.steps(30)
+        self.event(EV_SENT_LIVE)
+        got = self.steps(34 + 1)
+        self.assertEqual(got[:34], [(1, 'FROG', f) for f in range(30, 64)])
+        self.assertEqual(got[34], (1, 'FROG', 0))   # its own end: again from frame 0
+
+    def test_a_packet_up_at_the_press_ends_on_home(self):
+        # B2 during the burst: the burst and banner play out (they were up at the press), then HOME is held.
+        self.to_home()
+        self.event(EV_SENT_LIVE)
+        self.steps(3)
+        self.event(EV_B2)
+        self.assertEqual(self.runs(self.steps(13 + 24 + 1)), [('BURST', 13), ('BANNER', 24), ('HOME', 1)])
+        self.assertEqual(self.held_for(300000 // STEP_MS), {'HOME'})
 
     def test_b1_while_paused_moves_the_held_screen(self):
         self.to_home()
@@ -422,17 +448,17 @@ class Scheduler(unittest.TestCase):
             self.event(EV_B1)
         self.assertEqual(self.held_for(300000 // STEP_MS), {'HOME'})
         self.event(EV_SENT_LIVE)
-        self.assertEqual(self.runs(self.steps(16 + 24 + 1)), [('BURST', 16), ('BANNER', 24), ('HOME', 1)])
+        self.assertEqual(self.held_for(16 + 24 + 1), {'HOME'})
 
     def test_b1_while_paused_during_a_packet(self):
-        # B1 during the burst while paused: the next screen after the held one, as B1 always leaves a packet.
+        # B1 during a burst that was up at the B2 press: the next screen after the held one (HOME), as B1 always
+        # leaves a packet.
         self.to_home()
-        self.event(EV_B1)
-        self.event(EV_B2)
         self.event(EV_SENT_LIVE)
+        self.event(EV_B2)
         self.steps(3)
         self.event(EV_B1)
-        self.assertEqual(self.step()[1:], ('PRESSURE', 0))
+        self.assertEqual(self.step()[1:], ('AIR', 0))
 
     def test_resume_lets_the_held_screen_end(self):
         # B2 again: the held AIR stays to the end of its dwell, HOME follows, then the cycle's own next (AIR: B1 is

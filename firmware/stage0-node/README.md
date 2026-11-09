@@ -95,7 +95,7 @@ The firmware version string (`fw=` in `#boot`/`#status`) is `git describe --alwa
 | Button | Pin | Press |
 |---|---|---|
 | B1 | PA0 | The next screen, through every one: HOME, AIR, PRESSURE, POWER, RADIO, SCOPE, VANE, RAIN, SYSTEM, FORTUNE, FROG, MATRIX, PINBALL, HACK, HOME again. It does not move the HOME/detail cycle on. |
-| B2 | PA1 | Pause or resume. Paused, the screen stays where B1 put it (a detail screen keeps being redrawn; an interlude plays again from its first frame), comes back after a packet's burst and banner, and B1 moves it on. Resumed, it runs to its end, then HOME, and the next interlude is 2 minutes away. |
+| B2 | PA1 | Pause or resume. Paused, the screen stays where B1 put it (a detail screen keeps being redrawn; an interlude plays again from its first frame), stays through a packet (no burst or banner: it goes on where it was, redrawn with the new link line), and B1 moves it on. Resumed, it runs to its end, then HOME, and the next interlude is 2 minutes away. |
 | B3 | PC6 | The display off (the display-off command, then no SPI traffic) or on, with the current screen redrawn at its next step. After `#oled fault` (an SPI or DMA error, or a DMA that never ends) B3 off and on starts the display again. While the display is off, B1 and B2 do nothing. |
 
 A press counts once: the interrupt drops edges within 50 ms of the last one, and a press needs a 125 ms step to have read the button up since the press before, so a release that bounces is no second press.

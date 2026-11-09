@@ -13,7 +13,7 @@
  *            falls due only while HOME is up: due during a detail screen or a packet it waits for HOME,
  *            and the next is still due on the phase.
  *   packet   EV_SENT_LIVE plays BURST, then BANNER (HOME with the banner), then HOME. It preempts whatever
- *            is on (at its next step). EV_SENT_EXTRA only counts a frame for the banner.
+ *            is on (at its next step), except while paused (B2). EV_SENT_EXTRA only counts a frame for the banner.
  * Times are ms of one clock (clock_ms); differences wrap safely. Only in WS_BENCH_OLED=1 builds. */
 #ifndef SCR_SCHED_H
 #define SCR_SCHED_H
@@ -24,9 +24,10 @@
    FORTUNE, FROG, MATRIX, PINBALL, HACK, then HOME again (its own list: the interludes' order is apart). A
    base screen picked stays its 15 s, an interlude plays its frames, then the base cycle goes on. B2: pause
    or resume. Paused, the screen stays where B1 put it (design, "The buttons"): the one up at the press
-   (HOME if a packet or boot screen was up, after it ends) is held, plays again from frame 0 each time it
-   ends (a base screen after its 15 s), and comes back after a packet's burst and banner; B1 moves the held
-   screen to the next one; no base cycle, no interludes. On resume the held screen plays to its end, the
+   (HOME if a packet or boot screen was up, after it ends) is held and plays again from frame 0 each time it
+   ends (a base screen after its 15 s); a packet does not move it: no burst, no banner, the held screen goes
+   on at its frame and is redrawn at the next step, its link line current; B1 moves the held screen to the
+   next one; no base cycle, no interludes. On resume the held screen plays to its end, the
    cycle goes on from it, and the next interlude is a full period away. B3: the display off (sched_step
    reports display_on 0, the screens go on in step) or on. While the display is off, B1 and B2 do nothing:
    no change the user cannot see. */

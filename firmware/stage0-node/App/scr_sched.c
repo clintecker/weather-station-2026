@@ -19,12 +19,12 @@ static enum scr_id cur;
 static unsigned frame;           /* of cur, the next to show */
 static unsigned steps;           /* cur's length: its dwell or its frames */
 static int base;                 /* cur is up as a base screen */
-static int redraw;               /* the link changed (an ACK, a NO ACK) or B3 on: draw a base screen at the next step */
+static int redraw;               /* the link changed (a packet, an ACK, a NO ACK) or B3 on: draw a base screen at the next step */
 static uint32_t interlude_at;    /* when the next interlude falls due (clock_ms) */
 static unsigned next_interlude;  /* index into interludes */
 static unsigned next_detail;     /* index into details */
 static unsigned extras;          /* frames sent after the live one */
-static int paused;               /* B2: no base cycle, no interludes (packets still show) */
+static int paused;               /* B2: no base cycle, no interludes, no packet screens */
 static enum scr_id held;         /* while paused: the screen that stays (one of b1_order) */
 static int on;                   /* B3: the display is on */
 
@@ -76,34 +76,44 @@ static enum scr_id next_screen(enum scr_id id)
   return SCR_HOME;
 }
 
+/* B1, B2 and B3; while the display is off B1 and B2 do nothing. */
+static void button(enum sched_ev e, uint32_t now_ms)
+{
+  if (e == EV_B3)
+  {
+    on = !on;
+    if (on) redraw = 1;   /* the panel was dark: the screen comes back at its next step */
+    return;
+  }
+  if (!on) return;
+  if (e == EV_B1)   /* paused: the held screen moves on, from the held one (a packet screen up or not) */
+  {
+    if (paused) { held = next_screen(held); pick(held); }
+    else pick(next_screen(cur));
+    return;
+  }
+  paused = !paused;
+  if (paused) held = in_list(cur, b1_order, N_OF(b1_order)) ? cur : SCR_HOME;   /* a packet or boot one ends first */
+  else interlude_at = now_ms + INTERLUDE_EVERY_MS;      /* resumes a full period from now */
+}
+
 void sched_event(enum sched_ev e, uint32_t now_ms)
 {
   switch (e)
   {
-    case EV_SENT_LIVE: play(SCR_BURST); extras = 0; break;   /* preempts whatever is on */
+    case EV_SENT_LIVE:   /* preempts whatever is on; paused, the held screen stays and shows it */
+      if (paused) redraw = 1;
+      else play(SCR_BURST);
+      extras = 0;
+      break;
     case EV_SENT_EXTRA: if (extras < UINT16_MAX) extras++; break;
     case EV_ACK: case EV_NO_ACK: redraw = 1; break;   /* the link line and the banner show the outcome */
-    case EV_B1:   /* paused: the held screen moves on, from the held one (a packet screen up or not) */
-      if (!on) break;
-      if (paused) { held = next_screen(held); pick(held); }
-      else pick(next_screen(cur));
-      break;
-    case EV_B2:
-      if (!on) break;
-      paused = !paused;
-      if (paused) held = in_list(cur, b1_order, N_OF(b1_order)) ? cur : SCR_HOME;   /* a packet or boot one ends first */
-      else interlude_at = now_ms + INTERLUDE_EVERY_MS;      /* resumes a full period from now */
-      break;
-    case EV_B3:
-      on = !on;
-      if (on) redraw = 1;   /* the panel was dark: the screen comes back at its next step */
-      break;
-    default: break;
+    default: button(e, now_ms); break;   /* EV_B1..EV_B3 */
   }
 }
 
-/* What follows cur's end. While paused the held screen comes back (from its frame 0) after the banner and
-   after itself. */
+/* What follows cur's end. While paused the held screen comes back (from its frame 0) after itself, and after
+   a packet's banner that was up at the press. */
 static void after(void)
 {
   if (cur == SCR_BOOT) { play(SCR_HACK); return; }

@@ -157,7 +157,8 @@ Never during a packet burst or banner (the radio exchange wins); an interlude in
 
 - **B1**: next screen, through every one (HOME, the detail screens, the silly ones, HACK; then HOME). The list
   is its own: the interlude rotation and the HOME/detail cycle do not move with it.
-- **B2**: pause or resume (paused: the screen stays where B1 put it; packets still show).
+- **B2**: pause or resume (paused: the screen stays where B1 put it, and a packet does not break the hold: no burst
+  or banner, the held screen goes on where it was, redrawn at once so its link line shows the packet).
 - **B3**: OLED on or off (off: no SPI traffic, panel commanded to sleep).
 
 Debounced in software from the existing EXTI lines; a press never blocks.
