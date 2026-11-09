@@ -61,6 +61,14 @@ jobs:
         if: runner.os == 'Linux'
         run: tools/cppcheck.sh
 
+      # The board layer (issue #36): every firmware/board/*/board.toml passes the pin-map validator (ST's pin
+      # data, tools/pinctrl), its committed gen/ is what tools/boardgen.py writes, and the node's App/ and
+      # firmware/common name no pin or peripheral instance (tools/board_lint.py).
+      - name: Board layer (pin-map validator, generated files current, boundary lint)
+        run: |
+          python tools/boardgen.py --check
+          python tools/board_lint.py
+
       # vendor/ is git-ignored. Cache it keyed on the pin list; fetch-vendor.sh always re-verifies
       # every pinned commit and that no vendored file changed, so a stale or tampered cache fails here rather than in the tests.
       - name: Cache vendor sources
@@ -159,65 +167,28 @@ jobs:
           make -C firmware/benchlink ROLE=tx BUILD=build/ci-tx -j"$(nproc)"
           make -C firmware/benchlink ROLE=rx BUILD=build/ci-rx -j"$(nproc)"
 
-      # Our C already builds with a strict warning set and -Werror (board.mk STRICT). ANALYZE=1
-      # adds GCC's static analyzer (-fanalyzer) to our files only; any finding fails the build.
-      # Separate build directories, so the release-identical bins above are untouched.
-      - name: Static analysis (gcc -fanalyzer, our code)
-        working-directory: firmware/stage0-node
-        run: |
-          make ROLE=rx ANALYZE=1 BUILD=build/analyze-rx -j"$(nproc)"
-          make ROLE=tx ANALYZE=1 BUILD=build/analyze-tx -j"$(nproc)"
+      # Every board x role x power profile (tools/board_matrix.py, from each firmware/board/*/board.toml;
+      # issue #36): the NUCLEO TX in the default profile, phase B's four INA228 rails (WS_POWER_PROFILE=2),
+      # the ports board's mux bus (WS_I2C_MUX=1) and the bench OLED (WS_BENCH_OLED=1); the NUCLEO RX; the
+      # Wio-E5 mini TX in the three profiles. Each gets our strict set with -Werror plus GCC's analyzer
+      # (ANALYZE=1, any finding fails), the flash budget and no-heap checks, the stack bound
+      # (tools/stack_report.py) and the blocking-wait report (tools/blocking_report.py), and prints its flash
+      # and RAM budget lines (also in the job summary). Separate build directories (build/matrix/<cell>),
+      # so the release-identical bins above are untouched.
+      - name: Board x role x profile matrix (analyzer, stack bound, blocking waits, budgets)
+        run: python3 tools/board_matrix.py -j"$(nproc)"
 
-      # Worst-case stack bound must fit the stack the linker reserves (tools/stack_report.py).
-      - name: Stack bound
+      # The field build must link none of the bench OLED code (no oled_, scr_, ssd1325_ or font5x7 symbol).
+      - name: The field check
         working-directory: firmware/stage0-node
-        run: |
-          make ROLE=rx BUILD=build/analyze-rx stack
-          make ROLE=tx BUILD=build/analyze-tx stack
+        run: make field-check
 
-      # Interrupt/event driven: no banned busy-wait (HAL_Delay, blocking HAL I2C/UART/SPI, ...) and no
-      # unclassified HAL_GetTick polling reachable at run time (tools/blocking_report.py).
-      - name: No blocking waits at run time
-        working-directory: firmware/stage0-node
-        run: |
-          make ROLE=rx BUILD=build/analyze-rx waits
-          make ROLE=tx BUILD=build/analyze-tx waits
-
-      # The other TX build profiles (docs/firmware-budget.md): phase B's four INA228 rails
-      # (WS_POWER_PROFILE=2) and the ports board's mux bus (WS_I2C_MUX=1). The host tests compile them
-      # with the host compiler only; here each gets the ARM strict set with -Werror, the analyzer, the
-      # flash budget, the stack bound and the blocking-wait report, so neither can regress silently.
-      - name: TX profile variants (phase B, mux bus)
-        working-directory: firmware/stage0-node
-        run: |
-          for v in "phase-b:-DWS_POWER_PROFILE=2" "mux:-DWS_I2C_MUX=1"; do
-            name="${v%%:*}"; def="${v#*:}"
-            echo "::group::tx $name ($def)"
-            make ROLE=tx ANALYZE=1 OPT="-Os $def" BUILD="build/variant-$name" -j"$(nproc)"
-            make ROLE=tx OPT="-Os $def" BUILD="build/variant-$name" stack
-            make ROLE=tx OPT="-Os $def" BUILD="build/variant-$name" waits
-            echo "::endgroup::"
-          done
-
-      # The bench build with the OLED (WS_BENCH_OLED=1, App/oled_dma.c) gets the same checks; the field
-      # build must link none of it (make field-check: no oled_, scr_, ssd1325_ or font5x7 symbol).
-      - name: TX bench OLED build and the field check
-        working-directory: firmware/stage0-node
-        run: |
-          make ROLE=tx WS_BENCH_OLED=1 ANALYZE=1 BUILD=build/variant-oled -j"$(nproc)"
-          make ROLE=tx WS_BENCH_OLED=1 BUILD=build/variant-oled stack
-          make ROLE=tx WS_BENCH_OLED=1 BUILD=build/variant-oled waits
-          make field-check
-
-      # The TX on the Seeed Wio-E5 mini (BOARD=wio-e5, firmware/board/wio-e5; issue #35): the same checks
-      # as the NUCLEO TX (strict set with -Werror, the analyzer, the flash budget, no heap, the stack bound
-      # and the blocking-wait report), in its own build directory.
-      - name: TX on the Wio-E5 mini (BOARD=wio-e5)
-        working-directory: firmware/stage0-node
-        run: |
-          make ROLE=tx BOARD=wio-e5 ANALYZE=1 BUILD=build/variant-wio-e5 -j"$(nproc)"
-          make ROLE=tx BOARD=wio-e5 BUILD=build/variant-wio-e5 stack
-          make ROLE=tx BOARD=wio-e5 BUILD=build/variant-wio-e5 waits
+      # A made-up third board (tests/fixtures/boards/made-up-e5, never shipped) builds from its own directory,
+      # with no file outside it changed (docs/adding-a-board.md). The host job skips it: no ARM toolchain there.
+      - name: A new board needs only its own directory
+        env:
+          WS_REQUIRE_ARM: '1'
+        run: python3 -m unittest tests.test_boardgen.MadeUpBoard -v
 
       # Coverage-guided fuzzing of the input parsers (firmware/fuzz/README.md), 60 s per target.
       # The unit tests already run the same targets briefly without libFuzzer on every OS.
