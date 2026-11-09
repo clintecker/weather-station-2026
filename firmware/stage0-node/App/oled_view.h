@@ -19,6 +19,10 @@ void oled_view_fill(scr_view_t *v, enum scr_id id, unsigned frame);
    every 5 minutes, each from the first call on; SCR_GAP while the port is not in the layout or has no
    value. No module keeps any of it. */
 void oled_view_sample(scr_view_t *v, uint32_t now_ms);
+/* The boot checklist's marks (port_mark), from each local port's WSMP host state, at every step (eight cached
+   reads). Returns 1 when every port has its verdict (no SCR_PORT_WAIT): the scheduler's EV_SETTLED. An
+   Absent port counts as waiting until ABSENT_AFTER_MS after the first call, when every port has probed. */
+int oled_view_modules(scr_view_t *v, uint32_t now_ms);
 /* LoRa time on air of a frame of len bytes at the node's radio settings (radio_cfg.h), ms. */
 uint32_t oled_view_airtime_ms(uint8_t len);
 #endif

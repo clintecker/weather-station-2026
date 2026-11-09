@@ -16,7 +16,9 @@ except ImportError:
 FW = ROOT/'firmware'
 APP = FW/'stage0-node/App'
 P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH = 1, 2, 3, 4
-WH_IDENTIFYING, WH_ADMITTED, WH_ACTIVE, WH_SUSPECT, WH_QUARANTINED, WH_REFUSED = 2, 3, 4, 5, 6, 7
+WH_ABSENT, WH_PROBING, WH_IDENTIFYING, WH_ADMITTED, WH_ACTIVE, WH_SUSPECT, WH_QUARANTINED, WH_REFUSED = range(8)
+PORT_WAIT, PORT_OK, PORT_ABSENT, PORT_FAULT = range(4)   # enum scr_port_mark (App/scr_view.h)
+ABSENT_AFTER_MS = 20000                                   # oled_view.c: WSMP_SAMPLE_MS + 5 s
 
 SHIM = r'''
 #include <string.h>
@@ -71,7 +73,8 @@ int t_box_ok(void) { return v.box_ok; }
 int t_press_ok(void) { return v.press_ok; }
 int t_uv_ok(void) { return v.uv_ok; }
 int t_air_c(void) { return v.air_c; }
-unsigned t_modules_active(void) { return v.modules_active; }
+int t_modules(uint32_t now_ms) { return oled_view_modules(&v, now_ms); }
+unsigned t_mark(unsigned i) { return v.port_mark[i]; }
 unsigned t_rain_tips(void) { return v.rain.tips; }
 unsigned t_rain_now(void) { return v.rain.per_min[59]; }
 '''
@@ -113,6 +116,27 @@ class OledView(unittest.TestCase):
         self.port(P_ENCL_TH, WH_REFUSED, False)
         self.port(P_PRESSURE, WH_REFUSED, False)
         self.assertEqual(self.oks(), (1, 0, 0, 0))
+
+    def modules(self, now_ms):
+        self.lib.t_modules.argtypes = [ctypes.c_uint32]
+        settled = self.lib.t_modules(now_ms)
+        return settled, [self.lib.t_mark(i) for i in range(8)]
+
+    def test_the_checklist_marks(self):
+        # Each port's mark from its host state: probing, identifying and admitted (until the first latch) wait;
+        # active is OK; suspect, quarantined and refused are faults; absent waits until every port has probed
+        # (20 s after the first call), then is absent and no longer blocks.
+        states = [WH_ACTIVE, WH_PROBING, WH_IDENTIFYING, WH_ADMITTED, WH_SUSPECT, WH_QUARANTINED, WH_REFUSED, WH_ABSENT]
+        for p, st in enumerate(states, 1):
+            self.port(p, st, False)
+        self.assertEqual(self.modules(1000), (0, [PORT_OK, PORT_WAIT, PORT_WAIT, PORT_WAIT, PORT_FAULT, PORT_FAULT,
+                                                   PORT_FAULT, PORT_WAIT]))
+        for p in (2, 3, 4):
+            self.port(p, WH_ACTIVE, True)
+        self.assertEqual(self.modules(1000 + ABSENT_AFTER_MS - 1)[0], 0)      # the absent port still waits
+        self.assertEqual(self.modules(1000 + ABSENT_AFTER_MS), (1, [PORT_OK] * 4 + [PORT_FAULT] * 3 + [PORT_ABSENT]))
+        self.port(6, WH_PROBING, False)   # a module found late: waiting again
+        self.assertEqual(self.modules(60000)[0], 0)
 
     def test_rain_history_at_the_clock(self):
         self.lib.t_fill()

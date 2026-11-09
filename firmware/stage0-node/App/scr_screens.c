@@ -22,6 +22,7 @@ const scr_def scr_defs[] = {
   [SCR_FROG]     = { SCR_NAME("FROG") scr_frog, 64, 1, 8, 0 },
   [SCR_MATRIX]   = { SCR_NAME("MATRIX") scr_matrix, 64, 1, 8, 0 },
   [SCR_PINBALL]  = { SCR_NAME("PINBALL") scr_pinball, 64, 1, 8, 0 },
+  [SCR_MODULES]  = { SCR_NAME("MODULES") scr_modules, 16, 1, 8, SCR_F_ENDLESS },   /* its frame counts on through the wait */
 };
 _Static_assert(sizeof scr_defs / sizeof scr_defs[0] == SCR_COUNT, "a screen for every enum scr_id");
 

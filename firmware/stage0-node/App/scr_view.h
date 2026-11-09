@@ -31,6 +31,14 @@
 #define SCR_UTC_OFFSET_MIN (-360)
 #endif
 
+/* The boot checklist (scr_modules): each local port's mark (App/oled_view.c from its WSMP host state), and
+   how the wait for them ended (App/scr_sched.c). */
+#define SCR_PORTS 8U              /* the local ports, 1 (AIR) to 8 (RAILS): wsmp_local.h's enum wsmp_port */
+/* WAIT: no verdict yet (probing, identifying, admitted until its first latch, or no module before every port
+   has probed); OK: active; ABSENT: no module there; FAULT: quarantined, refused or suspect. */
+enum scr_port_mark { SCR_PORT_WAIT, SCR_PORT_OK, SCR_PORT_ABSENT, SCR_PORT_FAULT };
+enum scr_check { SCR_CHECK_WAIT, SCR_CHECK_DONE, SCR_CHECK_TIMEOUT };
+
 /* What the screens show. A value whose *_ok (or batt_ok, gauge_ok) is 0 is not drawn: its row says
    "NO <part>". */
 typedef struct {
@@ -50,7 +58,8 @@ typedef struct {
   uint8_t sf, bw_khz_div125; uint32_t freq_khz;   /* radio settings */
   uint8_t flash_pct, ram_pct, stack_pct, journal_pct, airtime_pct;   /* 0..100 */
   uint16_t station; uint32_t epoch;
-  unsigned modules, modules_active;       /* modules known, modules answering */
+  uint8_t port_mark[SCR_PORTS];           /* each local port's SCR_PORT_*, port 1 (AIR) first: the boot checklist */
+  uint8_t check;                          /* the checklist's outcome so far: SCR_CHECK_* (the scheduler's) */
   int key_ok;                             /* the node has its key (the boot splash) */
   uint32_t utc;                           /* time_utc(): UTC seconds, 0 while the clock is not synchronized */
   uint32_t since_exchange_s;              /* since the minute's exchange last started, or SCR_NONE_S */

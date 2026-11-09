@@ -76,7 +76,7 @@ class ScrView(unittest.TestCase):
     def test_frames(self):
         want = {'HOME': 1, 'BURST': 16, 'BANNER': 24, 'AIR': 8, 'PRESSURE': 8, 'POWER': 8, 'RADIO': 8, 'SCOPE': 64,
                 'VANE': 64, 'RAIN': 64, 'SYSTEM': 64, 'BOOT': 64, 'HACK': 24, 'FORTUNE': 64, 'FROG': 64, 'MATRIX': 64,
-                'PINBALL': 64}
+                'PINBALL': 64, 'MODULES': 16}
         self.assertEqual({s: self.lib.scr_frames(i) for i, s in enumerate(render.SCREENS)}, want)
 
     def test_font_file_is_current(self):
@@ -289,6 +289,39 @@ class ScrView(unittest.TestCase):
                    {(x, yy) for x, yy in f21 if yy == y} == {(x + d, y) for x, yy in base if yy == y and 0 <= x + d < W}
                    and any(yy == y for _, yy in base)]
         self.assertTrue(shifted)
+
+    def checklist(self, marks, check, frame=0):
+        v = render.demo_view()
+        v.port_mark[:], v.check = marks, check
+        return render.shade(self.lib, 'MODULES', frame, v)
+
+    def test_module_checklist(self):
+        # Each port's mark right-aligned in its column (AIR..ENCL left, BATT..RAIL right), the header counting the
+        # active ports of those with a module, the foot how the wait stands; a port with no module dim.
+        O, A, F, Wt = render.PORT_OK, render.PORT_ABSENT, render.PORT_FAULT, render.PORT_WAIT
+        got = self.checklist([O, O, Wt, O, O, A, A, F], render.CHECK_WAIT)
+        lit = set(got)
+        self.assertEqual(self.region(lit, 0, 11, 30, 18), self.text(1, 11, 'AIR'))
+        self.assertEqual(self.region(lit, 40, 11, 64, 18), self.text(61 - 11, 11, 'OK'))
+        self.assertEqual(self.region(lit, 67, 21, 92, 28), self.text(67, 21, 'WIND'))
+        none = self.region(lit, 100, 21, W, 28)
+        self.assertEqual(none, self.text(127 - 23, 21, 'NONE'))
+        self.assertEqual({got[p] for p in none}, {4})                                  # dim
+        head = {(x, y) for y in range(8) for x in range(W)} - self.text(0, 0, 'MODULE SCAN' + ' ' * 7 + '4/6')
+        self.assertEqual(self.region(lit, 0, 0, W, 8), head)
+        foot = lambda marks, check: self.region(set(self.checklist(marks, check)), 0, 56, W, H)
+        centred = lambda s: self.text((W - (6 * len(s) - 1)) // 2, 56, s)
+        self.assertEqual(foot([O, O, Wt, O, O, A, A, F], render.CHECK_WAIT), centred('SCANNING  1 PENDING'))
+        self.assertEqual(foot([O, O, Wt, O, O, A, A, O], render.CHECK_TIMEOUT), centred('TIMEOUT  1 PENDING'))
+        self.assertEqual(foot([O, O, O, O, O, A, A, F], render.CHECK_DONE), centred('ATTENTION  1 FAULT'))
+        self.assertEqual(foot([O, O, O, O, O, A, A, O], render.CHECK_DONE), centred('ALL MODULES NOMINAL'))
+
+    def test_module_checklist_animates_the_wait(self):
+        waiting = [render.PORT_WAIT] * render.PORTS
+        frames = [set(self.checklist(waiting, render.CHECK_WAIT, f)) for f in range(8)]
+        self.assertEqual(len({frozenset(f) for f in frames}), 4)                          # the dots scan
+        fault = [render.PORT_FAULT] + [render.PORT_OK] * 7
+        self.assertNotEqual(set(self.checklist(fault, render.CHECK_DONE, 0)), set(self.checklist(fault, render.CHECK_DONE, 6)))
 
     def test_scope_plots_bins(self):
         v = render.demo_view()

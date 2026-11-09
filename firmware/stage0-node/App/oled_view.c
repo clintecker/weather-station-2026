@@ -24,6 +24,9 @@ extern char _sidata[], _sdata[], _edata[], _end[], _estack[], _Min_Heap_Size[], 
 #define BW_HZ(index) (125000UL << (index))   /* radio_cfg.h's WS_LORA_BANDWIDTH 0:125 1:250 2:500 kHz */
 #define AIR_EVERY_MS 60000U
 #define PRESS_EVERY_MS 300000U
+/* An Absent port has no module once every port has probed: the I2C modules sample (and probe) at boot and
+   every WSMP_SAMPLE_MS, the on-board ones more often. One sample period and a margin. */
+#define ABSENT_AFTER_MS (WSMP_SAMPLE_MS + 5000U)
 #define JOURNAL_RECORDS ((WS_JOURNAL_PAGES - 1U) * JOURNAL_SLOTS_PER_PAGE)   /* the ring less the page being erased */
 
 static uint8_t pct(uint32_t used, uint32_t of)
@@ -54,15 +57,36 @@ static void fill_node(scr_view_t *v)
   v->epoch = node_state()->boot_epoch;
   v->pending = store_journal_pending();
   v->journal_pct = pct(v->pending, JOURNAL_RECORDS);
-  unsigned found = 0, active = 0;
-  for (int p = P_AIR_TH; p < P_COUNT; p++)   /* bound: the 8 local ports */
+}
+
+/* A port's mark on the boot checklist. Absent is a verdict only once every port has probed (probed). */
+static uint8_t port_mark(int state, int probed)
+{
+  switch (state)
   {
-    int s = wsmp_host_state((enum wsmp_port)p);
-    found += s != WH_ABSENT && s != WH_PROBING;
-    active += s == WH_ACTIVE;
+    case WH_ACTIVE: return SCR_PORT_OK;
+    case WH_ABSENT: return probed ? SCR_PORT_ABSENT : SCR_PORT_WAIT;
+    case WH_SUSPECT: case WH_QUARANTINED: case WH_REFUSED: return SCR_PORT_FAULT;
+    default: return SCR_PORT_WAIT;   /* probing, identifying, admitted until its first latch */
   }
-  v->modules = found;
-  v->modules_active = active;
+}
+
+_Static_assert(SCR_PORTS == (unsigned)P_COUNT - (unsigned)P_AIR_TH, "a checklist mark for every local port");
+
+static int scanning;              /* the first oled_view_modules came */
+static uint32_t scan_from;        /* then (clock_ms) */
+
+int oled_view_modules(scr_view_t *v, uint32_t now_ms)
+{
+  if (!scanning) { scanning = 1; scan_from = now_ms; }
+  int probed = now_ms - scan_from >= ABSENT_AFTER_MS, settled = 1;
+  for (unsigned i = 0; i < SCR_PORTS; i++)
+  {
+    uint8_t m = port_mark(wsmp_host_state((enum wsmp_port)((unsigned)P_AIR_TH + i)), probed);
+    v->port_mark[i] = m;
+    settled &= m != SCR_PORT_WAIT;
+  }
+  return settled;
 }
 
 /* The port is in the layout: the predicate the observation's fields use (wsmp_catalog_map.c). A module

@@ -35,6 +35,9 @@ RAIN_AGE_NONE, RAIN_AGE_MAX_S = 0xFFFFFFFF, 99 * 3600   # App/mod_rain.h
 SCR_TX_NONE, SCR_TX_WAIT, SCR_TX_NO_ACK, SCR_TX_ACK = -2, -1, 0, 1
 SCR_GAP, SCR_NONE_S = -32768, 0xFFFFFFFF
 AIR_HIST, PRESS_HIST, RADIO_HIST = 60, 36, 30
+PORTS = 8                                                          # SCR_PORTS (App/scr_view.h)
+PORT_WAIT, PORT_OK, PORT_ABSENT, PORT_FAULT = range(4)              # enum scr_port_mark
+CHECK_WAIT, CHECK_DONE, CHECK_TIMEOUT = range(3)                    # enum scr_check
 
 # The screens' sources and their include paths. oled_font.c is left out: the shim includes it, so a
 # test can see every string drawn (the shim's oled_text and oled_draw_text check each character against the font).
@@ -123,7 +126,7 @@ class View(ctypes.Structure):
                 ('cipher', u8 * 96), ('cipher_len', u8),
                 ('sf', u8), ('bw_khz_div125', u8), ('freq_khz', u32),
                 ('flash_pct', u8), ('ram_pct', u8), ('stack_pct', u8), ('journal_pct', u8), ('airtime_pct', u8),
-                ('station', u16), ('epoch', u32), ('modules', ctypes.c_uint), ('modules_active', ctypes.c_uint),
+                ('station', u16), ('epoch', u32), ('port_mark', u8 * PORTS), ('check', u8),
                 ('key_ok', i), ('utc', u32), ('since_exchange_s', u32),
                 ('air', hist(AIR_HIST)), ('press', hist(PRESS_HIST)), ('radio', RadioHist)]
 
@@ -157,7 +160,8 @@ def demo_view():
              press_dhpa=9830, uv_counts=0, last_seq=1233, last_age_s=58, last_acked=SCR_TX_ACK,
              ack_rssi=-41, ack_snr=13, sf=7, bw_khz_div125=4, freq_khz=915000,
              flash_pct=51, ram_pct=38, stack_pct=69, journal_pct=2, airtime_pct=4, station=17, epoch=42,
-             modules=8, modules_active=8, key_ok=1)
+             check=CHECK_DONE, key_ok=1)
+    v.port_mark[:] = [PORT_OK] * PORTS
     v.wind.speed_cms, v.wind.gust_cms, v.wind.vane_mv, v.wind.point = 130, 270, 1486, 2
     bins = [(i // 2) % 2 + (2 if 40 <= i < 56 else 0) + (1 if i % 7 == 3 and i < 100 else 0) for i in range(120)]
     v.wind.bins[:] = bins
@@ -316,7 +320,7 @@ def png(pixels, path, scale=4):
 
 # The frames worth a look: each step of each screen's animation.
 FRAMES = {'HOME': [0, 2, 4, 6], 'BURST': [0, 1, 8, 15], 'BANNER': [0], 'AIR': [0, 7], 'PRESSURE': [7], 'POWER': [7],
-          'RADIO': [0, 7], 'SCOPE': [0], 'VANE': [0, 1, 63], 'RAIN': [0], 'SYSTEM': [0, 63], 'BOOT': [0, 30, 62],
+          'RADIO': [0, 7], 'SCOPE': [0], 'VANE': [0, 1, 63], 'RAIN': [0], 'SYSTEM': [0, 63], 'BOOT': [0, 30, 62], 'MODULES': [0],
           'HACK': [0, 4, 12, 16, 18, 20, 21], 'FORTUNE': [0, 6, 30], 'FROG': [0, 20, 40, 44, 60], 'MATRIX': [0, 1, 2, 3, 4, 5],
           'PINBALL': [0, 20, 32, 33, 63]}
 
@@ -360,10 +364,24 @@ def views():
             out[f'fortune-{name}'] = ('FORTUNE', 63, v)
     for f in (2, 3):
         out[f'matrix-rain-f{f:02d}'] = ('MATRIX', f, weather(demo_view(), tips10=7))
+    for name, (marks, check) in checklists().items():
+        v = demo_view()
+        v.port_mark[:], v.check = marks, check
+        out[f'modules-{name}'] = ('MODULES', 5, v)
     other = demo_view()
     other.last_seq = 1500
     out['pinball-seq1500-f40'] = ('PINBALL', 40, other)
     return out
+
+
+def checklists():
+    """The boot checklist's states: {name: (the ports' marks, the outcome)}. A bench with no vane: wind absent."""
+    W_, O, A, F = PORT_WAIT, PORT_OK, PORT_ABSENT, PORT_FAULT
+    return {'probing': ([W_] * PORTS, CHECK_WAIT),
+            'admitted': ([W_, W_, W_, W_, W_, A, A, W_], CHECK_WAIT),
+            'settled': ([O, O, O, O, O, A, A, O], CHECK_DONE),
+            'fault': ([O, F, O, O, O, A, O, O], CHECK_DONE),
+            'timeout': ([O, O, W_, O, O, A, A, O], CHECK_TIMEOUT)}
 
 
 def digests(lib):

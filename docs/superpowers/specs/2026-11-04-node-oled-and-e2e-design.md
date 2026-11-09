@@ -132,8 +132,16 @@ Drawn only from what the TX knows. Mockups (true scale, real font) are in
 2. **Wind scope**: the last 30 s of cup pulse rate (4 Hz bins) on a dotted grid, scrolling; speed and gust below.
 3. **Vane compass**: a compass rose, the needle at the vane's position, its point, degrees and raw millivolts.
 4. **System bars**: flash, RAM and stack use, journal fill, radio airtime used this minute, as bar meters.
-5. **Boot splash with glitch**: radio settings, key present and epoch, modules found, a sliced-row glitch and a
-   progress line, at start.
+5. **Boot splash with glitch**: radio settings, key present and epoch, a sliced-row glitch and a progress line, at
+   start. Then **the module checklist** (Clint, 2026-11-09: the splash's "MODULES active/found" was over before the
+   modules were, so it never read 3/3): each local port (AIR, PRES, UVA, ENCL, BATT, WIND, RAIN, RAIL) with its mark,
+   scanning dots while it has no verdict (probing, identifying, admitted until the first minute latch makes it active,
+   or no module yet before every port has probed, 20 s), OK (active), NONE (no module: a bench with no vane does not
+   block) or FAULT (quarantined, refused, suspect); the header counts the active ones of the ports with a module. It
+   holds until no port waits or 60 s from boot (the first latch, which makes the modules active, comes 45 s after
+   boot), then shows ALL MODULES NOMINAL, the faults or TIMEOUT with the ports still pending for 2 s, then HACK THE
+   PLANET. A packet does not preempt the splash or the checklist: the first latch sends the first packet as the
+   modules settle.
 6. **HACK THE PLANET**: original pixel art, an eyepatch smiley (double ring, open eye, patch and strap, smile) with
    HACK, THE, PLANET typed in at double size, a wink, a glint on the patch, then a glitch out; about 3 s. It plays
    after the boot splash and in the rotation.

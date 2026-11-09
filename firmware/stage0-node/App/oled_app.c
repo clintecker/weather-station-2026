@@ -128,11 +128,13 @@ static void step(void)
   int want = sched_display_on();
   if (want != powered) { powered = want; oled_dma_enable(want); }
   if (oled_dma_busy()) return;
+  if (oled_view_modules(&view, now)) sched_event(EV_SETTLED, now);   /* the boot checklist's wait */
   int draw = sched_step(now, &id, &frame, &on);
   if (!draw || !on || oled_dma_faulted()) return;
   oled_view_fill(&view, id, frame);
   unsigned extras = sched_extras();   /* every frame after the live one: the backlog and the reports */
   view.reports = reports;
+  view.check = (uint8_t)sched_check();
   view.extra_frames = extras > reports ? extras - reports : 0U;
   view.last_age_s = clock_s() - live_s;
   view.since_exchange_s = exchanged ? clock_s() - exchange_s : SCR_NONE_S;

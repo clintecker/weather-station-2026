@@ -10,8 +10,10 @@
  *   vane    a compass rose with the needle swinging from N to the vane's point (a point a frame),
  *           its name and degrees, raw millivolts, the table's 16 positions, OK or NO POINT.
  *   system  bars of flash, RAM, stack, journal and this minute's airtime, filling over 8 frames.
- *   boot    radio settings, key and epoch, modules answering; a progress line across the 64 frames
+ *   boot    radio settings, key and epoch, MODULES ...; a progress line across the 64 frames
  *           and a sliced-row glitch at frames 28-29 and 60-63.
+ *   modules the boot checklist: each local port and its mark (scanning dots, OK, a dim NONE, a blinking
+ *           FAULT), the active ports of those with a module, and how the wait stands.
  *   hack    the eyepatch smiley; HACK at frame 0, THE at 4, PLANET at 8; a wink at 16-17, a glint on
  *           the patch at 18-19, a glitch out at 20-23. */
 #include "scr_screens.h"
@@ -37,6 +39,8 @@
 #define BAR_FILL_W 66
 #define FACE_CX 31                     /* tools/make_scr_art.py */
 #define FACE_CY 32
+#define CHECK_DIM 4U                   /* the checklist: a port with no module, dim */
+#define CHECK_WAIT_INK 8U              /* and one still waiting */
 #define PLANET_PITCH 10                /* PLANET at double height, squeezed to fit beside the face */
 
 static void hex_row(const oled_surf *s, int y, const scr_view_t *v, unsigned from)
@@ -161,14 +165,10 @@ static void boot_text(const oled_surf *s, const scr_view_t *v)
   oled_row key = { "" };
   oled_put(&key, v->key_ok ? "KEY OK  EPOCH " : "NO KEY  EPOCH ");
   oled_put_uint(&key, v->epoch);
-  oled_row mods = { "MODULES " };
-  oled_put_uint(&mods, v->modules_active);
-  oled_put(&mods, "/");
-  oled_put_uint(&mods, v->modules);
   (void)oled_text(s, 10, 6, "WS-NODE  BOOT", 1);
   (void)oled_text(s, 10, 18, link.s, 1);
   (void)oled_text(s, 10, 30, key.s, 1);
-  (void)oled_text(s, 10, 42, mods.s, 1);
+  (void)oled_text(s, 10, 42, "MODULES ...", 1);
 }
 
 void scr_boot(const oled_surf *s, unsigned frame, const scr_view_t *v)
@@ -180,6 +180,66 @@ void scr_boot(const oled_surf *s, unsigned frame, const scr_view_t *v)
     scr_glitch(s, sliced, 5, 0, 5, 27, 3);
   }
   oled_line(s, 0, 62, (int)(frame * (OLED_W - 1U) / 63U), 62, 0);
+}
+
+/* The checklist: the ports in two columns of four, each with its mark; the header counts the ports with a
+   module that are active; the footer says how the wait stands. A port waiting shows dots that scan. */
+static const char *const port_names[SCR_PORTS] = { "AIR", "PRES", "UVA", "ENCL", "BATT", "WIND", "RAIN", "RAIL" };
+
+static void port_row(const oled_surf *s, unsigned i, unsigned frame, unsigned mark)
+{
+  static const char *const marks[] = { "", "OK", "NONE", "FAULT" };
+  static const char *const dots[4] = { ".", "..", "...", "" };
+  int x = i < 4U ? 1 : 67, y = 11 + 10 * (int)(i % 4U);
+  oled_surf g = *s;
+  (void)oled_text(s, x, y, port_names[i], 1);
+  const char *m = mark == SCR_PORT_WAIT ? dots[(frame / 2U + i) % 4U] : marks[mark < 4U ? mark : 0U];
+  g.ink = mark == SCR_PORT_ABSENT ? CHECK_DIM : mark == SCR_PORT_WAIT ? CHECK_WAIT_INK : OLED_FULL;
+  if (mark == SCR_PORT_FAULT && frame % 8U >= 6U) return;   /* a fault blinks */
+  (void)oled_text(&g, x + 60 - oled_text_w(m, &font5x7, &oled_x1), y, m, 1);
+}
+
+/* The checklist's footer: the ports still waiting, then how the wait ended (a fault named, else all well). */
+static void check_foot(const oled_surf *s, unsigned check, unsigned waiting, unsigned faults)
+{
+  oled_row foot = { "" };
+  if (check == SCR_CHECK_WAIT || (check == SCR_CHECK_TIMEOUT && waiting != 0U))
+  {
+    oled_put(&foot, check == SCR_CHECK_WAIT ? "SCANNING  " : "TIMEOUT  ");
+    oled_put_uint(&foot, waiting);
+    oled_put(&foot, " PENDING");
+  }
+  else if (faults != 0U)
+  {
+    oled_put(&foot, "ATTENTION  ");
+    oled_put_uint(&foot, faults);
+    oled_put(&foot, faults == 1U ? " FAULT" : " FAULTS");
+  }
+  else oled_put(&foot, "ALL MODULES NOMINAL");
+  oled_line(s, 0, 52, OLED_W - 1, 52, 2);
+  scr_label(s, 56, foot.s, SCR_CENTRE);
+}
+
+void scr_modules(const oled_surf *s, unsigned frame, const scr_view_t *v)
+{
+  unsigned ok = 0, fitted = 0, waiting = 0, faults = 0;
+  for (unsigned i = 0; i < SCR_PORTS; i++)
+  {
+    unsigned m = v->port_mark[i];
+    ok += m == SCR_PORT_OK;
+    fitted += m != SCR_PORT_ABSENT;
+    waiting += m == SCR_PORT_WAIT;
+    faults += m == SCR_PORT_FAULT;
+    port_row(s, i, frame, m);
+  }
+  oled_row head = { "" };
+  oled_row count = { "" };
+  oled_put_uint(&count, ok);
+  oled_put(&count, "/");
+  oled_put_uint(&count, fitted);
+  (void)oled_put_lr(&head, "MODULE SCAN", count.s, OLED_COLS);
+  scr_header(s, head.s);
+  check_foot(s, v->check, waiting, faults);
 }
 
 /* The 5x7 at x2, each glyph 9 pixels wide (its last column overlapping the one before) on a 10-pixel
