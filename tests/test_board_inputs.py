@@ -40,6 +40,7 @@ extern GPIO_TypeDef stub_gpioa, stub_gpiob, stub_gpioc;
 #define GPIO_PIN_0 (1U << 0)
 #define GPIO_PIN_1 (1U << 1)
 #define GPIO_PIN_2 (1U << 2)
+#define GPIO_PIN_3 (1U << 3)
 #define GPIO_PIN_4 (1U << 4)
 #define GPIO_PIN_5 (1U << 5)
 #define GPIO_PIN_6 (1U << 6)
@@ -108,6 +109,7 @@ enum { ADC_CLOCK_SYNC_PCLK_DIV4, ADC_RESOLUTION_12B, ADC_DATAALIGN_RIGHT, ADC_SC
        ADC_REGULAR_RANK_1, ADC_REGULAR_RANK_2, ADC_REGULAR_RANK_3, ADC_REGULAR_RANK_4, ADC_SAMPLINGTIME_COMMON_1,
        ADC_OVERSAMPLING_RATIO_16, ADC_RIGHTBITSHIFT_4, ADC_TRIGGEREDMODE_SINGLE_TRIGGER };
 /* The channel numbers as the sequence reports them (ADC_CHANNEL_VREFINT is IN13 on this part). */
+#define ADC_CHANNEL_2 2U
 #define ADC_CHANNEL_4 4U
 #define ADC_CHANNEL_5 5U
 #define ADC_CHANNEL_6 6U
@@ -283,6 +285,7 @@ void t_link_open(uint32_t pins) { link_open = pins; link_sync(); }
 void t_cup_pulses(uint32_t n) { lptim_count += n; }
 uint32_t t_moder(int pin) { return (stub_gpiob.MODER >> (2U * (unsigned)pin)) & 3U; }
 uint32_t t_pupdr(int pin) { return (stub_gpiob.PUPDR >> (2U * (unsigned)pin)) & 3U; }
+uint32_t t_pupdr_c(int pin) { return (stub_gpioc.PUPDR >> (2U * (unsigned)pin)) & 3U; }
 uint32_t t_exti_masked(int line) { return !((exti_imr >> line) & 1U); }
 uint32_t t_cleared_at(void) { return cleared_at; }
 uint32_t t_unmasked_at(void) { return unmasked_at; }
@@ -419,16 +422,17 @@ void oled_app_button(unsigned b) { if (b < 4U) t_presses[b]++; }
 '''
 
 
-def build(owner, name, *defines, bench=False):
+def build(owner, name, *defines, bench=False, board_inc=()):
     """board_inputs.c and the shim as a host library, with the HAL stand-in (owner is the TestCase class);
-    bench: WS_BENCH_OLED=1, with a stand-in for the display's button forward."""
+    bench: WS_BENCH_OLED=1, with a stand-in for the display's button forward; board_inc: another board's
+    Core/Inc ahead of the NUCLEO's (its board_pins.h)."""
     owner.stub = tempfile.TemporaryDirectory()
     owner.addClassCleanup(owner.stub.cleanup)
     (Path(owner.stub.name)/'stm32wlxx_hal.h').write_text(HAL_STUB)
     (Path(owner.stub.name)/'stm32_timer.h').write_text(TIMER_STUB)
     # sys_conf.h is the board's own: board_inputs.c asserts its RF debug outputs are off.
     files = {'shim.c': SHIM, **({'bench.c': BENCH_SHIM} if bench else {})}
-    return host_library(owner, name, *defines, *(('-DWS_BENCH_OLED=1',) if bench else ()), *include_flags(owner.stub.name),
+    return host_library(owner, name, *defines, *(('-DWS_BENCH_OLED=1',) if bench else ()), *include_flags(owner.stub.name, *board_inc),
                         SOURCE, WIND, files=files)
 
 
@@ -660,6 +664,56 @@ class BoardInputs(unittest.TestCase):
         self.assertEqual(mv.value, 2048 * 3300 // 4095)
         self.assertEqual(self.lib.t_adc_starts(), starts + 1)          # the next sequence starts
         self.assertEqual(self.lib.t_vane(ctypes.byref(mv)), 0)          # nothing new yet
+
+
+WIO_INC = ROOT/'firmware/board/wio-e5/Core/Inc'
+
+
+@needs_cc
+class WioE5Pins(unittest.TestCase):
+    """The same board_inputs.c with the Wio-E5 mini's board layer (issue #35; its Core/Inc/board_pins.h
+    ahead of the NUCLEO's): cups on PC0 (LPTIM1_IN1, AF1), the vane on PB3 (ADC1_IN2), no charger pins,
+    and rain (PB4) and the mux RESET (PB14) as on the NUCLEO."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.lib = build(cls, 'boardinputs_wio', board_inc=(WIO_INC,))
+        cls.lib.t_init()                         # boot probe phase 1: the pull-downs are on
+
+    def k(self, name):
+        return ctypes.c_uint32.in_dll(self.lib, f'k_{name}').value
+
+    def test_cups_on_pc0_with_lptim1_in1(self):
+        self.assertEqual(self.lib.t_pin_mode(PORT['C'], 0), self.k('af_pp'))
+        self.assertEqual(self.lib.t_pin_alt(PORT['C'], 0), self.k('af1_lptim1'))
+        self.assertEqual(self.lib.t_lptim_clk(), 4)                    # GPIOC only (A 1, B 2, C 4)
+        self.assertEqual(self.lib.t_pin_inits(PORT['B'], 5), 0)       # PB5 is the mini's LED
+
+    def test_the_probe_pulls_pc0_and_pb4_and_restores_them(self):
+        self.assertEqual((self.lib.t_pupdr_c(0), self.lib.t_pupdr(4)), (PUPD_DOWN, PUPD_DOWN))
+        self.assertEqual(self.lib.t_fire(SETTLE_MS), 1)
+        self.assertEqual((self.lib.t_pupdr_c(0), self.lib.t_pupdr(4)), (PUPD_UP, PUPD_UP))
+        self.assertEqual(self.lib.t_pupdr(5), 0)                       # GPIOB pin 5 never touched
+
+    def test_the_vane_is_pb3_adc1_in2_and_the_sequence_keeps_four_ranks(self):
+        self.assertEqual(self.lib.t_pin_mode(PORT['B'], 3), self.k('analog'))
+        self.assertEqual(self.lib.t_pin_pull(PORT['B'], 3), self.k('nopull'))
+        self.assertEqual(self.lib.t_seq_n(), 4)
+        self.assertEqual([self.lib.t_seq_channel(i) for i in range(4)], [2, 13, 6, 13])   # vane, (VREFINT), VIN, VREFINT
+        self.assertEqual(self.lib.t_pin_mode(PORT['A'], 10), self.k('analog'))   # the charger input divider stays
+
+    def test_no_charger_pins(self):
+        for pin in (1, 2, 8, 10):                                      # ISET, the NUCLEO's vane, PGOOD, CHG
+            with self.subTest(pin=f'PB{pin}'):
+                self.assertEqual(self.lib.t_pin_inits(PORT['B'], pin), 0)
+        for idr in (0, PIN[8] | PIN[10]):
+            with self.subTest(idr=idr):
+                self.lib.t_pins(idr)
+                self.assertEqual(self.lib.board_charger_pins(), 0)
+
+    def test_rain_stays_on_pb4_exti4(self):
+        self.assertEqual(self.lib.t_pin_mode(PORT['B'], 4), self.k('it_falling'))
+        self.assertEqual(self.lib.t_irq_enabled(self.k('exti4')), 1)
 
 
 @needs_cc
