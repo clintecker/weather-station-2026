@@ -2,6 +2,14 @@
 
 Status: draft for Clint's approval, 2026-11-09. Builder check done; its questions are answered in place.
 
+**On hold (2026-11-09): the MCU.** The NUCLEO does not fit this stack: it is about 70 mm wide against 50.8 mm, has
+no mounting holes, and its 2-row Morpho headers short on the breadboard strips. Clint chose to **spike
+splitting the MCU and radio out** (a RAK3172 / STM32WLE5 module on a SolderFul layer, with the NUCLEO's
+ST-LINK as the bench programmer), issue #35. The fallback is a carrier perfboard with isolated holes that the
+NUCLEO plugs down into (CN7 pin 1 to CN10 pin 1 = 60.96 mm = 24 × 0.1", per KiCad's Nucleo-64 template,
+still to be measured on the MB1389). The rest of this design stands either way; the sections naming
+the NUCLEO jumper bundle and B3 change with the outcome.
+
 ## Intent
 
 The breadboard bench (`hardware/bench-breadboard-r1/`) proved the TX design, except for one thing: the
