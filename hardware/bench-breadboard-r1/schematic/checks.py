@@ -8,7 +8,7 @@ Reads model.py and KiCad's netlist export of bench-r1.kicad_sch, then checks:
   4 no force net reaches a header, breadboard or Dupont contact (BSW:215-217), except the listed exemptions;
   5 I2C addresses are unique and match the firmware; the bus pull-up stays >= 0.97 kohm (PM:326-330);
   6 no net's worst-case voltage exceeds a pin limit on it;
-  7 the TX NUCLEO pins match the firmware's pin map (board_inputs.c, i2c_bus.c, i2cscan oled.h);
+  7 the TX NUCLEO pins match the firmware's pin map (the NUCLEO's generated gen/pins.json, i2cscan oled.h);
   8 every bench power mode has exactly one source on +3V3, and no fitting of the removable parts can
     give it two;
   9 KiCad's own ERC reports nothing beyond the written waivers (model.ERC_WAIVERS).
@@ -207,13 +207,17 @@ def check_voltage():
 
 
 def firmware_pins():
-    src = (REPO / "firmware/stage0-node/App/board_inputs.c").read_text()
-    pins = dict(re.findall(r"\*\s+(P[A-H]\d+)\s+(CN\d+\.\d+)", src))
-    pins.update({m: c for m, c in re.findall(r"(P[A-H]\d+)\s+(CN\d+\.\d+)\s+D1[45]", src)})
+    """{MCU pin: NUCLEO contact} of the TX firmware: the node's pins from the NUCLEO's generated pin table
+    (firmware/board/nucleo-wl55jc/gen/pins.json, from its board.toml by tools/boardgen.py; issue #36), and
+    the bench OLED wiring of i2cscan's oled.h."""
+    rows = json.loads((REPO / "firmware/board/nucleo-wl55jc/gen/pins.json").read_text())["pins"]
+    pins = {}
+    for row in rows:
+        m = re.search(r"\b(CN\d+\.\d+)\b", row["at"])
+        if m and row["pin"]:
+            pins[row["pin"]] = m.group(1)
     for c, m in re.findall(r"<- (CN\d+\.\d+) (P[A-H]\d+)", (REPO / "firmware/i2cscan/App/oled.h").read_text()):
         pins[m] = c
-    pins.update({"PA11": "CN5.9", "PA12": "CN5.10"}) if "SDA_PIN GPIO_PIN_11" in \
-        (REPO / "firmware/board/nucleo-wl55jc/Core/Inc/board_pins.h").read_text() else None
     return pins
 
 

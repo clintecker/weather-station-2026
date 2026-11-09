@@ -28,7 +28,7 @@ extern "C" {
 
 /* Exported constants --------------------------------------------------------*/
 
-/* weather-station-2026: no ST BSP on the Wio-E5 mini: SubGHz_Phy/Target/radio_board_if.c drives the
+/* weather-station-2026: no ST BSP on the Wio-E5 mini: the generic ../stm32wl/SubGHz_Phy/Target/radio_board_if.c drives the
    module's RF switch itself (USE_BSP_DRIVER is not defined). */
 /* USER CODE BEGIN EC */
 

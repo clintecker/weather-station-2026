@@ -5,7 +5,7 @@ This directory holds one source tree with two roles:
 - **TX**, the transmitter: the sensor node, board A `003B00194142500E20353451`.
 - **RX**, the receiver: the USB bridge to the gateway, board B `0016001E4142500E20353451`.
 
-The firmware uses ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0). That board support lives in [`../board/nucleo-wl55jc`](../board/nucleo-wl55jc/board.mk). The bench tools (`firmware/rangetest`, `firmware/i2cscan`, `firmware/benchlink`) share it. It holds `Core/`, `startup/`, `SubGHz_Phy/Target/`, the linker script and the common build rules (`board.mk`). This project keeps only two board files of its own:
+The firmware uses ST's SubGHz_Phy_PingPong board support (STM32CubeWL v1.6.0). That board support lives in [`../board/nucleo-wl55jc`](../board/nucleo-wl55jc/board.toml) (another board: `BOARD=`, [`../../docs/adding-a-board.md`](../../docs/adding-a-board.md)). The bench tools (`firmware/rangetest`, `firmware/i2cscan`, `firmware/benchlink`) share it. It holds `board.toml` and its generated `gen/`, `Core/`, `startup/` and the linker script; `../board/stm32wl` holds `SubGHz_Phy/` and the common build rules (`rules.mk`). This project keeps only two board files of its own:
 
 - `Core/Src/stm32wlxx_it.c`: the flash error-correction (ECC) hook in the non-maskable interrupt (NMI) handler, and the HardFault record.
 - `Core/Inc/utilities_def.h`: the sequencer tasks.

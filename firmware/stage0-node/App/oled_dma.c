@@ -69,7 +69,7 @@ static void fault(void)
   LL_SPI_DisableIT_ERR(SPI1);   /* an error flag left set cannot raise the interrupt again */
   LL_SPI_Disable(SPI1);
   (void)UTIL_TIMER_Stop(&step_timer);
-  HAL_GPIO_WritePin(GPIOA, OLED_CS_PIN, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(OLED_CS_PORT, OLED_CS_PIN, GPIO_PIN_SET);
   state = ST_OFF;
   enabled = 0;
   power_pending = 0;
@@ -99,8 +99,8 @@ static void start_dma(uint8_t *buf, uint32_t n)
 
 static void select_start(int dc_data, uint8_t *buf, uint32_t n)
 {
-  HAL_GPIO_WritePin(GPIOC, OLED_DC_PIN, dc_data ? GPIO_PIN_SET : GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(GPIOA, OLED_CS_PIN, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(OLED_DC_PORT, OLED_DC_PIN, dc_data ? GPIO_PIN_SET : GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(OLED_CS_PORT, OLED_CS_PIN, GPIO_PIN_RESET);
   start_dma(buf, n);
 }
 
@@ -121,7 +121,7 @@ static void start_power(void)
 /* The last byte of a transfer has left: CS up, then the next step. */
 static void transfer_done(void)
 {
-  HAL_GPIO_WritePin(GPIOA, OLED_CS_PIN, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(OLED_CS_PORT, OLED_CS_PIN, GPIO_PIN_SET);
   if (state == ST_WINDOW) { state = ST_PIXELS; select_start(1, txbuf, OLED_FRAME_BYTES); return; }
   state = ST_IDLE;
   if (power_pending) start_power();
@@ -134,7 +134,7 @@ static void on_step(void *ctx)
   switch (state)
   {
     case ST_RESET_LOW:
-      HAL_GPIO_WritePin(GPIOC, OLED_RST_PIN, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(OLED_RST_PORT, OLED_RST_PIN, GPIO_PIN_SET);
       state = ST_RESET_SETTLE;
       arm(RESET_SETTLE_MS);
       break;
@@ -184,7 +184,7 @@ static void start_up(void)
   enabled = 1;
   power_pending = 0;
   hardware();
-  HAL_GPIO_WritePin(GPIOC, OLED_RST_PIN, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(OLED_RST_PORT, OLED_RST_PIN, GPIO_PIN_RESET);
   state = ST_RESET_LOW;
   arm(RESET_LOW_MS);
 }

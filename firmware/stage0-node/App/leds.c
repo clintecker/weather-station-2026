@@ -3,7 +3,7 @@
 #include "main.h"
 #include "stm32_timer.h"
 
-/* The board's (Core/Inc/board_pins.h): the NUCLEO's three, on when high; the Wio-E5 mini's one (blue), on
+/* The board's (its board.toml, generated into gen/board_pins.h): the NUCLEO's three, on when high; the Wio-E5 mini's one (blue), on
    when low, and pin 0 for the others, which makes their writes no-ops (only blue's pin is ever read). */
 static GPIO_TypeDef *const port[] = BOARD_LED_PORTS;
 static const uint16_t pin[] = BOARD_LED_PINS;

@@ -76,19 +76,15 @@ extern "C" {
   * @brief voltage of vdd tcxo.
   * @note override the default configuration of radio_driver.c
   */
-#define TCXO_CTRL_VOLTAGE           TCXO_CTRL_1_7V
+#define TCXO_CTRL_VOLTAGE           BOARD_TCXO_CTRL_VOLTAGE   /* weather-station-2026: board.toml [radio] tcxo_mv */
 
 /**
   * @brief Radio maximum wakeup time (in ms)
   * @note override the default configuration of radio_driver.c
   */
-/* weather-station-2026 (Wio-E5 mini): the LoRa-E5 module's 32 MHz TCXO is powered from the radio's
-   VDDTCXO (PB0-VDDTCXO / DIO3) at 1.7 V (TCXO_CTRL_VOLTAGE above, as on the NUCLEO). Its startup: 5 ms in
-   Zephyr (dts/arm/seeed_studio/lora-e5.dtsi, tcxo-power-startup-delay-ms = <5>, commit 0235217d); Seeed's
-   own STM32CubeWL port keeps ST's 1 ms (Seeed-Studio/LoRaWan-E5-Node, Projects/Applications/LoRaWAN/
-   LoRaWAN_End_Node/LoRaWAN/Target/radio_conf.h line 95, commit 163c0537). The longer one: the radio
-   waits for the TCXO up to this before it reports an HSE32 failure. To be measured on the board. */
-#define RF_WAKEUP_TIME              ( 5UL )
+/* weather-station-2026: board.toml [radio] tcxo_startup_ms: the radio waits for the TCXO up to this before
+   it reports an HSE32 failure (ST's template: 1 ms). */
+#define RF_WAKEUP_TIME              BOARD_TCXO_STARTUP_MS
 
 /**
   * @brief DCDC is enabled

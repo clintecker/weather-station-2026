@@ -399,6 +399,7 @@ PIN = {n: 1 << n for n in range(16)}
 PORT = {'A': 0, 'B': 1, 'C': 2}
 APP = ROOT/'firmware/stage0-node/App'
 BOARD_INC = ROOT/'firmware/board/nucleo-wl55jc/Core/Inc'
+BOARD_GEN = ROOT/'firmware/board/nucleo-wl55jc/gen'   # its board_pins.h (tools/boardgen.py; issue #36)
 SOURCE = APP/'board_inputs.c'
 WIND = APP/'mod_wind.c'
 PROBE_MS, SETTLE_MS = 900_000, 1        # every 15 minutes; the window, about 1 ms (record M7)
@@ -411,7 +412,7 @@ def include_flags(stub_dir, *first):
     """The include path of a board_inputs.c build: the HAL stand-in, then any directory in first (one
     that overrides a board header), then the station's own."""
     return ['-I', stub_dir, *(x for d in first for x in ('-I', d)), '-I', APP, '-I', ROOT/'firmware/common',
-            '-I', ROOT/'firmware', '-I', BOARD_INC]
+            '-I', ROOT/'firmware', '-I', BOARD_GEN, '-I', BOARD_INC]
 
 
 # The bench build's button forward (App/oled_app.c is not linked here): the presses it was given.
@@ -425,7 +426,7 @@ void oled_app_button(unsigned b) { if (b < 4U) t_presses[b]++; }
 def build(owner, name, *defines, bench=False, board_inc=()):
     """board_inputs.c and the shim as a host library, with the HAL stand-in (owner is the TestCase class);
     bench: WS_BENCH_OLED=1, with a stand-in for the display's button forward; board_inc: another board's
-    Core/Inc ahead of the NUCLEO's (its board_pins.h)."""
+    gen/ ahead of the NUCLEO's (its board_pins.h)."""
     owner.stub = tempfile.TemporaryDirectory()
     owner.addClassCleanup(owner.stub.cleanup)
     (Path(owner.stub.name)/'stm32wlxx_hal.h').write_text(HAL_STUB)
@@ -666,12 +667,12 @@ class BoardInputs(unittest.TestCase):
         self.assertEqual(self.lib.t_vane(ctypes.byref(mv)), 0)          # nothing new yet
 
 
-WIO_INC = ROOT/'firmware/board/wio-e5/Core/Inc'
+WIO_INC = ROOT/'firmware/board/wio-e5/gen'
 
 
 @needs_cc
 class WioE5Pins(unittest.TestCase):
-    """The same board_inputs.c with the Wio-E5 mini's board layer (issue #35; its Core/Inc/board_pins.h
+    """The same board_inputs.c with the Wio-E5 mini's board layer (issue #35; its generated gen/board_pins.h
     ahead of the NUCLEO's): cups on PC0 (LPTIM1_IN1, AF1), the vane on PB3 (ADC1_IN2), no charger pins,
     and rain (PB4) and the mux RESET (PB14) as on the NUCLEO."""
 

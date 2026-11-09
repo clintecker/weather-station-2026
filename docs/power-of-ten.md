@@ -121,7 +121,7 @@ static or on the stack, with a size fixed at compile time.
   `calloc` for every seal and open. With no `MBEDTLS_CIPHER_C`, CCM keeps its AES context inline
   (`common/ws_mbedtls_config.h`). Mbed TLS is also configured without `MBEDTLS_PLATFORM_C`.
 - The link enforces the rule. With `NO_HEAP=1` (`firmware/stage0-node/Makefile`, rule in
-  `firmware/board/nucleo-wl55jc/board.mk`) the link fails if `malloc`, `calloc`, `realloc`, `free`,
+  `firmware/board/stm32wl/rules.mk`) the link fails if `malloc`, `calloc`, `realloc`, `free`,
   their `_r` forms or `_sbrk` are linked in. Both images pass ("no heap: no allocator linked").
 - `-Wvla` and `-Walloca` (strict set) forbid stack allocation of run-time size.
 - `tools/stack_report.py` bounds the stack statically: TX 6,360 B, RX 2,652 B of the 8,192 B that
@@ -424,7 +424,7 @@ array of string pointers.
 
 **Complies.** CI runs these checks on every push and pull request (`.github/workflows/ci.yml`):
 
-- **Compiler**, our C only (`STRICT` in `firmware/board/nucleo-wl55jc/board.mk`). ST's code builds
+- **Compiler**, our C only (`STRICT` in `firmware/board/stm32wl/rules.mk`). ST's code builds
   with `-Wall` only. Our flags: `-Wall -Wextra -Wshadow -Wconversion -Wsign-conversion -Wcast-qual
   -Wstrict-prototypes -Wmissing-prototypes -Wundef -Wdouble-promotion -Wformat=2
   -Wnull-dereference`. This rule added `-Wpedantic -Wformat-signedness -Wformat-overflow=2

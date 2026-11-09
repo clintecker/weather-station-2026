@@ -41,7 +41,7 @@ class FlashLayout(unittest.TestCase):
         self.assertEqual(layout()[:6], (194560, 95, 30, 125, 126, 127))
         ld = (ROOT/'firmware/board/nucleo-wl55jc/STM32WL55JCIX_FLASH.ld').read_text()
         self.assertEqual(re.search(r'^\s*FLASH\s+\(rx\)\s*:.*LENGTH\s*=\s*(\d+)K', ld, re.M)[1], '190')
-        mk = (ROOT/'firmware/board/nucleo-wl55jc/board.mk').read_text()
+        mk = (ROOT/'firmware/board/stm32wl/rules.mk').read_text()
         self.assertEqual(re.search(r'^APP_FLASH_BYTES \?= (\d+)', mk, re.M)[1], '194560')
 
     def test_the_default_build_keeps_about_10_hours(self):

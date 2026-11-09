@@ -9,18 +9,17 @@ unsigned oled_spi1_init(void)
                                    LL_SPI_BAUDRATEPRESCALER_DIV8, LL_SPI_BAUDRATEPRESCALER_DIV16,
                                    LL_SPI_BAUDRATEPRESCALER_DIV32, LL_SPI_BAUDRATEPRESCALER_DIV64,
                                    LL_SPI_BAUDRATEPRESCALER_DIV128, LL_SPI_BAUDRATEPRESCALER_DIV256 };
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
+  BOARD_OLED_GPIO_CLK_ENABLE();
   __HAL_RCC_SPI1_CLK_ENABLE();
-  HAL_GPIO_WritePin(GPIOA, OLED_CS_PIN, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(GPIOC, OLED_RST_PIN | OLED_DC_PIN, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(OLED_CS_PORT, OLED_CS_PIN, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(OLED_RST_PORT, OLED_RST_PIN | OLED_DC_PIN, GPIO_PIN_SET);
   GPIO_InitTypeDef out = { .Pin = OLED_CS_PIN, .Mode = GPIO_MODE_OUTPUT_PP, .Pull = GPIO_NOPULL, .Speed = GPIO_SPEED_FREQ_LOW };
-  HAL_GPIO_Init(GPIOA, &out);
+  HAL_GPIO_Init(OLED_CS_PORT, &out);
   out.Pin = OLED_RST_PIN | OLED_DC_PIN;
-  HAL_GPIO_Init(GPIOC, &out);
+  HAL_GPIO_Init(OLED_RST_PORT, &out);
   GPIO_InitTypeDef spi = { .Pin = OLED_SCK_PIN | OLED_MOSI_PIN, .Mode = GPIO_MODE_AF_PP, .Pull = GPIO_NOPULL,
-                           .Speed = GPIO_SPEED_FREQ_LOW, .Alternate = GPIO_AF5_SPI1 };
-  HAL_GPIO_Init(GPIOA, &spi);
+                           .Speed = GPIO_SPEED_FREQ_LOW, .Alternate = BOARD_OLED_SPI_AF };
+  HAL_GPIO_Init(OLED_CS_PORT, &spi);
 
   uint32_t pclk = HAL_RCC_GetPCLK2Freq();
   unsigned k = ssd1325_spi_div_log2(pclk);

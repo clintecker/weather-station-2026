@@ -67,24 +67,30 @@ _Static_assert(DEBUG_RF_BUSY_ENABLED == 0, "DEBUG_RF_BUSY drives PA12, I2C2 SCL"
 _Static_assert(DEBUG_RF_SMPSRDY_ENABLED == 0, "DEBUG_RF_SMPSRDY drives PB2, the wind vane");
 _Static_assert(DEBUG_RF_LDORDY_ENABLED == 0, "DEBUG_RF_LDORDY drives PB4, the rain gauge");
 
-/* The board's (Core/Inc/board_pins.h): NUCLEO PB5, PB2 (IN4), PB1 (IN5); Wio-E5 mini PC0, PB3 (IN2), none. */
+/* Every pin is the board's (its board.toml, generated into gen/board_pins.h; issue #36): NUCLEO cups PB5,
+   vane PB2 (IN4), ISET PB1 (IN5); Wio-E5 mini PC0, PB3 (IN2), none. This file names no pin itself
+   (tools/board_lint.py). */
 #define CUPS_PORT BOARD_CUPS_PORT
 #define CUPS_PIN BOARD_CUPS_PIN   /* LPTIM1_IN1 AF1 */
 #define VANE_PORT BOARD_VANE_PORT
 #define VANE_PIN BOARD_VANE_PIN
 #define ISET_PIN BOARD_ISET_PIN   /* with the vane, on its port; 0 without the charger pins */
-#define VIN_PIN GPIO_PIN_10 /* PA10 */
-#define RAIN_PIN GPIO_PIN_4       /* PB4 = A3, CN8.4: EXTI4 */
-#define PGOOD_PIN GPIO_PIN_8      /* PB8 */
-#define CHG_PIN GPIO_PIN_10       /* PB10 */
-#define MUX_RESET_PIN GPIO_PIN_14 /* PB14 = A4, CN8.5: the mux RESET, active low (N5) */
+#define VIN_PIN BOARD_VIN_PIN
+#define RAIN_PORT BOARD_RAIN_PORT
+#define RAIN_PIN BOARD_RAIN_PIN   /* its own EXTI vector */
+#define PGOOD_PORT BOARD_PGOOD_PORT
+#define PGOOD_PIN BOARD_PGOOD_PIN
+#define CHG_PORT BOARD_CHG_PORT
+#define CHG_PIN BOARD_CHG_PIN     /* on a shared EXTI vector (lines 5 to 15) */
+#define MUX_RESET_PORT BOARD_MUX_RESET_PORT
+#define MUX_RESET_PIN BOARD_MUX_RESET_PIN   /* the mux RESET, active low (N5) */
 #define INPUT_IRQ_PRIORITY 2U     /* as the I2C and the console: below the radio and the RTC */
 #define COUNTER_PERIOD 0xFFFFU    /* LPTIM1 counts freely over 16 bits */
 #define ADC_FULL_SCALE 4095U
 #define RATIO_MV 3300U            /* the vane's pull-up uses VDDA too: its reading is a ratio */
 #define ADC_RESTART_CALLS 3U      /* calls without a new sequence before a start is tried again */
 #define CUPS_BIT BOARD_CUPS_BIT    /* CUPS_PIN's position: its two PUPDR bits */
-#define RAIN_BIT 4U               /* RAIN_PIN's position */
+#define RAIN_BIT BOARD_RAIN_BIT   /* RAIN_PIN's position */
 #define PUPD_MASK 3U              /* RM0453 GPIOx_PUPDR: two bits a pin, 01 pull-up, 10 pull-down */
 #define PUPD_UP 1U
 #define PUPD_DOWN 2U
@@ -117,13 +123,13 @@ static uint16_t probe_c0;                 /* LPTIM1 at the window's start */
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_LPTIM_MspInit(LPTIM_HandleTypeDef *h)
 {
-  if (h->Instance != LPTIM1) return;
-  RCC_PeriphCLKInitTypeDef clk = { .PeriphClockSelection = RCC_PERIPHCLK_LPTIM1, .Lptim1ClockSelection = RCC_LPTIM1CLKSOURCE_LSE };
+  if (h->Instance != BOARD_CUPS_LPTIM) return;
+  RCC_PeriphCLKInitTypeDef clk = { .PeriphClockSelection = BOARD_CUPS_LPTIM_PERIPHCLK, .BOARD_CUPS_LPTIM_CLKSEL = BOARD_CUPS_LPTIM_CLKSRC_LSE };
   (void)HAL_RCCEx_PeriphCLKConfig(&clk);
-  __HAL_RCC_LPTIM1_CLK_ENABLE();
+  BOARD_CUPS_LPTIM_CLK_ENABLE();
   BOARD_CUPS_CLK_ENABLE();
   GPIO_InitTypeDef gpio = { .Pin = CUPS_PIN, .Mode = GPIO_MODE_AF_PP, .Pull = GPIO_PULLUP, .Speed = GPIO_SPEED_FREQ_LOW,
-                            .Alternate = GPIO_AF1_LPTIM1 };
+                            .Alternate = BOARD_CUPS_AF };
   HAL_GPIO_Init(CUPS_PORT, &gpio);
 }
 
@@ -132,22 +138,21 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef *h)
 {
   if (h->Instance != ADC) return;
   __HAL_RCC_ADC_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
+  BOARD_ADC_GPIO_CLK_ENABLE();
   GPIO_InitTypeDef gpio = { .Pin = VANE_PIN | ISET_PIN, .Mode = GPIO_MODE_ANALOG, .Pull = GPIO_NOPULL };
   HAL_GPIO_Init(VANE_PORT, &gpio);
   gpio.Pin = VIN_PIN;
-  HAL_GPIO_Init(GPIOA, &gpio);
+  HAL_GPIO_Init(BOARD_VIN_PORT, &gpio);
   HAL_NVIC_SetPriority(ADC_IRQn, INPUT_IRQ_PRIORITY, 0);
   HAL_NVIC_EnableIRQ(ADC_IRQn);
 }
 
 static void cups_init(void)
 {
-  hlptim1.Instance = LPTIM1;
+  hlptim1.Instance = BOARD_CUPS_LPTIM;
   hlptim1.Init.Clock.Source = LPTIM_CLOCKSOURCE_APBCLOCK_LPOSC;
   hlptim1.Init.Clock.Prescaler = LPTIM_PRESCALER_DIV1;
-  hlptim1.Init.UltraLowPowerClock.Polarity = LPTIM_CLOCKPOLARITY_FALLING;   /* a closing reed pulls PB5 low */
+  hlptim1.Init.UltraLowPowerClock.Polarity = LPTIM_CLOCKPOLARITY_FALLING;   /* a closing reed pulls the pin low */
   /* An edge counts after 8 equal samples of the LSE kernel clock (244 us): reed bounce does not count,
      and 112 Hz (75 m/s, a 9 ms period) passes with a wide margin. */
   hlptim1.Init.UltraLowPowerClock.SampleTime = LPTIM_CLOCKSAMPLETIME_8TRANSITIONS;
@@ -164,7 +169,7 @@ static void cups_init(void)
    never HAL_ADC_ConfigChannel while ADSTART is set. */
 static int adc_channels(void)
 {
-  static const uint32_t channel[SEQ_LEN] = { BOARD_VANE_CHANNEL, BOARD_ISET_CHANNEL, ADC_CHANNEL_6, ADC_CHANNEL_VREFINT };
+  static const uint32_t channel[SEQ_LEN] = { BOARD_VANE_CHANNEL, BOARD_ISET_CHANNEL, BOARD_VIN_CHANNEL, ADC_CHANNEL_VREFINT };
   static const uint32_t rank_of[SEQ_LEN] = { ADC_REGULAR_RANK_1, ADC_REGULAR_RANK_2, ADC_REGULAR_RANK_3, ADC_REGULAR_RANK_4 };
   for (unsigned i = 0; i < SEQ_LEN; i++)
   {
@@ -208,33 +213,33 @@ static void adc_init(void)
 
 static void pins_init(void)
 {
-  __HAL_RCC_GPIOB_CLK_ENABLE();
+  BOARD_INPUTS_CLK_ENABLE();
   /* The charger pins only where the board has them: a value, not an #if, so both boards' code compiles. */
   GPIO_InitTypeDef in = { .Pin = PGOOD_PIN, .Mode = GPIO_MODE_INPUT, .Pull = GPIO_PULLUP, .Speed = GPIO_SPEED_FREQ_LOW };
-  if (BOARD_CHARGER_PINS) HAL_GPIO_Init(GPIOB, &in);
+  if (BOARD_CHARGER_PINS) HAL_GPIO_Init(PGOOD_PORT, &in);
   GPIO_InitTypeDef chg = { .Pin = CHG_PIN, .Mode = GPIO_MODE_IT_RISING_FALLING, .Pull = GPIO_PULLUP, .Speed = GPIO_SPEED_FREQ_LOW };
-  if (BOARD_CHARGER_PINS) HAL_GPIO_Init(GPIOB, &chg);
+  if (BOARD_CHARGER_PINS) HAL_GPIO_Init(CHG_PORT, &chg);
   GPIO_InitTypeDef rain = { .Pin = RAIN_PIN, .Mode = GPIO_MODE_IT_FALLING, .Pull = GPIO_PULLUP, .Speed = GPIO_SPEED_FREQ_LOW };
-  HAL_GPIO_Init(GPIOB, &rain);
-  HAL_NVIC_SetPriority(EXTI4_IRQn, INPUT_IRQ_PRIORITY, 0);
-  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
-  /* For button B3 only (PC6, line 6): the board's GPIO setup (gpio.c, MX_GPIO_Init) arms its falling
+  HAL_GPIO_Init(RAIN_PORT, &rain);
+  HAL_NVIC_SetPriority(BOARD_RAIN_IRQn, INPUT_IRQ_PRIORITY, 0);
+  HAL_NVIC_EnableIRQ(BOARD_RAIN_IRQn);
+  /* For button B3 only (NUCLEO PC6, line 6): the board's GPIO setup (gpio.c, MX_GPIO_Init) arms its falling
      edge but enables no vector, so without this a press would leave line 6 pending for good. */
-  HAL_NVIC_SetPriority(EXTI9_5_IRQn, INPUT_IRQ_PRIORITY, 0);
-  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, INPUT_IRQ_PRIORITY, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+  HAL_NVIC_SetPriority(BOARD_EXTI_5TO9_IRQn, INPUT_IRQ_PRIORITY, 0);
+  HAL_NVIC_EnableIRQ(BOARD_EXTI_5TO9_IRQn);
+  HAL_NVIC_SetPriority(BOARD_EXTI_10TO15_IRQn, INPUT_IRQ_PRIORITY, 0);
+  HAL_NVIC_EnableIRQ(BOARD_EXTI_10TO15_IRQn);
 #if WS_BENCH_OLED
-  /* The bench OLED's buttons B1 (PA0) and B2 (PA1): falling edge, internal pull-up (the NUCLEO's buttons
-     pull the pin low). B3 is PC6 above. */
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  GPIO_InitTypeDef keys = { .Pin = GPIO_PIN_0 | GPIO_PIN_1, .Mode = GPIO_MODE_IT_FALLING, .Pull = GPIO_PULLUP,
+  /* The bench OLED's buttons B1 and B2 (NUCLEO PA0, PA1): falling edge, internal pull-up (the NUCLEO's
+     buttons pull the pin low). B3 is above. */
+  BOARD_BUTTONS_CLK_ENABLE();
+  GPIO_InitTypeDef keys = { .Pin = BOARD_B1_PIN | BOARD_B2_PIN, .Mode = GPIO_MODE_IT_FALLING, .Pull = GPIO_PULLUP,
                             .Speed = GPIO_SPEED_FREQ_LOW };
-  HAL_GPIO_Init(GPIOA, &keys);
-  HAL_NVIC_SetPriority(EXTI0_IRQn, INPUT_IRQ_PRIORITY, 0);
-  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
-  HAL_NVIC_SetPriority(EXTI1_IRQn, INPUT_IRQ_PRIORITY, 0);
-  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+  HAL_GPIO_Init(BOARD_B1_PORT, &keys);
+  HAL_NVIC_SetPriority(BOARD_B1_IRQn, INPUT_IRQ_PRIORITY, 0);
+  HAL_NVIC_EnableIRQ(BOARD_B1_IRQn);
+  HAL_NVIC_SetPriority(BOARD_B2_IRQn, INPUT_IRQ_PRIORITY, 0);
+  HAL_NVIC_EnableIRQ(BOARD_B2_IRQn);
 #endif
 }
 
@@ -243,9 +248,9 @@ static void pins_init(void)
 static void mux_reset_init(void)
 {
   if (WS_I2C_MUX != 1) return;   /* a value, not an #if: both profiles always compile (power-of-ten.md, rule 8) */
-  HAL_GPIO_WritePin(GPIOB, MUX_RESET_PIN, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(MUX_RESET_PORT, MUX_RESET_PIN, GPIO_PIN_SET);
   GPIO_InitTypeDef out = { .Pin = MUX_RESET_PIN, .Mode = GPIO_MODE_OUTPUT_PP, .Pull = GPIO_NOPULL, .Speed = GPIO_SPEED_FREQ_LOW };
-  HAL_GPIO_Init(GPIOB, &out);
+  HAL_GPIO_Init(MUX_RESET_PORT, &out);
 }
 
 /* The cup count: LPTIM1 less the probes' own pulses, held still through a probe window (one read,
@@ -285,11 +290,11 @@ static void link_note(enum board_link link, int low, int edge)
 static void link_probe_end(int read)
 {
   int cups_low = HAL_GPIO_ReadPin(CUPS_PORT, CUPS_PIN) == GPIO_PIN_RESET;
-  int rain_low = HAL_GPIO_ReadPin(GPIOB, RAIN_PIN) == GPIO_PIN_RESET;
+  int rain_low = HAL_GPIO_ReadPin(RAIN_PORT, RAIN_PIN) == GPIO_PIN_RESET;
   pull_set(CUPS_PORT, CUPS_BIT, PUPD_UP);
-  pull_set(GPIOB, RAIN_BIT, PUPD_UP);
+  pull_set(RAIN_PORT, RAIN_BIT, PUPD_UP);
   __HAL_GPIO_EXTI_CLEAR_IT(RAIN_PIN);         /* an open link fell while masked: no tip */
-  LL_EXTI_EnableIT_0_31(LL_EXTI_LINE_4);
+  LL_EXTI_EnableIT_0_31(BOARD_RAIN_EXTI_LINE);
   uint16_t c1 = lptim_count();
   cups_offset = (uint16_t)(cups_offset + (uint16_t)(c1 - probe_c0));
   probing = 0U;
@@ -307,9 +312,9 @@ static void link_probe_start(void)
   probe_c0 = lptim_count();
   cups_hold = (uint16_t)(probe_c0 - cups_offset);
   probing = 1U;
-  LL_EXTI_DisableIT_0_31(LL_EXTI_LINE_4);
+  LL_EXTI_DisableIT_0_31(BOARD_RAIN_EXTI_LINE);
   pull_set(CUPS_PORT, CUPS_BIT, PUPD_DOWN);
-  pull_set(GPIOB, RAIN_BIT, PUPD_DOWN);
+  pull_set(RAIN_PORT, RAIN_BIT, PUPD_DOWN);
   if (UTIL_TIMER_Start(&link_settle_timer) != UTIL_TIMER_OK) link_probe_end(0);   /* never left pulled down */
 }
 
@@ -385,8 +390,8 @@ int board_charger_pins(void)
 {
   int pins = 0;
   if (!BOARD_CHARGER_PINS) return 0;   /* none fitted: App/power_acq.c reports the charger as none */
-  if (HAL_GPIO_ReadPin(GPIOB, PGOOD_PIN) == GPIO_PIN_RESET) pins |= (int)POWER_PGOOD;
-  if (HAL_GPIO_ReadPin(GPIOB, CHG_PIN) == GPIO_PIN_RESET) pins |= (int)POWER_CHG;
+  if (HAL_GPIO_ReadPin(PGOOD_PORT, PGOOD_PIN) == GPIO_PIN_RESET) pins |= (int)POWER_PGOOD;
+  if (HAL_GPIO_ReadPin(CHG_PORT, CHG_PIN) == GPIO_PIN_RESET) pins |= (int)POWER_CHG;
   return pins;
 }
 
@@ -396,7 +401,7 @@ int board_charger_pins(void)
    and PB14 is not driven. */
 void i2c_bus_mux_reset_line(int asserted)
 {
-  if (WS_I2C_MUX == 1) HAL_GPIO_WritePin(GPIOB, MUX_RESET_PIN, asserted ? GPIO_PIN_RESET : GPIO_PIN_SET);
+  if (WS_I2C_MUX == 1) HAL_GPIO_WritePin(MUX_RESET_PORT, MUX_RESET_PIN, asserted ? GPIO_PIN_RESET : GPIO_PIN_SET);
 }
 
 /* One call per conversion (EOC), in rank order; the last also has EOS. A sequence counts only when
@@ -423,20 +428,20 @@ void HAL_GPIO_EXTI_Callback(uint16_t pin)
   if (pin == RAIN_PIN) { rain_edge = 1U; mod_rain_tip(clock_ms()); }
   if (pin == CHG_PIN) chg_edges++;
 #if WS_BENCH_OLED
-  if (pin == GPIO_PIN_0) oled_app_button(1U);   /* B1 */
-  if (pin == GPIO_PIN_1) oled_app_button(2U);   /* B2 */
-  if (pin == GPIO_PIN_6) oled_app_button(3U);   /* B3 */
+  if (pin == BOARD_B1_PIN) oled_app_button(1U);
+  if (pin == BOARD_B2_PIN) oled_app_button(2U);
+  if (pin == BOARD_B3_PIN) oled_app_button(3U);
 #endif
 }
 
-void ADC_IRQHandler(void);        /* vector table names (startup_stm32wl55jcix.s, where EXTI4 is weak) */
-void EXTI4_IRQHandler(void);
+void ADC_IRQHandler(void);        /* vector table names (the board's startup file, where they are weak) */
+void BOARD_RAIN_IRQHandler(void);
 #if WS_BENCH_OLED
-void EXTI0_IRQHandler(void);
-void EXTI1_IRQHandler(void);
+void BOARD_B1_IRQHandler(void);
+void BOARD_B2_IRQHandler(void);
 #endif
-void EXTI9_5_IRQHandler(void);
-void EXTI15_10_IRQHandler(void);
+void BOARD_EXTI_5TO9_IRQHandler(void);
+void BOARD_EXTI_10TO15_IRQHandler(void);
 void ADC_IRQHandler(void) { HAL_ADC_IRQHandler(&hadc); }
 
 /* Serves every line a vector owns: a pending line it skipped would re-enter that interrupt forever.
@@ -450,33 +455,33 @@ static void exti_serve(const uint16_t *lines, unsigned n)
 #if WS_BENCH_OLED
 int board_button_up(unsigned b)
 {
-  if (b == 1U) return HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET;
-  if (b == 2U) return HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET;
-  if (b == 3U) return HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_6) == GPIO_PIN_SET;
+  if (b == 1U) return HAL_GPIO_ReadPin(BOARD_B1_PORT, BOARD_B1_PIN) == GPIO_PIN_SET;
+  if (b == 2U) return HAL_GPIO_ReadPin(BOARD_B2_PORT, BOARD_B2_PIN) == GPIO_PIN_SET;
+  if (b == 3U) return HAL_GPIO_ReadPin(BOARD_B3_PORT, BOARD_B3_PIN) == GPIO_PIN_SET;
   return 0;
 }
 
-/* EXTI0 and EXTI1 own lines 0 and 1 alone: the bench buttons B1 (PA0) and B2 (PA1). */
-void EXTI0_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0); }
-void EXTI1_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1); }
+/* B1's and B2's vectors own their lines alone (tools/boardgen.py checks it). */
+void BOARD_B1_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(BOARD_B1_PIN); }
+void BOARD_B2_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(BOARD_B2_PIN); }
 #endif
 
-/* EXTI4 owns line 4 alone: the rain gauge (PB4). */
-void EXTI4_IRQHandler(void)
+/* The rain gauge's vector owns its line alone (lines 0 to 4; tools/boardgen.py checks it). */
+void BOARD_RAIN_IRQHandler(void)
 {
   static const uint16_t lines[] = { RAIN_PIN };
   EXTI_SERVE(lines);
 }
-/* EXTI9_5 serves lines 5 to 9 for button B3 only (PC6, line 6, armed by the board's GPIO setup). No
+/* Lines 5 to 9: on the NUCLEO for button B3 only (PC6, line 6, armed by the board's GPIO setup). No
    station input is on these lines since change B (PB5 is the LPTIM1 input): none reaches a module. */
-void EXTI9_5_IRQHandler(void)
+void BOARD_EXTI_5TO9_IRQHandler(void)
 {
-  static const uint16_t lines[] = { GPIO_PIN_5, GPIO_PIN_6, GPIO_PIN_7, GPIO_PIN_8, GPIO_PIN_9 };
+  static const uint16_t lines[] = BOARD_EXTI_5TO9_LINES;
   EXTI_SERVE(lines);
 }
-/* EXTI15_10 serves lines 10 to 15: CHG (PB10) on line 10. */
-void EXTI15_10_IRQHandler(void)
+/* Lines 10 to 15: CHG (NUCLEO PB10, line 10). */
+void BOARD_EXTI_10TO15_IRQHandler(void)
 {
-  static const uint16_t lines[] = { GPIO_PIN_10, GPIO_PIN_11, GPIO_PIN_12, GPIO_PIN_13, GPIO_PIN_14, GPIO_PIN_15 };
+  static const uint16_t lines[] = BOARD_EXTI_10TO15_LINES;
   EXTI_SERVE(lines);
 }

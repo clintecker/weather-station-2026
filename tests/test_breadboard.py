@@ -23,7 +23,7 @@ import wiring  # noqa: E402
 DATA = HW/'source'/'wiring.toml'
 GUIDE = ROOT/'docs'/'hardware'/'bench-station-wiring.md'
 FIRMWARE = ROOT/'firmware'
-PINS_H = 'board/nucleo-wl55jc/Core/Inc/board_pins.h'   # the node's board pins (wiring.FIRMWARE; issue #35)
+PINS_H = 'board/nucleo-wl55jc/gen/board_pins.h'   # the node's pins, generated from its board.toml (wiring.FIRMWARE; #36)
 APP = FIRMWARE/'stage0-node'/'App'
 
 ENV = kicad_env.find()
@@ -93,10 +93,10 @@ class Checks(unittest.TestCase):
 
     def test_a_moved_firmware_pin_is_found(self):
         def move(text):
-            line = next(ln for ln in text.splitlines() if ln.startswith('#define RAIN_PIN'))
+            line = next(ln for ln in text.splitlines() if ln.startswith('#define BOARD_RAIN_PIN'))
             return text.replace(line, re.sub(r'GPIO_PIN_\d+', 'GPIO_PIN_6', line, count=1))   # PB4 -> PB6
-        problems = self.firmware_problems('stage0-node/App/board_inputs.c', move)
-        self.assertTrue(any('RAIN_PIN' in p for p in problems), problems)
+        problems = self.firmware_problems(PINS_H, move)
+        self.assertTrue(any('BOARD_RAIN_PIN' in p for p in problems), problems)
 
     def test_the_bench_link_pins_are_checked(self):
         self.assertIn('benchlink/App/benchlink.c', wiring.FIRMWARE)
@@ -109,17 +109,18 @@ class Checks(unittest.TestCase):
     def test_the_oled_pins_are_checked_and_pa9_is_not(self):
         # Change C (the PA9 sensor switch) is not part of the breadboard build (record 4.6, 2026-11-02): the breadboard
         # has no SENS_EN net, so no firmware's POWER_PIN is checked against it; the OLED's shared pins
-        # (board/nucleo-wl55jc/oled_spi1.h, i2cscan's and the node's) drive the OLED nets the model has (record 6.3).
+        # (the NUCLEO's board.toml [bench_oled], i2cscan's and the node's) drive the OLED nets the model has (record 6.3).
         for file, constants in wiring.FIRMWARE.items():
             with self.subTest(file=file):
                 self.assertNotIn('POWER_PIN', constants)
-        self.assertEqual(set(wiring.FIRMWARE['board/nucleo-wl55jc/oled_spi1.h'].values()),
+        self.assertEqual({v for k, v in wiring.FIRMWARE[PINS_H].items() if k.startswith('BOARD_OLED_')},
                          {'OLED_SCLK', 'OLED_DIN', 'OLED_CS', 'OLED_DC', 'OLED_RST'})
+        self.assertNotIn('BOARD_SENSOR_POWER_PIN', wiring.FIRMWARE[PINS_H])
         def move_dc(text):
-            line = next(ln for ln in text.splitlines() if ln.startswith('#define OLED_DC_PIN'))
+            line = next(ln for ln in text.splitlines() if ln.startswith('#define BOARD_OLED_DC_PIN'))
             return text.replace(line, line.replace('GPIO_PIN_2', 'GPIO_PIN_3').replace('PC2', 'PC3'))
-        problems = self.firmware_problems('board/nucleo-wl55jc/oled_spi1.h', move_dc)
-        self.assertTrue(any('oled_spi1.h: OLED_DC_PIN is PC3' in p for p in problems), problems)
+        problems = self.firmware_problems(PINS_H, move_dc)
+        self.assertTrue(any('board_pins.h: BOARD_OLED_DC_PIN is PC3' in p for p in problems), problems)
 
     def test_pa9_keeps_its_morpho_alias_but_no_net(self):
         # Record 4.2: the PA9 tie stays in [nucleo] ties (UM2592 Tables 17, 18); PA9 is unconnected (4.6, 2026-11-02).
@@ -153,7 +154,7 @@ class Checks(unittest.TestCase):
     def test_an_adc_input_needs_its_channel(self):
         # UM2592 Table 17: A0 = PB1 = ADC1_IN5, A1 = PB2 = ADC1_IN4 (the vane), A2 = PA10 = ADC1_IN6.
         self.assertEqual((wiring.ADC_CHANNEL['PB1'], wiring.ADC_CHANNEL['PB2'], wiring.ADC_CHANNEL['PA10']), (5, 4, 6))
-        # The node's vane pin and channel come from the NUCLEO's board layer (issue #35).
+        # The node's vane pin and channel come from the NUCLEO's board layer (issues #35, #36).
         problems = self.firmware_problems(PINS_H, lambda t: t.replace('ADC_CHANNEL_4', 'ADC_CHANNEL_9'))
         self.assertTrue(any('BOARD_VANE_PIN is PB2 (ADC1_IN4)' in p for p in problems), problems)
 
@@ -804,8 +805,8 @@ class PhaseAPower(unittest.TestCase):
         self.jumpers = wiring.plan_jumpers(self.w)
 
     def test_the_firmware_reads_iset_and_vin_on_their_adc_channels(self):
-        # The node: VIN in board_inputs.c, ISET from the NUCLEO's board layer (issue #35); benchlink: both.
-        self.assertEqual((wiring.FIRMWARE[PINS_H]['BOARD_ISET_PIN'], wiring.FIRMWARE['stage0-node/App/board_inputs.c']['VIN_PIN']),
+        # The node: both from the NUCLEO's board layer (issues #35, #36); benchlink: both.
+        self.assertEqual((wiring.FIRMWARE[PINS_H]['BOARD_ISET_PIN'], wiring.FIRMWARE[PINS_H]['BOARD_VIN_PIN']),
                          ('ISET', 'VIN_SENSE'))
         self.assertEqual((wiring.FIRMWARE['benchlink/App/benchlink.c']['ISET_PIN'], wiring.FIRMWARE['benchlink/App/benchlink.c']['VIN_PIN']),
                          ('ISET', 'VIN_SENSE'))
@@ -1528,13 +1529,16 @@ class ChangeCDeferred(unittest.TestCase):
         self.assertEqual(checks.check_lead_geometry(self.w), [])
 
     def test_the_firmware_keeps_pa9(self):
-        # i2c_bus, benchlink and i2cscan still name POWER_PIN = PA9 (the port power enable, CN10.19);
-        # the breadboard model does not check it, as it has no SENS_EN.
-        for file in ('stage0-node/App/i2c_bus.lit.md', 'benchlink/App/benchlink.c', 'i2cscan/App/i2cscan.c'):
+        # The node (its board layer: BOARD_SENSOR_POWER_PIN, which i2c_bus names POWER_PIN), benchlink and
+        # i2cscan still drive PA9 (the port power enable, CN10.19); the breadboard model does not check it, as
+        # it has no SENS_EN.
+        for file, const in ((PINS_H, 'BOARD_SENSOR_POWER_PIN'), ('benchlink/App/benchlink.c', 'POWER_PIN'),
+                            ('i2cscan/App/i2cscan.c', 'POWER_PIN')):
             with self.subTest(file=file):
                 found = {m.group(1): m for m in wiring.PIN_DEFINE.finditer((FIRMWARE/file).read_text())}
-                self.assertEqual(found['POWER_PIN'].group(2), '9')
-                self.assertNotIn('POWER_PIN', wiring.FIRMWARE.get(file, {}))
+                self.assertEqual((found[const].group(2), found[const].group(3)), ('9', 'A'))
+                self.assertNotIn(const, wiring.FIRMWARE.get(file, {}))
+        self.assertIn('#define POWER_PIN BOARD_SENSOR_POWER_PIN', (FIRMWARE/'stage0-node/App/i2c_bus.lit.md').read_text())
         self.assertEqual(wiring.check_firmware(self.w, FIRMWARE), [])
 
     def test_every_check_is_clean(self):

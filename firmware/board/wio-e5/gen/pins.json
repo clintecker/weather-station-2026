@@ -1,0 +1,139 @@
+{
+ "generated": "GENERATED from board.toml by tools/boardgen.py. Do not edit: edit board.toml, then run tools/boardgen.py.",
+ "board": "wio-e5",
+ "pins": [
+  {
+   "function": "console TX",
+   "pin": "PB6",
+   "at": "TX",
+   "signal": "USART1_TX",
+   "note": "the mini's own USB-UART bridge, on its USB-C"
+  },
+  {
+   "function": "console RX",
+   "pin": "PB7",
+   "at": "RX",
+   "signal": "USART1_RX",
+   "note": "the mini's own USB-UART bridge, on its USB-C"
+  },
+  {
+   "function": "I2C SDA",
+   "pin": "PA15",
+   "at": "PA15",
+   "signal": "I2C2_SDA",
+   "note": ""
+  },
+  {
+   "function": "I2C SCL",
+   "pin": "PB15",
+   "at": "PB15",
+   "signal": "I2C2_SCL",
+   "note": ""
+  },
+  {
+   "function": "cups",
+   "pin": "PC0",
+   "at": "PC0",
+   "signal": "LPTIM1_IN1",
+   "note": ""
+  },
+  {
+   "function": "vane",
+   "pin": "PB3",
+   "at": "PB3",
+   "signal": "ADC1_IN2",
+   "note": ""
+  },
+  {
+   "function": "iset",
+   "pin": "",
+   "at": "",
+   "signal": "GPIO",
+   "note": "not fitted: PB1 is not on the mini's headers"
+  },
+  {
+   "function": "vin",
+   "pin": "PA10",
+   "at": "PA10",
+   "signal": "ADC1_IN6",
+   "note": ""
+  },
+  {
+   "function": "rain",
+   "pin": "PB4",
+   "at": "PB4",
+   "signal": "EXTI4",
+   "note": ""
+  },
+  {
+   "function": "pgood",
+   "pin": "PB8",
+   "at": "",
+   "signal": "GPIO",
+   "note": "not fitted: PB8 is not on the mini's headers"
+  },
+  {
+   "function": "chg",
+   "pin": "PB10",
+   "at": "",
+   "signal": "EXTI10",
+   "note": "not fitted: CHG means little without PGOOD"
+  },
+  {
+   "function": "mux_reset",
+   "pin": "PB14",
+   "at": "PB14",
+   "signal": "GPIO",
+   "note": ""
+  },
+  {
+   "function": "sensor_power",
+   "pin": "PA9",
+   "at": "PA9",
+   "signal": "GPIO",
+   "note": ""
+  },
+  {
+   "function": "LED1",
+   "pin": "PB5",
+   "at": "",
+   "signal": "GPIO",
+   "note": "blue, active low"
+  },
+  {
+   "function": "RF switch CTRL1",
+   "pin": "PA4",
+   "at": "",
+   "signal": "GPIO",
+   "note": "radio_board_if.c"
+  },
+  {
+   "function": "RF switch CTRL2",
+   "pin": "PA5",
+   "at": "",
+   "signal": "GPIO",
+   "note": "radio_board_if.c"
+  },
+  {
+   "function": "swdio",
+   "pin": "PA13",
+   "at": "SWDIO",
+   "signal": "reserved",
+   "note": "SWD"
+  },
+  {
+   "function": "swclk",
+   "pin": "PA14",
+   "at": "SWCLK",
+   "signal": "reserved",
+   "note": "SWD"
+  },
+  {
+   "function": "boot",
+   "pin": "PB13",
+   "at": "PB13",
+   "signal": "reserved",
+   "note": "the BOOT button (no probe output: Core/Inc/sys_debug.h)"
+  }
+ ]
+}

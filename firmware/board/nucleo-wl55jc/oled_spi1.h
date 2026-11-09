@@ -5,12 +5,16 @@
 #define OLED_SPI1_H_INCLUDED
 
 #include "stm32wlxx_hal.h"
+#include "board_pins.h"   /* the pins: board.toml [bench_oled], generated (issue #36) */
 
-#define OLED_CS_PIN GPIO_PIN_4      /* PA4: a GPIO, low while sending */
-#define OLED_SCK_PIN GPIO_PIN_5     /* PA5, SPI1_SCK AF5 */
-#define OLED_MOSI_PIN GPIO_PIN_7    /* PA7, SPI1_MOSI AF5 */
-#define OLED_RST_PIN GPIO_PIN_1     /* PC1: low resets */
-#define OLED_DC_PIN GPIO_PIN_2      /* PC2: low command, high data */
+#define OLED_CS_PORT BOARD_OLED_CS_PORT
+#define OLED_CS_PIN BOARD_OLED_CS_PIN       /* a GPIO, low while sending */
+#define OLED_SCK_PIN BOARD_OLED_SCK_PIN     /* SPI1_SCK, on CS's port */
+#define OLED_MOSI_PIN BOARD_OLED_MOSI_PIN   /* SPI1_MOSI, on CS's port */
+#define OLED_RST_PORT BOARD_OLED_RST_PORT
+#define OLED_RST_PIN BOARD_OLED_RST_PIN     /* low resets */
+#define OLED_DC_PORT BOARD_OLED_DC_PORT
+#define OLED_DC_PIN BOARD_OLED_DC_PIN       /* low command, high data; on RST's port */
 
 /* The clocks, CS, RST and DC high as outputs, SCLK and DIN on SPI1, and SPI1 disabled and set up: master,
    transmit only (half duplex, nothing received, no receive overrun), mode 0 as Adafruit's driver, 8 bits

@@ -1,0 +1,99 @@
+# The Seeed Wio-E5 mini (LoRa-E5 module, STM32WLE5JC; issue #35): every hardware fact of this board that
+# the station's code uses (issue #36). tools/boardgen.py checks it against ST's pin data (tools/pinctrl)
+# and writes gen/. Edit this file, then run `python3 tools/boardgen.py`; never edit gen/ by hand.
+# README.md here has the wiring, the open hardware checks and the sources.
+#
+# The mini's headers carry 5V, 3V3, GND, RST, PA13 SWDIO, PA14 SWCLK and PA0, PA2, PA3, PA9, PA10, PA15,
+# PB3, PB4, PB6, PB7, PB9, PB10, PB13 (the BOOT button), PB14, PB15, PC0, PC1 (Zephyr
+# boards/seeed/lora_e5_mini pinout). "at" names the header pin; the module's own pins have none.
+
+[board]
+name = "wio-e5"
+title = "Seeed Wio-E5 mini (LoRa-E5, STM32WLE5JC)"
+mcu = "STM32WLE5JC"
+mcu_define = "STM32WLE5xx"
+pinctrl = "stm32wle5jcix"
+startup = "startup/startup_stm32wle5xx.s"
+ldscript = "STM32WLE5JCIX_FLASH.ld"
+roles = ["tx"]                             # the receiver stays on the NUCLEO
+flash = "nucleo-stlink-swd"                # no probe on the mini: the NUCLEO's ST-LINK over SWD (README.md)
+# Seeed ships the module under read-out protection level 1. Regressing it to level 0 mass-erases the flash
+# (Seeed's AT firmware with it); after that `flash` works. OpenOCD 0.12.0 stm32l4x driver: "stm32l4x unlock
+# num" and "stm32l4x option_load". To be confirmed on the first board.
+unlock = "openocd-stm32l4x"
+
+[console]
+uart = "USART1"
+tx = { pin = "PB6", at = "TX" }
+rx = { pin = "PB7", at = "RX" }
+to = "the mini's own USB-UART bridge, on its USB-C"
+
+# PA15 is JTDI after reset; the debug link is SWD only (PA13, PA14), so taking it costs nothing.
+[i2c]
+instance = "I2C2"
+sda = { pin = "PA15", at = "PA15" }
+scl = { pin = "PB15", at = "PB15" }
+
+# Unchanged from the NUCLEO: rain PB4, mux RESET PB14, sensor power PA9, the charger input divider PA10.
+# PB5 (the NUCLEO's cups pin) is the mini's LED and PB2 (its vane) is not on a header. PB3 is JTDO/SWO
+# after reset. The bq24074 pins are not fitted: PB1 (ISET) and PB8 (PGOOD) are not on the headers, so the
+# charger status and its battery current are none (App/power_acq.c); the ISET rank of the ADC sequence
+# converts VREFINT instead, a reading nobody uses. PGOOD and CHG keep the NUCLEO's pins in the generated
+# header (the code compares them, never configures them).
+[pins]
+cups = { pin = "PC0", af = "LPTIM1_IN1", at = "PC0" }
+vane = { pin = "PB3", adc = 2, at = "PB3" }
+iset = { fitted = false, why = "PB1 is not on the mini's headers" }
+vin = { pin = "PA10", adc = 6, at = "PA10" }
+rain = { pin = "PB4", exti = true, at = "PB4" }
+pgood = { pin = "PB8", fitted = false, why = "PB8 is not on the mini's headers" }
+chg = { pin = "PB10", exti = true, fitted = false, why = "CHG means little without PGOOD" }
+mux_reset = { pin = "PB14", at = "PB14" }
+sensor_power = { pin = "PA9", at = "PA9" }
+
+# One user LED, PB5, on when low (Zephyr boards/seeed/lora_e5_mini: led_0 on PB5, GPIO_ACTIVE_LOW). It is
+# the blue one: radio traffic and the 2 s heartbeat. Green and red have no LED: their pin is 0, which makes
+# their writes no-ops (HAL_GPIO_WritePin writes a zero mask to BSRR or BRR).
+[[led]]
+pin = "PB5"
+colour = "blue"
+active = "low"
+
+[reserved]
+swdio = { pin = "PA13", at = "SWDIO", why = "SWD" }
+swclk = { pin = "PA14", at = "SWCLK", why = "SWD" }
+boot = { pin = "PB13", at = "PB13", why = "the BOOT button (no probe output: Core/Inc/sys_debug.h)" }
+
+[bench_oled]
+ok = false
+why = "the OLED's SPI1 pins PA4 and PA5 drive the module's RF switch"
+
+# The RF switch: two GPIOs, PA4 (CTRL1) and PA5 (CTRL2), push-pull, inside the module. The truth table is
+# Seeed's own STM32CubeWL port, https://github.com/Seeed-Studio/LoRaWan-E5-Node at commit
+# 163c05379b1805dd8f2c061d4557a69985acc953, Drivers/BSP/STM32WLxx_LoRa_E5_mini/stm32wlxx_LoRa_E5_mini_radio.c,
+# BSP_RADIO_ConfigRFSwitch (lines 99-136), pins from stm32wlxx_LoRa_E5_mini_radio.h lines 84-92.
+# Zephyr agrees on RX and TX (dts/arm/seeed_studio/lora-e5.dtsi, commit 0235217d: PA4 tx-enable-gpios and
+# PA5 rx-enable-gpios, both GPIO_ACTIVE_LOW). They differ on OFF: Seeed drives both low (below), Zephyr
+# leaves both enables inactive (both high). OFF is UNVERIFIED on the hardware: the bench check is RX and TX
+# working, and the sleep current with OFF (README.md, open hardware checks).
+# TX_LP is never asked for (pa = "hp"): Seeed's "Turns On in Tx Low Power", not wired on this module.
+[radio]
+driver = "gpio"
+switch = ["PA4", "PA5"]                    # CTRL1, CTRL2
+off = [0, 0]
+off_verified = false
+rx = [1, 0]
+tx_hp = [0, 1]
+tx_lp = [1, 1]
+pa = "hp"                                  # RFO_HP only (Zephyr power-amplifier-output = "rfo-hp")
+rfo_lp_max_dbm = 15                        # not wired; ST's template value
+rfo_hp_max_dbm = 22                        # Zephyr rfo-hp-max-power
+# The 32 MHz TCXO, powered from the radio's VDDTCXO (PB0-VDDTCXO / DIO3) at 1.7 V (Zephyr hse-tcxo,
+# dio3-tcxo-voltage). Its startup: 5 ms in Zephyr (lora-e5.dtsi tcxo-power-startup-delay-ms = <5>, commit
+# 0235217d); Seeed's own port keeps ST's 1 ms (LoRaWAN_End_Node/LoRaWAN/Target/radio_conf.h line 95, commit
+# 163c0537). The longer one: the radio waits for the TCXO up to this before it reports an HSE32 failure.
+# To be measured on the board.
+tcxo = true
+tcxo_mv = 1700
+tcxo_startup_ms = 5
+dcdc = true                                # the SMPS is fitted (BSP_RADIO_IsDCDC)

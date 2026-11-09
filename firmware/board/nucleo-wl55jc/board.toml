@@ -1,0 +1,99 @@
+# The NUCLEO-WL55JC1 (MB1389): every hardware fact of this board that the station's code uses (issue #36).
+# tools/boardgen.py checks it against ST's pin data (tools/pinctrl) and writes gen/: board_pins.h,
+# board_caps.h, board.mk, pins.md and pins.json. Edit this file, then run `python3 tools/boardgen.py`;
+# never edit gen/ by hand (tools/code_shape.sh fails when gen/ is stale). docs/adding-a-board.md has the
+# format.
+#
+# Header positions ("at"): UM2592 table 17 (ARDUINO) and table 18 (ST morpho). The wiring is
+# docs/hardware/bench-station-wiring.md; why each pin is where it is: App/board_inputs.c, App/i2c_bus.lit.md.
+
+[board]
+name = "nucleo-wl55jc"
+title = "NUCLEO-WL55JC1 (MB1389)"
+mcu = "STM32WL55JC"
+mcu_define = "STM32WL55xx"
+pinctrl = "stm32wl55jcix"                  # tools/pinctrl/<pinctrl>-pinctrl.dtsi
+startup = "startup/startup_stm32wl55jcix.s"
+ldscript = "STM32WL55JCIX_FLASH.ld"
+roles = ["tx", "rx"]
+flash = "onboard-stlink"                   # its own STLINK-V3E: make flash SERIAL=<serial>
+unlock = "none"                            # ships at RDP level 0
+
+[console]
+uart = "USART2"
+tx = { pin = "PA2", at = "ST-LINK VCP" }
+rx = { pin = "PA3", at = "ST-LINK VCP" }
+to = "the ST-LINK's virtual COM port"
+
+[i2c]
+instance = "I2C2"
+sda = { pin = "PA11", at = "D14, CN5.9" }
+scl = { pin = "PA12", at = "D15, CN5.10" }
+
+# The station's pins, by function. af: the alternate function (checked on the pin); adc: the ADC1 channel;
+# exti: the pin's EXTI line is used. fitted = false: the board has no such connection (see the Wio-E5 mini).
+[pins]
+cups = { pin = "PB5", af = "LPTIM1_IN1", at = "D4, CN9.5" }
+vane = { pin = "PB2", adc = 4, at = "A1, CN8.2" }
+iset = { pin = "PB1", adc = 5, at = "A0, CN8.1" }
+vin = { pin = "PA10", adc = 6, at = "A2, CN8.3" }
+rain = { pin = "PB4", exti = true, at = "A3, CN8.4" }
+pgood = { pin = "PB8", at = "D5, CN9.6" }
+chg = { pin = "PB10", exti = true, at = "D6, CN9.7" }
+mux_reset = { pin = "PB14", at = "A4, CN8.5" }
+sensor_power = { pin = "PA9", at = "D9, CN5.2" }
+
+# The user LEDs in the station's order (App/leds.h): blue, green, red.
+[[led]]
+pin = "PB15"
+colour = "blue"
+active = "high"
+
+[[led]]
+pin = "PB9"
+colour = "green"
+active = "high"
+
+[[led]]
+pin = "PB11"
+colour = "red"
+active = "high"
+
+# Pins the board's own code drives: in the pin map, so nothing else may take them.
+[reserved]
+probe1 = { pin = "PB12", at = "D2, CN9.3", why = "DBG_Init's probe output (Core/Src/sys_debug.c)" }
+probe2 = { pin = "PB13", at = "A5, CN8.6", why = "DBG_Init's probe output (Core/Src/sys_debug.c)" }
+swdio = { pin = "PA13", why = "SWD" }
+swclk = { pin = "PA14", why = "SWD" }
+
+# The bench OLED (oled_spi1.c here; App/oled_dma.c) and the board's three buttons.
+[bench_oled]
+ok = true
+spi = "SPI1"
+cs = { pin = "PA4", at = "CN10.17" }
+sck = { pin = "PA5", af = "SPI1_SCK", at = "CN10.11" }
+mosi = { pin = "PA7", af = "SPI1_MOSI", at = "CN10.15" }
+rst = { pin = "PC1", at = "CN10.23" }
+dc = { pin = "PC2", at = "CN10.21" }
+b1 = { pin = "PA0", at = "B1" }
+b2 = { pin = "PA1", at = "B2" }
+b3 = { pin = "PC6", at = "B3" }
+
+# The radio's front end. driver "st-bsp": ST's NUCLEO BSP (Drivers/BSP/STM32WLxx_Nucleo) drives the switch;
+# the table below is what its BSP_RADIO_ConfigRFSwitch does (tests/test_boardgen.py checks it against the
+# BSP source). Levels are per switch pin, in the order of `switch`.
+[radio]
+driver = "st-bsp"
+bsp = "STM32WLxx_Nucleo"
+switch = ["PC4", "PC5", "PC3"]             # FE_CTRL1, FE_CTRL2, FE_CTRL3
+off = [0, 0, 0]
+rx = [1, 0, 1]
+tx_hp = [0, 1, 1]
+tx_lp = [1, 1, 1]
+pa = "lp_hp"                               # both RFO_LP and RFO_HP are wired
+rfo_lp_max_dbm = 15
+rfo_hp_max_dbm = 22
+tcxo = true
+tcxo_mv = 1700
+tcxo_startup_ms = 1
+dcdc = true

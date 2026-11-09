@@ -579,22 +579,22 @@ def load(path):
 # port in a comment that starts with the pin and may go on (/* PB5 = D4, CN9.5 */, /* PB1 = A0, CN8.1: ADC1_IN5 */);
 # without one it is on GPIOA (the I2C pins). Add an entry only for a net the model has. Every bench
 # firmware that drives a modelled pin is here: the node, benchlink, i2cscan, and the OLED's pins that i2cscan
-# and the node's bench build share (board/nucleo-wl55jc/oled_spi1.h).
-# Their POWER_PIN (PA9) is not here: the sensor power switch (change C) is not part of the breadboard build
-# (record 4.6, 2026-11-02), so the breadboard model has no SENS_EN net and PA9 is unconnected on it.
-FIRMWARE = {'stage0-node/App/board_inputs.c': {'RAIN_PIN': 'RAIN', 'PGOOD_PIN': 'PGOOD', 'CHG_PIN': 'CHG',
-                                               'VIN_PIN': 'VIN_SENSE'},
-            # The node's pins that differ between boards (issue #35) come from the NUCLEO's board layer.
-            'board/nucleo-wl55jc/Core/Inc/board_pins.h': {'BOARD_CUPS_PIN': 'CUPS', 'BOARD_VANE_PIN': 'VANE',
-                                                          'BOARD_ISET_PIN': 'ISET', 'BOARD_I2C_SDA_PIN': 'I2C_SDA',
-                                                          'BOARD_I2C_SCL_PIN': 'I2C_SCL'},
+# and the node's bench build share. The node's pins, the OLED's with them, are the NUCLEO's board.toml,
+# generated into its gen/board_pins.h by tools/boardgen.py (issue #36), so this checks the generated header.
+# Their POWER_PIN (PA9; BOARD_SENSOR_POWER_PIN) is not here: the sensor power switch (change C) is not part of
+# the breadboard build (record 4.6, 2026-11-02), so the breadboard model has no SENS_EN net and PA9 is
+# unconnected on it.
+NODE_PINS = 'board/nucleo-wl55jc/gen/board_pins.h'
+FIRMWARE = {NODE_PINS: {'BOARD_CUPS_PIN': 'CUPS', 'BOARD_VANE_PIN': 'VANE', 'BOARD_ISET_PIN': 'ISET',
+                        'BOARD_VIN_PIN': 'VIN_SENSE', 'BOARD_RAIN_PIN': 'RAIN', 'BOARD_PGOOD_PIN': 'PGOOD',
+                        'BOARD_CHG_PIN': 'CHG', 'BOARD_I2C_SDA_PIN': 'I2C_SDA', 'BOARD_I2C_SCL_PIN': 'I2C_SCL',
+                        'BOARD_OLED_CS_PIN': 'OLED_CS', 'BOARD_OLED_SCK_PIN': 'OLED_SCLK',
+                        'BOARD_OLED_MOSI_PIN': 'OLED_DIN', 'BOARD_OLED_RST_PIN': 'OLED_RST',
+                        'BOARD_OLED_DC_PIN': 'OLED_DC'},
             'benchlink/App/benchlink.c': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL',
                                           'PGOOD_PIN': 'PGOOD', 'CHG_PIN': 'CHG',
                                           'ISET_PIN': 'ISET', 'VIN_PIN': 'VIN_SENSE'},
-            'i2cscan/App/i2cscan.c': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL'},
-            'board/nucleo-wl55jc/oled_spi1.h': {'OLED_CS_PIN': 'OLED_CS', 'OLED_SCK_PIN': 'OLED_SCLK',
-                                                'OLED_MOSI_PIN': 'OLED_DIN', 'OLED_RST_PIN': 'OLED_RST',
-                                                'OLED_DC_PIN': 'OLED_DC'}}
+            'i2cscan/App/i2cscan.c': {'SDA_PIN': 'I2C_SDA', 'SCL_PIN': 'I2C_SCL'}}
 PIN_DEFINE = re.compile(r'^#define (\w+_PIN) GPIO_PIN_(\d+)\b(?:.*?/\* P([A-H])(\d+)\b([^\n]*?)\*/)?', re.M)
 # The ADC1 channel of each ARDUINO analog pin (UM2592 Table 17: A0..A5 on CN8; A1 = PB2 is the vane).
 ADC_CHANNEL = {'PB1': 5, 'PB2': 4, 'PA10': 6, 'PB4': 3, 'PB14': 1, 'PB13': 0}

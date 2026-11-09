@@ -1,0 +1,67 @@
+# A made-up third board, for tests/test_boardgen.py only (never shipped): it proves that a new board is one
+# directory and no change elsewhere (issue #36). An STM32WLE5JC carrier with the NUCLEO's station pins where
+# the module has them, a three-pin RF switch driven by the generic radio_board_if.c (the NUCLEO's truth
+# table on its pins), and the Wio-E5 mini's CubeMX code (USART1 on PB6/PB7, one LED on PB5), which the test
+# copies in as docs/adding-a-board.md says.
+
+[board]
+name = "made-up-e5"
+title = "Made-up WLE5 test carrier"
+mcu = "STM32WLE5JC"
+mcu_define = "STM32WLE5xx"
+pinctrl = "stm32wle5jcix"
+startup = "startup/startup_stm32wle5xx.s"
+ldscript = "STM32WLE5JCIX_FLASH.ld"
+roles = ["tx"]
+flash = "nucleo-stlink-swd"
+unlock = "none"
+
+[console]
+uart = "USART1"
+tx = { pin = "PB6" }
+rx = { pin = "PB7" }
+to = "a USB-UART bridge"
+
+[i2c]
+instance = "I2C2"
+sda = { pin = "PA11" }
+scl = { pin = "PA12" }
+
+[pins]
+cups = { pin = "PC0", af = "LPTIM1_IN1" }
+vane = { pin = "PB2", adc = 4 }
+iset = { pin = "PB1", adc = 5 }
+vin = { pin = "PA10", adc = 6 }
+rain = { pin = "PB4", exti = true }
+pgood = { pin = "PB8" }
+chg = { pin = "PB10", exti = true }
+mux_reset = { pin = "PB14" }
+sensor_power = { pin = "PA9" }
+
+[[led]]
+pin = "PB5"
+colour = "blue"
+active = "low"
+
+[reserved]
+swdio = { pin = "PA13", why = "SWD" }
+swclk = { pin = "PA14", why = "SWD" }
+
+[bench_oled]
+ok = false
+why = "no OLED header on the made-up carrier"
+
+[radio]
+driver = "gpio"
+switch = ["PC4", "PC5", "PC3"]
+off = [0, 0, 0]
+rx = [1, 0, 1]
+tx_hp = [0, 1, 1]
+tx_lp = [1, 1, 1]
+pa = "lp_hp"
+rfo_lp_max_dbm = 15
+rfo_hp_max_dbm = 22
+tcxo = true
+tcxo_mv = 1700
+tcxo_startup_ms = 3
+dcdc = true

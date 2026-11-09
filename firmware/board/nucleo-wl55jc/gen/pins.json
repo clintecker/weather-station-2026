@@ -1,0 +1,223 @@
+{
+ "generated": "GENERATED from board.toml by tools/boardgen.py. Do not edit: edit board.toml, then run tools/boardgen.py.",
+ "board": "nucleo-wl55jc",
+ "pins": [
+  {
+   "function": "console TX",
+   "pin": "PA2",
+   "at": "ST-LINK VCP",
+   "signal": "USART2_TX",
+   "note": "the ST-LINK's virtual COM port"
+  },
+  {
+   "function": "console RX",
+   "pin": "PA3",
+   "at": "ST-LINK VCP",
+   "signal": "USART2_RX",
+   "note": "the ST-LINK's virtual COM port"
+  },
+  {
+   "function": "I2C SDA",
+   "pin": "PA11",
+   "at": "D14, CN5.9",
+   "signal": "I2C2_SDA",
+   "note": ""
+  },
+  {
+   "function": "I2C SCL",
+   "pin": "PA12",
+   "at": "D15, CN5.10",
+   "signal": "I2C2_SCL",
+   "note": ""
+  },
+  {
+   "function": "cups",
+   "pin": "PB5",
+   "at": "D4, CN9.5",
+   "signal": "LPTIM1_IN1",
+   "note": ""
+  },
+  {
+   "function": "vane",
+   "pin": "PB2",
+   "at": "A1, CN8.2",
+   "signal": "ADC1_IN4",
+   "note": ""
+  },
+  {
+   "function": "iset",
+   "pin": "PB1",
+   "at": "A0, CN8.1",
+   "signal": "ADC1_IN5",
+   "note": ""
+  },
+  {
+   "function": "vin",
+   "pin": "PA10",
+   "at": "A2, CN8.3",
+   "signal": "ADC1_IN6",
+   "note": ""
+  },
+  {
+   "function": "rain",
+   "pin": "PB4",
+   "at": "A3, CN8.4",
+   "signal": "EXTI4",
+   "note": ""
+  },
+  {
+   "function": "pgood",
+   "pin": "PB8",
+   "at": "D5, CN9.6",
+   "signal": "GPIO",
+   "note": ""
+  },
+  {
+   "function": "chg",
+   "pin": "PB10",
+   "at": "D6, CN9.7",
+   "signal": "EXTI10",
+   "note": ""
+  },
+  {
+   "function": "mux_reset",
+   "pin": "PB14",
+   "at": "A4, CN8.5",
+   "signal": "GPIO",
+   "note": ""
+  },
+  {
+   "function": "sensor_power",
+   "pin": "PA9",
+   "at": "D9, CN5.2",
+   "signal": "GPIO",
+   "note": ""
+  },
+  {
+   "function": "LED1",
+   "pin": "PB15",
+   "at": "",
+   "signal": "GPIO",
+   "note": "blue, active high"
+  },
+  {
+   "function": "LED2",
+   "pin": "PB9",
+   "at": "",
+   "signal": "GPIO",
+   "note": "green, active high"
+  },
+  {
+   "function": "LED3",
+   "pin": "PB11",
+   "at": "",
+   "signal": "GPIO",
+   "note": "red, active high"
+  },
+  {
+   "function": "bench OLED CS",
+   "pin": "PA4",
+   "at": "CN10.17",
+   "signal": "GPIO",
+   "note": "WS_BENCH_OLED=1 only"
+  },
+  {
+   "function": "bench OLED SCK",
+   "pin": "PA5",
+   "at": "CN10.11",
+   "signal": "SPI1_SCK",
+   "note": "WS_BENCH_OLED=1 only"
+  },
+  {
+   "function": "bench OLED MOSI",
+   "pin": "PA7",
+   "at": "CN10.15",
+   "signal": "SPI1_MOSI",
+   "note": "WS_BENCH_OLED=1 only"
+  },
+  {
+   "function": "bench OLED RST",
+   "pin": "PC1",
+   "at": "CN10.23",
+   "signal": "GPIO",
+   "note": "WS_BENCH_OLED=1 only"
+  },
+  {
+   "function": "bench OLED DC",
+   "pin": "PC2",
+   "at": "CN10.21",
+   "signal": "GPIO",
+   "note": "WS_BENCH_OLED=1 only"
+  },
+  {
+   "function": "bench OLED B1",
+   "pin": "PA0",
+   "at": "B1",
+   "signal": "EXTI0",
+   "note": "WS_BENCH_OLED=1 only"
+  },
+  {
+   "function": "bench OLED B2",
+   "pin": "PA1",
+   "at": "B2",
+   "signal": "EXTI1",
+   "note": "WS_BENCH_OLED=1 only"
+  },
+  {
+   "function": "bench OLED B3",
+   "pin": "PC6",
+   "at": "B3",
+   "signal": "EXTI6",
+   "note": "WS_BENCH_OLED=1 only"
+  },
+  {
+   "function": "RF switch CTRL1",
+   "pin": "PC4",
+   "at": "",
+   "signal": "GPIO",
+   "note": "ST BSP"
+  },
+  {
+   "function": "RF switch CTRL2",
+   "pin": "PC5",
+   "at": "",
+   "signal": "GPIO",
+   "note": "ST BSP"
+  },
+  {
+   "function": "RF switch CTRL3",
+   "pin": "PC3",
+   "at": "",
+   "signal": "GPIO",
+   "note": "ST BSP"
+  },
+  {
+   "function": "probe1",
+   "pin": "PB12",
+   "at": "D2, CN9.3",
+   "signal": "reserved",
+   "note": "DBG_Init's probe output (Core/Src/sys_debug.c)"
+  },
+  {
+   "function": "probe2",
+   "pin": "PB13",
+   "at": "A5, CN8.6",
+   "signal": "reserved",
+   "note": "DBG_Init's probe output (Core/Src/sys_debug.c)"
+  },
+  {
+   "function": "swdio",
+   "pin": "PA13",
+   "at": "",
+   "signal": "reserved",
+   "note": "SWD"
+  },
+  {
+   "function": "swclk",
+   "pin": "PA14",
+   "at": "",
+   "signal": "reserved",
+   "note": "SWD"
+  }
+ ]
+}

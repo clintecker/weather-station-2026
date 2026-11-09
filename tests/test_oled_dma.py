@@ -296,14 +296,15 @@ def setup_bytes():
 
 def includes(owner):
     """The include flags of an oled_dma.c host build: the stand-ins (written into a directory the owner, a
-    TestCase class, removes), then the node's App and the board's Core/Inc (its sys_conf.h)."""
+    TestCase class, removes), then the node's App, the board's generated pins (gen/) and its Core/Inc
+    (its sys_conf.h)."""
     import tempfile
     stub = tempfile.TemporaryDirectory()
     owner.addClassCleanup(stub.cleanup)
     for name, text in (('stm32wlxx_hal.h', HAL_STUB), ('stm32wlxx_ll_dma.h', LL_DMA_STUB), ('stm32wlxx_ll_spi.h', LL_SPI_STUB),
                        ('stm32_timer.h', TIMER_STUB), ('sys_app.h', SYS_APP_STUB), ('stm32wlxx.h', DEVICE_STUB)):
         (Path(stub.name)/name).write_text(text)
-    return ['-I', stub.name, '-I', APP, '-I', ROOT/'firmware/common', '-I', BOARD, '-I', BOARD/'Core/Inc']
+    return ['-I', stub.name, '-I', APP, '-I', ROOT/'firmware/common', '-I', BOARD, '-I', BOARD/'gen', '-I', BOARD/'Core/Inc']
 
 
 @needs_cc
@@ -573,7 +574,7 @@ class FieldBuild(unittest.TestCase):
                                         f'BUILD={tmp}/build', 'show'], capture_output=True, text=True)
                     self.assertEqual(r.returncode, 0, r.stderr)
                     self.assertEqual(r.stdout.strip(), f'{usage}|{label}|build/tx-fieldcheck')
-        board = (ROOT/'firmware/board/nucleo-wl55jc/board.mk').read_text()
+        board = (ROOT/'firmware/board/stm32wl/rules.mk').read_text()
         self.assertIn('printf "flash budget%s: ', board)
         self.assertIn('usage: make $(strip $(USAGE_ARGS) flash)', board)
 

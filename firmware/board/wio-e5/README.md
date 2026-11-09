@@ -29,12 +29,13 @@ Written and compiled before the boards arrived. Nothing here has run on hardware
 | bq24074 PGOOD, CHG, ISET | PB8, PB10, PB1 | **none** | PB1 and PB8 are not on the headers; see [Power profile](#power-profile) |
 | Console | USART2 PA2/PA3, ST-LINK VCP | **USART1 PB6/PB7**, the mini's USB-C | 115200 8N1, as before |
 | Status LED | LED1 blue, LED2 green, LED3 red | **PB5 only, active low = blue** | green and red are no-ops |
-| RF switch | ST BSP (PC3, PC4, PC5) | **PA4, PA5** (module-internal) | `SubGHz_Phy/Target/radio_board_if.c` |
+| RF switch | ST BSP (PC3, PC4, PC5) | **PA4, PA5** (module-internal) | the generic `../stm32wl/SubGHz_Phy/Target/radio_board_if.c` |
 
-The pins come from `Core/Inc/board_pins.h`. The NUCLEO has the same file with its own values
-(`../nucleo-wl55jc/Core/Inc/board_pins.h`), so `App/board_inputs.c`, `App/i2c_bus.lit.md`,
-`App/leds.c`, `App/power_acq.c` and `Core/Src/stm32wlxx_it.c` no longer name pins themselves. The NUCLEO
-images are byte-identical to the ones built before the change.
+The pins come from `board.toml` here (issue #36): `tools/boardgen.py` checks them against ST's pin data and
+writes `gen/board_pins.h`, `gen/board_caps.h` and the pin table `gen/pins.md`. The NUCLEO has its own
+`board.toml` (`../nucleo-wl55jc`), so `App/board_inputs.c`, `App/i2c_bus.lit.md`, `App/leds.c`,
+`App/power_acq.c` and `Core/Src/stm32wlxx_it.c` name no pin themselves (`tools/board_lint.py` keeps it so).
+The NUCLEO images are byte-identical to the ones built before either change.
 
 The headers expose 5V, 3V3, GND, RST, PA13 (SWDIO), PA14 (SWCLK), PA0, PA2, PA3, PA9, PA10, PA15, PB3,
 PB4, PB6, PB7, PB9, PB10, PB13 (the BOOT button, active low), PB14, PB15, PC0 and PC1. Source: Zephyr
@@ -117,8 +118,8 @@ It is the same console as the NUCLEO's VCP, with the same commands and the same 
 
 ## Radio
 
-`SubGHz_Phy/Target/radio_board_if.c` holds the RF switch truth table, its sources and the one point where
-they disagree. The table is Seeed's own STM32CubeWL port (`Seeed-Studio/LoRaWan-E5-Node`, commit 163c0537,
+`board.toml` `[radio]` holds the RF switch truth table, its sources and the one point where they disagree;
+the generic `../stm32wl/SubGHz_Phy/Target/radio_board_if.c` drives it. The table is Seeed's own STM32CubeWL port (`Seeed-Studio/LoRaWan-E5-Node`, commit 163c0537,
 `stm32wlxx_LoRa_E5_mini_radio.c`, `BSP_RADIO_ConfigRFSwitch`):
 
 | State | PA4 | PA5 |
@@ -131,7 +132,7 @@ Zephyr (`lora-e5.dtsi`: PA4 TX enable, PA5 RX enable, both active low) agrees on
 would leave both pins high. Only RFO_HP is wired (max 22 dBm).
 
 The TCXO (32 MHz) is powered from the radio's VDDTCXO at 1.7 V. Its startup allowance is
-`RF_WAKEUP_TIME` 5 ms (Zephyr's value; Seeed's port keeps ST's 1 ms) in `SubGHz_Phy/Target/radio_conf.h`.
+5 ms (`tcxo_startup_ms` in `board.toml`, which becomes `RF_WAKEUP_TIME`; Zephyr's value, Seeed's port keeps ST's 1 ms).
 The SMPS (DCDC) is on, as Seeed's BSP reports it fitted.
 
 ## Open hardware checks
@@ -142,7 +143,7 @@ The SMPS (DCDC) is on, as Seeed's BSP reports it fitted.
 4. The LED (PB5) blinks the heartbeat, and its sense is right (active low).
 5. RF switch: the RX hears the TX, and the TX hears ACKs (RFO_HP, RX). Then the sleep current with the
    switch OFF (0, 0) compared with (1, 1) (the OFF state is unverified).
-6. TCXO: no HSE32 or radio-busy timeouts at boot or after Stop. Try `RF_WAKEUP_TIME` 1 against 5.
+6. TCXO: no HSE32 or radio-busy timeouts at boot or after Stop. Try `tcxo_startup_ms` 1 against 5.
 7. I2C2 on PA15/PB15: `#status` shows the INA228 and the MAX17048 answering.
 8. Cups on PC0 count (LPTIM1), the vane on PB3 reads, the rain tips on PB4 count, and the link probe
    verdicts are right.

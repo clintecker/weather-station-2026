@@ -29,7 +29,12 @@ extern "C" {
 /* Includes ------------------------------------------------------------------*/
 #include "platform.h"
 /* USER CODE BEGIN include */
-
+/* weather-station-2026 (issue #36): one file for every board. The board's front end comes from its
+   generated gen/board_caps.h (board.toml [radio]); radio_board_if.c drives it. */
+#include "board_caps.h"
+#if BOARD_RF_SWITCH_BSP != defined(USE_BSP_DRIVER)
+#error "board.toml [radio] driver \"st-bsp\" goes with USE_BSP_DRIVER in the board's Core/Inc/platform.h, and only it"
+#endif
 /* USER CODE END include */
 
 /* Exported defines ----------------------------------------------------------*/
@@ -63,19 +68,19 @@ extern "C" {
 /* USER CODE END Exported Parameters */
 /* Indicates the type of switch between the ones proposed by CONFIG Constants
  */
-#define RBI_CONF_RFO                        RBI_CONF_RFO_HP   /* weather-station-2026: the LoRa-E5 module wires RFO_HP only */
+#define RBI_CONF_RFO                        BOARD_RFO   /* weather-station-2026: board.toml [radio] pa */
 
 /* Indicates whether or not TCXO is supported by the board
  * 0: TCXO not supported
  * 1: TCXO supported
  */
-#define IS_TCXO_SUPPORTED                   1U
+#define IS_TCXO_SUPPORTED                   BOARD_TCXO  /* weather-station-2026: board.toml [radio] tcxo */
 
 /* Indicates whether or not DCDC is supported by the board
  * 0: DCDC not supported
  * 1: DCDC supported
  */
-#define IS_DCDC_SUPPORTED                   1U
+#define IS_DCDC_SUPPORTED                   BOARD_DCDC  /* weather-station-2026: board.toml [radio] dcdc */
 
 /* USER CODE BEGIN Exported Parameters_2 */
 
@@ -89,12 +94,7 @@ extern "C" {
 
 #else
 /* USER CODE BEGIN Exported PinMapping */
-/* weather-station-2026: the LoRa-E5 module's RF switch (radio_board_if.c). */
-#define RF_SW_CTRL1_PIN        GPIO_PIN_4
-#define RF_SW_CTRL1_GPIO_PORT  GPIOA
-#define RF_SW_CTRL2_PIN        GPIO_PIN_5
-#define RF_SW_CTRL2_GPIO_PORT  GPIOA
-#define RF_SW_GPIO_CLK_ENABLE() __HAL_RCC_GPIOA_CLK_ENABLE()
+/* weather-station-2026: the RF switch pins are the board's (gen/board_caps.h, BOARD_RF_SW_*). */
 /* USER CODE END Exported PinMapping */
 #endif  /* USE_BSP_DRIVER  */
 

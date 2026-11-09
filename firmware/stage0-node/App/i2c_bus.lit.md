@@ -74,8 +74,9 @@ The completion codes (`i2c_bus.h`) are:
 ## 2. Hardware and constants
 
 I2C2 uses PA11 (SDA) and PA12 (SCL) at 100 kHz, as before; on the Wio-E5 mini (issue #35) PA15 (SDA) and
-PB15 (SCL), on two ports. The pins come from the board layer (`Core/Inc/board_pins.h`), with the steps
-that set them up: one call for both on the NUCLEO, one for each pin on the mini. PA9 (D9, CN5.2; morpho CN10.19) is
+PB15 (SCL), on two ports. The pins, the I2C instance, its alternate function, clock and vectors, and the sensor
+power pin come from the board layer (its `board.toml`, generated into `gen/board_pins.h`; issue #36), with the
+steps that set the pins up: one call for both on the NUCLEO, one for each pin on the mini. PA9 (D9, CN5.2; morpho CN10.19) is
 the sensor supply enable, **not wired**: change C's load switch is not part of the breadboard build
 (build-progression record section 4.6, dated note 2026-11-02), so on the breadboard PA9 is
 unconnected, the hub's sensors are on the unswitched 3V3, and driving the pin does nothing. With
@@ -93,9 +94,9 @@ the I2C interrupt; ST's timer rounds down to 1/1024 s ticks. Each byte on the bu
 (131 bytes, about 12 ms) gets 41 ms, more than the 37 ms it needs with the erase stall.
 
 ```c {#constants}
-#include "board_pins.h"   /* BOARD_I2C_SDA_PIN, BOARD_I2C_SCL_PIN, their ports and steps: the board's */
+#include "board_pins.h"   /* BOARD_I2C*, BOARD_SENSOR_POWER_*: the board's, so this file names no pin */
 /* NUCLEO: PA11 SDA, PA12 SCL. Wio-E5 mini: PA15 SDA, PB15 SCL. Both I2C2, AF4 (issue #35). */
-#define POWER_PIN GPIO_PIN_9   /* PA9 = D9, CN5.2 */
+#define POWER_PIN BOARD_SENSOR_POWER_PIN   /* PA9 on both */
 #define I2C_GUARD_MS 30U
 #define I2C_BYTE_US 90U        /* one byte and its acknowledge at 100 kHz */
 #define US_PER_MS 1000U
@@ -124,34 +125,34 @@ static I2C_HandleTypeDef hi2c2;
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
 {
-  if (hi2c->Instance != I2C2) return;
-  RCC_PeriphCLKInitTypeDef clk = { .PeriphClockSelection = RCC_PERIPHCLK_I2C2,
-                                   .I2c2ClockSelection = RCC_I2C2CLKSOURCE_PCLK1 };
+  if (hi2c->Instance != BOARD_I2C) return;
+  RCC_PeriphCLKInitTypeDef clk = { .PeriphClockSelection = BOARD_I2C_PERIPHCLK,
+                                   .BOARD_I2C_CLKSEL = BOARD_I2C_CLKSRC_PCLK1 };
   (void)HAL_RCCEx_PeriphCLKConfig(&clk);   /* selects the I2C2 clock only, so it cannot time out */
   BOARD_I2C_GPIO_CLK_ENABLE();
   GPIO_InitTypeDef gpio = { .Pin = BOARD_I2C_SDA_PIN | BOARD_I2C_SCL_PIN, .Mode = GPIO_MODE_AF_OD, .Pull = GPIO_PULLUP,
-                            .Speed = GPIO_SPEED_FREQ_LOW, .Alternate = GPIO_AF4_I2C2 };
+                            .Speed = GPIO_SPEED_FREQ_LOW, .Alternate = BOARD_I2C_AF };
   BOARD_I2C_PINS_INIT(&gpio);
-  __HAL_RCC_I2C2_CLK_ENABLE();
-  HAL_NVIC_SetPriority(I2C2_EV_IRQn, I2C_IRQ_PRIORITY, 0);
-  HAL_NVIC_SetPriority(I2C2_ER_IRQn, I2C_IRQ_PRIORITY, 0);
-  HAL_NVIC_EnableIRQ(I2C2_EV_IRQn);
-  HAL_NVIC_EnableIRQ(I2C2_ER_IRQn);
+  BOARD_I2C_CLK_ENABLE();
+  HAL_NVIC_SetPriority(BOARD_I2C_EV_IRQn, I2C_IRQ_PRIORITY, 0);
+  HAL_NVIC_SetPriority(BOARD_I2C_ER_IRQn, I2C_IRQ_PRIORITY, 0);
+  HAL_NVIC_EnableIRQ(BOARD_I2C_EV_IRQn);
+  HAL_NVIC_EnableIRQ(BOARD_I2C_ER_IRQn);
 }
 
 /* cppcheck-suppress constParameterPointer ; ST's HAL callback signature */
 void HAL_I2C_MspDeInit(I2C_HandleTypeDef *hi2c)
 {
-  if (hi2c->Instance != I2C2) return;
-  HAL_NVIC_DisableIRQ(I2C2_EV_IRQn);
-  HAL_NVIC_DisableIRQ(I2C2_ER_IRQn);
-  __HAL_RCC_I2C2_CLK_DISABLE();
+  if (hi2c->Instance != BOARD_I2C) return;
+  HAL_NVIC_DisableIRQ(BOARD_I2C_EV_IRQn);
+  HAL_NVIC_DisableIRQ(BOARD_I2C_ER_IRQn);
+  BOARD_I2C_CLK_DISABLE();
   BOARD_I2C_PINS_DEINIT();
 }
 
 static void i2c_start(void)
 {
-  hi2c2.Instance = I2C2;
+  hi2c2.Instance = BOARD_I2C;
   hi2c2.Init.Timing = I2C_TIMING;
   hi2c2.Init.OwnAddress1 = 0;
   hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
@@ -402,10 +403,10 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 }
 static void on_guard(void *ctx) { (void)ctx; finish(I2C_ETIMEOUT); }
 
-void I2C2_EV_IRQHandler(void);   /* vector table names (startup_stm32wl55jcix.s) */
-void I2C2_ER_IRQHandler(void);
-void I2C2_EV_IRQHandler(void) { BUSYMON_ISR("I2C2_EV", HAL_I2C_EV_IRQHandler(&hi2c2)); }
-void I2C2_ER_IRQHandler(void) { BUSYMON_ISR("I2C2_ER", HAL_I2C_ER_IRQHandler(&hi2c2)); }
+void BOARD_I2C_EV_IRQHandler(void);   /* vector table names (the board's startup file) */
+void BOARD_I2C_ER_IRQHandler(void);
+void BOARD_I2C_EV_IRQHandler(void) { BUSYMON_ISR("I2C2_EV", HAL_I2C_EV_IRQHandler(&hi2c2)); }
+void BOARD_I2C_ER_IRQHandler(void) { BUSYMON_ISR("I2C2_ER", HAL_I2C_ER_IRQHandler(&hi2c2)); }
 ```
 
 ## 7. Starting an operation
@@ -533,7 +534,7 @@ static void recover_begin(void)
   (void)HAL_I2C_DeInit(&hi2c2);   /* fails only for a NULL handle. The code below takes the pins over anyway */
   /* An abandoned transfer can leave its interrupt pending and its handler set. Neither may run on
      the re-initialised peripheral. */
-  HAL_NVIC_ClearPendingIRQ(I2C2_EV_IRQn); HAL_NVIC_ClearPendingIRQ(I2C2_ER_IRQn);
+  HAL_NVIC_ClearPendingIRQ(BOARD_I2C_EV_IRQn); HAL_NVIC_ClearPendingIRQ(BOARD_I2C_ER_IRQn);
   hi2c2.XferISR = NULL;
   BOARD_I2C_PINS_HIGH();
   GPIO_InitTypeDef gpio = { .Pin = BOARD_I2C_SDA_PIN | BOARD_I2C_SCL_PIN, .Mode = GPIO_MODE_OUTPUT_OD, .Pull = GPIO_PULLUP,
@@ -646,7 +647,7 @@ profile there is no boot job: the bus is ready, and no channel can be selected (
 as `i2c_bus_init` returns.
 
 ```c {#init}
-void i2c_bus_power(int on) { HAL_GPIO_WritePin(GPIOA, POWER_PIN, on ? GPIO_PIN_SET : GPIO_PIN_RESET); }
+void i2c_bus_power(int on) { HAL_GPIO_WritePin(BOARD_SENSOR_POWER_PORT, POWER_PIN, on ? GPIO_PIN_SET : GPIO_PIN_RESET); }
 
 void i2c_bus_init(void)
 {
@@ -655,9 +656,9 @@ void i2c_bus_init(void)
   UTIL_SEQ_RegTask(1U << CFG_SEQ_Task_I2c, UTIL_SEQ_RFU, bus_task_timed);
   GPIO_InitTypeDef gpio = { .Pin = POWER_PIN, .Mode = GPIO_MODE_OUTPUT_PP, .Pull = GPIO_NOPULL,
                             .Speed = GPIO_SPEED_FREQ_LOW };
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  HAL_GPIO_WritePin(GPIOA, POWER_PIN, GPIO_PIN_SET);
-  HAL_GPIO_Init(GPIOA, &gpio);
+  BOARD_SENSOR_POWER_CLK_ENABLE();
+  HAL_GPIO_WritePin(BOARD_SENSOR_POWER_PORT, POWER_PIN, GPIO_PIN_SET);
+  HAL_GPIO_Init(BOARD_SENSOR_POWER_PORT, &gpio);
   i2c_start();
   booted = (uint8_t)(WS_I2C_MUX == 0);   /* the hub: nothing to boot */
   mux_ok = booted;

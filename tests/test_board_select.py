@@ -1,11 +1,11 @@
-"""The board selection of the node build (firmware/stage0-node/Makefile, BOARD=; issue #35) and the two
-board layers' pin headers (firmware/board/<board>/Core/Inc/board_pins.h).
+"""The board selection of the node build (firmware/stage0-node/Makefile, BOARD=; issues #35 and #36).
 
 make is run with a small extra makefile that prints the variables the selection sets, so nothing is
 compiled: the NUCLEO stays the default with its build directory and its usage and budget lines, the
 Wio-E5 mini builds the TX only, in its own directory, without the bench OLED, and an unknown board is
-refused. The headers: both boards define the same names; every pin the mini's names is on its headers;
-the mini's #error stops a bench OLED build; and its linker script keeps the NUCLEO's memory layout."""
+refused. What the build takes from a board (its roles, the bench OLED, the MCU, the unlock rule) comes
+from its generated gen/board.mk (tools/boardgen.py; tests/test_boardgen.py has the pin headers). The
+Wio-E5 mini's linker script keeps the NUCLEO's memory layout."""
 import re
 import shutil
 import subprocess
@@ -21,9 +21,6 @@ except ImportError:
 NODE = ROOT/'firmware/stage0-node'
 BOARDS = ROOT/'firmware/board'
 SHOW = 'show:\n\t@echo "$(BOARD_DIR)|$(BUILD)|$(strip $(USAGE_ARGS))|$(BUDGET_LABEL)|$(MCU_DEF)|$(notdir $(LDSCRIPT))|$(CLEAN_DIR)"\n'
-# The Wio-E5 mini's header pins (Zephyr boards/seeed/lora_e5_mini pinout; README.md there).
-WIO_HEADER = {'PA0', 'PA2', 'PA3', 'PA9', 'PA10', 'PA13', 'PA14', 'PA15', 'PB3', 'PB4', 'PB6', 'PB7', 'PB9', 'PB10',
-              'PB13', 'PB14', 'PB15', 'PC0', 'PC1'}
 
 
 def make(*args):
@@ -32,12 +29,6 @@ def make(*args):
         show.write_text(SHOW)
         return subprocess.run(['make', '-s', '-C', str(NODE), '-f', 'Makefile', '-f', str(show), *args, 'show'],
                               capture_output=True, text=True)
-
-
-def defines(path):
-    """The macro names a header defines (its include guard aside)."""
-    names = re.findall(r'^#define (\w+)', path.read_text(), re.M)
-    return {n for n in names if n != 'BOARD_PINS_H'}
 
 
 @unittest.skipUnless(shutil.which('make'), 'needs make')
@@ -62,8 +53,8 @@ class BoardSelection(unittest.TestCase):
 
     def test_refused_combinations(self):
         for args, message in ((('ROLE=rx', 'BOARD=wio-e5'), 'BOARD=wio-e5 is for ROLE=tx'),
-                              (('ROLE=tx', 'BOARD=wio-e5', 'WS_BENCH_OLED=1'), 'drive the RF switch'),
-                              (('ROLE=tx', 'BOARD=rak3172'), 'BOARD must be nucleo-wl55jc or wio-e5')):
+                              (('ROLE=tx', 'BOARD=wio-e5', 'WS_BENCH_OLED=1'), "drive the module's RF switch"),
+                              (('ROLE=tx', 'BOARD=rak3172'), 'BOARD must be one of: nucleo-wl55jc wio-e5')):
             with self.subTest(args=args):
                 r = make(*args)
                 self.assertNotEqual(r.returncode, 0)
@@ -80,31 +71,7 @@ class BoardSelection(unittest.TestCase):
                     self.assertIn('adapter serial X', r.stdout)
 
 
-class BoardPins(unittest.TestCase):
-    NUCLEO = BOARDS/'nucleo-wl55jc/Core/Inc/board_pins.h'
-    WIO = BOARDS/'wio-e5/Core/Inc/board_pins.h'
-
-    def test_both_boards_define_the_same_names(self):
-        self.assertEqual(defines(self.NUCLEO), defines(self.WIO))
-
-    def test_every_wio_e5_pin_is_on_its_headers(self):
-        text = self.WIO.read_text()
-        pins = {f'P{port}{n}' for port, n in re.findall(r'_PORT GPIO([A-C])\n#define \w+_PIN GPIO_PIN_(\d+)', text)}
-        self.assertEqual(pins, {'PA15', 'PB15', 'PC0', 'PB3'})        # SDA, SCL, cups, vane
-        self.assertLessEqual(pins, WIO_HEADER)
-        for name, n, comment in re.findall(r'^#define (\w+_PIN) GPIO_PIN_(\d+) /\* P[A-C](\d+)', text, re.M):
-            with self.subTest(name=name):
-                self.assertEqual(n, comment)                           # the comment names the same pin
-
-    def test_the_wio_e5_header_stops_a_bench_oled_build(self):
-        cc = shutil.which('cc')
-        if cc is None:
-            self.skipTest('needs cc')
-        for oled, ok in ((0, True), (1, False)):
-            with self.subTest(oled=oled):
-                r = subprocess.run([cc, '-E', f'-DWS_BENCH_OLED={oled}', '-x', 'c', str(self.WIO)], capture_output=True, text=True)
-                self.assertEqual(r.returncode == 0, ok, r.stderr[-500:])
-
+class LinkerLayout(unittest.TestCase):
     def test_the_wio_e5_keeps_the_nucleo_memory_layout(self):
         def memory(path):
             text = path.read_text()

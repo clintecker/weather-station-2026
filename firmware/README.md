@@ -6,7 +6,8 @@
 
 | Path | What |
 |---|---|
-| `board/nucleo-wl55jc/` | The shared NUCLEO-WL55JC1 board code from ST's CubeWL template (`Core/`, `startup/`, `SubGHz_Phy/Target/`). Also the linker script and `board.mk`. The linker script gives every project a 190 KB application region (pages 0–94). Pages 95–127 hold the journal and the node key. `board.mk` holds the common build rules that each project Makefile includes. `Core/Inc/sys_conf.h` takes `VERBOSE_LEVEL` and `LOW_POWER_DISABLE` from the project's `DEFS`. |
+| `board/<name>/` | One directory per hardware format (`nucleo-wl55jc`, the NUCLEO-WL55JC1; `wio-e5`, the Seeed Wio-E5 mini TX). `board.toml` holds every hardware fact the station's code uses; `tools/boardgen.py` checks it against ST's pin data and generates `gen/` (the pin and capability headers, the board's make variables, its pin table `gen/pins.md`). Beside it: the board's code from ST's CubeWL template (`Core/`, `startup/`), the linker script and a two-line `board.mk`. The linker script gives every project a 190 KB application region (pages 0–94). Pages 95–127 hold the journal and the node key. `Core/Inc/sys_conf.h` takes `VERBOSE_LEVEL` and `LOW_POWER_DISABLE` from the project's `DEFS`. Adding a board: [`../docs/adding-a-board.md`](../docs/adding-a-board.md). |
+| `board/stm32wl/` | What every board shares: the common build rules (`rules.mk`, which each board's `board.mk` includes), `SubGHz_Phy/App` and `SubGHz_Phy/Target` (one generic `radio_board_if.c`, driven by the board's `gen/board_caps.h`). |
 | `stage0-node/` | The weather-station firmware, TX and RX roles. It keeps its own `Core/Src/stm32wlxx_it.c` (the flash error-correction hook in the non-maskable interrupt handler, and the HardFault record). |
 | `rangetest/` | The bench range-test tool ([`rangetest/README.md`](rangetest/README.md)). |
 | `i2cscan/` | The bench I2C tool: bus scan, INA228 and MAX17048 readings ([`i2cscan/README.md`](i2cscan/README.md)). |
@@ -16,15 +17,16 @@
 | `fuzz/` | Host fuzz targets for the input parsers ([`fuzz/README.md`](fuzz/README.md)). |
 | `stage0.c`, `test_*.c`, `sim_flash.*` | Portable sensor and policy code, plus the host test drivers that `tests/` runs. |
 
-Each project keeps only its application, its sequencer task list (`Core/Inc/utilities_def.h`) and a short Makefile. The Makefile sets `TARGET`, `APP_SRC`, `DEFS` and `OPT`, then includes `../board/nucleo-wl55jc/board.mk`.
+Each project keeps only its application, its sequencer task list (`Core/Inc/utilities_def.h`) and a short Makefile. The Makefile sets `TARGET`, `APP_SRC`, `DEFS` and `OPT`, then includes `$(BOARD_DIR)/board.mk` (`../board/nucleo-wl55jc/board.mk` for the NUCLEO-only tools).
 
 ```mermaid
 flowchart TD
-  NM["stage0-node/Makefile<br/>ROLE=tx or rx"] -->|"include"| BMK["board/nucleo-wl55jc/board.mk"]
+  NM["stage0-node/Makefile<br/>ROLE=tx or rx, BOARD="] -->|"include"| BMK["board/&lt;BOARD&gt;/board.mk<br/>its gen/board.mk"]
   RM["rangetest/Makefile"] -->|"include"| BMK
   IM["i2cscan/Makefile"] -->|"include"| BMK
   BLM["benchlink/Makefile<br/>ROLE=tx or rx"] -->|"include"| BMK
-  BMK --> BC["board code: Core, startup, SubGHz_Phy/Target"]
+  BMK --> RUL["board/stm32wl/rules.mk<br/>SubGHz_Phy (generic radio_board_if.c)"]
+  BMK --> BC["board code: Core, startup, gen/ (from board.toml)"]
   BMK --> LD["linker script<br/>190 KB application region"]
   NM --> APP["stage0-node/App"]
   NM --> COM["common/ and stage0.c"]

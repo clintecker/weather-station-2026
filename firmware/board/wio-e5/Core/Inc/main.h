@@ -61,7 +61,7 @@ void Error_Handler(void);
 #define RTC_PREDIV_S ((1<<RTC_N_PREDIV_S)-1)
 #define RTC_PREDIV_A ((1<<(15-RTC_N_PREDIV_S))-1)
 /* weather-station-2026: the Seeed Wio-E5 mini (issue #35; ../README.md). One user LED, on when low
-   (Core/Inc/board_pins.h); no user buttons wired to the firmware (BOOT is PB13, RESET is NRST); no probe
+   (board.toml, gen/board_pins.h); no user buttons wired to the firmware (BOOT is PB13, RESET is NRST); no probe
    pins (Core/Inc/sys_debug.h). The console is USART1 on PB6/PB7, the module's own USB-UART bridge. */
 #define LED1_Pin GPIO_PIN_5
 #define LED1_GPIO_Port GPIOB

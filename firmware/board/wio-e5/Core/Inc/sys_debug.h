@@ -96,7 +96,7 @@ extern "C" {
 /* Exported macro ------------------------------------------------------------*/
 /* weather-station-2026 (Wio-E5 mini): no probe pins. PB12 is not on a header and PB13 is the BOOT button
    (a push-pull output there would fight it), so DBG_Init leaves both alone and the radio's probe writes
-   (SubGHz_Phy/Target/radio_conf.h) compile to nothing. */
+   (../stm32wl/SubGHz_Phy/Target/radio_conf.h) compile to nothing. */
 #define DISABLE_PROBE_GPIO
 #if !defined (DISABLE_PROBE_GPIO)
 

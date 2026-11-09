@@ -16,17 +16,20 @@
 # WS_BENCH_OLED and WS_POWER_PROFILE are not remembered: pass them to `flash` as to the build (the flash usage
 # line and the budget line name them).
 #
-# The board code (Core/, startup/, SubGHz_Phy/Target/, linker script) and the common build rules
-# live in ../board/nucleo-wl55jc (board.mk). This project keeps its own Core/Src/stm32wlxx_it.c
+# The board code (board.toml and its generated gen/, Core/, startup/, linker script) lives in
+# ../board/<BOARD>; what every board shares (SubGHz_Phy/, the common build rules: rules.mk) in ../board/stm32wl. This project keeps its own Core/Src/stm32wlxx_it.c
 # (flash ECC NMI hook, HardFault record) and Core/Inc/utilities_def.h (sequencer tasks).
 # Pinned inputs: tools/fetch-vendor.sh (STM32CubeWL v1.6.0 + submodules, Mbed TLS 3.6.6)
 # and xPack arm-none-eabi-gcc 15.2.1-1.1.
 
 ROLE      ?= tx
 ROOT       = ../..
-# The board (../board/<BOARD>): nucleo-wl55jc (the default), or wio-e5 (the TX only, field build only).
+# The board: any ../board/<BOARD> with a board.toml (nucleo-wl55jc, the default; wio-e5, the TX only, field
+# build only). Its roles and whether it can drive the bench OLED come from its generated gen/board.mk
+# (tools/boardgen.py). BOARD_DIR may point elsewhere (a board being written; tests/test_boardgen.py).
 BOARD     ?= nucleo-wl55jc
-BOARD_DIR  = ../board/$(BOARD)
+BOARD_DIR ?= ../board/$(BOARD)
+BOARDS     = $(patsubst ../board/%/board.toml,%,$(wildcard ../board/*/board.toml))
 # CUBE comes from board.mk (expanded when used).
 MBEDTLS    = $(CUBE)/Middlewares/Third_Party/mbed-crypto
 FW_VERSION:= $(shell git describe --always --dirty --abbrev=12 2>/dev/null || echo unknown)
@@ -39,11 +42,12 @@ FW_BUILD_ID := $(or $(shell printf '%s\n' '$(FW_VERSION)' | grep -v -e '-dirty$$
 ifeq ($(filter $(ROLE),tx rx),)
 $(error ROLE must be tx or rx)
 endif
-ifeq ($(filter $(BOARD),nucleo-wl55jc wio-e5),)
-$(error BOARD must be nucleo-wl55jc or wio-e5)
+ifeq ($(wildcard $(BOARD_DIR)/board.toml),)
+$(error BOARD must be one of: $(BOARDS) (no $(BOARD_DIR)/board.toml))
 endif
-ifeq ($(BOARD)$(ROLE),wio-e5rx)
-$(error BOARD=wio-e5 is for ROLE=tx: the receiver stays on the NUCLEO)
+include $(BOARD_DIR)/gen/board.mk
+ifeq ($(filter $(ROLE),$(BOARD_ROLES)),)
+$(error BOARD=$(BOARD) is for ROLE=$(BOARD_ROLES) (its board.toml roles))
 endif
 
 # The bench OLED (App/oled_dma.h; docs/superpowers/specs/2026-11-04-node-oled-and-e2e-design.md):
@@ -57,8 +61,8 @@ endif
 ifeq ($(ROLE)$(WS_BENCH_OLED),rx1)
 $(error WS_BENCH_OLED=1 is for ROLE=tx: the receiver has no display)
 endif
-ifeq ($(BOARD)$(WS_BENCH_OLED),wio-e51)
-$(error WS_BENCH_OLED=1 is for the NUCLEO: on the Wio-E5 mini PA4 and PA5 (the OLED's SPI1) drive the RF switch)
+ifeq ($(WS_BENCH_OLED)$(BOARD_BENCH_OLED_OK),10)
+$(error WS_BENCH_OLED=1 is not for BOARD=$(BOARD): $(BOARD_BENCH_OLED_WHY))
 endif
 OLED_SUFFIX = $(if $(filter 1,$(WS_BENCH_OLED)),-oled)
 # Another board than the NUCLEO builds in its own directory too (build/tx-wio-e5), and names itself.
@@ -120,7 +124,7 @@ $(BUILD)/app/node_store.o $(BUILD)/app/stage0.o: CFLAGS += -fno-optimize-crc
 
 # Our own C (not ST-generated Core/, not vendor, not the board code) builds with board.mk's strict
 # warning set and -Werror (the board's own oled_spi1.c too). ANALYZE=1 adds -fanalyzer (used by CI).
-STRICT_SRC = $(filter App/%.c $(ROOT)/firmware/%.c $(BOARD_DIR)/oled_spi1.c,$(APP_SRC))
+STRICT_SRC = $(filter-out $(BOARD_COMMON)/%,$(filter App/%.c $(ROOT)/firmware/%.c $(BOARD_DIR)/oled_spi1.c,$(APP_SRC)))
 
 # Code-space budget (docs/firmware-budget.md): fail when code + initialized data exceed
 # FLASH_BUDGET_PCT of the 190 KB application region (pages 0-94), well before the linker's hard
