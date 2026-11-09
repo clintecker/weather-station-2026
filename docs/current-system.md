@@ -69,6 +69,7 @@ the open questions that the physical build must answer.
 |---|---|
 | Power profile C | `WS_POWER_PROFILE 3` stops the build with `#error` (BQ25798 driver is a later phase) (PC:35-36) |
 | I2C mux variant | `WS_I2C_MUX=1` builds a TCA9548A (0x71) port bus with RESET on PB14; default 0 is the passive hub (IBH:8-21, BI:221-229) |
+| Wio-E5 mini TX board | `make ROLE=tx BOARD=wio-e5` builds the TX for a Seeed Wio-E5 mini (STM32WLE5JC) from `firmware/board/wio-e5`: I2C2 on PA15/PB15, cups PC0, vane PB3, console USART1 on its USB-C, no charger pins; compiled, not yet run on hardware (issue #35; `firmware/board/wio-e5/README.md`) |
 | Sensor-port power switch | PA9 is driven high as "sensor power enable" but is unconnected on the bench; no sensor power switch is part of the breadboard build (IBH:65-70, IBC:417-420, BSW:90) |
 | Field build | `-DWS_FIELD_BUILD` drops `TEST-HANG`/`TEST-FAULT` (NR:119) |
 
