@@ -1,11 +1,12 @@
-# Common build for every NUCLEO-WL55JC1 project (stage0-node, rangetest, i2cscan, benchlink).
+# Common build for every NUCLEO-WL55JC1 project (stage0-node, rangetest, i2cscan, benchlink), and the
+# shared rules of the other boards: ../wio-e5/board.mk sets the MCU variables below, then includes this.
 #
 # The board directory holds the ST CubeMX/CubeIDE template code all projects share: Core/ (HAL init,
 # UART, RTC, low power), startup/, SubGHz_Phy/Target/ and the linker script (190 KB application
 # region: pages 95..127 hold the node key and journal, see firmware/stage0-node/App/flash_layout.h).
 #
 # A project Makefile sets these, then includes this file last:
-#   BOARD      path to this directory (../board/nucleo-wl55jc)
+#   BOARD_DIR  path to the board directory (../board/nucleo-wl55jc)
 #   TARGET     output path without extension (e.g. $(BUILD)/rangetest)
 #   BUILD      build directory; every object lands in $(BUILD)/app or $(BUILD)/cube
 #   APP_SRC    the project's C sources in link order; use $(BOARD_CORE_SRC), $(BOARD_SYS_SRC) and
@@ -43,17 +44,23 @@ CLEAN_DIR ?= $(BUILD)
 
 # Shared sources. Core/Src keeps the glob order the projects have always linked in; a project's own
 # stm32wlxx_it.c takes the stock one's place in that order.
-IT_SRC         ?= $(BOARD)/Core/Src/stm32wlxx_it.c
-BOARD_CORE_SRC  = $(patsubst $(BOARD)/Core/Src/stm32wlxx_it.c,$(IT_SRC),$(wildcard $(BOARD)/Core/Src/*.c))
-BOARD_SYS_SRC   = $(BOARD)/startup/syscalls.c $(BOARD)/startup/sysmem.c
-BOARD_RADIO_SRC = $(BOARD)/SubGHz_Phy/Target/radio_board_if.c
+IT_SRC         ?= $(BOARD_DIR)/Core/Src/stm32wlxx_it.c
+BOARD_CORE_SRC  = $(patsubst $(BOARD_DIR)/Core/Src/stm32wlxx_it.c,$(IT_SRC),$(wildcard $(BOARD_DIR)/Core/Src/*.c))
+BOARD_SYS_SRC   = $(BOARD_DIR)/startup/syscalls.c $(BOARD_DIR)/startup/sysmem.c
+BOARD_RADIO_SRC = $(BOARD_DIR)/SubGHz_Phy/Target/radio_board_if.c
 # MX_SubGHz_Phy_Init/Process, which hand over to the project's SubGHz app.
-BOARD_APP_SRC   = $(BOARD)/SubGHz_Phy/App/app_subghz_phy.c
-ASM_SRC         = $(BOARD)/startup/startup_stm32wl55jcix.s
+BOARD_APP_SRC   = $(BOARD_DIR)/SubGHz_Phy/App/app_subghz_phy.c
+# The MCU (another board's board.mk sets these before including this file): its device define, its
+# startup file, its linker script, and the ST board support (BSP) sources and headers it uses.
+MCU_DEF        ?= STM32WL55xx
+ASM_SRC        ?= $(BOARD_DIR)/startup/startup_stm32wl55jcix.s
+LDSCRIPT       ?= $(BOARD_DIR)/STM32WL55JCIX_FLASH.ld
+BSP_SRC        ?= $(CUBE)/Drivers/BSP/STM32WLxx_Nucleo/stm32wlxx_nucleo_radio.c \
+                  $(CUBE)/Drivers/BSP/STM32WLxx_Nucleo/stm32wlxx_nucleo.c
+BSP_INC        ?= $(CUBE)/Drivers/BSP/STM32WLxx_Nucleo
 
 HAL = $(CUBE)/Drivers/STM32WLxx_HAL_Driver/Src/stm32wlxx_hal
-CUBE_SRC = $(CUBE)/Drivers/BSP/STM32WLxx_Nucleo/stm32wlxx_nucleo_radio.c \
-           $(CUBE)/Drivers/BSP/STM32WLxx_Nucleo/stm32wlxx_nucleo.c \
+CUBE_SRC = $(BSP_SRC) \
            $(HAL).c $(HAL)_cortex.c $(HAL)_dma.c $(HAL)_dma_ex.c $(HAL)_exti.c \
            $(HAL)_flash.c $(HAL)_flash_ex.c $(HAL)_gpio.c $(HAL)_pwr.c $(HAL)_pwr_ex.c \
            $(HAL)_rcc.c $(HAL)_rcc_ex.c $(HAL)_rtc.c $(HAL)_rtc_ex.c $(HAL)_subghz.c \
@@ -70,8 +77,8 @@ CUBE_SRC = $(CUBE)/Drivers/BSP/STM32WLxx_Nucleo/stm32wlxx_nucleo_radio.c \
            $(CUBE)/Utilities/trace/adv_trace/stm32_adv_trace.c \
            $(CUBE_EXTRA)
 
-INCS = $(PROJ_INCS) $(BOARD)/Core/Inc $(BOARD)/SubGHz_Phy/App $(BOARD)/SubGHz_Phy/Target \
-       $(CUBE)/Drivers/BSP/STM32WLxx_Nucleo \
+INCS = $(PROJ_INCS) $(BOARD_DIR)/Core/Inc $(BOARD_DIR)/SubGHz_Phy/App $(BOARD_DIR)/SubGHz_Phy/Target \
+       $(BSP_INC) \
        $(CUBE)/Drivers/CMSIS/Device/ST/STM32WLxx/Include \
        $(CUBE)/Drivers/CMSIS/Include \
        $(CUBE)/Drivers/STM32WLxx_HAL_Driver/Inc \
@@ -84,9 +91,9 @@ INCS = $(PROJ_INCS) $(BOARD)/Core/Inc $(BOARD)/SubGHz_Phy/App $(BOARD)/SubGHz_Ph
        $(EXTRA_INCS)
 
 CPU     = -mcpu=cortex-m4 -mthumb -mfloat-abi=soft
-CFLAGS  = $(CPU) -DCORE_CM4 -DSTM32WL55xx -DUSE_HAL_DRIVER $(DEFS) $(addprefix -I,$(INCS)) \
+CFLAGS  = $(CPU) -DCORE_CM4 -D$(MCU_DEF) -DUSE_HAL_DRIVER $(DEFS) $(addprefix -I,$(INCS)) \
           -std=gnu11 $(OPT) -g3 -Wall -ffunction-sections -fdata-sections -MMD -MP -fcallgraph-info=su
-LDFLAGS = $(CPU) -T $(BOARD)/STM32WL55JCIX_FLASH.ld --specs=nano.specs --specs=nosys.specs \
+LDFLAGS = $(CPU) -T $(LDSCRIPT) --specs=nano.specs --specs=nosys.specs \
           -Wl,--gc-sections -Wl,-Map=$(TARGET).map -Wl,--no-warn-rwx-segments \
           -Wl,--start-group -lc -lm -Wl,--end-group
 
@@ -153,7 +160,7 @@ $(BUILD)/app/startup.o: $(ASM_SRC)
 
 APP_FLASH_BYTES ?= 194560
 
-$(TARGET).elf: $(OBJS) $(BUILD)/link.flags $(BOARD)/STM32WL55JCIX_FLASH.ld $(MAKEFILE_LIST)
+$(TARGET).elf: $(OBJS) $(BUILD)/link.flags $(LDSCRIPT) $(MAKEFILE_LIST)
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@
 ifneq ($(FLASH_BUDGET_PCT),)

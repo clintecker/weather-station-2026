@@ -4,7 +4,7 @@
 #   make                      build build/rangetest.elf/.bin
 #   make flash SERIAL=<stlink serial>
 
-BOARD  = ../board/nucleo-wl55jc
+BOARD_DIR = ../board/nucleo-wl55jc
 BUILD  = build
 TARGET = $(BUILD)/rangetest
 
@@ -22,4 +22,4 @@ OPT       = -Og
 # Our own C (the range-test protocol) builds with the strict warning set and -Werror.
 STRICT_SRC = App/rt_proto.c
 
-include $(BOARD)/board.mk
+include $(BOARD_DIR)/board.mk

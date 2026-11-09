@@ -9,6 +9,10 @@
 #   make ROLE=tx WS_POWER_PROFILE=2      a power telemetry profile (App/power_config.h; default: its own)
 #   make field-check                     build ROLE=tx without the OLED (build/tx-fieldcheck); fail if any display
 #                                        code is linked
+#   make ROLE=tx BOARD=wio-e5            the TX on a Seeed Wio-E5 mini (STM32WLE5JC) -> build/tx-wio-e5/
+#   make ROLE=tx BOARD=wio-e5 flash SERIAL=<NUCLEO ST-LINK serial>   through the NUCLEO's ST-LINK over SWD
+#   make BOARD=wio-e5 unlock SERIAL=<...>  once per new board: RDP level 1 to 0 (erases Seeed's AT firmware)
+#                                        (../board/wio-e5/README.md)
 # WS_BENCH_OLED and WS_POWER_PROFILE are not remembered: pass them to `flash` as to the build (the flash usage
 # line and the budget line name them).
 #
@@ -20,7 +24,9 @@
 
 ROLE      ?= tx
 ROOT       = ../..
-BOARD      = ../board/nucleo-wl55jc
+# The board (../board/<BOARD>): nucleo-wl55jc (the default), or wio-e5 (the TX only, field build only).
+BOARD     ?= nucleo-wl55jc
+BOARD_DIR  = ../board/$(BOARD)
 # CUBE comes from board.mk (expanded when used).
 MBEDTLS    = $(CUBE)/Middlewares/Third_Party/mbed-crypto
 FW_VERSION:= $(shell git describe --always --dirty --abbrev=12 2>/dev/null || echo unknown)
@@ -32,6 +38,12 @@ FW_BUILD_ID := $(or $(shell printf '%s\n' '$(FW_VERSION)' | grep -v -e '-dirty$$
 
 ifeq ($(filter $(ROLE),tx rx),)
 $(error ROLE must be tx or rx)
+endif
+ifeq ($(filter $(BOARD),nucleo-wl55jc wio-e5),)
+$(error BOARD must be nucleo-wl55jc or wio-e5)
+endif
+ifeq ($(BOARD)$(ROLE),wio-e5rx)
+$(error BOARD=wio-e5 is for ROLE=tx: the receiver stays on the NUCLEO)
 endif
 
 # The bench OLED (App/oled_dma.h; docs/superpowers/specs/2026-11-04-node-oled-and-e2e-design.md):
@@ -45,17 +57,22 @@ endif
 ifeq ($(ROLE)$(WS_BENCH_OLED),rx1)
 $(error WS_BENCH_OLED=1 is for ROLE=tx: the receiver has no display)
 endif
+ifeq ($(BOARD)$(WS_BENCH_OLED),wio-e51)
+$(error WS_BENCH_OLED=1 is for the NUCLEO: on the Wio-E5 mini PA4 and PA5 (the OLED's SPI1) drive the RF switch)
+endif
 OLED_SUFFIX = $(if $(filter 1,$(WS_BENCH_OLED)),-oled)
+# Another board than the NUCLEO builds in its own directory too (build/tx-wio-e5), and names itself.
+BOARD_SUFFIX = $(if $(filter-out nucleo-wl55jc,$(BOARD)),-$(BOARD))
 # The power telemetry profile (App/power_config.h): empty keeps the header's default.
 WS_POWER_PROFILE ?=
 
-BUILD      = build/$(ROLE)$(OLED_SUFFIX)
+BUILD      = build/$(ROLE)$(OLED_SUFFIX)$(BOARD_SUFFIX)
 TARGET     = $(BUILD)/stage0-$(ROLE)
 # `make clean` removes both roles (build/), or only the BUILD given on the command line.
-CLEAN_DIR  = $(patsubst %/$(ROLE)$(OLED_SUFFIX),%,$(BUILD))
+CLEAN_DIR  = $(patsubst %/$(ROLE)$(OLED_SUFFIX)$(BOARD_SUFFIX),%,$(BUILD))
 # What the flash usage line and the budget line name: the role and the flags that change the image.
-USAGE_ARGS = ROLE=$(ROLE) $(if $(filter 1,$(WS_BENCH_OLED)),WS_BENCH_OLED=1) $(if $(WS_POWER_PROFILE),WS_POWER_PROFILE=$(WS_POWER_PROFILE))
-BUDGET_LABEL = $(ROLE)$(if $(WS_POWER_PROFILE),$(comma) profile $(WS_POWER_PROFILE))$(if $(filter 1,$(WS_BENCH_OLED)),$(comma) bench OLED)
+USAGE_ARGS = ROLE=$(ROLE) $(if $(BOARD_SUFFIX),BOARD=$(BOARD)) $(if $(filter 1,$(WS_BENCH_OLED)),WS_BENCH_OLED=1) $(if $(WS_POWER_PROFILE),WS_POWER_PROFILE=$(WS_POWER_PROFILE))
+BUDGET_LABEL = $(ROLE)$(if $(BOARD_SUFFIX),$(comma) $(BOARD))$(if $(WS_POWER_PROFILE),$(comma) profile $(WS_POWER_PROFILE))$(if $(filter 1,$(WS_BENCH_OLED)),$(comma) bench OLED)
 comma := ,
 
 IT_SRC  = Core/Src/stm32wlxx_it.c
@@ -78,7 +95,7 @@ APP_SRC += App/oled_dma.c App/oled_app.c App/oled_view.c App/scr_sched.c App/scr
            App/scr_detail.c App/scr_interludes.c App/scr_boot.c App/scr_mark.c App/scr_rain.c App/scr_silly.c App/scr_art.c App/scr_font.c App/scr_kana.c \
            $(ROOT)/firmware/common/oled_draw.c $(ROOT)/firmware/common/oled_font.c $(ROOT)/firmware/common/oled_row.c \
            $(ROOT)/firmware/common/font5x7.c \
-           $(ROOT)/firmware/common/ssd1325.c $(BOARD)/oled_spi1.c
+           $(ROOT)/firmware/common/ssd1325.c $(BOARD_DIR)/oled_spi1.c
 endif
 
 HAL_EXTRA = i2c i2c_ex iwdg adc adc_ex lptim
@@ -86,7 +103,7 @@ ifeq ($(ROLE),tx)
 CUBE_EXTRA = $(addprefix $(MBEDTLS)/library/,aes.c ccm.c block_cipher.c platform_util.c constant_time.c)
 endif
 
-PROJ_INCS  = App Core/Inc $(ROOT)/firmware $(ROOT)/firmware/common $(BOARD)
+PROJ_INCS  = App Core/Inc $(ROOT)/firmware $(ROOT)/firmware/common $(BOARD_DIR)
 EXTRA_INCS = $(MBEDTLS)/include
 
 DEFS = -DWS_ROLE_$(ROLE) -DWS_FW_VERSION=\"$(FW_VERSION)\" -DWS_FW_BUILD_ID=$(FW_BUILD_ID)UL -DMBEDTLS_CONFIG_FILE=\"ws_mbedtls_config.h\"
@@ -103,7 +120,7 @@ $(BUILD)/app/node_store.o $(BUILD)/app/stage0.o: CFLAGS += -fno-optimize-crc
 
 # Our own C (not ST-generated Core/, not vendor, not the board code) builds with board.mk's strict
 # warning set and -Werror (the board's own oled_spi1.c too). ANALYZE=1 adds -fanalyzer (used by CI).
-STRICT_SRC = $(filter App/%.c $(ROOT)/firmware/%.c $(BOARD)/oled_spi1.c,$(APP_SRC))
+STRICT_SRC = $(filter App/%.c $(ROOT)/firmware/%.c $(BOARD_DIR)/oled_spi1.c,$(APP_SRC))
 
 # Code-space budget (docs/firmware-budget.md): fail when code + initialized data exceed
 # FLASH_BUDGET_PCT of the 190 KB application region (pages 0-94), well before the linker's hard
@@ -112,7 +129,7 @@ FLASH_BUDGET_PCT ?= 90
 # No dynamic allocation (docs/power-of-ten.md, rule 3): the link fails if malloc & co. are linked in.
 NO_HEAP = 1
 
-include $(BOARD)/board.mk
+include $(BOARD_DIR)/board.mk
 
 # The field build links no display code (design, "Field builds"): build ROLE=tx with WS_BENCH_OLED=0
 # (and the default power profile) in its own directory, so it never replaces a build in build/tx, and

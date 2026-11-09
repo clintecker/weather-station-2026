@@ -6,7 +6,7 @@
 #   make                      build build/i2cscan.elf/.bin
 #   make flash SERIAL=<stlink serial>
 
-BOARD  = ../board/nucleo-wl55jc
+BOARD_DIR = ../board/nucleo-wl55jc
 BUILD  = build
 TARGET = $(BUILD)/i2cscan
 
@@ -23,17 +23,17 @@ APP_SRC = $(BOARD_CORE_SRC) \
           ../common/oled_row.c \
           ../common/font5x7.c \
           ../common/ssd1325.c \
-          $(BOARD)/oled_spi1.c \
+          $(BOARD_DIR)/oled_spi1.c \
           $(BOARD_RADIO_SRC) \
           $(BOARD_SYS_SRC)
 
 HAL_EXTRA = i2c i2c_ex adc adc_ex lptim
-PROJ_INCS = Core/Inc App ../common $(BOARD)   # power_regs.h, oled_draw.h, ssd1325.h, oled_spi1.h: shared with the node
+PROJ_INCS = Core/Inc App ../common $(BOARD_DIR)   # power_regs.h, oled_draw.h, ssd1325.h, oled_spi1.h: shared with the node
 DEFS      = -DDEBUG -DVERBOSE_LEVEL=VLEVEL_M
 OPT       = -Og
 
 # Our own C builds with the strict warning set and -Werror.
 STRICT_SRC = App/i2cscan.c App/meters.c App/bench_regs.c ../common/power_regs.c App/bench_screen.c App/oled.c ../common/oled_draw.c ../common/oled_font.c ../common/font5x7.c \
-             ../common/oled_row.c ../common/ssd1325.c $(BOARD)/oled_spi1.c
+             ../common/oled_row.c ../common/ssd1325.c $(BOARD_DIR)/oled_spi1.c
 
-include $(BOARD)/board.mk
+include $(BOARD_DIR)/board.mk

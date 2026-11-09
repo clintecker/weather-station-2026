@@ -6,7 +6,7 @@
 #   make ROLE=tx|rx flash SERIAL=<stlink serial>
 
 ROLE  ?= tx
-BOARD  = ../board/nucleo-wl55jc
+BOARD_DIR = ../board/nucleo-wl55jc
 BUILD  = build/$(ROLE)
 TARGET = $(BUILD)/benchlink-$(ROLE)
 
@@ -30,4 +30,4 @@ OPT       = -Og
 
 STRICT_SRC = App/benchlink.c App/bl_guard.c App/bl_pkt.c ../i2cscan/App/bench_regs.c ../common/power_regs.c
 
-include $(BOARD)/board.mk
+include $(BOARD_DIR)/board.mk
