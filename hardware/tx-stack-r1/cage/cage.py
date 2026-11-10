@@ -2,7 +2,7 @@
 
 The base replaces the #905 (TIBOX) body: 100 mm deep outside, 3 mm walls, mating exactly with the #905's clear
 lid and its O-ring: a 9 mm land with a tongue pressing into the lid's O-ring channel, corner blocks with M4 heat-set
-inserts under the lid's bosses (Clint's photo); the rest of the lid interface is L1-L6, and `--stl` refuses until
+inserts under the lid's bosses (Clint's photo); the screw (L1) and the rim coupon's fit are not settled, and `--stl` refuses until
 those are measured.
 It hangs on its pole by its back, long side vertical. Box frame: Xb across from the inside left wall (seen from the
 open lid), Yb from the inside floor (the back as hung) toward the lid, Zb up from the inside bottom wall.
@@ -23,7 +23,8 @@ M12 vent boss, the SMA bulkhead boss, two pole lugs on the back (no screws throu
 
 Run:  python3 cage.py           print the parts and check them against the box inside (no CadQuery needed)
       ../../../.venv-cad/bin/python cage.py --solid   also build the solids in CadQuery and check them
-      ../../../.venv-cad/bin/python cage.py --stl     export STL: refused until L1-L6 are measured
+      ../../../.venv-cad/bin/python cage.py --stl     export STL: refused until the lid gate is sourced
+      ../../../.venv-cad/bin/python cage.py --coupon  the rim test-fit coupon (one corner, 45 x 45 x 8): not gated
 """
 import sys
 from pathlib import Path
@@ -34,7 +35,9 @@ import stack as st  # noqa: E402
 from stack import S  # noqa: E402
 
 # ------------------------------------------------------------------ the lid interface and the box
-LID_KEYS = ["l1_lid_screw", "l2_screw_pos", "l3_channel_depth", "l4_oring_proud", "l5_lid_out", "l6_body_rib"]
+LID_KEYS = ["l2_screw_pos", "l4_oring_proud", "l5_lid_out", "l6_body_rib", "coupon_fit"]
+SCREW_OPT = S.val("lid_screw_opt")
+LID_KEYS += ["l1_lid_screw"] if SCREW_OPT == "a" else ["m4_screw", "m4_washer", "lid_pocket", "insert_m4"]
 T = S.val("base_wall")
 L_OUT, W_OUT, _r = S.val("l5_lid_out")
 BASE_D = S.val("base_out_depth")
@@ -47,15 +50,19 @@ RIM_OUT, RIM_CH, RIM_IN = S.val("lid_rim")
 LAND = RIM_OUT + RIM_CH + RIM_IN    # 9 mm
 LIP = RIM_OUT + RIM_CH - T          # the land's lip inside the 3 mm wall: carries the tongue (the lid's inner
 LIP_T = 3.0                         #   channel wall overhangs past it, in the lid); 3 thick, chamfered under
-TONGUE_W, TONGUE_H = S.val("rim_tongue")
-TONGUE_C = RIM_OUT + RIM_CH / 2     # the tongue's centre from the outside edge, on the channel
+TONGUE_W, TONGUE_H, TONGUE_C = S.val("rim_tongue")
 CORNER_Z, CORNER_X, CORNER_H = S.val("corner_keepout")   # the corner land (inside) and the insert post's depth
 BOSS_Z, BOSS_X = CORNER_Z - RIM_CH, CORNER_X - RIM_CH     # the lid's boss, inside the base wall
-SCREW_M, SCREW_L = S.val("l1_lid_screw")
+THREAD_D, THREAD_P, THREAD_L = S.val("l1_lid_screw")            # option a
+HEAD_D, HEAD_K, SCREW_L = S.val("m4_screw")                       # option b
+WASHER_D, WASHER_T = S.val("m4_washer")
+POCKET = S.val("lid_pocket")
+LID_HOLE = 8.0                                                    # the lid's hole (Clint, L1 "8 mm dia")
 _sl, _ss = S.val("l2_screw_pos")
 SCREWS = [(x, z) for x in (_ss - T, W - (_ss - T)) for z in (_sl - T, H - (_sl - T))]
 INSERT_D, INSERT_L = S.val("insert_m4")
-POST = _ss - T + INSERT_D / 2 + 3.0                     # the insert post, square from the inside corner
+_bore = INSERT_D if SCREW_OPT == "b" else THREAD_D
+POST = _ss - T + _bore / 2 + 3.0                        # the post, square from the inside corner (3 mm round the bore)
 CORNER = CORNER_Z                   # (for the cards' upper limit: unchanged, the blocks stop above the cards)
 EVM = S.val("evm")
 EVM_J8 = S.val("evm_j8")
@@ -232,7 +239,7 @@ def shell():
     out += [B(0, yl, 0, LIP, SEAM, H, "rim lip"), B(W - LIP, yl, 0, W, SEAM, H, "rim lip"),
             B(LIP, yl, 0, W - LIP, SEAM, LIP, "rim lip"), B(LIP, yl, H - LIP, W - LIP, SEAM, H, "rim lip")]
     out += [corner_box(sx, sz, CORNER_X, CORNER_Z, yl, SEAM, "corner land") for sx, sz in corners()]
-    out += [corner_box(sx, sz, POST, POST, SEAM - CORNER_H, yl, "corner post, M4 heat-set insert") for sx, sz in corners()]
+    out += [corner_box(sx, sz, POST, POST, SEAM - CORNER_H, yl, "corner post (lid screw)") for sx, sz in corners()]
     h, pts = TONGUE_W / 2, tongue()
     for (xa, za), (xb, zb) in zip(pts, pts[1:]):
         out.append(B(min(xa, xb) - h, SEAM, min(za, zb) - h, max(xa, xb) + h, SEAM + TONGUE_H, max(za, zb) + h,
@@ -308,6 +315,52 @@ def coax(arm):
     return pe, yb, zb, ax
 
 
+COUPON = (45.0, 45.0, 8.0)          # the test-fit coupon: one rim corner, outside footprint x height
+
+
+def coupon_boxes():
+    """One rim corner (the bottom-left as hung: Xb 0, Zb 0), COUPON outside, cut from the base at the seam: the two
+    walls, the rim lip, the corner land, the insert post (all solid to the coupon's underside, so it prints flat with no
+    bridges), the sealing lip on its S-curve, and the screw hole (the insert's bore, a position check). Its own frame: x, z from
+    the outside corner, y up from the coupon's underside. Returns (boxes, (hole x, hole z, hole radius))."""
+    cx, cz, ch = COUPON
+    y0 = SEAM + TONGUE_H - ch
+    mat = [B(-T, y0, -T, 0, SEAM, cz - T, "wall"), B(-T, y0, -T, cx - T, SEAM, 0, "wall")]
+    mat += [b for b in shell() if b.what in ("rim lip", "corner land", "tongue into the lid's O-ring channel")
+            or b.what.startswith("corner post")]
+    out = []
+    for b in mat:
+        x0, x1 = max(b.x0, -T), min(b.x1, cx - T)
+        ya, yb = (y0 if b.y1 <= SEAM else max(b.y0, y0)), min(b.y1, SEAM + TONGUE_H)   # solid under the land: prints
+                                                                                        # on its underside, no bridges
+        z0, z1 = max(b.z0, -T), min(b.z1, cz - T)
+        if x0 < x1 and ya < yb and z0 < z1:
+            out.append(B(x0 + T, ya - y0, z0 + T, x1 + T, yb - y0, z1 + T, b.what))
+    sx, sz = SCREWS[0]
+    return out, (sx + T, sz + T, (INSERT_D if SCREW_OPT == "b" else THREAD_D) / 2)
+
+
+def write_coupon():
+    import cadquery as cq
+    boxes, (hx, hz, hr) = coupon_boxes()
+    shape = None
+    for b in boxes:
+        s_ = cq.Workplane("XY").box(b.x1 - b.x0, b.z1 - b.z0, b.y1 - b.y0, centered=False).translate((b.x0, b.z0, b.y0))
+        shape = s_ if shape is None else shape.union(s_)
+    shape = shape.cut(cq.Workplane("XY").circle(hr).extrude(COUPON[2]).translate((hx, hz, 0)))
+    out = HERE / "stl" / "rim-coupon.stl"
+    out.parent.mkdir(exist_ok=True)
+    cq.exporters.export(shape, str(out))
+    return out
+
+
+def st_top_boxes():
+    """B3's parts in the box frame (the top card)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "layout"))
+    import layout_checks as lc
+    return [lc.to_box("B3", x) for _r, x in lc.board_boxes("B3") if not x.service] + [lc.card_slab("B3")]
+
+
 def stl_gate():
     """The lid interface must be measured (sourced) before any print file is made."""
     return [k for k in LID_KEYS if S.D[k][3] != "sourced"]
@@ -361,11 +414,12 @@ def main():
           f"{BP_BOTTOM:.1f}; B4 underside {under_b4:.1f}; top card B3 {st.card_z('B3'):.1f}")
     print(f"base: outside {L_OUT:g} x {W_OUT:g} x {BASE_D:g} (PETG, {T:g} mm walls), inside {W:g} x {H:g}, seam at Yb "
           f"{SEAM:g}, closed depth {D:g}; a {LAND:g} mm land ({RIM_OUT:g} + {RIM_CH:g} channel + {RIM_IN:g}, Clint) with a "
-          f"{TONGUE_W:g} x {TONGUE_H:g} tongue {TONGUE_C:g} in from the outside edge into the lid's O-ring channel (25 % "
-          f"squeeze on an assumed 3 mm round cord set 2 mm down); corner lands {CORNER_Z:g} x {CORNER_X:g}, insert posts "
+          f"{TONGUE_W:g} x {TONGUE_H:g} tongue {TONGUE_C:g} in from the outside edge into the lid's O-ring channel (about "
+          f"{TONGUE_H + S.val('l4_oring_proud'):g} mm squeeze on an assumed 3 mm round cord set 2 mm down); corner lands {CORNER_Z:g} x {CORNER_X:g}, insert posts "
           f"{POST:g} square, {CORNER_H:g} deep; lid "
-          f"screws M{SCREW_M:g} into heat-set inserts at " + ", ".join(f"({x:g}, {z:g})" for x, z in SCREWS)
-          + " [TBD-MEASURE: L1-L6]")
+          + (f"screws: option (b), M4 stainless, {WASHER_D:g} mm washers over the lid's {LID_HOLE:g} mm holes, into M4 "
+             "heat-set inserts at " if SCREW_OPT == "b" else f"screws: option (a), a printed M{THREAD_D:g} thread at ")
+          + ", ".join(f"({x:g}, {z:g})" for x, z in SCREWS) + " [TBD-MEASURE]")
     for x, z in SCREWS:
         if min(x, W - x) + INSERT_D / 2 + 3.0 > POST + 0.01:
             bad.append(f"the lid screw at ({x:g}, {z:g}) needs more than the corner post")
@@ -373,6 +427,27 @@ def main():
             bad.append(f"the lid screw at ({x:g}, {z:g}) is in the wall")
     if INSERT_L + 3.0 > CORNER_H:
         bad.append("the corner block is shorter than the insert and 3 mm under it")
+    if SCREW_OPT == "b":
+        if WASHER_D < LID_HOLE + 2.0:
+            bad.append(f"the {WASHER_D:g} mm washer seats less than 1 mm round the lid's {LID_HOLE:g} mm hole")
+        if WASHER_D + 1.0 > POCKET:
+            bad.append(f"the {WASHER_D:g} mm washer does not fit the lid's {POCKET:g} mm corner pocket")
+        if HEAD_D > WASHER_D:
+            bad.append("the screw head is wider than its washer")
+        print(f"lid screws (b): M4 x {SCREW_L:g} stainless pan head ({HEAD_D:g} head) on a {WASHER_D:g} x {WASHER_T:g} "
+              f"washer: {(WASHER_D - LID_HOLE) / 2:g} mm of seat round the lid's {LID_HOLE:g} mm hole, "
+              f"{(POCKET - WASHER_D) / 2:g} mm to the {POCKET:g} mm pocket's walls [TBD-MEASURE]; outside the O-ring, "
+              "so no seal at the holes")
+    lip6 = S.val("l6_body_rib")[1] - (S.val("base_905")[1] - W_OUT) / 2
+    print(f"sealing lip: on the lid channel's centre line, {TONGUE_C:g} in from the lid's edge; Clint's rough 1-2 mm in "
+          f"from the original base's edge would be about {lip6:.2f} in from the lid's edge, under its outer wall "
+          f"(0-{RIM_OUT:g}): it disagrees; the coupon settles it")
+    if "--coupon" in sys.argv:
+        out = write_coupon()
+        print(f"coupon STL written: {out} (not gated)")
+    if "--stl" in sys.argv and stl_gate():
+        print("STL REFUSED: the lid interface is not settled yet: " + ", ".join(stl_gate()))
+        sys.exit(2)
     if "--solid" in sys.argv or "--stl" in sys.argv:
         for name, s in solids():
             v = s.val()
@@ -386,11 +461,11 @@ def main():
             sys.exit(2)
     else:
         missing = stl_gate()
-        print("STL gate: " + ("open" if not missing else "closed until " + ", ".join(m.split("_")[0].upper()
-                                                                                    for m in missing) + " are measured"))
+        print("STL gate: " + ("open" if not missing else "closed until these are sourced: " + ", ".join(missing)
+                                + " (L1 the screw, and the rim coupon's fit on the real lid)"))
     for b in bad:
         print("FAIL ", b)
-    print(f"cage {'PASS' if not bad else 'FAIL'}: base inside {W:g} x {H:g} x {D:g} mm [TBD-MEASURE: L1-L6]")
+    print(f"cage {'PASS' if not bad else 'FAIL'}: base inside {W:g} x {H:g} x {D:g} mm [TBD-MEASURE: the lid gate]")
     sys.exit(1 if bad else 0)
 
 

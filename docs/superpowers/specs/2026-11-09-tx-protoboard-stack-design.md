@@ -53,10 +53,14 @@ the BQ25798EVM measured 90 x 90 (96 across J8) and did not fit it with 2 mm marg
 
 The lid interface is from Clint's photos: a 9 mm rim (3 mm wall, a 3 mm channel holding the white O-ring about 2 mm
 down, 3 mm wall), the channel curving in an S round each 22 x 21 mm corner boss, the screws 10 mm in from both
-outside edges. The base copies it: a 9 mm land, a 2 x 2.75 mm tongue on the channel's centre line and its S-curves
-(25 % squeeze on an assumed round 3 mm cord), a solid 3 mm corner land under each boss, and a corner post with an
-M4 heat-set insert (3 mm of PETG round it) under each screw. The screw thread, channel depth, outside size and the
-old base's rim rib (L1, L3, L5, L6) are not measured; `cage/cage.py --stl` refuses to export until they are.
+outside edges. The base copies it: a 9 mm land, a 2 x 3 mm sealing lip on the channel's centre line and its
+S-curves, like the original base's (about 1 mm squeeze on an assumed round 3 mm cord), a solid 3 mm corner land
+under each boss, and a corner post with an M4 heat-set insert (3 mm of PETG round it) under each screw. The
+original base takes about 8 mm plastic screws in moulded threads; the base uses M4 stainless screws on 12 mm washers
+through the lid's 8 mm holes instead (a printed copy of the thread is the other, parametric option). The lip's
+height is the original base's 3 mm (Clint); its offset follows the lid's channel. A 45 x 45 x 8 rim-corner coupon,
+not gated, is printed first and the real lid pressed onto it; `cage/cage.py --stl` refuses the full base until the
+coupon fits and the screws and the lid's corner pocket (L1) are settled.
 PETG's heat deflection (about 70 C, to be checked on the spool's datasheet) against more than 45 C inside in sun: a
 light colour and a UV paint or clear coat; ASA is a later-revision option.
 
@@ -168,8 +172,7 @@ fuel gauge cell sense (MAX17048 JP2 VBAT) <-- 100 ohm R8 <-- lug E1
 ## Measurements still needed `[TBD-MEASURE]`
 
 The full list, with the key each feeds, is in `hardware/tx-stack-r1/README.md`. The ones that move the cage:
-the lid interface L1, L3, L5 and L6 (the screw, the channel depth, the outside size and corner radius, the old
-base's rim rib), the snap line, the BQ25798EVM's part heights, and the card slot fit on a printed test slot. Also the cable outer diameters for the PG-7 glands (3-6.5 mm, round cable seals; flat
+the lid screws and the lid's corner pocket (L1), the rim coupon's fit on the real lid, the snap line, the BQ25798EVM's part heights, and the card slot fit on a printed test slot. Also the cable outer diameters for the PG-7 glands (3-6.5 mm, round cable seals; flat
 does not), and each port cable's capacitance.
 
 ## Parts

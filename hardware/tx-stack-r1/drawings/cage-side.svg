@@ -446,6 +446,6 @@
 <rect x="1159.6" y="290.8" width="28.8" height="25.6" fill="#D4AF37" fill-opacity="1.0" stroke="#7a5c12" stroke-width="1"/>
 <rect x="396.4" y="290.8" width="25.6" height="25.6" fill="#D4AF37" fill-opacity="1.0" stroke="#7a5c12" stroke-width="1"/>
 <text x="1194.8" y="307.6" font-size="10" text-anchor="start" fill="#222" font-weight="normal">SMA bulkhead boss</text>
-<text x="70.0" y="28.0" font-size="15" text-anchor="start" fill="#222" font-weight="bold">TX stack r3 in the printed PETG base (100 deep) under the #905 lid, hanging long side up, to scale 3.2 px/mm; inside 124 x 169 x 120 mm (lid interface L1, L3, L5, L6 [TBD-MEASURE])</text>
+<text x="70.0" y="28.0" font-size="15" text-anchor="start" fill="#222" font-weight="bold">TX stack r3 in the printed PETG base (100 deep) under the #905 lid, hanging long side up, to scale 3.2 px/mm; inside 124 x 169 x 120 mm (lid interface: L1 and the coupon fit [TBD-MEASURE])</text>
 <text x="70.0" y="48.0" font-size="12" text-anchor="start" fill="#222" font-weight="normal">Blue: moulded cage features. Red slabs: cards. Tan: backplane. Dashed: plug keep-outs. Grey: corner posts, gland nuts, pole lugs and drip edge.</text>
 <text x="70.0" y="64.0" font-size="12" text-anchor="start" fill="#222" font-weight="normal">Shelves bottom to top: the pack, the BQ25798EVM (90 x 90, J8 toward the lid), B4, B2, B1, B3; all slide toward the back. Glands in the bottom wall; cables rise in the right column.</text></svg>

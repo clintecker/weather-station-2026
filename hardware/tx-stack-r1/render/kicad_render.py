@@ -800,7 +800,7 @@ def render(jobs):
                   "cable), the ANT-916 antenna (length [TBD-MEASURE]); the PG-7 and PG-9 glands in the bottom wall "
                   "from the Adafruit #761 drawing",
                   f"inside {'x'.join(f'{v:g}' for v in cage.BOX_IN)} mm; the lid interface (rim, O-ring, screws) "
-                  "is from Clint's photos, L1, L3, L5, L6 [TBD-MEASURE]; the coax: AD1's arm toward the lid, the cable bending right in front of "
+                  "is from Clint's photos, L1 and the coupon fit [TBD-MEASURE]; the coax: AD1's arm toward the lid, the cable bending right in front of "
                   "the cards to the bulkhead boss",
                   "cards bottom to top: " + ", ".join(f"{c} {st.ROLE[c]}" for c in st.ORDER)
                   + "; the lid side faces the viewer"]

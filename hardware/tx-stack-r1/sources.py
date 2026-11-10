@@ -124,13 +124,18 @@ D = {
     "gasket": (1.0, "allowance off the closed depth for the lid's O-ring and fit", "assumed until M17", "TBD"),
     "lid_rim": ((3.0, 3.0, 3.0), "#905 lid rim, outside to inside: plastic wall, O-ring channel (white O-ring in it), plastic wall: a 9 mm land; the O-ring path curves in round the four corner bosses", "Clint's photo and sketch of the lid, 2026-11-10 (photo-8525 lid-up.jpg)", "sourced"),
     "lid_boss": ((22.0, 21.0, 3.0), "#905 lid corner screw boss: along the long side x along the short side (from the outside edges), wall outside the screw hole", "Clint's photo and sketch of the lid, 2026-11-10 (photo-8525 lid-up.jpg)", "sourced"),
-    "rim_tongue": ((2.0, 2.75), "the base rim's tongue into the lid's O-ring channel: width (centred on the channel, following its S-curve round the corner bosses), height above the land", "derived: the O-ring sits 2 mm below the channel walls (L4); assuming a round 3.0 mm solid cord filling the 3 mm channel, 25 % squeeze = 0.75 mm, so 2 + 0.75 = 2.75 high with the lid's walls down on the land; 2.0 wide leaves 0.5 mm each side in the 3 mm channel for PETG tolerance", "derived"),
-    "l1_lid_screw": ((4.0, 16.0), "L1: lid screw thread x length (and head); Clint: '8 mm dia', read for now as the lid's hole or counterbore, the thread unconfirmed", "Clint, 2026-11-10 (lid-measure sheet, via the coordinator): 8 mm dia (which part: asked); thread and length placeholders", "TBD"),
+    "rim_tongue": ((2.0, 3.0, 4.5), "the base's sealing lip: width, height above the land, centre-line offset from the lid's outside edge; it follows the lid channel's S-curve round each corner boss", "height 3 mm: Clint, 2026-11-10 (via the coordinator) (the original base's lip). Offset: the lid channel's centre line (3 + 3/2 from the lid rim, Clint's sketch): that is what must seal. Clint's eyeball of the original lip, 1-2 mm in from the base's outer edge, disagrees: with the base about 1.25 mm wider a side than the lid (Adafruit: 131 against 128.5) it would sit under the lid's outer wall, not the channel; the coupon fit settles it. Width 2.0 leaves 0.5 mm a side in the 3 mm channel. About 1 mm squeeze with the O-ring 2 mm down (L4), on an assumed round 3 mm cord", "derived"),
+    "l1_lid_screw": ((8.0, 0.0, 0.0), "L1: the original lid screw: thread diameter, pitch, length (option a, a printed thread to match)", "Clint, 2026-11-10 (photo-8528 rim.jpg and notes, via the coordinator): the original base's corner holes are large moulded threads, about 8 mm (coarse plastic thread in the photo); pitch and length not measured", "TBD"),
+    "lid_screw_opt": ("b", "lid screws: (a) a printed thread matching the original screw; (b) M4 stainless screws with washers through the lid's 8 mm holes into M4 heat-set inserts", "layout choice (recommended b: brass inserts survive the lid coming off many times, a printed PETG thread wears; the original screw is not needed)", "derived"),
+    "coupon_fit": (False, "test-fit coupon (cage.py --coupon): the real lid pressed onto the printed rim corner; the lip in the O-ring along both sides and round the boss's S-curve, the screw hole under the lid's hole", "pending: Clint prints it (about 20 minutes) and fits the lid; set True and sourced when it fits", "TBD"),
+    "m4_washer": ((12.0, 1.0), "M4 large (fender) washer, stainless: OD x thickness, for option b, over the lid's 8 mm hole", "ISO 7093-1 size 4 (d2 12, h 1), from the standard's table as remembered: check the ones bought", "TBD"),
+    "m4_screw": ((8.0, 3.1, 20.0), "M4 stainless pan-head screw: head diameter, head height, length (option b)", "ISO 7045 M4 head (dk 8, k 3.1), from the standard's table as remembered; length a layout choice: through the lid boss (L1 pending) into the 8 mm insert", "TBD"),
+    "lid_pocket": (14.0, "the lid's square corner pocket, inside width (the washer must seat in it); the hole 8 mm through its floor", "pending: Clint's photo-8526 shows a square pocket with a round counterbored hole; width placeholder", "TBD"),
     "l2_screw_pos": ((10.0, 10.0), "L2: lid screw centre from the two outside edges (long side, short side)", "Clint, 2026-11-10 (lid-measure sheet, via the coordinator)", "sourced"),
-    "l3_channel_depth": (4.0, "L3: the lid's O-ring channel depth", "pending: Clint's lid-measure.jpg; placeholder", "TBD"),
     "l4_oring_proud": (-2.0, "L4: how far the O-ring sits above (+) or below (-) the channel walls", "Clint, 2026-11-10 (lid-measure sheet, via the coordinator): inset about 2 mm below the walls", "sourced"),
-    "l5_lid_out": ((175.0, 130.0, 6.0), "L5: lid outside length x width, corner radius (the base matches it)", "pending: Clint's lid-measure.jpg; TIBOX 175 long; coordinator: 128.5-131 wide", "TBD"),
-    "l6_body_rib": ((1.5, 2.0), "L6: the original #905 body's rim rib, width x height (the reference for the tongue)", "pending: Clint's lid-measure.jpg; placeholder", "TBD"),
+    "l5_lid_out": ((175.0, 130.0, 6.0), "L5: lid outside length x width, corner radius (the base matches it)", "length: Clint, 2026-11-10 (via the coordinator), re-measured 6-14/16 in = 174.6, agreeing with Adafruit's 175 (the earlier 6-3/4 was a misread); width about 130 by Clint's tape (Adafruit 128.5); corner radius a placeholder", "sourced"),
+    "base_905": ((175.0, 131.0), "the original #905 base's outside length x width (wider than the lid)", "Adafruit #905 drawing, via the coordinator: base 131 wide against the lid's 128.5", "sourced"),
+    "l6_body_rib": ((3.0, 1.5), "L6: the original base's sealing lip: height, and its offset in from the base's outer edge (rough)", "Clint, 2026-11-10 (via the coordinator): 3 mm tall; 1-2 mm in from the base's outer edge, an eyeball estimate (a rough check that disagrees with the channel line)", "sourced"),
     "box_in": ((124.0, 169.0, 120.0), "printed base inside: width x length (up the pole) x depth floor to closed lid (base 97 inside + lid 24 less the gasket allowance)", "from l5_lid_out, base_out_depth, base_wall, lid_depth (its top about 1 mm) and gasket", "derived"),
     "insert_m4": ((5.6, 8.0), "M4 heat-set insert: hole x length", "typical M4 heat-set insert for plastics; check the ones bought", "TBD"),
     "corner_keepout": ((22.0, 21.0, 20.0), "the base's corner land under each lid boss and its O-ring S-curve: reach along the long wall x along the short wall (inside, a 3 mm shelf at the seam); then the insert post's depth below the seam", "the lid boss 22 x 21 from the outside edges (Clint's photo) + the 3 mm channel - the 3 mm wall; the post holds an M4 heat-set insert (8) with 3 mm of PETG round and under it, and the screw (L1)", "derived"),
@@ -163,14 +168,14 @@ def tbd(key):
 def label(key):
     """Text for a drawing label: the value, and the TBD flag when it is a placeholder."""
     v = D[key][0]
-    s = "x".join(f"{x:g}" for x in v) if isinstance(v, tuple) else f"{v:g}"
+    s = "x".join(f"{x:g}" for x in v) if isinstance(v, tuple) else (v if isinstance(v, str) else f"{v:g}")
     return s + " mm" + (" [TBD-MEASURE]" if tbd(key) else "")
 
 
 def table():
     rows = ["| Key | Value (mm) | What | Source | Status |", "|---|---|---|---|---|"]
     for k, (v, what, src, st) in D.items():
-        vs = " x ".join("?" if x is None else f"{x:g}" for x in v) if isinstance(v, tuple) else f"{v:g}"
+        vs = " x ".join("?" if x is None else f"{x:g}" for x in v) if isinstance(v, tuple) else (v if isinstance(v, str) else f"{v:g}")
         rows.append(f"| `{k}` | {vs} | {what} | {src} | {'[TBD-MEASURE]' if st == 'TBD' else st} |")
     return "\n".join(rows)
 

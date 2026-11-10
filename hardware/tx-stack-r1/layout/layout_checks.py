@@ -646,12 +646,14 @@ def check_mech():
     mech("Backplane on its posts", "four M3 screws through lines 0 and 20 into heat-set inserts in the base's posts",
          "the posts take the card insertion push", "undo the four screws, after every card is out",
          "removable only after all four cards are out")
-    mech("Lid to the printed base", f"the #905 lid's four screws into M4 heat-set inserts ({S.val('insert_m4')[0]:g} mm "
-         f"holes, 3 mm of wall round each) in the base's corner posts, 10 mm in from the lid's outside edges (Clint); "
-         "the base's 9 mm land under the lid's rim, its 2 x 2.75 tongue in the lid's O-ring channel",
+    mech("Lid to the printed base", f"four M4 stainless screws on {S.val('m4_washer')[0]:g} mm washers through the "
+         f"lid's 8 mm holes into M4 heat-set inserts ({S.val('insert_m4')[0]:g} mm holes, 3 mm of wall round each) in "
+         "the base's corner posts, 10 mm in from the lid's outside edges (Clint; option b, recommended over a printed "
+         f"copy of the original 8 mm plastic thread); the base's 9 mm land under the lid's rim, its "
+         f"{S.val('rim_tongue')[0]:g} x {S.val('rim_tongue')[1]:g} sealing lip in the lid's O-ring channel",
          "the screws squeeze the O-ring; the lid's rim takes a knock", "undo the four lid screws",
-         "the screw thread, the channel depth, the outside size and the old base's rib are not measured yet "
-         "(L1, L3, L5, L6): no STL until they are")
+         "not settled: the screw and the lid's corner pocket (L1), and the rim coupon's fit on the real lid: no "
+         "full STL until they are")
     mech("Base to the pole", "two moulded lugs on the back, a hose clamp or U-bolt through each; no screw through "
          "the back into the box", "the lugs' roots in the 3 mm floor", "open the clamps", "")
     mech("Cables through the glands", "six round port cables in PG-7s (#762, seal 3.0-4.3 mm) in the bottom wall's bosses; the flat "

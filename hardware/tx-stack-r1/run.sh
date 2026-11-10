@@ -9,7 +9,7 @@ echo "== dimension table in README.md"
 python3 sources.py --check
 echo "== layout checks L1-L9 (routing, mechanical table)"
 python3 layout/layout_checks.py
-echo "== printed base and cage: parts inside the box, the shelves, the STL gate (closed until M14-M20)"
+echo "== printed base and cage: parts inside the box, the shelves, the STL gate (closed until L1 and the coupon fit)"
 python3 cage/cage.py
 echo "== block diagram, card top views, backplane, cage side view, build sheets"
 python3 schematic/blockdiag.py

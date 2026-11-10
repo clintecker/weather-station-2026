@@ -6,9 +6,12 @@ base (100 mm deep, 3 mm walls) under the original Adafruit #905 clear lid and it
 by its back, long side vertical; inside 124 x 169, 120 deep with the lid closed. Every shelf slides toward the back.
 The lid interface is from Clint's photos: a 9 mm rim (3 mm wall, 3 mm O-ring channel, 3 mm wall), the channel
 curving in round 22 x 21 mm corner bosses, the screws 10 mm in from the outside edges, the O-ring 2 mm down in its
-channel. The base copies it with a 9 mm land, a 2 x 2.75 mm tongue into the channel (25 % squeeze on an assumed
-3 mm round cord) and M4 heat-set inserts in corner posts. The rest (L1, L3, L5, L6) is not measured yet, and
-`cage/cage.py --stl` refuses to export a print file until it is. Each card carries a right-angle 18-pin header
+channel. The base copies it with a 9 mm land, a 2 x 3 mm sealing lip on the channel's centre line like the
+original base's (about 1 mm squeeze on an assumed round 3 mm cord), and corner posts with M4 heat-set inserts for
+M4 stainless screws on 12 mm washers through the lid's 8 mm holes. A 45 x 45 x 8 rim-corner coupon
+(`cage/stl/rim-coupon.stl`, `cage.py --coupon`, not gated) checks the lip, the corner S-curve and the screw position
+on the real lid first; `cage/cage.py --stl` refuses the full base until the coupon fits and the screws (L1) are
+settled. Each card carries a right-angle 18-pin header
 on its back edge, its mating pins out past the snapped edge, that plugs into a socket on a PAD3U padboard
 backplane, so any card slides out toward the lid on its own. Battery current never passes through the backplane, a
 strip, a header or a socket.
@@ -53,7 +56,7 @@ Everything here is generated from four sources:
 | `layout/stack.py` | Card geometry (hole grid, strips, rails), footprints from each maker's board file, the placements, every conductor, the backplane and the joint card → socket. |
 | `layout/route.py` | Routes every wire, jumper and lead on its card: flat, on a 1.27 mm grid, right-angle runs, every part footprint an obstacle; the cut lengths come from the routes. |
 | `layout/layout_checks.py` | Layout checks L1-L9 (below); `--write` rewrites the mechanical table in this README. |
-| `cage/cage.py` | The printed base and its moulded cage: the lid interface as named inputs (rim, bosses, L1-L6), a 9 mm land and a tongue that follows the lid's O-ring channel round the corner bosses, corner lands and posts with M4 heat-set inserts for the lid screws, card slots, right corner post, backplane posts, EVM ledges, pack tray, gland bosses, vent, SMA boss, pole lugs, drip edge; the shelf fit checks with 2 mm margins and the gland pitch. `--solid` builds the solids in CadQuery; `--stl` refuses until L1-L6 are sourced. |
+| `cage/cage.py` | The printed base and its moulded cage: the lid interface as named inputs (rim, bosses, L1-L6), a 9 mm land and a tongue that follows the lid's O-ring channel round the corner bosses, corner lands and posts with M4 heat-set inserts for the lid screws, card slots, right corner post, backplane posts, EVM ledges, pack tray, gland bosses, vent, SMA boss, pole lugs, drip edge; the shelf fit checks with 2 mm margins and the gland pitch. `--solid` builds the solids in CadQuery; `--stl` refuses until L1 and the coupon fit are sourced; `--coupon` writes `cage/stl/rim-coupon.stl` (one rim corner, not gated). |
 | `layout/drawings.py` | Writes `drawings/B1..B4-top.svg`, `drawings/backplane.svg`, `drawings/cage-side.svg`, and the build sheets `build/B1..B4.md`, `build/BACKPLANE.md`, `build/ASSEMBLY.md`. `--png` also writes PNG copies into `renders/`. |
 | `build/ASSEMBLY.md` | The charger jumper steps before any power, the cage, the card order and the leads off the cards. |
 | `build/B1..B4.md`, `build/BACKPLANE.md` | Build sheets: the snap-off first, underside wires with routed lengths, top jumpers, parts lowest first with orientation, leads, strip map, checks before power; the backplane's cut, bus wires and hole-by-hole table. |
@@ -208,7 +211,7 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
 | Charger (BQ25798EVM) | a shelf: its side edges on two moulded ledges, a stop at the back, a snap clip at the front (the board has no mounting holes); the Bumpon feet (H1-H4, 3M SJ-5303) peeled off first | the ledges; the terminal screws are tightened from above, in the room under B4 | unscrew its leads, flex the clip, slide it toward the lid on its service loops | its underside parts (J6, tails: 4 mm [TBD-MEASURE]) must clear the 2 mm ledges at the edges |
 | B4 and the charger | B4's battery and sense leads are screwed into the EVM terminals | the terminal screws | unscrew the leads at the EVM before B4 slides out | B4 is tethered to the charger by its leads: unscrew them first |
 | Backplane on its posts | four M3 screws through lines 0 and 20 into heat-set inserts in the base's posts | the posts take the card insertion push | undo the four screws, after every card is out | removable only after all four cards are out |
-| Lid to the printed base | the #905 lid's four screws into M4 heat-set inserts (5.6 mm holes, 3 mm of wall round each) in the base's corner posts, 10 mm in from the lid's outside edges (Clint); the base's 9 mm land under the lid's rim, its 2 x 2.75 tongue in the lid's O-ring channel | the screws squeeze the O-ring; the lid's rim takes a knock | undo the four lid screws | the screw thread, the channel depth, the outside size and the old base's rib are not measured yet (L1, L3, L5, L6): no STL until they are |
+| Lid to the printed base | four M4 stainless screws on 12 mm washers through the lid's 8 mm holes into M4 heat-set inserts (5.6 mm holes, 3 mm of wall round each) in the base's corner posts, 10 mm in from the lid's outside edges (Clint; option b, recommended over a printed copy of the original 8 mm plastic thread); the base's 9 mm land under the lid's rim, its 2 x 3 sealing lip in the lid's O-ring channel | the screws squeeze the O-ring; the lid's rim takes a knock | undo the four lid screws | not settled: the screw and the lid's corner pocket (L1), and the rim coupon's fit on the real lid: no full STL until they are |
 | Base to the pole | two moulded lugs on the back, a hose clamp or U-bolt through each; no screw through the back into the box | the lugs' roots in the 3 mm floor | open the clamps |  |
 | Cables through the glands | six round port cables in PG-7s (#762, seal 3.0-4.3 mm) in the bottom wall's bosses; the flat wind and rain cables in PG-9s (#761) with the seal out and the gap packed with silicone or a split grommet | the gland's seal (round) or the sealant (flat); a drip loop below each gland outside, so water runs off the loop and not along the cable into the gland | loosen the cap (round); cut the sealant (flat) | a flat cable is sealed once its position is final and then comes out only by cutting the seal |
 <!-- mechanical:end -->
@@ -224,10 +227,20 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
 
 - **RJ11 latches:** less than 8 mm `[TBD-MEASURE]` over two plugs (B1 J11, B2 J14: 4.5 mm): press
   them with a small screwdriver from the front, or test with a real plug.
-- **The lid interface is half measured.** The rim, the corner bosses, the screw positions (L2) and the O-ring's
-  inset (L4) are from Clint; the screw thread (L1: "8 mm dia", the hole or the thread?), the channel depth (L3), the
-  outside size and corner radius (L5) and the old base's rim rib (L6) are placeholders; no print file until they are
-  in. The tongue assumes a round 3 mm solid cord: a foam or square cord needs a new height.
+- **The lid interface is not settled.** The rim, the corner bosses, the screw positions (L2) and the O-ring's
+  inset (L4) are from Clint; the channel depth does not matter (Clint). Open:
+  - L1, the screws. The original base has large moulded threads, about 8 mm, for plastic screws. Two options are
+    parametric (`lid_screw_opt`): (a) a printed thread copying the original (needs its pitch and length); (b) M4
+    stainless pan heads on 12 mm washers (ISO 7093, `[TBD-MEASURE]`) through the lid's 8 mm holes into M4 heat-set
+    inserts. **(b) is recommended:** brass inserts survive the lid coming off many times, a coarse PETG thread
+    wears. The washer must seat in the lid's square corner pocket (`lid_pocket`, 14 placeholder). The holes are
+    outside the O-ring, so they need no seal.
+  - L5 is settled: 175 long (Clint re-measured 174.6; Adafruit 175), about 130 wide by tape (Adafruit 128.5).
+  - L6: the original base's lip is 3 mm tall (Clint), so the base's is too, on the lid channel's centre line
+    (4.5 mm in from the lid's edge: that is what must seal); offset and width are named inputs (`rim_tongue`).
+    Clint's eyeball of the original lip, 1-2 mm in from the base's edge, disagrees: the original base is about
+    1.25 mm wider a side than the lid, so that would put it under the lid's outer wall. The coupon decides. About
+    1 mm squeeze with the O-ring 2 mm down, assuming a round 3 mm solid cord.
 - **PETG in sun.** Its heat-deflection temperature is about 70 C (0.45 MPa; check the spool's datasheet:
   Bambu's pages refuse scripts) against an inside above 45 C in sun (mechanical review): a light colour and a UV
   paint or clear coat outside.
@@ -252,10 +265,11 @@ in `sources.py`:
 1. The #905 lid, copied by the printed base. In from Clint (2026-11-10): the rim 3 + 3 channel + 3 = 9 mm
    (`lid_rim`), the corner bosses 22 x 21 with 3 mm outside the hole (`lid_boss`), L2 the screws 10 mm from both
    outside edges (`l2_screw_pos`), L4 the O-ring 2 mm below the channel walls (`l4_oring_proud`). Still needed:
-   - L1 the screw: thread, length, head; is "8 mm dia" the hole, the counterbore or the thread? (`l1_lid_screw`);
-   - L3 the channel's depth, and the O-ring's cross-section (round 3 mm assumed) (`l3_channel_depth`);
-   - L5 the lid's outside length x width and corner radius (`l5_lid_out`);
-   - L6 the original base's rim rib, width x height: the reference for the tongue (`l6_body_rib`).
+   - L1 the original screw: thread diameter, pitch, length (`l1_lid_screw`, for option a); the lid's corner
+     pocket width and the boss height under the screw head (`lid_pocket`, for option b); the M4 screws and washers
+     as bought (`m4_screw`, `m4_washer`);
+   - the rim coupon on the real lid (`coupon_fit`): the lip in the O-ring, the S-curve, the screw hole;
+   - the lid's corner radius (`l5_lid_out`) and the O-ring's cross-section (round 3 mm assumed).
 2. The BQ25798EVM's tallest part (`evm`) and what hangs below it (J6, tails: `evm_under`); the M4 heat-set inserts'
    hole and length (`insert_m4`).
 3. The snap line: card Y of the cut between column j and the inner back rail (`sb_snap_y`).
@@ -372,13 +386,18 @@ Status `[TBD-MEASURE]` means no source was found. The drawings use the value as 
 | `gasket` | 1 | allowance off the closed depth for the lid's O-ring and fit | assumed until M17 | [TBD-MEASURE] |
 | `lid_rim` | 3 x 3 x 3 | #905 lid rim, outside to inside: plastic wall, O-ring channel (white O-ring in it), plastic wall: a 9 mm land; the O-ring path curves in round the four corner bosses | Clint's photo and sketch of the lid, 2026-11-10 (photo-8525 lid-up.jpg) | sourced |
 | `lid_boss` | 22 x 21 x 3 | #905 lid corner screw boss: along the long side x along the short side (from the outside edges), wall outside the screw hole | Clint's photo and sketch of the lid, 2026-11-10 (photo-8525 lid-up.jpg) | sourced |
-| `rim_tongue` | 2 x 2.75 | the base rim's tongue into the lid's O-ring channel: width (centred on the channel, following its S-curve round the corner bosses), height above the land | derived: the O-ring sits 2 mm below the channel walls (L4); assuming a round 3.0 mm solid cord filling the 3 mm channel, 25 % squeeze = 0.75 mm, so 2 + 0.75 = 2.75 high with the lid's walls down on the land; 2.0 wide leaves 0.5 mm each side in the 3 mm channel for PETG tolerance | derived |
-| `l1_lid_screw` | 4 x 16 | L1: lid screw thread x length (and head); Clint: '8 mm dia', read for now as the lid's hole or counterbore, the thread unconfirmed | Clint, 2026-11-10 (lid-measure sheet, via the coordinator): 8 mm dia (which part: asked); thread and length placeholders | [TBD-MEASURE] |
+| `rim_tongue` | 2 x 3 x 4.5 | the base's sealing lip: width, height above the land, centre-line offset from the lid's outside edge; it follows the lid channel's S-curve round each corner boss | height 3 mm: Clint, 2026-11-10 (via the coordinator) (the original base's lip). Offset: the lid channel's centre line (3 + 3/2 from the lid rim, Clint's sketch): that is what must seal. Clint's eyeball of the original lip, 1-2 mm in from the base's outer edge, disagrees: with the base about 1.25 mm wider a side than the lid (Adafruit: 131 against 128.5) it would sit under the lid's outer wall, not the channel; the coupon fit settles it. Width 2.0 leaves 0.5 mm a side in the 3 mm channel. About 1 mm squeeze with the O-ring 2 mm down (L4), on an assumed round 3 mm cord | derived |
+| `l1_lid_screw` | 8 x 0 x 0 | L1: the original lid screw: thread diameter, pitch, length (option a, a printed thread to match) | Clint, 2026-11-10 (photo-8528 rim.jpg and notes, via the coordinator): the original base's corner holes are large moulded threads, about 8 mm (coarse plastic thread in the photo); pitch and length not measured | [TBD-MEASURE] |
+| `lid_screw_opt` | b | lid screws: (a) a printed thread matching the original screw; (b) M4 stainless screws with washers through the lid's 8 mm holes into M4 heat-set inserts | layout choice (recommended b: brass inserts survive the lid coming off many times, a printed PETG thread wears; the original screw is not needed) | derived |
+| `coupon_fit` | 0 | test-fit coupon (cage.py --coupon): the real lid pressed onto the printed rim corner; the lip in the O-ring along both sides and round the boss's S-curve, the screw hole under the lid's hole | pending: Clint prints it (about 20 minutes) and fits the lid; set True and sourced when it fits | [TBD-MEASURE] |
+| `m4_washer` | 12 x 1 | M4 large (fender) washer, stainless: OD x thickness, for option b, over the lid's 8 mm hole | ISO 7093-1 size 4 (d2 12, h 1), from the standard's table as remembered: check the ones bought | [TBD-MEASURE] |
+| `m4_screw` | 8 x 3.1 x 20 | M4 stainless pan-head screw: head diameter, head height, length (option b) | ISO 7045 M4 head (dk 8, k 3.1), from the standard's table as remembered; length a layout choice: through the lid boss (L1 pending) into the 8 mm insert | [TBD-MEASURE] |
+| `lid_pocket` | 14 | the lid's square corner pocket, inside width (the washer must seat in it); the hole 8 mm through its floor | pending: Clint's photo-8526 shows a square pocket with a round counterbored hole; width placeholder | [TBD-MEASURE] |
 | `l2_screw_pos` | 10 x 10 | L2: lid screw centre from the two outside edges (long side, short side) | Clint, 2026-11-10 (lid-measure sheet, via the coordinator) | sourced |
-| `l3_channel_depth` | 4 | L3: the lid's O-ring channel depth | pending: Clint's lid-measure.jpg; placeholder | [TBD-MEASURE] |
 | `l4_oring_proud` | -2 | L4: how far the O-ring sits above (+) or below (-) the channel walls | Clint, 2026-11-10 (lid-measure sheet, via the coordinator): inset about 2 mm below the walls | sourced |
-| `l5_lid_out` | 175 x 130 x 6 | L5: lid outside length x width, corner radius (the base matches it) | pending: Clint's lid-measure.jpg; TIBOX 175 long; coordinator: 128.5-131 wide | [TBD-MEASURE] |
-| `l6_body_rib` | 1.5 x 2 | L6: the original #905 body's rim rib, width x height (the reference for the tongue) | pending: Clint's lid-measure.jpg; placeholder | [TBD-MEASURE] |
+| `l5_lid_out` | 175 x 130 x 6 | L5: lid outside length x width, corner radius (the base matches it) | length: Clint, 2026-11-10 (via the coordinator), re-measured 6-14/16 in = 174.6, agreeing with Adafruit's 175 (the earlier 6-3/4 was a misread); width about 130 by Clint's tape (Adafruit 128.5); corner radius a placeholder | sourced |
+| `base_905` | 175 x 131 | the original #905 base's outside length x width (wider than the lid) | Adafruit #905 drawing, via the coordinator: base 131 wide against the lid's 128.5 | sourced |
+| `l6_body_rib` | 3 x 1.5 | L6: the original base's sealing lip: height, and its offset in from the base's outer edge (rough) | Clint, 2026-11-10 (via the coordinator): 3 mm tall; 1-2 mm in from the base's outer edge, an eyeball estimate (a rough check that disagrees with the channel line) | sourced |
 | `box_in` | 124 x 169 x 120 | printed base inside: width x length (up the pole) x depth floor to closed lid (base 97 inside + lid 24 less the gasket allowance) | from l5_lid_out, base_out_depth, base_wall, lid_depth (its top about 1 mm) and gasket | derived |
 | `insert_m4` | 5.6 x 8 | M4 heat-set insert: hole x length | typical M4 heat-set insert for plastics; check the ones bought | [TBD-MEASURE] |
 | `corner_keepout` | 22 x 21 x 20 | the base's corner land under each lid boss and its O-ring S-curve: reach along the long wall x along the short wall (inside, a 3 mm shelf at the seam); then the insert post's depth below the seam | the lid boss 22 x 21 from the outside edges (Clint's photo) + the 3 mm channel - the 3 mm wall; the post holds an M4 heat-set insert (8) with 3 mm of PETG round and under it, and the screw (L1) | derived |
