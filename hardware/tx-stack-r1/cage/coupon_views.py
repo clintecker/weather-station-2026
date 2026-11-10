@@ -12,7 +12,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # noqa: E402
 
+import cadquery as cq  # noqa: E402
 import cage  # noqa: E402
+from cage import S  # noqa: E402
 
 OUT = Path(__file__).resolve().parents[1] / "renders"
 
@@ -35,31 +37,46 @@ def top(solid):
         ax.plot(*zip(*ln), color="#555", lw=1.2)
     for ln in outline(solid, land_h + cage.TONGUE_H / 2):
         ax.plot(*zip(*ln), color="#b07a10", lw=1.6)
-    c, w = cage.TONGUE_C, cage.TONGUE_W
+    # r1's lip, ghosted under the new one
+    r1 = dict(cage.COUPON_R1)
+    old = cage.seal_region(cage.TONGUE_W / 2, 0, 1, **dict(r1)).intersect(
+        cq.Workplane("XY").rect(cx, cz, centered=False).extrude(1)).cut(cage.seal_region(-cage.TONGUE_W / 2, -1, 3, **dict(r1)))
+    for ln in outline(old, 0.5):
+        ax.plot(*zip(*ln), color="#aaa", lw=1.0, ls="--")
+    cs, cl, w = cage.TONGUE_CS, cage.TONGUE_CL, cage.TONGUE_W
+    rise, run, r = cage.S_RISE, cage.S_RUN, cage.CURVE_R
     sx, sz = cage.SCREWS[0]
     hx, hz = sx + cage.T, sz + cage.T
-    kw = dict(arrowprops=dict(arrowstyle="<->", color="#1f4e9c", lw=0.9), color="#1f4e9c", fontsize=8)
-    ax.annotate("", (0, 36), (c, 36), **kw)
-    ax.text(c / 2, 37, f"{c:g}", ha="center", color="#1f4e9c", fontsize=8)
-    ax.annotate("", (c - w / 2, 30), (c + w / 2, 30), **kw)
-    ax.text(c + w / 2 + 0.8, 29.6, f"lip {w:g} wide, {cage.TONGUE_H:g} tall", color="#1f4e9c", fontsize=8)
+    blue = "#1f4e9c"
+    kw = dict(arrowprops=dict(arrowstyle="<->", color=blue, lw=0.9), color=blue, fontsize=8)
+    t = dict(color=blue, fontsize=8)
+    ax.annotate("", (0, 48), (cl, 48), **kw)
+    ax.text(cl + 0.8, 48.6, f"{cl:g} (long side)", **t)
+    ax.annotate("", (50, 0), (50, cs), **kw)
+    ax.text(50.6, cs / 2 + 1.2, f"{cs:g}\n(short\nside)", **t)
+    ax.annotate("", (46, cs), (46, cs + rise), **kw)
+    ax.text(46.6, cs + rise / 2, f"{rise:g}", va="center", **t)
+    ax.annotate("", (cl, cs + rise + 6), (cl + run, cs + rise + 6), **kw)
+    ax.text(cl + run / 2, cs + rise + 6.7, f"{run:g}", ha="center", **t)
+    ax.annotate("", (cl - w / 2, 42), (cl + w / 2, 42), **kw)
+    ax.text(cl + w / 2 + 0.8, 41.6, f"{w:g}", **t)
+    ax.text(cl + run + 4, 34, f"R {r:g} bends on the lip's centre line [TBD-MEASURE]\nlip {w:g} wide, "
+            f"{cage.TONGUE_H:g} tall; no land inside it", **t)
+    d = S.val("coupon_bore")
     ax.annotate("", (0, hz), (hx, hz), **kw)
-    ax.text(hx / 2, hz + 0.8, f"{hx:g}", ha="center", color="#1f4e9c", fontsize=8)
+    ax.text(hx / 2, hz + 0.8, f"{hx:g}", ha="center", **t)
     ax.annotate("", (hx, 0), (hx, hz), **kw)
-    ax.text(hx + 0.6, hz / 2, f"{hz:g}", va="center", color="#1f4e9c", fontsize=8)
-    ax.annotate("", (40, 0), (40, cage.LAND), **kw)
-    ax.text(40.6, cage.LAND / 2, f"land {cage.LAND:g}", va="center", color="#1f4e9c", fontsize=8)
-    ax.text(26, 17, f"S-curve bends R {cage.CURVE_R:g} on the lip's\ncentre line [TBD-MEASURE]", color="#1f4e9c",
-            fontsize=8)
-    ax.text(0.8, -2.6, f"outside corner R {cage.CORNER_R:g} [TBD-MEASURE]", color="#1f4e9c", fontsize=8)
+    ax.text(hx + 0.6, hz / 2 - 2.5, f"{hz:g}", va="center", **t)
+    ax.text(hx + d / 2 + 0.5, hz + d / 2, f"\u00d8{d:g}", **t)
+    ax.text(0.8, -2.8, f"outside corner R {cage.CORNER_R:g} [TBD-MEASURE]; grey dashed: r1's lip", **t)
     ax.set_aspect("equal")
-    ax.set_xlim(-4, cx + 4)
+    ax.set_xlim(-4, cx + 9)
     ax.set_ylim(-5, cz + 4)
     ax.set_xlabel("mm from the lid's outside edge (short side)")
     ax.set_ylabel("mm from the lid's outside edge (long side)")
-    ax.set_title(f"rim test-fit coupon, top: {cx:g} x {cz:g} x {ch:g} mm, lip (gold) on the lid channel's centre "
-                 f"line;\nscrew bore {cage.INSERT_D:g} at {hx:g}/{hz:g} from the edges; the base's outside is "
-                 "the lid's (no outward offset)", fontsize=9)
+    ax.set_title(f"rim test-fit coupon r2, top: {cx:g} x {cz:g} x {ch:g} mm, lip (gold) moved out after the r1 fit; "
+                 f"hole \u00d8{d:g} at {hx:g}/{hz:g}.\nCHECK: Clint's marker line on r1 sat closer to the hole than "
+                 "these numbers (20 / 30 / R10) put the lip", fontsize=9)
     ax.grid(alpha=0.2)
     fig.tight_layout()
     fig.savefig(OUT / "rim-coupon-top.png", dpi=160)
@@ -81,13 +98,13 @@ def iso(solid):
         base = (0.85, 0.64, 0.25) if top else (0.78, 0.78, 0.74)
         shade.append(tuple(c * k for c in base))
     ax.add_collection3d(Poly3DCollection(polys, facecolors=shade, edgecolor="none"))
-    ax.set_xlim(0, 45)
-    ax.set_ylim(0, 45)
+    ax.set_xlim(0, cage.COUPON[0])
+    ax.set_ylim(0, cage.COUPON[1])
     ax.set_zlim(0, 12)
-    ax.set_box_aspect((45, 45, 12))
+    ax.set_box_aspect((cage.COUPON[0], cage.COUPON[1], 12))
     ax.view_init(elev=35, azim=-120)
     ax.set_axis_off()
-    ax.set_title("rim test-fit coupon, iso: the 3 mm lip (gold) on the 9 mm land, round the corner boss", fontsize=9)
+    ax.set_title("rim test-fit coupon, iso: r2, the 3 mm lip (gold) on the land, round the corner boss", fontsize=9)
     fig.tight_layout()
     fig.savefig(OUT / "rim-coupon-iso.png", dpi=160)
 
