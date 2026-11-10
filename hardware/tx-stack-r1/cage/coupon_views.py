@@ -1,10 +1,12 @@
 """Top (dimensioned) and iso views of the rim test-fit coupon, from the same solid cage.py exports.
 
-    ../../../.venv-cad/bin/python coupon_views.py     writes ../renders/rim-coupon-top.png and rim-coupon-iso.png
+    ../../../.venv-cad/bin/python coupon_views.py           writes ../renders/rim-coupon-top.png and rim-coupon-iso.png
+    ../../../.venv-cad/bin/python coupon_views.py --edges   writes ../renders/rim-edge-short-top.png and rim-edge-long-top.png
 """
 import sys
 from pathlib import Path
 
+EDGES = "--edges" in sys.argv
 sys.argv = sys.argv[:1]
 import matplotlib  # noqa: E402
 
@@ -130,7 +132,59 @@ def iso(solid):
     fig.savefig(OUT / "rim-coupon-iso.png", dpi=160)
 
 
-if __name__ == "__main__":
+def edge_top(which):
+    """Top of one whole-edge coupon, the edge drawn horizontally: hole spacing and overall length dimensioned."""
+    sol = cage.edge_coupon_solid(which)
+    ll, wl, _r = S.val("l5_lid_out")
+    sx, sz = S.val("edge_hole_span")
+    ch = cage.COUPON[2]
+    land_h = ch - cage.TONGUE_H
+    # lid frame: x across the 130, y along the 175; draw the edge along the plot's x
+    if which == "short":
+        f = lambda x, y: (x, y)                        # noqa: E731
+        L, span, n = wl, sx, "short"
+    else:
+        f = lambda x, y: (y, x)                        # noqa: E731
+        L, span, n = ll, sz, "long"
+    fig, ax = plt.subplots(figsize=(13 if which == "long" else 11, 3.6))
+    for z, c, lw in ((land_h / 2, "#555", 1.1), (land_h + cage.TONGUE_H / 2, "#b07a10", 1.5)):
+        for ln in outline(sol, z):
+            ax.plot(*zip(*[f(*p) for p in ln]), color=c, lw=lw)
+    blue = "#1f4e9c"
+    kw = dict(arrowprops=dict(arrowstyle="<->", color=blue, lw=0.9))
+    h0 = (L - span) / 2
+    ax.annotate("", (h0, 30), (h0 + span, 30), **kw)
+    tbd = "" if which == "short" else "  [TBD-MEASURE]"
+    ax.text(L / 2, 31, f"holes {span:g} apart{tbd}", color=blue, fontsize=9, ha="center")
+    ax.annotate("", (0, -5), (L, -5), **kw)
+    ax.text(L / 2, -9.5, f"{L:g} overall (l5_lid_out)", color=blue, fontsize=9, ha="center")
+    for x in (h0, h0 + span):
+        ax.plot([x, x], [10, 29], color=blue, lw=0.5, ls=":")
+    hx = h0
+    hz = (ll - sz) / 2 if which == "short" else (wl - sx) / 2
+    ax.text(hx + 5, hz - 1, f"\u00d8{S.val('coupon_bore'):g} at {hx:g} / {hz:g}", color=blue, fontsize=8)
+    ax.set_aspect("equal")
+    ax.set_xlim(-6, L + 6)
+    ax.set_ylim(-13, 36)
+    ax.set_xlabel(f"mm along the {n} edge")
+    ax.set_ylabel("mm in from the edge")
+    v = sol.val().Volume() / 1000
+    other = "long" if which == "short" else "short"
+    ax.set_title(f"rim edge coupon, {n} edge, top: {L:g} x {cage.EDGE_RETURN:g} x {ch:g} mm, {v:.1f} cm3 "
+                 f"(land {land_h:g}, lip {cage.TONGUE_W:g} x {cage.TONGUE_H:g} above it, R{cage.CORNER_R:g} corners)\n"
+                 f"both corners coupon r8's, mirrored; {cage.EDGE_RETURN:g} mm returns along each {other} side; "
+                 f"hole spacing {span:g}{tbd}", fontsize=9)
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    out = OUT / f"rim-edge-{which}-top.png"
+    fig.savefig(out, dpi=160)
+    return out
+
+
+if __name__ == "__main__" and EDGES:
+    for w in ("short", "long"):
+        print("wrote", edge_top(w))
+elif __name__ == "__main__":
     s = cage.coupon_solid()
     top(s)
     iso(s)

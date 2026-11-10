@@ -24,7 +24,8 @@ M12 vent boss, the SMA bulkhead boss, two pole lugs on the back (no screws throu
 Run:  python3 cage.py           print the parts and check them against the box inside (no CadQuery needed)
       ../../../.venv-cad/bin/python cage.py --solid   also build the solids in CadQuery and check them
       ../../../.venv-cad/bin/python cage.py --stl     export STL: refused until the lid gate is sourced
-      ../../../.venv-cad/bin/python cage.py --coupon  the rim test-fit coupon (one corner, 45 x 45 x 8): not gated
+      ../../../.venv-cad/bin/python cage.py --coupon  the rim test-fit coupon (one corner): not gated
+      ../../../.venv-cad/bin/python cage.py --edges   the two whole-edge rim coupons (short 130, long 175): not gated
 """
 import sys
 from pathlib import Path
@@ -423,6 +424,64 @@ def write_coupon():
     return out
 
 
+EDGE_RETURN = S.val("edge_return")  # the edge coupons' return down each adjoining side
+
+
+def rim_seal_wire(off):
+    """The whole rim's seal centre line (lid frame: x across the 130 from a long edge, z along the 175 from a short
+    edge), every corner coupon r8's S mirrored, its bends rounded (R outer / R middle / R outer), grown by off."""
+    ll, wl, _r = S.val("l5_lid_out")             # 175 long, 130 wide
+    cs, cl, rise, run = TONGUE_CS, TONGUE_CL, S_RISE, COUPON_RUN
+    X0, X1, X2, X3 = cl, cl + run, wl - cl - run, wl - cl
+    Z0, Z1, Z2, Z3 = cs, cs + rise, ll - cs - rise, ll - cs
+    pts = [(wl / 2, Z0),
+           (X2, Z0), (X2, Z1), (X3, Z1),          # bottom-right corner
+           (X3, Z2), (X2, Z2), (X2, Z3),          # top-right
+           (X1, Z3), (X1, Z2), (X0, Z2),          # top-left
+           (X0, Z1), (X1, Z1), (X1, Z0)]          # bottom-left
+    rs = {i: (CURVE_RI if (i - 1) % 3 == 1 else CURVE_R) for i in range(1, 13)}
+    return _rounded_wire(pts, rs).offset2D(off, "arc")[0]
+
+
+def edge_coupon_solid(which):
+    """One whole rim edge (which = "short": the 130 edge at z 0, returns 25 up each long side; "long": the 175 edge
+    at x 0, returns 25 across each short side) with both corner pockets, their holes (coupon r8's, mirrored) and S
+    curves: land 3.5, lip on top, nothing inside the lip, R4 outside corners, 8 tall."""
+    import cadquery as cq
+    ll, wl, _r = S.val("l5_lid_out")
+    ch = COUPON[2]
+    land_h = ch - TONGUE_H
+    outer = (cq.Workplane("XY").rect(wl, ll, centered=False).extrude(ch).edges("|Z").fillet(CORNER_R))
+
+    def prism(off, z0, h):
+        return cq.Workplane("XY").add(rim_seal_wire(off)).toPending().extrude(h).translate((0, 0, z0))
+
+    land = outer.cut(prism(-TONGUE_W / 2, -1.0, ch + 2.0))
+    land = land.cut(cq.Workplane("XY").box(wl + 10, ll + 10, TONGUE_H + 1, centered=False).translate((-5, -5, land_h)))
+    lip = prism(TONGUE_W / 2, land_h, TONGUE_H).cut(prism(-TONGUE_W / 2, land_h - 1, TONGUE_H + 2)).intersect(outer)
+    shape = land.union(lip)
+    sx, sz = S.val("edge_hole_span")
+    hx, hz = (wl - sx) / 2, (ll - sz) / 2                     # coupon r8's 10.5 / 8.5, mirrored
+    for x, z in ((hx, hz), (wl - hx, hz), (hx, ll - hz), (wl - hx, ll - hz)):
+        shape = shape.cut(cq.Workplane("XY").circle(S.val("coupon_bore") / 2).extrude(ch).translate((x, z, 0)))
+    clip = (cq.Workplane("XY").box(wl, EDGE_RETURN, ch, centered=False) if which == "short"
+            else cq.Workplane("XY").box(EDGE_RETURN, ll, ch, centered=False))
+    return shape.intersect(clip)
+
+
+def write_edges():
+    import cadquery as cq
+    out = []
+    for which in ("short", "long"):
+        sol = edge_coupon_solid(which)
+        p = HERE / "stl" / f"rim-edge-{which}.stl"
+        p.parent.mkdir(exist_ok=True)
+        cq.exporters.export(sol, str(p))
+        bb = sol.val().BoundingBox()
+        out.append((p, sol.val().Volume() / 1000, bb.xlen, bb.ylen))
+    return out
+
+
 def st_top_boxes():
     """B3's parts in the box frame (the top card)."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "layout"))
@@ -516,6 +575,9 @@ def main():
     if "--coupon" in sys.argv:
         out = write_coupon()
         print(f"coupon STL written: {out} (not gated)")
+    if "--edges" in sys.argv:
+        for p, v, a, b in write_edges():
+            print(f"edge coupon STL written: {p} ({a:.1f} x {b:.1f} mm, {v:.1f} cm3; not gated)")
     if "--stl" in sys.argv and stl_gate():
         print("STL REFUSED: the lid interface is not settled yet: " + ", ".join(stl_gate()))
         sys.exit(2)
