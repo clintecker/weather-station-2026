@@ -321,9 +321,9 @@ def coax(arm):
     return pe, yb, zb, ax
 
 
-COUPON = (45.0, 45.0, 8.0)          # the test-fit coupon (r4): one rim corner, outside footprint x height; at least
+COUPON = (45.0, 45.0, 8.0)          # the test-fit coupon (r5): one rim corner, outside footprint x height; at least
 CORNER_R = S.val("corner_r_out")    #   10 mm of straight lip past each outer bend
-COUPON_GHOST = dict(cs=4.0, cl=3.5, rise=20.0, run=20.0, r=(10.0, 5.0, 10.0))   # r3's lip, ghosted on the drawing
+COUPON_GHOST_HOLE = (10.0, 10.0)    # r4's hole centre, ghosted on the drawing (r4's lip is r5's)
 
 
 def coupon_seal_points(cs=None, cl=None, rise=None, run=None, far=90.0):
@@ -481,8 +481,8 @@ def main():
           f"{SEAM:g}, closed depth {D:g}; a {LAND:g} mm land ({RIM_OUT:g} + {RIM_CH:g} channel + {RIM_IN:g}, Clint) with a "
           f"{TONGUE_W:g} x {TONGUE_H:g} sealing lip {TONGUE_CS:g} in from the outside edge on the short sides, "
           f"{TONGUE_CL:g} on the long (coupon r1 fit), its S {S_RISE:g} x {S_RUN:g} with R {CURVE_R:g} outer and R {CURVE_RI:g} inner bends, into the "
-          f"lid's O-ring channel (about "
-          f"{TONGUE_H + S.val('l4_oring_proud'):g} mm squeeze on an assumed 3 mm round cord set 2 mm down); corner lands {CORNER_Z:g} x {CORNER_X:g}, insert posts "
+          f"lid's O-ring channel (its top "
+          f"where r3 had it, about 1 mm into the O-ring set 2 mm down, an assumed 3 mm round cord; the land 1.5 lower); corner lands {CORNER_Z:g} x {CORNER_X:g}, insert posts "
           f"{POST:g} square, {CORNER_H:g} deep; lid "
           + (f"screws: option (b), M4 stainless, {WASHER_D:g} mm washers over the lid's {LID_HOLE:g} mm holes, into M4 "
              "heat-set inserts at " if SCREW_OPT == "b" else f"screws: option (a), a printed M{THREAD_D:g} thread at ")
