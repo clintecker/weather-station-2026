@@ -37,7 +37,7 @@ def top(solid):
         ax.plot(*zip(*ln), color="#555", lw=1.2)
     for ln in outline(solid, land_h + cage.TONGUE_H / 2):
         ax.plot(*zip(*ln), color="#b07a10", lw=1.6)
-    # r2's lip, ghosted under the new one; the corner's diagonal through the screw
+    # r3's lip, ghosted under the new one; the corner's diagonal through the screw
     r1 = dict(cage.COUPON_GHOST)
     old = cage.seal_region(cage.TONGUE_W / 2, 0, 1, **dict(r1)).intersect(
         cq.Workplane("XY").rect(cx, cz, centered=False).extrude(1)).cut(cage.seal_region(-cage.TONGUE_W / 2, -1, 3, **dict(r1)))
@@ -56,23 +56,26 @@ def top(solid):
     ax.text(cl + 0.8, 46.6, f"{cl:g} (long side)", **t)
     ax.annotate("", (cx + 2, 0), (cx + 2, cs), **kw)
     ax.text(cx + 2.6, cs / 2 + 1.2, f"{cs:g}\n(short\nside)", **t)
-    ax.annotate("", (cx - 3, cs), (cx - 3, cs + rise), **kw)
-    ax.text(cx - 2.4, cs + rise / 2, f"{rise:g}", va="center", **t)
-    ax.annotate("", (cl, cs + rise + 4), (cl + run, cs + rise + 4), **kw)
-    ax.text(cl + run / 2, cs + rise + 4.7, f"{run:g}", ha="center", **t)
-    ax.annotate("", (-2, cs), (-2, cs + rise + r), **kw)
-    ax.text(-3.6, cs + (rise + r) / 2, f"{rise + r:g}", rotation=90, va="center", **t)
-    ax.annotate("", (cl, -1.2), (cl + run + r, -1.2), **kw)
-    ax.text(cl + (run + r) / 2, -2.2, f"{run + r:g}", ha="center", **t)
     ax.annotate("", (cl - w / 2, 42), (cl + w / 2, 42), **kw)
     ax.text(cl + w / 2 + 0.8, 41.6, f"{w:g}", **t)
     # the middle runs' straights (between the outer and inner bends), axis-aligned
     st = rise - r - ri
-    ax.annotate("", (cl + r, cs + rise - 3.2), (cl + r + st, cs + rise - 3.2), **kw)
-    ax.text(cl + r + st / 2, cs + rise - 5.4, f"{st:g} straight", ha="center", **t)
+    # the S's middle runs from the outside edges, and the lip-to-hole material
+    ax.annotate("", (0, cs + rise + 1.5), (cl + run, cs + rise + 1.5), **kw)
+    ax.text((cl + run) / 2, cs + rise + 2.2, f"{cl + run:g}", ha="center", **t)
+    ax.annotate("", (cl + run + 1.5, 0), (cl + run + 1.5, cs + rise), **kw)
+    ax.text(cl + run + 2.1, (cs + rise) / 2 - 3, f"{cs + rise:g}", **t)
+    d = S.val("coupon_bore")
+    face = cl + run - w / 2
+    clr = face - (hx + d / 2)
+    ax.annotate("", (hx + d / 2, hz), (face, hz), arrowprops=dict(arrowstyle="<->", color="#c03030", lw=0.9))
+    ax.text(hx + d / 2 - 0.2, hz - 1.8, f"{clr:.1f}", color="#c03030", fontsize=8)
+    sx_ = run - r - ri
+    ax.annotate("", (cl + r, cs + rise + 3.2), (cl + r + sx_, cs + rise + 3.2), **kw)
+    ax.text(cl + r + sx_ / 2, cs + rise + 4.0, f"{sx_:g} straight", ha="center", **t)
     ax.annotate("", (cl + run + 3.2, cs + r), (cl + run + 3.2, cs + r + st), **kw)
     ax.text(cl + run + 4.0, cs + r + st / 2, f"{st:g} straight", va="center", **t)
-    ax.text(cl + run + 4, 34, f"R {r:g} outer bends, R {ri:g} inner, on the lip's centre line [TBD-MEASURE]\nlip {w:g} wide, "
+    ax.text(cl + run + 4, 34, f"all bends R {r:g}, on the lip's centre line [TBD-MEASURE]\nlip {w:g} wide, "
             f"{cage.TONGUE_H:g} tall; no land inside it", **t)
     d = S.val("coupon_bore")
     ax.annotate("", (0, hz), (hx, hz), **kw)
@@ -80,15 +83,15 @@ def top(solid):
     ax.annotate("", (hx, 0), (hx, hz), **kw)
     ax.text(hx + 0.6, hz / 2 - 2.5, f"{hz:g}", va="center", **t)
     ax.text(hx + d / 2 + 0.5, hz + d / 2, f"\u00d8{d:g}", **t)
-    ax.text(0.8, -4.4, f"outside corner R {cage.CORNER_R:g} [TBD-MEASURE]; grey dashed: r2's lip", **t)
+    ax.text(0.8, -4.4, f"outside corner R {cage.CORNER_R:g} [TBD-MEASURE]; grey dashed: r3's lip", **t)
     ax.set_aspect("equal")
     ax.set_xlim(-6, cx + 9)
     ax.set_ylim(-6, cz + 4)
     ax.set_xlabel("mm from the lid's outside edge (short side)")
     ax.set_ylabel("mm from the lid's outside edge (long side)")
-    ax.set_title(f"rim test-fit coupon r3, top: {cx:g} x {cz:g} x {ch:g} mm; hole \u00d8{d:g} at {hx:g}/{hz:g}\n"
-                 f"the S symmetric about the diagonal: 20 in from each lip line, R{r:g} outer / R{ri:g} inner bends, "
-                 f"axis-aligned straights\nCHECK: Clint's marker line on r1 sat closer to the hole than these numbers "
+    ax.set_title(f"rim test-fit coupon r4, top: {cx:g} x {cz:g} x {ch:g} mm (land {ch - cage.TONGUE_H:g}, lip "
+                 f"{cage.TONGUE_H:g} above it); hole \u00d8{d:g} at {hx:g}/{hz:g}\nthe S's middle runs at "
+                 f"{cl + run:g} from both edges, all bends R{r:g}, axis-aligned straights; {clr:.1f} mm lip to hole\nCHECK: Clint's marker line on r1 sat closer to the hole than these numbers "
                  "put the lip", fontsize=9)
     ax.grid(alpha=0.2)
     fig.tight_layout()
@@ -117,7 +120,7 @@ def iso(solid):
     ax.set_box_aspect((cage.COUPON[0], cage.COUPON[1], 12))
     ax.view_init(elev=35, azim=-120)
     ax.set_axis_off()
-    ax.set_title("rim test-fit coupon, iso: r3, the 3 mm lip (gold) on the land, round the corner boss", fontsize=9)
+    ax.set_title("rim test-fit coupon, iso: r4, the lip (gold) 4.5 above the lowered land on the land, round the corner boss", fontsize=9)
     fig.tight_layout()
     fig.savefig(OUT / "rim-coupon-iso.png", dpi=160)
 
