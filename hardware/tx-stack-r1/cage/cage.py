@@ -51,7 +51,7 @@ LAND = RIM_OUT + RIM_CH + RIM_IN    # 9 mm
 TONGUE_W, TONGUE_H, TONGUE_CS, TONGUE_CL = S.val("rim_tongue")   # lip centre from the lid's edge: short, long sides
 TONGUE_C = max(TONGUE_CS, TONGUE_CL)
 S_RISE, S_RUN = S.val("seal_s")     # the S round each boss, lip centre line to lip centre line
-CURVE_R = S.val("seal_curve_r")
+CURVE_R, CURVE_RI = S.val("seal_curve_r")   # outer bends, inner bend
 # inside the base wall (box frame): the lip centre lines and the S's two segments
 LIP_CX, LIP_CZ = TONGUE_CL - T, TONGUE_CS - T            # along the long walls (Xb), the short walls (Zb)
 S_X, S_Z = LIP_CX + S_RUN, LIP_CZ + S_RISE               # the S's segment along Zb at Xb S_X, along Xb at Zb S_Z
@@ -321,9 +321,9 @@ def coax(arm):
     return pe, yb, zb, ax
 
 
-COUPON = (55.0, 55.0, 8.0)          # the test-fit coupon (r2): one rim corner, outside footprint x height; at least
+COUPON = (45.0, 45.0, 8.0)          # the test-fit coupon (r3): one rim corner, outside footprint x height; at least
 CORNER_R = S.val("corner_r_out")    #   10 mm of straight lip past each outer bend
-COUPON_R1 = dict(cs=4.5, cl=4.5, rise=19.0, run=18.0, r=5.0)   # r1's lip, ghosted on the drawing
+COUPON_GHOST = dict(cs=4.0, cl=3.5, rise=20.0, run=30.0, r=10.0)   # r2's lip, ghosted on the drawing
 
 
 def coupon_seal_points(cs=None, cl=None, rise=None, run=None, far=90.0):
@@ -339,8 +339,14 @@ def coupon_seal_points(cs=None, cl=None, rise=None, run=None, far=90.0):
 
 
 def rounded_wire(pts, r, bends=(1, 2, 3)):
-    """A closed CadQuery wire through pts, the 90-degree corners at the indices in bends rounded at radius r
-    (tangent arcs; a segment exactly 2r long is all arc)."""
+    """r is one radius, or one per bend (in the order of bends)."""
+    rs = dict(zip(bends, r if isinstance(r, (tuple, list)) else [r] * len(bends)))
+    return _rounded_wire(pts, rs)
+
+
+def _rounded_wire(pts, rs):
+    """A closed CadQuery wire through pts, the 90-degree corners at the indices in rs rounded at rs[i] (tangent
+    arcs between straights parallel to the edges)."""
     import cadquery as cq
     n = len(pts)
 
@@ -351,7 +357,8 @@ def rounded_wire(pts, r, bends=(1, 2, 3)):
     w = None
     seq = []
     for i, p in enumerate(pts):
-        if i in bends:
+        if i in rs:
+            r = rs[i]
             d1, d2 = unit(pts[i - 1], p), unit(p, pts[(i + 1) % n])
             p1 = (p[0] - r * d1[0], p[1] - r * d1[1])
             p2 = (p[0] + r * d2[0], p[1] + r * d2[1])
@@ -381,7 +388,7 @@ def rounded_wire(pts, r, bends=(1, 2, 3)):
 def seal_region(off, z0, h, **geom):
     """The box-inside region of the seal line (its bends rounded), grown by off (shrunk if < 0), as a prism."""
     import cadquery as cq
-    r = geom.pop("r", CURVE_R)
+    r = geom.pop("r", (CURVE_R, CURVE_RI, CURVE_R))
     wire = rounded_wire(coupon_seal_points(**geom), r).offset2D(off, "arc")[0]
     return cq.Workplane("XY").add(wire).toPending().extrude(h).translate((0, 0, z0))
 
@@ -389,7 +396,7 @@ def seal_region(off, z0, h, **geom):
 def coupon_solid():
     """The coupon (r2) as a CadQuery solid: the land from the outside edge to the lip's inner face (nothing inside
     the lip, round the S too), solid from the underside (it prints flat), the 2 x 3 sealing lip on its centre line
-    (4.0 in on the short side, 3.5 on the long, the S's bends at CURVE_R), the outside corner at CORNER_R, and the
+    (4.0 in on the short side, 3.5 on the long, the S's outer bends at CURVE_R, its inner bend at CURVE_RI), the outside corner at CORNER_R, and the
     7 mm screw hole. Its own frame: x, y in plan from the outside corner, z up from the underside."""
     import cadquery as cq
     cx, cz, ch = COUPON
@@ -473,7 +480,7 @@ def main():
     print(f"base: outside {L_OUT:g} x {W_OUT:g} x {BASE_D:g} (PETG, {T:g} mm walls), inside {W:g} x {H:g}, seam at Yb "
           f"{SEAM:g}, closed depth {D:g}; a {LAND:g} mm land ({RIM_OUT:g} + {RIM_CH:g} channel + {RIM_IN:g}, Clint) with a "
           f"{TONGUE_W:g} x {TONGUE_H:g} sealing lip {TONGUE_CS:g} in from the outside edge on the short sides, "
-          f"{TONGUE_CL:g} on the long (coupon r1 fit), its S {S_RISE:g} x {S_RUN:g} with R {CURVE_R:g} bends, into the "
+          f"{TONGUE_CL:g} on the long (coupon r1 fit), its S {S_RISE:g} x {S_RUN:g} with R {CURVE_R:g} outer and R {CURVE_RI:g} inner bends, into the "
           f"lid's O-ring channel (about "
           f"{TONGUE_H + S.val('l4_oring_proud'):g} mm squeeze on an assumed 3 mm round cord set 2 mm down); corner lands {CORNER_Z:g} x {CORNER_X:g}, insert posts "
           f"{POST:g} square, {CORNER_H:g} deep; lid "
