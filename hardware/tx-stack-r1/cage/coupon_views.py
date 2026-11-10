@@ -44,14 +44,13 @@ def top(solid):
     for ln in outline(old, 0.5):
         ax.plot(*zip(*ln), color="#aaa", lw=1.0, ls="--")
     ax.plot([cage.COUPON_GHOST_EDGE] * 2, [4, cz], color="#aaa", lw=1.0, ls="--")
-    _sx, _sz = cage.SCREWS[0]
-    _o = (_sx - _sz)                                       # the 45-degree line through the screw
+    _hx, _hz = cage.COUPON_HOLE
+    _o = (_hx - _hz)                                       # the 45-degree line through the screw
     ax.plot([_o, _o + min(cx, cz)], [0, min(cx, cz)], color="#c03030", lw=0.8, ls="-.")
     ax.text(min(cx, cz) - 8, min(cx, cz) - 3, "diagonal through\nthe screw", color="#c03030", fontsize=8)
     cs, cl, w = cage.TONGUE_CS, cage.TONGUE_CL, cage.TONGUE_W
-    rise, run, r, ri = cage.S_RISE, cage.S_RUN, cage.CURVE_R, cage.CURVE_RI
-    sx, sz = cage.SCREWS[0]
-    hx, hz = sx + cage.T, sz + cage.T
+    rise, run, r, ri = cage.S_RISE, cage.COUPON_RUN, cage.CURVE_R, cage.CURVE_RI
+    hx, hz = cage.COUPON_HOLE
     blue = "#1f4e9c"
     kw = dict(arrowprops=dict(arrowstyle="<->", color=blue, lw=0.9), color=blue, fontsize=8)
     t = dict(color=blue, fontsize=8)
@@ -94,8 +93,9 @@ def top(solid):
     ax.set_ylabel("mm from the lid's outside edge (long side)")
     ax.set_title(f"rim test-fit coupon r8, top: {cx:g} x {cz:g} x {ch:g} mm (land {ch - cage.TONGUE_H:g}, lip "
                  f"{cage.TONGUE_H:g} above it); hole \u00d8{d:g} at {hx:g}/{hz:g}\nthe S's middle runs at "
-                 f"{cl + run:g} from the long edge, {cs + rise:g} from the short, R{r:g} outer / R{ri:g} middle bends (r6 + r7 fits)\nthe hole centred in the lid's boss pocket: "
-                 f"{clr:.1f} mm to the lip, {hx - d / 2:g} / {hz - d / 2:g} to the long / short edges", fontsize=9)
+                 f"{cl + run:g} from the long edge, {cs + rise:g} from the short, R{r:g} outer / R{ri:g} middle bends (r6 + r7 fits)\nthe hole: "
+                 f"{clr:.1f} mm to the lip; hole at {hx:g} tests the lip only:\nthe lid's holes are 108-110 apart "
+                 f"(about {S.val('l2_screw_pos')[1]:g} from the edge), so check whether the hole lines up", fontsize=9)
     ax.grid(alpha=0.2)
     fig.tight_layout()
     fig.savefig(OUT / "rim-coupon-top.png", dpi=160)

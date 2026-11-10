@@ -321,7 +321,10 @@ def coax(arm):
     return pe, yb, zb, ax
 
 
-COUPON = (47.0, 45.0, 8.0)          # the test-fit coupon (r8): x from the long-side edge, z from the short-side edge: one rim corner, outside footprint x height; at least
+COUPON = (47.0, 45.0, 8.0)          # the test-fit coupon (r8)
+COUPON_RUN = S_RUN + S.val("coupon_long_shift")                # the coupon's S run along the long side (a lip test)
+COUPON_HOLE = S.val("coupon_hole")
+# the coupon: x from the long-side edge, z from the short-side edge: one rim corner, outside footprint x height; at least
 CORNER_R = S.val("corner_r_out")    #   10 mm of straight lip past each outer bend
 COUPON_GHOST = dict(cs=4.0, cl=4.5, rise=13.5, run=15.0, r=(3.0, 5.5, 3.0))   # r7's lip in r8's frame (its long edge
 COUPON_GHOST_EDGE = 1.0                                                        #   1 mm in), ghosted on the drawing
@@ -335,7 +338,7 @@ def coupon_seal_points(cs=None, cl=None, rise=None, run=None, far=90.0):
     cs = TONGUE_CS if cs is None else cs
     cl = TONGUE_CL if cl is None else cl
     rise = S_RISE if rise is None else rise
-    run = S_RUN if run is None else run
+    run = COUPON_RUN if run is None else run
     return [(cl, far), (cl, cs + rise), (cl + run, cs + rise), (cl + run, cs), (far, cs), (far, far)]
 
 
@@ -408,8 +411,8 @@ def coupon_solid():
     land = land.cut(cq.Workplane("XY").box(cx + 10, cz + 10, TONGUE_H + 1, centered=False).translate((-5, -5, land_h)))
     lip = seal_region(TONGUE_W / 2, land_h, TONGUE_H).cut(seal_region(-TONGUE_W / 2, land_h - 1, TONGUE_H + 2))
     shape = land.union(lip.intersect(sq))
-    sx, sz = SCREWS[0]
-    return shape.cut(cq.Workplane("XY").circle(S.val("coupon_bore") / 2).extrude(ch).translate((sx + T, sz + T, 0)))
+    hx, hz = COUPON_HOLE
+    return shape.cut(cq.Workplane("XY").circle(S.val("coupon_bore") / 2).extrude(ch).translate((hx, hz, 0)))
 
 
 def write_coupon():
