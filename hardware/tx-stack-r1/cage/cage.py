@@ -321,9 +321,9 @@ def coax(arm):
     return pe, yb, zb, ax
 
 
-COUPON = (45.0, 45.0, 8.0)          # the test-fit coupon (r5): one rim corner, outside footprint x height; at least
+COUPON = (45.0, 45.0, 8.0)          # the test-fit coupon (r6): one rim corner, outside footprint x height; at least
 CORNER_R = S.val("corner_r_out")    #   10 mm of straight lip past each outer bend
-COUPON_GHOST_HOLE = (10.0, 10.0)    # r4's hole centre, ghosted on the drawing (r4's lip is r5's)
+COUPON_GHOST = dict(cs=4.0, cl=3.5, rise=12.0, run=12.5, r=5.0)   # r4's lip, ghosted on the drawing (same hole)
 
 
 def coupon_seal_points(cs=None, cl=None, rise=None, run=None, far=90.0):
