@@ -1,16 +1,25 @@
-"""KiCad 10 renders of the stack, from layout/stack.py.
+"""KiCad 10 renders of the four cards and of the cage assembly, from layout/stack.py and cage/cage.py.
 
-Each board is a KiCad PCB: the SolderFul outline (edge notches and centre-line holes, datasheet p.2), every
-hole as a plated pad, and the row strips and rails as copper under a red mask. Parts are footprints with 3D
-models: KiCad's own STEP models where the library has the part (Sullins-style 1x8 socket, 0.1 in headers
-under the breakouts, the right-angle SWD header, the vertical 10k resistors, the 100 nF discs); every other
-part is a generated VRML of labelled boxes built from the same Box list the layout checks use, so a render
-can never show a part where the checks did not. Wires are tubes between their holes.
+Each card is a KiCad PCB: the SolderFul outline (edge notches and centre-line holes, datasheet p.2), every
+hole as a plated pad, and the row strips and rails as copper under a red mask. Parts with a real 3D model are
+footprints carrying it:
+  - KiCad's own library: the lying resistors (DIN0207, 7.62 mm), the standing DO-35 diodes (band on the right
+    lead), the 100 nF discs, the right-angle bus and SWD headers, the 0.1 in headers under the breakouts;
+  - the makers' STEP files, fetched by fetch_models.py into render/models/ (not committed): Adafruit SHTC3,
+    MAX17048 and INA228, Pololu S7V8F3.
+Every other part (the stand-ins: the Wio-E5 mini, the jack breakouts, the PTC fuses, the lug) is a generated
+VRML of the same boxes the layout checks use, so a render never shows a part where the checks did not. Wires
+are tubes between their holes; a lead to a part off the card ends in a short stub.
 
-Writes render/kicad/tx-stack-B1..B4.kicad_pcb and tx-stack-all.kicad_pcb (all four boards on M3 standoffs at
-the layout's gaps) and renders PNGs into ../renders/. Run: python3 kicad_render.py [--no-render]
+The assembly is one KiCad board standing for the cage back plate (box inside width x height), with the cage,
+the backplane, the cards and the power zone drawn as envelope boxes in the box frame. Each PNG carries a
+legend that names its stand-ins.
+
+Writes render/kicad/tx-stack-B1..B4.kicad_pcb and tx-stack-cage.kicad_pcb, and PNGs into ../renders/.
+Run: python3 kicad_render.py [--no-render] [name.png ...]
 """
 import math
+import textwrap
 import subprocess
 import sys
 import uuid
@@ -18,6 +27,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "layout"))
+sys.path.insert(0, str(HERE.parent / "cage"))
+sys.path.insert(0, str(HERE))
+import cage  # noqa: E402
+import fetch_models  # noqa: E402
 import layout_checks as lc  # noqa: E402
 import stack as st  # noqa: E402
 from stack import S  # noqa: E402
@@ -29,6 +42,9 @@ KICAD_CLI = "kicad-cli"
 WRL = 1 / 2.54                      # KiCad reads VRML in units of 0.1 inch
 T = st.BT
 HDR, PCB = st.HDR, st.PCB
+_NY, _NE = S.val("sb_notch_side_y"), S.val("sb_notch_end_span")
+NOTCHES = [(0, _NY), (0, st.BH / 2), (0, st.BH - _NY), (st.BW, _NY), (st.BW, st.BH / 2), (st.BW, st.BH - _NY),
+           (st.BW / 2 - _NE / 2, 0), (st.BW / 2 + _NE / 2, 0), (st.BW / 2 - _NE / 2, st.BH), (st.BW / 2 + _NE / 2, st.BH)]
 
 
 def uid(*parts):
@@ -150,153 +166,204 @@ class Mesh:
         path.write_text("\n".join(out) + "\n")
 
 
-# ------------------------------------------------------------------ colours of the labelled boxes
-def box_colour(what, fp_colour):
-    w = what.lower()
-    for key, c in (("keep", None), ("foam", "#8C8C8C"), ("header plastic", "#151515"), ("jack", "#1E1E1E"),
-                   ("module", "#B8BCC2"), ("sma", "#D4AF37"), ("usb-c", "#B8BCC2"), ("qt socket", "#EDE6D6"),
-                   ("jst ph", "#EDE6D6"), ("mf-r010", "#E8A317"), ("resistor", "#C9B48A"), ("capacitor", "#3060C0"),
-                   ("inductor", "#2A2A2A"), ("button", "#444444"), ("socket", "#151515"), ("swd", "#151515"),
-                   ("qt lead", "#151515"), ("bus pins", "#D4AF37"), ("pad leads", "#B03030")):
-        if key in w:
-            return c
-    return fp_colour
-
-
-# parts drawn by KiCad library STEP models; the VRML skips their boxes
+# ------------------------------------------------------------------ which parts get a real model
 def lib(name):
     return "${KICAD10_3DMODEL_DIR}/" + name
 
 
+PART_VALUE = {p["ref"]: p["value"] for p in st.model.PARTS}
+MAKER_SKIP = ("PCB", "QT socket", "JST PH", "inductor", "header plastic")   # boxes a maker's STEP replaces
+STAND_IN = {
+    "MINI": "Wio-E5 mini: boxes from its outline (no maker 3D model); its right-angle SMA adapter a box",
+    "BOB": "jack breakouts (SparkFun BOB-14021 + Amphenol 87180): boxes from the fab outline, on the printed spacer",
+    "PTC": "MF-R010 fuses: boxes (Bourns gives no 3D model)",
+    "LUG": "battery lug E1 (Keystone 7328) on its nylon screw: a box",
+}
+GENERIC = {
+    "RAH": "bus header: KiCad's generic 1x18 right-angle header (the Sullins part is the same pitch and pin line)",
+    "RAS": "SWD header: KiCad's generic 1x5 right-angle header",
+}
+
+
+def _rot(a, b, base=0.0):
+    """KiCad rotation (degrees, CCW seen from the top) taking a model axis at `base` degrees onto a -> b."""
+    return round(math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) - base) % 360
+
+
+def _runs(pins):
+    """Split a breakout's header pins into straight runs at 2.54 mm (one header piece each)."""
+    rows = {}
+    for x, y in pins.values():
+        rows.setdefault(round(y, 2), []).append((x, y))
+    runs = []
+    for row in rows.values():
+        row.sort()
+        cur = [row[0]]
+        for p in row[1:]:
+            if abs(p[0] - cur[-1][0] - st.P) < 0.05:
+                cur.append(p)
+            else:
+                runs.append(cur)
+                cur = [p]
+        runs.append(cur)
+    return runs
+
+
 def step_models(pl):
-    """[(step path, (x, y) board frame of the model origin, kicad rotation, z offset)] for one placement."""
-    ref, fpn = pl["ref"], pl["fp"]
-    pins = st.pins_of(pl)
-
-    def rot_of(a, b):
-        dx, dy = b[0] - a[0], b[1] - a[1]           # board frame, y up; KiCad screen y is down
-        sx, sy = round(dx / max(abs(dx), abs(dy), 1e-9)), round(-dy / max(abs(dx), abs(dy), 1e-9))
-        return {(0, 1): 0, (1, 0): 90, (0, -1): 180, (-1, 0): 270}[(sx, sy)]
-
-    if fpn == "SOCKET":
-        return [(lib("Connector_PinSocket_2.54mm.3dshapes/PinSocket_1x08_P2.54mm_Vertical.step"), pins["1"],
-                 rot_of(pins["1"], pins["2"]), 0.0)], ("PPPC081",)
-    if fpn == "SWD":
-        return [(lib("Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x05_P2.54mm_Horizontal.step"), pins["1"],
-                 rot_of(pins["1"], pins["2"]), 0.0)], ("SWD",)
-    if fpn == "RV":
-        return [(lib("Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P5.08mm_Vertical.step"), pins["2"],
-                 rot_of(pins["2"], pins["1"]), 0.0)], ("resistor",)
-    if fpn == "CAP":
+    """([(model path, (x, y) card frame of the model origin, KiCad rotation, z offset)], skip-all, skip keys)."""
+    kind, pins = pl["fp"], st.pins_of(pl)
+    if kind == "RLY":
+        return [(lib("Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal.step"), pins["1"],
+                 _rot(pins["1"], pins["2"]), 0.0)], True, ()
+    if kind == "DSTAND":
+        span = "2.54" if math.dist(pins["1"], pins["2"]) < 3 else "5.08"
+        # the body stands on lead 1. KiCad's pin 1 is the cathode: AnodeUp has its body on pin 1, CathodeUp on pin 2
+        if PART_VALUE[pl["ref"]].startswith("BAT85"):        # lead 1 is the anode
+            return [(lib(f"Diode_THT.3dshapes/D_DO-35_SOD27_P{span}mm_Vertical_CathodeUp.step"), pins["2"],
+                     _rot(pins["2"], pins["1"]), 0.0)], True, ()
+        return [(lib(f"Diode_THT.3dshapes/D_DO-35_SOD27_P{span}mm_Vertical_AnodeUp.step"), pins["1"],
+                 _rot(pins["1"], pins["2"]), 0.0)], True, ()
+    if kind == "CAP":
         return [(lib("Capacitor_THT.3dshapes/C_Disc_D3.8mm_W2.6mm_P2.50mm.step"), pins["1"],
-                 rot_of(pins["1"], pins["2"]), 0.0)], ("capacitor",)
-    # 0.1 in male headers under the breakouts and the mini (contiguous rows only)
-    rows = {"BOB": [[str(i) for i in range(1, 7)]], "SHTC3": [["VIN", "3V", "GND", "SCL", "SDA"]],
-            "MAX": [["H.VIN", "H.GND", "H.SCL", "H.SDA", "H.INT", "H.QST"]], "INA": [["H.VIN", "H.GND", "H.SCL", "H.SDA"]],
-            "REG": [["VOUT", "GND", "VIN", "SHDN"]],
-            "MINI": [[f"B{k}" for k in range(1, 13)], [f"D{k}" for k in range(12, 0, -1)]]}
-    out = []
-    for row in rows.get(fpn, []):
-        n = len(row)
-        out.append((lib(f"Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x{n:02d}_P2.54mm_Vertical.step"),
-                    pins[row[0]], rot_of(pins[row[0]], pins[row[1]]), 0.0))
-    if fpn == "INA":                                    # the ALERT pin keeps a 1x1 piece
-        out.append((lib("Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x01_P2.54mm_Vertical.step"), pins["H.ALRT"], 0, 0.0))
-    return out, (("header plastic",) if out else ())
-
-
-# ------------------------------------------------------------------ one board's VRML (parts, wires, labels)
-def board_mesh(b, dz=0.0, m=None, slab=False, stubs=True):
-    m = m or Mesh()
-    if slab:                       # boards above the KiCad board are drawn as VRML slabs with their holes
-        m.box(0, 0, dz - T, st.BW, st.BH, dz, "#B3202A")
-        for h in st.ALL_HOLES:
-            x, y = st.hole_xy(h)
-            m.disc(x, y, dz + 0.02, 0.55, "#1A1A1A", 8)
-            m.disc(x, y, dz - T - 0.02, 0.55, "#1A1A1A", 8)
-        for x, y in st.MHOLES:
-            m.disc(x, y, dz + 0.03, 1.5, "#F0F0F0", 16)
-    for bb, pl in st.placements():
-        if bb != b:
-            continue
-        f = st.FP[pl["fp"]]
-        _models, skip = step_models(pl)
-        top, label_at = -99, None
-        for bx in st.boxes_of(pl):
-            if bx.keepout or any(s.lower() in bx.what.lower() for s in skip):
-                continue
-            c = box_colour(bx.what, f["colour"])
-            if c is None:
-                continue
-            m.box(bx.x0, bx.y0, dz + bx.z0, bx.x1, bx.y1, dz + bx.z1, c)
-            area = (bx.x1 - bx.x0) * (bx.y1 - bx.y0)
-            if "pcb" in bx.what.lower() or (label_at is None and area > 20):
-                label_at = bx
-            top = max(top, bx.z1)
-        for pin, (x, y) in st.pins_of(pl).items():          # pin stubs below the board (solder tails)
-            m.cyl((x, y, dz - T - 1.2), (x, y, dz), 0.32, "#C9C9C9", 6)
-        for pad, (x, y) in st.pads_of(pl).items():
-            m.disc(x, y, dz + (label_at.z1 if label_at else 0) + 0.05, 0.9, "#D4AF37", 10)
-        if label_at is not None:
-            x0, y0, x1, y1 = label_at.x0, label_at.y0, label_at.x1, label_at.y1
-            part = next(p for p in st.model.PARTS if p["ref"] == pl["ref"])
-            name = f'{pl["ref"]} {part["value"]}'.upper()
-            h = min(2.2, (x1 - x0) / max(len(name), 1) * 0.9, (y1 - y0) / 3)
-            if h > 0.9:
-                m.text(name, (x0 + x1) / 2, (y0 + y1) / 2 - h / 2, dz + top + 0.06, h, "#FFFFFF")
+                 _rot(pins["1"], pins["2"]), 0.0)], True, ()
+    if kind in ("RAH", "RAS"):
+        n = len(pins)
+        path = lib(f"Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x{n:02d}_P2.54mm_Horizontal.step")
+        # the model's pins run along -Y (board frame) from its origin, the mating ends point +X
+        if kind == "RAH":                                     # mating ends toward the back (+Y)
+            return [(path, pins["1"], 90, 0.0)], True, ()
+        return [(path, pins[str(n)], 270, 0.0)], True, ()     # toward the front, origin at the last pin
+    out, skip = [], ()
+    if kind in ("SHTC3", "INA", "MAX", "REG", "MINI"):
+        for run in _runs(pins):
+            if len(run) == 1:
+                out.append((lib("Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x01_P2.54mm_Vertical.step"), run[0], 0, 0.0))
             else:
-                m.text(pl["ref"], (x0 + x1) / 2, (y0 + y1) / 2 - 0.6, dz + top + 0.06, 1.2, "#FFFFFF")
-    # wires and jumpers that start and end on this board
-    for kind, a, c, side, note in st.WIRES:
-        ea, ec = end3(a, b, dz), end3(c, b, dz)
-        if ea and ec:
-            col = wire_colour(note)
-            if side == "bottom":
-                z = dz - T - 0.8
-                pts = [(ea[0], ea[1], dz - T), (ea[0], ea[1], z), (ec[0], ec[1], z), (ec[0], ec[1], dz - T)]
+                out.append((lib(f"Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x{len(run):02d}_P2.54mm_Vertical.step"),
+                            run[0], _rot(run[0], run[1], -90), 0.0))
+        skip = ("header plastic",)
+    for mk, rot, x0, y0 in pl["step"]:
+        p = fetch_models.path_of(mk)
+        if p:
+            out.append(("${KIPRJMOD}/../models/" + p.relative_to(fetch_models.MODELS).as_posix(), (x0, y0), rot, HDR))
+            skip = MAKER_SKIP
+    return out, False, skip
+
+
+def legend_lines(kinds):
+    lines = []
+    for k in ("MINI", "BOB", "PTC", "LUG"):
+        if k in kinds:
+            lines.append("stand-in: " + STAND_IN[k])
+    for k in ("SHTC3", "MAX", "INA", "REG"):
+        if k in kinds:
+            name = st.KIND[k][1]
+            if fetch_models.path_of(k):
+                note = "; it shows a terminal block that is not fitted" if k == "INA" else ""
+                lines.append(f"{name}: maker's STEP ({fetch_models.SOURCES[k][3].split(';')[0]}){note}")
             else:
-                lift = 1.2 if kind == "jumper" else 2.5
-                za, zc = ea[2], ec[2]
-                pts = [(ea[0], ea[1], za), (ea[0], ea[1], max(za, zc) + lift), (ec[0], ec[1], max(za, zc) + lift),
-                       (ec[0], ec[1], zc)]
-            m.tube(pts, 0.35 if kind == "jumper" else 0.45, col, 6)
-        elif stubs and (ea or ec) and isinstance(a, str) and isinstance(c, str):
-            e = ea or ec
-            other = c if ea else a
-            up = st.BOARDS.index(other.split(":")[0]) > st.BOARDS.index(b)
-            m.tube([(e[0], e[1], e[2]), (e[0], e[1], e[2] + (6 if up else -T - 5))], 0.45, wire_colour(note), 6)
-    return m
+                lines.append(f"stand-in: {name}: boxes (model not fetched; run render/fetch_models.py)")
+    for k in ("RAH", "RAS"):
+        if k in kinds:
+            lines.append(GENERIC[k])
+    lines.append("wires are tubes; a lead to a part off this card ends in a short stub")
+    return lines
 
 
-def end3(e, b, dz):
-    """3D point of a conductor end on board b, or None."""
-    if isinstance(e, str):
-        bb, h = e.split(":")
-        if bb != b:
-            return None
-        x, y = st.hole_xy(h)
-        return (x, y, dz)
-    for bb, pl in st.placements():
-        if pl["ref"] == e[0] and bb == b and e[1] in st.pads_of(pl):
-            x, y = st.pads_of(pl)[e[1]]
-            zt = max(bx.z1 for bx in st.boxes_of(pl) if "PCB" in bx.what)
-            return (x, y, dz + zt)
-    return None
+# ------------------------------------------------------------------ colours
+def box_colour(what, kind):
+    w = what.lower()
+    for key, c in (("spacer", "#E6E2D3"), ("header plastic", "#151515"), ("jack", "#1E1E1E"),
+                   ("module", "#B8BCC2"), ("sma", "#D4AF37"), ("usb-c", "#B8BCC2"), ("qt socket", "#EDE6D6"),
+                   ("jst ph", "#EDE6D6"), ("mf-r010", "#E8A317"), ("button", "#444444"), ("lug", "#D4AF37"),
+                   ("screw", "#EDEDED"), ("battery leads", "#B03030"), ("inductor", "#2A2A2A")):
+        if key in w:
+            return c
+    return st.KIND.get(kind, ("#8A8A8A",))[0]
 
 
 def wire_colour(note):
     n = note.upper()
-    for key, c in (("3V3", "#D62728"), ("VIN", "#D62728"), ("VOUT", "#D62728"), ("GND", "#1A1A1A"),
-                   ("SCL", "#D4A017"), ("SDA", "#1F5FBF"), ("RST", "#8E44AD"), ("CUPS", "#2CA02C"),
-                   ("VANE", "#17A589"), ("RAIN", "#00A3D9"), ("SYS", "#E67E22")):
+    for key, c in (("3.3 V", "#D62728"), ("BATTERY +", "#D62728"), ("PACK +", "#D62728"), ("LUG", "#D62728"),
+                   ("SYS", "#E67E22"), ("GROUND", "#1A1A1A"), ("PACK -", "#1A1A1A"), ("CLOCK", "#D4A017"),
+                   ("DATA", "#1F5FBF"), ("RESET", "#8E44AD"), ("CUPS", "#2CA02C"), ("VANE", "#17A589"),
+                   ("RAIN", "#00A3D9"), ("THERMISTOR", "#7F7F7F"), ("SENSE", "#C2185B")):
         if key in n:
             return c
     return "#606060"
 
 
-# ------------------------------------------------------------------ the KiCad board file
-def outline_poly():
-    """SolderFul outline with the half-hole notches (datasheet p.2), clockwise in KiCad coordinates."""
+# ------------------------------------------------------------------ one card's VRML (stand-ins, wires, labels)
+def top_of(pl):
+    bx = [b for b in st.boxes_of(pl) if not b.keepout]
+    pcb = [b.z1 for b in bx if "PCB" in b.what]
+    return max(pcb) if pcb else max((b.z1 for b in bx), default=0.0)
+
+
+def end3(e, b):
+    """3D point of a conductor end on card b, or None (another card, the backplane or a part off the card)."""
+    if isinstance(e, str):
+        bb, h = e.split(":")
+        return (*st.hole_xy(h), 0.0) if bb == b else None
+    for bb, pl in st.placements():
+        if bb == b and pl["ref"] == e[0] and e[1] in st.pads_of(pl):
+            return (*st.pads_of(pl)[e[1]], top_of(pl))
+    return None
+
+
+def card_mesh(b):
+    m = Mesh()
+    kinds = set()
+    for bb, pl in st.placements():
+        if bb != b:
+            continue
+        kinds.add(pl["fp"])
+        _models, skip_all, skip = step_models(pl)
+        if skip_all:
+            continue
+        label_at, top = None, 0.0
+        for bx in st.boxes_of(pl):
+            if bx.keepout or any(k.lower() in bx.what.lower() for k in skip):
+                continue
+            m.box(bx.x0, bx.y0, bx.z0, bx.x1, bx.y1, bx.z1, box_colour(bx.what, pl["fp"]))
+            if "sma" not in bx.what.lower():
+                top = max(top, bx.z1)
+            if "pcb" in bx.what.lower() or (label_at is None and (bx.x1 - bx.x0) * (bx.y1 - bx.y0) > 20):
+                label_at = bx
+        if pl["fp"] == "PTC":                                     # its two leads into the card
+            for x, y in st.pins_of(pl).values():
+                m.cyl((x, y, -T - 1.2), (x, y, 1.0), 0.3, "#C9C9C9", 6)
+        for x, y in st.pads_of(pl).values():
+            m.disc(x, y, top_of(pl) + 0.05, 0.9, "#D4AF37", 10)
+        if label_at is not None and pl["fp"] not in ("PTC",):
+            x0, y0, x1, y1 = label_at.x0, label_at.y0, label_at.x1, label_at.y1
+            name = f'{pl["ref"]} {st.KIND[pl["fp"]][1]}'.upper()
+            h = min(2.2, (x1 - x0) / max(len(name), 1) * 0.9, (y1 - y0) / 3)
+            if h > 0.9:
+                m.text(name, (x0 + x1) / 2, (y0 + y1) / 2 - h / 2, top + 0.06, h, "#FFFFFF")
+            else:
+                m.text(pl["ref"], (x0 + x1) / 2, (y0 + y1) / 2 - 0.6, top + 0.06, 1.2, "#FFFFFF")
+    for kind, a, c, side, note in st.WIRES:
+        ea, ec = end3(a, b), end3(c, b)
+        col = wire_colour(note)
+        if ea and ec:
+            if side == "bottom":
+                z = -T - 0.8
+                pts = [(ea[0], ea[1], -T), (ea[0], ea[1], z), (ec[0], ec[1], z), (ec[0], ec[1], -T)]
+            else:
+                lift = 1.2 if kind == "jumper" else 2.5
+                zt = max(ea[2], ec[2]) + lift
+                pts = [ea, (ea[0], ea[1], zt), (ec[0], ec[1], zt), ec]
+            m.tube(pts, 0.35 if kind == "jumper" else 0.45, col, 6)
+        elif ea or ec:
+            e = ea or ec
+            m.tube([e, (e[0], e[1], e[2] + 6)], 0.45, col, 6)
+    return m, kinds
+
+
+# ------------------------------------------------------------------ the KiCad board files
+def card_outline():
+    """SolderFul outline with the half-hole notches (datasheet p.2), in KiCad coordinates (y down)."""
     r = S.val("sb_mhole") / 2
     W, H = st.BW, st.BH
     pts = []
@@ -306,12 +373,11 @@ def outline_poly():
             a = math.radians(a0 + (a1 - a0) * k / n)
             pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
 
-    ends = sorted({x for x, y in st.NOTCHES if y == 0})
-    sides = sorted({y for x, y in st.NOTCHES if x == 0})
-    # KiCad y = H - Y. Walk: top edge (back, Y = H) left to right, right side down, bottom (front) right to left, left up.
+    ends = sorted({x for x, y in NOTCHES if y == 0})
+    sides = sorted({y for x, y in NOTCHES if x == 0})
     pts.append((0, 0))
     for x in ends:
-        notch(x, 0, 180, 0)          # notch dips into the board (KiCad +y)
+        notch(x, 0, 180, 0)
     pts.append((W, 0))
     for Y in sorted(sides, reverse=True):
         notch(W, H - Y, 270, 90)
@@ -325,8 +391,7 @@ def outline_poly():
 
 
 def strips_copper():
-    out = []
-    hw = 0.9
+    out, hw = [], 0.9
     for row in range(1, 31):
         for c0, c1 in (("a", "e"), ("f", "j")):
             (x, y0), (_x, y1) = st.hole_xy(f"{c0}{row}"), st.hole_xy(f"{c1}{row}")
@@ -337,23 +402,23 @@ def strips_copper():
     return out
 
 
-def fp_text(ref, value, x, y, rot, models, layer="F.Cu"):
-    lines = [f'\t(footprint "stack:{value}"', f'\t\t(layer "{layer}")', f'\t\t(uuid "{uid("fp", ref, x, y)}")',
+def fp_text(ref, value, x, y, rot, models):
+    lines = [f'\t(footprint "stack:{value}"', '\t\t(layer "F.Cu")', f'\t\t(uuid "{uid("fp", ref, x, y)}")',
              f'\t\t(at {x:.4f} {y:.4f} {rot})',
              f'\t\t(property "Reference" "{ref}" (at 0 -1.5 {rot}) (layer "F.Fab") (uuid "{uid("ref", ref, x, y)}") '
              f'(effects (font (size 1 1) (thickness 0.15))))',
              f'\t\t(property "Value" "{value}" (at 0 0 {rot}) (layer "F.Fab") (uuid "{uid("val", ref, x, y)}") '
              f'(effects (font (size 1 1) (thickness 0.15))))',
              '\t\t(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)']
-    for path, off, mrot in models:
+    for path, off in models:
         lines.append(f'\t\t(model "{path}" (offset (xyz {off[0]:.4f} {off[1]:.4f} {off[2]:.4f})) '
-                     f'(scale (xyz 1 1 1)) (rotate (xyz 0 0 {mrot})))')
+                     f'(scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))')
     lines.append("\t)")
     return "\n".join(lines)
 
 
 def grid_fp():
-    """Every hole as a plated pad (1.0 mm drill) in one footprint at the board origin."""
+    """Every SolderFul hole as a plated pad in one footprint at the board origin."""
     lines = ['\t(footprint "stack:SOLDERBREAD02_holes"', '\t\t(layer "F.Cu")', f'\t\t(uuid "{uid("grid")}")',
              '\t\t(at 0 0)', '\t\t(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)']
     for i, h in enumerate(st.ALL_HOLES):
@@ -367,13 +432,12 @@ def grid_fp():
     return "\n".join(lines)
 
 
-def board_file(path, footprints, extent):
-    mask = "#B3202AFF"
+def board_file(path, footprints, outline, thick, mask, copper=(), texts=(), height=st.BH):
     head = f"""(kicad_pcb
 \t(version 20240108)
 \t(generator "tx-stack-r1-kicad_render")
 \t(generator_version "8.0")
-\t(general (thickness {T}) (legacy_teardrops no))
+\t(general (thickness {thick}) (legacy_teardrops no))
 \t(paper "A3")
 \t(layers
 \t\t(0 "F.Cu" signal) (31 "B.Cu" signal) (32 "B.Adhes" user "B.Adhesive") (33 "F.Adhes" user "F.Adhesive")
@@ -388,7 +452,7 @@ def board_file(path, footprints, extent):
 \t\t\t(layer "F.Paste" (type "Top Solder Paste"))
 \t\t\t(layer "F.Mask" (type "Top Solder Mask") (color "{mask}") (thickness 0.01))
 \t\t\t(layer "F.Cu" (type "copper") (thickness 0.035))
-\t\t\t(layer "dielectric 1" (type "core") (color "#C8B98AFF") (thickness {T - 0.09:.2f}) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
+\t\t\t(layer "dielectric 1" (type "core") (color "#C8B98AFF") (thickness {thick - 0.09:.2f}) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
 \t\t\t(layer "B.Cu" (type "copper") (thickness 0.035))
 \t\t\t(layer "B.Mask" (type "Bottom Solder Mask") (color "{mask}") (thickness 0.01))
 \t\t\t(layer "B.Paste" (type "Bottom Solder Paste"))
@@ -399,61 +463,76 @@ def board_file(path, footprints, extent):
 \t\t(pad_to_mask_clearance 0)
 \t)
 \t(net 0 "")"""
-    poly = " ".join(f"(xy {x:.4f} {y:.4f})" for x, y in outline_poly())
+    poly = " ".join(f"(xy {x:.4f} {y:.4f})" for x, y in outline)
     edge = [f'\t(gr_poly (pts {poly}) (stroke (width 0.1) (type solid)) (fill no) (layer "Edge.Cuts") '
             f'(uuid "{uid("edge", path.name)}"))']
     cu = []
-    for i, (x0, y0, x1, y1) in enumerate(strips_copper()):
+    for i, (x0, y0, x1, y1) in enumerate(copper):
         for layer in ("F.Cu", "B.Cu"):
-            cu.append(f'\t(gr_rect (start {x0:.4f} {st.BH - y1:.4f}) (end {x1:.4f} {st.BH - y0:.4f}) '
+            cu.append(f'\t(gr_rect (start {x0:.4f} {height - y1:.4f}) (end {x1:.4f} {height - y0:.4f}) '
                       f'(stroke (width 0) (type solid)) (fill yes) (layer "{layer}") (uuid "{uid("cu", layer, i)}"))')
-    texts = []
-    for k, (s_, x, y) in enumerate(extent):
-        texts.append(f'\t(gr_text "{s_}" (at {x:.3f} {y:.3f} 0) (layer "F.SilkS") (uuid "{uid("txt", path.name, k)}") '
-                     f'(effects (font (size 1.6 1.6) (thickness 0.25)) (justify left)))')
-    path.write_text("\n".join([head, grid_fp()] + footprints + cu + edge + texts + [")"]) + "\n")
+    tx = [f'\t(gr_text "{s_}" (at {x:.3f} {y:.3f} 0) (layer "F.SilkS") (uuid "{uid("txt", path.name, k)}") '
+          f'(effects (font (size 1.6 1.6) (thickness 0.25)) (justify left)))' for k, (s_, x, y) in enumerate(texts)]
+    grid = [grid_fp()] if copper else []
+    path.write_text("\n".join([head] + grid + list(footprints) + cu + edge + tx + [")"]) + "\n")
 
 
-def part_footprints(b, dz=0.0):
-    """KiCad STEP footprints for board b, model z raised by dz (stack render)."""
+def card_footprints(b):
     out = []
     for bb, pl in st.placements():
         if bb != b:
             continue
-        models, _skip = step_models(pl)
-        for k, (path, (x, y), rot, z) in enumerate(models):
-            # every STEP model sits on the board top; a breakout's PCB rests on its header's plastic
-            out.append(fp_text(f"{pl['ref']}_{k}", Path(path).stem, x, st.BH - y, rot, [(path, (0, 0, dz + z), 0)]))
+        for k, (path, (x, y), rot, z) in enumerate(step_models(pl)[0]):
+            out.append(fp_text(f"{pl['ref']}_{k}", Path(path).stem, x, st.BH - y, rot, [(path, (0, 0, z))]))
     return out
 
 
-def standoffs_mesh(m, z_bot):
-    r = st.STANDOFF_R
-    for (lo, hi), gap in st.GAPS.items():
-        za, zb = z_bot[lo], z_bot[hi] - T
-        for _n, x, y in st.STANDOFFS:
-            m.cyl((x, y, za), (x, y, zb), r, "#C9A227", 6)
-    for _n, x, y in st.STANDOFFS:                           # screws below B1 and above B4
-        m.cyl((x, y, z_bot["B1"] - T - S.val("floor")), (x, y, z_bot["B1"] - T), r, "#C9A227", 6)
-        m.cyl((x, y, z_bot["B4"]), (x, y, z_bot["B4"] + 2.0), 2.7, "#9A9A9A", 12)
+# ------------------------------------------------------------------ the cage assembly (box frame, envelopes)
+CAGE_COLOUR = {"cage": "#E6E2D3", "card": "#B3202A", "backplane": "#B8875A", "socket": "#151515",
+               "pack": "#3A6EA5", "charger": "#2E7D32", "mux": "#1A1A1A", "housing": "#151515", "part": "#8A8A8A"}
 
 
-def crossings_mesh(m, z_bot):
-    """Leads between boards: bus wires and the B1 3V3 wire as straight tubes; QT leads from the mux to B1."""
-    for kind, a, c, side, note in st.WIRES:
-        if isinstance(a, str) and isinstance(c, str) and a.split(":")[0] != c.split(":")[0]:
-            (ba, ha), (bc, hc) = a.split(":"), c.split(":")
-            (xa, ya), (xc, yc) = st.hole_xy(ha), st.hole_xy(hc)
-            m.tube([(xa, ya, z_bot[ba]), (xc, yc, z_bot[bc])], 0.45, wire_colour(note), 6)
-    mux = next(pl for b, pl in st.placements() if pl["ref"] == "U4")
-    chans = st.FP["MUX"]["chans"]
-    for k in range(1, 5):
-        lead = next(pl for b, pl in st.placements() if pl["ref"] == f"W1{k}")
-        cx, cy = st.tf(mux["rot"], mux["x0"], mux["y0"], *chans[k - 1])
-        zq = z_bot["B2"] + S.val("foam") + PCB + 1.4
-        lx, ly = st.pins_of(lead)["H.GND"]
-        top = z_bot["B1"] + S.val("qt_lead_h")
-        m.tube([(cx, cy, zq), (cx, cy - 3, zq), (cx, cy - 5, zq - 6), (lx, ly, top + 3), (lx, ly, top)], 0.6, "#2A2A2A", 6)
+def assembly_boxes():
+    """(colour key, Box in the box frame) for everything in the assembly, the back plate excepted."""
+    out = [("cage", b) for name, b in cage.fixed_boxes() if name != "back plate"]
+    for b in st.BOARDS:
+        out.append(("card", lc.card_slab(b)))
+        for ref, x in lc.board_boxes(b):
+            if not x.keepout:
+                bx = lc.to_box(b, x)
+                out.append(("part:" + st.KIND[next(pl["fp"] for _b, pl in st.placements() if pl["ref"] == ref)][0], bx))
+    p = st.P
+    out.append(("backplane", st.Box(st.strip_x(0) - p / 2, st.BP_BACK, st.strip_x(20) + p / 2, st.BP_FRONT,
+                                    st.BP_Z0 - 2 * p, st.BP_Z0 + (st.BP_HOLES + 1) * p, "backplane")))
+    for b in st.BOARDS:
+        z = st.bp_xy(f"s1.{st.SOCKET_HOLE[b]}")[1]
+        out.append(("socket", st.Box(st.strip_x(1) - p / 2, st.BP_FRONT, st.strip_x(18) + p / 2,
+                                     st.BP_FRONT + S.val("socket_h"), z - p / 2, z + p / 2, f"socket {b}")))
+    for ref, pins, _note in st.BP_PARTS:
+        if ref.startswith("W") or ref == "XJ1":
+            hh = S.val("qt_lead_h") if ref.startswith("W") else 8.5
+            for h in pins.values():
+                x, z = st.bp_xy(h)
+                out.append(("housing", st.Box(x - p / 2, st.BP_FRONT, x + p / 2, st.BP_FRONT + hh, z - p / 2, z + p / 2, ref)))
+    x0, z0, x1, z1 = st.MUX_BOX
+    out.append(("mux", st.Box(x0, st.BP_BACK - S.val("foam") - 4.8, x1, st.BP_BACK - S.val("foam"), z0, z1, "mux")))
+    for c in cage.contents():
+        out.append(("pack" if "pack" in c.what else "charger", c))
+    return out
+
+
+def cage_mesh():
+    """Box frame (Xb, Yb, Zb) -> mesh (Xb, Zb, Yb - plate): the back plate's front face is the KiCad board top."""
+    m = Mesh()
+    pl = cage.PLATE
+    for key, b in assembly_boxes():
+        col = key.split(":")[1] if key.startswith("part:") else CAGE_COLOUR[key]
+        m.box(b.x0, b.z0, b.y0 - pl, b.x1, b.z1, b.y1 - pl, col)
+    for b in st.BOARDS:                                  # card names on their front edges
+        z = st.card_z(b)
+        y = cage.CARD_FRONT - pl + 0.05
+        m.text(f"{b} {st.ROLE[b]}", st.CAGE_LEFT + st.BW / 2, z - T + 0.15, y, 1.3, "#FFFFFF")
+    return m
 
 
 # ------------------------------------------------------------------ writing and rendering
@@ -463,54 +542,77 @@ def write_all():
     if lc.FAILS:
         sys.exit("layout checks fail; fix them first:\n" + "\n".join(lc.FAILS))
     M3D.mkdir(parents=True, exist_ok=True)
-    files = []
+    jobs = {}
     for b in st.BOARDS:
-        mesh = board_mesh(b)
+        mesh, kinds = card_mesh(b)
         p = M3D / f"{b}.wrl"
         mesh.write(p)
-        fps = part_footprints(b) + [fp_text(f"{b}_parts", f"{b}_parts", 0, st.BH, 0, [("${KIPRJMOD}/3d/" + p.name, (0, 0, 0), 0)])]
+        fps = card_footprints(b) + [fp_text(f"{b}_parts", f"{b}_parts", 0, st.BH, 0, [("${KIPRJMOD}/3d/" + p.name, (0, 0, 0))])]
         f = OUT / f"tx-stack-{b}.kicad_pcb"
-        board_file(f, fps, [(f"{b} {st.ROLE[b]}  FRONT EDGE BELOW", 1, st.BH + 3.5)])
-        files.append(f)
-    # the stack: B1 is the KiCad board, B2..B4 are slabs at their heights (z of each board's top face)
-    z_bot = {"B1": 0.0}
-    for (lo, hi), gap in st.GAPS.items():
-        z_bot[hi] = z_bot[lo] + gap + T
-    mesh = Mesh()
-    for b in st.BOARDS:
-        board_mesh(b, z_bot[b], mesh, slab=(b != "B1"), stubs=False)
-    standoffs_mesh(mesh, z_bot)
-    crossings_mesh(mesh, z_bot)
-    p = M3D / "stack.wrl"
-    mesh.write(p)
-    fps = []
-    for b in st.BOARDS:
-        fps += part_footprints(b, z_bot[b])
-    fps.append(fp_text("stack_parts", "stack_parts", 0, st.BH, 0, [("${KIPRJMOD}/3d/" + p.name, (0, 0, 0), 0)]))
-    f = OUT / "tx-stack-all.kicad_pcb"
-    board_file(f, fps, [])
-    files.append(f)
-    print("wrote", ", ".join(str(x.relative_to(HERE)) for x in files))
-    return files
+        board_file(f, fps, card_outline(), T, "#B3202AFF", strips_copper(),
+                   [(f"{b} {st.ROLE[b]}  FRONT EDGE (bus header at the back edge, up)", 1, st.BH + 3.5)])
+        jobs[f] = (b, kinds)
+    W, H, _D = cage.BOX_IN
+    p = M3D / "cage.wrl"
+    cage_mesh().write(p)
+    f = OUT / "tx-stack-cage.kicad_pcb"
+    board_file(f, [fp_text("cage", "cage", 0, H, 0, [("${KIPRJMOD}/3d/" + p.name, (0, 0, 0))])],
+               [(0, 0), (W, 0), (W, H), (0, H)], cage.PLATE, "#E6E2D3FF", height=H)
+    jobs[f] = ("cage", None)
+    print("wrote", ", ".join(str(x.relative_to(HERE)) for x in jobs))
+    return jobs
 
 
-def render(files):
-    from PIL import Image
+def legend(png, title, lines):
+    from PIL import Image, ImageDraw, ImageFont
+    im = Image.open(png).convert("RGBA")
+    bg = Image.new("RGBA", im.size, (255, 255, 255, 255))
+    im = Image.alpha_composite(bg, im).convert("RGB")
+    try:
+        big, small = (ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", s) for s in (40, 28))
+    except OSError:
+        big, small = ImageFont.load_default(40), ImageFont.load_default(28)
+    pad, lh = 24, 38
+    width = max(40, int(im.width / 15))
+    lines = [w for s in lines for w in textwrap.wrap(s, width, subsequent_indent="    ")]
+    out = Image.new("RGB", (im.width, im.height + pad * 2 + 52 + lh * len(lines)), "white")
+    out.paste(im, (0, 0))
+    d = ImageDraw.Draw(out)
+    y = im.height + pad
+    d.text((pad, y), title, fill="#111111", font=big)
+    y += 52
+    for s in lines:
+        d.text((pad, y), s, fill="#333333", font=small)
+        y += lh
+    out = out.crop((0, 0, out.width, y + pad))
+    out.save(png)
+
+
+def render(jobs):
     PNG.mkdir(exist_ok=True)
-    jobs = []
-    for f in files[:-1]:
-        b = f.stem.split("-")[-1]
-        jobs.append((f, f"{b}-render-top.png", ["--side", "top", "--zoom", "0.95", "-w", "2400", "-h", "1600"]))
-        jobs.append((f, f"{b}-render-iso.png", ["--side", "top", "--rotate", "-50,0,20", "--perspective",
-                                                "--zoom", "0.9", "-w", "2400", "-h", "1700"]))
-    jobs.append((files[-1], "stack-render-iso.png", ["--side", "top", "--rotate", "-65,0,25", "--perspective",
-                                                     "--pivot", "0,0,3.5", "--pan", "1.0,2.0,3.5", "--zoom", "0.62",
-                                                     "-w", "2400", "-h", "2200"]))
-    jobs.append((files[-1], "stack-render-front.png", ["--side", "front", "--pan", "0,-3.5,0", "--zoom", "0.85",
-                                                       "-w", "2400", "-h", "2200"]))
+    todo = []
+    for f, (b, kinds) in jobs.items():
+        if b == "cage":
+            lines = ["every part is an envelope box from the layout checks (layout/stack.py, cage/cage.py), not a 3D model",
+                     "stand-ins: the cage (printed PLA, not yet designed past these boxes); the BQ25798EVM outline "
+                     f"{'x'.join(f'{v:g}' for v in cage.EVM)} mm and the box inside "
+                     f"{'x'.join(f'{v:g}' for v in cage.BOX_IN)} mm [TBD-MEASURE]",
+                     "cards bottom to top: " + ", ".join(f"{c} {st.ROLE[c]}" for c in st.ORDER)
+                     + "; pack and charger in the power zone below; the lid side faces the viewer"]
+            todo.append((f, "cage-render-iso.png", "cage assembly, iso (from the lid side)", lines,
+                         ["--side", "top", "--rotate", "-40,0,-35", "--perspective", "--zoom", "0.62",
+                          "-w", "2000", "-h", "2600"]))
+            todo.append((f, "cage-render-front.png", "cage assembly, from the open lid", lines,
+                         ["--side", "top", "--zoom", "0.95", "-w", "2000", "-h", "2700"]))
+            continue
+        lines = legend_lines(kinds)
+        todo.append((f, f"{b}-render-top.png", f"{b} {st.ROLE[b]}, from above (front edge at the bottom)", lines,
+                     ["--side", "top", "--zoom", "0.95", "-w", "2400", "-h", "1600"]))
+        todo.append((f, f"{b}-render-iso.png", f"{b} {st.ROLE[b]}, iso", lines,
+                     ["--side", "top", "--rotate", "-50,0,20", "--perspective", "--zoom", "0.9", "-w", "2400", "-h", "1700"]))
     ok = True
-    only = [a for a in sys.argv[1:] if a.endswith('.png')]
-    for f, png, args in jobs:
+    only = [a for a in sys.argv[1:] if a.endswith(".png")]
+    for f, png, title, lines, args in todo:
         if only and png not in only:
             continue
         out = PNG / png
@@ -521,14 +623,12 @@ def render(files):
             print(png, f"FAILED: {r.stderr[-400:]}")
             ok = False
             continue
-        im = Image.open(out).convert("RGBA")
-        bg = Image.new("RGBA", im.size, (255, 255, 255, 255))
-        Image.alpha_composite(bg, im).convert("RGB").save(out)
+        legend(out, title, lines)
         print("rendered", png)
     return ok
 
 
 if __name__ == "__main__":
-    fs = write_all()
-    if "--no-render" not in sys.argv and not render(fs):
+    js = write_all()
+    if "--no-render" not in sys.argv and not render(js):
         sys.exit(1)

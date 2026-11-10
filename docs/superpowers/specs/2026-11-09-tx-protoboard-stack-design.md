@@ -1,182 +1,167 @@
-# TX protoboard stack (r1): design
+# TX protoboard card cage (r2): design
 
-Status: draft for Clint's approval, 2026-11-09. Builder check done; its questions are answered in place.
-
-**On hold (2026-11-09): the MCU.** The NUCLEO does not fit this stack: it is about 70 mm wide against 50.8 mm, has
-no mounting holes, and its 2-row Morpho headers short on the breadboard strips. Clint chose to **spike
-splitting the MCU and radio out** (a RAK3172 / STM32WLE5 module on a SolderFul layer, with the NUCLEO's
-ST-LINK as the bench programmer), issue #35. The fallback is a carrier perfboard with isolated holes that the
-NUCLEO plugs down into (CN7 pin 1 to CN10 pin 1 = 60.96 mm = 24 × 0.1", per KiCad's Nucleo-64 template,
-still to be measured on the MB1389). The rest of this design stands either way; the sections naming
-the NUCLEO jumper bundle and B3 change with the outcome.
+Status: r2, after the electrical and mechanical reviews of r1, 2026-11-09. The generated design, its checks,
+build sheets and renders are in `hardware/tx-stack-r1/` (revised in place; git history keeps r1). Its README
+lists what changed from r1 and why, what is still a stand-in, and what Clint must measure.
 
 ## Intent
 
 The breadboard bench (`hardware/bench-breadboard-r1/`) proved the TX design, except for one thing: the
 bq24074 could not charge with the battery INA228 in the loop. Breadboard, Dupont and WAGO resistance
 ended charging early (record F1, and again on 2026-11-09). The next step makes the TX a **compact,
-soldered unit** that can go into the IP66 box, and replaces as much of the power measurement as it can
-with the **BQ25798** (issue #34).
+soldered unit** that goes into the IP66 box, and replaces as much of the power measurement as it can with
+the **BQ25798** (issue #34).
 
 Success is: the TX, its power system and every sensor port fit in the #905 box; the battery charges to
 full with current measured in the loop; every outdoor sensor plugs in through a gland to an internal RJ11
-jack and is found at boot.
+jack and is found at boot; **any card comes out on its own without desoldering**.
 
 ## Goals
 
-- Four DigiKey SolderFul BreadBoards (SOLDERBREAD#02: 81.3 × 50.8 mm, 1.6 mm, 0.1" pitch, 30 rows,
-  breadboard pattern: a–e and f–j joined per row, ± rails) stacked on **20 mm spacers** (already built).
+- Four DigiKey SolderFul BreadBoards (SOLDERBREAD#02: 81.3 x 50.8 mm, 1.6 mm, 0.1 in pitch, 30 rows, a-e and
+  f-j joined per row, two rails per long edge) as cards in a printed cage.
+- The MCU and radio are a **Seeed Wio-E5 mini** (STM32WLE5JC, issue #35) on its own header on the CORE card;
+  the NUCLEO is the bench programmer only (SWD).
 - **Five outdoor cables** (TH, baro, UV, wind, rain) each pass a gland and plug into an **internal RJ11
   jack**. Each I2C module is found at boot by its ID EEPROM (`docs/firmware-current-design.md` §4.1).
 - **BQ25798EVM** replaces the bq24074 and the solar, USB-C and load INA228s. **One INA228 (0x40,
   battery) and the MAX17048 stay** (Clint, 2026-11-09).
-- The battery loop is soldered end to end: no breadboard, Dupont or WAGO in it.
+- The battery loop is soldered or screwed end to end: no breadboard, Dupont, WAGO, header, socket or strip.
 - No OLED.
 
 ## Non-goals
 
-- RJ11 ports exposed on the outside of the box (facing down under the unit). Clint: a later "final final"
-  version, not now.
-- A custom PCB, a bare BQ25798 board, or the 16 MiB SPI flash (#33).
-- The outdoor module ends (sensor breakout + EEPROM + jack) beyond the pin map below; they get their own
-  build sheet.
+- RJ11 ports on the outside of the box, a custom PCB, a bare BQ25798 board, the 16 MiB SPI flash (#33).
+- Print files (STL) for the cage: not until the box inside is measured.
+- The outdoor module ends beyond the pin map below.
 
 ## Anti-goals
 
-- Any connector or breadboard contact in the battery current path (the F1 failure), **except the pack's own JST PH mating pair** (Clint, 2026-11-09: keep the pack unmodified and swappable). BATP and the MAX17048 sense tap on B4 right at the JST socket, so that one contact pair is the only resistance between the cell and the charger's sense.
-- A port pin map under which plugging a meter cable into an I2C jack, or the reverse, shorts 3.3 V to GND.
+- Any connector or breadboard contact in the battery current path (the F1 failure), **except the pack's own
+  JST PH mating pair** (keep the pack unmodified and swappable).
+- A port pin map under which plugging a meter cable into an I2C jack, or the reverse, shorts 3.3 V to ground.
 
-## Approaches considered
+## Mechanical: the card cage
 
-1. **Cable entry.** (a) **Thread the bare cable through a PG-7 gland, then crimp the plug inside**
-   (chosen: 100 RJ12 plugs on hand; needs the Klein VDV226-011 crimper and 4 more PG-7 glands);
-   (b) split cable-entry glands that clamp over a plugged cable; (c) waterproof bulkhead couplers.
-   Hardwiring cables straight to the boards was not wanted: everything plugs in.
-2. **Stack to NUCLEO.** (a) Morpho stacking headers straight onto the NUCLEO (Clint's preference) **does
-   not work on this board**: a 2-row 0.1" header lands both rows in one a–e strip and shorts. (b)
-   **Boards stack to each other on single-row headers down one column (each pin in its own row strip);
-   the stack reaches the NUCLEO through one bundle of female-ended jumpers onto the Morpho pins** (chosen,
-   my call after (a) failed). (c) Soldered wire bundles: rejected, hard to service.
-3. **Jack split.** **Bottom board: 4 I2C jacks (mux ch0–3; ch3 is the spare the ports design already
-   calls for). Board 2: wind and rain.** (Clint, 2026-11-09.) Alternatives were 3 I2C + wind on the
-   bottom, or all 5 on one board.
+The #905 box hangs on its pole by the back wall, long side vertical. A printed (PLA, Bambu H2D) cage screws
+to the back wall's four corner bosses:
 
-## The stack (bottom to top)
+- a back plate; a left wall with one slot per card; a right corner post that takes each card's back-right
+  corner; a retention bar screwed across the front-left of the stack after the cards are in;
+- four posts that hold the **backplane** (BusBoard ST2 stripboard cut to 21 strips x 39 holes, copper side
+  back) 7 mm off the back plate;
+- below the cards, the **power zone**: the pack on a shelf with side lips and a strap, and the BQ25798EVM on
+  two rails.
 
-| Board | Name | Contents |
+The cards are horizontal shelves. Each has a **Sullins PRPC018SBAN-M71RC** right-angle 1x18 male header on
+its back edge (column j, rows 1-18), which plugs 5.0 mm into a **Sullins PPPC181LFBN-RC** 1x18 socket on the
+backplane (5.84 mm of mating pin; at least 4.2 mm if a card sits 0.8 mm short). Card order bottom to top:
+B4 POWER, B2 PORTS B + METERS, B1 PORTS A, B3 CORE, at pitches of 15.24, 20.32 and 20.32 mm, each clearing the
+tallest part below plus its tails and 0.5 mm. The jacks face the right wall; the cable glands are in the
+bottom wall (two rows of four PG-7); the SMA bulkhead is in the right wall near the top, reached by the
+mini's SMA through a right-angle adapter (Amphenol RF 132172). The cage is parametric (`cage/cage.py`): the
+box inside, the corner bosses, the EVM outline and the slot allowance are named inputs at the top.
+
+Why a cage and not the r1 standoff stack: r1's soldered bus wires meant it could not come apart (mechanical
+C1), the box floor did not hold the stack, pack and charger (C2), and the lid margin was 0.5 mm on a floor
+spacer that did not exist (C3). The SolderFul's own strips are too short to carry an 18-line bus, hence the
+stripboard backplane.
+
+## The cards
+
+| Card | Role | Contents |
 |---|---|---|
-| B1 | PORTS | 4 RJ11 jacks on the front edge, column E rows 1–6, 8–13, 15–20, 22–27 (each jack's 6 pins in 6 row strips). PCA9548 #5626, **A0 bridged → 0x71**; ch0–3 → S1–S4 |
-| B2 | METERS | WIND and RAIN jacks (the BOB-14021 pair) on the front edge. Cups and rain 10 kΩ pull-ups + 100 nF to GND; vane 10 kΩ pull-up (values from `docs/current-system.md` §4.4, unchanged) |
-| B3 | CORE BUS | The NUCLEO jumper bundle lands here. SHTC3 enclosure sensor wired direct, upstream of the mux. 3V3/GND distribution to the stack |
-| B4 | POWER | INA228 0x40 in the battery loop, MAX17048 on the cell, S7V8F3 3.3 V regulator, battery JST pigtail soldered in. Leads out to the EVM's BAT and SYS |
+| B4 | POWER | INA228 0x40 (header pins 5-7 pulled; battery leads on its X1 pads), MAX17048 (cell sense on JP2 VBAT), S7V8F3 3.3 V regulator, battery + lug (Keystone 7328 on an M3 nylon screw) |
+| B2 | PORTS B + METERS | Sensor port 4; wind and rain jacks with the 10 k pull-ups, 100 nF filters (now also on the vane), 1N5232B clamps and 1 k series resistors to the MCU |
+| B1 | PORTS A | Sensor ports 1-3 |
+| B3 | CORE | Wio-E5 mini, SHTC3 enclosure sensor (upstream of the mux), right-angle SWD header at the front edge |
+| backplane | bus | Four sockets; the PCA9548 #5626 (A0 bridged, 0x71) on foam behind it, wired by its pads; four QT leads from the bus strips to the ports' mux channels; the charger I2C pins |
 
-Beside the stack on the box floor: the NUCLEO-WL55JC1, the BQ25798EVM and the battery pack.
+Each sensor port is a SparkFun BOB-14021 + Amphenol 87180-066LF jack (on a printed spacer, mouth flush with
+the card's right edge, wired to the card by flying leads), an MF-R010 fuse in its 3.3 V, 100 ohm in series on
+data and clock, BAT85S Schottky clamps from data and clock to the port 3.3 V and from ground, and a 1N5232B
+zener on the port 3.3 V.
 
-**Inter-board bus** (single-row header down one column through all four boards): 3V3, GND, SDA, SCL,
-MUX_RST (PB14), CUPS (PB5), VANE (PB2), RAIN (PB4). *On the Wio-E5 mini (#35) these become SDA PA15, SCL PB15, CUPS PC0 (LPTIM1_IN1), VANE PB3 (ADC_IN2); RAIN PB4 and MUX_RST PB14 stay; the console moves to the mini's own USB-C (USART1 PB6/PB7).* The builder picks the column; each pin sits in a
-different row strip.
+**Bus (18 lines, backplane strips 1-18):** 3.3 V supply, ground, sensor port 1 data and clock, cups, vane,
+I2C clock, sensor port 2 data and clock, I2C data, rain, ground, sensor port 3 data and clock, mux reset,
+spare, sensor port 4 data and clock. On the Wio-E5 mini: I2C data PA15, clock PB15, cups PC0 (LPTIM1_IN1),
+vane PB3 (ADC_IN2), rain PB4, mux reset PB14; the console is the mini's own USB-C (USART1 PB6/PB7).
 
 ## RJ11 pin maps (middle four positions only, so any 4- or 6-conductor straight-through cable works)
 
 | Jack | Pin 2 | Pin 3 | Pin 4 | Pin 5 |
 |---|---|---|---|---|
-| I2C S1–S4 (**my call**) | 3V3 | SDA | GND | SCL |
-| WIND (existing, `current-system.md` §4.4) | GND (vane return) | GND (cups return) | CUPS → PB5 | VANE → PB2 |
-| RAIN (existing) | — | GND | RAIN → PB4 | — |
+| Sensor ports 1-4 | 3.3 V | data (SDA) | ground | clock (SCL) |
+| Wind (`current-system.md` §4.4) | ground (vane return) | ground (cups return) | cups (wind speed) pulse | vane (wind direction) |
+| Rain | — | ground | rain pulse | — |
 
-Why this I2C order: GND sits between SDA and SCL in untwisted flat cable, and a mis-plug cannot short
-the supply. A wind or rain cable in an I2C jack puts a reed switch across SDA–GND (3–4) and the vane
-network (≥ about 680 Ω) across 3V3–SCL (2–5). An I2C module in a meter jack gets its 3V3 pin grounded
-and its GND pin on a 10 kΩ pull-up: it stays unpowered. **The INVENTORY note that puts 3.3 V on pin 1 is
-superseded** (4-conductor cable does not carry pin 1).
+Why this order: ground sits between data and clock in untwisted flat cable, and a mis-plug cannot short the
+supply. A wind or rain cable in a sensor port puts a reed switch across data and ground and the vane network
+(at least about 680 ohm) across 3.3 V and clock. An I2C module in a meter jack gets its 3.3 V pin grounded and
+its ground on a 10 k pull-up: it stays unpowered. Each outdoor I2C module carries its sensor breakout and a
+24LC32-class ID EEPROM at 0x50 on the same four lines.
 
-Each outdoor I2C module is wired to the same map: its sensor breakout and a 24LC32-class ID EEPROM at
-0x50 share the 4 lines.
+**Cable limit:** each port's lines are pulled up by about 5 kohm (the module's and the mux's 10 k), which at
+100 kHz allows about 236 pF: roughly 2-3 m of flat phone cable at an assumed 50 pF/m `[TBD-MEASURE]`. Longer
+runs need 2.2-3.3 k pull-ups at the jack; scope each port with its real cable.
 
 ## Power
 
 ```
-solar (P110) ─► EVM VAC/VBUS ─┐
-USB-C ────────► EVM ──────────┤ BQ25798 ── SYS ─► S7V8F3 ─► 3V3 (NUCLEO CN6.4 + stack)
-                              └ BAT ◄── soldered ── INA228 0x40 (B4) ── pack + (JST, soldered)
-                                BATP sense ◄── own wire, to the pack + side of the INA shunt
-MAX17048 CELL+ ◄── own sense wire at the pack terminal
+solar (P110) --> EVM VIN2 --+
+USB (micro-B J6) -> EVM VIN1 --+ BQ25798 -- SYS (J3) --> S7V8F3 --> 3.3 V supply (bus)
+                               +- battery + (J5) <-- INA228 shunt (B4) <-- lug E1 <-- pack + (JST PH)
+                                  charger battery sense (BATP, J5 SNS_BATP) <-- 100 ohm R7 <-- lug E1
+fuel gauge cell sense (MAX17048 JP2 VBAT) <-- 100 ohm R8 <-- lug E1
 ```
 
-- **BATP** (EVM J5 SNS_BATP, jumper JP9 per issue #34) senses the cell at the pack, not at the EVM, so
-  the INA228 shunt and wiring sit outside the charger's voltage sense. This is the fix for F1.
-- Battery-loop wire: the 22 AWG solid hook-up is the minimum; the loop budget stays F1's (+ side ≤
-  75 mΩ, − side ≤ 40 mΩ), measured once built.
-- The NUCLEO is powered at CN6.4 (3V3) with return at CN6.7, as bench mode B.
-- **Pack:** Adafruit #353, Li-ion 1S3P 6600 mAh with its own protection board, JST PH lead. Charge current
-  stays near the bench's 0.89 A (about 0.13 C); termination about 10% of ICHG.
-- **Battery INA228:** Adafruit #5832 (one of the 5 at home). Its shunt sits in the + leg between the pack
-  and the EVM's BAT; BATP taps on the pack side of it, so the charger regulates the cell, not the EVM
-  terminal. The SYS load hangs off the EVM side, which is fine.
-- **EVM before the driver exists (my call):** it charges on its own hardware defaults (cell count and
-  limits from its on-board PROG/strap settings). The builder reads the EVM guide (SLUUCB5) for those
-  defaults and for which of J5/JP9 is the BATP sense on this revision, and records them. The EVM's
-  SDA, SCL, INT and GND are **wired to the stack bus now** (0x6B clashes with nothing), so profile 3 needs
-  no rewiring. Its I2C pull-ups must not go to a rail above 3.3 V: disable them and use the 3.3 V
-  pull-ups already on the bus.
-- **Inputs (my call):** USB-C to the EVM's VIN1, solar to VIN2. The P110 (6.94 V open circuit, about
-  8.7 V cold) is inside the BQ25798's input range. The solar cable comes through the sixth gland and lands
-  on the EVM's input terminal; its barrel plug is cut or adapted at the box.
-- **I2C pull-ups:** the NUCLEO has none on PA11/PA12. Each Adafruit breakout carries its own 10 kΩ, and the
-  mux isolates the port channels. The builder checks the bus edges once with the scope; nothing is added
-  unless they are slow.
-- **Mux address:** the firmware already expects 0x71 (`docs/current-system.md` line 71).
+- **Battery + junction:** the pack pigtail, the shunt input and both sense leads meet on the lug E1, not in a
+  free-air splice (mechanical M8). The sense resistors sit at the lug end so a chafed sense wire cannot short
+  the pack (electrical m11).
+- **Charger set-up before any power** (electrical C1, M1, M2; issue #34), in `build/ASSEMBLY.md`: JP24 off and
+  JP22 on (one cell); the sense wire soldered, then JP9 off; JP18 off and a 10 k NTC (Adafruit #372) on J7,
+  taped to the pack; JP12, JP17 and JP30 stay. First power without the pack and with JP17 out; read REG0x0A
+  (cell count) and REG0x01-02 (charge voltage 4.2 V) and set ICHG to about 0.9 A before connecting the pack.
+  The #372 is B 3950 against the EVM's 103AT-sized divider: read TS at room temperature and confirm it is in
+  the normal band.
+- **Pull-ups:** the EVM's 10 k I2C pull-ups (on its own 3.3 V rail, JP30) cannot be switched off; with the
+  breakouts' the upstream total is 1.40 kohm, still above the 0.97 kohm floor.
+- **Pack:** Adafruit #353, Li-ion 1S3P 6600 mAh with its own protection board. Charge current near 0.9 A;
+  termination about 10 % of ICHG. Battery-loop budget stays F1's (+ side 75 mohm or less, − side 40 mohm or
+  less), measured once built.
+- **Sensor-power switch on PA9: deferred** (electrical M3). No orderable through-hole current-limited switch
+  was found; a shorted port browns out the 3.3 V supply until its MF-R010 trips.
 
 ## Firmware
 
-- Today's TX build (`WS_POWER_PROFILE=2`) runs on this stack: missing INA228s and the bq24074 ADC pins
-  read INVALID, they do not stop the station (`firmware-current-design.md`, ports 9 and 14). Build it with
-  `WS_I2C_MUX=1` and without `WS_BENCH_OLED`.
-- The BQ25798 driver (`WS_POWER_PROFILE=3`, now `#error`) is a **separate plan** (issue #34): I2C 0x6B,
-  one-shot ADC, MPPT enable, ITERM about 10% of ICHG. This stack does not wait for it.
+- The Wio-E5 board build (`firmware/board/wio-e5/`, its README states the power profile) runs on this unit;
+  missing parts read INVALID and do not stop the station. Build with the mux enabled and without the bench
+  OLED.
+- The BQ25798 driver (profile 3, now `#error`) is a separate plan (issue #34). The EVM's I2C is wired to the
+  bus now (0x6B clashes with nothing).
 - The mux part is a PCA9548 (#5626), pin- and register-compatible with the TCA9548A the firmware names.
 
-## Measurements still needed  `[TBD-MEASURE]`
+## Measurements still needed `[TBD-MEASURE]`
 
-1. #905 box inside floor and inside depth. The stack is about 66 mm plus parts above B4 and tails below
-   B1; the box is 75 mm deep outside.
-2. BQ25798EVM outline and tallest part.
-3. NUCLEO-WL55JC1 outline including the SMA.
-4. Battery pack (#353) size.
-5. Outer diameter of each cable for the PG-7 glands (they grip about 3–6.5 mm), and whether the RJ11 cables are flat (a round gland does not seal flat cable well).
+The full list, with the key each feeds, is in `hardware/tx-stack-r1/README.md`. The first four move the cage:
+the #905 box inside, its corner bosses, the BQ25798EVM outline and tallest part, and the card slot fit on a
+printed test slot. Also the cable outer diameters for the PG-7 glands (3-6.5 mm, round cable seals; flat
+does not), and each port cable's capacitance.
 
-If the floor cannot hold the NUCLEO, EVM and pack beside the stack, the first fallback is to mount the
-EVM on top of B4 on its own spacers.
+## Parts
 
-## Parts (ordered 2026-11-09, DigiKey; rows in INVENTORY.md "On order")
-
-- Ports: 10 × SparkFun BOB-14021 and 20 × Amphenol **87180-066LF** 6P6C jacks. The 87180 replaces the
-  sold-out PRT-00132. The BOB's footprint (SparkFun Eagle: 1.27 mm stagger, rows 6.35 and 8.89 mm from the
-  peg line, 3.25 mm pegs 10.16 mm apart) matches Amphenol's 54601-x06 exactly; the 87180 is Amphenol's
-  listed replacement for it. **Test-fit one jack before soldering.** Base needs 6 BOBs (4 I2C, wind, rain;
-  2 on hand), each outdoor I2C module 1 more.
-- Module ends: 10 × Adafruit Perma-Proto quarter (1608).
-- Per-port protection: 20 × Bourns MF-R010 (100 mA PTC) in each I2C port's 3V3.
-- Stack bus: 12 × Sullins PPPC081LFBN-RC 1×8 sockets. Standoffs from the Hilitchi M2/M3 kit: B1→B2 20 mm
-  (jack height), B2→B3 and B3→B4 10 mm with the male header's plastic slid off (or a 1 mm washer for 11 mm).
-  Stack height about 46 mm.
-- Radio (#35): 5 × Wio-E5 mini, 5 × Linx ANT-916-CW-HWR-SMA, 5 × Amphenol 135110-01-06.00 (SMA bulkhead
-  jack to straight plug, RG-316, 6"): antenna outside, vertical, on the box top or upper wall.
-- NUCLEO fallback: 5 × BusBoard PAD3U, 10 × Sullins PPPC192LFBN-RC (2×19).
-- Passives: 0.1 µF X7R, 10 kΩ 1 %, 1 MΩ, shunts, 2-pin headers.
-- **Not ordered, still needed:** female-to-female jumpers for SWD from the NUCLEO's ST-LINK to the
-  Wio-E5 (Adafruit 266 or equivalent).
+- Ports: SparkFun BOB-14021 and Amphenol **87180-066LF** 6P6C jacks (test-fit one jack before soldering);
+  Bourns MF-R010; Vishay BAT85S; onsemi 1N5232B; 100 ohm and 1 k 1/4 W resistors.
+- Bus: Sullins PRPC018SBAN-M71RC (right angle, 1x18) per card; Sullins PPPC181LFBN-RC (1x18 female) per card
+  on a BusBoard ST2 stripboard.
+- Battery: Keystone 7328 lug on an M3 nylon screw; Adafruit #372 10 k NTC.
+- Radio (#35): Wio-E5 mini, Amphenol RF 132172 right-angle SMA adapter, Amphenol 135110-01-06.00 (SMA
+  bulkhead to plug, RG-316, 6 in), Linx ANT-916-CW-HWR-SMA outside, vertical.
+- Module ends: Adafruit Perma-Proto quarter (1608).
 - On hand: glands, a modular crimper, premade RJ11 cables, EEPROMs, the PCA9548 mux.
 
 ## Next revision (not now)
 
-A **Molex 0432236113** ganged 1×6 6P6C jack (70.7 × 22.6 × 12.8 mm, 11.38 mm port pitch, contacts staggered
-1.27 mm in rows 2.54 mm apart, a board lock at each end; measured from Molex's STEP model) puts all six
-ports on one edge. Its staggered pins don't fit 0.1" boards, so it waits for the first custom PCB,
-together with the ports exposed under the box.
-
-## Left to the builder
-
-- The inter-board header column, header heights, and wire colours.
-- Where the mux and the pull-ups sit on B1 and B2 (f–j halves are free beside each jack).
-- Strain relief inside the box for each cable.
+A **Molex 0432236113** ganged 1x6 6P6C jack (70.7 x 22.6 x 12.8 mm, 11.38 mm port pitch, staggered contacts)
+puts all six ports on one edge. Its staggered pins do not fit 0.1 in boards, so it waits for the first custom
+PCB, together with the ports exposed under the box.
