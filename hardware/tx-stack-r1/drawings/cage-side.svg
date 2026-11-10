@@ -415,10 +415,10 @@
 <rect x="425.2" y="190.0" width="19.2" height="6.4" fill="#bbbbbb" fill-opacity="0.8" stroke="#555" stroke-width="0.6"/>
 <line x1="444.4" y1="206.0" x2="444.4" y2="746.8" stroke="#1F5FBF" stroke-width="1.5" stroke-dasharray="8 4"/>
 <text x="448.4" y="220.0" font-size="10" text-anchor="start" fill="#1F5FBF" font-weight="normal">base / lid seam (Yb 97): lid tray beyond</text>
-<rect x="766.0" y="676.4" width="68.8" height="70.4" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
-<rect x="766.0" y="206.0" width="68.8" height="70.4" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
-<rect x="1094.0" y="676.4" width="68.8" height="70.4" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
-<rect x="1094.0" y="206.0" width="68.8" height="70.4" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
+<rect x="766.0" y="702.0" width="44.8" height="44.8" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
+<rect x="766.0" y="206.0" width="44.8" height="44.8" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
+<rect x="1118.0" y="702.0" width="44.8" height="44.8" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
+<rect x="1118.0" y="206.0" width="44.8" height="44.8" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
 <rect x="766.0" y="705.8" width="41.0" height="41.0" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
 <rect x="766.0" y="206.0" width="41.0" height="41.0" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
 <rect x="1121.8" y="705.8" width="41.0" height="41.0" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
@@ -431,10 +431,10 @@
 <rect x="1145.2" y="206.0" width="17.6" height="540.8" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
 <rect x="766.0" y="729.2" width="396.8" height="17.6" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
 <rect x="766.0" y="206.0" width="396.8" height="17.6" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
-<rect x="766.0" y="676.4" width="68.8" height="70.4" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
-<rect x="766.0" y="206.0" width="68.8" height="70.4" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
-<rect x="1094.0" y="676.4" width="68.8" height="70.4" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
-<rect x="1094.0" y="206.0" width="68.8" height="70.4" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
+<rect x="766.0" y="702.0" width="44.8" height="44.8" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
+<rect x="766.0" y="206.0" width="44.8" height="44.8" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
+<rect x="1118.0" y="702.0" width="44.8" height="44.8" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
+<rect x="1118.0" y="206.0" width="44.8" height="44.8" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
 <rect x="822.6" y="727.6" width="53.1" height="19.2" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
 <rect x="899.4" y="727.6" width="53.1" height="19.2" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
 <rect x="976.2" y="727.6" width="53.1" height="19.2" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
@@ -443,9 +443,9 @@
 <rect x="899.4" y="727.6" width="53.1" height="19.2" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
 <rect x="976.2" y="727.6" width="53.1" height="19.2" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
 <rect x="1044.4" y="721.5" width="70.4" height="25.3" fill="#cccccc" fill-opacity="0.6" stroke="#666" stroke-width="0.6"/>
-<rect x="1159.6" y="290.8" width="28.8" height="25.6" fill="#D4AF37" fill-opacity="1.0" stroke="#7a5c12" stroke-width="1"/>
-<rect x="396.4" y="290.8" width="25.6" height="25.6" fill="#D4AF37" fill-opacity="1.0" stroke="#7a5c12" stroke-width="1"/>
-<text x="1194.8" y="307.6" font-size="10" text-anchor="start" fill="#222" font-weight="normal">SMA bulkhead boss</text>
+<rect x="1159.6" y="286.3" width="28.8" height="25.6" fill="#D4AF37" fill-opacity="1.0" stroke="#7a5c12" stroke-width="1"/>
+<rect x="396.4" y="286.3" width="25.6" height="25.6" fill="#D4AF37" fill-opacity="1.0" stroke="#7a5c12" stroke-width="1"/>
+<text x="1194.8" y="303.1" font-size="10" text-anchor="start" fill="#222" font-weight="normal">SMA bulkhead boss</text>
 <text x="70.0" y="28.0" font-size="15" text-anchor="start" fill="#222" font-weight="bold">TX stack r3 in the printed PETG base (100 deep) under the #905 lid, hanging long side up, to scale 3.2 px/mm; inside 124 x 169 x 120 mm (lid interface: L1 and the coupon fit [TBD-MEASURE])</text>
 <text x="70.0" y="48.0" font-size="12" text-anchor="start" fill="#222" font-weight="normal">Blue: moulded cage features. Red slabs: cards. Tan: backplane. Dashed: plug keep-outs. Grey: corner posts, gland nuts, pole lugs and drip edge.</text>
 <text x="70.0" y="64.0" font-size="12" text-anchor="start" fill="#222" font-weight="normal">Shelves bottom to top: the pack, the BQ25798EVM (90 x 90, J8 toward the lid), B4, B2, B1, B3; all slide toward the back. Glands in the bottom wall; cables rise in the right column.</text></svg>
