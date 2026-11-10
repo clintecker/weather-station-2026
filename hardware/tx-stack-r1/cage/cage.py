@@ -48,8 +48,8 @@ BOX_IN = (W, H, D)
 assert tuple(round(v, 3) for v in BOX_IN) == tuple(S.val("box_in")), (BOX_IN, S.val("box_in"))
 RIM_OUT, RIM_CH, RIM_IN = S.val("lid_rim")
 LAND = RIM_OUT + RIM_CH + RIM_IN    # 9 mm
-LIP = RIM_OUT + RIM_CH - T          # the land's lip inside the 3 mm wall: carries the tongue (the lid's inner
-LIP_T = 3.0                         #   channel wall overhangs past it, in the lid); 3 thick, chamfered under
+LIP = LAND - T                      # the land's lip inside the 3 mm wall: the full 9 mm rim under the lid's three
+LIP_T = 3.0                         #   walls; 3 thick, chamfered under for printing
 TONGUE_W, TONGUE_H, TONGUE_C = S.val("rim_tongue")
 CORNER_Z, CORNER_X, CORNER_H = S.val("corner_keepout")   # the corner land (inside) and the insert post's depth
 BOSS_Z, BOSS_X = CORNER_Z - RIM_CH, CORNER_X - RIM_CH     # the lid's boss, inside the base wall
@@ -316,41 +316,52 @@ def coax(arm):
 
 
 COUPON = (45.0, 45.0, 8.0)          # the test-fit coupon: one rim corner, outside footprint x height
+CURVE_R = S.val("seal_curve_r")
+CORNER_R = S.val("corner_r_out")
 
 
-def coupon_boxes():
-    """One rim corner (the bottom-left as hung: Xb 0, Zb 0), COUPON outside, cut from the base at the seam: the two
-    walls, the rim lip, the corner land, the insert post (all solid to the coupon's underside, so it prints flat with no
-    bridges), the sealing lip on its S-curve, and the screw hole (the insert's bore, a position check). Its own frame: x, z from
-    the outside corner, y up from the coupon's underside. Returns (boxes, (hole x, hole z, hole radius))."""
+def coupon_seal_points(far=80.0):
+    """The seal's centre line in the coupon frame (x, z from the lid's outside corner; the base's outside is the
+    lid's, no outward offset): down the left side 4.5 in, in round the boss, out along the bottom side 4.5 in.
+    Returned as the corners of the region on the box's inside of the line (closed far outside the coupon)."""
+    c = TONGUE_C
+    bx, bz = CORNER_X + T - RIM_CH / 2, CORNER_Z + T - RIM_CH / 2   # the channel's centre round the boss
+    return [(c, far), (c, bz), (bx, bz), (bx, c), (far, c), (far, far)]
+
+
+def coupon_solid():
+    """The coupon as a CadQuery solid: the full 9 mm land (to 4.5 past the seal line, round the boss), solid from
+    the underside (it prints flat), the 2 x 3 sealing lip on the seal line with the S-curve's bends at CURVE_R, the
+    outside corner rounded at CORNER_R, and the screw bore. Its own frame: x, y in plan from the outside corner,
+    z up from the underside."""
+    import cadquery as cq
     cx, cz, ch = COUPON
-    y0 = SEAM + TONGUE_H - ch
-    mat = [B(-T, y0, -T, 0, SEAM, cz - T, "wall"), B(-T, y0, -T, cx - T, SEAM, 0, "wall")]
-    mat += [b for b in shell() if b.what in ("rim lip", "corner land", "tongue into the lid's O-ring channel")
-            or b.what.startswith("corner post")]
-    out = []
-    for b in mat:
-        x0, x1 = max(b.x0, -T), min(b.x1, cx - T)
-        ya, yb = (y0 if b.y1 <= SEAM else max(b.y0, y0)), min(b.y1, SEAM + TONGUE_H)   # solid under the land: prints
-                                                                                        # on its underside, no bridges
-        z0, z1 = max(b.z0, -T), min(b.z1, cz - T)
-        if x0 < x1 and ya < yb and z0 < z1:
-            out.append(B(x0 + T, ya - y0, z0 + T, x1 + T, yb - y0, z1 + T, b.what))
+    land_h = ch - TONGUE_H
+
+    def region(off, z0, h):
+        """The box-inside region of the seal line, its bends filleted at CURVE_R, grown by off (shrunk if < 0),
+        as a prism from z0, h tall."""
+        w = cq.Workplane("XY").polyline(coupon_seal_points()).close().extrude(1.0)
+        w = w.edges("|Z").edges(cq.selectors.BoxSelector((0, 0, -1), (cx + 1, cz + 1, 2))).fillet(CURVE_R)
+        wire = w.faces("<Z").wires().val().offset2D(off, "arc")[0]
+        return cq.Workplane("XY").add(wire).toPending().extrude(h).translate((0, 0, z0))
+
+    sq = (cq.Workplane("XY").rect(cx, cz, centered=False).extrude(ch).edges("|Z")
+          .edges(cq.selectors.NearestToPointSelector((0, 0, ch / 2))).fillet(CORNER_R))
+    land = sq.cut(region(-(RIM_CH / 2 + RIM_IN), -1.0, ch + 2.0))              # to the lid's inner channel wall
+    land = land.cut(cq.Workplane("XY").box(cx + 10, cz + 10, TONGUE_H + 1, centered=False).translate((-5, -5, land_h)))
+    lip = region(TONGUE_W / 2, land_h, TONGUE_H).cut(region(-TONGUE_W / 2, land_h - 1, TONGUE_H + 2)).intersect(sq)
+    shape = land.union(lip)
     sx, sz = SCREWS[0]
-    return out, (sx + T, sz + T, (INSERT_D if SCREW_OPT == "b" else THREAD_D) / 2)
+    bore = INSERT_D if SCREW_OPT == "b" else THREAD_D
+    return shape.cut(cq.Workplane("XY").circle(bore / 2).extrude(ch).translate((sx + T, sz + T, 0)))
 
 
 def write_coupon():
     import cadquery as cq
-    boxes, (hx, hz, hr) = coupon_boxes()
-    shape = None
-    for b in boxes:
-        s_ = cq.Workplane("XY").box(b.x1 - b.x0, b.z1 - b.z0, b.y1 - b.y0, centered=False).translate((b.x0, b.z0, b.y0))
-        shape = s_ if shape is None else shape.union(s_)
-    shape = shape.cut(cq.Workplane("XY").circle(hr).extrude(COUPON[2]).translate((hx, hz, 0)))
     out = HERE / "stl" / "rim-coupon.stl"
     out.parent.mkdir(exist_ok=True)
-    cq.exporters.export(shape, str(out))
+    cq.exporters.export(coupon_solid(), str(out))
     return out
 
 
