@@ -398,11 +398,14 @@ def check_cage(ph):
     # (the retention bar is off) and of every other card
     lid = sorted({x.what.split(" ", 1)[0] + " " + x.what.split(" ", 1)[1].split(" ")[0] for _b, x in items
                   if x.y1 > cage.SEAM and not x.keepout})
-    NOTES.append(f"depth: the body-lid seam is at Yb {cage.SEAM:g} (M12); in the lid tray (past the seam): "
-                 + ", ".join(lid) + "; the corner screw posts and the floor posts, tabs and ribs are checked as keep-outs")
+    NOTES.append(f"depth: the base-lid seam is at Yb {cage.SEAM:g} (printed base 100 deep outside)"
+                 + ("; in the lid tray (past the seam): " + ", ".join(lid) if lid else "; nothing reaches the lid tray")
+                 + "; the base's corner lands, insert posts, rim lip and gland nuts are keep-outs (the lid's wall and "
+                 "bosses too, with the lid on)")
     for b in st.BOARDS:
         mine = [x for bb, x in items if bb == b and not x.keepout]
-        others = [x for bb, x in items if bb != b] + [f for f in fixed if "retention" not in f.what]
+        others = [x for bb, x in items if bb != b] + [f for f in fixed if "retention" not in f.what
+                                                       and not f.what.startswith("box lid")]
         for x in mine:
             swept = st.Box(x.x0, x.y0 + 0.5, x.x1, 1e3, x.z0, x.z1, x.what)
             for o in others:
@@ -417,24 +420,24 @@ def check_cage(ph):
                  f"Zb {ext[4]:.1f}..{ext[5]:.1f} mm; box inside {w:g} x {d:g} x {h:g} [TBD-MEASURE]")
     front_y = max(x.y1 for x in [x for _b, x in items] + cage_boxes())
     FLAGS.append(f"depth: the front of the stack is at Yb {front_y:.1f}, {d - front_y:.1f} mm short of the "
-                 f"closed lid ({d:g}: 48 + 25 less a {S.val('gasket'):g} mm gasket allowance [TBD-MEASURE])") \
+                 f"closed lid ({d:g}: base 97 + lid 24 less a {S.val('gasket'):g} mm gasket allowance [TBD-MEASURE])") \
         if d - front_y < 3.0 else None
     if ext[0] < 0 or ext[1] > w or ext[2] < 0 or ext[3] > d or ext[5] > h:
         fail("L7", f"the cage does not fit the box inside {w:g} x {h:g} x {d:g}")
     top_power = max(c.z1 for c in cage.contents())
     under_b4 = st.card_z("B4") + lowest("B4")[0]
     ev = S.val("evm")
-    flat_need = cage.YP + 1.6 + ev[2] + ev[1]            # lying flat would need the board's 80 mm of depth
     margin_b4 = under_b4 - top_power
-    NOTES.append(f"power zone: the EVM ({'x'.join(f'{v:g}' for v in ev)} [TBD-MEASURE], +-5) lying on the bottom "
-                 f"wall (across the floor) would need Yb {flat_need:.1f} of the {d:g} depth: it does not fit; it stands "
-                 f"parallel to the floor at Yb {cage.EVM_Y0:.1f}, in front of the backplane, Zb "
-                 f"{cage.EVM_Z0:g}..{cage.EVM_Z0 + ev[1]:g}: {margin_b4:.1f} mm under B4's underside ({under_b4:.1f}), "
-                 f"inside the outline's +-5 mm uncertainty; the pack stands in front of it, Yb "
-                 f"{cage.PACK_Y0:.1f}..{cage.PACK_Y0 + S.val('pack')[2]:.1f}")
-    FLAGS.append(f"the charger EVM fits standing with {margin_b4:.1f} mm under B4: the outline (80 x 80 +-5, J8 "
-                 f"{S.val('evm_j8'):g} past its edge) is [TBD-MEASURE] and decides it")
-    bp = st.Box(st.strip_x(0) - 1.27, cage.YP, st.strip_x(20) + 1.27, st.BP_FRONT,
+    shtc3 = [lc_b for lc_b in [to_box(bb, x) for bb in st.BOARDS for r, x in board_boxes(bb) if r == "U5"]]
+    heat = (min(x.z0 for x in shtc3) - cage.EVM_TOP) if shtc3 else 0.0
+    NOTES.append(f"shelves: pack {cage.PACK_Z0:g}-{cage.PACK_Z0 + S.val('pack')[2]:g}, the EVM ({ev[0]:g} x {ev[1]:g}, "
+                 f"J8 {S.val('evm_j8'):g} toward the lid; Clint) board at Zb {cage.EVM_Z0:g}, its top {cage.EVM_TOP:g}, "
+                 f"its back edge {cage.EVM_Y0 - st.BP_FRONT:.1f} mm in front of the backplane's lower end (from Zb "
+                 f"{cage.BP_BOTTOM:.1f}), {margin_b4:.1f} under B4 (the terminal "
+                 f"screws and the EVM's leads use that room); the SHTC3 is {heat:.0f} mm above the EVM")
+    if cage.EVM_TOP > cage.BP_BOTTOM and cage.EVM_Y0 - st.BP_FRONT < 2.0:
+        fail("L7", "the EVM is less than 2 mm in front of the backplane")
+    bp = st.Box(st.strip_x(0) - 1.27, 0.0, st.strip_x(20) + 1.27, st.BP_FRONT,
                 st.BP_Z0 - 2 * st.P, st.BP_Z0 + (st.BP_HOLES + 1) * st.P, "backplane, its posts and the mux behind it")
     for c in cage.contents():
         if overlap(c, bp):
@@ -596,56 +599,63 @@ def check_mech():
              "the mini's receptacle and its header", "pull the plug",
              "" if u.x0 >= 0 else "the console plug reaches the left wall")
     sma = next(x for x in a1 if x.what.endswith("SMA-K"))
-    arm = next(x for x in a1 if x.what.endswith("SMA adapter up arm"))
+    arm = next(x for x in a1 if x.what.endswith("SMA adapter forward arm"))
     hits = sorted({k.what for k in cage.box_keepouts() for x in a1 if "adapter" in x.what and overlap(x, k)})
     plug_l, bend = S.val("sma_plug_len"), S.val("rg316_bend")
     straight = w_in - sma.x1
-    up = h_in - arm.z1
-    need_up = plug_l + bend + 1.5
+    pe, yb, zb, ax = cage.coax(arm)
+    nut = cage.BULKHEAD_NUT / 2
+    probs = []
+    if yb + nut + 2.0 > cage.SEAM:
+        probs.append(f"the bulkhead (Yb {yb:.1f}) is within 2 mm of the seam ({cage.SEAM:g})")
+    if zb + nut + 2.0 > h_in - cage.CORNER:
+        probs.append(f"the bulkhead (Zb {zb:.1f}) meets the upper corner land")
+    if w_in - ax < bend + 2.0:
+        probs.append("no room for the bend to the right wall")
+    if pe > d_in - 2.0:
+        probs.append("the plug reaches the lid")
+    if hits:
+        probs.append("AD1 meets the " + ", ".join(hits))
     NOTES.append(f"SMA: a straight plug on the mini's SMA would need {plug_l + bend:.1f} mm to the right wall "
-                 f"(plug {plug_l:g} + bend {bend:g} [TBD-MEASURE]), there are {straight:.1f}: the right-angle adapter "
-                 f"AD1 is needed; over its up arm there are {up:.1f} mm, the plug and the bend need {need_up:.1f}")
-    cflag = "" if up >= need_up else (f"the coax does not fit: {up:.1f} mm over the adapter arm, the straight plug "
-                                     f"and the bend need {need_up:.1f} (all [TBD-MEASURE])"
-                                     + (f"; AD1's arm also meets the box's {', '.join(hits)}" if hits else "") + "; unresolved")
-    mech("SMA, adapter and coax to the bulkhead", "AD1 screwed on the mini's SMA-K, its arm up; the 135110 plug "
-         "screwed on AD1; the bulkhead jack nut in the right wall near the top",
+                 f"(plug {plug_l:g} + bend {bend:g} [TBD-MEASURE]), there are {straight:.1f}: AD1 is needed, its arm "
+                 f"toward the lid; the plug ends at Yb {pe:.1f}, the cable bends right to the bulkhead boss at Yb "
+                 f"{yb:.1f}, Zb {zb:.1f} in the right wall ({cage.SEAM - yb - nut:.1f} mm to the seam, "
+                 f"{h_in - cage.CORNER - zb - nut:.1f} under the upper corner land)")
+    for p_ in probs:
+        fail("L9", "coax: " + p_)
+    cflag = ""
+    mech("SMA, adapter and coax to the bulkhead", "AD1 screwed on the mini's SMA-K, its arm toward the lid; the "
+         "135110 plug screwed on AD1; the cable bends right in front of the cards to the bulkhead jack in the right "
+         "wall's boss",
          "the coax is clipped to the cage at its bend so a pull on it reaches the bulkhead, not the mini's SMA",
          "unscrew the plug at AD1 (8 mm spanner), then lift B3 out", cflag)
     # power
     mech("Battery lug E1 on B4", "Keystone 7328 on an M3 nylon screw and nut through the right centre hole",
          "the screw; the 22 AWG leads are soldered to the lug tail and sleeved", "undo the nut",
          "")
-    mech("Battery pack", "stands on its long edge on the pack tray in front of the charger; a hook-and-loop "
-         "strap through the tray", "the tray's front lip and the strap", "open the strap, unplug the JST PH")
-    mech("Charger (BQ25798EVM)", "an edge cradle (the board has no mounting holes): its bottom edge in a groove "
-         "on the pack tray, its side edges in two channels, snap clips at the front; the Bumpon feet (H1-H4, 3M "
-         "SJ-5303) peeled off first", "the channels and the groove; the terminal screws are tightened from the lid "
-         "side against the cradle", "take the pack out, unscrew the leads at its terminals, flex the clips, lift it "
-         "toward the lid", "the left channel stops under the backplane: the upper left corner is held only by the board "
-         "itself")
+    mech("Battery pack", "lies flat on the pack tray, the lowest shelf (the heaviest part low); a hook-and-loop "
+         "strap through the tray", "the tray's front lip and the strap", "open the strap, unplug the JST PH, slide it out")
+    mech("Charger (BQ25798EVM)", "a shelf: its side edges on two moulded ledges, a stop at the back, a snap clip at "
+         "the front (the board has no mounting holes); the Bumpon feet (H1-H4, 3M SJ-5303) peeled off first",
+         "the ledges; the terminal screws are tightened from above, in the room under B4",
+         "unscrew its leads, flex the clip, slide it toward the lid on its service loops",
+         "its underside parts (J6, tails: 4 mm [TBD-MEASURE]) must clear the 2 mm ledges at the edges")
     mech("B4 and the charger", "B4's battery and sense leads are screwed into the EVM terminals",
          "the terminal screws", "unscrew the leads at the EVM before B4 slides out",
          "B4 is tethered to the charger by its leads: unscrew them first")
-    def over(x, z, r):
-        return sorted({(f"card {o.what[:2]}" if o.what[:2] in st.BOARDS else o.what) for o in items
-                       if o.y1 > cage.YP + 0.1 and "back plate" not in o.what and o.x0 < x + r and x - r < o.x1
-                       and o.z0 < z + r and z - r < o.z1}
-                      | {c.what for c in cage.contents()
-                         if c.x0 < x + r and x - r < c.x1 and c.z0 < z + r and z - r < c.z1})
-    blocking = sorted({w for z in (cage.A1_Z, cage.A2_Z) for w in over(cage.A_X, z, 6.0)})
-    mech("Backplane on its posts", "four M3 screws through lines 0 and 20 into the printed posts",
+    mech("Backplane on its posts", "four M3 screws through lines 0 and 20 into heat-set inserts in the base's posts",
          "the posts take the card insertion push", "undo the four screws, after every card is out",
          "removable only after all four cards are out")
-    bscrews = sorted({w for x, z in cage.B_POSTS for w in over(x, z, 4.0)})
-    blocking = sorted(set(blocking) | set(bscrews))
-    mech("Cage to the box", f"the base plate on the A, B and C posts ({cage.A_H:g} mm, over the 1 mm ribs); an "
-         f"M4 x 10 socket-head screw and washer into each A brass insert, an M{S.val('b_screw'):g} self-tapper into each "
-         "blind B post (size [TBD-MEASURE]); notched for the D tabs and the corner posts", "six screws; the D tabs locate it; "
-         "C1 and C2 bear only", "undo the six screws" + (" after what covers them is out" if blocking else ""),
-         ("the screws are behind " + "; ".join(blocking) + ": the cage comes out last") if blocking else "")
-    mech("Cables through the glands", "six round port cables in PG-7s (#762, seal 3.0-4.3 mm); the flat wind and "
-         "rain cables in PG-9s (#761) with the seal out and the gap packed with silicone or a split grommet",
+    mech("Lid to the printed base", f"the #905 lid's four screws into M4 heat-set inserts ({S.val('insert_m4')[0]:g} mm "
+         f"holes, 3 mm of wall round each) in the base's corner posts, 10 mm in from the lid's outside edges (Clint); "
+         "the base's 9 mm land under the lid's rim, its 2 x 2.75 tongue in the lid's O-ring channel",
+         "the screws squeeze the O-ring; the lid's rim takes a knock", "undo the four lid screws",
+         "the screw thread, the channel depth, the outside size and the old base's rib are not measured yet "
+         "(L1, L3, L5, L6): no STL until they are")
+    mech("Base to the pole", "two moulded lugs on the back, a hose clamp or U-bolt through each; no screw through "
+         "the back into the box", "the lugs' roots in the 3 mm floor", "open the clamps", "")
+    mech("Cables through the glands", "six round port cables in PG-7s (#762, seal 3.0-4.3 mm) in the bottom wall's bosses; the flat "
+         "wind and rain cables in PG-9s (#761) with the seal out and the gap packed with silicone or a split grommet",
          "the gland's seal (round) or the sealant (flat); a drip loop below each gland outside, so water runs off "
          "the loop and not along the cable into the gland", "loosen the cap (round); cut the sealant (flat)",
          "a flat cable is sealed once its position is final and then comes out only by cutting the seal")
@@ -656,14 +666,15 @@ def check_mech():
         FLAGS.append(f"Clint's two existing BOB-14021s carry the 4UCON 14869 jack ({S.val('jack_4ucon')[2]:g} high): "
                      f"under the next card they need {need:.1f} mm, there are {gap:.2f}; the build uses new BOBs with "
                      f"the 87180-066LF ({S.val('jack_h'):g} high, RS listing; no Amphenol drawing in hand)")
-    NOTES.append("glands: " + ", ".join(f"{k} at Yb {y:g}, Zb {z:g}" for y, z, k in cage.GLANDS)
-                 + " (right wall); not the bottom wall: the pack tray and charger cover Xb 20-100, the corner posts "
-                 "Xb 0-15 and 106-121")
+    NOTES.append("glands: " + ", ".join(f"{k} at Xb {x:g}, Yb {y:g}" for x, y, k in cage.GLANDS)
+                 + " (bottom wall); the cables rise in the right column, Xb "
+                 f"{cage.EVM_X0 + S.val('evm')[0] + 2:g}-{cage.W:g}, past the EVM and the pack to the jacks")
     ft, fw = S.val("flat_cable")
     diag = (ft ** 2 + fw ** 2) ** 0.5
     for k, bore in zip(("PG-7", "PG-9"), S.val("gland_bore")):
         need = diag + 2 * S.val("sealant")
-        uses = [v for (y, z), v in cage.FLAT.items() if dict(((yy, zz), kk) for yy, zz, kk in cage.GLANDS)[(y, z)] == k]
+        kinds = {(xx, yy): kk for xx, yy, kk in cage.GLANDS}
+        uses = [v for xy, v in cage.FLAT.items() if kinds[xy] == k]
         if uses and need > bore:
             fail("L9", f"a flat cable ({ft:g} x {fw:g}, {diag:.1f} across) and its sealant need {need:.1f} mm; the {k} "
                        f"bore is {bore:g}")

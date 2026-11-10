@@ -351,10 +351,11 @@ def cage_views():
     for c in cage.contents():
         for o, a0, a1 in ((side, c.y0, c.y1), (front, c.x0, c.x1)):
             g.rect(o(a0), Z(c.z1), o(a1), Z(c.z0), "#fdf2e9", "#C0392B", 1.0, 0.9)
-        g.text(front((c.x0 + c.x1) / 2), Z((c.z0 + c.z1) / 2) + 4, c.what, 10, "middle")
+        if "J8" not in c.what and "underside" not in c.what:
+            g.text(front((c.x0 + c.x1) / 2), Z((c.z0 + c.z1) / 2) + 4, c.what, 10, "middle")
     g.rect(side(st.BP_BACK), Z(bz1), side(st.BP_FRONT), Z(bz0), "#d9c08a", "#7a5c12", 1)
     mx = st.MUX_BOX
-    g.rect(side(cage.YP + 1), Z(mx[3]), side(st.BP_BACK), Z(mx[1]), "#161616", "#000", 0.5, 0.6)
+    g.rect(side(cage.mux_box().y0), Z(mx[3]), side(st.BP_BACK), Z(mx[1]), "#161616", "#000", 0.5, 0.6)
     # cards and their parts
     for b in st.ORDER:
         slab = lc.card_slab(b)
@@ -370,31 +371,33 @@ def cage_views():
         g.rect(front(slab.x0), Z(slab.z1), front(slab.x1), Z(slab.z0), "#B3202A", "#5a0e12", 1)
         g.text(side(d_in) + 8, Z(slab.z0) + 4, f"{b} {st.ROLE[b]} (Zb {slab.z1:.1f})", 11, weight="bold")
     # glands, SMA bulkhead
-    for y, z, k in cage.GLANDS:
+    for x, y, k in cage.GLANDS:
         gd = cage.GLAND_NUT[k]
-        g.rect(front(w_in - 2), Z(z + gd / 2), front(w_in + 6), Z(z - gd / 2), "#555", "#222", 0.5)
-        g.rect(side(y - gd / 2), Z(z + gd / 2), side(y + gd / 2), Z(z - gd / 2), "#555", "#222", 0.5, 0.7)
-    g.text(front(w_in + 8), Z(cage.GLANDS[-1][1]) + 4, "glands, right wall (2 x 4): 7 PG-7, 1 PG-9", 10)
+        g.rect(front(x - gd / 2), Z(0), front(x + gd / 2), Z(-8), "#555", "#222", 0.5)
+        g.rect(side(y - gd / 2), Z(0), side(y + gd / 2), Z(-8), "#555", "#222", 0.5, 0.7)
+    g.text(front(w_in / 2), Z(-8) + 16, "glands in the bottom wall (2 x 4): 6 PG-7, 2 PG-9 (right column)", 10, "middle")
+    for b_ in cage.shell():
+        if "lug" in b_.what or "drip" in b_.what:
+            g.rect(side(b_.y0), Z(b_.z1), side(b_.y1), Z(b_.z0), "#bbbbbb", "#555", 0.6, 0.8)
     g.add(f'<line x1="{side(cage.SEAM):.1f}" y1="{Z(h_in):.1f}" x2="{side(cage.SEAM):.1f}" y2="{Z(0):.1f}" '
           'stroke="#1F5FBF" stroke-width="1.5" stroke-dasharray="8 4"/>')
-    g.text(side(cage.SEAM) + 4, Z(h_in) + 14, f"body / lid seam (Yb {cage.SEAM:g}): lid tray beyond", 10, fill="#1F5FBF")
+    g.text(side(cage.SEAM) + 4, Z(h_in) + 14, f"base / lid seam (Yb {cage.SEAM:g}): lid tray beyond", 10, fill="#1F5FBF")
     for k in cage.box_keepouts():
         g.rect(front(k.x0), Z(k.z1), front(k.x1), Z(k.z0), "#cccccc", "#666", 0.6, 0.6)
         if "floor" in k.what:
             g.text(front((k.x0 + k.x1) / 2), Z(k.z0) + 10, k.what.split()[-1], 8, "middle")
-    for i, zp in ((1, cage.A1_Z), (2, cage.A2_Z)):
-        r = cage.POST_D / 2
-        g.rect(front(cage.A_X - r), Z(zp + r), front(cage.A_X + r), Z(zp - r), "#666", "#222", 0.8, 0.8)
-        g.text(front(cage.A_X), Z(zp - r) + 10, f"A{i}", 8, "middle")
-    sz = st.card_z("B3") + 12
+    a1 = [lc.to_box("B3", x) for r_, x in lc.board_boxes("B3") if r_ == "A1"]
+    arm = next(x for x in a1 if x.what.endswith("forward arm"))
+    _pe, yb, sz, _ax = cage.coax(arm)
     g.rect(front(w_in - 1), Z(sz + 4), front(w_in + 8), Z(sz - 4), "#D4AF37", "#7a5c12", 1)
-    g.text(front(w_in + 10), Z(sz) + 4, "SMA bulkhead", 10)
-    g.text(M, 28, "TX card cage r3 in the #905 box (hanging, long side up), to scale 3.2 px/mm; box inside "
-           f"{w_in:g} x {h_in:g} x {d_in:g} mm [TBD-MEASURE]", 15, weight="bold")
-    g.text(M, 48, "Blue: printed cage. Red slabs: cards. Tan: backplane. Dashed: plug keep-outs. Dark squares in the "
-           "side view: the glands in the right wall.", 12)
-    g.text(M, 64, "Grey: the box (corner posts, floor posts A-C, D tabs). The charger (outline [TBD-MEASURE]) stands "
-           "parallel to the floor in front of the backplane, the pack in front of it, both below the cards.", 12)
+    g.rect(side(yb - 4), Z(sz + 4), side(yb + 4), Z(sz - 4), "#D4AF37", "#7a5c12", 1)
+    g.text(front(w_in + 10), Z(sz) + 4, "SMA bulkhead boss", 10)
+    g.text(M, 28, "TX stack r3 in the printed PETG base (100 deep) under the #905 lid, hanging long side up, to scale "
+           f"3.2 px/mm; inside {w_in:g} x {h_in:g} x {d_in:g} mm (lid interface L1, L3, L5, L6 [TBD-MEASURE])", 15, weight="bold")
+    g.text(M, 48, "Blue: moulded cage features. Red slabs: cards. Tan: backplane. Dashed: plug keep-outs. Grey: corner "
+           "posts, gland nuts, pole lugs and drip edge.", 12)
+    g.text(M, 64, "Shelves bottom to top: the pack, the BQ25798EVM (90 x 90, J8 toward the lid), B4, B2, B1, B3; all "
+           "slide toward the back. Glands in the bottom wall; cables rise in the right column.", 12)
     g.write(OUT_SVG / "cage-side.svg", "TX card cage side and front")
 
 
@@ -582,7 +585,7 @@ def backplane_sheet(ph):
 
 def assembly_sheet():
     order = ", ".join(f"{b} {st.ROLE[b]}" for b in st.ORDER) + " (top)"
-    L = ["# Assembly: charger set-up, cage, cards, cables", "",
+    L = ["# Assembly: charger set-up, the printed base, shelves, cards, cables", "",
          "Generated by `layout/drawings.py`. Read with `drawings/cage-side.svg`, `build/B1..B4.md` and "
          "`build/BACKPLANE.md`.", "",
          "## 1. Charger (BQ25798EVM) before any power: jumper changes (TI SLUUCB5; issue #34)", "",
@@ -602,23 +605,31 @@ def assembly_sheet():
          "(cell count) and REG0x01-0x02 (charge voltage 4.2 V), and set the charge current (ICHG) to about 0.9 A "
          "(electrical review m6: the JP22 note says 2 A, the datasheet default is 1 A). Then refit JP17 and connect "
          "the pack.", "",
-         "## 2. Print and fit the cage (`cage/cage.py`)", "",
-         "1. Measure what is still [TBD-MEASURE] in the box first (the README list, M7-M12 on Clint's floor sheet), the "
-         "charger EVM and the slot; set them in `sources.py`, then rerun `run.sh`.",
-         "2. Print a test slot first and tune `slot_clear` until a card slides with light friction.",
-         "3. Lay the base plate on the floor ribs, the A posts up through its collars, the D tabs in its notches; "
-         "screw it to A1 and A2 (an M4 x 10 socket-head screw and an M4 washer each, from the M4 kit on hand). B1-B4, C1 and "
-         "C2 stay free in their cut-outs. Screw the backplane to its four posts, copper side back. "
-         "The backplane comes off again only after every card is out.",
-         "4. Drill the right wall for the glands (two columns of four, below the jacks, at the Yb and Zb in the README): "
-         "six 12.0 mm holes for PG-7s (#762, the round port cables) and two 15.5 mm for PG-9s (#761, the flat wind and rain "
-         "cables, front column at Zb 45.5 and 87.5); and near the top for the SMA "
-         "bulkhead. The coax path from the mini's SMA to the bulkhead is not resolved yet (README, mechanical "
-         "connections): do not drill the bulkhead hole until it is.",
-         "5. Cables: each round port cable through its PG-7, cap tightened. Each flat weather-meter cable through a PG-9 "
+         "## 2. Print the base (`cage/cage.py`)", "",
+         "1. Finish measuring the #905 lid (L1-L6 in the README; L2 and L4 are in) and set them in `sources.py`; "
+         "`cage.py --stl` refuses to export until all six are sourced. Also the EVM's part heights and J6 under it "
+         "(`evm`, `evm_under`).",
+         "2. Print a test coupon first: one card slot (tune `slot_clear` until a card slides with light friction), one "
+         "M4 insert post, one lid corner of the land and tongue (fit the lid on it: the tongue must press the O-ring "
+         "about 0.75 mm, with the lid's walls down on the land), and a 30 mm square of the 3 mm wall to leak-test.",
+         "3. Print the base in PETG, a light colour, rim down on the plate (the O-ring land is the bed face), walls "
+         "3 mm (about 7 perimeters, solid). Set the M4 heat-set inserts in the four corner posts and the M3 inserts in "
+         "the backplane posts with the iron. Leak-test the bare base (water in the base, or soapy water with the lid on "
+         "and a little pressure through the vent hole); coat the inside only if it leaks. Paint or clear-coat the "
+         "outside against UV.",
+         "4. Fit the glands in the bottom wall's bosses (six 12.0 mm holes for PG-7s #762, the round port cables; two "
+         "15.5 mm for PG-9s #761, the flat wind and rain cables, right column), the M12 vent, and the SMA bulkhead in "
+         "the right wall's boss. Screw the backplane to its four posts, copper side back; it comes off again only after "
+         "every card is out.",
+         "5. Shelves bottom to top: the pack on its tray (strap); the EVM (Bumpon feet peeled off) slid back on its "
+         "ledges to the stop, clip at the front, leads with service loops; then the cards.",
+         "6. Cables: each round port cable through its PG-7, cap tightened. Each flat weather-meter cable through a PG-9 "
          "with its seal out. Seal after the final cable position is set (silicone or a split grommet in the gap); the "
-         "cable is then not removable without cutting the seal. Outside, leave a drip loop below each gland before "
-         "the cable is tied to the pole.", "",
+         "cable is then not removable without cutting the seal. Inside, a service loop in the space in front of the "
+         "cards; outside, a drip loop below each gland before the cable is tied to the pole.",
+         "7. The coax: AD1 on the mini's SMA, its arm toward the lid; the 135110 plug on it, the cable bent right in "
+         "front of the cards to the bulkhead; clip it to the right corner post at the bend.",
+         "8. Mount: hose clamps or U-bolts through the two pole lugs on the back; the lid on with its four screws.", "",
          f"## 3. Cards, bottom to top: {order}", "",
          "Every card has its back rails snapped off and the edge filed flat first (step 1 of its build sheet). "
          "Each card slides in from the lid side along its left-wall slot and right-post slot until its header pins "

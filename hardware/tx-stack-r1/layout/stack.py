@@ -183,15 +183,13 @@ def mini(ref, first_row, note):
               "USB-C console plug (lid open)", keepout=True, service=True),
           Box(5.37, 19.16, 9.87, 22.36, top, top + 2.5, "BOOT button"),
           Box(5.37, 0.88, 9.87, 4.08, top, top + 2.5, "RESET button")]
-    # the right-angle SMA adapter on the mini's SMA, its free arm pointing up (+Z) to the coax
+    # the right-angle SMA adapter on the mini's SMA, its free arm pointing toward the lid (maker -y, +Yb), where the
+    # deeper printed base leaves room for the plug and the cable's bend in front of the cards
     ax, ay = w + S.val("mini_sma_out"), 9.3345
     arm1, arm2 = S.val("sma_ra")
-    # its path to the bulkhead is unresolved (layout check L9 flag), so these two are drawn but kept out of the
-    # hard fit checks (service=True); L9 reports what they meet
-    mk.append(Box(ax, ay - 4, ax + arm1, ay + 4, HDR + PCB / 2 - 4, HDR + PCB / 2 + 4, "SMA right-angle adapter",
-                  service=True))
-    mk.append(Box(ax + arm1 - 8, ay - 4, ax + arm1, ay + 4, HDR + PCB / 2, HDR + PCB / 2 + arm2, "SMA adapter up arm",
-                  service=True))
+    mk.append(Box(ax, ay - 4, ax + arm1, ay + 4, HDR + PCB / 2 - 4, HDR + PCB / 2 + 4, "SMA right-angle adapter"))
+    mk.append(Box(ax + arm1 - 8, ay - arm2, ax + arm1, ay, HDR + PCB / 2 - 4, HDR + PCB / 2 + 4,
+                  "SMA adapter forward arm"))
     return placed(ref, "MINI", pins, [tbox(0, x0, y0, b, ref) for b in mk], note, step=[("MINI", 0, x0, y0)])
 
 
@@ -381,9 +379,7 @@ BP_HOLES = 39
 BP_SCREW_HOLES = (2, 36)   # on lines 0 and 20: drilled 3.2 mm for the M3 screws to the cage posts
 CAGE_LEFT = S.val("cage_wall") - 2.0              # card left edge, box frame (slots 2 mm deep in the left wall)
 BP_X0 = CAGE_LEFT + X(1) - 2 * P                  # backplane left edge: strip 1 under card row 1, two holes margin
-# the cage base rests on the floor ribs; the A posts come up through counterbored holes and a screw and washer
-# clamp the base to them. If the posts stand taller than ribs + base, the base sits on the posts instead.
-FLOOR_LIFT = max(S.val("m8_a_h"), *S.val("m10_bc_h"))   # cage base underside, Yb: on the A, B and C posts
+FLOOR_LIFT = 0.0                   # the printed base's floor is the cage's: everything stands on it
 BP_BACK = FLOOR_LIFT + S.val("cage_plate") + S.val("bp_posts")   # backplane copper face, Yb
 BP_FRONT = BP_BACK + S.val("strip_size")[2]        # component face (sockets), Yb
 CARD_DY = BP_FRONT - Y_BP                          # Yb = CARD_DY + (Y_BP - Y) ... see card_to_box

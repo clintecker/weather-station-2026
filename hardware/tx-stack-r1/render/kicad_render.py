@@ -566,7 +566,6 @@ def assembly_boxes(explode=0.0, section=False):
     cards (and the retention bar) drawn pulled out toward the lid by this much. section: the sockets drawn open
     (two walls and a back) so the header pins show inside them."""
     out = [("box", k) for k in cage.box_keepouts() + cage.floor_ribs()]
-    out += [("box", cage.sq(cage.A_X, z, cage.POST_D / 2, 0, cage.A_H, "floor post A")) for z in (cage.A1_Z, cage.A2_Z)]
     out += [("cage", b) for name, b in cage.fixed_boxes()]
     out = [(k, sh(b, 0, explode + 8, 0) if "retention" in b.what and explode else b) for k, b in out]
     for b in st.BOARDS:
@@ -624,52 +623,53 @@ def clip(b, win):
 
 def bulkhead_at():
     a1 = [lc.to_box("B3", x) for _r, x in lc.board_boxes("B3") if _r == "A1"]
-    sma = next(x for x in a1 if x.what.endswith("SMA-K"))
-    arm = next(x for x in a1 if x.what.endswith("SMA adapter up arm"))
-    return sma, arm, ((sma.y0 + sma.y1) / 2, st.card_z("B3") + 12.0)
+    arm = next(x for x in a1 if x.what.endswith("SMA adapter forward arm"))
+    return arm, cage.coax(arm)
 
 
-def extras(m, explode=0.0):
-    """Glands, the bottom and right walls (thin, so the inside stays visible), the SMA bulkhead, the antenna
-    outside, and the coax as the parts now place it."""
-    pl = 0.0
+def extras(m, explode=0.0, whole=False):
+    """The printed base's walls (only the bottom and right walls unless whole, so the inside stays visible), the
+    glands in the bottom wall's bosses, the SMA bulkhead, the antenna outside, and the coax."""
     W, H, D = cage.BOX_IN
 
     def P(x, y, z):
-        return (x, z, y - pl)
-    m.box(0, -3.0, -pl, W, 0, D - pl, "#C9CDD2")                      # bottom wall (inside face at Zb 0)
-    m.box(W, 0, -pl, W + 3.0, H, D - pl, "#C9CDD2")                   # right wall
-    for y, z, k in cage.GLANDS:                                        # right wall, below the jacks
+        return (x, z, y)
+    for b in cage.shell():
+        if whole or not any(w in b.what for w in ("left wall", "top wall")):
+            m.box(b.x0, b.z0, b.y0, b.x1, b.z1, b.y1, "#E8E4D8")
+    if whole:                                                          # the #905 clear lid, as a thin outline
+        T = cage.T
+        for x0, z0, x1, z1 in ((-T, -T, W + T, 0), (-T, H, W + T, H + T), (-T, 0, 0, H), (W, 0, W + T, H)):
+            m.box(x0, z0, cage.SEAM + 0.5, x1, z1, cage.SEAM + 25.0, "#BFD9E8")
+    for x, y, k in cage.GLANDS:                                        # bottom wall, the bosses outside
         d1, l1, l2, l3, _cmin, _cmax = cage.GLAND[k]
         nut = cage.GLAND_NUT[k]
-        m.cyl(P(W, y, z), P(W - l1, y, z), d1 / 2, "#2B2B2B", 12)          # thread inside
-        m.cyl(P(W - 1.0, y, z), P(W - 4.0, y, z), nut / 2, "#2B2B2B", 6)    # locknut on it
-        m.cyl(P(W + 3.0, y, z), P(W + 5.5, y, z), nut / 2 + 1.0, "#2B2B2B", 12)  # flange on the outside face
-        m.cyl(P(W + 5.5, y, z), P(W + 3.0 + l2 - l3 * 0.4, y, z), nut / 2, "#2B2B2B", 6)   # body and cap
-        m.cyl(P(W + 3.0 + l2 - l3 * 0.4, y, z), P(W + 3.0 + l2, y, z), nut / 2 - 1.5, "#2B2B2B", 12)  # dome
-    sma, arm, (yb, zb) = bulkhead_at()
-    m.cyl(P(W - 9.0, yb, zb), P(W + 12.0, yb, zb), 3.2, "#D4AF37", 12)  # bulkhead jack through the wall
+        m.cyl(P(x, y, 0), P(x, y, l1), d1 / 2, "#2B2B2B", 12)               # thread inside
+        m.cyl(P(x, y, 1.0), P(x, y, 4.0), nut / 2, "#2B2B2B", 6)            # locknut on it
+        m.cyl(P(x, y, -6.0), P(x, y, -8.5), nut / 2 + 1.0, "#2B2B2B", 12)   # flange under the boss
+        m.cyl(P(x, y, -8.5), P(x, y, -6.0 - l2 + l3 * 0.4), nut / 2, "#2B2B2B", 6)
+        m.cyl(P(x, y, -6.0 - l2 + l3 * 0.4), P(x, y, -6.0 - l2), nut / 2 - 1.5, "#2B2B2B", 12)
+    arm, (pe, yb, zb, ax) = bulkhead_at()
+    m.cyl(P(W - 9.0, yb, zb), P(W + 12.0, yb, zb), 3.2, "#D4AF37", 12)  # bulkhead jack through the boss
     m.cyl(P(W - 2.5, yb, zb), P(W - 0.2, yb, zb), 5.5, "#D4AF37", 6)    # its nut inside
-    hinge = (W + 12.0, yb, zb)
-    m.cyl(P(*hinge), P(W + 22.0, yb, zb), 4.5, "#1A1A1A", 12)           # antenna hinge
+    m.cyl(P(W + 12.0, yb, zb), P(W + 22.0, yb, zb), 4.5, "#1A1A1A", 12)  # antenna hinge
     L = S.val("ant_len")
     tip = (W + 22.0 + L * math.cos(math.radians(70)), yb, zb + L * math.sin(math.radians(70)))
     m.cyl(P(W + 22.0, yb, zb), P(*tip), 4.0, "#1A1A1A", 12)            # whip, tilted 70 degrees up
-    # coax: the straight plug on AD1's up arm, then the cable to the bulkhead (does not fit: L9 flag)
-    ax, ay = (arm.x0 + arm.x1) / 2, (arm.y0 + arm.y1) / 2
-    z0 = arm.z1
-    pe = z0 + S.val("sma_plug_len")
-    m.cyl(P(ax, ay + explode, z0), P(ax, ay + explode, pe), 3.0, "#D4AF37", 12)
+    # coax: the straight plug on AD1's forward arm, the bend to the right, the run to the bulkhead
+    az = (arm.z0 + arm.z1) / 2
+    y0 = arm.y1
+    m.cyl(P(ax, y0 + explode, az), P(ax, pe + explode, az), 3.0, "#D4AF37", 12)
     r = S.val("rg316_bend")
-    pts = [P(ax, ay + explode, pe)]
+    pts = [P(ax, pe + explode, az)]
     for k in range(1, 10):
         t = math.radians(90 * k / 9)
-        pts.append(P(ax + r - r * math.cos(t), ay + explode, pe + r * math.sin(t)))
-    pts += [P(W - 9.0, yb, pe + r), P(W - 9.0, yb, zb)]
+        pts.append(P(ax + r - r * math.cos(t), pe + explode + r * math.sin(t), az + (zb - az) * k / 9))
+    pts += [P(W - 9.0, yb, zb)]
     m.tube(pts, 1.25, "#7A4A2A", 8)
 
 
-def cage_mesh(explode=0.0, win=None, section=False):
+def cage_mesh(explode=0.0, win=None, section=False, whole=False):
     """Box frame (Xb, Yb, Zb) -> mesh (Xb, Zb, Yb): the box floor's inside face is the KiCad board top."""
     m = Mesh()
     pl = 0.0
@@ -707,7 +707,7 @@ def cage_mesh(explode=0.0, win=None, section=False):
             y = st.BP_BACK - 0.32 - pl
             m.cyl((x, z0, y), (x, z1, y), 0.32, "#C0C0C0", 8)
     if not win:
-        extras(m, explode)
+        extras(m, explode, whole)
         for b in st.BOARDS:                              # card names on their front edges
             z = st.card_z(b)
             y = cage.CARD_FRONT - pl + 0.05 + explode
@@ -743,7 +743,7 @@ def write_all():
                    [(f"{b} {st.ROLE[b]}  FRONT EDGE (bus header at the back edge, up)", 1, CD + 3.5)])
         jobs[f] = (b, kinds)
     W, H, _D = cage.BOX_IN
-    for name, kw in (("cage", {}), ("cage-exploded", {"explode": 45.0})):
+    for name, kw in (("cage", {}), ("cage-exploded", {"explode": 45.0}), ("cage-box", {"whole": True})):
         p = M3D / f"{name}.wrl"
         cage_mesh(**kw).write(p)
         f = OUT / f"tx-stack-{name}.kicad_pcb"
@@ -792,16 +792,16 @@ def legend(png, title, lines):
 def render(jobs):
     PNG.mkdir(exist_ok=True)
     todo = []
-    cage_lines = ["cage, cards and power zone: the envelope boxes the layout checks use (layout/stack.py, cage/cage.py); "
-                  "the mux is Adafruit's 5626 STEP" + ("" if fetch_models.path_of("MUX") else " (not fetched: a box)"),
-                  "stand-ins (boxes; no model without a login, see render/MODELS.md): the printed cage, the BQ25798EVM "
-                  f"outline {'x'.join(f'{v:g}' for v in cage.EVM)} mm [TBD-MEASURE] standing in front of the backplane, "
-                  "the pack standing in front of it, the sockets, the PG-7 and PG-9 glands (right wall; from the Adafruit #761 drawing), the "
-                  "SMA bulkhead (135110 cable), the ANT-916 antenna (length [TBD-MEASURE]); grey: the box floor with "
-                  "its A, B, C posts, D tabs and ribs, the corner screw posts, the bottom and right walls; inside "
-                  f"{'x'.join(f'{v:g}' for v in cage.BOX_IN)} mm (depth less a gasket allowance [TBD-MEASURE])",
-                  "the coax is drawn as the parts now sit: its straight plug on AD1's up arm runs out through the box top "
-                  "(layout check L9 flag: unresolved)",
+    cage_lines = ["the printed PETG base (100 deep) and its moulded cage, the cards and the shelves: the envelope boxes "
+                  "the layout checks use (layout/stack.py, cage/cage.py); the mux is Adafruit's 5626 STEP"
+                  + ("" if fetch_models.path_of("MUX") else " (not fetched: a box)"),
+                  "shelves bottom to top: the pack, the BQ25798EVM (90 x 90, Clint; heights [TBD-MEASURE]), B4, B2, "
+                  "B1, B3; stand-ins (render/MODELS.md): the EVM, the pack, the sockets, the SMA bulkhead (135110 "
+                  "cable), the ANT-916 antenna (length [TBD-MEASURE]); the PG-7 and PG-9 glands in the bottom wall "
+                  "from the Adafruit #761 drawing",
+                  f"inside {'x'.join(f'{v:g}' for v in cage.BOX_IN)} mm; the lid interface (rim, O-ring, screws) "
+                  "is from Clint's photos, L1, L3, L5, L6 [TBD-MEASURE]; the coax: AD1's arm toward the lid, the cable bending right in front of "
+                  "the cards to the bulkhead boss",
                   "cards bottom to top: " + ", ".join(f"{c} {st.ROLE[c]}" for c in st.ORDER)
                   + "; the lid side faces the viewer"]
     for f, (b, kinds) in jobs.items():
@@ -811,6 +811,12 @@ def render(jobs):
                           "-w", "2400", "-h", "3000"]))
             todo.append((f, "cage-render-front.png", "cage assembly, from the open lid", cage_lines,
                          ["--side", "top", "--zoom", "0.95", "-w", "2400", "-h", "3200"]))
+            continue
+        if b == "cage-box":
+            todo.append((f, "cage-render-box.png", "the whole printed base under the #905 lid (lid drawn as its rim "
+                         "outline), from the lid side and below: glands, vent, SMA bulkhead",
+                         cage_lines, ["--side", "top", "--rotate", "-62,0,-30", "--perspective", "--zoom", "0.5",
+                                      "-w", "2400", "-h", "3000"]))
             continue
         if b == "cage-exploded":
             todo.append((f, "cage-render-exploded.png", "cage assembly, exploded: the cards and the retention bar "

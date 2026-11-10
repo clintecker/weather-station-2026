@@ -14,7 +14,7 @@ ended charging early (record F1, and again on 2026-11-09). The next step makes t
 soldered unit** that goes into the IP66 box, and replaces as much of the power measurement as it can with
 the **BQ25798** (issue #34).
 
-Success is: the TX, its power system and every sensor port fit in the #905 box; the battery charges to
+Success is: the TX, its power system and every sensor port fit in a printed base under the #905 lid; the battery charges to
 full with current measured in the loop; every outdoor sensor plugs in through a gland to an internal RJ11
 jack and is found at boot; **any card comes out on its own without desoldering**.
 
@@ -45,21 +45,29 @@ jack and is found at boot; **any card comes out on its own without desoldering**
 
 ## Mechanical: the card cage
 
-The #905 box (TIBOX 125 x 175 x 75: a 50 mm body and a 25 mm clear lid tray, TIBOX catalogue p.5; Adafruit's
-diagram; inside 121 x 169, 48 deep in the body, about 72 closed, Clint's measurements M1-M13 of 2026-11-10) hangs
-on its pole by its floor (the back wall), long side vertical. A printed (PLA, Bambu H2D) cage stands on a base
-plate (120 x 157, the maker's DS-1217P length) that sits on the box's eight 7 mm floor posts over its 1 mm ribs and
-screws to A1 and A2 (M4 brass inserts, M4 x 10 screws) and B1-B4 (blind, M3 self-tappers); it is notched for the D tabs,
-the 15 mm corner screw posts and the gland nuts:
+The enclosure is a **printed PETG base** (Clint, 2026-11-10) under the original Adafruit #905 clear lid and its
+O-ring: 175 x 130 outside (TIBOX 175 long; the width and corner radius are L5 `[TBD-MEASURE]`), 100 mm deep outside,
+3 mm walls; inside 124 x 169, 120 deep with the lid closed (the seam at 97). It hangs on its pole by its back (two
+moulded lugs and hose clamps), long side vertical, a drip edge over the top seam. The stock body was dropped because
+the BQ25798EVM measured 90 x 90 (96 across J8) and did not fit it with 2 mm margins.
 
-- the base plate; a left wall with one slot per card; a right corner post that takes each card's back-right
-  corner; a retention bar screwed across the front-left of the stack after the cards are in;
-- four posts that hold the **backplane** (BusBoard PAD3U padboard, a pad per hole, cut to 21 x 39 holes; a
-  tinned bus wire on the copper side per bus line; copper side back) 3 mm off the base plate, a window in the plate
-  behind it for the socket tails and the mux;
-- below the cards, the **power zone**: the BQ25798EVM (about 80 x 80, TI SLUUCB5 Fig. 4-1, `[TBD-MEASURE]`)
-  standing parallel to the floor in an edge cradle (no mounting holes; Bumpons off) in front of the backplane, 4.1 mm under B4; the pack standing
-  on a tray in front of it, strapped. Lying on the bottom wall the EVM would need about 107 mm of the 72 mm depth.
+The lid interface is from Clint's photos: a 9 mm rim (3 mm wall, a 3 mm channel holding the white O-ring about 2 mm
+down, 3 mm wall), the channel curving in an S round each 22 x 21 mm corner boss, the screws 10 mm in from both
+outside edges. The base copies it: a 9 mm land, a 2 x 2.75 mm tongue on the channel's centre line and its S-curves
+(25 % squeeze on an assumed round 3 mm cord), a solid 3 mm corner land under each boss, and a corner post with an
+M4 heat-set insert (3 mm of PETG round it) under each screw. The screw thread, channel depth, outside size and the
+old base's rim rib (L1, L3, L5, L6) are not measured; `cage/cage.py --stl` refuses to export until they are.
+PETG's heat deflection (about 70 C, to be checked on the spool's datasheet) against more than 45 C inside in sun: a
+light colour and a UV paint or clear coat; ASA is a later-revision option.
+
+Everything is one vertical stack of horizontal shelves, each sliding toward the back, bottom to top: the pack (lies
+flat on a tray 2 mm over the gland nuts), the BQ25798EVM (on two moulded ledges, Bumpons off, 2 mm in front of the
+backplane's lower end, J8 toward the lid), then the cards B4, B2, B1, B3 (the SHTC3 on the top card, about 84 mm
+above the charger). Moulded in the base: a left wall with one slot per card; a right corner post that takes each
+card's back-right corner; four posts that hold the **backplane** (BusBoard PAD3U padboard, a pad per hole, cut to
+21 x 39 holes; a tinned bus wire on the copper side per bus line; copper side back) 8 mm off the floor over the mux;
+a retention bar screwed across the front-left of the stack after the cards are in. The lid's corner lands set the
+card heights: a card's parts cannot pass a top corner as it slides out, so the stack sits 3 mm under them.
 
 The cards are horizontal shelves, each with its two back rails snapped off along the line past column j (card
 depth 41.91 mm `[TBD-MEASURE]`) and the edge filed flat before any soldering. Each has a **Sullins
@@ -70,12 +78,13 @@ card, the card edge 10.86 mm from the backplane). The back RJ11 breakout on B1 a
 its printed spacer's tongue is gripped by the right corner post. Every wire, jumper and lead is routed flat on a
 1.27 mm grid around the parts (`layout/route.py`). Card order bottom to top:
 B4 POWER, B2 PORTS B + METERS, B1 PORTS A, B3 CORE, at pitches of 15.24, 20.32 and 20.32 mm, each clearing the
-tallest part below plus its tails and 0.5 mm. The jacks face the right wall; the cable glands are in the
-right wall below them (two columns of four: seven PG-7 #762 and one PG-9 #761; the power zone and the corner
-posts leave no room in the bottom wall); the SMA bulkhead is in the right wall near the top, reached by the
-mini's SMA through a right-angle adapter (Amphenol RF 132172); that coax path does not fit yet (the README's
-open questions). The cage is parametric (`cage/cage.py`): the box inside, the floor posts (named M1-M13 after Clint's sheet), the
-corner posts, the EVM outline and the slot allowance are named inputs at the top.
+tallest part below plus its tails and 0.5 mm. The jacks face the right wall; the cable glands are in the bottom wall's
+bosses (six PG-7 #762 for the round port cables, two PG-9 #761 for the flat wind and rain cables, sealed once the
+cable is final), with a pitch check; a vent in the bottom wall. The SMA bulkhead is in the right wall below the
+upper corner land: the mini's SMA through a right-angle adapter (Amphenol RF 132172) with its arm toward the lid, the
+135110 plug on it, the RG-316 bending right in front of the cards (the base's spare depth). The base is parametric
+(`cage/cage.py`): the lid interface, the shelves, the EVM outline and the slot allowance are named inputs, and every
+shelf is checked with 2 mm margins.
 
 Why a cage and not the r1 standoff stack: r1's soldered bus wires meant it could not come apart (mechanical
 C1), the box floor did not hold the stack, pack and charger (C2), and the lid margin was 0.5 mm on a floor
@@ -159,8 +168,8 @@ fuel gauge cell sense (MAX17048 JP2 VBAT) <-- 100 ohm R8 <-- lug E1
 ## Measurements still needed `[TBD-MEASURE]`
 
 The full list, with the key each feeds, is in `hardware/tx-stack-r1/README.md`. The ones that move the cage:
-the A insert thread and the B post bore, the snap line, the BQ25798EVM outline and tallest part, and the card
-slot fit on a printed test slot. Also the cable outer diameters for the PG-7 glands (3-6.5 mm, round cable seals; flat
+the lid interface L1, L3, L5 and L6 (the screw, the channel depth, the outside size and corner radius, the old
+base's rim rib), the snap line, the BQ25798EVM's part heights, and the card slot fit on a printed test slot. Also the cable outer diameters for the PG-7 glands (3-6.5 mm, round cable seals; flat
 does not), and each port cable's capacitance.
 
 ## Parts
