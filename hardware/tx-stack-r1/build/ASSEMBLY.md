@@ -16,14 +16,15 @@ The EVM ships set for two cells. Do these in order, with nothing connected:
 
 ## 2. Print and fit the cage (`cage/cage.py`)
 
-1. Measure the box first (the list in the README); set `box_in`, `boss`, `evm` and `slot_clear` in `sources.py`, then rerun `run.sh`.
+1. Measure what is still [TBD-MEASURE] in the box first (the README list, M7-M12 on Clint's floor sheet), the charger EVM and the slot; set them in `sources.py`, then rerun `run.sh`.
 2. Print a test slot first and tune `slot_clear` until a card slides with light friction.
-3. Screw the back plate to the four corner bosses; screw the backplane to its four posts, copper side back.
-4. Drill the bottom wall for eight PG-7 glands (two rows of four), the right wall near the top for the SMA bulkhead.
+3. Lay the base plate on the floor ribs, the A posts up through its collars, the D tabs in its notches; screw it to A1 and A2 (an M4 x 10 socket-head screw and an M4 washer each, from the M4 kit on hand). B1-B4, C1 and C2 stay free in their cut-outs. Screw the backplane to its four posts, copper side back. The backplane comes off again only after every card is out.
+4. Drill the right wall for the glands (two columns of four, below the jacks, at the Yb and Zb in the README): six 12.0 mm holes for PG-7s (#762, the round port cables) and two 15.5 mm for PG-9s (#761, the flat wind and rain cables, front column at Zb 45.5 and 87.5); and near the top for the SMA bulkhead. The coax path from the mini's SMA to the bulkhead is not resolved yet (README, mechanical connections): do not drill the bulkhead hole until it is.
+5. Cables: each round port cable through its PG-7, cap tightened. Each flat weather-meter cable through a PG-9 with its seal out. Seal after the final cable position is set (silicone or a split grommet in the gap); the cable is then not removable without cutting the seal. Outside, leave a drip loop below each gland before the cable is tied to the pole.
 
 ## 3. Cards, bottom to top: B4 POWER, B2 PORTS B + METERS, B1 PORTS A, B3 CORE (top)
 
-Each card slides in from the lid side along its left-wall slot and right-post slot until its header pins enter the socket (5 mm). Fit the retention bar (front left, two M3 screws) last. To take a card out: bar off, unplug that card's cables (jacks, battery leads on B4, the coax on B3), slide it out.
+Every card has its back rails snapped off and the edge filed flat first (step 1 of its build sheet). Each card slides in from the lid side along its left-wall slot and right-post slot until its header pins enter the socket (5 mm; the header insulator meets the socket 0.84 mm further in). On B1 and B2 the back breakout's spacer tongue enters the right post's slot. Fit the retention bar (front left, two M3 screws) last. To take a card out: bar off, unplug that card's cables (jacks, battery leads on B4, the coax on B3), slide it out.
 
 ## 4. Leads off the cards
 

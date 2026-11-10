@@ -11,8 +11,9 @@ slides toward the back and plugs its right-angle header (column j, rows 1-18) in
 
 Each placement stores its pins (board frame), pads, 3D boxes and the real STEP model to draw, so the checks
 (layout_checks.py), the drawings and the renders all read the same geometry.
-Hole names: "e5" (column e, row 5), rails "F+5" "F-5" (front) and "B+5" "B-5" (back); on a card, "B1:e5";
-on the backplane, "BP:s3.12" (strip 3, hole 12 along it).
+Hole names: "e5" (column e, row 5), rails "F+5" "F-5" (front); the back rails are snapped off before any
+soldering, so the card is CD deep (BH stays the SolderFul grid's reference width). On a card, "B1:e5"; on the
+backplane (PAD3U padboard, a separate pad per hole), "BP:s3.12" (line 3, hole 12 along it).
 """
 import sys
 from pathlib import Path
@@ -28,8 +29,8 @@ BW, BH, BT = S.val("sb_w"), S.val("sb_h"), S.val("sb_t")
 X1 = S.val("sb_x1")
 LETTER_Y = {c: S.val("sb_ya") + i * P for i, c in enumerate("abcde")}
 LETTER_Y.update({c: BH - S.val("sb_ya") - (4 - i) * P for i, c in enumerate("fghij")})
-RAIL_Y = {"F+": S.val("sb_rails"), "F-": S.val("sb_rails") + P, "B+": BH - S.val("sb_rails") - P,
-          "B-": BH - S.val("sb_rails")}
+RAIL_Y = {"F+": S.val("sb_rails"), "F-": S.val("sb_rails") + P}   # the back rails are snapped off
+CD = S.val("sb_snap_y")                  # card depth after the snap: the new back edge, card frame Y
 BOARDS = ["B1", "B2", "B3", "B4"]
 ORDER = ["B4", "B2", "B1", "B3"]          # bottom to top in the cage
 ROLE = {"B1": "PORTS A", "B2": "PORTS B + METERS", "B3": "CORE", "B4": "POWER"}
@@ -89,7 +90,8 @@ Y_J = LETTER_Y["j"]
 Y_MOUTH = Y_J + RA_TIP - S.val("insertion")                                   # socket mouth, card frame
 Y_BP = Y_MOUTH + S.val("socket_h")                                            # backplane face, card frame
 PIN_Z = S.val("ra_pin_z")
-assert abs(Y_BP - BH - S.val("card_bp_gap")) < 0.01, (Y_BP - BH)
+assert abs(Y_BP - CD - S.val("card_bp_gap")) < 0.01, (Y_BP - CD)
+Y_INS = Y_J + S.val("ra_offset") + S.val("ra_insulator")                     # insulator front face, card frame
 
 
 # ------------------------------------------------------------------ footprints
@@ -134,6 +136,9 @@ def two_pin(ref, kind, h1, h2, note=""):
     return placed(ref, kind, {"1": (xa, ya), "2": (xb, yb)}, boxes, note)
 
 
+TONGUE_Y1 = CD + S.val("tongue")[1]
+
+
 def bob(ref, y_top, note):
     """BOB-14021 + 87180 jack turned so the mouth faces +X, flush with the card's right edge, on a bonded
     printed spacer. Its six holes are pads (flying leads to the card); none of its pins goes into the card."""
@@ -145,10 +150,14 @@ def bob(ref, y_top, note):
     mk = [Box(0, 0, S.val("bob_w"), S.val("bob_d"), 0, sp, "printed spacer"),
           Box(0, 0, S.val("bob_w"), S.val("bob_d"), sp, sp + PCB, "BOB-14021 PCB"),
           Box(7.62 - jw / 2, mouth - jd, 7.62 + jw / 2, mouth, sp + PCB, sp + PCB + jh, "87180-066LF jack"),
-          Box(7.62 - 5.5, mouth, 7.62 + 5.5, mouth + S.val("plug_len"), sp + PCB + 1, sp + PCB + 9.5, "RJ11 plug",
+          Box(7.62 - S.val("plug_6p")[0] / 2, mouth, 7.62 + S.val("plug_6p")[0] / 2, mouth + S.val("plug_len"),
+              sp + PCB + 1, sp + PCB + 1 + S.val("plug_6p")[2], "RJ11 plug (standard 6P body after Cinch 32-5996UL)",
               keepout=True)]
     pads = {str(i): tf(270, x0, y0, 13.97 - (i - 1) * P, 1.27) for i in range(1, 7)}
-    return placed(ref, "BOB", {}, [tbox(270, x0, y0, b, ref) for b in mk], note, pads)
+    boxes = [tbox(270, x0, y0, b, ref) for b in mk]
+    if y_top > CD:          # overhangs the snapped back edge: the printed spacer carries a tongue in the card plane
+        boxes.append(Box(BW - S.val("tongue")[0], CD, BW, TONGUE_Y1, -BT, 0, f"{ref} printed spacer tongue"))
+    return placed(ref, "BOB", {}, boxes, note, pads, step=[("BOB", 270, x0, y0 + 0.0)])
 
 
 MINI_B_Y, MINI_D_Y, MINI_X0 = 20.4535, 2.6735, 16.1925
@@ -177,9 +186,13 @@ def mini(ref, first_row, note):
     # the right-angle SMA adapter on the mini's SMA, its free arm pointing up (+Z) to the coax
     ax, ay = w + S.val("mini_sma_out"), 9.3345
     arm1, arm2 = S.val("sma_ra")
-    mk.append(Box(ax, ay - 4, ax + arm1, ay + 4, HDR + PCB / 2 - 4, HDR + PCB / 2 + 4, "SMA right-angle adapter"))
-    mk.append(Box(ax + arm1 - 8, ay - 4, ax + arm1, ay + 4, HDR + PCB / 2, HDR + PCB / 2 + arm2, "SMA adapter up arm"))
-    return placed(ref, "MINI", pins, [tbox(0, x0, y0, b, ref) for b in mk], note)
+    # its path to the bulkhead is unresolved (layout check L9 flag), so these two are drawn but kept out of the
+    # hard fit checks (service=True); L9 reports what they meet
+    mk.append(Box(ax, ay - 4, ax + arm1, ay + 4, HDR + PCB / 2 - 4, HDR + PCB / 2 + 4, "SMA right-angle adapter",
+                  service=True))
+    mk.append(Box(ax + arm1 - 8, ay - 4, ax + arm1, ay + 4, HDR + PCB / 2, HDR + PCB / 2 + arm2, "SMA adapter up arm",
+                  service=True))
+    return placed(ref, "MINI", pins, [tbox(0, x0, y0, b, ref) for b in mk], note, step=[("MINI", 0, x0, y0)])
 
 
 def breakout(ref, kind, size, names, x_first, rot, hole, extra=(), note="", pads=None, pin_y=2.54):
@@ -261,7 +274,9 @@ def port(card, k, p, y_bob):
         w("lead", (jack, pin), f"{card}:{hole}", "top", f"S{k} jack contact {pin} {what}")
 
 
-BOB_Y = [16.0, 32.5, 49.0]          # top (back-most) edge of the three breakouts on a card, card frame Y
+BOB_Y = [S.val("bob_w"), 2 * S.val("bob_w") + 0.5, 3 * S.val("bob_w") + 1.0]   # back-most edge of the three breakouts
+# Three 15.24 mm breakouts need 46.72 mm of the 41.91 mm card: the front one is flush with the front edge and the
+# back one overhangs the snapped back edge by 4.8 mm, its spacer's tongue held in the right corner post
 # B1: ports S1-S3
 port("B1", 1, 2, BOB_Y[2])
 port("B1", 2, 7, BOB_Y[1])
@@ -356,14 +371,20 @@ w("lead", ("R8", "2"), ("U6", "JP2.VBAT"), "top", "fuel gauge cell sense (JP2 VB
 w("lead", ("RT1", "1"), ("U1", "TS"), "top", "thermistor to EVM J7")
 w("lead", ("RT1", "2"), ("U1", "TSN"), "top", "thermistor return to EVM J7")
 
-# ------------------------------------------------------------------ the backplane (BusBoard ST2, cut 21 strips wide)
-# Strips run vertically (along Zb); strip i (1..18) carries bus line i, strip 19 is spare. Hole n along a strip
-# is at Zb = BP_Z0 + (n - 1) P. Each card's socket pins sit in one hole row; the copper faces the box back.
-BP_STRIPS = 20       # strips 0..20 (cut 21 wide): 1-18 the bus, 0 and 20 carry the mounting screws, 19 spare
+# ------------------------------------------------------------------ the backplane (BusBoard PAD3U padboard)
+# A piece 21 x 40 holes cut from a PAD3U (a separate plated pad per hole, no strips). Hole lines run vertically
+# (along Zb); on line i (1..18) a tinned bus wire on the back (copper) face is soldered at every used pad and
+# carries bus line i; line 19 is spare, lines 0 and 20 take the mounting screws. Hole n along a line is at
+# Zb = BP_Z0 + (n - 1) P. Each card's socket pins sit in one hole row. Nothing connects unless a wire does.
+BP_STRIPS = 20       # lines 0..20 (cut 21 wide)
 BP_HOLES = 39
+BP_SCREW_HOLES = (2, 36)   # on lines 0 and 20: drilled 3.2 mm for the M3 screws to the cage posts
 CAGE_LEFT = S.val("cage_wall") - 2.0              # card left edge, box frame (slots 2 mm deep in the left wall)
 BP_X0 = CAGE_LEFT + X(1) - 2 * P                  # backplane left edge: strip 1 under card row 1, two holes margin
-BP_BACK = S.val("cage_plate") + S.val("bp_posts")   # backplane copper face, Yb
+# the cage base rests on the floor ribs; the A posts come up through counterbored holes and a screw and washer
+# clamp the base to them. If the posts stand taller than ribs + base, the base sits on the posts instead.
+FLOOR_LIFT = max(S.val("m8_a_h"), *S.val("m10_bc_h"))   # cage base underside, Yb: on the A, B and C posts
+BP_BACK = FLOOR_LIFT + S.val("cage_plate") + S.val("bp_posts")   # backplane copper face, Yb
 BP_FRONT = BP_BACK + S.val("strip_size")[2]        # component face (sockets), Yb
 CARD_DY = BP_FRONT - Y_BP                          # Yb = CARD_DY + (Y_BP - Y) ... see card_to_box
 PITCH = {("B4", "B2"): 6, ("B2", "B1"): 8, ("B1", "B3"): 8}   # in backplane holes (2.54 mm)
@@ -415,6 +436,19 @@ for pad, h in MUX_HOLES.items():
     w("wire", ("U4", pad), f"BP:{h}", "copper", f"mux {pad[2:]} pad lead to its strip")
 w("wire", f"BP:s{bus_row('GND')}.38", f"BP:s{bus_row('GND', 1)}.38", "copper",
   "the two bus ground strips joined")
+BP_BUS = []          # (line, [holes the tinned bus wire is soldered at]): every used pad on lines 1-18
+_used = {}
+for _ref, _pins, _n in BP_PARTS:
+    for _h in _pins.values():
+        _i, _k = (int(v) for v in _h[1:].split("."))
+        _used.setdefault(_i, set()).add(_k)
+for _k, _a, _c, _s, _n in WIRES:
+    for _e in (_a, _c):
+        if isinstance(_e, str) and _e.startswith("BP:"):
+            _i, _m = (int(v) for v in _e[4:].split("."))
+            _used.setdefault(_i, set()).add(_m)
+for _i in range(1, 19):
+    BP_BUS.append((_i, sorted(_used.get(_i, ()))))
 MUX_BOX = (strip_x(2) - 1.27, BP_Z0 + 0.5 * P, strip_x(2) - 1.27 + S.val("mux_w"),
            BP_Z0 + 0.5 * P + S.val("mux_d"))   # on foam on the copper side behind holes 1.5-9.5: Xb and Zb extents
 

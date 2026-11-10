@@ -1,6 +1,8 @@
-# TX protoboard card cage (r2): design
+# TX protoboard card cage (r3): design
 
-Status: r2, after the electrical and mechanical reviews of r1, 2026-11-09. The generated design, its checks,
+Status: r3, 2026-11-10 (r2 after the electrical and mechanical reviews of r1, 2026-11-09; r3 snaps the cards'
+back rails off, moves the backplane to a PAD3U padboard, routes every wire, and takes the box from the maker's
+catalogue). The generated design, its checks,
 build sheets and renders are in `hardware/tx-stack-r1/` (revised in place; git history keeps r1). Its README
 lists what changed from r1 and why, what is still a stand-in, and what Clint must measure.
 
@@ -43,29 +45,42 @@ jack and is found at boot; **any card comes out on its own without desoldering**
 
 ## Mechanical: the card cage
 
-The #905 box hangs on its pole by the back wall, long side vertical. A printed (PLA, Bambu H2D) cage screws
-to the back wall's four corner bosses:
+The #905 box (TIBOX 125 x 175 x 75: a 50 mm body and a 25 mm clear lid tray, TIBOX catalogue p.5; Adafruit's
+diagram; inside 121 x 169, 48 deep in the body, about 72 closed, Clint's measurements M1-M13 of 2026-11-10) hangs
+on its pole by its floor (the back wall), long side vertical. A printed (PLA, Bambu H2D) cage stands on a base
+plate (120 x 157, the maker's DS-1217P length) that sits on the box's eight 7 mm floor posts over its 1 mm ribs and
+screws to A1 and A2 (M4 brass inserts, M4 x 10 screws) and B1-B4 (blind, M3 self-tappers); it is notched for the D tabs,
+the 15 mm corner screw posts and the gland nuts:
 
-- a back plate; a left wall with one slot per card; a right corner post that takes each card's back-right
+- the base plate; a left wall with one slot per card; a right corner post that takes each card's back-right
   corner; a retention bar screwed across the front-left of the stack after the cards are in;
-- four posts that hold the **backplane** (BusBoard ST2 stripboard cut to 21 strips x 39 holes, copper side
-  back) 7 mm off the back plate;
-- below the cards, the **power zone**: the pack on a shelf with side lips and a strap, and the BQ25798EVM on
-  two rails.
+- four posts that hold the **backplane** (BusBoard PAD3U padboard, a pad per hole, cut to 21 x 39 holes; a
+  tinned bus wire on the copper side per bus line; copper side back) 3 mm off the base plate, a window in the plate
+  behind it for the socket tails and the mux;
+- below the cards, the **power zone**: the BQ25798EVM (about 80 x 80, TI SLUUCB5 Fig. 4-1, `[TBD-MEASURE]`)
+  standing parallel to the floor in an edge cradle (no mounting holes; Bumpons off) in front of the backplane, 4.1 mm under B4; the pack standing
+  on a tray in front of it, strapped. Lying on the bottom wall the EVM would need about 107 mm of the 72 mm depth.
 
-The cards are horizontal shelves. Each has a **Sullins PRPC018SBAN-M71RC** right-angle 1x18 male header on
-its back edge (column j, rows 1-18), which plugs 5.0 mm into a **Sullins PPPC181LFBN-RC** 1x18 socket on the
-backplane (5.84 mm of mating pin; at least 4.2 mm if a card sits 0.8 mm short). Card order bottom to top:
+The cards are horizontal shelves, each with its two back rails snapped off along the line past column j (card
+depth 41.91 mm `[TBD-MEASURE]`) and the edge filed flat before any soldering. Each has a **Sullins
+PRPC040SBAN-M71RC** right-angle header cut to 1x18 (the 1x18 PRPC018SBAN-M71RC is no longer sold) on its back
+edge (column j, rows 1-18), its mating pins 7.36 mm past the snapped edge, which plugs 5.0 mm into a **Sullins PPPC181LFBN-RC** 1x18 socket on the
+backplane (5.84 mm of mating pin; at least 4.2 mm if a card sits 0.8 mm short; the socket 2.36 mm clear of the
+card, the card edge 10.86 mm from the backplane). The back RJ11 breakout on B1 and B2 overhangs the snapped edge;
+its printed spacer's tongue is gripped by the right corner post. Every wire, jumper and lead is routed flat on a
+1.27 mm grid around the parts (`layout/route.py`). Card order bottom to top:
 B4 POWER, B2 PORTS B + METERS, B1 PORTS A, B3 CORE, at pitches of 15.24, 20.32 and 20.32 mm, each clearing the
 tallest part below plus its tails and 0.5 mm. The jacks face the right wall; the cable glands are in the
-bottom wall (two rows of four PG-7); the SMA bulkhead is in the right wall near the top, reached by the
-mini's SMA through a right-angle adapter (Amphenol RF 132172). The cage is parametric (`cage/cage.py`): the
-box inside, the corner bosses, the EVM outline and the slot allowance are named inputs at the top.
+right wall below them (two columns of four: seven PG-7 #762 and one PG-9 #761; the power zone and the corner
+posts leave no room in the bottom wall); the SMA bulkhead is in the right wall near the top, reached by the
+mini's SMA through a right-angle adapter (Amphenol RF 132172); that coax path does not fit yet (the README's
+open questions). The cage is parametric (`cage/cage.py`): the box inside, the floor posts (named M1-M13 after Clint's sheet), the
+corner posts, the EVM outline and the slot allowance are named inputs at the top.
 
 Why a cage and not the r1 standoff stack: r1's soldered bus wires meant it could not come apart (mechanical
 C1), the box floor did not hold the stack, pack and charger (C2), and the lid margin was 0.5 mm on a floor
 spacer that did not exist (C3). The SolderFul's own strips are too short to carry an 18-line bus, hence the
-stripboard backplane.
+padboard backplane with its bus wires.
 
 ## The cards
 
@@ -143,22 +158,22 @@ fuel gauge cell sense (MAX17048 JP2 VBAT) <-- 100 ohm R8 <-- lug E1
 
 ## Measurements still needed `[TBD-MEASURE]`
 
-The full list, with the key each feeds, is in `hardware/tx-stack-r1/README.md`. The first four move the cage:
-the #905 box inside, its corner bosses, the BQ25798EVM outline and tallest part, and the card slot fit on a
-printed test slot. Also the cable outer diameters for the PG-7 glands (3-6.5 mm, round cable seals; flat
+The full list, with the key each feeds, is in `hardware/tx-stack-r1/README.md`. The ones that move the cage:
+the A insert thread and the B post bore, the snap line, the BQ25798EVM outline and tallest part, and the card
+slot fit on a printed test slot. Also the cable outer diameters for the PG-7 glands (3-6.5 mm, round cable seals; flat
 does not), and each port cable's capacitance.
 
 ## Parts
 
 - Ports: SparkFun BOB-14021 and Amphenol **87180-066LF** 6P6C jacks (test-fit one jack before soldering);
   Bourns MF-R010; Vishay BAT85S; onsemi 1N5232B; 100 ohm and 1 k 1/4 W resistors.
-- Bus: Sullins PRPC018SBAN-M71RC (right angle, 1x18) per card; Sullins PPPC181LFBN-RC (1x18 female) per card
-  on a BusBoard ST2 stripboard.
+- Bus: Sullins PRPC040SBAN-M71RC (right angle, cut to 1x18) per card; Sullins PPPC181LFBN-RC (1x18 female) per
+  card on a BusBoard PAD3U padboard with 22 AWG tinned bus wires.
 - Battery: Keystone 7328 lug on an M3 nylon screw; Adafruit #372 10 k NTC.
 - Radio (#35): Wio-E5 mini, Amphenol RF 132172 right-angle SMA adapter, Amphenol 135110-01-06.00 (SMA
   bulkhead to plug, RG-316, 6 in), Linx ANT-916-CW-HWR-SMA outside, vertical.
 - Module ends: Adafruit Perma-Proto quarter (1608).
-- On hand: glands, a modular crimper, premade RJ11 cables, EEPROMs, the PCA9548 mux.
+- On hand: one PG-7 gland, premade RJ11 cables, EEPROMs, the PCA9548 mux. Not yet ordered: the README's list.
 
 ## Next revision (not now)
 

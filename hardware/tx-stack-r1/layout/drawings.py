@@ -1,7 +1,7 @@
 """Drawings and build sheets from layout/stack.py and cage/cage.py.
 
-  drawings/B1..B4-top.svg   each card from above, to scale: strips tinted by net, parts, wires
-  drawings/backplane.svg    the stripboard backplane from the front (component side)
+  drawings/B1..B4-top.svg   each card from above, to scale: strips tinted by net, parts, the routed wires
+  drawings/backplane.svg    the PAD3U padboard backplane from the front (component side), the bus wires behind
   drawings/cage-side.svg    the box from the side (section, back wall left, lid right) and from the front
   build/B1..B4.md           each card, step by step: underside wires (with lengths), parts lowest first
                             (with orientation), leads, the strip map, checks before power
@@ -17,6 +17,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import layout_checks as lc
+import route
 import stack as st
 from stack import S, model
 from layout_checks import cage
@@ -58,7 +59,7 @@ def sx(x):
 
 
 def sy(y):
-    return M + (st.BH - y) * K
+    return M + 120 + (st.CD - y) * K          # room above the snapped edge for the overhanging back jacks
 
 
 def hole_s(h):
@@ -121,22 +122,21 @@ def net_of_end(e, ph):
 def where(e):
     if isinstance(e, str):
         b, h = e.split(":")
-        return f"backplane strip {h[1:].split('.')[0]} hole {h.split('.')[1]}" if b == "BP" else h
+        return f"backplane line {h[1:].split('.')[0]} hole {h.split('.')[1]}" if b == "BP" else h
     part = next(p for p in model.PARTS if p["ref"] == e[0])
     pin = next(x for x in part["pins"] if x[0] == e[1])
     return f"{e[0]} {pin[1]}"
 
 
-def length(a, c):
-    """Cut length for a wire or lead, mm: the route plus 10 mm for strip ends, rounded up to 5 mm."""
-    pa, pc = end_xy(a), end_xy(c)
-    if pa and pc and board_of_end(a) == board_of_end(c):
-        d = abs(pa[0] - pc[0]) + abs(pa[1] - pc[1])
-    else:
-        d = None
-    if d is None:
-        return None
-    return int(math.ceil((d + 10) / 5) * 5)
+def length(i):
+    """Cut length for wire i, mm: its routed path (layout/route.py) plus 10 mm for the stripped ends, rounded up to 5."""
+    return route.cut_length(i)
+
+
+def bends(i):
+    r = route.ROUTES[i]
+    g = r["grid"] if r and r.get("grid") else []
+    return sum(1 for a, b, c in zip(g, g[1:], g[2:]) if (a[0] == b[0]) != (b[0] == c[0]))
 
 
 # ------------------------------------------------------------------ one card from above
@@ -144,9 +144,11 @@ def top_view(b, ph):
     rep = REP
     W, H = sx(st.BW) + 360 + 40 * K, sy(0) + 140
     g = Svg(W, H)
-    g.rect(sx(0), sy(st.BH), sx(st.BW), sy(0), "#B3202A", "#5a0e12", 1.5)
+    g.rect(sx(0), sy(st.CD), sx(st.BW), sy(0), "#B3202A", "#5a0e12", 1.5)
     r = S.val("sb_mhole") / 2 * K
     for x, y in st.MHOLES:
+        if y > st.CD:
+            continue
         g.add(f'<circle cx="{sx(x):.1f}" cy="{sy(y):.1f}" r="{r:.1f}" fill="#ffffff" stroke="#888"/>')
     hw = 1.15 * K
     for row in range(1, 31):
@@ -169,7 +171,7 @@ def top_view(b, ph):
         g.add(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{S.val("sb_hole") / 2 * K:.1f}" fill="#2b2b2b"/>')
     for row in range(1, 31):
         x, _ = hole_s(f"a{row}")
-        g.text(x, sy(st.BH) - 6, row, 10, "middle")
+        g.text(x, sy(st.CD) - 6, row, 10, "middle")
         g.text(x, sy(0) + 16, row, 10, "middle")
     for c in "abcdefghij":
         _, y = hole_s(f"{c}1")
@@ -196,33 +198,33 @@ def top_view(b, ph):
         for pad, (x, y) in st.pads_of(pl).items():
             net = lc.eff_net((pl["ref"], pad))
             g.add(f'<path d="M{sx(x):.1f},{sy(y) - 5:.1f} l5,5 l-5,5 l-5,-5 z" fill="{ncol(net)}" stroke="#000"/>')
-    # conductors
-    off = []
-    for kind, a, c, side, note in st.WIRES:
+    # conductors, along their routed paths
+    for i, (kind, a, c, side, note) in enumerate(st.WIRES):
         ba, bc = board_of_end(a), board_of_end(c)
-        if b not in (ba, bc):
+        if b not in (ba, bc) or side == "copper":
             continue
-        pa = end_xy(a) if ba == b else None
-        pc = end_xy(c) if bc == b else None
+        r = route.ROUTES[i]
         net = net_of_end(a, lc_ph) or net_of_end(c, lc_ph)
         col = ncol(net)
         dash = ' stroke-dasharray="5 3"' if side == "bottom" else ""
-        if pa and pc:
-            g.add(f'<line x1="{sx(pa[0]):.1f}" y1="{sy(pa[1]):.1f}" x2="{sx(pc[0]):.1f}" y2="{sy(pc[1]):.1f}" stroke="{col}" '
-                  f'stroke-width="{2.4 if kind == "jumper" else 2.0}" stroke-linecap="round"{dash} opacity="0.9"/>')
-        else:
-            p = pa or pc
-            off.append((p, col, note))
-    for p, col, note in off:
-        g.add(f'<circle cx="{sx(p[0]):.1f}" cy="{sy(p[1]):.1f}" r="5" fill="none" stroke="{col}" stroke-width="2.2"/>')
+        if r and r["ok"] and not r.get("bundled"):
+            pts = " ".join(f"{sx(p[0]):.1f},{sy(p[1]):.1f}" for p in r["pts"])
+            g.add(f'<polyline points="{pts}" fill="none" stroke="{col}" stroke-width="{2.4 if kind == "jumper" else 2.0}" '
+                  f'stroke-linejoin="round" stroke-linecap="round"{dash} opacity="0.9"/>')
+            if ba != bc or None in (ba, bc):
+                p = r["pts"][-1] if (bc != b) else r["pts"][0]
+                if abs(p[1]) < 0.01:
+                    g.add(f'<circle cx="{sx(p[0]):.1f}" cy="{sy(p[1]):.1f}" r="5" fill="none" stroke="{col}" stroke-width="2.2"/>')
     # edges
     g.text(sx(st.BW / 2), sy(0) + 40, "FRONT EDGE (lid side): the card slides in from here", 14, "middle", weight="bold")
-    g.text(sx(st.BW / 2), sy(st.BH) - 34, f"BACK EDGE: header (column j, rows 1-18) plugs into the backplane", 13, "middle",
+    g.text(sx(st.BW / 2), sy(st.TONGUE_Y1 + 6) - 10, "BACK EDGE (snapped, filed flat): header (column j, rows 1-18) plugs into the "
+           "backplane", 13, "middle",
            weight="bold")
-    g.text(sx(st.BW) + 14, sy(st.BH / 2), "RIGHT EDGE: jack mouths", 12, "start", weight="bold", rot=90)
-    g.text(M, 24, f"{b} {st.ROLE[b]}: from above, 1:1 at {K:g} px/mm, SolderFul 81.3 x 50.8 mm", 16, weight="bold")
+    g.text(sx(st.BW) + 14, sy(st.CD / 2), "RIGHT EDGE: jack mouths", 12, "start", weight="bold", rot=90)
+    g.text(M, 24, f"{b} {st.ROLE[b]}: from above, {K:g} px/mm; SolderFul 81.3 x 50.8 mm with the back rails snapped off: "
+           f"{st.BW:g} x {st.CD:.2f} mm [TBD-MEASURE]", 16, weight="bold")
     # legend
-    lx, ly = sx(st.BW) + 40 + 25 * K, sy(st.BH) - 10
+    lx, ly = sx(st.BW) + 40 + 25 * K, sy(st.CD) - 10
     g.text(lx, ly, "Lines on this card", 13, weight="bold")
     nets = sorted({n for n in rep[b].values() if n and "/" not in n}, key=lambda n: plain(n))
     for i, n in enumerate(nets):
@@ -230,8 +232,8 @@ def top_view(b, ph):
         g.add(f'<rect x="{lx}" y="{y - 10}" width="22" height="11" fill="{ncol(n)}" fill-opacity="0.7"/>')
         g.text(lx + 30, y, plain(n), 10.5)
     y = ly + 30 + len(nets) * 16
-    for s_, d in (("solid line", "jumper or wire on top"), ("dashed line", "wire on the underside"),
-                  ("ring", "lead off the card (to a pad, the charger or a jack)"), ("square", "pin in a hole"),
+    for s_, d in (("solid line", "jumper, wire or lead on top, as routed"), ("dashed line", "wire on the underside, as routed"),
+                  ("ring on the front edge", "lead leaving the card (to the charger, the pack)"), ("square", "pin in a hole"),
                   ("diamond", "pad with a soldered lead"), ("grey dashed box", "plug or service keep-out")):
         g.text(lx, y, f"{s_}: {d}", 10)
         y += 15
@@ -251,14 +253,24 @@ def backplane_view(ph):
     def bz(n):
         return H - M - (n + 0.5) * st.P * KB
     g = Svg(W, H)
-    g.rect(bx(0) - st.P * KB / 2, bz(st.BP_HOLES + 0.5), bx(st.BP_STRIPS) + st.P * KB / 2, bz(0.5), "#d9c08a", "#7a5c12", 1.2)
+    g.rect(bx(0) - st.P * KB / 2, bz(st.BP_HOLES + 0.5), bx(st.BP_STRIPS) + st.P * KB / 2, bz(0.5), "#B3202A", "#5a0e12", 1.2)
+    bus = dict(st.BP_BUS)
     for i in range(n_strips):
-        net = REP["BP"].get(f"s{i}")
-        g.rect(bx(i) - 1.0 * KB, bz(st.BP_HOLES + 0.4), bx(i) + 1.0 * KB, bz(0.6), ncol(net) if net else "#c8a96a",
-               "#7a5c12", 0.6, 0.55 if net else 0.4)
         g.text(bx(i), bz(st.BP_HOLES + 1.2), i, 10, "middle")
         for n in range(1, st.BP_HOLES + 1):
-            g.add(f'<circle cx="{bx(i):.1f}" cy="{bz(n):.1f}" r="{0.5 * KB:.1f}" fill="#2b2b2b"/>')
+            g.add(f'<rect x="{bx(i) - 0.8 * KB:.1f}" y="{bz(n) - 0.8 * KB:.1f}" width="{1.6 * KB:.1f}" height="{1.6 * KB:.1f}" '
+                  f'rx="2" fill="#D4AF37" stroke="#7a5c12" stroke-width="0.5"/>')
+            g.add(f'<circle cx="{bx(i):.1f}" cy="{bz(n):.1f}" r="{0.47 * KB:.1f}" fill="#2b2b2b"/>')
+        hs = bus.get(i)
+        if hs:
+            net = REP["BP"].get(f"s{i}")
+            g.add(f'<line x1="{bx(i):.1f}" y1="{bz(hs[0]):.1f}" x2="{bx(i):.1f}" y2="{bz(hs[-1]):.1f}" stroke="{ncol(net)}" '
+                  f'stroke-width="{0.64 * KB:.1f}" stroke-linecap="round" opacity="0.75"/>')
+            for n in hs:
+                g.add(f'<circle cx="{bx(i):.1f}" cy="{bz(n):.1f}" r="{0.9 * KB:.1f}" fill="none" stroke="{ncol(net)}" stroke-width="1.6"/>')
+    for i in (0, st.BP_STRIPS):
+        for n in st.BP_SCREW_HOLES:
+            g.add(f'<circle cx="{bx(i):.1f}" cy="{bz(n):.1f}" r="{1.6 * KB:.1f}" fill="#fff" stroke="#000" stroke-width="1.2"/>')
     for n in range(1, st.BP_HOLES + 1, 2):
         g.text(bx(0) - 2.5 * KB, bz(n) + 4, n, 9, "end")
     mx = st.MUX_BOX
@@ -285,16 +297,18 @@ def backplane_view(ph):
                 i, n = (int(v) for v in e[4:].split("."))
                 g.add(f'<circle cx="{bx(i):.1f}" cy="{bz(n):.1f}" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>')
     lx = bx(st.BP_STRIPS) + 2 * KB + 380
-    g.text(M, 26, "Backplane: BusBoard ST2 stripboard cut 21 strips x 39 holes, seen from the front (component side); "
-           "strips run up and down", 15, weight="bold")
+    g.text(M, 26, f"Backplane: BusBoard PAD3U padboard cut {n_strips} x {st.BP_HOLES} holes, seen from the front "
+           "(component side); a pad per hole, no strips: the bus wires on the copper side join them", 15, weight="bold")
     y = M + 10
-    g.text(lx, y, "Strip: line", 13, weight="bold")
+    g.text(lx, y, "Line: what its bus wire carries", 13, weight="bold")
     for i in range(n_strips):
         y += 15
-        g.text(lx, y, f"{i}: {plain(REP['BP'].get(f's{i}')) if REP['BP'].get(f's{i}') else 'spare / screw strip'}", 10.5)
+        g.text(lx, y, f"{i}: {plain(REP['BP'].get(f's{i}')) if REP['BP'].get(f's{i}') else 'spare (no wire)' if 0 < i < 20 else 'screws, no wire'}", 10.5)
     y += 25
     for s_ in ("black outline: card socket (Sullins PPPC181LFBN-RC)", "small square: a pin in a hole",
-               "purple ring: a lead soldered on the copper side", "dashed: the mux, behind on foam"):
+               "coloured line: tinned bus wire on the copper side, ringed where soldered",
+               "purple ring: a lead soldered on the copper side", "white circle: 3.2 mm screw hole",
+               "dashed: the mux, behind on foam"):
         g.text(lx, y, s_, 10)
         y += 15
     g.write(OUT_SVG / "backplane.svg", "backplane")
@@ -334,14 +348,13 @@ def cage_views():
             g.rect(side(b.y0), Z(b.z1), side(b.y1), Z(b.z0), "#9fb7d9", "#2b4a77", 0.6, 0.6)
         if name != "back plate":
             g.rect(front(b.x0), Z(b.z1), front(b.x1), Z(b.z0), "#9fb7d9", "#2b4a77", 0.6, 0.5)
-    g.rect(front(0), Z(st.BP_Z0 + 120), front(cage.W), Z(0), "none", "#2b4a77", 0.4, dash="2 4")
     for c in cage.contents():
         for o, a0, a1 in ((side, c.y0, c.y1), (front, c.x0, c.x1)):
             g.rect(o(a0), Z(c.z1), o(a1), Z(c.z0), "#fdf2e9", "#C0392B", 1.0, 0.9)
         g.text(front((c.x0 + c.x1) / 2), Z((c.z0 + c.z1) / 2) + 4, c.what, 10, "middle")
     g.rect(side(st.BP_BACK), Z(bz1), side(st.BP_FRONT), Z(bz0), "#d9c08a", "#7a5c12", 1)
     mx = st.MUX_BOX
-    g.rect(side(S.val("cage_plate") + 1), Z(mx[3]), side(st.BP_BACK), Z(mx[1]), "#161616", "#000", 0.5, 0.6)
+    g.rect(side(cage.YP + 1), Z(mx[3]), side(st.BP_BACK), Z(mx[1]), "#161616", "#000", 0.5, 0.6)
     # cards and their parts
     for b in st.ORDER:
         slab = lc.card_slab(b)
@@ -357,20 +370,31 @@ def cage_views():
         g.rect(front(slab.x0), Z(slab.z1), front(slab.x1), Z(slab.z0), "#B3202A", "#5a0e12", 1)
         g.text(side(d_in) + 8, Z(slab.z0) + 4, f"{b} {st.ROLE[b]} (Zb {slab.z1:.1f})", 11, weight="bold")
     # glands, SMA bulkhead
-    gd = S.val("gland")[0]
-    for i in range(4):
-        for j, y in enumerate((20.0, 48.0)):
-            x = 30 + i * 25
-            g.rect(front(x - gd / 2), Z(2), front(x + gd / 2), Z(-3), "#555", "#222", 0.5)
-    g.text(front(w_in / 2), Z(-3) + 18, "8 x PG-7 glands in the bottom wall (2 rows of 4); cables rise in the right zone",
-           11, "middle")
+    for y, z, k in cage.GLANDS:
+        gd = cage.GLAND_NUT[k]
+        g.rect(front(w_in - 2), Z(z + gd / 2), front(w_in + 6), Z(z - gd / 2), "#555", "#222", 0.5)
+        g.rect(side(y - gd / 2), Z(z + gd / 2), side(y + gd / 2), Z(z - gd / 2), "#555", "#222", 0.5, 0.7)
+    g.text(front(w_in + 8), Z(cage.GLANDS[-1][1]) + 4, "glands, right wall (2 x 4): 7 PG-7, 1 PG-9", 10)
+    g.add(f'<line x1="{side(cage.SEAM):.1f}" y1="{Z(h_in):.1f}" x2="{side(cage.SEAM):.1f}" y2="{Z(0):.1f}" '
+          'stroke="#1F5FBF" stroke-width="1.5" stroke-dasharray="8 4"/>')
+    g.text(side(cage.SEAM) + 4, Z(h_in) + 14, f"body / lid seam (Yb {cage.SEAM:g}): lid tray beyond", 10, fill="#1F5FBF")
+    for k in cage.box_keepouts():
+        g.rect(front(k.x0), Z(k.z1), front(k.x1), Z(k.z0), "#cccccc", "#666", 0.6, 0.6)
+        if "floor" in k.what:
+            g.text(front((k.x0 + k.x1) / 2), Z(k.z0) + 10, k.what.split()[-1], 8, "middle")
+    for i, zp in ((1, cage.A1_Z), (2, cage.A2_Z)):
+        r = cage.POST_D / 2
+        g.rect(front(cage.A_X - r), Z(zp + r), front(cage.A_X + r), Z(zp - r), "#666", "#222", 0.8, 0.8)
+        g.text(front(cage.A_X), Z(zp - r) + 10, f"A{i}", 8, "middle")
     sz = st.card_z("B3") + 12
     g.rect(front(w_in - 1), Z(sz + 4), front(w_in + 8), Z(sz - 4), "#D4AF37", "#7a5c12", 1)
     g.text(front(w_in + 10), Z(sz) + 4, "SMA bulkhead", 10)
-    g.text(M, 28, "TX card cage r2 in the #905 box (hanging, long side up), to scale 3.2 px/mm; box inside "
+    g.text(M, 28, "TX card cage r3 in the #905 box (hanging, long side up), to scale 3.2 px/mm; box inside "
            f"{w_in:g} x {h_in:g} x {d_in:g} mm [TBD-MEASURE]", 15, weight="bold")
-    g.text(M, 48, "Blue: printed cage. Red slabs: cards. Tan: backplane. Dashed: plug keep-outs. Pack and charger below "
-           "the cards; the charger outline is a placeholder until measured.", 12)
+    g.text(M, 48, "Blue: printed cage. Red slabs: cards. Tan: backplane. Dashed: plug keep-outs. Dark squares in the "
+           "side view: the glands in the right wall.", 12)
+    g.text(M, 64, "Grey: the box (corner posts, floor posts A-C, D tabs). The charger (outline [TBD-MEASURE]) stands "
+           "parallel to the floor in front of the backplane, the pack in front of it, both below the cards.", 12)
     g.write(OUT_SVG / "cage-side.svg", "TX card cage side and front")
 
 
@@ -395,25 +419,31 @@ def build_list(b, ph):
     rep = REP
     L = [f"# {b} {st.ROLE[b]}: build sheet", "",
          f"Generated by `layout/drawings.py` from `layout/stack.py`; drawing `drawings/{b}-top.svg`. Holes: column letter "
-         "+ row number (`e5`); rails `F+` (outer front: 3.3 V supply) and `F-` (inner front: ground), `B+`/`B-` at the back "
-         "stay bare. The front edge (column a) faces the lid; the back edge plugs into the backplane. Every strip carries "
-         "one line (checked by `layout/layout_checks.py`). Lengths are cut lengths (route + 10 mm), insulated 26 AWG "
-         "unless the row says otherwise.", ""]
-    ws = [x for x in st.WIRES if b in (board_of_end(x[1]), board_of_end(x[2]))]
-    under = [x for x in ws if x[3] == "bottom" and board_of_end(x[1]) == board_of_end(x[2]) == b]
-    step = 1
+         "+ row number (`e5`); rails `F+` (outer front: 3.3 V supply) and `F-` (inner front: ground). The front edge "
+         "(column a) faces the lid; the back edge plugs into the backplane. Every strip carries one line (checked by "
+         "`layout/layout_checks.py`). Every wire follows its route in `drawings/{b}-top.svg` (`layout/route.py`: flat, "
+         "straight runs on the 1.27 mm grid with right-angle bends, around every part). Lengths are cut lengths (route "
+         "+ 10 mm), insulated 26 AWG unless the row says otherwise.", "",
+         "## 1. Snap off the back rails (before any soldering)", "",
+         f"1. Score both faces along the line between column j and the inner back rail (card Y {st.CD:.2f} mm from the "
+         "front edge [TBD-MEASURE]: measure on the card), clamp the card along the line and snap the two back rails off.",
+         "2. File the edge flat and square to the front edge; stop at the line (do not open the column j holes).",
+         f"3. Check: the card is {st.CD:.2f} mm deep everywhere; it slides in a test slot without catching.", ""]
+    ws = [(i, x) for i, x in enumerate(st.WIRES) if b in (board_of_end(x[1]), board_of_end(x[2]))]
+    under = [(i, x) for i, x in ws if x[3] == "bottom" and board_of_end(x[1]) == board_of_end(x[2]) == b]
+    step = 2
     if under:
         L += [f"## {step}. Underside wires first (parts cover these holes later)", "",
               "| # | From | To | Length | Line | What |", "|---|---|---|---|---|---|"]
-        for i, (kind, a, c, side, note) in enumerate(under, 1):
-            L.append(f"| {i} | {where(a)} | {where(c)} | {length(a, c)} mm | {plain(net_of_end(a, ph))} | {note} |")
+        for k, (wi, (kind, a, c, side, note)) in enumerate(under, 1):
+            L.append(f"| {k} | {where(a)} | {where(c)} | {length(wi)} mm, {bends(wi)} bends | {plain(net_of_end(a, ph))} | {note} |")
         L.append("")
         step += 1
-    top = [x for x in ws if x[3] == "top" and board_of_end(x[1]) == board_of_end(x[2]) == b and x[0] == "jumper"]
+    top = [(i, x) for i, x in ws if x[3] == "top" and board_of_end(x[1]) == board_of_end(x[2]) == b and x[0] == "jumper"]
     if top:
-        L += [f"## {step}. Bare jumpers on top", "", "| # | From | To | Line | What |", "|---|---|---|---|---|"]
-        for i, (kind, a, c, side, note) in enumerate(top, 1):
-            L.append(f"| {i} | {where(a)} | {where(c)} | {plain(net_of_end(a, ph))} | {note} |")
+        L += [f"## {step}. Bare jumpers on top", "", "| # | From | To | Length | Line | What |", "|---|---|---|---|---|---|"]
+        for k, (wi, (kind, a, c, side, note)) in enumerate(top, 1):
+            L.append(f"| {k} | {where(a)} | {where(c)} | {length(wi)} mm | {plain(net_of_end(a, ph))} | {note} |")
         L.append("")
         step += 1
     pls = [pl for bb, pl in st.placements() if bb == b]
@@ -436,14 +466,20 @@ def build_list(b, ph):
             L.append("| VBUS, VIN-, VIN+ (header pins 5-7) | pulled out of the header before fitting | battery nodes stay off the card |")
         L.append("")
     step += 1
-    leads = [x for x in ws if x[0] == "lead" or board_of_end(x[1]) != board_of_end(x[2])]
+    leads = [(i, x) for i, x in ws if x[0] == "lead" or board_of_end(x[1]) != board_of_end(x[2])]
     if leads:
         L += [f"## {step}. Leads (flying leads from the jacks, and leads off the card)", "",
+              "Each lead climbs off its pad straight across its own breakout to the nearest edge, drops to the card and "
+              "follows its route; a lead off the card leaves at the front edge where the drawing rings it.", "",
               "| # | From | To | Length | Line | What |", "|---|---|---|---|---|---|"]
-        for i, (kind, a, c, side, note) in enumerate(leads, 1):
-            pa, pc = end_xy(a), end_xy(c)
-            ln = f"{int(math.ceil((math.dist(pa, pc) + 25) / 5) * 5)} mm" if pa and pc else "see ASSEMBLY.md"
-            L.append(f"| {i} | {where(a)} | {where(c)} | {ln} | {plain(net_of_end(a, ph) or net_of_end(c, ph))} | {note} |")
+        for k, (wi, (kind, a, c, side, note)) in enumerate(leads, 1):
+            r = route.ROUTES[wi]
+            on = board_of_end(a) == board_of_end(c) == b
+            ln = (f"{length(wi)} mm" if on else f"{length(wi)} mm to the front edge, then see ASSEMBLY.md") \
+                if r and r["ok"] else "see ASSEMBLY.md"
+            if r and r.get("bundled"):
+                ln += " (laid beside the lead before it)"
+            L.append(f"| {k} | {where(a)} | {where(c)} | {ln} | {plain(net_of_end(a, ph) or net_of_end(c, ph))} | {note} |")
         L.append("")
         step += 1
     L += [f"## {step}. Strip map (what every used strip carries)", "", "| Strip | Line | Holes used |", "|---|---|---|"]
@@ -472,40 +508,75 @@ def build_list(b, ph):
 
 
 def backplane_sheet(ph):
+    n_lines = st.BP_STRIPS + 1
+    bus = dict(st.BP_BUS)
     L = ["# Backplane: build sheet", "",
-         "Generated by `layout/drawings.py`; drawing `drawings/backplane.svg`. A BusBoard ST2 stripboard "
-         "(100 x 80 mm, 31 strips x 39 holes, strips along the 100 mm side) cut to 21 strips x 39 holes. Strips run up "
-         "and down in the box; strip n carries bus line n for every card. Component side faces the cards (front); "
-         "copper faces the back wall.", "",
+         "Generated by `layout/drawings.py`; drawing `drawings/backplane.svg`. A BusBoard PAD3U padboard "
+         "(160.02 x 100.08 mm, 38 x 62 holes on 0.1 in, a separate plated pad per hole and no strips) cut to "
+         f"{n_lines} x {st.BP_HOLES} holes. Nothing on it connects unless a wire does: on lines 1-18 a tinned bus wire "
+         "on the copper side, soldered at every used pad, carries bus line n for every card. Lines run up and down in "
+         "the box. Component side faces the cards (front); copper faces the back wall.", "",
          "## 1. Cut and drill", "",
-         "1. Cut 21 strips wide (strips 0-20). Keep all 39 holes along the strips.",
-         "2. Drill 3.2 mm at strips 0 and 20, about 4 mm in from each end, for the four M3 screws to the cage posts.",
-         "3. Do not cut any strip: every bus line runs the full length.", "",
-         "## 2. Strips", "", "| Strip | Line |", "|---|---|"]
-    for i in range(0, st.BP_STRIPS + 1):
-        net = REP["BP"].get(f"s{i}")
-        L.append(f"| {i} | {plain(net) if net else 'spare (screws on 0 and 20)'} |")
-    L += ["", "## 3. Sockets (one per card; pin n in strip n)", "", "| Socket | Card | Hole along the strips |", "|---|---|---|"]
+         f"1. Cut a piece {n_lines} holes across by {st.BP_HOLES} holes along from one PAD3U (score both faces along "
+         "a line of holes, snap, file the edges flat). Lines 0-20 across; holes 1-39 along.",
+         f"2. Drill 3.2 mm through the pads at lines 0 and 20, holes {' and '.join(str(n) for n in st.BP_SCREW_HOLES)}, "
+         "for the four M3 screws to the cage posts. Nothing else is soldered on lines 0 and 20.",
+         "3. Meter two neighbouring pads anywhere: open (the board has no strips).", "",
+         "## 2. Sockets (one per card; pin n on line n)", "", "| Socket | Card | Hole along the lines |", "|---|---|---|"]
     for ref, pins, note in st.BP_PARTS:
         if ref.startswith("XB"):
             L.append(f"| {ref} Sullins PPPC181LFBN-RC | {note} | {next(iter(pins.values())).split('.')[1]} |")
     L += ["", "Fit each socket square to the board (a card pin bent sideways will not enter); solder one end pin, check, "
-          "then the rest.", "", "## 4. Pins on the front (QT leads to the mux, the charger's I2C)", "",
-          "| Part | Pin | Strip, hole | Line |", "|---|---|---|---|"]
+          "then the rest.", "", "## 3. Pins on the front (QT leads to the mux, the charger's I2C)", "",
+          "| Part | Pin | Line, hole | Bus line |", "|---|---|---|---|"]
     for ref, pins, note in st.BP_PARTS:
         if not ref.startswith("XB"):
             for pin, h in pins.items():
                 i, n = h[1:].split(".")
                 L.append(f"| {ref} ({note}) | {lc.PIN[(ref, pin)][1]} | {i}, {n} | {plain(lc.NET_OF.get((ref, pin)))} |")
     L += ["", "Each QT lead's V+ pin (red) is folded back along its lead and sleeved: the mux channel V+ is not the "
-          "3.3 V supply.", "", "## 5. Copper side", "", "| From | To | Length | Line | What |", "|---|---|---|---|---|"]
+          "3.3 V supply.", "",
+          "## 4. Bus wires (copper side)", "",
+          f"Tinned copper bus wire, 22 AWG ({S.val('bus_wire'):g} mm). Lay each one straight along its line over the "
+          "pads, tack it at the first and last hole, then solder it at every hole listed (each is already holding a "
+          "pin). Cut length: the span plus 10 mm.", "",
+          "| Line | Bus line | From hole | To hole | Cut | Soldered at holes |", "|---|---|---|---|---|---|"]
+    for i in range(1, 19):
+        hs = bus.get(i, [])
+        net = REP["BP"].get(f"s{i}")
+        if not hs:
+            L.append(f"| {i} | {plain(net) if net else 'spare'} | - | - | no wire | - |")
+            continue
+        cut = int(math.ceil(((hs[-1] - hs[0]) * st.P + 10) / 5) * 5)
+        L.append(f"| {i} | {plain(net)} | {hs[0]} | {hs[-1]} | {cut} mm | {', '.join(str(n) for n in hs)} |")
+    L += ["", "## 5. Leads on the copper side", "", "| From | To | Length | Line | What |", "|---|---|---|---|---|"]
     for kind, a, c, side, note in st.WIRES:
         if side == "copper":
             L.append(f"| {where(a)} | {where(c)} | 40 mm | {plain(net_of_end(c, ph) or net_of_end(a, ph))} | {note} |")
     L += ["", "The mux (Adafruit #5626: bridge A0 for 0x71, its Vlogic switch SW1 to V+) sits on a foam pad on the "
-          "copper side over holes 2-9, below the B4 socket; its five header pads take short leads to strip hole 10.",
-          "", "## Before power", "", "- Each strip to its neighbours: open. Strip 2 to strip 12: closed (both ground).",
-          "- 3.3 V supply (strip 1) to ground (strip 2): open."]
+          "copper side over holes 2-9, below the B4 socket and clear of the bus wires (they start at hole 10); its "
+          "five header pads take short leads to hole 10.", "",
+          "## 6. Hole by hole", "", "Every pad that has anything soldered in it; every other pad stays bare.", "",
+          "| Line | Hole | What is in it | Bus wire |", "|---|---|---|---|"]
+    used = defaultdict(list)
+    for ref, pins, note in st.BP_PARTS:
+        for pin, h in pins.items():
+            used[h].append(f"{ref} {lc.PIN[(ref, pin)][1]}")
+    for kind, a, c, side, note in st.WIRES:
+        for e, o in ((a, c), (c, a)):
+            if isinstance(e, str) and e.startswith("BP:"):
+                used[e[3:]].append(f"lead to {where(o)}")
+    for i in (0, st.BP_STRIPS):
+        for n in st.BP_SCREW_HOLES:
+            used[f"s{i}.{n}"].append("3.2 mm screw hole (drilled)")
+    for h in sorted(used, key=lambda h: tuple(int(v) for v in h[1:].split("."))):
+        i, n = (int(v) for v in h[1:].split("."))
+        wire = f"line {i}" if n in bus.get(i, []) else "-"
+        L.append(f"| {i} | {n} | {'; '.join(used[h])} | {wire} |")
+    L += ["", "## Before power", "",
+          "- Each bus line to its neighbours: open. Line 2 to line 12: closed (both ground, joined at hole 38).",
+          "- 3.3 V supply (line 1) to ground (line 2): open.",
+          "- Each bus wire: continuity from its first to its last soldered hole."]
     (OUT_MD / "BACKPLANE.md").write_text("\n".join(L) + "\n")
 
 
@@ -532,15 +603,28 @@ def assembly_sheet():
          "(electrical review m6: the JP22 note says 2 A, the datasheet default is 1 A). Then refit JP17 and connect "
          "the pack.", "",
          "## 2. Print and fit the cage (`cage/cage.py`)", "",
-         "1. Measure the box first (the list in the README); set `box_in`, `boss`, `evm` and `slot_clear` in "
-         "`sources.py`, then rerun `run.sh`.",
+         "1. Measure what is still [TBD-MEASURE] in the box first (the README list, M7-M12 on Clint's floor sheet), the "
+         "charger EVM and the slot; set them in `sources.py`, then rerun `run.sh`.",
          "2. Print a test slot first and tune `slot_clear` until a card slides with light friction.",
-         "3. Screw the back plate to the four corner bosses; screw the backplane to its four posts, copper side back.",
-         "4. Drill the bottom wall for eight PG-7 glands (two rows of four), the right wall near the top for the SMA "
-         "bulkhead.", "",
+         "3. Lay the base plate on the floor ribs, the A posts up through its collars, the D tabs in its notches; "
+         "screw it to A1 and A2 (an M4 x 10 socket-head screw and an M4 washer each, from the M4 kit on hand). B1-B4, C1 and "
+         "C2 stay free in their cut-outs. Screw the backplane to its four posts, copper side back. "
+         "The backplane comes off again only after every card is out.",
+         "4. Drill the right wall for the glands (two columns of four, below the jacks, at the Yb and Zb in the README): "
+         "six 12.0 mm holes for PG-7s (#762, the round port cables) and two 15.5 mm for PG-9s (#761, the flat wind and rain "
+         "cables, front column at Zb 45.5 and 87.5); and near the top for the SMA "
+         "bulkhead. The coax path from the mini's SMA to the bulkhead is not resolved yet (README, mechanical "
+         "connections): do not drill the bulkhead hole until it is.",
+         "5. Cables: each round port cable through its PG-7, cap tightened. Each flat weather-meter cable through a PG-9 "
+         "with its seal out. Seal after the final cable position is set (silicone or a split grommet in the gap); the "
+         "cable is then not removable without cutting the seal. Outside, leave a drip loop below each gland before "
+         "the cable is tied to the pole.", "",
          f"## 3. Cards, bottom to top: {order}", "",
+         "Every card has its back rails snapped off and the edge filed flat first (step 1 of its build sheet). "
          "Each card slides in from the lid side along its left-wall slot and right-post slot until its header pins "
-         f"enter the socket ({S.val('insertion'):g} mm). Fit the retention bar (front left, two M3 screws) last. To take "
+         f"enter the socket ({S.val('insertion'):g} mm; the header insulator meets the socket "
+         f"{st.Y_MOUTH - st.Y_INS:.2f} mm further in). On B1 and B2 the back breakout's spacer tongue enters the right "
+         "post's slot. Fit the retention bar (front left, two M3 screws) last. To take "
          "a card out: bar off, unplug that card's cables (jacks, battery leads on B4, the coax on B3), slide it out.",
          "", "## 4. Leads off the cards", "", "| From | To | Length | What |", "|---|---|---|---|"]
     for kind, a, c, side, note in st.WIRES:

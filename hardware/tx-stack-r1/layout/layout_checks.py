@@ -1,26 +1,36 @@
 """Machine checks of the card cage (layout/stack.py) against the schematic model.
 
-  L1 every placed pin lands on a SolderFul hole (cards) or a stripboard hole (backplane), no two pins share
-     a hole; every jumper, wire and lead end is a real hole or a real pad; no hole takes two conductors;
-     nothing is soldered under an RJ11 breakout's spacer or on the back rails under the socket;
-  L2 no two different nets share a strip, on a card or on the backplane; an unconnected pin sits alone;
+  L1 every placed pin lands on a SolderFul hole (cards; the back rails are snapped off) or a padboard hole
+     (backplane), no two pins share a hole; every jumper, wire and lead end is a real hole or a real pad; no
+     hole takes two conductors; nothing is soldered under an RJ11 breakout's spacer; every backplane bus wire
+     is soldered only at real holes of its own line;
+  L2 no two different nets share copper: a card's row strip or rail, or a backplane pad joined by a bus wire
+     (the PAD3U has no strips: nothing connects unless a wire does); an unconnected pin sits alone;
   L3 the built copper (pins in strips, jumpers, wires, leads, cables and matings, the parts' own ties) is
      exactly the schematic, net for net;
   L4 no battery net touches a strip, a header or a socket: the battery loop is soldered or screwed leads;
-  L5 the bus: on every card row-strip i (f-j) carries bus line i and its header pin; on the backplane strip i
-     carries the same line, each socket pin i in strip i; the header pin tip reaches the socket mouth
-     (insertion) and the socket body clears the card's parts;
+  L5 the bus: on every card row-strip i (f-j) carries bus line i and its header pin; on the backplane the bus
+     wire on line i carries the same line, each socket pin i on line i; the header pin tip reaches the socket
+     mouth (insertion); the socket body clears the snapped card edge and the card's parts;
   L6 parts and keep-outs (plugs, the USB-C console lead, SWD leads) on one card do not collide in 3D;
   L7 the cage: each card's pitch clears the tallest part below plus the header tails and solder tails above;
      no part of one card enters another card's slab, the backplane's front items, the left wall slot, the
      right corner post or the retention bar; each card slides out toward the lid alone; the cage, the
-     power zone (pack and charger) and every card fit the box inside; the slot width; the backplane length.
+     power zone (pack and charger) and every card fit the box inside; the slot width; the backplane length;
+  L8 every routed wire, jumper and lead (layout/route.py) lies on its side of the card in straight runs with
+     right-angle bends, never crosses a part's footprint (a pad lead only crosses its own breakout), never
+     passes over a used hole that is not its own end, and shares no grid edge with another wire except an
+     insulated lead bundle; a bare jumper crosses nothing;
+  L9 every mating and fixing (MECH below): how it is held, what takes the force, how it comes apart; the
+     numeric ones are checked (slot play against the socket's alignment tolerance, insertion, the latch
+     room over each plug, the coax bend room, the SMA path) and the README table is written from it.
 Run: python3 layout_checks.py   (exit status 0 only if every check passes)
 """
 import sys
 from collections import defaultdict
 from itertools import combinations
 
+import route
 import stack as st
 from stack import S, model
 
@@ -110,10 +120,10 @@ def check_pins_and_ends(ph):
                     x, y = st.hole_xy(h)
                     if bx.x0 < x < bx.x1 and bx.y0 < y < bx.y1 and f"{b}:{h}" in ends:
                         fail("L1", f"{b}:{h} is used but lies under {bx.what}")
-    for e in ends:
-        b, h = e.split(":")
-        if b != "BP" and h[:2] in ("B+", "B-") and int(h[2:]) <= 19:
-            fail("L1", f"{e} is under the backplane socket (back rails, rows 1-19 stay bare)")
+    for line, holes in st.BP_BUS:
+        for n in holes:
+            if not bp_ok(f"s{line}.{n}"):
+                fail("L1", f"backplane bus wire {line} is soldered at s{line}.{n}, not a padboard hole")
     n = sum(len(st.pins_of(pl)) for _b, pl in st.placements())
     NOTES.append(f"{n} pins placed on holes, {len(st.WIRES)} jumpers, wires and leads, {len(st.CABLES)} cable and mating links")
 
@@ -134,9 +144,10 @@ class UF:
 
 
 def node(e):
+    """The copper an end belongs to: a card's row strip or rail, or one backplane pad (no strips there)."""
     if isinstance(e, str):
         b, h = e.split(":")
-        return ("strip", b, h.split(".")[0] if b == "BP" else st.strip_of(h))
+        return ("strip", b, h if b == "BP" else st.strip_of(h))
     return ("pin",) + tuple(e)
 
 
@@ -149,6 +160,9 @@ def build_copper(ph, ties=True):
         uf.u(node(a), node(c))
     for a, c in st.CABLES:
         uf.u(node(a), node(c))
+    for line, holes in st.BP_BUS:                       # the tinned bus wires: soldered at every used pad
+        for n in holes[1:]:
+            uf.u(("strip", "BP", f"s{line}.{holes[0]}"), ("strip", "BP", f"s{line}.{n}"))
     if ties:
         for p in model.PARTS:
             for tie in p.get("ties", []):
@@ -159,8 +173,6 @@ def build_copper(ph, ties=True):
     for b in st.BOARDS:
         for h in st.ALL_HOLES:
             uf.f(("strip", b, st.strip_of(h)))
-    for i in range(0, st.BP_STRIPS + 1):
-        uf.f(("strip", "BP", f"s{i}"))
     return uf
 
 
@@ -255,12 +267,13 @@ def strip_report(ph):
     uf = build_copper(ph, ties=False)
     rep = defaultdict(dict)
     strips = [(b, st.strip_of(h)) for b in st.BOARDS for h in st.ALL_HOLES] + \
-             [("BP", f"s{i}") for i in range(0, st.BP_STRIPS + 1)]
+             [("BP", f"s{line}.{holes[0]}") for line, holes in st.BP_BUS if holes]
     for b, s in strips:
+        g = uf.f(("strip", b, s))
         if True:
-            g = uf.f(("strip", b, s))
             nets = {NET_OF[(x[1], x[2])] for x in uf.p if x[0] == "pin" and uf.f(x) == g and (x[1], x[2]) in NET_OF}
-            rep[b][s] = next(iter(nets)) if len(nets) == 1 else (None if not nets else "/".join(sorted(nets)))
+            rep[b][s.split(".")[0] if b == "BP" else s] = \
+                next(iter(nets)) if len(nets) == 1 else (None if not nets else "/".join(sorted(nets)))
     return rep
 
 
@@ -273,19 +286,27 @@ def check_bus(ph):
                 fail("L5", f"{b} row-strip {i} (f-j) carries {got}, bus line {i} is {line}")
             if ph.get((b, f"j{i}")) != (model.HEADERS[b], str(i)):
                 fail("L5", f"{b}:j{i} holds {ph.get((b, f'j{i}'))}, wants header pin {i}")
-        if rep["BP"].get(f"s{i}") != line:
-            fail("L5", f"backplane strip {i} carries {rep['BP'].get(f's{i}')}, bus line {i} is {line}")
+        if rep["BP"].get(f"s{i}") != line and not (line == "BUS_SPARE" and rep["BP"].get(f"s{i}") is None):
+            fail("L5", f"backplane bus wire {i} carries {rep['BP'].get(f's{i}')}, bus line {i} is {line}")
     tip = st.Y_J + st.RA_TIP
     ins = tip - st.Y_MOUTH
     tol = S.val("slot_clear") + 0.5
     if ins - tol < 3.0 or ins > S.val("ra_mate"):
         fail("L5", f"insertion {ins:.2f} mm (minus {tol:.1f} position tolerance) is outside 3.0..{S.val('ra_mate')}")
-    NOTES.append(f"bus: 18 lines, header column j rows 1-18 on every card, backplane strips 1-18; pin tip at card Y "
-                 f"{tip:.2f}, socket mouth {st.Y_MOUTH:.2f}, insertion {ins:.2f} mm of {S.val('ra_mate'):g} "
-                 f"(>= {ins - tol:.2f} if the card sits {tol:.1f} mm short); card back edge "
-                 f"{st.Y_BP - st.BH:.2f} mm from the backplane")
+    gap = st.Y_MOUTH - st.CD
+    if gap < S.val("clear"):
+        fail("L5", f"the socket mouth is {gap:.2f} mm past the snapped card edge (< {S.val('clear'):g}): it overlaps the card")
+    if st.Y_MOUTH - st.Y_INS < 0.5:
+        fail("L5", f"the header insulator ends {st.Y_MOUTH - st.Y_INS:.2f} mm short of the socket mouth")
+    NOTES.append(f"bus: 18 lines, header column j rows 1-18 on every card, backplane bus wires on lines 1-18; card "
+                 f"snapped at Y {st.CD:.2f} [TBD-MEASURE]; header insulator to Y {st.Y_INS:.2f}, mating pins out to Y "
+                 f"{tip:.2f} ({tip - st.CD:.2f} past the edge); socket mouth {st.Y_MOUTH:.2f} ({gap:.2f} clear of the card, "
+                 f"{st.Y_MOUTH - st.Y_INS:.2f} clear of the insulator); insertion {ins:.2f} mm of {S.val('ra_mate'):g} "
+                 f"(>= {ins - tol:.2f} if the card sits {tol:.1f} mm short); card edge {st.Y_BP - st.CD:.2f} mm from the backplane")
     for b in st.BOARDS:
         sock = st.Box(st.X(1) - 1.27, st.Y_MOUTH, st.X(18) + 1.27, st.Y_BP, 0.0, 2 * st.PIN_Z, "socket body")
+        if overlap(sock, st.Box(0, 0, st.BW, st.CD, -st.BT, 0, "card"), tol=-S.val("clear")):
+            fail("L5", f"{b}: the socket body comes within {S.val('clear'):g} mm of the card")
         for ref, x in board_boxes(b):
             if ref != model.HEADERS[b] and not x.keepout and overlap(sock, x):
                 fail("L5", f"{b}: the backplane socket body hits {x.what}")
@@ -332,7 +353,7 @@ def to_box(b, x):
 
 
 def card_slab(b):
-    return to_box(b, st.Box(0, 0, st.BW, st.BH, -st.BT, 0, "card"))
+    return to_box(b, st.Box(0, 0, st.BW, st.CD, -st.BT, 0, "card"))
 
 
 def cage_boxes():
@@ -359,7 +380,7 @@ def check_cage(ph):
     for b in st.BOARDS:
         items += [(b, to_box(b, x)) for _r, x in board_boxes(b) if not x.service]
         items.append((b, card_slab(b)))
-    fixed = cage_boxes()
+    fixed = cage_boxes() + [st.Box(k.x0, k.y0, k.x1, k.y1, k.z0, k.z1, f"box {k.what}") for k in cage.box_keepouts()]
     for ref, pins, note in st.BP_PARTS:            # the QT lead housings and charger pins standing on the backplane
         if ref.startswith("W") or ref == "XJ1":
             for pin, h in pins.items():
@@ -375,6 +396,10 @@ def check_cage(ph):
             fail("L7", f"{a.what} collides with {c.what}")
     # pull-out: each card slides toward the lid (+Yb) alone; the swept volume must stay clear of the cage
     # (the retention bar is off) and of every other card
+    lid = sorted({x.what.split(" ", 1)[0] + " " + x.what.split(" ", 1)[1].split(" ")[0] for _b, x in items
+                  if x.y1 > cage.SEAM and not x.keepout})
+    NOTES.append(f"depth: the body-lid seam is at Yb {cage.SEAM:g} (M12); in the lid tray (past the seam): "
+                 + ", ".join(lid) + "; the corner screw posts and the floor posts, tabs and ribs are checked as keep-outs")
     for b in st.BOARDS:
         mine = [x for bb, x in items if bb == b and not x.keepout]
         others = [x for bb, x in items if bb != b] + [f for f in fixed if "retention" not in f.what]
@@ -390,14 +415,26 @@ def check_cage(ph):
            min(x.z0 for x in xs), max(x.z1 for x in xs))
     NOTES.append(f"cage and cards span Xb {ext[0]:.1f}..{ext[1]:.1f}, Yb {ext[2]:.1f}..{ext[3]:.1f}, "
                  f"Zb {ext[4]:.1f}..{ext[5]:.1f} mm; box inside {w:g} x {d:g} x {h:g} [TBD-MEASURE]")
+    front_y = max(x.y1 for x in [x for _b, x in items] + cage_boxes())
+    FLAGS.append(f"depth: the front of the stack is at Yb {front_y:.1f}, {d - front_y:.1f} mm short of the "
+                 f"closed lid ({d:g}: 48 + 25 less a {S.val('gasket'):g} mm gasket allowance [TBD-MEASURE])") \
+        if d - front_y < 3.0 else None
     if ext[0] < 0 or ext[1] > w or ext[2] < 0 or ext[3] > d or ext[5] > h:
         fail("L7", f"the cage does not fit the box inside {w:g} x {h:g} x {d:g}")
     top_power = max(c.z1 for c in cage.contents())
     under_b4 = st.card_z("B4") + lowest("B4")[0]
-    NOTES.append(f"power zone: pack shelf at Zb {cage.PACK_Z:g}, charger rails at Zb {cage.EVM_Z:g} (outline "
-                 f"{'x'.join(f'{v:g}' for v in S.val('evm'))} [TBD-MEASURE]); top of the charger {top_power:.1f}, "
-                 f"B4's underside {under_b4:.1f} mm")
-    bp = st.Box(st.strip_x(0) - 1.27, S.val("cage_plate"), st.strip_x(20) + 1.27, st.BP_FRONT,
+    ev = S.val("evm")
+    flat_need = cage.YP + 1.6 + ev[2] + ev[1]            # lying flat would need the board's 80 mm of depth
+    margin_b4 = under_b4 - top_power
+    NOTES.append(f"power zone: the EVM ({'x'.join(f'{v:g}' for v in ev)} [TBD-MEASURE], +-5) lying on the bottom "
+                 f"wall (across the floor) would need Yb {flat_need:.1f} of the {d:g} depth: it does not fit; it stands "
+                 f"parallel to the floor at Yb {cage.EVM_Y0:.1f}, in front of the backplane, Zb "
+                 f"{cage.EVM_Z0:g}..{cage.EVM_Z0 + ev[1]:g}: {margin_b4:.1f} mm under B4's underside ({under_b4:.1f}), "
+                 f"inside the outline's +-5 mm uncertainty; the pack stands in front of it, Yb "
+                 f"{cage.PACK_Y0:.1f}..{cage.PACK_Y0 + S.val('pack')[2]:.1f}")
+    FLAGS.append(f"the charger EVM fits standing with {margin_b4:.1f} mm under B4: the outline (80 x 80 +-5, J8 "
+                 f"{S.val('evm_j8'):g} past its edge) is [TBD-MEASURE] and decides it")
+    bp = st.Box(st.strip_x(0) - 1.27, cage.YP, st.strip_x(20) + 1.27, st.BP_FRONT,
                 st.BP_Z0 - 2 * st.P, st.BP_Z0 + (st.BP_HOLES + 1) * st.P, "backplane, its posts and the mux behind it")
     for c in cage.contents():
         if overlap(c, bp):
@@ -405,8 +442,8 @@ def check_cage(ph):
     if top_power + cl > under_b4:
         fail("L7", f"the charger ({top_power:.1f}) reaches B4's underside ({under_b4:.1f})")
     span = (st.BP_HOLES - 1) * st.P
-    NOTES.append(f"backplane: ST2 cut to {st.BP_STRIPS + 1} strips x {st.BP_HOLES} holes ({(st.BP_STRIPS + 1) * st.P:.1f} x "
-                 f"{span + st.P:.1f} mm), sockets at holes " + ", ".join(f"{b} {st.SOCKET_HOLE[b]}" for b in st.ORDER)
+    NOTES.append(f"backplane: PAD3U piece {st.BP_STRIPS + 1} x {st.BP_HOLES} holes ({(st.BP_STRIPS + 1) * st.P:.1f} x "
+                 f"{span + st.P:.1f} mm), 18 bus wires, sockets at holes " + ", ".join(f"{b} {st.SOCKET_HOLE[b]}" for b in st.ORDER)
                  + f"; copper face {st.BP_BACK:g} mm off the back wall")
     if max(st.SOCKET_HOLE.values()) > st.BP_HOLES:
         fail("L7", "a socket is past the end of the backplane")
@@ -417,7 +454,249 @@ def check_cage(ph):
             fail("L7", f"the mux behind the backplane covers {b}'s socket tails")
     sc = S.val("slot_clear")
     NOTES.append(f"slots: {t + sc:.1f} mm for the {t:g} mm card ({sc:g} mm print allowance [TBD-MEASURE]); "
-                 f"retention bar {S.val('bar'):g} mm, front left; right corner post grips card Y 49.3-50.8")
+                 f"retention bar {S.val('bar'):g} mm, front left; right corner post grips card Y {S.val('sb_snap_y') - 1.5:.2f}-{st.CD:.2f}, on B1 and B2 the back breakout's spacer tongue")
+
+
+def check_routes():
+    """L8: the routed wires (layout/route.py) checked from their points, not from the router's own bookkeeping."""
+    n_ok = n_all = 0
+    total = 0.0
+    edges = {}
+    nodes = {}
+    for i, (kind, a, c, side, note) in enumerate(st.WIRES):
+        if side == "copper":
+            continue
+        r = route.ROUTES[i]
+        if r is None:
+            continue                                   # a backplane lead (drawn straight)
+        n_all += 1
+        if not r["ok"]:
+            fail("L8", f"wire {i} ({kind} {a} - {c}) on {r['card']}: {r['why']}")
+            continue
+        n_ok += 1
+        if r.get("bundled"):
+            continue                                   # laid beside the first lead from the same pad
+        total += r["length"]
+        z = route.Z_TOP if side == "top" else route.Z_BOT
+        own = set(r["own"])
+        fp = route.footprints(r["card"], side)
+        holes = route.used_holes(r["card"])
+        flat = [p for p in r["pts"]]
+        for p, q in zip(flat, flat[1:]):
+            if abs(p[2] - z) > 1e-6 or abs(q[2] - z) > 1e-6:
+                continue                               # the climb onto a breakout pad and the run across its own board
+            if abs(p[0] - q[0]) > 1e-6 and abs(p[1] - q[1]) > 1e-6:
+                fail("L8", f"wire {i} on {r['card']} runs diagonally from ({p[0]:.2f},{p[1]:.2f}) to ({q[0]:.2f},{q[1]:.2f})")
+            for f in fp:
+                if f[0] not in own and route.seg_hits(p, q, f, -0.05):
+                    fail("L8", f"wire {i} on {r['card']} {side} crosses {f[0]} ({f[5]})")
+        g = r["grid"]
+        for n in g[1:-1]:
+            x, y = route.node_xy(n)
+            if (round(x, 2), round(y, 2)) in holes:
+                fail("L8", f"wire {i} on {r['card']} passes over the used hole at ({x:.2f},{y:.2f})")
+        for u, v in zip(g, g[1:]):
+            edges.setdefault((r["card"], side, frozenset((u, v))), []).append((i, r["kind"]))
+        for n in g:
+            nodes.setdefault((r["card"], side, n), []).append((i, r["kind"]))
+    for (card, side, _e), users in edges.items():
+        if len(users) > 1 and not all(k.startswith("lead") for _i, k in users):
+            fail("L8", f"{card} {side}: wires {', '.join(str(i) for i, _k in users)} share a grid run")
+        if len(users) > route.BUNDLE:
+            fail("L8", f"{card} {side}: {len(users)} leads bundled on one grid run (> {route.BUNDLE})")
+    for (card, side, n), users in nodes.items():
+        if len(users) > 1 and any(k == "jumper" for _i, k in users):
+            fail("L8", f"{card} {side}: a bare jumper meets wire(s) "
+                       f"{', '.join(str(i) for i, _k in users)} at ({route.node_xy(n)[0]:.2f},{route.node_xy(n)[1]:.2f})")
+    NOTES.append(f"routing: {n_ok} of {n_all} wires, jumpers and leads routed on the 1.27 mm grid, right-angle runs "
+                 f"around every part, {total:.0f} mm of wire laid (bundled leads counted once)")
+
+
+MECH = []       # (mating or fixing, how it is held, what takes the force, how it comes apart, flag or "")
+FLAGS = []
+
+
+def mech(what, held, force, apart, flag=""):
+    MECH.append((what, held, force, apart, flag))
+    if flag:
+        FLAGS.append(f"{what}: {flag}")
+
+
+def room_above(box, items, ceiling):
+    """Free height over a box-frame box: up to the lowest thing above that overlaps it in X and Y."""
+    zs = [o.z0 for o in items if o is not box and o.x0 < box.x1 - 0.02 and box.x0 < o.x1 - 0.02 and
+          o.y0 < box.y1 - 0.02 and box.y0 < o.y1 - 0.02 and o.z0 >= box.z1 - 0.02]
+    return min(zs + [ceiling]) - box.z1
+
+
+def check_mech():
+    """L9: every mating and fixing, with the numbers that can be checked now."""
+    w_in, h_in, d_in = S.val("box_in")
+    items = [to_box(b, x) for b in st.BOARDS for _r, x in board_boxes(b) if not x.service] + \
+        [card_slab(b) for b in st.BOARDS] + cage_boxes()
+    sc, tol = S.val("slot_clear"), S.val("align_tol")
+    if sc > tol:
+        fail("L9", f"slot play {sc:g} mm is more than the socket lead-in takes ({tol:g} mm)")
+    stop = st.Y_MOUTH - st.Y_INS
+    ins = st.Y_INS + S.val("ra_mate") - st.Y_MOUTH
+    mech("Card in its slot", "left wall slot (2 mm deep) and the right corner post slot; the retention bar across "
+         "the front left", "the slots take the card's weight and any knock across it; the bar stops it backing out",
+         "two M3 screws: bar off, card slides out toward the lid",
+         "")
+    mech("Bus header into the backplane socket", f"18 contacts' friction; axis Yb (in the card plane, toward the back "
+         f"wall); insertion {ins:.2f} mm of "
+         f"{S.val('ra_mate'):g}; the insulator meets the socket {stop:.2f} mm further in (the depth stop)",
+         f"the socket; side play is the slot's {sc:g} mm, inside the socket lead-in ({tol:g} mm [TBD-MEASURE])",
+         "pull the card straight out toward the lid (bar off first)", "")
+    # breakouts
+    for b in st.BOARDS:
+        for pl in st.PLACE[b]:
+            if pl["fp"] in ("INA", "MAX", "REG", "SHTC3"):
+                qt = any("QT socket" in x.what for x in st.boxes_of(pl))
+                mech(f"{b} {pl['ref']} breakout ({pl['note'].split(';')[0]})",
+                     "its own header, soldered in the breakout and in the card (one row)",
+                     "the header pins; a QT plug's push goes through the breakout into the header" if qt else
+                     "the header pins",
+                     "desolder the header row (or cut the pins and fit a new header)",
+                     "held by solder alone on one header row")
+    for b in ("B1", "B2"):
+        for pl in st.PLACE[b]:
+            if pl["fp"] == "BOB":
+                back = any("tongue" in x.what for x in st.boxes_of(pl))
+                mech(f"{b} {pl['ref']} RJ11 breakout", "bonded to its printed spacer, the spacer bonded to the card; "
+                     "its six pads take flying leads to the card (no pin goes into the card)"
+                     + ("; the spacer's tongue sits in the right corner post slot" if back else ""),
+                     "the plug's push and pull run along the jack axis (Xb) through the jack and the breakout into the "
+                     "two bonds" + (" and the post" if back else "") + "; the latch takes the pull",
+                     "unsolder the six leads at the card; cut the spacer bond",
+                     "held by adhesive alone" + (" (the post takes the push on this one)" if back else
+                                                 ": the plug's push and pull load the bond"))
+    # latch access and the cable path
+    plugs = [x for x in items if "RJ11 plug" in x.what]
+    rooms = sorted((room_above(pg, items, h_in), pg.what) for pg in plugs)
+    worst = rooms[0]
+    fin = S.val("finger")
+    tight = [f"{w_.split(' RJ11')[0]} {r_:.1f}" for r_, w_ in rooms if r_ < fin]
+    col = w_in - max(pg.x1 for pg in plugs)
+    flag = "" if not tight else (f"less than {fin:g} mm [TBD-MEASURE] over the plug to press its latch from above: "
+                                 + ", ".join(tight) + " mm (a small screwdriver from the front instead)")
+    mech("RJ11 plug latch and cable", f"the jack latch; the latch is on the plug, {worst[0]:.1f} mm free over the "
+         f"tightest plug ({worst[1]}); each cable turns down beyond the plug in the {col:.1f} mm column to the right "
+         "wall and runs down past the charger to its PG-7 gland in the right wall, below the jacks", "the latch, then the gland's seal (strain relief)",
+         "press the latch (lid open, from the front), pull; loosen the gland nut to pull the cable through", flag)
+    # the mini, its USB-C and SMA, the coax
+    a1 = [to_box("B3", x) for _r, x in board_boxes("B3") if _r == "A1"]
+    usb = [to_box("B3", x) for x in st.boxes_of(next(pl for pl in st.PLACE["B3"] if pl["ref"] == "A1"))
+           if x.service]
+    mech("Wio-E5 mini on B3", "soldered on its own 2 x 12 header (not in sockets)", "the header pins",
+         "desolder 24 pins", "held by solder alone; cannot come off without desoldering 24 pins")
+    if usb:
+        u = usb[0]
+        mech("Wio-E5 mini USB-C console", "the receptacle's friction; cable plugged from the left with the lid open",
+             "the mini's receptacle and its header", "pull the plug",
+             "" if u.x0 >= 0 else "the console plug reaches the left wall")
+    sma = next(x for x in a1 if x.what.endswith("SMA-K"))
+    arm = next(x for x in a1 if x.what.endswith("SMA adapter up arm"))
+    hits = sorted({k.what for k in cage.box_keepouts() for x in a1 if "adapter" in x.what and overlap(x, k)})
+    plug_l, bend = S.val("sma_plug_len"), S.val("rg316_bend")
+    straight = w_in - sma.x1
+    up = h_in - arm.z1
+    need_up = plug_l + bend + 1.5
+    NOTES.append(f"SMA: a straight plug on the mini's SMA would need {plug_l + bend:.1f} mm to the right wall "
+                 f"(plug {plug_l:g} + bend {bend:g} [TBD-MEASURE]), there are {straight:.1f}: the right-angle adapter "
+                 f"AD1 is needed; over its up arm there are {up:.1f} mm, the plug and the bend need {need_up:.1f}")
+    cflag = "" if up >= need_up else (f"the coax does not fit: {up:.1f} mm over the adapter arm, the straight plug "
+                                     f"and the bend need {need_up:.1f} (all [TBD-MEASURE])"
+                                     + (f"; AD1's arm also meets the box's {', '.join(hits)}" if hits else "") + "; unresolved")
+    mech("SMA, adapter and coax to the bulkhead", "AD1 screwed on the mini's SMA-K, its arm up; the 135110 plug "
+         "screwed on AD1; the bulkhead jack nut in the right wall near the top",
+         "the coax is clipped to the cage at its bend so a pull on it reaches the bulkhead, not the mini's SMA",
+         "unscrew the plug at AD1 (8 mm spanner), then lift B3 out", cflag)
+    # power
+    mech("Battery lug E1 on B4", "Keystone 7328 on an M3 nylon screw and nut through the right centre hole",
+         "the screw; the 22 AWG leads are soldered to the lug tail and sleeved", "undo the nut",
+         "")
+    mech("Battery pack", "stands on its long edge on the pack tray in front of the charger; a hook-and-loop "
+         "strap through the tray", "the tray's front lip and the strap", "open the strap, unplug the JST PH")
+    mech("Charger (BQ25798EVM)", "an edge cradle (the board has no mounting holes): its bottom edge in a groove "
+         "on the pack tray, its side edges in two channels, snap clips at the front; the Bumpon feet (H1-H4, 3M "
+         "SJ-5303) peeled off first", "the channels and the groove; the terminal screws are tightened from the lid "
+         "side against the cradle", "take the pack out, unscrew the leads at its terminals, flex the clips, lift it "
+         "toward the lid", "the left channel stops under the backplane: the upper left corner is held only by the board "
+         "itself")
+    mech("B4 and the charger", "B4's battery and sense leads are screwed into the EVM terminals",
+         "the terminal screws", "unscrew the leads at the EVM before B4 slides out",
+         "B4 is tethered to the charger by its leads: unscrew them first")
+    def over(x, z, r):
+        return sorted({(f"card {o.what[:2]}" if o.what[:2] in st.BOARDS else o.what) for o in items
+                       if o.y1 > cage.YP + 0.1 and "back plate" not in o.what and o.x0 < x + r and x - r < o.x1
+                       and o.z0 < z + r and z - r < o.z1}
+                      | {c.what for c in cage.contents()
+                         if c.x0 < x + r and x - r < c.x1 and c.z0 < z + r and z - r < c.z1})
+    blocking = sorted({w for z in (cage.A1_Z, cage.A2_Z) for w in over(cage.A_X, z, 6.0)})
+    mech("Backplane on its posts", "four M3 screws through lines 0 and 20 into the printed posts",
+         "the posts take the card insertion push", "undo the four screws, after every card is out",
+         "removable only after all four cards are out")
+    bscrews = sorted({w for x, z in cage.B_POSTS for w in over(x, z, 4.0)})
+    blocking = sorted(set(blocking) | set(bscrews))
+    mech("Cage to the box", f"the base plate on the A, B and C posts ({cage.A_H:g} mm, over the 1 mm ribs); an "
+         f"M4 x 10 socket-head screw and washer into each A brass insert, an M{S.val('b_screw'):g} self-tapper into each "
+         "blind B post (size [TBD-MEASURE]); notched for the D tabs and the corner posts", "six screws; the D tabs locate it; "
+         "C1 and C2 bear only", "undo the six screws" + (" after what covers them is out" if blocking else ""),
+         ("the screws are behind " + "; ".join(blocking) + ": the cage comes out last") if blocking else "")
+    mech("Cables through the glands", "six round port cables in PG-7s (#762, seal 3.0-4.3 mm); the flat wind and "
+         "rain cables in PG-9s (#761) with the seal out and the gap packed with silicone or a split grommet",
+         "the gland's seal (round) or the sealant (flat); a drip loop below each gland outside, so water runs off "
+         "the loop and not along the cable into the gland", "loosen the cap (round); cut the sealant (flat)",
+         "a flat cable is sealed once its position is final and then comes out only by cutting the seal")
+    gap = min(st.card_z(st.ORDER[i + 1]) - st.BT - st.card_z(st.ORDER[i]) for i in range(len(st.ORDER) - 1)
+              if st.ORDER[i] in ("B1", "B2"))
+    need = S.val("bob_spacer") + S.val("breakout_t") + S.val("jack_4ucon")[2] + S.val("tails") + 0.5
+    if need > gap:
+        FLAGS.append(f"Clint's two existing BOB-14021s carry the 4UCON 14869 jack ({S.val('jack_4ucon')[2]:g} high): "
+                     f"under the next card they need {need:.1f} mm, there are {gap:.2f}; the build uses new BOBs with "
+                     f"the 87180-066LF ({S.val('jack_h'):g} high, RS listing; no Amphenol drawing in hand)")
+    NOTES.append("glands: " + ", ".join(f"{k} at Yb {y:g}, Zb {z:g}" for y, z, k in cage.GLANDS)
+                 + " (right wall); not the bottom wall: the pack tray and charger cover Xb 20-100, the corner posts "
+                 "Xb 0-15 and 106-121")
+    ft, fw = S.val("flat_cable")
+    diag = (ft ** 2 + fw ** 2) ** 0.5
+    for k, bore in zip(("PG-7", "PG-9"), S.val("gland_bore")):
+        need = diag + 2 * S.val("sealant")
+        uses = [v for (y, z), v in cage.FLAT.items() if dict(((yy, zz), kk) for yy, zz, kk in cage.GLANDS)[(y, z)] == k]
+        if uses and need > bore:
+            fail("L9", f"a flat cable ({ft:g} x {fw:g}, {diag:.1f} across) and its sealant need {need:.1f} mm; the {k} "
+                       f"bore is {bore:g}")
+        NOTES.append(f"glands: a flat cable {ft:g} x {fw:g} ({diag:.1f} across) and {S.val('sealant'):g} mm of "
+                     f"sealant each side need {need:.1f}: the {k} bore (seal out) is {bore:g}"
+                     + (f", used for {', '.join(uses)}" if uses else ""))
+    FLAGS.append(f"the flat weather-meter cables ({ft:g} x {fw:g}) are wider than a PG-9's round seal "
+                 f"({S.val('gland_pg9')[4]:g}-{S.val('gland_pg9')[5]:g}): they go through with the seal out, the gap "
+                 "packed with silicone or a split grommet; sealed once the cable's position is final, the cable comes "
+                 "out only by cutting the seal")
+    for f in FLAGS:
+        NOTES.append(f"flag: {f}")
+
+
+def mech_table():
+    rows = ["| Mating or fixing | Held by | Force path | Taken apart | Flag |", "|---|---|---|---|---|"]
+    for r in MECH:
+        rows.append("| " + " | ".join(c.replace("|", "/") for c in r) + " |")
+    return "\n".join(rows)
+
+
+def readme_mech(write):
+    p = st.HERE.parent / "README.md"
+    t = p.read_text()
+    a, b = "<!-- mechanical:begin (generated by layout/layout_checks.py --write) -->", "<!-- mechanical:end -->"
+    if a not in t:
+        fail("L9", "README has no mechanical table markers")
+        return
+    new = t[:t.index(a) + len(a)] + "\n" + mech_table() + "\n" + t[t.index(b):]
+    if write:
+        p.write_text(new)
+    elif new != t:
+        fail("L9", "README mechanical table out of step: run python3 layout/layout_checks.py --write")
 
 
 def run():
@@ -427,11 +706,14 @@ def run():
     check_bus(ph)
     check_3d()
     check_cage(ph)
+    check_routes()
+    check_mech()
     return ph
 
 
 def main():
     run()
+    readme_mech("--write" in sys.argv)
     for n in NOTES:
         print("note ", n)
     for f in FAILS:
