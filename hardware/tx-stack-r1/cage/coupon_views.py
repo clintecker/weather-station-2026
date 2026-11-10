@@ -37,7 +37,7 @@ def top(solid):
         ax.plot(*zip(*ln), color="#555", lw=1.2)
     for ln in outline(solid, land_h + cage.TONGUE_H / 2):
         ax.plot(*zip(*ln), color="#b07a10", lw=1.6)
-    # r6's lip and long edge, ghosted in r7's frame; the corner's diagonal through the screw
+    # r7's lip and long edge, ghosted in r8's frame; the corner's diagonal through the screw
     g = dict(cage.COUPON_GHOST)
     old = cage.seal_region(cage.TONGUE_W / 2, 0, 1, **dict(g)).intersect(
         cq.Workplane("XY").rect(cx, cz, centered=False).extrude(1)).cut(cage.seal_region(-cage.TONGUE_W / 2, -1, 3, **dict(g)))
@@ -86,15 +86,15 @@ def top(solid):
     ax.annotate("", (hx, 0), (hx, hz), **kw)
     ax.text(hx + 0.6, hz / 2 - 2.5, f"{hz:g}", va="center", **t)
     ax.text(hx + d / 2 + 0.5, hz + d / 2, f"\u00d8{d:g}", **t)
-    ax.text(0.8, -4.4, f"outside corner R {cage.CORNER_R:g} [TBD-MEASURE]; grey dashed: r6's lip and long edge", **t)
+    ax.text(0.8, -4.4, f"outside corner R {cage.CORNER_R:g} [TBD-MEASURE]; grey dashed: r7's lip and long edge", **t)
     ax.set_aspect("equal")
     ax.set_xlim(-6, cx + 9)
     ax.set_ylim(-6, cz + 4)
     ax.set_xlabel("mm from the lid's outside edge (short side)")
     ax.set_ylabel("mm from the lid's outside edge (long side)")
-    ax.set_title(f"rim test-fit coupon r7, top: {cx:g} x {cz:g} x {ch:g} mm (land {ch - cage.TONGUE_H:g}, lip "
+    ax.set_title(f"rim test-fit coupon r8, top: {cx:g} x {cz:g} x {ch:g} mm (land {ch - cage.TONGUE_H:g}, lip "
                  f"{cage.TONGUE_H:g} above it); hole \u00d8{d:g} at {hx:g}/{hz:g}\nthe S's middle runs at "
-                 f"{cl + run:g} from the long edge, {cs + rise:g} from the short, R{r:g} outer / R{ri:g} middle bends (r6 fit)\nthe hole centred in the lid's boss pocket: "
+                 f"{cl + run:g} from the long edge, {cs + rise:g} from the short, R{r:g} outer / R{ri:g} middle bends (r6 + r7 fits)\nthe hole centred in the lid's boss pocket: "
                  f"{clr:.1f} mm to the lip, {hx - d / 2:g} / {hz - d / 2:g} to the long / short edges", fontsize=9)
     ax.grid(alpha=0.2)
     fig.tight_layout()
@@ -123,7 +123,7 @@ def iso(solid):
     ax.set_box_aspect((cage.COUPON[0], cage.COUPON[1], 12))
     ax.view_init(elev=35, azim=-120)
     ax.set_axis_off()
-    ax.set_title("rim test-fit coupon, iso: r7, the lip (gold) 4.5 above the land, 1 mm wider on the long side", fontsize=9)
+    ax.set_title("rim test-fit coupon, iso: r8, the lip (gold) 4.5 above the land, 2 mm wider on the long side than r6", fontsize=9)
     fig.tight_layout()
     fig.savefig(OUT / "rim-coupon-iso.png", dpi=160)
 
