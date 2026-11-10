@@ -446,7 +446,8 @@ def rim_seal_wire(off):
 def edge_coupon_solid(which):
     """One whole rim edge (which = "short": the 130 edge at z 0, returns 25 up each long side; "long": the 175 edge
     at x 0, returns 25 across each short side) with both corner pockets, their holes (coupon r8's, mirrored) and S
-    curves: land 3.5, lip on top, nothing inside the lip, R4 outside corners, 8 tall."""
+    curves: land 3.5, lip on top, nothing inside the lip, R4 outside corners, 8 tall. The lip and S are coupon r8's;
+    the holes sit where the lid's measured spacings (edge_hole_span) put them, not at r8's 8.5."""
     import cadquery as cq
     ll, wl, _r = S.val("l5_lid_out")
     ch = COUPON[2]
@@ -461,12 +462,25 @@ def edge_coupon_solid(which):
     lip = prism(TONGUE_W / 2, land_h, TONGUE_H).cut(prism(-TONGUE_W / 2, land_h - 1, TONGUE_H + 2)).intersect(outer)
     shape = land.union(lip)
     sx, sz = S.val("edge_hole_span")
-    hx, hz = (wl - sx) / 2, (ll - sz) / 2                     # coupon r8's 10.5 / 8.5, mirrored
+    hx, hz = (wl - sx) / 2, (ll - sz) / 2                     # 10.5 / 10.0: the measured spacings on the 130 x 175
     for x, z in ((hx, hz), (wl - hx, hz), (hx, ll - hz), (wl - hx, ll - hz)):
         shape = shape.cut(cq.Workplane("XY").circle(S.val("coupon_bore") / 2).extrude(ch).translate((x, z, 0)))
     clip = (cq.Workplane("XY").box(wl, EDGE_RETURN, ch, centered=False) if which == "short"
             else cq.Workplane("XY").box(EDGE_RETURN, ll, ch, centered=False))
     return shape.intersect(clip)
+
+
+def edge_hole_clearance():
+    """Hole edge to the lip's nearest face, and to the nearest outside edge, at one corner of the edge coupons."""
+    import cadquery as cq
+    ll, wl, _r = S.val("l5_lid_out")
+    sx, sz = S.val("edge_hole_span")
+    hx, hz = (wl - sx) / 2, (ll - sz) / 2
+    lip = cq.Workplane("XY").add(rim_seal_wire(TONGUE_W / 2)).toPending().extrude(1).cut(
+        cq.Workplane("XY").add(rim_seal_wire(-TONGUE_W / 2)).toPending().extrude(1))
+    c = cq.Vertex.makeVertex(hx, hz, 0.5)
+    d = S.val("coupon_bore") / 2
+    return lip.val().distance(c) - d, min(hx, hz) - d
 
 
 def write_edges():
@@ -578,6 +592,8 @@ def main():
     if "--edges" in sys.argv:
         for p, v, a, b in write_edges():
             print(f"edge coupon STL written: {p} ({a:.1f} x {b:.1f} mm, {v:.1f} cm3; not gated)")
+        lc, ec = edge_hole_clearance()
+        print(f"edge coupon hole: {lc:.1f} mm to the lip, {ec:.1f} to the nearest edge")
     if "--stl" in sys.argv and stl_gate():
         print("STL REFUSED: the lid interface is not settled yet: " + ", ".join(stl_gate()))
         sys.exit(2)

@@ -146,7 +146,7 @@ def edge_top(which):
     else:
         f = lambda x, y: (y, x)                        # noqa: E731
         L, span, n = ll, sz, "long"
-    fig, ax = plt.subplots(figsize=(13 if which == "long" else 11, 3.6))
+    fig, ax = plt.subplots(figsize=(13 if which == "long" else 11, 3.9))
     for z, c, lw in ((land_h / 2, "#555", 1.1), (land_h + cage.TONGUE_H / 2, "#b07a10", 1.5)):
         for ln in outline(sol, z):
             ax.plot(*zip(*[f(*p) for p in ln]), color=c, lw=lw)
@@ -154,7 +154,7 @@ def edge_top(which):
     kw = dict(arrowprops=dict(arrowstyle="<->", color=blue, lw=0.9))
     h0 = (L - span) / 2
     ax.annotate("", (h0, 30), (h0 + span, 30), **kw)
-    tbd = "" if which == "short" else "  [TBD-MEASURE]"
+    tbd = " (108-110 measured)  [TBD-MEASURE]" if which == "short" else " (measured, +-1)  [TBD-MEASURE]"
     ax.text(L / 2, 31, f"holes {span:g} apart{tbd}", color=blue, fontsize=9, ha="center")
     ax.annotate("", (0, -5), (L, -5), **kw)
     ax.text(L / 2, -9.5, f"{L:g} overall (l5_lid_out)", color=blue, fontsize=9, ha="center")
@@ -165,15 +165,16 @@ def edge_top(which):
     ax.text(hx + 5, hz - 1, f"\u00d8{S.val('coupon_bore'):g} at {hx:g} / {hz:g}", color=blue, fontsize=8)
     ax.set_aspect("equal")
     ax.set_xlim(-6, L + 6)
-    ax.set_ylim(-13, 36)
+    ax.set_ylim(-13, 37)
     ax.set_xlabel(f"mm along the {n} edge")
     ax.set_ylabel("mm in from the edge")
     v = sol.val().Volume() / 1000
+    lc, _ec = cage.edge_hole_clearance()
     other = "long" if which == "short" else "short"
     ax.set_title(f"rim edge coupon, {n} edge, top: {L:g} x {cage.EDGE_RETURN:g} x {ch:g} mm, {v:.1f} cm3 "
                  f"(land {land_h:g}, lip {cage.TONGUE_W:g} x {cage.TONGUE_H:g} above it, R{cage.CORNER_R:g} corners)\n"
-                 f"both corners coupon r8's, mirrored; {cage.EDGE_RETURN:g} mm returns along each {other} side; "
-                 f"hole spacing {span:g}{tbd}", fontsize=9)
+                 f"both corners coupon r8's lip and S, mirrored; {cage.EDGE_RETURN:g} mm returns along each {other} side\n"
+                 f"holes where the lid's spacings put them: {span:g} apart{tbd}; {lc:.1f} mm from the hole to the lip", fontsize=9)
     ax.grid(alpha=0.2)
     fig.tight_layout()
     out = OUT / f"rim-edge-{which}-top.png"
