@@ -69,7 +69,9 @@ def top(solid):
     ax.text(cl + run + 2.1, (cs + rise) / 2 - 3, f"{cs + rise:g}", **t)
     d = S.val("coupon_bore")
     face = cl + run - w / 2
-    clr = face - (hx + d / 2)
+    clr = min(face - (hx + d / 2), (cs + rise - w / 2) - (hz + d / 2))
+    import math as _m
+    _rc = _m.hypot(hx - cage.CORNER_R, hz - cage.CORNER_R) + cage.CORNER_R - d / 2
     ax.annotate("", (hx + d / 2, hz), (face, hz), arrowprops=dict(arrowstyle="<->", color="#c03030", lw=0.9))
     ax.text(hx + d / 2 - 0.2, hz - 1.8, f"{clr:.1f}", color="#c03030", fontsize=8)
     sx_ = run - r - ri
@@ -94,8 +96,8 @@ def top(solid):
     ax.set_title(f"rim test-fit coupon r8, top: {cx:g} x {cz:g} x {ch:g} mm (land {ch - cage.TONGUE_H:g}, lip "
                  f"{cage.TONGUE_H:g} above it); hole \u00d8{d:g} at {hx:g}/{hz:g}\nthe S's middle runs at "
                  f"{cl + run:g} from the long edge, {cs + rise:g} from the short, R{r:g} outer / R{ri:g} middle bends (r6 + r7 fits)\nthe hole: "
-                 f"{clr:.1f} mm to the lip; hole at {hx:g} tests the lip only:\nthe lid's holes are 108-110 apart "
-                 f"(about {S.val('l2_screw_pos')[1]:g} from the edge), so check whether the hole lines up", fontsize=9)
+                 f"{clr:.1f} mm to the lip, {hz - d / 2:g} to the short edge, {_rc:.1f} to the R{cage.CORNER_R:g} corner\n"
+                 "hole moved 1.5 toward the corner (Clint, r7 fit)", fontsize=9)
     ax.grid(alpha=0.2)
     fig.tight_layout()
     fig.savefig(OUT / "rim-coupon-top.png", dpi=160)
