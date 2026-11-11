@@ -83,6 +83,7 @@ M = 2.0                             # the margin every fit check asks for
 BP_POST_D, BP_FLAT, _bd, _bl, _bf = S.val("bp_post")
 BP_BORE = (_bd, _bl)
 BP_POSTS = [st.bp_xy(h) for h in st.BP_SCREWS]          # bottom left (the flat), bottom right, top right
+BAR_INS = S.val("bar_inserts")                          # Xb, Zb, Zb, the bar's clearance hole
 
 # ------------------------------------------------------------------ chosen
 PLATE = 0.0
@@ -139,7 +140,7 @@ def parts():
                        z + SLOT_CLEAR / 2, f"slot for {b}"))
     wall.append(B(WALL - 2.0, YP, Z_LO, WALL, CARD_FRONT + 1.0, Z_HI, "left wall slot side"))
     slots.append(B(*GROOVE[:3], *GROOVE[3:], "backplane groove"))
-    out.append(Part("left wall", wall, cuts=slots, solid=groove_roof,
+    out.append(Part("left wall", wall, cuts=slots, solid=left_wall_solid,
                     note="moulded in the base: one 2 mm deep slot per card; cards slide in from the lid side toward the "
                          f"back; the backplane's left edge in a groove (Xb {GROOVE[0]:g}-{GROOVE[3]:g}, Yb {GROOVE[1]:g}-"
                          f"{GROOVE[4]:g}, a 45 degree roof) the wall's full length"))
@@ -163,7 +164,9 @@ def parts():
                          f"(bore \u00d8{BP_BORE[0]:g} x {BP_BORE[1]:g}), screws at {', '.join(st.BP_SCREWS)}; the bottom-left "
                          f"post flat {BP_FLAT:g} from its centre toward the mux; the top-left corner in the left wall's groove"))
     out.append(Part("retention bar", [B(0, CARD_FRONT + 0.5, Z_LO, 12.0, CARD_FRONT + 0.5 + BAR, Z_HI, "retention bar")],
-                    note="separate: two M3 screws into the left wall's front face; off before any card comes out"))
+                    solid=bar_solid,
+                    note=f"separate: two M3 screws (\u00d8{BAR_INS[3]:g} holes) into inserts in the left wall's front face at "
+                         f"Xb {BAR_INS[0]:g}, Zb {BAR_INS[1]:g} and {BAR_INS[2]:g}; off before any card comes out"))
     # EVM ledges: the board's left and right edges rest on 2 mm ledges, a stop at the back, a snap clip at the front
     ez = EVM_Z0 - SHELF
     out.append(Part("charger ledges", [
@@ -181,13 +184,28 @@ def parts():
     return out
 
 
-def groove_roof(shape):
-    """The groove's 45 degree roof: from (Xb GROOVE x0, its top) up to the wall face, so it prints without support."""
+def left_wall_solid(shape):
+    """The groove's 45 degree roof (from Xb GROOVE x0 at its top up to the wall face, so it prints without support)
+    and the retention bar's two insert bores in the wall's front face."""
     import cadquery as cq
     x0, y0, z0, x1, y1, z1 = GROOVE
     tri = (cq.Workplane("XY").polyline([(x0, y1), (x1 + 0.01, y1), (x1 + 0.01, y1 + (x1 + 0.01 - x0))]).close()
            .extrude(z1 - z0).translate((0, 0, z0)))
-    return shape.cut(tri)
+    shape = shape.cut(tri)
+    front = CARD_FRONT + 1.0
+    for z in BAR_INS[1:3]:
+        shape = shape.cut(cq.Workplane("XZ").circle(BP_BORE[0] / 2).extrude(-BP_BORE[1])
+                          .translate((BAR_INS[0], front - BP_BORE[1], z)))
+    return shape
+
+
+def bar_solid(shape):
+    """The retention bar's clearance holes, through it along Yb."""
+    import cadquery as cq
+    for z in BAR_INS[1:3]:
+        shape = shape.cut(cq.Workplane("XZ").circle(BAR_INS[3] / 2).extrude(-(BAR + 2))
+                          .translate((BAR_INS[0], CARD_FRONT - 0.5, z)))
+    return shape
 
 
 def bp_post_solids(_shape):
