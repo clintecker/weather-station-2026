@@ -80,9 +80,10 @@ GLAND = {"PG-7": S.val("gland_pg7"), "PG-9": S.val("gland_pg9")}
 GLAND_NUT = {"PG-7": S.val("gland")[1], "PG-9": S.val("gland_pg9_nut")}
 M = 2.0                             # the margin every fit check asks for
 # the backplane mount (cage/backplane-mount-spec.md): three round floor posts, the top-left corner in a left-wall groove
-BP_POST_D, BP_FLAT, _bd, _bl, _bf = S.val("bp_post")
+BP_POST_D, BP_POST_BL, BP_FLAT, _bd, _bl, _bf = S.val("bp_post")
 BP_BORE = (_bd, _bl)
-BP_POSTS = [st.bp_xy(h) for h in st.BP_SCREWS]          # bottom left (the flat), bottom right, top right
+BP_POSTS = [st.bp_xy(h) for h in st.BP_SCREWS]          # bottom left (the larger, with the flat), bottom right, top right
+BP_POST_DS = [BP_POST_BL, BP_POST_D, BP_POST_D]
 BAR_INS = S.val("bar_inserts")                          # Xb, Zb, Zb, the bar's clearance hole
 
 # ------------------------------------------------------------------ chosen
@@ -157,13 +158,14 @@ def parts():
     out.append(Part("right corner post", post, cuts=pslots,
                     note=f"moulded: takes each card's back-right corner (card Y {grip:.2f}-{st.CD:.2f}); on B1 and B2 "
                          f"the back breakout's spacer tongue (card Y {st.CD:.2f}-{st.TONGUE_Y1:.2f}) instead"))
-    posts = [B(x - BP_POST_D / 2, YP, z - BP_POST_D / 2, x + (BP_FLAT if (x, z) == BP_POSTS[0] else BP_POST_D / 2),
-               st.BP_BACK, z + BP_POST_D / 2, "backplane post") for x, z in BP_POSTS]
+    posts = [B(x - d / 2, YP, z - d / 2, x + (BP_FLAT if i == 0 else d / 2), st.BP_BACK, z + d / 2, "backplane post")
+             for i, ((x, z), d) in enumerate(zip(BP_POSTS, BP_POST_DS))]
     out.append(Part("backplane posts", posts, solid=bp_post_solids,
-                    note=f"three round posts \u00d8{BP_POST_D:g}, {st.BP_BACK:g} tall from the floor, M3 heat-set inserts "
-                         f"(bore \u00d8{BP_BORE[0]:g} x {BP_BORE[1]:g}), screws at {', '.join(st.BP_SCREWS)}; the bottom-left "
-                         f"post flat {BP_FLAT:g} from its centre toward the mux; the top-left corner in the left wall's groove"))
-    out.append(Part("retention bar", [B(0, CARD_FRONT + 0.5, Z_LO, 12.0, CARD_FRONT + 0.5 + BAR, Z_HI, "retention bar")],
+                    note=f"three round posts {st.BP_BACK:g} tall from the floor (bottom left \u00d8{BP_POST_BL:g} with a flat "
+                         f"{BP_FLAT:g} from its centre toward the mux, the right two \u00d8{BP_POST_D:g}), M3 heat-set inserts "
+                         f"(bore \u00d8{BP_BORE[0]:g} x {BP_BORE[1]:g}), screws at {', '.join(st.BP_SCREWS)}; the top-left "
+                         "corner in the left wall's groove"))
+    out.append(Part("retention bar", [B(0, CARD_FRONT + 1.0, Z_LO, 12.0, CARD_FRONT + 1.0 + BAR, Z_HI, "retention bar")],
                     solid=bar_solid,
                     note=f"separate: two M3 screws (\u00d8{BAR_INS[3]:g} holes) into inserts in the left wall's front face at "
                          f"Xb {BAR_INS[0]:g}, Zb {BAR_INS[1]:g} and {BAR_INS[2]:g}; off before any card comes out"))
@@ -211,14 +213,14 @@ def bar_solid(shape):
 def bp_post_solids(_shape):
     """The three backplane posts: round, a fillet at the foot, the insert bore from the top, the bottom-left flat."""
     import cadquery as cq
-    r, f, top = BP_POST_D / 2, S.val("bp_post")[4], st.BP_BACK
+    f, top = S.val("bp_post")[5], st.BP_BACK
     c = (f * (1 - 0.5 ** 0.5), f * (1 - 0.5 ** 0.5))
-    prof = (cq.Workplane("XY").moveTo(0, 0).lineTo(r + f, 0).threePointArc((r + c[0], c[1]), (r, f))
-            .lineTo(r, top).lineTo(0, top).close())
-    one = prof.revolve(360, (0, 0, 0), (0, 1, 0))
     shape = None
-    for i, (x, z) in enumerate(BP_POSTS):
-        p = one.translate((x, YP, z))
+    for i, ((x, z), d) in enumerate(zip(BP_POSTS, BP_POST_DS)):
+        r = d / 2
+        prof = (cq.Workplane("XY").moveTo(0, 0).lineTo(r + f, 0).threePointArc((r + c[0], c[1]), (r, f))
+                .lineTo(r, top).lineTo(0, top).close())
+        p = prof.revolve(360, (0, 0, 0), (0, 1, 0)).translate((x, YP, z))
         p = p.cut(cq.Workplane("XZ").circle(BP_BORE[0] / 2).extrude(-BP_BORE[1]).translate((x, top - BP_BORE[1], z)))
         if i == 0:
             p = p.cut(cq.Workplane("XY").box(10, top + 2, 20, centered=False).translate((x + BP_FLAT, -1, z - 10)))
@@ -271,7 +273,7 @@ def backplane_checks():
     right = min(b.x0 for n, b in printed if b.x0 >= x1 - 0.01 and b.y1 > yb + 0.02 and b.z0 < z1 and z0 < b.z1)
     if right - x1 < tr - 0.01:
         bad.append(f"the backplane has {right - x1:.2f} of travel to the right, the fit needs {tr:g}")
-    lines = [f"backplane mount: 3 posts \u00d8{BP_POST_D:g} at " + ", ".join(f"({x:.2f}, {z:.2f})" for x, z in BP_POSTS)
+    lines = [f"backplane mount: 3 posts at " + ", ".join(f"({x:.2f}, {z:.2f}) \u00d8{d:g}" for (x, z), d in zip(BP_POSTS, BP_POST_DS))
              + f", tops and the groove floor at Yb {yb:g}; outline Xb {x0:.2f}-{x1:.2f}, Zb {z0:.2f}-{z1:.2f}; "
              f"{right - x1:.2f} free to the right (needs {tr:g}); mux {gap:.2f} from a post (both positions)"]
     return lines, bad
