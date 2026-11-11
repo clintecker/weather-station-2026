@@ -393,7 +393,7 @@ def cage_views():
     g.rect(side(yb - 4), Z(sz + 4), side(yb + 4), Z(sz - 4), "#D4AF37", "#7a5c12", 1)
     g.text(front(w_in + 10), Z(sz) + 4, "SMA bulkhead boss", 10)
     g.text(M, 28, "TX stack r3 in the printed PETG base (100 deep) under the #905 lid, hanging long side up, to scale "
-           f"3.2 px/mm; inside {w_in:g} x {h_in:g} x {d_in:g} mm (lid interface: L1 and the coupon fit [TBD-MEASURE])", 15, weight="bold")
+           f"3.2 px/mm; inside {w_in:g} x {h_in:g} x {d_in:g} mm (lid interface: L1 and the rim ring's fit [TBD-MEASURE])", 15, weight="bold")
     g.text(M, 48, "Blue: moulded cage features. Red slabs: cards. Tan: backplane. Dashed: plug keep-outs. Grey: corner "
            "posts, gland nuts, pole lugs and drip edge.", 12)
     g.text(M, 64, "Shelves bottom to top: the pack, the BQ25798EVM (90 x 90, J8 toward the lid), B4, B2, B1, B3; all "
@@ -606,10 +606,10 @@ def assembly_sheet():
          "(electrical review m6: the JP22 note says 2 A, the datasheet default is 1 A). Then refit JP17 and connect "
          "the pack.", "",
          "## 2. Print the base (`cage/cage.py`)", "",
-         "1. Print the rim coupon first (`cage.py --coupon`, `cage/stl/rim-coupon.stl`: one corner, 45 x 45 x 8, "
-         "about 20 minutes, flat on its underside) and press the real lid onto it: the sealing lip must sit in the "
-         "O-ring along both sides and round the boss's S-curve, and the screw hole under the lid's hole. Adjust "
-         "`rim_tongue` (offset, width) until it does, then set `coupon_fit` True. Settle L1 (the screws, the lid's "
+         "1. Print the rim test ring first (`cage.py --ring`, `cage/stl/rim-ring.stl`: the whole rim, 175.5 x 129.5 "
+         "x 8, about an hour, flat on its land) and press the real lid onto it: the lip must drop into the O-ring "
+         "channel all the way round and through all four S-curves, all four holes under the lid's at once, the outer "
+         "edge flush on all four sides. Correct `cage/lid-rim-spec.md` until it does, then set `ring_fit` True. Settle L1 (the screws, the lid's "
          "corner pocket); `cage.py --stl` refuses the full base until both are sourced. Also the EVM's part heights "
          "and J6 under it (`evm`, `evm_under`).",
          "2. Then a second test coupon: one card slot (tune `slot_clear` until a card slides with light friction), one "

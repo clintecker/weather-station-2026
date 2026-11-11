@@ -648,11 +648,11 @@ def check_mech():
          "removable only after all four cards are out")
     mech("Lid to the printed base", f"four M4 stainless screws on {S.val('m4_washer')[0]:g} mm washers through the "
          f"lid's 8 mm holes into M4 heat-set inserts ({S.val('insert_m4')[0]:g} mm holes, 3 mm of wall round each) in "
-         "the base's corner posts, 10 mm in from the lid's outside edges (Clint; option b, recommended over a printed "
+         "the base's corner posts, 156 x 109 apart (9.75 / 10.25 in from the lid's edges, cage/lid-rim-spec.md; option b, recommended over a printed "
          f"copy of the original 8 mm plastic thread); the base's 9 mm land under the lid's rim, its "
          f"{S.val('rim_tongue')[0]:g} x {S.val('rim_tongue')[1]:g} sealing lip in the lid's O-ring channel",
          "the screws squeeze the O-ring; the lid's rim takes a knock", "undo the four lid screws",
-         "not settled: the screw and the lid's corner pocket (L1), and the rim coupon's fit on the real lid: no "
+         "not settled: the screw and the lid's corner pocket (L1), and the rim test ring's fit on the real lid: no "
          "full STL until they are")
     mech("Base to the pole", "two moulded lugs on the back, a hose clamp or U-bolt through each; no screw through "
          "the back into the box", "the lugs' roots in the 3 mm floor", "open the clamps", "")
