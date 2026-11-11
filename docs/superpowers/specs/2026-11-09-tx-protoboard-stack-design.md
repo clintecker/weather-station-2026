@@ -69,8 +69,9 @@ Everything is one vertical stack of horizontal shelves, each sliding toward the 
 flat on a tray 2 mm over the gland nuts), the BQ25798EVM (on two moulded ledges, Bumpons off, 2 mm in front of the
 backplane's lower end, J8 toward the lid), then the cards B4, B2, B1, B3 (the SHTC3 on the top card, about 84 mm
 above the charger). Moulded in the base: a left wall with one slot per card; a right corner post that takes each
-card's back-right corner; four posts that hold the **backplane** (BusBoard PAD3U padboard, a pad per hole, cut to
-21 x 39 holes; a tinned bus wire on the copper side per bus line; copper side back) 8 mm off the floor over the mux;
+card's back-right corner; three round floor posts and a groove in the left wall that hold the **backplane** (BusBoard PAD3U padboard, a pad per hole, cut to
+21 x 39 holes; a tinned bus wire on the copper side per bus line; copper side back) 8 mm off the floor over the mux (`hardware/tx-stack-r1/cage/backplane-mount-spec.md`: three M3 screws, the
+top-left edge in the groove);
 a retention bar screwed across the front-left of the stack after the cards are in. The lid's corner lands set the
 card heights: a card's parts cannot pass a top corner as it slides out, so the stack sits 3 mm under them.
 

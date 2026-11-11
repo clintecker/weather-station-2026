@@ -1771,7 +1771,6 @@
 <rect x="428.9" y="131.1" width="11.2" height="11.2" rx="2" fill="#D4AF37" stroke="#7a5c12" stroke-width="0.5"/>
 <circle cx="434.5" cy="136.7" r="3.3" fill="#2b2b2b"/>
 <circle cx="78.9" cy="794.5" r="11.2" fill="#fff" stroke="#000" stroke-width="1.2"/>
-<circle cx="78.9" cy="190.0" r="11.2" fill="#fff" stroke="#000" stroke-width="1.2"/>
 <circle cx="434.5" cy="794.5" r="11.2" fill="#fff" stroke="#000" stroke-width="1.2"/>
 <circle cx="434.5" cy="190.0" r="11.2" fill="#fff" stroke="#000" stroke-width="1.2"/>
 <text x="61.4" y="816.3" font-size="9" text-anchor="end" fill="#222" font-weight="normal">1</text>

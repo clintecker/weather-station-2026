@@ -268,9 +268,9 @@ def backplane_view(ph):
                   f'stroke-width="{0.64 * KB:.1f}" stroke-linecap="round" opacity="0.75"/>')
             for n in hs:
                 g.add(f'<circle cx="{bx(i):.1f}" cy="{bz(n):.1f}" r="{0.9 * KB:.1f}" fill="none" stroke="{ncol(net)}" stroke-width="1.6"/>')
-    for i in (0, st.BP_STRIPS):
-        for n in st.BP_SCREW_HOLES:
-            g.add(f'<circle cx="{bx(i):.1f}" cy="{bz(n):.1f}" r="{1.6 * KB:.1f}" fill="#fff" stroke="#000" stroke-width="1.2"/>')
+    for h in st.BP_SCREWS:
+        i, n = (int(v) for v in h[1:].split("."))
+        g.add(f'<circle cx="{bx(i):.1f}" cy="{bz(n):.1f}" r="{1.6 * KB:.1f}" fill="#fff" stroke="#000" stroke-width="1.2"/>')
     for n in range(1, st.BP_HOLES + 1, 2):
         g.text(bx(0) - 2.5 * KB, bz(n) + 4, n, 9, "end")
     mx = st.MUX_BOX
@@ -522,8 +522,10 @@ def backplane_sheet(ph):
          "## 1. Cut and drill", "",
          f"1. Cut a piece {n_lines} holes across by {st.BP_HOLES} holes along from one PAD3U (score both faces along "
          "a line of holes, snap, file the edges flat). Lines 0-20 across; holes 1-39 along.",
-         f"2. Drill 3.2 mm through the pads at lines 0 and 20, holes {' and '.join(str(n) for n in st.BP_SCREW_HOLES)}, "
-         "for the four M3 screws to the cage posts. Nothing else is soldered on lines 0 and 20.",
+         "2. Drill 3.2 mm through three pads, for the M3 screws to the base's three floor posts: "
+         + ", ".join(f"line {h[1:].split('.')[0]} hole {h[1:].split('.')[1]}" for h in st.BP_SCREWS)
+         + " (bottom left, bottom right, top right). The top-left corner has no screw: the board's left edge sits in "
+         "the left wall's groove. Nothing else is soldered on lines 0 and 20.",
          "3. Meter two neighbouring pads anywhere: open (the board has no strips).", "",
          "## 2. Sockets (one per card; pin n on line n)", "", "| Socket | Card | Hole along the lines |", "|---|---|---|"]
     for ref, pins, note in st.BP_PARTS:
@@ -559,7 +561,16 @@ def backplane_sheet(ph):
     L += ["", "The mux (Adafruit #5626: bridge A0 for 0x71, its Vlogic switch SW1 to V+) sits on a foam pad on the "
           "copper side over holes 2-9, below the B4 socket and clear of the bus wires (they start at hole 10); its "
           "five header pads take short leads to hole 10.", "",
-          "## 6. Hole by hole", "", "Every pad that has anything soldered in it; every other pad stays bare.", "",
+          "## 6. Fit it in the base (`cage/backplane-mount-spec.md`)", "",
+          f"1. Copper side back, mux behind it: lower the board onto the three posts {S.val('bp_groove')[2]:g} mm to the "
+          "right of its place (toward the right wall), its copper face down on the post tops; its left edge is then "
+          "clear of the left wall.",
+          f"2. Slide it {S.val('bp_groove')[2]:g} mm left, flat on the posts, until its left edge is in the left wall's "
+          "groove (it stops 0.5 short of the groove's floor) and the three drilled holes are over the posts' inserts. "
+          "The mux moves with it and clears the bottom-left post's flat in both places.",
+          "3. Drive the three M3 x 6 button-head screws (ISO 7380, no washers). It comes out the same way, after every "
+          "card is out.", "",
+          "## 7. Hole by hole", "", "Every pad that has anything soldered in it; every other pad stays bare.", "",
           "| Line | Hole | What is in it | Bus wire |", "|---|---|---|---|"]
     used = defaultdict(list)
     for ref, pins, note in st.BP_PARTS:
@@ -569,9 +580,8 @@ def backplane_sheet(ph):
         for e, o in ((a, c), (c, a)):
             if isinstance(e, str) and e.startswith("BP:"):
                 used[e[3:]].append(f"lead to {where(o)}")
-    for i in (0, st.BP_STRIPS):
-        for n in st.BP_SCREW_HOLES:
-            used[f"s{i}.{n}"].append("3.2 mm screw hole (drilled)")
+    for h in st.BP_SCREWS:
+        used[h].append("3.2 mm screw hole (drilled)")
     for h in sorted(used, key=lambda h: tuple(int(v) for v in h[1:].split("."))):
         i, n = (int(v) for v in h[1:].split("."))
         wire = f"line {i}" if n in bus.get(i, []) else "-"
@@ -622,7 +632,8 @@ def assembly_sheet():
          "outside against UV.",
          "4. Fit the glands in the bottom wall's bosses (six 12.0 mm holes for PG-7s #762, the round port cables; two "
          "15.5 mm for PG-9s #761, the flat wind and rain cables, right column), the M12 vent, and the SMA bulkhead in "
-         "the right wall's boss. Screw the backplane to its four posts, copper side back; it comes off again only after "
+         "the right wall's boss. Fit the backplane (its build sheet, section 6): lowered onto its three posts 2.5 mm "
+         "right of its place, slid left into the left wall's groove, three M3 screws; it comes off again only after "
          "every card is out.",
          "5. Shelves bottom to top: the pack on its tray (strap); the EVM (Bumpon feet peeled off) slid back on its "
          "ledges to the stop, clip at the front, leads with service loops; then the cards.",
