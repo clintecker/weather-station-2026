@@ -45,7 +45,7 @@ Mirror the quadrant about the Y axis and then about the X axis to close the loop
 **Checks for the path:**
 
 - **Spans, centre line to centre line:** the straight lips are 169.5 apart along X and 123.0 apart along Y.
-- **Inset:** the straight lip sits 3.25 in from the outer edge (scan: 3.15–3.36).
+- **Inset:** the straight lip sits 3.25 in from the outer edge on the long sides (scan: 3.15–3.36) and 3.0 on the short sides (the 175.5 length is rounded; the scan clipped the short-side edges).
 - **S depth:** each middle run is 15.4 in from its parallel straight lip (scan: 15.1–15.6 at all four corners).
 - **Middle bend:** R7.15 on the centre line (scan: 7.14–7.16 at all four corners).
 - **Outer bends:** R3.5 (scan: 3.0–4.0).
