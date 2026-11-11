@@ -22,8 +22,9 @@ Y = Xb − 61.75 (positive toward the right wall).
 - **Board:** PAD3U cut 21 lines × 39 holes, 2.54 pitch, 1.6 thick. Lines run along Zb.
 - **Outline:** Xb 6.51 to 59.85, Zb 50.25 to 149.31.
 - **Copper (back) face** at Yb 8.0, against the posts. The component face is at Yb 9.6.
-- **Behind it, on the copper face:** the mux breakout on foam, at **Xb 12.86 to 53.50**, Zb 52.79 to 73.11, inside
-  the 8 mm gap. It moved 1.27 right from the first issue of this spec, so the bottom-left post gets a full wall. Bus wires run along lines 1 to 18 (Xb 10.32 to 53.50).
+- **Behind it, on the copper face:** the mux breakout on foam, at **Xb 11.59 to 52.23**, Zb 52.79 to 73.11, inside
+  the 8 mm gap. It can't move right: during the fitting slide (section 3) its right edge passes 0.35 from the
+  bottom-right post. Bus wires run along lines 1 to 18 (Xb 10.32 to 53.50).
 
 ## 2. Posts: three screw posts
 
@@ -35,7 +36,8 @@ Y = Xb − 61.75 (positive toward the right wall).
 
 - **Spacing:** 50.80 across (20 holes) and 86.36 along (34 holes). These are the board's line 0 / line 20, holes 2 / 36.
 - **Post:** a round boss, from the floor (Yb 0) to a flat top at **Yb 8.0**, with an R1.0 fillet at its foot.
-  - **Bottom left: Ø8.0, no flat.** That leaves 1.7 of plastic round the insert's knurl and 1.1 to the mux.
+  - **Bottom left: Ø8.0, with a flat on its +Xb side 3.5 from its centre** (at Xb 11.28). That leaves 1.2 round the
+    knurl on the flat side (the same as the right posts), 1.7 elsewhere, and 0.3 to the mux.
   - **Bottom right and top right: Ø7.0.** That leaves 1.2 round the knurl.
 - **Insert bore:** **Ø4.0 × 6.5 deep** from the post top, for an M3 × 5.7 heat-set insert. It's a blind hole, with
   1.5 of post left under it.
@@ -109,12 +111,12 @@ part's front face.
   | B2 | 95.97 to 112.54 |
   | B1 | 116.29 to 132.86 |
 
-**Retention bar:** a separate printed part, 12.0 (Xb 0 to 12.0) × 2.5 (Yb 62.87 to 65.37) × 77.88 (Zb 72.73 to
-150.61).
+**Retention bar:** a separate printed part, 12.0 (Xb 0 to 12.0) × 2.5 (Yb 63.37 to 65.87) × 77.88 (Zb 72.73 to
+150.61). It sits flat on the left wall's front face.
 
 - It screws to the left wall's front face, with Ø3.4 clearance holes at the two insert positions above.
 - It covers each card's front-left corner, so no card can slide out.
-- 0.5 is left between the bar and the cards' front edges (Yb 62.37).
+- 1.0 is left between the bar and the cards' front edges (Yb 62.37). The sockets' pins engage far deeper than that.
 
 ## 5. Measure before printing
 
