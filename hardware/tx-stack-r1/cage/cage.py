@@ -2,7 +2,7 @@
 
 The base replaces the #905 (TIBOX) body: 100 mm deep outside, 3 mm walls, mating exactly with the #905's clear
 lid and its O-ring: a 9 mm land with a tongue pressing into the lid's O-ring channel, corner blocks with M4 heat-set
-inserts under the lid's bosses (Clint's photo); the screw (L1) and the rim coupon's fit are not settled, and `--stl` refuses until
+inserts under the lid's bosses (Clint's photo); the screw (L1) and the rim test ring's fit are not settled, and `--stl` refuses until
 those are measured.
 It hangs on its pole by its back, long side vertical. Box frame: Xb across from the inside left wall (seen from the
 open lid), Yb from the inside floor (the back as hung) toward the lid, Zb up from the inside bottom wall.
@@ -24,9 +24,9 @@ M12 vent boss, the SMA bulkhead boss, two pole lugs on the back (no screws throu
 Run:  python3 cage.py           print the parts and check them against the box inside (no CadQuery needed)
       ../../../.venv-cad/bin/python cage.py --solid   also build the solids in CadQuery and check them
       ../../../.venv-cad/bin/python cage.py --stl     export STL: refused until the lid gate is sourced
-      ../../../.venv-cad/bin/python cage.py --coupon  the rim test-fit coupon (one corner): not gated
-      ../../../.venv-cad/bin/python cage.py --edges   the two whole-edge rim coupons (short 130, long 175): not gated
+      ../../../.venv-cad/bin/python cage.py --ring    the rim test ring from lid-rim-spec.md, checked against it: not gated
 """
+import math
 import sys
 from pathlib import Path
 
@@ -36,7 +36,7 @@ import stack as st  # noqa: E402
 from stack import S  # noqa: E402
 
 # ------------------------------------------------------------------ the lid interface and the box
-LID_KEYS = ["l2_screw_pos", "l4_oring_proud", "l5_lid_out", "l6_body_rib", "coupon_fit"]
+LID_KEYS = ["l2_screw_pos", "l4_oring_proud", "l5_lid_out", "l6_body_rib", "ring_fit"]
 SCREW_OPT = S.val("lid_screw_opt")
 LID_KEYS += ["l1_lid_screw"] if SCREW_OPT == "a" else ["m4_screw", "m4_washer", "lid_pocket", "insert_m4"]
 T = S.val("base_wall")
@@ -203,7 +203,7 @@ def box_keepouts():
 def tongue():
     """The tongue's centre line (x, z) points, closed: along each wall at TONGUE_C - T inside, and round each corner
     boss in the lid's S-curve (in along the boss's inner face, round its corner, out to the next wall)."""
-    cx, cz, bx, bz = LIP_CX, LIP_CZ, S_X, S_Z              # (square corners here: the coupon has the R bends)
+    cx, cz, bx, bz = LIP_CX, LIP_CZ, S_X, S_Z              # (square corners here: the ring has the R bends)
     return [(cx, bz), (bx, bz), (bx, cz),                  # bottom-left corner (Zb 0 is the bottom wall)
             (W - bx, cz), (W - bx, bz), (W - cx, bz),
             (W - cx, H - bz), (W - bx, H - bz), (W - bx, H - cz),
@@ -322,178 +322,138 @@ def coax(arm):
     return pe, yb, zb, ax
 
 
-COUPON = (47.0, 45.0, 8.0)          # the test-fit coupon (r8)
-COUPON_RUN = S_RUN + S.val("coupon_long_shift")                # the coupon's S run along the long side (a lip test)
-COUPON_HOLE = S.val("coupon_hole")
-# the coupon: x from the long-side edge, z from the short-side edge: one rim corner, outside footprint x height; at least
-CORNER_R = S.val("corner_r_out")    #   10 mm of straight lip past each outer bend
-COUPON_GHOST = dict(cs=4.0, cl=4.5, rise=13.5, run=15.0, r=(3.0, 5.5, 3.0))   # r7's lip in r8's frame (its long edge
-COUPON_GHOST_EDGE = 1.0                                                        #   1 mm in), ghosted on the drawing
+# ------------------------------------------------------------------ the rim test ring, straight from cage/lid-rim-spec.md
+# (the spec's frame: origin at the lid centre, X along the long side, Y along the short side, Z up from the bed)
+import lid_rim_spec as RS  # noqa: E402
+
+RING_PRINT = 3.6                    # min per cm3 on the H2D: coupon r1, 5.6 cm3 in about 20 minutes (Clint)
+H2D_BED = (325.0, 320.0)            # Bambu H2D build plate, one nozzle (bambulab.com H2D specs)
 
 
-def coupon_seal_points(cs=None, cl=None, rise=None, run=None, far=90.0):
-    """The seal's centre line in the coupon frame (x along the short side, z along the long side, from the lid's
-    outside corner; the base's outside is the lid's): up the long-side leg cl in, along the S's segment at
-    z = cs + rise, down the S's segment at x = cl + run, out along the short-side leg cs in. Returned as the
-    corners of the region on the box's inside of the line (closed far outside the coupon)."""
-    cs = TONGUE_CS if cs is None else cs
-    cl = TONGUE_CL if cl is None else cl
-    rise = S_RISE if rise is None else rise
-    run = COUPON_RUN if run is None else run
-    return [(cl, far), (cl, cs + rise), (cl + run, cs + rise), (cl + run, cs), (far, cs), (far, far)]
+def ring_path():
+    """The lip centre line, closed and anticlockwise from the +X short side at Y 0: the spec's quadrant, then mirrored
+    about Y, both, and X. Each segment is ("line", a, b) or ("arc", a, b, centre, r, sense); a mirror and a reversal
+    each flip an arc's sense, so every arc keeps the sense the table gives it."""
+    q = RS.load()["quadrant"]
+
+    def f(seg, fx, fy, rev):
+        m = [(p[0] * fx, p[1] * fy) for p in seg[1:4 if seg[0] == "arc" else 3]]
+        a, b = (m[1], m[0]) if rev else (m[0], m[1])
+        return ("line", a, b) if seg[0] == "line" else ("arc", a, b, m[2], seg[4], seg[5])
+    return ([f(x, 1, 1, False) for x in q] + [f(x, -1, 1, True) for x in reversed(q)]
+            + [f(x, -1, -1, False) for x in q] + [f(x, 1, -1, True) for x in reversed(q)])
 
 
-def rounded_wire(pts, r, bends=(1, 2, 3)):
-    """r is one radius, or one per bend (in the order of bends)."""
-    rs = dict(zip(bends, r if isinstance(r, (tuple, list)) else [r] * len(bends)))
-    return _rounded_wire(pts, rs)
-
-
-def _rounded_wire(pts, rs):
-    """A closed CadQuery wire through pts, the 90-degree corners at the indices in rs rounded at rs[i] (tangent
-    arcs between straights parallel to the edges)."""
-    import cadquery as cq
-    n = len(pts)
-
-    def unit(a, b):
-        d = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
-        return ((b[0] - a[0]) / d, (b[1] - a[1]) / d)
-
-    w = None
-    seq = []
-    for i, p in enumerate(pts):
-        if i in rs:
-            r = rs[i]
-            d1, d2 = unit(pts[i - 1], p), unit(p, pts[(i + 1) % n])
-            p1 = (p[0] - r * d1[0], p[1] - r * d1[1])
-            p2 = (p[0] + r * d2[0], p[1] + r * d2[1])
-            c = (p1[0] + r * d2[0], p1[1] + r * d2[1])
-            k = ((p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2) ** 0.5
-            mid = (c[0] + r * (p[0] - c[0]) / k, c[1] + r * (p[1] - c[1]) / k)
-            seq.append(("arc", p1, mid, p2))
-        else:
-            seq.append(("pt", p))
-    start = seq[0][1]
-    w = cq.Workplane("XY").moveTo(*start)
-    cur = start
-    for item in seq[1:] + [seq[0]]:
-        if item[0] == "pt":
-            if item[1] != cur:
-                w = w.lineTo(*item[1])
-            cur = item[1]
-        else:
-            _k, p1, mid, p2 = item
-            if (abs(p1[0] - cur[0]) + abs(p1[1] - cur[1])) > 1e-9:
-                w = w.lineTo(*p1)
-            w = w.threePointArc(mid, p2)
-            cur = p2
-    return w.close().wires().val()
-
-
-def seal_region(off, z0, h, **geom):
-    """The box-inside region of the seal line (its bends rounded), grown by off (shrunk if < 0), as a prism."""
-    import cadquery as cq
-    r = geom.pop("r", (CURVE_R, CURVE_RI, CURVE_R))
-    wire = rounded_wire(coupon_seal_points(**geom), r).offset2D(off, "arc")[0]
-    return cq.Workplane("XY").add(wire).toPending().extrude(h).translate((0, 0, z0))
-
-
-def coupon_solid():
-    """The coupon (r2) as a CadQuery solid: the land from the outside edge to the lip's inner face (nothing inside
-    the lip, round the S too), solid from the underside (it prints flat), the 2 x 3 sealing lip on its centre line
-    (4.0 in on the short side, 3.5 on the long, the S's outer bends at CURVE_R, its inner bend at CURVE_RI), the outside corner at CORNER_R, and the
-    7 mm screw hole. Its own frame: x, y in plan from the outside corner, z up from the underside."""
-    import cadquery as cq
-    cx, cz, ch = COUPON
-    land_h = ch - TONGUE_H
-    sq = (cq.Workplane("XY").rect(cx, cz, centered=False).extrude(ch).edges("|Z")
-          .edges(cq.selectors.NearestToPointSelector((0, 0, ch / 2))).fillet(CORNER_R))
-    land = sq.cut(seal_region(-TONGUE_W / 2, -1.0, ch + 2.0))                 # to the lip's inner face
-    land = land.cut(cq.Workplane("XY").box(cx + 10, cz + 10, TONGUE_H + 1, centered=False).translate((-5, -5, land_h)))
-    lip = seal_region(TONGUE_W / 2, land_h, TONGUE_H).cut(seal_region(-TONGUE_W / 2, land_h - 1, TONGUE_H + 2))
-    shape = land.union(lip.intersect(sq))
-    hx, hz = COUPON_HOLE
-    return shape.cut(cq.Workplane("XY").circle(S.val("coupon_bore") / 2).extrude(ch).translate((hx, hz, 0)))
-
-
-def write_coupon():
-    import cadquery as cq
-    out = HERE / "stl" / "rim-coupon.stl"
-    out.parent.mkdir(exist_ok=True)
-    cq.exporters.export(coupon_solid(), str(out))
-    return out
-
-
-EDGE_RETURN = S.val("edge_return")  # the edge coupons' return down each adjoining side
-
-
-def rim_seal_wire(off):
-    """The whole rim's seal centre line (lid frame: x across the 130 from a long edge, z along the 175 from a short
-    edge), every corner coupon r8's S mirrored, its bends rounded (R outer / R middle / R outer), grown by off."""
-    ll, wl, _r = S.val("l5_lid_out")             # 175 long, 130 wide
-    cs, cl, rise, run = TONGUE_CS, TONGUE_CL, S_RISE, COUPON_RUN
-    X0, X1, X2, X3 = cl, cl + run, wl - cl - run, wl - cl
-    Z0, Z1, Z2, Z3 = cs, cs + rise, ll - cs - rise, ll - cs
-    pts = [(wl / 2, Z0),
-           (X2, Z0), (X2, Z1), (X3, Z1),          # bottom-right corner
-           (X3, Z2), (X2, Z2), (X2, Z3),          # top-right
-           (X1, Z3), (X1, Z2), (X0, Z2),          # top-left
-           (X0, Z1), (X1, Z1), (X1, Z0)]          # bottom-left
-    rs = {i: (CURVE_RI if (i - 1) % 3 == 1 else CURVE_R) for i in range(1, 13)}
-    return _rounded_wire(pts, rs).offset2D(off, "arc")[0]
-
-
-def edge_coupon_solid(which):
-    """One whole rim edge (which = "short": the 130 edge at z 0, returns 25 up each long side; "long": the 175 edge
-    at x 0, returns 25 across each short side) with both corner pockets, their holes (coupon r8's, mirrored) and S
-    curves: land 3.5, lip on top, nothing inside the lip, R4 outside corners, 8 tall. The lip and S are coupon r8's;
-    the holes sit where the lid's measured spacings (edge_hole_span) put them, not at r8's 8.5."""
-    import cadquery as cq
-    ll, wl, _r = S.val("l5_lid_out")
-    ch = COUPON[2]
-    land_h = ch - TONGUE_H
-    outer = (cq.Workplane("XY").rect(wl, ll, centered=False).extrude(ch).edges("|Z").fillet(CORNER_R))
-
-    def prism(off, z0, h):
-        return cq.Workplane("XY").add(rim_seal_wire(off)).toPending().extrude(h).translate((0, 0, z0))
-
-    land = outer.cut(prism(-TONGUE_W / 2, -1.0, ch + 2.0))
-    land = land.cut(cq.Workplane("XY").box(wl + 10, ll + 10, TONGUE_H + 1, centered=False).translate((-5, -5, land_h)))
-    lip = prism(TONGUE_W / 2, land_h, TONGUE_H).cut(prism(-TONGUE_W / 2, land_h - 1, TONGUE_H + 2)).intersect(outer)
-    shape = land.union(lip)
-    sx, sz = S.val("edge_hole_span")
-    hx, hz = (wl - sx) / 2, (ll - sz) / 2                     # 10.5 / 10.0: the measured spacings on the 130 x 175
-    for x, z in ((hx, hz), (wl - hx, hz), (hx, ll - hz), (wl - hx, ll - hz)):
-        shape = shape.cut(cq.Workplane("XY").circle(S.val("coupon_bore") / 2).extrude(ch).translate((x, z, 0)))
-    clip = (cq.Workplane("XY").box(wl, EDGE_RETURN, ch, centered=False) if which == "short"
-            else cq.Workplane("XY").box(EDGE_RETURN, ll, ch, centered=False))
-    return shape.intersect(clip)
-
-
-def edge_hole_clearance():
-    """Hole edge to the lip's nearest face, and to the nearest outside edge, at one corner of the edge coupons."""
-    import cadquery as cq
-    ll, wl, _r = S.val("l5_lid_out")
-    sx, sz = S.val("edge_hole_span")
-    hx, hz = (wl - sx) / 2, (ll - sz) / 2
-    lip = cq.Workplane("XY").add(rim_seal_wire(TONGUE_W / 2)).toPending().extrude(1).cut(
-        cq.Workplane("XY").add(rim_seal_wire(-TONGUE_W / 2)).toPending().extrude(1))
-    c = cq.Vertex.makeVertex(hx, hz, 0.5)
-    d = S.val("coupon_bore") / 2
-    return lip.val().distance(c) - d, min(hx, hz) - d
-
-
-def write_edges():
+def ring_edges():
     import cadquery as cq
     out = []
-    for which in ("short", "long"):
-        sol = edge_coupon_solid(which)
-        p = HERE / "stl" / f"rim-edge-{which}.stl"
-        p.parent.mkdir(exist_ok=True)
-        cq.exporters.export(sol, str(p))
-        bb = sol.val().BoundingBox()
-        out.append((p, sol.val().Volume() / 1000, bb.xlen, bb.ylen))
+    for sg in ring_path():
+        a, b = cq.Vector(*sg[1], 0), cq.Vector(*sg[2], 0)
+        if sg[0] == "line":
+            out.append(cq.Edge.makeLine(a, b))
+        else:
+            c = cq.Vector(*sg[3], 0)
+            mid = c + ((a + b) * 0.5 - c).normalized() * sg[4]
+            out.append(cq.Edge.makeThreePointArc(a, mid, b))
     return out
+
+
+def ring_prism(off, z0, h):
+    """The region inside the lip centre line grown by off (outward +), from z0, h tall."""
+    import cadquery as cq
+    w = cq.Wire.assembleEdges(ring_edges())
+    if off:
+        w = w.offset2D(off, "arc")[0]
+    return cq.Workplane("XY").add(cq.Solid.extrudeLinear(cq.Face.makeFromWires(w), cq.Vector(0, 0, h))).translate((0, 0, z0))
+
+
+def ring_solid():
+    """The ring: the land (Z 0-3.5) from the outline in to the lip's inner face, nothing inside it; the 2 x 4.5 lip on
+    top; four 7 mm holes."""
+    import cadquery as cq
+    sp = RS.load()
+    L, Wd = sp["outline"]
+    lw, _lh = sp["lip_w"], sp["lip_h"]
+    land_h, top = sp["land_z"][1], sp["lip_z"][1]
+    outer = cq.Workplane("XY").rect(L, Wd).extrude(top).edges("|Z").fillet(sp["corner_r"])
+    land = outer.intersect(cq.Workplane("XY").rect(L + 10, Wd + 10).extrude(land_h)).cut(ring_prism(-lw / 2, -1, top + 2))
+    lip = ring_prism(lw / 2, land_h, top - land_h).cut(ring_prism(-lw / 2, land_h - 1, top)).intersect(outer)
+    shape = land.union(lip)
+    hx, hy = sp["holes"]
+    for x in (hx, -hx):
+        for y in (hy, -hy):
+            shape = shape.cut(cq.Workplane("XY").circle(sp["hole_d"] / 2).extrude(top + 2).translate((x, y, -1)))
+    return shape
+
+
+def ring_checks(solid=None):
+    """The ring against the spec: the segment table, the mirrors, the spans and the spec's stated checks, tangency on
+    the built edges, the hole-to-lip clearance. Returns (lines to print, faults)."""
+    import cadquery as cq
+    sp = RS.load()
+    d = RS.derived(sp)
+    bad = ["spec table: " + x for x in RS.check(sp)]
+    path = ring_path()
+    pts = [p for sg in path for p in (sg[1:4] if sg[0] == "arc" else sg[1:3])]
+    key = {(round(x, 6), round(y, 6)) for x, y in pts}
+    for x, y in key:
+        for m in ((-x, y), (x, -y), (-x, -y)):
+            if (round(m[0], 6) + 0.0, round(m[1], 6) + 0.0) not in {(a + 0.0, b + 0.0) for a, b in key}:
+                bad.append(f"mirror: ({x:g}, {y:g}) has no partner at ({m[0]:g}, {m[1]:g})")
+    for i in range(len(path)):
+        if math.dist(path[i][2], path[(i + 1) % len(path)][1]) > 1e-6:
+            bad.append(f"path: segment {i} does not meet segment {(i + 1) % len(path)}")
+    edges = ring_edges()
+    worst = 0.0
+    for i, e in enumerate(edges):
+        t0, t1 = e.tangentAt(1.0), edges[(i + 1) % len(edges)].tangentAt(0.0)
+        worst = max(worst, math.degrees(math.acos(max(-1.0, min(1.0, t0.dot(t1))))))
+    if worst > 1e-3:
+        bad.append(f"tangency: a {worst:.4f} degree kink in the built path")
+    xs = max(abs(sg[1][0]) for sg in path if sg[0] == "line" and sg[1][0] == sg[2][0])
+    ys = max(abs(sg[1][1]) for sg in path if sg[0] == "line" and sg[1][1] == sg[2][1])
+    if abs(2 * xs - sp["spans_stated"][0]) > 1e-6 or abs(2 * ys - sp["spans_stated"][1]) > 1e-6:
+        bad.append(f"spans: built {2 * xs:g} x {2 * ys:g}, the spec says {sp['spans_stated'][0]:g} x {sp['spans_stated'][1]:g}")
+    spec_notes = []
+    for side, v in (("short", d["inset_short"]), ("long", d["inset_long"])):
+        if abs(v - sp["inset_stated"]) > 1e-6:
+            spec_notes.append(f"the {side}-side straight lip is {v:g} in from the outline, the spec's check says "
+                              f"{sp['inset_stated']:g}")
+    for what, v in (("S depth, short side", d["s_short"]), ("S depth, long side", d["s_long"])):
+        if abs(v - sp["s_stated"]) > 1e-6:
+            spec_notes.append(f"{what} {v:g}, the spec's check says {sp['s_stated']:g}")
+    if abs(d["r_mid"] - sp["r_mid_stated"]) > 1e-6 or any(abs(r - sp["r_outer_stated"]) > 1e-6 for r in d["r_outer"]):
+        spec_notes.append("a bend radius differs from the spec's stated check")
+    lip = (ring_prism(sp["lip_w"] / 2, 0, 1).cut(ring_prism(-sp["lip_w"] / 2, -1, 3))).val()
+    hx, hy = sp["holes"]
+    clr = [lip.distance(cq.Vertex.makeVertex(x, y, 0.5)) - sp["hole_d"] / 2 for x in (hx, -hx) for y in (hy, -hy)]
+    if min(clr) < sp["clear_stated"] - 1e-6:
+        bad.append(f"hole to lip: {min(clr):.2f}, the spec asks at least {sp['clear_stated']:g}")
+    L, Wd = sp["outline"]
+    edge = min(L / 2 - hx, Wd / 2 - hy) - sp["hole_d"] / 2
+    lines = [f"ring path: {len(path)} segments, {sum(1 for sg in path if sg[0] == 'arc')} arcs, the worst joint "
+             f"{worst:.1e} degrees off tangent; spans {2 * xs:g} x {2 * ys:g} centre to centre",
+             "hole to lip: " + ", ".join(f"{c:.2f}" for c in clr) + f" (spec: at least {sp['clear_stated']:g}); "
+             f"hole to the outline {edge:.2f}"]
+    if solid is not None:
+        v = solid.val().Volume() / 1000
+        bb = solid.val().BoundingBox()
+        fits = bb.xlen <= H2D_BED[0] and bb.ylen <= H2D_BED[1]
+        lines.append(f"ring: {bb.xlen:.1f} x {bb.ylen:.1f} x {bb.zlen:.1f} mm, {v:.1f} cm3, about "
+                     f"{v * RING_PRINT:.0f} min on the H2D; flat on its {H2D_BED[0]:g} x {H2D_BED[1]:g} bed: "
+                     f"{'yes' if fits else 'NO'}")
+        if not solid.val().isValid():
+            bad.append("the ring is not a valid solid")
+    return lines + ["SPEC INCONSISTENT: " + n for n in spec_notes], bad
+
+
+def write_ring():
+    import cadquery as cq
+    sol = ring_solid()
+    out = HERE / "stl" / "rim-ring.stl"
+    out.parent.mkdir(exist_ok=True)
+    cq.exporters.export(sol, str(out))
+    return out, sol
 
 
 def st_top_boxes():
@@ -557,7 +517,7 @@ def main():
     print(f"base: outside {L_OUT:g} x {W_OUT:g} x {BASE_D:g} (PETG, {T:g} mm walls), inside {W:g} x {H:g}, seam at Yb "
           f"{SEAM:g}, closed depth {D:g}; a {LAND:g} mm land ({RIM_OUT:g} + {RIM_CH:g} channel + {RIM_IN:g}, Clint) with a "
           f"{TONGUE_W:g} x {TONGUE_H:g} sealing lip {TONGUE_CS:g} in from the outside edge on the short sides, "
-          f"{TONGUE_CL:g} on the long (coupon r1 fit), its S {S_RISE:g} x {S_RUN:g} with R {CURVE_R:g} outer and R {CURVE_RI:g} inner bends, into the "
+          f"{TONGUE_CL:g} on the long (lid-rim-spec.md), its S {S_RISE:g} x {S_RUN:g} with R {CURVE_R:g} outer and R {CURVE_RI:g} inner bends, into the "
           f"lid's O-ring channel (its top "
           f"where r3 had it, about 1 mm into the O-ring set 2 mm down, an assumed 3 mm round cord; the land 1.5 lower); corner lands {CORNER_Z:g} x {CORNER_X:g}, insert posts "
           f"{POST:g} square, {CORNER_H:g} deep; lid "
@@ -585,15 +545,14 @@ def main():
     lip6 = S.val("l6_body_rib")[1] - (S.val("base_905")[1] - W_OUT) / 2
     print(f"sealing lip: {TONGUE_CS:g} / {TONGUE_CL:g} in from the lid's edge (short / long sides); Clint's rough 1-2 mm in "
           f"from the original base's edge would be about {lip6:.2f} in from the lid's edge, under its outer wall "
-          f"(0-{RIM_OUT:g}): it disagrees; the coupon settles it")
-    if "--coupon" in sys.argv:
-        out = write_coupon()
-        print(f"coupon STL written: {out} (not gated)")
-    if "--edges" in sys.argv:
-        for p, v, a, b in write_edges():
-            print(f"edge coupon STL written: {p} ({a:.1f} x {b:.1f} mm, {v:.1f} cm3; not gated)")
-        lc, ec = edge_hole_clearance()
-        print(f"edge coupon hole: {lc:.1f} mm to the lip, {ec:.1f} to the nearest edge")
+          f"(0-{RIM_OUT:g}): it disagrees; the scan (lid-rim-spec.md) settles it")
+    if "--ring" in sys.argv:
+        out, sol = write_ring()
+        print(f"ring STL written: {out} (not gated)")
+        lines, rbad = ring_checks(sol)
+        for ln in lines:
+            print(ln)
+        bad += rbad
     if "--stl" in sys.argv and stl_gate():
         print("STL REFUSED: the lid interface is not settled yet: " + ", ".join(stl_gate()))
         sys.exit(2)
@@ -611,7 +570,7 @@ def main():
     else:
         missing = stl_gate()
         print("STL gate: " + ("open" if not missing else "closed until these are sourced: " + ", ".join(missing)
-                                + " (L1 the screw, and the rim coupon's fit on the real lid)"))
+                                + " (L1 the screw, and the rim test ring's fit on the real lid)"))
     for b in bad:
         print("FAIL ", b)
     print(f"cage {'PASS' if not bad else 'FAIL'}: base inside {W:g} x {H:g} x {D:g} mm [TBD-MEASURE: the lid gate]")
