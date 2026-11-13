@@ -230,7 +230,7 @@ def check_battery():
                 fail(5, f"battery net {net} reaches {ref}.{pin} through a {c} contact")
             elif c == "jst" and net not in ("PACK_P", "PACK_N"):
                 fail(5, f"battery net {net} has a JST mating at {ref}.{pin} (only the pack's own plug is allowed)")
-            elif c not in ("solder", "evm", "jst"):
+            elif c not in ("solder", "evm", "jst", "lever"):
                 fail(5, f"battery net {net} reaches {ref}.{pin} through '{c}'")
     chain = [("PACK_P", [("BT1", "+"), ("PG1", "M+")]), ("CELL_P", [("PG1", "L+"), ("U2", "X1.VIN+")]),
              ("BAT_P", [("U2", "X1.VIN-"), ("U1", "BAT")]), ("PACK_N", [("BT1", "-"), ("PG1", "M-")]),
@@ -242,15 +242,15 @@ def check_battery():
     for sense, res in ((("U1", "BATP"), "R7"), (("U6", "JP2.VBAT"), "R8")):
         net = NET_OF.get(sense)
         if net is None or (res, "2") not in NETS[net][0] or NET_OF.get((res, "1")) != "CELL_P":
-            fail(5, f"{sense[0]}.{sense[1]} should sense the lug (CELL_P) through {res}; it is on {net}")
+            fail(5, f"{sense[0]}.{sense[1]} should sense the battery + junction (CELL_P) through {res}; it is on {net}")
         for r, p in NETS[net][0] if net else []:
             if PIN[(r, p)][3] not in ("solder", "evm"):
                 fail(5, f"sense net {net} reaches {r}.{p} through '{PIN[(r, p)][3]}'")
     if PART["U1"]["pins"] and ("U1", "INT") in NET_OF:
         fail(5, "the charger interrupt is wired but the model says it is not")
-    NOTES.append("battery chain: pack + =JST= pigtail -solder- lug E1 -solder- INA228 shunt -solder- EVM J5 BATTERY; "
+    NOTES.append("battery chain: pack + =JST= pigtail -lever- WAGO E1 -lever- INA228 shunt -solder- EVM J5 BATTERY; "
                  "pack - =JST= pigtail -solder- EVM J5 GND; charger sense (BATP) and gauge sense each through 100 ohm "
-                 "from the lug")
+                 "from a resistor leg in the WAGO")
 
 
 def check_pin_maps():
@@ -340,7 +340,7 @@ def check_outdoor():
         to_gnd = to_sup = False
         for d in clamps:
             pins = {p[1]: NET_OF.get((d, p[0])) for p in PART[d]["pins"]}
-            if PART[d]["value"].startswith("1N52"):        # a zener clamps both ways on its own
+            if PART[d]["value"].startswith("1N47"):        # a zener (1N4733A) clamps both ways on its own
                 ok = pins["cathode"] == net and pins["anode"] == "GND"
                 to_gnd |= ok
                 to_sup |= ok

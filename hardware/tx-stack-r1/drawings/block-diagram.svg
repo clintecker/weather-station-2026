@@ -22,12 +22,12 @@
 <text x="524" y="258" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B4</text>
 <text x="308" y="275" font-size="11" fill="#333">Adafruit #5832, 15 mohm shunt</text>
 <text x="308" y="289" font-size="11" fill="#333">battery leads on the X1 pads</text>
-<text x="308" y="303" font-size="11" fill="#333">+ junction: lug E1 on B4</text>
+<text x="308" y="303" font-size="11" fill="#333">+ junction: WAGO 222-415 E1 on B4</text>
 <rect x="300" y="352" width="230" height="62" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
 <text x="308" y="370" font-size="13" font-weight="bold">MAX17048 (U6) gauge 0x36</text>
 <text x="524" y="370" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B4</text>
 <text x="308" y="387" font-size="11" fill="#333">Adafruit #5580</text>
-<text x="308" y="401" font-size="11" fill="#333">cell sense via 100 ohm from the lug</text>
+<text x="308" y="401" font-size="11" fill="#333">cell sense via 100 ohm from the WAGO</text>
 <rect x="570" y="90" width="200" height="62" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
 <text x="578" y="108" font-size="13" font-weight="bold">S7V8F3 (U7) 3.3 V</text>
 <text x="764" y="108" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">B4</text>
@@ -39,7 +39,7 @@
 <text x="282" y="200" font-size="11" text-anchor="start" fill="#C0392B">USB 5 V</text>
 <path d="M145,312 L145,380 L300,380" fill="none" stroke="#C0392B" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#a)"/>
 <text x="150" y="344" font-size="11" fill="#C0392B" text-anchor="start" font-weight="normal">pack + via JST PH pigtail (PG1)</text>
-<text x="150" y="358" font-size="11" fill="#C0392B" text-anchor="start" font-weight="normal">lug E1: charger and gauge sense, 100 ohm each</text>
+<text x="150" y="358" font-size="11" fill="#C0392B" text-anchor="start" font-weight="normal">WAGO E1: charger and gauge sense, 100 ohm each</text>
 <path d="M260,285 L300,285" fill="none" stroke="#C0392B" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#a)"/>
 <text x="262" y="272" font-size="10" fill="#C0392B" text-anchor="start" font-weight="normal">battery +</text>
 <path d="M415,240 L415,200" fill="none" stroke="#C0392B" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#a)"/>

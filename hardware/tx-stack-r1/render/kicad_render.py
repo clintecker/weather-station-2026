@@ -201,10 +201,10 @@ STAND_IN = {
     "BOB": "RJ11 breakouts: the BOB-14021 board imported from SparkFun's Eagle file; the Amphenol 87180 jack is a box "
            "(Amphenol model: login), on the printed spacer",
     "PTC": "MF-R010 fuses: boxes (Bourns model: login)",
-    "LUG": "battery lug E1 (Keystone 7328) on its nylon screw: a box (Keystone site refuses scripts)",
+    "WAGO": "WAGO 222-415 E1: a box from WAGO's data sheet (26.6 x 20.5 x 14.5)",
 }
 GENERIC = {
-    "RAH": "bus header: drawn from the Sullins PRPC drawing (tails, 90 degree bends, insulator, 5.84 mm mating pins "
+    "RAH": "bus header (generic, Clint's): drawn from the Sullins PRPC drawing (tails, 90 degree bends, insulator, 5.8 mm mating pins "
            "past the snapped edge)",
     "RAS": "SWD header: drawn from the same Sullins drawing",
 }
@@ -241,13 +241,14 @@ def step_models(pl):
     if kind == "RLY":
         return [(lib("Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal.step"), pins["1"],
                  _rot(pins["1"], pins["2"]), 0.0)], True, ()
-    if kind == "DSTAND":
+    if kind in ("DSTAND", "DSTAND41"):
         span = "2.54" if math.dist(pins["1"], pins["2"]) < 3 else "5.08"
+        pkg = "D_DO-35_SOD27" if kind == "DSTAND" else "D_DO-41_SOD81"
         # the body stands on lead 1. KiCad's pin 1 is the cathode: AnodeUp has its body on pin 1, CathodeUp on pin 2
         if PART_VALUE[pl["ref"]].startswith("BAT85"):        # lead 1 is the anode
-            return [(lib(f"Diode_THT.3dshapes/D_DO-35_SOD27_P{span}mm_Vertical_CathodeUp.step"), pins["2"],
+            return [(lib(f"Diode_THT.3dshapes/{pkg}_P{span}mm_Vertical_CathodeUp.step"), pins["2"],
                      _rot(pins["2"], pins["1"]), 0.0)], True, ()
-        return [(lib(f"Diode_THT.3dshapes/D_DO-35_SOD27_P{span}mm_Vertical_AnodeUp.step"), pins["1"],
+        return [(lib(f"Diode_THT.3dshapes/{pkg}_P{span}mm_Vertical_AnodeUp.step"), pins["1"],
                  _rot(pins["1"], pins["2"]), 0.0)], True, ()
     if kind == "CAP":
         return [(lib("Capacitor_THT.3dshapes/C_Disc_D3.8mm_W2.6mm_P2.50mm.step"), pins["1"],
@@ -274,7 +275,7 @@ def step_models(pl):
 
 def legend_lines(kinds):
     lines = []
-    for k in ("MINI", "BOB", "PTC", "LUG"):
+    for k in ("MINI", "BOB", "PTC", "WAGO"):
         if k in kinds:
             if k in BUILT_NOTE and not fetch_models.path_of(k):
                 lines.append(f"stand-in: {k}: boxes ({BUILT_NOTE[k]} not fetched; run render/fetch_models.py)")
@@ -311,7 +312,7 @@ def box_colour(what, kind):
 
 def wire_colour(note):
     n = note.upper()
-    for key, c in (("3.3 V", "#D62728"), ("BATTERY +", "#D62728"), ("PACK +", "#D62728"), ("LUG", "#D62728"),
+    for key, c in (("3.3 V", "#D62728"), ("BATTERY +", "#D62728"), ("PACK +", "#D62728"), ("WAGO", "#D62728"),
                    ("SYS", "#E67E22"), ("GROUND", "#1A1A1A"), ("PACK -", "#1A1A1A"), ("CLOCK", "#D4A017"),
                    ("DATA", "#1F5FBF"), ("RESET", "#8E44AD"), ("CUPS", "#2CA02C"), ("VANE", "#17A589"),
                    ("RAIN", "#00A3D9"), ("THERMISTOR", "#7F7F7F"), ("SENSE", "#C2185B")):
@@ -382,7 +383,7 @@ def card_mesh(b):
         if side == "copper" or not r or not r["ok"] or r["card"] != b:
             continue
         col = wire_colour(note)
-        rad = 0.30 if kind == "jumper" else (0.55 if "22 AWG" in note else 0.42)
+        rad = 0.30 if kind == "jumper" else S.val("wire24")[1] / 2
         pts = corners([tuple(p) for p in r["pts"]])
         if r.get("bundled"):                              # laid beside the first lead from the same pad
             k = bundle[id(r["pts"])] = bundle.get(id(r["pts"]), 0) + 1

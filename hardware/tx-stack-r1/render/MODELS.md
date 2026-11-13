@@ -12,10 +12,10 @@ tracks and silkscreen, no part models); **drawn** = generated from the maker's d
 | Part | Model source | Status | Why |
 |---|---|---|---|
 | SolderFul SOLDERBREAD#02 cards | `kicad_render.py`: outline, holes, strips from the datasheet (`sources.py`), back rails snapped off | drawn | no maker model |
-| Lying resistors, standing DO-35 diodes, 100 nF discs | KiCad 10 library (`Resistor_THT`, `Diode_THT`, `Capacitor_THT`) | real | |
+| Lying resistors, standing DO-35 (BAT85S) and DO-41 (1N4733A) diodes, 100 nF discs | KiCad 10 library (`Resistor_THT`, `Diode_THT`, `Capacitor_THT`) | real | |
 | Breakout headers (0.1 in, vertical) | KiCad 10 library (`Connector_PinHeader_2.54mm`) | real | |
-| Bus header and SWD header (Sullins PRPC040SBAN-M71RC) | `kicad_render.py` from the Sullins PRPC drawing: tails, 90 degree bends, insulator, 5.84 mm mating pins | drawn | Sullins' site has no direct model download (https://www.sullinscorp.com/drawings/ returns 404); KiCad's generic header has the wrong mating length |
-| Backplane socket (Sullins PPPC181LFBN-RC) | boxes (drawn open in the section) | stand-in | as above |
+| Bus header and SWD header (Clint's generic 2.54 mm right-angle male, cut to 18) | `kicad_render.py` from the Sullins PRPC drawing as a stand-in for the generic part: tails, 90 degree bends, insulator, 5.8 mm mating pins [TBD-MEASURE] | drawn | the generic header has no drawing; KiCad's generic header has the wrong mating length |
+| Backplane socket (generic 2.54 mm female strip, cut to 1x18) | boxes (drawn open in the section), sized from the Sullins PPPC drawing [TBD-MEASURE] | stand-in | as above |
 | Adafruit SHTC3 #4636 | https://raw.githubusercontent.com/adafruit/Adafruit_CAD_Parts/main/4636%20SHTC3/4636%20SHTC3.step | real | |
 | Adafruit MAX17048 #5580 | https://raw.githubusercontent.com/adafruit/Adafruit_CAD_Parts/main/5580%20MAX17048/5580%20MAX17048.step | real | |
 | Adafruit INA228 #5832 | https://raw.githubusercontent.com/adafruit/Adafruit_CAD_Parts/main/5832%20INA228%20STEMMA%20QT/5832%20INA228%20STEMMA%20QT.step | real | shows its terminal block, which is not fitted |
@@ -28,7 +28,7 @@ tracks and silkscreen, no part models); **drawn** = generated from the maker's d
 | Seeed Wio-E5 mini board | https://files.seeedstudio.com/products/113990939/LoRa-E5%20mini%20v1.0.brd | imported | Seeed publishes no 3D model |
 | LoRa-E5 module, SMA-K, USB-C, buttons on the mini | boxes from the brd's footprints | stand-in | the import carries no part models |
 | Bourns MF-R010 fuses | boxes | stand-in | Bourns models only through SnapEDA / Octopart (login) |
-| Keystone 7328 lug | box | stand-in | keyelco.com refuses scripts (403) |
+| WAGO 222-415 lever connector (E1) | box, 26.6 x 20.5 x 14.5 (WAGO data sheet, https://www.wago.com/222-415) | stand-in | the WAGO STEP sits behind the product page's download form |
 | Amphenol RF 132172 SMA adapter (AD1) | boxes | stand-in | amphenolrf.com refuses scripts (403) |
 | Amphenol RF 135110-01-06.00 cable and bulkhead | tubes and cylinders | stand-in | amphenolrf.com refuses scripts (403) |
 | TE / Linx ANT-916-CW-HWR-SMA antenna | cylinders, length `ant_len` [TBD-MEASURE] | stand-in | te.com refuses scripts (403) |
@@ -45,8 +45,6 @@ Download each into its own folder under `render/models/` (not committed), then t
 |---|---|---|
 | Amphenol 87180-066LF | https://www.amphenol-cs.com/product/87180066lf.html (3D model link), or https://www.snapeda.com/search/?q=87180-066LF | `render/models/JACK/` |
 | Bourns MF-R010 | https://www.bourns.com/products/circuit-protection/resettable-fuses-pptc/product/MF-R (CAD models via SnapEDA) | `render/models/PTC/` |
-| Keystone 7328 | https://www.keyelco.com/product.cfm/product_id/1150 (3D model) | `render/models/LUG/` |
-| Sullins PRPC040SBAN-M71RC, PPPC181LFBN-RC | https://www.snapeda.com/search/?q=PRPC040SBAN-M71RC and ?q=PPPC181LFBN-RC | `render/models/HDR/`, `render/models/SOCKET/` |
 | Amphenol RF 132172 and 135110-01-06.00 | https://www.amphenolrf.com/132172.html, https://www.amphenolrf.com/135110-01-06-00.html | `render/models/SMA/` |
 | TE / Linx ANT-916-CW-HWR-SMA | https://www.te.com/en/product-ANT-916-CW-HWR-SMA.html | `render/models/ANT/` |
 | TI BQ25798EVM design files | https://www.ti.com/tool/BQ25798EVM (design files) | `render/models/EVM/` |

@@ -29,7 +29,10 @@ UC = "4UCON drawing 14869 (SparkFun PRT-00132 jack), cdn.sparkfun.com/assets/8/6
 PAD = "BusBoard PAD3U Padboard, busboardcom.busboard.us/PAD3U (38 x 62 holes, 0.037 in holes on 0.1 in, 160.02 x 100.08 x 1.6 mm; DigiKey 4526-PAD3U-ND)"
 TIB = "TIBOX enclosure catalogue, cdn-shop.adafruit.com/datasheets/TIBOX.pdf"
 BOXD = "Adafruit #905 diagram (not to scale), cdn-shop.adafruit.com/datasheets/175mmenclosurediagram.pdf p.1 (inside bottom 135.7 x 90 mm straight walls between the corner bosses)"
-KEY = "Keystone solder lugs catalogue p.79, keyelco.com/userAssets/file/K75p79.pdf"
+WAGO = "WAGO data sheet 222-415 (version 07.11.2023), https://www.wago.com/222-415"
+ONZ = "onsemi 1N4728A/D Rev. 2 (January 2002), https://www.onsemi.com/pdf/datasheet/1n4728a-d.pdf"
+GEN = "Clint's generic 2.54 mm right-angle male header (cut to 18), 2026-11-13; drawn as the Sullins PRPC drawing (" + SUL + ")"
+GENF = "Clint's generic 2.54 mm female header strip (cut to 18), 2026-11-13; drawn as the Sullins PPPC drawing (" + SULF + ")"
 
 D = {
     # ---------------------------------------------------------------- SolderFul BreadBoard SOLDERBREAD#02
@@ -87,20 +90,20 @@ D = {
     "cap_h": (6.0, "100 nF disc height", "KiCad C_Disc_D3.8mm model, D 3.8 + lead", "derived"),
     "pack": ((69.0, 54.0, 18.0), "battery pack #353", "INVENTORY.md / docs/current-system.md (SHOP:49)", "sourced"),
     # ---------------------------------------------------------------- card cage and backplane (r2)
-    "ra_offset": (1.52, "right-angle header: hole centre to the insulator's back face", SUL + " (.060)", "sourced"),
-    "ra_insulator": (2.54, "right-angle header insulator, along the mating pins", SUL + " (.100)", "sourced"),
-    "ra_mate": (5.84, "right-angle header mating pin length beyond the insulator", SUL + " code BA (.230)", "sourced"),
-    "ra_tail": (3.05, "right-angle header solder tail below the insulator", SUL + " code BA (.120)", "sourced"),
-    "ra_pin_z": (1.27, "right-angle header pin centre above the card", SUL + ": insulator .100 square on the board", "derived"),
-    "socket_h": (8.5, "Sullins PPPC181LFBN-RC body, backplane face to mouth", SULF, "sourced"),
-    "socket_w": (2.54, "Sullins PPPC socket body width (single row)", SULF, "sourced"),
-    "socket_tail": (3.0, "socket solder tail beyond the backplane copper", SULF + ": .118 tail; check on the part", "TBD"),
-    "insertion": (5.0, "chosen pin insertion into the socket (5.84 available; 0.84 left for print tolerance)", "layout rule", "derived"),
-    "card_bp_gap": (10.86, "snapped card back edge to backplane face", "39.37 (column j) + 1.52 + 2.54 + 5.84 - 5.0 + 8.5 - 41.91 (sb_snap_y)", "derived"),
+    "ra_offset": (1.52, "right-angle header: hole centre to the insulator's back face", GEN + " (.060): check on the part", "TBD"),
+    "ra_insulator": (2.54, "right-angle header insulator, along the mating pins", GEN + " (.100): check on the part", "TBD"),
+    "ra_mate": (5.8, "right-angle header mating (long) leg beyond the insulator", GEN + ": 5.8 nominal; measure Clint's", "TBD"),
+    "ra_tail": (3.05, "right-angle header solder tail below the insulator", GEN + " (.120): check on the part", "TBD"),
+    "ra_pin_z": (1.27, "right-angle header pin centre above the card", "the 2.54 square insulator on the board", "derived"),
+    "socket_h": (8.5, "backplane socket body, backplane face to mouth (1x18 cut from a longer female strip, one position lost at each cut)", GENF + ": check on the part", "TBD"),
+    "socket_w": (2.54, "backplane socket body width (single row)", GENF, "TBD"),
+    "socket_tail": (3.0, "socket solder tail beyond the backplane copper", GENF + ": .118 tail; check on the part", "TBD"),
+    "insertion": (4.96, "chosen pin insertion into the socket (5.8 nominal available; 0.84 left for print tolerance)", "layout rule", "derived"),
+    "card_bp_gap": (10.86, "snapped card back edge to backplane face", "39.37 (column j) + 1.52 + 2.54 + 5.8 - 4.96 + 8.5 - 41.91 (sb_snap_y)", "derived"),
     "pad_pitch": (2.54, "PAD3U hole pitch (a separate pad per hole, no strips)", PAD, "sourced"),
     "strip_size": ((160.02, 100.08, 1.6), "BusBoard PAD3U padboard, 62 holes along 160 mm x 38 along 100 mm; the backplane is a piece 21 x 40 holes cut from it, lines along the 160 mm side", PAD, "sourced"),
     "pad_margin": (1.27, "backplane cut edge to the nearest hole centre (cut midway between two hole lines)", "half the 2.54 pitch", "derived"),
-    "bus_wire": (0.64, "tinned copper bus wire for the 18 backplane lines, 22 AWG", "AWG 22 = 0.644 mm", "sourced"),
+    "bus_wire": (0.64, "bare bus wire for the 18 backplane lines: 22 AWG solid, stripped (Adafruit 1311 hook-up wire, on hand)", "AWG 22 = 0.644 mm", "sourced"),
     "align_tol": (0.5, "header pin to socket misalignment the socket's lead-in takes", "typical 0.1 in female header lead-in; check one card in the cage", "TBD"),
     "finger": (8.0, "vertical room needed over a plug to press its latch", "a fingertip or a small screwdriver", "TBD"),
     "rg316_bend": (12.7, "RG-316 minimum static bend radius (the 135110-01 cable)", "typical 5 x 2.5 mm OD; not in the Amphenol listing", "TBD"),
@@ -119,10 +122,13 @@ D = {
     "clear": (0.5, "minimum clearance kept between parts", "layout rule", "derived"),
     "tongue": ((6.0, 8.89), "printed tongue on the back jack's spacer: width x reach past the snapped edge (to the old 50.8 edge)", "layout choice: the right corner post grips its last 1.5 mm", "derived"),
     "bob_spacer": (2.0, "printed spacer under each RJ11 breakout (bonded to the card)", "layout choice", "derived"),
-    "do35": ((4.56, 2.0), "DO-35 body length x diameter (1N5232B, BAT85S)", "onsemi 1N5221B series and Vishay BAT85 (doc 88146) outline DO-35/DO-204AH", "sourced"),
+    "do35": ((4.56, 2.0), "DO-35 body length x diameter (BAT85S)", "Vishay BAT85 (doc 88146) outline DO-35/DO-204AH", "sourced"),
     "diode_stand_h": (7.0, "standing DO-35 height (body on one lead, the other looped over)", "4.56 body + 1 lead + loop; check on the part", "TBD"),
+    "do41": ((5.2, 2.35, 0.86), "DO-41 body length x diameter, lead diameter (1N4733A zeners; the lead passes the 1.0 mm card hole)", ONZ + ", case 59-10: A 4.10-5.20 (max used), B 2.00-2.70 (the midpoint used: at 2.7 the B2 meter zeners D51-D53 standing on 2.54 rows touch each other and their filter caps; 2.44 or less fits), D 0.71-0.86 (max): measure Clint's", "TBD"),
+    "do41_stand_h": (7.6, "standing DO-41 height (body on one lead, the other looped over)", "5.2 body + 1 lead + loop, as diode_stand_h; check on the part", "TBD"),
+    "wire24": ((0.511, 1.45, 84.2), "24 AWG insulated hook-up wire (card wires solid, flying leads stranded): conductor diameter, insulation OD, resistance mohm/m", "AWG 24 = 0.511 mm, 84.2 mohm/m at 20 C (0.205 mm2 copper); OD about 1.3-1.6 for PVC hook-up wire: measure Clint's", "TBD"),
     "r_lying_h": (2.5, "lying DIN0207 resistor height (body diameter)", "KiCad R_Axial_DIN0207_L6.3mm_D2.5mm model", "derived"),
-    "lug": ((13.5, 0.38), "Keystone 7328 ring solder lug length x thickness (ring for #4 / M3, 3.1 mm hole)", KEY + ": 7328 .531 long, .015 brass, H .120", "sourced"),
+    "wago": ((26.6, 20.5, 14.5), "WAGO 222-415 5-way lever splicing connector (E1, the battery + junction): width (the five entries side by side) x depth (entry face to back) x height, levers closed", WAGO + ": physical data; 0.08-2.5 mm2 / 28-12 AWG solid and stranded, strip 9-10 mm, 32 A", "sourced"),
     "pack": ((69.0, 54.0, 18.0), "battery pack #353", "INVENTORY.md / docs/current-system.md (SHOP:49)", "sourced"),
     "evm": ((90.0, 90.0, 15.0), "BQ25798EVM (BMS034) board outline x tallest part above it; no mounting holes; feet H1-H4 3M Bumpon SJ-5303 (11.2 x 5.1) peeled off for the rails", "outline: Clint, by hand, 2026-11-10: 90 x 90; parts (SLUUCB5E BOM): J1-J4 On-Shore ED120/2DS, J5 ED120/3DS (5.08 mm terminal blocks), J7 Molex 0393570002, J9 3M N2510-6002-RB, J8 Molex 0022053041, J6 Molex 47346-0001, about 33 jumpers with shunts; 15 covers a 5.08 mm rising-clamp block (about 10-12, makers' drawings not reached)", "TBD"),
     "evm_j8": (6.0, "EVM J8 (right-angle 4-pin, the EV2300 port our I2C lead uses) reach past the board edge", "Clint, by hand, 2026-11-10: 96 across J8, 90 without", "sourced"),

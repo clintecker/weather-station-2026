@@ -75,15 +75,15 @@ def main():
     box(300, 90, 230, 110, "BQ25798EVM (U1) charger", ["TI SLUUCB5; MPPT from solar", "I2C " + addr("U1") + " on J8, interrupt not wired",
         "1 cell: JP22 only, JP24/JP9/JP18 out", "own slot below the cards"], "#fdf2e9", PW)
     box(300, 240, 230, 92, "INA228 (U2) shunt " + addr("U2"), [P["U2"]["part"] + ", 15 mohm shunt",
-        "battery leads on the X1 pads", "+ junction: lug E1 on B4"], "#fdf2e9", PW, "B4")
-    box(300, 352, 230, 62, "MAX17048 (U6) gauge " + addr("U6"), [P["U6"]["part"], "cell sense via 100 ohm from the lug"],
+        "battery leads on the X1 pads", "+ junction: WAGO 222-415 E1 on B4"], "#fdf2e9", PW, "B4")
+    box(300, 352, 230, 62, "MAX17048 (U6) gauge " + addr("U6"), [P["U6"]["part"], "cell sense via 100 ohm from the WAGO"],
         "#fdf2e9", PW, "B4")
     box(570, 90, 200, 62, "S7V8F3 (U7) 3.3 V", [P["U7"]["part"] + " buck-boost", "system out in, 3.3 V out"], "#fdf2e9", PW, "B4")
     arrow([(260, 110), (300, 120)], "solar", PW)
     arrow([(260, 185), (280, 185), (280, 170), (300, 170)], "USB 5 V", PW, lx=282, ly=200, anchor="start")
     arrow([(145, 312), (145, 380), (300, 380)], "", PW, dash=True)
     text(150, 344, "pack + via JST PH pigtail (PG1)", 11, PW)
-    text(150, 358, "lug E1: charger and gauge sense, 100 ohm each", 11, PW)
+    text(150, 358, "WAGO E1: charger and gauge sense, 100 ohm each", 11, PW)
     arrow([(260, 285), (300, 285)], "", PW, dash=True)
     text(262, 272, "battery +", 10, PW)
     arrow([(415, 240), (415, 200)], "charger battery +", PW, dash=True, lx=420, ly=225, anchor="start")

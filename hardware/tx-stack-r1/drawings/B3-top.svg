@@ -497,7 +497,7 @@
 <text x="62.0" y="239.7" font-size="11" text-anchor="end" fill="#222" font-weight="normal">i</text>
 <text x="62.0" y="216.9" font-size="11" text-anchor="end" fill="#222" font-weight="normal">j</text>
 <rect x="93.0" y="176.3" width="411.5" height="22.9" fill="#202020" fill-opacity="0.22" stroke="#202020" stroke-width="1.2"/>
-<text x="298.7" y="174.1" font-size="11" text-anchor="middle" fill="#000" font-weight="bold">XH3 bus header 1x18 R/A</text>
+<text x="298.7" y="174.3" font-size="11" text-anchor="middle" fill="#000" font-weight="bold">XH3 bus header 1x18 R/A</text>
 <rect x="100.9" y="209.4" width="7" height="7" fill="#D62728" stroke="#000" stroke-width="1"/>
 <rect x="123.7" y="209.4" width="7" height="7" fill="#1A1A1A" stroke="#000" stroke-width="1"/>
 <rect x="146.6" y="209.4" width="7" height="7" fill="#6FA8DC" stroke="#000" stroke-width="1"/>
@@ -545,8 +545,8 @@
 <rect x="535.2" y="415.1" width="7" height="7" fill="#D4A017" stroke="#000" stroke-width="1"/>
 <rect x="512.4" y="415.1" width="7" height="7" fill="#1A1A1A" stroke="#000" stroke-width="1"/>
 <rect x="344.4" y="478.0" width="114.3" height="22.9" fill="#202020" fill-opacity="0.22" stroke="#202020" stroke-width="1.2"/>
-<rect x="344.4" y="553.4" width="114.3" height="126.0" fill="none" fill-opacity="1.0" stroke="#555" stroke-width="0.8" stroke-dasharray="3 3"/>
-<text x="401.6" y="511.1" font-size="11" text-anchor="middle" fill="#000" font-weight="bold">J3 SWD 1x5</text>
+<rect x="344.4" y="553.1" width="114.3" height="126.0" fill="none" fill-opacity="1.0" stroke="#555" stroke-width="0.8" stroke-dasharray="3 3"/>
+<text x="401.6" y="510.9" font-size="11" text-anchor="middle" fill="#000" font-weight="bold">J3 SWD 1x5</text>
 <rect x="352.3" y="460.8" width="7" height="7" fill="#D62728" stroke="#000" stroke-width="1"/>
 <rect x="375.2" y="460.8" width="7" height="7" fill="#7F8C8D" stroke="#000" stroke-width="1"/>
 <rect x="398.1" y="460.8" width="7" height="7" fill="#7F8C8D" stroke="#000" stroke-width="1"/>

@@ -305,8 +305,8 @@ def backplane_view(ph):
         y += 15
         g.text(lx, y, f"{i}: {plain(REP['BP'].get(f's{i}')) if REP['BP'].get(f's{i}') else 'spare (no wire)' if 0 < i < 20 else 'screws, no wire'}", 10.5)
     y += 25
-    for s_ in ("black outline: card socket (Sullins PPPC181LFBN-RC)", "small square: a pin in a hole",
-               "coloured line: tinned bus wire on the copper side, ringed where soldered",
+    for s_ in ("black outline: card socket (generic 1x18 female strip, cut)", "small square: a pin in a hole",
+               "coloured line: bare bus wire on the copper side, ringed where soldered",
                "purple ring: a lead soldered on the copper side", "white circle: 3.2 mm screw hole",
                "dashed: the mux, behind on foam"):
         g.text(lx, y, s_, 10)
@@ -403,6 +403,7 @@ def cage_views():
 
 # ------------------------------------------------------------------ build sheets
 ORIENT = {"DSTAND": "standing: body on the first hole, the other lead looped over",
+          "DSTAND41": "standing: body on the first hole, the other lead looped over (DO-41, 0.86 leads)",
           "RLY": "lying flat, leads bent at the body",
           "PTC": "standing, leads formed out to the span", "CAP": "standing disc"}
 
@@ -411,7 +412,7 @@ def part_line(pl):
     part = next(p for p in model.PARTS if p["ref"] == pl["ref"])
     pins = st.pins_of(pl)
     o = ORIENT.get(pl["fp"], "")
-    if pl["fp"] == "DSTAND":
+    if pl["fp"] in ("DSTAND", "DSTAND41"):
         names = {x[0]: x[1] for x in part["pins"]}
         band = next((n for n, v in names.items() if v == "cathode"), "2")
         o += f"; cathode band toward {lc.hole_at(pins[band])}"
@@ -426,7 +427,7 @@ def build_list(b, ph):
          "(column a) faces the lid; the back edge plugs into the backplane. Every strip carries one line (checked by "
          "`layout/layout_checks.py`). Every wire follows its route in `drawings/{b}-top.svg` (`layout/route.py`: flat, "
          "straight runs on the 1.27 mm grid with right-angle bends, around every part). Lengths are cut lengths (route "
-         "+ 10 mm), insulated 26 AWG unless the row says otherwise.", "",
+         "+ 10 mm), 24 AWG solid insulated unless the row says otherwise (insulation OD about 1.45 mm, `[TBD-MEASURE]`).", "",
          "## 1. Snap off the back rails (before any soldering)", "",
          f"1. Score both faces along the line between column j and the inner back rail (card Y {st.CD:.2f} mm from the "
          "front edge [TBD-MEASURE]: measure on the card), clamp the card along the line and snap the two back rails off.",
@@ -506,7 +507,7 @@ def build_list(b, ph):
           "- No continuity between the 3.3 V supply and ground (both front rails).",
           f"- Header pin n (column j, row n) to backplane line n: check against `build/BACKPLANE.md`."]
     if b == "B4":
-        L.append("- No continuity from any battery lead (lug, shunt pads) to any strip.")
+        L.append("- No continuity from any battery lead (WAGO E1, shunt pads) to any strip.")
     (OUT_MD / f"{b}.md").write_text("\n".join(L) + "\n")
 
 
@@ -529,9 +530,9 @@ def backplane_sheet(ph):
          "## 2. Sockets (one per card; pin n on line n)", "", "| Socket | Card | Hole along the lines |", "|---|---|---|"]
     for ref, pins, note in st.BP_PARTS:
         if ref.startswith("XB"):
-            L.append(f"| {ref} Sullins PPPC181LFBN-RC | {note} | {next(iter(pins.values())).split('.')[1]} |")
+            L.append(f"| {ref} generic female strip, cut to 1x18 | {note} | {next(iter(pins.values())).split('.')[1]} |")
     L += ["", "Fit each socket square to the board (a card pin bent sideways will not enter); solder one end pin, check, "
-          "then the rest.", "", "## 3. Pins on the front (QT leads to the mux, the charger's I2C)", "",
+          "then the rest. Cut each 1x18 from a longer strip by pulling the contact one past the end and cutting through that empty position (one position lost at each cut); file the cut face flat.", "", "## 3. Pins on the front (QT leads to the mux, the charger's I2C)", "",
           "| Part | Pin | Line, hole | Bus line |", "|---|---|---|---|"]
     for ref, pins, note in st.BP_PARTS:
         if not ref.startswith("XB"):
@@ -541,7 +542,7 @@ def backplane_sheet(ph):
     L += ["", "Each QT lead's V+ pin (red) is folded back along its lead and sleeved: the mux channel V+ is not the "
           "3.3 V supply.", "",
           "## 4. Bus wires (copper side)", "",
-          f"Tinned copper bus wire, 22 AWG ({S.val('bus_wire'):g} mm). Lay each one straight along its line over the "
+          f"Bare 22 AWG solid copper (the Adafruit 1311 hook-up wire on hand, stripped; {S.val('bus_wire'):g} mm). Lay each one straight along its line over the "
           "pads, tack it at the first and last hole, then solder it at every hole listed (each is already holding a "
           "pin). Cut length: the span plus 10 mm.", "",
           "| Line | Bus line | From hole | To hole | Cut | Soldered at holes |", "|---|---|---|---|---|---|"]
@@ -600,7 +601,7 @@ def assembly_sheet():
          "## 1. Charger (BQ25798EVM) before any power: jumper changes (TI SLUUCB5; issue #34)", "",
          "The EVM ships set for two cells. Do these in order, with nothing connected:", "",
          "1. **JP24 off, JP22 on** (PROG: one cell, 1.5 MHz). JP22 is the only PROG jumper fitted.",
-         "2. **Battery sense wire first, then JP9 off.** Solder the charger battery sense lead (from R7 at the lug) "
+         "2. **Battery sense wire first, then JP9 off.** Solder the charger battery sense lead (from R7, whose other leg is in the WAGO E1) "
          "to J5 SNS_BATP; only then remove JP9, so BATP is never left floating.",
          "3. **JP18 off, thermistor on J7.** Fit the Adafruit #372 10 kohm NTC (B 3950) to J7 and tape it to the pack. "
          "The EVM's TS divider is set for a 103AT (B 3435): the cold and hot thresholds move by a few degrees; "
@@ -654,12 +655,12 @@ def assembly_sheet():
     for kind, a, c, side, note in st.WIRES:
         off = [e for e in (a, c) if isinstance(e, tuple) and board_of_end(e) is None and e[0] != "U4"]
         if off:
-            ln = "its own lead, at the lug" if "E1" in (a[0], c[0] if isinstance(c, tuple) else "") and \
+            ln = "its own leg, in the WAGO" if "E1" in (a[0], c[0] if isinstance(c, tuple) else "") and \
                 any(x[0] in ("R7", "R8") for x in (a, c) if isinstance(x, tuple)) else "150 mm, trim to fit"
             L.append(f"| {where(a)} | {where(c)} | {ln} | {note} |")
     L += ["| EVM J8 (KK 4-pin housing, pins 1-3) | backplane charger pins | 150 mm | charger I2C: ground, clock, data |",
           "| mux channel 0-3 (QT) | backplane QT lead pins | 150 mm (Adafruit #4209) | sensor ports S1-S4 |", "",
-          "Battery leads: 22 AWG, soldered or screwed at both ends; nothing of the battery loop goes through a strip, "
+          f"Battery leads: 24 AWG stranded (red +, black -), soldered at the boards and clamped in the WAGO E1 (strip 9-10 mm; about {S.val('wire24')[2] * 0.1:.1f} mV drop per 0.1 m at 1 A, {S.val('wire24')[2]:g} mohm/m); sense leads after R7 and R8: 24 AWG stranded; nothing of the battery loop goes through a strip, "
           "a header or a socket (layout check L4). Leave 60-80 mm service loops on the jack cables and the solar lead "
           "inside the box, with a drip loop below each gland outside.", "",
           "## 5. Before the first power", "",

@@ -96,10 +96,10 @@ Y_INS = Y_J + S.val("ra_offset") + S.val("ra_insulator")                     # i
 
 # ------------------------------------------------------------------ footprints
 KIND = {  # kind -> (colour, label, STEP models drawn instead of boxes whose name contains a key)
-    "BOB": ("#B5121B", "RJ11"), "PTC": ("#E8A317", "PTC"), "RLY": ("#C9B48A", "R"), "DSTAND": ("#C04000", "D"),
+    "BOB": ("#B5121B", "RJ11"), "PTC": ("#E8A317", "PTC"), "RLY": ("#C9B48A", "R"), "DSTAND": ("#C04000", "D"), "DSTAND41": ("#C04000", "D"),
     "CAP": ("#3060C0", "C"), "MINI": ("#1A1A1A", "Wio-E5 mini"), "SHTC3": ("#161616", "SHTC3"),
     "INA": ("#161616", "INA228"), "MAX": ("#161616", "MAX17048"), "REG": ("#1D6B33", "S7V8F3"),
-    "RAH": ("#202020", "bus header"), "RAS": ("#202020", "SWD"), "LUG": ("#D4AF37", "lug"),
+    "RAH": ("#202020", "bus header"), "RAS": ("#202020", "SWD"), "WAGO": ("#8A8D8F", "WAGO 222-415"),
 }
 
 
@@ -109,7 +109,8 @@ def placed(ref, kind, pins, boxes, note="", pads=None, step=None):
 
 def two_pin(ref, kind, h1, h2, note=""):
     """A two-lead part with lead 1 in hole h1 and lead 2 in h2 (model pins '1', '2').
-    RLY lying resistor (DIN0207, 7.62 or more), DSTAND standing DO-35 (body on lead 1's hole),
+    RLY lying resistor (DIN0207, 7.62 or more), DSTAND standing DO-35 (body on lead 1's hole), DSTAND41 the same
+    for a DO-41,
     PTC standing radial (leads formed to the span), CAP disc."""
     (xa, ya), (xb, yb) = hole_xy(h1), hole_xy(h2)
     xm, ym = (xa + xb) / 2, (ya + yb) / 2
@@ -122,10 +123,11 @@ def two_pin(ref, kind, h1, h2, note=""):
     if kind == "RLY":
         boxes = [body(6.3, 2.5, 0.1, 0.1 + S.val("r_lying_h"), "resistor body"),
                  body(span, 0.6, 0, 1.0, "resistor leads")]
-    elif kind == "DSTAND":
-        dl, dd = S.val("do35")
+    elif kind in ("DSTAND", "DSTAND41"):
+        dl, dd = S.val("do35") if kind == "DSTAND" else S.val("do41")[:2]
+        sh = S.val("diode_stand_h") if kind == "DSTAND" else S.val("do41_stand_h")
         boxes = [Box(xa - dd / 2, ya - dd / 2, xa + dd / 2, ya + dd / 2, 0.8, 0.8 + dl, f"{ref} diode body"),
-                 body(span, 0.6, S.val("diode_stand_h") - 1.2, S.val("diode_stand_h"), "diode lead loop")]
+                 body(span, 0.6, sh - 1.2, sh, "diode lead loop")]
     elif kind == "PTC":
         w, t, h = S.val("ptc")
         boxes = [body(w, t, 1.0, 1.0 + h, "MF-R010 body")]
@@ -258,7 +260,7 @@ def port(card, k, p, y_bob):
     pl.append(two_pin(f"F{k}", "PTC", f"F+{p}", f"a{p}", f"port S{k} 3.3 V fuse, standing, leads formed to 7.62"))
     pl.append(two_pin(f"D{k}2", "DSTAND", f"b{p + 1}", f"b{p}", f"port S{k} data to its 3.3 V, body on the data side"))
     pl.append(two_pin(f"D{k}4", "DSTAND", f"c{p + 2}", f"c{p}", f"port S{k} clock to its 3.3 V, body on the clock side"))
-    pl.append(two_pin(f"D{k}1", "DSTAND", f"d{p}", f"d{p - 1}", f"port S{k} 3.3 V zener, cathode band to row {p}"))
+    pl.append(two_pin(f"D{k}1", "DSTAND41", f"d{p}", f"d{p - 1}", f"port S{k} 3.3 V zener (1N4733A, DO-41), cathode band to row {p}"))
     pl.append(two_pin(f"D{k}3", "DSTAND", f"d{p + 3}", f"d{p + 1}", f"port S{k} ground to data, band to row {p + 1}"))
     pl.append(two_pin(f"D{k}5", "DSTAND", f"b{p + 3}", f"b{p + 2}", f"port S{k} ground to clock, band to row {p + 2}"))
     pl.append(two_pin(f"R{k}1", "RLY", f"e{p + 1}", f"f{p + 1}", f"port S{k} data series 100, across the channel"))
@@ -288,7 +290,7 @@ for name, jack_net, r_pull, cap, zen, r_ser, gnd_row, line in (
     m = bus_row(line)
     PLACE["B2"] += [two_pin(r_pull, "RLY", f"F+{m}", f"a{m}", f"{name} pull-up 10k, lying over the ground rail"),
                     two_pin(cap, "CAP", f"b{m}", f"b{gnd_row}", f"{name} filter 100 nF"),
-                    two_pin(zen, "DSTAND", f"c{m}", f"c{gnd_row}", f"{name} clamp zener, band to row {m}"),
+                    two_pin(zen, "DSTAND41", f"c{m}", f"c{gnd_row}", f"{name} clamp zener (1N4733A, DO-41), band to row {m}"),
                     two_pin(r_ser, "RLY", f"e{m}", f"f{m}", f"{name} series 1k, across the channel")]
 for g in (4, 7, 10):
     w("jumper", f"B2:a{g}", f"B2:F-{g}", "top", "meter ground strip to the ground rail")
@@ -343,11 +345,14 @@ _rw, _rd = S.val("s7v8f3")
 PLACE["B4"].append(breakout("U7", "REG", (_rw, _rd), ["VOUT", "GND", "VIN", "SHDN"], 1.905, 0, "f24",
                             [Box(2.2, 3.0, 9.2, 10.0, T_, T_ + S.val("s7v8f3_h"), "inductor")],
                             "3.3 V regulator; pins in row-strips 24-27, board toward the front", pin_y=15.24))
-_lx, _ly = MHOLES[2]
-PLACE["B4"].append(placed("E1", "LUG", {}, [Box(_lx - 3, _ly - 3, _lx + 3, _ly + 3, 0, 4.5, "E1 M3 nylon screw, nut and lug"),
-                                             Box(_lx - 1.5, _ly - 13.5, _lx + 1.5, _ly - 3, 0, 1.93, "E1 lug tail")],
-                          "battery + junction: Keystone 7328 on an M3 nylon screw in the right centre hole",
-                          pads={"1": (_lx, _ly - 9)}))
+_ww, _wd, _wh = S.val("wago")
+WAGO_X0, WAGO_Y1 = 58.6, 13.9          # its left face clear of U6's PCB, its back face clear of U7's; entries face the front
+PLACE["B4"].append(placed("E1", "WAGO", {}, [Box(WAGO_X0, WAGO_Y1 - _wd, WAGO_X0 + _ww, WAGO_Y1, 0, _wh,
+                                                 "E1 WAGO 222-415 body")],
+                          "battery + junction: WAGO 222-415 hot-glued to the card's front-right corner, entries to the "
+                          f"front (it overhangs the front edge {_wd - WAGO_Y1:.1f}, the right edge "
+                          f"{WAGO_X0 + _ww - BW:.1f}); one way spare",
+                          pads={"1": (WAGO_X0 + 1.4, 1.4)}))
 for a, b_, n in (("g1", "g24", "3.3 V supply from the regulator"), ("d10", "h1", "3.3 V supply to the INA228"),
                  ("d20", "f1", "3.3 V supply to the MAX17048"), ("g2", "g25", "ground to the regulator"),
                  ("d9", "h2", "ground to the INA228"), ("d19", "f2", "ground to the MAX17048"),
@@ -356,16 +361,16 @@ for a, b_, n in (("g1", "g24", "3.3 V supply from the regulator"), ("d10", "h1",
                  ("d7", f"g{bus_row('I2C_SDA')}", "I2C data (SDA) to the INA228"),
                  ("d17", f"h{bus_row('I2C_SDA')}", "I2C data (SDA) to the MAX17048")):
     w("wire", f"B4:{a}", f"B4:{b_}", "bottom", n)
-w("lead", ("U1", "SYS"), "B4:g26", "top", "charger system output (J3 SYS) to the regulator in, 22 AWG")
+w("lead", ("U1", "SYS"), "B4:g26", "top", "charger system output (J3 SYS) to the regulator in, 24 AWG stranded red")
 # the battery loop: soldered or screwed end to end, never a strip, a header or a socket
-w("lead", ("PG1", "L+"), ("E1", "1"), "top", "pack + (pigtail) to the lug, 22 AWG")
-w("lead", ("E1", "1"), ("U2", "X1.VIN+"), "top", "lug to the shunt in (X1 VIN+), 22 AWG")
-w("lead", ("U2", "X1.VIN-"), ("U1", "BAT"), "top", "shunt out (X1 VIN-) to charger battery + (J5 BATTERY), 22 AWG")
-w("lead", ("PG1", "L-"), ("U1", "BATN"), "top", "pack - to charger battery - (J5 GND), 22 AWG")
-w("lead", ("E1", "1"), ("R7", "1"), "top", "lug to the charger sense resistor (100 ohm, at the lug, sleeved)")
-w("lead", ("R7", "2"), ("U1", "BATP"), "top", "charger battery sense (J5 SNS_BATP), 26 AWG")
-w("lead", ("E1", "1"), ("R8", "1"), "top", "lug to the gauge sense resistor (100 ohm, at the lug, sleeved)")
-w("lead", ("R8", "2"), ("U6", "JP2.VBAT"), "top", "fuel gauge cell sense (JP2 VBAT), 26 AWG")
+w("lead", ("PG1", "L+"), ("E1", "1"), "top", "pack + (pigtail) into the WAGO, 24 AWG stranded red")
+w("lead", ("E1", "1"), ("U2", "X1.VIN+"), "top", "WAGO to the shunt in (X1 VIN+), 24 AWG stranded red")
+w("lead", ("U2", "X1.VIN-"), ("U1", "BAT"), "top", "shunt out (X1 VIN-) to charger battery + (J5 BATTERY), 24 AWG stranded red")
+w("lead", ("PG1", "L-"), ("U1", "BATN"), "top", "pack - to charger battery - (J5 GND), 24 AWG stranded black")
+w("lead", ("E1", "1"), ("R7", "1"), "top", "the charger sense resistor's own leg into the WAGO (100 ohm, sleeved; no wire)")
+w("lead", ("R7", "2"), ("U1", "BATP"), "top", "charger battery sense (J5 SNS_BATP), 24 AWG stranded")
+w("lead", ("E1", "1"), ("R8", "1"), "top", "the gauge sense resistor's own leg into the WAGO (100 ohm, sleeved; no wire)")
+w("lead", ("R8", "2"), ("U6", "JP2.VBAT"), "top", "fuel gauge cell sense (JP2 VBAT), 24 AWG stranded")
 w("lead", ("RT1", "1"), ("U1", "TS"), "top", "thermistor to EVM J7")
 w("lead", ("RT1", "2"), ("U1", "TSN"), "top", "thermistor return to EVM J7")
 
@@ -385,7 +390,7 @@ FLOOR_LIFT = 0.0                   # the printed base's floor is the cage's: eve
 BP_BACK = FLOOR_LIFT + S.val("cage_plate") + S.val("bp_posts")   # backplane copper face, Yb
 BP_FRONT = BP_BACK + S.val("strip_size")[2]        # component face (sockets), Yb
 CARD_DY = BP_FRONT - Y_BP                          # Yb = CARD_DY + (Y_BP - Y) ... see card_to_box
-PITCH = {("B4", "B2"): 6, ("B2", "B1"): 8, ("B1", "B3"): 8}   # in backplane holes (2.54 mm)
+PITCH = {("B4", "B2"): 8, ("B2", "B1"): 8, ("B1", "B3"): 8}   # in backplane holes (2.54 mm); B4-B2 8 for the WAGO E1
 SOCKET_HOLE = {"B4": 13}                           # the mux sits behind holes 1-10, below the cards
 BP_Z0 = S.val("power_zone") - (SOCKET_HOLE["B4"] - 1) * P   # first backplane hole, Zb
 for lo, hi in PITCH:

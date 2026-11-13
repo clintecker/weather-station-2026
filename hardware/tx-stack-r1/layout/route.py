@@ -24,7 +24,8 @@ X_MIN, X_MAX = 2.6, st.BW - 2.0                # stay out of the left wall slot 
 Y_MIN, Y_MAX = 1.2, st.CD - 1.0
 NX = [st.X1 + k * G for k in range(-2, 64) if X_MIN <= st.X1 + k * G <= X_MAX]
 NY = [k * G for k in range(0, 40) if Y_MIN <= k * G <= Y_MAX]
-HALF = {"wire": 0.5, "jumper": 0.35, "lead": 0.55, "lead22": 0.8}   # half-width + clearance: 26 AWG, bare, 22 AWG
+OD = S.val("wire24")[1]                        # 24 AWG insulated: card wires solid, flying leads stranded
+HALF = {"wire": OD / 2 + 0.05, "jumper": 0.35, "lead": OD / 2 + 0.05}   # half-width + clearance; jumper: bare
 Z_TOP, Z_BOT = 0.5, -st.BT - 0.5
 BUNDLE = 3                                     # insulated leads laid side by side along one grid line, at most
 EXIT = {"B4": 64.0}                            # off-card leads leave B4's front edge from here (X), toward the charger
@@ -56,9 +57,6 @@ def footprints(card, side):
                 continue
             if (side == "top" and bx.z1 > 0.05) or (side == "bottom" and bx.z0 < -0.05):
                 out.append((pl["ref"], bx.x0, bx.y0, bx.x1, bx.y1, bx.what))
-    if card == "B4" and side == "bottom":            # the lug's M3 screw head under B4 (the empty holes are free)
-        x, y = st.MHOLES[2]
-        out.append(("E1", x - 3.0, y - 3.0, x + 3.0, y + 3.0, "E1 screw head"))
     return out
 
 
@@ -246,8 +244,6 @@ def route_order(order):
         kind, a, c, side, note = st.WIRES[wi]
         if side == "copper":
             continue
-        if kind == "lead" and "22 AWG" in note:
-            kind = "lead22"
         cards = {e.split(":")[0] if isinstance(e, str) else st.board_of_ref().get(e[0]) for e in (a, c)} - {None, "BP"}
         if not cards:
             continue

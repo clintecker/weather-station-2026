@@ -20,15 +20,15 @@ strip, a header or a socket.
 
 | Card (bottom to top) | Role | What it carries |
 |---|---|---|
-| B4 | POWER | The battery monitor INA228 (0x40), the fuel gauge MAX17048 (0x36), the S7V8F3 3.3 V regulator and the battery + lug (Keystone 7328). |
+| B4 | POWER | The battery monitor INA228 (0x40), the fuel gauge MAX17048 (0x36), the S7V8F3 3.3 V regulator and the battery + junction (WAGO 222-415 lever connector, hot-glued). |
 | B2 | PORTS B + METERS | Sensor port 4 and the wind and rain jacks, with the meter pull-ups, filters, clamps and 1 k series resistors. |
-| B1 | PORTS A | Sensor ports 1-3: each a jack breakout, an MF-R010 fuse, 100 ohm series resistors and BAT85S / 1N5232B clamps. |
+| B1 | PORTS A | Sensor ports 1-3: each a jack breakout, an MF-R010 fuse, 100 ohm series resistors and BAT85S / 1N4733A clamps. |
 | B3 | CORE | The Wio-E5 mini on its header, the enclosure air sensor SHTC3 (0x70) and a right-angle SWD header at the front edge. |
-| backplane | bus | BusBoard PAD3U padboard (a pad per hole, no strips) cut to 21 x 39 holes; a tinned bus wire on the copper side carries each of the 18 lines; four Sullins sockets, the PCA9548 mux (0x71) behind it on foam, the four QT leads to the ports and the charger I2C pins. |
+| backplane | bus | BusBoard PAD3U padboard (a pad per hole, no strips) cut to 21 x 39 holes; a tinned bus wire on the copper side carries each of the 18 lines; four generic 1x18 female sockets, the PCA9548 mux (0x71) behind it on foam, the four QT leads to the ports and the charger I2C pins. |
 | shelves below the cards | power | The battery pack (lowest, the heaviest part) on a moulded tray, then the BQ25798EVM (90 x 90, J8 toward the lid) on two moulded ledges; on leads to B4. |
 
-The bus header is Sullins PRPC040SBAN-M71RC (right angle, 1x40, cut to 1x18; the 1x18 PRPC018SBAN-M71RC is no
-longer sold at DigiKey, same drawing) into Sullins PPPC181LFBN-RC (1x18 female) on the backplane. The card ends at
+The bus header is a generic 2.54 mm right-angle male header cut to 1x18 (drawn as the Sullins PRPC drawing; its
+mating pin 5.8 nominal, `[TBD-MEASURE]`) into a generic female strip cut to 1x18 (one position lost at each cut) on the backplane. The card ends at
 the snap line (card Y 41.91 `[TBD-MEASURE]`); the header insulator ends at 43.43, its mating pins at 49.27 (7.36
 past the edge); the socket mouth is at 44.27, 2.36 mm clear of the card and 0.84 mm clear of the insulator (the
 depth stop); 5.00 mm of the 5.84 mm mating pin goes in, and the card's edge sits 10.86 mm from the backplane. All
@@ -102,7 +102,7 @@ You need python3 3.11+ with Pillow, KiCad 10 (`kicad-cli` with its 3D library), 
 2. Every connected pin is in exactly one net, every unused pin in none; every net has at least two members.
 3. The I2C address map (no upstream clash, every 0x50 behind a mux channel, addresses match the firmware) and the upstream pull-up total (1.40 kohm, at or above 0.97 kohm).
 4. Each sensor port's 3.3 V comes only through its own MF-R010 from the 3.3 V supply.
-5. No battery current passes a header, socket or strip; the series chain, the lug and the sense resistors are present.
+5. No battery current passes a header, socket or strip; the series chain, the WAGO junction and the sense resistors are present.
 6. The RJ11 pin maps (sensor ports 2 3.3 V, 3 data, 4 ground, 5 clock; wind 2/3 ground, 4 cups, 5 vane; rain 3 ground, 4 rain).
 7. The Wio-E5 pins match the firmware's board file.
 8. KiCad ERC reports nothing beyond the written waivers.
@@ -127,8 +127,8 @@ apart (mechanical C1), did not fit the floor (C2) and had 0.5 mm to the lid (C3)
 cage. The connection changes (check 10):
 
 - **Removed:** the B3-B4 socket XS1 and the B4 bus pins XP1 (the cards now plug into the backplane); the QT leads on B1 (W11-W14) move to the backplane as W1-W4, beside the mux.
-- **Added:** a right-angle bus header per card (XH1-XH4) and a backplane socket per card (XB1-XB4); the charger I2C pins XJ1 on the backplane; the battery + lug E1 (mechanical M8); 100 ohm resistors R7 and R8 at the tap end of the charger battery sense (BATP) and the fuel gauge cell sense leads (electrical m11); the pack thermistor RT1 on EVM J7 with JP18 removed (M2); the right-angle SMA adapter AD1; on every outdoor line a series resistor and clamps (M5): 100 ohm and BAT85S Schottky clamps (to the port 3.3 V and from ground) on each sensor port's data and clock, a 1N5232B zener on each port's 3.3 V, and on cups, vane and rain a 1N5232B zener and a 1 k series resistor to the MCU, with a new 100 nF filter on the vane (C3).
-- **Moved:** the charger and gauge sense now leave the lug through R7 and R8; EVM J8 pin 1 is the I2C lead's ground; each port's data and clock pass their series resistors between jack and mux; each meter line passes its 1 k between the jack side and the MCU pin; AD1 sits between the radio and the coax.
+- **Added:** a right-angle bus header per card (XH1-XH4) and a backplane socket per card (XB1-XB4); the charger I2C pins XJ1 on the backplane; the battery + junction E1 (a WAGO 222-415, mechanical M8); 100 ohm resistors R7 and R8 at the tap end of the charger battery sense (BATP) and the fuel gauge cell sense leads (electrical m11); the pack thermistor RT1 on EVM J7 with JP18 removed (M2); the right-angle SMA adapter AD1; on every outdoor line a series resistor and clamps (M5): 100 ohm and BAT85S Schottky clamps (to the port 3.3 V and from ground) on each sensor port's data and clock, a 1N4733A zener on each port's 3.3 V, and on cups, vane and rain a 1N4733A zener and a 1 k series resistor to the MCU, with a new 100 nF filter on the vane (C3).
+- **Moved:** the charger and gauge sense now leave the WAGO junction through R7 and R8 (each resistor's own leg in the WAGO); EVM J8 pin 1 is the I2C lead's ground; each port's data and clock pass their series resistors between jack and mux; each meter line passes its 1 k between the jack side and the MCU pin; AD1 sits between the radio and the coax.
 - **Renamed:** EVM pins are named by terminal (J3 SYS, J8.2 clock, J8.3 data).
 
 Clamps on the sensor-port data and clock are BAT85S (at most 10 pF at 1 V, Vishay doc 88146), not zeners: a DO-35
@@ -166,20 +166,16 @@ zener adds 100 pF or more, which would eat the 236 pF budget.
 
 Everything the build needs that is in neither the DigiKey cart (2026-11-09) nor `INVENTORY.md`. Stock and price
 from digikey.ca on 2026-11-10; quantities include spares. On hand per `INVENTORY.md`, so not listed: the M4 heat-set
-inserts (100) for the lid screws and the M3 heat-set inserts (200) for the backplane posts, the M3 nylon screw and
-nut for the lug, the M3 screws for the backplane and the bar, the RJ12 6P6C crimp plugs (100, generic; modelled as
+inserts (100) for the lid screws and the M3 heat-set inserts (200) for the backplane posts, the WAGO 222-415
+(battery + junction), the generic 2.54 mm right-angle male headers and female strips (cut to 1x18), the onsemi 1N4733A
+zeners, 24 AWG solid and stranded hook-up wire, the Adafruit 1311 22 AWG solid (stripped for the bus), the M3 screws for the backplane and the bar, the RJ12 6P6C crimp plugs (100, generic; modelled as
 the standard 6P body after Cinch 32-5996UL), and the PETG (Clint).
 
 | Part | Maker part | DigiKey | Need | Buy | Stock | Price (CAD, 1 off) | Note |
 |---|---|---|---|---|---|---|---|
-| Right-angle bus and SWD header, 1x40 | Sullins PRPC040SBAN-M71RC | S1111EC-40-ND | 77 pins (4 x 18 + 5) | 3 | 5,728 | 2.97 | cut to length; replaces PRPC018SBAN-M71RC (no longer sold) |
-| Backplane socket, 1x18 female | Sullins PPPC181LFBN-RC | S7051-ND | 4 | 6 | 5,847 | 1.74 | |
 | Signal clamp diode | Vishay BAT85S-TR | BAT85SCT-ND | 16 | 20 | 44,459 | 0.74 | |
-| Zener clamp 5.6 V | onsemi 1N5232BTR | 1N5232BFSCT-ND | 7 | 10 | 86,084 | 0.25 | |
 | Series and sense resistor 100 ohm | Stackpole CF14JT100R | CF14JT100RCT-ND | 10 | 15 | 308,663 | 0.16 | the Yageo kit has 5; the cart's CF14JT1M00 (1 Mohm, 50) matches no part here: check that line |
-| Battery lug | Keystone 7328 | 36-7328-ND | 1 | 3 | 25,100 | 0.33 | |
-| SMA right-angle adapter (AD1) | Amphenol RF 132172 | ACX1249-ND | 1 | 1 | 10,603 | 20.40 | needed (a straight plug does not fit, L9); its arm toward the lid |
-| Tinned bus wire, 22 AWG solid | Alpha Wire 298 SV005 | 298SV005-ND | about 1.6 m | 1 spool (30.5 m) | 309 | 147.28 | or strip the 22 AWG solid hookup wire on hand, if it is solid |
+| SMA right-angle adapter (AD1) | Amphenol RF 132172 | ACX1249-ND | 1 | 1 | 10,603 | 20.40 | pending Clint's measurement of the 135110 plug length; its arm toward the lid |
 | Cable glands PG-7 (round port cables) and PG-9 (flat weather-meter cables, seal out, packed) | Adafruit #762 and #761 (Clint has one of each), or LAPP 53111000 (M12) for the PG-7s | 2181-53111000-ND | 6 PG-7 + 2 PG-9 | 5 PG-7 + 1 PG-9 | LAPP not stocked (2 weeks) | bulk only | plus silicone or split grommets for the two flat cables |
 | Hose clamps for the pole lugs | stainless, to suit the pole | - | 2 | 2 | - | - | the two on hand are for the shield arm |
 | Pressure-equalising vent | M12 x 1.5 vent plug | - | 1 | 1 | not checked | - | DigiKey number not found in this pass |
@@ -196,7 +192,7 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
 | Mating or fixing | Held by | Force path | Taken apart | Flag |
 |---|---|---|---|---|
 | Card in its slot | left wall slot (2 mm deep) and the right corner post slot; the retention bar across the front left | the slots take the card's weight and any knock across it; the bar stops it backing out | two M3 screws: bar off, card slides out toward the lid |  |
-| Bus header into the backplane socket | 18 contacts' friction; axis Yb (in the card plane, toward the back wall); insertion 5.00 mm of 5.84; the insulator meets the socket 0.84 mm further in (the depth stop) | the socket; side play is the slot's 0.3 mm, inside the socket lead-in (0.5 mm [TBD-MEASURE]) | pull the card straight out toward the lid (bar off first) |  |
+| Bus header into the backplane socket | 18 contacts' friction; axis Yb (in the card plane, toward the back wall); insertion 4.96 mm of 5.8; the insulator meets the socket 0.84 mm further in (the depth stop) | the socket; side play is the slot's 0.3 mm, inside the socket lead-in (0.5 mm [TBD-MEASURE]) | pull the card straight out toward the lid (bar off first) |  |
 | B3 U5 breakout (enclosure air sensor, top card, away from the charger) | its own header, soldered in the breakout and in the card (one row) | the header pins; a QT plug's push goes through the breakout into the header | desolder the header row (or cut the pins and fit a new header) | held by solder alone on one header row |
 | B4 U2 breakout (battery monitor) | its own header, soldered in the breakout and in the card (one row) | the header pins; a QT plug's push goes through the breakout into the header | desolder the header row (or cut the pins and fit a new header) | held by solder alone on one header row |
 | B4 U6 breakout (fuel gauge) | its own header, soldered in the breakout and in the card (one row) | the header pins; a QT plug's push goes through the breakout into the header | desolder the header row (or cut the pins and fit a new header) | held by solder alone on one header row |
@@ -211,7 +207,7 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
 | Wio-E5 mini on B3 | soldered on its own 2 x 12 header (not in sockets) | the header pins | desolder 24 pins | held by solder alone; cannot come off without desoldering 24 pins |
 | Wio-E5 mini USB-C console | the receptacle's friction; cable plugged from the left with the lid open | the mini's receptacle and its header | pull the plug |  |
 | SMA, adapter and coax to the bulkhead | AD1 screwed on the mini's SMA-K, its arm toward the lid; the 135110 plug screwed on AD1; the cable bends right in front of the cards to the bulkhead jack in the right wall's boss | the coax is clipped to the cage at its bend so a pull on it reaches the bulkhead, not the mini's SMA | unscrew the plug at AD1 (8 mm spanner), then lift B3 out |  |
-| Battery lug E1 on B4 | Keystone 7328 on an M3 nylon screw and nut through the right centre hole | the screw; the 22 AWG leads are soldered to the lug tail and sleeved | undo the nut |  |
+| Battery junction E1 on B4 | WAGO 222-415 hot-glued to B4's top, front-right corner (overhanging the front edge) | the glue; the 24 AWG stranded leads and the R7/R8 legs clamped (strip 9-10 mm) | lever up to free a lead; warm the glue to lift it |  |
 | Battery pack | lies flat on the pack tray, the lowest shelf (the heaviest part low); a hook-and-loop strap through the tray | the tray's front lip and the strap | open the strap, unplug the JST PH, slide it out |  |
 | Charger (BQ25798EVM) | a shelf: its side edges on two moulded ledges, a stop at the back, a snap clip at the front (the board has no mounting holes); the Bumpon feet (H1-H4, 3M SJ-5303) peeled off first | the ledges; the terminal screws are tightened from above, in the room under B4 | unscrew its leads, flex the clip, slide it toward the lid on its service loops | its underside parts (J6, tails: 4 mm [TBD-MEASURE]) must clear the 2 mm ledges at the edges |
 | B4 and the charger | B4's battery and sense leads are screwed into the EVM terminals | the terminal screws | unscrew the leads at the EVM before B4 slides out | B4 is tethered to the charger by its leads: unscrew them first |
@@ -287,7 +283,7 @@ in `sources.py`:
 3. The snap line: card Y of the cut between column j and the inner back rail (`sb_snap_y`).
 4. The card slot fit on a printed test slot (`slot_clear`); the socket's lead-in (`align_tol`).
 5. Solder tails and underside wires below a card, after the first card (`tails`).
-6. The Sullins socket's solder tail (`socket_tail`); a standing DO-35 diode's height (`diode_stand_h`).
+6. The generic header and socket (`ra_*`, `socket_*`); standing DO-35 and DO-41 diode heights (`diode_stand_h`, `do41_stand_h`) and the DO-41 diameter (`do41`); the 24 AWG insulation OD (`wire24`).
 7. The PG-9 locknut across corners (`gland_pg9_nut`); the PG-7's lengths are scaled from the PG-9 (`gland_pg7`).
 8. Each round port cable's outer diameter (PG-7: 3.0-4.3 mm) and the flat meter cable's size (`flat_cable`,
    `sealant`).
@@ -357,20 +353,20 @@ Status `[TBD-MEASURE]` means no source was found. The drawings use the value as 
 | `res_v_h` | 9 | 10 kohm standing (P5.08 vertical) height | KiCad R_Axial_DIN0207 vertical model, L 6.3 + lead | derived |
 | `cap_h` | 6 | 100 nF disc height | KiCad C_Disc_D3.8mm model, D 3.8 + lead | derived |
 | `pack` | 69 x 54 x 18 | battery pack #353 | INVENTORY.md / docs/current-system.md (SHOP:49) | sourced |
-| `ra_offset` | 1.52 | right-angle header: hole centre to the insulator's back face | Sullins right-angle male header drawing, mfgdatasheets.nlight.net (PRPC018SBAN-M71RC, -M71 single narrow) (.060) | sourced |
-| `ra_insulator` | 2.54 | right-angle header insulator, along the mating pins | Sullins right-angle male header drawing, mfgdatasheets.nlight.net (PRPC018SBAN-M71RC, -M71 single narrow) (.100) | sourced |
-| `ra_mate` | 5.84 | right-angle header mating pin length beyond the insulator | Sullins right-angle male header drawing, mfgdatasheets.nlight.net (PRPC018SBAN-M71RC, -M71 single narrow) code BA (.230) | sourced |
-| `ra_tail` | 3.05 | right-angle header solder tail below the insulator | Sullins right-angle male header drawing, mfgdatasheets.nlight.net (PRPC018SBAN-M71RC, -M71 single narrow) code BA (.120) | sourced |
-| `ra_pin_z` | 1.27 | right-angle header pin centre above the card | Sullins right-angle male header drawing, mfgdatasheets.nlight.net (PRPC018SBAN-M71RC, -M71 single narrow): insulator .100 square on the board | derived |
-| `socket_h` | 8.5 | Sullins PPPC181LFBN-RC body, backplane face to mouth | Sullins PPPC female header drawing (PPPC181LFBN-RC), sullinscorp.com | sourced |
-| `socket_w` | 2.54 | Sullins PPPC socket body width (single row) | Sullins PPPC female header drawing (PPPC181LFBN-RC), sullinscorp.com | sourced |
-| `socket_tail` | 3 | socket solder tail beyond the backplane copper | Sullins PPPC female header drawing (PPPC181LFBN-RC), sullinscorp.com: .118 tail; check on the part | [TBD-MEASURE] |
-| `insertion` | 5 | chosen pin insertion into the socket (5.84 available; 0.84 left for print tolerance) | layout rule | derived |
-| `card_bp_gap` | 10.86 | snapped card back edge to backplane face | 39.37 (column j) + 1.52 + 2.54 + 5.84 - 5.0 + 8.5 - 41.91 (sb_snap_y) | derived |
+| `ra_offset` | 1.52 | right-angle header: hole centre to the insulator's back face | Clint's generic 2.54 mm right-angle male header (cut to 18), 2026-11-13; drawn as the Sullins PRPC drawing (Sullins right-angle male header drawing, mfgdatasheets.nlight.net (PRPC018SBAN-M71RC, -M71 single narrow)) (.060): check on the part | [TBD-MEASURE] |
+| `ra_insulator` | 2.54 | right-angle header insulator, along the mating pins | Clint's generic 2.54 mm right-angle male header (cut to 18), 2026-11-13; drawn as the Sullins PRPC drawing (Sullins right-angle male header drawing, mfgdatasheets.nlight.net (PRPC018SBAN-M71RC, -M71 single narrow)) (.100): check on the part | [TBD-MEASURE] |
+| `ra_mate` | 5.8 | right-angle header mating (long) leg beyond the insulator | Clint's generic 2.54 mm right-angle male header (cut to 18), 2026-11-13; drawn as the Sullins PRPC drawing (Sullins right-angle male header drawing, mfgdatasheets.nlight.net (PRPC018SBAN-M71RC, -M71 single narrow)): 5.8 nominal; measure Clint's | [TBD-MEASURE] |
+| `ra_tail` | 3.05 | right-angle header solder tail below the insulator | Clint's generic 2.54 mm right-angle male header (cut to 18), 2026-11-13; drawn as the Sullins PRPC drawing (Sullins right-angle male header drawing, mfgdatasheets.nlight.net (PRPC018SBAN-M71RC, -M71 single narrow)) (.120): check on the part | [TBD-MEASURE] |
+| `ra_pin_z` | 1.27 | right-angle header pin centre above the card | the 2.54 square insulator on the board | derived |
+| `socket_h` | 8.5 | backplane socket body, backplane face to mouth (1x18 cut from a longer female strip, one position lost at each cut) | Clint's generic 2.54 mm female header strip (cut to 18), 2026-11-13; drawn as the Sullins PPPC drawing (Sullins PPPC female header drawing (PPPC181LFBN-RC), sullinscorp.com): check on the part | [TBD-MEASURE] |
+| `socket_w` | 2.54 | backplane socket body width (single row) | Clint's generic 2.54 mm female header strip (cut to 18), 2026-11-13; drawn as the Sullins PPPC drawing (Sullins PPPC female header drawing (PPPC181LFBN-RC), sullinscorp.com) | [TBD-MEASURE] |
+| `socket_tail` | 3 | socket solder tail beyond the backplane copper | Clint's generic 2.54 mm female header strip (cut to 18), 2026-11-13; drawn as the Sullins PPPC drawing (Sullins PPPC female header drawing (PPPC181LFBN-RC), sullinscorp.com): .118 tail; check on the part | [TBD-MEASURE] |
+| `insertion` | 4.96 | chosen pin insertion into the socket (5.8 nominal available; 0.84 left for print tolerance) | layout rule | derived |
+| `card_bp_gap` | 10.86 | snapped card back edge to backplane face | 39.37 (column j) + 1.52 + 2.54 + 5.8 - 4.96 + 8.5 - 41.91 (sb_snap_y) | derived |
 | `pad_pitch` | 2.54 | PAD3U hole pitch (a separate pad per hole, no strips) | BusBoard PAD3U Padboard, busboardcom.busboard.us/PAD3U (38 x 62 holes, 0.037 in holes on 0.1 in, 160.02 x 100.08 x 1.6 mm; DigiKey 4526-PAD3U-ND) | sourced |
 | `strip_size` | 160.02 x 100.08 x 1.6 | BusBoard PAD3U padboard, 62 holes along 160 mm x 38 along 100 mm; the backplane is a piece 21 x 40 holes cut from it, lines along the 160 mm side | BusBoard PAD3U Padboard, busboardcom.busboard.us/PAD3U (38 x 62 holes, 0.037 in holes on 0.1 in, 160.02 x 100.08 x 1.6 mm; DigiKey 4526-PAD3U-ND) | sourced |
 | `pad_margin` | 1.27 | backplane cut edge to the nearest hole centre (cut midway between two hole lines) | half the 2.54 pitch | derived |
-| `bus_wire` | 0.64 | tinned copper bus wire for the 18 backplane lines, 22 AWG | AWG 22 = 0.644 mm | sourced |
+| `bus_wire` | 0.64 | bare bus wire for the 18 backplane lines: 22 AWG solid, stripped (Adafruit 1311 hook-up wire, on hand) | AWG 22 = 0.644 mm | sourced |
 | `align_tol` | 0.5 | header pin to socket misalignment the socket's lead-in takes | typical 0.1 in female header lead-in; check one card in the cage | [TBD-MEASURE] |
 | `finger` | 8 | vertical room needed over a plug to press its latch | a fingertip or a small screwdriver | [TBD-MEASURE] |
 | `rg316_bend` | 12.7 | RG-316 minimum static bend radius (the 135110-01 cable) | typical 5 x 2.5 mm OD; not in the Amphenol listing | [TBD-MEASURE] |
@@ -389,10 +385,13 @@ Status `[TBD-MEASURE]` means no source was found. The drawings use the value as 
 | `clear` | 0.5 | minimum clearance kept between parts | layout rule | derived |
 | `tongue` | 6 x 8.89 | printed tongue on the back jack's spacer: width x reach past the snapped edge (to the old 50.8 edge) | layout choice: the right corner post grips its last 1.5 mm | derived |
 | `bob_spacer` | 2 | printed spacer under each RJ11 breakout (bonded to the card) | layout choice | derived |
-| `do35` | 4.56 x 2 | DO-35 body length x diameter (1N5232B, BAT85S) | onsemi 1N5221B series and Vishay BAT85 (doc 88146) outline DO-35/DO-204AH | sourced |
+| `do35` | 4.56 x 2 | DO-35 body length x diameter (BAT85S) | Vishay BAT85 (doc 88146) outline DO-35/DO-204AH | sourced |
 | `diode_stand_h` | 7 | standing DO-35 height (body on one lead, the other looped over) | 4.56 body + 1 lead + loop; check on the part | [TBD-MEASURE] |
+| `do41` | 5.2 x 2.35 x 0.86 | DO-41 body length x diameter, lead diameter (1N4733A zeners; the lead passes the 1.0 mm card hole) | onsemi 1N4728A/D Rev. 2 (January 2002), https://www.onsemi.com/pdf/datasheet/1n4728a-d.pdf, case 59-10: A 4.10-5.20 (max used), B 2.00-2.70 (the midpoint used: at 2.7 the B2 meter zeners D51-D53 standing on 2.54 rows touch each other and their filter caps; 2.44 or less fits), D 0.71-0.86 (max): measure Clint's | [TBD-MEASURE] |
+| `do41_stand_h` | 7.6 | standing DO-41 height (body on one lead, the other looped over) | 5.2 body + 1 lead + loop, as diode_stand_h; check on the part | [TBD-MEASURE] |
+| `wire24` | 0.511 x 1.45 x 84.2 | 24 AWG insulated hook-up wire (card wires solid, flying leads stranded): conductor diameter, insulation OD, resistance mohm/m | AWG 24 = 0.511 mm, 84.2 mohm/m at 20 C (0.205 mm2 copper); OD about 1.3-1.6 for PVC hook-up wire: measure Clint's | [TBD-MEASURE] |
 | `r_lying_h` | 2.5 | lying DIN0207 resistor height (body diameter) | KiCad R_Axial_DIN0207_L6.3mm_D2.5mm model | derived |
-| `lug` | 13.5 x 0.38 | Keystone 7328 ring solder lug length x thickness (ring for #4 / M3, 3.1 mm hole) | Keystone solder lugs catalogue p.79, keyelco.com/userAssets/file/K75p79.pdf: 7328 .531 long, .015 brass, H .120 | sourced |
+| `wago` | 26.6 x 20.5 x 14.5 | WAGO 222-415 5-way lever splicing connector (E1, the battery + junction): width (the five entries side by side) x depth (entry face to back) x height, levers closed | WAGO data sheet 222-415 (version 07.11.2023), https://www.wago.com/222-415: physical data; 0.08-2.5 mm2 / 28-12 AWG solid and stranded, strip 9-10 mm, 32 A | sourced |
 | `evm` | 90 x 90 x 15 | BQ25798EVM (BMS034) board outline x tallest part above it; no mounting holes; feet H1-H4 3M Bumpon SJ-5303 (11.2 x 5.1) peeled off for the rails | outline: Clint, by hand, 2026-11-10: 90 x 90; parts (SLUUCB5E BOM): J1-J4 On-Shore ED120/2DS, J5 ED120/3DS (5.08 mm terminal blocks), J7 Molex 0393570002, J9 3M N2510-6002-RB, J8 Molex 0022053041, J6 Molex 47346-0001, about 33 jumpers with shunts; 15 covers a 5.08 mm rising-clamp block (about 10-12, makers' drawings not reached) | [TBD-MEASURE] |
 | `evm_j8` | 6 | EVM J8 (right-angle 4-pin, the EV2300 port our I2C lead uses) reach past the board edge | Clint, by hand, 2026-11-10: 96 across J8, 90 without | sourced |
 | `box_out` | 125 x 175 x 75 | #905 (TIBOX) outside, for reference: width x length x depth (the printed base replaces its 50 mm body) | TIBOX enclosure catalogue, cdn-shop.adafruit.com/datasheets/TIBOX.pdf p.5; adafruit.com/product/905 | sourced |

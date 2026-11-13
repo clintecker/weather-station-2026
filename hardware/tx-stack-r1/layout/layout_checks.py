@@ -106,7 +106,7 @@ def check_pins_and_ends(ph):
                 used[e].append(note)
             elif e not in PIN:
                 fail("L1", f"{kind} end {e} is not a model pin")
-            elif e[0] in st.board_of_ref() and (e not in pads or PIN[e][3] not in ("solder", "lead")):
+            elif e[0] in st.board_of_ref() and (e not in pads or PIN[e][3] not in ("solder", "lead", "lever")):
                 fail("L1", f"{kind} end {e[0]}.{e[1]} is a placed part's pin that is not a solder pad")
     for e, notes in used.items():
         if len(notes) > 1:
@@ -630,8 +630,8 @@ def check_mech():
          "the coax is clipped to the cage at its bend so a pull on it reaches the bulkhead, not the mini's SMA",
          "unscrew the plug at AD1 (8 mm spanner), then lift B3 out", cflag)
     # power
-    mech("Battery lug E1 on B4", "Keystone 7328 on an M3 nylon screw and nut through the right centre hole",
-         "the screw; the 22 AWG leads are soldered to the lug tail and sleeved", "undo the nut",
+    mech("Battery junction E1 on B4", "WAGO 222-415 hot-glued to B4's top, front-right corner (overhanging the front edge)",
+         "the glue; the 24 AWG stranded leads and the R7/R8 legs clamped (strip 9-10 mm)", "lever up to free a lead; warm the glue to lift it",
          "")
     mech("Battery pack", "lies flat on the pack tray, the lowest shelf (the heaviest part low); a hook-and-loop "
          "strap through the tray", "the tray's front lip and the strap", "open the strap, unplug the JST PH, slide it out")
