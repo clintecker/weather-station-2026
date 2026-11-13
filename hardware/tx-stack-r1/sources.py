@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "cage"))
 import lid_rim_spec  # noqa: E402
 
 RIM = lid_rim_spec.derived()        # the lid rim, from cage/lid-rim-spec.md (Clint's 300 dpi lid scans, 2026-11-11)
+PADSCAN = ("Clint's 300 dpi PAD3U scan with a steel ruler, 2026-11-13 (scan_20261113142805.pdf p.1-2): scaled by the "
+           "ruler, 11.958 px/mm along the 100 mm side, 11.919 along the 160 (the hole pitch then reads 2.542 both ways)")
 SCAN = "cage/lid-rim-spec.md: Clint's 300 dpi lid scans with a steel ruler, 2026-11-11 (11.953 px/mm; the lip path +-0.3, the spans +-0.4)"
 
 SB = "https://mm.digikey.com/Volume0/opasdata/d220001/medias/docus/6170/DKS-SOLDERBREAD-02-ND.pdf"
@@ -101,7 +103,12 @@ D = {
     "card_bp_gap": (10.86, "snapped card back edge to backplane face", "39.37 (column j) + 1.52 + 2.54 + 5.8 - 4.96 + 8.5 - 41.91 (sb_snap_y)", "derived"),
     "fillet_clear": (0.6, "solder fillet radius kept clear round a used hole: an underside wire's insulation stays this far from the hole centre", "coordinator rule (Clint): OD/2 + 0.6 from any hole a pin or another wire end uses", "derived"),
     "pad_pitch": (2.54, "PAD3U hole pitch (a separate pad per hole, no strips)", PAD, "sourced"),
-    "strip_size": ((160.02, 100.08, 1.6), "BusBoard PAD3U padboard, 62 holes along 160 mm x 38 along 100 mm; the backplane is a piece 30 x 39 holes (plus a tab) cut from it, lines along the 160 mm side", PAD, "sourced"),
+    "strip_size": ((160.02, 100.08, 1.6), "BusBoard PAD3U padboard, 62 holes along 160 mm x 38 along 100 mm; the backplane is the plated end's 30 rows (lines 0-29) by the full 38 holes, lines across the 160 mm side", PAD, "sourced"),
+    "pad3u_mount": ((2.80, 3.75, 2.65, 88.9), "PAD3U factory mounting holes at one 100 mm end: drill diameter, copper ring diameter, centre beyond the end row's hole centres, centre to centre; on the 2nd and 37th of the 38 holes, the pads beside them left off", PADSCAN + ": drill 33.5 px, ring 45 px, 31.5 px past row 1, 1063 px apart; +-0.1", "sourced"),
+    "pad3u_far_holes": ((1.5, 1.27), "PAD3U unplated holes at the other 100 mm end: diameter, centre before the end row (midway between the last two rows), on the 2nd and 37th holes", PADSCAN + ": 17.5-18.5 px; +-0.1", "sourced"),
+    "pad3u_edges": ((2.81, 2.23, 99.68), "PAD3U factory edges measured: long side to the outer holes' centres (2.84 and 2.78), the far (unplated) end to its last row, the width", PADSCAN + "; BusBoard's 100.08 / 38 rows would give 3.05", "sourced"),
+    "pad3u_plated_edge": (2.83, "PAD3U mounting holes' centre to the factory edge at that end", "derived: BusBoard's 160.02 less 60 pitches (61 rows in the scan), the far margin 2.23 and the holes' 2.65; the scan cuts that end off, so measure it with calipers", "TBD"),
+    "bp_slot": ((4.0, 2.1), "the right corner post's backplane slot: depth into its -Xb face (Xb 85.8), height (Yb 8.0 to 10.1, as the left groove)", "the fit: the board tilts its factory right edge in to the slot's end, so its left edge clears the left wall's face (8.5) as it comes down, then slides left into the left groove; 1.7 deeper than the 2.3 card slots (Clint: about 1-2 mm deeper), so a factory edge 0.6 further out than BusBoard's numbers give still fits", "derived"),
     "pad3u_factory_margin": ((3.05, 2.54), "PAD3U factory edge to the nearest hole centre: across the lines (100.08 side), along them (160.02 side)", "derived from strip_size: (100.08 - 37 x 2.54) / 2 and (160.02 - 61 x 2.54) / 2; more than the 1.27 of a cut edge, so the backplane keeps no factory edge", "derived"),
     "pad_margin": (1.27, "backplane cut edge to the nearest hole centre (cut midway between two hole lines)", "half the 2.54 pitch", "derived"),
     "bus_wire": (0.64, "bare bus wire for the 18 backplane lines: 22 AWG solid, stripped (Adafruit 1311 hook-up wire, on hand)", "AWG 22 = 0.644 mm", "sourced"),

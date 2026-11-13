@@ -2,7 +2,7 @@
 
 The backplane is a piece of BusBoard PAD3U padboard. It stands 8 mm off the base's inside floor on printed posts with
 M3 heat-set inserts. The cards plug into its sockets from the lid side. Every dimension is in mm. The numbers come from
-`layout/stack.py` and `cage/cage.py` as of 7c780f7, with section 6 for the 6-hole B4-B2 pitch.
+`layout/stack.py` and `cage/cage.py` as of the factory-edge rectangle (2026-11-13): the board is the PAD3U's plated end, held by two screws, the left groove and a slot in the right corner post.
 
 ## Coordinate frame
 
@@ -19,91 +19,98 @@ Y = Xb − 61.75 (positive toward the right wall).
 
 ## 1. The backplane (for reference: not printed)
 
-- **Board:** PAD3U, 2.54 pitch, 1.6 thick, cut as an **L**. Lines run along Zb.
-  - The main piece is 30 lines × 39 holes (lines 0 to 29). That is the widest the fitting slide allows: its right
-    edge, shifted 2.5 to the right, stops 0.59 short of the right corner post (Xb 85.8). A PAD3U is 38 holes across.
-  - A **tab** carries one more line, line −1, beside holes 1 to 3.
-  - The inside corner of the L is a hacksaw cut.
-- **Outline:**
-  - Main piece: **Xb 6.51 to 82.71**, Zb 50.25 to 149.31.
-  - Tab: **Xb 3.97 to 6.51, Zb 50.25 to 57.87** (2.54 × 7.62). Its left edge is midway between lines −2 and −1, 3.81
-    from line 0's hole centres. That leaves 2.21 of FR4 left of the 3.2 hole at s0.2.
+- **Board:** PAD3U, 2.54 pitch, 1.6 thick, **a plain rectangle** (no tab, no hacksaw). Lines run along Zb.
+  - It is the PAD3U's **plated end**: the 30 rows next to its two factory mounting holes become lines 0 to 29, each
+    the full **38 holes** (holes 1 to 38). Socket holes stay at 13, 19, 27 and 35.
+  - **Only the left edge is cut** (scored midway between line 0 and the next row out, 1.27 from line 0). The right
+    edge (beyond the mounting holes), the top and the bottom are the PAD3U's own.
+- **Measured from Clint's scan** (300 dpi with a steel ruler, 2026-11-13; ±0.1; `sources.py` pad3u_*):
+  - Mounting holes: **Ø2.80 drill, Ø3.75 copper ring**, on the 2nd and 37th of the 38 holes (88.9 apart),
+    **2.65 beyond the end row's hole centres**. The pads beside them are left off.
+  - The other end: two plain Ø1.5 holes, on the same two holes, midway between the last two rows; 2.23 from the last
+    row to the edge.
+  - Long sides: 2.81 from the outer holes' centres to the edge (2.84 and 2.78). Width 99.68.
+  - The scan shows **61** rows (BusBoard says 62); the mounting holes sit where a 62nd would be.
+  - **Not measurable from the scan:** the plated end's edge. It is cut off in all three pages. BusBoard's 160.02 less
+    the rest puts it **2.83 beyond the mounting holes** (5.48 from line 29). `[TBD-MEASURE]` with calipers.
+- **Outline: Xb 6.51 to 86.92, Zb 48.71 to 148.31** (80.4 × 99.6).
+- **Mounting holes:** lower **(84.09, 54.06)**, level with hole 2; upper **(84.09, 142.96)**, level with hole 37.
 - **Copper (back) face** at Yb 8.0, against the posts. The component face is at Yb 9.6.
 - **Behind it, on the copper face:** the mux breakout on foam, at **Xb 11.59 to 52.23**, Zb 52.79 to 73.11, inside
-  the 8 mm gap. It is boxed in: 0.31 from the bottom-left post's flat in place, and 0.35 from the bottom-right post
-  during the fitting slide (section 3). Bus wires run along lines 1 to 18 (Xb 10.32 to 53.50), and along B4's
-  power lines 19 to 23 and 26 from hole 5 to hole 13 (Xb 56.04 to 73.82, Zb 61.68 to 82.00).
-- **On the front, at the lower end:** R7 (line 21 to line 24, hole 7) and R8 (line 22 hole 8 to line 23 hole 11) lie
-  flat, 2.6 high; the leads to the EVM and the pack land on holes 6 of lines 19, 21 and 26.
+  the 8 mm gap. Bus wires run along lines 1 to 18, and along B4's power lines 19 to 23 and 26 from hole 5 to hole 13.
+- **On the front, at the lower end:** R7 and R8 lie flat, 2.6 high; the leads to the EVM and the pack land on
+  holes 6 of lines 19, 21 and 26.
 
-## 2. Posts: three screw posts
+## 2. Holding it: two screws, a groove and a slot (Clint's plan)
 
-| Post | Xb | Zb | X | Y | From the inside walls |
-|---|---|---|---|---|---|
-| Bottom left | 7.78 | 54.06 | −30.69 | −53.97 | 7.78 from left, 54.06 from bottom |
-| Bottom right | 58.58 | 54.06 | −30.69 | −3.17 | 64.92 from right, 54.06 from bottom |
-| Top right | 58.58 | 140.42 | +55.67 | −3.17 | 64.92 from right, 29.08 from top |
+| Corner | Held by | Where (Xb, Zb) |
+|---|---|---|
+| Lower left | M3 screw through the **one drilled hole** (line 0 hole 2) into the bottom-left post's insert | 7.78, 54.06 |
+| Lower right | M3 screw through the **lower factory hole**, drilled out from 2.8 to 3.2, into a new bottom-right post | 84.09, 54.06 |
+| Upper left | The left wall's groove (section 3), as now | left edge, Zb 58.56 up |
+| Upper right | A **slot in the right corner post** (section 6), 4.0 deep; the upper factory hole is unused | right edge, Zb 72.73 up |
 
-- **Spacing:** 50.80 across (20 holes) and 86.36 along (34 holes). These are the board's line 0 / line 20, holes
-  2 / 36. The bottom-left screw goes through the tab.
-- **The wider board keeps these three posts and screws.** No new screw post is needed in Clint's printed base:
-  - The B4 socket (1x26, hole 13) ends at line 26. The B3 socket, now at hole 35, stays 1x18 and ends at Xb 54.81. The
-    s20.36 screw head (Xb 55.73 to 61.43, Zb 137.57 to 143.27) overlaps it along Zb but clears it by 0.92 along Xb.
-  - Line 20 carries the charger battery + only from hole 5 up, clear of the s20.2 post (its edge at Zb 57.56).
-  - Lines 21 to 29 (Xb 61 to 82.7) overhang the right-hand posts by up to 24. Only the right end of B4's socket
-    pushes there. A **support pad** takes it: Ø6, from the floor (Yb 0) to Yb 8.0, no bore, under line 28, hole 13
-    (**Xb 78.90, Zb 82.00**), behind the right end of B4's socket. Nothing else is on line 28, and the line 26 socket
-    tail and bus wire (Xb 73.82) are 1.8 from its edge. New prints mould it with the posts. **In Clint's printed
-    base:** print it as a separate Ø6 × 8.0 spacer and glue it to the floor there.
-- **Post:** a round boss, from the floor (Yb 0) to a flat top at **Yb 8.0**, with an R1.0 fillet at its foot.
-  - **Bottom left: Ø8.0, with a flat on its +Xb side 3.5 from its centre** (at Xb 11.28). This is as first specified
-    and as Clint printed it. It leaves 1.2 round the knurl on the flat side, 1.7 elsewhere, and 0.31 to the mux.
-  - **Bottom right and top right: Ø7.0.** That leaves 1.2 round the knurl.
-- **Insert bore:** **Ø4.0 × 6.5 deep** from the post top, for an M3 × 5.7 heat-set insert. It's a blind hole, with
-  1.5 of post left under it.
-- **Screws:** M3 × 6 button head (ISO 7380: head Ø5.7, 1.65 high), no washer, through 3.2 holes drilled in the board.
-  - Each head covers its neighbouring holes on the front: line 1 holes 1 to 3 at s0.2, and line 19 holes 1 to 3 at
-    s20.2. Nothing is in those holes, and the PAD3U's pads are on the back only.
-  - The tops of the two bottom heads are at Yb 11.25. The EVM's envelope starts at Yb 11.6, so they clear it by only
-    0.35. That envelope (`evm`) is `[TBD-MEASURE]`: the EVM's back edge there is its bare board.
+- **Screws: M3, not M4.** The factory hole is Ø2.8, so either size means drilling it out (3.2 for M3, 4.2 for
+  M4). An M4 button head (ISO 7380: Ø7.6, 2.2 high) would reach Yb 11.8 there, 0.2 into the EVM's envelope (Yb 11.6,
+  up to Zb 52.5). The M3 head (Ø5.7, 1.65) clears it by 0.35, as the old screws did. Use M4 only if the EVM measures
+  further forward.
+- **The drilled hole is 1.27 from the scored edge**, so it opens 0.3 into it. Drill it before snapping the edge;
+  the head clamps 4 mm of FR4 beside it. That is the price of keeping the bottom-left post where Clint printed it
+  without the old tab.
+- **Posts** (round, from the floor to a flat top at **Yb 8.0**, R1.0 fillet at the foot, insert bore **Ø4.0 × 6.5**
+  for an M3 × 5.7 heat-set insert):
+  - **Bottom left: Ø8.0 with a flat** on its +Xb side 3.5 from its centre (as Clint printed it): 0.31 to the mux.
+  - **Bottom right: Ø7.0 at (84.09, 54.06).** Below the right corner post (which starts at Zb 72.73); clear of the
+    EVM (it is in front, from Yb 11.6) and of the charger's right rib (Xb 94.75).
+- **Plain pads** (Ø6, floor to Yb 8.0, no bore, no hole in the board) under **s20.2, s20.36 and s28.13**: they take
+  the cards' push between the screws.
 
-**Why the right posts are Ø7:** at Ø7 they clear line 18's pads by 0.7. Press their inserts slowly, with the iron a
-little cooler.
+## 3. The left edge: a groove
 
-## 3. The left edge above the tab: a groove
+The board's left edge sits in a **groove** in the left wall's slot-side face (Xb 8.5), as before:
 
-A screw at the fourth corner (Xb 7.78, Zb 140.42) won't work. It is inside the left wall's slot side (Xb 6.5 to 8.5,
-Zb 72.73 to 150.61), and its head would hit B3's socket at hole 35. Instead, the board's left edge above the tab sits
-in a **groove**:
+- **Section:** Xb 6.0 to 8.5 (2.5 deep), Yb 8.0 to 10.1, a 45° chamfered roof up to the wall face. The board's edge
+  (Xb 6.51) is 1.99 under the roof.
+- **Below the wall, a rail** carries the groove down to **Zb 58.56**, 0.5 above the bottom-left post.
 
-- **In the left wall** (section 6): in its slot-side face (the face at Xb 8.5), Zb 72.73 to 150.61.
-- **Below the wall, a rail:** a block Xb 0 to 8.5, Yb 0 to 13.6, **Zb 58.56 to 72.73**, joined to the wall's foot
-  and moulded on the base's left wall and floor. The same groove runs through it.
-  - It stops 0.5 above the bottom-left post (top at Zb 58.06) and 0.69 above the tab (Zb 57.87).
-  - It is well above the charger: the EVM's envelope tops out at Zb 52.5.
-- **Section:** Xb 6.0 to 8.5 (2.5 deep, with 0.5 clearance past the board's edge), Yb 8.0 to 10.1.
-- **Floor:** the groove floor is at **Yb 8.0**, level with the post tops. It holds up the board's left edge.
-- **Roof:** a 45° chamfer, rising from (Xb 6.0, Yb 10.1) to the wall face (Yb 12.6), so it prints without support.
-- **If your base was printed to the first spec** (three posts, groove in the wall only): add the rail if you can. If
-  not, the left edge is unsupported between the tab and Zb 72.73, but the bottom-left screw holds that corner.
+## 4. Fitting it, and the checks
 
-**To fit the board:**
+**To fit the board** (every card out):
 
-1. Lower it onto the posts 2.5 to the right (+Xb). The tab is then at Xb 6.47 to 9.01, under the rail's foot.
-2. Slide it left: the edge goes into the groove, and the tab comes to rest on the bottom-left post.
-3. Drive the three screws.
+1. Tilt it and push its factory right edge into the right corner post's slot, to the slot's end (Xb 89.80). Its
+   left edge is then at Xb 9.39, 0.89 clear of the left wall's face (8.5), so the left side comes down past it.
+2. Lower the left side onto the posts and pads, then slide the board 2.88 left: its left edge goes into the groove,
+   the right edge stays 1.12 in the slot, and the two screw holes come over the inserts.
+3. Drive the two M3 × 6 button-head screws.
 
-## 4. Checks
+The factory right edge's position is `[TBD-MEASURE]`. With the 4.0 slot the fit works with the edge up to 6.17
+past line 29's centres, 0.69 more than BusBoard's numbers give (5.48); past that, sand it back.
 
-- The post tops and the groove floor are all at Yb 8.0, flat to ±0.1.
-- Every post centre falls on a board hole, on the 2.54 grid listed above.
-- Nothing printed lies inside the board outline or the tab at Yb above 8.0, except the groove roof over the board's
-  left 2 mm. This holds in place and shifted 2.5 to the right (the slide-in).
-- The board has 2.5 of free travel to the right before anything stops it: 3.09 to the right corner post (Xb 85.8).
-- The tab's edge (Xb 3.97) is clear of the base's left wall (Xb 0). The EVM is 2.0 in front of the board's front face.
-- The screw heads cover no used hole and meet nothing printed; they clear the EVM's envelope (0.35, see section 2).
-- The rail starts above the tab and the bottom-left post.
-- The support pad's top is at Yb 8.0, under no used pad, wire or tail.
+**Checks** (`cage/cage.py` backplane_checks, `layout/layout_checks.py` L7):
+
+- The post and pad tops and the groove and slot floors are all at Yb 8.0.
+- The bottom-left post is on the drilled hole; the bottom-right post is on the lower factory hole, computed from the
+  scan's 2.65 past line 29 (L7). The two factory holes are 35 pitches apart, and neither ring reaches the edge.
+- Nothing printed is inside the board's slab above Yb 8.0, except the groove's and the slot's roofs, in place and
+  pushed to the slot's end.
+- The screw heads cover no used hole, meet nothing printed and clear the EVM's envelope by 0.35.
+- The mux clears every post and pad, in place and pushed right.
+
+## 5a. Clint's printed base (first spec)
+
+It has the bottom-left post (Ø8, flat), posts at s20.2 and s20.36 (Ø7, inserts) and the groove in the wall. For
+this board:
+
+- **Keep:** the bottom-left post (the one drilled hole lands on it) and the s20.2 and s20.36 posts as plain supports
+  (leave their screws out).
+- **Add, glued to the floor:** a printed **Ø7 × 8.0 standoff with an M3 insert at (84.09, 54.06)** for the
+  lower-right screw, and the Ø6 × 8.0 spacer at s28.13 as before.
+- **The right corner post (Xb 85.8):** the board's right edge reaches Xb 86.92, 1.12 into it. Without the slot the
+  board does not go in. Either cut the slot into the printed post by hand (Xb 85.8 to 89.8, Yb 8.0 to 10.1, from
+  Zb 72.73 up: a hot knife or a file), or reprint the post. If the base has no right corner post, glue a second
+  standoff with an M3 insert under the upper factory hole (84.09, 142.96), drill that hole out to 3.2 as well, and
+  use three screws.
+- **No rail?** Then the left edge is free between Zb 54 and 72.73; the bottom-left screw holds that corner.
 
 ## 6. Card guides: the left wall, the right corner post and the retention bar
 
@@ -135,6 +142,8 @@ base has no card slots, so these heights are for new prints.
   147.0. Each bore is Ø4.0 × 6.5 deep. *These positions are my call; the model doesn't fix them yet.*
 
 **Right corner post:** a block Xb 85.8 to 93.8, Yb 0 to 21.96, Zb 72.73 to 150.61.
+
+- **Backplane slot:** in its −Xb face, **Xb 85.8 to 89.8 (4.0 deep), Yb 8.0 to 10.1**, the post's full length, a 45° chamfered roof up to the face. It takes the board's factory right edge (section 4).
 
 - **Card slots:** cut into its −Xb face (the face at Xb 85.8), **2.3 deep** (Xb 85.8 to 88.1), from Yb 9.6 to
   22.06, which is through its front.

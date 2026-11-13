@@ -472,7 +472,7 @@ def check_cage(ph):
                  f"screws and the EVM's leads use that room); the SHTC3 is {heat:.0f} mm above the EVM")
     if cage.EVM_TOP > cage.BP_BOTTOM and cage.EVM_Y0 - st.BP_FRONT < 2.0:
         fail("L7", "the EVM is less than 2 mm in front of the backplane")
-    bp = st.Box(st.BP_TAB[0], 0.0, st.strip_x(20) + 1.27, st.BP_FRONT,
+    bp = st.Box(st.BP_OUTLINE[0], 0.0, st.strip_x(20) + 1.27, st.BP_FRONT,
                 st.BP_Z0 - 2 * st.P, st.BP_Z0 + (st.BP_HOLES + 1) * st.P, "backplane, its posts and the mux behind it")
     for c in cage.contents():
         if overlap(c, bp):
@@ -481,7 +481,7 @@ def check_cage(ph):
         fail("L7", f"the charger ({top_power:.1f}) reaches B4's underside ({under_b4:.1f})")
     span = (st.BP_HOLES - 1) * st.P
     NOTES.append(f"backplane: PAD3U piece {st.BP_STRIPS + 1} x {st.BP_HOLES} holes ({(st.BP_STRIPS + 1) * st.P:.1f} x "
-                 f"{span + st.P:.1f} mm) plus the tab, {len(st.BP_BUS)} bus wires (18 bus lines, B4's power lines), sockets at holes " + ", ".join(f"{b} {st.SOCKET_HOLE[b]}" for b in st.ORDER)
+                 f"{span + st.P:.1f} mm) from the plated end, {len(st.BP_BUS)} bus wires (18 bus lines, B4's power lines), sockets at holes " + ", ".join(f"{b} {st.SOCKET_HOLE[b]}" for b in st.ORDER)
                  + f"; copper face {st.BP_BACK:g} mm off the back wall")
     so = st.bp_sheet_outline()
     if any(abs(a - b) > 0.01 for a, b in zip(so, st.BP_OUTLINE)):
@@ -490,6 +490,27 @@ def check_cage(ph):
     else:
         NOTES.append(f"backplane: the build sheet's cut outline (edges: {', '.join(f'{k} {v}' for k, v in st.BP_EDGES.items())}) "
                      f"is the checked outline, Xb {so[0]:.2f}-{so[2]:.2f}, Zb {so[1]:.2f}-{so[3]:.2f}")
+    # the PAD3U's factory mounting holes (measured, sources pad3u_mount) on their posts
+    d, ring, off, sep = S.val("pad3u_mount")
+    fx = st.strip_x(st.BP_STRIPS) + off
+    holes = {"lower right": (fx, st.BP_Z0 + st.P), "upper right": (fx, st.BP_Z0 + st.P + sep)}
+    if abs(sep - 35 * st.P) > 0.1:
+        fail("L7", f"the factory holes are {sep:.2f} apart, not the 35 pitches (88.90) of the 2nd and 37th holes")
+    for name, (hx, hz) in holes.items():
+        if hx + ring / 2 > st.BP_OUTLINE[2] - 0.3:
+            fail("L7", f"the {name} factory hole's ring is within 0.3 of the board's right edge")
+    posts = dict(zip(cage.BP_POST_WHAT, cage.BP_POSTS))
+    lx, lz = holes[st.BP_FACTORY_SCREW]
+    px, pz = next(v for k, v in posts.items() if "factory" in k)
+    if math.hypot(px - lx, pz - lz) > 0.05:
+        fail("L7", f"the {st.BP_FACTORY_SCREW} factory hole ({lx:.2f}, {lz:.2f}) is not on its post ({px:.2f}, {pz:.2f})")
+    dx, dz = st.bp_xy(st.BP_SCREWS[0])
+    qx, qz = next(v for k, v in posts.items() if "drilled" in k)
+    if math.hypot(qx - dx, qz - dz) > 0.05:
+        fail("L7", f"the drilled hole {st.BP_SCREWS[0]} ({dx:.2f}, {dz:.2f}) is not on its post ({qx:.2f}, {qz:.2f})")
+    NOTES.append(f"backplane: the {st.BP_FACTORY_SCREW} factory hole ({lx:.2f}, {lz:.2f}) and the drilled "
+                 f"{st.BP_SCREWS[0]} land on their posts; the upper factory hole ({holes['upper right'][0]:.2f}, "
+                 f"{holes['upper right'][1]:.2f}) is unused, the edge held by the right post's slot")
     if max(st.SOCKET_HOLE.values()) > st.BP_HOLES:
         fail("L7", "a socket is past the end of the backplane")
     mx = st.MUX_BOX
@@ -781,10 +802,12 @@ def check_mech():
          "unscrew its leads at its terminals (they run to the backplane, not to a card), flex the clip, slide it "
          "toward the lid on its service loops",
          "its underside parts (J6, tails: 4 mm [TBD-MEASURE]) must clear the 2 mm ledges at the edges")
-    mech("Backplane on its posts", "three M3 screws (s0.2 through the board's tab, s20.2, s20.36) into heat-set inserts in "
-         "three round floor posts; the left edge above the tab in the left wall's groove and its rail (lowered 2.5 right, slid left into it)",
-         "the posts and the groove floor take the card insertion push", "undo the three screws, slide it 2.5 right, "
-         "lift it out, after every card is out", "removable only after all four cards are out")
+    mech("Backplane on its posts", "two M3 screws (the drilled s0.2, and the PAD3U's lower factory hole drilled out to 3.2) "
+         "into heat-set inserts in two round floor posts; the left edge in the left wall's groove and its rail, the factory "
+         "right edge in a 4.0 slot in the right corner post (tilted into the slot, slid left into the groove)",
+         "the posts, three plain pads and the groove and slot floors take the card insertion push", "undo the two screws, "
+         "slide it right to the slot's end, lift the left side, out, after every card is out",
+         "removable only after all four cards are out")
     mech("Lid to the printed base", f"four M4 stainless screws on {S.val('m4_washer')[0]:g} mm washers through the "
          f"lid's 8 mm holes into M4 heat-set inserts ({S.val('insert_m4')[0]:g} mm holes, 3 mm of wall round each) in "
          "the base's corner posts, 156 x 109 apart (9.75 / 10.25 in from the lid's edges, cage/lid-rim-spec.md; option b, recommended over a printed "

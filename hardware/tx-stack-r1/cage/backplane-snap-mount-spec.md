@@ -1,5 +1,8 @@
 # Backplane snap mount, for newer printed bases: build spec
 
+> **Superseded (2026-11-13):** the backplane is now the PAD3U's plated end with its factory right edge in a slot in
+> the right corner post (`backplane-mount-spec.md`). The hook positions below are for the old 82.71 edge.
+
 This spec is for **new** bases only. The base Clint has already printed keeps its posts and screws (see
 `backplane-mount-spec.md`).
 

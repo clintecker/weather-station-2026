@@ -380,17 +380,19 @@ w("lead", ("RT1", "1"), ("U1", "TS"), "top", "thermistor to EVM J7")
 w("lead", ("RT1", "2"), ("U1", "TSN"), "top", "thermistor return to EVM J7")
 
 # ------------------------------------------------------------------ the backplane (BusBoard PAD3U padboard)
-# A piece 21 x 39 holes cut from a PAD3U (a separate plated pad per hole, no strips). Hole lines run vertically
-# (along Zb); on line i (1..18) a tinned bus wire on the back (copper) face is soldered at every used pad and
-# carries bus line i; line 19 is spare, lines 0 and 20 take the three mounting screws; line 0's edge runs in the left-wall groove above a tab. Hole n along a line is at
+# The plated end of a PAD3U (a separate plated pad per hole, no strips): its 30 rows nearest the factory mounting
+# holes become lines 0-29, each the full 38 holes. Lines run vertically (along Zb); on line i (1..18) a tinned bus
+# wire on the back (copper) face is soldered at every used pad and carries bus line i. Hole n along a line is at
 # Zb = BP_Z0 + (n - 1) P. Each card's socket pins sit in one hole row. Nothing connects unless a wire does.
-BP_STRIPS = 29       # lines 0..29 (cut 30 wide, plus the tab): the widest the 2.5 fitting slide allows before the
-#                      right corner post (Xb 85.8)
-BP_HOLES = 39
-BP_SCREWS = ("s0.2", "s20.2", "s20.36")   # drilled 3.2 mm for the M3 screws to the three floor posts (bottom left,
-#                                          bottom right, top right); the left edge above the tab runs in the left wall's
-#                                          groove and its rail (cage/backplane-mount-spec.md)
-BP_TAB_HOLES = 3     # the L: line -1 left on for holes 1-3, so s0.2 has FR4 round it (a hacksaw cut at the inside corner)
+# Edges: the right (beyond line 29, with the two factory mounting holes), the top and the bottom are the PAD3U's own;
+# only the left edge is scored, midway between lines -1 and 0. Held (cage/backplane-mount-spec.md): lower left by
+# an M3 screw through the one drilled hole (s0.2), lower right by an M3 screw through the lower factory hole,
+# the right edge in a slot in the right corner post, the left edge in the left wall's groove.
+BP_STRIPS = 29       # lines 0..29: line 29 is the plated end's last row
+BP_HOLES = 38        # the PAD3U's full 38 across
+BP_SCREWS = ("s0.2",)   # the one hole drilled (3.2, M3 to the bottom-left post); 1.27 from the scored edge, so it opens
+#                        into it: drill before snapping the edge
+BP_SUPPORTS = ("s20.2", "s20.36", "s28.13")   # plain pads under the board (no screw, no hole)
 CAGE_LEFT = S.val("cage_wall") - 2.0              # card left edge, box frame (slots 2 mm deep in the left wall)
 BP_X0 = CAGE_LEFT + X(0) - P / 2                  # backplane left edge: half a pitch outside line 0 (line 1 under card row 1)
 FLOOR_LIFT = 0.0                   # the printed base's floor is the cage's: everything stands on it
@@ -473,20 +475,28 @@ for _i in range(1, BP_STRIPS + 1):
         BP_BUS.append((_i, sorted(_used.get(_i, ()))))
 MUX_BOX = (strip_x(2) - 1.27, BP_Z0 + 0.5 * P, strip_x(2) - 1.27 + S.val("mux_w"),
            BP_Z0 + 0.5 * P + S.val("mux_d"))   # on foam on the copper side behind holes 1.5-9.5: Xb and Zb extents
-BP_OUTLINE = (BP_X0, BP_Z0 - P / 2, CAGE_LEFT + X(BP_STRIPS) + P / 2, BP_Z0 + (BP_HOLES - 0.5) * P)   # Xb0, Zb0, Xb1, Zb1
-BP_TAB = (BP_X0 - P, BP_Z0 - P / 2, BP_X0, BP_Z0 + (BP_TAB_HOLES - 0.5) * P)   # the tab (line -1, holes 1-N), same order
+# the PAD3U's factory mounting holes (pad3u_mount, measured from Clint's scan): beyond line 29, on holes 2 and 37
+_MD, _MRING, _MOFF, _MSPAN = S.val("pad3u_mount")
+BP_FACTORY = {"lower right": (strip_x(BP_STRIPS) + _MOFF, BP_Z0 + P),
+              "upper right": (strip_x(BP_STRIPS) + _MOFF, BP_Z0 + P + _MSPAN)}
+BP_FACTORY_SCREW = "lower right"   # drilled out from 2.8 to 3.2 for an M3 screw to the bottom-right post
 # how each edge of the piece is made (build/BACKPLANE.md section 1): "cut" = scored midway between two hole rows
-# (pad_margin from the hole centres); "factory" = the PAD3U's own edge (pad3u_factory_margin: 3.05 across, 2.54 along)
-BP_EDGES = {"left": "cut", "right": "cut", "bottom": "cut", "top": "cut"}
-BP_RIGHT_TOL = 0.5   # the sheet lets the right edge sit this much past its 1.27; cage.backplane_checks keeps that much spare travel
+# (pad_margin from the hole centres); "factory" = the PAD3U's own edge (pad3u_edges and pad3u_plated_edge)
+BP_EDGES = {"left": "cut", "right": "factory", "bottom": "factory", "top": "factory"}
 
 
 def bp_sheet_outline():
-    """The main piece's outline (Xb0, Zb0, Xb1, Zb1) as the build sheet's cut step makes it."""
-    fa, fl = S.val("pad3u_factory_margin")
-    m = {k: (S.val("pad_margin") if v == "cut" else (fa if k in ("left", "right") else fl)) for k, v in BP_EDGES.items()}
+    """The piece's outline (Xb0, Zb0, Xb1, Zb1) as the build sheet makes it: each edge cut or the PAD3U's own."""
+    side, _far, _w = S.val("pad3u_edges")
+    fac = {"left": None, "right": _MOFF + S.val("pad3u_plated_edge"), "bottom": side, "top": side}
+    m = {k: (S.val("pad_margin") if v == "cut" else fac[k]) for k, v in BP_EDGES.items()}
     return (strip_x(0) - m["left"], BP_Z0 - m["bottom"], strip_x(BP_STRIPS) + m["right"],
             BP_Z0 + (BP_HOLES - 1) * P + m["top"])
+
+
+_side = S.val("pad3u_edges")[0]
+BP_OUTLINE = (BP_X0, BP_Z0 - _side, strip_x(BP_STRIPS) + _MOFF + S.val("pad3u_plated_edge"),
+              BP_Z0 + (BP_HOLES - 1) * P + _side)   # Xb0, Zb0, Xb1, Zb1
 BP_USED = {(i, n) for i, ns in _used.items() for n in ns} | {tuple(int(v) for v in h[1:].split(".")) for _r, _p, _n in BP_PARTS
                                                           for h in _p.values()}   # (line, hole) with anything in it
 

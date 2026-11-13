@@ -575,11 +575,8 @@ def assembly_boxes(explode=0.0, section=False):
                 bx = sh(lc.to_box(b, x), 0, explode, 0)
                 out.append(("part:" + st.KIND[next(pl["fp"] for _b, pl in st.placements() if pl["ref"] == ref)][0], bx))
     p = st.P
-    out.append(("backplane", st.Box(st.strip_x(0) - p / 2, st.BP_BACK, st.strip_x(20) + p / 2, st.BP_FRONT,
-                                    st.BP_Z0 - p / 2 - S.val("pad_margin"),
-                                    st.BP_Z0 + (st.BP_HOLES - 0.5) * p + S.val("pad_margin"), "backplane")))
-    tx0, tz0, tx1, tz1 = st.BP_TAB
-    out.append(("backplane", st.Box(tx0, st.BP_BACK, tx1, st.BP_FRONT, tz0, tz1, "backplane tab (line -1, holes 1-3)")))
+    ox0, oz0, ox1, oz1 = st.BP_OUTLINE
+    out.append(("backplane", st.Box(ox0, st.BP_BACK, ox1, st.BP_FRONT, oz0, oz1, "backplane")))
     for b in st.BOARDS:
         z = st.bp_xy(f"s1.{st.SOCKET_HOLE[b]}")[1]
         xa, xb, y0, y1 = st.strip_x(1) - p / 2, st.strip_x(st.model.HDR_LEN[b]) + p / 2, st.BP_FRONT, st.BP_FRONT + S.val("socket_h")
