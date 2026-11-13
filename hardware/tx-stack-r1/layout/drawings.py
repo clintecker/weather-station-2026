@@ -244,16 +244,22 @@ def top_view(b, ph):
 def backplane_view(ph):
     KB = 7.0
     n_strips = st.BP_STRIPS + 1
-    W = M * 2 + n_strips * st.P * KB + 900
+    W = M * 2 + (n_strips + 1) * st.P * KB + 900
     H = M * 2 + (st.BP_HOLES + 2) * st.P * KB + 40
 
     def bx(i):
-        return M + (i + 0.5) * st.P * KB
+        return M + (i + 1.5) * st.P * KB          # line -1 (the tab) is the first column
 
     def bz(n):
         return H - M - (n + 0.5) * st.P * KB
     g = Svg(W, H)
     g.rect(bx(0) - st.P * KB / 2, bz(st.BP_HOLES + 0.5), bx(st.BP_STRIPS) + st.P * KB / 2, bz(0.5), "#B3202A", "#5a0e12", 1.2)
+    g.rect(bx(-1) - st.P * KB / 2, bz(st.BP_TAB_HOLES + 0.5), bx(0) - st.P * KB / 2 + 2, bz(0.5), "#B3202A", "#5a0e12", 1.2)
+    for n in range(1, st.BP_TAB_HOLES + 1):
+        g.add(f'<rect x="{bx(-1) - 0.8 * KB:.1f}" y="{bz(n) - 0.8 * KB:.1f}" width="{1.6 * KB:.1f}" height="{1.6 * KB:.1f}" '
+              f'rx="2" fill="#D4AF37" stroke="#7a5c12" stroke-width="0.5"/>')
+        g.add(f'<circle cx="{bx(-1):.1f}" cy="{bz(n):.1f}" r="{0.47 * KB:.1f}" fill="#2b2b2b"/>')
+    g.text(bx(-1), bz(st.BP_TAB_HOLES + 1.2), "-1 (tab)", 10, "middle")
     bus = dict(st.BP_BUS)
     for i in range(n_strips):
         g.text(bx(i), bz(st.BP_HOLES + 1.2), i, 10, "middle")
@@ -272,12 +278,12 @@ def backplane_view(ph):
         i, n = (int(v) for v in h[1:].split("."))
         g.add(f'<circle cx="{bx(i):.1f}" cy="{bz(n):.1f}" r="{1.6 * KB:.1f}" fill="#fff" stroke="#000" stroke-width="1.2"/>')
     for n in range(1, st.BP_HOLES + 1, 2):
-        g.text(bx(0) - 2.5 * KB, bz(n) + 4, n, 9, "end")
+        g.text(bx(-1) - 2.5 * KB, bz(n) + 4, n, 9, "end")
     mx = st.MUX_BOX
-    g.rect(M + (mx[0] - st.strip_x(0)) * KB + st.P * KB / 2, bz((mx[3] - st.BP_Z0) / st.P + 1),
-           M + (mx[2] - st.strip_x(0)) * KB + st.P * KB / 2, bz((mx[1] - st.BP_Z0) / st.P + 1),
+    g.rect(bx(0) + (mx[0] - st.strip_x(0)) * KB, bz((mx[3] - st.BP_Z0) / st.P + 1),
+           bx(0) + (mx[2] - st.strip_x(0)) * KB, bz((mx[1] - st.BP_Z0) / st.P + 1),
            "none", "#161616", 1.6, dash="8 4")
-    g.text(M + (mx[0] + mx[2] - 2 * st.strip_x(0)) / 2 * KB, bz((mx[1] + mx[3] - 2 * st.BP_Z0) / 2 / st.P + 1),
+    g.text(bx(0) + (mx[0] + mx[2] - 2 * st.strip_x(0)) / 2 * KB, bz((mx[1] + mx[3] - 2 * st.BP_Z0) / 2 / st.P + 1),
            "PCA9548 mux (behind, on foam)", 12, "middle", weight="bold")
     for ref, pins, note in st.BP_PARTS:
         for pin, h in pins.items():
@@ -520,11 +526,11 @@ def backplane_sheet(ph):
          "on the copper side, soldered at every used pad, carries bus line n for every card. Lines run up and down in "
          "the box. Component side faces the cards (front); copper faces the back wall.", "",
          "## 1. Cut and drill", "",
-         f"1. Cut a piece {n_lines} holes across by {st.BP_HOLES} holes along from the bottom-right corner of one PAD3U, seen from the face that becomes the front, so its factory edges are its right and bottom (score both faces midway between two rows of holes, not through them, snap, sand the edges flat). The left edge (line 0) must end 0.5-1.2 mm from the near side of line 0's holes, or it will not fit the left wall's groove. Lines 0-20 across; holes 1-39 along.",
-         "2. Drill 3.2 mm through two pads on line 20, for the M3 screws to the base's two floor posts: "
+         f"1. Cut an L from the bottom-right corner of one PAD3U, seen from the face that becomes the front, so its factory edges are its right and bottom: {n_lines} holes across by {st.BP_HOLES} holes along, plus a tab one hole wide (line -1) beside holes 1-{st.BP_TAB_HOLES} at the bottom left. Score both faces midway between two rows of holes, not through them, and snap the long cuts; cut the inside corner of the L with a hacksaw (down between lines -1 and 0 to the score above hole {st.BP_TAB_HOLES}), then sand every edge flat. The left edge above the tab (line 0) must end 0.5-1.2 mm from the near side of line 0's holes, or it will not fit the left wall's groove; the tab's left edge is midway between line -2 and line -1. Lines -1 (tab) and 0-20 across; holes 1-39 along.",
+         "2. Drill 3.2 mm through three pads, for the M3 screws to the base's three floor posts: "
          + ", ".join(f"line {h[1:].split('.')[0]} hole {h[1:].split('.')[1]}" for h in st.BP_SCREWS)
-         + " (bottom right, top right). Line 0 has no screw: a 3.2 mm hole 1.27 mm from the left edge would break out "
-         "of it, and the whole left edge runs in the left wall's groove. Nothing else is soldered on lines 0 and 20.",
+         + " (bottom left, bottom right, top right). The tab leaves about 2.2 mm of board left of the line 0 hole. Line 0 has no "
+         "screw higher up: its left edge sits in the left wall's groove. Nothing else is soldered on lines -1, 0 and 20.",
          "3. Meter two neighbouring pads anywhere: open (the board has no strips).", "",
          "## 2. Sockets (one per card; pin n on line n)", "", "| Socket | Card | Hole along the lines |", "|---|---|---|"]
     for ref, pins, note in st.BP_PARTS:
@@ -561,14 +567,14 @@ def backplane_sheet(ph):
           "copper side over holes 2-9, below the B4 socket and clear of the bus wires (they start at hole 10); its "
           "five header pads take short leads to hole 10.", "",
           "## 6. Fit it in the base (`cage/backplane-mount-spec.md`)", "",
-          f"1. Copper side back, mux behind it: lower the board onto the two posts {S.val('bp_groove')[2]:g} mm to the "
+          f"1. Copper side back, mux behind it: lower the board onto the three posts {S.val('bp_groove')[2]:g} mm to the "
           "right of its place (toward the right wall), its copper face down on the post tops; its left edge is then "
           "clear of the left wall.",
           f"2. Slide it {S.val('bp_groove')[2]:g} mm left, flat on the posts, until its left edge is in the left wall's "
-          "groove and the rail below it, from top to bottom (it stops 0.5 short of the groove's floor; the lowest 4 mm, "
-          "beside the EVM, stays out of it), and the two drilled holes are over the posts' inserts. The mux moves with "
-          "it and stays clear of the bottom-right post.",
-          "3. Drive the two M3 x 6 button-head screws (ISO 7380, no washers). It comes out the same way, after every "
+          "groove and the rail below it, down to just above the tab (it stops 0.5 short of the groove's floor), the tab "
+          "lands on the bottom-left post, and the three drilled holes are over the posts' inserts. The mux moves with it "
+          "and clears the bottom-left post's flat and the bottom-right post in both places.",
+          "3. Drive the three M3 x 6 button-head screws (ISO 7380, no washers). It comes out the same way, after every "
           "card is out.", "",
           "## 7. Hole by hole", "", "Every pad that has anything soldered in it; every other pad stays bare.", "",
           "| Line | Hole | What is in it | Bus wire |", "|---|---|---|---|"]
@@ -632,8 +638,8 @@ def assembly_sheet():
          "outside against UV.",
          "4. Fit the glands in the bottom wall's bosses (six 12.0 mm holes for PG-7s #762, the round port cables; two "
          "15.5 mm for PG-9s #761, the flat wind and rain cables, right column), the M12 vent, and the SMA bulkhead in "
-         "the right wall's boss. Fit the backplane (its build sheet, section 6): lowered onto its two posts 2.5 mm "
-         "right of its place, slid left into the left wall's groove (the whole left edge), two M3 screws; it comes off again only after "
+         "the right wall's boss. Fit the backplane (its build sheet, section 6): lowered onto its three posts 2.5 mm "
+         "right of its place, slid left into the left wall's groove, three M3 screws (one through the tab); it comes off again only after "
          "every card is out.",
          "5. Shelves bottom to top: the pack on its tray (strap); the EVM (Bumpon feet peeled off) slid back on its "
          "ledges to the stop, clip at the front, leads with service loops; then the cards.",

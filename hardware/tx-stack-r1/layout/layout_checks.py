@@ -437,7 +437,7 @@ def check_cage(ph):
                  f"screws and the EVM's leads use that room); the SHTC3 is {heat:.0f} mm above the EVM")
     if cage.EVM_TOP > cage.BP_BOTTOM and cage.EVM_Y0 - st.BP_FRONT < 2.0:
         fail("L7", "the EVM is less than 2 mm in front of the backplane")
-    bp = st.Box(st.strip_x(0) - 1.27, 0.0, st.strip_x(20) + 1.27, st.BP_FRONT,
+    bp = st.Box(st.BP_TAB[0], 0.0, st.strip_x(20) + 1.27, st.BP_FRONT,
                 st.BP_Z0 - 2 * st.P, st.BP_Z0 + (st.BP_HOLES + 1) * st.P, "backplane, its posts and the mux behind it")
     for c in cage.contents():
         if overlap(c, bp):
@@ -643,9 +643,9 @@ def check_mech():
     mech("B4 and the charger", "B4's battery and sense leads are screwed into the EVM terminals",
          "the terminal screws", "unscrew the leads at the EVM before B4 slides out",
          "B4 is tethered to the charger by its leads: unscrew them first")
-    mech("Backplane on its posts", "two M3 screws (s20.2, s20.36) into heat-set inserts in two round floor posts; the "
-         "whole left edge in the left wall's groove and the rail below it (lowered 2.5 right, slid left into it)",
-         "the posts and the groove floor take the card insertion push", "undo the two screws, slide it 2.5 right, "
+    mech("Backplane on its posts", "three M3 screws (s0.2 through the board's tab, s20.2, s20.36) into heat-set inserts in "
+         "three round floor posts; the left edge above the tab in the left wall's groove and its rail (lowered 2.5 right, slid left into it)",
+         "the posts and the groove floor take the card insertion push", "undo the three screws, slide it 2.5 right, "
          "lift it out, after every card is out", "removable only after all four cards are out")
     mech("Lid to the printed base", f"four M4 stainless screws on {S.val('m4_washer')[0]:g} mm washers through the "
          f"lid's 8 mm holes into M4 heat-set inserts ({S.val('insert_m4')[0]:g} mm holes, 3 mm of wall round each) in "

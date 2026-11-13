@@ -377,13 +377,14 @@ w("lead", ("RT1", "2"), ("U1", "TSN"), "top", "thermistor return to EVM J7")
 # ------------------------------------------------------------------ the backplane (BusBoard PAD3U padboard)
 # A piece 21 x 39 holes cut from a PAD3U (a separate plated pad per hole, no strips). Hole lines run vertically
 # (along Zb); on line i (1..18) a tinned bus wire on the back (copper) face is soldered at every used pad and
-# carries bus line i; line 19 is spare, line 20 takes the two mounting screws; line 0 runs in the left-wall groove. Hole n along a line is at
+# carries bus line i; line 19 is spare, lines 0 and 20 take the three mounting screws; line 0's edge runs in the left-wall groove above a tab. Hole n along a line is at
 # Zb = BP_Z0 + (n - 1) P. Each card's socket pins sit in one hole row. Nothing connects unless a wire does.
 BP_STRIPS = 20       # lines 0..20 (cut 21 wide)
 BP_HOLES = 39
-BP_SCREWS = ("s20.2", "s20.36")   # drilled 3.2 mm for the M3 screws to the two floor posts (bottom right, top right);
-#                                  the whole left edge runs in the left wall's groove and its rail below (cage/backplane-
-#                                  mount-spec.md: a 3.2 mm hole on line 0, 1.27 from the edge, would break out of it)
+BP_SCREWS = ("s0.2", "s20.2", "s20.36")   # drilled 3.2 mm for the M3 screws to the three floor posts (bottom left,
+#                                          bottom right, top right); the left edge above the tab runs in the left wall's
+#                                          groove and its rail (cage/backplane-mount-spec.md)
+BP_TAB_HOLES = 3     # the L: line -1 left on for holes 1-3, so s0.2 has FR4 round it (a hacksaw cut at the inside corner)
 CAGE_LEFT = S.val("cage_wall") - 2.0              # card left edge, box frame (slots 2 mm deep in the left wall)
 BP_X0 = CAGE_LEFT + X(0) - P / 2                  # backplane left edge: half a pitch outside line 0 (line 1 under card row 1)
 FLOOR_LIFT = 0.0                   # the printed base's floor is the cage's: everything stands on it
@@ -455,6 +456,9 @@ for _i in range(1, 19):
 MUX_BOX = (strip_x(2) - 1.27, BP_Z0 + 0.5 * P, strip_x(2) - 1.27 + S.val("mux_w"),
            BP_Z0 + 0.5 * P + S.val("mux_d"))   # on foam on the copper side behind holes 1.5-9.5: Xb and Zb extents
 BP_OUTLINE = (BP_X0, BP_Z0 - P / 2, CAGE_LEFT + X(BP_STRIPS) + P / 2, BP_Z0 + (BP_HOLES - 0.5) * P)   # Xb0, Zb0, Xb1, Zb1
+BP_TAB = (BP_X0 - P, BP_Z0 - P / 2, BP_X0, BP_Z0 + (BP_TAB_HOLES - 0.5) * P)   # the tab (line -1, holes 1-N), same order
+BP_USED = {(i, n) for i, ns in _used.items() for n in ns} | {tuple(int(v) for v in h[1:].split(".")) for _r, _p, _n in BP_PARTS
+                                                          for h in _p.values()}   # (line, hole) with anything in it
 
 # ------------------------------------------------------------------ cables and matings (off the cards)
 CABLES = [(("BT1", "+"), ("PG1", "M+")), (("BT1", "-"), ("PG1", "M-")),
