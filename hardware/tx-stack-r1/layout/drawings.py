@@ -521,10 +521,10 @@ def backplane_sheet(ph):
          "the box. Component side faces the cards (front); copper faces the back wall.", "",
          "## 1. Cut and drill", "",
          f"1. Cut a piece {n_lines} holes across by {st.BP_HOLES} holes along from the bottom-right corner of one PAD3U, seen from the face that becomes the front, so its factory edges are its right and bottom (score both faces midway between two rows of holes, not through them, snap, sand the edges flat). The left edge (line 0) must end 0.5-1.2 mm from the near side of line 0's holes, or it will not fit the left wall's groove. Lines 0-20 across; holes 1-39 along.",
-         "2. Drill 3.2 mm through three pads, for the M3 screws to the base's three floor posts: "
+         "2. Drill 3.2 mm through two pads on line 20, for the M3 screws to the base's two floor posts: "
          + ", ".join(f"line {h[1:].split('.')[0]} hole {h[1:].split('.')[1]}" for h in st.BP_SCREWS)
-         + " (bottom left, bottom right, top right). The top-left corner has no screw: the board's left edge sits in "
-         "the left wall's groove. Nothing else is soldered on lines 0 and 20.",
+         + " (bottom right, top right). Line 0 has no screw: a 3.2 mm hole 1.27 mm from the left edge would break out "
+         "of it, and the whole left edge runs in the left wall's groove. Nothing else is soldered on lines 0 and 20.",
          "3. Meter two neighbouring pads anywhere: open (the board has no strips).", "",
          "## 2. Sockets (one per card; pin n on line n)", "", "| Socket | Card | Hole along the lines |", "|---|---|---|"]
     for ref, pins, note in st.BP_PARTS:
@@ -561,13 +561,14 @@ def backplane_sheet(ph):
           "copper side over holes 2-9, below the B4 socket and clear of the bus wires (they start at hole 10); its "
           "five header pads take short leads to hole 10.", "",
           "## 6. Fit it in the base (`cage/backplane-mount-spec.md`)", "",
-          f"1. Copper side back, mux behind it: lower the board onto the three posts {S.val('bp_groove')[2]:g} mm to the "
+          f"1. Copper side back, mux behind it: lower the board onto the two posts {S.val('bp_groove')[2]:g} mm to the "
           "right of its place (toward the right wall), its copper face down on the post tops; its left edge is then "
           "clear of the left wall.",
           f"2. Slide it {S.val('bp_groove')[2]:g} mm left, flat on the posts, until its left edge is in the left wall's "
-          "groove (it stops 0.5 short of the groove's floor) and the three drilled holes are over the posts' inserts. "
-          "The mux moves with it and clears the bottom-left post's flat in both places.",
-          "3. Drive the three M3 x 6 button-head screws (ISO 7380, no washers). It comes out the same way, after every "
+          "groove and the rail below it, from top to bottom (it stops 0.5 short of the groove's floor; the lowest 4 mm, "
+          "beside the EVM, stays out of it), and the two drilled holes are over the posts' inserts. The mux moves with "
+          "it and stays clear of the bottom-right post.",
+          "3. Drive the two M3 x 6 button-head screws (ISO 7380, no washers). It comes out the same way, after every "
           "card is out.", "",
           "## 7. Hole by hole", "", "Every pad that has anything soldered in it; every other pad stays bare.", "",
           "| Line | Hole | What is in it | Bus wire |", "|---|---|---|---|"]
@@ -631,8 +632,8 @@ def assembly_sheet():
          "outside against UV.",
          "4. Fit the glands in the bottom wall's bosses (six 12.0 mm holes for PG-7s #762, the round port cables; two "
          "15.5 mm for PG-9s #761, the flat wind and rain cables, right column), the M12 vent, and the SMA bulkhead in "
-         "the right wall's boss. Fit the backplane (its build sheet, section 6): lowered onto its three posts 2.5 mm "
-         "right of its place, slid left into the left wall's groove, three M3 screws; it comes off again only after "
+         "the right wall's boss. Fit the backplane (its build sheet, section 6): lowered onto its two posts 2.5 mm "
+         "right of its place, slid left into the left wall's groove (the whole left edge), two M3 screws; it comes off again only after "
          "every card is out.",
          "5. Shelves bottom to top: the pack on its tray (strap); the EVM (Bumpon feet peeled off) slid back on its "
          "ledges to the stop, clip at the front, leads with service loops; then the cards.",

@@ -375,15 +375,15 @@ w("lead", ("RT1", "1"), ("U1", "TS"), "top", "thermistor to EVM J7")
 w("lead", ("RT1", "2"), ("U1", "TSN"), "top", "thermistor return to EVM J7")
 
 # ------------------------------------------------------------------ the backplane (BusBoard PAD3U padboard)
-# A piece 21 x 40 holes cut from a PAD3U (a separate plated pad per hole, no strips). Hole lines run vertically
+# A piece 21 x 39 holes cut from a PAD3U (a separate plated pad per hole, no strips). Hole lines run vertically
 # (along Zb); on line i (1..18) a tinned bus wire on the back (copper) face is soldered at every used pad and
-# carries bus line i; line 19 is spare, lines 0 and 20 take the three mounting screws. Hole n along a line is at
+# carries bus line i; line 19 is spare, line 20 takes the two mounting screws; line 0 runs in the left-wall groove. Hole n along a line is at
 # Zb = BP_Z0 + (n - 1) P. Each card's socket pins sit in one hole row. Nothing connects unless a wire does.
 BP_STRIPS = 20       # lines 0..20 (cut 21 wide)
 BP_HOLES = 39
-BP_SCREWS = ("s0.2", "s20.2", "s20.36")   # drilled 3.2 mm for the M3 screws to the three floor posts (bottom left,
-#                                          bottom right, top right); the top-left corner sits in the left wall's groove
-#                                          (cage/backplane-mount-spec.md: a screw at s0.36 would be inside the wall)
+BP_SCREWS = ("s20.2", "s20.36")   # drilled 3.2 mm for the M3 screws to the two floor posts (bottom right, top right);
+#                                  the whole left edge runs in the left wall's groove and its rail below (cage/backplane-
+#                                  mount-spec.md: a 3.2 mm hole on line 0, 1.27 from the edge, would break out of it)
 CAGE_LEFT = S.val("cage_wall") - 2.0              # card left edge, box frame (slots 2 mm deep in the left wall)
 BP_X0 = CAGE_LEFT + X(0) - P / 2                  # backplane left edge: half a pitch outside line 0 (line 1 under card row 1)
 FLOOR_LIFT = 0.0                   # the printed base's floor is the cage's: everything stands on it
