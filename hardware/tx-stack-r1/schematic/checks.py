@@ -340,7 +340,7 @@ def check_outdoor():
         to_gnd = to_sup = False
         for d in clamps:
             pins = {p[1]: NET_OF.get((d, p[0])) for p in PART[d]["pins"]}
-            if PART[d]["value"].startswith("1N47"):        # a zener (1N4733A) clamps both ways on its own
+            if PART[d]["value"].startswith("1N52"):        # a zener clamps both ways on its own
                 ok = pins["cathode"] == net and pins["anode"] == "GND"
                 to_gnd |= ok
                 to_sup |= ok

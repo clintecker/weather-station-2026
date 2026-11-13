@@ -241,9 +241,9 @@ def step_models(pl):
     if kind == "RLY":
         return [(lib("Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal.step"), pins["1"],
                  _rot(pins["1"], pins["2"]), 0.0)], True, ()
-    if kind in ("DSTAND", "DSTAND41"):
+    if kind == "DSTAND":
         span = "2.54" if math.dist(pins["1"], pins["2"]) < 3 else "5.08"
-        pkg = "D_DO-35_SOD27" if kind == "DSTAND" else "D_DO-41_SOD81"
+        pkg = "D_DO-35_SOD27"
         # the body stands on lead 1. KiCad's pin 1 is the cathode: AnodeUp has its body on pin 1, CathodeUp on pin 2
         if PART_VALUE[pl["ref"]].startswith("BAT85"):        # lead 1 is the anode
             return [(lib(f"Diode_THT.3dshapes/{pkg}_P{span}mm_Vertical_CathodeUp.step"), pins["2"],

@@ -528,8 +528,8 @@
 <text x="154.6" y="422.6" font-size="8.5" text-anchor="middle" fill="#000" font-weight="bold">D14</text>
 <rect x="169.5" y="415.1" width="7" height="7" fill="#F7DC6F" stroke="#000" stroke-width="1"/>
 <rect x="123.7" y="415.1" width="7" height="7" fill="#F08080" stroke="#000" stroke-width="1"/>
-<rect x="116.7" y="385.2" width="21.2" height="21.1" fill="#C04000" fill-opacity="0.22" stroke="#C04000" stroke-width="1.2"/>
-<text x="121.1" y="399.7" font-size="8.5" text-anchor="middle" fill="#000" font-weight="bold">D11</text>
+<rect x="118.2" y="386.7" width="18.0" height="18.0" fill="#C04000" fill-opacity="0.22" stroke="#C04000" stroke-width="1.2"/>
+<text x="120.3" y="399.7" font-size="8.5" text-anchor="middle" fill="#000" font-weight="bold">D11</text>
 <rect x="123.7" y="392.2" width="7" height="7" fill="#F08080" stroke="#000" stroke-width="1"/>
 <rect x="100.9" y="392.2" width="7" height="7" fill="#1A1A1A" stroke="#000" stroke-width="1"/>
 <rect x="186.8" y="386.7" width="18.0" height="18.0" fill="#C04000" fill-opacity="0.22" stroke="#C04000" stroke-width="1.2"/>
@@ -572,8 +572,8 @@
 <text x="268.9" y="422.6" font-size="8.5" text-anchor="middle" fill="#000" font-weight="bold">D24</text>
 <rect x="283.8" y="415.1" width="7" height="7" fill="#F7DC6F" stroke="#000" stroke-width="1"/>
 <rect x="238.0" y="415.1" width="7" height="7" fill="#F08080" stroke="#000" stroke-width="1"/>
-<rect x="231.0" y="385.2" width="21.2" height="21.1" fill="#C04000" fill-opacity="0.22" stroke="#C04000" stroke-width="1.2"/>
-<text x="235.4" y="399.7" font-size="8.5" text-anchor="middle" fill="#000" font-weight="bold">D21</text>
+<rect x="232.5" y="386.7" width="18.0" height="18.0" fill="#C04000" fill-opacity="0.22" stroke="#C04000" stroke-width="1.2"/>
+<text x="234.6" y="399.7" font-size="8.5" text-anchor="middle" fill="#000" font-weight="bold">D21</text>
 <rect x="238.0" y="392.2" width="7" height="7" fill="#F08080" stroke="#000" stroke-width="1"/>
 <rect x="215.2" y="392.2" width="7" height="7" fill="#1A1A1A" stroke="#000" stroke-width="1"/>
 <rect x="301.1" y="386.7" width="18.0" height="18.0" fill="#C04000" fill-opacity="0.22" stroke="#C04000" stroke-width="1.2"/>
@@ -615,8 +615,8 @@
 <text x="383.2" y="422.6" font-size="8.5" text-anchor="middle" fill="#000" font-weight="bold">D34</text>
 <rect x="398.1" y="415.1" width="7" height="7" fill="#F7DC6F" stroke="#000" stroke-width="1"/>
 <rect x="352.3" y="415.1" width="7" height="7" fill="#F08080" stroke="#000" stroke-width="1"/>
-<rect x="345.3" y="385.2" width="21.2" height="21.1" fill="#C04000" fill-opacity="0.22" stroke="#C04000" stroke-width="1.2"/>
-<text x="349.7" y="399.7" font-size="8.5" text-anchor="middle" fill="#000" font-weight="bold">D31</text>
+<rect x="346.8" y="386.7" width="18.0" height="18.0" fill="#C04000" fill-opacity="0.22" stroke="#C04000" stroke-width="1.2"/>
+<text x="348.9" y="399.7" font-size="8.5" text-anchor="middle" fill="#000" font-weight="bold">D31</text>
 <rect x="352.3" y="392.2" width="7" height="7" fill="#F08080" stroke="#000" stroke-width="1"/>
 <rect x="329.5" y="392.2" width="7" height="7" fill="#1A1A1A" stroke="#000" stroke-width="1"/>
 <rect x="415.4" y="386.7" width="18.0" height="18.0" fill="#C04000" fill-opacity="0.22" stroke="#C04000" stroke-width="1.2"/>

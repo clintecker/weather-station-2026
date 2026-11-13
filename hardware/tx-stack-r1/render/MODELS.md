@@ -12,7 +12,7 @@ tracks and silkscreen, no part models); **drawn** = generated from the maker's d
 | Part | Model source | Status | Why |
 |---|---|---|---|
 | SolderFul SOLDERBREAD#02 cards | `kicad_render.py`: outline, holes, strips from the datasheet (`sources.py`), back rails snapped off | drawn | no maker model |
-| Lying resistors, standing DO-35 (BAT85S) and DO-41 (1N4733A) diodes, 100 nF discs | KiCad 10 library (`Resistor_THT`, `Diode_THT`, `Capacitor_THT`) | real | |
+| Lying resistors, standing DO-35 diodes, 100 nF discs | KiCad 10 library (`Resistor_THT`, `Diode_THT`, `Capacitor_THT`) | real | |
 | Breakout headers (0.1 in, vertical) | KiCad 10 library (`Connector_PinHeader_2.54mm`) | real | |
 | Bus header and SWD header (Clint's generic 2.54 mm right-angle male, cut to 18) | `kicad_render.py` from the Sullins PRPC drawing as a stand-in for the generic part: tails, 90 degree bends, insulator, 5.8 mm mating pins [TBD-MEASURE] | drawn | the generic header has no drawing; KiCad's generic header has the wrong mating length |
 | Backplane socket (generic 2.54 mm female strip, cut to 1x18) | boxes (drawn open in the section), sized from the Sullins PPPC drawing [TBD-MEASURE] | stand-in | as above |

@@ -47,7 +47,7 @@ def two(ref, value, part, block, names=("1", "2")):
                 pins=[("1", names[0], PAS, "header"), ("2", names[1], PAS, "header")])
 
 
-ZENER = "onsemi 1N4733A, 5.1 V 1 W zener, DO-41 (port supply clamp)"
+ZENER = "onsemi 1N5232B, 5.6 V 500 mW zener, DO-35 (port supply clamp)"
 SCHOTTKY = "Vishay BAT85S, 30 V 200 mA Schottky, DO-35, <= 10 pF (signal clamp)"
 R100 = "Stackpole CF14JT100R, 100 ohm 1/4 W"
 R1K = "Stackpole CF14JT1K00, 1 kohm 1/4 W"
@@ -125,7 +125,7 @@ PARTS = [
                                 ("L+", "lead +", PAS, "lever"), ("L-", "lead -", PAS, "solder")],
          ties=[["M+", "L+"], ["M-", "L-"]]),
     dict(ref="E1", value="WAGO 222-415", block="battery",
-         part="WAGO 222-415 5-way lever splicing connector, hot-glued to B4's top at its front-right corner",
+         part="WAGO 222-415 5-way lever splicing connector, on a 3M VHB 4950 pad on B4's top at its front-right corner",
          card="B4", pins=[("1", "clamp", PAS, "lever")],
          note="the battery + junction: pigtail +, the shunt input and a leg of each sense resistor; one way spare"),
     dict(two("R7", "100", R100 + " (charger sense, its leg in the WAGO E1)", "battery"), pins=[
@@ -186,7 +186,7 @@ PARTS = [
     two("C1", "100nF", C100N + " (cups filter)", "meters"),
     two("C2", "100nF", C100N + " (rain filter)", "meters"),
     two("C3", "100nF", C100N + " (vane filter)", "meters"),
-    *[two(f"D5{i}", "1N4733A", ZENER.replace("port supply", w), "meters", ("cathode", "anode"))
+    *[two(f"D5{i}", "1N5232B", ZENER.replace("port supply", w), "meters", ("cathode", "anode"))
       for i, w in ((1, "cups clamp"), (2, "vane clamp"), (3, "rain clamp"))],
     card_header("B2"),
     # ------------------------------------------------------------ B1 PORTS A
@@ -199,7 +199,7 @@ PARTS = [
         dict(two(f"F{k}", "MF-R010", "Bourns MF-R010 100 mA PTC", "ports"), note=f"port S{k} 3.3 V"),
         two(f"R{k}1", "100", R100 + f" (port S{k} data series)", "ports"),
         two(f"R{k}2", "100", R100 + f" (port S{k} clock series)", "ports"),
-        two(f"D{k}1", "1N4733A", ZENER + f" (port S{k} 3.3 V)", "ports", ("cathode", "anode")),
+        two(f"D{k}1", "1N5232B", ZENER + f" (port S{k} 3.3 V)", "ports", ("cathode", "anode")),
         two(f"D{k}2", "BAT85S", SCHOTTKY + f" (port S{k} data to its 3.3 V)", "ports", ("anode", "cathode")),
         two(f"D{k}3", "BAT85S", SCHOTTKY + f" (port S{k} ground to data)", "ports", ("anode", "cathode")),
         two(f"D{k}4", "BAT85S", SCHOTTKY + f" (port S{k} clock to its 3.3 V)", "ports", ("anode", "cathode")),

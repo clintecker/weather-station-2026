@@ -2,7 +2,7 @@
 
 The backplane is a piece of BusBoard PAD3U padboard. It stands 8 mm off the base's inside floor on printed posts with
 M3 heat-set inserts. The cards plug into its sockets from the lid side. Every dimension is in mm. The numbers come from
-`layout/stack.py` and `cage/cage.py` as of 7d5fc82.
+`layout/stack.py` and `cage/cage.py` as of 7c780f7, with section 6 updated for the 8-hole B4-B2 pitch.
 
 ## Coordinate frame
 
@@ -50,14 +50,14 @@ little cooler.
 
 A screw at the fourth corner (Xb 7.78, Zb 140.42) won't work, for two reasons:
 
-- The left wall's slot side fills Xb 6.5 to 8.5 from the floor up for Zb 72.73 to 150.61. The board's left 2 mm and
+- The left wall's slot side fills Xb 6.5 to 8.5 from the floor up for Zb 72.73 to 155.69. The board's left 2 mm and
   that screw are inside the wall.
 - The screw's head would hit B3's socket at hole 35.
 
 Instead, the board's left edge sits in a **groove** in the left wall (section 6). If you've built a stand-in rail
 because your box has no wall, move the groove into the section 6 wall:
 
-- **Where:** in the wall's slot-side face (the face at Xb 8.5), for the wall's full length, Zb 72.73 to 150.61
+- **Where:** in the wall's slot-side face (the face at Xb 8.5), for the wall's full length, Zb 72.73 to 155.69
   (X −12.02 to +65.86).
 - **Section:** Xb 6.0 to 8.5 (2.5 deep, with 0.5 clearance past the board's edge), Yb 8.0 to 10.1.
 - **Floor:** the groove floor is at **Yb 8.0**, level with the post tops. It holds up the board's left edge along
@@ -88,18 +88,21 @@ part's front face.
 | Card | Card's top face, Zb | Slot, Zb |
 |---|---|---|
 | B4 | 80.73 | 78.98 to 80.88 |
-| B2 | 95.97 | 94.22 to 96.12 |
-| B1 | 116.29 | 114.54 to 116.44 |
-| B3 | 136.61 | 134.86 to 136.76 |
+| B2 | 101.05 | 99.30 to 101.20 |
+| B1 | 121.37 | 119.62 to 121.52 |
+| B3 | 141.69 | 139.94 to 141.84 |
 
-**Left wall:** a solid block from Xb 0 (on the base's left wall) to Xb 8.5, Yb 0 to 63.37, Zb 72.73 to 150.61.
+B4 to B2 is 8 holes (20.32) since the WAGO 222-415 battery junction on B4 (14.5 tall on a 1.1 VHB pad) went in;
+B2 to B1 and B1 to B3 stay 8 holes.
+
+**Left wall:** a solid block from Xb 0 (on the base's left wall) to Xb 8.5, Yb 0 to 63.37, Zb 72.73 to 155.69.
 
 - **Card slots:** cut into its +Xb face (the face at Xb 8.5), **2.0 deep** (Xb 6.5 to 8.5), from Yb 9.6 to 63.37.
 - **Backplane groove:** the groove from section 3 is also cut into that face.
 - **Retention-bar inserts:** two M3 × 5.7 heat-set inserts in its front face (Yb 63.37), at Xb 3.25 and Zb 76.0 and
-  147.0. Each bore is Ø4.0 × 6.5 deep. *These positions are my call; the model doesn't fix them yet.*
+  152.0. Each bore is Ø4.0 × 6.5 deep. *These positions are my call; the model doesn't fix them yet.*
 
-**Right corner post:** a block Xb 85.8 to 93.8, Yb 0 to 21.96, Zb 72.73 to 150.61.
+**Right corner post:** a block Xb 85.8 to 93.8, Yb 0 to 21.96, Zb 72.73 to 155.69.
 
 - **Card slots:** cut into its −Xb face (the face at Xb 85.8), **2.3 deep** (Xb 85.8 to 88.1), from Yb 9.6 to
   22.06, which is through its front.
@@ -108,11 +111,11 @@ part's front face.
 
   | Above | Zb |
   |---|---|
-  | B2 | 95.97 to 112.54 |
-  | B1 | 116.29 to 132.86 |
+  | B2 | 101.05 to 117.62 |
+  | B1 | 121.37 to 137.94 |
 
-**Retention bar:** a separate printed part, 12.0 (Xb 0 to 12.0) × 2.5 (Yb 63.37 to 65.87) × 77.88 (Zb 72.73 to
-150.61). It sits flat on the left wall's front face.
+**Retention bar:** a separate printed part, 12.0 (Xb 0 to 12.0) × 2.5 (Yb 63.37 to 65.87) × 82.96 (Zb 72.73 to
+155.69). It sits flat on the left wall's front face.
 
 - It screws to the left wall's front face, with Ø3.4 clearance holes at the two insert positions above.
 - It covers each card's front-left corner, so no card can slide out.

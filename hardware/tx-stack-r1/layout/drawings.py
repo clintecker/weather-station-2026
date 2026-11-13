@@ -403,7 +403,6 @@ def cage_views():
 
 # ------------------------------------------------------------------ build sheets
 ORIENT = {"DSTAND": "standing: body on the first hole, the other lead looped over",
-          "DSTAND41": "standing: body on the first hole, the other lead looped over (DO-41, 0.86 leads)",
           "RLY": "lying flat, leads bent at the body",
           "PTC": "standing, leads formed out to the span", "CAP": "standing disc"}
 
@@ -412,7 +411,7 @@ def part_line(pl):
     part = next(p for p in model.PARTS if p["ref"] == pl["ref"])
     pins = st.pins_of(pl)
     o = ORIENT.get(pl["fp"], "")
-    if pl["fp"] in ("DSTAND", "DSTAND41"):
+    if pl["fp"] == "DSTAND":
         names = {x[0]: x[1] for x in part["pins"]}
         band = next((n for n, v in names.items() if v == "cathode"), "2")
         o += f"; cathode band toward {lc.hole_at(pins[band])}"

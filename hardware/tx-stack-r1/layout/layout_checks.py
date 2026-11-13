@@ -630,8 +630,8 @@ def check_mech():
          "the coax is clipped to the cage at its bend so a pull on it reaches the bulkhead, not the mini's SMA",
          "unscrew the plug at AD1 (8 mm spanner), then lift B3 out", cflag)
     # power
-    mech("Battery junction E1 on B4", "WAGO 222-415 hot-glued to B4's top, front-right corner (overhanging the front edge)",
-         "the glue; the 24 AWG stranded leads and the R7/R8 legs clamped (strip 9-10 mm)", "lever up to free a lead; warm the glue to lift it",
+    mech("Battery junction E1 on B4", "WAGO 222-415 on a 3M VHB 4950 foam-tape pad on B4's top, front-right corner (overhanging the front edge)",
+         "the tape (93 C long term, 3M); the 24 AWG stranded leads and the R7/R8 legs clamped (strip 9-10 mm)", "lever up to free a lead; pry or cut the tape with a thin blade to lift it",
          "")
     mech("Battery pack", "lies flat on the pack tray, the lowest shelf (the heaviest part low); a hook-and-loop "
          "strap through the tray", "the tray's front lip and the strap", "open the strap, unplug the JST PH, slide it out")
