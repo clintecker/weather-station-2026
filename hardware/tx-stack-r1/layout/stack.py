@@ -99,7 +99,7 @@ KIND = {  # kind -> (colour, label, STEP models drawn instead of boxes whose nam
     "BOB": ("#B5121B", "RJ11"), "PTC": ("#E8A317", "PTC"), "RLY": ("#C9B48A", "R"), "DSTAND": ("#C04000", "D"),
     "CAP": ("#3060C0", "C"), "MINI": ("#1A1A1A", "Wio-E5 mini"), "SHTC3": ("#161616", "SHTC3"),
     "INA": ("#161616", "INA228"), "MAX": ("#161616", "MAX17048"), "REG": ("#1D6B33", "S7V8F3"),
-    "RAH": ("#202020", "bus header"), "RAS": ("#202020", "SWD"), "WAGO": ("#8A8D8F", "WAGO 222-415"),
+    "RAH": ("#202020", "bus header"), "RAS": ("#202020", "SWD"),
 }
 
 
@@ -210,12 +210,13 @@ def breakout(ref, kind, size, names, x_first, rot, hole, extra=(), note="", pads
                   step=[(kind, rot, x0, y0)])
 
 
-def ra_header(ref, n, first_hole, toward, kind="RAH", note="", names=None):
+def ra_header(ref, n, first_hole, toward, kind="RAH", note="", names=None, pulled=()):
     """Right-angle 1xn male header, pins along +X from first_hole, mating ends pointing +Y ('back') or
-    -Y ('front'). Boxes: insulator, mating pins, tails below the card."""
+    -Y ('front'); `pulled` pin numbers are taken out of the plastic. Boxes: insulator, mating pins, tails below
+    the card."""
     hx, hy = hole_xy(first_hole)
     names = names or [str(i + 1) for i in range(n)]
-    pins = {nm: (hx + i * P, hy) for i, nm in enumerate(names)}
+    pins = {nm: (hx + i * P, hy) for i, nm in enumerate(names) if i + 1 not in pulled}
     s = 1 if toward == "back" else -1
     off, ins, mate, tail = S.val("ra_offset"), S.val("ra_insulator"), S.val("ra_mate"), S.val("ra_tail")
     xa, xb = hx - 1.27, hx + (n - 1) * P + 1.27
@@ -244,7 +245,9 @@ def bus_row(net, which=0):
 
 
 for b in BOARDS:
-    PLACE[b].append(ra_header(model.HEADERS[b], 18, "j1", "back", note="bus header, mating pins toward the backplane"))
+    PLACE[b].append(ra_header(model.HEADERS[b], model.HDR_LEN[b], "j1", "back", pulled=model.PULLED.get(b, ()),
+                              note="bus header, mating pins toward the backplane"
+                                   + ("; pins 19-23 and 26 are B4's power pins, 24 and 25 pulled" if b == "B4" else "")))
     # the bus 3.3 V and both bus grounds to the front rails, on the underside
     w("wire", f"{b}:i{bus_row('+3V3')}", f"{b}:F+1", note="bus 3.3 V supply to the front 3.3 V rail")
     w("wire", f"{b}:i{bus_row('GND')}", f"{b}:F-{2 if b != 'B1' else 3}", note="bus ground to the front ground rail")
@@ -259,9 +262,9 @@ def port(card, k, p, y_bob):
     pl.append(two_pin(f"F{k}", "PTC", f"F+{p}", f"a{p}", f"port S{k} 3.3 V fuse, standing, leads formed to 7.62"))
     pl.append(two_pin(f"D{k}2", "DSTAND", f"b{p + 1}", f"b{p}", f"port S{k} data to its 3.3 V, body on the data side"))
     pl.append(two_pin(f"D{k}4", "DSTAND", f"c{p + 2}", f"c{p}", f"port S{k} clock to its 3.3 V, body on the clock side"))
-    pl.append(two_pin(f"D{k}1", "DSTAND", f"d{p}", f"d{p - 1}", f"port S{k} 3.3 V zener, cathode band to row {p}"))
-    pl.append(two_pin(f"D{k}3", "DSTAND", f"d{p + 3}", f"d{p + 1}", f"port S{k} ground to data, band to row {p + 1}"))
-    pl.append(two_pin(f"D{k}5", "DSTAND", f"b{p + 3}", f"b{p + 2}", f"port S{k} ground to clock, band to row {p + 2}"))
+    pl.append(two_pin(f"D{k}1", "DSTAND", f"d{p}", f"d{p - 1}", f"port S{k} 3.3 V zener, cathode band to column {p}"))
+    pl.append(two_pin(f"D{k}3", "DSTAND", f"d{p + 3}", f"d{p + 1}", f"port S{k} ground to data, band to column {p + 1}"))
+    pl.append(two_pin(f"D{k}5", "DSTAND", f"b{p + 3}", f"b{p + 2}", f"port S{k} ground to clock, band to column {p + 2}"))
     pl.append(two_pin(f"R{k}1", "RLY", f"e{p + 1}", f"f{p + 1}", f"port S{k} data series 100, across the channel"))
     pl.append(two_pin(f"R{k}2", "RLY", f"e{p + 2}", f"f{p + 2}", f"port S{k} clock series 100, across the channel"))
     for g in (p - 1, p + 3):
@@ -289,7 +292,7 @@ for name, jack_net, r_pull, cap, zen, r_ser, gnd_row, line in (
     m = bus_row(line)
     PLACE["B2"] += [two_pin(r_pull, "RLY", f"F+{m}", f"a{m}", f"{name} pull-up 10k, lying over the ground rail"),
                     two_pin(cap, "CAP", f"b{m}", f"b{gnd_row}", f"{name} filter 100 nF"),
-                    two_pin(zen, "DSTAND", f"c{m}", f"c{gnd_row}", f"{name} clamp zener, band to row {m}"),
+                    two_pin(zen, "DSTAND", f"c{m}", f"c{gnd_row}", f"{name} clamp zener, band to column {m}"),
                     two_pin(r_ser, "RLY", f"e{m}", f"f{m}", f"{name} series 1k, across the channel")]
 for g in (4, 7, 10):
     w("jumper", f"B2:a{g}", f"B2:F-{g}", "top", "meter ground strip to the ground rail")
@@ -303,7 +306,7 @@ w("lead", ("J22", "3"), "B2:d10", "top", "rain jack contact 3 ground")
 w("lead", ("J22", "4"), f"B2:d{bus_row('RAIN')}", "top", "rain jack contact 4 rain")
 
 # B3: CORE
-PLACE["B3"].append(mini("A1", 19, "on its own header; D row column c, B row column h, rows 19-30; SMA past the right edge"))
+PLACE["B3"].append(mini("A1", 19, "on its own header; its D pins in row C, its B pins in row H, columns 19-30; SMA past the right edge"))
 PLACE["B3"].append(ra_header("J3", 5, "a12", "front", "RAS", "SWD, right angle, pins out over the front edge"))
 PLACE["B3"].append(breakout("U5", "SHTC3", S.val("shtc3"), ["VIN", "3V", "GND", "SCL", "SDA"], 7.62, 180, "c8",
                             [Box(20.5, 5.9, 25.4, 11.9, HDR + PCB, HDR + PCB + S.val("qt_h"), "QT socket"),
@@ -331,8 +334,10 @@ PLACE["B4"].append(breakout("U2", "INA", S.val("ina228"), ["H.VIN", "H.GND", "H.
                             [Box(20.1, 5.9, 25.4, 11.9, T_, T_ + S.val("qt_h"), "QT socket"),
                              Box(0, 5.9, 5.3, 11.9, T_, T_ + S.val("qt_h"), "QT socket"),
                              Box(7.7, 14.6, 17.7, 18.2, T_, T_ + 6.0, "soldered battery leads at X1")],
-                            "battery monitor; header pins 5-7 pulled; battery leads on the X1 pads",
-                            pads={"X1.VIN-": (9.2, 16.383), "X1.VIN+": (16.2, 16.383)}))
+                            "battery monitor; header pins 5-7 pulled; battery leads soldered in X1's outer holes "
+                            "(X1 is a 3-way 3.5 mm terminal footprint, left unfitted: VIN- 9.2, VBUS 12.7, VIN+ 16.2; "
+                            "Adafruit-INA228-PCB .brd, TERMBLOCK_1X3-3.5MM at (12.7, 16.383) R180, 1.0 drills)",
+                            pads={"X1.VIN-": (9.2, 16.383), "X1.VBUS": (12.7, 16.383), "X1.VIN+": (16.2, 16.383)}))
 PLACE["B4"].append(breakout("U6", "MAX", S.val("max17048"), ["H.VIN", "H.GND", "H.SCL", "H.SDA", "H.INT", "H.QST"],
                             6.35, 180, "e20",
                             [Box(14.0, 14.5, 20.0, 19.0, T_, T_ + S.val("jstph_h"), "JST PH socket (unused)"),
@@ -343,16 +348,7 @@ PLACE["B4"].append(breakout("U6", "MAX", S.val("max17048"), ["H.VIN", "H.GND", "
 _rw, _rd = S.val("s7v8f3")
 PLACE["B4"].append(breakout("U7", "REG", (_rw, _rd), ["VOUT", "GND", "VIN", "SHDN"], 1.905, 0, "f24",
                             [Box(2.2, 3.0, 9.2, 10.0, T_, T_ + S.val("s7v8f3_h"), "inductor")],
-                            "3.3 V regulator; pins in row-strips 24-27, board toward the front", pin_y=15.24))
-_ww, _wd, _wh = S.val("wago")
-_vt = S.val("vhb")[0]                  # the VHB 4950 pad under it
-WAGO_X0, WAGO_Y1 = 58.6, 13.9          # its left face clear of U6's PCB, its back face clear of U7's; entries face the front
-PLACE["B4"].append(placed("E1", "WAGO", {}, [Box(WAGO_X0, WAGO_Y1 - _wd, WAGO_X0 + _ww, WAGO_Y1, 0, _vt + _wh,
-                                                 "E1 WAGO 222-415 body on its VHB pad")],
-                          "battery + junction: WAGO 222-415 on a 3M VHB 4950 pad (93 C long term) at the card's front-right corner, entries to the "
-                          f"front (it overhangs the front edge {_wd - WAGO_Y1:.1f}, the right edge "
-                          f"{WAGO_X0 + _ww - BW:.1f}); one way spare",
-                          pads={"1": (WAGO_X0 + 1.4, 1.4)}))
+                            "3.3 V regulator; pins in the F-J strips of columns 24-27, board toward the front", pin_y=15.24))
 for a, b_, n in (("g1", "g24", "3.3 V supply from the regulator"), ("d10", "h1", "3.3 V supply to the INA228"),
                  ("d20", "f1", "3.3 V supply to the MAX17048"), ("g2", "g25", "ground to the regulator"),
                  ("d9", "h2", "ground to the INA228"), ("d19", "f2", "ground to the MAX17048"),
@@ -361,16 +357,14 @@ for a, b_, n in (("g1", "g24", "3.3 V supply from the regulator"), ("d10", "h1",
                  ("d7", f"g{bus_row('I2C_SDA')}", "I2C data (SDA) to the INA228"),
                  ("d17", f"h{bus_row('I2C_SDA')}", "I2C data (SDA) to the MAX17048")):
     w("wire", f"B4:{a}", f"B4:{b_}", "bottom", n)
-w("lead", ("U1", "SYS"), "B4:g26", "top", "charger system output (J3 SYS) to the regulator in, 24 AWG stranded red")
-# the battery loop: soldered or screwed end to end, never a strip, a header or a socket
-w("lead", ("PG1", "L+"), ("E1", "1"), "top", "pack + (pigtail) into the WAGO, 24 AWG stranded red")
-w("lead", ("E1", "1"), ("U2", "X1.VIN+"), "top", "WAGO to the shunt in (X1 VIN+), 24 AWG stranded red")
-w("lead", ("U2", "X1.VIN-"), ("U1", "BAT"), "top", "shunt out (X1 VIN-) to charger battery + (J5 BATTERY), 24 AWG stranded red")
-w("lead", ("PG1", "L-"), ("U1", "BATN"), "top", "pack - to charger battery - (J5 GND), 24 AWG stranded black")
-w("lead", ("E1", "1"), ("R7", "1"), "top", "the charger sense resistor's own leg into the WAGO (100 ohm, sleeved; no wire)")
-w("lead", ("R7", "2"), ("U1", "BATP"), "top", "charger battery sense (J5 SNS_BATP), 24 AWG stranded")
-w("lead", ("E1", "1"), ("R8", "1"), "top", "the gauge sense resistor's own leg into the WAGO (100 ohm, sleeved; no wire)")
-w("lead", ("R8", "2"), ("U6", "JP2.VBAT"), "top", "fuel gauge cell sense (JP2 VBAT), 24 AWG stranded")
+# B4's power pins (model.B4_POWER): every lead leaving B4 now goes through its header (rule L10)
+w("jumper", "B4:i19", "B4:i20", "top", "the two shunt-out pins' strips joined (battery current)")
+w("lead", "B4:g20", ("U2", "X1.VIN-"), "top", "shunt out (X1 VIN-) to header pins 19-20 (charger battery +), 24 AWG stranded, red with a black band")
+w("jumper", "B4:i21", "B4:i22", "top", "the two junction pins' strips joined (battery current)")
+w("lead", "B4:g21", ("U2", "X1.VIN+"), "top", "header pins 21-22 (battery + junction) to the shunt in (X1 VIN+), 24 AWG stranded, red with a black band")
+w("lead", "B4:g23", ("U6", "JP2.VBAT"), "top", "header pin 23 (gauge sense, from R8 on the backplane) to JP2 VBAT, 24 AWG stranded")
+#   pin 26 sits in the regulator's VIN strip (R26): SYS needs no wire on B4
+w("lead", ("PG1", "L-"), ("U1", "BATN"), "copper", "pack - to charger battery - (J5 GND), 24 AWG stranded, black")
 w("lead", ("RT1", "1"), ("U1", "TS"), "top", "thermistor to EVM J7")
 w("lead", ("RT1", "2"), ("U1", "TSN"), "top", "thermistor return to EVM J7")
 
@@ -379,7 +373,8 @@ w("lead", ("RT1", "2"), ("U1", "TSN"), "top", "thermistor return to EVM J7")
 # (along Zb); on line i (1..18) a tinned bus wire on the back (copper) face is soldered at every used pad and
 # carries bus line i; line 19 is spare, lines 0 and 20 take the three mounting screws; line 0's edge runs in the left-wall groove above a tab. Hole n along a line is at
 # Zb = BP_Z0 + (n - 1) P. Each card's socket pins sit in one hole row. Nothing connects unless a wire does.
-BP_STRIPS = 20       # lines 0..20 (cut 21 wide)
+BP_STRIPS = 29       # lines 0..29 (cut 30 wide, plus the tab): the widest the 2.5 fitting slide allows before the
+#                      right corner post (Xb 85.8)
 BP_HOLES = 39
 BP_SCREWS = ("s0.2", "s20.2", "s20.36")   # drilled 3.2 mm for the M3 screws to the three floor posts (bottom left,
 #                                          bottom right, top right); the left edge above the tab runs in the left wall's
@@ -391,7 +386,8 @@ FLOOR_LIFT = 0.0                   # the printed base's floor is the cage's: eve
 BP_BACK = FLOOR_LIFT + S.val("cage_plate") + S.val("bp_posts")   # backplane copper face, Yb
 BP_FRONT = BP_BACK + S.val("strip_size")[2]        # component face (sockets), Yb
 CARD_DY = BP_FRONT - Y_BP                          # Yb = CARD_DY + (Y_BP - Y) ... see card_to_box
-PITCH = {("B4", "B2"): 8, ("B2", "B1"): 8, ("B1", "B3"): 8}   # in backplane holes (2.54 mm); B4-B2 8 for the WAGO E1
+PITCH = {("B4", "B2"): 8, ("B2", "B1"): 8, ("B1", "B3"): 8}   # in backplane holes (2.54 mm); B4-B2 8 (set for a WAGO junction on B4, since
+#   moved to the backplane; kept: the printed base's slots are at these heights)
 SOCKET_HOLE = {"B4": 13}                           # the mux sits behind holes 1-10, below the cards
 BP_Z0 = S.val("power_zone") - (SOCKET_HOLE["B4"] - 1) * P   # first backplane hole, Zb
 for lo, hi in PITCH:
@@ -424,7 +420,7 @@ def bp_xy(h):
 
 BP_PARTS = []   # (ref, {pin: hole}, note)
 for b in BOARDS:
-    BP_PARTS.append((model.SOCKETS[b], {str(i): f"s{i}.{SOCKET_HOLE[b]}" for i in range(1, 19)},
+    BP_PARTS.append((model.SOCKETS[b], {str(i): f"s{i}.{SOCKET_HOLE[b]}" for i in model.hdr_pins(b)},
                      f"socket for {b} ({ROLE[b]})"))
 _free = SOCKET_HOLE["B2"] + 2          # QT lead pins between the B2 and B1 sockets, above B2's header
 for k in range(1, 5):
@@ -440,6 +436,16 @@ for pad, h in MUX_HOLES.items():
     w("wire", ("U4", pad), f"BP:{h}", "copper", f"mux {pad[2:]} pad lead to its strip")
 w("wire", f"BP:s{bus_row('GND')}.38", f"BP:s{bus_row('GND', 1)}.38", "copper",
   "the two bus ground strips joined")
+# B4's power lines (model.B4_POWER) at the backplane's lower end, beside the EVM: the battery + junction is lines
+# 21-22 (R7 and R8 there, so both senses tap the junction itself); the leads to the EVM and the pack are short
+BP_PARTS.append(("R7", {"1": "s21.7", "2": "s24.7"}, "charger sense 100 ohm, lying on the front, junction to a lone pad"))
+BP_PARTS.append(("R8", {"1": "s22.8", "2": "s23.11"}, "gauge sense 100 ohm, lying on the front (on a slant), junction to line 23"))
+w("wire", "BP:s19.5", "BP:s20.5", "copper", "lines 19 and 20 joined (charger battery +, two pins)")
+w("wire", "BP:s21.5", "BP:s22.5", "copper", "lines 21 and 22 joined (battery + junction, two pins)")
+w("lead", ("PG1", "L+"), "BP:s21.6", "copper", "pack + (pigtail) to the junction, 24 AWG stranded, red with a black band")
+w("lead", ("U1", "BAT"), "BP:s19.6", "copper", "charger battery + (J5 BATTERY) to lines 19-20, 24 AWG stranded, red with a black band")
+w("lead", ("U1", "SYS"), "BP:s26.6", "copper", "charger system output (J3 SYS) to line 26 (B4 pin 26, the regulator in), 24 AWG stranded, red with a black band")
+w("lead", ("R7", "2"), ("U1", "BATP"), "copper", "charger battery sense (J5 SNS_BATP) from R7's free leg, 24 AWG stranded, white with a red band")
 BP_BUS = []          # (line, [holes the tinned bus wire is soldered at]): every used pad on lines 1-18
 _used = {}
 for _ref, _pins, _n in BP_PARTS:
@@ -451,8 +457,9 @@ for _k, _a, _c, _s, _n in WIRES:
         if isinstance(_e, str) and _e.startswith("BP:"):
             _i, _m = (int(v) for v in _e[4:].split("."))
             _used.setdefault(_i, set()).add(_m)
-for _i in range(1, 19):
-    BP_BUS.append((_i, sorted(_used.get(_i, ()))))
+for _i in range(1, BP_STRIPS + 1):
+    if _i <= 18 or len(_used.get(_i, ())) > 1:          # a lone pad (R7's free leg on line 24) takes no bus wire
+        BP_BUS.append((_i, sorted(_used.get(_i, ()))))
 MUX_BOX = (strip_x(2) - 1.27, BP_Z0 + 0.5 * P, strip_x(2) - 1.27 + S.val("mux_w"),
            BP_Z0 + 0.5 * P + S.val("mux_d"))   # on foam on the copper side behind holes 1.5-9.5: Xb and Zb extents
 BP_OUTLINE = (BP_X0, BP_Z0 - P / 2, CAGE_LEFT + X(BP_STRIPS) + P / 2, BP_Z0 + (BP_HOLES - 0.5) * P)   # Xb0, Zb0, Xb1, Zb1
@@ -477,7 +484,7 @@ for n in "2345":
 for n in "34":
     CABLES.append((("J22", n), ("M2", n)))
 for b in BOARDS:
-    for i in range(1, 19):
+    for i in model.hdr_pins(b):
         CABLES.append(((model.HEADERS[b], str(i)), (model.SOCKETS[b], str(i))))
 
 

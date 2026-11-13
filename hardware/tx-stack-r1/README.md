@@ -20,15 +20,15 @@ strip, a header or a socket.
 
 | Card (bottom to top) | Role | What it carries |
 |---|---|---|
-| B4 | POWER | The battery monitor INA228 (0x40), the fuel gauge MAX17048 (0x36), the S7V8F3 3.3 V regulator and the battery + junction (WAGO 222-415 lever connector, on 3M VHB 4950 tape). |
+| B4 | POWER | The battery monitor INA228 (0x40), the fuel gauge MAX17048 (0x36), the S7V8F3 3.3 V regulator B4's power pins: its header is 1x26 (pins 19-23 and 26 power, 24-25 pulled); no lead leaves it. |
 | B2 | PORTS B + METERS | Sensor port 4 and the wind and rain jacks, with the meter pull-ups, filters, clamps and 1 k series resistors. |
 | B1 | PORTS A | Sensor ports 1-3: each a jack breakout, an MF-R010 fuse, 100 ohm series resistors and BAT85S / 1N5232B clamps. |
 | B3 | CORE | The Wio-E5 mini on its header, the enclosure air sensor SHTC3 (0x70) and a right-angle SWD header at the front edge. |
-| backplane | bus | BusBoard PAD3U padboard (a pad per hole, no strips) cut to 21 x 39 holes; a tinned bus wire on the copper side carries each of the 18 lines; four generic 1x18 female sockets, the PCA9548 mux (0x71) behind it on foam, the four QT leads to the ports and the charger I2C pins. |
-| shelves below the cards | power | The battery pack (lowest, the heaviest part) on a moulded tray, then the BQ25798EVM (90 x 90, J8 toward the lid) on two moulded ledges; on leads to B4. |
+| backplane | bus | BusBoard PAD3U padboard (a pad per hole, no strips) cut to 30 x 39 holes plus a tab; a bare bus wire on the copper side carries each of the 18 lines and B4's six power lines; the battery + junction (lines 21-22) with R7 and R8, short leads to the EVM and the pack; four generic female sockets, the PCA9548 mux (0x71) behind it on foam, the four QT leads to the ports and the charger I2C pins. |
+| shelves below the cards | power | The battery pack (lowest, the heaviest part) on a moulded tray, then the BQ25798EVM (90 x 90, J8 toward the lid) on two moulded ledges; on short leads to the backplane's lower end, never to a card. |
 
-The bus header is a generic 2.54 mm right-angle male header cut to 1x18 (drawn as the Sullins PRPC drawing; its
-mating pin 5.8 nominal, `[TBD-MEASURE]`) into a generic female strip cut to 1x18 (one position lost at each cut) on the backplane. The card ends at
+The bus header is a generic 2.54 mm right-angle male header cut to 1x18 (B4: 1x26) (drawn as the Sullins PRPC drawing; its
+mating pin 5.8 nominal, `[TBD-MEASURE]`) into a generic female strip cut to the same length (one position lost at each cut) on the backplane. The card ends at
 the snap line (card Y 41.91 `[TBD-MEASURE]`); the header insulator ends at 43.43, its mating pins at 49.27 (7.36
 past the edge); the socket mouth is at 44.27, 2.36 mm clear of the card and 0.84 mm clear of the insulator (the
 depth stop); 5.00 mm of the 5.84 mm mating pin goes in, and the card's edge sits 10.86 mm from the backplane. All
@@ -102,7 +102,7 @@ You need python3 3.11+ with Pillow, KiCad 10 (`kicad-cli` with its 3D library), 
 2. Every connected pin is in exactly one net, every unused pin in none; every net has at least two members.
 3. The I2C address map (no upstream clash, every 0x50 behind a mux channel, addresses match the firmware) and the upstream pull-up total (1.40 kohm, at or above 0.97 kohm).
 4. Each sensor port's 3.3 V comes only through its own MF-R010 from the 3.3 V supply.
-5. No battery current passes a header, socket or strip; the series chain, the WAGO junction and the sense resistors are present.
+5. The battery current crosses a header and its socket only on two pins or more (B4 pins 19-20 and 21-22); the series chain, the junction and the sense resistors are present.
 6. The RJ11 pin maps (sensor ports 2 3.3 V, 3 data, 4 ground, 5 clock; wind 2/3 ground, 4 cups, 5 vane; rain 3 ground, 4 rain).
 7. The Wio-E5 pins match the firmware's board file.
 8. KiCad ERC reports nothing beyond the written waivers.
@@ -113,11 +113,12 @@ You need python3 3.11+ with Pillow, KiCad 10 (`kicad-cli` with its 3D library), 
 
 - **L1:** every pin on a hole, every conductor end a real hole or pad, no hole doubled, nothing under a spacer; every backplane bus wire soldered only at real holes of its own line.
 - **L2/L3:** the copper equals the schematic; no strip (card) and no wire-joined pad group (backplane: the PAD3U has no strips, nothing connects unless a wire does) carries two nets (checked without part-internal ties).
-- **L4:** no battery net touches a strip.
+- **L4:** the battery current touches only B4's doubled power-pin strips and their backplane lines; each crossing is on two pins.
 - **L5:** the bus is on rows 1-18 of column j on every card and bus wires 1-18 of the backplane; insertion 5.00 mm of 5.84 (at least 4.20 with the card 0.8 mm short); the socket body never overlaps the snapped card (2.36 mm clear).
 - **L6:** no two part bodies collide on a card.
 - **L7:** each card pitch clears the tallest part below, its tails and 0.5 mm; nothing collides with the cage, the backplane, another card, the base's corner lands and insert posts, its rim lip, or the gland nuts; each card slides out alone; everything fits the box inside; the EVM and pack shelves stay 2 mm clear of each other, the backplane, B4, the lid's inner wall and bosses; the mux stays clear of the socket tails; what sits past the base-lid seam (in the lid tray) is listed.
 - **L8:** every routed wire, jumper and lead (81 of 81) runs on its side of the card in right-angle runs, crosses no part footprint (a pad lead only its own breakout), passes over no used hole but its own ends, and shares no grid run with another conductor except an insulated lead bundle (at most 3); a bare jumper meets nothing.
+- **L10:** each card comes out alone (Clint's rule, below): no soldered or clamped lead leaves a card; everything else off a card is its header or a hand plug; the charger and the pack meet only the backplane; nothing runs card to card except through the backplane.
 - **L9:** every mating and fixing in the table below; the slot play against the socket lead-in, the room over each plug's latch, the SMA path and the cage screws' access are computed, and anything held by solder or adhesive alone or reachable only after something else comes out is flagged.
 
 ## What changed from r1, and why
@@ -127,8 +128,8 @@ apart (mechanical C1), did not fit the floor (C2) and had 0.5 mm to the lid (C3)
 cage. The connection changes (check 10):
 
 - **Removed:** the B3-B4 socket XS1 and the B4 bus pins XP1 (the cards now plug into the backplane); the QT leads on B1 (W11-W14) move to the backplane as W1-W4, beside the mux.
-- **Added:** a right-angle bus header per card (XH1-XH4) and a backplane socket per card (XB1-XB4); the charger I2C pins XJ1 on the backplane; the battery + junction E1 (a WAGO 222-415, mechanical M8); 100 ohm resistors R7 and R8 at the tap end of the charger battery sense (BATP) and the fuel gauge cell sense leads (electrical m11); the pack thermistor RT1 on EVM J7 with JP18 removed (M2); the right-angle SMA adapter AD1; on every outdoor line a series resistor and clamps (M5): 100 ohm and BAT85S Schottky clamps (to the port 3.3 V and from ground) on each sensor port's data and clock, a 1N5232B zener on each port's 3.3 V, and on cups, vane and rain a 1N5232B zener and a 1 k series resistor to the MCU, with a new 100 nF filter on the vane (C3).
-- **Moved:** the charger and gauge sense now leave the WAGO junction through R7 and R8 (each resistor's own leg in the WAGO); EVM J8 pin 1 is the I2C lead's ground; each port's data and clock pass their series resistors between jack and mux; each meter line passes its 1 k between the jack side and the MCU pin; AD1 sits between the radio and the coax.
+- **Added:** a right-angle bus header per card (XH1-XH4) and a backplane socket per card (XB1-XB4); the charger I2C pins XJ1 on the backplane; the battery + junction (backplane lines 21-22; mechanical M8); 100 ohm resistors R7 and R8 at the tap end of the charger battery sense (BATP) and the fuel gauge cell sense leads (electrical m11); the pack thermistor RT1 on EVM J7 with JP18 removed (M2); the right-angle SMA adapter AD1; on every outdoor line a series resistor and clamps (M5): 100 ohm and BAT85S Schottky clamps (to the port 3.3 V and from ground) on each sensor port's data and clock, a 1N5232B zener on each port's 3.3 V, and on cups, vane and rain a 1N5232B zener and a 1 k series resistor to the MCU, with a new 100 nF filter on the vane (C3).
+- **Moved:** the charger and gauge sense now leave the battery + junction through R7 and R8 on the backplane; EVM J8 pin 1 is the I2C lead's ground; each port's data and clock pass their series resistors between jack and mux; each meter line passes its 1 k between the jack side and the MCU pin; AD1 sits between the radio and the coax.
 - **Renamed:** EVM pins are named by terminal (J3 SYS, J8.2 clock, J8.3 data).
 
 Clamps on the sensor-port data and clock are BAT85S (at most 10 pF at 1 V, Vishay doc 88146), not zeners: a DO-35
@@ -141,8 +142,8 @@ zener adds 100 pF or more, which would eat the 236 pF budget.
   from the backplane. The back RJ11 breakout on B1 and B2 overhangs the snapped edge by 4.8 mm: its printed spacer
   carries a tongue in the card plane that the right corner post grips; the post is cut away round that jack and
   plug.
-- **Backplane on a BusBoard PAD3U padboard** (pad per hole): 18 tinned bus wires, each soldered at every pin of its
-  line; cut step and hole-by-hole table in `build/BACKPLANE.md`; three screw holes, s0.2 (in a tab, line -1, holes 1-3: the board is an L), s20.2 and s20.36, to three round
+- **Backplane on a BusBoard PAD3U padboard** (pad per hole), 30 lines wide (0-29, the widest the fitting slide allows
+  before the right corner post): 18 bare bus wires, each soldered at every pin of its line, and B4's power lines; cut step and hole-by-hole table in `build/BACKPLANE.md`; three screw holes, s0.2 (in a tab, line -1, holes 1-3: the board is an L), s20.2 and s20.36, to three round
   floor posts; the left edge above the tab sits in a groove in the left wall and a rail below it (`cage/backplane-mount-spec.md`): lowered 2.5 mm right, slid left into it.
 - **Wires routed** (`layout/route.py`) instead of drawn straight: lengths, drawings and renders follow the routes.
 - **A printed base instead of the #905 body** (Clint, 2026-11-10): the EVM measured 90 x 90 (96 across J8) and
@@ -166,8 +167,7 @@ zener adds 100 pF or more, which would eat the 236 pF budget.
 
 Everything the build needs that is in neither the DigiKey cart (2026-11-09) nor `INVENTORY.md`. Stock and price
 from digikey.ca on 2026-11-10; quantities include spares. On hand per `INVENTORY.md`, so not listed: the M4 heat-set
-inserts (100) for the lid screws and the M3 heat-set inserts (200) for the backplane posts, the WAGO 222-415
-(battery + junction), the generic 2.54 mm right-angle male headers and female strips (cut to 1x18), 
+inserts (100) for the lid screws and the M3 heat-set inserts (200) for the backplane posts, the generic 2.54 mm right-angle male headers and female strips (cut to 1x18 and, for B4, 1x26), 
 24 AWG solid and stranded hook-up wire, the Adafruit 1311 22 AWG solid (stripped for the bus), the M3 screws for the backplane and the bar, the RJ12 6P6C crimp plugs (100, generic; modelled as
 the standard 6P body after Cinch 32-5996UL), and the PETG (Clint).
 
@@ -186,6 +186,13 @@ the standard 6P body after Cinch 32-5996UL), and the PETG (Clint).
 
 ## Mechanical connections
 
+**Rule (Clint, 2026-11-13): each card (B1-B4) can be pulled out independently of every other card, and inspected.**
+No card has a soldered or clamped wire leaving it. Everything that leaves a card goes through its backplane header,
+or is an ordinary plug on that card that comes out by hand (an RJ11 port cable, the SMA coax, the SWD or USB-C
+lead). The charger and the pack connect only to the backplane; nothing runs from one card to another except through
+the backplane. Taking a card out needs only the retention bar off, its own plugs out, then a straight pull; never
+another card first (layout check L10, with L7's slide-out and plug-clearance checks).
+
 Every mating and fixing: how it is held, what takes the force, how it comes apart. Flagged: anything held by
 solder or adhesive alone, or that cannot be reached or removed without taking something else apart first.
 
@@ -193,7 +200,7 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
 | Mating or fixing | Held by | Force path | Taken apart | Flag |
 |---|---|---|---|---|
 | Card in its slot | left wall slot (2 mm deep) and the right corner post slot; the retention bar across the front left | the slots take the card's weight and any knock across it; the bar stops it backing out | two M3 screws: bar off, card slides out toward the lid |  |
-| Bus header into the backplane socket | 18 contacts' friction; axis Yb (in the card plane, toward the back wall); insertion 4.96 mm of 5.8; the insulator meets the socket 0.84 mm further in (the depth stop) | the socket; side play is the slot's 0.3 mm, inside the socket lead-in (0.5 mm [TBD-MEASURE]) | pull the card straight out toward the lid (bar off first) |  |
+| Bus header into the backplane socket | 18 contacts' friction (B4: 24, its power pins too); axis Yb (in the card plane, toward the back wall); insertion 4.96 mm of 5.8; the insulator meets the socket 0.84 mm further in (the depth stop) | the socket; side play is the slot's 0.3 mm, inside the socket lead-in (0.5 mm [TBD-MEASURE]) | pull the card straight out toward the lid (bar off first) |  |
 | B3 U5 breakout (enclosure air sensor, top card, away from the charger) | its own header, soldered in the breakout and in the card (one row) | the header pins; a QT plug's push goes through the breakout into the header | desolder the header row (or cut the pins and fit a new header) | held by solder alone on one header row |
 | B4 U2 breakout (battery monitor) | its own header, soldered in the breakout and in the card (one row) | the header pins; a QT plug's push goes through the breakout into the header | desolder the header row (or cut the pins and fit a new header) | held by solder alone on one header row |
 | B4 U6 breakout (fuel gauge) | its own header, soldered in the breakout and in the card (one row) | the header pins; a QT plug's push goes through the breakout into the header | desolder the header row (or cut the pins and fit a new header) | held by solder alone on one header row |
@@ -208,10 +215,9 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
 | Wio-E5 mini on B3 | soldered on its own 2 x 12 header (not in sockets) | the header pins | desolder 24 pins | held by solder alone; cannot come off without desoldering 24 pins |
 | Wio-E5 mini USB-C console | the receptacle's friction; cable plugged from the left with the lid open | the mini's receptacle and its header | pull the plug |  |
 | SMA, adapter and coax to the bulkhead | AD1 screwed on the mini's SMA-K, its arm toward the lid; the 135110 plug screwed on AD1; the cable bends right in front of the cards to the bulkhead jack in the right wall's boss | the coax is clipped to the cage at its bend so a pull on it reaches the bulkhead, not the mini's SMA | unscrew the plug at AD1 (8 mm spanner), then lift B3 out |  |
-| Battery junction E1 on B4 | WAGO 222-415 on a 3M VHB 4950 foam-tape pad on B4's top, front-right corner (overhanging the front edge) | the tape (93 C long term, 3M); the 24 AWG stranded leads and the R7/R8 legs clamped (strip 9-10 mm) | lever up to free a lead; pry or cut the tape with a thin blade to lift it |  |
+| B4's power pins (the battery path) | header pins 19-20 (charger battery +, after the shunt) and 21-22 (the battery + junction) doubled, 23 gauge sense, 26 SYS (24-25 pulled), in the B4 socket on lines 19-26; the junction, R7 and R8 and the leads to the EVM and the pack are on the backplane | the socket contacts (about 0.5 A each on the doubled pins at 1 A) | pull B4 out: the battery path opens at its header, nothing to unscrew |  |
 | Battery pack | lies flat on the pack tray, the lowest shelf (the heaviest part low); a hook-and-loop strap through the tray | the tray's front lip and the strap | open the strap, unplug the JST PH, slide it out |  |
-| Charger (BQ25798EVM) | a shelf: its side edges on two moulded ledges, a stop at the back, a snap clip at the front (the board has no mounting holes); the Bumpon feet (H1-H4, 3M SJ-5303) peeled off first | the ledges; the terminal screws are tightened from above, in the room under B4 | unscrew its leads, flex the clip, slide it toward the lid on its service loops | its underside parts (J6, tails: 4 mm [TBD-MEASURE]) must clear the 2 mm ledges at the edges |
-| B4 and the charger | B4's battery and sense leads are screwed into the EVM terminals | the terminal screws | unscrew the leads at the EVM before B4 slides out | B4 is tethered to the charger by its leads: unscrew them first |
+| Charger (BQ25798EVM) | a shelf: its side edges on two moulded ledges, a stop at the back, a snap clip at the front (the board has no mounting holes); the Bumpon feet (H1-H4, 3M SJ-5303) peeled off first | the ledges; the terminal screws are tightened from above, in the room under B4 | unscrew its leads at its terminals (they run to the backplane, not to a card), flex the clip, slide it toward the lid on its service loops | its underside parts (J6, tails: 4 mm [TBD-MEASURE]) must clear the 2 mm ledges at the edges |
 | Backplane on its posts | three M3 screws (s0.2 through the board's tab, s20.2, s20.36) into heat-set inserts in three round floor posts; the left edge above the tab in the left wall's groove and its rail (lowered 2.5 right, slid left into it) | the posts and the groove floor take the card insertion push | undo the three screws, slide it 2.5 right, lift it out, after every card is out | removable only after all four cards are out |
 | Lid to the printed base | four M4 stainless screws on 12 mm washers through the lid's 8 mm holes into M4 heat-set inserts (5.6 mm holes, 3 mm of wall round each) in the base's corner posts, 156 x 109 apart (9.75 / 10.25 in from the lid's edges, cage/lid-rim-spec.md; option b, recommended over a printed copy of the original 8 mm plastic thread); the base's 9 mm land under the lid's rim, its 2 x 4.5 sealing lip in the lid's O-ring channel | the screws squeeze the O-ring; the lid's rim takes a knock | undo the four lid screws | not settled: the screw and the lid's corner pocket (L1), and the rim test ring's fit on the real lid: no full STL until they are |
 | Base to the pole | two moulded lugs on the back, a hose clamp or U-bolt through each; no screw through the back into the box | the lugs' roots in the 3 mm floor | open the clamps |  |
@@ -263,7 +269,7 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
   (21.3 mm needed, 18.72 there). The cards use new BOBs with the 87180-066LF (11.5 mm, RS listing).
 - **Thermistor bias.** The #372 NTC is B 3950; the EVM's TS divider assumes a 103AT (B 3435). Read TS at room temperature before the first charge (build/ASSEMBLY.md).
 - **Mini back-feed.** The mini's AP2112 is back-fed from the bus 3.3 V; with USB-C in for the console two regulators run in parallel (accepted, electrical m3).
-- **B4 tether.** B4 carries the battery and SYS leads to the EVM; unscrew them at the EVM before B4 slides out.
+- **B4 power through the backplane** (resolved 2026-11-13): the battery path, its senses and SYS reach B4 on header pins 19-23 and 26; B4 slides out with nothing to undo. Pulling B4 opens the battery path (the shunt is on B4): the EVM then sees no battery, which is the intended way to power down. The doubled socket contacts' resistance is not measured `[TBD-MEASURE]`: a few milliohm per pair is a few mV at 1 A, seen only by the INA228's bus-voltage reading; the charger (BATP) and the gauge sense the junction itself on the backplane.
 
 ## Measurements for Clint
 
@@ -391,8 +397,6 @@ Status `[TBD-MEASURE]` means no source was found. The drawings use the value as 
 | `diode_stand_h` | 7 | standing DO-35 height (body on one lead, the other looped over) | 4.56 body + 1 lead + loop; check on the part | [TBD-MEASURE] |
 | `wire24` | 0.511 x 1.45 x 84.2 | 24 AWG insulated hook-up wire (card wires solid, flying leads stranded): conductor diameter, insulation OD, resistance mohm/m | AWG 24 = 0.511 mm, 84.2 mohm/m at 20 C (0.205 mm2 copper); OD about 1.3-1.6 for PVC hook-up wire: measure Clint's | [TBD-MEASURE] |
 | `r_lying_h` | 2.5 | lying DIN0207 resistor height (body diameter) | KiCad R_Axial_DIN0207_L6.3mm_D2.5mm model | derived |
-| `vhb` | 1.1 x 93 x 149 | E1's mount: 3M VHB 4950 double-sided acrylic foam tape (white, firm, general purpose adhesive): thickness, long-term and short-term temperature tolerance (degC); chosen over 2-part epoxy so E1 can be pried off for service; apply above 10 degC | 3M VHB Tapes Technical Data, November 2005 (70-0709-3863-7), via mm.digikey.com/Volume0/opasdata/d220001/medias/docus/2605/VHB Tape Data Sheet.pdf: 4950 0.045 in (1.1 mm); short term 300 F (149 C), long term 200 F (93 C); minimum application 50 F (10 C) | sourced |
-| `wago` | 26.6 x 20.5 x 14.5 | WAGO 222-415 5-way lever splicing connector (E1, the battery + junction): width (the five entries side by side) x depth (entry face to back) x height, levers closed | WAGO data sheet 222-415 (version 07.11.2023), https://www.wago.com/222-415: physical data; 0.08-2.5 mm2 / 28-12 AWG solid and stranded, strip 9-10 mm, 32 A | sourced |
 | `evm` | 90 x 90 x 15 | BQ25798EVM (BMS034) board outline x tallest part above it; no mounting holes; feet H1-H4 3M Bumpon SJ-5303 (11.2 x 5.1) peeled off for the rails | outline: Clint, by hand, 2026-11-10: 90 x 90; parts (SLUUCB5E BOM): J1-J4 On-Shore ED120/2DS, J5 ED120/3DS (5.08 mm terminal blocks), J7 Molex 0393570002, J9 3M N2510-6002-RB, J8 Molex 0022053041, J6 Molex 47346-0001, about 33 jumpers with shunts; 15 covers a 5.08 mm rising-clamp block (about 10-12, makers' drawings not reached) | [TBD-MEASURE] |
 | `evm_j8` | 6 | EVM J8 (right-angle 4-pin, the EV2300 port our I2C lead uses) reach past the board edge | Clint, by hand, 2026-11-10: 96 across J8, 90 without | sourced |
 | `box_out` | 125 x 175 x 75 | #905 (TIBOX) outside, for reference: width x length x depth (the printed base replaces its 50 mm body) | TIBOX enclosure catalogue, cdn-shop.adafruit.com/datasheets/TIBOX.pdf p.5; adafruit.com/product/905 | sourced |

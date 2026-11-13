@@ -224,14 +224,18 @@ def check_battery():
     for net, (members, attrs) in NETS.items():
         if not attrs.get("battery"):
             continue
+        contacts = defaultdict(int)
         for ref, pin in members:
             c = PIN[(ref, pin)][3]
             if c in ("header", "socket"):
-                fail(5, f"battery net {net} reaches {ref}.{pin} through a {c} contact")
+                contacts[ref] += 1           # allowed only doubled: two pins of one header and its socket
             elif c == "jst" and net not in ("PACK_P", "PACK_N"):
                 fail(5, f"battery net {net} has a JST mating at {ref}.{pin} (only the pack's own plug is allowed)")
-            elif c not in ("solder", "evm", "jst", "lever"):
+            elif c not in ("solder", "evm", "jst"):
                 fail(5, f"battery net {net} reaches {ref}.{pin} through '{c}'")
+        for ref, k in contacts.items():
+            if k < 2:
+                fail(5, f"battery net {net} crosses {ref} on {k} pin: the battery current needs two")
     chain = [("PACK_P", [("BT1", "+"), ("PG1", "M+")]), ("CELL_P", [("PG1", "L+"), ("U2", "X1.VIN+")]),
              ("BAT_P", [("U2", "X1.VIN-"), ("U1", "BAT")]), ("PACK_N", [("BT1", "-"), ("PG1", "M-")]),
              ("BAT_N", [("PG1", "L-"), ("U1", "BATN")])]
@@ -244,13 +248,13 @@ def check_battery():
         if net is None or (res, "2") not in NETS[net][0] or NET_OF.get((res, "1")) != "CELL_P":
             fail(5, f"{sense[0]}.{sense[1]} should sense the battery + junction (CELL_P) through {res}; it is on {net}")
         for r, p in NETS[net][0] if net else []:
-            if PIN[(r, p)][3] not in ("solder", "evm"):
+            if PIN[(r, p)][3] not in ("solder", "evm", "header", "socket"):
                 fail(5, f"sense net {net} reaches {r}.{p} through '{PIN[(r, p)][3]}'")
     if PART["U1"]["pins"] and ("U1", "INT") in NET_OF:
         fail(5, "the charger interrupt is wired but the model says it is not")
-    NOTES.append("battery chain: pack + =JST= pigtail -lever- WAGO E1 -lever- INA228 shunt -solder- EVM J5 BATTERY; "
-                 "pack - =JST= pigtail -solder- EVM J5 GND; charger sense (BATP) and gauge sense each through 100 ohm "
-                 "from a resistor leg in the WAGO")
+    NOTES.append("battery chain: pack + =JST= pigtail -solder- backplane junction (lines 21-22) =2 pins= B4 INA228 "
+                 "shunt =2 pins= backplane lines 19-20 -solder- EVM J5 BATTERY; pack - =JST= pigtail -solder- EVM J5 GND; "
+                 "charger sense (BATP) and gauge sense each through 100 ohm on the backplane at the junction")
 
 
 def check_pin_maps():

@@ -27,9 +27,10 @@ pole:
 
 ## 1. The backplane (for reference: not printed)
 
-- **Board:** a 21 × 39-hole piece of BusBoard PAD3U, 2.54 pitch, 1.6 thick, plain rectangular. It has **no tab and no
-  drilled holes.**
-- **Outline when seated:** Xb 6.51 to 59.85, Zb 50.25 to 149.31.
+- **Board:** a 30 × 39-hole piece of BusBoard PAD3U (lines 0 to 29), 2.54 pitch, 1.6 thick, plain rectangular. It
+  has **no tab and no drilled holes.**
+- **Outline when seated:** Xb 6.51 to 82.71, Zb 50.25 to 149.31.
+- **Front, right part:** B4's socket runs to line 26 (Xb 75.09) at hole 13; lines 27 to 29 are spare.
 - **Faces:** the copper (back) face is at Yb 8.0 and the component (front) face at Yb 9.6.
 - **Behind it:** the mux breakout on foam, at Xb 11.59 to 52.23, Zb 52.79 to 73.11.
 
@@ -51,6 +52,7 @@ pole:
 - **Positions:**
   - (Xb 58.58, Zb 54.06)
   - (Xb 58.58, Zb 140.42)
+  - (Xb 78.90, Zb 82.00): line 28, hole 13, behind the right end of B4's socket. Lines 27 to 29 carry nothing.
 - **Job:** they carry the push when a card is plugged in. Along with the groove floor, they set the board at Yb 8.0.
 
 ## 4. Right edge: two snap hooks
@@ -63,9 +65,14 @@ reaches over the board's front face.
 
 | Part | Xb | Yb | Zb, lower hook | Zb, upper hook |
 |---|---|---|---|---|
-| Pillar (stiff root) | 61.65 to 64.65 | 0 to 12.6 | 58.0 to 62.0 | 136.0 to 140.0 |
-| Arm (flexes in +Xb) | 60.15 to 61.65 (1.5 thick) | 9.7 to 12.6 (2.9 tall) | 62.0 to 82.0 (20 long) | 116.0 to 136.0 (20 long) |
-| Lip, on the arm's free end | 59.15 to 60.15 (1.0 over the board) | 9.7 to 11.2 | 78.0 to 82.0 | 116.0 to 120.0 |
+| Pillar (stiff root) | 84.21 to 85.80 (on the right corner post's face, or free-standing below it) | 0 to 12.6 | 58.0 to 62.0 | 136.0 to 140.0 |
+| Arm (flexes in +Xb) | 83.01 to 84.21 (1.2 thick) | 9.7 to 12.6 (2.9 tall) | 62.0 to 82.0 (20 long) | 116.0 to 136.0 (20 long) |
+| Lip, on the arm's free end | 82.01 to 83.01 (0.7 over the board) | 9.7 to 11.2 | 78.0 to 82.0 | 116.0 to 120.0 |
+
+The hooks moved to the wider board's right edge (Xb 82.71). There, the gap to the right corner post (Xb 85.8, from
+Zb 72.73 up) is only 3.09. So the arm is 1.2 thick and its flex space 1.5 ends at Xb 85.71, 0.09 short of the post.
+The upper pillar is joined to the post's −Xb face and stays at Xb ≤ 85.8, so it never enters the post's card slots
+(Xb 85.8 to 88.1). The lower pillar (Zb 58 to 62) stands on the floor below the post, which starts at Zb 72.73.
 
 - **Arm direction:** the lower arm runs up from its pillar, and the upper arm runs down from its pillar. Both free
   ends point toward the board's middle.
@@ -73,12 +80,12 @@ reaches over the board's front face.
 - **The lip's top:** a **45° lead-in ramp**, rising from (Xb 59.15, Yb 10.2) to (Xb 60.15, Yb 11.2). When the board's
   edge is pressed down onto the ramp, it pushes the arm out toward +Xb.
 - **Arm clearance:**
-  - 0.3 to the board's right edge (Xb 59.85 to 60.15).
+  - 0.3 to the board's right edge (Xb 82.71 to 83.01).
   - At least 1.5 of clear space on the arm's +Xb side, along its whole length, so it can flex.
   - Nothing underneath the arm between Yb 0 and 9.7.
 - **Flex check (PETG):**
   - deflection needed: 1.0 (the lip) + 0.2 = 1.2;
-  - strain = 1.5 × 1.2 × 1.5 / 20² = **0.7 %**;
+  - strain = 1.5 × 1.2 × 1.2 / 20² = **0.54 %**;
   - PETG allows about 2 % for repeated snaps, so the margin is good.
 - **Printing:** the arm is a horizontal overhang. Print it on a small tree support, or a 0.2 mm-gap support block,
   under its full length, then remove the support. **Do not** join the arm to the floor.
@@ -111,8 +118,8 @@ Two small blocks stand on the floor, one off each end of the board, away from th
    anything.
 3. **Hook flex:** the hooks' flex space is clear, at least 1.5 in +Xb along the whole arm.
 4. **Hook clearance:**
-   - Nothing on the board's front face lies under a lip. The board's line 20 is unused.
-   - The lip clears the B4 socket's housing on lines 1–18. Line 18's pads stop at about Xb 54.4.
+   - Nothing on the board's front face lies under a lip. The board's line 29 is unused.
+   - The lip clears the B4 socket's housing on lines 1–26. It ends at Xb 75.09, 6.9 short of the lip.
 5. **Mux:** it clears the pads, the hooks and the stops by at least 0.5.
 6. **Fit test:** print one hook and a 60 mm length of groove on a scrap plate first. Snap a board offcut in and out
    10 times. Nothing should crack or go loose.

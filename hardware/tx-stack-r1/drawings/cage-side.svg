@@ -71,13 +71,13 @@
 <rect x="159.6" y="258.4" width="5.1" height="341.4" fill="#d9c08a" fill-opacity="1.0" stroke="#7a5c12" stroke-width="1"/>
 <rect x="141.0" y="514.4" width="18.6" height="65.0" fill="#161616" fill-opacity="0.6" stroke="#000" stroke-width="0.5"/>
 <rect x="194.6" y="481.9" width="8.1" height="8.1" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
-<rect x="795.0" y="481.9" width="146.3" height="8.1" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
+<rect x="795.0" y="481.9" width="211.3" height="8.1" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
 <rect x="176.0" y="485.0" width="18.6" height="2.0" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
-<rect x="795.0" y="485.0" width="146.3" height="2.0" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
+<rect x="795.0" y="485.0" width="211.3" height="2.0" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
 <rect x="202.7" y="485.0" width="6.1" height="5.1" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
-<rect x="795.0" y="485.0" width="146.3" height="5.1" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
+<rect x="795.0" y="485.0" width="211.3" height="5.1" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
 <rect x="206.3" y="495.2" width="2.6" height="4.6" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
-<rect x="795.0" y="495.2" width="146.3" height="4.6" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
+<rect x="795.0" y="495.2" width="211.3" height="4.6" fill="#202020" fill-opacity="0.3" stroke="#202020" stroke-width="0.5"/>
 <rect x="260.4" y="482.1" width="8.1" height="8.0" fill="#161616" fill-opacity="0.3" stroke="#161616" stroke-width="0.5"/>
 <rect x="811.2" y="482.1" width="65.0" height="8.0" fill="#161616" fill-opacity="0.3" stroke="#161616" stroke-width="0.5"/>
 <rect x="256.4" y="476.9" width="65.0" height="5.1" fill="#161616" fill-opacity="0.3" stroke="#161616" stroke-width="0.5"/>
@@ -106,8 +106,6 @@
 <rect x="979.9" y="476.9" width="36.6" height="5.1" fill="#1D6B33" fill-opacity="0.3" stroke="#1D6B33" stroke-width="0.5"/>
 <rect x="256.9" y="467.3" width="22.4" height="9.6" fill="#1D6B33" fill-opacity="0.3" stroke="#1D6B33" stroke-width="0.5"/>
 <rect x="986.9" y="467.3" width="22.4" height="9.6" fill="#1D6B33" fill-opacity="0.3" stroke="#1D6B33" stroke-width="0.5"/>
-<rect x="289.1" y="440.1" width="65.6" height="49.9" fill="#8A8D8F" fill-opacity="0.3" stroke="#8A8D8F" stroke-width="0.5"/>
-<rect x="974.3" y="440.1" width="85.1" height="49.9" fill="#8A8D8F" fill-opacity="0.3" stroke="#8A8D8F" stroke-width="0.5"/>
 <rect x="199.5" y="490.1" width="134.1" height="5.1" fill="#B3202A" fill-opacity="1.0" stroke="#5a0e12" stroke-width="1"/>
 <rect x="786.8" y="490.1" width="260.2" height="5.1" fill="#B3202A" fill-opacity="1.0" stroke="#5a0e12" stroke-width="1"/>
 <text x="526.0" y="499.2" font-size="11" text-anchor="start" fill="#222" font-weight="bold">B4 POWER (Zb 80.7)</text>

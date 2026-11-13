@@ -28,7 +28,6 @@ tracks and silkscreen, no part models); **drawn** = generated from the maker's d
 | Seeed Wio-E5 mini board | https://files.seeedstudio.com/products/113990939/LoRa-E5%20mini%20v1.0.brd | imported | Seeed publishes no 3D model |
 | LoRa-E5 module, SMA-K, USB-C, buttons on the mini | boxes from the brd's footprints | stand-in | the import carries no part models |
 | Bourns MF-R010 fuses | boxes | stand-in | Bourns models only through SnapEDA / Octopart (login) |
-| WAGO 222-415 lever connector (E1) | box, 26.6 x 20.5 x 14.5 (WAGO data sheet, https://www.wago.com/222-415) | stand-in | the WAGO STEP sits behind the product page's download form |
 | Amphenol RF 132172 SMA adapter (AD1) | boxes | stand-in | amphenolrf.com refuses scripts (403) |
 | Amphenol RF 135110-01-06.00 cable and bulkhead | tubes and cylinders | stand-in | amphenolrf.com refuses scripts (403) |
 | TE / Linx ANT-916-CW-HWR-SMA antenna | cylinders, length `ant_len` [TBD-MEASURE] | stand-in | te.com refuses scripts (403) |

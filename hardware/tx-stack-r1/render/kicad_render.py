@@ -201,7 +201,6 @@ STAND_IN = {
     "BOB": "RJ11 breakouts: the BOB-14021 board imported from SparkFun's Eagle file; the Amphenol 87180 jack is a box "
            "(Amphenol model: login), on the printed spacer",
     "PTC": "MF-R010 fuses: boxes (Bourns model: login)",
-    "WAGO": "WAGO 222-415 E1: a box from WAGO's data sheet (26.6 x 20.5 x 14.5)",
 }
 GENERIC = {
     "RAH": "bus header (generic, Clint's): drawn from the Sullins PRPC drawing (tails, 90 degree bends, insulator, 5.8 mm mating pins "
@@ -275,7 +274,7 @@ def step_models(pl):
 
 def legend_lines(kinds):
     lines = []
-    for k in ("MINI", "BOB", "PTC", "WAGO"):
+    for k in ("MINI", "BOB", "PTC"):
         if k in kinds:
             if k in BUILT_NOTE and not fetch_models.path_of(k):
                 lines.append(f"stand-in: {k}: boxes ({BUILT_NOTE[k]} not fetched; run render/fetch_models.py)")
@@ -312,7 +311,7 @@ def box_colour(what, kind):
 
 def wire_colour(note):
     n = note.upper()
-    for key, c in (("3.3 V", "#D62728"), ("BATTERY +", "#D62728"), ("PACK +", "#D62728"), ("WAGO", "#D62728"),
+    for key, c in (("3.3 V", "#D62728"), ("BATTERY +", "#D62728"), ("PACK +", "#D62728"),
                    ("SYS", "#E67E22"), ("GROUND", "#1A1A1A"), ("PACK -", "#1A1A1A"), ("CLOCK", "#D4A017"),
                    ("DATA", "#1F5FBF"), ("RESET", "#8E44AD"), ("CUPS", "#2CA02C"), ("VANE", "#17A589"),
                    ("RAIN", "#00A3D9"), ("THERMISTOR", "#7F7F7F"), ("SENSE", "#C2185B")):
@@ -583,12 +582,12 @@ def assembly_boxes(explode=0.0, section=False):
     out.append(("backplane", st.Box(tx0, st.BP_BACK, tx1, st.BP_FRONT, tz0, tz1, "backplane tab (line -1, holes 1-3)")))
     for b in st.BOARDS:
         z = st.bp_xy(f"s1.{st.SOCKET_HOLE[b]}")[1]
-        xa, xb, y0, y1 = st.strip_x(1) - p / 2, st.strip_x(18) + p / 2, st.BP_FRONT, st.BP_FRONT + S.val("socket_h")
+        xa, xb, y0, y1 = st.strip_x(1) - p / 2, st.strip_x(st.model.HDR_LEN[b]) + p / 2, st.BP_FRONT, st.BP_FRONT + S.val("socket_h")
         if section:
             out += [("socket", st.Box(xa, y0, xb, y1, z - p / 2, z - 0.5, f"socket {b} lower wall")),
                     ("socket", st.Box(xa, y0, xb, y1, z + 0.5, z + p / 2, f"socket {b} upper wall")),
                     ("socket", st.Box(xa, y0, xb, y0 + 1.0, z - 0.5, z + 0.5, f"socket {b} floor"))]
-            for i in range(1, 19):                       # contacts and tails through the board to the bus wire
+            for i in st.model.hdr_pins(b):               # contacts and tails through the board to the bus wire
                 x = st.strip_x(i)
                 out.append(("contact", st.Box(x - 0.3, y0 + 1.0, x + 0.3, y1 - 0.8, z - 0.5, z - 0.25, "contact")))
                 out.append(("contact", st.Box(x - 0.3, y0 + 1.0, x + 0.3, y1 - 0.8, z + 0.25, z + 0.5, "contact")))

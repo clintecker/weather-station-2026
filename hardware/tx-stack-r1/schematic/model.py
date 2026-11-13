@@ -11,7 +11,6 @@ Pin tuple: (number, name, electrical type, contact). Contact is how a conductor 
   header   a 0.1 in pin soldered into a card or backplane hole (it joins that hole's strip)
   socket   a 2.54 mm female header contact on the backplane (it joins that backplane strip)
   solder   a lead soldered straight to a pad or a wire end (no strip, no connector)
-  lever    a conductor in a WAGO lever clamp (stripped 9-10 mm, lever closed)
   lead     a flying lead soldered into a breakout's own hole (the RJ11 breakouts)
   jst      the pack's own JST PH mating           qt   a STEMMA QT (JST SH) mating
   rj11     an RJ11 6P6C mating                    usb  a USB mating
@@ -83,16 +82,35 @@ BUS = ["+3V3", "GND", "P1_SDA", "P1_SCL", "CUPS", "VANE", "I2C_SCL", "P2_SDA", "
 CARDS = {"B1": "PORTS A", "B2": "PORTS B + METERS", "B3": "CORE", "B4": "POWER"}
 
 
+# B4's power pins beyond the 18 bus lines: header pin / backplane line -> net. The ~1 A battery legs each take two
+# pins; pins 24 and 25 are pulled from B4's header (they would sit on the regulator's 3.3 V and ground strips).
+B4_POWER = {19: "BAT_P", 20: "BAT_P", 21: "CELL_P", 22: "CELL_P", 23: "GAUGE_S", 26: "SYS"}
+HDR_LEN = {"B1": 18, "B2": 18, "B3": 18, "B4": 26}
+PULLED = {"B4": (24, 25)}
+
+
+def hdr_pins(card):
+    return [i for i in range(1, HDR_LEN[card] + 1) if i not in PULLED.get(card, ())]
+
+
+def _pname(i):
+    return f"bus {i}" if i <= 18 else f"power {i}"
+
+
 def card_header(card):
-    return dict(ref=f"XH{card[1]}", value="bus header 1x18 R/A", block="bus",
-                part="generic 2.54 mm right-angle male header, cut to 1x18, card back edge", card=card,
-                pins=[(str(i), f"bus {i}", PAS, "header") for i in range(1, 19)])
+    n, pulled = HDR_LEN[card], PULLED.get(card, ())
+    return dict(ref=f"XH{card[1]}", value=f"bus header 1x{n} R/A" + (f" (pins {', '.join(map(str, pulled))} pulled)" if pulled else ""),
+                block="bus", card=card,
+                part=f"generic 2.54 mm right-angle male header, cut to 1x{n}, card back edge"
+                     + (f"; pins {' and '.join(map(str, pulled))} pulled out with pliers" if pulled else ""),
+                pins=[(str(i), _pname(i), PAS, "header") for i in hdr_pins(card)])
 
 
 def bp_socket(card):
-    return dict(ref=f"XB{card[1]}", value="bus socket 1x18", block="bus", card="BP",
-                part="generic 2.54 mm female header strip, cut to 1x18 (one position lost at each cut), on the backplane", mates=card,
-                pins=[(str(i), f"bus {i}", PAS, "socket") for i in range(1, 19)])
+    n = HDR_LEN[card]
+    return dict(ref=f"XB{card[1]}", value=f"bus socket 1x{n}", block="bus", card="BP",
+                part=f"generic 2.54 mm female header strip, cut to 1x{n} (one position lost at each cut), on the backplane", mates=card,
+                pins=[(str(i), _pname(i), PAS, "socket") for i in hdr_pins(card)])
 
 
 PARTS = [
@@ -122,16 +140,12 @@ PARTS = [
          pins=[("+", "+", POUT, "jst"), ("-", "-", PAS, "jst")]),
     dict(ref="PG1", value="JST PH pigtail", part="JST PH 2-pin socket with leads (mates the pack, unmodified)",
          block="battery", pins=[("M+", "plug +", PAS, "jst"), ("M-", "plug -", PAS, "jst"),
-                                ("L+", "lead +", PAS, "lever"), ("L-", "lead -", PAS, "solder")],
+                                ("L+", "lead +", PAS, "solder"), ("L-", "lead -", PAS, "solder")],
          ties=[["M+", "L+"], ["M-", "L-"]]),
-    dict(ref="E1", value="WAGO 222-415", block="battery",
-         part="WAGO 222-415 5-way lever splicing connector, on a 3M VHB 4950 pad on B4's top at its front-right corner",
-         card="B4", pins=[("1", "clamp", PAS, "lever")],
-         note="the battery + junction: pigtail +, the shunt input and a leg of each sense resistor; one way spare"),
-    dict(two("R7", "100", R100 + " (charger sense, its leg in the WAGO E1)", "battery"), pins=[
-        ("1", "1", PAS, "lever"), ("2", "2", PAS, "solder")]),
-    dict(two("R8", "100", R100 + " (gauge sense, its leg in the WAGO E1)", "battery"), pins=[
-        ("1", "1", PAS, "lever"), ("2", "2", PAS, "solder")]),
+    dict(two("R7", "100", R100 + " (charger sense, on the backplane at the battery + junction)", "battery"), card="BP",
+         pins=[("1", "1", PAS, "solder"), ("2", "2", PAS, "solder")]),
+    dict(two("R8", "100", R100 + " (gauge sense, on the backplane at the battery + junction)", "battery"), card="BP",
+         pins=[("1", "1", PAS, "solder"), ("2", "2", PAS, "solder")]),
     # ------------------------------------------------------------ B4 POWER
     dict(ref="U2", value="INA228 0x40", part="Adafruit #5832", block="battery", card="B4",
          pins=[("H.VIN", "VIN", PIN, "header"), ("H.GND", "GND", PAS, "header"), ("H.SCL", "SCL", BI, "header"),
@@ -150,7 +164,7 @@ PARTS = [
                ("BAT1.+", "BAT+", PAS, "nc"), ("BAT2.+", "BAT+", PAS, "nc")] + qt("QT1", "nc") + qt("QT2", "nc"),
          ties=[["JP2.VBAT", "BAT1.+", "BAT2.+"], ["H.GND", "JP2.GND", "QT1.GND", "QT2.GND"],
                ["H.VIN", "QT1.V+", "QT2.V+"], ["H.SDA", "QT1.SDA", "QT2.SDA"], ["H.SCL", "QT1.SCL", "QT2.SCL"]],
-         i2c=[0x36], pullups_k=10.0, note="cell sense through R8 from the WAGO E1"),
+         i2c=[0x36], pullups_k=10.0, note="cell sense through R8 from the battery + junction on the backplane (B4 header pin 23)"),
     dict(ref="U7", value="S7V8F3 3.3V", part="Pololu #2122", block="power", card="B4",
          pins=[("VOUT", "3.3 V out", POUT, "header"), ("GND", "ground", PAS, "header"), ("VIN", "in", PIN, "header"),
                ("SHDN", "shutdown", IN, "nc")], note="SHDN open: enabled"),
@@ -259,6 +273,11 @@ def bus(net):
     return out
 
 
+def power(net):
+    """B4's header pins and the B4 socket's pins carrying `net` (B4_POWER)."""
+    return [x for i, n in B4_POWER.items() if n == net for x in ((HEADERS["B4"], str(i)), (SOCKETS["B4"], str(i)))]
+
+
 def port_nets():
     out = {}
     for k, (jack, mod, ch) in PORTS.items():
@@ -277,18 +296,18 @@ def port_nets():
 NETS = {
     "PACK_P": ([("BT1", "+"), ("PG1", "M+")], dict(battery=True)),
     "PACK_N": ([("BT1", "-"), ("PG1", "M-")], dict(battery=True)),
-    "CELL_P": ([("PG1", "L+"), ("E1", "1"), ("U2", "X1.VIN+"), ("R7", "1"), ("R8", "1")], dict(battery=True)),
-    "BAT_P": ([("U2", "X1.VIN-"), ("U1", "BAT")], dict(battery=True)),
+    "CELL_P": ([("PG1", "L+"), ("U2", "X1.VIN+"), ("R7", "1"), ("R8", "1")] + power("CELL_P"), dict(battery=True)),
+    "BAT_P": ([("U2", "X1.VIN-"), ("U1", "BAT")] + power("BAT_P"), dict(battery=True)),
     "BAT_N": ([("PG1", "L-"), ("U1", "BATN")], dict(battery=True)),
     "BATP_S": ([("R7", "2"), ("U1", "BATP")], dict(sense=True)),
-    "GAUGE_S": ([("R8", "2"), ("U6", "JP2.VBAT")], dict(sense=True)),
+    "GAUGE_S": ([("R8", "2"), ("U6", "JP2.VBAT")] + power("GAUGE_S"), dict(sense=True)),
     "TS": ([("RT1", "1"), ("U1", "TS")], dict()),
     "TS_RET": ([("RT1", "2"), ("U1", "TSN")], dict()),
     "VUSB": ([("PS1", "VBUS"), ("U1", "VIN1")], dict(force=True)),
     "VUSB_RET": ([("PS1", "GND"), ("U1", "PGND1")], dict(force=True)),
     "SOLAR_P": ([("PV1", "+"), ("U1", "VIN2")], dict(force=True)),
     "SOLAR_N": ([("PV1", "-"), ("U1", "PGND2")], dict(force=True)),
-    "SYS": ([("U1", "SYS"), ("U7", "VIN")], dict(force=True)),
+    "SYS": ([("U1", "SYS"), ("U7", "VIN")] + power("SYS"), dict(force=True)),
     "+3V3": ([("U7", "VOUT"), ("U2", "H.VIN"), ("U6", "H.VIN"), ("U5", "VIN"), ("U4", "H.VCC"), ("A1", "B2"),
               ("J3", "1"), ("R1", "1"), ("R2", "1"), ("R3", "1")]
              + [(f"F{k}", "1") for k in range(1, 5)] + bus("+3V3"),
@@ -324,7 +343,7 @@ NETS = {
 }
 
 NET_NAME = {
-    "PACK_P": "pack + (at its plug)", "PACK_N": "pack - (at its plug)", "CELL_P": "battery + junction (WAGO E1)",
+    "PACK_P": "pack + (at its plug)", "PACK_N": "pack - (at its plug)", "CELL_P": "battery + junction (backplane lines 21-22)",
     "BAT_P": "charger battery + (after the shunt)", "BAT_N": "battery - (charger ground)",
     "BATP_S": "charger battery sense (BATP)", "GAUGE_S": "fuel gauge cell sense (VBAT)",
     "TS": "battery temperature (TS)", "TS_RET": "thermistor return", "VUSB": "USB 5 V in", "VUSB_RET": "USB ground",
@@ -379,7 +398,6 @@ R1_ADDED = {
     **{s: "backplane socket for one card" for s in ("XB1", "XB2", "XB3", "XB4")},
     "XJ1": "charger I2C lead lands on the backplane",
     **{f"W{k}": f"QT lead S{k}, now on the backplane" for k in range(1, 5)},
-    "E1": "battery + junction on a defined part (mechanical review M8): a WAGO 222-415",
     "R7": "100 ohm at the tap end of the charger sense lead (electrical review m11)",
     "R8": "100 ohm at the tap end of the gauge sense lead (m11; 100 not 1k: the gauge may draw its supply here)",
     "RT1": "pack thermistor on EVM J7, JP18 removed (electrical review M2)",
@@ -394,7 +412,7 @@ R1_RENAMED = {("U1", "GND"): ("U1", "SYSN"), ("U1", "SDA"): ("U1", "J8.3"), ("U1
 # pins in both revisions whose partners (among pins both revisions have) changed, or pins one revision lacks
 R1_MOVED = [
     ([("PG1", "L+"), ("U2", "X1.VIN+"), ("U1", "BATP"), ("U6", "JP2.VBAT")],
-     "charger and gauge sense now leave the battery + junction (E1) through 100 ohm resistors R7, R8 (review m11)"),
+     "charger and gauge sense now leave the battery + junction (backplane lines 21-22) through 100 ohm resistors R7, R8 (review m11)"),
     ([("U1", "J8.1"), ("U1", "TS"), ("U1", "TSN")],
      "EVM pins newly used: J8-1 ground for the I2C lead, J7 for the pack thermistor (review M2)"),
     ([(f"J1{k}", p) for k in range(1, 5) for p in "35"] + [(f"MOD{k}", p) for k in range(1, 4) for p in "35"]

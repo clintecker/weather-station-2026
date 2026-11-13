@@ -6,6 +6,9 @@ enters and leaves the card at its end holes. Every part's footprint (from its bo
 and renders use) is an obstacle on the side it occupies, inflated by the wire's half-width; every used hole that
 is not the wire's own end is an obstacle on both sides (a pin's solder joint or another wire's end). Two routed
 wires never run along the same grid edge; insulated wires may cross at right angles; a bare jumper crosses nothing.
+Runs prefer the midway lines between hole rows (a free hole under a wire costs extra, so pads stay free for later
+fixes), and two insulated runs side by side on neighbouring grid lines (1.27 apart, less than the 1.45 insulation)
+cost extra too: stats() counts what is left of both.
 
 A lead from a pad on a breakout leaves the pad straight across its own board to the nearest edge, then drops to
 the card. A lead to a part off the card (the charger, the pack) runs to this card's exit point on its front edge.
@@ -29,6 +32,22 @@ HALF = {"wire": OD / 2 + 0.05, "jumper": 0.35, "lead": OD / 2 + 0.05}   # half-w
 Z_TOP, Z_BOT = 0.5, -st.BT - 0.5
 BUNDLE = 3                                     # insulated leads laid side by side along one grid line, at most
 EXIT = {"B4": 64.0}                            # off-card leads leave B4's front edge from here (X), toward the charger
+
+
+HOLE_X = {round(st.X(r), 2) for r in range(1, 31)}
+HOLE_Y = {round(y, 2) for y in list(st.LETTER_Y.values()) + list(st.RAIL_Y.values())}
+
+
+def is_hole(n):
+    x, y = node_xy(n)
+    return round(x, 2) in HOLE_X and round(y, 2) in HOLE_Y
+
+
+def neighbours(a, b):
+    """The two grid edges parallel to a-b, one grid step either side."""
+    if a[1] == b[1]:
+        return [frozenset(((a[0], a[1] + s), (b[0], b[1] + s))) for s in (-1, 1)]
+    return [frozenset(((a[0] + s, a[1]), (b[0] + s, b[1]))) for s in (-1, 1)]
 
 
 def node_xy(n):
@@ -131,7 +150,7 @@ class Grid:
                 return False
         return True
 
-    def route(self, starts, goals, kind, own=()):
+    def route(self, starts, goals, kind, own=(), strict=False):
         """Dijkstra over (node, direction) from any start to any goal node; returns the node list or None."""
         goals = set(goals)
         ends = set(starts) | goals
@@ -158,7 +177,11 @@ class Grid:
                 if m not in ends and self.nodes.get(m) and not self.pass_ok(m, how, kind):
                     continue
                 shared = frozenset((n, m)) in self.edges
-                c = cost + G + (1.5 if bend else 0.0) + (2.0 if self.nodes.get(m) else 0.0) + (1.0 if shared else 0.0)
+                side_by = kind != "jumper" and any(k2 != "jumper" for e in neighbours(n, m) for _w, k2 in self.edges.get(e, []))
+                c = cost + G + (1.5 if bend else 0.0) + (2.0 if self.nodes.get(m) else 0.0) + (1.0 if shared else 0.0) \
+                    + (1.2 if m not in ends and is_hole(m) else 0.0) + (10.0 if side_by else 0.0)
+                if strict and side_by and n not in ends and m not in ends:
+                    continue                 # first try: never side by side with another insulated run
                 heapq.heappush(pq, (c, m, dd, path + (m,)))
         return None
 
@@ -273,7 +296,8 @@ def route_order(order):
         if len(sets) != 2 or not sets[0][0] or not sets[1][0]:
             routes[wi] = dict(card=card, side=side, pts=[], length=None, ok=False, why="no free grid node next to an end")
             continue
-        path = g.route(sets[0][0], sets[1][0], kind, own=tuple(own))
+        path = g.route(sets[0][0], sets[1][0], kind, own=tuple(own), strict=True) or \
+            g.route(sets[0][0], sets[1][0], kind, own=tuple(own))
         if path is None:
             routes[wi] = dict(card=card, side=side, pts=[], length=None, ok=False, why="no route around the parts")
             continue
@@ -309,6 +333,33 @@ def _prio(i):
 
 
 ROUTES = route_all()
+
+
+def stats():
+    """(insulated wires lying over free holes: {wire index: [hole nodes]}, side-by-side runs closer than the
+    insulation, away from both wires' end holes: sorted [(i, j, card, side, mm)]) after routing."""
+    over, pairs = {}, {}
+    seen = {}
+    endn = {}
+    for i, r in enumerate(ROUTES):
+        if not r or not r.get("ok") or not r.get("grid") or r["kind"] == "jumper" or r.get("bundled"):
+            continue
+        path = r["grid"]
+        hs = [n for n in path[1:-1] if is_hole(n)]
+        if hs:
+            over[i] = hs
+        endn[i] = {path[0], path[-1]}
+        for a, b in zip(path, path[1:]):
+            seen.setdefault((r["card"], r["side"], frozenset((a, b))), set()).add(i)
+    for (card, side, e), ws in seen.items():
+        a, b = tuple(e)
+        for nb in neighbours(a, b):
+            for j in seen.get((card, side, nb), ()):
+                for i in ws:
+                    if i < j and not (set(e) | set(nb)) & (endn[i] | endn[j]):
+                        k = (i, j, card, side)
+                        pairs[k] = pairs.get(k, 0.0) + G
+    return over, sorted(k + (round(v, 2),) for k, v in pairs.items())
 
 
 def cut_length(i):

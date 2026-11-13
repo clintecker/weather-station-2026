@@ -20,17 +20,21 @@ Y = Xb − 61.75 (positive toward the right wall).
 ## 1. The backplane (for reference: not printed)
 
 - **Board:** PAD3U, 2.54 pitch, 1.6 thick, cut as an **L**. Lines run along Zb.
-  - The main piece is 21 lines × 39 holes (lines 0 to 20).
+  - The main piece is 30 lines × 39 holes (lines 0 to 29). That is the widest the fitting slide allows: its right
+    edge, shifted 2.5 to the right, stops 0.59 short of the right corner post (Xb 85.8). A PAD3U is 38 holes across.
   - A **tab** carries one more line, line −1, beside holes 1 to 3.
   - The inside corner of the L is a hacksaw cut.
 - **Outline:**
-  - Main piece: Xb 6.51 to 59.85, Zb 50.25 to 149.31.
+  - Main piece: **Xb 6.51 to 82.71**, Zb 50.25 to 149.31.
   - Tab: **Xb 3.97 to 6.51, Zb 50.25 to 57.87** (2.54 × 7.62). Its left edge is midway between lines −2 and −1, 3.81
     from line 0's hole centres. That leaves 2.21 of FR4 left of the 3.2 hole at s0.2.
 - **Copper (back) face** at Yb 8.0, against the posts. The component face is at Yb 9.6.
 - **Behind it, on the copper face:** the mux breakout on foam, at **Xb 11.59 to 52.23**, Zb 52.79 to 73.11, inside
   the 8 mm gap. It is boxed in: 0.31 from the bottom-left post's flat in place, and 0.35 from the bottom-right post
-  during the fitting slide (section 3). Bus wires run along lines 1 to 18 (Xb 10.32 to 53.50).
+  during the fitting slide (section 3). Bus wires run along lines 1 to 18 (Xb 10.32 to 53.50), and along B4's
+  power lines 19 to 23 and 26 from hole 5 to hole 13 (Xb 56.04 to 73.82, Zb 61.68 to 82.00).
+- **On the front, at the lower end:** R7 (line 21 to line 24, hole 7) and R8 (line 22 hole 8 to line 23 hole 11) lie
+  flat, 2.6 high; the leads to the EVM and the pack land on holes 6 of lines 19, 21 and 26.
 
 ## 2. Posts: three screw posts
 
@@ -42,6 +46,13 @@ Y = Xb − 61.75 (positive toward the right wall).
 
 - **Spacing:** 50.80 across (20 holes) and 86.36 along (34 holes). These are the board's line 0 / line 20, holes
   2 / 36. The bottom-left screw goes through the tab.
+- **The wider board keeps these three posts and screws.** No new screw post is needed in Clint's printed base:
+  - The B4 socket (1x26, hole 13) ends at line 26. The B3 socket at hole 37 stays 1x18 and ends at Xb 54.81, so the
+    s20.36 screw head (Xb 55.73 to 61.43) clears it by 0.92.
+  - Line 20 carries the charger battery + only from hole 5 up, clear of the s20.2 post (its edge at Zb 57.56).
+  - Lines 21 to 29 (Xb 61 to 82.7) overhang the right-hand posts by up to 24. Only the right end of B4's socket
+    pushes there. **Optional:** a plain Ø6 × 8.0 printed spacer glued to the floor under line 28, hole 13 (Xb 78.90,
+    Zb 82.00) supports it. Nothing else is on line 28.
 - **Post:** a round boss, from the floor (Yb 0) to a flat top at **Yb 8.0**, with an R1.0 fillet at its foot.
   - **Bottom left: Ø8.0, with a flat on its +Xb side 3.5 from its centre** (at Xb 11.28). This is as first specified
     and as Clint printed it. It leaves 1.2 round the knurl on the flat side, 1.7 elsewhere, and 0.31 to the mux.
@@ -86,7 +97,7 @@ in a **groove**:
 - Every post centre falls on a board hole, on the 2.54 grid listed above.
 - Nothing printed lies inside the board outline or the tab at Yb above 8.0, except the groove roof over the board's
   left 2 mm. This holds in place and shifted 2.5 to the right (the slide-in).
-- The board has 2.5 of free travel to the right before anything stops it (the right corner post is at Xb 85.8).
+- The board has 2.5 of free travel to the right before anything stops it: 3.09 to the right corner post (Xb 85.8).
 - The tab's edge (Xb 3.97) is clear of the base's left wall (Xb 0). The EVM is 2.0 in front of the board's front face.
 - The screw heads cover no used hole and meet nothing printed; they clear the EVM's envelope (0.35, see section 2).
 - The rail starts above the tab and the bottom-left post.
@@ -108,7 +119,8 @@ part's front face.
 | B1 | 121.37 | 119.62 to 121.52 |
 | B3 | 141.69 | 139.94 to 141.84 |
 
-B4 to B2 is 8 holes (20.32) since the WAGO 222-415 battery junction on B4 (14.5 tall on a 1.1 VHB pad) went in;
+B4 to B2 is 8 holes (20.32), set when a WAGO junction sat on B4 (it has since moved to the backplane as lines 21-22; the
+heights stay because Clint's base is printed to them);
 B2 to B1 and B1 to B3 stay 8 holes.
 
 **Left wall:** a solid block from Xb 0 (on the base's left wall) to Xb 8.5, Yb 0 to 63.37, Zb 72.73 to 155.69.

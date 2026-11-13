@@ -29,7 +29,6 @@ UC = "4UCON drawing 14869 (SparkFun PRT-00132 jack), cdn.sparkfun.com/assets/8/6
 PAD = "BusBoard PAD3U Padboard, busboardcom.busboard.us/PAD3U (38 x 62 holes, 0.037 in holes on 0.1 in, 160.02 x 100.08 x 1.6 mm; DigiKey 4526-PAD3U-ND)"
 TIB = "TIBOX enclosure catalogue, cdn-shop.adafruit.com/datasheets/TIBOX.pdf"
 BOXD = "Adafruit #905 diagram (not to scale), cdn-shop.adafruit.com/datasheets/175mmenclosurediagram.pdf p.1 (inside bottom 135.7 x 90 mm straight walls between the corner bosses)"
-WAGO = "WAGO data sheet 222-415 (version 07.11.2023), https://www.wago.com/222-415"
 GEN = "Clint's generic 2.54 mm right-angle male header (cut to 18), 2026-11-13; drawn as the Sullins PRPC drawing (" + SUL + ")"
 GENF = "Clint's generic 2.54 mm female header strip (cut to 18), 2026-11-13; drawn as the Sullins PPPC drawing (" + SULF + ")"
 
@@ -126,8 +125,6 @@ D = {
     "diode_stand_h": (7.0, "standing DO-35 height (body on one lead, the other looped over)", "4.56 body + 1 lead + loop; check on the part", "TBD"),
     "wire24": ((0.511, 1.45, 84.2), "24 AWG insulated hook-up wire (card wires solid, flying leads stranded): conductor diameter, insulation OD, resistance mohm/m", "AWG 24 = 0.511 mm, 84.2 mohm/m at 20 C (0.205 mm2 copper); OD about 1.3-1.6 for PVC hook-up wire: measure Clint's", "TBD"),
     "r_lying_h": (2.5, "lying DIN0207 resistor height (body diameter)", "KiCad R_Axial_DIN0207_L6.3mm_D2.5mm model", "derived"),
-    "vhb": ((1.1, 93, 149), "E1's mount: 3M VHB 4950 double-sided acrylic foam tape (white, firm, general purpose adhesive): thickness, long-term and short-term temperature tolerance (degC); chosen over 2-part epoxy so E1 can be pried off for service; apply above 10 degC", "3M VHB Tapes Technical Data, November 2005 (70-0709-3863-7), via mm.digikey.com/Volume0/opasdata/d220001/medias/docus/2605/VHB Tape Data Sheet.pdf: 4950 0.045 in (1.1 mm); short term 300 F (149 C), long term 200 F (93 C); minimum application 50 F (10 C)", "sourced"),
-    "wago": ((26.6, 20.5, 14.5), "WAGO 222-415 5-way lever splicing connector (E1, the battery + junction): width (the five entries side by side) x depth (entry face to back) x height, levers closed", WAGO + ": physical data; 0.08-2.5 mm2 / 28-12 AWG solid and stranded, strip 9-10 mm, 32 A", "sourced"),
     "pack": ((69.0, 54.0, 18.0), "battery pack #353", "INVENTORY.md / docs/current-system.md (SHOP:49)", "sourced"),
     "evm": ((90.0, 90.0, 15.0), "BQ25798EVM (BMS034) board outline x tallest part above it; no mounting holes; feet H1-H4 3M Bumpon SJ-5303 (11.2 x 5.1) peeled off for the rails", "outline: Clint, by hand, 2026-11-10: 90 x 90; parts (SLUUCB5E BOM): J1-J4 On-Shore ED120/2DS, J5 ED120/3DS (5.08 mm terminal blocks), J7 Molex 0393570002, J9 3M N2510-6002-RB, J8 Molex 0022053041, J6 Molex 47346-0001, about 33 jumpers with shunts; 15 covers a 5.08 mm rising-clamp block (about 10-12, makers' drawings not reached)", "TBD"),
     "evm_j8": (6.0, "EVM J8 (right-angle 4-pin, the EV2300 port our I2C lead uses) reach past the board edge", "Clint, by hand, 2026-11-10: 96 across J8, 90 without", "sourced"),

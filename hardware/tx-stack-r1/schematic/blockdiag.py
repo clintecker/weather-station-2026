@@ -67,7 +67,7 @@ def main():
     PW, I2, MT, RF = "#C0392B", "#1F5FBF", "#2CA02C", "#8E44AD"
     text(W / 2, 30, "TX card cage r2: block diagram (Wio-E5 mini TX on four SolderFul cards and a backplane)", 18, anchor="middle", weight="bold")
     text(W / 2, 50, "Generated from schematic/model.py. Red: power. Blue: I2C. Green: meter lines. Purple: RF. "
-         "Dashed: battery current (soldered leads only, never a strip).", 12, anchor="middle")
+         "Dashed: battery current (soldered leads, backplane lines and doubled B4 header pins).", 12, anchor="middle")
     # ---------------- power tree (left)
     box(30, 80, 230, 62, P["PV1"]["value"], [P["PV1"]["part"][:36], "gland, off the stack"], "#fdf2e9", PW)
     box(30, 160, 230, 50, P["PS1"]["value"], [P["PS1"]["part"]], "#fdf2e9", PW)
@@ -75,15 +75,15 @@ def main():
     box(300, 90, 230, 110, "BQ25798EVM (U1) charger", ["TI SLUUCB5; MPPT from solar", "I2C " + addr("U1") + " on J8, interrupt not wired",
         "1 cell: JP22 only, JP24/JP9/JP18 out", "own slot below the cards"], "#fdf2e9", PW)
     box(300, 240, 230, 92, "INA228 (U2) shunt " + addr("U2"), [P["U2"]["part"] + ", 15 mohm shunt",
-        "battery leads on the X1 pads", "+ junction: WAGO 222-415 E1 on B4"], "#fdf2e9", PW, "B4")
-    box(300, 352, 230, 62, "MAX17048 (U6) gauge " + addr("U6"), [P["U6"]["part"], "cell sense via 100 ohm from the WAGO"],
+        "battery leads on the X1 pads", "in and out on two B4 header pins each"], "#fdf2e9", PW, "B4")
+    box(300, 352, 230, 62, "MAX17048 (U6) gauge " + addr("U6"), [P["U6"]["part"], "cell sense via R8 on the backplane, pin 23"],
         "#fdf2e9", PW, "B4")
     box(570, 90, 200, 62, "S7V8F3 (U7) 3.3 V", [P["U7"]["part"] + " buck-boost", "system out in, 3.3 V out"], "#fdf2e9", PW, "B4")
     arrow([(260, 110), (300, 120)], "solar", PW)
     arrow([(260, 185), (280, 185), (280, 170), (300, 170)], "USB 5 V", PW, lx=282, ly=200, anchor="start")
     arrow([(145, 312), (145, 380), (300, 380)], "", PW, dash=True)
     text(150, 344, "pack + via JST PH pigtail (PG1)", 11, PW)
-    text(150, 358, "WAGO E1: charger and gauge sense, 100 ohm each", 11, PW)
+    text(150, 358, "junction: backplane lines 21-22, R7 and R8 there", 11, PW)
     arrow([(260, 285), (300, 285)], "", PW, dash=True)
     text(262, 272, "battery +", 10, PW)
     arrow([(415, 240), (415, 200)], "charger battery +", PW, dash=True, lx=420, ly=225, anchor="start")
@@ -146,8 +146,8 @@ def main():
     arrow([(1200, 545), (1180, 545), (1180, 200), (1160, 200)], "cups / vane / rain", MT, lx=1186, ly=380, anchor="start")
     # boards key
     y = 850
-    text(30, y, "Cards (bottom to top): B4 POWER, 15.24 mm, B2 PORTS B + METERS, 20.32 mm, B1 PORTS A, 20.32 mm, B3 CORE; "
-         "each plugs a 1x18 right-angle header into a socket on the backplane (18 lines).", 12, weight="bold")
+    text(30, y, "Cards (bottom to top): B4 POWER, 20.32 mm, B2 PORTS B + METERS, 20.32 mm, B1 PORTS A, 20.32 mm, B3 CORE; "
+         "each plugs a right-angle header into a socket on the backplane (18 bus lines; B4 1x26 with its power pins).", 12, weight="bold")
     text(30, y + 20, "Addresses (check 2): upstream " + ", ".join(
         f"{r} {addr(r)}" for r in ("U6", "U2", "U1", "U5", "U4")) + "; behind the mux, each port: 24LC32 0x50 + its sensor.", 12)
     text(30, y + 40, "Ground is common everywhere and is not drawn. Pin maps: schematic/model.py, checked against "
