@@ -146,7 +146,7 @@ def main():
     arrow([(1200, 545), (1180, 545), (1180, 200), (1160, 200)], "cups / vane / rain", MT, lx=1186, ly=380, anchor="start")
     # boards key
     y = 850
-    text(30, y, "Cards (bottom to top): B4 POWER, 20.32 mm, B2 PORTS B + METERS, 20.32 mm, B1 PORTS A, 20.32 mm, B3 CORE; "
+    text(30, y, "Cards (bottom to top): B4 POWER, 15.24 mm, B2 PORTS B + METERS, 20.32 mm, B1 PORTS A, 20.32 mm, B3 CORE; "
          "each plugs a right-angle header into a socket on the backplane (18 bus lines; B4 1x26 with its power pins).", 12, weight="bold")
     text(30, y + 20, "Addresses (check 2): upstream " + ", ".join(
         f"{r} {addr(r)}" for r in ("U6", "U2", "U1", "U5", "U4")) + "; behind the mux, each port: 24LC32 0x50 + its sensor.", 12)

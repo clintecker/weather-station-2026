@@ -386,8 +386,8 @@ FLOOR_LIFT = 0.0                   # the printed base's floor is the cage's: eve
 BP_BACK = FLOOR_LIFT + S.val("cage_plate") + S.val("bp_posts")   # backplane copper face, Yb
 BP_FRONT = BP_BACK + S.val("strip_size")[2]        # component face (sockets), Yb
 CARD_DY = BP_FRONT - Y_BP                          # Yb = CARD_DY + (Y_BP - Y) ... see card_to_box
-PITCH = {("B4", "B2"): 8, ("B2", "B1"): 8, ("B1", "B3"): 8}   # in backplane holes (2.54 mm); B4-B2 8 (set for a WAGO junction on B4, since
-#   moved to the backplane; kept: the printed base's slots are at these heights)
+PITCH = {("B4", "B2"): 6, ("B2", "B1"): 8, ("B1", "B3"): 8}   # in backplane holes (2.54 mm); B4-B2 6 again (8 was for a WAGO junction on B4, since
+#   moved to the backplane; Clint's printed base has no card slots, so nothing fixes these heights)
 SOCKET_HOLE = {"B4": 13}                           # the mux sits behind holes 1-10, below the cards
 BP_Z0 = S.val("power_zone") - (SOCKET_HOLE["B4"] - 1) * P   # first backplane hole, Zb
 for lo, hi in PITCH:

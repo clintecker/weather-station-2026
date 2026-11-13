@@ -2,7 +2,7 @@
 
 The backplane is a piece of BusBoard PAD3U padboard. It stands 8 mm off the base's inside floor on printed posts with
 M3 heat-set inserts. The cards plug into its sockets from the lid side. Every dimension is in mm. The numbers come from
-`layout/stack.py` and `cage/cage.py` as of 7c780f7, with section 6 updated for the 8-hole B4-B2 pitch.
+`layout/stack.py` and `cage/cage.py` as of 7c780f7, with section 6 for the 6-hole B4-B2 pitch.
 
 ## Coordinate frame
 
@@ -47,12 +47,14 @@ Y = Xb − 61.75 (positive toward the right wall).
 - **Spacing:** 50.80 across (20 holes) and 86.36 along (34 holes). These are the board's line 0 / line 20, holes
   2 / 36. The bottom-left screw goes through the tab.
 - **The wider board keeps these three posts and screws.** No new screw post is needed in Clint's printed base:
-  - The B4 socket (1x26, hole 13) ends at line 26. The B3 socket at hole 37 stays 1x18 and ends at Xb 54.81, so the
-    s20.36 screw head (Xb 55.73 to 61.43) clears it by 0.92.
+  - The B4 socket (1x26, hole 13) ends at line 26. The B3 socket, now at hole 35, stays 1x18 and ends at Xb 54.81. The
+    s20.36 screw head (Xb 55.73 to 61.43, Zb 137.57 to 143.27) overlaps it along Zb but clears it by 0.92 along Xb.
   - Line 20 carries the charger battery + only from hole 5 up, clear of the s20.2 post (its edge at Zb 57.56).
   - Lines 21 to 29 (Xb 61 to 82.7) overhang the right-hand posts by up to 24. Only the right end of B4's socket
-    pushes there. **Optional:** a plain Ø6 × 8.0 printed spacer glued to the floor under line 28, hole 13 (Xb 78.90,
-    Zb 82.00) supports it. Nothing else is on line 28.
+    pushes there. A **support pad** takes it: Ø6, from the floor (Yb 0) to Yb 8.0, no bore, under line 28, hole 13
+    (**Xb 78.90, Zb 82.00**), behind the right end of B4's socket. Nothing else is on line 28, and the line 26 socket
+    tail and bus wire (Xb 73.82) are 1.8 from its edge. New prints mould it with the posts. **In Clint's printed
+    base:** print it as a separate Ø6 × 8.0 spacer and glue it to the floor there.
 - **Post:** a round boss, from the floor (Yb 0) to a flat top at **Yb 8.0**, with an R1.0 fillet at its foot.
   - **Bottom left: Ø8.0, with a flat on its +Xb side 3.5 from its centre** (at Xb 11.28). This is as first specified
     and as Clint printed it. It leaves 1.2 round the knurl on the flat side, 1.7 elsewhere, and 0.31 to the mux.
@@ -71,10 +73,10 @@ little cooler.
 ## 3. The left edge above the tab: a groove
 
 A screw at the fourth corner (Xb 7.78, Zb 140.42) won't work. It is inside the left wall's slot side (Xb 6.5 to 8.5,
-Zb 72.73 to 155.69), and its head would hit B3's socket at hole 35. Instead, the board's left edge above the tab sits
+Zb 72.73 to 150.61), and its head would hit B3's socket at hole 35. Instead, the board's left edge above the tab sits
 in a **groove**:
 
-- **In the left wall** (section 6): in its slot-side face (the face at Xb 8.5), Zb 72.73 to 155.69.
+- **In the left wall** (section 6): in its slot-side face (the face at Xb 8.5), Zb 72.73 to 150.61.
 - **Below the wall, a rail:** a block Xb 0 to 8.5, Yb 0 to 13.6, **Zb 58.56 to 72.73**, joined to the wall's foot
   and moulded on the base's left wall and floor. The same groove runs through it.
   - It stops 0.5 above the bottom-left post (top at Zb 58.06) and 0.69 above the tab (Zb 57.87).
@@ -101,6 +103,7 @@ in a **groove**:
 - The tab's edge (Xb 3.97) is clear of the base's left wall (Xb 0). The EVM is 2.0 in front of the board's front face.
 - The screw heads cover no used hole and meet nothing printed; they clear the EVM's envelope (0.35, see section 2).
 - The rail starts above the tab and the bottom-left post.
+- The support pad's top is at Yb 8.0, under no used pad, wire or tail.
 
 ## 6. Card guides: the left wall, the right corner post and the retention bar
 
@@ -115,22 +118,23 @@ part's front face.
 | Card | Card's top face, Zb | Slot, Zb |
 |---|---|---|
 | B4 | 80.73 | 78.98 to 80.88 |
-| B2 | 101.05 | 99.30 to 101.20 |
-| B1 | 121.37 | 119.62 to 121.52 |
-| B3 | 141.69 | 139.94 to 141.84 |
+| B2 | 95.97 | 94.22 to 96.12 |
+| B1 | 116.29 | 114.54 to 116.44 |
+| B3 | 136.61 | 134.86 to 136.76 |
 
-B4 to B2 is 8 holes (20.32), set when a WAGO junction sat on B4 (it has since moved to the backplane as lines 21-22; the
-heights stay because Clint's base is printed to them);
-B2 to B1 and B1 to B3 stay 8 holes.
+B4 to B2 is 6 holes (15.24) again: the WAGO junction that needed 8 has moved to the backplane (lines 21-22), and
+B4's tallest part is now 10.1 (U6's JST PH socket), which needs 12.1 of the 13.64 between the cards. B2 to B1 and
+B1 to B3 stay 8 holes. The sockets are at backplane holes 13 (B4), 19 (B2), 27 (B1) and 35 (B3). Clint's printed
+base has no card slots, so these heights are for new prints.
 
-**Left wall:** a solid block from Xb 0 (on the base's left wall) to Xb 8.5, Yb 0 to 63.37, Zb 72.73 to 155.69.
+**Left wall:** a solid block from Xb 0 (on the base's left wall) to Xb 8.5, Yb 0 to 63.37, Zb 72.73 to 150.61.
 
 - **Card slots:** cut into its +Xb face (the face at Xb 8.5), **2.0 deep** (Xb 6.5 to 8.5), from Yb 9.6 to 63.37.
 - **Backplane groove:** the groove from section 3 is also cut into that face.
 - **Retention-bar inserts:** two M3 × 5.7 heat-set inserts in its front face (Yb 63.37), at Xb 3.25 and Zb 76.0 and
-  152.0. Each bore is Ø4.0 × 6.5 deep. *These positions are my call; the model doesn't fix them yet.*
+  147.0. Each bore is Ø4.0 × 6.5 deep. *These positions are my call; the model doesn't fix them yet.*
 
-**Right corner post:** a block Xb 85.8 to 93.8, Yb 0 to 21.96, Zb 72.73 to 155.69.
+**Right corner post:** a block Xb 85.8 to 93.8, Yb 0 to 21.96, Zb 72.73 to 150.61.
 
 - **Card slots:** cut into its −Xb face (the face at Xb 85.8), **2.3 deep** (Xb 85.8 to 88.1), from Yb 9.6 to
   22.06, which is through its front.
@@ -139,11 +143,11 @@ B2 to B1 and B1 to B3 stay 8 holes.
 
   | Above | Zb |
   |---|---|
-  | B2 | 101.05 to 117.62 |
-  | B1 | 121.37 to 137.94 |
+  | B2 | 95.97 to 112.54 |
+  | B1 | 116.29 to 132.86 |
 
-**Retention bar:** a separate printed part, 12.0 (Xb 0 to 12.0) × 2.5 (Yb 63.37 to 65.87) × 82.96 (Zb 72.73 to
-155.69). It sits flat on the left wall's front face.
+**Retention bar:** a separate printed part, 12.0 (Xb 0 to 12.0) × 2.5 (Yb 63.37 to 65.87) × 77.88 (Zb 72.73 to
+150.61). It sits flat on the left wall's front face.
 
 - It screws to the left wall's front face, with Ø3.4 clearance holes at the two insert positions above.
 - It covers each card's front-left corner, so no card can slide out.

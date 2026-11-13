@@ -84,7 +84,8 @@ BP_POST_D, BP_POST_BL, BP_FLAT, _bd, _bl, _bf = S.val("bp_post")
 BP_BORE = (_bd, _bl)
 BP_POSTS = [st.bp_xy(h) for h in st.BP_SCREWS]          # bottom left (the larger, with the flat), bottom right, top right
 BP_POST_DS = [BP_POST_BL, BP_POST_D, BP_POST_D]
-BAR_INS = S.val("bar_inserts")                          # Xb, Zb, Zb, the bar's clearance hole
+BAR_INS = S.val("bar_inserts")
+BP_PAD = "s28.13"                                        # the support pad under the board's overhang (line 28 is spare)                          # Xb, Zb, Zb, the bar's clearance hole
 
 # ------------------------------------------------------------------ chosen
 PLATE = 0.0
@@ -164,6 +165,10 @@ def parts():
                          f"the back breakout's spacer tongue (card Y {st.CD:.2f}-{st.TONGUE_Y1:.2f}) instead"))
     posts = [B(x - d / 2, YP, z - d / 2, x + (BP_FLAT if i == 0 else d / 2), st.BP_BACK, z + d / 2, "backplane post")
              for i, ((x, z), d) in enumerate(zip(BP_POSTS, BP_POST_DS))]
+    sx, sz = st.bp_xy(BP_PAD)
+    out.append(Part("backplane support pad", [B(sx - 3.0, YP, sz - 3.0, sx + 3.0, st.BP_BACK, sz + 3.0, "backplane support pad")],
+                    note=f"a plain \u00d86 pad {st.BP_BACK:g} tall under {BP_PAD} (no screw), behind the right end of B4's "
+                         "socket, where the wide board overhangs the right-hand posts; in Clint's printed base a glued spacer"))
     out.append(Part("backplane posts", posts, solid=bp_post_solids,
                     note=f"three round posts {st.BP_BACK:g} tall from the floor (bottom left \u00d8{BP_POST_BL:g} with a flat "
                          f"{BP_FLAT:g} from its centre toward the mux, the right two \u00d8{BP_POST_D:g}), M3 heat-set inserts "

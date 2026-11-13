@@ -37,5 +37,5 @@
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
 		(model "${KIPRJMOD}/3d/cage-section.wrl" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
-	(gr_poly (pts (xy 0.0000 36.1300) (xy 31.9100 36.1300) (xy 31.9100 60.1300) (xy 0.0000 60.1300)) (stroke (width 0.1) (type solid)) (fill no) (layer "Edge.Cuts") (uuid "78d6e93c-4065-538c-aefc-bcf1e3d78bd5"))
+	(gr_poly (pts (xy 0.0000 41.2100) (xy 31.9100 41.2100) (xy 31.9100 65.2100) (xy 0.0000 65.2100)) (stroke (width 0.1) (type solid)) (fill no) (layer "Edge.Cuts") (uuid "78d6e93c-4065-538c-aefc-bcf1e3d78bd5"))
 )
