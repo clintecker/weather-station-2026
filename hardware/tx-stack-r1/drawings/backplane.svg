@@ -2603,7 +2603,7 @@
 <circle cx="558.9" cy="705.6" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
 <text x="70.0" y="26.0" font-size="15" text-anchor="start" fill="#222" font-weight="bold">Backplane: BusBoard PAD3U padboard cut 30 x 38 holes, seen from the front (component side); a pad per hole, no strips: the bus wires on the copper side join them</text>
 <text x="1006.3" y="80.0" font-size="13" text-anchor="start" fill="#222" font-weight="bold">Line: what its bus wire carries</text>
-<text x="1006.3" y="95.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">0: screws, no wire</text>
+<text x="1006.3" y="95.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">0: no bus wire</text>
 <text x="1006.3" y="110.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">1: 3.3 V supply</text>
 <text x="1006.3" y="125.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">2: ground</text>
 <text x="1006.3" y="140.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">3: sensor port 1 data (SDA)</text>
@@ -2627,15 +2627,15 @@
 <text x="1006.3" y="410.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">21: battery + junction (backplane lines 21-22)</text>
 <text x="1006.3" y="425.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">22: battery + junction (backplane lines 21-22)</text>
 <text x="1006.3" y="440.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">23: fuel gauge cell sense (VBAT)</text>
-<text x="1006.3" y="455.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">24: screws, no wire</text>
-<text x="1006.3" y="470.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">25: screws, no wire</text>
+<text x="1006.3" y="455.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">24: no bus wire (R7&#x27;s free leg)</text>
+<text x="1006.3" y="470.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">25: no bus wire</text>
 <text x="1006.3" y="485.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">26: charger system output (SYS)</text>
-<text x="1006.3" y="500.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">27: screws, no wire</text>
-<text x="1006.3" y="515.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">28: screws, no wire</text>
-<text x="1006.3" y="530.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">29: screws, no wire</text>
+<text x="1006.3" y="500.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">27: no bus wire</text>
+<text x="1006.3" y="515.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">28: no bus wire</text>
+<text x="1006.3" y="530.0" font-size="10.5" text-anchor="start" fill="#222" font-weight="normal">29: no bus wire</text>
 <text x="1006.3" y="555.0" font-size="10" text-anchor="start" fill="#222" font-weight="normal">black outline: card socket (generic female strip, cut: 1x18, B4 1x26)</text>
 <text x="1006.3" y="570.0" font-size="10" text-anchor="start" fill="#222" font-weight="normal">small square: a pin in a hole</text>
 <text x="1006.3" y="585.0" font-size="10" text-anchor="start" fill="#222" font-weight="normal">coloured line: bare bus wire on the copper side, ringed where soldered</text>
 <text x="1006.3" y="600.0" font-size="10" text-anchor="start" fill="#222" font-weight="normal">purple ring: a lead soldered on the copper side</text>
-<text x="1006.3" y="615.0" font-size="10" text-anchor="start" fill="#222" font-weight="normal">white circle: 3.2 mm screw hole</text>
+<text x="1006.3" y="615.0" font-size="10" text-anchor="start" fill="#222" font-weight="normal">white circle: 3.2 mm screw hole (line 0 hole 2, the lower factory hole)</text>
 <text x="1006.3" y="630.0" font-size="10" text-anchor="start" fill="#222" font-weight="normal">dashed: the mux, behind on foam</text></svg>

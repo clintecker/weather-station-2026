@@ -1,8 +1,28 @@
-# Backplane mount: build spec (printed TX base, floor posts)
+# Enclosure 2: backplane mount build spec (the printed TX base)
 
-The backplane is a piece of BusBoard PAD3U padboard. It stands 8 mm off the base's inside floor on printed posts with
-M3 heat-set inserts. The cards plug into its sockets from the lid side. Every dimension is in mm. The numbers come from
-`layout/stack.py` and `cage/cage.py` as of the factory-edge rectangle (2026-11-13): the board is the PAD3U's plated end, held by two screws, the left groove and a slot in the right corner post.
+**Enclosure 2** is the new printed base the TX is built into (not yet printed; Clint's CAD bot makes it from these
+specs). Everything below is printed into it: nothing is glued in or cut by hand afterwards.
+
+The backplane is the plated end of a BusBoard PAD3U padboard. It stands 8 mm off the base's inside floor on printed
+posts with M3 heat-set inserts. The cards plug into its sockets from the lid side. Every dimension is in mm. The
+numbers come from `layout/stack.py` and `cage/cage.py` (the factory-edge rectangle, 2026-11-13).
+
+## Changes from the snap-mount version (for the CAD bot)
+
+The current enclosure 2 STL follows `backplane-snap-mount-spec.md`. Change it as follows:
+
+1. **Remove** both snap hooks and their pillars (about Xb 56 to 62).
+2. **Remove** the length stops, including the top stop (about Xb 30 to 50, Zb 150).
+3. **Remove** the snap version's support pads (about Xb 60, Zb 79 and 118).
+4. **Add two screw posts**, floor to Yb 8.0, each with an M3 insert bore Ø4.0 × 6.5 from the top (section 2):
+   - bottom left at **(Xb 7.78, Zb 54.06)**, Ø8.0, with a flat on its +Xb side 3.5 from its centre;
+   - bottom right at **(84.09, 54.06)**, Ø7.0.
+5. **Add three plain support posts**, Ø6.0, floor to Yb 8.0, no bore: at **(58.58, 54.06)**, **(58.58, 140.42)**
+   and **(78.90, 82.00)**.
+6. **Cut the backplane slot** into the right corner post's left (−Xb) face: **Xb 85.8 to 89.8 (4.0 deep), Yb 8.0 to
+   10.1**, the post's full length, with a 45° roof from (89.8, 10.1) up to the face (section 6).
+7. **Keep** the left wall's groove and the rail below it (section 3), the card slots and the cut-backs. Check the
+   right corner post against section 6: Xb 85.8 to 93.8, Zb 72.73 to 150.61 (the STL has about 86 to 94, 73 to 148).
 
 ## Coordinate frame
 
@@ -17,7 +37,7 @@ The **box frame** is the one `cage.py` uses, looking into the open base from the
 The lid-centre frame of `lid-rim-spec.md` is also given: X = Zb − 84.75 (positive toward the top wall) and
 Y = Xb − 61.75 (positive toward the right wall).
 
-## 1. The backplane (for reference: not printed)
+## 1. The backplane (not printed; for reference)
 
 - **Board:** PAD3U, 2.54 pitch, 1.6 thick, **a plain rectangle** (no tab, no hacksaw). Lines run along Zb.
   - It is the PAD3U's **plated end**: the 30 rows next to its two factory mounting holes become lines 0 to 29, each
@@ -41,7 +61,7 @@ Y = Xb − 61.75 (positive toward the right wall).
 - **On the front, at the lower end:** R7 and R8 lie flat, 2.6 high; the leads to the EVM and the pack land on
   holes 6 of lines 19, 21 and 26.
 
-## 2. Holding it: two screws, a groove and a slot (Clint's plan)
+## 2. Holding it: two screws, a groove and a slot
 
 | Corner | Held by | Where (Xb, Zb) |
 |---|---|---|
@@ -55,15 +75,15 @@ Y = Xb − 61.75 (positive toward the right wall).
   up to Zb 52.5). The M3 head (Ø5.7, 1.65) clears it by 0.35, as the old screws did. Use M4 only if the EVM measures
   further forward.
 - **The drilled hole is 1.27 from the scored edge**, so it opens 0.3 into it. Drill it before snapping the edge;
-  the head clamps 4 mm of FR4 beside it. That is the price of keeping the bottom-left post where Clint printed it
-  without the old tab.
+  the head clamps 4 mm of FR4 beside it. That keeps the board a plain rectangle (no tab) with the bottom-left post
+  under line 0.
 - **Posts** (round, from the floor to a flat top at **Yb 8.0**, R1.0 fillet at the foot, insert bore **Ø4.0 × 6.5**
   for an M3 × 5.7 heat-set insert):
   - **Bottom left: Ø8.0 with a flat** on its +Xb side 3.5 from its centre (as Clint printed it): 0.31 to the mux.
   - **Bottom right: Ø7.0 at (84.09, 54.06).** Below the right corner post (which starts at Zb 72.73); clear of the
     EVM (it is in front, from Yb 11.6) and of the charger's right rib (Xb 94.75).
-- **Plain pads** (Ø6, floor to Yb 8.0, no bore, no hole in the board) under **s20.2, s20.36 and s28.13**: they take
-  the cards' push between the screws.
+- **Plain support posts** (Ø6, floor to Yb 8.0, no bore, no hole in the board) under **s20.2 (58.58, 54.06), s20.36
+  (58.58, 140.42) and s28.13 (78.90, 82.00)**: they take the cards' push between the screws.
 
 ## 3. The left edge: a groove
 
@@ -96,22 +116,6 @@ past line 29's centres, 0.69 more than BusBoard's numbers give (5.48); past that
 - The screw heads cover no used hole, meet nothing printed and clear the EVM's envelope by 0.35.
 - The mux clears every post and pad, in place and pushed right.
 
-## 5a. Clint's printed base (first spec)
-
-It has the bottom-left post (Ø8, flat), posts at s20.2 and s20.36 (Ø7, inserts) and the groove in the wall. For
-this board:
-
-- **Keep:** the bottom-left post (the one drilled hole lands on it) and the s20.2 and s20.36 posts as plain supports
-  (leave their screws out).
-- **Add, glued to the floor:** a printed **Ø7 × 8.0 standoff with an M3 insert at (84.09, 54.06)** for the
-  lower-right screw, and the Ø6 × 8.0 spacer at s28.13 as before.
-- **The right corner post (Xb 85.8):** the board's right edge reaches Xb 86.92, 1.12 into it. Without the slot the
-  board does not go in. Either cut the slot into the printed post by hand (Xb 85.8 to 89.8, Yb 8.0 to 10.1, from
-  Zb 72.73 up: a hot knife or a file), or reprint the post. If the base has no right corner post, glue a second
-  standoff with an M3 insert under the upper factory hole (84.09, 142.96), drill that hole out to 3.2 as well, and
-  use three screws.
-- **No rail?** Then the left edge is free between Zb 54 and 72.73; the bottom-left screw holds that corner.
-
 ## 6. Card guides: the left wall, the right corner post and the retention bar
 
 The four cards (B4, B2, B1, B3, from bottom to top) are SolderFul boards, **81.3 wide** (along Xb) and **1.6 thick**.
@@ -131,8 +135,8 @@ part's front face.
 
 B4 to B2 is 6 holes (15.24) again: the WAGO junction that needed 8 has moved to the backplane (lines 21-22), and
 B4's tallest part is now 10.1 (U6's JST PH socket), which needs 12.1 of the 13.64 between the cards. B2 to B1 and
-B1 to B3 stay 8 holes. The sockets are at backplane holes 13 (B4), 19 (B2), 27 (B1) and 35 (B3). Clint's printed
-base has no card slots, so these heights are for new prints.
+B1 to B3 stay 8 holes. The sockets are at backplane holes 13 (B4), 19 (B2), 27 (B1) and 35 (B3). Enclosure 2
+prints the card slots at these heights (the STL's Zb 79, 94, 115 and 136 match).
 
 **Left wall:** a solid block from Xb 0 (on the base's left wall) to Xb 8.5, Yb 0 to 63.37, Zb 72.73 to 150.61.
 
@@ -166,3 +170,8 @@ base has no card slots, so these heights are for new prints.
 
 - **Heat-set insert:** its length and its largest (knurl) diameter, with calipers. The bore above assumes 5.7 long
   and about 4.6 across the knurl. If yours differ, make the bore the knurl diameter minus 0.6 and the length plus 0.8.
+
+## Appendix: old printed base (not used)
+
+Clint's first printed base (three posts, the groove in the wall only) is not used for the TX. It would need the
+lower-right post and the s28.13 pad added and the 4.0 slot cut into its right corner post; enclosure 2 prints them.

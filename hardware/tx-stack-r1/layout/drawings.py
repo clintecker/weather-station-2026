@@ -347,11 +347,15 @@ def backplane_view(ph):
     g.text(lx, y, "Line: what its bus wire carries", 13, weight="bold")
     for i in range(n_strips):
         y += 15
-        g.text(lx, y, f"{i}: {plain(REP['BP'].get(f's{i}')) if REP['BP'].get(f's{i}') else 'spare (no wire)' if 0 < i < 20 else 'screws, no wire'}", 10.5)
+        legs = [f"{ref}'s free leg" if all(h.split(".")[0] != f"s{i}" for h in pins.values() if h != hp) else ref
+                for ref, pins, _n in st.BP_PARTS if not ref.startswith("XB") for hp in pins.values()
+                if hp.split(".")[0] == f"s{i}"]
+        txt = plain(REP['BP'].get(f's{i}')) if REP['BP'].get(f's{i}') else "no bus wire" + (f" ({', '.join(legs)})" if legs else "")
+        g.text(lx, y, f"{i}: {txt}", 10.5)
     y += 25
     for s_ in ("black outline: card socket (generic female strip, cut: 1x18, B4 1x26)", "small square: a pin in a hole",
                "coloured line: bare bus wire on the copper side, ringed where soldered",
-               "purple ring: a lead soldered on the copper side", "white circle: 3.2 mm screw hole",
+               "purple ring: a lead soldered on the copper side", "white circle: 3.2 mm screw hole (line 0 hole 2, the lower factory hole)",
                "dashed: the mux, behind on foam"):
         g.text(lx, y, s_, 10)
         y += 15

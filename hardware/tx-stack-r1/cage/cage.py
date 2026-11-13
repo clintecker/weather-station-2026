@@ -177,8 +177,7 @@ def parts():
     out.append(Part("backplane support pads", [B(x - r, YP, z - r, x + r, st.BP_BACK, z + r, "backplane support pad")
                                                for x, z in (st.bp_xy(h) for h in st.BP_SUPPORTS)],
                     note=f"plain \u00d8{BP_PAD_D:g} pads {st.BP_BACK:g} tall under {', '.join(st.BP_SUPPORTS)} (no screw, no "
-                         "hole in the board): they take the cards' push; in Clint's printed base the old s20.2 and s20.36 "
-                         "posts (their screws left out) and a glued spacer at s28.13"))
+                         "hole in the board), printed in enclosure 2: they take the cards' push"))
     out.append(Part("backplane posts", posts, solid=bp_post_solids,
                     note=f"two round screw posts {st.BP_BACK:g} tall from the floor (bottom left \u00d8{BP_POST_BL:g} with a "
                          f"flat {BP_FLAT:g} from its centre toward the mux, under the drilled s0.2; bottom right "
