@@ -84,8 +84,8 @@ BP_POST_D, BP_POST_BL, BP_FLAT, _bd, _bl, _bf = S.val("bp_post")
 BP_BORE = (_bd, _bl)
 # screw posts: bottom left under the drilled hole (s0.2, with the flat toward the mux), bottom right under the
 # PAD3U's lower factory hole; the board's holes they serve, from the layout (the L7 and section 4 checks compare them)
-BP_POSTS = [(7.78, 54.06), (84.09, 54.06)]
 BP_HOLES_AT = [st.bp_xy(st.BP_SCREWS[0]), st.BP_FACTORY[st.BP_FACTORY_SCREW]]
+BP_POSTS = [(7.78, 54.06), (86.63, 54.06)]
 BP_POST_WHAT = ["bottom-left (drilled s0.2)", "bottom-right (factory hole)"]
 BP_POST_DS = [BP_POST_BL, BP_POST_D]
 RSLOT_D, RSLOT_H = S.val("bp_slot")
@@ -102,6 +102,8 @@ CARD_FRONT = st.BP_FRONT + st.Y_BP
 Z_LO = st.card_z("B4") - 8.0
 Z_HI = min(st.card_z("B3") + 14.0, H - 0.5)
 RX = st.CAGE_LEFT + st.BW
+POST_R = 8.0                        # the right corner post reaches this far right of the cards' edge (RX): 3.5 behind
+#                                     the 6.5 deep backplane slot
 BP_BOTTOM = st.BP_Z0 - 2 * st.P
 # glands: two rows of four in the bottom wall, the flat weather-meter cables in the PG-9s under the right column
 FLAT = {(98.0, 25.0): "wind (flat)", (98.0, 60.0): "rain (flat)"}
@@ -159,14 +161,14 @@ def parts():
                          f"{GROOVE[4]:g}, a 45 degree roof) the wall's full length and down a rail to Zb {RAIL_Z0:.2f}, above the bottom-left post"))
     grip = S.val("sb_snap_y") - 1.5
     post_y1 = CARD_FRONT - grip
-    post = [B(RX - 2.0, YP, Z_LO, RX + 6.0, post_y1, Z_HI, "right corner post")]
+    post = [B(RX - 2.0, YP, Z_LO, RX + POST_R, post_y1, Z_HI, "right corner post")]
     pslots = [B(RX - 2.0, st.BP_FRONT, st.card_z(b) - st.BT - SLOT_CLEAR / 2, RX + SLOT_CLEAR, post_y1 + 0.1,
                 st.card_z(b) + SLOT_CLEAR / 2, f"post slot for {b}") for b in st.ORDER]
     pslots.append(B(*RSLOT[:3], *RSLOT[3:], "backplane slot"))
     for b in ("B1", "B2"):
         z = st.card_z(b)
         nxt = st.ORDER[st.ORDER.index(b) + 1]
-        pslots.append(B(RX - 2.0, CARD_FRONT - st.BOB_Y[2] - 0.5, z, RX + 6.0, post_y1 + 0.1,
+        pslots.append(B(RX - 2.0, CARD_FRONT - st.BOB_Y[2] - 0.5, z, RX + POST_R, post_y1 + 0.1,
                         st.card_z(nxt) - st.BT - SLOT_CLEAR / 2 - 2.0, f"post cut round {b}'s back jack and plug"))
     out.append(Part("right corner post", post, cuts=pslots, solid=right_post_solid,
                     note=f"moulded: takes each card's back-right corner (card Y {grip:.2f}-{st.CD:.2f}); on B1 and B2 "

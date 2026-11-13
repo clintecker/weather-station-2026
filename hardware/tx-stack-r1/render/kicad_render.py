@@ -266,7 +266,7 @@ def step_models(pl):
     for mk, rot, x0, y0 in pl["step"]:
         p = fetch_models.path_of(mk)
         if p:
-            z = S.val("bob_spacer") if mk == "BOB" else HDR
+            z = min(x.z0 for x in st.boxes_of(pl) if "BOB-14021 PCB" in x.what) if mk == "BOB" else HDR   # the back one sits higher
             out.append(("${KIPRJMOD}/../models/" + p.relative_to(fetch_models.MODELS).as_posix(), (x0, y0), rot, z))
             skip = ("PCB",) + (("header plastic",) if mk == "MINI" else ()) if mk in fetch_models.BUILT else MAKER_SKIP
     return out, False, skip

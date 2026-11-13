@@ -82,35 +82,57 @@ BUS = ["+3V3", "GND", "P1_SDA", "P1_SCL", "CUPS", "VANE", "I2C_SCL", "P2_SDA", "
 CARDS = {"B1": "PORTS A", "B2": "PORTS B + METERS", "B3": "CORE", "B4": "POWER"}
 
 
-# B4's power pins beyond the 18 bus lines: header pin / backplane line -> net. The ~1 A battery legs each take two
-# pins; pins 24 and 25 are pulled from B4's header (they would sit on the regulator's 3.3 V and ground strips).
+# Every card has the full 1x30 right-angle header (card rows 1-30, column j) and every backplane socket is 1x30:
+# card pin n on backplane line n (the columns sit straight over the lines). Lines 1-18 are the bus. B4's power pins
+# on lines 19-26: header pin / backplane line -> net; the ~1 A battery legs each take two pins.
 B4_POWER = {19: "BAT_P", 20: "BAT_P", 21: "CELL_P", 22: "CELL_P", 23: "GAUGE_S", 26: "SYS"}
-HDR_LEN = {"B1": 18, "B2": 18, "B3": 18, "B4": 26}
-PULLED = {"B4": (24, 25)}
+# pins 19-30 whose card row strip carries a card-local net: the header pin is on that net (it sits in the strip) and
+# so is the socket contact it mates, but that contact is soldered to an isolated backplane pad (no bus wire there)
+CARD_LOCAL = {"B3": {20: "+3V3", 21: "SWDIO", 22: "SWCLK", 23: "NRST", 24: "GND", 26: "MUX_RST"},
+              "B4": {24: "+3V3", 25: "GND"}}
+HDR_LEN = {"B1": 30, "B2": 30, "B3": 30, "B4": 30}
+PULLED = {}
+
+
+def line_net(i):
+    """The net backplane line i's bus wire carries (None: no shared net, every contact on it is an isolated pad)."""
+    return BUS[i - 1] if 1 <= i <= len(BUS) else B4_POWER.get(i)
+
+
+def pin_net(card, i):
+    """The net on a card's header pin i (and the socket contact it mates), or None."""
+    if i <= len(BUS):
+        return BUS[i - 1]
+    if card == "B4" and i in B4_POWER:
+        return B4_POWER[i]
+    return CARD_LOCAL.get(card, {}).get(i)
 
 
 def hdr_pins(card):
     return [i for i in range(1, HDR_LEN[card] + 1) if i not in PULLED.get(card, ())]
 
 
-def _pname(i):
-    return f"bus {i}" if i <= 18 else f"power {i}"
+def _pname(card, i):
+    if i <= len(BUS):
+        return f"bus {i}"
+    n = pin_net(card, i)
+    if n is None:
+        return f"spare {i}"
+    return f"power {i}" if card == "B4" and i in B4_POWER else f"local {i} ({n})"
 
 
 def card_header(card):
-    n, pulled = HDR_LEN[card], PULLED.get(card, ())
-    return dict(ref=f"XH{card[1]}", value=f"bus header 1x{n} R/A" + (f" (pins {', '.join(map(str, pulled))} pulled)" if pulled else ""),
-                block="bus", card=card,
-                part=f"generic 2.54 mm right-angle male header, cut to 1x{n}, card back edge"
-                     + (f"; pins {' and '.join(map(str, pulled))} pulled out with pliers" if pulled else ""),
-                pins=[(str(i), _pname(i), PAS, "header") for i in hdr_pins(card)])
+    n = HDR_LEN[card]
+    return dict(ref=f"XH{card[1]}", value=f"bus header 1x{n} R/A", block="bus", card=card,
+                part=f"generic 2.54 mm right-angle male header, cut to 1x{n}, card back edge",
+                pins=[(str(i), _pname(card, i), PAS, "header" if pin_net(card, i) else "nc") for i in hdr_pins(card)])
 
 
 def bp_socket(card):
     n = HDR_LEN[card]
     return dict(ref=f"XB{card[1]}", value=f"bus socket 1x{n}", block="bus", card="BP",
                 part=f"generic 2.54 mm female header strip, cut to 1x{n} (one position lost at each cut), on the backplane", mates=card,
-                pins=[(str(i), _pname(i), PAS, "socket") for i in hdr_pins(card)])
+                pins=[(str(i), _pname(card, i), PAS, "socket" if pin_net(card, i) else "nc") for i in hdr_pins(card)])
 
 
 PARTS = [
@@ -341,6 +363,10 @@ NETS = {
     "RF_WALL": ([("CX1", "J"), ("AE1", "RF")], dict()),
     **port_nets(),
 }
+# the card-local header pins (CARD_LOCAL): in their strip's net, with the socket contact each one mates
+for _c, _pins in CARD_LOCAL.items():
+    for _i, _n in _pins.items():
+        NETS[_n][0].extend([(HEADERS[_c], str(_i)), (SOCKETS[_c], str(_i))])
 
 NET_NAME = {
     "PACK_P": "pack + (at its plug)", "PACK_N": "pack - (at its plug)", "CELL_P": "battery + junction (backplane lines 21-22)",

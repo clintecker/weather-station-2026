@@ -15,7 +15,7 @@ tracks and silkscreen, no part models); **drawn** = generated from the maker's d
 | Lying resistors, standing DO-35 diodes, 100 nF discs | KiCad 10 library (`Resistor_THT`, `Diode_THT`, `Capacitor_THT`) | real | |
 | Breakout headers (0.1 in, vertical) | KiCad 10 library (`Connector_PinHeader_2.54mm`) | real | |
 | Bus header and SWD header (Clint's generic 2.54 mm right-angle male, cut to 18) | `kicad_render.py` from the Sullins PRPC drawing as a stand-in for the generic part: tails, 90 degree bends, insulator, 5.8 mm mating pins [TBD-MEASURE] | drawn | the generic header has no drawing; KiCad's generic header has the wrong mating length |
-| Backplane socket (generic 2.54 mm female strip, cut to 1x18) | boxes (drawn open in the section), sized from the Sullins PPPC drawing [TBD-MEASURE] | stand-in | as above |
+| Backplane socket (generic 2.54 mm female strip, cut to 1x30) | boxes (drawn open in the section), sized from the Sullins PPPC drawing [TBD-MEASURE] | stand-in | as above |
 | Adafruit SHTC3 #4636 | https://raw.githubusercontent.com/adafruit/Adafruit_CAD_Parts/main/4636%20SHTC3/4636%20SHTC3.step | real | |
 | Adafruit MAX17048 #5580 | https://raw.githubusercontent.com/adafruit/Adafruit_CAD_Parts/main/5580%20MAX17048/5580%20MAX17048.step | real | |
 | Adafruit INA228 #5832 | https://raw.githubusercontent.com/adafruit/Adafruit_CAD_Parts/main/5832%20INA228%20STEMMA%20QT/5832%20INA228%20STEMMA%20QT.step | real | shows its terminal block, which is not fitted |

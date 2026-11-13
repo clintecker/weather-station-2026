@@ -70,17 +70,19 @@ flat on a tray 2 mm over the gland nuts), the BQ25798EVM (on two moulded ledges,
 backplane's lower end, J8 toward the lid), then the cards B4, B2, B1, B3 (the SHTC3 on the top card, about 84 mm
 above the charger). Moulded in the base: a left wall with one slot per card; a right corner post that takes each
 card's back-right corner; two screw posts, plain pads, a groove in the left wall and a slot in the right corner post that hold the **backplane** (BusBoard PAD3U padboard, a pad per hole: its
-plated end, 30 x 38 holes, only the left edge cut; a tinned bus wire on the copper side per bus line; copper side back) 8 mm off the floor over the mux (`hardware/tx-stack-r1/cage/backplane-mount-spec.md`: two M3 screws, one through a factory mounting hole);
+plated end, 31 x 38 holes (lines 0-30), only the left edge cut; a tinned bus wire on the copper side per bus line; copper side back) 8 mm off the floor over the mux (`hardware/tx-stack-r1/cage/backplane-mount-spec.md`: two M3 screws, one through a factory mounting hole);
 a retention bar screwed across the front-left of the stack after the cards are in. The lid's corner lands set the
 card heights: a card's parts cannot pass a top corner as it slides out, so the stack sits 3 mm under them.
 
 The cards are horizontal shelves, each with its two back rails snapped off along the line past column j (card
 depth 41.91 mm `[TBD-MEASURE]`) and the edge filed flat before any soldering. Each has a **Sullins
-PRPC040SBAN-M71RC** right-angle header cut to 1x18 (the 1x18 PRPC018SBAN-M71RC is no longer sold) on its back
-edge (column j, rows 1-18), its mating pins 7.36 mm past the snapped edge, which plugs 5.0 mm into a **Sullins PPPC181LFBN-RC** 1x18 socket on the
+PRPC040SBAN-M71RC** right-angle header cut to the full 1x30 on its back edge (column j, rows 1-30; pin n on
+backplane line n), its mating pins 7.36 mm past the snapped edge, which plugs 5.0 mm into a 1x30 female socket on the
 backplane (5.84 mm of mating pin; at least 4.2 mm if a card sits 0.8 mm short; the socket 2.36 mm clear of the
 card, the card edge 10.86 mm from the backplane). The back RJ11 breakout on B1 and B2 overhangs the snapped edge;
-its printed spacer's tongue is gripped by the right corner post. Every wire, jumper and lead is routed flat on a
+its 3.04 mm printed spacer bridges the header and the socket, and its tongue is gripped by the right corner post. On
+backplane lines 19-30 only B4's power contacts (19-23, 26) meet a bus wire; every other contact there sits on an
+isolated pad. Every wire, jumper and lead is routed flat on a
 1.27 mm grid around the parts (`layout/route.py`). Card order bottom to top:
 B4 POWER, B2 PORTS B + METERS, B1 PORTS A, B3 CORE, at pitches of 15.24, 20.32 and 20.32 mm, each clearing the
 tallest part below plus its tails and 0.5 mm. The jacks face the right wall; the cable glands are in the bottom wall's
@@ -180,7 +182,8 @@ does not), and each port cable's capacitance.
 
 - Ports: SparkFun BOB-14021 and Amphenol **87180-066LF** 6P6C jacks (test-fit one jack before soldering);
   Bourns MF-R010; Vishay BAT85S; onsemi 1N5232B; 100 ohm and 1 k 1/4 W resistors.
-- Bus: Sullins PRPC040SBAN-M71RC (right angle, cut to 1x18) per card; Sullins PPPC181LFBN-RC (1x18 female) per
+- Bus: generic right-angle male header (drawn as the Sullins PRPC040SBAN-M71RC), cut to 1x30, per card; generic
+  female strip (drawn as the Sullins PPPC) cut to 1x30, per
   card on a BusBoard PAD3U padboard with 22 AWG tinned bus wires.
 - Battery: Keystone 7328 lug on an M3 nylon screw; Adafruit #372 10 k NTC.
 - Radio (#35): Wio-E5 mini, Amphenol RF 132172 right-angle SMA adapter, Amphenol 135110-01-06.00 (SMA

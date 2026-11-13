@@ -17,7 +17,8 @@
   L7 the cage: each card's pitch clears the tallest part below plus the header tails and solder tails above;
      no part of one card enters another card's slab, the backplane's front items, the left wall slot, the
      right corner post or the retention bar; each card slides out toward the lid alone; the cage, the
-     power zone (pack and charger) and every card fit the box inside; the slot width; the backplane length;
+     power zone (pack and charger) and every card fit the box inside; the slot width; the backplane length; every
+     screw post and support pad under the backplane keeps 1.5 from each copper-face joint and bus wire;
   L8 every routed wire, jumper and lead (layout/route.py) lies on its side of the card in straight runs with
      right-angle bends, never crosses a part's footprint (a pad lead only crosses its own breakout), never
      passes over a used hole that is not its own end, and shares no grid edge with another wire except an
@@ -32,6 +33,8 @@
      backplane header; every other way off a card is a plug on it (RJ11 jack, SMA, SWD or USB-C) whose plug
      clears the neighbouring cards; the charger and the pack meet only the backplane, never a card; nothing
      runs card to card except through the backplane.
+ L11 the backplane lines (every socket 1x30): each socket contact is on its line's bus wire, its card pin on the
+     line's net, or on an isolated pad no bus wire is soldered to or lies over; a bus wire joins one net only.
 Run: python3 layout_checks.py   (exit status 0 only if every check passes)
 """
 import math
@@ -242,8 +245,14 @@ def check_copper(ph):
                 k = sum(1 for v in model.B4_POWER.values() if v == n)
                 if model.NETS[n][1].get("battery") and 0 < k < 2:
                     fail("L4", f"battery net {n} crosses the B4 header on {k} pin")
-        if len(loose) > 1:
+        spots = [x for x in loose if not x.startswith(("XH", "XB"))]   # a spare header pin, its mated contact and
+        if len(spots) > 1:                                               # its isolated pad: one end, not a joint
             fail("L2", f"unconnected pins {loose} share a strip {strips}")
+        elif spots and len(loose) > 1:
+            STUBS.append(f"{spots[0]} ({PIN[tuple(spots[0].split('.', 1))][1]}) on {strips[0]}")
+    if STUBS:
+        NOTES.append("spare header pins on an unused part pin's strip (the socket contact on an isolated pad): "
+                     + "; ".join(sorted(STUBS)))
     merged = defaultdict(list)
     for n, c in cls.items():
         merged[c].append(n)
@@ -253,6 +262,7 @@ def check_copper(ph):
 
 _TIED = None
 _EFF = None
+STUBS = []
 
 
 def eff_net(pin):
@@ -313,10 +323,14 @@ def check_bus(ph):
             fail("L5", f"B4:j{i} holds {ph.get(('B4', f'j{i}'))}, wants header pin {i}")
         if rep["BP"].get(f"s{i}") != line:
             fail("L5", f"backplane line {i} carries {rep['BP'].get(f's{i}')}, B4 power pin {i} is {line}")
-    for b in st.BOARDS:
-        for i in model.PULLED.get(b, ()):
-            if ph.get((b, f"j{i}")):
-                fail("L5", f"{b}:j{i} holds {ph.get((b, f'j{i}'))}, but header pin {i} is pulled")
+    for b in st.BOARDS:                                 # the full 1x30: pins 19-30 in their strips' nets
+        if model.HDR_LEN[b] != 30 or model.PULLED.get(b):
+            fail("L5", f"{b}'s header is 1x{model.HDR_LEN[b]} with pins {model.PULLED.get(b)} pulled, not the full 1x30")
+        for i in range(19, model.HDR_LEN[b] + 1):
+            if ph.get((b, f"j{i}")) != (model.HEADERS[b], str(i)):
+                fail("L5", f"{b}:j{i} holds {ph.get((b, f'j{i}'))}, wants header pin {i}")
+            if rep[b].get(f"R{i}") != model.pin_net(b, i):
+                fail("L5", f"{b} row-strip {i} carries {rep[b].get(f'R{i}')}, its header pin {i} is on {model.pin_net(b, i)}")
     tip = st.Y_J + st.RA_TIP
     ins = tip - st.Y_MOUTH
     tol = S.val("slot_clear") + 0.5
@@ -327,20 +341,87 @@ def check_bus(ph):
         fail("L5", f"the socket mouth is {gap:.2f} mm past the snapped card edge (< {S.val('clear'):g}): it overlaps the card")
     if st.Y_MOUTH - st.Y_INS < 0.5:
         fail("L5", f"the header insulator ends {st.Y_MOUTH - st.Y_INS:.2f} mm short of the socket mouth")
-    NOTES.append(f"bus: 18 lines, header column j rows 1-18 on every card, backplane bus wires on lines 1-18; B4's "
-                 f"header 1x{model.HDR_LEN['B4']} adds power pins " + ", ".join(f"{i} {n}" for i, n in model.B4_POWER.items())
-                 + f" (pins {', '.join(map(str, model.PULLED['B4']))} pulled); card "
+    NOTES.append(f"bus: every card a 1x30 header in column j rows 1-30, every socket 1x30; bus wires on lines 1-18; "
+                 f"B4's power lines " + ", ".join(f"{i} {n}" for i, n in model.B4_POWER.items())
+                 + "; card-local pins " + "; ".join(f"{c} " + ", ".join(f"{i} {n}" for i, n in v.items())
+                                                   for c, v in model.CARD_LOCAL.items()) + " (isolated pads); card "
                  f"snapped at Y {st.CD:.2f} [TBD-MEASURE]; header insulator to Y {st.Y_INS:.2f}, mating pins out to Y "
                  f"{tip:.2f} ({tip - st.CD:.2f} past the edge); socket mouth {st.Y_MOUTH:.2f} ({gap:.2f} clear of the card, "
                  f"{st.Y_MOUTH - st.Y_INS:.2f} clear of the insulator); insertion {ins:.2f} mm of {S.val('ra_mate'):g} "
                  f"(>= {ins - tol:.2f} if the card sits {tol:.1f} mm short); card edge {st.Y_BP - st.CD:.2f} mm from the backplane")
     for b in st.BOARDS:
-        sock = st.Box(st.X(1) - 1.27, st.Y_MOUTH, st.X(18) + 1.27, st.Y_BP, 0.0, 2 * st.PIN_Z, "socket body")
+        sock = st.Box(st.X(1) - 1.27, st.Y_MOUTH, st.X(model.HDR_LEN[b]) + 1.27, st.Y_BP, 0.0, 2 * st.PIN_Z, "socket body")
         if overlap(sock, st.Box(0, 0, st.BW, st.CD, -st.BT, 0, "card"), tol=-S.val("clear")):
             fail("L5", f"{b}: the socket body comes within {S.val('clear'):g} mm of the card")
         for ref, x in board_boxes(b):
             if ref != model.HEADERS[b] and not x.keepout and overlap(sock, x):
                 fail("L5", f"{b}: the backplane socket body hits {x.what}")
+
+
+def check_lines(ph):
+    """L11: each socket contact is on its line's bus wire (the pin's net is the line's net) or on an isolated pad that
+    no bus wire is soldered to or lies over; the pads one bus wire joins all carry one net."""
+    bus = dict(st.BP_BUS)
+    n_iso = 0
+    for b in st.BOARDS:
+        for i in model.hdr_pins(b):
+            n, net, ln = st.SOCKET_HOLE[b], model.pin_net(b, i), model.line_net(i)
+            pin = (model.SOCKETS[b], str(i))
+            if NET_OF.get(pin) != net:
+                fail("L11", f"{pin[0]}.{i} is on {NET_OF.get(pin)} in the model, its card pin on {net}")
+            holes = bus.get(i, [])
+            if n in holes:
+                if net is None or net != ln:
+                    fail("L11", f"{pin[0]}.{i} ({net}) is soldered to line {i}'s bus wire ({ln})")
+            else:
+                n_iso += 1
+                if net is not None and net == ln and i in bus:
+                    fail("L11", f"{pin[0]}.{i} ({net}) is off line {i}'s bus wire, which carries its net")
+                if holes and min(holes) <= n <= max(holes):
+                    fail("L11", f"line {i}'s bus wire (holes {min(holes)}-{max(holes)}) lies over {pin[0]}.{i}'s isolated pad")
+    for line, holes in st.BP_BUS:                       # every pin soldered along one bus wire: one net
+        nets = set()
+        for n in holes:
+            x = ph.get(("BP", f"s{line}.{n}"))
+            if x and NET_OF.get(x):
+                nets.add(NET_OF[x])
+        if len(nets) > 1:
+            fail("L11", f"line {line}'s bus wire joins nets {sorted(nets)}")
+        if model.line_net(line) and nets and nets != {model.line_net(line)}:
+            fail("L11", f"line {line}'s bus wire carries {sorted(nets)}, the line is {model.line_net(line)}")
+    shared = defaultdict(list)
+    for line, _h in st.BP_BUS:
+        shared[model.line_net(line)].append(line)
+    NOTES.append(f"lines: {n_iso} socket contacts on isolated pads; shared nets by line: "
+                 + "; ".join(f"{k} {','.join(map(str, v))}" for k, v in shared.items()))
+
+
+def check_copper_face():
+    """L7: every screw post and support pad under the backplane keeps clear_face (1.5) from its edge to every joint
+    on the copper face (a used pad: a socket or part tail, a wire end) and every bus wire."""
+    cl = 1.5
+    r_j = S.val("pad_margin")                    # a joint's fillet: up to half a pitch round its hole
+    things = [(x, z, d / 2, w) for (x, z), d, w in zip(cage.BP_POSTS, cage.BP_POST_DS, cage.BP_POST_WHAT)] + \
+             [(*st.bp_xy(h), cage.BP_PAD_D / 2, f"support pad under {h}") for h in st.BP_SUPPORTS]
+    worst = 99.0
+    for x, z, r, what in things:
+        for li, ni in st.BP_USED:
+            hx, hz = st.strip_x(li), st.bp_xy(f"s0.{ni}")[1]
+            g = math.hypot(hx - x, hz - z) - r - r_j
+            worst = min(worst, g)
+            if g < cl:
+                fail("L7", f"the {what} is {g:.2f} from the joint at s{li}.{ni} (< {cl:g})")
+        for li, holes in st.BP_BUS:
+            if len(holes) < 2:
+                continue
+            hx = st.strip_x(li)
+            z0, z1 = st.bp_xy(f"s0.{min(holes)}")[1], st.bp_xy(f"s0.{max(holes)}")[1]
+            g = math.hypot(hx - x, max(z0 - z, 0, z - z1)) - r - 0.3
+            worst = min(worst, g)
+            if g < cl:
+                fail("L7", f"the {what} is {g:.2f} from line {li}'s bus wire (< {cl:g})")
+    NOTES.append(f"copper face: posts and support pads at least {worst:.2f} from every joint (fillet {r_j:g} round its "
+                 f"hole) and bus wire (>= {cl:g})")
 
 
 def overlap(a, b, tol=0.02):
@@ -705,7 +786,7 @@ def check_mech():
          "the front left", "the slots take the card's weight and any knock across it; the bar stops it backing out",
          "two M3 screws: bar off, card slides out toward the lid",
          "")
-    mech("Bus header into the backplane socket", f"18 contacts' friction (B4: {len(model.hdr_pins('B4'))}, its power pins too); axis Yb (in the card plane, toward the back "
+    mech("Bus header into the backplane socket", f"30 contacts' friction on every card (the full 1x30); axis Yb (in the card plane, toward the back "
          f"wall); insertion {ins:.2f} mm of "
          f"{S.val('ra_mate'):g}; the insulator meets the socket {stop:.2f} mm further in (the depth stop)",
          f"the socket; side play is the slot's {sc:g} mm, inside the socket lead-in ({tol:g} mm [TBD-MEASURE])",
@@ -727,7 +808,9 @@ def check_mech():
                 back = any("tongue" in x.what for x in st.boxes_of(pl))
                 mech(f"{b} {pl['ref']} RJ11 breakout", "bonded to its printed spacer, the spacer bonded to the card; "
                      "its six pads take flying leads to the card (no pin goes into the card)"
-                     + ("; the spacer's tongue sits in the right corner post slot" if back else ""),
+                     + (f"; the spacer ({S.val('bob_spacer_back'):g} tall) bridges the 1x30 bus header and the socket "
+                        "(front block and a side wall past the header's last pin), its tongue in the right corner "
+                        "post slot; the pad leads cross the header in the air" if back else ""),
                      "the plug's push and pull run along the jack axis (Xb) through the jack and the breakout into the "
                      "two bonds" + (" and the post" if back else "") + "; the latch takes the pull",
                      "unsolder the six leads at the card; cut the spacer bond",
@@ -790,7 +873,8 @@ def check_mech():
          "unscrew the plug at AD1 (8 mm spanner), then lift B3 out", cflag)
     # power
     mech("B4's power pins (the battery path)", "header pins 19-20 (charger battery +, after the shunt) and 21-22 "
-         "(the battery + junction) doubled, 23 gauge sense, 26 SYS (24-25 pulled), in the B4 socket on lines 19-26; "
+         "(the battery + junction) doubled, 23 gauge sense, 26 SYS (24-25 its 3.3 V and ground, on isolated pads), in the "
+         "B4 socket on lines 19-26; "
          "the junction, R7 and R8 and the leads to the EVM and the pack are on the backplane",
          "the socket contacts (about 0.5 A each on the doubled pins at 1 A)",
          "pull B4 out: the battery path opens at its header, nothing to unscrew", "")
@@ -879,8 +963,10 @@ def run():
     check_pins_and_ends(ph)
     check_copper(ph)
     check_bus(ph)
+    check_lines(ph)
     check_3d()
     check_cage(ph)
+    check_copper_face()
     check_routes()
     check_removal()
     check_mech()

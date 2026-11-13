@@ -147,7 +147,7 @@ def main():
     # boards key
     y = 850
     text(30, y, "Cards (bottom to top): B4 POWER, 15.24 mm, B2 PORTS B + METERS, 20.32 mm, B1 PORTS A, 20.32 mm, B3 CORE; "
-         "each plugs a right-angle header into a socket on the backplane (18 bus lines; B4 1x26 with its power pins).", 12, weight="bold")
+         "each plugs a full 1x30 right-angle header into a 1x30 socket on the backplane (18 bus lines; B4 adds its power pins).", 12, weight="bold")
     text(30, y + 20, "Addresses (check 2): upstream " + ", ".join(
         f"{r} {addr(r)}" for r in ("U6", "U2", "U1", "U5", "U4")) + "; behind the mux, each port: 24LC32 0x50 + its sensor.", 12)
     text(30, y + 40, "Ground is common everywhere and is not drawn. Pin maps: schematic/model.py, checked against "

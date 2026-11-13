@@ -467,7 +467,7 @@
 		(property "Reference" "J11_0" (at 0 -1.5 270) (layer "F.Fab") (uuid "eea9529d-12d4-5b0d-85ea-a2929c9377ea") (effects (font (size 1 1) (thickness 0.15))))
 		(property "Value" "bob14021_board" (at 0 0 270) (layer "F.Fab") (uuid "1759c063-775d-5e91-917a-6c707ca41825") (effects (font (size 1 1) (thickness 0.15))))
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
-		(model "${KIPRJMOD}/../models/BOB/bob14021_board.step" (offset (xyz 0.0000 0.0000 2.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
+		(model "${KIPRJMOD}/../models/BOB/bob14021_board.step" (offset (xyz 0.0000 0.0000 3.0400)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
 	(footprint "stack:D_DO-35_SOD27_P2.54mm_Vertical_CathodeUp"
 		(layer "F.Cu")

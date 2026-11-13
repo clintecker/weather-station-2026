@@ -213,9 +213,13 @@ def pad_exit(grid, pad, kind, ref):
     """Leave a breakout pad straight across its own board to its edge: (via points at the pad's height, the
     grid nodes to drop to). A pad past the card's back edge (the overhanging jack) leaves sideways and then runs
     along the breakout's inner edge back over the card."""
-    (x, y), _top, _r = pad
+    (x, y), top, _r = pad
     m = HALF[kind]
     own = [r for r in grid.fp if r[0] == ref]
+    hdr = st.model.HEADERS[grid.card]
+    # the bus header runs along the back edge (column j, rows 1-30): a lead from the overhanging breakout (its pads
+    # above the header and the socket) crosses it in the air at the pad's height and touches down in front of it
+    y_back = min([Y_MAX] + [r[2] - m for r in grid.fp if r[0] == hdr])
     best = None
     for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
         t = 0.0
@@ -223,13 +227,13 @@ def pad_exit(grid, pad, kind, ref):
             t += 0.25
         q = (x + dx * t, y + dy * t)
         via = [q]
-        if dx and q[1] > Y_MAX:                       # beside the overhanging breakout: come back over the card
-            q = (q[0], Y_MAX)
+        if dx and q[1] > y_back:                      # beside the overhanging breakout: come back over the card
+            q = (q[0], y_back)
             via.append(q)
             t += abs(via[0][1] - q[1])
         if not (X_MIN <= q[0] <= X_MAX and Y_MIN <= q[1] <= Y_MAX):
             continue
-        if any(inside(v, r, m) for v in via for r in grid.fp if r[0] != ref):
+        if any(inside(v, r, m) for v in via for r in grid.fp if r[0] != ref and not (r[0] == hdr and v is not q)):
             continue
         if best is None or t < best[0]:
             best = (t, via)

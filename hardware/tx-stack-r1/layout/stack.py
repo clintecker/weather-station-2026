@@ -147,8 +147,9 @@ def bob(ref, y_top, note):
     mouth = peg + 7.88                                  # KiCad fab: pegs 8.89, mouth 16.77 from pin-1 row
     x0, y0 = BW - mouth, y_top                          # rot 270: maker +y -> +X, maker +x -> -Y
     jw, jd, jh = S.val("jack_w"), S.val("jack_d"), S.val("jack_h")
-    sp = S.val("bob_spacer")
-    mk = [Box(0, 0, S.val("bob_w"), S.val("bob_d"), 0, sp, "printed spacer"),
+    raised = y_top > CD     # the back one overhangs the snapped edge: it bridges the 1x30 header and the socket
+    sp = S.val("bob_spacer_back") if raised else S.val("bob_spacer")
+    mk = ([] if raised else [Box(0, 0, S.val("bob_w"), S.val("bob_d"), 0, sp, "printed spacer")]) + [
           Box(0, 0, S.val("bob_w"), S.val("bob_d"), sp, sp + PCB, "BOB-14021 PCB"),
           Box(7.62 - jw / 2, mouth - jd, 7.62 + jw / 2, mouth, sp + PCB, sp + PCB + jh, "87180-066LF jack"),
           Box(7.62 - S.val("plug_6p")[0] / 2, mouth, 7.62 + S.val("plug_6p")[0] / 2, mouth + S.val("plug_len"),
@@ -156,8 +157,18 @@ def bob(ref, y_top, note):
               keepout=True)]
     pads = {str(i): tf(270, x0, y0, 13.97 - (i - 1) * P, 1.27) for i in range(1, 7)}
     boxes = [tbox(270, x0, y0, b, ref) for b in mk]
-    if y_top > CD:          # overhangs the snapped back edge: the printed spacer carries a tongue in the card plane
-        boxes.append(Box(BW - S.val("tongue")[0], CD, BW, TONGUE_Y1, -BT, 0, f"{ref} printed spacer tongue"))
+    if raised:              # overhangs the snapped back edge: the printed spacer carries a tongue in the card plane
+        pcb = next(x for x in boxes if "PCB" in x.what)
+        y_hdr = LETTER_Y["j"] - 0.4 - S.val("clear")         # the header's pin bends start 0.4 before column j
+        x_end = X(30) + P / 2 + S.val("clear")               # past the 1x30 header's (and socket's) last pin
+        boxes += [Box(pcb.x0, pcb.y0, BW, y_hdr, 0, sp, f"{ref} printed spacer"),
+                  Box(x_end, y_hdr, BW, pcb.y1, 0, sp, f"{ref} printed spacer side wall"),
+                  Box(x_end, CD, BW, pcb.y1, -BT, 0, f"{ref} printed spacer side wall, past the edge"),
+                  Box(BW - S.val("tongue")[0], CD, BW, TONGUE_Y1, -BT, 0, f"{ref} printed spacer tongue")]
+    if raised:
+        note += (f"; on a {sp:g} mm printed spacer that bridges the 1x30 bus header and the backplane socket (a block in "
+                 "front of the header, a side wall past its pin 30, the tongue): solder the header first, then bond the "
+                 "spacer and the breakout; its leads cross over the header to the card")
     return placed(ref, "BOB", {}, boxes, note, pads, step=[("BOB", 270, x0, y0 + 0.0)])
 
 
@@ -248,7 +259,7 @@ BUS_ROW_END = {"B3": ("f", "f"), "B4": ("f", "f")}
 for b in BOARDS:
     PLACE[b].append(ra_header(model.HEADERS[b], model.HDR_LEN[b], "j1", "back", pulled=model.PULLED.get(b, ()),
                               note="bus header, mating pins toward the backplane"
-                                   + ("; pins 19-23 and 26 are B4's power pins, 24 and 25 pulled" if b == "B4" else "")))
+                                   + ("; pins 19-23 and 26 are B4's power pins" if b == "B4" else "")))
     # the bus 3.3 V and both bus grounds to the front rails, on the underside; BUS_ROW_END: where a card's
     # first two bus wires leave their strips (B3 and B4 straight up from row F: rows G-I of columns 1-2 are boxed in)
     r3, r0 = BUS_ROW_END.get(b, ("i", "i"))
@@ -380,19 +391,20 @@ w("lead", ("RT1", "1"), ("U1", "TS"), "top", "thermistor to EVM J7")
 w("lead", ("RT1", "2"), ("U1", "TSN"), "top", "thermistor return to EVM J7")
 
 # ------------------------------------------------------------------ the backplane (BusBoard PAD3U padboard)
-# The plated end of a PAD3U (a separate plated pad per hole, no strips): its 30 rows nearest the factory mounting
-# holes become lines 0-29, each the full 38 holes. Lines run vertically (along Zb); on line i (1..18) a tinned bus
-# wire on the back (copper) face is soldered at every used pad and carries bus line i. Hole n along a line is at
+# The plated end of a PAD3U (a separate plated pad per hole, no strips): its 31 rows nearest the factory mounting
+# holes become lines 0-30, each the full 38 holes. Lines run vertically (along Zb); on line i (1..18, and B4's power lines) a tinned bus
+# wire on the back (copper) face is soldered at every used pad of its net and carries line i. Hole n along a line is at
 # Zb = BP_Z0 + (n - 1) P. Each card's socket pins sit in one hole row. Nothing connects unless a wire does.
-# Edges: the right (beyond line 29, with the two factory mounting holes), the top and the bottom are the PAD3U's own;
+# Edges: the right (beyond line 30, with the two factory mounting holes), the top and the bottom are the PAD3U's own;
 # only the left edge is scored, midway between lines -1 and 0. Held (cage/backplane-mount-spec.md): lower left by
 # an M3 screw through the one drilled hole (s0.2), lower right by an M3 screw through the lower factory hole,
 # the right edge in a slot in the right corner post, the left edge in the left wall's groove.
-BP_STRIPS = 29       # lines 0..29: line 29 is the plated end's last row
+BP_STRIPS = 30       # lines 0..30: line 30 is the plated end's last row (card pin 30 sits over it)
 BP_HOLES = 38        # the PAD3U's full 38 across
 BP_SCREWS = ("s0.2",)   # the one hole drilled (3.2, M3 to the bottom-left post); 1.27 from the scored edge, so it opens
 #                        into it: drill before snapping the edge
-BP_SUPPORTS = ("s20.2", "s20.36", "s28.13")   # plain pads under the board (no screw, no hole)
+BP_SUPPORTS = ("s20.2", "s28.16", "s24.31")   # plain pads under the board (no screw, no hole), clear of every joint
+#   and bus wire on the copper face (L7)
 CAGE_LEFT = S.val("cage_wall") - 2.0              # card left edge, box frame (slots 2 mm deep in the left wall)
 BP_X0 = CAGE_LEFT + X(0) - P / 2                  # backplane left edge: half a pitch outside line 0 (line 1 under card row 1)
 FLOOR_LIFT = 0.0                   # the printed base's floor is the cage's: everything stands on it
@@ -459,7 +471,7 @@ w("lead", ("PG1", "L+"), "BP:s21.6", "copper", "pack + (pigtail) to the junction
 w("lead", ("U1", "BAT"), "BP:s19.6", "copper", "charger battery + (J5 BATTERY) to lines 19-20, 24 AWG stranded, red with a black band")
 w("lead", ("U1", "SYS"), "BP:s26.6", "copper", "charger system output (J3 SYS) to line 26 (B4 pin 26, the regulator in), 24 AWG stranded, red with a black band")
 w("lead", ("R7", "2"), ("U1", "BATP"), "copper", "charger battery sense (J5 SNS_BATP) from R7's free leg, 24 AWG stranded, white with a red band")
-BP_BUS = []          # (line, [holes the tinned bus wire is soldered at]): every used pad on lines 1-18
+BP_BUS = []          # (line, [holes the tinned bus wire is soldered at]): the used pads of the line's own net
 _used = {}
 for _ref, _pins, _n in BP_PARTS:
     for _h in _pins.values():
@@ -470,12 +482,16 @@ for _k, _a, _c, _s, _n in WIRES:
         if isinstance(_e, str) and _e.startswith("BP:"):
             _i, _m = (int(v) for v in _e[4:].split("."))
             _used.setdefault(_i, set()).add(_m)
+# a socket contact whose card pin is not on the line's net (model.pin_net) is an isolated pad: no bus wire there
+BP_ISOLATED = {(i, SOCKET_HOLE[b]) for b in BOARDS for i in model.hdr_pins(b)
+               if model.pin_net(b, i) is None or model.pin_net(b, i) != model.line_net(i)}
 for _i in range(1, BP_STRIPS + 1):
-    if _i <= 18 or len(_used.get(_i, ())) > 1:          # a lone pad (R7's free leg on line 24) takes no bus wire
-        BP_BUS.append((_i, sorted(_used.get(_i, ()))))
+    _on = sorted(n for n in _used.get(_i, ()) if (_i, n) not in BP_ISOLATED)
+    if model.line_net(_i) and (_i <= 18 or len(_on) > 1):   # a lone pad (R7's free leg on line 24) takes no bus wire
+        BP_BUS.append((_i, _on))
 MUX_BOX = (strip_x(2) - 1.27, BP_Z0 + 0.5 * P, strip_x(2) - 1.27 + S.val("mux_w"),
            BP_Z0 + 0.5 * P + S.val("mux_d"))   # on foam on the copper side behind holes 1.5-9.5: Xb and Zb extents
-# the PAD3U's factory mounting holes (pad3u_mount, measured from Clint's scan): beyond line 29, on holes 2 and 37
+# the PAD3U's factory mounting holes (pad3u_mount, measured from Clint's scan): beyond line 30, on holes 2 and 37
 _MD, _MRING, _MOFF, _MSPAN = S.val("pad3u_mount")
 BP_FACTORY = {"lower right": (strip_x(BP_STRIPS) + _MOFF, BP_Z0 + P),
               "upper right": (strip_x(BP_STRIPS) + _MOFF, BP_Z0 + P + _MSPAN)}
