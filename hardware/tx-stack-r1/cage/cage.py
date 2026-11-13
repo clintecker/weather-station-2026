@@ -127,6 +127,13 @@ RSLOT = (st.CAGE_LEFT + st.BW - 2.0, st.BP_BACK, Z_LO, st.CAGE_LEFT + st.BW - 2.
 #   the right corner post's backplane slot (Xb, Yb, Zb from / to): the board's factory right edge
 
 
+def to_lid(xb, yb, zb):
+    """Box frame -> the lid-centre frame of lid-rim-spec.md (X toward the top wall, Y toward the LEFT wall as seen
+    from the lid, Z from the outside of the back toward the lid): right-handed, the frame the CAD bot and the STL
+    use. Y = W/2 - Xb, so the box frame itself is left-handed and Xb runs to the right seen from the lid."""
+    return zb - H / 2, W / 2 - xb, yb + T
+
+
 class Part:
     def __init__(self, name, boxes, holes=(), cuts=(), note="", solid=None):
         """boxes less cuts is the envelope the checks use; solid, when given, builds the real shape for --solid

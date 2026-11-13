@@ -343,8 +343,8 @@ def backplane_view(ph):
                 i, n = (int(v) for v in e[4:].split("."))
                 g.add(f'<circle cx="{bx(i):.1f}" cy="{bz(n):.1f}" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>')
     lx = bx(st.BP_STRIPS) + 2 * KB + 380
-    g.text(M, 26, f"Backplane: BusBoard PAD3U padboard cut {n_strips} x {st.BP_HOLES} holes, seen from the front "
-           "(component side); a pad per hole, no strips: the bus wires on the copper side join them", 15, weight="bold")
+    g.text(M, 26, f"Backplane: BusBoard PAD3U padboard cut {n_strips} x {st.BP_HOLES} holes, seen from the lid (glands down: the front, "
+           "component side; line 0 at the left wall); a pad per hole, no strips: the bus wires on the copper side join them", 15, weight="bold")
     y = M + 10
     g.text(lx, y, "Line: what its bus wire carries", 13, weight="bold")
     for i in range(n_strips):
@@ -383,8 +383,8 @@ def cage_views():
 
     def front(x):
         return ox2 + x * KZ
-    for o, span, title in ((side, d_in, "SIDE (section): back wall and pole left, lid right"),
-                           (front, w_in, "FRONT (lid open): left wall left")):
+    for o, span, title in ((side, d_in, "SIDE (section, seen from the left wall): back wall and pole left, lid right"),
+                           (front, w_in, "FRONT (from the lid, glands down): left wall (card block) left")):
         g.rect(o(0), Z(h_in), o(span), Z(0), "#f4f6f8", "#555", 1.2, dash="6 3")
         g.text(o(0), Z(h_in) - 10, title, 13, weight="bold")
     g.add(f'<line x1="{side(0) - 18:.1f}" y1="{Z(-5):.1f}" x2="{side(0) - 18:.1f}" y2="{Z(h_in + 5):.1f}" stroke="#777" '

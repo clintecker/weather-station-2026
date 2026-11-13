@@ -425,7 +425,28 @@ def card_z(b):
 
 
 def card_to_box(b, x, y, z):
+    """Card frame (x along the columns 1->30, y from the A row toward J, z out of the top face; right-handed: the
+    top face seen with the logo upright, A row toward you, columns left to right) -> box frame. The box frame (Xb, Yb,
+    Zb) is LEFT-handed: Xb runs to the right as you look in from the lid, glands down (cage.to_lid, L12)."""
     return CAGE_LEFT + x, BP_FRONT + (Y_BP - y), card_z(b) + z
+
+
+def box_to_card(b, xb, yb, zb):
+    """The inverse of card_to_box."""
+    return xb - CAGE_LEFT, Y_BP - (yb - BP_FRONT), zb - card_z(b)
+
+
+# how each drawing and render looks into the box: (screen right, screen up, toward the viewer) as box-frame
+# directions; L12 checks each is a true (right-handed) view of the real box, through cage.to_lid
+VIEWS = {
+    "lid": (((1, 0, 0), (0, 0, 1), (0, 1, 0)),
+            "from the lid, glands down: drawings/backplane.svg, the cage-side.svg front view, the cage KiCad renders"),
+    "left": (((0, 1, 0), (0, 0, 1), (-1, 0, 0)),
+             "from the left (card-block) wall side, lid to the right: the cage-side.svg section"),
+    "right": (((0, 0, 1), (0, 1, 0), (1, 0, 0)),
+              "from the right (corner-post) side, lid up: cage-render-section"),
+}
+MESH_AXES = (0, 2, 1)     # the KiCad cage meshes: mesh (x, y, z) = box (Xb, Zb, Yb), the floor as the board top
 
 
 def strip_x(i):

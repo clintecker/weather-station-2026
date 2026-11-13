@@ -11,6 +11,12 @@ numbers come from `layout/stack.py` and `cage/cage.py` (the factory-edge rectang
 
 The current enclosure 2 STL follows `backplane-snap-mount-spec.md`. Change it as follows:
 
+0. **MIRROR enclosure 2 across the lid frame's Y = 0 plane** (left↔right as seen from the lid) before applying the
+   changes below. The lid rim, the O-ring land and the lid screw holes are symmetric and unaffected; the glands, the
+   vent and the SMA bulkhead move with the mirror. The current STL is the mirror image of the model: seen from the
+   lid with the glands down, its card block is on the right, and a real card would then plug in backwards (header
+   pin n on line 31−n, the RJ11 jacks facing the block). After the mirror the card block and the retention bar are
+   on the **left** and the corner post on the **right**, which is what every coordinate below already describes.
 1. **Remove** both snap hooks and their pillars (about Xb 56 to 62).
 2. **Remove** the length stops, including the top stop (about Xb 30 to 50, Zb 150).
 3. **Remove** the snap version's support pads (about Xb 60, Zb 79 and 118).
@@ -32,16 +38,21 @@ The current enclosure 2 STL follows `backplane-snap-mount-spec.md`. Change it as
 
 ## Coordinate frame
 
-The **box frame** is the one `cage.py` uses, looking into the open base from the lid side, hung as on the pole:
+The **box frame** is the one `cage.py` uses, looking into the open base from the lid side, hung as on the pole
+(glands at the bottom):
 
-- **Xb** runs from the inside face of the **left** wall toward the right wall. The inside width is 123.5.
+- **Xb** runs from the inside face of the **left** wall toward the right wall, left to right as you look in. The
+  card block and the retention bar are on the left wall; the right corner post and the SMA bulkhead are on the right.
+  The inside width is 123.5.
 - **Zb** runs from the inside face of the **bottom** wall (the one with the glands) toward the top wall. The inside
   length is 169.5.
 - **Yb** runs from the inside face of the **floor** (the back as hung) toward the lid. The floor is 3.0 thick, so
   Yb 0 is 3.0 above the outside of the back.
 
-The lid-centre frame of `lid-rim-spec.md` is also given: X = Zb − 84.75 (positive toward the top wall) and
-Y = Xb − 61.75 (positive toward the right wall).
+The lid-centre frame of `lid-rim-spec.md` (the CAD bot's and the STL's frame) is also given: **X = Zb − 84.75**
+(positive toward the top wall), **Y = 61.75 − Xb** (positive toward the **left** wall) and Z = Yb + 3.0 (from the
+outside of the back toward the lid). That frame is right-handed; so the box frame (Xb, Yb, Zb) is left-handed, which
+is what makes Xb run left to right seen from the lid (`cage.to_lid`, layout check L12).
 
 ## 1. The backplane (not printed; for reference)
 

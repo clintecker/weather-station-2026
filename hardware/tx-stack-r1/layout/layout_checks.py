@@ -33,6 +33,9 @@
      backplane header; every other way off a card is a plug on it (RJ11 jack, SMA, SWD or USB-C) whose plug
      clears the neighbouring cards; the charger and the pack meet only the backplane, never a card; nothing
      runs card to card except through the backplane.
+ L12 handedness: the box frame is left-handed (lid-centre Y = W/2 - Xb, cage.to_lid); each card maps into the real
+     box as a real card (determinant +1, a lopsided point round-trips, column 1 on the left seen from the lid); every
+     drawing's and render's view (stack.VIEWS, stack.MESH_AXES) is a true view, not a mirror.
  L11 the backplane lines (every socket 1x30): each socket contact is on its line's bus wire, its card pin on the
      line's net, or on an isolated pad no bus wire is soldered to or lies over; a bus wire joins one net only.
 Run: python3 layout_checks.py   (exit status 0 only if every check passes)
@@ -422,6 +425,59 @@ def check_copper_face():
                 fail("L7", f"the {what} is {g:.2f} from line {li}'s bus wire (< {cl:g})")
     NOTES.append(f"copper face: posts and support pads at least {worst:.2f} from every joint (fillet {r_j:g} round its "
                  f"hole) and bus wire (>= {cl:g})")
+
+
+def _jac(f, p, h=1.0):
+    base = f(*p)
+    cols = []
+    for k in range(3):
+        q = list(p)
+        q[k] += h
+        cols.append([(f(*q)[i] - base[i]) / h for i in range(3)])
+    return [[cols[j][i] for j in range(3)] for i in range(3)]     # rows: outputs
+
+
+def _det(m):
+    return (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+            + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+
+
+def _mul(m, v):
+    return [sum(m[i][k] * v[k] for k in range(3)) for i in range(3)]
+
+
+def _cross(a, b):
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+
+
+def check_hand():
+    """L12: the real box (the lid-centre frame, right-handed) holds each card as a real card: card_to_box then
+    cage.to_lid has determinant +1; a lopsided card point maps to the box and back; column 1 is on the left seen from
+    the lid; every drawing's and render's view (stack.VIEWS, stack.MESH_AXES) is a true right-handed view."""
+    lid = _jac(cage.to_lid, (10.0, 10.0, 10.0))
+    for b in st.BOARDS:
+        card = _jac(lambda x, y, z: st.card_to_box(b, x, y, z), (3.0, 7.0, 1.0))
+        d = _det(lid) * _det(card)
+        if d < 0.5:
+            fail("L12", f"{b}: card frame to the real box has determinant {d:+.0f}: the model holds a mirror image of the card")
+        p = (5.1, 33.7, 2.9)                                  # a lopsided point: near column 2, toward J, above the top
+        q = st.box_to_card(b, *st.card_to_box(b, *p))
+        if max(abs(u - v) for u, v in zip(p, q)) > 1e-9:
+            fail("L12", f"{b}: card point {p} comes back from the box as {q}")
+        c1 = cage.to_lid(*st.card_to_box(b, st.X(1), 20.0, 0.0))
+        c30 = cage.to_lid(*st.card_to_box(b, st.X(30), 20.0, 0.0))
+        if not c1[1] > c30[1]:                                # seen from the lid, screen right is -Y
+            fail("L12", f"{b}: column 1 is not on the left seen from the lid")
+    for name, ((r, u, t), what) in st.VIEWS.items():
+        R, U, T_ = (_mul(lid, v) for v in (r, u, t))
+        if sum(a * b for a, b in zip(_cross(R, U), T_)) < 0.5:
+            fail("L12", f"view '{name}' ({what}) is a mirror view of the real box")
+    mesh = [[1.0 if st.MESH_AXES[i] == k else 0.0 for k in range(3)] for i in range(3)]
+    if _det(mesh) * _det(lid) < 0.5:                         # mesh <- box <- lid: +1 for a true render
+        fail("L12", "the KiCad cage meshes (stack.MESH_AXES) render a mirror image of the real box")
+    NOTES.append("handedness: the box frame is left-handed (Xb to the right seen from the lid; lid frame Y = "
+                 f"{cage.W / 2:g} - Xb); every card maps in as a real card (det +1), column 1 on the left seen from the "
+                 "lid; views " + ", ".join(st.VIEWS) + " and the KiCad meshes are true views")
 
 
 def overlap(a, b, tol=0.02):
@@ -964,6 +1020,7 @@ def run():
     check_copper(ph)
     check_bus(ph)
     check_lines(ph)
+    check_hand()
     check_3d()
     check_cage(ph)
     check_copper_face()

@@ -12,12 +12,18 @@ on its pole (long side vertical, glands at the bottom):
 - **Zb** runs from the inside face of the **bottom** wall upward. The inside length is 169.5.
 - **Yb** runs from the inside face of the **floor** (the back, on the pole) toward the lid. The base–lid seam is at
   Yb 97.0.
+- **Lid-centre frame** (`lid-rim-spec.md`, the CAD bot's): X = Zb − 84.75, **Y = 61.75 − Xb**, Z = Yb + 3.0. It is
+  right-handed, so +Y is the **left** wall and −Y the right wall. This describes enclosure 2 **after** the mirror in
+  `backplane-mount-spec.md` (step 0): the glands, the vent and the bulkhead move with that mirror, so G4 and G8 (the
+  PG-9s) end up in the column nearest the right wall, and the SMA in the right wall.
 - **Walls:** all of them are 3.0 thick. The outside faces are at Xb −3.0 / 126.5, Zb −3.0 / 172.5 and Yb −3.0.
 
 ## 1. Bottom wall: eight cable glands and the vent
 
 Every hole's axis runs along Zb, through the bottom wall (Zb −3.0 to 0). Each position is given as (Xb, Yb): across
-from the left inside wall, and out from the floor's inside face toward the lid.
+from the left inside wall, and out from the floor's inside face toward the lid. Seen from the lid, G1 is nearest the
+left wall and G4 nearest the right; in the lid-centre frame the columns are at Y +35.75, +11.75, −12.25 and −36.25,
+the rows at Z 28.0 and 63.0, and the vent at (Y +11.75, Z 88.0).
 
 | # | Xb | Yb | Gland | Hole | Cable (suggested; the model doesn't fix the order) |
 |---|---|---|---|---|---|
@@ -52,7 +58,8 @@ from the left inside wall, and out from the floor's inside face toward the lid.
 
 - **Position:** the hole axis runs along Xb, through the **right** wall (Xb 123.5 to 126.5), at **Yb 86.0, Zb 144.6**.
   - That's 25 below the inside top wall, and 11.0 below the seam toward the floor.
-  - In the lid-centre frame of `lid-rim-spec.md`: X +59.85, on the +Y wall (the right wall), 11.0 below the seam.
+  - In the lid-centre frame of `lid-rim-spec.md`: X +59.85, on the **−Y wall** (the right wall, Y −61.75 inside),
+    Z 89.0 (11.0 below the seam).
 - **Hole:** **Ø6.5**, for an SMA bulkhead jack with a 1/4-36 thread.
   - If Clint's bulkhead has a flat on its thread, make it a **D-hole**: Ø6.5 with a flat at **5.8 across** (2.9 from
     the centre). That stops it turning.

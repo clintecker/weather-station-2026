@@ -669,7 +669,10 @@ def extras(m, explode=0.0, whole=False):
 
 
 def cage_mesh(explode=0.0, win=None, section=False, whole=False):
-    """Box frame (Xb, Yb, Zb) -> mesh (Xb, Zb, Yb): the box floor's inside face is the KiCad board top."""
+    """Box frame (Xb, Yb, Zb) -> mesh (Xb, Zb, Yb) (stack.MESH_AXES): the box floor's inside face is the KiCad board
+    top. The box frame is left-handed and this swap is a mirror, so the KiCad scene is the real box (L12): its top view
+    is the true view from the lid, left wall on the left."""
+    assert st.MESH_AXES == (0, 2, 1), "the mesh code below writes (Xb, Zb, Yb); L12 checks stack.MESH_AXES"
     m = Mesh()
     pl = 0.0
     for key, b in assembly_boxes(explode, section):
