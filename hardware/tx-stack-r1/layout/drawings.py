@@ -520,8 +520,7 @@ def backplane_sheet(ph):
          "on the copper side, soldered at every used pad, carries bus line n for every card. Lines run up and down in "
          "the box. Component side faces the cards (front); copper faces the back wall.", "",
          "## 1. Cut and drill", "",
-         f"1. Cut a piece {n_lines} holes across by {st.BP_HOLES} holes along from one PAD3U (score both faces along "
-         "a line of holes, snap, file the edges flat). Lines 0-20 across; holes 1-39 along.",
+         f"1. Cut a piece {n_lines} holes across by {st.BP_HOLES} holes along from the bottom-right corner of one PAD3U, seen from the face that becomes the front, so its factory edges are its right and bottom (score both faces midway between two rows of holes, not through them, snap, sand the edges flat). The left edge (line 0) must end 0.5-1.2 mm from the near side of line 0's holes, or it will not fit the left wall's groove. Lines 0-20 across; holes 1-39 along.",
          "2. Drill 3.2 mm through three pads, for the M3 screws to the base's three floor posts: "
          + ", ".join(f"line {h[1:].split('.')[0]} hole {h[1:].split('.')[1]}" for h in st.BP_SCREWS)
          + " (bottom left, bottom right, top right). The top-left corner has no screw: the board's left edge sits in "
