@@ -303,11 +303,12 @@ def backplane_checks():
                   for p in parts() for b in p.boxes if b.what == "backplane post" and b.z0 < mz1 and mz0 < b.z1)
               for dx in (0.0, tr))
     right = min(b.x0 for n, b in printed if b.x0 >= x1 - 0.01 and b.y1 > yb + 0.02 and b.z0 < z1 and z0 < b.z1)
-    if right - x1 < tr - 0.01:
-        bad.append(f"the backplane has {right - x1:.2f} of travel to the right, the fit needs {tr:g}")
+    if right - x1 < tr + st.BP_RIGHT_TOL - 0.01:
+        bad.append(f"the backplane has {right - x1:.2f} of travel to the right, the fit needs {tr:g} plus the "
+                   f"{st.BP_RIGHT_TOL:g} the build sheet allows the right edge")
     lines = [f"backplane mount: {len(BP_POSTS)} posts at " + ", ".join(f"({x:.2f}, {z:.2f}) \u00d8{d:g}" for (x, z), d in zip(BP_POSTS, BP_POST_DS))
              + f", tops and the groove floor at Yb {yb:g}; outline Xb {x0:.2f}-{x1:.2f}, Zb {z0:.2f}-{z1:.2f}; "
-             f"{right - x1:.2f} free to the right (needs {tr:g}); mux {gap:.2f} from a post (both positions); tab "
+             f"{right - x1:.2f} free to the right (needs {tr:g} + {st.BP_RIGHT_TOL:g} cut tolerance); mux {gap:.2f} from a post (both positions); tab "
              f"Xb {tx0:.2f}-{tx1:.2f}, Zb {tz0:.2f}-{tz1:.2f} ({tab_fr4:.2f} of FR4 beside s0.2's 3.2 hole); groove and "
              f"rail from Zb {GROOVE[2]:.2f}" + ("; " + ", ".join(head_notes) if head_notes else "")]
     return lines, bad

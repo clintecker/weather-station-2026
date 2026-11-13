@@ -464,6 +464,18 @@ MUX_BOX = (strip_x(2) - 1.27, BP_Z0 + 0.5 * P, strip_x(2) - 1.27 + S.val("mux_w"
            BP_Z0 + 0.5 * P + S.val("mux_d"))   # on foam on the copper side behind holes 1.5-9.5: Xb and Zb extents
 BP_OUTLINE = (BP_X0, BP_Z0 - P / 2, CAGE_LEFT + X(BP_STRIPS) + P / 2, BP_Z0 + (BP_HOLES - 0.5) * P)   # Xb0, Zb0, Xb1, Zb1
 BP_TAB = (BP_X0 - P, BP_Z0 - P / 2, BP_X0, BP_Z0 + (BP_TAB_HOLES - 0.5) * P)   # the tab (line -1, holes 1-N), same order
+# how each edge of the piece is made (build/BACKPLANE.md section 1): "cut" = scored midway between two hole rows
+# (pad_margin from the hole centres); "factory" = the PAD3U's own edge (pad3u_factory_margin: 3.05 across, 2.54 along)
+BP_EDGES = {"left": "cut", "right": "cut", "bottom": "cut", "top": "cut"}
+BP_RIGHT_TOL = 0.5   # the sheet lets the right edge sit this much past its 1.27; cage.backplane_checks keeps that much spare travel
+
+
+def bp_sheet_outline():
+    """The main piece's outline (Xb0, Zb0, Xb1, Zb1) as the build sheet's cut step makes it."""
+    fa, fl = S.val("pad3u_factory_margin")
+    m = {k: (S.val("pad_margin") if v == "cut" else (fa if k in ("left", "right") else fl)) for k, v in BP_EDGES.items()}
+    return (strip_x(0) - m["left"], BP_Z0 - m["bottom"], strip_x(BP_STRIPS) + m["right"],
+            BP_Z0 + (BP_HOLES - 1) * P + m["top"])
 BP_USED = {(i, n) for i, ns in _used.items() for n in ns} | {tuple(int(v) for v in h[1:].split(".")) for _r, _p, _n in BP_PARTS
                                                           for h in _p.values()}   # (line, hole) with anything in it
 

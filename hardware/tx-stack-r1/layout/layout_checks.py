@@ -478,6 +478,13 @@ def check_cage(ph):
     NOTES.append(f"backplane: PAD3U piece {st.BP_STRIPS + 1} x {st.BP_HOLES} holes ({(st.BP_STRIPS + 1) * st.P:.1f} x "
                  f"{span + st.P:.1f} mm) plus the tab, {len(st.BP_BUS)} bus wires (18 bus lines, B4's power lines), sockets at holes " + ", ".join(f"{b} {st.SOCKET_HOLE[b]}" for b in st.ORDER)
                  + f"; copper face {st.BP_BACK:g} mm off the back wall")
+    so = st.bp_sheet_outline()
+    if any(abs(a - b) > 0.01 for a, b in zip(so, st.BP_OUTLINE)):
+        fail("L7", f"the backplane outline the build sheet cuts ({', '.join(f'{v:.2f}' for v in so)}) is not the outline "
+                   f"the checks use ({', '.join(f'{v:.2f}' for v in st.BP_OUTLINE)})")
+    else:
+        NOTES.append(f"backplane: the build sheet's cut outline (edges: {', '.join(f'{k} {v}' for k, v in st.BP_EDGES.items())}) "
+                     f"is the checked outline, Xb {so[0]:.2f}-{so[2]:.2f}, Zb {so[1]:.2f}-{so[3]:.2f}")
     if max(st.SOCKET_HOLE.values()) > st.BP_HOLES:
         fail("L7", "a socket is past the end of the backplane")
     mx = st.MUX_BOX
