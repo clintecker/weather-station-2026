@@ -350,6 +350,7 @@ Status `[TBD-MEASURE]` means no source was found. The drawings use the value as 
 | `usbc_plug` | 7 | USB-C plug overmould thickness (console cable) | typical cable; measure Clint's | [TBD-MEASURE] |
 | `shtc3` | 25.4 x 17.78 | SHTC3 #4636 outline | Adafruit Eagle board, github.com/adafruit/Adafruit-SHTC3-PCB | sourced |
 | `ina228` | 25.4 x 20.32 | INA228 #5832 outline | Adafruit Eagle board, github.com/adafruit/Adafruit-INA228-PCB | sourced |
+| `ina228_sj1` | open | INA228 #5832 VBUS jumper SJ1 (VBUS to VIN+) as shipped; closed for high-side measurement | learn.adafruit.com/adafruit-ina228-i2c-power-monitor/pinouts (VBUS Jumper); Adafruit-INA228-PCB .sch: SJ1 pins VIN+ / VBUS, SOLDERJUMPER_ARROW_NOPASTE (open) | sourced |
 | `max17048` | 25.4 x 20.32 | MAX17048 #5580 outline | Adafruit Eagle board, github.com/adafruit/Adafruit-MAX17048-PCB | sourced |
 | `qt_lead_h` | 14 | QT lead male-pin housing height (#4209) | premium jumper housing; measure | [TBD-MEASURE] |
 | `qt_h` | 2.9 | STEMMA QT (JST SH) socket height | bench r1 kicad_layout.py qt_socket | [TBD-MEASURE] |
@@ -370,6 +371,7 @@ Status `[TBD-MEASURE]` means no source was found. The drawings use the value as 
 | `socket_tail` | 3 | socket solder tail beyond the backplane copper | Clint's generic 2.54 mm female header strip (cut to 18), 2026-11-13; drawn as the Sullins PPPC drawing (Sullins PPPC female header drawing (PPPC181LFBN-RC), sullinscorp.com): .118 tail; check on the part | [TBD-MEASURE] |
 | `insertion` | 4.96 | chosen pin insertion into the socket (5.8 nominal available; 0.84 left for print tolerance) | layout rule | derived |
 | `card_bp_gap` | 10.86 | snapped card back edge to backplane face | 39.37 (column j) + 1.52 + 2.54 + 5.8 - 4.96 + 8.5 - 41.91 (sb_snap_y) | derived |
+| `fillet_clear` | 0.6 | solder fillet radius kept clear round a used hole: an underside wire's insulation stays this far from the hole centre | coordinator rule (Clint): OD/2 + 0.6 from any hole a pin or another wire end uses | derived |
 | `pad_pitch` | 2.54 | PAD3U hole pitch (a separate pad per hole, no strips) | BusBoard PAD3U Padboard, busboardcom.busboard.us/PAD3U (38 x 62 holes, 0.037 in holes on 0.1 in, 160.02 x 100.08 x 1.6 mm; DigiKey 4526-PAD3U-ND) | sourced |
 | `strip_size` | 160.02 x 100.08 x 1.6 | BusBoard PAD3U padboard, 62 holes along 160 mm x 38 along 100 mm; the backplane is a piece 30 x 39 holes (plus a tab) cut from it, lines along the 160 mm side | BusBoard PAD3U Padboard, busboardcom.busboard.us/PAD3U (38 x 62 holes, 0.037 in holes on 0.1 in, 160.02 x 100.08 x 1.6 mm; DigiKey 4526-PAD3U-ND) | sourced |
 | `pad3u_factory_margin` | 3.05 x 2.54 | PAD3U factory edge to the nearest hole centre: across the lines (100.08 side), along them (160.02 side) | derived from strip_size: (100.08 - 37 x 2.54) / 2 and (160.02 - 61 x 2.54) / 2; more than the 1.27 of a cut edge, so the backplane keeps no factory edge | derived |

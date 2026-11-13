@@ -156,7 +156,7 @@ PARTS = [
          ties=[["H.VIN+", "X1.VIN+", "X1.VBUS", "H.VBUS"], ["H.VIN-", "X1.VIN-"], ["H.VIN", "QT1.V+", "QT2.V+"],
                ["H.GND", "QT1.GND", "QT2.GND"], ["H.SDA", "QT1.SDA", "QT2.SDA"], ["H.SCL", "QT1.SCL", "QT2.SCL"]],
          i2c=[0x40], pullups_k=10.0, removed=["H.VBUS", "H.VIN-", "H.VIN+"],
-         note="shunt in the pack + leg; leads soldered to the X1 pads (no terminal block); header pins 5-7 pulled"),
+         note="shunt in the pack + leg (high side); SJ1 soldered closed so VBUS sits on VIN+ (open as shipped: Adafruit #5832 guide, VBUS jumper; INA228 bus voltage and power read VBUS); leads soldered to the X1 pads (no terminal block); header pins 5-7 pulled"),
     dict(ref="U6", value="MAX17048 0x36", part="Adafruit #5580", block="battery", card="B4",
          pins=[("H.VIN", "VIN", PIN, "header"), ("H.GND", "GND", PAS, "header"), ("H.SCL", "SCL", BI, "header"),
                ("H.SDA", "SDA", BI, "header"), ("H.INT", "INT", OC, "nc"), ("H.QST", "QST", IN, "nc"),

@@ -31,6 +31,8 @@ OD = S.val("wire24")[1]                        # 24 AWG insulated: card wires so
 HALF = {"wire": OD / 2 + 0.05, "jumper": 0.35, "lead": OD / 2 + 0.05}   # half-width + clearance; jumper: bare
 Z_TOP, Z_BOT = 0.5, -st.BT - 0.5
 BUNDLE = 3                                     # insulated leads laid side by side along one grid line, at most
+FILLET = S.val("fillet_clear")                 # an underside wire's centre keeps OD/2 + this from any used hole
+CLEAR = OD / 2 + FILLET                        # but its own end holes: the joint and its fillet stay bare
 EXIT = {"B4": 64.0}                            # off-card leads leave B4's front edge from here (X), toward the charger
 
 
@@ -119,6 +121,13 @@ class Grid:
         self.card, self.side = card, side
         self.fp = footprints(card, side)
         self.holes = used_holes(card)
+        self.near = {}           # underside: node -> the used holes whose fillet it is too close to
+        if side == "bottom":
+            for ix, x in enumerate(NX):
+                for iy, y in enumerate(NY):
+                    hs = {h for h in self.holes if math.dist(h, (x, y)) < CLEAR - 1e-6}
+                    if hs:
+                        self.near[(ix, iy)] = hs
         self.edges = {}          # frozenset(n1, n2) -> [(wire index, kind)]: insulated leads may run bundled
         self.nodes = {}          # node -> list of (wire index, kind, how) how: 'h', 'v', 'end', 'bend'
 
@@ -128,6 +137,9 @@ class Grid:
             return True
         if (round(x, 2), round(y, 2)) in self.holes:
             return False
+        hs = self.near.get(n)
+        if hs and not hs <= {tuple(round(v, 2) for v in node_xy(e)) for e in ends}:
+            return False                 # over another joint's solder fillet
         m = HALF[kind]
         return not any(inside((x, y), r, m) for r in self.fp if r[0] not in own)
 

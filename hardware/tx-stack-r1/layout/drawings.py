@@ -497,11 +497,16 @@ def build_list(b, ph):
         L.append(f"**{pl['ref']}** {part['value']} ({part['part']}): {pl['note']}"
                  + (f"; {o}" if o else "") + f"; top {hmax:.1f} mm above the card")
         L.append("")
+        for (ref, pad), (sj, sj_at, why) in st.PAD_BRIDGED.items():
+            if ref == pl["ref"]:
+                L += [f"Before fitting {ref}: solder {sj} closed ({sj_at}): {why}. Meter {pad.split('.')[-1]} to VIN+: a beep.", ""]
         rows = []
         for pin, xy in st.pins_of(pl).items():
             rows.append(f"| {lc.PIN[(pl['ref'], pin)][1]} ({pin}) | {lc.hole_at(xy)} | {plain(lc.NET_OF.get((pl['ref'], pin)))} |")
         for pad in st.pads_of(pl):
-            rows.append(f"| {lc.PIN[(pl['ref'], pad)][1]} ({pad}) | pad: soldered lead | {plain(lc.eff_net((pl['ref'], pad)))} |")
+            how = (f"pad: left bare ({st.PAD_BRIDGED[(pl['ref'], pad)][0]} closed joins it)" if (pl["ref"], pad) in st.PAD_BRIDGED
+                   else "pad: soldered lead")
+            rows.append(f"| {lc.PIN[(pl['ref'], pad)][1]} ({pad}) | {how} | {plain(lc.eff_net((pl['ref'], pad)))} |")
         if rows:
             L += ["| Pin | Hole | Line |", "|---|---|---|"] + rows
         if pl["ref"] == "U2":
@@ -544,11 +549,26 @@ def build_list(b, ph):
     L += ["", "## Before power", "",
           "- Meter each strip in the map to its neighbours: no continuity between neighbouring strips.",
           "- No continuity between the 3.3 V supply and ground (both front rails).",
-          f"- Header pin n (row J, column n) to backplane line n: check against `build/BACKPLANE.md`."]
+          f"- Each header pin Jn beeps to Fn (row J to row F, same column: its own strip) and to no other header pin, except the groups below."]
+    for grp, why in header_beeps(b):
+        L.append(f"- Header pins {', '.join(f'J{n}' for n in grp)} beep to each other: {why}.")
     if b == "B4":
-        L.append("- Battery path: header pins 19 and 20 joined, 21 and 22 joined, each pair open to everything else; the "
-                 "shunt pads only on their own leads. Pins 24 and 25 pulled.")
+        L.append("- Pins 24 and 25 are pulled: nothing in J24 or J25.")
     (OUT_MD / f"{b}.md").write_text("\n".join(L) + "\n")
+
+
+def header_beeps(b):
+    """[(header columns, why)] that beep together on card b: one line joined on the card, or B4's battery path."""
+    pins = sorted(n for n in range(1, st.model.HDR_LEN[b] + 1) if n not in st.model.PULLED.get(b, ()))
+    by = {}
+    for n in pins:
+        by.setdefault(REP[b].get(f"R{n}"), []).append(n)
+    out = [(g, f"all {plain(k)}") for k, g in by.items() if k and len(g) > 1]
+    if b == "B4":
+        out = [g for g in out if not set(g[0]) & {19, 20, 21, 22}]
+        out.append(([19, 20, 21, 22], "19-20 and 21-22 by the top jumpers, and 20-21 through U2's shunt "
+                                      "(X1 VIN- to X1 VIN+, a few milliohms)"))
+    return out
 
 
 def backplane_sheet(ph):

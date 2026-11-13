@@ -21,7 +21,10 @@
   L8 every routed wire, jumper and lead (layout/route.py) lies on its side of the card in straight runs with
      right-angle bends, never crosses a part's footprint (a pad lead only crosses its own breakout), never
      passes over a used hole that is not its own end, and shares no grid edge with another wire except an
-     insulated lead bundle; a bare jumper crosses nothing;
+     insulated lead bundle; a bare jumper crosses nothing; every wire, jumper and lead end on a card has a hole
+     of its own (no part pin, no other end: the strip's copper makes the joint); an underside wire keeps its
+     centre OD/2 + fillet_clear from every used hole but its own ends (the solder fillets stay bare); every breakout pad has
+     a lead or a closed solder jumper (stack.PAD_BRIDGED, tied in the schematic model), never both or neither;
   L9 every mating and fixing (MECH below): how it is held, what takes the force, how it comes apart; the
      numeric ones are checked (slot play against the socket's alignment tolerance, insertion, the latch
      room over each plug, the coax bend room, the SMA path) and the README table is written from it;
@@ -31,6 +34,7 @@
      runs card to card except through the backplane.
 Run: python3 layout_checks.py   (exit status 0 only if every check passes)
 """
+import math
 import sys
 from collections import defaultdict
 from itertools import combinations
@@ -44,6 +48,7 @@ import cage  # noqa: E402
 
 FAILS, NOTES = [], []
 PIN = {(p["ref"], pin[0]): pin for p in model.PARTS for pin in p["pins"]}
+PART = {p["ref"]: p for p in model.PARTS}
 NET_OF = {m: n for n, (ms, _a) in model.NETS.items() for m in ms}
 
 
@@ -497,6 +502,14 @@ def check_cage(ph):
                  f"retention bar {S.val('bar'):g} mm, front left; right corner post grips card Y {S.val('sb_snap_y') - 1.5:.2f}-{st.CD:.2f}, on B1 and B2 the back breakout's spacer tongue")
 
 
+def seg_dist(h, p, q):
+    """Distance from point h to segment p-q (2D)."""
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    L = dx * dx + dy * dy
+    t = 0.0 if L == 0 else max(0.0, min(1.0, ((h[0] - p[0]) * dx + (h[1] - p[1]) * dy) / L))
+    return math.dist(h, (p[0] + t * dx, p[1] + t * dy))
+
+
 def check_routes():
     """L8: the routed wires (layout/route.py) checked from their points, not from the router's own bookkeeping."""
     n_ok = n_all = 0
@@ -539,6 +552,50 @@ def check_routes():
             edges.setdefault((r["card"], side, frozenset((u, v))), []).append((i, r["kind"]))
         for n in g:
             nodes.setdefault((r["card"], side, n), []).append((i, r["kind"]))
+    ends, pins = {}, {}
+    for b, pl in st.placements():
+        for nm, (x, y) in st.pins_of(pl).items():
+            pins.setdefault((b, round(x, 2), round(y, 2)), []).append(f"{pl['ref']}.{nm}")
+    for i, (kind, a, c, side, _n) in enumerate(st.WIRES):
+        for e in (a, c):
+            if isinstance(e, str) and e.split(":")[0] in st.PLACE:
+                x, y = st.hole_xy(e.split(":")[1])
+                ends.setdefault((e.split(":")[0], round(x, 2), round(y, 2)), []).append(f"wire {i} end {e}")
+    shared = 0
+    for k, u in ends.items():
+        if len(u) > 1 or k in pins:
+            shared += 1
+            fail("L8", f"{k[0]} hole ({k[1]:.2f},{k[2]:.2f}) is shared: " + ", ".join(u + pins.get(k, [])))
+    leaded = {e for _k, a, c, _s, _n in st.WIRES for e in (a, c) if isinstance(e, tuple)}
+    for b, pl in st.placements():
+        for pad in st.pads_of(pl):
+            k = (pl["ref"], pad)
+            if k in leaded and k in st.PAD_BRIDGED:
+                fail("L8", f"{b} {k[0]} {pad} has a lead and a solder jumper ({st.PAD_BRIDGED[k][0]}): one or the other")
+            elif k not in leaded and k not in st.PAD_BRIDGED and (
+                    PIN[k][3] != "nc" or any(pad in t for t in PART[k[0]].get("ties", []))):
+                fail("L8", f"{b} {k[0]} {pad} is a pad with neither a lead nor a closed solder jumper (it would float)")
+    for (ref, pad), (sj, _w, _y) in st.PAD_BRIDGED.items():
+        part = next(p for p in model.PARTS if p["ref"] == ref)
+        if not any(pad in t and len(t) > 1 for t in part.get("ties", [])):
+            fail("L8", f"{ref} {pad}: {sj} is closed on the sheet but the schematic model ties {pad} to nothing")
+    n_clear = 0
+    for i, (kind, a, c, side, _n) in enumerate(st.WIRES):
+        r = route.ROUTES[i]
+        if side != "bottom" or r is None or not r["ok"]:
+            continue
+        own = {(round(x, 2), round(y, 2)) for x, y in (st.hole_xy(e.split(":")[1]) for e in (a, c)
+               if isinstance(e, str) and e.split(":")[0] == r["card"])}
+        g = [route.node_xy(n) for n in r["grid"]]
+        for h in route.used_holes(r["card"]) - own:
+            d = min(seg_dist(h, p, q) for p, q in zip(g, g[1:])) if len(g) > 1 else math.dist(h, g[0])
+            if d < route.CLEAR - 1e-6:
+                fail("L8", f"wire {i} on {r['card']} underside passes {d:.2f} from the used hole at ({h[0]:.2f},{h[1]:.2f}) "
+                           f"(needs {route.CLEAR:.3f}: OD/2 + {route.FILLET:g} fillet)")
+        n_clear += 1
+    NOTES.append(f"holes: every one of {len(ends)} wire, jumper and lead ends on the cards has its own hole "
+                 f"({shared} shared); {n_clear} underside wires keep {route.CLEAR:.3f} (OD/2 + {route.FILLET:g} fillet) "
+                 "from every used hole but their own ends, header pins included")
     for (card, side, _e), users in edges.items():
         if len(users) > 1 and not all(k.startswith("lead") for _i, k in users):
             fail("L8", f"{card} {side}: wires {', '.join(str(i) for i, _k in users)} share a grid run")

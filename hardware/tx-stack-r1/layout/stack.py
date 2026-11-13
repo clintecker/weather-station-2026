@@ -244,13 +244,16 @@ def bus_row(net, which=0):
     return rows[which]
 
 
+BUS_ROW_END = {"B3": ("f", "f"), "B4": ("f", "f")}
 for b in BOARDS:
     PLACE[b].append(ra_header(model.HEADERS[b], model.HDR_LEN[b], "j1", "back", pulled=model.PULLED.get(b, ()),
                               note="bus header, mating pins toward the backplane"
                                    + ("; pins 19-23 and 26 are B4's power pins, 24 and 25 pulled" if b == "B4" else "")))
-    # the bus 3.3 V and both bus grounds to the front rails, on the underside
-    w("wire", f"{b}:i{bus_row('+3V3')}", f"{b}:F+1", note="bus 3.3 V supply to the front 3.3 V rail")
-    w("wire", f"{b}:i{bus_row('GND')}", f"{b}:F-{2 if b != 'B1' else 3}", note="bus ground to the front ground rail")
+    # the bus 3.3 V and both bus grounds to the front rails, on the underside; BUS_ROW_END: where a card's
+    # first two bus wires leave their strips (B3 and B4 straight up from row F: rows G-I of columns 1-2 are boxed in)
+    r3, r0 = BUS_ROW_END.get(b, ("i", "i"))
+    w("wire", f"{b}:{r3}{bus_row('+3V3')}", f"{b}:F+1", note="bus 3.3 V supply to the front 3.3 V rail")
+    w("wire", f"{b}:{r0}{bus_row('GND')}", f"{b}:F-{2 if b != 'B1' else 3}", note="bus ground to the front ground rail")
     w("wire", f"{b}:i{bus_row('GND', 1)}", f"{b}:F-20", note="second bus ground to the front ground rail")
 
 
@@ -312,19 +315,20 @@ PLACE["B3"].append(breakout("U5", "SHTC3", S.val("shtc3"), ["VIN", "3V", "GND", 
                             [Box(20.5, 5.9, 25.4, 11.9, HDR + PCB, HDR + PCB + S.val("qt_h"), "QT socket"),
                              Box(0, 5.9, 4.9, 11.9, HDR + PCB, HDR + PCB + S.val("qt_h"), "QT socket")],
                             "enclosure air sensor, top card, away from the charger"))
-for a, b_, n in (("g1", "g20", "3.3 V supply to the mini (B2) and SWD"), ("d8", "h1", "3.3 V supply to the SHTC3"),
-                 ("g2", "g24", "ground to the mini (B6)"), ("d6", "h2", "ground to the SHTC3"),
-                 ("g12", "d19", "ground to the mini (D12)"), ("i24", "h12", "ground: mini B6 and D12 joined"),
-                 (f"g{bus_row('I2C_SCL')}", "d20", "I2C clock (SCL) to the mini (PB15)"),
+for a, b_, n in (("F+18", "g20", "3.3 V supply to the mini (B2) and SWD, from the front 3.3 V rail"),
+                 ("a8", "F+8", "3.3 V supply to the SHTC3, from the front 3.3 V rail"),
+                 ("a6", "F-6", "ground to the SHTC3, from the front ground rail"),
+                 ("g12", "a19", "ground to the mini (D12)"), ("i24", "h12", "ground to the mini (B6), from the second bus ground"),
+                 (f"g{bus_row('I2C_SCL')}", "a20", "I2C clock (SCL) to the mini (PB15)"),
                  ("d5", f"h{bus_row('I2C_SCL')}", "I2C clock (SCL) to the SHTC3"),
-                 (f"g{bus_row('I2C_SDA')}", "d21", "I2C data (SDA) to the mini (PA15)"),
+                 (f"g{bus_row('I2C_SDA')}", "e21", "I2C data (SDA) to the mini (PA15)"),
                  ("d4", f"h{bus_row('I2C_SDA')}", "I2C data (SDA) to the SHTC3"),
                  (f"g{bus_row('MUX_RST')}", "g26", "mux reset from the mini (PB14)"),
-                 (f"g{bus_row('CUPS')}", "d27", "cups pulse to the mini (PC0)"),
-                 (f"g{bus_row('VANE')}", "d23", "vane voltage to the mini (PB3)"),
-                 (f"g{bus_row('RAIN')}", "d22", "rain pulse to the mini (PB4)"),
-                 ("f20", "b12", "SWD 3.3 V"), ("f21", "b13", "SWD debug data (PA13)"),
-                 ("f22", "b14", "SWD debug clock (PA14)"), ("f23", "b15", "SWD reset (NRST)"), ("f24", "b16", "SWD ground")):
+                 (f"g{bus_row('CUPS')}", "a27", "cups pulse to the mini (PC0)"),
+                 (f"g{bus_row('VANE')}", "a23", "vane voltage to the mini (PB3)"),
+                 (f"g{bus_row('RAIN')}", "a22", "rain pulse to the mini (PB4)"),
+                 ("F+11", "b12", "SWD 3.3 V, from the front 3.3 V rail"), ("f21", "b13", "SWD debug data (PA13)"),
+                 ("f22", "b14", "SWD debug clock (PA14)"), ("f23", "b15", "SWD reset (NRST)"), ("F-16", "b16", "SWD ground, from the front ground rail")):
     w("wire", f"B3:{a}", f"B3:{b_}", "bottom", n)
 
 # B4: POWER
@@ -334,7 +338,7 @@ PLACE["B4"].append(breakout("U2", "INA", S.val("ina228"), ["H.VIN", "H.GND", "H.
                             [Box(20.1, 5.9, 25.4, 11.9, T_, T_ + S.val("qt_h"), "QT socket"),
                              Box(0, 5.9, 5.3, 11.9, T_, T_ + S.val("qt_h"), "QT socket"),
                              Box(7.7, 14.6, 17.7, 18.2, T_, T_ + 6.0, "soldered battery leads at X1")],
-                            "battery monitor; header pins 5-7 pulled; battery leads soldered in X1's outer holes "
+                            "battery monitor; SJ1 (VBUS jumper) soldered closed; header pins 5-7 pulled; battery leads soldered in X1's outer holes "
                             "(X1 is a 3-way 3.5 mm terminal footprint, left unfitted: VIN- 9.2, VBUS 12.7, VIN+ 16.2; "
                             "Adafruit-INA228-PCB .brd, TERMBLOCK_1X3-3.5MM at (12.7, 16.383) R180, 1.0 drills)",
                             pads={"X1.VIN-": (9.2, 16.383), "X1.VBUS": (12.7, 16.383), "X1.VIN+": (16.2, 16.383)}))
@@ -345,13 +349,20 @@ PLACE["B4"].append(breakout("U6", "MAX", S.val("max17048"), ["H.VIN", "H.GND", "
                              Box(20.1, 5.9, 25.4, 11.9, T_, T_ + S.val("qt_h"), "QT socket"),
                              Box(0, 5.9, 5.3, 11.9, T_, T_ + S.val("qt_h"), "QT socket")],
                             "fuel gauge; cell sense on its JP2 VBAT pad", pads={"JP2.VBAT": (11.43, 11.43)}))
+# a breakout pad with no lead gets its net from a solder jumper on that breakout, closed by hand before fitting
+PAD_BRIDGED = {("U2", "X1.VBUS"): ("SJ1", "the VBUS jumper on the back, above the VIN+ and VBUS pins",
+                                   "VBUS to VIN+: the INA228 then reads the pack voltage (bus voltage and power, high side); "
+                                   "open as shipped (low side), so VBUS would float")}
 _rw, _rd = S.val("s7v8f3")
 PLACE["B4"].append(breakout("U7", "REG", (_rw, _rd), ["VOUT", "GND", "VIN", "SHDN"], 1.905, 0, "f24",
                             [Box(2.2, 3.0, 9.2, 10.0, T_, T_ + S.val("s7v8f3_h"), "inductor")],
                             "3.3 V regulator; pins in the F-J strips of columns 24-27, board toward the front", pin_y=15.24))
-for a, b_, n in (("g1", "g24", "3.3 V supply from the regulator"), ("d10", "h1", "3.3 V supply to the INA228"),
-                 ("d20", "f1", "3.3 V supply to the MAX17048"), ("g2", "g25", "ground to the regulator"),
-                 ("d9", "h2", "ground to the INA228"), ("d19", "f2", "ground to the MAX17048"),
+for a, b_, n in (("h24", "F+24", "3.3 V from the regulator to the front 3.3 V rail"),
+                 ("a10", "F+10", "3.3 V supply to the INA228, from the front 3.3 V rail"),
+                 ("a20", "F+21", "3.3 V supply to the MAX17048, from the front 3.3 V rail"),
+                 ("h25", "F-25", "ground to the regulator, from the front ground rail"),
+                 ("a9", "F-9", "ground to the INA228, from the front ground rail"),
+                 ("a19", "F-19", "ground to the MAX17048, from the front ground rail"),
                  ("d8", f"g{bus_row('I2C_SCL')}", "I2C clock (SCL) to the INA228"),
                  ("d18", f"h{bus_row('I2C_SCL')}", "I2C clock (SCL) to the MAX17048"),
                  ("d7", f"g{bus_row('I2C_SDA')}", "I2C data (SDA) to the INA228"),
