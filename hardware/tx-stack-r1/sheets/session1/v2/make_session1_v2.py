@@ -491,7 +491,7 @@ def _cover(c, pg, title, sub, items, mats, tasks, rules):
         chip(c, x + w * (2 * i + 1) / (2 * n), y + 6, name, 9, "ALT", INK, "c")
     x, y, w, h = panel(c, g.cell(1, 1), None, f"THE {len(tasks)} TASKS. IN THIS ORDER.")
     for i, t in enumerate(tasks):
-        text(c, x + 16, y + h - 22 - i * (h - 20) / 4, t, 17, "HEAD", INK)
+        text(c, x + 16, y + h - 22 - i * (h - 20) / max(4, len(tasks)), t, 17, "HEAD", INK)
     x, y, w, h = panel(c, g.cell(0, 2, 2), None, "STANDING ORDERS.", warn=True)
     for i, r in enumerate(rules):
         yy = y + h - 14 - i * (h - 14) / 4
@@ -500,35 +500,23 @@ def _cover(c, pg, title, sub, items, mats, tasks, rules):
     mask_icon(c, x + w - 50, y + h / 2, 1.5)
 
 
-def cover_cards(c, pg):
-    _cover(c, pg, "SESSION 1: CARDS", "NO SOLDER. NO POWER. SNAP, FILE, LABEL, REPORT. THEN SESSION 2 BUILDS B4.",
-           [("CALIPERS", "tool_caliper"), ("STEEL RULER", "tool_ruler"), ("UTILITY KNIFE", "tool_knife"),
-            ("2 C-CLAMPS", "tool_clamps"), ("FLAT FILE", "tool_file"), ("SANDPAPER 120", "tool_sandpaper"),
-            ("SHARPIE", "tool_marker"), ("MASK", None), ("PHONE", "tool_phone")],
-           [("4x SOLDERFUL CARD", "mat_cards")],
-           ["00  WHAT YOU ARE BUILDING", "01  SNAP THE CARD RAILS", "02  LABEL. PHOTOGRAPH. REPORT."],
-           ["SCORE BOTH FACES. ALWAYS BOTH.",
-            "FILE TO THE LINE, NEVER PAST IT. ROW J STAYS WHOLE.",
-            "FIBREGLASS DUST: MASK ON, DAMP TOWEL UNDER, WASH HANDS AFTER.",
-            "WRITE EVERY NUMBER DOWN. A NUMBER NOT WRITTEN DID NOT HAPPEN."])
-
-
-def cover_base(c, pg):
-    _cover(c, pg, "SESSION 3: BASE", "AFTER THE CARDS. INSERTS, BACKPLANE, TWO SCREWS. NO SOLDER. NO POWER.",
+def cover(c, pg):
+    _cover(c, pg, "SESSION 1: PREP", "NO SOLDER. NO POWER. CARDS FIRST, THEN THE BASE: SNAP, LABEL, MEASURE, CUT, FIT.",
            [("CALIPERS", "tool_caliper"), ("STEEL RULER", "tool_ruler"), ("UTILITY KNIFE", "tool_knife"),
             ("2 C-CLAMPS", "tool_clamps"), ("SANDPAPER 120", "tool_sandpaper"), ("DRILL 3.2 MM", "tool_drill"),
             ("SHARPIE", "tool_marker"), ("FLAT FILE", "tool_file"), ("MASK", None), ("PHONE", "tool_phone"),
             ("IRON (INSERTS ONLY)", "")],
-           [("1x PAD3U", "mat_pad3u"), ("BASE, INSERTS, SCREWS", "mat_base")],
-           ["01  MEASURE THE INSERT", "02  CUT, DRILL, FIT BACKPLANE", "03  REPORT"],
+           [("1x PAD3U", "mat_pad3u"), ("4x SOLDERFUL", "mat_cards"), ("INSERTS + SCREWS", "mat_base")],
+           ["01  SNAP THE CARD RAILS", "02  LABEL. PHOTOGRAPH. REPORT.", "03  MEASURE THE INSERT",
+            "04  CUT, DRILL, FIT BACKPLANE", "05  REPORT THE BASE"],
            ["COUNT HOLES. DO NOT TRUST A RULER FOR POSITION.",
+            "SCORE BOTH FACES. ALWAYS BOTH. FILE TO THE LINE, NEVER PAST IT.",
             "FIBREGLASS DUST: MASK ON, DAMP TOWEL UNDER, WASH HANDS AFTER.",
-            "SCORE BOTH FACES. ALWAYS BOTH.",
             "WRITE EVERY NUMBER DOWN. A NUMBER NOT WRITTEN DID NOT HAPPEN."])
 
 
 def step1(c, pg):
-    page(c, "01", "MEASURE THE INSERT", "ONE M3 HEAT-SET INSERT. TWO NUMBERS. THE POST HOLES DEPEND ON THEM.", pg,
+    page(c, "03", "MEASURE THE INSERT", "ONE M3 HEAT-SET INSERT. TWO NUMBERS. THE POST HOLES DEPEND ON THEM.", pg,
          SLOGANS[1])
     g = Grid(2, 2)
     # 1: length
@@ -769,7 +757,7 @@ def ringm(c, px, py, r=6, color=NEON, w=1.8):
 
 
 def bp1(c, pg):
-    page(c, "02", "BACKPLANE  1/6: FIND THE PLATED END",
+    page(c, "04", "BACKPLANE  1/6: FIND THE PLATED END",
          "ONE PAD3U. KEEP THE END WITH THE TWO BIG HOLES: 31 ROWS OF 38 HOLES. ONE CUT ONLY.", pg, SLOGANS[3])
     g = Grid(2, 2, heights=[1.45, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
@@ -828,7 +816,7 @@ def bp1(c, pg):
 
 
 def bp2(c, pg):
-    page(c, "02", "BACKPLANE  2/6: DRILL TWO HOLES",
+    page(c, "04", "BACKPLANE  2/6: DRILL TWO HOLES",
          "BEFORE THE SNAP. LINE 0 HOLE 2 AT 3.2. THE LOWER BIG HOLE OPENED FROM 2.8 TO 3.2.", pg, SLOGANS[4])
     g = Grid(2, 2, heights=[1.5, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
@@ -877,7 +865,7 @@ def bp2(c, pg):
 
 
 def bp3(c, pg):
-    page(c, "02", "BACKPLANE  3/6: SCORE AND SNAP", "LEFT EDGE ONLY. BOTH FACES. x10 EACH.", pg, SLOGANS[4])
+    page(c, "04", "BACKPLANE  3/6: SCORE AND SNAP", "LEFT EDGE ONLY. BOTH FACES. x10 EACH.", pg, SLOGANS[4])
     g = Grid(1, 2, heights=[1.25, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "Clamp the steel ruler on the KEEP side of the dots (right). Knife along it 10 times, light then firm, straight",
@@ -904,7 +892,7 @@ def bp3(c, pg):
 
 
 def bp4(c, pg):
-    page(c, "02", "BACKPLANE  4/6: SAND. CHECK. MARK.", "THE NEW EDGE FLAT. TWO NUMBERS. ONE WORD.", pg, SLOGANS[1])
+    page(c, "04", "BACKPLANE  4/6: SAND. CHECK. MARK.", "THE NEW EDGE FLAT. TWO NUMBERS. ONE WORD.", pg, SLOGANS[1])
     g = Grid(2, 2, heights=[1.1, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
         "Sand the snapped LEFT edge flat on paper on the table, the board standing on that edge. CHECK: the edge to the",
@@ -950,7 +938,7 @@ def bp4(c, pg):
 
 
 def bp5(c, pg):
-    page(c, "02", "BACKPLANE  5/6: READY THE BASE",
+    page(c, "04", "BACKPLANE  5/6: READY THE BASE",
          "ENCLOSURE 2: POSTS AND SLOT PRINTED IN. TWO INSERTS. NOTHING GLUED, NOTHING CUT.", pg,
          SLOGANS[0])
     g = Grid(2, 2, heights=[1.3, 1])
@@ -993,7 +981,7 @@ def bp5(c, pg):
 
 
 def bp6(c, pg):
-    page(c, "02", "BACKPLANE  6/6: FIT IT. TWO SCREWS.",
+    page(c, "04", "BACKPLANE  6/6: FIT IT. TWO SCREWS.",
          "EVERY CARD OUT. FRONT UP, BACK FACE DOWN. RIGHT EDGE FIRST, THEN SLIDE LEFT.", pg, SLOGANS[2])
     g = Grid(2, 3, heights=[1, 1, 1])
     steps = [("f_tilt", ["TILT IT. Push the right edge into the corner", "post's slot, to the slot's end. The left",
@@ -1114,7 +1102,7 @@ def step4(c, pg):
     label(c, x + w - 90, y + 46, "RULER ALONG\nTHE DEPTH", *s.A("ruler"), 9)
     # 3: the report
     x, y, w, h = panel(c, g.cell(0, 1, 2), 3, [
-        "Send these to Claude. Claude updates the card model from them. Then Session 2: build B4 POWER."])
+        "Send these to Claude. Claude updates the card model from them. Then on to the base (step 03)."])
     report(c, x, y, w, h, CARD_ROWS)
 
 
@@ -1142,7 +1130,7 @@ def report(c, x, y, w, h, rows):
 
 
 def base_report(c, pg):
-    page(c, "03", "REPORT.", "THE BASE IS DONE. SHOW THE MACHINE YOUR NUMBERS.", pg, SLOGANS[5])
+    page(c, "05", "REPORT THE BASE.", "THE BASE IS DONE. SHOW THE MACHINE YOUR NUMBERS.", pg, SLOGANS[5])
     g = Grid(1, 2, heights=[1, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "Send these to Claude. Claude updates the model, the post holes and the card slots from them."])
@@ -1154,14 +1142,12 @@ def built_page(c, pg):
     builtpage.built(c, pg, sys.modules[__name__], "00", SLOGANS[2])
 
 
-# Cards first (Clint builds the cards next); the base waits for enclosure 3 and is Session 3.
+# One session: the cards first (Clint builds them next), then the base.
 SESSIONS = [
-    ("session1", "Session 1: cards", "PROTOCOL 01 // SESSION 1 // CARDS",
-     [("00-cover", [cover_cards]), ("00-what-you-are-building", [built_page]), ("01-snap-card-rails", [step3]),
-      ("02-label-report", [step4])]),
-    ("session3", "Session 3: base", "PROTOCOL 03 // SESSION 3 // BASE",
-     [("00-cover", [cover_base]), ("00-what-you-are-building", [built_page]), ("01-measure-insert", [step1]),
-      ("02-backplane", [bp1, bp2, bp3, bp4, bp5, bp6]), ("03-report", [base_report])]),
+    ("session1", "Session 1: prep", "PROTOCOL 01 // SESSION 1 // PREP",
+     [("00-cover", [cover]), ("00-what-you-are-building", [built_page]), ("01-snap-card-rails", [step3]),
+      ("02-label-report", [step4]), ("03-measure-insert", [step1]), ("04-backplane", [bp1, bp2, bp3, bp4, bp5, bp6]),
+      ("05-report-base", [base_report])]),
 ]
 
 

@@ -108,7 +108,9 @@ def cards(s):
         s.anchor(f"{b}_front", vp((st.CAGE_LEFT + st.BW * 0.62, st.BP_FRONT + st.Y_BP, cz + 0.8)))
         s.anchor(f"{b}_right", vp((st.CAGE_LEFT + st.BW, st.BP_FRONT + st.Y_BP - 20, cz + 0.8)))
         s.anchor(f"{b}_socket", vp((x1, st.BP_FRONT + st.S.val("socket_h"), zr)))
-    s.anchor("bp_low", vp((st.strip_x(4), st.BP_FRONT, SC.BZ0 + 3)))
+    # between lines 27 and 28, 1.2 above the bottom edge: the corner of the backplane that B4 does not hide in
+    #   the iso (line 4 was behind B4, so the BACKPLANE leader landed on B4)
+    s.anchor("bp_low", vp((st.strip_x(27) + st.P / 2, st.BP_FRONT, SC.BZ0 + 1.2)), on=("backplane", "bp_pads"))
     s.anchor("bp_low_l", vp((12.0, st.BP_FRONT, SC.BZ0 + 6)))
     s.anchor("post_r", vp((95.8, 21.96, 76.0)))
     s.anchor("bar", vp((3.0, cage.CARD_FRONT + 3.5, 74.5)))

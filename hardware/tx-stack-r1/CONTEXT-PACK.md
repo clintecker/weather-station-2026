@@ -176,14 +176,14 @@ PDFs change.
     4. The **SMA nut seat** sits 1.5 from the top-right corner block (the spec asks for 2.0). The nut fits, but tell
        the PDF to use an open spanner on the 3/8 in nut.
     5. The bar is 2.5 thick (`sources.bar`) and sits 1.00 in front of the card front edges, which is OK.
-- **PDFs (re-split 2026-11-16, cards first):**
-  - **Session 1: CARDS** (4 pages): cover, what you are building, snap the card rails, label/photo/report.
-  - **Session 2: B4 POWER** (12 pages), unchanged apart from the shared built page, which now says enclosure 3.
-  - **Session 3: BASE** (10 pages): cover, built page, measure the insert, backplane 1–6, report.
-    **These are still the enclosure 2 pages.** Revise them for enclosure 3 (items 1, 2 and 4 above) before Clint
-    builds the base.
-  - `make_session1_v2.py` builds both Session 1 and Session 3. The rendered SVGs (`svg/`) and `out/` are git-ignored;
-    copy them from the old scratchpad or re-render with `scenes.py`.
+- **PDFs (2026-11-16):**
+  - **Session 1: PREP** (12 pages, cards first, then the base): cover, what you are building, 01 snap the card rails,
+    02 label/photo/report, 03 measure the insert, 04 backplane 1–6, 05 report the base. Steps 03–05 are still the
+    enclosure 2 base pages: revise them for enclosure 3 (items 1, 2 and 4 above).
+  - **Session 2: B4 POWER** (12 pages).
+  - The built page's BACKPLANE leader pointed at B4 (the anchor at line 4 was hidden behind B4). It now sits between
+    lines 27 and 28, and `r3d.Scene.anchor(..., on=part)` fails the render if an anchor is hidden behind another part.
+  - The rendered SVGs (`svg/`) and `out/` are git-ignored; copy them from the old scratchpad or re-render.
 - **Clint still owes:**
   - whether the backplane was already cut at 30 lines (it needs 31: lines 0–30);
   - the distance from the PAD3U plated edge to line 30 (TBD-MEASURE, about 5.48 and at most 6.13);

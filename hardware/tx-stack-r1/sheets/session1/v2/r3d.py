@@ -66,6 +66,7 @@ class Scene:
         self.anchors = {}    # name -> 3D point
         self.xf = None       # (R 3x3, t) applied to decals and anchors added while set
         self.holes = {}      # anchor name -> True if the hole is drawn face-on (checked against the SVG)
+        self.anchor_on = {}  # anchor name -> part name(s) it must be seen on (render fails if it is hidden)
         self.frames = []     # (what, 3x3 linear part) of each map from a physical (right-handed) frame into this scene
 
     def placed_by(self, what, R):
@@ -102,8 +103,12 @@ class Scene:
         self.decals.append(dict(kind="lines", part=part, segs=[(self._p(a), self._p(b)) for a, b in segs],
                                 colour=colour, width=width, check=check, opacity=opacity, width_mm=width_mm))
 
-    def anchor(self, name, p):
+    def anchor(self, name, p, on=None):
+        """on: the part (or tuple of parts) a leader to this anchor names; render() checks the anchor is visible
+        on it, so a leader can never land on whatever happens to be drawn in front."""
         self.anchors[name] = self._p(p)
+        if on:
+            self.anchor_on[name] = (on,) if isinstance(on, str) else tuple(on)
 
     def hole(self, name, p, drawn=True):
         """An anchor that names a hole: page callouts on it are checked by holecheck.py."""
@@ -306,6 +311,9 @@ def render(scene, out, direction, up=(0, 0, 1), fit=None, scale=None, margin=6, 
         o = view.x * u + view.y * v + view.n * far
         dep = far - float((np.asarray(p3) - (view.x * u + view.y * v)) @ view.n)
         return abs(b[0] - dep) < 0.3
+    hidden = [k for k, ons in scene.anchor_on.items() if not any(visible(o, scene.anchors[k]) for o in ons)]
+    if hidden:
+        raise SystemExit(f"{Path(out).name}: anchors hidden behind other parts: {hidden}")
     for dc in scene.decals:
         if dc["kind"] == "text":
             if win is not None and not win.contains(shapely.Point(view.p2(dc["o"]))):
