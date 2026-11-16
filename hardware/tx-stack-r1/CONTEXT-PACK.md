@@ -87,6 +87,12 @@ Lid-centre frame (the CAD bot's): **X = Zb − 84.75, Y = 61.75 − Xb, Z = Yb +
   (Xb 85.8–92.3, Yb 8.0–10.1). The post is widened to Xb 95.8.
 - **Fitting:** tilt the right edge into the slot, lower the board, then slide it 2.84 left.
 - **On the bench:** FRONT up and hole 1 nearest you puts the big holes on the RIGHT. FRONT faces the lid.
+- **Pads (Clint's photos IMG_8592–8594, 2026-11-16):** round, except every 5th line (29, 24 … 4; line 30 is round)
+  and every 5th hole row (holes 5, 10 … 35 from hole 1's edge), which are square. Line 30 also has one lone square at
+  hole 4. The pattern isn't symmetric, so FRONT is the face with the "PadBoard-3U … BusBoard.net" legend
+  (`models.b_copper`).
+- **Rendering:** render scenes one per process (`scenes.py NAME`). A multi-scene run segfaults partway through and
+  still exits 0.
 
 ### Cards and nets
 
