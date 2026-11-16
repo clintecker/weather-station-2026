@@ -22,7 +22,8 @@
   L8 every routed wire, jumper and lead (layout/route.py) lies on its side of the card in straight runs with
      right-angle bends, never crosses a part's footprint (a pad lead only crosses its own breakout), never
      passes over a used hole that is not its own end, and shares no grid edge with another wire except an
-     insulated lead bundle; a bare jumper crosses nothing; every wire, jumper and lead end on a card has a hole
+     insulated lead bundle; no two insulated runs lie side by side on neighbouring grid lines (1.27 apart, less
+     than the insulation OD; a wire's bare stripped step into its own end hole aside); a bare jumper crosses nothing; every wire, jumper and lead end on a card has a hole
      of its own (no part pin, no other end: the strip's copper makes the joint); an underside wire keeps its
      centre OD/2 + fillet_clear from every used hole but its own ends (the solder fillets stay bare); every breakout pad has
      a lead or a closed solder jumper (stack.PAD_BRIDGED, tied in the schematic model), never both or neither;
@@ -111,7 +112,7 @@ def pin_holes():
 def check_pins_and_ends(ph):
     used = defaultdict(list)
     pads = {(pl["ref"], n) for _b, pl in st.placements() for n in st.pads_of(pl)}
-    for kind, a, c, side, note in st.WIRES:
+    for kind, a, c, side, note in route.WIRES:
         for e in (a, c):
             if isinstance(e, str):
                 b, h = e.split(":")
@@ -172,7 +173,7 @@ def build_copper(ph, ties=True):
     uf = UF()
     for (b, h), (ref, pin) in ph.items():
         uf.u(("pin", ref, pin), node(f"{b}:{h}"))
-    for kind, a, c, side, note in st.WIRES:
+    for kind, a, c, side, note in route.WIRES:
         uf.u(node(a), node(c))
     for a, c in st.CABLES:
         uf.u(node(a), node(c))
@@ -674,7 +675,7 @@ def check_routes():
     total = 0.0
     edges = {}
     nodes = {}
-    for i, (kind, a, c, side, note) in enumerate(st.WIRES):
+    for i, (kind, a, c, side, note) in enumerate(route.WIRES):
         if side == "copper":
             continue
         r = route.ROUTES[i]
@@ -714,7 +715,7 @@ def check_routes():
     for b, pl in st.placements():
         for nm, (x, y) in st.pins_of(pl).items():
             pins.setdefault((b, round(x, 2), round(y, 2)), []).append(f"{pl['ref']}.{nm}")
-    for i, (kind, a, c, side, _n) in enumerate(st.WIRES):
+    for i, (kind, a, c, side, _n) in enumerate(route.WIRES):
         for e in (a, c):
             if isinstance(e, str) and e.split(":")[0] in st.PLACE:
                 x, y = st.hole_xy(e.split(":")[1])
@@ -724,7 +725,7 @@ def check_routes():
         if len(u) > 1 or k in pins:
             shared += 1
             fail("L8", f"{k[0]} hole ({k[1]:.2f},{k[2]:.2f}) is shared: " + ", ".join(u + pins.get(k, [])))
-    leaded = {e for _k, a, c, _s, _n in st.WIRES for e in (a, c) if isinstance(e, tuple)}
+    leaded = {e for _k, a, c, _s, _n in route.WIRES for e in (a, c) if isinstance(e, tuple)}
     for b, pl in st.placements():
         for pad in st.pads_of(pl):
             k = (pl["ref"], pad)
@@ -738,7 +739,7 @@ def check_routes():
         if not any(pad in t and len(t) > 1 for t in part.get("ties", [])):
             fail("L8", f"{ref} {pad}: {sj} is closed on the sheet but the schematic model ties {pad} to nothing")
     n_clear = 0
-    for i, (kind, a, c, side, _n) in enumerate(st.WIRES):
+    for i, (kind, a, c, side, _n) in enumerate(route.WIRES):
         r = route.ROUTES[i]
         if side != "bottom" or r is None or not r["ok"]:
             continue
@@ -766,11 +767,24 @@ def check_routes():
     NOTES.append(f"routing: {n_ok} of {n_all} wires, jumpers and leads routed on the 1.27 mm grid, right-angle runs "
                  f"around every part, {total:.0f} mm of wire laid (bundled leads counted once)")
     over, pairs = route.stats()
-    near = [p for p in pairs if p[4] >= 2.5]
-    NOTES.append(f"routing: {len(over)} insulated wires still lie over {sum(len(v) for v in over.values())} free holes "
-                 "(the router prefers the midway lines; the rest have no free midway line); "
-                 f"{len(near)} side-by-side runs of 2.5 mm or more lie 1.27 apart (the 1.45 insulation touches; harmless, "
-                 "the grid has no wider line there): " + "; ".join(f"{c} {s} wires {i}+{j} {mm:g} mm" for i, j, c, s, mm in near))
+    held = defaultdict(float)
+    for i, j, card, side, mm in pairs:
+        what = (f"{card} {side}: wires {i} ({route.WIRES[i][1]}-{route.WIRES[i][2]}) and {j} "
+                f"({route.WIRES[j][1]}-{route.WIRES[j][2]}) run side by side {route.G:g} apart for {mm:g} mm "
+                f"(closer than the {route.OD:g} insulation: parallel runs need {2 * route.G:g})")
+        held[card] += mm
+        if card in route.CLOSE_OPEN:
+            NOTES.append("OPEN (route.CLOSE_OPEN): " + what)
+        else:
+            fail("L8", what)
+    for card, (mm, why) in route.CLOSE_OPEN.items():
+        if held[card] > mm + 1e-6:
+            fail("L8", f"{card}: {held[card]:g} mm of side-by-side runs, more than the {mm:g} mm left open ({why})")
+        else:
+            NOTES.append(f"OPEN: {card} keeps {held[card]:g} mm of side-by-side runs (at most {mm:g}): {why}")
+    NOTES.append(f"routing: {len(over)} insulated wires lie over {sum(len(v) for v in over.values())} free holes; "
+                 f"{len(pairs)} pairs of insulated runs side by side closer than {2 * route.G:g} "
+                 f"({', '.join(sorted(held)) or 'none'}); rail ends at the hole the router picked on their rail")
 
 
 MECH = []       # (mating or fixing, how it is held, what takes the force, how it comes apart, flag or "")
@@ -793,7 +807,7 @@ def check_removal():
     plug_pins = {("A1", "ANT")}                         # the mini's SMA-K, AD1 screwed on
     off = {"U1", "BT1", "PG1", "RT1", "PS1", "PV1"}     # the charger, the pack and what hangs on them
     bad = []
-    for kind, a, c, side, note in st.WIRES:
+    for kind, a, c, side, note in route.WIRES:
         wa, wc = where(a), where(c)
         for e, w_, o, wo in ((a, wa, c, wc), (c, wc, a, wa)):
             if w_ in st.BOARDS and wo != w_:

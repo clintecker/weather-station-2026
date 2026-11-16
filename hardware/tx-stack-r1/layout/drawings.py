@@ -223,7 +223,7 @@ def top_view(b, ph):
             net = lc.eff_net((pl["ref"], pad))
             g.add(f'<path d="M{sx(x):.1f},{sy(y) - 5:.1f} l5,5 l-5,5 l-5,-5 z" fill="{ncol(net)}" stroke="#000"/>')
     # conductors, along their routed paths
-    for i, (kind, a, c, side, note) in enumerate(st.WIRES):
+    for i, (kind, a, c, side, note) in enumerate(route.WIRES):
         ba, bc = board_of_end(a), board_of_end(c)
         if b not in (ba, bc) or side == "copper":
             continue
@@ -337,7 +337,7 @@ def backplane_view(ph):
                 g.text((bx(i1) + bx(i2)) / 2, (bz(n1) + bz(n2)) / 2 + 4, ref, 11, "middle", weight="bold")
             n = int(next(iter(pins.values())).split(".")[1])
             g.text(bx(st.BP_STRIPS) + 2 * KB, bz(n) + 4 + (12 if ref == "R8" else 0), f"{ref}: {note}", 10)
-    for kind, a, c, side, note in st.WIRES:
+    for kind, a, c, side, note in route.WIRES:
         for e, o in ((a, c), (c, a)):
             if isinstance(e, str) and e.startswith("BP:"):
                 i, n = (int(v) for v in e[4:].split("."))
@@ -485,7 +485,7 @@ def build_list(b, ph):
          "front edge [TBD-MEASURE]: measure on the card), clamp the card along the line and snap the two back rails off.",
          "2. File the edge flat and square to the front edge; stop at the line (do not open the row J holes).",
          f"3. Check: the card is {st.CD:.2f} mm deep everywhere; it slides in a test slot without catching.", ""]
-    ws = [(i, x) for i, x in enumerate(st.WIRES) if b in (board_of_end(x[1]), board_of_end(x[2]))]
+    ws = [(i, x) for i, x in enumerate(route.WIRES) if b in (board_of_end(x[1]), board_of_end(x[2]))]
     under = [(i, x) for i, x in ws if x[3] == "bottom" and board_of_end(x[1]) == board_of_end(x[2]) == b]
     step = 2
     if under:
@@ -550,7 +550,7 @@ def build_list(b, ph):
     for (bb, h), (ref, pin) in ph.items():
         if bb == b:
             use[st.strip_of(h)].append(f"{h} {ref}")
-    for kind, a, c, side, note in st.WIRES:
+    for kind, a, c, side, note in route.WIRES:
         for e in (a, c):
             if isinstance(e, str) and e.startswith(b + ":"):
                 use[st.strip_of(e.split(":")[1])].append(f"{e.split(':')[1]} {kind}")
@@ -668,7 +668,7 @@ def backplane_sheet(ph):
           "(line 24, hole 7) also takes the charger sense lead on the copper side.", "",
           "### Leads to the charger and the pack (copper side, short)", "",
           "| From | To the backplane | What |", "|---|---|---|"]
-    for kind, a, c, side, note in st.WIRES:
+    for kind, a, c, side, note in route.WIRES:
         if kind == "lead" and isinstance(a, tuple) and a[0] in ("PG1", "U1") and isinstance(c, str) and c.startswith("BP:"):
             i, n = c[4:][1:].split(".")
             L.append(f"| {where(a)} | line {i}, hole {n} | {note} |")
@@ -689,7 +689,7 @@ def backplane_sheet(ph):
         cut = int(math.ceil(((hs[-1] - hs[0]) * st.P + 10) / 5) * 5)
         L.append(f"| {i} | {plain(net)} | {hs[0]} | {hs[-1]} | {cut} mm | {', '.join(str(n) for n in hs)} |")
     L += ["", "## 5. Leads on the copper side", "", "| From | To | Length | Line | What |", "|---|---|---|---|---|"]
-    for kind, a, c, side, note in st.WIRES:
+    for kind, a, c, side, note in route.WIRES:
         if side == "copper":
             L.append(f"| {where(a)} | {where(c)} | 40 mm | {plain(net_of_end(c, ph) or net_of_end(a, ph))} | {note} |")
     L += ["", "The mux (Adafruit #5626: bridge A0 for 0x71, its Vlogic switch SW1 to V+) sits on a foam pad on the "
@@ -711,7 +711,7 @@ def backplane_sheet(ph):
     for ref, pins, note in st.BP_PARTS:
         for pin, h in pins.items():
             used[h].append(f"{ref} {lc.PIN[(ref, pin)][1]}")
-    for kind, a, c, side, note in st.WIRES:
+    for kind, a, c, side, note in route.WIRES:
         for e, o in ((a, c), (c, a)):
             if isinstance(e, str) and e.startswith("BP:"):
                 used[e[3:]].append(f"lead to {where(o)}")
@@ -791,7 +791,7 @@ def assembly_sheet():
          "SWD and USB-C leads if fitted), slide it out. No card needs another card out first, and nothing is soldered "
          "between a card and anything else (layout check L10).",
          "", "## 4. Leads off the cards", "", "| From | To | Length | What |", "|---|---|---|---|"]
-    for kind, a, c, side, note in st.WIRES:
+    for kind, a, c, side, note in route.WIRES:
         off = [e for e in (a, c) if isinstance(e, tuple) and board_of_end(e) is None and e[0] != "U4"]
         if off:
             ln = "100 mm, trim to fit" if any((isinstance(x, str) and x.startswith("BP:")) or x[0] == "R7" for x in (a, c)) \

@@ -377,7 +377,7 @@ def card_mesh(b):
         if pl["fp"] in ("RAH", "RAS"):
             header_pins(m, pl)
     bundle = {}
-    for i, (kind, a, c, side, note) in enumerate(st.WIRES):
+    for i, (kind, a, c, side, note) in enumerate(route.WIRES):
         r = route.ROUTES[i]
         if side == "copper" or not r or not r["ok"] or r["card"] != b:
             continue
