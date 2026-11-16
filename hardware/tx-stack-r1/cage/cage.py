@@ -112,7 +112,9 @@ GLAND_IN = max(g[1] for g in GLAND.values())            # thread length inside t
 VENT = (50.0, 85.0)                                     # Xb, Yb in the bottom wall
 # shelves, bottom to top
 PACK_TRAY_Z = GLAND_IN + M                              # tray underside
-PACK_X0, PACK_Z0 = M + 4.0, PACK_TRAY_Z + SHELF             # the pack lies flat: 69 across, 54 back-to-lid, 18 up
+CORNER_BLOCK_X = 16.5                                   # enclosure 3's bottom-left corner block reaches Xb 16.5
+#                                     up to Zb 16.4 (STL audit, sheets/audit-enc3); the pack moves right of it
+PACK_X0, PACK_Z0 = CORNER_BLOCK_X + M, PACK_TRAY_Z + SHELF  # the pack lies flat: 69 across, 54 back-to-lid, 18 up
 EVM_X0 = TONGUE_C + RIM_CH / 2 + RIM_IN - T + M         # clear of the lid's inner channel wall (it reaches into the lid)
 EVM_Y0 = st.BP_FRONT + M                                # in front of the backplane's lower end; J8 toward the lid
 EVM_Z0 = PACK_Z0 + PACK[2] + M + S.val("evm_under")     # board underside

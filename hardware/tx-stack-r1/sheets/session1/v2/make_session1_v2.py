@@ -51,6 +51,7 @@ SLOGANS = [
 ]
 
 MIN_LABEL, MIN_FINE, MIN_KEY = 9, 8, 12
+PROTO = "PROTOCOL 01 // SESSION 1 // CARDS"   # set per session by the build loop
 
 
 # ------------------------------------------------------------------ primitives
@@ -401,7 +402,7 @@ def page(c, step_no, title, sub, pg, slogan):
         ts -= 1
     text(c, M + 94, H - 44, title, ts, "HEAD", WHITE)
     text(c, M + 95, H - 64, sub, 9, "MONO", HAZ)
-    text(c, W - M, H - 26, "PROTOCOL 01 // SESSION 1 // PREP", 8, "MONO", GREY, "r")
+    text(c, W - M, H - 26, PROTO, 8, "MONO", GREY, "r")
     text(c, W - M, H - 38, "UNIT: TX-STACK-R1", 8, "MONO", GREY, "r")
     c.saveState()
     p = c.beginPath()
@@ -470,47 +471,60 @@ def panel(c, cell, n, caption, warn=False):
 
 
 # ------------------------------------------------------------------ pages
-def cover(c, pg):
-    page(c, "00", "SESSION 1: PREP", "NO SOLDER. NO POWER. ONLY CUTTING, MEASURING, FITTING AND OBEDIENCE.", pg,
-         SLOGANS[0])
+def _cover(c, pg, title, sub, items, mats, tasks, rules):
+    page(c, "00", title, sub, pg, SLOGANS[0])
     g = Grid(2, 3, heights=[1.25, 0.95, 0.9])
     x, y, w, h = panel(c, g.cell(0, 0, 2), None, "REQUIRED APPARATUS. LAY IT ALL OUT BEFORE YOU BEGIN.")
-    items = [("CALIPERS", "tool_caliper"), ("STEEL RULER", "tool_ruler"), ("UTILITY KNIFE", "tool_knife"),
-             ("2 C-CLAMPS", "tool_clamps"), ("SANDPAPER 120", "tool_sandpaper"), ("DRILL 3.2 MM", "tool_drill"),
-             ("SHARPIE", "tool_marker"), ("FLAT FILE", "tool_file"), ("MASK", None), ("PHONE", "tool_phone"),
-             ("IRON (INSERTS ONLY)", "")]
     cw, rh = w / 6, h / 2
     for i, (name, art) in enumerate(items):
         col, row = i % 6, i // 6
         X, Y = x + cw * col, y + h - rh * (row + 1)
         if art:
             Art(c, art, X + 6, Y + 20, cw - 12, rh - 26)
-        elif art == "":
-            pass
-        else:
+        elif art is None:
             mask_icon(c, X + cw / 2, Y + 20 + (rh - 26) / 2, 1.0)
         chip(c, X + cw / 2, Y + 6, name, 9, "ALT", INK, "c")
     x, y, w, h = panel(c, g.cell(0, 1), None, "MATERIAL ISSUED TO YOU.")
-    Art(c, "mat_pad3u", x + 6, y + 22, w / 3 - 12, h - 26)
-    chip(c, x + w / 6, y + 6, "1x PAD3U", 9, "ALT", INK, "c")
-    Art(c, "mat_cards", x + w / 3 + 6, y + 22, w / 3 - 12, h - 26)
-    chip(c, x + w / 2, y + 6, "4x SOLDERFUL CARD", 9, "ALT", INK, "c")
-    Art(c, "mat_base", x + 2 * w / 3 + 4, y + 22, w / 3 - 8, h - 26)
-    chip(c, x + 5 * w / 6, y + 6, "INSERTS + SCREWS", 9, "ALT", INK, "c")
-    x, y, w, h = panel(c, g.cell(1, 1), None, "THE FOUR TASKS. IN THIS ORDER.")
-    for i, s in enumerate(["01  MEASURE THE INSERT", "02  CUT, DRILL, FIT BACKPLANE", "03  SNAP THE CARD RAILS",
-                           "04  LABEL. PHOTOGRAPH. REPORT."]):
-        text(c, x + 16, y + h - 22 - i * (h - 20) / 4, s, 17, "HEAD", INK)
+    n = len(mats)
+    for i, (name, art) in enumerate(mats):
+        Art(c, art, x + w * i / n + 6, y + 22, w / n - 12, h - 26)
+        chip(c, x + w * (2 * i + 1) / (2 * n), y + 6, name, 9, "ALT", INK, "c")
+    x, y, w, h = panel(c, g.cell(1, 1), None, f"THE {len(tasks)} TASKS. IN THIS ORDER.")
+    for i, t in enumerate(tasks):
+        text(c, x + 16, y + h - 22 - i * (h - 20) / 4, t, 17, "HEAD", INK)
     x, y, w, h = panel(c, g.cell(0, 2, 2), None, "STANDING ORDERS.", warn=True)
-    rules = ["COUNT HOLES. DO NOT TRUST A RULER FOR POSITION.",
-             "FIBREGLASS DUST: MASK ON, DAMP TOWEL UNDER, WASH HANDS AFTER.",
-             "SCORE BOTH FACES. ALWAYS BOTH.",
-             "WRITE EVERY NUMBER DOWN. A NUMBER NOT WRITTEN DID NOT HAPPEN."]
-    for i, s in enumerate(rules):
+    for i, r in enumerate(rules):
         yy = y + h - 14 - i * (h - 14) / 4
         verdict(c, x + 22, yy, True, 10)
-        text(c, x + 42, yy - 4, s, 11, "ALT", INK)
+        text(c, x + 42, yy - 4, r, 11, "ALT", INK)
     mask_icon(c, x + w - 50, y + h / 2, 1.5)
+
+
+def cover_cards(c, pg):
+    _cover(c, pg, "SESSION 1: CARDS", "NO SOLDER. NO POWER. SNAP, FILE, LABEL, REPORT. THEN SESSION 2 BUILDS B4.",
+           [("CALIPERS", "tool_caliper"), ("STEEL RULER", "tool_ruler"), ("UTILITY KNIFE", "tool_knife"),
+            ("2 C-CLAMPS", "tool_clamps"), ("FLAT FILE", "tool_file"), ("SANDPAPER 120", "tool_sandpaper"),
+            ("SHARPIE", "tool_marker"), ("MASK", None), ("PHONE", "tool_phone")],
+           [("4x SOLDERFUL CARD", "mat_cards")],
+           ["00  WHAT YOU ARE BUILDING", "01  SNAP THE CARD RAILS", "02  LABEL. PHOTOGRAPH. REPORT."],
+           ["SCORE BOTH FACES. ALWAYS BOTH.",
+            "FILE TO THE LINE, NEVER PAST IT. ROW J STAYS WHOLE.",
+            "FIBREGLASS DUST: MASK ON, DAMP TOWEL UNDER, WASH HANDS AFTER.",
+            "WRITE EVERY NUMBER DOWN. A NUMBER NOT WRITTEN DID NOT HAPPEN."])
+
+
+def cover_base(c, pg):
+    _cover(c, pg, "SESSION 3: BASE", "AFTER THE CARDS. INSERTS, BACKPLANE, TWO SCREWS. NO SOLDER. NO POWER.",
+           [("CALIPERS", "tool_caliper"), ("STEEL RULER", "tool_ruler"), ("UTILITY KNIFE", "tool_knife"),
+            ("2 C-CLAMPS", "tool_clamps"), ("SANDPAPER 120", "tool_sandpaper"), ("DRILL 3.2 MM", "tool_drill"),
+            ("SHARPIE", "tool_marker"), ("FLAT FILE", "tool_file"), ("MASK", None), ("PHONE", "tool_phone"),
+            ("IRON (INSERTS ONLY)", "")],
+           [("1x PAD3U", "mat_pad3u"), ("BASE, INSERTS, SCREWS", "mat_base")],
+           ["01  MEASURE THE INSERT", "02  CUT, DRILL, FIT BACKPLANE", "03  REPORT"],
+           ["COUNT HOLES. DO NOT TRUST A RULER FOR POSITION.",
+            "FIBREGLASS DUST: MASK ON, DAMP TOWEL UNDER, WASH HANDS AFTER.",
+            "SCORE BOTH FACES. ALWAYS BOTH.",
+            "WRITE EVERY NUMBER DOWN. A NUMBER NOT WRITTEN DID NOT HAPPEN."])
 
 
 def step1(c, pg):
@@ -1010,7 +1024,7 @@ def bp6(c, pg):
 
 
 def step3(c, pg):
-    page(c, "03", "SNAP THE CARD RAILS", "FOUR SOLDERFUL CARDS. THE TWO BACK RAILS COME OFF. BEFORE ANY SOLDER.", pg,
+    page(c, "01", "SNAP THE CARD RAILS", "FOUR SOLDERFUL CARDS. THE TWO BACK RAILS COME OFF. BEFORE ANY SOLDER.", pg,
          SLOGANS[5])
     g = Grid(2, 3, heights=[1.35, 1, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
@@ -1078,7 +1092,7 @@ def step3(c, pg):
 
 
 def step4(c, pg):
-    page(c, "04", "LABEL. PHOTOGRAPH. REPORT.", "NAME EACH CARD. SHOW THE MACHINE YOUR WORK.", pg, SLOGANS[2])
+    page(c, "02", "LABEL. PHOTOGRAPH. REPORT.", "NAME EACH CARD. SHOW THE MACHINE YOUR WORK.", pg, SLOGANS[2])
     g = Grid(2, 2, heights=[1.25, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["Sharpie the name on each card's FRONT", "edge (the A side). Shown as stacked",
                                              "in the box: B3 on top, B4 at the bottom."])
@@ -1100,15 +1114,24 @@ def step4(c, pg):
     label(c, x + w - 90, y + 46, "RULER ALONG\nTHE DEPTH", *s.A("ruler"), 9)
     # 3: the report
     x, y, w, h = panel(c, g.cell(0, 1, 2), 3, [
-        "Send these to Claude. Claude updates the model, the post holes and the card slots from them."])
-    rows = [("INSERT LENGTH  L", "mm", "expected 5.7"),
-            ("INSERT DIAMETER  D (KNURL TIPS)", "mm", "expected 4.6"),
-            ("CARD: FRONT EDGE TO SNAP LINE", "mm", "model 41.91"),
-            ("BACKPLANE: 31 x 38, 2 HOLES, FITS, 2 SCREWS", "Y / N", ""),
-            ("BACKPLANE: LINE 30 TO RIGHT EDGE", "mm", "expected 5.48, at most 6.13"),
-            ("PHOTO OF A SNAPPED CARD WITH A RULER", "SENT", "")]
+        "Send these to Claude. Claude updates the card model from them. Then Session 2: build B4 POWER."])
+    report(c, x, y, w, h, CARD_ROWS)
+
+
+CARD_ROWS = [("CARD: FRONT EDGE TO SNAP LINE", "mm", "model 41.91"),
+             ("ALL FOUR CARDS: A = B, ROW J WHOLE", "Y / N", ""),
+             ("FOUR NAMES ON FOUR FRONT EDGES", "Y / N", "B1 PORTS A, B2 PORTS B + METERS, B3 CORE, B4 POWER"),
+             ("PHOTO OF A SNAPPED CARD WITH A RULER", "SENT", "")]
+BASE_ROWS = [("INSERT LENGTH  L", "mm", "expected 5.7"),
+             ("INSERT DIAMETER  D (KNURL TIPS)", "mm", "expected 4.6"),
+             ("BACKPLANE: 31 x 38, 2 HOLES, FITS, 2 SCREWS", "Y / N", ""),
+             ("BACKPLANE: LINE 30 TO RIGHT EDGE", "mm", "expected 5.48, at most 6.13"),
+             ("PHOTO OF THE BACKPLANE SCREWED DOWN", "SENT", "")]
+
+
+def report(c, x, y, w, h, rows):
     for i, (lab, unit, exp) in enumerate(rows):
-        yy = y + h - 22 - i * (h - 16) / 6
+        yy = y + h - 22 - i * (h - 16) / max(len(rows), 4)
         text(c, x + 44, yy, lab, 14, "HEAD", INK)
         c.setStrokeColor(NEON)
         lw(c, 1.8)
@@ -1118,21 +1141,36 @@ def step4(c, pg):
             text(c, x + 44, yy - 13, exp, 9, "MONO", GREY)
 
 
+def base_report(c, pg):
+    page(c, "03", "REPORT.", "THE BASE IS DONE. SHOW THE MACHINE YOUR NUMBERS.", pg, SLOGANS[5])
+    g = Grid(1, 2, heights=[1, 1])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, [
+        "Send these to Claude. Claude updates the model, the post holes and the card slots from them."])
+    report(c, x, y, w, h, BASE_ROWS)
+
+
 def built_page(c, pg):
     import builtpage
-    builtpage.built(c, pg, sys.modules[__name__], "05", SLOGANS[2])
+    builtpage.built(c, pg, sys.modules[__name__], "00", SLOGANS[2])
 
 
-PAGES = [("00-cover", [cover]), ("01-measure-insert", [step1]), ("02-backplane", [bp1, bp2, bp3, bp4, bp5, bp6]),
-         ("03-snap-card-rails", [step3]), ("04-label-report", [step4]), ("05-what-you-are-building", [built_page])]
+# Cards first (Clint builds the cards next); the base waits for enclosure 3 and is Session 3.
+SESSIONS = [
+    ("session1", "Session 1: cards", "PROTOCOL 01 // SESSION 1 // CARDS",
+     [("00-cover", [cover_cards]), ("00-what-you-are-building", [built_page]), ("01-snap-card-rails", [step3]),
+      ("02-label-report", [step4])]),
+    ("session3", "Session 3: base", "PROTOCOL 03 // SESSION 3 // BASE",
+     [("00-cover", [cover_base]), ("00-what-you-are-building", [built_page]), ("01-measure-insert", [step1]),
+      ("02-backplane", [bp1, bp2, bp3, bp4, bp5, bp6]), ("03-report", [base_report])]),
+]
 
 
 HOLE_ISSUES = []
 
 
-def build(path, fns, start=1, report=False):
+def build(path, fns, start=1, report=False, title="Session 1: cards"):
     c = canvas.Canvas(str(path), pagesize=(W, H))
-    c.setTitle("Session 1: prep")
+    c.setTitle(title)
     c.setAuthor("TX-STACK-R1")
     issues = 0
     for i, fn in enumerate(fns):
@@ -1150,13 +1188,18 @@ def build(path, fns, start=1, report=False):
 
 
 OUT.mkdir(parents=True, exist_ok=True)
-allfns = []
-n = 1
-for name, fns in PAGES:
-    build(OUT / f"session1-{name}.pdf", fns, n)
-    allfns += fns
-    n += len(fns)
-bad = build(OUT / "session1-all.pdf", allfns, 1, report=True)
-print("ok", n - 1, "pages,", bad, "label issues,", len(HOLE_ISSUES), "hole-alignment issues", HC.STATS)
+bad = 0
+for sid, title, proto, pages in SESSIONS:
+    PROTO = proto
+    allfns = []
+    n = 1
+    for name, fns in pages:
+        build(OUT / f"{sid}-{name}.pdf", fns, n, title=title)
+        allfns += fns
+        n += len(fns)
+    b = build(OUT / f"{sid}-all.pdf", allfns, 1, report=True, title=title)
+    bad += b
+    print(sid, "ok", n - 1, "pages,", b, "label issues")
+print(len(HOLE_ISSUES), "hole-alignment issues", HC.STATS)
 if HOLE_ISSUES:
     sys.exit("BUILD FAILED: hole callouts off their holes")

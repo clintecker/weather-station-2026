@@ -7,7 +7,7 @@ ORDER_TOP_DOWN = ["B3", "B1", "B2", "B4"]
 
 def built(c, pg, h, step_no, slogan):
     h.page(c, step_no, "WHAT YOU ARE BUILDING",
-           "ENCLOSURE 2'S BASE. THE BACKPLANE. FOUR CARDS IN THEIR 1x30 SOCKETS.", pg, slogan)
+           "THE PRINTED BASE (ENCLOSURE 3). THE BACKPLANE. FOUR CARDS IN THEIR 1x30 SOCKETS.", pg, slogan)
     g = h.Grid(1, 2, heights=[1, 1])
     # 1: iso from the lid side
     x, y, w, hh = h.panel(c, g.cell(0, 0), 1, [

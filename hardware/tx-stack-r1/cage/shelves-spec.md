@@ -2,7 +2,8 @@
 
 Enclosure 2 has no bottom shelves yet. This spec adds the two that `cage/cage.py` models below the cards: the
 **pack tray** (the battery lies on it) and the **charger ledges** (the BQ25798EVM slides in on them). Every
-dimension is in mm. The numbers come from `cage/cage.py` (`parts()` and `contents()`), 2026-11-13. Apply this
+dimension is in mm. The numbers come from `cage/cage.py` (`parts()` and `contents()`), 2026-11-13; the pack and
+tray moved 12.5 right on 2026-11-16 to clear enclosure 3's bottom-left corner block (Xb 0–16.5, Zb 0–16.4). Apply this
 **after** the mirror in `backplane-mount-spec.md` (step 0): every position here describes the mirrored box.
 
 ## Coordinate frame
@@ -19,13 +20,13 @@ Each shelf is a flat plate across Xb and Yb, so "height" below means Zb (up the 
 
 ## What to add to enclosure 2
 
-1. **Add the pack tray:** a plate **Xb 4.0 to 77.0, Yb 0 to 58.0, Zb 9.9 to 11.9** (2.0 thick). It is moulded to the
-   floor along its back edge (Yb 0), and to the left wall if you like (it is 4.0 off it).
-   - Lid frame: Y +57.75 to −15.25, Z 3.0 to 61.0, X −74.85 to −72.85.
-2. **Add the pack tray's front lip:** **Xb 4.0 to 77.0, Yb 56.0 to 58.0, Zb 11.9 to 17.9** (6 high). It stops the
+1. **Add the pack tray:** a plate **Xb 16.5 to 89.5, Yb 0 to 58.0, Zb 9.9 to 11.9** (2.0 thick). It is moulded to the
+   floor along its back edge (Yb 0) and to the bottom-left corner block's right face (Xb 16.5).
+   - Lid frame: Y +45.25 to −27.75, Z 3.0 to 61.0, X −74.85 to −72.85.
+2. **Add the pack tray's front lip:** **Xb 16.5 to 89.5, Yb 56.0 to 58.0, Zb 11.9 to 17.9** (6 high). It stops the
    pack sliding toward the lid.
    - Lid frame: Z 59.0 to 61.0, X −72.85 to −66.85.
-3. **Add two strap slots** through the tray for a hook-and-loop strap over the pack: 20 × 3, at Xb 10 and 71 (just
+3. **Add two strap slots** through the tray for a hook-and-loop strap over the pack: 20 × 3, at Xb 22.5 and 83.5 (just
    outside the pack's ends), centred at Yb 29. *These slots are my call; the model doesn't draw them.*
 4. **Add the left charger ledge:** **Xb 0 to 8.75, Yb 0 to 94.0, Zb 33.9 to 35.9**, moulded to the left wall and to the
    floor.
@@ -50,7 +51,7 @@ Each shelf is a flat plate across Xb and Yb, so "height" below means Zb (up the 
 
 | Item | Box frame (Xb, Yb, Zb) | Lid frame (Y, Z, X) | Source |
 |---|---|---|---|
-| Battery pack #353, lying flat | 6.0–75.0, 2.0–56.0, 11.9–29.9 | +55.75 to −13.25, 5.0–59.0, −72.85 to −54.85 | pack 69 × 54 × 18, sourced |
+| Battery pack #353, lying flat | 18.5–87.5, 2.0–56.0, 11.9–29.9 | +43.25 to −25.75, 5.0–59.0, −72.85 to −54.85 | pack 69 × 54 × 18, sourced |
 | BQ25798EVM board and parts above | 6.75–96.75, 11.6–101.6, 35.9–52.5 | +55.0 to −35.0, 14.6–104.6, −48.85 to −32.25 | evm 90 × 90 × 15 `[TBD-MEASURE]` |
 | EVM underside (J6 micro-B, tails) | 6.75–96.75, 11.6–101.6, 31.9–35.9 | as above, X −52.85 to −48.85 | evm_under 4.0 `[TBD-MEASURE]` |
 | EVM J8 (I2C lead, toward the lid) | 36.75–51.75, 101.6–107.6, 35.9–45.9 | +25.0 to +10.0, 104.6–110.6, −48.85 to −38.85 | evm_j8 6.0, sourced |

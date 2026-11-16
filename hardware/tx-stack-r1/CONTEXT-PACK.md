@@ -170,16 +170,20 @@ PDFs change.
        - the corner blocks are solid from the floor up to Yb ≈ 80;
        - the wall top is at Yb 117 with a 2.0 lip, and there is no seam land at Yb 97.
        - The cards clear all of this by at least 2.0, but `cage.py`'s shell should be updated to match the STL.
-    3. **No shelves in enclosure 3.** If the pack tray is added as specced, the pack overlaps the bottom-left corner
-       block by 10.5 × 4.5 (Xb 6–16.5, Zb 11.9–16.4). Move the pack and tray right or up, or notch the block.
+    3. **No shelves in enclosure 3.** ✅ Done 2026-11-16: the pack and tray moved 12.5 right (`cage.CORNER_BLOCK_X`),
+       so the pack is now at Xb 18.5–87.5 and the tray at 16.5–89.5, clear of the bottom-left corner block
+       (Xb 0–16.5, Zb 0–16.4). `shelves-spec.md` is updated.
     4. The **SMA nut seat** sits 1.5 from the top-right corner block (the spec asks for 2.0). The nut fits, but tell
        the PDF to use an open spanner on the 3/8 in nut.
     5. The bar is 2.5 thick (`sources.bar`) and sits 1.00 in front of the card front edges, which is OK.
-- **PDFs:**
-  - Session 1 (prep, backplane and cards) and Session 2 (B4 POWER) were built from db1936a.
-  - They show the base mirrored (bar on the left).
-  - Revise them so the base pages match enclosure 3.
-  - Clint wants to start building the cards next, so the card-build pages come first.
+- **PDFs (re-split 2026-11-16, cards first):**
+  - **Session 1: CARDS** (4 pages): cover, what you are building, snap the card rails, label/photo/report.
+  - **Session 2: B4 POWER** (12 pages), unchanged apart from the shared built page, which now says enclosure 3.
+  - **Session 3: BASE** (10 pages): cover, built page, measure the insert, backplane 1–6, report.
+    **These are still the enclosure 2 pages.** Revise them for enclosure 3 (items 1, 2 and 4 above) before Clint
+    builds the base.
+  - `make_session1_v2.py` builds both Session 1 and Session 3. The rendered SVGs (`svg/`) and `out/` are git-ignored;
+    copy them from the old scratchpad or re-render with `scenes.py`.
 - **Clint still owes:**
   - whether the backplane was already cut at 30 lines (it needs 31: lines 0–30);
   - the distance from the PAD3U plated edge to line 30 (TBD-MEASURE, about 5.48 and at most 6.13);
