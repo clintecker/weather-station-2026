@@ -68,7 +68,7 @@ def on_node(x, y):
 
 
 def footprints(card, side):
-    """[(ref, x0, y0, x1, y1)] of every part body on this side of the card (keep-outs and service zones excluded)."""
+    """[(ref, x0, y0, x1, y1, what, z0)] of every part body on this side of the card (keep-outs and service zones excluded)."""
     out = []
     for b, pl in st.placements():
         if b != card:
@@ -77,7 +77,7 @@ def footprints(card, side):
             if bx.keepout or bx.service:
                 continue
             if (side == "top" and bx.z1 > 0.05) or (side == "bottom" and bx.z0 < -0.05):
-                out.append((pl["ref"], bx.x0, bx.y0, bx.x1, bx.y1, bx.what))
+                out.append((pl["ref"], bx.x0, bx.y0, bx.x1, bx.y1, bx.what, bx.z0))
     return out
 
 
@@ -220,17 +220,25 @@ def pad_exit(grid, pad, kind, ref):
     # the bus header runs along the back edge (column j, rows 1-30): a lead from the overhanging breakout (its pads
     # above the header and the socket) crosses it in the air at the pad's height and touches down in front of it
     y_back = min([Y_MAX] + [r[2] - m for r in grid.fp if r[0] == hdr])
+    # the parts standing on the breakout's own top (its sockets, terminal footprints): the lead lies on the board
+    # and goes round them, with at most one jog sideways off the pad into a channel between them
+    tall = [r for r in own if r[6] >= top - 0.05 and not inside((x, y), r)]   # not the pad's own joint zone
     best = None
-    for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+    for (dx, dy), o in ((d, o) for d in ((-1, 0), (1, 0), (0, -1), (0, 1))
+                        for o in (0.0, 1.27, -1.27, 1.905, -1.905, 2.54, -2.54, 3.175, -3.175)):
+        j = (x + dy * o, y + dx * o)                  # the jog runs across the exit direction
         t = 0.0
-        while t < 40 and any(inside((x + dx * t, y + dy * t), r, m) for r in own):
+        while t < 40 and any(inside((j[0] + dx * t, j[1] + dy * t), r, m) for r in own):
             t += 0.25
-        q = (x + dx * t, y + dy * t)
-        via = [q]
+        q = (j[0] + dx * t, j[1] + dy * t)
+        if any(seg_hits(a, b, r, m + 0.6) for a, b in (((x, y), j), (j, q)) for r in tall):   # no squeezing between sockets
+            continue
+        via = ([j] if o else []) + [q]
+        t += abs(o)
         if dx and q[1] > y_back:                      # beside the overhanging breakout: come back over the card
             q = (q[0], y_back)
             via.append(q)
-            t += abs(via[0][1] - q[1])
+            t += abs(via[-2][1] - q[1])
         if not (X_MIN <= q[0] <= X_MAX and Y_MIN <= q[1] <= Y_MAX):
             continue
         if any(inside(v, r, m) for v in via for r in grid.fp if r[0] != ref and not (r[0] == hdr and v is not q)):

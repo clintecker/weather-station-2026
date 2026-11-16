@@ -629,12 +629,7 @@ def t_leads():
 @scene
 def t_final():
     s = top_scene(["J", "XH4", "U7", "U2", "U6"], leads=True, under=False, decals=False)
-    # page 09's leaders: on L3's riser up U6's edge (the visible white run), and on U2's board beside X1's holes
-    w3 = [w for w in LEADS if LEAD_NO[w["a"]] == 3][0]
-    p3 = lead_path(w3)
-    k = next(i for i in range(1, len(p3) - 2) if p3[i + 1][2] - p3[i][2] > 1.0)
-    (xa, ya, za), (_, _, zb) = p3[k], p3[k + 1]
-    s.anchor("L3riser", (xa - 0.25, ya - 0.68, (za + zb) / 2), on="L3")  # on the tube's camera side
+    # page 09's leader: on U2's board beside X1's holes
     for dy in (2.0, -2.0):
         vx, vy = PL["U2"]["pads"]["X1.VBUS"]
         s.anchor(f"X1spot{dy:+.0f}", (vx, vy + dy, T + HDR + PCB), on=f"U2_{BOARD['INA']}")

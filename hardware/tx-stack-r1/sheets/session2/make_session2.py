@@ -478,7 +478,7 @@ def leads(c, pg):
         "2 mm at the pad end. U2's middle X1 hole (VBUS) gets no lead: SJ1 (step 06) joins it to VIN+."])
     rows = [("L1", "G20", "U2 X1 VIN− (shunt out)", "80 MM", "charger battery +", "RED, BLACK BANDS"),
             ("L2", "G21", "U2 X1 VIN+ (shunt in)", "95 MM", "battery + junction", "RED, BLACK BANDS"),
-            ("L3", "G23", "U6 JP2 VBAT (cell sense)", "70 MM", "gauge sense from R8", "WHITE, RED BANDS")]
+            ("L3", "G23", "U6 JP2 VBAT (cell sense)", "50 MM", "gauge sense from R8", "WHITE, RED BANDS")]
     text(c, x + 44, y + h - 14, "LEAD  FROM  TO                         CUT    LINE                COLOUR", 8.5, "MONO", GREY)
     for i, (n, fa, fb, ln, line, col) in enumerate(rows):
         yy = y + h - 46 - i * 30
@@ -505,8 +505,6 @@ def checks(c, pg):
     g = Grid(2, 2, heights=[1.0, 1.1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["B4 POWER, finished, seen from above. Do the checks below in order."])
     a = Art(c, "t_final", x + 4, y + 4, w - 8, h - 8)
-    label(c, x + w - 12, y + 34, "L3, WHITE: SOLDERED ON U6's JP2 VBAT PAD,\nBEHIND THE WHITE SOCKETS (NOT PLUGGED IN)",
-          *a.A("L3riser"), 9, "ALT", INK, "r")
     label(c, x + 12, y + 30, "U2: NO GREEN X1 BLOCK (OFF IN STEP 06)", *a.A("X1spot+2"), 9, "ALT", NEON, lcolor=INK)
     checks = [("1", "NEIGHBOURS", "Each used strip (B4.md strip map) against the strips beside it: NO BEEP.\nExpected BEEPS: 19-20 and 21-22 (jumpers), 20-21 (through U2's shunt)."),
               ("2", "3.3 V vs GROUND", "+ RAIL against − RAIL: NO steady BEEP.\nA short chirp as the capacitors charge is fine."),
