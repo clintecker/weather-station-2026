@@ -759,12 +759,15 @@ POST_S28_16 = bxz(28, 16)
 SLOT_END = 92.3                                # backplane slot Xb 85.8-92.3 (6.5 deep)
 POST_X1 = 95.8                                 # right corner post Xb 85.8-95.8
 SLIDE = 2.84
+sys.path.insert(0, "/Users/clint/code/electronics/weather-station-2026/hardware/tx-stack-r1")
+import sources as _src                         # noqa: E402
+BAR_X, BAR_LO, BAR_HI = _src.val("bar_inserts")[:3]   # enclosure 3 as printed: Xb 5.00, Zb 76.50 and 146.50
 PLASTIC = "#D9D9D9"
 ADD = M.HAZ
 
 
-def base_parts(slot=True, wall_h=14.0):
-    """Enclosure 2's printed base (all printed in, nothing glued or cut), the parts that matter: floor, walls cut
+def base_parts(slot=True, wall_h=14.0, bar=False):
+    """Enclosure 3's printed base (bar: the retention bar's two inserts, seen on the left block's top) (all printed in, nothing glued or cut), the parts that matter: floor, walls cut
     down, the left wall block with its groove, the right corner post with its slot, the two M3 screw posts and the
     three plain support posts. Returns [(name, solid, colour)]."""
     out = []
@@ -788,6 +791,10 @@ def base_parts(slot=True, wall_h=14.0):
         ins.append(cq.Workplane("XY").workplane(offset=BYB - 0.05).center(*p).circle(2.3).circle(1.3)
                    .extrude(0.06).val())
     out.append(("inserts", cq.Compound.makeCompound(ins), M.BRASS))
+    if bar:
+        bi = [cq.Workplane("XY").workplane(offset=wall_h - 0.05).center(BAR_X, z).circle(2.3).circle(1.3)
+              .extrude(0.06).val() for z in (BAR_LO, BAR_HI)]
+        out.append(("bar_inserts", cq.Compound.makeCompound(bi), M.BRASS))
     return out
 
 
@@ -826,9 +833,11 @@ def board_in_base(dx=0.0, tilt=0.0, screws=False):
 @scene
 def f_plan():
     s = r3d.Scene()
-    for nm, so, col in base_parts():
+    for nm, so, col in base_parts(bar=True):
         s.add(nm, so, col)
     base_anchors(s)
+    s.hole("bar_lo", (BAR_X, BAR_LO, 14.0))
+    s.hole("bar_hi", (BAR_X, BAR_HI, 14.0))
     R("f_plan", s, (0, 0, 1), up=(0, 1, 0), fit=(260, 320), line=0.35, outline=1.1,
       crop=((48, 100, 0), 54, 58))
 

@@ -939,12 +939,12 @@ def bp4(c, pg):
 
 def bp5(c, pg):
     page(c, "04", "BACKPLANE  5/6: READY THE BASE",
-         "ENCLOSURE 2: POSTS AND SLOT PRINTED IN. TWO INSERTS. NOTHING GLUED, NOTHING CUT.", pg,
+         "ENCLOSURE 3: POSTS AND SLOT PRINTED IN. FOUR INSERTS. NOTHING GLUED, NOTHING CUT.", pg,
          SLOGANS[0])
     g = Grid(2, 2, heights=[1.3, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        "Enclosure 2's base from the lid side, bottom wall at the bottom; all printed in, tops at 8.0. Positions are",
-        "(Xb, Zb) mm from the left and bottom walls. Screws go into post A (hole A) and post B (hole B) only."])
+        "Enclosure 3's base from the lid side, bottom wall at the bottom; all printed in, post tops at 8.0. Positions",
+        "are (Xb, Zb) mm from the left and bottom walls. Backplane screws: post A and post B. Bar screws: BAR 1, BAR 2."])
     p = Art(c, "f_plan", x + 130, y + 6, 240, h - 12)
     for nm in ("post_bl", "standoff"):
         ringm(c, *p.A(nm), 8)
@@ -961,6 +961,11 @@ def bp5(c, pg):
     label(c, p.x - 14, bly_ + 30, "SCREW POST A: DIA 8,\nFLAT, AT (7.78, 54.06)", blx_, bly_, 10, "ALT", NEON, "r", lcolor=INK)
     gx, gy = p.A("groove")
     label(c, p.x - 14, gy + 10, "LEFT WALL\nGROOVE", gx, gy, 9, "ALT", INK, "r")
+    for nm, txt in (("bar_lo", "BAR 1 INSERT\nAT (5.00, 76.50)"), ("bar_hi", "BAR 2 INSERT\nAT (5.00, 146.50)")):
+        bx_, by_ = p.A(nm)
+        ringm(c, bx_, by_, 7)
+        label(c, p.x - 14, by_ + (18 if nm == "bar_lo" else -4), txt, bx_ - 7, by_, 10, "ALT", NEON, "r", lcolor=INK,
+              dot=False)
     cx_, cy_ = p.A("slot_mid")
     label(c, rx, cy_ - 6, "CORNER POST: SLOT 6.5 DEEP", cx_, cy_, 10, "ALT", INK)
     # 2: the slot
@@ -972,12 +977,14 @@ def bp5(c, pg):
     chip(c, x + w / 2, y + 4, "SLIDES FREELY, END TO END: OK", 10, "ALT", NEON, "c")
     # 3: the two inserts
     x, y, w, h = panel(c, g.cell(1, 1), 3, [
-        "Iron on, no solder. Press one M3 insert", "into each SCREW POST (A, B) until flush.",
-        "The support posts get none. Then check", "every post top: level, 8.0 above the floor."])
-    Art(c, "mat_base", x + 10, y + h - 70, w - 20, 60)
-    chip(c, x + 10, y + 40, "2 x M3 HEAT-SET INSERT (POSTS A, B)", 9, "ALT", INK)
-    chip(c, x + 10, y + 24, "2 x M3 x 6 BUTTON HEAD (NEXT PAGE)", 9, "ALT", INK)
-    chip(c, x + 10, y + 8, "ALL POST TOPS LEVEL: 8.0 ABOVE THE FLOOR", 9, "ALT", NEON)
+        "Iron on, no solder. One M3 insert, flush, in", "SCREW POSTS A, B and bores BAR 1, BAR 2.",
+        "BAR 1 has 0.48 of plastic over the B4 slot:", "light pressure, iron not past flush. Then run",
+        "a PAD3U offcut down the B4 slot from the", "front; file the slot if it binds."])
+    Art(c, "mat_base", x + 10, y + h - 64, w - 20, 54)
+    chip(c, x + 10, y + 56, "4 x M3 HEAT-SET INSERT (A, B, BAR 1, BAR 2)", 9, "ALT", INK)
+    chip(c, x + 10, y + 40, "2 x M3 x 6 BUTTON HEAD (NEXT PAGE)", 9, "ALT", INK)
+    chip(c, x + 10, y + 24, "ALL POST TOPS LEVEL: 8.0 ABOVE THE FLOOR", 9, "ALT", NEON)
+    chip(c, x + 10, y + 8, "OFFCUT SLIDES THE WHOLE B4 SLOT: OK", 9, "ALT", NEON)
 
 
 def bp6(c, pg):
@@ -1112,6 +1119,7 @@ CARD_ROWS = [("CARD: FRONT EDGE TO SNAP LINE", "mm", "model 41.91"),
              ("PHOTO OF A SNAPPED CARD WITH A RULER", "SENT", "")]
 BASE_ROWS = [("INSERT LENGTH  L", "mm", "expected 5.7"),
              ("INSERT DIAMETER  D (KNURL TIPS)", "mm", "expected 4.6"),
+             ("BAR 1 + BAR 2 INSERTS SET, B4 SLOT CLEAR", "Y / N", "offcut slides the whole B4 slot"),
              ("BACKPLANE: 31 x 38, 2 HOLES, FITS, 2 SCREWS", "Y / N", ""),
              ("BACKPLANE: LINE 30 TO RIGHT EDGE", "mm", "expected 5.48, at most 6.13"),
              ("PHOTO OF THE BACKPLANE SCREWED DOWN", "SENT", "")]
