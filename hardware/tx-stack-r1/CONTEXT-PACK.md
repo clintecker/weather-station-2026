@@ -147,14 +147,34 @@ PDFs change.
 
 ## Where things stand (2026-11-16)
 
-- **Enclosure 3** (`~/Downloads/enclosure 3.stl`) is **printing now**. It hasn't been checked against the layout yet.
-  That's the first job:
-  - is it mirrored, with the bar LEFT from the lid?
-  - are the backplane posts, insert bores, slot and widened corner post where they should be?
-  - do the card slot heights match `card_z`, with the cut-backs over the RJ11 plugs and the SMA on the right wall?
-  - do the shelves clash with anything?
-  - Report the differences in mm. If a difference touches the cards, adjust the layout and the PDFs. Don't ask for a
-    reprint unless a card can't fit.
+- **Enclosure 3** (`~/Downloads/enclosure 3.stl`) is **printing now**. It was audited on 2026-11-16 (scripts and
+  images in `sheets/audit-enc3/`).
+  - **Verdict:** nothing stops a card or the backplane from fitting. It is mirrored (bar LEFT from the lid).
+  - **Matches the spec to 0.01:**
+    - all five posts, the bores and the Ø8 post's flat;
+    - the groove;
+    - the corner post (Xb 85.8–95.8) and its slot;
+    - the card slots: B4 Zb 78.98, B2 94.22, B1 114.54 and B3 134.86, each 1.9 tall;
+    - the cut-backs;
+    - the glands, the vent and the SMA hole. These are printed 0.2 undersize, so **ream them to size**.
+  - The fit check found zero interference. That covers the cards, the parts, the plugs and the backplane, including
+    the 2.84 slide.
+  - **Changes needed in the docs and PDFs:**
+    1. **Retention-bar inserts moved.** The STL has them at **Xb 5.00, Zb 76.50 and 146.50**; the model had 3.25,
+       76.0 and 147.0.
+       - Drill the bar's Ø3.4 holes there, and update `sources.bar_inserts`, the bar spec and the PDFs.
+       - The lower insert bore has only **0.48** of plastic to the floor of the B4 slot. Add a bench step: set that
+         insert gently, then slide a 1.6 offcut through the front of the B4 slot and file it if it binds.
+    2. **The shell differs from the model** (enclosure 2 was the same):
+       - the walls are 4.25 on the long sides and 4.0 on the short ones, so the inside is 121.0 × 167.5;
+       - the corner blocks are solid from the floor up to Yb ≈ 80;
+       - the wall top is at Yb 117 with a 2.0 lip, and there is no seam land at Yb 97.
+       - The cards clear all of this by at least 2.0, but `cage.py`'s shell should be updated to match the STL.
+    3. **No shelves in enclosure 3.** If the pack tray is added as specced, the pack overlaps the bottom-left corner
+       block by 10.5 × 4.5 (Xb 6–16.5, Zb 11.9–16.4). Move the pack and tray right or up, or notch the block.
+    4. The **SMA nut seat** sits 1.5 from the top-right corner block (the spec asks for 2.0). The nut fits, but tell
+       the PDF to use an open spanner on the 3/8 in nut.
+    5. The bar is 2.5 thick (`sources.bar`) and sits 1.00 in front of the card front edges, which is OK.
 - **PDFs:**
   - Session 1 (prep, backplane and cards) and Session 2 (B4 POWER) were built from db1936a.
   - They show the base mirrored (bar on the left).
