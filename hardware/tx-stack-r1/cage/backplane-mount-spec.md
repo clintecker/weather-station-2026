@@ -165,8 +165,9 @@ prints the card slots at these heights (the STL's Zb 79, 94, 115 and 136 match).
 
 - **Card slots:** cut into its +Xb face (the face at Xb 8.5), **2.0 deep** (Xb 6.5 to 8.5), from Yb 9.6 to 63.37.
 - **Backplane groove:** the groove from section 3 is also cut into that face.
-- **Retention-bar inserts:** two M3 × 5.7 heat-set inserts in its front face (Yb 63.37), at Xb 3.25 and Zb 76.0 and
-  147.0. Each bore is Ø4.0 × 6.5 deep. *These positions are my call; the model doesn't fix them yet.*
+- **Retention-bar inserts:** two M3 × 5.7 heat-set inserts in its front face (Yb 63.37), at Xb 5.00 and Zb 76.50 and
+  146.50, as printed in enclosure 3 (audited 2026-11-16). Each bore is Ø4.0 × 6.5 deep. The lower bore leaves only
+  0.48 of plastic to the floor of the B4 slot: set that insert gently, then run a 1.6 offcut through the B4 slot.
 
 **Right corner post:** a block Xb 85.8 to 95.8, Yb 0 to 21.96, Zb 72.73 to 150.61.
 
