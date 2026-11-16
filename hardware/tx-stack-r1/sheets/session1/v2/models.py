@@ -354,6 +354,8 @@ B_L = B_MH_X + B_MH_EDGE                       # 160.11 (BusBoard 160.02)
 B_MH_D, B_MH_RING = 2.80, 3.75
 B_LINE0_ROW = B_ROWS - 30                      # line 0 = row 31 from the plain end (repo 91a5345: 31 lines, 0-30)
 B_SCORE_X = B_FAR + (B_LINE0_ROW - 1) * P - P / 2   # midway between line 0 and the next row out
+B_SQ_ROW = 4                                   # square-pad lines: r % 5 == 4, i.e. lines 29, 24, ... 4
+B_SQ_HOLE = 0                                  # square-pad hole rows: holes 5, 10, ... 35 (IMG_8594: 5th from hole 1's edge)
 
 
 def b_row_x(r):
@@ -411,15 +413,20 @@ def b_region(x0, x1, y0=0.0, y1=None, drilled=(), opened=False, pads=True, plain
 
 
 def b_copper(x0, x1, y0, y1, drilled=(), opened=False):
-    """The PAD3U is double-sided: a plated pad on BOTH faces of every hole, rows alternately round and square
-    (round rows square every 5th hole, as on the scan); the plated mounting holes' rings on both faces."""
+    """The PAD3U is double-sided: a plated pad on BOTH faces of every hole; the plated mounting holes' rings on both
+    faces. Pads are round except on every 5th line and every 5th hole row, which are square, like graph-paper
+    gridlines (Clint's photos IMG_8592/8593, 2026-11-16): at the plated end line 30 is round, line 29 square, then
+    four round and a square (lines 24, 19, 14, 9, 4); with FRONT up and the big holes on the right, the square rows
+    are the 4th, 9th, ... from the far edge (holes 35, 30, ... 5), and line 30 has one more square at hole 4
+    (IMG_8594). That face, the one with "PadBoard-3U-2.00 ... BusBoard.net" reading up the plated end, is FRONT."""
     out = []
     for (x, y) in b_holes(x0, x1, y0, y1):
         if b_missing((x, y)) or any(abs(x - d[0]) < 0.01 and abs(y - d[1]) < 0.01 for d in drilled):
             continue
         r = int(round((x - B_FAR) / P))
         j = int(round((y - B_SIDE) / P))
-        sq = (r % 2 == 1) or (j % 5 == 2)
+        sq = (r % 5 == B_SQ_ROW) or ((j + 1) % 5 == B_SQ_HOLE) or (r == B_ROWS - 1 and j + 1 == 4)
+        #    r: rows from the plain end (line 30 = 60); j + 1 = hole; plus one lone square at line 30, hole 4
         for z in (-0.06, PAD_T):
             w = cq.Workplane("XY").workplane(offset=z).center(x, y)
             pad = (w.rect(1.9, 1.9) if sq else w.circle(0.95)).circle(0.5).extrude(0.06)

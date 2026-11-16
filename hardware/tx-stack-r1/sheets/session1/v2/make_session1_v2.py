@@ -761,9 +761,9 @@ def bp1(c, pg):
          "ONE PAD3U. KEEP THE END WITH THE TWO BIG HOLES: 31 ROWS OF 38 HOLES. ONE CUT ONLY.", pg, SLOGANS[3])
     g = Grid(2, 2, heights=[1.45, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        "Both faces have pads, and the big holes are symmetric (holes 2 and 37 of 38), so either face can be FRONT.",
-        "Lay the PAD3U with the two BIG plated holes on the RIGHT: the face that is up is FRONT; the bus wires go on",
-        "the BACK. Count 31 rows in from the right: line 30 is beside the big holes, line 0 is the 31st. Every line",
+        "FRONT is the face with the PadBoard-3U ... BusBoard.net legend. Big holes on the RIGHT, the legend reading",
+        "up beside them, LINE 30's lone square pad 4th from you (hole 4): that face up is FRONT, bus wires on the BACK.",
+        "Count 31 rows in from the right: line 30 is beside the big holes, line 0 is the 31st. Every line",
         "keeps all 38 holes, hole 1 the row nearest you. Dot each end of the gap left of line 0: the only cut."])
     b = Art(c, "b_board", x + 70, y + 30, 330, h - 64, align="l")
     (s0x, s0y), (s1x, s1y) = b.A("score0"), b.A("score1")
@@ -790,7 +790,7 @@ def bp1(c, pg):
     dim(c, brx + 120, bry, brx + 120, tr_y, "38 HOLES", 11, INK, lx=brx + 120, ly=(bry + tr_y) / 2 - 40)
     chip(c, *b.A("piece"), "KEEP", 20, "HEAD", INK, "c")
     chip(c, *b.A("spare"), "SPARE", 16, "HEAD", INK, "c")
-    chip(c, x + 4, bry - 30, "FACE UP = FRONT\n(BIG HOLES RIGHT,\nHOLE 1 NEAR YOU)", 9, "ALT", INK)
+    chip(c, x + 4, bry - 30, "LEGEND FACE UP\n= FRONT (BIG HOLES\nRIGHT, HOLE 1 NEAR)", 9, "ALT", INK)
     # 2: the plated end from the BACK face
     x, y, w, h = panel(c, g.cell(0, 1), 2, [
         "The plated end from the BACK face (bus-wire", "side), turned over top-to-bottom like Clint's",
@@ -927,8 +927,8 @@ def bp4(c, pg):
     label(c, r.x + r.w + 14, r.y + r.h - 10, "LINE 30", *r.A("l29top"), 9)
     # 3: meter + mark
     x, y, w, h = panel(c, g.cell(1, 1), 3, [
-        "Meter two neighbouring pads anywhere: OPEN", "(the PAD3U has no strips). Big holes on the",
-        "RIGHT: write FRONT on the face that is up."])
+        "Meter two neighbouring pads anywhere: OPEN", "(the PAD3U has no strips). Legend face up,",
+        "big holes RIGHT: write FRONT on that face."])
     text(c, x + 30, y + h - 40, "PAD TO PAD:", 16, "HEAD", INK)
     text(c, x + 30, y + h - 66, "OPEN. NO BEEP.", 20, "HEAD", NEON)
     text(c, x + 30, y + h - 110, "FRONT", 30, "HEAD", INK)
