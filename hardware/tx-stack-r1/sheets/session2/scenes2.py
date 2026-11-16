@@ -156,6 +156,9 @@ STEPS = Path("/Users/clint/code/electronics/weather-station-2026/hardware/tx-sta
 _step_cache = {}
 
 
+X1_GREEN = "#2E9E4F"
+
+
 def step_parts(kind):
     """The maker's STEP as [(solid, colour)], in the maker frame used by stack.breakout (pins at y = pin_y)."""
     if kind in _step_cache:
@@ -165,7 +168,8 @@ def step_parts(kind):
     out = []
     for so in [x for v in shp.vals() for x in v.Solids()]:
         bb = so.BoundingBox()
-        if kind == "INA" and bb.zmin < -0.5:          # the screw terminal block: not fitted
+        if kind == "INA" and bb.zmin < -0.5:          # X1, the screw terminal block: fitted as supplied, desoldered
+            out.append((so, "X1"))                     # before U2 goes on the card (it would hit B2's header tails)
             continue
         if kind == "REG":
             so = so.rotate((11.43 / 2, 16.51 / 2, 0), (11.43 / 2, 16.51 / 2, 1), 180)   # pins to the maker's top
@@ -180,7 +184,7 @@ def step_parts(kind):
     return out
 
 
-def add_breakout(s, ref, pulled=(), alone=False):
+def add_breakout(s, ref, pulled=(), alone=False, x1=False):
     """A breakout from stack's placement: maker STEP, header plastic, pins. alone: in its own maker frame, not on the
     card (x0, y0 = 0, rot 0, z = 0)."""
     pl = PL[ref]
@@ -194,6 +198,10 @@ def add_breakout(s, ref, pulled=(), alone=False):
         return sh.translate((x0, y0, z0))
     comp = {}
     for so, col in step_parts(kind):
+        if col == "X1":
+            if not x1:
+                continue
+            col = X1_GREEN
         comp.setdefault(col, []).append(tfm(so))
     for col, sols in comp.items():
         s.add(f"{ref}_{col}", cq.Compound.makeCompound(sols), col, 1.0 if col == BOARD[kind] else 0.6)
@@ -288,8 +296,15 @@ def add_leads(s):
         body, band = BAND[LEAD_COL[w["a"]]]
         p = lead_path(w)
         Ltot = sum(np.linalg.norm(np.array(b) - np.array(a)) for a, b in zip(p[:-1], p[1:]))
-        s.add(f"L{n}", tube(p[1:-1], 0.72), body, 0.8)
-        s.add(f"L{n}cu", tube([p[0], p[1]], 0.26).fuse(tube([p[-2], p[-1]], 0.26)), "#C87533", 0.4)
+        q = p[1:-1]
+        Lq = sum(np.linalg.norm(np.array(b) - np.array(a)) for a, b in zip(q[:-1], q[1:]))
+        strip = 2.5                                   # the stripped end, lying on the breakout's top into its pad
+        s.add(f"L{n}", tube(subpath(q, 0, Lq - strip), 0.72), body, 0.8)
+        bare = subpath(q, Lq - strip, Lq)
+        bare = [(x_, y_, p[-1][2] + 0.45) for x_, y_, _ in bare] + [p[-1]]   # flat on the pad, then down its hole
+        s.add(f"L{n}cu", tube([p[0], p[1]], 0.26).fuse(tube(bare, 0.26)), "#C87533", 0.4)
+        xe, ye, ze = p[-1]
+        s.add(f"L{n}joint", cq.Solid.makeCone(1.05, 0.3, 0.75, cq.Vector(xe, ye, ze + 0.2)), TIN, 0.4)
         bands = [tube(subpath(p, 2.2, 8.0), 0.95), tube(subpath(p, Ltot - 9.5, Ltot - 2.4), 0.95)]
         s.add(f"L{n}band", bands[0].fuse(bands[1]), band, 0.8)
         s.anchor(f"L{n}a", (p[1][0], p[1][1], T))
@@ -339,7 +354,8 @@ def p_reg():
 @scene
 def p_ina():
     s = r3d.Scene()
-    add_breakout(s, "U2", alone=True)
+    add_breakout(s, "U2", alone=True, x1=True)
+    s.anchor("x1", (7.45, 16.0, 6.0), on=f"U2_{X1_GREEN}")
     s.anchor("p5", (3.81 + 4 * M.P, 2.54, -HDR - 3))
     s.anchor("p7", (3.81 + 6 * M.P, 2.54, -HDR - 3))
     for k in range(8):
@@ -613,6 +629,15 @@ def t_leads():
 @scene
 def t_final():
     s = top_scene(["J", "XH4", "U7", "U2", "U6"], leads=True, under=False, decals=False)
+    # page 09's leaders: on L3's riser up U6's edge (the visible white run), and on U2's board beside X1's holes
+    w3 = [w for w in LEADS if LEAD_NO[w["a"]] == 3][0]
+    p3 = lead_path(w3)
+    k = next(i for i in range(1, len(p3) - 2) if p3[i + 1][2] - p3[i][2] > 1.0)
+    (xa, ya, za), (_, _, zb) = p3[k], p3[k + 1]
+    s.anchor("L3riser", (xa - 0.25, ya - 0.68, (za + zb) / 2), on="L3")  # on the tube's camera side
+    for dy in (2.0, -2.0):
+        vx, vy = PL["U2"]["pads"]["X1.VBUS"]
+        s.anchor(f"X1spot{dy:+.0f}", (vx, vy + dy, T + HDR + PCB), on=f"U2_{BOARD['INA']}")
     R("t_final", s, (-0.35, -1, 0.85), fit=(260, 190), line=0.3)
 
 

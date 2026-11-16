@@ -350,7 +350,7 @@ PLACE["B4"].append(breakout("U2", "INA", S.val("ina228"), ["H.VIN", "H.GND", "H.
                              Box(0, 5.9, 5.3, 11.9, T_, T_ + S.val("qt_h"), "QT socket"),
                              Box(7.7, 14.6, 17.7, 18.2, T_, T_ + 6.0, "soldered battery leads at X1")],
                             "battery monitor; SJ1 (VBUS jumper) soldered closed; header pins 5-7 pulled; battery leads soldered in X1's outer holes "
-                            "(X1 is a 3-way 3.5 mm terminal footprint, left unfitted: VIN- 9.2, VBUS 12.7, VIN+ 16.2; "
+                            "(X1, the green 3-way 3.5 mm terminal block, comes fitted: desolder it and wick its holes open first, its top at 12.6 would hit B2's header tails, L7; VIN- 9.2, VBUS 12.7, VIN+ 16.2; "
                             "Adafruit-INA228-PCB .brd, TERMBLOCK_1X3-3.5MM at (12.7, 16.383) R180, 1.0 drills)",
                             pads={"X1.VIN-": (9.2, 16.383), "X1.VBUS": (12.7, 16.383), "X1.VIN+": (16.2, 16.383)}))
 PLACE["B4"].append(breakout("U6", "MAX", S.val("max17048"), ["H.VIN", "H.GND", "H.SCL", "H.SDA", "H.INT", "H.QST"],

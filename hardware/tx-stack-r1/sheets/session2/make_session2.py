@@ -187,12 +187,12 @@ def cover(c, pg):
         chip(c, X + cw / 2, Y + 18, name, 9, "ALT", INK, "c")
     x, y, w, h = panel(c, g.cell(0, 1), None, "TOOLS.")
     tools = ["SOLDERING IRON + SOLDER", "FLUSH CUTTERS", "WIRE STRIPPER (24 AWG)", "MULTIMETER (CONTINUITY)",
-             "PLIERS (PULL 3 U2 PINS)", "STEEL RULER (WIRE LENGTHS)", "SHARPIE", "HEAT GUN OR LIGHTER (HEAT-SHRINK)"]
+             "PLIERS (PULL 3 U2 PINS)", "SOLDER WICK OR SUCKER (U2's X1)", "STEEL RULER (WIRE LENGTHS)", "SHARPIE", "HEAT GUN OR LIGHTER (HEAT-SHRINK)"]
     for i, s in enumerate(tools):
         text(c, x + 14, y + h - 16 - i * (h - 12) / len(tools), "-  " + s, 11, "ALT", INK)
     x, y, w, h = panel(c, g.cell(1, 1), None, "THE STEPS. IN THIS ORDER.")
     steps = ["01  KNOW THE TWO FACES", "02  13 WIRES ON THE UNDERSIDE", "03  TWO BARE JUMPERS",
-             "04  BUS HEADER, ROW J", "05  REGULATOR U7", "06  INA228 U2 + SJ1", "07  MAX17048 U6", "08  THREE LEADS",
+             "04  BUS HEADER, ROW J", "05  REGULATOR U7", "06  INA228 U2: X1 OFF, SJ1", "07  MAX17048 U6", "08  THREE LEADS",
              "09  METER BEFORE POWER"]
     for i, s in enumerate(steps):
         text(c, x + 14, y + h - 16 - i * (h - 10) / len(steps), s, 13, "HEAD", INK)
@@ -309,18 +309,19 @@ def reg(c, pg):
 
 
 def ina(c, pg):
-    page(c, "06", "INA228 U2: 3 PINS OUT, SJ1 CLOSED", "ADAFRUIT #5832. BATTERY MONITOR. BOTH JOBS BEFORE IT GOES ON THE CARD.",
+    page(c, "06", "INA228 U2: X1 OFF, 3 PINS OUT, SJ1 CLOSED", "ADAFRUIT #5832. BATTERY MONITOR. ALL THREE JOBS BEFORE IT GOES ON THE CARD.",
          pg, SLOGANS2[6])
     g = Grid(2, 2, heights=[1, 1.15])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
-        "Before fitting: on U2's 8-pin header, pull", "out the three pins labelled VBUS, VIN− and",
-        "VIN+ (header pins 5, 6, 7). Pliers, heat."])
+        "Desolder the GREEN TERMINAL BLOCK X1 (it hits", "B2's header tails above B4); wick its 3 holes",
+        "open. Then pull header pins 5, 6, 7 (VBUS,", "VIN−, VIN+) out of U2's 8-pin header."])
     a = Art(c, "p_ina", x + 4, y + 4, w / 2 - 8, h - 8)
     b = Art(c, "p_ina_pulled", x + w / 2 + 4, y + 4, w / 2 - 8, h - 8)
     for k in (5, 6, 7):
         ring(c, *a.A(f"pin{k}"), r=3.6)
     chip(c, a.x + a.w / 2, y + 6, "AS SUPPLIED", 9, "ALT", INK, "c")
-    chip(c, b.x + b.w / 2, y + 6, "PINS 5-7 OUT", 9, "ALT", NEON, "c")
+    chip(c, b.x + b.w / 2, y + 6, "X1 OFF, PINS 5-7 OUT", 9, "ALT", NEON, "c")
+    label(c, a.x + 6, a.y + a.h + 4, "X1: OFF", *a.A("x1"), 9, "ALT", NEON, lcolor=INK)
     arrow(c, a.x + a.w - 4, a.y + a.h / 2, b.x + 6, b.y + b.h / 2, NEON, 2)
     x, y, w, h = panel(c, g.cell(1, 0), 2, [
         "U2's BACK (the face the pins come out of),", "far edge: bridge SJ1's two pads with solder.",
@@ -504,6 +505,9 @@ def checks(c, pg):
     g = Grid(2, 2, heights=[1.0, 1.1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["B4 POWER, finished, seen from above. Do the checks below in order."])
     a = Art(c, "t_final", x + 4, y + 4, w - 8, h - 8)
+    label(c, x + w - 12, y + 34, "L3, WHITE: SOLDERED ON U6's JP2 VBAT PAD,\nBEHIND THE WHITE SOCKETS (NOT PLUGGED IN)",
+          *a.A("L3riser"), 9, "ALT", INK, "r")
+    label(c, x + 12, y + 30, "U2: NO GREEN X1 BLOCK (OFF IN STEP 06)", *a.A("X1spot+2"), 9, "ALT", NEON, lcolor=INK)
     checks = [("1", "NEIGHBOURS", "Each used strip (B4.md strip map) against the strips beside it: NO BEEP.\nExpected BEEPS: 19-20 and 21-22 (jumpers), 20-21 (through U2's shunt)."),
               ("2", "3.3 V vs GROUND", "+ RAIL against − RAIL: NO steady BEEP.\nA short chirp as the capacitors charge is fine."),
               ("3", "HEADER PINS", "Each pin Jn beeps to F n (same column, its own strip) and to NO other\nheader pin, except the three groups in check 4."),
