@@ -74,6 +74,8 @@ POST = _ss - T + _bore / 2 + 3.0                        # the post, square from 
 CORNER = CORNER_Z                   # (for the cards' upper limit: unchanged, the blocks stop above the cards)
 EVM = S.val("evm")
 EVM_J8 = S.val("evm_j8")
+EVM_J8_X = S.val("evm_j8_x")
+EVM_OVL, EVM_OVR = S.val("evm_overhang")
 SLOT_CLEAR = S.val("slot_clear")
 PACK = S.val("pack")
 GLAND = {"PG-7": S.val("gland_pg7"), "PG-9": S.val("gland_pg9")}
@@ -97,7 +99,9 @@ PLATE = 0.0
 Y0 = YP = 0.0                       # the floor's inside face: everything stands on it
 WALL = S.val("cage_wall")
 BAR = S.val("bar")
-SHELF = 2.0                         # pack tray, EVM ledge thickness
+SHELF = 2.0                         # EVM ledge thickness
+TRAY_T = 3.0                        # pack tray thickness: it spans from the left wall to the right fin
+BP_SLAB_CLEAR = 0.3                 # the left ledge's top below the backplane's outline (its install column)
 CARD_FRONT = st.BP_FRONT + st.Y_BP
 Z_LO = st.card_z("B4") - 8.0
 Z_HI = min(st.card_z("B3") + 14.0, H - 0.5)
@@ -111,14 +115,21 @@ GLANDS = [(x, y, "PG-9" if (x, y) in FLAT else "PG-7") for y in (25.0, 60.0) for
 GLAND_IN = max(g[1] for g in GLAND.values())            # thread length inside the wall (L1)
 VENT = (50.0, 85.0)                                     # Xb, Yb in the bottom wall
 # shelves, bottom to top
-PACK_TRAY_Z = GLAND_IN + M                              # tray underside
+# the shelves stack down from the backplane: the left ledge (EVM board underside) just below the backplane's outline
+# (nothing printed may sit in its install column), then the EVM's underside parts, the margin, the pack, the tray;
+# what is left above the gland threads is the cable space (Clint's v3 shelves, 2026-11-16)
+PACK_TRAY_Z = (st.BP_OUTLINE[1] - BP_SLAB_CLEAR - S.val("evm_under") - M - S.val("pack")[2] - TRAY_T)
+CABLE_RISE = PACK_TRAY_Z - GLAND_IN                     # each cable rises out of its gland and turns right here
 CORNER_BLOCK_X = 16.5                                   # enclosure 3's bottom-left corner block reaches Xb 16.5
-#                                     up to Zb 16.4 (STL audit, sheets/audit-enc3); the pack moves right of it
-PACK_X0, PACK_Z0 = CORNER_BLOCK_X + M, PACK_TRAY_Z + SHELF  # the pack lies flat: 69 across, 54 back-to-lid, 18 up
-EVM_X0 = TONGUE_C + RIM_CH / 2 + RIM_IN - T + M         # clear of the lid's inner channel wall (it reaches into the lid)
+#                                     up to Zb 16.4 (STL audit, sheets/audit-enc3); the tray is above it now, and the
+#                                     pack stays right of it, centred under the EVM
+PACK_X0, PACK_Z0 = CORNER_BLOCK_X + M, PACK_TRAY_Z + TRAY_T  # the pack lies flat: 69 across, 54 back-to-lid, 18 up
+EVM_X0 = TONGUE_C + RIM_CH / 2 + RIM_IN - T + M + EVM_OVL   # J6 clear of the lid's inner channel wall
 EVM_Y0 = st.BP_FRONT + M                                # in front of the backplane's lower end; J8 toward the lid
 EVM_Z0 = PACK_Z0 + PACK[2] + M + S.val("evm_under")     # board underside
 EVM_TOP = EVM_Z0 + 1.6 + EVM[2]
+EVM_X1, EVM_Y1 = EVM_X0 + EVM[0], EVM_Y0 + EVM[1]
+FIN = (EVM_X1 - SHELF, EVM_X1 + 2.0)                    # the right fin (Xb): its inner 2 is the ledge under the board
 BULKHEAD_NUT = 11.0                                     # SMA bulkhead jack nut across corners [derived: 3/8 in hex]
 _gd, _gh, _gt = S.val("bp_groove")
 RAIL_Z0 = max(EVM_TOP + M, BP_POSTS[0][1] + BP_POST_BL / 2 + 0.5)   # the groove rail below the left wall: 2 above
@@ -199,20 +210,21 @@ def parts():
                     solid=bar_solid,
                     note=f"separate: two M3 screws (\u00d8{BAR_INS[3]:g} holes) into inserts in the left wall's front face at "
                          f"Xb {BAR_INS[0]:g}, Zb {BAR_INS[1]:g} and {BAR_INS[2]:g}; off before any card comes out"))
-    # EVM ledges: the board's left and right edges rest on 2 mm ledges, a stop at the back, a snap clip at the front
+    # EVM: the board's left edge rests on a ledge moulded to the left wall (from just in front of the backplane, clear
+    # of its left edge and the bottom-left post), its right edge on the top of the right
+    # fin, a wall standing on the floor from the tray to the board (it also holds the tray's right end). Both are
+    # notched where through-hole tails sit near the edges (evm_edge_tails). A stop at the back, a clip at the front.
     ez = EVM_Z0 - SHELF
     out.append(Part("charger ledges", [
-        B(0, YP, ez, EVM_X0 + 2.0, SEAM - LIP_T, EVM_Z0, "charger ledge, left wall"),
-        B(EVM_X0 + EVM[0] - 2.0, YP, ez, EVM_X0 + EVM[0] + 2.0, SEAM - LIP_T, EVM_Z0, "charger ledge, right rib"),
-        B(EVM_X0 + EVM[0] - 2.0, YP, PACK_TRAY_Z + SHELF, EVM_X0 + EVM[0] + 2.0, M, ez, "charger right rib, from the floor")],
-        note=f"moulded: the EVM slides back on two 2 mm ledges at Zb {ez:g}-{EVM_Z0:g} (no mounting holes; Bumpons off), "
-             "a snap clip at the front; its underside parts (J6) clear the ledges [TBD-MEASURE]"))
-    out.append(Part("pack tray", [B(PACK_X0 - 2.0, YP, PACK_TRAY_Z, PACK_X0 + PACK[0] + 2.0, PACK[1] + 4.0,
-                                    PACK_TRAY_Z + SHELF, "pack tray"),
-                                  B(PACK_X0 - 2.0, PACK[1] + 2.0, PACK_TRAY_Z + SHELF, PACK_X0 + PACK[0] + 2.0,
-                                    PACK[1] + 4.0, PACK_TRAY_Z + SHELF + 6.0, "pack tray front lip")],
-                    note=f"moulded from the floor, {M:g} mm over the gland nuts; the pack lies flat, slides back, a "
-                         "hook-and-loop strap through the tray"))
+        B(0, st.BP_FRONT + 0.5, ez, EVM_X0 + SHELF, SEAM - LIP_T, EVM_Z0, "charger ledge, left wall"),
+        B(FIN[0], YP, PACK_TRAY_Z, FIN[1], SEAM - LIP_T, EVM_Z0, "right fin (charger ledge on its top)")],
+        note=f"moulded: the EVM slides back on a 2 mm ledge (left wall) and the right fin's top at Zb {ez:g}-{EVM_Z0:g} "
+             "(no mounting holes; Bumpons off), notched under its edge tails; a stop at the back, a clip at the front"))
+    out.append(Part("pack tray", [B(0, YP, PACK_TRAY_Z, FIN[0], PACK[1] + 4.0, PACK_TRAY_Z + TRAY_T, "pack tray"),
+                                  B(PACK_X0 - 2.0, PACK[1] + 2.0, PACK_TRAY_Z + TRAY_T, PACK_X0 + PACK[0] + 2.0,
+                                    PACK[1] + 4.0, PACK_TRAY_Z + TRAY_T + 6.0, "pack tray front lip")],
+                    note=f"moulded to the floor, the left wall and the right fin, {CABLE_RISE:g} mm over the gland "
+                         "threads (the cable space); the pack lies flat, slides back, a hook-and-loop strap round it"))
     return out
 
 
@@ -379,6 +391,9 @@ def box_keepouts():
     for x, y, k in GLANDS:
         r = GLAND_NUT[k] / 2
         out.append(B(x - r, y - r, 0, x + r, y + r, GLAND[k][1], f"{k} gland at Xb {x:g}, Yb {y:g}"))
+        cb = S.val("gland_bore")[0 if k == "PG-7" else 1] / 2 + 1.0
+        out.append(B(x - cb, y - cb, GLAND[k][1], x + cb, y + cb, GLAND_IN + CABLE_RISE,
+                     f"{k} cable rise above the gland at Xb {x:g}, Yb {y:g}"))
     return out
 
 
@@ -412,8 +427,9 @@ def contents():
     """The pack and the charger in their places (box frame), for the checks and the drawings."""
     return [B(PACK_X0, YP + 2.0, PACK_Z0, PACK_X0 + PACK[0], YP + 2.0 + PACK[1], PACK_Z0 + PACK[2],
               "battery pack #353 (shelf)"),
-            B(EVM_X0, EVM_Y0, EVM_Z0, EVM_X0 + EVM[0], EVM_Y0 + EVM[1], EVM_TOP, "BQ25798EVM (shelf)"),
-            B(EVM_X0 + 30.0, EVM_Y0 + EVM[1], EVM_Z0, EVM_X0 + 45.0, EVM_Y0 + EVM[1] + EVM_J8, EVM_Z0 + 10.0,
+            B(EVM_X0 - EVM_OVL, EVM_Y0, EVM_Z0 + 1.6, EVM_X1 + EVM_OVR, EVM_Y1, EVM_TOP,
+              "BQ25798EVM parts above the board (J6, J3, J5 past its edges)"),
+            B(EVM_X0 + EVM_J8_X[0], EVM_Y1, EVM_Z0, EVM_X0 + EVM_J8_X[1], EVM_Y1 + EVM_J8, EVM_Z0 + 10.0,
               "BQ25798EVM J8 (toward the lid)"),
             B(EVM_X0, EVM_Y0, EVM_Z0 - S.val("evm_under"), EVM_X0 + EVM[0], EVM_Y0 + EVM[1], EVM_Z0,
               "BQ25798EVM underside (J6, tails)")]

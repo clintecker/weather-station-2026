@@ -170,9 +170,20 @@ PDFs change.
        - the corner blocks are solid from the floor up to Yb ≈ 80;
        - the wall top is at Yb 117 with a 2.0 lip, and there is no seam land at Yb 97.
        - The cards clear all of this by at least 2.0, but `cage.py`'s shell should be updated to match the STL.
-    3. **No shelves in enclosure 3.** ✅ Done 2026-11-16: the pack and tray moved 12.5 right (`cage.CORNER_BLOCK_X`),
-       so the pack is now at Xb 18.5–87.5 and the tray at 16.5–89.5, clear of the bottom-left corner block
-       (Xb 0–16.5, Zb 0–16.4). `shelves-spec.md` is updated.
+    3. **No shelves in enclosure 3.** ✅ Redesigned 2026-11-16 for the next print (v3): `cage/shelves-spec.md`.
+       The enclosure 2 shelves blocked every gland cable: the tray was 1.9 over the nuts, and the right ledge sat over
+       the PG-9 bores.
+       - **Now:** the left ledge top sits 0.3 under the backplane's install column (Zb 48.41). The EVM's underside,
+         the pack and a 3 mm tray stack down from it, leaving a 13.5 cable space over the gland threads.
+       - **Right side:** a floor-standing right fin carries the board's right edge and the tray's right end. The
+         cables turn right under the tray and go up a right column (Xb 100.25–122.25).
+       - **v3 also needs:** the left-wall rail starting at Zb 67, notches for the edge tails, two M3 keeper bosses
+         with stepped tabs, and strap slots.
+       - **EVM:** measured by Clint, 90 x 90 with J8 sticking out 12 (photo IMG_8591). The overhangs and tail
+         positions are scaled from the photo (`sources`: evm_j8, evm_j8_x, evm_j8_lead, evm_overhang,
+         evm_edge_tails).
+       - **Model gap:** `cage.py`'s shell is still 100 deep (seam 97), so its ledges stop at Yb 94. The spec gives
+         enclosure 3's real numbers (walls to Yb about 117).
     4. The **SMA nut seat** sits 1.5 from the top-right corner block (the spec asks for 2.0). The nut fits, but tell
        the PDF to use an open spanner on the 3/8 in nut.
     5. The bar is 2.5 thick (`sources.bar`) and sits 1.00 in front of the card front edges, which is OK.
