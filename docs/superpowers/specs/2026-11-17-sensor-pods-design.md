@@ -103,7 +103,7 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
     names them, and `docs/current-system.md` records the hub build with no ID EEPROMs at 0x50), a
     6P modular crimper (INVENTORY suggests Klein VDV226-011-SEN), bulk round 6-conductor cable (the
     straight-through cables on hand have plugs fitted, which pass no gland), and enough PG-7 glands
-    for three pods on top of the TX box's seven.
+    for three pods (plus the TH lead's small gland) on top of the TX box's five PG-7s and two PG-9s.
 - **Cable runs are under 2 m** (Clint, 2026-11-17): the TX side's pull-ups and the per-port total
   above hold; no stronger pull-ups at the pod jacks.
 - **Shield remix allowed** (Clint, 2026-11-17): the top cap (object_70) and the L-bracket arm
