@@ -15,6 +15,7 @@ Hole names: "e5" (column e, row 5), rails "F+5" "F-5" (front); the back rails ar
 soldering, so the card is CD deep (BH stays the SolderFul grid's reference width). On a card, "B1:e5"; on the
 backplane (PAD3U padboard, a separate pad per hole), "BP:s3.12" (line 3, hole 12 along it).
 """
+import math
 import sys
 from pathlib import Path
 
@@ -119,7 +120,21 @@ def two_pin(ref, kind, h1, h2, note=""):
     def body(l, w, z0, z1, what, cx=xm, cy=ym):
         return Box(cx - (l if along_x else w) / 2, cy - (w if along_x else l) / 2,
                    cx + (l if along_x else w) / 2, cy + (w if along_x else l) / 2, z0, z1, f"{ref} {what}")
-    if kind == "RLY":
+    if kind == "RLY" and xa != xb and ya != yb:     # on a slant (one column over across the channel): sliced boxes
+        span = math.dist((xa, ya), (xb, yb))
+        ux, uy = (xb - xa) / span, (yb - ya) / span
+
+        def sliced(l, w, z0, z1, what, n=8):
+            out = []
+            for k in range(n):
+                s0, s1 = -l / 2 + k * l / n, -l / 2 + (k + 1) * l / n
+                pa, pb = (xm + ux * s0, ym + uy * s0), (xm + ux * s1, ym + uy * s1)
+                out.append(Box(min(pa[0], pb[0]) - w / 2, min(pa[1], pb[1]) - w / 2, max(pa[0], pb[0]) + w / 2,
+                               max(pa[1], pb[1]) + w / 2, z0, z1, f"{ref} {what}"))
+            return out
+        boxes = sliced(6.3, 2.5, 0.1, 0.1 + S.val("r_lying_h"), "resistor body") + \
+            sliced(span, 0.6, 0, 1.0, "resistor leads")
+    elif kind == "RLY":
         boxes = [body(6.3, 2.5, 0.1, 0.1 + S.val("r_lying_h"), "resistor body"),
                  body(span, 0.6, 0, 1.0, "resistor leads")]
     elif kind == "DSTAND":
@@ -137,39 +152,24 @@ def two_pin(ref, kind, h1, h2, note=""):
     return placed(ref, kind, {"1": (xa, ya), "2": (xb, yb)}, boxes, note)
 
 
-TONGUE_Y1 = CD + S.val("tongue")[1]
-
-
-def bob(ref, y_top, note):
-    """BOB-14021 + 87180 jack turned so the mouth faces +X, flush with the card's right edge, on a bonded
-    printed spacer. Its six holes are pads (flying leads to the card); none of its pins goes into the card."""
+def bob(ref, col, note):
+    """BOB-14021 + 87180 jack turned so the mouth faces the card's front edge (toward the lid), standing on a
+    soldered 1x6 male header: pin i in hole a(col + i - 1), six columns, six strips. The breakout overhangs the
+    front edge; the plug goes in from the front."""
     peg = S.val("bob_peg_y")
     mouth = peg + 7.88                                  # KiCad fab: pegs 8.89, mouth 16.77 from pin-1 row
-    x0, y0 = BW - mouth, y_top                          # rot 270: maker +y -> +X, maker +x -> -Y
+    hy = S.val("bob_hdr_y")
+    x0, y0 = X(col) + 13.97, LETTER_Y["a"] + hy        # rot 180: maker +y (toward the mouth) -> -Y, maker +x -> -X
     jw, jd, jh = S.val("jack_w"), S.val("jack_d"), S.val("jack_h")
-    raised = y_top > CD     # the back one overhangs the snapped edge: it bridges the 1x30 header and the socket
-    sp = S.val("bob_spacer_back") if raised else S.val("bob_spacer")
-    mk = ([] if raised else [Box(0, 0, S.val("bob_w"), S.val("bob_d"), 0, sp, "printed spacer")]) + [
-          Box(0, 0, S.val("bob_w"), S.val("bob_d"), sp, sp + PCB, "BOB-14021 PCB"),
-          Box(7.62 - jw / 2, mouth - jd, 7.62 + jw / 2, mouth, sp + PCB, sp + PCB + jh, "87180-066LF jack"),
-          Box(7.62 - S.val("plug_6p")[0] / 2, mouth, 7.62 + S.val("plug_6p")[0] / 2, mouth + S.val("plug_len"),
-              sp + PCB + 1, sp + PCB + 1 + S.val("plug_6p")[2], "RJ11 plug (standard 6P body after Cinch 32-5996UL)",
-              keepout=True)]
-    pads = {str(i): tf(270, x0, y0, 13.97 - (i - 1) * P, 1.27) for i in range(1, 7)}
-    boxes = [tbox(270, x0, y0, b, ref) for b in mk]
-    if raised:              # overhangs the snapped back edge: the printed spacer carries a tongue in the card plane
-        pcb = next(x for x in boxes if "PCB" in x.what)
-        y_hdr = LETTER_Y["j"] - 0.4 - S.val("clear")         # the header's pin bends start 0.4 before column j
-        x_end = X(30) + P / 2 + S.val("clear")               # past the 1x30 header's (and socket's) last pin
-        boxes += [Box(pcb.x0, pcb.y0, BW, y_hdr, 0, sp, f"{ref} printed spacer"),
-                  Box(x_end, y_hdr, BW, pcb.y1, 0, sp, f"{ref} printed spacer side wall"),
-                  Box(x_end, CD, BW, pcb.y1, -BT, 0, f"{ref} printed spacer side wall, past the edge"),
-                  Box(BW - S.val("tongue")[0], CD, BW, TONGUE_Y1, -BT, 0, f"{ref} printed spacer tongue")]
-    if raised:
-        note += (f"; on a {sp:g} mm printed spacer that bridges the 1x30 bus header and the backplane socket (a block in "
-                 "front of the header, a side wall past its pin 30, the tongue): solder the header first, then bond the "
-                 "spacer and the breakout; its leads cross over the header to the card")
-    return placed(ref, "BOB", {}, boxes, note, pads, step=[("BOB", 270, x0, y0 + 0.0)])
+    t = HDR + PCB
+    pw, ph, pl_, _l = S.val("plug_6p")
+    mk = [Box(0, hy - 1.27, S.val("bob_w"), hy + 1.27, 0, HDR, "header plastic"),
+          Box(0, 0, S.val("bob_w"), S.val("bob_d"), HDR, t, "BOB-14021 PCB"),
+          Box(7.62 - jw / 2, mouth - jd, 7.62 + jw / 2, mouth, t, t + jh, "87180-066LF jack"),
+          Box(7.62 - pw / 2, mouth, 7.62 + pw / 2, mouth + S.val("plug_len"), t + 1, t + 1 + pl_,
+              "RJ11 plug (standard 6P body after Cinch 32-5996UL)", keepout=True)]
+    pins = {str(i): tf(180, x0, y0, 13.97 - (i - 1) * P, hy) for i in range(1, 7)}
+    return placed(ref, "BOB", pins, [tbox(180, x0, y0, b, ref) for b in mk], note, step=[("BOB", 180, x0, y0)])
 
 
 MINI_B_Y, MINI_D_Y, MINI_X0 = 20.4535, 2.6735, 16.1925
@@ -268,56 +268,85 @@ for b in BOARDS:
     w("wire", f"{b}:i{bus_row('GND', 1)}", f"{b}:F-20", note="second bus ground to the front ground rail")
 
 
-def port(card, k, p, y_bob):
-    """Sensor port k on rows p-1..p+3 (L half): 3.3 V strip p, data p+1, clock p+2, grounds p-1 and p+3;
-    data and clock cross the channel on their series resistors to the bus strips of the same rows."""
-    assert bus_row(f"P{k}_SDA") == p + 1 and bus_row(f"P{k}_SCL") == p + 2, (k, p)
+def port(card, k, c, p, junction=None, gnd=None):
+    """Sensor port k: jack J1k (J14 for k 4) on its header in row a of columns c..c+5 (contact 1 and 6 unused, each
+    alone in its strip), so its 3.3 V, data, ground and clock contacts own the strips c+1..c+4 (rows b-e free). The
+    four signal clamps stand in those strips (rows b-d); the series resistors cross the channel from row e to the
+    bus strips of the port's data and clock lines (straight, or one column over on a slant). `p`: the port's fuse
+    block, a ground strip p on the ground rail, the fuse standing from the 3.3 V rail into strip p+1 (the port's
+    3.3 V) and the zener from p+1 to p; one underside wire each brings the jack's 3.3 V and ground strips to the
+    block (ground to the inner column, so the two wires nest and never cross)
+    `junction` (cols n, n+1): the bus strips are out of reach (under the retention bar), so the resistors stand in
+    junction strips there and the jack's data and clock strips reach them by underside wires."""
+    v, sd, g, sc = c + 1, c + 2, c + 3, c + 4
+    n, m = bus_row(f"P{k}_SDA"), bus_row(f"P{k}_SCL")
+    assert m == n + 1, (k, n, m)
     pl = PLACE[card]
-    pl.append(two_pin(f"F{k}", "PTC", f"F+{p}", f"a{p}", f"port S{k} 3.3 V fuse, standing, leads formed to 7.62"))
-    pl.append(two_pin(f"D{k}2", "DSTAND", f"b{p + 1}", f"b{p}", f"port S{k} data to its 3.3 V, body on the data side"))
-    pl.append(two_pin(f"D{k}4", "DSTAND", f"c{p + 2}", f"c{p}", f"port S{k} clock to its 3.3 V, body on the clock side"))
-    pl.append(two_pin(f"D{k}1", "DSTAND", f"d{p}", f"d{p - 1}", f"port S{k} 3.3 V zener, cathode band to column {p}"))
-    pl.append(two_pin(f"D{k}3", "DSTAND", f"d{p + 3}", f"d{p + 1}", f"port S{k} ground to data, band to column {p + 1}"))
-    pl.append(two_pin(f"D{k}5", "DSTAND", f"b{p + 3}", f"b{p + 2}", f"port S{k} ground to clock, band to column {p + 2}"))
-    pl.append(two_pin(f"R{k}1", "RLY", f"e{p + 1}", f"f{p + 1}", f"port S{k} data series 100, across the channel"))
-    pl.append(two_pin(f"R{k}2", "RLY", f"e{p + 2}", f"f{p + 2}", f"port S{k} clock series 100, across the channel"))
-    for g in (p - 1, p + 3):
-        w("jumper", f"{card}:a{g}", f"{card}:F-{g}", "top", f"port S{k} ground strip to the ground rail")
     jack = f"J1{k}"
-    pl.append(bob(jack, y_bob, f"S{k} jack, mouth flush with the right edge"))
-    for pin, hole, what in (("2", f"e{p}", "3.3 V"), ("3", f"a{p + 1}", "data (SDA)"), ("4", f"e{p + 3}", "ground"),
-                            ("5", f"a{p + 2}", "clock (SCL)")):
-        w("lead", (jack, pin), f"{card}:{hole}", "top", f"S{k} jack contact {pin} {what}")
+    pl.append(bob(jack, c, f"S{k} jack on its 1x6 header in row a, columns {c}-{c + 5}; mouth toward the front edge"))
+    pl.append(two_pin(f"D{k}2", "DSTAND", f"b{sd}", f"b{v}", f"port S{k} data to its 3.3 V, body on the data side"))
+    pl.append(two_pin(f"D{k}5", "DSTAND", f"b{g}", f"b{sc}", f"port S{k} ground to clock, band to column {sc}"))
+    pl.append(two_pin(f"D{k}3", "DSTAND", f"c{g}", f"c{sd}", f"port S{k} ground to data, band to column {sd}"))
+    pl.append(two_pin(f"D{k}4", "DSTAND", f"d{sc}", f"d{v}", f"port S{k} clock to its 3.3 V, body on the clock side, "
+                      f"looped over columns {sd}-{g}"))
+    if junction:
+        ja, jb = junction
+        assert (ja, jb) == (n, m)
+        pl.append(two_pin(f"R{k}1", "RLY", f"e{ja}", f"f{n}", f"port S{k} data series 100, across the channel"))
+        pl.append(two_pin(f"R{k}2", "RLY", f"e{jb}", f"f{m}", f"port S{k} clock series 100, across the channel"))
+        w("wire", f"{card}:e{sd}", f"{card}:d{ja}", note=f"S{k} jack data (contact 3) to its series resistor R{k}1")
+        w("wire", f"{card}:e{sc}", f"{card}:d{jb}", note=f"S{k} jack clock (contact 5) to its series resistor R{k}2")
+    else:
+        assert sd == n or sc == m, (k, c)
+        pl.append(two_pin(f"R{k}1", "RLY", f"e{sd}", f"f{n}", f"port S{k} data series 100, across the channel"
+                          + ("" if sd == n else ", on a slant one column over")))
+        pl.append(two_pin(f"R{k}2", "RLY", f"e{sc}", f"f{m}", f"port S{k} clock series 100, across the channel"
+                          + ("" if sc == m else ", on a slant one column over")))
+    pl.append(two_pin(f"F{k}", "PTC", f"F+{p + 1}", f"a{p + 1}", f"port S{k} 3.3 V fuse, standing, leads formed to 7.62"))
+    pl.append(two_pin(f"D{k}1", "DSTAND", f"b{p + 1}", f"b{p}", f"port S{k} 3.3 V zener, cathode band to column {p + 1}"))
+    w("jumper", f"{card}:a{p}", f"{card}:F-{p}", "top", f"port S{k} block ground strip to the ground rail")
+    w("wire", f"{card}:e{v}", f"{card}:e{p + 1}", note=f"S{k} jack 3.3 V (contact 2) from its fuse F{k}")
+    w("wire", f"{card}:e{g}", f"{card}:{gnd or f'e{p}'}", note=f"S{k} jack ground (contact 4) to "
+      + (f"the bus ground strip ({gnd})" if gnd else "its block's ground strip"))
 
 
-BOB_Y = [S.val("bob_w"), 2 * S.val("bob_w") + 0.5, 3 * S.val("bob_w") + 1.0]   # back-most edge of the three breakouts
-# Three 15.24 mm breakouts need 46.72 mm of the 41.91 mm card: the front one is flush with the front edge and the
-# back one overhangs the snapped back edge by 4.8 mm, its spacer's tongue held in the right corner post
-# B1: ports S1-S3
-port("B1", 1, 2, BOB_Y[2])
-port("B1", 2, 7, BOB_Y[1])
-port("B1", 3, 12, BOB_Y[0])
-# B2: port S4 and the weather meters
-port("B2", 4, 16, BOB_Y[2])
+# B1: ports S1-S3, the three jacks across the front, mouths toward the lid. S1's bus strips (columns 3-4) sit behind
+# the retention bar's corner, so its jack is on the right and its series resistors stand in junction strips 3-4.
+port("B1", 2, 5, 19, gnd="f2")
+port("B1", 3, 11, 17, gnd="f12")
+port("B1", 1, 24, 21, junction=(3, 4))
+# B2: port S4, the rain jack, the wind jack, and the weather meters
+port("B2", 4, 15, 21)
 for name, jack_net, r_pull, cap, zen, r_ser, gnd_row, line in (
         ("cups", "CUPS_J", "R1", "C1", "D51", "R4", 4, "CUPS"),
-        ("vane", "VANE_J", "R2", "C3", "D52", "R5", 7, "VANE"),
-        ("rain", "RAIN_J", "R3", "C2", "D53", "R6", 10, "RAIN")):
+        ("vane", "VANE_J", "R2", "C3", "D52", "R5", 7, "VANE")):
     m = bus_row(line)
     PLACE["B2"] += [two_pin(r_pull, "RLY", f"F+{m}", f"a{m}", f"{name} pull-up 10k, lying over the ground rail"),
                     two_pin(cap, "CAP", f"b{m}", f"b{gnd_row}", f"{name} filter 100 nF"),
                     two_pin(zen, "DSTAND", f"c{m}", f"c{gnd_row}", f"{name} clamp zener, band to column {m}"),
                     two_pin(r_ser, "RLY", f"e{m}", f"f{m}", f"{name} series 1k, across the channel")]
-for g in (4, 7, 10):
+for g in (4, 7):
     w("jumper", f"B2:a{g}", f"B2:F-{g}", "top", "meter ground strip to the ground rail")
-PLACE["B2"].append(bob("J21", BOB_Y[1], "wind jack, mouth flush with the right edge"))
-PLACE["B2"].append(bob("J22", BOB_Y[0], "rain jack, mouth flush with the right edge"))
-w("lead", ("J21", "2"), "B2:e4", "top", "wind jack contact 2 ground")
-w("lead", ("J21", "3"), "B2:d4", "top", "wind jack contact 3 ground")
-w("lead", ("J21", "4"), f"B2:d{bus_row('CUPS')}", "top", "wind jack contact 4 cups")
-w("lead", ("J21", "5"), f"B2:d{bus_row('VANE')}", "top", "wind jack contact 5 vane")
-w("lead", ("J22", "3"), "B2:d10", "top", "rain jack contact 3 ground")
-w("lead", ("J22", "4"), f"B2:d{bus_row('RAIN')}", "top", "rain jack contact 4 rain")
+# the rain jack's rain contact (4) lands in the RAIN bus column itself: its meter parts stand in the jack's strips
+J22_C = bus_row("RAIN") - 3
+PLACE["B2"].append(bob("J22", J22_C, f"rain jack on its 1x6 header in row a, columns {J22_C}-{J22_C + 5}; mouth "
+                                     "toward the front edge"))
+_r, _g = J22_C + 3, J22_C + 2
+PLACE["B2"] += [two_pin("R3", "RLY", f"d{_r + 3}", f"d{_r}", "rain pull-up 10k, lying along row d over the jack's "
+                        "unused strips"),
+                two_pin("C2", "CAP", f"c{_r}", f"c{_g}", "rain filter 100 nF (row c: in row b the disc would touch "
+                        "the jack's header)"),
+                two_pin("D53", "DSTAND", f"b{_r}", f"b{_g}", f"rain clamp zener, band to column {_r}"),
+                two_pin("R6", "RLY", f"e{_r}", f"f{_r}", "rain series 1k, across the channel")]
+w("jumper", f"B2:a{_r + 3}", f"B2:F+{_r + 3}", "top", "rain pull-up's 3.3 V strip to the 3.3 V rail")
+w("jumper", f"B2:e{_g}", "B2:e7", "top", "rain jack ground strip to the vane meter's ground strip")
+J21_C = 24
+PLACE["B2"].append(bob("J21", J21_C, f"wind jack on its 1x6 header in row a, columns {J21_C}-{J21_C + 5}; mouth "
+                                     "toward the front edge"))
+w("jumper", f"B2:d{J21_C + 1}", f"B2:d{J21_C + 2}", "top", "wind jack's two ground strips (contacts 2 and 3) joined")
+w("wire", f"B2:e{J21_C + 1}", "B2:d21", note="wind jack ground (contacts 2-3) to S4's block ground strip")
+w("wire", f"B2:e{J21_C + 3}", f"B2:d{bus_row('CUPS')}", note="wind jack cups (contact 4) to the cups meter strip")
+w("wire", f"B2:e{J21_C + 4}", f"B2:d{bus_row('VANE')}", note="wind jack vane (contact 5) to the vane meter strip")
 
 # B3: CORE
 PLACE["B3"].append(mini("A1", 19, "on its own header; its D pins in row C, its B pins in row H, columns 19-30; SMA past the right edge"))

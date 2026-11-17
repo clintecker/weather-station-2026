@@ -199,7 +199,7 @@ STAND_IN = {
     "MINI": "Wio-E5 mini: its board imported from Seeed's Eagle file; the LoRa-E5 module, SMA, USB-C and buttons are "
             "boxes (no maker model), and so is the right-angle SMA adapter AD1 (Amphenol RF: login)",
     "BOB": "RJ11 breakouts: the BOB-14021 board imported from SparkFun's Eagle file; the Amphenol 87180 jack is a box "
-           "(Amphenol model: login), on the printed spacer",
+           "(Amphenol model: login), on its 1x6 header",
     "PTC": "MF-R010 fuses: boxes (Bourns model: login)",
 }
 GENERIC = {
@@ -255,7 +255,7 @@ def step_models(pl):
     if kind in ("RAH", "RAS"):
         return [], False, ("mating pins", "pin bends", "solder tails")   # pins drawn bent in card_mesh
     out, skip = [], ()
-    if kind in ("SHTC3", "INA", "MAX", "REG", "MINI"):
+    if kind in ("SHTC3", "INA", "MAX", "REG", "MINI", "BOB"):
         for run in _runs(pins):
             if len(run) == 1:
                 out.append((lib("Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x01_P2.54mm_Vertical.step"), run[0], 0, 0.0))
@@ -266,9 +266,9 @@ def step_models(pl):
     for mk, rot, x0, y0 in pl["step"]:
         p = fetch_models.path_of(mk)
         if p:
-            z = min(x.z0 for x in st.boxes_of(pl) if "BOB-14021 PCB" in x.what) if mk == "BOB" else HDR   # the back one sits higher
+            z = HDR
             out.append(("${KIPRJMOD}/../models/" + p.relative_to(fetch_models.MODELS).as_posix(), (x0, y0), rot, z))
-            skip = ("PCB",) + (("header plastic",) if mk == "MINI" else ()) if mk in fetch_models.BUILT else MAKER_SKIP
+            skip = ("PCB", "header plastic") if mk in fetch_models.BUILT else MAKER_SKIP
     return out, False, skip
 
 
@@ -300,7 +300,7 @@ def legend_lines(kinds):
 # ------------------------------------------------------------------ colours
 def box_colour(what, kind):
     w = what.lower()
-    for key, c in (("spacer", "#E6E2D3"), ("header plastic", "#151515"), ("jack", "#1E1E1E"),
+    for key, c in (("header plastic", "#151515"), ("jack", "#1E1E1E"),
                    ("module", "#B8BCC2"), ("sma", "#D4AF37"), ("usb-c", "#B8BCC2"), ("qt socket", "#EDE6D6"),
                    ("jst ph", "#EDE6D6"), ("mf-r010", "#E8A317"), ("button", "#444444"), ("lug", "#D4AF37"),
                    ("screw", "#EDEDED"), ("battery leads", "#B03030"), ("inductor", "#2A2A2A")):

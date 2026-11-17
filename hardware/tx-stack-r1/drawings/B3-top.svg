@@ -593,8 +593,7 @@
 <polyline points="607.3,304.3 607.3,315.7 607.3,327.2 607.3,338.6 607.3,350.0 595.9,350.0 584.4,350.0 573.0,350.0 561.6,350.0 550.2,350.0 538.7,350.0 527.3,350.0 515.9,350.0 504.4,350.0 493.0,350.0 481.6,350.0 470.1,350.0 458.7,350.0 447.3,350.0 435.8,350.0 424.4,350.0 424.4,361.4 424.4,372.9 424.4,384.3 424.4,395.7 424.4,407.2 424.4,418.6 424.4,430.0 424.4,441.5" fill="none" stroke="#7F8C8D" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 3" opacity="0.9"/>
 <polyline points="470.1,510.0 470.1,498.6 470.1,487.2 470.1,475.7 470.1,464.3 470.1,452.9 458.7,452.9 458.7,441.5 447.3,441.5" fill="none" stroke="#1A1A1A" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 3" opacity="0.9"/>
 <text x="435.8" y="607.2" font-size="14" text-anchor="middle" fill="#222" font-weight="bold">FRONT EDGE (lid side): the card slides in from here</text>
-<text x="435.8" y="46.0" font-size="13" text-anchor="middle" fill="#222" font-weight="bold">BACK EDGE (snapped, filed flat): header (row J, columns 1-18) plugs into the backplane</text>
-<text x="815.7" y="378.6" font-size="12" text-anchor="start" fill="#222" font-weight="bold" transform="rotate(90 815.7 378.6)">RIGHT EDGE: jack mouths</text>
+<text x="435.8" y="140.0" font-size="13" text-anchor="middle" fill="#222" font-weight="bold">BACK EDGE (snapped, filed flat): header (row J, columns 1-18) plugs into the backplane</text>
 <text x="70.0" y="24.0" font-size="16" text-anchor="start" fill="#222" font-weight="bold">B3 CORE: from above, 9 px/mm; SolderFul 81.3 x 50.8 mm with the back rails snapped off: 81.3 x 41.91 mm [TBD-MEASURE]</text>
 <text x="1066.7" y="180.0" font-size="13" text-anchor="start" fill="#222" font-weight="bold">Lines on this card</text>
 <rect x="1066.6999999999998" y="188.0" width="22" height="11" fill="#D62728" fill-opacity="0.7"/>

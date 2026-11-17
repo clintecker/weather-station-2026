@@ -28,10 +28,11 @@ def qt(prefix, contact="qt"):
 
 
 def bob(ref, value, used, board):
-    """BOB-14021 with an 87180-066LF jack, on a printed spacer, mouth facing the box side wall. Jack contact
-    n is the breakout's hole n; the used holes take flying leads to the card (its header is not fitted)."""
+    """BOB-14021 with an 87180-066LF jack, standing on its soldered 1x6 male header, mouth toward the card's front
+    edge (the lid). Jack contact n is the breakout's hole n and header pin n, each in its own card strip; an unused
+    contact's pin sits alone in its strip."""
     return dict(ref=ref, value=value, part="SparkFun BOB-14021 + Amphenol 87180-066LF", block=board,
-                pins=[(str(i), f"contact {i}", PAS, "lead" if i in used else "nc") for i in range(1, 7)])
+                pins=[(str(i), f"contact {i}", PAS, "header" if i in used else "nc") for i in range(1, 7)])
 
 
 def module(ref, value, sensor, addr):

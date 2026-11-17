@@ -83,7 +83,7 @@ def sx(x):
 
 
 def sy(y):
-    return M + 120 + (st.CD - y) * K          # room above the snapped edge for the overhanging back jacks
+    return M + 120 + (st.CD - y) * K          # room above the snapped edge (labels, the header)
 
 
 def hole_s(h):
@@ -166,7 +166,9 @@ def bends(i):
 # ------------------------------------------------------------------ one card from above
 def top_view(b, ph):
     rep = REP
-    W, H = sx(st.BW) + 360 + 40 * K, sy(0) + 140
+    FRONT_Y = min([0.0] + [bx.y0 for bb, pl in st.placements() if bb == b and pl["fp"] == "BOB"
+                           for bx in st.boxes_of(pl)])     # the RJ11 jacks and their plugs, in front of the card
+    W, H = sx(st.BW) + 360 + 40 * K, sy(FRONT_Y) + 140
     g = Svg(W, H)
     g.rect(sx(0), sy(st.CD), sx(st.BW), sy(0), "#B3202A", "#5a0e12", 1.5)
     r = S.val("sb_mhole") / 2 * K
@@ -196,7 +198,7 @@ def top_view(b, ph):
     for row in range(1, 31):
         x, _ = hole_s(f"a{row}")
         g.text(x, sy(st.CD) - 6, row, 10, "middle")
-        g.text(x, sy(0) + 16, row, 10, "middle")
+        g.text(x, sy(FRONT_Y) + 16, row, 10, "middle")
     for c in "abcdefghij":
         _, y = hole_s(f"{c}1")
         g.text(sx(0) - 8, y + 4, c, 11, "end")
@@ -240,11 +242,11 @@ def top_view(b, ph):
                 if abs(p[1]) < 0.01:
                     g.add(f'<circle cx="{sx(p[0]):.1f}" cy="{sy(p[1]):.1f}" r="5" fill="none" stroke="{col}" stroke-width="2.2"/>')
     # edges
-    g.text(sx(st.BW / 2), sy(0) + 40, "FRONT EDGE (lid side): the card slides in from here", 14, "middle", weight="bold")
-    g.text(sx(st.BW / 2), sy(st.TONGUE_Y1 + 6) - 10, "BACK EDGE (snapped, filed flat): header (row J, columns 1-18) plugs into the "
+    g.text(sx(st.BW / 2), sy(FRONT_Y) + 40, "FRONT EDGE (lid side): the card slides in from here"
+           + ("; the RJ11 jacks overhang it, mouths toward the lid" if b in ("B1", "B2") else ""), 14, "middle", weight="bold")
+    g.text(sx(st.BW / 2), sy(st.CD) - 50, "BACK EDGE (snapped, filed flat): header (row J, columns 1-18) plugs into the "
            "backplane", 13, "middle",
            weight="bold")
-    g.text(sx(st.BW) + 14, sy(st.CD / 2), "RIGHT EDGE: jack mouths", 12, "start", weight="bold", rot=90)
     g.text(M, 24, f"{b} {st.ROLE[b]}: from above, {K:g} px/mm; SolderFul 81.3 x 50.8 mm with the back rails snapped off: "
            f"{st.BW:g} x {st.CD:.2f} mm [TBD-MEASURE]", 16, weight="bold")
     # legend
@@ -530,7 +532,7 @@ def build_list(b, ph):
     step += 1
     leads = [(i, x) for i, x in ws if x[0] == "lead" or board_of_end(x[1]) != board_of_end(x[2])]
     if leads:
-        L += [f"## {step}. Leads (flying leads from the jacks, and leads off the card)", "",
+        L += [f"## {step}. Leads (off the card, and from breakout pads)", "",
               "Each lead climbs off its pad straight across its own breakout to the nearest edge, drops to the card and "
               "follows its route; a lead off the card leaves at the front edge where the drawing rings it.", "",
               "| # | From | To | Length | Line | Colour | What |", "|---|---|---|---|---|---|---|"]
@@ -785,8 +787,8 @@ def assembly_sheet():
          "Every card has its back rails snapped off and the edge filed flat first (step 1 of its build sheet). "
          "Each card slides in from the lid side along its left-wall slot and right-post slot until its header pins "
          f"enter the socket ({S.val('insertion'):g} mm; the header insulator meets the socket "
-         f"{st.Y_MOUTH - st.Y_INS:.2f} mm further in). On B1 and B2 the back breakout's spacer tongue enters the right "
-         "post's slot. Fit the retention bar (front left, two M3 screws) last. To take "
+         f"{st.Y_MOUTH - st.Y_INS:.2f} mm further in). On B1 and B2 the RJ11 jacks overhang the front edge, "
+         "mouths toward the lid. Fit the retention bar (front left, two M3 screws) last. To take "
          "a card out: bar off, unplug that card's own plugs (the RJ11 cables on B1 and B2, the coax at AD1 on B3, the "
          "SWD and USB-C leads if fitted), slide it out. No card needs another card out first, and nothing is soldered "
          "between a card and anything else (layout check L10).",

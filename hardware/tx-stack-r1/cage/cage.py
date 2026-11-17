@@ -13,9 +13,9 @@ Everything is a horizontal shelf in one stack, each sliding toward the back. Bot
   - B4 POWER, B2 PORTS B + METERS, B1 PORTS A, B3 CORE (the SHTC3 on B3, furthest from the charger's heat),
     each card in a left-wall slot and a right corner post, its bus header in a socket on the PAD3U backplane behind;
   - the retention bar across the cards' front-left.
-The spare depth in front of the cards (Yb from the bar to the lid) takes the RJ11 cables' service loops down the right
-column to the glands, the EVM leads' service loops, and the coax: AD1's arm points toward the lid and the cable bends
-to the SMA bulkhead boss high in the right wall.
+The spare depth in front of the cards (Yb from the bar to the lid) takes the RJ11 plugs (B1's and B2's jacks face the
+lid) and their cables' bends down to the glands, the EVM leads' service loops, and the coax: AD1's arm points toward
+the lid and the cable bends to the SMA bulkhead boss high in the right wall.
 
 Moulded into the base: the corner blocks (hung from the walls under the lid's bosses) with M4 heat-set inserts, the card slots, the right corner
 post, the backplane posts, the EVM ledges, the pack tray; outside: gland bosses with nut flats in the bottom wall, an
@@ -185,14 +185,8 @@ def parts():
     pslots = [B(RX - 2.0, st.BP_FRONT, st.card_z(b) - st.BT - SLOT_CLEAR / 2, RX + SLOT_CLEAR, post_y1 + 0.1,
                 st.card_z(b) + SLOT_CLEAR / 2, f"post slot for {b}") for b in st.ORDER]
     pslots.append(B(*RSLOT[:3], *RSLOT[3:], "backplane slot"))
-    for b in ("B1", "B2"):
-        z = st.card_z(b)
-        nxt = st.ORDER[st.ORDER.index(b) + 1]
-        pslots.append(B(RX - 2.0, CARD_FRONT - st.BOB_Y[2] - 0.5, z, RX + POST_R, post_y1 + 0.1,
-                        st.card_z(nxt) - st.BT - SLOT_CLEAR / 2 - 2.0, f"post cut round {b}'s back jack and plug"))
     out.append(Part("right corner post", post, cuts=pslots, solid=right_post_solid,
-                    note=f"moulded: takes each card's back-right corner (card Y {grip:.2f}-{st.CD:.2f}); on B1 and B2 "
-                         f"the back breakout's spacer tongue (card Y {st.CD:.2f}-{st.TONGUE_Y1:.2f}) instead"))
+                    note=f"moulded: takes each card's back-right corner (card Y {grip:.2f}-{st.CD:.2f})"))
     posts = [B(x - d / 2, YP, z - d / 2, x + (BP_FLAT if i == 0 else d / 2), st.BP_BACK, z + d / 2, "backplane post")
              for i, ((x, z), d) in enumerate(zip(BP_POSTS, BP_POST_DS))]
     r = BP_PAD_D / 2

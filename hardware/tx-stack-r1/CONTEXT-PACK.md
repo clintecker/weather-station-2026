@@ -104,7 +104,7 @@ Lid-centre frame (the CAD bot's): **X = Zb − 84.75, Y = 61.75 − Xb, Z = Yb +
   - line 23: GAUGE_S;
   - line 26: SYS.
   - Every other contact is an isolated pad (L11).
-- **B1 and B2:** the back RJ11 breakouts sit on a 3.04 spacer.
+- **B1 and B2:** each RJ11 breakout stands on a soldered 1x6 male header in row a (six columns, six strips), overhanging the front edge, mouth toward the lid; no spacers, no flying leads.
 - **B4:** SJ1 on U2 (INA228) is soldered closed, which joins VBUS to VIN+. Beep groups: J1+J24, J2+J12+J25, and
   J19–J22.
 - **Routing:**

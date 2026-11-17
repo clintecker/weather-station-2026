@@ -27,7 +27,7 @@ The EVM ships set for two cells. Do these in order, with nothing connected:
 
 ## 3. Cards, bottom to top: B4 POWER, B2 PORTS B + METERS, B1 PORTS A, B3 CORE (top)
 
-Every card has its back rails snapped off and the edge filed flat first (step 1 of its build sheet). Each card slides in from the lid side along its left-wall slot and right-post slot until its header pins enter the socket (4.96 mm; the header insulator meets the socket 0.84 mm further in). On B1 and B2 the back breakout's spacer tongue enters the right post's slot. Fit the retention bar (front left, two M3 screws) last. To take a card out: bar off, unplug that card's own plugs (the RJ11 cables on B1 and B2, the coax at AD1 on B3, the SWD and USB-C leads if fitted), slide it out. No card needs another card out first, and nothing is soldered between a card and anything else (layout check L10).
+Every card has its back rails snapped off and the edge filed flat first (step 1 of its build sheet). Each card slides in from the lid side along its left-wall slot and right-post slot until its header pins enter the socket (4.96 mm; the header insulator meets the socket 0.84 mm further in). On B1 and B2 the RJ11 jacks overhang the front edge, mouths toward the lid. Fit the retention bar (front left, two M3 screws) last. To take a card out: bar off, unplug that card's own plugs (the RJ11 cables on B1 and B2, the coax at AD1 on B3, the SWD and USB-C leads if fitted), slide it out. No card needs another card out first, and nothing is soldered between a card and anything else (layout check L10).
 
 ## 4. Leads off the cards
 

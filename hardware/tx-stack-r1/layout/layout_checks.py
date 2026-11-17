@@ -2,7 +2,7 @@
 
   L1 every placed pin lands on a SolderFul hole (cards; the back rails are snapped off) or a padboard hole
      (backplane), no two pins share a hole; every jumper, wire and lead end is a real hole or a real pad; no
-     hole takes two conductors; nothing is soldered under an RJ11 breakout's spacer; every backplane bus wire
+     hole takes two conductors; every backplane bus wire
      is soldered only at real holes of its own line;
   L2 no two different nets share copper: a card's row strip or rail, or a backplane pad joined by a bus wire
      (the PAD3U has no strips: nothing connects unless a wire does); an unconnected pin sits alone;
@@ -128,15 +128,6 @@ def check_pins_and_ends(ph):
     for e, notes in used.items():
         if len(notes) > 1:
             fail("L1", f"hole {e} takes {len(notes)} conductors: {notes}")
-    # nothing soldered under a breakout spacer, nor on the back rails under the socket (rows 1-19)
-    ends = set(used) | {f"{b}:{h}" for (b, h) in ph}
-    for b, pl in st.placements():
-        for bx in st.boxes_of(pl):
-            if "spacer" in bx.what:
-                for h in st.ALL_HOLES:
-                    x, y = st.hole_xy(h)
-                    if bx.x0 < x < bx.x1 and bx.y0 < y < bx.y1 and f"{b}:{h}" in ends:
-                        fail("L1", f"{b}:{h} is used but lies under {bx.what}")
     for line, holes in st.BP_BUS:
         for n in holes:
             if not bp_ok(f"s{line}.{n}"):
@@ -658,7 +649,7 @@ def check_cage(ph):
             fail("L7", f"the mux behind the backplane covers {b}'s socket tails")
     sc = S.val("slot_clear")
     NOTES.append(f"slots: {t + sc:.1f} mm for the {t:g} mm card ({sc:g} mm print allowance [TBD-MEASURE]); "
-                 f"retention bar {S.val('bar'):g} mm, front left; right corner post grips card Y {S.val('sb_snap_y') - 1.5:.2f}-{st.CD:.2f}, on B1 and B2 the back breakout's spacer tongue")
+                 f"retention bar {S.val('bar'):g} mm, front left; right corner post grips card Y {S.val('sb_snap_y') - 1.5:.2f}-{st.CD:.2f}")
 
 
 def seg_dist(h, p, q):
@@ -875,29 +866,31 @@ def check_mech():
     for b in ("B1", "B2"):
         for pl in st.PLACE[b]:
             if pl["fp"] == "BOB":
-                back = any("tongue" in x.what for x in st.boxes_of(pl))
-                mech(f"{b} {pl['ref']} RJ11 breakout", "bonded to its printed spacer, the spacer bonded to the card; "
-                     "its six pads take flying leads to the card (no pin goes into the card)"
-                     + (f"; the spacer ({S.val('bob_spacer_back'):g} tall) bridges the 1x30 bus header and the socket "
-                        "(front block and a side wall past the header's last pin), its tongue in the right corner "
-                        "post slot; the pad leads cross the header in the air" if back else ""),
-                     "the plug's push and pull run along the jack axis (Xb) through the jack and the breakout into the "
-                     "two bonds" + (" and the post" if back else "") + "; the latch takes the pull",
-                     "unsolder the six leads at the card; cut the spacer bond",
-                     "held by adhesive alone" + (" (the post takes the push on this one)" if back else
-                                                 ": the plug's push and pull load the bond"))
+                cols = sorted(st.strip_of(hole_at(xy))[1:] for xy in st.pins_of(pl).values())
+                mech(f"{b} {pl['ref']} RJ11 breakout", f"its own 1x6 male header, soldered in the breakout and in row a "
+                     f"of the card, one pin in each of columns {min(cols, key=int)}-{max(cols, key=int)} (six strips); "
+                     "the breakout overhangs the card's front edge, the jack's mouth toward the lid",
+                     "the plug's push and pull run along the jack axis (Yb) through the jack and the breakout into the six "
+                     "header pins, in bending (the breakout overhangs the front edge); the latch takes the pull",
+                     "desolder the six header pins (or cut them and fit a new header)",
+                     "held by solder alone on one header row; the plug's push and pull load the six pins")
     # latch access and the cable path
     plugs = [x for x in items if "RJ11 plug" in x.what]
     rooms = sorted((room_above(pg, items, h_in), pg.what) for pg in plugs)
     worst = rooms[0]
     fin = S.val("finger")
     tight = [f"{w_.split(' RJ11')[0]} {r_:.1f}" for r_, w_ in rooms if r_ < fin]
-    col = w_in - max(pg.x1 for pg in plugs)
+    front = d_in - max(pg.y1 for pg in plugs)
+    mouth = min(pg.y0 for pg in plugs)
+    if front < 0:
+        fail("L9", f"the RJ11 plugs and their cable bends reach Yb {max(pg.y1 for pg in plugs):.1f}, past the lid ({d_in:g})")
     flag = "" if not tight else (f"less than {fin:g} mm [TBD-MEASURE] over the plug to press its latch from above: "
                                  + ", ".join(tight) + " mm (a small screwdriver from the front instead)")
     mech("RJ11 plug latch and cable", f"the jack latch; the latch is on the plug, {worst[0]:.1f} mm free over the "
-         f"tightest plug ({worst[1]}); each cable turns down beyond the plug in the {col:.1f} mm column to the right "
-         "wall and runs down past the charger to its PG-7 gland in the right wall, below the jacks", "the latch, then the gland's seal (strain relief)",
+         f"tightest plug ({worst[1]}); the plugs go in from the lid side (mouths at Yb {mouth:.1f}); each flat cable "
+         f"leaves its plug toward the lid, bends down in front of the cards (the plug and the bend reach Yb "
+         f"{max(pg.y1 for pg in plugs):.1f}, {front:.1f} mm short of the lid) and runs down the front of the stack to its "
+         "gland in the bottom wall", "the latch, then the gland's seal (strain relief)",
          "press the latch (lid open, from the front), pull; loosen the gland nut to pull the cable through", flag)
     # the mini, its USB-C and SMA, the coax
     a1 = [to_box("B3", x) for _r, x in board_boxes("B3") if _r == "A1"]
@@ -979,14 +972,14 @@ def check_mech():
          "a flat cable is sealed once its position is final and then comes out only by cutting the seal")
     gap = min(st.card_z(st.ORDER[i + 1]) - st.BT - st.card_z(st.ORDER[i]) for i in range(len(st.ORDER) - 1)
               if st.ORDER[i] in ("B1", "B2"))
-    need = S.val("bob_spacer") + S.val("breakout_t") + S.val("jack_4ucon")[2] + S.val("tails") + 0.5
+    need = st.HDR + S.val("breakout_t") + S.val("jack_4ucon")[2] + S.val("tails") + 0.5
     if need > gap:
         FLAGS.append(f"Clint's two existing BOB-14021s carry the 4UCON 14869 jack ({S.val('jack_4ucon')[2]:g} high): "
                      f"under the next card they need {need:.1f} mm, there are {gap:.2f}; the build uses new BOBs with "
                      f"the 87180-066LF ({S.val('jack_h'):g} high, RS listing; no Amphenol drawing in hand)")
     NOTES.append("glands: " + ", ".join(f"{k} at Xb {x:g}, Yb {y:g}" for x, y, k in cage.GLANDS)
-                 + " (bottom wall); the cables rise in the right column, Xb "
-                 f"{cage.EVM_X0 + S.val('evm')[0] + 2:g}-{cage.W:g}, past the EVM and the pack to the jacks")
+                 + " (bottom wall); the RJ11 cables leave their plugs toward the lid, come down in front of the "
+                 "stack (beside the EVM leads' service loops) and back over the floor under the pack tray to the glands")
     ft, fw = S.val("flat_cable")
     diag = (ft ** 2 + fw ** 2) ** 0.5
     for k, bore in zip(("PG-7", "PG-9"), S.val("gland_bore")):
