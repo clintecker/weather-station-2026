@@ -845,9 +845,9 @@ def assembly_sheet():
          "plug to the right column, down it and left under the pack tray to its gland (cage/shelves-spec.md).",
          "7. The coax: AD1 on the mini's SMA, its arm toward the lid; the 135110 plug on it, the cable bent right in "
          "front of the cards and down the right column to the bulkhead low in the right wall; clip it to the right corner "
-         f"post. [TBD-MEASURE] The run is about 120-130 mm, the 6 in cable has about {S.val('coax_len'):g} between its "
-         "plugs: check it reaches before the cards go in, or get a longer one; and check the straight plug on the "
-         "bulkhead's inner end clears the EVM's lid-right corner (or use a right-angle plug).",
+         "post. The 6 in cable reaches (Clint, 2026-11-17: it fits the low bulkhead with no tight bend). "
+         "[TBD-MEASURE] Check the straight plug on the bulkhead's inner end clears the EVM's lid-right corner (or use a "
+         "right-angle plug).",
          "8. Mount: hose clamps or straps through the two slots in each mounting flange (the short ends, in the floor "
          "plane); the lid on with its four screws.", "",
          f"## 3. Cards, bottom to top: {order}", "",
