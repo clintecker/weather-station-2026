@@ -12,4 +12,12 @@ cd ../..; .venv/bin/python -m unittest tests.test_pods_layout; cd hardware/pods-
 echo "== pod electrical checks P1-P7"
 cd ../..; .venv/bin/python -m unittest tests.test_pods_checks; cd hardware/pods-r1
 ../../.venv/bin/python layout/pod_checks.py
+echo "== assembled shield and SHT45 fit (only when the shield 3MF is on this machine)"
+if ../../.venv/bin/python -c "import sys; sys.path.insert(0, '.'); import sources; sys.exit(0 if sources.shield_path().exists() else 1)" \
+   && [ -x ../../.venv-cad/bin/python ]; then
+  cd ../..; .venv-cad/bin/python -m unittest tests.test_pods_shield; cd hardware/pods-r1
+  ../../.venv-cad/bin/python shield/assemble.py
+else
+  echo "skipped: the shield 3MF (sources.shield_3mf) or .venv-cad is not on this machine"
+fi
 echo "== pods-r1: every check passes"

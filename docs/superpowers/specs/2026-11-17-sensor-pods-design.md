@@ -65,17 +65,24 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
     (object_70), plate pitch set by the 15 mm posts;
   - three post columns, diameter about 10 mm, centred 25 mm from the axis, leaving a **clear core
     of diameter 40 mm**;
-  - a **sensor stand** (object_68): a strip about 14 x 5 mm, 81 mm tall on a three-legged foot
-    (53 x 47), about 8 mm off the axis, zip-tie teardrops up its face;
+  - a **sensor stand** (object_68): a strip 14 x 5 mm, 81 mm tall on a three-legged foot
+    (53 x 47, 4 thick, three Ø4 bores on the posts' circle), zip-tie teardrops up its face; assembled, the
+    strip's middle is 2.0 mm off the plate axis (its faces at y +0.5 and -4.5 mm), not 8 mm;
   - a **base cup** (object_67), diameter about 59, 32.6 tall, with a foot about 19 x 54 that meets
-    the **L-bracket arm** (object_72, 58.8 x 124 x 64, holes in its upright plate) and a small pole
+    the **L-bracket arm** (object_72, 58.8 x 124 x 64; two holes and a foot pocket in its base plate) and a small pole
     clamp.
-  - The 3MF is laid out as printed (parts flat on the bed). The assembled positions (plates on the
-    base cup, the stand's orientation to the posts) are derived from the parts' mating features,
-    not assumed; the 2026-11-17 fit check assumed the stand on the plate axis and must be redone.
-- **SHT45 #6174** board 25.4 x 17.8 mm with its PTFE-capped sensor. The 2026-11-17 fit check put it
-  on the stand's inner face with more than 5 mm to every post, but that check assumed the stand on the
-  plate axis (above), so the fit is provisional until the assembled-shield check is re-run.
+  - The 3MF is laid out as printed (parts flat on the bed). `hardware/pods-r1/shield/assemble.py` derives the
+    assembled positions from the parts' mating features (pure translations, no part turned): cup tube bores,
+    stand foot bores, plate and cap post bores all on the Ø50 post circle; plate posts 15 mm tall (pitch 15);
+    the cup foot (19 x 54, two Ø4.5 holes 42 apart) in the arm's pocket (19.6 x 54.6, 1 mm deep, two Ø5 holes).
+    Stack, bottom to top, with Z = 0 on the pocket floor: cup foot, cup disc to Z 32.6, stand foot 32.6-36.6,
+    six plates (posts Z 36.6-126.6), cap. Every mate is within 0.3 mm (lateral and axial 0.00; the foot has
+    0.15-0.30 mm free in its pocket). The cup has a Ø5 through-hole at (-12, 4) from the axis, a cable way.
+    Clear core through the stack: 20.0 mm radius (the posts, Ø40). The check runs when the 3MF is present.
+- **SHT45 #6174** board 25.4 x 17.8 mm with its PTFE-capped sensor (4.8 mm overall). Checked on the assembled
+  shield (`assemble.py`): long side vertical on the stand strip's inner face (the +y face, 0.5 mm from the
+  axis), centred mid-stack (Z 69-94 of the 36.6-126.6 stack), it clears every post and plate by 13.2 mm (the
+  outer face, 8.2 mm); the requirement is 5.0 mm. The strip reaches r 8.3 mm of the core's 20.
 - **Perma-Proto Quarter #1608** (about 44 x 51 mm: take the exact outline and hole grid from
   Adafruit's own file) does not fit the shield's core: the TH pod board lives outside the shield.
 - **I2C on a port**: each port's lines are pulled up on the TX side by the mux breakout's 10 k
