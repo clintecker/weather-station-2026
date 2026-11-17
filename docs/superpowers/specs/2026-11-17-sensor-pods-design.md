@@ -76,8 +76,9 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
     stand foot bores, plate and cap post bores all on the Ø50 post circle; plate posts 15 mm tall (pitch 15);
     the cup foot (19 x 54, two Ø4.5 holes 42 apart) in the arm's pocket (19.6 x 54.6, 1 mm deep, two Ø5 holes).
     Stack, bottom to top, with Z = 0 on the pocket floor: cup foot, cup disc to Z 32.6, stand foot 32.6-36.6,
-    six plates (posts Z 36.6-126.6), cap. Every mate is within 0.3 mm (lateral and axial 0.00; the foot has
-    0.15-0.30 mm free in its pocket). The cup has a Ø5 through-hole at (-12, 4) from the axis, a cable way.
+    six plates (posts Z 36.6-126.6), cap. Every mate is within 0.3 mm (measured on the placed meshes: lateral 0.00, plate spacing 15.0 = post length, no
+    section overlaps between neighbours; the foot has
+    0.30 mm free per side in its pocket, 0.25 mm round each bolt). The cup has a Ø5 through-hole at (-12, 4) from the axis, a cable way.
     Clear core through the stack: 20.0 mm radius (the posts, Ø40). The check runs when the 3MF is present.
 - **SHT45 #6174** board 25.4 x 17.8 mm with its PTFE-capped sensor (4.8 mm overall). Checked on the assembled
   shield (`assemble.py`): long side vertical on the stand strip's inner face (the +y face, 0.5 mm from the
@@ -198,7 +199,8 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
 - The pod board layout (which holes, which strips, wire routes) and the box geometry, from the parts'
   own drawings and the shield meshes.
 - The assembled shield (plate stack, stand orientation, base cup to arm) from the meshes' mating
-  features, and a re-run of the fit check on the assembled model.
+  features, and a re-run of the fit check on the assembled model: done, see "Constraints and facts" (the
+  shield and the SHT45 fit; `hardware/pods-r1/shield/assemble.py`).
 - Whether the shield file can be committed: its licence is unknown, so keep it out of git (a local
   path in the pod design's sources, with a hash) unless Clint says it is his own work.
 - Which breakout pull-ups to remove on each pod, from the per-port total.

@@ -352,6 +352,99 @@ def mates():
     return out
 
 
+# ---------------------------------------------------------------- independent checks on the PLACED meshes
+# The placements above set each part's bore centroid and one face; these re-measure the assembled vertices themselves
+# (sections of the placed meshes, not features + translation), and test things the placement never sets.
+_BORE_PROBE = {PLATE: (1.5, 1.9, 2.1), CAP: (0.0, 1.6, 1.9), CUP: (11.0, 1.9, 2.1), STAND: (-38.5, 1.9, 2.1)}
+
+
+def placed_axes(oid):
+    """The three bore centres of a placed part, measured on its placed mesh (sorted by angle about the axis)."""
+    stem = oid.split(".")[0]
+    z, lo, hi = _BORE_PROBE[stem]
+    v, f = assembled()[oid]
+    c = circles(v, f, z + placements()[oid][2], lo, hi)
+    assert len(c) == 3, (oid, c)
+    return _by_angle([(x, y) for x, y, _ in c])
+
+
+def placed_post_faces(oid):
+    """(bottom z, top z) of a placed plate's or cap's post tubes, from its placed vertices."""
+    v = assembled()[oid][0]
+    ax = placed_axes(oid)
+    r = features(oid.split(".")[0])["tube_r"] + 0.02
+    near = np.min([np.hypot(v[:, 0] - x, v[:, 1] - y) for x, y in ax], axis=0) <= r
+    return float(v[near, 2].min()), float(v[near, 2].max())
+
+
+def _inside(pts, segs):
+    """Even-odd: which of pts (n, 2) lie inside material bounded by segs (m, 2, 2) (a ray along +x)."""
+    a, b = segs[:, 0], segs[:, 1]
+    ab = b - a
+    n = np.zeros(len(pts), int)
+    for i in range(0, len(pts), 256):
+        q = pts[i:i + 256]
+        cross = (a[None, :, 1] > q[:, None, 1]) != (b[None, :, 1] > q[:, None, 1])
+        xs = a[None, :, 0] + (q[:, None, 1] - a[None, :, 1]) * ab[None, :, 0] / np.where(ab[None, :, 1] == 0, 1, ab[None, :, 1])
+        n[i:i + 256] = (cross & (xs > q[:, None, 0])).sum(1)
+    return n % 2 == 1
+
+
+def clash(a, b, levels=7, margin=0.05):
+    """Sampled cross-section overlap of two placed meshes a, b = (V, F): at `levels` heights through the Z range they
+    share, the number of section-segment midpoints of one lying inside the material of the other. 0 = no clash."""
+    lo, hi = max(a[0][:, 2].min(), b[0][:, 2].min()) + margin, min(a[0][:, 2].max(), b[0][:, 2].max()) - margin
+    if hi <= lo:
+        return 0
+    hits = 0
+    for z in np.linspace(lo, hi, levels):
+        sa, sb = section_z(*a, z), section_z(*b, z)
+        if not len(sa) or not len(sb):
+            continue
+        for p, q in ((sa, sb), (sb, sa)):
+            mid = p.mean(1)
+            near = (mid[:, 0] > q[:, :, 0].min() - 1) & (mid[:, 0] < q[:, :, 0].max() + 1) & \
+                   (mid[:, 1] > q[:, :, 1].min() - 1) & (mid[:, 1] < q[:, :, 1].max() + 1)
+            hits += int(_inside(mid[near], q).sum())
+    return hits
+
+
+def clash_pairs():
+    """The pairs of neighbouring placed parts that must not overlap: the post chain, the stand against every plate and
+    the cap (its strip runs up the core), and the cup against the arm."""
+    chain = [CUP, STAND] + [f"{PLATE}.{k}" for k in range(1, PITCH_PLATES + 1)] + [CAP]
+    pairs = list(zip(chain, chain[1:])) + [(CUP, ARM)]
+    pairs += [(STAND, i) for i in chain[2:]]
+    return pairs
+
+
+def independent_checks():
+    """Facts measured on the placed meshes that no placement sets:
+    axis_radius: distance of every measured bore centre from the axis, per part (all should be 25.0);
+    lateral: per-bore distance between the facing bores of each mating pair of parts, (name, mm);
+    pitch: spacing between consecutive plates' post bottom faces; post_length: each plate's post length (should agree);
+    radial: stand foot lobe radius minus the post tube radius (mm);
+    fits: (name, per-side clearance mm) for the cup foot's holes in the arm's holes and the foot in its pocket;
+    clash: {pair: count} from `clash`."""
+    chain = [CUP, STAND] + [f"{PLATE}.{k}" for k in range(1, PITCH_PLATES + 1)] + [CAP]
+    ax = {i: placed_axes(i) for i in chain}
+    out = {"axis_radius": {i: [float(np.hypot(*p)) for p in a] for i, a in ax.items()}}
+    out["lateral"] = [(f"{b} on {a}", float(np.hypot(*(ax[a] - ax[b]).T).max())) for a, b in zip(chain, chain[1:])]
+    plates = [f"{PLATE}.{k}" for k in range(1, PITCH_PLATES + 1)]
+    faces = [placed_post_faces(i) for i in plates]
+    out["pitch"] = [faces[k + 1][0] - faces[k][0] for k in range(len(faces) - 1)]
+    out["post_length"] = [t - b for b, t in faces]
+    out["radial"] = features(STAND)["lobe_r"] - features(CUP)["tube_r"]
+    cup, arm = features(CUP), features(ARM)
+    pl = placements()
+    gaps = [g for x in mates() if x["mate"] == "cup foot in arm" for g in x["gaps_xxyy"]]
+    out["fits"] = [("bolt hole radius, arm minus cup foot", float(arm["hole_r"] - cup["hole_r"]))] + \
+                  [(f"pocket wall {n}", float(g)) for n, g in zip(("x-", "x+", "y-", "y+"), gaps)]
+    asm = assembled()
+    out["clash"] = {f"{a} / {b}": clash(asm[a], asm[b]) for a, b in clash_pairs()}
+    return out
+
+
 # ---------------------------------------------------------------- the clear core
 def _core_ids():
     return [i for i in assembled() if i.startswith(PLATE) or i in (CAP, CUP)]
@@ -483,6 +576,16 @@ def main():
     for side in ("inner", "outer"):
         d = sht45_fit_detail(side)
         print(f"SHT45 on the {side} face: clearance {d['fit']:.2f} mm to {d['nearest']} at Z {d['at_z']:.1f} (needs 5.0)")
+    ind = independent_checks()
+    print("independent (placed-mesh) checks:")
+    print("  bore radius from axis, all parts: %.3f..%.3f" % (min(min(v) for v in ind["axis_radius"].values()),
+                                                           max(max(v) for v in ind["axis_radius"].values())))
+    print("  per-bore lateral, worst pair: %s %.3f" % max(ind["lateral"], key=lambda t: t[1]))
+    print("  plate pitch %s, post length %s" % ([round(x, 3) for x in ind["pitch"]], [round(x, 3) for x in ind["post_length"]]))
+    print("  foot lobe vs post tube radius: %+.3f; " % ind["radial"] + "; ".join(f"{n} {g:.2f}" for n, g in ind["fits"]))
+    print("  clashes: %d over %d pairs" % (sum(ind["clash"].values()), len(ind["clash"])))
+    bad |= (any(g > 0.3 for _, g in ind["lateral"]) or any(abs(p - ind["post_length"][0]) > 0.3 for p in ind["pitch"])
+            or abs(ind["radial"]) > 0.3 or any(not 0 < g <= 0.5 for _, g in ind["fits"]) or any(ind["clash"].values()))
     ok = not bad and min(cc) >= 20.0 - 1e-6 and sht45_fit() >= 5.0
     print("shield: every check passes" if ok else "shield: MISFIT (see numbers above)")
     return 0 if ok else 1

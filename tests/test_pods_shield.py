@@ -88,6 +88,34 @@ class ShieldAssembly(unittest.TestCase):
         pocket = next(x for x in self.mates if x["mate"] == "cup foot in arm")
         self.assertEqual(pocket["holes"], 2)
 
+    def test_mating_features_measured_on_placed_meshes(self):
+        """Facts the placement does not set, re-measured on the assembled vertices."""
+        ind = self.m.independent_checks()
+        for oid, radii in ind["axis_radius"].items():                   # every bore on the same Ø50 circle
+            for r in radii:
+                self.assertAlmostEqual(r, 25.0, delta=0.05, msg=oid)
+        for name, err in ind["lateral"]:                                 # per bore, not per centroid
+            self.assertLessEqual(err, 0.3, name)
+        post = ind["post_length"]
+        self.assertAlmostEqual(post[0], 15.0, delta=0.05)
+        for p in post:
+            self.assertAlmostEqual(p, post[0], delta=0.05)
+        for p in ind["pitch"]:                                           # measured plate spacing = the post length
+            self.assertAlmostEqual(p, post[0], delta=0.3)
+        self.assertLessEqual(abs(ind["radial"]), 0.3)                    # foot lobe vs post tube radius
+        for name, c in ind["fits"]:                                      # real fits: free, but by less than 0.5 mm a side
+            self.assertGreater(c, 0.0, name)
+            self.assertLessEqual(c, 0.5, name)
+        for pair, n in ind["clash"].items():
+            self.assertEqual(n, 0, pair)
+
+    def test_clash_check_can_fail(self):
+        """The overlap test sees a misplaced part: plate 2 pushed 5 mm down into plate 1 must clash."""
+        a = self.m.assembled()
+        v, f = a["object_79.2"]
+        self.assertGreater(self.m.clash(a["object_79.1"], (v - [0, 0, 5.0], f)), 0)
+        self.assertEqual(self.m.clash(a["object_79.1"], a["object_79.2"]), 0)
+
     def test_core_clear(self):
         lo, hi = self.m.stack_span()
         self.assertGreater(hi - lo, 85.0)                        # six plates on 15 mm posts
