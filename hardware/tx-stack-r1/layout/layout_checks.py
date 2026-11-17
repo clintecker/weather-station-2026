@@ -9,7 +9,8 @@
   L3 the built copper (pins in strips, jumpers, wires, leads, cables and matings, the parts' own ties) is
      exactly the schematic, net for net;
   L4 the battery current crosses the B4 header and socket only on doubled pins (model.B4_POWER), and touches
-     only the strips and backplane lines of those pins; everywhere else it is soldered leads;
+     only the strips and backplane lines of those pins; everywhere else it is soldered leads; the charger's SYS and
+     its return (J3 GND) each reach their backplane bus wire by a lead of their own;
   L5 the bus: on every card row-strip i (f-j) carries bus line i and its header pin; on the backplane the bus
      wire on line i carries the same line, each socket pin i on line i; the header pin tip reaches the socket
      mouth (insertion); the socket body clears the snapped card edge and the card's parts;
@@ -39,6 +40,9 @@
      drawing's and render's view (stack.VIEWS, stack.MESH_AXES) is a true view, not a mirror.
  L11 the backplane lines (every socket 1x30): each socket contact is on its line's bus wire, its card pin on the
      line's net, or on an isolated pad no bus wire is soldered to or lies over; a bus wire joins one net only.
+ L13 the slot keys: each card pulls one spare pin (B1 27, B2 28, B3 29, B4 30: model.PULLED, checked in L5) and its
+     own socket has a key plug in that contact, on an isolated pad nothing is soldered to; for every card and socket
+     the card's pins miss the plug only in its own socket (any other card stubs on it and cannot seat).
 Run: python3 layout_checks.py   (exit status 0 only if every check passes)
 """
 import math
@@ -318,10 +322,21 @@ def check_bus(ph):
             fail("L5", f"B4:j{i} holds {ph.get(('B4', f'j{i}'))}, wants header pin {i}")
         if rep["BP"].get(f"s{i}") != line:
             fail("L5", f"backplane line {i} carries {rep['BP'].get(f's{i}')}, B4 power pin {i} is {line}")
-    for b in st.BOARDS:                                 # the full 1x30: pins 19-30 in their strips' nets
-        if model.HDR_LEN[b] != 30 or model.PULLED.get(b):
-            fail("L5", f"{b}'s header is 1x{model.HDR_LEN[b]} with pins {model.PULLED.get(b)} pulled, not the full 1x30")
+    key_want = {"B1": (27,), "B2": (28,), "B3": (29,), "B4": (30,)}   # the slot keys (model.PULLED), Clint 2026-11-16
+    for b in st.BOARDS:                                 # the full 1x30 less its key pin: pins 19-30 in their strips' nets
+        if model.HDR_LEN[b] != 30 or tuple(model.PULLED.get(b, ())) != key_want[b]:
+            fail("L5", f"{b}'s header is 1x{model.HDR_LEN[b]} with pins {model.PULLED.get(b)} pulled, not the 1x30 "
+                       f"less its key pin {key_want[b]}")
+        for i in model.PULLED.get(b, ()):
+            if model.pin_net(b, i) is not None or model.line_net(i) is not None:
+                fail("L5", f"{b}'s key pin {i} is on {model.pin_net(b, i)} (line {model.line_net(i)}): a key must be spare")
+            if (b, f"j{i}") in ph:
+                fail("L5", f"{b}:j{i} holds {ph[(b, f'j{i}')]}, but pin {i} is pulled (the slot key)")
+            if model.KEY.get(b) != i:
+                fail("L5", f"{b}'s socket key plug is in contact {model.KEY.get(b)}, its card's pulled pin is {i}")
         for i in range(19, model.HDR_LEN[b] + 1):
+            if i in model.PULLED.get(b, ()):
+                continue
             if ph.get((b, f"j{i}")) != (model.HEADERS[b], str(i)):
                 fail("L5", f"{b}:j{i} holds {ph.get((b, f'j{i}'))}, wants header pin {i}")
             if rep[b].get(f"R{i}") != model.pin_net(b, i):
@@ -336,7 +351,8 @@ def check_bus(ph):
         fail("L5", f"the socket mouth is {gap:.2f} mm past the snapped card edge (< {S.val('clear'):g}): it overlaps the card")
     if st.Y_MOUTH - st.Y_INS < 0.5:
         fail("L5", f"the header insulator ends {st.Y_MOUTH - st.Y_INS:.2f} mm short of the socket mouth")
-    NOTES.append(f"bus: every card a 1x30 header in column j rows 1-30, every socket 1x30; bus wires on lines 1-18; "
+    NOTES.append(f"bus: every card a 1x30 header in column j rows 1-30 less its key pin ("
+                 + ", ".join(f"{b} {model.KEY[b]}" for b in st.BOARDS) + "), every socket 1x30; bus wires on lines 1-18; "
                  f"B4's power lines " + ", ".join(f"{i} {n}" for i, n in model.B4_POWER.items())
                  + "; card-local pins " + "; ".join(f"{c} " + ", ".join(f"{i} {n}" for i, n in v.items())
                                                    for c, v in model.CARD_LOCAL.items()) + " (isolated pads); card "
@@ -353,14 +369,69 @@ def check_bus(ph):
                 fail("L5", f"{b}: the backplane socket body hits {x.what}")
 
 
+def check_keys(ph):
+    """L13: the slot keys. Every socket holds a key plug in one contact (on an isolated pad: no bus wire is soldered to
+    it or lies over it, no conductor meets it); a card seats in a socket only if the plug's position is one of the
+    card's pulled pins. For each card and socket: its own fits, every other one collides."""
+    bus = dict(st.BP_BUS)
+    ends = {e[3:] for _k, a, c, _s, _n in route.WIRES for e in (a, c) if isinstance(e, str) and e.startswith("BP:")}
+    for s in st.BOARDS:
+        i, n = st.BP_KEYS[s]
+        if (i, n) not in st.BP_ISOLATED:
+            fail("L13", f"{model.SOCKETS[s]}'s key plug contact (line {i}, hole {n}) is not on an isolated pad")
+        hs = bus.get(i, [])
+        if hs and min(hs) <= n <= max(hs):
+            fail("L13", f"line {i}'s bus wire reaches {model.SOCKETS[s]}'s key plug contact (hole {n})")
+        if f"s{i}.{n}" in ends:
+            fail("L13", f"a lead or wire is soldered to {model.SOCKETS[s]}'s key plug contact (line {i}, hole {n})")
+        if NET_OF.get((model.SOCKETS[s], str(i))) is not None:
+            fail("L13", f"{model.SOCKETS[s]}.{i} (the key plug) is on {NET_OF[(model.SOCKETS[s], str(i))]} in the model")
+    grid = []
+    for c in st.BOARDS:
+        pins = {int(p) for p in st.pins_of(next(pl for pl in st.PLACE[c] if pl["ref"] == model.HEADERS[c]))}
+        row = []
+        for s in st.BOARDS:
+            plug = model.KEY[s]
+            hits = plug in pins
+            if (c == s) == hits:
+                fail("L13", f"{c} in {model.SOCKETS[s]}'s slot (key plug in contact {plug}): "
+                            + (f"its pin {plug} stubs on the plug: it cannot seat in its own slot" if c == s
+                               else "it seats: no pin of it meets the plug"))
+            row.append(f"{s} {'fits' if not hits else 'blocked'}")
+        grid.append(f"{c}: " + ", ".join(row))
+    NOTES.append("slot keys: key plugs " + ", ".join(f"{model.SOCKETS[s]} contact {model.KEY[s]} ({model.KEY_COLOUR[s]})"
+                                                     for s in st.BOARDS) + "; card in socket: " + "; ".join(grid))
+
+
+def check_charger_leads():
+    """L4 (the power leads): the charger's SYS reaches the backplane by its own lead to line 26, and its return by
+    its own lead from J3 GND (SYSN) to a ground bus line, never only through the I2C lead's J8 pin 1."""
+    leads = {}
+    for k, a, c, _s, _n in route.WIRES:
+        if k == "lead" and isinstance(a, tuple) and isinstance(c, str):
+            leads[a] = c
+    for pin, want in ((("U1", "SYS"), "SYS"), (("U1", "SYSN"), "GND")):
+        e = leads.get(pin)
+        if not (isinstance(e, str) and e.startswith("BP:")):
+            fail("L4", f"{pin[0]} {pin[1]} has no lead of its own to the backplane")
+            continue
+        line = int(e[4:].split(".")[0])
+        if model.line_net(line) != want or line not in dict(st.BP_BUS) or int(e.split(".")[1]) not in dict(st.BP_BUS)[line]:
+            fail("L4", f"{pin[0]} {pin[1]}'s lead lands at {e}, not on a {want} bus wire")
+    NOTES.append("charger leads: J3 SYS to line 26, J3 GND to " + str(leads.get(("U1", "SYSN"))).replace("BP:s", "line ")
+                 .replace(".", " hole ") + " (SYS's own return; J8 pin 1 is the I2C lead's ground only)")
+
+
 def check_lines(ph):
     """L11: each socket contact is on its line's bus wire (the pin's net is the line's net) or on an isolated pad that
     no bus wire is soldered to or lies over; the pads one bus wire joins all carry one net."""
     bus = dict(st.BP_BUS)
     n_iso = 0
     for b in st.BOARDS:
-        for i in model.hdr_pins(b):
+        for i in model.socket_pins(b):
             n, net, ln = st.SOCKET_HOLE[b], model.pin_net(b, i), model.line_net(i)
+            if i not in model.hdr_pins(b):
+                net = None                              # the key plug's contact: its card has no pin there
             pin = (model.SOCKETS[b], str(i))
             if NET_OF.get(pin) != net:
                 fail("L11", f"{pin[0]}.{i} is on {NET_OF.get(pin)} in the model, its card pin on {net}")
@@ -847,7 +918,9 @@ def check_mech():
          "the front left", "the slots take the card's weight and any knock across it; the bar stops it backing out",
          "two M3 screws: bar off, card slides out toward the lid",
          "")
-    mech("Bus header into the backplane socket", f"30 contacts' friction on every card (the full 1x30); axis Yb (in the card plane, toward the back "
+    mech("Bus header into the backplane socket", f"29 contacts' friction on every card (the 1x30 less its key pin: "
+         + ", ".join(f"{b} {model.KEY[b]}" for b in st.BOARDS) + "; its own socket's key plug sits there and blocks "
+         f"every other card); axis Yb (in the card plane, toward the back "
          f"wall); insertion {ins:.2f} mm of "
          f"{S.val('ra_mate'):g}; the insulator meets the socket {stop:.2f} mm further in (the depth stop)",
          f"the socket; side play is the slot's {sc:g} mm, inside the socket lead-in ({tol:g} mm [TBD-MEASURE])",
@@ -889,8 +962,9 @@ def check_mech():
     mech("RJ11 plug latch and cable", f"the jack latch; the latch is on the plug, {worst[0]:.1f} mm free over the "
          f"tightest plug ({worst[1]}); the plugs go in from the lid side (mouths at Yb {mouth:.1f}); each flat cable "
          f"leaves its plug toward the lid, bends down in front of the cards (the plug and the bend reach Yb "
-         f"{max(pg.y1 for pg in plugs):.1f}, {front:.1f} mm short of the lid) and runs down the front of the stack to its "
-         "gland in the bottom wall", "the latch, then the gland's seal (strain relief)",
+         f"{max(pg.y1 for pg in plugs):.1f}, {front:.1f} mm short of the lid), crosses right to the right column "
+         "(cage/shelves-spec.md: Xb 100-122, beside the EVM and the pack) and down it to the cable space under the pack "
+         "tray, then along the floor to its gland in the bottom wall", "the latch, then the gland's seal (strain relief)",
          "press the latch (lid open, from the front), pull; loosen the gland nut to pull the cable through", flag)
     # the mini, its USB-C and SMA, the coax
     a1 = [to_box("B3", x) for _r, x in board_boxes("B3") if _r == "A1"]
@@ -965,8 +1039,12 @@ def check_mech():
          "full STL until they are")
     mech("Base to the pole", "two moulded lugs on the back, a hose clamp or U-bolt through each; no screw through "
          "the back into the box", "the lugs' roots in the 3 mm floor", "open the clamps", "")
-    mech("Cables through the glands", "six round port cables in PG-7s (#762, seal 3.0-4.3 mm) in the bottom wall's bosses; the flat "
-         "wind and rain cables in PG-9s (#761) with the seal out and the gap packed with silicone or a split grommet",
+    n7 = sum(1 for g in cage.GLANDS if g[2] == "PG-7")
+    mech("Cables through the glands", f"five round cables (the four sensor-port cables S1-S4 and the solar lead) in "
+         f"PG-7s (#762, seal 3.0-4.3 mm; {n7} PG-7s, {n7 - 5} spare, blanked) in the bottom wall's bosses, each passed "
+         "through its gland before its inside plug is crimped (a 6P plug, about 12 mm across its corners, passes no gland "
+         "bore); the flat wind and rain cables in PG-9s (#761) with the seal out and the gap packed with silicone or a "
+         "split grommet, their factory plugs cut off and new 6P plugs crimped inside",
          "the gland's seal (round) or the sealant (flat); a drip loop below each gland outside, so water runs off "
          "the loop and not along the cable into the gland", "loosen the cap (round); cut the sealant (flat)",
          "a flat cable is sealed once its position is final and then comes out only by cutting the seal")
@@ -974,12 +1052,13 @@ def check_mech():
               if st.ORDER[i] in ("B1", "B2"))
     need = st.HDR + S.val("breakout_t") + S.val("jack_4ucon")[2] + S.val("tails") + 0.5
     if need > gap:
-        FLAGS.append(f"Clint's two existing BOB-14021s carry the 4UCON 14869 jack ({S.val('jack_4ucon')[2]:g} high): "
-                     f"under the next card they need {need:.1f} mm, there are {gap:.2f}; the build uses new BOBs with "
-                     f"the 87180-066LF ({S.val('jack_h'):g} high, RS listing; no Amphenol drawing in hand)")
+        FLAGS.append(f"the BOB-14021s take the Amphenol 87180-066LF jack ({S.val('jack_h'):g} high, RS listing; no "
+                     f"Amphenol drawing in hand), not the 4UCON 14869 ({S.val('jack_4ucon')[2]:g} high): under the next "
+                     f"card that would need {need:.1f} mm, there are {gap:.2f}")
     NOTES.append("glands: " + ", ".join(f"{k} at Xb {x:g}, Yb {y:g}" for x, y, k in cage.GLANDS)
-                 + " (bottom wall); the RJ11 cables leave their plugs toward the lid, come down in front of the "
-                 "stack (beside the EVM leads' service loops) and back over the floor under the pack tray to the glands")
+                 + " (bottom wall); the RJ11 cables leave their plugs toward the lid, cross right in front of the "
+                 "cards to the right column (beside the EVM leads' service loops), down it, and turn left in the cable "
+                 "space under the pack tray to the glands (cage.py CABLE_RISE, cage/shelves-spec.md)")
     ft, fw = S.val("flat_cable")
     diag = (ft ** 2 + fw ** 2) ** 0.5
     for k, bore in zip(("PG-7", "PG-9"), S.val("gland_bore")):
@@ -1027,6 +1106,8 @@ def run():
     check_copper(ph)
     check_bus(ph)
     check_lines(ph)
+    check_keys(ph)
+    check_charger_leads()
     check_hand()
     check_3d()
     check_cage(ph)

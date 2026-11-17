@@ -7,7 +7,7 @@ echo "== schematic: model.py -> KiCad -> ERC + netlist -> checks 1-10 -> PDF"
 sh schematic/run.sh
 echo "== dimension table in README.md"
 python3 sources.py --check
-echo "== layout checks L1-L12 (routing, mechanical table, handedness)"
+echo "== layout checks L1-L13 (routing, mechanical table, handedness, slot keys)"
 python3 layout/layout_checks.py
 echo "== printed base and cage: parts inside the box, the shelves, the STL gate (closed until L1 and the coupon fit)"
 python3 cage/cage.py

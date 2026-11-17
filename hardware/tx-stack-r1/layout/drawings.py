@@ -244,9 +244,15 @@ def top_view(b, ph):
     # edges
     g.text(sx(st.BW / 2), sy(FRONT_Y) + 40, "FRONT EDGE (lid side): the card slides in from here"
            + ("; the RJ11 jacks overhang it, mouths toward the lid" if b in ("B1", "B2") else ""), 14, "middle", weight="bold")
-    g.text(sx(st.BW / 2), sy(st.CD) - 50, "BACK EDGE (snapped, filed flat): header (row J, columns 1-18) plugs into the "
-           "backplane", 13, "middle",
+    g.text(sx(st.BW / 2), sy(st.CD) - 50, f"BACK EDGE (snapped, filed flat): 1x30 header (row J, columns 1-30, pin "
+           f"{model.KEY[b]} pulled: the slot key) plugs into the backplane", 13, "middle",
            weight="bold")
+    kx, ky = hole_s(f"j{model.KEY[b]}")
+    g.add(f'<path d="M{kx - 6:.1f},{ky - 6:.1f} l12,12 M{kx - 6:.1f},{ky + 6:.1f} l12,-12" stroke="#000" stroke-width="2.4"/>')
+    g.text(kx, ky - 12, f"key: pin {model.KEY[b]} pulled", 10, "middle", weight="bold")
+    dot = {"blue": "#1F5FBF", "green": "#2CA02C", "yellow": "#F1C40F", "red": "#D62728"}[model.KEY_COLOUR[b]]
+    g.add(f'<circle cx="{sx(1.5):.1f}" cy="{sy(1.5):.1f}" r="{1.5 * K:.1f}" fill="{dot}" stroke="#000" stroke-width="1"/>')
+    g.text(sx(1.5) + 2 * K, sy(1.5) + 4, f"{model.KEY_COLOUR[b]} dot ({b})", 10, weight="bold")
     g.text(M, 24, f"{b} {st.ROLE[b]}: from above, {K:g} px/mm; SolderFul 81.3 x 50.8 mm with the back rails snapped off: "
            f"{st.BW:g} x {st.CD:.2f} mm [TBD-MEASURE]", 16, weight="bold")
     # legend
@@ -328,9 +334,13 @@ def backplane_view(ph):
                   f'stroke="{"#888" if iso else "#000"}"/>')
         if ref.startswith("XB"):
             n = int(next(iter(pins.values())).split(".")[1])
-            ln = model.HDR_LEN[next(b for b in st.BOARDS if model.SOCKETS[b] == ref)]
+            kb = next(b for b in st.BOARDS if model.SOCKETS[b] == ref)
+            ki, kn = st.BP_KEYS[kb]
+            g.add(f'<rect x="{bx(ki) - 5:.1f}" y="{bz(kn) - 5:.1f}" width="10" height="10" fill="#000" stroke="#000"/>')
+            g.text(bx(ki), bz(kn) - 8, "K", 9, "middle", weight="bold")
+            ln = model.HDR_LEN[kb]
             g.rect(bx(1) - 1.27 * KB, bz(n) - 1.27 * KB, bx(ln) + 1.27 * KB, bz(n) + 1.27 * KB, "none", "#000", 1.4)
-            g.text(bx(st.BP_STRIPS) + 2 * KB, bz(n) + 4, f"{ref}: {note}", 11, weight="bold")
+            g.text(bx(st.BP_STRIPS) + 2 * KB, bz(n) + 4, f"{ref}: {note} ({model.KEY_COLOUR[kb]} dot)", 11, weight="bold")
         elif ref.startswith("W") or ref == "XJ1" or ref in ("R7", "R8"):
             if ref in ("R7", "R8"):
                 (i1, n1), (i2, n2) = [tuple(int(v) for v in h[1:].split(".")) for h in pins.values()]
@@ -359,6 +369,7 @@ def backplane_view(ph):
     y += 25
     for s_ in ("black outline: card socket (generic female strip, every one cut to 1x30, lines 1-30)", "small square: a pin in a hole",
                "white square: a socket contact on an isolated pad (its card pin is spare or card-local: no bus wire)",
+               "black square K: the socket's key plug (a cut-off male pin in that contact, flush; its pad soldered to nothing else)",
                "coloured line: bare bus wire on the copper side, ringed where soldered",
                "purple ring: a lead soldered on the copper side", "white circle: 3.2 mm screw hole (line 0 hole 2, the lower factory hole)",
                "dashed: the mux, behind on foam"):
@@ -486,7 +497,11 @@ def build_list(b, ph):
          f"1. Score both faces along the line between row J and the inner back rail (card Y {st.CD:.2f} mm from the "
          "front edge [TBD-MEASURE]: measure on the card), clamp the card along the line and snap the two back rails off.",
          "2. File the edge flat and square to the front edge; stop at the line (do not open the row J holes).",
-         f"3. Check: the card is {st.CD:.2f} mm deep everywhere; it slides in a test slot without catching.", ""]
+         f"3. Check: the card is {st.CD:.2f} mm deep everywhere; it slides in a test slot without catching.",
+         f"4. Label it: a {model.KEY_COLOUR[b]} paint-pen or sticker dot on the top face at the front edge, near column 1 "
+         f"(the {b} colour; the matching dot goes on the base beside the {b} slot, ASSEMBLY.md). The header's pin "
+         f"{model.KEY[b]} comes out before fitting (the slot key, the header in the parts list below), so {b} seats "
+         "only in its own slot.", ""]
     ws = [(i, x) for i, x in enumerate(route.WIRES) if b in (board_of_end(x[1]), board_of_end(x[2]))]
     under = [(i, x) for i, x in ws if x[3] == "bottom" and board_of_end(x[1]) == board_of_end(x[2]) == b]
     step = 2
@@ -528,6 +543,11 @@ def build_list(b, ph):
             L += ["| Pin | Hole | Line |", "|---|---|---|"] + rows
         if pl["ref"] == "U2":
             L.append("| VBUS, VIN-, VIN+ (header pins 5-7) | pulled out of the header before fitting | battery nodes stay off the card |")
+        if pl["ref"] == model.HEADERS[b]:
+            k = model.KEY[b]
+            L.append(f"| key {k} ({k}) | none: pulled out of the plastic before fitting (grip the pin with pliers, "
+                     f"heat it if it sticks, push it out; hole j{k} stays empty) | the slot key: {b}'s own socket has a "
+                     f"key plug in contact {k}; every other socket's key plug meets one of {b}'s pins |")
         L.append("")
     step += 1
     leads = [(i, x) for i, x in ws if x[0] == "lead" or board_of_end(x[1]) != board_of_end(x[2])]
@@ -574,8 +594,8 @@ def build_list(b, ph):
     for (bb, h), (ref, pin) in lc_ph.items():
         if bb == b and ref != st.model.HEADERS[b] and st.strip_of(h)[0] == "R" and int(st.strip_of(h)[1:]) in spare:
             also[int(st.strip_of(h)[1:])] = f"{ref} {lc.PIN[(ref, pin)][1]}, unused"
-    L.append(f"- The full 1x30 header: J1-J30 all fitted (none pulled). Spare pins (no net on the card; their "
-             f"socket contacts sit on isolated pads): "
+    L.append(f"- The 1x30 header less its key pin: J{model.KEY[b]} pulled (hole j{model.KEY[b]} empty), every other "
+             f"pin fitted. Spare pins (no net on the card; their socket contacts sit on isolated pads): "
              + (", ".join(f"J{n}" + (f" (its strip also holds {also[n]})" if n in also else "") for n in spare) or "none") + ".")
     (OUT_MD / f"{b}.md").write_text("\n".join(L) + "\n")
 
@@ -631,7 +651,8 @@ def backplane_sheet(ph):
          "(160.02 x 100.08 mm, 38 x 62 holes on 0.1 in, a separate plated pad per hole and no strips): its "
          f"{n_lines} rows at the plated end, each the full {st.BP_HOLES} holes. Nothing on it connects unless a wire does: on lines 1-18 a bare bus wire "
          "on the copper side, soldered at every used pad, carries bus line n for every card (every socket is 1x30); lines 19-23 and 26 carry "
-         "B4's power pins (the battery path, its senses and SYS) down to short leads to the charger and the pack. Lines run up and down in "
+         "B4's power pins (the battery path, its senses and SYS) down to short leads to the charger and the pack, and the charger's "
+         "own ground lead (J3 GND, SYS's return) lands on line 12, the bus ground. Lines run up and down in "
          "the box. Component side faces the cards (front); copper faces the back wall.", "",
          "## 1. Cut and drill", "",
          f"1. Take one PAD3U and find its end with the two large plated mounting holes (the other end has two small "
@@ -650,15 +671,32 @@ def backplane_sheet(ph):
          f"({st.BP_OUTLINE[2] - st.strip_x(st.BP_STRIPS):.2f} from line {st.BP_STRIPS}'s) [TBD-MEASURE: the scan cuts "
          f"that end off]. The fit needs it no more than {cage_slot_room():.2f} past line {st.BP_STRIPS}'s centres.",
          "5. Meter two neighbouring pads anywhere: open (the board has no strips).", "",
-         "## 2. Sockets (one per card; pin n on line n)", "", "| Socket | Card | Hole along the lines |", "|---|---|---|"]
+         "## 2. Sockets (one per card; pin n on line n) and their key plugs", "",
+         "| Socket | Card | Hole along the lines | Key plug (line, hole) | Colour dot |", "|---|---|---|---|---|"]
     for ref, pins, note in st.BP_PARTS:
         if ref.startswith("XB"):
-            ln = model.HDR_LEN[next(b for b in st.BOARDS if model.SOCKETS[b] == ref)]
-            L.append(f"| {ref} generic female strip, cut to 1x{ln} | {note} | {next(iter(pins.values())).split('.')[1]} |")
+            kb = next(b for b in st.BOARDS if model.SOCKETS[b] == ref)
+            ln = model.HDR_LEN[kb]
+            ki, kn = st.BP_KEYS[kb]
+            L.append(f"| {ref} generic female strip, cut to 1x{ln} | {note} | {next(iter(pins.values())).split('.')[1]} | "
+                     f"contact {ki}: line {ki}, hole {kn} | {model.KEY_COLOUR[kb]} |")
     L += ["", "Fit each socket square to the board (a card pin bent sideways will not enter); solder one end pin, check, "
-          "then the rest. Every socket is 1x30 (lines 1-30, all 30 of its card's header pins in it). On lines 19-30 only "
+          "then the rest. Every socket is 1x30 (lines 1-30: its card's 29 header pins and, in the 30th contact, the key "
+          "plug below; all 30 tails are soldered, each in its own pad). On lines 19-30 only "
           "B4's contacts on lines 19-23 and 26 meet a bus wire; every other contact there is soldered to its own pad and "
-          "nothing else (an isolated pad): " + isolated_list() + ". Cut each from a longer strip by pulling the contact one past the end and cutting through that empty position (one position lost at each cut); file the cut face flat.", "", "## 3. Pins and parts on the front (QT leads to the mux, the charger's I2C, the sense resistors)", "",
+          "nothing else (an isolated pad): " + isolated_list() + ". Cut each from a longer strip by pulling the contact one past the end and cutting through that empty position (one position lost at each cut); file the cut face flat.", "",
+          "**Key plugs (the slot keys).** The four sockets are identical, so each gets a key plug that only its own card "
+          "clears: " + ", ".join(f"{model.SOCKETS[b]} (for {b}) in contact {model.KEY[b]}" for b in st.ORDER) + ". "
+          "Each card has that same pin pulled from its header (its build sheet); every other card still has it, stubs "
+          "on the plug and cannot seat (B3 in B4's slot would put the battery on the Wio-E5). Make each plug from the "
+          "generic male header stock: pull one pin out of the plastic, push its long end into the socket contact "
+          "from the front until it bottoms, and cut it flush with the socket mouth (file the cut end flat; nothing may "
+          "stand proud of the mouth). The plug is held by the contact's grip alone: never solder it, and nothing else is "
+          "soldered to that contact's pad (it stays an isolated pad: no bus wire, no lead). After fitting, try each "
+          "card in each wrong socket by hand, off the base: it must stop at the mouth.", "",
+          "**Colour dots.** A paint-pen or sticker dot beside each socket on the front face and on the base beside its "
+          "card slot, the same colour as the dot on that card's front edge: " + ", ".join(
+              f"{b} {model.KEY_COLOUR[b]}" for b in st.BOARDS) + ".", "", "## 3. Pins and parts on the front (QT leads to the mux, the charger's I2C, the sense resistors)", "",
           "| Part | Pin | Line, hole | Bus line |", "|---|---|---|---|"]
     for ref, pins, note in st.BP_PARTS:
         if not ref.startswith("XB"):
@@ -676,7 +714,9 @@ def backplane_sheet(ph):
             L.append(f"| {where(a)} | line {i}, hole {n} | {note} |")
         elif kind == "lead" and isinstance(a, tuple) and a[0] == "R7":
             L.append(f"| {where(c)} | R7's free leg (line 24, hole 7) | {note} |")
-    L += ["", "Leave each 60-80 mm with a service loop: the EVM slides out on them.", "",
+    L += ["", "Leave each 60-80 mm with a service loop: the EVM slides out on them. The ground lead (J3 GND to line 12) "
+          "is SYS's return: the regulator's load and the radio's transmit peaks come back on it, not on the I2C lead's "
+          "J8 pin 1; run it beside the SYS lead from J3 and on to line 12 above the mux.", "",
           "## 4. Bus wires (copper side)", "",
           f"Bare 22 AWG solid copper (the Adafruit 1311 hook-up wire on hand, stripped; {S.val('bus_wire'):g} mm). Lay each one straight along its line over the "
           "pads, tack it at the first and last hole, then solder it at every hole listed (each is already holding a "
@@ -727,7 +767,9 @@ def backplane_sheet(ph):
           "- Each bus line to its neighbours: open. Line 2 to line 12: closed (both ground, joined at hole 38).",
           "- 3.3 V supply (line 1) to ground (line 2): open.",
           "- Lines 19-30: each B4 contact on lines 19-23 and 26 beeps to its line's bus wire (19 to 20, 21 to 22); every "
-          "other contact on lines 19-30 (the isolated pads) beeps to nothing: not its line's wire, not its neighbours.",
+          "other contact on lines 19-30 (the isolated pads, the key plugs' included) beeps to nothing: not its line's wire, "
+          "not its neighbours.",
+          "- The charger ground lead's EVM end (J3 GND) beeps to line 12 and line 2.",
           "- Each bus wire: continuity from its first to its last soldered hole."]
     (OUT_MD / "BACKPLANE.md").write_text("\n".join(L) + "\n")
 
@@ -769,21 +811,37 @@ def assembly_sheet():
          "the backplane posts with the iron. Leak-test the bare base (water in the base, or soapy water with the lid on "
          "and a little pressure through the vent hole); coat the inside only if it leaks. Paint or clear-coat the "
          "outside against UV.",
-         "4. Fit the glands in the bottom wall's bosses (six 12.0 mm holes for PG-7s #762, the round port cables; two "
-         "15.5 mm for PG-9s #761, the flat wind and rain cables, right column), the M12 vent, and the SMA bulkhead in "
+         "4. Fit the glands in the bottom wall's bosses (six 12.0 mm holes for PG-7s #762: the four sensor-port cables "
+         "S1-S4, the solar lead and a spare, blanked; two 15.5 mm for PG-9s #761, the flat wind and rain cables, right column), "
+         "the M12 vent, and the SMA bulkhead in "
          "the right wall's boss. Fit the backplane (its build sheet, section 6): its factory right edge tilted into the "
          "right corner post's slot, lowered and slid left into the left wall's groove, two M3 screws; it comes off again only after "
          "every card is out.",
          "5. Shelves bottom to top: the pack on its tray (strap); the EVM (Bumpon feet peeled off) slid back on its "
          "ledges to the stop, clip at the front, leads with service loops; then the cards.",
-         "6. Cables: each round port cable through its PG-7, cap tightened. Each flat weather-meter cable through a PG-9 "
-         "with its seal out. Seal after the final cable position is set (silicone or a split grommet in the gap); the "
-         "cable is then not removable without cutting the seal. Inside, a service loop in the space in front of the "
-         "cards; outside, a drip loop below each gland before the cable is tied to the pole.",
+         f"6. Cables. A 6P plug ({S.val('plug_6p')[0]:g} x {S.val('plug_6p')[1]:g} mm, "
+         f"{math.hypot(S.val('plug_6p')[0], S.val('plug_6p')[1]):.1f} across its corners, "
+         f"{math.hypot(S.val('plug_6p')[0], S.val('plug_6p')[2]):.1f} with the latch) passes no gland: the PG-7 bore is "
+         f"{S.val('gland_bore')[0]:g} and the PG-9's {S.val('gland_bore')[1]:g} even with the seal out. So every cable "
+         "goes through its gland with no plug on its inside end, and that plug is crimped after, inside the box (Clint's "
+         "6P crimp plugs; a 6P (RJ11/RJ12) crimp tool is needed). Round port cables: slide the cap, the seal and the "
+         "body's bore over the bare end from outside, pull the length through, crimp the plug (same pin order as the "
+         "module end: 2 3.3 V, 3 data, 4 ground, 5 clock), tighten the cap. The weather meters' flat cables come with "
+         "their plugs fitted: note which colour sits at which plug position (wind 2-5, rain 3-4), cut the plug off "
+         "outside the box, pass the cable in through the PG-9 with its seal out, crimp a new plug in the same order, then "
+         "seal the gap (silicone or a split grommet) once the cable's position is final; the cable then comes out only "
+         "by cutting the seal (and the plug). Check that the crimp plugs hold the meters' narrower flat cable with each "
+         "conductor on its position (otherwise use 6P4C plugs). Inside, a service loop in the space in front of the "
+         "cards; outside, a drip loop below each gland before the cable is tied to the pole. Each cable runs from its "
+         "plug to the right column, down it and left under the pack tray to its gland (cage/shelves-spec.md).",
          "7. The coax: AD1 on the mini's SMA, its arm toward the lid; the 135110 plug on it, the cable bent right in "
          "front of the cards to the bulkhead; clip it to the right corner post at the bend.",
          "8. Mount: hose clamps or U-bolts through the two pole lugs on the back; the lid on with its four screws.", "",
          f"## 3. Cards, bottom to top: {order}", "",
+         "**Labels (the slot key's colour code):** a dot on each card's front edge and the same colour beside its slot "
+         "on the base and beside its socket on the backplane: " + ", ".join(f"{b} {model.KEY_COLOUR[b]}" for b in st.BOARDS)
+         + ". Match the dots. The key plugs (BACKPLANE.md section 2) make a wrong card stop at the socket mouth: if a "
+         "card will not go the last few millimetres, it is in the wrong slot; never force it.", "",
          "Every card has its back rails snapped off and the edge filed flat first (step 1 of its build sheet). "
          "Each card slides in from the lid side along its left-wall slot and right-post slot until its header pins "
          f"enter the socket ({S.val('insertion'):g} mm; the header insulator meets the socket "
@@ -801,7 +859,7 @@ def assembly_sheet():
             L.append(f"| {where(a)} | {where(c)} | {ln} | {note} |")
     L += ["| EVM J8 (KK 4-pin housing, pins 1-3) | backplane charger pins | 150 mm | charger I2C: ground, clock, data |",
           "| mux channel 0-3 (QT) | backplane QT lead pins | 150 mm (Adafruit #4209) | sensor ports S1-S4 |", "",
-          f"Battery leads: 24 AWG stranded (red +, black -), soldered at the backplane and screwed at the EVM (about {S.val('wire24')[2] * 0.1:.1f} mV drop per 0.1 m at 1 A, {S.val('wire24')[2]:g} mohm/m); the charger sense lead from R7: 24 AWG stranded. The battery current reaches B4 only on doubled header pins (19-20, 21-22; layout check L4); no lead goes to a card (L10). Leave 60-80 mm service loops on the jack cables and the solar lead "
+          f"Battery leads: 24 AWG stranded (red +, black -), soldered at the backplane and screwed at the EVM (about {S.val('wire24')[2] * 0.1:.1f} mV drop per 0.1 m at 1 A, {S.val('wire24')[2]:g} mohm/m); the charger sense lead from R7: 24 AWG stranded. SYS (J3 SYS to line 26) and its return (J3 GND to line 12, black) are a pair of 24 AWG stranded leads of the same length, run side by side: the 3.3 V regulator's load and the radio's transmit peaks return on that ground lead, not through the I2C lead's J8 pin 1. The battery current reaches B4 only on doubled header pins (19-20, 21-22; layout check L4); no lead goes to a card (L10). Leave 60-80 mm service loops on the jack cables and the solar lead "
           "inside the box, with a drip loop below each gland outside.", "",
           "## 5. Before the first power", "",
           "- Charger jumpers as in step 1; the pack disconnected; JP17 out.",

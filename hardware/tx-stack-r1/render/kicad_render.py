@@ -584,8 +584,10 @@ def assembly_boxes(explode=0.0, section=False):
             out += [("socket", st.Box(xa, y0, xb, y1, z - p / 2, z - 0.5, f"socket {b} lower wall")),
                     ("socket", st.Box(xa, y0, xb, y1, z + 0.5, z + p / 2, f"socket {b} upper wall")),
                     ("socket", st.Box(xa, y0, xb, y0 + 1.0, z - 0.5, z + 0.5, f"socket {b} floor"))]
-            for i in st.model.hdr_pins(b):               # contacts and tails through the board to the bus wire
+            for i in st.model.socket_pins(b):            # contacts and tails through the board to the bus wire
                 x = st.strip_x(i)
+                if i == st.model.KEY[b]:                   # the key plug: a cut-off pin in the contact, flush with the mouth
+                    out.append(("contact", st.Box(x - 0.32, y0 + 1.0, x + 0.32, y1, z - 0.32, z + 0.32, "key plug")))
                 out.append(("contact", st.Box(x - 0.3, y0 + 1.0, x + 0.3, y1 - 0.8, z - 0.5, z - 0.25, "contact")))
                 out.append(("contact", st.Box(x - 0.3, y0 + 1.0, x + 0.3, y1 - 0.8, z + 0.25, z + 0.5, "contact")))
                 out.append(("contact", st.Box(x - 0.32, st.BP_BACK - 1.5, x + 0.32, y0 + 1.0, z - 0.32, z + 0.32, "tail")))

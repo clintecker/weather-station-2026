@@ -259,7 +259,10 @@ BUS_ROW_END = {"B3": ("f", "f"), "B4": ("f", "f")}
 for b in BOARDS:
     PLACE[b].append(ra_header(model.HEADERS[b], model.HDR_LEN[b], "j1", "back", pulled=model.PULLED.get(b, ()),
                               note="bus header, mating pins toward the backplane"
-                                   + ("; pins 19-23 and 26 are B4's power pins" if b == "B4" else "")))
+                                   + ("; pins 19-23 and 26 are B4's power pins" if b == "B4" else "")
+                                   + f"; pin {model.KEY[b]} pulled out of the plastic before fitting (the slot key: "
+                                     f"{b}'s own socket has a key plug in that contact; every other card keeps that pin "
+                                     "and stubs on the plug)"))
     # the bus 3.3 V and both bus grounds to the front rails, on the underside; BUS_ROW_END: where a card's
     # first two bus wires leave their strips (B3 and B4 straight up from row F: rows G-I of columns 1-2 are boxed in)
     r3, r0 = BUS_ROW_END.get(b, ("i", "i"))
@@ -350,7 +353,11 @@ w("wire", f"B2:e{J21_C + 4}", f"B2:d{bus_row('VANE')}", note="wind jack vane (co
 
 # B3: CORE
 PLACE["B3"].append(mini("A1", 19, "on its own header; its D pins in row C, its B pins in row H, columns 19-30; SMA past the right edge"))
-PLACE["B3"].append(ra_header("J3", 5, "a12", "front", "RAS", "SWD, right angle, pins out over the front edge"))
+PLACE["B3"].append(ra_header("J3", 5, "a12", "front", "RAS",
+                             "SWD, a generic right-angle male header cut to 1x5 (the bus header stock), soldered in row a "
+                             "columns 12-16, its mating pins lying flat toward the front edge: they end at card Y "
+                             f"{LETTER_Y['a'] - RA_TIP:.2f}, {LETTER_Y['a'] - RA_TIP:.2f} mm short of the edge (over the "
+                             "front rails), and the ST-LINK Dupont housings push on there past the edge, lid open"))
 PLACE["B3"].append(breakout("U5", "SHTC3", S.val("shtc3"), ["VIN", "3V", "GND", "SCL", "SDA"], 7.62, 180, "c8",
                             [Box(20.5, 5.9, 25.4, 11.9, HDR + PCB, HDR + PCB + S.val("qt_h"), "QT socket"),
                              Box(0, 5.9, 4.9, 11.9, HDR + PCB, HDR + PCB + S.val("qt_h"), "QT socket")],
@@ -441,7 +448,7 @@ BP_BACK = FLOOR_LIFT + S.val("cage_plate") + S.val("bp_posts")   # backplane cop
 BP_FRONT = BP_BACK + S.val("strip_size")[2]        # component face (sockets), Yb
 CARD_DY = BP_FRONT - Y_BP                          # Yb = CARD_DY + (Y_BP - Y) ... see card_to_box
 PITCH = {("B4", "B2"): 6, ("B2", "B1"): 8, ("B1", "B3"): 8}   # in backplane holes (2.54 mm); B4-B2 6 again (8 was for a WAGO junction on B4, since
-#   moved to the backplane; enclosure 2 prints the card slots at these heights)
+#   moved to the backplane; enclosure 3, as printed, has its card slots at these heights: audited 2026-11-16, sheets/audit-enc3)
 SOCKET_HOLE = {"B4": 13}                           # the mux sits behind holes 1-10, below the cards
 BP_Z0 = S.val("power_zone") - (SOCKET_HOLE["B4"] - 1) * P   # first backplane hole, Zb
 for lo, hi in PITCH:
@@ -495,8 +502,8 @@ def bp_xy(h):
 
 BP_PARTS = []   # (ref, {pin: hole}, note)
 for b in BOARDS:
-    BP_PARTS.append((model.SOCKETS[b], {str(i): f"s{i}.{SOCKET_HOLE[b]}" for i in model.hdr_pins(b)},
-                     f"socket for {b} ({ROLE[b]})"))
+    BP_PARTS.append((model.SOCKETS[b], {str(i): f"s{i}.{SOCKET_HOLE[b]}" for i in model.socket_pins(b)},
+                     f"socket for {b} ({ROLE[b]}); key plug in contact {model.KEY[b]}"))
 _free = SOCKET_HOLE["B2"] + 2          # QT lead pins between the B2 and B1 sockets, above B2's header
 for k in range(1, 5):
     BP_PARTS.append((f"W{k}", {"H.GND": f"s{bus_row('GND', 1)}.{_free + k - 1}",
@@ -520,6 +527,10 @@ w("wire", "BP:s21.5", "BP:s22.5", "copper", "lines 21 and 22 joined (battery + j
 w("lead", ("PG1", "L+"), "BP:s21.6", "copper", "pack + (pigtail) to the junction, 24 AWG stranded, red with a black band")
 w("lead", ("U1", "BAT"), "BP:s19.6", "copper", "charger battery + (J5 BATTERY) to lines 19-20, 24 AWG stranded, red with a black band")
 w("lead", ("U1", "SYS"), "BP:s26.6", "copper", "charger system output (J3 SYS) to line 26 (B4 pin 26, the regulator in), 24 AWG stranded, red with a black band")
+#   SYS's return: its own lead from J3 GND to the bus ground (line 12, the nearer ground line to line 26; hole 11, just
+#   above the mux), so the regulator's load and the LoRa TX peaks do not return through the I2C lead's J8 pin 1
+GND_LEAD = "BP:s12.11"
+w("lead", ("U1", "SYSN"), GND_LEAD, "copper", "charger system ground (J3 GND) to line 12 (the bus ground, SYS's return), 24 AWG stranded, black")
 w("lead", ("R7", "2"), ("U1", "BATP"), "copper", "charger battery sense (J5 SNS_BATP) from R7's free leg, 24 AWG stranded, white with a red band")
 BP_BUS = []          # (line, [holes the tinned bus wire is soldered at]): the used pads of the line's own net
 _used = {}
@@ -533,8 +544,9 @@ for _k, _a, _c, _s, _n in WIRES:
             _i, _m = (int(v) for v in _e[4:].split("."))
             _used.setdefault(_i, set()).add(_m)
 # a socket contact whose card pin is not on the line's net (model.pin_net) is an isolated pad: no bus wire there
-BP_ISOLATED = {(i, SOCKET_HOLE[b]) for b in BOARDS for i in model.hdr_pins(b)
-               if model.pin_net(b, i) is None or model.pin_net(b, i) != model.line_net(i)}
+BP_ISOLATED = {(i, SOCKET_HOLE[b]) for b in BOARDS for i in model.socket_pins(b)
+               if i not in model.hdr_pins(b) or model.pin_net(b, i) is None or model.pin_net(b, i) != model.line_net(i)}
+BP_KEYS = {b: (model.KEY[b], SOCKET_HOLE[b]) for b in BOARDS}   # (line, hole) of each socket's key plug
 for _i in range(1, BP_STRIPS + 1):
     _on = sorted(n for n in _used.get(_i, ()) if (_i, n) not in BP_ISOLATED)
     if model.line_net(_i) and (_i <= 18 or len(_on) > 1):   # a lone pad (R7's free leg on line 24) takes no bus wire

@@ -1,5 +1,19 @@
 # TX protoboard card cage (r3): design
 
+> **Superseded in r3 (2026-11-16).** The build in `hardware/tx-stack-r1/` (its README, `schematic/model.py`,
+> `layout/stack.py` and `build/*.md`) is the source of truth; this spec is kept as written and differs from it here:
+> - **No battery lug E1 on B4.** The battery + junction is on the backplane, lines 21-22 joined; R7 (charger
+>   sense) and R8 (gauge sense) lie on the backplane at that junction. B4 meets the battery path only through its
+>   header's doubled pins 19-20 and 21-22 (gauge sense on 23, SYS on 26). The Keystone 7328 lug is not used.
+> - **No printed spacers or flying leads for the jacks.** Each BOB-14021 stands on its own soldered 1x6 male header
+>   in row a of its card (contact n in its own column and strip), overhanging the front edge, mouth toward the lid
+>   (not the right wall); the back jack's tongue and the right post's cut are gone.
+> - **Slot keys:** each card pulls one spare header pin (B1 27, B2 28, B3 29, B4 30) and its own socket has a key
+>   plug there; colour dots B1 blue, B2 green, B3 yellow, B4 red.
+> - **Charger ground lead:** EVM J3 GND to backplane line 12, beside the SYS lead.
+> - The header is the generic right-angle 1x30 (drawn as the Sullins PRPC); its pins stand 7.32 mm past the edge
+>   and 4.96 mm of the 5.8 mm mating pin goes in (at least 4.16 with the card 0.8 mm short).
+
 Status: r3, 2026-11-10 (r2 after the electrical and mechanical reviews of r1, 2026-11-09; r3 snaps the cards'
 back rails off, moves the backplane to a PAD3U padboard, routes every wire, and takes the box from the maker's
 catalogue). The generated design, its checks,

@@ -59,7 +59,7 @@ D = {
     "jack_w": (13.2, "87180 / 54601 jack body width", KRJ + "; RS 771-0215 listing 13.2", "sourced"),
     "jack_d": (18.0, "jack body depth (peg line + 7.88 to the mouth)", KRJ + ": fab -1.23..16.77; RS 18 mm", "sourced"),
     "jack_h": (11.5, "jack body height above the BOB", "RS Components 771-0215 (87180-066LF) listing, 11.5 x 13.2 x 18 mm; test-fit one jack (" + DOC + ")", "sourced"),
-    "jack_4ucon": ((13.34, 20.57, 15.70), "4UCON 14869 jack (on Clint's two existing BOB-14021s): width x length x height (15.00 to the shoulder); pins 1.27 stagger, 6.35 outer, rows 2.54 apart, 8.89 from the pegs; pegs 3.20 at 10.16; tails 4.30", UC + " (SparkFun's STEP is an outdated version: community.sparkfun.com/t/44748)", "sourced"),
+    "jack_4ucon": ((13.34, 20.57, 15.70), "4UCON 14869 jack (SparkFun PRT-00132; not used, too tall under the next card: L9): width x length x height (15.00 to the shoulder); pins 1.27 stagger, 6.35 outer, rows 2.54 apart, 8.89 from the pegs; pegs 3.20 at 10.16; tails 4.30", UC + " (SparkFun's STEP is an outdated version: community.sparkfun.com/t/44748)", "sourced"),
     "hdr_plastic": (2.5, "male header plastic (board to breakout)", "standard 0.1 in header; bench r1 kicad_layout.py SEAT_Z", "sourced"),
     "breakout_t": (1.6, "breakout PCB thickness (Adafruit, SparkFun, Seeed)", "Eagle files: 1.6 mm default stack; not stated", "TBD"),
     # ---------------------------------------------------------------- PCA9548 #5626
@@ -125,7 +125,7 @@ D = {
     "bp_posts": (8.0, "backplane copper face off the base's floor (the mux on its foam and the socket tails behind it, 2 mm clear)", "mux 4.8 + foam 1 + 2 = 7.8", "derived"),
     "cage_plate": (0.0, "cage base plate: none (the printed base's floor carries the cage)", "layout choice", "derived"),
     "cage_wall": (8.5, "cage left wall thickness; card slots 2 mm deep", "layout choice: the cards' left edge clears the base's 6 mm rim lip (the full 9 mm land less the 3 mm wall) by 0.5 mm as they slide out", "derived"),
-    "slot_clear": (0.3, "card slot width over the 1.6 mm card (print tuning)", "Bambu H2D PLA first-print allowance; tune on a test slot", "TBD"),
+    "slot_clear": (0.3, "card slot width over the 1.6 mm card (print tuning)", "Bambu H2D first-print allowance (the base is PETG); tune on a test slot", "TBD"),
     "bar": (2.5, "retention bar thickness in front of the card front edges", "layout choice", "derived"),
     "tails": (1.5, "solder tails and bottom-side wires below a card", "typical; measure after the first card", "TBD"),
     "clear": (0.5, "minimum clearance kept between parts", "layout rule", "derived"),

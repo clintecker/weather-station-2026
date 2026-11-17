@@ -9,8 +9,9 @@ Reads model.py and KiCad's netlist export of tx-stack-r1.kicad_sch, then checks:
     the addresses match the firmware (i2c_bus.h I2C_MUX_ADDR, power_config.h); the upstream pull-ups stay
     >= 0.97 kohm;
   4 every I2C port's 3V3 (jack pin 2) comes only through its own MF-R010, whose other leg is on +3V3;
-  5 no battery-current path through a header, a socket or a breadboard contact: every member of a battery
-    net is a soldered lead, an EVM terminal or the pack's own JST PH mating; the series chain pack +
+  5 the battery current crosses a header and its socket only on two pins or more of each (B4's doubled pins
+    19-20 and 21-22, model.B4_POWER), never on one, and never through any other contact: every other member of
+    a battery net is a soldered lead, an EVM terminal or the pack's own JST PH mating; the series chain pack +
     -> pigtail -> INA228 shunt -> EVM BAT and pack - -> EVM BAT- exists; BATP and the gauge sense are on the
     pack side of the shunt;
   6 the RJ11 pin maps: I2C ports 2 3V3, 3 SDA, 4 GND, 5 SCL; wind 2 GND, 3 GND, 4 CUPS, 5 VANE; rain

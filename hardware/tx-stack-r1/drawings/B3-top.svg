@@ -526,7 +526,6 @@
 <rect x="672.4" y="209.4" width="7" height="7" fill="#8E44AD" stroke="#000" stroke-width="1"/>
 <rect x="695.2" y="209.4" width="7" height="7" fill="#fff" stroke="#000" stroke-width="1"/>
 <rect x="718.1" y="209.4" width="7" height="7" fill="#fff" stroke="#000" stroke-width="1"/>
-<rect x="741.0" y="209.4" width="7" height="7" fill="#fff" stroke="#000" stroke-width="1"/>
 <rect x="763.8" y="209.4" width="7" height="7" fill="#fff" stroke="#000" stroke-width="1"/>
 <rect x="370.1" y="235.8" width="449.7" height="206.9" fill="#1A1A1A" fill-opacity="0.22" stroke="#1A1A1A" stroke-width="1.2"/>
 <rect x="621.3" y="284.6" width="108.0" height="108.0" fill="#1A1A1A" fill-opacity="0.22" stroke="#1A1A1A" stroke-width="1.2"/>
@@ -558,7 +557,7 @@
 <rect x="512.4" y="415.1" width="7" height="7" fill="#1A1A1A" stroke="#000" stroke-width="1"/>
 <rect x="344.4" y="478.0" width="114.3" height="22.9" fill="#202020" fill-opacity="0.22" stroke="#202020" stroke-width="1.2"/>
 <rect x="344.4" y="553.1" width="114.3" height="126.0" fill="none" fill-opacity="1.0" stroke="#555" stroke-width="0.8" stroke-dasharray="3 3"/>
-<text x="401.6" y="510.9" font-size="11" text-anchor="middle" fill="#000" font-weight="bold">J3 SWD 1x5</text>
+<text x="401.6" y="510.9" font-size="11" text-anchor="middle" fill="#000" font-weight="bold">J3 SWD 1x5 R/A</text>
 <rect x="352.3" y="460.8" width="7" height="7" fill="#D62728" stroke="#000" stroke-width="1"/>
 <rect x="375.2" y="460.8" width="7" height="7" fill="#7F8C8D" stroke="#000" stroke-width="1"/>
 <rect x="398.1" y="460.8" width="7" height="7" fill="#7F8C8D" stroke="#000" stroke-width="1"/>
@@ -593,7 +592,11 @@
 <polyline points="607.3,304.3 607.3,315.7 607.3,327.2 607.3,338.6 607.3,350.0 595.9,350.0 584.4,350.0 573.0,350.0 561.6,350.0 550.2,350.0 538.7,350.0 527.3,350.0 515.9,350.0 504.4,350.0 493.0,350.0 481.6,350.0 470.1,350.0 458.7,350.0 447.3,350.0 435.8,350.0 424.4,350.0 424.4,361.4 424.4,372.9 424.4,384.3 424.4,395.7 424.4,407.2 424.4,418.6 424.4,430.0 424.4,441.5" fill="none" stroke="#7F8C8D" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 3" opacity="0.9"/>
 <polyline points="470.1,510.0 470.1,498.6 470.1,487.2 470.1,475.7 470.1,464.3 470.1,452.9 458.7,452.9 458.7,441.5 447.3,441.5" fill="none" stroke="#1A1A1A" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 3" opacity="0.9"/>
 <text x="435.8" y="607.2" font-size="14" text-anchor="middle" fill="#222" font-weight="bold">FRONT EDGE (lid side): the card slides in from here</text>
-<text x="435.8" y="140.0" font-size="13" text-anchor="middle" fill="#222" font-weight="bold">BACK EDGE (snapped, filed flat): header (row J, columns 1-18) plugs into the backplane</text>
+<text x="435.8" y="140.0" font-size="13" text-anchor="middle" fill="#222" font-weight="bold">BACK EDGE (snapped, filed flat): 1x30 header (row J, columns 1-30, pin 29 pulled: the slot key) plugs into the backplane</text>
+<path d="M738.5,206.9 l12,12 M738.5,218.9 l12,-12" stroke="#000" stroke-width="2.4"/>
+<text x="744.5" y="200.9" font-size="10" text-anchor="middle" fill="#222" font-weight="bold">key: pin 29 pulled</text>
+<circle cx="83.5" cy="553.7" r="13.5" fill="#F1C40F" stroke="#000" stroke-width="1"/>
+<text x="101.5" y="557.7" font-size="10" text-anchor="start" fill="#222" font-weight="bold">yellow dot (B3)</text>
 <text x="70.0" y="24.0" font-size="16" text-anchor="start" fill="#222" font-weight="bold">B3 CORE: from above, 9 px/mm; SolderFul 81.3 x 50.8 mm with the back rails snapped off: 81.3 x 41.91 mm [TBD-MEASURE]</text>
 <text x="1066.7" y="180.0" font-size="13" text-anchor="start" fill="#222" font-weight="bold">Lines on this card</text>
 <rect x="1066.6999999999998" y="188.0" width="22" height="11" fill="#D62728" fill-opacity="0.7"/>

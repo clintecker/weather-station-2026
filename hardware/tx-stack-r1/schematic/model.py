@@ -92,7 +92,15 @@ B4_POWER = {19: "BAT_P", 20: "BAT_P", 21: "CELL_P", 22: "CELL_P", 23: "GAUGE_S",
 CARD_LOCAL = {"B3": {20: "+3V3", 21: "SWDIO", 22: "SWCLK", 23: "NRST", 24: "GND", 26: "MUX_RST"},
               "B4": {24: "+3V3", 25: "GND"}}
 HDR_LEN = {"B1": 30, "B2": 30, "B3": 30, "B4": 30}
-PULLED = {}
+# Slot keys (Clint, 2026-11-16): the four sockets are identical, so without a key any card would seat in any slot
+# (B3 in B4's would put the battery on the Wio-E5). Lines 27-30 carry nothing on any card (no BUS, B4_POWER or
+# CARD_LOCAL pin there), so each card pulls one of them out of its header, and its own backplane socket takes a key
+# plug in that same position: a male pin cut off the generic header stock, pushed into that socket contact, flush
+# with the mouth, soldered to nothing (the contact's pad stays isolated). Every other card still has that pin, so it
+# stubs on the plug and cannot seat. KEY_COLOUR: the dot on each card's front edge and on its slot.
+PULLED = {"B1": (27,), "B2": (28,), "B3": (29,), "B4": (30,)}
+KEY = {c: p[0] for c, p in PULLED.items()}          # the socket position holding the key plug, per card's socket
+KEY_COLOUR = {"B1": "blue", "B2": "green", "B3": "yellow", "B4": "red"}
 
 
 def line_net(i):
@@ -113,6 +121,11 @@ def hdr_pins(card):
     return [i for i in range(1, HDR_LEN[card] + 1) if i not in PULLED.get(card, ())]
 
 
+def socket_pins(card):
+    """Every contact of the card's 1x30 backplane socket, the key plug's included (it is soldered like the rest)."""
+    return list(range(1, HDR_LEN[card] + 1))
+
+
 def _pname(card, i):
     if i <= len(BUS):
         return f"bus {i}"
@@ -125,15 +138,16 @@ def _pname(card, i):
 def card_header(card):
     n = HDR_LEN[card]
     return dict(ref=f"XH{card[1]}", value=f"bus header 1x{n} R/A", block="bus", card=card,
-                part=f"generic 2.54 mm right-angle male header, cut to 1x{n}, card back edge",
+                part=f"generic 2.54 mm right-angle male header, cut to 1x{n}, card back edge; pin {KEY[card]} pulled (slot key)",
                 pins=[(str(i), _pname(card, i), PAS, "header" if pin_net(card, i) else "nc") for i in hdr_pins(card)])
 
 
 def bp_socket(card):
     n = HDR_LEN[card]
     return dict(ref=f"XB{card[1]}", value=f"bus socket 1x{n}", block="bus", card="BP",
-                part=f"generic 2.54 mm female header strip, cut to 1x{n} (one position lost at each cut), on the backplane", mates=card,
-                pins=[(str(i), _pname(card, i), PAS, "socket" if pin_net(card, i) else "nc") for i in hdr_pins(card)])
+                part=f"generic 2.54 mm female header strip, cut to 1x{n} (one position lost at each cut), on the backplane; key plug in contact {KEY[card]}", mates=card,
+                pins=[(str(i), f"key plug {i}" if i == KEY.get(card) else _pname(card, i), PAS,
+                       "socket" if pin_net(card, i) and i in hdr_pins(card) else "nc") for i in socket_pins(card)])
 
 
 PARTS = [
@@ -196,7 +210,7 @@ PARTS = [
     dict(ref="A1", value="Wio-E5 mini TX", part="Seeed Wio-E5 mini (113990939), STM32WLE5JC", block="radio",
          card="B3", pins=mini_pins(), i2c=[], pullups_k=4.7,
          note="4.7 kohm I2C pull-ups R15/R16 on board; 3.3 V fed in on its 3V3 pad; USB-C = console"),
-    dict(ref="J3", value="SWD 1x5", part="0.1 in vertical male header (ST-LINK leads, Adafruit 266)",
+    dict(ref="J3", value="SWD 1x5 R/A", part="generic 2.54 mm right-angle male header (the bus header stock), cut to 1x5; ST-LINK Dupont leads",
          block="radio", card="B3",
          pins=[("1", "3.3 V", PAS, "header"), ("2", "SWDIO", PAS, "header"), ("3", "SWCLK", PAS, "header"),
                ("4", "NRST", PAS, "header"), ("5", "ground", PAS, "header")]),

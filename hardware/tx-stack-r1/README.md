@@ -3,20 +3,23 @@
 The transmitter is four SolderFul SOLDERBREAD#02 cards, each with its two back rails snapped off (81.3 x 41.91 mm
 `[TBD-MEASURE]`), the BQ25798EVM and the battery pack, all horizontal shelves in one stack inside a printed PETG
 base (100 mm deep, 3 mm walls) under the original Adafruit #905 clear lid and its O-ring. The base hangs on its pole
-by its back, long side vertical; inside 124 x 169, 120 deep with the lid closed. Every shelf slides toward the back.
+by its back, long side vertical; inside 123.5 x 169.5, 120 deep with the lid closed. Every shelf slides toward the back.
 The lid interface is from Clint's photos: a 9 mm rim (3 mm wall, 3 mm O-ring channel, 3 mm wall), the channel
 curving in round 22 x 21 mm corner bosses, the screws 10 mm in from the outside edges, the O-ring 2 mm down in its
-channel. The base copies it with a 9 mm land, a 2 x 3 mm sealing lip on the channel's centre line like the
-original base's (about 1 mm squeeze on an assumed round 3 mm cord), and corner posts with M4 heat-set inserts for
+channel. The base copies it with a 9 mm land, a 2 mm wide sealing lip on the channel's centre line (its height is
+not settled: see Open questions, L6), and corner posts with M4 heat-set inserts for
 M4 stainless screws on 12 mm washers through the lid's 8 mm holes. The rim follows `cage/lid-rim-spec.md`,
 measured off Clint's 300 dpi lid scans (2026-11-11). A whole-rim test ring (`cage/stl/rim-ring.stl`, `cage.py
 --ring`, not gated) checks the lip, all four S-curves and the four holes on the real lid first; `cage/cage.py --stl`
 refuses the full base until the ring fits and the screws (L1) are settled. The corner coupons r1-r8 and the two edge
 strips are history (their STLs and renders stay in `cage/stl/` and `renders/`; the code that made them is in git up to
-c5e3281). Each card carries a right-angle 18-pin header
+c5e3281). Each card carries a right-angle 1x30 header
 on its back edge, its mating pins out past the snapped edge, that plugs into a socket on a PAD3U padboard
-backplane, so any card slides out toward the lid on its own. Battery current never passes through the backplane, a
-strip, a header or a socket.
+backplane, so any card slides out toward the lid on its own. Each card has one spare pin pulled (B1 27, B2 28, B3 29,
+B4 30) and its own socket a key plug in that contact, so a card seats only in its own slot (a colour dot on each card
+and slot: B1 blue, B2 green, B3 yellow, B4 red). The battery current crosses a header and its socket only on B4's
+doubled pins (19-20 and 21-22, about 0.5 A a contact at 1 A, layout check L4 and schematic check 5); everywhere else
+it runs in soldered leads, and it touches no card strip but those pins' own.
 
 | Card (bottom to top) | Role | What it carries |
 |---|---|---|
@@ -24,15 +27,15 @@ strip, a header or a socket.
 | B2 | PORTS B + METERS | Sensor port 4 and the wind and rain jacks, with the meter pull-ups, filters, clamps and 1 k series resistors. |
 | B1 | PORTS A | Sensor ports 1-3: each a jack breakout, an MF-R010 fuse, 100 ohm series resistors and BAT85S / 1N5232B clamps. |
 | B3 | CORE | The Wio-E5 mini on its header, the enclosure air sensor SHTC3 (0x70) and a right-angle SWD header at the front edge. |
-| backplane | bus | BusBoard PAD3U padboard (a pad per hole, no strips) its plated end, 31 rows (lines 0-30) x 38 holes, factory edges right, top and bottom; a bare bus wire on the copper side carries each of the 18 lines and B4's six power lines; the battery + junction (lines 21-22) with R7 and R8, short leads to the EVM and the pack; four generic female sockets, every one 1x30 (on lines 19-30 only B4's power contacts meet a bus wire; the rest sit on isolated pads), the PCA9548 mux (0x71) behind it on foam, the four QT leads to the ports and the charger I2C pins. |
+| backplane | bus | BusBoard PAD3U padboard (a pad per hole, no strips) its plated end, 31 rows (lines 0-30) x 38 holes, factory edges right, top and bottom; a bare bus wire on the copper side carries each of the 18 lines and B4's six power lines; the battery + junction (lines 21-22) with R7 and R8, short leads to the EVM and the pack, and the charger's own ground lead (J3 GND to line 12); four generic female sockets, every one 1x30 with a key plug in its card's pulled position (on lines 19-30 only B4's power contacts meet a bus wire; the rest, the key plugs' contacts included, sit on isolated pads), the PCA9548 mux (0x71) behind it on foam, the four QT leads to the ports and the charger I2C pins. |
 | shelves below the cards | power | The battery pack (lowest, the heaviest part) on a moulded tray, then the BQ25798EVM (90 x 90, J8 toward the lid) on two moulded ledges; on short leads to the backplane's lower end, never to a card. |
 
-The bus header is a generic 2.54 mm right-angle male header cut to the full 1x30 on every card (rows 1-30 of column j; pin n on backplane line n) (drawn as the Sullins PRPC drawing; its
+The bus header is a generic 2.54 mm right-angle male header cut to 1x30 on every card (rows 1-30 of column j; pin n on backplane line n; the card's key pin pulled) (drawn as the Sullins PRPC drawing; its
 mating pin 5.8 nominal, `[TBD-MEASURE]`) into a generic female strip cut to the same length (one position lost at each cut) on the backplane. The card ends at
-the snap line (card Y 41.91 `[TBD-MEASURE]`); the header insulator ends at 43.43, its mating pins at 49.27 (7.36
+the snap line (card Y 41.91 `[TBD-MEASURE]`); the header insulator ends at 43.43, its mating pins at 49.23 (7.32
 past the edge); the socket mouth is at 44.27, 2.36 mm clear of the card and 0.84 mm clear of the insulator (the
-depth stop); 5.00 mm of the 5.84 mm mating pin goes in, and the card's edge sits 10.86 mm from the backplane. All
-checked in L5.
+depth stop); 4.96 mm of the 5.8 mm mating pin goes in (at least 4.16 with the card 0.8 mm short), and the card's
+edge sits 10.86 mm from the backplane. All checked in L5; the keys in L13.
 
 Everything here is generated from four sources:
 
@@ -57,9 +60,9 @@ Everything here is generated from four sources:
 | `schematic/blockdiag.py` → `drawings/block-diagram.svg` | One-page block diagram with real part numbers. |
 | `layout/stack.py` | Card geometry (hole grid, strips, rails), footprints from each maker's board file, the placements, every conductor, the backplane and the joint card → socket. |
 | `layout/route.py` | Routes every wire, jumper and lead on its card: flat, on a 1.27 mm grid, right-angle runs, every part footprint an obstacle; the cut lengths come from the routes. |
-| `layout/layout_checks.py` | Layout checks L1-L12 (below; L12 the handedness: the box frame is left-handed, Xb left to right seen from the lid, lid-centre Y = 61.75 - Xb, so each card goes in as a real card); `--write` rewrites the mechanical table in this README. |
+| `layout/layout_checks.py` | Layout checks L1-L13 (below; L12 the handedness: the box frame is left-handed, Xb left to right seen from the lid, lid-centre Y = 61.75 - Xb, so each card goes in as a real card); `--write` rewrites the mechanical table in this README. |
 | `cage/cage.py` | The printed base and its moulded cage: the lid interface as named inputs (rim, bosses, L1-L6), a 9 mm land and a tongue that follows the lid's O-ring channel round the corner bosses, corner lands and posts with M4 heat-set inserts for the lid screws, card slots, right corner post, backplane posts, EVM ledges, pack tray, gland bosses, vent, SMA boss, pole lugs, drip edge; the shelf fit checks with 2 mm margins and the gland pitch. `--solid` builds the solids in CadQuery; `--stl` refuses until L1 and the ring fit are sourced; `--ring` writes `cage/stl/rim-ring.stl` (the whole rim from `lid-rim-spec.md`, not gated) and checks it against the spec (mirrors, spans, tangency, hole-to-lip clearance). |
-| `cage/shelves-spec.md` | CAD-bot spec for the pack tray and the charger ledges below the cards (enclosure 2 has none yet). |
+| `cage/shelves-spec.md` | CAD-bot spec for the pack tray and the charger ledges below the cards (enclosure 3, as printed, has none; the next print, v3, adds them). |
 | `cage/lid-rim-spec.md`, `cage/lid_rim_spec.py` | The lid rim measured off Clint's 300 dpi scans: outline, the lip's centre line as a segment table, the lip section, the holes. `lid_rim_spec.py` reads it; `sources.py` takes the rim keys from it and `cage.py --ring` builds the ring straight from the table. |
 | `cage/ring_views.py` | The ring's dimensioned top view (spans, one corner's segment points and radii, the hole spacing) and iso view, `renders/rim-ring-top.png` and `rim-ring-iso.png` (needs the CadQuery venv). The full base's solids are still boxes: its S has square corners; the ring has the spec's arcs. |
 | `layout/drawings.py` | Writes `drawings/B1..B4-top.svg`, `drawings/backplane.svg`, `drawings/cage-side.svg`, and the build sheets `build/B1..B4.md`, `build/BACKPLANE.md`, `build/ASSEMBLY.md`. `--png` also writes PNG copies into `renders/`. |
@@ -84,7 +87,7 @@ Everything here is generated from four sources:
 ```sh
 ./run.sh                               # everything, with all checks
 sh schematic/run.sh                    # schematic + checks 1-10 only
-python3 layout/layout_checks.py        # layout checks L1-L9 only (--write: the mechanical table)
+python3 layout/layout_checks.py        # layout checks L1-L13 only (--write: the mechanical table)
 python3 cage/cage.py [--solid]         # the cage against the box inside
 python3 layout/drawings.py --png       # drawings + build sheets (+ PNGs)
 python3 -I render/fetch_models.py      # makers' models (once; the renders fall back to boxes offline)
@@ -114,12 +117,13 @@ You need python3 3.11+ with Pillow, KiCad 10 (`kicad-cli` with its 3D library), 
 
 - **L1:** every pin on a hole, every conductor end a real hole or pad, no hole doubled, every backplane bus wire soldered only at real holes of its own line.
 - **L2/L3:** the copper equals the schematic; no strip (card) and no wire-joined pad group (backplane: the PAD3U has no strips, nothing connects unless a wire does) carries two nets (checked without part-internal ties).
-- **L4:** the battery current touches only B4's doubled power-pin strips and their backplane lines; each crossing is on two pins.
-- **L5:** the bus is on rows 1-18 of column j on every card and bus wires 1-18 of the backplane; insertion 5.00 mm of 5.84 (at least 4.20 with the card 0.8 mm short); the socket body never overlaps the snapped card (2.36 mm clear).
+- **L4:** the battery current touches only B4's doubled power-pin strips and their backplane lines; each crossing is on two pins; the charger's SYS (J3 SYS to line 26) and its return (J3 GND to line 12) each have their own lead to their bus wire.
+- **L5:** the bus is on rows 1-18 of column j on every card and bus wires 1-18 of the backplane; every header is the 1x30 less exactly its key pin (B1 27, B2 28, B3 29, B4 30), a spare pin with no net; insertion 4.96 mm of 5.8 (at least 4.16 with the card 0.8 mm short); the socket body never overlaps the snapped card (2.36 mm clear).
 - **L6:** no two part bodies collide on a card.
 - **L7:** each card pitch clears the tallest part below, its tails and 0.5 mm; nothing collides with the cage, the backplane, another card, the base's corner lands and insert posts, its rim lip, or the gland nuts; each card slides out alone; everything fits the box inside; the EVM and pack shelves stay 2 mm clear of each other, the backplane, B4, the lid's inner wall and bosses; the mux stays clear of the socket tails; what sits past the base-lid seam (in the lid tray) is listed.
 - **L8:** every routed wire, jumper and lead (81 of 81) runs on its side of the card in right-angle runs, crosses no part footprint (a pad lead only its own breakout), passes over no used hole but its own ends, and shares no grid run with another conductor except an insulated lead bundle (at most 3); a bare jumper meets nothing.
 - **L10:** each card comes out alone (Clint's rule, below): no soldered or clamped lead leaves a card; everything else off a card is its header or a hand plug; the charger and the pack meet only the backplane; nothing runs card to card except through the backplane.
+- **L13:** the slot keys: each socket's key plug sits in its card's pulled position, on an isolated pad (no bus wire, no lead); for every card and socket the card's pins miss the plug only in its own socket, so any other card stubs on it.
 - **L9:** every mating and fixing in the table below; the slot play against the socket lead-in, the room over each plug's latch, the SMA path and the cage screws' access are computed, and anything held by solder or adhesive alone or reachable only after something else comes out is flagged.
 
 ## What changed from r1, and why
@@ -139,21 +143,28 @@ zener adds 100 pF or more, which would eat the 236 pF budget.
 ## What changed in r3, and why
 
 - **Back rails snapped off** each card (`sb_snap_y`, card Y 41.91 `[TBD-MEASURE]`) before any soldering, the edge
-  filed flat. The header's mating pins now stand 7.36 mm past the edge into the socket; the card edge is 10.86 mm
+  filed flat. The header's mating pins now stand 7.32 mm past the edge into the socket; the card edge is 10.86 mm
   from the backplane.
 - **RJ11 jacks face the lid** (2026-11-16): on B1 and B2 every BOB-14021 stands on a soldered 1x6 male header in
   row a (pin n in its own column and strip), overhanging the front edge, mouth toward the lid; the plugs and their
   cable bends sit in front of the cards. The printed spacers, the back jack's tongue, the right post's cut and the
   flying leads are gone; each port's clamps stand in its jack's strips, its fuse and zener in a block beside it.
-- **Backplane on a BusBoard PAD3U padboard** (pad per hole): the PAD3U's plated end, 30 lines (0-29) x 38 holes, a
+- **Backplane on a BusBoard PAD3U padboard** (pad per hole): the PAD3U's plated end, 31 lines (0-30) x 38 holes, a
   rectangle with only its left edge cut: 18 bare bus wires, each soldered at every pin of its line, and B4's power lines; cut step and hole-by-hole table in `build/BACKPLANE.md`; two M3 screws, through the one drilled hole (s0.2) and the
   lower factory mounting hole (drilled out to 3.2), into two floor posts; the left edge in the left wall's groove, the factory right edge in a 4.0 slot in the right corner post (`cage/backplane-mount-spec.md`): tilted into the slot, slid left into the groove.
+- **Slot keys** (Clint, 2026-11-16): the four sockets are identical, so any card fitted any slot, and B3 in B4's
+  would have put the battery on the Wio-E5. Each card pulls one spare pin (B1 27, B2 28, B3 29, B4 30) and its own
+  socket takes a key plug there (a cut-off male pin, flush with the mouth, soldered to nothing); a colour dot on
+  each card and slot (B1 blue, B2 green, B3 yellow, B4 red). Checked in L5 and L13.
+- **Charger ground lead:** J3 GND to backplane line 12 (24 AWG stranded, black, beside the SYS lead), so SYS's
+  return no longer runs only through the I2C lead's J8 pin 1 and its KK crimp. Checked in L4.
 - **Wires routed** (`layout/route.py`) instead of drawn straight: lengths, drawings and renders follow the routes.
 - **A printed base instead of the #905 body** (Clint, 2026-11-10): the EVM measured 90 x 90 (96 across J8) and
   did not fit the stock body with 2 mm margins. The base is PETG, 100 deep outside, 3 mm walls, and mates with the
   #905's own lid and O-ring; everything is one vertical stack of shelves (pack, EVM, B4, B2, B1, B3), the SHTC3 on
   the top card about 84 mm above the charger. Glands in the bottom wall's bosses (PG-7 #762 and PG-9 #761, from
-  Adafruit's drawing), with a pitch check; the cables rise in the right column past the EVM and the pack.
+  Adafruit's drawing), with a pitch check; each cable rises out of its gland, turns right under the pack tray and
+  runs up the right column past the pack and the EVM (`cage/shelves-spec.md`).
 - **The lid's corners set the card heights.** The lid's corner bosses (22 x 21) and the O-ring's curve round them
   need a solid 3 mm land in each corner of the base at the seam, so a card's parts can't pass a top corner as it
   slides out. The card stack is 10 mm lower (`power_zone` 82): B3's top is 3 mm under the upper corner lands. The
@@ -203,7 +214,7 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
 | Mating or fixing | Held by | Force path | Taken apart | Flag |
 |---|---|---|---|---|
 | Card in its slot | left wall slot (2 mm deep) and the right corner post slot; the retention bar across the front left | the slots take the card's weight and any knock across it; the bar stops it backing out | two M3 screws: bar off, card slides out toward the lid |  |
-| Bus header into the backplane socket | 30 contacts' friction on every card (the full 1x30); axis Yb (in the card plane, toward the back wall); insertion 4.96 mm of 5.8; the insulator meets the socket 0.84 mm further in (the depth stop) | the socket; side play is the slot's 0.3 mm, inside the socket lead-in (0.5 mm [TBD-MEASURE]) | pull the card straight out toward the lid (bar off first) |  |
+| Bus header into the backplane socket | 29 contacts' friction on every card (the 1x30 less its key pin: B1 27, B2 28, B3 29, B4 30; its own socket's key plug sits there and blocks every other card); axis Yb (in the card plane, toward the back wall); insertion 4.96 mm of 5.8; the insulator meets the socket 0.84 mm further in (the depth stop) | the socket; side play is the slot's 0.3 mm, inside the socket lead-in (0.5 mm [TBD-MEASURE]) | pull the card straight out toward the lid (bar off first) |  |
 | B3 U5 breakout (enclosure air sensor, top card, away from the charger) | its own header, soldered in the breakout and in the card (one row) | the header pins; a QT plug's push goes through the breakout into the header | desolder the header row (or cut the pins and fit a new header) | held by solder alone on one header row |
 | B4 U2 breakout (battery monitor) | its own header, soldered in the breakout and in the card (one row) | the header pins; a QT plug's push goes through the breakout into the header | desolder the header row (or cut the pins and fit a new header) | held by solder alone on one header row |
 | B4 U6 breakout (fuel gauge) | its own header, soldered in the breakout and in the card (one row) | the header pins; a QT plug's push goes through the breakout into the header | desolder the header row (or cut the pins and fit a new header) | held by solder alone on one header row |
@@ -214,7 +225,7 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
 | B2 J14 RJ11 breakout | its own 1x6 male header, soldered in the breakout and in row a of the card, one pin in each of columns 15-20 (six strips); the breakout overhangs the card's front edge, the jack's mouth toward the lid | the plug's push and pull run along the jack axis (Yb) through the jack and the breakout into the six header pins, in bending (the breakout overhangs the front edge); the latch takes the pull | desolder the six header pins (or cut them and fit a new header) | held by solder alone on one header row; the plug's push and pull load the six pins |
 | B2 J22 RJ11 breakout | its own 1x6 male header, soldered in the breakout and in row a of the card, one pin in each of columns 8-13 (six strips); the breakout overhangs the card's front edge, the jack's mouth toward the lid | the plug's push and pull run along the jack axis (Yb) through the jack and the breakout into the six header pins, in bending (the breakout overhangs the front edge); the latch takes the pull | desolder the six header pins (or cut them and fit a new header) | held by solder alone on one header row; the plug's push and pull load the six pins |
 | B2 J21 RJ11 breakout | its own 1x6 male header, soldered in the breakout and in row a of the card, one pin in each of columns 24-29 (six strips); the breakout overhangs the card's front edge, the jack's mouth toward the lid | the plug's push and pull run along the jack axis (Yb) through the jack and the breakout into the six header pins, in bending (the breakout overhangs the front edge); the latch takes the pull | desolder the six header pins (or cut them and fit a new header) | held by solder alone on one header row; the plug's push and pull load the six pins |
-| RJ11 plug latch and cable | the jack latch; the latch is on the plug, 12.9 mm free over the tightest plug (B2 J21 RJ11 plug (standard 6P body after Cinch 32-5996UL)); the plugs go in from the lid side (mouths at Yb 72.8); each flat cable leaves its plug toward the lid, bends down in front of the cards (the plug and the bend reach Yb 97.8, 22.2 mm short of the lid) and runs down the front of the stack to its gland in the bottom wall | the latch, then the gland's seal (strain relief) | press the latch (lid open, from the front), pull; loosen the gland nut to pull the cable through |  |
+| RJ11 plug latch and cable | the jack latch; the latch is on the plug, 12.9 mm free over the tightest plug (B2 J21 RJ11 plug (standard 6P body after Cinch 32-5996UL)); the plugs go in from the lid side (mouths at Yb 72.8); each flat cable leaves its plug toward the lid, bends down in front of the cards (the plug and the bend reach Yb 97.8, 22.2 mm short of the lid), crosses right to the right column (cage/shelves-spec.md: Xb 100-122, beside the EVM and the pack) and down it to the cable space under the pack tray, then along the floor to its gland in the bottom wall | the latch, then the gland's seal (strain relief) | press the latch (lid open, from the front), pull; loosen the gland nut to pull the cable through |  |
 | Wio-E5 mini on B3 | soldered on its own 2 x 12 header (not in sockets) | the header pins | desolder 24 pins | held by solder alone; cannot come off without desoldering 24 pins |
 | Wio-E5 mini USB-C console | the receptacle's friction; cable plugged from the left with the lid open | the mini's receptacle and its header | pull the plug |  |
 | SMA, adapter and coax to the bulkhead | AD1 screwed on the mini's SMA-K, its arm toward the lid; the 135110 plug screwed on AD1; the cable bends right in front of the cards to the bulkhead jack in the right wall's boss | the coax is clipped to the cage at its bend so a pull on it reaches the bulkhead, not the mini's SMA | unscrew the plug at AD1 (8 mm spanner), then lift B3 out |  |
@@ -224,7 +235,7 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
 | Backplane on its posts | two M3 screws (the drilled s0.2, and the PAD3U's lower factory hole drilled out to 3.2) into heat-set inserts in two round floor posts; the left edge in the left wall's groove and its rail, the factory right edge in a 4.0 slot in the right corner post (tilted into the slot, slid left into the groove) | the posts, three plain pads and the groove and slot floors take the card insertion push | undo the two screws, slide it right to the slot's end, lift the left side, out, after every card is out | removable only after all four cards are out |
 | Lid to the printed base | four M4 stainless screws on 12 mm washers through the lid's 8 mm holes into M4 heat-set inserts (5.6 mm holes, 3 mm of wall round each) in the base's corner posts, 156 x 109 apart (9.75 / 10.25 in from the lid's edges, cage/lid-rim-spec.md; option b, recommended over a printed copy of the original 8 mm plastic thread); the base's 9 mm land under the lid's rim, its 2 x 4.5 sealing lip in the lid's O-ring channel | the screws squeeze the O-ring; the lid's rim takes a knock | undo the four lid screws | not settled: the screw and the lid's corner pocket (L1), and the rim test ring's fit on the real lid: no full STL until they are |
 | Base to the pole | two moulded lugs on the back, a hose clamp or U-bolt through each; no screw through the back into the box | the lugs' roots in the 3 mm floor | open the clamps |  |
-| Cables through the glands | six round port cables in PG-7s (#762, seal 3.0-4.3 mm) in the bottom wall's bosses; the flat wind and rain cables in PG-9s (#761) with the seal out and the gap packed with silicone or a split grommet | the gland's seal (round) or the sealant (flat); a drip loop below each gland outside, so water runs off the loop and not along the cable into the gland | loosen the cap (round); cut the sealant (flat) | a flat cable is sealed once its position is final and then comes out only by cutting the seal |
+| Cables through the glands | five round cables (the four sensor-port cables S1-S4 and the solar lead) in PG-7s (#762, seal 3.0-4.3 mm; 6 PG-7s, 1 spare, blanked) in the bottom wall's bosses, each passed through its gland before its inside plug is crimped (a 6P plug, about 12 mm across its corners, passes no gland bore); the flat wind and rain cables in PG-9s (#761) with the seal out and the gap packed with silicone or a split grommet, their factory plugs cut off and new 6P plugs crimped inside | the gland's seal (round) or the sealant (flat); a drip loop below each gland outside, so water runs off the loop and not along the cable into the gland | loosen the cap (round); cut the sealant (flat) | a flat cable is sealed once its position is final and then comes out only by cutting the seal |
 <!-- mechanical:end -->
 
 ## Deferred, with reasons
@@ -236,8 +247,6 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
 
 ## Open questions
 
-- **RJ11 latches:** less than 8 mm `[TBD-MEASURE]` over two plugs (B1 J11, B2 J14: 4.5 mm): press
-  them with a small screwdriver from the front, or test with a real plug.
 - **The lid interface is not settled.** The rim, the corner bosses, the screw positions (L2) and the O-ring's
   inset (L4) are from Clint; the channel depth does not matter (Clint). Open:
   - L1, the screws. The original base has large moulded threads, about 8 mm, for plastic screws. Two options are
@@ -253,11 +262,14 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
     For the full base this changed: the outline from 175 x 130 (inside now 123.5 x 169.5), the lip insets from
     4.0 / 3.5, the S from 13.5 / 14.0, the radii from 3 / 5.5, the screws from 155 x 109. The spec's own check
     says the straight lip is 3.25 in from the outline; its segment table puts the short sides' at 3.0.
-  - L6: the original base's lip is 3 mm tall (Clint), so the base's is too, on the lid channel's centre line
-    (4.5 mm in from the lid's edge: that is what must seal); offset and width are named inputs (`rim_tongue`).
-    Clint's eyeball of the original lip, 1-2 mm in from the base's edge, disagrees: the original base is about
-    1.25 mm wider a side than the lid, so that would put it under the lid's outer wall. The scan decides. About
-    1 mm squeeze with the O-ring 2 mm down, assuming a round 3 mm solid cord.
+  - L6, the lip height: **not settled.** `cage/lid-rim-spec.md`, `sources.rim_tongue` and `cage.py` build the
+    lip 2 wide x 4.5 tall (the test ring too); Clint's earlier note on the original base (`l6_body_rib`) says 3 tall.
+    Which one the printed base and the test ring actually carry is not known here: it waits on Clint's report of
+    the printed base and the test ring on the real lid. Nothing is changed until then. The lip sits on the lid
+    channel's centre line (that is what must seal); offset and width are named inputs (`rim_tongue`). Clint's
+    eyeball of the original lip, 1-2 mm in from the base's edge, disagrees with that line: the original base is
+    about 1.25 mm wider a side than the lid, so that would put it under the lid's outer wall. The squeeze on the
+    O-ring (assumed a round 3 mm solid cord, 2 mm down) follows from whichever height is right.
 - **PETG in sun.** Its heat-deflection temperature is about 70 C (0.45 MPa; check the spool's datasheet:
   Bambu's pages refuse scripts) against an inside above 45 C in sun (mechanical review): a light colour and a UV
   paint or clear coat outside.
@@ -266,10 +278,18 @@ solder or adhesive alone, or that cannot be reached or removed without taking so
   reach past the seam into the lid (to Yb 107.6 of 120): J8's plug has 12 mm.
 - **Glands and cables.** The weather-meter cables are flat (about 2.3 x 6.6, derived from TE 5-555042-3's cable
   entry): each goes through a PG-9 (bore 10.5 with the seal out; 7.0 across the cable plus 0.5 mm of sealant a side
-  fits) packed with silicone or a split grommet, sealed only once the cable's position is final. The round port
-  cables take PG-7s (3.0-4.3 mm): measure them. A drip loop below every gland.
-- **Clint's two existing BOB-14021s** carry the 4UCON 14869 jack, 15.70 mm high: too tall under the next card
-  (21.8 mm needed on the header, 18.72 there). The cards use new BOBs with the 87180-066LF (11.5 mm, RS listing).
+  fits) packed with silicone or a split grommet, sealed only once the cable's position is final. The round
+  cables (sensor ports S1-S4 and the solar lead; the sixth PG-7 is a blanked spare) take PG-7s (3.0-4.3 mm):
+  measure them. A 6P plug is about 11.7 mm across its corners (12.2 with the latch), more than either gland's bore
+  (PG-7 7.9, PG-9 10.5 with the seal out), so every cable goes through its gland with no plug on its inside end and
+  that plug is crimped after (Clint has 6P crimp plugs; a 6P crimp tool is needed, not yet listed). The weather
+  meters' factory plugs are cut off outside and re-crimped inside, same order (`build/ASSEMBLY.md` step 2.6); open:
+  whether Clint's 6P6C plugs hold the meters' narrower flat cable on the right positions, or 6P4C plugs are needed.
+  A drip loop below every gland.
+- **RJ11 jack:** the BOB-14021s take the Amphenol 87180-066LF (11.5 mm, RS listing). The 4UCON 14869 (SparkFun
+  PRT-00132, 15.70 mm high) would be too tall under the next card (21.8 mm needed on the header, 18.72 there).
+  Clint has bare BOB-14021 boards and loose jacks (2026-11-16), nothing assembled: check the loose jacks are the
+  87180-066LF before soldering.
 - **Thermistor bias.** The #372 NTC is B 3950; the EVM's TS divider assumes a 103AT (B 3435). Read TS at room temperature before the first charge (build/ASSEMBLY.md).
 - **Mini back-feed.** The mini's AP2112 is back-fed from the bus 3.3 V; with USB-C in for the console two regulators run in parallel (accepted, electrical m3).
 - **B4 power through the backplane** (resolved 2026-11-13): the battery path, its senses and SYS reach B4 on header pins 19-23 and 26; B4 slides out with nothing to undo. Pulling B4 opens the battery path (the shunt is on B4): the EVM then sees no battery, which is the intended way to power down. The doubled socket contacts' resistance is not measured `[TBD-MEASURE]`: a few milliohm per pair is a few mV at 1 A, seen only by the INA228's bus-voltage reading; the charger (BATP) and the gauge sense the junction itself on the backplane.
@@ -336,7 +356,7 @@ Status `[TBD-MEASURE]` means no source was found. The drawings use the value as 
 | `jack_w` | 13.2 | 87180 / 54601 jack body width | KiCad 10 footprint RJ12_Amphenol_54601-x06_Horizontal (fab layer); RS 771-0215 listing 13.2 | sourced |
 | `jack_d` | 18 | jack body depth (peg line + 7.88 to the mouth) | KiCad 10 footprint RJ12_Amphenol_54601-x06_Horizontal (fab layer): fab -1.23..16.77; RS 18 mm | sourced |
 | `jack_h` | 11.5 | jack body height above the BOB | RS Components 771-0215 (87180-066LF) listing, 11.5 x 13.2 x 18 mm; test-fit one jack (docs/superpowers/specs/2026-11-09-tx-protoboard-stack-design.md) | sourced |
-| `jack_4ucon` | 13.34 x 20.57 x 15.7 | 4UCON 14869 jack (on Clint's two existing BOB-14021s): width x length x height (15.00 to the shoulder); pins 1.27 stagger, 6.35 outer, rows 2.54 apart, 8.89 from the pegs; pegs 3.20 at 10.16; tails 4.30 | 4UCON drawing 14869 (SparkFun PRT-00132 jack), cdn.sparkfun.com/assets/8/6/5/f/1/RJ11-Datasheet.pdf (SparkFun's STEP is an outdated version: community.sparkfun.com/t/44748) | sourced |
+| `jack_4ucon` | 13.34 x 20.57 x 15.7 | 4UCON 14869 jack (SparkFun PRT-00132; not used, too tall under the next card: L9): width x length x height (15.00 to the shoulder); pins 1.27 stagger, 6.35 outer, rows 2.54 apart, 8.89 from the pegs; pegs 3.20 at 10.16; tails 4.30 | 4UCON drawing 14869 (SparkFun PRT-00132 jack), cdn.sparkfun.com/assets/8/6/5/f/1/RJ11-Datasheet.pdf (SparkFun's STEP is an outdated version: community.sparkfun.com/t/44748) | sourced |
 | `hdr_plastic` | 2.5 | male header plastic (board to breakout) | standard 0.1 in header; bench r1 kicad_layout.py SEAT_Z | sourced |
 | `breakout_t` | 1.6 | breakout PCB thickness (Adafruit, SparkFun, Seeed) | Eagle files: 1.6 mm default stack; not stated | [TBD-MEASURE] |
 | `mux_w` | 40.64 | PCA9548 #5626 length | Adafruit Eagle board, github.com/adafruit/Adafruit-PCA9548-PCB; adafruit.com/product/5626: 40.6 x 20.2 x 4.8 mm | sourced |
@@ -398,7 +418,7 @@ Status `[TBD-MEASURE]` means no source was found. The drawings use the value as 
 | `bp_posts` | 8 | backplane copper face off the base's floor (the mux on its foam and the socket tails behind it, 2 mm clear) | mux 4.8 + foam 1 + 2 = 7.8 | derived |
 | `cage_plate` | 0 | cage base plate: none (the printed base's floor carries the cage) | layout choice | derived |
 | `cage_wall` | 8.5 | cage left wall thickness; card slots 2 mm deep | layout choice: the cards' left edge clears the base's 6 mm rim lip (the full 9 mm land less the 3 mm wall) by 0.5 mm as they slide out | derived |
-| `slot_clear` | 0.3 | card slot width over the 1.6 mm card (print tuning) | Bambu H2D PLA first-print allowance; tune on a test slot | [TBD-MEASURE] |
+| `slot_clear` | 0.3 | card slot width over the 1.6 mm card (print tuning) | Bambu H2D first-print allowance (the base is PETG); tune on a test slot | [TBD-MEASURE] |
 | `bar` | 2.5 | retention bar thickness in front of the card front edges | layout choice | derived |
 | `tails` | 1.5 | solder tails and bottom-side wires below a card | typical; measure after the first card | [TBD-MEASURE] |
 | `clear` | 0.5 | minimum clearance kept between parts | layout rule | derived |
