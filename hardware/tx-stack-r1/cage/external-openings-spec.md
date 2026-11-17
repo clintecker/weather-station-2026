@@ -1,7 +1,28 @@
 # External openings in the printed base: build spec
 
-This covers the holes through the base's walls: eight cable glands, one pressure vent and one SMA bulkhead for the
-antenna. Every dimension is in mm. The positions come from `cage/cage.py` and the layout checks as of 4550f83.
+This covers the holes through the base's walls: seven cable glands, one pressure vent and one SMA bulkhead for the
+antenna. Every dimension is in mm. The positions come from `cage/cage.py` and the layout checks as of 4550f83, updated
+for **enclosure 4** (audited 2026-11-17, `sheets/audit-enc4/`).
+
+## Enclosure 4 as printed, and the two fixes asked for (2026-11-17)
+
+Enclosure 4 (`~/Downloads/enclosure 4.stl`) differs from the table below as follows:
+
+- **PG-7 holes are Ø13.0** as printed (not 12.0 undersize): fit the glands straight in, no reaming. Five of them:
+  G1, G2, G3, G5, G6. **G7 is gone**: there is no spare now (solar + S1-S4 + wind + rain).
+- **Both PG-9 holes were left out.** Fix 2: **put them back**, Ø15.5 at (Xb 98, Yb 25) and (98, 60), i.e. in the
+  lid-centre frame Y −36.25, Z 28.0 and 63.0, through the bottom wall (X −87.75 to −84.75). Inside, each needs its
+  **Ø24 keep-out from Zb 0 to 8**:
+  - the right corner block's left face is at **Xb 106.85** for Zb 0 to 8 (enclosure 3 had it at about 110): take it
+    back to **Xb ≥ 110** there;
+  - a **1 mm land (Zb 0 to 1)** now covers the bottom wall's inside from about Xb 80 to the right wall: cut it away
+    inside each Ø24, back to the 3.0 wall, so the locknut seats flat and the thread reaches.
+- **The vent** is Ø12.46 at (50, 85), unchanged.
+- **The SMA bulkhead moved** low in the right wall: **Yb 94.14, Zb 60.38**, Ø6.44, with a Ø14.2 inner nut seat
+  (it was Yb 86.14, Zb 144.6 in enclosure 3). Section 2 below is updated.
+- **Mounting:** the two pole lugs are replaced by **two mounting flanges** on the short ends, in the floor plane
+  (Yb −3 to 3), Xb 31.75 to 91.75, reaching 28 past each end wall (to Zb −31 and 200.5), each with **two 3.45 × 13.95
+  slots** at Xb 47.95 and 75.45 (centres Zb −18 and 187.5). Section 3 below is updated.
 
 ## Coordinate frame
 
@@ -27,14 +48,14 @@ the rows at Z 28.0 and 63.0, and the vent at (Y +11.75, Z 88.0).
 
 | # | Xb | Yb | Gland | Hole | Cable (suggested; the model doesn't fix the order) |
 |---|---|---|---|---|---|
-| G1 | 26.0 | 25.0 | PG-7 (Adafruit #762) | Ø12.0 | Solar panel (Voltaic P110), plug cut off |
-| G2 | 50.0 | 25.0 | PG-7 | Ø12.0 | Sensor port S1 |
-| G3 | 74.0 | 25.0 | PG-7 | Ø12.0 | Sensor port S2 |
-| G4 | 98.0 | 25.0 | **PG-9** (Adafruit #761) | **Ø15.5** | Wind meter (flat cable) |
-| G5 | 26.0 | 60.0 | PG-7 | Ø12.0 | Sensor port S3 |
-| G6 | 50.0 | 60.0 | PG-7 | Ø12.0 | Sensor port S4 |
-| G7 | 74.0 | 60.0 | PG-7 | Ø12.0 | Spare: blanking plug, or leave it unbored as a 0.6 mm knock-out skin |
-| G8 | 98.0 | 60.0 | **PG-9** | **Ø15.5** | Rain gauge (flat cable) |
+| G1 | 26.0 | 25.0 | PG-7 (Adafruit #762) | Ø13.0 (enclosure 4) | Solar panel (Voltaic P110), plug cut off |
+| G2 | 50.0 | 25.0 | PG-7 | Ø13.0 | Sensor port S1 |
+| G3 | 74.0 | 25.0 | PG-7 | Ø13.0 | Sensor port S2 |
+| G4 | 98.0 | 25.0 | **PG-9** (Adafruit #761) | **Ø15.5** (fix 2: missing in enclosure 4) | Wind meter (flat cable) |
+| G5 | 26.0 | 60.0 | PG-7 | Ø13.0 | Sensor port S3 |
+| G6 | 50.0 | 60.0 | PG-7 | Ø13.0 | Sensor port S4 |
+| ~~G7~~ | 74.0 | 60.0 | - | none (enclosure 4) | Removed: no spare |
+| G8 | 98.0 | 60.0 | **PG-9** | **Ø15.5** (fix 2: missing in enclosure 4) | Rain gauge (flat cable) |
 | V1 | 50.0 | 85.0 | M12 × 1.5 vent | Ø12.5 | Pressure-equalising vent (part not chosen yet) |
 
 - **Pitch:** 24 across, 35 between the two rows. The closest locknuts (a PG-9 beside a PG-7) are 4.7 apart.
@@ -49,18 +70,18 @@ the rows at Z 28.0 and 63.0, and the vent at (Y +11.75, Z 88.0).
   has show more thread.
   - 📏 **Measure:** on one PG-7 and one PG-9, the threaded length from the underside of the body's hex to the end of
     the thread.
-- **Hole finish:** print the holes 0.2 undersize, then ream or drill them to size. Remove all elephant's foot from the
+- **Hole finish:** enclosure 4 prints the PG-7 holes at Ø13.0, which takes the 11.5 thread without reaming; the PG-9
+  holes Ø15.5. Remove all elephant's foot from the
   outside face, so the sealing washer seats flat.
 - **Water:** the holes face down when the box is hung, so water drains away from them. Give every cable a drip loop
   below its gland outside. Don't put a drip lip or a recess round the holes, because they would hold water.
 
 ## 2. Right wall: the SMA antenna bulkhead
 
-- **Position:** the hole axis runs along Xb, through the **right** wall (Xb 123.5 to 126.5), at **Yb 86.0, Zb 144.6**.
-  - That's 25 below the inside top wall, and 11.0 below the seam toward the floor.
-  - In the lid-centre frame of `lid-rim-spec.md`: X +59.85, on the **−Y wall** (the right wall, Y −61.75 inside),
-    Z 89.0 (11.0 below the seam).
-- **Hole:** **Ø6.5**, for an SMA bulkhead jack with a 1/4-36 thread.
+- **Position (enclosure 4, as printed):** the hole axis runs along Xb, through the **right** wall, at **Yb 94.14,
+  Zb 60.38** (enclosure 3 had it at Yb 86.14, Zb 144.6, beside B3).
+  - In the lid-centre frame of `lid-rim-spec.md`: X −24.37, on the **−Y wall**, Z 97.14.
+- **Hole:** **Ø6.44** as printed, for an SMA bulkhead jack with a 1/4-36 thread; inner nut seat Ø14.2.
   - If Clint's bulkhead has a flat on its thread, make it a **D-hole**: Ø6.5 with a flat at **5.8 across** (2.9 from
     the centre). That stops it turning.
   - 📏 **Check on the real cable** (the Amphenol 135110 end with the threaded body and nut): the thread diameter,
@@ -71,13 +92,18 @@ the rows at Z 28.0 and 63.0, and the vent at (Y +11.75, Z 88.0).
 - **The antenna:** the 916 MHz tilting whip (Linx ANT-916-CW-HWR-SMA) screws on outside and tilts to point **up**,
   because the box hangs with this wall at its side. Leave the outside of the right wall clear of anything in a
   **Ø40 × 20** zone round the hole axis, for the hinge and the swing.
-- **Inside:** the 6-inch coax runs from the radio's SMA (through the right-angle adapter, if it's needed) to this
-  jack, bending right in front of the cards. The layout checks place the jack where the cable reaches without strain.
+- **Inside:** the coax runs from the radio's SMA on B3 (Zb about 140, through the right-angle adapter AD1) to this
+  jack, bending right in front of the cards and down the right column (Xb 88-121) to Zb 60.
+  - 📏 **[TBD] Cable length:** the run is about 120-130 mm; the 6-inch Amphenol 135110-01-06.00 has about 110 between
+    its plugs. It is probably too short: check at Session 6, or get a longer one.
+  - 📏 **[TBD] The EVM corner:** a straight plug on the jack's inner end reaches about Xb 93, about 6-10 mm above the
+    EVM's lid-right corner (board to Xb 98.25, Yb 101.6). Check it clears at Session 6, or use a right-angle plug.
 
 ## 3. Other outside features (for reference: no holes through the wall)
 
-- **Two pole lugs on the back:** hose-clamp slots, 30 × 10 × 12, at Zb 30 and 139.5, centred across. Nothing passes
-  through the back wall.
+- **Two mounting flanges (enclosure 4)**, replacing the pole lugs: on the short ends, in the floor plane (Yb −3 to
+  3), Xb 31.75 to 91.75, 28 past each end wall; two 3.45 × 13.95 slots in each, at Xb 47.95 and 75.45 (centres Zb −18
+  and 187.5), for hose clamps or straps. Nothing passes through the back wall.
 - **Drip edge:** over the top wall at the lid seam, 2.0 proud and 6.0 deep.
 
 ## 4. Checks

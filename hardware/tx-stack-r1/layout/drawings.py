@@ -310,7 +310,7 @@ def backplane_view(ph):
               f'stroke="#7a5c12" stroke-width="0.8"/>')
         g.add(f'<circle cx="{ux(fx):.1f}" cy="{uz(fz):.1f}" r="{(1.6 if used_f else 1.4) * KB:.1f}" '
               f'fill="{"#fff" if used_f else "#2b2b2b"}" stroke="#000" stroke-width="1.2"/>')
-        g.text(ux(fx) + 2.6 * KB, uz(fz) + 4, f"factory hole ({'drill to 3.2, M3 screw' if used_f else 'unused'})", 10)
+        g.text(ux(fx) + 2.6 * KB, uz(fz) + 4, f"factory hole ({'drill to 3.2, M3 screw' if used_f else 'unused: no screws'})", 10)
     bus = dict(st.BP_BUS)
     for i in range(n_strips):
         g.text(bx(i), bz(st.BP_HOLES + 1.2), i, 10, "middle")
@@ -382,7 +382,7 @@ def backplane_view(ph):
                "white square: a socket contact on an isolated pad (its card pin is spare or card-local: no bus wire)",
                "black square K: the socket's key plug (a cut-off male pin in that contact, flush; its pad soldered to nothing else)",
                "coloured line: bare bus wire on the copper side, ringed where soldered",
-               "purple ring: a lead soldered on the copper side", "white circle: 3.2 mm screw hole (line 0 hole 2, the lower factory hole)",
+               "purple ring: a lead soldered on the copper side",
                "dashed: the mux, behind on foam"):
         g.text(lx, y, s_, 10)
         y += 15
@@ -450,9 +450,9 @@ def cage_views():
         gd = cage.GLAND_NUT[k]
         g.rect(front(x - gd / 2), Z(0), front(x + gd / 2), Z(-8), "#555", "#222", 0.5)
         g.rect(side(y - gd / 2), Z(0), side(y + gd / 2), Z(-8), "#555", "#222", 0.5, 0.7)
-    g.text(front(w_in / 2), Z(-8) + 16, "glands in the bottom wall (2 x 4): 6 PG-7, 2 PG-9 (right column)", 10, "middle")
+    g.text(front(w_in / 2), Z(-8) + 16, f"glands in the bottom wall: {sum(1 for g_ in cage.GLANDS if g_[2] == 'PG-7')} PG-7, 2 PG-9 (right column), no spare", 10, "middle")
     for b_ in cage.shell():
-        if "lug" in b_.what or "drip" in b_.what:
+        if "flange" in b_.what or "drip" in b_.what:
             g.rect(side(b_.y0), Z(b_.z1), side(b_.y1), Z(b_.z0), "#bbbbbb", "#555", 0.6, 0.8)
     g.add(f'<line x1="{side(cage.SEAM):.1f}" y1="{Z(h_in):.1f}" x2="{side(cage.SEAM):.1f}" y2="{Z(0):.1f}" '
           'stroke="#1F5FBF" stroke-width="1.5" stroke-dasharray="8 4"/>')
@@ -466,11 +466,11 @@ def cage_views():
     _pe, yb, sz, _ax = cage.coax(arm)
     g.rect(front(w_in - 1), Z(sz + 4), front(w_in + 8), Z(sz - 4), "#D4AF37", "#7a5c12", 1)
     g.rect(side(yb - 4), Z(sz + 4), side(yb + 4), Z(sz - 4), "#D4AF37", "#7a5c12", 1)
-    g.text(front(w_in + 10), Z(sz) + 4, "SMA bulkhead boss", 10)
+    g.text(front(w_in + 10), Z(sz) + 4, "SMA bulkhead (enclosure 4)", 10)
     g.text(M, 28, "TX stack r3 in the printed PETG base (100 deep) under the #905 lid, hanging long side up, to scale "
            f"3.2 px/mm; inside {w_in:g} x {h_in:g} x {d_in:g} mm (lid interface: L1 and the rim ring's fit [TBD-MEASURE])", 15, weight="bold")
     g.text(M, 48, "Blue: moulded cage features. Red slabs: cards. Tan: backplane. Dashed: plug keep-outs. Grey: corner "
-           "posts, gland nuts, pole lugs and drip edge.", 12)
+           "posts, gland nuts, mounting flanges and drip edge.", 12)
     g.text(M, 64, "Shelves bottom to top: the pack, the BQ25798EVM (90 x 90, J8 toward the lid), B4, B2, B1, B3; all "
            "slide toward the back. Glands in the bottom wall; cables rise in the right column.", 12)
     g.write(OUT_SVG / "cage-side.svg", "TX card cage side and front")
@@ -665,18 +665,15 @@ def backplane_sheet(ph):
          "B4's power pins (the battery path, its senses and SYS) down to short leads to the charger and the pack, and the charger's "
          "own ground lead (J3 GND, SYS's return) lands on line 12, the bus ground. Lines run up and down in "
          "the box. Component side faces the cards (front); copper faces the back wall.", "",
-         "## 1. Cut and drill", "",
+         "## 1. Cut", "",
          f"1. Take one PAD3U and find its end with the two large plated mounting holes (the other end has two small "
          f"plain holes). Count {n_lines} rows in from that end: they become lines {st.BP_STRIPS} (next to the mounting "
          f"holes) down to 0, each the full {st.BP_HOLES} holes. Seen from the face that becomes the front (pads at the "
          "back), the mounting-hole end is the right edge. Keep the PAD3U's own right, top and bottom edges: no cut there.",
-         f"2. Before cutting: drill {st.BP_SCREWS[0][1:].replace('.', ' hole ').join(['line ', ''])} (the second hole "
-         "from the bottom of line 0) 3.2 mm, for the M3 screw to the bottom-left post, and drill the lower mounting hole "
-         f"(level with hole 2) out from {S.val('pad3u_mount')[0]:g} to 3.2 mm for the M3 screw to the bottom-right post. "
-         "Leave the upper mounting hole as it is: the right corner post's slot holds that corner.",
+         "2. No holes to drill: the base has no screw posts (enclosure 4); the cards plugged into the sockets hold the "
+         "board. Leave both mounting holes as they are: the right corner post's slot holds that edge.",
          "3. Score both faces midway between line 0 and the next row out (never through the holes) and snap: the only "
-         "cut. The score runs through the line 0 hole you drilled, so that hole opens 0.3 mm into the edge: that is "
-         "expected, and the screw head clamps the board beside it. Sand the edge flat. It must end 1.27 mm from line "
+         "cut. Sand the edge flat. It must end 1.27 mm from line "
          "0's hole centres (0.5-1.2 from their near side), or it will not fit the left wall's groove.",
          f"4. Check the right edge: it should be {S.val('pad3u_plated_edge'):g} mm beyond the mounting holes' centres "
          f"({st.BP_OUTLINE[2] - st.strip_x(st.BP_STRIPS):.2f} from line {st.BP_STRIPS}'s) [TBD-MEASURE: the scan cuts "
@@ -751,13 +748,13 @@ def backplane_sheet(ph):
           "## 6. Fit it in the base (`cage/backplane-mount-spec.md`)", "",
           f"1. Copper side back, mux behind it: tilt the board and push its factory right edge into the right corner "
           f"post's slot, to the slot's end (Xb {cage_slot_end():.2f}); its left edge is then clear of the left wall's face. "
-          "Lower the left side onto the posts and pads, copper face down.",
-          "2. Slide it left, flat on the posts, until its left edge is in the left wall's groove and the rail below it "
-          f"and the two screw holes are over the posts' inserts (about {cage_ins():.2f} mm). The right edge stays "
-          f"{st.BP_OUTLINE[2] - 85.8:.2f} mm into the slot. The mux moves with it and clears the posts and pads.",
-          "3. Drive the two M3 x 6 button-head screws (ISO 7380, no washers): bottom left (line 0 hole 2) and bottom right "
-          f"(the lower mounting hole). The support pads under {', '.join(st.BP_SUPPORTS)} have no screws. It comes out the same way, after "
-          "every card is out.", "",
+          "Lower the left side onto the pads, copper face down.",
+          "2. Slide it left, flat on the pads, until its left edge is in the left wall's groove and the rail below it "
+          f"(about {cage_ins():.2f} mm). The right edge stays "
+          f"{st.BP_OUTLINE[2] - 85.8:.2f} mm into the slot. The mux moves with it and clears the pads.",
+          f"3. No screws (enclosure 4 has no screw posts): it lies on the support pads under {', '.join(st.BP_SUPPORTS)}, "
+          "and the cards, once plugged into its sockets, hold it in place; until then it is loose, so fit the cards "
+          "straight after. It comes out the same way, after every card is out.", "",
           "## 7. Hole by hole", "", "Every pad that has anything soldered in it; every other pad stays bare.", "",
           "| Line | Hole | What is in it | Bus wire |", "|---|---|---|---|"]
     used = defaultdict(list)
@@ -818,16 +815,16 @@ def assembly_sheet():
          "M4 insert post, one lid corner of the land and tongue (fit the lid on it: the sealing lip must press the O-ring "
          "about 1 mm, with the lid's walls down on the land), and a 30 mm square of the 3 mm wall to leak-test.",
          "3. Print the base in PETG, a light colour, rim down on the plate (the O-ring land is the bed face), walls "
-         "3 mm (about 7 perimeters, solid). Set the M4 heat-set inserts in the four corner posts (option b: M4 stainless screws on 12 mm washers through the lid's 8 mm holes) and the M3 inserts in "
-         "the backplane posts with the iron. Leak-test the bare base (water in the base, or soapy water with the lid on "
+         "3 mm (about 7 perimeters, solid). Set the M4 heat-set inserts in the four corner posts (option b: M4 stainless screws on 12 mm washers through the lid's 8 mm holes) and the retention "
+         "bar's two M3 inserts in the left wall's front face with the iron. Leak-test the bare base (water in the base, or soapy water with the lid on "
          "and a little pressure through the vent hole); coat the inside only if it leaks. Paint or clear-coat the "
          "outside against UV.",
-         "4. Fit the glands in the bottom wall's bosses (six 12.0 mm holes for PG-7s #762: the four sensor-port cables "
-         "S1-S4, the solar lead and a spare, blanked; two 15.5 mm for PG-9s #761, the flat wind and rain cables, right column), "
-         "the M12 vent, and the SMA bulkhead in "
-         "the right wall's boss. Fit the backplane (its build sheet, section 6): its factory right edge tilted into the "
-         "right corner post's slot, lowered and slid left into the left wall's groove, two M3 screws; it comes off again only after "
-         "every card is out.",
+         f"4. Fit the glands in the bottom wall's bosses (five {S.val('gland')[0]:g} mm holes for PG-7s #762: the four "
+         "sensor-port cables S1-S4 and the solar lead; two 15.5 mm for PG-9s #761, the flat wind and rain cables, right "
+         "column; no spare), the M12 vent, and the SMA bulkhead low in the right wall (enclosure 4: Yb 94.14, Zb 60.38). "
+         "Fit the backplane (its build sheet, section 6): its factory right edge tilted into the "
+         "right corner post's slot, lowered and slid left into the left wall's groove; no screws, the cards hold it, so "
+         "fit them straight after; it comes off again only after every card is out.",
          "5. Shelves bottom to top: the pack on its tray (strap); the EVM (Bumpon feet peeled off) slid back on its "
          "ledges to the stop, clip at the front, leads with service loops; then the cards.",
          f"6. Cables. A 6P plug ({S.val('plug_6p')[0]:g} x {S.val('plug_6p')[1]:g} mm, "
@@ -846,8 +843,12 @@ def assembly_sheet():
          "cards; outside, a drip loop below each gland before the cable is tied to the pole. Each cable runs from its "
          "plug to the right column, down it and left under the pack tray to its gland (cage/shelves-spec.md).",
          "7. The coax: AD1 on the mini's SMA, its arm toward the lid; the 135110 plug on it, the cable bent right in "
-         "front of the cards to the bulkhead; clip it to the right corner post at the bend.",
-         "8. Mount: hose clamps or U-bolts through the two pole lugs on the back; the lid on with its four screws.", "",
+         "front of the cards and down the right column to the bulkhead low in the right wall; clip it to the right corner "
+         f"post. [TBD-MEASURE] The run is about 120-130 mm, the 6 in cable has about {S.val('coax_len'):g} between its "
+         "plugs: check it reaches before the cards go in, or get a longer one; and check the straight plug on the "
+         "bulkhead's inner end clears the EVM's lid-right corner (or use a right-angle plug).",
+         "8. Mount: hose clamps or straps through the two slots in each mounting flange (the short ends, in the floor "
+         "plane); the lid on with its four screws.", "",
          f"## 3. Cards, bottom to top: {order}", "",
          "**Labels (the slot key's colour code):** a dot on each card's front edge and the same colour beside its slot "
          "on the base and beside its socket on the backplane: " + ", ".join(f"{b} {model.KEY_COLOUR[b]}" for b in st.BOARDS)

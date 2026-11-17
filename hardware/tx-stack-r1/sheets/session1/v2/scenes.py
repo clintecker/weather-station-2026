@@ -527,7 +527,7 @@ SX = M.B_SCORE_X
 D02 = M.b_xy(0, 2)
 
 
-def b_split(z=0.0, drilled=(D02,), opened=True, pads=False):
+def b_split(z=0.0, drilled=(), opened=False, pads=False):     # enclosure 4: nothing drilled
     piece, cu = M.b_region(SX, M.B_L, drilled=drilled, opened=opened)
     spare, cs = M.b_region(0, SX, drilled=drilled)
     pads = cq.Compound.makeCompound([c for c in (cu, cs) if c is not None])
@@ -699,7 +699,7 @@ def b_sand():
     s.add("bench", M.bench(xe, -60, 150, 150, t=25, top=0), M.BENCH)
     s.add("sand", M.box(xe + 2, -20, 0, 125, 120, 0.6), M.SAND)
     w = M.B_L - SX
-    pc, cu = M.b_region(SX, M.B_L, drilled=[D02], opened=True)
+    pc, cu = M.b_region(SX, M.B_L, drilled=[], opened=False)
     pc, cu = pc.translate((-SX, 0, 0)), cu.translate((-SX, 0, 0))
     pc, _ = place(pc, (0, 0, 1), (1, 0, 0), (0, 50, 0.6))
     cu, _ = place(cu, (0, 0, 1), (1, 0, 0), (0, 50, 0.6))
@@ -730,7 +730,7 @@ def b_right():
     """Top view: the factory right edge, line 30 and the lower mounting hole (holes 1-4)."""
     s = r3d.Scene()
     x0, y1 = M.b_row_x(M.B_ROWS - 2) - M.P / 2, M.B_SIDE + 3.5 * M.P
-    b, cu = M.b_region(x0, M.B_L, 0, y1, opened=True)
+    b, cu = M.b_region(x0, M.B_L, 0, y1, opened=False)
     s.add("board", b, M.HAZ).add("pads", cu, M.TIN, 0.3)
     t = M.PAD_T
     s.hole("l30", (*M.b_xy(30, 3), t))
@@ -751,10 +751,8 @@ def bxz(line, hole):
     return x - BX0, y + BZ0
 
 
-POST_BL = (7.78, 54.06)
 POST_S20_2 = bxz(20, 2)
 POST_S24_31 = bxz(24, 31)                      # repo 91a5345: supports s20.2, s28.16, s24.31
-STANDOFF = (M.B_MH_X - BX0, M.B_MH_LO[1] + BZ0)  # bottom-right screw post (86.63, 54.06)
 POST_S28_16 = bxz(28, 16)
 SLOT_END = 92.3                                # backplane slot Xb 85.8-92.3 (6.5 deep)
 POST_X1 = 95.8                                 # right corner post Xb 85.8-95.8
@@ -772,10 +770,12 @@ PLASTIC = "#D9D9D9"
 ADD = M.HAZ
 
 
-def base_parts(slot=True, wall_h=14.0, bar=False, lid_posts=False):
-    """Enclosure 3's printed base (bar: the retention bar's two inserts, seen on the left block's top) (all printed in, nothing glued or cut), the parts that matter: floor, walls cut
-    down, the left wall block with its groove, the right corner post with its slot, the two M3 screw posts and the
-    three plain support posts. Returns [(name, solid, colour)]."""
+def base_parts(slot=True, wall_h=14.0, bar=False, lid_posts=False, shelves=False):
+    """Enclosure 4's printed base (bar: the retention bar's two inserts, seen on the left block's top) (all printed in,
+    nothing glued or cut), the parts that matter: floor, walls cut down, the left wall block with its groove, the right
+    corner post with its slot and the three plain support posts (no screw posts since enclosure 4: the cards hold the
+    backplane); shelves: the EVM ledges, the right fin and the pack tray (as printed, enclosure 4 + its lip fix).
+    Returns [(name, solid, colour)]."""
     out = []
     out.append(("floor", M.box(-3, -3, -3, 126.5, 172.5, 0), PLASTIC))
     out.append(("wallL", M.box(-3, -3, 0, 0, 172.5, wall_h), PLASTIC))
@@ -786,17 +786,15 @@ def base_parts(slot=True, wall_h=14.0, bar=False, lid_posts=False):
     if slot:
         post = post.cut(M.box(85.79, 70, BYB, SLOT_END, 153, 10.1))
     out.append(("cornerpost", post, PLASTIC))
-    bl = cq.Workplane("XY").center(*POST_BL).circle(4.0).extrude(BYB)
-    bl = bl.cut(M.box(POST_BL[0] + 3.5, POST_BL[1] - 5, -1, POST_BL[0] + 6, POST_BL[1] + 5, 10))
-    out.append(("post_bl", bl.val(), PLASTIC))
     for nm, p in (("post_s20_2", POST_S20_2), ("post_s24_31", POST_S24_31), ("post_s28_16", POST_S28_16)):
         out.append((nm, cq.Workplane("XY").center(*p).circle(3.0).extrude(BYB).val(), PLASTIC))
-    out.append(("standoff", cq.Workplane("XY").center(*STANDOFF).circle(3.5).extrude(BYB).val(), PLASTIC))
-    ins = []
-    for p in (POST_BL, STANDOFF):
-        ins.append(cq.Workplane("XY").workplane(offset=BYB - 0.05).center(*p).circle(2.3).circle(1.3)
-                   .extrude(0.06).val())
-    out.append(("inserts", cq.Compound.makeCompound(ins), M.BRASS))
+    if shelves:                                   # drawn in the scene frame (x Xb, y Zb, z Yb): heights along z
+        sh = [M.box(0, 41.15, 13.85, 9.85, 48.4, 109.0),                 # left ledge (EVM's left edge)
+              M.box(96.25, 21.4, 0, 100.25, 48.4, 109.0),                # right fin (EVM's right edge, the tray's end)
+              M.box(102.0, 38.4, 101.75, 121.0, 48.4, 109.0),            # the right lid-end block
+              M.box(0, 21.4, 0, 96.25, 24.4, _cage.TRAY_Y1),             # pack tray
+              M.box(16.5, 24.4, _cage.LIP_Y0, 89.5, 30.4, _cage.TRAY_Y1)]   # its front lip
+        out.append(("shelves", cq.Compound.makeCompound([b.val() for b in sh]), PLASTIC))
     if bar:
         bi = [cq.Workplane("XY").workplane(offset=wall_h - 0.05).center(BAR_X, z).circle(2.3).circle(1.3)
               .extrude(0.06).val() for z in (BAR_LO, BAR_HI)]
@@ -815,40 +813,30 @@ def base_parts(slot=True, wall_h=14.0, bar=False, lid_posts=False):
 
 def base_anchors(s):
     z = BYB
-    for nm, p in (("post_bl", POST_BL), ("post_s20_2", POST_S20_2), ("post_s24_31", POST_S24_31),
-                  ("standoff", STANDOFF), ("post_s28_16", POST_S28_16)):
-        (s.hole if nm in ("post_bl", "standoff") else s.anchor)(nm, (*p, z))
+    for nm, p in (("post_s20_2", POST_S20_2), ("post_s24_31", POST_S24_31), ("post_s28_16", POST_S28_16)):
+        s.anchor(nm, (*p, z))
     s.anchor("slot_lo", ((85.8 + SLOT_END) / 2, 72.73, 9.0))
     s.anchor("slot_mid", (85.8, 110, 9.0))
     s.anchor("post_top", (SLOT_END, 110, 21.96))
     s.anchor("groove", (8.5, 110, 9.0))
 
 
-def board_in_base(dx=0.0, tilt=0.0, screws=False):
-    """The piece in the box frame, slid dx along +Xb from home; tilt (deg) lifts its left side about the right edge."""
-    pc, cu = M.b_region(SX, M.B_L, drilled=[D02], opened=True)
+def board_in_base(dx=0.0, tilt=0.0):
+    """The piece in the box frame, slid dx along +Xb from home; tilt (deg) lifts its left side about the right edge.
+    Nothing drilled, no screws (enclosure 4: the cards hold it)."""
+    pc, cu = M.b_region(SX, M.B_L)
     pc, cu = pc.translate((-BX0 + dx, BZ0, BYB)), cu.translate((-BX0 + dx, BZ0, BYB))
     if tilt:
         pivot = (M.B_L - BX0 + dx, 0, BYB)
         pc = pc.rotate(pivot, (pivot[0], 1, pivot[2]), tilt)
         cu = cu.rotate(pivot, (pivot[0], 1, pivot[2]), tilt)
-    parts = [("board", pc, M.HAZ), ("pads", cu, M.TIN)]
-    if screws:
-        hs = []
-        for p in (POST_BL, STANDOFF):
-            h = cq.Workplane("XY").workplane(offset=BYB + M.PAD_T).center(*p).circle(2.85).extrude(1.65)
-            h = h.faces(">Z").edges().fillet(0.8)
-            h = h.cut(cq.Workplane("XY").workplane(offset=BYB + M.PAD_T + 0.6).center(*p).polygon(6, 2.3)
-                      .extrude(2))
-            hs.append(h.val())
-        parts.append(("screws", cq.Compound.makeCompound(hs), M.STEEL))
-    return parts
+    return [("board", pc, M.HAZ), ("pads", cu, M.TIN)]
 
 
 @scene
 def f_plan():
     s = r3d.Scene()
-    for nm, so, col in base_parts(bar=True, lid_posts=True):
+    for nm, so, col in base_parts(bar=True, lid_posts=True, shelves=True):
         s.add(nm, so, col)
     base_anchors(s)
     s.hole("bar_lo", (BAR_X, BAR_LO, 14.0))
@@ -878,37 +866,34 @@ def f_slot():
     R("f_slot", s, (-0.8, -1, 0.75), fit=(200, 160), line=0.4, outline=1.1, crop=((83, 76, 6), 23, 17))
 
 
-def _side(name, dx, tilt, screws):
+def _side(name, dx, tilt):
     s = r3d.Scene()
     for nm, so, col in base_parts(wall_h=26):
         if nm in ("wallB",):
             continue
         s.add(nm, so, col)
-    for nm, so, col in board_in_base(dx, tilt, screws):
+    for nm, so, col in board_in_base(dx, tilt):
         s.add(nm, so, col, 0.12 if nm == "pads" else 1.0)
     s.anchor("left_edge", (6.51 + dx, 60, BYB + 0.8))
     s.anchor("right_edge", (M.B_L - BX0 + dx, 60, BYB + 0.8))
     s.anchor("groove", (8.5, 60, 9.0))
     s.anchor("slot_end", (SLOT_END, 60, 9.0))
-    zh = BYB + M.PAD_T + (1.7 if screws else 0.0)
-    s.hole("screw_l", (POST_BL[0], 60, zh))
-    s.hole("screw_r", (STANDOFF[0], 60, zh))
     R(name, s, (0, -1, 0), up=(0, 0, 1), fit=(330, 90), line=0.35, outline=1.1, crop=((48, 0, 14), 50, 12))
 
 
 @scene
 def f_tilt():
-    _side("f_tilt", SLIDE, 6.0, False)
+    _side("f_tilt", SLIDE, 6.0)
 
 
 @scene
 def f_slide():
-    _side("f_slide", SLIDE, 0.0, False)
+    _side("f_slide", SLIDE, 0.0)
 
 
 @scene
 def f_home():
-    _side("f_home", 0.0, 0.0, False)          # Session 1 test-fits the bare board: no screws until it is wired
+    _side("f_home", 0.0, 0.0)                 # the bare board: no screws, ever (enclosure 4)
 
 
 @scene
@@ -916,11 +901,9 @@ def f_done():
     s = r3d.Scene()
     for nm, so, col in base_parts():
         s.add(nm, so, col)
-    for nm, so, col in board_in_base(0.0, 0.0, False):      # test fit: the bare board, no screws
+    for nm, so, col in board_in_base(0.0, 0.0):             # test fit: the bare board, no screws
         s.add(nm, so, col, 0.12 if nm == "pads" else 1.0)
     base_anchors(s)
-    s.hole("screw_l", (*POST_BL, BYB + M.PAD_T))
-    s.hole("screw_r", (*STANDOFF, BYB + M.PAD_T))
     s.hole("upper_mh", (M.B_MH_HI[0] - BX0, M.B_MH_HI[1] + BZ0, BYB + M.PAD_T))
     R("f_done", s, (0, 0, 1), up=(0, 1, 0), fit=(260, 320), line=0.35, outline=1.1,
       crop=((48, 100, 0), 54, 58))
@@ -928,10 +911,10 @@ def f_done():
 
 @scene
 def mat_base():
-    """The parts for the base: four M3 heat-set inserts (posts A, B, bars 1, 2) and four M4 (the lid corner posts,
-    cage insert_m4: the M3 model scaled to its length)."""
+    """The parts for the base: two M3 heat-set inserts (bars 1, 2) and four M4 (the lid corner posts, cage insert_m4:
+    the M3 model scaled to its length)."""
     s = r3d.Scene()
-    for k, x in enumerate((0, 8, 16, 24)):
+    for k, x in enumerate((8, 16)):
         s.add(f"insert{k}", M.insert().translate((x, 0, 0)), M.BRASS, 0.5)
     k4 = M4_L / 5.7
     for k, x in enumerate((36, 47, 58, 69)):

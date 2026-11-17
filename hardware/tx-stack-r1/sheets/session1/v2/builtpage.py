@@ -13,7 +13,7 @@ ORDER_TOP_DOWN = ["B3", "B1", "B2", "B4"]
 
 def built(c, pg, h, step_no, slogan):
     h.page(c, step_no, "WHAT YOU ARE BUILDING",
-           "THE PRINTED BASE (ENCLOSURE 3). THE BACKPLANE. FOUR CARDS IN THEIR KEYED 1x30 SOCKETS.", pg, slogan)
+           "THE PRINTED BASE (ENCLOSURE 4). THE BACKPLANE. FOUR CARDS IN THEIR KEYED 1x30 SOCKETS.", pg, slogan)
     g = h.Grid(1, 2, heights=[1, 1])
     # 1: iso from the lid side
     x, y, w, hh = h.panel(c, g.cell(0, 0), 1, [
@@ -36,13 +36,13 @@ def built(c, pg, h, step_no, slogan):
     h.label(c, x + 8, by_ - 60, "RETENTION BAR", bx_, by_, 9, "ALT", h.INK)
     # 2: straight down from the lid
     x, y, w, hh = h.panel(c, g.cell(0, 1), 2, [
-        "Straight down from the lid, glands at the bottom. Not drawn: the pack tray and charger ledges (shelves:",
-        "cage/shelves-spec.md, not printed yet), the EVM and the pack. Card parts are stack.py's layout boxes."])
+        "Straight down from the lid, glands at the bottom; the pack tray and the charger ledges below the cards.",
+        "Not drawn: the EVM and the pack. Card parts are stack.py's layout boxes."])
     a = h.Art(c, "asm_lid", x + 30, y + 4, w * 0.5, hh - 8, align="l")
     rx = a.x + a.w + 26
     ys = sorted((a.A(f"{b}_front")[1], b) for b in ORDER_TOP_DOWN)[::-1]
     for i, (_, b) in enumerate(ys):
         px, py = a.A(f"{b}_front")
         h.label(c, rx, py - 4 + (6 - 4 * i), ROLE[b], px, py, 11, "HEAD", h.INK)
-    h.label(c, rx, a.y + 40, "BACKPLANE: BIG HOLES RIGHT,\nSCREWS A (LEFT) AND B (RIGHT)", *a.A("bp_low"), 9, "ALT",
+    h.label(c, rx, a.y + 40, "BACKPLANE: BIG HOLES RIGHT,\nNO SCREWS: THE CARDS HOLD IT", *a.A("bp_low"), 9, "ALT",
             h.INK)

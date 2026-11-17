@@ -515,12 +515,12 @@ def _cover(c, pg, title, sub, items, mats, tasks, rules):
 def cover(c, pg):
     _cover(c, pg, "SESSION 1: PREP", "NO SOLDER. NO POWER. CARDS FIRST, THEN THE BASE: SNAP, LABEL, MEASURE, CUT, TEST-FIT.",
            [("CALIPERS", "tool_caliper"), ("STEEL RULER", "tool_ruler"), ("UTILITY KNIFE", "tool_knife"),
-            ("2 C-CLAMPS", "tool_clamps"), ("SANDPAPER 120", "tool_sandpaper"), ("DRILL 3.2 MM", "tool_drill"),
+            ("2 C-CLAMPS", "tool_clamps"), ("SANDPAPER 120", "tool_sandpaper"),
             ("SHARPIE", "tool_marker"), ("FLAT FILE", "tool_file"), ("MASK", None), ("PHONE", "tool_phone"),
             ("IRON (INSERTS ONLY)", "")],
            [("1x PAD3U", "mat_pad3u"), ("4x SOLDERFUL", "mat_cards"), ("M3 + M4 INSERTS", "mat_base")],
            ["01  SNAP THE CARD RAILS", "02  LABEL. PHOTOGRAPH. REPORT.", "03  MEASURE THE INSERT",
-            "04  CUT, DRILL, TEST-FIT BACKPLANE", "05  REPORT THE BASE"],
+            "04  CUT, TEST-FIT BACKPLANE", "05  REPORT THE BASE"],
            ["COUNT HOLES. DO NOT TRUST A RULER FOR POSITION.",
             "SCORE BOTH FACES. ALWAYS BOTH. FILE TO THE LINE, NEVER PAST IT.",
             "FIBREGLASS DUST: MASK ON, DAMP TOWEL UNDER, WASH HANDS AFTER.",
@@ -528,7 +528,7 @@ def cover(c, pg):
 
 
 def step1(c, pg):
-    page(c, "03", "MEASURE THE INSERT", "ONE M3 HEAT-SET INSERT. TWO NUMBERS. THE POST HOLES DEPEND ON THEM.", pg,
+    page(c, "03", "MEASURE THE INSERT", "ONE M3 HEAT-SET INSERT. TWO NUMBERS. THE BAR'S INSERT BORES DEPEND ON THEM.", pg,
          SLOGANS[1])
     g = Grid(2, 2)
     # 1: length
@@ -769,7 +769,7 @@ def ringm(c, px, py, r=6, color=NEON, w=1.8):
 
 
 def bp1(c, pg):
-    page(c, "04", "BACKPLANE  1/6: FIND THE PLATED END",
+    page(c, "04", "BACKPLANE  1/5: FIND THE PLATED END",
          "ONE PAD3U. KEEP THE END WITH THE TWO BIG HOLES: 31 ROWS OF 38 HOLES. ONE CUT ONLY.", pg, SLOGANS[3])
     g = Grid(2, 2, heights=[1.45, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
@@ -827,61 +827,12 @@ def bp1(c, pg):
     chip(c, bad.x + bad.w / 2, y + 8, "THROUGH HOLES: RAGGED", 9, "ALT", NEON, "c")
 
 
-def bp2(c, pg):
-    page(c, "04", "BACKPLANE  2/6: DRILL TWO HOLES",
-         "BEFORE THE SNAP. LINE 0 HOLE 2 AT 3.2. THE LOWER BIG HOLE OPENED FROM 2.8 TO 3.2.", pg, SLOGANS[4])
-    g = Grid(2, 2, heights=[1.5, 1])
-    x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        "Still ONE board: drill before you snap. FRONT face up, big holes on the right. Drill 3.2 mm from the FRONT,",
-        "board on scrap wood, slow speed, light pressure: (A) line 0 hole 2, (B) the LOWER big hole, level with hole 2.",
-        "Leave the UPPER big hole as it is: the slot in the base's corner post holds that corner."])
-    d = Art(c, "b_drill", x + 150, y + 22, 250, h - 36, align="l")
-    (s0x, s0y), (s1x, s1y) = d.A("score0"), d.A("score1")
-    dashed(c, s0x, s0y - 8, s1x, s1y + 8, w=1.6, halo=WHITE)
-    r32 = 1.6 * d.k * d.scale            # the 3.2 mm hole's own radius on this page
-    ax, ay = d.A("h0_2")                  # centred on line 0's hole 2: 1.27 right of the score line
-    ringm(c, ax, ay, r32, w=1.3)
-    label(c, d.x - 30, ay + 40, "A  LINE 0 HOLE 2\n    DRILL 3.2 MM", ax - r32 * 0.7, ay + r32 * 0.7, 12, "ALT", NEON,
-          "r", dot=False)
-    bx, by = d.A("mh_lo")
-    ringm(c, bx, by, r32, w=1.3)
-    label(c, d.x + d.w + 20, by + 34, "B  LOWER BIG HOLE\n    OPEN 2.8 TO 3.2", bx + r32 * 0.7, by + r32 * 0.7, 12,
-          "ALT", NEON, dot=False)
-    ux, uy = d.A("mh_hi")
-    label(c, d.x + d.w + 20, uy - 20, "UPPER BIG HOLE:\nLEAVE IT 2.8", ux + 4, uy - 2, 10, "ALT", INK, dot=False)
-    label(c, d.x - 30, (s0y + s1y) / 2, "SCORE LINE\n(BACKPLANE 3/6: NOT YET)", s0x, (s0y + s1y) / 2, 9, "ALT", INK, "r")
-    chip(c, d.A("h0_38")[0], d.y + d.h + 2, "LINE 0", 9, "ALT", INK, "c")
-    chip(c, d.A("h30_38")[0] - 4, d.y + d.h + 2, "LINE 30", 9, "ALT", INK, "c")
-    chip(c, d.x - 6, d.A("h30_1")[1] - 9, "HOLE 1", 9, "ALT", INK, "r")
-    chip(c, d.x - 6, d.A("h30_2")[1] + 1, "HOLE 2", 9, "ALT", INK, "r")
-    # 2: hole A close-up
-    x, y, w, h = panel(c, g.cell(0, 1), 2, [
-        "Hole A crosses the score line by 0.3 mm.", "Drilled now, the spare row still backs it.",
-        "After the snap it opens into the edge: OK."])
-    z = Art(c, "b_holezoom", x + 30, y + 6, w * 0.5, h - 12, align="l")
-    (s0x, s0y), (s1x, s1y) = z.A("score0"), z.A("score1")
-    dashed(c, s0x, s0y, s1x, s1y, w=2.0, halo=WHITE)
-    label(c, z.x + z.w + 10, z.y + z.h - 30, "LINE 0 HOLE 2\n3.2 MM", *z.A("hole"), 10, "ALT", NEON, lcolor=INK)
-    label(c, z.x + z.w + 10, z.y + 30, "0.3 MM PAST\nTHE SCORE LINE", *z.A("hole_l"), 9, "ALT", INK)
-    # 3: hole B before / after + the drill
-    x, y, w, h = panel(c, g.cell(1, 1), 3, [
-        "Hole B: same 3.2 mm bit through the plated", "hole. Mask on, damp towel under,",
-        "wash hands after."])
-    b0 = Art(c, "b_mh_before", x + 10, y + 40, w / 2 - 30, h - 60)
-    b1 = Art(c, "b_mh_after", x + w / 2 + 10, y + 40, w / 2 - 30, h - 60)
-    arrow(c, b0.x + b0.w + 2, b0.y + b0.h / 2, b1.x - 2, b1.y + b1.h / 2, NEON, 2)
-    chip(c, b0.x + b0.w / 2, y + 24, "AS MADE: 2.8", 10, "ALT", INK, "c")
-    chip(c, b1.x + b1.w / 2, y + 24, "DRILLED: 3.2", 10, "ALT", NEON, "c")
-    Art(c, "tool_drill", x + 20, y + 2, 120, 18, align="l")
-    mask_icon(c, x + w - 30, y + h - 16, 0.6)
-
-
 def bp3(c, pg):
-    page(c, "04", "BACKPLANE  3/6: SCORE AND SNAP", "LEFT EDGE ONLY. BOTH FACES. x10 EACH.", pg, SLOGANS[4])
+    page(c, "04", "BACKPLANE  2/5: SCORE AND SNAP", "LEFT EDGE ONLY. BOTH FACES. x10 EACH.", pg, SLOGANS[4])
     g = Grid(1, 2, heights=[1.25, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
-        "Clamp the steel ruler on the KEEP side of the dots (right). Knife along it 10 times, light then firm, straight",
-        "through hole A. Flip the board over top-to-bottom, line up on the same gap from the dots, score 10 more."])
+        "Clamp the steel ruler on the KEEP side of the dots (right). Knife along it 10 times, light then firm, in the",
+        "gap. Flip the board over top-to-bottom, line up on the same gap from the dots, score 10 more. Nothing to drill."])
     s = Art(c, "b_score", x + 110, y + 4, 290, h - 10, align="l", valign="b")
     label(c, x + 6, s.y + 40, "KNIFE ON\nTHE LINE.\nPULL TOWARD\nYOU.", *s.A("tip"), 9, color=INK)
     label(c, x + 6, s.y + s.h - 14, "CLAMP", *s.A("clamp"), 9)
@@ -904,12 +855,12 @@ def bp3(c, pg):
 
 
 def bp4(c, pg):
-    page(c, "04", "BACKPLANE  4/6: SAND. CHECK. MARK.", "THE NEW EDGE FLAT. TWO NUMBERS. ONE WORD.", pg, SLOGANS[1])
+    page(c, "04", "BACKPLANE  3/5: SAND. CHECK. MARK.", "THE NEW EDGE FLAT. TWO NUMBERS. ONE WORD.", pg, SLOGANS[1])
     g = Grid(2, 2, heights=[1.1, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
         "Sand the snapped LEFT edge flat on paper on the table, the board standing on that edge. CHECK: the edge to the",
         "near side of line 0's holes = 0.5 to 1.2 mm (1.27 mm to their centres). Over that, sand more: it must fit",
-        "the left wall's groove. Hole A is open into the edge here: expected."])
+        "the left wall's groove."])
     s = Art(c, "b_sand", x + 40, y + 4, 230, h - 8, align="l")
     (a0x, a0y), (a1x, a1y) = s.A("a0"), s.A("a1")
     arrow(c, (a0x + a1x) / 2, (a0y + a1y) / 2 + 26, a0x, a0y + 26, INK, 2)
@@ -950,13 +901,13 @@ def bp4(c, pg):
 
 
 def bp5(c, pg):
-    page(c, "04", "BACKPLANE  5/6: READY THE BASE",
-         "POSTS AND SLOT PRINTED IN. FOUR M3 INSERTS. FOUR M4 IN THE LID CORNER POSTS.", pg,
+    page(c, "04", "BACKPLANE  4/5: READY THE BASE",
+         "PADS, SLOT, SHELVES PRINTED IN. 2 M3 INSERTS (THE BAR). 4 M4 IN THE LID CORNER POSTS.", pg,
          SLOGANS[0])
     g = Grid(2, 2, heights=[1.3, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        "Enclosure 3's base from the lid side, bottom wall at the bottom; all printed in, post tops at 8.0. Positions",
-        "are (Xb, Zb) mm from the left and bottom walls. Backplane screws: post A and post B. Bar screws: BAR 1, BAR 2.",
+        "Enclosure 4's base from the lid side, bottom wall at the bottom; all printed in, pad tops at 8.0. Positions",
+        "are (Xb, Zb) mm from the left and bottom walls. No backplane screws. Bar screws: BAR 1, BAR 2.",
         "The four lid corner posts (up at the rim, under the lid's screw bosses) take the M4 inserts (ringed)."])
     p = Art(c, "f_plan", x + 130, y + 6, 240, h - 12)
     m4 = [p.A(f"m4_{k}") for k in range(4)]          # cage.corners(): bottom left, top left, bottom right, top right
@@ -970,8 +921,6 @@ def bp5(c, pg):
           lcolor=INK, dot=False)
     label(c, p.x + p.w + 20, m4[2][1] - 4, "M4 INSERT: LID CORNER POST", m4[2][0] + 7, m4[2][1], 10, "ALT", NEON,
           lcolor=INK, dot=False)
-    for nm in ("post_bl", "standoff"):
-        ringm(c, *p.A(nm), 8)
     rx = p.x + p.w + 20
     sx_, sy_ = p.A("post_s24_31")
     label(c, rx, sy_ - 4, "SUPPORT DIA 6 AT (68.74, 127.72)", sx_, sy_, 10, "ALT", INK)
@@ -979,10 +928,6 @@ def bp5(c, pg):
     label(c, rx, spy - 4, "SUPPORT DIA 6 AT (78.90, 89.62)", spx + 6, spy, 10, "ALT", INK)
     s2x, s2y = p.A("post_s20_2")
     label(c, rx, s2y + 34, "SUPPORT DIA 6 AT (58.58, 54.06)", s2x, s2y + 4, 10, "ALT", INK)
-    stx, sty = p.A("standoff")
-    label(c, rx, sty - 20, "SCREW POST B: DIA 7\nAT (86.63, 54.06)", stx + 8, sty, 10, "ALT", NEON, lcolor=INK, dot=False)
-    blx_, bly_ = p.A("post_bl")
-    label(c, p.x - 14, bly_ + 14, "SCREW POST A: DIA 8,\nFLAT, AT (7.78, 54.06)", blx_, bly_, 10, "ALT", NEON, "r", lcolor=INK)
     gx, gy = p.A("groove")
     label(c, p.x - 14, gy + 10, "LEFT WALL\nGROOVE", gx, gy, 9, "ALT", INK, "r")
     for nm, txt in (("bar_lo", "BAR 1 INSERT\nAT (5.00, 76.50)"), ("bar_hi", "BAR 2 INSERT\nAT (5.00, 146.50)")):
@@ -1001,28 +946,28 @@ def bp5(c, pg):
     chip(c, x + w / 2, y + 4, "SLIDES FREELY, END TO END: OK", 10, "ALT", NEON, "c")
     # 3: the two inserts
     x, y, w, h = panel(c, g.cell(1, 1), 3, [
-        "Iron on, no solder. One M3 insert, flush, in", "SCREW POSTS A, B and bores BAR 1, BAR 2; one",
-        "M4 in each lid corner post (ASSEMBLY.md 2.3).", "BAR 1 has 0.48 of plastic over the B4 slot:",
+        "Iron on, no solder. One M3 insert, flush, in", "each of bores BAR 1 and BAR 2; one M4 in",
+        "each lid corner post (ASSEMBLY.md 2.3).", "BAR 1 has 0.48 of plastic over the B4 slot:",
         "light pressure, iron not past flush. Then run", "a PAD3U offcut down the B4 slot from the",
         "front; file the slot if it binds."])
     mb = Art(c, "mat_base", x + 10, y + h - 58, w - 20, 50)
-    chip(c, mb.A("m3")[0], y + h - 70, "M3 x4", 9, "ALT", INK, "c")
+    chip(c, mb.A("m3")[0], y + h - 70, "M3 x2", 9, "ALT", INK, "c")
     chip(c, mb.A("m4")[0], y + h - 70, "M4 x4", 9, "ALT", INK, "c")
-    chip(c, x + 10, y + 56, "4 x M3 HEAT-SET INSERT (A, B, BAR 1, BAR 2)", 9, "ALT", INK)
+    chip(c, x + 10, y + 56, "2 x M3 HEAT-SET INSERT (BAR 1, BAR 2)", 9, "ALT", INK)
     chip(c, x + 10, y + 40, "4 x M4 HEAT-SET INSERT (LID CORNER POSTS)", 9, "ALT", INK)
-    chip(c, x + 10, y + 24, "ALL POST TOPS LEVEL: 8.0 ABOVE THE FLOOR", 9, "ALT", NEON)
+    chip(c, x + 10, y + 24, "ALL PAD TOPS LEVEL: 8.0 ABOVE THE FLOOR", 9, "ALT", NEON)
     chip(c, x + 10, y + 8, "OFFCUT SLIDES THE WHOLE B4 SLOT: OK", 9, "ALT", NEON)
 
 
 def bp6(c, pg):
-    page(c, "04", "BACKPLANE  6/6: TEST-FIT IT. OUT AGAIN.",
-         "THE BARE BOARD: IN, CHECK, OUT. NO SCREWS TODAY. IT IS WIRED IN A LATER SESSION.", pg, SLOGANS[2])
+    page(c, "04", "BACKPLANE  5/5: TEST-FIT IT. OUT AGAIN.",
+         "THE BARE BOARD: IN, CHECK, OUT. NO SCREWS, EVER: THE CARDS HOLD IT.", pg, SLOGANS[2])
     g = Grid(2, 3, heights=[1, 1, 1])
     steps = [("f_tilt", ["TILT IT. FRONT up, BACK face down. Push the", "right edge into the corner post's slot, to",
                          "the slot's end. The left edge clears the wall."]),
-             ("f_slide", ["LOWER the left side onto the screw and", "support posts, BACK face down."]),
-             ("f_home", ["SLIDE it 2.84 mm LEFT: left edge into the", "groove, right edge 3.66 in the slot. CHECK",
-                         "holes A and B sit over the inserts. No", "screws: they go in when it is wired."])]
+             ("f_slide", ["LOWER the left side onto the three", "support pads, BACK face down."]),
+             ("f_home", ["SLIDE it 2.84 mm LEFT: left edge into the", "groove, right edge 3.66 in the slot. No",
+                         "screws: plugged in, the cards hold it."])]
     for i, (art, cap) in enumerate(steps):
         x, y, w, h = panel(c, g.cell(0, i), i + 1, cap)
         a = Art(c, art, x + 10, y + 22, w - 20, h - 50, valign="c")
@@ -1033,22 +978,19 @@ def bp6(c, pg):
         if art == "f_tilt":
             label(c, a.x + a.w - 10, a.y + a.h + 6, "RIGHT EDGE IN THE SLOT", *a.A("slot_end"), 9, "ALT", INK, "r")
         if art == "f_home":
-            label(c, a.x + 10, a.y - 12, "HOLE A OVER POST A", *a.A("screw_l"), 9, "ALT", INK)
-            label(c, a.x + a.w - 10, a.y - 12, "HOLE B OVER POST B", *a.A("screw_r"), 9, "ALT", INK, "r")
+            label(c, a.x + 10, a.y - 12, "LEFT EDGE IN THE GROOVE", *a.A("groove"), 9, "ALT", INK)
     cell = (g.cell(1, 0)[0], g.cell(1, 2)[1], g.cell(1, 0)[2], g.cell(1, 0)[1] + g.cell(1, 0)[3] - g.cell(1, 2)[1])
     x, y, w, h = panel(c, cell, 4, [
-        "Seated, from the lid side: flat on all", "posts, A and B over their inserts. Then",
+        "Seated, from the lid side: flat on all", "three pads. Then",
         "OUT: slide it right, lift the left side,", "tilt the right edge out of the slot.",
         "Wiring it is a later session; then it goes", f"back for good: {BP_FIT.lower()},",
-        "two M3 x 6 screws (BACKPLANE.md 6)."])
+        "held by the cards (BACKPLANE.md 6)."])
     wl = "LATER (BACKPLANE.md 2-5): " + "; ".join(t.upper() for t in BP_WIRING) + "."
     wl = textwrap.wrap(wl, 36)
     for k, ln in enumerate(wl):
         chip(c, x + 36, y + h - 14 - 13 * k, ln, 8.5, "ALT", NEON)
     d = Art(c, "f_done", x + 6, y + 30, w - 12, h - 40 - 13 * len(wl) - 18)
-    label(c, d.x + 20, d.y - 18, "HOLE A OVER POST A", *d.A("screw_l"), 9, "ALT", INK)
-    label(c, d.x + d.w - 100, d.y - 18, "HOLE B OVER POST B", *d.A("screw_r"), 9, "ALT", INK)
-    label(c, d.x + d.w - 110, d.y + d.h + 10, "UPPER BIG HOLE: EMPTY", *d.A("upper_mh"), 9, "ALT", INK)
+    label(c, d.x + d.w - 110, d.y + d.h + 10, "BOTH BIG HOLES: EMPTY", *d.A("upper_mh"), 9, "ALT", INK)
 
 
 def step3(c, pg):
@@ -1154,7 +1096,7 @@ BASE_ROWS = [("INSERT LENGTH  L", "mm", "expected 5.7"),
              ("INSERT DIAMETER  D (KNURL TIPS)", "mm", "expected 4.6"),
              ("BAR 1 + BAR 2 INSERTS SET, B4 SLOT CLEAR", "Y / N", "offcut slides the whole B4 slot"),
              ("4 x M4 INSERTS IN THE LID CORNER POSTS", "Y / N", M4_WHY.split(":")[0] + ": the lid's M4 screws"),
-             ("BACKPLANE: 31 x 38, 2 HOLES, TEST-FITS", "Y / N", "in, A and B over the inserts, out again"),
+             ("BACKPLANE: 31 x 38, TEST-FITS", "Y / N", "in, flat on the three pads, out again"),
              ("BACKPLANE: LINE 30 TO RIGHT EDGE", "mm", "expected 5.48, at most 6.13"),
              ("PHOTO OF THE BACKPLANE TEST-FITTED", "SENT", "")]
 
@@ -1175,7 +1117,7 @@ def base_report(c, pg):
     page(c, "05", "REPORT THE BASE.", "THE BASE IS DONE. SHOW THE MACHINE YOUR NUMBERS.", pg, SLOGANS[5])
     g = Grid(1, 2, heights=[1, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
-        "Send these to Claude. Claude updates the model, the post holes and the card slots from them."])
+        "Send these to Claude. Claude updates the model, the bar's insert bores and the card slots from them."])
     report(c, x, y, w, h, BASE_ROWS)
 
 
@@ -1188,7 +1130,7 @@ def built_page(c, pg):
 SESSIONS = [
     ("session1", "Session 1: prep", "PROTOCOL 01 // SESSION 1 // PREP",
      [("00-cover", [cover]), ("00-what-you-are-building", [built_page]), ("01-snap-card-rails", [step3]),
-      ("02-label-report", [step4]), ("03-measure-insert", [step1]), ("04-backplane", [bp1, bp2, bp3, bp4, bp5, bp6]),
+      ("02-label-report", [step4]), ("03-measure-insert", [step1]), ("04-backplane", [bp1, bp3, bp4, bp5, bp6]),
       ("05-report-base", [base_report])]),
 ]
 

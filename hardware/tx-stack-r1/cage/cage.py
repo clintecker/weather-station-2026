@@ -15,11 +15,13 @@ Everything is a horizontal shelf in one stack, each sliding toward the back. Bot
   - the retention bar across the cards' front-left.
 The spare depth in front of the cards (Yb from the bar to the lid) takes the RJ11 plugs (B1's and B2's jacks face the
 lid) and their cables' bends down to the glands, the EVM leads' service loops, and the coax: AD1's arm points toward
-the lid and the cable bends to the SMA bulkhead boss high in the right wall.
+the lid and the cable bends right and runs down the right column to the SMA bulkhead low in the right wall (enclosure 4:
+Yb 94.14, Zb 60.38).
 
 Moulded into the base: the corner blocks (hung from the walls under the lid's bosses) with M4 heat-set inserts, the card slots, the right corner
-post, the backplane posts, the EVM ledges, the pack tray; outside: gland bosses with nut flats in the bottom wall, an
-M12 vent boss, the SMA bulkhead boss, two pole lugs on the back (no screws through it), a drip edge over the top seam.
+post, the backplane's support pads (no screw posts since enclosure 4: the cards hold the backplane), the EVM ledges,
+the pack tray; outside: gland bosses with nut flats in the bottom wall, an M12 vent boss, the SMA bulkhead boss, two
+mounting flanges on the short ends (two slots each), a drip edge over the top seam.
 
 Run:  python3 cage.py           print the parts and check them against the box inside (no CadQuery needed)
       ../../../.venv-cad/bin/python cage.py --solid   also build the solids in CadQuery and check them
@@ -82,14 +84,8 @@ GLAND = {"PG-7": S.val("gland_pg7"), "PG-9": S.val("gland_pg9")}
 GLAND_NUT = {"PG-7": S.val("gland")[1], "PG-9": S.val("gland_pg9_nut")}
 M = 2.0                             # the margin every fit check asks for
 # the backplane mount (cage/backplane-mount-spec.md): two screw posts, plain pads, the left edge in a groove, the right in a slot
-BP_POST_D, BP_POST_BL, BP_FLAT, _bd, _bl, _bf = S.val("bp_post")
-BP_BORE = (_bd, _bl)
-# screw posts: bottom left under the drilled hole (s0.2, with the flat toward the mux), bottom right under the
-# PAD3U's lower factory hole; the board's holes they serve, from the layout (the L7 and section 4 checks compare them)
-BP_HOLES_AT = [st.bp_xy(st.BP_SCREWS[0]), st.BP_FACTORY[st.BP_FACTORY_SCREW]]
-BP_POSTS = [(7.78, 54.06), (86.63, 54.06)]
-BP_POST_WHAT = ["bottom-left (drilled s0.2)", "bottom-right (factory hole)"]
-BP_POST_DS = [BP_POST_BL, BP_POST_D]
+# no screw posts since enclosure 4 (Clint, 2026-11-17: the cards plugged into it hold the backplane in place)
+BP_BORE = S.val("bar_bore")                              # the retention bar's insert bores
 RSLOT_D, RSLOT_H = S.val("bp_slot")
 BAR_INS = S.val("bar_inserts")
 BP_PAD_D = 6.0                                           # plain support pads (no screw) under st.BP_SUPPORTS                          # Xb, Zb, Zb, the bar's clearance hole
@@ -101,6 +97,8 @@ WALL = S.val("cage_wall")
 BAR = S.val("bar")
 SHELF = 2.0                         # EVM ledge thickness
 TRAY_T = 3.0                        # pack tray thickness: it spans from the left wall to the right fin
+LIP_Y0 = S.val("pack")[1] + 2.0     # the tray's front lip starts at the pack's front (it lies at Yb 2-56)
+TRAY_Y1 = LIP_Y0 + 6.0              # the 45 degree lip ramp rises 6 to the tray's front edge (enclosure 4 fix 1)
 BP_SLAB_CLEAR = 0.3                 # the left ledge's top below the backplane's outline (its install column)
 CARD_FRONT = st.BP_FRONT + st.Y_BP
 Z_LO = st.card_z("B4") - 8.0
@@ -111,7 +109,9 @@ POST_R = 8.0                        # the right corner post reaches this far rig
 BP_BOTTOM = st.BP_Z0 - 2 * st.P
 # glands: two rows of four in the bottom wall, the flat weather-meter cables in the PG-9s under the right column
 FLAT = {(98.0, 25.0): "wind (flat)", (98.0, 60.0): "rain (flat)"}
-GLANDS = [(x, y, "PG-9" if (x, y) in FLAT else "PG-7") for y in (25.0, 60.0) for x in (26.0, 50.0, 74.0, 98.0)]
+GLANDS = [(x, y, "PG-9" if (x, y) in FLAT else "PG-7") for y in (25.0, 60.0) for x in (26.0, 50.0, 74.0, 98.0)
+          if (x, y) != (74.0, 60.0)]             # enclosure 4: no spare (G7 gone); the PG-9s go back in (fix 2)
+SMA = S.val("sma_bulkhead")                             # Yb, Zb of the bulkhead's axis, hole, nut seat (enclosure 4)
 GLAND_IN = max(g[1] for g in GLAND.values())            # thread length inside the wall (L1)
 VENT = (50.0, 85.0)                                     # Xb, Yb in the bottom wall
 # shelves, bottom to top
@@ -132,8 +132,7 @@ EVM_X1, EVM_Y1 = EVM_X0 + EVM[0], EVM_Y0 + EVM[1]
 FIN = (EVM_X1 - SHELF, EVM_X1 + 2.0)                    # the right fin (Xb): its inner 2 is the ledge under the board
 BULKHEAD_NUT = 11.0                                     # SMA bulkhead jack nut across corners [derived: 3/8 in hex]
 _gd, _gh, _gt = S.val("bp_groove")
-RAIL_Z0 = max(EVM_TOP + M, BP_POSTS[0][1] + BP_POST_BL / 2 + 0.5)   # the groove rail below the left wall: 2 above
-#   the EVM, 0.5 above the bottom-left post
+RAIL_Z0 = EVM_TOP + M                                   # the groove rail below the left wall: 2 above the EVM
 RAIL_Y1 = st.BP_FRONT + _gh + _gd + 1.0                 # the rail's front face: the groove roof plus 1
 GROOVE = (WALL - _gd, st.BP_BACK, RAIL_Z0, WALL, st.BP_FRONT + _gh, Z_HI)   # Xb, Yb, Zb from / to: the backplane groove
 RSLOT = (st.CAGE_LEFT + st.BW - 2.0, st.BP_BACK, Z_LO, st.CAGE_LEFT + st.BW - 2.0 + RSLOT_D, st.BP_BACK + RSLOT_H, Z_HI)
@@ -178,7 +177,7 @@ def parts():
     out.append(Part("left wall", wall, cuts=slots, solid=left_wall_solid,
                     note="moulded in the base: one 2 mm deep slot per card; cards slide in from the lid side toward the "
                          f"back; the backplane's left edge in a groove (Xb {GROOVE[0]:g}-{GROOVE[3]:g}, Yb {GROOVE[1]:g}-"
-                         f"{GROOVE[4]:g}, a 45 degree roof) the wall's full length and down a rail to Zb {RAIL_Z0:.2f}, above the bottom-left post"))
+                         f"{GROOVE[4]:g}, a 45 degree roof) the wall's full length and down a rail to Zb {RAIL_Z0:.2f}"))
     grip = S.val("sb_snap_y") - 1.5
     post_y1 = CARD_FRONT - grip
     post = [B(RX - 2.0, YP, Z_LO, RX + POST_R, post_y1, Z_HI, "right corner post")]
@@ -187,19 +186,12 @@ def parts():
     pslots.append(B(*RSLOT[:3], *RSLOT[3:], "backplane slot"))
     out.append(Part("right corner post", post, cuts=pslots, solid=right_post_solid,
                     note=f"moulded: takes each card's back-right corner (card Y {grip:.2f}-{st.CD:.2f})"))
-    posts = [B(x - d / 2, YP, z - d / 2, x + (BP_FLAT if i == 0 else d / 2), st.BP_BACK, z + d / 2, "backplane post")
-             for i, ((x, z), d) in enumerate(zip(BP_POSTS, BP_POST_DS))]
     r = BP_PAD_D / 2
     out.append(Part("backplane support pads", [B(x - r, YP, z - r, x + r, st.BP_BACK, z + r, "backplane support pad")
                                                for x, z in (st.bp_xy(h) for h in st.BP_SUPPORTS)],
                     note=f"plain \u00d8{BP_PAD_D:g} pads {st.BP_BACK:g} tall under {', '.join(st.BP_SUPPORTS)} (no screw, no "
-                         "hole in the board), printed in enclosure 2: they take the cards' push"))
-    out.append(Part("backplane posts", posts, solid=bp_post_solids,
-                    note=f"two round screw posts {st.BP_BACK:g} tall from the floor (bottom left \u00d8{BP_POST_BL:g} with a "
-                         f"flat {BP_FLAT:g} from its centre toward the mux, under the drilled s0.2; bottom right "
-                         f"\u00d8{BP_POST_D:g} under the PAD3U's lower factory hole), M3 heat-set inserts (bore "
-                         f"\u00d8{BP_BORE[0]:g} x {BP_BORE[1]:g}); the left edge in the left wall's groove and its rail, the "
-                         "factory right edge in the right corner post's slot"))
+                         "hole in the board): they take the cards' push; no screw posts (enclosure 4): the cards plugged "
+                         "into its sockets hold the board, its left edge in the groove, its right edge in the post's slot"))
     out.append(Part("retention bar", [B(0, CARD_FRONT + 1.0, Z_LO, 12.0, CARD_FRONT + 1.0 + BAR, Z_HI, "retention bar")],
                     solid=bar_solid,
                     note=f"separate: two M3 screws (\u00d8{BAR_INS[3]:g} holes) into inserts in the left wall's front face at "
@@ -214,11 +206,13 @@ def parts():
         B(FIN[0], YP, PACK_TRAY_Z, FIN[1], SEAM - LIP_T, EVM_Z0, "right fin (charger ledge on its top)")],
         note=f"moulded: the EVM slides back on a 2 mm ledge (left wall) and the right fin's top at Zb {ez:g}-{EVM_Z0:g} "
              "(no mounting holes; Bumpons off), notched under its edge tails; a stop at the back, a clip at the front"))
-    out.append(Part("pack tray", [B(0, YP, PACK_TRAY_Z, FIN[0], PACK[1] + 4.0, PACK_TRAY_Z + TRAY_T, "pack tray"),
-                                  B(PACK_X0 - 2.0, PACK[1] + 2.0, PACK_TRAY_Z + TRAY_T, PACK_X0 + PACK[0] + 2.0,
-                                    PACK[1] + 4.0, PACK_TRAY_Z + TRAY_T + 6.0, "pack tray front lip")],
+    out.append(Part("pack tray", [B(0, YP, PACK_TRAY_Z, FIN[0], TRAY_Y1, PACK_TRAY_Z + TRAY_T, "pack tray"),
+                                  B(PACK_X0 - 2.0, LIP_Y0, PACK_TRAY_Z + TRAY_T, PACK_X0 + PACK[0] + 2.0,
+                                    TRAY_Y1, PACK_TRAY_Z + TRAY_T + 6.0, "pack tray front lip (45 degree ramp)")],
                     note=f"moulded to the floor, the left wall and the right fin, {CABLE_RISE:g} mm over the gland "
-                         "threads (the cable space); the pack lies flat, slides back, a hook-and-loop strap round it"))
+                         f"threads (the cable space); the pack lies flat on Yb 0-{LIP_Y0:g}, slides back, a hook-and-loop "
+                         f"strap round it; the front lip a 45 degree ramp from Yb {LIP_Y0:g} (the pack's front) up 6 to Yb "
+                         f"{TRAY_Y1:g} (enclosure 4 fix 1: enclosure 4 started it at Yb 50, under the pack)"))
     return out
 
 
@@ -256,43 +250,21 @@ def bar_solid(shape):
     return shape
 
 
-def bp_post_solids(_shape):
-    """The three backplane posts: round, a fillet at the foot, the insert bore from the top, the bottom-left flat."""
-    import cadquery as cq
-    f, top = S.val("bp_post")[5], st.BP_BACK
-    c = (f * (1 - 0.5 ** 0.5), f * (1 - 0.5 ** 0.5))
-    shape = None
-    for i, ((x, z), d) in enumerate(zip(BP_POSTS, BP_POST_DS)):
-        r = d / 2
-        prof = (cq.Workplane("XY").moveTo(0, 0).lineTo(r + f, 0).threePointArc((r + c[0], c[1]), (r, f))
-                .lineTo(r, top).lineTo(0, top).close())
-        p = prof.revolve(360, (0, 0, 0), (0, 1, 0)).translate((x, YP, z))
-        p = p.cut(cq.Workplane("XZ").circle(BP_BORE[0] / 2).extrude(-BP_BORE[1]).translate((x, top - BP_BORE[1], z)))
-        if i == 0:
-            p = p.cut(cq.Workplane("XY").box(10, top + 2, 20, centered=False).translate((x + BP_FLAT, -1, z - 10)))
-        shape = p if shape is None else shape.union(p)
-    return shape
-
-
 def backplane_checks():
-    """cage/backplane-mount-spec.md section 4: the post and pad tops, the groove and the slot floors level with the
-    copper face; the screw posts on the drilled hole and on the lower factory hole; nothing printed in the board's slab
-    but the groove and the slot over its edges; the fit (right edge tilted to the slot's end, the left edge clear of
-    the left wall's face on the way down, then slid left into the groove); the screw heads; the mux. Returns
-    (lines, faults)."""
+    """cage/backplane-mount-spec.md section 4: the pad tops, the groove and the slot floors level with the copper face;
+    no screw posts (enclosure 4); nothing printed in the board's slab but the groove and the slot over its edges; the
+    fit (right edge tilted to the slot's end, the left edge clear of the left wall's face on the way down, then slid
+    left into the groove); the mux. Returns (lines, faults)."""
     bad = []
     x0, z0, x1, z1 = st.BP_OUTLINE
     yb, yf = st.BP_BACK, st.BP_FRONT
     for p in parts():
         for b in p.boxes:
-            if b.what in ("backplane post", "backplane support pad") and abs(b.y1 - yb) > 0.1:
+            if b.what == "backplane support pad" and abs(b.y1 - yb) > 0.1:
                 bad.append(f"a {b.what}'s top is at Yb {b.y1:g}, not the board's {yb:g}")
     for name, fl in (("groove", GROOVE[1]), ("right slot", RSLOT[1])):
         if abs(fl - yb) > 0.1:
             bad.append(f"the {name} floor is at Yb {fl:g}, not the board's {yb:g}")
-    for (x, z), (hx, hz), what in zip(BP_POSTS, BP_HOLES_AT, BP_POST_WHAT):
-        if abs(x - hx) > 0.01 or abs(z - hz) > 0.01:
-            bad.append(f"the {what} post at ({x:.2f}, {z:.2f}) is not on its hole ({hx:.2f}, {hz:.2f})")
     printed = [(n, b) for n, b in fixed_boxes() if n != "retention bar"]   # the bar goes on after the cards
 
     def hits(ax0, ax1, ay0, ay1, why, az0=z0, az1=z1, what="the backplane outline"):
@@ -319,19 +291,6 @@ def backplane_checks():
     if engage_r < 0.8 or engage_l < 0.8:
         bad.append(f"the board's edges sit only {engage_r:.2f} (right, in the slot) and {engage_l:.2f} (left, in the "
                    "groove) under their roofs: at least 0.8 each")
-    hd, hk = S.val("m3_button")
-    head_notes = []
-    for (hx, hz), what in zip(BP_POSTS, BP_POST_WHAT):
-        near = sorted((li, ni) for li, ni in st.BP_USED if math.hypot(st.strip_x(li) - hx, st.bp_xy(f"s0.{ni}")[1] - hz)
-                      < hd / 2 + 1.0)
-        if near:
-            bad.append(f"the {what} screw head covers used holes {near}")
-        bad += hits(hx - hd / 2, hx + hd / 2, yf, yf + hk, "", hz - hd / 2, hz + hd / 2, f"the {what} screw head")
-        if EVM_X0 < hx + hd / 2 and hx - hd / 2 < EVM_X0 + EVM[0] and EVM_Z0 < hz + hd / 2 and hz - hd / 2 < EVM_TOP:
-            gap = EVM_Y0 - (yf + hk)
-            head_notes.append(f"{what} head {gap:.2f} from the EVM envelope")
-            if gap < 0.0:
-                bad.append(f"the {what} screw head meets the EVM envelope")
     ring = S.val("pad3u_mount")[1]
     fx, fz = st.BP_FACTORY["upper right"]
     if fx + ring / 2 > x1 or any(math.hypot(st.strip_x(li) - fx, st.bp_xy(f"s0.{ni}")[1] - fz) < ring / 2 + 1.0
@@ -342,18 +301,17 @@ def backplane_checks():
     for dx in (0.0, ins):
         for p in parts():
             for b in p.boxes:
-                if b.what in ("backplane post", "backplane support pad") and b.z0 < mz1 and mz0 < b.z1:
+                if b.what == "backplane support pad" and b.z0 < mz1 and mz0 < b.z1:
                     g = (b.x0 - (mx1 + dx)) if b.x0 >= mx1 + dx else (mx0 + dx - b.x1)
                     gap = min(gap, g)
                     if g < 0.0:
                         bad.append(f"the mux (moved {dx:.2f}) meets the {b.what} at Xb {b.x0:.2f}-{b.x1:.2f}")
-    lines = [f"backplane mount: screw posts " + ", ".join(f"{w} ({x:.2f}, {z:.2f}) \u00d8{d:g}" for (x, z), d, w in
-                                                         zip(BP_POSTS, BP_POST_DS, BP_POST_WHAT))
+    lines = [f"backplane mount: no screws (the cards hold it)"
              + f"; plain pads under {', '.join(st.BP_SUPPORTS)}; tops, the groove and the slot floors at Yb {yb:g}; "
              f"outline Xb {x0:.2f}-{x1:.2f}, Zb {z0:.2f}-{z1:.2f}; right edge {engage_r:.2f} into the slot (to Xb "
              f"{RSLOT[3]:.2f}), left {engage_l:.2f} into the groove; the fit: {ins:.2f} to the right, left edge "
-             f"{left_clear:.2f} clear of the wall's face coming down; mux {gap:.2f} from a post or pad (both positions); "
-             f"groove and rail from Zb {GROOVE[2]:.2f}" + ("; " + ", ".join(head_notes) if head_notes else "")]
+             f"{left_clear:.2f} clear of the wall's face coming down; mux {gap:.2f} from a pad (both positions); "
+             f"groove and rail from Zb {GROOVE[2]:.2f}"]
     return lines, bad
 
 
@@ -443,8 +401,9 @@ def shell():
     for (xa, za), (xb, zb) in zip(pts, pts[1:]):
         out.append(B(min(xa, xb) - h, SEAM, min(za, zb) - h, max(xa, xb) + h, SEAM + TONGUE_H, max(za, zb) + h,
                      "tongue into the lid's O-ring channel"))
-    for z in (30.0, H - 30.0):
-        out.append(B(W / 2 - 15, -T - 10.0, z - 6, W / 2 + 15, -T, z + 6, "pole lug (hose-clamp slot)"))
+    fx0, fx1, reach, ft = S.val("mount_flange")[:4]                # enclosure 4: in the floor plane, past each end wall
+    out.append(B(fx0, -T, -T - reach, fx1, -T + ft, -T, "mounting flange, bottom end (two slots)"))
+    out.append(B(fx0, -T, H + T, fx1, -T + ft, H + T + reach, "mounting flange, top end (two slots)"))
     out.append(B(-T - 2.0, SEAM - 6.0, H + T, W + T + 2.0, SEAM, H + T + 2.0, "drip edge over the top seam"))
     for x, y, k in GLANDS:
         r = GLAND_NUT[k] / 2 + 1.0
@@ -507,13 +466,26 @@ def solids():
 
 
 def coax(arm):
-    """The coax from AD1's forward arm: the straight plug toward the lid, the RG-316 bend to the right, a straight
-    run (dropping under the upper corner post if it must) to the bulkhead boss in the right wall. Returns (plug end Yb, bulkhead Yb, bulkhead Zb, axis Xb)."""
-    ax, az = (arm.x0 + arm.x1) / 2, (arm.z0 + arm.z1) / 2
+    """The coax from AD1's forward arm: the straight plug toward the lid, the RG-316 bend to the right, then down the
+    right column to the bulkhead where enclosure 4 put it (sma_bulkhead: low in the right wall). Returns (plug end
+    Yb, bulkhead Yb, bulkhead Zb, axis Xb)."""
+    ax = (arm.x0 + arm.x1) / 2
     pe = arm.y1 + S.val("sma_plug_len")
-    zb = min(az, H - CORNER_Z - BULKHEAD_NUT / 2 - M - 1.0)    # the cable drops to clear the corner block
-    yb = min(pe + S.val("rg316_bend"), SEAM - LIP_T - BULKHEAD_NUT / 2 - M - 0.5)   # and stays under the rim lip
-    return pe, yb, zb, ax
+    return pe, SMA[0], SMA[1], ax
+
+
+def coax_route(arm):
+    """The coax's length from AD1's plug to the bulkhead's inner plug (the path the render draws: a quarter bend of
+    rg316_bend to the right, dropping as it goes, then straight to the plug on the bulkhead's inner end) and where that
+    straight plug ends (Xb). Returns (length, plug end Xb)."""
+    ax, az = (arm.x0 + arm.x1) / 2, (arm.z0 + arm.z1) / 2
+    pe, yb, zb, _ = coax(arm)
+    r = S.val("rg316_bend")
+    pts = [(ax, pe, az)] + [(ax + r - r * math.cos(math.radians(90 * k / 9)), pe + r * math.sin(math.radians(90 * k / 9)),
+                             az + (zb - az) * k / 9) for k in range(1, 10)]
+    inner = W - 9.0 - S.val("sma_plug_len")                   # the jack's inner end, then the straight plug on it
+    pts.append((inner, yb, zb))
+    return sum(math.dist(a, b) for a, b in zip(pts, pts[1:])), inner
 
 
 # ------------------------------------------------------------------ the rim test ring, straight from cage/lid-rim-spec.md

@@ -36,8 +36,8 @@ def V(sh):
 def vp(p):
     return (p[0], p[2], p[1])
 PLASTIC = "#D9D9D9"
-BASE_KEEP = ("left wall", "right corner post", "backplane posts", "backplane support pads", "retention bar")
-# the pack tray and the charger ledges are left out: cage/shelves-spec.md is new and enclosure 2 does not print them
+BASE_KEEP = ("left wall", "right corner post", "backplane support pads", "retention bar", "charger ledges", "pack tray")
+# enclosure 4 prints the shelves (the charger ledges and the pack tray); it has no backplane screw posts
 
 
 def from_lid(X, Y, Z):
@@ -74,7 +74,7 @@ def base(s, wall_y=None):
 
 def backplane(s):
     """Board frame (bx, by, bz) -> drawing frame (Xb, Zb, Yb) = (bx - BX0, by + BZ0, 8.0 + bz): a translation."""
-    pc, cu = M.b_region(SC.SX, M.B_L, drilled=[SC.D02], opened=True)
+    pc, cu = M.b_region(SC.SX, M.B_L)                    # nothing drilled: no screws since enclosure 4
 
     def tf(sh):
         return sh.translate((-SC.BX0, SC.BZ0, st.BP_BACK))

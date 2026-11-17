@@ -74,15 +74,12 @@ Lid-centre frame (the CAD bot's): **X = Zb − 84.75, Y = 61.75 − Xb, Z = Yb +
 - **The board:** the PAD3U's plated end, **31 lines (0–30) × 38 holes**. Line n sits under header pin n.
 - **Cut:** only the left edge is scored, midway, 1.27 from line 0.
 - **Outline when seated:** Xb 6.51–89.46, Zb 48.71–148.31.
-- **Holes:**
-  - the factory holes are Ø2.80 drill with a Ø3.75 ring, on holes 2 and 37 (88.9 apart), 2.65 beyond the end row;
-  - one hole is drilled: line 0 hole 2, Ø3.2, **before** the snap;
-  - the lower factory hole is opened to 3.2.
-- **Fixings:** two **M3** screws into heat-set inserts. M4 heads would hit the EVM.
-- **Printed posts:**
-  - screw posts: bottom left at (7.78, 54.06), Ø8 with a flat; bottom right at (86.63, 54.06), Ø7; insert bore
-    Ø4.0 × 6.5;
-  - plain supports, Ø6: (58.58, 54.06), (78.90, 89.62) and (68.74, 127.72).
+- **Holes:** the factory holes are Ø2.80 drill with a Ø3.75 ring, on holes 2 and 37 (88.9 apart), 2.65 beyond the
+  end row. **Nothing is drilled** (enclosure 4, 2026-11-17).
+- **Fixings: none.** Enclosure 4 has no screw posts; Clint: "When the cards are plugged into it, they hold it in
+  place." It is loose until the cards are in. (Enclosures 2 and 3 had two M3 screws at (7.78, 54.06) and
+  (86.63, 54.06).)
+- **Printed supports:** plain pads, Ø6: (58.58, 54.06), (78.90, 89.62) and (68.74, 127.72); the groove rail from Zb 67.
 - **Edges:** the left edge sits in the groove in the bar wall. The upper right sits in a slot in the right corner post
   (Xb 85.8–92.3, Yb 8.0–10.1). The post is widened to Xb 95.8.
 - **Fitting:** tilt the right edge into the slot, lower the board, then slide it 2.84 left.
@@ -151,7 +148,19 @@ Lid-centre frame (the CAD bot's): **X = Zb − 84.75, Y = 61.75 − Xb, Z = Yb +
 Both PDFs, as page images, are also at https://claude.ai/artifact/SDZWoCHYXDoJhXiDKyWPd5. Republish that page when the
 PDFs change.
 
-## Where things stand (2026-11-16)
+## Where things stand (2026-11-17)
+
+- **Enclosure 4** (`~/Downloads/enclosure 4.stl`, received 2026-11-17) was audited the same day
+  (`sheets/audit-enc4/README.md`). Same shell as enclosure 3, plus mounting flanges on both short ends, the v3 shelves,
+  no backplane screw posts (the cards hold the backplane), five PG-7 holes at Ø13.0 (G7 and both PG-9s gone), and the
+  SMA bulkhead moved to Yb 94.14, Zb 60.38. Everything fits except the pack, which rides the tray lip's ramp.
+  - **Two fixes asked of Clint** ("enclosure 4 + fixes"; the repo models this): (1) tray to Yb 62, the lip's 45° ramp
+    from Yb 56 to 62; (2) the two PG-9 holes back at (98, 25) and (98, 60), the right corner block back to Xb ≥ 110
+    and the 1 mm inside land cut away inside each Ø24 locknut keep-out. **Re-audit the new STL when it comes.**
+  - **Session 6 checks [TBD]:** the 6-inch coax (about 110 between plugs) is probably too short for the new SMA
+    position (route about 120-130); a straight plug on the bulkhead's inner end reaches about Xb 93, above the EVM's
+    lid-right corner.
+  - Session 1 drops the drilling page (11 pages now); BACKPLANE.md and ASSEMBLY.md have no backplane screws.
 
 - **Enclosure 3** (`~/Downloads/enclosure 3.stl`) is **printing now**. It was audited on 2026-11-16 (scripts and
   images in `sheets/audit-enc3/`).

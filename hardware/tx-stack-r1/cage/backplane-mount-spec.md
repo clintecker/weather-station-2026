@@ -1,5 +1,12 @@
 # Enclosure 2: backplane mount build spec (the printed TX base)
 
+> **Enclosure 4 (2026-11-17): no screw posts.** Clint removed both screw posts (bottom left and bottom right) and
+> their M3 inserts. Nothing is drilled in the backplane and nothing screws it down: it lies on the three plain
+> support pads, its left edge in the left wall's groove (the rail now starts at Zb 67.0), its factory right edge in
+> the right corner post's slot (Zb 72.75 to 150.6), and **the four cards plugged into its sockets hold it in place**
+> (Clint). Until the cards are in it is loose. Sections 2 and 4 below are updated; the "Changes" list is history. The
+> two retention-bar inserts (Xb 5.00, Zb 76.5 and 146.5) stay. Audit: `sheets/audit-enc4/`.
+
 **Enclosure 2** is the new printed base the TX is built into (not yet printed; Clint's CAD bot makes it from these
 specs). Everything below is printed into it: nothing is glued in or cut by hand afterwards.
 
@@ -20,7 +27,7 @@ The current enclosure 2 STL follows `backplane-snap-mount-spec.md`. Change it as
 1. **Remove** both snap hooks and their pillars (about Xb 56 to 62).
 2. **Remove** the length stops, including the top stop (about Xb 30 to 50, Zb 150).
 3. **Remove** the snap version's support pads (about Xb 60, Zb 79 and 118).
-4. **Add two screw posts**, floor to Yb 8.0, each with an M3 insert bore Ø4.0 × 6.5 from the top (section 2):
+4. ~~**Add two screw posts**~~ (removed again in enclosure 4: no screws), floor to Yb 8.0, each with an M3 insert bore Ø4.0 × 6.5 from the top (section 2):
    - bottom left at **(Xb 7.78, Zb 54.06)**, Ø8.0, with a flat on its +Xb side 3.5 from its centre;
    - bottom right at **(86.63, 54.06)**, Ø7.0 (the board now has 31 lines, so its factory holes sit one pitch
      further right than the 84.09 of the first draft).
@@ -81,14 +88,17 @@ is what makes Xb run left to right seen from the lid (`cage.to_lid`, layout chec
 - **On the front, at the lower end:** R7 and R8 lie flat, 2.6 high; the leads to the EVM and the pack land on
   holes 6 of lines 19, 21 and 26.
 
-## 2. Holding it: two screws, a groove and a slot
+## 2. Holding it: the cards, a groove and a slot (enclosure 4: no screws)
 
-| Corner | Held by | Where (Xb, Zb) |
+| Edge | Held by | Where (Xb, Zb) |
 |---|---|---|
-| Lower left | M3 screw through the **one drilled hole** (line 0 hole 2) into the bottom-left post's insert | 7.78, 54.06 |
-| Lower right | M3 screw through the **lower factory hole**, drilled out from 2.8 to 3.2, into a new bottom-right post | 86.63, 54.06 |
-| Upper left | The left wall's groove (section 3), as now | left edge, Zb 58.56 up |
-| Upper right | A **slot in the right corner post** (section 6), 6.5 deep; the upper factory hole is unused | right edge, Zb 72.73 up |
+| Back (copper face) | Three plain support pads, tops at Yb 8.0 | see below |
+| Left | The left wall's groove (section 3) and its rail | left edge, Zb 67.0 up |
+| Right | A **slot in the right corner post** (section 6), 6.5 deep; both factory holes unused | right edge, Zb 72.75 up |
+| Front | The four cards' headers in its sockets: plugged in, they hold it (Clint, 2026-11-17) | sockets at holes 13, 19, 27, 35 |
+
+Enclosures 2 and 3 had two M3 screws here (the drilled line 0 hole 2 at (7.78, 54.06) and the lower factory hole,
+drilled out to 3.2, at (86.63, 54.06)). Enclosure 4 dropped them; the notes below on the screws are history.
 
 - **Screws: M3, not M4.** The factory hole is Ø2.8, so either size means drilling it out (3.2 for M3, 4.2 for
   M4). An M4 button head (ISO 7380: Ø7.6, 2.2 high) would reach Yb 11.8 there, 0.2 into the EVM's envelope (Yb 11.6,
@@ -112,7 +122,7 @@ The board's left edge sits in a **groove** in the left wall's slot-side face (Xb
 
 - **Section:** Xb 6.0 to 8.5 (2.5 deep), Yb 8.0 to 10.1, a 45° chamfered roof up to the wall face. The board's edge
   (Xb 6.51) is 1.99 under the roof.
-- **Below the wall, a rail** carries the groove down to **Zb 58.56**, 0.5 above the bottom-left post.
+- **Below the wall, a rail** carries the groove down to **Zb 67.0** (enclosure 4; 2 above the EVM's top).
 
 ## 4. Fitting it, and the checks
 
@@ -120,23 +130,22 @@ The board's left edge sits in a **groove** in the left wall's slot-side face (Xb
 
 1. Tilt it and push its factory right edge into the right corner post's slot, to the slot's end (Xb 92.30). Its
    left edge is then at Xb 9.35, 0.85 clear of the left wall's face (8.5), so the left side comes down past it.
-2. Lower the left side onto the posts and pads, then slide the board 2.84 left: its left edge goes into the groove,
-   the right edge stays 3.66 in the slot, and the two screw holes come over the inserts.
-3. Drive the two M3 × 6 button-head screws.
+2. Lower the left side onto the pads, then slide the board 2.84 left: its left edge goes into the groove and the
+   right edge stays 3.66 in the slot.
+3. No screws (enclosure 4): plug the cards in; they hold it.
 
 The factory right edge's position is `[TBD-MEASURE]`. With the 6.5 slot the fit works with the edge up to 6.13
 past line 30's centres, 0.65 more than BusBoard's numbers give (5.48); past that, sand it back.
 
 **Checks** (`cage/cage.py` backplane_checks, `layout/layout_checks.py` L7):
 
-- The post and pad tops and the groove and slot floors are all at Yb 8.0.
-- The bottom-left post is on the drilled hole; the bottom-right post is on the lower factory hole, computed from the
-  scan's 2.65 past line 30 (L7). The two factory holes are 35 pitches apart, and neither ring reaches the edge.
+- The pad tops and the groove and slot floors are all at Yb 8.0.
+- No screw hole in the board (L7 fails if one comes back). The two factory holes are 35 pitches apart, and neither
+  ring reaches the edge.
 - Nothing printed is inside the board's slab above Yb 8.0, except the groove's and the slot's roofs, in place and
   pushed to the slot's end.
-- The screw heads cover no used hole, meet nothing printed and clear the EVM's envelope by 0.35.
-- The mux clears every post and pad, in place and pushed right.
-- Every post and support pad keeps 1.5 from each copper-face joint (a 1.27 fillet round its hole) and each bus wire
+- The mux clears every pad, in place and pushed right.
+- Every support pad keeps 1.5 from each copper-face joint (a 1.27 fillet round its hole) and each bus wire
   (L7, `check_copper_face`).
 
 ## 6. Card guides: the left wall, the right corner post and the retention bar
@@ -192,7 +201,7 @@ prints the card slots at these heights (the STL's Zb 79, 94, 115 and 136 match).
 
 ## 5. Measure before printing
 
-- **Heat-set insert:** its length and its largest (knurl) diameter, with calipers. The bore above assumes 5.7 long
+- **Heat-set insert** (now only the retention bar's two): its length and its largest (knurl) diameter, with calipers. The bore assumes 5.7 long
   and about 4.6 across the knurl. If yours differ, make the bore the knurl diameter minus 0.6 and the length plus 0.8.
 
 ## Appendix: old printed base (not used)

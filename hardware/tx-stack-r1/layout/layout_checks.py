@@ -463,12 +463,11 @@ def check_lines(ph):
 
 
 def check_copper_face():
-    """L7: every screw post and support pad under the backplane keeps clear_face (1.5) from its edge to every joint
+    """L7: every support pad under the backplane (no screw posts since enclosure 4) keeps clear_face (1.5) from its edge to every joint
     on the copper face (a used pad: a socket or part tail, a wire end) and every bus wire."""
     cl = 1.5
     r_j = S.val("pad_margin")                    # a joint's fillet: up to half a pitch round its hole
-    things = [(x, z, d / 2, w) for (x, z), d, w in zip(cage.BP_POSTS, cage.BP_POST_DS, cage.BP_POST_WHAT)] + \
-             [(*st.bp_xy(h), cage.BP_PAD_D / 2, f"support pad under {h}") for h in st.BP_SUPPORTS]
+    things = [(*st.bp_xy(h), cage.BP_PAD_D / 2, f"support pad under {h}") for h in st.BP_SUPPORTS]
     worst = 99.0
     for x, z, r, what in things:
         for li, ni in st.BP_USED:
@@ -486,7 +485,7 @@ def check_copper_face():
             worst = min(worst, g)
             if g < cl:
                 fail("L7", f"the {what} is {g:.2f} from line {li}'s bus wire (< {cl:g})")
-    NOTES.append(f"copper face: posts and support pads at least {worst:.2f} from every joint (fillet {r_j:g} round its "
+    NOTES.append(f"copper face: the support pads at least {worst:.2f} from every joint (fillet {r_j:g} round its "
                  f"hole) and bus wire (>= {cl:g})")
 
 
@@ -690,7 +689,7 @@ def check_cage(ph):
     else:
         NOTES.append(f"backplane: the build sheet's cut outline (edges: {', '.join(f'{k} {v}' for k, v in st.BP_EDGES.items())}) "
                      f"is the checked outline, Xb {so[0]:.2f}-{so[2]:.2f}, Zb {so[1]:.2f}-{so[3]:.2f}")
-    # the PAD3U's factory mounting holes (measured, sources pad3u_mount) on their posts
+    # the PAD3U's factory mounting holes (measured, sources pad3u_mount): both unused since enclosure 4 (no screw posts)
     d, ring, off, sep = S.val("pad3u_mount")
     fx = st.strip_x(st.BP_STRIPS) + off
     holes = {"lower right": (fx, st.BP_Z0 + st.P), "upper right": (fx, st.BP_Z0 + st.P + sep)}
@@ -699,18 +698,11 @@ def check_cage(ph):
     for name, (hx, hz) in holes.items():
         if hx + ring / 2 > st.BP_OUTLINE[2] - 0.3:
             fail("L7", f"the {name} factory hole's ring is within 0.3 of the board's right edge")
-    posts = dict(zip(cage.BP_POST_WHAT, cage.BP_POSTS))
-    lx, lz = holes[st.BP_FACTORY_SCREW]
-    px, pz = next(v for k, v in posts.items() if "factory" in k)
-    if math.hypot(px - lx, pz - lz) > 0.05:
-        fail("L7", f"the {st.BP_FACTORY_SCREW} factory hole ({lx:.2f}, {lz:.2f}) is not on its post ({px:.2f}, {pz:.2f})")
-    dx, dz = st.bp_xy(st.BP_SCREWS[0])
-    qx, qz = next(v for k, v in posts.items() if "drilled" in k)
-    if math.hypot(qx - dx, qz - dz) > 0.05:
-        fail("L7", f"the drilled hole {st.BP_SCREWS[0]} ({dx:.2f}, {dz:.2f}) is not on its post ({qx:.2f}, {qz:.2f})")
-    NOTES.append(f"backplane: the {st.BP_FACTORY_SCREW} factory hole ({lx:.2f}, {lz:.2f}) and the drilled "
-                 f"{st.BP_SCREWS[0]} land on their posts; the upper factory hole ({holes['upper right'][0]:.2f}, "
-                 f"{holes['upper right'][1]:.2f}) is unused, the edge held by the right post's slot")
+    if st.BP_SCREWS or st.BP_FACTORY_SCREW:
+        fail("L7", "the backplane has a screw hole, but enclosure 4 has no screw posts (the cards hold it)")
+    NOTES.append(f"backplane: no screws and no drilled holes (enclosure 4: the cards hold it); both factory holes "
+                 f"({holes['lower right'][0]:.2f}, {holes['lower right'][1]:.2f}) and ({holes['upper right'][0]:.2f}, "
+                 f"{holes['upper right'][1]:.2f}) unused, the right edge held by the right post's slot")
     if max(st.SOCKET_HOLE.values()) > st.BP_HOLES:
         fail("L7", "a socket is past the end of the backplane")
     mx = st.MUX_BOX
@@ -985,8 +977,9 @@ def check_mech():
     pe, yb, zb, ax = cage.coax(arm)
     nut = cage.BULKHEAD_NUT / 2
     probs = []
-    if yb + nut + 2.0 > cage.SEAM:
-        probs.append(f"the bulkhead (Yb {yb:.1f}) is within 2 mm of the seam ({cage.SEAM:g})")
+    top = S.val("enc_wall_top")                     # the printed wall top (cage.py's shell is still 100 deep)
+    if yb + nut + 2.0 > top:
+        probs.append(f"the bulkhead (Yb {yb:.1f}) is within 2 mm of the printed wall top ({top:g})")
     if zb + nut + 2.0 > h_in - cage.CORNER:
         probs.append(f"the bulkhead (Zb {zb:.1f}) meets the upper corner land")
     if w_in - ax < bend + 2.0:
@@ -998,14 +991,21 @@ def check_mech():
     NOTES.append(f"SMA: a straight plug on the mini's SMA would need {plug_l + bend:.1f} mm to the right wall "
                  f"(plug {plug_l:g} + bend {bend:g} [TBD-MEASURE]), there are {straight:.1f}: AD1 is needed, its arm "
                  f"toward the lid; the plug ends at Yb {pe:.1f}, the cable bends right to the bulkhead boss at Yb "
-                 f"{yb:.1f}, Zb {zb:.1f} in the right wall ({cage.SEAM - yb - nut:.1f} mm to the seam, "
-                 f"{h_in - cage.CORNER - zb - nut:.1f} under the upper corner land)")
+                 f"{yb:.1f}, Zb {zb:.1f} in the right wall (enclosure 4, sma_bulkhead; {top - yb - nut:.1f} mm to the printed wall top)")
+    run, inner = cage.coax_route(arm)
+    if run + 15.0 > S.val("coax_len"):              # the drawn path is the shortest diagonal; a real run follows the column
+        FLAGS.append(f"coax: AD1 to the bulkhead (Zb {zb:.1f}, enclosure 4) is at least {run:.0f} mm of cable on the shortest "
+                     f"path (about 120-130 down the right column); the 135110-01-06.00 has about {S.val('coax_len'):g} between "
+                     "its plugs [TBD-MEASURE]: it is probably too short, a longer one may be needed (Session 6 check)")
+    FLAGS.append(f"coax: a straight plug on the bulkhead's inner end reaches Xb {inner:.1f} (model; about 93 in enclosure 4), "
+                 f"about {zb - cage.EVM_Z0 - 1.6:.0f} mm above the board of the EVM, whose lid-right corner is at Xb "
+                 f"{cage.EVM_X1:.2f}, Yb {cage.EVM_Y1:.2f} [TBD-MEASURE]: check it clears at Session 6, or use a right-angle plug")
     for p_ in probs:
         fail("L9", "coax: " + p_)
     cflag = ""
     mech("SMA, adapter and coax to the bulkhead", "AD1 screwed on the mini's SMA-K, its arm toward the lid; the "
-         "135110 plug screwed on AD1; the cable bends right in front of the cards to the bulkhead jack in the right "
-         "wall's boss",
+         "135110 plug screwed on AD1; the cable bends right in front of the cards and runs down the right column to the "
+         "bulkhead jack low in the right wall (enclosure 4: Yb 94.14, Zb 60.38)",
          "the coax is clipped to the cage at its bend so a pull on it reaches the bulkhead, not the mini's SMA",
          "unscrew the plug at AD1 (8 mm spanner), then lift B3 out", cflag)
     # power
@@ -1023,12 +1023,12 @@ def check_mech():
          "unscrew its leads at its terminals (they run to the backplane, not to a card), flex the clip, slide it "
          "toward the lid on its service loops",
          "its underside parts (J6, tails: 4 mm [TBD-MEASURE]) must clear the 2 mm ledges at the edges")
-    mech("Backplane on its posts", "two M3 screws (the drilled s0.2, and the PAD3U's lower factory hole drilled out to 3.2) "
-         "into heat-set inserts in two round floor posts; the left edge in the left wall's groove and its rail, the factory "
-         "right edge in a 4.0 slot in the right corner post (tilted into the slot, slid left into the groove)",
-         "the posts, three plain pads and the groove and slot floors take the card insertion push", "undo the two screws, "
-         "slide it right to the slot's end, lift the left side, out, after every card is out",
-         "removable only after all four cards are out")
+    mech("Backplane on its pads", "no screws (enclosure 4): three plain floor pads behind it; the left edge in the "
+         "left wall's groove and its rail, the factory right edge in a 4.0 slot in the right corner post (tilted into the "
+         "slot, slid left into the groove); the four cards plugged into its sockets hold it in place",
+         "three plain pads and the groove and slot floors take the card insertion push; the groove and slot roofs and "
+         "the plugged cards take the pull", "after every card is out: slide it right to the slot's end, lift the left "
+         "side, out", "removable only after all four cards are out; loose until the cards are in")
     mech("Lid to the printed base", f"four M4 stainless screws on {S.val('m4_washer')[0]:g} mm washers through the "
          f"lid's 8 mm holes into M4 heat-set inserts ({S.val('insert_m4')[0]:g} mm holes, 3 mm of wall round each) in "
          "the base's corner posts, 156 x 109 apart (9.75 / 10.25 in from the lid's edges, cage/lid-rim-spec.md; option b, recommended over a printed "
@@ -1037,11 +1037,12 @@ def check_mech():
          "the screws squeeze the O-ring; the lid's rim takes a knock", "undo the four lid screws",
          "not settled: the screw and the lid's corner pocket (L1), and the rim test ring's fit on the real lid: no "
          "full STL until they are")
-    mech("Base to the pole", "two moulded lugs on the back, a hose clamp or U-bolt through each; no screw through "
-         "the back into the box", "the lugs' roots in the 3 mm floor", "open the clamps", "")
+    mech("Base to the pole", "two mounting flanges on the short ends, in the floor plane (enclosure 4), each with two "
+         "3.45 x 13.95 slots (Xb 47.95 and 75.45): hose clamps or straps through the slots; no screw through the back "
+         "into the box", "the flanges' roots on the end walls and the floor", "open the clamps", "")
     n7 = sum(1 for g in cage.GLANDS if g[2] == "PG-7")
     mech("Cables through the glands", f"five round cables (the four sensor-port cables S1-S4 and the solar lead) in "
-         f"PG-7s (#762, seal 3.0-4.3 mm; {n7} PG-7s, {n7 - 5} spare, blanked) in the bottom wall's bosses, each passed "
+         f"PG-7s (#762, seal 3.0-4.3 mm; {n7} PG-7s, {n7 - 5} spare) in the bottom wall's bosses, each passed "
          "through its gland before its inside plug is crimped (a 6P plug, about 12 mm across its corners, passes no gland "
          "bore); the flat wind and rain cables in PG-9s (#761) with the seal out and the gap packed with silicone or a "
          "split grommet, their factory plugs cut off and new 6P plugs crimped inside",

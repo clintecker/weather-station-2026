@@ -432,13 +432,12 @@ w("lead", ("RT1", "2"), ("U1", "TSN"), "top", "thermistor return to EVM J7")
 # wire on the back (copper) face is soldered at every used pad of its net and carries line i. Hole n along a line is at
 # Zb = BP_Z0 + (n - 1) P. Each card's socket pins sit in one hole row. Nothing connects unless a wire does.
 # Edges: the right (beyond line 30, with the two factory mounting holes), the top and the bottom are the PAD3U's own;
-# only the left edge is scored, midway between lines -1 and 0. Held (cage/backplane-mount-spec.md): lower left by
-# an M3 screw through the one drilled hole (s0.2), lower right by an M3 screw through the lower factory hole,
-# the right edge in a slot in the right corner post, the left edge in the left wall's groove.
+# only the left edge is scored, midway between lines -1 and 0. Held (cage/backplane-mount-spec.md, enclosure 4): no
+# screws and no drilled holes; it lies on three support pads, the right edge in a slot in the right corner post, the
+# left edge in the left wall's groove, and the four cards plugged into its sockets hold it in place (Clint, 2026-11-17).
 BP_STRIPS = 30       # lines 0..30: line 30 is the plated end's last row (card pin 30 sits over it)
 BP_HOLES = 38        # the PAD3U's full 38 across
-BP_SCREWS = ("s0.2",)   # the one hole drilled (3.2, M3 to the bottom-left post); 1.27 from the scored edge, so it opens
-#                        into it: drill before snapping the edge
+BP_SCREWS = ()          # no hole is drilled: enclosure 4 has no screw posts (the cards hold the backplane)
 BP_SUPPORTS = ("s20.2", "s28.16", "s24.31")   # plain pads under the board (no screw, no hole), clear of every joint
 #   and bus wire on the copper face (L7)
 CAGE_LEFT = S.val("cage_wall") - 2.0              # card left edge, box frame (slots 2 mm deep in the left wall)
@@ -557,7 +556,7 @@ MUX_BOX = (strip_x(2) - 1.27, BP_Z0 + 0.5 * P, strip_x(2) - 1.27 + S.val("mux_w"
 _MD, _MRING, _MOFF, _MSPAN = S.val("pad3u_mount")
 BP_FACTORY = {"lower right": (strip_x(BP_STRIPS) + _MOFF, BP_Z0 + P),
               "upper right": (strip_x(BP_STRIPS) + _MOFF, BP_Z0 + P + _MSPAN)}
-BP_FACTORY_SCREW = "lower right"   # drilled out from 2.8 to 3.2 for an M3 screw to the bottom-right post
+BP_FACTORY_SCREW = None   # both factory holes unused since enclosure 4 (no screw posts)
 # how each edge of the piece is made (build/BACKPLANE.md section 1): "cut" = scored midway between two hole rows
 # (pad_margin from the hole centres); "factory" = the PAD3U's own edge (pad3u_edges and pad3u_plated_edge)
 BP_EDGES = {"left": "cut", "right": "factory", "bottom": "factory", "top": "factory"}

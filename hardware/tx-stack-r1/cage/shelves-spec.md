@@ -1,5 +1,13 @@
 # Base v3: shelves build spec (pack tray, right fin, charger ledge, keepers)
 
+> **Enclosure 4 (2026-11-17)** prints these shelves as specified below (`sheets/audit-enc4/`): tray Zb 21.4-24.4, Yb 0
+> to 58, strap slots at Xb 13.5-16.5 and 89.5-92.5; fin Xb 96.25-100.25, Zb 21.4-48.4, Yb 0-109; left ledge Xb 0-9.85,
+> top Zb 48.4, Yb 13.85-109; the right lid-end block Xb 102-121, Yb 101.75-109, Zb 38.4-48.4; the M3 keeper bores Ø4 at
+> (Xb 4.5, Yb 106) and (100.25, 106); the rail from Zb 67. The cards, backplane, plugs, EVM and gland nuts all clear.
+> **One fault, from this spec:** the lip's chamfer (step 2) started at Yb 50, under the pack (54 deep, front at Yb
+> 56), so the pack rode 4 up the ramp toward the EVM. **Fix 1 (asked of Clint):** extend the tray to **Yb 62** and start
+> the 45° ramp at **Yb 56** (the pack's front), rising to Zb 30.41 at Yb 62. Steps 1 and 2 below now say so.
+
 Enclosure 3 has no shelves. This spec adds them to the **next base print (v3)**, built on enclosure 3 exactly as
 printed. Change nothing else in enclosure 3 except the left-wall rail (step 9).
 
@@ -78,15 +86,17 @@ tray and the fin go all the way back to the floor.
 
 ## What to add to enclosure 3 (v3)
 
-1. **The pack tray:** a plate at **Xb 1.25 to 96.25, Yb 0 to 58.0, Zb 21.41 to 24.41** (3.0 thick).
+1. **The pack tray:** a plate at **Xb 1.25 to 96.25, Yb 0 to 62.0, Zb 21.41 to 24.41** (3.0 thick; enclosure 4
+   printed it to Yb 58.0: fix 1).
    - **Joins:** it is moulded to the floor (Yb 0), to the left wall face (Xb 1.25) and to the right fin (step 3). It
      sits on top of the bottom-left corner block, which stops at about Zb 18.
-   - **Lid frame:** Y +60.50 to −34.50, Z 3.0 to 61.0, X −63.34 to −60.34.
-2. **The tray's front lip:** **Xb 16.5 to 89.5, Yb 56.0 to 58.0, Zb 24.41 to 30.41**. It stops the pack sliding toward
-   the lid.
-   - **Chamfer:** in print it sticks out sideways from the top of the tray wall, so give it a 45° chamfer underneath,
-     from Yb 50.0 at the tray face to Yb 56.0 at Zb 30.41.
-   - **Lid frame:** Y +45.25 to −27.75, Z 59.0 to 61.0, X −60.34 to −54.34.
+   - **Lid frame:** Y +60.50 to −34.50, Z 3.0 to 65.0, X −63.34 to −60.34.
+2. **The tray's front lip (fix 1):** a 45° ramp, **Xb 16.5 to 89.5**, from **Yb 56.0 at the tray face (Zb 24.41)**
+   up to **Zb 30.41 at Yb 62.0**, the tray's front edge. It stops the pack sliding toward the lid; the pack lies flat
+   on Yb 0 to 56 (it is 54 deep, set 2 off the floor).
+   - **Print:** the ramp is its own 45° support (it rises toward the tray's free edge). Enclosure 4 had the chamfer
+     from Yb 50.0 to 56.0 under a lip at Yb 56-58: that put 6 mm of ramp under the pack's front edge.
+   - **Lid frame:** Y +45.25 to −27.75, Z 59.0 (ramp foot) to 65.0, X −60.34 at the foot to −54.34 at Z 65.0.
 3. **The right fin:** a wall at **Xb 96.25 to 100.25, Yb 0 to 109.0, Zb 21.41 to 48.41** (4 thick, 27 tall), standing on
    the floor. It holds:
    - the tray's right end (step 1);
@@ -150,7 +160,7 @@ tray and the fin go all the way back to the floor.
   B4, for the full depth.
   - **Narrow point:** only J3, J5 and the BAT jumper reach into it, to Xb 104.25 at Zb 50 to 65 and Yb 46 to 80.
   - Every cable, and the EVM's SYS and BATTERY leads, use this column. Keep it empty.
-- **The vent** at (Xb 50, Yb 85): the tray ends at Yb 58.
+- **The vent** at (Xb 50, Yb 85): the tray ends at Yb 62.
 - **Backplane install column:** Xb 6.51 to 92.30, from Zb 48.71, Yb 8.0 to the seam. Nothing printed goes here.
 - **Backplane screw posts:** bottom left Ø8 at (7.78, 54.06), bottom right Ø7 at (86.63, 54.06), Yb 0 to 8.0.
   - The left ledge starts at Yb 10.1, in front of both.
@@ -169,6 +179,8 @@ tray and the fin go all the way back to the floor.
   ledge, the EVM's underside and J8 meet no solid in enclosure 3.
   - The EVM's parts above the board meet only the rail (step 9).
   - The cable space meets only the two corner blocks.
+- Checked against the enclosure 4 STL on 2026-11-17 (`sheets/audit-enc4`): the same, except the pack meets the lip's
+  ramp (Yb 50 to 56, 1197 mm³): fix 1.
 
 ## Still to measure
 
