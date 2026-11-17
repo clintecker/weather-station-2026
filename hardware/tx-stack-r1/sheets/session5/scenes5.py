@@ -59,7 +59,10 @@ def R(name, s, d, up=(0, 0, 1), fit=(300, 220), **kw):
 
 PL = {pl["ref"]: dict(pl, pins=dict(pl["pins"]), pads=dict(pl["pads"])) for pl in st.PLACE[CARD]}
 HDR_REF = next(r for r, p in PL.items() if p["fp"] == "RAH")      # XH3
-assert HDR_REF == "XH3" and len(PL[HDR_REF]["pins"]) == 30, "B3's bus header must be a full 1x30"
+KEY = st.model.KEY[CARD]                                           # 29: pulled from XH3 (the slot key)
+assert HDR_REF == "XH3" and len(PL[HDR_REF]["pins"]) == 29 and str(KEY) not in PL[HDR_REF]["pins"], \
+    "B3's bus header: a 1x30 less its key pin"
+assert KEY == b3md.KEY and st.model.KEY_COLOUR[CARD] == b3md.COLOUR, (KEY, b3md.KEY, b3md.COLOUR)
 
 # ------------------------------------------------------------------ wires: st.WIRES + route.py, checked against B3.md
 WIRES = []
@@ -327,15 +330,19 @@ def p_header():
     s = r3d.Scene()
     off, ins = st.S.val("ra_offset"), st.S.val("ra_insulator")
     tail = st.S.val("ra_tail")
-    ps = []
-    for n in range(30):                                        # 1x30, every pin fitted
-        x = n * M.P
-        ps.append(M.box(x - 0.32, -0.32, -tail, x + 0.32, 0.32, 1.27 + 0.32).val())
-        ps.append(M.box(x - 0.32, -0.32, 1.27 - 0.32, x + 0.32, st.RA_TIP, 1.27 + 0.32).val())
+    ps, key = [], []
+    for n in range(30):                                        # 1x30 less the key pin: it is drawn pulled out,
+        x = n * M.P                                            # lifted 7 mm above its empty place
+        dz = 7.0 if n + 1 == KEY else 0.0
+        (key if dz else ps).append(M.box(x - 0.32, -0.32, -tail + dz, x + 0.32, 0.32, 1.27 + 0.32 + dz).val())
+        (key if dz else ps).append(M.box(x - 0.32, -0.32, 1.27 - 0.32 + dz, x + 0.32, st.RA_TIP, 1.27 + 0.32 + dz).val())
     s.add("ins", M.box(-1.27, off, 0, 29 * M.P + 1.27, off + ins, 2.54), "#1E1E1E")
     s.anchor("p1", (0, off + ins / 2, 2.6))
     s.anchor("p30", (29 * M.P, off + ins / 2, 2.6))
+    s.anchor("gap", ((KEY - 1) * M.P, off + ins / 2, 2.6))
     s.add("pins", cq.Compound.makeCompound(ps), "#D8B24A", 0.5)
+    s.add("keypin", cq.Compound.makeCompound(key), "#D8B24A", 0.5)
+    s.anchor("key", ((KEY - 1) * M.P, st.RA_TIP * 0.6, 1.27 + 0.32 + 7.0), on="keypin")
     R("p_header", s, (-0.5, -1, 0.8), fit=(150, 60), line=0.3)
 
 
@@ -454,6 +461,8 @@ def top_scene(parts, under=True, decals=True, anchors=True):
     for ref in ("J3", "XH3"):
         if ref in parts:
             add_ra(s, ref)
+    if "XH3" in parts:                   # the slot key's colour dot (B3.md step 1.4) goes on with the header
+        M.key_dot(s, st.model.KEY_COLOUR[CARD])
     if "U5" in parts:
         add_shtc3(s, anchors=anchors)
     if "A1" in parts:

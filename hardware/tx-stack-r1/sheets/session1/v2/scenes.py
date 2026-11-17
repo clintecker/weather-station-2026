@@ -762,11 +762,17 @@ SLIDE = 2.84
 sys.path.insert(0, "/Users/clint/code/electronics/weather-station-2026/hardware/tx-stack-r1")
 import sources as _src                         # noqa: E402
 BAR_X, BAR_LO, BAR_HI = _src.val("bar_inserts")[:3]   # enclosure 3 as printed: Xb 5.00, Zb 76.50 and 146.50
+sys.path.insert(0, "/Users/clint/code/electronics/weather-station-2026/hardware/tx-stack-r1/cage")
+import cage as _cage                           # noqa: E402  (the lid corner posts and their M4 inserts)
+M4_D, M4_L = _cage.INSERT_D, _cage.INSERT_L    # insert_m4: hole 5.6, length 8.0
+_M4_IN = _cage.POST - _cage._bore / 2 - 3.0     # bore centre from each inside wall (cage.POST: 3 mm round the bore)
+M4_AT = [(_M4_IN if sx > 0 else _cage.W - _M4_IN, _M4_IN if sz > 0 else _cage.H - _M4_IN) for sx, sz in _cage.corners()]
+CORNER_LAND = (_cage.CORNER_X, _cage.CORNER_Z, _cage.SEAM)   # the corner land (lid boss shelf) over each post
 PLASTIC = "#D9D9D9"
 ADD = M.HAZ
 
 
-def base_parts(slot=True, wall_h=14.0, bar=False):
+def base_parts(slot=True, wall_h=14.0, bar=False, lid_posts=False):
     """Enclosure 3's printed base (bar: the retention bar's two inserts, seen on the left block's top) (all printed in, nothing glued or cut), the parts that matter: floor, walls cut
     down, the left wall block with its groove, the right corner post with its slot, the two M3 screw posts and the
     three plain support posts. Returns [(name, solid, colour)]."""
@@ -795,6 +801,15 @@ def base_parts(slot=True, wall_h=14.0, bar=False):
         bi = [cq.Workplane("XY").workplane(offset=wall_h - 0.05).center(BAR_X, z).circle(2.3).circle(1.3)
               .extrude(0.06).val() for z in (BAR_LO, BAR_HI)]
         out.append(("bar_inserts", cq.Compound.makeCompound(bi), M.BRASS))
+    if lid_posts:                                # the four lid corner posts' lands, each with its M4 insert
+        cx, cz, top = CORNER_LAND
+        W, H = _cage.W, _cage.H
+        lands = [M.box(0 if x < W / 2 else W - cx, 0 if z < H / 2 else H - cz, top - 3.0,
+                       cx if x < W / 2 else W, cz if z < H / 2 else H, top).val() for x, z in M4_AT]
+        out.append(("lid_posts", cq.Compound.makeCompound(lands), PLASTIC))
+        m4 = [cq.Workplane("XY").workplane(offset=top - 0.05).center(x, z).circle(M4_D / 2 + 0.9).circle(M4_D / 2 - 0.6)
+              .extrude(0.06).val() for x, z in M4_AT]
+        out.append(("m4_inserts", cq.Compound.makeCompound(m4), M.BRASS))
     return out
 
 
@@ -833,13 +848,15 @@ def board_in_base(dx=0.0, tilt=0.0, screws=False):
 @scene
 def f_plan():
     s = r3d.Scene()
-    for nm, so, col in base_parts(bar=True):
+    for nm, so, col in base_parts(bar=True, lid_posts=True):
         s.add(nm, so, col)
     base_anchors(s)
     s.hole("bar_lo", (BAR_X, BAR_LO, 14.0))
     s.hole("bar_hi", (BAR_X, BAR_HI, 14.0))
+    for k, (x, z) in enumerate(M4_AT):           # corners(): (+,+) bottom left, (+,-) top left, (-,+), (-,-)
+        s.hole(f"m4_{k}", (x, z, CORNER_LAND[2]))
     R("f_plan", s, (0, 0, 1), up=(0, 1, 0), fit=(260, 320), line=0.35, outline=1.1,
-      crop=((48, 100, 0), 54, 58))
+      crop=((_cage.W / 2, _cage.H / 2, 0), _cage.W / 2 + 2, _cage.H / 2 + 2))
 
 
 @scene
@@ -873,8 +890,9 @@ def _side(name, dx, tilt, screws):
     s.anchor("right_edge", (M.B_L - BX0 + dx, 60, BYB + 0.8))
     s.anchor("groove", (8.5, 60, 9.0))
     s.anchor("slot_end", (SLOT_END, 60, 9.0))
-    s.hole("screw_l", (POST_BL[0], 60, BYB + M.PAD_T + 1.7))
-    s.hole("screw_r", (STANDOFF[0], 60, BYB + M.PAD_T + 1.7))
+    zh = BYB + M.PAD_T + (1.7 if screws else 0.0)
+    s.hole("screw_l", (POST_BL[0], 60, zh))
+    s.hole("screw_r", (STANDOFF[0], 60, zh))
     R(name, s, (0, -1, 0), up=(0, 0, 1), fit=(330, 90), line=0.35, outline=1.1, crop=((48, 0, 14), 50, 12))
 
 
@@ -890,7 +908,7 @@ def f_slide():
 
 @scene
 def f_home():
-    _side("f_home", 0.0, 0.0, True)
+    _side("f_home", 0.0, 0.0, False)          # Session 1 test-fits the bare board: no screws until it is wired
 
 
 @scene
@@ -898,11 +916,11 @@ def f_done():
     s = r3d.Scene()
     for nm, so, col in base_parts():
         s.add(nm, so, col)
-    for nm, so, col in board_in_base(0.0, 0.0, True):
+    for nm, so, col in board_in_base(0.0, 0.0, False):      # test fit: the bare board, no screws
         s.add(nm, so, col, 0.12 if nm == "pads" else 1.0)
     base_anchors(s)
-    s.hole("screw_l", (*POST_BL, BYB + M.PAD_T + 1.65))
-    s.hole("screw_r", (*STANDOFF, BYB + M.PAD_T + 1.65))
+    s.hole("screw_l", (*POST_BL, BYB + M.PAD_T))
+    s.hole("screw_r", (*STANDOFF, BYB + M.PAD_T))
     s.hole("upper_mh", (M.B_MH_HI[0] - BX0, M.B_MH_HI[1] + BZ0, BYB + M.PAD_T))
     R("f_done", s, (0, 0, 1), up=(0, 1, 0), fit=(260, 320), line=0.35, outline=1.1,
       crop=((48, 100, 0), 54, 58))
@@ -910,15 +928,16 @@ def f_done():
 
 @scene
 def mat_base():
-    """The parts for the base: two M3 heat-set inserts, two M3 x 6 button heads."""
+    """The parts for the base: four M3 heat-set inserts (posts A, B, bars 1, 2) and four M4 (the lid corner posts,
+    cage insert_m4: the M3 model scaled to its length)."""
     s = r3d.Scene()
-    for k, x in enumerate((14, 24)):
+    for k, x in enumerate((0, 8, 16, 24)):
         s.add(f"insert{k}", M.insert().translate((x, 0, 0)), M.BRASS, 0.5)
-    for k, x in enumerate((34, 43)):
-        h = cq.Workplane("XY").center(x, 0).circle(2.85).extrude(1.65).faces(">Z").edges().fillet(0.8)
-        h = h.cut(cq.Workplane("XY").workplane(offset=0.6).center(x, 0).polygon(6, 2.3).extrude(2))
-        sh = cq.Workplane("XY").workplane(offset=-6).center(x, 0).circle(1.5).extrude(6)
-        s.add(f"screw{k}", h.union(sh), M.STEEL, 0.4)
+    k4 = M4_L / 5.7
+    for k, x in enumerate((36, 47, 58, 69)):
+        s.add(f"m4_{k}", M.insert().val().scale(k4).translate(cq.Vector(x, 0, 0)), M.BRASS, 0.5)
+    s.anchor("m3", (12, -4, 0))
+    s.anchor("m4", (52.5, -5, 0))
     R("mat_base", s, (-0.3, -1, 0.8), fit=(150, 80), line=0.35)
 
 

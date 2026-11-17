@@ -61,7 +61,7 @@ Each QT lead's V+ pin (red) is folded back along its lead and sleeved: the mux c
 | U1 system ground (J3 GND) | line 12, hole 11 | charger system ground (J3 GND) to line 12 (the bus ground, SYS's return), 24 AWG stranded, black |
 | U1 battery sense (J5 SNS_BATP) | R7's free leg (line 24, hole 7) | charger battery sense (J5 SNS_BATP) from R7's free leg, 24 AWG stranded, white with a red band |
 
-Leave each 60-80 mm with a service loop: the EVM slides out on them. The ground lead (J3 GND to line 12) is SYS's return: the regulator's load and the radio's transmit peaks come back on it, not on the I2C lead's J8 pin 1; run it beside the SYS lead from J3 and on to line 12 above the mux.
+Cut each to the length in section 5 and trim it to fit, leaving a service loop: the EVM slides out on them. The ground lead (J3 GND to line 12) is SYS's return: the regulator's load and the radio's transmit peaks come back on it, not on the I2C lead's J8 pin 1; run it beside the SYS lead from J3 and on to line 12 above the mux.
 
 ## 4. Bus wires (copper side)
 
@@ -98,7 +98,7 @@ Bare 22 AWG solid copper (the Adafruit 1311 hook-up wire on hand, stripped; 0.64
 
 | From | To | Length | Line | What |
 |---|---|---|---|---|
-| PG1 lead - | U1 battery - (J5 GND) | 40 mm | battery - (charger ground) | pack - to charger battery - (J5 GND), 24 AWG stranded, black |
+| PG1 lead - | U1 battery - (J5 GND) | 150 mm, trim to fit | battery - (charger ground) | pack - to charger battery - (J5 GND), 24 AWG stranded, black |
 | U4 VIN | backplane line 1 hole 10 | 40 mm | 3.3 V supply | mux VCC pad lead to its strip |
 | U4 GND | backplane line 2 hole 10 | 40 mm | ground | mux GND pad lead to its strip |
 | U4 SCL | backplane line 7 hole 10 | 40 mm | I2C clock (SCL) | mux SCL pad lead to its strip |
@@ -107,11 +107,11 @@ Bare 22 AWG solid copper (the Adafruit 1311 hook-up wire on hand, stripped; 0.64
 | backplane line 2 hole 38 | backplane line 12 hole 38 | 40 mm | ground | the two bus ground strips joined |
 | backplane line 19 hole 5 | backplane line 20 hole 5 | 40 mm | charger battery + (after the shunt) | lines 19 and 20 joined (charger battery +, two pins) |
 | backplane line 21 hole 5 | backplane line 22 hole 5 | 40 mm | battery + junction (backplane lines 21-22) | lines 21 and 22 joined (battery + junction, two pins) |
-| PG1 lead + | backplane line 21 hole 6 | 40 mm | battery + junction (backplane lines 21-22) | pack + (pigtail) to the junction, 24 AWG stranded, red with a black band |
-| U1 battery + (J5 BATTERY) | backplane line 19 hole 6 | 40 mm | charger battery + (after the shunt) | charger battery + (J5 BATTERY) to lines 19-20, 24 AWG stranded, red with a black band |
-| U1 system out (J3 SYS) | backplane line 26 hole 6 | 40 mm | charger system output (SYS) | charger system output (J3 SYS) to line 26 (B4 pin 26, the regulator in), 24 AWG stranded, red with a black band |
-| U1 system ground (J3 GND) | backplane line 12 hole 11 | 40 mm | ground | charger system ground (J3 GND) to line 12 (the bus ground, SYS's return), 24 AWG stranded, black |
-| R7 2 | U1 battery sense (J5 SNS_BATP) | 40 mm | charger battery sense (BATP) | charger battery sense (J5 SNS_BATP) from R7's free leg, 24 AWG stranded, white with a red band |
+| PG1 lead + | backplane line 21 hole 6 | 100 mm, trim to fit | battery + junction (backplane lines 21-22) | pack + (pigtail) to the junction, 24 AWG stranded, red with a black band |
+| U1 battery + (J5 BATTERY) | backplane line 19 hole 6 | 100 mm, trim to fit | charger battery + (after the shunt) | charger battery + (J5 BATTERY) to lines 19-20, 24 AWG stranded, red with a black band |
+| U1 system out (J3 SYS) | backplane line 26 hole 6 | 100 mm, trim to fit | charger system output (SYS) | charger system output (J3 SYS) to line 26 (B4 pin 26, the regulator in), 24 AWG stranded, red with a black band |
+| U1 system ground (J3 GND) | backplane line 12 hole 11 | 100 mm, trim to fit | ground | charger system ground (J3 GND) to line 12 (the bus ground, SYS's return), 24 AWG stranded, black |
+| R7 2 | U1 battery sense (J5 SNS_BATP) | 100 mm, trim to fit | charger battery sense (BATP) | charger battery sense (J5 SNS_BATP) from R7's free leg, 24 AWG stranded, white with a red band |
 
 The mux (Adafruit #5626: bridge A0 for 0x71, its Vlogic switch SW1 to V+) sits on a foam pad on the copper side over holes 2-9, below the B4 socket and clear of the bus wires (they start at hole 10); its five header pads take short leads to hole 10.
 

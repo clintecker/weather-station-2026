@@ -8,6 +8,7 @@ letter + number ('e10'); here that is shown as printed: E10 = row E, column 10.
 Usage: pdfenv/bin/python make_session2.py [OUT_DIR]
 """
 import sys
+import textwrap
 from pathlib import Path
 
 from sheetlib import *          # noqa: F401,F403  (page furniture, chips, leaders, Art, checks)
@@ -24,7 +25,7 @@ SLOGANS2 = [
     "B4 POWER FEEDS THE OTHERS. IT IS BUILT FIRST.",
     "TOP IS THE FACE THAT READS. THE MACHINE CHECKED.",
     "A WIRE UNDER A PART CANNOT BE FIXED LATER.",
-    "THIRTY PINS. THIRTY LINES. NONE PULLED.",
+    "TWENTY-NINE PINS. ONE KEY. ONE SLOT.",
     "THE BATTERY GOES WHERE THE MAP SAYS. NOWHERE ELSE.",
     "METER FIRST. POWER NEVER. NOT TODAY.",
     "PINS PULLED ARE PINS THAT CANNOT LIE.",
@@ -62,6 +63,15 @@ for _n, _a, _b, _len, _line, _col, _what in _b4_rows(r"2\. Underside wires"):
     _cut, _bends = _re.match(r"(\d+) mm, (\d+) bends?", _len).groups()
     UNDER.append((int(_n), _a, _b, int(_cut), int(_bends), _LINE[_line], _col.upper()))
 LEAD_MM = {r[1]: r[3].split()[0] for r in _b4_rows(r"5\. Leads")}      # {"g20": "80", ...}
+# the slot key and the colour dot (B4.md: XH4's key row, section 1 step 4, the Before-power header line)
+_KEYROW = _re.search(r"^\| key (\d+) \(\d+\) \| none: (.*?) \| (.*?) \|$", _B4, _re.M)
+KEY, KEY_HOW, KEY_WHY = int(_KEYROW.group(1)), _KEYROW.group(2), _KEYROW.group(3)
+DOT_STEP = _re.search(r"^4\. (Label it: .*)$", _B4, _re.M).group(1)
+DOT_COL = _re.match(r"Label it: an? (\w+) paint-pen", DOT_STEP).group(1).upper()
+_HDR = _re.search(r"^- (The 1x30 header less its key pin: .*)$", _B4, _re.M).group(1)
+_m = _re.search(r"key pin: (J\d+) pulled \(hole (j\d+) empty\)", _HDR)
+assert _m and _m.group(1) == f"J{KEY}", "B4.md: the Before-power header line names the key pin"
+SPARE_PINS = _re.findall(r"\b(J\d+)\b", _HDR.split("isolated pads):")[1])
 GROUPS = [([1, 2, 3], "BUS POWER TO THE FRONT RAILS"), ([4, 7], "REGULATOR 3.3 V AND GROUND TO THE RAILS"),
           ([5, 8, 10, 12], "THE INA228'S POWER, CLOCK AND DATA"), ([6, 9, 11, 13], "THE MAX17048'S POWER, CLOCK AND DATA")]
 
@@ -174,7 +184,7 @@ def cover(c, pg):
     x, y, w, h = panel(c, g.cell(0, 0, 2), None,
                        "PARTS FOR B4 POWER. ALL OF THEM ARE WITH YOU AT THE OFFICE. LAY THEM OUT BEFORE YOU HEAT THE IRON.")
     items = [("B4 POWER CARD\n(rails snapped, Session 1)", "p_card"),
-             ("XH4 RIGHT-ANGLE HEADER\n1x30, every pin fitted", "p_header"),
+             (f"XH4 RIGHT-ANGLE HEADER\n1x30, pin {KEY} pulled (slot key)", "p_header"),
              ("U7 S7V8F3 3.3 V\nPololu #2122", "p_reg"),
              ("U2 INA228\nAdafruit #5832", "p_ina"),
              ("U6 MAX17048\nAdafruit #5580", "p_max"),
@@ -189,12 +199,12 @@ def cover(c, pg):
         chip(c, X + cw / 2, Y + 18, name, 9, "ALT", INK, "c")
     x, y, w, h = panel(c, g.cell(0, 1), None, "TOOLS.")
     tools = ["SOLDERING IRON + SOLDER", "FLUSH CUTTERS", "WIRE STRIPPER (24 AWG)", "MULTIMETER (CONTINUITY)",
-             "PLIERS (PULL 3 U2 PINS)", "SOLDER WICK OR SUCKER (U2's X1)", "STEEL RULER (WIRE LENGTHS)", "SHARPIE", "HEAT GUN OR LIGHTER (HEAT-SHRINK)"]
+             f"PLIERS (U2 PINS 5-7, XH4 PIN {KEY})", f"{DOT_COL} PAINT PEN OR DOT STICKER", "SOLDER WICK OR SUCKER (U2's X1)", "STEEL RULER (WIRE LENGTHS)", "SHARPIE", "HEAT GUN OR LIGHTER (HEAT-SHRINK)"]
     for i, s in enumerate(tools):
         text(c, x + 14, y + h - 16 - i * (h - 12) / len(tools), "-  " + s, 11, "ALT", INK)
     x, y, w, h = panel(c, g.cell(1, 1), None, "THE STEPS. IN THIS ORDER.")
     steps = ["01  KNOW THE TWO FACES", "02  13 WIRES ON THE UNDERSIDE", "03  TWO BARE JUMPERS",
-             "04  BUS HEADER, ROW J", "05  REGULATOR U7", "06  INA228 U2: X1 OFF, SJ1", "07  MAX17048 U6", "08  THREE LEADS",
+             f"04  BUS HEADER (PIN {KEY} OUT), {DOT_COL} DOT", "05  REGULATOR U7", "06  INA228 U2: X1 OFF, SJ1", "07  MAX17048 U6", "08  THREE LEADS",
              "09  METER BEFORE POWER"]
     for i, s in enumerate(steps):
         text(c, x + 14, y + h - 16 - i * (h - 10) / len(steps), s, 13, "HEAD", INK)
@@ -425,28 +435,34 @@ def jumpers(c, pg):
 
 
 def header(c, pg):
-    page(c, "04", "BUS HEADER XH4, ROW J", "GENERIC RIGHT-ANGLE MALE HEADER, CUT TO 1x30. ALL 30 PINS STAY IN.", pg,
-         SLOGANS2[3])
+    page(c, "04", "BUS HEADER XH4, ROW J", f"GENERIC RIGHT-ANGLE MALE HEADER, CUT TO 1x30. PIN {KEY} PULLED: THE SLOT KEY.",
+         pg, SLOGANS2[3])
     g = Grid(1, 2, heights=[1.15, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
-        "B4 POWER, TOP FACE. Short legs down through J1 to J30 (row J, columns 1-30), from the top: every hole in row J",
-        "takes a pin. The long pins point AWAY from row A, out past the snapped back edge. Solder on the UNDERSIDE:",
-        "J1 first, check it sits flat and square, then J30, then the rest."])
+        f"B4 POWER, TOP FACE. Short legs down through J1 to J{KEY - 1} (row J), from the top. J{KEY} stays EMPTY: pin {KEY}",
+        "is pulled (the slot key, below). The long pins point AWAY from row A, out past the snapped back edge. Solder",
+        f"on the UNDERSIDE: J1 first, check it sits flat and square, then J{KEY - 1}, then the rest. The {DOT_COL.lower()} dot: below."])
     face_tag(c, x + 4, y + h - 40, "top")
     a = Art(c, "t_header", x + 96, y + 4, 330, h - 8, align="l")
-    for hname in ("j1", "j30"):
+    for hname in ("j1", f"j{KEY}"):
         ring(c, *a.A(anchor_name(hname)))
-    j1, j30 = a.A("J1"), a.A("J30")
+    j1, jk = a.A("J1"), a.A(f"J{KEY}")
     label(c, a.x - 4, j1[1] + 30, "J1: PIN 1", *j1, 9, "ALT", INK, "r")
-    label(c, j30[0] + 6, a.y + a.h + 8, "J30: PIN 30", *j30, 9, "ALT", INK)
-    x, y, w, h = panel(c, g.cell(0, 1), 2, [
-        "Cut 1x30 from a longer strip: pull the 31st pin, cut through its empty place, file flat. Pins 1-18: 3.3 V,",
-        "ground, I2C and sensor lines. 19-20 charger battery +, 21-22 battery + junction, 23 gauge sense, 24 3.3 V and",
-        "25 ground (from U7's strips), 26 SYS, 27-30 spare. They plug into B4's backplane socket (line n = pin n)."])
-    hd = Art(c, "p_header", x + 20, y + 10, 300, h - 20, align="l")
-    for k in ("p1", "p30"):
-        ring(c, *hd.A(k), r=4.0)
-    label(c, hd.x + hd.w + 12, hd.y + hd.h / 2, "1x30: PIN 1 TO PIN 30,\nNONE PULLED", *hd.A("p30"), 10, "ALT", INK)
+    label(c, jk[0] - 30, a.y + a.h + 8, f"J{KEY}: EMPTY (PIN {KEY} PULLED, SLOT KEY)", *jk, 9, "ALT", INK, "r")
+    dx, dy = a.A("keydot")
+    label(c, a.x - 8, dy + 26, f"{DOT_COL} DOT:\nTOP FACE, FRONT\nEDGE, COLUMN 1", dx, dy, 9, "ALT", INK, "r")
+    x, y, w, h = panel(c, g.cell(0, 1), 2, textwrap.wrap(
+        f"Cut 1x30 from a longer strip: pull the 31st pin, cut through its empty place, file flat. Then pin {KEY}: "
+        f"{KEY_HOW}. Why: {KEY_WHY}. Pins 1-18: 3.3 V, ground, I2C, sensor lines; 19-20 charger battery +, 21-22 "
+        f"battery + junction, 23 gauge sense, 24 3.3 V and 25 ground (U7's strips), 26 SYS, "
+        f"{SPARE_PINS[0][1:]}-{SPARE_PINS[-1][1:]} spare (line n = pin n).", 112))
+    hd = Art(c, "p_header", x + 20, y + 40, 300, h - 48, align="l")
+    ring(c, *hd.A("p1"), r=4.0)
+    ring(c, *hd.A("key"), r=4.0)
+    label(c, hd.x + hd.w + 12, hd.y + hd.h - 10, f"PIN {KEY} PULLED OUT:\nTHE SLOT KEY", *hd.A("keypin"), 10, "ALT", INK)
+    label(c, hd.x + hd.w + 12, hd.y + hd.h / 2 - 6, f"29 PINS LEFT, PLACE\n{KEY} EMPTY", *hd.A("key"), 10, "ALT", INK, dot=False)
+    for k, ln in enumerate(textwrap.wrap(f"{DOT_COL} DOT (B4.md step 1.4). {DOT_STEP}", 118)):
+        text(c, x + 12, y + 26 - 10 * k, ln, 8.5, "ALT", INK)
 
 
 def leads(c, pg):
@@ -513,7 +529,9 @@ def checks(c, pg):
               ("3", "HEADER PINS", "Each pin Jn beeps to F n (same column, its own strip) and to NO other\nheader pin, except the three groups in check 4."),
               ("4", "PIN GROUPS", "J1 and J24 beep (3.3 V). J2, J12 and J25 beep (ground).\nJ19, J20, J21 and J22 all beep to each other."),
               ("5", "SJ1 + LEAD ENDS", "X1 VBUS to X1 VIN+: BEEP (SJ1). X1 VIN− to G20, X1 VIN+ to G21,\nJP2 VBAT to G23: BEEP."),
-              ("6", "ALL 30 PINS", "J1-J30 all fitted, none pulled. Spares J27-J30 beep to no other\nheader pin (J27's strip also holds U7 SHDN, unused).")]
+              ("6", f"KEY PIN {KEY}", f"J{KEY} pulled (hole J{KEY} empty: the slot key), every other pin fitted.\n"
+                                      f"Spares {SPARE_PINS[0]}-{SPARE_PINS[-1]} beep to no other header pin "
+                                      f"({SPARE_PINS[0]}'s strip also holds U7 SHDN).")]
     x, y, w, h = panel(c, g.cell(0, 1, 2), 2, ["Any beep where it says NO BEEP, or silence where it says BEEP: stop. Photograph it. Report to Claude."],
                        warn=True)
     for i, (n, t, s) in enumerate(checks):

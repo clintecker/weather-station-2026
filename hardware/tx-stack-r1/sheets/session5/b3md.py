@@ -44,11 +44,24 @@ SNAP = [re.sub(r"^\d+\. ", "", ln).strip() for ln in _section(r"1\. Snap").split
 
 assert len(WIRES) == 21 and [w["n"] for w in WIRES] == list(range(1, 22)), WIRES
 assert list(PARTS) == ["J3", "XH3", "U5", "A1"], list(PARTS)
-assert len(PARTS["XH3"][1]) == 30, "the bus header must be a full 1x30"
+# the slot key: one row of XH3's table is the pulled pin ("key 29 (29)", hole "none: pulled out of ..."), the
+# other 29 are fitted
+_keys = [r for r in PARTS["XH3"][1] if r[0].startswith("key ")]
+assert len(_keys) == 1 and len(PARTS["XH3"][1]) == 30, "XH3: a 1x30 with exactly one pin pulled (the slot key)"
+KEY_ROW = _keys[0]
+KEY = int(re.match(r"key (\d+)", KEY_ROW[0]).group(1))                     # 29
+KEY_HOW = re.search(r"\((grip .*?)\)", KEY_ROW[1]).group(1).split(";")[0]    # pliers, heat, push it out
+KEY_WHY = KEY_ROW[2]                                                         # the slot key: ...
+KEY_HOLE = f"j{KEY}"
+FITTED = [r for r in PARTS["XH3"][1] if r is not KEY_ROW]
+DOT = next(s for s in SNAP if s.startswith("Label it"))                     # section 1 step 4: the colour dot
+COLOUR = re.match(r"Label it: an? (\w+) paint-pen", DOT).group(1)            # yellow
+KEY_CHECK = next(l for l in BEFORE if l.startswith("The 1x30 header less its key pin"))
 
 if __name__ == "__main__":
     for w in WIRES:
         print(w)
     for k, (h, pins) in PARTS.items():
         print(k, h[:60], len(pins))
+    print("key", KEY, COLOUR, KEY_HOW, "|", KEY_CHECK[:60])
     print(len(STRIPS), "strips;", len(BEFORE), "before-power bullets;", len(SNAP), "snap steps")

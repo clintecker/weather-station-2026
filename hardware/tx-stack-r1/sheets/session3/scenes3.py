@@ -355,10 +355,15 @@ def add_ptc(s, ref):
     mark(s, f"{ref}_face", tuple(f["face"] + [0, 0, 1.8]), f"{ref}_body")
 
 
+KEY = st.model.KEY[CARD]                 # the bus-header pin pulled out as the slot key (B2: 28)
+KEY_COLOUR = st.model.KEY_COLOUR[CARD]   # the colour dot on the card's front edge (B2: green)
+
+
 def add_header(s, ref="XH2"):
-    """Generic right-angle 1x30 header in j1-j30 (every pin fitted), mating pins toward the back (+Y)."""
+    """Generic right-angle 1x30 header in j1-j30 less its key pin (model.PULLED: stack's pins omit it), mating
+    pins toward the back (+Y); the card's colour dot goes on with it (build sheet step 1.4)."""
     pins = PL[ref]["pins"]
-    assert len(pins) == 30, "B2's bus header must be a full 1x30"
+    assert sorted(int(k) for k in pins) == [n for n in range(1, 31) if n != KEY], "B2's header: 1x30 less its key pin"
     x1, y = pins["1"]
     x30 = pins["30"][0]
     off, ins = S.val("ra_offset"), S.val("ra_insulator")
@@ -366,13 +371,16 @@ def add_header(s, ref="XH2"):
     pz = T + st.PIN_Z
     s.add(f"{ref}_ins", M.box(x1 - 1.27, y + off, T, x30 + 1.27, y + off + ins, T + 2 * st.PIN_Z), "#1E1E1E")
     ps = []
-    for n in range(1, 31):
+    for n in (k for k in range(1, 31) if str(k) in pins):
         x = pins[str(n)][0]
         ps.append(M.box(x - 0.32, y - 0.32, T - tail, x + 0.32, y + 0.32, pz + 0.32).val())
         ps.append(M.box(x - 0.32, y - 0.32, pz - 0.32, x + 0.32, y + st.RA_TIP, pz + 0.32).val())
     s.add(f"{ref}_pins", cq.Compound.makeCompound(ps), "#D8B24A", 0.4)
     for n in (1, 30):
         mark(s, f"{ref}_p{n}", (pins[str(n)][0], y + st.RA_TIP - 0.5, pz + 0.32), f"{ref}_pins")
+    M.key_dot(s, KEY_COLOUR)
+    if "keydot" not in MARK:                     # checked visible only where a page labels it
+        s.anchor_on.pop("keydot", None)
 
 
 # ------------------------------------------------------------------ RJ11 breakouts: BOB-14021 STEP + 87180 jack + 1x6
@@ -602,18 +610,23 @@ def p_card():
 
 @scene
 def p_header():
+    """The 1x30 as cut, its key pin (B2: 28) pulled: lifted out of the plastic above its empty place."""
     s = r3d.Scene()
     off, ins = S.val("ra_offset"), S.val("ra_insulator")
     tail = S.val("ra_tail")
-    ps = []
+    ps, kp = [], []
     for n in range(30):
         x = n * M.P
-        ps.append(M.box(x - 0.32, -0.32, -tail, x + 0.32, 0.32, 1.27 + 0.32).val())
-        ps.append(M.box(x - 0.32, -0.32, 1.27 - 0.32, x + 0.32, st.RA_TIP, 1.27 + 0.32).val())
+        lift = 9.0 if n + 1 == KEY else 0.0
+        (kp if lift else ps).append(M.box(x - 0.32, -0.32, -tail + lift, x + 0.32, 0.32, 1.27 + 0.32 + lift).val())
+        (kp if lift else ps).append(M.box(x - 0.32, -0.32, 1.27 - 0.32 + lift, x + 0.32, st.RA_TIP, 1.27 + 0.32 + lift).val())
     s.add("ins", M.box(-1.27, off, 0, 29 * M.P + 1.27, off + ins, 2.54), "#1E1E1E")
     s.anchor("p1", (0, off + ins / 2, 2.6))
     s.anchor("p30", (29 * M.P, off + ins / 2, 2.6))
+    s.anchor("pkey", ((KEY - 1) * M.P, off + ins / 2, 2.6))
+    s.anchor("key_pin", ((KEY - 1) * M.P, 0, 1.27 + 9.0 + 0.32), on="keypin")
     s.add("pins", cq.Compound.makeCompound(ps), "#D8B24A", 0.5)
+    s.add("keypin", cq.Compound.makeCompound(kp), "#D8B24A", 0.5)
     R("p_header", s, (-0.5, -1, 0.8), fit=(150, 60), line=0.3)
 
 
@@ -780,7 +793,8 @@ def t_jumpers():
 
 @scene
 def t_header():
-    top_render("t_header", top_scene("XH2"))
+    s = top_scene("XH2")
+    top_render("t_header", s)
 
 
 # ------------------------------------------------------------------ parts: full top view + close-up per stage
@@ -893,7 +907,7 @@ def t_final():
 
 
 SCENE_MARKS = {
-    "t_jumpers": [], "u1": [], "t_header": [],
+    "t_jumpers": [], "u1": [], "t_header": ["keydot"], "p_header": ["key_pin"],
     "t_caps": ["@" + r for r in GROUP["CAPS"]], "t_f4": ["@" + r for r in GROUP["F4"]],
     "t_rpull": ["@" + r for r in GROUP["RPULL"]], "t_rser": ["@" + r for r in GROUP["RSER"]],
     "t_s4d": ["@" + r for r in GROUP["S4D"]], "t_zen": ["@" + r for r in GROUP["ZEN"]],

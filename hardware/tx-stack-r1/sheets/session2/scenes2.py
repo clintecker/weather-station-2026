@@ -52,6 +52,8 @@ def R(name, s, d, up=(0, 0, 1), fit=(300, 220), **kw):
 
 
 PL = {pl["ref"]: dict(pl, pins=dict(pl["pins"]), pads=dict(pl["pads"])) for pl in st.PLACE["B4"]}
+KEY, KEY_COLOUR = st.model.KEY["B4"], st.model.KEY_COLOUR["B4"]          # the slot key pin, the colour dot
+assert str(KEY) not in PL["XH4"]["pins"] and len(PL["XH4"]["pins"]) == 29, "XH4: 1x30 less its key pin"
 
 # ------------------------------------------------------------------ wires from route.py
 B4_WIRES = []      # dicts: n (B4.md row), a, b, length, line, note, pts (card frame, this z), kind
@@ -225,7 +227,8 @@ def add_breakout(s, ref, pulled=(), alone=False, x1=False):
 
 
 def add_header(s):
-    """XH4: generic right-angle 1x30 header in j1-j30 (every pin fitted), mating pins toward the back (+Y)."""
+    """XH4: generic right-angle 1x30 header in j1-j30 less its key pin (model.PULLED: stack's pins omit it), mating
+    pins toward the back (+Y). The plastic is the full 1x30; the key position is an empty hole."""
     pins = PL["XH4"]["pins"]
     x1, y = pins["1"]
     x18 = x1 + 29 * M.P
@@ -332,11 +335,15 @@ def p_card():
 def p_header():
     s = r3d.Scene()
     off, ins, mate, tail = st.S.val("ra_offset"), st.S.val("ra_insulator"), st.S.val("ra_mate"), st.S.val("ra_tail")
-    ps = []
-    for n in range(30):                                        # 1x30, every pin fitted (repo 91a5345)
+    ps, kp = [], []
+    for n in range(30):                                        # 1x30, the key pin pulled (model.PULLED)
         x = n * M.P
-        ps.append(M.box(x - 0.32, -0.32, -tail, x + 0.32, 0.32, 1.27 + 0.32).val())
-        ps.append(M.box(x - 0.32, -0.32, 1.27 - 0.32, x + 0.32, st.RA_TIP, 1.27 + 0.32).val())
+        lift = 7.0 if n + 1 == KEY else 0.0                    # the key pin drawn lifted out of its place
+        (kp if lift else ps).append(M.box(x - 0.32, -0.32, -tail + lift, x + 0.32, 0.32, 1.27 + 0.32 + lift).val())
+        (kp if lift else ps).append(M.box(x - 0.32, -0.32, 1.27 - 0.32 + lift, x + 0.32, st.RA_TIP, 1.27 + 0.32 + lift).val())
+    s.add("keypin", cq.Compound.makeCompound(kp), "#D8B24A", 0.5)
+    s.anchor("key", ((KEY - 1) * M.P, off + ins / 2, 2.6))
+    s.anchor("keypin", ((KEY - 1) * M.P, st.RA_TIP * 0.6, 1.27 + 7.0 + 0.32), on="keypin")
     s.add("ins", M.box(-1.27, off, 0, 29 * M.P + 1.27, off + ins, 2.54), "#1E1E1E")
     s.anchor("p1", (0, off + ins / 2, 2.6))
     s.anchor("p30", (29 * M.P, off + ins / 2, 2.6))
@@ -542,6 +549,7 @@ def top_scene(parts, leads=False, under=True, decals=True):
             s.add(f"w{n}", body, WIRE_COL[NET[by_row(n)["i"]]], 0.5)
     if "XH4" in parts:
         add_header(s)
+        M.key_dot(s, KEY_COLOUR, T)          # B4.md step 1.4: the colour dot on the top face, front edge, column 1
     for ref, pulled in (("U7", ()), ("U2", ("P5", "P6", "P7")), ("U6", ())):
         if ref in parts:
             add_breakout(s, ref, pulled)

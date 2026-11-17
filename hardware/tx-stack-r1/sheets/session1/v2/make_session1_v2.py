@@ -10,6 +10,7 @@ Usage: pdfenv/bin/python make_session1_v2.py OUT_DIR
 import json
 import math
 import sys
+import textwrap
 from pathlib import Path
 
 from reportlab.lib.colors import HexColor
@@ -49,6 +50,17 @@ SLOGANS = [
     "DUST IS PERMANENT. WEAR THE MASK.",
     "REPORT ALL NUMBERS TO CLAUDE.",
 ]
+
+import re  # noqa: E402
+_BUILD = Path("/Users/clint/code/electronics/weather-station-2026/hardware/tx-stack-r1/build")
+_ASM = (_BUILD / "ASSEMBLY.md").read_text()
+_BPMD = (_BUILD / "BACKPLANE.md").read_text()
+M4_STEP = re.search(r"Set the (M4 heat-set inserts in the four corner posts) \((option b: [^)]*)\)", _ASM)
+assert M4_STEP, "ASSEMBLY.md section 2 step 3 sets the M4 inserts in the four corner posts"
+M4_WHAT, M4_WHY = M4_STEP.group(1), M4_STEP.group(2)       # "M4 heat-set inserts in the four corner posts", "option b: ..."
+BP_SECS = dict(re.findall(r"^## (\d+)\. (.*)$", _BPMD, re.M))   # {"2": "Sockets (one per card; ...", ...}
+BP_WIRING = [re.sub(r" \([^)]*\)", "", BP_SECS[k]) for k in ("2", "3", "4", "5")]   # sockets + key plugs, pins and parts, bus wires, leads
+BP_FIT = re.sub(r" \([^)]*\)", "", BP_SECS["6"])                                    # "Fit it in the base"
 
 MIN_LABEL, MIN_FINE, MIN_KEY = 9, 8, 12
 PROTO = "PROTOCOL 01 // SESSION 1 // CARDS"   # set per session by the build loop
@@ -501,14 +513,14 @@ def _cover(c, pg, title, sub, items, mats, tasks, rules):
 
 
 def cover(c, pg):
-    _cover(c, pg, "SESSION 1: PREP", "NO SOLDER. NO POWER. CARDS FIRST, THEN THE BASE: SNAP, LABEL, MEASURE, CUT, FIT.",
+    _cover(c, pg, "SESSION 1: PREP", "NO SOLDER. NO POWER. CARDS FIRST, THEN THE BASE: SNAP, LABEL, MEASURE, CUT, TEST-FIT.",
            [("CALIPERS", "tool_caliper"), ("STEEL RULER", "tool_ruler"), ("UTILITY KNIFE", "tool_knife"),
             ("2 C-CLAMPS", "tool_clamps"), ("SANDPAPER 120", "tool_sandpaper"), ("DRILL 3.2 MM", "tool_drill"),
             ("SHARPIE", "tool_marker"), ("FLAT FILE", "tool_file"), ("MASK", None), ("PHONE", "tool_phone"),
             ("IRON (INSERTS ONLY)", "")],
-           [("1x PAD3U", "mat_pad3u"), ("4x SOLDERFUL", "mat_cards"), ("INSERTS + SCREWS", "mat_base")],
+           [("1x PAD3U", "mat_pad3u"), ("4x SOLDERFUL", "mat_cards"), ("M3 + M4 INSERTS", "mat_base")],
            ["01  SNAP THE CARD RAILS", "02  LABEL. PHOTOGRAPH. REPORT.", "03  MEASURE THE INSERT",
-            "04  CUT, DRILL, FIT BACKPLANE", "05  REPORT THE BASE"],
+            "04  CUT, DRILL, TEST-FIT BACKPLANE", "05  REPORT THE BASE"],
            ["COUNT HOLES. DO NOT TRUST A RULER FOR POSITION.",
             "SCORE BOTH FACES. ALWAYS BOTH. FILE TO THE LINE, NEVER PAST IT.",
             "FIBREGLASS DUST: MASK ON, DAMP TOWEL UNDER, WASH HANDS AFTER.",
@@ -837,7 +849,7 @@ def bp2(c, pg):
           "ALT", NEON, dot=False)
     ux, uy = d.A("mh_hi")
     label(c, d.x + d.w + 20, uy - 20, "UPPER BIG HOLE:\nLEAVE IT 2.8", ux + 4, uy - 2, 10, "ALT", INK, dot=False)
-    label(c, d.x - 30, (s0y + s1y) / 2, "SCORE LINE\n(PAGE 3: NOT YET)", s0x, (s0y + s1y) / 2, 9, "ALT", INK, "r")
+    label(c, d.x - 30, (s0y + s1y) / 2, "SCORE LINE\n(BACKPLANE 3/6: NOT YET)", s0x, (s0y + s1y) / 2, 9, "ALT", INK, "r")
     chip(c, d.A("h0_38")[0], d.y + d.h + 2, "LINE 0", 9, "ALT", INK, "c")
     chip(c, d.A("h30_38")[0] - 4, d.y + d.h + 2, "LINE 30", 9, "ALT", INK, "c")
     chip(c, d.x - 6, d.A("h30_1")[1] - 9, "HOLE 1", 9, "ALT", INK, "r")
@@ -939,13 +951,25 @@ def bp4(c, pg):
 
 def bp5(c, pg):
     page(c, "04", "BACKPLANE  5/6: READY THE BASE",
-         "ENCLOSURE 3: POSTS AND SLOT PRINTED IN. FOUR INSERTS. NOTHING GLUED, NOTHING CUT.", pg,
+         "POSTS AND SLOT PRINTED IN. FOUR M3 INSERTS. FOUR M4 IN THE LID CORNER POSTS.", pg,
          SLOGANS[0])
     g = Grid(2, 2, heights=[1.3, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
         "Enclosure 3's base from the lid side, bottom wall at the bottom; all printed in, post tops at 8.0. Positions",
-        "are (Xb, Zb) mm from the left and bottom walls. Backplane screws: post A and post B. Bar screws: BAR 1, BAR 2."])
+        "are (Xb, Zb) mm from the left and bottom walls. Backplane screws: post A and post B. Bar screws: BAR 1, BAR 2.",
+        "The four lid corner posts (up at the rim, under the lid's screw bosses) take the M4 inserts (ringed)."])
     p = Art(c, "f_plan", x + 130, y + 6, 240, h - 12)
+    m4 = [p.A(f"m4_{k}") for k in range(4)]          # cage.corners(): bottom left, top left, bottom right, top right
+    for mx, my in m4:
+        ringm(c, mx, my, 7)
+    label(c, p.x - 14, m4[1][1] + 6, "M4 INSERT:\nLID CORNER POST", m4[1][0] - 7, m4[1][1], 10, "ALT", NEON, "r",
+          lcolor=INK, dot=False)
+    label(c, p.x + p.w + 20, m4[3][1] + 6, "M4 INSERT: LID CORNER POST", m4[3][0] + 7, m4[3][1], 10, "ALT", NEON,
+          lcolor=INK, dot=False)
+    label(c, p.x - 14, m4[0][1] - 4, "M4 INSERT:\nLID CORNER POST", m4[0][0] - 7, m4[0][1], 10, "ALT", NEON, "r",
+          lcolor=INK, dot=False)
+    label(c, p.x + p.w + 20, m4[2][1] - 4, "M4 INSERT: LID CORNER POST", m4[2][0] + 7, m4[2][1], 10, "ALT", NEON,
+          lcolor=INK, dot=False)
     for nm in ("post_bl", "standoff"):
         ringm(c, *p.A(nm), 8)
     rx = p.x + p.w + 20
@@ -958,13 +982,13 @@ def bp5(c, pg):
     stx, sty = p.A("standoff")
     label(c, rx, sty - 20, "SCREW POST B: DIA 7\nAT (86.63, 54.06)", stx + 8, sty, 10, "ALT", NEON, lcolor=INK, dot=False)
     blx_, bly_ = p.A("post_bl")
-    label(c, p.x - 14, bly_ + 30, "SCREW POST A: DIA 8,\nFLAT, AT (7.78, 54.06)", blx_, bly_, 10, "ALT", NEON, "r", lcolor=INK)
+    label(c, p.x - 14, bly_ + 14, "SCREW POST A: DIA 8,\nFLAT, AT (7.78, 54.06)", blx_, bly_, 10, "ALT", NEON, "r", lcolor=INK)
     gx, gy = p.A("groove")
     label(c, p.x - 14, gy + 10, "LEFT WALL\nGROOVE", gx, gy, 9, "ALT", INK, "r")
     for nm, txt in (("bar_lo", "BAR 1 INSERT\nAT (5.00, 76.50)"), ("bar_hi", "BAR 2 INSERT\nAT (5.00, 146.50)")):
         bx_, by_ = p.A(nm)
         ringm(c, bx_, by_, 7)
-        label(c, p.x - 14, by_ + (18 if nm == "bar_lo" else -4), txt, bx_ - 7, by_, 10, "ALT", NEON, "r", lcolor=INK,
+        label(c, p.x - 14, by_ + (30 if nm == "bar_lo" else -4), txt, bx_ - 7, by_, 10, "ALT", NEON, "r", lcolor=INK,
               dot=False)
     cx_, cy_ = p.A("slot_mid")
     label(c, rx, cy_ - 6, "CORNER POST: SLOT 6.5 DEEP", cx_, cy_, 10, "ALT", INK)
@@ -977,25 +1001,28 @@ def bp5(c, pg):
     chip(c, x + w / 2, y + 4, "SLIDES FREELY, END TO END: OK", 10, "ALT", NEON, "c")
     # 3: the two inserts
     x, y, w, h = panel(c, g.cell(1, 1), 3, [
-        "Iron on, no solder. One M3 insert, flush, in", "SCREW POSTS A, B and bores BAR 1, BAR 2.",
-        "BAR 1 has 0.48 of plastic over the B4 slot:", "light pressure, iron not past flush. Then run",
-        "a PAD3U offcut down the B4 slot from the", "front; file the slot if it binds."])
-    Art(c, "mat_base", x + 10, y + h - 64, w - 20, 54)
+        "Iron on, no solder. One M3 insert, flush, in", "SCREW POSTS A, B and bores BAR 1, BAR 2; one",
+        "M4 in each lid corner post (ASSEMBLY.md 2.3).", "BAR 1 has 0.48 of plastic over the B4 slot:",
+        "light pressure, iron not past flush. Then run", "a PAD3U offcut down the B4 slot from the",
+        "front; file the slot if it binds."])
+    mb = Art(c, "mat_base", x + 10, y + h - 58, w - 20, 50)
+    chip(c, mb.A("m3")[0], y + h - 70, "M3 x4", 9, "ALT", INK, "c")
+    chip(c, mb.A("m4")[0], y + h - 70, "M4 x4", 9, "ALT", INK, "c")
     chip(c, x + 10, y + 56, "4 x M3 HEAT-SET INSERT (A, B, BAR 1, BAR 2)", 9, "ALT", INK)
-    chip(c, x + 10, y + 40, "2 x M3 x 6 BUTTON HEAD (NEXT PAGE)", 9, "ALT", INK)
+    chip(c, x + 10, y + 40, "4 x M4 HEAT-SET INSERT (LID CORNER POSTS)", 9, "ALT", INK)
     chip(c, x + 10, y + 24, "ALL POST TOPS LEVEL: 8.0 ABOVE THE FLOOR", 9, "ALT", NEON)
     chip(c, x + 10, y + 8, "OFFCUT SLIDES THE WHOLE B4 SLOT: OK", 9, "ALT", NEON)
 
 
 def bp6(c, pg):
-    page(c, "04", "BACKPLANE  6/6: FIT IT. TWO SCREWS.",
-         "EVERY CARD OUT. FRONT UP, BACK FACE DOWN. RIGHT EDGE FIRST, THEN SLIDE LEFT.", pg, SLOGANS[2])
+    page(c, "04", "BACKPLANE  6/6: TEST-FIT IT. OUT AGAIN.",
+         "THE BARE BOARD: IN, CHECK, OUT. NO SCREWS TODAY. IT IS WIRED IN A LATER SESSION.", pg, SLOGANS[2])
     g = Grid(2, 3, heights=[1, 1, 1])
-    steps = [("f_tilt", ["TILT IT. Push the right edge into the corner", "post's slot, to the slot's end. The left",
-                         "edge then clears the left wall."]),
+    steps = [("f_tilt", ["TILT IT. FRONT up, BACK face down. Push the", "right edge into the corner post's slot, to",
+                         "the slot's end. The left edge clears the wall."]),
              ("f_slide", ["LOWER the left side onto the screw and", "support posts, BACK face down."]),
-             ("f_home", ["SLIDE it 2.84 mm LEFT: left edge into the", "groove, right edge 3.66 in the slot, holes",
-                         "A and B over the inserts. Two M3 x 6", "button heads, no washers."])]
+             ("f_home", ["SLIDE it 2.84 mm LEFT: left edge into the", "groove, right edge 3.66 in the slot. CHECK",
+                         "holes A and B sit over the inserts. No", "screws: they go in when it is wired."])]
     for i, (art, cap) in enumerate(steps):
         x, y, w, h = panel(c, g.cell(0, i), i + 1, cap)
         a = Art(c, art, x + 10, y + 22, w - 20, h - 50, valign="c")
@@ -1006,15 +1033,21 @@ def bp6(c, pg):
         if art == "f_tilt":
             label(c, a.x + a.w - 10, a.y + a.h + 6, "RIGHT EDGE IN THE SLOT", *a.A("slot_end"), 9, "ALT", INK, "r")
         if art == "f_home":
-            label(c, a.x + 10, a.y - 12, "SCREW 1: HOLE A", *a.A("screw_l"), 9, "ALT", INK)
-            label(c, a.x + a.w - 10, a.y - 12, "SCREW 2: HOLE B", *a.A("screw_r"), 9, "ALT", INK, "r")
-    x, y, w, h = panel(c, g.cell(1, 0, 1) if False else (g.cell(1, 0)[0], g.cell(1, 2)[1], g.cell(1, 0)[2],
-                       g.cell(1, 0)[1] + g.cell(1, 0)[3] - g.cell(1, 2)[1]), 4, [
-        "In place, from the lid side. Two screws: A", "(bottom left) and B (bottom right). The upper",
-        "big hole stays empty. It comes out the", "same way, after every card is out."])
-    d = Art(c, "f_done", x + 6, y + 30, w - 12, h - 40)
-    label(c, d.x + 20, d.y - 18, "SCREW 1: HOLE A", *d.A("screw_l"), 9, "ALT", INK)
-    label(c, d.x + d.w - 100, d.y - 18, "SCREW 2: HOLE B", *d.A("screw_r"), 9, "ALT", INK)
+            label(c, a.x + 10, a.y - 12, "HOLE A OVER POST A", *a.A("screw_l"), 9, "ALT", INK)
+            label(c, a.x + a.w - 10, a.y - 12, "HOLE B OVER POST B", *a.A("screw_r"), 9, "ALT", INK, "r")
+    cell = (g.cell(1, 0)[0], g.cell(1, 2)[1], g.cell(1, 0)[2], g.cell(1, 0)[1] + g.cell(1, 0)[3] - g.cell(1, 2)[1])
+    x, y, w, h = panel(c, cell, 4, [
+        "Seated, from the lid side: flat on all", "posts, A and B over their inserts. Then",
+        "OUT: slide it right, lift the left side,", "tilt the right edge out of the slot.",
+        "Wiring it is a later session; then it goes", f"back for good: {BP_FIT.lower()},",
+        "two M3 x 6 screws (BACKPLANE.md 6)."])
+    wl = "LATER (BACKPLANE.md 2-5): " + "; ".join(t.upper() for t in BP_WIRING) + "."
+    wl = textwrap.wrap(wl, 36)
+    for k, ln in enumerate(wl):
+        chip(c, x + 36, y + h - 14 - 13 * k, ln, 8.5, "ALT", NEON)
+    d = Art(c, "f_done", x + 6, y + 30, w - 12, h - 40 - 13 * len(wl) - 18)
+    label(c, d.x + 20, d.y - 18, "HOLE A OVER POST A", *d.A("screw_l"), 9, "ALT", INK)
+    label(c, d.x + d.w - 100, d.y - 18, "HOLE B OVER POST B", *d.A("screw_r"), 9, "ALT", INK)
     label(c, d.x + d.w - 110, d.y + d.h + 10, "UPPER BIG HOLE: EMPTY", *d.A("upper_mh"), 9, "ALT", INK)
 
 
@@ -1120,9 +1153,10 @@ CARD_ROWS = [("CARD: FRONT EDGE TO SNAP LINE", "mm", "model 41.91"),
 BASE_ROWS = [("INSERT LENGTH  L", "mm", "expected 5.7"),
              ("INSERT DIAMETER  D (KNURL TIPS)", "mm", "expected 4.6"),
              ("BAR 1 + BAR 2 INSERTS SET, B4 SLOT CLEAR", "Y / N", "offcut slides the whole B4 slot"),
-             ("BACKPLANE: 31 x 38, 2 HOLES, FITS, 2 SCREWS", "Y / N", ""),
+             ("4 x M4 INSERTS IN THE LID CORNER POSTS", "Y / N", M4_WHY.split(":")[0] + ": the lid's M4 screws"),
+             ("BACKPLANE: 31 x 38, 2 HOLES, TEST-FITS", "Y / N", "in, A and B over the inserts, out again"),
              ("BACKPLANE: LINE 30 TO RIGHT EDGE", "mm", "expected 5.48, at most 6.13"),
-             ("PHOTO OF THE BACKPLANE SCREWED DOWN", "SENT", "")]
+             ("PHOTO OF THE BACKPLANE TEST-FITTED", "SENT", "")]
 
 
 def report(c, x, y, w, h, rows):

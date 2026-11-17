@@ -12,6 +12,7 @@ Every caption, table and step list is built from B2.md (b2md.py) and from scenes
 Usage: pdfenv/bin/python make_session3.py [OUT_DIR]     (renders first: sh render_all.sh)
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -31,7 +32,7 @@ SLOGANS3 = [
     "B2 HEARS THE WIND, THE RAIN AND PORT S4.",
     "TOP IS THE FACE THAT READS. THE MACHINE CHECKED.",
     "A WIRE UNDER A PART CANNOT BE FIXED LATER.",
-    "THIRTY PINS. THIRTY LINES. NONE PULLED.",
+    "TWENTY-NINE PINS. ONE KEY. ONE SLOT.",
     "THE BAND IS THE CATHODE. THE CATHODE IS THE LAW.",
     "LOWEST FIRST. TALLEST LAST. GRAVITY APPROVES.",
     "SIX PINS DOWN. ONE MOUTH OUT. NO FLYING LEADS.",
@@ -40,7 +41,16 @@ SLOGANS3 = [
 
 # the B2 bus header's spare pins, from B2.md's header table (pins whose line is "not connected")
 SPARES = [h.upper() for p, h, l in B.PARTS["XH2"]["pins"] if l == "not connected"]
-assert len(B.PARTS["XH2"]["pins"]) == 30, "full 1x30 (emphatic)"
+# the slot key: B2.md's header table ends with the pulled pin's row ("key 28 (28)", hole "none: pulled out ...")
+KEYROW = next(r for r in B.PARTS["XH2"]["pins"] if r[0].startswith("key "))
+KEY = int(re.search(r"\((\d+)\)", KEYROW[0]).group(1))
+FITTED = [r for r in B.PARTS["XH2"]["pins"] if r is not KEYROW]
+assert len(FITTED) == 29 and all(h.startswith("j") for _p, h, _l in FITTED), "1x30 less its key pin"
+HOW_PULL = KEYROW[1].split(": ", 1)[1].split(";")[0]          # "pulled out of the plastic before fitting (grip ...)"
+WHY_KEY = KEYROW[2]                                            # "the slot key: B2's own socket has a key plug in ..."
+DOT = next(t for t in B.SNAP if t.startswith("Label it"))      # B2.md section 1 step 4: the colour dot
+DOT_COLOUR = re.search(r"a (\w+) paint-pen", DOT).group(1)
+KEY_LINE = next(l for l in B.BEFORE if l.startswith("The 1x30 header less its key pin"))
 
 
 def hole(h):
@@ -306,7 +316,7 @@ def cover(c, pg):
     dio = refs_of(lambda r: r.startswith("D"))
     cols = sorted({w_["colour"] for w_ in B.WIRES})
     items = [("B2 CARD\n(back rails snapped)", "p_card"),
-             ("XH2 RIGHT-ANGLE HEADER\n1x30, every pin fitted", "p_header"),
+             (f"XH2 RIGHT-ANGLE HEADER\n1x30, PIN {KEY} PULLED (SLOT KEY)", "p_header"),
              (f"PER JACK ({len(JACKS)}x): BOB-14021 (BARE,\nTAB ON) + 87180 JACK + 1x6 HEADER", "p_bob"),
              ("\n".join(f"{' '.join(rs)}: {v}" for v, rs in res), "p_res"),
              ("\n".join(f"{v}: {' '.join(rs)}" for v, rs in dio), "p_diode"),
@@ -323,8 +333,7 @@ def cover(c, pg):
         chip(c, X + cw / 2, Y + 6 + 10 * (nl - 1), name, 7.5, "ALT", INK, "c")
     x, y, w, h = panel(c, g.cell(0, 1), None, "TOOLS.")
     tools = ["SOLDERING IRON + SOLDER", "FLUSH CUTTERS", "WIRE STRIPPER (24 AWG)", "MULTIMETER (CONTINUITY)",
-             "PLIERS (FORM F4'S LEADS)", "STEEL RULER (WIRE LENGTHS)", "VICE OR CLAMP (SNAP THE TABS)", "SMALL FILE",
-             "SHARPIE"]
+             f"PLIERS (F4'S LEADS, PULL PIN {KEY})", f"{DOT_COLOUR.upper()} PAINT PEN OR DOT STICKER", "STEEL RULER (WIRE LENGTHS)", "VICE OR CLAMP (SNAP THE TABS)", "SMALL FILE"]
     for i, s in enumerate(tools):
         text(c, x + 14, y + h - 16 - i * (h - 12) / len(tools), "-  " + s, 10, "ALT", INK)
     x, y, w, h = panel(c, g.cell(1, 1), None, "THE STEPS. IN THIS ORDER.")
@@ -403,7 +412,7 @@ def wire_rows(c, tx, ytop, nums, right):
 def wires_panel(c, cell, k, nums, first):
     if first:
         cp = cap(f"B2, UNDERSIDE (row J toward you). Wires {nums[0]}-{nums[-1]} of {len(B.WIRES)}.",
-                 "Cut each to the length shown (route + 10 mm), strip 5 mm at both ends, lay it flat on the drawn route,",
+                 "Cut each to the length shown (route + 10 mm), strip 3 mm at both ends, lay it flat on the drawn route,",
                  "bends square. Push each end through its hole from the UNDERSIDE, solder it on the TOP, trim.")
     else:
         cp = cap(f"B2, UNDERSIDE. Wires {nums[0]}-{nums[-1]}. Grey = wires already in. Same method: cut, strip,",
@@ -491,40 +500,50 @@ def jumpers(c, pg):
 
 
 def header(c, pg):
-    page(c, "04", "BUS HEADER XH2, ROW J", "GENERIC RIGHT-ANGLE MALE HEADER, CUT TO 1x30. ALL 30 PINS STAY IN.", pg,
-         SLOGANS3[3])
+    page(c, "04", "BUS HEADER XH2, ROW J",
+         f"GENERIC RIGHT-ANGLE MALE HEADER, CUT TO 1x30. PIN {KEY} PULLED: THE SLOT KEY. {DOT_COLOUR.upper()} DOT ON THE FRONT.",
+         pg, SLOGANS3[3])
     g = Grid(1, 2, heights=[1.15, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
-        "B2, TOP FACE. Short legs down through HOLES J1 to J30 (row J, columns 1-30), from the top: every hole",
-        "in row J takes a pin. The long pins point AWAY from row A, out past the snapped back edge (toward the",
-        "backplane). Solder on the UNDERSIDE: J1 first, check it sits flat and square, then J30, then the rest."))
+        f"B2, TOP FACE. Short legs down through HOLES J1 to J30 (row J, columns 1-30), from the top: every hole in row J",
+        f"takes a pin except HOLE J{KEY}, which stays empty (pin {KEY} pulled: the slot key). The long pins point AWAY",
+        "from row A, out past the snapped back edge (toward the backplane). Solder on the UNDERSIDE: J1 first, check",
+        f"it sits flat and square, then J30, then the rest. {DOT}"))
     face_tag(c, x + 4, y + h - 40, "top")
     a = Art(c, "t_header", x + 96, y + 4, 330, h - 8, align="l")
-    ring_holes(c, a, ["j1", "j30"])
-    j1, j30 = a.A("J1"), a.A("J30")
-    lanes(c, [("HOLE J1: PIN 1", *j1, "lt", True)], (a.x, a.y, a.x + a.w, a.y + a.h))
-    lanes(c, [("HOLE J30: PIN 30", *j30, "rt", True)], (a.x, a.y, a.x + a.w, a.y + a.h))
+    ring_holes(c, a, ["j1", f"j{KEY}", "j30"])
+    box = (a.x, a.y, a.x + a.w, a.y + a.h)
+    lanes(c, [("HOLE J1: PIN 1", *a.A("J1"), "lt", True)], box)
+    lanes(c, [(f"HOLE J{KEY}: EMPTY (KEY)", *a.A(f"J{KEY}"), "up", True)], (a.x, a.y, a.x + a.w, a.A("J1")[1] + 8))
+    lanes(c, [("HOLE J30: PIN 30", *a.A("J30"), "rt", True)], box)
+    dx_, dy_ = a.A("keydot")
+    label(c, x + 8, dy_ + 16, f"{DOT_COLOUR.upper()} DOT:\nB2'S COLOUR", dx_ - 3, dy_ + 1, 9, "ALT", NEON, lcolor=INK, dot=False)
     x, y, w, h = panel(c, g.cell(0, 1), 2, cap(
-        "Cut 1x30 from a longer strip: pull the 31st pin, cut through its empty place, file flat. B2.md, pin by pin:",
-        "pin n carries backplane bus line n. Spare pins (no net on B2; their socket contacts sit on isolated pads)",
-        "stay in anyway: the 1x30 is full, NONE PULLED."))
+        f"Cut 1x30 from a longer strip: pull the 31st pin, cut through its empty place, file flat. Then pin {KEY}:",
+        f"{HOW_PULL}. Why: {WHY_KEY}. B2.md, pin by pin: pin n carries backplane bus line n."))
     hd = Art(c, "p_header", x + 30, y + 70, 220, h - 80, align="c", valign="c")
     ring(c, *hd.A("p1"), r=4.0)
     ring(c, *hd.A("p30"), r=4.0)
-    rows = B.PARTS["XH2"]["pins"]
+    kx, ky = hd.A("key_pin")
+    label(c, kx - 30, hd.y + hd.h + 2, f"PIN {KEY}: OUT", kx, ky, 9, "ALT", NEON, "r", lcolor=INK, dot=False)
+    rows = FITTED + [KEYROW]
     cx0 = x + 262
     colw = (x + w - cx0) / 2
     for i, (p, hh, ln) in enumerate(rows):
         col, r_ = divmod(i, 15)
         xx, yy = cx0 + col * colw, y + h - 12 - r_ * 10.6
+        if p is KEYROW[0]:
+            text(c, xx, yy, f"J{KEY}", 8.5, "HEAD", NEON)
+            text(c, xx + 26, yy, "PULLED: THE SLOT KEY", 7.8, "HEAD", INK)
+            continue
         text(c, xx, yy, f"{hole(hh)}", 8.5, "HEAD", NEON)
         sh = (ln.replace("sensor port ", "S").replace(" (SDA)", " SDA").replace(" (SCL)", " SCL")
               .replace("(wind speed) ", "").replace("(wind direction) ", "")
               .replace("spare bus line (for the charger interrupt)", "spare bus line"))
         text(c, xx + 26, yy, sh, 7.8, "ALT", INK if ln != "not connected" else GREY)
     LAB.block(cx0, y + h - 12 - 14 * 10.6 - 4, x + w, y + h - 2, "pin table")
-    text(c, x + 14, y + 36, "1x30: PIN 1 TO PIN 30, NONE PULLED.", 11, "HEAD", INK)
-    text(c, x + 14, y + 22, f"SPARES (FITTED, NO NET): {SPARES[0]}-{SPARES[-1]}.", 9, "ALT", INK)
+    text(c, x + 14, y + 36, f"1x30 LESS PIN {KEY}: 29 PINS, HOLE J{KEY} EMPTY.", 11, "HEAD", INK)
+    text(c, x + 14, y + 22, f"SPARES (FITTED, NO NET): {', '.join(SPARES)}.", 8, "ALT", INK)
 
 
 # --------------------------------------------- parts pages: full top view + close-up + B2.md pin table
@@ -822,8 +841,7 @@ def checks(c, pg):
     rows = [("1", "NEIGHBOURS", B.BEFORE[0]), ("2", "3.3 V vs GROUND", B.BEFORE[1]),
             ("3", "HEADER PINS", B.BEFORE[2].replace("Jn", "HOLE Jn").replace("Fn", "HOLE Fn")),
             ("4", "GROUND PINS", B.BEFORE[3].replace("J2", "HOLES J2").replace("J12", "J12")),
-            ("5", "ALL 30 PINS", f"HOLES J1-J30 all fitted, none pulled. Spares {SPARES[0]}-{SPARES[-1]} beep to no other "
-                                 "header pin."),
+            ("5", f"KEY PIN {KEY}", KEY_LINE.replace(f"hole j{KEY}", f"HOLE J{KEY}")),
             ("6", "JACK GROUNDS", "On the UNDERSIDE, each jack's ground header pin beeps to the − RAIL: " +
              ", ".join(grounds) + ".")]
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Any beep where it says no continuity, or silence where it says beep: stop.",
@@ -858,7 +876,7 @@ c_glob = [None]
 UG = GROUPS["ugroups"]
 NWP = (len(UG) + 1) // 2
 STEP_TITLES = [("01", "KNOW THE TWO FACES"), ("02", f"{len(B.WIRES)} WIRES ON THE UNDERSIDE"),
-               ("03", f"{len(B.JUMPERS)} BARE JUMPERS"), ("04", "BUS HEADER XH2, ROW J"),
+               ("03", f"{len(B.JUMPERS)} BARE JUMPERS"), ("04", f"BUS HEADER XH2 (PIN {KEY} OUT), {DOT_COLOUR.upper()} DOT"),
                ("05", "PULL-UPS " + " ".join(G["RPULL"])), ("06", "SERIES " + " ".join(G["RSER"])),
                ("07", "DISCS " + " ".join(G["CAPS"])), ("08", "PORT S4 DIODES " + G["S4D"][0] + "-" + G["S4D"][-1]),
                ("09", "ZENERS " + " ".join(G["ZEN"])), ("10", "FUSE " + " ".join(G["F4"])),

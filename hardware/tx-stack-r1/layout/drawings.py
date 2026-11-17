@@ -143,6 +143,17 @@ def net_of_end(e, ph):
     return lc.eff_net(e)
 
 
+def lead_len(a, c):
+    """Cut length of a lead that leaves the cards and the backplane (to the EVM or the pack): one value for
+    ASSEMBLY.md section 4 and BACKPLANE.md section 5, cut long and trimmed to fit with a service loop. None for
+    a lead between two points on the cards or the backplane (the mux pads included)."""
+    off = [e for e in (a, c) if isinstance(e, tuple) and board_of_end(e) is None and e[0] != "U4"]
+    if not off:
+        return None
+    to_bp = any((isinstance(x, str) and x.startswith("BP:")) or x[0] == "R7" for x in (a, c))
+    return "100 mm, trim to fit" if to_bp else "150 mm, trim to fit"
+
+
 def where(e):
     if isinstance(e, str):
         b, h = e.split(":")
@@ -714,7 +725,7 @@ def backplane_sheet(ph):
             L.append(f"| {where(a)} | line {i}, hole {n} | {note} |")
         elif kind == "lead" and isinstance(a, tuple) and a[0] == "R7":
             L.append(f"| {where(c)} | R7's free leg (line 24, hole 7) | {note} |")
-    L += ["", "Leave each 60-80 mm with a service loop: the EVM slides out on them. The ground lead (J3 GND to line 12) "
+    L += ["", "Cut each to the length in section 5 and trim it to fit, leaving a service loop: the EVM slides out on them. The ground lead (J3 GND to line 12) "
           "is SYS's return: the regulator's load and the radio's transmit peaks come back on it, not on the I2C lead's "
           "J8 pin 1; run it beside the SYS lead from J3 and on to line 12 above the mux.", "",
           "## 4. Bus wires (copper side)", "",
@@ -733,7 +744,7 @@ def backplane_sheet(ph):
     L += ["", "## 5. Leads on the copper side", "", "| From | To | Length | Line | What |", "|---|---|---|---|---|"]
     for kind, a, c, side, note in route.WIRES:
         if side == "copper":
-            L.append(f"| {where(a)} | {where(c)} | 40 mm | {plain(net_of_end(c, ph) or net_of_end(a, ph))} | {note} |")
+            L.append(f"| {where(a)} | {where(c)} | {lead_len(a, c) or '40 mm'} | {plain(net_of_end(c, ph) or net_of_end(a, ph))} | {note} |")
     L += ["", "The mux (Adafruit #5626: bridge A0 for 0x71, its Vlogic switch SW1 to V+) sits on a foam pad on the "
           "copper side over holes 2-9, below the B4 socket and clear of the bus wires (they start at hole 10); its "
           "five header pads take short leads to hole 10.", "",
@@ -852,10 +863,8 @@ def assembly_sheet():
          "between a card and anything else (layout check L10).",
          "", "## 4. Leads off the cards", "", "| From | To | Length | What |", "|---|---|---|---|"]
     for kind, a, c, side, note in route.WIRES:
-        off = [e for e in (a, c) if isinstance(e, tuple) and board_of_end(e) is None and e[0] != "U4"]
-        if off:
-            ln = "100 mm, trim to fit" if any((isinstance(x, str) and x.startswith("BP:")) or x[0] == "R7" for x in (a, c)) \
-                else "150 mm, trim to fit"
+        ln = lead_len(a, c)
+        if ln:
             L.append(f"| {where(a)} | {where(c)} | {ln} | {note} |")
     L += ["| EVM J8 (KK 4-pin housing, pins 1-3) | backplane charger pins | 150 mm | charger I2C: ground, clock, data |",
           "| mux channel 0-3 (QT) | backplane QT lead pins | 150 mm (Adafruit #4209) | sensor ports S1-S4 |", "",

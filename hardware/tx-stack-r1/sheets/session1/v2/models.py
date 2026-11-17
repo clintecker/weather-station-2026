@@ -52,6 +52,22 @@ def col_x(n):
     return SB_X1 + (n - 1) * P
 
 
+# ------------------------------------------------------------------ slot-key colour dot (model.KEY_COLOUR)
+KEY_RGB = {"blue": "#2D6FD0", "green": "#2E9E4F", "yellow": "#FFD400", "red": "#E8202A"}
+DOT_XY = (SB_X1, 1.6)                          # top face, at the front edge, near column 1 (build/Bn.md step 1.4)
+DOT_R = 1.3
+
+
+def key_dot(s, colour, z=SB_T, xy=DOT_XY, r=DOT_R, name="keydot"):
+    """The card's colour dot (paint pen or sticker) on its top face at the front edge, near column 1: a disc in the
+    key colour on a thin white rim (the red dot must read on the red card). Anchor `name` at its centre."""
+    x, y = xy
+    rim = cq.Solid.makeCylinder(r + 0.35, 0.10, cq.Vector(x, y, z), cq.Vector(0, 0, 1))
+    dot = cq.Solid.makeCylinder(r, 0.10, cq.Vector(x, y, z + 0.10), cq.Vector(0, 0, 1))
+    s.add(name + "_rim", rim, "#FFFFFF", 0.2).add(name, dot, KEY_RGB[colour], 0.2)
+    s.anchor(name, (x, y, z + 0.2), on=name)
+
+
 def solderful(snapped=False, decals=None, part="card", z0=0.0, labels=True):
     """Card in its own frame: X along numbers 1-30, Y from the FRONT edge (A side), top face at z0 + 1.6.
     decals: an r3d.Scene to receive the silkscreen. Returns (board, pads)."""

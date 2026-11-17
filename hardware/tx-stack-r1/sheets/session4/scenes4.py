@@ -87,6 +87,8 @@ def R(name, s, d, up=(0, 0, 1), fit=(300, 220), use=(), **kw):
 
 
 PL = {pl["ref"]: dict(pl, pins=dict(pl["pins"]), pads=dict(pl["pads"])) for pl in st.PLACE["B1"]}
+KEY = st.model.KEY["B1"]                     # the bus-header pin pulled as B1's slot key
+COLOUR = st.model.KEY_COLOUR["B1"]           # B1's colour dot
 
 # ------------------------------------------------------------------ wires from route.py, in B1.md order
 B1_WIRES = []
@@ -189,16 +191,18 @@ def anchor_name(h):
 
 # ------------------------------------------------------------------ XH1, the 1x30 bus header
 def add_header(s, ref="XH1"):
-    """Generic right-angle 1x30 header in j1-j30 (every pin fitted), mating pins toward the back (+Y)."""
+    """Generic right-angle 1x30 header in j1-j30 less its key pin (model.PULLED: B1's pin 27, the slot key),
+    mating pins toward the back (+Y)."""
     pins = PL[ref]["pins"]
-    assert sorted(int(k) for k in pins) == list(range(1, 31)), "B1's bus header must be a full 1x30"
+    assert sorted(int(k) for k in pins) == [n for n in range(1, 31) if n != KEY], \
+        "B1's bus header must be the 1x30 less its key pin"
     x1, y = pins["1"]
-    x30 = pins["30"][0]
+    x30 = x1 + 29 * M.P
     off, ins, tail = S.val("ra_offset"), S.val("ra_insulator"), S.val("ra_tail")
     pz = T + st.PIN_Z
     s.add(f"{ref}_ins", M.box(x1 - 1.27, y + off, T, x30 + 1.27, y + off + ins, T + 2 * st.PIN_Z), "#1E1E1E")
     ps = []
-    for n in range(1, 31):
+    for n in (k for k in range(1, 31) if str(k) in pins):
         x = pins[str(n)][0]
         ps.append(M.box(x - 0.32, y - 0.32, T - tail, x + 0.32, y + 0.32, pz + 0.32).val())
         ps.append(M.box(x - 0.32, y - 0.32, pz - 0.32, x + 0.32, y + st.RA_TIP, pz + 0.32).val())
@@ -206,6 +210,7 @@ def add_header(s, ref="XH1"):
     for n in (1, 10, 18, 19, 30):
         x = pins[str(n)][0]
         s.anchor(f"{ref}_p{n}", (x, y + st.RA_TIP - 0.6, pz + 0.32), on=f"{ref}_pins")
+    M.key_dot(s, COLOUR)                         # the blue dot on the front edge goes on with the header (B1.md 1.4)
 
 
 # ------------------------------------------------------------------ two-lead parts (stack.two_pin placements)
@@ -323,6 +328,11 @@ BOB_T = max(so.BoundingBox().zmax for so, c in bob_solids() if c == BOB_RED)    
 HDR_PADS = sorted((h for h in bob_holes() if abs(h[1] - S.val("bob_hdr_y")) < 0.01), key=lambda h: -h[0])
 JACK_PINS = [h for h in bob_holes() if h not in HDR_PADS]
 PEGS = [(x, S.val("bob_peg_y")) for x in (2.54, 12.7)]           # SparkFun JP3 peg holes (3.2 mm, unplated)
+# BOB-14021 as SparkFun sells it (Session 3's scenes3.py, same board): a 5.84 mm snap-off tab on its maker +x side,
+# beyond a V-score at x 15.24 ("V-score for the end user if they want to remove"). On B1 it comes off: J12 and J13
+# sit edge to edge (tab_hits() names what each tab would land on).
+BOB_TAB = (15.24, 21.59)
+FLUSH = 0.3                                                          # a jack pin cut flush: what stands proud
 assert len(HDR_PADS) == 6 and len(JACK_PINS) == 6
 
 
@@ -338,10 +348,15 @@ def maker_boxes(ref="J12"):
     return out
 
 
-def bob_parts(s, name, xf, board=True, jack=True, header=True, trimmed=True, jack_dz=0.0, hdr_dz=0.0):
+def bob_parts(s, name, xf, board=True, jack=True, header=True, trimmed=True, jack_dz=0.0, hdr_dz=0.0, tab=False,
+              flush=None):
     """One breakout in the maker frame, carried into the scene by xf(shape) (a rigid map). Contact i of the header
     (pin i) is pad i of HDR_PADS (pin 1 at maker x 13.97, stack.bob). jack_dz / hdr_dz lift / drop the jack and
-    the header apart for an exploded view."""
+    the header apart for an exploded view. tab: the snap-off tab still on (as supplied). flush: the jack's six pins
+    soldered and cut flush under the board (default: when the jack is seated); otherwise full length as supplied.
+    trimmed: the header's long ends cut under the card (fitted on B1)."""
+    if flush is None:
+        flush = not jack_dz
     mb = maker_boxes()
     if board:
         by = {}
@@ -349,6 +364,13 @@ def bob_parts(s, name, xf, board=True, jack=True, header=True, trimmed=True, jac
             by.setdefault(col, []).append(so)
         for col, sols in by.items():
             s.add(f"{name}_{col}", xf(cq.Compound.makeCompound(sols)), col, 1.0 if col == BOB_RED else 0.3)
+        if tab:
+            bd = S.val("bob_d")
+            s.add(f"{name}_tab", xf(M.box(BOB_TAB[0] + 0.51, 0, 0, BOB_TAB[1], bd, BOB_T).val()), BOB_RED, 1.0)
+            s.add(f"{name}_score", xf(M.box(BOB_TAB[0], 0, 0.45, BOB_TAB[0] + 0.51, bd, BOB_T - 0.45).val()), BOB_RED, 0.3)
+            s.anchor(f"{name}_tab", xf_pt(xf, ((BOB_TAB[0] + BOB_TAB[1]) / 2 + 0.6, 12.0, BOB_T)), on=f"{name}_tab")
+            s.anchor(f"{name}_score", xf_pt(xf, (BOB_TAB[0] + 0.25, 0.0, BOB_T / 2)), on=f"{name}_score")
+            s.anchor(f"{name}_score_top", xf_pt(xf, (BOB_TAB[0] + 0.25, 6.0, BOB_T - 0.45)), on=f"{name}_score")
     if jack:
         x0, y0, z0, x1, y1, z1, _ = mb["87180-066LF jack"]
         z0, z1 = z0 + jack_dz, z1 + jack_dz
@@ -357,15 +379,21 @@ def bob_parts(s, name, xf, board=True, jack=True, header=True, trimmed=True, jac
         xc = (x0 + x1) / 2
         mouth = M.box(xc - pw / 2, y1 - 9.0, z0 + 1.0, xc + pw / 2, y1 + 0.1, z0 + 1.0 + ph)
         s.add(f"{name}_jack", xf(jk.cut(mouth).val()), JACK, 1.0)
-        tail = (z0 + TAILS) if trimmed else 3.0          # trimmed: TAILS below the board; supplied: about 3 mm
+        tail = (z0 + FLUSH) if flush else 3.0            # flush: cut flush under the board; supplied: about 3 mm
         pins = [M.box(x - 0.25, y - 0.15, z0 - tail, x + 0.25, y + 0.15, z0 + 0.2).val() for x, y in JACK_PINS]
         s.add(f"{name}_jpins", xf(cq.Compound.makeCompound(pins)), TIN, 0.4)
+        if flush:                                         # the solder joints under the board, cut flush
+            fil = [cq.Solid.makeCone(0.95, 0.32, 0.55, cq.Vector(x, y, 0.0), cq.Vector(0, 0, -1)) for x, y in JACK_PINS]
+            s.add(f"{name}_jfil", xf(cq.Compound.makeCompound(fil)), M.TIN, 0.4)
+            jx, jy = JACK_PINS[1]
+            s.anchor(f"{name}_jfil", xf_pt(xf, (jx + 0.62, jy, -0.2)), on=(f"{name}_jfil", f"{name}_jpins"))
         pegs = [cq.Solid.makeCylinder(1.45, BOB_T + 0.9, cq.Vector(x, y, z0 - BOB_T - 0.8), cq.Vector(0, 0, 1))
                 for x, y in PEGS]
         s.add(f"{name}_pegs", xf(cq.Compound.makeCompound(pegs)), JACK, 0.6)
         s.anchor(f"{name}_jtop", xf_pt(xf, (xc, (y0 + y1) / 2, z1)), on=f"{name}_jack")
         s.anchor(f"{name}_mouth", xf_pt(xf, (xc, y1 - 0.6, z1)), on=f"{name}_jack")
         s.anchor(f"{name}_mouthc", xf_pt(xf, (xc, y1, z0 + 1.0 + ph / 2)))
+        s.anchor(f"{name}_peg", xf_pt(xf, (PEGS[0][0], PEGS[0][1], z0 - BOB_T - 0.8)), on=f"{name}_pegs")
     if header:
         x0, y0, z0, x1, y1, z1, _ = mb["header plastic"]
         pl_ = M.box(x0, y0, z0 + hdr_dz, x1, y1, z1 + hdr_dz)
@@ -378,6 +406,8 @@ def bob_parts(s, name, xf, board=True, jack=True, header=True, trimmed=True, jac
             s.anchor(f"{name}_c{i}", xf_pt(xf, (x, y, top)))
             s.anchor(f"{name}_c{i}b", xf_pt(xf, (x, y, bot)))
             s.anchor(f"{name}_hc{i}", xf_pt(xf, (x, y0, (z0 + z1) / 2 + hdr_dz)), on=f"{name}_hdr")
+        s.anchor(f"{name}_hdr_bot", xf_pt(xf, (HDR_PADS[2][0] - 1.27, HDR_PADS[2][1] + 0.8, z0 + hdr_dz)), on=f"{name}_hdr")
+        s.anchor(f"{name}_hpin_lo", xf_pt(xf, (HDR_PADS[0][0], HDR_PADS[0][1], bot)), on=f"{name}_pins")
     for i, (x, y) in enumerate(HDR_PADS, 1):
         s.anchor(f"{name}_pad{i}", xf_pt(xf, (x, y, BOB_T + 0.04)))
 
@@ -498,14 +528,21 @@ def p_card():
 def p_header():
     s = r3d.Scene()
     off, ins, tail = S.val("ra_offset"), S.val("ra_insulator"), S.val("ra_tail")
-    ps = []
-    for n in range(30):
-        x = n * M.P
-        ps.append(M.box(x - 0.32, -0.32, -tail, x + 0.32, 0.32, 1.27 + 0.32).val())
-        ps.append(M.box(x - 0.32, -0.32, 1.27 - 0.32, x + 0.32, st.RA_TIP, 1.27 + 0.32).val())
+    ps, kp = [], []
+    lift = 7.0                                   # the key pin, pulled out of the plastic, drawn above its place
+    for n in range(1, 31):
+        x, dz = (n - 1) * M.P, (lift if n == KEY else 0.0)
+        to = kp if n == KEY else ps
+        to.append(M.box(x - 0.32, -0.32, -tail + dz, x + 0.32, 0.32, 1.27 + 0.32 + dz).val())
+        to.append(M.box(x - 0.32, -0.32, 1.27 - 0.32 + dz, x + 0.32, st.RA_TIP, 1.27 + 0.32 + dz).val())
     s.add("ins", M.box(-1.27, off, 0, 29 * M.P + 1.27, off + ins, 2.54), "#1E1E1E")
     s.add("pins", cq.Compound.makeCompound(ps), HDR_GOLD, 0.5)
-    R("p_header", s, (-0.5, -1, 0.8), fit=(150, 60), line=0.3)
+    s.add("keypin", cq.Compound.makeCompound(kp), HDR_GOLD, 0.5)
+    s.anchor("p1", (0, st.RA_TIP - 0.6, 1.27 + 0.32), on="pins")
+    s.anchor("p30", (29 * M.P, st.RA_TIP - 0.6, 1.27 + 0.32), on="pins")
+    s.anchor("key", ((KEY - 1) * M.P, st.RA_TIP - 0.6, 1.27 + 0.32 + lift), on="keypin")
+    s.anchor("keyhole", ((KEY - 1) * M.P, off + ins / 2, 2.54), on="ins")
+    R("p_header", s, (-0.5, -1, 0.8), fit=(150, 60), line=0.3, use=["p1", "p30", "key", "keyhole"])
 
 
 @scene
@@ -536,9 +573,9 @@ def ident(sh):
 
 @scene
 def p_bob():
-    """BOB-14021 as SparkFun ships it: the bare board."""
+    """BOB-14021 as SparkFun ships it: the bare board, its snap-off tab still on."""
     s = r3d.Scene()
-    bob_parts(s, "B", ident, jack=False, header=False)
+    bob_parts(s, "B", ident, jack=False, header=False, tab=True)
     R("p_bob", s, (-0.4, -0.7, 1.0), fit=(110, 90), line=0.35)
 
 
@@ -639,7 +676,7 @@ def t_jumpers_iso():
 
 @scene
 def t_header():
-    top("t_header", top_scene("XH1"), fit=(330, 200))
+    top("t_header", top_scene("XH1"), fit=(330, 200), use=["keydot"])
 
 
 @scene
@@ -709,9 +746,27 @@ def bench_xf(dx=0.0, rz=0.0):
 def bob_kit():
     """Fit the jack and the header on the bare breakout: exploded, the jack above, the header below."""
     s = r3d.Scene()
-    bob_parts(s, "B", ident, trimmed=False, jack_dz=9.0, hdr_dz=-7.0)
-    R("bob_kit", s, (-0.55, -0.8, 0.45), fit=(170, 210), line=0.35,
-      use=["B_jtop", "B_hc1", "B_hc6"])
+    bob_parts(s, "B", ident, trimmed=False, jack_dz=9.0, hdr_dz=-7.0, tab=True)
+    R("bob_kit", s, (0.45, -0.75, 0.6), fit=(250, 260), line=0.35,
+      use=["B_jtop", "B_hc1", "B_hc6", "B_tab", "B_score"])
+
+
+@scene
+def bob_snap():
+    """The bare board, tab on, straight down: the V-score line (Session 3's p_bob_snap)."""
+    s = r3d.Scene()
+    bob_parts(s, "B", ident, jack=False, header=False, tab=True)
+    R("bob_snap", s, (0, 0, 1), up=(0, 1, 0), fit=(200, 160), line=0.35, use=["B_tab", "B_score_top"])
+
+
+@scene
+def bob_ready():
+    """Built, tab off: jack soldered on top, its pins cut flush underneath, the 1x6 header in the pad row (seen
+    from below, the side that faces the card; Session 3's p_bob_ready)."""
+    s = r3d.Scene()
+    bob_parts(s, "B", ident, trimmed=False)
+    R("bob_ready", s, (-0.45, 0.8, -0.75), up=(0, 0, -1), fit=(250, 230), line=0.35,
+      use=["B_jfil", "B_hdr_bot", "B_hpin_lo", "B_peg"])
 
 
 @scene
@@ -792,7 +847,29 @@ def t_final():
     R("t_final", s, (-0.35, -1, 0.85), fit=(300, 200), line=0.3)
 
 
+def tab_hits():
+    """What each breakout's snap-off tab would land on if it were left on (card frame, stack's boxes)."""
+    out = {}
+    for ref in JACKS:
+        kind, rot, x0, y0 = PL[ref]["step"][0]
+        pcb = next(b for b in PL[ref]["boxes"] if "BOB-14021 PCB" in b.what)
+        (xa, ya), (xb, yb) = st.tf(rot, x0, y0, BOB_TAB[0], 0), st.tf(rot, x0, y0, BOB_TAB[1], S.val("bob_d"))
+        lo, hi = (min(xa, xb), min(ya, yb)), (max(xa, xb), max(ya, yb))
+        hits = []
+        for o in PL:
+            if o == ref:
+                continue
+            for bx in PL[o]["boxes"]:
+                if (not bx.keepout and bx.x0 < hi[0] and bx.x1 > lo[0] and bx.y0 < hi[1] and bx.y1 > lo[1]
+                        and bx.z0 < pcb.z1 and bx.z1 > pcb.z0 and o not in hits):
+                    hits.append(o)
+        out[ref] = hits
+    return out
+
+
 if __name__ == "__main__":
+    import json
+    (OUT / "tab_hits.json").write_text(json.dumps(tab_hits(), indent=1))
     names = sys.argv[1:] or list(SCENES)
     if names == ["list"]:
         print(" ".join(SCENES))

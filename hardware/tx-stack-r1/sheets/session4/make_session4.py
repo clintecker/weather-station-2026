@@ -27,7 +27,7 @@ SLOGANS4 = [
     "B1 PORTS A. THREE PORTS. THREE JACKS. ONE CARD.",
     "TOP IS THE FACE THAT READS. THE MACHINE CHECKED.",
     "A WIRE UNDER A PART CANNOT BE FIXED LATER.",
-    "THIRTY PINS. THIRTY LINES. NONE PULLED.",
+    "TWENTY-NINE PINS. ONE KEY. ONE SLOT.",
     "THE BAND IS THE CATHODE. THE CATHODE IS THE BAND.",
     "EVERY PORT IS GUARDED. EVERY GUARD IS LOW.",
     "METER FIRST. POWER NEVER. NOT TODAY.",
@@ -174,8 +174,41 @@ N_J = len(JACKS)
 WIRES_MD = b1md.wires()
 JUMP_MD = b1md.jumpers()
 assert not b1md.has_leads(), "B1.md has a leads section again: Session 4 has no leads page"
-assert len(pins("XH1")) == 30 and [p["Hole"] for p in pins("XH1")] == [f"j{n}" for n in range(1, 31)], \
-    "B1.md: XH1 must be the full 1x30 in j1-j30"
+KEY = b1md.key_pin()                 # XH1's pulled pin: B1's slot key (B1.md, XH1's "key" row)
+DOT = b1md.key_colour()              # B1's colour dot (B1.md step 1.4)
+DOT_RGB = {"blue": HexColor("#2D6FD0"), "green": HexColor("#2E9E4F"), "yellow": HexColor("#FFD400"),
+           "red": HexColor("#E8202A")}[DOT]
+KEY_ROW = next(p for p in pins("XH1") if p["Pin"].startswith("key "))
+assert sorted(p["Hole"] for p in pins("XH1") if p is not KEY_ROW) == sorted(f"j{n}" for n in range(1, 31) if n != KEY) \
+    and f"hole j{KEY} stays empty" in KEY_ROW["Hole"], "B1.md: XH1 must be the 1x30 in j1-j30 less its key pin"
+
+
+def xh1_rows():
+    """XH1's pins in pin order, the pulled key pin at its own place: [(n, hole or None, line)]."""
+    out = []
+    for p in pins("XH1"):
+        n = int(p["Pin"].rsplit("(", 1)[1].rstrip(")"))
+        out.append((n, None if p is KEY_ROW else p["Hole"], p["Line"]))
+    return sorted(out)
+
+
+def pin_ranges(ns):
+    """[19, 20, 21, 28, 29] -> 'J19-J21, J28-J29'."""
+    out, run = [], [ns[0]]
+    for n in ns[1:]:
+        if n == run[-1] + 1:
+            run.append(n)
+        else:
+            out.append(run)
+            run = [n]
+    out.append(run)
+    return ", ".join(f"J{r[0]}-J{r[-1]}" if len(r) > 1 else f"J{r[0]}" for r in out)
+
+
+def tab_hits():
+    """scenes4.py's tab_hits(): what each breakout's snap-off tab would land on, left on (svg/tab_hits.json)."""
+    import json
+    return json.loads((SL.SVG / "tab_hits.json").read_text())
 
 
 def port_of_jack(ref):
@@ -202,11 +235,11 @@ def cover(c, pg):
     x, y, w, h = panel(c, g.cell(0, 0, 2), None,
                        "PARTS FOR B1 PORTS A. LAY THEM OUT BEFORE YOU HEAT THE IRON. COUNTS FROM B1.md (PARTS, LOWEST FIRST).")
     items = [("B1 PORTS A CARD\n(rails snapped, Session 1)", "p_card"),
-             ("XH1 RIGHT-ANGLE HEADER\n1x30, every pin fitted", "p_header"),
+             (f"XH1 RIGHT-ANGLE HEADER\n1x30, pin {KEY} pulled (slot key)", "p_header"),
              (f"{N_R}x 100 OHM 1/4 W\nStackpole CF14JT100R", "p_res"),
              (f"{N_Z}x 1N5232B ZENER (left)\n{N_S}x BAT85S SCHOTTKY (right)", "p_diodes"),
              (f"{N_F}x MF-R010 PTC FUSE\nBourns, 100 mA", "p_ptc"),
-             (f"{N_J}x SPARKFUN BOB-14021\nRJ11 breakout, bare board", "p_bob"),
+             (f"{N_J}x SPARKFUN BOB-14021\nbare board, snap-off tab on", "p_bob"),
              (f"{N_J}x AMPHENOL 87180-066LF\nRJ11 6P6C jack", "p_jack"),
              (f"{N_J}x 1x6 MALE HEADER\nstraight, 2.54 mm", "p_hdr6"),
              (f"BARE TINNED WIRE\n{len(JUMP_MD)} jumpers, 20 mm each", "p_jumper"),
@@ -220,12 +253,14 @@ def cover(c, pg):
         chip(c, X + cw / 2, Y + 14 + nl * 10, name, 8.5, "ALT", INK, "c")
     x, y, w, h = panel(c, g.cell(0, 1), None, "TOOLS.")
     tools = ["SOLDERING IRON + SOLDER", "FLUSH CUTTERS", "WIRE STRIPPER (24 AWG)", "MULTIMETER (CONTINUITY + OHMS)",
-             "SMALL PLIERS (FORM THE LEADS)", "STEEL RULER (WIRE LENGTHS)", "HELPING HANDS (THE BREAKOUTS)"]
+             f"SMALL PLIERS (FORM THE LEADS, PULL XH1 PIN {KEY})", "STEEL RULER (WIRE LENGTHS)",
+             "HELPING HANDS (THE BREAKOUTS)", "VICE OR CLAMP (SNAP THE TABS)", "SMALL FILE",
+             f"{DOT.upper()} PAINT PEN OR DOT STICKER"]
     for i, s in enumerate(tools):
         text(c, x + 14, y + h - 16 - i * (h - 12) / len(tools), "-  " + s, 10.5, "ALT", INK)
     x, y, w, h = panel(c, g.cell(1, 1), None, "THE STEPS. IN THIS ORDER. LOWEST PARTS FIRST.")
     steps = ["01  KNOW THE TWO FACES", f"02  {len(WIRES_MD)} WIRES ON THE UNDERSIDE", f"03  {len(JUMP_MD)} BARE JUMPERS",
-             "04  BUS HEADER XH1, ROW J", f"05  {N_R} RESISTORS", f"06  {N_Z + N_S} DIODES, PORT BY PORT", f"07  {N_F} FUSES",
+             f"04  BUS HEADER XH1 (PIN {KEY} OUT), {DOT.upper()} DOT", f"05  {N_R} RESISTORS", f"06  {N_Z + N_S} DIODES, PORT BY PORT", f"07  {N_F} FUSES",
              f"08  BUILD {N_J} JACK BREAKOUTS", f"09  JACKS {', '.join(JACK_ORDER)} IN ROW A", "10  STRIP MAP",
              "11  METER BEFORE POWER"]
     for i, s in enumerate(steps):
@@ -377,36 +412,59 @@ def jumpers(c, pg):
 
 
 def header(c, pg):
-    page(c, "04", "BUS HEADER XH1, ROW J", "GENERIC 2.54 MM RIGHT-ANGLE MALE HEADER, CUT TO 1x30. ALL 30 PINS STAY IN.", pg,
-         SLOGANS4[3])
-    g = Grid(1, 2, heights=[1.0, 1.15])
+    page(c, "04", "BUS HEADER XH1, ROW J",
+         f"GENERIC 2.54 MM RIGHT-ANGLE MALE HEADER, CUT TO 1x30. PIN {KEY} PULLED: THE SLOT KEY.", pg, SLOGANS4[3])
+    g = Grid(1, 3, heights=[0.92, 0.56, 1.12])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
-        "B1 PORTS A, TOP FACE. Short legs down through J1 to J30 (row J, columns 1-30) from the top: every hole in",
-        "row J takes a pin. The long pins point AWAY from row A, out past the snapped back edge. Solder on the",
-        "UNDERSIDE: J1 first, check it sits flat and square, then J30, then the rest."])
+        f"B1 PORTS A, TOP FACE. Short legs down through J1 to J30 (row J, columns 1-30) from the top: every hole in",
+        f"row J takes a pin EXCEPT J{KEY} (pin {KEY} pulled: the slot key, step 2). The long pins point AWAY from row A,",
+        "out past the snapped back edge. Solder on the UNDERSIDE: J1 first, check it sits flat and square, then J30."])
     face_tag(c, x + 4, y + h - 40, "top")
     a = Art(c, "t_header", x + 96, y + 4, 330, h - 8, align="l")
-    for hname in ("j1", "j30"):
+    for hname in ("j1", f"j{KEY}", "j30"):
         ring(c, *a.A(anchor_name(hname)))
-    j1, j30 = a.A("J1"), a.A("J30")
+    j1, jk, j30 = a.A("J1"), a.A(f"J{KEY}"), a.A("J30")
     label(c, a.x - 6, j1[1] + 4, "J1: PIN 1", j1[0] - 4.2, j1[1], 9, "ALT", INK, "r", dot=False)
     label(c, a.x + a.w + 6, j30[1] + 4, "J30: PIN 30", j30[0] + 4.2, j30[1], 9, "ALT", INK, dot=False)
-    x, y, w, h = panel(c, g.cell(0, 1), 2, [
-        "Every pin and its line (B1.md, XH1). Pin n plugs into backplane line n. Spare pins carry no net on B1,",
-        "and they stay in: the 1x30 is full, always. Cut 1x30 from a longer strip: pull the 31st pin, cut through",
+    label(c, a.x + a.w + 6, j30[1] - 26, f"J{KEY}: EMPTY\n(PIN {KEY} PULLED,\nTHE SLOT KEY)", jk[0] + 3.0, jk[1] - 3.0, 9,
+          "ALT", NEON, lcolor=INK, dot=False)
+    dx, dy = a.A("keydot")
+    label(c, a.x - 6, dy + 18, f"{DOT.upper()} DOT\n(FRONT EDGE)", dx - 2, dy, 9, "ALT", INK, "r")
+    # 2: the key pin and the colour dot (B1.md step 1.4 and XH1's key row)
+    x, y, w, h = panel(c, g.cell(0, 1), 2, wrap(b1md.label_step(), 108))
+    hd = Art(c, "p_header", x + 40, y + 6, 220, h - 22, align="l")
+    kx, ky = hd.A("key")
+    label(c, kx - 14, hd.y + hd.h + 2, f"PIN {KEY}: PULLED OUT", kx, ky, 9, "ALT", NEON, "r", lcolor=INK)
+    tx = hd.x + hd.w + 24
+    how = KEY_ROW["Hole"].replace("none: ", "").replace("hole j", "hole J")
+    lines = wrap(f"PIN {KEY}: {how}.", 46) + [""] + wrap(f"WHY: {KEY_ROW['Line']}.", 46)
+    for i, ln in enumerate(lines):
+        text(c, tx, y + h - 16 - i * 10.5, ln, 8.5, "ALT", INK)
+    c.setFillColor(DOT_RGB)
+    c.setStrokeColor(INK)
+    lw(c, 1.0)
+    c.circle(x + w - 30, y + 22, 9, stroke=1, fill=1)
+    text(c, x + w - 46, y + 18, f"{DOT.upper()} DOT", 9, "HEAD", INK, "r")
+    LAB.block(x + w - 40, y + 12, x + w - 20, y + 32, "dot swatch")
+    # 3: every pin and its line
+    x, y, w, h = panel(c, g.cell(0, 2), 3, [
+        "Every pin and its line (B1.md, XH1). Pin n plugs into backplane line n. Spare pins carry no net on B1 and",
+        f"stay in; pin {KEY} is the slot key and comes out. Cut 1x30 from a longer strip: pull the 31st pin, cut through",
         "its empty place, file flat."])
-    rows = pins("XH1")
+    rows = xh1_rows()
     colw = (w - 50) / 2
     for half in (0, 1):
         tx = x + 44 + half * colw
         text(c, tx, y + h - 22, "PIN  HOLE  LINE", 9, "MONO", GREY)
-        for i, p in enumerate(rows[half * 15:(half + 1) * 15]):
-            n = half * 15 + i + 1
-            yy = y + h - 38 - i * 15.2
-            line = p["Line"]
+        for i, (n, hh, line) in enumerate(rows[half * 15:(half + 1) * 15]):
+            yy = y + h - 34 - i * 12.4
             spare = line == "not connected"
             text(c, tx, yy, f"{n:>2}", 10, "HEAD", INK)
-            text(c, tx + 26, yy, hole(p["Hole"]), 10, "HEAD", NEON)
+            if hh is None:
+                text(c, tx + 26, yy, f"J{n}", 10, "HEAD", GREY)
+                text(c, tx + 62, yy, "KEY: PULLED, HOLE EMPTY (THE SLOT KEY)", 9, "HEAD", NEON)
+                continue
+            text(c, tx + 26, yy, hole(hh), 10, "HEAD", NEON)
             text(c, tx + 62, yy, "spare: no net on B1 (pin stays in)" if spare else line, 9, "ALT", GREY if spare else INK)
 
 
@@ -558,37 +616,43 @@ def contact_labels(c, a, x, w, dy):
 
 
 def prep_jacks(c, pg):
-    page(c, "08", f"BUILD {N_J} JACK BREAKOUTS", "SPARKFUN BOB-14021 COMES AS A BARE BOARD: FIT THE JACK, THEN THE 1x6 HEADER.",
-         pg, SLOGANS4[7])
-    g = Grid(2, 2, heights=[0.62, 1.2])
-    x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        f"As supplied, {N_J} of each. {', '.join(JACK_ORDER)} are identical: build all {N_J} now, off the card."])
-    cw = (w - 40) / 3
-    for i, (art, name) in enumerate((("p_bob", "BOB-14021: BARE BOARD\n6 pads in a row + 6 jack holes"),
-                                     ("p_jack", "87180-066LF JACK\n6 pins, 2 pegs, mouth"),
-                                     ("p_hdr6", "1x6 MALE HEADER\nshort end, plastic, long end"))):
-        X = x + 40 + cw * i
-        Art(c, art, X + 6, y + 36, cw - 12, h - 44)
-        chip(c, X + cw / 2, y + 16, name, 8.5, "ALT", INK, "c")
-    x, y, w, h = panel(c, g.cell(0, 1), 2, [
-        "1. JACK: six pins into the six staggered",
-        "holes, two pegs into the two big holes.",
-        "It fits from one face only. Seat it flat,",
-        "solder the six pins on the other face.",
-        "2. HEADER: SHORT ends up through the six",
-        "pads in a row, plastic on the face AWAY",
-        "from the jack. Solder on the jack's face."])
-    a = Art(c, "bob_kit", x + 10, y + 34, w - 20, h - 64)
-    label(c, x + w - 8, a.A("B_jtop")[1] + 18, "87180-066LF", *a.A("B_jtop"), 9, "ALT", INK, "r")
-    contact_labels(c, a, x, w, -26)
-    x, y, w, h = panel(c, g.cell(1, 1), 3, [
-        "3. CLIP the jack's six pin tails to 1.5 mm",
-        "under the board: on the card they stand",
-        "over the + RAIL and − RAIL, 2.5 mm up.",
-        "The header's long ends stay full length",
-        "(they go through the card).",
-        f"Make all {N_J}. Contact 1 is the header",
-        "pin marked; contact 6 the other end."])
+    page(c, "08", f"BUILD {N_J} JACK BREAKOUTS",
+         f"BOB-14021 (BARE BOARD) + 87180-066LF JACK + 1x6 HEADER, {N_J} TIMES: {', '.join(JACK_ORDER)}.", pg, SLOGANS4[7])
+    g = Grid(2, 2, heights=[1, 1])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, ["AS SUPPLIED: three parts per jack.", "BOB-14021 is a bare board with a",
+                                            "snap-off tab; jack and header loose."])
+    a = Art(c, "bob_kit", x + 60, y + 6, w - 120, h - 12)
+    label(c, x + 8, a.A("B_jtop")[1] + 10, "87180 JACK", *a.A("B_jtop"), 8.5, "ALT", NEON, lcolor=INK)
+    label(c, x + w - 8, a.A("B_tab")[1] + 12, "SNAP-OFF TAB", *a.A("B_tab"), 8.5, "ALT", NEON, "r", lcolor=INK)
+    label(c, x + w - 8, a.A("B_score")[1] - 14, "V-SCORE", *a.A("B_score"), 8.5, "ALT", NEON, "r", lcolor=INK)
+    label(c, x + 8, a.A("B_hc6")[1] - 6, "1x6 HEADER", *a.A("B_hc6"), 8.5, "ALT", NEON, lcolor=INK)
+    x, y, w, h = panel(c, g.cell(1, 0), 2, ["1  SNAP THE TAB OFF: clamp the board along",
+                                            "the V-score, bend once. File the edge flat.",
+                                            f"Board {6 * 2.54:.2f} mm wide (the header's length)."])
+    a = Art(c, "bob_snap", x + 10, y + 50, w - 90, h - 56, align="l")
+    label(c, x + w - 8, a.A("B_tab")[1], "TAB: OFF", *a.A("B_tab"), 8.5, "ALT", NEON, "r", lcolor=INK)
+    sx, sy = a.A("B_score_top")
+    label(c, sx + 10, a.y + a.h + 2, "V-SCORE", sx, sy, 8.5, "ALT", NEON, lcolor=INK)
+    th = tab_hits()
+    why = "Left on, each tab would land on a neighbour: " + "; ".join(
+        f"{r}'s on {' '.join(th[r])}" for r in JACK_ORDER if th[r]) + "."
+    for i, s_ in enumerate(wrap(why, 52)[:3]):
+        text(c, x + 10, y + 34 - i * 10, s_, 8.0, "ALT", INK)
+    x, y, w, h = panel(c, g.cell(0, 1), 3, ["2  JACK on the board's top: pegs in the two big",
+                                            "holes, pins in the six small ones (one way only).",
+                                            "Solder the pins underneath, CUT THEM FLUSH.",
+                                            "3  HEADER: plastic under the board, short ends",
+                                            "up through the six pads, solder on top."])
+    a = Art(c, "bob_ready", x + 70, y + 6, w - 140, h - 12)
+    label(c, x + w - 8, a.A("B_jfil")[1] - 10, "JACK PINS: FLUSH", *a.A("B_jfil"), 8.5, "ALT", NEON, "r", lcolor=INK)
+    label(c, x + 8, a.A("B_peg")[1] - 10, "PEG", *a.A("B_peg"), 8.5, "ALT", NEON, lcolor=INK)
+    label(c, x + 8, a.A("B_hdr_bot")[1] + 14, "1x6 PLASTIC", *a.A("B_hdr_bot"), 8.5, "ALT", NEON, lcolor=INK)
+    label(c, x + w - 8, a.A("B_hpin_lo")[1] + 6, "LONG ENDS", *a.A("B_hpin_lo"), 8.5, "ALT", NEON, "r", lcolor=INK)
+    x, y, w, h = panel(c, g.cell(1, 1), 4, ["Done. Flush jack pins: on the card they stand",
+                                            "2.5 mm over the + RAIL and − RAIL. The header's",
+                                            "long ends stay full length (through the card).",
+                                            f"Build all {N_J} the same. Contact 1: the header",
+                                            "pin marked; contact 6 the other end."], warn=True)
     a = Art(c, "bob_done", x + 10, y + 34, w - 20, h - 64)
     contact_labels(c, a, x, w, -30)
     px, py = a.A("B_jtop")
@@ -666,12 +730,6 @@ def strips(c, pg):
         text(c, cx + 56, yy, line, 8, "ALT", INK)
 
 
-def spare_range(s):
-    """'J19, J20, ... J30' -> 'J19-J30' when consecutive (B1.md's before-power list)."""
-    ns = [int(v.strip()[1:]) for v in s.split(",")]
-    return f"J{ns[0]}-J{ns[-1]}" if ns == list(range(ns[0], ns[-1] + 1)) else s
-
-
 def jack_checks():
     """Per jack, what each contact should read (from B1.md: the contact's line, the strip map, the resistors, the
     fuses and XH1's pins). Returns [(jack, [(contact, expectation)])]."""
@@ -704,7 +762,9 @@ def checks(c, pg):
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["B1 PORTS A, finished, seen from the front-left. Do the checks below in order."])
     Art(c, "t_final", x + 4, y + 4, w - 8, h - 8)
     bp = b1md.before()
-    spares = next(b for b in bp if b.startswith("The full 1x30")).split(":")[-1].strip().rstrip(".")
+    full = next(b for b in bp if b.startswith("The 1x30 header less its key pin"))
+    assert f"J{KEY} pulled (hole j{KEY} empty)" in full, "B1.md: the before-power key line moved"
+    spares = [int(v.strip()[1:]) for v in full.split(":")[-1].strip().rstrip(".").split(",")]
     groups = [b for b in bp if b.startswith("Header pins ") and "beep to each other" in b]
     gtxt = "; ".join(b.split(":")[0].replace("Header pins ", "").replace(" beep to each other", "") for b in groups)
     fs = [p for p in PARTS if p["ref"].startswith("F")]
@@ -716,8 +776,8 @@ def checks(c, pg):
               ("3", "HEADER PINS", "Each pin Jn beeps to Fn (row F, same column: its own strip) and to NO\n"
                                    f"other header pin, except: {gtxt} (all ground)."),
               ("4", "RAIL PINS", "J1 beeps to the + RAIL. The ground pins beep to the − RAIL."),
-              ("5", "ALL 30 PINS", f"J1-J30 all fitted, none pulled. Spares (no net on B1): {spare_range(spares)}.\n"
-                                   "Each spare beeps to no other header pin.")]
+              ("5", f"KEY PIN {KEY}", f"J{KEY} pulled (hole J{KEY} empty: the slot key), every other pin fitted.\n"
+                                    f"Spares (no net on B1): {pin_ranges(spares)}. Each beeps to no other header pin.")]
     x, y, w, h = panel(c, g.cell(0, 1, 2), 2, ["Any beep where it says NO BEEP, or silence where it says BEEP: stop. Photograph it. Report to Claude."],
                        warn=True)
     for i, (n, t, s) in enumerate(checks):

@@ -6,6 +6,7 @@ both scenes4.py (CAD venv) and make_session4.py (PDF venv), so no table on a pag
 Sections are found by their heading's words ("Underside wires", "Bare jumpers", "Parts", "Strip map"), not numbers.
   parts()     -> [dict(ref, head, pins=[dict(Pin, Hole, Line)])] in B1.md order (lowest first)
   before()    -> the "Before power" bullet lines
+  snap(), label_step(), key_pin(), key_colour()  -> section 1, the colour dot and the slot key
 """
 import re
 from pathlib import Path
@@ -71,6 +72,26 @@ def has_leads():
 
 def before():
     return [ln[2:].strip() for ln in _sec("Before power") if ln.startswith("- ")]
+
+
+def snap():
+    """Section 1's numbered steps (snap off the back rails; step 4: the colour dot and the slot key)."""
+    return [ln.split(". ", 1)[1] for ln in _sec("Snap off") if re.match(r"^\d\. ", ln)]
+
+
+def label_step():
+    """Section 1's 'Label it' step: the card's colour dot and its slot-key pin."""
+    return next(s for s in snap() if s.startswith("Label it"))
+
+
+def key_pin():
+    """The bus header's pulled pin (the slot key): the XH1 row named 'key n (n)'."""
+    row = next(p for p in part("XH1")["pins"] if p["Pin"].startswith("key "))
+    return int(row["Pin"].split()[1])
+
+
+def key_colour():
+    return re.search(r"a (\w+) paint-pen", label_step()).group(1)
 
 
 def parts():
