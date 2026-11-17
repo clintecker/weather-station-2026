@@ -20,4 +20,11 @@ if ../../.venv/bin/python -c "import sys; sys.path.insert(0, '.'); import source
 else
   echo "skipped: the shield 3MF (sources.shield_3mf) or .venv-cad is not on this machine"
 fi
+echo "== pod boxes (TH, BARO, UV): STLs, then the fit, openings, seal and window checks"
+if [ -x ../../.venv-cad/bin/python ]; then
+  ../../.venv-cad/bin/python box/podbox.py
+  cd ../..; .venv-cad/bin/python -m unittest tests.test_pods_box; cd hardware/pods-r1
+else
+  echo "skipped: .venv-cad (CadQuery) is not on this machine"
+fi
 echo "== pods-r1: every check passes"
