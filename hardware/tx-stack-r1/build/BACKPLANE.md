@@ -51,9 +51,9 @@ Each QT lead's V+ pin (red) is folded back along its lead and sleeved: the mux c
 
 | From | To the backplane | What |
 |---|---|---|
-| PG1 lead + | line 1, hole 6 | pack + (pigtail) to the junction, 24 AWG stranded, red with a black band |
-| U1 battery + (J5 BATTERY) | line 9, hole 6 | charger battery + (J5 BATTERY) to lines 19-20, 24 AWG stranded, red with a black band |
-| U1 system out (J3 SYS) | line 6, hole 6 | charger system output (J3 SYS) to line 26 (B4 pin 26, the regulator in), 24 AWG stranded, red with a black band |
+| PG1 lead + | line 21, hole 6 | pack + (pigtail) to the junction, 24 AWG stranded, red with a black band |
+| U1 battery + (J5 BATTERY) | line 19, hole 6 | charger battery + (J5 BATTERY) to lines 19-20, 24 AWG stranded, red with a black band |
+| U1 system out (J3 SYS) | line 26, hole 6 | charger system output (J3 SYS) to line 26 (B4 pin 26, the regulator in), 24 AWG stranded, red with a black band |
 | U1 battery sense (J5 SNS_BATP) | R7's free leg (line 24, hole 7) | charger battery sense (J5 SNS_BATP) from R7's free leg, 24 AWG stranded, white with a red band |
 
 Leave each 60-80 mm with a service loop: the EVM slides out on them.

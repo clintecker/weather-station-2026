@@ -672,7 +672,7 @@ def backplane_sheet(ph):
           "| From | To the backplane | What |", "|---|---|---|"]
     for kind, a, c, side, note in route.WIRES:
         if kind == "lead" and isinstance(a, tuple) and a[0] in ("PG1", "U1") and isinstance(c, str) and c.startswith("BP:"):
-            i, n = c[4:][1:].split(".")
+            i, n = c[len("BP:s"):].split(".")
             L.append(f"| {where(a)} | line {i}, hole {n} | {note} |")
         elif kind == "lead" and isinstance(a, tuple) and a[0] == "R7":
             L.append(f"| {where(c)} | R7's free leg (line 24, hole 7) | {note} |")
