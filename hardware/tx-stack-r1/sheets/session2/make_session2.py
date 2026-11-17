@@ -44,22 +44,24 @@ def anchor_name(h):
     return h if h.startswith("F") else h[0].upper() + h[1:]
 
 
-# B4.md section 2, with the colour this sheet suggests per line (B4.md names no colours for the solid wires)
-UNDER = [  # (#, from, to, cut mm, bends, line, colour)  B4.md section 2 (repo 91a5345, unchanged)
-    (1, "f1", "F+1", 40, 0, "3.3 V", "RED"),
-    (2, "f2", "F-2", 35, 0, "GROUND", "BLACK"),
-    (3, "i12", "F-20", 65, 3, "GROUND", "BLACK"),
-    (4, "h24", "F+24", 55, 4, "3.3 V", "RED"),
-    (5, "a10", "F+10", 20, 0, "3.3 V", "RED"),
-    (6, "a20", "F+21", 25, 1, "3.3 V", "RED"),
-    (7, "h25", "F-25", 60, 4, "GROUND", "BLACK"),
-    (8, "a9", "F-9", 20, 0, "GROUND", "BLACK"),
-    (9, "a19", "F-19", 20, 0, "GROUND", "BLACK"),
-    (10, "d8", "g7", 40, 3, "I2C CLOCK SCL", "YELLOW"),
-    (11, "d18", "h7", 65, 5, "I2C CLOCK SCL", "YELLOW"),
-    (12, "d7", "g10", 45, 3, "I2C DATA SDA", "BLUE"),
-    (13, "d17", "h10", 50, 3, "I2C DATA SDA", "BLUE"),
-]
+# B4.md sections 2 and 5, read at build time (never copied by hand: the router changes them)
+import re as _re
+_B4 = Path("/Users/clint/code/electronics/weather-station-2026/hardware/tx-stack-r1/build/B4.md").read_text()
+
+
+def _b4_rows(title):
+    blk = _re.search(r"^## " + title + r".*?$(.*?)(?=^## |\Z)", _B4, _re.S | _re.M).group(1)
+    rows = [[c.strip() for c in ln.strip().strip("|").split("|")] for ln in blk.splitlines()
+            if ln.startswith("|") and not ln.startswith("|---")]
+    return rows[1:]
+
+
+_LINE = {"3.3 V supply": "3.3 V", "ground": "GROUND", "I2C clock (SCL)": "I2C CLOCK SCL", "I2C data (SDA)": "I2C DATA SDA"}
+UNDER = []  # (#, from, to, cut mm, bends, line, colour)
+for _n, _a, _b, _len, _line, _col, _what in _b4_rows(r"2\. Underside wires"):
+    _cut, _bends = _re.match(r"(\d+) mm, (\d+) bends?", _len).groups()
+    UNDER.append((int(_n), _a, _b, int(_cut), int(_bends), _LINE[_line], _col.upper()))
+LEAD_MM = {r[1]: r[3].split()[0] for r in _b4_rows(r"5\. Leads")}      # {"g20": "80", ...}
 GROUPS = [([1, 2, 3], "BUS POWER TO THE FRONT RAILS"), ([4, 7], "REGULATOR 3.3 V AND GROUND TO THE RAILS"),
           ([5, 8, 10, 12], "THE INA228'S POWER, CLOCK AND DATA"), ([6, 9, 11, 13], "THE MAX17048'S POWER, CLOCK AND DATA")]
 
@@ -476,9 +478,9 @@ def leads(c, pg):
     x, y, w, h = panel(c, g.cell(0, 1), 2, [
         "The three leads (B4.md section 5). Cut to the length shown. Strip 3 mm at the G end (through the hole) and",
         "2 mm at the pad end. U2's middle X1 hole (VBUS) gets no lead: SJ1 (step 06) joins it to VIN+."])
-    rows = [("L1", "G20", "U2 X1 VIN− (shunt out)", "80 MM", "charger battery +", "RED, BLACK BANDS"),
-            ("L2", "G21", "U2 X1 VIN+ (shunt in)", "95 MM", "battery + junction", "RED, BLACK BANDS"),
-            ("L3", "G23", "U6 JP2 VBAT (cell sense)", "50 MM", "gauge sense from R8", "WHITE, RED BANDS")]
+    rows = [("L1", "G20", "U2 X1 VIN− (shunt out)", LEAD_MM["g20"] + " MM", "charger battery +", "RED, BLACK BANDS"),
+            ("L2", "G21", "U2 X1 VIN+ (shunt in)", LEAD_MM["g21"] + " MM", "battery + junction", "RED, BLACK BANDS"),
+            ("L3", "G23", "U6 JP2 VBAT (cell sense)", LEAD_MM["g23"] + " MM", "gauge sense from R8", "WHITE, RED BANDS")]
     text(c, x + 44, y + h - 14, "LEAD  FROM  TO                         CUT    LINE                COLOUR", 8.5, "MONO", GREY)
     for i, (n, fa, fb, ln, line, col) in enumerate(rows):
         yy = y + h - 46 - i * 30

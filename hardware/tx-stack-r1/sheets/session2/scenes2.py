@@ -56,7 +56,7 @@ PL = {pl["ref"]: dict(pl, pins=dict(pl["pins"]), pads=dict(pl["pads"])) for pl i
 # ------------------------------------------------------------------ wires from route.py
 B4_WIRES = []      # dicts: n (B4.md row), a, b, length, line, note, pts (card frame, this z), kind
 _net_of_note = {}
-for i, (kind, a, b, side, note) in enumerate(st.WIRES):
+for i, (kind, a, b, side, note) in enumerate(rt.WIRES):   # the routed ends (a rail end may move along its rail)
     r = rt.ROUTES[i]
     if not r or r.get("card") != "B4":
         continue
