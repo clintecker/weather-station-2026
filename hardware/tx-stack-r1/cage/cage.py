@@ -43,7 +43,7 @@ from stack import S  # noqa: E402
 # ------------------------------------------------------------------ the lid interface and the box
 LID_KEYS = ["l2_screw_pos", "l4_oring_proud", "l5_lid_out", "l6_body_rib", "ring_fit"]
 SCREW_OPT = S.val("lid_screw_opt")
-LID_KEYS += ["l1_lid_screw"] if SCREW_OPT == "a" else ["m4_screw", "m4_washer", "lid_pocket", "insert_m4"]
+LID_KEYS += ["l1_lid_screw"] if SCREW_OPT == "a" else ["lid_screw_opt"]   # (c): Clint's printed bolts (2026-11-17)
 T = S.val("base_wall")              # the floor, and the lid frame's margin
 L_OUT, W_OUT, _r = S.val("l5_lid_out")
 BASE_D = S.val("base_out_depth")
@@ -69,16 +69,11 @@ LIP_CX, LIP_CZ = TONGUE_CL - T, TONGUE_CS - T            # along the long walls 
 S_X, S_Z = LIP_CX + S_RUN, LIP_CZ + S_RISE               # the S's segment along Zb at Xb S_X, along Xb at Zb S_Z
 LIP_XS, LIP_ZS = LIP_CX + TONGUE_W / 2, LIP_CZ + TONGUE_W / 2   # the land ends at the lip's inner face
 LIP = max(LIP_XS, LIP_ZS)
-CORNER_H = S.val("corner_keepout")
 CORNER_X, CORNER_Z = S_X + TONGUE_W / 2, S_Z + TONGUE_W / 2   # the corner land, to the lip's inner face round the S
 THREAD_D, THREAD_P, THREAD_L = S.val("l1_lid_screw")            # option a
-HEAD_D, HEAD_K, SCREW_L = S.val("m4_screw")                       # option b
-WASHER_D, WASHER_T = S.val("m4_washer")
-POCKET = S.val("lid_pocket")
 LID_HOLE = 8.0                                                    # the lid's hole (Clint, L1 "8 mm dia")
 _sl, _ss = S.val("l2_screw_pos")
 SCREWS = [(x, z) for x in (_ss - T, W - (_ss - T)) for z in (_sl - T, H - (_sl - T))]
-INSERT_D, INSERT_L = S.val("insert_m4")
 CORNER = BLK                        # the corner blocks reach this far in from the inside faces, floor to wall top
 EVM = S.val("evm")
 EVM_J8 = S.val("evm_j8")
@@ -857,31 +852,13 @@ def main():
           f"floor {T:g}, long walls {IN_X0 + T:g}, short walls {IN_Z0 + T:g}), inside {BOX_IN[0]:g} x {BOX_IN[1]:g} "
           f"(Xb {IN_X0:g}-{IN_X1:g}, Zb {IN_Z0:g}-{IN_Z1:g}), wall top (seam) at Yb {SEAM:g}, a {LIP_W:g} x {LIP_H:g} lip "
           f"on its inside edge, closed depth {D:g}; corner blocks {BLK:g} square (R{BLK_R:g}, R{BLK_F:g} fillets), floor "
-          f"to wall top, \u00d8{BORE_D:g} lid-screw bores from Yb {BORE_Y0:g} (chamfered to \u00d8{CHAMF_D:g}) at "
-          + ", ".join(f"({x:g}, {z:g})" for x, z in SCREWS) + "; lid screws "
-          + (f"option (b), M4 stainless, {WASHER_D:g} mm washers over the lid's {LID_HOLE:g} mm holes [TBD-MEASURE]"
-             if SCREW_OPT == "b" else f"option (a), a printed M{THREAD_D:g} thread [TBD-MEASURE]"))
+          f"to wall top, \u00d8{BORE_D:g} lid-bolt bores from Yb {BORE_Y0:g} (chamfered to \u00d8{CHAMF_D:g}) at "
+          + ", ".join(f"({x:g}, {z:g})" for x, z in SCREWS)
+          + "; lid fastening: Clint's 3D-printed bolts in the four bores, no heat-set inserts (2026-11-17)")
     for x, z in SCREWS:                       # each bore inside its corner block and the walls behind it
         if min(x + T, W + T - x, z + T, H + T - z) < BORE_D / 2 + 1.0 or \
                 max(min(x - IN_X0, IN_X1 - x), min(z - IN_Z0, IN_Z1 - z)) + BORE_D / 2 > BLK:
             bad.append(f"the lid-screw bore at ({x:g}, {z:g}) leaves its corner block and wall")
-    if INSERT_L + 3.0 > SEAM - BORE_Y0:
-        bad.append("the lid-screw bore is shorter than the insert and 3 mm under it")
-    if SCREW_OPT == "b" and BORE_D > INSERT_D + 0.5:
-        print(f"FLAG lid screws: enclosure 4's corner bores are \u00d8{BORE_D:g}, {SEAM - BORE_Y0:g} deep; an M4 "
-              f"heat-set insert wants \u00d8{INSERT_D:g} [insert_m4 TBD]: the bores do not take the planned inserts "
-              "(Clint: what goes in them?)")
-    if SCREW_OPT == "b":
-        if WASHER_D < LID_HOLE + 2.0:
-            bad.append(f"the {WASHER_D:g} mm washer seats less than 1 mm round the lid's {LID_HOLE:g} mm hole")
-        if WASHER_D + 1.0 > POCKET:
-            bad.append(f"the {WASHER_D:g} mm washer does not fit the lid's {POCKET:g} mm corner pocket")
-        if HEAD_D > WASHER_D:
-            bad.append("the screw head is wider than its washer")
-        print(f"lid screws (b): M4 x {SCREW_L:g} stainless pan head ({HEAD_D:g} head) on a {WASHER_D:g} x {WASHER_T:g} "
-              f"washer: {(WASHER_D - LID_HOLE) / 2:g} mm of seat round the lid's {LID_HOLE:g} mm hole, "
-              f"{(POCKET - WASHER_D) / 2:g} mm to the {POCKET:g} mm pocket's walls [TBD-MEASURE]; outside the O-ring, "
-              "so no seal at the holes")
     lip6 = S.val("l6_body_rib")[1] - (S.val("base_905")[1] - W_OUT) / 2
     print(f"sealing lip: {TONGUE_CS:g} / {TONGUE_CL:g} in from the lid's edge (short / long sides); Clint's rough 1-2 mm in "
           f"from the original base's edge would be about {lip6:.2f} in from the lid's edge, under its outer wall "

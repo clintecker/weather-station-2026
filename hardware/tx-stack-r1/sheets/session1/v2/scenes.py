@@ -762,8 +762,8 @@ import sources as _src                         # noqa: E402
 BAR_X, BAR_LO, BAR_HI = _src.val("bar_inserts")[:3]   # enclosure 3 as printed: Xb 5.00, Zb 76.50 and 146.50
 sys.path.insert(0, "/Users/clint/code/electronics/weather-station-2026/hardware/tx-stack-r1/cage")
 import cage as _cage                           # noqa: E402  (the corner blocks and the lid-screw bores)
-M4_D, M4_L = _cage.INSERT_D, _cage.INSERT_L    # insert_m4: hole 5.6, length 8.0
-M4_AT = list(_cage.SCREWS)                     # the lid-screw bores, in cage.corners() order (enclosure 4: 7.25 / 6.75 in)
+BOLT_AT = list(_cage.SCREWS)                   # the lid-bolt bores (Clint's printed bolts, no inserts), cage.corners() order
+CLIP_INS = list(_cage.CLIP_INS)                # the EVM clip's two M3 insert bores (Xb, Yb), down from the ledge top
 CORNER_LAND = (_cage.BLK, _cage.BLK, _cage.SEAM)   # the corner blocks: square from the inside faces, their top (Yb)
 IN_X0, IN_Z0 = _cage.IN_X0, _cage.IN_Z0        # the base's inside faces (enclosure 4)
 
@@ -800,18 +800,15 @@ def base_parts(slot=True, wall_h=14.0, bar=False, lid_posts=False, shelves=False
         bi = [cq.Workplane("XY").workplane(offset=wall_h - 0.05).center(BAR_X, z).circle(2.3).circle(1.3)
               .extrude(0.06).val() for z in (BAR_LO, BAR_HI)]
         out.append(("bar_inserts", cq.Compound.makeCompound(bi), M.BRASS))
-    if lid_posts:                                # the four corner blocks (floor to wall top), each with its lid-screw bore
+    if lid_posts:                                # the four corner blocks (floor to wall top), each with its lid-bolt bore
         cx, cz, top = CORNER_LAND
         lands = []
-        for x, z in M4_AT:
+        for x, z in BOLT_AT:
             b = _cage.corner_box(1 if x < _cage.W / 2 else -1, 1 if z < _cage.H / 2 else -1, cx, cz, 0, top, "")
             lands.append(M.box(b.x0, b.z0, 0, b.x1, b.z1, top)
                          .cut(cq.Workplane("XY").workplane(offset=_cage.BORE_Y0).center(x, z)
                               .circle(_cage.BORE_D / 2).extrude(top)).val())
         out.append(("lid_posts", cq.Compound.makeCompound(lands), PLASTIC))
-        m4 = [cq.Workplane("XY").workplane(offset=top - 0.05).center(x, z).circle(M4_D / 2 + 0.9).circle(M4_D / 2 - 0.6)
-              .extrude(0.06).val() for x, z in M4_AT]
-        out.append(("m4_inserts", cq.Compound.makeCompound(m4), M.BRASS))
     return out
 
 
@@ -845,8 +842,10 @@ def f_plan():
     base_anchors(s)
     s.hole("bar_lo", (BAR_X, BAR_LO, 14.0))
     s.hole("bar_hi", (BAR_X, BAR_HI, 14.0))
-    for k, (x, z) in enumerate(M4_AT):           # corners(): (+,+) bottom left, (+,-) top left, (-,+), (-,-)
-        s.hole(f"m4_{k}", (x, z, CORNER_LAND[2]))
+    for k, (x, z) in enumerate(BOLT_AT):         # corners(): (+,+) bottom left, (+,-) top left, (-,+), (-,-)
+        s.hole(f"bolt_{k}", (x, z, CORNER_LAND[2]))
+    for k, (x, y) in enumerate(CLIP_INS):        # the clip bores open on the ledge top (Zb), seen edge-on from the lid
+        s.anchor(f"clip_{k}", (x, _cage.EVM_Z0, y))
     R("f_plan", s, (0, 0, 1), up=(0, 1, 0), fit=(260, 320), line=0.35, outline=1.1,
       crop=((_cage.W / 2, _cage.H / 2, 0), _cage.W / 2 + 2, _cage.H / 2 + 2))
 
@@ -915,16 +914,13 @@ def f_done():
 
 @scene
 def mat_base():
-    """The parts for the base: two M3 heat-set inserts (bars 1, 2) and four M4 (the lid corner posts, cage insert_m4:
-    the M3 model scaled to its length)."""
+    """The parts for the base: four M3 heat-set inserts (bars 1, 2 and the EVM clip's two). No M4: the lid takes
+    Clint's printed bolts."""
     s = r3d.Scene()
-    for k, x in enumerate((8, 16)):
+    for k, x in enumerate((8, 16, 28, 36)):
         s.add(f"insert{k}", M.insert().translate((x, 0, 0)), M.BRASS, 0.5)
-    k4 = M4_L / 5.7
-    for k, x in enumerate((36, 47, 58, 69)):
-        s.add(f"m4_{k}", M.insert().val().scale(k4).translate(cq.Vector(x, 0, 0)), M.BRASS, 0.5)
-    s.anchor("m3", (12, -4, 0))
-    s.anchor("m4", (52.5, -5, 0))
+    s.anchor("m3_bar", (12, -4, 0))
+    s.anchor("m3_clip", (32, -4, 0))
     R("mat_base", s, (-0.3, -1, 0.8), fit=(150, 80), line=0.35)
 
 

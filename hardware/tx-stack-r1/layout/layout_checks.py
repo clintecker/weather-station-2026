@@ -1034,14 +1034,12 @@ def check_mech():
          "three plain pads and the groove and slot floors take the card insertion push; the groove and slot roofs and "
          "the plugged cards take the pull", "after every card is out: slide it right to the slot's end, lift the left "
          "side, out", "removable only after all four cards are out; loose until the cards are in")
-    mech("Lid to the printed base", f"four M4 stainless screws on {S.val('m4_washer')[0]:g} mm washers through the "
-         f"lid's 8 mm holes into M4 heat-set inserts ({S.val('insert_m4')[0]:g} mm holes, 3 mm of wall round each) in "
-         "the base's corner posts, 156 x 109 apart (9.75 / 10.25 in from the lid's edges, cage/lid-rim-spec.md; option b, recommended over a printed "
-         f"copy of the original 8 mm plastic thread); the base's 9 mm land under the lid's rim, its "
+    mech("Lid to the printed base", "four of Clint's 3D-printed bolts through the lid's 8 mm holes into the "
+         f"\u00d8{S.val('enc_lid_bores')[0]:g} bores in the base's corner posts (no heat-set inserts; Clint, 2026-11-17), "
+         "156 x 109 apart (9.75 / 10.25 in from the lid's edges, cage/lid-rim-spec.md); the base's 9 mm land under the lid's rim, its "
          f"{S.val('rim_tongue')[0]:g} x {S.val('rim_tongue')[1]:g} sealing lip in the lid's O-ring channel",
-         "the screws squeeze the O-ring; the lid's rim takes a knock", "undo the four lid screws",
-         "not settled: the screw and the lid's corner pocket (L1), and the rim test ring's fit on the real lid: no "
-         "full STL until they are")
+         "the bolts squeeze the O-ring; the lid's rim takes a knock", "undo the four printed lid bolts",
+         "fastening settled (Clint's printed bolts, no inserts); still open: the rim test ring's fit on the real lid")
     mech("Base to the pole", "two mounting flanges on the short ends, in the floor plane (enclosure 4), each with two "
          "3.45 x 13.95 slots (Xb 47.95 and 75.45): hose clamps or straps through the slots; no screw through the back "
          "into the box", "the flanges' roots on the end walls and the floor", "open the clamps", "")

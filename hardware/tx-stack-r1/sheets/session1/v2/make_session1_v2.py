@@ -55,9 +55,8 @@ import re  # noqa: E402
 _BUILD = Path("/Users/clint/code/electronics/weather-station-2026/hardware/tx-stack-r1/build")
 _ASM = (_BUILD / "ASSEMBLY.md").read_text()
 _BPMD = (_BUILD / "BACKPLANE.md").read_text()
-M4_STEP = re.search(r"Set the (M4 heat-set inserts in the four corner posts) \((option b: [^)]*)\)", _ASM)
-assert M4_STEP, "ASSEMBLY.md section 2 step 3 sets the M4 inserts in the four corner posts"
-M4_WHAT, M4_WHY = M4_STEP.group(1), M4_STEP.group(2)       # "M4 heat-set inserts in the four corner posts", "option b: ..."
+assert "No inserts in the four corner posts" in _ASM and "EVM clip's two" in _ASM, \
+    "ASSEMBLY.md section 2 step 3: printed lid bolts in the corner posts, M3 inserts for the bar and the EVM clip"
 BP_SECS = dict(re.findall(r"^## (\d+)\. (.*)$", _BPMD, re.M))   # {"2": "Sockets (one per card; ...", ...}
 BP_WIRING = [re.sub(r" \([^)]*\)", "", BP_SECS[k]) for k in ("2", "3", "4", "5")]   # sockets + key plugs, pins and parts, bus wires, leads
 BP_FIT = re.sub(r" \([^)]*\)", "", BP_SECS["6"])                                    # "Fit it in the base"
@@ -518,7 +517,7 @@ def cover(c, pg):
             ("2 C-CLAMPS", "tool_clamps"), ("SANDPAPER 120", "tool_sandpaper"),
             ("SHARPIE", "tool_marker"), ("FLAT FILE", "tool_file"), ("MASK", None), ("PHONE", "tool_phone"),
             ("IRON (INSERTS ONLY)", "")],
-           [("1x PAD3U", "mat_pad3u"), ("4x SOLDERFUL", "mat_cards"), ("M3 + M4 INSERTS", "mat_base")],
+           [("1x PAD3U", "mat_pad3u"), ("4x SOLDERFUL", "mat_cards"), ("4x M3 INSERTS", "mat_base")],
            ["01  SNAP THE CARD RAILS", "02  LABEL. PHOTOGRAPH. REPORT.", "03  MEASURE THE INSERT",
             "04  CUT, TEST-FIT BACKPLANE", "05  REPORT THE BASE"],
            ["COUNT HOLES. DO NOT TRUST A RULER FOR POSITION.",
@@ -902,25 +901,26 @@ def bp4(c, pg):
 
 def bp5(c, pg):
     page(c, "04", "BACKPLANE  4/5: READY THE BASE",
-         "PADS, SLOT, SHELVES PRINTED IN. 2 M3 INSERTS (THE BAR). 4 M4 IN THE LID CORNER POSTS.", pg,
+         "4 M3 INSERTS: THE BAR AND THE EVM CLIP. NONE IN THE CORNER POSTS.", pg,
          SLOGANS[0])
     g = Grid(2, 2, heights=[1.3, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
         "Enclosure 4's base from the lid side, bottom wall at the bottom; all printed in, pad tops at 8.0. Positions",
-        "are (Xb, Zb) mm from the left and bottom walls. No backplane screws. Bar screws: BAR 1, BAR 2.",
-        "The four lid corner posts (up at the rim, under the lid's screw bosses) take the M4 inserts (ringed)."])
+        "are (Xb, Zb) mm from the left and bottom walls. No backplane screws. M3 inserts (ringed): BAR 1, BAR 2 and",
+        "the EVM clip's two (down into the ledge tops). The four corner posts take printed lid bolts: no inserts."])
     p = Art(c, "f_plan", x + 130, y + 6, 240, h - 12)
-    m4 = [p.A(f"m4_{k}") for k in range(4)]          # cage.corners(): bottom left, top left, bottom right, top right
-    for mx, my in m4:
-        ringm(c, mx, my, 7)
-    label(c, p.x - 14, m4[1][1] + 6, "M4 INSERT:\nLID CORNER POST", m4[1][0] - 7, m4[1][1], 10, "ALT", NEON, "r",
-          lcolor=INK, dot=False)
-    label(c, p.x + p.w + 20, m4[3][1] + 6, "M4 INSERT: LID CORNER POST", m4[3][0] + 7, m4[3][1], 10, "ALT", NEON,
-          lcolor=INK, dot=False)
-    label(c, p.x - 14, m4[0][1] - 4, "M4 INSERT:\nLID CORNER POST", m4[0][0] - 7, m4[0][1], 10, "ALT", NEON, "r",
-          lcolor=INK, dot=False)
-    label(c, p.x + p.w + 20, m4[2][1] - 4, "M4 INSERT: LID CORNER POST", m4[2][0] + 7, m4[2][1], 10, "ALT", NEON,
-          lcolor=INK, dot=False)
+    bolts = [p.A(f"bolt_{k}") for k in range(4)]     # cage.corners(): bottom left, top left, bottom right, top right
+    label(c, p.x - 14, bolts[1][1] + 6, "LID BOLT POST\n(PRINTED BOLT)", bolts[1][0] - 5, bolts[1][1], 10, "ALT", INK, "r")
+    label(c, p.x + p.w + 20, bolts[3][1] + 6, "LID BOLT POST (PRINTED BOLT)", bolts[3][0] + 5, bolts[3][1], 10, "ALT", INK)
+    label(c, p.x - 14, bolts[0][1] - 4, "LID BOLT POST\n(PRINTED BOLT)", bolts[0][0] - 5, bolts[0][1], 10, "ALT", INK, "r")
+    label(c, p.x + p.w + 20, bolts[2][1] - 4, "LID BOLT POST (PRINTED BOLT)", bolts[2][0] + 5, bolts[2][1], 10, "ALT", INK)
+    for k, txt in ((0, "CLIP INSERT (M3), LEFT KEEPER"), (1, "CLIP INSERT (M3), RIGHT BLOCK")):
+        cx0, cy0 = p.A(f"clip_{k}")
+        ringm(c, cx0, cy0, 6)
+        if k == 0:
+            label(c, p.x - 14, cy0 - 26, txt.replace(", ", ",\n"), cx0 - 6, cy0, 10, "ALT", NEON, "r", lcolor=INK, dot=False)
+        else:
+            label(c, p.x + p.w + 20, cy0 - 26, txt, cx0 + 6, cy0, 10, "ALT", NEON, lcolor=INK, dot=False)
     rx = p.x + p.w + 20
     sx_, sy_ = p.A("post_s24_31")
     label(c, rx, sy_ - 4, "SUPPORT DIA 6 AT (68.74, 127.72)", sx_, sy_, 10, "ALT", INK)
@@ -946,15 +946,15 @@ def bp5(c, pg):
     chip(c, x + w / 2, y + 4, "SLIDES FREELY, END TO END: OK", 10, "ALT", NEON, "c")
     # 3: the two inserts
     x, y, w, h = panel(c, g.cell(1, 1), 3, [
-        "Iron on, no solder. One M3 insert, flush, in", "each of bores BAR 1 and BAR 2; one M4 in",
-        "each lid corner post (ASSEMBLY.md 2.3).", "BAR 1 has 0.48 of plastic over the B4 slot:",
+        "Iron on, no solder. One M3 insert, flush, in", "each of BAR 1, BAR 2 and the two EVM clip",
+        "bores (ASSEMBLY.md 2.3). Corners: none.", "BAR 1 has 0.48 of plastic over the B4 slot:",
         "light pressure, iron not past flush. Then run", "a PAD3U offcut down the B4 slot from the",
         "front; file the slot if it binds."])
     mb = Art(c, "mat_base", x + 10, y + h - 58, w - 20, 50)
-    chip(c, mb.A("m3")[0], y + h - 70, "M3 x2", 9, "ALT", INK, "c")
-    chip(c, mb.A("m4")[0], y + h - 70, "M4 x4", 9, "ALT", INK, "c")
+    chip(c, mb.A("m3_bar")[0], y + h - 70, "BAR x2", 9, "ALT", INK, "c")
+    chip(c, mb.A("m3_clip")[0], y + h - 70, "CLIP x2", 9, "ALT", INK, "c")
     chip(c, x + 10, y + 56, "2 x M3 HEAT-SET INSERT (BAR 1, BAR 2)", 9, "ALT", INK)
-    chip(c, x + 10, y + 40, "4 x M4 HEAT-SET INSERT (LID CORNER POSTS)", 9, "ALT", INK)
+    chip(c, x + 10, y + 40, "2 x M3 HEAT-SET INSERT (EVM CLIP)", 9, "ALT", INK)
     chip(c, x + 10, y + 24, "ALL PAD TOPS LEVEL: 8.0 ABOVE THE FLOOR", 9, "ALT", NEON)
     chip(c, x + 10, y + 8, "OFFCUT SLIDES THE WHOLE B4 SLOT: OK", 9, "ALT", NEON)
 
@@ -1095,7 +1095,7 @@ CARD_ROWS = [("CARD: FRONT EDGE TO SNAP LINE", "mm", "model 41.91"),
 BASE_ROWS = [("INSERT LENGTH  L", "mm", "expected 5.7"),
              ("INSERT DIAMETER  D (KNURL TIPS)", "mm", "expected 4.6"),
              ("BAR 1 + BAR 2 INSERTS SET, B4 SLOT CLEAR", "Y / N", "offcut slides the whole B4 slot"),
-             ("4 x M4 INSERTS IN THE LID CORNER POSTS", "Y / N", M4_WHY.split(":")[0] + ": the lid's M4 screws"),
+             ("2 x M3 INSERTS IN THE EVM CLIP BORES", "Y / N", "left keeper and right lid-end block, flush"),
              ("BACKPLANE: 31 x 38, TEST-FITS", "Y / N", "in, flat on the three pads, out again"),
              ("BACKPLANE: LINE 30 TO RIGHT EDGE", "mm", "expected 5.48, at most 6.13"),
              ("PHOTO OF THE BACKPLANE TEST-FITTED", "SENT", "")]

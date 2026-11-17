@@ -813,11 +813,11 @@ def assembly_sheet():
          "corner pocket); `cage.py --stl` refuses the full base until both are sourced. Also the EVM's part heights "
          "and J6 under it (`evm`, `evm_under`).",
          "2. Then a second test coupon: one card slot (tune `slot_clear` until a card slides with light friction), one "
-         "M4 insert post, one lid corner of the land and tongue (fit the lid on it: the sealing lip must press the O-ring "
+         "lid bolt post (with one of the printed bolts), one lid corner of the land and tongue (fit the lid on it: the sealing lip must press the O-ring "
          "about 1 mm, with the lid's walls down on the land), and a 30 mm square of the 3 mm wall to leak-test.",
          "3. Print the base in PETG, a light colour, rim down on the plate (the O-ring land is the bed face), walls "
-         "3 mm (about 7 perimeters, solid). Set the M4 heat-set inserts in the four corner posts (option b: M4 stainless screws on 12 mm washers through the lid's 8 mm holes) and the retention "
-         "bar's two M3 inserts in the left wall's front face with the iron. Leak-test the bare base (water in the base, or soapy water with the lid on "
+         "3 mm (about 7 perimeters, solid). No inserts in the four corner posts: the lid goes on with Clint's 3D-printed bolts in their bores. With the iron, set the retention "
+         "bar's two M3 heat-set inserts in the left wall's front face and the EVM clip's two (down into the left keeper and the right lid-end block, at Xb 4.5 and 100.25, Yb 106). Leak-test the bare base (water in the base, or soapy water with the lid on "
          "and a little pressure through the vent hole); coat the inside only if it leaks. Paint or clear-coat the "
          "outside against UV.",
          f"4. Fit the glands in the bottom wall's bosses (five {S.val('gland')[0]:g} mm holes for PG-7s #762: the four "
@@ -849,7 +849,7 @@ def assembly_sheet():
          "[TBD-MEASURE] Check the straight plug on the bulkhead's inner end clears the EVM's lid-right corner (or use a "
          "right-angle plug).",
          "8. Mount: hose clamps or straps through the two slots in each mounting flange (the short ends, in the floor "
-         "plane); the lid on with its four screws.", "",
+         "plane); the lid on with its four printed bolts.", "",
          f"## 3. Cards, bottom to top: {order}", "",
          "**Labels (the slot key's colour code):** a dot on each card's front edge and the same colour beside its slot "
          "on the base and beside its socket on the backplane: " + ", ".join(f"{b} {model.KEY_COLOUR[b]}" for b in st.BOARDS)

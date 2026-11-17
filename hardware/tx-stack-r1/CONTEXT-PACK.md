@@ -161,12 +161,15 @@ PDFs change.
     bending the cable to fit). **Session 6 check [TBD]:** a straight plug on the bulkhead's inner end reaches about
     Xb 93, above the EVM's lid-right corner.
   - **cage.py now models enclosure 4 + fixes** (2026-11-17): the R9 shell 120 deep, walls 4.25 / 4.0 (inside faces
-    Xb 1.25 / 122.25, Zb 1 / 168.5), four 15.4 corner blocks with Ø10 lid-screw bores (not the planned Ø5.6 M4
-    insert: ask Clint), the 2 x 2.5 lip, gland pockets, flanges, the real EVM ledge / keeper / fin / lid-end block,
+    Xb 1.25 / 122.25, Zb 1 / 168.5), four 15.4 corner blocks with Ø10 lid-bolt bores, the 2 x 2.5 lip, gland pockets, flanges, the real EVM ledge / keeper / fin / lid-end block,
     tray slots and support, the right post's relief over B2 and B1. `cage.py --audit-stl` voxel-diffs clean against
     enclosure 4 except the two fixes and the outside lettering (`sheets/audit-enc4/README.md`). The frame W x H stays
     the lid frame (123.5 x 169.5); box_in is now the real inside, 121 x 167.5 x 140.
   - Session 1 drops the drilling page (11 pages now); BACKPLANE.md and ASSEMBLY.md have no backplane screws.
+  - **Lid fastening settled (Clint, 2026-11-17):** the four corner posts take Clint's 3D-printed bolts in their Ø10
+    bores, with **no heat-set inserts** (`sources.lid_screw_opt` = c; the M4 rows are gone). The only inserts are four
+    M3s: retention bar (Xb 5.0, Zb 76.5 / 146.5) and EVM clip (Xb 4.5 / 100.25, Yb 106, down into the left keeper and
+    the right lid-end block). ASSEMBLY.md step 3 and Session 1 page 9 set all four. Pods keep their inserts.
 
 - **Enclosure 3** (`~/Downloads/enclosure 3.stl`) is **printing now**. It was audited on 2026-11-16 (scripts and
   images in `sheets/audit-enc3/`).
