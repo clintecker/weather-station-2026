@@ -126,7 +126,17 @@ def netlist(pod):
 
 
 def net_of(pod, ref, pin):
-    return _pins(pod)[(ref, str(pin))][1]
+    """The net a pin sits on, read from copper: its group's declared name, "SHORT(3V3+GND)" when the group mixes
+    nets, "OPEN(SDA)" when that net is split over more than one group, "NC" for a pin left unconnected."""
+    key = (ref, str(pin))
+    groups = _groups(pod)
+    g = next(g for g in groups if key in g)
+    labs = _labels(pod, g)
+    if len(labs) > 1:
+        return "SHORT(" + "+".join(labs) + ")"
+    if labs[0] != "NC" and sum(labs[0] in _labels(pod, h) for h in groups) > 1:
+        return f"OPEN({labs[0]})"
+    return labs[0]
 
 
 def copper_faults(pod):

@@ -79,6 +79,19 @@ class PodChecks(unittest.TestCase):
                     for pin, (pod_net, tx_net) in e.items():
                         self.assertEqual(pod_net, tx_net, f"{n} on S{port} pin {pin}")
 
+    def test_mutated_pod_fails_end_to_end(self):
+        for n, p in self.pods.items():
+            q = copy.deepcopy(p)
+            q.wires = [w for w in q.wires if not (w.net == "SDA" and w.hole_a == "C3")]     # the J1 SDA wire
+            e = self.c.end_to_end(q, 1)
+            self.assertEqual(e[3], ("OPEN(SDA)", "SDA"), n)
+            self.assertTrue(self.c.cable_faults(q, "straight"), n)
+            q = copy.deepcopy(p)
+            q.wires.append(self.c.pods.w("GND", "A2", "A4"))                                 # 3V3 to GND at the jack
+            e = self.c.end_to_end(q, 1)
+            self.assertTrue(e[2][0].startswith("SHORT("), e[2])
+            self.assertTrue(self.c.cable_faults(q, "straight"), n)
+
     def test_cable_reversed_flagged(self):
         r = self.c.cable_map("reversed")
         self.assertEqual({k: r[k] for k in (2, 5, 3, 4)}, {2: 5, 5: 2, 3: 4, 4: 3})
