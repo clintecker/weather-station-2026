@@ -47,6 +47,7 @@ PERMA = (GH + "Adafruit-Perma-Proto-PCB/blob/6a11bc3bbf/adafruit%20permaproto%20
          "2026-06-03; repo HEAD 2c7f1ba879; Adafruit 1/4-size Perma-Proto, product 1608 in the repo README)")
 TI = "TI SLVA689 'I2C Bus Pullup Resistor Calculation', https://www.ti.com/lit/an/slva689/slva689.pdf, Table 1 (standard mode column)"
 SHIELD = "~/Downloads/Stevenson_screen_NFS.3mf"     # kept unexpanded in the table; shield_path() expands it where used
+SHIELD_OUT = "~/Downloads/pods-shield-remix/"       # the remixed shield STLs (outside git); shield_out_path() expands it
 
 D = {
     # ---------------------------------------------------------------- Adafruit Perma-Proto Quarter #1608
@@ -107,6 +108,8 @@ D = {
     "i2c_sink_ma": (3.0, "standard- and fast-mode I2C low-level output sink current the bus pull-ups must stay under (at VOL 0.4 V)", TI + ": 'Low-level output voltage (at 3 mA current sink)'", "sourced"),
     "rise_ns_max": (1000, "standard-mode I2C maximum SDA/SCL rise time (30 to 70 percent), ns", TI + ": tr 1000 ns standard mode (300 fast, 120 fast-plus)", "sourced"),
     # ---------------------------------------------------------------- the radiation shield (never committed)
+    "shield_out": (SHIELD_OUT, "local folder (outside git) the shield remix writes its STLs to: the remixed top cap (object_70, UV box screw bosses) and L-arm (object_72, TH and BARO mounting faces). They are derived from the shield's meshes, so they never go into git", "controller choice 2026-11-17 (Task 7); written by hardware/pods-r1/shield/remix.py, created when missing", "sourced"),
+    "pod_mount_screw": ((3.0, 10.0, 5.5), "pod box mounting screws, M3 x 10 A2 stainless pan head (ISO 7045): thread, length, head diameter. Up through the remixed cap (two, into the UV box's far-end lug inserts) and through the remixed arm's faces (four per box, into the TH and BARO lug inserts); every one grips 5.0 of printed plastic, leaving 5.0 of thread in the pod_insert_bore insert", "shield/remix.py choice; ISO 7045 M3 dk 5.5 as pod_screw; not bought: measure the screws on hand", "TBD"),
     "shield_3mf": ((SHIELD, "c8a6f1bc66e94d516a0e3b6fd50ad338343281649da1c4f9df0fd2809695a768"), "Clint's Stevenson-screen radiation shield model: local path (outside git), sha256. Only the top cap (object_70) and the L-arm (object_72) are remixed. The file and everything derived from its meshes stay out of git", "~/Downloads/Stevenson_screen_NFS.3mf (Clint, 2026-11-17; sha256 taken from the file on 2026-11-17)", "sourced"),
 }
 
@@ -134,6 +137,13 @@ def _fmt(v):
 def shield_path():
     """The shield 3MF's real local path (the table keeps the unexpanded ~/Downloads form)."""
     return Path(val("shield_3mf")[0]).expanduser()
+
+
+def shield_out_path():
+    """The remixed shield STLs' real local folder (the table keeps the unexpanded ~/Downloads form); created if missing."""
+    p = Path(val("shield_out")).expanduser()
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def _is_length(v):

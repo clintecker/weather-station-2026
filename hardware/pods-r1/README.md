@@ -13,6 +13,10 @@ TX sensor port by a round 6-conductor cable. Design: `docs/superpowers/specs/202
 - `box/podbox.py` (CadQuery, `.venv-cad`): the three printed pod boxes and lids, sized from each pod's board; writes
   `box/stl/pod-{th,baro,uv}-{body,lid}.stl` in print orientation (committed: our own geometry). Its docstring records
   the wall, seal, screws, mount face, vent baffle and UV window choices.
+- `shield/assemble.py` (numpy, `.venv-cad`): the shield assembled from its meshes' mating features, the core and the
+  SHT45 fit. `shield/remix.py` (CadQuery + manifold3d, `.venv-cad`; `sheets/requirements-cad.txt`): the remixed top cap
+  (UV box screw bosses) and L-arm (TH and BARO mounting faces, the TH lead hole); prints its checks and writes the two
+  STLs to `shield_out`, outside git. Its docstring records the placements and why.
 - `run.sh`: rebuilds and checks everything here; exits non-zero on the first failed step.
 
 The radiation shield's 3MF and every file derived from its meshes stay out of git; `shield_3mf` records a local path and
@@ -72,5 +76,7 @@ a sha256 only. Adafruit's Eagle files were read once from GitHub into a scratch 
 | `cable_pf_per_m` | ? | capacitance per metre of the bought 6-conductor round cable (conductor to conductor, the SDA/SCL pair) | [TBD-MEASURE]: the cable is not bought; take its datasheet figure or measure it with an LCR meter | [TBD-MEASURE] |
 | `i2c_sink_ma` | 3 | standard- and fast-mode I2C low-level output sink current the bus pull-ups must stay under (at VOL 0.4 V) | TI SLVA689 'I2C Bus Pullup Resistor Calculation', https://www.ti.com/lit/an/slva689/slva689.pdf, Table 1 (standard mode column): 'Low-level output voltage (at 3 mA current sink)' | sourced |
 | `rise_ns_max` | 1000 | standard-mode I2C maximum SDA/SCL rise time (30 to 70 percent), ns | TI SLVA689 'I2C Bus Pullup Resistor Calculation', https://www.ti.com/lit/an/slva689/slva689.pdf, Table 1 (standard mode column): tr 1000 ns standard mode (300 fast, 120 fast-plus) | sourced |
+| `shield_out` | ~/Downloads/pods-shield-remix/ | local folder (outside git) the shield remix writes its STLs to: the remixed top cap (object_70, UV box screw bosses) and L-arm (object_72, TH and BARO mounting faces). They are derived from the shield's meshes, so they never go into git | controller choice 2026-11-17 (Task 7); written by hardware/pods-r1/shield/remix.py, created when missing | sourced |
+| `pod_mount_screw` | 3 x 10 x 5.5 | pod box mounting screws, M3 x 10 A2 stainless pan head (ISO 7045): thread, length, head diameter. Up through the remixed cap (two, into the UV box's far-end lug inserts) and through the remixed arm's faces (four per box, into the TH and BARO lug inserts); every one grips 5.0 of printed plastic, leaving 5.0 of thread in the pod_insert_bore insert | shield/remix.py choice; ISO 7045 M3 dk 5.5 as pod_screw; not bought: measure the screws on hand | [TBD-MEASURE] |
 | `shield_3mf` | ~/Downloads/Stevenson_screen_NFS.3mf x c8a6f1bc66e94d516a0e3b6fd50ad338343281649da1c4f9df0fd2809695a768 | Clint's Stevenson-screen radiation shield model: local path (outside git), sha256. Only the top cap (object_70) and the L-arm (object_72) are remixed. The file and everything derived from its meshes stay out of git | ~/Downloads/Stevenson_screen_NFS.3mf (Clint, 2026-11-17; sha256 taken from the file on 2026-11-17) | sourced |
 <!-- dimensions:end -->

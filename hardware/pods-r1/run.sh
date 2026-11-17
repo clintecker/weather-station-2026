@@ -27,4 +27,12 @@ if [ -x ../../.venv-cad/bin/python ]; then
 else
   echo "skipped: .venv-cad (CadQuery) is not on this machine"
 fi
+echo "== shield remix: cap bosses (UV), arm faces (TH, BARO), TH lead (only when the shield 3MF is on this machine)"
+if ../../.venv/bin/python -c "import sys; sys.path.insert(0, '.'); import sources; sys.exit(0 if sources.shield_path().exists() else 1)" \
+   && [ -x ../../.venv-cad/bin/python ]; then
+  cd ../..; .venv-cad/bin/python -m unittest tests.test_pods_remix; cd hardware/pods-r1
+  ../../.venv-cad/bin/python shield/remix.py
+else
+  echo "skipped: the shield 3MF (sources.shield_3mf) or .venv-cad is not on this machine"
+fi
 echo "== pods-r1: every check passes"
