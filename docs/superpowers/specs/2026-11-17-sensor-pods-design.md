@@ -159,7 +159,9 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
 2. **TH pod**: SHT45 #6174 on the shield stand, a 4-wire lead (stranded, colours as the TX
    convention: red 3.3 V, black GND, yellow SCL, blue SDA) soldered to its header pads, through the
    base cup, into the TH pod box through a small gland or grommet, to the pod board. Pod box on the
-   remixed arm.
+   remixed arm. **The lead (controller ruling 2026-11-17, pending Clint):** a round jacketed 4-core
+   cable, OD 3.0-4.3 mm, stranded cores coloured red 3V3, black GND, yellow SCL, blue SDA, so the TH
+   box's second PG-7 (#762) seals on its jacket (`th_lead_gland`).
 3. **Baro pod**: BMP581 #6407 on the pod board; its box on the remixed arm beside the TH box; a downward-facing
    vent port with a baffle (no direct path for rain or spray), and an ePTFE membrane if one is on
    hand.

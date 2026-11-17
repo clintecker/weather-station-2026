@@ -28,9 +28,15 @@ CHOICES (the brief left these to the builder; record of them):
                    a hard stop, so the squeeze is set by the groove, not by screw torque.
   lid screws       four M3 x 8 pan head (sources pod_screw) through 3.4 holes in the lid into M3 heat-set inserts
                    (sources insert_m3, bores pod_insert_bore) in four corner lugs outside the walls, outside the seal.
-  mount face       the back face (-z). The same four corner lugs take M3 heat-set inserts from the back (blind: the
+  mount face       the back face (-z). TH/BARO: the same four corner lugs take M3 heat-set inserts from the back (blind: the
                    sealed space is never pierced); mount_face() gives the plane and the four insert centres. The arm
                    and the cap (Task 7) bolt to two or more of them with M3 screws from their side.
+                   UV (fix round 1): the floor gland must hang past the cap's edge (the cap is 100 x 100; the cable
+                   runs down the outside of the louvers with a drip loop below the gland). So the two lugs at the
+                   gland's end keep only their lid inserts, and two blind floor bosses inside the box, inboard of the
+                   gland's nut (NUT_GAP clear of it) and BOSS_MARGIN clear of the side walls, take the other two mount
+                   inserts (MOUNT_BOSS_DEPTH deep from the mount face). mount_face("UV").keepouts gives the gland's
+                   keep-out circle (GLAND_KEEP across at least) that the cap must stay clear of.
   board            on two standoffs from the back wall, one under each Perma-Proto mounting hole, no wider than
                    mount_keep (the screw head's circle the layout keeps clear, so they miss every bottom wire and
                    joint); M3 x 8 thread-forming into a pod_pilot_m3 pilot. Standoff height = the copper side's
@@ -75,6 +81,9 @@ BAFFLE_OVER = 6.0           # baffle beyond the vent hole's edge, each open side
 BAFFLE_T = 1.6              # baffle fin thickness
 WINDOW_LEDGE = 1.5          # UV window ledge, each side (aperture = d - 2 x ledge)
 NUT_GAP = 1.0               # a gland nut's free gap to the nearest wall
+GLAND_KEEP = 18.0           # UV: the floor gland's keep-out circle on the mount face (the gland body 16.6 + margin)
+MOUNT_BOSS_DEPTH = 7.7      # UV: floor boss height from the mount face (insert bore 6.7 + 1.0 of plastic over it)
+BOSS_MARGIN = 2.0           # UV: floor boss clear of the side walls
 UPS = {"TH": (0.0, 1.0, 0.0), "BARO": (0.0, 1.0, 0.0), "UV": (0.0, 0.0, 1.0)}
 
 
@@ -157,6 +166,14 @@ def dims(name):
             d["seat"] = (seat_d, S.val("baro_eptfe")[1])
     d["lugs"] = [(x, y) for x in (d["x0"] - WALL - LUG_DIAG, d["x1"] + WALL + LUG_DIAG)
                  for y in (d["y0"] - WALL - LUG_DIAG, d["y1"] + WALL + LUG_DIAG)]
+    d["mount_lugs"], d["floor_bosses"], d["keepouts"] = list(d["lugs"]), [], []
+    if name == "UV":
+        (_k, (gx, gy, _gz), _a), = [o for o in d["ops"] if o[0] == "gland"]
+        br = S.val("pod_insert_bore")[0] / 2 + LUG_WALL
+        by = gy + nut_r + NUT_GAP + br                          # inboard of the gland's nut
+        d["floor_bosses"] = [(d["x0"] + BOSS_MARGIN + br, by), (d["x1"] - BOSS_MARGIN - br, by)]
+        d["mount_lugs"] = [xy for xy in d["lugs"] if xy[1] > gy]          # the far end's two lugs
+        d["keepouts"] = [(gx, gy, max(GLAND_KEEP, S.val("gland_pg7")[2] + 1.4))]
     return d
 
 
@@ -175,11 +192,22 @@ def board_holes():
     return list(PP.OUTLINE["mounting_holes"])
 
 
+class MountFace(tuple):
+    """mount_face()'s result: still unpacks as (plane, holes); .keepouts adds the circles (x, y, d) on that plane that
+    the mating part (Task 7's arm or cap) must stay clear of (the UV floor gland; none on TH/BARO)."""
+
+    def __new__(cls, plane, holes, keepouts):
+        self = super().__new__(cls, (plane, holes))
+        self.plane, self.holes, self.keepouts = plane, holes, keepouts
+        return self
+
+
 def mount_face(name):
-    """((origin, normal), [(x, y)]): the back face's plane and the M3 insert centres in it (box frame)."""
+    """MountFace((origin, normal), [(x, y)], keepouts=[(x, y, d)]): the back face's plane, the M3 insert centres in it
+    and the keep-out circles on it (box frame). Unpacks as ((origin, normal), holes) as before."""
     d = dims(name)
     origin = ((d["x0"] + d["x1"]) / 2, (d["y0"] + d["y1"]) / 2, d["z_bo"])
-    return (origin, (0.0, 0.0, -1.0)), list(d["lugs"])
+    return MountFace((origin, (0.0, 0.0, -1.0)), d["mount_lugs"] + d["floor_bosses"], list(d["keepouts"]))
 
 
 def screws(name):
@@ -273,8 +301,12 @@ def _build(name, standoffs=True, baffle=True):
     bd, bdepth = S.val("pod_insert_bore")
     s = _outline(d, d["z_bo"], d["z_rim"])
     s = s.cut(_rrect(d["x0"], d["y0"], d["x1"], d["y1"], R_IN, d["z_bi"], d["z_rim"] + 1))
-    for x, y in d["lugs"]:                    # lid inserts from the rim, mount inserts from the back
+    for x, y in d["lugs"]:                    # lid inserts from the rim
         s = s.cut(cq.Workplane("XY").workplane(offset=d["z_rim"] - bdepth).center(x, y).circle(bd / 2).extrude(bdepth + 1))
+    for x, y in d["floor_bosses"]:            # UV: blind floor bosses for two of the mount inserts
+        s = s.union(cq.Workplane("XY").workplane(offset=d["z_bi"] - 0.5).center(x, y).circle(bd / 2 + LUG_WALL)
+                    .extrude(d["z_bo"] + MOUNT_BOSS_DEPTH - d["z_bi"] + 0.5))
+    for x, y in d["mount_lugs"] + d["floor_bosses"]:     # mount inserts from the back
         s = s.cut(cq.Workplane("XY").workplane(offset=d["z_bo"] - 1).center(x, y).circle(bd / 2).extrude(bdepth + 1))
     if standoffs:
         keep, pilot = S.val("mount_keep"), S.val("pod_pilot_m3")
@@ -379,7 +411,8 @@ def report():
             lines.append(f"  {k:<10} at ({c[0]:.2f}, {c[1]:.2f}, {c[2]:.2f}) axis {a}")
         (o, nrm), holes = mount_face(n)
         lines.append(f"  mount    plane z {o[2]:.2f} normal {nrm}; M3 inserts at "
-                     + ", ".join(f"({x:.2f}, {y:.2f})" for x, y in holes))
+                     + ", ".join(f"({x:.2f}, {y:.2f})" for x, y in holes)
+                     + "".join(f"; keep-out ({x:.2f}, {y:.2f}) d {kd:.1f}" for x, y, kd in mount_face(n).keepouts))
         if n == "BARO":
             lines.append(f"  baffle   {_baffle_box(d)}; free gap round it {baffle_gaps(n):.2f}")
     return "\n".join(lines)

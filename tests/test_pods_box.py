@@ -125,6 +125,19 @@ class PodBox(unittest.TestCase):
                     for b in (self._plug_body_only(n), jack):
                         self.assertGreater(nut.distance(solid(b)), 0.5, f"{n} {kind} nut to {b.what}")
                     self.assertGreater(nut.distance(lid), 0.2, f"{n} {kind} nut to the lid")
+                    # and nothing in the body (a wall, a boss, the baffle) stands within 0.5 of the nut's side
+                    (c, axis), = [(c, a) for k, c, a in self.box.openings(n) if k == kind]
+                    nb = nut.BoundingBox()
+                    r = max(nb.xlen, nb.ylen, nb.zlen) / 2 if axis[2] else max(nb.xlen, nb.zlen) / 2
+                    r += 0.5
+                    mid = tuple(ci - (self.box.wall_t(n, kind) + 1.5) * ai for ci, ai in zip(c, axis))
+                    for k in range(24):
+                        a = k * math.pi / 12
+                        if axis[2]:
+                            pt = (mid[0] + r * math.cos(a), mid[1] + r * math.sin(a), mid[2])
+                        else:
+                            pt = (mid[0] + r * math.cos(a), mid[1], mid[2] + r * math.sin(a))
+                        self.assertFalse(body.isInside(cq.Vector(*pt)), f"{n} {kind}: body within 0.5 of the nut at {pt}")
 
     def _plug_body_only(self, name):
         S, Box = self.S, self.pods.Box
@@ -256,6 +269,33 @@ class PodBox(unittest.TestCase):
                 for x, y in holes:
                     self.assertFalse(body.isInside(cq.Vector(x, y, bb.zmin + depth / 2)), f"{n}: no mount insert bore")
                     self.assertTrue(body.isInside(cq.Vector(x, y, bb.zmin + depth + 0.3)), f"{n}: mount bore through")
+
+    def test_uv_mount_clears_cap_edge(self):
+        """The UV box sits on the 100 x 100 top cap with its floor gland hanging past the cap's edge: one straight
+        cap edge separates every mount hole from the gland's keep-out by 1 mm or more, and the holes span <= 100."""
+        mf = self.box.mount_face("UV")
+        (_origin, _normal), holes = mf                         # still unpacks as before
+        self.assertEqual(holes, mf.holes)
+        self.assertGreaterEqual(len(holes), 2)
+        (_k, gc, _a), = [o for o in self.box.openings("UV") if o[0] == "gland"]
+        self.assertEqual(len(mf.keepouts), 1)
+        kx, ky, kd = mf.keepouts[0]
+        self.assertGreaterEqual(kd, 18.0)
+        self.assertAlmostEqual(kx, gc[0], places=6)
+        self.assertAlmostEqual(ky, gc[1], places=6)
+        self.assertGreaterEqual(kd, self.S.val("gland_pg7")[2])
+        best = -1e9
+        for deg in range(360):                                  # a cap edge in any direction
+            ux, uy = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+            keep_far = kx * ux + ky * uy + kd / 2               # the keep-out's far side along u
+            hole_near = min(x * ux + y * uy for x, y in holes)
+            best = max(best, hole_near - keep_far)               # room for an edge 1 mm from each side
+        self.assertGreaterEqual(best, 2.0, f"no straight cap edge leaves 1 mm each side (best gap {best:.2f})")
+        xs, ys = [x for x, _ in holes], [y for _, y in holes]
+        self.assertLessEqual(max(xs) - min(xs), 100.0)
+        self.assertLessEqual(max(ys) - min(ys), 100.0)
+        for n in ("TH", "BARO"):
+            self.assertEqual(self.box.mount_face(n).keepouts, [])
 
     def test_stls_written(self):
         out = PODS / "box" / "stl"
