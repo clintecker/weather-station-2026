@@ -100,7 +100,7 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
     quarters #1608 (10), BOB-14021 (10 + the old panel), 87180-066LF jacks (20), 2-pin headers and
     shunts (100 each, for the WP jumper), RJ12 6P6C crimp plugs (100).
   - **Not in the inventory file:** the Adafruit 24LC32 EEPROM breakouts (Clint has them; not yet
-    listed, count not recorded), a
+    listed; about 10 on hand), a
     6P modular crimper (INVENTORY suggests Klein VDV226-011-SEN), bulk round 6-conductor cable (the
     straight-through cables on hand have plugs fitted, which pass no gland), and enough PG-7 glands
     for three pods (plus the TH lead's small gland) on top of the TX box's five PG-7s and two PG-9s.
@@ -168,7 +168,7 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
    jumper read from Adafruit's files). The bench loses these sensors when the pods are built.
    **The EEPROM breakout (Clint, 2026-11-17): Adafruit's I2C EEPROM, the 24LC32 STEMMA QT breakout
    (Adafruit #5146 as far as known; check the number on the bag).** It is not listed in
-   `INVENTORY.md`; the count is not recorded (three are needed, one per pod). Its 10 k pull-ups count
+   `INVENTORY.md`; Clint has about 10 (2026-11-17), three needed, one per pod. Its 10 k pull-ups count
    toward the port total (cut its pull-up jumper if the total needs it), and its WP pad is wired to the
    2-pin shunt header.
 7. **Every pod box**: printed PETG, light colour, UV paint or clear coat outside (as the TX base); a
