@@ -7,4 +7,6 @@ echo "== dimension table in README.md"
 python3 sources.py --check
 echo "== Perma-Proto model against sources and the .brd"
 cd ../..; .venv/bin/python -m unittest tests.test_pods_permaproto; cd hardware/pods-r1
+echo "== pod board layouts (TH, BARO, UV)"
+cd ../..; .venv/bin/python -m unittest tests.test_pods_layout; cd hardware/pods-r1
 echo "== pods-r1: every check passes"
