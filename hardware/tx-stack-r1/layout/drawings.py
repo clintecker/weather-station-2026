@@ -407,10 +407,11 @@ def cage_views():
 
     def front(x):
         return ox2 + x * KZ
-    for o, span, title in ((side, d_in, "SIDE (section, seen from the left wall): back wall and pole left, lid right"),
-                           (front, w_in, "FRONT (from the lid, glands down): left wall (card block) left")):
-        g.rect(o(0), Z(h_in), o(span), Z(0), "#f4f6f8", "#555", 1.2, dash="6 3")
-        g.text(o(0), Z(h_in) - 10, title, 13, weight="bold")
+    zi0, zi1 = cage.IN_Z0, cage.IN_Z1                      # the base's inside faces (enclosure 4)
+    for o, a0, a1, title in ((side, 0, d_in, "SIDE (section, seen from the left wall): back wall and pole left, lid right"),
+                             (front, cage.IN_X0, cage.IN_X1, "FRONT (from the lid, glands down): left wall (card block) left")):
+        g.rect(o(a0), Z(zi1), o(a1), Z(zi0), "#f4f6f8", "#555", 1.2, dash="6 3")
+        g.text(o(a0), Z(zi1) - 10, title, 13, weight="bold")
     g.add(f'<line x1="{side(0) - 18:.1f}" y1="{Z(-5):.1f}" x2="{side(0) - 18:.1f}" y2="{Z(h_in + 5):.1f}" stroke="#777" '
           f'stroke-width="12"/>')
     g.text(side(0) - 30, Z(h_in / 2), "pole", 12, "middle", rot=-90)
@@ -452,11 +453,11 @@ def cage_views():
         g.rect(side(y - gd / 2), Z(0), side(y + gd / 2), Z(-8), "#555", "#222", 0.5, 0.7)
     g.text(front(w_in / 2), Z(-8) + 16, f"glands in the bottom wall: {sum(1 for g_ in cage.GLANDS if g_[2] == 'PG-7')} PG-7, 2 PG-9 (right column), no spare", 10, "middle")
     for b_ in cage.shell():
-        if "flange" in b_.what or "drip" in b_.what:
+        if "flange" in b_.what:
             g.rect(side(b_.y0), Z(b_.z1), side(b_.y1), Z(b_.z0), "#bbbbbb", "#555", 0.6, 0.8)
-    g.add(f'<line x1="{side(cage.SEAM):.1f}" y1="{Z(h_in):.1f}" x2="{side(cage.SEAM):.1f}" y2="{Z(0):.1f}" '
+    g.add(f'<line x1="{side(cage.SEAM):.1f}" y1="{Z(zi1):.1f}" x2="{side(cage.SEAM):.1f}" y2="{Z(zi0):.1f}" '
           'stroke="#1F5FBF" stroke-width="1.5" stroke-dasharray="8 4"/>')
-    g.text(side(cage.SEAM) + 4, Z(h_in) + 14, f"base / lid seam (Yb {cage.SEAM:g}): lid tray beyond", 10, fill="#1F5FBF")
+    g.text(side(cage.SEAM) + 4, Z(zi1) + 14, f"base / lid seam (Yb {cage.SEAM:g}): lid tray beyond", 10, fill="#1F5FBF")
     for k in cage.box_keepouts():
         g.rect(front(k.x0), Z(k.z1), front(k.x1), Z(k.z0), "#cccccc", "#666", 0.6, 0.6)
         if "floor" in k.what:
@@ -464,13 +465,13 @@ def cage_views():
     a1 = [lc.to_box("B3", x) for r_, x in lc.board_boxes("B3") if r_ == "A1"]
     arm = next(x for x in a1 if x.what.endswith("forward arm"))
     _pe, yb, sz, _ax = cage.coax(arm)
-    g.rect(front(w_in - 1), Z(sz + 4), front(w_in + 8), Z(sz - 4), "#D4AF37", "#7a5c12", 1)
+    g.rect(front(cage.IN_X1 - 1), Z(sz + 4), front(cage.IN_X1 + 8), Z(sz - 4), "#D4AF37", "#7a5c12", 1)
     g.rect(side(yb - 4), Z(sz + 4), side(yb + 4), Z(sz - 4), "#D4AF37", "#7a5c12", 1)
-    g.text(front(w_in + 10), Z(sz) + 4, "SMA bulkhead (enclosure 4)", 10)
-    g.text(M, 28, "TX stack r3 in the printed PETG base (100 deep) under the #905 lid, hanging long side up, to scale "
+    g.text(front(cage.IN_X1 + 10), Z(sz) + 4, "SMA bulkhead (enclosure 4)", 10)
+    g.text(M, 28, "TX stack r3 in the printed PETG base (enclosure 4, 120 deep) under the #905 lid, hanging long side up, to scale "
            f"3.2 px/mm; inside {w_in:g} x {h_in:g} x {d_in:g} mm (lid interface: L1 and the rim ring's fit [TBD-MEASURE])", 15, weight="bold")
     g.text(M, 48, "Blue: moulded cage features. Red slabs: cards. Tan: backplane. Dashed: plug keep-outs. Grey: corner "
-           "posts, gland nuts, mounting flanges and drip edge.", 12)
+           "blocks, gland nuts, mounting flanges; the lid's channel wall and bosses above the seam.", 12)
     g.text(M, 64, "Shelves bottom to top: the pack, the BQ25798EVM (90 x 90, J8 toward the lid), B4, B2, B1, B3; all "
            "slide toward the back. Glands in the bottom wall; cables rise in the right column.", 12)
     g.write(OUT_SVG / "cage-side.svg", "TX card cage side and front")

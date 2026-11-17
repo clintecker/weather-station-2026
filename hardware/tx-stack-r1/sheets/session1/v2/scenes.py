@@ -761,11 +761,16 @@ sys.path.insert(0, "/Users/clint/code/electronics/weather-station-2026/hardware/
 import sources as _src                         # noqa: E402
 BAR_X, BAR_LO, BAR_HI = _src.val("bar_inserts")[:3]   # enclosure 3 as printed: Xb 5.00, Zb 76.50 and 146.50
 sys.path.insert(0, "/Users/clint/code/electronics/weather-station-2026/hardware/tx-stack-r1/cage")
-import cage as _cage                           # noqa: E402  (the lid corner posts and their M4 inserts)
+import cage as _cage                           # noqa: E402  (the corner blocks and the lid-screw bores)
 M4_D, M4_L = _cage.INSERT_D, _cage.INSERT_L    # insert_m4: hole 5.6, length 8.0
-_M4_IN = _cage.POST - _cage._bore / 2 - 3.0     # bore centre from each inside wall (cage.POST: 3 mm round the bore)
-M4_AT = [(_M4_IN if sx > 0 else _cage.W - _M4_IN, _M4_IN if sz > 0 else _cage.H - _M4_IN) for sx, sz in _cage.corners()]
-CORNER_LAND = (_cage.CORNER_X, _cage.CORNER_Z, _cage.SEAM)   # the corner land (lid boss shelf) over each post
+M4_AT = list(_cage.SCREWS)                     # the lid-screw bores, in cage.corners() order (enclosure 4: 7.25 / 6.75 in)
+CORNER_LAND = (_cage.BLK, _cage.BLK, _cage.SEAM)   # the corner blocks: square from the inside faces, their top (Yb)
+IN_X0, IN_Z0 = _cage.IN_X0, _cage.IN_Z0        # the base's inside faces (enclosure 4)
+
+
+def _V(sh):
+    """Box frame (Xb, Yb, Zb) -> this scene frame (Xb, Zb, Yb), as assembly.V."""
+    return sh.rotate((0, 0, 0), (1, 0, 0), 90).mirror("XZ")
 PLASTIC = "#D9D9D9"
 ADD = M.HAZ
 
@@ -778,9 +783,9 @@ def base_parts(slot=True, wall_h=14.0, bar=False, lid_posts=False, shelves=False
     Returns [(name, solid, colour)]."""
     out = []
     out.append(("floor", M.box(-3, -3, -3, 126.5, 172.5, 0), PLASTIC))
-    out.append(("wallL", M.box(-3, -3, 0, 0, 172.5, wall_h), PLASTIC))
-    out.append(("wallB", M.box(0, -3, 0, 123.5, 0, wall_h), PLASTIC))
-    blk = M.box(0, 72.73, 0, 8.5, 150.61, wall_h).cut(M.box(6.0, 70, BYB, 9, 153, 10.1))
+    out.append(("wallL", M.box(-3, -3, 0, IN_X0, 172.5, wall_h), PLASTIC))
+    out.append(("wallB", M.box(IN_X0, -3, 0, 126.5, IN_Z0, wall_h), PLASTIC))
+    blk = M.box(IN_X0, 72.73, 0, 8.5, 150.61, wall_h).cut(M.box(6.0, 70, BYB, 9, 153, 10.1))
     out.append(("leftblock", blk, PLASTIC))
     post = M.box(85.8, 72.73, 0, POST_X1, 150.61, 21.96)
     if slot:
@@ -788,22 +793,21 @@ def base_parts(slot=True, wall_h=14.0, bar=False, lid_posts=False, shelves=False
     out.append(("cornerpost", post, PLASTIC))
     for nm, p in (("post_s20_2", POST_S20_2), ("post_s24_31", POST_S24_31), ("post_s28_16", POST_S28_16)):
         out.append((nm, cq.Workplane("XY").center(*p).circle(3.0).extrude(BYB).val(), PLASTIC))
-    if shelves:                                   # drawn in the scene frame (x Xb, y Zb, z Yb): heights along z
-        sh = [M.box(0, 41.15, 13.85, 9.85, 48.4, 109.0),                 # left ledge (EVM's left edge)
-              M.box(96.25, 21.4, 0, 100.25, 48.4, 109.0),                # right fin (EVM's right edge, the tray's end)
-              M.box(102.0, 38.4, 101.75, 121.0, 48.4, 109.0),            # the right lid-end block
-              M.box(0, 21.4, 0, 96.25, 24.4, _cage.TRAY_Y1),             # pack tray
-              M.box(16.5, 24.4, _cage.LIP_Y0, 89.5, 30.4, _cage.TRAY_Y1)]   # its front lip
-        out.append(("shelves", cq.Compound.makeCompound([b.val() for b in sh]), PLASTIC))
+    if shelves:                                   # cage.py's EVM ledge, keeper, fin, lid-end block and pack tray (enclosure 4 + fix 1)
+        sh = [_V(so).val() for nm, so in _cage.solids() if nm in ("charger ledges", "pack tray")]
+        out.append(("shelves", cq.Compound.makeCompound(sh), PLASTIC))
     if bar:
         bi = [cq.Workplane("XY").workplane(offset=wall_h - 0.05).center(BAR_X, z).circle(2.3).circle(1.3)
               .extrude(0.06).val() for z in (BAR_LO, BAR_HI)]
         out.append(("bar_inserts", cq.Compound.makeCompound(bi), M.BRASS))
-    if lid_posts:                                # the four lid corner posts' lands, each with its M4 insert
+    if lid_posts:                                # the four corner blocks (floor to wall top), each with its lid-screw bore
         cx, cz, top = CORNER_LAND
-        W, H = _cage.W, _cage.H
-        lands = [M.box(0 if x < W / 2 else W - cx, 0 if z < H / 2 else H - cz, top - 3.0,
-                       cx if x < W / 2 else W, cz if z < H / 2 else H, top).val() for x, z in M4_AT]
+        lands = []
+        for x, z in M4_AT:
+            b = _cage.corner_box(1 if x < _cage.W / 2 else -1, 1 if z < _cage.H / 2 else -1, cx, cz, 0, top, "")
+            lands.append(M.box(b.x0, b.z0, 0, b.x1, b.z1, top)
+                         .cut(cq.Workplane("XY").workplane(offset=_cage.BORE_Y0).center(x, z)
+                              .circle(_cage.BORE_D / 2).extrude(top)).val())
         out.append(("lid_posts", cq.Compound.makeCompound(lands), PLASTIC))
         m4 = [cq.Workplane("XY").workplane(offset=top - 0.05).center(x, z).circle(M4_D / 2 + 0.9).circle(M4_D / 2 - 0.6)
               .extrude(0.06).val() for x, z in M4_AT]

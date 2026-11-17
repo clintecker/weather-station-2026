@@ -157,9 +157,15 @@ PDFs change.
   - **Two fixes asked of Clint** ("enclosure 4 + fixes"; the repo models this): (1) tray to Yb 62, the lip's 45° ramp
     from Yb 56 to 62; (2) the two PG-9 holes back at (98, 25) and (98, 60), the right corner block back to Xb ≥ 110
     and the 1 mm inside land cut away inside each Ø24 locknut keep-out. **Re-audit the new STL when it comes.**
-  - **Session 6 checks [TBD]:** the 6-inch coax (about 110 between plugs) is probably too short for the new SMA
-    position (route about 120-130); a straight plug on the bulkhead's inner end reaches about Xb 93, above the EVM's
-    lid-right corner.
+  - **Coax resolved (Clint, 2026-11-17):** the 6-inch coax fits the low bulkhead (it was worse at the old high one,
+    bending the cable to fit). **Session 6 check [TBD]:** a straight plug on the bulkhead's inner end reaches about
+    Xb 93, above the EVM's lid-right corner.
+  - **cage.py now models enclosure 4 + fixes** (2026-11-17): the R9 shell 120 deep, walls 4.25 / 4.0 (inside faces
+    Xb 1.25 / 122.25, Zb 1 / 168.5), four 15.4 corner blocks with Ø10 lid-screw bores (not the planned Ø5.6 M4
+    insert: ask Clint), the 2 x 2.5 lip, gland pockets, flanges, the real EVM ledge / keeper / fin / lid-end block,
+    tray slots and support, the right post's relief over B2 and B1. `cage.py --audit-stl` voxel-diffs clean against
+    enclosure 4 except the two fixes and the outside lettering (`sheets/audit-enc4/README.md`). The frame W x H stays
+    the lid frame (123.5 x 169.5); box_in is now the real inside, 121 x 167.5 x 140.
   - Session 1 drops the drilling page (11 pages now); BACKPLANE.md and ASSEMBLY.md have no backplane screws.
 
 - **Enclosure 3** (`~/Downloads/enclosure 3.stl`) is **printing now**. It was audited on 2026-11-16 (scripts and
@@ -197,8 +203,7 @@ PDFs change.
        - **EVM:** measured by Clint, 90 x 90 with J8 sticking out 12 (photo IMG_8591). The overhangs and tail
          positions are scaled from the photo (`sources`: evm_j8, evm_j8_x, evm_j8_lead, evm_overhang,
          evm_edge_tails).
-       - **Model gap:** `cage.py`'s shell is still 100 deep (seam 97), so its ledges stop at Yb 94. The spec gives
-         enclosure 3's real numbers (walls to Yb about 117).
+       - **Model gap (closed 2026-11-17):** `cage.py`'s shell is now enclosure 4's (walls to Yb 117).
     4. The **SMA nut seat** sits 1.5 from the top-right corner block (the spec asks for 2.0). The nut fits, but tell
        the PDF to use an open spanner on the 3/8 in nut.
     5. The bar is 2.5 thick (`sources.bar`) and sits 1.00 in front of the card front edges, which is OK.

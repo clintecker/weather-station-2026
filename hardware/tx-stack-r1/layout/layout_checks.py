@@ -632,10 +632,11 @@ def check_cage(ph):
     # (the retention bar is off) and of every other card
     lid = sorted({x.what.split(" ", 1)[0] + " " + x.what.split(" ", 1)[1].split(" ")[0] for _b, x in items
                   if x.y1 > cage.SEAM and not x.keepout})
-    NOTES.append(f"depth: the base-lid seam is at Yb {cage.SEAM:g} (printed base 100 deep outside)"
+    NOTES.append(f"depth: the base-lid seam is at Yb {cage.SEAM:g} (the printed base, enclosure 4: 120 deep outside, "
+                 "walls to Yb 117)"
                  + ("; in the lid tray (past the seam): " + ", ".join(lid) if lid else "; nothing reaches the lid tray")
-                 + "; the base's corner lands, insert posts, rim lip and gland nuts are keep-outs (the lid's wall and "
-                 "bosses too, with the lid on)")
+                 + "; the base's corner blocks and gland nuts are keep-outs (the lid's wall and bosses too, with the "
+                 "lid on)")
     for b in st.BOARDS:
         mine = [x for bb, x in items if bb == b and not x.keepout]
         others = [x for bb, x in items if bb != b] + [f for f in fixed if "retention" not in f.what
@@ -647,16 +648,18 @@ def check_cage(ph):
                     fail("L7", f"{b} cannot slide out: {x.what} meets {o.what}")
     # the box inside
     w, h, d = S.val("box_in")
-    xs = [x for _b, x in items] + fixed
+    xs = [x for _b, x in items] + cage_boxes()              # the cards and the cage inside the base's inside faces
     ext = (min(x.x0 for x in xs), max(x.x1 for x in xs), min(x.y0 for x in xs), max(x.y1 for x in xs),
            min(x.z0 for x in xs), max(x.z1 for x in xs))
     NOTES.append(f"cage and cards span Xb {ext[0]:.1f}..{ext[1]:.1f}, Yb {ext[2]:.1f}..{ext[3]:.1f}, "
-                 f"Zb {ext[4]:.1f}..{ext[5]:.1f} mm; box inside {w:g} x {d:g} x {h:g} [TBD-MEASURE]")
+                 f"Zb {ext[4]:.1f}..{ext[5]:.1f} mm; box inside {w:g} x {d:g} x {h:g} (Xb {cage.IN_X0:g}-{cage.IN_X1:g}, "
+                 f"Zb {cage.IN_Z0:g}-{cage.IN_Z1:g}) [TBD-MEASURE: the closed depth]")
     front_y = max(x.y1 for x in [x for _b, x in items] + cage_boxes())
     FLAGS.append(f"depth: the front of the stack is at Yb {front_y:.1f}, {d - front_y:.1f} mm short of the "
-                 f"closed lid ({d:g}: base 97 + lid 24 less a {S.val('gasket'):g} mm gasket allowance [TBD-MEASURE])") \
+                 f"closed lid ({d:g}: base 117 + lid 24 less a {S.val('gasket'):g} mm gasket allowance [TBD-MEASURE])") \
         if d - front_y < 3.0 else None
-    if ext[0] < 0 or ext[1] > w or ext[2] < 0 or ext[3] > d or ext[5] > h:
+    if ext[0] < cage.IN_X0 - 0.01 or ext[1] > cage.IN_X1 + 0.01 or ext[2] < 0 or ext[3] > d or \
+            ext[4] < cage.IN_Z0 - 0.01 or ext[5] > cage.IN_Z1 + 0.01:
         fail("L7", f"the cage does not fit the box inside {w:g} x {h:g} x {d:g}")
     top_power = max(c.z1 for c in cage.contents())
     under_b4 = st.card_z("B4") + lowest("B4")[0]
@@ -941,7 +944,7 @@ def check_mech():
                      "held by solder alone on one header row; the plug's push and pull load the six pins")
     # latch access and the cable path
     plugs = [x for x in items if "RJ11 plug" in x.what]
-    rooms = sorted((room_above(pg, items, h_in), pg.what) for pg in plugs)
+    rooms = sorted((room_above(pg, items, cage.IN_Z1), pg.what) for pg in plugs)
     worst = rooms[0]
     fin = S.val("finger")
     tight = [f"{w_.split(' RJ11')[0]} {r_:.1f}" for r_, w_ in rooms if r_ < fin]
@@ -973,30 +976,32 @@ def check_mech():
     arm = next(x for x in a1 if x.what.endswith("SMA adapter forward arm"))
     hits = sorted({k.what for k in cage.box_keepouts() for x in a1 if "adapter" in x.what and overlap(x, k)})
     plug_l, bend = S.val("sma_plug_len"), S.val("rg316_bend")
-    straight = w_in - sma.x1
+    straight = cage.IN_X1 - sma.x1
     pe, yb, zb, ax = cage.coax(arm)
     nut = cage.BULKHEAD_NUT / 2
     probs = []
-    top = S.val("enc_wall_top")                     # the printed wall top (cage.py's shell is still 100 deep)
+    top = cage.SEAM                                 # the printed wall top (enclosure 4)
     if yb + nut + 2.0 > top:
         probs.append(f"the bulkhead (Yb {yb:.1f}) is within 2 mm of the printed wall top ({top:g})")
-    if zb + nut + 2.0 > h_in - cage.CORNER:
-        probs.append(f"the bulkhead (Zb {zb:.1f}) meets the upper corner land")
-    if w_in - ax < bend + 2.0:
+    if zb + nut + 2.0 > cage.IN_Z1 - cage.CORNER or zb - nut - 2.0 < cage.IN_Z0 + cage.CORNER:
+        probs.append(f"the bulkhead (Zb {zb:.1f}) meets a corner block")
+    edge = cage.IN_X1 - (ax + bend + 2.5 / 2)        # the cable's outside after the bend (RG-316 about 2.5 OD)
+    if edge < 0:
         probs.append("no room for the bend to the right wall")
+    NOTES.append(f"coax bend: AD1's axis at Xb {ax:.2f}, {cage.IN_X1 - ax:.2f} to the right wall's inside face; an R {bend:g} "
+                 f"bend [TBD] leaves the cable's outside {edge:.2f} from it (Clint, 2026-11-17: the cable fits as built)")
     if pe > d_in - 2.0:
         probs.append("the plug reaches the lid")
     if hits:
         probs.append("AD1 meets the " + ", ".join(hits))
     NOTES.append(f"SMA: a straight plug on the mini's SMA would need {plug_l + bend:.1f} mm to the right wall "
                  f"(plug {plug_l:g} + bend {bend:g} [TBD-MEASURE]), there are {straight:.1f}: AD1 is needed, its arm "
-                 f"toward the lid; the plug ends at Yb {pe:.1f}, the cable bends right to the bulkhead boss at Yb "
+                 f"toward the lid; the plug ends at Yb {pe:.1f}, the cable bends right to the bulkhead at Yb "
                  f"{yb:.1f}, Zb {zb:.1f} in the right wall (enclosure 4, sma_bulkhead; {top - yb - nut:.1f} mm to the printed wall top)")
     run, inner = cage.coax_route(arm)
-    if run + 15.0 > S.val("coax_len"):              # the drawn path is the shortest diagonal; a real run follows the column
-        FLAGS.append(f"coax: AD1 to the bulkhead (Zb {zb:.1f}, enclosure 4) is at least {run:.0f} mm of cable on the shortest "
-                     f"path (about 120-130 down the right column); the 135110-01-06.00 has about {S.val('coax_len'):g} between "
-                     "its plugs [TBD-MEASURE]: it is probably too short, a longer one may be needed (Session 6 check)")
+    NOTES.append(f"coax: AD1 to the bulkhead (Zb {zb:.1f}, enclosure 4) is at least {run:.0f} mm of cable on the "
+                 f"shortest path; the 135110-01-06.00 has about {S.val('coax_len'):g} between its plugs: Clint, 2026-11-17, "
+                 "it fits (better than the old high bulkhead, no tight bend to make)")
     FLAGS.append(f"coax: a straight plug on the bulkhead's inner end reaches Xb {inner:.1f} (model; about 93 in enclosure 4), "
                  f"about {zb - cage.EVM_Z0 - 1.6:.0f} mm above the board of the EVM, whose lid-right corner is at Xb "
                  f"{cage.EVM_X1:.2f}, Yb {cage.EVM_Y1:.2f} [TBD-MEASURE]: check it clears at Session 6, or use a right-angle plug")

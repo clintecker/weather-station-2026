@@ -66,7 +66,8 @@ def base(s, wall_y=None):
     for name, shape in cage.solids():
         if name in BASE_KEEP:
             s.add(name.replace(" ", "_"), V(cq.Compound.makeCompound(shape.vals()) if hasattr(shape, "vals") else shape), PLASTIC, 0.8)
-    walls = [b for b in cage.shell() if b.what in ("floor (back)", "left wall", "right wall", "bottom wall", "top wall")]
+    walls = [b for b in cage.shell() if b.what in ("floor (back)", "left wall", "right wall", "bottom wall", "top wall")
+             or b.what.startswith("corner block")]       # enclosure 4: the four corner blocks, floor to wall top
     for k, b in enumerate(walls):
         y1 = b.y1 if wall_y is None or b.what == "floor (back)" else min(b.y1, wall_y)
         s.add(f"wall{k}", V(M.box(b.x0, b.y0, b.z0, b.x1, y1, b.z1).val()), "#C9C9C9", 0.8)

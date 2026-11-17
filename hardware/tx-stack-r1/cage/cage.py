@@ -1,14 +1,16 @@
 """The printed base and its cage for the TX, parametric. PETG on the Bambu H2D.
 
-The base replaces the #905 (TIBOX) body: 100 mm deep outside, 3 mm walls, mating exactly with the #905's clear
-lid and its O-ring: a 9 mm land with a tongue pressing into the lid's O-ring channel, corner blocks with M4 heat-set
-inserts under the lid's bosses (Clint's photo); the screw (L1) and the rim test ring's fit are not settled, and `--stl` refuses until
-those are measured.
-It hangs on its pole by its back, long side vertical. Box frame: Xb across from the inside left wall (seen from the
-open lid), Yb from the inside floor (the back as hung) toward the lid, Zb up from the inside bottom wall.
+The base is enclosure 4 (Clint's print, audited 2026-11-17 in sheets/audit-enc4) with its two fixes: 120 mm deep outside
+(a 3 mm floor, walls to Yb 117 with a 2 x 2.5 sealing lip on their inside edge), long walls 4.25 and short walls 4.0
+thick, outside corners R9; four corner blocks 15.4 square, floor to wall top, with the lid-screw bores in them; it
+mates with the #905's clear lid (whose O-ring and screws are not settled: `--stl` refuses until they are measured).
+It hangs on its pole by its back, long side vertical. Box frame: Xb across from the lid frame's left edge (the inside
+left wall is at Xb 1.25; seen from the open lid), Yb from the inside floor (the back as hung) toward the lid, Zb up
+from the lid frame's bottom edge (the inside bottom wall is at Zb 1.0). The frame is the lid outline less 3 all round
+(W x H 123.5 x 169.5), kept so the lid, the sheets and the renders share it.
 
 Everything is a horizontal shelf in one stack, each sliding toward the back. Bottom to top:
-  - the battery pack (the heaviest part) on a tray just above the gland nuts in the bottom wall;
+  - the battery pack (the heaviest part) on a tray above the gland pockets in the bottom wall;
   - the BQ25798EVM on two ledges (it has no mounting holes; its Bumpon feet come off), J8 toward the lid;
   - B4 POWER, B2 PORTS B + METERS, B1 PORTS A, B3 CORE (the SHTC3 on B3, furthest from the charger's heat),
     each card in a left-wall slot and a right corner post, its bus header in a socket on the PAD3U backplane behind;
@@ -18,10 +20,11 @@ lid) and their cables' bends down to the glands, the EVM leads' service loops, a
 the lid and the cable bends right and runs down the right column to the SMA bulkhead low in the right wall (enclosure 4:
 Yb 94.14, Zb 60.38).
 
-Moulded into the base: the corner blocks (hung from the walls under the lid's bosses) with M4 heat-set inserts, the card slots, the right corner
-post, the backplane's support pads (no screw posts since enclosure 4: the cards hold the backplane), the EVM ledges,
-the pack tray; outside: gland bosses with nut flats in the bottom wall, an M12 vent boss, the SMA bulkhead boss, two
-mounting flanges on the short ends (two slots each), a drip edge over the top seam.
+Moulded into the base: the corner blocks with the lid-screw bores, the card slots, the right corner post, the
+backplane's support pads (no screw posts since enclosure 4: the cards hold the backplane), the EVM ledge, keeper, fin
+and lid-end block, the pack tray and its support; in the bottom wall the gland and vent holes over 1 mm pockets; the
+SMA bulkhead hole in the right wall; outside, two mounting flanges on the short ends (two slots each, a gusset).
+No outside bosses and no drip edge (enclosure 4 has none).
 
 Run:  python3 cage.py           print the parts and check them against the box inside (no CadQuery needed)
       ../../../.venv-cad/bin/python cage.py --solid   also build the solids in CadQuery and check them
@@ -41,13 +44,19 @@ from stack import S  # noqa: E402
 LID_KEYS = ["l2_screw_pos", "l4_oring_proud", "l5_lid_out", "l6_body_rib", "ring_fit"]
 SCREW_OPT = S.val("lid_screw_opt")
 LID_KEYS += ["l1_lid_screw"] if SCREW_OPT == "a" else ["m4_screw", "m4_washer", "lid_pocket", "insert_m4"]
-T = S.val("base_wall")
+T = S.val("base_wall")              # the floor, and the lid frame's margin
 L_OUT, W_OUT, _r = S.val("l5_lid_out")
 BASE_D = S.val("base_out_depth")
-W, H = W_OUT - 2 * T, L_OUT - 2 * T
-SEAM = BASE_D - T                   # Yb of the base-lid seam (the land)
+W, H = W_OUT - 2 * T, L_OUT - 2 * T   # the lid frame (123.5 x 169.5): to_lid, the sheets and the renders use it
+IN_X0, IN_X1, IN_Z0, IN_Z1 = S.val("enc_inside")   # the real inside faces (enclosure 4)
+SEAM = S.val("enc_wall_top")        # Yb of the wall top (the base-lid seam)
+assert abs(SEAM - (BASE_D - T)) < 1e-6, (SEAM, BASE_D, T)
 D = SEAM + S.val("lid_depth") - 1.0 - S.val("gasket")
-BOX_IN = (W, H, D)
+BOX_IN = (IN_X1 - IN_X0, IN_Z1 - IN_Z0, D)
+OUT_R = S.val("enc_outer_r")
+BLK, BLK_R, BLK_F = S.val("enc_blocks")             # corner blocks: square, inner corner radius, wall fillet
+BORE_D, BORE_Y0, CHAMF_Y0, CHAMF_D = S.val("enc_lid_bores")
+LIP_W, LIP_H = S.val("enc_lip")
 assert tuple(round(v, 3) for v in BOX_IN) == tuple(S.val("box_in")), (BOX_IN, S.val("box_in"))
 RIM_OUT, RIM_CH, RIM_IN = S.val("lid_rim")
 LAND = RIM_OUT + RIM_CH + RIM_IN    # 9 mm
@@ -60,7 +69,6 @@ LIP_CX, LIP_CZ = TONGUE_CL - T, TONGUE_CS - T            # along the long walls 
 S_X, S_Z = LIP_CX + S_RUN, LIP_CZ + S_RISE               # the S's segment along Zb at Xb S_X, along Xb at Zb S_Z
 LIP_XS, LIP_ZS = LIP_CX + TONGUE_W / 2, LIP_CZ + TONGUE_W / 2   # the land ends at the lip's inner face
 LIP = max(LIP_XS, LIP_ZS)
-LIP_T = 3.0                         # the land's ledge inside the wall: 3 thick, chamfered under for printing
 CORNER_H = S.val("corner_keepout")
 CORNER_X, CORNER_Z = S_X + TONGUE_W / 2, S_Z + TONGUE_W / 2   # the corner land, to the lip's inner face round the S
 THREAD_D, THREAD_P, THREAD_L = S.val("l1_lid_screw")            # option a
@@ -71,9 +79,7 @@ LID_HOLE = 8.0                                                    # the lid's ho
 _sl, _ss = S.val("l2_screw_pos")
 SCREWS = [(x, z) for x in (_ss - T, W - (_ss - T)) for z in (_sl - T, H - (_sl - T))]
 INSERT_D, INSERT_L = S.val("insert_m4")
-_bore = INSERT_D if SCREW_OPT == "b" else THREAD_D
-POST = _ss - T + _bore / 2 + 3.0                        # the post, square from the inside corner (3 mm round the bore)
-CORNER = CORNER_Z                   # (for the cards' upper limit: unchanged, the blocks stop above the cards)
+CORNER = BLK                        # the corner blocks reach this far in from the inside faces, floor to wall top
 EVM = S.val("evm")
 EVM_J8 = S.val("evm_j8")
 EVM_J8_X = S.val("evm_j8_x")
@@ -106,6 +112,9 @@ Z_HI = min(st.card_z("B3") + 14.0, H - 0.5)
 RX = st.CAGE_LEFT + st.BW
 POST_R = 8.0                        # the right corner post reaches this far right of the cards' edge (RX): 3.5 behind
 #                                     the 6.5 deep backplane slot
+POST_RELIEF, POST_RELIEF_Y0 = (("B2", "B1"), ("B1", "B3")), 15.15   # the right post's front cut back from this Yb,
+#                                     from each lower card's top face to 2 below the next card's slot (enclosure 4),
+POST_RELIEF_X1 = 89.6               # and stepped back to the backplane slot's roof left of this Xb
 BP_BOTTOM = st.BP_Z0 - 2 * st.P
 # glands: two rows of four in the bottom wall, the flat weather-meter cables in the PG-9s under the right column
 FLAT = {(98.0, 25.0): "wind (flat)", (98.0, 60.0): "rain (flat)"}
@@ -114,6 +123,8 @@ GLANDS = [(x, y, "PG-9" if (x, y) in FLAT else "PG-7") for y in (25.0, 60.0) for
 SMA = S.val("sma_bulkhead")                             # Yb, Zb of the bulkhead's axis, hole, nut seat (enclosure 4)
 GLAND_IN = max(g[1] for g in GLAND.values())            # thread length inside the wall (L1)
 VENT = (50.0, 85.0)                                     # Xb, Yb in the bottom wall
+PG9_CLEAR, PG9_CLEAR_Z = 24.0, 8.0                      # fix 2: a 24 mm cut round each PG-9 up to Zb 8 (its nut)
+FLANGE_SLOT_Z = -18.0                                   # the bottom flange's slot centres (the top's mirror: 187.5)
 # shelves, bottom to top
 # the shelves stack down from the backplane: the left ledge (EVM board underside) just below the backplane's outline
 # (nothing printed may sit in its install column), then the EVM's underside parts, the margin, the pack, the tray;
@@ -130,6 +141,18 @@ EVM_Z0 = PACK_Z0 + PACK[2] + M + S.val("evm_under")     # board underside
 EVM_TOP = EVM_Z0 + 1.6 + EVM[2]
 EVM_X1, EVM_Y1 = EVM_X0 + EVM[0], EVM_Y0 + EVM[1]
 FIN = (EVM_X1 - SHELF, EVM_X1 + 2.0)                    # the right fin (Xb): its inner 2 is the ledge under the board
+LEDGE_H = 10.0                                          # the left ledge and the blocks in front: Zb EVM_Z0-10 to EVM_Z0
+LEDGE_Y0 = st.BP_FRONT + 0.5                            # the left ledge's back end at the wall (45 degrees in plan)
+LEDGE_Y1 = 103.0                                        # the left ledge's front end, under the keeper
+KEEP_X1, KEEP_Y1 = 9.25, 109.0                          # the left keeper's right face; the keeper, fin and block front
+KEEP_ROOF = 93.88                                       # the keeper's back: a 45 degree roof, Yb = Xb + 93.88
+KEEP_Y0 = IN_X0 + KEEP_ROOF
+LEND_Y0 = 92.0                                          # the right lid-end block's back edge at its ends (a V, 103 mid)
+CLIP_INS = ((4.5, 106.0), (FIN[1], 106.0))              # the front clip's M3 insert bores (bar_bore), down from the top
+LIP_X = (16.5, 89.5)                                    # the tray's front lip, Xb (enclosure 4)
+STRAP = (3.0, 20.0, (15.0, 91.0), 19.0)                 # the strap slots: width (Xb) x length (Yb), centres Xb, from Yb
+TRAY_SUP = (12.0, 58.0, 5.0)                            # the tray's support block: to Xb, to Yb, height under the tray
+#   (all enclosure 4 as printed, sheets/audit-enc4; the tray and its lip to Yb 62 are fix 1)
 BULKHEAD_NUT = 11.0                                     # SMA bulkhead jack nut across corners [derived: 3/8 in hex]
 _gd, _gh, _gt = S.val("bp_groove")
 RAIL_Z0 = EVM_TOP + M                                   # the groove rail below the left wall: 2 above the EVM
@@ -165,14 +188,14 @@ def sq(x, z, r, y0, y1, what):
 def parts():
     out = []
     # left wall: solid behind the slots, ribs between them
-    wall = [B(0, YP, Z_LO, WALL - 2.0, CARD_FRONT + 1.0, Z_HI, "left wall")]
+    wall = [B(IN_X0, YP, Z_LO, WALL - 2.0, CARD_FRONT + 1.0, Z_HI, "left wall")]
     slots = []
     for b in st.ORDER:
         z = st.card_z(b)
         slots.append(B(WALL - 2.0, st.BP_FRONT, z - st.BT - SLOT_CLEAR / 2, WALL, CARD_FRONT + 1.0,
                        z + SLOT_CLEAR / 2, f"slot for {b}"))
     wall.append(B(WALL - 2.0, YP, Z_LO, WALL, CARD_FRONT + 1.0, Z_HI, "left wall slot side"))
-    wall.append(B(0, YP, RAIL_Z0, WALL, RAIL_Y1, Z_LO, "groove rail below the left wall"))
+    wall.append(B(IN_X0, YP, RAIL_Z0, WALL, RAIL_Y1, Z_LO, "groove rail below the left wall"))
     slots.append(B(*GROOVE[:3], *GROOVE[3:], "backplane groove"))
     out.append(Part("left wall", wall, cuts=slots, solid=left_wall_solid,
                     note="moulded in the base: one 2 mm deep slot per card; cards slide in from the lid side toward the "
@@ -184,6 +207,11 @@ def parts():
     pslots = [B(RX - 2.0, st.BP_FRONT, st.card_z(b) - st.BT - SLOT_CLEAR / 2, RX + SLOT_CLEAR, post_y1 + 0.1,
                 st.card_z(b) + SLOT_CLEAR / 2, f"post slot for {b}") for b in st.ORDER]
     pslots.append(B(*RSLOT[:3], *RSLOT[3:], "backplane slot"))
+    for lo, hi in POST_RELIEF:                               # enclosure 4: the post's front cut back over B2 and B1
+        pslots.append(B(RX - 2.0 - 0.1, POST_RELIEF_Y0, st.card_z(lo), RX + POST_R + 0.1, post_y1 + 0.1,
+                        st.card_z(hi) - st.BT - SLOT_CLEAR / 2 - 2.0, f"post relief over {lo}"))
+        pslots.append(B(RX - 2.0 - 0.1, RSLOT[4], st.card_z(lo), POST_RELIEF_X1, POST_RELIEF_Y0 + 0.1,
+                        st.card_z(hi) - st.BT - SLOT_CLEAR / 2 - 2.0, f"post relief over {lo}, its step to the slot roof"))
     out.append(Part("right corner post", post, cuts=pslots, solid=right_post_solid,
                     note=f"moulded: takes each card's back-right corner (card Y {grip:.2f}-{st.CD:.2f})"))
     r = BP_PAD_D / 2
@@ -192,27 +220,37 @@ def parts():
                     note=f"plain \u00d8{BP_PAD_D:g} pads {st.BP_BACK:g} tall under {', '.join(st.BP_SUPPORTS)} (no screw, no "
                          "hole in the board): they take the cards' push; no screw posts (enclosure 4): the cards plugged "
                          "into its sockets hold the board, its left edge in the groove, its right edge in the post's slot"))
-    out.append(Part("retention bar", [B(0, CARD_FRONT + 1.0, Z_LO, 12.0, CARD_FRONT + 1.0 + BAR, Z_HI, "retention bar")],
+    out.append(Part("retention bar", [B(IN_X0, CARD_FRONT + 1.0, Z_LO, 12.0, CARD_FRONT + 1.0 + BAR, Z_HI, "retention bar")],
                     solid=bar_solid,
                     note=f"separate: two M3 screws (\u00d8{BAR_INS[3]:g} holes) into inserts in the left wall's front face at "
                          f"Xb {BAR_INS[0]:g}, Zb {BAR_INS[1]:g} and {BAR_INS[2]:g}; off before any card comes out"))
-    # EVM: the board's left edge rests on a ledge moulded to the left wall (from just in front of the backplane, clear
-    # of its left edge and the bottom-left post), its right edge on the top of the right
-    # fin, a wall standing on the floor from the tray to the board (it also holds the tray's right end). Both are
-    # notched where through-hole tails sit near the edges (evm_edge_tails). A stop at the back, a clip at the front.
-    ez = EVM_Z0 - SHELF
+    # EVM: the board's left edge rests on a ledge moulded to the left wall (from just in front of the backplane, its
+    # back end cut at 45 degrees), its right edge on the top of the right fin, a wall standing on the floor from the
+    # tray to the board (it also holds the tray's right end). Both are notched where through-hole tails sit near the
+    # edges (evm_edge_tails). In front of the board: the left keeper and the right lid-end block, each with an M3
+    # insert bore for the front clip (enclosure 4).
+    ez = EVM_Z0 - LEDGE_H
     out.append(Part("charger ledges", [
-        B(0, st.BP_FRONT + 0.5, ez, EVM_X0 + SHELF, SEAM - LIP_T, EVM_Z0, "charger ledge, left wall"),
-        B(FIN[0], YP, PACK_TRAY_Z, FIN[1], SEAM - LIP_T, EVM_Z0, "right fin (charger ledge on its top)")],
-        note=f"moulded: the EVM slides back on a 2 mm ledge (left wall) and the right fin's top at Zb {ez:g}-{EVM_Z0:g} "
-             "(no mounting holes; Bumpons off), notched under its edge tails; a stop at the back, a clip at the front"))
-    out.append(Part("pack tray", [B(0, YP, PACK_TRAY_Z, FIN[0], TRAY_Y1, PACK_TRAY_Z + TRAY_T, "pack tray"),
-                                  B(PACK_X0 - 2.0, LIP_Y0, PACK_TRAY_Z + TRAY_T, PACK_X0 + PACK[0] + 2.0,
-                                    TRAY_Y1, PACK_TRAY_Z + TRAY_T + 6.0, "pack tray front lip (45 degree ramp)")],
+        B(IN_X0, LEDGE_Y0, ez, EVM_X0 + SHELF, LEDGE_Y1, EVM_Z0, "charger ledge, left wall"),
+        B(IN_X0, KEEP_Y0, ez, KEEP_X1, KEEP_Y1, EVM_Z0, "charger keeper, left (clip insert)"),
+        B(FIN[0], YP, PACK_TRAY_Z, FIN[1], KEEP_Y1, EVM_Z0, "right fin (charger ledge on its top)"),
+        B(FIN[1], LEND_Y0, ez, IN_X1, KEEP_Y1, EVM_Z0, "charger lid-end block, right (clip insert)")],
+        solid=charger_solid,
+        note=f"moulded: the EVM slides back on a 2 mm ledge (left wall, chamfered under) and the right fin's top at Zb "
+             f"{EVM_Z0:g} (no mounting holes; Bumpons off), notched under its edge tails; in front of it a keeper (left) "
+             f"and a lid-end block (right) to Yb {KEEP_Y1:g}, an M3 insert bore in each for the front clip (enclosure 4)"))
+    out.append(Part("pack tray", [B(IN_X0, YP, PACK_TRAY_Z, FIN[0], TRAY_Y1, PACK_TRAY_Z + TRAY_T, "pack tray"),
+                                  B(LIP_X[0], LIP_Y0, PACK_TRAY_Z + TRAY_T, LIP_X[1],
+                                    TRAY_Y1, PACK_TRAY_Z + TRAY_T + 6.0, "pack tray front lip (45 degree ramp)"),
+                                  B(IN_X0, YP, PACK_TRAY_Z - TRAY_SUP[2], TRAY_SUP[0], TRAY_SUP[1], PACK_TRAY_Z,
+                                    "pack tray support (on the bottom-left corner block)")],
+                    solid=tray_solid,
                     note=f"moulded to the floor, the left wall and the right fin, {CABLE_RISE:g} mm over the gland "
-                         f"threads (the cable space); the pack lies flat on Yb 0-{LIP_Y0:g}, slides back, a hook-and-loop "
-                         f"strap round it; the front lip a 45 degree ramp from Yb {LIP_Y0:g} (the pack's front) up 6 to Yb "
-                         f"{TRAY_Y1:g} (enclosure 4 fix 1: enclosure 4 started it at Yb 50, under the pack)"))
+                         f"threads (the cable space), on a support over the bottom-left corner block; the pack lies flat on "
+                         f"Yb 0-{LIP_Y0:g}, slides back, a hook-and-loop strap round it through two {STRAP[0]:g} x "
+                         f"{STRAP[1]:g} slots; the front lip a 45 degree ramp from Yb {LIP_Y0:g} (the pack's front) up 6 "
+                         f"to Yb {TRAY_Y1:g} (enclosure 4 fix 1: enclosure 4 has the tray to Yb 58 and the ramp from Yb 50, "
+                         "under the pack)"))
     return out
 
 
@@ -239,6 +277,73 @@ def right_post_solid(shape):
     tri = (cq.Workplane("XY").polyline([(x1, y1), (x0 - 0.01, y1), (x0 - 0.01, y1 + (x1 - x0))]).close()
            .extrude(z1 - z0).translate((0, 0, z0)))
     return shape.cut(tri)
+
+
+def _prism_xz(pts, y0, y1):
+    """A prism of the (Xb, Zb) outline pts from Yb y0 to y1."""
+    import cadquery as cq
+    return cq.Workplane("XZ").polyline(pts).close().extrude(-(y1 - y0)).translate((0, y0, 0))
+
+
+def _prism_xy(pts, z0, z1):
+    """A prism of the (Xb, Yb) outline pts from Zb z0 to z1."""
+    import cadquery as cq
+    return cq.Workplane("XY").polyline(pts).close().extrude(z1 - z0).translate((0, 0, z0))
+
+
+def _prism_yz(pts, x0, x1):
+    """A prism of the (Yb, Zb) outline pts from Xb x0 to x1."""
+    import cadquery as cq
+    return cq.Workplane("YZ").polyline(pts).close().extrude(x1 - x0).translate((x0, 0, 0))
+
+
+def _cyl_z(x, y, d, z0, z1):
+    import cadquery as cq
+    return cq.Workplane("XY").center(x, y).circle(d / 2).extrude(z1 - z0).translate((0, 0, z0))
+
+
+def charger_solid(_shape):
+    """The EVM's ledge (45 degrees under, its back end 45 degrees in plan), the left keeper (a 45 degree roof at its
+    back), the right fin and the lid-end block (a V back edge), the tail notches and the clip's two insert bores."""
+    ez, top, x1 = EVM_Z0 - LEDGE_H, EVM_Z0, EVM_X0 + SHELF
+    ch = x1 - IN_X0 - 1.0                                    # the 45 degree chamfer under the ledge
+    ledge = _prism_xz([(IN_X0, ez), (IN_X0 + 1.0, ez), (x1, ez + ch), (x1, top), (IN_X0, top)], LEDGE_Y0 - 1, LEDGE_Y1)
+    ledge = ledge.cut(_prism_xy([(IN_X0 - 2, LEDGE_Y0 - 2), (x1 + 1, LEDGE_Y0 + x1 + 1 - IN_X0), (x1 + 1, LEDGE_Y0 - 2)],
+                                ez - 1, top + 1))                     # its back end, 45 degrees in plan
+    keep = _prism_xy([(IN_X0, IN_X0 + KEEP_ROOF), (KEEP_X1, KEEP_X1 + KEEP_ROOF), (KEEP_X1, KEEP_Y1), (IN_X0, KEEP_Y1)],
+                     ez, top)
+    fin = _prism_xz([(FIN[0], PACK_TRAY_Z), (FIN[1], PACK_TRAY_Z), (FIN[1], top), (FIN[0], top)], YP, KEEP_Y1)
+    mid = (FIN[1] + IN_X1) / 2
+    vb = LEND_Y0 + (mid - FIN[1])
+    lend = _prism_xy([(FIN[1], LEND_Y0), (mid, vb), (IN_X1, LEND_Y0), (IN_X1, KEEP_Y1), (FIN[1], KEEP_Y1)], ez, top)
+    shape = ledge.union(keep).union(fin).union(lend)
+    t = S.val("evm_edge_tails")
+    import cadquery as cq
+    for a, b in (t[0:2], t[2:4]):                            # left edge tails: through the ledge's inner 4, the
+        ya, yb = EVM_Y0 + a, EVM_Y0 + b                      # notch's front end 45 degrees in plan (enclosure 4)
+        shape = shape.cut(_prism_xy([(x1 - 4.0, ya), (x1 + 0.01, ya), (x1 + 0.01, yb + 4.01), (x1 - 4.0, yb)],
+                                    ez - 1, top + 1))
+    for a, b in (t[4:6], t[6:8]):                            # right edge tails: the fin's inner 2, 3 down
+        shape = shape.cut(cq.Workplane("XY").box(SHELF + 0.01, b - a, 3.0 + 1, centered=False)
+                          .translate((FIN[0] - 0.01, EVM_Y0 + a, top - 3.0)))
+    for x, y in CLIP_INS:
+        shape = shape.cut(_cyl_z(x, y, BP_BORE[0], top - BP_BORE[1], top + 1))
+    return shape
+
+
+def tray_solid(_shape):
+    """The pack tray, its 45 degree front lip ramp, the two strap slots and the support block under its left end."""
+    z0, z1 = PACK_TRAY_Z, PACK_TRAY_Z + TRAY_T
+    import cadquery as cq
+    tray = cq.Workplane("XY").box(FIN[0] - IN_X0, TRAY_Y1 - YP, TRAY_T, centered=False).translate((IN_X0, YP, z0))
+    lip = _prism_yz([(LIP_Y0, z1), (TRAY_Y1, z1), (TRAY_Y1, z1 + TRAY_Y1 - LIP_Y0)], LIP_X[0], LIP_X[1])
+    sup = cq.Workplane("XY").box(TRAY_SUP[0] - IN_X0, TRAY_SUP[1] - YP, TRAY_SUP[2], centered=False) \
+        .translate((IN_X0, YP, z0 - TRAY_SUP[2]))
+    shape = tray.union(lip).union(sup)
+    w, ln, xs, y0 = STRAP
+    for x in xs:
+        shape = shape.cut(cq.Workplane("XY").box(w, ln, TRAY_T + 2, centered=False).translate((x - w / 2, y0, z0 - 1)))
+    return shape
 
 
 def bar_solid(shape):
@@ -320,26 +425,24 @@ def corners():
     return [(sx, sz) for sx in (1, -1) for sz in (1, -1)]
 
 
-def corner_box(sx, sz, rx, rz, y0, y1, what):
-    x0, x1 = (0, rx) if sx > 0 else (W - rx, W)
-    z0, z1 = (0, rz) if sz > 0 else (H - rz, H)
+def corner_box(sx, sz, rx, rz, y0, y1, what, lid=False):
+    """A box rx x rz in one corner: from the base's inside faces, or (lid) from the lid frame's edges."""
+    lo_x, hi_x, lo_z, hi_z = (0, W, 0, H) if lid else (IN_X0, IN_X1, IN_Z0, IN_Z1)
+    x0, x1 = (lo_x, lo_x + rx) if sx > 0 else (hi_x - rx, hi_x)
+    z0, z1 = (lo_z, lo_z + rz) if sz > 0 else (hi_z - rz, hi_z)
     return B(x0, y0, z0, x1, y1, z1, what)
 
 
 def box_keepouts():
-    """What the base and the lid put inside. The base: the corner lands at the seam (a 3 mm shelf under each lid
-    boss and its O-ring S-curve), the insert posts hung below them, the rim lip all round, the glands' threads and
-    nuts on the bottom wall. The lid (its names start "lid"; off when a card comes out): its inner channel wall and
-    its corner bosses, from the seam to the lid's top."""
-    yl = SEAM - LIP_T
-    out = [corner_box(sx, sz, CORNER_X, CORNER_Z, yl, SEAM, "corner land (lid boss and O-ring curve)") for sx, sz in corners()]
-    out += [corner_box(sx, sz, POST, POST, SEAM - CORNER_H, yl, "corner insert post (lid screw)") for sx, sz in corners()]
-    out += [B(0, yl, 0, LIP_XS, SEAM, H, "rim lip, left"), B(W - LIP_XS, yl, 0, W, SEAM, H, "rim lip, right"),
-            B(0, yl, 0, W, SEAM, LIP_ZS, "rim lip, bottom"), B(0, yl, H - LIP_ZS, W, SEAM, H, "rim lip, top")]
+    """What the base and the lid put inside. The base: the four corner blocks (floor to wall top, with the lid-screw
+    bores; the sealing lip is flush with the inside faces, so it adds nothing inside), the glands' threads and nuts on
+    the bottom wall. The lid (its names start "lid"; off when a card comes out): its inner channel wall and its corner
+    bosses, from the seam to the lid's top (in the lid frame: not settled, unchanged)."""
+    out = [corner_box(sx, sz, BLK, BLK, YP, SEAM, "corner block (lid-screw bore)") for sx, sz in corners()]
     inner = TONGUE_C + RIM_CH / 2 + RIM_IN - T              # the lid's inner channel wall reaches this far inside
     out += [B(0, SEAM, 0, inner, D, H, "lid inner channel wall"), B(W - inner, SEAM, 0, W, D, H, "lid inner channel wall"),
             B(0, SEAM, 0, W, D, inner, "lid inner channel wall"), B(0, SEAM, H - inner, W, D, H, "lid inner channel wall")]
-    out += [corner_box(sx, sz, CORNER_X, CORNER_Z, SEAM, D, "lid corner boss and channel") for sx, sz in corners()]
+    out += [corner_box(sx, sz, CORNER_X, CORNER_Z, SEAM, D, "lid corner boss and channel", lid=True) for sx, sz in corners()]
     for x, y, k in GLANDS:
         r = GLAND_NUT[k] / 2
         out.append(B(x - r, y - r, 0, x + r, y + r, GLAND[k][1], f"{k} gland at Xb {x:g}, Yb {y:g}"))
@@ -347,16 +450,6 @@ def box_keepouts():
         out.append(B(x - cb, y - cb, GLAND[k][1], x + cb, y + cb, GLAND_IN + CABLE_RISE,
                      f"{k} cable rise above the gland at Xb {x:g}, Yb {y:g}"))
     return out
-
-
-def tongue():
-    """The tongue's centre line (x, z) points, closed: along each wall at TONGUE_C - T inside, and round each corner
-    boss in the lid's S-curve (in along the boss's inner face, round its corner, out to the next wall)."""
-    cx, cz, bx, bz = LIP_CX, LIP_CZ, S_X, S_Z              # (square corners here: the ring has the R bends)
-    return [(cx, bz), (bx, bz), (bx, cz),                  # bottom-left corner (Zb 0 is the bottom wall)
-            (W - bx, cz), (W - bx, bz), (W - cx, bz),
-            (W - cx, H - bz), (W - bx, H - bz), (W - bx, H - cz),
-            (bx, H - cz), (bx, H - bz), (cx, H - bz), (cx, bz)]
 
 
 def floor_ribs():
@@ -388,28 +481,93 @@ def contents():
 
 
 def shell():
-    """The printed base's walls and outside features (box frame; outside the inside volume)."""
-    out = [B(-T, -T, -T, W + T, 0, H + T, "floor (back)"),
-           B(-T, 0, -T, 0, SEAM, H + T, "left wall"), B(W, 0, -T, W + T, SEAM, H + T, "right wall"),
-           B(0, 0, -T, W, SEAM, 0, "bottom wall"), B(0, 0, H, W, SEAM, H + T, "top wall")]
-    yl = SEAM - LIP_T
-    out += [B(0, yl, 0, LIP_XS, SEAM, H, "rim lip"), B(W - LIP_XS, yl, 0, W, SEAM, H, "rim lip"),
-            B(LIP_XS, yl, 0, W - LIP_XS, SEAM, LIP_ZS, "rim lip"), B(LIP_XS, yl, H - LIP_ZS, W - LIP_XS, SEAM, H, "rim lip")]
-    out += [corner_box(sx, sz, CORNER_X, CORNER_Z, yl, SEAM, "corner land") for sx, sz in corners()]
-    out += [corner_box(sx, sz, POST, POST, SEAM - CORNER_H, yl, "corner post (lid screw)") for sx, sz in corners()]
-    h, pts = TONGUE_W / 2, tongue()
-    for (xa, za), (xb, zb) in zip(pts, pts[1:]):
-        out.append(B(min(xa, xb) - h, SEAM, min(za, zb) - h, max(xa, xb) + h, SEAM + TONGUE_H, max(za, zb) + h,
-                     "tongue into the lid's O-ring channel"))
-    fx0, fx1, reach, ft = S.val("mount_flange")[:4]                # enclosure 4: in the floor plane, past each end wall
-    out.append(B(fx0, -T, -T - reach, fx1, -T + ft, -T, "mounting flange, bottom end (two slots)"))
-    out.append(B(fx0, -T, H + T, fx1, -T + ft, H + T + reach, "mounting flange, top end (two slots)"))
-    out.append(B(-T - 2.0, SEAM - 6.0, H + T, W + T + 2.0, SEAM, H + T + 2.0, "drip edge over the top seam"))
-    for x, y, k in GLANDS:
-        r = GLAND_NUT[k] / 2 + 1.0
-        out.append(B(x - r, y - r, -T - 3.0, x + r, y + r, -T, f"{k} gland boss (nut flats)"))
-    out.append(B(VENT[0] - 8, VENT[1] - 8, -T - 3.0, VENT[0] + 8, VENT[1] + 8, -T, "vent boss"))
+    """The printed base's walls, corner blocks, lip and outside features as boxes (box frame), for the drawings and
+    the renders; shell_solid() is the real shape."""
+    o0x, o1x, o0z, o1z = -T, W + T, -T, H + T                # outside faces: Xb -3 / 126.5, Zb -3 / 172.5
+    out = [B(o0x, -T, o0z, o1x, 0, o1z, "floor (back)"),
+           B(o0x, 0, o0z, IN_X0, SEAM, o1z, "left wall"), B(IN_X1, 0, o0z, o1x, SEAM, o1z, "right wall"),
+           B(IN_X0, 0, o0z, IN_X1, SEAM, IN_Z0, "bottom wall"), B(IN_X0, 0, IN_Z1, IN_X1, SEAM, o1z, "top wall")]
+    out += [corner_box(sx, sz, BLK, BLK, 0, SEAM, "corner block (lid-screw bore)") for sx, sz in corners()]
+    y1 = SEAM + LIP_H
+    out += [B(IN_X0 - LIP_W, SEAM, IN_Z0 + BLK, IN_X0, y1, IN_Z1 - BLK, "sealing lip"),
+            B(IN_X1, SEAM, IN_Z0 + BLK, IN_X1 + LIP_W, y1, IN_Z1 - BLK, "sealing lip"),
+            B(IN_X0 + BLK, SEAM, IN_Z0 - LIP_W, IN_X1 - BLK, y1, IN_Z0, "sealing lip"),
+            B(IN_X0 + BLK, SEAM, IN_Z1, IN_X1 - BLK, y1, IN_Z1 + LIP_W, "sealing lip")]
+    for sx, sz in corners():                                 # round each block's two inside faces
+        out.append(corner_box(sx, sz, BLK + LIP_W, BLK + LIP_W, SEAM, y1, "sealing lip (round the corner block)"))
+    fx0, fx1, reach, ft = S.val("mount_flange")[:4]                # in the floor plane, past each end wall
+    out.append(B(fx0, -T, o0z - reach, fx1, -T + ft, o0z, "mounting flange, bottom end (two slots)"))
+    out.append(B(fx0, -T, o1z, fx1, -T + ft, o1z + reach, "mounting flange, top end (two slots)"))
     return out
+
+
+def cavity_outline(n=12):
+    """The inside outline (Xb, Zb), anticlockwise from the bottom-left corner block: the inside faces, each corner
+    block's two faces with its R BLK_R inner corner, an R BLK_F fillet where a block meets a wall. Arcs as n chords."""
+    def arc(c, r, a0, a1):
+        return [(c[0] + r * math.cos(math.radians(a0 + (a1 - a0) * k / n)),
+                 c[1] + r * math.sin(math.radians(a0 + (a1 - a0) * k / n))) for k in range(n + 1)]
+    f, R = BLK_F, BLK_R
+    loc = (arc((f, BLK + f), f, 180, 270) + arc((BLK - R, BLK - R), R, 90, 0) + arc((BLK + f, f), f, 180, 270))
+    out = []
+    for sx, sz in ((1, 1), (-1, 1), (-1, -1), (1, -1)):      # BL, BR, TR, TL: anticlockwise
+        pts = [(IN_X0 + u if sx > 0 else IN_X1 - u, IN_Z0 + v if sz > 0 else IN_Z1 - v) for u, v in loc]
+        out += pts[::-1] if sx * sz < 0 else pts
+    return out
+
+
+def shell_solid():
+    """The printed base as enclosure 4 (+ fix 2) built it, in CadQuery: the R9 outside, the 3 floor, the walls and the
+    four corner blocks to Yb 117, the 2 x 2.5 lip round the inside edge, the lid-screw bores (and their 45 degree
+    chamfers) in the blocks, the gland pockets and holes in the bottom wall (fix 2: the PG-9s and their 24 mm clearance
+    cuts), the SMA hole and its nut seat in the right wall, the two mounting flanges with their slots and gussets."""
+    import cadquery as cq
+    o0x, o1x, o0z, o1z = -T, W + T, -T, H + T
+    outer = (cq.Workplane("XZ").center((o0x + o1x) / 2, (o0z + o1z) / 2).rect(o1x - o0x, o1z - o0z)
+             .extrude(-(SEAM + T)).edges("|Y").fillet(OUT_R).translate((0, -T, 0)))
+    cav = cavity_outline()
+    shape = outer.cut(_prism_xz(cav, 0, SEAM + 1))
+    lip = (cq.Workplane("XZ").polyline(cav).close().offset2D(LIP_W).extrude(-LIP_H).translate((0, SEAM, 0))
+           .cut(_prism_xz(cav, SEAM - 1, SEAM + LIP_H + 1)))
+    shape = shape.union(lip)
+    for x, z in SCREWS:                                      # the lid-screw bores, chamfered at the top
+        shape = shape.cut(cq.Workplane("XZ").center(x, z).circle(BORE_D / 2).extrude(-(SEAM + 1 - BORE_Y0))
+                          .translate((0, BORE_Y0, 0)))
+        h = (CHAMF_D - BORE_D) / 2 + 0.5
+        shape = shape.cut(cq.Workplane("XY").add(cq.Solid.makeCone(BORE_D / 2, BORE_D / 2 + h, h,
+                                                                   cq.Vector(x, CHAMF_Y0, z), cq.Vector(0, 1, 0))))
+    for (xa, xb), apex, step in S.val("enc_pockets"):        # 1 mm pockets in the bottom wall's inside face
+        xc, half = (xa + xb) / 2, (xb - xa) / 2
+        if step is None:
+            pts = [(xa, -0.5), (xb, -0.5), (xb, apex - half), (xc, apex), (xa, apex - half)]
+        else:                                                # narrowing at 45 degrees to the vent's land
+            ys, h2 = step
+            pts = [(xa, -0.5), (xb, -0.5), (xb, ys), (xc + h2, ys + half - h2), (xc + h2, apex - h2), (xc, apex),
+                   (xc - h2, apex - h2), (xc - h2, ys + half - h2), (xa, ys)]
+        shape = shape.cut(_prism_xy(pts, IN_Z0 - 1.0, IN_Z0 + 0.01))
+        if xa < IN_X0 + BLK + BLK_F:                         # no fillet at the block's foot along this pocket
+            shape = shape.cut(cq.Workplane("XY").box(BLK_F + 0.01, apex - half, BLK_F, centered=False)
+                              .translate((IN_X0 + BLK, 0, IN_Z0)))
+    pg7, vent, pg9 = S.val("enc_glands")
+    for x, y, k in GLANDS:
+        d = pg7 if k == "PG-7" else pg9
+        shape = shape.cut(_cyl_z(x, y, d, o0z - 1, IN_Z0 + 1))
+        if k == "PG-9":                                      # fix 2: clear the land and the corner block round it
+            shape = shape.cut(_cyl_z(x, y, PG9_CLEAR, IN_Z0 - 1.0, PG9_CLEAR_Z))
+    shape = shape.cut(_cyl_z(VENT[0], VENT[1], vent, o0z - 1, IN_Z0 + 1))
+    yb, zb, hole, seat = SMA                                 # the SMA bulkhead hole and its inner nut seat
+    shape = shape.cut(cq.Workplane("YZ").center(yb, zb).circle(hole / 2).extrude(o1x - IN_X1 + 2).translate((IN_X1 - 1, 0, 0)))
+    shape = shape.cut(cq.Workplane("YZ").center(yb, zb).circle(seat / 2).extrude(S.val("enc_sma_seat") + 0.5)
+                      .translate((IN_X1 - 0.5, 0, 0)))
+    fx0, fx1, reach, ft, sw, sl, s1, s2, fr, gus = S.val("mount_flange")
+    fl = (cq.Workplane("XY").box(fx1 - fx0, ft, reach + 1, centered=False).translate((fx0, -T, o0z - reach))
+          .edges("|Y").edges("<Z").fillet(fr))
+    for sxc in (s1, s2):
+        fl = fl.cut(cq.Workplane("XZ").center(sxc, FLANGE_SLOT_Z).slot2D(sl, sw, 90).extrude(-(ft + 2)).translate((0, -T - 1, 0)))
+    fl = fl.union(_prism_yz([(-T + ft, o0z + 0.5), (-T + ft + gus, o0z + 0.5), (-T + ft + gus, o0z), (-T + ft, o0z - gus)],
+                            fx0, fx1))
+    shape = shape.union(fl).union(fl.mirror("XY", (0, 0, H / 2)))
+    return shape
 
 
 def minus(a, c):
@@ -483,7 +641,7 @@ def coax_route(arm):
     r = S.val("rg316_bend")
     pts = [(ax, pe, az)] + [(ax + r - r * math.cos(math.radians(90 * k / 9)), pe + r * math.sin(math.radians(90 * k / 9)),
                              az + (zb - az) * k / 9) for k in range(1, 10)]
-    inner = W - 9.0 - S.val("sma_plug_len")                   # the jack's inner end, then the straight plug on it
+    inner = IN_X1 - 9.0 - S.val("sma_plug_len")               # the jack's inner end, then the straight plug on it
     pts.append((inner, yb, zb))
     return sum(math.dist(a, b) for a, b in zip(pts, pts[1:])), inner
 
@@ -613,6 +771,15 @@ def ring_checks(solid=None):
     return lines + ["SPEC INCONSISTENT: " + n for n in spec_notes], bad
 
 
+def write_audit_stl(out):
+    import cadquery as cq
+    shape = shell_solid()
+    for name, s in solids():
+        if name != "retention bar":
+            shape = shape.union(s)
+    cq.exporters.export(shape, str(out), tolerance=0.02, angularTolerance=0.1)
+
+
 def write_ring():
     import cadquery as cq
     sol = ring_solid()
@@ -638,7 +805,8 @@ def main():
     bad = []
     for p in parts():
         for b in p.boxes:
-            if b.x0 < -0.01 or b.x1 > W + 0.01 or b.y0 < -0.01 or b.y1 > D + 0.01 or b.z0 < -0.01 or b.z1 > H + 0.01:
+            if b.x0 < IN_X0 - 0.01 or b.x1 > IN_X1 + 0.01 or b.y0 < -0.01 or b.y1 > D + 0.01 or \
+                    b.z0 < IN_Z0 - 0.01 or b.z1 > IN_Z1 + 0.01:
                 bad.append(f"{p.name}: {b.what} leaves the box inside")
         print(f"{p.name:18s} {p.note}")
     keep = box_keepouts()
@@ -651,7 +819,8 @@ def main():
     # the shelves: each content clear of the walls, the corner posts, the glands, the cage parts and each other by M
     cont = contents()
     for c in cont:
-        if c.x0 < M - 0.01 or c.x1 > W - M + 0.01 or c.y0 < M - 0.01 or c.y1 > D - M + 0.01 or c.z0 < M - 0.01:
+        if c.x0 < IN_X0 + M - 0.01 or c.x1 > IN_X1 - M + 0.01 or c.y0 < M - 0.01 or c.y1 > D - M + 0.01 or \
+                c.z0 < IN_Z0 + M - 0.01:
             bad.append(f"{c.what}: less than {M:g} mm to a wall")
         for o in keep + [b for n, b in fixed_boxes() if n not in ("charger ledges", "pack tray")]:
             g = B(o.x0 - M, o.y0 - M, o.z0 - M, o.x1 + M, o.y1 + M, o.z1 + M, o.what)
@@ -684,23 +853,24 @@ def main():
     print(f"shelves (Zb): glands to {GLAND_IN:g}; pack tray {PACK_TRAY_Z:g}, pack {PACK_Z0:g}-{PACK_Z0 + PACK[2]:g}; "
           f"EVM underside parts {EVM_Z0 - S.val('evm_under'):g}, board {EVM_Z0:g}, top {EVM_TOP:g}; backplane from "
           f"{BP_BOTTOM:.1f}; B4 underside {under_b4:.1f}; top card B3 {st.card_z('B3'):.1f}")
-    print(f"base: outside {L_OUT:g} x {W_OUT:g} x {BASE_D:g} (PETG, {T:g} mm walls), inside {W:g} x {H:g}, seam at Yb "
-          f"{SEAM:g}, closed depth {D:g}; a {LAND:g} mm land ({RIM_OUT:g} + {RIM_CH:g} channel + {RIM_IN:g}, Clint) with a "
-          f"{TONGUE_W:g} x {TONGUE_H:g} sealing lip {TONGUE_CS:g} in from the outside edge on the short sides, "
-          f"{TONGUE_CL:g} on the long (lid-rim-spec.md), its S {S_RISE:g} x {S_RUN:g} with R {CURVE_R:g} outer and R {CURVE_RI:g} inner bends, into the "
-          f"lid's O-ring channel (its top "
-          f"where r3 had it, about 1 mm into the O-ring set 2 mm down, an assumed 3 mm round cord; the land 1.5 lower); corner lands {CORNER_Z:g} x {CORNER_X:g}, insert posts "
-          f"{POST:g} square, {CORNER_H:g} deep; lid "
-          + (f"screws: option (b), M4 stainless, {WASHER_D:g} mm washers over the lid's {LID_HOLE:g} mm holes, into M4 "
-             "heat-set inserts at " if SCREW_OPT == "b" else f"screws: option (a), a printed M{THREAD_D:g} thread at ")
-          + ", ".join(f"({x:g}, {z:g})" for x, z in SCREWS) + " [TBD-MEASURE]")
-    for x, z in SCREWS:
-        if min(x, W - x) + INSERT_D / 2 + 3.0 > POST + 0.01:
-            bad.append(f"the lid screw at ({x:g}, {z:g}) needs more than the corner post")
-        if min(x, W - x) - INSERT_D / 2 < -T + 0.01:
-            bad.append(f"the lid screw at ({x:g}, {z:g}) is in the wall")
-    if INSERT_L + 3.0 > CORNER_H:
-        bad.append("the corner block is shorter than the insert and 3 mm under it")
+    print(f"base (enclosure 4 + fixes): outside {W + 2 * T:g} x {H + 2 * T:g} x {BASE_D:g} (PETG, R{OUT_R:g} corners; "
+          f"floor {T:g}, long walls {IN_X0 + T:g}, short walls {IN_Z0 + T:g}), inside {BOX_IN[0]:g} x {BOX_IN[1]:g} "
+          f"(Xb {IN_X0:g}-{IN_X1:g}, Zb {IN_Z0:g}-{IN_Z1:g}), wall top (seam) at Yb {SEAM:g}, a {LIP_W:g} x {LIP_H:g} lip "
+          f"on its inside edge, closed depth {D:g}; corner blocks {BLK:g} square (R{BLK_R:g}, R{BLK_F:g} fillets), floor "
+          f"to wall top, \u00d8{BORE_D:g} lid-screw bores from Yb {BORE_Y0:g} (chamfered to \u00d8{CHAMF_D:g}) at "
+          + ", ".join(f"({x:g}, {z:g})" for x, z in SCREWS) + "; lid screws "
+          + (f"option (b), M4 stainless, {WASHER_D:g} mm washers over the lid's {LID_HOLE:g} mm holes [TBD-MEASURE]"
+             if SCREW_OPT == "b" else f"option (a), a printed M{THREAD_D:g} thread [TBD-MEASURE]"))
+    for x, z in SCREWS:                       # each bore inside its corner block and the walls behind it
+        if min(x + T, W + T - x, z + T, H + T - z) < BORE_D / 2 + 1.0 or \
+                max(min(x - IN_X0, IN_X1 - x), min(z - IN_Z0, IN_Z1 - z)) + BORE_D / 2 > BLK:
+            bad.append(f"the lid-screw bore at ({x:g}, {z:g}) leaves its corner block and wall")
+    if INSERT_L + 3.0 > SEAM - BORE_Y0:
+        bad.append("the lid-screw bore is shorter than the insert and 3 mm under it")
+    if SCREW_OPT == "b" and BORE_D > INSERT_D + 0.5:
+        print(f"FLAG lid screws: enclosure 4's corner bores are \u00d8{BORE_D:g}, {SEAM - BORE_Y0:g} deep; an M4 "
+              f"heat-set insert wants \u00d8{INSERT_D:g} [insert_m4 TBD]: the bores do not take the planned inserts "
+              "(Clint: what goes in them?)")
     if SCREW_OPT == "b":
         if WASHER_D < LID_HOLE + 2.0:
             bad.append(f"the {WASHER_D:g} mm washer seats less than 1 mm round the lid's {LID_HOLE:g} mm hole")
@@ -726,7 +896,16 @@ def main():
     if "--stl" in sys.argv and stl_gate():
         print("STL REFUSED: the lid interface is not settled yet: " + ", ".join(stl_gate()))
         sys.exit(2)
+    if "--audit-stl" in sys.argv:                           # the printed base as one STL in the box frame, for the
+        out = Path(sys.argv[sys.argv.index("--audit-stl") + 1])   # voxel diff against the enclosure STL (audit-enc4)
+        out.write_text("")
+        write_audit_stl(out)
+        print(f"audit STL written: {out} (box frame; shell and moulded parts, no retention bar; not a print file)")
     if "--solid" in sys.argv or "--stl" in sys.argv:
+        sh = shell_solid().val()
+        print(f"  solid shell: valid {sh.isValid()}, {sh.Volume() / 1000:.1f} cm3")
+        if not sh.isValid():
+            bad.append("the shell is not a valid solid")
         for name, s in solids():
             v = s.val()
             print(f"  solid {name}: valid {v.isValid()}, {v.Volume() / 1000:.1f} cm3")
@@ -743,7 +922,8 @@ def main():
                                 + " (L1 the screw, and the rim test ring's fit on the real lid)"))
     for b in bad:
         print("FAIL ", b)
-    print(f"cage {'PASS' if not bad else 'FAIL'}: base inside {W:g} x {H:g} x {D:g} mm [TBD-MEASURE: the lid gate]")
+    print(f"cage {'PASS' if not bad else 'FAIL'}: base inside {BOX_IN[0]:g} x {BOX_IN[1]:g} x {D:g} mm "
+          "[TBD-MEASURE: the lid gate]")
     sys.exit(1 if bad else 0)
 
 

@@ -629,34 +629,39 @@ def bulkhead_at():
 
 
 def extras(m, explode=0.0, whole=False):
-    """The printed base's walls (only the bottom and right walls unless whole, so the inside stays visible), the
-    glands in the bottom wall's bosses, the SMA bulkhead, the antenna outside, and the coax."""
-    W, H, D = cage.BOX_IN
+    """The printed base's walls and corner blocks (only the bottom and right walls and the blocks on them unless
+    whole, so the inside stays visible), the glands in the bottom wall, the SMA bulkhead, the antenna outside, and the
+    coax."""
+    W, H = cage.W, cage.H                 # the lid frame (the lid outline less 3 all round)
+    XI, OX, OZ = cage.IN_X1, cage.W + cage.T, -cage.T   # the right wall's inside and outside faces, the bottom wall's outside
 
     def P(x, y, z):
         return (x, z, y)
     for b in cage.shell():
-        if whole or not any(w in b.what for w in ("left wall", "top wall")):
+        hidden = any(w in b.what for w in ("left wall", "top wall")) or \
+            (b.what.startswith(("corner block", "sealing lip")) and b.x0 < W / 2 and b.z0 > H / 2) or \
+            (b.what.startswith("sealing lip") and (b.x1 <= cage.IN_X0 + 0.01 or b.z0 >= cage.IN_Z1 - 0.01))
+        if whole or not hidden:
             m.box(b.x0, b.z0, b.y0, b.x1, b.z1, b.y1, "#E8E4D8")
     if whole:                                                          # the #905 clear lid, as a thin outline
         T = cage.T
         for x0, z0, x1, z1 in ((-T, -T, W + T, 0), (-T, H, W + T, H + T), (-T, 0, 0, H), (W, 0, W + T, H)):
             m.box(x0, z0, cage.SEAM + 0.5, x1, z1, cage.SEAM + 25.0, "#BFD9E8")
-    for x, y, k in cage.GLANDS:                                        # bottom wall, the bosses outside
+    for x, y, k in cage.GLANDS:                                        # bottom wall (no bosses: enclosure 4)
         d1, l1, l2, l3, _cmin, _cmax = cage.GLAND[k]
         nut = cage.GLAND_NUT[k]
         m.cyl(P(x, y, 0), P(x, y, l1), d1 / 2, "#2B2B2B", 12)               # thread inside
-        m.cyl(P(x, y, 1.0), P(x, y, 4.0), nut / 2, "#2B2B2B", 6)            # locknut on it
-        m.cyl(P(x, y, -6.0), P(x, y, -8.5), nut / 2 + 1.0, "#2B2B2B", 12)   # flange under the boss
-        m.cyl(P(x, y, -8.5), P(x, y, -6.0 - l2 + l3 * 0.4), nut / 2, "#2B2B2B", 6)
-        m.cyl(P(x, y, -6.0 - l2 + l3 * 0.4), P(x, y, -6.0 - l2), nut / 2 - 1.5, "#2B2B2B", 12)
+        m.cyl(P(x, y, 0.0), P(x, y, 3.0), nut / 2, "#2B2B2B", 6)            # locknut on it, in its pocket
+        m.cyl(P(x, y, OZ), P(x, y, OZ - 2.5), nut / 2 + 1.0, "#2B2B2B", 12)  # flange on the wall's outside
+        m.cyl(P(x, y, OZ - 2.5), P(x, y, OZ - l2 + l3 * 0.4), nut / 2, "#2B2B2B", 6)
+        m.cyl(P(x, y, OZ - l2 + l3 * 0.4), P(x, y, OZ - l2), nut / 2 - 1.5, "#2B2B2B", 12)
     arm, (pe, yb, zb, ax) = bulkhead_at()
-    m.cyl(P(W - 9.0, yb, zb), P(W + 12.0, yb, zb), 3.2, "#D4AF37", 12)  # bulkhead jack through the boss
-    m.cyl(P(W - 2.5, yb, zb), P(W - 0.2, yb, zb), 5.5, "#D4AF37", 6)    # its nut inside
-    m.cyl(P(W + 12.0, yb, zb), P(W + 22.0, yb, zb), 4.5, "#1A1A1A", 12)  # antenna hinge
+    m.cyl(P(XI - 9.0, yb, zb), P(OX + 8.5, yb, zb), 3.2, "#D4AF37", 12)  # bulkhead jack through the right wall
+    m.cyl(P(XI - 2.5, yb, zb), P(XI + 0.8, yb, zb), 5.5, "#D4AF37", 6)  # its nut inside, in its 1 mm seat
+    m.cyl(P(OX + 8.5, yb, zb), P(OX + 18.5, yb, zb), 4.5, "#1A1A1A", 12)  # antenna hinge
     L = S.val("ant_len")
-    tip = (W + 22.0 + L * math.cos(math.radians(70)), yb, zb + L * math.sin(math.radians(70)))
-    m.cyl(P(W + 22.0, yb, zb), P(*tip), 4.0, "#1A1A1A", 12)            # whip, tilted 70 degrees up
+    tip = (OX + 18.5 + L * math.cos(math.radians(70)), yb, zb + L * math.sin(math.radians(70)))
+    m.cyl(P(OX + 18.5, yb, zb), P(*tip), 4.0, "#1A1A1A", 12)            # whip, tilted 70 degrees up
     # coax: the straight plug on AD1's forward arm, the bend to the right, the run to the bulkhead
     az = (arm.z0 + arm.z1) / 2
     y0 = arm.y1
@@ -666,7 +671,7 @@ def extras(m, explode=0.0, whole=False):
     for k in range(1, 10):
         t = math.radians(90 * k / 9)
         pts.append(P(ax + r - r * math.cos(t), pe + explode + r * math.sin(t), az + (zb - az) * k / 9))
-    pts += [P(W - 9.0, yb, zb)]
+    pts += [P(XI - 9.0, yb, zb)]
     m.tube(pts, 1.25, "#7A4A2A", 8)
 
 
@@ -746,7 +751,7 @@ def write_all():
         board_file(f, fps, card_outline(), T, "#B3202AFF", strips_copper(),
                    [(f"{b} {st.ROLE[b]}  FRONT EDGE (bus header at the back edge, up)", 1, CD + 3.5)])
         jobs[f] = (b, kinds)
-    W, H, _D = cage.BOX_IN
+    W, H = cage.W, cage.H                 # the KiCad board: the lid frame, the floor's inside face
     for name, kw in (("cage", {}), ("cage-exploded", {"explode": 45.0}), ("cage-box", {"whole": True})):
         p = M3D / f"{name}.wrl"
         cage_mesh(**kw).write(p)
@@ -796,7 +801,7 @@ def legend(png, title, lines):
 def render(jobs):
     PNG.mkdir(exist_ok=True)
     todo = []
-    cage_lines = ["the printed PETG base (100 deep) and its moulded cage, the cards and the shelves: the envelope boxes "
+    cage_lines = ["the printed PETG base (enclosure 4, 120 deep) and its moulded cage, the cards and the shelves: the envelope boxes "
                   "the layout checks use (layout/stack.py, cage/cage.py); the mux is Adafruit's 5626 STEP"
                   + ("" if fetch_models.path_of("MUX") else " (not fetched: a box)"),
                   "shelves bottom to top: the pack, the BQ25798EVM (90 x 90, Clint; heights [TBD-MEASURE]), B4, B2, "
@@ -805,7 +810,7 @@ def render(jobs):
                   "from the Adafruit #761 drawing",
                   f"inside {'x'.join(f'{v:g}' for v in cage.BOX_IN)} mm; the lid interface (rim, O-ring, screws) "
                   "is from Clint's photos, L1 and the rim ring's fit [TBD-MEASURE]; the coax: AD1's arm toward the lid, the cable bending right in front of "
-                  "the cards to the bulkhead boss",
+                  "the cards to the bulkhead in the right wall",
                   "cards bottom to top: " + ", ".join(f"{c} {st.ROLE[c]}" for c in st.ORDER)
                   + "; the lid side faces the viewer"]
     for f, (b, kinds) in jobs.items():

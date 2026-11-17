@@ -55,9 +55,47 @@ Fit (`fit/fit_results.txt`, `pen.py`):
 
 ## Session 6 checks [TBD-MEASURE]
 
-- The coax (Amphenol 135110-01-06.00, about 110 between its plugs) from AD1 on B3 (Zb about 140) down the right column
-  to the bulkhead at Zb 60: the route is about 120-130. Probably too short.
+- ~~The coax too short~~: resolved, Clint 2026-11-17: the 6 inch cable fits the low bulkhead (it was worse at the old
+  high one, bending the cable to fit).
 - A straight plug on the bulkhead's inner end reaches about Xb 93, about 6-10 above the EVM's lid-right corner (board
   to Xb 98.25, Yb 101.6). Check it clears, or use a right-angle plug.
 
 Re-audit the next STL with the same scripts.
+
+## The model against enclosure 4 (2026-11-17)
+
+`cage/cage.py` now builds the base as enclosure 4 + the two fixes (`shell_solid()`, the parts' `solid` callables).
+`python cage.py --audit-stl OUT.stl` (CAD venv) writes the shell and every moulded part (not the retention bar, a
+separate print) as one STL in the box frame. `vox_model.py OUT.stl model.npz DIR` voxelises it on the same 0.5 mm grid
+as `vox_diff.py`; `model_diff.py v4.npz model.npz` lists the regions in one and not the other (opened by one voxel to
+drop face skins) over 20 mm³; `classify.py` sorts them. Result (`model_diff.txt`): 544,094 mm³ printed, 546,289
+modelled; 67 regions over 20 mm³, every one explained:
+
+| Group | Regions | mm³ | Why |
+|---|---|---|---|
+| fix 1, enclosure 4 only | 1 | 1953 | the old lip ramp from Yb 50 (Xb 16.5-89.5, Zb 24.4-30.4) |
+| fix 1, model only | 1 | 2217 | the tray to Yb 62 and the ramp from Yb 56 |
+| fix 2, enclosure 4 only | 2 | 2531 | the PG-9 holes and their Ø24 cuts to Zb 8 at (98, 25) and (98, 60) |
+| outside faces, enclosure 4 only (model solid) | 64 | 2823 | debossed lettering and marks 1 mm deep: left wall (13 identical 32 × 5 recesses every 12 mm at Yb 7-39, lettering at Yb 61-89), right wall (Yb 65-85), top wall (Yb 25-92), bottom wall (Yb 98-110). Not modelled |
+
+What the model now carries, from the STL (`sources.py`: enc_inside, enc_outer_r, enc_blocks, enc_lid_bores, enc_lip,
+enc_pockets, enc_glands, enc_sma_seat, mount_flange; the shelf and post numbers in `cage.py`):
+
+- Outside Xb −3..126.5, Zb −3..172.5, R9 corners; floor Yb −3..0; walls to Yb 117; long walls 4.25 (inside faces Xb
+  1.25 / 122.25), short walls 4.0 (Zb 1 / 168.5). The frame (W × H 123.5 × 169.5, the lid outline less 3) is kept.
+- Four corner blocks 15.4 square from the inside faces, floor to wall top, R8 inner corner, R2.5 fillets to the walls
+  (none at the bottom-left block's foot along P1); Ø10 bores from Yb 80.75, 45° chamfer to Ø14.6 at the top, at the
+  lid's screw positions. **Ø10 is not the Ø5.6 an M4 heat-set insert wants** (`cage.py` prints a FLAG).
+- The 2 × 2.5 lip on the inside edge (walls and block faces).
+- Bottom wall: 1 mm pockets P1-P3 with 45° roofs (P2 narrows at 45° from Yb 64.5 to the vent's 8 mm land), PG-7 Ø13 ×
+  5, vent Ø12.5, fix 2 PG-9 Ø15.5 × 2 with Ø24 cuts to Zb 8. Teardrop tops on the holes are not modelled (they lift the
+  centroids 0.2; centres stay 25 / 60 / 85).
+- SMA Ø6.44 at Yb 94.14, Zb 60.38, Ø14.2 seat 1.0 into the right wall. Flanges as `mount_flange`, R8 corners, slots,
+  a 7 mm 45° gusset each.
+- EVM ledge chamfered under, back end 45° in plan, tail notches with 45° front ends; left keeper (45° roof) and right
+  lid-end block (V back edge) to Yb 109 with Ø4 × 6.5 clip insert bores; fin Yb 0-109; tray with two 3 × 20 strap
+  slots and a support block Xb 1.25-12, Zb 16.4-21.4.
+- The right corner post's front cut back over B2 and B1 (Yb 15.15 to its front, from the lower card's top face to 2
+  below the next slot, stepped to Xb 89.6 down to the slot roof).
+- The retention bar now starts at the real left wall, Xb 1.25-12 (it was 0-12 in the lid frame).
+

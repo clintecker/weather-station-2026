@@ -118,9 +118,17 @@ D = {
     "ant_len": (100.0, "ANT-916-CW-HWR length, hinge to tip (render only)", "not looked up: TE page refuses scripts; measure", "TBD"),
     "sma_plug_len": (20.0, "straight SMA plug and its crimp ferrule on the 135110 cable", "typical; measure the cable", "TBD"),
     "sma_bulkhead": ((94.14, 60.38, 6.44, 14.2), "SMA bulkhead in the right wall: Yb, Zb of its axis, the hole, the inner nut seat", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4); moved from Yb 86.14, Zb 144.6 in enclosure 3", "sourced"),
-    "coax_len": (110.0, "135110-01-06.00 coax: cable between the two plugs", "the part number's 6.00 in (152.4) overall less two straight plugs (sma_plug_len); measure the cable", "TBD"),
-    "mount_flange": ((31.75, 91.75, 28.0, 6.0, 3.45, 13.95, 47.95, 75.45), "mounting flanges on both short ends, in the floor plane: Xb from, to, reach past the end wall, thickness (Yb -3 to 3), slot width x length, the two slots' Xb", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4): slot centres at Zb -18 and 187.5", "sourced"),
-    "enc_wall_top": (117.0, "the printed base's wall top (the seam land), Yb", "enclosure 3 and 4 STLs (as printed, audit-enc3, audit-enc4): walls to Yb 117 with a 2.0 lip; cage.py's shell is still the 100 deep #905 one", "sourced"),
+    "coax_len": (110.0, "135110-01-06.00 coax: cable between the two plugs", "the part number's 6.00 in (152.4) overall less two straight plugs (sma_plug_len); Clint, 2026-11-17: the 6 inch cable fits the bulkhead at Zb 60.38, better than the old high bulkhead (no tight bend to make)", "sourced"),
+    "mount_flange": ((31.75, 91.75, 28.0, 6.0, 3.5, 14.0, 48.0, 75.5, 8.0, 7.0), "mounting flanges on both short ends, in the floor plane: Xb from, to, reach past the end wall, thickness (Yb -3 to 3), slot width x length (round ends), the two slots' Xb, the far corners' radius, the 45 degree gusset's leg (along Yb from the flange's face and along Zb from the end wall)", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4): slot centres at Zb -18 and 187.5", "sourced"),
+    "enc_wall_top": (117.0, "the printed base's wall top (the seam land), Yb", "enclosure 3 and 4 STLs (as printed, audit-enc3, audit-enc4): walls to Yb 117 with a 2.0 lip", "sourced"),
+    "enc_inside": ((1.25, 122.25, 1.0, 168.5), "the printed base's inside faces: left and right walls (Xb), bottom and top walls (Zb); the long walls 4.25 thick, the short ones 4.0, outside faces Xb -3 / 126.5 and Zb -3 / 172.5", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4)", "sourced"),
+    "enc_outer_r": (9.0, "the printed base's outside corner radius (its four edges along Yb, floor to wall top)", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4): fitted to the outline at Zb -2.9 to 4", "sourced"),
+    "enc_blocks": ((15.4, 8.0, 2.5), "the four corner blocks, floor to wall top: square from the inside faces, the radius of each block's inner corner, the fillet where a block meets a wall", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4): faces at Xb 16.65 / 106.85, Zb 16.4 / 153.1", "sourced"),
+    "enc_lid_bores": ((10.0, 80.75, 114.7, 14.6), "the lid-screw bores in the corner blocks, at the lid's screw positions: diameter, from Yb, chamfer from Yb, chamfer diameter at the wall top (45 degrees)", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4): four bores at Xb 7.25 / 116.25, Zb 6.75 / 162.75", "sourced"),
+    "enc_lip": ((2.0, 2.5), "the sealing lip on the wall top's inside edge, all round the walls and the corner blocks: width, height above the wall top", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4): Yb 117 to 119.5, its inner face flush with the walls' and blocks' inside faces", "sourced"),
+    "enc_pockets": ((((16.5, 35.5), 73.63, None), ((40.5, 59.5), 96.3, (64.5, 8.0)), ((64.5, 83.5), 38.63, None)), "gland pockets in the bottom wall's inside face (the wall 4.0, Zb -3 to 1; each pocket 1.0 deep, to Zb 0): Xb from-to, the Yb apex of its 45 degree roof (each runs from the floor, Yb 0), and where one narrows at 45 degrees to the vent's land (from Yb, to this half-width)", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4): lands of radius 9.5 round the glands at Yb 25 and 60, 8 round the vent", "sourced"),
+    "enc_glands": ((13.0, 12.5, 15.5), "gland and vent holes through the bottom wall: PG-7, the M12 vent, PG-9", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4) (PG-7 13.0, the vent 12.46; all teardrop-topped for printing); the PG-9s 15.5 (fix 2, not in enclosure 4)", "sourced"),
+    "enc_sma_seat": (1.0, "the SMA bulkhead's inner nut seat (sma_bulkhead's 14.2) depth into the right wall", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4): Xb 122.25 to about 123.25", "sourced"),
     "bar_bore": ((4.0, 6.5), "M3 heat-set insert bore for the retention bar's two inserts in the left wall's front face: diameter x depth", "enclosure 3 and 4 STLs (as printed; the bore for an M3 x 5.7 insert about 4.6 across the knurl: knurl - 0.6, length + 0.8)", "derived"),
     "bar_inserts": ((5.00, 76.5, 146.5, 3.4), "the retention bar's two M3 heat-set inserts in the left wall's front face: Xb, the two Zb, and the bar's clearance holes (the bores bar_bore, for insert_m3)", "enclosure 3 STL (as printed, audited 2026-11-16, sheets/audit-enc3): bores at Xb 5.00, Zb 76.50 and 146.50; the lower bore leaves 0.48 of plastic to the B4 slot's floor", "sourced"),
     "bp_groove": ((2.5, 0.5, 2.5), "the left wall's backplane groove: depth into the wall's slot-side face, height over the board's component face, the board's sideways fit travel (lowered this far to the right, then slid left into the groove)", "cage/backplane-mount-spec.md: 0.5 clear past the board's edge; floor level with the support pads' tops, a 45 degree roof", "derived"),
@@ -146,8 +154,8 @@ D = {
     # ---------------------------------------------------------------- the printed base (PETG) under the #905 lid
     "box_out": ((125.0, 175.0, 75.0), "#905 (TIBOX) outside, for reference: width x length x depth (the printed base replaces its 50 mm body)", TIB + " p.5; adafruit.com/product/905", "sourced"),
     "lid_depth": (25.0, "#905 clear lid tray depth, outside (kept: the printed base mates with it)", TIB + " p.5 D2; Clint, by hand, 2026-11-10: lid about 25 deep, no lip", "sourced"),
-    "base_out_depth": (100.0, "printed base depth, outside, rim to back", "Clint, 2026-11-10: 100 mm", "sourced"),
-    "base_wall": (3.0, "printed base walls and floor (PETG, about 7 perimeters on a 0.4 nozzle, solid)", "layout choice for a watertight FDM wall", "derived"),
+    "base_out_depth": (120.0, "printed base depth, outside, back to wall top (the lip stands 2.5 above it)", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4): floor Yb -3 to 0, walls to Yb 117", "sourced"),
+    "base_wall": (3.0, "printed base floor (the lid frame's wall: the lid outline less this is the frame W x H); the walls are thicker (enc_inside)", "enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4): floor 3.0 (Yb -3 to 0)", "sourced"),
     "gasket": (1.0, "allowance off the closed depth for the lid's O-ring and fit", "assumed until M17", "TBD"),
     "lid_rim": ((3.0, 3.0, 3.0), "#905 lid rim, outside to inside: plastic wall, O-ring channel (white O-ring in it), plastic wall: a 9 mm land; the O-ring path curves in round the four corner bosses", "Clint's photo and sketch of the lid, 2026-11-10 (photo-8525 lid-up.jpg)", "sourced"),
     "lid_boss": ((22.0, 21.0, 3.0), "#905 lid corner screw boss: along the long side x along the short side (from the outside edges), wall outside the screw hole", "Clint's photo and sketch of the lid, 2026-11-10 (photo-8525 lid-up.jpg)", "sourced"),
@@ -167,7 +175,7 @@ D = {
     "l5_lid_out": ((RIM["lid_out"][0], RIM["lid_out"][1], RIM["corner_r"]), "L5: lid outside length x width, corner radius (the base matches it; the radius in use is corner_r_out)", SCAN + " (was 175 x 130 by tape and Adafruit)", "sourced"),
     "base_905": ((175.0, 131.0), "the original #905 base's outside length x width (wider than the lid)", "Adafruit #905 drawing, via the coordinator: base 131 wide against the lid's 128.5", "sourced"),
     "l6_body_rib": ((3.0, 1.5), "L6: the original base's sealing lip: height, and its offset in from the base's outer edge (rough)", "Clint, 2026-11-10 (via the coordinator): 3 mm tall; 1-2 mm in from the base's outer edge, an eyeball estimate (a rough check that disagrees with the channel line)", "sourced"),
-    "box_in": ((RIM["lid_out"][1] - 6.0, RIM["lid_out"][0] - 6.0, 120.0), "printed base inside: width x length (up the pole) x depth floor to closed lid (base 97 inside + lid 24 less the gasket allowance)", "from l5_lid_out less 2 x base_wall, base_out_depth, base_wall, lid_depth (its top about 1 mm) and gasket", "derived"),
+    "box_in": ((121.0, 167.5, 140.0), "printed base inside: width x length (up the pole) x depth floor to closed lid (base 117 inside + lid 24 less the gasket allowance)", "enc_inside, base_out_depth less the floor, lid_depth (its top about 1 mm) and gasket", "derived"),
     "insert_m4": ((5.6, 8.0), "M4 heat-set insert: hole x length", "typical M4 heat-set insert for plastics; check the ones bought", "TBD"),
     "corner_keepout": (20.0, "the insert post's depth below the seam (the corner land's reach comes from seal_s and rim_tongue)", "an M4 heat-set insert (8) with 3 mm of PETG under it, and the screw (L1)", "derived"),
     "evm_under": (4.0, "BQ25798EVM underside: J6 micro-USB (bottom-mounted) and solder tails below the board", "J6 Molex 47346-0001 (SLUUCB5E BOM), right-angle bottom mount; height not reached", "TBD"),
@@ -203,10 +211,18 @@ def label(key):
     return s + " mm" + (" [TBD-MEASURE]" if tbd(key) else "")
 
 
+def _fmt(v, top=True):
+    """A table cell: numbers, None as ?, tuples joined by x (nested ones in brackets)."""
+    if isinstance(v, tuple):
+        s = " x ".join(_fmt(x, False) for x in v)
+        return s if top else f"({s})"
+    return "?" if v is None else v if isinstance(v, str) else f"{v:g}"
+
+
 def table():
     rows = ["| Key | Value (mm) | What | Source | Status |", "|---|---|---|---|---|"]
     for k, (v, what, src, st) in D.items():
-        vs = " x ".join("?" if x is None else f"{x:g}" for x in v) if isinstance(v, tuple) else (v if isinstance(v, str) else f"{v:g}")
+        vs = _fmt(v)
         rows.append(f"| `{k}` | {vs} | {what} | {src} | {'[TBD-MEASURE]' if st == 'TBD' else st} |")
     return "\n".join(rows)
 
