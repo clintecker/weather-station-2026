@@ -1,6 +1,7 @@
 # Outdoor sensor pods (TH, baro, UV): design
 
-Status: draft 2026-11-17, from the conversation with Clint the same day. Builds on the TX card cage
+Status: reviewed 2026-11-17 (Clint: "likely ok"); one open item, the EEPROM breakout part. From the
+conversation with Clint the same day. Builds on the TX card cage
 (`hardware/tx-stack-r1/`, design `docs/superpowers/specs/2026-11-09-tx-protoboard-stack-design.md`) and
 the module identity design (`docs/firmware-current-design.md` §4.1, §6.7, §6.9).
 
@@ -48,7 +49,7 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
 ## Anti-goals
 
 - A connector, solder joint or circuit board inside the shield's measured air, other than the
-  SHT45 breakout itself.
+  SHT45 breakout itself and the four lead joints on its own header pads.
 - Any pod whose seal depends on a glued joint that cannot be taken apart.
 - A pod that can only be identified by the port it is plugged into: the EEPROM is the identity.
 - A UV window that silently changes the reading: the window material is recorded, and its
@@ -72,8 +73,9 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
   - The 3MF is laid out as printed (parts flat on the bed). The assembled positions (plates on the
     base cup, the stand's orientation to the posts) are derived from the parts' mating features,
     not assumed; the 2026-11-17 fit check assumed the stand on the plate axis and must be redone.
-- **SHT45 #6174** board 25.4 x 17.8 mm with its PTFE-capped sensor: fits on the stand's inner face
-  with more than 5 mm to every post (fit check 2026-11-17).
+- **SHT45 #6174** board 25.4 x 17.8 mm with its PTFE-capped sensor. The 2026-11-17 fit check put it
+  on the stand's inner face with more than 5 mm to every post, but that check assumed the stand on the
+  plate axis (above), so the fit is provisional until the assembled-shield check is re-run.
 - **Perma-Proto Quarter #1608** (about 44 x 51 mm: take the exact outline and hole grid from
   Adafruit's own file) does not fit the shield's core: the TH pod board lives outside the shield.
 - **I2C on a port**: each port's lines are pulled up on the TX side by the mux breakout's 10 k
@@ -82,6 +84,9 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
   (about 236 pF at 100 kHz with about 5 k): the builder computes the per-pod total and removes
   pull-ups where the breakout allows (cut-trace jumpers), recording which.
 - **Cable**: straight-through RJ11/RJ12, round, through a PG-7 gland (3.0-4.3 mm seal) at each end.
+  The PG-7 (#762) seals only 3.0-4.3 mm, and common round 6-conductor modular cable is about 4.5 mm,
+  so the bulk cable must be bought to an outside diameter of 3.0-4.3 mm (measured, not taken from the
+  listing), or that end gets a PG-9 (4.0-6.4 mm). The same limit applies to the TX box's PG-7s.
   A 6P plug (about 12 mm across its corners) cannot pass a gland: the cable goes through both glands
   first and both plugs are crimped after (Clint has 6P crimp plugs; a 6P crimper is needed, see
   `hardware/tx-stack-r1/build/ASSEMBLY.md`). Length per pod is set by the mast layout; any run over
@@ -90,6 +95,15 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
   WP pad strapped so the record is write-protected in service. Each EEPROM shares 0x50 with the
   others only behind the TX mux (one port per channel).
 - **TX side**: four sensor ports, three pods. The fourth port (S4, B2 J14) stays spare.
+- **Parts status** (`/Users/clint/code/electronics/INVENTORY.md`, review 2026-11-17):
+  - On hand or on the 2026-11-09 order: the three sensors (#6174 x2, #6407, #4831), Perma-Proto
+    quarters #1608 (10), BOB-14021 (10 + the old panel), 87180-066LF jacks (20), 2-pin headers and
+    shunts (100 each, for the WP jumper), RJ12 6P6C crimp plugs (100).
+  - **Not in the inventory:** the EEPROM breakouts (Clint says they are in the inventory; no line
+    names them, and `docs/current-system.md` records the hub build with no ID EEPROMs at 0x50), a
+    6P modular crimper (INVENTORY suggests Klein VDV226-011-SEN), bulk round 6-conductor cable (the
+    straight-through cables on hand have plugs fitted, which pass no gland), and enough PG-7 glands
+    for three pods on top of the TX box's seven.
 - **Cable runs are under 2 m** (Clint, 2026-11-17): the TX side's pull-ups and the per-port total
   above hold; no stronger pull-ups at the pod jacks.
 - **Shield remix allowed** (Clint, 2026-11-17): the top cap (object_70) and the L-bracket arm
@@ -152,12 +166,16 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
    step is needed. The pod board is drawn around that EEPROM breakout as supplied (Clint names the
    board; until then it is the Adafruit 24LC32 STEMMA QT breakout, its outline, pull-ups and WP
    jumper read from Adafruit's files). The bench loses these sensors when the pods are built.
+   **Open (blocks the pod board layout):** the EEPROM breakout's maker and number, and how many; it is
+   not in `INVENTORY.md` (above).
 7. **Every pod box**: printed PETG, light colour, UV paint or clear coat outside (as the TX base); a
    lid on an O-ring or gasket held by screws into heat-set inserts (taken apart, never glued); one
    PG-7 gland at the bottom for the port cable; a drip loop below the gland; a mounting face that
    matches the remixed arm's or the remixed cap's bosses.
-8. **Cables**: one round straight-through 6-conductor cable per pod, crimped after passing the
-   glands at both ends; length from the mast layout.
+8. **Cables**: one round straight-through 6-conductor cable per pod, OD 3.0-4.3 mm for the PG-7s,
+   crimped after passing the glands at both ends; length from the mast layout (under 2 m). The TH
+   pod's lead from the SHT45 to its pod board (about 0.3-0.5 m) counts toward that port's bus length
+   and capacitance.
 9. **Sheets**: a new session (or one per pod) in `hardware/tx-stack-r1/sheets/`'s pipeline style:
    parts as supplied, each pod board step by step, the TH lead and the shield stand, each box, the
    continuity checks before power, the cable crimp order.
