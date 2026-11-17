@@ -1,6 +1,6 @@
 # Outdoor sensor pods (TH, baro, UV): design
 
-Status: reviewed 2026-11-17 (Clint: "likely ok"); one open item, the EEPROM breakout part. From the
+Status: reviewed and approved 2026-11-17 (Clint: "likely ok"); EEPROM breakout named (item 6). From the
 conversation with Clint the same day. Builds on the TX card cage
 (`hardware/tx-stack-r1/`, design `docs/superpowers/specs/2026-11-09-tx-protoboard-stack-design.md`) and
 the module identity design (`docs/firmware-current-design.md` §4.1, §6.7, §6.9).
@@ -99,8 +99,8 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
   - On hand or on the 2026-11-09 order: the three sensors (#6174 x2, #6407, #4831), Perma-Proto
     quarters #1608 (10), BOB-14021 (10 + the old panel), 87180-066LF jacks (20), 2-pin headers and
     shunts (100 each, for the WP jumper), RJ12 6P6C crimp plugs (100).
-  - **Not in the inventory:** the EEPROM breakouts (Clint says they are in the inventory; no line
-    names them, and `docs/current-system.md` records the hub build with no ID EEPROMs at 0x50), a
+  - **Not in the inventory file:** the Adafruit 24LC32 EEPROM breakouts (Clint has them; not yet
+    listed, count not recorded), a
     6P modular crimper (INVENTORY suggests Klein VDV226-011-SEN), bulk round 6-conductor cable (the
     straight-through cables on hand have plugs fitted, which pass no gland), and enough PG-7 glands
     for three pods (plus the TH lead's small gland) on top of the TX box's five PG-7s and two PG-9s.
@@ -166,8 +166,11 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
    step is needed. The pod board is drawn around that EEPROM breakout as supplied (Clint names the
    board; until then it is the Adafruit 24LC32 STEMMA QT breakout, its outline, pull-ups and WP
    jumper read from Adafruit's files). The bench loses these sensors when the pods are built.
-   **Open (blocks the pod board layout):** the EEPROM breakout's maker and number, and how many; it is
-   not in `INVENTORY.md` (above).
+   **The EEPROM breakout (Clint, 2026-11-17): Adafruit's I2C EEPROM, the 24LC32 STEMMA QT breakout
+   (Adafruit #5146 as far as known; check the number on the bag).** It is not listed in
+   `INVENTORY.md`; the count is not recorded (three are needed, one per pod). Its 10 k pull-ups count
+   toward the port total (cut its pull-up jumper if the total needs it), and its WP pad is wired to the
+   2-pin shunt header.
 7. **Every pod box**: printed PETG, light colour, UV paint or clear coat outside (as the TX base); a
    lid on an O-ring or gasket held by screws into heat-set inserts (taken apart, never glued); one
    PG-7 gland at the bottom for the port cable; a drip loop below the gland; a mounting face that
