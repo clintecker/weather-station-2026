@@ -5,4 +5,6 @@ set -e
 cd "$(dirname "$0")"
 echo "== dimension table in README.md"
 python3 sources.py --check
+echo "== Perma-Proto model against sources and the .brd"
+cd ../..; .venv/bin/python -m unittest tests.test_pods_permaproto; cd hardware/pods-r1
 echo "== pods-r1: every check passes"
