@@ -46,7 +46,7 @@ EEP = (GH + "Adafruit-24LC32-PCB/blob/e92cf5549d/Adafruit%2024LC32%20I2C%20EEPRO
 PERMA = (GH + "Adafruit-Perma-Proto-PCB/blob/6a11bc3bbf/adafruit%20permaproto%20quarterbreadboard.brd (last change to the file "
          "2026-06-03; repo HEAD 2c7f1ba879; Adafruit 1/4-size Perma-Proto, product 1608 in the repo README)")
 TI = "TI SLVA689 'I2C Bus Pullup Resistor Calculation', https://www.ti.com/lit/an/slva689/slva689.pdf, Table 1 (standard mode column)"
-SHIELD = Path.home() / "Downloads" / "Stevenson_screen_NFS.3mf"
+SHIELD = "~/Downloads/Stevenson_screen_NFS.3mf"     # kept unexpanded in the table; shield_path() expands it where used
 
 D = {
     # ---------------------------------------------------------------- Adafruit Perma-Proto Quarter #1608
@@ -63,7 +63,7 @@ D = {
     "sht45_pins": (("VIN", "3Vo", "GND", "SCL", "SDA"), "SHT45 header pads, left to right as laid out (board net names VCC, 3.3V, GND, SCL, SDA)", SHT + ": element JP2 (1X05, pads 1-5)", "sourced"),
     "sht45_hdr": ((7.62, 2.54, 2.54), "SHT45 header: x of pad 1, y of the row, pitch (from the board's lower-left corner)", SHT + ": JP2 at (12.7, 2.54), pads at -5.08..+5.08", "sourced"),
     "sht45_pullup_k": (10.0, "SHT45 pull-ups, kohm: SDA and SCL on the header side each 10k to VIN (pad 1); the sensor side has its own 10k to 3.3 V behind a BSS138 level shifter; no jumper to cut them (the shifter's header side is what the pod sees)", SHT + " and its .sch: R3 RESPACK_4X0603 10K, pins 1-8 VCC-SCL, 3-6 VCC-SDA, 2-7 and 4-5 3.3V to the sensor-side lines", "sourced"),
-    "sht45_addr": ("0x44", "SHT45 I2C address (fixed, cannot be changed)", "learn.adafruit.com/adafruit-sht40-temperature-humidity-sensor/pinouts: 'The I2C address is 0x44 and cannot be changed'; adafruit.com/product/6174", "sourced"),
+    "sht45_addr": ("0x44", "SHT45 I2C address (fixed, cannot be changed)", "https://learn.adafruit.com/adafruit-sht40-temperature-humidity-sensor/pinouts: 'The I2C address is 0x44 and cannot be changed'; https://www.adafruit.com/product/6174", "sourced"),
     # ---------------------------------------------------------------- Adafruit BMP581 #6407 (baro pod)
     "bmp581": ((25.4, 17.78), "BMP581 #6407 breakout outline, width x height; 2.5 mm plated mounting holes at the four corners, as the SHT45; the repo README lists BMP580 #6413, not 6407: the .brd name says BMP581 and the layout is the same family", BMP + ": Dimension layer 20, 0..25.4 x 0..17.78", "sourced"),
     "bmp581_pins": (("VIN", "3Vo", "GND", "SCK", "SDO", "SDI", "CS", "INT"), "BMP581 header pads, left to right (board net names VCC, 3.3V, GND, SCK/SCL, SDO/ADR, SDI/SDA, CS, INT)", BMP + ": element JP1 (1X08, pads 1-8)", "sourced"),
@@ -90,7 +90,7 @@ D = {
     "i2c_sink_ma": (3.0, "standard- and fast-mode I2C low-level output sink current the bus pull-ups must stay under (at VOL 0.4 V)", TI + ": 'Low-level output voltage (at 3 mA current sink)'", "sourced"),
     "rise_ns_max": (1000, "standard-mode I2C maximum SDA/SCL rise time (30 to 70 percent), ns", TI + ": tr 1000 ns standard mode (300 fast, 120 fast-plus)", "sourced"),
     # ---------------------------------------------------------------- the radiation shield (never committed)
-    "shield_3mf": ((str(SHIELD), "c8a6f1bc66e94d516a0e3b6fd50ad338343281649da1c4f9df0fd2809695a768"), "Clint's Stevenson-screen radiation shield model: local path (outside git), sha256. Only the top cap (object_70) and the L-arm (object_72) are remixed. The file and everything derived from its meshes stay out of git", "~/Downloads/Stevenson_screen_NFS.3mf (Clint, 2026-11-17; sha256 taken from the file on 2026-11-17)", "sourced"),
+    "shield_3mf": ((SHIELD, "c8a6f1bc66e94d516a0e3b6fd50ad338343281649da1c4f9df0fd2809695a768"), "Clint's Stevenson-screen radiation shield model: local path (outside git), sha256. Only the top cap (object_70) and the L-arm (object_72) are remixed. The file and everything derived from its meshes stay out of git", "~/Downloads/Stevenson_screen_NFS.3mf (Clint, 2026-11-17; sha256 taken from the file on 2026-11-17)", "sourced"),
 }
 
 
@@ -114,11 +114,21 @@ def _fmt(v):
     return v if isinstance(v, str) else f"{v:g}"
 
 
+def shield_path():
+    """The shield 3MF's real local path (the table keeps the unexpanded ~/Downloads form)."""
+    return Path(val("shield_3mf")[0]).expanduser()
+
+
+def _is_length(v):
+    vs = v if isinstance(v, tuple) else (v,)
+    return all(x is None or (isinstance(x, (int, float)) and not isinstance(x, bool)) for x in vs)
+
+
 def label(key):
-    """Text for a drawing label: the value, and the TBD flag when it is a placeholder."""
+    """Text for a drawing label: the value (with mm when it is a number), and the TBD flag when it is a placeholder."""
     v = val(key)
     s = "x".join(_fmt(x) for x in v) if isinstance(v, tuple) else _fmt(v)
-    return s + " mm" + (" [TBD-MEASURE]" if tbd(key) else "")
+    return s + (" mm" if _is_length(v) else "") + (" [TBD-MEASURE]" if tbd(key) else "")
 
 
 def permaproto_q_holes():

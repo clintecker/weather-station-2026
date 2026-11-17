@@ -63,7 +63,7 @@ class PodsSources(unittest.TestCase):
     def test_every_sourced_row_cites(self):
         for k, (v, what, src, st) in self.s.D.items():
             if st == "sourced":
-                self.assertTrue(re.search(r"https?://|\.(py|md|brd|sch|3mf)\b|/", src), f"{k}: no URL or path in the source")
+                self.assertTrue(re.search(r"https?://|[\w.-]+/[\w./-]*\.[A-Za-z0-9]{2,4}\b", src), f"{k}: no URL or path in the source")
 
     def test_readme_table_in_step(self):
         self.assertTrue(self.s.sync_readme(check=True))
@@ -73,6 +73,15 @@ class PodsSources(unittest.TestCase):
         self.assertTrue(path.endswith("Stevenson_screen_NFS.3mf"))
         self.assertRegex(sha, r"^[0-9a-f]{64}$")
         self.assertEqual(self.s.D["shield_3mf"][3], "sourced")
+
+    def test_label_units(self):
+        self.assertEqual(self.s.label("sht45_addr"), "0x44")
+        self.assertEqual(self.s.label("cable_max_m"), "2 mm")
+        self.assertTrue(self.s.label("cable_pf_per_m").endswith("[TBD-MEASURE]"))
+
+    def test_table_has_no_home_path(self):
+        self.assertNotIn(str(Path.home()), self.s.table())
+        self.assertTrue(self.s.val("shield_3mf")[0].startswith("~/"))
 
     def test_shield_not_in_git(self):
         files = subprocess.run(["git", "ls-files", "hardware/pods-r1"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
