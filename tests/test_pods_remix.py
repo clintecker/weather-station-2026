@@ -78,18 +78,32 @@ class PodsRemix(unittest.TestCase):
         old = self.orig[r.A.CAP]
         self.assert_part_is_good(cap, old)
         top_z, flat_r = r.cap_flat_top()
-        # the flat top really is flat and round at that radius, measured on the remixed mesh with vertical rays
+        # the original flat top really is a flat disc of that radius (vertical rays on the original mesh)
         for a in np.linspace(0, 2 * math.pi, 24, endpoint=False):
-            self.assertAlmostEqual(r.top_z(cap, (flat_r - 0.5) * math.cos(a), (flat_r - 0.5) * math.sin(a)), top_z, 2)
-            self.assertLess(r.top_z(cap, (flat_r + 1.0) * math.cos(a), (flat_r + 1.0) * math.sin(a)), top_z - 0.5)
-        self.assertLess(overlap(cap, self.orig["object_79.6"]), SLIVER)        # the bosses stay out of the top plate
+            self.assertAlmostEqual(r.top_z(old, (flat_r - 0.5) * math.cos(a), (flat_r - 0.5) * math.sin(a)), top_z, 2)
+            self.assertLess(r.top_z(old, (flat_r + 1.0) * math.cos(a), (flat_r + 1.0) * math.sin(a)), top_z - 0.5)
+        self.assertAlmostEqual(cap.bounding_box()[5], top_z, 3)                  # nothing added stands above the flat top
+        self.assertLess(overlap(cap, self.orig["object_79.6"]), SLIVER)        # the bosses and ribs stay out of the top plate
         m = r.uv_mount()
         head = r.S.val("pod_mount_screw")[2]
-        self.assertGreaterEqual(len(m["holes"]), 2)
-        for x, y in m["holes"]:
-            edge = flat_r - math.hypot(x, y)
+        # EVERY one of the UV box's mount holes is a hole in the cap
+        placed = [tuple(np.round(p[:2], 3)) for p in r.box_points("UV", [(*h, r.P.dims("UV")["z_bo"]) for h in r.P.mount_face("UV").holes])]
+        self.assertEqual(len(placed), 4)
+        cap_holes = {tuple(np.round(h, 3)) for h in m["holes"]}
+        for h in placed:
+            self.assertIn(h, cap_holes)
+        # the remixed cap's real top face: a section just under the top
+        v, f = r.arrays(cap)
+        seg = r.A.section_z(v, f, top_z - 0.02)
+        a, b = seg[:, 0], seg[:, 1]
+        for x, y in placed:
+            q = np.array([x, y])
+            t = np.clip(((q - a) * (b - a)).sum(1) / np.maximum(((b - a) ** 2).sum(1), 1e-18), 0, 1)
+            d = np.hypot(*(a + t[:, None] * (b - a) - q).T)
+            edge = float(d[d > r.HOLE_D / 2 + 0.3].min())                      # the hole's own rim is not an edge
             self.assertGreaterEqual(edge, EDGE, (x, y, edge))
-            self.assertGreaterEqual(edge, head / 2, (x, y, edge))
+            ring = np.array([(x + head / 2 * math.cos(u), y + head / 2 * math.sin(u)) for u in np.linspace(0, 2 * math.pi, 24, endpoint=False)])
+            self.assertTrue(r.A._inside(ring, seg).all(), (x, y))             # the whole head's circle is on the top face
             # a clear M3 hole through the cap, a flat seat for the whole head, and a straight way up to it from below
             pin = r.cyl((x, y), 2.9, m["seat_z"] - 0.01, top_z + 1)
             self.assertLess(overlap(pin, cap), 1e-3)
@@ -97,30 +111,39 @@ class PodsRemix(unittest.TestCase):
             self.assertAlmostEqual(overlap(ring, cap), ring.volume(), delta=0.02 * ring.volume())
             reach = r.cyl((x, y), head, old.bounding_box()[2] - 5, m["seat_z"] - 0.01)
             self.assertLess(overlap(reach, cap), 1e-3)
+            if math.hypot(x, y) > flat_r:                               # on the saddle: driven from the open air below,
+                for i in range(1, 7):                                   # with the shield assembled
+                    self.assertLess(overlap(reach, self.orig[f"object_79.{i}"]), 1e-3)
             grip = top_z - m["seat_z"]
             length = r.S.val("pod_mount_screw")[1]
             bore_d, bore_depth = r.S.val("pod_insert_bore")
             self.assertGreaterEqual(length - grip, 4.0)                  # thread in the insert
             self.assertLessEqual(length - grip, bore_depth - 0.5)        # the screw does not bottom in the bore
-        # the UV box sits on the cap's flat top and overlaps nothing; its holes are the box's own mount-face holes
+        # the UV box sits on the cap's top and overlaps nothing
         box = r.box_placed("UV")
         self.assertLess(overlap(box, cap), SLIVER)
         self.assertAlmostEqual(box.bounding_box()[2], top_z, 3)
-        placed = [tuple(np.round(p[:2], 3)) for p in r.box_points("UV", [(*h, r.P.dims("UV")["z_bo"]) for h in r.P.mount_face("UV").holes])]
-        for h in m["holes"]:
-            self.assertIn(tuple(np.round(h, 3)), placed)
-        # the gland keep-out is entirely off the cap (and the louvers), and the gland and its cable meet nothing
-        footprint = [cap.bounding_box()] + [self.orig[f"object_79.{i}"].bounding_box() for i in range(1, 7)]
+        # the gland keep-out is entirely off the remixed cap's and the louvers' real outlines (projections on XY)
+        outlines = [cap] + [self.orig[f"object_79.{i}"] for i in range(1, 7)]
         for x, y, d in m["keepouts"]:
             self.assertGreaterEqual(d, 18.0)
-            for b in footprint:
-                dx = max(b[0] - x, 0, x - b[3])
-                dy = max(b[1] - y, 0, y - b[4])
-                self.assertGreaterEqual(math.hypot(dx, dy), d / 2, (x, y, b))
+            q = np.array([x, y])
+            for part in outlines:
+                for poly in part.project().to_polygons():
+                    pa = np.asarray(poly, float)
+                    pb = np.roll(pa, -1, axis=0)
+                    t = np.clip(((q - pa) * (pb - pa)).sum(1) / np.maximum(((pb - pa) ** 2).sum(1), 1e-18), 0, 1)
+                    self.assertGreaterEqual(float(np.hypot(*(pa + t[:, None] * (pb - pa) - q).T).min()), d / 2, (x, y))
+                    cross = (pa[:, 1] > y) != (pb[:, 1] > y)
+                    xs = pa[:, 0] + (y - pa[:, 1]) * (pb - pa)[:, 0] / np.where(cross, (pb - pa)[:, 1], 1)
+                    self.assertEqual(int((cross & (xs > x)).sum()) % 2, 0, (x, y))        # and not inside it
         drop = r.uv_cable_envelope()
         for k in [r.A.CAP] + [f"object_79.{i}" for i in range(1, 7)] + [r.A.CUP]:
             self.assertGreater(drop.min_gap(self.orig[k] if k != r.A.CAP else cap, 50.0), 1.0, k)
         self.assertGreater(drop.min_gap(r.arm_remixed(), 50.0), 1.0)
+        # the saddle's ribs barely stand in front of the louvers: under 1 % of the +x louver face
+        area, low, face = r.saddle_cover()
+        self.assertLess(low, 0.01 * face)
         # printable on its flat top as before: no more steep downward area than the original, bar the new holes' roofs
         self.assertLessEqual(r.overhang_area(cap, r.CAP_PRINT_UP), r.overhang_area(old, r.CAP_PRINT_UP) + 30.0 * len(m["holes"]))
 

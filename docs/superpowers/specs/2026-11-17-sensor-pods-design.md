@@ -69,8 +69,9 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
     (53 x 47, 4 thick, three Ø4 bores on the posts' circle), zip-tie teardrops up its face; assembled, the
     strip's middle is 2.0 mm off the plate axis (its faces at y +0.5 and -4.5 mm), not 8 mm;
   - a **base cup** (object_67), diameter about 59, 32.6 tall, with a foot about 19 x 54 that meets
-    the **L-bracket arm** (object_72, 58.8 x 124 x 64; two holes and a foot pocket in its base plate) and a small pole
-    clamp.
+    the **L-bracket arm** (object_72, 58.8 x 124 x 64; two holes and a foot pocket in its base plate). The pole clamp is
+    NOT in the model: the arm's upright has three pairs of hose-clamp slots, and `shield/remix.py` checks clearance to an
+    assumed clamp envelope round them (`pole_clamp_env`, TBD until the real clamp is measured).
   - The 3MF is laid out as printed (parts flat on the bed). `hardware/pods-r1/shield/assemble.py` derives the
     assembled positions from the parts' mating features (pure translations, no part turned): cup tube bores,
     stand foot bores, plate and cap post bores all on the Ø50 post circle; plate posts 15 mm tall (pitch 15);
@@ -131,8 +132,9 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
   Rejected: a BOB-14021 and an EEPROM breakout do not fit, and it puts a connector in the airflow.
 
 **Baro pod: where the BMP581 goes** (Clint: the box is not vented).
-- **Chosen (Clint): its own outdoor pod box on the arm**, beside the TH pod box, with a sheltered
-  downward vent.
+- **Chosen (Clint): its own outdoor pod box on the arm**, with a sheltered downward vent. Placed across the base
+  cup from the TH pod box (BARO on the arm's +x face, TH on -x), which meets "beside the base cup" (controller ruling
+  2026-11-17, pending Clint).
 - Rejected: venting the TX box and putting the BMP581 inside on S4 (Claude's first pick; Clint chose
   outdoors), and doing both.
 
@@ -162,7 +164,8 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
    remixed arm. **The lead (controller ruling 2026-11-17, pending Clint):** a round jacketed 4-core
    cable, OD 3.0-4.3 mm, stranded cores coloured red 3V3, black GND, yellow SCL, blue SDA, so the TH
    box's second PG-7 (#762) seals on its jacket (`th_lead_gland`).
-3. **Baro pod**: BMP581 #6407 on the pod board; its box on the remixed arm beside the TH box; a downward-facing
+3. **Baro pod**: BMP581 #6407 on the pod board; its box on the remixed arm beside the base cup, across the cup from
+   the TH box (controller ruling 2026-11-17, pending Clint); a downward-facing
    vent port with a baffle (no direct path for rain or spray), and an ePTFE membrane if one is on
    hand.
 4. **UV pod**: LTR390 #4831 on the pod board, sensor face up under a UV-transmitting window in the
