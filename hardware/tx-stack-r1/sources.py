@@ -86,7 +86,7 @@ D = {
     "jstph_h": (6.0, "JST PH 2-pin socket height (MAX17048)", "KiCad JST_PH_B2B-PH-K model; bench r1 model_gauge", "sourced"),
     "s7v8f3": ((11.43, 16.51), "Pololu S7V8F3 outline", "bench r1 build.py SIZE['REG'] (0.45 x 0.65 in); pin order from the board in hand", "sourced"),
     "s7v8f3_h": (3.0, "S7V8F3 tallest part (inductor)", "bench r1 kicad_layout.py model_reg", "TBD"),
-    "ptc": ((7.4, 3.1, 12.7), "MF-R010 body W x T x H (max), leads 5.08", "Bourns MF-R datasheet table, via distributor listings", "sourced"),
+    "ptc": ((7.4, 3.1, 12.7), "MF-R010 Style 1 (round dipped disc on two kinked leads): A width x E thickness x B top-to-kinks (max); leads C 5.1 +/- 0.7 apart, 0.51 dia, D >= 7.6 below the kinks", "Bourns MF-R datasheet dimension table + Style 1 drawing (Clint, 2026-11-16)", "sourced"),
     "res_v_h": (9.0, "10 kohm standing (P5.08 vertical) height", "KiCad R_Axial_DIN0207 vertical model, L 6.3 + lead", "derived"),
     "cap_h": (6.0, "100 nF disc height", "KiCad C_Disc_D3.8mm model, D 3.8 + lead", "derived"),
     "pack": ((69.0, 54.0, 18.0), "battery pack #353", "INVENTORY.md / docs/current-system.md (SHOP:49)", "sourced"),

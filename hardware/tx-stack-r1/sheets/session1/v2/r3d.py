@@ -220,9 +220,28 @@ def render(scene, out, direction, up=(0, 0, 1), fit=None, scale=None, margin=6, 
 
     fills = []
     miss = []
+    big = 0.01 * sum(r.area for r in regions)
+    rng = np.random.default_rng(1)
     for r in regions:
         rp = r.representative_point()
         b = hit(rp.x, rp.y)
+        if r.area > big:
+            # A big region (a card face) can contain a small part whose outline never closed: one sample point can land
+            # on that part and colour the whole face. Vote over several interior points and keep the majority part.
+            x0, y0, x1, y1 = r.bounds
+            votes = [b] if b is not None else []
+            tries = 0
+            while len(votes) < 9 and tries < 200:
+                tries += 1
+                px, py = rng.uniform(x0, x1), rng.uniform(y0, y1)
+                if r.contains(shapely.Point(px, py)):
+                    bb = hit(px, py)
+                    if bb is not None:
+                        votes.append(bb)
+            if votes:
+                ks = [v[1] for v in votes]
+                kbest = max(set(ks), key=ks.count)
+                b = next(v for v in votes if v[1] == kbest)
         if b is None:
             miss.append(r)
             continue

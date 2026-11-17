@@ -7,6 +7,7 @@ PAD3U numbers: sources.py strip_size / pad_pitch and build/BACKPLANE.md.
 import math
 
 import cadquery as cq
+import numpy as np
 
 P = 2.54
 
@@ -78,6 +79,13 @@ def solderful(snapped=False, decals=None, part="card", z0=0.0, labels=True):
     pt = 0.06
     pads = (cq.Workplane("XY").workplane(offset=t).pushPoints(grid).slot2D(2.05, 1.55, 90).extrude(pt))
     pads = pads.union(cq.Workplane("XY").workplane(offset=t).pushPoints(railp).circle(0.85).extrude(pt))
+    # the strips, as on the real card: each column's A-E pads joined, its F-J pads joined, each rail one long trace
+    sw = 0.9
+    for n in range(1, 31):
+        for lo, hi in (("A", "E"), ("F", "J")):
+            pads = pads.union(box(col_x(n) - sw / 2, LET_Y[lo], t, col_x(n) + sw / 2, LET_Y[hi], t + pt))
+    for y in rails:
+        pads = pads.union(box(col_x(1), y - sw / 2, t, col_x(30), y + sw / 2, t + pt))
     pads = pads.faces(">Z").workplane(origin=(0, 0, t + pt)).pushPoints(grid + railp).hole(1.0)
     b, pads = b.translate((0, 0, z0)), pads.translate((0, 0, z0))
     if decals is not None and labels:
@@ -439,3 +447,55 @@ def b_copper(x0, x1, y0, y1, drilled=(), opened=False):
                         .extrude(0.06))
                 out.append(ring.val())
     return cq.Compound.makeCompound(out) if out else None
+
+
+# ------------------------------------------------------------------ Bourns MF-R010 PTC, Style 1 (datasheet table)
+def _rod(pts, r):
+    """A round wire through 3D points (cylinders + ball joints)."""
+    pts = [np.asarray(p, float) for p in pts]
+    sol = []
+    for a, b in zip(pts[:-1], pts[1:]):
+        L = float(np.linalg.norm(b - a))
+        if L > 1e-6:
+            sol.append(cq.Solid.makeCylinder(r, L, cq.Vector(*a), cq.Vector(*((b - a) / L))))
+    for p in pts[1:-1]:
+        sol.append(cq.Solid.makeSphere(r, cq.Vector(*p)))
+    s = sol[0]
+    for x in sol[1:]:
+        s = s.fuse(x)
+    return s.clean()
+
+
+def mfr010(p1, p2, card_top, w=7.4, t=3.1, h=12.7, pitch=5.1, lead_d=0.51, seat=1.0):
+    """MF-R010 Style 1 standing on the card, its two leads formed out from the 5.1 pitch to the holes p1, p2 (XY).
+    A dipped round disc (A = w across, E = t thick) on two kinked leads; B = h from the top to the kinks, which sit
+    `seat` above the card. Returns dict(body, leads, top, face, n): face = centre of the disc's +n (viewer-side) face."""
+    p1, p2 = np.asarray(p1, float)[:2], np.asarray(p2, float)[:2]
+    u2 = (p2 - p1) / np.linalg.norm(p2 - p1)
+    n2 = np.array([u2[1], -u2[0]])
+    if n2[0] > 0 or (abs(n2[0]) < 1e-9 and n2[1] > 0):
+        n2 = -n2                                              # face the -X (front-left) side
+    mid = (p1 + p2) / 2
+    u, n = np.array([*u2, 0.0]), np.array([*n2, 0.0])
+    o = np.array([*mid, 0.0])
+    zk = card_top + seat                                     # kink seating plane
+    ztop = zk + h
+    zc = ztop - w / 2                                        # disc centre
+    P = lambda a, z, b=0.0: o + u * a + n * b + np.array([0, 0, z])
+    disc = cq.Solid.makeCylinder(w / 2, t, cq.Vector(*P(0, zc, -t / 2)), cq.Vector(*n))
+    disc = cq.Workplane().add(disc).edges().fillet(0.9).val()
+    neck_bot = zc - w / 2 - 1.1                              # the dip runs a little way down the leads
+    corners = [P(-2.3, zc - 2.6), P(2.3, zc - 2.6), P(pitch / 2 + 0.4, neck_bot), P(-pitch / 2 - 0.4, neck_bot)]
+    base = cq.Workplane().polyline([tuple(c - n * (t * 0.35)) for c in corners]).close().wire().val()
+    neck = cq.Solid.extrudeLinear(cq.Face.makeFromWires(base), cq.Vector(*(n * t * 0.7)))
+    body = disc.fuse(neck).clean()
+    leads = None
+    for sgn, p in ((-1, p1), (1, p2)):
+        a0 = sgn * pitch / 2
+        hole = np.array([*p, 0.0]) - o
+        a1 = float(hole @ u)
+        pts = [P(a0, neck_bot + 0.5), P(a0, zk + 1.3), P(a0 + sgn * 0.45, zk + 0.75), P(a0, zk + 0.2),
+               P(a1, card_top + 0.7), P(a1, card_top - 1.6)]
+        lg = _rod(pts, lead_d / 2)
+        leads = lg if leads is None else leads.fuse(lg)
+    return dict(body=body, leads=leads, top=P(0, ztop), face=P(0, zc, t / 2), n=n, u=u, zc=zc)

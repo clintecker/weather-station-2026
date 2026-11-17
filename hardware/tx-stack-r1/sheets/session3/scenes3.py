@@ -339,22 +339,20 @@ PTC_COL = "#E8A317"
 
 
 def add_ptc(s, ref):
+    """MF-R010 Style 1 (Bourns datasheet: round dipped disc 7.4 x 3.1, kinked leads 5.1 apart, 12.7 top to kinks),
+    standing along its column, leads formed out to the 7.62 span (rail to row A)."""
     pl = PL[ref]
     (x1, y1), (x2, y2) = pl["pins"]["1"], pl["pins"]["2"]
     assert abs(x1 - x2) < 1e-6                         # F4 stands along a column (rail to row A)
-    box = next(b for b in pl["boxes"] if "MF-R010" in b.what)
-    b = cq.Workplane().add(M.box(box.x0, box.y0, T + box.z0, box.x1, box.y1, T + box.z1).val()).edges("|Z").fillet(1.0)
-    b = b.edges(">Z").fillet(0.8).val()
-    s.add(f"{ref}_body", b, PTC_COL, 0.8)
-    ym = (y1 + y2) / 2
-    sg = 1 if y2 > y1 else -1
-    zb = T + box.z0 + 0.3
-    lead = tube([(x1, ym - sg * 2.54, zb + 1.0), (x1, ym - sg * 2.54, T + 0.6), (x1, y1, T + 0.6), (x1, y1, T - 1.6)], 0.3)
-    lead = lead.fuse(tube([(x2, ym + sg * 2.54, zb + 1.0), (x2, ym + sg * 2.54, T + 0.6), (x2, y2, T + 0.6), (x2, y2, T - 1.6)], 0.3))
-    s.add(f"{ref}_leads", lead, M.TIN, 0.4)
-    s.text(f"{ref}_body", "R010", (box.x0 - 0.01, ym, T + box.z0 + 6.5), (0, -1, 0), (0, 0, 1), 1.6, colour="#1C1C1C")
-    mark(s, f"@{ref}", (x1, ym, T + box.z1), f"{ref}_body")
-    mark(s, f"{ref}_face", (box.x0, ym, T + box.z0 + 9.5), f"{ref}_body")
+    w, t, h = S.val("ptc")
+    f = M.mfr010((x1, y1), (x2, y2), T, w=w, t=t, h=h)
+    s.add(f"{ref}_body", f["body"], PTC_COL, 0.8)
+    s.add(f"{ref}_leads", f["leads"], M.TIN, 0.4)
+    fc = f["face"] + f["n"] * 0.01
+    s.text(f"{ref}_body", "R010", tuple(fc + [0, 0, -0.6]), tuple(-f["u"] if f["n"][0] < 0 else f["u"]), (0, 0, 1),
+           1.5, colour="#1C1C1C")
+    mark(s, f"@{ref}", tuple(f["top"]), f"{ref}_body")
+    mark(s, f"{ref}_face", tuple(f["face"] + [0, 0, 1.8]), f"{ref}_body")
 
 
 def add_header(s, ref="XH2"):

@@ -273,23 +273,15 @@ def add_diode(s, ref):
 
 
 def add_ptc(s, ref):
-    """MF-R010 (sources ptc: 7.4 W x 3.1 T x 12.7 H), standing, leads formed out to the 7.62 span (F+n to an)."""
+    """MF-R010 Style 1 (Bourns datasheet: round dipped disc 7.4 x 3.1, kinked leads 5.1 apart, 12.7 top to kinks),
+    standing, leads formed out to the 7.62 span (F+n to an)."""
     p1, p2 = np.array(PL[ref]["pins"]["1"]), np.array(PL[ref]["pins"]["2"])
     w, t, h = S.val("ptc")
-    mid = (p1 + p2) / 2
-    z1 = T + 1.0 + h
-    z0 = z1 - 9.0                                        # the disc; the kinked leads below it
-    body = (cq.Workplane("XY").box(t, w, z1 - z0).edges("|X").fillet(min(w, z1 - z0) * 0.45)
-            .edges().fillet(0.5).translate((mid[0], mid[1], (z0 + z1) / 2)).val())
-    s.add(f"{ref}_body", body, PTC_YELLOW, 0.8)
-    legs = None
-    for p in (p1, p2):
-        inner = mid + (p - mid) / np.linalg.norm(p - mid) * 2.54
-        lg = tube([_p3(inner, z0 + 1.0), _p3(inner, T + 2.6), _p3(p, T + 1.2), _p3(p, T - 1.6)], 0.25)
-        legs = lg if legs is None else legs.fuse(lg)
-    s.add(f"{ref}_leads", legs, TIN, 0.5)
-    s.anchor(f"{ref}_m", (mid[0] - t / 2, mid[1], (z0 + z1) / 2), on=f"{ref}_body")
-    s.anchor(f"{ref}_top", (mid[0], mid[1], z1), on=f"{ref}_body")
+    f = M.mfr010(p1, p2, T, w=w, t=t, h=h)
+    s.add(f"{ref}_body", f["body"], PTC_YELLOW, 0.8)
+    s.add(f"{ref}_leads", f["leads"], TIN, 0.5)
+    s.anchor(f"{ref}_m", tuple(f["face"]), on=f"{ref}_body")
+    s.anchor(f"{ref}_top", tuple(f["top"]), on=f"{ref}_body")
 
 
 # ------------------------------------------------------------------ RJ11 breakouts (BOB-14021 + 87180 jack + 1x6 header)
