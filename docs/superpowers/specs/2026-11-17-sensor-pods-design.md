@@ -142,7 +142,7 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
 **Baro pod: where the BMP581 goes** (Clint: the box is not vented).
 - **Chosen (Clint): its own outdoor pod box on the arm**, with a sheltered downward vent. Placed across the base
   cup from the TH pod box (BARO on the arm's +x face, TH on -x), which meets "beside the base cup" (controller ruling
-  2026-11-17, pending Clint).
+  2026-11-17; confirmed by Clint 2026-11-17).
 - Rejected: venting the TX box and putting the BMP581 inside on S4 (Claude's first pick; Clint chose
   outdoors), and doing both.
 
@@ -169,11 +169,11 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
 2. **TH pod**: SHT45 #6174 on the shield stand, a 4-wire lead (stranded, colours as the TX
    convention: red 3.3 V, black GND, yellow SCL, blue SDA) soldered to its header pads, through the
    base cup, into the TH pod box through a small gland or grommet, to the pod board. Pod box on the
-   remixed arm. **The lead (controller ruling 2026-11-17, pending Clint):** a round jacketed 4-core
+   remixed arm. **The lead (controller ruling 2026-11-17; confirmed by Clint 2026-11-17):** a round jacketed 4-core
    cable, OD 3.0-4.3 mm, stranded cores coloured red 3V3, black GND, yellow SCL, blue SDA, so the TH
    box's second PG-7 (#762) seals on its jacket (`th_lead_gland`).
 3. **Baro pod**: BMP581 #6407 on the pod board; its box on the remixed arm beside the base cup, across the cup from
-   the TH box (controller ruling 2026-11-17, pending Clint); a downward-facing
+   the TH box (controller ruling 2026-11-17; confirmed by Clint 2026-11-17); a downward-facing
    vent port with a baffle (no direct path for rain or spray), and an ePTFE membrane if one is on
    hand.
 4. **UV pod**: LTR390 #4831 on the pod board, sensor face up under a UV-transmitting window in the
