@@ -13,6 +13,7 @@ firmware/*/build/
 # pinned third-party checkouts (tools/fetch-vendor.sh)
 vendor/
 .venv-cad/
+.venv-pdf/
 .DS_Store
 .claude/
 # KiCad local view settings

@@ -286,7 +286,7 @@ def add_page(step, title, tags, fn):
 
 def cover(c, pg):
     page(c, "00", "SESSION P: THE THREE POD BOARDS",
-         "TH, BARO, UV: EACH ON A PERMA-PROTO QUARTER #1608, 9 WIRES UNDER. ONE PORT CABLE. NO POWER.",
+         "TH, BARO, UV: EACH ON A PERMA-PROTO QUARTER #1608, 9 WIRES UNDER, ITS OWN PORT CABLE. NO POWER.",
          pg, SLOGANS_P[0])
     g = Grid(1, 1)
     x, y, w, h = panel(c, g.cell(0, 0), None, cap(
@@ -301,8 +301,8 @@ def cover(c, pg):
              ("PER POD (3x): SULLINS PRPC002SAAN\n2-PIN HEADER + SPC02SYAN SHUNT", "p_jp1"),
              ("PER POD (3x): R1 10k 1% MFR-25\nBROWN-BLACK-BLACK-RED-BROWN", "p_r1"),
              ("24 AWG SOLID HOOK-UP WIRE\nred, black, yellow, blue", "p_wires"),
-             ("TH LEAD: ROUND JACKETED 4-CORE\nstranded: red, black, yellow, blue", "p_lead"),
-             ("PORT CABLE: ROUND 6-CONDUCTOR\n+ 2 RJ12 6P6C PLUGS + PG-7 #762", "p_cable")]
+             ("TH LEAD: ROUND JACKETED 4-CORE, STRANDED\nred, black, yellow, blue + its own PG-7 #762", "p_lead"),
+             ("3 PORT CABLES (1 PER POD), ROUND 6-COND.\n+ 6 RJ12 6P6C PLUGS + 3 PG-7 #762", "p_cable")]
     cw, rh = w / 3, h / 4
     for i, (name, art) in enumerate(items):
         col, row = i % 3, i // 3
@@ -310,8 +310,10 @@ def cover(c, pg):
         Art(c, art, X + 8, Y + 30, cw - 16, rh - 36)
         chip(c, X + cw / 2, Y + 18, name, 7.6, "ALT", INK, "c")
     X, Y = x + cw * 2, y
-    lines = ["NOT IN THIS SESSION: the boxes, the", "glands' fitting, the shield (Session Q).",
-             "", "STILL TO BUY: the TH lead and the port", "cable (sources.py: th_lead_gland, pg7_seal).",
+    lines = ["THE 3 PG-7s are the pod boxes' cable glands;", "each cable's TX end goes through a PG-7",
+             "the TX box already has (one per port).", "",
+             "NOT IN THIS SESSION: the boxes, the", "glands' fitting, the shield (Session Q).",
+             "", "STILL TO BUY: the TH lead and the port", "cables (sources.py: th_lead_gland, pg7_seal).",
              "", "VALUES: sources.py. HOLES: layout/pods.py."]
     para(c, X + 10, Y + rh - 22, lines, 8.0, 10.5, w=cw - 14, what="notes")
 
@@ -932,20 +934,23 @@ def meter_page(pod, step):
 def cable_crimp(c, pg):
     th = S.val("plug_6p")[0]
     lo, hi = S.val("pg7_seal")
-    page(c, "C1", "PORT CABLE: GLANDS FIRST, THEN CRIMP", f"ROUND 6-CONDUCTOR, STRAIGHT THROUGH, UNDER {S.val('cable_max_m'):g} M. "
-         f"A {th} MM PLUG WILL NOT PASS A PG-7.", pg, SLOGANS_P[7])
+    page(c, "C1", "PORT CABLES: GLANDS FIRST, THEN CRIMP", f"3 CABLES, ONE PER POD. ROUND 6-CONDUCTOR, STRAIGHT, UNDER "
+         f"{S.val('cable_max_m'):g} M. {th} MM PLUGS PASS NO PG-7.", pg, SLOGANS_P[7])
     g = Grid(2, 3, heights=[0.8, 0.8, 1.15])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, cap(
-        f"1  Each end's gland body is in its wall first: the pod box's PG-7 #762 (Session Q) and the TX port's gland. The cable's",
-        f"round jacket must be {lo:g}-{hi:g} mm across for a PG-7 to seal (else that end gets a PG-9). 2  Cut to length. 3  Push each",
-        "BARE end in through its dome nut and gland body from OUTSIDE the box. No plug yet.", width=100))
+        "EACH OF THE 3 CABLES (TH, BARO, UV), one at a time. 1  Both gland bodies are in their walls first: the pod box's",
+        "PG-7 #762 (Session Q) and, at the TX end, the PG-7 the TX box already has for that pod's port.",
+        f"Each cable's round jacket must be {lo:g}-{hi:g} mm across for a PG-7 to seal (else that end gets a PG-9). 2  Cut it to",
+        "length. 3  Push each BARE end in through its dome nut and gland body from OUTSIDE the box. No plug yet.", width=100))
     a = Art(c, "cab_glands", x + 20, y + 24, w - 40, h - 68)
-    lanes(c, [("POD END: PG-7, DOME OUT", *a.A("pod_gland"), "up", False), ("TX END: ITS GLAND", *a.A("tx_gland"), "up", False),
+    lanes(c, [("POD END: PG-7 #762, DOME OUT", *a.A("pod_gland"), "up", False),
+              ("TX END: THE TX BOX'S PG-7", *a.A("tx_gland"), "up", False),
               ("BARE END (POD BOX)", *a.A("pod_end"), "dn", False), ("BARE END (TX BOX)", *a.A("tx_end"), "dn", False)],
           art_box(a, -2), size=8.2)
     x, y, w, h = panel(c, g.cell(0, 1, 2), 2, cap(
         "4  Only now crimp a 6P6C plug on each end, inside its box: strip the jacket to the crimp tool's gauge, lay the six",
-        "conductors flat in the SAME colour order at both ends (hold each plug as below), push them to the tip, crimp.", width=100))
+        "conductors flat in the SAME colour order at both ends (hold each plug as below), push them to the tip, crimp.",
+        "6 plugs in all: 2 per cable. Use the same colour order on all 3 cables.", width=100))
     a = Art(c, "cab_crimped", x + 20, y + 4, w - 40, h - 44)
     lanes(c, [("POD-END PLUG", *a.A("pod_plug"), "up", False), ("TX-END PLUG", *a.A("tx_plug"), "up", False)],
           art_box(a, -2), size=8.2)
@@ -953,7 +958,8 @@ def cable_crimp(c, pg):
                                             "Contact 1 is on the LEFT."])
     a = Art(c, "plug_face", x + 40, y + 10, w - 80, h - 50)
     lanes(c, [(str(n), *a.A(f"P:c{n}"), "up", False) for n in range(1, 7)], art_box(a, -2), size=8.5)
-    x, y, w, h = panel(c, g.cell(1, 2), 4, ["Write the colour at each contact,", "pod end first. The TX end must match."])
+    x, y, w, h = panel(c, g.cell(1, 2), 4, ["Write the colour at each contact,", "pod end first. The TX end must match.",
+                                            "One order for all 3 cables."])
     for hx, hs_ in ((x + 40, "CONTACT"), (x + 96, "POD END"), (x + 186, "TX END")):
         text(c, hx, y + h - 40, hs_, 8.5, "MONO", GREY)
     for n in range(1, 7):
@@ -971,8 +977,8 @@ def cable_meter(c, pg):
     tx = PC.tx_port_map(1)
     e2e = PC.end_to_end(PODS_["UV"], 1, "reversed")
     bad = [f"TX pin {t} ({tx[t]}) lands on the pod's {pn}" for t, (pn, txn) in e2e.items() if pn != txn]
-    page(c, "C2", "PORT CABLE: PIN TO PIN BEFORE POWER", "CONTINUITY MODE. THE CABLE ALONE, NO POD, NO TX. A REVERSED CABLE "
-         "IS CAUGHT HERE OR NEVER.", pg, SLOGANS_P[6])
+    page(c, "C2", "PORT CABLES: PIN TO PIN BEFORE POWER", "CONTINUITY MODE. EACH OF THE 3 CABLES ALONE, NO POD, NO TX. "
+         "REVERSED IS CAUGHT HERE.", pg, SLOGANS_P[6])
     g = Grid(2, 2, heights=[1.3, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["Both plugs held the same way (tip UP,", "contacts toward you, latch away). Meter",
                                             "probe on one gold contact of each."])
@@ -990,15 +996,18 @@ def cable_meter(c, pg):
     SL.HC.mark(*pa, "leader dot")
     SL.HC.mark(*pb, "leader dot")
     chip(c, (pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2 - 50, "1 TO 1: BEEP", 9, "ALT", NEON, "c")
-    x, y, w, h = panel(c, g.cell(1, 0), 2, ["Six checks, then six that must be silent.", "Tick each."])
+    x, y, w, h = panel(c, g.cell(1, 0), 2, ["Every cable: six that beep, six that must", "be silent. Tick each, once per cable."])
     text(c, x + 40, y + h - 22, "POD CONTACT -> TX CONTACT", 8.5, "MONO", GREY)
     for i, n in enumerate(range(1, 7)):
         yy = y + h - 40 - i * 17
-        text(c, x + 20, yy, f"{n}  ->  {straight[n]}", 11, "HEAD", INK)
-        text(c, x + 96, yy, "BEEP", 9, "HEAD", NEON)
-        text(c, x + 140, yy, f"{n}  ->  {rev[n]}", 11, "HEAD", INK)
-        text(c, x + 216, yy, "SILENT", 9, "HEAD", GREY)
-        tick_box(c, x + w - 20, yy - 2, 10)
+        text(c, x + 14, yy, f"{n}  ->  {straight[n]}", 11, "HEAD", INK)
+        text(c, x + 72, yy, "BEEP", 9, "HEAD", NEON)
+        text(c, x + 106, yy, f"{n}  ->  {rev[n]}", 11, "HEAD", INK)
+        text(c, x + 158, yy, "SILENT", 9, "HEAD", GREY)
+        for k_ in range(3):
+            tick_box(c, x + w - 74 + k_ * 24, yy - 2, 10)
+    for k_, nm in enumerate(("TH", "BARO", "UV")):
+        text(c, x + w - 69 + k_ * 24, y + h - 27, nm, 7.5, "HEAD", GREY, "c")
     LAB.block(x + 14, y + h - 40 - 6 * 17, x + w - 24, y + h - 26, "table")
     yy = y + h - 40 - 6 * 17 - 6
     para(c, x + 14, yy, wrap_px("Also: no two neighbouring contacts of one plug beep (1-2, 2-3 ... 5-6).", w - 30, 8.4),
@@ -1047,8 +1056,9 @@ def build_pages():
             st = f"{n:02d}"
             add_page(st, title, tags, mk(pod, st))
             n += 1
-    add_page("C1", "PORT CABLE: GLANDS FIRST, THEN CRIMP", ["cable", "cable:crimp-order"], cable_crimp)
-    add_page("C2", "PORT CABLE: PIN TO PIN BEFORE POWER", ["cable", "cable:continuity", "cable:reversed"], cable_meter)
+    add_page("C1", "PORT CABLES: GLANDS FIRST, THEN CRIMP", ["cable", "cable:per-pod", "cable:crimp-order"], cable_crimp)
+    add_page("C2", "PORT CABLES: PIN TO PIN BEFORE POWER", ["cable", "cable:per-pod", "cable:continuity", "cable:reversed"],
+             cable_meter)
 
 
 build_pages()

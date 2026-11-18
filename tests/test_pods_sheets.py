@@ -12,32 +12,40 @@ Run from the repo root:
 """
 import json
 import os
+import re
 import subprocess
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SHEETS = ROOT / "hardware" / "pods-r1" / "sheets"
+PAGES = 33      # 2 cover, faces, jack breakouts, BMP581 cut, headers, 8 (TH) + 7 (BARO) + 7 (UV), 2 cable pages
 BOB_STEP = ROOT / "hardware" / "tx-stack-r1" / "render" / "models" / "BOB" / "bob14021_board.step"
 
 
 def _env():
-    """CADPY and PDFPY as sheets/env.sh sets them (the environment overrides it)."""
+    """CADPY, PDFPY and what is missing, as sheets/env.sh sets them (the environment overrides it)."""
     if not (SHEETS / "env.sh").exists():
-        return None, None
-    out = subprocess.run(["sh", "-c", f'. "{SHEETS / "env.sh"}"; echo "$CADPY"; echo "$PDFPY"'],
-                         capture_output=True, text=True)
-    cad, pdf = (out.stdout.splitlines() + ["", ""])[:2]
-    return cad, pdf
+        return None, None, None
+    out = subprocess.run(["sh", "-c", f'. "{SHEETS / "env.sh"}"; echo "$CADPY"; echo "$PDFPY"; echo "$_PODS_MISSING"'],
+                         capture_output=True, text=True, cwd=ROOT)
+    cad, pdf, missing = (out.stdout.splitlines() + ["", "", ""])[:3]
+    return cad, pdf, missing.strip()
+
+
+def pdf_page_count(path):
+    """Page objects in the PDF itself (reportlab writes page dictionaries uncompressed), not the manifest's word."""
+    return len(re.findall(rb"/Type\s*/Page(?![A-Za-z])", Path(path).read_bytes()))
 
 
 class SessionP(unittest.TestCase):
     def test_session_p_builds(self):
-        cad, pdf = _env()
+        cad, pdf, missing = _env()
         if not cad or not pdf:
             self.fail("hardware/pods-r1/sheets/env.sh is missing: it names the CAD and PDF interpreters")
-        if not Path(cad).exists() or not Path(pdf).exists():
-            self.skipTest(f"CAD ({cad}) or PDF ({pdf}) interpreter not on this machine")
+        if missing:
+            self.skipTest(f"WARNING: sheet interpreters missing or incomplete ({missing}); "
+                          "set up with: sh hardware/pods-r1/sheets/setup-envs.sh")
         if not BOB_STEP.exists():
             self.skipTest("the BOB-14021 board STEP (tx-stack-r1/render/fetch_models.py) is not on this machine")
         r = subprocess.run(["sh", str(SHEETS / "render_all.sh")], capture_output=True, text=True)
@@ -59,11 +67,14 @@ class SessionP(unittest.TestCase):
             need |= {f"{pod}:lead"} if pod == "TH" else {f"{pod}:sensor"}
             for i in range(1, 10):
                 need.add(f"{pod}:wire:w{i}")
-        need |= {"BARO:header-cut", "TH:lead-sht45-end", "TH:lead-gland-order"}
+        need |= {"BARO:header-cut", "TH:lead-sht45-end", "TH:lead-gland-order", "cable:per-pod"}
         self.assertEqual(sorted(need - tags), [], "pages missing from the PDF")
         for p in man["pages"]:
             self.assertTrue(p["title"].strip(), p)
-        self.assertEqual(man["page_count"], len(man["pages"]))
+        self.assertEqual(len(man["pages"]), PAGES)
+        self.assertEqual(man["page_count"], PAGES)
+        self.assertEqual(pdf_page_count(SHEETS / "out" / "session-p-pods.pdf"), PAGES, "the PDF's own page objects")
+        self.assertEqual([p["page"] for p in man["pages"]], list(range(1, PAGES + 1)))
 
 
 if __name__ == "__main__":

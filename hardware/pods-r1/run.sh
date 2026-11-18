@@ -37,9 +37,18 @@ else
 fi
 echo "== Session P bench sheets: render the scenes, build the PDF, label and hole checks (CADPY/PDFPY from sheets/env.sh)"
 . sheets/env.sh
-if [ -x "$CADPY" ] && [ -x "$PDFPY" ]; then
+SHEETS_SKIPPED=""
+if [ -z "$_PODS_MISSING" ]; then
   cd ../..; .venv/bin/python -m unittest tests.test_pods_sheets; cd hardware/pods-r1
 else
-  echo "skipped: the sheet interpreters (CADPY=$CADPY, PDFPY=$PDFPY) are not on this machine"
+  SHEETS_SKIPPED=1
+  echo "################################################################################"
+  echo "WARNING: Session P sheets SKIPPED: missing or incomplete:$_PODS_MISSING"
+  echo "  set up: sh hardware/pods-r1/sheets/setup-envs.sh   (or set CADPY / PDFPY)"
+  echo "################################################################################"
 fi
-echo "== pods-r1: every check passes"
+if [ -n "$SHEETS_SKIPPED" ]; then
+  echo "== pods-r1: every check that ran passes; WARNING: the Session P sheets were SKIPPED (see above)"
+else
+  echo "== pods-r1: every check passes"
+fi
