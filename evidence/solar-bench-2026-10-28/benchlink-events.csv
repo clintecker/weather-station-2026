@@ -1,0 +1,42 @@
+utc,local,event,detail
+2026-10-29T18:12:16+00:00,2026-10-29 13:12:16,logger_start,"pid=31004; older CSV header rewritten, copy at evidence/solar-bench-2026-10-28/benchlink.csv.before-35-columns"
+2026-10-29T18:12:16+00:00,2026-10-29 13:12:16,rx_connected,/dev/cu.usbmodem21303
+2026-10-29T18:12:20+00:00,2026-10-29 13:12:20,tx_first_packet,seq=61 uptime=317 s reset=? boots=? faults=?
+2026-10-29T18:12:57+00:00,2026-10-29 13:12:57,tx_boot,reset=power boots=1 faults=0 fault_pc=- after seq=66 uptime=343 s
+2026-10-29T18:38:58+00:00,2026-10-29 13:38:58,tx_boot,reset=watchdog boots=2 faults=0 fault_pc=- after seq=309 uptime=1936 s
+2026-10-29T18:49:44+00:00,2026-10-29 13:49:44,tx_boot,reset=software boots=7 faults=5 fault_pc=0800206c after seq=126 uptime=2598 s
+2026-10-29T18:50:38+00:00,2026-10-29 13:50:38,rx_note,#bl boot role=rx reset=pin boots=2 faults=0
+2026-10-29T18:50:41+00:00,2026-10-29 13:50:41,tx_boot,reset=pin boots=8 faults=5 fault_pc=0800206c after seq=9 uptime=2661 s
+2026-10-29T18:51:53+00:00,2026-10-29 13:51:53,tx_boot,reset=watchdog boots=9 faults=5 fault_pc=0800206c after seq=11 uptime=2729 s
+2026-10-29T18:56:18+00:00,2026-10-29 13:56:18,silence_start,no packet for 30 s; last seq=47
+2026-10-29T18:56:18+00:00,2026-10-29 13:56:18,rx_heartbeat_lost,no RX heartbeat for 30 s with USB still open
+2026-10-29T18:59:25+00:00,2026-10-29 13:59:25,logger_start,pid=34088
+2026-10-29T18:59:25+00:00,2026-10-29 13:59:25,rx_connected,/dev/cu.usbmodem21303
+2026-10-29T18:59:25+00:00,2026-10-29 13:59:25,tx_first_packet,seq=27 uptime=143 s reset=power boots=1 faults=0
+2026-10-29T19:01:03+00:00,2026-10-29 14:01:03,rx_port_reopen,no line for 25 s; closing and reopening /dev/cu.usbmodem21303
+2026-10-29T19:01:03+00:00,2026-10-29 14:01:03,rx_connected,/dev/cu.usbmodem21303
+2026-10-29T19:01:04+00:00,2026-10-29 14:01:04,silence_start,no packet for 30 s; last seq=42
+2026-10-29T19:01:38+00:00,2026-10-29 14:01:38,rx_note,#bl rx rearm: nothing heard for 60 s
+2026-10-29T19:01:52+00:00,2026-10-29 14:01:52,silence_end,78 s without a packet
+2026-10-29T19:01:52+00:00,2026-10-29 14:01:52,tx_boot,reset=power boots=1 faults=0 fault_pc=- after seq=42 uptime=220 s
+2026-10-29T19:07:24+00:00,2026-10-29 14:07:24,rx_note,#bl drill hang: the main loop stops; expect reset=watchdog
+2026-10-29T19:07:31+00:00,2026-10-29 14:07:31,rx_note,#bl boot role=rx reset=watchdog boots=3 faults=0
+2026-10-29T19:07:32+00:00,2026-10-29 14:07:32,packets_missed,1 between seq 66 and 68
+2026-10-29T19:17:14+00:00,2026-10-29 14:17:14,logger_start,pid=35273
+2026-10-29T19:17:14+00:00,2026-10-29 14:17:14,rx_connected,/dev/cu.usbmodem21303
+2026-10-29T19:17:17+00:00,2026-10-29 14:17:17,tx_first_packet,seq=185 uptime=952 s reset=power boots=1 faults=0
+2026-10-29T19:45:01+00:00,2026-10-29 14:45:01,rx_note,#bl boot role=rx reset=pin boots=4 faults=0
+2026-10-29T19:45:04+00:00,2026-10-29 14:45:04,logger_start,pid=78695
+2026-10-29T19:45:04+00:00,2026-10-29 14:45:04,rx_connected,/dev/cu.usbmodem21303
+2026-10-29T19:45:09+00:00,2026-10-29 14:45:09,tx_first_packet,seq=0 uptime=2602 s reset=pin boots=2 faults=0
+2026-10-30T16:14:22+00:00,2026-10-30 11:14:22,rx_note,#bl rx error
+2026-10-30T16:14:27+00:00,2026-10-30 11:14:27,packets_missed,1 between seq 14749 and 14751
+2026-10-30T17:10:58+00:00,2026-10-30 12:10:58,rx_disconnected,read failed: [Errno 6] Device not configured
+2026-10-30T17:11:00+00:00,2026-10-30 12:11:00,rx_absent,the RX is not on USB; waiting
+2026-10-30T17:11:02+00:00,2026-10-30 12:11:02,rx_connected,/dev/cu.usbmodem13103
+2026-10-30T17:11:07+00:00,2026-10-30 12:11:07,packets_missed,1 between seq 15429 and 15431
+2026-10-30T17:11:09+00:00,2026-10-30 12:11:09,rx_disconnected,read failed: [Errno 6] Device not configured
+2026-10-30T17:11:11+00:00,2026-10-30 12:11:11,rx_connected,/dev/cu.usbmodem13103
+2026-10-30T21:34:34+00:00,2026-10-30 16:34:34,rx_disconnected,read failed: [Errno 6] Device not configured
+2026-10-30T21:34:36+00:00,2026-10-30 16:34:36,rx_connected,/dev/cu.usbmodem13103
+2026-11-02T08:59:07+00:00,2026-11-02 02:59:07,bad_packet,

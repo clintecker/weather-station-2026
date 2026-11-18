@@ -1,0 +1,18 @@
+2026-10-29 14:17:14 logger_start pid=35273
+2026-10-29 14:17:14 rx_connected /dev/cu.usbmodem21303
+2026-10-29 14:17:17 tx_first_packet seq=185 uptime=952 s reset=power boots=1 faults=0
+2026-10-29 14:45:01 rx_note #bl boot role=rx reset=pin boots=4 faults=0
+2026-10-29 14:45:04 logger_start pid=78695
+2026-10-29 14:45:04 rx_connected /dev/cu.usbmodem21303
+2026-10-29 14:45:09 tx_first_packet seq=0 uptime=2602 s reset=pin boots=2 faults=0
+2026-10-30 11:14:22 rx_note #bl rx error
+2026-10-30 11:14:27 packets_missed 1 between seq 14749 and 14751
+2026-10-30 12:10:58 rx_disconnected read failed: [Errno 6] Device not configured
+2026-10-30 12:11:00 rx_absent the RX is not on USB; waiting
+2026-10-30 12:11:02 rx_connected /dev/cu.usbmodem13103
+2026-10-30 12:11:07 packets_missed 1 between seq 15429 and 15431
+2026-10-30 12:11:09 rx_disconnected read failed: [Errno 6] Device not configured
+2026-10-30 12:11:11 rx_connected /dev/cu.usbmodem13103
+2026-10-30 16:34:34 rx_disconnected read failed: [Errno 6] Device not configured
+2026-10-30 16:34:36 rx_connected /dev/cu.usbmodem13103
+2026-11-02 02:59:07 bad_packet 

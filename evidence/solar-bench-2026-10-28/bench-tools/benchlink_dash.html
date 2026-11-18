@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Solar Bench Live</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f5f1; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #8a8983;
+  --grid: #e7e5df; --axis: #c9c7bf; --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s7: #6250d6; --state: #52514e; --state-off: #ecebe6; --node: #f1f0ec;
+  --crit: #b42318; --crit-bg: #fdecea; --gap: #8a8983;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8e86;
+    --grid: #2a2a28; --axis: #3d3d3a; --s1: #3987e5; --s2: #d95926; --s4: #c98500; --s7: #9085e9; --state: #c3c2b7; --state-off: #252523; --node: #222220;
+    --crit: #ff8a7a; --crit-bg: #3a1714; --gap: #8f8e86;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8e86;
+  --grid: #2a2a28; --axis: #3d3d3a; --s1: #3987e5; --s2: #d95926; --s4: #c98500; --s7: #9085e9; --state: #c3c2b7; --state-off: #252523; --node: #222220;
+  --crit: #ff8a7a; --crit-bg: #3a1714; --gap: #8f8e86;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  padding: 20px max(16px, env(safe-area-inset-left, 0px)) 32px max(16px, env(safe-area-inset-right, 0px)); }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; max-width: 1100px; margin: 0 auto 14px; }
+h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+.status { color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.ranges { margin-left: auto; display: flex; gap: 4px; }
+.ranges button { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--axis);
+  background: var(--surface); color: var(--ink-2); cursor: pointer; }
+.ranges button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; max-width: 1100px; margin: 0 auto 14px; }
+.tile { background: var(--surface); border: 1px solid var(--grid); border-radius: 10px; padding: 10px 12px; }
+.tile .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); }
+.tile .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .u { font-size: 13px; color: var(--ink-2); font-weight: 400; }
+.panels { max-width: 1100px; margin: 0 auto; background: var(--surface); border: 1px solid var(--grid); border-radius: 12px; padding: 8px 4px 4px; }
+svg { display: block; width: 100%; height: auto; }
+.t-title { font-size: 12px; font-weight: 600; fill: var(--ink); }
+.t-axis { font-size: 10.5px; fill: var(--ink-3); font-variant-numeric: tabular-nums; }
+.t-lab { font-size: 11px; font-weight: 600; fill: var(--ink-2); }
+#tip { position: fixed; pointer-events: none; background: var(--surface); border: 1px solid var(--axis); border-radius: 8px;
+  padding: 8px 10px; font-size: 12px; font-variant-numeric: tabular-nums; box-shadow: 0 4px 14px rgba(0,0,0,.12); display: none; z-index: 5; }
+#tip b { font-weight: 600; }
+.sw { display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 5px; }
+.flowbox { max-width: 1100px; margin: 0 auto 14px; background: var(--surface); border: 1px solid var(--grid); border-radius: 12px; padding: 12px 16px 6px; }
+.flowhead { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+.flowhead .state { font-weight: 600; }
+.flowhead .when { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.flowhead .when.live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #2f9e44; margin-right: 6px; vertical-align: 1px; }
+.f-node { fill: var(--node); stroke: var(--axis); stroke-width: 1; }
+.f-name { font-size: 15px; font-weight: 600; fill: var(--ink); }
+.f-sub { font-size: 12px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.f-val { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.alarm { max-width: 1100px; margin: 0 auto 14px; display: flex; gap: 10px; align-items: center; padding: 10px 14px;
+  border-radius: 10px; border: 1px solid var(--crit); background: var(--crit-bg); color: var(--ink); font-weight: 600; }
+.alarm[hidden] { display: none; }
+.alarm svg { width: 18px; height: 18px; flex: none; }
+.alarm span { font-weight: 400; color: var(--ink-2); }
+.note { max-width: 1100px; margin: 10px auto 0; color: var(--ink-3); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Solar bench, live</h1>
+  <span class="status" id="status">loading…</span>
+  <div class="ranges" role="group" aria-label="Time range">
+    <button data-h="1">1 h</button><button data-h="6">6 h</button><button data-h="24">24 h</button><button data-h="0">All</button>
+  </div>
+</header>
+<div class="alarm" id="alarm" role="alert" hidden>
+  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2 19 18H1Z" fill="none" stroke="var(--crit)" stroke-width="2" stroke-linejoin="round"/><path d="M10 8v4.5M10 15v.5" stroke="var(--crit)" stroke-width="2" stroke-linecap="round"/></svg>
+  <div id="alarmtext"></div>
+</div>
+<section class="flowbox" aria-label="Energy flow">
+  <div class="flowhead"><span class="state" id="flowstate">…</span><span class="when" id="flowwhen">…</span></div>
+  <svg id="flow" viewBox="0 60 1000 240" role="img" aria-label="Energy flow between input, charger, load and battery"></svg>
+</section>
+<div class="tiles" id="tiles"></div>
+<div class="panels"><svg id="chart" role="img" aria-label="Battery current, cell voltage, charger state, temperature, humidity and radio signal over time"></svg></div>
+<p class="note">Charge current from the bq24074 ISET pin (±10 %), load = OUT ÷ 100 Ω. Every 5 s from the TX; refreshes every 10 s.</p>
+<div id="tip"></div>
+<script>
+(function () {
+  const W = 1080, L = 58, R = 150, PH = 104, GAP = 26, STRIP = 64, TOP = 8;
+  const PANELS = [
+    { title: 'Where the current goes (mA): load, plus what goes into the battery', stack: true },
+    { title: 'Battery current (mA): + charging, − discharging', signed: true },
+    { title: 'State of charge (%): counted vs the gauge', series: [['soc_cc', '--s1', 'counted'], ['soc_pct', '--s3', 'gauge']], dec: 0 },
+    { title: 'Cell voltage (V)', series: [['vcell_v', '--s1', 'cell']], dec: 3 },
+    { title: 'Input and charger', state: [['@solar', 'Solar'], ['@usb-c', 'USB-C'], ['pgood', 'PGOOD'], ['chg', 'CHG']] },
+    { title: 'Temperature (°C)', series: [['temp_c', '--s1', 'temp']], dec: 1 },
+    { title: 'Humidity (%)', series: [['rh_pct', '--s1', 'RH']], dec: 1 },
+    /* RSSI bands for SF7 / 500 kHz on the SX126x: sensitivity about -117 dBm, so "horrible" is within ~10 dB of it */
+    { title: 'Radio signal, RSSI (dBm)', series: [['rssi', '--s1', 'RSSI']], dec: 0, domain: [-120, 0],
+      bands: [[-70, 0, 'good', '#0ca30c'], [-90, -70, 'ok', '#fab219'], [-105, -90, 'bad', '#ec835a'], [-120, -105, 'horrible', '#d03b3b']] },
+  ];
+  let hours = 6;
+  try { const h = localStorage.getItem('bench-hours'); if (h !== null) hours = +h; } catch (e) {}
+  const svg = document.getElementById('chart'), tip = document.getElementById('tip');
+  let data = null, layout = [];
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const fmtT = t => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fmtTs = t => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  function nice(lo, hi, n) {
+    const span = hi - lo || Math.abs(hi) || 1, raw = span / n, p = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map(m => m * p).find(s => s >= raw);
+    return { lo: Math.floor(lo / step) * step, hi: Math.ceil(hi / step) * step, step };
+  }
+  function el(tag, attrs, text) {
+    const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  /* Which source feeds the charger's input at a row: [source, how]. The input contributes when PGOOD is on
+     or any charge current flows. A window in sources.csv wins ('noted'); otherwise the divider decides
+     ('auto'): above 5.4 V only the panel (USB never goes there); 4.4-5.4 V while supplying over 600 mA is
+     USB-C (this panel never gave over ~550 mA); anything else is the panel. Before the divider (no vin_v): USB-C
+     above 700 mA, else solar. */
+  function sourceAt(r) {
+    const ci = Object.fromEntries(data.cols.map((c, i) => [c, i]));
+    const chg = r[ci.charge_ma] || 0, load = r[ci.load_ma] || 0, vin = r[ci.vin_v];
+    if (!(r[ci.pgood] === 1 || chg > 0.5)) return [null, ''];
+    for (const [a, b, src] of (data.sources || [])) if (r[0] >= a && (b === null || r[0] <= b)) return [src, 'noted'];
+    if (vin === null || vin === undefined) return [chg + load > 700 ? 'usb-c' : 'solar', 'auto'];   /* before the divider: current alone */
+    if (vin >= 4.4 && vin < 5.4 && chg + load > 600) return ['usb-c', 'auto'];
+    return ['solar', 'auto'];
+  }
+  /* true when a gap (no packet for over 30 s, from the server's full-resolution rows) lies between two
+     plotted points: lines break there instead of joining across it */
+  function gapBetween(a, b) { return (data.gaps || []).some(g => g[0] < b && g[1] > a); }
+  const fmtDur = s => s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.round(s % 3600 / 60)} min` : s >= 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`;
+  function draw() {
+    if (!data || !data.rows.length) { svg.innerHTML = ''; return; }
+    const ci = Object.fromEntries(data.cols.map((c, i) => [c, i])), rows = data.rows;
+    const t0 = rows[0][0], t1 = Math.max(rows[rows.length - 1][0], t0 + 60);
+    const x = t => L + (t - t0) / (t1 - t0) * (W - L - R);
+    let y0 = TOP; layout = [];
+    svg.innerHTML = '';
+    const H = PANELS.reduce((s, p) => s + (p.state ? STRIP + 18 : PH + 18) + GAP, TOP + 18);
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    for (const p of PANELS) {
+      const title = p.series && p.series[0][0] === 'soc_cc' && data.anchor
+        ? `State of charge (%): counted from ${fmtT(data.anchor)} (±10 %, gaps estimated) vs the gauge` : p.title;
+      svg.appendChild(el('text', { x: L, y: y0 + 11, class: 't-title' }, title));
+      const top = y0 + 18;
+      if (p.state) {
+        p.state.forEach(([col, name], k) => {
+          const yy = top + k * 15;
+          svg.appendChild(el('rect', { x: L, y: yy, width: W - L - R, height: 11, rx: 2, fill: css('--state-off') }));
+          let start = null;
+          const fillc = col === '@solar' ? css('--s4') : col === '@usb-c' ? css('--s7') : css('--state');
+          rows.forEach((r, i) => {
+            const on = col[0] === '@' ? sourceAt(r)[0] === col.slice(1) : r[ci[col]] === 1;
+            if (on && start === null) start = r[0];
+            const end = i === rows.length - 1 || !on;
+            if (start !== null && end) {
+              const te = on ? r[0] : r[0];
+              svg.appendChild(el('rect', { x: x(start), y: yy, width: Math.max(1.5, x(te) - x(start)), height: 11, rx: 2, fill: fillc }));
+              start = null;
+            }
+          });
+          svg.appendChild(el('text', { x: L - 8, y: yy + 9, 'text-anchor': 'end', class: 't-axis' }, name));
+        });
+        layout.push({ p, top, bottom: top + STRIP });
+        y0 = top + STRIP + GAP;
+        continue;
+      }
+      if (p.stack || p.signed) {
+        const L_ = r => r[ci.load_ma], C_ = r => r[ci.charge_ma], PG = r => r[ci.pgood] === 1;
+        /* battery current: + charge while the input is good (PGOOD); - the whole load once PGOOD is off. With PGOOD on
+           and no charge flowing, OUT tells the two cases apart: OUT still well above the cell = the panel covers
+           the load (balanced, 0); OUT down near the cell = the battery is helping by an unmeasured amount (null,
+           drawn dashed). The cell voltage comes from the gauge; before it was on the cell, assume balanced. */
+        const helping = r => r[ci.vcell_v] !== null && r[ci.vout_v] !== null && r[ci.vout_v] - r[ci.vcell_v] < 0.1;
+        const bat = r => {
+          if (!PG(r)) return L_(r) !== null ? (C_(r) || 0) - L_(r) : null;   /* input bursts still count */
+          if (C_(r) !== null && C_(r) > 2) return C_(r);
+          return helping(r) ? null : 0;
+        };
+        let lo = 0, hi = 0;
+        for (const r of rows) {
+          if (p.stack) hi = Math.max(hi, (L_(r) || 0) + (PG(r) ? (C_(r) || 0) : 0));
+          else { const b = bat(r); if (b !== null) { lo = Math.min(lo, b); hi = Math.max(hi, b); } }
+        }
+        if (p.signed) { lo = Math.min(lo, -50); hi = Math.max(hi, 50); }
+        const sc = nice(lo, hi * 1.05, 4);
+        const y = v => top + PH - (v - sc.lo) / (sc.hi - sc.lo) * PH;
+        for (let v = sc.lo; v <= sc.hi + sc.step / 2; v += sc.step) {
+          svg.appendChild(el('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: css(v === 0 ? '--axis' : '--grid'), 'stroke-width': 1 }));
+          svg.appendChild(el('text', { x: L - 8, y: y(v) + 3.5, 'text-anchor': 'end', class: 't-axis' }, String(+v.toFixed(3))));
+        }
+        const labels = [];
+        const lastR = rows[rows.length - 1];
+        if (p.stack) {
+          const area = (lowF, highF) => {
+            let up = '', down = [];
+            rows.forEach((r, i) => { up += (i ? 'L' : 'M') + x(r[0]).toFixed(1) + ' ' + y(highF(r)).toFixed(1); down.push(x(r[0]).toFixed(1) + ' ' + y(lowF(r)).toFixed(1)); });
+            return up + 'L' + down.reverse().join('L') + 'Z';
+          };
+          const ld = r => L_(r) || 0, tot = r => ld(r) + (C_(r) || 0);
+          svg.appendChild(el('path', { d: area(() => 0, ld), fill: css('--s2'), 'fill-opacity': 0.85 }));
+          svg.appendChild(el('path', { d: area(ld, tot), fill: css('--s1'), 'fill-opacity': 0.85 }));
+          let d = ''; rows.forEach((r, i) => { d += (i ? 'L' : 'M') + x(r[0]).toFixed(1) + ' ' + y(tot(r)).toFixed(1); });
+          svg.appendChild(el('path', { d, fill: 'none', stroke: css('--ink'), 'stroke-width': 1.25 }));
+          const cl = C_(lastR) || 0;
+          if (PG(lastR)) {
+            labels.push({ y: y(tot(lastR)) + 4, color: '--ink', text: `from input ${tot(lastR).toFixed(0)}` });
+            labels.push({ y: y((ld(lastR) + tot(lastR)) / 2) + 4, color: '--s1', text: `→ battery ${cl.toFixed(0)}` });
+          } else {
+            labels.push({ y: y(tot(lastR)) + 4, color: '--ink', text: `battery ${(ld(lastR) - cl).toFixed(0)} + input ${cl.toFixed(0)}` });
+          }
+          labels.push({ y: y(ld(lastR) / 2) + 4, color: '--s2', text: `→ load ${ld(lastR).toFixed(0)}` });
+        } else {
+          let d = '', pen = false, dash = '', prevT = null;
+          for (const r of rows) {
+            const b = bat(r);
+            if (prevT !== null && gapBetween(prevT, r[0])) pen = false;
+            prevT = r[0];
+            if (b === null) { if (PG(r)) dash += (dash ? 'L' : 'M') + x(r[0]).toFixed(1) + ' ' + y(0).toFixed(1); pen = false; continue; }
+            d += (pen ? 'L' : 'M') + x(r[0]).toFixed(1) + ' ' + y(b).toFixed(1); pen = true;
+          }
+          svg.appendChild(el('path', { d, fill: 'none', stroke: css('--s1'), 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+          if (dash) svg.appendChild(el('path', { d: dash, fill: 'none', stroke: css('--ink-3'), 'stroke-width': 2, 'stroke-dasharray': '4 4' }));
+          const b = bat(lastR);
+          labels.push({ y: y(b === null ? 0 : b) + 4, color: b === null ? '--ink-3' : '--s1',
+            text: b === null ? 'battery helping (not measured)' : b === 0 ? '≈0, balanced' : (b > 0 ? `+${b.toFixed(0)} in` : `${b.toFixed(0)} out`) });
+          svg.appendChild(el('text', { x: L + 4, y: y(sc.hi) + 12, class: 't-axis' }, 'charging ↑'));
+          svg.appendChild(el('text', { x: L + 4, y: y(sc.lo) - 4, class: 't-axis' }, 'discharging ↓'));
+        }
+        labels.sort((a, b) => a.y - b.y);
+        for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 13);
+        for (const lb of labels) svg.appendChild(el('text', { x: W - R + 8, y: lb.y, class: 't-lab', fill: css(lb.color) }, lb.text));
+        layout.push({ p, top, bottom: top + PH });
+        y0 = top + PH + GAP;
+        continue;
+      }
+      let lo = Infinity, hi = -Infinity;
+      for (const r of rows) for (const [col] of p.series) { const v = r[ci[col]]; if (v !== null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
+      if (!isFinite(lo)) { lo = 0; hi = 1; }
+      if (p.zero) lo = Math.min(lo, 0);
+      const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.01 || 0.5;
+      const sc = p.domain ? { lo: p.domain[0], hi: p.domain[1], step: 20 } : nice(p.zero ? lo : lo - pad, hi + pad, 4);
+      const y = v => top + PH - (Math.max(sc.lo, Math.min(sc.hi, v)) - sc.lo) / (sc.hi - sc.lo) * PH;
+      for (const [b0, b1, name, color] of (p.bands || [])) {
+        svg.appendChild(el('rect', { x: L, y: y(b1), width: W - L - R, height: y(b0) - y(b1), fill: color, 'fill-opacity': 0.12 }));
+        svg.appendChild(el('text', { x: W - R - 6, y: y(b1) + 12, 'text-anchor': 'end', class: 't-axis', 'font-weight': 600 }, name));
+      }
+      for (let v = sc.lo; v <= sc.hi + sc.step / 2; v += sc.step) {
+        svg.appendChild(el('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: css('--grid'), 'stroke-width': 1 }));
+        svg.appendChild(el('text', { x: L - 8, y: y(v) + 3.5, 'text-anchor': 'end', class: 't-axis' },
+          (+v.toFixed(6)).toLocaleString(undefined, { maximumFractionDigits: Math.max(0, -Math.floor(Math.log10(sc.step))) })));
+      }
+      const labels = [];
+      for (const [col, color, name] of p.series) {
+        let d = '', pen = false;
+        let prevT = null;
+        for (const r of rows) {
+          const v = r[ci[col]];
+          if (prevT !== null && gapBetween(prevT, r[0])) pen = false;
+          prevT = r[0];
+          if (v === null) { pen = false; continue; }
+          d += (pen ? 'L' : 'M') + x(r[0]).toFixed(1) + ' ' + y(v).toFixed(1);
+          pen = true;
+        }
+        svg.appendChild(el('path', { d, fill: 'none', stroke: css(color), 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+        const last = [...rows].reverse().find(r => r[ci[col]] !== null);
+        if (last) labels.push({ y: y(last[ci[col]]) + 4, color, text: `${name} ${last[ci[col]].toFixed(p.dec)}` });
+      }
+      labels.sort((a, b) => a.y - b.y);
+      for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 13);
+      for (const lb of labels) svg.appendChild(el('text', { x: W - R + 8, y: lb.y, class: 't-lab', fill: css(lb.color) }, lb.text));
+      layout.push({ p, top, bottom: top + PH, y, sc });
+      y0 = top + PH + GAP;
+    }
+    const ticks = 6;
+    for (let i = 0; i <= ticks; i++) {
+      const t = t0 + (t1 - t0) * i / ticks;
+      svg.appendChild(el('text', { x: x(t), y: y0 + 4, 'text-anchor': i === 0 ? 'start' : i === ticks ? 'end' : 'middle', class: 't-axis' }, fmtT(t)));
+    }
+    for (const [mt, mlabel] of (data.marks || [])) {
+      if (mt < t0 || mt > t1) continue;
+      svg.appendChild(el('line', { x1: x(mt), x2: x(mt), y1: TOP, y2: y0 - GAP + 6, stroke: css('--ink-3'), 'stroke-width': 1 }));
+      svg.appendChild(el('text', { x: x(mt) + 4, y: y0 - GAP + 16, 'text-anchor': 'start', class: 't-axis' }, mlabel));
+    }
+    for (const [g0, g1, how, mah] of (data.gaps || [])) {
+      const a = Math.max(t0, g0), b = Math.min(t1, g1);
+      if (b <= a) continue;
+      svg.appendChild(el('rect', { x: x(a), y: TOP, width: Math.max(2, x(b) - x(a)), height: y0 - GAP + 6 - TOP,
+        fill: css('--gap'), 'fill-opacity': 0.16 }));
+      if (x(b) - x(a) > 40)
+        svg.appendChild(el('text', { x: (x(a) + x(b)) / 2, y: TOP + 12, 'text-anchor': 'middle', class: 't-axis', 'font-weight': 600 },
+          `no data ${fmtDur(g1 - g0)}${how ? ' · came back: ' + how : ''}${mah === null || mah === undefined ? '' : ` · count est. ${mah >= 0 ? '+' : ''}${mah.toFixed(0)} mAh`}`));
+    }
+    const hair = el('line', { y1: TOP, y2: y0 - GAP + 4, stroke: css('--ink-3'), 'stroke-width': 1, 'stroke-dasharray': '3 3', visibility: 'hidden' });
+    svg.appendChild(hair);
+    const hit = el('rect', { x: L, y: TOP, width: W - L - R, height: y0 - TOP, fill: 'transparent' });
+    svg.appendChild(hit);
+    function move(ev) {
+      const b = svg.getBoundingClientRect(), sx = (ev.clientX - b.left) / b.width * W;
+      const t = t0 + (sx - L) / (W - L - R) * (t1 - t0);
+      let best = rows[0];
+      for (const r of rows) if (Math.abs(r[0] - t) < Math.abs(best[0] - t)) best = r;
+      hair.setAttribute('x1', x(best[0])); hair.setAttribute('x2', x(best[0])); hair.setAttribute('visibility', 'visible');
+      const v = (c, d, u) => best[ci[c]] === null ? '–' : best[ci[c]].toFixed(d) + u;
+      tip.innerHTML = `<b>${fmtTs(best[0])}</b><br>` +
+        `<span class="sw" style="background:${css('--s1')}"></span>charge ${v('charge_ma', 0, ' mA')}<br>` +
+        `<span class="sw" style="background:${css('--s2')}"></span>load ${v('load_ma', 1, ' mA')}<br>` +
+        `cell ${v('vcell_v', 3, ' V')} · PGOOD ${best[ci.pgood] ? 'on' : 'off'} · CHG ${best[ci.chg] ? 'on' : 'off'}<br>` +
+        `input ${v('vin_v', 2, ' V')} · ${v('temp_c', 1, ' °C')} · ${v('rh_pct', 1, ' %')} · ${v('rssi', 0, ' dBm')}`;
+      tip.style.display = 'block';
+      flowShow(best, false);
+      const tx = ev.clientX + 16 + tip.offsetWidth > innerWidth ? ev.clientX - tip.offsetWidth - 12 : ev.clientX + 16;
+      tip.style.left = tx + 'px'; tip.style.top = Math.min(ev.clientY + 12, innerHeight - tip.offsetHeight - 8) + 'px';
+    }
+    hit.addEventListener('pointermove', move);
+    hit.addEventListener('pointerleave', () => { tip.style.display = 'none'; hair.setAttribute('visibility', 'hidden'); flowShow(null, true); });
+  }
+  function tiles() {
+    const r = data.rows[data.rows.length - 1], ci = Object.fromEntries(data.cols.map((c, i) => [c, i]));
+    const f = (c, d) => r[ci[c]] === null ? '–' : r[ci[c]].toFixed(d);
+    const items = [['Charge level', r[ci.soc_cc] === null ? '–' : '~' + f('soc_cc', 0), '% ±10'], ['Charge', f('charge_ma', 0), 'mA'], ['Load', f('load_ma', 1), 'mA'], ['Cell', f('vcell_v', 3), 'V'],
+      ['Charger', (r[ci.pgood] ? 'PGOOD' : 'no input') + (r[ci.chg] ? ' · CHG' : ''), ''], ['Air', f('temp_c', 1), '°C'], ['Humidity', f('rh_pct', 1), '%']];
+    document.getElementById('tiles').innerHTML = items.map(([k, v, u]) =>
+      `<div class="tile"><div class="k">${k}</div><div class="v">${v} <span class="u">${u}</span></div></div>`).join('');
+  }
+  /* ---------- energy flow ---------- */
+  const flow = document.getElementById('flow');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let flowLive = true, links = {};
+  function fnode(x, y, w, h, name, id) {
+    flow.appendChild(el('rect', { x, y, width: w, height: h, rx: 14, class: 'f-node' }));
+    flow.appendChild(el('text', { x: x + 16, y: y + 26, class: 'f-name' }, name));
+    const sub = el('text', { x: x + 16, y: y + 46, class: 'f-sub', id }); flow.appendChild(sub);
+    return sub;
+  }
+  function flink(key, d, color, lx, ly, anchor) {
+    flow.appendChild(el('path', { d, fill: 'none', stroke: css('--grid'), 'stroke-width': 10, 'stroke-linecap': 'round' }));
+    const dots = el('path', { d, fill: 'none', stroke: css(color), 'stroke-width': 8, 'stroke-linecap': 'round', 'stroke-dasharray': '0 18' });
+    flow.appendChild(dots);
+    const val = el('text', { x: lx, y: ly, 'text-anchor': anchor || 'middle', class: 'f-val', fill: css(color) });
+    flow.appendChild(val);
+    links[key] = { dots, val, speed: 0, dir: 1, off: 0, color };
+  }
+  function flowBuild() {
+    flow.innerHTML = ''; links = {};
+    flink('panel', 'M 220 110 L 400 110', '--s4', 310, 92);
+    flink('load', 'M 600 110 L 780 110', '--s2', 690, 92);
+    flink('batt', 'M 500 152 L 500 212', '--s1', 518, 188, 'start');
+    nodes.panel = fnode(40, 70, 180, 80, 'Input', 'fp');
+    nodes.chg = fnode(400, 70, 200, 80, 'bq24074 charger', 'fc');
+    nodes.load = fnode(780, 70, 180, 80, 'Load (100 Ω)', 'fl');
+    nodes.batt = fnode(400, 212, 200, 80, 'Battery 6600 mAh', 'fb');
+    const g = el('rect', { x: 556, y: 228, width: 30, height: 48, rx: 4, fill: 'none', stroke: css('--axis') }); flow.appendChild(g);
+    nodes.fill = el('rect', { x: 559, y: 273, width: 24, height: 0, rx: 2, fill: css('--s1') }); flow.appendChild(nodes.fill);
+  }
+  const nodes = {};
+  const speedFor = ma => ma <= 0.5 ? 0 : 18 + 55 * Math.log10(1 + ma / 4);   /* px/s, log so 10 mA still visibly moves */
+  function setLink(k, ma, dir, text, dashed) {
+    const l = links[k];
+    l.speed = speedFor(ma); l.dir = dir;
+    l.dots.setAttribute('stroke-dasharray', dashed ? '6 10' : (l.speed ? '0 18' : '0 1000'));
+    l.dots.setAttribute('stroke-opacity', dashed ? 0.55 : 1);
+    l.val.textContent = text;
+  }
+  function flowShow(r, live) {
+    if (!data || !data.rows.length) return;
+    flowLive = live;
+    const ci = Object.fromEntries(data.cols.map((c, i) => [c, i]));
+    if (!r) r = data.rows[data.rows.length - 1];
+    const g = c => r[ci[c]], pg = g('pgood') === 1, chg = g('charge_ma') || 0, ld = g('load_ma') || 0;
+    const vo = g('vout_v'), vc = g('vcell_v'), vin = g('vin_v'), cc = g('soc_cc');
+    const helping = pg && chg <= 2 && vo !== null && vc !== null && vo - vc < 0.1;
+    const mw = (v, ma) => v === null ? '' : ` · ${(v * ma).toFixed(0)} mW`;
+    let state;
+    if (!pg) {
+      const net = ld - chg;
+      setLink('panel', chg, 1, chg > 0.5 ? `${chg.toFixed(1)} mA in bursts` : 'no input', false);
+      setLink('batt', net, -1, `${net.toFixed(0)} mA out${mw(vc, net)}`, false);
+      state = chg > 0.5 ? 'Battery runs the load; the input adds a little in bursts' : 'Battery runs the load (no input)';
+    } else if (helping) {
+      setLink('panel', ld, 1, `< ${ld.toFixed(0)} mA`, false);
+      setLink('batt', 5, -1, 'helping · not measured', true);
+      state = 'Input is weak: the battery is helping it run the load';
+    } else if (chg > 2) {
+      setLink('panel', ld + chg, 1, `${(ld + chg).toFixed(0)} mA${mw(vin ?? vo, ld + chg)}`, false);
+      setLink('batt', chg, 1, `${chg.toFixed(0)} mA in${mw(vc, chg)}`, false);
+      state = 'Input is charging the battery and running the load';
+    } else {
+      setLink('panel', ld, 1, `${ld.toFixed(0)} mA${mw(vin ?? vo, ld)}`, false);
+      setLink('batt', 0, 1, '≈0 · balanced', false);
+      state = 'Input runs the load; the battery is idle';
+    }
+    setLink('load', ld, 1, `${ld.toFixed(0)} mA${mw(vo, ld)}`, false);
+    const [src, how] = sourceAt(r);
+    const srcName = { 'usb-c': 'USB-C', solar: 'solar' }[src] || 'no input';
+    nodes.panel.textContent = `${srcName}${how === 'auto' ? ' (auto)' : ''}${vin ? ' · ' + vin.toFixed(2) + ' V' : ''}`;
+    nodes.chg.textContent = `OUT ${vo === null ? '–' : vo.toFixed(2) + ' V'} · ${g('chg') === 1 ? 'CHG on' : 'CHG off'}`;
+    nodes.load.textContent = vo === null ? '' : `${(vo * ld).toFixed(0)} mW`;
+    nodes.batt.textContent = (vc === null ? 'cell –' : `cell ${vc.toFixed(3)} V`) + (cc === null ? '' : ` · ~${cc.toFixed(0)} %`);
+    /* the counted level when there is one; otherwise a rough one from voltage (inflated while charging) */
+    const frac = Math.max(0, Math.min(1, cc !== null ? cc / 100 : vc === null ? 0 : (vc - 3.3) / (4.2 - 3.3)));
+    nodes.fill.setAttribute('height', (42 * frac).toFixed(1)); nodes.fill.setAttribute('y', (273 - 42 * frac).toFixed(1));
+    document.getElementById('flowstate').textContent = state;
+    const w = document.getElementById('flowwhen');
+    w.textContent = live ? staleNote || 'live' : 'at ' + fmtTs(r[0]);
+    w.classList.toggle('live', live && !staleNote);
+  }
+  let lastTs = null;
+  function animate(ts) {
+    const dt = lastTs === null ? 0 : (ts - lastTs) / 1000; lastTs = ts;
+    for (const k in links) {
+      const l = links[k];
+      if (!l.speed) continue;
+      l.off -= l.dir * l.speed * dt;
+      l.dots.setAttribute('stroke-dashoffset', l.off.toFixed(1));
+    }
+    requestAnimationFrame(animate);
+  }
+  flowBuild();
+  if (!reduce) requestAnimationFrame(animate);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { flowBuild(); flowShow(null, flowLive); });
+
+  /* The red banner: the newest packet over 30 s old (from last_t, so a range with no rows still shows it),
+     or the data cannot be loaded. While it shows, the flow view says "stale" instead of "live". */
+  let staleNote = null;
+  function alarm(html, note) {
+    const a = document.getElementById('alarm');
+    a.hidden = html === null;
+    if (html !== null) document.getElementById('alarmtext').innerHTML = html;
+    staleNote = note;
+    if (flowLive) {   /* also when flowShow cannot run (no data yet, or none in this range) */
+      const w = document.getElementById('flowwhen');
+      w.textContent = note || 'live';
+      w.classList.toggle('live', !note);
+    }
+  }
+  async function refresh() {
+    const since = hours ? Date.now() / 1000 - hours * 3600 : 0;
+    let got;
+    try {
+      const res = await fetch('/data?since=' + since, { cache: 'no-store' });
+      got = await res.json();
+      if (!res.ok) throw new Error(got.error || `HTTP ${res.status}`);
+    } catch (e) {
+      document.getElementById('status').textContent = 'no new data';
+      alarm(`The dashboard cannot load data <span>· ${String(e.message || e).replace(/</g, '&lt;')}. The charts show the last data it had.</span>`,
+            'stale: not loading');
+      if (flowLive && data && data.rows.length) flowShow(null, true);
+      return;
+    }
+    data = got;
+    const notes = [];
+    if (data.skipped) notes.push(`${data.skipped} unreadable CSV row${data.skipped > 1 ? 's' : ''} skipped (first at line ${data.first_bad_line})`);
+    if (data.sources_error) notes.push(`sources: ${data.sources_error}`);
+    const last = data.last_t, age = last === null ? null : Math.round(Date.now() / 1000 - last);
+    document.getElementById('status').textContent =
+      (last === null ? 'no packets yet' : `last packet ${fmtTs(last)} (${age} s ago)`) +
+      (data.rows.length ? ` · ${data.total} rows` : ' · no data in this range') + (notes.length ? ' · ' + notes.join(' · ') : '');
+    if (age !== null && age > 30)
+      alarm(`No packet for ${fmtDur(age)} <span>· last at ${fmtTs(last)}. The TX may be off or the radio link down; the logger's -events.csv says why.</span>`,
+            `stale: last packet ${fmtTs(last)}`);
+    else alarm(null, null);
+    if (data.rows.length) { tiles(); if (flowLive) flowShow(null, true); }
+    draw();
+  }
+  document.querySelectorAll('.ranges button').forEach(b => {
+    b.setAttribute('aria-pressed', String(+b.dataset.h === hours));
+    b.addEventListener('click', () => {
+      hours = +b.dataset.h;
+      try { localStorage.setItem('bench-hours', String(hours)); } catch (e) {}
+      document.querySelectorAll('.ranges button').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+      refresh();
+    });
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+  refresh();
+  setInterval(refresh, 10000);
+})();
+</script>
+</body>
+</html>
