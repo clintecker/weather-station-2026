@@ -86,6 +86,8 @@ NUT_GAP = 1.0               # a gland nut's free gap to the nearest wall
 GLAND_KEEP = 18.0           # UV: the floor gland's keep-out circle on the mount face (the gland body 16.6 + margin)
 MOUNT_BOSS_CAP = 1.0        # UV: plastic over a floor boss's blind insert bore
 BOSS_MARGIN = 2.0           # UV: floor boss clear of the side walls
+LID_CHAMFER = 0.8           # v1: the lid's top outer edge (round the whole outline, lugs and webs included)
+V1 = _HERE / "v1"           # v1: Clint's printed boxes (his CAD agent, from CAD-BRIEF.md), 2026-11-18; this model matches them
 UPS = {"TH": (0.0, 1.0, 0.0), "BARO": (0.0, 1.0, 0.0), "UV": (0.0, 0.0, 1.0)}
 
 
@@ -279,12 +281,29 @@ def _rrect(x0, y0, x1, y1, r, z0, z1):
             .rect(x1 - x0, y1 - y0).extrude(z1 - z0).edges("|Z").fillet(r))
 
 
+def _lug_web(d, x, y, lug_r):
+    """v1: the web that joins a corner lug to the walls: two flat faces parallel to the corner's diagonal, each
+    tangent to the lug and running back to its wall (they fill the notch between the lug and the rounded corner)."""
+    xo = d["x1"] + WALL if x > d["x1"] else d["x0"] - WALL       # the outer faces this lug sits beyond
+    yo = d["y1"] + WALL if y > d["y1"] else d["y0"] - WALL
+    sx, sy = (1.0 if xo > d["x0"] else -1.0), (1.0 if yo > d["y0"] else -1.0)
+    k = lug_r / math.sqrt(2)
+    t1 = (x + sx * k, y - sy * k)                                  # tangent point on the x-wall side
+    t2 = (x - sx * k, y + sy * k)                                  # tangent point on the y-wall side
+    a = (xo, t1[1] + sy * sx * (xo - t1[0]))                       # along the diagonal from t1 back to the x-wall
+    b = (t2[0] + sx * sy * (yo - t2[1]), yo)                       # along the diagonal from t2 back to the y-wall
+    rr = R_IN + WALL
+    k0 = (xo - sx * rr, yo - sy * rr)                              # the rounded corner's centre (inside the wall)
+    return [a, t1, (x, y), t2, b, k0]
+
+
 def _outline(d, z0, z1):
-    """The outer wall's rounded rectangle plus the four corner lugs."""
+    """The outer wall's rounded rectangle plus the four corner lugs and (v1) the webs joining them to the walls."""
     lug_r = S.val("pod_insert_bore")[0] / 2 + LUG_WALL
     s = _rrect(d["x0"] - WALL, d["y0"] - WALL, d["x1"] + WALL, d["y1"] + WALL, R_IN + WALL, z0, z1)
     for x, y in d["lugs"]:
         s = s.union(cq.Workplane("XY").workplane(offset=z0).center(x, y).circle(lug_r).extrude(z1 - z0))
+        s = s.union(cq.Workplane("XY").workplane(offset=z0).polyline(_lug_web(d, x, y, lug_r)).close().extrude(z1 - z0))
     return s
 
 
@@ -334,11 +353,9 @@ def _build(name, standoffs=True, baffle=True):
             s = s.cut(cq.Workplane("XY").workplane(offset=d["z_bo"] - 1).center(cx, cy)
                       .circle(S.val("gland")[0] / 2).extrude(WALL + 2))
         elif kind == "vent":
-            s = s.cut(cq.Workplane("XY").add(cq.Solid.makeCylinder(VENT_D / 2, WALL + 2, cq.Vector(cx, d["y0"] + 1, cz),
-                                                                   cq.Vector(0, -1, 0))))
+            s = s.cut(_teardrop_y(cx, cz, VENT_D / 2, d["y0"] + 1, WALL + 2))       # v1: teardrop, as the glands
             sd, st = d["seat"]
-            s = s.cut(cq.Workplane("XY").add(cq.Solid.makeCylinder(sd / 2, st + 1, cq.Vector(cx, d["y0"] + 1, cz),
-                                                                   cq.Vector(0, -1, 0))))
+            s = s.cut(_teardrop_y(cx, cz, sd / 2, d["y0"] + 1, st + 1))             # v1: the seat too
             if baffle:
                 bx0, bx1, by0, by1, bz0, bz1 = _baffle_box(d)
                 s = s.union(cq.Workplane("XY").add(cq.Solid.makeBox(bx1 - bx0, by1 - by0, bz1 - bz0 + 0.5,
@@ -366,6 +383,8 @@ def lid(name):
     g = groove(name)
     z0, z1 = d["z_rim"], d["z_rim"] + d["lid_t"]
     s = _outline(d, z0, z1)
+    top = s.faces(">Z").val()
+    s = s.newObject(top.outerWire().Edges()).chamfer(LID_CHAMFER)     # v1: the top outer edge
     o, r = WALL / 2, R_IN + WALL / 2
     xa, xb, ya, yb = d["x0"] - o, d["x1"] + o, d["y0"] - o, d["y1"] + o
     hw = g["width"] / 2

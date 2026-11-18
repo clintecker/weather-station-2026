@@ -26,7 +26,7 @@ fi
 echo "== pod boxes (TH, BARO, UV): STLs, then the fit, openings, seal and window checks"
 if [ -x ../../.venv-cad/bin/python ]; then
   ../../.venv-cad/bin/python box/podbox.py
-  cd ../..; .venv-cad/bin/python -m unittest tests.test_pods_box; cd hardware/pods-r1
+  cd ../..; .venv-cad/bin/python -m unittest tests.test_pods_box tests.test_pods_v1; cd hardware/pods-r1
 else
   skip "pod boxes (box/podbox.py, tests.test_pods_box): .venv-cad (CadQuery) is not on this machine"
 fi
