@@ -115,6 +115,14 @@ def rows_table(c, x, ytop, w, head, rows, size=8.4, col=None, ticks=False, lead=
     return yy
 
 
+def guidance_note(c):
+    """One footnote line above the slogan rule: what '(guidance)' on this page means."""
+    s = ("(GUIDANCE) / (G.) = BENCH GUIDANCE, COMMON PRACTICE: NOT FROM A DATASHEET OR SOURCES.PY. "
+         "YOUR PART'S OWN INSTRUCTIONS WIN.")
+    assert pdfmetrics.stringWidth(s, "MONO", 6.2) < W - 2 * M, "guidance footnote too long"
+    text(c, M, 37, s, 6.2, "MONO", GREY)
+
+
 # ------------------------------------------------------------------ the pages
 PAGES = []          # (step, title, tags, fn)
 
@@ -155,11 +163,12 @@ def cover(c, pg):
 def before(c, pg):
     page(c, "00", "BEFORE YOU START", "TOOLS, THE ORDER OF THE STEPS, AND HOW THIS SHEET NAMES EVERY FACE AND HOLE.", pg,
          SLOGANS_Q[1])
+    guidance_note(c)
     g = Grid(2, 2, heights=[1.3, 1])
     x, y, w, h = panel(c, g.cell(0, 0), None, "TOOLS AND CONSUMABLES.")
     tools = ["SOLDERING IRON + AN M3 HEAT-SET INSERT TIP", "  (OR AN OLD CONICAL TIP YOU DON'T NEED)",
-             "PH1 CROSS SCREWDRIVER (THE M3 PAN HEADS)", "SPANNER OR PLIERS FOR THE PG-7 NUTS",
-             "SHARP KNIFE + STEEL RULER (THE CORD)", "INSTANT GLUE (CYANOACRYLATE): CORD JOINT",
+             "PH1 CROSS SCREWDRIVER (GUIDANCE)", "SPANNER OR PLIERS FOR THE PG-7 NUTS",
+             "SHARP KNIFE + STEEL RULER (THE CORD)", "INSTANT GLUE: CORD JOINT (GUIDANCE)",
              "NEUTRAL-CURE SILICONE (UV WINDOW)", "MULTIMETER: CONTINUITY (SHUNT CHECK)",
              "FLUSH CUTTERS (CABLE TIE TAILS)", "ISOPROPYL ALCOHOL + CLOTH"]
     for i, s in enumerate(tools):
@@ -223,6 +232,7 @@ def inserts_page(name, step):
         page(c, step, f"{name} BOX: {fx['inserts']} HEAT-SET INSERTS",
              f"4 FROM THE RIM (LID SCREWS), {fx['inserts'] - 4} FROM THE BACK FACE (MOUNT SCREWS). BORES "
              f"{BORE_D:g} ACROSS, {BORE_DEPTH:g} DEEP.", pg, SLOGANS_Q[2])
+        guidance_note(c)
         g = Grid(2, 2, heights=[1.25, 1])
         x, y, w, h = panel(c, g.cell(0, 0), 1, ["RIM UP. The 4 rim bores, one in each", "corner lug: the lid's screws.",
                                                 "Insert 1 into each (step 3)."])
@@ -252,9 +262,9 @@ def inserts_page(name, step):
         x, y, w, h = panel(c, g.cell(1, 1), 4, ["Check every one: flush (a straight edge", "rocks on none), square, and an",
                                                 "M3 screw turns in by hand."], warn=True)
         yy = para(c, x + 40, y + h - 14, wrap_px(
-            "Iron at PETG heat (about 230 C) with the insert tip. Insert on the tip, its SMALL (chamfered) end into the bore. "
+            "Iron at PETG heat (about 230 C, guidance) with the insert tip. Insert on the tip, its SMALL (chamfered) end into the bore. "
             "Press straight down, slowly, no twisting, until its top is FLUSH with the face. Lift the iron straight off; "
-            "hold a flat steel part on the insert 10 s while it sets. Rim bores with the rim up; back bores with the back up.",
+            "hold a flat steel part on the insert 10 s (guidance) while it sets. Rim bores with the rim up; back bores with the back up.",
             w - 52, 8.6), 8.6, 11.5, w=w - 44, what="insert method")
         para(c, x + 12, yy - 8, wrap_px(
             f"{fx['inserts']} inserts in the {name} box. A crooked insert: heat it, pull it with pliers, let the bore cool, "
@@ -295,6 +305,7 @@ def gland_page(name, step):
         else:
             title, sub = "UV BOX: THE FLOOR GLAND", "ONE GLAND, IN THE BACK FACE (THE FLOOR ON THE CAP). LOCKNUT INSIDE."
         page(c, step, title, sub, pg, SLOGANS_Q[3])
+        guidance_note(c)
         g = Grid(2, 2, heights=[1.15, 0.85] if name == "UV" else [0.8, 1.2])
         if name == "TH":
             cp = ["The bottom wall from outside. Port-cable", "hole (left, as drawn) and the lead's hole",
@@ -315,10 +326,10 @@ def gland_page(name, step):
         L(c, a, its)
         if name == "UV":
             cp2 = ["1  Thread up through the floor from", "OUTSIDE, seal ring on the outside face.",
-                   "2  Inside: locknut on, hand tight + 1/4.", "Dome nut stays loose for the cable."]
+                   "2  Inside: locknut on, hand tight + 1/4 (g.).", "Dome nut stays loose for the cable."]
         else:
             cp2 = ["1  Thread in from OUTSIDE, seal ring", "against the outside face. 2  Inside: the",
-                   "locknut on, hand tight, then 1/4 turn", "with the spanner. Dome nuts stay loose."]
+                   "locknut on, hand tight, then 1/4 turn", "(guidance). Dome nuts stay loose."]
         x, y, w, h = panel(c, g.cell(1, 0), 2, cp2)
         a = Art(c, f"q_gl_{p}_in", x + 10, y + 22, w - 20, h - 50)
         its = [("LOCKNUT INSIDE", "lock:gland", "up")]
@@ -355,12 +366,13 @@ def gland_page(name, step):
 def window_page(c, pg):
     page(c, "09", "UV LID: THE WINDOW", f"PTFE DISC {WIN_D:g} x {WIN_T:g} INTO THE RECESS IN THE LID'S TOP FACE, "
          "FLUSH, BEDDED IN SILICONE.", pg, SLOGANS_Q[3])
+    guidance_note(c)
     g = Grid(2, 1)
     x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
         "The UV LID, top face up (the face WITHOUT the groove). The recess is", f"{WIN_D + 0.3:g} across, {WIN_T:g} deep, over a "
         f"{WIN_D - 3:g} aperture. 1  Wipe the", "recess and the disc with alcohol. 2  A thin bead of neutral-cure",
         "silicone round the recess's ledge (not on the aperture). 3  Press", "the disc in until FLUSH with the lid; "
-        "wipe the squeeze-out off the", "top. 4  Lid flat, 24 h to cure, before step 16.", width=48))
+        "wipe the squeeze-out off the", "top. 4  Lid flat, 24 h (guidance) to cure, then step 16.", width=48))
     a = Art(c, "q_win_iso", x + 6, y + 30, w - 12, h - 70)
     L(c, a, [("PTFE DISC", "disc", "up"), ("RECESS + LEDGE", "recess", "up"), ("APERTURE", "aperture", "up")])
     x, y, w, h = panel(c, g.cell(1, 0), 2, cap(
@@ -405,6 +417,7 @@ def bib_page(name, step):
     def f(c, pg):
         page(c, step, f"{name} BOARD INTO THE {name} BOX", f"2 x {M8} THROUGH THE PERMA-PROTO'S MOUNTING HOLES "
              "INTO THE STANDOFFS. THEN THE PLUG INTO J1.", pg, SLOGANS_Q[4])
+        guidance_note(c)
         g = Grid(2, 1)
         pre = {"TH": "Session P done for TH, including step 11 (the lead's pod end, through its gland, soldered).",
                "BARO": "Session P done for BARO, its port cable through its gland and crimped (Session P C1-C2).",
@@ -412,7 +425,7 @@ def bib_page(name, step):
         x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
             pre, "1  Board in, top face up (print readable), J1's mouth toward the gland end. 2  A screw through each",
             "mounting hole into its standoff: thread-forming into the plastic, snug, no more. 3  Plug the port cable's",
-            "plug into J1 until it clicks. 4  Leave a little slack, then tighten the dome nut by hand + 1/4 turn.",
+            "plug into J1 until it clicks. 4  Leave a little slack, then tighten the dome nut by hand + 1/4 turn (guidance).",
             width=48))
         a = Art(c, f"q_bib_{p}_top", x + 70, y + 20, w - 140, h - 40)
         its = [(f"{M8}", "bscrew0", "lt"), (f"{M8}", "bscrew1", "rt"), ("PLUG IN J1", "plug", "lt"),
@@ -465,6 +478,7 @@ def shunt_page(c, pg):
 def oring_page(c, pg):
     page(c, "15", "CUT AND SEAT THE O-RING CORD", f"ONE LENGTH PER LID, {CORD:g} MM CORD, BUTT-JOINED. "
          "THE GROOVE IS IN THE LID'S INNER FACE.", pg, SLOGANS_Q[6])
+    guidance_note(c)
     g = Grid(3, 2, heights=[1.1, 1])
     for k, name in enumerate(POD):
         x, y, w, h = panel(c, g.cell(k, 0), k + 1, [f"{name} LID, inner face up.", f"Cut {FACTS[name]['cut']} mm of cord."])
@@ -473,7 +487,7 @@ def oring_page(c, pg):
     x, y, w, h = panel(c, g.cell(0, 1, 2), 4, cap(
         "1  Cut the cord square with a sharp knife, on the ruler, to the length in the table (the groove's centreline).",
         "2  Press it into the groove all round, starting opposite the join; do not stretch it. 3  The two ends meet in",
-        "the middle of the GLAND-END run: a drop of instant glue on one end face, push them together 10 s.", width=66))
+        "the middle of the GLAND-END run: a drop of instant glue (guidance) on one end face, push them together 10 s.", width=66))
     a = Art(c, "q_oring_join", x + 40, y + 24, w - 160, h - 50)
     L(c, a, [("BUTT JOINT", "join", "rt"), ("GROOVE", "groove", "rt")])
     x, y, w, h = panel(c, g.cell(2, 1), 5, ["The cord stands", f"{CORD - FACTS['TH']['depth']:.2f} proud of the face:",
@@ -522,7 +536,7 @@ def shield_order(c, pg):
              ("19", "CUP ONTO THE ARM, STAND, SHT45", "Cup foot on the arm's pocket floor, its 2 holes over the arm's 2. "
               "Stand on the cup. SHT45 tied to the stand."),
              ("--", "6 LOUVER PLATES", "Onto the stand's posts, each on the one below, as your shield goes."),
-             ("20", "UV BOX ONTO THE CAP (BENCH)", f"Cap upside down on the bench: 4 x {M10} up into the UV box. Then the "
+             ("20", "UV BOX ONTO THE CAP (BENCH)", f"Cap upside down on the UV box: 4 x {M10} down through the cap into the box. Then the "
               "cap onto plate 6, LAST."),
              ("21", "DRIP LOOPS + TIES", "Every cable dips below its gland before it runs to the pole.")]
     yy = y + h - 40
@@ -576,18 +590,19 @@ def sht_page(c, pg):
 
 
 def cap_page(c, pg):
-    page(c, "20", "UV BOX ONTO THE CAP", f"ON THE BENCH: CAP UPSIDE DOWN, BOX LID DOWN UNDER IT. 4 x {M10} UP INTO "
-         "THE BOX. CAP ON LAST.", pg, SLOGANS_Q[7])
+    page(c, "20", "UV BOX ONTO THE CAP", f"ON THE BENCH: CAP UPSIDE DOWN ON THE BOX. 4 x {M10} DOWN THROUGH THE "
+         "CAP INTO THE BOX.", pg, SLOGANS_Q[7])
     g = Grid(2, 2, heights=[1.1, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, cap(
         "On the bench: the UV box lid DOWN on a cloth (protect the window), the cap upside down on it, its saddle over the",
         "box's gland end, the gland in the saddle's notch. 2 screws go down through the cap's flat top into the far-end lug",
-        "inserts (down the counterbores inside the cap); 2 through the saddle into the floor-boss inserts.", width=100))
+        "inserts (down the counterbores inside the cap); 2 from above, through the saddle's holes, into the floor-boss inserts.",
+        "The cap goes onto the stack LAST, after the 6 louver plates.", width=100))
     a = Art(c, "q_cap_bench", x + 130, y + 4, w - 260, h - 8)
     L(c, a, [(f"{M10}: LUG", "lug0", "lt"), (f"{M10}: LUG", "lug1", "lt"), (f"{M10}: SADDLE", "saddle2", "rt"),
              (f"{M10}: SADDLE", "saddle3", "rt")], size=8.0)
-    x, y, w, h = panel(c, g.cell(0, 1), 2, ["The cap from below: the 2 lug holes at", "the end of their counterbores, the 2",
-                                            "saddle holes in the open."])
+    x, y, w, h = panel(c, g.cell(0, 1), 2, ["The cap's inside, as you see it on the", "bench: the 2 lug holes down their",
+                                            "counterbores, the 2 saddle holes."])
     a = Art(c, "q_cap_under", x + 75, y + 20, w - 150, h - 40)
     LH(c, a, [("LUG HOLE", "lug0", "lt"), ("LUG HOLE", "lug1", "lt"), ("SADDLE HOLE", "saddle2", "rt"),
               ("SADDLE HOLE", "saddle3", "rt")], size=8.0)
