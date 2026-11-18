@@ -27,7 +27,22 @@ TX sensor port by a round 6-conductor cable. Design: `docs/superpowers/specs/202
   shapely 2.2) and `.venv-pdf` from `sheets/requirements-pdf.txt` (reportlab + svglib, Python 3.13; the TX sheets'
   pins). `sheets/env.sh` uses `CADPY` / `PDFPY` when set, else those two venvs, and prints a WARNING block when either
   is missing; `run.sh` then marks the sheets SKIPPED in its last line. `svg/` and `out/` stay out of git.
-- `run.sh`: rebuilds and checks everything here; exits non-zero on the first failed step.
+- `run.sh`: rebuilds and checks everything here; exits non-zero on the first failed step. Every step it cannot run on
+  this machine (no shield 3MF, no `.venv-cad`, no sheet interpreters, no BOB-14021 STEP) is named again in a WARNING
+  banner at the end, instead of "every check passes".
+- `layout/pod_checks.py` P6 sets the pod cable length (each port's pull-ups with the TX main bus's in parallel for the
+  3 mA sink, the port segment's rise time with the TX port's 60 pF allowance); the TX checks' S4 note
+  (<= 118 pF / 1.2 m) models an empty port with the mux's 10 k alone, so it is not a pod limit.
+
+Setting up a fresh clone (from the repo root):
+1. The plain `.venv` is a prerequisite: `run.sh` runs `sources.py --check` and the plain unit tests with
+   `.venv/bin/python` (create it as the repo README says: `python3 -m venv .venv` and
+   `.venv/bin/python -m pip install -r requirements.txt`).
+2. `sh hardware/pods-r1/sheets/setup-envs.sh` (uv) makes `.venv-cad` and `.venv-pdf` and then runs
+   `python3 -I hardware/tx-stack-r1/render/fetch_models.py`, which downloads the makers' STEP models (checked against
+   their sha256) into the gitignored `hardware/tx-stack-r1/render/models/` and builds the BOB-14021 board STEP from
+   SparkFun's Eagle file with `kicad-cli` (so KiCad must be installed). Without that STEP the Session P and Q sheets
+   skip, and `run.sh` says so in its final WARNING.
 
 The radiation shield's 3MF and every file derived from its meshes stay out of git; `shield_3mf` records a local path and
 a sha256 only. Adafruit's Eagle files were read once from GitHub into a scratch folder; the parsed numbers are here.

@@ -62,7 +62,8 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
   on it is measured by hand. Kept locally beside the pod design (licence not known, so not committed:
   see "Left to the builder"). From the meshes:
   - six louver plates, each 100 x 100 x 20 mm (object_79), a closed top cap 100 x 100 x 19.2
-    (object_70), plate pitch set by the 15 mm posts;
+    (object_70) whose flat top is only a disc of r 38.03 mm, not the full 100 x 100 (the remix fuses a saddle onto it
+    that overhangs +x for the UV box, below), plate pitch set by the 15 mm posts;
   - three post columns, diameter about 10 mm, centred 25 mm from the axis, leaving a **clear core
     of diameter 40 mm**;
   - a **sensor stand** (object_68): a strip 14 x 5 mm, 81 mm tall on a three-legged foot
@@ -88,18 +89,24 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
 - **Perma-Proto Quarter #1608** (about 44 x 51 mm: take the exact outline and hole grid from
   Adafruit's own file) does not fit the shield's core: the TH pod board lives outside the shield.
 - **I2C on a port**: each port's lines are pulled up on the TX side by the mux breakout's 10 k
-  (`tx-protoboard-stack-design.md`, cable limit). Every Adafruit breakout on a pod adds its own
-  pull-ups. The total per port must stay above the bus's floor and the cable's rise-time limit
-  (about 236 pF at 100 kHz with about 5 k): the builder computes the per-pod total and removes
-  pull-ups where the breakout allows (cut-trace jumpers), recording which.
+  (`tx-protoboard-stack-design.md`, cable limit). Every Adafruit breakout on a pod adds its own 10 k
+  header-side pull-ups, and none of them (sensor or EEPROM) has a cuttable pull-up jumper. The per-port
+  total is the mux's, the sensor's and the EEPROM's 10 k in parallel, 3.33 k; while a channel is
+  selected the PCA9548 also joins the TX main bus's pull-ups (1.40 k: A1 4.7 k, U1 U2 U4 U5 U6 10 k),
+  so a pod's device sinks 987 ohm, against the 967 ohm floor (3 mA at 0.4 V): it passes by 21 ohm
+  (2.1 %). At 2 m of cable at a TYPICAL 100 pF/m (the bought cable's figure is still to measure), with
+  10 pF per device and the TX port's 60 pF allowance, the port segment carries TH 340 / BARO 290 /
+  UV 290 pF and rises in 960 / 819 / 819 ns (limit 1000 ns). No pull-up removal is needed.
+  Pod cable length is set by `hardware/pods-r1/layout/pod_checks.py` P6; the TX S4 note
+  (<= 118 pF / 1.2 m) models an empty port with the mux's 10 k alone.
 - **Cable**: straight-through RJ11/RJ12, round, through a PG-7 gland (3.0-4.3 mm seal) at each end.
   The PG-7 (#762) seals only 3.0-4.3 mm, and common round 6-conductor modular cable is about 4.5 mm,
   so the bulk cable must be bought to an outside diameter of 3.0-4.3 mm (measured, not taken from the
   listing), or that end gets a PG-9 (4.0-6.4 mm). The same limit applies to the TX box's PG-7s.
   A 6P plug (about 12 mm across its corners) cannot pass a gland: the cable goes through both glands
   first and both plugs are crimped after (Clint has 6P crimp plugs; a 6P crimper is needed, see
-  `hardware/tx-stack-r1/build/ASSEMBLY.md`). Length per pod is set by the mast layout; any run over
-  about 2-3 m needs the port's pull-ups revisited (above).
+  `hardware/tx-stack-r1/build/ASSEMBLY.md`). Length per pod is set by the mast layout, under 2 m;
+  `pod_checks.py` P6 (above) is the check for any longer run (TH has only 40 ns of rise-time margin at 2 m).
 - **Identity**: every pod carries a programmed 24LC32A record (`firmware-current-design.md` §6.9),
   WP pad strapped so the record is write-protected in service. Each EEPROM shares 0x50 with the
   others only behind the TX mux (one port per channel).
@@ -116,8 +123,9 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
 - **Cable runs are under 2 m** (Clint, 2026-11-17): the TX side's pull-ups and the per-port total
   above hold; no stronger pull-ups at the pod jacks.
 - **Shield remix allowed** (Clint, 2026-11-17): the top cap (object_70) and the L-bracket arm
-  (object_72) are reprinted from remixed versions of their meshes: the cap gains screw bosses for the
-  UV box, the arm becomes longer (or gains a second arm) with mounting faces for the TH and baro boxes
+  (object_72) are reprinted from remixed versions of their meshes: the cap gains a fused saddle and screw
+  bosses for the UV box (the saddle carries the box's two floor bosses past the r 38.03 flat-top disc, with
+  the gland end overhanging the cap's edge), the arm becomes longer (or gains a second arm) with mounting faces for the TH and baro boxes
   beside the base cup. The plates, posts, stand and base cup stay as printed; the base cup may get a
   hole for the TH lead only if no existing opening serves (check the meshes first).
 
@@ -182,8 +190,8 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
    **The EEPROM breakout (Clint, 2026-11-17): Adafruit's I2C EEPROM, the 24LC32 STEMMA QT breakout
    (Adafruit #5146 as far as known; check the number on the bag).** It is not listed in
    `INVENTORY.md`; Clint has about 10 (2026-11-17), three needed, one per pod. Its 10 k pull-ups count
-   toward the port total (cut its pull-up jumper if the total needs it), and its WP pad is wired to the
-   2-pin shunt header.
+   toward the port total (it has no pull-up jumper; the total passes without removing any), and its WP pad
+   is wired to the 2-pin shunt header.
 7. **Every pod box**: printed PETG, light colour, UV paint or clear coat outside (as the TX base); a
    lid on an O-ring or gasket held by screws into heat-set inserts (taken apart, never glued); one
    PG-7 gland at the bottom for the port cable; a drip loop below the gland; a mounting face that
@@ -208,7 +216,8 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
   shield and the SHT45 fit; `hardware/pods-r1/shield/assemble.py`).
 - Whether the shield file can be committed: its licence is unknown, so keep it out of git (a local
   path in the pod design's sources, with a hash) unless Clint says it is his own work.
-- Which breakout pull-ups to remove on each pod, from the per-port total.
+- The per-port pull-up total and rise time, from `pod_checks.py` P6 (today no breakout pull-up is removed;
+  none has a jumper to cut).
 - The vent baffle and window details; each cable's length (under 2 m) from where Clint mounts the
   shield on the pole.
 - The remixed cap and arm geometry, from the original meshes.

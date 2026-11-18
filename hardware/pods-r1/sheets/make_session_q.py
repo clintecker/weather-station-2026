@@ -559,7 +559,9 @@ def arm_page(c, pg):
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, cap(
         "The remixed L-arm with both boxes on. TH hangs on the face on the side of the arm's lead hole (its lead comes down",
         "through that hole: step 10); BARO on the opposite face. Each box: back face flat on its face, lid OUTWARD, glands",
-        "DOWN. The cup is NOT on the arm yet: the screw heads are where the cup goes.", width=100))
+        "DOWN. The cup is NOT on the arm yet: the screw heads are where the cup goes.",
+        "LATER: to replace the TH or BARO box, lift the cup and the stack off the arm first; the lid still opens in place.",
+        width=100))
     a = Art(c, "q_arm_iso", x + 140, y + 4, w - 280, h - 10)
     L(c, a, [("TH FACE", "thface", "lt"), ("TH BOX", "thbox", "lt"), ("BARO FACE", "baroface", "rt"),
              ("BARO BOX", "barobox", "rt"), ("UPRIGHT (POLE SIDE)", "upright", "rt")], size=8.0)
