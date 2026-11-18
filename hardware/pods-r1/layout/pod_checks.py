@@ -6,11 +6,15 @@
   P3  each pod, on each TX sensor port S1-S4 through a straight cable, meets the TX's nets pin for pin
   P4  a reversed cable (1<->6, 2<->5, 3<->4) is detected (it puts 3V3 on SCL)
   P5  I2C addresses on a pod are unique: the sensor's and the EEPROM's 0x50
-  P6  pull-up budget at the 2 m cable: total pull-up >= (3.3 - 0.4 V) / 3 mA and rise time 0.8473 R C <= 1000 ns
+  P6  pull-up budget at the 2 m cable: every pull-up a pod's device must sink while its channel is selected (the port's
+      and the TX main bus's, which the PCA9548 joins) >= (3.3 - 0.4 V) / 3 mA, and rise time 0.8473 R C <= 1000 ns on
+      the port segment (its own pull-ups, its cable, devices and the TX port's 60 pF allowance). P6 sets the pod cable
+      length; the TX checks' S4 note (<= 118 pF / 1.2 m) models an empty port with the mux's 10 k alone.
   P7  write protect: shunt on = WP at 3V3; shunt off = R1 holds WP at GND
 
 The TX port model (hardware/tx-stack-r1/schematic/model.py) is loaded read-only under its own module name: PORTS and
-PIN_MAPS give each port's jack and pin-to-net map, and the mux card U4's pullups_k the mux channel's pull-up.
+PIN_MAPS give each port's jack and pin-to-net map, the mux card U4's pullups_k the mux channel's pull-up, and NETS'
+I2C_SDA / I2C_SCL members with a pullups_k the main bus's pull-ups upstream of the mux.
 """
 import importlib.util
 import sys
@@ -33,6 +37,11 @@ PF_PER_DEVICE = 10.0
 K_RISE = 0.8473                                 # 30 to 70 percent rise of an RC charge
 CABLE_PF_TYPICAL = 100.0                        # pF/m; used only while sources.py cable_pf_per_m is TBD (see cable_pf_per_m)
 SINK_NET = (3.3 - 0.4) / (S.val("i2c_sink_ma") * 1e-3)       # smallest total pull-up: 967 ohm
+# The TX port's own capacitance, mirrored from hardware/tx-stack-r1/schematic/checks.py check_outdoor() (the port bus
+# note: "a 60 pF allowance: two 10 pF clamps plus an estimated 40 pF of boards and module"). It is a literal inside that
+# note's f-string, not a value the TX code exposes, so it is copied here; change both together. It may count the mux
+# channel and the module boards a second time beside PF_PER_DEVICE: that errs slow (conservative).
+TX_PORT_PF = 60.0
 
 
 # ------------------------------------------------------------------ the TX port model (read-only)
@@ -66,6 +75,19 @@ def tx_mux_pullup_k():
     """The mux channel's header-side pull-up, kohm: the TX model's U4 pullups_k (the PCA9548 board's pull-ups)."""
     m = _tx_model()
     return next(p for p in m.PARTS if p["ref"] == "U4")["pullups_k"]
+
+
+def upstream_pullups():
+    """[(ref, kohm)] of the TX main bus's pull-ups (upstream of the mux), read from the TX model: every part on the
+    I2C_SDA and I2C_SCL nets that has a pullups_k. The line with the stronger total is returned (today both lines carry
+    the same parts: A1 4.7 k, U1 U2 U4 U5 U6 10 k)."""
+    m = _tx_model()
+    part = {p["ref"]: p for p in m.PARTS}
+    lines = []
+    for net in ("I2C_SDA", "I2C_SCL"):
+        refs = sorted({r for r, _pin in m.NETS[net][0]})
+        lines.append([(r, part[r]["pullups_k"]) for r in refs if r in part and part[r].get("pullups_k")])
+    return max(lines, key=lambda ps: sum(1.0 / k for _, k in ps))
 
 
 # ------------------------------------------------------------------ P1: copper
@@ -212,8 +234,18 @@ def _parallel(kohms):
 
 
 def pullup_total(pod, extra_k=()):
-    """Every fitted pull-up in parallel, ohms. extra_k: further pull-ups (kohm) to test a budget with."""
+    """The port segment's pull-ups in parallel, ohms (the mux channel's and the pod's breakouts'): the R of the port
+    segment's rise time. extra_k: further pull-ups (kohm) to test a budget with."""
     return 1000.0 * _parallel([k for _, k in pullups(pod)] + list(extra_k))
+
+
+def sink_total(pod, extra_k=(), extra_upstream_k=()):
+    """Every pull-up a device on the pod must sink while its mux channel is selected, ohms: the port segment's and the
+    TX main bus's (upstream_pullups), which the PCA9548's switch puts in parallel. The 100 ohm series resistor between
+    the port's channel side and the jack (TX R{k}1/R{k}2) is left out, which errs strong (conservative).
+    extra_upstream_k: further upstream pull-ups (kohm) to test the check with."""
+    return 1000.0 * _parallel([k for _, k in pullups(pod)] + list(extra_k)
+                              + [k for _, k in upstream_pullups()] + list(extra_upstream_k))
 
 
 def cable_pf_per_m():
@@ -229,24 +261,34 @@ def device_count(pod):
 
 
 def bus_pf(pod, metres):
-    """Cable (metres x pF/m), 10 pF per device and, on TH, the lead at the same pF/m."""
+    """The port segment's capacitance: cable (metres x pF/m), 10 pF per device, the TX port's TX_PORT_PF allowance and,
+    on TH, the lead at the same pF/m."""
     lead = pod.lead.length_m * cable_pf_per_m() if pod.lead else 0.0
-    return metres * cable_pf_per_m() + PF_PER_DEVICE * device_count(pod) + lead
+    return metres * cable_pf_per_m() + PF_PER_DEVICE * device_count(pod) + TX_PORT_PF + lead
 
 
 def rise_ns(pod, metres, extra_k=()):
-    """30 to 70 percent rise time, ns: 0.8473 R C (ohm x pF = 1e-3 ns)."""
+    """30 to 70 percent rise time of the port segment, ns: 0.8473 R C (ohm x pF = 1e-3 ns), R its own pull-ups.
+
+    Why the upstream pull-ups are left out here though sink_total counts them: with the channel selected the main bus
+    (R_up, C_up) and the port (R_p, C_p) are one node through the switch's few ohms, and that node's time constant
+    (C_up + C_p) / (1/R_up + 1/R_p) is a mediant of R_up C_up and R_p C_p, so never slower than the slower segment alone.
+    Checking each segment against its own pull-ups therefore bounds the joined bus: the port segment here, the main bus
+    in the TX checks. Adding R_up here without C_up (not modelled) would be optimistic."""
     return K_RISE * pullup_total(pod, extra_k) * bus_pf(pod, metres) * 1e-3
 
 
-def budget_failures(pod, metres=None, extra_k=()):
+def budget_failures(pod, metres=None, extra_k=(), extra_upstream_k=()):
     metres = S.val("cable_max_m") if metres is None else metres
-    out, r = [], pullup_total(pod, extra_k)
+    out, r = [], sink_total(pod, extra_k, extra_upstream_k)
     if r < SINK_NET:
-        # every Adafruit breakout's 10 k pull-ups are in parallel with the TX mux channel's; remove the last one added
-        ref, key = breakouts(pod)[0]
-        out.append(f"{pod.name}: pull-up {r:.0f} ohm < {SINK_NET:.0f} ohm (3 mA sink at 0.4 V): remove the 10 k header-side "
-                   f"pull-ups on {ref} ({key}); the board has no jumper, so cut the pack's resistor")
+        # every breakout's 10 k is in parallel with the mux channel's and the main bus's. The one to name is the sensor
+        # breakout's (the first non-EEPROM breakout): the EEPROM must stay on every pod (it is the pod's identity), and
+        # the mux's and the main bus's are TX parts, outside this pod's build.
+        ref, key = next((rk for rk in breakouts(pod) if rk[1] != "eeprom_24lc32"), breakouts(pod)[0])
+        out.append(f"{pod.name}: pull-up {r:.0f} ohm (port and TX main bus) < {SINK_NET:.0f} ohm (3 mA sink at 0.4 V): "
+                   f"remove the 10 k header-side pull-ups on {ref} ({key}); the board has no jumper, so cut the pack's "
+                   f"resistor")
     t = rise_ns(pod, metres, extra_k)
     if t > S.val("rise_ns_max"):
         out.append(f"{pod.name}: rise time {t:.0f} ns > {S.val('rise_ns_max')} ns at {metres:g} m: shorten the cable or "
@@ -294,13 +336,19 @@ def report():
     m = S.val("cable_max_m")
     lines = [f"cable {m:g} m at {cable_pf_per_m():g} pF/m"
              + (" (TYPICAL, sources.py cable_pf_per_m is TBD: measure the bought cable)" if pf is None else ""),
-             f"TX mux channel pull-up {tx_mux_pullup_k():g} k (read from tx-stack-r1/schematic/model.py U4 pullups_k)"]
+             f"TX mux channel pull-up {tx_mux_pullup_k():g} k (read from tx-stack-r1/schematic/model.py U4 pullups_k)",
+             f"TX main bus pull-ups {' || '.join(f'{r} {k:g}k' for r, k in upstream_pullups())} = "
+             f"{1000.0 * _parallel([k for _, k in upstream_pullups()]):.0f} ohm (model.py NETS I2C_SDA/I2C_SCL), in "
+             f"parallel while a channel is selected; TX port allowance {TX_PORT_PF:g} pF (schematic/checks.py)",
+             "pod cable length is set by this check (P6); the TX checks' S4 note models an empty port (mux 10 k alone)"]
     for n in pods.POD_NAMES:
         p = pods.pod(n)
-        lines.append(f"{n:5s} pull-ups {' || '.join(f'{k:g}k' for _, k in pullups(p))} = {pullup_total(p):.0f} ohm "
-                     f"(min {SINK_NET:.0f}); C {bus_pf(p, m):.0f} pF ({device_count(p)} devices"
-                     + (f", lead {p.lead.length_m:g} m" if p.lead else "") + f"); rise {rise_ns(p, m):.0f} ns "
-                     f"(max {S.val('rise_ns_max')}); addresses {', '.join(hex(x) for x in addresses(p))}; "
+        r, t = sink_total(p), rise_ns(p, m)
+        lines.append(f"{n:5s} port pull-ups {' || '.join(f'{k:g}k' for _, k in pullups(p))} = {pullup_total(p):.0f} ohm; "
+                     f"with the main bus {r:.0f} ohm (min {SINK_NET:.0f}, margin {r - SINK_NET:+.0f} ohm, "
+                     f"{100 * (r / SINK_NET - 1):+.1f} %); C {bus_pf(p, m):.0f} pF ({device_count(p)} devices, "
+                     f"TX {TX_PORT_PF:g} pF" + (f", lead {p.lead.length_m:g} m" if p.lead else "") + f"); rise {t:.0f} ns "
+                     f"(max {S.val('rise_ns_max')}, margin {S.val('rise_ns_max') - t:.0f} ns); addresses {', '.join(hex(x) for x in addresses(p))}; "
                      f"WP shunt on {wp_level(p, True)}, off {wp_level(p, False)}")
     return lines
 

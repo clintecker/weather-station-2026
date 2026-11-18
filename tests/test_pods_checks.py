@@ -114,7 +114,7 @@ class PodChecks(unittest.TestCase):
     def test_pullup_budget_two_metres(self):
         for n, p in self.pods.items():
             with self.subTest(pod=n):
-                self.assertGreaterEqual(self.c.pullup_total(p), (3.3 - 0.4) / 3e-3)
+                self.assertGreaterEqual(self.c.sink_total(p), (3.3 - 0.4) / 3e-3)
                 t = self.c.rise_ns(p, 2.0)
                 self.assertLessEqual(t, 1000)
                 self.assertAlmostEqual(t, 0.8473 * self.c.pullup_total(p) * self.c.bus_pf(p, 2.0) * 1e-3, places=6)
@@ -122,11 +122,31 @@ class PodChecks(unittest.TestCase):
         # the TX mux channel, the sensor breakout and the EEPROM breakout, 10 k each in parallel
         self.assertAlmostEqual(self.c.pullup_total(self.pods["UV"]), 10000 / 3, places=6)
 
+    def test_upstream_pullups_counted(self):
+        """The main bus's pull-ups (read from the TX model) load the sink check while the channel is selected."""
+        up = dict(self.c.upstream_pullups())
+        self.assertEqual(up, {"A1": 4.7, "U1": 10.0, "U2": 10.0, "U4": 10.0, "U5": 10.0, "U6": 10.0})
+        p = self.pods["UV"]
+        g = 1 / self.c.pullup_total(p) + sum(1 / (1000 * k) for k in up.values())
+        self.assertAlmostEqual(self.c.sink_total(p), 1 / g, places=6)
+        self.assertLess(self.c.sink_total(p), self.c.pullup_total(p))
+        # a fake extra 10 k upstream lowers the sink total and, at today's 2 % margin, fails the check
+        base = self.c.sink_total(p)
+        more = self.c.sink_total(p, extra_upstream_k=(10.0,))
+        self.assertLess(more, base)
+        self.assertEqual(self.c.budget_failures(p), [])
+        fails = self.c.budget_failures(p, extra_upstream_k=(10.0,))
+        self.assertTrue(any("main bus" in f and "< 967" in f for f in fails), fails)
+        # the rise time is the port segment's own (see rise_ns): an upstream pull-up does not fail it
+        self.assertFalse(any("rise" in f for f in fails), fails)
+
     def test_budget_names_the_resistor_to_remove(self):
         p = self.pods["BARO"]
         fails = self.c.budget_failures(p, extra_k=(1.0, 1.0))        # pretend two more 1 k pull-ups
         self.assertTrue(fails)
-        self.assertTrue(any("remove" in f and ("U1" in f or "U2" in f) for f in fails), fails)
+        # the sensor breakout's (U2), never the EEPROM's (U1): the EEPROM is the pod's identity and stays
+        self.assertTrue(any("remove" in f and "U2 (bmp581)" in f for f in fails), fails)
+        self.assertFalse(any("eeprom" in f for f in fails), fails)
         slow = self.c.budget_failures(p, metres=2000.0)              # an absurd cable: rise time fails
         self.assertTrue(any("rise" in f for f in slow), slow)
 
@@ -134,8 +154,16 @@ class PodChecks(unittest.TestCase):
         th, uv = self.pods["TH"], self.pods["UV"]
         per_m = self.c.cable_pf_per_m()
         self.assertGreater(per_m, 0)
-        self.assertAlmostEqual(self.c.bus_pf(uv, 2.0), 2.0 * per_m + 10 * self.c.device_count(uv))
+        # cable, 10 pF per device and the TX port's 60 pF allowance (tx-stack-r1 schematic/checks.py check_outdoor)
+        self.assertEqual(self.c.TX_PORT_PF, 60.0)
+        self.assertAlmostEqual(self.c.bus_pf(uv, 2.0), 2.0 * per_m + 10 * self.c.device_count(uv) + 60.0)
         self.assertAlmostEqual(self.c.bus_pf(th, 2.0) - self.c.bus_pf(uv, 2.0), th.lead.length_m * per_m)
+
+    def test_tx_port_allowance_still_60pf(self):
+        """TX_PORT_PF mirrors a literal in the TX checks' port note; fail if that note changes."""
+        src = (Path(__file__).resolve().parent.parent / "hardware" / "tx-stack-r1" / "schematic" / "checks.py").read_text()
+        self.assertIn("less a 60 pF allowance: two 10 pF clamps plus an estimated 40 pF of boards and module", src)
+        self.assertIn("(cmax - 60)", src)
 
     def test_wp_shunt_protects(self):
         for n, p in self.pods.items():
