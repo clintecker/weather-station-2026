@@ -2,7 +2,7 @@
 
 These are the bench PDFs for the weather station. You open one, put it next to the soldering iron, and build the board page by page. Every picture on every page comes from real CAD geometry. Nothing is drawn by hand, and no picture comes from an image generator.
 
-They look like flat-pack furniture instructions from a slightly worried future. Each page has a black header band with a yellow step number, a hazard stripe, and a deadpan slogan in the footer, such as "METER FIRST. POWER NEVER. NOT TODAY."
+They're styled like flat-pack furniture instructions. Each page has a black header band with a yellow step number, a hazard stripe, and a slogan in the footer, such as "METER FIRST. POWER NEVER. NOT TODAY."
 
 Clint builds from them at the bench, and he liked the look enough to ask for a recipe that works on other projects. That recipe is in [skill/SKILL.md](skill/SKILL.md).
 

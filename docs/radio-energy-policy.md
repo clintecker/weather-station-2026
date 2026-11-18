@@ -29,21 +29,21 @@ This repository holds the breadboarded development version: two development boar
 
 ---
 
-## 1. The problem: a radio with no sense of thrift
+## 1. The problem
 
-The station is an unattended node on battery and solar power. Nobody walks out to the yard to nurse it. It sends one-minute readings over a long LoRa path to an indoor receiver. Each minute, the radio must decide:
+The station is an unattended node on battery and solar power. It sends one-minute readings over a long LoRa path to an indoor receiver. Each minute, the radio must decide:
 
 - if it transmits at all,
 - what to transmit: the live reading, older readings from the journal, or diagnostics,
 - how much to transmit.
 
-Before this policy (before 2026-10-13), the node used one fixed rule. It sent the live reading and up to 2 older readings every minute, whatever the link and energy state. That rule shouted into a dead link and paid for every word. It ignored the battery and the sun. And when energy was plentiful, it still cleared a long backlog slowly.
+Before this policy (before 2026-10-13), the node used one fixed rule. It sent the live reading and up to 2 older readings every minute, whatever the link and energy state. So it kept spending energy on a link that was down. It ignored the battery and the sun. And when energy was plentiful, it still cleared a long backlog slowly.
 
 ---
 
 ## 2. Goals, in priority order
 
-The list reads top down, and the top always wins.
+Higher rules win over lower ones.
 
 1. **Collect the data.** Sampling and journaling continue whenever the station operates. The radio never takes the energy that the next 7 days of sampling need (derived from requirement R03).
 2. **Deliver live readings on time.** One reading per minute, committed within 120 s (H01), when energy permits.
@@ -56,7 +56,7 @@ A lower goal never takes energy or airtime from a higher goal.
 
 ---
 
-## 3. Energy facts: where the coulombs go
+## 3. Energy facts
 
 Most numbers here rest on assumed currents, and we say so up front. Transmit (TX) ≈ 100 mA at +20 dBm. The datasheet gives 87 mA at +20 dBm (LoRa 125 kHz), so 100 mA is a margin of about 15 %. Receive (RX) ≈ 5 mA. The bench firmware transmits at 0 dBm (`WS_TX_POWER_DBM`, `App/radio_cfg.h:12`), far below that. The battery and solar build measures the real currents (H02).
 
@@ -109,7 +109,7 @@ Core budget: ≤ 0.25 W average = **6 Wh/day** (product specification section 4,
 | Pack against that reserve | about 48 %: the reserve is about twice the pack |
 | Core load whose reserve fits in the pack | ≤ 0.12 W (24.4 ÷ (1.2 × 168)). With the CONSERVE band (reserve + 20 %, section 9) also inside it: ≤ 0.10 W |
 
-**Open decision D1 (for Clint, power design section 15).** Here is the awkward bit. The 1S3P pack (about 24.4 Wh) is smaller than the reserve that this policy uses (≥ 50.4 Wh). With a reserve larger than the pack, the energy above reserve is negative at every state of charge. The energy states would then pin the node in CRITICAL. The options:
+**Open decision D1 (for Clint, power design section 15).** This is a real problem. The 1S3P pack (about 24.4 Wh) is smaller than the reserve that this policy uses (≥ 50.4 Wh). With a reserve larger than the pack, the energy above reserve is negative at every state of charge. The energy states would then pin the node in CRITICAL. The options:
 
 | Option | What it means | Cost or risk |
 |---|---|---|
@@ -129,7 +129,7 @@ Core budget: ≤ 0.25 W average = **6 Wh/day** (product specification section 4,
 
 ---
 
-## 4. Policy structure: two inputs, one ladder
+## 4. Policy structure
 
 Two independent inputs decide the allowance each minute. The **stricter** input wins.
 
@@ -159,7 +159,7 @@ flowchart LR
 
 ## 5. Energy states: four defined, one in use
 
-The firmware defines four energy states and their limits (`firmware/common/ws_policy.c`). But `energy_state()` always returns NORMAL (`App/tx_policy.c:34`) until someone sets the thresholds. So three of these rows are dress rehearsals for now. *Trimmed 2026-11-02 to phases A and B, when the later build stages left this document.*
+The firmware defines four energy states and their limits (`firmware/common/ws_policy.c`). But `energy_state()` always returns NORMAL (`App/tx_policy.c:34`) until someone sets the thresholds. So for now only the NORMAL row is in use. *Trimmed 2026-11-02 to phases A and B, when the later build stages left this document.*
 
 | State | Meaning | Live reading | Backlog drain | Diagnostics | Radio time cap |
 |---|---|---|---|---|---|
@@ -192,7 +192,7 @@ Then each phase needs its own evidence that an input carries the station and tha
 
 SURPLUS ends when any condition fails: the input goes, the battery starts to discharge, or its voltage leaves the full band.
 
-## 6. Link state: when to stop shouting (implemented on the bench prototype)
+## 6. Link state (implemented on the bench prototype)
 
 This part needs no energy hardware. It stops the node from spending full radio energy every minute on a link that is down. Thus a failure costs little.
 

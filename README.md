@@ -1,12 +1,12 @@
 # Weather Station: bench prototype software
 
-A home weather station, still on the bench and proud of it. A sensor node (an STM32WL NUCLEO board) samples its sensors every 15 seconds. Once a minute it sends one observation, a summary of that minute, over encrypted LoRa to a second board on USB. A Python gateway (`ws0`) stores each reading in SQLite and acknowledges it over the radio. The gateway then serves the reading over a local HTTP API, a web dashboard and optional MQTT for Home Assistant.
+A home weather station, still on the bench. A sensor node (an STM32WL NUCLEO board) samples its sensors every 15 seconds. Once a minute it sends one observation, a summary of that minute, over encrypted LoRa to a second board on USB. A Python gateway (`ws0`) stores each reading in SQLite and acknowledges it over the radio. The gateway then serves the reading over a local HTTP API, a web dashboard and optional MQTT for Home Assistant.
 
 This repository holds the firmware, the gateway, the tests, a fault-injection simulator, the bench hardware files and the dated evidence of each bench run.
 
 Authority: the **Weather Station v0.2 product and technical requirements document (PRD/TRD), 8 October 2026**, sections 3, 9, 11 and the 24-hour delivery test (H01). H01 lives in section 12 of that document. The PRD/TRD itself is not in this repository.
 
-Status, in one breath (then a few more):
+Where things stand:
 
 - The Python gateway (`ws0`) and the firmware for two NUCLEO-WL55JC1 boards (`firmware/stage0-node/`) live here.
 - The boards run release `04fcc656938d` (TX) and `cc2766a38c61` (RX), protocol version 5. We built, flashed and tested that release on the bench, with the gateway of that release.
@@ -43,7 +43,7 @@ In the simulated demo, `ws0 demo` stands in for the boards. It sends encrypted f
 
 ## The bench build sheets
 
-The best thing in this repository might be paper. The bench build sheets are PDFs full of drawings that walk Clint through the hardware one step at a time. Think flat-pack furniture manual, if the manual knew which header pin to pull.
+The bench build sheets are illustrated PDFs that walk you through building the hardware, one step per page. They're the nicest thing in here, so have a look.
 
 There are two sets:
 
@@ -57,8 +57,6 @@ Why they are good:
 - **One step per page.** Each page opens with one big step number in a hazard-yellow box, then numbered panels with short captions.
 - **Label chips that never collide.** Each label sits on a paper chip, and its leader stops at the chip edge. The build checks every page for chips that overlap, cross a panel edge or sit under another leader. One bad chip, and the build stops with `BUILD FAILED: label or hole-callout issues`.
 
-The footers keep morale up too: "LOWEST FIRST. TALLEST LAST. GRAVITY APPROVES."
-
 ![Session 1, step 00: what you are building](docs/build-sheets/img/s1-what-you-are-building.jpg)
 
 ![Session 2, step 06: the INA228 U2 as supplied, X1 off, SJ1 closed](docs/build-sheets/img/s2-ina228-as-supplied.jpg)
@@ -69,7 +67,7 @@ The full tour, how the pipeline works and a reusable skill for other projects ar
 
 ## Run the simulated demo on your Mac
 
-No boards? No problem. The demo fakes the radio side and runs the real gateway. Python 3.12 is the tested baseline. Open this folder in VS Code and run:
+You don't need any boards for this. The demo fakes the radio side and runs the real gateway. Python 3.12 is the tested baseline. Open this folder in VS Code and run:
 
 ```sh
 python3 -m venv .venv
@@ -107,7 +105,7 @@ The same port serves a live dashboard at `http://127.0.0.1:8088/`. It asks for t
 
 ## Break things on purpose
 
-The fun part: pull the plug and watch the gateway cope. Run these commands in a second terminal. They act only on the simulator:
+While the demo runs, you can break things on purpose and watch how the gateway handles it. Run these commands in a second terminal. They act only on the simulator:
 
 ```sh
 # Interrupt transport; leave demo running so it journals new observations.
@@ -133,7 +131,7 @@ Rules that the demo shows:
 
 ## Run with the boards
 
-Real radios, real wires. Both boards run the firmware in [`firmware/stage0-node/`](firmware/stage0-node/README.md). Find the port and the ST-LINK serial number of each board with `.venv/bin/python -m serial.tools.list_ports -v`.
+Both boards run the firmware in [`firmware/stage0-node/`](firmware/stage0-node/README.md). Find the port and the ST-LINK serial number of each board with `.venv/bin/python -m serial.tools.list_ports -v`.
 
 **CAUTION:** Never provision a wiped TX board again with a key that it used before ([`docs/runbook-moving-boards.md`](docs/runbook-moving-boards.md)).
 
@@ -154,7 +152,7 @@ The gateway runs on macOS and Linux. Windows is not supported.
 
 ## Run the simulation harness
 
-The harness is the demo on fast-forward, with a fault menu. It runs a full virtual day in each scenario.
+The harness runs the demo in virtual time with faults injected. Each scenario covers a full virtual day.
 
 ```sh
 # 15 deterministic scenarios, 24 virtual hours each; no hardware or broker required.
