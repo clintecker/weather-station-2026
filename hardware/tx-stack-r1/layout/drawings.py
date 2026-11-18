@@ -501,9 +501,9 @@ def build_list(b, ph):
          "silkscreen names them: row letter + column number (`e10` = row E, column 10; letters A-J are rows, numbers "
          "1-30 are columns); rails `F+` (outer front: 3.3 V supply) and `F-` (inner front: ground). The front edge "
          "(row A) faces the lid; the back edge plugs into the backplane. Every strip carries one line (checked by "
-         "`layout/layout_checks.py`). Every wire follows its route in `drawings/{b}-top.svg` (`layout/route.py`: flat, "
+         f"`layout/layout_checks.py`). Every wire follows its route in `drawings/{b}-top.svg` (`layout/route.py`: flat, "
          "straight runs on the 1.27 mm grid with right-angle bends, around every part). Lengths are cut lengths (route "
-         "+ 10 mm), 24 AWG solid insulated unless the table says otherwise (insulation OD about 1.45 mm, `[TBD-MEASURE]`). "
+         "+ 10 mm, rounded up to the next 5 mm), 24 AWG solid insulated unless the table says otherwise (insulation OD about 1.45 mm, `[TBD-MEASURE]`). "
          + COLOURS, "",
          "## 1. Snap off the back rails (before any soldering)", "",
          f"1. Score both faces along the line between row J and the inner back rail (card Y {st.CD:.2f} mm from the "
