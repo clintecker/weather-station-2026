@@ -25,22 +25,23 @@ CHOICES (Task 7; the brief left these to the builder)
   UV box on the cap
     No placement puts all four of the UV box's mount holes on the ORIGINAL Ø76 flat top with the gland keep-out off the
     cap (the far-end lugs are 94.6 mm from the gland and 57.7 mm apart; a lug and a floor boss are at least 77 mm apart,
-    more than the flat top's usable Ø70). So the remixed cap carries a SADDLE: a platform whose top is coplanar with the
-    flat top, running from the flat-top disc out past the cap's +x rim to under the box's two floor bosses, notched
-    round the gland keep-out, and ribbed down to the sloped roof and over the rim. All four mount holes are used:
+    more than the flat top's usable Ø70). So the remixed cap carries a SADDLE: the cap's cone drawn out toward +x into
+    a spout whose top is coplanar with the flat top, ending in a rounded pad under each of the box's two floor bosses,
+    with a round scoop between the pads that keeps the gland keep-out clear. All four mount holes are used:
     the two far-end lugs on the original flat top, the two floor bosses on the saddle. podbox.py is unchanged.
     The box is turned so its gland end points +x (away from the pole, which is behind the arm's upright at -y): the
-    gland and its cable hang outside the cap (in the saddle's notch) and outside the louvers on the BARO side, and the
+    gland and its cable hang outside the cap (in the saddle's scoop) and outside the louvers on the BARO side, and the
     cable runs down to the arm there. Lug line at x = UV_LUG_X, centred on y = 0.
     Lug bosses: one under the roof per lug screw, a Ø BOSS_D column from the roof down to the seat, GRIP below the flat
     top (so the M3 x 10 grips 5.0 and leaves 5.0 of thread in the insert). The lugs are past the inner cone (r 31), so
     a counterbore (CBORE_D, clear of the head) runs from the seat straight down through the cone and out of the cap's
     open bottom: these two screws go in with the cap off the stack.
-    Saddle: SADDLE_X0..SADDLE_X1 by +-SADDLE_HW, GRIP thick (the floor-boss screws go in from the open air under it, no
-    counterbore), the part under the roof inside r SADDLE_CLEAR_R left out (the cap's inside stays as it was); ribs
-    RIB_T thick at y = RIB_Y, standing on the saddle's underside and reaching RIB_BITE into the sloped roof's shell,
-    then running out over the rim to the saddle's outer end. The notch is a NOTCH_R cylinder round the keep-out centre.
-    The cap still prints on its flat top: the saddle's top is on the bed with the flat top, the ribs grow up from it.
+    Saddle: the convex hull of the cap's outside above SADDLE_ROOT_Z and a GRIP-thick pad of radius SADDLE_PAD_R round
+    each floor boss, less the cap's own hull, so on the -x side it is the cone itself and toward +x it is one smooth
+    underside rising from the cone (above the louvers) to the pads. The floor-boss screws go in from the open air under
+    it through short Ø CBORE_D counterbores. The end is cut by one SCOOP_R circle centred at SCOOP_C, clear of the
+    keep-out by 1.5. The cap still prints on its flat top: the saddle's top is on the bed with the flat top, and its
+    underside faces up in print.
   TH and BARO boxes on the arm
     One face per box, on opposite sides of the cup: TH on -x (the side of the cup's lead hole), BARO on +x. Each face is
     a vertical plate FACE_T thick (the base plate's own thickness) parallel to the YZ plane, FACE_GAP outside the cup's
@@ -91,13 +92,9 @@ UV_LUG_X = -12.0                                 # the UV box's far-end lug line
 FACE_T = 5.0                                     # arm faces and tabs: the base plate's thickness (checked below)
 FACE_GAP = 2.0                                   # a face's inner side outside the cup's largest radius
 FACE_MARGIN = 6.0                                # face material past every lug hole centre
-SADDLE_X0, SADDLE_X1 = 25.0, 75.0                # the saddle's x extent (shield frame), inner end inside the flat top
-SADDLE_HW = 26.0                                 # the saddle's half-width in y
-SADDLE_CLEAR_R = 35.5                            # under the roof, inside this radius, the saddle adds nothing
-RIB_Y = (-24.5, 0.0, 24.5)                       # saddle ribs' centre planes (y)
-RIB_T = 3.0                                      # rib thickness
-RIB_BITE = 1.0                                   # a rib's foot reaches this far into the roof's shell
-NOTCH_R = 10.5                                   # the saddle's notch round the gland keep-out (keep-out r 9 + 1.5)
+SADDLE_PAD_R = 9.0                               # the saddle's rounded pad round each floor-boss screw
+SADDLE_ROOT_Z = 134.0                            # the saddle springs from the cap's cone at this height (above the louvers)
+SCOOP_C, SCOOP_R = (110.0, 0.0), 40.7            # the saddle's end: one round scoop between the pads, clear of the gland
 TAB_IN = 15.0                                    # the tabs reach in to |x| = TAB_IN under the base plate
 BOX_BELOW_PLATES = 6.0                           # TH/BARO box top under the lowest louver plate
 LEAD_HOLE_D = 6.0                                # the arm lead hole (the lead is OD 3.0-4.3)
@@ -308,42 +305,29 @@ def _ray_hits(v, f, x, y):
     return np.sort((l0 * p[:, 0, 2] + l1 * p[:, 1, 2] + l2 * p[:, 2, 2])[ins])
 
 
-def _rib(yc):
-    """One saddle rib (CadQuery), in the XZ plane at y = yc: its top RIB_BITE into the saddle, its foot RIB_BITE into the
-    roof's outer surface (the lowest of that surface across the rib's thickness) out to the rim, then straight out to
-    the saddle's outer end."""
-    m = uv_mount()
-    v, f = A.assembled()[A.CAP]
-    zlo = float(v[:, 2].min())
-    top = m["seat_z"] + RIB_BITE
-    foot = []
-    for x in np.arange(SADDLE_X0, SADDLE_X1, 0.5):
-        hs = [_ray_hits(v, f, x, y) for y in (yc - RIB_T / 2, yc, yc + RIB_T / 2)]
-        if any(not len(h) for h in hs):
-            break                                                   # past the cap's rim
-        h = min(float(h[-1]) for h in hs)
-        if h >= m["seat_z"]:
-            continue                                                # still under the saddle's plate
-        foot.append((float(x), max(h - RIB_BITE, zlo + RIB_BITE)))
-    assert foot, f"no roof under the saddle at y {yc}"
-    pts = [(foot[0][0], top)] + foot + [(SADDLE_X1, m["seat_z"]), (SADDLE_X1, top)]
-    return cq.Workplane("XZ", origin=(0, yc + RIB_T / 2, 0)).polyline(pts).close().extrude(RIB_T)
-
-
 @lru_cache(maxsize=None)
 def saddle():
-    """The saddle and its ribs, notched round the gland keep-out (a manifold, before it is fused to the cap)."""
+    """The saddle: the cap's cone drawn out toward +x into a spout (a manifold, before it is fused to the cap).
+
+    It is the convex hull of the cap's own outside above SADDLE_ROOT_Z (so on the -x side it is the cone itself) and a
+    round pad, SADDLE_PAD_R, GRIP thick, round each floor-boss screw, with the cap's hull (shrunk 0.6 mm toward the
+    axis, so it overlaps the 2.4 mm roof and fuses) taken out: what is left sits outside the cone, its top coplanar
+    with the flat top, its underside one smooth slope from the cone up to the pads. The end between the pads is one
+    round scoop (SCOOP_C, SCOOP_R) that keeps the gland keep-out clear."""
     m = uv_mount()
-    v, f = A.assembled()[A.CAP]
-    under = float(_ray_hits(v, f, 0.0, 0.0)[-2])                      # the roof's underside at the axis
-    plate = (_block(SADDLE_X0, SADDLE_X1, -SADDLE_HW, SADDLE_HW, m["seat_z"], m["top_z"])
-             .cut(cq.Workplane("XY").workplane(offset=m["seat_z"] - 1.0).circle(SADDLE_CLEAR_R).extrude(under - m["seat_z"] + 1.0)))
-    s = from_cq(plate)
-    for yc in RIB_Y:
-        s = s + from_cq(_rib(yc))
-    for x, y, kd in m["keepouts"]:
-        s = s - from_cq(cq.Workplane("XY").workplane(offset=m["seat_z"] - 60.0).center(x, y).circle(NOTCH_R).extrude(80.0))
-    return s
+    v, _f = A.assembled()[A.CAP]
+    upper = v[v[:, 2] >= SADDLE_ROOT_Z]
+    pads = [cyl((x, y), 2 * SADDLE_PAD_R, m["seat_z"], m["top_z"]) for x, y in m["bosses"]]
+    pts = np.vstack([upper] + [arrays(p)[0] for p in pads])
+    spout = mf.Manifold.hull_points(pts)
+    k = 1.0 - 0.6 / float(np.hypot(v[:, 0], v[:, 1]).max())
+    inside = mf.Manifold.hull_points(np.ascontiguousarray(v, dtype=float)).scale((k, k, 1.0))
+    spout = spout - inside
+    z0 = m["seat_z"] - 60.0
+    spout = spout - cyl(SCOOP_C, 2 * SCOOP_R, z0, m["top_z"] + 10.0)
+    for x, y, kd in m["keepouts"]:                                   # belt and braces: the keep-out plus 1.5 all round
+        spout = spout - cyl((x, y), kd + 3.0, z0, m["top_z"] + 10.0)
+    return spout
 
 
 @lru_cache(maxsize=None)
@@ -359,9 +343,11 @@ def cap_remixed():
                    .extrude(GRIP + 2.0))
         cut.append(cq.Workplane("XY").workplane(offset=lo - 2.0).center(x, y).circle(CBORE_D / 2)
                    .extrude(m["seat_z"] - lo + 2.0))
-    for x, y in m["bosses"]:                                        # through the saddle; the head seats on its underside
+    for x, y in m["bosses"]:                                        # through the saddle; the head seats GRIP under the top
         cut.append(cq.Workplane("XY").workplane(offset=m["seat_z"] - 0.5).center(x, y).circle(HOLE_D / 2)
                    .extrude(GRIP + 2.0))
+        cut.append(cq.Workplane("XY").workplane(offset=lo - 2.0).center(x, y).circle(CBORE_D / 2)
+                   .extrude(m["seat_z"] - lo + 2.0))                # the spout's sloped underside: a short counterbore
     for w in add:
         cap = cap + from_cq(w)
     cap = cap + saddle()
@@ -371,7 +357,7 @@ def cap_remixed():
 
 
 def saddle_cover():
-    """How much of the louvers' face the saddle and ribs stand in front of: (area beyond the cap's rim projected on the
+    """How much of the louvers' face the saddle stands in front of: (area beyond the cap's rim projected on the
     +x side, mm^2; the part of it below the top louver plate's top, mm^2; that side's louver face, mm^2)."""
     rim = float(original(A.CAP).bounding_box()[3])
     out = saddle().trim_by_plane((1.0, 0.0, 0.0), rim)                # what is past the rim, x > rim
@@ -596,7 +582,7 @@ def remix_checks():
                    f"whole Ø{HEAD_D:g} head on it: {head}")
         bad |= edge < 3.0 or not head
     area, low, face = saddle_cover()
-    out.append(f"  saddle {SADDLE_X0:g}..{SADDLE_X1:g} x +-{SADDLE_HW:g}, ribs at y {RIB_Y}; past the rim it covers {area:.0f} mm2 "
+    out.append(f"  saddle: a spout off the cone from Z {SADDLE_ROOT_Z:g}, pads r {SADDLE_PAD_R:g}; past the rim it covers {area:.0f} mm2 "
                f"of the +x side seen along x, {low:.0f} mm2 of it below the top louver plate's top (louver face {face:.0f} mm2)")
     out.append(f"  cap bosses: Ø{BOSS_D:g} under the roof, seat Z {m['seat_z']:.2f} (grip {GRIP:.1f}), "
                f"counterbore Ø{CBORE_D:g} down and out of the cap's bottom")

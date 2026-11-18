@@ -348,7 +348,7 @@ def gland_page(name, step):
                       "over the vent, before the board goes in. No patch on hand: leave the seat empty. Never tape the vent.",
                       width=100)
         else:
-            cp3 = cap("Done, from below. On the cap this gland hangs past the saddle in its notch (step 20); the cable comes",
+            cp3 = cap("Done, from below. On the cap this gland hangs past the saddle in its scoop (step 20); the cable comes",
                       "up through it into the box and bends over into the jack. Dome nut loose until the cable is in.",
                       width=100)
         x, y, w, h = panel(c, g.cell(0, 1, 2), 3, cp3)
@@ -597,7 +597,7 @@ def cap_page(c, pg):
     g = Grid(2, 2, heights=[1.1, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, cap(
         "On the bench: the UV box lid DOWN on a cloth (protect the window), the cap upside down on it, its saddle over the",
-        "box's gland end, the gland in the saddle's notch. 2 screws go down through the cap's flat top into the far-end lug",
+        "box's gland end, the gland in the saddle's scoop. 2 screws go down through the cap's flat top into the far-end lug",
         "inserts (down the counterbores inside the cap); 2 from above, through the saddle's holes, into the floor-boss inserts.",
         "The cap goes onto the stack LAST, after the 6 louver plates.", width=100))
     a = Art(c, "q_cap_bench", x + 130, y + 4, w - 260, h - 8)

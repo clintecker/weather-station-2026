@@ -91,7 +91,7 @@ class PodsRemix(unittest.TestCase):
             self.assertAlmostEqual(r.top_z(old, (flat_r - 0.5) * math.cos(a), (flat_r - 0.5) * math.sin(a)), top_z, 2)
             self.assertLess(r.top_z(old, (flat_r + 1.0) * math.cos(a), (flat_r + 1.0) * math.sin(a)), top_z - 0.5)
         self.assertAlmostEqual(cap.bounding_box()[5], top_z, 3)                  # nothing added stands above the flat top
-        self.assertLess(overlap(cap, self.orig["object_79.6"]), SLIVER)        # the bosses and ribs stay out of the top plate
+        self.assertLess(overlap(cap, self.orig["object_79.6"]), SLIVER)        # the bosses and the saddle stay out of the top plate
         m = r.uv_mount()
         head = r.S.val("pod_mount_screw")[2]
         # EVERY one of the UV box's mount holes is a hole in the cap
@@ -149,7 +149,7 @@ class PodsRemix(unittest.TestCase):
         for k in [r.A.CAP] + [f"object_79.{i}" for i in range(1, 7)] + [r.A.CUP]:
             self.assertGreater(drop.min_gap(self.orig[k] if k != r.A.CAP else cap, 50.0), 1.0, k)
         self.assertGreater(drop.min_gap(r.arm_remixed(), 50.0), 1.0)
-        # the saddle's ribs barely stand in front of the louvers: under 1 % of the +x louver face
+        # the saddle barely stands in front of the louvers: under 1 % of the +x louver face
         area, low, face = r.saddle_cover()
         self.assertLess(low, 0.01 * face)
         # printable on its flat top as before: no more steep downward area than the original, bar the new holes' roofs
