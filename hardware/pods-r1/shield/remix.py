@@ -79,7 +79,10 @@ import podbox as P             # noqa: E402  hardware/pods-r1/box/podbox.py
 
 HOLE_D = S.val("pod_mount_screw")[0] + 0.4       # M3 clearance through the cap and the faces
 HEAD_D = S.val("pod_mount_screw")[2]
-THREAD = 5.0                                     # screw thread left in the insert (insert 5.7 long, bore 6.7 deep)
+THREAD_WANT = 5.0                                # screw thread wanted in each pod box insert
+INSERT_LEN = S.val("insert_m3")[0]               # the M3 heat-set insert's length (tx-stack-r1 sources, TBD: 5.7)
+THREAD = min(THREAD_WANT, INSERT_LEN)            # thread in the insert: never longer than the insert (5.0 today)
+assert THREAD <= INSERT_LEN <= S.val("pod_insert_bore")[1], "the mount screw's thread must end inside its insert's bore"
 GRIP = S.val("pod_mount_screw")[1] - THREAD      # printed plastic under every mount screw's head: 5.0
 BOSS_D = 10.0                                    # cap boss column
 CBORE_D = HEAD_D + 1.0                           # head and driver clearance below a cap seat

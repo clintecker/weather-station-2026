@@ -72,6 +72,14 @@ class PodsRemix(unittest.TestCase):
         self.assertLess(lost, 0.02 * old.volume(), lost)
 
     # ------------------------------------------------------------------ the cap: UV box on screw bosses
+    def test_mount_thread_fits_the_insert(self):
+        """Every mount screw's thread in a pod box insert (remix THREAD) is no longer than the insert (insert_m3, TBD),
+        so the screw neither bottoms in the blind bore nor stands short of the plastic it clamps (GRIP = length - THREAD)."""
+        r, S = self.r, self.r.S
+        self.assertLessEqual(r.THREAD, S.val("insert_m3")[0])
+        self.assertLessEqual(r.THREAD, S.val("pod_insert_bore")[1])
+        self.assertAlmostEqual(r.GRIP, S.val("pod_mount_screw")[1] - r.THREAD)
+
     def test_cap_bosses(self):
         r = self.r
         cap = r.cap_remixed()

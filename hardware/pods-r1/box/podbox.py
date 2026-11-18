@@ -31,11 +31,13 @@ CHOICES (the brief left these to the builder; record of them):
   mount face       the back face (-z). TH/BARO: the same four corner lugs take M3 heat-set inserts from the back (blind: the
                    sealed space is never pierced); mount_face() gives the plane and the four insert centres. The arm
                    and the cap (Task 7) bolt to two or more of them with M3 screws from their side.
-                   UV (fix round 1): the floor gland must hang past the cap's edge (the cap is 100 x 100; the cable
+                   UV (fix round 1): the floor gland must hang past the cap's edge (the cap's flat top is a disc of
+                   r 38.03 with a fused saddle that carries the floor bosses, the gland end overhanging; the cable
                    runs down the outside of the louvers with a drip loop below the gland). So the two lugs at the
                    gland's end keep only their lid inserts, and two blind floor bosses inside the box, inboard of the
                    gland's nut (NUT_GAP clear of it) and BOSS_MARGIN clear of the side walls, take the other two mount
-                   inserts (MOUNT_BOSS_DEPTH deep from the mount face). mount_face("UV").keepouts gives the gland's
+                   inserts (mount_boss_depth() tall from the mount face: the insert bore plus MOUNT_BOSS_CAP, so it
+                   grows with the insert and its bore stays blind). mount_face("UV").keepouts gives the gland's
                    keep-out circle (GLAND_KEEP across at least) that the cap must stay clear of.
   board            on two standoffs from the back wall, one under each Perma-Proto mounting hole, no wider than
                    mount_keep (the screw head's circle the layout keeps clear, so they miss every bottom wire and
@@ -82,9 +84,18 @@ BAFFLE_T = 1.6              # baffle fin thickness
 WINDOW_LEDGE = 1.5          # UV window ledge, each side (aperture = d - 2 x ledge)
 NUT_GAP = 1.0               # a gland nut's free gap to the nearest wall
 GLAND_KEEP = 18.0           # UV: the floor gland's keep-out circle on the mount face (the gland body 16.6 + margin)
-MOUNT_BOSS_DEPTH = 7.7      # UV: floor boss height from the mount face (insert bore 6.7 + 1.0 of plastic over it)
+MOUNT_BOSS_CAP = 1.0        # UV: plastic over a floor boss's blind insert bore
 BOSS_MARGIN = 2.0           # UV: floor boss clear of the side walls
 UPS = {"TH": (0.0, 1.0, 0.0), "BARO": (0.0, 1.0, 0.0), "UV": (0.0, 0.0, 1.0)}
+
+
+def mount_boss_depth():
+    """UV floor boss height from the mount face: the insert bore's depth (sources pod_insert_bore, from the TBD
+    insert_m3 length) plus MOUNT_BOSS_CAP, so a longer insert grows the boss and its bore stays blind."""
+    return S.val("pod_insert_bore")[1] + MOUNT_BOSS_CAP
+
+
+MOUNT_BOSS_DEPTH = mount_boss_depth()   # at import, for readers (7.7 with today's insert); _build uses dims()
 
 
 def up(name):
@@ -135,7 +146,7 @@ def dims(name):
     if name != "UV":                                           # the port gland's nut (on the plug's axis) clears the lid
         z_rim = max(z_rim, pz + nut_r + NUT_GAP)
     d = dict(name=name, t=t, cs=cs, top=top, x0=x0, x1=x1, y1=y1, z_bi=z_bi, z_bo=z_bi - WALL, z_rim=z_rim,
-             px=px, pz=pz, mouth=mouth, plug_end=plug_end, lid_t=LID_T, ops=[])
+             px=px, pz=pz, mouth=mouth, plug_end=plug_end, lid_t=LID_T, ops=[], boss_depth=mount_boss_depth())
     if name == "UV":
         # the cable rises through the floor, bends over at plug_bend and runs level into the jack
         gy = mouth - body_len - S.val("plug_bend")
@@ -305,7 +316,7 @@ def _build(name, standoffs=True, baffle=True):
         s = s.cut(cq.Workplane("XY").workplane(offset=d["z_rim"] - bdepth).center(x, y).circle(bd / 2).extrude(bdepth + 1))
     for x, y in d["floor_bosses"]:            # UV: blind floor bosses for two of the mount inserts
         s = s.union(cq.Workplane("XY").workplane(offset=d["z_bi"] - 0.5).center(x, y).circle(bd / 2 + LUG_WALL)
-                    .extrude(d["z_bo"] + MOUNT_BOSS_DEPTH - d["z_bi"] + 0.5))
+                    .extrude(d["z_bo"] + d["boss_depth"] - d["z_bi"] + 0.5))
     for x, y in d["mount_lugs"] + d["floor_bosses"]:     # mount inserts from the back
         s = s.cut(cq.Workplane("XY").workplane(offset=d["z_bo"] - 1).center(x, y).circle(bd / 2).extrude(bdepth + 1))
     if standoffs:

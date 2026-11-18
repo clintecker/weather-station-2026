@@ -270,8 +270,52 @@ class PodBox(unittest.TestCase):
                     self.assertFalse(body.isInside(cq.Vector(x, y, bb.zmin + depth / 2)), f"{n}: no mount insert bore")
                     self.assertTrue(body.isInside(cq.Vector(x, y, bb.zmin + depth + 0.3)), f"{n}: mount bore through")
 
+    def _breakthroughs(self, name, body):
+        """[(kind, x, y, mm3)] of every M3 insert bore (mount bores from the back, lid bores from the rim) that reaches
+        the sealed space: the largest solid of the box's inside() less the body. A blind bore's own void inside a boss
+        is a separate solid, so only a bore that breaks through overlaps the cavity."""
+        d = self.box.dims(name)
+        bd, bdepth = self.box.S.val("pod_insert_bore")
+        cav = max(solid(self.box.inside(name)).cut(body).Solids(), key=lambda v: v.Volume())
+        bores = ([("mount", x, y, d["z_bo"]) for x, y in self.box.mount_face(name).holes]
+                 + [("lid", x, y, d["z_rim"] - bdepth) for x, y in d["lugs"]])
+        out = []
+        for kind, x, y, z0 in bores:
+            v = cq.Solid.makeCylinder(bd / 2, bdepth, cq.Vector(x, y, z0)).intersect(cav).Volume()
+            if v > 1e-3:
+                out.append((kind, round(x, 2), round(y, 2), round(v, 3)))
+        return out
+
+    def test_insert_bores_blind(self):
+        """No mount or lid insert bore opens into the sealed box, on every pod."""
+        for n in self.names:
+            with self.subTest(pod=n):
+                self.assertEqual(self._breakthroughs(n, self.built[n][0]), [])
+
+    def test_insert_bores_blind_with_a_longer_insert(self):
+        """Mutation proof: a 9.0 mm insert (bore 10.0) still leaves the UV floor bosses blind, because the boss is the
+        bore plus MOUNT_BOSS_CAP; the old fixed 7.7 mm boss would let that bore through (so the check has teeth)."""
+        box, D = self.box, self.box.S.D
+        keep, keep_fn = D["pod_insert_bore"], box.mount_boss_depth
+
+        def rebuild():
+            for f in (box.dims, box._build, box.lid):
+                f.cache_clear()
+        try:
+            D["pod_insert_bore"] = ((keep[0][0], 10.0),) + tuple(keep[1:])
+            rebuild()
+            self.assertAlmostEqual(box.dims("UV")["boss_depth"], 11.0)
+            self.assertEqual(self._breakthroughs("UV", box.body("UV")), [])
+            box.mount_boss_depth = lambda: 7.7                     # the old hard-coded height
+            rebuild()
+            leaks = self._breakthroughs("UV", box.body("UV"))
+            self.assertEqual(sorted(k for k, *_ in leaks), ["mount", "mount"], leaks)
+        finally:
+            D["pod_insert_bore"], box.mount_boss_depth = keep, keep_fn
+            rebuild()
+
     def test_uv_mount_clears_cap_edge(self):
-        """The UV box sits on the 100 x 100 top cap with its floor gland hanging past the cap's edge: one straight
+        """The UV box sits on the remixed top cap with its floor gland hanging past the cap's edge: one straight
         cap edge separates every mount hole from the gland's keep-out by 1 mm or more, and the holes span <= 100."""
         mf = self.box.mount_face("UV")
         (_origin, _normal), holes = mf                         # still unpacks as before
