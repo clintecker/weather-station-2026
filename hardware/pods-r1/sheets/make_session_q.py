@@ -133,16 +133,16 @@ def add_page(step, title, tags, fn):
 
 def cover(c, pg):
     page(c, "00", "SESSION Q: BOXES, SHIELD, INSTALL",
-         "THE 3 PRINTED POD BOXES CLOSED AND SEALED, THEN ON THE REMIXED SHIELD. BOARDS FROM SESSION P.", pg, SLOGANS_Q[0])
+         "THE 3 V1 POD BOXES CLOSED AND SEALED, THEN ON THE REMIXED SHIELD. BOARDS FROM SESSION P.", pg, SLOGANS_Q[0])
     g = Grid(1, 1)
     x, y, w, h = panel(c, g.cell(0, 0), None, cap(
         "PARTS AS SUPPLIED. Printed parts as they come off the bed; the gland as it comes in its bag (body, seal, dome nut,",
         "locknut, all assembled); inserts, screws, cord and ties loose. Quantities are for all three pods.", width=100))
     n_ins = sum(f["inserts"] for f in FACTS.values())
     cord_m = sum(f["groove"] for f in FACTS.values()) / 1000
-    items = [("TH BOX (PETG): BODY + LID\n2 GLAND HOLES, BOTTOM WALL", "q_p_box_th"),
-             ("BARO BOX (PETG): BODY + LID\nGLAND HOLE + VENT, BOTTOM WALL", "q_p_box_baro"),
-             ("UV BOX (PETG): BODY + LID\nFLOOR GLAND HOLE, LID WINDOW", "q_p_box_uv"),
+    items = [("TH BOX V1 (PETG): BODY + LID\n2 GLAND HOLES, BOTTOM WALL", "q_p_box_th"),
+             ("BARO BOX V1 (PETG): BODY + LID\nGLAND HOLE + VENT, BOTTOM WALL", "q_p_box_baro"),
+             ("UV BOX V1 (PETG): BODY + LID\nFLOOR GLAND HOLE, LID WINDOW", "q_p_box_uv"),
              (f"M3 HEAT-SET INSERT ({n_ins}x)\n{INS_L:g} LONG, {INS_D:g} KNURL (TBD)", "q_p_insert"),
              ("PG-7 #762 GLAND (4x): 1 PER BOX\n+ TH'S 2ND, FOR THE SHT45 LEAD", "q_p_gland"),
              (f"O-RING CORD {CORD:g} MM, NBR/EPDM\n{cord_m:.1f} M + SPARE (3 LIDS)", "q_p_cord"),
