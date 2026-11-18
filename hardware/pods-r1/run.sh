@@ -35,11 +35,19 @@ if ../../.venv/bin/python -c "import sys; sys.path.insert(0, '.'); import source
 else
   echo "skipped: the shield 3MF (sources.shield_3mf) or .venv-cad is not on this machine"
 fi
-echo "== Session P bench sheets: render the scenes, build the PDF, label and hole checks (CADPY/PDFPY from sheets/env.sh)"
+echo "== Session P + Q bench sheets: render the scenes, build the PDFs, label and hole checks (CADPY/PDFPY from sheets/env.sh)"
 . sheets/env.sh
 SHEETS_SKIPPED=""
 if [ -z "$_PODS_MISSING" ]; then
   cd ../..; .venv/bin/python -m unittest tests.test_pods_sheets; cd hardware/pods-r1
+  if ! ../../.venv/bin/python -c "import sys; sys.path.insert(0, '.'); import sources as S; from pathlib import Path; o = Path(S.val('shield_out')).expanduser(); \
+sys.exit(0 if S.shield_path().exists() and (o / 'cap_remixed.stl').exists() and (o / 'arm_remixed.stl').exists() else 1)"; then
+    SHEETS_SKIPPED=1
+    echo "################################################################################"
+    echo "WARNING: Session Q sheets NOT BUILT: the shield 3MF (sources.shield_3mf) or the remixed STLs"
+    echo "  (sources.shield_out: run .venv-cad/bin/python hardware/pods-r1/shield/remix.py) are not on this machine"
+    echo "################################################################################"
+  fi
 else
   SHEETS_SKIPPED=1
   echo "################################################################################"
@@ -48,7 +56,7 @@ else
   echo "################################################################################"
 fi
 if [ -n "$SHEETS_SKIPPED" ]; then
-  echo "== pods-r1: every check that ran passes; WARNING: the Session P sheets were SKIPPED (see above)"
+  echo "== pods-r1: every check that ran passes; WARNING: some bench sheets were SKIPPED (see above)"
 else
   echo "== pods-r1: every check passes"
 fi
