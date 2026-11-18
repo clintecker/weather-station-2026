@@ -17,6 +17,14 @@ TX sensor port by a round 6-conductor cable. Design: `docs/superpowers/specs/202
   SHT45 fit. `shield/remix.py` (CadQuery + manifold3d, `.venv-cad`; `sheets/requirements-cad.txt`): the remixed top cap
   (UV box screw bosses) and L-arm (TH and BARO mounting faces, the TH lead hole); prints its checks and writes the two
   STLs to `shield_out`, outside git. Its docstring records the placements and why.
+- `sheets/`: Session P, Clint's bench PDF for the three pod boards and the port cable, in the TX sheets' style
+  (`../tx-stack-r1/sheets`, whose renderer and page furniture it imports read-only). `scenes_p.py` + `models_p.py`
+  render every illustration from CadQuery geometry (one scene per process, `sh sheets/render_all.sh`, cached in
+  `sheets/svg/`); `make_session_p.py` lays out `sheets/out/session-p-pods.pdf` from `layout/pods.py`,
+  `layout/pod_checks.py` and `sources.py`, runs the label-overlap and hole-callout checks and fails on any issue
+  (`sh sheets/build.sh`). Two interpreters, named in `sheets/env.sh` and overridable as `CADPY=... PDFPY=...`: CADPY
+  needs `sheets/requirements-cad.txt` (CadQuery 2.7, shapely 2.2), PDFPY needs reportlab + svglib (Python 3.13);
+  the defaults in `env.sh` are this Mac's scratch venvs. `svg/` and `out/` stay out of git.
 - `run.sh`: rebuilds and checks everything here; exits non-zero on the first failed step.
 
 The radiation shield's 3MF and every file derived from its meshes stay out of git; `shield_3mf` records a local path and

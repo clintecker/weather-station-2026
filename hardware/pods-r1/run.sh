@@ -35,4 +35,11 @@ if ../../.venv/bin/python -c "import sys; sys.path.insert(0, '.'); import source
 else
   echo "skipped: the shield 3MF (sources.shield_3mf) or .venv-cad is not on this machine"
 fi
+echo "== Session P bench sheets: render the scenes, build the PDF, label and hole checks (CADPY/PDFPY from sheets/env.sh)"
+. sheets/env.sh
+if [ -x "$CADPY" ] && [ -x "$PDFPY" ]; then
+  cd ../..; .venv/bin/python -m unittest tests.test_pods_sheets; cd hardware/pods-r1
+else
+  echo "skipped: the sheet interpreters (CADPY=$CADPY, PDFPY=$PDFPY) are not on this machine"
+fi
 echo "== pods-r1: every check passes"
