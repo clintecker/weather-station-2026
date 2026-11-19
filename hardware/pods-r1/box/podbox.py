@@ -99,7 +99,7 @@ CROWN_DOME_T = 3.0          # the dome's shell
 CROWN_FLAT = 3.0            # the apex flat, beyond the window recess's edge
 CROWN_LUGS = 3              # bayonet lugs on the skirt's bore
 CROWN_LUG = (8.0, 2.4, 1.0)  # a lug: arc length, height, depth (into the spigot's channel)
-CROWN_TURN = 25.0           # the bayonet's twist, degrees
+CROWN_TURN = -25.0          # the bayonet's twist, degrees about +z: negative = clockwise seen from above, like a jar lid
 CROWN_LUG_Z = 3.5           # lug centre below the spigot's top
 CROWN_ORING_Z = 7.0         # the radial O-ring groove's centre below the spigot's top
 CROWN_BOSS_R = 31.0         # floor bosses for the mount inserts: radius about the crown's axis (inside the cap's flat top)
@@ -532,7 +532,8 @@ def _crown_body(d, standoffs=True):
     for a in _bayonet_angles(d):
         half = math.degrees((lw / 2 + 0.3) / rs)
         s = s.cut(_ring(d, rs - dep, rs + 1, zl - lh / 2 - 0.3, zj + 1, a - half, a + half))
-        s = s.cut(_ring(d, rs - dep, rs + 1, zl - lh / 2 - 0.3, zl + lh / 2 + 0.3, a - half, a + CROWN_TURN + half))
+        s = s.cut(_ring(d, rs - dep, rs + 1, zl - lh / 2 - 0.3, zl + lh / 2 + 0.3, min(a, a + CROWN_TURN) - half,
+                         max(a, a + CROWN_TURN) + half))
     return s
 
 
@@ -555,7 +556,8 @@ def _crown_lid(d):
                 .extrude(apex - tube_bot - 1.0))
     for x, y in L["holes"]:
         s = s.union(cq.Workplane("XY").workplane(offset=L["z"]).center(x, y).circle(2.5).extrude(apex - L["z"] - 1.5))
-        s = s.cut(cq.Workplane("XY").workplane(offset=L["z"] - 1).center(x, y).circle(1.05).extrude(7.0))
+        s = s.cut(cq.Workplane("XY").workplane(offset=L["z"] - 1).center(x, y).circle(S.val("pod_pilot_m25") / 2)
+                  .extrude(S.val("ltr_screw")[1] + 1.0))
     s = s.cut(cq.Workplane("XY").workplane(offset=d["z_flat"] - wdw["depth"]).center(cx, cy)
               .circle(wdw["recess_d"] / 2).extrude(5))
     s = s.cut(cq.Workplane("XY").workplane(offset=tube_bot - 1).center(cx, cy).circle(wdw["aperture"] / 2)
@@ -598,7 +600,7 @@ def report():
         if n == "UV":
             lines.append(f"  crown    Ø{2 * d['r_out']:.1f} x {d['z_flat'] - d['z_bo']:.1f} tall (drum to the ledge "
                          f"{d['z_ledge'] - d['z_bo']:.1f}, lid skirt {CROWN_SP_H:g}, dome rise {CROWN_RISE:g}); bayonet "
-                         f"{CROWN_LUGS} lugs, {CROWN_TURN:g} deg twist")
+                         f"{CROWN_LUGS} lugs, {abs(CROWN_TURN):g} deg twist, clockwise from above to lock")
             lines.append(f"  seal     cord {g['cord']} in a {g['width']} x {g['depth']} groove round the spigot (radial, "
                          f"squeeze {g['squeeze']:.0%}), centreline {g['length']:.1f} long")
             lines.append(f"  LTR390   on 2 M2.5 bosses under the window, board top Z {d['ltr']['z']:.2f}")
