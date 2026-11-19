@@ -49,15 +49,15 @@ def insert_m3():
     return body.val()
 
 
-def pan_screw(length):
-    """An ISO 7045 M3 pan-head screw (sources pod_screw / pod_mount_screw: thread, length, head 5.5), axis +z: the head's
-    underside at z = 0, its top at +2.4, the shank down to z = -length; a cross recess in the head."""
-    d = S.val("pod_screw")[0]
-    dk = S.val("pod_screw")[2]
-    k = 2.4
+def pan_screw(length, size=None):
+    """An ISO 7045 pan-head screw, axis +z: the head's underside at z = 0, the shank down to z = -length; a cross recess
+    in the head. size: (thread, length, head) as sources gives it (default pod_screw, M3: head 5.5, 2.4 tall; the
+    LTR390's ltr_screw, M2.5, draws a head 1.9 tall)."""
+    d, _l, dk = size or S.val("pod_screw")
+    k = 2.4 * d / 3.0 if d < 3.0 else 2.4
     head = cq.Workplane("XY").circle(dk / 2).extrude(k).faces(">Z").edges().fillet(0.9)
     for a in (0, 90):
-        head = head.cut(cq.Workplane("XY").workplane(offset=k - 1.2).rect(3.0, 0.6).extrude(2).rotate((0, 0, 0), (0, 0, 1), a))
+        head = head.cut(cq.Workplane("XY").workplane(offset=k - 1.2).rect(dk * 0.55, 0.6).extrude(2).rotate((0, 0, 0), (0, 0, 1), a))
     shank = cq.Workplane("XY").workplane(offset=-length).circle(d / 2).extrude(length + 0.2)
     shank = shank.faces("<Z").chamfer(0.3)
     return head.union(shank).val()
@@ -140,6 +140,11 @@ def cord_in_groove(name, cut_gap=0.0):
     g = PB.groove(name)
     d = PB.dims(name)
     r = g["cord"] / 2
+    if g.get("radial"):                     # the UV crown: a ring round the spigot, in its groove, standing proud of it
+        cx, cy = d["axis"]
+        rc = d["r_sp"] - g["depth"] + r
+        ax = gp_Ax2(gp_Pnt(cx, cy, g["z"]), gp_Dir(0, 0, 1), gp_Dir(1, 0, 0))
+        return cq.Shape.cast(BRepPrimAPI_MakeTorus(ax, rc, r).Shape())
     zc = d["z_rim"] + g["depth"] - r
     o, rc = PB.WALL / 2, PB.R_IN + PB.WALL / 2
     xa, xb, ya, yb = d["x0"] - o, d["x1"] + o, d["y0"] - o, d["y1"] + o

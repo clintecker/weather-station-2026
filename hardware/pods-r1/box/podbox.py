@@ -493,7 +493,8 @@ def _ring(d, r0, r1, z0, z1, a0=0.0, a1=360.0):
 
 
 def _bayonet_angles(d):
-    return [360.0 * k / CROWN_LUGS + 30.0 for k in range(CROWN_LUGS)]      # entry slots; the lugs lock CROWN_TURN on
+    return [360.0 * k / CROWN_LUGS + 90.0 for k in range(CROWN_LUGS)]      # entry slots (none over the gland at 270);
+                                                                             # the lugs lock CROWN_TURN on
 
 
 def _crown_body(d, standoffs=True):
@@ -541,14 +542,17 @@ def _crown_lid(d):
     cx, cy = d["axis"]
     ro, zl, zj, apex = d["r_out"], d["z_ledge"], d["z_joint"], d["apex"]
     ai, bi = ro - CROWN_DOME_T, CROWN_RISE - CROWN_DOME_T
-    n = 40
+    n = 8                                       # quarter-ellipses as splines (one smooth face each, not 40 bands)
     ts = [math.pi / 2 * i / n for i in range(n + 1)]
     outer = [(ro * math.cos(t), zj + CROWN_RISE * math.sin(t)) for t in ts]
     inner = [(ai * math.cos(t), zj + bi * math.sin(t)) for t in ts]
     outer[-1], inner[-1] = (0.0, apex), (0.0, zj + bi)
     bore = d["r_sp"] + CROWN_C
-    prof = [(bore, zl), (ro, zl)] + outer + inner[::-1] + [(bore, zj)]
-    s = cq.Workplane("XZ").polyline(prof).close().revolve(360, (0, 0, 0), (0, 1, 0)).translate((cx, cy, 0))
+    w = (cq.Workplane("XZ").moveTo(bore, zl).lineTo(ro, zl).lineTo(*outer[0])
+         .spline(outer[1:], tangents=[(0, 1), (-1, 0)], includeCurrent=True)
+         .lineTo(*inner[-1]).spline(inner[::-1][1:], tangents=[(1, 0), (0, -1)], includeCurrent=True)
+         .lineTo(bore, zj).close())
+    s = w.revolve(360, (0, 0, 0), (0, 1, 0)).translate((cx, cy, 0))
     s = s.cut(cq.Workplane("XY").workplane(offset=d["z_flat"]).center(cx, cy).circle(ro + 5).extrude(10))   # apex flat
     wdw, L = d["window"], d["ltr"]
     tube_bot = L["z"] + 0.8 + LTR_GAP

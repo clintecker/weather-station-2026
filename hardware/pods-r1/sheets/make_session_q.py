@@ -48,6 +48,8 @@ SEAL_LO, SEAL_HI = S.val("pg7_seal")
 GLAND_HOLE = S.val("th_lead_gland")[0]
 M8 = f"M3 x {LID_SCREW[1]:g}"
 M10 = f"M3 x {MOUNT_SCREW[1]:g}"
+LTR_SCREW = S.val("ltr_screw")                       # (2.5, 6.0, 4.5)
+M25 = f"M2.5 x {LTR_SCREW[1]:g}"
 
 
 def _box_facts():
@@ -58,7 +60,7 @@ def _box_facts():
 
 FACTS = _box_facts()
 SLOGANS_Q = [
-    "THREE BOXES. EIGHT INSERTS EACH. ONE SHIELD.",
+    "THREE BOXES. TWENTY INSERTS. ONE SHIELD.",
     "THE RIM TAKES THE LID. THE BACK TAKES THE SHIELD.",
     "HOT BRASS, STRAIGHT DOWN, FLUSH. ONCE.",
     "THE SEAL GOES OUTSIDE. THE LOCKNUT GOES INSIDE.",
@@ -68,6 +70,7 @@ SLOGANS_Q = [
     "WATER FOLLOWS THE CABLE. THE LOOP SENDS IT DOWN.",
 ]
 POD_WORD = {"TH": "TH (SHT45 TEMPERATURE + HUMIDITY)", "BARO": "BARO (BMP581 PRESSURE)", "UV": "UV (LTR390)"}
+BOX = {"TH": "TH BOX", "BARO": "BARO BOX", "UV": "UV CROWN"}
 
 
 # ------------------------------------------------------------------ small helpers
@@ -133,7 +136,7 @@ def add_page(step, title, tags, fn):
 
 def cover(c, pg):
     page(c, "00", "SESSION Q: BOXES, SHIELD, INSTALL",
-         "THE 3 V1 POD BOXES CLOSED AND SEALED, THEN ON THE REMIXED SHIELD. BOARDS FROM SESSION P.", pg, SLOGANS_Q[0])
+         "TH + BARO BOXES AND THE UV CROWN, SEALED, ON THE REMIXED SHIELD. BOARDS: SESSION P.", pg, SLOGANS_Q[0])
     g = Grid(1, 1)
     x, y, w, h = panel(c, g.cell(0, 0), None, cap(
         "PARTS AS SUPPLIED. Printed parts as they come off the bed; the gland as it comes in its bag (body, seal, dome nut,",
@@ -142,19 +145,20 @@ def cover(c, pg):
     cord_m = sum(f["groove"] for f in FACTS.values()) / 1000
     items = [("TH BOX V1 (PETG): BODY + LID\n2 GLAND HOLES, BOTTOM WALL", "q_p_box_th"),
              ("BARO BOX V1 (PETG): BODY + LID\nGLAND HOLE + VENT, BOTTOM WALL", "q_p_box_baro"),
-             ("UV BOX V1 (PETG): BODY + LID\nFLOOR GLAND HOLE, LID WINDOW", "q_p_box_uv"),
+             ("UV CROWN (PETG): BODY + DOME LID\nGLAND IN THE DRUM, WINDOW ON TOP", "q_p_box_uv"),
              (f"M3 HEAT-SET INSERT ({n_ins}x)\n{INS_L:g} LONG, {INS_D:g} KNURL (TBD)", "q_p_insert"),
              ("PG-7 #762 GLAND (4x): 1 PER BOX\n+ TH'S 2ND, FOR THE SHT45 LEAD", "q_p_gland"),
-             (f"O-RING CORD {CORD:g} MM, NBR/EPDM\n{cord_m:.1f} M + SPARE (3 LIDS)", "q_p_cord"),
-             (f"{M8} PAN HEAD (18x)\n12 LID + 6 BOARD", "q_p_m3x8"),
+             (f"O-RING CORD {CORD:g} MM, NBR/EPDM\n{cord_m:.1f} M + SPARE (3 BOXES)", "q_p_cord"),
+             (f"{M8} PAN HEAD (14x)\n8 LID (TH + BARO) + 6 BOARD", "q_p_m3x8"),
              (f"{M10} PAN HEAD (12x)\n4 PER BOX, INTO THE SHIELD", "q_p_m3x10"),
              (f"UV WINDOW: PTFE DISC {WIN_D:g} x {WIN_T:g}\n+ BARO ePTFE PATCH {EPTFE_D:g} (OPTIONAL)", "q_p_window"),
              ("UV-RESISTANT CABLE TIES\n2 FOR THE SHT45 + CABLE TIES", "q_p_tie"),
-             ("REMIXED TOP CAP (WHITE)\nUV BOX SADDLE + LUG BOSSES", "q_p_cap"),
+             (f"{M25} PAN HEAD (2x)\nTHE LTR390 INTO THE UV LID", "q_p_m25"),
+             ("REMIXED TOP CAP (WHITE)\nSKIRT + 4 SCREW BOSSES", "q_p_cap"),
              ("REMIXED L-ARM (WHITE)\nTH + BARO FACES, LEAD HOLE", "q_p_arm")]
-    cw, rh = w / 3, h / 4
+    cw, rh = w / 4, h / 4
     for i, (name, art) in enumerate(items):
-        col, row = i % 3, i // 3
+        col, row = i % 4, i // 4
         X, Y = x + cw * col, y + h - rh * (row + 1)
         Art(c, art, X + 10, Y + 34, cw - 20, rh - 42)
         chip(c, X + cw / 2, Y + 18, name, 7.6, "ALT", INK, "c")
@@ -177,12 +181,14 @@ def before(c, pg):
     for i, (n, s) in enumerate(STEP_LIST):
         text(c, x + 12, y + h - 14 - i * min(14.5, (h - 20) / len(STEP_LIST)), f"{n}  {s}", 8.0, "HEAD", INK)
     x, y, w, h = panel(c, g.cell(0, 1, 2), None, "STANDING ORDERS.", warn=True)
-    rules = ["EVERY BOX HAS A RIM (THE OPEN SIDE THE LID SCREWS TO) AND A BACK FACE (FLAT, CLOSED: THE MOUNT FACE, ON THE "
-             "SHIELD). TH AND BARO ALSO HAVE A BOTTOM WALL: THE SHORT WALL WITH THE GLAND HOLES.",
-             "THE UV BOX'S GLAND HOLE IS IN ITS BACK FACE: ON THE CAP THAT FACE IS ITS FLOOR. ITS LID CARRIES THE WINDOW.",
-             "CORNERS ARE NAMED GLAND END / FAR END, LEFT / RIGHT AS DRAWN. EACH OF THE 4 CORNER LUGS HAS TWO BORES: ONE "
+    rules = ["TH AND BARO BOXES: A RIM (THE OPEN SIDE THE LID SCREWS TO), A BACK FACE (FLAT, CLOSED: THE MOUNT FACE, ON "
+             "THE ARM) AND A BOTTOM WALL (THE SHORT WALL WITH THE GLAND HOLES).",
+             "THE UV CROWN IS ROUND: A DRUM WITH ITS GLAND IN THE WALL, A SPIGOT ON TOP THAT THE DOME LID TWISTS ONTO (NO "
+             "LID SCREWS), AND A FLAT FLOOR THAT SITS ON THE CAP. THE DOME CARRIES THE WINDOW AND THE LTR390.",
+             "TH AND BARO CORNERS ARE NAMED GLAND END / FAR END, LEFT / RIGHT AS DRAWN. EACH CORNER LUG HAS TWO BORES: ONE "
              "FROM THE RIM (LID SCREW), ONE FROM THE BACK FACE (MOUNT SCREW). THEY DO NOT MEET.",
-             f"SCREWS: {M8} INTO THE LID INSERTS AND THE BOARD STANDOFFS. {M10} ONLY THROUGH THE SHIELD INTO THE BACK INSERTS.",
+             f"SCREWS: {M8} INTO THE LID INSERTS AND THE BOARD STANDOFFS. {M10} ONLY THROUGH THE SHIELD INTO THE MOUNT "
+             f"INSERTS. {M25}: ONLY THE LTR390 INTO THE UV LID.",
              "THE BOARDS, THE PORT CABLES AND THE TH LEAD ARE SESSION P. THIS SHEET SAYS WHEN TO GO BACK TO IT.",
              "NO POWER IN THIS SESSION. ANYTHING THAT WILL NOT FIT: STOP, PHOTOGRAPH IT, REPORT TO CLAUDE. NO FILING."]
     for i, s in enumerate(rules):
@@ -202,26 +208,50 @@ def faces(c, pg):
             if row == 0:
                 cp = {"TH": ["TH: from the rim. Two gland", "holes in the bottom wall."],
                       "BARO": ["BARO: from the rim. One gland", "hole + the small vent."],
-                      "UV": ["UV: flat and shallow. From the", "rim: two bosses on the floor."]}[name]
+                      "UV": ["UV from above: the open drum,", "4 floor bosses, 2 standoffs."]}[name]
             else:
                 cp = {"TH": ["TH: the back face (flat, no", "holes): the mount face."],
                       "BARO": ["BARO: the back face. Same", "shape as TH, a bit bigger."],
-                      "UV": ["UV: the back face = the floor.", "Its gland hole is in it."]}[name]
+                      "UV": ["UV from below: the flat floor,", "4 bores: it sits on the cap."]}[name]
             x, y, w, h = panel(c, g.cell(k, row), k + 1 + 3 * row, cp)
             a = Art(c, f"q_face_{p}_{view}", x + 14, y + 22, w - 28, h - 64)
-            if view == "front":
-                its = [("RIM (LID)", "rim", "up"), ("LUG", "lug", "up")]
-                if name == "UV":
-                    its.append(("END WALL", "end", "dn"))
-                else:
-                    its.append(("BOTTOM WALL", "bottom", "dn"))
+            if name == "UV":
+                its = ([("SPIGOT (LID)", "spigot", "up"), ("FLOOR BOSS", "boss", "up"), ("STANDOFF", "standoff", "dn"),
+                        ("GLAND HOLE", "op:gland", "dn")] if view == "front" else
+                       [("FLOOR (BACK FACE)", "floor", "up"), ("BOSS BORE", "boss", "up"), ("GLAND HOLE", "op:gland", "dn")])
+            elif view == "front":
+                its = [("RIM (LID)", "rim", "up"), ("LUG", "lug", "up"), ("BOTTOM WALL", "bottom", "dn")]
             else:
-                its = [("BACK FACE", "back", "up"), ("LUG", "lug", "dn" if name == "UV" else "up")]
-                if name == "UV":
-                    its.append(("GLAND HOLE", "op:gland", "dn"))
-                else:
-                    its.append(("BOTTOM WALL", "bottom", "dn"))
+                its = [("BACK FACE", "back", "up"), ("LUG", "lug", "up"), ("BOTTOM WALL", "bottom", "dn")]
             L(c, a, its, size=8.0)
+
+
+def uv_inserts_page(c, pg):
+    fx = FACTS["UV"]
+    page(c, "04", f"UV CROWN: {fx['inserts']} HEAT-SET INSERTS", f"ALL {fx['inserts']} FROM BELOW, INTO THE FLOOR BOSSES "
+         f"(MOUNT SCREWS). BORES {BORE_D:g} ACROSS, {BORE_DEPTH:g} DEEP.", pg, SLOGANS_Q[2])
+    guidance_note(c)
+    g = Grid(2, 2, heights=[1.25, 1])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, ["FLOOR UP (crown turned over, resting on", "its spigot). The 4 floor bores: the",
+                                            "cap's screws come up into these."])
+    b = Art(c, "q_ins_uv_back", x + 10, y + 26, w - 20, h - 56)
+    LH(c, b, [(f"FLOOR BOSS {n[5:]}", n, "up" if k < 2 else "dn") for k, n in enumerate(sorted(b.holes))], size=8.0)
+    x, y, w, h = panel(c, g.cell(1, 0), 2, ["One bore, close up, floor up: the insert", "over it, chamfered end DOWN into it.",
+                                            "Blind: the bore stops inside the boss."])
+    a = Art(c, "q_ins_uv_lug", x + 20, y + 22, w - 40, h - 46)
+    L(c, a, [("INSERT: CHAMFER INTO THE BORE", "ins", "dn"), ("BORE", "bore", "up"), ("FLOOR", "lug", "up")], size=8.0)
+    x, y, w, h = panel(c, g.cell(0, 1), 3, ["Same iron and method as TH and BARO", "(steps 02 and 03), with the floor UP."])
+    para(c, x + 12, y + h - 40, wrap_px(
+        "Iron at PETG heat (about 230 C, guidance) with the insert tip. Insert on the tip, its SMALL (chamfered) end into the bore. "
+        "Press straight down, slowly, no twisting, until its top is FLUSH with the floor. Lift the iron straight off; "
+        "hold a flat steel part on the insert 10 s (guidance) while it sets.", w - 26, 8.6), 8.6, 11.5, w=w - 20,
+         what="insert method")
+    x, y, w, h = panel(c, g.cell(1, 1), 4, ["Check every one: flush (a straight edge", "rocks on none), square, and an",
+                                            "M3 screw turns in by hand."], warn=True)
+    para(c, x + 12, y + h - 52, wrap_px(
+        f"No rim inserts in the crown: its lid twists on. A crooked insert: heat it, pull it with pliers, let the bore "
+        f"cool, and put a new one in. The insert size ({INS_L:g} long, {INS_D:g} knurl) is TBD: measure yours.",
+        w - 26, 8.2), 8.2, 10.5, color=GREY, w=w - 20, what="insert notes")
 
 
 def inserts_page(name, step):
@@ -239,12 +269,8 @@ def inserts_page(name, step):
         a = Art(c, f"q_ins_{p}_rim", x + 10, y + 26, w - 20, h - 56)
         rim = sorted((n for n in a.holes if n.startswith("rim:")))
         LH(c, a, [(seen(n[4:], False), n, "up" if n[4] == "T" else "dn") for n in rim], size=8.0)
-        if name == "UV":
-            cp = ["BACK FACE UP (box turned over). 2 lug", "bores at the FAR END + 2 in the floor",
-                  "bosses (inside the box, blind). Mount screws."]
-        else:
-            cp = ["BACK FACE UP (box turned over). The", "same 4 lugs, the other end: 4 back bores.",
-                  "Blind: they never reach the rim bores."]
+        cp = ["BACK FACE UP (box turned over). The", "same 4 lugs, the other end: 4 back bores.",
+              "Blind: they never reach the rim bores."]
         x, y, w, h = panel(c, g.cell(1, 0), 2, cp)
         b = Art(c, f"q_ins_{p}_back", x + 10, y + 26, w - 20, h - 56)
         back = sorted(n for n in b.holes)
@@ -253,7 +279,7 @@ def inserts_page(name, step):
             if n.startswith("back:"):
                 its.append((seen(n[5:], True), n, "up" if n[5] == "T" else "dn"))
             else:
-                its.append(("FLOOR BOSS " + ("RIGHT" if n.endswith("L") else "LEFT"), n, "dn"))
+                its.append((f"FLOOR BOSS {n[5:]}", n, "dn"))
         LH(c, b, its, size=8.0)
         x, y, w, h = panel(c, g.cell(0, 1), 3, ["3  One corner lug, close up: the insert", "over its rim bore, chamfered end DOWN.",
                                                 "Same at every bore, rim and back."])
@@ -303,10 +329,10 @@ def gland_page(name, step):
         elif name == "BARO":
             title, sub = "BARO BOX: GLAND + VENT", "ONE GLAND IN THE BOTTOM WALL. THE VENT HOLE STAYS OPEN: NEVER TAPE IT."
         else:
-            title, sub = "UV BOX: THE FLOOR GLAND", "ONE GLAND, IN THE BACK FACE (THE FLOOR ON THE CAP). LOCKNUT INSIDE."
+            title, sub = "UV CROWN: THE DRUM GLAND", "ONE GLAND, LEVEL, IN THE DRUM WALL. SEAL RING OUTSIDE, LOCKNUT INSIDE."
         page(c, step, title, sub, pg, SLOGANS_Q[3])
         guidance_note(c)
-        g = Grid(2, 2, heights=[1.15, 0.85] if name == "UV" else [0.8, 1.2])
+        g = Grid(2, 2, heights=[0.8, 1.2])
         if name == "TH":
             cp = ["The bottom wall from outside. Port-cable", "hole (left, as drawn) and the lead's hole",
                   "(right). The pointed tops are print", "teardrops: leave them, the seal covers them."]
@@ -314,22 +340,18 @@ def gland_page(name, step):
             cp = ["The bottom wall from outside: the gland", "hole and the 4 mm vent. The pointed top is",
                   "a print teardrop: the seal covers it."]
         else:
-            cp = ["The back face (floor) from outside: the", "gland hole at the gland end, past the two",
-                  "floor-boss inserts (step 04)."]
+            cp = ["The drum from outside: the gland hole in", "its round, flat spot face. The pointed top",
+                  "is a print teardrop: the seal covers it."]
         x, y, w, h = panel(c, g.cell(0, 0), 1, cp)
         a = Art(c, f"q_gl_{p}_holes", x + 10, y + 22, w - 20, h - 50)
-        its = [("PORT-CABLE GLAND HOLE" if name != "UV" else "GLAND HOLE", "op:gland", "up")]
+        its = [("PORT-CABLE GLAND HOLE", "op:gland", "up")]
         if name == "TH":
             its.append(("LEAD GLAND HOLE", "op:lead_gland", "dn"))
         if name == "BARO":
             its.append(("VENT 4 MM", "op:vent", "dn"))
         L(c, a, its)
-        if name == "UV":
-            cp2 = ["1  Thread up through the floor from", "OUTSIDE, seal ring on the outside face.",
-                   "2  Inside: locknut on, hand tight + 1/4 (g.).", "Dome nut stays loose for the cable."]
-        else:
-            cp2 = ["1  Thread in from OUTSIDE, seal ring", "against the outside face. 2  Inside: the",
-                   "locknut on, hand tight, then 1/4 turn", "(guidance). Dome nuts stay loose."]
+        cp2 = ["1  Thread in from OUTSIDE, seal ring", "against the outside face. 2  Inside: the",
+               "locknut on, hand tight, then 1/4 turn", "(guidance). Dome nuts stay loose."]
         x, y, w, h = panel(c, g.cell(1, 0), 2, cp2)
         a = Art(c, f"q_gl_{p}_in", x + 10, y + 22, w - 20, h - 50)
         its = [("LOCKNUT INSIDE", "lock:gland", "up")]
@@ -348,8 +370,8 @@ def gland_page(name, step):
                       "over the vent, before the board goes in. No patch on hand: leave the seat empty. Never tape the vent.",
                       width=100)
         else:
-            cp3 = cap("Done, from below. On the cap this gland hangs past the saddle in its scoop (step 20); the cable comes",
-                      "up through it into the box and bends over into the jack. Dome nut loose until the cable is in.",
+            cp3 = cap("Done, from outside. On the cap this gland points out over the louvers (step 20); the cable comes in",
+                      "level, straight to J1's plug. Inside, the locknut sits on a flat land. Dome nut loose until the cable is in.",
                       width=100)
         x, y, w, h = panel(c, g.cell(0, 1, 2), 3, cp3)
         a = Art(c, f"q_gl_{p}_out", x + 60, y + 24, w - 120, h - 52)
@@ -364,20 +386,20 @@ def gland_page(name, step):
 
 
 def window_page(c, pg):
-    page(c, "09", "UV LID: THE WINDOW", f"PTFE DISC {WIN_D:g} x {WIN_T:g} INTO THE RECESS IN THE LID'S TOP FACE, "
+    page(c, "09", "UV LID: THE WINDOW", f"PTFE DISC {WIN_D:g} x {WIN_T:g} INTO THE RECESS IN THE DOME'S FLAT TOP, "
          "FLUSH, BEDDED IN SILICONE.", pg, SLOGANS_Q[3])
     guidance_note(c)
     g = Grid(2, 1)
     x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
-        "The UV LID, top face up (the face WITHOUT the groove). The recess is", f"{WIN_D + 0.3:g} across, {WIN_T:g} deep, over a "
+        "The UV LID (the dome), right way up: the flat at its top. The recess is", f"{WIN_D + 0.3:g} across, {WIN_T:g} deep, over a "
         f"{WIN_D - 3:g} aperture. 1  Wipe the", "recess and the disc with alcohol. 2  A thin bead of neutral-cure",
         "silicone round the recess's ledge (not on the aperture). 3  Press", "the disc in until FLUSH with the lid; "
         "wipe the squeeze-out off the", "top. 4  Lid flat, 24 h (guidance) to cure, then step 16.", width=48))
     a = Art(c, "q_win_iso", x + 6, y + 30, w - 12, h - 70)
     L(c, a, [("PTFE DISC", "disc", "up"), ("RECESS + LEDGE", "recess", "up"), ("APERTURE", "aperture", "up")])
     x, y, w, h = panel(c, g.cell(1, 0), 2, cap(
-        "Done, from above. The disc sits flush: no lip for water to pond on. It sits over the LTR390 when the lid is on:",
-        "the window is at the lid's FAR END, away from the gland end.", f"Disc: {WIN_MAT}; TBD, measure yours.", width=48),
+        "Done, from above. The disc sits flush: no lip for water to pond on. It is at the very top of the dome, right",
+        "over the LTR390 once that is on its bosses (step 13).", f"Disc: {WIN_MAT}; TBD, measure yours.", width=48),
         warn=True)
     a = Art(c, "q_win_top", x + 30, y + 30, w - 60, h - 70)
     L(c, a, [("WINDOW, FLUSH", "disc", "up"), ("UV LID", "lid", "dn")])
@@ -415,13 +437,14 @@ def bib_page(name, step):
     p = name.lower()
 
     def f(c, pg):
+        if name == "UV":
+            return uv_bib(c, pg)
         page(c, step, f"{name} BOARD INTO THE {name} BOX", f"2 x {M8} THROUGH THE PERMA-PROTO'S MOUNTING HOLES "
              "INTO THE STANDOFFS. THEN THE PLUG INTO J1.", pg, SLOGANS_Q[4])
         guidance_note(c)
         g = Grid(2, 1)
         pre = {"TH": "Session P done for TH, including step 11 (the lead's pod end, through its gland, soldered).",
-               "BARO": "Session P done for BARO, its port cable through its gland and crimped (Session P C1-C2).",
-               "UV": "Session P done for UV, its port cable up through the FLOOR gland and crimped (Session P C1-C2)."}[name]
+               "BARO": "Session P done for BARO, its port cable through its gland and crimped (Session P C1-C2)."}[name]
         x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
             pre, "1  Board in, top face up (print readable), J1's mouth toward the gland end. 2  A screw through each",
             "mounting hole into its standoff: thread-forming into the plastic, snug, no more. 3  Plug the port cable's",
@@ -436,15 +459,37 @@ def bib_page(name, step):
         x, y, w, h = panel(c, g.cell(1, 0), 2, cap(
             "From the front-left. Nothing touches the lid's side of the rim. The JP1 shunt is ON (both posts) for the",
             "check on step 14. " + {"TH": "The lead's jacket runs into its own gland, not past the plug.",
-                                    "BARO": "Keep the vent and its fin clear of the cable.",
-                                    "UV": "The cable rises through the floor and bends over into J1."}[name],
+                                    "BARO": "Keep the vent and its fin clear of the cable."}[name],
             width=48), warn=True)
         a = Art(c, f"q_bib_{p}_iso", x + 60, y + 20, w - 120, h - 40)
         its = [("JP1 SHUNT ON", "JP1:shunt", "rt"), ("U1 EEPROM", "U1:chip", "lt"), ("J1", "J1:jack", "lt")]
-        if name != "TH":
-            its.append(("U2 " + {"BARO": "BMP581", "UV": "LTR390"}[name], "U2:sensor", "rt"))
+        if name == "BARO":
+            its.append(("U2 BMP581", "U2:sensor", "rt"))
         L(c, a, its, size=8.0)
     return f
+
+
+def uv_bib(c, pg):
+    page(c, "13", "UV BOARD INTO THE CROWN, LTR390 INTO THE LID", f"2 x {M8} INTO THE STANDOFFS, PLUG INTO J1. "
+         f"2 x {M25} HOLD THE LTR390 IN THE LID.", pg, SLOGANS_Q[4])
+    guidance_note(c)
+    g = Grid(2, 1)
+    x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
+        "Session P done for UV: its port cable in through the drum's gland and crimped, the LTR390 on its lead.",
+        "1  Board in, top face up (print readable), J1's mouth toward the gland. 2  A screw through each mounting hole",
+        "into its standoff: thread-forming, snug, no more. 3  Plug the port cable into J1 until it clicks. Leave a",
+        "little slack, then the dome nut by hand + 1/4 turn (guidance). The lead comes up out of the drum.", width=48))
+    a = Art(c, "q_bib_uv_top", x + 70, y + 20, w - 140, h - 40)
+    L(c, a, [(f"{M8}", "bscrew0", "lt"), (f"{M8}", "bscrew1", "rt"), ("PLUG IN J1", "plug", "lt"),
+             ("PORT CABLE", "cable", "lt"), ("LTR390 LEAD", "L:out", "rt")], size=8.0)
+    x, y, w, h = panel(c, g.cell(1, 0), 2, cap(
+        "4  The dome lid upside down on a cloth beside the crown (window down). 5  The LTR390 chip DOWN onto the two",
+        "bosses under the window, two of its corner holes over them. 6  An " + M25 + " through each into its boss:",
+        "thread-forming, snug, no more. The lead hangs out of the lid; it coils into the drum at step 16.", width=48),
+        warn=True)
+    a = Art(c, "q_bib_uv_iso", x + 20, y + 30, w - 40, h - 70)
+    L(c, a, [("LTR390: CHIP DOWN", "ltr", "up"), (M25, "m25_0", "dn"), (M25, "m25_1", "up"),
+             ("LEAD TO THE BOARD", "ltr_lead", "dn")], size=8.0)
 
 
 def shunt_page(c, pg):
@@ -467,7 +512,7 @@ def shunt_page(c, pg):
     for name in POD:
         pd = PD.pod(name)
         u, j = pd.part("U1").pins["WP"], pd.part("J1").pins["2"]
-        rows.append([f"{name} BOX", f"{u} (U1 WP) to {j} (J1 pin 2, 3.3 V)", "BEEP"])
+        rows.append([BOX[name], f"{u} (U1 WP) to {j} (J1 pin 2, 3.3 V)", "BEEP"])
     yy = rows_table(c, x + 16, y + h - 40, w - 30, [("POD", 0), ("PROBE THESE TWO JOINTS", 90), ("MUST", 330)], rows,
                     size=9.5, ticks=True, lead=13)
     para(c, x + 16, yy - 6, wrap_px("The shunt stays ON for good: the station reads the EEPROM, it never writes it. "
@@ -476,36 +521,39 @@ def shunt_page(c, pg):
 
 
 def oring_page(c, pg):
-    page(c, "15", "CUT AND SEAT THE O-RING CORD", f"ONE LENGTH PER LID, {CORD:g} MM CORD, BUTT-JOINED. "
-         "THE GROOVE IS IN THE LID'S INNER FACE.", pg, SLOGANS_Q[6])
+    page(c, "15", "CUT AND SEAT THE O-RING CORD", "ONE LENGTH PER BOX, BUTT-JOINED. TH + BARO: IN THE LID'S GROOVE. UV: ROUND THE SPIGOT.", pg, SLOGANS_Q[6])
     guidance_note(c)
     g = Grid(3, 2, heights=[1.1, 1])
     for k, name in enumerate(POD):
-        x, y, w, h = panel(c, g.cell(k, 0), k + 1, [f"{name} LID, inner face up.", f"Cut {FACTS[name]['cut']} mm of cord."])
+        first = f"{name} LID, inner face up." if name != "UV" else "UV BODY: round the spigot."
+        x, y, w, h = panel(c, g.cell(k, 0), k + 1, [first, f"Cut {FACTS[name]['cut']} mm of cord."])
         a = Art(c, f"q_oring_{name.lower()}", x + 44, y + 8, w - 52, h - 40)
         L(c, a, [("CORD", "cord", "lt")], size=8.0)
     x, y, w, h = panel(c, g.cell(0, 1, 2), 4, cap(
         "1  Cut the cord square with a sharp knife, on the ruler, to the length in the table (the groove's centreline).",
         "2  Press it into the groove all round, starting opposite the join; do not stretch it. 3  The two ends meet in",
-        "the middle of the GLAND-END run: a drop of instant glue (guidance) on one end face, push them together 10 s.", width=66))
+        "the middle of the GLAND-END run (UV: anywhere, away from a slot): a drop of instant glue (guidance) on one end",
+        "face, push them together 10 s.", width=66))
     a = Art(c, "q_oring_join", x + 40, y + 24, w - 160, h - 50)
     L(c, a, [("BUTT JOINT", "join", "rt"), ("GROOVE", "groove", "rt")])
-    x, y, w, h = panel(c, g.cell(2, 1), 5, ["The cord stands", f"{CORD - FACTS['TH']['depth']:.2f} proud of the face:",
-                                            "the lid squeezes it."], warn=True)
+    x, y, w, h = panel(c, g.cell(2, 1), 5, ["The cord stands proud of", "its groove: TH + BARO "
+                                            f"{CORD - FACTS['TH']['depth']:.2f},", f"UV {CORD - FACTS['UV']['depth']:.2f}."], warn=True)
     rows = [[n, f"{FACTS[n]['groove']:.1f}", f"{FACTS[n]['cut']}"] for n in POD]
     rows_table(c, x + 10, y + h - 40, w - 16, [("LID", 0), ("GROOVE", 44), ("CUT", 104)], rows, size=9.5, ticks=True,
                lead=13)
 
 
 def lid_page(c, pg):
-    page(c, "16", "LIDS ON: 4 x M3 x 8 EACH", "GROOVE SIDE DOWN ONTO THE RIM. CROSS ORDER. THE LID LANDS FLAT ON "
-         "THE RIM: THAT IS THE STOP.", pg, SLOGANS_Q[6])
+    page(c, "16", "LIDS ON", f"TH + BARO: 4 x {M8}, CROSS ORDER, STOP WHEN THE LID SITS FLAT. UV: TWIST ON.", pg, SLOGANS_Q[6])
     g = Grid(3, 2, heights=[1.9, 1])
     for k, name in enumerate(POD):
         cp = {"TH": ["TH: lid on, 4 screws.", "Glands below."], "BARO": ["BARO: lid on, 4 screws.", "Vent below, open."],
-              "UV": ["UV: window at the far", "end, over the LTR390."]}[name]
+              "UV": ["UV: lugs into the 3 slots,", "push down, turn clockwise."]}[name]
         x, y, w, h = panel(c, g.cell(k, 0), k + 1, cp)
         a = Art(c, f"q_lid_{name.lower()}", x + 10, y + 22, w - 20, h - 44)
+        if name == "UV":
+            L(c, a, [("DOME LID", "lid", "up"), ("ENTRY SLOT", "slot", "dn")], size=8.0)
+            continue
         lugs = sorted(n for n in a.anchors if n.startswith("ls:"))
         num = {"BL": "1", "TR": "2", "TL": "3", "BR": "4"}
         L(c, a, [(num[n[3:]], n, "up" if n[3] == "T" else "dn") for n in lugs], size=9)
@@ -516,7 +564,8 @@ def lid_page(c, pg):
         "(the groove sets the squeeze); it strips the insert.", width=100), warn=True)
     rows = [["TH", "after step 14's tick. Then the box goes on the arm (step 18)."],
             ["BARO", "after step 14's tick. The vent stays open below."],
-            ["UV", "after step 14's tick AND the window's silicone has cured (step 09)."]]
+            ["UV", "after step 14's tick AND the window's cure (step 09). Lead coiled into the drum; lid down, its 3 lugs "
+                   "into the 3 slots; push down and turn clockwise (from above) to the stop, about 25 degrees."]]
     rows_table(c, x + 40, y + h - 22, w - 50, [("LID", 0), ("WHEN", 60)], rows, size=9.0, ticks=True, lead=12)
 
 
@@ -531,13 +580,13 @@ def shield_order(c, pg):
              ("BASE CUP", "cup", "lt"), ("ARM (REMIX)", "arm", "lt"), ("TH BOX", "th", "lt"),
              ("BARO BOX", "baro", "rt")], size=8.0)
     x, y, w, h = panel(c, g.cell(3, 0, 2), 2, ["WHY THIS ORDER: the arm's box", "screws go in from the cup side;",
-                                               "the cap's lug screws from inside", "the cap."], warn=True)
+                                               "the crown's screws from inside", "the cap."], warn=True)
     steps = [("18", "TH + BARO BOXES ONTO THE ARM", f"4 x {M10} each, through the face from the CUP side. Cup NOT on yet."),
              ("19", "CUP ONTO THE ARM, STAND, SHT45", "Cup foot on the arm's pocket floor, its 2 holes over the arm's 2. "
               "Stand on the cup. SHT45 tied to the stand."),
              ("--", "6 LOUVER PLATES", "Onto the stand's posts, each on the one below, as your shield goes."),
-             ("20", "UV BOX ONTO THE CAP (BENCH)", f"Cap upside down on the UV box: 4 x {M10} down through the cap into the box. Then the "
-              "cap onto plate 6, LAST."),
+             ("20", "UV CROWN ONTO THE CAP (BENCH)", f"Lid off, crown upside down, the cap upside down on its floor: 4 x {M10} "
+              "down the cap's counterbores into the floor inserts. Lid back on. Then the cap onto plate 6, LAST."),
              ("21", "DRIP LOOPS + TIES", "Every cable dips below its gland before it runs to the pole.")]
     yy = y + h - 40
     for n, t, s in steps:
@@ -592,26 +641,27 @@ def sht_page(c, pg):
 
 
 def cap_page(c, pg):
-    page(c, "20", "UV BOX ONTO THE CAP", f"ON THE BENCH: CAP UPSIDE DOWN ON THE BOX. 4 x {M10} DOWN THROUGH THE "
-         "CAP INTO THE BOX.", pg, SLOGANS_Q[7])
+    page(c, "20", "UV CROWN ONTO THE CAP", f"ON THE BENCH, LID OFF, BOTH UPSIDE DOWN: 4 x {M10} DOWN THE CAP INTO THE "
+         "FLOOR INSERTS.", pg, SLOGANS_Q[7])
     g = Grid(2, 2, heights=[1.1, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, cap(
-        "On the bench: the UV box lid DOWN on a cloth (protect the window), the cap upside down on it, its saddle over the",
-        "box's gland end, the gland in the saddle's scoop. 2 screws go down through the cap's flat top into the far-end lug",
-        "inserts (down the counterbores inside the cap); 2 from above, through the saddle's holes, into the floor-boss inserts.",
-        "The cap goes onto the stack LAST, after the 6 louver plates.", width=100))
+        "1  Twist the dome lid off (anticlockwise from above) and rest it window-up on a cloth beside the crown: it stays on",
+        "its lead. 2  Crown upside down on the bench, resting on its spigot. 3  The cap upside down on its floor, the",
+        "cap's 4 counterbores over the 4 floor inserts. 4  An " + M10 + " down each counterbore: snug, no more.",
+        "5  Turn it all over, lid back on (step 16). The cap goes onto the stack LAST, after the 6 louver plates.", width=100))
     a = Art(c, "q_cap_bench", x + 130, y + 4, w - 260, h - 8)
-    L(c, a, [(f"{M10}: LUG", "lug0", "lt"), (f"{M10}: LUG", "lug1", "lt"), (f"{M10}: SADDLE", "saddle2", "rt"),
-             (f"{M10}: SADDLE", "saddle3", "rt")], size=8.0)
-    x, y, w, h = panel(c, g.cell(0, 1), 2, ["The cap's inside, as you see it on the", "bench: the 2 lug holes down their",
-                                            "counterbores, the 2 saddle holes."])
+    L(c, a, [(M10, "cs0", "lt"), (M10, "cs1", "lt"), (M10, "cs2", "rt"), (M10, "cs3", "rt"), ("SKIRT", "skirt", "rt")],
+      size=8.0)
+    x, y, w, h = panel(c, g.cell(0, 1), 2, ["The cap's inside, as you see it on the", "bench: the 4 screw holes, each down",
+                                            "its counterbore through the inner cone."])
     a = Art(c, "q_cap_under", x + 75, y + 20, w - 150, h - 40)
-    LH(c, a, [("LUG HOLE", "lug0", "lt"), ("LUG HOLE", "lug1", "lt"), ("SADDLE HOLE", "saddle2", "rt"),
-              ("SADDLE HOLE", "saddle3", "rt")], size=8.0)
-    x, y, w, h = panel(c, g.cell(1, 1), 3, ["Done, right way up. The gland hangs past", "the saddle; the window faces the "
+    LH(c, a, [("SCREW HOLE", "cs0", "lt"), ("SCREW HOLE", "cs1", "lt"), ("SCREW HOLE", "cs2", "rt"),
+              ("SCREW HOLE", "cs3", "rt")], size=8.0)
+    x, y, w, h = panel(c, g.cell(1, 1), 3, ["Done, right way up. The gland points out", "over the skirt; the window faces the "
                                             "sky.", "Now the cap onto plate 6: LAST."], warn=True)
     a = Art(c, "q_cap_iso", x + 20, y + 20, w - 40, h - 40)
-    L(c, a, [("UV BOX", "uvbox", "up"), ("WINDOW", "window", "up"), ("FLOOR GLAND", "gland", "dn")], size=8.0)
+    L(c, a, [("UV CROWN", "uvbox", "up"), ("WINDOW", "window", "up"), ("GLAND", "gland", "dn"), ("SKIRT", "skirt", "dn")],
+      size=8.0)
 
 
 def drip_page(c, pg):
@@ -628,7 +678,8 @@ def drip_page(c, pg):
     rows = [["TH PORT CABLE", "straight down from the TH box's gland, a dip below it, then back up to the pole."],
             ["TH SHT45 LEAD", "comes UP into its gland from below: the low point is under the TH face (step 10)."],
             ["BARO PORT CABLE", "straight down from the BARO box's gland, a dip below it, then to the pole."],
-            ["UV PORT CABLE", "down the outside of the louvers on the BARO side, a dip at the bottom, then to the pole."]]
+            ["UV PORT CABLE", "level out of the crown's gland, then down the outside of the louvers on the BARO side, a dip "
+                              "at the bottom, then to the pole."]]
     yy = rows_table(c, x + 12, y + h - 40, w - 20, [("CABLE", 0), ("ITS LOOP", 74)], rows, size=8.4, ticks=True, lead=11)
     para(c, x + 12, yy - 6, wrap_px("Tie each cable to the arm's upright or the pole above its loop, never IN the loop. "
                                     "Nothing pulls on a gland. The dips sit lower than every gland.", w - 24, 8.6), 8.6,
@@ -640,30 +691,33 @@ def build_pages():
     PAGES.clear()
     add_page("00", "SESSION Q: BOXES, SHIELD, INSTALL",
              ["parts-as-supplied", "parts:box", "parts:insert", "parts:gland", "parts:oring", "parts:lid-screw",
-              "parts:mount-screw", "parts:board-screw", "parts:uv-window", "parts:cap", "parts:arm", "parts:cable-tie"], cover)
+              "parts:mount-screw", "parts:board-screw", "parts:ltr-screw", "parts:uv-window", "parts:cap", "parts:arm",
+              "parts:cable-tie"], cover)
     add_page("00", "BEFORE YOU START", ["tools", "steps"], before)
     add_page("01", "KNOW THE THREE BOXES", ["box-faces"], faces)
     for k, name in enumerate(POD):
         st = f"{k + 2:02d}"
-        add_page(st, f"{name} BOX: HEAT-SET INSERTS", [f"{name}:inserts"], inserts_page(name, st))
+        add_page(st, f"{BOX[name]}: HEAT-SET INSERTS", [f"{name}:inserts"],
+                 uv_inserts_page if name == "UV" else inserts_page(name, st))
     add_page("05", "THE PG-7 #762 AS SUPPLIED", ["gland", "gland:as-supplied", "gland:locknut-off"], gland_supplied)
     for k, name in enumerate(POD):
         st = f"{k + 6:02d}"
         extra = {"TH": ["TH:lead-gland"], "BARO": ["BARO:vent"], "UV": []}[name]
-        add_page(st, {"TH": "TH BOX: TWO GLANDS", "BARO": "BARO BOX: GLAND + VENT", "UV": "UV BOX: THE FLOOR GLAND"}[name],
+        add_page(st, {"TH": "TH BOX: TWO GLANDS", "BARO": "BARO BOX: GLAND + VENT", "UV": "UV CROWN: THE DRUM GLAND"}[name],
                  ["gland", f"{name}:gland"] + extra, gland_page(name, st))
     add_page("09", "UV LID: THE WINDOW", ["UV:window"], window_page)
     add_page("10", "TH: THE SHT45 LEAD, CUP + ARM + GLAND", ["lead-through-cup", "TH:lead-route"], lead_page)
     for k, name in enumerate(POD):
         st = f"{k + 11:02d}"
-        add_page(st, f"{name} BOARD INTO THE {name} BOX", [f"{name}:board-in-box"], bib_page(name, st))
+        add_page(st, "UV BOARD INTO THE CROWN, LTR390 INTO THE LID" if name == "UV" else f"{name} BOARD INTO THE {name} BOX",
+                 [f"{name}:board-in-box"] + (["UV:ltr390-in-lid"] if name == "UV" else []), bib_page(name, st))
     add_page("14", "SHUNT ON? METER BEFORE THE LID", ["shunt-check"] + [f"{n}:shunt" for n in POD], shunt_page)
     add_page("15", "CUT AND SEAT THE O-RING CORD", ["oring", "oring:cut"], oring_page)
-    add_page("16", "LIDS ON: 4 x M3 x 8 EACH", ["lid", "lid:screws"] + [f"{n}:lid" for n in POD], lid_page)
+    add_page("16", "LIDS ON", ["lid", "lid:screws", "UV:bayonet"] + [f"{n}:lid" for n in POD], lid_page)
     add_page("17", "THE SHIELD: PARTS AND FITTING ORDER", ["shield-order"], shield_order)
     add_page("18", "TH AND BARO BOXES ONTO THE ARM", ["arm-mount", "TH:arm", "BARO:arm"], arm_page)
     add_page("19", "CUP ON, STAND ON, SHT45 ON THE STAND", ["sht45-stand"], sht_page)
-    add_page("20", "UV BOX ONTO THE CAP", ["uv-cap", "UV:cap"], cap_page)
+    add_page("20", "UV CROWN ONTO THE CAP", ["uv-cap", "UV:cap"], cap_page)
     add_page("21", "DRIP LOOPS", ["drip-loops"] + [f"{n}:drip-loop" for n in POD], drip_page)
 
 

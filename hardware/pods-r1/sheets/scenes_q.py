@@ -110,6 +110,53 @@ def d_(name):
     return PB.dims(name)
 
 
+def lid_top(d):
+    """The lid's outer top face (z, box frame): the UV crown's apex flat, or a box lid's outer face."""
+    return d.get("z_flat", d["z_rim"] + d["lid_t"])
+
+
+def crown_pt(d, r, deg, z):
+    """A point on a circle of radius r about the UV crown's axis, at deg (box frame, from +x) and height z."""
+    cx, cy = d["axis"]
+    return (cx + r * math.cos(math.radians(deg)), cy + r * math.sin(math.radians(deg)), z)
+
+
+def dome_pt(d, frac, deg, lift=0.0):
+    """A point on the UV crown's dome (outer face), at frac of its radius out from the axis, at deg (box frame)."""
+    z = min(d["z_joint"] + (d["apex"] - d["z_joint"]) * math.sqrt(max(0.0, 1 - frac * frac)), d["z_flat"])
+    return crown_pt(d, frac * d["r_out"], deg, z + lift)
+
+
+def front_slot(d, view):
+    """The bayonet entry slot whose angle is nearest the viewer's side (box frame, degrees)."""
+    va = math.degrees(math.atan2(view[1], view[0]))
+    return min(PB._bayonet_angles(d), key=lambda a: abs((a - va + 180) % 360 - 180))
+
+
+def banded(d, lid):
+    """The UV crown's dome lid as drawn by r3d: the same solid cut into horizontal bands, so the hidden-line drawing
+    shades the smooth dome in steps (one smooth face draws as one flat tone). Drawing only: the STL stays smooth."""
+    cx, cy = d["axis"]
+    bb = lid.BoundingBox()
+    zs = [bb.zmin - 1] + [d["z_joint"] + (d["apex"] - d["z_joint"]) * f for f in (0.45, 0.7, 0.86, 0.95)] + [bb.zmax + 1]
+    pieces = []
+    for z0, z1 in zip(zs, zs[1:]):
+        slab = cq.Solid.makeBox(bb.xlen + 20, bb.ylen + 20, z1 - z0, cq.Vector(bb.xmin - 10, bb.ymin - 10, z0))
+        pieces.append(lid.intersect(slab))
+    return cq.Compound.makeCompound(pieces)
+
+
+def uv_lid(d=None):
+    d = d or d_("UV")
+    return banded(d, PB.lid("UV"))
+
+
+def lid_turned(d, deg, lift=0.0):
+    """The UV crown's lid turned deg about its axis (from its locked position) and lifted (banded, as drawn)."""
+    cx, cy = d["axis"]
+    return banded(d, PB.lid("UV").rotate(cq.Vector(cx, cy, 0), cq.Vector(cx, cy, 1), deg)).translate(cq.Vector(0, 0, lift))
+
+
 def corner(name, x, y):
     """A lug's corner code in the box frame: B (gland end, y0) / T (far end); L (x0) / R (x1)."""
     d = d_(name)
@@ -120,7 +167,8 @@ def add_body(s, name, lid=False, lid_lift=0.0, prefix=None):
     p = prefix or name.lower()
     s.add(f"{p}_body", PB.body(name), Q.PETG, 1.0)
     if lid:
-        s.add(f"{p}_lid", PB.lid(name).translate(cq.Vector(0, 0, lid_lift)), Q.PETG, 1.0)
+        shp = uv_lid() if name == "UV" else PB.lid(name)
+        s.add(f"{p}_lid", shp.translate(cq.Vector(0, 0, lid_lift)), Q.PETG, 1.0)
 
 
 def bore_anchors(s, name, which, drawn=True):
@@ -133,7 +181,7 @@ def bore_anchors(s, name, which, drawn=True):
         for x, y in d["mount_lugs"]:
             s.hole(f"back:{corner(name, x, y)}", (x, y, d["z_bo"]), drawn)
         for k, (x, y) in enumerate(d["floor_bosses"]):
-            s.hole(f"boss:{'L' if k == 0 else 'R'}", (x, y, d["z_bo"]), drawn)
+            s.hole(f"boss:{k + 1}", (x, y, d["z_bo"]), drawn)
 
 
 def opening(name, kind):
@@ -142,6 +190,20 @@ def opening(name, kind):
 
 def face_anchors(s, name, view):
     d = d_(name)
+    if name == "UV":                     # the crown: a drum, its spigot (the lid's seat), floor bosses, a gland in the wall
+        p = "uv_body"
+        x, y = d["floor_bosses"][0]
+        gx, gy, gz = opening(name, "gland")[0]
+        s.anchor("op:gland", (gx, d["axis"][1] - d["r_out"], gz))
+        if view == "front":
+            s.anchor("spigot", crown_pt(d, d["r_sp"], 200, d["z_joint"]), on=p)
+            s.anchor("boss", (x, y, d["z_bo"] + d["boss_depth"]))
+            hx, hy, _dr = PB.board_holes()[0]
+            s.anchor("standoff", (hx, hy, -d["t"]))
+        else:
+            s.anchor("floor", crown_pt(d, 14.0, 150, d["z_bo"]), on=p)
+            s.anchor("boss", (x, y, d["z_bo"]))
+        return
     xm, ym = (d["x0"] + d["x1"]) / 2, (d["y0"] + d["y1"]) / 2
     p = f"{name.lower()}_body"
     front = view == "front"
@@ -159,8 +221,8 @@ def face_anchors(s, name, view):
 
 
 UP = {"TH": (0, 1, 0), "BARO": (0, 1, 0), "UV": (0, 0, 1)}
-FRONT = {"TH": (-0.45, -0.55, 1.0), "BARO": (-0.45, -0.55, 1.0), "UV": (-0.45, -0.75, 0.9)}
-BACK = {"TH": (0.45, -0.55, -1.0), "BARO": (0.45, -0.55, -1.0), "UV": (0.45, -0.75, -0.9)}
+FRONT = {"TH": (-0.45, -0.55, 1.0), "BARO": (-0.45, -0.55, 1.0), "UV": (-0.35, -0.9, 0.8)}
+BACK = {"TH": (0.45, -0.55, -1.0), "BARO": (0.45, -0.55, -1.0), "UV": (0.25, -0.55, -1.0)}
 
 
 # ------------------------------------------------------------------ parts as supplied (cover)
@@ -169,6 +231,10 @@ for _n in POD:
         s = r3d.Scene()
         d = d_(name)
         add_body(s, name)
+        if name == "UV":                 # the crown: the dome lid beside the body, both upright
+            s.add("uv_lid", uv_lid(d).translate(cq.Vector(2 * d["r_out"] + 12, 0, d["z_bo"] - d["z_ledge"])), Q.PETG, 1.0)
+            R("q_p_box_uv", s, (-0.3, -1.0, 0.45), fit=(170, 130), line=0.3)
+            return
         w = d["x1"] - d["x0"] + 2 * PB.WALL + 16
         xm = (d["x0"] + d["x1"]) / 2
         lid = PB.lid(name).rotate(cq.Vector(xm, 0, d["z_rim"]), cq.Vector(xm, 1, d["z_rim"]), 180)
@@ -209,6 +275,14 @@ for _L, _nm in ((LID_L, "m3x8"), (MOUNT_L, "m3x10")):
         R(f"q_p_{nm}", s, (-0.4, -1, 0.55), fit=(110, 110), line=0.35)
     _ps.__name__ = f"q_p_{_nm}"
     scene(_ps)
+
+
+@scene
+def q_p_m25():
+    s = r3d.Scene()
+    for k in range(2):
+        s.add(f"s{k}", Q.pan_screw(S.val("ltr_screw")[1], S.val("ltr_screw")).translate(cq.Vector(k * 8.0, 0, 0)), Q.STEEL, 0.8)
+    R("q_p_m25", s, (-0.4, -1, 0.55), fit=(110, 110), line=0.35)
 
 
 @scene
@@ -281,9 +355,9 @@ for _n in POD:
         s = r3d.Scene()
         add_body(s, name)
         bore_anchors(s, name, "back")
-        for k, c, a in PB.openings(name):
-            if k == "gland" and name == "UV":
-                s.anchor("op:gland", c)
+        if name == "UV":
+            gx, gy, gz = opening(name, "gland")[0]
+            s.anchor("op:gland", (gx, d_(name)["axis"][1] - d_(name)["r_out"], gz))
         R(f"q_ins_{name.lower()}_back", s, (0, 0, -1), up=(0, 1, 0), fit=(220, 300), line=0.35, outline=1.1)
 
     def _il(name=_n):
@@ -291,6 +365,18 @@ for _n in POD:
         s = r3d.Scene()
         d = d_(name)
         add_body(s, name)
+        if name == "UV":                 # a floor boss from below (box turned over): the insert under its bore, pointing up
+            x, y = d["floor_bosses"][0]
+            z = d["z_bo"]
+            flip = np.diag([1.0, -1.0, -1.0])
+            s.add("ins", turn(Q.insert_m3(), flip, (x, y, z - 4.0)), Q.BRASS, 0.8)
+            u = np.array((0.55, -0.9)) / np.hypot(0.55, 0.9)
+            s.anchor("ins", (x + u[0] * Q.INSERT_D / 2, y + u[1] * Q.INSERT_D / 2, z - 4.0 - 1.5), on="ins")
+            s.anchor("bore", (x, y, z))
+            s.anchor("lug", (x + 4.0, y + 3.0, z), on="uv_body")
+            R("q_ins_uv_lug", s, (0.55, -0.9, -0.75), up=(0, 0, -1), fit=(200, 200), line=0.35,
+              crop=((x, y, z - 1.0), 13.0, 13.0))
+            return
         x, y = d["lugs"][3]
         s.add("ins", Q.insert_m3().translate(cq.Vector(x, y, d["z_rim"] + 4.0)), Q.BRASS, 0.8)
         s.add("ins2", Q.insert_m3().translate(cq.Vector(x, y, d["z_rim"] - Q.INSERT_L)), Q.BRASS, 0.8)
@@ -301,7 +387,8 @@ for _n in POD:
         R(f"q_ins_{name.lower()}_lug", s, (0.55, -0.9, 0.75), up=(0, 0, 1), fit=(200, 200), line=0.35,
           crop=((x, y, d["z_rim"] + 1.0), 13.0, 13.0))
     _ir.__name__, _ib.__name__, _il.__name__ = f"q_ins_{_n.lower()}_rim", f"q_ins_{_n.lower()}_back", f"q_ins_{_n.lower()}_lug"
-    scene(_ir)
+    if _n != "UV":                       # the crown has no rim inserts: its lid is a bayonet
+        scene(_ir)
     scene(_ib)
     scene(_il)
 
@@ -354,11 +441,11 @@ def gland_scene(name, fitted=True, patch=False):
     for k, c, a in PB.openings(name):
         if k == "window":
             continue
-        s.anchor(f"op:{k}", c)
+        s.anchor(f"op:{k}", c if name != "UV" else (c[0], d["axis"][1] - d["r_out"], c[2] + 4.0))
         if fitted and k in ("gland", "lead_gland"):
             ca, aa = np.asarray(c), np.asarray(a)
             nut = S.val("gland_pg7")[2]
-            side = np.array((0, 0, 1.0)) if name != "UV" else np.array((0, 1.0, 0))
+            side = np.array((0, 0, 1.0))
             s.anchor(f"dome:{k}", tuple(ca + aa * (DOME_END - 5.5) + side * nut * 0.95 / 2 * 0.86))
             inner = ca - aa * PB.WALL
             s.anchor(f"lock:{k}", tuple(inner - aa * 1.2 + side * nut / 2 * 0.86))
@@ -379,23 +466,19 @@ def gland_scene(name, fitted=True, patch=False):
 for _n in POD:
     def _gh(name=_n):
         s = gland_scene(name, fitted=False)
-        if name == "UV":
-            R("q_gl_uv_holes", s, (0, 0, -1), up=(0, 1, 0), fit=(220, 260), line=0.35)
-        else:
-            R(f"q_gl_{name.lower()}_holes", s, (0, -1, 0), up=(0, 0, 1), fit=(260, 160), line=0.35)
+        R(f"q_gl_{name.lower()}_holes", s, (0, -1, 0), up=(0, 0, 1), fit=(260, 160), line=0.35)
 
     def _go(name=_n):
         s = gland_scene(name)
-        if name == "UV":
-            R("q_gl_uv_out", s, (-0.45, -0.8, -0.75), up=(0, 0, 1), fit=(260, 260), line=0.32)
-        else:
-            R(f"q_gl_{name.lower()}_out", s, (-0.35, -1, 0.55), up=(0, 0, 1), fit=(260, 220), line=0.32)
+        R(f"q_gl_{name.lower()}_out", s, (-0.35, -1, 0.55), up=(0, 0, 1), fit=(260, 220), line=0.32)
 
     def _gi(name=_n):
         s = gland_scene(name, patch=(name == "BARO"))
         d = d_(name)
-        if name == "UV":
-            R("q_gl_uv_in", s, (0.2, -0.35, 1), up=(0, 1, 0), fit=(260, 260), line=0.32)
+        if name == "UV":                 # from above, into the open drum: the locknut on its flat land
+            gx, gy, gz = opening(name, "gland")[0]
+            R("q_gl_uv_in", s, (0.0, 0.75, 1), up=(0, 0, 1), fit=(260, 220), line=0.32,
+              crop=((gx, d["y_land"] + 4, gz), 26.0, 20.0))
         else:
             R(f"q_gl_{name.lower()}_in", s, (0.0, 0.75, 1), up=(0, 0, 1), fit=(260, 220), line=0.32,
               crop=(((d["x0"] + d["x1"]) / 2, d["y0"] + 6, (d["z_bi"] + d["z_rim"]) / 2), (d["x1"] - d["x0"]) / 2 + 6, 20.0))
@@ -410,14 +493,14 @@ for _n in POD:
 def q_win_iso():
     s = r3d.Scene()
     d = d_("UV")
-    s.add("uv_lid", PB.lid("UV"), Q.PETG, 1.0)
+    s.add("uv_lid", uv_lid(d), Q.PETG, 1.0)
     w = d["window"]
-    z1 = d["z_rim"] + d["lid_t"]
+    z1 = lid_top(d)
     s.add("disc", Q.window_disc().translate(cq.Vector(*w["c"], z1 + 9.0)), M.PTFE, 0.8)
     s.anchor("disc", (w["c"][0] - S.val("uv_window")[1] / 2 + 1.0, w["c"][1], z1 + 9.0 + S.val("uv_window")[2]), on="disc")
     s.anchor("recess", (w["c"][0] + w["recess_d"] / 2 - 0.6, w["c"][1] - 3.0, z1 - w["depth"]))
     s.anchor("aperture", (w["c"][0], w["c"][1] - w["aperture"] / 2, z1 - d["lid_t"]))
-    R("q_win_iso", s, (-0.35, -0.9, 0.9), fit=(300, 230), line=0.32)
+    R("q_win_iso", s, (-0.35, -0.9, 0.9), fit=(300, 230), line=0.32, crop=((*w["c"], z1 - 3.0), 30.0, 24.0))
 
 
 @scene
@@ -426,12 +509,10 @@ def q_win_top():
     d = d_("UV")
     add_body(s, "UV", lid=True)
     w = d["window"]
-    z1 = d["z_rim"] + d["lid_t"]
+    z1 = lid_top(d)
     s.add("disc", Q.window_disc().translate(cq.Vector(*w["c"], z1 - w["depth"])), M.PTFE, 0.8)
     s.anchor("disc", (w["c"][0] + 4.0, w["c"][1] + 4.0, z1), on="disc")
-    for k, c, a in PB.openings("UV"):
-        s.anchor(f"op:{k}", c)
-    s.anchor("lid", (d["x1"] - 6, d["y0"] + 20, z1), on="uv_lid")
+    s.anchor("lid", dome_pt(d, 0.7, -60), on="uv_lid")
     R("q_win_top", s, (0, 0, 1), up=(0, 1, 0), fit=(200, 300), line=0.35)
 
 
@@ -451,11 +532,7 @@ def plug_in_j1(s, name):
     (c, a) = opening(name, "gland")
     end = tip - pl
     zc = z0 + ph / 2
-    if name == "UV":
-        pts = [(d["px"], end + 0.5, zc), (d["px"], c[1] + 4.0, zc), (d["px"], c[1], zc - 6.0), (c[0], c[1], c[2] + 2.0),
-               (c[0], c[1], c[2] - GLAND_DROP - 22.0)]
-    else:
-        pts = [(d["px"], end + 0.5, zc), (c[0], c[1] + 4.0, c[2]), (c[0], c[1] - GLAND_DROP - 22.0, c[2])]
+    pts = [(d["px"], end + 0.5, zc), (c[0], c[1] + 4.0, c[2]), (c[0], c[1] - GLAND_DROP - 22.0, c[2])]
     s.add("cable", Q.tube(pts, 2.0), M.JACKET, 1.0)
     s.anchor("plug", (d["px"], end + 2.0, z0 + ph))
     s.anchor("cable", (pts[1][0], (pts[0][1] + pts[1][1]) / 2, pts[1][2] + 2.0))
@@ -480,6 +557,59 @@ def th_lead_in_box(s):
     s.anchor("L:out", (c[0], c[1] - GLAND_DROP - 12.0, c[2] + 2.0))
 
 
+def uv_lead_in_box(s, rise=30.0):
+    """The UV lead's board end: the four cores from J10, J12, J13, J14 (soldered on the copper side, as TH's) up into
+    the round jacket, which rises out of the open drum toward the lid (box frame). Returns the jacket's top."""
+    pod = PD.pod("UV")
+    d = d_("UV")
+    cores = sorted(pod.lead.conductors, key=lambda c: PPM.HOLES[c.hole][0])
+    xs = [PPM.HOLES[c.hole] for c in cores]
+    jx, jy = float(np.mean([p[0] for p in xs])), float(np.mean([p[1] for p in xs])) + 4.0
+    zj = 9.0
+    for k, c in enumerate(cores):
+        x, y = PPM.HOLES[c.hole]
+        off = (k - 1.5) * 1.15
+        pts = [(x, y, -T - 1.0), (x, y, 2.0), (x, y + 1.5, 5.0), (jx + off, jy, zj)]
+        s.add(f"L_{c.colour}", M.tube(pts, 0.6), M.INS[c.colour], 0.7)
+    top = (jx, jy, d["z_joint"] + rise)
+    s.add("L_jacket", Q.tube([(jx, jy, zj), (jx, jy, zj + 6.0), top], 2.0), M.JACKET, 1.0)
+    s.anchor("L:out", (jx + 2.0, jy, d["z_joint"] + rise * 0.6))
+    return top
+
+
+def ltr_in_lid(s, lead=True, screws=True):
+    """The LTR390 #4831 on its two bosses under the crown's dome (box frame, lid as it sits on the body): sensor UP
+    under the window's aperture tube, two M2.5 x 6 up through its corner holes; its lead's cores off the header pads
+    on the copper side, into the jacket hanging down into the drum."""
+    import models_p as MP
+    d = d_("UV")
+    L_ = d["ltr"]
+    sx, sy = S.val("ltr390_sensor")
+    t = np.array((L_["c"][0] - sx, L_["c"][1] - sy, L_["z"] - MP.PCB))
+    parts, anc = MP.breakout("ltr390")
+    for nm, shp, col, w in parts:
+        s.add(f"ltr_{nm}", turn(shp, np.eye(3), t), col, w)
+    s.anchor("ltr", tuple(t + (3.0, 13.0, MP.PCB)))
+    if screws:
+        size = S.val("ltr_screw")
+        for k, (x, y) in enumerate(L_["holes"]):
+            s.add(f"m25_{k}", turn(Q.pan_screw(size[1], size), np.diag([1.0, -1.0, -1.0]), (x, y, L_["z"] - MP.PCB)),
+                  Q.STEEL, 0.8)
+            s.anchor(f"m25_{k}", (x + 1.0, y, L_["z"] - MP.PCB - 1.9))
+    if lead:
+        pads = dict(zip(S.val("ltr390_pins"), MP.hdr_pads("ltr390")))
+        ends = []
+        for k, c in enumerate(PD.pod("UV").lead.conductors):
+            px, py = pads[c.pad]
+            pts = [(px, py, MP.PCB + 0.5), (px, py, -0.6), (px, py - 1.0, -3.0), (10.0 + k * 1.0, 5.0, -6.0)]
+            w_ = [tuple(np.array(p) + t) for p in pts]
+            s.add(f"core_{c.colour}", M.tube(w_, 0.6), M.INS[c.colour], 0.6)
+            ends.append(w_[-1])
+        e = np.mean(ends, 0)
+        s.add("ltr_jacket", Q.tube([tuple(e), tuple(e + (0, 0, -18.0))], 2.0), M.JACKET, 1.0)
+        s.anchor("ltr_lead", tuple(e + (2.0, 0, -12.0)))
+
+
 def board_screws(s):
     for k, (x, y, _dr) in enumerate(PPM.OUTLINE["mounting_holes"]):
         s.add(f"bscrew{k}", Q.pan_screw(LID_L).translate(cq.Vector(x, y, 0.0)), Q.STEEL, 0.8)
@@ -495,6 +625,8 @@ def bib_scene(name, holes=False):
     plug_in_j1(s, name)
     if name == "TH":
         th_lead_in_box(s)
+    if name == "UV":
+        uv_lead_in_box(s)
     return s
 
 
@@ -502,9 +634,24 @@ for _n in POD:
     def _bt(name=_n):
         s = bib_scene(name)
         s.anchor("standoff", (*PPM.OUTLINE["mounting_holes"][0][:2], -T))
-        R(f"q_bib_{name.lower()}_top", s, (0, 0, 1), up=(0, 1, 0), fit=(260, 380), line=0.32, outline=1.1)
+        kw = {}
+        if name == "UV":                 # the crown is wide: crop to the board, the plug and the gland
+            w, h = S.val("permaproto_q")
+            kw["crop"] = ((w / 2, h / 2 - 12.0, 0.0), w / 2 + 14.0, h / 2 + 26.0)
+        R(f"q_bib_{name.lower()}_top", s, (0, 0, 1), up=(0, 1, 0), fit=(260, 380), line=0.32, outline=1.1, **kw)
 
     def _bi(name=_n):
+        if name == "UV":                 # the lid upside down on the bench: the LTR390 onto its bosses, chip down
+            s = r3d.Scene()
+            d = d_(name)
+            s.add("uv_lid", uv_lid(d), Q.PETG, 1.0)
+            ltr_in_lid(s)
+            L_ = d["ltr"]
+            s.anchor("boss", (L_["holes"][1][0] + 2.5, L_["holes"][1][1], L_["z"] + 3.0))
+            s.placed_by("box frame (podbox), the lid seen from below", np.eye(3))
+            r3d.render(s, OUT / "q_bib_uv_iso", (0.35, -0.8, -1.0), up=(0, 1, 0), fit=(300, 300), line=0.3,
+                       crop=((*L_["c"], L_["z"] - 6.0), 24.0, 24.0))
+            return
         s = bib_scene(name)
         R(f"q_bib_{name.lower()}_iso", s, (-0.45, -0.7, 1.0), up=(0, 1, 0), fit=(300, 300), line=0.3)
     _bt.__name__, _bi.__name__ = f"q_bib_{_n.lower()}_top", f"q_bib_{_n.lower()}_iso"
@@ -538,6 +685,14 @@ def q_shunt_top():
 for _n in POD:
     def _or(name=_n):
         s = r3d.Scene()
+        if name == "UV":                 # the crown: the cord round the BODY's spigot, below the bayonet slots
+            d = d_(name)
+            g = PB.groove(name)
+            add_body(s, name)
+            s.add("cord", Q.cord_in_groove(name), Q.CORD, 0.8)
+            s.anchor("cord", crown_pt(d, d["r_sp"] - g["depth"] + g["cord"], 235, g["z"]), on="cord")
+            R("q_oring_uv", s, (-0.35, -0.9, 0.45), up=(0, 0, 1), fit=(160, 230), line=0.32)
+            return
         s.add(f"{name.lower()}_lid", PB.lid(name), Q.PETG, 1.0)
         s.add("cord", Q.cord_in_groove(name), Q.CORD, 0.8)
         d = d_(name)
@@ -548,16 +703,24 @@ for _n in POD:
 
     def _lid(name=_n):
         s = r3d.Scene()
-        add_body(s, name, lid=True)
         d = d_(name)
+        if name == "UV":                 # the bayonet: the lid lifted over the body, its lugs over the entry slots
+            add_body(s, name)
+            s.add("uv_lid", lid_turned(d, -PB.CROWN_TURN, 16.0), Q.PETG, 1.0)
+            w = d["window"]
+            s.add("disc", Q.window_disc().translate(cq.Vector(*w["c"], lid_top(d) - w["depth"] + 16.0)), M.PTFE, 0.8)
+            add_glands(s, name)
+            a = front_slot(d, FRONT[name])
+            s.anchor("slot", crown_pt(d, d["r_sp"] - PB.CROWN_LUG[2] - 0.25, a, d["z_joint"] - 1.5))
+            s.anchor("lid", dome_pt(d, 0.8, 250, 16.0), on="uv_lid")
+            R("q_lid_uv", s, FRONT[name], up=UP[name], fit=(170, 230), line=0.3)
+            return
+        add_body(s, name, lid=True)
         z1 = d["z_rim"] + d["lid_t"]
         for x, y in d["lugs"]:
             k = corner(name, x, y)
             s.add(f"ls_{k}", Q.pan_screw(LID_L).translate(cq.Vector(x, y, z1)), Q.STEEL, 0.8)
             s.anchor(f"ls:{k}", (x + 1.2, y + 1.2, z1 + 2.4))
-        if name == "UV":
-            w = d["window"]
-            s.add("disc", Q.window_disc().translate(cq.Vector(*w["c"], z1 - w["depth"])), M.PTFE, 0.8)
         add_glands(s, name)
         R(f"q_lid_{name.lower()}", s, FRONT[name], up=UP[name], fit=(170, 230), line=0.3)
     _or.__name__, _lid.__name__ = f"q_oring_{_n.lower()}", f"q_lid_{_n.lower()}"
@@ -592,7 +755,7 @@ def box_mesh(s, X, name, glands=True, lid=True, screws=()):
         if name == "UV":
             d = d_(name)
             w = d["window"]
-            z1 = d["z_rim"] + d["lid_t"]
+            z1 = lid_top(d)
             s.add("uv_disc", turn(Q.window_disc().translate(cq.Vector(*w["c"], z1 - w["depth"])), Rm, t), M.PTFE, 0.8)
     if glands:
         for k, c, a in PB.openings(name):
@@ -649,7 +812,7 @@ def q_sh_order():
                         "stand": ((0.0, -4.6, 90.0 + gap["stand"]), "stand"),
                         "plate1": ((40.0, -30.0, 46.6 + gap["plates"]), "plate1"),
                         "plate6": ((40.0, -30.0, 121.6 + gap["plates"] + 50.0), "plate6"),
-                        "cap": ((-30.0, -30.0, 140.0 + gap["cap"] + 50.0), "cap")}.items():
+                        "cap": ((0.0, -56.5, 141.0 + gap["cap"] + 50.0), "cap")}.items():
         if p is None:
             bb = s.parts[[q[0] for q in s.parts].index(on)][1][0]
             p = bb.mean(0)
@@ -813,31 +976,31 @@ def q_sht_close():
     MRr("q_sht_close", s, (0.2, 1.0, 0.12), fit=(260, 330), line=0.32, bounds_parts=keep)
 
 
-def _uv_on_cap(s, X, lift=0.0, flip=False):
+def _uv_on_cap(s, X, flip=False, lid=True):
+    """The remixed cap with the UV crown on it (shield frame), and the four M3 x 10 up through the cap into the floor
+    inserts. flip: both turned over (180 about x) for the bench, the cap's flat top at z = 0; lid: the dome lid on."""
     cap = X.cap_remixed()
     Rm, t = X.box_pose("UV")
-    F = np.diag([1.0, -1.0, -1.0]) if flip else np.eye(3)          # turned over (180 about x) for the bench
+    F = np.diag([1.0, -1.0, -1.0]) if flip else np.eye(3)
     z_top = X.uv_mount()["top_z"]
     shift = np.array([0, 0, -z_top]) if flip else np.zeros(3)
     v, f = MR._weld(*__import__("remix").arrays(cap))
     s.add("cap", ((v + shift) @ F.T, f), Q.SHIELD)
-    t2 = F @ (t + shift + (0, 0, lift))
+    t2 = F @ (t + shift)
     R2 = F @ Rm
     s.add("uv_box", turn(PB.body("UV"), R2, t2), Q.PETG, 1.0)
-    s.add("uv_lid", turn(PB.lid("UV"), R2, t2), Q.PETG, 1.0)
     d = d_("UV")
-    w = d["window"]
-    z1 = d["z_rim"] + d["lid_t"]
-    s.add("uv_disc", turn(Q.window_disc().translate(cq.Vector(*w["c"], z1 - w["depth"])), R2, t2), M.PTFE, 0.8)
+    if lid:
+        s.add("uv_lid", turn(PB.lid("UV"), R2, t2), Q.PETG, 1.0)
+        w = d["window"]
+        s.add("uv_disc", turn(Q.window_disc().translate(cq.Vector(*w["c"], lid_top(d) - w["depth"])), R2, t2), M.PTFE, 0.8)
     for nm, shp, col in Q.gland_in_wall(*opening("UV", "gland")):
         s.add(f"uv_gland_{nm}", turn(shp, R2, t2), col, 0.8)
     m = X.uv_mount()
-    seat = m["seat_z"]
     heads = []
     for k, (x, y) in enumerate(m["holes"]):
-        hp = np.array((x, y, seat))
-        head = F @ (hp + shift)
-        ax = F @ np.array((0, 0, 1.0))                    # the shank points up (world) into the box
+        head = F @ (np.array((x, y, m["seat_z"])) + shift)
+        ax = F @ np.array((0, 0, 1.0))                    # the shank points up (world) into the crown's floor
         s.add(f"cs{k}", mount_screw(ax, head), Q.STEEL, 0.8)
         heads.append((k, head, ax))
     return m, F, shift, heads
@@ -845,29 +1008,27 @@ def _uv_on_cap(s, X, lift=0.0, flip=False):
 
 @scene
 def q_cap_bench():
-    """At the bench: the UV box lid-down, the cap turned over onto its back; the four M3 x 10 go in from above."""
+    """At the bench: the crown's body upside down on its spigot (lid off), the cap turned over onto its floor; the four
+    M3 x 10 go down the cap's counterbores into the floor inserts."""
     A, X = _shield()
     s = MR.Scene()
-    m, F, shift, heads = _uv_on_cap(s, X, flip=True)
+    m, F, shift, heads = _uv_on_cap(s, X, flip=True, lid=False)
     for k, head, ax in heads:
-        kind = "lug" if k < 2 else "saddle"
-        s.anchor(f"{kind}{k}", tuple(head - ax * 2.4))
-    sx = F @ (np.array((50.0, 22.0, m["top_z"] - 2.5)) + shift)
-    s.anchor("saddle", tuple(sx))
+        s.anchor(f"cs{k}", tuple(head - ax * 2.4))
+    s.anchor("skirt", tuple(F @ (np.array((0.0, -54.0, m["top_z"] - 6.0)) + shift)))
     MRr("q_cap_bench", s, (0.35, -0.7, 1.0), fit=(330, 300), line=0.3)
 
 
 @scene
 def q_cap_under():
-    """The remixed cap seen from below (from inside the shield): the two lug holes up their Ø6.5 counterbores through
-    the inner cone, the two saddle holes in the open air past the rim."""
+    """The remixed cap seen from below (from inside the shield): the four screw holes up their counterbores through
+    the inner cone."""
     A, X = _shield()
     s = MR.Scene()
     s.add("cap", X.cap_remixed(), Q.SHIELD)
     m = X.uv_mount()
     for k, (x, y) in enumerate(m["holes"]):
-        s.hole(f"{'lug' if k < 2 else 'saddle'}{k}", (x, y, m["seat_z"]), drawn=False)
-    s.anchor("gland_notch", (m["keepouts"][0][0] - 10.5, m["keepouts"][0][1], m["seat_z"]))
+        s.hole(f"cs{k}", (x, y, m["seat_z"]), drawn=False)
     MRr("q_cap_under", s, (0, 0, -1), up=(1, 0, 0), fit=(260, 260), line=0.32)
 
 
@@ -877,11 +1038,13 @@ def q_cap_iso():
     s = MR.Scene()
     m, F, shift, heads = _uv_on_cap(s, X)
     tip, ax = gland_tip(X, "UV", "gland")
-    s.add("uv_cable", Q.tube([tuple(tip - ax * 6.0), tuple(tip + ax * 40.0)], 2.0), M.JACKET, 1.0)
-    s.anchor("uvbox", tuple(X.box_points("UV", [(20.0, 10.0, d_("UV")["z_rim"] + d_("UV")["lid_t"])])[0]), on="uv_lid")
+    s.add("uv_cable", Q.tube([tuple(tip - ax * 6.0), tuple(tip + ax * 6.0), tuple(tip + ax * 12.0 + (0, 0, -8.0)),
+                              tuple(tip + ax * 12.0 + (0, 0, -40.0))], 2.0), M.JACKET, 1.0)
+    d = d_("UV")
+    s.anchor("uvbox", tuple(X.box_points("UV", [dome_pt(d, 0.75, 200)])[0]), on="uv_lid")
     s.anchor("gland", tuple(tip - ax * 8.0))
-    s.anchor("saddle", (60.0, 0.0, m["top_z"] - 5.0))
-    s.anchor("window", tuple(X.box_points("UV", [(*d_("UV")["window"]["c"], d_("UV")["z_rim"] + d_("UV")["lid_t"])])[0]))
+    s.anchor("skirt", (0.0, -54.0, m["top_z"] - 6.0))
+    s.anchor("window", tuple(X.box_points("UV", [(*d["window"]["c"], lid_top(d))])[0]))
     MRr("q_cap_iso", s, (0.8, -0.9, 0.7), fit=(330, 280), line=0.3)
 
 
@@ -940,8 +1103,9 @@ def q_drip():
         routes[f"{n.lower()}_cable"] = cable_route(tip, ax, side)
     tip, ax = gland_tip(X, "UV", "gland")
     lo, hi, _t = X.arm_plate()
-    routes["uv_cable"] = [tuple(tip), (tip[0], tip[1], lo - 95.0), (tip[0] + 4.0, tip[1] - 12.0, lo - 140.0),
-                          (tip[0] + 2.0, tip[1] - 34.0, lo - 128.0), (14.0, -99.0, lo - 120.0), (6.0, -105.0, lo - 135.0),
+    out = tip + ax * 12.0                                  # level out of the drum, then over and down outside the louvers
+    routes["uv_cable"] = [tuple(tip), tuple(out + (0, 0, -6.0)), (out[0] + 2.0, out[1], lo - 140.0), (out[0], out[1], lo - 95.0),
+                          (out[0] + 2.0, out[1] - 34.0, lo - 128.0), (14.0, -99.0, lo - 120.0), (6.0, -105.0, lo - 135.0),
                           (6.0, -105.0, lo - 190.0)]
     lead = [np.array((-12.0, 4.0, 60.0))] + [np.asarray(p, float) for p in X.th_lead_path()]
     tip_l, ax_l = gland_tip(X, "TH", "lead_gland")

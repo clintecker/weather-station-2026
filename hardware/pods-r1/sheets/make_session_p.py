@@ -2,7 +2,7 @@
 illustrations rendered from real 3D geometry by scenes_p.py (svg/*.svg + anchors in svg/*.json), every label on a paper
 chip whose leader stops at the chip edge, and the TX label-overlap and hole-callout checks run on every page.
 
-Source of truth (read-only): layout/pods.py (every part, pin hole, wire, route and the TH lead), layout/permaproto.py
+Source of truth (read-only): layout/pods.py (every part, pin hole, wire, route and the TH and UV leads), layout/permaproto.py
 (holes, strips), layout/pod_checks.py (the copper netlist the strip maps and meter checks are built from; the cable map
 that says what a reversed cable does), sources.py (part values). Nothing about holes, nets or wire ends is typed here.
 
@@ -129,14 +129,14 @@ def cover(c, pg):
         "Lay out one pod's parts at a time. Quantities are for all three pods.", width=100))
     items = [("PERMA-PROTO QUARTER #1608 (3x)\nprinted top, strips underneath", "p_pp"),
              ("24LC32 EEPROM #5146 (3x)\n+ its loose 1x6 header", "p_eep"),
-             ("LTR390 UV #4831 (UV pod)\n+ its loose 1x6 header", "p_ltr"),
+             ("LTR390 UV #4831 (UV pod)\nits header strip: NOT USED", "p_ltr"),
              ("BMP581 #6407 (BARO pod)\n+ loose header, 1 pin per pad", "p_bmp"),
              ("SHT45 #6174, PTFE CAP (TH pod)\nits header strip: NOT USED", "p_sht"),
              ("PER POD (3x): BOB-14021 (TAB ON)\n+ 87180-066LF JACK + 1x6 HEADER", "p_bob"),
              ("PER POD (3x): SULLINS PRPC002SAAN\n2-PIN HEADER + SPC02SYAN SHUNT", "p_jp1"),
              ("PER POD (3x): R1 10k 1% MFR-25\nBROWN-BLACK-BLACK-RED-BROWN", "p_r1"),
              ("24 AWG SOLID HOOK-UP WIRE\nred, black, yellow, blue", "p_wires"),
-             ("TH LEAD: ROUND JACKETED 4-CORE, STRANDED\nred, black, yellow, blue + its own PG-7 #762", "p_lead"),
+             ("TH + UV LEADS: ROUND JACKETED 4-CORE,\nSTRANDED; TH'S HAS ITS OWN PG-7 #762", "p_lead"),
              ("3 PORT CABLES (1 PER POD), ROUND 6-COND.\n+ 6 RJ12 6P6C PLUGS + 3 PG-7 #762", "p_cable")]
     cw, rh = w / 3, h / 4
     for i, (name, art) in enumerate(items):
@@ -148,7 +148,7 @@ def cover(c, pg):
     lines = ["THE 3 PG-7s are the pod boxes' cable glands;", "each cable's TX end goes through a PG-7",
              "the TX box already has (one per port).", "",
              "NOT IN THIS SESSION: the boxes, the", "glands' fitting, the shield (Session Q).",
-             "", "STILL TO BUY: the TH lead and the port", "cables (sources.py: th_lead_gland, pg7_seal).",
+             "", "STILL TO BUY: the lead cable (TH + UV)", "and the port cables (sources.py:", "th_lead_gland, pg7_seal).",
              "", "VALUES: sources.py. HOLES: layout/pods.py."]
     para(c, X + 10, Y + rh - 22, lines, 8.0, 10.5, w=cw - 14, what="notes")
 
@@ -277,23 +277,31 @@ def bmp_cut(c, pg):
 
 
 def headers(c, pg):
-    page(c, "04", "HEADERS ONTO THE BREAKOUTS", "24LC32 #5146 (3x) AND LTR390 #4831: A PIN PER PAD. SHT45: NONE, THE TH LEAD GOES ON ITS PADS.", pg, SLOGANS_P[3])
-    g = Grid(1, 2, heights=[1, 1])
-    for k, (key, art, pre, n) in enumerate((("eeprom_24lc32", "hdr_eep", "eep", "3x: one per pod"),
-                                             ("ltr390", "hdr_ltr", "ltr", "the UV pod"))):
-        names = S.val(key + "_pins")
-        nm = {"eeprom_24lc32": "24LC32 EEPROM #5146", "ltr390": "LTR390 #4831"}[key]
-        x, y, w, h = panel(c, g.cell(0, k), k + 1, cap(
-            f"{nm} ({n}): its own 1x6 strip, plastic under the board (the face without the chips), short ends up through",
-            "the six pads from below, soldered on the chip face. Long ends in a spare Perma-Proto to hold it square; solder",
-            "pin 1 first, check it sits flat, then pin 6, then the rest. Pads: " +
-            ", ".join(f"{i + 1} {p}" for i, p in enumerate(names)) + "."))
-        a = Art(c, art, x + 20, y + 30, w - 200, h - 70, align="l")
-        its = [("HEADER SOLDERED ON TOP", *a.A(f"{pre}:hfil"), "up", False), ("1x6 PLASTIC UNDER", *a.A(f"{pre}:hdr"), "dn", False)]
-        lanes(c, its, art_box(a, -4), size=8.5)
-        tx = a.x + a.w + 20
-        para(c, tx, y + h - 50, ["STEMMA QT SOCKETS:", "fitted at the factory,", "both stay, nothing", "plugs in them."],
-             8.6, 11, w=x + w - tx - 4, what="qt note")
+    page(c, "04", "HEADERS ONTO THE THREE EEPROMS", "24LC32 #5146 (3x): A PIN PER PAD. SHT45 AND LTR390: NO HEADER, THEIR LEADS GO ON "
+         "THEIR PADS.", pg, SLOGANS_P[3])
+    g = Grid(1, 2, heights=[1.2, 0.8])
+    names = S.val("eeprom_24lc32_pins")
+    x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
+        "24LC32 EEPROM #5146 (3x: one per pod): its own 1x6 strip, plastic under the board (the face without the chips),",
+        "short ends up through the six pads from below, soldered on the chip face. Long ends in a spare Perma-Proto to hold",
+        "it square; solder pin 1 first, check it sits flat, then pin 6, then the rest. Pads: " +
+        ", ".join(f"{i + 1} {p}" for i, p in enumerate(names)) + "."))
+    a = Art(c, "hdr_eep", x + 20, y + 30, w - 200, h - 70, align="l")
+    its = [("HEADER SOLDERED ON TOP", *a.A("eep:hfil"), "up", False), ("1x6 PLASTIC UNDER", *a.A("eep:hdr"), "dn", False)]
+    lanes(c, its, art_box(a, -4), size=8.5)
+    tx = a.x + a.w + 20
+    para(c, tx, y + h - 50, ["STEMMA QT SOCKETS:", "fitted at the factory,", "both stay, nothing", "plugs in them."],
+         8.6, 11, w=x + w - tx - 4, what="qt note")
+    x, y, w, h = panel(c, g.cell(0, 1), 2, cap(
+        "SHT45 #6174 (TH) and LTR390 #4831 (UV): leave their header strips in the bag. Each one goes on a 4-core lead",
+        "soldered straight to its pads, on the TH and UV lead pages. A header there would only get in the lead's way."))
+    cw = (w - 20) / 3
+    for k, (art, nm) in enumerate((("p_sht", "SHT45 #6174 (TH)"), ("p_ltr", "LTR390 #4831 (UV)"))):
+        X = x + 10 + cw * k
+        Art(c, art, X + 8, y + 60, cw - 16, h - 112)
+        chip(c, X + cw / 2, y + 48, nm + ": HEADER STAYS IN THE BAG", 7.6, "ALT", INK, "c")
+    para(c, x + 10 + cw * 2 + 10, y + h - 50, ["The BMP581 #6407 (BARO)", "got its 6-pin header", "in step 03."], 8.6, 11,
+         w=cw - 20, what="note")
 
 
 # ------------------------------------------------------------------ per pod
@@ -535,22 +543,36 @@ def sensor_page(pod, step):
     return f
 
 
-def lead_sht_page(pod, step):
+LEAD_KIT = {   # per sensor on a lead: its name, what its front is, its scenes, where it ends up, the length row
+    "sht45": dict(name="SHT45 #6174", front="the face with the white PTFE cap and the printed pad names",
+                  art="sht_lead", iso="sht_lead_iso", row="th_lead_m", sets="the shield sets it",
+                  home="In the shield, this board sits on the stand strip's inner face, zip-tied (Session Q). The four "
+                       "pads are the only joints in the shield's air."),
+    "ltr390": dict(name="LTR390 #4831", front="the face with the LTR390 sensor and the printed pad names",
+                   art="ltr_lead", iso="ltr_lead_iso", row="uv_lead_m", sets="the crown sets it",
+                   home="In the UV crown this board sits sensor UP on the lid's two M2.5 bosses, under the window "
+                        "(Session Q). The lead lets the lid come off and sit beside the body."),
+}
+
+
+def lead_sensor_page(pod, step):
     lead = pod.lead
-    cores = {cc.colour: cc for cc in lead.conductors}
+    kit = LEAD_KIT[lead.source]
+    names = S.val(lead.source + "_pins")
+    empty = [n for n in names if n not in {cc.pad for cc in lead.conductors}]
 
     def f(c, pg):
-        page(c, step, "TH POD: THE LEAD, SHT45 END", "ROUND JACKETED 4-CORE, STRANDED. SOLDERED TO THE SHT45 #6174'S OWN HEADER "
-             "PADS. NO HEADER.", pg, SLOGANS_P[5])
+        page(c, step, f"{pod.name} POD: THE LEAD, {kit['name'].split(' #')[0]} END",
+             f"ROUND JACKETED 4-CORE, STRANDED. SOLDERED TO THE {kit['name']}'S OWN HEADER PADS. NO HEADER.", pg, SLOGANS_P[5])
         g = Grid(1, 2, heights=[1.35, 1])
         x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
-            "The SHT45 #6174's FRONT: the face with the white PTFE cap and the printed pad names. Strip the jacket back 30 mm",
+            f"The {kit['name']}'s FRONT: {kit['front']}. Strip the jacket back 30 mm",
             "at this end, strip each core 3 mm, twist and tin it. Each core goes IN FROM THE BACK (the bare face) and is",
             "soldered on the FRONT: " + ", ".join(f"{cc.colour.upper()} to {cc.pad}" for cc in lead.conductors) +
-            ". The 3Vo pad stays EMPTY. Trim the ends.", width=100))
-        a = Art(c, "sht_lead", x + 20, y + 24, 240, h - 90, align="l", valign="b")
+            f". {' and '.join(empty)} {'stays' if len(empty) == 1 else 'stay'} EMPTY. Trim the ends.", width=100))
+        a = Art(c, kit["art"], x + 20, y + 24, 240, h - 90, align="l", valign="b")
         items = [(f"{cc.pad}: {cc.colour.upper()}", *a.A(f"pad:{cc.pad}"), "up", False) for cc in lead.conductors]
-        items.append(("3Vo: EMPTY", *a.A("pad:3Vo"), "up", False))
+        items += [(f"{n}: EMPTY", *a.A(f"pad:{n}"), "up", False) for n in empty]
         lanes(c, items, art_box(a), size=8.0)
         lanes(c, [("4-CORE JACKET", *a.A("jacket"), "rt", False)], art_box(a), size=8.5)
         tx = x + w - 190
@@ -563,59 +585,70 @@ def lead_sht_page(pod, step):
             text(c, tx + 70, yy, cc.pad, 10, "HEAD", NEON)
             text(c, tx + 104, yy, NET_WORD[cc.net], 8.2, "ALT", INK)
         LAB.block(tx, y + h - 68 - 4 * 18, x + w - 4, y + h - 40, "core table")
-        para(c, tx, y + h - 68 - 4 * 18 - 14, wrap_px("In the shield, this board sits on the stand strip's inner face, "
-                                                     "zip-tied (Session Q). The four pads are the only joints in the shield's air.",
-                                                     x + w - tx - 8, 8.2), 8.2, 10.5, w=x + w - tx - 4, what="note")
+        para(c, tx, y + h - 68 - 4 * 18 - 14, wrap_px(kit["home"], x + w - tx - 8, 8.2), 8.2, 10.5, w=x + w - tx - 4,
+             what="note")
         x, y, w, h = panel(c, g.cell(0, 1), 2, cap(
             "From below and behind: the four cores enter through the BACK, bend down along the board and gather into the",
             f"jacket. Check each joint on the FRONT is a shiny cone, no strand outside its pad. Lead length {lead.length_m} m "
-            "(sources.py th_lead_m, TBD: the shield sets it). The other end stays BARE until the next page.", width=100))
-        b = Art(c, "sht_lead_iso", x + 30, y + 22, w - 60, h - 56)
+            f"(sources.py {kit['row']}, TBD: {kit['sets']}). The other end stays BARE until the next page.", width=100))
+        b = Art(c, kit["iso"], x + 30, y + 22, w - 60, h - 56)
         lanes(c, [("BACK (BARE FACE): CORES IN HERE", *b.A("back"), "rt", False)], art_box(b, -2), size=8.5)
     return f
 
 
-def lead_pod_page(pod, step):
+def _lead_pod_panel(c, cell, k, pod, tail):
+    """The lead's bare pod end soldered into J10-J14 from the TOP: the board, the four cores, the core table."""
     lead = pod.lead
+    x, y, w, h = panel(c, cell, k, cap(
+        f"{board_name(pod).upper()}, TOP FACE, everything else fitted. Strip the jacket back 40 mm, each core 3 mm.",
+        "Each core goes DOWN through its hole from the TOP and is soldered on the COPPER SIDE: " +
+        ", ".join(f"{cc.colour.upper()} in {hole(cc.hole)}" for cc in lead.conductors) + ". J11 stays EMPTY. " + tail,
+        width=100))
+    face_tag(c, x + 36, y + h - 24, "top")
+    a = Art(c, f"t_{pod.name.lower()}_u2", x + 30, y + 30, 260, min(h - 80, 330), align="l")
+    items = []
+    for cc in lead.conductors:
+        px, py = a.A(cc.hole)
+        ring(c, px, py)
+        items.append((f"{cc.colour.upper()}: {hole(cc.hole)}", px, py, "up", True))
+    lanes(c, items, art_box(a), size=8.2)
+    lanes(c, [("JACKET: " + ("DOWN TO THE GLAND" if pod.name == "TH" else "UP TO THE LID"), *a.A("L:jacket"), "rt", False)],
+          art_box(a), size=8.5)
+    tx = x + w - 190
+    text(c, tx, y + h - 60, "CORE     HOLE   LINE", 8.5, "MONO", GREY)
+    for i, cc in enumerate(lead.conductors):
+        yy = y + h - 78 - i * 18
+        c.setFillColor(INSC[cc.colour])
+        c.rect(tx, yy - 2, 14, 10, stroke=0, fill=1)
+        text(c, tx + 20, yy, cc.colour.upper(), 9.5, "HEAD", INK)
+        text(c, tx + 70, yy, hole(cc.hole), 10, "HEAD", NEON)
+        text(c, tx + 104, yy, NET_WORD[cc.net], 8.2, "ALT", INK)
+    LAB.block(tx, y + h - 78 - 4 * 18, x + w - 4, y + h - 50, "core table")
 
+
+def lead_pod_page(pod, step):
     def f(c, pg):
-        page(c, step, "TH POD: THE LEAD, POD END", "THREAD IT FIRST, SOLDER IT LAST: THE PERMA-PROTO WILL NOT PASS A GLAND.",
-             pg, SLOGANS_P[7])
-        g = Grid(1, 2, heights=[0.75, 1.35])
-        x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
-            "THREADING ORDER for the lead's BARE pod end, before any soldering at this end: 1 down through the base cup's",
-            "5 mm hole (from the stand side); 2 down through the remixed arm's 6 mm lead hole; 3 through the TH box's",
-            "SECOND PG-7 #762: its dome nut first, then in through the gland body (fitted in the box's bottom wall, lock nut",
-            "inside: Session Q). Not printed yet? Stop here; finish this page in Session Q.", width=100), warn=True)
-        a = Art(c, "th_gland", x + 20, y + 14, w - 40, h - 74)
-        lanes(c, [("3a DOME NUT", *a.A("dome"), "up", False), ("3b GLAND BODY (BOX WALL)", *a.A("body"), "up", False),
-                  ("LOCK NUT (INSIDE)", *a.A("lock"), "up", False), ("TO THE SHT45 (SOLDERED)", *a.A("jacket"), "dn", False),
-                  ("BARE CORES: INTO THE BOX", *a.A("cores"), "dn", False)], art_box(a, -2), size=8.0)
-        x, y, w, h = panel(c, g.cell(0, 1), 2, cap(
-            f"{board_name(pod).upper()}, TOP FACE, everything else fitted. Strip the jacket back 40 mm inside the box, each",
-            "core 3 mm. Each core goes DOWN through its hole from the TOP and is soldered on the COPPER SIDE: " +
-            ", ".join(f"{cc.colour.upper()} in {hole(cc.hole)}" for cc in lead.conductors) + ". J11 stays EMPTY (on the",
-            "UV pod it is the LTR390's 3Vo). The jacket runs down past U1's right end, off the bottom edge, to the gland.",
-            width=100))
-        face_tag(c, x + 36, y + h - 24, "top")
-        a = Art(c, "t_th_u2", x + 30, y + 30, 260, h - 80, align="l")
-        items = []
-        for cc in lead.conductors:
-            px, py = a.A(cc.hole)
-            ring(c, px, py)
-            items.append((f"{cc.colour.upper()}: {hole(cc.hole)}", px, py, "up", True))
-        lanes(c, items, art_box(a), size=8.2)
-        lanes(c, [("JACKET: DOWN TO THE GLAND", *a.A("L:jacket"), "rt", False)], art_box(a), size=8.5)
-        tx = a.x + a.w + 150
-        text(c, tx, y + h - 60, "CORE     HOLE   LINE", 8.5, "MONO", GREY)
-        for i, cc in enumerate(lead.conductors):
-            yy = y + h - 78 - i * 18
-            c.setFillColor(INSC[cc.colour])
-            c.rect(tx, yy - 2, 14, 10, stroke=0, fill=1)
-            text(c, tx + 20, yy, cc.colour.upper(), 9.5, "HEAD", INK)
-            text(c, tx + 70, yy, hole(cc.hole), 10, "HEAD", NEON)
-            text(c, tx + 104, yy, NET_WORD[cc.net], 8.2, "ALT", INK)
-        LAB.block(tx, y + h - 78 - 4 * 18, x + w - 4, y + h - 50, "core table")
+        if pod.name == "TH":
+            page(c, step, "TH POD: THE LEAD, POD END", "THREAD IT FIRST, SOLDER IT LAST: THE PERMA-PROTO WILL NOT PASS A GLAND.",
+                 pg, SLOGANS_P[7])
+            g = Grid(1, 2, heights=[0.75, 1.35])
+            x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
+                "THREADING ORDER for the lead's BARE pod end, before any soldering at this end: 1 down through the base cup's",
+                "5 mm hole (from the stand side); 2 down through the remixed arm's 6 mm lead hole; 3 through the TH box's",
+                "SECOND PG-7 #762: its dome nut first, then in through the gland body (fitted in the box's bottom wall, lock nut",
+                "inside: Session Q). Not printed yet? Stop here; finish this page in Session Q.", width=100), warn=True)
+            a = Art(c, "th_gland", x + 20, y + 14, w - 40, h - 74)
+            lanes(c, [("3a DOME NUT", *a.A("dome"), "up", False), ("3b GLAND BODY (BOX WALL)", *a.A("body"), "up", False),
+                      ("LOCK NUT (INSIDE)", *a.A("lock"), "up", False), ("TO THE SHT45 (SOLDERED)", *a.A("jacket"), "dn", False),
+                      ("BARE CORES: INTO THE BOX", *a.A("cores"), "dn", False)], art_box(a, -2), size=8.0)
+            _lead_pod_panel(c, g.cell(0, 1), 2, pod, "The jacket runs down past U1's right end, off the bottom edge, "
+                            "to the gland.")
+        else:
+            page(c, step, f"{pod.name} POD: THE LEAD, POD END", "NO GLAND ON THIS LEAD: IT STAYS INSIDE THE CROWN. SOLDER IT "
+                 "NOW.", pg, SLOGANS_P[3])
+            g = Grid(1, 1)
+            _lead_pod_panel(c, g.cell(0, 0), 1, pod, "The jacket stands straight up off the board, toward the "
+                            "LTR390 in the crown's lid.")
     return f
 
 
@@ -722,7 +755,8 @@ def meter_rows(pod):
         for ref, pn in grp:
             hh = pins[(ref, pn)][0]
             if pod.lead and ref == pod.lead.ref:
-                tg.append(f"the SHT45's {pn} pad (lead {next(c.colour for c in pod.lead.conductors if c.pad == pn)})")
+                tg.append(f"the {SENSOR[pod.name].split(' #')[0]}'s {pn} pad "
+                          f"(lead {next(c.colour for c in pod.lead.conductors if c.pad == pn)})")
             else:
                 nm = f"{ref}'s lead" if ref == "R1" else (f"{ref} pin {pn}" if pn.isdigit() else f"{ref} {pn}")
                 tg.append(f"{nm} ({hole(hh)})")
@@ -746,7 +780,7 @@ def meter_page(pod, step):
         its = [("J1", *a.A("J1:mouth"), "rt", False), ("U1", *a.A("U1:chip"), "rt", False),
                ("JP1 SHUNT ON", *a.A("JP1:shunt"), "rt", False)]
         if pod.lead:
-            its.append(("TH LEAD", *a.A("L:jacket"), "rt", False))
+            its.append((f"{pod.name} LEAD", *a.A("L:jacket"), "rt", False))
         else:
             its.append(("U2", *a.A("U2:sensor"), "rt", False))
         lanes(c, its, art_box(a, -2), size=8.5)
@@ -870,7 +904,7 @@ def build_pages():
     add_page("01", "KNOW THE PERMA-PROTO'S TWO FACES", ["faces"], faces)
     add_page("02", "BUILD THE 3 JACK BREAKOUTS", ["bob-build"], bob_page)
     add_page("03", "BARO: CUT THE BMP581'S HEADER TO 6 PINS", ["BARO:header-cut"], bmp_cut)
-    add_page("04", "HEADERS ONTO THE BREAKOUTS", ["headers"], headers)
+    add_page("04", "HEADERS ONTO THE THREE EEPROMS", ["headers"], headers)
     n = 5
     for name in ("TH", "BARO", "UV"):
         pod = PODS_[name]
@@ -881,8 +915,11 @@ def build_pages():
                (f"{name} POD: JACK J1 IN A1-A6", [f"{name}:jack-header", f"{name}:jack"], jack_page),
                (f"{name} POD: EEPROM U1 IN F5-F10", [f"{name}:eeprom"], eep_page)]
         if pod.lead:
-            seq += [("TH POD: THE LEAD, SHT45 END", ["TH:lead", "TH:lead-sht45-end"], lead_sht_page),
-                    ("TH POD: THE LEAD, POD END", ["TH:lead", "TH:lead-gland-order"], lead_pod_page)]
+            end = pod.lead.source
+            seq += [(f"{name} POD: THE LEAD, {SENSOR[name].split(' #')[0]} END", [f"{name}:lead", f"{name}:lead-{end}-end"],
+                     lead_sensor_page),
+                    (f"{name} POD: THE LEAD, POD END", [f"{name}:lead"] + (["TH:lead-gland-order"] if name == "TH" else
+                                                                         [f"{name}:lead-pod-end"]), lead_pod_page)]
         else:
             seq += [(f"{name} POD: SENSOR U2 IN J10-J15", [f"{name}:sensor"], sensor_page)]
         seq += [(f"{name} POD: STRIP MAP", [f"{name}:strip-map"], strip_page),

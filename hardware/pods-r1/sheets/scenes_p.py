@@ -211,13 +211,34 @@ def add_breakout(s, pl):
 
 
 LEAD_X = 37.6                          # the TH lead's jacket runs past the right of U1, clear of everything
+UV_LEAD_UP = 20.0                      # the UV lead's jacket drawn standing this far up off the gather point
 
 
 def add_lead(s, pod, jacket_to=-16.0):
-    """The TH lead's pod end: the four stranded cores pushed into their holes from the TOP and soldered underneath,
-    rising and gathered into the round jacket, which leaves past the bottom (gland) edge high over the board."""
+    """A lead's pod end: the four stranded cores pushed into their holes from the TOP and soldered underneath, rising
+    and gathered into the round jacket. TH: it leaves past the bottom (gland) edge high over the board. UV: no gland,
+    it stands straight up toward the LTR390 in the crown's lid."""
     zj = T + 11.0
     cores = sorted(pod.lead.conductors, key=lambda c: PPM.HOLES[c.hole][0])
+    if pod.name != "TH":
+        xs = [PPM.HOLES[c.hole][0] for c in cores]
+        cx, cy = sum(xs) / len(xs), PPM.HOLES[cores[0].hole][1] - 6.0     # gathered over the board, off the J row
+        for k, c in enumerate(cores):
+            x, y = PPM.HOLES[c.hole]
+            off = (k - 1.5) * 1.15
+            g0 = (cx + off, cy, zj - 1.0)
+            pts = [(x, y, -1.0), (x, y, T + 2.0), (x, y, T + 4.0), g0, (cx + off, cy, zj + 2.0)]
+            s.add(f"L_{c.colour}", M.tube(pts, 0.6), M.INS[c.colour], 0.7)
+            u, p0 = 0.3, np.array((x, y, T + 4.0))                         # a little way along the slanted run,
+            dv = np.array(g0) - p0                                          # on the tube's top as seen from above
+            dz = dv[2] / np.linalg.norm(dv)
+            q = p0 + dv * u
+            mark(s, f"L:{c.colour}", (q[0], q[1], q[2] + 0.6 / math.sqrt(1 - dz * dz) - 0.05), f"L_{c.colour}")
+        jk = cq.Solid.makeCylinder(2.0, UV_LEAD_UP, cq.Vector(cx, cy, zj + 1.0), cq.Vector(0, 0, 1))
+        s.add("L_jacket", jk, M.JACKET, 1.0)
+        mark(s, "L:jacket", (cx + 1.0, cy, zj + 1.0 + UV_LEAD_UP), "L_jacket")
+        under_joints(s, "L_ufil", [c.hole for c in pod.lead.conductors])
+        return
     for k, c in enumerate(cores):
         x, y = PPM.HOLES[c.hole]
         off = (k - 1.5) * 1.15
@@ -468,15 +489,6 @@ def hdr_eep():
 
 
 @scene
-def hdr_ltr():
-    s = r3d.Scene()
-    parts, anc = M.breakout("ltr390", header=True, hdr_n=6)
-    place(s, "ltr", parts, anc)
-    M.breakout_silk(s, "ltr390", "ltr_board")
-    R("hdr_ltr", s, (-0.35, -0.9, 0.75), fit=(200, 170), line=0.32)
-
-
-@scene
 def hdr_bmp():
     s = r3d.Scene()
     parts, anc = M.breakout("bmp581", header=True, hdr_n=6)
@@ -645,53 +657,62 @@ for _n in PD.POD_NAMES:
 
 
 # ------------------------------------------------------------------ the TH lead: the SHT45 end, the gland order
-@scene
-def sht_lead():
-    """The SHT45 #6174 with the lead's four cores soldered to its own header pads (no header): each core in from the
-    back (bare face), soldered on the front, 3Vo left empty. Seen straight at the front (the PTFE cap's face)."""
-    pod = PODS_["TH"]
+LEAD_POD = {"sht45": "TH", "ltr390": "UV"}
+
+
+def _sensor_lead(key, iso):
+    """The sensor breakout `key` with its lead's four cores soldered to its own header pads (no header): each core in
+    from the back (bare face), soldered on the front, the unused pads left empty. Front view, or from below and behind."""
+    pod = PODS_[LEAD_POD[key]]
     s = r3d.Scene()
-    parts, anc = M.breakout("sht45")
-    place(s, "sht", parts, anc)
-    M.breakout_silk(s, "sht45", "sht_board")
-    pads = dict(zip(M.S.val("sht45_pins"), M.hdr_pads("sht45")))
+    parts, anc = M.breakout(key)
+    place(s, key[:3], parts, anc)
+    M.breakout_silk(s, key, f"{key[:3]}_board")
+    pads = dict(zip(M.S.val(key + "_pins"), M.hdr_pads(key)))
+    used = [c.pad for c in pod.lead.conductors]
+    xm = sum(pads[p][0] for p in used) / len(used)
     fil = []
     for k, c in enumerate(pod.lead.conductors):
         x, y = pads[c.pad]
-        pts = [(x, y, M.PCB + 0.6), (x, y, -1.5), (x, y - 2.0, -3.0), (x, -8.0, -3.0), (10.16 + (k - 1.5) * 1.3, -16.0, -3.0)]
-        s.add(f"L_{c.colour}", M.tube(pts[1:], 0.6), M.INS[c.colour], 0.7)
-        s.add(f"T_{c.colour}", cq.Solid.makeCylinder(0.35, M.PCB + 0.6 + 1.5, cq.Vector(x, y, -1.5), cq.Vector(0, 0, 1)),
-              M.COPPER, 0.3)
-        fil.append(M.fillet_cone(x, y, M.PCB + 0.05, True, 0.85, 0.4, 0.55))
-        s.anchor(f"pad:{c.pad}", (x, y, M.PCB + 0.3))
-        mark(s, f"L:{c.colour}", (x + 0.0, -6.0, -3.0 + 0.6), f"L_{c.colour}")
-    s.add("sfil", cq.Compound.makeCompound(fil), M.TIN, 0.4)
-    s.anchor("pad:3Vo", (*pads["3Vo"], M.PCB + 0.05))
-    s.add("jacket", cq.Solid.makeCylinder(2.0, 14.0, cq.Vector(10.16, -16.0, -3.0), cq.Vector(0, -1, 0)), M.JACKET)
-    mark(s, "jacket", (10.16, -24.0, -1.0), "jacket")
-    R("sht_lead", s, TOP, up=(0, 1, 0), fit=(260, 300), line=0.35)
-
-
-@scene
-def sht_lead_iso():
-    pod = PODS_["TH"]
-    s = r3d.Scene()
-    parts, anc = M.breakout("sht45")
-    place(s, "sht", parts, anc)
-    M.breakout_silk(s, "sht45", "sht_board")
-    pads = dict(zip(M.S.val("sht45_pins"), M.hdr_pads("sht45")))
-    fil = []
-    for k, c in enumerate(pod.lead.conductors):
-        x, y = pads[c.pad]
-        pts = [(x, y, -1.5), (x, y - 2.0, -3.0), (x, -8.0, -3.0), (10.16 + (k - 1.5) * 1.3, -16.0, -3.0)]
+        pts = [(x, y, -1.5), (x, y - 2.0, -3.0), (x, -8.0, -3.0), (xm + (k - 1.5) * 1.3, -16.0, -3.0)]
         s.add(f"L_{c.colour}", M.tube(pts, 0.6), M.INS[c.colour], 0.7)
         s.add(f"T_{c.colour}", cq.Solid.makeCylinder(0.35, M.PCB + 0.6 + 1.5, cq.Vector(x, y, -1.5), cq.Vector(0, 0, 1)),
               M.COPPER, 0.3)
         fil.append(M.fillet_cone(x, y, M.PCB + 0.05, True, 0.85, 0.4, 0.55))
+        if not iso:
+            s.anchor(f"pad:{c.pad}", (x, y, M.PCB + 0.3))
+            mark(s, f"L:{c.colour}", (x + 0.0, -6.0, -3.0 + 0.6), f"L_{c.colour}")
     s.add("sfil", cq.Compound.makeCompound(fil), M.TIN, 0.4)
-    s.add("jacket", cq.Solid.makeCylinder(2.0, 14.0, cq.Vector(10.16, -16.0, -3.0), cq.Vector(0, -1, 0)), M.JACKET)
-    mark(s, "back", (20.0, 12.0, 0.0), "sht_board")
-    R("sht_lead_iso", s, (-0.3, -0.7, -0.75), up=(0, 0, 1), fit=(260, 220), line=0.32)
+    s.add("jacket", cq.Solid.makeCylinder(2.0, 14.0, cq.Vector(xm, -16.0, -3.0), cq.Vector(0, -1, 0)), M.JACKET)
+    if iso:
+        mark(s, "back", (20.0, 12.0, 0.0), f"{key[:3]}_board")
+        R(f"{key[:3]}_lead_iso", s, (-0.3, -0.7, -0.75), up=(0, 0, 1), fit=(260, 220), line=0.32)
+    else:
+        for n in pads:
+            if n not in used:
+                s.anchor(f"pad:{n}", (*pads[n], M.PCB + 0.05))
+        mark(s, "jacket", (xm, -24.0, -1.0), "jacket")
+        R(f"{key[:3]}_lead", s, TOP, up=(0, 1, 0), fit=(260, 300), line=0.35)
+
+
+@scene
+def sht_lead():
+    _sensor_lead("sht45", False)
+
+
+@scene
+def sht_lead_iso():
+    _sensor_lead("sht45", True)
+
+
+@scene
+def ltr_lead():
+    _sensor_lead("ltr390", False)
+
+
+@scene
+def ltr_lead_iso():
+    _sensor_lead("ltr390", True)
 
 
 @scene
@@ -779,10 +800,12 @@ SCENE_MARKS = {
     "p_jp1": ["jp:jp1", "jp:shunt"],
     "bob_kit": ["bob:tab", "bob:score", "bob:jack", "bob:hdr"], "bob_snap": ["bob:tab", "bob:score_top"],
     "bob_ready": ["bob:jfil", "bob:hdr_bot", "bob:hpin_lo", "bob:peg"], "bob_top": ["bob:hfil", "bob:jack"],
-    "hdr_eep": ["eep:hfil", "eep:hdr", "eep:hpin_lo"], "hdr_ltr": ["ltr:hfil", "ltr:hdr"],
+    "hdr_eep": ["eep:hfil", "eep:hdr", "eep:hpin_lo"],
     "hdr_bmp": ["bmp:hfil", "bmp:hdr"],
     "sht_lead": [f"L:{c}" for c in ("red", "black", "yellow", "blue")] + ["jacket"],
     "sht_lead_iso": ["back"],
+    "ltr_lead": [f"L:{c}" for c in ("red", "black", "yellow", "blue")] + ["jacket"],
+    "ltr_lead_iso": ["back"],
 }
 for _c in (14, 15):
     for _gi, _g in enumerate(UGROUPS):
@@ -795,13 +818,13 @@ for _c in (14, 15):
     SCENE_MARKS[f"i{_c}_eep"] = ["U1:chip"]
 for _n in PD.POD_NAMES:
     k = _n.lower()
-    if _n == "TH":
+    if PODS_[_n].lead:
         SCENE_MARKS[f"t_{k}_u2"] = [f"L:{c}" for c in ("red", "black", "yellow", "blue")] + ["L:jacket"]
         SCENE_MARKS[f"i_{k}_u2"] = ["L:jacket"]
     else:
         SCENE_MARKS[f"t_{k}_u2"] = ["U2:sensor", "U2:qtR"]
         SCENE_MARKS[f"i_{k}_u2"] = ["U2:sensor"]
-    SCENE_MARKS[f"fin_{k}"] = ["J1:mouth", "U1:chip", "JP1:shunt"] + (["L:jacket"] if _n == "TH" else ["U2:sensor"])
+    SCENE_MARKS[f"fin_{k}"] = ["J1:mouth", "U1:chip", "JP1:shunt"] + (["L:jacket"] if PODS_[_n].lead else ["U2:sensor"])
 
 
 if __name__ == "__main__":
