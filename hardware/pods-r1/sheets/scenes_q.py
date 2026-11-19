@@ -616,8 +616,16 @@ def board_screws(s):
         s.anchor(f"bscrew{k}", (x + 1.2, y + 1.2, 2.4))
 
 
+P_LEAD = ("L_red", "L_black", "L_yellow", "L_blue", "L_jacket")   # Session P's bench-pose lead (cores + jacket)
+
+
 def bib_scene(name, holes=False):
     s = SP.pod_scene(name, "u2", holes=holes, decals=True)
+    if name in ("TH", "UV"):             # in the box the lead takes its box route (th_ / uv_lead_in_box below): drop
+        s.parts = [p for p in s.parts if p[0] not in P_LEAD]       # Session P's bench pose so it is drawn once
+        for k in [k for k in s.anchors if k.startswith("L:")]:      # (its solder joints underneath, L_ufil, stay)
+            s.anchors.pop(k)
+            s.anchor_on.pop(k, None)
     shift_scene(s, (0, 0, -T))
     add_body(s, name)
     add_glands(s, name)
