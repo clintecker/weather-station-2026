@@ -11,13 +11,15 @@ the top edge and the right edge (see the report). All three pods share one footp
 
   J1   BOB-14021 + 87180-066LF on a 1x6 male header, pins 1-6 in A1-A6, turned 180 (mouth to the bottom edge)
   U1   Adafruit 24LC32 #5146, turned 180, header in row F: VIN F10 ... WP F5 (its board hangs down over rows B-E)
-  U2   the sensor, upright, header in row J: VIN J10, then 3Vo J11, GND J12, SCL J13 ... (BARO and UV only)
+  U2   BARO: the BMP581, upright, header in row J: VIN J10, then 3Vo J11, GND J12, SCL J13 ...
+       TH and UV: the sensor (SHT45, LTR390) sits at the far end of a 4-wire lead landing on J10, J12, J13, J14
   JP1  Sullins PRPC002SAAN-RC + SPC02SYAN shunt in H4 (pin 1, 3V3) and H5 (pin 2, WP): shunt on = WP at 3.3 V
   R1   10 k Yageo MFR-25FBF52-10K lying along column 5 from J5 (WP) to top-5: shunt off = WP pulled to GND = writable
   top- rail = GND (R1's ground, tapped from U1's GND strip by J8 to top-8); top+, bot+ and bot- are unused
 
-U1 and U2 share only strip F-J10, where both put VIN (3V3). TH has no U2: its lead lands on J10, J12, J13 and J14,
-the holes UV's LTR390 uses for VIN, GND, SCL and SDA, so TH and UV are wired identically. BARO differs from UV only
+U1 and U2 share only strip F-J10, where both put VIN (3V3). TH and UV have no U2 on the board: each has a lead whose
+pod end lands on J10, J12, J13 and J14 (VIN, GND, SCL, SDA), so TH and UV are wired identically. The UV lead is short:
+it carries the LTR390 up under the window at the top of the UV crown (box/podbox.py; Clint 2026-11-19). BARO differs from UV only
 in its two SDA wires (they end on strip F-J15 instead of F-J14), because the BMP581's SDI is its sixth pad.
 All nine wires run on the copper side along routes stored with them (Wire.path); none needs a top jumper.
 
@@ -101,13 +103,14 @@ class Wire:
 class Conductor:
     colour: str
     net: str
-    pad: str          # the SHT45 header pad it is soldered to (sensor end)
+    pad: str          # the sensor breakout's header pad it is soldered to (sensor end)
     hole: str         # the pod-board hole it is soldered into (pod end)
 
 
 @dataclass
 class Lead:
-    """The TH pod's stranded 4-wire lead from the SHT45 (in the shield) to the pod board."""
+    """A stranded 4-wire lead from a sensor breakout (TH: the SHT45 in the shield; UV: the LTR390 under the crown's
+    window) to the pod board."""
     ref: str
     part: str
     source: str
@@ -333,9 +336,14 @@ def _th():
 
 def _uv():
     parts, wires = _common(14)
-    parts.append(breakout("U2", "ltr390", 0, "J10", BREAKOUT_NETS,
-                          note="sensor face up for the lid window; overhangs the top edge 3.81 and the right edge 2.54"))
-    return Pod("UV", "ltr390", parts, wires)
+    lead = Lead("U2", BREAKOUT_PART["ltr390"], "ltr390",
+                [Conductor("red", "3V3", "VIN", "J10"), Conductor("black", "GND", "GND", "J12"),
+                 Conductor("yellow", "SCL", "SCL", "J13"), Conductor("blue", "SDA", "SDA", "J14")],
+                S.val("uv_lead_m"),
+                "short stranded 4-wire lead soldered to the LTR390's own header pads (no header on the LTR390), which "
+                "sits sensor up under the crown's window; lands on the same holes as the TH lead. LTR390 3Vo and INT "
+                "are left unconnected.")
+    return Pod("UV", "ltr390", parts, wires, lead)
 
 
 def _baro():

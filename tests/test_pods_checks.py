@@ -156,8 +156,8 @@ class PodChecks(unittest.TestCase):
         self.assertGreater(per_m, 0)
         # cable, 10 pF per device and the TX port's 60 pF allowance (tx-stack-r1 schematic/checks.py check_outdoor)
         self.assertEqual(self.c.TX_PORT_PF, 60.0)
-        self.assertAlmostEqual(self.c.bus_pf(uv, 2.0), 2.0 * per_m + 10 * self.c.device_count(uv) + 60.0)
-        self.assertAlmostEqual(self.c.bus_pf(th, 2.0) - self.c.bus_pf(uv, 2.0), th.lead.length_m * per_m)
+        self.assertAlmostEqual(self.c.bus_pf(uv, 2.0), (2.0 + uv.lead.length_m) * per_m + 10 * self.c.device_count(uv) + 60.0)
+        self.assertAlmostEqual(self.c.bus_pf(th, 2.0) - self.c.bus_pf(uv, 2.0), (th.lead.length_m - uv.lead.length_m) * per_m)
 
     def test_tx_port_allowance_still_60pf(self):
         """TX_PORT_PF mirrors a literal in the TX checks' port note; fail if that note changes."""

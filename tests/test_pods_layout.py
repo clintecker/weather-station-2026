@@ -46,9 +46,9 @@ class PodLayout(unittest.TestCase):
                 self.assertNotIn(other, t, (n, other))
             refs = [part.ref for part in p.parts]
             self.assertEqual(len(refs), len(set(refs)), n)
-            expect = {"J1", "U1", "JP1", "R1"} | ({"U2"} if n != "TH" else set())
+            expect = {"J1", "U1", "JP1", "R1"} | ({"U2"} if n == "BARO" else set())
             self.assertEqual(set(refs), expect, n)
-            self.assertEqual(p.lead is not None, n == "TH")
+            self.assertEqual(p.lead is not None, n != "BARO")
 
     def test_all_pins_on_holes(self):
         for n, p in self.pods.items():
@@ -105,11 +105,20 @@ class PodLayout(unittest.TestCase):
         self.assertEqual(lead.length_m, self.S.val("th_lead_m"))
         for c in lead.conductors:
             self.assertIn(c.hole, self.PP.HOLES)
-        # the lead's pod end lands where the UV pod's LTR390 has the same nets
-        uv = self.pods["UV"].part("U2")
-        by_net = {uv.nets[pin]: h for pin, h in uv.pins.items() if uv.nets[pin]}
+        # the lead's pod end lands where the BARO pod's BMP581 has the same nets (SDA aside: BARO's is strip 15)
+        baro = self.pods["BARO"].part("U2")
+        by_net = {baro.nets[pin]: h for pin, h in baro.pins.items() if baro.nets[pin]}
         for c in lead.conductors:
-            self.assertEqual(c.hole, by_net[c.net], c)
+            if c.net != "SDA":
+                self.assertEqual(c.hole, by_net[c.net], c)
+
+    def test_uv_lead_matches_th(self):
+        th, uv = self.pods["TH"].lead, self.pods["UV"].lead
+        self.assertEqual([(c.colour, c.net, c.pad, c.hole) for c in uv.conductors],
+                         [(c.colour, c.net, c.pad, c.hole) for c in th.conductors])
+        self.assertTrue(set(c.pad for c in uv.conductors) <= set(self.S.val("ltr390_pins")))
+        self.assertIn("#4831", uv.part)
+        self.assertEqual(uv.length_m, self.S.val("uv_lead_m"))
 
     # ---------------------------------------------------------------- beyond the plan's four
     def test_jack_faces_gland_edge(self):
@@ -177,7 +186,7 @@ class PodLayout(unittest.TestCase):
         diff = [(a, b) for a, b in zip(wires(baro), wires(uv)) if a != b]
         self.assertEqual(len(wires(baro)), len(wires(uv)))
         self.assertEqual({a[0] for a, _b in diff}, {"SDA"})            # only the SDA wires follow the sensor's SDA pad
-        self.assertEqual(baro.part("U2").pins["VIN"], uv.part("U2").pins["VIN"])
+        self.assertEqual(baro.part("U2").pins["VIN"], uv.lead.conductors[0].hole)
 
     def test_wire_routes(self):
         """Each wire's stored route: starts and ends at its holes, right-angle runs on the 1.27 grid, OD/2 +

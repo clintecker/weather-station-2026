@@ -1,8 +1,9 @@
 """The v1 pod boxes (hardware/pods-r1/box/v1/): Clint's printed STLs, made by his CAD agent from box/CAD-BRIEF.md.
 
 box/podbox.py is the model the sheets draw. These tests hold it to the printed files: each v1 STL is one closed
-solid, and the model's body and lid differ from it by no more than a tessellation's worth of volume in each
-direction (any real feature change, a moved hole or a missing web, is tens to hundreds of mm3).
+solid, and the model's TH and BARO bodies and lids differ from them by no more than a tessellation's worth of volume
+in each direction (any real feature change, a moved hole or a missing web, is tens to hundreds of mm3). The UV v1
+box is retired: the UV pod is the crown now (Clint 2026-11-19); its v1 files stay in box/v1 as a record.
 
 Needs CadQuery and manifold3d, so it skips in the plain .venv (CI). Run with the CAD venv from the repo root:
     .venv-cad/bin/python -m unittest tests.test_pods_v1 -v
@@ -75,7 +76,7 @@ class V1Boxes(unittest.TestCase):
 
     def test_model_matches_v1(self):
         PB = self.PB
-        for n in ("TH", "BARO", "UV"):
+        for n in ("TH", "BARO"):
             d = PB.dims(n)
             for part, shape, z in (("body", PB.body(n), d["z_bo"]), ("lid", PB.lid(n), d["z_rim"])):
                 with self.subTest(pod=n, part=part):

@@ -89,6 +89,23 @@ BOSS_MARGIN = 2.0           # UV: floor boss clear of the side walls
 LID_CHAMFER = 0.8           # v1: the lid's top outer edge (round the whole outline, lugs and webs included)
 V1 = _HERE / "v1"           # v1: Clint's printed boxes (his CAD agent, from CAD-BRIEF.md), 2026-11-18; this model matches them
 UPS = {"TH": (0.0, 1.0, 0.0), "BARO": (0.0, 1.0, 0.0), "UV": (0.0, 0.0, 1.0)}
+# the UV crown (Clint 2026-11-19: "make it look cool"): a round drum and a smooth dome, centred on the shield's axis
+CROWN_SP_H = 10.0           # the body's spigot: height (the lid's skirt slides over it)
+CROWN_SP_T = 2.4            # spigot wall
+CROWN_C = 0.2               # radial clearance, spigot to the lid's skirt bore
+CROWN_SKIRT_T = 2.2         # the lid's skirt wall (its outside is flush with the drum's)
+CROWN_RISE = 28.0           # the dome's rise above the spigot's top
+CROWN_DOME_T = 3.0          # the dome's shell
+CROWN_FLAT = 3.0            # the apex flat, beyond the window recess's edge
+CROWN_LUGS = 3              # bayonet lugs on the skirt's bore
+CROWN_LUG = (8.0, 2.4, 1.0)  # a lug: arc length, height, depth (into the spigot's channel)
+CROWN_TURN = 25.0           # the bayonet's twist, degrees
+CROWN_LUG_Z = 3.5           # lug centre below the spigot's top
+CROWN_ORING_Z = 7.0         # the radial O-ring groove's centre below the spigot's top
+CROWN_BOSS_R = 31.0         # floor bosses for the mount inserts: radius about the crown's axis (inside the cap's flat top)
+CROWN_GLAND_FACE = 22.0     # the round spot face for the port gland's seal, outside (and the flat land inside)
+LTR_HOLES = (10.16, 6.35)   # LTR390 #4831 corner holes from its centre (x, y); 2.54 in from each edge (Adafruit's usual)
+LTR_GAP = 1.0               # chip top to the window's aperture tube
 
 
 def mount_boss_depth():
@@ -149,24 +166,12 @@ def dims(name):
         z_rim = max(z_rim, pz + nut_r + NUT_GAP)
     d = dict(name=name, t=t, cs=cs, top=top, x0=x0, x1=x1, y1=y1, z_bi=z_bi, z_bo=z_bi - WALL, z_rim=z_rim,
              px=px, pz=pz, mouth=mouth, plug_end=plug_end, lid_t=LID_T, ops=[], boss_depth=mount_boss_depth())
+    d["y0"] = plug_end - max(CLEAR, _nut_depth())
     if name == "UV":
-        # the cable rises through the floor, bends over at plug_bend and runs level into the jack
-        gy = mouth - body_len - S.val("plug_bend")
-        d["y0"] = min(plug_end - CLEAR, gy - nut_r - NUT_GAP)
-        d["ops"].append(("gland", (px, gy, d["z_bo"]), (0.0, 0.0, -1.0)))
-        mat, wd, wt = S.val("uv_window")
-        sx, sy = S.val("ltr390_sensor")
-        u2 = p.part("U2")
-        cx, cy = u2.origin[0] + sx, u2.origin[1] + sy
-        rr = wd / 2 + 0.15
-        d["x1"] = max(d["x1"], cx + rr + 1.0)
-        d["y1"] = max(d["y1"], cy + rr + 1.0)
-        d["lid_t"] = max(LID_T, wt + 1.2)
-        d["window"] = dict(c=(cx, cy), recess_d=wd + 0.3, depth=wt, aperture=wd - 2 * WINDOW_LEDGE, material=mat)
-        d["ops"].append(("window", (cx, cy, z_rim + d["lid_t"]), (0.0, 0.0, 1.0)))
+        _crown_dims(d, p, nut_r)
     else:
-        d["y0"] = plug_end - max(CLEAR, _nut_depth())
         d["ops"].append(("gland", (px, d["y0"] - WALL, pz), (0.0, -1.0, 0.0)))
+    if name != "UV":
         right = px + nut_r                                         # the port gland's nut, right edge
         if name == "TH":
             lx = (right + d["x1"]) / 2
@@ -177,21 +182,18 @@ def dims(name):
             vz = z_bi + seat_d / 2 + 1.0
             d["ops"].append(("vent", (vx, d["y0"] - WALL, vz), (0.0, -1.0, 0.0)))
             d["seat"] = (seat_d, S.val("baro_eptfe")[1])
-    d["lugs"] = [(x, y) for x in (d["x0"] - WALL - LUG_DIAG, d["x1"] + WALL + LUG_DIAG)
-                 for y in (d["y0"] - WALL - LUG_DIAG, d["y1"] + WALL + LUG_DIAG)]
-    d["mount_lugs"], d["floor_bosses"], d["keepouts"] = list(d["lugs"]), [], []
-    if name == "UV":
-        (_k, (gx, gy, _gz), _a), = [o for o in d["ops"] if o[0] == "gland"]
-        br = S.val("pod_insert_bore")[0] / 2 + LUG_WALL
-        by = gy + nut_r + NUT_GAP + br                          # inboard of the gland's nut
-        d["floor_bosses"] = [(d["x0"] + BOSS_MARGIN + br, by), (d["x1"] - BOSS_MARGIN - br, by)]
-        d["mount_lugs"] = [xy for xy in d["lugs"] if xy[1] > gy]          # the far end's two lugs
-        d["keepouts"] = [(gx, gy, max(GLAND_KEEP, S.val("gland_pg7")[2] + 1.4))]
+    if name != "UV":
+        d["lugs"] = [(x, y) for x in (d["x0"] - WALL - LUG_DIAG, d["x1"] + WALL + LUG_DIAG)
+                     for y in (d["y0"] - WALL - LUG_DIAG, d["y1"] + WALL + LUG_DIAG)]
+        d["mount_lugs"], d["floor_bosses"], d["keepouts"] = list(d["lugs"]), [], []
     return d
 
 
 def inside(name):
     d = dims(name)
+    if name == "UV":                       # the crown's bore, as its bounding square (corners outside the drum)
+        cx, cy = d["axis"]
+        return Box(cx - d["r_in"], cy - d["r_in"], cx + d["r_in"], cy + d["r_in"], d["z_bi"], d["z_joint"], "UV crown inside")
     return Box(d["x0"], d["y0"], d["x1"], d["y1"], d["z_bi"], d["z_rim"], f"{name} pod box inside")
 
 
@@ -252,6 +254,13 @@ def _groove_path(d, n=24):
 def groove(name):
     d = dims(name)
     cord = S.val("pod_oring")
+    if name == "UV":                       # the crown: a radial groove round the body's spigot, below the bayonet
+        cx, cy = d["axis"]
+        rc = d["r_sp"] - d["groove_d"] / 2
+        path = [(cx + rc * math.cos(2 * math.pi * i / 180), cy + rc * math.sin(2 * math.pi * i / 180)) for i in range(180)]
+        return dict(cord=cord, width=d["groove_w"], depth=d["groove_d"], length=2 * math.pi * rc, path=path,
+                    z=d["z_joint"] - CROWN_ORING_Z, radial=True, squeeze=round(1 - (d["groove_d"] + CROWN_C) / cord, 3),
+                    probes=[(cx + rc * math.cos(a), cy + rc * math.sin(a)) for a in (0.3, 1.9, 3.5, 5.1)])
     o = WALL / 2
     xm, ym = (d["x0"] + d["x1"]) / 2, (d["y0"] + d["y1"]) / 2
     path = _groove_path(d)
@@ -328,6 +337,8 @@ def _baffle_box(d):
 @lru_cache(maxsize=None)
 def _build(name, standoffs=True, baffle=True):
     d = dims(name)
+    if name == "UV":
+        return _solid(_crown_body(d, standoffs), "UV body")
     bd, bdepth = S.val("pod_insert_bore")
     s = _outline(d, d["z_bo"], d["z_rim"])
     s = s.cut(_rrect(d["x0"], d["y0"], d["x1"], d["y1"], R_IN, d["z_bi"], d["z_rim"] + 1))
@@ -380,6 +391,8 @@ def walls(name):
 @lru_cache(maxsize=None)
 def lid(name):
     d = dims(name)
+    if name == "UV":
+        return _solid(_crown_lid(d), "UV lid")
     g = groove(name)
     z0, z1 = d["z_rim"], d["z_rim"] + d["lid_t"]
     s = _outline(d, z0, z1)
@@ -408,6 +421,154 @@ def lid(name):
     return v
 
 
+def _solid(s, what):
+    v = s.val()
+    if not isinstance(v, cq.Solid):
+        sols = v.Solids()
+        assert len(sols) == 1, f"{what} is {len(sols)} solids"
+        v = sols[0]
+    return v
+
+
+# ------------------------------------------------------------------ the UV crown
+def _crown_dims(d, p, nut_r):
+    """The UV crown's numbers, added to d (box frame). The contents are the TH box's (the board, its parts, the plug
+    and the port gland's nut, each grown by CLEAR); the crown's axis runs through the plug's axis (x = px) so the port
+    gland points straight out of the drum, and sits where the smallest circle round the contents is centred."""
+    pts = []
+    for b in [b for part in p.parts for b in part.boxes]:
+        pts += [(x, y) for x in (b.x0 - CLEAR, b.x1 + CLEAR) for y in (b.y0 - CLEAR, b.y1 + CLEAR)]
+    pts += [(x, y) for x in (d["x0"], d["x1"]) for y in (-CLEAR, d["y1"])]
+    pts += [(d["px"] + s * (nut_r + NUT_GAP), d["y0"]) for s in (-1.0, 1.0)]
+    cx = d["px"]
+    best = min((max(math.hypot(x - cx, y - cy) for x, y in pts), cy) for cy in [i * 0.125 for i in range(-80, 240)])
+    r_in = float(math.ceil(best[0] + 0.5))
+    cy = best[1]
+    r_sp = r_in + CROWN_SP_T
+    r_out = r_sp + CROWN_C + CROWN_SKIRT_T
+    z_ledge = max(d["top"] + CLEAR, d["pz"] + CROWN_GLAND_FACE / 2 + 1.0)    # the gland's spot face stays under it
+    z_joint = z_ledge + CROWN_SP_H
+    apex = z_joint + CROWN_RISE
+    cord = S.val("pod_oring")
+    mat, wd, wt = S.val("uv_window")
+    flat = apex - 0.6                                           # the apex is cut flat here, so the disc sits flush
+    d.update(axis=(cx, cy), r_in=r_in, r_sp=r_sp, r_out=r_out, z_ledge=z_ledge, z_joint=z_joint, apex=apex, z_flat=flat,
+             z_rim=z_joint, z_lid0=z_ledge, lid_t=CROWN_DOME_T, lugs=[], mount_lugs=[], keepouts=[],
+             groove_d=round(0.75 * cord - CROWN_C, 2), groove_w=round(1.35 * cord, 2))
+    d["window"] = dict(c=(cx, cy), recess_d=wd + 0.3, depth=wt, aperture=wd - 2 * WINDOW_LEDGE, material=mat)
+    d["ops"].append(("window", (cx, cy, flat), (0.0, 0.0, 1.0)))
+    y_land = d["y0"]                                            # the nut's flat land inside (as the TH box's wall)
+    d["y_land"] = y_land
+    d["ops"].append(("gland", (d["px"], y_land - WALL, d["pz"]), (0.0, -1.0, 0.0)))
+    # the LTR390, sensor up under the window's aperture tube, on two M2.5 screws into bosses under the dome
+    z_b = apex - CROWN_DOME_T - 4.5
+    d["ltr"] = dict(c=(cx, cy), z=z_b, holes=[(cx - LTR_HOLES[0], cy - LTR_HOLES[1]), (cx + LTR_HOLES[0], cy + LTR_HOLES[1])],
+                    size=S.val("ltr390"))
+    # four floor bosses for the mount inserts, on a circle of CROWN_BOSS_R, clear of the board and its copper side
+    br = S.val("pod_insert_bore")[0] / 2 + LUG_WALL
+    w, h = S.val("permaproto_q")
+
+    def ok(a):
+        x, y = cx + CROWN_BOSS_R * math.cos(math.radians(a)), cy + CROWN_BOSS_R * math.sin(math.radians(a))
+        return not (-CLEAR - br < x < w + CLEAR + br and -CLEAR - br < y < h + CLEAR + br)
+    good = [a for a in range(0, 360) if ok(a)]
+    assert good, "no room for the UV floor bosses"
+    pick = [max(good, key=lambda a: min(abs(((a - 270) + 180) % 360 - 180), 999))]
+    while len(pick) < 4:
+        pick.append(max(good, key=lambda a: min(abs((a - b + 180) % 360 - 180) for b in pick)))
+    d["floor_bosses"] = [(cx + CROWN_BOSS_R * math.cos(math.radians(a)), cy + CROWN_BOSS_R * math.sin(math.radians(a)))
+                         for a in sorted(pick)]
+
+
+def _ring(d, r0, r1, z0, z1, a0=0.0, a1=360.0):
+    """A ring (or a sector of one, degrees a0..a1) about the crown's axis."""
+    cx, cy = d["axis"]
+    if a1 - a0 >= 360.0:
+        s = cq.Workplane("XY").workplane(offset=z0).circle(r1).circle(r0).extrude(z1 - z0)
+    else:
+        s = (cq.Workplane("XZ").center((r0 + r1) / 2, (z0 + z1) / 2).rect(r1 - r0, z1 - z0)
+             .revolve(a1 - a0, (-(r0 + r1) / 2, -(z0 + z1) / 2), (-(r0 + r1) / 2, 1 - (z0 + z1) / 2)))
+        s = s.rotate((0, 0, 0), (0, 0, 1), a0)
+    return s.translate((cx, cy, 0))
+
+
+def _bayonet_angles(d):
+    return [360.0 * k / CROWN_LUGS + 30.0 for k in range(CROWN_LUGS)]      # entry slots; the lugs lock CROWN_TURN on
+
+
+def _crown_body(d, standoffs=True):
+    cx, cy = d["axis"]
+    bd, bdepth = S.val("pod_insert_bore")
+    s = (cq.Workplane("XY").workplane(offset=d["z_bo"]).center(cx, cy).circle(d["r_out"]).extrude(d["z_ledge"] - d["z_bo"])
+         .union(cq.Workplane("XY").workplane(offset=d["z_ledge"] - 0.5).center(cx, cy).circle(d["r_sp"])
+                .extrude(d["z_joint"] - d["z_ledge"] + 0.5)))
+    s = s.cut(cq.Workplane("XY").workplane(offset=d["z_bi"]).center(cx, cy).circle(d["r_in"]).extrude(d["z_joint"] - d["z_bi"] + 1))
+    # the port gland: a flat land inside (the nut's seat, as the TH wall), a round spot face outside, the hole
+    px, pz, F, yl = d["px"], d["pz"], CROWN_GLAND_FACE, d["y_land"]
+    land = (cq.Workplane("XY").add(cq.Solid.makeBox(F, yl - (cy - d["r_out"]), d["z_ledge"] - d["z_bi"],
+                                                    cq.Vector(px - F / 2, cy - d["r_out"], d["z_bi"])))
+            .intersect(cq.Workplane("XY").workplane(offset=d["z_bi"] - 1).center(cx, cy).circle(d["r_out"]).extrude(60)))
+    s = s.union(land)
+    s = s.cut(cq.Workplane("XY").add(cq.Solid.makeCylinder(F / 2, 20.0, cq.Vector(px, yl - WALL, pz), cq.Vector(0, -1, 0))))
+    s = s.cut(_teardrop_y(px, pz, S.val("gland")[0] / 2, yl + 1.0, WALL + 2.0))
+    # floor bosses: blind M3 mount inserts from below
+    for x, y in d["floor_bosses"]:
+        s = s.union(cq.Workplane("XY").workplane(offset=d["z_bi"] - 0.5).center(x, y).circle(bd / 2 + LUG_WALL)
+                    .extrude(d["z_bo"] + d["boss_depth"] - d["z_bi"] + 0.5))
+        s = s.cut(cq.Workplane("XY").workplane(offset=d["z_bo"] - 1).center(x, y).circle(bd / 2).extrude(bdepth + 1))
+    if standoffs:
+        keep, pilot = S.val("mount_keep"), S.val("pod_pilot_m3")
+        for x, y, _dr in board_holes():
+            s = s.union(cq.Workplane("XY").workplane(offset=d["z_bi"] - 0.5).center(x, y).circle(keep)
+                        .extrude(-d["t"] - d["z_bi"] + 0.5))
+            s = s.cut(cq.Workplane("XY").workplane(offset=d["z_bo"] + 1.0).center(x, y).circle(pilot / 2)
+                      .extrude(-d["t"] - d["z_bo"]))
+    # the radial O-ring groove, then the bayonet: an entry slot down from the spigot's top and a channel round
+    zj, rs = d["z_joint"], d["r_sp"]
+    zo = zj - CROWN_ORING_Z
+    s = s.cut(_ring(d, rs - d["groove_d"], rs + 1, zo - d["groove_w"] / 2, zo + d["groove_w"] / 2))
+    lw, lh, ld = CROWN_LUG
+    dep, zl = ld + 0.3, zj - CROWN_LUG_Z
+    for a in _bayonet_angles(d):
+        half = math.degrees((lw / 2 + 0.3) / rs)
+        s = s.cut(_ring(d, rs - dep, rs + 1, zl - lh / 2 - 0.3, zj + 1, a - half, a + half))
+        s = s.cut(_ring(d, rs - dep, rs + 1, zl - lh / 2 - 0.3, zl + lh / 2 + 0.3, a - half, a + CROWN_TURN + half))
+    return s
+
+
+def _crown_lid(d):
+    cx, cy = d["axis"]
+    ro, zl, zj, apex = d["r_out"], d["z_ledge"], d["z_joint"], d["apex"]
+    ai, bi = ro - CROWN_DOME_T, CROWN_RISE - CROWN_DOME_T
+    n = 40
+    ts = [math.pi / 2 * i / n for i in range(n + 1)]
+    outer = [(ro * math.cos(t), zj + CROWN_RISE * math.sin(t)) for t in ts]
+    inner = [(ai * math.cos(t), zj + bi * math.sin(t)) for t in ts]
+    outer[-1], inner[-1] = (0.0, apex), (0.0, zj + bi)
+    bore = d["r_sp"] + CROWN_C
+    prof = [(bore, zl), (ro, zl)] + outer + inner[::-1] + [(bore, zj)]
+    s = cq.Workplane("XZ").polyline(prof).close().revolve(360, (0, 0, 0), (0, 1, 0)).translate((cx, cy, 0))
+    s = s.cut(cq.Workplane("XY").workplane(offset=d["z_flat"]).center(cx, cy).circle(ro + 5).extrude(10))   # apex flat
+    wdw, L = d["window"], d["ltr"]
+    tube_bot = L["z"] + 0.8 + LTR_GAP
+    s = s.union(cq.Workplane("XY").workplane(offset=tube_bot).center(cx, cy).circle(wdw["aperture"] / 2 + 2.0)
+                .extrude(apex - tube_bot - 1.0))
+    for x, y in L["holes"]:
+        s = s.union(cq.Workplane("XY").workplane(offset=L["z"]).center(x, y).circle(2.5).extrude(apex - L["z"] - 1.5))
+        s = s.cut(cq.Workplane("XY").workplane(offset=L["z"] - 1).center(x, y).circle(1.05).extrude(7.0))
+    s = s.cut(cq.Workplane("XY").workplane(offset=d["z_flat"] - wdw["depth"]).center(cx, cy)
+              .circle(wdw["recess_d"] / 2).extrude(5))
+    s = s.cut(cq.Workplane("XY").workplane(offset=tube_bot - 1).center(cx, cy).circle(wdw["aperture"] / 2)
+              .extrude(apex - tube_bot + 2))
+    lw, lh, ld = CROWN_LUG
+    zc = zj - CROWN_LUG_Z
+    for a in _bayonet_angles(d):
+        half = math.degrees((lw / 2) / d["r_sp"])
+        b = a + CROWN_TURN
+        s = s.union(_ring(d, bore - ld, bore + 0.5, zc - lh / 2, zc + lh / 2, b - half, b + half))
+    return s
+
+
 # ------------------------------------------------------------------ output
 STL = _HERE / "stl"
 
@@ -417,7 +578,7 @@ def write_stls():
     out = []
     for n in pods.POD_NAMES:
         d = dims(n)
-        for part, shape, z in (("body", body(n), d["z_bo"]), ("lid", lid(n), d["z_rim"])):
+        for part, shape, z in (("body", body(n), d["z_bo"]), ("lid", lid(n), d.get("z_lid0", d["z_rim"]))):
             p = STL / f"pod-{n.lower()}-{part}.stl"
             cq.exporters.export(shape.translate(cq.Vector(0, 0, -z)), str(p), tolerance=0.05, angularTolerance=0.2)
             out.append(p)
@@ -434,9 +595,17 @@ def report():
         lines.append(f"== {n}  (up = {up(n)})")
         lines.append(f"  inside   {ins.x1 - ins.x0:.2f} x {ins.y1 - ins.y0:.2f} x {ins.z1 - ins.z0:.2f}  "
                      f"(x {ins.x0:.2f}..{ins.x1:.2f}, y {ins.y0:.2f}..{ins.y1:.2f}, z {ins.z0:.2f}..{ins.z1:.2f})")
-        lines.append(f"  outside  {bb.xlen:.2f} x {bb.ylen:.2f} x {bb.zlen + d['lid_t']:.2f} with the lid "
-                     f"(walls {WALL}, lid {d['lid_t']}, lugs included)")
-        lines.append(f"  seal     cord {g['cord']} in a {g['width']} x {g['depth']} lid groove, centreline {g['length']:.1f} long")
+        if n == "UV":
+            lines.append(f"  crown    Ø{2 * d['r_out']:.1f} x {d['z_flat'] - d['z_bo']:.1f} tall (drum to the ledge "
+                         f"{d['z_ledge'] - d['z_bo']:.1f}, lid skirt {CROWN_SP_H:g}, dome rise {CROWN_RISE:g}); bayonet "
+                         f"{CROWN_LUGS} lugs, {CROWN_TURN:g} deg twist")
+            lines.append(f"  seal     cord {g['cord']} in a {g['width']} x {g['depth']} groove round the spigot (radial, "
+                         f"squeeze {g['squeeze']:.0%}), centreline {g['length']:.1f} long")
+            lines.append(f"  LTR390   on 2 M2.5 bosses under the window, board top Z {d['ltr']['z']:.2f}")
+        else:
+            lines.append(f"  outside  {bb.xlen:.2f} x {bb.ylen:.2f} x {bb.zlen + d['lid_t']:.2f} with the lid "
+                         f"(walls {WALL}, lid {d['lid_t']}, lugs included)")
+            lines.append(f"  seal     cord {g['cord']} in a {g['width']} x {g['depth']} lid groove, centreline {g['length']:.1f} long")
         for k, c, a in openings(n):
             lines.append(f"  {k:<10} at ({c[0]:.2f}, {c[1]:.2f}, {c[2]:.2f}) axis {a}")
         (o, nrm), holes = mount_face(n)

@@ -156,7 +156,13 @@ class PodBox(unittest.TestCase):
             with self.subTest(pod=n):
                 self.assertEqual(kinds.count("gland"), 1, n)
                 for kind, _c, axis in ops:
-                    if kind in ("gland", "lead_gland", "vent"):
+                    if kind == "gland" and n == "UV":                 # the crown's port gland: level, straight out
+                        self.assertAlmostEqual(angle(axis, down), 90.0, places=6)
+                        ax, ay = self.box.dims("UV")["axis"]
+                        out = (_c[0] - ax, _c[1] - ay)
+                        self.assertLess(abs(out[0] * axis[1] - out[1] * axis[0]), 1e-6, "UV gland not radial")
+                        self.assertGreater(out[0] * axis[0] + out[1] * axis[1], 0)
+                    elif kind in ("gland", "lead_gland", "vent"):
                         self.assertLessEqual(angle(axis, down), 10.0, f"{n} {kind}")
                     if kind == "window":
                         self.assertLessEqual(angle(axis, up), 5.0, f"{n} window")
@@ -205,6 +211,8 @@ class PodBox(unittest.TestCase):
         cord = S.val("pod_oring")
         bore_d, bore_depth = S.val("pod_insert_bore")
         for n in self.names:
+            if n == "UV":
+                continue                                        # the crown: test_uv_crown_seal_and_bayonet
             body, lid, _w = self.built[n]
             g = self.box.groove(n)
             with self.subTest(pod=n):
@@ -238,22 +246,65 @@ class PodBox(unittest.TestCase):
                     self.assertGreater(min(math.hypot(x - px, y - py) for px, py in g["path"]),
                                        bore_d / 2 + g["width"] / 2 + 0.5, f"{n}: insert breaks into the groove")
 
+    def test_uv_crown_seal_and_bayonet(self):
+        """The crown's lid: a radial O-ring in a groove round the body's spigot (squeezed about 25 %), held down by a
+        bayonet (lugs in the spigot's channels); no glue, no screws; the lid and the body never overlap."""
+        cord = self.S.val("pod_oring")
+        d = self.box.dims("UV")
+        body, lid, _w = self.built["UV"]
+        g = self.box.groove("UV")
+        self.assertTrue(g["radial"])
+        self.assertAlmostEqual(g["width"], round(1.35 * cord, 2))
+        self.assertGreater(g["squeeze"], 0.2)
+        self.assertLess(g["squeeze"], 0.3)
+        for x, y in g["probes"]:
+            self.assertFalse(body.isInside(cq.Vector(x, y, g["z"])), f"no groove at {x, y}")
+        ax, ay = d["axis"]
+        for a in (0.3, 1.9, 3.5, 5.1):
+            r = d["r_sp"] - g["depth"] - 0.4
+            self.assertTrue(body.isInside(cq.Vector(ax + r * math.cos(a), ay + r * math.sin(a), g["z"])), "spigot holed")
+            rb = d["r_sp"] + self.box.CROWN_C + 0.3                     # the lid's skirt over the groove
+            self.assertTrue(lid.isInside(cq.Vector(ax + rb * math.cos(a), ay + rb * math.sin(a), g["z"])), "no skirt")
+        self.assertEqual(self.box.screws("UV"), [])
+        self.assertLess(lid.intersect(body).Volume(), 1e-3)            # closed and locked, nothing overlaps
+        # each bayonet lug is in its channel: the lid has material there, the body has none
+        lw, lh, ld = self.box.CROWN_LUG
+        for a in self.box._bayonet_angles(d):
+            t = math.radians(a + self.box.CROWN_TURN)
+            r = d["r_sp"] + self.box.CROWN_C - ld / 2
+            p = cq.Vector(ax + r * math.cos(t), ay + r * math.sin(t), d["z_joint"] - self.box.CROWN_LUG_Z)
+            self.assertTrue(lid.isInside(p), f"no lug at {a}")
+            self.assertFalse(body.isInside(p), f"lug at {a} not in a channel")
+        # the lid's skirt is flush with the drum, and the lid lands on the spigot's top (the axial stop)
+        self.assertAlmostEqual(lid.BoundingBox().xlen, body.BoundingBox().ylen, delta=0.5)
+
     def test_uv_window_recorded(self):
         S = self.S
         self.assertIn("uv_window", S.D)
-        material, d, t = S.val("uv_window")
+        material, dw, t = S.val("uv_window")
         self.assertTrue(isinstance(material, str) and material.strip())
-        self.assertGreater(d, 0)
+        self.assertGreater(dw, 0)
         self.assertGreater(t, 0)
-        # the window sits over the LTR390's sensor, flush in the UV lid's top face
+        # the window is centred on the crown's axis, flush in the apex flat; the LTR390 sits under its aperture
+        d = self.box.dims("UV")
         (_k, c, _axis), = [o for o in self.box.openings("UV") if o[0] == "window"]
         lid = self.built["UV"][1]
         self.assertAlmostEqual(c[2], lid.BoundingBox().zmax, places=6)
-        u2 = self.pods.pod("UV").part("U2")
-        sx, sy = S.val("ltr390_sensor")
-        self.assertAlmostEqual(c[0], u2.origin[0] + sx, places=6)
-        self.assertAlmostEqual(c[1], u2.origin[1] + sy, places=6)
+        self.assertAlmostEqual(c[0], d["axis"][0], places=6)
+        self.assertAlmostEqual(c[1], d["axis"][1], places=6)
         self.assertFalse(lid.isInside(cq.Vector(c[0], c[1], c[2] - t / 2)), "no window recess")
+        self.assertFalse(lid.isInside(cq.Vector(c[0], c[1], d["ltr"]["z"] + 2.0)), "the aperture is blocked")
+        L = d["ltr"]
+        lw, lh = L["size"]
+        board = cq.Solid.makeBox(lw, lh, 1.6, cq.Vector(L["c"][0] - lw / 2, L["c"][1] - lh / 2, L["z"] - 1.6))
+        self.assertLess(board.intersect(lid).Volume(), 1e-3)
+        for x, y in L["holes"]:                                          # M2.5 pilots in bosses over the corner holes
+            self.assertTrue(lid.isInside(cq.Vector(x + 1.6, y, L["z"] + 1.0)), "no LTR390 boss")
+            self.assertFalse(lid.isInside(cq.Vector(x, y, L["z"] + 1.0)), "no pilot")
+        # the LTR390's chip is under the window's centre
+        sx, sy = S.val("ltr390_sensor")
+        self.assertAlmostEqual(L["c"][0] - lw / 2 + sx, c[0], places=6)
+        self.assertAlmostEqual(L["c"][1] - lh / 2 + sy, c[1], places=6)
 
     # ------------------------------------------------------------ mounting and the written files
     def test_mount_face(self):
@@ -309,35 +360,24 @@ class PodBox(unittest.TestCase):
             box.mount_boss_depth = lambda: 7.7                     # the old hard-coded height
             rebuild()
             leaks = self._breakthroughs("UV", box.body("UV"))
-            self.assertEqual(sorted(k for k, *_ in leaks), ["mount", "mount"], leaks)
+            self.assertEqual(sorted(k for k, *_ in leaks), ["mount"] * len(box.dims("UV")["floor_bosses"]), leaks)
         finally:
             D["pod_insert_bore"], box.mount_boss_depth = keep, keep_fn
             rebuild()
 
-    def test_uv_mount_clears_cap_edge(self):
-        """The UV box sits on the remixed top cap with its floor gland hanging past the cap's edge: one straight
-        cap edge separates every mount hole from the gland's keep-out by 1 mm or more, and the holes span <= 100."""
+    def test_uv_crown_mount(self):
+        """The crown stands on the cap's flat top (r 38): four floor bosses within CROWN_BOSS_R of its axis, nothing to
+        keep clear on the mount face (the port gland is in the drum's wall), the gland's spot face under the lid."""
+        d = self.box.dims("UV")
         mf = self.box.mount_face("UV")
-        (_origin, _normal), holes = mf                         # still unpacks as before
-        self.assertEqual(holes, mf.holes)
-        self.assertGreaterEqual(len(holes), 2)
+        self.assertEqual(mf.keepouts, [])
+        self.assertEqual(len(mf.holes), 4)
+        ax, ay = d["axis"]
+        for x, y in mf.holes:
+            self.assertAlmostEqual(math.hypot(x - ax, y - ay), self.box.CROWN_BOSS_R, places=6)
+        self.assertLessEqual(self.box.CROWN_BOSS_R + self.S.val("pod_mount_screw")[2] / 2 + 1.0, 38.0)
         (_k, gc, _a), = [o for o in self.box.openings("UV") if o[0] == "gland"]
-        self.assertEqual(len(mf.keepouts), 1)
-        kx, ky, kd = mf.keepouts[0]
-        self.assertGreaterEqual(kd, 18.0)
-        self.assertAlmostEqual(kx, gc[0], places=6)
-        self.assertAlmostEqual(ky, gc[1], places=6)
-        self.assertGreaterEqual(kd, self.S.val("gland_pg7")[2])
-        best = -1e9
-        for deg in range(360):                                  # a cap edge in any direction
-            ux, uy = math.cos(math.radians(deg)), math.sin(math.radians(deg))
-            keep_far = kx * ux + ky * uy + kd / 2               # the keep-out's far side along u
-            hole_near = min(x * ux + y * uy for x, y in holes)
-            best = max(best, hole_near - keep_far)               # room for an edge 1 mm from each side
-        self.assertGreaterEqual(best, 2.0, f"no straight cap edge leaves 1 mm each side (best gap {best:.2f})")
-        xs, ys = [x for x, _ in holes], [y for _, y in holes]
-        self.assertLessEqual(max(xs) - min(xs), 100.0)
-        self.assertLessEqual(max(ys) - min(ys), 100.0)
+        self.assertLessEqual(gc[2] + self.box.CROWN_GLAND_FACE / 2, d["z_ledge"])
         for n in ("TH", "BARO"):
             self.assertEqual(self.box.mount_face(n).keepouts, [])
 
