@@ -286,12 +286,12 @@ def port(card, k, c, p, junction=None, gnd=None):
     assert m == n + 1, (k, n, m)
     pl = PLACE[card]
     jack = f"J1{k}"
-    pl.append(bob(jack, c, f"S{k} jack on its 1x6 header in row a, columns {c}-{c + 5}; mouth toward the front edge"))
+    pl.append(bob(jack, c, f"S{k} jack on its 1x6 header in column a, rows {c}-{c + 5}; mouth toward the front edge"))
     pl.append(two_pin(f"D{k}2", "DSTAND", f"b{sd}", f"b{v}", f"port S{k} data to its 3.3 V, body on the data side"))
-    pl.append(two_pin(f"D{k}5", "DSTAND", f"b{g}", f"b{sc}", f"port S{k} ground to clock, band to column {sc}"))
-    pl.append(two_pin(f"D{k}3", "DSTAND", f"c{g}", f"c{sd}", f"port S{k} ground to data, band to column {sd}"))
+    pl.append(two_pin(f"D{k}5", "DSTAND", f"b{g}", f"b{sc}", f"port S{k} ground to clock, band to row {sc}"))
+    pl.append(two_pin(f"D{k}3", "DSTAND", f"c{g}", f"c{sd}", f"port S{k} ground to data, band to row {sd}"))
     pl.append(two_pin(f"D{k}4", "DSTAND", f"d{sc}", f"d{v}", f"port S{k} clock to its 3.3 V, body on the clock side, "
-                      f"looped over columns {sd}-{g}"))
+                      f"looped over rows {sd}-{g}"))
     if junction:
         ja, jb = junction
         assert (ja, jb) == (n, m)
@@ -302,11 +302,11 @@ def port(card, k, c, p, junction=None, gnd=None):
     else:
         assert sd == n or sc == m, (k, c)
         pl.append(two_pin(f"R{k}1", "RLY", f"e{sd}", f"f{n}", f"port S{k} data series 100, across the channel"
-                          + ("" if sd == n else ", on a slant one column over")))
+                          + ("" if sd == n else ", on a slant one row over")))
         pl.append(two_pin(f"R{k}2", "RLY", f"e{sc}", f"f{m}", f"port S{k} clock series 100, across the channel"
-                          + ("" if sc == m else ", on a slant one column over")))
+                          + ("" if sc == m else ", on a slant one row over")))
     pl.append(two_pin(f"F{k}", "PTC", f"F+{p + 1}", f"a{p + 1}", f"port S{k} 3.3 V fuse, standing, leads formed to 7.62"))
-    pl.append(two_pin(f"D{k}1", "DSTAND", f"b{p + 1}", f"b{p}", f"port S{k} 3.3 V zener, cathode band to column {p + 1}"))
+    pl.append(two_pin(f"D{k}1", "DSTAND", f"b{p + 1}", f"b{p}", f"port S{k} 3.3 V zener, cathode band to row {p + 1}"))
     w("jumper", f"{card}:a{p}", f"{card}:F-{p}", "top", f"port S{k} block ground strip to the ground rail")
     w("wire", f"{card}:e{v}", f"{card}:e{p + 1}", note=f"S{k} jack 3.3 V (contact 2) from its fuse F{k}")
     w("wire", f"{card}:e{g}", f"{card}:{gnd or f'e{p}'}", note=f"S{k} jack ground (contact 4) to "
@@ -326,25 +326,25 @@ for name, jack_net, r_pull, cap, zen, r_ser, gnd_row, line in (
     m = bus_row(line)
     PLACE["B2"] += [two_pin(r_pull, "RLY", f"F+{m}", f"a{m}", f"{name} pull-up 10k, lying over the ground rail"),
                     two_pin(cap, "CAP", f"b{m}", f"b{gnd_row}", f"{name} filter 100 nF"),
-                    two_pin(zen, "DSTAND", f"c{m}", f"c{gnd_row}", f"{name} clamp zener, band to column {m}"),
+                    two_pin(zen, "DSTAND", f"c{m}", f"c{gnd_row}", f"{name} clamp zener, band to row {m}"),
                     two_pin(r_ser, "RLY", f"e{m}", f"f{m}", f"{name} series 1k, across the channel")]
 for g in (4, 7):
     w("jumper", f"B2:a{g}", f"B2:F-{g}", "top", "meter ground strip to the ground rail")
 # the rain jack's rain contact (4) lands in the RAIN bus column itself: its meter parts stand in the jack's strips
 J22_C = bus_row("RAIN") - 3
-PLACE["B2"].append(bob("J22", J22_C, f"rain jack on its 1x6 header in row a, columns {J22_C}-{J22_C + 5}; mouth "
+PLACE["B2"].append(bob("J22", J22_C, f"rain jack on its 1x6 header in column a, rows {J22_C}-{J22_C + 5}; mouth "
                                      "toward the front edge"))
 _r, _g = J22_C + 3, J22_C + 2
-PLACE["B2"] += [two_pin("R3", "RLY", f"d{_r + 3}", f"d{_r}", "rain pull-up 10k, lying along row d over the jack's "
+PLACE["B2"] += [two_pin("R3", "RLY", f"d{_r + 3}", f"d{_r}", "rain pull-up 10k, lying along column d over the jack's "
                         "unused strips"),
-                two_pin("C2", "CAP", f"c{_r}", f"c{_g}", "rain filter 100 nF (row c: in row b the disc would touch "
+                two_pin("C2", "CAP", f"c{_r}", f"c{_g}", "rain filter 100 nF (column c: in column b the disc would touch "
                         "the jack's header)"),
-                two_pin("D53", "DSTAND", f"b{_r}", f"b{_g}", f"rain clamp zener, band to column {_r}"),
+                two_pin("D53", "DSTAND", f"b{_r}", f"b{_g}", f"rain clamp zener, band to row {_r}"),
                 two_pin("R6", "RLY", f"e{_r}", f"f{_r}", "rain series 1k, across the channel")]
 w("jumper", f"B2:a{_r + 3}", f"B2:F+{_r + 3}", "top", "rain pull-up's 3.3 V strip to the 3.3 V rail")
 w("jumper", f"B2:e{_g}", "B2:e7", "top", "rain jack ground strip to the vane meter's ground strip")
 J21_C = 24
-PLACE["B2"].append(bob("J21", J21_C, f"wind jack on its 1x6 header in row a, columns {J21_C}-{J21_C + 5}; mouth "
+PLACE["B2"].append(bob("J21", J21_C, f"wind jack on its 1x6 header in column a, rows {J21_C}-{J21_C + 5}; mouth "
                                      "toward the front edge"))
 w("jumper", f"B2:d{J21_C + 1}", f"B2:d{J21_C + 2}", "top", "wind jack's two ground strips (contacts 2 and 3) joined")
 w("wire", f"B2:e{J21_C + 1}", "B2:d21", note="wind jack ground (contacts 2-3) to S4's block ground strip")
@@ -352,10 +352,10 @@ w("wire", f"B2:e{J21_C + 3}", f"B2:d{bus_row('CUPS')}", note="wind jack cups (co
 w("wire", f"B2:e{J21_C + 4}", f"B2:d{bus_row('VANE')}", note="wind jack vane (contact 5) to the vane meter strip")
 
 # B3: CORE
-PLACE["B3"].append(mini("A1", 19, "on its own header; its D pins in row C, its B pins in row H, columns 19-30; SMA past the right edge"))
+PLACE["B3"].append(mini("A1", 19, "on its own header; its D pins in column C, its B pins in column H, rows 19-30; SMA past the right edge"))
 PLACE["B3"].append(ra_header("J3", 5, "a12", "front", "RAS",
-                             "SWD, a generic right-angle male header cut to 1x5 (the bus header stock), soldered in row a "
-                             "columns 12-16, its mating pins lying flat toward the front edge: they end at card Y "
+                             "SWD, a generic right-angle male header cut to 1x5 (the bus header stock), soldered in column a "
+                             "rows 12-16, its mating pins lying flat toward the front edge: they end at card Y "
                              f"{LETTER_Y['a'] - RA_TIP:.2f}, {LETTER_Y['a'] - RA_TIP:.2f} mm short of the edge (over the "
                              "front rails), and the ST-LINK Dupont housings push on there past the edge, lid open"))
 PLACE["B3"].append(breakout("U5", "SHTC3", S.val("shtc3"), ["VIN", "3V", "GND", "SCL", "SDA"], 7.62, 180, "c8",
@@ -403,7 +403,7 @@ PAD_BRIDGED = {("U2", "X1.VBUS"): ("SJ1", "the VBUS jumper on the back, above th
 _rw, _rd = S.val("s7v8f3")
 PLACE["B4"].append(breakout("U7", "REG", (_rw, _rd), ["VOUT", "GND", "VIN", "SHDN"], 1.905, 0, "f24",
                             [Box(2.2, 3.0, 9.2, 10.0, T_, T_ + S.val("s7v8f3_h"), "inductor")],
-                            "3.3 V regulator; pins in the F-J strips of columns 24-27, board toward the front", pin_y=15.24))
+                            "3.3 V regulator; pins in the F-J strips of rows 24-27, board toward the front", pin_y=15.24))
 for a, b_, n in (("h24", "F+24", "3.3 V from the regulator to the front 3.3 V rail"),
                  ("a10", "F+10", "3.3 V supply to the INA228, from the front 3.3 V rail"),
                  ("a20", "F+21", "3.3 V supply to the MAX17048, from the front 3.3 V rail"),
@@ -514,9 +514,9 @@ BP_PARTS.append(("XJ1", {"GND": f"s{bus_row('GND')}.11", "SCL": f"s{bus_row('I2C
 MUX_HOLES = {"H.VCC": f"s{bus_row('+3V3')}.10", "H.GND": f"s{bus_row('GND')}.10", "H.SCL": f"s{bus_row('I2C_SCL')}.10",
              "H.SDA": f"s{bus_row('I2C_SDA')}.10", "H.RST": f"s{bus_row('MUX_RST')}.10"}
 for pad, h in MUX_HOLES.items():
-    w("wire", ("U4", pad), f"BP:{h}", "copper", f"mux {pad[2:]} pad lead to its strip")
+    w("wire", ("U4", pad), f"BP:{h}", "copper", f"mux {pad[2:]} pad lead to its line's bus wire")
 w("wire", f"BP:s{bus_row('GND')}.38", f"BP:s{bus_row('GND', 1)}.38", "copper",
-  "the two bus ground strips joined")
+  "the two bus ground lines joined")
 # B4's power lines (model.B4_POWER) at the backplane's lower end, beside the EVM: the battery + junction is lines
 # 21-22 (R7 and R8 there, so both senses tap the junction itself); the leads to the EVM and the pack are short
 BP_PARTS.append(("R7", {"1": "s21.7", "2": "s24.7"}, "charger sense 100 ohm, lying on the front, junction to a lone pad"))

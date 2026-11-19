@@ -45,7 +45,8 @@ How a reading meets its row (checklist.CHECKS, `op`): mOhm = mv / (ma / 1000); m
 mA rows read `ma` (C5 and C16 compare `ma` with the reference current in `value`); C2 reads `value`
 in ohm: under 0.5 with the TIE closed, and, with `lever = "open"`, at least checklist.C2_OPEN_MIN_OHM
 (100 ohm; the honest reading is kOhm to about 1 MOhm: R_ISER, R_IPD and diode paths, record 4.3);
-`value = "open"` with `unit = "open"` is still read as a pass for that half; text rows read `value`.
+an OL reading (`value = "open"` with `unit = "open"`) fails that half, as record 4.3 never reads OL;
+text rows read `value`.
 
 Status (exit code), one line per problem first; the tool never blocks a run:
   valid (0)    every check passes.
@@ -290,9 +291,9 @@ def _one_amp(row, r):
 
 
 def _lever_open(r):
-    """C2's lever-open half: an ohm reading at or above the floor (an OL reading may say "open")."""
+    """C2's lever-open half: an ohm reading at or above the floor, never OL (record 4.3)."""
     if r.get('unit') == 'open':
-        return [] if r.get('value') == 'open' else ['value must be "open"']
+        return ['reads OL with the lever open: it is never OL (record 4.3), so give the ohm reading']
     if r.get('unit') not in (None, 'ohm'):
         return [f'unit {r.get("unit")!r} is not the row\'s \'ohm\'']
     value, floor = r.get('value'), checklist.C2_OPEN_MIN_OHM

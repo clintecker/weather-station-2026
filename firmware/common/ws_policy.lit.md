@@ -1,10 +1,12 @@
 # ws_policy: the transmitting node's transmission policy
 
-`ws_policy.c` decides, once a minute, whether the transmitting node (TX node) transmits. It also
+Once a minute, `ws_policy.c` decides if the transmitting node (TX node) transmits. It also
 decides how many backlog frames follow the live reading. It tracks the link state from the
-gateway's replies. It counts strikes against records that the gateway keeps refusing. Each function
-is pure. `App/tx_policy.c` holds the state, feeds these functions from the journal and the clock,
-and acts on their results.
+gateway's replies. It counts strikes against records that the gateway keeps refusing.
+
+`ws_policy.c` keeps no state of its own: each function works only on its arguments and on state the
+caller passes by pointer. `App/tx_policy.c` holds that state. It feeds these functions from the
+journal and the clock, and it acts on their results.
 
 This document is the source. `tools/tangle.py` generates `ws_policy.c` from the code chunks below.
 The repository also holds the generated file, so the build, the static analysers and the host tests
@@ -16,16 +18,20 @@ python3 tools/tangle.py --check                                                #
 python3 tools/tangle.py --weave /tmp/ws_policy.html firmware/common/ws_policy.lit.md   # render
 ```
 
+`python3 tools/tangle.py --check` checks that the committed .c matches the tangle. CI makes the same
+check in `tests/test_tangle.py` (the unit-test step), not with this command.
+
 A chunk is a fenced ` ```c {#name} ` block. A line `<<name>>` inside a chunk includes chunk
 `name`. The chunks appear in reading order. The root chunk (section 7) puts them in C order.
 
 The policy itself is `docs/radio-energy-policy.md` (approved 2026-10-12). This file implements its
 numbers. Section 9 of that document lists six numbered decisions, and this file cites them as
 "decision 1" to "decision 6". The node now measures its 1S3P pack (power telemetry design,
-`docs/superpowers/specs/2026-10-29-power-telemetry-design.md`), but the energy-state thresholds are
-deferred to the energy-policy work: they need measured loads and the owner's call on the pack
-reserve (design section 9.9, open decision D1). Until then `energy_state()` in `App/tx_policy.c`
-always returns `WS_ENERGY_NORMAL`.
+`docs/superpowers/specs/2026-10-29-power-telemetry-design.md`).
+
+The energy-state thresholds aren't set yet. They wait for the energy-policy work, because they
+need measured loads and the owner's call on the pack reserve (design section 9.9 for the energy
+state, open decision D1 in design section 15). Until then `energy_state()` in `App/tx_policy.c` always returns `WS_ENERGY_NORMAL`.
 
 ## 1. Behaviour
 
@@ -35,7 +41,7 @@ always returns `WS_ENERGY_NORMAL`.
 | `ws_lora_airtime_ms` | time on air in ms, rounded up, at most 1 ms above Semtech's formula | `airtime` |
 | `ws_link_minute` | the link change after one exchange (`WS_LINK_*`) | `link` |
 | `ws_link_probe_interval` | the current back-off step, s | `link` |
-| `ws_minute_backlog` | -1: send nothing. Else the number of backlog frames after the live reading, with a due health report's airtime reserved | `minute` |
+| `ws_minute_backlog` | -1: send nothing. Else the number of backlog frames after the live reading, with a due health report's airtime reserved | `minute`, `health_reserve` |
 | `ws_strike_targets` | which frames of an exchange earn a strike | `strike_targets` |
 | `ws_strike_note` | 1 when a record reaches the strike limit, else 0 | `strikes` |
 | `ws_strike_forget` | clears a record's strikes | `strikes` |
@@ -57,10 +63,12 @@ Energy is a `WS_ENERGY_*` code from `ws_obs.h`, in this order: `SURPLUS`, `NORMA
 
 The caps are decision 3. `CRITICAL` never reaches the arrays in `ws_minute_backlog`, because the
 energy gate refuses it first (section 5). Its entries exist so that each array has one entry per
-state. The `_Static_assert` fails the build if a new state has no entry in an array.
+state. The `_Static_assert` fails the build if the three arrays differ in length, or if their
+length isn't `WS_ENERGY_CRITICAL + 1`. That catches a new state only while `CRITICAL` stays the last
+code.
 
-`App/tx_policy.c` asserts `WS_BACKLOG_MAX <= MAX_QUEUE - 1`. So the send queue holds the live
-reading plus the largest backlog.
+`App/tx_policy.c` asserts `WS_BACKLOG_MAX <= MAX_QUEUE - 1`. So the send queue has room for the
+live reading and the largest backlog.
 
 ```c {#energy-tables}
 /* Per energy state, in WS_ENERGY_* order: backlog frames and radio time per minute. */
@@ -73,7 +81,7 @@ _Static_assert(ENERGY_STATES == WS_ENERGY_CRITICAL + 1 && sizeof backlog_limit =
 ```
 
 `ws_energy_name` gives the console and the `#link` messages a name for a code. A code out of
-range gives `"?"`, so the function never reads outside the array.
+range gives `"?"`, so the function never reads past the end of the array.
 
 ```c {#energy-name}
 const char *ws_energy_name(int energy)
@@ -150,8 +158,8 @@ when `sf` is 2 and `DE` is 1.
 ### Worked example
 
 `radio_cfg.h` sets spreading factor 7 (SF7), 500 kHz, an 8-symbol preamble and coding rate 4/5
-(`cr` = 1). `firmware/test_tx_policy.c` pins the time of a 51-byte frame at these settings to
-26 ms. It pins a 42-byte frame to 22 ms. The worked example uses the 51-byte frame.
+(`cr` = 1). At these settings, `firmware/test_tx_policy.c` pins a 51-byte frame to 26 ms and a
+42-byte frame to 22 ms. Here's the 51-byte frame, step by step.
 
 | Step | Value |
 |---|---|
@@ -164,11 +172,13 @@ when `sf` is 2 and `DE` is 1.
 | time | 401 × 128 000 000 / 500 000 = 102 656 quarter-µs, / 4000 = 25 ms truncated |
 | result | 25 + 1 = **26 ms** (formula: 25.664 ms) |
 
-The same steps give 18 ms for the 33-byte ACK (`WS_ACK_FRAME_LEN`). The default field set (the
-WSMP bench field set, `WS_F_WSMP_BENCH` in `App/node_fields.h`, which holds every power field of
-every phase) gives a 77-byte plaintext and 16 bytes of frame overhead. So `OBS_FRAME_MAX`
-(`App/tx_exchange.h`) is 93 bytes. The same steps give 42 ms for it (formula: 41.024 ms). The
-health report (`WS_DIAG_FRAME_LEN`, 64 + 16 = 80 bytes) takes 36 ms (formula: 35.904 ms).
+The same steps give 18 ms for the 33-byte ACK (`WS_ACK_FRAME_LEN`).
+
+The default field set is the WSMP bench field set (`WS_F_WSMP_BENCH` in `App/node_fields.h`), which
+holds every power field of every phase. It gives a 77-byte plaintext and 16 bytes of frame
+overhead. So `OBS_FRAME_MAX` (`App/tx_exchange.h`) is 93 bytes, and the same steps give 42 ms for
+it (formula: 41.024 ms). The health report (`WS_DIAG_FRAME_LEN`, 64 + 16 = 80 bytes) takes 36 ms
+(formula: 35.904 ms).
 
 `App/tx_policy.c` (`policy_init`) adds the observation airtime, the ACK airtime and
 `TURNAROUND_MS` (300 ms) into `exchange_ms`. `exchange_ms` is the radio time of one answered
@@ -183,7 +193,8 @@ The same steps at SF12 and 500 kHz:
 | ACK (`WS_ACK_FRAME_LEN`) | 33 | 411.648 ms | 412 ms |
 | health report (`WS_DIAG_FRAME_LEN`) | 80 | 739.328 ms | 740 ms |
 
-So one exchange at SF12 is 822 + 412 + 300 = 1534 ms (formula: 821.2 + 411.6 + 300 = 1532.8 ms).
+So one exchange at SF12 is 822 + 412 + 300 = 1534 ms (formula: 821.248 + 411.648 + 300 =
+1532.896 ms, about 1532.9 ms).
 
 The test's second fixed value covers DE = 1. 10 bytes at SF12 and 125 kHz give 992 ms (formula:
 991.2 ms). The test also compares the function with a floating-point copy of the formula. It
@@ -259,9 +270,9 @@ stateDiagram-v2
 
 ### Back-off
 
-The back-off applies only in `CONSERVE` (section 5). `SURPLUS` and `NORMAL` send the live reading
-every minute while probing, so the node relinks within a minute. The step still advances in those
-states, and `link_report` uses it only for its messages.
+The back-off applies only in `CONSERVE` (section 5). In `SURPLUS` and `NORMAL`, a probing node
+still sends the live reading every minute, so it relinks within a minute. The step still advances
+in those states, but `link_report` uses it only for its messages.
 
 | `probe_step` | Interval after an unanswered exchange |
 |---|---|
@@ -389,17 +400,21 @@ by_airtime = cap_ms > reserve_ms ? (cap_ms - reserve_ms) / exchange_ms : 0     (
 backlog    = by_airtime > 1 ? min(backlog, by_airtime - 1) : 0
 ```
 
-The arithmetic saturates. A reserve at or above the cap, an exchange longer than what is left, or
-an `exchange_ms` of 0 (no estimate) gives `by_airtime` = 0 or 1 and a backlog of 0: the live
-reading only, never a wrapped count. (The earlier form, `backlog = by_airtime - 1` on an unsigned
-`by_airtime`, relied on a separate "at least 1" step and would wrap at 0.)
+The arithmetic saturates. Three cases give `by_airtime` = 0 or 1 and a backlog of 0:
+
+- a reserve at or above the cap
+- an exchange longer than what's left of the cap
+- an `exchange_ms` of 0 (no estimate)
+
+You get the live reading only, never a wrapped count. The earlier form, `backlog = by_airtime - 1`
+on an unsigned `by_airtime`, needed a separate "at least 1" step and would wrap at 0.
 
 `App/tx_policy.c` (`policy_minute_backlog`) passes the reserve when a report is due at the minute's
 start, or falls due before the next minute starts (`diag_follows`). The second case is the
-15-minute report: `last_diag_s` is stamped after an exchange, so 15 minutes later the minute starts
-a few seconds before the report falls due, and the report goes at that exchange's end. A report
-that a link-state change makes due (section 4; `link_report` in `App/tx_policy.c`) is decided at
-the exchange's end, so its minute has no reserve.
+15-minute report. `policy_diag_sent` stamps `last_diag_s` after an exchange. So 15 minutes later,
+the minute starts a few seconds before the report falls due, and the report goes at that exchange's
+end. A link-state change can also make a report due (section 4, `link_report` in
+`App/tx_policy.c`). The code decides that at the exchange's end, so that minute has no reserve.
 
 With the 360 ms exchange of section 3 (SF7):
 
@@ -418,9 +433,10 @@ airtime binds. With the 1534 ms exchange and the 740 ms report of section 3 (SF1
 | `CONSERVE` | 2000 / 1534 = 1 exchange: backlog 0 | (2000 − 740) / 1534 = 0: the live reading only |
 
 **The `CONSERVE` exception.** The live reading and a due health report always go. In `CONSERVE` at
-SF12 the two take 1534 + 740 = 2274 ms (formula: 1532.8 + 739.3 = 2272 ms), over the 2 s cap by
-274 ms. That happens once per health report: every 15 minutes, plus once after each link-state
+SF12 the two take 1534 + 740 = 2274 ms (formula: 1532.9 + 739.3 = 2272.2 ms), 274 ms over
+the 2 s cap. It happens once per health report: every 15 minutes, plus once after each link-state
 change. `CONSERVE` sends only every 5th minute, so its average airtime stays far below the cap.
+
 The policy accepts this exception (power telemetry design section 15, R3).
 
 ```c {#minute-backlog}
@@ -446,10 +462,12 @@ long as it stays in the journal. Strikes find such a record, and the node then a
 ### When a record gets a strike
 
 A record gets a strike when its frame gets no reply and a frame sent **after** it in the same
-exchange gets a reply. The later reply shows that the link worked at that time. So the missing
-reply points at the record. A reply to an earlier frame shows nothing, because on a weak link the
-next frame can fail to arrive. So the drain sends one more frame after a miss. That frame lets the
-node identify a refused record (`FRAMES_AFTER_MISS` in `App/tx_exchange.c`).
+exchange gets a reply. The later reply shows that the link worked at that time, so the missing
+reply points at the record.
+
+A reply to an earlier frame shows nothing, because on a weak link the
+next frame can fail to arrive. That's why the drain sends one more frame after a miss
+(`FRAMES_AFTER_MISS` in `App/tx_exchange.c`). That frame lets the node spot a refused record.
 
 ```mermaid
 flowchart TD
@@ -585,10 +603,10 @@ Semtech's formula, not from the code under test:
 
 | Test | What it checks |
 |---|---|
-| `airtime` | The formula over SF7–SF12, three bandwidths and payloads 0–255. 51 bytes at SF7/500 kHz give 26 ms, 42 bytes give 22 ms. 10 bytes at SF12/125 kHz give 992 ms. The section 3 frames: 93, 33 and 80 bytes at SF7 and SF12 (500 kHz) |
+| `airtime` | The formula over SF7 to SF12, three bandwidths and payloads 0 to 255. 51 bytes at SF7/500 kHz give 26 ms, 42 bytes give 22 ms. 10 bytes at SF12/125 kHz give 992 ms. The section 3 frames: 93, 33 and 80 bytes at SF7 and SF12 (500 kHz) |
 | `link` | Two silent minutes stay linked. The third starts probing. The back-off is 240, 480, 900, 900 s. A reply relinks and resets the count |
 | `minute` | The backlog per state (20, 5, 0). `CRITICAL` and unknown codes send nothing. The 300 s `CONSERVE` interval. Probing sends the live reading only. The airtime cap, `max_backlog` and a clock wrap |
-| `health_reserve` | The health report's reserve with the section 3 airtimes: SF7 unchanged (5); SF12 `NORMAL` 3 exchanges, 2 in a health minute; SF12 `CONSERVE` the live reading only; a reserve at or above the cap the live reading only (no wrap) |
+| `health_reserve` | The health report's reserve with the section 3 airtimes: SF7 unchanged (5). SF12 `NORMAL` 3 exchanges, 2 in a health minute. SF12 `CONSERVE` the live reading only. A reserve at or above the cap the live reading only (no wrap) |
 | `strike_targets` | the three `replied` patterns of section 6, and an empty exchange |
 | `strikes` | The 10th strike returns 1 and restarts the count. Identity keys. Forget. A full table replaces the entry with the fewest strikes |
 | `main` | `ws_energy_name` |

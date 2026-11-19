@@ -1,12 +1,14 @@
 # Runbook: connect the gateway to Home Assistant (MQTT)
 
 The gateway publishes to an MQTT broker. Home Assistant (HA) finds the station through MQTT
-discovery. The gateway was tested against a local Mosquitto broker
-(`evidence/mqtt-local-broker-2026-10-13/`), then against Clint's Home Assistant: the HA user's login (checked with a read-only client) and
-the `station-01` device with its entities, from the gateway's run-d7 discovery, are verified
-(`evidence/ha-broker-2026-10-22/`). TLS is not verified: that broker has no certificate. The
-gateway logging in on the rotated password and entities updating live are checked at the next
-hardware session ([`CONTEXT-PACK.md`](CONTEXT-PACK.md)).
+discovery. We first tested the gateway against a local Mosquitto broker
+(`evidence/mqtt-local-broker-2026-10-13/`). Then we tested it against Clint's Home Assistant
+(`evidence/ha-broker-2026-10-22/`). That run verified two things: the HA user's login (checked with
+a read-only client), and the `station-01` device with its entities, from the gateway's run-d7
+discovery. We haven't verified TLS, because that broker has no certificate.
+
+Two checks wait for the next hardware session: the gateway logging in with the rotated password,
+and entities updating live ([`CONTEXT-PACK.md`](CONTEXT-PACK.md)).
 
 ```mermaid
 flowchart LR
@@ -26,9 +28,10 @@ flowchart LR
 
 The run directory (for example `run-office/`) already holds the radio key. Git ignores it
 (`run*/`). When the gateway reads `mqtt-password`, it warns if the file has any group or other
-permission bits set. It checks only the POSIX mode bits (not ACLs), and it skips the check when
-`WS_MQTT_PASSWORD` supplies the password. The gateway runs on macOS and Linux; Windows is not
-supported.
+permission bits set. It checks only the POSIX mode bits (not ACLs). It skips the check when
+`WS_MQTT_PASSWORD` supplies the password.
+
+The gateway runs on macOS and Linux. Windows isn't supported.
 
 ## Set up the broker in Home Assistant OS (Clint's setup)
 
@@ -40,8 +43,8 @@ Recent HA versions call add-ons "Apps", so menu names can differ on older versio
    Start. Check its log after a couple of minutes.
 2. **Create a user for the gateway:** Settings → People → Users → Add user (for example
    `weatherstation`).
-   - If the Users tab is missing, turn on Advanced Mode in your HA profile.
-   - The names `homeassistant` and `addons` are reserved.
+   - If you don't see the Users tab, enable Advanced Mode in your HA profile.
+   - Don't use the names `homeassistant` or `addons`. They're reserved.
    - The broker accepts HA users and refuses anonymous connections.
 3. **Enable the MQTT integration:** Settings → Devices & services. MQTT appears as a discovered
    integration. Select it, keep discovery on, and submit.
@@ -93,7 +96,7 @@ flowchart TD
 
 ## What the gateway publishes
 
-Root topic `weatherstation/v1/<station>`. All messages are retained, QoS 1 (`ws0/service.py`, `MQTT`):
+Root topic `weatherstation/v1/<station>`. The gateway sends every message retained, at QoS 1 (`ws0/service.py`, `MQTT`):
 
 | Topic | Content |
 |---|---|
@@ -110,11 +113,11 @@ A sensor shows as available only when all three conditions hold:
 
 - `…/availability` is `online`,
 - `…/gateway_availability` is `online`,
-- the sensor's field is not null in the latest `…/weather` message. A faulted sensor therefore shows as unavailable, never as a number.
+- the sensor's field is not null in the latest `…/weather` message. So a faulted sensor shows as unavailable, never as a number.
 
 Since-boot counters (rain tips, energy and charge) have the state class `total_increasing`. The
 other sensors have `measurement`. The power, enclosure, UVA raw and sample-count sensors are diagnostic
-entities (`DIAGNOSTIC_FIELDS` in `ws0/fields.py`); so are the health-report entities ([Power
+entities (`DIAGNOSTIC_FIELDS` in `ws0/fields.py`). So are the health-report entities ([Power
 entities](#power-entities)). The gateway publishes `…/weather` and
 `…/availability` on change and every 300 s.
 
@@ -124,11 +127,11 @@ Protocol version 6 (design: [`superpowers/specs/2026-10-29-power-telemetry-desig
 sections 3 and 10) adds the station's power data. All of it is diagnostic (entity category
 `diagnostic`), so HA lists it under the device's "Diagnostic" section, not with the weather.
 
-**Every minute, from `…/weather`** (observation fields, `discovery()` in `ws0/service.py:512`;
-unique ID `<station>_<field>`). The gateway creates an entity only for a field that the newest
-reading carries, so a rail this build does not measure has no entity at all. Which phase fills each
-rail (design section 3.2; phase A is the current bq24074 build, B adds one INA228 per rail, step 1b
-of the breadboard build):
+**Every minute, from `…/weather`** (observation fields, `discovery()` in `ws0/service.py:512`,
+unique ID `<station>_<field>`). The gateway creates an entity only for a field in the newest
+reading. So a rail this build doesn't measure has no entity at all. The table shows which phase
+fills each rail (design section 3.2). Phase A is the current bq24074 build. Phase B adds one INA228
+per rail (step 1b of the breadboard build).
 
 | Field | Entity name | Unit, class | Phase A | Phase B |
 |---|---|---|---|---|
@@ -143,27 +146,29 @@ of the breadboard build):
 | `usb_mv`, `usb_current_ma` | USB-C input voltage, USB-C input current | mV, mA | no entity | yes |
 
 - **Phase A cannot tell solar from USB-C.** The bq24074 has one input. "Charger input voltage
-  (source not identified)" is the voltage after the sources join; there is no solar or USB-C
+  (source not identified)" is the voltage after the sources join. There's no solar or USB-C
   entity. USB-C is for bench work and occasional backup charging only, never together with solar.
 - **Battery current sign:** + into the cell (charging), − out of the cell (discharging), mA. Load
   and source currents are + into the load or into the station.
 - **Field 11 (`batt_mv`, "Battery voltage") changed meaning in version 6:** it is the cell
   voltage from the fuel gauge. Under version 5 it was the INA228 VBUS of whatever net its jumper
-  sensed (on the official wiring the charger OUT). HA keeps the history of an entity across the
-  release, because the unique ID `<station>_batt_mv` does not change: values before the version 6
-  release are not the cell voltage. Compare only values after the release date.
+  sensed (on the official wiring the charger OUT). The unique ID `<station>_batt_mv` doesn't
+  change, so HA keeps one history across the release. Values from before the version 6 release
+  aren't the cell voltage. Compare only values after the release date.
 - A present field whose sensor failed is `null`: the entity is unavailable (the three conditions
   above), never a number.
 
 **Every 15 minutes, from `…/diagnostics`** (health-report keys, `HEALTH_ENTITIES` and
-`health_discovery()` in `ws0/service.py:449` and `:474`; unique ID `<station>_diag_<key>`, config
+`health_discovery()` in `ws0/service.py:449` and `:474`, unique ID `<station>_diag_<key>`, config
 topic `homeassistant/<component>/<station>_diag_<key>/config`). An entity is available while
 `…/gateway_availability` is `online`, `…/diagnostics/availability` is `online` and its key is not
 `null` in the newest report. The gateway sets `…/diagnostics/availability` (retained) to `offline`
 once the newest health report is older than 1,900 s (`HEALTH_MAX_AGE_S` in `ws0/service.py`: two
-15-minute reports plus slack, the dashboard's "overdue" limit). So a node that browns out or whose
-radio dies does not leave its last SOC and charger state on screen as live values: they go
-unavailable about 32 minutes after the last report. It does not follow `…/availability` (the
+15-minute reports plus slack, the dashboard's "overdue" limit).
+
+Say a node browns out or its radio
+dies. Its last SOC and charger state don't stay on screen as live values. They go unavailable about
+32 minutes after the last report. This availability doesn't follow `…/availability` (the
 every-minute reading's 180 s freshness).
 
 | Key | Entity name | Component, unit, class | Phases A and B |
@@ -182,35 +187,40 @@ every-minute reading's 180 s freshness).
 | `charger_reported_battery_mv` | Charger-reported battery voltage | sensor, mV, voltage | no entity |
 | `charger_temp_c`, `pack_temp_c` | Charger temperature, Battery pack temperature | sensor, °C, temperature | no entity |
 
-Every report carries every key, but the gateway advertises an entity only for a key the build
-measures: the report's fitted byte lists the others in `power_not_measured` (power design section
-6.1), as an observation field the record does not carry gets no entity. So phases A and B create
-**8** power entities (the "yes" rows); the other seven keys are in the report format, but no
-breadboard build measures them. A key the build measures whose source
-fails (a dead fuel gauge: listed in `power_sensor_faults`) keeps its entity and shows it unavailable.
+Every report carries every key. But the gateway advertises an entity only for a key the build
+measures. The report's fitted byte lists the other keys in `power_not_measured` (power design
+section 6.1). This works the same way as an observation field that the record doesn't carry: no
+entity.
+
+So phases A and B create **8** power entities (the "yes" rows). The other seven keys are in
+the report format, but no breadboard build measures them. Say the build measures a key but its
+source fails (a dead fuel gauge, listed in `power_sensor_faults`). The key keeps its entity and
+shows it unavailable.
+
 If an earlier version 6 test run advertised all fifteen, remove the seven phase A "no entity"
-configs the same way as the retired entities below. The station counters of the report
-(boots since power-up, crashes and last crash PC, radio TX timeouts, I2C recoveries, journal
-counts, reset cause) stay in the `…/diagnostics` JSON only, with no entity: read them there or on
+configs. Use the same steps as for the retired entities below. The report's station counters stay
+in the `…/diagnostics` JSON only, with no entity. These are boots since power-up, crashes and last
+crash PC, radio TX timeouts, I2C recoveries, journal counts and reset cause. Read them there or on
 the dashboard. The full key list with units and `null` rules is the `HealthReport` schema in
 [`openapi.json`](openapi.json).
 
 ### Remove the retired entities after the version 6 release
 
 Version 6 builds no longer send `soc_gauge_pct` ("Battery (fuel gauge estimate)") and
-`charger_pins` ("Charger status pins"); the health report replaces them (`battery_soc_pct`, the
-charger binary sensors). The gateway never advertises them again, but their retained discovery
-configs from the version 5 run stay in the broker, and HA keeps showing two unavailable entities.
-After the first version 6 reading has arrived:
+`charger_pins` ("Charger status pins"). The health report replaces them (`battery_soc_pct`, the
+charger binary sensors). The gateway never advertises them again. But their retained discovery
+configs from the version 5 run stay in the broker, so HA keeps showing two unavailable entities.
+Do this only after the version 6 release. A version 5 gateway would advertise them again.
+
+After the first version 6 reading arrives:
 
 1. In HA: Settings → Devices & services → MQTT → Configure → **Publish a packet**.
 2. Topic `homeassistant/sensor/<station>_soc_gauge_pct/config`, payload empty, retain on, Publish.
    An empty retained discovery message removes the entity and clears the broker's copy.
 3. The same for `homeassistant/sensor/<station>_charger_pins/config`.
-4. Check the device page: the two entities are gone. Their recorded history stays in HA's database
-   until it ages out.
-
-Do this only after the version 6 release: a version 5 gateway would advertise them again.
+4. Check the device page. The two entities no longer show. Their state history ages out (the
+   recorder keeps 10 days by default). But their hourly long-term statistics stay until you delete
+   them in Developer tools → Statistics.
 
 ## Run the gateway unattended
 
@@ -219,4 +229,4 @@ Do this only after the version 6 release: a version 5 gateway would advertise th
 | macOS | `tools/deploy/macos/install.sh install <run dir> <RX ST-LINK serial>` (LaunchAgent. It restarts the gateway on exit) |
 | Linux | `tools/deploy/linux/ws0-gateway.service` (systemd unit. See the comments in the file) |
 
-Both read the password from the run directory, so no OS-specific secret store is involved.
+Both read the password from the run directory, so you don't need an OS-specific secret store.

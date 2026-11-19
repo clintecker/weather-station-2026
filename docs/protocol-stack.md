@@ -1,25 +1,31 @@
 # Protocol stack: from sensor to database
 
-> **Document type:** Technical description. **Language:** ASD-STE100 Simplified Technical English (STE) [[STE]](#STE).
-> **Applies to:** protocol version 6 (observation catalog version 2, 64-byte health report), the firmware in `firmware/stage0-node`, and the gateway in `ws0/`. Version 6 comes from the power telemetry design ([`2026-10-29-power-telemetry-design.md`](superpowers/specs/2026-10-29-power-telemetry-design.md), sections 4–7). No release of version 6 is recorded yet. The last release of protocol version 5 is `04fcc656938d` (2026-10-19). [`RELEASES.md`](../firmware/stage0-node/RELEASES.md) lists the release that the boards run now. A version 5 board and a version 6 gateway (or the opposite) do not exchange frames (section 14).
-> **Status:** The bench data path operates. The SHT45 sensor is wired and gives valid readings (2026-10-14). **The 24-hour delivery test (H01, [`H01-checklist.md`](H01-checklist.md)) is NOT RUN.**
-> **Short reference:** [`protocol.md`](protocol.md) is the normative wire specification (byte tables and rules). This document tells how each layer operates and why.
+> **Document type:** Technical description. **Language:** plain English, close to ASD-STE100 Simplified Technical English (STE) [[STE]](#STE).
+>
+> **Applies to:** protocol version 6 (observation catalog version 2, 64-byte health report), the firmware in `firmware/stage0-node`, and the gateway in `ws0/`. Version 6 comes from the power telemetry design ([`2026-10-29-power-telemetry-design.md`](superpowers/specs/2026-10-29-power-telemetry-design.md), sections 4–7). `RELEASES.md` has no version 6 release yet.
+>
+> **Releases:** [`RELEASES.md`](../firmware/stage0-node/RELEASES.md) records each node release flashed to the boards. The last ones are TX `04fcc656938d` and RX `cc2766a38c61` (2026-10-19, protocol version 5). Bench tools such as `firmware/benchlink`, which the TX ran on 2026-10-28/29, replace the node firmware, and `RELEASES.md` doesn't record them. A version 5 board and a version 6 gateway (or the other way round) don't exchange frames (section 14).
+>
+> **Status:** The bench data path works. The SHT45 sensor went onto the bus on 2026-10-14, and it gives valid readings. **The 24-hour delivery test (H01, [`H01-checklist.md`](H01-checklist.md)) is NOT RUN.**
+>
+> **Short reference:** [`protocol.md`](protocol.md) is the normative wire specification (byte tables and rules). This document tells you how each layer works and why.
+>
 > **Failures and recovery:** [`failure-modes.md`](failure-modes.md) defines each behavior off the normal path, the loss budget, and the open issues for the battery and solar deployment.
 
 ---
 
 ## 1. Purpose
 
-This document describes how one weather observation moves from the sensor to the database. It also describes how the acknowledgment (ACK) moves back. For each layer, it gives:
+This document follows one weather observation from the sensor to the database, and the acknowledgment (ACK) on its way back. For each layer, you get:
 
 - the data format,
 - the rules that each component must obey,
 - the failure modes and the recovery,
 - links to the source documents.
 
-Read section 2 first. It gives the full picture. Then read the section for the layer that you must change.
+Start with section 2 for the full picture. Then jump to the section for the layer you want to change.
 
-The system described here is the bench prototype. It is the breadboarded development build (Stage 0): two development boards and a gateway computer, on USB power.
+Everything here is the bench prototype: the breadboarded development build (Stage 0). That's two development boards and a gateway computer, all on USB power.
 
 ---
 
@@ -60,7 +66,7 @@ flowchart LR
 
 ### 2.1 The layers
 
-Each layer has one job. A layer does not depend on the internal details of a different layer.
+Each layer has one job. No layer depends on the internal details of another layer.
 
 | # | Layer | Format | Where | Section |
 |---|---|---|---|---|
@@ -76,9 +82,9 @@ Each layer has one job. A layer does not depend on the internal details of a dif
 
 ### 2.2 The three rules that keep data safe
 
-These three rules apply to the full stack. Do not break them.
+These three rules apply to the full stack. Don't break them.
 
-1. **Store before send.** The TX board writes the observation to flash before it transmits. A power loss after the write does not lose the observation.
+1. **Store before send.** The TX board writes the observation to flash before it transmits. A power loss after the write doesn't lose the observation.
 2. **Commit before ACK.** The gateway makes an ACK only after SQLite commits the observation. The RX board never makes an ACK.
 3. **Never repeat a nonce.** Each frame that the TX board seals uses a new 40-bit counter. The board records each counter block in flash **before** it uses a counter from that block.
 
@@ -97,7 +103,7 @@ The SHT45 breakout (Adafruit 6174) connects to I2C2 of the STM32WL55. The pins c
 | 3.3 V | CN6 pin 4 | 3V3 | — | Sensor supply |
 | GND | CN6 pin 6 | GND | — | Ground |
 
-**The same signals are on the ST morpho headers** (UM2592 Rev 4, Table 18 and Figure 24). No solder bridges are in the path. Use these pins with the Adafruit 4397 cable. Its female sockets cannot plug into the female Arduino headers. Hold the board component side up, with the SMA antenna connector at the top. The pins count from the top.
+**The same signals are on the ST morpho headers** (UM2592 Rev 4, Table 18 and Figure 24). There are no solder bridges in the path. Use these pins with the Adafruit 4397 cable, because its female sockets can't plug into the female Arduino headers. Hold the board component side up, with the SMA antenna connector at the top. The pins count from the top.
 
 | Signal | Morpho pin | Position | 4397 wire (STEMMA QT colors) |
 |---|---|---|---|
@@ -108,13 +114,21 @@ The SHT45 breakout (Adafruit 6174) connects to I2C2 of the STM32WL55. The pins c
 
 On CN10, the odd pins are the inner column. On CN7, the odd pins are the outer column (board edge).
 
-The bus speed is 100 kHz (standard mode). The timing register value is `0x20323E5D` at PCLK1 = 48 MHz: ST's example value with SDADEL = 2, a 146 ns data hold, which an INA228 strapped to SDA (the USB-C rail at 0x48) needs (power telemetry design section 9.2). The 10 kΩ resistors on the breakout are the bus pull-ups. The internal pull-ups of the MCU (about 40 kΩ) are also on. Thus an unplugged breakout leaves the lines defined, and the transfer fails as a clean address NACK. The I2C setup is in `App/i2c_bus.c`.
+The bus runs at 100 kHz (standard mode). The timing register value is `0x20323E5D` at PCLK1 = 48 MHz. That's ST's example value with SDADEL = 2, a 146 ns data hold, which an INA228 strapped to SDA (the USB-C rail at 0x48) needs (power telemetry design section 9.2).
 
-**Power parts on the same bus (phase A, the current design).** Two STEMMA QT branches share I2C2's SDA, SCL and ground. A passive STEMMA QT hub connects the SHT45; the battery INA228 (0x40) and the MAX17048 fuel gauge (0x36) are on a second cable (QTM). Both are on the unswitched 3V3 (`hardware/bench-breadboard-r0`, `bench-bb-r0.3`). The PA9 sensor switch (change C) is not part of the breadboard build (build-progression record 4.6, 2026-11-02), where PA9 switches each sensor port and the power monitors stay unswitched (PORT-9); on the bench PA9 is unconnected and the firmware's drive of it is harmless. There is no mux (`WS_I2C_MUX` 0, the firmware default). The INA228 shunt is in the battery path. Its VBUS input senses the charger output (OUT). The gauge senses the cell. The charger signals do not use the bus: ISET on PB1 (ADC1_IN5), the charger input through a 20 kΩ / 10 kΩ divider on PA10 (ADC1_IN6), CHG on PB10 and PGOOD on PB8. Phase B adds one INA228 for each rail (load 0x41, solar 0x45, USB-C 0x48). Source: the power telemetry design, sections 2, 9.1 and 9.2.
+The 10 kΩ resistors on the breakout are the bus pull-ups. The MCU's internal pull-ups (about 40 kΩ) are on too. So an unplugged breakout leaves the lines defined, and the transfer fails as a clean address NACK. The I2C setup is in `App/i2c_bus.c`.
+
+**Power parts on the same bus (phase A, the current design).** Two STEMMA QT branches share I2C2's SDA, SCL and ground. A passive STEMMA QT hub connects the SHT45. The battery INA228 (0x40) and the MAX17048 fuel gauge (0x36) are on a second cable (QTM). Both branches are on the unswitched 3V3 (`hardware/bench-breadboard-r0`, `bench-bb-r0.3`). There's no mux (`WS_I2C_MUX` 0, the firmware default).
+
+The PA9 sensor switch (change C) isn't part of the breadboard build (build-progression record 4.6, 2026-11-02). In change C, PA9 switches each sensor port and the power monitors stay unswitched (PORT-9). On the bench, nothing connects to PA9, so the firmware's drive of it does no harm.
+
+The INA228 shunt is in the battery path. Its VBUS input senses the charger output (OUT). The gauge senses the cell.
+
+The charger signals don't use the bus: ISET on PB1 (ADC1_IN5), the charger input through a 20 kΩ / 10 kΩ divider on PA10 (ADC1_IN6), CHG on PB10 and PGOOD on PB8. Phase B adds one INA228 for each rail (load 0x41, solar 0x45, USB-C 0x48). Source: the power telemetry design, sections 2, 9.1 and 9.2.
 
 ### 3.2 Measurement transaction
 
-The firmware uses the code in `firmware/stage0.c`. The host tests use the same code. The node reads the sensor every 15 s and builds one observation from 4 samples (section 4.2).
+The firmware and the host tests use the same code, in `firmware/stage0.c`. The node reads the sensor every 15 s and builds one observation from 4 samples (section 4.2).
 
 ```mermaid
 sequenceDiagram
@@ -130,14 +144,14 @@ sequenceDiagram
 
 The sensor gives two 16-bit raw values. Each value has its own CRC-8. The CRC uses polynomial `0x31`, initial value `0xFF`, and no final XOR [[SHT4x]](#SHT4x).
 
-The firmware converts the raw values to integers. It does not use floating point:
+The firmware converts the raw values to integers, with no floating point:
 
 - Temperature, in 0.01 °C: `T = −4500 + (17500 × S_T + 32767) / 65535`
 - Relative humidity, in 0.01 %: `RH = −600 + (12500 × S_RH + 32767) / 65535`, then limited to the range 0 to 10000.
 
 ### 3.3 Faults
 
-If the write, the read, or a CRC check fails, the transfer or the parser returns an error. The parser does not change the output values. The bus codes are in `App/i2c_bus.h`:
+If the write, the read, or a CRC check fails, the transfer or the parser returns an error. The parser leaves the output values alone. The bus codes are in `App/i2c_bus.h`:
 
 | Code | Meaning |
 |---:|---|
@@ -146,20 +160,24 @@ If the write, the read, or a CRC check fails, the transfer or the parser returns
 | −3 | the read failed after the address |
 | −4 | CRC mismatch (the module sets this code) |
 | −5 | bus still stuck after recovery |
-| −6 | the transfer did not finish within its 30 ms guard |
+| −6 | the transfer did not finish within its guard (30 ms plus 90 µs per byte) |
+| −7 | bus error, lost arbitration, HAL refusal, or a mux that did not take the channel (a bus fault, not an absence) |
+| −8 | a part answered with another chip ID (the module sets this code) |
 
-The `#sample` line does not print these codes. The module turns a failed sample into its probe result. An address NACK means absent. Any other failure is a bus fault. The first minute's report prints a `#modules` line with the state of each module port, for example `#modules air_th=active …`. The `MODULES` console command prints the same line. While the air module is active, a minute without a valid air sample gives the **INVALID** code for both temperature and humidity (section 4.2). If the air module is not active, the observation leaves out its fields. The air fields are then **INVALID** only when the observation has no other field. The gateway stores them as `null`, with `quality=sensor_fault`. The system never shows an invalid reading as a real value.
+The `#sample` line doesn't print these codes. Instead, the module turns a failed sample into its probe result. An address NACK means absent, and any other failure is a bus fault. The first minute's report prints a `#modules` line with the state of each module port, for example `#modules air_th=active …`. The `MODULES` console command prints the same line.
 
-After a failure that can leave the bus stuck, the firmware does a bus recovery. These failures are a guard timeout, a HAL refusal, or SDA low after the failure. A sensor can hold SDA low if it resets during a byte. The temperature and humidity modules also ask for a recovery after a bad CRC. The recovery does these steps:
+While the air module is active, a minute without a valid air sample gives the **INVALID** code for both temperature and humidity (section 4.2). If the air module isn't active, the observation leaves out its fields. In that case the air fields are **INVALID** only when the observation has no other field. The gateway stores them as `null`, with `quality=sensor_fault`. The system never shows an invalid reading as a real value.
 
-1. Release both lines (output latch high). Then make SCL and SDA GPIO open-drain outputs. Thus the takeover never drives SCL low.
-2. Give up to 9 clock pulses on SCL until the sensor releases SDA.
+Some failures can leave the bus stuck, and after one of them the firmware runs a bus recovery. These failures are a guard timeout, a bus error (an I2C bus error or lost arbitration), a HAL refusal, or SDA still low after the failure. A sensor can hold SDA low if it resets in the middle of a byte. The temperature and humidity modules also ask for a recovery after a bad CRC. The recovery does these steps:
+
+1. Release both lines (output latch high). Then make SCL and SDA GPIO open-drain outputs. That way the takeover never drives SCL low.
+2. Send at most 9 clock pulses on SCL, and stop when the sensor releases SDA.
 3. Make a STOP condition: SDA low while SCL is low, SCL high, then SDA high.
 4. Start the I²C peripheral again. If SDA was still held low, the transfer reports −5.
 
-The pin sequence is `ws_i2c_recover()` in `firmware/stage0.c`. A host test checks it against a model of the open-drain bus (`firmware/test_policy.c`). The test requires exactly one STOP, no accidental START, and an idle bus at the end. It covers a free bus and a device that holds SDA for 1 to 9 clocks. Before 2026-10-13, the routine left SCL low when SDA was not stuck. Thus its STOP was not a real STOP.
+The pin sequence is `ws_i2c_recover()` in `firmware/stage0.c`. A host test checks it against a model of the open-drain bus (`firmware/test_policy.c`). The test requires exactly one STOP, no accidental START, and an idle bus at the end. It covers a free bus and a device that holds SDA for 1 to 9 clocks. Before 2026-10-13, the routine left SCL low when SDA wasn't stuck, so its STOP wasn't a real STOP.
 
-> **Note:** The SHT45 was wired on 2026-10-14 and gave valid readings ([`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), "SHT45 first light"). Before that, all observations were `sensor_fault`. That was the correct behavior.
+> **Note:** The SHT45 went onto the bus on 2026-10-14 and gave valid readings ([`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), "SHT45 first light"). Before that, every observation was `sensor_fault`, which was the correct behavior with no sensor.
 
 **More information:** Sensirion SHT4x datasheet [[SHT4x]](#SHT4x) · I²C specification, NXP UM10204 [[I2C]](#I2C) · bus recovery, UM10204 section 3.1.16.
 
@@ -194,11 +212,19 @@ packet-beta
 | 18 | 4 | Field bitmap | Bit *i* set = catalog field *i* follows, for *i* = 0–30. **Bit 31 (EXT) is not a field.** It tells that an extension bitmap follows. Current build: at most `0xFE19FA7F` (section 4.2). A phase A station sends `0x1619FA7F`. |
 | 22 | 2 | Extension bitmap | **Only if EXT is set.** Bit *j* set = catalog field 32 + *j* follows. Defined: bits 0–1 (fields 32 and 33). Bits 2–15 (fields 34–47) must be 0. Current build: at most `0x0003`. |
 
-The head is 22 bytes, or 24 bytes when EXT is set. Three canonical rules apply ([`protocol.md`](protocol.md) section 5.5): EXT set with an extension bitmap of 0 is rejected; an extension bit for an undefined field is rejected; a record with no field is rejected. A record that has only extension fields (bitmap `0x80000000`, extension bitmap not 0) is legal. In C, the field mask is 64-bit (`WS_F(i)` is `(uint64_t)1 << i`), and `WS_OBS_PLAIN_LEN(m)` adds 2 bytes when `m >> 32` is not 0 (`firmware/common/ws_obs.h`).
+The head is 22 bytes, or 24 bytes when EXT is set. The gateway rejects three non-canonical forms ([`protocol.md`](protocol.md) section 5.5):
+
+- EXT set with an extension bitmap of 0,
+- an extension bit for an undefined field,
+- a record with no field.
+
+A record that has only extension fields (bitmap `0x80000000`, extension bitmap not 0) is legal. In C, the field mask is 64-bit (`WS_F(i)` is `(uint64_t)1 << i`), and `WS_OBS_PLAIN_LEN(m)` adds 2 bytes when `m >> 32` is not 0 (`firmware/common/ws_obs.h`).
 
 ### 4.2 Fields
 
-The present fields follow the head, in increasing bit order. Each field has a fixed width from the **field catalog** (`firmware/common/ws_obs.h`, `ws0/fields.py`). [`protocol.md`](protocol.md) section 5.3 has the full table. This is **catalog version 2**. The current build is the WSMP bench station. Its field set has 24 fields (`WS_F_WSMP_BENCH` in `App/node_fields.h:20-23`). Each module in the layout adds its fields (`App/wsmp_catalog_map.c`):
+The present fields follow the head, in increasing bit order. Each field has a fixed width from the **field catalog** (`firmware/common/ws_obs.h`, `ws0/fields.py`), which is **catalog version 2**. [`protocol.md`](protocol.md) section 5.3 has the full table.
+
+The current build is the WSMP bench station. Its field set has 24 fields (`WS_F_WSMP_BENCH` in `App/node_fields.h:20-23`). Each module in the layout adds its fields (`App/wsmp_catalog_map.c`):
 
 | Module | Bits | Fields | Bytes |
 |---|---|---|---:|
@@ -211,9 +237,9 @@ The present fields follow the head, in increasing bit order. Each field has a fi
 | Power rails (WSMP type 9) | 26–30, ext 0–1 (32, 33) | `load_mv`, `load_current_ma`, `charger_input_mv`, `solar_mv`, `solar_current_ma`, `usb_mv`, `usb_current_ma`, + the 2-byte extension bitmap | 14 + 2 |
 | Enclosure temperature and humidity (SHTC3) | 19, 20 | `enclosure_temp_c`, `enclosure_rh_pct` | 4 |
 
-With every field of the set, the record is 22 + 2 + 53 = **77 bytes** (phase B, the widest record; `_Static_assert` in `App/node_fields.h:29`). The journal slot and the airtime estimate use this size. A **phase A** station sends fewer fields. Its build has no source for `load_current_ma`, `solar_mv`, `solar_current_ma`, `usb_mv` and `usb_current_ma`, so these fields are **absent**, and the record has no extension bitmap: 22 + 43 = **65 bytes**. The current build does not send the minute extremes (bits 21–24).
+With every field of the set, the record is 22 + 2 + 53 = **77 bytes** (phase B, the widest record, `_Static_assert` in `App/node_fields.h:29`). The journal slot and the airtime estimate use this size. A **phase A** station sends fewer fields. Its build has no source for `load_current_ma`, `solar_mv`, `solar_current_ma`, `usb_mv` and `usb_current_ma`, so these fields are **absent**, and the record has no extension bitmap: 22 + 43 = **65 bytes**. The current build doesn't send the minute extremes (bits 21–24).
 
-The power fields describe **what is measured**, not which part measures it (the power telemetry design, sections 3.2 and 5.2):
+Each power field names **the quantity it measures**. It doesn't name the part that measures it (the power telemetry design, sections 3.2 and 5.2):
 
 | Bit | Field | Encoding | Phase A source |
 |---:|---|---|---|
@@ -230,13 +256,20 @@ The power fields describe **what is measured**, not which part measures it (the 
 
 Every current has the range −32,768 to +32,766 mA (codes 0–65534), and `0xFFFF` is INVALID. Every rail voltage has the range 0 to 65,534 mV. Solar and USB-C are never connected together. Only phase B can tell their currents apart.
 
-- **Absent and INVALID are different.** A field is **absent** when the build has no source for it (`WS_POWER_PROFILE`, `App/power_config.h`). A field is **INVALID** when its source is fitted but failed, or its reading is out of range. The two power modules are always in the layout, so a dead INA228 or gauge gives INVALID fields, never absent ones.
-- **Every field has its own INVALID code**: its all-ones value. A sensor fault, a missing sample, or an out-of-range reading gives INVALID. The node never leaves a field out because of a fault. Thus a fault does not change the frame length. A module that leaves the layout removes its fields, and the frame becomes shorter.
-- **Out of range is INVALID, not clamped.** A temperature outside −40.00 to 125.00 °C becomes INVALID (`ws_code_temp_centi`). Relative humidity is the exception. It is clamped to 0–100 % (`ws_code_rh_centi`), as Sensirion recommends.
+- **Absent and INVALID are different.** A field is **absent** when the build has no source for it (`WS_POWER_PROFILE`, `App/power_config.h`). A field is **INVALID** when the build has its source but the source failed, or its reading is out of range. The two power modules are always in the layout, so a dead INA228 or gauge gives INVALID fields, never absent ones.
+- **Every field except qualifiers (field 10) has its own INVALID code**: its all-ones value. A sensor fault, a missing sample, or an out-of-range reading gives INVALID. The node never leaves a field out because of a fault, so a fault doesn't change the frame length. A module that leaves the layout removes its fields, and the frame gets shorter.
+- **Out of range is INVALID, not clamped.** A temperature outside −40.00 to 125.00 °C becomes INVALID (`ws_code_temp_centi`). Relative humidity is the exception. The firmware clamps it to 0–100 % (`ws_code_rh_centi`), as Sensirion recommends.
 - **One SHT45 fault invalidates both temperature and humidity.** The two values come from one I²C reply.
 - **INVALID codes are impossible values.** A reader that forgets to check gets 615.35 °C (`0xFFFF` − 4000, in 0.01 °C) or 655.35 %. Range checks reject both.
 
-The gateway rejects a record that is not canonical. Each reading has only one correct byte form. The length must match the bitmap. Reserved bits must be 0. Each code must be in range or INVALID. The time-known flag must match the UTC field. Section 11.1 and [`protocol.md`](protocol.md) section 5.5 list the rules.
+The gateway rejects a record that isn't canonical. Each reading has only one correct byte form, and the gateway checks these rules:
+
+- The length must match the bitmap.
+- Reserved bits must be 0.
+- Each code must be in range or INVALID.
+- The time-known flag must match the UTC field.
+
+Section 11.1 and [`protocol.md`](protocol.md) section 5.5 list the rules.
 
 The gateway stores an INVALID field as `null`. The record's `quality` is `valid` (all present fields have values), `partial` (some are `null`) or `sensor_fault` (all are `null`). The sample count `th_samples` is metadata and does not count towards `quality`.
 
@@ -252,7 +285,7 @@ The TX board keeps each observation in internal flash until an authentic ACK arr
 
 ### 5.1 Flash map
 
-The STM32WL55JC has 256 KB of flash in 128 pages of 2 KB. The flash programs 64 bits (one double-word) at a time. You cannot program a double-word two times without an erase. The firmware uses this property.
+The STM32WL55JC has 256 KB of flash in 128 pages of 2 KB. The flash programs 64 bits (one double-word) at a time. You can't program a double-word again without an erase, except with all zeros (RM0453, the exception to the PROGERR rule). The firmware uses both properties: the ACK word and the page header zeroing.
 
 | Pages | Size | Contents |
 |---|---|---|
@@ -261,13 +294,13 @@ The STM32WL55JC has 256 KB of flash in 128 pages of 2 KB. The flash programs 64 
 | 125–126 | 4 KB | Monotonic log, two pages (A and B): epochs, counter reservations, lost total, abandoned total |
 | 127 | 2 KB | Configuration: station ID, key, key check value (KCV) |
 
-A firmware update programs only pages 0–54. The configuration, the counters, and the journal stay (verified 2026-10-12 on the previous layout). A release that changes the page map loses them, and the board then needs a WIPE and a new key ([`runbook-moving-boards.md`](runbook-moving-boards.md), "Changing the flash layout"). PROVISION refuses a journal with pending records.
+A firmware update programs only the firmware region, pages 0–94. The configuration, the counters, and the journal stay (verified 2026-10-12 on the previous layout). A release that changes the page map loses them, and then the board needs a WIPE and a new key ([`runbook-moving-boards.md`](runbook-moving-boards.md), "Changing the flash layout"). PROVISION refuses a journal with pending records.
 
 ### 5.2 Slot format
 
 The fields that the build measures set the slot size (`App/node_fields.h`, section 4). A slot is the observation plaintext rounded up to whole double-words, plus a commit double-word and an ACK double-word (`JOURNAL_SLOT_BYTES` in `App/node_store.h`).
 
-For the current build, the widest plaintext is 77 bytes (`WS_OBS_PLAIN_MAX`, from `WS_NODE_FIELDS`). It rounds up to 10 double-words (80 bytes). Thus a slot is 80 + 8 + 8 = **96 bytes**. A phase A record (65 bytes) uses the same slot size: the slot comes from the build's field set, not from the record.
+For the current build, the widest plaintext is 77 bytes (`WS_OBS_PLAIN_MAX`, from `WS_NODE_FIELDS`). It rounds up to 10 double-words (80 bytes), so a slot is 80 + 8 + 8 = **96 bytes**. A phase A record (65 bytes) uses the same slot size, because the build's field set sets the slot size, not the record.
 
 ```mermaid
 packet-beta
@@ -282,7 +315,11 @@ packet-beta
 | 10 | 8 | Commit word: magic `0x4A53` + CRC-16/CCITT of the plaintext bytes | Second |
 | 11 | 8 | ACK word: all `0xFF` = pending, all `0x00` = acknowledged | When the ACK arrives |
 
-Each journal page starts with an 8-byte header: a 32-bit magic and a 32-bit page sequence number. Then the page has (2048 − 8) / 96 = 21.25, so **21 slots**. The magic is `"WSJ"` plus the slot size in its low byte: `0x57534A60` (`WSJ` and then the byte `0x60`, a grave accent in ASCII, because 96 = `0x60`; `JPG_MAGIC` in `App/node_store.c:51`). The version 5 bench build used 80-byte slots (magic `0x57534A50`, `WSJP`). Thus the first boot of a version 6 image recycles every version 5 page. Drain the journal before the update (section 14). The firmware ignores a page with another magic at boot and recycles it by the normal erase-before-reuse. Examples are a page from an older journal format, or a page from a build whose field set gives another slot size. The firmware never reads such a page as data. When the firmware reads a record back, its own field bitmap gives its length (`ws_obs_plain_len`).
+Each journal page starts with an 8-byte header: a 32-bit magic and a 32-bit page sequence number. That leaves room for (2048 − 8) / 96 = 21.25, so **21 slots**. The magic is `"WSJ"` plus the slot size in its low byte: `0x57534A60` (`JPG_MAGIC` in `App/node_store.c:51`). That's `WSJ` and then the byte `0x60`, a grave accent in ASCII, because 96 = `0x60`.
+
+The firmware ignores a page with another magic at boot, and it never reads such a page as data. It recycles the page by the normal erase-before-reuse. Examples are a page from an older journal format, or a page from a build whose field set gives another slot size. When the firmware reads a record back, the record's own field bitmap gives its length (`ws_obs_plain_len`).
+
+The version 5 bench build used 80-byte slots (magic `0x57534A50`, `WSJP`). So the first boot of a version 6 image ignores every version 5 page, and their pending records are lost. It recycles those pages as the ring reaches them. Drain the journal before the update (section 14).
 
 ### 5.3 Slot life cycle
 
@@ -305,7 +342,7 @@ stateDiagram-v2
 
 ### 5.4 Power-loss behavior
 
-A power loss can stop a flash write at any time. The firmware reads a partly written slot in one of three ways. All three are safe.
+A power loss can stop a flash write at any time. The firmware reads a partly written slot in one of three ways, and all three are safe.
 
 | What the scan finds | Cause | Result |
 |---|---|---|
@@ -317,7 +354,7 @@ If the ECC (error-correcting code) error is in the ACK word only, the firmware c
 
 ### 5.5 Capacity
 
-One of the 30 journal pages is always being recycled. The journal therefore holds at least 29 pages × 21 slots = **609 observations**. At one observation each minute, this is 609 / 60 = **10.15 hours** without an ACK. A build with more fields has larger slots and fewer of them:
+At any time, one of the 30 journal pages is in the middle of recycling. So the journal holds at least 29 pages × 21 slots = **609 observations**. At one observation a minute, that's 609 / 60 = **10.15 hours** without an ACK. A build with more fields has larger slots and fewer of them:
 
 | Field set | Plaintext | Slot | Slots a page | Records (29 pages) | Hours |
 |---|---:|---:|---:|---:|---:|
@@ -325,11 +362,13 @@ One of the 30 journal pages is always being recycled. The journal therefore hold
 | Version 6 node field set, phases A–C (current build) | 77 B | 96 B | 21 | 609 | 10.15 |
 | Every catalog version 2 field (never a build) | 94 B | 112 B | 18 | 522 | 8.7 |
 
-The rule is **9.5 hours of the build's widest record**. A compile-time check in `App/node_store.c` keeps this floor. Thus a field set above 80 bytes of plaintext (a 96-byte frame) does not compile. That is the **per-build ceiling**. Only the RX bridge and the gateway accept the full catalog (94 bytes), so that they accept every canonical record. The node field set holds every power field of every phase, so a change of phase changes neither the slot size nor the page magic. When the ring is full, the firmware erases the oldest page. It counts each pending observation on that page as `lost`.
+The rule is **9.5 hours of the build's widest record**. A compile-time check in `App/node_store.c` keeps this floor. So a field set above 80 bytes of plaintext (a 96-byte frame) doesn't compile, and that's the **per-build ceiling**. Only the RX bridge and the gateway accept the full catalog (94 bytes), so that they accept every canonical record.
 
-> **Caution:** The 30-day buffer requirement (test H11) needs external SPI NOR flash. The internal journal does not satisfy H11.
+The node field set holds every power field of every phase. So a change of phase changes neither the slot size nor the page magic. When the ring is full, the firmware erases the oldest page. It counts each pending observation on that page as `lost`.
 
-> **Warning:** The power-loss behavior agrees with the design, but **nobody has tested it with real power cuts yet**. Do this test before H01.
+> **Caution:** The 30-day buffer requirement (test H11) needs external SPI NOR flash. The internal journal doesn't satisfy H11.
+
+> **Warning:** The power-loss behavior agrees with the design, but **nobody tested it with real power cuts yet**. Do this test before H01.
 
 **More information:** STM32WL5x reference manual RM0453, flash chapter (ECC and programming rules) [[RM0453]](#RM0453) · `firmware/stage0-node/App/node_store.c`.
 
@@ -344,7 +383,7 @@ Two different numbers prevent two different failures:
 | **Epoch + sequence** | 32 + 32 bits | Two different observations with the same identity (a database collision) | Inside the encrypted plaintext |
 | **Transmission counter** | 40 bits (1 to 2^40 − 1) | Two frames with the same CCM nonce (a total loss of security) | Clear header, authenticated |
 
-A retry of one observation uses the **same identity** and a **new counter**. Thus the gateway can find duplicates, and the radio never repeats a nonce.
+A retry of one observation uses the **same identity** and a **new counter**. That way the gateway can find duplicates, and the radio never repeats a nonce.
 
 ### 6.1 Durable reservation
 
@@ -363,19 +402,23 @@ flowchart TD
   U --> S
 ```
 
-Each log entry is one double-word: an 8-bit type and a 56-bit value. The counter allocator `store_next_counter` refuses to issue a counter above 2^40 − 1. The 5-byte header field would truncate it and repeat a nonce. (2^40 frames last more than 100,000 years at 20 frames a minute.) The recovery takes the maximum value of each type from both pages. A torn entry reads as an ECC error or a bad value. The firmware ignores that entry. The values only increase, so an ignored entry can only make the firmware skip numbers. It cannot make the firmware use a number again.
+Each log entry is one double-word: an 8-bit type and a 56-bit value. The counter allocator `store_next_counter` refuses to issue a counter above 2^40 − 1, because the 5-byte header field would truncate it and repeat a nonce. (2^40 frames last more than 100,000 years at 20 frames a minute.)
+
+The recovery takes the maximum value of each type from both pages. A torn entry reads as an ECC error or a bad value, and the firmware ignores it. The values only go up, so an ignored entry can only make the firmware skip numbers. It can't make the firmware use a number again.
 
 When a log page is full, the firmware writes the current maximum values to the other page. It writes the page header **last**. If power stops during this step, the old page stays valid.
 
-**Example (observed 2026-10-12):** The TX board used counters 1 to 8. Then the board restarted ([`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), "Reboot behaviour"). The next counter was **257**, because the board skips the rest of the reserved block (9 to 256). This is correct.
+**Example (observed 2026-10-12):** The TX board used counters 1 to 8. Then the board restarted ([`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), "Reboot behaviour"). The next counter was **257**, because the board skips the rest of the reserved block (9 to 256). That's the correct behavior.
 
 ### 6.2 Why counter reuse is dangerous
 
-AES-CCM uses counter mode for encryption. If two frames use the same key and nonce, an attacker can XOR the two ciphertexts and get the XOR of the two plaintexts. The authentication guarantee is also lost. RFC 3610 section 2.1 ("destroys the security properties of this mode") and NIST SP 800-38C describe this risk [[RFC3610]](#RFC3610) [[SP800-38C]](#SP800-38C).
+AES-CCM uses counter mode for encryption. Say two frames use the same key and nonce. Then an attacker can XOR the two ciphertexts and get the XOR of the two plaintexts. You also lose the authentication guarantee. RFC 3610 section 2.1 ("destroys the security properties of this mode") and NIST SP 800-38C describe this risk [[RFC3610]](#RFC3610) [[SP800-38C]](#SP800-38C).
 
-> **Warning:** Do not restore an old copy of the TX flash state or the gateway nonce database while you keep the same key. If counter state is lost, provision a **new key** for both ends.
+> **Warning:** Don't restore an old copy of the TX flash state or the gateway nonce database while you keep the same key. If you lose counter state, provision a **new key** for both ends.
 
-> **Warning:** Before release `0f456040fe54`, `WIPE ERASE-ALL-NODE-STATE` reset the node's counter to 1. From `0f456040fe54` on, it keeps the counter. The `PROVISION` epoch floor raises only the epoch (the observation identity), **not** the counter. A key used before `0f456040fe54`, or on another board, can therefore repeat nonces already sent on air. Prefer a new key. See [`runbook-moving-boards.md`](runbook-moving-boards.md).
+> **Warning:** Before release `0f456040fe54`, `WIPE ERASE-ALL-NODE-STATE` reset the node's counter to 1. From `0f456040fe54` on, it keeps the counter. The `PROVISION` epoch floor raises only the epoch (the observation identity), **not** the counter.
+>
+> So a key used before `0f456040fe54`, or on another board, can repeat nonces already sent on air. Use a new key when you can. See [`runbook-moving-boards.md`](runbook-moving-boards.md).
 
 ---
 
@@ -410,7 +453,7 @@ packet-beta
 | ACK, NACK | 17 | **33 bytes** |
 | Health report | 64 | **80 bytes** |
 
-Every frame is far below the LoRa payload limit of 255 bytes (`WS_FRAME_MAX`). The widest observation frame of the current build, with every field of the set:
+Every frame is far below the LoRa payload limit of 255 bytes (`WS_FRAME_MAX`). Here's the widest observation frame of the current build, with every field of the set:
 
 ```mermaid
 packet-beta
@@ -428,12 +471,12 @@ packet-beta
   40-103: "transmission counter (u64)"
 ```
 
-- **Nonce (13 bytes)** = kind (1 byte) + station ID as a 4-byte integer + counter as an 8-byte integer. The firmware and the gateway build it **from the integers**. They do not copy the header bytes. Kinds 1 and 4 use the node's counter space. Kinds 2 and 3 use the gateway's counter space. The kind byte makes each (kind, counter) pair different. Thus all kinds can use the same key and never share a nonce.
-- **Additional authenticated data (AAD)** = all 8 header bytes. The tag covers them, but they are not encrypted. An attacker cannot change the version, the kind, the station, or the counter without a tag failure.
-- **Key** = 128 bits. Each station has a different key. The gateway and the TX board share it.
-- **Tag** = 64 bits (8 bytes). A forgery attempt succeeds with probability 2^−64. Each attempt is online, and airtime limits the attempts. At about 50 attempts per second, 2^64 attempts take about 10^10 years. RFC 3610 permits tags of 4 to 16 bytes. NIST SP 800-38C permits 64-bit tags.
-- **Limits.** The seal function (`ws_seal_kind` in C, `seal()` in Python) refuses a station of 0 or above 65,535, a counter of 0 or above 2^40 − 1, and a kind outside 1–4. It does not truncate them. The C function then wipes its output buffer.
-- **Length checks.** The gateway checks the frame length for the kind **before** it decrypts: observation 39–110 bytes, ACK and NACK 33, health report 80 (`PLAIN_LENGTHS` in `ws0/protocol.py`). The gateway drops a frame that fails, with no reply. After decryption, an observation must have exactly the length that its own field bitmap gives. If not, the gateway sends a NACK.
+- **Nonce (13 bytes)** = kind (1 byte) + station ID as a 4-byte integer + counter as an 8-byte integer. The firmware and the gateway build it **from the integers**. They don't copy the header bytes. Kinds 1 and 4 use the node's counter space. Kinds 2 and 3 use the gateway's counter space. The kind byte makes each (kind, counter) pair different, so all kinds can use the same key and never share a nonce.
+- **Additional authenticated data (AAD)** = all 8 header bytes. The tag covers them, but they aren't encrypted. An attacker can't change the version, the kind, the station, or the counter without a tag failure.
+- **Key** = 128 bits. Each station has a different key, and the gateway and the TX board share it.
+- **Tag** = 64 bits (8 bytes). A forgery try succeeds with probability 2^−64. Each try is online, and airtime limits the tries. At about 50 tries per second, 2^64 tries take about 10^10 years. RFC 3610 permits tags of 4 to 16 bytes. NIST SP 800-38C permits 64-bit tags.
+- **Limits.** The seal function (`ws_seal_kind` in C, `seal()` in Python) refuses a station of 0 or above 65,535, a counter of 0 or above 2^40 − 1, and a kind outside 1–4. It doesn't truncate them. The C function then wipes its output buffer.
+- **Length checks.** The gateway checks the frame length for the kind **before** it decrypts: observation 39–110 bytes, ACK and NACK 33, health report 80 (`PLAIN_LENGTHS` in `ws0/protocol.py`). The gateway drops a frame that fails, with no reply. After decryption, an observation must have exactly the length that its own field bitmap gives. If it doesn't, the gateway sends a NACK.
 
 ### 7.3 ACK plaintext (17 bytes)
 
@@ -456,7 +499,7 @@ Section 11.3 explains the echo.
 
 ### 7.3.1 NACK plaintext (kind 3, 17 bytes)
 
-The NACK has the same layout as the ACK (diagram in section 7.3). The gateway sends a NACK only for an **authentic** frame that it must reject permanently. It first stores the raw frame in its `rejections` table. A NACK uses the gateway's ACK counter space.
+The NACK has the same layout as the ACK (diagram in section 7.3). The gateway sends a NACK only for an **authentic** frame that it must reject permanently. Before it sends the NACK, it stores the raw frame in its `rejections` table. A NACK uses the gateway's ACK counter space.
 
 | Offset | Size | Field |
 |---:|---:|---|
@@ -467,9 +510,9 @@ The NACK has the same layout as the ACK (diagram in section 7.3). The gateway se
 
 ### 7.3.2 Health report plaintext (kind 4, 64 bytes)
 
-The TX board sends the health report to the gateway and expects no reply. The report has no journal entry and no receive window. It uses the node's counter space. The gateway stores it in its `diagnostics` table. It orders the reports by (epoch, uptime), not by arrival.
+The TX board sends the health report to the gateway and expects no reply. The report has no journal entry and no receive window, and it uses the node's counter space. The gateway stores it in its `diagnostics` table and orders the reports by (epoch, uptime), not by arrival.
 
-The report has a fixed length of 64 bytes (`WS_DIAG_PLAIN_LEN` in `firmware/common/ws_frame.h`, `DIAG` in `ws0/protocol.py`). Bytes 0–31 keep their version 5 layout. Bytes 32–63 are new in version 6: the slow station and power values (the power telemetry design, section 6.1). A fixed length keeps the exact-length checks of the RX bridge (`ws_air_frame_ok`) and of the gateway.
+The report has a fixed length of 64 bytes (`WS_DIAG_PLAIN_LEN` in `firmware/common/ws_frame.h`, `DIAG` in `ws0/protocol.py`). Bytes 0–31 keep their version 5 layout. Bytes 32–63 are new in version 6: the slow station and power values (the power telemetry design, section 6.1). With a fixed length, the RX bridge (`ws_air_frame_ok`) and the gateway can keep their exact-length checks.
 
 ```mermaid
 packet-beta
@@ -540,7 +583,7 @@ packet-beta
 | 60 | 2 | Charger die temperature, signed, 0.1 °C. None: −32768. Gateway key `charger_temp_c`. |
 | 62 | 2 | Pack temperature, signed, 0.1 °C. None: −32768. Gateway key `pack_temp_c`. |
 
-The "charger-reported" values are the charger's own measurements. They are not the observation field `charger_input_mv` (field 28, the PA10 divider), and the two never share a name. In phase A, offsets 52–56 and 60–62 have the none code: the bq24074 measures nothing over I2C, and phase B adds no charger measurement. The gateway stores each none code as `null`.
+The "charger-reported" values are the charger's own measurements. They aren't the observation field `charger_input_mv` (field 28, the PA10 divider), and the two never share a name. In phase A, offsets 52–56 and 60–62 have the none code, because the bq24074 measures nothing over I2C. Phase B adds no charger measurement either. The gateway stores each none code as `null`.
 
 **Charger status byte (offset 50)** (the power telemetry design, section 6.3):
 
@@ -552,7 +595,7 @@ The "charger-reported" values are the charger's own measurements. They are not t
 | 3–5 | Charge stage: 0 not reported, 1 pre-charge, 2 constant current, 3 constant voltage, 4 top-off, 5 terminated, 6 not charging, 7 reserved | 0 (the pins cannot tell) |
 | 6–7 | Active input: 0 not reported, 1 solar, 2 USB-C, 3 no input (the charger reports that neither input powers it) | 0 (one VBUS input, the source is not identified) |
 
-**The fitted byte** (byte 51) says which slots the build has a source for, one bit a group (`WS_FIT_*`; phases A and B send 0x2F). A none code in a fitted slot is a sensor fault; in any other slot it means "not measured in this build". The gateway lists the `null` power keys by reason in `power_not_measured` and `power_sensor_faults` (`docs/protocol.md` section 4).
+**The fitted byte** (byte 51) says which slots the build has a source for, one bit a group (`WS_FIT_*`, and phases A and B send 0x2F). A none code in a fitted slot is a sensor fault. In any other slot it means "not measured in this build". The gateway lists the `null` power keys by reason in `power_not_measured` and `power_sensor_faults` (`docs/protocol.md` section 4).
 
 | Bit | C (`ws_frame.h`) / Python (`protocol.py`) | Slots | Phases A, B |
 |---:|---|---|---|
@@ -565,11 +608,13 @@ The "charger-reported" values are the charger's own measurements. They are not t
 | 6 | `WS_FIT_PACK_TEMP` / `FIT_PACK_TEMP` | pack temperature (62) | clear |
 | 7 | — | reserved, 0 | 0 |
 
-`power_not_measured` lists the `null` power keys whose bit is clear, `power_sensor_faults` those whose bit is set; both are sorted lists of gateway keys. A decoder that treats byte 51 as "must be 0" rejects every report a phase A or B node sends.
+`power_not_measured` lists the `null` power keys whose bit is clear. `power_sensor_faults` lists those whose bit is set. Each one is a sorted list of gateway keys. A decoder that treats byte 51 as "must be 0" rejects every report a phase A or B node sends.
 
-**Canonical rules.** Bit 7 of byte 51 must be 0. A charger status other than `0xFF` with stage 7 is not canonical. Every active input code (0–3) is canonical. A health report gets no reply, so the gateway keeps the other values of such a report. It logs a warning, and for a bad status byte it stores the five charger keys as `null`.
+**Canonical rules.** Bit 7 of byte 51 must be 0. A charger status other than `0xFF` with stage 7 isn't canonical. Every active input code (0–3) is canonical. A health report gets no reply, so the gateway keeps the other values of such a report. It logs a warning, and for a bad status byte it stores the five charger keys as `null`.
 
-The 16-bit counts stop at `0xFFFF`. The RSSI and SNR show the downlink (gateway to node). The `#rx obs` line of the RX board shows the uplink. The two can be different, so check both directions at the real placement (`docs/H01-checklist.md`). The node sends a report after boot, every 15 minutes, and after each link-state change. It sends the report after that minute's exchange, also while the link is probing. (Before 2026-10-13, the node sent it only while LINKED, so the link field always read 0.)
+The 16-bit counts stop at `0xFFFF`. The RSSI and SNR show the downlink (gateway to node), and the `#rx obs` line of the RX board shows the uplink. The two can differ, so check both directions at the real placement (`docs/H01-checklist.md`).
+
+The node sends a report after boot, every 15 minutes, and after each link-state change. It sends the report after that minute's exchange, and it does this in the PROBING state too. (Before 2026-10-13, the node sent it only while LINKED, so the link field always read 0.)
 
 ### 7.4 Implementations
 
@@ -578,11 +623,15 @@ The 16-bit counts stop at `0xFFFF`. The RSSI and SNR show the downlink (gateway 
 | TX board | Mbed TLS (`mbedtls_ccm_*`) | 3.6.6 LTS | `tools/fetch-vendor.sh`: `STM32CubeWL` submodule `mbed-crypto` @ `7ee7e20` |
 | Gateway | `cryptography` (`AESCCM`, OpenSSL) | 50.0.1 | `requirements.txt` |
 
-The project does not have its own AES code. The test file `tests/test_frame.py` compiles the C frame code on the host. It makes sure that C and Python give the **same bytes**. It uses known-answer vectors made directly with the `cryptography` library from the specified header and nonce, and 300 random frames over the full station and counter ranges. It also does rejection tests (bad tag, wrong station, wrong key, wrong length, other version bytes). It does limit tests: counter 2^40 − 1 accepted, 2^40 refused, station 65,535 accepted, 65,536 refused. `tests/test_obs.py` checks the observation encoder. It uses a known-answer record and checks that every code makes the round trip exactly. It checks that C and Python give identical bytes for 3,000 random records.
+The project doesn't have its own AES code.
 
-The TX board runs a self-test at each boot (`kat=pass`). The self-test encodes the known-answer observation, seals it, and compares the frame with the stored vector. It opens a known ACK and NACK. It checks that a changed tag fails and that counter 2^40 is refused. If the test fails, the board does not transmit.
+The test file `tests/test_frame.py` compiles the C frame code on the host and makes sure that C and Python give the **same bytes**. It uses known-answer vectors made directly with the `cryptography` library from the specified header and nonce. It also uses 300 random frames over the full station and counter ranges. It runs rejection tests (bad tag, wrong station, wrong key, wrong length, other version bytes). It runs limit tests too: counter 2^40 − 1 accepted, 2^40 refused, station 65,535 accepted, 65,536 refused.
 
-**Key check value (KCV):** The first 3 bytes of AES-128(key, 16 zero bytes). It identifies a key and does not show the key. Example: the FIPS-197 test key `000102…0f` has the KCV `c6a13b`.
+`tests/test_obs.py` checks the observation encoder. It uses a known-answer record and checks that every code makes the round trip exactly. It also checks that C and Python give the same bytes for 3,000 random records.
+
+The TX board runs a self-test at each boot (`kat=pass`). The self-test encodes the known-answer observation, seals it, and compares the frame with the stored vector. It opens a known ACK and NACK. It checks that a changed tag fails and that counter 2^40 gets refused. If the test fails, the board doesn't transmit.
+
+**Key check value (KCV):** The first 3 bytes of AES-128(key, 16 zero bytes). It identifies a key without showing the key. Example: the FIPS-197 test key `000102…0f` has the KCV `c6a13b`.
 
 **More information:** RFC 3610 (CCM) [[RFC3610]](#RFC3610) · NIST SP 800-38C [[SP800-38C]](#SP800-38C) · Mbed TLS CCM API [[MBEDTLS]](#MBEDTLS) · Python `cryptography` AESCCM [[PYCA]](#PYCA).
 
@@ -607,11 +656,11 @@ The TX board runs a self-test at each boot (`kat=pass`). The self-test encodes t
 | Transmit power | 0 dBm | Bench value |
 | Symbol timeout | **0 (off)** | See 8.4 |
 
-All values are in `firmware/stage0-node/App/radio_cfg.h`. **The two boards must use the same values.**
+The numeric values are in `firmware/stage0-node/App/radio_cfg.h`. `ws_radio_configure()` in `App/radio_cfg.c` sets the header mode, the CRC and the IQ. The sync word is the SubGHz_Phy default. **The two boards must use the same values.**
 
 ### 8.2 Time on air
 
-The symbol time is `Ts = 2^SF / BW = 128 / 500 kHz = 0.256 ms`. This formula gives the number of header, payload and CRC symbols for a payload of PL bytes. It applies with an explicit header, CRC on, coding rate 4/5, and low data rate optimization off:
+The symbol time is `Ts = 2^SF / BW = 128 / 500 kHz = 0.256 ms`. The formula below gives the number of header, payload and CRC symbols for a payload of PL bytes. It holds for an explicit header, CRC on, a 4/5 code rate, and low data rate optimization off:
 
 `n = 8 + ceil((8 × PL − 4 × SF + 28 + 16) / (4 × SF)) × 5`
 
@@ -622,7 +671,9 @@ The symbol time is `Ts = 2^SF / BW = 128 / 500 kHz = 0.256 ms`. This formula giv
 | ACK / NACK | 33 | ceil(280 / 28) = 10 | 58 | 12.25 symbols | 70.25 × 0.256 = **18.0 ms** |
 | Health report | 80 | ceil(656 / 28) = 24 | 128 | 12.25 symbols | 140.25 × 0.256 = **35.9 ms** |
 
-At SF12, the same frames take 821.2 ms (widest observation), 739.3 ms (phase A observation), 411.6 ms (ACK) and 739.3 ms (health report). The per-build ceiling (96 bytes) takes 41.0 ms at SF7 and 821.2 ms at SF12, the same as 93 bytes. For comparison, the version 5 frames took 34.6 ms (77-byte observation) and 24.4 ms (48-byte health report) at SF7. Airtime increases in steps of 4 × SF bits: about every 3–4 bytes at SF7. The firmware uses the same formula (`ws_lora_airtime_ms()` in `firmware/common/ws_policy.c:43-56`). It adds 1 ms to the whole milliseconds: 42 ms (widest observation), 18 ms (ACK) and 36 ms (health report) at SF7.
+At SF12, the same frames take 821.2 ms (widest observation), 739.3 ms (phase A observation), 411.6 ms (ACK) and 739.3 ms (health report). The per-build ceiling (96 bytes) takes 41.0 ms at SF7 and 821.2 ms at SF12, the same as 93 bytes. For comparison, the version 5 frames took 34.6 ms (77-byte observation) and 24.4 ms (48-byte health report) at SF7. Airtime goes up in steps of 4 × SF bits, which is about every 3–4 bytes at SF7.
+
+The firmware uses the same formula (`ws_lora_airtime_ms()` in `firmware/common/ws_policy.c:43-56`). It adds 1 ms to the whole milliseconds: 42 ms (widest observation), 18 ms (ACK) and 36 ms (health report) at SF7.
 
 The formula is in Semtech AN1200.13 and the SX1261/2 datasheet [[SX126X]](#SX126X). You can also use an online calculator [[AIRTIME]](#AIRTIME).
 
@@ -634,19 +685,19 @@ The formula is in Semtech AN1200.13 and the SX1261/2 datasheet [[SX126X]](#SX126
 | 47 CFR §15.247(a)(1) | Frequency hopping: 50 or more channels if the 20 dB bandwidth is less than 250 kHz | Not used (one channel) |
 | 47 CFR §15.247(a)(2) | Digital modulation: 6 dB bandwidth of 500 kHz or more. Up to +30 dBm. Power density 8 dBm/3 kHz or less. | **Used.** At 0 dBm, the density is approximately −22 dBm/3 kHz. |
 
-> **Caution:** Nobody has measured the 6 dB bandwidth of these boards with a spectrum analyzer. The antenna gain is also not known. This section is an engineering reading of Part 15. It is not a compliance certificate.
+> **Caution:** Nobody measured the 6 dB bandwidth of these boards with a spectrum analyzer yet, and we don't know the antenna gain either. This section is an engineering reading of Part 15, not a compliance certificate.
 
 **More information:** eCFR §15.247 [[FCC247]](#FCC247) · eCFR §15.249 [[FCC249]](#FCC249) · LoRa Alliance regional parameters (US915 uses 500 kHz channels) [[RP002]](#RP002).
 
 ### 8.4 Lesson: the symbol timeout
 
-The first firmware used ST's default symbol timeout of 5 symbols. At SF7 and 500 kHz, 5 symbols is **1.3 ms**. The radio stopped the ACK window after 1.3 ms if no preamble had started. Thus the TX board missed all ACKs. It also sent backlog frames while the RX board was busy with an ACK, so those frames were lost.
+The first firmware used ST's default symbol timeout of 5 symbols. At SF7 and 500 kHz, 5 symbols is **1.3 ms**. If no preamble started in that 1.3 ms, the radio closed the ACK window. So the TX board missed every ACK. It also sent backlog frames while the RX board was busy with an ACK, and those frames got lost.
 
-The firmware now sets the symbol timeout to 0 (off). The firmware's own 2-second window timer stops the receive operation. **If you change the SF or the bandwidth, calculate the symbol time again.**
+The firmware now sets the symbol timeout to 0 (off), and its own 2-second window timer stops the receive operation. **If you change the SF or the bandwidth, calculate the symbol time again.**
 
 ### 8.5 Measured link (bench, 2026-10-12)
 
-The boards were approximately 30 cm apart, at 0 dBm. Source: [`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), "Stage-0 firmware bring-up" (end-to-end link, epoch 2, seq 0–12, trial-and-error item 1).
+The boards were about 30 cm apart, at 0 dBm. Source: [`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md), "Weather-station firmware bring-up (2026-10-12)" (end-to-end link, epoch 2, seq 0–12, trial-and-error item 1).
 
 | Measure | Value |
 |---|---|
@@ -655,7 +706,7 @@ The boards were approximately 30 cm apart, at 0 dBm. Source: [`hardware/nucleo-w
 | SNR | 12 to 13 dB |
 | After the symbol-timeout fix | `sent=3 acked=3 no_ack=0` |
 
-This is a bench result. It is not a range result. H01 requires a test at the real locations.
+This is a bench result, not a range result. H01 needs a test at the real locations.
 
 ---
 
@@ -705,7 +756,7 @@ sequenceDiagram
 
 ### 9.2 TX exchange state machine
 
-`App/tx_exchange.c` runs the exchange as a state machine. Only events that are certain to come move it: the radio's TxDone or TxTimeout, the ACK window timer (2,000 ms), and the gap timer (50 ms). [`firmware-event-model.md`](firmware-event-model.md) has the full event table.
+`App/tx_exchange.c` runs the exchange as a state machine. In every state, an event that's certain to come ends the wait: the radio's TxDone or TxTimeout, the ACK window timer (2,000 ms) or the gap timer (50 ms). In ack-wait, the authentic reply (RxDone) also ends the window early. [`firmware-event-model.md`](firmware-event-model.md) has the full event table.
 
 ```mermaid
 stateDiagram-v2
@@ -731,17 +782,18 @@ stateDiagram-v2
 
 - In the gap state, a local failure (journal read, seal, radio busy) skips the frame. The exchange moves to the next frame after a new gap.
 - A refused counter reservation ends the exchange at once. The policy still gets the replies so far.
-- When the queue is done, the policy updates the link state and the strikes. If a health report is due, the exchange waits one more gap and sends it.
-- Each way out of ack-wait puts the radio in standby first. Idle puts the radio to sleep.
-- If the exchange takes longer than its worst case, `exchange_abort()` stops the timers and the radio and returns to idle.
+- When the queue is empty, the policy updates the link state and the strikes. If a health report is due, the exchange waits one more gap and sends it.
+- Every way out of ack-wait leaves the radio in standby. The window end commands standby. A received reply leaves the single-mode receiver in standby already.
+- Normal idle puts the radio to sleep.
+- If the exchange takes longer than its worst case, `exchange_abort()` stops the timers and the radio and returns to idle. It leaves the radio in standby before the watchdog reset.
 
 ### 9.3 Rules
 
 - **Live first.** The current observation goes first. The backlog cannot delay new data.
-- **Bounded backlog.** Each minute sends N old observations at most (section 9.4). At NORMAL (N = 5), a full 10.15-hour journal (609 records) clears in approximately 2 hours (609 / 5 = 122 minutes). In CONSERVE (N = 0) the backlog does not clear. The 30-day buffer test (H11) must examine this rate.
+- **Bounded backlog.** Each minute sends N old observations at most (section 9.4). At NORMAL (N = 5), a full 10.15-hour journal (609 records) clears in about 2 hours (609 / 5 = 122 minutes). In CONSERVE (N = 0) the backlog doesn't clear. The 30-day buffer test (H11) must examine this rate.
 - **A retry is the same data.** A retry has the same identity and a new counter. The gateway stores it once and sends the ACK again.
-- **The RX board does not decide.** It forwards frames with the correct version, kind and length. Upstream, that is an observation of 39–110 bytes or an 80-byte health report (`ws_air_frame_ok` in `firmware/common/ws_console.c:77-83`). Downstream, it is a 33-byte ACK or NACK (`ws_host_reply_ok`). It does not check the tag. It has no key.
-- **Any authentic ACK clears its own slot.** An ACK can arrive late. It still clears the correct slot.
+- **The RX board doesn't decide.** It forwards frames with the correct version, kind and length. Upstream, that's an observation of 39–110 bytes or an 80-byte health report (`ws_air_frame_ok` in `firmware/common/ws_console.c:77-83`). Downstream, it's a 33-byte ACK or NACK (`ws_host_reply_ok`). It doesn't check the tag, and it has no key.
+- **Any authentic ACK clears its own slot.** An ACK can arrive late and still clear the correct slot.
 
 ### 9.4 Transmission policy
 
@@ -754,10 +806,10 @@ Source: [`radio-energy-policy.md`](radio-energy-policy.md), `App/tx_policy.c` an
 | CONSERVE | 0 | 2 s | Live reading only, at most every 300 s |
 | CRITICAL | 0 | 0 | Nothing is sent. Readings stay in the journal. |
 
-- **Airtime cap.** The firmware estimates one answered exchange as observation airtime + ACK airtime + 300 ms. It uses the widest observation frame of the build (`OBS_FRAME_MAX`, 93 bytes). That is 42 + 18 + 300 = 360 ms at SF7 and 500 kHz (`exchange_ms` in `App/tx_policy.c:43-45`). The number of frames in a minute is limited to the radio time ÷ 360 ms. For the 5 s NORMAL cap that is 13, so the NORMAL backlog limit of 5 applies. The live reading always fits.
-- **Health minute.** In a minute whose health report is due, the allowance first reserves the health frame's airtime (36 ms at SF7) from the cap: `by_airtime = cap > reserve ? (cap − reserve) / exchange : 0`, and the backlog is at most `by_airtime − 1`, never below 0 (`ws_minute_backlog` in `firmware/common/ws_policy.c:88-99`). At SF7 nothing changes. At SF12 (exchange 822 + 412 + 300 = 1,534 ms) NORMAL allows 3 exchanges, and 2 in a health minute. In CONSERVE at SF12, the live exchange and the health report take 1,534 + 740 = 2,274 ms. That is above the 2 s cap **once for each health report**. This exception is accepted (the power telemetry design, section 6.4). The live reading and a due health report always go.
-- **The drain stops one frame after a miss.** If a frame gets no reply, the node sends one more frame of the planned queue, then stops. A second miss in a row, or a transmit timeout, stops it at once. The one more frame lets a strike tell a record that the gateway refuses from a lossy link (section 9.5).
-- **PROBING.** After 3 consecutive minutes with no answer, the link state becomes PROBING. The node then sends the live reading only, with no backlog. In SURPLUS and NORMAL, the live reading still goes every minute, so the bench prototype always sends every minute. Only CONSERVE waits 120 s, 240 s and 480 s, then every 900 s (`ws_link_may_send()` in `firmware/stage0.c`, changed 2026-10-13). Any answer to a sent frame makes the link LINKED again. The node also sends the health report while probing, with link state 1.
+- **Airtime cap.** The firmware estimates one answered exchange as observation airtime + ACK airtime + 300 ms. For the widest observation frame of the build (`OBS_FRAME_MAX`, 93 bytes), that's 42 + 18 + 300 = 360 ms at SF7 and 500 kHz (`exchange_ms` in `App/tx_policy.c:43-45`). The most frames that fit in a minute is the radio time ÷ 360 ms. For the 5 s NORMAL cap that's 13, so the NORMAL backlog limit of 5 applies. The live reading always fits.
+- **Health minute.** In a minute with a health report due, the allowance first takes the health frame's airtime (36 ms at SF7) off the cap: `by_airtime = cap > reserve ? (cap − reserve) / exchange : 0`, and the backlog limit is `by_airtime − 1`, never below 0 (`ws_minute_backlog` in `firmware/common/ws_policy.c:88-99`). At SF7 this changes nothing, but at SF12 (exchange 822 + 412 + 300 = 1,534 ms), NORMAL allows 3 exchanges, and 2 in a health minute. In CONSERVE at SF12, the live exchange and the health report take 1,534 + 740 = 2,274 ms, which goes over the 2 s cap **once for each health report**. The power telemetry design (section 6.4) accepts this exception, and the live reading and a due health report always go.
+- **The drain stops one frame after a miss.** If a frame gets no reply, the node sends one more frame of the planned queue, then stops. A second miss in a row, or a transmit timeout, stops it at once. That one extra frame lets a strike tell a record that the gateway refuses apart from a lossy link (section 9.5).
+- **PROBING.** After 3 unanswered minutes in a row, the link state becomes PROBING and the node sends only the live reading (no backlog). In SURPLUS and NORMAL that reading still goes every minute, so the bench prototype always sends every minute. Only CONSERVE waits 120 s, 240 s and 480 s, then every 900 s (`ws_link_may_send()` in `firmware/stage0.c`, changed 2026-10-13). Any answer to a sent frame puts the link back to LINKED. In PROBING the health report still goes out, with link state 1.
 
 ```mermaid
 stateDiagram-v2
@@ -769,14 +821,16 @@ stateDiagram-v2
   PROBING --> LINKED: "any reply (ACK or NACK)"
 ```
 
-- **Simulator.** The Python simulator (`ws0/simulator.py`, `BACKLOG_PER_MINUTE = 5`) drains 5 records per minute, like NORMAL. It sends the live reading every minute. It does not model the drain stop or PROBING. In NORMAL, its delivery timing matches the firmware.
+- **Simulator.** The Python simulator (`ws0/simulator.py`, `BACKLOG_PER_MINUTE = 5`) drains 5 records per minute, like NORMAL, and sends the live reading every minute. It doesn't model the drain stop or PROBING. In NORMAL, its delivery timing matches the firmware.
 
 ### 9.5 NACK and abandoned records
 
 A record leaves the journal without an ACK in three cases. The node counts each case, and the counts go into the health report (section 7.3.2).
 
 1. **NACK.** The gateway authenticated the frame but must reject it permanently (identity collision or invalid record). The node accepts a NACK only if its echo, epoch and sequence match the frame just sent. It marks the slot done and adds 1 to the persisted `abandoned` total.
-2. **Strike limit.** A record earns a strike when it gets no reply but a frame sent **after** it in the same exchange gets one. At 10 strikes, the node abandons the record and counts it (`STRIKE_LIMIT` 10, 6 tracking slots). An answer to an earlier frame proves nothing, because on a weak link the next frame can be lost. Thus a link or gateway outage never abandons data. A refused record that is the only backlog is the minute's last frame. No later frame can show that the gateway refuses it. Thus the node retries it each minute (one frame) and never abandons it.
+2. **Strike limit.** A record earns a strike when it gets no reply but a frame sent **after** it in the same exchange gets one. At 10 strikes, the node abandons the record and counts it (`STRIKE_LIMIT` 10, 6 tracking slots).
+
+   An answer to an earlier frame proves nothing, because on a weak link the next frame can get lost. So a link or gateway outage never abandons data. A refused record that's the only backlog is the minute's last frame. No later frame can show that the gateway refuses it. So the node retries it each minute (one frame) and never abandons it.
 3. **Ring overflow.** The firmware erases the oldest page and counts its pending records as `lost` (section 5.5).
 
 ### 9.6 Failure cases
@@ -807,9 +861,9 @@ flowchart LR
   MAC --> PY["pyserial, ws0 serve"]
 ```
 
-The ST-LINK on each Nucleo board makes the USB virtual COM port. The port name changes when you move the cable. **Identify a board by its ST-LINK serial number, not by its port name.**
+The ST-LINK on each Nucleo board makes the USB virtual COM port. The port name changes when you move the cable, so **identify a board by its ST-LINK serial number, not by its port name.**
 
-The gateway opens the port exclusively (`open_port()` in `ws0/link.py`). On macOS and Linux, pyserial locks the port with `flock`. A second program that opens the same port fails. Thus it cannot take lines from the gateway's buffer and lose frames. After a serial error, the gateway closes the port. It opens the port again after a back-off of 1, 2, 4, 8, then 15 s.
+The gateway opens the port exclusively (`open_port()` in `ws0/link.py`). On macOS and Linux, pyserial locks the port with `flock`. If a second program tries to open the same port, it fails. So it can't take lines from the gateway's buffer and lose frames. After a serial error, the gateway closes the port. It opens the port again after a back-off of 1, 2, 4, 8, then 15 s.
 
 ### 10.2 Line format
 
@@ -825,14 +879,14 @@ The gateway opens the port exclusively (`open_port()` in `ws0/link.py`). On macO
 Rules:
 
 - The RX board accepts a host line of 256 bytes or less (`WS_LINE_MAX`). The gateway accepts an RX line of 1,024 characters or less (`MAX_LINE` in `ws0/link.py`). Each side discards a longer line whole.
-- A line that starts with `#` is a diagnostic. The gateway writes it to `receiver.log` in its run directory (`--directory`, for example `run-hw/` at home or `run-office/` at the office). It never decodes it as a frame. It reads the fields of `#alive` and `#boot role=rx` only for receiver liveness.
+- A line that starts with `#` is a diagnostic. The gateway writes it to `receiver.log` in its run directory (`--directory`, for example `run-hw/` at home or `run-office/` at the office). It never decodes it as a frame. It reads the fields of `#alive` and `#boot role=rx` only to track receiver liveness.
 - The gateway writes each frame and its ACK or NACK to `receiver.log`, with the UTC time (`frame <hex> -> ack <hex>` or `-> nack <hex>`, and health reports as `diag <hex>`). This file is evidence for H01.
 - The serial read timeout is 50 ms. The gateway answers a frame immediately. (The TX ACK window is 2 s.)
 - While the RX console holds a complete line for processing, it drops more input. The host sends one line for each exchange.
 
 ### 10.3 TX console (not part of the data path)
 
-The TX board also has a console. It is for provisioning and diagnostics. All lines from the TX board start with `#`.
+The TX board also has a console, for provisioning and diagnostics. All lines from the TX board start with `#`.
 
 | Command | Function |
 |---|---|
@@ -843,7 +897,7 @@ The TX board also has a console. It is for provisioning and diagnostics. All lin
 | `TEST-HANG` | Bench only. Stops the main loop. The watchdog must reset the board in approximately 8 s. |
 | `TEST-FLASH-STORM` | Bench only. Writes flash continuously for power-cut tests. Its slots use epoch `0xFFFFFFFF`. The next boot removes any of them that a cut left pending. |
 
-Use `python -m ws0 provision-node`. Do not type the key by hand. The tool calculates the epoch floor from the gateway database. It compares the KCV of the board with the KCV of the gateway key.
+Use `python -m ws0 provision-node`, and don't type the key by hand. The tool calculates the epoch floor from the gateway database. It compares the KCV of the board with the KCV of the gateway key.
 
 **More information:** UM2592 section on the STLINK-V3E virtual COM port [[UM2592]](#UM2592) · pyserial [[PYSERIAL]](#PYSERIAL).
 
@@ -884,20 +938,20 @@ flowchart TD
 
 A commit failure (`OSError` or `sqlite3.Error`) gives no reply. The node keeps the record and sends it again.
 
-**Replay or key reuse.** The gateway keeps a high-water mark of the node counter. It also keeps the SHA-256 of each authentic node frame that it accepted as fresh, by counter (nonce database, tables `node_counter` and `node_frames`). The gateway never answers an authentic frame at or below the mark and never stores it as data:
+**Replay or key reuse.** The gateway keeps a high-water mark of the node counter. It also keeps the SHA-256 of each authentic node frame that it accepted as fresh, by counter (nonce database, tables `node_counter` and `node_frames`). The gateway never answers an authentic frame at or below the mark, and it never stores one as data:
 
-- **Same bytes** as the frame accepted under that counter: a **replay**. Anyone who recorded a frame can do this. It is harmless. The gateway counts it (`replays`) and keeps it in `rejections` with reason `replay`. It raises no alarm.
-- **Different bytes** under a counter that was used, or a counter that was never accepted: a **counter regression**. The node never repeats a counter, and a direct LoRa link cannot reorder frames. Thus this means a repeated nonce (a reused key). The gateway keeps the frame in `rejections` with reason `counter_regression`. It raises the persistent `/v1/status` alarm "possible key reuse: re-key the node".
+- **Same bytes** as the frame accepted under that counter: a **replay**. Anyone who recorded a frame can do this, and it's harmless. The gateway counts it (`replays`) and keeps it in `rejections` with reason `replay`. It raises no alarm.
+- **Different bytes** under a counter that the gateway already accepted, or a counter it never accepted: a **counter regression**. The node never repeats a counter, and a direct LoRa link can't reorder frames. So this means a repeated nonce (a reused key). The gateway keeps the frame in `rejections` with reason `counter_regression`. It raises the persistent `/v1/status` alarm "possible key reuse: re-key the node".
 
 ### 11.2 Storage rules
 
-- SQLite uses `PRAGMA synchronous=FULL` [[SQLITE]](#SQLITE), plus `PRAGMA fullfsync=ON` and `checkpoint_fullfsync=ON`. On macOS, `fsync()` does not flush the drive cache, but `F_FULLFSYNC` does. Thus the commit is on stable storage before the ACK exists (`gateway.py`, `full_flush`). Both databases use a write-ahead log (WAL). Simulations and unit tests can switch durability off with `WS0_UNSAFE_FAST_FSYNC=1` (`synchronous=OFF`, no `fullfsync`). Results made that way do not show power-loss durability.
+- SQLite uses `PRAGMA synchronous=FULL` [[SQLITE]](#SQLITE), plus `PRAGMA fullfsync=ON` and `checkpoint_fullfsync=ON`. On macOS, `fsync()` doesn't flush the drive cache, but `F_FULLFSYNC` does. So the commit is on stable storage before the ACK exists (`gateway.py`, `full_flush`). Both databases use a write-ahead log (WAL). Simulations and unit tests can switch durability off with `WS0_UNSAFE_FAST_FSYNC=1` (`synchronous=OFF`, no `fullfsync`). Results from such runs don't show power-loss durability.
 - The gateway ACK counters use a `BEGIN IMMEDIATE` transaction. The counter is in the database before the gateway seals the ACK.
 - The nonce database is bound to the key fingerprint, the station, and the direction. A different key cannot use it by accident.
 - An authentic frame that the gateway must reject permanently goes into the `rejections` table (station, session, sequence, received_at, reason, detail, frame_hex) **before** the gateway seals the NACK.
-- The gateway **quarantines** a sample time more than 5 s after the receipt time (`future_clock_at_receipt`). Waiting does not make it valid.
-- An observation is **available** for 180 s after its sample time, only if its clock is known. Availability is decided **per field**. A field is available only if its own value is not `null` (`fields_available` in `/v1/observations/latest`, and one Home Assistant entity per field). A dead sensor does not hide the other fields. After 180 s, Home Assistant and the API show the fields as unavailable.
-- Since-boot counters (rain tips, energy, charge) must not decrease **in sequence order** within one epoch. The gateway compares a new record with its stored neighbours by sequence, not by arrival. Thus it accepts a late backlog record. A decrease is an invalid record (NACK reason 2).
+- The gateway **quarantines** a sample time more than 5 s after the receipt time (`future_clock_at_receipt`). It stays quarantined: time passing doesn't make it valid.
+- An observation is **available** for 180 s after its sample time, only if its clock is known. The gateway decides availability **per field**. A field is available only if its own value isn't `null` (`fields_available` in `/v1/observations/latest`, and one Home Assistant entity per field). A dead sensor doesn't hide the other fields. After 180 s, Home Assistant and the API show the fields as unavailable.
+- Since-boot counters (rain tips, energy, charge) must not decrease **in sequence order** within one epoch. The gateway compares a new record with its stored neighbours by sequence, not by arrival, so it accepts a late backlog record. A decrease is an invalid record (NACK reason 2).
 
 ### 11.3 Time synchronization
 
@@ -913,32 +967,38 @@ flowchart TD
   T -- no --> K["Keep the clock as it is"]
 ```
 
-**Host clock check.** The gateway is the only time source. It measures its own clock with SNTP at start and every hour (`ws0/clock.py`). If the offset is more than 1 s, every ACK carries UTC **0**. The TX board then does not change its clock, because 0 is before 2026-01-01. If no measurement is possible, the gateway still sends its time and shows `unverified` in `/v1/status`.
+**Host clock check.** The gateway is the only time source. It measures its own clock with SNTP at start (`ws0/clock.py`). After that, it checks every hour while the clock is OK, or every 5 min after a failed, undecided or bad check. If the offset is more than 1 s even after you take off half the round trip, every ACK carries UTC **0**. That stays until a later check is clearly within 1 s.
 
-**Why the echo is necessary.** An attacker can record an authentic ACK. Later, the attacker can jam the real ACK and send the recorded ACK. Without the echo, the TX board would accept the old time. With the echo, the old ACK has an old counter. The TX board uses a new counter for each frame, so the old ACK does not match. The attacker cannot make a new valid echo without the key.
+The TX board doesn't change its clock on UTC 0, because 0 is before 2026-01-01.
 
-**Accuracy.** The gateway writes its time at the commit. The TX board sets its clock when the ACK arrives. The TX clock is late by the time between these two events. This time is normally much less than 1 s (two airtimes + USB + commit). Nobody has measured it exactly yet.
+A result too close to call (a slow round trip) counts as unverified, and the gateway still sends its time. If no measurement is possible, the gateway also still sends its time and shows `unverified` in `/v1/status`.
 
-**Drift.** The RTC uses the 32.768 kHz LSE crystal. A tuning-fork crystal drifts approximately 20 ppm at room temperature. Its error increases with the square of the temperature difference. At −35 °C it can be more than 120 ppm. After 6 hours without an ACK, the TX board marks new samples `time unknown` (UTC = 0).
+**Why the echo is necessary.** An attacker can record an authentic ACK. Later, the attacker can jam the real ACK and send the recorded one. Without the echo, the TX board would accept the old time.
+
+With the echo, the old ACK has an old counter. The TX board uses a new counter for each frame, so the old ACK doesn't match. The attacker can't make a new valid echo without the key.
+
+**Accuracy.** The gateway writes its time at the commit, and the TX board sets its clock when the ACK arrives. So the TX clock is late by the time between these two events. That's normally much less than 1 s (two airtimes + USB + commit), but nobody measured it exactly yet.
+
+**Drift.** The RTC uses the 32.768 kHz LSE crystal. A tuning-fork crystal drifts about 20 ppm at room temperature. Its error goes up with the square of the temperature difference, and at −35 °C it can be more than 120 ppm. After 6 hours without an ACK, the TX board marks new samples `time unknown` (UTC = 0).
 
 #### 11.3.1 Time across a reset
 
-A system reset (RESET button, NRST, software reset, watchdog) does not stop the RTC or clear its backup registers. The TX board keeps a trust marker in two backup registers: a magic value and the RTC second of the last sync. At boot, the board trusts its clock again only if all of these are true:
+A system reset (RESET button, NRST, software reset, watchdog) doesn't stop the RTC or clear its backup registers. The TX board keeps a trust marker in two backup registers: a magic value and the RTC second of the last sync. At boot, the board trusts its clock again only if all of these are true:
 
 - the marker is present,
 - the RTC counted forward since the sync,
 - the sync is less than 6 hours old,
 - the clock shows a plausible date (2026-01-01 or later).
 
-If a power loss clears the backup domain, the marker is gone. The board then starts with `time unknown`.
+If a power loss clears the backup domain, it clears the marker too, and the board starts with `time unknown`.
 
-**Open:** Nobody has checked yet whether a real power loss clears the backup domain on this board (VBAT supply). Check it against the board schematic and with a true power-removal test (deferred). A simulated loss (the debugger pulsed `RCC_BDCR.BDRST`) gave no restore and `time=unknown` ([`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md)).
+**Open:** Nobody checked yet if a real power loss clears the backup domain on this board (VBAT supply). Check it against the board schematic and with a true power-removal test (deferred). A simulated loss (the debugger pulsed `RCC_BDCR.BDRST`) gave no restore and `time=unknown` ([`hardware/nucleo-wl55jc-bringup.md`](hardware/nucleo-wl55jc-bringup.md)).
 
-**Bench result (2026-10-12):** after a warm reset, the board printed `#time restored … sync_age=11`. Its first reading in the new epoch was synchronized. The difference between board and host was −1.0 s (same log).
+**Bench result (2026-10-12):** after a warm reset, the board printed `#time restored … sync_age=11`. Its first reading in the new epoch was a synchronized reading. The difference between board and host was −1.0 s (same log).
 
 #### 11.3.2 Reconstructed time
 
-Every observation carries **uptime**: whole seconds since the TX board booted. Time sync does not change uptime. Thus all readings of one epoch share one monotonic time line. When the gateway has at least one **synchronized** reading of an epoch, it calculates the time of every unsynchronized reading of the same epoch:
+Every observation carries **uptime**: whole seconds since the TX board booted. Time sync doesn't change uptime, so all readings of one epoch share one monotonic time line. If the gateway has at least one **synchronized** reading of an epoch, it calculates the time of every unsynchronized reading of that epoch:
 
 `effective_time = ref_utc + (uptime − ref_uptime)`, with the synchronized reading nearest in uptime.
 
@@ -954,12 +1014,12 @@ flowchart LR
 
 Rules:
 
-- The raw payload does not change. It stays immutable and stays the deduplication authority. The result goes into separate columns: `effective_at`, `time_basis` (`synchronized`, `reconstructed`, or `unknown`), and `time_uncertainty_s`.
+- The raw payload doesn't change. It stays immutable and stays the deduplication authority. The result goes into separate columns: `effective_at`, `time_basis` (`synchronized`, `reconstructed`, or `unknown`), and `time_uncertainty_s`.
 - **Uncertainty** = 2 s (whole-second quantization of two fields) + 150 ppm × |uptime − ref_uptime|. Example: 2 s after one minute, about 41 s after a 3-day outage.
 - The gateway never uses a quarantined reference (its clock was ahead of its receipt time).
 - The gateway never shows a reading with an uncertainty above 10 s as **current**. The reading stays in the history with its error bound.
 - **H01:** a reconstructed time counts as a known acquisition time when it meets the same 5 s tolerance. The project owner decided this on 2026-10-12. Reports give the reconstructed count separately.
-- **Limit:** an epoch that ends (reboot) before its first synchronized reading has no reference. Its readings stay `unknown`. With the trust marker of section 11.3.1, only a power loss followed by a reboot before the first ACK causes this.
+- **Limit:** an epoch that ends (reboot) before its first synchronized reading has no reference, so its readings stay `unknown`. With the trust marker of section 11.3.1, only a power loss followed by a reboot before the first ACK causes this.
 
 **Bench result (2026-10-12):** a simulated power loss (backup-domain reset) started epoch 8 with no time. One minute later, the gateway reconstructed reading 0 as 03:15:34Z ± 2.0 s. The board log shows the sample at 03:15:35Z.
 
@@ -978,7 +1038,9 @@ See [`openapi.json`](openapi.json) and the firmware README ([`../firmware/stage0
 
 ## 12. Worked example: the known-answer frames
 
-The boot self-test of the TX board and `tests/test_frame.py` share these frames (`KAT_OBS` and `KAT_ACK` in `App/selftest.c:15-20`). They use the FIPS-197 test key `000102…0f` and station 1. The gateway code opens them (`ws0/protocol.py`). These are the protocol version 6 vectors (`.venv/bin/python -m tests.test_frame --kat` prints them). The nonce does not contain the version, so the ciphertext is the same as in version 5. The header is the AAD, so the version byte changes every tag.
+The boot self-test of the TX board and `tests/test_frame.py` share these frames (`KAT_OBS` and `KAT_ACK` in `App/selftest.c:15-20`). They use the FIPS-197 test key `000102…0f` and station 1, and the gateway code opens them (`ws0/protocol.py`). These are the protocol version 6 vectors (`.venv/bin/python -m tests.test_frame --kat` prints them).
+
+The nonce doesn't contain the version, so the ciphertext is the same as in version 5. The header is the AAD, so the version byte changes every tag.
 
 ### 12.1 Observation frame (TX to gateway)
 
@@ -998,7 +1060,7 @@ packet-beta
   272-335: "tag 57ff27db21805390"
 ```
 
-The gateway opens it with the station key. The plaintext is 26 bytes. It has temperature and humidity only (bitmap `0x00000003`), not the field set of the current build:
+The gateway opens it with the station key. The plaintext is 26 bytes. It has only temperature and humidity (bitmap `0x00000003`), not the field set of the current build:
 
 ```mermaid
 packet-beta
@@ -1043,11 +1105,11 @@ packet-beta
   96-135: "echo 0100000002"
 ```
 
-The echo `0x0100000002` is equal to the counter of the observation frame. The counter of the ACK (5) comes from the gateway's own counter space. This vector is for the self-test only. Its UTC (1760000000) is before 2026-01-01, so a node would not set its clock from it.
+The echo `0x0100000002` is equal to the counter of the observation frame. The counter of the ACK (5) comes from the gateway's own counter space. This vector is for the self-test only. Its UTC (1760000000) is before 2026-01-01, so a node wouldn't set its clock from it.
 
 ### 12.3 Try it yourself
 
-The script opens the logged exchanges of protocol version 6. It skips frames of other versions. A run directory of a version 5 release needs the version 5 code. Give the run directory as the argument.
+This script opens the logged exchanges of protocol version 6 and skips frames of other versions. For a run directory of a version 5 release, you need the version 5 code. Give the run directory as the argument.
 
 ```sh
 # Decode the logged exchanges (needs the key in <run dir>/gateway.json; prints no key)
@@ -1094,15 +1156,16 @@ EOF
 
 When you change the protocol, do these steps:
 
-1. Increase the version (the high 4 bits of byte 0). Old frames must fail at the header check. A change of the frame format also needs a **new key** ([`protocol.md`](protocol.md) section 2).
+1. Increase the version (the high 4 bits of byte 0), so old frames fail at the header check. A change of the frame format also needs a **new key** ([`protocol.md`](protocol.md) section 2).
 2. Update [`protocol.md`](protocol.md) and this document.
 3. Update `ws0/protocol.py` and `firmware/common/ws_frame.{c,h}` together. Update `ws0/fields.py` and `firmware/common/ws_obs.{c,h}` together.
 4. Make new known-answer vectors directly with the `cryptography` library from the specified header and nonce (not with `ws0/protocol.py`). Put them in `tests/test_frame.py` **and** `App/selftest.c`.
 5. Run `WS0_UNSAFE_FAST_FSYNC=1 .venv/bin/python -m unittest discover -s tests` and `make -C firmware/fuzz check`. All must pass.
-6. Run the harness into a **new** output directory. Do not overwrite old evidence.
-7. Build both roles. Record the binary SHA-256 values. Flash **both** boards. A version mismatch stops all traffic.
+6. Run the simulation into a **new** output directory. Don't overwrite old evidence.
+7. Build both roles and record the binary SHA-256 values.
+8. Flash **both** boards. A version mismatch stops all traffic.
 
-**Release procedure for a format change** (version 6 and every later version; the power telemetry design, section 4, replaces [`protocol-design.md`](protocol-design.md) section 7):
+**Release procedure for a format change** (version 6 and every later version). The power telemetry design, section 4, replaces [`protocol-design.md`](protocol-design.md) section 7 here:
 
 | Step | Action | Why |
 |---:|---|---|
@@ -1114,7 +1177,7 @@ When you change the protocol, do these steps:
 | 5 | Start the gateway of the same release (`VERSION = 6` in `ws0/protocol.py`). | — |
 | 6 | Record the release in `RELEASES.md`: the protocol version, the field set, the power wiring phase and the monitored rails. | — |
 
-Why version 6 is a new version: under version 5, a gateway that was not updated would NACK the new bitmap bits (reason 2), and the node would abandon those records. An RX bridge that was not updated would drop the longer health report. With a new version, a mismatched end drops the frames as another version, so the records stay in the journal until both ends match.
+Why version 6 is a new version: under version 5, an old gateway would NACK the new bitmap bits (reason 2), and the node would abandon those records. An old RX bridge would drop the longer health report. With a new version, a mismatched end drops the frames as another version. So the records stay in the journal until both ends match.
 
 ---
 
@@ -1147,7 +1210,7 @@ Why version 6 is a new version: under version 5, a gateway that was not updated 
 | Key | Source |
 |---|---|
 | <a id="STE"></a>STE | ASD-STE100 Simplified Technical English — <https://www.asd-ste100.org/> |
-| <a id="UM2592"></a>UM2592 | ST, *STM32WL Nucleo-64 board (MB1389)*, user manual, Rev 4 — <https://www.st.com/resource/en/user_manual/um2592-stm32wl-nucleo64-board-mb1389-stmicroelectronics.pdf> |
+| <a id="UM2592"></a>UM2592 | ST, *STM32WL Nucleo-64 board (MB1389)*, user manual, Rev 4 (Nov 2025), as supplied by Clint ([bring-up log](hardware/nucleo-wl55jc-bringup.md)) — <https://www.st.com/resource/en/user_manual/um2592-stm32wl-nucleo64-board-mb1389-stmicroelectronics.pdf> |
 | <a id="DB3933"></a>DB3933 | ST, *NUCLEO-WL55JC* data brief — <https://www.st.com/en/evaluation-tools/nucleo-wl55jc.html> |
 | <a id="RM0453"></a>RM0453 | ST, STM32WL5x reference manual (flash, ECC, SUBGHZ radio) — <https://www.st.com/en/microcontrollers-microprocessors/stm32wl55jc.html> (Documentation tab) |
 | CubeWL | ST, STM32CubeWL v1.6.0 (HAL, SubGHz_Phy, Mbed TLS) — <https://github.com/STMicroelectronics/STM32CubeWL> |

@@ -5,7 +5,7 @@ Its acceptance criteria come from the v0.2 product and technical requirements (P
 
 H01 runs on the breadboard build: two development boards on USB power, the bench sensor modules, and the gateway. The TX reads its sensors as WSMP local modules ([`module-protocol.md`](module-protocol.md)). Power phase A (the bq24074 charger, the 1S3P pack and their monitors, read by the node) runs beside it ([`hardware/power-metering.md`](hardware/power-metering.md) section 1).
 
-**Where H01 runs.** H01 runs on the breadboard build, after step 1 has exited (build-progression record [S1](superpowers/specs/2026-10-29-build-progression-decisions.md#25-build-steps)). Clint's answer 7.1 Q8 ("H01 first") puts it before step 1b's four-rail work (profile B: the load, solar and USB-C INA228s on the bq24074).
+**Where H01 runs.** H01 runs on the breadboard build, after step 1 exits (build-progression record [S1](superpowers/specs/2026-10-29-build-progression-decisions.md#25-build-steps)). Clint's answer 7.1 Q8 ("H01 first") puts it before step 1b's four-rail work (profile B: the load, solar and USB-C INA228s on the bq24074).
 
 **Status: NOT RUN.** Simulated observations cannot satisfy this test.
 
@@ -27,21 +27,24 @@ flowchart TD
   F --> L
 ```
 
-A fault-test phase can run separately from the placement run. Its intervals never leave the placement run's denominator.
+You can run a fault-test phase separately from the placement run to characterize recovery. Never subtract it silently from the placement run's denominator. If you inject faults in the placement run itself, report all intervals.
 
 ## Capture before testing
 
 - Source revision, vendor and toolchain versions, binary hashes, and the configuration without keys.
 - Board, sensor and bill-of-materials revisions. Exact wiring, supply and current-measurement boundaries.
-- Receiver host, antennas and intended placement, including obstructions.
+- Receiver host, antennas and intended placement, with any obstructions.
 - The declared synchronized acquisition-time source, the clock accuracy and the report period.
 - Raw receiver frames and logs, the SQLite database and the transmitter journal counters.
 - MQTT and Home Assistant (HA) discovery, measurement availability and local API checks.
-- The power wiring phase (A or B; [`hardware/power-metering.md`](hardware/power-metering.md) section 1) and the monitored rails, as the release's `RELEASES.md` entry records them: which rails the build fills, which are absent, the INA228 addresses, and the measured constants in `App/power_config.h` (R_ISET, divider ratio; a shunt only if it failed its verification) or "nominal", and the firmware build ID (nonzero: a build from a clean commit). Name the TX supply (USB bench power) apart from the power breadboard the node reads.
+- The power wiring phase (A or B, see [`hardware/power-metering.md`](hardware/power-metering.md) section 1) and the monitored rails, as the release's `RELEASES.md` entry records them (step g): which rails the build fills and which are absent.
+- Separately from that entry, note the INA228 addresses and the constants in `App/power_config.h` (R_ISET, divider ratio, and a shunt only if it failed its verification), measured or "nominal". Also note the firmware build ID from the health report. A nonzero ID means a build from a clean commit, and it's the first 8 hex digits of the release commit.
+  - The `RELEASES.md` entry doesn't carry these. It carries the commit, plus the section 12.2 drill results when the power wiring changed.
+- Name the TX supply (USB bench power) apart from the power breadboard the node reads.
 
 ## Preconditions (build-progression record S1, H8, D6, M7)
 
-Each is recorded in the run notes before the 24-hour run starts. A run that starts without one of them is not an H01 run.
+Record each one in the run notes before the 24-hour run starts. A run that starts without one of them is not an H01 run.
 
 | # | Precondition | How it is shown | Source |
 |---|---|---|---|
@@ -56,8 +59,9 @@ Each is recorded in the run notes before the 24-hour run starts. A run that star
 - `/v1/status` shows `"alarm": null` before the run starts and after it ends.
   - A non-null alarm means possible key reuse (`failure-modes.md` §8.2). Causes: a restored flash backup, two boards that share a key, or a key reused after a WIPE.
   - `ws0 provision-node` prints the gateway's counter high-water mark. It refuses a board at or below the mark.
-- **Wire and verify the SHT45 sensor first.** It is the air temperature and humidity module (`App/mod_th.c`). The H01 verdict counts a reading as valid only when its temperature and humidity are valid. The transmitter (TX) console must show a CRC-checked valid reading (`#sample … valid=1`). The unplug test must show `sensor_fault`, then recovery.
-  - Without a sensor every reading is a `sensor_fault`. The verdict is then FAIL by design (see `evidence/soak-a07f498-2026-10-13/`).
+- **Wire and check the SHT45 sensor first.** It's the air temperature and humidity module (`App/mod_th.c`). The H01 verdict counts a reading as valid only when its temperature and humidity are valid. The transmitter (TX) console must show a CRC-checked valid reading (`#sample … valid=1`).
+  - Unplug test: after the unplug, the TX `#sample` line must go to `valid=0` (`t=0`, `rh=-`) and the `#counts` `sensor_faults` counter must rise. The gateway record must turn "partial". The H01 report counts it as `on_time_sensor_fault`. After the replug, `valid=1` must come back.
+  - Without a sensor every reading counts as a sensor fault, so the verdict is FAIL by design (see `evidence/soak-a07f498-2026-10-13/`).
 - **USB topology (record H8, 7.1 Q5).** On 2026-10-28/29 both NUCLEOs shared one hub, and a TX unplug stalled the RX port: open but silent (record F6).
   - The RX gateway NUCLEO goes alone on a direct Mac port. Never unplug or replug it during the run.
   - The TX and any other bench board go on another port or hub. Their replugs happen only there, at the board end.
@@ -65,25 +69,38 @@ Each is recorded in the run notes before the 24-hour run starts. A run that star
 - **Secure the USB cables. Run no debugger sessions during the run.**
   - A USB dropout of about 1 s makes the ST-LINK reset its board (`reset=pin`). A debugger session can also reset TX.
   - Sources: `docs/hardware/nucleo-wl55jc-bringup.md`, "Office session", and the USB-dropout failure mode in `failure-modes.md` §6.
-- If TX was wiped, provision it with a **new** key (`docs/runbook-moving-boards.md`).
+- If you wiped TX, provision it with a **new** key (`docs/runbook-moving-boards.md`).
   - On firmware before release `0f456040fe54`, a WIPE restarts the nonce counter.
   - A key used before that release, or on another board, can repeat nonces.
-- **Power release (open decision D2).** Whether H01 runs on a protocol version 6 release is Clint's decision (power telemetry design [section 15](superpowers/specs/2026-10-29-power-telemetry-design.md#15-risks-and-open-decisions), D2). Recommendation: yes, so that the H01 evidence names the shipping protocol. *Note (2026-10-30):* as the build-progression record stands, the H01 preconditions can be met only on a version 6 build: precondition 5 needs `#status` `meter_link=ok`, which only the version 6 node source prints (`App/tx_console.c:62`; the version 5 status line has no such field), and precondition 1 needs the power-telemetry phase A exit criteria, which version 5 firmware cannot meet because it reads no power. A "no" on D2 therefore also needs a version 5 backport of the M7 counter link probe and of the phase A power reading, which no plan carries; without it, H01 runs on a version 6 build. A version 6 release changes the frame format, so it needs the release procedure ([`protocol-design.md`](protocol-design.md) section 7: drain, WIPE, flash both boards, new run directory, new key) before the run, never during it.
-- **On a version 6 release, check that the gateway stores the power fields** before the run: `/v1/observations/latest` and the dashboard show each power field of the phase's column ([`hardware/power-metering.md`](hardware/power-metering.md) section 4) either as a value (valid), absent when the phase has no source for it (no field, no HA entity), or `null` (INVALID) when its fitted part failed; the newest health report (`…/diagnostics`) carries the power keys. An INVALID power field marks the record "partial", which does not change the verdict: the verdict counts temperature and humidity only (power design section 5.3).
+- **Power release (open decision D2).** Clint decides if H01 runs on a protocol version 6 release (power telemetry design [section 15](superpowers/specs/2026-10-29-power-telemetry-design.md#15-risks-and-open-decisions), D2). Recommendation: yes, so the H01 evidence names the shipping protocol.
+  - *Note (2026-10-30):* as the build-progression record stands, only a version 6 build can meet the H01 preconditions.
+  - Precondition 5 needs `#status` `meter_link=ok`. Only the version 6 node source prints it (`App/tx_console.c:62`). The version 5 status line has no such field.
+  - Precondition 1 needs the power-telemetry phase A exit criteria, and version 5 firmware can't meet them. Version 5 reads the battery INA228 (voltage and accumulators), the MAX17048 SOC and PGOOD/CHG. It doesn't read ISET, the charger input voltage, the INA228 die temperature, or the gauge cell voltage and rate. The version 5 gateway has no fields for them either.
+  - So a "no" on D2 also needs a version 5 backport of the M7 counter link probe and of the missing phase A power readings. No plan carries that backport. Without it, H01 runs on a version 6 build.
+  - A version 6 release changes the frame format. Do the release procedure ([`protocol-design.md`](protocol-design.md) section 7: drain, WIPE, flash both boards, new run directory, new key) before the run, never during it.
+- **On a version 6 release, check that the gateway stores the power fields** before the run.
+  - `/v1/observations/latest` and the dashboard show each power field of the phase's column ([`hardware/power-metering.md`](hardware/power-metering.md) section 4) in one of three ways:
+    - a value (valid),
+    - absent, when the phase has no source for it (no field, no HA entity),
+    - `null` (INVALID), when its fitted part failed.
+  - The newest health report (`…/diagnostics`) carries the power keys.
+  - An INVALID power field marks the record "partial". That doesn't change the verdict, because the verdict counts temperature and humidity only (power design section 5.3).
 - Do not run bench fault-injection commands (`TEST-HANG`, `TEST-FLASH-STORM`) on the boards under test during the placement run.
 - Run firmware from release `0f456040fe54` or later. Name the release in the evidence (`firmware/stage0-node/RELEASES.md`).
   - On 2026-10-19 the TX runs `04fcc656938d` and the RX runs `cc2766a38c61`. Both are bench releases, not H01 releases: their radio settings are bench values.
-  - In the NORMAL energy state (always on USB), this firmware keeps sending the live reading every minute while it probes a silent link. An outage therefore costs no extra late intervals (`failure-modes.md` §3.3).
+  - In the NORMAL energy state (always on USB), this firmware keeps sending the live reading every minute while it probes a silent link. So an outage costs no extra late intervals (`failure-modes.md` §3.3).
   - Earlier releases backed off up to 15 min.
 
 ## Link check before the run
 
-At the intended placements, record the received signal strength (RSSI) and signal-to-noise ratio (SNR) in **both** directions for at least 30 exchanges:
+At the intended placements, record the received signal strength (RSSI) and signal-to-noise ratio (SNR) in **both** directions for at least 30 exchanges. The count of 30 is this checklist's own rule, added with the link check on 2026-10-12. No measurement sets it.
 
 - uplink from `receiver.log` (`#rx obs`),
 - downlink from the TX console (`#ack … rssi`).
 
-Both boards print `power=` at boot. The two values must match. If the downlink margin is more than 3 dB worse than the uplink, fix the receiver antenna position before you start the 24-hour run.
+Both boards print `power=` at boot. The two values must match. The ACK uses the same radio settings as the uplink, so the two margins should be about the same.
+
+If the downlink margin is more than 3 dB worse than the uplink, move the receiver antenna before the 24-hour run. The 3 dB limit is also this checklist's own rule from 2026-10-12, not a measured figure.
 
 ## 24-hour placement test
 
@@ -102,13 +119,20 @@ Score the run with:
     --start <UTC, e.g. 2026-10-15T00:00:00Z> --hours 24 --output evidence/h01-<date>
 ```
 
-- Always give `--db` and `--station` explicitly. The defaults (`run-hw/observations.sqlite3`, `station-01`) may not match the run, and a wrong station scores 0 intervals. On 2026-10-19 the gateway runs from `run-d7`, and `run-hw` does not exist.
+- Always give `--db` and `--station` explicitly. The defaults (`run-hw/observations.sqlite3`, `station-01`) may not match the run, and a wrong station scores 0 intervals.
+- No gateway runs now and no run directory is current. The `run-d7` session ended on 2026-10-19 at 21:58 UTC. The 2026-11-18 cleanup deleted every earlier run directory (`run-hw`, `run-office`, the `run-d5`/`run-d6` archives, `run-d7`). The next bench run uses a new run directory, so pass its `observations.sqlite3` path to `--db` and its station name to `--station`.
 - `--output` must be a new directory. The tool refuses an existing one.
 - The exit code is 0 for PASS and 1 for FAIL.
 - The tool applies these rules to the gateway database. It writes `report.json` and `report.md`.
 - The verdict needs on-time **valid** readings. The report gives transport-only success (sensor-fault readings delivered on time) beside the verdict, never instead of it.
 - `invalid_clock_observations` counts observations, not intervals.
-- The report lists the **serial-link gaps** (`serial_gaps`, `serial_gap_count`, `serial_gap_total_s`) beside the score, never in it: each serial-lost to the next serial-open, each `serial-reopen` over its `silent_s`, each `receiver-silent` span (180 s without an RX report), and each run of missing `#alive` minutes. Name every gap in the evidence. A gap that matches late or missing intervals explains them; it never removes them from the denominator. `not recorded` means a gateway without the `gateway_events` table: gaps unknown, not zero.
+- The report lists the **serial-link gaps** (`serial_gaps`, `serial_gap_count`, `serial_gap_total_s`) beside the score, never in it. A gap is one of these:
+  - each serial-lost to the next serial-open,
+  - each `serial-reopen` over its `silent_s`,
+  - each `receiver-silent` span (180 s without an RX report),
+  - each run of missing `#alive` minutes.
+
+  Name every gap in the evidence. A gap that matches late or missing intervals explains them. It never removes them from the denominator. `not recorded` means a gateway without the `gateway_events` table: gaps unknown, not zero.
 
 Record the exact test interval and denominator. If you inject faults in the same run, report all intervals. A separate fault-test phase can characterize recovery. Never subtract it silently from the placement run's denominator.
 
@@ -127,6 +151,6 @@ Record the exact test interval and denominator. If you inject faults in the same
 
 ## Decision
 
-H01 passes only when placement latency, identity, time, restarts, stale state and recovery all meet the specification. Save the full evidence set. Freeze a reproducible checkpoint. The verdict criteria above do not change with the power release: the power fields are stored and exposed, never scored.
+H01 passes only when placement latency, identity, time, restarts, stale state and recovery all meet the specification. Save the full evidence set. Freeze a reproducible checkpoint. The verdict criteria above don't change with the power release. The gateway stores and exposes the power fields but never scores them.
 
 On failure, fix the antenna placement, the link settings and the buffering. If necessary, move the receiver or select a better qualified radio module. Then test again. Do not introduce a mesh. Do not lower the pass threshold.

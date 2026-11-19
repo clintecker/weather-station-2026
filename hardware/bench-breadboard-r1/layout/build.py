@@ -586,7 +586,7 @@ def check():
         if d > QT_HEADER_MM:
             fails.append(f"[4] QT-to-header cable {cable} needs about {d:.0f} mm, it is {QT_HEADER_MM} mm")
     ntc = max(math.dist(NTC_BEAD, pin_xy(("RT1", p))) for p in ("1", "2")) * 1.15 + 10
-    notes.append(f"NTC leads need about {ntc:.0f} mm from the pack to BB1 [TBD-MEASURE: #372 lead length]")
+    notes.append(f"NTC leads need about {ntc:.0f} mm from the pack to BB1 (the #372 leads are at least 457 mm, per Adafruit)")
     # 5 parts inside the plate and not overlapping
     rects = {r: outline(r) for r in PLACE}
     rects.update({b: (x, y, BB_W, BB_H) for b, (x, y) in BOARDS.items()})

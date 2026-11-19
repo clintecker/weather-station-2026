@@ -1,13 +1,13 @@
 # wsmp_host: the station side of WSMP
 
 `wsmp_host.c` keeps one state for each local port of the bench station. It turns the modules'
-probes into presence, admits a module only when its identity and descriptors pass the registry and
-its data fits the radio budget, latches every module of the layout once a minute, and removes a
-module after three missed latches. It follows section 7 of `docs/module-protocol.md` (DATAVANE5K,
+probes into presence. It admits a module only when its identity and descriptors pass the registry
+and its data fits the radio budget. Once a minute it latches every module of the layout. After three
+missed latches it removes a module. It follows section 7 of `docs/module-protocol.md` (DATAVANE5K,
 the Weather Station Module Protocol).
 
-This document is the source. `tools/tangle.py` generates `wsmp_host.c` from the code chunks below.
-The header `wsmp_host.h` is a plain file.
+This file is the source. `tools/tangle.py` generates `wsmp_host.c` from the code chunks below.
+The header `wsmp_host.h` is a plain file, so you edit it directly.
 
 ```sh
 python3 tools/tangle.py firmware/stage0-node/App/wsmp_host.lit.md            # write wsmp_host.c
@@ -33,10 +33,9 @@ python3 tools/tangle.py --check firmware/stage0-node/App/wsmp_host.lit.md    # c
 | Removal of a refused or quarantined module | it keeps probing; two missed probes in a row make it Absent | `test_a_refused_port_needs_two_missed_probes_to_be_absent` |
 | Re-identification (section 6.7, PORT-16, PORT-17) | the pre-latch slot, the identity check of every port module in the layout, the sticky possibly-replugged flag, the unverified counter and the 60-latch timeout (section 5.1) | `Reidentify` in `tests/test_wsmp_host.py` |
 
-A local module cannot fail a snapshot read: the read is a copy. So a "good read" here is a latch at
-which the module's last probe did not report it absent. The snapshot must also unpack and carry the
-latch's token. A bus fault (probe -1) counts as a good read,
-so WSMP-P3 holds.
+A local module can't fail a snapshot read, because the read is a copy. So a "good read" here is a
+latch at which the module's last probe didn't report it absent. The snapshot must also unpack and
+carry the latch's token. A bus fault (probe -1) counts as a good read, so WSMP-P3 holds.
 
 ## 2. States
 
@@ -69,13 +68,15 @@ stateDiagram-v2
 ```
 
 A join that quarantines the port goes from Admitted through Active to Quarantined in one latch.
-That latch does not latch the port.
-For an on-board module (battery, rails, enclosure, wind, rain) Identifying (WSMP section 7) happens
-inside one step: its blocks are at hand, so the second good probe identifies and decides at once. The
-battery (port 5) and rails (port 8) modules are base-board modules fixed by `WS_POWER_PROFILE`: their
-probe always reports present, so they join the layout at boot and never leave it, whatever their parts
-answer (`docs/superpowers/specs/2026-10-29-power-telemetry-design.md` section 8.5). An I2C
-port module (ports 1-3 of the static channel map) is identified across steps, section 4 below.
+That latch doesn't latch the port.
+
+For an on-board module (battery, rails, enclosure, wind, rain), Identifying (WSMP section 7) happens
+inside one step. Its blocks are at hand, so the second good probe identifies and decides at once. The
+battery (port 5) and rails (port 8) modules are base-board modules fixed by `WS_POWER_PROFILE`.
+Their probe always reports present, so they join the layout at boot and never leave it, whatever
+their parts answer (`docs/superpowers/specs/2026-10-29-power-telemetry-design.md` section 8.5). The
+host identifies an I2C port module (ports 1-3 of the static channel map) across steps, as section 4
+below describes.
 
 ```c {#constants}
 #ifndef WSMP_HOST_BUDGET
@@ -150,16 +151,19 @@ void wsmp_host_init(void)
 
 `wsmp_host_admit` checks the identity block (WSMP-I1), its digest of the descriptor block, and the
 descriptors against the registry (WSMP-D7). It changes no port. `identify` writes the module's share
-of the budget only when the module is admitted. A minute-class module's bytes are then added to the
-bytes of the minute-class modules that are admitted or in the layout. The total must fit the radio
-budget (WSMP-A1), `WSMP_RADIO_BUDGET` = 60 B: the planned plaintext (80 B) less a 20-byte header.
+of the budget only when admission succeeds. For a minute-class module, the host adds its bytes to
+the bytes of the other minute-class modules that are Admitted, Active or Suspect. The total must
+fit the radio budget (WSMP-A1), `WSMP_RADIO_BUDGET` = 60 B: the planned plaintext (80 B) less a 20-byte header.
 
-No module type is health class (power telemetry design section 8.2). The slow power values (SOC, its
-rate, the charger status, die temperatures, VDDA, the charger-reported measurements) reach the health
-report through `mod_power_health()`, not through WSMP channels, so nothing here checks a health-class
-module against the health report. The `report_class` test below stays for a later health-class type.
-The whole station is at the WSMP-P8 limits: 8 modules and 24 minute channels, whose 53 value bytes and
-6 quality bytes (59 B) fit the 60 B budget.
+No module type the station builds is health class (power telemetry design section 8.2). Type 5
+(battery and charger) is frozen and not built, and it stays health class in the registry. The slow
+power values (SOC, its rate, the charger status, die temperatures, VDDA, the charger-reported
+measurements) reach the health report through `mod_power_health()`, not through WSMP channels. So
+nothing here checks a health-class module against the health report. The `report_class` test below
+stays for a later health-class type.
+
+The whole station is at the WSMP-P8 limits: 8 modules and 24 minute channels. Their 53 value bytes
+and 6 quality bytes (59 B) fit the 60 B budget.
 
 | Module (port) | Channels | Value bytes |
 |---|---:|---:|
@@ -219,7 +223,7 @@ int wsmp_host_admit(enum wsmp_port p, const uint8_t id[WSMP_IDENTITY_LEN], const
 
 ## 4. Probes
 
-The host looks at a port's probe only when the module has probed again (its sequence number moved).
+The host looks at a port's probe only when the module probes again (its sequence number moves).
 
 ```c {#probes}
 static void identify(enum wsmp_port p, port_t *s)
@@ -315,11 +319,11 @@ void wsmp_host_tick(uint32_t now_ms)
 
 ### 4.1 Identifying an I2C port module
 
-`App/port_id.c` does the bus work: the record read and the sensor serial, then, for a duplicate, the
-holder check, each as steps of the port's driver held in its idle state. When the reads are done
-(and the boot hold is over, and no lower port is still identifying, so verdicts are decided in
-port order) `decide` runs the verdict order of `wsmp_identify` (section 6.7)
-against the modules Admitted, Active or Suspect on the other ports:
+`App/port_id.c` does the bus work: the record read and the sensor serial, then the holder check
+for a duplicate. It runs each one as steps of the port's driver, held in its idle state. `decide`
+runs once the reads finish, the boot hold is over and no lower port is still identifying. That
+keeps the verdicts in port order. `decide` runs the verdict order of `wsmp_identify` (section 6.7)
+against the modules that are Admitted, Active or Suspect on the other ports:
 
 | Verdict | Result |
 |---|---|
@@ -327,12 +331,12 @@ against the modules Admitted, Active or Suspect on the other ports:
 | `DUP_SERIAL`, `DUP_TYPE` | the holder check on the holder's port. Gone: the holder is ended (Absent, a leave) and the verdict is decided again. Present: Refused, re-evaluated at every latch |
 | admit | the registry and budget checks of section 3 with the verdict's identity; once admitted, the driver is bound to the module: a fresh window, the boot ID, the applied record's calibration |
 
-A read error is not a verdict. When the sensor serial (the SHT45's 0x89) failed its 3 tries back to
-back, the identification is incomplete: no verdict is decided, so a module is never `SENSOR_CHANGED`
-(and never loses its calibration) because one read failed. The port stays Identifying, counts the
-incomplete identification (the `#modules` line shows `(incomplete=N)` after the port's state), and
-identifies again at its next probe, or goes Absent if that probe fails. A port waiting so does not
-hold the verdicts of the higher ports.
+A read error isn't a verdict. If the sensor serial read (the SHT45's 0x89) fails its 3 tries back
+to back, the identification is incomplete and the host decides no verdict. So one failed read never
+makes a module `SENSOR_CHANGED`, and the module never loses its calibration that way. The port stays
+Identifying and counts the incomplete identification (the `#modules` line shows `(incomplete=N)`
+after the port's state). It identifies again at its next probe, or goes Absent if that probe fails.
+A port that waits like this doesn't hold the verdicts of the higher ports.
 
 ```c {#identify}
 static int valid_record(uint8_t status)
@@ -454,21 +458,27 @@ static void identifying(enum wsmp_port p, port_t *s, int held, uint32_t now_ms)
 
 ## 5. The latch
 
-Each latch has a new token (WSMP-L3). A module admitted since the last latch joins now. Each module
-of the layout is latched and its snapshot read. A join or a leave is a change of the layout. The
-fifth change within an hour quarantines the port for an hour (WSMP-P6).
+Each latch has a new token (WSMP-L3). A module admitted since the last latch joins now. The host
+latches each module of the layout and reads its snapshot. A join or a leave is a change of the
+layout. The fifth change within an hour quarantines the port for an hour (WSMP-P6).
 
-The order within a latch is fixed (section 6.7): first the state transitions of every port, in port
-order; then the identity-check results (section 5.1), in port order; then the re-evaluation of the
-refused duplicates, in port order. The check's outcome is read before the transitions, because two
-of them depend on it: a Suspect module whose read was good returns to Active only with a matched
-check (an unverified one neither raises nor resets its missed-latch count), and a module whose
-flag a matched check clears takes its new boot ID in the snapshot this latch froze, so the window
-that may span the replug already carries it. A matched check clears the flag only at a latch whose
-read was good: the transition returns the outcome the identity result takes, unverified when the
-read failed, so an unplugged module whose check agrees (a READ module's NACK at 0x50) keeps its flag
-and boot ID until it is back. An Admitted module whose check confirmed a change does not
-join: it ends without a change of the layout.
+Section 6.7 fixes the order within a latch. Each step goes through the ports in port order:
+
+1. The state transitions of every port.
+2. The identity-check results (section 5.1).
+3. The re-evaluation of the refused duplicates.
+
+The host reads the check's outcome before the transitions, because two of them depend on it. First,
+a Suspect module whose read was good returns to Active only with a matched check. An unverified
+check neither raises nor resets its missed-latch count. Second, when a matched check clears a
+module's flag, the module takes its new boot ID in the snapshot this latch froze. So the window that
+may span the replug already carries it.
+
+A matched check clears the flag only at a latch whose read was good. The transition returns the
+outcome that the identity result uses, and that outcome is unverified when the read failed. So an
+unplugged module whose check agrees (a READ module's NACK at 0x50) keeps its flag and boot ID until
+it's back. An Admitted module whose check confirmed a change doesn't join. It ends without a change
+of the layout.
 
 ```c {#latch}
 static void layout_change(port_t *s, uint32_t now_ms)
@@ -611,10 +621,10 @@ void wsmp_host_latch(uint32_t utc, uint32_t now_ms)
 
 ### 5.1 The pre-latch slot and the identity check
 
-A module can be swapped between two reads without one failed read, and an unplugged module stays
-Active until a latch read fails, so admission alone does not see a swap (section 6.7,
-"Re-identification"; PORT-16, PORT-17). Every latch is therefore preceded by an identity check of
-every Admitted, Active and Suspect port module:
+You can swap a module between two reads without one failed read. An unplugged module also stays
+Active until a latch read fails. So admission alone doesn't see a swap (section 6.7,
+"Re-identification", PORT-16, PORT-17). That's why the host runs an identity check of every
+Admitted, Active and Suspect port module before each latch:
 
 | Rule | Here | Checked by (`Reidentify` in `tests/test_wsmp_host.py`) |
 |---|---|---|
@@ -627,8 +637,8 @@ every Admitted, Active and Suspect port module:
 | Timeout | 60 latches in a row flagged and unverified end the port in any state; it rejoins as a new module | `test_a_suspect_module_with_good_reads_and_unverified_checks_times_out_once`, `test_an_active_bmp581_whose_eeprom_dies_then_one_read_fails`, `test_a_match_partway_through_resets_the_timeout_run` |
 | Suspect | a good read with an unverified check neither raises nor resets the missed-latch count | `test_miss_good_unverified_miss_good_unverified_miss_removes_the_module` |
 
-The slot is defined from the latch time, not from a sample: sampling is free-running (WSMP-T4). A
-module admitted in the slot is checked from its admission on.
+The host times the slot from the latch, not from a sample, because the sample timing runs free
+(WSMP-T4). If a module gets admitted inside the slot, the host checks it from its admission on.
 
 ```c {#slot}
 static int in_slot(uint32_t now_ms)
@@ -753,17 +763,22 @@ void wsmp_host_worst_line(void)
 
 ## 7. The descriptor set
 
-`wsmp_host_set` describes the layout (WSMP section 11.1) for the gateway: one entry for each module
-that is Admitted, Active or Suspect, in increasing port order. The type, schema, serial, identity
-flags and descriptors come from the module's identity and descriptor blocks, so the set says what
-admission checked. `record_crc` is the applied record's CRC (firmware-current-design.md, section
-6.7): 0 for a module without a record, and 0 when its record is not applied (`NO_RECORD`,
-`SENSOR_CHANGED`, `CAL_REJECTED`). A swap or a new record therefore gives a different set. The
-caller numbers it (WSMP-E1); the generation stays 0 here. The caller builds the set after the
-minute's latch steps (`wsmp_host_latch`): an Admitted module joins the readings at that latch
-(WSMP-P4), so the set built then is the one the latch's readings follow. A module whose blocks no
-longer unpack is a bug, never a silent gap: it is left out and counted in `*dropped`, which
-`MODULES` prints as `#ident dropped=N`.
+`wsmp_host_set` describes the layout (WSMP section 11.1) for the gateway. It has one entry for each
+module that's Admitted, Active or Suspect, in increasing port order. The type, schema, serial,
+identity flags and descriptors come from the module's identity and descriptor blocks, so the set
+says what admission checked. `record_crc` is the applied record's CRC (firmware-current-design.md,
+section 6.7). It's 0 for a module without a record, and 0 when its record isn't applied
+(`NO_RECORD`, `SENSOR_CHANGED`, `CAL_REJECTED`). So a swap or a new record gives a different set.
+
+The generation stays 0 here. The plan is for a future caller to number the set (WSMP-E1), as part
+of the journal and radio work. Today's only caller, `MODULES` in `tx_console.c`, doesn't number it.
+
+The plan is to build the set after the minute's latch steps (`wsmp_host_latch`). An Admitted module
+joins the readings at that latch (WSMP-P4), so a set built then matches the latch's readings. Today
+only the `MODULES` console command builds it (`tx_console.c:289`), when you ask, not after each latch.
+
+A module whose blocks no longer unpack is a bug, and the host doesn't hide it. It leaves the module
+out and counts it in `*dropped`, which `MODULES` prints as `#ident dropped=N`.
 
 ```c {#set}
 static int set_entry(enum wsmp_port p, const port_t *s, wsmp_set_module *m)
@@ -800,9 +815,9 @@ unsigned wsmp_host_set(wsmp_set *set, unsigned *dropped)
 
 `MODULES` prints one line for module `i` of the set:
 `#ident port=1 type=1 serial=0123456789abcdef source=record status=applied crc=deadbeef`. A module
-that never has a record (source `port` with status 0: the meters and the battery and rails modules) shows
-`status=none`. The
-gateway's names for the source and the status are the same (`ws0/wsmp_set.py`).
+that never has a record (source `port` with status 0: the meters and the battery and rails modules)
+shows `status=none`. The gateway uses the same names for the source and the status
+(`ws0/wsmp_set.py`).
 
 ```c {#ident-line}
 #define HEX_DIGITS 16U

@@ -249,8 +249,7 @@ class PreflightTests(unittest.TestCase):
 
     def test_c2_lever_open_is_a_floor(self):
         others = [r for r in MODE_A if not r.startswith('check = "C2"\nlever')]
-        for reading in ('lever = "open"\nvalue = 11500.0', 'lever = "open"\nunit = "ohm"\nvalue = 100.0',
-                        'unit = "open"\nvalue = "open"'):
+        for reading in ('lever = "open"\nvalue = 11500.0', 'lever = "open"\nunit = "ohm"\nvalue = 100.0'):
             with self.subTest(reading):
                 self.write(others + [f'check = "C2"\n{reading}'])
                 self.assertEqual(self.run_status(), ('valid', []))
@@ -258,6 +257,8 @@ class PreflightTests(unittest.TestCase):
         self.assertFailing('under 100 ohm')
         self.write(others + ['check = "C2"\nlever = "open"\nvalue = "open"'])
         self.assertFailing('needs a numeric value')
+        self.write(others + ['check = "C2"\nunit = "open"\nvalue = "open"'])
+        self.assertFailing('reads OL with the lever open')
         self.write(MODE_A + ['check = "C8"\nlever = "open"\nmv = 0.3'])
         self.assertFailing('on C2 only')
 

@@ -3,9 +3,11 @@
 `app_tx.c` boots the transmitting node (the TX node) and runs its sampling. The station's sensors
 are WSMP local modules (`docs/module-protocol.md`, DATAVANE5K). Each module samples on its own
 schedule, and a 250 ms tick drives them (`wsmp_host.c`). Every 15 s the sample task counts a tick.
-The 4th tick latches every module and makes the minute's observation from their snapshots
-(`wsmp_catalog_map.c`). The file journals the observation in flash and passes it to the radio
-exchange (`tx_exchange.c`). It also tells the watchdog task whether to refresh the watchdog.
+On the 4th tick it latches every module and builds the minute's observation from their snapshots
+(`wsmp_catalog_map.c`).
+
+This file journals the observation in flash and hands it to the radio exchange (`tx_exchange.c`).
+It also tells the watchdog task if it's OK to refresh the watchdog.
 
 This document is the source. `tools/tangle.py` generates `app_tx.c` from the code chunks below. The
 repository also holds the generated file, so the build, the static analysers and the host tests read
@@ -48,6 +50,10 @@ The generated file opens with a summary:
  * lists the other TX modules. */
 ```
 
+One fix to that summary. Each frame gets a new counter, reserved durably. Each observation frame
+also gets one ACK receive window, but the health report frame has none (`send_diag` in
+`tx_exchange.c`). The comment above still says every frame gets a window, and it needs the same fix.
+
 ## 2. Boot
 
 ### Order of operations
@@ -83,24 +89,29 @@ flowchart TD
 ```
 
 The bench build (`WS_BENCH_OLED=1`, `App/oled_app.h`) starts the OLED right after the LEDs, before
-anything can stop the boot, so the display also serves an unprovisioned node. `oled_app_start` returns
-at once: the panel's reset and set-up run on timers (`App/oled_dma.h`), and its 125 ms step plays the
-boot splash and then HACK THE PLANET once the panel is ready. Each frame reads the node as it is then,
-so the splash shows the key and the epoch that `boot_ready` found. The field build compiles none of it (an `#if`,
-not a value: the driver's sources are not in that build at all, and `make field-check` proves it).
+anything can stop the boot. That way the display works on an unprovisioned node too.
+`oled_app_start` returns at once, because the panel's reset and set-up run on timers
+(`App/oled_dma.h`). Once the panel is ready, the 125 ms step plays the boot splash, then the module
+checklist (held until every port has a verdict, 60 s at most), then HACK THE PLANET. Each frame reads
+the node at that moment, so the splash shows the key and the epoch that `boot_ready` found.
+
+The field build compiles none of it. It's an `#if`, not a value: the driver's sources aren't in that
+build at all, and `make field-check` proves it.
 
 The watchdog starts before the firmware reads storage. Until sampling starts, `node.running` is 0,
-so `watchdog_healthy` returns 1 (section 6). A node that fails `boot_ready` therefore stays up with
-the console available. The watchdog does not reset it.
+so `watchdog_healthy` returns 1 (section 6). That means a node that fails `boot_ready` stays up
+with the console available, and the watchdog doesn't reset it.
 
 ### State
 
 `node` holds this boot's identity and run state (`tx_node_t`, `tx_node.h`). Only this file writes
-it. The other TX modules read it through `node_state()`. `node_selftest` serves the `KAT` console
-command. KAT stands for known-answer test. The self-test checks the observation encoder, the
-seal, the opener for the gateway's acknowledgement (ACK) and negative acknowledgement (NACK), and
-the counter limit against fixed expected answers (`selftest.h`). `node_selftest` runs the self-test again and stores the result in
-`node.kat_ok`. It does not start sampling on a node whose boot stopped at a failed self-test.
+it. The other TX modules read it through `node_state()`.
+
+`node_selftest` serves the `KAT` console command (KAT is short for known-answer test). The self-test
+checks its parts against fixed expected answers (`selftest.h`). They are the observation encoder,
+the seal, the opener for the gateway's acknowledgement (ACK) and negative acknowledgement (NACK),
+and the counter limit. `node_selftest` runs the self-test again and stores the result in `node.kat_ok`. It
+doesn't start sampling on a node whose boot stopped at a failed self-test.
 
 ```c {#node-state}
 /* This boot's identity and run state. Only this file writes it. The other TX modules read it
@@ -147,10 +158,12 @@ static int boot_ready(void)
 
 ### Boot retry
 
-A storage failure at boot can be transient. `boot_retry` arms a one-shot timer of `BOOT_RETRY_MS`
-(10 minutes). The timer callback calls `NVIC_SystemReset`. `boot_retry` prints
-`#boot-retry: reset in 600 s`. It does nothing when the self-test failed. An unprovisioned board
-never calls it. Both cases need an operator, and a reset does not change them.
+A storage failure at boot can clear on its own. So `boot_retry` arms a one-shot timer of
+`BOOT_RETRY_MS` (10 minutes), and the timer callback calls `NVIC_SystemReset`. `boot_retry` prints
+`#boot-retry: reset in 600 s`.
+
+`boot_retry` does nothing when the self-test failed, and an unprovisioned board never calls it.
+Both of those need an operator, and a reset won't change them.
 
 ```c {#boot-retry-delay}
 /* A storage failure at boot can be transient. A reset after 10 minutes retries the boot once. */
@@ -211,14 +224,16 @@ void SubghzApp_Init(void)
 
 ### From the sample timer to the minute report
 
-Two timers drive sampling. The module timer fires every 250 ms (`WSMP_TICK_MS`). Its task runs one
-step of every local module through the station host. The sample timer fires every 15 s. Its 4th
-tick latches every module and calls `minute_report` (section 4). The latch never waits for a
-sensor. A module that has not finished a sample has one sample fewer in its window. Each of the
-other ticks tells the host when the latch is due (`wsmp_host_next_latch`): the host's pre-latch slot
-starts 3 s before it, and holds the port modules' samples for their identity checks (sensor module
-firmware-current-design.md, section 6.7). The time told is counted from when the timer fired (`sample_fired_ms`,
-taken in its interrupt), not from when the task ran: a task that runs late does not move the slot.
+Two timers drive sampling. The module timer fires every 250 ms (`WSMP_TICK_MS`), and its task runs
+one step of every local module through the station host. The sample timer fires every 15 s. Its 4th
+tick latches every module and calls `minute_report` (section 4).
+
+The latch never waits for a sensor. If a module didn't finish a sample in time, its window just
+holds one sample fewer. On each of the other ticks, the sample task tells the host when the latch
+is due (`wsmp_host_next_latch`). The host's pre-latch slot starts 3 s before the latch and holds the
+port modules' samples for their identity checks (sensor module firmware-current-design.md, section
+6.7). The sample task counts that time from when the timer fired (`sample_fired_ms`, taken in its
+interrupt), not from when the task ran. So a task that runs late doesn't move the slot.
 
 ```mermaid
 flowchart TD
@@ -296,7 +311,7 @@ static void on_module_timer(void *ctx) { (void)ctx; UTIL_SEQ_SetTask(1U << CFG_S
 
 ### Starting the modules
 
-`modules_start` runs once a boot, after the epoch is reserved. It sets up the board inputs (the cup
+`modules_start` runs once a boot, after `boot_ready` reserves the epoch. It sets up the board inputs (the cup
 counter, the vane ADC, the rain interrupt and the charger pins). Then `local_init(node.boot_epoch,
 clock_ms())` starts the modules, which take the boot epoch as their boot ID (WSMP-I2). The rain
 module is on only if the stored setting says so (WSMP-P1). The station host starts with every port
@@ -379,15 +394,25 @@ static void minute_report(int src)
 | `epoch`, `seq` | `node.boot_epoch`, `node.next_seq` |
 | `energy` | `energy_state()` |
 
-A minute without a valid outside-air mean increments `node.sensor_faults`, for any reason (a failing
-or absent air module, or its first window). It keeps rising for a dead sensor after its module goes
-absent. `MODULES` tells the reasons apart. The function returns 1
-only if the encoder wrote exactly the length of the reading's own bitmap (`WS_OBS_PLAIN_LEN`).
-`minute_report` wraps the result in `WS_CHECK`, because the map's codes always encode. The journal
-slot holds `WS_OBS_PLAIN_MAX` bytes, the widest reading. A record's length comes from its bitmap.
+A minute without a valid outside-air mean increments `node.sensor_faults`, whatever the reason: a
+failing or absent air module, or its first window. For a dead sensor it keeps rising after its
+module goes absent. The `MODULES` console command shows each port's state, so it separates an
+absent (or suspect) air module from one that's present. It doesn't show channel validity, though.
+So it can't tell a first window from a failing sensor behind an active module.
 
-The `ws_obs_t` is `static`. Only the sequencer runs `minute_encode`, and it never re-enters. Its
-call chain is the deepest one that `tools/stack_report.py` counts.
+`minute_encode` returns 1 only if the encoder wrote exactly the length of the reading's own bitmap
+(`WS_OBS_PLAIN_LEN`). `minute_report` wraps the result in `WS_CHECK`, because the map's codes always
+encode. The journal slot holds `WS_OBS_PLAIN_MAX` bytes, the widest reading. A record's length
+comes from its bitmap.
+
+The `ws_obs_t` is `static`. Only the sequencer runs `minute_encode`, and it never re-enters. A static
+`o` keeps the record off the sample task's stack.
+
+The code comments below say `minute_encode` is on the deepest callback chain, but it isn't.
+On the 2026-11-18 build, `tools/stack_report.py` puts the self-test path from `console_task_timed`
+deepest (1176 B). The sample task's chain (1004 B) is the third deepest, and its deepest
+path goes through `wsmp_host_latch`. `stack_report.py` does count the deepest chain four times, so
+128 B on that chain costs about 512 B. Those comments need fixing in `app_tx.c` and here.
 
 ```c {#minute-encode}
 /* The minute's observation, built from the modules' snapshots. */
@@ -458,12 +483,13 @@ static int journal_or_hold(const uint8_t *plain, int encoded, int busy, jref_t *
 #sample epoch=E seq=S uptime=U valid=0|1 rc=SRC n=SAMPLES t=T rh=H|- time=synchronized|unknown utc=UTC journal=ok|held|ERROR pending=P lost=L
 ```
 
-`rc` is always 0. The latch does not wait for a sensor, so no sample code reaches the report. `t` and `rh`
-are the outside-air means; `t` is 0 when the minute is not valid. `valid` is the temperature's: the
-relative humidity can be missing on its own (a suspect sample leaves only its own channel), so `rh`
-is `-` whenever it is missing (and when the minute is not valid), never a 0 that reads as a
-measurement. The radio frame marks it missing as before. `pending` and
-`lost` come from `store_journal_pending` and `store_journal_lost`.
+`rc` is always 0, because the latch doesn't wait for a sensor and no sample code reaches the report.
+`t` and `rh` are the outside-air means, and `t` is 0 when the minute isn't valid. `valid` belongs to
+the temperature. The relative humidity can be missing on its own, because a suspect sample leaves
+only its own channel. So `rh` is `-` whenever it's missing (and when the minute isn't valid), never a
+0 that looks like a measurement. The radio frame marks it missing as before.
+
+`pending` and `lost` come from `store_journal_pending` and `store_journal_lost`.
 
 ```c {#sample-line}
 #define RH_DIGITS 5U   /* up to 65535 */
@@ -498,9 +524,11 @@ static void sample_line(const minute_t *m, int src, int rc, int busy)
 
 `minute_send` asks the policy what this minute may send (`policy_minute_backlog`,
 `docs/radio-energy-policy.md`). A return of -1 sends nothing. Any other value starts the exchange
-with the live record and that many backlog records. `live` is NULL when the journal append failed.
-The exchange then sends backlog only. The policy counts a minute that may send as the last send. So
-`minute_send` asks the policy only when no exchange is running.
+with the live record and that many backlog records. `live` is NULL when the journal append failed,
+and then the exchange sends backlog only.
+
+The policy counts a minute that may send as the last send. So `minute_send` only asks the policy
+when no exchange runs.
 
 ```c {#minute-send}
 /* Sends what this minute may send: the live reading and the backlog that the policy allows. live
@@ -519,7 +547,7 @@ static void minute_send(const jref_t *live)
 
 The firmware writes flash only with the radio idle (`docs/firmware-event-model.md`). A journal
 append can erase a page, and the CPU stalls during a flash erase. A minute can end while the
-previous minute's exchange still runs. That minute therefore keeps its encoded reading in `held[]`.
+previous minute's exchange still runs. So that minute keeps its encoded reading in `held[]`.
 `tx_exchange.c` calls `held_flush` the moment the radio goes idle, before anything else runs. The
 next minute sends the journaled reading as backlog.
 
@@ -611,8 +639,12 @@ void held_flush(void)
 ### Constants
 
 `TX_FAIL_LIMIT` is the longest failure run that still counts as healthy. `ws_failrun_tripped` is
-true when the run exceeds it, so the 11th failure in a row trips it. A reset runs `Radio.Init`
-again. A minute that the policy chose not to send does not change either run.
+true when the run goes past it, so the 11th failure in a row trips it. A reset runs `Radio.Init`
+again.
+
+A minute that the policy chose not to send leaves the transmit (air) run unchanged. But
+`journal_or_hold` still journals its reading, and that append still counts in the journal run. The
+comment below says such minutes never count, which is only true of the air run.
 
 ```c {#fail-limit}
 /* A TX node that keeps failing must not look healthy. Above this many failures in a row, the
@@ -664,8 +696,8 @@ then does the following, in this order:
 
 1. Set `stuck`. From now on the sample task makes no report, the module tick does nothing, and every
    check returns 0.
-2. Call `sampling_stop`: it stops the sample timer and the module timer, so nothing wakes the board
-   until the reset.
+2. Call `sampling_stop`. It stops the sample timer and the module timer, so no new sample or
+   module work starts before the reset. The periodic watchdog check still runs.
 3. Call `exchange_abort`. It stops the gap and ACK timers, puts the radio in standby and marks the
    exchange idle. Then it calls `held_flush`, which journals the held readings with the radio idle.
 4. Print `#watchdog radio exchange stuck; radio stopped, held readings journaled, resetting` and
@@ -703,8 +735,9 @@ int watchdog_healthy(void)
 ### sampling_stop
 
 The console calls `sampling_stop` for a commanded reboot and for `TEST-FLASH-STORM`. It clears
-`node.running` and stops both timers. The watchdog check then stops expecting samples. A module
-transfer still on the bus finishes, and nothing reads its result.
+`node.running` and stops both timers, so the watchdog check stops expecting samples. A module
+transfer that's still on the bus finishes, and the bus still hands its result to its module. No new
+module work starts, and no report uses that result.
 
 ```c {#sampling-stop}
 void sampling_stop(void)
@@ -806,16 +839,24 @@ before its first caller.
 ## 8. Tests
 
 `tests/test_tx_machine.py` builds `app_tx.c` with the other TX modules and the real `node_store.c`
-into a host library. `firmware/host/tx_harness.c` simulates the clock, the timers, the sequencer, the
-radio and the flash. The real WSMP modules run on the I2C bus model (`firmware/host/i2c_sim.c` and
-`firmware/host/i2c_models.c`) with one simulated SHT45. At its end, every test checks four things.
-No flash operation ran while the radio was busy. No test started a running timer again. No radio
-command ran without the radio interrupt masked. No `WS_CHECK` failed. Each test without the flash
-storm also checks that the main-loop tasks settled.
+into a host library. `firmware/host/sim_core.c` simulates the clock, the timers and the sequencer.
+`firmware/host/tx_harness.c` adds the radio, the WSMP modules on the bus model, and the flash
+(`firmware/sim_flash.c` under the real `node_store.c`). The real WSMP modules run on the I2C bus
+model (`firmware/host/i2c_sim.c` and `firmware/host/i2c_models.c`) with a simulated SHT45, battery
+INA228 and MAX17048 gauge.
+
+At its end, every test checks four things:
+
+- No flash operation ran while the radio was busy.
+- No test started a running timer again.
+- No radio command ran without the radio interrupt masked.
+- No `WS_CHECK` failed.
+
+Each test without the flash storm also checks that the main-loop tasks settled.
 
 | Test | What it checks in this file |
 |---|---|
-| `test_minute_exchange_then_health_report_after_a_gap` | `#boot`, the first `#sample` line with `valid=1 n=3 t=2150 rh=4500`, the `#modules` line, then the first minute's frame |
+| `test_minute_exchange_then_health_report_after_a_gap` | `#boot`, the first `#sample` line with `valid=1 n=1 t=2150 rh=4500`, the `#modules` line, then the first minute's frame |
 | `test_a_reading_made_during_an_exchange_is_journaled_when_the_radio_goes_idle` | `journal=held`, the `#busy` line, `#held journaled` after the exchange ends, then the reading sent as backlog |
 | `test_held_readings_keep_the_newest_when_more_minutes_wait` | two held readings, a third drops the oldest (`held_lost=1`), the rest journaled oldest first |
 | `test_a_radio_that_never_finishes_trips_the_exchange_bound` | the exchange bound to the second, standby radio, held readings journaled, no sampling until the reset |
@@ -831,8 +872,10 @@ storm also checks that the main-loop tasks settled.
 own. `tests/test_stage0.py` runs `firmware/test_policy.c`. That test checks `ws_failrun`. The run
 trips at the 11th failure, resets on success and saturates.
 
-No host test covers the boot failure paths (`#error store-init`, `#unprovisioned`, `#error self-test
-failed`, `#error epoch-reserve`, `#boot-retry`) or `SAMPLING_STALL_S`.
+No host test covers `#error store-init`, `#error self-test failed`, `#error epoch-reserve`,
+`#boot-retry` or `SAMPLING_STALL_S`. Two tests cover the `#unprovisioned` boot path:
+`test_provision_refuses_a_journal_with_pending_records` and
+`test_provision_accepts_a_clean_unprovisioned_board`.
 
 ```sh
 .venv/bin/python -m unittest tests.test_tx_machine tests.test_modules tests.test_i2c_bus tests.test_stage0 tests.test_tangle

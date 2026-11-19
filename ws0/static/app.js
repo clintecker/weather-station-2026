@@ -578,7 +578,7 @@
   const inputText = (d) => stateText(d, 'charger_active_input', INPUTS, '—');
   function chargerText(d) {
     if (d.charger_input_power_ok === undefined) return '—';
-    if (d.charger_input_power_ok === null) return isFault(d, 'charger_input_power_ok') ? 'sensor fault' : 'not reported';
+    if (d.charger_input_power_ok === null) return stateText(d, 'charger_input_power_ok', {}, '—');
     const parts = [d.charger_input_power_ok ? 'input power good' : 'no input power', d.charger_charging ? 'charging' : 'not charging'];
     if (d.charger_fault) parts.push('fault');
     if (d.charger_stage) parts.push(`stage ${STAGES[d.charger_stage] || d.charger_stage}`);

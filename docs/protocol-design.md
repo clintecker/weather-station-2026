@@ -1,15 +1,15 @@
 # Wire protocol: design rationale
 
-This document tells why the wire protocol has its current form. The normative specification is
-[`protocol.md`](protocol.md). It has every byte layout and rule. If the code and this text
-disagree, the code and `protocol.md` are correct.
+This doc explains why the wire protocol looks the way it does. The normative spec is
+[`protocol.md`](protocol.md), and it has every byte layout and rule. If the code and this text
+disagree, trust the code and `protocol.md`.
 
-The protocol version is **6**. Version 6 is version 5 with observation catalog version 2 and the
-64-byte health report, from the power telemetry design
+The protocol version is **6**. Version 6 is version 5 plus observation catalog version 2 and the
+64-byte health report. Both come from the power telemetry design
 ([`2026-10-29-power-telemetry-design.md`](superpowers/specs/2026-10-29-power-telemetry-design.md),
-"the power design" below; its section 4 has the reasons for the bump). The envelope, the nonce, the
-counters, the tag and the ACK/NACK plaintext did not change. Version 5 was implemented on `master`
-in these commits:
+called "the power design" below). Section 4 of the power design gives the reasons for the bump. The
+envelope, the nonce, the counters, the tag and the ACK/NACK plaintext didn't change. Version 5 went
+in on `master` in these commits:
 - `6f52a51`: the field catalog
 - `0d5ebc2`: the envelope
 - `5dbe2d9`: gateway decoding
@@ -19,20 +19,20 @@ in these commits:
 - `bc5e6ed`: Home Assistant discovery per field
 
 Release `bc5e6ede429c` put version 5 on both boards on 2026-10-14, with a new key
-([`RELEASES.md`](../firmware/stage0-node/RELEASES.md)). Version 6 ships by the release procedure of
-section 7, with a new key and a new run directory; `RELEASES.md` records its release.
+([`RELEASES.md`](../firmware/stage0-node/RELEASES.md)). Version 6 ships by the release procedure in
+section 7, with a new key and a new run directory. `RELEASES.md` records its release.
 
 Four parallel reviews checked the design: security, encoding, implementation fit, and
-requirements and simplicity. The project owner then made these decisions:
+requirements and simplicity. Then the project owner made these decisions:
 - Introduce this format **before** the 24-hour delivery test (H01, [`H01-checklist.md`](H01-checklist.md)).
 - Use an **8-byte** CCM tag.
 - Use a **compact 8-byte header**.
 - Align the fields to whole bytes. Bit packing saved no airtime, because LoRa sends whole symbol
   blocks.
 - Put the battery and solar telemetry **inside the observation**, not in a separate frame kind.
-  Version 6 keeps that rule for the fast power values (voltages and currents every minute) and puts
+  Version 6 keeps that rule for the fast power values (voltages and currents every minute). It puts
   the slow ones (every 15 minutes) in the health report (power design decision, 2026-10-29).
-- Keep **no backward compatibility**. All boards are reflashed together.
+- Keep **no backward compatibility**. You reflash all boards together.
 
 H01 runs on this format. When H01 passes, the product requirements document (PRD) freezes the
 identity, time and quality contract (PRD section 12).
@@ -52,7 +52,7 @@ identity, time and quality contract (PRD section 12).
 ## 2. Sizes and airtime
 
 The radio uses LoRa at 500 kHz, coding rate 4/5, an 8-symbol preamble, an explicit header and CRC
-on (`protocol-stack.md` section 8.2). Airtime increases in steps: about every 3–4 bytes at
+on (`protocol-stack.md` section 8.2). Airtime goes up in steps: about every 3–4 bytes at
 spreading factor 7 (SF7), and every 6 bytes at SF12.
 
 | Frame | Previous format | This format | SF7 | SF12 |
@@ -70,18 +70,19 @@ spreading factor 7 (SF7), and every 6 bytes at SF12.
 | Health report, version 6 (64-byte plaintext) | 56 B | **80 B** | 35.9 ms | 739.3 ms |
 | Health report, version 5 (for comparison) | — | 48 B | 24.4 ms | 493.6 ms |
 
-Airtimes use the firmware's formula (`ws_lora_airtime_ms`, `firmware/common/ws_policy.c:43-56`).
-The phase A record is the version 5 bench set (61 B of plaintext) less the retired fields 17 and 18
-(2 B) plus fields 12, 26 and 28 (6 B): 65 B. Section 5.3 names the fields of each phase.
+The airtimes come from the firmware's formula (`ws_lora_airtime_ms`,
+`firmware/common/ws_policy.c:43-56`). The phase A record is the version 5 bench set (61 B of
+plaintext), minus the retired fields 17 and 18 (2 B), plus fields 12, 26 and 28 (6 B). That's 65 B.
+Section 5.3 names the fields of each phase.
 
-**One exchange** is the observation airtime + the ACK airtime + 300 ms, with the build's widest
-observation (`exchange_ms`, `firmware/stage0-node/App/tx_policy.c:43-45`). At SF7 it is
-41.0 + 18.0 + 300 = 359 ms (13 exchanges in NORMAL's 5 s). At SF12 it is
-821.2 + 411.6 + 300 = **1,532.8 ms**: NORMAL allows 3 exchanges a minute, and the live exchange
+**One exchange** is the observation airtime plus the ACK airtime plus 300 ms, using the build's
+widest observation (`exchange_ms`, `firmware/stage0-node/App/tx_policy.c:43-45`). At SF7 that's
+41.0 + 18.0 + 300 = 359 ms, so 13 exchanges fit in NORMAL's 5 s. At SF12 it's
+821.2 + 411.6 + 300 = **1,532.8 ms**. NORMAL then allows 3 exchanges a minute, and the live exchange
 alone fits the 2 s cap of the CONSERVE energy state (`radio-energy-policy.md`).
 
-**The health reserve saturates.** In a minute whose health report is due, the backlog allowance
-first reserves the health frame's airtime from the energy state's cap (`ws_minute_backlog`,
+**The health reserve saturates.** In a minute when a health report is due, the backlog allowance
+first takes the health frame's airtime out of the energy state's cap (`ws_minute_backlog`,
 `firmware/common/ws_policy.c:88-99`):
 
 ```
@@ -89,13 +90,16 @@ by_airtime = cap_ms > reserve_ms ? (cap_ms - reserve_ms) / exchange_ms : 0
 backlog    = by_airtime > 1 ? min(backlog, by_airtime - 1) : 0     (never below 0)
 ```
 
-The live reading and a due health report always go. The earlier form, `backlog = by_airtime - 1`,
-wrapped when `by_airtime` was 0 (unsigned); this form cannot. At SF7 nothing changes. At SF12
-NORMAL allows 2 exchanges in a health minute. In CONSERVE at SF12 the live exchange plus the health
-report is 2,272 ms (2,274 ms with the firmware's whole-millisecond rounding: 1,534 + 740), over the
-2 s cap **once per health report**: every 15 minutes, plus once after each link-state change.
-CONSERVE sends only every 5th minute, so its average stays far below the cap. That is a documented
-exception (power design risk R3). The energy state is NORMAL in this phase.
+The live reading and a due health report always go. The earlier form set `by_airtime` to at least 1
+before `backlog = by_airtime - 1`, so it never wrapped. The new form subtracts the health reserve.
+Its guards (`cap_ms > reserve_ms`, `by_airtime > 1`) keep the unsigned arithmetic from wrapping. At
+SF7 nothing changes. At SF12, NORMAL allows 2 exchanges in a health minute.
+
+In CONSERVE at SF12, the live exchange plus the health report is 2,272 ms. With the firmware's
+whole-millisecond rounding it's 2,274 ms (1,534 + 740). That's over the 2 s cap **once per health
+report**: every 15 minutes, plus once after each link-state change. CONSERVE sends only every 5th
+minute, so its average stays far below the cap. This is a documented exception (power design risk
+R3). The energy state is NORMAL in this phase.
 
 ## 3. Envelope
 
@@ -114,20 +118,21 @@ the full table.
 
 - The header is the additional authenticated data (AAD) of the CCM mode. Every integer is
   big-endian.
-- The receiver drops any version other than 6 silently. It also drops any unassigned kind (0 and
-  5–15). Byte 0 is `0x61` to `0x64`. A version 5 frame (`0x51` to `0x54`) reads as another version,
-  so a version 6 receiver drops it, and a version 5 receiver drops a version 6 frame. A frame of
-  the format before version 5 starts with `0x57` ('W'). It reads as version 5, kind 7, and is
-  dropped too.
-- **Why version 6 is a bump** (power design section 4). Under version 5 a gateway that was not
-  updated would NACK the new bitmap bits (reason 2, `fields.decode`), and the node would abandon
-  those records: a permanent loss. An RX bridge that was not updated would drop the longer health
-  report silently. With version 6 a mismatched end drops the frames as another version, so the
-  records stay in the journal until both ends match. No new frame kind was added.
-- The previous header was 16 bytes: the magic `WS`, a version byte, a kind byte, a u32 station
-  and a u64 counter. A u16 station ID is sufficient for one gateway. A u40 counter lasts more than
-  100,000 years (section 3.2). These two changes save 5 bytes. One byte for version and kind, and
-  no magic, save 3 more.
+- The receiver silently drops any version other than 6, and any unassigned kind (0 and 5–15).
+  Byte 0 is `0x61` to `0x64`. A version 5 frame (`0x51` to `0x54`) reads as another version, so a
+  version 6 receiver drops it. A version 5 receiver drops a version 6 frame the same way. A frame
+  of the format before version 5 starts with `0x57` ('W'). It reads as version 5, kind 7, so it
+  gets dropped too.
+- **Why version 6 is a bump** (power design section 4). Under version 5, a gateway you hadn't
+  updated would NACK the new bitmap bits (reason 2, `fields.decode`). The node would then abandon
+  those records for good. An RX bridge you hadn't updated would silently drop the longer health
+  report. With version 6, a mismatched end drops the frames as another version, so the records stay
+  in the journal until both ends match. Version 6 adds no new frame kind.
+- The format before version 5 (draft 4) had a 16-byte header. It held the magic `WS`, a version
+  byte, a kind byte, a u32 station and a u64 counter. Version 5 brought in the 8-byte header, and
+  version 6 kept it. A u16 station ID is enough for one gateway. A u40 counter lasts more than
+  100,000 years (section 3.2). Those two changes save 5 bytes, and one byte for version
+  and kind with no magic saves 3 more.
 
 ### 3.2 Nonce and counter
 
@@ -139,8 +144,8 @@ packet-beta
 ```
 
 - **Nonce (13 bytes):** the kind, the station ID as a u32, and the counter as a u64. The code
-  builds it **from the integers**. It never copies it from the header bytes. Thus the nonce does
-  not depend on how the header packs the values. The construction did not change from the previous
+  builds it **from the integers** and never copies it from the header bytes. So the nonce doesn't
+  depend on how the header packs the values. The construction didn't change from the previous
   format.
 - **Two counter spaces:**
   - the node's flash counter, for observations and health reports,
@@ -151,28 +156,28 @@ packet-beta
   1. The node's allocator `store_next_counter` and the gateway's `Nonces.next` refuse to issue a
      counter at or past 2^40.
   2. The seal routine (`ws_seal_kind` in C, `seal()` in Python) rejects an out-of-range counter
-     itself.
-  3. Python writes the counter with `to_bytes(5, 'big')`. This call raises on overflow. The code
-     never masks the counter.
+     on its own.
+  3. Python writes the counter with `to_bytes(5, 'big')`, which raises on overflow. The code never
+     masks the counter.
 
   **Why all three:** a 5-byte header field truncates silently. Without these checks, a counter at
-  or past 2^40 would go on air as a small counter. That is nonce reuse, a total loss of security.
+  or past 2^40 would go on air as a small counter. That's nonce reuse, a total loss of security.
 - **Lifetime:** 2^40 frames last more than 100,000 years at 20 frames per minute. A reboot loop
   once a second skips a 256-counter block each time. Even that loop lasts about 136 years.
-- **New key at release:** the first release of this format used a **new key and fresh state**: a
-  new run directory, a new gateway nonce database, and a WIPE and PROVISION on the node. Every
-  later format change does the same (section 7), so version 6 gets its own key. The CCM
-  keystream blocks encode only the nonce length L, not the tag length M. Thus a counter overlap
-  across formats under one key would reuse keystream. A new key prevents that at no cost.
+- **New key at release:** the first release of this format used a **new key and fresh state**. That
+  means a new run directory, a new gateway nonce database, and a WIPE and PROVISION on the node. Every
+  later format change does the same (section 7), so version 6 gets its own key. The CCM keystream
+  blocks encode only the nonce length L, not the tag length M. So if counters overlapped across
+  formats under one key, they'd reuse keystream. A new key prevents that at no cost.
 
 ### 3.3 Tag length
 
-M = 8 gives a forgery probability of 2^-64 per attempt. RFC 3610 permits M from 4 to 16. NIST SP
-800-38C permits 64-bit tags. Its Appendix B relates the tag length to the number of forgery
-attempts that an attacker gets.
+M = 8 gives a forgery probability of 2^-64 per try. RFC 3610 permits M from 4 to 16. NIST SP
+800-38C permits 64-bit tags. Its Appendix B relates the tag length to the number of forgery tries
+an attacker gets.
 
-Here, each attempt is online, and airtime limits the attempts. Continuous jamming at SF7 permits
-about 50 attempts per second. 2^64 attempts would take about 10^10 years. The node also listens
+Here every try is online, and airtime limits how many there can be. Continuous jamming at SF7
+allows about 50 tries per second, so 2^64 tries would take about 10^10 years. The node also listens
 only in short ACK windows. Truncated CBC-MAC has no GCM-style attack on short tags.
 
 ### 3.4 Length checks
@@ -184,37 +189,37 @@ only in short ACK windows. Truncated CBC-MAC has no GCM-style attack on short ta
 | ACK and NACK | 33 bytes | — |
 
 The gateway never answers a frame that fails before authentication. The check before decryption
-permits any catalog length, not only the length of the current build. The gateway and the RX
-filter thus need no build configuration. The 110-byte bound is accepted only by the RX bridge and
-the gateway (`WS_OBS_PLAIN_ALL`, `firmware/common/ws_obs.h:111`; `PLAIN_LENGTHS`,
-`ws0/protocol.py:255-256`). No node build sends it: a node build's ceiling is a 96-byte frame
+allows any catalog length, not only the current build's length. So the gateway and the RX filter
+need no build configuration. Only the RX bridge and the gateway accept the 110-byte bound
+(`WS_OBS_PLAIN_ALL`, `firmware/common/ws_obs.h:111`, and `PLAIN_LENGTHS`,
+`ws0/protocol.py:255-256`). No node build sends it. A node build's ceiling is a 96-byte frame
 (section 5.5).
 
 ### 3.5 RX bridge
 
-The bridge holds no key. It forwards upstream:
+The bridge holds no key. It forwards these frames upstream:
 - frames whose first byte is `0x61` (observation) with a length in the observation range, 39 to
   110 bytes,
 - frames whose first byte is `0x64` (health report) with a length of 80.
 
-It accepts downstream exactly 33 bytes with a first byte of `0x62` or `0x63`. The filter is in
-`ws_console.c` (`ws_air_frame_ok`, `firmware/common/ws_console.c:77-83`; `ws_host_reply_ok`).
-Thus host tests and the `console` fuzz target cover it. A bridge of another version drops every
-frame of this one, which is why both boards are flashed from the same release (section 7).
+Downstream, it accepts exactly 33 bytes with a first byte of `0x62` or `0x63`. The filter lives in
+`ws_console.c` (`ws_air_frame_ok`, `firmware/common/ws_console.c:77-83`, and `ws_host_reply_ok`).
+So host tests and the `console` fuzz target cover it. A bridge of another version drops every frame
+of this one. That's why you flash both boards from the same release (section 7).
 
 ### 3.6 What an eavesdropper sees
 
 An eavesdropper sees the kind, the station ID, the counter, the frame length and the timing. A
-sensor fault never changes which fields are present (section 5.1). Thus the length does not show
-sensor faults. The length does show which modules are in the layout and which power phase the
-build has (section 5.3, "Power telemetry"). The health report has a fixed length, so its length
-shows nothing. The kind byte tells a NACK from an ACK. The previous format also showed this.
+sensor fault never changes which fields are present (section 5.1), so the length doesn't give away
+sensor faults. It does show which modules are in the layout and which power phase the build has
+(section 5.3, "Power telemetry"). The health report has a fixed length, so its length shows
+nothing. The kind byte tells a NACK from an ACK. The previous format showed this too.
 
 ## 4. Fixed plaintexts
 
 The ACK and the NACK share one 17-byte plaintext. A u32 holds the host UTC (ACK) or the reason
-(NACK). A u40 echo holds the counter of the answered observation frame. The echo has the width of
-the header counter, so it holds any counter.
+(NACK). A u40 echo holds the counter of the observation frame that the reply answers. The echo has
+the width of the header counter, so it can hold any counter.
 
 ```mermaid
 packet-beta
@@ -232,8 +237,8 @@ The node's reply API is `ws_open_reply(…, uint32_t *epoch, uint32_t *seq, uint
 uint64_t *echo)`. `word` is the UTC or the reason.
 
 **Health report (kind 4), 64 bytes.** The node sends it after boot, every 15 minutes and at each
-link-state change, after that minute's exchange. The version 5 report had 32 bytes; it added four
-fields to the 24-byte report before it, which an operator needs to diagnose a node remotely:
+link-state change, after that minute's exchange. The version 5 report had 32 bytes. It took the
+24-byte report before it and added four fields that an operator needs to diagnose a node remotely:
 - the **firmware build ID**: the first 4 bytes of the release commit hash (0 for a build from a
   dirty tree or without a commit hash: "not identified"),
 - the **RSSI and SNR of the last ACK**, as the node heard it. The RX board reports the uplink
@@ -241,10 +246,10 @@ fields to the 24-byte report before it, which an operator needs to diagnose a no
 - the **crash record count** (`fault.c`, RTC backup register DR11, saturating),
 - the **energy state** (section 5.2).
 
-Version 6 keeps those 32 bytes unchanged and adds 32 more (power design section 6.1): the slow
-values that change over hours, not minutes, at a 15-minute cadence:
+Version 6 keeps those 32 bytes as they are and adds 32 more (power design section 6.1). These are
+the slow values that change over hours, not minutes, sent every 15 minutes:
 - **station items**: the PC of the last crash, boots since power-up, radio TX timeouts and I2C bus
-  recoveries since boot;
+  recoveries since boot,
 - **power items**: the MCU supply (VDDA from VREFINT), the hottest power-monitor die temperature,
   the gauge's state of charge (1/256 %) and its rate, the charger status byte (input power good,
   charging, fault, charge stage, active input), and the charger's own measurements (input voltage
@@ -290,35 +295,37 @@ The 16-bit counts saturate at `0xFFFF`. −128 in the RSSI or SNR field means "n
 phase.
 
 Why this shape:
-- **A fixed length.** Every slot is always on the wire, with a none code (the type's minimum for a
-  signed value, all-ones for an unsigned one) when the build or phase has no source or the source
-  failed. A fixed length keeps the RX bridge's exact-length check (`ws_console.c:82`) and the
-  gateway's `PLAIN_LENGTHS`, and a charger with its own ADC could fill the charger-reported
-  slots without a format change. In phase A they are none, except the ISET charge current.
-- **Source-agnostic names.** The keys say what is measured (`charger_reported_input_mv`), not which
-  chip measures it. The charger-reported keys are named apart from the observation field
-  `charger_input_mv` (field 28), a separate measurement, so one name has one meaning everywhere.
-- **Canonical rules without a NACK.** A health report is never answered. So the gateway keeps every
-  value of a report that breaks a rule: fitted bit 7 set gives a warning; a charger status with
-  stage 7 gives a warning and `null` charger keys (`diag_problems`, `ws0/protocol.py:102-108`).
-  The node never sends either. Active input 3 is canonical: it means "no input" (amended
-  2026-10-29, it was reserved), so a charger that reports its input can say it has none.
-- **"Not measured" and "sensor fault" kept apart.** One none code a slot cannot say why a value is
-  missing, so byte 51 (the fitted byte, amended 2026-10-29) carries one bit a group of slots: set
-  means the build has a source, so a none code is a fault. The gateway turns it into
-  `power_not_measured` and `power_sensor_faults`; Home Assistant gets entities only for measured
-  keys, as observation entities exist only for fields the record carries.
+- **A fixed length.** Every slot is always on the wire. When the build or phase has no source, or
+  the source failed, the slot carries a none code (the type's minimum for a signed value, all-ones
+  for an unsigned one). A fixed length keeps the RX bridge's exact-length check
+  (`ws_console.c:82`) and the gateway's `PLAIN_LENGTHS`. It also means a charger with its own ADC
+  could fill the charger-reported slots without a format change. In phase A those slots are none,
+  except the ISET charge current.
+- **Source-agnostic names.** The keys say what's measured (`charger_reported_input_mv`), not which
+  chip measures it. The charger-reported keys have names apart from the observation field
+  `charger_input_mv` (field 28), which is a separate measurement. So one name has one meaning
+  everywhere.
+- **Canonical rules without a NACK.** Nothing ever answers a health report. So the gateway keeps
+  every value of a report that breaks a rule. Fitted bit 7 set gives a warning, and a charger
+  status with stage 7 gives a warning and `null` charger keys (`diag_problems`, `ws0/protocol.py:102-108`).
+  The node never sends either. Active input 3 is canonical and means "no input" (amended
+  2026-10-29, it was reserved before), so a charger that reports its input can say it has none.
+- **"Not measured" and "sensor fault" kept apart.** One none code per slot can't say why a value
+  is missing. So byte 51 (the fitted byte, amended 2026-10-29) carries one bit per group of slots.
+  A set bit means the build has a source, so a none code there is a fault. The gateway turns this
+  into `power_not_measured` and `power_sensor_faults`. Home Assistant gets entities only for
+  measured keys, the same way observation entities exist only for fields the record carries.
 - **Not WSMP channels.** The slow values reach the report through `mod_power_health()` and the
   station accessors, not through WSMP health-class channels (power design section 8.2). Sub-project 7
-  decides whether they become health-class channels on the radio.
+  decides if they become health-class channels on the radio.
 
 **Health reports are not journaled** (power design section 6.4, risk R1). A report goes once, with
-no receive window and no retry. An outage therefore loses the slow values of the reports due during
-it: the state of charge and its rate, the charger status, the die temperatures, VDDA and the
+no receive window and no retry, so an outage loses the slow values of the reports due during it.
+The state of charge and its rate, the charger status, the die temperatures, VDDA and the
 charger-reported values have gaps for that time. The counters (crashes, boots, TX timeouts, I2C
 recoveries, the journal counts) lose nothing for good, because the next report carries their
-current totals. Every fast value, including the battery voltage and current and the energy and
-charge counters, travels in the journaled observation. The loss is accepted.
+current totals. Every fast value travels in the journaled observation, including the battery
+voltage and current and the energy and charge counters. The design accepts the loss.
 
 ## 5. Observation (kind 1)
 
@@ -336,37 +343,39 @@ packet-beta
   176-191: "extension bitmap (u16), only when EXT is set"
 ```
 
-The present fields follow the 22-byte header, or the 24 bytes of header and extension word, in
-increasing field order. The flags byte has bit 0 "time known" (it must equal UTC ≠ 0) and bits 1–2
-the energy state at sampling (section 5.2). Bits 3–7 are zero. `protocol.md` section 5.1 has the
-full table.
+The present fields follow the 22-byte header (or the 24 bytes of header and extension word), in
+increasing field order. In the flags byte, bit 0 is "time known" (it must equal UTC ≠ 0), and bits
+1–2 hold the energy state at sampling (section 5.2). Bits 3–7 are zero. `protocol.md` section 5.1
+has the full table.
 
-**The extension word (catalog version 2).** Catalog version 1 used bits 0–25 and reserved 26–31,
-so six slots were left, and the rails need seven new fields (26–30, 32, 33). Bit 31 of the bitmap
-becomes **EXT**: it is not a field, and when it is set a u16 extension bitmap follows the header,
-bit *j* for field 32 + *j* (fields 32–47). The header stays 22 bytes for every record that does not
-need the extension, and fields 0–30 keep their bits. A record with field 32 or 33 pays 2 bytes. In
-C the field mask is a 64-bit logical mask (`WS_F(i)` is `(uint64_t)1 << i`,
-`firmware/common/ws_obs.h:55`), which also removes the undefined shift `WS_F(WS_FI_COUNT)` at 32
-fields; `WS_FI_EXT` = 31 is a placeholder of width 0, and `_Static_assert(WS_FI_COUNT <= 48)`
+**The extension word (catalog version 2).** Catalog version 1 used bits 0–25 and reserved 26–31.
+That left six slots, and the rails need seven new fields (26–30, 32, 33). So bit 31 of the bitmap
+becomes **EXT**, which isn't a field. When EXT is set, a u16 extension bitmap follows the header,
+with bit *j* for field 32 + *j* (fields 32–47). The header stays 22 bytes for every record that
+doesn't need the extension, and fields 0–30 keep their bits.
+
+A record with field 32 or 33 pays 2 bytes. In C the field mask is a 64-bit logical mask (`WS_F(i)` is `(uint64_t)1 << i`,
+`firmware/common/ws_obs.h:55`). That also removes the undefined shift `WS_F(WS_FI_COUNT)` at 32
+fields. `WS_FI_EXT` = 31 is a placeholder of width 0, and `_Static_assert(WS_FI_COUNT <= 48)`
 bounds the catalog (`ws_obs.h:53-59`).
 
-**Presence rule:** "absent" means that this build has no source for the field; INVALID means a
-fault. The two never mix.
+**Presence rule:** "absent" means this build has no source for the field. INVALID means a fault.
+The two never mix.
 - The build configuration decides which fields a record can carry. On the WSMP bench, the modules
-  in the layout decide which of them a record carries (`App/wsmp_catalog_map.c`).
-- **Absent = no source in this build**: the field's module is not in the layout, or the build's
-  power phase (`WS_POWER_PROFILE`, `App/power_config.h`) does not fit that rail. The WSMP slot
-  behind it carries the snapshot quality "not fitted", and the catalog map leaves the field out of
-  the bitmap. Absence is a property of the build, never of a part's state.
+  in the layout decide which of those a record carries (`App/wsmp_catalog_map.c`).
+- **Absent = no source in this build**: either the field's module isn't in the layout, or the
+  build's power phase (`WS_POWER_PROFILE`, `App/power_config.h`) doesn't fit that rail. The WSMP
+  slot behind it carries the snapshot quality "not fitted", and the catalog map leaves the field
+  out of the bitmap. Absence is a property of the build, never of a part's state.
 - **INVALID = a fault**: a fitted source failed, or its reading is out of range (a clipped ADC, a
   current outside −32,768 to +32,766 mA, energy without a battery voltage). A sensor fault never
   changes which fields are present. The node sends a faulted field with its INVALID code and never
   leaves it out.
 - **The power modules are always present.** The battery module (fields 11–16) and the rails module
-  (fields 26–30, 32, 33) are base-board modules fixed by `WS_POWER_PROFILE`, not pluggable ones
-  (power design section 8.5). A station whose INA228 and gauge are both dead sends fields 11–16 as
-  INVALID, never absent, and the dashboard says "sensor fault", not "not measured in this build".
+  (fields 26–30, 32, 33) are base-board modules that `WS_POWER_PROFILE` fixes. They aren't
+  pluggable (power design section 8.5). If a station's INA228 and gauge are both dead, it sends
+  fields 11–16 as INVALID, never absent. The dashboard then says "sensor fault", not "not measured
+  in this build".
 - A later build can add a fixed schedule keyed on the sequence number. For example, it can send
   some fields with every 5th sequence.
 - The gateway rejects a record with no field.
@@ -374,15 +383,16 @@ fault. The two never mix.
 **Every observation covers exactly one minute**, in every energy state:
 - **NORMAL and SURPLUS:** the node transmits each minute's record and drains the backlog.
 - **CONSERVE:** the node journals every minute. It transmits only the latest record, every 300 s.
-- **CRITICAL:** the node journals and does not transmit.
+- **CRITICAL:** the node journals and doesn't transmit.
 
 The energy-state bits record the **reporting mode** (requirement R02: the published reporting
-interval). The gateway takes the current mode from the newest record by identity order. It does
-not take it from backfilled records.
+interval). The gateway takes the current mode from the newest record by identity order, not from
+backfilled records.
 
 ### 5.2 Energy-state codes
 
-The codes are the firmware's `energy_t` numbering, which `ws_link_may_send` also uses:
+The codes are the firmware's `WS_ENERGY_*` numbering (`firmware/common/ws_obs.h:116`), which
+`ws_link_may_send` also uses:
 
 | Code | State |
 |---:|---|
@@ -391,41 +401,43 @@ The codes are the firmware's `energy_t` numbering, which `ws_link_may_send` also
 | 2 | CONSERVE |
 | 3 | CRITICAL |
 
-The energy-state thresholds are deferred (power design section 9.9). The firmware always sends 1
+The power design defers the energy-state thresholds (section 9.9). The firmware always sends 1
 (NORMAL).
 
 ### 5.3 Field catalog, version 2
 
-Catalog version 2 ships with protocol version 6 (power design section 5). It keeps every field of
-version 1 at its index, corrects the meaning of the battery fields 11 and 13–16, changes the step of
-field 12, retires fields 17 and 18, and adds the rail fields 26–30, 32 and 33.
+Catalog version 2 ships with protocol version 6 (power design section 5). It keeps every version 1
+field at its index. It corrects the meaning of the battery fields 11 and 13–16 and changes the step
+of field 12. It retires fields 17 and 18 and adds the rail fields 26–30, 32 and 33.
 
 **Encoding rules for every field:**
-- The code is `round_half_up((x − min) / step)`. The firmware computes it in integer arithmetic
-  from the sensor's raw counts where possible. Thus C and Python cannot disagree on half-way values.
+- The code is `round_half_up((x − min) / step)`. Where it can, the firmware computes it in integer
+  arithmetic from the sensor's raw counts. So C and Python can't disagree on half-way values.
 - The **all-ones code is INVALID**. It means no sample, a sensor fault, or a value out of range.
-- **A reading out of range becomes INVALID. It is never clamped.** The only exception is relative
-  humidity, which is clamped to 0–100 %. This follows Sensirion practice.
+- **A reading out of range becomes INVALID. It's never clamped.** The only exception is relative
+  humidity, which gets clamped to 0–100 %. This follows Sensirion practice.
 - The gateway rejects codes above the field's maximum, except the field's special codes.
 - **Decoding is exact:** `(code − offset_code) / scale`, with an integer offset in code units.
-  Every code makes the round trip unchanged. Thus no floating-point noise reaches the stored JSON.
+  Every code makes the round trip unchanged, so no floating-point noise reaches the stored JSON.
 - **Counters** (`rain_tips` and the energy and charge counters) count **since boot**. Each starts
   at 0 when its epoch starts.
-  - The gateway totals them across epochs: the sum of the last value of each epoch.
-  - Within one epoch, a counter must not decrease **in sequence order**. The gateway compares each
-    record with its stored neighbours by sequence, never by arrival order. Thus backfill is safe. A
-    decrease gives NACK reason 2.
-  - Rain tips are not yet durable per tip across a power cut. The PRD's rain acceptance test (H06)
-    needs this later firmware change. Until then, a power cut can lose the tips counted after the
+  - The gateway stores each epoch's since-boot values. Home Assistant gets the counters as
+    `total_increasing`, which handles the reset at each new epoch. Totals across epochs (the sum
+    of each epoch's last value) are planned, but the gateway doesn't build them yet.
+  - Within one epoch, a counter must not go down **in sequence order**. The gateway compares each
+    record with its stored neighbours by sequence, never by arrival order, so backfill is safe. A
+    decrease gets NACK reason 2.
+  - Rain tips aren't durable per tip across a power cut yet. The PRD's rain acceptance test (H06)
+    needs that later firmware change. Until then, a power cut can lose the tips counted after the
     last journaled minute (up to about 59 s of tips).
-- **No index is ever reused.** A retired field stays in the catalog: a version 6 gateway still
-  decodes it, and a later build may send it again with the same meaning. No catalog name is
+- **No index is ever reused.** A retired field stays in the catalog. A version 6 gateway still
+  decodes it, and a later build may send it again with the same meaning. No catalog name ever gets
   renamed.
 
 The "First build" column names the hardware that first carries each field. "Bench prototype" is
 the first USB-powered build, with the SHT45 only. "Full station" is the full proof-of-concept
 station. "Phase A" and "phase B" are the power phases of the power design (section "Power
-telemetry" below). The current WSMP bench build already carries most "full station" fields from
+telemetry" below). The current WSMP bench build already carries most "full station" fields, from
 hobby breakout modules (see below).
 
 | *i* | Field | Bytes | Unit and step | Range (codes) | Special codes | First build |
@@ -436,7 +448,7 @@ hobby breakout modules (see below).
 | 3 | `wind_speed_ms` | 2 | 0.1 m/s | 0 to 75.0: scalar mean over the minute | 0xFFFF INVALID | full station (SEN-15901) |
 | 4 | `wind_gust_ms` | 2 | 0.1 m/s | 0 to 75.0: highest rolling 3-s mean in the minute | 0xFFFF INVALID | full station |
 | 5 | `wind_dir_deg` | 2 | 1° | 0 to 359: unit-vector mean, wraps modulo 360 | 0xFFFE CALM (mean speed < 0.5 m/s). 0xFFFF INVALID, also required whenever the speed is INVALID. | full station |
-| 6 | `rain_tips` | 3 | tips since boot | 0 to 16,777,214 | 0xFFFFFF INVALID | full station (0.2794 mm per tip, set in the gateway configuration) |
+| 6 | `rain_tips` | 3 | tips since boot | 0 to 16,777,214 | 0xFFFFFF INVALID | full station (0.2794 mm per tip is the rain module's registry factor, `nm_per_tip = 279400` in `wsmp_registry.toml`, not a gateway setting) |
 | 7 | `uv_index` | 1 | 0.1 UVI | 0 to 25.0 (0–250) | 0xFF INVALID | Only from a sensor qualified for UV index (PRD test H07) |
 | 8 | `irradiance_wm2` | 2 | 1 W/m² | 0 to 2000 | 0xFFFF INVALID | optional module |
 | 9 | `uva_raw` | 3 | sensor counts (gain and integration time fixed per build, set in the gateway configuration) | 0 to 2^20 − 1 | 0xFFFFFF INVALID | full station (LTR390). **Never reported as UV index** (PRD section 9, test H07) |
@@ -464,16 +476,17 @@ hobby breakout modules (see below).
 | 34–47 | reserved | — | — | must be zero | — | — |
 
 The node samples temperature and humidity every 15 s. Fields 0 and 1 carry the mean of the
-minute's valid samples. Fields 21–24 carry their extrema. Field 25 tells how many samples were
-valid (PRD section 9: coverage and extrema). The calibration revision maps to the sampling
-description in the gateway configuration.
+minute's valid samples, and fields 21–24 carry their extrema. Field 25 says how many samples were
+valid (PRD section 9: coverage and extrema). The plan is for the calibration revision to map to a
+sampling description in the gateway configuration. That isn't built yet. Today the gateway stores
+the calibration revision as a plain number (0–255), and the current build sends 0.
 
 The WSMP bench station (`firmware/stage0-node/App/wsmp_catalog_map.c`, from 2026-10-18) fills this
-catalog from its local modules. A reading carries the fields of the modules in the layout. It does
-not send fields 21–24: WSMP-H8 ([`module-protocol.md`](module-protocol.md)) gives the gateway the
-task to derive extremes from the minute means, which the gateway does not do yet. It sends field
-12, the battery current, as a mean over the minute from the INA228's CHARGE accumulator (power
-design section 9.4).
+catalog from its local modules. A reading carries the fields of the modules in the layout. It
+doesn't send fields 21–24. WSMP-H8 ([`module-protocol.md`](module-protocol.md)) gives the gateway
+the job of deriving extremes from the minute means, and the gateway doesn't do that yet. The
+station sends field 12, the battery current, as a mean over the minute from the INA228's CHARGE
+accumulator (power design section 9.4).
 
 #### Power telemetry
 
@@ -486,15 +499,17 @@ phase needs a format change (power design section 1). The phases are:
 | **A** (current) | Adafruit bq24074 (#4755), one VBUS input | battery INA228 at 0x40 (shunt in the battery path, VBUS on its own sense lead to the charger OUT), MAX17048 at 0x36 on the CELL+ node; the MCU reads ISET (PB1), the charger input divider (PA10), CHG (PB10), PGOOD (PB8) and VREFINT |
 | **B** (four rails) | bq24074 | phase A plus a load INA228 (0x41, on OUT), a solar INA228 (0x45) and a USB-C INA228 (0x48), each upstream of the point where the sources join |
 
-The pack is a 1S3P Li-ion pack in both phases (three
-2,200 mAh cells in parallel, 6,600 mAh, 3.0 to 4.2 V).
+The pack is a 1S3P Li-ion pack in both phases (three 2,200 mAh cells in parallel, 6,600 mAh, 3.0
+to 4.2 V).
 
-**Fields, units, signs and ranges.** Every voltage is 2 bytes at 1 mV (0 to 65,534 mV); every
-current is 2 bytes at 1 mA, offset binary, −32,768 to +32,766 mA; both are means over the minute,
-with 0xFFFF INVALID. A current outside the range is INVALID: the node uses the codec's own range
-check (`ws_obs_code_ok`), never a separate clamp. The encoding is wider than any monitor: an INA228
-rail measures ±5.24 A at its 10 µA current step. Field 12 moved from 0.1 mA (±3.27 A) to 1 mA so
-that every current has one encoding; it was never sent before, so no stored value changes.
+**Fields, units, signs and ranges.** Every voltage is 2 bytes at 1 mV (0 to 65,534 mV). Every
+current is 2 bytes at 1 mA, offset binary, −32,768 to +32,766 mA. Both are means over the minute,
+with 0xFFFF INVALID. A current outside the range is INVALID. The node uses the codec's own range
+check (`ws_obs_code_ok`) for this, never a separate clamp.
+
+The encoding is wider than any monitor: an INA228 rail measures ±5.24 A at its 10 µA current step.
+Field 12 moved from 0.1 mA (±3.27 A) to 1 mA so that every current has one encoding. It was never
+sent before, so no stored value changes.
 
 | Rail | Voltage field | Current field | Positive means |
 |---|---|---|---|
@@ -504,13 +519,14 @@ that every current has one encoding; it was never sent before, so no stored valu
 | Solar input, upstream of the join | 29 `solar_mv` | 30 `solar_current_ma` | current into the station |
 | USB-C input, upstream of the join | 32 `usb_mv` | 33 `usb_current_ma` | current into the station |
 
-The battery INA228 in phase A has the cell (the CELL+ node) on VIN+ and the charger's BATT socket on VIN−, through the BATT joint (build-progression record P3; the header LIPO pin is only a test point). The part
-counts VIN+ → VIN− as positive, which is out of the cell, so the firmware's rail table gives it
-sign −1 (`App/power_config.h:101-127`). The version 5 release counted a discharge as charge;
-version 6 fixes the sign. The names say what is measured; none names a chip.
+In phase A, the battery INA228 has the cell (the CELL+ node) on VIN+ and the charger's BATT socket
+on VIN−, through the BATT joint (build-progression record P3). The header LIPO pin is only a test
+point. The part counts VIN+ → VIN− as positive, which is out of the cell. So the firmware's rail
+table gives it sign −1 (`App/power_config.h:101-127`). The version 5 release counted a discharge as
+charge, and version 6 fixes the sign. The names say what's measured, and none of them names a chip.
 
-**Which source fills each field, per phase** (power design section 3.2). "Absent" = the field is
-not in the record; "INVALID" = the source is fitted but failed.
+**Which source fills each field, per phase** (power design section 3.2). "Absent" means the field
+isn't in the record. "INVALID" means the source is fitted but failed.
 
 | Field | Phase A | Phase B |
 |---|---|---|
@@ -526,33 +542,36 @@ not in the record; "INVALID" = the source is fitted but failed.
 | 33 USB-C current | absent | USB-C INA228 |
 
 - **The battery voltage stays on the gauge in every phase.** The MAX17048 reads the CELL+ node on
-  its own sense lead, which carries no load current, with its ground over STEMMA QT; whenever
-  current flows that node differs from the cell by the pack-lead drop, I × R_pack (build-progression
-  record M4 and P8; the power design's dated note: "Kelvin" is not literal). An INA228 VBUS is referenced to system ground at the charger, so it would include the negative
-  lead's drop and would change sensor across a phase change. With no gauge, field 11 is INVALID;
-  there is no fallback source.
+  its own sense lead, which carries no load current, with its ground over STEMMA QT. Whenever
+  current flows, that node differs from the cell by the pack-lead drop, I × R_pack
+  (build-progression records M4 and P8, and the power design's dated note: "Kelvin" is not
+  literal). An INA228 measures VBUS against system ground at the charger. So it would include the
+  negative lead's drop, and field 11 would change sensor across a phase change. With no gauge,
+  field 11 is INVALID, and there's no fallback source.
 - **Phase A cannot identify the source.** The bq24074 has one VBUS input, and no monitor sits
-  upstream of the point where solar and USB-C join. Field 28 exists for exactly that reason: it
-  measures the joined input and says nothing about which source feeds it. The firmware never
-  guesses the source (the benchlink dashboard's panel-specific heuristic stays a bench tool).
-  Field 28 is measured while the charger draws current, so it is not the source's open-circuit
-  voltage either: with the bq24074's EN2 low it can sit at the VIN-DPM threshold (4.35–4.63 V,
-  SLUS810) while the charger limits its input current; with EN2 high (phase B) VIN-DPM does not act
-  and a weak source is pulled down towards the cell voltage (`hardware/power-metering.md` section
-  5.4).
-- **Phase B** puts one monitor upstream of the join on each source, so solar and USB-C current are
-  told apart.
-- **The USB-C rule.** USB-C is for bench work and occasional backup charging only, and is never
-  connected at the same time as solar. So at most one source rail carries current. Two source
-  rails with current at the same time are a broken operating rule, visible in the data in phases B
-  and C; phase A cannot see it. Analysing it is gateway work outside this design.
-- **Slow values go to the health report.** The state of charge and its rate, the charger status,
-  the die temperatures, VDDA and the charger's own measurements change over hours, so they travel
-  every 15 minutes (section 4), not in the observation. That is why fields 17 and 18 retired.
+  upstream of the point where solar and USB-C join. That's why field 28 exists: it measures the
+  joined input and says nothing about which source feeds it. The firmware never guesses the
+  source. (The benchlink dashboard's panel-specific heuristic stays a bench tool.)
 
-The firmware: the rail table and the profile are in `App/power_config.h`, the acquisition in
-`App/power_acq.c`, the two WSMP modules (battery, type 8; rails, type 9) in `App/mod_power.c`, and
-the map to the catalog in `App/wsmp_catalog_map.c:8-27, 154-190`.
+  The node measures field 28 while the charger draws current, so it isn't the source's
+  open-circuit voltage either. With the bq24074's EN2 low, it can sit at the VIN-DPM threshold
+  (4.35–4.63 V, SLUS810) while the charger limits its input current. With EN2 high (phase B),
+  VIN-DPM doesn't act, and a weak source gets pulled down towards the cell voltage
+  (`hardware/power-metering.md` section 5.4).
+- **Phase B** puts one monitor upstream of the join on each source, so you can tell solar current
+  from USB-C current.
+- **The USB-C rule.** USB-C is for bench work and occasional backup charging only. It's never
+  connected at the same time as solar, so at most one source rail carries current. Two source rails
+  with current at the same time means someone broke the operating rule. Phases B and C show this
+  in the data, but phase A can't see it. Analysing it is gateway work outside this design.
+- **Slow values go to the health report.** The state of charge and its rate, the charger status,
+  the die temperatures, VDDA and the charger's own measurements change over hours. So they travel
+  every 15 minutes in the health report (section 4), not in the observation. That's why fields 17
+  and 18 retired.
+
+In the firmware, the rail table and the profile are in `App/power_config.h`, and the acquisition is
+in `App/power_acq.c`. The two WSMP modules (battery is type 8, rails is type 9) are in
+`App/mod_power.c`. The map to the catalog is in `App/wsmp_catalog_map.c:8-27, 154-190`.
 
 ### 5.4 One valid encoding per reading
 
@@ -569,11 +588,11 @@ The gateway rejects an authenticated observation with NACK reason 2 if it:
 - has time known ≠ (UTC ≠ 0),
 - has a counter that decreases in sequence order within its epoch (section 5.3).
 
-Bits 0–30 of the base bitmap all name defined fields in catalog version 2, so none of them can be
-reserved; the reserved fields are 34–47. The identity and time checks also apply. An identity
-collision gives NACK reason 1. A sample more than 5 s ahead of its receipt is quarantined.
+In catalog version 2, bits 0–30 of the base bitmap all name defined fields, so none of them can be
+reserved. The reserved fields are 34–47. The identity and time checks also apply. An identity
+collision gets NACK reason 1. The gateway quarantines a sample more than 5 s ahead of its receipt.
 
-The gateway and the node share one catalog and ship together. Thus an unknown bit is a bug, not a
+The gateway and the node share one catalog and ship together. So an unknown bit is a bug, not a
 newer node.
 
 ### 5.5 Builds
@@ -587,9 +606,9 @@ build's fields with one constant:
 
 `WS_OBS_PLAIN_MAX` = 22 + the extension word when a field 32–47 is in the set + the sum of the
 widths of those fields. `WS_F_WSMP_BENCH` holds every power field of every phase (fields 0–6, 9,
-11–16, 19, 20, 25–30, 32, 33): **77 B**, asserted at compile time (`node_fields.h:29`). Moving
-between power phases therefore changes neither the journal slot nor the page magic; a phase A
-record is shorter (65 B) but uses the same slot.
+11–16, 19, 20, 25–30, 32, 33). That's **77 B**, asserted at compile time (`node_fields.h:29`). So
+moving between power phases changes neither the journal slot nor the page magic. A phase A record
+is shorter (65 B) but uses the same slot.
 
 The journal stores `WS_OBS_PLAIN_MAX` bytes per slot, plus the commit word and the ACK word:
 `SLOT_BYTES = roundup8(WS_OBS_PLAIN_MAX) + 16`. When the node reads a record back, it takes the
@@ -598,10 +617,12 @@ record's length from the record's own bitmap and extension word.
 **The journal rule: 9.5 hours of the build's widest record** (power design section 7). The
 compile-time check in `node_store.c:71-75` asserts that the ring keeps 9.5 hours of
 `WS_OBS_PLAIN_MAX`, the build's widest record. Version 5 asserted 24 hours of every catalog field
-(`WS_OBS_PLAIN_ALL`); catalog version 2 makes that 94 B, a 112 B slot, 18 slots a page and 522
-records, so the build would fail. A build whose field set exceeds **80 B of plaintext (a 96 B
-frame) does not compile**: that is the per-build ceiling. The 110 B bound of every catalog field
-exists only so that the RX bridge and the gateway accept any canonical record.
+(`WS_OBS_PLAIN_ALL`). Under catalog version 2 that's 94 B, a 112 B slot, 18 slots a page and 522
+records, so the build would fail. A build whose field set is over **80 B of plaintext (a 96 B
+frame) doesn't compile**, and that's the per-build ceiling.
+
+The 110 B bound of every catalog field exists only so the RX bridge and the gateway accept any
+canonical record.
 
 | Field set | Plaintext | Frame | Slot | Slots a page | Records (29 of 30 pages) | Outage buffer |
 |---|---:|---:|---:|---:|---:|---:|
@@ -611,25 +632,28 @@ exists only so that the RX bridge and the gateway accept any canonical record.
 | Previous bench build (temperature and humidity with the minute summary) | 35 B | 51 B | 56 B | 36 | 1,044 | 17.4 h |
 | Every catalog version 2 field (not a build; does not compile) | 94 B | 110 B | 112 B | 18 | 522 | 8.7 h |
 
-One journal page is always being recycled, so the counts use 29 of the 30 pages (flash layout v3, 2026-11-04). The proof of
-concept accepts this buffer. The 30-day buffer comes with an external SPI NOR flash journal (PRD
-test H11); more pages or SPI NOR is also the answer for a field set above the ceiling (power design
-risk R6).
+The node always has one journal page in recycling, so the counts use 29 of the 30 pages (flash
+layout v3, 2026-11-04). The proof of concept accepts this buffer. The 30-day buffer comes with an
+external SPI NOR flash journal (PRD test H11). More pages or SPI NOR is also the answer for a field
+set above the ceiling (power design risk R6).
 
 The journal page magic is `"WSJ"` + the slot size in its low byte. A build with another field set
-has another slot size. Thus the node ignores and recycles pages from a build with a different
-layout. The version 6 slot (96 B) differs from the version 5 slot (80 B), so the first boot of the
-version 6 image recycles every old page: the release procedure drains the journal first (section
+has another slot size. So the node ignores and recycles pages from a build with a different layout.
+The version 6 slot (96 B) differs from the version 5 slot (80 B), so the first boot of the version 6
+image recycles every old page. That's why the release procedure drains the journal first (section
 7).
 
 ### 5.6 Calibration revision
 
-Each station has one revision. It starts at 0 and only increases (it never wraps). It names a
-calibration and sampling set in the gateway configuration. The node applies the calibration. The
-design says that the gateway accepts any revision up to the highest one configured. The gateway
-does not check this yet: it accepts any revision from 0 to 255. The current build sends 0. The
-power constants (shunts, R_ISET, the divider ratio) are build constants in `App/power_config.h`,
-identified by the firmware build ID in the health report, not by the calibration revision.
+The design says each station has one calibration revision. It starts at 0, only goes up and never
+wraps. It names a calibration and sampling set in the gateway configuration, and the node applies
+the calibration. The design also says the gateway accepts any revision up to the highest one
+configured. The gateway doesn't check this yet. Today it accepts any revision from 0 to 255, with
+no check that it only goes up, and the current build sends 0.
+
+The power constants (shunts, R_ISET, the divider ratio) are build constants in
+`App/power_config.h`. The firmware build ID in the health report identifies them, not the
+calibration revision.
 
 ### 5.7 Gateway record
 
@@ -647,35 +671,35 @@ The stored JSON has `version: 6` (`RECORD_VERSION`, `gateway.py:26`), `station`,
 - `partial`: some present fields are INVALID.
 - `sensor_fault`: all present fields are INVALID.
 
-A present INVALID power field makes the record `partial`; an absent one never does. A healthy
+A present INVALID power field makes the record `partial`. An absent one never does. A healthy
 phase A record is `valid`.
 
-`/v1/observations/latest` and MQTT decide availability per field. Thus a dead UV sensor never hides
+`/v1/observations/latest` and MQTT decide availability per field, so a dead UV sensor never hides
 the temperature. **H01 scores the validity of the temperature and humidity fields.**
 
-`gateway.validate` takes its rules from the catalog. Units and CSV columns also come from the
-catalog. The code for the older record versions and their table migrations is deleted, because the
-project keeps no backward compatibility.
+`gateway.validate` takes its rules from the catalog, and so do the units and CSV columns. We
+deleted the code for the older record versions and their table migrations, because the project
+keeps no backward compatibility.
 
-**Old data across a format change** (power design section 4). The rules for version 5 data after
-version 6 ships:
+**Old data across a format change** (power design section 4). These are the rules for version 5
+data after version 6 ships:
 - **One record version per run directory.** A run directory, its database and its key belong to
   one record version. The gateway accepts only `RECORD_VERSION` (`gateway.py:69-70`). The version 6
-  release starts a new run directory; the version 5 run directory and its database stay with the
-  version 5 release, which can still read them. Nothing is migrated.
-- **No renames.** No catalog name is renamed in catalog version 2, so a name means the same thing
-  across runs, and an analysis that joins runs by field name stays valid. Retired fields (17, 18)
-  keep their names and meanings.
+  release starts a new run directory. The version 5 run directory and its database stay with the
+  version 5 release, which can still read them. Nothing gets migrated.
+- **No renames.** Catalog version 2 renames no catalog name, so a name means the same thing across
+  runs. An analysis that joins runs by field name stays valid. Retired fields (17, 18) keep their
+  names and meanings.
 - **Exception: the corrected battery fields.** In version 5 data, `batt_mv` (field 11) is the
-  INA228 VBUS of whatever net its jumper sensed (the official wiring puts it on the charger OUT,
-  not on the cell); `energy_in_mwh` and `energy_out_mwh` (13, 14) are the INA228 ENERGY register,
-  OUT voltage × current; and `charge_in_mah` and `charge_out_mah` (15, 16) count with the wrong
-  sign in the official orientation (a discharge counted as charge in). Read version 5 values of
-  these fields with that meaning; never join them with version 6 values as one series.
+  INA228 VBUS of whatever net its jumper sensed. (The official wiring puts it on the charger OUT,
+  not on the cell.) `energy_in_mwh` and `energy_out_mwh` (13, 14) are the INA228 ENERGY register,
+  OUT voltage × current. `charge_in_mah` and `charge_out_mah` (15, 16) count with the wrong sign in
+  the official orientation, so a discharge counts as charge in. Read version 5 values of these
+  fields with that meaning, and never join them with version 6 values as one series.
 - **Home Assistant.** Retained discovery configs of `soc_gauge_pct` and `charger_pins` from version
-  5 runs stay in the broker; the release note says to remove the two entities. The new health-report
-  entities use their own unique-ID namespace (`<station>_diag_<key>`), so they never collide with
-  observation entities.
+  5 runs stay in the broker. The release note tells you to remove those two entities. The new
+  health-report entities use their own unique-ID namespace (`<station>_diag_<key>`), so they never
+  collide with observation entities.
 
 ## 6. Where the design lives in the code
 
@@ -687,14 +711,17 @@ version 6 ships:
 - **Cross-check tests.** `tests/test_obs.py` checks the observation:
   - The C encoder and the Python decoder agree on random readings for every field and bitmap
     subset, including INVALID, CALM and the range edges.
-  - Every code decodes and encodes again exactly.
-  - The gateway rejects every non-canonical form in section 5.4, including the EXT rules (an
-    empty extension bitmap, a reserved extension bit, an extension-only record) and the current
-    edges −32,768 and +32,766 mA (valid) and −32,769 and +32,767 mA (INVALID).
+  - Every code of the 1- and 2-byte fields (except `qualifiers`) decodes and encodes again
+    exactly. The random round trip covers the wider fields.
+  - The test rejects the non-canonical forms of section 5.4, including the EXT rules (an empty
+    extension bitmap, a reserved extension bit, EXT set with no extension word). It accepts an
+    extension-only record as legal. It also checks the current edges: −32,768 and +32,766 mA are
+    valid, and −32,769 and +32,767 mA are INVALID.
 
   `tests/test_frame.py` checks the envelope (version 6 byte 0), the replies and the 64-byte health
-  report byte for byte, C against Python, with the none codes, the extremes and the non-canonical
-  vectors (fitted bit 7 set, stage 7) of `diag_problems`, and active input 3 decoded as `no_input`.
+  report byte for byte, C against Python. It covers the none codes, the extremes, the
+  non-canonical vectors of `diag_problems` (fitted bit 7 set, stage 7), and active input 3 decoded
+  as `no_input`.
 - **Known-answer vectors.** C and Python share an encoding vector without encryption (temperature
   −12.34 °C, humidity 45.67 %). The node's boot self-test also has an encryption vector with
   M = 8.
@@ -708,9 +735,11 @@ version 6 ships:
   `gateway.py` (catalog-driven `validate`, availability per field, the counter rule),
   `ws0/service.py` (station limit, Home Assistant discovery per field, units and CSV).
 - **Replay and key reuse:** the gateway keeps a digest of each node frame, by counter
-  (counter → SHA-256 of the frame). A repeat with identical bytes is a replay. The gateway counts
-  it and raises no alarm. A repeat with different bytes is real nonce reuse. The gateway raises the
-  key-reuse alarm. The previous format raised the alarm for a plain replay too.
+  (counter → SHA-256 of the frame). A repeat with the same bytes is a replay. The gateway counts
+  it and raises no alarm. A repeat with different bytes is real nonce reuse, and the gateway
+  raises the key-reuse alarm. Gateway code before commit `dd49609` (draft 4 and an early version 5
+  draft) raised the alarm for a plain replay too. The released version 5 gateway already told the
+  two apart.
 
 ## 7. Release procedure for a format change
 
@@ -718,22 +747,22 @@ This procedure applies to version 6 and to every later format change (power desi
 
 | Step | Action | Why |
 |---:|---|---|
-| 0 | **Drain the journal**: wait for `pending=0` on the TX console. | A WIPE discards pending records, and the version 6 image recycles every journal page of the old slot size at its first boot (section 5.5). Records sent before the drain finish are stored under the old release. |
-| 1 | WIPE the node. | It erases the key and the journal; it keeps the counter and the epoch. |
+| 0 | **Drain the journal**: wait for `pending=0` on the TX console. | A WIPE discards pending records, and the version 6 image recycles every journal page of the old slot size at its first boot (section 5.5). Records sent before the drain finishes are stored under the old release. |
+| 1 | WIPE the node. | It erases the key and the journal. It keeps the counter and the epoch. |
 | 2 | Flash the RX board and the TX board **from the same release**. | The TX and RX roles share `WS_FRAME_VERSION`, and the boot known-answer vectors change with the version byte. |
 | 3 | `init` a new run directory. The old run directory and its database stay with the old release. | One record version per run directory (section 5.7). |
 | 4 | Run `provision-node` with the new key. | A key from the previous format could repeat keystream (section 3.2). |
 | 5 | Start the gateway (`RECORD_VERSION` 6 for this release). | The gateway accepts one record version. |
-| 6 | Record the release in `RELEASES.md`: the protocol version, the field set, the power wiring phase and the monitored rails. Record the image size in `firmware-budget.md`. | The release names what its data means. |
+| 6 | Record the release in `RELEASES.md`: the protocol version, the field set, the power wiring phase, the monitored rails and the image sizes (flash budget). Release sizes go in `RELEASES.md`, not `firmware-budget.md`. | The release names what its data means. |
 
 ## 8. Not in this design
 
-- Drivers for fields 7 and 8. The WSMP bench has drivers for the other measured fields. It does
-  not send fields 21–24 (section 5.3). The catalog is fixed now. Each sensor's driver comes with
+- Drivers for fields 7 and 8. The WSMP bench has drivers for the other measured fields, but it
+  doesn't send fields 21–24 (section 5.3). The catalog is fixed now. Each sensor's driver comes with
   its hardware.
-- The phase B hardware (step 1b): the catalog and the health report already have its slots
-  (section 5.3, "Power telemetry"); a power profile other than A or B stops the build with
-  `#error` (`App/power_config.h:35-36`).
+- The phase B hardware (step 1b). The catalog and the health report already have its slots
+  (section 5.3, "Power telemetry"). A power profile other than A or B stops the build with
+  `#error` (`App/power_config.h:35-38`).
 - Gateway analysis and alerts on the power data (two source rails with current, early
   termination, SOC trends), rail energy counters other than the battery's, the window minimum and
   maximum of the currents, and derived rail power.

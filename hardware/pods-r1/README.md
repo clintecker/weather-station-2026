@@ -1,53 +1,77 @@
 # pods-r1: the three outdoor I2C sensor pods
 
-Three pods (TH: Adafruit SHT45 #6174, Baro: BMP581 #6407, UV: LTR390 #4831), each on an Adafruit Perma-Proto Quarter
-#1608 with an Adafruit 24LC32 STEMMA QT breakout #5146 as its ID EEPROM and a BOB-14021 + 87180-066LF jack, joined to a
-TX sensor port by a round 6-conductor cable. Design: `docs/superpowers/specs/2026-11-17-sensor-pods-design.md`.
+There are three pods: TH (Adafruit SHT45 #6174), Baro (BMP581 #6407) and UV (LTR390 #4831). Each pod sits on an
+Adafruit Perma-Proto Quarter #1608. Each one carries an Adafruit 24LC32 STEMMA QT breakout #5146 as its ID EEPROM,
+and a BOB-14021 with an 87180-066LF jack. A round 6-conductor cable joins each pod to a TX sensor port. The design is
+in `docs/superpowers/specs/2026-11-17-sensor-pods-design.md`.
 
-- `sources.py`: every dimension and electrical fact with its source and status; the table below is generated from it
-  (`python3 sources.py` writes it, `--check` verifies it). Values shared with the TX stack (`bob_w`, `jack_w`, ...)
-  are read from `../tx-stack-r1/sources.py`, not copied.
-- `layout/permaproto.py`: the Perma-Proto Quarter's holes, strips and outline from Adafruit's file.
-- `layout/pods.py`: the three pod boards as data (parts on named holes, wires, the TH lead); `python3 layout/pods.py`
-  prints each pod's hole map and wire list.
-- `box/podbox.py` (CadQuery, `.venv-cad`): the three printed pod boxes and lids, sized from each pod's board; writes
-  `box/stl/pod-{th,baro,uv}-{body,lid}.stl` in print orientation (committed: our own geometry). Its docstring records
-  the wall, seal, screws, mount face, vent baffle and UV window choices.
-- `shield/assemble.py` (numpy, `.venv-cad`): the shield assembled from its meshes' mating features, the core and the
-  SHT45 fit. `shield/remix.py` (CadQuery + manifold3d, `.venv-cad`; `sheets/requirements-cad.txt`): the remixed top cap
-  (UV box screw bosses) and L-arm (TH and BARO mounting faces, the TH lead hole); prints its checks and writes the two
-  STLs to `shield_out`, outside git. Its docstring records the placements and why.
-- `sheets/`: Session P, Clint's bench PDF for the three pod boards and the port cable, in the TX sheets' style
-  (`../tx-stack-r1/sheets`, whose renderer and page furniture it imports read-only). `scenes_p.py` + `models_p.py`
-  render every illustration from CadQuery geometry (one scene per process, `sh sheets/render_all.sh`, cached in
-  `sheets/svg/`); `make_session_p.py` lays out `sheets/out/session-p-pods.pdf` from `layout/pods.py`,
-  `layout/pod_checks.py` and `sources.py`, runs the label-overlap and hole-callout checks and fails on any issue
-  (`sh sheets/build.sh`). Two interpreters, set up once from the repo root with
-  `sh hardware/pods-r1/sheets/setup-envs.sh` (uv): `.venv-cad` from `sheets/requirements-cad.txt` (CadQuery 2.7,
-  shapely 2.2) and `.venv-pdf` from `sheets/requirements-pdf.txt` (reportlab + svglib, Python 3.13; the TX sheets'
-  pins). `sheets/env.sh` uses `CADPY` / `PDFPY` when set, else those two venvs, and prints a WARNING block when either
-  is missing; `run.sh` then marks the sheets SKIPPED in its last line. `svg/` and `out/` stay out of git.
-- `run.sh`: rebuilds and checks everything here; exits non-zero on the first failed step. Every step it cannot run on
-  this machine (no shield 3MF, no `.venv-cad`, no sheet interpreters, no BOB-14021 STEP) is named again in a WARNING
-  banner at the end, instead of "every check passes".
-- `layout/pod_checks.py` P6 sets the pod cable length (each port's pull-ups with the TX main bus's in parallel for the
-  3 mA sink, the port segment's rise time with the TX port's 60 pF allowance); the TX checks' S4 note
-  (<= 118 pF / 1.2 m) models an empty port with the mux's 10 k alone, so it is not a pod limit.
+- `sources.py`: every dimension and electrical fact, with its source and status. It generates the table below
+  (`python3 sources.py` writes it, `--check` verifies it). It reads the values it shares with the TX stack (`bob_w`,
+  `jack_w`, ...) from `../tx-stack-r1/sources.py` and doesn't copy them.
+- `layout/permaproto.py`: the Perma-Proto Quarter's holes, strips and outline, from Adafruit's file.
+- `layout/pods.py`: the three pod boards as data (parts on named holes, wires, the TH lead). Run
+  `python3 layout/pods.py` to print each pod's hole map and wire list.
+- `box/podbox.py` (CadQuery, `.venv-cad`): the three printed pod boxes and lids, sized from each pod's board. It
+  writes `box/stl/pod-{th,baro,uv}-{body,lid}.stl` in print orientation. We commit those STLs because they're our own
+  geometry. Its docstring records the choices for the wall, seal, screws, mount face, vent baffle and UV window.
+- `shield/assemble.py` (numpy, `.venv-cad`): the shield assembled from the mating features of its meshes, plus the
+  core and the SHT45 fit.
+- `shield/remix.py` (CadQuery + manifold3d, `.venv-cad`, from `sheets/requirements-cad.txt`): the remixed top cap
+  (UV box screw bosses) and L-arm (TH and BARO mounting faces, the TH lead hole). It prints its checks and writes the
+  two STLs to `shield_out`, outside git. Its docstring records the placements and the reasons for them.
+- `sheets/`: Session P, Clint's bench PDF for the three pod boards and the port cable. It uses the style of the TX
+  sheets (`../tx-stack-r1/sheets`) and imports their renderer and page furniture read-only.
+  - `scenes_p.py` + `models_p.py` render every illustration from CadQuery geometry. They run one scene per process
+    (`sh sheets/render_all.sh`) and cache the results in `sheets/svg/`.
+  - `make_session_p.py` lays out `sheets/out/session-p-pods.pdf` from `layout/pods.py`, `layout/pod_checks.py` and
+    `sources.py`. It runs the label-overlap and hole-callout checks and fails on any issue (`sh sheets/build.sh`).
+  - The sheets use two interpreters. Make them once from the repo root with `sh hardware/pods-r1/sheets/setup-envs.sh`
+    (uv). `.venv-cad` comes from `sheets/requirements-cad.txt` (CadQuery 2.7, shapely 2.2). `.venv-pdf` comes from
+    `sheets/requirements-pdf.txt` (reportlab + svglib, Python 3.13, the same pins as the TX sheets).
+  - `sheets/env.sh` uses `CADPY` / `PDFPY` when you set them, and otherwise those two venvs. If either one is
+    missing, it prints a WARNING block, and `run.sh` marks the sheets SKIPPED in its last line.
+  - `svg/` and `out/` stay out of git.
+- `run.sh`: rebuilds and checks everything in this folder. It exits non-zero on the first step that fails. Some steps
+  can't run on every machine (no shield 3MF, no `.venv-cad`, no sheet interpreters, no BOB-14021 STEP). `run.sh`
+  names each one again in a WARNING banner at the end, so you don't get "every check passes" when it skipped steps.
+- `layout/pod_checks.py` P6 sets the pod cable length. It uses each port's pull-ups in parallel with the TX main
+  bus's pull-ups for the 3 mA sink. It uses the TX port's 60 pF allowance for the rise time of the port segment.
+  The S4 note in the TX checks (<= 118 pF / 1.2 m) models an empty port with only the mux's 10 k. So S4 isn't a pod
+  limit.
 
 Setting up a fresh clone (from the repo root):
-1. The plain `.venv` is a prerequisite: `run.sh` runs `sources.py --check` and the plain unit tests with
-   `.venv/bin/python` (create it as the repo README says: `python3 -m venv .venv` and
-   `.venv/bin/python -m pip install -r requirements.txt`).
-2. `sh hardware/pods-r1/sheets/setup-envs.sh` (uv) makes `.venv-cad` and `.venv-pdf` and then runs
-   `python3 -I hardware/tx-stack-r1/render/fetch_models.py`, which downloads the makers' STEP models (checked against
-   their sha256) into the gitignored `hardware/tx-stack-r1/render/models/` and builds the BOB-14021 board STEP from
-   SparkFun's Eagle file with `kicad-cli` (so KiCad must be installed). Without that STEP the Session P and Q sheets
-   skip, and `run.sh` says so in its final WARNING.
+1. You need the plain `.venv` first. `run.sh` uses `.venv/bin/python` for the plain unit tests, for
+   `layout/pod_checks.py` and for its shield-file probes. (`sources.py --check` itself runs with the system
+   `python3`.) Make it the way the repo README says: `python3 -m venv .venv`, `source .venv/bin/activate`,
+   `python -m pip install -r requirements.txt`. That's the same as `.venv/bin/python -m pip install -r requirements.txt`
+   without activating, which is the form `docs/current-system.md` uses.
+2. Run `sh hardware/pods-r1/sheets/setup-envs.sh` (uv). It makes `.venv-cad` and `.venv-pdf`. Then it runs
+   `python3 -I hardware/tx-stack-r1/render/fetch_models.py`.
+   - That script downloads the makers' STEP models into the gitignored `hardware/tx-stack-r1/render/models/` and
+     checks each one against its sha256.
+   - It also builds the BOB-14021 board STEP from SparkFun's Eagle file with `kicad-cli`, so you need KiCad
+     installed.
+   - Without that STEP the Session P and Q sheets skip, and `run.sh` says so in its final WARNING.
 
-The radiation shield's 3MF and every file derived from its meshes stay out of git; `shield_3mf` records a local path and
-a sha256 only. Adafruit's Eagle files were read once from GitHub into a scratch folder; the parsed numbers are here.
+The radiation shield's 3MF stays out of git, and so does every file made from its meshes. `shield_3mf` only records a
+local path and a sha256. We read Adafruit's Eagle files once from GitHub into a scratch folder. The numbers we parsed
+from them are here.
 
 ## Dimension table
+
+Some rows in the generated table below are wrong, and `sources.py` still needs fixing. Until it is, these are the
+correct facts:
+
+- `sht45`: the board has four 2.5 mm plated mounting holes, at (2.54, 2.54), (22.86, 2.54), (2.54, 15.24) and
+  (22.86, 15.24). The row says "two" and then lists four positions.
+- `bmp581`: the board has only two 2.5 mm plated mounting holes, at the top corners: (2.54, 15.24) and (22.86, 15.24).
+  The bottom corners have no holes because the 8-pin header JP1 fills that edge. The outline 25.4 x 17.78 is right.
+  Also, the BMP5xx repo README does list #6407 (with #6413 and #6411), so the row's remark about #6413 is wrong.
+- `eeprom_24lc32_pins`: the silkscreen over pad 2 reads `3V`, not `3Vo`. The pads read VIN, 3V, GND, SCL, SDA, WP
+  (JP1 1X06, pads 1-6). The net names VCC, 3.3V, GND, SCL, SDA, WP are right.
+- `mount_keep` and `pod_screw`: ISO 7045 gives the M3 pan head diameter (dk max) as 5.6, not 5.5. So the head
+  clearance radius should be 2.8, not 2.75. Change both rows together, because `box/podbox.py` asserts that half the
+  `pod_screw` head fits inside `mount_keep`. `pod_mount_screw` quotes the same 5.5 head and needs 5.6 too.
 
 <!-- dimensions:begin (generated by sources.py) -->
 | Key | Value | What | Source | Status |

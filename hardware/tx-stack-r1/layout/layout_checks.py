@@ -1022,22 +1022,22 @@ def check_mech():
          "pull B4 out: the battery path opens at its header, nothing to unscrew", "")
     mech("Battery pack", "lies flat on the pack tray, the lowest shelf (the heaviest part low); a hook-and-loop "
          "strap through the tray", "the tray's front lip and the strap", "open the strap, unplug the JST PH, slide it out")
-    mech("Charger (BQ25798EVM)", "a shelf: its side edges on two moulded ledges, a stop at the back, a snap clip at "
-         "the front (the board has no mounting holes); the Bumpon feet (H1-H4, 3M SJ-5303) peeled off first",
+    mech("Charger (BQ25798EVM)", "a shelf: its side edges on two moulded ledges, a stop at the back, a clip at the "
+         "front on two M3 screws into heat-set inserts (Yb 106; the board has no mounting holes); the Bumpon feet (H1-H4, 3M SJ-5303) peeled off first",
          "the ledges; the terminal screws are tightened from above, in the room under B4",
-         "unscrew its leads at its terminals (they run to the backplane, not to a card), flex the clip, slide it "
+         "unscrew its leads at its terminals (they run to the backplane, not to a card), unscrew the front clip, slide it "
          "toward the lid on its service loops",
          "its underside parts (J6, tails: 4 mm [TBD-MEASURE]) must clear the 2 mm ledges at the edges")
     mech("Backplane on its pads", "no screws (enclosure 4): three plain floor pads behind it; the left edge in the "
-         "left wall's groove and its rail, the factory right edge in a 4.0 slot in the right corner post (tilted into the "
+         "left wall's groove and its rail, the factory right edge in a 6.5 mm deep slot (Xb 85.8 to 92.3) in the right corner post (tilted into the "
          "slot, slid left into the groove); the four cards plugged into its sockets hold it in place",
          "three plain pads and the groove and slot floors take the card insertion push; the groove and slot roofs and "
          "the plugged cards take the pull", "after every card is out: slide it right to the slot's end, lift the left "
          "side, out", "removable only after all four cards are out; loose until the cards are in")
     mech("Lid to the printed base", "four of Clint's 3D-printed bolts through the lid's 8 mm holes into the "
          f"\u00d8{S.val('enc_lid_bores')[0]:g} bores in the base's corner posts (no heat-set inserts; Clint, 2026-11-17), "
-         "156 x 109 apart (9.75 / 10.25 in from the lid's edges, cage/lid-rim-spec.md); the base's 9 mm land under the lid's rim, its "
-         f"{S.val('rim_tongue')[0]:g} x {S.val('rim_tongue')[1]:g} sealing lip in the lid's O-ring channel",
+         "156 x 109 apart (9.75 / 10.25 in from the lid's edges, cage/lid-rim-spec.md); the base's wall top under the lid's rim, its "
+         f"{S.val('enc_lip')[0]:g} x {S.val('enc_lip')[1]:g} sealing lip in the lid's O-ring channel",
          "the bolts squeeze the O-ring; the lid's rim takes a knock", "undo the four printed lid bolts",
          "fastening settled (Clint's printed bolts, no inserts); still open: the rim test ring's fit on the real lid")
     mech("Base to the pole", "two mounting flanges on the short ends, in the floor plane (enclosure 4), each with two "
@@ -1045,7 +1045,7 @@ def check_mech():
          "into the box", "the flanges' roots on the end walls and the floor", "open the clamps", "")
     n7 = sum(1 for g in cage.GLANDS if g[2] == "PG-7")
     mech("Cables through the glands", f"five round cables (the four sensor-port cables S1-S4 and the solar lead) in "
-         f"PG-7s (#762, seal 3.0-4.3 mm; {n7} PG-7s, {n7 - 5} spare) in the bottom wall's bosses, each passed "
+         f"PG-7s (#762, seal 3.0-4.3 mm; {n7} PG-7s, {n7 - 5} spare) through the bottom wall over 1 mm pockets (no bosses), each passed "
          "through its gland before its inside plug is crimped (a 6P plug, about 12 mm across its corners, passes no gland "
          "bore); the flat wind and rain cables in PG-9s (#761) with the seal out and the gap packed with silicone or a "
          "split grommet, their factory plugs cut off and new 6P plugs crimped inside",

@@ -1,15 +1,18 @@
 # wsmp_ident: the verdict for a module on a port
 
-In v1 a port number is a place, not a module type. When the station finds a module on an I2C port it
-reads the module record from the board's ID EEPROM, maybe the sensor's own serial, and decides: admit
-the module, quarantine it, or (for a duplicate) check the module that holds its serial or type first.
-`docs/firmware-current-design.md` section 6.7 fixes that decision as
-an ordered table. This file is that table as one pure function, `wsmp_identify`, with the serial
-rules it needs.
+In v1 a port number is a place. It doesn't tell you the module type. When the station finds a module
+on an I2C port, it reads the module record from the board's ID EEPROM. It may also read the sensor's
+own serial. Then it decides: admit the module, quarantine it, or, for a duplicate, check the module
+that holds its serial or type first.
 
-It does no I/O. The station (a later change) reads the record and the sensor serial, retries a failed
-read three times and a CRC failure once, runs the holder check that a duplicate asks for, and keeps
-the port states.
+`docs/firmware-current-design.md` section 6.7 sets that decision out as an ordered table. This file is
+that table as one pure function, `wsmp_identify`, plus the serial rules it needs.
+
+The function does no I/O. The station does that part today. `firmware/stage0-node/App/port_id.c` reads
+the record and the sensor serial. It tries a failed record read 3 times in all (the first try plus 2
+retries), back to back, before it gives `NO_RECORD` (READ). A record with a CRC failure gets read once
+more. `firmware/stage0-node/App/wsmp_host.c` runs the verdict and the holder check that a duplicate
+asks for, and it keeps the port states.
 
 This document is the source. `tools/tangle.py` generates `wsmp_ident.c` from the code chunks below.
 The header `wsmp_ident.h` is a plain file.
@@ -31,9 +34,9 @@ python3 tools/tangle.py --check firmware/common/wsmp_ident.lit.md    # committed
 
 ## 2. The serial namespaces
 
-The serial's top byte names its source, so the sources never collide (section 6.7, "Namespaces").
-The station-bound fallback is today's `WSMP_LOCAL_SERIAL(port, type)` (`stage0-node/App/wsmp_local.h`),
-whose value already has a zero top byte. A sensor serial carries the module type, so an SHT45's serial
+The serial's top byte names its source, so serials from different sources never collide (section 6.7,
+"Namespaces"). The station-bound fallback is today's `WSMP_LOCAL_SERIAL(port, type)`
+(`stage0-node/App/wsmp_local.h`), and its value already has a zero top byte. A sensor serial carries the module type, so an SHT45's serial
 can never equal another part's.
 
 ```c {#serials}
@@ -66,8 +69,8 @@ uint64_t wsmp_sensor_serial(uint16_t type, uint32_t sensor_serial)
 | 5 | duplicate type | the module type is held on another port (one per type in v1) | check the holder |
 | 6 | admit | otherwise | the serial, its flags and, for status 0, the record's calibration |
 
-Without a usable record, the serial comes from the sensor if the part has one, else from the port: the
-same precedence everywhere (section 6.7, "Serial rules").
+Without a usable record, the serial comes from the sensor if the part has one, else from the port.
+That order is the same everywhere (section 6.7, "Serial rules").
 
 ```c {#fallback}
 static void fallback_serial(const wsmp_observed *o, wsmp_verdict *v)
@@ -78,12 +81,14 @@ static void fallback_serial(const wsmp_observed *o, wsmp_verdict *v)
 }
 ```
 
-A bind of kind 1 matches only a sensor serial that was read and is equal. A record that binds a sensor
-whose serial could not be read cannot be confirmed, so it counts as changed: its calibration is never
-applied to a sensor it may not belong to. The station never asks for that verdict: a sensor serial
-that fails its 3 tries leaves the identification incomplete, and no verdict is decided from it
-(`App/port_id.c`, firmware-current-design.md section 6.7, step 3b). So on the station `SENSOR_CHANGED` means a
-serial that was read and differs; the rule here keeps the function safe on its own.
+A bind of kind 1 matches only a sensor serial that was read and is equal. If a record binds a sensor
+whose serial couldn't be read, nothing can confirm the bind. So it counts as changed, and its
+calibration never goes onto a sensor it may not belong to.
+
+The station never asks for that verdict, though. A sensor serial that fails its 3 tries leaves the identification incomplete, and the station
+decides no verdict from it (`App/port_id.c`, firmware-current-design.md section 6.7, step 3b). So on
+the station `SENSOR_CHANGED` means a serial that was read and differs. The rule here just keeps the
+function safe on its own.
 
 ```c {#bind}
 static int bind_matches(const wsmp_record *r, const wsmp_observed *o)
@@ -92,8 +97,8 @@ static int bind_matches(const wsmp_record *r, const wsmp_observed *o)
 }
 ```
 
-Steps 1 to 3c decide the record status and the serial. A quarantine stops there (the function returns
-0); every other outcome goes on to the duplicate steps. The parsed record stays in the verdict, so the
+Steps 1 to 3c decide the record status and the serial. A quarantine stops there, and the function
+returns 0. Every other outcome goes on to the duplicate steps. The parsed record stays in the verdict, so the
 station can apply its calibration when the status is 0.
 
 ```c {#record-steps}
@@ -120,9 +125,9 @@ static int record_steps(const wsmp_observed *o, wsmp_verdict *v)
 }
 ```
 
-Steps 4 and 5 look for a holder: a module on another port that is Admitted, Active or Suspect. With a
-non-zero serial the search is by serial, else by type. A serial is never 0 (every namespace has a
-non-zero part), so the two searches cannot mix.
+Steps 4 and 5 look for a holder. That's a module on another port in the Admitted, Active or Suspect
+state. With a non-zero serial the search goes by serial, else by type. A serial is never 0 because
+every namespace has a non-zero part, so the two searches can't mix.
 
 ```c {#holder}
 static const wsmp_port_held *holder(const wsmp_port_held *held, unsigned n, uint8_t port, uint64_t serial, uint16_t type)
@@ -137,8 +142,9 @@ static const wsmp_port_held *holder(const wsmp_port_held *held, unsigned n, uint
 }
 ```
 
-A quarantined module is not admitted, so its serial, source and flags reach only the console (the
-`MODULES` line): the record's serial, source "record", status 0 and no record CRC.
+A quarantined module isn't admitted, so its serial, source and flags go nowhere. The console's
+`MODULES` line shows only the verdict (`type_conflict`) for that port. The verdict itself still
+carries the record's serial, source "record", status 0 and no record CRC.
 
 ```c {#identify}
 void wsmp_identify(const wsmp_observed *o, const wsmp_port_held *held, unsigned n, wsmp_verdict *v)

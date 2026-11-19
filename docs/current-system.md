@@ -1,15 +1,16 @@
 # Weather station 2026: current-system specification (breadboard development system)
 
-Read from `weather-station-2026` at `origin/master`, commit `e44977f` (2026-11-02), plus the parts
-inventory `/Users/clint/code/electronics/INVENTORY.md`. This document says **what the parts are and how
-they work together electrically, in firmware and on the wire**. It deliberately carries **no physical
-breadboard layout** (no holes, rows, columns, board letters, jumper numbers or lead IDs). The reader
-designs the physical layout.
+This was first read from `weather-station-2026` at `origin/master`, commit `e44977f` (2026-11-02), plus
+the parts inventory `/Users/clint/code/electronics/INVENTORY.md`. We then updated it up to commit
+`26da337` (2026-11-09). Some line citations still point at the `e44977f` text. This page covers **what
+the parts are and how they work together electrically, in firmware and on the wire**. It has **no
+physical breadboard layout** on purpose (no holes, rows, columns, board letters, jumper numbers or lead
+IDs). You design the physical layout.
 
 ## 0. How to read the citations
 
-Every fact carries a source as `path:line` (paths relative to the repository root) or a datasheet /
-maker reference. "Inferred" marks a conclusion drawn here and not stated in a source.
+Every fact has a source. It's either `path:line` (paths are relative to the repository root) or a
+datasheet or maker reference. "Inferred" marks a conclusion we drew here that no source states.
 
 | Short name | Path |
 |---|---|
@@ -38,19 +39,34 @@ maker reference. "Inferred" marks a conclusion drawn here and not stated in a so
 | SHOP | `docs/poc-shopping-list.md` |
 | BRU | `docs/hardware/nucleo-wl55jc-bringup.md` |
 
-Datasheets the repository cites: ST UM2592 Rev 4 (NUCLEO-WL55JC user manual; Tables 9, 11-19), ST
-DS13293 Rev 5 (STM32WL55), ST RM0453 (STM32WL reference manual), TI SLUS810N (bq2407x), TI SBOS904 /
-SLYS021A (INA228), Analog Devices MAX17048, Sensirion SHT4x and SHTC3, Bosch BMP581, Lite-On LTR390,
-SparkFun SEN-15901 datasheet, Semtech SX126x / AN1200.13 (PTD:28-29, PM:15-20, PS:595-627).
+The repository cites these datasheets (PTD:28-29, PM:15-20, PS:595-627):
+
+- ST UM2592 Rev 4 (NUCLEO-WL55JC user manual, Tables 9, 11-19)
+- ST DS13293 Rev 5 (STM32WL55)
+- ST RM0453 (STM32WL reference manual)
+- TI SLUS810N (bq2407x)
+- TI SBOS904 / SLYS021A (INA228)
+- Analog Devices MAX17048
+- Sensirion SHT4x and SHTC3
+- Bosch BMP581
+- Lite-On LTR390
+- SparkFun SEN-15901 datasheet
+- Semtech SX126x / AN1200.13
 
 ---
 
 ## 1. Purpose and scope
 
-**Purpose.** A fresh session will redesign the breadboard development build from scratch. It needs
-the complete functional picture: every part, every electrical connection by function and net, every
-component value, every MCU pin, the firmware behaviour that depends on the wiring, the protocols, and
-the open questions that the physical build must answer.
+**Purpose.** A fresh session will redesign the breadboard development build from scratch. To do that,
+it needs the complete functional picture:
+
+- every part
+- every electrical connection, by function and net
+- every component value
+- every MCU pin
+- the firmware behaviour that depends on the wiring
+- the protocols
+- the open questions that the physical build must answer
 
 **In scope** (the breadboarded development system):
 
@@ -73,11 +89,13 @@ the open questions that the physical build must answer.
 | Sensor-port power switch | PA9 is driven high as "sensor power enable" but is unconnected on the bench; no sensor power switch is part of the breadboard build (IBH:65-70, IBC:417-420, BSW:90) |
 | Field build | `-DWS_FIELD_BUILD` drops `TEST-HANG`/`TEST-FAULT` (NR:119) |
 
-**Status today.** Master builds **protocol version 6** (power telemetry); that release has **not been
-cut**: RELEASES.md lists it as "Next release (not cut yet)" (REL:31). The last recorded node releases
-are TX `04fcc656938d`, RX `cc2766a38c61`, protocol 5 (NR:28, REL:81, REL:137). The 24-hour H01 delivery
-test has not run (NR:33). The phase A power chain was proven on 2026-10-28/29 with benchlink **except the
-shunt in the battery path** (PTD:58, BRU:498-507).
+**Status today.** Master builds **protocol version 6** (power telemetry). Nobody **cut that release
+yet**: RELEASES.md lists it as "Next release (not cut yet)" (REL:31). The last recorded node releases
+are TX `04fcc656938d` and RX `cc2766a38c61`, on protocol 5 (NR:28, REL:81, REL:137). The 24-hour H01
+delivery test is still to do (NR:33).
+
+Benchlink proved the phase A power chain on 2026-10-28/29, **except
+the shunt in the battery path** (PTD:58, BRU:498-507).
 
 ---
 
@@ -94,8 +112,8 @@ shunt in the battery path** (PTD:58, BRU:498-507).
 - TX -> RX: **LoRa 915.0 MHz, 500 kHz, SF7, CR 4/5**, AES-128-CCM frames: one observation a minute
   (plus backlog), a health report every 15 min (radio_cfg.h:11-18, NR:312-314).
 - RX -> TX: ACK/NACK frame per observation, sealed by the gateway (PROTO:170-187).
-- RX <-> Mac: USB CDC through the on-board ST-LINK V3E, 115200 8N1; frames as lowercase hex lines up,
-  ACK/NACK hex lines down (PS:801-831).
+- RX <-> Mac: USB CDC through the on-board ST-LINK V3E, 115200 8N1. Frames go up as lowercase hex lines,
+  and ACK/NACK hex lines come down (PS:801-831).
 - Mac gateway -> SQLite (`observations`, `rejections`, `diagnostics`, plus `rx_alive`, `rx_faults`,
   `gateway_events`, `radio_events`), HTTP API + dashboard on 127.0.0.1:8088, MQTT to Home Assistant
   (gateway.py:168-188, ws0/web.py:61-76, ws0/__main__.py:39, HA:96-107).
@@ -123,11 +141,13 @@ shunt in the battery path** (PTD:58, BRU:498-507).
   - I2C2 -> second QT branch (always powered) -> INA228 0x40 -> MAX17048 0x36 (phase B: + 0x41, 0x45, 0x48)
   - PB5 / PB2 <- RJ11 breakout <- SEN-15901 wind cable (cups, vane)
   - PB4 <- RJ11 breakout <- SEN-15901 rain cable
-  - SPI1 -> bench OLED (only `i2cscan` drives it)
-  - ST-LINK USB -> Mac (console, flashing; also 3V3 supply in bench mode A)
+  - SPI1 -> bench OLED. Two builds drive it: `i2cscan`, and the TX node's bench build
+    (`make ROLE=tx WS_BENCH_OLED=1` in `firmware/stage0-node`, Makefile:8, Makefile:54-65). The default
+    field build (`WS_BENCH_OLED=0`) and the RX leave it out.
+  - ST-LINK USB -> Mac (console and flash, plus the 3V3 supply in bench mode A)
   - SubGHz radio -> antenna -> LoRa
 - **RX NUCLEO-WL55JC1** (no external wiring)
-  - LoRa <-> radio; USB (ST-LINK VCP) <-> Mac
+  - LoRa <-> radio, and USB (ST-LINK VCP) <-> Mac
 - **Mac**
   - `ws0 serve` (finds RX by ST-LINK serial) -> SQLite store -> HTTP :8088 dashboard/API, MQTT -> Home Assistant
   - `tools/` (console, status, h01_report, rx_faults, benchlink_log/dash, rangetest_log, preflight)
@@ -136,8 +156,9 @@ shunt in the battery path** (PTD:58, BRU:498-507).
 
 ## 3. Hardware inventory
 
-Quantities: INV, counted 2026-10-20/21 unless marked "received 2026-11-05" (DigiKey order 2026-11-02, at home, not yet counted; INV:66-81,
-INV:417-419). "Interface" and "Address/pins" are the functional connection, not a layout.
+Quantities come from INV, counted 2026-10-20/21. Rows marked "received 2026-11-05" are from the DigiKey
+order of 2026-11-02. Those parts are at home and nobody counted them yet (INV:66-81, INV:417-419).
+"Interface" and "Address/pins" give the functional connection, not a layout.
 
 ### 3.1 MCU and radio
 
@@ -145,9 +166,16 @@ INV:417-419). "Interface" and "Address/pins" are the functional connection, not 
 |---|---|---|---|---|---|---|---|
 | ST NUCLEO-WL55JC1 | NUCLEO-WL55JC1 | 2 (INV:15) | TX node and RX bridge | ST-LINK V3E USB (SWD, VCP 115200 8N1), Arduino + morpho headers | TX ST-LINK serial `003B00194142500E20353451`, RX `0016001E4142500E20353451` (NR:5-6, BRU:19-27) | USB 5 V via ST-LINK, or external 3.0-3.6 V on 3V3 (CN6.4 = CN7.16), max 1.3 A, ST-LINK then unpowered (UM2592 sec. 6.4, Table 9; BSW:375-380) | STM32WL55JC, 256 KB flash (128 x 2 KB), RDP level 0 (BRU:27-35). High-band board 865-928 MHz (PS:597). Jumpers at factory default (BRU:164-172). Measured target 3.276-3.290 V on USB (BRU:31) |
 
-On-board resources used or reserved (UM2592 Table 19, via BSW:117-154): buttons B1 PA0, B2 PA1, B3 PC6;
-LEDs LED1 blue PB15, LED2 green PB9, LED3 red PB11 (board main.h:63-78); TCXO supply PB0; RF switch
-PC3/PC4/PC5; LSE crystal PC14/PC15; SWD PA13/PA14; BOOT0 PH3; VCP PA2/PA3.
+On-board resources that the firmware uses or reserves (UM2592 Table 19, through BSW:117-154):
+
+- buttons B1 PA0, B2 PA1, B3 PC6
+- LEDs LED1 blue PB15, LED2 green PB9, LED3 red PB11 (board main.h:63-78)
+- TCXO supply PB0
+- RF switch PC3/PC4/PC5
+- LSE crystal PC14/PC15
+- SWD PA13/PA14
+- BOOT0 PH3
+- VCP PA2/PA3
 
 ### 3.2 Power
 
@@ -173,7 +201,7 @@ PC3/PC4/PC5; LSE crystal PC14/PC15; SWD PA13/PA14; BOOT0 PH3; VCP PA2/PA3.
 | USB-C male plug breakout | Adafruit #5978 | 5 received 2026-11-05 (INV:78) | phase B USB-C metering, charger side | — | — | — | needs soldering (INV:78) |
 | Female 2.1 mm DC jack to screw terminal | Adafruit #368 | 5 received 2026-11-05 (INV:75) | phase B: panel plug into the solar meter | — | — | — | (PM:174) |
 | Male 2.1 mm barrel plug to screw terminal | Adafruit #369 | 4 received 2026-11-05 (INV:76) | phase B: solar meter into the charger DC jack | — | — | — | (PM:175) |
-| ADC divider and ISET network parts | see 4.5 | — | charger input and charge current sense | — | PA10, PB1 | — | 1 Mohm received 2026-11-05 (INV:419); 100 nF C0G/X7R radial received 2026-11-05 (INV:66); 10 kohm 1 % from the Yageo kits (INV:82-84) |
+| ADC divider and ISET network parts | see 4.5 | — | charger input and charge current sense | — | PA10, PB1 | — | 1 Mohm received 2026-11-05 (INV:438); 100 nF X7R radial (KEMET C320C104K5R5TA) received 2026-11-05 (INV:84); 10 kohm 1 % from the Yageo RS4X kit (INV:100-102) |
 
 ### 3.4 Sensors
 
@@ -193,13 +221,13 @@ PC3/PC4/PC5; LSE crystal PC14/PC15; SWD PA13/PA14; BOOT0 PH3; VCP PA2/PA3.
 | SparkFun Weather Meter Kit | SEN-15901 | 1 (INV:35) | wind speed (cups), direction (vane), rain gauge | two RJ11 cables: wind (vane, cups plug into vane) and rain | cups PB5, vane PB2, rain PB4 | passive reeds and resistor network | anemometer counted 2026-10-21 (INV:493). Cups 1.492 mph per Hz = 0.66698 m/s per Hz; rain 0.2794 mm per tip (SHOP:58, WSMP:228-229) |
 | SparkFun RJ11 breakout | BOB-14021 (+ PRT-00132 jacks) | 1 panel of two boards, 2 jacks (INV:36) | one breakout per meter cable | 6-pin header, labels 1 "-", 2 B, 3 R, 4 G, 5 Y, 6 "-" (WT:61-62) | see 4.4 | — | panel must be separated and jacks/headers soldered; whether done is unrecorded (INV:36, INV:494). Meter cables are never cut (BSW:168-169) |
 | RJ12 6P6C crimp plugs | — | 100, at home (INV:37) | future cables | — | — | — | needs a 6P crimper (none yet) (INV:37) |
-| RJ11 cables, straight-through | — | ? on order (INV:39) | — | — | — | — | check 6-conductor on arrival (INV:39) |
+| RJ11 cables, straight-through | — | 2+: reported received 2026-11-09, not counted, location not recorded (INV:40) | — | — | — | — | still need the 6-conductor check and a meter check that they're straight-through (INV:40) |
 
 ### 3.6 Display (bench only)
 
 | Part | Maker # | Qty | Role | Interface | Address / pins | Supply | Notes |
 |---|---|---|---|---|---|---|---|
-| Adafruit 2.7" 128 x 64 monochrome OLED | Adafruit #2674 (SSD1325) | **not in INV** (only its capacitor is: INV:72) | bench readout for `i2cscan` | SPI1, write only; 20-pin header (WT:393-394) | see 4.3 | 3.3 V, 50-150 mA (I2CS, "The OLED") | must be in SPI mode: R19 and R21 fitted, R18 and R20 empty (WT:396). 220 µF across its 3.3 V and GND (WT:400-407) |
+| Adafruit 2.7" 128 x 64 monochrome OLED | Adafruit #2674 (SSD1325) | **not in INV** (only its capacitor is: INV:72) | bench readout for `i2cscan` and the TX bench build (`WS_BENCH_OLED=1`) | SPI1, write only; 20-pin header (WT:393-394) | see 4.3 | 3.3 V, 50-150 mA (I2CS, "The OLED") | must be in SPI mode: R19 and R21 fitted, R18 and R20 empty (WT:396). 220 µF across its 3.3 V and GND (WT:400-407) |
 | 220 µF 16 V radial electrolytic | Rubycon 16YXJ220MT16.3X11 (and Panasonic EEU-FC1C221) | 20 + 10 received 2026-11-05 (INV:72-73) | OLED bulk capacitor | — | — | — | polarised (WT:407) |
 
 ### 3.7 Interconnect and build materials
@@ -226,7 +254,7 @@ PC3/PC4/PC5; LSE crystal PC14/PC15; SWD PA13/PA14; BOOT0 PH3; VCP PA2/PA3.
 ### 4.1 Power path
 
 **Topology (phase A).** Sources -> charger IN/VBUS -> charger power path -> OUT (system rail) and BAT
-(cell). The battery INA228 shunt sits **in the pack's positive lead**, between the CELL+ node (pack
+(cell). The battery INA228 shunt sits **in the pack's positive lead**. It's between the CELL+ node (pack
 side) and the charger's BAT pin (PM:62, BSW:221). Functional nets (WT:510-577):
 
 | Net | Members (functional) | Source |
@@ -262,15 +290,20 @@ side) and the charger's BAT pin (PM:62, BSW:221). Functional nets (WT:510-577):
 | INA228 die temperature | battery INA228 | — | health `power_monitor_temp_c` | PM:145 |
 | MCU supply | VREFINT | VDDA | health `mcu_supply_mv` | PM:146 |
 
-**Phase B additions** (PM:69-77; in scope for the breadboard build, not yet in the breadboard model): load INA228 0x41 in series from OUT to a
-LOAD node feeding the test load and the regulator (VBUS at LOAD); solar INA228 0x45 in the panel lead
-before D4 (VBUS at the panel side, SOLAR_IN); USB-C INA228 0x48 between a sink-configured USB-C
-receptacle and the charger's USB-C, before D2 (VBUS at USB_IN). The battery INA228's VBUS moves to CELL+
-as a host-side cross-check; the node does not read it (PC:12-17). Phase B requires EN2 high and EN1 low
-on the #4755 (input limit by R_ILIM, no VIN-DPM); EN1 = EN2 = high is standby (PM:194-209). Input-margin
-check: with USB-C only at full charge, charger VBUS >= 4.6 V (PM:211-215). Back-feed checked with 10
-kohm on the idle input (PM:190-192). Weak-source behaviour with EN2 high: PGOOD/CHG may cycle at low sun;
-analysed, not measured (PM:246-271).
+**Phase B additions** (PM:69-77). These are in scope for the breadboard build but aren't in the
+breadboard model yet. Phase B adds three INA228s:
+
+- load INA228 0x41, in series from OUT to a LOAD node that feeds the test load and the regulator (VBUS at LOAD)
+- solar INA228 0x45, in the panel lead before D4 (VBUS at the panel side, SOLAR_IN)
+- USB-C INA228 0x48, between a sink-configured USB-C receptacle and the charger's USB-C, before D2 (VBUS at USB_IN)
+
+The battery INA228's VBUS moves to CELL+ as a host-side cross-check. The node doesn't read it
+(PC:12-17). Phase B needs EN2 high and EN1 low on the #4755 (input limit by R_ILIM, no VIN-DPM). EN1 =
+EN2 = high is standby (PM:194-209). Input-margin check: with USB-C only at full charge, charger VBUS
+must be >= 4.6 V (PM:211-215). The back-feed check uses 10 kohm on the idle input (PM:190-192).
+
+With EN2 high and a weak source, PGOOD/CHG may cycle at low sun. That's analysed, not measured
+(PM:246-271).
 
 **Ground.** One GND net in two domains joined by **exactly one conductor** (WT:448-459, BSW:223):
 
@@ -280,26 +313,39 @@ analysed, not measured (PM:246-271).
 | Logic ground | NUCLEO GND, both QT branches, meter returns and filter caps, divider and ISET returns, regulator GND, OLED GND, NTC return | WT:448-458 |
 | The tie | one conductor from the pack-negative star point to the regulator GND / logic ground, in both modes | BSW:223, BSW:318-319 |
 
-Rules that follow (FM:300-310): the gauge's and INA228's minus/GND header pins are **not** wired (ground
-comes over QT); the SYSOUT pigtail's black lead and the gauge pigtail's black lead are insulated; the
-charger input must be a floating adapter. A second tie makes battery return current flow in QT cables
-(FM:310). The NTC returns to logic ground, not the star; up to 40 mV TS offset during a 1 A charge is
-accepted (+0.4 °C cold, +3.8 °C hot trip shift) (BSW:238-241).
+Rules that follow (FM:300-310):
+
+- Don't wire the gauge's or the INA228's minus/GND header pins. Their ground comes over QT.
+- Insulate the black lead of the SYSOUT pigtail and the black lead of the gauge pigtail.
+- The charger input must be a floating adapter.
+
+A second tie makes battery return current flow in the QT cables (FM:310). The NTC returns to logic
+ground, not the star. That costs up to 40 mV of TS offset during a 1 A charge, and we accept it (+0.4 °C
+shift on the cold trip, +3.8 °C on the hot trip) (BSW:238-241).
 
 **Force-current rule.** Battery, charge, input and load current must **never pass through a breadboard
-strip, header pin or Dupont contact**; splices are lever connectors, the INA228 screw terminal and the
-JST PH sockets (BSW:215-217). Reason: the bq24074 BAT pin is both output and voltage sense; about 0.2
-ohm of contacts at 1 A ended charges early, and 3-4 ohm intermittent contact made OUT wander 120-150 mV
-(BSW:261-263, FM:308). The one tolerated exception is the regulator chain in mode B (BSW:310-312). The
-charger header's LIPO, OUT and GND pins carry no current and serve only as test points; the header
-otherwise carries CHG, PGOOD, ISET, THERM and VBUS (BSW:233-236).
+strip, header pin or Dupont contact**. Use lever connectors, the INA228 screw terminal and the JST PH
+sockets for splices (BSW:215-217). That's because the bq24074 BAT pin is both the output and the
+voltage sense. About 0.2 ohm of contacts at 1 A ended charges early. A 3-4 ohm intermittent contact made OUT
+wander 120-150 mV (BSW:261-263, FM:308).
 
-**Battery-path resistance budget at 1 A** (FM:291, BL:72): + span (pack plug + to LIPO, including the 15
-mohm shunt) <= 75 mohm; - span (charger GND to pack -) <= 40 mohm; each pack-side span <= 28 mohm (sum
-recorded as R_pack); each JST PH mating <= 20 mohm; each lever clamp or screw <= 5 mohm. Lead lengths
-used: pigtail halves <= 60 mm, solid force links <= 50 mm, regulator supply and tie <= 100 mm (26 AWG
-is about 13 mohm per 100 mm) (build-progression record H7, quoted at
-`docs/superpowers/specs/2026-10-29-build-progression-decisions.md:156`).
+The one exception we tolerate is the regulator chain in mode B
+(BSW:310-312).
+
+The charger header's LIPO, OUT and GND pins carry no current. They're only test points. The rest of the
+header carries CHG, PGOOD, ISET, THERM and VBUS (BSW:233-236).
+
+**Battery-path resistance budget at 1 A** (FM:291, BL:72):
+
+- \+ span (pack plug + to LIPO, with the 15 mohm shunt): <= 75 mohm
+- \- span (charger GND to pack -): <= 40 mohm
+- each pack-side span: <= 28 mohm (R_pack is the sum of them)
+- each JST PH mating: <= 20 mohm
+- each lever clamp or screw: <= 5 mohm
+
+Lead lengths: pigtail halves <= 60 mm, solid force links <= 50 mm, regulator supply and tie <= 100 mm.
+26 AWG is about 13 mohm per 100 mm. These come from build-progression record H7
+(`docs/superpowers/specs/2026-10-29-build-progression-decisions.md:153`).
 
 **Bench power modes.**
 
@@ -309,15 +355,16 @@ is about 13 mohm per 100 mm) (build-progression record H7, quoted at
 | B (power tests) | pack -> charger -> OUT -> S7V8F3 -> battery-power link (a 2-pin header with a removable shunt, "BATTERY POWER: USB UNPLUGGED") -> NUCLEO 3V3 (CN6.4); return from CN6.7 to regulator GND | test load removed | VCC lead unplugged (its 50-150 mA would ride the regulator chain and the INA228 reading) | console optional via a 3.3 V USB-serial on PA2/PA3, data and ground only | BSW:305-315, BSW:328-330 |
 | Interlock | **never connect the NUCLEO USB and the battery supply at the same time**; A->B: unplug USB, remove load, unplug OLED VCC, fit shunt; B->A: remove shunt first, then OLED, load, USB. Mode changes never move the ground tie or the CN6.7 return | | | | BSW:316-326 |
 
-**The NTC and the charger.** Cut the THERM solder jumper first, else the fixed 10 kohm R10 in parallel
-keeps TS <= 10 kohm: the cold trip never fires and the hot trip moves to about 35 °C (BSW:273,
-FM:293). TS about 0.75 V at 25 °C (0.375 V means the jumper is still closed) (BSW:475).
+**The NTC and the charger.** Cut the THERM solder jumper first. If you don't, the fixed 10 kohm R10 sits
+in parallel and keeps TS <= 10 kohm. Then the cold trip never fires, and the hot trip moves to about
+35 °C (BSW:273, FM:293). TS reads about 0.75 V at 25 °C. If it reads 0.375 V, the jumper is still closed
+(BSW:475).
 
 ### 4.2 I2C buses
 
 One bus: **I2C2, PA11 SDA (AF4), PA12 SCL (AF4), open-drain, internal pull-ups also enabled, 100 kHz,
 TIMINGR `0x20323E5D` at PCLK1 48 MHz** (IBC:14-15, IBC:26, IBC:42-43, IBH:3-4). SDADEL = 2 gives 146 ns
-data hold, which the INA228 needs when A1 is strapped to SDA (0x48) (PM:312-318).
+of data hold. The INA228 needs that when you strap its A1 to SDA (0x48) (PM:312-318).
 
 | Branch | Power | Devices (address) | Source |
 |---|---|---|---|
@@ -326,19 +373,20 @@ data hold, which the INA228 needs when A1 is strapped to SDA (0x48) (PM:312-318)
 | Shared | GND, SDA, SCL common to both branches; hub ground straight from a NUCLEO GND pin | | WT:87, WT:415-416 |
 
 Notes:
-- 3V3 only; never the 5 V pin (CN6.5 sits next to CN6.4) (BSW:82, BSW:107-108).
-- Pull-ups: on the breakouts only. With about nine STEMMA boards (phase B) the parallel pull-up is about
-  1.11 kohm, sinking 2.6 mA at 0.4 V, inside 3 mA; pass if >= 0.97 kohm measured with the bus idle and
-  powered off (PM:324-330). Inferred for phase A (six breakouts with 10 kohm each): about 1.7 kohm.
-- The 0x48 strap adds the INA228's 10 kohm ADDR1 pull-down to SDA: idle SDA about 3.0 V, accepted (PM:319-322).
+- 3V3 only, never the 5 V pin. CN6.5 sits next to CN6.4 (BSW:82, BSW:107-108).
+- Pull-ups are on the breakouts only. With about nine STEMMA boards (phase B), the parallel pull-up is
+  about 1.11 kohm. It sinks 2.6 mA at 0.4 V, which is inside 3 mA. It passes if you measure >= 0.97 kohm
+  with the bus idle and powered off (PM:324-330). Inferred for phase A (six breakouts with 10 kohm each):
+  about 1.7 kohm.
+- The 0x48 strap adds the INA228's 10 kohm ADDR1 pull-down to SDA. Idle SDA sits at about 3.0 V, and we accept that (PM:319-322).
 - Reserved addresses (never an INA228): 0x36, 0x44, 0x46, 0x47, 0x50, 0x53, 0x70, 0x71 (build-time
   asserts, PC:53-66).
-- Bus behaviour: one transfer at a time, 30 ms + 90 µs/byte guard, stuck-bus recovery (up to 9 SCL
-  clocks then STOP) only after a timeout, bus error, HAL refusal or SDA low; an address NACK means
-  "absent" and costs no recovery (IBH:3-7, WSMP:648-652, EVM:80-93).
+- Bus behaviour: one transfer at a time, with a guard of 30 ms + 90 µs/byte. Stuck-bus recovery (up to
+  9 SCL clocks, then STOP) runs only after a timeout, a bus error, a HAL refusal or SDA low. An address
+  NACK means "absent" and costs no recovery (IBH:3-7, WSMP:648-652, EVM:80-93).
 - In the hub build, record clients at 0x50 complete as NACK without bus traffic (no ID EEPROMs) (IBH:9-11).
 
-### 4.3 SPI OLED (bench only; driven only by `firmware/i2cscan`)
+### 4.3 SPI OLED (bench only, driven by `firmware/i2cscan` and the TX bench build)
 
 | OLED pin | Signal | MCU pin | NUCLEO morpho (Arduino alias) | Source |
 |---|---|---|---|---|
@@ -352,15 +400,18 @@ Notes:
 | 20 | frame ground | GND or open | — | WT:396 |
 | 3, 5, 6, 9-14, 17-19 | unused | — | — | WT:393-396 |
 
-SPI clock: fastest step <= 1 MHz (SSD1325 limit); one frame is 4096 bytes, about 45 ms (oled.h:19-20,
-I2CS "The OLED"). Supply pair goes straight to NUCLEO pins, never through a shared ground rail: its
-return current otherwise offsets ground-referenced readings (ISET, VIN_SENSE, vane) (FM:307). The node
-firmware does not drive the OLED (no OLED code in `firmware/stage0-node/App`).
+SPI clock: the fastest step <= 1 MHz (SSD1325 limit). One frame is 4096 bytes, about 45 ms (oled.h:19-20,
+I2CS "The OLED"). Run the supply pair straight to NUCLEO pins, never through a shared ground rail.
+Otherwise its return current offsets the ground-referenced readings (ISET, VIN_SENSE, vane) (FM:307).
+
+The node TX firmware drives the OLED when you build it with `make ROLE=tx WS_BENCH_OLED=1`
+(`App/oled_app.c`, `App/oled_dma.c`, SPI1 DMA). The default field build (`WS_BENCH_OLED=0`) and the RX
+leave it out (`firmware/stage0-node/Makefile`:8, :54-65). It uses the same pins as the table above (`App/oled_dma.h`:6).
 
 ### 4.4 Weather meter inputs
 
-**RJ11 pinout on the BOB-14021** (labels 1 "-", 2 B, 3 R, 4 G, 5 Y, 6 "-"; WT:61-62; SEN-15901
-datasheet via BSW:175-177):
+**RJ11 pinout on the BOB-14021** (labels 1 "-", 2 B, 3 R, 4 G, 5 Y, 6 "-", WT:61-62, SEN-15901
+datasheet through BSW:175-177):
 
 | Cable | Pin | Function | Net | Source |
 |---|---|---|---|---|
@@ -374,8 +425,8 @@ datasheet via BSW:175-177):
 
 Confirm each conductor by continuity with the meter cable plugged in (BSW:175-177).
 
-**Conditioning** (sits at the jack end, beside each breakout, so the link probe sees every wire between
-pull-up and MCU) (BSW:179-183, WT:102-106):
+**Input conditioning.** It sits at the jack end, beside each breakout. That way the link probe sees every
+wire between the pull-up and the MCU (BSW:179-183, WT:102-106):
 
 | Input | MCU | Pull-up | Filter | Firmware | Source |
 |---|---|---|---|---|---|
@@ -385,15 +436,17 @@ pull-up and MCU) (BSW:179-183, WT:102-106):
 
 Vane resistances clockwise from north in 22.5° steps (ohm): 33000, 6570, 8200, 891, 1000, 688, 2200, 1410,
 3900, 3140, 16000, 14120, 120000, 42120, 64900, 21880 (mod_wind.c:39-41). Closest pair 891/1000 ohm is
-30 mV apart (BI:195-197). The real voltages are still to be measured on the bench and written into
-`vane_mv` (BSW:421-428). An unconnected PB2 floats and can look like a valid position: the pull-up is
-required (BSW:453-456).
+30 mV apart (BI:195-197). Nobody measured the real voltages on the bench yet. They go into `vane_mv`
+once measured (BSW:421-428). An unconnected PB2 floats and can look like a valid position, so you
+need the pull-up (BSW:453-456).
 
-Internal pull-ups on PB5/PB4 stay on; the **counter link probe** at boot and every 15 min swaps them for
-pull-downs for about 1 ms: an intact link (external 10 kohm at the jack end) reads high, an open one low.
-Three low reads with no edge: rain "rain-open" (fault), cups "cups-suspect", escalating to "cups-open"
-if the vane moves or after 24 h (BIH:38-58, BI:38-48, mod_wind.c:13-17). An open beyond the pull-up (the
-cable or jack) is not detectable (mod_rain.c:3-6).
+The internal pull-ups on PB5/PB4 stay on. The **counter link probe** runs at boot and every 15 min. It
+swaps them for pull-downs for about 1 ms. An intact link (external 10 kohm at the jack end) reads high,
+and an open one reads low.
+
+After three low reads with no edge, rain goes "rain-open" (fault). Cups go
+"cups-suspect", and then "cups-open" if the vane moves or after 24 h (BIH:38-58, BI:38-48,
+mod_wind.c:13-17). The probe can't see an open beyond the pull-up, in the cable or jack (mod_rain.c:3-6).
 
 ### 4.5 Charger signals to the MCU
 
@@ -404,18 +457,28 @@ cable or jack) is not detectable (mod_rain.c:3-6).
 | CHG | open drain, active low; breakout LED (10 kohm to OUT) | PB10, input, internal pull-up, EXTI10 both edges (edge count for 2 Hz fault detection) | bit 1 "charging"; 3+ edges in 2 s = fault, clears after 4 s | BI:15-16, BI:207-208, power_acq.c:22-24 |
 | PGOOD | open drain, active low; breakout LED (10 kohm to OUT) | PB8, input, internal pull-up | bit 0 "input power good" | BI:14, BI:205-206 |
 
-Limits (DS13293 via BSW:284-285): PB8 and PB10 are FT_f, but **with the internal pull-up on the pin must
-stay below min(VDD, VDDA) + 0.3 V**; the LEDs on OUT pull a released pin to at most 2.9 V measured on USB;
-the worst case on the panel is still to be measured (FM:295). PA10 (FT_fa, no pull) allows min(VDD,VDDA)
-+ 3.6 V and <= 5.5 V: VBUS <= 16.5 V powered, about 10.8 V unpowered (PM:279-280). ADC clipping:
-oversampled result >= 4080 = out of range, field INVALID (BSW:281). The ISET network's purpose: the 100
-nF is the sampled source; the 1 Mohm pulls an open wire to 0 V so the CHG cross-check flags it; a
-firmware fault driving PB1 low leaves ISET at 909 ohm, +10 % charge current, not a short (PTD:718-723).
+**Limits** (DS13293 through BSW:284-285). PB8 and PB10 are FT_f. But **with the internal pull-up on,
+the pin must stay below min(VDD, VDDA) + 0.3 V**. The LEDs on OUT pull a released pin to at most 2.9 V,
+measured on USB. Nobody measured the worst case on the panel yet (FM:295).
 
-ADC set-up shared by vane, ISET, VIN and VREFINT: one interrupt-driven regular sequence IN4, IN5, IN6,
-VREFINT; 12-bit, 160.5 cycles each, hardware oversampling x16 shift 4; about 0.9 ms a sequence at 12
-MHz; one offset calibration at boot; VDDA = 3300 x VREFINT_CAL / VREFINT_raw (VREFINT_CAL taken at 3.3 V
-on this part) (BI:22-26, BI:170-200, BIH:13-23).
+PA10 (FT_fa, no pull) allows
+min(VDD,VDDA) + 3.6 V and <= 5.5 V. That means VBUS <= 16.5 V powered, and about 10.8 V unpowered
+(PM:279-280). ADC clipping: an oversampled result >= 4080 is out of range, and the field is INVALID
+(BSW:281).
+
+**What the ISET network parts do** (PTD:718-723):
+
+- The 100 nF is the source that the ADC samples.
+- The 1 Mohm pulls an open wire to 0 V, so the CHG cross-check flags it.
+- If a firmware fault drives PB1 low, ISET sees 909 ohm. That gives +10 % charge current, not a short.
+
+**ADC set-up** for the vane, ISET, VIN and VREFINT (BI:22-26, BI:170-200, BIH:13-23):
+
+- one interrupt-driven regular sequence: IN4, IN5, IN6, VREFINT
+- 12-bit, 160.5 cycles each, hardware oversampling x16, shift 4
+- about 0.9 ms a sequence at 12 MHz
+- one offset calibration at boot
+- VDDA = 3300 x VREFINT_CAL / VREFINT_raw (this part takes VREFINT_CAL at 3.3 V)
 
 ### 4.6 Complete MCU pin map (TX node)
 
@@ -435,7 +498,7 @@ alias is the same MCU pin.
 | PB10 | D6, CN9.7; CN10.25 | bq24074 CHG, pull-up, EXTI10 both edges | in | CHG | BSW:89, BI:15-16 |
 | PA9 | D9, CN5.2; CN10.19 | sensor port power enable: **unconnected on the bench**; firmware drives it high | out | — | BSW:90, IBC:417-420 |
 | PB14 | A4, CN8.5; CN7.36 | mux RESET, only in the `WS_I2C_MUX=1` variant; untouched otherwise | out | — | BSW:145, BI:221-229 |
-| PA5 | morpho CN10.11 (D13, CN5.6) | OLED SCLK, SPI1_SCK (i2cscan only) | out | OLED_SCLK | BSW:91 |
+| PA5 | morpho CN10.11 (D13, CN5.6) | OLED SCLK, SPI1_SCK (i2cscan and the TX bench build) | out | OLED_SCLK | BSW:91 |
 | PA7 | CN10.15 (D11, CN5.4) | OLED DIN, SPI1_MOSI | out | OLED_DIN | BSW:92 |
 | PA4 | CN10.17 (D10, CN5.3) | OLED CS | out | OLED_CS | BSW:93 |
 | PC2 | CN10.21 (D8, CN5.1) | OLED DC | out | OLED_DC | BSW:94 |
@@ -453,10 +516,10 @@ alias is the same MCU pin.
 | PA15 | CN7.17 | T_JTDI: last-resort only | — | — | BSW:131 |
 | Free | PA6 (D12), PA8 (CN10.16), PC0 (CN10.14), PC13 (CN7.23, slow signals only) | — | — | — | BSW:124, BSW:126, BSW:147, BSW:152 |
 
-Header hazards: 5 V pins CN6.5, CN6.8 (Arduino) and CN7.18, CN7.24, CN7.6, CN10.8 (morpho) are taped
-"NO 5V"; CN6.2 (IOREF) and CN5.8 (AVDD) stay empty (BSW:107-108, BSW:370-372). Build-time asserts keep
-ST's RF debug outputs off PA10, PA11, PA12, PB2 and PB4 (BI:60-64). Station signals land on the Arduino
-headers; only the OLED uses morpho pins (BSW:100-105).
+Header hazards: tape the 5 V pins "NO 5V". They're CN6.5 and CN6.8 (Arduino), and CN7.18, CN7.24, CN7.6
+and CN10.8 (morpho). CN6.2 (IOREF) and CN5.8 (AVDD) stay empty (BSW:107-108, BSW:370-372). Build-time
+asserts keep ST's RF debug outputs off PA10, PA11, PA12, PB2 and PB4 (BI:60-64). Station signals land on
+the Arduino headers. Only the OLED uses morpho pins (BSW:100-105).
 
 ---
 
@@ -464,17 +527,19 @@ headers; only the OLED uses morpho pins (BSW:100-105).
 
 ### 5.1 Architecture
 
-Base: ST STM32CubeWL v1.6.0 SubGHz_Phy PingPong board support in `firmware/board/nucleo-wl55jc`, shared
-by all bench firmware; Mbed TLS 3.6.6 for CCM (NR:8, PROTO:103-104). One source tree, two roles by
-`ROLE=tx|rx` (Makefile:3-4).
+Base: ST STM32CubeWL v1.6.0 SubGHz_Phy PingPong board support in `firmware/board/nucleo-wl55jc`. All the
+bench firmware shares it. Mbed TLS 3.6.6 does the CCM (NR:8, PROTO:103-104). One source tree builds two
+roles, picked by `ROLE=tx|rx` (Makefile:3-4).
 
-**Event model.** No RTOS. Interrupts copy data, start the next hardware step or timer, and post event
-bits or sequencer tasks; tasks (`process`, `sample`, `module_tick`, `bus_task`, `console_task`, `check`)
-run one at a time and never wait; idle enters low-power (sleep only: `LOW_POWER_DISABLE=1`) (EVM:13-36,
-NR:462). Interrupt priorities: radio and RTC alarm 0; ADC, EXTI, I2C, console 2 (EVM:17, BI:74). Time
-comes from the RTC via `clock_ms()`; `HAL_GetTick` counts 1/1024 s and is not used (EVM:40-43, NR:118).
-Flash is written only while the radio is idle; a minute report that arrives during an exchange is held
-in RAM (at most two) (EVM:100-125).
+**Event model.** There's no RTOS (EVM:13-36, NR:462). Interrupts copy data, start the next hardware step
+or timer, and post event bits or sequencer tasks. The tasks (`process`, `sample`, `module_tick`,
+`bus_task`, `console_task`, `check`) run one at a time and never wait. Idle enters low-power, but only
+sleep (`LOW_POWER_DISABLE=1`). Interrupt priorities: radio and RTC alarm at 0, and ADC, EXTI, I2C and
+console at 2 (EVM:17, BI:74).
+
+Time comes from the RTC through `clock_ms()`. `HAL_GetTick` counts 1/1024 s, and nothing uses it
+(EVM:40-43, NR:118). The firmware writes flash only while the radio is idle. If a minute report arrives
+during an exchange, the firmware holds it in RAM, at most two of them (EVM:100-125).
 
 **Main loop and ticks.**
 
@@ -487,8 +552,8 @@ in RAM (at most two) (EVM:100-125).
 | watchdog check | 1 s | refresh IWDG (about 8 s: LSI/64, reload 4000) only if healthy | watchdog.c:12-15 |
 | link probe | boot + 15 min | cups/rain link test (4.4) | BIH:48 |
 
-**Module system (WSMP local modules).** Each sensor is a local WSMP module on a numbered port, driven by
-a `switch` per operation (probe, identify, latch, snapshot); the station host handles presence,
+**Module system (WSMP local modules).** Each sensor is a local WSMP module on a numbered port. A
+`switch` per operation (probe, identify, latch, snapshot) drives it. The station host handles presence,
 admission against the registry and radio budget, the minute latch and flap limits (NR:106-109,
 wsmp_local.h:3-13).
 
@@ -503,10 +568,11 @@ wsmp_local.h:3-13).
 | 7 `rain` | 7 | SEN-15901 bucket | tip counter | mod_rain.h:3-6 |
 | 8 `rails` | 9 | INA228s, PA10 divider | load V/I, charger input V, solar V/I, USB-C V/I | mod_power.h:14-21 |
 
-Battery and rails modules are base-board modules: present in every profile whatever the parts answer; a
-dead part gives INVALID fields, never absent ones (mod_power.h:23-27). The rain gauge is a bare switch,
-so its presence is a stored setting (`SENSOR rain on/off`) (mod_rain.h:5-6). Module states: absent,
-probing, admitted, active, suspect, quarantined, refused (NR:249, WSMP:491-506).
+The battery and rails modules are base-board modules. They're present in every profile, whatever the
+parts answer. A dead part gives INVALID fields, never absent ones (mod_power.h:23-27). The rain gauge is
+a bare switch, so its presence is a stored setting (`SENSOR rain on/off`) (mod_rain.h:5-6). Module
+states: absent, probing, identifying, admitted, active, suspect, quarantined, refused (wsmp_host.h:10,
+the state diagram in `docs/module-protocol.md`, NR:249, WSMP:491-506).
 
 **Drivers.**
 
@@ -520,10 +586,13 @@ probing, admitted, active, suspect, quarantined, refused (NR:249, WSMP:491-506).
 | `power_regs.c` (common) | INA228/MAX17048/ISET/divider/VREFINT conversions shared with i2cscan and benchlink | NR:112 |
 | `board_inputs.c` | LPTIM1, ADC sequence, EXTI4/EXTI10, link probe | BI:1-48 |
 
-INA228 configuration: ADCRANGE 0 (±163.84 mV), CURRENT_LSB 10 µA, range ±5.24 A, SHUNT_CAL = 131072 x
-lsb_µA x R_µΩ / 10^7 = 1966 for 15 mohm; ENERGY register not read; rail current = sign x ΣΔCHARGE /
-Σelapsed; battery energy = ΣΔQ x latest VCELL (<= 20 s old, else that minute's energy fields INVALID)
-(PTD:689-703, PC:75-80).
+**INA228 configuration** (PTD:689-703, PC:75-80):
+
+- ADCRANGE 0 (±163.84 mV), CURRENT_LSB 10 µA, range ±5.24 A
+- SHUNT_CAL = 131072 x lsb_µA x R_µΩ / 10^7 = 1966 for 15 mohm
+- the firmware doesn't read the ENERGY register
+- rail current = sign x ΣΔCHARGE / Σelapsed
+- battery energy = ΣΔQ x latest VCELL. The VCELL must be <= 20 s old. If it isn't, that minute's energy fields are INVALID.
 
 ### 5.2 What it samples and how often
 
@@ -540,18 +609,30 @@ lsb_µA x R_µΩ / 10^7 = 1966 for 15 mohm; ENERGY register not read; rail curre
 
 ### 5.3 Fault handling, watchdog, storage, console, power profiles
 
-**Watchdog.** IWDG about 8 s, refreshed only from the main loop when healthy. TX healthy = a sample in the
-last 150 s and no exchange past its bound ((frames + 1) x (3 s + 2 s + 50 ms) + 5 s); a stuck exchange
-first stops sampling, stops the radio and journals held readings, then lets the reset happen. More than
-10 consecutive journal or transmit failures also reset (NR:347-351, EVM:198-208, app_tx.c:84, NR:252).
+**Watchdog.** The IWDG is about 8 s. Only the main loop refreshes it, and only when the TX is healthy.
+Healthy means a sample in the last 150 s and no exchange past its bound ((frames + 1) x (3 s + 2 s +
+50 ms) + 5 s).
 
-**Crash records.** HardFault or non-ECC NMI saves registers to RTC backup DR5-DR11 and resets; next boot
-prints `#fault kind= pc= lr= cfsr= hfsr= bfar= count=`. DR6 keeps the last crash PC; DR12 counts boots
-since power-up (zeroed on power-on). No backup battery: power loss clears them. A brown-out reads as
-"power" (NR:272-287). Run-time checks `WS_CHECK` count failures and the first site (NR:228).
+On a stuck exchange, the firmware first stops sampling, stops the radio and journals the
+held readings. Then it lets the reset happen. More than 10 journal or transmit failures in a row also
+reset it (NR:347-351, EVM:198-208, app_tx.c:84, NR:252).
 
-**Boot self-test (KAT).** Encodes and seals a known observation, opens known ACK/NACK, checks a tampered
-ACK fails and counter 2^40 is refused; on failure the board refuses to transmit (NR:354-360).
+**Crash records.** A HardFault or a non-ECC NMI saves the registers to RTC backup DR5-DR11 and resets.
+The next boot prints `#fault kind= pc= lr= cfsr= hfsr= bfar= count=`. DR6 keeps the last crash PC. DR12
+counts boots since power-up, and power-on zeroes it. There's no backup battery, so a power loss clears
+them.
+
+A brown-out reads as "power" (NR:272-287). The run-time checks `WS_CHECK` count failures and
+record the first site (NR:228).
+
+**Boot self-test (KAT)** (NR:354-360). At boot the firmware:
+
+- encodes and seals a known observation
+- opens a known ACK/NACK
+- checks that a tampered ACK fails
+- checks that it refuses counter 2^40
+
+If any of these fail, the board refuses to transmit.
 
 **Flash map and journal** (256 KB, 128 x 2 KB pages) (flash_layout.h:4-8, NR:373-401):
 
@@ -562,11 +643,13 @@ ACK fails and counter 2^40 is refused; on failure the board refuses to transmit 
 | 125-126 | monotonic log A/B: boot epoch, counter reservations (blocks of 256), lost/abandoned totals |
 | 127 | config: station ID, key, KCV |
 
-Slot = plaintext rounded to 8 B + commit double-word (magic + CRC-16) + ACK double-word; page magic
-"WSJ" + slot size (0x57534A60). Capacity >= 609 records, about 10.15 h without ACK; on overflow the
-oldest page is erased and counted `lost` (NR:389-401). Torn writes read back as burned; a torn ACK word
-counts as acknowledged (NR:450-453). 70 reset-during-write cycles passed; **true power removal never
-tested** (NR:448, FM:266).
+Slot = plaintext rounded to 8 B + commit double-word (magic + CRC-16) + ACK double-word. Page magic =
+"WSJ" + slot size (0x57534A60). The journal holds >= 609 records, about 10.15 h without an ACK. On
+overflow, the firmware erases the oldest page and counts it as `lost` (NR:389-401).
+
+Torn writes read back
+as burned. A torn ACK word counts as acknowledged (NR:450-453). 70 reset-during-write cycles passed, but
+**nobody tested a true power removal yet** (NR:448, FM:266).
 
 **Console** (ST-LINK VCP, 115200 8N1) (NR:172-175, tx_console.c:266):
 
@@ -585,10 +668,14 @@ tested** (NR:448, FM:266).
 Key `#status` fields: `fw`, `reset`, `provisioned`, `station`, `kcv`, `kat`, `epoch`, `next_seq`, `ctr`,
 `link`, `energy`, `time`, `meter_link` (NR:197-210). `#counts`: `pending`, `lost`, `burned`, `abandoned`,
 `sent`, `acked`, `no_ack`, `tx_timeouts`, `i2c_recoveries`, `i2c_stuck`, `check_fails` (NR:214-228).
-`#sample` once a minute (NR:247). Flash-writing commands are refused during an exchange (EVM:212-213).
+`#sample` comes once a minute (NR:247). The TX refuses commands that write flash during an exchange
+(EVM:212-213).
 
-**LEDs** (NR:364-369): LED1 blue 400 ms = sending, 40 ms blip every 2 s = alive; LED2 green = ACK
-received; LED3 red 400 ms = no/rejected ACK or TX timeout, 1 s = NACK/abandon, solid = not running.
+**LEDs** (NR:364-369):
+
+- LED1 blue: 400 ms = sending, a 40 ms blip every 2 s = alive
+- LED2 green: ACK received
+- LED3 red: 400 ms = no ACK, rejected ACK or TX timeout. 1 s = NACK or abandon. Solid = not running.
 
 **Power profiles** (PC:7-39, NR:80-84):
 
@@ -598,14 +685,20 @@ received; LED3 red 400 ms = no/rejected ACK or TX timeout, 1 s = NACK/abandon, s
 | 2, phase B | adds load 0x41, solar 0x45, USB-C 0x48 INA228s; battery VBUS not read | all |
 | 3, phase C | `#error` | — |
 
-Other build constants: `WS_I2C_MUX` 0 (hub, default) / 1 (mux variant); `WS_NODE_FIELDS` default
-`WS_F_WSMP_BENCH` (77 B) (NR:83-84). Energy state is always NORMAL: thresholds deferred (NR:207). Time:
-clock set only from the ACK of the frame just sent (UTC >= 2026-01-01), trusted 6 h, kept across a warm
-reset in RTC DR3/DR4 (tx_time.c:8-13, PROTO:199-202, NR:460-461).
+Other build constants: `WS_I2C_MUX` is 0 (hub, default) or 1 (mux variant). `WS_NODE_FIELDS` defaults to
+`WS_F_WSMP_BENCH` (77 B) (NR:83-84). The energy state is always NORMAL, because the thresholds are
+deferred (NR:207). Time: the TX sets its clock only from the ACK of the frame it just sent (UTC >=
+2026-01-01). It trusts that time for 6 h and keeps it across a warm reset in RTC DR3/DR4 (tx_time.c:8-13,
+PROTO:199-202, NR:460-461).
 
-**Calibration constants still nominal** (PC:67-99): shunt 15,000 µΩ (verified against a series meter,
-replaced only on a fail); `POWER_R_ISET_OHM` 1000; `POWER_ISET_GAIN_PPM` 990099; `POWER_VIN_DIVIDER_PPM`
-3000000. A dirty-tree build reports firmware build ID 0, so commit a measured constant before flashing
+**Calibration constants still nominal** (PC:67-99):
+
+- shunt 15,000 µΩ. You check this value against a series meter, and change it only if it fails.
+- `POWER_R_ISET_OHM` 1000
+- `POWER_ISET_GAIN_PPM` 990099
+- `POWER_VIN_DIVIDER_PPM` 3000000
+
+A dirty-tree build reports firmware build ID 0. So commit a measured constant before you flash
 (PC:20-25, Makefile:25).
 
 ### 5.4 Build, release and gates
@@ -661,11 +754,11 @@ CI (`.github/workflows/ci.yml`) adds libFuzzer 60 s a target and compares bins w
 | Firmware | Purpose | How used | Source |
 |---|---|---|---|
 | `firmware/benchlink` | plain (unencrypted) LoRa power-telemetry link for the charger/battery bench; TX samples every 250 ms, sends a 78 B packet every 5 s at **10 dBm**, 915 MHz/500 kHz/SF7/CR4/5; RX prints each packet; a Mac logger writes CSV and a dashboard charts it. Same MCU pins as the node. Not H01 evidence | `make ROLE=tx flash SERIAL=<TX>`, `make ROLE=rx flash SERIAL=<RX>`; then `tools/benchlink_log.py`, `tools/benchlink_dash.py` | BL:3-22, BL:58-64, benchlink.c:133 |
-| `firmware/i2cscan` | read-only I2C2 check: pull-ups present, address scan every 10 s, INA228 and MAX17048 readings once a second, phase B rails if present; draws the readings on the bench OLED; drives PA9 high; no radio | `make flash SERIAL=<TX>`; miniterm at 115200 | I2CS:3-9, I2CS:13-67, I2CS:72-84 |
+| `firmware/i2cscan` | I2C2 bench check. It only reads the power parts (INA228, MAX17048) and sends the weather sensors (SHT45, SHTC3, BMP581, LTR390) only the commands a reading needs. It checks pull-ups, scans every 10 s, reads INA228/MAX17048, the air sensors and the weather meter (cups, vane, rain) once a second, and the phase B rails if present. It draws on the bench OLED, drives PA9 high and has no radio | `make flash SERIAL=<TX>`; miniterm at 115200 | I2CS:3-9, I2CS:13-67, I2CS:72-84 |
 | `firmware/rangetest` | bidirectional link test about once a second with a 16 B ping-pong; buttons step TX power (+22/+14/+10/0 dBm) and SF (12/10/9/7); boot and fallback SF12/+22 dBm; 915 MHz/500 kHz/CR4/5 fixed; both boards same image | `make flash` both; `tools/rangetest_log.py <serial> <csv>` | RT:3-34, RT:38-45 |
 
-All three link inside the 190 KB firmware region, so the node's key and journal (pages 95-127) survive;
-reflash the node release afterwards (BL:24-26, I2CS:76-78, RT:51-54).
+All three link inside the 190 KB firmware region, so the node's key and journal (pages 95-127) survive.
+Reflash the node release afterwards (BL:24-26, I2CS:76-78, RT:51-54).
 
 ---
 
@@ -685,11 +778,17 @@ reflash the node release afterwards (BL:24-26, I2CS:76-78, RT:51-54).
 | Airtime at SF7 | 93 B obs 41.0 ms, 81 B 35.9 ms, ACK 18.0 ms, health 35.9 ms; SF12 821.2 / 739.3 / 411.6 / 739.3 ms | PS:614-627 |
 | Measured | 30 cm, 0 dBm: RSSI -23/-24 dBm, SNR 12-13 dB (bench, not range) | PS:647-658 |
 
-**Link behaviour** (NR:312-315, EVM:129-194): each minute the live reading goes first, then up to 5
-pending readings, capped at about 5 s estimated airtime (health report airtime reserved first in a
-health minute). Each frame gets one 2 s ACK window; after a miss, one more frame; a second miss or a TX
-failure ends the drain. 3 silent minutes -> state `probing` (live reading only). Records are abandoned
-after 10 unanswered tries (strike limit) or on a NACK. Health reports have no journal and no ACK.
+**Link behaviour** (NR:312-315, EVM:129-194). Each minute the live reading goes first. Up to 5 pending
+readings follow, capped at about 5 s of estimated airtime. In a health minute, the TX reserves the
+health report's airtime first.
+
+Each frame gets one 2 s ACK window. After a miss, the TX sends one more frame.
+A second miss or a TX failure ends the drain. After 3 silent minutes, the state goes to `probing` (live
+reading only).
+
+The TX abandons a record on a NACK, or after 10 strikes (tx_policy.c:17, tx_policy.c:75-81). A strike is
+a try that went unanswered while the gateway answered a later frame in the same exchange. Misses on a
+dead link don't count. Health reports have no journal and no ACK.
 
 ### 7.2 Over-the-air frame (protocol version 6)
 
@@ -703,18 +802,32 @@ after 10 unanswered tries (strike limit) or on a NACK. Health reports have no jo
 | 8 | n | AES-128-CCM ciphertext |
 | 8+n | 8 | CCM tag (M = 8) |
 
-AAD = the 8 header bytes; nonce (13 B) = kind (u8) + station (u32) + counter (u64) built from integers;
-128-bit per-station key; KCV = first 3 bytes of AES(key, 0^16). Node counter space covers observation and
-health report (reserved in flash blocks of 256); gateway counter space covers ACK/NACK
-(`gateway-nonces.sqlite3`). A frame-format change needs a new key (PROTO:86-105, PROTO:140-168).
+Crypto details (PROTO:86-105, PROTO:140-168):
 
-**Frame lengths** (PROTO:113-131): observation plaintext 23-94 B (frame 39-110 B; node build ceiling 80/96
-B; current node field set 77/93 B); ACK/NACK 17/33 B; health report 64/80 B. The gateway checks length,
-version, kind and station before decrypting and sends nothing for a failed frame.
+- AAD = the 8 header bytes.
+- Nonce (13 B) = kind (u8) + station (u32) + counter (u64), built from integers.
+- The key is 128-bit, one per station. KCV = the first 3 bytes of AES(key, 0^16).
+- The node counter space covers the observation and the health report. The node reserves it in flash, in blocks of 256.
+- The gateway counter space covers ACK/NACK (`gateway-nonces.sqlite3`).
+- A frame-format change needs a new key.
 
-**ACK/NACK plaintext, 17 B** (PROTO:182-187): epoch (u32), sequence (u32), ACK: host UTC at commit (0 if
-the gateway's clock is wrong) / NACK: reason (1 identity collision, 2 invalid record) (u32), echo of the
-answered frame's counter (u40). ACK sent only after the SQLite commit.
+**Frame lengths** (PROTO:113-131), plaintext/frame:
+
+- observation: 23-94 B / 39-110 B. The node build ceiling is 80/96 B, and the current node field set is 77/93 B.
+- ACK/NACK: 17/33 B
+- health report: 64/80 B
+
+The gateway checks length, version, kind and station before it decrypts. It sends nothing for a failed
+frame.
+
+**ACK/NACK plaintext, 17 B** (PROTO:182-187):
+
+- epoch (u32)
+- sequence (u32)
+- u32: in an ACK, the host UTC at commit (0 if the gateway's clock is wrong). In a NACK, the reason (1 identity collision, 2 invalid record).
+- echo of the answered frame's counter (u40)
+
+The gateway sends the ACK only after the SQLite commit.
 
 **Observation plaintext** (PROTO:449-459):
 
@@ -730,8 +843,9 @@ answered frame's counter (u40). ACK sent only after the SQLite commit.
 | 22 | 2 | extension bitmap (only if EXT): bit j = field 32+j |
 | 22/24 | k | present fields in increasing index, each big-endian unsigned of its width |
 
-Value = (code - offset) / scale; INVALID = all-ones code; absent (not in bitmap) = no source in this
-build; INVALID = fitted source failed or out of range (PROTO:483-503, PROTO:540).
+Value = (code - offset) / scale. INVALID is the all-ones code, and it means a fitted source failed or
+was out of range. Absent (not in the bitmap) means this build has no source for it (PROTO:483-503,
+PROTO:540).
 
 **Field catalog v2** (PROTO:545-581):
 
@@ -770,9 +884,12 @@ build; INVALID = fitted source failed or out of range (PROTO:483-503, PROTO:540)
 | 33 | `usb_current_ma` | 2 | 1 mA offset binary (ext bit 1) | 32768 | | USB-C INA228 (B) |
 | 34-47 | reserved | | must be zero | | | |
 
-Records by phase (PROTO:472-476): phase A, fields 0-6, 9, 11-16, 19, 20, 25, 26, 28, bitmap
-`0x1619FA7F`, 65 B (81 B frame); phase B adds 27, 29, 30, 32, 33, bitmap `0xFE19FA7F` + ext `0x0003`,
-77 B (93 B). Example known answer: epoch 1, seq 2, T -12.34 °C -> code 0x0ACE, RH 45.67 % -> 0x11D7
+Records by phase (PROTO:472-476):
+
+- phase A: fields 0-6, 9, 11-16, 19, 20, 25, 26, 28, bitmap `0x1619FA7F`, 65 B (81 B frame)
+- phase B adds 27, 29, 30, 32, 33: bitmap `0xFE19FA7F` + ext `0x0003`, 77 B (93 B)
+
+Example known answer: epoch 1, seq 2, T -12.34 °C -> code 0x0ACE, RH 45.67 % -> 0x11D7
 (PROTO:505-524).
 
 **Health report plaintext, 64 B** (PROTO:256-288):
@@ -811,18 +928,23 @@ Records by phase (PROTO:472-476): phase A, fields 0-6, 9, 11-16, 19, 20, 25, 26,
 | 60 | 2 | charger die temp 0.1 °C | -32768 |
 | 62 | 2 | pack temp 0.1 °C | -32768 |
 
-Charger status byte (PROTO:367-375): bit 0 input power good (PGOOD); bit 1 charging (CHG steady); bit 2
-fault (CHG 3+ edges in 2 s, clears after 4 s); bits 3-5 stage (0 in phase A; 7 non-canonical); bits 6-7
-active input (0 not reported in phases A/B). Fitted byte (PROTO:305-316): bit 0 VDDA, 1 monitor temp, 2
-gauge, 3 charger status bits 0-2, 4 charger registers, 5 charge current, 6 pack temp; phases A and B send
-0x2F. A none code under a set bit = sensor fault; under a clear bit = not measured. SOC over-reads while
-charging (PROTO:347-350).
+Charger status byte (PROTO:367-375):
+
+- bit 0: input power good (PGOOD)
+- bit 1: charging (CHG steady)
+- bit 2: fault (CHG 3+ edges in 2 s, clears after 4 s)
+- bits 3-5: stage (0 in phase A, 7 non-canonical)
+- bits 6-7: active input (0 = not reported in phases A/B)
+
+Fitted byte (PROTO:305-316): bit 0 VDDA, 1 monitor temp, 2 gauge, 3 charger status bits 0-2, 4 charger
+registers, 5 charge current, 6 pack temp. Phases A and B send 0x2F. A none code under a set bit means a
+sensor fault. Under a clear bit it means not measured. SOC over-reads during a charge (PROTO:347-350).
 
 ### 7.3 WSMP (DATAVANE5K module protocol)
 
-Version 1.1 draft; station side implemented for local modules; radio part, remote modules and UTC latch
-not implemented (WSMP:3-7). Contract between the station and its modules; local drivers present the same
-blocks as a remote Modbus module would (WSMP:10-13, WSMP:629-646).
+Version 1.1 draft. The station side works for local modules. The radio part, remote modules and the UTC
+latch aren't implemented (WSMP:3-7). WSMP is the contract between the station and its modules. Local
+drivers present the same blocks that a remote Modbus module would (WSMP:10-13, WSMP:629-646).
 
 | Element | Definition | Source |
 |---|---|---|
@@ -854,7 +976,7 @@ blocks as a remote Modbus module would (WSMP:10-13, WSMP:629-646).
 | Store | `ingest` returns only after a WAL commit with `synchronous=FULL` and `F_FULLFSYNC` (about 5.3 ms median); identity (station, session=epoch, sequence) immutable; exact repeat = no-op, different payload = collision (NACK 1) | GW:32-36, GW:90-135 |
 | Reply | ACK sealed only after commit; NACK only for an authentic, permanently invalid record, stored in `rejections` first | PROTO:192-195 |
 | Health reports | stored in `diagnostics`, ordered by (epoch, uptime); none codes -> null; derived lists `power_not_measured`, `power_sensor_faults` | PROTO:212-214, PROTO:316-320 |
-| Time | samples without UTC get reconstructed time from the nearest synchronized sample of the same epoch, with an error bound (1 s quantisation + 150 ppm drift) | gateway.py:20-21, GW:598-648 |
+| Time | samples without UTC get reconstructed time from the nearest synchronized sample of the same boot epoch. Error bound: 2 s of quantisation (1 s on each of the two whole-second fields, the sample uptime and the reference) plus 150 ppm of the time span to the reference | gateway.py:16-22, GW:598-648 |
 | Freshness | latest reading current only if known, bounded, not future and < 180 s old | GW:39, GW:83 |
 | Files (run directory, git-ignored) | `gateway.json` (config incl. radio key and API token: secrets), `observations.sqlite3`, `gateway-nonces.sqlite3`, `receiver.log`, optional `mqtt-password` | NR:168, PROTO:143, HA:25-28 |
 | HTTP | 127.0.0.1:8088 by default; dashboard at `/`, API `/v1/status`, `/v1/history`, `/v1/events` (SSE), `/v1/radio`, `/v1/diagnostics`, `/v1/receiver/alive`, `/v1/gateway/events`; bearer token required | ws0/__main__.py:39, WEB:22-27, WEB:221-223, WEB:242-258 |
@@ -892,22 +1014,28 @@ blocks as a remote Modbus module would (WSMP:10-13, WSMP:629-646).
 | 72 | u32 | last crash PC |
 | 76 | u16 | CRC |
 
-RX console line: `#bl rssi= snr= len= hex=` per packet; `#bl hb ...` every 10 s (benchlink.c:9-13).
+RX console line: `#bl rssi= snr= len= hex=` per packet, and `#bl hb ...` every 10 s (benchlink.c:9-13).
 
-**CSV** (`tools/benchlink_log.py`, one row per packet) columns: `utc, local, rssi, snr, seq, gap,
+**CSV** (`tools/benchlink_log.py`, one row per packet). Columns: `utc, local, rssi, snr, seq, gap,
 uptime_s, ina, gauge, sht, pgood, chg, adc, charge_ma, charge_min_ma, charge_max_ma, load_ma, vout_v,
 vcell_v, soc_pct, rate_pct_h, temp_c, rh_pct, ina_die_c, ishunt_ma, battery_ma, samples, misses, vin_v,
 reset, boots, faults, fault_pc, tx_timeouts, i2c_restarts, i2c_unsticks, version` (benchlink_log.py:99-117).
-Derived: `charge_ma` = 400 x (V_PB1 / 0.990099) / 1000 ohm; `battery_ma` = -`ishunt_ma` (+ into cell,
-v4 only); `load_ma` = OUT / 100 ohm (estimate); clipped readings logged empty (BL:110-119). A side file
+Derived columns (BL:110-119):
+
+- `charge_ma` = 400 x (V_PB1 / 0.990099) / 1000 ohm
+- `battery_ma` = -`ishunt_ma` (+ into cell, v4 only)
+- `load_ma` = OUT / 100 ohm (an estimate)
+- the logger writes clipped readings as empty
+
+A side file
 `<name>-events.csv` records boots, silences, alerts and the `logger_start` constants (TR:15).
 
 ---
 
 ## 8. How to run it
 
-From the repository root, with the project virtualenv (README.md:40-44, NR:37-42, TR:3). No secrets on
-command lines: `console.py` refuses `PROVISION` (TR:19).
+Run these from the repository root, with the project virtualenv (README.md:40-44, NR:37-42, TR:3). Keep
+secrets off command lines. `console.py` refuses `PROVISION` (TR:19).
 
 ```sh
 # one-time setup
@@ -964,13 +1092,19 @@ python -m ws0.harness --output my-simulation-results
 tools/gates.sh
 ```
 
-Re-key: `WIPE ERASE-ALL-NODE-STATE` on the TX, then a **new** run directory and `provision-node`
-(NR:155-157). Drain the journal (`pending=0`) before any format or field-set change (NR:444).
+To re-key, send `WIPE ERASE-ALL-NODE-STATE` to the TX. Then make a **new** run directory and run
+`provision-node` (NR:155-157). Drain the journal (`pending=0`) before any format or field-set change
+(NR:444).
 
-Bench acceptance checks to repeat on the new build (BSW:439-451): `MODULES` after a minute shows every
-module `active` (rain `absent` until `SENSOR rain on`); hot-plug a sensor -> suspect -> absent -> active,
-no reset; 100 counted cup pulses within ±1; 20 bucket tips counted; `meter_link=ok`; mode A sign check
-(battery current negative without input, positive charging); one hour in mode B with no reset.
+Bench acceptance checks to repeat on the new build (BSW:439-451):
+
+1. After a minute, `MODULES` shows every module `active`. Rain stays `absent` until `SENSOR rain on`.
+2. Hot-plug a sensor. It goes suspect -> absent -> active, with no reset.
+3. 100 counted cup pulses read within ±1.
+4. All 20 bucket tips show up in the count.
+5. `meter_link=ok`.
+6. Mode A sign check: battery current is negative with no input and positive during a charge.
+7. One hour in mode B with no reset.
 
 ---
 
@@ -1019,20 +1153,21 @@ no reset; 100 counted cup pulses within ±1; 20 bucket tips counted; `meter_link
 
 ### 9.3 Electrical rules the new layout must keep (restated from the sources)
 
-1. No battery, charge, input or load current through any breadboard strip, header pin or Dupont
-   contact; only the regulator chain in battery mode is tolerated (BSW:215-217, BSW:310-312).
-2. Exactly one conductor between power ground (pack-negative star) and logic ground; module grounds come
-   over their QT cables; unused pigtail minus leads insulated (FM:310, BSW:223).
-3. Gauge red lead on the cell side of the shunt (CELL+); INA228 VBUS on its own sense lead to OUT; sense
-   leads never share a clamp with or run bundled along a force lead (BSW:225-231, WT:732).
-4. Meter pull-ups and filters at the jack end, so every wire to the MCU is inside the link probe's sight
+1. No battery, charge, input or load current goes through any breadboard strip, header pin or Dupont
+   contact. The only exception is the regulator chain in battery mode (BSW:215-217, BSW:310-312).
+2. Exactly one conductor joins power ground (pack-negative star) and logic ground. Module grounds come
+   over their QT cables. Insulate the unused pigtail minus leads (FM:310, BSW:223).
+3. The gauge red lead goes on the cell side of the shunt (CELL+). The INA228 VBUS gets its own sense lead
+   to OUT. Sense leads never share a clamp with a force lead or run bundled along one (BSW:225-231,
+   WT:732).
+4. Put the meter pull-ups and filters at the jack end, so the link probe sees every wire to the MCU
    (BSW:179-183).
-5. OLED supply and return straight to NUCLEO pins, not a shared ground rail; unplug its VCC in battery mode
-   (FM:307, BSW:96).
-6. Never NUCLEO USB and battery supply together; never USB-C and solar together; charger input from a
-   floating adapter (BSW:316, PM:40-41, BSW:243-245).
-7. 3.3 V only to the QT parts; tape the 5 V header pins (BSW:82, BSW:107-108).
-8. Battery-path span limits at 1 A as in 4.1; force-lead lengths short (pigtails <= 60 mm, solid links
-   <= 50 mm, regulator supply and tie <= 100 mm).
-9. PA10 input: source cold Voc <= about 10.2 V with the 3:1 divider; a higher source needs a new ratio
-   (PM:284-293).
+5. Run the OLED supply and return straight to NUCLEO pins, not a shared ground rail. Unplug its VCC in
+   battery mode (FM:307, BSW:96).
+6. Never connect NUCLEO USB and the battery supply together. Never connect USB-C and solar together. Feed
+   the charger input from a floating adapter (BSW:316, PM:40-41, BSW:243-245).
+7. Only 3.3 V goes to the QT parts. Tape the 5 V header pins (BSW:82, BSW:107-108).
+8. Keep the battery-path span limits at 1 A from 4.1. Keep force leads short (pigtails <= 60 mm, solid
+   links <= 50 mm, regulator supply and tie <= 100 mm).
+9. PA10 input: the source's cold Voc must be <= about 10.2 V with the 3:1 divider. A higher source needs
+   a new ratio (PM:284-293).

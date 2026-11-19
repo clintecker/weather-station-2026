@@ -8,7 +8,7 @@ packs the health report and computes the key check value. The gateway builds the
 
 This document is the source. `tools/tangle.py` generates `ws_frame.c` from the code chunks below.
 The repository also holds the generated file, so the build, the static analysers, the fuzzer and the
-host tests read ordinary C. Edit this file, then regenerate and check:
+host tests read ordinary C. Edit this file, then regenerate and check it:
 
 ```sh
 python3 tools/tangle.py firmware/common/ws_frame.lit.md                            # write ws_frame.c
@@ -163,23 +163,27 @@ OBS and DIAG share the node's counter. ACK and NACK share the gateway's counter.
 issues a counter value twice within one space.
 
 A counter must be durable before use. Otherwise a reset between seal and reservation lets the next
-boot issue the same counter again. A repeated counter is fatal for CCM. CCM encrypts in counter
-mode, and its keystream depends only on the key and the nonce. Two frames under one nonce share
-keystream. The exclusive OR (XOR) of their ciphertexts is the XOR of their plaintexts. A known
-plaintext of one frame then reveals the other. `docs/protocol-design.md` section 3.2 counts nonce
-reuse as a total loss of security.
+boot issue the same counter again. A repeated counter is fatal for CCM.
 
-The version is in the AAD but not in the nonce. Each protocol version therefore uses a new key
-(`docs/protocol-design.md` section 3.2; for version 6 the release procedure of the power telemetry
-design, section 4, WIPEs the node and provisions a new key). No counter used under the previous
+Here's why. CCM encrypts in counter mode, and its keystream depends only on the key and the nonce.
+Two frames under one nonce share keystream. The exclusive OR (XOR) of their ciphertexts is the XOR
+of their plaintexts. If you know the plaintext of one frame, you can read the other.
+`docs/protocol-design.md` section 3.2 counts nonce reuse as a total loss of security.
+
+The version is in the AAD but not in the nonce. So each protocol version uses a new key
+(`docs/protocol-design.md` section 3.2). For version 6, the release procedure in section 4 of the
+power telemetry design WIPEs the node and provisions a new key. No counter used under the previous
 format meets that key.
 
 ## 4. Sealing
 
 ### Refusals
 
-`seal_ok` decides what `ws_seal_kind` may seal. The checks short-circuit in order, so the code
-computes `plain_len + WS_FRAME_OVERHEAD` only for a `plain_len` that cannot overflow.
+`seal_ok` decides what `ws_seal_kind` may seal. Its checks short-circuit in order, so its
+comparison `plain_len + WS_FRAME_OVERHEAD > out_cap` runs only for a `plain_len` that cannot
+overflow. `ws_seal_kind` computes `len = plain_len + WS_FRAME_OVERHEAD` up front, for any
+`plain_len`. That's harmless: C defines unsigned wrap, and the function uses `len` only after
+`seal_ok` passes.
 
 ```c {#seal-ok}
 /* Returns 1 if ws_seal_kind can seal these arguments: a plaintext that fits the frame and the
@@ -310,14 +314,14 @@ flowchart TD
 ```
 
 Step 3 checks an argument, not the frame, so it returns `WS_FRAME_EINVAL`. Step 4 rebuilds the
-header from the frame's kind, the caller's station and the frame's counter. It compares bytes 0–2
+header from the frame's kind, the caller's station and the frame's counter. It compares bytes 0 to 2
 (version, kind and station, `WS_COUNTER_OFF` bytes). Step 5 uses the frame's 8 header bytes as the
 AAD.
 
-Steps 1–4 need no key and run no cipher. A reply for another station fails at step 4. Step 4 does
+Steps 1 to 4 need no key and run no cipher. A reply for another station fails at step 4. Step 4 does
 not compare the counter bytes. `ws_open_reply` reads them from the frame and encodes them again, so
 they match by construction. The nonce for step 5 comes from the same `header` call. It holds the
-node's own station, so the tag can verify only for a frame sealed for this station.
+node's own station, so the tag can pass only for a frame sealed for this station.
 
 A failed `mbedtls_ccm_setkey` also returns `WS_FRAME_EAUTH`. The caller cannot tell it from a bad
 tag.
@@ -356,12 +360,12 @@ returns, so only those 3 bytes leave it.
 
 | Key | Check value |
 |---|---|
-| `00 01 02 … 0f` (the self-test key) | `c6a13b` (FIPS-197 AES-128 vector) |
+| `00 01 02 … 0f` (the self-test key) | `c6a13b` (AES-128 of the zero block under the self-test key, checked in `tests/test_frame.py` against Python's AES) |
 
 Users:
 
 - `store_config_write` and `store_config_load` (`App/node_store.c`) store the value with the key
-  and compare it on load. A mismatch means that the stored key changed after it was written.
+  and compare it on load. A mismatch means that the stored key changed after the node wrote it.
 - `App/tx_console.c` prints the value as `kcv=` in `#status`, for comparison with the gateway's
   value.
 
@@ -383,10 +387,11 @@ int ws_key_check(const uint8_t key[WS_KEY_LEN], uint8_t out[WS_KCV_LEN]) {
 ## 7. Health report
 
 `ws_diag_pack` writes the 64-byte health report plaintext (kind `WS_KIND_DIAG`,
-`WS_DIAG_PLAIN_LEN`) from a `ws_diag_t`. The length is fixed: the RX bridge checks it exactly
-(`ws_console.c`, `WS_DIAG_FRAME_LEN` 80) and so does the gateway (`PLAIN_LENGTHS`). The order of the
-writes sets the offsets. The first 32 bytes keep their version 5 layout; bytes 32–63 are new in
-version 6 (power telemetry design, `docs/superpowers/specs/2026-10-29-power-telemetry-design.md`
+`WS_DIAG_PLAIN_LEN`) from a `ws_diag_t`. The order of the writes sets the offsets.
+
+The length never changes. The RX bridge checks it exactly (`ws_console.c`, `WS_DIAG_FRAME_LEN` 80), and
+so does the gateway (`PLAIN_LENGTHS`). The first 32 bytes keep their version 5 layout. Bytes 32 to
+63 are new in version 6 (power telemetry design, `docs/superpowers/specs/2026-10-29-power-telemetry-design.md`
 section 6.1). The plaintext bits, most significant bit first:
 
 ```mermaid
@@ -458,14 +463,18 @@ packet-beta
 | 60 | 2 | i16 | `chg_temp` | charger die temperature, 0.1 °C | `WS_I16_NONE` |
 | 62 | 2 | i16 | `pack_temp` | pack temperature, 0.1 °C | `WS_I16_NONE` |
 
-The fields name what is measured, not which part measures it. A slot that a build or a phase
-cannot fill carries its none code (the design's fill table, section 3.3, says which phase fills
-which slot). Signed none codes are the type's minimum, as `WS_SIGNAL_NONE` is for the i8 signal
-fields; unsigned ones are all ones. The gateway reads every none code as `null`.
+Each field names the quantity, not the part that measures it. A slot that a build or a phase
+can't fill carries its none code. The design's fill table (section 3.3) says which phase fills
+which slot.
+
+Signed none codes are the type's minimum, as `WS_SIGNAL_NONE` is for the i8 signal
+fields. Unsigned ones are all ones, except `crash_pc`. Its none code is 0 (`WS_CRASH_PC_NONE`),
+and 0xFFFFFFFF there means the stacked crash frame was not trusted. The gateway reads every none
+code as `null`.
 
 The fitted byte tells the two reasons for a none code apart, as absent and INVALID do in the
-observation (design section 5.3). Its bit for a slot is set when the build has a source for it, so
-a none code there is a sensor fault; with the bit clear the slot is not measured in this build:
+observation (design section 5.3). If a slot's bit is set, the build has a source for that slot, so a
+none code there is a sensor fault. If the bit is clear, this build doesn't measure the slot:
 
 | Bit | Macro | Slots |
 |---|---|---|
@@ -478,7 +487,7 @@ a none code there is a sensor fault; with the bit clear the slot is not measured
 | 6 | `WS_FIT_PACK_TEMP` | `pack_temp` |
 | 7 | — | reserved, 0 (`WS_FIT_DEFINED` is 0x7F) |
 
-Phases A and B set bits 0, 1, 2, 3 and 5 (0x2F); phase C sets the bits of the parts it has.
+Phases A and B set bits 0, 1, 2, 3 and 5 (0x2F). Phase C sets the bits of the parts it has.
 
 The charger status byte (`WS_CHG_*` in `ws_frame.h`, design section 6.3):
 
@@ -488,20 +497,30 @@ The charger status byte (`WS_CHG_*` in `ws_frame.h`, design section 6.3):
 | 1 | `WS_CHG_CHARGING` | charging |
 | 2 | `WS_CHG_FAULT` | fault |
 | 3–5 | `WS_CHG_STAGE(s)`, `WS_CHG_STAGE_MASK` | 0 not reported, 1 pre-charge or trickle, 2 constant current, 3 constant voltage, 4 top-off, 5 terminated, 6 not charging, 7 reserved |
-| 6–7 | `WS_CHG_INPUT(i)`, `WS_CHG_INPUT_MASK` | active input: 0 not reported (`WS_CHG_INPUT_NOT_REPORTED`), 1 solar (`WS_CHG_INPUT_SOLAR`, VAC1), 2 USB-C (`WS_CHG_INPUT_USB_C`, VAC2), 3 no input (`WS_CHG_INPUT_NO_INPUT`: the charger reports that neither input powers it) |
+| 6–7 | `WS_CHG_INPUT(i)`, `WS_CHG_INPUT_MASK` | active input: 0 not reported (`WS_CHG_INPUT_NOT_REPORTED`), 1 solar (`WS_CHG_INPUT_SOLAR`), 2 USB-C (`WS_CHG_INPUT_USB_C`), 3 no input (`WS_CHG_INPUT_NO_INPUT`: the charger reports that neither input powers it) |
+
+The input codes don't name the charger's VAC pins. Phase C firmware maps the pins to codes. On the
+current `hardware/tx-stack-r1` wiring, USB goes to VIN1 (VAC1) of the TI BQ25798EVM and solar goes to
+VIN2 (VAC2). The comments in `ws_frame.h` still say the reverse (solar on VAC1, USB-C on VAC2).
 
 **Canonical rules.** The node never sends a non-canonical report:
 
 - Bit 7 of the fitted byte is 0. `ws_diag_pack` writes `fitted & WS_FIT_DEFINED`, so no value of
   `fitted` can break the rule.
-- A charger status byte other than `WS_CHARGER_NONE` never has stage 7. The caller builds the
-  byte from the macros with stages 0–6. Every active input code 0–3 is canonical: code 3 means
-  "no input" (amended 2026-10-29; it was reserved), so phase C reports a charger with no input
-  without a protocol change. 0xFF stays "no status" because its stage is 7.
+- A charger status byte other than `WS_CHARGER_NONE` never has stage 7. In phases A and B,
+  `charger_status` in `App/power_acq.c` builds the byte with stage 0. Then `diag_power` in
+  `App/tx_exchange.c` replaces any stage-7 byte with `WS_CHARGER_NONE` before it packs the report.
+- Every active input code 0 to 3 is canonical. The 2026-10-29 amendment turned code 3 from
+  reserved into "no input". So phase C can report a charger with no input without a protocol change.
+  0xFF stays "no status" because its stage is 7.
 
-A health report is never answered. A gateway that receives a report that breaks a rule keeps every
-other value: it logs a warning for fitted bit 7, and it stores the charger keys as `null` with a warning
-for an invalid status byte (`diag_problems` in `ws0/protocol.py`).
+Nothing answers a health report. If the gateway gets a report that breaks a rule, it keeps every
+other value (`diag_problems` in `ws0/protocol.py`):
+
+- For fitted bit 7, it logs a warning.
+- For an invalid status byte, it stores the charger keys as `null` and logs a warning.
+
+More rules for the packer:
 
 - Each `ws_diag_t` field has its wire width, so the function truncates nothing. The caller clamps
   the counts. The design saturates 16-bit counters at `0xFFFF`.
@@ -585,34 +604,39 @@ the design document with the `AESCCM` class of the `cryptography` library.
 | Test | What it checks |
 |---|---|
 | `test_vectors_follow_the_spec` | the OBS, ACK and NACK known-answer vectors start with 0x61–0x63 and follow the design document's construction |
-| `test_version_6_byte0` | C and Python seal kinds 1–4 with byte 0 = 0x61–0x64. A version 5 ACK or health report, authentic under its own header, is refused as another version (`WS_FRAME_EHEADER`), and a 32-byte health report has the wrong length |
+| `test_version_6_byte0` | C seals kinds 1–4 with byte 0 = 0x61–0x64, matching the design's construction. Python's `frame_kind` reads them and rejects the version 5 byte 0. C refuses a version 5 ACK, authentic under its own header, as `WS_FRAME_EHEADER`, and so does Python `unseal`. Python `unseal` also refuses a version 5 health report, and a 32-byte health report has the wrong length for it |
 | `test_known_answer_vectors` | C and Python seal and open the vectors to the same bytes and values |
 | `test_random_agreement_both_directions` | 300 random keys, stations and counters: C seals what Python seals, and C opens what Python seals |
 | `test_counter_and_station_limits` | the C code refuses station 0 and 65536, counter 0, 2^40 and 2^64 − 1, kinds 0, 5 and 15, and a 256-byte frame. After a station or counter refusal the C buffer is all zero (`fuzz_reply` checks it for every refusal) |
-| `test_reply_rejections` | a wrong tag, station, key, kind, length or version fails. A NACK with its kind byte changed to ACK fails the tag |
+| `test_reply_rejections` | a wrong tag, station, key, kind, length or version fails. A NACK with its kind byte changed to ACK should fail the tag, but the test doesn't check that yet: it changes byte 0 to 0x52 (a version 5 ACK), which fails on the version first |
 | `test_diagnostic_frame_agreement` | a sealed 80-byte health report frame matches Python and the design's construction, and `unseal` in `ws0/protocol.py` does not accept it as an observation |
-| `test_diag_plaintext_matches_python` | `ws_diag_pack` equals `pack_diag` field by field for zeros, maxima, minima, none codes and 200 random reports; each member sits at its spec offset; bit 7 of byte 51 is 0 whatever `fitted` holds |
+| `test_diag_plaintext_matches_python` | `ws_diag_pack` equals `pack_diag` field by field for zeros, maxima, minima, none codes and 200 random reports. Each member sits at its spec offset. Bit 7 of byte 51 is 0 whatever `fitted` holds |
 | `test_key_check_value` | the check value equals AES-ECB of a zero block, `c6a13b` for the self-test key |
 | `test_selftest_vectors` (`FirmwareTables`) | the byte arrays in `App/selftest.c` are `selftest_frames()`, the one source of the vectors, in the layout that `python -m tests.test_frame --kat` prints |
 | `test_diag_mirror_matches_the_header` (`FirmwareTables`) | the test's `ctypes` mirror has the members of `ws_diag_t` in `ws_frame.h`, in order and with their types |
 | `test_diag_layout_matches_the_spec` (`FirmwareTables`) | `DIAG` and the none codes are the design's 64-byte table, and `ws_frame.h` defines `WS_FRAME_VERSION` 6, `WS_DIAG_PLAIN_LEN` 64 and the none codes |
-| `test_pack_diag_by_name`, `test_diag_canonical_rules` (`FirmwareTables`) | `pack_diag` defaults and refusals; `diag_problems` on fitted bit 7 and stage 7, empty when canonical; active input 3 decodes as `no_input` |
+| `test_pack_diag_by_name`, `test_diag_canonical_rules` (`FirmwareTables`) | `pack_diag` defaults and refusals. `diag_problems` flags fitted bit 7 and stage 7 and is empty when canonical. Active input 3 decodes as `no_input` |
 
-`firmware/fuzz/fuzz_reply.c` passes arbitrary bytes to `ws_open_reply`. `tests/test_fuzz.py`
-(`test_reply`) runs it. Only the two genuine self-test frames may open. The fuzzer then seals with
-a station, counter, kind and plaintext that it chooses. The station and the counter are biased to 0,
-1, each limit and one past it. The kind is 0 to 5, so two invalid kinds occur.
-A value out of range must return a negative code. It must also leave all of `out` zero, including
-8 bytes past any frame. An accepted value must give the design document's header and length. An
-ACK or NACK for station 1 with a 17-byte plaintext must open to the same values.
+`firmware/fuzz/fuzz_reply.c` passes arbitrary bytes to `ws_open_reply`, and `tests/test_fuzz.py`
+(`test_reply`) runs it. Only the two genuine self-test frames may open.
+
+The fuzzer then seals with a station, counter, kind and plaintext that it chooses. It biases the
+station and the counter to 0, 1, each limit and one past it. The kind is 0 to 5, so two invalid
+kinds occur. The fuzzer expects this:
+
+- A value out of range returns a negative code. It also leaves all of `out` zero, and that
+  includes 8 bytes past any frame.
+- An accepted value gives the design document's header and length.
+- An ACK or NACK for station 1 with a 17-byte plaintext opens to the same values.
 
 `selftest_kat` (`App/selftest.c`) is the known-answer test. It runs on the TX board at boot
 (`App/app_tx.c`). It seals the observation vector and checks that `ws_seal_kind` refuses counter
 2^40. It tries to open the ACK, a tampered ACK and the NACK. `#status` reports the result as `kat=`.
-The version byte is in the AAD, so a version change changes every tag: the vectors are
-regenerated from one source, `selftest_frames()` in `tests/test_frame.py`, with
-`.venv/bin/python -m tests.test_frame --kat`, which prints the three arrays for `selftest.c`. A TX
-board whose vectors do not match its `WS_FRAME_VERSION` fails `kat=` and does not transmit.
+
+The version byte is in the AAD, so a version change changes every tag. You regenerate the vectors
+from one source, `selftest_frames()` in `tests/test_frame.py`. Run
+`.venv/bin/python -m tests.test_frame --kat` and it prints the three arrays for `selftest.c`. A TX
+board whose vectors don't match its `WS_FRAME_VERSION` fails `kat=` and doesn't transmit.
 
 ```sh
 .venv/bin/python -m unittest tests.test_frame tests.test_fuzz tests.test_tangle

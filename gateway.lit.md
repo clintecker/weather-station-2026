@@ -4,14 +4,13 @@
 
 - It validates each decoded record against a closed schema.
 - It commits the record to stable storage before the caller sends an ACK (acknowledgement).
-- It reports whether the latest reading is current. When the reading is not current, it gives a
-  reason.
+- It tells you if the latest reading is current. If it isn't, it gives a reason.
 - It gives a UTC time with an error bound to samples that the node took without a synchronized
   clock.
 
 This document is the source. `tools/tangle.py` generates `gateway.py` from the code chunks below.
-The repository also holds the generated file, so `import gateway`, ruff and the tests read ordinary
-Python. Edit this file, then regenerate and check:
+The repository holds the generated file too, so `import gateway`, ruff and the tests read ordinary Python.
+Edit this file, then regenerate and check:
 
 ```sh
 python3 tools/tangle.py gateway.lit.md                          # write gateway.py
@@ -19,7 +18,8 @@ python3 tools/tangle.py --check gateway.lit.md                  # committed .py 
 python3 tools/tangle.py --weave /tmp/gateway.html gateway.lit.md   # render
 ```
 
-`--check` without a document checks only the documents under `firmware/`. So name this document.
+`--check` without a document checks every `*.lit.md` under `firmware/` and `ws0/`, plus those at the
+repository root, which includes this one. Name this document if you want to check only it.
 
 A chunk is a fenced ` ```python {#name} ` block. A line `<<name>>` inside a chunk includes chunk
 `name` at that line's indentation. This document writes the `Store` methods without their class
@@ -69,8 +69,8 @@ Limits and units that the file uses:
 
 | Constant | Value | Use |
 |---|---|---|
-| `MINUTE_S`, `HOUR_S`, `DAY_S` | 60, 3600, 86400 | `ws0/__main__.py` and `ws0/harness.py` import them |
-| `RECORD_VERSION` | 6 | the only accepted `version`. It equals `VERSION` in `ws0/protocol.py`. A run directory belongs to one record version: a version 5 database stays with the version 5 release, with no migration (`docs/protocol-design.md` section 5.7) |
+| `MINUTE_S`, `HOUR_S`, `DAY_S` | 60, 3600, 86400 | `ws0/__main__.py` and `ws0/harness.py` import `MINUTE_S`. `ws0/web.py` imports all three (and `FAR_FUTURE`) |
+| `RECORD_VERSION` | 6 | the only accepted `version`. It equals `VERSION` in `ws0/protocol.py`. A run directory belongs to one record version. A version 5 database stays with the version 5 release, with no migration (`docs/protocol-design.md` section 5.7) |
 | `CURRENT_MAX_AGE_S` | 180 | a latest reading of this age or older is not current |
 | `FUTURE_SLACK_S` | 5 | a sample time more than this after its receipt shows a wrong clock |
 | `UTC_LIMIT` | 2^32 | the UTC field of the observation is a u32 |
@@ -90,8 +90,8 @@ FAR_FUTURE = 253402300800   # 10000-01-01T00:00:00Z: the open end of a time rang
 ## 3. Durability
 
 `full_flush` configures a connection so that each commit reaches stable storage. `Store`, `Nonces`
-in `ws0/protocol.py` and `ws0/simulator.py` call it on every connection that they open for
-writing. The read-only connections of `reader` and `open_read_only` (section 10) do not need it.
+in `ws0/protocol.py` and `ws0/simulator.py` call it on every connection that they open to write.
+The read-only connections of `reader` and `open_read_only` (section 10) don't need it.
 
 SQLite has two journal modes that matter here. The rollback journal is the default. The
 write-ahead log (WAL) appends each commit to a separate `-wal` file. `fsync` is the system call that
@@ -104,19 +104,24 @@ asks the operating system to write a file to the drive.
 | `fullfsync` | `ON` | on macOS, `fsync()` does not flush the drive cache. `F_FULLFSYNC` does |
 | `checkpoint_fullfsync` | `ON` | the WAL checkpoint also uses `F_FULLFSYNC` |
 
-The docstring gives the measurements from the bench Mac:
+The `full_flush` docstring gives these numbers from the bench Mac:
 
 | Commit | Latency |
 |---|---|
 | without the flush (not durable) | 0.06 ms |
 | with the flush | 5.3 ms median, 16 ms max |
-| a nonce commit, rollback journal then WAL | 14 ms then 5 ms |
+| a nonce commit, rollback journal then WAL | 14 ms then 5 ms (not recorded, see below) |
+
+The nonce-commit row comes only from the docstring. It went in with commit 6c29345, and there's no
+recorded measurement behind it. That commit's message gives a different number: the median of
+`Gateway.receive` with real fsync went from 31.6 ms to 13.0 ms. Treat 14 ms and 5 ms as unconfirmed
+until someone times a nonce commit on the bench Mac.
 
 `WS0_UNSAFE_FAST_FSYNC=1` sets `synchronous`, `fullfsync` and `checkpoint_fullfsync` to `OFF`.
 WAL stays on. Simulations and unit tests set it (for example `tests/test_gateway.py` line 3). A run
-with this variable set claims no durability across power loss.
+with this variable set doesn't claim durability across power loss.
 
-In WAL mode the `-wal` file holds committed data. So a copy of the database must take the main
+In WAL mode the `-wal` file holds committed data. So when you copy the database, take the main
 file, `-wal` and `-shm` together, or none of them.
 
 ```python {#full-flush}
@@ -156,7 +161,7 @@ BASE_KEYS = frozenset({'version','station','session','sequence','sampled_at','up
 
 ### Identity and counters
 
-`station` and `session` are 1–64 characters of `[A-Za-z0-9_-]`. The counters are integers in
+`station` and `session` are 1 to 64 characters of `[A-Za-z0-9_-]`. The counters are integers in
 `0 <= value < top`:
 
 | Field | Exclusive top |
@@ -365,7 +370,7 @@ erDiagram
 | `time_uncertainty_s` | REAL | error bound of `effective_at`: 0, a reconstruction bound, or NULL |
 
 The primary key is (`station`, `session`, `sequence`), the observation identity. The payload
-decides whether a record is a duplicate. The gateway derives the three time columns, and
+decides if a record is a duplicate. The gateway derives the three time columns, and
 `reconstruct` rewrites them.
 
 ### Indexes
@@ -698,11 +703,15 @@ flowchart TD
 A target at or below `lo` has a reference at or below `lo` that is closer than the new one. The
 same holds at or above `hi`. So only targets strictly between them can change. The bounded scope
 replaced a rescan of the whole epoch. That rescan cost 14 ms per frame at 1440 untimed readings.
+
 `ReconstructionTests.test_bounded_update_matches_a_full_rescan` ingests 120 records in random
 order, with quarantined references and untimed readings. After each record it compares the time
 columns with a full rescan.
 
-`reconstruct` reads the targets first. Most epochs have none, and then it reads no reference.
+For a new untimed record (`only=`) and for a full rescan, `reconstruct` reads the targets first.
+Most epochs have none, and then it reads no reference. For a new trusted reference it first reads
+the two neighbouring references `lo` and `hi`, then the targets between them. The docstring below
+still says the targets come first. That's out of date for the `reference=` case.
 
 ```python {#store-reconstruct}
 def reconstruct(self, station, session, only=None, reference=None):
@@ -1077,7 +1086,7 @@ except in `DurabilityTests`:
 | `SchemaTests` | every validation rule, its message and its order |
 | `LatestReasonTests` | every freshness reason and its boundaries, from rows inserted directly |
 | `ReadOnlyOpen` | `open_read_only` with the gateway stopped and running |
-| `DurabilityTests` | `fullfsync`, `synchronous=FULL`, WAL and `checkpoint_fullfsync` on `Store` and `Nonces` |
+| `DurabilityTests` | `fullfsync`, `synchronous=FULL` and WAL on `Store` and `Nonces`. `checkpoint_fullfsync` on `Store` |
 
 `tests/test_stage0.py` runs the gateway with a simulated node:
 
@@ -1086,7 +1095,7 @@ except in `DurabilityTests`:
 | `PipelineTests` | commit before ACK, no ACK on a commit failure, a replay stores nothing |
 | `TimeReconstruction` | reconstruction after the first synchronization, a whole backlog after an outage, quarantined references, the growing bound |
 | `NackTests` | collision NACKed and recorded in `rejections`, invalid record NACKed, unauthenticated frames not stored, no reply on a commit failure |
-| `DiagnosticsAndEpochFloor` | diagnostics ordered by (epoch, uptime), the epoch floor from all three tables |
+| `DiagnosticsAndEpochFloor` | diagnostics ordered by (epoch, uptime), and the epoch floor above the epochs seen in observations and diagnostics. The code reads all three tables, but the test doesn't cover rejections |
 
 ```sh
 .venv/bin/python -m unittest tests.test_gateway tests.test_stage0 tests.test_tangle

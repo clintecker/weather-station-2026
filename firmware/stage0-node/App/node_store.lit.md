@@ -3,8 +3,9 @@
 `node_store.c` keeps the durable state of the transmitting node (the TX node) in the internal flash
 of the STM32WL55. That state is the provisioning record (station id and AES key), the monotonic
 values, the rain module setting and the journal. The monotonic values are the boot epoch, the
-transmission counter and the lost and abandoned totals. The journal holds the observations that the gateway has not acknowledged
-yet. Every function in the file tolerates a power cut at any flash operation.
+transmission counter and the lost and abandoned totals. The journal holds the observations that the
+gateway didn't acknowledge yet. Every function in the file copes with a power cut at any flash
+operation.
 
 This document is the source. `tools/tangle.py` generates `node_store.c` from the code chunks below.
 The repository also holds the generated file, so the build, the static analysers and the host tests
@@ -32,16 +33,21 @@ After a power cut at any flash operation, followed by a reboot:
 | WIPE | an interrupted WIPE never leaves an unprovisioned board with pending records | `wipe_journal_survives` |
 | Flash use | no program over a double-word that is not erased | `sim_violation` |
 
-The radio frames use AES-128 in CCM mode (AES-CCM). The counter is the AES-CCM nonce, under a key
-that survives reflashing and WIPE (section 7). A repeated counter under one key breaks the
-confidentiality and the authenticity of both frames. So the counter guarantee has no exceptions.
-The other guarantees bound data loss.
+The radio frames use AES-128 in CCM mode (AES-CCM). The counter is part of the AES-CCM nonce. The
+nonce is the frame kind, the station id and the counter (`firmware/common/ws_frame.c`). So under
+one key and station, a repeated counter repeats the nonce. That breaks the confidentiality and the
+authenticity of both frames.
+
+The same key can come back after a reflash or a WIPE. A reflash leaves the provisioning page alone.
+WIPE erases it, but a later PROVISION can load the same key. So the counter lives in the meta log,
+which reflashing and WIPE never erase (section 7). The counter guarantee has no exceptions. The
+other guarantees put a limit on data loss.
 
 ## 2. Flash model
 
-The STM32WL55JC has 128 pages of 2 KB in a single bank (reference manual RM0453, section 3.3). The
-flash stores an error-correcting code (ECC) with each double-word. `firmware/sim_flash.c` models
-the operations that this file uses:
+The STM32WL55JC has 128 pages of 2 KB (reference manual RM0453, section 4.3.1). It's a single
+bank (RM0453, section 4.2). The flash stores an error-correcting code (ECC) with each double-word.
+`firmware/sim_flash.c` models the operations that this file uses:
 
 | Operation | Effect | After a cut during it |
 |---|---|---|
@@ -50,8 +56,8 @@ the operations that this file uses:
 | Program zeros over written data | allowed (RM0453, an exception to the PROGERR rule) | as above |
 | Read one double-word | the value | a torn double-word fails the ECC check. The non-maskable interrupt (NMI) handler sets `ws_flash_ecc_fault`, and the read returns nonzero |
 
-A read therefore has three outcomes: erased, a value, or unreadable. Every decision below states
-what it does with an unreadable double-word.
+So a read has three outcomes: erased, a value, or unreadable. Every decision below says what it
+does with an unreadable double-word.
 
 Page map (`flash_layout.h`):
 
@@ -92,8 +98,11 @@ The generated file opens with the same summary:
 
 ### Return codes
 
-Every function returns `STORE_OK` (0) or a negative `STORE_E*` code from `node_store.h`.
-Callers only test for nonzero. The value appears in `#error` lines.
+Every function that returns a status returns `STORE_OK` (0) or a negative `STORE_E*` code from
+`node_store.h`. Callers only test for nonzero. The value shows up in `#error` lines. The getters
+return values or counts instead: `store_rain_enabled`, `store_journal_pending`,
+`store_journal_lost`, `store_journal_burned`, `store_journal_oldest`, `store_journal_scrub`,
+`store_ecc_faults`, `store_abandoned_total` and `store_counter_next`.
 
 | Code | Value | Meaning |
 |---|---|---|
@@ -108,9 +117,9 @@ Callers only test for nonzero. The value appears in `#error` lines.
 
 ### Flash access
 
-`rd64` returns 0 and sets `*bad` on an ECC fault. `bad` stays set, so a caller can read several
-double-words and test once. `n_ecc` counts faults since boot (`store_ecc_faults()`). A nonzero
-count after boot means that a cut tore a double-word.
+On an ECC fault, `rd64` returns 0 and sets `*bad`. `bad` stays set, so a caller can read several
+double-words and test once. `n_ecc` counts faults since boot (`store_ecc_faults()`). If the count
+is nonzero after boot, a cut tore a double-word.
 
 ```c {#erased}
 #define ERASED 0xFFFFFFFFFFFFFFFFULL
@@ -134,10 +143,10 @@ static uint64_t rd64(uint32_t addr, int *bad) {
 <<write-guards>>
 ```
 
-`prog64` and `erase_page` refuse a misaligned program or any address outside pages 95–127. The
+`prog64` and `erase_page` refuse a misaligned program or any address outside pages 95 to 127. The
 refusal goes through `WS_CHECK` (`firmware/common/ws_check.h`). It returns `STORE_EFLASH`, the same
-code as a failed flash operation, which every caller handles. Only a bug in this file can produce a
-wrong address. The check stops such a bug from erasing firmware pages.
+code as a failed flash operation, and every caller already handles that. Only a bug in this file
+can make a wrong address. The check stops that bug from erasing firmware pages.
 
 ```c {#write-guards}
 /* Every write stays inside the node-state pages (journal, meta and config, flash_layout.h).
@@ -157,7 +166,7 @@ static int erase_page(uint32_t page) {
 
 The mutators need the RAM state that a successful `store_meta_init` or `store_journal_init` built.
 Without it they return `STORE_ENOTREADY` (`node_store.h`) and write nothing. So a failed boot scan
-cannot lead to appends at a stale position.
+can't lead to appends at a stale position.
 
 ```c {#ready-flags}
 /* The mutators refuse to run on RAM state that no successful init built. Otherwise they
@@ -231,7 +240,7 @@ A cut at each point gives this load result:
 | during the station double-word | unreadable | `STORE_ENODATA` |
 | after the station double-word | programmed | the record |
 
-`STORE_EEXISTS` means that a double-word of the record is not erased. The flash cannot program it
+`STORE_EEXISTS` means that a double-word of the record isn't erased. The flash can't program it
 again, so WIPE must erase the page first.
 
 ```c {#config-write}
@@ -261,7 +270,7 @@ int store_config_write(uint32_t station, const uint8_t key[WS_KEY_LEN], uint8_t 
 
 1. Every double-word is readable and both magics match. Otherwise it returns `STORE_ENODATA`.
 2. The recomputed key check value (`ws_key_check`) equals the stored one. Otherwise it returns
-   `STORE_EKEY`, because the key changed after it was written.
+   `STORE_EKEY`, because the key changed after the write.
 3. The station id is in range. Otherwise it returns `STORE_ERANGE`.
 
 The function zeroes the key buffer on every failure. On success it also fills `kcv_out` with the
@@ -313,8 +322,9 @@ packet-beta
 | `0xD2` | `META_ABAND` | cumulative records abandoned after a NACK or at the strike limit |
 | `0xA1` | `META_RAIN` | the rain module setting: bit 0 is "on" (WSMP-P1). Each change writes the next value |
 
-The strike limit is in `ws_policy.h`. A record gets a strike when it stays unanswered while a later
-frame of the same exchange gets an answer.
+The strike rule is in `ws_policy.h`. The strike limit itself (`STRIKE_LIMIT`, 10) is in
+`tx_policy.c`. A record gets a strike when it stays unanswered while a later frame of the same
+exchange gets an answer.
 
 ```c {#meta-constants}
 #define META_MAGIC 0x57534D31UL /* "WSM1" */
@@ -370,9 +380,9 @@ static void meta_absorb(uint64_t v) {
 }
 ```
 
-`meta_scan` reads a page header and every position. A page without a readable "WSM1" header is not
-a meta page. An unreadable record adds no value but still counts as used, because the flash cannot
-program a torn double-word again. `*last` is the last position that is not erased. Appends continue
+`meta_scan` reads a page header and every position. A page without a readable "WSM1" header isn't
+a meta page. An unreadable record adds no value but still counts as used, because the flash can't
+program a torn double-word again. `*last` is the last position that isn't erased. Appends continue
 after it.
 
 ```c {#meta-scan}
@@ -405,8 +415,8 @@ flowchart TD
     A1 & A2 & B2 --> C["ctr_next = ctr_reserved + 1, meta_ready = 1, STORE_OK"]
 ```
 
-During a compaction both pages can be valid. The maxima over both pages are correct then too.
-`ctr_next` starts at `ctr_reserved + 1`. This skips any counters of the last block that the node
+During a compaction both pages can be valid. The maxima over both pages are still correct then.
+`ctr_next` starts at `ctr_reserved + 1`, so it skips any counters of the last block that the node
 used before the reset.
 
 ```c {#meta-init}
@@ -431,18 +441,18 @@ int store_meta_init(void) {
 }
 ```
 
-Both meta pages can become unreadable while the provisioning record survives. The counter then
+Both meta pages can become unreadable while the provisioning record survives. Then the counter
 restarts at 1 under the existing key. The design accepts this risk, because only a layout change
 can cause it. A layout change gives the board a WIPE and a new key
-(`docs/runbook-moving-boards.md`, "Changing the flash layout"), so no layout-version field is
-necessary.
+(`docs/runbook-moving-boards.md`, "Changing the flash layout"). So you don't need a layout-version
+field.
 
 ### Append
 
-`meta_append` returns `STORE_ERANGE` for a value over `META_VALUE_MAX` (56 bits). It compacts when
-the active page is full. It returns `STORE_EFLASH` if the compaction or the program fails. Callers
-pass its code through. A failed program still consumes its position, because the double-word may
-be torn.
+`meta_append` returns `STORE_ERANGE` for a value over `META_VALUE_MAX` (56 bits). When the active
+page is full, it compacts. If the compaction or the program fails, it returns `STORE_EFLASH`.
+Callers pass its code through. A failed program still uses up its position, because the
+double-word may be torn.
 
 ```c {#meta-append}
 static int meta_append(uint32_t type, uint64_t value) {
@@ -482,16 +492,18 @@ A cut after each step leaves these pages for the next boot:
 | 3 | not a meta page (no header) | valid, all values |
 | 4 | valid, higher generation | valid, older generation |
 
-A cut at steps 1–3 leaves the current page authoritative, and the next append compacts again. After
-step 4 the maxima over both pages are unchanged.
+A cut at steps 1 to 3 leaves the current page authoritative, and the next append compacts again.
+After step 4, the maxima over both pages don't change.
 
 Step 1 matters because the other page holds the previous generation with a valid header. An erase
 with the header in place let a cut leave the header readable over partially erased records. Boot
 then took maxima from junk. A counter above 2^40 disables the node permanently, because WIPE keeps
-the counter. Step 1 programs zeros over the header, which the flash allows over written data. This
-makes the page invalid before the erase starts. The test model's partial erases leave each
-double-word old, erased or unreadable, never an altered value. So the sweeps exercise the step
-order, but they cannot reproduce the original failure.
+the counter.
+
+Step 1 programs zeros over the header, which the flash allows over written data. That makes the
+page invalid before the erase starts. The test model's partial erases leave each double-word old,
+erased or unreadable, never an altered value. So the sweeps exercise the step order, but they
+can't reproduce the original failure.
 
 ```c {#meta-compact}
 /* Compacts into the other page. It writes that page's header last, so a cut compaction
@@ -514,19 +526,19 @@ static int meta_compact(void) {
 }
 ```
 
-An unreadable header reads as 0 with `bad` set. 0 is not `ERASED`, so step 1 also zeroes an
+An unreadable header reads as 0 with `bad` set. 0 isn't `ERASED`, so step 1 also zeroes an
 unreadable header.
 
 ### Reserve before use
 
 Every caller appends first and changes RAM only after the append succeeds. So RAM never holds a
-value that the next boot would not restore. The error sweep (section 9) found one exception.
+value that the next boot wouldn't restore. The error sweep (section 9) found one exception.
 `store_note_abandoned` raised `abandoned_total` before the append. A failed program then made the
 reported total fall after the next reboot. The fix has a regression test,
 `test_bug_failed_abandon_note_lowers_total_after_reboot`.
 
-**Epoch.** `store_next_epoch` reserves one epoch per boot, before sampling. The observation
-identity is (epoch, sequence). The function returns `STORE_EEXHAUSTED` one below
+**Epoch.** `store_next_epoch` reserves one epoch per boot, before the node takes any samples. The
+observation identity is (epoch, sequence). The function returns `STORE_EEXHAUSTED` one below
 `STORE_EPOCH_RESERVED` (`UINT32_MAX`, `node_store.h`). That reserved epoch is `STORM_EPOCH`. The
 bench flash storm test (`TEST-FLASH-STORM`) writes its records under it, and the boot scrub
 acknowledges them.
@@ -544,8 +556,8 @@ int store_next_epoch(uint32_t *epoch) {
 }
 ```
 
-**Epoch floor.** After a WIPE the gateway supplies a floor above every epoch that it has stored for
-the station. `store_epoch_floor` accepts a floor at or below the current epoch and changes nothing.
+**Epoch floor.** After a WIPE, the gateway sends a floor above every epoch that it stored for the
+station. `store_epoch_floor` accepts a floor at or below the current epoch and changes nothing.
 
 ```c {#epoch-floor}
 /* After a WIPE, the gateway supplies a floor above every epoch it has stored. New observation
@@ -574,12 +586,13 @@ int store_note_abandoned(void) {
 uint32_t store_abandoned_total(void) { return abandoned_total; }
 ```
 
-**Rain setting.** The rain gauge is a bare switch, so the station cannot detect it (WSMP-P1). The
+**Rain setting.** The rain gauge is a bare switch, so the station can't detect it (WSMP-P1). The
 operator turns the rain module on and off with a console command, and the node keeps the setting.
+
 The meta log keeps only maxima, so the setting is a rising value whose bit 0 is "on". A change
 writes the next value, which has the other parity. Recovery takes the highest value, which is the
-last one written. A cut write leaves the old value or the new one, never another. The same setting
-again writes nothing.
+last one written. A cut write leaves the old value or the new one, never another. Setting the same
+value again writes nothing.
 
 ```c {#rain}
 int store_rain_set(int on) {
@@ -596,10 +609,12 @@ int store_rain_enabled(void) { return (int)(rain_setting & 1U); }
 
 **Counter.** One record per transmission would fill a meta page every 255 frames. So the log
 reserves blocks of `CTR_BLOCK` (256), and `store_next_counter` returns counters from RAM within the
-block. A reset discards the rest of the block, because init starts at `ctr_reserved + 1`. The loss
-is at most 255 of 2^40 counters. The frame header carries 40 bits (`WS_COUNTER_MAX`). Past that
-limit the function returns `STORE_EEXHAUSTED` permanently and does not truncate. A failed
-reservation returns its error and no counter.
+block. A reset throws away the rest of the block, because init starts at `ctr_reserved + 1`. The
+loss is at most 255 of 2^40 counters.
+
+The frame header carries 40 bits (`WS_COUNTER_MAX`). Past that limit, the function returns
+`STORE_EEXHAUSTED` permanently and doesn't truncate. A failed reservation returns its error and no
+counter.
 
 ```mermaid
 flowchart TD
@@ -634,8 +649,9 @@ int store_next_counter(uint64_t *counter) {
 
 ### Format
 
-Pages 95–124 form a ring of `WS_JOURNAL_PAGES` pages. The host sweeps build the ring with 3 pages
-so that it wraps. Each page has an 8-byte header followed by fixed-size slots. In the default build
+Pages 95 to 124 form a ring of `WS_JOURNAL_PAGES` pages. The wrapping host sweeps (the `small` and
+`wide` builds) use a 3-page ring so that it wraps. The `full` sweeps run on the 30-page ring
+without a wrap. Each page has an 8-byte header and then fixed-size slots. In the default build
 (the version 6 node field set, `WS_F_WSMP_BENCH`: a 77-byte plaintext at most) a 2048-byte page
 holds 21 slots of 96 bytes and leaves 24 bytes unused:
 
@@ -676,17 +692,21 @@ packet-beta
 704-767: "ACK_POS 11: erased = pending, 0 = acknowledged"
 ```
 
-The plaintext takes `JOURNAL_PLAIN_DW` double-words, zero-padded. The slot size follows the build's
-field set (`node_fields.h`): its widest record, `WS_OBS_PLAIN_MAX`, not the whole catalog. A shorter
-record of the same build sits zero-padded in the same slot. The board's ring keeps at least 9.5 hours of the
-build's widest record (the check below), which caps a node build at 80 bytes of plaintext (a 96-byte
-slot, 21 slots a page, 29 x 21 = 609 records, about 10.1 hours; a 96-byte frame). Every catalog v2 field together
-is 94 bytes, a 112-byte slot and only 18 slots a page (522 records, 8.7 hours): the RX bridge and
-the gateway accept such a record, but no node build sends one. The host tests build that geometry
-too, with a shrunken ring. The low byte of the header magic is the slot
-size. So a page written with another slot size reads as "not a journal page". The low 32 bits of
-the header are the page sequence. Each newly opened page gets the next sequence. The head is the
-page with the highest sequence.
+The plaintext takes `JOURNAL_PLAIN_DW` double-words, zero-padded. The slot size follows the widest
+record of the build's field set (`node_fields.h`, `WS_OBS_PLAIN_MAX`), not the whole catalog. A
+shorter record of the same build sits zero-padded in the same slot.
+
+The board's ring keeps at least 9.5 hours of the build's widest record (the check below). That caps
+a node build at 80 bytes of plaintext, which is a 96-byte frame. At that size you get a 96-byte
+slot and 21 slots a page. That's 29 x 21 = 609 records, about 10.1 hours.
+
+All the catalog v2 fields together come to 94 bytes. That needs a 112-byte slot, with only 18
+slots a page (522 records, 8.7 hours). The RX bridge and the gateway accept such a record, but no
+node build sends one. The host tests build that geometry too, with a smaller ring.
+
+The low byte of the header magic is the slot size. So a page written with another slot size reads
+as "not a journal page". The low 32 bits of the header are the page sequence. Each newly opened
+page gets the next sequence. The head is the page with the highest sequence.
 
 ```c {#journal-constants}
 #define JPG_MAGIC  (0x57534A00UL | JOURNAL_SLOT_BYTES) /* "WSJ" + slot size: another layout is ignored */
@@ -742,8 +762,8 @@ stateDiagram-v2
     Burned --> Erased: page opened again
 ```
 
-The journal never reuses a burned slot before its page is erased. Boot classifies each slot from
-flash:
+The journal never reuses a burned slot until it erases that slot's page. Boot sorts each slot into
+a state from what it reads in flash:
 
 | Data and commit | ACK double-word | Boot state |
 |---|---|---|
@@ -756,9 +776,12 @@ The commit word holds the slot magic and a CRC-16 (cyclic redundancy check) of t
 compares its upper 32 bits with `slot_commit_word(plain) >> 32`. A partial page erase can leave a
 commit word over data that did not survive, or the reverse. The CRC catches that case.
 
-An unreadable ACK double-word counts as acknowledged. The ACK program starts only after the
-gateway's authenticated ACK arrived, so the gateway already stored the record. A pending state
-would make the node send the record again.
+An unreadable ACK double-word counts as acknowledged. The node programs the ACK double-word only
+when it's done with a record. That happens after the gateway's authenticated ACK, after an
+authenticated NACK, when the strike policy abandons the record, on a scrub, or in the bench storm
+test. In every one of those cases you don't want a resend, and a pending state would make the
+node send the record again. So "acknowledged" is the right reading. But it doesn't always mean the gateway stored the
+record: after a strike or a scrub, it may never have.
 
 ```c {#crc}
 #define CRC16_INIT 0xFFFFU   /* CRC-16/CCITT-FALSE */
@@ -780,15 +803,15 @@ static uint64_t slot_commit_word(const uint8_t plain[WS_OBS_PLAIN_MAX]) {
 }
 ```
 
-The Makefile builds `node_store.c` with `-fno-optimize-crc`. Without it GCC 15 replaces this loop
+The Makefile builds `node_store.c` with `-fno-optimize-crc`. Without it, GCC 15 replaces this loop
 and `ws_crc8` with 768 B of lookup tables, for code that runs a few times a minute.
 
 ### RAM state
 
 Boot rebuilds the RAM state from flash. It holds `page_seq[p]` (0 means not a journal page), one
 pending bit per slot of the ring, and the head position. `n_lost` and `n_burned` count since boot.
-The persisted lost total is `lost_total` in the meta log. A `jref_t` (page, slot) names a slot.
-Only this file creates them, and the public functions that take one check its range.
+The lost total that survives a reboot is `lost_total` in the meta log. A `jref_t` (page, slot)
+names a slot. Only this file creates them, and the public functions that take one check its range.
 
 ```c {#journal-state}
 /* ---- journal ---- */
@@ -824,9 +847,9 @@ flowchart TD
     C -- ok --> SP["set the pending bit, add 1 to n_pending, STORE_OK"]
 ```
 
-The append consumes the slot before any program. A failed program therefore leaves a burned slot,
-which the journal never reuses. The append needs `meta_ready`, because opening a page can persist
-the lost total.
+The append uses up the slot before any program. So a failed program leaves a burned slot, and the
+journal never reuses it. The append needs `meta_ready`, because opening a page can write the lost
+total to the meta log.
 
 ```c {#journal-append}
 int store_journal_append(const uint8_t plain[WS_OBS_PLAIN_MAX], jref_t *ref) {
@@ -867,12 +890,14 @@ flowchart TD
 
 The caller passes the sequence: the previous head's sequence + 1, or 1 for the first page.
 
-A cut between steps 2 and 4 over-counts. The records remain, and the total already includes them.
-The sweep records this as `note_lost_back`, because over-counting is allowed. A cut during steps
-4–5 leaves a page with its old header and some old slots, or with no readable header. Boot repairs
-it (next section). The error sweep found that the step-2 failure path was missing. The code ignored
-a failed `meta_append(META_LOST)` and erased the page. It lost records that the total never
-counted. The regression test is `test_bug_failed_lost_persist_still_erases_page`.
+A cut between steps 2 and 4 over-counts. The records stay, and the total already includes them.
+The sweep logs this as `note_lost_back`, because the guarantees let the total over-count. A cut
+during steps 4 to 5 leaves a page with its old header and some old slots, or with no readable
+header. Boot repairs it (next section).
+
+The error sweep found that the step-2 failure path was missing. The code ignored a failed
+`meta_append(META_LOST)` and erased the page anyway. It lost records that the total never counted.
+The regression test is `test_bug_failed_lost_persist_still_erases_page`.
 
 ```c {#journal-new-page}
 static int journal_new_page(uint32_t page, uint32_t seq) {
@@ -908,7 +933,7 @@ static int journal_advance_if_full(void) {
 ### Boot
 
 `journal_find_head` reads every page header. The head is the page with the highest sequence, or
-the later page on a tie. A page with an unreadable or foreign header is not a journal page.
+the later page on a tie. A page with an unreadable or foreign header isn't a journal page.
 
 ```c {#journal-find-head}
 /* Reads every page header into page_seq (0: not a journal page) and points head at the
@@ -924,8 +949,9 @@ static int journal_find_head(void) {
 }
 ```
 
-`journal_scan_slot` classifies one slot (table above). `journal_scan_page` returns one past the
-last slot that is not blank. On the head page the next append goes there, after any burned slot.
+`journal_scan_slot` sorts one slot into a state (table above). `journal_scan_page` returns one past
+the last slot that isn't blank. On the head page, the next append goes there, after any burned
+slot.
 
 ```c {#journal-scan-slot}
 /* Boot scan of one slot. Returns 0 if the slot is blank, else 1. It counts a slot with torn or
@@ -965,12 +991,13 @@ flowchart TD
 ```
 
 The last step fixes the first bug that the power-cut sweep found. Its regression test is
-`test_bug_interrupted_recycle_resurrects_acked_record`. If the head page is full, a cut may have
-stopped the recycle of the next page during its erase. That cut can erase an ACK double-word while
-the data and the commit word of the record survive. The slot then reads as pending, and the node
-sends an acknowledged record again. So init finishes the recycle (`journal_advance_if_full`) before
-it trusts that page. If the head is not full, the next page was never recycled, so its slots are as
-written.
+`test_bug_interrupted_recycle_resurrects_acked_record`.
+
+If the head page is full, a cut can stop the recycle of the next page during its erase. That cut
+can erase an ACK double-word while the data and the commit word of the record survive. The slot
+then reads as pending, and the node sends an acknowledged record again. So init finishes
+the recycle (`journal_advance_if_full`) before it trusts that page. If the head isn't full, the
+next page never started a recycle, so its slots are as the node wrote them.
 
 ```c {#journal-init}
 int store_journal_init(void) {
@@ -1018,7 +1045,7 @@ int store_journal_read(jref_t ref, uint8_t plain[WS_OBS_PLAIN_MAX]) {
 `store_journal_ack` programs zero into the ACK double-word, then clears the pending bit. If the
 program fails, the record stays pending and the node sends it again. The gateway removes the
 duplicate. If the function cleared the bit first, RAM could drop a record that flash still holds
-as pending. The next boot would then send it anyway. An ACK for a slot that is not pending returns
+as pending. The next boot would then send it anyway. An ACK for a slot that isn't pending returns
 0 and writes nothing.
 
 ```c {#journal-ack}
@@ -1092,7 +1119,7 @@ int store_journal_find(uint32_t epoch, uint32_t seq, jref_t *ref) {
 `store_journal_scrub` acknowledges every pending record of one epoch. Boot calls it with
 `STORM_EPOCH` to drop the records of the bench storm test. Each match moves `i` past its slot, and
 the search finds no slot at or past `JOURNAL_CAPACITY`. So the loop runs at most `JOURNAL_CAPACITY`
-times. This satisfies rule 2 of the Power of Ten coding rules (`docs/power-of-ten.md`).
+times. That meets rule 2 of the Power of Ten coding rules (`docs/power-of-ten.md`).
 `tools/loop_bounds.py` reads the `bound:` comment.
 
 ```c {#journal-scrub}
@@ -1111,7 +1138,7 @@ uint32_t store_journal_scrub(uint32_t marker)
 ```
 
 The console, `#sample` and the health report (DIAG) read these accessors. Only the lost total
-persists across boots.
+survives a reboot.
 
 ```c {#accessors}
 uint32_t store_journal_pending(void) { return n_pending; }
@@ -1124,10 +1151,12 @@ uint64_t store_counter_next(void) { return ctr_next; }
 ## 7. WIPE
 
 `store_wipe` erases the journal and the provisioning record. It never erases the meta log. So the
-counter, the epoch and the totals keep rising for the life of the board. The first version erased
-both meta pages, which restarted the counter at 1. A new PROVISION command with the same key then
-repeated nonces. A key first used under this firmware can follow the board across WIPEs. A key used
-under older firmware, or on another board, cannot (`docs/runbook-moving-boards.md`).
+counter, the epoch and the totals keep rising for the life of the board.
+
+The first version erased both meta pages, which restarted the counter at 1. A new PROVISION command
+with the same key then repeated nonces. A key first used under this firmware can follow the board
+across WIPEs. A key used under older firmware, or on another board, can't
+(`docs/runbook-moving-boards.md`).
 
 ```mermaid
 flowchart TD
@@ -1138,13 +1167,16 @@ flowchart TD
 ```
 
 `store_wipe` tries every journal page, even after a failure. It erases the provisioning page last.
-The board is unprovisioned only from that erase on. The first version erased the provisioning page
-first. A cut after that erase left an unprovisioned board with pending records. Those records went
-out under the identity of the next PROVISION. The regression test is
-`test_bug_interrupted_wipe_leaves_journal_on_unprovisioned_board`. Now a failed journal erase keeps
-the record, so the board stays provisioned. The operator does not see `#wipe ok` and runs WIPE
-again. An interrupted WIPE can leave acknowledged records pending again
-(`note_acked_back_after_interrupted_wipe`). WIPE makes no promise until it reports success.
+The board loses its provisioning only at that erase.
+
+The first version erased the provisioning page first. A cut after that erase left an unprovisioned
+board with pending records. Those records went out under the identity of the next PROVISION. The
+regression test is `test_bug_interrupted_wipe_leaves_journal_on_unprovisioned_board`.
+
+Now a failed journal erase keeps the provisioning record, so the board stays provisioned. The
+operator doesn't see `#wipe ok` and runs WIPE again. An interrupted WIPE can leave acknowledged
+records pending again (`note_acked_back_after_interrupted_wipe`). WIPE makes no promise until it
+reports success.
 
 ```c {#wipe}
 /* WIPE erases the key and the journal but never the meta log: the counter (the AES-CCM

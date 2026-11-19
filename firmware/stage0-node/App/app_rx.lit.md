@@ -80,9 +80,12 @@ Each diagnostic line starts with `#`. A forwarded frame is the only line without
 
 ## 3. Radio callbacks (interrupt context)
 
-ST's SubGHz_Phy driver calls five callbacks from the radio interrupt. ST names them RxDone,
-RxError, RxTimeout, TxDone and TxTimeout. The callbacks copy what they need, count, and post an
-event bit. They print nothing. The main-loop task `process` (section 4) does the rest.
+ST's SubGHz_Phy driver calls callbacks from the radio interrupt. This file registers five of them
+(`app_rx.c:332-336`): RxDone, RxError, RxTimeout, TxDone and TxTimeout. The driver also has CadDone
+and FhssChangeChannel, which this receiver doesn't use.
+
+The callbacks copy what they need, count, and post an event bit. They don't print anything. The
+main-loop task `process` (section 4) does the rest.
 
 | Callback | Radio event | Event bit | Counts as a radio event |
 |---|---|---|---|
@@ -92,8 +95,8 @@ event bit. They print nothing. The main-loop task `process` (section 4) does the
 | `on_tx_done` | the ACK left the radio | `EV_TX_DONE` | no |
 | `on_tx_timeout` | the driver's transmit timer expired | `EV_TX_TIMEOUT` | no |
 
-A radio event sets `last_radio_event_ms` and clears `quiet_relistens` (section 6). A transmission is
-not a radio event, because it proves nothing about the receiver
+A radio event sets `last_radio_event_ms` and clears `quiet_relistens` (section 6). A transmission
+isn't a radio event, because it proves nothing about the receiver
 (`test_a_transmission_is_not_a_radio_event`).
 
 ### The path of a received packet
@@ -195,7 +198,7 @@ static void post(uint32_t ev) { events_post(&pending_ev, ev); }
 
 Each failure kind has one capture slot. `bad_frame` holds a CRC failure, and `hdr_rssi` holds a
 header failure. A slot stays full until `process` takes it. A failure that arrives while its slot
-is full adds 1 to `n_crc` or `n_hdr` and to `n_fault_overrun`. The callback does not capture it
+is full adds 1 to `n_crc` or `n_hdr` and to `n_fault_overrun`. The callback doesn't capture it
 (`test_failures_before_the_main_loop_runs_are_counted`).
 
 ```c {#crc-capture-state}
@@ -214,7 +217,7 @@ calls RxError in the same interrupt. `ws_radio_take_crc_error` (`App/radio_cfg.c
 the HAL's CRC flag. The RxDone branch of the diagram above shows the order of operations.
 
 A replaced frame is usually real data loss. It may also be a frame that `forward` would have
-dropped, since the air-frame check comes later; `n_frames_lost` counts both. `process` reports it
+dropped, since the air-frame check comes later. `n_frames_lost` counts both. `process` reports it
 at once with `#rx frame-lost`
 (`test_a_frame_replaced_before_forwarding_is_counted`).
 
@@ -310,8 +313,10 @@ static void on_tx_timeout(void) { post(EV_TX_TIMEOUT); }
 ### Taking the events
 
 `take_events` reads and clears `pending_ev`. It copies the frame and the CRC capture into `got`. It
-does all of this with interrupts masked. Without the mask, a second RxDone could overwrite
-`rx_frame` while `forward` prints it. With the mask, the second frame waits for the next pass.
+does all of this with interrupts masked. `forward` prints the copy in `got`, not `rx_frame`. The
+mask makes sure a second RxDone can't overwrite `rx_frame` halfway through the copy. With the
+mask, the second frame waits for the next pass.
+
 `got` is static because it holds two 255-byte frames.
 
 ```c {#take-events}
@@ -418,7 +423,7 @@ and one of two kinds:
 | refused | `n_dropped` | red | `#rx drop` |
 | accepted | `n_forwarded` if `hex_print` queued the line, `n_diag` for a health report | blue | hex, then `#rx obs` |
 
-`hex_print` returns 0 when the console queue was full and dropped the line. The bridge does not
+`hex_print` returns 0 when the console queue was full and dropped the line. The bridge doesn't
 count that frame as forwarded (`test_forwarded_counts_only_frames_that_reached_the_host`).
 
 ```c {#forward}
@@ -782,8 +787,8 @@ flowchart TD
 
 The console comes first because it carries the ACK downlink. A stalled console output stops frames
 and `#alive` alike. A stall is a trace transfer by direct memory access (DMA) that started and
-never finished. Each self-repair gets one attempt. A check that passes clears its retry count, so a
-later fault gets a new attempt.
+never finished. Each self-repair gets one try. A check that passes clears its retry count, so a
+later fault gets a new try.
 
 | Test | Rule |
 |---|---|
@@ -831,7 +836,7 @@ int watchdog_healthy(void)
 5. It registers the process task.
 6. `console_init`.
 7. `watchdog_start`, then `fault_boot_note` counts the boot in backup register DR12 (zeroed first
-   when the reset cause is power-on; `fault.h`).
+   when the reset cause is power-on, see `fault.h`).
 8. It prints `#boot` and calls `fault_report`.
 9. It starts the 1-minute alive timer.
 10. `listen`, `stackmon_seed`.
@@ -948,10 +953,10 @@ callbacks, the radio helpers, the process task and its steps, the console handle
 ## 10. Tests
 
 `tests/test_rx_machine.py` compiles `app_rx.c`, `App/console.c` and the shared modules unchanged
-against `firmware/host/rx_harness.c`. The harness models ST's SubGHz_Phy in continuous receive.
-In that model, a CRC failure is RxDone with the HAL's CRC flag, then RxError. A header failure is
-RxTimeout. The harness also models the console UART, the 2 KB trace FIFO at 115200 baud, and the
-watchdog's 1 s check and 8 s IWDG. The tests check the bridge through its console output and its
+against `firmware/host/rx_harness.c`. `rx_harness.c` models ST's SubGHz_Phy in continuous
+receive. In that model, a CRC failure shows up as RxDone with the HAL's CRC flag, then RxError. A
+header failure shows up as RxTimeout. `rx_harness.c` also models the console UART, the 2 KB trace
+FIFO at 115200 baud, and the watchdog's 1 s check and 8 s IWDG. The tests check the bridge through its console output and its
 radio calls.
 
 | Group | Tests |

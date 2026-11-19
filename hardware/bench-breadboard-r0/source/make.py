@@ -431,10 +431,11 @@ def change_rows(w, jumpers, baseline):
     """The 'Changes from the previous revision' section: by net and ends, never by W-number."""
     removed, added = changes(connections(w, jumpers), baseline['connections'])
     return ['', f'## Changes from the previous revision ({baseline["revision"]})', '',
-            'To rebuild the bench from the previous sheet: first take out everything under **Remove**, then fit '
-            'everything under **Add**. Each end is a hole, a NUCLEO pin, a joint position or a part terminal; '
-            'the part pins on a hole\'s strip follow it in brackets. W-numbers change on every regeneration, so '
-            f'this list never uses them. Parts that moved are in section 1. The previous revision is '
+            'To rebuild the bench from the previous sheet, first remove everything under **Remove**, then fit '
+            'everything under **Add**. Each end is a hole, a NUCLEO pin, a joint position or a part terminal. '
+            'If part pins share a hole\'s strip, they follow the hole in brackets. The planner numbers the jumpers '
+            'by stage and position, so their W-numbers shift whenever the model\'s jumpers change, and this list '
+            f'never uses them. Parts that moved are in section 1. The previous revision is '
             f'{_baseline_source(baseline)}.',
             *_change_table('Remove', removed), *_change_table('Add', added)]
 
@@ -522,20 +523,21 @@ def cut_list(jumpers):
 def jumper_rows(w, jumpers):
     colours = ', '.join(f'{c} {name}' for c, name in wiring.NET_CLASSES.items())
     oled = ', '.join(nucleo_jumpers(jumpers, OLED_NETS))
-    dupont = (f' One exception: the OLED\'s signal jumpers from board C to CN10 ({oled}) are female-to-male Dupont '
-              'jumpers of about 30 cm on the morpho\'s male pins, bench OLED only (record N3; the OLED wires bench '
-              'check).') if oled else ''
+    dupont = (f' The exception is the OLED\'s signal jumpers from board C to CN10 ({oled}). They\'re female-to-male '
+              'Dupont jumpers of about 30 cm on the morpho\'s male pins, for the bench OLED only (record N3 and the '
+              '"OLED wires" bench check).') if oled else ''
     morpho = ', '.join(f'{j.id} ({j.net}, {h[1]}.{h[2]})' for j, h in morpho_signals(jumpers))
     if morpho:
-        dupont += (f' Another: the station signals still on the morpho\'s male pins ({morpho}) are female-to-male Dupont '
-                   'jumpers too, the female end on the pin: a solid wire cannot be pushed onto a male pin. A later '
-                   'revision moves them to the ARDUINO female headers as solid 22 AWG (record 4.5, change B; the '
-                   'morpho signal pins bench check).')
-    out = ['', '## 2. Jumpers', '', f'Each jumper is one wire between the two holes: pre-cut solid 22 AWG laid flat '
-           f'(record H3).{dupont} Length is the kit jumper to use (kit_length() in make.py: the BOJACK kit\'s 14 sizes, '
-           f'the next size up for a diagonal); an ARDUINO-header jumper is cut to fit once the base plate fixes '
-           f'where the NUCLEO sits (record H7: at most 200 mm). Colour by class: {colours}. A link is a jumper '
-           f'the model names by a stable id.']
+        dupont += (f' Also, the station signals still on the morpho\'s male pins ({morpho}) are female-to-male Dupont '
+                   'jumpers too, with the female end on the pin. You can\'t push a solid wire onto a male pin. A later '
+                   'revision moves them to the ARDUINO female headers as solid 22 AWG (record 4.5, change B, and the '
+                   '"Morpho signal pins" bench check).')
+    out = ['', '## 2. Jumpers', '', f'Each jumper is one pre-cut wire of solid 22 AWG between its two holes, laid '
+           f'flat (record H3).{dupont}', '',
+           'The Length column gives the kit jumper to use. `kit_length()` in make.py picks from the BOJACK kit\'s 14 '
+           'sizes and takes the next size up for a diagonal. You cut an ARDUINO-header jumper to fit once the base '
+           f'plate fixes where the NUCLEO sits (record H7: at most 200 mm). Colour by class: {colours}. A link is a '
+           f'jumper that the model names by a stable id.']
     stage = None
     for j in jumpers:
         s = wiring.jumper_stage(j)[0]
@@ -577,12 +579,14 @@ def lead_rows(w):
     if not w.leads:
         return []
     out = ['', '## 3. Leads', '',
-           'Wires off the breadboard (record D2). A force lead ends in a lever clamp, a screw terminal or a JST '
-           'socket; only sense leads, the OLED\'s supply pair and the P1 regulator chain (record P1) end in a '
-           'breadboard hole or on a NUCLEO pin. Stranded ends go into a lever clamp stripped and twisted, the '
-           'screw terminals take solid 22 AWG only (record P7). Cut each lead to its length or shorter: every '
-           'span of the battery path counts (section 5, check 7). An `insulated` end is folded back under '
-           'heat-shrink.', '',
+           'Leads are the wires off the breadboard (record D2). Only sense leads, the OLED\'s supply pair and the '
+           'P1 regulator chain (record P1) end in a breadboard hole or on a NUCLEO pin. No other force lead does. '
+           'The battery-path force leads end in a lever clamp, the INA228\'s X1 screw terminal or a JST PH socket. '
+           'The adapter cable goes into the charger\'s USB-C, the load\'s own leads end at the resistor, and '
+           'L_SYSOUT_NEG has an insulated free end.', '',
+           'Strip and twist a stranded end before it goes into a lever clamp. The screw terminals take solid '
+           '22 AWG only (record P7). Cut each lead to its length or shorter, because every span of the battery '
+           'path counts (section 5, check 7). Fold an `insulated` end back under heat-shrink.', '',
            '| Lead | Role | Wire | Length | Max mA | From | To | Net | Segment | Exception | Note |',
            '|---|---|---|---|---|---|---|---|---|---|---|']
     for k in w.leads:
@@ -606,8 +610,9 @@ def joint_rows(w):
     if not w.joints:
         return []
     out = ['', '## 4. Joints', '',
-           'Lever connectors off the breadboard, glued in a row beside board B (record P3-P7, H1). A joint is '
-           'one node. One lead end per position; close every lever and pull-test each lead by hand.', '',
+           'Joints are the lever connectors off the breadboard. They sit in a row beside board B, glued down '
+           '(record P3-P7, H1). Each joint is one node. Put one lead end in each position. Close every lever, '
+           'then tug each lead by hand to test it.', '',
            '| Joint | Kind | Net | Positions | Note |', '|---|---|---|---|---|']
     for joint in w.joints.values():
         nets = ', '.join(n for n, ms in w.nets.items() if f'J:{joint.id}' in ms)
@@ -625,9 +630,9 @@ def path_rows(w):
     """Section 5: each M6 segment with its P8 budget, the implied drops and blank measured columns."""
     by_id = {k.id: k for k in w.leads}
     out = ['', '## 5. Power path', '',
-           'The battery-path segments (record M6) and their budgets at 1 A (record P8). At 1 A (C12-C14) fill '
-           'the measured columns: mOhm = the meter\'s mV / the INA228 current in A. The lead copper is estimated '
-           'from each lead\'s gauge and length.', '',
+           'Each battery-path segment (record M6) has a budget at 1 A (record P8). When you run C12-C14 at 1 A, '
+           'fill the measured columns: mOhm = the meter\'s mV / the INA228 current in A. The lead copper '
+           'column is an estimate from each lead\'s gauge and length.', '',
            '| Segment | Steps | Budget mOhm | Implied mV at 38 mA | Implied mV at 1 A | Lead copper mOhm | '
            'Measured mV | I (A) | mOhm |', '|---|---|---|---|---|---|---|---|---|']
     for seg, route in checks.power_path_segments(w).items():
@@ -682,13 +687,14 @@ def checklist_rows():
     mode_a = [r for r in checklist.CHECKS if r['mode'] == 'A']
     mode_b = [r for r in checklist.CHECKS if r['mode'] == 'B']
     return ['', '## 6. Pre-run checklist (C1-C23)', '',
-            f'Meter: {checklist.METER}, read directly (record 7.1 Q2). Back-probe the pack plug by sliding the probe '
-            'tip along the wire into the back of the housing; never pull the plug to probe it. The 1 A limits are '
+            f'Meter: {checklist.METER}, read directly (record 7.1 Q2). To back-probe the pack plug, slide the probe '
+            'tip along the wire into the back of the housing, and never pull the plug to probe it. The 1 A limits are '
             'in mOhm: the mV limit is the mOhm figure times the INA228 current in A (0.8-1.0 A). Every reading '
-            'goes into the run\'s preflight block (record D6, `tools/preflight.py`). When a span fails, measure '
+            'goes into the run\'s preflight block (record D6, `tools/preflight.py`). If a span fails, measure it '
             'joint by joint (C14) to find the bad one.', '', '### Mode A', '', *_check_table(mode_a), '',
-            '### Mode B', '', 'The station running from the regulator (section 7: NUCLEO USB unplugged, SHUNT fitted, '
-            '100 ohm load out, OLED VCC lead unplugged), the meter on min/max across at least 5 radio TX bursts.',
+            '### Mode B', '', 'Run these with the station on the regulator (section 7: NUCLEO USB unplugged, SHUNT '
+            'fitted, 100 ohm load out, OLED VCC lead unplugged). Keep the meter on min/max across at least 5 radio '
+            'TX bursts.',
             '', *_check_table(mode_b), '',
             f'Before every mode-A run: {", ".join(checklist.REQUIRED_MODE_A)}. Before every mode-B run: '
             f'{", ".join(checklist.REQUIRED_MODE_B)}. After every rewire and at every step exit (1 A charge): '
@@ -702,13 +708,13 @@ def mode_rows(w):
     oled = next((k.id for k in w.leads if k.role == 'supply' and 'N:CN7.16' in (k.a, k.b)), 'the OLED VCC lead')
     ret = next((k.id for k in w.leads if 'N:CN6.7' in (k.a, k.b)), 'the CN6.7 lead')
     return ['', '## 7. Mode A and mode B', '',
-            'Mode A (daily, the NUCLEO on USB) is drawn: the BATTERY POWER shunt open, the 100 ohm load fitted, the '
-            'OLED on its own supply pair. A mode change never touches ground.', '',
+            'The drawings show mode A, the daily setup with the NUCLEO on USB. In mode A the BATTERY POWER shunt is '
+            'open, the 100 ohm load is fitted and the OLED is on its own supply pair. A mode change never touches ground.', '',
             '**Mode A to B:**', '', '1. Unplug the NUCLEO\'s USB.',
-            f'2. Open the load\'s two levers ({" and ".join(levers) or "OUT and STAR"}) and take the 100 ohm load out.',
+            f'2. Open the load\'s two levers ({" and ".join(levers) or "OUT and STAR"}) and remove the 100 ohm load.',
             f'3. Unplug the OLED\'s VCC lead ({oled}) from CN7.16.', '4. Fit the BATTERY POWER shunt (SHUNT).', '',
-            '**Mode B to A:** the reverse, the shunt out before the USB goes in.', '',
-            '1. Take the BATTERY POWER shunt out.', f'2. Plug the OLED\'s VCC lead ({oled}) back into CN7.16.',
+            '**Mode B to A:** the reverse, with the shunt out before the USB goes in.', '',
+            '1. Remove the BATTERY POWER shunt.', f'2. Plug the OLED\'s VCC lead ({oled}) back into CN7.16.',
             '3. Refit the 100 ohm load and close its two levers.', '4. Plug the NUCLEO\'s USB in.', '',
             f'The TIE ({checks.TIE}) and the CN6.7 lead ({ret}) never move.']
 
@@ -718,11 +724,12 @@ def mode_rows(w):
 # Record 4.4 step 3, P3 and 1.4: the charger's solder jumpers, checked at step 1 (not first at step 1b's B1),
 # because EN2 low would hold the USB-C input to 100 or 500 mA and C12-C18 would never see the 1 A charge.
 CHARGER_JUMPERS = (
-    '- **Charger jumpers** (record 4.4 step 3, P3, 1.4; charger unpowered, pack unplugged): on the #4755 the 1A '
-    'solder jumper is closed and the 0.5A and 1.5A solder jumpers are open: never the 1.5A setting on this pack. '
-    'Record which way EN1 (SJ2) and EN2 (SJ1) are set: expected **EN2 = 1, EN1 = 0** (the R_ILIM input limit, no '
-    'VIN-DPM; SLUS810 table 7-2). EN2 low holds the USB-C input to the 100 or 500 mA VIN-DPM modes, so C12-C18 '
-    'and power check 7 never see the 0.8-1.0 A charge: stop and record it. EN1 = EN2 = 1 is standby, no charge.')
+    '- **Charger jumpers** (record 4.4 step 3, P3, 1.4), with the charger unpowered and the pack unplugged: on the '
+    '#4755 the 1A solder jumper is closed and the 0.5A and 1.5A solder jumpers are open. On this pack it\'s '
+    'never the 1.5A setting. Record which way EN1 (SJ2) and EN2 (SJ1) are set, and expect '
+    '**EN2 = 1, EN1 = 0** (the R_ILIM input limit, no VIN-DPM, SLUS810 table 7-2). If EN2 is low, stop and record '
+    'it. EN2 low holds the USB-C input to the 100 or 500 mA VIN-DPM modes, so C12-C18 and power check 7 never see '
+    'the 0.8-1.0 A charge. EN1 = EN2 = 1 is standby, with no charge.')
 
 
 def bench_rows(w, jumpers):
@@ -735,20 +742,23 @@ def bench_rows(w, jumpers):
     return out + [
         CHARGER_JUMPERS,
         '- **BOB-14021 preparation** (module preparation, record H5, 7.1 Q6): the BOB-14021 comes as a panel of '
-        'two boards; separate it into its two boards first (BOBW for the wind cable, BOBR for the rain cable). '
+        'two boards. Separate it into its two boards first (BOBW for the wind cable, BOBR for the rain cable). '
         'Then solder one PRT-00132 jack and one 6-pin header onto each board before it goes into the breadboard. '
-        'Then the per-conductor continuity '
-        'check, the Fluke 87V on continuity, the meter\'s cable plugged into the jack: BOBW pins 3 and 4 close and '
-        'open as the cups turn, pins 2 and 5 read a resistance that changes with the vane\'s position; BOBR pins 3 '
-        'and 4 close as the bucket tips; pins 1 and 6 read open to every other pin. The meter cables are never cut.',
-        f'- **3V3, not 5 V:** {to_3v3} goes to CN6.4 (3V3). On the Arduino power header the next pin, '
-        'CN6.5, is 5 V: check the hole against UM2592 Table 17 before you push the wire in.',
-        f'- **NO 5V tape** (record N3): Kapton labelled "NO 5V" over {", ".join(NO_5V[:2])} (sockets) and '
+        'Then do the per-conductor continuity check with the Fluke 87V on continuity and the meter\'s cable '
+        'plugged into the jack:\n'
+        '  - BOBW pins 3 and 4 close and open as the cups turn.\n'
+        '  - BOBW pins 2 and 5 read a resistance that changes with the vane\'s position.\n'
+        '  - BOBR pins 3 and 4 close as the bucket tips.\n'
+        '  - Pins 1 and 6 read open to every other pin.\n'
+        '  - Never cut the meter cables.',
+        f'- **3V3, not 5 V:** {to_3v3} goes to CN6.4 (3V3). The next pin on the Arduino power header, '
+        'CN6.5, is 5 V. Check the hole against UM2592 Table 17 before you push the wire in.',
+        f'- **NO 5V tape** (record N3): put Kapton labelled "NO 5V" over {", ".join(NO_5V[:2])} (sockets) and '
         f'{", ".join(NO_5V[2:])} (pins). CN6.2 (IOREF) and CN5.8 (AVDD) stay empty.',
         '- **Rails:** some 830-point boards split each rail at the centre. If yours do, set '
-        '`split_rails = true` in `source/wiring.toml` and regenerate: the plan then bridges the halves.',
+        '`split_rails = true` in `source/wiring.toml` and regenerate. The plan then bridges the halves.',
         '- **NUCLEO headers:** the positions follow the wiring guide. Tick its section 6 checklist '
-        'against UM2592 first. The drawing of the headers is not to scale.',
+        'against UM2592 first. The drawing of the headers isn\'t to scale.',
         *arduino_check(w, jumpers), *morpho_check(w, jumpers), oled_check(w, jumpers)]
 
 
@@ -771,10 +781,10 @@ def morpho_check(w, jumpers):
         return []
     pins = ', '.join(f'{j.id} to {h[1]}.{h[2]} ({w.mcu.get(j.net)}, {j.net})' for j, h in into)
     alias = _aliases(w, into)
-    empty = f' Their ARDUINO aliases ({", ".join(alias)}) stay empty: one landing per MCU pin (record N1).' if alias else ''
-    return [f'- **Morpho signal pins:** {pins}. The morpho pins are male: each is a female-to-male Dupont jumper, '
-            'its female end on the pin, its male end in the breadboard hole (a solid wire cannot be pushed onto a '
-            f'male pin). Check each pin against UM2592 Table 18 before you fit the lead.{empty}']
+    empty = f' Their ARDUINO aliases ({", ".join(alias)}) stay empty, so each MCU pin has one landing (record N1).' if alias else ''
+    return [f'- **Morpho signal pins:** {pins}. The morpho pins are male, so each one takes a female-to-male Dupont '
+            'jumper: the female end on the pin, the male end in the breadboard hole. You can\'t push a solid wire '
+            f'onto a male pin. Check each pin against UM2592 Table 18 before you fit the lead.{empty}']
 
 
 def _aliases(w, into):
@@ -793,10 +803,11 @@ def oled_check(w, jumpers):
     signals = ', '.join(nucleo_jumpers(jumpers, OLED_NETS))
     pair = ' and '.join(f'{k.id} ({end_name(k.a)} to {end_name(k.b)})' for k in w.leads if k.role == 'supply')
     alias = _aliases(w, _into(jumpers, ('CN10',), OLED_NETS))
-    empty = f' Their ARDUINO aliases ({", ".join(alias)}) stay empty: one landing per MCU pin (record N1).' if alias else ''
-    return (f'- **OLED wires:** {signals} run from board C to CN10: female-to-male jumpers of about 30 cm.{empty} '
-            f'Its supply pair goes straight to the NUCLEO, off every breadboard rail (record N3): {pair}. In mode B '
-            'unplug the OLED\'s VCC lead from CN7.16 (section 7), or the display\'s 50-150 mA rides the regulator chain.')
+    empty = f' Their ARDUINO aliases ({", ".join(alias)}) stay empty, so each MCU pin has one landing (record N1).' if alias else ''
+    return (f'- **OLED wires:** {signals} run from board C to CN10 as female-to-male jumpers of about 30 cm.'
+            f'{empty} The OLED\'s supply pair goes straight to the NUCLEO and stays off every breadboard rail '
+            f'(record N3): {pair}. In mode B unplug the OLED\'s VCC lead from CN7.16 (section 7). If you don\'t, '
+            'the display draws its 50-150 mA through the regulator chain.')
 
 
 def arduino_name(header, pin):
@@ -814,24 +825,24 @@ def arduino_check(w, jumpers):
         return []
     into.sort(key=lambda t: (t[1][1], t[1][2]))
     pins = ', '.join(f'{j.id} to {h[1]}.{h[2]} ({arduino_name(h[1], h[2])}, {w.mcu.get(j.net)}, {j.net})' for j, h in into)
-    return [f'- **CN5 (D8-D15), CN8 (A0-A5) and CN9 (D0-D7):** {pins}. All three are female ARDUINO headers: use '
-            'solid 22 AWG male ends (record H3, N3). Check each against UM2592 Table 17 before you push the wire '
-            f'in. The morpho aliases of these pins ({", ".join(_aliases(w, into))}) stay empty: one landing per MCU '
-            'pin (record N1).']
+    return [f'- **CN5 (D8-D15), CN8 (A0-A5) and CN9 (D0-D7):** {pins}. All three are female ARDUINO headers, so '
+            'use solid 22 AWG male ends (record H3, N3). Check each pin against UM2592 Table 17 before you push the '
+            f'wire in. The morpho aliases of these pins ({", ".join(_aliases(w, into))}) stay empty, so each MCU pin '
+            'has one landing (record N1).']
 
 
 def _intro(w, data):
     source = Path(data).relative_to(SOURCE).as_posix()
-    text = (f'Generated by `source/make.py sheet` (or `all`) from `source/{source}`. Do not edit. Build in this '
-            'order. Holes are `board:row column`: `A:j14` is board A, row j, column 14. The rails are L+ and L- '
-            '(beside row a) and R- and R+ (beside row j).')
+    text = (f'`source/make.py sheet` (or `all`) writes this sheet from `source/{source}`, so don\'t edit it by hand. '
+            'Build in the order of the sections. A hole is `board:row column`: `A:j14` is board A, row j, column '
+            '14. The rails are L+ and L- beside row a, and R- and R+ beside row j.')
     if Path(data) == DATA:
         return text + ' The renders are in `renders/`.'
-    return text + (f' **{w.revision} is a frozen earlier revision** (record 6.1): build this sheet for its own change, '
-                   'then the next revision\'s sheet, whose Remove and Add lists start from this one. It has no '
-                   'renders: they are of the current revision (`build-sheet.md` at the top of this directory). The '
-                   'wiring guide and the firmware describe the current revision, so `make.py` holds this model to '
-                   'the connectivity proof and the D3 checks only.')
+    return text + (f'\n\n**{w.revision} is a frozen earlier revision** (record 6.1). Build this sheet for its own '
+                   'change, then the next revision\'s sheet, whose Remove and Add lists start from this one. This '
+                   'revision has no renders, because the renders show the current revision (`build-sheet.md` at the '
+                   'top of this directory). The wiring guide and the firmware describe the current revision too, so '
+                   '`make.py` holds this model to the connectivity proof and the D3 checks only.')
 
 
 # Where everything off the breadboards lives on the bench base plate (hardware/base-plate/spec-r2.md),
@@ -840,17 +851,19 @@ def _intro(w, data):
 PLATE_HOMES = {'PACK': 'battery cradle (strap over it; the + lead exits at the marked end)',
                'NTC': 'taped to the pack in its cradle; its leads leave by the cradle\'s lead gap',
                'RLOAD': 'the two raised posts beside its WAGOs, held by its leads, clear of the plastic',
-               'ADAPTER': 'off the plate, at the wall; its cable held by the USB CHG clamp and tie bridge'}
+               'ADAPTER': 'off the plate, at the wall; its cable held by the USB CHG jacket clamp'}
 JOINT_HOME = 'the WAGO row, in its labelled pocket, levers up'
 EXTRA_HOMES = (('NUCLEO TX (the node)', 'its edge cradle on the plate, USB end at the cable exit'),
                ('NUCLEO RX (the bridge)', 'its edge cradle on the plate, USB end at the cable exit; its USB to a '
                 'Mac port directly, not a hub'),
                ('spare WAGO 222-413 (the meter splice, check C5)', 'its splice pocket next to CELL_POS while in use, if the plate has one (base plate spec §7 item 13); '
                 'otherwise held by a tie point there'),
-               ('STEMMA QT hub', 'the sensor deck (M2.5 screws on standoffs), fed by the QT cable from board A'),
-               ('STEMMA QT sensors', 'the sensor deck, screwed down, or off the plate on a longer QT cable'),
-               ('wind and rain meters', 'off the plate (outdoors); their RJ11 cables held by the meter clamps'),
-               ('USB cables to the NUCLEOs', 'one clamp and tie bridge each at the cable exit'))
+               ('STEMMA QT hub', 'plugged into a breadboard, fed by the QT cable from board A'),
+               ('STEMMA QT sensors', 'the sensor deck, screwed down on 8 mm M2.5 standoffs, or off the plate on a '
+                'longer QT cable'),
+               ('wind and rain meters', 'off the plate (outdoors); their RJ11 cables held by the meter anchors '
+                '(F5 tie point, F6 jacket clamp)'),
+               ('USB cables to the NUCLEOs', 'one raised jacket clamp each at the front edge, no tie bridge'))
 
 
 def homes_rows(w):
@@ -859,7 +872,7 @@ def homes_rows(w):
     if missing:
         raise ValueError(f'no base plate home for {missing}: add them to PLATE_HOMES')
     out = ['', '## 0b. Homes', '', 'Every board and part lives on a breadboard or in its own place on the base '
-           'plate (`hardware/base-plate/spec-r2.md`); nothing is loose on the desk.', '',
+           'plate (`hardware/base-plate/spec-r2.md`). Nothing sits loose on the desk.', '',
            '| What | Home |', '|---|---|']
     out += [f'| {p.id} ({p.kind}) | breadboard {p.board} (section 1) |' for p in w.parts.values() if not p.place_mm]
     out += [f'| {p.id} ({p.kind}) | {PLATE_HOMES[p.id]} |' for p in w.parts.values() if p.place_mm]
@@ -868,25 +881,28 @@ def homes_rows(w):
 
 
 TEARDOWN = ['', '## 0a. Teardown (before building from this sheet)', '',
-            'Take the old build apart in this order, so that nothing is ever live while you pull it:', '',
+            'Take the old build apart in this order. That way nothing is live while you pull it.', '',
             '1. **Power off.** Unplug the charger\'s USB-C adapter at the wall, then both NUCLEO USB cables.',
-            '2. **The pack:** unplug its JST PH plug from the pigtail. Never cut its lead. From here the pack is the '
-            'only energy on the bench, and its plug is apart.',
-            '3. **The leads (section 3), every one:** open each WAGO lever and pull its lead; unplug the JST PH '
-            'plugs at the charger and the gauge by the plug body, never by the wires; loosen the INA228\'s X1 '
-            'screws and pull its three leads; pull the adapter cable out of the charger\'s USB-C; pull every lead '
-            'that ends in a breadboard hole or a NUCLEO pin (the regulator leads, L_REG_3V3, L_NUC_RET, the OLED '
-            'supply pair, the NTC pair, so the pack and its taped NTC come free together).',
-            '4. **The jumpers:** pull each one straight up with pliers or fingers on the bend. Sort the kit jumpers '
-            'back by length. Keep a cut-to-fit wire only if it is the same span as one in section 2; tag it with '
-            'the holes it joins (for example A:d19-A:d2), never a jumper number: those change whenever the model '
-            'is regenerated.',
+            '2. **The pack:** unplug its JST PH plug from the pigtail. Never cut its lead. From here on the pack is '
+            'the only energy on the bench, and its plug is apart.',
+            '3. **The leads (section 3), every one:**',
+            '   - Open each WAGO lever and pull its lead.',
+            '   - Unplug the JST PH plugs at the charger and the gauge. Hold the plug body, never the wires.',
+            '   - Loosen the INA228\'s X1 screws and pull its three leads.',
+            '   - Pull the adapter cable out of the charger\'s USB-C.',
+            '   - Pull every lead that ends in a breadboard hole or a NUCLEO pin. That\'s the regulator leads, '
+            'L_REG_3V3, L_NUC_RET, the OLED supply pair and the NTC pair. With the NTC pair out, the pack and its taped NTC '
+            'come free together.',
+            '4. **The jumpers:** pull each one straight up, with pliers or your fingers on the bend. Sort the kit '
+            'jumpers back by length. Keep a cut-to-fit wire only if it has the same span as one in section 2. Tag '
+            'it with the holes it joins (for example A:d19-A:d2), never a jumper number. The jumper numbers change '
+            'whenever the model\'s jumpers change.',
             '5. **The breakouts:** rock each one gently out by its board edges (charger, INA228, gauge, '
-            'regulator, RJ11 breakouts, OLED), never by a header or the screw terminal.',
-            '6. **The breadboards** stay where they are if they already sit in the base plate pockets; otherwise '
-            'peel them off and seat them in the pockets before building.',
-            '7. **Check before building:** with nothing fitted, each board\'s rails read open (OL) to each other '
-            'on the meter. A short means a strand of wire is stuck in a strip: find it before going on.']
+            'regulator, RJ11 breakouts, OLED). Never pull it by a header or the screw terminal.',
+            '6. **The breadboards** stay where they are if they already sit in the base plate pockets. If they '
+            'don\'t, peel them off and seat them in the pockets before you build.',
+            '7. **Check before you build:** with nothing fitted, each board\'s rails read open (OL) to each other '
+            'on the meter. A short means a strand of wire is stuck in a strip. Find it before you go on.']
 
 
 def build_sheet(w, jumpers, out=HW, data=DATA):
@@ -945,12 +961,14 @@ def _sense_lead(w, terminal):
 
 # Record M1 and 7.1 Q2: the series reference is the Fluke 87V itself (no shunt or clamp meter is bought),
 # in series only for a short steady window, as power-telemetry 12.2 allows.
-SERIES_METER = ('the Fluke 87V in series (its A input for about 1 A, its mA input, 400 mA, for the 38 mA load), '
-                'spliced into the pack + lead at CELL+ position 1 (its two leads clipped to short 22 AWG solid stubs: '
-                'the pack red lead and one stub in a spare 222-413, the other stub in position 1; the pack unplugged '
-                'while it goes in and out), only for a '
-                'short steady window: its current shunt adds tens to hundreds of mOhm, so never during a termination '
-                'run or the battery-path checks (7, C12-C14)')
+SERIES_METER = 'the Fluke 87V in series (its A input for about 1 A, its mA input, 400 mA, for the 38 mA load)'
+SERIES_SPLICE = ('   - Use the meter in series only for a short steady window, and never during a termination run or the '
+                 'battery-path checks (7, C12-C14). Its current shunt adds about 30 mOhm on the A input and about '
+                 '1.8 ohm on the mA input (Fluke burden voltage 0.03 V/A and 1.8 mV/mA, typical).\n'
+                 '   - Unplug the pack while the meter goes in and comes out.\n'
+                 '   - Splice the meter into the pack + lead at CELL+ position 1.\n'
+                 '   - Clip the meter\'s two leads to short 22 AWG solid stubs. The pack red lead and one stub go in a '
+                 'spare 222-413, and the other stub goes in position 1.')
 
 
 def power_checks(w, jumpers):
@@ -960,37 +978,40 @@ def power_checks(w, jumpers):
     status = ' and '.join(nucleo_jumpers(jumpers, ('CHG', 'PGOOD')))
     analog = ' and '.join(nucleo_jumpers(jumpers, ('ISET', 'VIN_SENSE')))
     return ['', '## Power checks', '',
-            'The phase A power checks (spec `docs/superpowers/specs/2026-10-29-power-telemetry-design.md` '
-            'section 11.1, amended by the build-progression record), in this order, with the section 6 rows each '
-            'shares. **The model first:** a measured or fitted value goes into `source/wiring.toml` before the '
-            'firmware, because D3 checks 8 and 9 (`make.py sheet`) hold the firmware to the model: check 2\'s '
-            'R_ISET as the charger\'s `iset_ohms`; R4-R6 each measured (record 4.4 step 12) as their '
-            '`measured_ohms`; the M2 ISET gain fit (4.4 step 11) as the charger\'s `iset_gain_ppm`. Then the same '
-            'value into `firmware/stage0-node/App/power_config.h` (`POWER_R_ISET_OHM`, `POWER_VIN_DIVIDER_PPM`, '
-            '`POWER_ISET_GAIN_PPM`), benchlink\'s `VIN_DIVIDER_PPM` and `tools/benchlink_log.py`\'s `R_ISET_OHM` '
-            'and `ISET_GAIN`, and regenerate this sheet, in one commit. Check 3\'s value goes in only if the shunt '
-            'fails its check. Commit a measured value before flashing the build that carries it: a build from a dirty tree '
-            'reports firmware build ID 0, "not identified" (spec section 8.6).', '',
-            f'1. **Before power, no VBUS lead fitted** (pre-run check C1): on the INA228, X1.2 (VBUS) to X1.3 (VIN+) and X1.2 to '
-            f'X1.1 (VIN-) read open (SJ1, the back VBUS-to-VIN+ jumper, open). Then fit {lead} into the OUT joint '
-            f'({at}).',
+            'These are the phase A power checks (spec `docs/superpowers/specs/2026-10-29-power-telemetry-design.md` '
+            'section 11.1, as the build-progression record amends it). Do them in this order. Each check names the '
+            'section 6 rows it shares.', '',
+            '**The model comes first.** Put a measured or fitted value into `source/wiring.toml` before the '
+            'firmware, because D3 checks 8 and 9 (`make.py sheet`) hold the firmware to the model:', '',
+            '- check 2\'s R_ISET goes in as the charger\'s `iset_ohms`',
+            '- R4-R6, each measured (record 4.4 step 12), go in as their `measured_ohms`',
+            '- the M2 ISET gain fit (4.4 step 11) goes in as the charger\'s `iset_gain_ppm`', '',
+            'Then put the same value into `firmware/stage0-node/App/power_config.h` (`POWER_R_ISET_OHM`, '
+            '`POWER_VIN_DIVIDER_PPM`, `POWER_ISET_GAIN_PPM`), benchlink\'s `VIN_DIVIDER_PPM` and '
+            '`tools/benchlink_log.py`\'s `R_ISET_OHM` and `ISET_GAIN`. Regenerate this sheet, and commit all of it '
+            'in one commit. Check 3\'s value goes in only if the shunt fails its check. Commit a measured value '
+            'before you flash the build that carries it. A build from a dirty tree reports firmware build ID 0, '
+            '"not identified" (spec section 8.6).', '',
+            f'1. **Before power, no VBUS lead fitted** (pre-run check C1): on the INA228, X1.2 (VBUS) to X1.3 (VIN+) '
+            f'and X1.2 to X1.1 (VIN-) read open (SJ1, the back VBUS-to-VIN+ jumper, is open). Then fit {lead} into '
+            f'the OUT joint ({at}).',
             '2. **R_ISET** (C16): with the charger unpowered and the pack unplugged, measure ISET to GND: R9, '
-            '1 kOhm expected (POWER_R_ISET_OHM 1000), behind the closed 1A jumper (KISET 890 A*ohm gives about '
-            '0.89 A). Any other reading replaces the charger\'s `iset_ohms` in the model first, then '
-            '`POWER_R_ISET_OHM` and the logger\'s `R_ISET_OHM` (see above). The charge current read from ISET is '
-            'I = 400 x V_ISET / R_ISET: the ISET monitor is 1/400 of the charge current, +-10 % (SLUS810 section '
-            '9.3.5.1), plus R_ISET\'s own tolerance.',
-            f'3. **Shunt** (C5): verified, not measured (spec section 8.6, record M1): at a steady current the '
-            f'INA228 battery current agrees within 2 % + 2 mA with {SERIES_METER}. Only if the shunt fails, the '
-            'reference-derived value (the meter\'s mV across the shunt\'s Kelvin points over the series A, never an '
-            'ohm range) replaces the nominal 15 mOhm (1 %).',
+            '1 kOhm expected (POWER_R_ISET_OHM 1000), behind the closed 1A jumper. With KISET at 890 A*ohm that '
+            'gives about 0.89 A. If you read anything else, put it in the model as the charger\'s `iset_ohms` '
+            'first, then in `POWER_R_ISET_OHM` and the logger\'s `R_ISET_OHM` (see above). The charge current from '
+            'ISET is I = 400 x V_ISET / R_ISET. The ISET monitor is 1/400 of the charge current, +-10 % (SLUS810 '
+            'section 9.3.5.1), plus R_ISET\'s own tolerance.',
+            f'3. **Shunt** (C5): verified, not measured (spec section 8.6, record M1). At a steady current, the '
+            f'INA228 battery current agrees within 2 % + 2 mA with {SERIES_METER}. Only if the shunt fails does a '
+            'reference-derived value replace the nominal 15 mOhm (1 %). Take that value from the meter\'s mV across '
+            f'the shunt\'s Kelvin points over the series A, never an ohm range. To fit the meter:\n{SERIES_SPLICE}',
             f'4. **ISET and VIN_SENSE before the pack** ({analog}): with the wall adapter on and the pack unplugged, '
-            f'VIN_SENSE ({_headers(w, "VIN_SENSE")}) x the measured ratio (POWER_VIN_DIVIDER_PPM / 1e6, from R4-R6 '
-            'each measured and held in the model as `measured_ohms`; record M2) agrees with the meter on VBUS, within 1 %, and ISET '
-            f'({_headers(w, "ISET")}) reads near 0 V with no charge current.',
+            f'VIN_SENSE ({_headers(w, "VIN_SENSE")}) x the measured ratio (POWER_VIN_DIVIDER_PPM / 1e6) agrees with '
+            'the meter on VBUS within 1 %. The ratio comes from R4-R6, each measured and held in the model as '
+            f'`measured_ohms` (record M2). ISET ({_headers(w, "ISET")}) reads near 0 V with no charge current.',
             '5. **TS:** with input power present, THERM to GND reads about 0.75 V at 25 C (the 10 kOhm NTC at 75 uA). '
-            'About 0.375 V means the breakout\'s fixed 10 kOhm TS resistor (R10, the THERM jumper) is still in '
-            'parallel: cut it.',
+            'If it reads about 0.375 V, the breakout\'s fixed 10 kOhm TS resistor (R10, the THERM jumper) is still '
+            'in parallel. Cut it.',
             *_checks_6_to_10(w, status)]
 
 
@@ -998,35 +1019,39 @@ def _checks_6_to_10(w, status):
     loop = loop_leads(w)
     b = checklist.BUDGETS
     return [
-        f'6. **CHG and PGOOD released** ({status}; C17): with the charge done, and with the input removed for a '
-        f'moment, with the firmware\'s internal pull-ups on, {w.mcu.get("CHG")} (CHG: {_headers(w, "CHG")}) and '
-        f'{w.mcu.get("PGOOD")} (PGOOD: {_headers(w, "PGOOD")}) both read at or below min(VDD, VDDA) + 0.3 V '
-        '(DS13293 table 26 note 3: above that the internal pull-ups must be off; record N4). The LED anodes are on '
-        'OUT (schematic), so a released pin sits near OUT - Vf: 2.9 V measured on 2026-10-28/29, under the VDD + 0.3 '
-        'V rule (3.6 V). Re-measure at each step.',
+        f'6. **CHG and PGOOD released** ({status}, C17): with the charge done, with the input removed for a '
+        f'moment and with the firmware\'s internal pull-ups on, {w.mcu.get("CHG")} (CHG: {_headers(w, "CHG")}) and '
+        f'{w.mcu.get("PGOOD")} (PGOOD: {_headers(w, "PGOOD")}) both read at or below min(VDD, VDDA) + 0.3 V. Above '
+        'that the internal pull-ups must be off (DS13293 table 26 note 3, record N4). The LED anodes are on OUT '
+        '(schematic), so a released pin sits near OUT - Vf. It measured 2.9 V on 2026-10-28/29, under the VDD + 0.3 '
+        'V rule (3.6 V). Measure it again at each step.',
         '7. **Battery path** (C12-C14, section 5): in the first 10 minutes of a CC charge, with the INA228 current I '
-        'between 0.8 and 1.0 A, each span a mV drop on the meter over I (spec section 11.2, record P8): the + span '
-        f'(PATH_POS: pack plug +, back-probed, to the charger\'s header LIPO, including the 15 mOhm shunt) at most '
-        f'{b["PATH_POS"]:g} mOhm; the - span (PATH_NEG: header GND to pack plug -, back-probed) at most '
-        f'{b["PATH_NEG"]:g} mOhm; each pack-side span (PATH_PACK_POS: pack plug + to the CELL+ clamp; PATH_PACK_NEG: '
-        f'the STAR clamp to pack plug -) at most {b["PATH_PACK_POS"]:g} mOhm, their sum recorded as R_pack; each JST '
-        'PH mating at most 20 mOhm; each lever clamp to clamp and each screw at most 5 mOhm. The leads of PATH_POS '
-        f'and PATH_NEG are about {sum(lead_mohm(k) for k in loop):.0f} mOhm of copper ({", ".join(k.id for k in loop)}, '
-        'from their gauge and length). A 0.2 ohm breadboard path ended 1 A charges early on 2026-10-28.',
-        '8. **Gauge** (C10, C14; step 1 exit 5, record R-2): at rest or at the 38 mA load, the gauge VCELL within '
-        '10 mV of the meter at the pack plug. At a 1 A charge, the gauge VCELL within 10 mV of the meter at the '
-        'gauge\'s own sense points (the CELL+ clamp to the STAR clamp), and the pack-plug difference (gauge VCELL - '
-        'the meter at the pack plug) recorded, at or below I x R_pack + 10 mV (R_pack from C14).',
+        'between 0.8 and 1.0 A, take each span\'s mV drop on the meter and divide it by I (spec section 11.2, '
+        'record P8). The limits are:',
+        f'   - the + span (PATH_POS: pack plug +, back-probed, to the charger\'s header LIPO, with the 15 mOhm shunt '
+        f'in it): at most {b["PATH_POS"]:g} mOhm',
+        f'   - the - span (PATH_NEG: header GND to pack plug -, back-probed): at most {b["PATH_NEG"]:g} mOhm',
+        '   - each pack-side span (PATH_PACK_POS: pack plug + to the CELL+ clamp, and PATH_PACK_NEG: the STAR clamp '
+        f'to pack plug -): at most {b["PATH_PACK_POS"]:g} mOhm, with their sum recorded as R_pack',
+        '   - each JST PH mating: at most 20 mOhm',
+        '   - each lever clamp to clamp, and each screw: at most 5 mOhm', '',
+        f'   The leads of PATH_POS and PATH_NEG are about {sum(lead_mohm(k) for k in loop):.0f} mOhm of copper '
+        f'({", ".join(k.id for k in loop)}, from their gauge and length). A 0.2 ohm breadboard path ended 1 A '
+        'charges early on 2026-10-28.',
+        '8. **Gauge** (C10, C14, step 1 exit 5, record R-2): at rest or at the 38 mA load, the gauge VCELL is within '
+        '10 mV of the meter at the pack plug. At a 1 A charge, the gauge VCELL is within 10 mV of the meter at the '
+        'gauge\'s own sense points (the CELL+ clamp to the STAR clamp). Also record the pack-plug difference (gauge '
+        'VCELL - the meter at the pack plug). It must be at or below I x R_pack + 10 mV (R_pack from C14).',
         '9. **INA VBUS = OUT, and SJ1 really open:** during a charge with the pack below 4.1 V, OUT (`load_mv`, the '
-        'INA228 VBUS) reads 4.3-4.5 V and at least 100 mV above the gauge VCELL. A closed SJ1 ties the cell to OUT '
-        'and fails this check.',
-        '10. **TMR and termination** (record P9): with the charger unpowered, TMR reads 0 ohm to GND (the schematic '
-        'ties it to GND: all safety timers disabled, so the charge may start from any cell voltage). A charge at the '
-        '1A jumper then ends with CHG off and steady, not flashing, while the INA228 battery current is 0.20-0.40 A '
-        '(ITERM about 0.3 A) and the cell (gauge VCELL - I x R_pack) is at 4.12 V or more. Flashing at about 2 Hz '
-        'means expired safety timers (SLUS810 table 9-2): with TMR at GND it should not happen, so check TMR and the '
-        'CHG lead. If the board in hand has TMR floating (default 4-6 h), record it and start the charge at 3.85 V '
-        'or more; no RTMR is fitted (record P9).']
+        'INA228 VBUS) reads 4.3-4.5 V. It also reads at least 100 mV above the gauge VCELL. A closed SJ1 ties the '
+        'cell to OUT and fails this check.',
+        '10. **TMR and termination** (record P9): with the charger unpowered, TMR reads 0 ohm to GND. The schematic '
+        'ties it to GND, so all safety timers are disabled and the charge may start from any cell voltage. A charge '
+        'at the 1A jumper then ends with CHG off and steady, not flashing. At that point the INA228 battery current '
+        'is 0.20-0.40 A (ITERM about 0.3 A) and the cell (gauge VCELL - I x R_pack) is at 4.12 V or more. If CHG '
+        'flashes at about 2 Hz, the safety timers expired (SLUS810 table 9-2). With TMR at GND that shouldn\'t '
+        'happen, so check TMR and the CHG lead. If the board in hand has TMR floating (default 4-6 h), record it and '
+        'start the charge at 3.85 V or more, since no RTMR is fitted (record P9).']
 
 
 def phase_b_checks():
@@ -1034,38 +1059,40 @@ def phase_b_checks():
     docs/hardware/power-metering.md): the three rail INA228s and the D2/D4 OR pair, before the node runs
     WS_POWER_PROFILE 2. Their wiring is not drawn on this sheet yet."""
     return ['', '## Step 1b power checks', '',
-            'Step 1b, on the breadboard build (record S1), before '
-            'the node runs profile B (`WS_POWER_PROFILE=2`): the load, solar and USB-C INA228s and the board\'s own '
-            'D2/D4 OR pair (record P10). Step 1b is not drawn on this sheet: the model does not hold its '
-            'wiring yet. Checks 1-10 still hold.', '',
-            'B1. **EN1 and EN2** (charger unpowered): record both solder jumpers of the #4755 again, SJ2 (EN1) and SJ1 '
-            '(EN2), as the step 1 bench check "Charger jumpers" first did. The design needs **EN2 high and EN1 low**: the R_ILIM input limit, no VIN-DPM (SLUS810 table '
-            '7-2). EN1 = EN2 = high is standby, no charge. EN2 low means a 100 or 500 mA input limit with VIN-DPM: '
-            'stop and record it (record 1.4, P10).',
+            'Step 1b, on the breadboard build (record S1), covers the load, solar and USB-C INA228s and the '
+            'board\'s own D2/D4 OR pair (record P10). Do these checks before the node runs profile B '
+            '(`WS_POWER_PROFILE=2`). This sheet doesn\'t draw step 1b, because the model doesn\'t hold its wiring '
+            'yet. Checks 1-10 still hold.', '',
+            'B1. **EN1 and EN2** (charger unpowered): record both solder jumpers of the #4755 again, SJ2 (EN1) and '
+            'SJ1 (EN2), as you first did in the step 1 bench check "Charger jumpers". The design needs **EN2 high '
+            'and EN1 low**: the R_ILIM input limit, no VIN-DPM (SLUS810 table 7-2). EN1 = EN2 = high is standby, '
+            'with no charge. If EN2 is low, stop and record it (record 1.4, P10). EN2 low means a 100 or 500 mA '
+            'input limit with VIN-DPM.', '',
             'B2. **Addresses:** the i2cscan bus scan lists 0x40 battery, 0x41 load, 0x45 solar and 0x48 USB-C '
-            '(`power_config.h` `POWER_ADDR_*`), each with an `#rail` line (0x41, 0x45, 0x48). 0x48 is the ADDR1-to-SDA '
-            'wire, allowed as INA228 module preparation (7.1 Q1): scope SDA against SCL on this bus, data hold at '
-            'least 100 ns after the address MSB (spec R15).',
-            'B3. **Rail shunts:** verified, not measured, as check 3: at a steady current on each rail (the load '
-            'INA228 with the 100 ohm load; the solar and USB-C INA228s each during a charge from that source alone), '
-            'the INA228 current (the i2cscan `#rail` line, or the node\'s `load_current_ma`, `solar_current_ma`, '
-            '`usb_current_ma`) agrees within 2 % + 2 mA with the Fluke 87V in series in that rail\'s + lead at its '
-            'lever joint, the same short steady window as check 3. Only a rail '
-            'that fails gets its reference-derived value in `power_config.h` (`POWER_SHUNT_UOHM_LOAD`, `_SOLAR`, '
-            '`_USB`).',
-            'B4. **Bus pull-up** (exit f): bus idle and unpowered, SDA to 3V3 and SCL to 3V3 each read 0.97 kOhm or '
-            'more, the measured value recorded (about nine 10 kOhm boards in parallel; power-metering.md section 7). '
-            'Bus idle and powered, SDA high reads 2.8 V or more (the 0x48 board\'s 10 kOhm ADDR1 pull-down stays on '
-            'SDA; record 1.4).',
-            'B5. **One source at a time** (exit e): never solar and USB-C together. With solar alone (the wall '
-            'adapter unplugged at the mains end), the USB-C INA228 reads |I| <= 1 mA and, with a 10 kOhm test load '
-            'across the idle USB-C input, that input reads <= 0.5 V (D2 blocking); then the same with USB-C alone and '
-            'the panel unplugged at its adapter: the solar INA228 reads |I| <= 1 mA and the idle solar input, with the '
-            'same 10 kOhm load, <= 0.5 V (D4 blocking). The live source\'s INA228 VBUS reads the source, and '
-            '`charger_input_mv` reads it less one Schottky drop (0.35-0.5 V).',
-            'B6. **A weak source with EN2 high** (power-metering.md section 5.4): a bench supply at 7 V with its '
-            'current limit at 0.3 A, then 0.1 A, into the DC jack through the solar INA228, the cell at about '
-            '3.7 V. Record whether PGOOD and CHG hold steady or cycle, and `charger_input_mv`.']
+            '(`power_config.h` `POWER_ADDR_*`). Each of 0x41, 0x45 and 0x48 has an `#rail` line. 0x48 is the '
+            'ADDR1-to-SDA wire, allowed as INA228 module preparation (7.1 Q1). Scope SDA against SCL on this bus: '
+            'data hold is at least 100 ns after the address MSB (spec R15).', '',
+            'B3. **Rail shunts:** verified, not measured, like check 3. At a steady current on each rail, the INA228 '
+            'current agrees within 2 % + 2 mA with the Fluke 87V in series in that rail\'s + lead at its lever '
+            'joint. Use the load INA228 with the 100 ohm load, and the solar and USB-C INA228s each during a charge '
+            'from that source alone. Read the INA228 current from the i2cscan `#rail` line, or from the node\'s '
+            '`load_current_ma`, `solar_current_ma` and `usb_current_ma`. Keep the meter in for the same short steady '
+            'window as check 3. Only a rail that fails gets its reference-derived value in `power_config.h` '
+            '(`POWER_SHUNT_UOHM_LOAD`, `_SOLAR`, `_USB`).', '',
+            'B4. **Bus pull-up** (exit f): with the bus idle and unpowered, SDA to 3V3 and SCL to 3V3 each read '
+            '0.97 kOhm or more. Record the measured value (about nine 10 kOhm boards in parallel, power-metering.md '
+            'section 7). With the bus idle and powered, SDA high reads 2.8 V or more (the 0x48 board\'s 10 kOhm '
+            'ADDR1 pull-down stays on SDA, record 1.4).', '',
+            'B5. **One source at a time** (exit e): never solar and USB-C together. First run solar alone, with the '
+            'wall adapter unplugged at the mains end. The USB-C INA228 reads |I| <= 1 mA. With a 10 kOhm test load '
+            'across the idle USB-C input, that input reads <= 0.5 V (D2 blocking). Then do the same with USB-C alone '
+            'and the panel unplugged at its adapter. The solar INA228 reads |I| <= 1 mA, and the idle solar input, '
+            'with the same 10 kOhm load, reads <= 0.5 V (D4 blocking). The live source\'s INA228 VBUS reads the '
+            'source. `charger_input_mv` reads it less one Schottky drop, about 0.3-0.5 V and smaller at low current '
+            '(the SK34A\'s VF is 0.55 V max at 3 A). Record the drop you measure.', '',
+            'B6. **A weak source with EN2 high** (power-metering.md section 5.4): feed a bench supply at 7 V into '
+            'the DC jack through the solar INA228, with its current limit at 0.3 A, then 0.1 A, and the cell at '
+            'about 3.7 V. Record if PGOOD and CHG hold steady or cycle, and record `charger_input_mv`.']
 
 
 # ---- the schematic's table of leads and joints (record D2, D4) ----

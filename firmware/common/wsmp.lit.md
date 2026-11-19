@@ -1,15 +1,19 @@
 # wsmp: the WSMP core
 
 `wsmp.c` packs and checks the data blocks of WSMP, the Weather Station Module Protocol
-(`docs/module-protocol.md`). A module gives its identity, its descriptors and one snapshot each
-minute. The station reads them, and this file turns the bytes into structures and back. It also
-checks the descriptors against the registry, parses and packs the module record v1.0 of a module
-board's ID EEPROM (`docs/firmware-current-design.md` section 6.9),
-computes CRC-32C and the radio budget, and maps quality codes. `tools/wsmp_registry.py` generates the registry header `wsmp_registry.h` from
-`wsmp_registry.toml`.
+(`docs/module-protocol.md`). A module gives the station its identity, its descriptors and one
+snapshot each minute. This file turns those bytes into structures and back. It also does these jobs:
 
-The file has no state, no HAL call and no heap. The station uses it now. The remote module adapter
-will use the same file later, so both ends of the cable share one implementation.
+- It checks the descriptors against the registry.
+- It parses and packs the module record v1.0 from a module board's ID EEPROM
+  (`docs/firmware-current-design.md` section 6.9).
+- It computes CRC-32C and the radio budget.
+- It maps quality codes.
+
+`tools/wsmp_registry.py` generates the registry header `wsmp_registry.h` from `wsmp_registry.toml`.
+
+The file has no state, no HAL call and no heap. The station uses it now. Later the remote module
+adapter will use the same file, so both ends of the cable share one implementation.
 
 This document is the source. `tools/tangle.py` generates `wsmp.c` from the code chunks below. The
 header `wsmp.h` is a plain file. Edit this file, then regenerate and check:
@@ -26,12 +30,12 @@ python3 tools/tangle.py --check firmware/common/wsmp.lit.md    # committed .c ==
 | Layout | every block has the byte layout of WSMP section 6. Every integer is big-endian | `test_snapshot_round_trip_matches_the_wsmp_layout`, `test_identity_refuses_bad_magic_and_major` |
 | Refusal | an unpack function refuses a reserved bit, an undefined flag bit, a bad magic, a wrong major version, a zero serial and a channel count out of range. It returns a negative `WSMP_E*` code | `test_snapshot_refuses_a_set_reserved_byte`, `test_snapshot_refuses_an_undefined_flag`, `test_identity_refuses_bad_magic_and_major`, `test_identity_refuses_0_or_9_channels`, `fuzz_wsmp` |
 | Registry | `wsmp_desc_check` accepts exactly the descriptors of the registry entry. With `wsmp_unpack_desc`, which finds a set reserved bit, it refuses each case of WSMP-D7 with its own code | `test_desc_check_accepts_the_registry_entry`, `test_desc_check_refuses_each_wsmp_d7_case`, `test_desc_check_refuses_widths_kinds_and_counts_out_of_range` |
-| Round trip | unpack, then pack, gives back the same bytes for every accepted block | `test_snapshot_round_trip_matches_the_wsmp_layout`, `fuzz_wsmp` |
+| Round trip | unpack, then pack, gives back the same bytes for every accepted snapshot, descriptor block and descriptor set. For an identity block it gives back every byte except byte 3 (the WSMP minor), which pack always writes as this station's minor | `test_snapshot_round_trip_matches_the_wsmp_layout`, `fuzz_wsmp`, `fuzz_set` |
 | Budget | the value bytes are the sum of the air widths. The quality bytes are 2 bits a channel, rounded up to a byte. `WSMP_RADIO_BUDGET` is 60 and the version is 1.1 | `test_budget_bytes_for_the_bench_station`, `test_version_1_1_and_radio_budget_60` |
 | Quality | each snapshot quality maps to its 2-bit radio code. "Not fitted" (6) and an unknown code map to "missing" | `test_quality_air_table`, `test_not_fitted_is_quality_6_and_missing_on_the_radio` |
 | CRC and text | CRC-32C gives the standard check value. Metadata text passes only the WSMP-M1 characters | `test_crc32c_known_vector`, `test_text_ok_charset` |
-| Identity flags | the identity block carries the identity flags in register 0x000F; unpack refuses a set reserved bit (2–3, 8–15) with `WSMP_ERESERVED` | `test_identity_flags_at_register_0x000f`, `test_identity_refuses_reserved_id_flag_bits`, `fuzz_wsmp` |
-| Descriptor set | `wsmp_unpack_set` accepts exactly the layout of WSMP section 11.1 with the identity entry (serial, `id_flags`, `record_crc`), and refuses each fault of section 9 with its own code; an accepted set packs back to the same bytes; `wsmp_set_check` is the registry check of every module | `tests/test_wsmp_set.py`, `fuzz_wsmp` |
+| Identity flags | the identity block carries the identity flags in register 0x000F. Unpack refuses a set reserved bit (2–3, 8–15) with `WSMP_ERESERVED` | `test_identity_flags_at_register_0x000f`, `test_identity_refuses_reserved_id_flag_bits`, `fuzz_wsmp` |
+| Descriptor set | `wsmp_unpack_set` accepts exactly the layout of WSMP section 11.1 with the identity entry (serial, `id_flags`, `record_crc`). It refuses each fault of section 9 with its own code. An accepted set packs back to the same bytes. `wsmp_set_check` is the registry check of every module | `tests/test_wsmp_set.py`, `fuzz_set` (`firmware/fuzz/fuzz_set.c`) |
 | Module record | `wsmp_record_parse` applies checks 2–6 of the record in the spec's order and returns the first failure as a record status. An accepted record of minor 0 packs back to the same 128 bytes | `tests/test_wsmp_record.py`, `fuzz_record` |
 
 The error codes are:
@@ -45,20 +49,21 @@ The error codes are:
 | `WSMP_EUNIT` | −4 | the unit is not the canonical unit of the quantity |
 | `WSMP_ESCALE` | −5 | the scale is outside −6 to +6 |
 | `WSMP_ERESERVED` | −6 | a reserved bit or byte is set, or an undefined flag bit |
-| `WSMP_ETYPE` | −7 | an unknown module type, a different schema, or a channel list that differs from the entry |
-| `WSMP_ELEN` | −8 | a width outside 1 to 4, a channel count outside 1 to 8, or a zero serial; a descriptor set of the wrong length, or with too many modules or channels |
+| `WSMP_ETYPE` | −7 | an unknown module type, a different schema, or a channel list that differs from the entry. In a descriptor set it also means ports that are not strictly increasing. In `wsmp_set_check` it means a serial namespace that is not its source, or a module type seen twice |
+| `WSMP_ELEN` | −8 | a width outside 1 to 4, a channel count outside 1 to 8, or a zero serial. Also a descriptor set of the wrong length, or with too many modules or channels |
 | `WSMP_EDIGEST` | −9 | a descriptor set whose digest does not match its entries |
 
-The record parser returns a record status instead (`WSMP_REC_*`, section 9 below), because the
-status goes to the gateway in the identity flags.
+The record parser returns a record status (`WSMP_REC_*`) instead, because the status goes to the
+gateway in the identity flags. Section 8 below covers the statuses, and the enum is in `wsmp.h`.
 
-The tests are in `tests/test_wsmp_core.py` and `tests/test_wsmp_record.py`. The fuzz targets are
-`firmware/fuzz/fuzz_wsmp.c` and `firmware/fuzz/fuzz_record.c`.
+The tests are in `tests/test_wsmp_core.py`, `tests/test_wsmp_set.py` and `tests/test_wsmp_record.py`.
+The fuzz targets are `firmware/fuzz/fuzz_wsmp.c`, `firmware/fuzz/fuzz_set.c` and
+`firmware/fuzz/fuzz_record.c`.
 
 ## 2. Constants
 
-The descriptor packs its air width, its sign and 4 reserved bits into one byte. The width takes the
-top 3 bits as width − 1. The sign takes the next bit.
+The descriptor packs its air width, its sign and 4 reserved bits into one byte. The width goes in
+the top 3 bits as width − 1. The sign goes in the next bit.
 
 ```c {#constants}
 #define DESC_WIDTH_SHIFT 5U
@@ -101,10 +106,11 @@ packet-beta
   240-255: "identity flags"
 ```
 
-The identity flags (register 0x000F, reserved and 0 before the module ports design) tell where the
-serial came from and what became of the module record: the serial source in bits 0–1, the record
-status in bits 4–7, the rest 0. Their low byte goes to the gateway as the descriptor set's
-`id_flags`. A module without a record (an on-board module) has 0.
+The identity flags are in register 0x000F. Before the module ports design, that register was
+reserved and 0. The flags tell you where the serial came from and what happened to the module
+record. The serial source is in bits 0–1, the record status is in bits 4–7, and the rest are 0.
+Their low byte goes to the gateway as the descriptor set's `id_flags`. A module without a record
+(an on-board module) has 0.
 
 ```c {#identity}
 void wsmp_pack_identity(const wsmp_identity *id, uint8_t out[WSMP_IDENTITY_LEN])
@@ -126,10 +132,11 @@ void wsmp_pack_identity(const wsmp_identity *id, uint8_t out[WSMP_IDENTITY_LEN])
 }
 ```
 
-The unpack function refuses a block that the station must not admit (WSMP-I1): a wrong magic, a
-different major version, a channel count outside 1 to 8, or a zero serial. A higher minor version is
-accepted (WSMP-V2). The identity flags' reserved bits (2–3 and 8–15) must be 0: a set one is
-`WSMP_ERESERVED` (spec section 6.7, "identity flags"), so a reason the station does not know never
+The unpack function refuses a block that the station must not admit (WSMP-I1). That's a wrong
+magic, a different major version, a channel count outside 1 to 8, or a zero serial. It accepts a
+higher minor version (WSMP-V2). The reserved bits of the identity flags (2–3 and 8–15) must be 0,
+and a set one gives `WSMP_ERESERVED`. That rule is in `docs/firmware-current-design.md` section 6.7,
+in the "identity flags" row of the identity block. It means a reason the station doesn't know never
 reaches the gateway as a known one.
 
 ```c {#identity-unpack}
@@ -198,8 +205,8 @@ void wsmp_pack_desc(const wsmp_desc *d, unsigned n, uint8_t out[WSMP_DESC_BLOCK_
 }
 ```
 
-The unpack function reads `n` descriptors. A reserved bit in any of them, or a non-zero byte in a
-descriptor after the last channel, is `WSMP_ERESERVED`. The registry check comes later, in
+The unpack function reads `n` descriptors. A reserved bit in any of them gives `WSMP_ERESERVED`.
+So does a non-zero byte in a descriptor after the last channel. The registry check comes later, in
 `wsmp_desc_check`.
 
 ```c {#desc-unpack}
@@ -229,11 +236,12 @@ int wsmp_unpack_desc(const uint8_t in[WSMP_DESC_BLOCK_LEN], unsigned n, wsmp_des
 
 ## 5. The registry check
 
-`wsmp_desc_check` applies WSMP-D7. It first checks each descriptor by itself: a known quantity and
-kind, the canonical unit, a scale of −6 to +6 and a width of 1 to 4 bytes. Then it compares the
-channel list with the registry entry of the module type. The entry must exist, have the same schema
-and the same number of channels, and list the same quantity and kind in each position. A failure of
-the channel list is `WSMP_ETYPE`.
+`wsmp_desc_check` applies WSMP-D7. First it checks each descriptor on its own. A descriptor needs a
+known quantity and kind, the canonical unit, a scale of −6 to +6 and a width of 1 to 4 bytes.
+
+Then it compares the channel list with the registry entry of the module type. The entry must exist and
+have the same schema and the same number of channels. It must also list the same quantity and kind
+in each position. If the channel list fails, the result is `WSMP_ETYPE`.
 
 The registry tables come from `wsmp_registry.h` as initializers. This file holds the one copy of
 each, so every user of the lookups shares it.
@@ -260,9 +268,9 @@ const wsmp_cal_limits *wsmp_cal_limits_of(uint16_t quantity)
 }
 ```
 
-The calibration table of record major 1 (`wsmp_cal_limits_of`) is a registry table too: the
-generator writes it from the TOML's `[[calibration]]` rows, with each quantity's physical range
-converted to the channel scale. `wsmp_cal.c` applies it.
+The calibration table of record major 1 (`wsmp_cal_limits_of`) is a registry table too. The
+generator writes it from the TOML's `[[calibration]]` rows and converts each quantity's physical
+range to the channel scale. `wsmp_cal.c` applies it.
 
 ```c {#desc-check}
 static int desc_one_ok(const wsmp_desc *d)
@@ -357,7 +365,7 @@ int wsmp_unpack_snapshot(const uint8_t in[WSMP_SNAPSHOT_LEN], wsmp_snapshot *s)
 ## 7. CRC-32C, quality, budget and text
 
 The descriptor digest is CRC-32C (the Castagnoli polynomial, as iSCSI uses it) over the descriptor
-block. The bitwise form costs no table in flash. The check value of the ASCII digits "123456789" is
+block. The bitwise form needs no table in flash. The check value of the ASCII digits "123456789" is
 `0xE3069283`.
 
 ```c {#crc32c}
@@ -386,11 +394,11 @@ The radio carries 2 bits of quality (WSMP section 9). The snapshot codes and the
 | 6 | not fitted (WSMP 1.1): this hardware build has no source for the channel | 3 (missing) |
 | 7–255 | unknown | 3 (missing) |
 
-"Not fitted" (`WSMP_QUAL_NOT_FITTED`) needs no entry in the table below: it is past the end, so it
-maps to "missing" like an unknown code. The distinction from "missing" holds locally and through
-the catalog map only (a not fitted slot becomes an absent field, a missing one INVALID); a receiver
-of a WSMP radio reading sees both as "missing" (power telemetry spec
-`docs/superpowers/specs/2026-10-29-power-telemetry-design.md` section 8.3).
+"Not fitted" (`WSMP_QUAL_NOT_FITTED`) needs no entry in the `air` table below. It's past the end
+of the table, so it maps to "missing" like an unknown code. The difference from "missing" holds
+only locally and through the catalog map. There a not fitted slot becomes an absent field, and a
+missing one becomes INVALID. A receiver of a WSMP radio reading sees both as "missing" (power
+telemetry spec `docs/superpowers/specs/2026-10-29-power-telemetry-design.md` section 8.3).
 
 ```c {#quality}
 uint8_t wsmp_quality_air(uint8_t quality)
@@ -402,9 +410,9 @@ uint8_t wsmp_quality_air(uint8_t quality)
 ```
 
 The radio budget (WSMP-A1) counts the air width of each value and 2 quality bits for each channel.
-The station admits minute-class modules while their sum stays within `WSMP_RADIO_BUDGET`, 60 bytes:
-the planned plaintext (80 B, the journal's per-build limit) less a 20-byte header (power telemetry
-spec section 8.4). The station with the battery and rails modules uses 53 + 6 = 59 bytes.
+The station admits minute-class modules while their sum stays within `WSMP_RADIO_BUDGET`, 60 bytes.
+That's the planned plaintext (80 B, the journal's per-build limit) minus a 20-byte header (power
+telemetry spec section 8.4). The station with the battery and rails modules uses 53 + 6 = 59 bytes.
 
 ```c {#budget}
 unsigned wsmp_values_bytes(const wsmp_desc *d, unsigned n)
@@ -444,11 +452,14 @@ int wsmp_text_ok(const uint8_t *p, size_t n)
 
 ## 8. Module record v1.0
 
-Every v1 module board carries a 24LC32A EEPROM whose first 128 bytes are the module record
-(`docs/firmware-current-design.md` section 6.9, proposed as WSMP
-section 10.1). It gives the module a serial that follows it across ports, binds it to its sensor and
-carries the sensor's calibration. Every integer is big-endian. The length is fixed in major 1: the
-station reads the 128 bytes in one transfer before it knows anything else.
+Every v1 module board (pod) carries a 24LC32-class 4 KB EEPROM at 0x50. On the pods that's an
+Adafruit #5146 breakout with a CAT24C32 or equivalent. The first 128 bytes of the EEPROM are the
+module record (`docs/firmware-current-design.md` section 6.9, proposed as WSMP section 10.1). The
+record gives the module a serial that follows it across ports. It also binds the module to its
+sensor and carries the sensor's calibration.
+
+Every integer is big-endian. Major 1 fixes the length at 128 bytes, because the station reads them
+in one transfer before it knows anything else.
 
 | Offset | Size | Field | Rule |
 |---|---|---|---|
@@ -492,12 +503,13 @@ enum { ENTRY_KIND = 2, ENTRY_RES_A = 3, ENTRY_REVISION = 4, ENTRY_RES_B = 6, ENT
        ENTRY_GAIN = 12 };
 ```
 
-**Checks, in order.** The first failure decides (section 6.9). Check 1, a read that fails three
-times, never reaches the parser, and the spec's second read after a CRC failure is the caller's: it
-reads again and parses again. Checks 2 to 5 look at the bytes before any field is trusted. An erased
-EEPROM (every byte 0xFF) is BLANK and anything else without the magic, an all-zero one included, is
-NO_MAGIC. The length is checked before the CRC, since a record of another length has its CRC
-elsewhere.
+**Checks, in order.** The first failure decides (section 6.9). Check 1 is a read that fails three
+times, and it never reaches the parser. The spec's second read after a CRC failure belongs to the
+caller, which reads again and parses again.
+
+Checks 2 to 5 examine the bytes before the parser trusts any field. An erased EEPROM (every byte
+0xFF) is BLANK. Anything else without the magic, an all-zero one included, is NO_MAGIC. The parser
+checks the length before the CRC, because a record of another length has its CRC somewhere else.
 
 ```c {#record-head}
 static uint8_t record_head(const uint8_t *in)
@@ -511,7 +523,7 @@ static uint8_t record_head(const uint8_t *in)
 }
 ```
 
-Once the CRC holds, the fields are read into the structure:
+Once the CRC holds, `record_fields` reads the fields into the structure:
 
 ```c {#record-fields}
 static void entry_fields(const uint8_t *p, wsmp_cal_entry *e)
@@ -536,16 +548,23 @@ static void record_fields(const uint8_t *in, wsmp_record *r)
 }
 ```
 
-Check 6 is every structural rule of the table; any failure is MALFORMED. The serial must be in the
-record namespace (0x01) with a low part that is neither 0 nor all ones. The module type must be in
-the registry. The sensor bind must be a known kind and have no value without a kind. Kind 1 (the SHT4x
-serial) is required on module type 1 (the SHT45) and refused on every other type: their parts have no
-serial the station can read (types 2 and 3 in v1), so a bind there could never be confirmed. The part number must be WSMP-M1 text;
-an empty one (16 zero bytes) is accepted, though the programming fixture refuses to write it. With minor 0, the flags and
-every reserved byte must be 0, an entry's reserved bytes included; a later minor may give them a
-meaning, so they are not checked then. A used entry's kind must be 0 or a registry kind, whatever
-the minor. The quantity, the revision and the match with the type's channels are not checked here:
-they are check 7, CAL_REJECTED (`wsmp_cal.c`).
+Check 6 covers every structural rule of the table. Any failure here gives MALFORMED. The rules are:
+
+- The serial must be in the record namespace (0x01), with a low part that is neither 0 nor all ones.
+- The module type must be in the registry.
+- The sensor bind must be a known kind, and it can't have a value without a kind.
+- Module type 1 (the SHT45) must have kind 1 (the SHT4x serial), and every other type must not. The
+  parts on the other types have no serial the station can read (types 2 and 3 in v1), so the station
+  could never confirm a bind there.
+- The part number must be WSMP-M1 text. The parser accepts an empty one (16 zero bytes). The design
+  says the programming fixture must refuse to write an empty one, but that fixture is a host tool
+  that doesn't exist yet (`docs/firmware-current-design.md` section 6.9).
+- With minor 0, the flags and every reserved byte must be 0, an entry's reserved bytes included. A
+  later minor may give them a meaning, so the parser doesn't check them then.
+- A used entry's kind must be 0 or a registry kind, whatever the minor.
+
+This check leaves out the quantity, the revision and the match with the type's channels. Those are
+check 7, CAL_REJECTED (`wsmp_cal.c`).
 
 ```c {#record-body}
 static int serial_ok(uint64_t serial)
@@ -596,9 +615,9 @@ uint8_t wsmp_record_parse(const uint8_t in[WSMP_RECORD_LEN], wsmp_record *r)
 }
 ```
 
-The encoder is for the programming fixture and the tests. It writes the layout in order with the
-cursor helpers, leaves every reserved byte 0 and seals the CRC. So an accepted record of minor 0
-packs back to its own bytes.
+The encoder is for the programming fixture (not written yet) and the tests. It writes the layout in
+order with the cursor helpers, leaves every reserved byte 0 and writes the CRC last. So an accepted
+record of minor 0 packs back to its own bytes.
 
 ```c {#record-pack}
 static uint8_t *pack_entry(uint8_t *p, const wsmp_cal_entry *e)
@@ -645,12 +664,12 @@ uint8_t wsmp_id_flags(uint8_t source, uint8_t status)
 
 ## 9. Descriptor set
 
-The descriptor set (WSMP section 11.1) is what the station tells the gateway about its modules: one
-header, then one entry for each module in the layout, in increasing port order, each followed by its
-descriptors. The entry carries the module's identity (firmware-current-design.md section 6.7, "The
-serial reaches the gateway"): its serial, the identity flags' low byte and the applied record's
-CRC-32C. A header is 8 bytes and an entry 18, so a full set (8 modules, 24 channels) is
-8 + 8 × 18 + 24 × 6 = 296 bytes (WSMP-E4).
+The descriptor set (WSMP section 11.1) is what the station tells the gateway about its modules. It
+has one header, then one entry for each module in the layout, in increasing port order. Each entry
+has its descriptors right after it. The entry carries the module's identity
+(firmware-current-design.md section 6.7, "The serial reaches the gateway"). That's its serial, the
+identity flags' low byte and the applied record's CRC-32C. A header is 8 bytes and an entry 18, so a
+full set (8 modules, 24 channels) is 8 + 8 × 18 + 24 × 6 = 296 bytes (WSMP-E4).
 
 ```mermaid
 ---
@@ -673,14 +692,15 @@ packet-beta
   208-255: "descriptor 1 (6 B), then one for each further channel"
 ```
 
-`id_flags` is the serial source in bits 0–1 and the record status in bits 4–7 (`wsmp_id_flags`);
-bits 2–3 are reserved. `record_crc` is 0 whenever no record is applied. The digest covers every
+`id_flags` holds the serial source in bits 0–1 and the record status in bits 4–7 (`wsmp_id_flags`).
+Bits 2–3 are reserved. `record_crc` is 0 whenever the station applied no record. The digest covers every
 byte after the header, so a set and its digest name each other.
 
 `wsmp_pack_set` writes the set and its digest and returns its length. The caller builds the set from
-admitted modules, so it is within the counts that `wsmp_unpack_set` accepts. A set with more than 8
-modules, a channel count outside 1–8 or more than 24 channels is a bug of the caller: the function
-checks the counts first (Power of Ten rule 5) and then packs nothing and returns 0.
+admitted modules, so it stays within the counts that `wsmp_unpack_set` accepts. A set with more than
+8 modules, a channel count outside 1–8 or more than 24 channels is a bug in the caller. The function
+checks the counts first (Power of Ten rule 5). If they're out of range, it packs nothing and
+returns 0.
 
 ```c {#set-pack}
 static uint8_t *pack_entry_set(uint8_t *p, const wsmp_set_module *m)
@@ -727,7 +747,7 @@ unsigned wsmp_pack_set(const wsmp_set *s, uint8_t out[WSMP_SET_MAX_LEN])
 }
 ```
 
-`wsmp_unpack_set` reads a set of `len` bytes. It refuses, with its own code:
+`wsmp_unpack_set` reads a set of `len` bytes. It refuses each of these faults with its own code:
 
 | Fault | Code |
 |---|---|
@@ -737,7 +757,7 @@ unsigned wsmp_pack_set(const wsmp_set *s, uint8_t out[WSMP_SET_MAX_LEN])
 | ports not strictly increasing (a port twice, or out of order) | `WSMP_ETYPE` |
 | a digest that does not match | `WSMP_EDIGEST` |
 
-A set with no module is valid: every port may be empty. The registry check is separate
+A set with no module is valid, because every port may be empty. The registry check is separate
 (`wsmp_set_check`, WSMP-E7), so the gateway can store a set that fails it for diagnosis.
 
 ```c {#set-unpack}
@@ -796,10 +816,13 @@ int wsmp_unpack_set(const uint8_t *in, size_t len, wsmp_set *s)
 ```
 
 `wsmp_set_check` is the gateway's WSMP-E7 for an unpacked set. Each module must pass the registry
-check (WSMP-D7, its own code). Two identity rules of firmware-current-design.md (section 6.7)
-give `WSMP_ETYPE`: a serial's namespace (its top byte) is its source (`id_flags` bits 0–1), and v1
-admits at most one module of each type (the design's proposed WSMP-P10 text), so a type twice in one
-set is refused.
+check (WSMP-D7), which returns its own code. Two identity rules of firmware-current-design.md
+(section 6.7) give `WSMP_ETYPE`:
+
+- A serial's namespace (its top byte) must be its source (`id_flags` bits 0–1).
+- v1 admits at most one module of each type (WSMP-P10 in module-protocol.md, and
+  firmware-current-design.md sections 1 and 6.7). So the check refuses a type that shows up twice in
+  one set.
 
 ```c {#set-check}
 static int module_ok_set(const wsmp_set *s, unsigned i)

@@ -1,22 +1,32 @@
 # I2C bench tool
 
-A first check of the I2C2 bus on the NUCLEO-WL55JC1, for board B of the bench breadboard
-(`hardware/bench-breadboard-r0`, and the r1 bench). It answers: are the bus lines pulled up, which parts
-answer, do the INA228 and the MAX17048 read what the meter reads, and do the weather sensors and the
-weather meter (cups, vane, rain) read at all? Not the weather-station firmware and not H01 evidence.
+This is a first check of the I2C2 bus on the NUCLEO-WL55JC1, for board B of the bench breadboard
+(`hardware/bench-breadboard-r0`, and the r1 bench). It answers these questions:
 
-On the **power parts** the tool only reads: it writes no INA228 or MAX17048 register, so the node
-firmware finds them as it left them. The **weather sensors** get only what a reading needs, the node's
-own values (`stage0-node/App/mod_th.c`, `mod_reg.c`): the SHT45 measure command 0xFD, the SHTC3 wake
-0x3517 and measure 0x7866, the BMP581 OSR_CONFIG 0x36 = 0x40 and forced mode ODR_CONFIG 0x37 = 0x82,
-the LTR390 MAIN_CTRL 0x00 = 0x0A (UVS mode). The node sets them again at its start. It also writes the
-OLED, on its own SPI bus. It does not use the radio.
+- Are the bus lines pulled up?
+- Which parts answer?
+- Do the INA228 and the MAX17048 read what the meter reads?
+- Do the weather sensors and the weather meter (cups, vane, rain) read at all?
+
+It isn't the weather-station firmware, and its output isn't H01 evidence.
+
+On the **power parts** the tool only reads. It writes no INA228 or MAX17048 register, so the node
+firmware finds them as it left them. The **weather sensors** get only what a reading needs. These are
+the node's own values (`stage0-node/App/mod_th.c`, `mod_reg.c`):
+
+- the SHT45 measure command 0xFD
+- the SHTC3 wake 0x3517 and measure 0x7866
+- the BMP581 OSR_CONFIG 0x36 = 0x40 and forced mode ODR_CONFIG 0x37 = 0x82
+- the LTR390 MAIN_CTRL 0x00 = 0x0A (UVS mode)
+
+The node sets them again when it starts. The tool also writes to the OLED, on its own SPI bus. It
+doesn't use the radio.
 
 ## What it prints
 
-At start, after a `#power PA9 (D9) high` line (the sensor power enable, not wired on the bench; see "The OLED" below)
-and a `#oled` line with the display's SPI clock (see "The OLED" below), and again
-whenever a scan finds nothing:
+At start the tool prints a `#power PA9 (D9) high` line and a `#oled` line with the display's SPI
+clock. PA9 is the sensor power enable, and it isn't wired on the bench (see "The OLED" below). Then
+it prints this line. It prints it again whenever a scan finds nothing:
 
 ```
 #lines SDA=high SCL=high: pull-ups present
@@ -49,9 +59,9 @@ Then once a second (the INA228 line averages four samples):
 In its hibernate mode the gauge measures every 45 s, so `vcell` can stay the same for a while.
 
 **Phase B rail monitors.** After each scan (every 10 s, and once at start) the tool reads each phase B
-INA228 that answers, at the node's addresses (`stage0-node/App/power_config.h` `POWER_ADDR_*`,
-[`power-metering.md`](../../docs/hardware/power-metering.md) section 7), one line each, a single
-reading (not averaged). Phase A has none of them, so it prints nothing:
+INA228 that answers. It uses the node's addresses (`stage0-node/App/power_config.h` `POWER_ADDR_*`,
+[`power-metering.md`](../../docs/hardware/power-metering.md) section 7). You get one line for each
+monitor, from a single sample (not averaged). Phase A has none of them, so it prints nothing:
 
 ```
 #scan 0x41 INA228 load monitor (phase B)
@@ -61,17 +71,18 @@ reading (not averaged). Phase A has none of them, so it prints nothing:
 
 | Rail | Address, strap | `i` positive | `vbus` |
 |---|---|---|---|
-| `load` | 0x41: A0 to VS | from OUT to the load | OUT at the load INA228 |
+| `load` | 0x41: A0 to VS | from OUT to the load | the LOAD joint (the load side of the shunt, on its own lead), not OUT |
 | `solar` | 0x45: A0 and A1 to VS | from the panel into the station | the panel's lead, before D4 |
 | `usb-c` | 0x48: A1 to **SDA** (a rework) | from the USB-C source into the station | the USB-C VBUS, before D2 |
 
-`#rail ... is not an INA228` means another part answers there; a rail INA228 missing from the scan
-but a `?` at another address means its strap is wrong (0x48 seen as 0x40 or 0x44: the A1-to-SDA
-wire is open or on the wrong pad). The node's sign for each rail is the same as printed here (power
-spec section 3.1); only the battery rail is turned.
+`#rail ... is not an INA228` means another part answers at that address. If a rail INA228 is
+missing from the scan but a `?` shows at another address, its strap is wrong. For example,
+0x48 seen as 0x40 or 0x44 means the A1-to-SDA wire is open or on the wrong pad. The node uses the
+same sign for each rail as printed here (power spec section 3.1). It turns only the battery rail.
 
-**Weather sensors and meter.** Once a second, after the power lines (each sensor was triggered the
-second before, so the first line after a start shows `-`):
+**Weather sensors and meter.** Once a second, after the power lines, you get these two lines. The tool
+triggers each sensor once at start and then the second before each line. So the first line after a
+start already shows readings. A `-` marks a sensor that didn't answer or failed its CRC.
 
 ```
 #meters cups=72 hz=2 wind=1.33 m/s (3 s) vane=1486 mV NE rain=2 tips 0.56 mm
@@ -95,7 +106,7 @@ cd firmware/i2cscan
 make flash SERIAL=003B00194142500E20353451
 ```
 
-Flashing writes only the application region. The node's key and journal (pages 95 to 127) survive.
+The flash writes only the application region. The node's key and journal (pages 95 to 127) survive.
 To go back to the node firmware afterwards, flash it as in
 [`../stage0-node/README.md`](../stage0-node/README.md), "Build and flash".
 
@@ -110,24 +121,26 @@ Press the black RESET button (B4) to see the start lines again. Ctrl-] quits min
 
 ## Before connecting
 
-- Mode A: the NUCLEO on USB, the BATTERY POWER link on board B **open**. Never the NUCLEO's USB and
-  the battery supply together.
+- Mode A: the NUCLEO on USB, the BATTERY POWER link on board B **open**. Never use the NUCLEO's USB
+  and the battery supply together.
 - The STEMMA QT hub takes the **unswitched 3.3 V** from CN6.4 and GND from CN6.6, never the
-  5 V pin. The power monitors take the same 3V3 on their own cable (QTM; bench-bb-r0.3, change C).
-  There is no sensor load switch on the bench: change C's PA9 switch is not part of the breadboard
-  build (build-progression record 4.6 dated note, 2026-11-02), so PA9 is unconnected. SDA to PA11
-  (D14, CN5.9), SCL to PA12 (D15, CN5.10) ([`docs/hardware/bench-station-wiring.md`](../../docs/hardware/bench-station-wiring.md)).
+  5 V pin.
+- The power monitors take the same 3V3 on their own cable (QTM, bench-bb-r0.3, change C).
+- The bench has no sensor load switch. Change C's PA9 switch isn't part of the breadboard build
+  (build-progression record 4.6 dated note, 2026-11-02), so nothing connects to PA9.
+- SDA goes to PA11 (D14, CN5.9) and SCL to PA12 (D15, CN5.10)
+  ([`docs/hardware/bench-station-wiring.md`](../../docs/hardware/bench-station-wiring.md)).
 
 ## Checks against the meter
 
 | Tool line | Meter |
 |---|---|
-| `#ina228 ... i=` | the Fluke 87V in series in the pack + lead at CELL+ position 1 (record M1; its mA input for the 38 mA load): about +37.6 mA with the 100 ohm load and no source; within 2 % + 2 mA of the meter (build-sheet power check 3: the shunt is verified, not measured). In series only for a short steady reading: its current shunt adds tens to hundreds of milliohms to the battery path (its span limits, build-sheet power check 7: the + span at most 75 mOhm) |
+| `#ina228 ... i=` | the Fluke 87V in series in the pack + lead at CELL+ position 1 (record M1; its mA input for the 38 mA load). Expect about OUT / 100 ohm with the 100 ohm load and no source (roughly 37-42 mA over a 3.7-4.2 V cell), positive (out of the battery). It should agree within 2 % + 2 mA of the meter (build-sheet power check 3: the shunt is verified, not measured). Its current shunt adds about 1.8 ohm on the mA input (1.8 mV/mA, about 68 mV at 38 mA) and about 30 mOhm on the A input, so put it in series only for a short steady reading (the span limits, build-sheet power check 7: the + span at most 75 mOhm) |
 | `#rail <rail> ... i=` | the 87V the same way, in series in that rail's + lead, at a steady current: within 2 % + 2 mA (build-sheet power check B3) |
 | `#gauge vcell=` | at rest or at the 38 mA load, the meter at the pack plug (back-probed): within 10 mV. At a 1 A charge, the meter across the gauge's own sense points (the CELL+ clamp to the STAR clamp): within 10 mV, the pack-plug difference recorded (build-sheet power check 8) |
 | `#ina228 vbus=` | OUT, on the OUT lever connector (or the charger's OUT header pin, a zero-current test point). With a source charging the cell (below 4.1 V): 4.3-4.5 V and at least 100 mV above `vcell` (build-sheet power check 9). With no source: a little below `vcell` (the charger's battery FET) |
 
-Wiring checks these readings catch:
+These readings catch the following wiring faults:
 
 | Reading | Wiring fault |
 |---|---|
@@ -149,10 +162,14 @@ Wiring checks these readings catch:
 
 ## The OLED
 
-The same readings appear on the bench OLED, redrawn once a second: Adafruit #2674, 2.7" 128 x 64,
-SSD1325 controller, on **SPI1** (not I2C, so it is not in the scan). The r1 bench mounts the panel
-upside down (BB3, DS1 at 180°), so the frame is drawn turned 180° (`oled_surf_on(frame, 1)`), as it is sent.
-Each part's row says `NO <part>` when it did not answer.
+The same readings appear on the bench OLED, redrawn once a second. It's an Adafruit #2674, 2.7"
+128 x 64, with an SSD1325 controller. It sits on **SPI1** (not I2C), so it isn't in the scan. The r1
+bench mounts the panel upside down (BB3, DS1 at 180°). So the tool draws the frame turned
+180° (`oled_surf_on(frame, 1)`) and sends it as drawn.
+
+Each I2C part's row says `NO <part>` when it didn't answer (`NO INA228`, `NO MAX17048`, `NO SHT45`,
+`NO SHTC3`, `NO BMP581`). The LTR390 shows `UV NO`. The WIND and RAIN rows stay blank until the meter
+inputs are up.
 
 ```
 I2C 44 47 53 70
@@ -165,11 +182,11 @@ WIND 1.33m/s NE
 RAIN 2 TIPS 0.56mm
 ```
 
-The display is set up once, at start. If it gets its 3.3 V later (the OLED link's jumper cap fitted
-with the board running), press RESET.
+The tool configures the display once, at start. If the display gets its 3.3 V later (you fit the
+OLED link's jumper cap with the board running), press RESET.
 
-**Interface:** the module must be in SPI mode: on its back, **R19 and R21 fitted, R18 and R20 empty**
-(Adafruit's guide; the module may ship in 8-bit mode with R18 and R20 fitted).
+**Interface:** the module must be in SPI mode. On its back, **R19 and R21 fitted, R18 and R20 empty**
+(Adafruit's guide). The module may ship in 8-bit mode with R18 and R20 fitted.
 
 | OLED pin | Signal | NUCLEO | MCU pin |
 |---|---|---|---|
@@ -183,18 +200,26 @@ with the board running), press RESET.
 | 3, 5, 6, 9-14, 17-19 | not used | leave empty | |
 | 20 | frame ground (the metal case) | GND, or leave open | |
 
-The pins are from UM2592 Rev 4, Tables 17 and 18; the hardware build sheet (`hardware/bench-breadboard-r0/build-sheet.md`) lands each signal on its morpho pin only and the supply pair straight on the NUCLEO, never on a breadboard rail (build-progression record N1, N3). D9 (PA9) is not used for reset: it is the sensor power enable. Change C's switch is not part of the
-breadboard build (build-progression record 4.6 dated note, 2026-11-02), so on the bench PA9 is
-unconnected; this tool still drives PA9 high at start (a `#power` line says so) and keeps it high,
-which is harmless on the bench. Put the kit's 220 uF capacitor across the OLED's 3.3 V and GND (+ to
-3.3 V). The display draws 50-150 mA from the NUCLEO's 3V3.
+The pins come from UM2592 Rev 4, Tables 17 and 18. The hardware build sheet
+(`hardware/bench-breadboard-r0/build-sheet.md`) lands each signal on its morpho pin only. It puts the
+supply pair straight on the NUCLEO, never on a breadboard rail (build-progression record N1, N3).
 
-The SPI clock is the fastest step at or below 1 MHz (Adafruit: the SSD1325 needs 1 MHz or less); the
+D9 (PA9) isn't used for reset. It's the sensor power enable. Change C's switch isn't part of the
+breadboard build (build-progression record 4.6 dated note, 2026-11-02), so on the bench nothing
+connects to PA9. This tool still drives PA9 high at start and keeps it high. A `#power` line says so.
+That's harmless on the bench.
+
+Put the kit's 220 uF capacitor across the OLED's 3.3 V and GND (+ to 3.3 V). The display draws
+50-150 mA from the NUCLEO's 3V3.
+
+The SPI clock is the fastest step at or below 1 MHz (Adafruit: the SSD1325 needs 1 MHz or less). The
 start line prints it. The set-up commands are Adafruit's for this module (Adafruit_SSD1325_Library).
-**Mode B (battery only):** the OLED's 50-150 mA comes from the same 3.3 V the regulator makes from the
-cell, so the INA228's current then includes the display. Unplug the OLED's 3.3 V wire (named in the
-build sheet's bench checks) for mode B battery readings. Mode A, the daily setup with the NUCLEO on USB, is not affected.
 
-SPI is write only, so the tool cannot tell whether a display is there: if the screen stays dark,
-check the 3.3 V at pin 2, the five signal wires, and R19/R21. `#oled SPI timeout` means SPI1 itself
-stalled, not the display.
+**Mode B (battery only):** the regulator makes 3.3 V from the cell, and the OLED's 50-150 mA comes
+from that same 3.3 V. So in mode B the INA228's current includes the display. For mode B battery
+readings, unplug the OLED's 3.3 V wire (the build sheet's bench checks name it). Mode A, the daily
+setup with the NUCLEO on USB, isn't affected.
+
+SPI is write only, so the tool can't tell if a display is there. If the screen stays dark, check the
+3.3 V at pin 2, the five signal wires, and R19/R21. `#oled SPI timeout` means SPI1 itself stalled,
+not the display.

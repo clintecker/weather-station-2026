@@ -1,9 +1,9 @@
 # protocol: the radio frame on the gateway side
 
 `protocol.py` builds and opens the radio frames of protocol version 6. The design notes for this
-format are in `docs/protocol-design.md`; version 6 (catalog version 2 observations and the 64-byte
-health report) is defined by the power telemetry design,
-`docs/superpowers/specs/2026-10-29-power-telemetry-design.md` sections 4–6.
+format are in `docs/protocol-design.md`. Version 6 adds catalog version 2 observations and the
+64-byte health report. The power telemetry design defines it, in sections 4 to 6 of
+`docs/superpowers/specs/2026-10-29-power-telemetry-design.md`.
 
 The module builds four parts of a frame:
 
@@ -20,7 +20,7 @@ repeated nonces.
 
 This document is the source. `tools/tangle.py` generates `protocol.py` from the code chunks below.
 The repository also holds the generated file, so imports, ruff and the tests read ordinary Python.
-Edit this file, then regenerate and check:
+Edit this file, then regenerate and check it:
 
 ```sh
 python3 tools/tangle.py ws0/protocol.lit.md                          # write protocol.py
@@ -45,7 +45,7 @@ them in file order.
 | Replay | the gateway counts an exact copy of an accepted frame. It raises no alarm | `test_replayed_obs_gets_no_reply_and_is_not_stored`, `test_exact_duplicate_of_latest_frame_is_not_answered` |
 | Regression | any other authentic frame at or below the mark raises the key-reuse alarm | `test_same_counter_different_bytes_alarms`, `test_older_frame_never_seen_still_alarms`, `test_wipe_and_reuse_alarms_on_first_frame` |
 | Unseal | `unseal` refuses the wrong length, version, kind or station before it decrypts | `test_reply_rejections`, `test_diagnostic_frame_agreement`, `test_version_6_byte0` |
-| Health report by name | `pack_diag` and `unpack_diag` use the C member names; no caller depends on the tuple order of `DIAG`. `diag_problems` names every broken canonical rule | `test_pack_diag_by_name`, `test_diag_layout_matches_the_spec`, `test_diag_canonical_rules` |
+| Health report by name | `pack_diag` and `unpack_diag` use the C member names. No caller depends on the tuple order of `DIAG`. `diag_problems` names every broken canonical rule | `test_pack_diag_by_name`, `test_diag_layout_matches_the_spec`, `test_diag_canonical_rules` |
 
 The counter is the AES-CCM nonce. Two different plaintexts under one key and one nonce lose their
 confidentiality and their authenticity. The allocator rules in section 5 and the mark in section 6
@@ -193,13 +193,18 @@ def _header_and_nonce(kind, station, counter):
 ### Reading the header
 
 `frame_kind` returns the kind only when the high nibble is `VERSION`. It returns `None` for an
-empty packet or another version. A version 5 frame starts with `0x51` to `0x54`, and a frame of the
-older version 4 format with `0x57`: both read as version 5, so `frame_kind` returns `None`. A
-mismatched end therefore drops the frames as another version and never NACKs them; the node keeps
-the records in its journal until both ends match (power telemetry design section 4).
+empty packet or another version.
 
-`frame_counter` reads the counter field. It checks nothing. Callers use it on a frame that `unseal`
-authenticated. `unseal` also uses it to rebuild the nonce.
+A version 5 frame starts with `0x51` to `0x54`. A frame of the
+older version 4 format starts with `0x57`. Both read as version 5, so `frame_kind` returns `None`.
+So if the two ends run different versions, the receiving end drops the frames as another version
+and never NACKs them. The node keeps the records in its journal until both ends match (power
+telemetry design section 4).
+
+`frame_counter` reads the counter field. It checks nothing. The gateway service uses it only on
+frames that `unseal` authenticated. The web telemetry (`ws0/web.py`) also reads it from rejected,
+unauthenticated frames, but only to show the counter in the frame log. The test harness and the
+simulator read it from frames they sealed themselves. `unseal` also uses it to rebuild the nonce.
 
 ```python {#frame-kind}
 def frame_kind(packet):
@@ -291,9 +296,10 @@ NACK_COLLISION, NACK_INVALID = 1, 2
 ### Health report (DIAG)
 
 The health report tells the gateway the node's state. The node sends it once and expects no reply.
-The node does not keep it in its journal, and the gateway does not answer it. Version 6 makes it a
-fixed 64 bytes (power telemetry design section 6.1): the first 32 bytes keep their version 5
-layout, and bytes 32–63 carry the slow power and station items. The struct is
+The node doesn't keep it in its journal, and the gateway doesn't answer it.
+
+Version 6 makes it a fixed 64 bytes (power telemetry design section 6.1). The first 32 bytes keep
+their version 5 layout. Bytes 32 to 63 carry the slow power and station items. The struct is
 `>IIHIHHHHBBIbbBBIHHHHhHhBBHhHhhh`:
 
 ```mermaid
@@ -365,11 +371,13 @@ packet-beta
 | 60 | 2 | `chg_temp` | charger die temperature, 0.1 °C | `I16_NONE` |
 | 62 | 2 | `pack_temp` | pack temperature, 0.1 °C | `I16_NONE` |
 
-The fields say what is measured, not which part measures it, so a later phase fills a slot without
-a format change. A slot that a build or phase cannot fill carries its none code; the gateway maps
-every none code to `null`. Byte 51, the fitted byte, says why a slot is `null`: its bit for the slot
-set means the build has a source, so the none code is a sensor fault; clear means the slot is not
-measured in this build (design section 6.1).
+The fields name the quantity, not the part that measures it. So a later phase fills a slot
+without a format change. A slot that a build or phase can't fill carries its none code. The gateway
+maps every none code to `null`. Byte 51, the fitted byte, says why a slot is `null` (design section
+6.1):
+
+- If the slot's bit is set, the build has a source, so the none code is a sensor fault.
+- If the bit is clear, this build doesn't measure the slot.
 
 | Bit | Constant | Slots |
 |---|---|---|
@@ -403,10 +411,13 @@ RESET_CAUSES = ('unknown','power','pin','brownout','software','watchdog','lowpow
 LINK_STATES = ('linked','probing')
 ```
 
-The none codes and the defaults of the version 6 fields. A signed none code is the type's minimum,
-an unsigned one is all ones. The three station counts have no none code (the firmware fills them in
-every phase); their default is 0. `CRASH_PC_UNTRUSTED` is a value, not a none code: the gateway
-shows it as a PC.
+Here are the none codes and the defaults of the version 6 fields. A signed none code is the type's
+minimum. An unsigned one is all ones. The three station counts have no none code, because the
+firmware fills them in every phase. Their default is 0.
+
+`CRASH_PC_UNTRUSTED` is a value, not a none code. The gateway stores it as `last_crash_pc`
+`'ffffffff'` (not `null`). The dashboard shows it as "crash, frame not trusted (no PC)", not as an
+address.
 
 ```python {#diag-none}
 U16_NONE, I16_NONE, CHARGER_NONE = 0xFFFF, -0x8000, 0xFF     # no value; the fitted byte says why
@@ -419,13 +430,14 @@ DIAG_DEFAULTS = dict(crash_pc=CRASH_PC_NONE, boots=0, tx_timeouts=0, i2c_recover
                      chg_batt_ma=I16_NONE, chg_temp=I16_NONE, pack_temp=I16_NONE)
 ```
 
-`pack_diag(**fields)` packs by name. The fifteen version 5 fields are required. A version 6 field
-that the caller leaves out gets its default from `DIAG_DEFAULTS` (its none code; `fitted` 0, nothing
-fitted).
-An unknown or missing name raises `TypeError`; a value its field cannot hold raises `struct.error`.
+`pack_diag(**fields)` packs by name. You must pass the fifteen version 5 fields. A version 6 field
+that you leave out gets its default from `DIAG_DEFAULTS`. That's its none code, or 0 for `fitted`
+(nothing fitted). An unknown or missing name raises `TypeError`. A value that its field can't hold
+raises `struct.error`.
+
 `unpack_diag(payload)` returns a `dict` of the raw values by `DIAG_FIELDS` name. It raises
 `ValueError('Wrong health report length')` for any length other than `DIAG.size`. It applies no
-rule: `diag_problems` does.
+rule. `diag_problems` does that.
 
 ```python {#pack-diag}
 def pack_diag(**values):
@@ -457,12 +469,14 @@ The charger status byte (power telemetry design section 6.3):
 | 3–5 | `CHG_STAGE_SHIFT`, `CHARGER_STAGES` | 0 not reported, 1 `precharge` (pre-charge or trickle), 2 `cc`, 3 `cv`, 4 `topoff`, 5 `terminated`, 6 `not_charging`, 7 reserved |
 | 6–7 | `CHG_INPUT_SHIFT`, `CHARGER_INPUTS` | active input: 0 not reported, 1 `solar`, 2 `usb_c`, 3 `no_input` (the charger reports that no input powers it) |
 
-`ws_frame.h` defines the same bits as `WS_CHG_*`. Phase A fills bits 0–2 from the PGOOD and CHG
-pins, with stage 0 and input 0. The stage and the active input are for a charger that reports them
-(none is fitted today); the active input would attribute the charger's input current to the solar or
-the USB-C rail. Input 3, `no_input`, is a reading, not a gap: the charger has neither input (every
-night on solar with USB-C unplugged), so both source rails carry 0 mA (design section 3.2). It is canonical; "not
-reported" stays 0.
+`ws_frame.h` defines the same bits as `WS_CHG_*`. Phase A fills bits 0 to 2 from the PGOOD and CHG
+pins, with stage 0 and input 0. The stage and the active input are for a charger that reports them.
+No build has one yet. With one, the active input would tell you if the charger's input current
+comes from the solar rail or the USB-C rail.
+
+Input 3, `no_input`, is a reading, not a gap. It means the charger has neither input, which happens
+every night on solar with USB-C unplugged. Both source rails then carry 0 mA (design section 6.3,
+and `WS_CHG_INPUT_NO_INPUT` in `ws_frame.h`). Code 3 is canonical. "Not reported" stays 0.
 
 ```python {#charger-bits}
 CHG_POWER_GOOD, CHG_CHARGING, CHG_FAULT = 0x01, 0x02, 0x04
@@ -472,22 +486,25 @@ CHARGER_INPUTS = (None, 'solar', 'usb_c', 'no_input')                           
 ```
 
 **Canonical rules** (power telemetry design section 6.1). The node never sends a non-canonical
-report. A health report is never answered, so the gateway keeps every other value of a report that
-breaks a rule:
+report. The gateway never answers a health report. So when a report breaks a rule, the gateway
+keeps every other value in it:
 
 | Rule | Problem string | Gateway action |
 |---|---|---|
 | fitted bit 7 is 0 | `'fitted bit 7 set'` | log a warning, store the report (the bit carries no meaning) |
 | a status byte other than `CHARGER_NONE` has a stage of 0–6 | `'charger stage 7'` | log a warning, store the five charger keys as `null` |
 
-Every active input code (0–3) is canonical. Code 3 was reserved until 2026-10-29 (design section
-6.3); it now means "no input", so phase C needs no change to these rules.
+Every active input code (0 to 3) is canonical. The design reserved code 3 until 2026-10-29
+(section 6.3). It now means "no input", so a charger that reports its input needs no change to
+these rules. (Phase C no longer exists in the design.)
 
-`diag_problems(d)` takes the `dict` of `unpack_diag` and returns the broken rules as a tuple of
-these strings, empty when the report is canonical. `charger_keys(status)` returns the five
-gateway charger keys: all `None` for `CHARGER_NONE` or a non-canonical byte, otherwise the three
-booleans, the stage name (`None` for "not reported") and the input name (`None` for "not
-reported", `'no_input'` for code 3).
+`diag_problems(d)` takes the `dict` of `unpack_diag`. It returns the broken rules as a tuple of
+these strings. The tuple is empty when the report is canonical.
+
+`charger_keys(status)` returns the five gateway charger keys. For `CHARGER_NONE` or a non-canonical
+byte, all five are `None`. Otherwise you get the three booleans, the stage name and the input name.
+The stage name is `None` for "not reported". The input name is `None` for "not reported" and
+`'no_input'` for code 3.
 
 ```python {#diag-problems}
 def diag_problems(d):
@@ -562,15 +579,17 @@ flowchart TD
 | 6 | otherwise the stored binding must equal this one | `ValueError('Nonce state/key/endpoint mismatch')` |
 
 **Why the code never recreates the state.** A new file starts at counter 0, so its first counter
-is 1. The key already used counter 1 and every counter up to the lost value. A silent new file
-would repeat nonces under the same key. Two callers pass `create=True`. `provision` in
-`ws0/__main__.py` (the `init` command) generates a new key in the same step. The error text names
-that remedy. The simulation harness (`ws0/harness.py`) creates fresh state in a new state
-directory for each scenario. It uses a fixed public test key, never a deployment key.
+is 1. The key already used counter 1 and every counter up to the lost value. So a silent new file
+would repeat nonces under the same key.
 
-**Why the binding.** The binding is a hash of the key, station and kind. Step 6 fails in three
-cases: the file was copied from another station, the key is different, or the kind is wrong. So
-the file never hands out counters for another nonce space. The file stores the hash, not the key.
+Two callers pass `create=True`. `provision` in `ws0/__main__.py` (the `init` command) generates a
+new key in the same step. The error text names that fix. The simulation harness
+(`ws0/harness.py`) creates fresh state in a new state directory for each scenario. It uses a fixed
+public test key, never a deployment key.
+
+**Why the binding.** The binding is a hash of the key, station and kind. Step 6 fails if someone
+copied the file from another station, if the key is different, or if the kind is wrong. So the
+file never hands out counters for another nonce space. The file stores the hash, not the key.
 
 `WS0_UNSAFE_FAST_FSYNC=1` turns the durability settings off for simulations and unit tests
 (`gateway.full_flush`). Those runs claim no durability across power loss.
@@ -723,12 +742,14 @@ flowchart TD
 **Why a replay is not an alarm.** An exact copy reuses no nonce. It is the same ciphertext under
 the same nonce, so it reveals nothing new. The gateway still does not answer or store it.
 
-**Why a regression is an alarm.** Different bytes under a counter already seen have one cause: the
-node sealed a second plaintext with a nonce that it already used. That breaks CCM for both frames.
-An unknown frame below the mark is also a regression. Direct LoRa does not reorder frames. So the
+**Why a regression is an alarm.** Different bytes under a counter already seen have one cause. The
+node sealed a second plaintext with a nonce that it already used, and that breaks CCM for both
+frames.
+
+An unknown frame below the mark is also a regression. Direct LoRa doesn't reorder frames. So the
 gateway treats an older counter that never arrived as reuse
 (`test_older_frame_never_seen_still_alarms`). A node that restarts its counter under the old key
-gets this verdict on its first frame (`test_wipe_and_reuse_alarms_on_first_frame`). The remedy is a
+gets this verdict on its first frame (`test_wipe_and_reuse_alarms_on_first_frame`). The fix is a
 new key.
 
 **Why before the gateway acts on the frame.** `service.py` calls this method before
@@ -839,11 +860,13 @@ Plaintext length = frame length − `HEADER_LEN` − `TAG_LEN`.
 | other | none | `unseal` refuses every length |
 
 The observation range covers every field bitmap of the full catalog, not only the bitmap of one
-build: `fields.fields_len` counts the 2-byte extension word when an extension field is present, so
-the upper end is the record with every field (94 B; a node build sends at most 80 B, design section
-5.4). The smallest field adds one byte; an extension-only record (header, extension word, one
-2-byte field) is 26 B, inside the range. So `unseal` refuses an observation plaintext with no
-field. The exact observation length depends on the encrypted field bitmap. So `fields.decode`
+build. `fields.fields_len` counts the 2-byte extension word when an extension field is present. So
+the upper end is the record with every field, 94 B. A node build sends at most 80 B (design section
+5.4).
+
+The smallest field adds one byte, so `unseal` refuses an observation plaintext with no field. An
+extension-only record (header, extension word, one 2-byte field) is 26 B, which is inside the
+range. The exact observation length depends on the encrypted field bitmap, so `fields.decode`
 checks it after decryption.
 
 ```python {#plain-length-table}
@@ -890,8 +913,9 @@ Steps 1 to 4 use no cryptography. Step 5 fails for a wrong key, a changed byte a
 changed kind. The kind is in the nonce and in the AAD. `service.py` never answers a frame that
 fails here. A NACK for an unauthenticated frame would let anyone make the node drop a record.
 
-`ws_open_reply` in `ws_frame.c` applies the same checks to ACK and NACK on the node
-(`test_reply_rejections`).
+On the node, `ws_open_reply` in `ws_frame.c` applies the length, version, kind, station and tag
+checks to ACK and NACK (`test_reply_rejections`). It takes either reply kind. It has no separate
+counter-range check, so a counter of 0 goes on to the tag check.
 
 ```python {#unseal}
 def unseal(key, station, kind, packet):

@@ -3,9 +3,12 @@
 `tx_exchange.c` runs the radio exchange of the transmitting node (the TX node) for one minute. The
 TX node sends the live observation first. Then it sends older pending observations, as many as the
 transmission policy allows. It seals each frame with a newly reserved counter. After each frame it
-listens for an acknowledgement (ACK) during its own ACK window. Then it sends the health report if
-one is due. One explicit state machine does this work. Radio events and timer events drive it. This
-file also holds the AES key, and it is the only module that seals and opens frames.
+listens for an acknowledgement (ACK) during its own ACK window. Last, it sends the health report if
+one is due.
+
+One explicit state machine does all of this, and radio events and timer events drive it. This file
+holds the AES key, and it's the only module that seals and opens frames with it. `selftest.c` also
+seals and opens fixed known-answer frames at boot, but with a test key.
 
 This document is the source. `tools/tangle.py` generates `tx_exchange.c` from the code chunks below.
 The repository also holds the generated file, so the build, the static analysers and the host tests
@@ -40,7 +43,7 @@ layouts and the bridge's line contract.
 | No flash write while the radio is busy | The code reserves counters in the gap state. `app_tx.c` journals a reading made during an exchange when the radio goes idle | every test (`h_flash_ops_during_radio`), `test_a_reading_made_during_an_exchange_is_journaled_when_the_radio_goes_idle` |
 | A failing link sends little | After a missed reply, one more frame goes. Then the drain stops | `test_a_missed_reply_allows_one_more_frame_then_stops_the_drain` |
 | A hung radio is detected | The exchange has a time limit. The watchdog check aborts an exchange that passes it | `test_a_radio_that_never_finishes_trips_the_exchange_bound` |
-| The health report is complete and cheap | `send_diag` fills all 64 bytes from cached values and counters only, with none codes for what the phase cannot fill; every TxTimeout is counted | `test_the_health_report_carries_every_field_from_cached_values`, `test_every_transmit_timeout_is_counted_and_reported` |
+| The health report is complete and cheap | `send_diag` fills all 64 bytes from cached values and counters only, with none codes for what the phase can't fill. The code counts every TxTimeout | `test_the_health_report_carries_every_field_from_cached_values`, `test_every_transmit_timeout_is_counted_and_reported` |
 
 ## 2. State machine
 
@@ -213,11 +216,13 @@ static enum { GAP_FRAME, GAP_DIAG } gap_then;   /* what the gap timer starts */
 static UTIL_TIMER_Object_t gap_timer;
 ```
 
-The ACK window has its own timer. The code does not use the timeout of ST's driver. A CRC error
-leaves the driver's `RxTimeoutTimer` running, and its timeout leaves the radio receiving. The radio
-listens with `ws_radio_rx(0)`, which sets no driver timeout. Every way out of `ack-wait` puts the
-radio in standby. `batch` holds the events of the current `process` pass that are not handled yet.
-`events` is the callback table that the code gives to the radio driver.
+The ACK window has its own timer. The code doesn't use the timeout of ST's driver, because a CRC
+error leaves the driver's `RxTimeoutTimer` running, and that timeout leaves the radio receiving. The
+radio listens with `ws_radio_rx(0)`, which sets no driver timeout. Every way out of `ack-wait` puts
+the radio in standby.
+
+`batch` holds the events of the current `process` pass that aren't handled yet. `events` is the
+callback table that the code gives to the radio driver.
 
 ```c {#ack-timer}
 /* This firmware times the ACK window with its own timer, not with the radio driver's timeout.
@@ -229,11 +234,12 @@ static uint32_t batch;      /* the events of this process pass not handled yet *
 static RadioEvents_t events;
 ```
 
-The exchange queue. `queue[0..qn)` holds journal references, and `qi` is the frame being sent.
-`replied[i]` records that the gateway answered `queue[i]` with an ACK or a NACK. `MAX_QUEUE` is 21
-(`tx_exchange.h`): the live frame and up to 20 backlog frames. `exchange_start_s` and
-`exchange_limit_s` give the watchdog its evidence. `sent_counter`, `sent_epoch` and `sent_seq`
-identify the frame just sent. A reply must echo them.
+Next is the exchange queue. `queue[0..qn)` holds journal references, and `qi` is the index of the
+current frame. `replied[i]` records that the gateway answered `queue[i]` with an ACK or a NACK.
+`MAX_QUEUE` is 21 (`tx_exchange.h`): the live frame and up to 20 backlog frames.
+
+`exchange_start_s` and `exchange_limit_s` give the watchdog its evidence. `sent_counter`,
+`sent_epoch` and `sent_seq` identify the frame just sent. A reply must echo them.
 
 ```c {#queue}
 static jref_t queue[MAX_QUEUE];
@@ -256,7 +262,7 @@ Only this file writes `tx_counts`. Other modules read it through `exchange_count
 | `ack_rejects` | a packet fails `ws_open_reply`, or a NACK is not for the frame just sent |
 | `unexpected` | an event arrives in a state that does not expect it |
 | `air` | a failure run: a refused counter reservation, a refused send or a TxTimeout adds one. A TxDone clears it |
-| `tx_timeouts` | every TxTimeout, of an observation (`in_sending`) or of a health report (`in_diag_sending`); saturates at 0xFFFF and never clears until a reset. The health report carries it (power telemetry design, sections 6.1 and 6.2) and `#counts` shows it |
+| `tx_timeouts` | every TxTimeout, of an observation (`in_sending`) or of a health report (`in_diag_sending`). It saturates at 0xFFFF and clears only at a reset. The health report carries it (power telemetry design, sections 6.1 and 6.2) and `#counts` shows it |
 
 Only a TxDone proves that the radio works. `watchdog_healthy` (`app_tx.c`) fails when the `air`
 run passes `TX_FAIL_LIMIT` (10). The watchdog then resets a radio that accepts sends but never
@@ -327,8 +333,8 @@ static int8_t ack_rssi = WS_SIGNAL_NONE, ack_snr = WS_SIGNAL_NONE;
 ### Event bits
 
 Interrupt and timer callbacks post events as bits into `pending_ev` (`App/events.h`).
-`events_post` sets bits with interrupts masked and schedules the process task. Several events can
-therefore arrive before the task runs, and the task loses none of them.
+`events_post` sets bits with interrupts masked and schedules the process task. So several events
+can arrive before the task runs, and the task doesn't lose any of them.
 
 ```c {#event-bits}
 /* Interrupt and timer callbacks post these events as bits (App/events.h). */
@@ -455,8 +461,8 @@ qn = 1:   15 s
 qn = 21: 116 s
 ```
 
-`exchange_overdue(now_s)` is true when an exchange runs and more than `exchange_limit_s` has passed
-since `exchange_start_s`. `watchdog_healthy` (`app_tx.c`) then calls `sampling_stop`, which stops
+`exchange_overdue(now_s)` is true when an exchange runs and `now_s - exchange_start_s` is more than
+`exchange_limit_s`. `watchdog_healthy` (`app_tx.c`) then calls `sampling_stop`, which stops
 the sample and module timers. Next it calls `exchange_abort` (section 9) and lets the watchdog reset
 the board.
 
@@ -488,8 +494,8 @@ void exchange_start(const jref_t *live, unsigned backlog)
 ### Gap
 
 `gap_before` records what the gap starts and enters `gap`. ST's `UTIL_TIMER_Start` refuses a timer
-that is already running. That refusal fails a `WS_CHECK`, but it needs no other recovery. The
-running timer still posts `EV_GAP`.
+that is already started. That refusal fails a `WS_CHECK`, but it needs no other recovery, because
+the timer that's already started still posts `EV_GAP`.
 
 ```c {#gap-before}
 /* The gap timer starts the next frame after INTER_FRAME_MS. Nothing waits in the meantime. */
@@ -530,7 +536,7 @@ A local failure does not count as a missed reply and does not change the drain. 
 `send_obs` seals and sends one plaintext. It does these steps in order:
 
 1. Reserve a counter with `store_next_counter`. On failure, note a transmit failure and return -1.
-   A frame without a durable counter could repeat an AES-CCM nonce (a number that must be used
+   A frame without a durable counter could repeat an AES-CCM nonce (a number that you must use
    only once with a key).
 2. Seal with `ws_seal_kind`. A valid station and counter always seal, so a failure is a `WS_CHECK`
    failure. Return 0.
@@ -541,19 +547,27 @@ A local failure does not count as a missed reply and does not change the drain. 
    `#error radio-busy` and return 0.
 
 The bench display hooks (`App/oled_hooks.h`) tell the bench build's OLED what the exchange does:
-`oled_note_sent` when a frame goes on air (here and in `send_diag`), `oled_note_ack` for the ACK to the
-frame just sent (`on_ack`) and `oled_note_no_ack` when its window ends empty (`no_reply`), a NACK, a
-transmit timeout or `exchange_abort` ends it. They run
-here, in the exchange's task, and only note the event and copy the frame; the display draws from its
-own task. The frame that plays the packet burst is the minute's live reading, the exchange's first
-(`qi < live_n`: `live_n` is 1 when `exchange_start` queued a live reading, 0 when its journal append
-failed and the queue holds backlog only). Every other frame (the backlog, the one more after a miss,
-the health report) is passed as `OLED_SENT_BACKLOG` or `OLED_SENT_REPORT`, and the banner only counts it,
-so a minute without a live reading plays no burst. A first frame that fails locally gets no burst that minute. In the field build
-the hooks are empty inline functions, and they take only values the exchange already holds (a call
-such as `store_journal_pending()` as an argument would still run in the field build), so the hooks
-add no code there. The WS_CHECK sites number their lines (`ws_check.h`): a line added above one
-changes only its line constant in the image.
+
+- `oled_note_sent` when a frame goes on air (here and in `send_diag`).
+- `oled_note_ack` for the ACK to the frame just sent (`on_ack`).
+- `oled_note_no_ack` when the frame's window ends empty (`no_reply`), or when a NACK, a transmit
+  timeout or `exchange_abort` ends it.
+
+The hooks run here, in the exchange's task. They only note the event and copy the frame. The
+display draws from its own task.
+
+The frame that plays the packet burst is the minute's live reading, which is the exchange's first
+frame (`qi < live_n`). `live_n` is 1 when `exchange_start` queued a live reading. It's 0 when the
+minute has no live reference (its reading didn't encode, or its journal append failed), so the
+queue holds backlog only. The code passes every other frame (the backlog, the one more after a
+miss, the health report) as `OLED_SENT_BACKLOG` or `OLED_SENT_REPORT`, and the banner only counts
+it. So a minute without a live reading plays no burst. A first frame that fails locally gets no
+burst that minute.
+
+In the field build the hooks are empty inline functions, and they take only values the exchange
+already holds, so they add no code there. (A call such as `store_journal_pending()` as an argument
+would still run in the field build.) The `WS_CHECK` sites number their lines (`ws_check.h`), so a
+line added above one changes only its line constant in the image.
 
 The counter reservation can write flash. It runs in the gap state, while the radio is in standby
 or asleep. The flowchart shows `send_current` and `send_obs` together.
@@ -694,7 +708,7 @@ static void window_closed(void)
 `handle_reply` opens `rx_frame` with `ws_open_reply`, which checks length, version, kind, station
 and authentication tag. On a failure, `handle_reply` increments `ack_rejects`, flashes the red LED,
 prints `#ack reject` and returns 0. An authentic reply sets `ack_rssi` and `ack_snr`, clamped to
--127..127. A forged frame therefore cannot set them. The reply is "mine" when it echoes
+-127..127. So a forged frame can't set them. The reply is "mine" when it echoes
 `sent_counter`, `sent_epoch` and `sent_seq`. The kind selects `on_nack` or `on_ack`.
 
 ```mermaid
@@ -848,8 +862,8 @@ two cases:
 | 0 | cap `qn` at `qi + 1 + FRAMES_AFTER_MISS`, set `missed_last` |
 | 1 | `stop_drain`: `qn = qi + 1`, so this frame is the last |
 
-A TxTimeout also calls `stop_drain`. A failing link therefore does not use up the backlog allowance
-of the minute.
+A TxTimeout also calls `stop_drain`. So a failing link doesn't use up the backlog allowance of the
+minute.
 
 ```mermaid
 flowchart TD
@@ -909,8 +923,8 @@ static void next_item(void)
 
 ### Health report
 
-The health report (kind 4, `WS_KIND_DIAG`) goes after the minute's exchange. It also goes while the
-link is probing, so its link field can report that. It has no journal entry and no ACK window.
+The health report (kind 4, `WS_KIND_DIAG`) goes after the minute's exchange. It also goes when the
+link is in its probing state, so its link field can report that. It has no journal entry and no ACK window.
 `clamp16` saturates totals to the 16-bit fields. `clamp8` keeps a signal value in -127..127,
 because `INT8_MIN` means "none".
 
@@ -919,25 +933,26 @@ static uint16_t clamp16(uint32_t v) { return v > UINT16_MAX ? UINT16_MAX : (uint
 static int8_t clamp8(int v) { return (int8_t)(v < -INT8_MAX ? -INT8_MAX : v > INT8_MAX ? INT8_MAX : v); }  /* INT8_MIN means "none" */
 ```
 
-The report is 64 bytes (`WS_DIAG_PLAIN_LEN`; power telemetry design, section 6.1). Its first 32
+The report is 64 bytes (`WS_DIAG_PLAIN_LEN`, power telemetry design section 6.1). Its first 32
 bytes keep their version 5 values. The other 32 carry the station items and the slow power values.
 Every value is a cached one: nothing in the radio path touches I2C or the ADC (design section 6.2).
 
 | Bytes | Values | Source (design section 9.8) |
 |---|---|---|
-| 0-31 | epoch, uptime, journal and meta totals, `no_ack`, `ack_rejects`, reset cause, link, crash count, energy state, ACK signal | the node state, `node_store.c`, `tx_counts`, `watchdog.c`, `tx_policy.c`, `fault_count()` |
+| 0-31 | epoch, uptime, journal and meta totals, `no_ack`, `ack_rejects`, reset cause, link, firmware build ID (`build`, bytes 24-27), crash count, energy state, ACK signal | the node state, `node_store.c`, `tx_counts`, `watchdog.c`, `tx_policy.c`, `WS_FW_BUILD_ID`, `fault_count()` |
 | 32 | `crash_pc` | `fault_last_pc()`: 0 without a crash since power-up |
 | 36 | `boots` | `fault_boots()` (DR12), clamped to 0xFFFF |
 | 38 | `tx_timeouts` | `tx_counts.tx_timeouts`, saturating (section 3) |
 | 40 | `i2c_recoveries` | `i2c_bus_recoveries()`, saturating in `i2c_bus.c` |
 | 42-63 | VDDA, power-monitor die temperature, SOC and its rate, charger status, the charger-reported values | `mod_power_health()`: the values of the last latch, each with its none code when the phase or a failed source cannot fill it |
 
-`diag_power` copies `mod_power_health()` member by member: the two structures share names and none
-codes (`mod_power.h`). A charger status byte that is not canonical (stage 7) would be
-a bug in `power_acq.c`; the `WS_CHECK` counts it and the report carries "no status" (0xFF) instead,
-so the node never sends a non-canonical report. `fitted` is the profile's `WS_FIT_*` mask
-(`mod_power.c`): with it the gateway tells a slot this build does not measure from a fitted source
-that failed (`ws_diag_pack` clears its reserved bit 7).
+`diag_power` copies `mod_power_health()` member by member, because the two structures share names
+and none codes (`mod_power.h`). A charger status byte that isn't canonical (stage 7) would be a bug
+in `power_acq.c`. If one shows up, the `WS_CHECK` counts it and the report carries "no status"
+(0xFF) instead. So the node never sends a non-canonical report.
+
+`fitted` is the profile's `WS_FIT_*` mask (`mod_power.c`). The gateway uses it to tell a slot this
+build doesn't measure from a fitted source that failed. `ws_diag_pack` clears its reserved bit 7.
 
 ```c {#diag-fill}
 static int charger_status_canonical(uint8_t st)
@@ -980,7 +995,7 @@ named as the `ws_diag_t` members, as raw values with their none codes (`crash_pc
            chg_temp= pack_temp= fitted=
 ```
 
-(one line on the console; wrapped here). At its longest it is about 345 characters, inside the
+(It's one line on the console, wrapped here.) At its longest it is about 345 characters, inside the
 640-byte print buffer.
 
 ```c {#diag-line}
@@ -995,9 +1010,10 @@ static void diag_line(const ws_diag_t *d)
 }
 ```
 
-`send_diag` fills the first 32 bytes' values from the node state, the journal totals, the meta totals
-and `tx_counts`, with the reset cause, the link state, the fault count, the energy state and the
-signal of the last ACK; then `diag_station` and `diag_power` fill the rest.
+`send_diag` fills the values of the first 32 bytes from the node state, the journal totals, the
+meta totals and `tx_counts`. It adds the reset cause, the link state, the firmware build ID
+(`WS_FW_BUILD_ID`), the fault count, the energy state and the signal of the last ACK. Then
+`diag_station` and `diag_power` fill the rest.
 
 | Step | Failure |
 |---|---|
@@ -1068,9 +1084,9 @@ static void radio_idle(void) { tx_state = TX_IDLE; ws_radio_sleep(); held_flush(
 ```
 
 `exchange_abort` ends an exchange that passed its time limit. It stops both timers, puts the radio
-in standby, enters `idle` and journals the held readings while the radio is stopped. A watchdog
-reset that follows then loses no reading. The bench display shows a live frame still waiting for its
-reply as not ACKed (`oled_note_no_ack`; the hook ignores any other frame).
+in standby, enters `idle` and journals the held readings while the radio is in standby. So a
+watchdog reset that follows doesn't lose a reading. The bench display shows a live frame that still
+waits for its reply as not ACKed (`oled_note_no_ack`). The hook ignores any other frame.
 
 ```c {#abort}
 /* The exchange passed its worst case, for example because the radio never finishes. Stop the radio,
@@ -1229,11 +1245,17 @@ the event callbacks, then the functions. Each function comes after the functions
 ## 12. Tests
 
 `tests/test_tx_machine.py` builds the real `app_tx.c`, `tx_exchange.c` and the other TX node modules
-against `firmware/host/tx_harness.c`. The harness simulates the clock, ST's timers and sequencer, a
-radio that behaves like ST's driver, the official phase A I2C bus (a STEMMA QT hub built with
-`-DWS_I2C_MUX=0`: the SHT45 at 0x44, the battery INA228 at 0x40 and the MAX17048 gauge at 0x36), the
-board ADC and charger pin seams, and the flash under the real `node_store.c`. The test build adds the undefined-behaviour sanitizer (UBSan) to the
-library. `TxUnderAddressSanitizer` runs the suite again under the address sanitizer (ASan) where the
+against `firmware/host/tx_harness.c`. `tx_harness.c` simulates these parts:
+
+- the clock, ST's timers and ST's sequencer
+- a radio that behaves like ST's driver
+- the official phase A I2C bus, a STEMMA QT hub built with `-DWS_I2C_MUX=0`
+- on that bus, the SHT45 at 0x44, the battery INA228 at 0x40 and the MAX17048 gauge at 0x36
+- the board ADC and charger pin seams
+- the flash under the real `node_store.c`
+
+The test build adds the undefined-behaviour sanitizer (UBSan) to the library.
+`TxUnderAddressSanitizer` runs the suite again under the address sanitizer (ASan) where the
 platform allows the preload of its runtime. At its end, every test also checks these things:
 
 - No flash operation ran while the radio was busy.
@@ -1252,7 +1274,7 @@ platform allows the preload of its runtime. At its end, every test also checks t
 | flash with the radio idle | `test_counter_reservations_never_meet_a_busy_radio`, `test_flash_commands_wait_for_the_radio_exchange` |
 | drain and failures | `test_a_missed_reply_allows_one_more_frame_then_stops_the_drain`, `test_after_a_miss_only_one_more_frame_goes_even_if_it_is_answered`, `test_a_transmit_timeout_stops_the_drain`, `test_a_send_failure_on_a_backlog_frame_moves_on`, `test_a_failed_health_report_ends_the_exchange`, `test_a_health_report_that_leaves_clears_the_transmit_failure_run`, `test_transmit_failures_in_a_row_trip_the_watchdog_and_a_tx_done_clears_them` |
 | time limit, held readings | `test_a_radio_that_never_finishes_trips_the_exchange_bound`, `test_a_reading_made_during_an_exchange_is_journaled_when_the_radio_goes_idle`, `test_held_readings_keep_the_newest_when_more_minutes_wait` |
-| health report contents | `test_the_health_report_carries_every_field_from_cached_values`, `test_the_health_report_charger_status_and_iset_while_charging`, `test_the_health_report_has_none_codes_for_what_is_not_there`, `test_the_health_report_counts_saturate`, `test_every_transmit_timeout_is_counted_and_reported`, `test_the_health_report_carries_the_i2c_recoveries`: each report is opened with `ws0.protocol.unseal`, decoded with `unpack_diag` and checked canonical with `diag_problems` |
+| health report contents | `test_the_health_report_carries_every_field_from_cached_values`, `test_the_health_report_charger_status_and_iset_while_charging`, `test_the_health_report_has_none_codes_for_what_is_not_there`, `test_the_health_report_counts_saturate`, `test_every_transmit_timeout_is_counted_and_reported`, `test_the_health_report_carries_the_i2c_recoveries`. Each test opens its report with `ws0.protocol.unseal` and decodes it with `unpack_diag`. All but `test_every_transmit_timeout_is_counted_and_reported` also check it canonical with `diag_problems`. That test decodes its first report and reads the second report's `tx_timeouts` from the `#diag sent` log line |
 | policy | `test_three_silent_minutes_mean_probing_with_no_backlog_until_a_reply`, `test_a_health_report_at_least_every_15_minutes`, `test_strikes_need_an_answer_after_the_missed_record`, `test_a_lone_refused_record_is_retried_never_abandoned_by_luck`, `test_no_strikes_while_nothing_is_answered` |
 | randomized | `test_three_hours_of_mixed_link_keep_every_invariant`: 3 h with 5 seeds of lost ACKs, NACKs, junk, CRC and header failures, the ACK of another frame, transmit timeouts and refused sends. The radio state must match the exchange state at every step, and no event can be unexpected |
 
