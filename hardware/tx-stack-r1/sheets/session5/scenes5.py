@@ -3,7 +3,7 @@
 Geometry comes from the repo, read-only: layout/stack.py PLACE["B3"] (placements, pins, boxes), st.WIRES +
 layout/route.py (every wire's routed path), the makers' files in render/models/ (Adafruit SHTC3 STEP; the Wio-E5 mini
 board STEP built from Seeed's Eagle file by render/fetch_models.py; its module, USB-C, buttons and SMA are stack's
-boxes). Card frame = stack's card frame (X from the left edge along columns 1-30, Y from the FRONT edge, the A side),
+boxes). Card frame = stack's card frame (X from the left edge along rows 1-30, Y from the FRONT edge, the A side),
 with the card's top face at z = 1.6 here (stack's z = 0). build/B3.md (via b3md.py) gives the wire colours and is
 cross-checked against stack/route on import.
 

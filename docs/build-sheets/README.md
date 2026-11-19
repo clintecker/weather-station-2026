@@ -6,6 +6,23 @@ They're styled like flat-pack furniture instructions. Each page has a black head
 
 Clint builds from them at the bench, and he liked the look enough to ask for a recipe that works on other projects. That recipe is in [skill/SKILL.md](skill/SKILL.md).
 
+## The PDFs
+
+Ready-to-print copies are in [`pdf/`](pdf/). Each was rebuilt and checked page by page on 2026-11-19, after the build docs switched to the board's own hole names (letter = column, number = row, so `E10` is column E, row 10).
+
+| PDF | What you build | Pages |
+|---|---|---|
+| [tx-session1-prep.pdf](pdf/tx-session1-prep.pdf) | Snap the card rails, label, measure the insert, cut and test-fit the PAD3U backplane | 11 |
+| [tx-session2-b4-power.pdf](pdf/tx-session2-b4-power.pdf) | B4 POWER | 12 |
+| [tx-session3-b2-ports-b-meters.pdf](pdf/tx-session3-b2-ports-b-meters.pdf) | B2 PORTS B + METERS | 18 |
+| [tx-session4-b1-ports-a.pdf](pdf/tx-session4-b1-ports-a.pdf) | B1 PORTS A | 17 |
+| [tx-session5-b3-core.pdf](pdf/tx-session5-b3-core.pdf) | B3 CORE | 18 |
+| [pods-session-p-boards.pdf](pdf/pods-session-p-boards.pdf) | The TH, BARO and UV pod boards and their leads | 34 |
+
+Session Q (pod boxes, radiation shield, install) isn't here: its pictures come from the shield model, whose licence is unknown. Build it locally (see below).
+
+When you change a sheet, rebuild it and copy the booklet over the one here.
+
 ## A few pages
 
 | | |
@@ -17,7 +34,7 @@ Clint builds from them at the bench, and he liked the look enough to ask for a r
 | ![Session 3, build the 3 jack breakouts: BOB-14021, jack and header](img/s3-jack-breakouts.jpg) | ![Session 3, the 3 jacks fitted: top view and iso view of B2](img/s3-jacks-fitted.jpg) |
 | Session 3, page 14. Three loose parts become one jack breakout in four panels. | Session 3, page 16. The finished card from two angles. Compare before you pick up the meter. |
 
-The images are page renders of the PDFs in `hardware/tx-stack-r1/sheets/out/`. Git ignores those PDFs, so rebuild them with the commands below.
+The images are page renders of the PDFs. The build writes into `hardware/tx-stack-r1/sheets/out/` and `hardware/pods-r1/sheets/out/`, which git ignores; the copies in `pdf/` are the ones that are committed.
 
 ## What makes them good
 
@@ -46,7 +63,7 @@ Run every command from the repo root. Each build only lays out pages from SVGs t
 | 3, B2 PORTS B + METERS | 8 wires, 6 jumpers, header XH2, pull-ups, filters, diodes, zeners, fuse F4, 3 jack breakouts, strip map, meter checks | 18 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session3/make_session3.py OUT` |
 | 4, B1 PORTS A | 11 wires, 3 jumpers, header XH1, 6 resistors, 15 diodes, fuses F1 to F3, 3 jack breakouts, strip map, meter checks | 17 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session4/make_session4.py OUT` |
 | 5, B3 CORE | Snap the back rails, 21 wires, SWD header J3, header XH3, SHTC3 U5, Wio-E5 mini A1, strip map, meter checks | 18 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session5/make_session5.py OUT` |
-| P, pod boards | The TH, BARO and UV pod boards on Perma-Proto Quarters, 3 jack breakouts, the port cables | 33 | `sh hardware/pods-r1/sheets/build.sh` |
+| P, pod boards | The TH, BARO and UV pod boards on Perma-Proto Quarters, 3 jack breakouts, the port cables | 34 | `sh hardware/pods-r1/sheets/build.sh` |
 
 Use `hardware/tx-stack-r1/sheets/out` for `OUT` to match the PDFs that are there now. If you leave it out, Session 1 writes to `session1/v2/out`, Session 2 to `session2/out`, and Sessions 3 to 5 to `sheets/out`.
 
@@ -75,7 +92,7 @@ CAD=$PWD/.venv-cad/bin/python   sh hardware/tx-stack-r1/sheets/session5/render_a
 
 `scenes3.py list`, `scenes4.py list`, `scenes5.py list` and `scenes_p.py list` print the scene names (39, 41, 34 and 56). `scenes3.py list` takes about 3.5 minutes because the import routes every wire. Session 1 has 54 scenes plus the two in `assembly.py`, and Session 2 has 27. With no name, `scenes.py` and `scenes2.py` render all of them in one process. Do not do that (see the pitfalls below).
 
-Without `CADPY` or `CAD`, the TX `render_all.sh` scripts fall back to a `cadx` venv in an old session scratchpad. That folder can disappear. The repo-local `.venv-cad` works too: the `list` commands above ran with it.
+Without `CADPY` or `CAD`, the TX `render_all.sh` scripts use the repo-local `.venv-cad`.
 
 ### Make the two Python environments
 
@@ -110,4 +127,5 @@ These came from the code and the commit history. The skill repeats them for othe
 - The first PAD3U model drew every other row of pads square. Clint's photos showed square pads on every fifth line and row, so the sheets now name FRONT by the legend (commit `10d391b`).
 - Sessions 2 to 4 keep their own copy of `asm_iso.svg`, but their scene scripts have no entry to render it. On this machine those copies are older than Session 1's and differ from it. Session 5 renders the shared pictures into its own folder (`_shared` in `scenes5.py`), which is the better pattern.
 - Sessions 1 and 2 print label issues but fail only on hole issues. Sessions 3 to 5 and P fail on both.
-- The TX scripts hold absolute repo paths and default to a venv in a scratchpad. The pod sheets fixed this with `env.sh`, repo-local venvs and a loud WARNING (commit `3b6cebd`).
+- The TX scripts hold absolute repo paths, and their `render_all.sh` scripts used to default to a venv in a session scratchpad that later lost its packages. They now default to the repo-local `.venv-cad`. The pod sheets do this with `env.sh` and a loud WARNING (commit `3b6cebd`).
+- A build doc's wording can change under a reader. When the strip names flipped from "column N, rows ..." to "row N, columns ...", Session 5's strip-map regex matched nothing and the page would have built with no bars. Readers should fail when a pattern finds nothing.

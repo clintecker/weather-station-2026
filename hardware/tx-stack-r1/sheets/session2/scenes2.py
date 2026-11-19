@@ -2,7 +2,7 @@
 
 Geometry comes from the repo, read-only: layout/stack.py (placements, pins, pads, boxes), layout/route.py (every
 wire's routed path), the makers' STEP files in render/models/ (INA228, MAX17048, S7V8F3). Card frame = stack's card
-frame (X from the left edge along columns 1-30, Y from the FRONT edge, the A side), with the card's top face at
+frame (X from the left edge along rows 1-30, Y from the FRONT edge, column A), with the card's top face at
 z = 1.6 here (stack's z = 0).
 
 Run: cadx/bin/python -B scenes2.py [name ...]
@@ -549,7 +549,7 @@ def top_scene(parts, leads=False, under=True, decals=True):
             s.add(f"w{n}", body, WIRE_COL[NET[by_row(n)["i"]]], 0.5)
     if "XH4" in parts:
         add_header(s)
-        M.key_dot(s, KEY_COLOUR, T)          # B4.md step 1.4: the colour dot on the top face, front edge, column 1
+        M.key_dot(s, KEY_COLOUR, T)          # B4.md step 1.4: the colour dot on the top face, front edge, row 1
     for ref, pulled in (("U7", ()), ("U2", ("P5", "P6", "P7")), ("U6", ())):
         if ref in parts:
             add_breakout(s, ref, pulled)

@@ -2,8 +2,8 @@
 
 Source of truth: hardware/tx-stack-r1/build/B3.md, parsed by b3md.py (every wire, part pin, strip and before-power
 check on these pages comes from it); geometry from layout/stack.py + layout/route.py via scenes5.py.
-Hole names: the board prints ROWS as letters (A-J) and COLUMNS as numbers (1-30). B3.md writes holes as
-letter + number ('e10'); here that is shown as printed: E10 = row E, column 10.
+Hole names: the board prints COLUMNS as letters (A-J) and ROWS as numbers (1-30). B3.md writes holes as
+letter + number ('e10'); here that is shown as printed: E10 = column E, row 10.
 
 Usage: pdfenv/bin/python make_session5.py [OUT_DIR]     (default: ../out; writes session5-all.pdf)
 """
@@ -122,7 +122,7 @@ def face_tag(c, x, y, face):
 
 
 def axis_marks(c, a, face, fs=8.5, nums_y=None):
-    """Column numbers and row letters around a card drawing (the underside has no print to read)."""
+    """Row numbers and column letters around a card drawing (the underside has no print to read)."""
     for n in (1, 5, 10, 15, 20, 25, 30):
         x, y = a.A(f"J{n}" if face == "under" else f"A{n}")
         text(c, x, (a.y - 8) if nums_y is None else nums_y, str(n), fs, "ALT", GREY, "c")
@@ -135,7 +135,7 @@ def axis_marks(c, a, face, fs=8.5, nums_y=None):
 
 
 def place_chips(c, ends, a, size=9, color=NEON, gap=10, up_y=None, dn_y=None):
-    """Endpoint chips go OUTSIDE the card: one lane above it (ends in the upper half) and one below the column
+    """Endpoint chips go OUTSIDE the card: one lane above it (ends in the upper half) and one below the row
     numbers (lower half). Chips keep the left-to-right order of their holes and are packed without overlap;
     each leader leaves the chip's inner edge at its centre (white halo, black line), so leaders never cross."""
     ys = [a.A(k)[1] for k in ("fl", "fr", "bl", "br")]
@@ -210,13 +210,13 @@ def cover(c, pg):
         text(c, x + 14, y + h - 16 - i * (h - 12) / len(tools), "-  " + s, 11, "ALT", INK)
     x, y, w, h = panel(c, g.cell(1, 1), None, "THE STEPS. IN THIS ORDER.")
     steps = ["01  SNAP THE BACK RAILS (OR CHECK)", "02  KNOW THE TWO FACES", "03  21 WIRES ON THE UNDERSIDE",
-             "04  SWD HEADER J3, ROW A", f"05  BUS HEADER XH3 (KEY), {COLOUR.upper()} DOT", "06  SHTC3 U5", "07  WIO-E5 MINI A1",
+             "04  SWD HEADER J3, COLUMN A", f"05  BUS HEADER XH3 (KEY), {COLOUR.upper()} DOT", "06  SHTC3 U5", "07  WIO-E5 MINI A1",
              "08  THE STRIP MAP", "09  METER BEFORE POWER"]
     for i, s in enumerate(steps):
         text(c, x + 14, y + h - 16 - i * (h - 10) / len(steps), s, 13, "HEAD", INK)
     x, y, w, h = panel(c, g.cell(0, 2, 2), None, "STANDING ORDERS.", warn=True)
-    rules = ["EVERY HOLE IS NAMED AS PRINTED: LETTER = ROW (A-J), NUMBER = COLUMN (1-30). E10 = ROW E, COLUMN 10.",
-             "TOP = THE FACE WHERE \"DigiKey\" READS. A ROW TOWARD YOU. COLUMNS 1 TO 30 LEFT TO RIGHT.",
+    rules = ["EVERY HOLE IS NAMED AS PRINTED: LETTER = COLUMN (A-J), NUMBER = ROW (1-30). E10 = COLUMN E, ROW 10.",
+             "TOP = THE FACE WHERE \"DigiKey\" READS. COLUMN A TOWARD YOU. ROWS 1 TO 30 LEFT TO RIGHT.",
              "ALL 21 UNDERSIDE WIRES GO IN BEFORE ANY PART: THE MINI AND U5 COVER THEIR HOLES.",
              f"XH3: 1x30 WITH PIN {KEY} PULLED (THE SLOT KEY), {KEY_HOLE.upper()} EMPTY. NO POWER IN THIS SESSION."]
     for i, s in enumerate(rules):
@@ -235,7 +235,7 @@ def snap(c, pg):
          pg, SLOGANS5[2])
     g = Grid(2, 3, heights=[1.35, 1, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        "B3 CORE, TOP FACE. Score both faces along the line between row J and the inner back rail: card Y 41.91 mm",
+        "B3 CORE, TOP FACE. Score both faces along the line between column J and the inner back rail: card Y 41.91 mm",
         "from the FRONT edge (model value, TBD-MEASURE: measure it on the card). Clamp along the line and snap the",
         "two back rails off. If B3 was already snapped in Session 1, skip to panel 5 and check it."])
     a = Art(c, "s3_card", x + 96, y + 2, 290, h - 4, align="l")
@@ -270,11 +270,11 @@ def snap(c, pg):
     arrow(c, px, py + 40, px, py + 6, HAZ, 3.5, 12, halo=INK)
     chip(c, px, py + 46, "SNAP", 12, "HEAD", NEON, "c")
     label(c, x + 8, y + 40, "SCRAP WOOD", *s.A("wood"), 9)
-    x, y, w, h = panel(c, g.cell(0, 2), 4, ["File the edge flat and square to the front", "edge. STOP at the line: row J holes stay shut."])
+    x, y, w, h = panel(c, g.cell(0, 2), 4, ["File the edge flat and square to the front", "edge. STOP at the line: column J holes stay shut."])
     Art(c, "tool_file", x + 40, y + h - 24, 150, 22, align="l")
     ok = Art(c, "s3_edge_ok", x + 8, y + 16, 110, h - 54, frame=True)
     verdict(c, ok.x + ok.w - 2, ok.y + ok.h + 2, True)
-    chip(c, ok.x + ok.w / 2, ok.y - 13, "ROW J WHOLE", 9, "ALT", INK, "c")
+    chip(c, ok.x + ok.w / 2, ok.y - 13, "COLUMN J WHOLE", 9, "ALT", INK, "c")
     bad = Art(c, "s3_edge_bad", x + w - 120, y + 16, 110, h - 54, frame=True)
     verdict(c, bad.x + bad.w - 2, bad.y + bad.h + 2, False)
     chip(c, bad.x + bad.w / 2, bad.y - 13, "FILED INTO THE PADS", 9, "ALT", NEON, "c")
@@ -291,31 +291,31 @@ def know(c, pg):
          SLOGANS5[1])
     g = Grid(1, 3, heights=[1.1, 1.1, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
-        "TOP FACE: \"DigiKey\" and \"SolderFul BreadBoard\" read correctly, row A toward you, columns 1 to 30 left to",
-        "right. Rows are LETTERS (A-J), columns are NUMBERS (1-30). Example: E10 is row E, column 10 (ringed)."])
+        "TOP FACE: \"DigiKey\" and \"SolderFul BreadBoard\" read correctly, column A toward you, rows 1 to 30 left to",
+        "right. Columns are LETTERS (A-J), rows are NUMBERS (1-30). Example: E10 is column E, row 10 (ringed)."])
     face_tag(c, x + 34, y + h - 26, "top")
     a = Art(c, "b3_top", x + 96, y + 24, 330, h - 28, align="l", valign="t")
     _, py = a.A("E10")
-    ring_label(c, a, "e10", "E10 = ROW E, COLUMN 10", dx=0, dy=a.A("fl")[1] - 16 - py, size=10)
-    r = chip(c, a.x + a.w + 10, a.A("A1")[1] - 4, "ROW A\n(toward you)", 9, "ALT", INK)
+    ring_label(c, a, "e10", "E10 = COLUMN E, ROW 10", dx=0, dy=a.A("fl")[1] - 16 - py, size=10)
+    r = chip(c, a.x + a.w + 10, a.A("A1")[1] - 4, "COLUMN A\n(toward you)", 9, "ALT", INK)
     leader(c, r, a.A("A30")[0] + 3, a.A("A30")[1], INK, dot=False)
-    chip(c, a.x + a.w + 10, a.A("J1")[1] - 4, "ROW J\n(header row)", 9, "ALT", INK)
+    chip(c, a.x + a.w + 10, a.A("J1")[1] - 4, "COLUMN J\n(header column)", 9, "ALT", INK)
     chip(c, x + 8, y + 20, "FRONT EDGE\n= A SIDE", 9, "ALT", INK)
     x, y, w, h = panel(c, g.cell(0, 1), 2, [
-        "UNDERSIDE: turn B3 over toward you, over its FRONT edge. Now row J is toward you, row A away, and",
-        "columns STILL run 1 to 30 left to right. No print here: count from the left end. E10 is ringed again."])
+        "UNDERSIDE: turn B3 over toward you, over its FRONT edge. Now column J is toward you, column A away, and",
+        "rows STILL run 1 to 30 left to right. No print here: count from the left end. E10 is ringed again."])
     face_tag(c, x + 4, y + h - 40, "under")
     a = Art(c, "b3_under", x + 96, y + 14, 330, h - 40, align="l", valign="b")
     axis_marks(c, a, "under")
     _, py = a.A("E10")
     ring_label(c, a, "e10", "E10", dx=0, dy=a.A("fl")[1] + 10 - py, size=10)
-    chip(c, a.x + a.w + 10, a.A("J1")[1] - 4, "ROW J\n(toward you)", 9, "ALT", INK)
-    chip(c, a.x + a.w + 10, a.A("A1")[1] - 4, "ROW A\n(away from you)", 9, "ALT", INK)
+    chip(c, a.x + a.w + 10, a.A("J1")[1] - 4, "COLUMN J\n(toward you)", 9, "ALT", INK)
+    chip(c, a.x + a.w + 10, a.A("A1")[1] - 4, "COLUMN A\n(away from you)", 9, "ALT", INK)
     x, y, w, h = panel(c, g.cell(0, 2), 3, ["The build sheet (B3.md) writes holes in lower case: e21. It is the same hole: E21.",
-                                            "Rails: F+21 = the + RAIL at column 21 (outer front rail). F-17 = the − RAIL at column 17."])
-    rows = [("B3.md", "THIS SHEET", "ON THE BOARD"), ("e21", "E21", "row E, column 21"),
-            ("i24", "I24", "row I, column 24"), ("F+21", "+ RAIL 21", "outer front rail, column 21: 3.3 V"),
-            ("F-17", "− RAIL 17", "inner front rail, column 17: ground")]
+                                            "Rails: F+21 = the + RAIL at row 21 (outer front rail). F-17 = the − RAIL at row 17."])
+    rows = [("B3.md", "THIS SHEET", "ON THE BOARD"), ("e21", "E21", "column E, row 21"),
+            ("i24", "I24", "column I, row 24"), ("F+21", "+ RAIL 21", "outer front rail, row 21: 3.3 V"),
+            ("F-17", "− RAIL 17", "inner front rail, row 17: ground")]
     for i, (a_, b_, c_) in enumerate(rows):
         yy = y + h - 16 - i * 17
         f = "HEAD" if i == 0 else "ALT"
@@ -331,7 +331,7 @@ def wires_page(c, pg, gi):
     g = Grid(1, 2, heights=[2.1, 1])
     done = sum(len(gg) for gg, _ in GROUPS[:gi])
     x, y, w, h = panel(c, g.cell(0, 0), None, [
-        f"B3 CORE, UNDERSIDE (row J toward you). {title}.",
+        f"B3 CORE, UNDERSIDE (column J toward you). {title}.",
         f"Grey = the {done} wires already in." if done else "First wires: the card is bare.",
         "Each wire lies flat along its drawn route with right-angle bends, around every hole it does not use."])
     face_tag(c, x + 4, y + h - 20, "under")
@@ -371,11 +371,11 @@ def ra_pin_table(c, x, y, rows, size=11, step=17):
 
 def swd(c, pg):
     head, pins = PARTS["J3"]
-    page(c, "04", "SWD HEADER J3, ROW A", "5 PINS IN A12-A16. LOWEST PART: IT GOES ON FIRST. THE DEBUG PORT.", pg,
+    page(c, "04", "SWD HEADER J3, COLUMN A", "5 PINS IN A12-A16. LOWEST PART: IT GOES ON FIRST. THE DEBUG PORT.", pg,
          SLOGANS5[4])
     g = Grid(2, 2, heights=[1.3, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        "B3 CORE, TOP FACE. J3's short legs go down through A12, A13, A14, A15, A16 (row A, columns 12-16) from the",
+        "B3 CORE, TOP FACE. J3's short legs go down through A12, A13, A14, A15, A16 (column A, rows 12-16) from the",
         f"top; the long pins lie flat toward the FRONT edge and end at card Y {SWD_TIP} mm, {SWD_TIP} mm short of the edge, over",
         "the rails: the ST-LINK Dupont housings push on there, past the edge, lid open. Solder on the UNDERSIDE: A12",
         "first, check it lies flat and square, then the rest. Wires 17-21 already reach B12-B16 underneath."])
@@ -402,13 +402,13 @@ def swd(c, pg):
 def header(c, pg):
     head, pins = PARTS["XH3"]
     K = KEY_HOLE.upper()
-    page(c, "05", "BUS HEADER XH3, ROW J", f"GENERIC RIGHT-ANGLE MALE HEADER, CUT TO 1x30. PIN {KEY} PULLED: THE SLOT KEY.",
+    page(c, "05", "BUS HEADER XH3, COLUMN J", f"GENERIC RIGHT-ANGLE MALE HEADER, CUT TO 1x30. PIN {KEY} PULLED: THE SLOT KEY.",
          pg, SLOGANS5[3])
     g = Grid(2, 2, heights=[1.3, 1.25])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, textwrap.wrap(
-        f"B3 CORE, TOP FACE. Short legs down through row J, from the top: every hole J1-J30 takes a pin (ringed) but "
+        f"B3 CORE, TOP FACE. Short legs down through column J, from the top: every hole J1-J30 takes a pin (ringed) but "
         f"{K}. Pin {KEY} is pulled before fitting: the slot key, so B3 seats only in its own slot. The long pins point "
-        "AWAY from row A, out past the snapped back edge. Solder on the UNDERSIDE: J1 first, check it sits flat, J30, "
+        "AWAY from column A, out past the snapped back edge. Solder on the UNDERSIDE: J1 first, check it sits flat, J30, "
         "the rest. " + b3md.DOT.split(" The header's")[0], 106))
     face_tag(c, x + 34, y + h - 26, "top")
     a = Art(c, "t_header", x + 80, y + 22, w - 160, h - 22 - 30, align="c", valign="b")
@@ -420,8 +420,8 @@ def header(c, pg):
     label(c, a.x + a.w + 8, j30[1] - 3, "J30: PIN 30", j30[0] + 4.2, j30[1], 9, "ALT", INK, "l", dot=False)
     label(c, a.x + a.w + 8, j30[1] + 22, f"{K}: EMPTY\n(PIN {KEY} PULLED)", jk[0], jk[1] + 2, 9, "ALT", NEON, "l", dot=False)
     dx, dy = a.A("keydot")
-    label(c, a.x - 8, dy + 14, f"{COLOUR.upper()} DOT:\nFRONT EDGE,\nNEAR COLUMN 1", dx - 3, dy, 9, "ALT", INK, "r", dot=False)
-    chip(c, a.x + a.w / 2, y + 8, f"ROW J: 29 PINS. {K} EMPTY: PIN {KEY} PULLED (THE SLOT KEY)", 10, "HEAD", NEON, "c")
+    label(c, a.x - 8, dy + 14, f"{COLOUR.upper()} DOT:\nFRONT EDGE,\nNEAR ROW 1", dx - 3, dy, 9, "ALT", INK, "r", dot=False)
+    chip(c, a.x + a.w / 2, y + 8, f"COLUMN J: 29 PINS. {K} EMPTY: PIN {KEY} PULLED (THE SLOT KEY)", 10, "HEAD", NEON, "c")
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Pin n plugs into backplane line n. B3.md section 3."])
     colw = (w - 8) / 2
     import re as re_
@@ -452,8 +452,8 @@ def shtc3(c, pg):
          pg, SLOGANS5[1])
     g = Grid(2, 2, heights=[1.3, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        "B3 CORE, TOP FACE. U5 stands on its 5-pin header in row C: C8 VIN, C7 3V, C6 GND, C5 SCL, C4 SDA. Its board",
-        "reaches toward row A and over the front rails. Check the pins against U5's own labels: VIN must land in C8.",
+        "B3 CORE, TOP FACE. U5 stands on its 5-pin header in column C: C8 VIN, C7 3V, C6 GND, C5 SCL, C4 SDA. Its board",
+        "reaches toward column A and over the front rails. Check the pins against U5's own labels: VIN must land in C8.",
         "Solder on the UNDERSIDE. 3V (C7) connects to nothing else. Wires 5, 6, 10, 12 already serve its strips."])
     face_tag(c, x + 34, y + h - 26, "top")
     a = Art(c, "t_shtc3", x + 40, y + 34, w - 190, h - 34 - 34, align="l", valign="b")
@@ -473,7 +473,7 @@ def shtc3(c, pg):
 
 def mini1(c, pg):
     head, pins = PARTS["A1"]
-    page(c, "07", "WIO-E5 MINI A1  1/2", "SEEED 113990939. THE RADIO AND THE MCU. 24 PINS: D1-D12 IN ROW C, B1-B12 IN ROW H.",
+    page(c, "07", "WIO-E5 MINI A1  1/2", "SEEED 113990939. THE RADIO AND THE MCU. 24 PINS: D1-D12 IN COLUMN C, B1-B12 IN COLUMN H.",
          pg, SLOGANS5[4])
     g = Grid(1, 2, heights=[1.7, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
@@ -504,7 +504,7 @@ def mini2(c, pg):
     page(c, "07", "WIO-E5 MINI A1  2/2", "EVERY PIN, EVERY HOLE. CHECK EACH AGAINST THE PRINT ON A1 BEFORE YOU SOLDER.",
          pg, SLOGANS5[4])
     g = Grid(2, 1)
-    for k, (rowname, sel) in enumerate((("ROW H: A1's B PINS (B1-B12)", "B"), ("ROW C: A1's D PINS (D1-D12)", "D"))):
+    for k, (rowname, sel) in enumerate((("COLUMN H: A1's B PINS (B1-B12)", "B"), ("COLUMN C: A1's D PINS (D1-D12)", "D"))):
         x, y, w, h = panel(c, g.cell(k, 0), k + 1, [rowname, "B3.md section 3. Grey: not connected."])
         rows = [(p, hh, line) for p, hh, line in pins if p.rsplit("(", 1)[1].startswith(sel)]
         text(c, x + 40, y + h - 16, "HOLE   PIN", 9, "MONO", GREY)
@@ -532,7 +532,7 @@ def strips(c, pg):
     page(c, "08", "THE STRIP MAP", "B3.md SECTION 4. WHAT EVERY USED STRIP CARRIES, SEEN FROM THE TOP FACE.", pg, SLOGANS5[5])
     g = Grid(1, 2, heights=[1.55, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
-        "B3 CORE, TOP FACE, no parts drawn. Each column has two strips: rows A-E (below the channel) and rows F-J",
+        "B3 CORE, TOP FACE, no parts drawn. Each row has two strips: columns A-E (below the channel) and columns F-J",
         "(above it). The bar colour and the code name the line it carries (codes above for F-J, below for A-E).",
         "Grey NC: the strip holds only an unused pin. No bar: the strip is not used. Rails: + = 3.3 V, − = ground."])
     face_tag(c, x + 34, y + h - 26, "top")
@@ -540,8 +540,10 @@ def strips(c, pg):
     pitch = a.A("A2")[0] - a.A("A1")[0]
     used = {}
     import re
+    assert any(re.match(r"row \d+, columns [AF]-[EJ]", st) for st, _, _ in b3md.STRIPS), \
+        "B3.md strip names changed: no 'row N, columns A-E/F-J' entries, the strip map would be empty"
     for strip, line, holes_ in b3md.STRIPS:
-        m = re.match(r"column (\d+), rows ([AF])-[EJ]", strip)
+        m = re.match(r"row (\d+), columns ([AF])-[EJ]", strip)
         if not m:
             continue
         n, half = int(m.group(1)), m.group(2)
@@ -617,7 +619,7 @@ def checks(c, pg):
     beeps = [re.match(r"Header pins (.+?) beep to each other: all (.+)\.", gg).groups() for gg in groups]
     rows = [("1", "NEIGHBOURS", "Each used strip (step 08) against the strips beside it: NO BEEP."),
             ("2", "3.3 V vs GROUND", "+ RAIL against − RAIL: NO steady BEEP."),
-            ("3", "HEADER PINS", "Each pin Jn beeps to Fn (same column, its own strip) and to NO\nother header pin, except the groups in check 4."),
+            ("3", "HEADER PINS", "Each pin Jn beeps to Fn (same row, its own strip) and to NO\nother header pin, except the groups in check 4."),
             ("4", "PIN GROUPS", "\n".join(f"{p.replace(', ', ' + ')} beep: {ln}." for p, ln in beeps)),
             ("5", f"KEY PIN {KEY}", f"J{KEY} pulled (hole J{KEY} empty: the slot key), every other pin fitted.\nSpares (no net on B3): "
              + ", ".join(f"J{n}" for n in sp) + ".\nEach shares its strip only with an unused A1 pin.")]

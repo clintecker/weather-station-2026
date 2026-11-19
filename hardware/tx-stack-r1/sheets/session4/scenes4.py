@@ -1,10 +1,10 @@
 """Session 4 (build B1 PORTS A) illustrations, same pipeline as Session 2 (r3d: hidden lines + ray-cast flat colour).
 
 Geometry comes from the repo, read-only: layout/stack.py PLACE["B1"] (every part's pins and boxes, the RJ11
-breakouts on their 1x6 headers in row a), layout/route.py (route.WIRES: every wire and jumper with its routed ends,
+breakouts on their 1x6 headers in column a), layout/route.py (route.WIRES: every wire and jumper with its routed ends,
 and its routed path), sources.py (DO-35, MF-R010, resistor and header sizes), and SparkFun's BOB-14021 board in render/models/BOB
 (the Amphenol 87180 jack is stack's box: Amphenol's model is behind a login). Card frame = stack's card frame (X from
-the left edge along columns 1-30, Y from the FRONT edge, the A side), with the card's top face at z = 1.6 here.
+the left edge along rows 1-30, Y from the FRONT edge, the A side), with the card's top face at z = 1.6 here.
 
 Run ONE scene per process (a multi-scene run segfaults partway and still exits 0):
   cadx/bin/python -B scenes4.py NAME
@@ -441,7 +441,7 @@ def add_bob(s, ref):
 
 # ------------------------------------------------------------------ jumpers
 def jumper_solid(w):
-    """Bare tinned jumper: legs down the two holes, a low bridge 1 mm over the card (across the number row)."""
+    """Bare tinned jumper: legs down the two holes, a low bridge 1 mm over the card (across the printed row numbers)."""
     (x1, y1, _), (x2, y2, _) = w["pts"][0], w["pts"][-1]
     h = T + 1.0
     return tube([(x1, y1, T - 1.6), (x1, y1, h), (x2, y2, h), (x2, y2, T - 1.6)], 0.3)
@@ -782,7 +782,7 @@ def bob_done():
 def t_jacks_before():
     s = top_scene("F")
     (cx, cy), hw, hh = holes_box(part_holes(JACKS), 3.5, 0)
-    lo, hi = -1.5, cy + 2.2                              # the front edge (Y 0) to just behind row a
+    lo, hi = -1.5, cy + 2.2                              # the front edge (Y 0) to just behind column a
     top("t_jacks_before", s, fit=(520, 130), crop=((cx, (lo + hi) / 2, T), hw, (hi - lo) / 2))
 
 

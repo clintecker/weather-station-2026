@@ -7,7 +7,7 @@ names: which diode lead is the cathode), sources.py (part sizes) and the BOB-140
 (built from SparkFun's Eagle file by render/fetch_models.py). build/B2.md (b2md.py) gives the numbering, colours and
 the step grouping, and is checked against route.py on import. The Amphenol 87180 jack, the 1x6 header and the small
 two-lead parts are drawn from stack.py's boxes and sources.py's sizes (MODELS.md: no maker model for the jack).
-Card frame = stack's card frame (X from the left edge along columns 1-30, Y from the FRONT edge, the A side), with
+Card frame = stack's card frame (X from the left edge along rows 1-30, Y from the FRONT edge, the A side), with
 the card's top face at z = 1.6 here (stack's z = 0).
 
 Run ONE scene per process (a multi-scene run segfaults partway and still exits 0):
@@ -216,7 +216,7 @@ def _res_length(ref):
 
 
 def add_resistor(s, ref):
-    """Lying resistor along its two holes (along a row, a column or on a slant): leads up from the holes and bent
+    """Lying resistor along its two holes (along a column, a row or on a slant): leads up from the holes and bent
     in at the body ends; colour bands start at lead 1's end."""
     pl = PL[ref]
     p1, p2 = np.array(pl["pins"]["1"], float), np.array(pl["pins"]["2"], float)
@@ -310,8 +310,8 @@ def band_side(ref, present):
     raise SystemExit(f"{ref}: band hidden from the front and from behind")
 
 
-ISO_F = (-0.3, -1, 0.75)          # from the front-left (row A side)
-ISO_B = (-0.3, 1, 0.75)           # from behind-left (row J side)
+ISO_F = (-0.3, -1, 0.75)          # from the front-left (column A side)
+ISO_B = (-0.3, 1, 0.75)           # from behind-left (column J side)
 
 
 CAP_COL = "#D9A441"
@@ -320,7 +320,7 @@ CAP_COL = "#D9A441"
 def add_cap(s, ref):
     pl = PL[ref]
     (x1, y1), (x2, y2) = pl["pins"]["1"], pl["pins"]["2"]
-    assert abs(y1 - y2) < 1e-6                         # every B2 disc stands on two holes of one row
+    assert abs(y1 - y2) < 1e-6                         # every B2 disc stands on two holes of one column
     box = next(b for b in pl["boxes"] if "disc" in b.what)
     d = box.x1 - box.x0
     t = box.y1 - box.y0
@@ -340,10 +340,10 @@ PTC_COL = "#E8A317"
 
 def add_ptc(s, ref):
     """MF-R010 Style 1 (Bourns datasheet: round dipped disc 7.4 x 3.1, kinked leads 5.1 apart, 12.7 top to kinks),
-    standing along its column, leads formed out to the 7.62 span (rail to row A)."""
+    standing along its row, leads formed out to the 7.62 span (rail to column A)."""
     pl = PL[ref]
     (x1, y1), (x2, y2) = pl["pins"]["1"], pl["pins"]["2"]
-    assert abs(x1 - x2) < 1e-6                         # F4 stands along a column (rail to row A)
+    assert abs(x1 - x2) < 1e-6                         # F4 stands along a row (rail to column A)
     w, t, h = S.val("ptc")
     f = M.mfr010((x1, y1), (x2, y2), T, w=w, t=t, h=h)
     s.add(f"{ref}_body", f["body"], PTC_COL, 0.8)
@@ -487,7 +487,7 @@ def bob_alone(s, **kw):
 
 
 def add_bob(s, ref):
-    """A BOB-14021 build from stack's placement (stack.bob: rot 180, header in row a, mouth to the front edge),
+    """A BOB-14021 build from stack's placement (stack.bob: rot 180, header in column a, mouth to the front edge),
     soldered on its 1x6 header, jack pins trimmed flush."""
     pl = PL[ref]
     kind, rot, x0, y0 = pl["step"][0]
@@ -505,7 +505,7 @@ def add_bob(s, ref):
             s.anchor(f"{ref}:{k}", q)
         else:
             mark(s, f"{ref}_{k}", q, tuple(f"{ref}_{o}" for o in ((on,) if isinstance(on, str) else on)))
-    # the six header pins really are stack's six pins (row a, columns col..col+5)
+    # the six header pins really are stack's six pins (column a, rows col..col+5)
     for i, (x, y) in enumerate(HPINS, 1):
         q = st.tf(rot, x0, y0, x, y)
         assert np.allclose(q, pl["pins"][str(i)], atol=1e-6), (ref, i, q, pl["pins"][str(i)])
@@ -855,7 +855,7 @@ for _st in ("S4D", "ZEN"):
         scene(_i)
 
 
-# ------------------------------------------------------------------ the jacks: prepare (bench), then fit in row a
+# ------------------------------------------------------------------ the jacks: prepare (bench), then fit in column a
 @scene
 def p_bob_kit():
     """Exploded, as supplied: bare board with its tab, jack above, 1x6 header below."""

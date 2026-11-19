@@ -2,9 +2,9 @@
 
 Source of truth: hardware/tx-stack-r1/build/B2.md, read by b2md.py (every table printed here comes from it);
 geometry from layout/stack.py + layout/route.py via scenes3.py (anchors in svg/*.json).
-Hole names: the board prints ROWS as letters (A-J) and COLUMNS as numbers (1-30). B2.md writes holes as
-letter + number ('e10'); here that is shown as printed: E10 = row E, column 10. Three jacks share a name with a
-row-J hole (J14, J21, J22): the sheets always say JACK J14 for the part and HOLE J14 for the hole.
+Hole names: SolderFul (and layout/stack.py) call the lettered lines A-J COLUMNS and the numbered lines 1-30 ROWS.
+B2.md writes holes as letter + number ('e10'); here that is shown as printed: E10 = column E, row 10. Three jacks
+share a name with a column-J hole (J14, J21, J22): the sheets always say JACK J14 for the part and HOLE J14 for the hole.
 
 Every caption, table and step list is built from B2.md (b2md.py) and from scenes3.py's step grouping
 (svg/groups.json, written by every render): nothing about holes or lengths is typed here.
@@ -51,6 +51,10 @@ WHY_KEY = KEYROW[2]                                            # "the slot key: 
 DOT = next(t for t in B.SNAP if t.startswith("Label it"))      # B2.md section 1 step 4: the colour dot
 DOT_COLOUR = re.search(r"a (\w+) paint-pen", DOT).group(1)
 KEY_LINE = next(l for l in B.BEFORE if l.startswith("The 1x30 header less its key pin"))
+# B2.md section 3's note above the jumper table: the one bare jumper that crosses a bare rail pad
+JMP_NOTE = " ".join(ln.strip() for ln in B._sec("Bare jumpers") if ln.strip() and not ln.startswith("|"))
+JMP_HOT = int(re.match(r"Jumper (\d+) ", JMP_NOTE).group(1))
+JMP_OVER = re.search(r"over hole (F[-+]\d+)", JMP_NOTE).group(1)
 
 
 def hole(h):
@@ -67,7 +71,7 @@ def anchor_name(h):
 
 
 def hole_name(h):
-    """A hole in running text: row-J holes that share a jack's name say HOLE."""
+    """A hole in running text: column-J holes that share a jack's name say HOLE."""
     s = hole(h)
     return f"HOLE {s}" if s in ("J14", "J21", "J22") else s
 
@@ -94,7 +98,7 @@ def face_tag(c, x, y, face):
 
 
 def axis_marks(c, a, face, fs=8.5):
-    """Column numbers and row letters around a card drawing (the underside has no print to read)."""
+    """Row numbers and column letters around a card drawing (the underside has no print to read)."""
     for n in (1, 5, 10, 15, 20, 25, 30):
         x, y = a.A(f"J{n}" if face == "under" else f"A{n}")
         text(c, x, a.y - 8, str(n), fs, "ALT", GREY, "c")
@@ -341,9 +345,9 @@ def cover(c, pg):
     for i, (n, s) in enumerate(steps):
         text(c, x + 14, y + h - 14 - i * (h - 8) / len(steps), f"{n}  {s}", 9.5, "HEAD", INK)
     x, y, w, h = panel(c, g.cell(0, 2, 2), None, "STANDING ORDERS.", warn=True)
-    rules = ["EVERY HOLE IS NAMED AS PRINTED: LETTER = ROW (A-J), NUMBER = COLUMN (1-30). E10 = ROW E, COLUMN 10.",
-             "TOP = THE FACE WHERE \"DigiKey\" READS. ROW A TOWARD YOU. COLUMNS 1 TO 30 LEFT TO RIGHT.",
-             "JACK J14 / J21 / J22 ARE PARTS. HOLE J14 / J21 / J22 ARE ROW-J HOLES. THE SHEET ALWAYS SAYS WHICH.",
+    rules = ["EVERY HOLE IS NAMED AS PRINTED: LETTER = COLUMN (A-J), NUMBER = ROW (1-30). E10 = COLUMN E, ROW 10.",
+             "TOP = THE FACE WHERE \"DigiKey\" READS. COLUMN A TOWARD YOU. ROWS 1 TO 30 LEFT TO RIGHT.",
+             "JACK J14 / J21 / J22 ARE PARTS. HOLE J14 / J21 / J22 ARE COLUMN-J HOLES. THE SHEET ALWAYS SAYS WHICH.",
              "NO POWER IN THIS SESSION. THE METER IS THE ONLY JUDGE."]
     for i, s in enumerate(rules):
         yy = y + h - 9 - i * (h - 4) / 4
@@ -356,32 +360,32 @@ def know(c, pg):
          pg, SLOGANS3[1])
     g = Grid(2, 3, heights=[1.1, 1.1, 0.95])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        "TOP FACE: \"DigiKey\" and \"SolderFul BreadBoard\" read correctly, row A toward you, columns 1 to 30",
-        "left to right. Rows are LETTERS (A-J), columns NUMBERS (1-30). E10 = row E, column 10 (ringed)."])
+        "TOP FACE: \"DigiKey\" and \"SolderFul BreadBoard\" read correctly, column A toward you, rows 1 to 30",
+        "left to right. Columns are LETTERS (A-J), rows NUMBERS (1-30). E10 = column E, row 10 (ringed)."])
     face_tag(c, x + 4, y + h - 40, "top")
     a = Art(c, "b2_top", x + 96, y + 24, 330, h - 28, align="l", valign="t")
     px, py = a.A("E10")
     ring(c, px, py)
-    lanes(c, [("E10 = ROW E, COLUMN 10", px, py, "dn", True)], (a.x, a.A("fl")[1] - 6, a.x + a.w, a.y + a.h), 10)
-    chip(c, a.x + a.w + 10, a.A("A1")[1] - 4, "ROW A\n(toward you)", 9, "ALT", INK)
-    chip(c, a.x + a.w + 10, a.A("J1")[1] - 4, "ROW J\n(header row)", 9, "ALT", INK)
+    lanes(c, [("E10 = COLUMN E, ROW 10", px, py, "dn", True)], (a.x, a.A("fl")[1] - 6, a.x + a.w, a.y + a.h), 10)
+    chip(c, a.x + a.w + 10, a.A("A1")[1] - 4, "COLUMN A\n(toward you)", 9, "ALT", INK)
+    chip(c, a.x + a.w + 10, a.A("J1")[1] - 4, "COLUMN J\n(header)", 9, "ALT", INK)
     chip(c, x + 8, y + 20, "FRONT EDGE\n= A SIDE", 9, "ALT", INK)
     x, y, w, h = panel(c, g.cell(0, 1, 2), 2, [
-        "UNDERSIDE: turn the card over toward you, over its FRONT edge. Now row J is toward you, row A away,",
-        "and columns STILL run 1 to 30 left to right. No print here: count from the left end. E10 is ringed."])
+        "UNDERSIDE: turn the card over toward you, over its FRONT edge. Now column J is toward you, column A away,",
+        "and rows STILL run 1 to 30 left to right. No print here: count from the left end. E10 is ringed."])
     face_tag(c, x + 4, y + h - 40, "under")
     a = Art(c, "b2_under", x + 96, y + 14, 330, h - 40, align="l", valign="b")
     axis_marks(c, a, "under")
     px, py = a.A("E10")
     ring(c, px, py)
     lanes(c, [("E10", px, py, "up", True)], (a.x, a.y, a.x + a.w, a.A("fl")[1] + 4), 10)
-    chip(c, a.x + a.w + 10, a.A("J1")[1] - 4, "ROW J\n(toward you)", 9, "ALT", INK)
-    chip(c, a.x + a.w + 10, a.A("A1")[1] - 4, "ROW A\n(away from you)", 9, "ALT", INK)
-    x, y, w, h = panel(c, g.cell(0, 2), 3, ["B2.md writes holes in lower case:", "e10 = E10. F+5 = + RAIL at column 5",
-                                            "(outer front), F-4 = − RAIL, column 4."])
-    rows = [("B2.md", "THIS SHEET", "ON THE BOARD"), ("e10", "E10", "row E, column 10"),
-            ("i12", "I12", "row I, column 12"), ("F+5", "+ RAIL 5", "outer front rail"),
-            ("F-4", "− RAIL 4", "inner front rail"), ("j14", "HOLE J14", "row J, column 14")]
+    chip(c, a.x + a.w + 10, a.A("J1")[1] - 4, "COLUMN J\n(toward you)", 9, "ALT", INK)
+    chip(c, a.x + a.w + 10, a.A("A1")[1] - 4, "COLUMN A\n(away from you)", 9, "ALT", INK)
+    x, y, w, h = panel(c, g.cell(0, 2), 3, ["B2.md writes holes in lower case:", "e10 = E10. F+5 = + RAIL at row 5",
+                                            "(outer front), F-4 = − RAIL, row 4."])
+    rows = [("B2.md", "THIS SHEET", "ON THE BOARD"), ("e10", "E10", "column E, row 10"),
+            ("i12", "I12", "column I, row 12"), ("F+5", "+ RAIL 5", "outer front rail"),
+            ("F-4", "− RAIL 4", "inner front rail"), ("j14", "HOLE J14", "column J, row 14")]
     for i, (a_, b_, c_) in enumerate(rows):
         yy = y + h - 12 - i * 15
         f = "HEAD" if i == 0 else "ALT"
@@ -411,7 +415,7 @@ def wire_rows(c, tx, ytop, nums, right):
 
 def wires_panel(c, cell, k, nums, first):
     if first:
-        cp = cap(f"B2, UNDERSIDE (row J toward you). Wires {nums[0]}-{nums[-1]} of {len(B.WIRES)}.",
+        cp = cap(f"B2, UNDERSIDE (column J toward you). Wires {nums[0]}-{nums[-1]} of {len(B.WIRES)}.",
                  "Cut each to the length shown (route + 10 mm), strip 3 mm at both ends, lay it flat on the drawn route,",
                  "bends square. Push each end through its hole from the UNDERSIDE, solder it on the TOP, trim.")
     else:
@@ -470,7 +474,7 @@ def jumpers(c, pg):
     x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
         f"B2, TOP FACE. {len(B.JUMPERS)} bare jumpers, each between the two holes in the table. Cut the length shown,",
         "bend a U to the hole spacing, legs down through both holes from the TOP, bridge 1 mm above the card,",
-        "solder on the UNDERSIDE, trim. Jumper numbers are drawn at each bridge."))
+        "solder on the UNDERSIDE, trim. Jumper numbers are drawn at each bridge. Jumper 4 is different: see the red note."))
     face_tag(c, x + 30, y + h - 22, "top")
     a = Art(c, "t_jumpers", x + 14, y + 30, 340, h - 62, align="l", valign="c")
     holes = [hh for j in B.JUMPERS for hh in (j["a"], j["b"])]
@@ -486,7 +490,10 @@ def jumpers(c, pg):
     for i, j in enumerate(B.JUMPERS):
         yy = y + h - 44 - i * 30
         text(c, tx, yy, f"JMP{j['n']}  {hole(j['a'])} TO {hole(j['b'])}", 10.5, "HEAD", INK)
-        text(c, tx, yy - 11, f"{j['length'].upper()} BARE · {j['line'].upper()}", 8, "ALT", GREY)
+        if j["n"] == JMP_HOT:
+            text(c, tx, yy - 11, f"{j['length'].upper()} · SLEEVE IT OR ARCH IT CLEAR OF {hole(JMP_OVER)}", 8, "HEAD", RED)
+        else:
+            text(c, tx, yy - 11, f"{j['length'].upper()} BARE · {j['line'].upper()}", 8, "ALT", GREY)
     LAB.block(tx, y + h - 44 - (len(B.JUMPERS) - 1) * 30 - 16, x + w, y + h - 34, "jumper table")
     x, y, w, h = panel(c, g.cell(0, 1), 2, cap("What each jumper ties (B2.md). Each bridge lies flat, 1 mm over the card."))
     yy = y + h - 16
@@ -497,17 +504,20 @@ def jumpers(c, pg):
             text(c, x + 190, yy - 10 * k_, ln, 8.6, "ALT", INK)
         yy -= 10 * max(1, len(textwrap.wrap(j["what"], 58))) + 9
     LAB.block(x + 38, yy, x + w, y + h - 4, "jumper what")
+    for k_, ln in enumerate(textwrap.wrap("WATCH OUT: " + re.sub(r"\b([a-j]\d+|F[-+]\d+)\b", lambda m: hole(m.group(1)), JMP_NOTE), 110)):
+        text(c, x + 40, yy - 4 - 10 * k_, ln, 8.6, "HEAD", RED)
+    LAB.block(x + 38, yy - 4 - 10 * k_ - 3, x + w, yy + 6, "jumper warning")
 
 
 def header(c, pg):
-    page(c, "04", "BUS HEADER XH2, ROW J",
+    page(c, "04", "BUS HEADER XH2, COLUMN J",
          f"GENERIC RIGHT-ANGLE MALE HEADER, CUT TO 1x30. PIN {KEY} PULLED: THE SLOT KEY. {DOT_COLOUR.upper()} DOT ON THE FRONT.",
          pg, SLOGANS3[3])
     g = Grid(1, 2, heights=[1.15, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
-        f"B2, TOP FACE. Short legs down through HOLES J1 to J30 (row J, columns 1-30), from the top: every hole in row J",
+        f"B2, TOP FACE. Short legs down through HOLES J1 to J30 (column J, rows 1-30), from the top: every hole in column J",
         f"takes a pin except HOLE J{KEY}, which stays empty (pin {KEY} pulled: the slot key). The long pins point AWAY",
-        "from row A, out past the snapped back edge (toward the backplane). Solder on the UNDERSIDE: J1 first, check",
+        "from column A, out past the snapped back edge (toward the backplane). Solder on the UNDERSIDE: J1 first, check",
         f"it sits flat and square, then J30, then the rest. {DOT}"))
     face_tag(c, x + 4, y + h - 40, "top")
     a = Art(c, "t_header", x + 96, y + 4, 330, h - 8, align="l")
@@ -606,13 +616,13 @@ def series(c, pg):
     for r in refs:
         vals.setdefault(val(r), []).append(r)
     bands = {"1k": "BROWN-BLACK-RED-GOLD", "100": "BROWN-BLACK-BROWN-GOLD"}
-    parts_page(c, pg, "06", "SERIES " + " ".join(refs), "ACROSS THE CENTRE CHANNEL, ROW E TO ROW F. LYING FLAT.",
+    parts_page(c, pg, "06", "SERIES " + " ".join(refs), "ACROSS THE CENTRE CHANNEL, COLUMN E TO COLUMN F. LYING FLAT.",
                SLOGANS3[5], refs, "t_rser",
                cap("B2, TOP FACE. Each resistor lies flat across the centre channel. " +
                    " ".join(f"{v} ({bands.get(v, '')}): {' '.join(rs)}." for v, rs in vals.items()),
                    "1k and 100 look alike: check the third band. " + fits_sentence(refs) + " Solder on the UNDERSIDE, trim."),
                cap("Close-up, straight down. " + " ".join(f"{r}: {where(r)}." for r in refs if "slant" in where(r)) +
-                   " The row-F ends are the bus side of each strip, the row-E ends the jack side."),
+                   " The column-F ends are the bus side of each strip, the column-E ends the jack side."),
                "z_rser", lambda c, b: ring_lanes(c, b, holes_of(refs)))
 
 
@@ -623,7 +633,7 @@ def caps(c, pg):
         lanes(c, [(f"{r}: {val(r).upper()}, MARKED 104", *b.A(f"{r}_face"), "up", False) for r in refs], art_box(b, -4))
     parts_page(c, pg, "07", "FILTER DISCS " + " ".join(refs), "100 nF CERAMIC DISCS, MARKED 104. STANDING.",
                SLOGANS3[5], refs, "t_caps",
-               cap("B2, TOP FACE. Each disc stands on two neighbouring holes in one row: one on the jack line, one on a",
+               cap("B2, TOP FACE. Each disc stands on two neighbouring holes in one column: one on the jack line, one on a",
                    "ground strip. " + fits_sentence(refs), f"Push down until the coating just clears the card "
                    f"(top {B.top_mm(refs[0])} mm). No polarity. Solder on the UNDERSIDE, trim."),
                cap("From the front-left. " + " ".join(f"{r}: {where(r)}." for r in refs)),
@@ -690,7 +700,7 @@ def fuse(c, pg):
     parts_page(c, pg, "10", "PORT S4 FUSE " + " ".join(refs), "BOURNS MF-R010, 100 mA PTC. STANDING, LEADS FORMED OUT TO 7.62 MM.",
                SLOGANS3[5], refs, "t_f4",
                cap("B2, TOP FACE. Bend the two leads out with pliers so they land 7.62 mm apart (three holes), then stand",
-                   "it: " + fits_sentence(refs), f"Flat faces along the column. Top {B.top_mm(refs[0])} mm. "
+                   "it: " + fits_sentence(refs), f"Flat faces along the row. Top {B.top_mm(refs[0])} mm. "
                    "No polarity. Solder on the UNDERSIDE, trim."),
                cap("From the front-left. Its leads go only into the two holes named; the − RAIL hole between stays empty."),
                "i_f4", close, h1=1.1)
@@ -734,11 +744,11 @@ def prep_jacks(c, pg):
 
 
 def fit_jacks(c, pg):
-    page(c, "12", f"FIT THE {len(JACKS)} JACKS IN ROW A", "EACH BREAKOUT ON ITS 1x6 HEADER. MOUTH TO THE FRONT EDGE. "
+    page(c, "12", f"FIT THE {len(JACKS)} JACKS IN COLUMN A", "EACH BREAKOUT ON ITS 1x6 HEADER. MOUTH TO THE FRONT EDGE. "
          "TALLEST PARTS: LAST.", pg, SLOGANS3[5])
     g = Grid(1, 2, heights=[1.45, 0.75])
     x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
-        "B2, TOP FACE. Each breakout's header long ends go down through six row-A holes from the TOP, jack mouth",
+        "B2, TOP FACE. Each breakout's header long ends go down through six column-A holes from the TOP, jack mouth",
         "toward the FRONT edge (the board overhangs it). " + "; ".join(f"{jack_name(r)} in {jack_holes(r)[1]}"
                                                                      for r in JACKS) + ". Contact 1 at the LEFT hole.",
         "Hold the board level, solder one end pin on the UNDERSIDE, check, then the other five; trim."))
@@ -753,8 +763,8 @@ def fit_jacks(c, pg):
     lanes(c, items, (a.x, a.y, a.x + a.w, a.y + a.h), size=8.5)
     tx = a.x + a.w + 10
     yy = y + h - 20
-    for i, s in enumerate(["CONTACT n = HEADER PIN n.", "PIN 1 = THE LEFT-MOST HOLE", "(LOWEST COLUMN NUMBER).", "",
-                           "MOUTH: TOWARD ROW A AND", "PAST THE FRONT EDGE.", "", "THE BOARD COVERS THE",
+    for i, s in enumerate(["CONTACT n = HEADER PIN n.", "PIN 1 = THE LEFT-MOST HOLE", "(LOWEST ROW NUMBER).", "",
+                           "MOUTH: TOWARD COLUMN A AND", "PAST THE FRONT EDGE.", "", "THE BOARD COVERS THE",
                            "+ AND − RAILS UNDER IT:", "NOTHING IS SOLDERED THERE."]):
         text(c, tx, yy - i * 11, s, 8.2, "ALT", INK)
     LAB.block(tx, yy - 10 * 11, x + w, yy + 10, "notes")
@@ -783,7 +793,7 @@ def jacks_done(c, pg):
          SLOGANS3[5])
     g = Grid(1, 2, heights=[1.1, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
-        "B2, TOP FACE, all parts in. The breakouts sit side by side along row A, boards over the front rails, jacks",
+        "B2, TOP FACE, all parts in. The breakouts sit side by side along column A, boards over the front rails, jacks",
         "overhanging the front edge. Each header's soldered short ends show in the pad row behind its jack."))
     face_tag(c, x + 30, y + h - 22, "top")
     a = Art(c, "t_jacks", x + 14, y + 26, 360, h - 52, align="l", valign="c")
@@ -801,7 +811,7 @@ def strip_map(c, pg):
          SLOGANS3[7])
     g = Grid(1, 1)
     x, y, w, h = panel(c, g.cell(0, 0), None, [
-        "Rows A-E of a column are one strip; rows F-J of the same column are another. Rails run the full length.",
+        "Columns A-E of a row are one strip; columns F-J of the same row are another. Rails run the full length.",
         "Each strip carries one line only."])
     rows = B.STRIPS
     half = (len(rows) + 1) // 2
@@ -813,7 +823,7 @@ def strip_map(c, pg):
         if strip.startswith("rail "):
             st_ = {"F+": "+ RAIL", "F-": "− RAIL"}[strip.split()[1]]
         else:
-            st_ = strip.replace("column ", "COL ").replace(", rows ", " ").upper()
+            st_ = strip.replace(", columns ", " ").upper()
         text(c, xx, yy, st_, 9, "HEAD", NEON)
         ln = short(line)
         fs = 8.2
@@ -840,7 +850,7 @@ def checks(c, pg):
         grounds.append(f"{r} C{'+C'.join(cs)}")
     rows = [("1", "NEIGHBOURS", B.BEFORE[0]), ("2", "3.3 V vs GROUND", B.BEFORE[1]),
             ("3", "HEADER PINS", B.BEFORE[2].replace("Jn", "HOLE Jn").replace("Fn", "HOLE Fn")),
-            ("4", "GROUND PINS", B.BEFORE[3].replace("J2", "HOLES J2").replace("J12", "J12")),
+            ("4", "GROUND PINS", B.BEFORE[3].replace("Header pins J2, J12", "The header pins in HOLES J2 and J12")),
             ("5", f"KEY PIN {KEY}", KEY_LINE.replace(f"hole j{KEY}", f"HOLE J{KEY}")),
             ("6", "JACK GROUNDS", "On the UNDERSIDE, each jack's ground header pin beeps to the − RAIL: " +
              ", ".join(grounds) + ".")]
@@ -880,7 +890,7 @@ STEP_TITLES = [("01", "KNOW THE TWO FACES"), ("02", f"{len(B.WIRES)} WIRES ON TH
                ("05", "PULL-UPS " + " ".join(G["RPULL"])), ("06", "SERIES " + " ".join(G["RSER"])),
                ("07", "DISCS " + " ".join(G["CAPS"])), ("08", "PORT S4 DIODES " + G["S4D"][0] + "-" + G["S4D"][-1]),
                ("09", "ZENERS " + " ".join(G["ZEN"])), ("10", "FUSE " + " ".join(G["F4"])),
-               ("11", f"BUILD THE {len(JACKS)} JACK BREAKOUTS"), ("12", "FIT THE JACKS IN ROW A"),
+               ("11", f"BUILD THE {len(JACKS)} JACK BREAKOUTS"), ("12", "FIT THE JACKS IN COLUMN A"),
                ("13", "THE JACKS, FITTED"), ("14", "STRIP MAP"), ("15", "METER BEFORE POWER")]
 
 PAGES = [("00-cover", [cover]), ("00-what-you-are-building", [built_page]), ("01-know-the-faces", [know]),

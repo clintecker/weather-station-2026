@@ -1,7 +1,8 @@
 #!/bin/sh
 # Render every scene of scenes3.py, ONE per process (a multi-scene run segfaults partway and still exits 0), then
 # check that every expected SVG exists. Usage: sh render_all.sh [NAME ...]
-PY=${CADPY:-/private/tmp/claude-501/-Users-clint-code-electronics-weather-station-2026/68ade3da-6079-4ead-9fba-a514cb7d2eb1/scratchpad/cadx/bin/python}
+HERE=$(cd "$(dirname "$0")" && pwd)
+PY=${CADPY:-$HERE/../../../../.venv-cad/bin/python}   # repo-local venv (hardware/pods-r1/sheets/setup-envs.sh)
 cd "$(dirname "$0")"
 NAMES=${*:-$($PY -B scenes3.py list)}
 for n in $NAMES; do

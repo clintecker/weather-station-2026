@@ -55,7 +55,7 @@ import re  # noqa: E402
 _BUILD = Path("/Users/clint/code/electronics/weather-station-2026/hardware/tx-stack-r1/build")
 _ASM = (_BUILD / "ASSEMBLY.md").read_text()
 _BPMD = (_BUILD / "BACKPLANE.md").read_text()
-assert "No inserts in the four corner posts" in _ASM and "EVM clip's two" in _ASM, \
+assert "Don't put inserts in the four corner posts" in _ASM and "EVM clip's two" in _ASM, \
     "ASSEMBLY.md section 2 step 3: printed lid bolts in the corner posts, M3 inserts for the bar and the EVM clip"
 BP_SECS = dict(re.findall(r"^## (\d+)\. (.*)$", _BPMD, re.M))   # {"2": "Sockets (one per card; ...", ...}
 BP_WIRING = [re.sub(r" \([^)]*\)", "", BP_SECS[k]) for k in ("2", "3", "4", "5")]   # sockets + key plugs, pins and parts, bus wires, leads
@@ -675,7 +675,7 @@ def step2b(c, pg):
     x, y, w, h = panel(c, g.cell(0, 2), 5, [
         "Sand every edge flat on paper on the table. For the long left edge, let the tab hang off the end",
         "of the table. File the sawn inside corner flat. CHECK, above the tab: left edge to the near side",
-        "of line 0's holes = 0.5 to 1.2 mm."])
+        "of line 0's holes = about 0.8 mm."])
     s = Art(c, "s2_sand", x + 50, y + 4, 230, h - 8, align="l")
     (a0x, a0y), (a1x, a1y) = s.A("a0"), s.A("a1")
     arrow(c, (a0x + a1x) / 2, (a0y + a1y) / 2 + 26, a0x, a0y + 26, INK, 2)
@@ -857,9 +857,9 @@ def bp4(c, pg):
     page(c, "04", "BACKPLANE  3/5: SAND. CHECK. MARK.", "THE NEW EDGE FLAT. TWO NUMBERS. ONE WORD.", pg, SLOGANS[1])
     g = Grid(2, 2, heights=[1.1, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        "Sand the snapped LEFT edge flat on paper on the table, the board standing on that edge. CHECK: the edge to the",
-        "near side of line 0's holes = 0.5 to 1.2 mm (1.27 mm to their centres). Over that, sand more: it must fit",
-        "the left wall's groove."])
+        "Sand the snapped LEFT edge flat on paper on the table, the board standing on that edge. Aim for 1.27 mm from",
+        "line 0's hole centres, about 0.8 mm from the near side of the holes. More than about 1.78 mm from the centres",
+        "won't go fully into the left wall's groove: sand more. A little short still seats under the groove roof."])
     s = Art(c, "b_sand", x + 40, y + 4, 230, h - 8, align="l")
     (a0x, a0y), (a1x, a1y) = s.A("a0"), s.A("a1")
     arrow(c, (a0x + a1x) / 2, (a0y + a1y) / 2 + 26, a0x, a0y + 26, INK, 2)
@@ -871,7 +871,7 @@ def bp4(c, pg):
     c.line(ex, ey - 16, ex, ey + 16)
     c.line(hx, hy - 16, hx, hy + 16)
     dim(c, ex, ey - 12, hx, hy - 12, "", 12, NEON, ticks=False, w=1.0)
-    label(c, e.x + e.w + 14, ey - 30, "0.5 TO 1.2 MM", (ex + hx) / 2, ey - 12, 12, "ALT", NEON, "l", lcolor=INK)
+    label(c, e.x + e.w + 14, ey - 30, "ABOUT 0.8 MM", (ex + hx) / 2, ey - 12, 12, "ALT", NEON, "l", lcolor=INK)
     label(c, e.x + e.w + 14, e.y + e.h - 10, "LINE 0", *e.A("line0"), 9)
     # 2: the factory right edge
     x, y, w, h = panel(c, g.cell(0, 1), 2, [
@@ -998,7 +998,7 @@ def step3(c, pg):
          SLOGANS[5])
     g = Grid(2, 3, heights=[1.35, 1, 1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        "Columns 1-30. From the FRONT edge: two front rails, a number row, rows A-E, the channel, rows F-J,",
+        "Rows 1-30. From the FRONT edge: two front rails, a number row, columns A-E, the channel, columns F-J,",
         "the J-side number row, then the two BACK rails. MEASURE front edge to the snap line (between the",
         "J-side numbers and the first back rail). The model says 41.91 mm. Write down what YOU measure."])
     a = Art(c, "s3_card", x + 96, y + 2, 290, h - 4, align="l")
@@ -1043,11 +1043,11 @@ def step3(c, pg):
     chip(c, px, py + 46, "SNAP", 12, "HEAD", NEON, "c")
     label(c, x + 8, y + 40, "SCRAP WOOD", *s.A("wood"), 9)
     # 4: file to the line, not past
-    x, y, w, h = panel(c, g.cell(0, 2), 4, ["File the edge flat and square.", "STOP at the line. Row J stays intact."])
+    x, y, w, h = panel(c, g.cell(0, 2), 4, ["File the edge flat and square.", "STOP at the line. Column J stays intact."])
     Art(c, "tool_file", x + 40, y + h - 24, 150, 22, align="l")
     ok = Art(c, "s3_edge_ok", x + 8, y + 16, 110, h - 54, frame=True)
     verdict(c, ok.x + ok.w - 2, ok.y + ok.h + 2, True)
-    chip(c, ok.x + ok.w / 2, ok.y - 13, "ROW J WHOLE", 9, "ALT", INK, "c")
+    chip(c, ok.x + ok.w / 2, ok.y - 13, "COLUMN J WHOLE", 9, "ALT", INK, "c")
     bad = Art(c, "s3_edge_bad", x + w - 120, y + 16, 110, h - 54, frame=True)
     verdict(c, bad.x + bad.w - 2, bad.y + bad.h + 2, False)
     chip(c, bad.x + bad.w / 2, bad.y - 13, "FILED INTO THE PADS", 9, "ALT", NEON, "c")
@@ -1089,7 +1089,7 @@ def step4(c, pg):
 
 
 CARD_ROWS = [("CARD: FRONT EDGE TO SNAP LINE", "mm", "model 41.91"),
-             ("ALL FOUR CARDS: A = B, ROW J WHOLE", "Y / N", ""),
+             ("ALL FOUR CARDS: A = B, COLUMN J WHOLE", "Y / N", ""),
              ("FOUR NAMES ON FOUR FRONT EDGES", "Y / N", "B1 PORTS A, B2 PORTS B + METERS, B3 CORE, B4 POWER"),
              ("PHOTO OF A SNAPPED CARD WITH A RULER", "SENT", "")]
 BASE_ROWS = [("INSERT LENGTH  L", "mm", "expected 5.7"),
