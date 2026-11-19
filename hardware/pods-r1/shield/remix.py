@@ -22,26 +22,21 @@ WHAT THE MESHES SAY (measured here, not assumed)
         beside the cup's column: the TH lead's way out (no new hole in the cup).
 
 CHOICES (Task 7; the brief left these to the builder)
-  UV box on the cap
-    No placement puts all four of the UV box's mount holes on the ORIGINAL Ø76 flat top with the gland keep-out off the
-    cap (the far-end lugs are 94.6 mm from the gland and 57.7 mm apart; a lug and a floor boss are at least 77 mm apart,
-    more than the flat top's usable Ø70). So the remixed cap carries a SADDLE: the cap's cone drawn out toward +x into
-    a spout whose top is coplanar with the flat top, ending in a rounded pad under each of the box's two floor bosses,
-    with a round scoop between the pads that keeps the gland keep-out clear. All four mount holes are used:
-    the two far-end lugs on the original flat top, the two floor bosses on the saddle. podbox.py is unchanged.
-    The box is turned so its gland end points +x (away from the pole, which is behind the arm's upright at -y): the
-    gland and its cable hang outside the cap (in the saddle's scoop) and outside the louvers on the BARO side, and the
-    cable runs down to the arm there. Lug line at x = UV_LUG_X, centred on y = 0.
-    Lug bosses: one under the roof per lug screw, a Ø BOSS_D column from the roof down to the seat, GRIP below the flat
-    top (so the M3 x 10 grips 5.0 and leaves 5.0 of thread in the insert). The lugs are past the inner cone (r 31), so
-    a counterbore (CBORE_D, clear of the head) runs from the seat straight down through the cone and out of the cap's
-    open bottom: these two screws go in with the cap off the stack.
-    Saddle: the convex hull of the cap's outside above SADDLE_ROOT_Z and a GRIP-thick pad of radius SADDLE_PAD_R round
-    each floor boss, less the cap's own hull, so on the -x side it is the cone itself and toward +x it is one smooth
-    underside rising from the cone (above the louvers) to the pads. The floor-boss screws go in from the open air under
-    it through short Ø CBORE_D counterbores. The end is cut by one SCOOP_R circle centred at SCOOP_C, clear of the
-    keep-out by 1.5. The cap still prints on its flat top: the saddle's top is on the bed with the flat top, and its
-    underside faces up in print.
+  UV crown on the cap
+    The UV pod is a round crown (podbox.py, _crown_body/_crown_lid) with its axis on the plate axis and its floor flat
+    on the cap's flat top, turned so its port gland points +x (away from the pole, which is behind the arm's upright
+    at -y). The gland comes straight out of the drum wall; the cable runs level out to a drip loop and then down
+    outside the louvers to the arm on the BARO side.
+    Mount: the crown's four floor bosses (r 31 about its axis) are all on the original flat top. One boss under the
+    roof per screw, a Ø BOSS_D column from the roof down to the seat, GRIP below the flat top (so the M3 x 10 grips 5.0
+    and leaves 5.0 of thread in the insert). A counterbore (CBORE_D, clear of the head) runs from the seat straight
+    down through the inner cone and out of the cap's open bottom: these screws go in with the cap off the stack.
+    Skirt: the crown is Ø 2 r_out, wider than the cap, so the cap grows a skirt under it: a shell of revolution SKIRT_T
+    thick that starts SKIRT_FOOT outside and above the top louver plate and flares out in one S-curve (vertical at
+    both ends, a smoothstep in r against Z) to the crown's drum at the flat top's level, plus a ring there from
+    SKIRT_RING_IN out that fuses to the roof. The louvers' outline runs up into the crown without a step, the cap's
+    cone is hidden, and nothing hangs in front of the louvers. The cap still prints on its flat top: the ring is on
+    the bed with it, and the skirt leans in from there.
   TH and BARO boxes on the arm
     One face per box, on opposite sides of the cup: TH on -x (the side of the cup's lead hole), BARO on +x. Each face is
     a vertical plate FACE_T thick (the base plate's own thickness) parallel to the YZ plane, FACE_GAP outside the cup's
@@ -87,14 +82,13 @@ assert THREAD <= INSERT_LEN <= S.val("pod_insert_bore")[1], "the mount screw's t
 GRIP = S.val("pod_mount_screw")[1] - THREAD      # printed plastic under every mount screw's head: 5.0
 BOSS_D = 10.0                                    # cap boss column
 CBORE_D = HEAD_D + 1.0                           # head and driver clearance below a cap seat
-UV_TURN = 90                                     # degrees about Z: the UV box's gland end (-y in its frame) to +x
-UV_LUG_X = -12.0                                 # the UV box's far-end lug line on the cap (shield frame x)
+UV_TURN = 90                                     # degrees about Z: the UV crown's port gland (-y in its frame) to +x
 FACE_T = 5.0                                     # arm faces and tabs: the base plate's thickness (checked below)
 FACE_GAP = 2.0                                   # a face's inner side outside the cup's largest radius
 FACE_MARGIN = 6.0                                # face material past every lug hole centre
-SADDLE_PAD_R = 9.0                               # the saddle's rounded pad round each floor-boss screw
-SADDLE_ROOT_Z = 134.0                            # the saddle springs from the cap's cone at this height (above the louvers)
-SCOOP_C, SCOOP_R = (110.0, 0.0), 40.7            # the saddle's end: one round scoop between the pads, clear of the gland
+SKIRT_T = 2.4                                    # the cap's skirt under the UV crown: shell and top ring thickness
+SKIRT_FOOT = (0.6, 0.6)                          # its foot: this far outside the louver plates' radius and above their top
+SKIRT_RING_IN = 36.0                             # the top ring reaches in to this radius (it fuses to the flat top's shell)
 TAB_IN = 15.0                                    # the tabs reach in to |x| = TAB_IN under the base plate
 BOX_BELOW_PLATES = 6.0                           # TH/BARO box top under the lowest louver plate
 LEAD_HOLE_D = 6.0                                # the arm lead hole (the lead is OD 3.0-4.3)
@@ -245,13 +239,12 @@ def box_pose(name):
     lo = box_local(name).bounding_box()
     d = P.dims(name)
     holes = P.mount_face(name).holes
-    if name == "UV":
+    if name == "UV":                                  # the crown: its axis on the plate axis, floor on the flat top
         c, s = round(math.cos(math.radians(UV_TURN))), round(math.sin(math.radians(UV_TURN)))
         R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.0]])
-        far = sorted(holes, key=lambda h: h[1])[-2:]                       # the two far-end lugs
-        mid = np.mean(far, 0)
+        ax, ay = d["axis"]
         z_top, _ = cap_flat_top()
-        t = np.array([UV_LUG_X, 0.0, z_top]) - R @ np.array([mid[0], mid[1], d["z_bo"]])
+        t = np.array([0.0, 0.0, z_top]) - R @ np.array([ax, ay, d["z_bo"]])
         return R, t
     side = -1.0 if name == "TH" else 1.0
     # box +z (the lid's side) points away from the arm: TH -x, BARO +x; box +y is world up; box +x follows (right hand)
@@ -280,15 +273,13 @@ def box_placed(name):
 # ------------------------------------------------------------------ the cap
 @lru_cache(maxsize=None)
 def uv_mount():
-    """All four UV mount holes in the shield frame: lugs (the far-end lug inserts, on the flat top) and bosses (the
-    floor-boss inserts, on the saddle); holes = lugs + bosses."""
+    """The UV crown's four mount holes (its floor-boss inserts) in the shield frame, all on the cap's flat top; the
+    crown's outer radius; and the screws' seat (GRIP under the top)."""
     z_top, r_flat = cap_flat_top()
     d = P.dims("UV")
-    w = lambda pts: [tuple(map(float, p[:2])) for p in box_points("UV", [(x, y, d["z_bo"]) for x, y in pts])]
-    lugs, bosses = w(d["mount_lugs"]), w(d["floor_bosses"])
-    keep = [(*map(float, box_points("UV", [(x, y, d["z_bo"])])[0][:2]), kd) for x, y, kd in P.mount_face("UV").keepouts]
-    return dict(holes=lugs + bosses, lugs=lugs, bosses=bosses, keepouts=keep, top_z=z_top, flat_r=r_flat,
-                seat_z=z_top - GRIP)
+    holes = [tuple(map(float, p[:2])) for p in box_points("UV", [(x, y, d["z_bo"]) for x, y in d["floor_bosses"]])]
+    return dict(holes=holes, lugs=holes, bosses=[], keepouts=[], top_z=z_top, flat_r=r_flat, seat_z=z_top - GRIP,
+                r_out=float(d["r_out"]))
 
 
 def _ray_hits(v, f, x, y):
@@ -306,28 +297,28 @@ def _ray_hits(v, f, x, y):
 
 
 @lru_cache(maxsize=None)
-def saddle():
-    """The saddle: the cap's cone drawn out toward +x into a spout (a manifold, before it is fused to the cap).
-
-    It is the convex hull of the cap's own outside above SADDLE_ROOT_Z (so on the -x side it is the cone itself) and a
-    round pad, SADDLE_PAD_R, GRIP thick, round each floor-boss screw, with the cap's hull (shrunk 0.6 mm toward the
-    axis, so it overlaps the 2.4 mm roof and fuses) taken out: what is left sits outside the cone, its top coplanar
-    with the flat top, its underside one smooth slope from the cone up to the pads. The end between the pads is one
-    round scoop (SCOOP_C, SCOOP_R) that keeps the gland keep-out clear."""
+def skirt():
+    """The skirt under the UV crown (a manifold, before it is fused to the cap): a shell of revolution that starts just
+    outside the louver plates' radius, just above their top, and flares out in one S-curve (vertical at both ends) to
+    the crown's drum, plus a ring at the flat top's level that carries it and fuses to the cap's roof. The louver stack's
+    outline runs up into the crown without a step; the cap's cone and the crown's overhang are hidden behind it."""
     m = uv_mount()
-    v, _f = A.assembled()[A.CAP]
-    upper = v[v[:, 2] >= SADDLE_ROOT_Z]
-    pads = [cyl((x, y), 2 * SADDLE_PAD_R, m["seat_z"], m["top_z"]) for x, y in m["bosses"]]
-    pts = np.vstack([upper] + [arrays(p)[0] for p in pads])
-    spout = mf.Manifold.hull_points(pts)
-    k = 1.0 - 0.6 / float(np.hypot(v[:, 0], v[:, 1]).max())
-    inside = mf.Manifold.hull_points(np.ascontiguousarray(v, dtype=float)).scale((k, k, 1.0))
-    spout = spout - inside
-    z0 = m["seat_z"] - 60.0
-    spout = spout - cyl(SCOOP_C, 2 * SCOOP_R, z0, m["top_z"] + 10.0)
-    for x, y, kd in m["keepouts"]:                                   # belt and braces: the keep-out plus 1.5 all round
-        spout = spout - cyl((x, y), kd + 3.0, z0, m["top_z"] + 10.0)
-    return spout
+    plates = [original(f"{A.PLATE}.{k}").bounding_box() for k in range(1, A.PITCH_PLATES + 1)]
+    r0 = max(max(abs(b[0]), abs(b[1]), b[3], b[4]) for b in plates) + SKIRT_FOOT[0]
+    z0 = max(b[5] for b in plates) + SKIRT_FOOT[1]
+    r1, z1 = m["r_out"], m["top_z"]
+    n = 32
+    outer, inner = [], []
+    for i in range(n + 1):
+        u = i / n
+        z = z0 + (z1 - z0) * u
+        r = r0 + (r1 - r0) * (3 * u * u - 2 * u ** 3)
+        slope = (r1 - r0) * (6 * u - 6 * u * u) / (z1 - z0)            # dr/dz
+        outer.append((r, z))
+        inner.append((r - SKIRT_T * math.sqrt(1 + slope * slope), z))  # the shell's normal thickness, measured across
+    inner = [(r, z) for r, z in inner if z <= z1 - SKIRT_T]
+    prof = outer + [(SKIRT_RING_IN, z1), (SKIRT_RING_IN, z1 - SKIRT_T)] + inner[::-1]
+    return from_cq(cq.Workplane("XZ").polyline(prof).close().revolve(360, (0, 0, 0), (0, 1, 0)).val(), 0.005)
 
 
 @lru_cache(maxsize=None)
@@ -336,37 +327,28 @@ def cap_remixed():
     cap = original(A.CAP)
     lo = cap.bounding_box()[2]
     add, cut = [], []
-    for x, y in m["lugs"]:
+    for x, y in m["holes"]:                    # a boss under the roof per screw: GRIP of plastic under the head
         add.append(cq.Workplane("XY").workplane(offset=m["seat_z"]).center(x, y).circle(BOSS_D / 2)
                    .extrude(m["top_z"] - 0.5 - m["seat_z"]))
         cut.append(cq.Workplane("XY").workplane(offset=m["seat_z"] - 0.5).center(x, y).circle(HOLE_D / 2)
                    .extrude(GRIP + 2.0))
         cut.append(cq.Workplane("XY").workplane(offset=lo - 2.0).center(x, y).circle(CBORE_D / 2)
                    .extrude(m["seat_z"] - lo + 2.0))
-    for x, y in m["bosses"]:                                        # through the saddle; the head seats GRIP under the top
-        cut.append(cq.Workplane("XY").workplane(offset=m["seat_z"] - 0.5).center(x, y).circle(HOLE_D / 2)
-                   .extrude(GRIP + 2.0))
-        cut.append(cq.Workplane("XY").workplane(offset=lo - 2.0).center(x, y).circle(CBORE_D / 2)
-                   .extrude(m["seat_z"] - lo + 2.0))                # the spout's sloped underside: a short counterbore
     for w in add:
         cap = cap + from_cq(w)
-    cap = cap + saddle()
+    cap = cap + skirt()
     for w in cut:
         cap = cap - from_cq(w)
     return cap
 
 
-def saddle_cover():
-    """How much of the louvers' face the saddle stands in front of: (area beyond the cap's rim projected on the
-    +x side, mm^2; the part of it below the top louver plate's top, mm^2; that side's louver face, mm^2)."""
-    rim = float(original(A.CAP).bounding_box()[3])
-    out = saddle().trim_by_plane((1.0, 0.0, 0.0), rim)                # what is past the rim, x > rim
-    side = out.rotate((0.0, -90.0, 0.0))                              # look along -x: (y, z) onto the XY plane
-    area = side.project().area()
+def skirt_cover():
+    """How much of the louvers' face the skirt stands in front of: (area of the skirt below the top louver plate's
+    top, seen from the side, mm^2; that side's louver face, mm^2). The skirt's foot is above the plates: 0."""
     top6 = float(original(f"{A.PLATE}.{A.PITCH_PLATES}").bounding_box()[5])
-    low = out.trim_by_plane((0.0, 0.0, -1.0), -top6).rotate((0.0, -90.0, 0.0)).project().area()
-    lo, hi = plates_bottom(), top6
-    return area, low, (hi - lo) * 100.0
+    low = skirt().trim_by_plane((0.0, 0.0, -1.0), -top6)
+    area = low.rotate((0.0, -90.0, 0.0)).project().area() if low.volume() > 1e-6 else 0.0
+    return area, (top6 - plates_bottom()) * 100.0
 
 
 def top_edge(cap, x, y):
@@ -402,13 +384,20 @@ def outline_gap(m, x, y):
 
 
 def uv_cable_envelope():
-    """The UV box's floor gland (its keep-out circle, GLAND_DROP below the floor) and the cable straight down from it
-    (the largest cable OD plus 2 mm all round) to below the arm."""
-    m = uv_mount()
-    x, y, kd = m["keepouts"][0]
-    gland = cyl((x, y), kd, m["top_z"] - GLAND_DROP, m["top_z"])
+    """The UV crown's port gland (its body, GLAND_DROP long, straight out of the drum along +x), the cable's level
+    run out to a drip loop, and the cable straight down from there (the largest cable OD plus 2 mm all round) to
+    below the arm."""
+    d = P.dims("UV")
+    (_k, c, a), = [o for o in P.openings("UV") if o[0] == "gland"]
+    (p0,) = box_points("UV", [c])
+    R, _t = box_pose("UV")
+    u = R @ np.asarray(a, float)
+    od = S.val("pg7_seal")[1] + 4.0
+    p1 = p0 + u * GLAND_DROP
+    gland = cyl_axis(p0, p1, S.val("gland_pg7")[2])
+    loop = p1 + u * (od / 2 + 6.0)                                   # the cable bends down here
     low = arm_plate()[0] - 120.0
-    cable = cyl((x, y), S.val("pg7_seal")[1] + 4.0, low, m["top_z"] - GLAND_DROP + 0.5)
+    cable = tube([p1, loop], od) + cyl((loop[0], loop[1]), od, low, loop[2])
     return gland + cable
 
 
@@ -573,28 +562,26 @@ def remix_checks():
     out += lines
     bad |= not ok
     m = uv_mount()
-    out.append(f"cap flat top: Z {m['top_z']:.2f}, a disc of radius {m['flat_r']:.2f}; UV box turned {UV_TURN} deg "
-               f"(gland end to +x), far-end lugs bolted, back flat on the top")
+    out.append(f"cap flat top: Z {m['top_z']:.2f}, a disc of radius {m['flat_r']:.2f}; UV crown (Ø{2 * m['r_out']:.1f}) "
+               f"on its axis, port gland to +x, floor flat on the top, four screws up through the cap")
     for x, y in m["holes"]:
         edge, head = top_edge(cap, x, y)
-        kind = "lug, flat top" if (x, y) in m["lugs"] else "floor boss, saddle"
-        out.append(f"  UV hole ({x:.2f}, {y:.2f}) [{kind}]: {edge:.2f} mm inside the remixed top's edge (needs 3.0); "
+        out.append(f"  UV hole ({x:.2f}, {y:.2f}): {edge:.2f} mm inside the remixed top's edge (needs 3.0); "
                    f"whole Ø{HEAD_D:g} head on it: {head}")
         bad |= edge < 3.0 or not head
-    area, low, face = saddle_cover()
-    out.append(f"  saddle: a spout off the cone from Z {SADDLE_ROOT_Z:g}, pads r {SADDLE_PAD_R:g}; past the rim it covers {area:.0f} mm2 "
-               f"of the +x side seen along x, {low:.0f} mm2 of it below the top louver plate's top (louver face {face:.0f} mm2)")
+    low, face = skirt_cover()
+    out.append(f"  skirt: flares out to Ø{2 * m['r_out']:.1f} under the crown; {low:.0f} mm2 of it below the top louver "
+               f"plate's top (louver face {face:.0f} mm2)")
+    bad |= low > 1.0
     out.append(f"  cap bosses: Ø{BOSS_D:g} under the roof, seat Z {m['seat_z']:.2f} (grip {GRIP:.1f}), "
                f"counterbore Ø{CBORE_D:g} down and out of the cap's bottom")
-    for x, y, kd in m["keepouts"]:
-        g = min([outline_gap(cap, x, y)] + [outline_gap(asm[f"{A.PLATE}.{i}"], x, y) for i in range(1, 7)])
-        out.append(f"  gland keep-out ({x:.2f}, {y:.2f}) Ø{kd:g}: its edge {g - kd / 2:.2f} mm off the remixed cap's and the "
-                   f"louvers' real outlines")
-        bad |= g < kd / 2
     env = uv_cable_envelope()
-    gaps = {k: env.min_gap(cap if k == A.CAP else asm[k], 50.0) for k in [A.CAP] + [f"{A.PLATE}.{i}" for i in range(1, 7)]}
+    parts = [A.CAP] + [f"{A.PLATE}.{i}" for i in range(1, 7)] + [A.CUP]
+    gaps = {k: env.min_gap(cap if k == A.CAP else asm[k], 50.0) for k in parts}
+    gaps["arm"] = env.min_gap(arm, 50.0)
+    gaps["BARO box"] = env.min_gap(box_placed("BARO"), 50.0)
     k = min(gaps, key=gaps.get)
-    out.append(f"  gland ({GLAND_DROP:g} below the floor) and cable drop: nearest {k} at {gaps[k]:.2f} mm")
+    out.append(f"  gland ({GLAND_DROP:g} out of the drum) and cable drop: nearest {k} at {gaps[k]:.2f} mm")
     bad |= gaps[k] <= 1.0
     uv = box_placed("UV")
     out.append(f"  UV box on the cap: overlap {(uv ^ cap).volume():.3f} mm3")

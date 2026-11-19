@@ -61,15 +61,19 @@ class PodsRemix(unittest.TestCase):
         cls.asm = cls.r.A.assembled()
         cls.orig = {k: cls.r.as_manifold(*cls.asm[k]) for k in cls.asm}
 
-    def assert_part_is_good(self, new, old):
+    def assert_part_is_good(self, new, old, cuts=None):
         """A closed 2-manifold in one piece (nothing added is floating), larger than the original, and the original kept
-        except where the screw and lead holes go through it."""
+        except where the screw and lead holes go through it (cuts: those holes' envelope, when the part has one)."""
         self.assertEqual(new.status(), mf.Error.NoError)
         self.assertTrue(closed_two_manifold(new))
         self.assertEqual(len(new.decompose()), 1, "an added boss or face is floating")
         self.assertGreater(new.volume(), old.volume())
-        lost = (old - new).volume()
-        self.assertLess(lost, 0.02 * old.volume(), lost)
+        lost = old - new
+        if cuts is not None:
+            lost = lost - cuts
+            self.assertLess(lost.volume(), 1.0, lost.volume())
+        else:
+            self.assertLess(lost.volume(), 0.02 * old.volume(), lost.volume())
 
     # ------------------------------------------------------------------ the cap: UV box on screw bosses
     def test_mount_thread_fits_the_insert(self):
@@ -84,14 +88,20 @@ class PodsRemix(unittest.TestCase):
         r = self.r
         cap = r.cap_remixed()
         old = self.orig[r.A.CAP]
-        self.assert_part_is_good(cap, old)
+        m = r.uv_mount()
+        lo = old.bounding_box()[2]
+        cuts = None
+        for x, y in m["holes"]:                                  # the original is cut only by the holes and counterbores
+            c = r.cyl((x, y), r.CBORE_D + 0.02, lo - 3, m["seat_z"] + 0.01) + r.cyl((x, y), r.HOLE_D + 0.02, lo - 3, m["top_z"] + 3)
+            cuts = c if cuts is None else cuts + c
+        self.assert_part_is_good(cap, old, cuts)
         top_z, flat_r = r.cap_flat_top()
         # the original flat top really is a flat disc of that radius (vertical rays on the original mesh)
         for a in np.linspace(0, 2 * math.pi, 24, endpoint=False):
             self.assertAlmostEqual(r.top_z(old, (flat_r - 0.5) * math.cos(a), (flat_r - 0.5) * math.sin(a)), top_z, 2)
             self.assertLess(r.top_z(old, (flat_r + 1.0) * math.cos(a), (flat_r + 1.0) * math.sin(a)), top_z - 0.5)
         self.assertAlmostEqual(cap.bounding_box()[5], top_z, 3)                  # nothing added stands above the flat top
-        self.assertLess(overlap(cap, self.orig["object_79.6"]), SLIVER)        # the bosses and the saddle stay out of the top plate
+        self.assertLess(overlap(cap, self.orig["object_79.6"]), SLIVER)        # the bosses and the skirt stay out of the top plate
         m = r.uv_mount()
         head = r.S.val("pod_mount_screw")[2]
         # EVERY one of the UV box's mount holes is a hole in the cap
@@ -119,9 +129,7 @@ class PodsRemix(unittest.TestCase):
             self.assertAlmostEqual(overlap(ring, cap), ring.volume(), delta=0.02 * ring.volume())
             reach = r.cyl((x, y), head, old.bounding_box()[2] - 5, m["seat_z"] - 0.01)
             self.assertLess(overlap(reach, cap), 1e-3)
-            if math.hypot(x, y) > flat_r:                               # on the saddle: driven from the open air below,
-                for i in range(1, 7):                                   # with the shield assembled
-                    self.assertLess(overlap(reach, self.orig[f"object_79.{i}"]), 1e-3)
+            self.assertLess(math.hypot(x, y), flat_r - r.HOLE_D)       # all four on the original flat top
             grip = top_z - m["seat_z"]
             length = r.S.val("pod_mount_screw")[1]
             bore_d, bore_depth = r.S.val("pod_insert_bore")
@@ -149,9 +157,13 @@ class PodsRemix(unittest.TestCase):
         for k in [r.A.CAP] + [f"object_79.{i}" for i in range(1, 7)] + [r.A.CUP]:
             self.assertGreater(drop.min_gap(self.orig[k] if k != r.A.CAP else cap, 50.0), 1.0, k)
         self.assertGreater(drop.min_gap(r.arm_remixed(), 50.0), 1.0)
-        # the saddle barely stands in front of the louvers: under 1 % of the +x louver face
-        area, low, face = r.saddle_cover()
-        self.assertLess(low, 0.01 * face)
+        # the skirt stands clear above the louvers: none of it below the top plate's top
+        low, face = r.skirt_cover()
+        self.assertLess(low, 1.0)
+        # and it carries the crown: its top ring is flush with the flat top, out to the crown's drum
+        sk = r.skirt().bounding_box()
+        self.assertAlmostEqual(sk[5], top_z, 3)
+        self.assertAlmostEqual(max(sk[3], -sk[0]), m["r_out"], delta=0.05)
         # printable on its flat top as before: no more steep downward area than the original, bar the new holes' roofs
         self.assertLessEqual(r.overhang_area(cap, r.CAP_PRINT_UP), r.overhang_area(old, r.CAP_PRINT_UP) + 30.0 * len(m["holes"]))
 
