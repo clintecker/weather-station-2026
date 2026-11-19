@@ -58,9 +58,47 @@ def group(name):
         return "lid"
     if name.startswith("fscrew"):
         return "screws"
-    if name.endswith("_body") or name.startswith("fins") or name.startswith("gl"):
+    if name == "uv_body" or name.startswith("fins") or name.startswith("gl"):
         return "body"
     return "pod"                                      # the board, its parts, the plug and lead
+
+
+BOARD_UP = 44.0                                       # the board's lift out of the drum when taken apart
+LTR_DROP = 22.0                                       # the LTR390's drop out of the lid (lid frame)
+
+
+def explode(name):
+    """Where a part sits when the crown is fully apart (mm from its place: dx, dy, dz; the gland axis is -y, the lid
+    parts are in the lid's frame, which itself unlocks and lifts), and the stretch of the slider [t0, t1] it moves in."""
+    up = lambda dz, t0=0.35, t1=1.0: ((0.0, 0.0, dz), (t0, t1))
+    if name == "oring":
+        return up(52.0, 0.15, 0.8)
+    if name.startswith("fscrew"):
+        return up(-40.0, 0.0, 0.5)
+    if name.startswith("fins"):
+        return up(-16.0, 0.3, 0.8)
+    if name.startswith("m25_"):                       # the LTR390's screws: out below it
+        return up(-LTR_DROP - 14.0, 0.45, 1.0)
+    if name in ltr:                                   # the LTR390, its cores and jacket: down out of the lid
+        return up(-LTR_DROP, 0.45, 1.0)
+    gl = {"glgland_gdome": -40.0, "glgland_gseal": -30.0, "glgland_gbody": -21.0, "glgland_glock": 14.0}
+    if name in gl:
+        return (0.0, gl[name], 0.0), (0.2, 0.75)
+    if name.startswith("plug_") or name == "cable":   # unplug from J1, out along the gland's axis
+        return (0.0, -26.0, 0.0), (0.1, 0.55)
+    if name.startswith("bscrew"):
+        return up(BOARD_UP + 18.0)
+    # off the board: the jack breakout and the EEPROM breakout whole (their own solder with them), JP1's shunt (its
+    # header stays soldered in), R1; the joints under the pod board (*_ufil, R1's, JP1's) stay with the board
+    extra = {"J1": 12.0, "U1": 14.0, "R1": 6.0}
+    ref = name.split("_")[0]
+    if name == "JP1_shunt":
+        return up(BOARD_UP + 9.0)
+    if ref in extra and not name.endswith("ufil") and name != "R1_rfil":
+        return up(BOARD_UP + extra[ref])
+    if group(name) == "pod":
+        return up(BOARD_UP)
+    return (0.0, 0.0, 0.0), (0.0, 1.0)
 
 
 metas, blob, off = [], bytearray(), 0
@@ -71,11 +109,12 @@ for name, shp, col, _w in s.parts:
         continue
     v = np.array([(p.x - cx, p.y - cy, p.z) for p in vs], np.float32)   # crown axis at the origin
     f = np.array(fs, np.uint32)
-    metas.append(dict(name=name, group=group(name), color=col, nv=len(v), nt=len(f), off=off))
+    ex, st = explode(name)
+    metas.append(dict(name=name, group=group(name), color=col, nv=len(v), nt=len(f), off=off, ex=ex, st=st))
     blob += v.tobytes() + f.tobytes()
     off += v.nbytes + f.nbytes
 
-info = dict(meshes=metas, cable=cable, r_out=d["r_out"], z_bo=d["z_bo"], z_joint=d["z_joint"], apex=d["apex"],
+info = dict(meshes=metas, cable=cable, lid_lift=90.0, board_up=BOARD_UP, ltr_drop=LTR_DROP, r_out=d["r_out"], z_bo=d["z_bo"], z_joint=d["z_joint"], apex=d["apex"],
             turn=PB.CROWN_TURN, slots=PB._bayonet_angles(d))
 (out / "crown.json").write_text(json.dumps(info))
 (out / "crown.txt").write_text(base64.b64encode(bytes(blob)).decode())
