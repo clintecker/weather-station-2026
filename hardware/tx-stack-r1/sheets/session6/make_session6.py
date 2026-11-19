@@ -38,9 +38,9 @@ SLOGANS6 = [
 ORDER = ["XB4", "XB2", "XB1", "XB3"]                       # bottom to top: holes 13, 19, 27, 35
 SOCK = bpmd.SOCKETS
 MUXL = {p: (ln, hl, cut) for p, ln, hl, cut in bpmd.MUX_LEADS}
-SILK = {"RESET": "RST"}
+SILK = {"RESET": "RST", **{f"CH{k}.{s}": f"CH{k} {s}" for k in range(4) for s in ("SDA", "SCL")}}
 MUX_COL = {"VIN": "red", "GND": "black", "SCL": "yellow", "SDA": "blue", "RESET": "green",
-           **{f"SD{k}": "blue" for k in range(4)}, **{f"SC{k}": "yellow" for k in range(4)}}   # == scenes6.MUX_COL
+           **{f"CH{k}.SDA": "blue" for k in range(4)}, **{f"CH{k}.SCL": "yellow" for k in range(4)}}   # == scenes6.MUX_COL
 NET_SHORT = {"3.3 V supply": "3.3 V", "ground": "GROUND", "I2C clock (SCL)": "SCL", "I2C data (SDA)": "SDA",
              "mux reset": "MUX RST", "cups (wind speed) pulse": "CUPS", "vane (wind direction) voltage": "VANE",
              "rain gauge pulse": "RAIN", "spare bus line (for the charger interrupt)": "SPARE (INT)",
@@ -117,19 +117,20 @@ def cover(c, pg):
     x, y, w, h = panel(c, g.cell(0, 0, 2), None,
                        "PARTS (build/BACKPLANE.md sections 2-5). LAY THEM OUT BEFORE YOU HEAT THE IRON.")
     bus_mm = sum(r[4] for r in bpmd.BUS)
-    lead_mm = sum(v[2] for v in MUXL.values()) + sum(j[3] for j in bpmd.JUMPERS)
+    lead_mm = sum(v[2] for p, v in MUXL.items() if not p.startswith("CH")) + sum(j[3] for j in bpmd.JUMPERS)
     items = [("MALE HEADER STOCK\n7 pins: 4 key plugs, XJ1 x 3", "p_header"),
              ("R7, R8: 100 OHM AXIAL\n(brown black brown)", "p_res"),
              ("U4 PCA9548 MUX\nAdafruit #5626", "p_mux"),
+             ("4 x QT CABLE, Adafruit #4209\nJST SH to male pins, 150 mm", "p_qt"),
              ("DOUBLE-SIDED FOAM PAD\n1 mm thick, about 32 x 11 mm", "p_foam"),
-             (f"22 AWG SOLID, Adafruit 1311\nbare {bus_mm} mm, insulated {lead_mm} mm", "p_wire22"),
-             ("24 AWG STRANDED, 5 x 100 mm\n3 red/black band, black, white/red", "p_wire24")]
-    cw, rh = w / 3, h / 2
+             (f"22 AWG SOLID, Adafruit 1311\nbare {bus_mm} mm; 8 insulated\nleads, {lead_mm} mm", "p_wire22"),
+             ("24 AWG STRANDED, 5 x 100 mm\n3 red/black band, black,\nwhite/red", "p_wire24")]
+    cw, rh = w / 4, h / 2
     for i, (name, art) in enumerate(items):
-        col, row = i % 3, i // 3
+        col, row = i % 4, i // 4
         X0, Y0 = x + cw * col, y + h - rh * (row + 1)
-        Art(c, art, X0 + 10, Y0 + 32, cw - 20, rh - 40)
-        chip(c, X0 + cw / 2, Y0 + 18, name, 8.6, "ALT", INK, "c")
+        Art(c, art, X0 + 10, Y0 + 40, cw - 20, rh - 48)
+        chip(c, X0 + cw / 2, Y0 + 26, name, 8.2, "ALT", INK, "c")
     x, y, w, h = panel(c, g.cell(0, 1), None, "TOOLS.")
     tools = ["SOLDERING IRON + SOLDER", "FLUSH CUTTERS", "WIRE STRIPPER (22 AND 24 AWG)", "MULTIMETER (CONTINUITY)",
              "STEEL RULER (CUT LENGTHS)", "SMALL FLAT FILE", "PLIERS (PULL HEADER PINS)",
@@ -137,7 +138,7 @@ def cover(c, pg):
     for i, s in enumerate(tools):
         text(c, x + 14, y + h - 16 - i * (h - 12) / len(tools), "-  " + s, 10.5, "ALT", INK)
     x, y, w, h = panel(c, g.cell(1, 1), None, "THE STEPS. IN THIS ORDER.")
-    steps = ["01  KEY PLUGS AND COLOUR DOTS", "02  XJ1, R7 AND R8 ON THE FRONT", "03  THE MUX: A0, SW1, 13 LEADS",
+    steps = ["01  KEY PLUGS AND COLOUR DOTS", "02  XJ1, R7 AND R8 ON THE FRONT", "03  THE MUX: A0, SW1, 5 LEADS, 4 CABLES",
              "04  THE MUX ON FOAM, LEADS TO HOLE 10", "05  THREE LINKS ON THE COPPER SIDE",
              "06  EVM AND PACK LEADS (BOARD END)", "07  BUS WIRES, LINES 1-18", "08  BUS WIRES, LINES 19-23, 26",
              "09  METER CHECKS", "10  REPORT"]
@@ -261,62 +262,73 @@ def front_parts(c, pg):
 
 
 # ------------------------------------------------------------------ 03 the mux on the bench
-TP_PADS = ["SD0", "SC0", "SD1", "SC1", "SD2", "SC2", "SD3", "SC3"]
+CH_PADS = [f"CH{k}.{s}" for k in range(4) for s in ("SDA", "SCL")]
 HDR_PADS = ["VIN", "GND", "SCL", "SDA", "RESET"]
 
 
 def mux1(c, pg):
     page(c, "03", "THE MUX  1/2: AS SUPPLIED", "ADAFRUIT #5626, PCA9548. BRIDGE A0 (ADDRESS 0x71). SW1 TO V+.", pg, SLOGANS6[3])
     g = Grid(2, 2, heights=[1, 1])
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["TOP FACE, as it comes. Nine QT ports.",
-                                             "They all stay empty. Set SW1 to the V+ side",
-                                             "(read the silk beside it)."])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, ["TOP FACE, as it comes. Set SW1 to the V+",
+                                             "side (read the silk beside it). The",
+                                             "upstream port and channels 4-7 stay empty."])
     a = Art(c, "m_top", x + 10, y + 10, w - 20, h - 50)
     label(c, x + 44, y + h - 18, "UPSTREAM QT", *a.A("up_qt"), 9)
     label(c, x + w - 10, y + h - 18, "SW1", *a.A("sw1"), 9, anchor="r")
     x, y, w, h = panel(c, g.cell(1, 0), 2, ["BACK FACE, as it comes. Bridge A0 with a",
-                                             "blob of solder: address 0x71. Leave A1, A2."])
+                                             "blob of solder: address 0x71. Leave A1, A2.",
+                                             "Nothing else on this face gets solder."])
     a = Art(c, "m_back", x + 10, y + 10, w - 20, h - 50)
     label(c, x + w - 10, y + h - 18, "A0: BRIDGE IT", *a.A("a0"), 9, color=NEON, anchor="r")
     x, y, w, h = panel(c, g.cell(0, 1, 2), 3, [
-        "The 13 pads that get a lead. Back face: SD0-SC3, round test pads along the edge by channels 0-3. Top face: the",
-        "5-hole header VIN GND SCL SDA RST at the far end. Pad places from Adafruit's own board file (layout/muxleads.py).",
-        "Check them against the silk on your board before you solder."])
-    a = Art(c, "m_back", x + 30, y + 10, 230, h - 50, align="l")
-    for k, pad in enumerate(TP_PADS):
-        px, py = a.A(f"tp_{pad}")
-        r = chip(c, px, a.y + a.h + 6 + (k % 2) * 13, pad, 8, "ALT", INK, "c")
+        "TOP FACE. Five header holes take 22 AWG leads. Channels 0-3 are the four QT ports on the header's VIN side:",
+        "each takes a #4209 cable. Places from Adafruit's own board file (layout/muxleads.py). Cut lengths: the lead",
+        "end to end; the cable from the back of its plug."])
+    a = Art(c, "m_top", x + 30, y + 10, 230, h - 50, align="l")
+    for k in range(4):
+        px, py = a.A(f"qt_{k}")
+        r = chip(c, px, a.y - 2, f"CH{k}", 8, "ALT", INK, "c")
         leader(c, r, px, py)
     for pad in HDR_PADS:
         px, py = a.A(f"jp_{pad}")
         r = chip(c, a.x + a.w + 6, py - 3, SILK.get(pad, pad), 8, "ALT", INK, "l")
         leader(c, r, px, py)
     tx = a.x + a.w + 50
-    order = TP_PADS + HDR_PADS
-    cols = [("PAD", 0, "l"), ("FACE", 34, "l"), ("TO", 74, "l"), ("CUT", 168, "r")]
-    rows = [[SILK.get(p, p), "back" if p in TP_PADS else "header", lh(*MUXL[p][:2]).lower(), f"{MUXL[p][2]} mm"]
-            for p in order]
-    table(c, tx + 14, y + h - 14, cols, rows, 8, 10.4, colours=[MUX_COL[p] for p in order])
+    cols = [("WHAT", 0, "l"), ("TO", 70, "l"), ("CUT", 190, "r")]
+    rows = [[SILK.get(p, p) + " lead", lh(*MUXL[p][:2]).lower(), f"{MUXL[p][2]} mm"] for p in HDR_PADS]
+    rows += [[f"CH{k} cable", f"lines {MUXL[f'CH{k}.SDA'][0]}, {MUXL[f'CH{k}.SCL'][0]}, hole 10", f"{MUXL[f'CH{k}.SDA'][2]} mm"]
+             for k in range(4)]
+    table(c, tx + 14, y + h - 14, cols, rows, 8, 11.5, colours=[MUX_COL[p] for p in HDR_PADS] + [None] * 4)
     LAB.block(tx, y + 20, x + w, y + h, "lead table")
 
 
 def mux2(c, pg):
-    page(c, "03", "THE MUX  2/2: 13 LEADS", "22 AWG SOLID, INSULATED (ADAFRUIT 1311). STRIP 3 MM EACH END. CUT TO THE TABLE ON 1/2.",
+    page(c, "03", "THE MUX  2/2: 5 LEADS, 4 CABLES", "HEADER: 22 AWG SOLID (ADAFRUIT 1311). CHANNELS 0-3: QT CABLES #4209. STRIP 3 MM.",
          pg, SLOGANS6[3])
-    g = Grid(2, 2, heights=[1.45, 0.55])
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["BACK FACE. Tin each test pad. Lay a lead's",
-                                             "bare end flat on its pad, along the board,",
-                                             "out past the edge. Solder. Keep it low."])
-    a = Art(c, "m_back_done", x + 10, y + 10, w - 20, h - 46)
-    x, y, w, h = panel(c, g.cell(1, 0), 2, ["TOP FACE. Header leads go in from the top,",
-                                             "out past the end. Solder on the back face",
-                                             "and cut the tails flush."])
-    a = Art(c, "m_top_done", x + 10, y + 10, w - 20, h - 46)
+    g = Grid(2, 2, heights=[1.35, 0.65])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, ["ONE CABLE. Cut the pin end off at the length",
+                                             "in the table, from the plug's back. Strip",
+                                             "3 mm off blue and yellow. Cut red and black",
+                                             "off 3 mm from the plug, tape them together."])
+    a = Art(c, "c_cable", x + 36, y + 30, w - 46, h - 60)
+    label(c, x + w - 8, y + h - 16, "PLUG", *a.A("plug_0"), 9, anchor="r")
+    label(c, x + 44, y + h - 16, "RED + BLACK, TAPED", *a.A("tape_0"), 9, color=NEON)
+    label(c, x + 8, y + 18, "BLUE SDA, YELLOW SCL: 3 MM BARE", *a.A("end_CH0.SCL"), 9)
+    x, y, w, h = panel(c, g.cell(1, 0), 2, ["TOP FACE, done. Header leads in from the top,",
+                                             "out past the end, tails cut flush on the",
+                                             "back. The four cables plug in now or after",
+                                             "the foam: push each plug fully home."])
+    Art(c, "m_top_done", x + 36, y + 10, w - 46, h - 46)
     x, y, w, h = panel(c, g.cell(0, 1, 2), 3, [
-        "Colours: VIN red, GND black, RST green, every data lead (SDA, SD0-SD3) blue, every clock lead (SCL, SC0-SC3)",
-        "yellow. Put a pen mark or tape flag on each with its pad name: four blues and four yellows look alike."])
-    rows = [("SD0  SC0", "sensor port 1 (S1)"), ("SD1  SC1", "sensor port 2 (S2)"), ("SD2  SC2", "sensor port 3 (S3)"),
-            ("SD3  SC3", "sensor port 4 (S4)"), ("VIN  GND  SCL  SDA  RST", "the main bus: 3.3 V, ground, I2C, mux reset")]
+        "Header lead colours: VIN red, GND black, SCL yellow, SDA blue, RST green. Nothing else gets soldered to the mux.",
+        "Mark each cable with its channel: four cables look alike."])
+    rows = [("CH0 CABLE", "sensor port 1 (S1): blue to line 3, yellow to line 4"),
+            ("CH1 CABLE", "sensor port 2 (S2): blue to line 8, yellow to line 9"),
+            ("CH2 CABLE", "sensor port 3 (S3): blue to line 13, yellow to line 14"),
+            ("CH3 CABLE", "sensor port 4 (S4): blue to line 17, yellow to line 18"),
+            ("VIN GND SCL SDA RST", "the main bus: lines 1, 2, 7, 10, 15")]
+    for k in range(4):
+        assert (MUXL[f"CH{k}.SDA"][0], MUXL[f"CH{k}.SCL"][0]) == ((3, 4), (8, 9), (13, 14), (17, 18))[k]
     for i, (k, v) in enumerate(rows):
         yy = y + h - 16 - i * (h - 14) / 5
         text(c, x + 50, yy, k, 11, "HEAD", INK)
@@ -330,7 +342,8 @@ def mux_mount(c, pg):
     g = Grid(2, 2, heights=[1.45, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
         "COPPER SIDE, lines 0-20, holes 1-13 (line 0 on the right). The mux over holes 2-9, back face down on the foam,",
-        "the SD/SC edge toward hole 10. Each lead into its ringed hole 10 from this side. Solder it on the front, clip."])
+        "the channel 0-3 edge toward hole 10. Each lead and cable wire (SDA0 = channel 0's blue) into its ringed hole 10",
+        "from this side. Solder it on the front, clip."])
     a = Art(c, "m_mounted", x + 26, y + 18, w - 50, h - 60, valign="b")
     axis(c, a, range(0, 21), range(1, 14), side="r")
     items = sorted(((a.A(f"h{ln}_{hl}")[0], p, ln, hl) for p, (ln, hl, cut) in MUXL.items()), reverse=True)
@@ -338,21 +351,22 @@ def mux_mount(c, pg):
     for k, (px, p, ln, hl) in enumerate(items):
         py = a.A(f"h{ln}_{hl}")[1]
         ring(c, px, py, 3.4, 1.3)
-        r = chip(c, px, top + (k % 2) * 13, f"{SILK.get(p, p)} {ln}", 7.6, "ALT", INK, "c")
+        tag = f"{p[4:]}{p[2]}" if p.startswith("CH") else SILK.get(p, p)
+        r = chip(c, px, top + (k % 2) * 13, f"{tag} {ln}", 7.6, "ALT", INK, "c")
         leader(c, r, px, py + 3.4, dot=False)
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Foam in the middle of the back face, clear of",
-                                             "both test-pad rows and the header. 1 mm,",
-                                             "no thicker: the mux must clear the floor."])
+                                             "the header holes. 1 mm, no thicker: the mux",
+                                             "and its plugs must clear the floor."])
     a = Art(c, "m_iso", x + 40, y + 4, w - 46, h - 8)
     label(c, x + 8, y + 16, "FOAM", *a.A("foam"), 9)
-    x, y, w, h = panel(c, g.cell(1, 1), 3, ["Order: stick it down, then route each lead,",
-                                             "push it through hole 10, solder on the",
-                                             "front, clip. The bus wire comes later."])
-    rows = [[SILK.get(p, p), str(MUXL[p][0])] for p in TP_PADS + HDR_PADS]
+    x, y, w, h = panel(c, g.cell(1, 1), 3, ["Order: stick it down, plug the cables in,",
+                                             "route each wire, push it through hole 10,",
+                                             "solder on the front, clip. Bus wires later."])
+    rows = [[SILK.get(p, p), str(MUXL[p][0])] for p in CH_PADS + HDR_PADS]
     half = (len(rows) + 1) // 2
     for col in range(2):
         rs = rows[col * half:(col + 1) * half]
-        table(c, x + 44 + col * 110, y + h - 14, [("PAD", 0, "l"), ("LINE (HOLE 10)", 34, "l")], rs, 9, 11.5)
+        table(c, x + 44 + col * 120, y + h - 14, [("WIRE", 0, "l"), ("LINE", 62, "l")], rs, 9, 11.5)
 
 
 # ------------------------------------------------------------------ 05 links
@@ -445,7 +459,7 @@ def bus1(c, pg):
     yy -= 16
     for s_ in ["Strip the 1311 wire bare. Pull it straight", "with pliers before you cut it.",
                "Lines 5, 6, 11, 16 start at hole 13.", "The rest start at hole 10 or 11, where",
-               "the mux leads and XJ1 pins already sit:", "the wire's joint takes them too.",
+               "the mux wires and XJ1 pins already sit:", "the wire's joint takes them too.",
                "No wire touches its neighbour."]:
         text(c, x + 10, yy, s_, 9, "ALT", INK)
         yy -= 12
@@ -518,7 +532,7 @@ def checks(c, pg):
 
 
 REPORT_ROWS = [("KEY PLUGS: WRONG CARDS STOP", "Y / N", "only if the cards have headers yet"),
-               ("MUX PADS MATCH THE SILK", "Y / N", "SD0-SC3 on the back face, header VIN GND SCL SDA RST"),
+               ("FOUR QT CABLES SEATED", "Y / N", "red and black taped, nothing bare near the mux"),
                ("FOAM THICKNESS UNDER THE MUX", "mm", "1 mm or less"),
                ("METER CHECKS 1-6 ALL PASS", "Y / N", "page 12"),
                ("ANY LEAD CUT TOO LONG OR SHORT", "mm", "which one, and the length that fit"),

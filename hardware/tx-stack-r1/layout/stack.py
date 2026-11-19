@@ -507,11 +507,13 @@ BP_PARTS.append(("XJ1", {"GND": f"s{bus_row('GND')}.11", "SCL": f"s{bus_row('I2C
                          "SDA": f"s{bus_row('I2C_SDA')}.11"}, "charger I2C pins (lead to EVM J8)"))
 MUX_HOLES = {"H.VCC": f"s{bus_row('+3V3')}.10", "H.GND": f"s{bus_row('GND')}.10", "H.SCL": f"s{bus_row('I2C_SCL')}.10",
              "H.SDA": f"s{bus_row('I2C_SDA')}.10", "H.RST": f"s{bus_row('MUX_RST')}.10"}
-for _k in range(1, 5):          # sensor ports 1-4 = mux channels 0-3: leads from its SDx/SCx pads (its QT ports stay empty)
-    MUX_HOLES[f"SD{_k - 1}"] = f"s{bus_row(f'P{_k}_SDA')}.10"
-    MUX_HOLES[f"SC{_k - 1}"] = f"s{bus_row(f'P{_k}_SCL')}.10"
-for pad, h in MUX_HOLES.items():
-    w("wire", ("U4", pad), f"BP:{h}", "copper", f"mux {pad.split('.')[-1]} pad lead to its line's bus wire")
+for pad, h in list(MUX_HOLES.items()):
+    w("wire", ("U4", pad), f"BP:{h}", "copper", f"mux {pad.split('.')[-1]} header lead to its line's bus wire")
+for _k in range(1, 5):          # sensor ports 1-4 = mux channels 0-3: a cut QT cable in each channel's port
+    for _s, _c in (("SDA", "blue"), ("SCL", "yellow")):
+        MUX_HOLES[f"CH{_k - 1}.{_s}"] = f"s{bus_row(f'P{_k}_{_s}')}.10"
+        w("wire", ("U4", f"CH{_k - 1}.{_s}"), f"BP:{MUX_HOLES[f'CH{_k - 1}.{_s}']}", "copper",
+          f"QT cable #4209 in mux channel {_k - 1}, pin end cut off: its {_c} {_s} into hole 10")
 w("wire", f"BP:s{bus_row('GND')}.38", f"BP:s{bus_row('GND', 1)}.38", "copper",
   "the two bus ground lines joined")
 # B4's power lines (model.B4_POWER) at the backplane's lower end, beside the EVM: the battery + junction is lines

@@ -127,7 +127,7 @@ def main():
         jref, mod, ch = model.PORTS[k]
         x = 30 + (k - 1) * 290
         box(x, 640, 260, 76, f"Port S{k}: {jref} RJ11 + F{k} MF-R010",
-            [f"mux ch{ch} (SD{ch}/SC{ch} pad leads), 100 ohm series", "3.3 V through its PTC; clamps", "BOB-14021 + 87180-066LF"],
+            [f"mux ch{ch} (cut QT cable), 100 ohm series", "3.3 V through its PTC; clamps", "BOB-14021 + 87180-066LF"],
             "#eef3fa", I2, "B1" if k < 4 else "B2")
         arrow([(380 + (k - 1) * 70, 592), (380 + (k - 1) * 70, 615), (x + 130, 615), (x + 130, 640)], "", I2)
         if mod:

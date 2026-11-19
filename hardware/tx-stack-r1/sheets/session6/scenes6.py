@@ -54,7 +54,7 @@ COL = {"red": "#D7262E", "black": "#1C1C1C", "yellow": "#F2C318", "blue": "#2D6F
 # the mux leads' colours (Adafruit 1311 set: black, red, yellow, green, blue, white): power red, ground black,
 # every clock yellow, every data blue, reset green
 MUX_COL = {"VIN": "red", "GND": "black", "SCL": "yellow", "SDA": "blue", "RESET": "green",
-           **{f"SD{k}": "blue" for k in range(4)}, **{f"SC{k}": "yellow" for k in range(4)}}
+           **{f"CH{k}.SDA": "blue" for k in range(4)}, **{f"CH{k}.SCL": "yellow" for k in range(4)}}
 LINK_COL = {(2, 38): "black", (19, 5): "red", (21, 5): "red"}
 # the EVM and pack leads (BACKPLANE.md: 24 AWG stranded): body colour, band colour or None, flag text
 EVM_COL = {"PG1 lead +": ("red", "black", "PACK +"), "U1 battery + (J5 BATTERY)": ("red", "black", "J5 BAT"),
@@ -85,7 +85,8 @@ _front = {(ref, ln, hl) for ref, pins, _n in st.BP_PARTS if not ref.startswith("
           for ln, hl in [tuple(int(v) for v in h[1:].split("."))]}
 assert _front == {(r[0], r[3], r[4]) for r in bpmd.FRONT}, (_front, bpmd.FRONT)
 for pad, ln, hl, cut in bpmd.MUX_LEADS:
-    assert ML.target()[pad] == (ln, hl) and ML.cut(pad) == cut, (pad, ln, hl, cut)
+    assert ML.target()[pad] == (ln, hl) and (ML.cable_cut(int(pad[2])) if pad.startswith("CH") else ML.cut(pad)) == cut, \
+        (pad, ln, hl, cut)
 ISO = {(ln, bpmd.SOCKETS[ref]["hole"]) for ref, lines in bpmd.ISOLATED.items() for ln in lines}
 assert ISO == {(i, n) for i, n in st.BP_ISOLATED if i >= 19}, ISO ^ st.BP_ISOLATED
 
@@ -216,7 +217,7 @@ def resistor(a, b, tail=1.6):
 def mux_parts(bridged=True):
     """Adafruit #5626 in its own frame (x along its 40.64, y along 20.32, the BACK face at z = 0, top at 1.6),
     from Adafruit's board file (layout/muxleads.py): PCB with its JP1 header holes and two mounting holes, the nine
-    JST SH sockets, the PCA9548, SW1, the 8 channel 0-3 test pads and the A0 jumper on the back face."""
+    JST SH sockets, the PCA9548, SW1, the channel 0-3 SMD test points (never wired) and the A0 jumper on the back face."""
     pcb = M.box(0, 0, 0, 40.64, 20.32, ML.PCB)
     holes = [(ML.JP1_X, y, 0.5) for y in ML.JP1.values()] + [(2.54, 2.54, 1.25), (2.54, 17.907, 1.25)]
     for x, y, r in holes:
@@ -294,8 +295,53 @@ def insulated_lead(pts, r, bare_head=1, bare_tail=2):
     return body, comp(bare)
 
 
+def qt_plug(k):
+    """A seated #4209 plug in channel k's port, in the mux frame (an axis-aligned box)."""
+    x = ML.QT_X[k]
+    return (x - ML.PLUG_W / 2, ML.PLUG_OUT, ML.PCB + ML.QT_TOP[0], x + ML.PLUG_W / 2, ML.PLUG_IN, ML.PCB + ML.QT_TOP[1])
+
+
+def add_cable(s, k, to_frame, length=None):
+    """Channel k's cut #4209 cable: the plug, red and black cut back and taped, blue and yellow either straight out
+    `length` mm past the plug (to_frame: mux frame -> scene frame) or, with length None, along their routed paths
+    to hole 10 (board frame). Anchors plug_k, tape_k, end_CHk.SDA / end_CHk.SCL."""
+    x0, y0, z0, x1, y1, z1 = qt_plug(k)
+    c0, c1 = to_frame(x0, y0, z0), to_frame(x1, y1, z1)
+    s.add(f"plug_{k}", M.box(*[min(a, b) for a, b in zip(c0, c1)], *[max(a, b) for a, b in zip(c0, c1)]), JST)
+    zc = ML.PCB + sum(ML.QT_TOP) / 2
+    s.anchor(f"plug_{k}", to_frame(ML.QT_X[k], ML.PLUG_OUT + 1.0, ML.PCB + ML.QT_TOP[1]))
+    tapes = []
+    for sig in ("GND", "V+"):
+        dx, colr = ML.QT_WIRE[sig]
+        a, b = to_frame(ML.QT_X[k] + dx, ML.PLUG_OUT, zc), to_frame(ML.QT_X[k] + dx, ML.PLUG_OUT - ML.STUB, zc)
+        s.add(f"cs_{k}_{sig}", cyl(ML.CABLE_R, a, b), COL[colr])
+    a = to_frame(ML.QT_X[k] - 1.0, ML.PLUG_OUT - ML.STUB + 1.2, zc)
+    b = to_frame(ML.QT_X[k] - 1.0, ML.PLUG_OUT - ML.STUB - 0.6, zc)
+    s.add(f"tape_{k}", cyl(1.25, a, b), TAPE)
+    s.anchor(f"tape_{k}", to_frame(ML.QT_X[k] - 1.0, ML.PLUG_OUT - ML.STUB, zc + 1.25))
+    for sig in ("SDA", "SCL"):
+        pad = f"CH{k}.{sig}"
+        if length is None:
+            pts = lead_pts(pad)
+            body, bare = insulated_lead(pts, ML.CABLE_R, 0, 2)
+        else:
+            dx = ML.QT_WIRE[sig][0]
+            pts = [to_frame(ML.QT_X[k] + dx, ML.PLUG_OUT - t, zc) for t in (0.0, length - 3.0, length)]
+            body, bare = insulated_lead(pts, ML.CABLE_R, 0, 1)
+        s.add(f"cw_{pad}", body, COL[MUX_COL[pad]])
+        s.add(f"cwb_{pad}", bare, SOLDER, 0.6)
+        s.anchor(f"end_{pad}", pts[-1])
+
+
 def add_mux_leads(s, pads=None, colour=True):
-    for pad in pads or [p for p, *_ in bpmd.MUX_LEADS]:
+    pads = pads or [p for p, *_ in bpmd.MUX_LEADS]
+    for k in sorted({int(p[2]) for p in pads if p.startswith("CH")}):
+        add_cable(s, k, mux_board_pt)
+    for pad in pads:
+        ln, hl = ML.target()[pad]
+        if pad.startswith("CH"):
+            s.add(f"mlj_{pad}", joint(ln, hl, "front"), SOLDER, 0.6)
+            continue
         body, bare = insulated_lead(lead_pts(pad), ML.WIRE_R, 1, 2)
         s.add(f"ml_{pad}", body, COL[MUX_COL[pad]] if colour else "#DDDDDD")
         s.add(f"mlb_{pad}", bare, SOLDER, 0.6)
@@ -561,20 +607,17 @@ def _mux_alone(name, face, bridged, leads, fit=(250, 150)):
     for nm, (shp, colr) in mux_parts(bridged).items():
         s.add("mux_" + nm, shp, colr, 0.6 if nm in ("gold", "small") else 1.0)
     z_back, z_top = 0.0, ML.PCB
-    for pad, x in ML.TP.items():
-        s.anchor(f"tp_{pad}", (x, ML.TP_Y, z_back))
+    for k, x in ML.QT_X.items():
+        s.anchor(f"qt_{k}", (x, 1.2, z_top + 2.9))
     for pad, y in ML.JP1.items():
         s.anchor(f"jp_{pad}", (ML.JP1_X, y, z_top if face == "top" else z_back))
     s.anchor("a0", (*ML.A0, z_back))
     s.anchor("sw1", (31.75, 10.16, z_top + 1.6))
     s.anchor("up_qt", (2.8, 10.16, z_top + 1.5))
     s.anchor("ch_edge", (20.0, 0.0, z_top))
-    if leads:                                         # straight stubs as they come off the pads, before routing
-        for pad, x in ML.TP.items():
-            pts = [(x, ML.TP_Y, -0.35), (x, -1.0, -0.35), (x, -9.0, -0.35)]
-            b, bare = insulated_lead(pts, ML.WIRE_R, 1, 0)
-            s.add(f"st_{pad}", b, COL[MUX_COL[pad]]).add(f"stb_{pad}", bare, SOLDER, 0.6)
-            s.anchor(f"end_{pad}", pts[-1])
+    if leads:                                         # header stubs before routing, and the four cables plugged in
+        for k in ML.QT_X:
+            add_cable(s, k, lambda x, y, z: (x, y, z), length=12.0)
         for pad, y in ML.JP1.items():
             pts = [(ML.JP1_X, y, -0.3), (ML.JP1_X, y, ML.PCB + 1.0), (40.64 + 9.0, y, ML.PCB + 1.0)]
             b, bare = insulated_lead(pts, ML.WIRE_R, 1, 0)
@@ -596,8 +639,26 @@ def m_back():
 
 
 @scene
-def m_back_done():
-    _mux_alone("m_back_done", "back", True, True, fit=(250, 190))
+def c_cable():
+    """One #4209 cable after prep: the plug, red and black cut back and taped, blue and yellow cut to length with
+    3 mm stripped. Drawn in the mux frame without the mux (the plug's back at y = PLUG_OUT)."""
+    s = r3d.Scene()
+    k = 0
+    add_cable(s, k, lambda x, y, z: (x, y, z), length=float(ML.cable_cut(k) - 10))
+    R("c_cable", s, (0.3, 0.35, 1), up=(0, 1, 0), fit=(200, 250), line=0.6)
+
+
+@scene
+def p_qt():
+    """A #4209 cable as supplied: JST SH plug, four 150 mm wires, a single male pin in a black housing on each."""
+    s = r3d.Scene()
+    s.add("plug", M.box(-2.2, 0, 0, 2.2, 5.0, 1.7), JST)
+    for sig, (dx, colr) in ML.QT_WIRE.items():
+        x = dx * 3.0
+        s.add(f"w_{sig}", tube([(dx, 0, 0.85), (dx, -6, 0.85), (x, -14, 0.85), (x, -60, 0.85)], ML.CABLE_R), COL[colr])
+        s.add(f"h_{sig}", M.box(x - 0.75, -74, 0.1, x + 0.75, -60, 1.6), BLACK)
+        s.add(f"p_{sig}", cyl(0.32, (x, -74, 0.85), (x, -80, 0.85)), GOLD)
+    R("p_qt", s, (0.3, -0.25, 1), up=(1, 0, 0), fit=(150, 60), line=0.5)
 
 
 @scene

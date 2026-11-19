@@ -77,12 +77,14 @@ for frm, to, length, net, what in table(S5):
     LEADS.append((frm, to, length, net, what))
 MUX_PARA = re.search(r"^The mux is an Adafruit #5626\..*$", S5, re.M).group(0)
 assert "Bridge A0 for address 0x71" in MUX_PARA and "SW1 to V+" in MUX_PARA, MUX_PARA
-MUX_LEADS = []                                        # (pad, line, hole, cut mm)
+MUX_LEADS = []                                        # (pad, line, hole, cut mm): header pins, then CHk.SDA/SCL
 for frm, to, length, net, what in LEADS:
-    m = re.match(r"U4 (\w+)$", frm)
+    m = re.match(r"U4 (\w+)$", frm) or re.match(r"U4 (CH[0-3]) (SDA|SCL)$", frm)
     if m:
         t = re.match(r"backplane line (\d+) hole (\d+)", to)
-        MUX_LEADS.append((m.group(1), int(t.group(1)), int(t.group(2)), int(length.split()[0])))
+        pad = m.group(1) if m.lastindex == 1 else f"{m.group(1)}.{m.group(2)}"
+        assert pad.startswith("CH") == length.endswith("of cable"), (frm, length)
+        MUX_LEADS.append((pad, int(t.group(1)), int(t.group(2)), int(length.split()[0])))
 assert len(MUX_LEADS) == 13, MUX_LEADS
 JUMPERS = []                                          # ((line, hole), (line, hole), what, cut mm)
 for frm, to, length, net, what in LEADS:
@@ -94,5 +96,6 @@ assert len(JUMPERS) == 3, JUMPERS
 
 BEFORE = [ln[2:] for ln in section("Before power").splitlines() if ln.startswith("- ")]
 assert len(BEFORE) == 5, BEFORE
-MUX_PADS_PARA = re.search(r"^VIN, GND, SCL, SDA and RST are the 5-hole header row.*$", S5, re.M).group(0)
+MUX_PADS_PARA = re.search(r"^VIN, GND, SCL, SDA and RST are 22 AWG.*$", S5, re.M).group(0)
+assert "#4209" in MUX_PARA and "red (V+)" in MUX_PADS_PARA, MUX_PADS_PARA
 EVM_LEN = {frm: length for frm, to, length, net, what in LEADS if frm.startswith(("PG1 lead +", "U1 ")) or frm == "R7 2"}

@@ -45,7 +45,7 @@ card strip except those pins' own.
 | B2 | PORTS B + METERS | Sensor port 4 and the wind and rain jacks, with the meter pull-ups, filters, clamps and 1 k series resistors. |
 | B1 | PORTS A | Sensor ports 1-3: each a jack breakout, an MF-R010 fuse, 100 ohm series resistors and BAT85S / 1N5232B clamps. |
 | B3 | CORE | The Wio-E5 mini on its header, the enclosure air sensor SHTC3 (0x70) and a right-angle SWD header at the front edge. |
-| backplane | bus | BusBoard PAD3U padboard (a pad per hole, no strips) its plated end, 31 rows (lines 0-30) x 38 holes, factory edges right, top and bottom; a bare bus wire on the copper side carries each of the 18 lines and B4's six power lines; the battery + junction (lines 21-22) with R7 and R8, short leads to the EVM and the pack, and the charger's own ground lead (J3 GND to line 12); four generic female sockets, every one 1x30 with a key plug in its card's pulled position (on lines 19-30 only B4's power contacts meet a bus wire; the rest, the key plugs' contacts included, sit on isolated pads), the PCA9548 mux (0x71) behind it on foam, wired by thirteen short leads from its pads (SD0-SC3 carry sensor ports 1-4; its QT ports stay empty), and the charger I2C pins. |
+| backplane | bus | BusBoard PAD3U padboard (a pad per hole, no strips) its plated end, 31 rows (lines 0-30) x 38 holes, factory edges right, top and bottom; a bare bus wire on the copper side carries each of the 18 lines and B4's six power lines; the battery + junction (lines 21-22) with R7 and R8, short leads to the EVM and the pack, and the charger's own ground lead (J3 GND to line 12); four generic female sockets, every one 1x30 with a key plug in its card's pulled position (on lines 19-30 only B4's power contacts meet a bus wire; the rest, the key plugs' contacts included, sit on isolated pads), the PCA9548 mux (0x71) behind it on foam, wired by five header leads and four QT cables (#4209, pin ends cut off) whose SDA and SCL wires carry sensor ports 1-4, and the charger I2C pins. |
 | shelves below the cards | power | The battery pack (lowest, the heaviest part) on a moulded tray, then the BQ25798EVM (90 x 90, J8 toward the lid) on two moulded ledges; on short leads to the backplane's lower end, never to a card. |
 
 The bus header on every card is a generic 2.54 mm right-angle male header cut to 1x30. It uses rows 1-30 of column j,
@@ -157,7 +157,7 @@ r1 stacked the boards on standoffs with soldered bus wires between them. The rev
 apart (mechanical C1). It also didn't fit the floor (C2), and it had 0.5 mm to the lid (C3). r2 replaces the stack with the
 card cage. These are the connection changes (check 10):
 
-- Removed: the B3-B4 socket XS1 and the B4 bus pins XP1, since the cards now plug into the backplane. The QT leads on B1 (W11-W14) are gone: the mux on the backplane takes the sensor ports on leads from its SD0-SC3 pads.
+- Removed: the B3-B4 socket XS1 and the B4 bus pins XP1, since the cards now plug into the backplane. The QT leads on B1 (W11-W14) are gone: the mux on the backplane takes the sensor ports on cut QT cables in its channels 0-3.
 - Added:
   - a right-angle bus header per card (XH1-XH4) and a backplane socket per card (XB1-XB4)
   - the charger I2C pins XJ1 on the backplane

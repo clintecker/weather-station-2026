@@ -264,13 +264,12 @@ PARTS = [
          block="ports", card="BP",
          pins=[("H.VCC", "VIN", PIN, "solder"), ("H.GND", "GND", PAS, "solder"), ("H.SCL", "SCL", BI, "solder"),
                ("H.SDA", "SDA", BI, "solder"), ("H.RST", "RESET", IN, "solder")]
-         + sum(([(f"SD{k}", f"SD{k}", BI, "solder"), (f"SC{k}", f"SC{k}", BI, "solder")] for k in range(4)), [])
          + qt("UP", "nc") + sum(([(p, n, t, "nc" if n == "V+" else c) for p, n, t, c in qt(f"CH{k}")] for k in range(4)), []),
          ties=[["H.GND", "UP.GND"] + [f"CH{k}.GND" for k in range(4)], ["H.VCC", "UP.V+"],
-               ["H.SDA", "UP.SDA"], ["H.SCL", "UP.SCL"]]
-         + [[f"SD{k}", f"CH{k}.SDA"] for k in range(4)] + [[f"SC{k}", f"CH{k}.SCL"] for k in range(4)],
+               ["H.SDA", "UP.SDA"], ["H.SCL", "UP.SCL"]],
          i2c=[0x71], pullups_k=10.0,
-         note="thirteen leads from its pads (VIN GND SCL SDA RST, SD0-SC3 for sensor ports 1-4); its QT ports stay empty"),
+         note="five header leads (VIN GND SCL SDA RST); channels 0-3 each take a #4209 QT cable, pin end cut off, its "
+              "SDA and SCL wires to sensor ports 1-4 (V+ and GND cut back and taped); upstream port empty"),
     # ------------------------------------------------------------ outdoors
     module("MOD1", "TH module", "SHT45 #6174", 0x44),
     module("MOD2", "Baro module", "BMP581 #6407", 0x47),
@@ -318,9 +317,9 @@ def port_nets():
         out[f"P{k}_3V3"] = ([(f"F{k}", "2"), (f"D{k}1", "1"), (f"D{k}2", "2"), (f"D{k}4", "2"), (jack, "2")] + [(x, "2") for x in m], dict(vmax=3.4))
         out[f"P{k}_JSDA"] = ([(jack, "3"), (f"D{k}2", "1"), (f"D{k}3", "2"), (f"R{k}1", "1")] + [(x, "3") for x in m], dict(vmax=3.6))
         out[f"P{k}_JSCL"] = ([(jack, "5"), (f"D{k}4", "1"), (f"D{k}5", "2"), (f"R{k}2", "1")] + [(x, "5") for x in m], dict(vmax=3.6))
-        out[f"P{k}_SDA"] = ([(f"R{k}1", "2"), ("U4", f"SD{ch}"), ("U4", f"CH{ch}.SDA")]
+        out[f"P{k}_SDA"] = ([(f"R{k}1", "2"), ("U4", f"CH{ch}.SDA")]
                             + bus(f"P{k}_SDA"), dict(vmax=3.6))
-        out[f"P{k}_SCL"] = ([(f"R{k}2", "2"), ("U4", f"SC{ch}"), ("U4", f"CH{ch}.SCL")]
+        out[f"P{k}_SCL"] = ([(f"R{k}2", "2"), ("U4", f"CH{ch}.SCL")]
                             + bus(f"P{k}_SCL"), dict(vmax=3.6))
     return out
 
@@ -424,9 +423,9 @@ PWR_FLAGS = ["GND", "P1_3V3", "P2_3V3", "P3_3V3", "P4_3V3", "CELL_P", "BAT_P"]
 R1_REMOVED = {
     "XS1": "the B3-B4 socket: the four cards now plug into a backplane",
     "XP1": "the B4 bus pins, same reason",
-    "W11": "QT lead S1 gone: the mux on the backplane takes sensor port 1 on leads from its SD0/SC0 pads",
-    "W12": "QT lead S2 gone (mux SD1/SC1 leads)", "W13": "QT lead S3 gone (mux SD2/SC2 leads)",
-    "W14": "QT lead S4 gone (mux SD3/SC3 leads)",
+    "W11": "QT lead S1 gone: the mux on the backplane takes sensor port 1 on a cut QT cable in its channel 0",
+    "W12": "QT lead S2 gone (cut QT cable in mux channel 1)", "W13": "QT lead S3 gone (cut QT cable in mux channel 2)",
+    "W14": "QT lead S4 gone (cut QT cable in mux channel 3)",
 }
 R1_ADDED = {
     **{h: "right-angle bus header on each card's back edge" for h in ("XH1", "XH2", "XH3", "XH4")},
@@ -452,8 +451,9 @@ R1_MOVED = [
     ([(f"J1{k}", p) for k in range(1, 5) for p in "35"] + [(f"MOD{k}", p) for k in range(1, 4) for p in "35"]
      + [("U4", f"CH{k}.{s}") for k in range(4) for s in ("SDA", "SCL")],
      "each port's data and clock now pass a 100 ohm series resistor between the jack and the mux (review M5)"),
-    ([("U4", f"S{c}{k}") for k in range(4) for c in "DC"] + [("U4", f"CH{k}.V+") for k in range(4)],
-     "the mux's SD0-SC3 pads are now wired (leads to the backplane bus lines) in place of the four QT leads; the channel QT V+ (VCCIO) is no longer used"),
+    ([("U4", f"CH{k}.V+") for k in range(4)],
+     "the channel QT V+ (VCCIO) is no longer used: each channel's cut QT cable carries only SDA and SCL to the "
+     "backplane, and the sensors take power from their own card ports"),
     ([("J21", "4"), ("J21", "5"), ("J22", "4"), ("M1", "4"), ("M1", "5"), ("M2", "4"), ("R1", "2"), ("R2", "2"),
       ("R3", "2"), ("C1", "1"), ("C2", "1"), ("A1", "D4"), ("A1", "D8"), ("A1", "D9")],
      "each meter line now passes a 1 kohm series resistor between the jack side (pull-up, filter, clamps) and "

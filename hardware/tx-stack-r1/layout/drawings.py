@@ -163,10 +163,13 @@ def link_len(a, c):
 
 
 def mux_len(a):
-    """Cut length of a mux lead (muxleads.py: from the pad's real place on the #5626 to its hole 10), or None."""
+    """Cut length of a mux lead or channel cable (muxleads.py: from the pad or QT port's real place on the #5626 to
+    its hole 10), or None. A channel's two wires share one cable, so both rows give the cable's length."""
     if isinstance(a, tuple) and a[0] == "U4":
         import muxleads
-        return f"{muxleads.cut({'H.VCC': 'VIN', 'H.GND': 'GND', 'H.SCL': 'SCL', 'H.SDA': 'SDA', 'H.RST': 'RESET'}.get(a[1], a[1]))} mm"
+        if a[1].startswith("CH"):
+            return f"{muxleads.cable_cut(int(a[1][2]))} mm of cable"
+        return f"{muxleads.cut({'H.VCC': 'VIN', 'H.GND': 'GND', 'H.SCL': 'SCL', 'H.SDA': 'SDA', 'H.RST': 'RESET'}[a[1]])} mm"
     return None
 
 
@@ -176,6 +179,8 @@ def where(e):
         return f"backplane line {h[1:].split('.')[0]} hole {h.split('.')[1]}" if b == "BP" else h
     part = next(p for p in model.PARTS if p["ref"] == e[0])
     pin = next(x for x in part["pins"] if x[0] == e[1])
+    if e[0] == "U4" and e[1].startswith("CH"):            # a channel's QT port, not the header pin of the same name
+        return f"U4 {e[1].split('.')[0]} {pin[1]}"
     return f"{e[0]} {pin[1]}"
 
 
@@ -833,17 +838,20 @@ def backplane_sheet(ph):
             L.append(f"| {where(a)} | {where(c)} | {lead_len(a, c) or mux_len(a) or link_len(a, c) or '40 mm'} | {plain(net_of_end(c, ph) or net_of_end(a, ph))} | {note} |")
     L += ["", "The mux is an Adafruit #5626. Bridge A0 for address 0x71 and set its Vlogic switch SW1 to V+. It sits "
           "on a foam pad on the copper side over holes 2-9, below the B4 socket. That keeps it clear of the bus wires, "
-          "which start at hole 10. Thirteen of its pads take leads to hole 10: VIN, GND, SCL, SDA and RST to the "
-          "main bus lines, and SD0/SC0 to SD3/SC3 (channels 0-3) to sensor ports 1-4. Its QT ports stay empty, and the "
-          "sensors take power from their own card ports.", "",
-          "VIN, GND, SCL, SDA and RST are the 5-hole header row at the mux's far end from its upstream QT port. "
-          "SD0-SC3 are round test pads on the mux's back face (the face with the A0-A2 jumpers), along the long edge "
-          "beside channels 0-3's QT ports (Adafruit's board file; `layout/muxleads.py`). Use 22 AWG solid insulated "
-          "hook-up (Adafruit 1311), stripped 3 mm. Solder the header leads in from the top face and trim their tails "
-          "flush on the back. Lay each test-pad lead's bare end flat on its pad. Then stick the back face to the foam, "
-          "the SD/SC edge toward hole 10. The foam goes in the middle, clear of both test-pad rows and the header, "
-          "and no thicker than 1 mm, so the mux clears the floor. Each lead goes into its hole 10 from the copper "
-          "side and is soldered on the front; the bus wire's joint on the copper side takes it too.", "",
+          "which start at hole 10. Its 5-hole header (VIN, GND, SCL, SDA, RST, at the far end from its upstream QT "
+          "port) takes five leads to the main bus lines. Channels 0-3 reach sensor ports 1-4 through four Adafruit "
+          "#4209 QT cables, one plugged into each channel's QT port. Its upstream port and channels 4-7 stay empty, "
+          "and the sensors take power from their own card ports.", "",
+          "VIN, GND, SCL, SDA and RST are 22 AWG solid insulated hook-up (Adafruit 1311), stripped 3 mm, soldered in "
+          "from the top face with the tails trimmed flush on the back. Channels 0-3 are the QT ports along the long "
+          "edge on the same side as the header's VIN end (CONN1, CONN2, CONN5, CONN6; Adafruit's board file, "
+          "`layout/muxleads.py`). Cut each #4209 cable's male-pin end off at the length in the table, measured from "
+          "the back of the plug. Strip 3 mm off its blue (SDA) and yellow (SCL) wires. Cut its red (V+) and black "
+          "(GND) wires off about 3 mm from the plug and tape them; the mux's ground comes through its header lead. "
+          "Nothing else is soldered to the mux. Stick the back face to the foam, the channel 0-3 edge toward hole 10, "
+          "and plug the four cables in. The foam goes in the middle, no thicker than 1 mm, so the mux clears the "
+          "floor. Each lead and cable wire goes into its hole 10 from the copper side and is soldered on the front; "
+          "the bus wire's joint on the copper side takes it too.", "",
           "## 6. Fit it in the base (`cage/backplane-mount-spec.md`)", "",
           f"1. With the copper side back and the mux behind it, tilt the board. Push its factory right edge into the "
           f"right corner post's slot, to the slot's end (Xb {cage_slot_end():.2f}). Its left edge is then clear of the "
