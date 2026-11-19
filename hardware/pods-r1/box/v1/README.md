@@ -7,7 +7,7 @@ These six STLs are the v1 pod boxes: the files Clint prints. His CAD agent made 
 |---|---|
 | `pod-th-body.stl`, `pod-th-lid.stl` | TH box: sealed, two PG-7 glands |
 | `pod-baro-body.stl`, `pod-baro-lid.stl` | BARO box: one PG-7, the 4 mm vent with its ePTFE seat and baffle |
-| `pod-uv-body.stl`, `pod-uv-lid.stl` | UV box: floor gland, window recess in the lid |
+| `pod-uv-body.stl`, `pod-uv-lid.stl` | UV box: floor gland, window recess in the lid. Retired 2026-11-19: the UV pod is now the crown in `../stl/` (`box/podbox.py`), so don't print these two |
 
 They're in print orientation, in the same frame as `../stl/` (the model's own export): body back face on the bed,
 lid groove face on the bed.

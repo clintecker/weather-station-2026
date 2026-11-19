@@ -3,7 +3,7 @@
 This brief is for a CAD agent that will model and print the three sensor pod boxes. Units are millimetres.
 
 Here's where the numbers come from:
-- Every box dimension comes from `box/podbox.py` and `sources.py` as of 2026-11-18.
+- Every box dimension comes from `box/podbox.py` and `sources.py` as of 2026-11-18 (the UV crown: 2026-11-19).
 - The cap and arm mount details come from `shield/remix.py`.
 - The pressure figures and the 1 g silica pack size don't come from those files. The 3.5 hPa/°C is plain gas-law physics. The BMP581's ±0.5 hPa is Bosch's figure.
 
@@ -12,7 +12,7 @@ The reference STLs are `box/stl/pod-{th,baro,uv}-{body,lid}.stl`. They're saved 
 ## What these boxes are
 
 Each box holds one soldered Adafruit Perma-Proto Quarter board (43.18 × 50.8 × 1.6) that carries:
-- the sensor breakout, on BARO and UV only (BMP581 and LTR390). The TH board carries no sensor. The SHT45 sits outside on the shield stand, and its 4-core lead lands on the TH board at J10, J12, J13 and J14.
+- the sensor breakout, on BARO only (BMP581). The TH and UV boards carry no sensor. The SHT45 sits outside on the shield stand, and the LTR390 sits in the UV crown's lid. Each one's 4-core lead lands on its board at J10, J12, J13 and J14.
 - an ID EEPROM.
 - a 6P RJ11 jack (SparkFun BOB-14021 with an 87180 jack). The jack's mouth faces down.
 
@@ -22,13 +22,13 @@ A cable comes in through a PG-7 cable gland. You crimp the plug onto it inside t
 |---|---|---|---|
 | TH | the SHT45 board's port end; the SHT45 itself sits outside on the shield stand, on a 4-core lead | upright on the −x face of the remixed shield arm | 2 × PG-7 in the bottom wall (port cable and SHT45 lead) |
 | BARO | BMP581 | upright on the +x face of the remixed shield arm | 1 × PG-7 and a Ø4 vent with a baffle, both in the bottom wall |
-| UV | LTR390 | lying flat, window up, on the remixed shield cap | 1 × PG-7 through the floor; a window in the lid |
+| UV | LTR390 (in the lid, on a 0.15 m lead) | a round crown, window up, on the remixed shield cap | 1 × PG-7, level, through the drum wall; a window at the top of the dome |
 
 ## Sealing (Clint, 2026-11-18)
 
 - **TH: completely sealed.** It gets an opaque lid, with no window and no vent. The two glands are the only openings. The O-ring lid seals the rest.
 - **BARO: sealed against water, but it must keep its vent.** An airtight box stops tracking outside pressure, because trapped air changes pressure with temperature. That's about 3.5 hPa per °C, far more than the BMP581's ±0.5 hPa. So keep the Ø4 vent and the baffle. Put the adhesive ePTFE membrane on the vent's inside seat, since it lets air through and keeps water out. The lid is opaque.
-- **UV: the only box with a window.** The window is a 20 × 1.5 PTFE diffuser disc, set flush in the lid. UV-grade acrylic or quartz is the alternative. The rest of the lid is opaque.
+- **UV: the only box with a window.** The window is a 20 × 1.5 PTFE diffuser disc, set flush in the flat at the top of the dome. UV-grade acrylic or quartz is the alternative. The rest of the lid is opaque. The lid seals on an O-ring round the body's spigot, not on a lid groove.
 - **Desiccant:** you don't need any. A small pocket for a 1 g silica pack is welcome in TH and UV, if it fits outside the cavity minimums below.
 
 ## Frame
@@ -79,19 +79,34 @@ All coordinates use the **pod board frame**:
 - **Baffle:** a fin 1.6 thick at x 26.36..42.36, y −35.92..−34.32 (2.5 above the bottom wall's inner face). It stands from the back wall at z −6.5 up to z 8.7. It overhangs the vent hole by 6.0 on its three open sides, so there's no straight line from outside to the BMP581. Keep at least 2.5 of free gap round it so air can move.
 - **Mount face:** as TH, inserts in all four lugs.
 
-### UV (window)
-- **Inside cavity** (minimum): x −2.00..47.72, y −43.06..56.87, z −6.50..17.60 (49.72 × 99.93 × 24.10).
-- **Outside:** walls x −5.00..50.72, y −46.06..59.87, z −9.50..17.60. The lid adds z 17.60..20.60. With the lugs the box is 65.72 × 115.93 × 30.10.
-- **Lugs:** (−6.00, −47.06), (−6.00, 60.87), (51.72, −47.06), (51.72, 60.87).
-- **Floor gland:** Ø13.0 through the back/floor at (10.16, −33.76), axis −z. The cable comes up through it, bends over (10 mm allowance) and runs level into the jack: **fixed**.
-- **Window**, in the lid at (33.02, 45.72), centred over the LTR390's sensor chip (**fixed**):
-  - a Ø20.3 × 1.5 deep recess in the lid's top face. The disc sits flush, so no water ponds on it.
-  - a Ø17.0 aperture through the lid (a 1.5 ledge all round).
+### UV (the crown)
+The UV pod isn't a box: it's a round crown, a drum with a dome lid that twists on. Everything is about its axis at
+(10.16, 13.375), which runs through the port plug's axis, so the gland points straight out of the drum.
+- **Drum:** outside Ø117.6 (r 58.8) from the floor at z −9.50 up to the ledge at z 20.84. Inside bore r 54.0 from
+  z −6.50 (a 3.0 floor).
+- **Spigot:** r 56.4 outside (2.4 wall) from the ledge up to the joint at z 30.84. The lid's skirt slides over it
+  with 0.2 clearance, flush with the drum outside.
+- **O-ring:** a radial groove round the spigot at z 23.84, 0.93 deep × 2.03 wide, for the 1.5 cord (351 mm of it).
+  The lid's skirt squeezes it about 25 %. It sits below the bayonet, so no slot crosses it.
+- **Bayonet:** 3 lugs inside the lid's skirt (8 wide, 2.4 tall, 1.0 deep, centred 3.5 below the joint). The
+  spigot has an entry slot down from its top at 90°, 210° and 330° (box frame, from +x) and a channel round from
+  each. The lid locks 25° clockwise seen from above; the channel's end is the stop. No slot is over the gland (270°).
+- **Dome lid:** a quarter-ellipse dome, 28 rise from the joint, 3.0 thick, apex z 58.84, cut flat at z 58.24 for
+  the window. The overall crown is 67.7 tall from the floor.
+- **Port gland:** Ø13.0, level, through the drum wall at (10.16, y, 8.84), axis −y. Inside: a flat land (the nut's
+  seat) at y −38.42. Outside: a Ø22 flat spot face. Both **fixed**.
+- **Window**, on the axis (**fixed**):
+  - a Ø20.3 × 1.5 deep recess in the flat at the top of the dome. The disc sits flush, so no water ponds on it.
+  - a Ø17.0 aperture (a 1.5 ledge all round) at the top of a short tube down toward the LTR390.
   - the disc sits in a bed of neutral-cure silicone.
-- **Mount face:** z −9.50, the floor.
-  - **Lug inserts:** only the two far-end lugs, (−6.00, 60.87) and (51.72, 60.87), take mount inserts. The gland-end lugs keep only their lid inserts.
-  - **Floor bosses:** two blind bosses inside the box, Ø8.0 at (4.00, −20.46) and (41.72, −20.46). They go from the floor up to z −1.8. Each one takes an M3 insert from outside: bore Ø4.0 × 6.7, with 1.0 of plastic left over the bore.
-  - **Keep-out:** a Ø18.0 circle round the floor gland at (10.16, −33.76) on the mount face. The cap must stay clear of it. The gland hangs past the cap's edge.
+- **LTR390:** in the lid, chip up, its board's top at z 51.34, on two bosses under the dome at (0.00, 7.03) and
+  (20.32, 19.73), two of its corner holes. 2 × M2.5 × 6 thread-forming into Ø2.1 pilots. The chip is 1.0 below the
+  aperture tube. Its 0.15 m lead runs to the board below.
+- **Board:** on the two standoffs from the floor under the Perma-Proto's mounting holes, (3.81, 25.4) and
+  (39.37, 25.4), M3 × 8 thread-forming, as in TH and BARO.
+- **Mount face:** z −9.50, the floor. Four blind floor bosses take M3 inserts from below: bore Ø4.0 × 6.7, at
+  r 31 about the axis, at (−6.27, 39.66), (−20.05, 20.35), (−16.13, −3.05) and (26.59, −12.91), clear of the
+  board. No corner lugs and no lid screws.
 
 ## Mounting interfaces (fixed: the remixed shield parts are drilled to match)
 
@@ -100,11 +115,14 @@ All coordinates use the **pod board frame**:
   - 4 × M3 × 10 pan head go from the arm side through the arm face (5.0 plastic) into the four lug inserts.
   - The insert pattern is the four lug centres above.
 - **UV:**
-  - The floor sits on the remixed top cap. The cap's flat top is a disc of r 38.03.
-  - A fused saddle carries the floor bosses. It's the cap's cone drawn out toward +x into a spout, with its top flush with the flat top. It ends in a 5.0-thick pad (r 9) under each floor boss. A round scoop (r 40.7, centred at x 110) between the pads keeps the gland keep-out clear. It has no ribs.
-  - 2 × M3 × 10 go up from inside the cap (with the cap off the stack), through its counterbores and the 5.0 of plastic under the flat top, into the far-end lug inserts.
-  - 2 × M3 × 10 go up through the saddle into the floor-boss inserts.
-  - The gland end hangs past the cap's edge. The cable runs down outside the louvers, with a drip loop below the gland.
+  - The floor sits on the remixed top cap, the crown's axis on the shield's axis, turned so the gland points +x.
+    The cap's flat top is a disc of r 38.03; all four floor bosses (r 31) are on it.
+  - The cap carries a skirt under the crown: a shell 2.4 thick that starts just outside and above the top louver
+    plate and flares out in one S-curve to the crown's drum (r 58.8), with a ring at the flat top's level. Nothing of
+    it hangs in front of the louvers.
+  - 4 × M3 × 10 go up from inside the cap (with the cap off the stack), through its counterbores and the 5.0 of
+    plastic under the flat top, into the floor-boss inserts.
+  - The gland comes level out of the drum. The cable runs out to a drip loop, then down outside the louvers.
 - **If you move a lug, a boss or a gland,** the cable runs won't match any more. Nor will the remixed arm and cap (`shield/remix.py`). Don't move them unless you regenerate the remix too.
 
 ## What you may change, and what you must not
@@ -136,5 +154,5 @@ All coordinates use the **pod board frame**:
 3. The board (x 0..43.18, y 0..50.8, z −1.6..0) sits on the standoff tops, and every wall is at least 2.0 from it.
 4. Every gland nut (16.6 across corners, behind its hole) is at least 1.0 clear of every wall and the lid.
 5. BARO: no straight line from outside through the vent reaches the BMP581 board without hitting the baffle.
-6. UV: nothing on the mount face (bosses, lugs) intrudes into the Ø18 keep-out.
+6. UV: the floor is flat (nothing stands proud of it), and the lid twists on and off by hand with the cord in its groove.
 7. Each insert bore stays blind: none of them breaks into the sealed cavity.
