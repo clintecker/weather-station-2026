@@ -503,18 +503,15 @@ BP_PARTS = []   # (ref, {pin: hole}, note)
 for b in BOARDS:
     BP_PARTS.append((model.SOCKETS[b], {str(i): f"s{i}.{SOCKET_HOLE[b]}" for i in model.socket_pins(b)},
                      f"socket for {b} ({ROLE[b]}); key plug in contact {model.KEY[b]}"))
-_free = SOCKET_HOLE["B2"] + 2          # QT lead pins between the B2 and B1 sockets, above B2's header
-for k in range(1, 5):
-    BP_PARTS.append((f"W{k}", {"H.GND": f"s{bus_row('GND', 1)}.{_free + k - 1}",
-                               "H.SDA": f"s{bus_row(f'P{k}_SDA')}.{_free + k - 1}",
-                               "H.SCL": f"s{bus_row(f'P{k}_SCL')}.{_free + k - 1}"},
-                     f"QT lead S{k}: pins from the front, soldered on the copper side"))
 BP_PARTS.append(("XJ1", {"GND": f"s{bus_row('GND')}.11", "SCL": f"s{bus_row('I2C_SCL')}.11",
                          "SDA": f"s{bus_row('I2C_SDA')}.11"}, "charger I2C pins (lead to EVM J8)"))
 MUX_HOLES = {"H.VCC": f"s{bus_row('+3V3')}.10", "H.GND": f"s{bus_row('GND')}.10", "H.SCL": f"s{bus_row('I2C_SCL')}.10",
              "H.SDA": f"s{bus_row('I2C_SDA')}.10", "H.RST": f"s{bus_row('MUX_RST')}.10"}
+for _k in range(1, 5):          # sensor ports 1-4 = mux channels 0-3: leads from its SDx/SCx pads (its QT ports stay empty)
+    MUX_HOLES[f"SD{_k - 1}"] = f"s{bus_row(f'P{_k}_SDA')}.10"
+    MUX_HOLES[f"SC{_k - 1}"] = f"s{bus_row(f'P{_k}_SCL')}.10"
 for pad, h in MUX_HOLES.items():
-    w("wire", ("U4", pad), f"BP:{h}", "copper", f"mux {pad[2:]} pad lead to its line's bus wire")
+    w("wire", ("U4", pad), f"BP:{h}", "copper", f"mux {pad.split('.')[-1]} pad lead to its line's bus wire")
 w("wire", f"BP:s{bus_row('GND')}.38", f"BP:s{bus_row('GND', 1)}.38", "copper",
   "the two bus ground lines joined")
 # B4's power lines (model.B4_POWER) at the backplane's lower end, beside the EVM: the battery + junction is lines
@@ -583,9 +580,6 @@ CABLES = [(("BT1", "+"), ("PG1", "M+")), (("BT1", "-"), ("PG1", "M-")),
           (("PV1", "+"), ("U1", "VIN2")), (("PV1", "-"), ("U1", "PGND2")),
           (("A1", "ANT"), ("AD1", "P")), (("AD1", "J"), ("CX1", "P")), (("CX1", "J"), ("AE1", "RF")),
           (("U1", "J8.1"), ("XJ1", "GND")), (("U1", "J8.2"), ("XJ1", "SCL")), (("U1", "J8.3"), ("XJ1", "SDA"))]
-for k in range(1, 5):
-    for s in ("GND", "V+", "SDA", "SCL"):
-        CABLES.append(((f"W{k}", f"Q.{s}"), ("U4", f"CH{k - 1}.{s}")))
 for k, mod in ((1, "MOD1"), (2, "MOD2"), (3, "MOD3")):
     for n in "2345":
         CABLES.append(((f"J1{k}", n), (mod, n)))

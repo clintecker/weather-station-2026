@@ -42,22 +42,10 @@ Only the contact's grip holds the plug. Never solder it, and solder nothing else
 
 **Colour dots.** Put a paint-pen or sticker dot beside each socket on the front face, and one on the base beside its card slot. Use the same colour as the dot on that card's front edge: B1 blue, B2 green, B3 yellow, B4 red.
 
-## 3. Pins and parts on the front (QT leads to the mux, the charger's I2C, the sense resistors)
+## 3. Pins and parts on the front (the charger's I2C, the sense resistors)
 
 | Part | Pin | Line, hole | Bus line |
 |---|---|---|---|
-| W1 (QT lead S1: pins from the front, soldered on the copper side) | GND | 12, 21 | ground |
-| W1 (QT lead S1: pins from the front, soldered on the copper side) | SDA | 3, 21 | sensor port 1 data (SDA) |
-| W1 (QT lead S1: pins from the front, soldered on the copper side) | SCL | 4, 21 | sensor port 1 clock (SCL) |
-| W2 (QT lead S2: pins from the front, soldered on the copper side) | GND | 12, 22 | ground |
-| W2 (QT lead S2: pins from the front, soldered on the copper side) | SDA | 8, 22 | sensor port 2 data (SDA) |
-| W2 (QT lead S2: pins from the front, soldered on the copper side) | SCL | 9, 22 | sensor port 2 clock (SCL) |
-| W3 (QT lead S3: pins from the front, soldered on the copper side) | GND | 12, 23 | ground |
-| W3 (QT lead S3: pins from the front, soldered on the copper side) | SDA | 13, 23 | sensor port 3 data (SDA) |
-| W3 (QT lead S3: pins from the front, soldered on the copper side) | SCL | 14, 23 | sensor port 3 clock (SCL) |
-| W4 (QT lead S4: pins from the front, soldered on the copper side) | GND | 12, 24 | ground |
-| W4 (QT lead S4: pins from the front, soldered on the copper side) | SDA | 17, 24 | sensor port 4 data (SDA) |
-| W4 (QT lead S4: pins from the front, soldered on the copper side) | SCL | 18, 24 | sensor port 4 clock (SCL) |
 | XJ1 (charger I2C pins (lead to EVM J8)) | ground | 2, 11 | ground |
 | XJ1 (charger I2C pins (lead to EVM J8)) | clock | 7, 11 | I2C clock (SCL) |
 | XJ1 (charger I2C pins (lead to EVM J8)) | data | 10, 11 | I2C data (SDA) |
@@ -65,8 +53,6 @@ Only the contact's grip holds the plug. Never solder it, and solder nothing else
 | R7 (charger sense 100 ohm, lying on the front, junction to a lone pad) | 2 | 24, 7 | charger battery sense (BATP) |
 | R8 (gauge sense 100 ohm, lying on the front (on a slant), junction to line 23) | 1 | 22, 8 | battery + junction (backplane lines 21-22) |
 | R8 (gauge sense 100 ohm, lying on the front (on a slant), junction to line 23) | 2 | 23, 11 | fuel gauge cell sense (VBAT) |
-
-Fold each QT lead's V+ pin (red) back along its lead and sleeve it. The design leaves the mux channel V+ unused (it's the line-1 3.3 V supply passed through SW1). The sensors take power from their own card ports.
 
 R7 and R8 lie flat on the front, with R8 on a slant and its legs bent to the span. R7's free leg (line 24, hole 7) also takes the charger sense lead on the copper side.
 
@@ -88,28 +74,28 @@ The ground lead (J3 GND to line 12) is SYS's return. The regulator's load and th
 
 Use bare 22 AWG solid copper: the Adafruit 1311 hook-up wire on hand, stripped (0.64 mm). Lay each wire straight along its line over the pads and tack it at the first and last hole. Then solder it at every hole listed. Cut length: the span plus 10 mm.
 
-Most of those holes already hold a socket pin, a QT or XJ1 pin, a resistor leg or a section-3 lead. The others take the section-5 leads: hole 5 on lines 19, 20, 21 and 22, hole 10 on lines 1, 2, 7, 10 and 15 and hole 38 on lines 2 and 12. Fit those leads before the bus wires, or leave those holes open and solder them in section 5.
+Most of those holes already hold a socket pin, an XJ1 pin, a resistor leg or a section-3 lead. The others take the section-5 leads: hole 5 on lines 19, 20, 21 and 22, hole 10 on lines 1, 2, 3, 4, 7, 8, 9, 10, 13, 14, 15, 17 and 18 and hole 38 on lines 2 and 12. Fit those leads before the bus wires, or leave those holes open and solder them in section 5.
 
 | Line | Bus line | From hole | To hole | Cut | Soldered at holes |
 |---|---|---|---|---|---|
 | 1 | 3.3 V supply | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
 | 2 | ground | 10 | 38 | 85 mm | 10, 11, 13, 19, 27, 35, 38 |
-| 3 | sensor port 1 data (SDA) | 13 | 35 | 70 mm | 13, 19, 21, 27, 35 |
-| 4 | sensor port 1 clock (SCL) | 13 | 35 | 70 mm | 13, 19, 21, 27, 35 |
+| 3 | sensor port 1 data (SDA) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
+| 4 | sensor port 1 clock (SCL) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
 | 5 | cups (wind speed) pulse | 13 | 35 | 70 mm | 13, 19, 27, 35 |
 | 6 | vane (wind direction) voltage | 13 | 35 | 70 mm | 13, 19, 27, 35 |
 | 7 | I2C clock (SCL) | 10 | 35 | 75 mm | 10, 11, 13, 19, 27, 35 |
-| 8 | sensor port 2 data (SDA) | 13 | 35 | 70 mm | 13, 19, 22, 27, 35 |
-| 9 | sensor port 2 clock (SCL) | 13 | 35 | 70 mm | 13, 19, 22, 27, 35 |
+| 8 | sensor port 2 data (SDA) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
+| 9 | sensor port 2 clock (SCL) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
 | 10 | I2C data (SDA) | 10 | 35 | 75 mm | 10, 11, 13, 19, 27, 35 |
 | 11 | rain gauge pulse | 13 | 35 | 70 mm | 13, 19, 27, 35 |
-| 12 | ground | 11 | 38 | 80 mm | 11, 13, 19, 21, 22, 23, 24, 27, 35, 38 |
-| 13 | sensor port 3 data (SDA) | 13 | 35 | 70 mm | 13, 19, 23, 27, 35 |
-| 14 | sensor port 3 clock (SCL) | 13 | 35 | 70 mm | 13, 19, 23, 27, 35 |
+| 12 | ground | 11 | 38 | 80 mm | 11, 13, 19, 27, 35, 38 |
+| 13 | sensor port 3 data (SDA) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
+| 14 | sensor port 3 clock (SCL) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
 | 15 | mux reset | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
 | 16 | spare bus line (for the charger interrupt) | 13 | 35 | 70 mm | 13, 19, 27, 35 |
-| 17 | sensor port 4 data (SDA) | 13 | 35 | 70 mm | 13, 19, 24, 27, 35 |
-| 18 | sensor port 4 clock (SCL) | 13 | 35 | 70 mm | 13, 19, 24, 27, 35 |
+| 17 | sensor port 4 data (SDA) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
+| 18 | sensor port 4 clock (SCL) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
 | 19 | charger battery + (after the shunt) | 5 | 13 | 35 mm | 5, 6, 13 |
 | 20 | charger battery + (after the shunt) | 5 | 13 | 35 mm | 5, 13 |
 | 21 | battery + junction (backplane lines 21-22) | 5 | 13 | 35 mm | 5, 6, 7, 13 |
@@ -127,6 +113,14 @@ Most of those holes already hold a socket pin, a QT or XJ1 pin, a resistor leg o
 | U4 SCL | backplane line 7 hole 10 | 40 mm | I2C clock (SCL) | mux SCL pad lead to its line's bus wire |
 | U4 SDA | backplane line 10 hole 10 | 40 mm | I2C data (SDA) | mux SDA pad lead to its line's bus wire |
 | U4 RESET | backplane line 15 hole 10 | 40 mm | mux reset | mux RST pad lead to its line's bus wire |
+| U4 SD0 | backplane line 3 hole 10 | 40 mm | sensor port 1 data (SDA) | mux SD0 pad lead to its line's bus wire |
+| U4 SC0 | backplane line 4 hole 10 | 40 mm | sensor port 1 clock (SCL) | mux SC0 pad lead to its line's bus wire |
+| U4 SD1 | backplane line 8 hole 10 | 40 mm | sensor port 2 data (SDA) | mux SD1 pad lead to its line's bus wire |
+| U4 SC1 | backplane line 9 hole 10 | 40 mm | sensor port 2 clock (SCL) | mux SC1 pad lead to its line's bus wire |
+| U4 SD2 | backplane line 13 hole 10 | 40 mm | sensor port 3 data (SDA) | mux SD2 pad lead to its line's bus wire |
+| U4 SC2 | backplane line 14 hole 10 | 40 mm | sensor port 3 clock (SCL) | mux SC2 pad lead to its line's bus wire |
+| U4 SD3 | backplane line 17 hole 10 | 40 mm | sensor port 4 data (SDA) | mux SD3 pad lead to its line's bus wire |
+| U4 SC3 | backplane line 18 hole 10 | 40 mm | sensor port 4 clock (SCL) | mux SC3 pad lead to its line's bus wire |
 | backplane line 2 hole 38 | backplane line 12 hole 38 | 40 mm | ground | the two bus ground lines joined |
 | backplane line 19 hole 5 | backplane line 20 hole 5 | 40 mm | charger battery + (after the shunt) | lines 19 and 20 joined (charger battery +, two pins) |
 | backplane line 21 hole 5 | backplane line 22 hole 5 | 40 mm | battery + junction (backplane lines 21-22) | lines 21 and 22 joined (battery + junction, two pins) |
@@ -136,7 +130,7 @@ Most of those holes already hold a socket pin, a QT or XJ1 pin, a resistor leg o
 | U1 system ground (J3 GND) | backplane line 12 hole 11 | 100 mm, trim to fit | ground | charger system ground (J3 GND) to line 12 (the bus ground, SYS's return), 24 AWG stranded, black |
 | R7 2 | U1 battery sense (J5 SNS_BATP) | 100 mm, trim to fit | charger battery sense (BATP) | charger battery sense (J5 SNS_BATP) from R7's free leg, 24 AWG stranded, white with a red band |
 
-The mux is an Adafruit #5626. Bridge A0 for address 0x71 and set its Vlogic switch SW1 to V+. It sits on a foam pad on the copper side over holes 2-9, below the B4 socket. That keeps it clear of the bus wires, which start at hole 10. Its five header pads take short leads to hole 10.
+The mux is an Adafruit #5626. Bridge A0 for address 0x71 and set its Vlogic switch SW1 to V+. It sits on a foam pad on the copper side over holes 2-9, below the B4 socket. That keeps it clear of the bus wires, which start at hole 10. Thirteen of its pads take short leads to hole 10: VIN, GND, SCL, SDA and RST to the main bus lines, and SD0/SC0 to SD3/SC3 (channels 0-3) to sensor ports 1-4. Its QT ports stay empty, and the sensors take power from their own card ports.
 
 ## 6. Fit it in the base (`cage/backplane-mount-spec.md`)
 
@@ -162,14 +156,14 @@ This table has every pad with anything soldered in it. Every other pad stays bar
 | 2 | 27 | XB1 bus 2 | line 2 |
 | 2 | 35 | XB3 bus 2 | line 2 |
 | 2 | 38 | lead to backplane line 12 hole 38 | line 2 |
+| 3 | 10 | lead to U4 SD0 | line 3 |
 | 3 | 13 | XB4 bus 3 | line 3 |
 | 3 | 19 | XB2 bus 3 | line 3 |
-| 3 | 21 | W1 SDA | line 3 |
 | 3 | 27 | XB1 bus 3 | line 3 |
 | 3 | 35 | XB3 bus 3 | line 3 |
+| 4 | 10 | lead to U4 SC0 | line 4 |
 | 4 | 13 | XB4 bus 4 | line 4 |
 | 4 | 19 | XB2 bus 4 | line 4 |
-| 4 | 21 | W1 SCL | line 4 |
 | 4 | 27 | XB1 bus 4 | line 4 |
 | 4 | 35 | XB3 bus 4 | line 4 |
 | 5 | 13 | XB4 bus 5 | line 5 |
@@ -186,14 +180,14 @@ This table has every pad with anything soldered in it. Every other pad stays bar
 | 7 | 19 | XB2 bus 7 | line 7 |
 | 7 | 27 | XB1 bus 7 | line 7 |
 | 7 | 35 | XB3 bus 7 | line 7 |
+| 8 | 10 | lead to U4 SD1 | line 8 |
 | 8 | 13 | XB4 bus 8 | line 8 |
 | 8 | 19 | XB2 bus 8 | line 8 |
-| 8 | 22 | W2 SDA | line 8 |
 | 8 | 27 | XB1 bus 8 | line 8 |
 | 8 | 35 | XB3 bus 8 | line 8 |
+| 9 | 10 | lead to U4 SC1 | line 9 |
 | 9 | 13 | XB4 bus 9 | line 9 |
 | 9 | 19 | XB2 bus 9 | line 9 |
-| 9 | 22 | W2 SCL | line 9 |
 | 9 | 27 | XB1 bus 9 | line 9 |
 | 9 | 35 | XB3 bus 9 | line 9 |
 | 10 | 10 | lead to U4 SDA | line 10 |
@@ -209,21 +203,17 @@ This table has every pad with anything soldered in it. Every other pad stays bar
 | 12 | 11 | lead to U1 system ground (J3 GND) | line 12 |
 | 12 | 13 | XB4 bus 12 | line 12 |
 | 12 | 19 | XB2 bus 12 | line 12 |
-| 12 | 21 | W1 GND | line 12 |
-| 12 | 22 | W2 GND | line 12 |
-| 12 | 23 | W3 GND | line 12 |
-| 12 | 24 | W4 GND | line 12 |
 | 12 | 27 | XB1 bus 12 | line 12 |
 | 12 | 35 | XB3 bus 12 | line 12 |
 | 12 | 38 | lead to backplane line 2 hole 38 | line 12 |
+| 13 | 10 | lead to U4 SD2 | line 13 |
 | 13 | 13 | XB4 bus 13 | line 13 |
 | 13 | 19 | XB2 bus 13 | line 13 |
-| 13 | 23 | W3 SDA | line 13 |
 | 13 | 27 | XB1 bus 13 | line 13 |
 | 13 | 35 | XB3 bus 13 | line 13 |
+| 14 | 10 | lead to U4 SC2 | line 14 |
 | 14 | 13 | XB4 bus 14 | line 14 |
 | 14 | 19 | XB2 bus 14 | line 14 |
-| 14 | 23 | W3 SCL | line 14 |
 | 14 | 27 | XB1 bus 14 | line 14 |
 | 14 | 35 | XB3 bus 14 | line 14 |
 | 15 | 10 | lead to U4 RESET | line 15 |
@@ -235,14 +225,14 @@ This table has every pad with anything soldered in it. Every other pad stays bar
 | 16 | 19 | XB2 bus 16 | line 16 |
 | 16 | 27 | XB1 bus 16 | line 16 |
 | 16 | 35 | XB3 bus 16 | line 16 |
+| 17 | 10 | lead to U4 SD3 | line 17 |
 | 17 | 13 | XB4 bus 17 | line 17 |
 | 17 | 19 | XB2 bus 17 | line 17 |
-| 17 | 24 | W4 SDA | line 17 |
 | 17 | 27 | XB1 bus 17 | line 17 |
 | 17 | 35 | XB3 bus 17 | line 17 |
+| 18 | 10 | lead to U4 SC3 | line 18 |
 | 18 | 13 | XB4 bus 18 | line 18 |
 | 18 | 19 | XB2 bus 18 | line 18 |
-| 18 | 24 | W4 SCL | line 18 |
 | 18 | 27 | XB1 bus 18 | line 18 |
 | 18 | 35 | XB3 bus 18 | line 18 |
 | 19 | 5 | lead to backplane line 20 hole 5 | line 19 |

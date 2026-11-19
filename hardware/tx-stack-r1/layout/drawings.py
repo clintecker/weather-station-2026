@@ -772,17 +772,14 @@ def backplane_sheet(ph):
           "hand, off the base. Each one must stop at the mouth.", "",
           "**Colour dots.** Put a paint-pen or sticker dot beside each socket on the front face, and one on the base "
           "beside its card slot. Use the same colour as the dot on that card's front edge: " + ", ".join(
-              f"{b} {model.KEY_COLOUR[b]}" for b in st.BOARDS) + ".", "", "## 3. Pins and parts on the front (QT leads to the mux, the charger's I2C, the sense resistors)", "",
+              f"{b} {model.KEY_COLOUR[b]}" for b in st.BOARDS) + ".", "", "## 3. Pins and parts on the front (the charger's I2C, the sense resistors)", "",
           "| Part | Pin | Line, hole | Bus line |", "|---|---|---|---|"]
     for ref, pins, note in st.BP_PARTS:
         if not ref.startswith("XB"):
             for pin, h in pins.items():
                 i, n = h[1:].split(".")
                 L.append(f"| {ref} ({note}) | {lc.PIN[(ref, pin)][1]} | {i}, {n} | {plain(lc.NET_OF.get((ref, pin)))} |")
-    L += ["", "Fold each QT lead's V+ pin (red) back along its lead and sleeve it. The design leaves the mux channel "
-          "V+ unused (it's the line-1 3.3 V supply passed through SW1). The sensors take power from their own card "
-          "ports.", "",
-          "R7 and R8 lie flat on the front, with R8 on a slant and its legs bent to the span. R7's free leg (line 24, "
+    L += ["", "R7 and R8 lie flat on the front, with R8 on a slant and its legs bent to the span. R7's free leg (line 24, "
           "hole 7) also takes the charger sense lead on the copper side.", "",
           "### Leads to the charger and the pack (copper side, short)", "",
           "| From | To the backplane | What |", "|---|---|---|"]
@@ -802,7 +799,7 @@ def backplane_sheet(ph):
           f"Use bare 22 AWG solid copper: the Adafruit 1311 hook-up wire on hand, stripped ({S.val('bus_wire'):g} mm). "
           "Lay each wire straight along its line over the pads and tack it at the first and last hole. Then solder it at "
           "every hole listed. Cut length: the span plus 10 mm.", "",
-          "Most of those holes already hold a socket pin, a QT or XJ1 pin, a resistor leg or a section-3 lead. The "
+          "Most of those holes already hold a socket pin, an XJ1 pin, a resistor leg or a section-3 lead. The "
           "others take the section-5 leads: " + s5_holes() + ". Fit those leads before the bus wires, or leave those "
           "holes open and solder them in section 5.", "",
           "| Line | Bus line | From hole | To hole | Cut | Soldered at holes |", "|---|---|---|---|---|---|"]
@@ -820,7 +817,9 @@ def backplane_sheet(ph):
             L.append(f"| {where(a)} | {where(c)} | {lead_len(a, c) or '40 mm'} | {plain(net_of_end(c, ph) or net_of_end(a, ph))} | {note} |")
     L += ["", "The mux is an Adafruit #5626. Bridge A0 for address 0x71 and set its Vlogic switch SW1 to V+. It sits "
           "on a foam pad on the copper side over holes 2-9, below the B4 socket. That keeps it clear of the bus wires, "
-          "which start at hole 10. Its five header pads take short leads to hole 10.", "",
+          "which start at hole 10. Thirteen of its pads take short leads to hole 10: VIN, GND, SCL, SDA and RST to the "
+          "main bus lines, and SD0/SC0 to SD3/SC3 (channels 0-3) to sensor ports 1-4. Its QT ports stay empty, and the "
+          "sensors take power from their own card ports.", "",
           "## 6. Fit it in the base (`cage/backplane-mount-spec.md`)", "",
           f"1. With the copper side back and the mux behind it, tilt the board. Push its factory right edge into the "
           f"right corner post's slot, to the slot's end (Xb {cage_slot_end():.2f}). Its left edge is then clear of the "
@@ -965,7 +964,7 @@ def assembly_sheet():
         if ln:
             L.append(f"| {where(a)} | {where(c)} | {ln} | {note} |")
     L += ["| EVM J8 (KK 4-pin housing, pins 1-3) | backplane charger pins | 150 mm | charger I2C: ground, clock, data |",
-          "| mux channel 0-3 (QT) | backplane QT lead pins | 150 mm (Adafruit #4209) | sensor ports S1-S4 |", "",
+          "",
           f"Battery leads are 24 AWG stranded (red +, black -), about {S.val('wire24')[2] * 0.1:.1f} mV drop per 0.1 m "
           f"at 1 A ({S.val('wire24')[2]:g} mohm/m). J5 BATTERY to line 19 is soldered at the backplane and screwed at "
           "J5. The pack + pigtail is soldered at line 21. The pack - lead runs straight from the pack to J5 GND "

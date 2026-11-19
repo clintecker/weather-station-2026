@@ -611,11 +611,11 @@ def check_cage(ph):
         items += [(b, to_box(b, x)) for _r, x in board_boxes(b) if not x.service]
         items.append((b, card_slab(b)))
     fixed = cage_boxes() + [st.Box(k.x0, k.y0, k.x1, k.y1, k.z0, k.z1, f"box {k.what}") for k in cage.box_keepouts()]
-    for ref, pins, note in st.BP_PARTS:            # the QT lead housings and charger pins standing on the backplane
-        if ref.startswith("W") or ref == "XJ1":
+    for ref, pins, note in st.BP_PARTS:            # the charger pins standing on the backplane
+        if ref == "XJ1":
             for pin, h in pins.items():
                 x, z = st.bp_xy(h)
-                hh = S.val("qt_lead_h") if ref.startswith("W") else 8.5
+                hh = 8.5
                 fixed.append(st.Box(x - 1.27, st.BP_FRONT, x + 1.27, st.BP_FRONT + hh, z - 1.27, z + 1.27, f"{ref} {pin} housing"))
         elif ref in ("R7", "R8"):                  # lying 100 ohm resistors on the front, body over their span
             (xa, za), (xb, zb) = (st.bp_xy(h) for h in pins.values())

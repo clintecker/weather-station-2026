@@ -81,7 +81,6 @@ D = {
     "ina228": ((25.4, 20.32), "INA228 #5832 outline", ADA.format("INA228"), "sourced"),
     "ina228_sj1": ("open", "INA228 #5832 VBUS jumper SJ1 (VBUS to VIN+) as shipped; closed for high-side measurement", "learn.adafruit.com/adafruit-ina228-i2c-power-monitor/pinouts (VBUS Jumper); Adafruit-INA228-PCB .sch: SJ1 pins VIN+ / VBUS, SOLDERJUMPER_ARROW_NOPASTE (open)", "sourced"),
     "max17048": ((25.4, 20.32), "MAX17048 #5580 outline", ADA.format("MAX17048"), "sourced"),
-    "qt_lead_h": (14.0, "QT lead male-pin housing height (#4209)", "premium jumper housing; measure", "TBD"),
     "qt_h": (2.9, "STEMMA QT (JST SH) socket height", "bench r1 kicad_layout.py qt_socket", "TBD"),
     "jstph_h": (6.0, "JST PH 2-pin socket height (MAX17048)", "KiCad JST_PH_B2B-PH-K model; bench r1 model_gauge", "sourced"),
     "s7v8f3": ((11.43, 16.51), "Pololu S7V8F3 outline", "bench r1 build.py SIZE['REG'] (0.45 x 0.65 in); pin order from the board in hand", "sourced"),

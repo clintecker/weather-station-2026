@@ -62,7 +62,7 @@ def addr(ref):
 
 def main():
     need("SOLAR_P", "VUSB", "PACK_P", "CELL_P", "BAT_P", "SYS", "+3V3", "I2C_SDA", "I2C_SCL", "MUX_RST",
-         "CUPS", "VANE", "RAIN", "RF_MINI", "RF_WALL", "VCCIO", *[f"P{k}_SDA" for k in range(1, 5)])
+         "CUPS", "VANE", "RAIN", "RF_MINI", "RF_WALL", *[f"P{k}_SDA" for k in range(1, 5)])
     W, H = 1500, 960
     PW, I2, MT, RF = "#C0392B", "#1F5FBF", "#2CA02C", "#8E44AD"
     text(W / 2, 30, "TX card cage r2: block diagram (Wio-E5 mini TX on four SolderFul cards and a backplane)", 18, anchor="middle", weight="bold")
@@ -127,7 +127,7 @@ def main():
         jref, mod, ch = model.PORTS[k]
         x = 30 + (k - 1) * 290
         box(x, 640, 260, 76, f"Port S{k}: {jref} RJ11 + F{k} MF-R010",
-            [f"QT lead W{k} from mux ch{ch}, 100 ohm series", "3.3 V through its PTC; clamps", "BOB-14021 + 87180-066LF"],
+            [f"mux ch{ch} (SD{ch}/SC{ch} pad leads), 100 ohm series", "3.3 V through its PTC; clamps", "BOB-14021 + 87180-066LF"],
             "#eef3fa", I2, "B1" if k < 4 else "B2")
         arrow([(380 + (k - 1) * 70, 592), (380 + (k - 1) * 70, 615), (x + 130, 615), (x + 130, 640)], "", I2)
         if mod:

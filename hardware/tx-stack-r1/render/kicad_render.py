@@ -595,7 +595,7 @@ def assembly_boxes(explode=0.0, section=False):
             out.append(("socket", st.Box(xa, y0, xb, y1, z - p / 2, z + p / 2, f"socket {b}")))
     for ref, pins, _note in st.BP_PARTS:
         if ref.startswith("W") or ref == "XJ1":
-            hh = S.val("qt_lead_h") if ref.startswith("W") else 8.5
+            hh = 8.5
             for h in pins.values():
                 x, z = st.bp_xy(h)
                 out.append(("housing", st.Box(x - p / 2, st.BP_FRONT, x + p / 2, st.BP_FRONT + hh, z - p / 2, z + p / 2, ref)))

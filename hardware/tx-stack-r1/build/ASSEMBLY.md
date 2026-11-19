@@ -60,7 +60,6 @@ To take a card out, take the bar off. Unplug that card's own plugs: the RJ11 cab
 | U1 system ground (J3 GND) | backplane line 12 hole 11 | 100 mm, trim to fit | charger system ground (J3 GND) to line 12 (the bus ground, SYS's return), 24 AWG stranded, black |
 | R7 2 | U1 battery sense (J5 SNS_BATP) | 100 mm, trim to fit | charger battery sense (J5 SNS_BATP) from R7's free leg, 24 AWG stranded, white with a red band |
 | EVM J8 (KK 4-pin housing, pins 1-3) | backplane charger pins | 150 mm | charger I2C: ground, clock, data |
-| mux channel 0-3 (QT) | backplane QT lead pins | 150 mm (Adafruit #4209) | sensor ports S1-S4 |
 
 Battery leads are 24 AWG stranded (red +, black -), about 8.4 mV drop per 0.1 m at 1 A (84.2 mohm/m). J5 BATTERY to line 19 is soldered at the backplane and screwed at J5. The pack + pigtail is soldered at line 21. The pack - lead runs straight from the pack to J5 GND (screwed) and doesn't touch the backplane. The charger sense lead from R7 is 24 AWG stranded too.
 

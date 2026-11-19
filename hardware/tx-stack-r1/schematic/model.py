@@ -264,17 +264,13 @@ PARTS = [
          block="ports", card="BP",
          pins=[("H.VCC", "VIN", PIN, "solder"), ("H.GND", "GND", PAS, "solder"), ("H.SCL", "SCL", BI, "solder"),
                ("H.SDA", "SDA", BI, "solder"), ("H.RST", "RESET", IN, "solder")]
-         + qt("UP", "nc") + sum((qt(f"CH{k}") for k in range(4)), []),
+         + sum(([(f"SD{k}", f"SD{k}", BI, "solder"), (f"SC{k}", f"SC{k}", BI, "solder")] for k in range(4)), [])
+         + qt("UP", "nc") + sum(([(p, n, t, "nc" if n == "V+" else c) for p, n, t, c in qt(f"CH{k}")] for k in range(4)), []),
          ties=[["H.GND", "UP.GND"] + [f"CH{k}.GND" for k in range(4)], ["H.VCC", "UP.V+"],
-               ["H.SDA", "UP.SDA"], ["H.SCL", "UP.SCL"], [f"CH{k}.V+" for k in range(4)]],
+               ["H.SDA", "UP.SDA"], ["H.SCL", "UP.SCL"]]
+         + [[f"SD{k}", f"CH{k}.SDA"] for k in range(4)] + [[f"SC{k}", f"CH{k}.SCL"] for k in range(4)],
          i2c=[0x71], pullups_k=10.0,
-         note="five leads soldered to its header pads; channel QT V+ is VCCIO and stays unused"),
-    *[dict(ref=f"W{k}", value=f"QT lead S{k}", block="ports", card="BP",
-           part="Adafruit #4209 QT to male pins (V+ pin folded back and insulated)",
-           pins=qt("Q") + [("H.GND", "GND", PAS, "header"), ("H.V+", "V+", PAS, "nc"),
-                           ("H.SDA", "SDA", BI, "header"), ("H.SCL", "SCL", BI, "header")],
-           ties=[["Q.GND", "H.GND"], ["Q.V+", "H.V+"], ["Q.SDA", "H.SDA"], ["Q.SCL", "H.SCL"]])
-      for k in range(1, 5)],
+         note="thirteen leads from its pads (VIN GND SCL SDA RST, SD0-SC3 for sensor ports 1-4); its QT ports stay empty"),
     # ------------------------------------------------------------ outdoors
     module("MOD1", "TH module", "SHT45 #6174", 0x44),
     module("MOD2", "Baro module", "BMP581 #6407", 0x47),
@@ -322,9 +318,9 @@ def port_nets():
         out[f"P{k}_3V3"] = ([(f"F{k}", "2"), (f"D{k}1", "1"), (f"D{k}2", "2"), (f"D{k}4", "2"), (jack, "2")] + [(x, "2") for x in m], dict(vmax=3.4))
         out[f"P{k}_JSDA"] = ([(jack, "3"), (f"D{k}2", "1"), (f"D{k}3", "2"), (f"R{k}1", "1")] + [(x, "3") for x in m], dict(vmax=3.6))
         out[f"P{k}_JSCL"] = ([(jack, "5"), (f"D{k}4", "1"), (f"D{k}5", "2"), (f"R{k}2", "1")] + [(x, "5") for x in m], dict(vmax=3.6))
-        out[f"P{k}_SDA"] = ([(f"R{k}1", "2"), ("U4", f"CH{ch}.SDA"), (f"W{k}", "Q.SDA"), (f"W{k}", "H.SDA")]
+        out[f"P{k}_SDA"] = ([(f"R{k}1", "2"), ("U4", f"SD{ch}"), ("U4", f"CH{ch}.SDA")]
                             + bus(f"P{k}_SDA"), dict(vmax=3.6))
-        out[f"P{k}_SCL"] = ([(f"R{k}2", "2"), ("U4", f"CH{ch}.SCL"), (f"W{k}", "Q.SCL"), (f"W{k}", "H.SCL")]
+        out[f"P{k}_SCL"] = ([(f"R{k}2", "2"), ("U4", f"SC{ch}"), ("U4", f"CH{ch}.SCL")]
                             + bus(f"P{k}_SCL"), dict(vmax=3.6))
     return out
 
@@ -355,7 +351,6 @@ NETS = {
              ("D51", "2"), ("D52", "2"), ("D53", "2")]
             + [(f"J1{k}", "4") for k in range(1, 5)] + [(f"MOD{k}", "4") for k in range(1, 4)]
             + [(f"D{k}{s}", p) for k in range(1, 5) for s, p in (("1", "2"), ("3", "1"), ("5", "1"))]
-            + [(f"W{k}", s) for k in range(1, 5) for s in ("Q.GND", "H.GND")]
             + [("U4", f"CH{k}.GND") for k in range(4)] + bus("GND"), dict()),
     "I2C_SCL": ([("A1", "D11"), ("U2", "H.SCL"), ("U6", "H.SCL"), ("U5", "SCL"), ("U4", "H.SCL"), ("U1", "J8.2"),
                  ("XJ1", "SCL")] + bus("I2C_SCL"), dict(vmax=3.6)),
@@ -369,7 +364,6 @@ NETS = {
     "VANE": ([("A1", "D8"), ("R5", "2")] + bus("VANE"), dict(vmax=3.4)),
     "RAIN": ([("A1", "D9"), ("R6", "2")] + bus("RAIN"), dict(vmax=3.4)),
     "BUS_SPARE": (bus("BUS_SPARE"), dict()),
-    "VCCIO": ([("U4", f"CH{k}.V+") for k in range(4)] + [(f"W{k}", "Q.V+") for k in range(1, 5)], dict()),
     "SWDIO": ([("A1", "B3"), ("J3", "2")], dict()),
     "SWCLK": ([("A1", "B4"), ("J3", "3")], dict()),
     "NRST": ([("A1", "B5"), ("J3", "4")], dict()),
@@ -393,7 +387,7 @@ NET_NAME = {
     "CUPS_J": "cups (wind speed) pulse at the jack", "VANE_J": "vane (wind direction) at the jack",
     "RAIN_J": "rain pulse at the jack", "CUPS": "cups (wind speed) pulse", "VANE": "vane (wind direction) voltage",
     "RAIN": "rain gauge pulse", "BUS_SPARE": "spare bus line (for the charger interrupt)",
-    "VCCIO": "mux channel supply (unused)", "SWDIO": "debug data (SWDIO)", "SWCLK": "debug clock (SWCLK)",
+    "SWDIO": "debug data (SWDIO)", "SWCLK": "debug clock (SWCLK)",
     "NRST": "MCU reset (NRST)", "RF_MINI": "antenna feed at the radio", "RF_RA": "antenna feed after the elbow",
     "RF_WALL": "antenna feed at the wall",
     **{f"P{k}_{s}": f"sensor port {k} {w}" for k in range(1, 5) for s, w in (
@@ -422,7 +416,7 @@ OUTDOOR_LINES = {**{f"P{k}_JSDA": (f"R{k}1", [f"D{k}2", f"D{k}3"]) for k in rang
 ERC_WAIVERS = {
     "lib_symbol_issues": "symbols are embedded in the generated schematic, not taken from a KiCad library",
 }
-PWR_FLAGS = ["GND", "P1_3V3", "P2_3V3", "P3_3V3", "P4_3V3", "CELL_P", "BAT_P", "VCCIO"]
+PWR_FLAGS = ["GND", "P1_3V3", "P2_3V3", "P3_3V3", "P4_3V3", "CELL_P", "BAT_P"]
 
 # ------------------------------------------------------------------ what changed from r1, and why
 # checks.py rule 10 compares r1-connections.json with this model: every part added or removed, and every pin
@@ -430,15 +424,14 @@ PWR_FLAGS = ["GND", "P1_3V3", "P2_3V3", "P3_3V3", "P4_3V3", "CELL_P", "BAT_P", "
 R1_REMOVED = {
     "XS1": "the B3-B4 socket: the four cards now plug into a backplane",
     "XP1": "the B4 bus pins, same reason",
-    "W11": "QT lead S1 moves to the backplane (as W1) beside the mux",
-    "W12": "QT lead S2 moves to the backplane (as W2)", "W13": "QT lead S3 moves to the backplane (as W3)",
-    "W14": "QT lead S4 moves to the backplane (as W4)",
+    "W11": "QT lead S1 gone: the mux on the backplane takes sensor port 1 on leads from its SD0/SC0 pads",
+    "W12": "QT lead S2 gone (mux SD1/SC1 leads)", "W13": "QT lead S3 gone (mux SD2/SC2 leads)",
+    "W14": "QT lead S4 gone (mux SD3/SC3 leads)",
 }
 R1_ADDED = {
     **{h: "right-angle bus header on each card's back edge" for h in ("XH1", "XH2", "XH3", "XH4")},
     **{s: "backplane socket for one card" for s in ("XB1", "XB2", "XB3", "XB4")},
     "XJ1": "charger I2C lead lands on the backplane",
-    **{f"W{k}": f"QT lead S{k}, now on the backplane" for k in range(1, 5)},
     "R7": "100 ohm at the tap end of the charger sense lead (electrical review m11)",
     "R8": "100 ohm at the tap end of the gauge sense lead (m11; 100 not 1k: the gauge may draw its supply here)",
     "RT1": "pack thermistor on EVM J7, JP18 removed (electrical review M2)",
@@ -459,6 +452,8 @@ R1_MOVED = [
     ([(f"J1{k}", p) for k in range(1, 5) for p in "35"] + [(f"MOD{k}", p) for k in range(1, 4) for p in "35"]
      + [("U4", f"CH{k}.{s}") for k in range(4) for s in ("SDA", "SCL")],
      "each port's data and clock now pass a 100 ohm series resistor between the jack and the mux (review M5)"),
+    ([("U4", f"S{c}{k}") for k in range(4) for c in "DC"] + [("U4", f"CH{k}.V+") for k in range(4)],
+     "the mux's SD0-SC3 pads are now wired (leads to the backplane bus lines) in place of the four QT leads; the channel QT V+ (VCCIO) is no longer used"),
     ([("J21", "4"), ("J21", "5"), ("J22", "4"), ("M1", "4"), ("M1", "5"), ("M2", "4"), ("R1", "2"), ("R2", "2"),
       ("R3", "2"), ("C1", "1"), ("C2", "1"), ("A1", "D4"), ("A1", "D8"), ("A1", "D9")],
      "each meter line now passes a 1 kohm series resistor between the jack side (pull-up, filter, clamps) and "

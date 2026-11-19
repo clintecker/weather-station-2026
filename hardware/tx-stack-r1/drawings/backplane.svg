@@ -327,10 +327,10 @@
 <circle cx="150.0" cy="154.4" r="3.3" fill="#2b2b2b"/>
 <rect x="144.4" y="131.1" width="11.2" height="11.2" rx="2" fill="#D4AF37" stroke="#7a5c12" stroke-width="0.5"/>
 <circle cx="150.0" cy="136.7" r="3.3" fill="#2b2b2b"/>
-<line x1="150.0" y1="581.2" x2="150.0" y2="190.0" stroke="#6FA8DC" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<line x1="150.0" y1="634.5" x2="150.0" y2="190.0" stroke="#6FA8DC" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<circle cx="150.0" cy="634.5" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="150.0" cy="581.2" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="150.0" cy="474.5" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
-<circle cx="150.0" cy="438.9" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="150.0" cy="332.2" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="150.0" cy="190.0" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <text x="167.8" y="115.3" font-size="10" text-anchor="middle" fill="#222" font-weight="normal">4</text>
@@ -410,10 +410,10 @@
 <circle cx="167.8" cy="154.4" r="3.3" fill="#2b2b2b"/>
 <rect x="162.2" y="131.1" width="11.2" height="11.2" rx="2" fill="#D4AF37" stroke="#7a5c12" stroke-width="0.5"/>
 <circle cx="167.8" cy="136.7" r="3.3" fill="#2b2b2b"/>
-<line x1="167.8" y1="581.2" x2="167.8" y2="190.0" stroke="#F1C40F" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<line x1="167.8" y1="634.5" x2="167.8" y2="190.0" stroke="#F1C40F" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<circle cx="167.8" cy="634.5" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="167.8" cy="581.2" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="167.8" cy="474.5" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
-<circle cx="167.8" cy="438.9" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="167.8" cy="332.2" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="167.8" cy="190.0" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <text x="185.6" y="115.3" font-size="10" text-anchor="middle" fill="#222" font-weight="normal">5</text>
@@ -741,10 +741,10 @@
 <circle cx="238.9" cy="154.4" r="3.3" fill="#2b2b2b"/>
 <rect x="233.3" y="131.1" width="11.2" height="11.2" rx="2" fill="#D4AF37" stroke="#7a5c12" stroke-width="0.5"/>
 <circle cx="238.9" cy="136.7" r="3.3" fill="#2b2b2b"/>
-<line x1="238.9" y1="581.2" x2="238.9" y2="190.0" stroke="#6FA8DC" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<line x1="238.9" y1="634.5" x2="238.9" y2="190.0" stroke="#6FA8DC" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<circle cx="238.9" cy="634.5" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="238.9" cy="581.2" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="238.9" cy="474.5" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
-<circle cx="238.9" cy="421.1" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="238.9" cy="332.2" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="238.9" cy="190.0" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <text x="256.7" y="115.3" font-size="10" text-anchor="middle" fill="#222" font-weight="normal">9</text>
@@ -824,10 +824,10 @@
 <circle cx="256.7" cy="154.4" r="3.3" fill="#2b2b2b"/>
 <rect x="251.1" y="131.1" width="11.2" height="11.2" rx="2" fill="#D4AF37" stroke="#7a5c12" stroke-width="0.5"/>
 <circle cx="256.7" cy="136.7" r="3.3" fill="#2b2b2b"/>
-<line x1="256.7" y1="581.2" x2="256.7" y2="190.0" stroke="#F1C40F" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<line x1="256.7" y1="634.5" x2="256.7" y2="190.0" stroke="#F1C40F" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<circle cx="256.7" cy="634.5" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="256.7" cy="581.2" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="256.7" cy="474.5" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
-<circle cx="256.7" cy="421.1" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="256.7" cy="332.2" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="256.7" cy="190.0" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <text x="274.5" y="115.3" font-size="10" text-anchor="middle" fill="#222" font-weight="normal">10</text>
@@ -1077,10 +1077,6 @@
 <circle cx="310.0" cy="616.7" r="6.3" fill="none" stroke="#1A1A1A" stroke-width="1.6"/>
 <circle cx="310.0" cy="581.2" r="6.3" fill="none" stroke="#1A1A1A" stroke-width="1.6"/>
 <circle cx="310.0" cy="474.5" r="6.3" fill="none" stroke="#1A1A1A" stroke-width="1.6"/>
-<circle cx="310.0" cy="438.9" r="6.3" fill="none" stroke="#1A1A1A" stroke-width="1.6"/>
-<circle cx="310.0" cy="421.1" r="6.3" fill="none" stroke="#1A1A1A" stroke-width="1.6"/>
-<circle cx="310.0" cy="403.4" r="6.3" fill="none" stroke="#1A1A1A" stroke-width="1.6"/>
-<circle cx="310.0" cy="385.6" r="6.3" fill="none" stroke="#1A1A1A" stroke-width="1.6"/>
 <circle cx="310.0" cy="332.2" r="6.3" fill="none" stroke="#1A1A1A" stroke-width="1.6"/>
 <circle cx="310.0" cy="190.0" r="6.3" fill="none" stroke="#1A1A1A" stroke-width="1.6"/>
 <circle cx="310.0" cy="136.7" r="6.3" fill="none" stroke="#1A1A1A" stroke-width="1.6"/>
@@ -1161,10 +1157,10 @@
 <circle cx="327.8" cy="154.4" r="3.3" fill="#2b2b2b"/>
 <rect x="322.2" y="131.1" width="11.2" height="11.2" rx="2" fill="#D4AF37" stroke="#7a5c12" stroke-width="0.5"/>
 <circle cx="327.8" cy="136.7" r="3.3" fill="#2b2b2b"/>
-<line x1="327.8" y1="581.2" x2="327.8" y2="190.0" stroke="#6FA8DC" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<line x1="327.8" y1="634.5" x2="327.8" y2="190.0" stroke="#6FA8DC" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<circle cx="327.8" cy="634.5" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="327.8" cy="581.2" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="327.8" cy="474.5" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
-<circle cx="327.8" cy="403.4" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="327.8" cy="332.2" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="327.8" cy="190.0" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <text x="345.6" y="115.3" font-size="10" text-anchor="middle" fill="#222" font-weight="normal">14</text>
@@ -1244,10 +1240,10 @@
 <circle cx="345.6" cy="154.4" r="3.3" fill="#2b2b2b"/>
 <rect x="340.0" y="131.1" width="11.2" height="11.2" rx="2" fill="#D4AF37" stroke="#7a5c12" stroke-width="0.5"/>
 <circle cx="345.6" cy="136.7" r="3.3" fill="#2b2b2b"/>
-<line x1="345.6" y1="581.2" x2="345.6" y2="190.0" stroke="#F1C40F" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<line x1="345.6" y1="634.5" x2="345.6" y2="190.0" stroke="#F1C40F" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<circle cx="345.6" cy="634.5" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="345.6" cy="581.2" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="345.6" cy="474.5" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
-<circle cx="345.6" cy="403.4" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="345.6" cy="332.2" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="345.6" cy="190.0" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <text x="363.4" y="115.3" font-size="10" text-anchor="middle" fill="#222" font-weight="normal">15</text>
@@ -1492,10 +1488,10 @@
 <circle cx="398.9" cy="154.4" r="3.3" fill="#2b2b2b"/>
 <rect x="393.3" y="131.1" width="11.2" height="11.2" rx="2" fill="#D4AF37" stroke="#7a5c12" stroke-width="0.5"/>
 <circle cx="398.9" cy="136.7" r="3.3" fill="#2b2b2b"/>
-<line x1="398.9" y1="581.2" x2="398.9" y2="190.0" stroke="#6FA8DC" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<line x1="398.9" y1="634.5" x2="398.9" y2="190.0" stroke="#6FA8DC" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<circle cx="398.9" cy="634.5" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="398.9" cy="581.2" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="398.9" cy="474.5" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
-<circle cx="398.9" cy="385.6" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="398.9" cy="332.2" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <circle cx="398.9" cy="190.0" r="6.3" fill="none" stroke="#6FA8DC" stroke-width="1.6"/>
 <text x="416.7" y="115.3" font-size="10" text-anchor="middle" fill="#222" font-weight="normal">18</text>
@@ -1575,10 +1571,10 @@
 <circle cx="416.7" cy="154.4" r="3.3" fill="#2b2b2b"/>
 <rect x="411.1" y="131.1" width="11.2" height="11.2" rx="2" fill="#D4AF37" stroke="#7a5c12" stroke-width="0.5"/>
 <circle cx="416.7" cy="136.7" r="3.3" fill="#2b2b2b"/>
-<line x1="416.7" y1="581.2" x2="416.7" y2="190.0" stroke="#F1C40F" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<line x1="416.7" y1="634.5" x2="416.7" y2="190.0" stroke="#F1C40F" stroke-width="4.5" stroke-linecap="round" opacity="0.75"/>
+<circle cx="416.7" cy="634.5" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="416.7" cy="581.2" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="416.7" cy="474.5" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
-<circle cx="416.7" cy="385.6" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="416.7" cy="332.2" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <circle cx="416.7" cy="190.0" r="6.3" fill="none" stroke="#F1C40F" stroke-width="1.6"/>
 <text x="434.5" y="115.3" font-size="10" text-anchor="middle" fill="#222" font-weight="normal">19</text>
@@ -2684,22 +2680,6 @@
 <text x="630.1" y="573.2" font-size="9" text-anchor="middle" fill="#222" font-weight="bold">K</text>
 <rect x="105.6" y="572.3" width="533.4" height="17.8" fill="none" fill-opacity="1.0" stroke="#000" stroke-width="1.4"/>
 <text x="644.1" y="585.2" font-size="11" text-anchor="start" fill="#222" font-weight="bold">XB4: socket for B4 (POWER); key plug in contact 30 (red dot)</text>
-<rect x="306.0" y="434.9" width="8" height="8" fill="#1A1A1A" stroke="#000"/>
-<rect x="146.0" y="434.9" width="8" height="8" fill="#6FA8DC" stroke="#000"/>
-<rect x="163.8" y="434.9" width="8" height="8" fill="#F1C40F" stroke="#000"/>
-<text x="644.1" y="442.9" font-size="10" text-anchor="start" fill="#222" font-weight="normal">W1: QT lead S1: pins from the front, soldered on the copper side</text>
-<rect x="306.0" y="417.1" width="8" height="8" fill="#1A1A1A" stroke="#000"/>
-<rect x="234.9" y="417.1" width="8" height="8" fill="#6FA8DC" stroke="#000"/>
-<rect x="252.7" y="417.1" width="8" height="8" fill="#F1C40F" stroke="#000"/>
-<text x="644.1" y="425.1" font-size="10" text-anchor="start" fill="#222" font-weight="normal">W2: QT lead S2: pins from the front, soldered on the copper side</text>
-<rect x="306.0" y="399.4" width="8" height="8" fill="#1A1A1A" stroke="#000"/>
-<rect x="323.8" y="399.4" width="8" height="8" fill="#6FA8DC" stroke="#000"/>
-<rect x="341.6" y="399.4" width="8" height="8" fill="#F1C40F" stroke="#000"/>
-<text x="644.1" y="407.4" font-size="10" text-anchor="start" fill="#222" font-weight="normal">W3: QT lead S3: pins from the front, soldered on the copper side</text>
-<rect x="306.0" y="381.6" width="8" height="8" fill="#1A1A1A" stroke="#000"/>
-<rect x="394.9" y="381.6" width="8" height="8" fill="#6FA8DC" stroke="#000"/>
-<rect x="412.7" y="381.6" width="8" height="8" fill="#F1C40F" stroke="#000"/>
-<text x="644.1" y="389.6" font-size="10" text-anchor="start" fill="#222" font-weight="normal">W4: QT lead S4: pins from the front, soldered on the copper side</text>
 <rect x="128.2" y="612.7" width="8" height="8" fill="#1A1A1A" stroke="#000"/>
 <rect x="217.1" y="612.7" width="8" height="8" fill="#D4A017" stroke="#000"/>
 <rect x="270.5" y="612.7" width="8" height="8" fill="#1F5FBF" stroke="#000"/>
@@ -2719,6 +2699,14 @@
 <circle cx="221.1" cy="634.5" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
 <circle cx="274.5" cy="634.5" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
 <circle cx="363.4" cy="634.5" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
+<circle cx="150.0" cy="634.5" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
+<circle cx="167.8" cy="634.5" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
+<circle cx="238.9" cy="634.5" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
+<circle cx="256.7" cy="634.5" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
+<circle cx="327.8" cy="634.5" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
+<circle cx="345.6" cy="634.5" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
+<circle cx="398.9" cy="634.5" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
+<circle cx="416.7" cy="634.5" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
 <circle cx="132.2" cy="136.7" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
 <circle cx="310.0" cy="136.7" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
 <circle cx="434.5" cy="723.4" r="6" fill="none" stroke="#8E44AD" stroke-width="2"/>
