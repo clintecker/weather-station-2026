@@ -154,6 +154,22 @@ def lead_len(a, c):
     return "100 mm, trim to fit" if to_bp else "150 mm, trim to fit"
 
 
+def link_len(a, c):
+    """A link between two backplane holes (copper side): the span plus 3 mm in each hole plus 7, rounded up to 5 mm."""
+    if all(isinstance(e, str) and e.startswith("BP:") for e in (a, c)):
+        (xa, za), (xc, zc) = st.bp_xy(a[3:]), st.bp_xy(c[3:])
+        return f"{int(math.ceil((math.hypot(xc - xa, zc - za) + 13) / 5) * 5)} mm"
+    return None
+
+
+def mux_len(a):
+    """Cut length of a mux lead (muxleads.py: from the pad's real place on the #5626 to its hole 10), or None."""
+    if isinstance(a, tuple) and a[0] == "U4":
+        import muxleads
+        return f"{muxleads.cut({'H.VCC': 'VIN', 'H.GND': 'GND', 'H.SCL': 'SCL', 'H.SDA': 'SDA', 'H.RST': 'RESET'}.get(a[1], a[1]))} mm"
+    return None
+
+
 def where(e):
     if isinstance(e, str):
         b, h = e.split(":")
@@ -814,12 +830,20 @@ def backplane_sheet(ph):
     L += ["", "## 5. Leads on the copper side", "", "| From | To | Length | Line | What |", "|---|---|---|---|---|"]
     for kind, a, c, side, note in route.WIRES:
         if side == "copper":
-            L.append(f"| {where(a)} | {where(c)} | {lead_len(a, c) or '40 mm'} | {plain(net_of_end(c, ph) or net_of_end(a, ph))} | {note} |")
+            L.append(f"| {where(a)} | {where(c)} | {lead_len(a, c) or mux_len(a) or link_len(a, c) or '40 mm'} | {plain(net_of_end(c, ph) or net_of_end(a, ph))} | {note} |")
     L += ["", "The mux is an Adafruit #5626. Bridge A0 for address 0x71 and set its Vlogic switch SW1 to V+. It sits "
           "on a foam pad on the copper side over holes 2-9, below the B4 socket. That keeps it clear of the bus wires, "
-          "which start at hole 10. Thirteen of its pads take short leads to hole 10: VIN, GND, SCL, SDA and RST to the "
+          "which start at hole 10. Thirteen of its pads take leads to hole 10: VIN, GND, SCL, SDA and RST to the "
           "main bus lines, and SD0/SC0 to SD3/SC3 (channels 0-3) to sensor ports 1-4. Its QT ports stay empty, and the "
           "sensors take power from their own card ports.", "",
+          "VIN, GND, SCL, SDA and RST are the 5-hole header row at the mux's far end from its upstream QT port. "
+          "SD0-SC3 are round test pads on the mux's back face (the face with the A0-A2 jumpers), along the long edge "
+          "beside channels 0-3's QT ports (Adafruit's board file; `layout/muxleads.py`). Use 22 AWG solid insulated "
+          "hook-up (Adafruit 1311), stripped 3 mm. Solder the header leads in from the top face and trim their tails "
+          "flush on the back. Lay each test-pad lead's bare end flat on its pad. Then stick the back face to the foam, "
+          "the SD/SC edge toward hole 10. The foam goes in the middle, clear of both test-pad rows and the header, "
+          "and no thicker than 1 mm, so the mux clears the floor. Each lead goes into its hole 10 from the copper "
+          "side and is soldered on the front; the bus wire's joint on the copper side takes it too.", "",
           "## 6. Fit it in the base (`cage/backplane-mount-spec.md`)", "",
           f"1. With the copper side back and the mux behind it, tilt the board. Push its factory right edge into the "
           f"right corner post's slot, to the slot's end (Xb {cage_slot_end():.2f}). Its left edge is then clear of the "

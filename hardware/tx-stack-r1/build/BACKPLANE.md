@@ -108,29 +108,31 @@ Most of those holes already hold a socket pin, an XJ1 pin, a resistor leg or a s
 | From | To | Length | Line | What |
 |---|---|---|---|---|
 | PG1 lead - | U1 battery - (J5 GND) | 150 mm, trim to fit | battery - (charger ground) | pack - to charger battery - (J5 GND), 24 AWG stranded, black |
-| U4 VIN | backplane line 1 hole 10 | 40 mm | 3.3 V supply | mux VCC pad lead to its line's bus wire |
-| U4 GND | backplane line 2 hole 10 | 40 mm | ground | mux GND pad lead to its line's bus wire |
-| U4 SCL | backplane line 7 hole 10 | 40 mm | I2C clock (SCL) | mux SCL pad lead to its line's bus wire |
-| U4 SDA | backplane line 10 hole 10 | 40 mm | I2C data (SDA) | mux SDA pad lead to its line's bus wire |
-| U4 RESET | backplane line 15 hole 10 | 40 mm | mux reset | mux RST pad lead to its line's bus wire |
-| U4 SD0 | backplane line 3 hole 10 | 40 mm | sensor port 1 data (SDA) | mux SD0 pad lead to its line's bus wire |
-| U4 SC0 | backplane line 4 hole 10 | 40 mm | sensor port 1 clock (SCL) | mux SC0 pad lead to its line's bus wire |
-| U4 SD1 | backplane line 8 hole 10 | 40 mm | sensor port 2 data (SDA) | mux SD1 pad lead to its line's bus wire |
-| U4 SC1 | backplane line 9 hole 10 | 40 mm | sensor port 2 clock (SCL) | mux SC1 pad lead to its line's bus wire |
-| U4 SD2 | backplane line 13 hole 10 | 40 mm | sensor port 3 data (SDA) | mux SD2 pad lead to its line's bus wire |
-| U4 SC2 | backplane line 14 hole 10 | 40 mm | sensor port 3 clock (SCL) | mux SC2 pad lead to its line's bus wire |
-| U4 SD3 | backplane line 17 hole 10 | 40 mm | sensor port 4 data (SDA) | mux SD3 pad lead to its line's bus wire |
-| U4 SC3 | backplane line 18 hole 10 | 40 mm | sensor port 4 clock (SCL) | mux SC3 pad lead to its line's bus wire |
+| U4 VIN | backplane line 1 hole 10 | 80 mm | 3.3 V supply | mux VCC pad lead to its line's bus wire |
+| U4 GND | backplane line 2 hole 10 | 85 mm | ground | mux GND pad lead to its line's bus wire |
+| U4 SCL | backplane line 7 hole 10 | 75 mm | I2C clock (SCL) | mux SCL pad lead to its line's bus wire |
+| U4 SDA | backplane line 10 hole 10 | 75 mm | I2C data (SDA) | mux SDA pad lead to its line's bus wire |
+| U4 RESET | backplane line 15 hole 10 | 65 mm | mux reset | mux RST pad lead to its line's bus wire |
+| U4 SD0 | backplane line 3 hole 10 | 25 mm | sensor port 1 data (SDA) | mux SD0 pad lead to its line's bus wire |
+| U4 SC0 | backplane line 4 hole 10 | 30 mm | sensor port 1 clock (SCL) | mux SC0 pad lead to its line's bus wire |
+| U4 SD1 | backplane line 8 hole 10 | 25 mm | sensor port 2 data (SDA) | mux SD1 pad lead to its line's bus wire |
+| U4 SC1 | backplane line 9 hole 10 | 25 mm | sensor port 2 clock (SCL) | mux SC1 pad lead to its line's bus wire |
+| U4 SD2 | backplane line 13 hole 10 | 30 mm | sensor port 3 data (SDA) | mux SD2 pad lead to its line's bus wire |
+| U4 SC2 | backplane line 14 hole 10 | 30 mm | sensor port 3 clock (SCL) | mux SC2 pad lead to its line's bus wire |
+| U4 SD3 | backplane line 17 hole 10 | 30 mm | sensor port 4 data (SDA) | mux SD3 pad lead to its line's bus wire |
+| U4 SC3 | backplane line 18 hole 10 | 35 mm | sensor port 4 clock (SCL) | mux SC3 pad lead to its line's bus wire |
 | backplane line 2 hole 38 | backplane line 12 hole 38 | 40 mm | ground | the two bus ground lines joined |
-| backplane line 19 hole 5 | backplane line 20 hole 5 | 40 mm | charger battery + (after the shunt) | lines 19 and 20 joined (charger battery +, two pins) |
-| backplane line 21 hole 5 | backplane line 22 hole 5 | 40 mm | battery + junction (backplane lines 21-22) | lines 21 and 22 joined (battery + junction, two pins) |
+| backplane line 19 hole 5 | backplane line 20 hole 5 | 20 mm | charger battery + (after the shunt) | lines 19 and 20 joined (charger battery +, two pins) |
+| backplane line 21 hole 5 | backplane line 22 hole 5 | 20 mm | battery + junction (backplane lines 21-22) | lines 21 and 22 joined (battery + junction, two pins) |
 | PG1 lead + | backplane line 21 hole 6 | 100 mm, trim to fit | battery + junction (backplane lines 21-22) | pack + (pigtail) to the junction, 24 AWG stranded, red with a black band |
 | U1 battery + (J5 BATTERY) | backplane line 19 hole 6 | 100 mm, trim to fit | charger battery + (after the shunt) | charger battery + (J5 BATTERY) to lines 19-20, 24 AWG stranded, red with a black band |
 | U1 system out (J3 SYS) | backplane line 26 hole 6 | 100 mm, trim to fit | charger system output (SYS) | charger system output (J3 SYS) to line 26 (B4 pin 26, the regulator in), 24 AWG stranded, red with a black band |
 | U1 system ground (J3 GND) | backplane line 12 hole 11 | 100 mm, trim to fit | ground | charger system ground (J3 GND) to line 12 (the bus ground, SYS's return), 24 AWG stranded, black |
 | R7 2 | U1 battery sense (J5 SNS_BATP) | 100 mm, trim to fit | charger battery sense (BATP) | charger battery sense (J5 SNS_BATP) from R7's free leg, 24 AWG stranded, white with a red band |
 
-The mux is an Adafruit #5626. Bridge A0 for address 0x71 and set its Vlogic switch SW1 to V+. It sits on a foam pad on the copper side over holes 2-9, below the B4 socket. That keeps it clear of the bus wires, which start at hole 10. Thirteen of its pads take short leads to hole 10: VIN, GND, SCL, SDA and RST to the main bus lines, and SD0/SC0 to SD3/SC3 (channels 0-3) to sensor ports 1-4. Its QT ports stay empty, and the sensors take power from their own card ports.
+The mux is an Adafruit #5626. Bridge A0 for address 0x71 and set its Vlogic switch SW1 to V+. It sits on a foam pad on the copper side over holes 2-9, below the B4 socket. That keeps it clear of the bus wires, which start at hole 10. Thirteen of its pads take leads to hole 10: VIN, GND, SCL, SDA and RST to the main bus lines, and SD0/SC0 to SD3/SC3 (channels 0-3) to sensor ports 1-4. Its QT ports stay empty, and the sensors take power from their own card ports.
+
+VIN, GND, SCL, SDA and RST are the 5-hole header row at the mux's far end from its upstream QT port. SD0-SC3 are round test pads on the mux's back face (the face with the A0-A2 jumpers), along the long edge beside channels 0-3's QT ports (Adafruit's board file; `layout/muxleads.py`). Use 22 AWG solid insulated hook-up (Adafruit 1311), stripped 3 mm. Solder the header leads in from the top face and trim their tails flush on the back. Lay each test-pad lead's bare end flat on its pad. Then stick the back face to the foam, the SD/SC edge toward hole 10. The foam goes in the middle, clear of both test-pad rows and the header, and no thicker than 1 mm, so the mux clears the floor. Each lead goes into its hole 10 from the copper side and is soldered on the front; the bus wire's joint on the copper side takes it too.
 
 ## 6. Fit it in the base (`cage/backplane-mount-spec.md`)
 
