@@ -57,6 +57,11 @@ The radiation shield's 3MF stays out of git, and so does every file made from it
 local path and a sha256. We read Adafruit's Eagle files once from GitHub into a scratch folder. The numbers we parsed
 from them are here.
 
+The UV crown has a 3D view on the 2389 artifact host: https://artifacts.folk-fujita.ts.net/p/uv-dome-crown/. You can
+turn it, take it apart (the LTR390 lead stretches with the lid) and cut it in half. `sh hardware/pods-r1/viewer/publish.sh`
+rebuilds it from `podbox.py` and the Session Q models, then publishes it (`--no-publish` builds `viewer/out/` only). It
+draws only our own CAD. The shield and the cap remix are left out.
+
 ## Dimension table
 
 Some rows in the generated table below are wrong, and `sources.py` still needs fixing. Until it is, these are the

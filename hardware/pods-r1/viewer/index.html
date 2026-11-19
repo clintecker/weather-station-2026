@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="The weather station UV pod crown in 3D: drum, smooth dome lid with bayonet and O-ring, LTR390 under the window. Take it apart or cut it in half.">
+<style>body{margin:0}</style>
+</head><body>
+<title>UV Dome Crown</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* layout: one big turntable view of the part, a slim control rail under it, then the numbers that define it */
+:root{
+  --bg:#eef2f4; --fg:#15202a; --muted:#5a6873; --line:#cdd6dc; --panel:#ffffff;
+  --sky-top:#cfe1ec; --sky-bot:#f5f8fa; --accent:#6b3fd0;
+  --display:"Space Grotesk",system-ui,sans-serif; --body:Inter,system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f151a; --fg:#e4ebf0; --muted:#93a3ae; --line:#26323b; --panel:#162028;
+  --sky-top:#1b2a36; --sky-bot:#0f151a; --accent:#a98bff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f151a; --fg:#e4ebf0; --muted:#93a3ae; --line:#26323b; --panel:#162028;
+  --sky-top:#1b2a36; --sky-bot:#0f151a; --accent:#a98bff; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.5}
+main{max-width:1180px;margin-inline:auto;padding-block:24px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+header{display:flex;flex-direction:column;gap:6px}
+.eyebrow{font-family:var(--mono);font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(1.7rem,3.4vw,2.5rem);margin:0;text-wrap:balance;line-height:1.1}
+p{margin:0;max-width:68ch;color:var(--muted)}
+.stage{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:linear-gradient(var(--sky-top),var(--sky-bot))}
+#view{height:min(74vh,700px);min-height:360px;touch-action:none;cursor:grab}
+#view:active{cursor:grabbing}
+#status{position:absolute;inset:auto 0 50% 0;text-align:center;font-family:var(--mono);font-size:.85rem;color:var(--muted)}
+.rail{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;padding:12px 14px;border-top:1px solid var(--line);background:var(--panel);font-size:.9rem}
+.rail label{display:inline-flex;align-items:center;gap:8px}
+.rail input[type=range]{width:min(240px,55vw);accent-color:var(--accent)}
+.rail input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
+.rail button{font:inherit;padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);cursor:pointer}
+.rail button:focus-visible,.rail input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+output{font-family:var(--mono);color:var(--muted);font-size:.82rem;min-width:9ch;display:inline-block}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.fact{background:var(--panel);padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.fact b{font-family:var(--display);font-size:1.05rem}
+.fact span{font-size:.88rem;color:var(--muted)}
+.fact code{font-family:var(--mono);font-size:.82rem;color:var(--fg)}
+.note{font-size:.85rem;color:var(--muted);border-left:3px solid var(--accent);padding-left:10px}
+</style>
+<main>
+<header>
+  <div class="eyebrow">pods-r1 · UV pod · podbox.py</div>
+  <h1>The UV dome crown</h1>
+  <p>The UV pod as it sits on top of the radiation shield: a round drum with a smooth dome lid. The LTR390 hangs under the window at the apex. The lid twists on with a bayonet and seals on a radial O-ring. Four M3 screws come up through the cap's flat top into the drum's floor. Drag to turn it. Slide to take it apart.</p>
+</header>
+
+<figure class="stage" style="margin:0">
+  <div id="view" role="img" aria-label="3D model of the UV dome crown; drag to turn, slider explodes it"></div>
+  <div id="status">loading the model…</div>
+  <div class="rail">
+    <label for="explode">take apart <input type="range" id="explode" min="0" max="1" step="0.01" value="0.35"> <output id="explode-v"></output></label>
+    <label for="cut"><input type="checkbox" id="cut"> cut in half</label>
+    <label for="board"><input type="checkbox" id="board" checked> pod board inside</label>
+    <button type="button" id="spin">stop turning</button>
+    <button type="button" id="reset">reset view</button>
+  </div>
+</figure>
+
+<section class="facts" aria-label="Key dimensions">
+  <div class="fact"><b>Ø117.6 drum</b><span>Outer radius 58.8, inner 54.0. The lid's skirt sits flush with the drum outside.</span></div>
+  <div class="fact"><b>28 mm dome rise</b><span>A two-spline profile over the spigot, 3.0 shell, apex flat at <code>z 58.2</code> with the window recess Ø20.3.</span></div>
+  <div class="fact"><b>Bayonet, 25° clockwise</b><span>Three lugs at 90°, 210° and 330°. Turn it clockwise seen from above to lock it, like a jar lid.</span></div>
+  <div class="fact"><b>Radial O-ring</b><span>A cord round the body's spigot, 7 mm below its top. The groove is 351.4 mm round with about 25% squeeze.</span></div>
+  <div class="fact"><b>LTR390 under the window</b><span>Board top at <code>z 51.3</code> on two bosses, held by 2 × M2.5 × 6 into Ø2.1 pilots. Its lead drops into the drum.</span></div>
+  <div class="fact"><b>4 × M3 × 10 from below</b><span>Up through the cap's counterbores into heat-set inserts in floor bosses on a 31 mm radius. The gland exits the drum side, away from the pole.</span></div>
+</section>
+
+<p class="note">The LTR390's 4-core lead loops once round the drum from the board up to the sensor. Take it apart and the lead stretches out with the lid, so you can see how much slack it needs, and the window disc lifts out of its recess on top.</p>
+<p class="note">Everything here is our own CAD from <code>hardware/pods-r1/box/podbox.py</code> and the Session Q models. The shield and the remixed cap aren't drawn: the shield model's licence is unknown, so its mesh stays off pages. The screws hang where the cap's flat top would be.</p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+  const el=document.getElementById('view'), status=document.getElementById('status');
+  const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.localClippingEnabled=true;
+  el.appendChild(renderer.domElement);
+  const scene=new THREE.Scene();
+  const cam=new THREE.PerspectiveCamera(32,1,1,5000);
+  const controls=new THREE.OrbitControls(cam,renderer.domElement);
+  controls.enableDamping=true; controls.autoRotate=!reduce; controls.autoRotateSpeed=1.2;
+  scene.add(new THREE.HemisphereLight(0xffffff,0x8899aa,0.75));
+  const sun=new THREE.DirectionalLight(0xffffff,0.75); sun.position.set(200,400,250); scene.add(sun);
+  const fill=new THREE.DirectionalLight(0xffffff,0.25); fill.position.set(-300,100,-200); scene.add(fill);
+
+  // model space: mm, crown axis at the origin, z up -> three's y up
+  const root=new THREE.Group(); root.rotation.x=-Math.PI/2; scene.add(root);
+  const groups={}; ['body','oring','lid','window','screws','pod'].forEach(g=>{groups[g]=new THREE.Group(); root.add(groups[g]);});
+  const clip=new THREE.Plane(new THREE.Vector3(0,0,-1),0); // after root's turn: cuts the half toward the viewer's start side
+  let info=null;
+
+  const mats={};
+  function mat(c,name){
+    const key=c+(name==='lid'?'L':name==='window'?'W':'');
+    if(name==='window'&&!mats[key]){     // the window disc: frosted and see-through, so the LTR390 shows under it
+      mats[key]=new THREE.MeshPhysicalMaterial({color:0xeaf4ff,roughness:0.35,metalness:0,transparent:true,opacity:0.32,
+        depthWrite:false,side:THREE.DoubleSide,clippingPlanes:[]});
+    }
+    if(!mats[key]){
+      const col=new THREE.Color(c);
+      mats[key]=new THREE.MeshStandardMaterial({color:col,roughness:name==='lid'?0.55:0.7,metalness:/B7BCC2|C9A54A/i.test(c)?0.45:0,side:THREE.DoubleSide,clippingPlanes:[]});
+    }
+    return mats[key];
+  }
+
+  function resize(){const w=el.clientWidth,h=el.clientHeight;renderer.setSize(w,h,false);renderer.domElement.style.width='100%';renderer.domElement.style.height='100%';cam.aspect=w/h;cam.updateProjectionMatrix();}
+  function home(){cam.position.set(190,150,230); controls.target.set(0,20,0); controls.update();}
+  window.addEventListener('resize',resize); resize(); home();
+
+  const ex=document.getElementById('explode'), exv=document.getElementById('explode-v');
+  // the LTR390 lead: a tube through the exported path; each point moves with the lid by its own share (0 at the
+  // board, 1 at the sensor), so the slack loop pulls out as the dome comes off
+  let cableMesh=null, cableMat=null;
+  function drawCable(turn,lift){
+    if(!info||!info.cable) return;
+    const c=info.cable, pts=c.pts.map((p,i)=>{
+      const f=c.follow[i], a=turn*f, ca=Math.cos(a), sa=Math.sin(a);
+      return new THREE.Vector3(p[0]*ca-p[1]*sa, p[0]*sa+p[1]*ca, p[2]+lift*f);
+    });
+    const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts,false,'centripetal'),140,c.r,12,false);
+    if(!cableMat) cableMat=mat(c.color,'cable');
+    if(cableMesh){cableMesh.geometry.dispose(); cableMesh.geometry=geo;}
+    else {cableMesh=new THREE.Mesh(geo,cableMat); groups.pod.add(cableMesh);}
+  }
+  function apply(){
+    const t=+ex.value;
+    if(!info) return;
+    // lid: unlock (turn back the bayonet's twist) then lift; O-ring rises a little; the floor screws drop
+    const turn=-info.turn*Math.PI/180*Math.min(1,t*2);
+    const lift=Math.max(0,t*2-0.4)/1.6*70;
+    groups.lid.rotation.z=turn; groups.lid.position.z=lift;
+    groups.window.rotation.z=turn; groups.window.position.z=lift+Math.min(1,Math.max(0,(t-0.55)/0.4))*25;   // then out of its recess
+    drawCable(turn,lift);
+    groups.oring.position.z=t*28;
+    groups.screws.position.z=-t*35;
+    exv.textContent=t<0.02?'locked':t<0.5?'unlocking':'apart';
+  }
+  ex.addEventListener('input',apply);
+  document.getElementById('cut').addEventListener('change',e=>{Object.values(mats).forEach(m=>{m.clippingPlanes=e.target.checked?[clip]:[];m.needsUpdate=true;});});
+  document.getElementById('board').addEventListener('change',e=>{groups.pod.visible=e.target.checked;});
+  const spin=document.getElementById('spin');
+  spin.textContent=controls.autoRotate?'stop turning':'turn slowly';
+  spin.addEventListener('click',()=>{controls.autoRotate=!controls.autoRotate;spin.textContent=controls.autoRotate?'stop turning':'turn slowly';});
+  document.getElementById('reset').addEventListener('click',home);
+  renderer.domElement.addEventListener('pointerdown',()=>{if(controls.autoRotate){controls.autoRotate=false;spin.textContent='turn slowly';}});
+
+  Promise.all([fetch('crown.json').then(r=>{if(!r.ok)throw new Error('crown.json '+r.status);return r.json();}),
+               fetch('crown.txt').then(r=>{if(!r.ok)throw new Error('crown.txt '+r.status);return r.text();})])
+  .then(([m,t])=>{
+    info=m;
+    const b=atob(t), u=new Uint8Array(b.length); for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);
+    const buf=u.buffer;
+    m.meshes.forEach(e=>{
+      const v=new Float32Array(buf,e.off,e.nv*3), f=new Uint32Array(buf,e.off+e.nv*12,e.nt*3);
+      const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(v,3)); g.setIndex(new THREE.BufferAttribute(f,1));
+      const ng=g.toNonIndexed(); ng.computeVertexNormals();
+      groups[e.group].add(new THREE.Mesh(ng,mat(e.color,e.name)));
+    });
+    status.hidden=true; apply();
+  })
+  .catch(err=>{status.textContent='The model did not load ('+err.message+'). Reload the page to try again.';});
+
+  (function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,cam);})();
+})();
+</script>
+
+</body></html>
