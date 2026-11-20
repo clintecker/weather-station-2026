@@ -30,6 +30,10 @@ import pods_sheet as PS         # noqa: E402,F401
 import sheetlib as SL           # noqa: E402
 import pods as PD               # noqa: E402
 import sources as S             # noqa: E402
+import pod_checks as PC         # noqa: E402
+
+PORTS_ = PC.pod_ports()          # {pod: (TX port, mux channel)} from the TX model (S2 = UV, S3 = baro)
+PORT_TAGS = ", ".join(f"{n} = S{k}" for n, (k, _ch) in sorted(PORTS_.items(), key=lambda kv: kv[1]))
 
 SL.SVG = SHEETS_DIR / "svg"
 SL.PROTO = "PROTOCOL Q // SESSION Q // BOXES + SHIELD + INSTALL"
@@ -190,6 +194,7 @@ def before(c, pg):
              f"SCREWS: {M8} INTO THE LID INSERTS AND THE BOARD STANDOFFS. {M10} ONLY THROUGH THE SHIELD INTO THE MOUNT "
              f"INSERTS. {M25}: ONLY THE LTR390 INTO THE UV LID.",
              "THE BOARDS, THE PORT CABLES AND THE TH LEAD ARE SESSION P. THIS SHEET SAYS WHEN TO GO BACK TO IT.",
+             "EACH PORT CABLE IS FLAGGED AT BOTH ENDS WITH ITS TX PORT (SESSION P): " + PORT_TAGS + ". KEEP THE FLAGS ON.",
              "NO POWER IN THIS SESSION. ANYTHING THAT WILL NOT FIT: STOP, PHOTOGRAPH IT, REPORT TO CLAUDE. NO FILING."]
     for i, s in enumerate(rules):
         yy = y + h - 12 - i * (h - 8) / len(rules)
@@ -675,10 +680,10 @@ def drip_page(c, pg):
              ("TH LEAD", "low:th_lead", "rt"), ("BARO LOOP", "low:baro_cable", "rt")], size=8.0)
     x, y, w, h = panel(c, g.cell(3, 0, 2), 2, ["Tick each cable when its loop", "is set and tied. Then each dome",
                                                "nut once more by hand: snug,", "not crushed."], warn=True)
-    rows = [["TH PORT CABLE", "straight down from the TH box's gland, a dip below it, then back up to the pole."],
+    rows = [["TH PORT CABLE", f"(S{PORTS_['TH'][0]}) straight down from the TH box's gland, a dip below it, then back up to the pole."],
             ["TH SHT45 LEAD", "comes UP into its gland from below: the low point is under the TH face (step 10)."],
-            ["BARO PORT CABLE", "straight down from the BARO box's gland, a dip below it, then to the pole."],
-            ["UV PORT CABLE", "level out of the crown's gland, then down the outside of the louvers on the BARO side, a dip "
+            ["BARO PORT CABLE", f"(S{PORTS_['BARO'][0]}) straight down from the BARO box's gland, a dip below it, then to the pole."],
+            ["UV PORT CABLE", f"(S{PORTS_['UV'][0]}) level out of the crown's gland, then down the outside of the louvers on the BARO side, a dip "
                               "at the bottom, then to the pole."]]
     yy = rows_table(c, x + 12, y + h - 40, w - 20, [("CABLE", 0), ("ITS LOOP", 74)], rows, size=8.4, ticks=True, lead=11)
     para(c, x + 12, yy - 6, wrap_px("Tie each cable to the arm's upright or the pole above its loop, never IN the loop. "

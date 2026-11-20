@@ -18,6 +18,8 @@ sys.path.insert(0, str(HERE))
 from sheetlib import *          # noqa: F401,F403,E402  (page furniture, chips, leaders, Art, checks)
 import sheetlib as SL           # noqa: E402
 import bpmd                     # noqa: E402
+sys.path.insert(0, str(HERE.parents[1] / "layout"))
+import evmleads as EL           # noqa: E402  (each EVM / pack lead's lane, as drawn and as layout check L7 tests it)
 
 SL.LEADER_INK = True
 
@@ -426,7 +428,7 @@ def evm(c, pg):
         text(c, x + 30, yy, flag, 11, "HEAD", INK)
         where = f"line {ln}, hole {hl}" if hl != 7 else "R7's leg, line 24, hole 7"
         text(c, x + 30, yy - 11, where, 8.5, "ALT", INK)
-        text(c, x + 30, yy - 21, what.split(", ")[-1], 7.5, "ALT", GREY)
+        text(c, x + 30, yy - 21, EL.WAY[(ln, hl)], 7.5, "ALT", GREY)
         yy -= (h - 40) / 5
     x, y, w, h = panel(c, g.cell(1, 1), 3, ["Each far end: a tape flag with its",
                                              "name, the bare end taped over.",
@@ -437,7 +439,8 @@ def evm(c, pg):
                        warn=True)
     for i, s_ in enumerate(["Cut each lead 100 mm.", "Strip 3 mm at the board end.",
                             "Leave the far end in its", "insulation, taped over.", "",
-                            "J3 GND runs beside J3 SYS,", "then along hole 11 to line 12,", "above the mux."]):
+                            "Keep each lead in its own lane", "as drawn. The board sits on a", "pad at line 20, hole 2:",
+                            "nothing runs over it."]):
         text(c, x + 14, y + h - 46 - i * 13, s_, 9.5, "ALT", INK)
 
 
@@ -531,7 +534,7 @@ def checks(c, pg):
         c.rect(x + w - 26, yy - 4, 14, 14, stroke=1, fill=0)
 
 
-REPORT_ROWS = [("KEY PLUGS: WRONG CARDS STOP", "Y / N", "only if the cards have headers yet"),
+REPORT_ROWS = [("KEY PLUGS IN, FLUSH, NO SOLDER", "Y / N", "the wrong-card test is in Session 8"),
                ("FOUR QT CABLES SEATED", "Y / N", "red and black taped, nothing bare near the mux"),
                ("FOAM THICKNESS UNDER THE MUX", "mm", "1 mm or less"),
                ("METER CHECKS 1-6 ALL PASS", "Y / N", "page 12"),

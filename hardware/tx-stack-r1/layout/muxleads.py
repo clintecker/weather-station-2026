@@ -40,6 +40,7 @@ QT_WIRE = {"GND": (-1.5, "black"), "V+": (-0.5, "red"), "SDA": (0.5, "blue"), "S
 TP_Y = 2.286                 # the channel 0-3 SMD test points on the bottom layer, as supplied (drawn only, never wired)
 TP = {"SD0": 7.62, "SC0": 10.16, "SD1": 15.24, "SC1": 17.78, "SD2": 22.86, "SC2": 25.40, "SD3": 30.48, "SC3": 33.02}
 CABLE_R = 0.45               # one #4209 wire (about 0.9 mm over the insulation)
+RISE = 7.2                   # the header leads fan out at this hole (above J5 BAT's joint at hole 6)
 STUB = 3.0                   # red and black are cut this far out of the plug and taped
 A0 = (17.526, 6.35)
 SILK = {"RESET": "RST"}
@@ -88,8 +89,12 @@ def path(pad):
     lane = WIRE_R + 1.6 * k * 0.5        # the five lie side by side, a little stacked
     end = MUX_LINE0 + 40.64 / P + 0.35   # just past the mux's JP1 end
     xo = end + 0.25 + 0.45 * k          # side by side up the copper face past the mux's end
-    return [(l0, h0, top), (l0, h0, top + 1.0), (end, h0, top + 1.0), (xo, h0, lane), (xo, 11.5, lane),
-            (tl + 0.3, 11.5, lane), (tl, th + 0.5, 0.9), (tl, th, 0.0), (tl, th, -PCB - 1.0)]
+    # all five rise together hugging the mux's end (line end + 0.25) to hole RISE, then fan out: a lead fanned out
+    # low would pass over the support pad under s20.2 (layout check L7) or the J5 BAT lead's joint at line 19, hole 6
+    pts = [(l0, h0, top), (l0, h0, top + 1.0), (end, h0, top + 1.0), (end + 0.25, h0, lane), (end + 0.25, max(RISE, h0), lane),
+           (xo, max(RISE, h0), lane), (xo, 11.5, lane), (tl + 0.3, 11.5, lane), (tl, th + 0.5, 0.9), (tl, th, 0.0),
+           (tl, th, -PCB - 1.0)]
+    return [q for i, q in enumerate(pts) if i == 0 or q != pts[i - 1]]
 
 
 def mm(p, q):

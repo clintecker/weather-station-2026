@@ -485,8 +485,41 @@ def check_copper_face():
             worst = min(worst, g)
             if g < cl:
                 fail("L7", f"the {what} is {g:.2f} from line {li}'s bus wire (< {cl:g})")
+    # the routed copper-side leads (layout/muxleads.py, layout/evmleads.py: the paths the Session 6 sheet draws): none
+    # may pass over a support pad, since the board sits on the pads
+    import muxleads
+    import evmleads
+
+    def xz(line, hole):
+        return st.strip_x(0) + line * st.P, st.BP_Z0 + (hole - 1) * st.P
+
+    def seg_d(px, pz, a, b):
+        (ax, az), (bx, bz) = a, b
+        vx, vz = bx - ax, bz - az
+        L2 = vx * vx + vz * vz
+        t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((px - ax) * vx + (pz - az) * vz) / L2))
+        return math.hypot(ax + t * vx - px, az + t * vz - pz)
+
+    routes = [(f"mux lead {pad}", muxleads.path(pad), muxleads.CABLE_R if pad.startswith("CH") else muxleads.WIRE_R)
+              for pad in muxleads.target()]
+    for ln, hl in evmleads.ENDS:
+        routes.append((f"EVM / pack lead from line {ln}, hole {hl}", evmleads.path(ln, hl), evmleads.LEAD_R))
+    lworst = 99.0
+    for x, z, r, what in things:
+        for name, pts, lr in routes:
+            plan = [xz(p[0], p[1]) for p in pts]
+            g = min(seg_d(x, z, plan[i], plan[i + 1]) for i in range(len(plan) - 1)) - r - lr
+            lworst = min(lworst, g)
+            if g < cl:
+                fail("L7", f"the {what} is {g:.2f} from the {name} (< {cl:g})")
+    mx0, mz0, mx1, mz1 = st.MUX_BOX
+    for ln, hl in evmleads.ENDS:                   # the EVM / pack leads stay off the mux (the mux's own leads start on it)
+        for p in evmleads.path(ln, hl):
+            x, z = xz(p[0], p[1])
+            if mx0 - 0.7 < x < mx1 + 0.7 and mz0 - 0.7 < z < mz1 + 0.7:
+                fail("L7", f"the lead from line {ln}, hole {hl} passes over the mux at line {p[0]}, hole {p[1]}")
     NOTES.append(f"copper face: the support pads at least {worst:.2f} from every joint (fillet {r_j:g} round its "
-                 f"hole) and bus wire (>= {cl:g})")
+                 f"hole) and bus wire, {lworst:.2f} from every routed lead (>= {cl:g})")
 
 
 def _jac(f, p, h=1.0):

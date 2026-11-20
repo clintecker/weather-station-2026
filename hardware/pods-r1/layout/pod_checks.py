@@ -58,6 +58,14 @@ def _tx_model():
     return sys.modules["tx_stack_model"]
 
 
+def pod_ports():
+    """{pod name: (TX port number, mux channel)} from the TX model's PORTS (each port's module, by its value's first
+    word: "TH module", "Baro module", "UV module"). Every cable and lead gets flagged with its port."""
+    m = _tx_model()
+    val = {p["ref"]: p["value"] for p in m.PARTS}
+    return {val[mod].split()[0].upper(): (k, ch) for k, (_jack, mod, ch) in m.PORTS.items() if mod}
+
+
 def tx_port_map(port):
     """{jack pin 1-6: net} of TX port S1-S4 (port: 1-4 or "S1"-"S4"), nets named as the pod names them."""
     m = _tx_model()

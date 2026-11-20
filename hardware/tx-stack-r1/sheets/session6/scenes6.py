@@ -30,6 +30,7 @@ import models as M                      # noqa: E402
 import r3d                              # noqa: E402
 import stack as st                      # noqa: E402
 import muxleads as ML                   # noqa: E402
+import evmleads as EL                   # noqa: E402
 import bpmd                             # noqa: E402
 
 OUT = HERE / "svg"
@@ -368,16 +369,11 @@ DROP = 26.0                              # how far the loose ends hang below the
 
 
 def evm_path(frm, ln, hl):
-    """Backplane end of each EVM / pack lead: in from the copper side (or lapped on R7's free leg), then down the
-    copper face, past the board's lower edge, to its tape flag."""
-    yb = -DROP
-    if frm.startswith("U1 battery sense"):          # lapped along R7's free leg on the copper side
-        return [pt(ln, hl, 4.6), pt(ln, hl, 2.4), pt(ln, 4, 2.4), pt(ln, 0.0, 2.4), (X(ln), yb, -2.4)], False
-    if hl == 11:                                     # the charger ground lead: above the mux, beside SYS (line 26)
-        return [pt(ln, hl, -T - 1.0), pt(ln, hl, 0), pt(ln, hl, 4.0), pt(ln + 0.4, 11.4, 4.0), pt(25.5, 11.4, 4.0),
-                pt(25.5, 4, 2.4), pt(25.5, 0.0, 2.4), (X(25.5), yb, -2.4)], True
-    return [pt(ln, hl, -T - 1.0), pt(ln, hl, 0), pt(ln, hl, 2.4), pt(ln, 4, 2.4), pt(ln, 0.0, 2.4),
-            (X(ln), yb, -2.4)], True
+    """Backplane end of each EVM / pack lead (layout/evmleads.py: in from the copper side, or lapped on R7's free leg,
+    then down its own lane, clear of the support pads and the mux, past the board's lower edge), to its tape flag."""
+    pts = [pt(*q) for q in EL.path(ln, hl, T)]
+    x, y, z = pts[-1]
+    return pts + [(x, -DROP, z)], (ln, hl) != EL.SENSE
 
 
 def add_evm_leads(s, flags=True):

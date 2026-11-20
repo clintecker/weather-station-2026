@@ -36,6 +36,9 @@ import permaproto as PPM        # noqa: E402
 import pod_checks as PC         # noqa: E402
 import sources as S             # noqa: E402
 
+PORTS_ = PC.pod_ports()          # {pod: (TX port, mux channel)}, from the TX model (S2 = UV, S3 = baro since 6a5fe7f)
+PORT_TAGS = ", ".join(f"{n} = S{k}" for n, (k, _ch) in sorted(PORTS_.items(), key=lambda kv: kv[1]))
+
 SL.SVG = SHEETS_DIR / "svg"
 SL.PROTO = "PROTOCOL P // SESSION P // POD BOARDS + PORT CABLE"
 SL.LEADER_INK = True
@@ -172,6 +175,9 @@ def before(c, pg):
              "TOP− IS THE OUTER RAIL AT THE TOP EDGE, BESIDE THE BLUE LINE. TOP+ IS THE INNER ONE, BESIDE THE RED LINE.",
              "WIRES: 24 AWG SOLID, IN FROM THE COPPER SIDE, SOLDERED ON THE TOP. PART PINS: IN FROM THE TOP, SOLDERED UNDERNEATH.",
              "J1, U1, U2, JP1, R1 ARE PARTS. J5, J10 ... ARE HOLES IN ROW J. THE SHEET ALWAYS SAYS WHICH.",
+             "EACH POD BOARD KEEPS ITS OWN 24LC32 FOR LIFE. ITS ID RECORD DESCRIBES THAT SENSOR: NEVER SWAP AN EEPROM OR A SENSOR "
+             "BETWEEN PODS.",
+             "MARK EACH BOARD, ITS LEAD AND ITS PORT CABLE (BOTH ENDS) WITH ITS TX PORT: " + PORT_TAGS + ".",
              "NO POWER IN THIS SESSION. THE METER IS THE ONLY JUDGE. ANYTHING ODD: STOP, PHOTOGRAPH IT, REPORT TO CLAUDE."]
     for i, s in enumerate(rules):
         yy = y + h - 12 - i * (h - 8) / len(rules)
@@ -810,14 +816,15 @@ def cable_crimp(c, pg):
         "EACH OF THE 3 CABLES (TH, BARO, UV), one at a time. 1  Both gland bodies are in their walls first: the pod box's",
         "PG-7 #762 (Session Q) and, at the TX end, the PG-7 the TX box already has for that pod's port.",
         f"Each cable's round jacket must be {lo:g}-{hi:g} mm across for a PG-7 to seal (else that end gets a PG-9). 2  Cut it to",
-        "length. 3  Push each BARE end in through its dome nut and gland body from OUTSIDE the box. No plug yet.", width=100))
+        "length. 3  Push each BARE end in through its dome nut and gland body from OUTSIDE the box. No plug yet.",
+        f"4  Flag both ends with the pod's TX port: {PORT_TAGS}. The TX reads each port on its own mux channel.", width=100))
     a = Art(c, "cab_glands", x + 20, y + 24, w - 40, h - 68)
     lanes(c, [("POD END: PG-7 #762, DOME OUT", *a.A("pod_gland"), "up", False),
               ("TX END: THE TX BOX'S PG-7", *a.A("tx_gland"), "up", False),
               ("BARE END (POD BOX)", *a.A("pod_end"), "dn", False), ("BARE END (TX BOX)", *a.A("tx_end"), "dn", False)],
           art_box(a, -2), size=8.2)
     x, y, w, h = panel(c, g.cell(0, 1, 2), 2, cap(
-        "4  Only now crimp a 6P6C plug on each end, inside its box: strip the jacket to the crimp tool's gauge, lay the six",
+        "5  Only now crimp a 6P6C plug on each end, inside its box: strip the jacket to the crimp tool's gauge, lay the six",
         "conductors flat in the SAME colour order at both ends (hold each plug as below), push them to the tip, crimp.",
         "6 plugs in all: 2 per cable. Use the same colour order on all 3 cables.", width=100))
     a = Art(c, "cab_crimped", x + 20, y + 4, w - 40, h - 44)
