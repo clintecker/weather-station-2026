@@ -19,6 +19,7 @@ Ready-to-print copies are in [`pdf/`](pdf/). Each was rebuilt and checked page b
 | [tx-session5-b3-core.pdf](pdf/tx-session5-b3-core.pdf) | B3 CORE | 18 |
 | [tx-session6-backplane.pdf](pdf/tx-session6-backplane.pdf) | Wire the PAD3U backplane: key plugs, XJ1, R7, R8, the mux with its leads and QT cables, links, EVM and pack leads (board end), 24 bus wires | 13 |
 | [tx-session7-charger-pack.pdf](pdf/tx-session7-charger-pack.pdf) | Set the BQ25798EVM's jumpers, the J5 sense lead, thermistor RT1 at J7, the J5/J3 leads, the pack leads at PG1, the J8 lead to XJ1, meter checks and a USB-only first power (the I2C set-up waits on charger firmware) | 12 |
+| [tx-session8-into-the-box.pdf](pdf/tx-session8-into-the-box.pdf) | Rim test ring, the base and its inserts, glands, the wrong-card test, colour dots, backplane, pack, EVM, cards, cable runs and 6P plugs, the solar lead to J2, the coax, the before-power list, lid and mount | 17 |
 | [pods-session-p-boards.pdf](pdf/pods-session-p-boards.pdf) | The TH, BARO and UV pod boards and their leads | 34 |
 
 Session Q (pod boxes, radiation shield, install) isn't here: its pictures come from the shield model, whose licence is unknown. Build it locally (see below).
@@ -67,11 +68,12 @@ Run every command from the repo root. Each build only lays out pages from SVGs t
 | 5, B3 CORE | Snap the back rails, 21 wires, SWD header J3, header XH3, SHTC3 U5, Wio-E5 mini A1, strip map, meter checks | 18 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session5/make_session5.py OUT` |
 | 6, backplane | Key plugs and colour dots, XJ1, R7, R8, mux U4 on foam with 5 leads and 4 QT cables, 3 links, 5 EVM and pack leads (backplane end only), 24 bus wires, meter checks | 13 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session6/make_session6.py OUT` |
 | 7, charger and pack | BQ25798EVM jumpers, J5 sense lead, RT1 at J7, J5/J3 leads, PG1 pack leads, J8 lead to XJ1, meter checks, USB-only first power | 12 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session7/make_session7.py OUT` |
+| 8, into the box | Rim ring, base inserts, glands and labels, wrong-card test, slot dots, backplane, pack, EVM, cards and bar, cables with 6P plugs crimped inside, solar lead to J2, coax, before-power list, lid, mount | 17 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session8/make_session8.py OUT` |
 | P, pod boards | The TH, BARO and UV pod boards on Perma-Proto Quarters, 3 jack breakouts, the port cables | 34 | `sh hardware/pods-r1/sheets/build.sh` |
 
-Use `hardware/tx-stack-r1/sheets/out` for `OUT` to match the PDFs that are there now. If you leave it out, Session 1 writes to `session1/v2/out`, Session 2 to `session2/out`, and Sessions 3 to 7 to `sheets/out`.
+Use `hardware/tx-stack-r1/sheets/out` for `OUT` to match the PDFs that are there now. If you leave it out, Session 1 writes to `session1/v2/out`, Session 2 to `session2/out`, and Sessions 3 to 8 to `sheets/out`.
 
-Sessions 1 and 2 write one PDF per step and a booklet (`session1-all.pdf`, `session2-all.pdf`). Sessions 3 to 7 write the booklet only. Session P writes `out/session-p-pods.pdf` and `out/session-p-manifest.json`. The manifest lists each page with its title, tags and issue counts, and [`tests/test_pods_sheets.py`](../../tests/test_pods_sheets.py) reads it.
+Sessions 1 and 2 write one PDF per step and a booklet (`session1-all.pdf`, `session2-all.pdf`). Sessions 3 to 8 write the booklet only. Session P writes `out/session-p-pods.pdf` and `out/session-p-manifest.json`. The manifest lists each page with its title, tags and issue counts, and [`tests/test_pods_sheets.py`](../../tests/test_pods_sheets.py) reads it.
 
 There is also a Session Q in `hardware/pods-r1/sheets/` for the pod boxes, the radiation shield and the installation (23 pages, `sh hardware/pods-r1/sheets/render_q.sh`, then `build_q.sh`). The shield model has an unknown licence, so its pictures and PDF stay in the gitignored `svg/` and `out/` folders. This page shows none of them.
 
@@ -89,6 +91,7 @@ CADPY=$PWD/.venv-cad/bin/python sh hardware/tx-stack-r1/sheets/session4/render_a
 CAD=$PWD/.venv-cad/bin/python   sh hardware/tx-stack-r1/sheets/session5/render_all.sh
 sh hardware/tx-stack-r1/sheets/session6/render_all.sh   # finds .venv-cad itself; JOBS=n
 sh hardware/tx-stack-r1/sheets/session7/render_all.sh   # the same
+sh hardware/tx-stack-r1/sheets/session8/render_all.sh   # the same
 
 # Sessions 1 and 2 have no render_all.sh: give one scene name per call
 (cd hardware/tx-stack-r1/sheets/session1/v2 && ../../../../../.venv-cad/bin/python -B scenes.py NAME)
