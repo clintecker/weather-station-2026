@@ -41,9 +41,11 @@ static const uint8_t rails_slots[POWER_RAILS_CHANNELS] = { PS_LOAD_MV, PS_LOAD_M
                                                             PS_SOLAR_MA, PS_USB_MV, PS_USB_MA };
 
 /* The health slots profiles A and B have a source for (spec sections 3.3 and 6.1): VREFINT, the
-   INA228 die, the gauge, the CHG and PGOOD pins and ISET. The charger registers (stage, active input,
-   reported input, battery voltage, die temperature) and the pack temperature come with phase C. */
-#define HEALTH_FITTED (WS_FIT_MCU_SUPPLY | WS_FIT_MONITOR_TEMP | WS_FIT_GAUGE | WS_FIT_CHARGER_STATUS | WS_FIT_CHARGE_CURRENT)
+   INA228 die, the gauge, the CHG and PGOOD pins and ISET (phase C: the BQ25798's status and IBAT). */
+#define HEALTH_FITTED_AB (WS_FIT_MCU_SUPPLY | WS_FIT_MONITOR_TEMP | WS_FIT_GAUGE | WS_FIT_CHARGER_STATUS | WS_FIT_CHARGE_CURRENT)
+/* Phase C adds the BQ25798's registers (stage, active input, VBUS, IBUS, VBAT, die). The pack temperature
+   stays unfitted: TS is a % of REGN, and the B 3950 NTC on the EVM's 103AT divider has no fitted curve. */
+#define HEALTH_FITTED (HEALTH_FITTED_AB | (POWER_HAS_BQ25798 ? WS_FIT_CHARGER_REGS : 0U))
 
 static void health_none(power_health_t *h)
 {
@@ -126,7 +128,7 @@ void mod_power_identity(enum power_module m, uint8_t id[WSMP_IDENTITY_LEN], uint
 }
 
 /* The slow values of a closed window, with their none codes; the charger-reported input, battery
-   voltage and temperatures have no source before phase C. */
+   voltage and die temperature have a source in phase C only, the pack temperature in none. */
 static void health_cache(const power_slow_t *s)
 {
   health_none(&pw.health);
@@ -136,6 +138,10 @@ static void health_cache(const power_slow_t *s)
   pw.health.monitor_temp = s->monitor_temp;
   pw.health.chg_batt_ma = s->chg_batt_ma;
   pw.health.charger_status = s->charger_status;
+  pw.health.chg_input_mv = s->chg_input_mv;
+  pw.health.chg_input_ma = s->chg_input_ma;
+  pw.health.chg_batt_mv = s->chg_batt_mv;
+  pw.health.chg_temp = s->chg_temp;
 }
 
 /* power_acq's window for this token: closed by the first module to latch with it, then shared. */

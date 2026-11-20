@@ -4,6 +4,7 @@
 #include "bench.h"
 #include "board_inputs.h"
 #include "busymon.h"
+#include "charger.h"
 #include "clock.h"
 #include "console.h"
 #include "i2c_bus.h"
@@ -163,7 +164,7 @@ static void storm(void)
 #define SPOWER_CYCLES 10U
 #define SPOWER_EDGES (2U * SPOWER_CYCLES)   /* low, then high, in each cycle */
 #define SPOWER_HALF_MS (WSMP_SAMPLE_MS + 1000U)
-#define SPOWER_PARTS ((1U << I2C_C_REC_AIR) - 1U)   /* the parts' clients, SHT45 to MAX17048 */
+#define SPOWER_PARTS (((1U << I2C_C_REC_AIR) - 1U) | (1U << I2C_C_CHARGER))   /* the parts: SHT45 to MAX17048, the BQ25798 */
 static UTIL_TIMER_Object_t spower_timer;
 static uint8_t spower_running, spower_edges;   /* a run is in progress; edges made so far */
 static volatile uint8_t spower_due;            /* the timer fired: the next edge, or the end */
@@ -261,11 +262,21 @@ static void provision(char *line)
 
 /* From CMD_STORM on, a command writes flash: never during a radio exchange or a pending reboot
    (flash is only written with the radio idle, docs/firmware-event-model.md); the operator retries. */
-enum { CMD_STATUS, CMD_KAT, CMD_MODULES, CMD_SPOWER, CMD_STORM, CMD_WIPE, CMD_PROVISION, CMD_RAIN_ON, CMD_RAIN_OFF,
-       CMD_COUNT };
-static const char *const command[CMD_COUNT] = { "STATUS", "KAT", "MODULES", "TEST-SENSOR-POWER", "TEST-FLASH-STORM",
-                                                "WIPE ERASE-ALL-NODE-STATE", "PROVISION ", "SENSOR rain on",
-                                                "SENSOR rain off" };
+enum { CMD_STATUS, CMD_KAT, CMD_MODULES, CMD_SPOWER, CMD_CHARGER, CMD_STORM, CMD_WIPE, CMD_PROVISION, CMD_RAIN_ON,
+       CMD_RAIN_OFF, CMD_COUNT };
+static const char *const command[CMD_COUNT] = { "STATUS", "KAT", "MODULES", "TEST-SENSOR-POWER", "CHARGER",
+                                                "TEST-FLASH-STORM", "WIPE ERASE-ALL-NODE-STATE", "PROVISION ",
+                                                "SENSOR rain on", "SENSOR rain off" };
+
+/* CHARGER: the BQ25798's latest poll (App/charger.c, phase C; "not-fitted" in the other profiles), for
+   the TX stack's Session 7 page 09 check: CELL (REG0x0A), VREG (REG0x01-0x02), ICHG, TS and the charge
+   state. Reads no bus: the values are at most CHARGER_PERIOD_MS old (poll_age_ms says how old). */
+static void charger_cmd(void)
+{
+  static char line[CHARGER_LINE_MAX];   /* static: off the stack; only the console task prints it */
+  (void)charger_line(line, sizeof line, clock_ms());
+  APP_PRINTF("%s\n", line);
+}
 
 /* SENSOR rain on|off: the rain gauge cannot be detected, so the operator sets it (WSMP-P1). The node
    stores the setting and applies it at once; the station host admits the module after two probes. */
@@ -311,6 +322,7 @@ static void read_command(int cmd)
     case CMD_STATUS: tx_status(); break;
     case CMD_KAT: APP_PRINTF("#kat %s\n", node_selftest() ? "pass" : "FAIL"); break;
     case CMD_MODULES: modules_line(); break;
+    case CMD_CHARGER: charger_cmd(); break;
 #ifndef WS_FIELD_BUILD   /* bench only: a field image never drops the sensor supply */
     case CMD_SPOWER: spower_start(); break;
 #endif

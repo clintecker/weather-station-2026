@@ -24,10 +24,12 @@
    channel). A client has at most one transfer queued or running. The four INA228 rail monitors
    (power telemetry spec section 9.2) are upstream in both profiles: I2C_C_INA228 the battery (0x40),
    then the load (0x41), solar (0x45) and USB-C (0x48) rails. I2C_C_INA228 to I2C_C_MAX17048 stay one
-   run: the power module's clients (wsmp_local.c routes the run). */
+   run: the power module's clients (wsmp_local.c routes the run). I2C_C_CHARGER, the BQ25798 (0x6B,
+   upstream, phase C only), is the power module's too; it comes last so the run and the record
+   clients keep their numbers (the #test lines' ack and fail bits). */
 enum i2c_client { I2C_C_SHT45, I2C_C_BMP581, I2C_C_LTR390, I2C_C_SHTC3, I2C_C_INA228, I2C_C_INA_LOAD,
                   I2C_C_INA_SOLAR, I2C_C_INA_USB, I2C_C_MAX17048, I2C_C_REC_AIR, I2C_C_REC_PRESSURE,
-                  I2C_C_REC_UVA, I2C_C_COUNT };
+                  I2C_C_REC_UVA, I2C_C_CHARGER, I2C_C_COUNT };
 #define I2C_EID        (-8)   /* a module's own code: a part answered with another chip ID */
 
 #define I2C_MUX_ADDR 0x71U   /* not the default 0x70: the SHTC3 is there (firmware-current-design.md, section 4.1) */

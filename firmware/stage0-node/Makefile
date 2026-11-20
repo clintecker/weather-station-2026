@@ -7,14 +7,16 @@
 #   make ROLE=tx ANALYZE=1               add GCC's static analyzer to our own C (used by CI)
 #   make ROLE=tx WS_BENCH_OLED=1         the bench build with the OLED -> build/tx-oled/stage0-tx.{elf,bin}
 #   make ROLE=tx WS_POWER_PROFILE=2      a power telemetry profile (App/power_config.h; default: its own)
+#   make ROLE=tx WS_I2C_MUX=1            the I2C mux profile (App/i2c_bus.h; default: the hub)
+#   make ROLE=tx BOARD=wio-e5 WS_POWER_PROFILE=3 WS_I2C_MUX=1   the TX stack (hardware/tx-stack-r1): the BQ25798
 #   make field-check                     build ROLE=tx without the OLED (build/tx-fieldcheck); fail if any display
 #                                        code is linked
 #   make ROLE=tx BOARD=wio-e5            the TX on a Seeed Wio-E5 mini (STM32WLE5JC) -> build/tx-wio-e5/
 #   make ROLE=tx BOARD=wio-e5 flash SERIAL=<NUCLEO ST-LINK serial>   through the NUCLEO's ST-LINK over SWD
 #   make BOARD=wio-e5 unlock SERIAL=<...>  once per new board: RDP level 1 to 0 (erases Seeed's AT firmware)
 #                                        (../board/wio-e5/README.md)
-# WS_BENCH_OLED and WS_POWER_PROFILE are not remembered: pass them to `flash` as to the build (the flash usage
-# line and the budget line name them).
+# WS_BENCH_OLED, WS_POWER_PROFILE and WS_I2C_MUX are not remembered: pass them to `flash` as to the build (the
+# flash usage line and the budget line name them).
 #
 # The board code (board.toml and its generated gen/, Core/, startup/, linker script) lives in
 # ../board/<BOARD>; what every board shares (SubGHz_Phy/, the common build rules: rules.mk) in ../board/stm32wl. This project keeps its own Core/Src/stm32wlxx_it.c
@@ -69,14 +71,16 @@ OLED_SUFFIX = $(if $(filter 1,$(WS_BENCH_OLED)),-oled)
 BOARD_SUFFIX = $(if $(filter-out nucleo-wl55jc,$(BOARD)),-$(BOARD))
 # The power telemetry profile (App/power_config.h): empty keeps the header's default.
 WS_POWER_PROFILE ?=
+# The I2C bus profile (App/i2c_bus.h: 0 the STEMMA QT hub, 1 the mux): empty keeps the header's default.
+WS_I2C_MUX ?=
 
 BUILD      = build/$(ROLE)$(OLED_SUFFIX)$(BOARD_SUFFIX)
 TARGET     = $(BUILD)/stage0-$(ROLE)
 # `make clean` removes both roles (build/), or only the BUILD given on the command line.
 CLEAN_DIR  = $(patsubst %/$(ROLE)$(OLED_SUFFIX)$(BOARD_SUFFIX),%,$(BUILD))
 # What the flash usage line and the budget line name: the role and the flags that change the image.
-USAGE_ARGS = ROLE=$(ROLE) $(if $(BOARD_SUFFIX),BOARD=$(BOARD)) $(if $(filter 1,$(WS_BENCH_OLED)),WS_BENCH_OLED=1) $(if $(WS_POWER_PROFILE),WS_POWER_PROFILE=$(WS_POWER_PROFILE))
-BUDGET_LABEL = $(ROLE)$(if $(BOARD_SUFFIX),$(comma) $(BOARD))$(if $(WS_POWER_PROFILE),$(comma) profile $(WS_POWER_PROFILE))$(if $(filter 1,$(WS_BENCH_OLED)),$(comma) bench OLED)
+USAGE_ARGS = ROLE=$(ROLE) $(if $(BOARD_SUFFIX),BOARD=$(BOARD)) $(if $(filter 1,$(WS_BENCH_OLED)),WS_BENCH_OLED=1) $(if $(WS_POWER_PROFILE),WS_POWER_PROFILE=$(WS_POWER_PROFILE)) $(if $(WS_I2C_MUX),WS_I2C_MUX=$(WS_I2C_MUX))
+BUDGET_LABEL = $(ROLE)$(if $(BOARD_SUFFIX),$(comma) $(BOARD))$(if $(WS_POWER_PROFILE),$(comma) profile $(WS_POWER_PROFILE))$(if $(WS_I2C_MUX),$(comma) mux $(WS_I2C_MUX))$(if $(filter 1,$(WS_BENCH_OLED)),$(comma) bench OLED)
 comma := ,
 
 IT_SRC  = Core/Src/stm32wlxx_it.c
@@ -88,7 +92,7 @@ ifeq ($(ROLE),tx)
 APP_SRC += App/tx_exchange.c App/tx_policy.c App/tx_time.c App/tx_console.c App/selftest.c \
            App/node_store.c App/flash_stm32wl.c App/i2c_bus.c App/board_inputs.c App/wsmp_local.c App/port_id.c App/wsmp_host.c \
            App/wsmp_catalog_map.c App/mod_th.c App/mod_mean.c App/mod_reg.c App/mod_power.c App/power_acq.c App/mod_wind.c \
-           App/mod_rain.c $(ROOT)/firmware/common/power_regs.c $(ROOT)/firmware/common/wsmp.c $(ROOT)/firmware/common/wsmp_cal.c \
+           App/mod_rain.c App/charger.c $(ROOT)/firmware/common/power_regs.c $(ROOT)/firmware/common/wsmp.c $(ROOT)/firmware/common/wsmp_cal.c \
            $(ROOT)/firmware/common/wsmp_ident.c $(ROOT)/firmware/stage0.c \
            $(ROOT)/firmware/common/ws_frame.c $(ROOT)/firmware/common/ws_obs.c $(ROOT)/firmware/common/ws_policy.c
 endif
@@ -117,6 +121,9 @@ endif
 ifneq ($(WS_POWER_PROFILE),)
 DEFS += -DWS_POWER_PROFILE=$(WS_POWER_PROFILE)
 endif
+ifneq ($(WS_I2C_MUX),)
+DEFS += -DWS_I2C_MUX=$(WS_I2C_MUX)
+endif
 OPT  = -Os
 # GCC 15 turns the bitwise CRC loops (node_store.c crc16, stage0.c ws_crc8) into 768 B of lookup
 # tables; they run a few times a minute, so keep them as loops (same values, tests/test_stage0.py).
@@ -140,7 +147,7 @@ include $(BOARD_DIR)/board.mk
 # fail on any symbol of the driver, the screens or the display library.
 FIELD_CHECK = build/tx-fieldcheck
 field-check:
-	$(MAKE) ROLE=tx WS_BENCH_OLED=0 WS_POWER_PROFILE= BUILD=$(FIELD_CHECK)
+	$(MAKE) ROLE=tx WS_BENCH_OLED=0 WS_POWER_PROFILE= WS_I2C_MUX= BUILD=$(FIELD_CHECK)
 	@$(NM) $(FIELD_CHECK)/stage0-tx.elf > $(FIELD_CHECK)/field-check.nm || { echo "error: nm failed"; exit 1; }
 	@if grep -E ' [A-Za-z] (oled_|scr_|ssd1325_|font5x7)' $(FIELD_CHECK)/field-check.nm; then \
 	  rm -f $(FIELD_CHECK)/field-check.nm; echo "error: the field build links display code (WS_BENCH_OLED=0)"; exit 1; fi

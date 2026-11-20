@@ -145,6 +145,7 @@ void h_power_health(int32_t out[11])
                           h.chg_batt_ma, h.chg_temp, h.pack_temp, h.charger_status };
   memcpy(out, v, sizeof v);
 }
+int h_power_fitted(void) { power_health_t h; mod_power_health(&h); return h.fitted; }
 /* The cup counter (LPTIM1, 16 bits) and the vane ADC. A tear makes the counter move by one pulse
    right after the next read, as a pulse that arrives between two reads does. probe_pulses stands for
    App/board_inputs.c's cups_offset: the link probe's own pulses, out of the count. */

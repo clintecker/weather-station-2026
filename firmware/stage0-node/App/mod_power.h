@@ -45,7 +45,10 @@ int board_charger_pins(void);
    has the name and the none code of its ws_diag_t member (firmware/common/ws_frame.h): unsigned all
    ones, signed the type's minimum, the charger status 0xFF. Phase A and B have no charger-reported
    input, battery voltage or temperatures (none); chg_batt_ma is the bq24074 ISET current while PGOOD is
-   asserted, 0 mA while it is not, none when the ADC failed or ISET clipped. fitted is the profile's
+   asserted, 0 mA while it is not, none when the ADC failed or ISET clipped. Phase C (the BQ25798,
+   App/charger.c): chg_batt_ma is the mean of the window's IBAT reads, chg_input_mv/ma, chg_batt_mv and
+   chg_temp the window's latest VBUS, IBUS, VBAT and die reads, each none without a read in the window;
+   pack_temp stays none (not fitted). fitted is the profile's
    WS_FIT_* mask (ws_frame.h): a none code in a fitted slot is a fault, in any other "not measured". */
 typedef struct {
   uint16_t vdda_mv;          /* MCU supply, VDDA via VREFINT, mean of the last window */

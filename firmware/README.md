@@ -68,6 +68,7 @@ The host tests compile them with warnings as errors. The TX firmware links them 
 
   No battery, charge or load current goes through a breadboard contact (record P1). The battery path runs through the charger's own JST PH sockets and the CELL+, BATT, OUT and STAR lever connectors. A 0.2 Ω breadboard path once ended 1 A charges early. The gauge's lead lands on CELL+, and the INA228's VBUS sense lead on the OUT connector.
 - Phase B (step 1b, not built yet) adds a load INA228 (0x41), a solar INA228 (0x45) and a USB-C INA228 (0x48) upstream of the point where the sources join. The build constant `WS_POWER_PROFILE` (`stage0-node/App/power_config.h`) selects the phase. USB-C is for bench work and occasional backup charging only, never connected together with solar. [`docs/hardware/power-metering.md`](../docs/hardware/power-metering.md) has the rails and addresses.
+- Phase C (`WS_POWER_PROFILE` 3) is the TX stack (`hardware/tx-stack-r1`): a BQ25798EVM at 0x6B replaces the bq24074 and the load, solar and USB-C INA228s; the battery INA228 and the MAX17048 stay. `stage0-node/App/charger.c` sets it up (0.9 A, 4.2 V, one cell) at every start and after any chip reset, gates charging on the thermistor, and the `CHARGER` console command prints its registers.
 
 The development boards, their antennas and their USB data cables are the platform of the bench prototype. This link needs no custom boards and no printed fixtures.
 

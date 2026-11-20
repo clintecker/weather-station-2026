@@ -68,6 +68,9 @@ typedef struct {
   int16_t monitor_temp;    /* the hottest fitted INA228's latest DIETEMP, 0.1 degC */
   uint16_t vdda_mv;        /* VDDA from VREFINT, mean of the window's samples */
   int16_t chg_batt_ma;     /* charger-reported charge current, mean of the window's samples */
+  /* Phase C only (the BQ25798's ADC, the window's latest read), else none: */
+  uint16_t chg_input_mv, chg_batt_mv;   /* VBUS, VBAT */
+  int16_t chg_input_ma, chg_temp;       /* IBUS (+ into the charger), the die, 0.1 degC */
 } power_slow_t;
 
 typedef struct {
@@ -80,7 +83,8 @@ typedef struct {
 /* now_ms is clock_ms() (App/clock.h) in every call. */
 void power_acq_init(uint32_t now_ms);
 void power_acq_tick(uint32_t now_ms);   /* every WSMP_TICK_MS (250 ms); starts what is due, never waits */
-/* The completion of a power client's transfer (i2c_bus_done routes I2C_C_INA228 to I2C_C_MAX17048 here). */
+/* The completion of a power client's transfer (i2c_bus_done routes I2C_C_INA228 to I2C_C_MAX17048 and
+   I2C_C_CHARGER here). */
 void power_acq_i2c_done(enum i2c_client c, int rc);
 /* Closes the window at now_ms into *out and opens the next one. */
 void power_acq_latch(uint32_t now_ms, power_window_t *out);
@@ -88,7 +92,8 @@ void power_acq_latch(uint32_t now_ms, power_window_t *out);
    batt_ok: the battery INA228 has a current step; batt_ma_x100 is that step's mean current in 0.01 mA
    (+ into the cell), out_mv the load rail's latest VBUS (OUT), 0 where the profile reads none.
    gauge_ok: the MAX17048 answered its last read; vcell_mv and soc_pct_x10 (0.1 %) are its values.
-   charging: the bq24074 CHG pin steady (not flashing); charger: the health report's charger status byte.
+   charging: the bq24074 CHG pin steady (not flashing), or the BQ25798's CHG_STAT (phase C); charger: the
+   health report's charger status byte. Phase C: out_mv is the charger's VSYS.
    rail: the load, solar and USB-C INA228s (enum power_live_rail): fitted, the profile has the rail's
    current slot; ok, its part has a current step; ma_x100 and mv, as the battery's (mv 0 where its VBUS is
    not read). A value whose part is not ok reads 0. */

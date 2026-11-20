@@ -14,7 +14,7 @@ except ImportError:
     from tests.toolchain import ROOT, WSMP_APP, fresh_station, host_library, needs_cc, wsmp_sources    # python -m unittest tests.<module>
     from tests import wsmp_wind_ref as wind_ref
 
-DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228, DEVK_MAX17048 = 2, 3, 4, 5, 6, 7
+DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228, DEVK_MAX17048, DEVK_BQ25798 = 2, 3, 4, 5, 6, 7, 10
 DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY = range(5)
 DM_BUS_ERROR = 6
 P_AIR_TH, P_PRESSURE, P_UVA, P_ENCL_TH, P_BATTERY, P_WIND, P_RAIN, P_RAILS = range(1, 9)
@@ -805,6 +805,36 @@ class Rails(PowerStation, Conformance, Harness):
                 self.latch(lib, self.PORT, 10 + pins)
                 self.assertEqual(self.health(lib)['charger_status'], status)
 
+
+class PhaseCPower(PowerStation, Harness):
+    """Phase C (WS_POWER_PROFILE=3, the TX stack's BQ25798 at 0x6B; App/charger.c): the charger's ADC fills
+    the rails module's load voltage (VSYS) and charger input (VBUS), and the health report's charger
+    registers, so the fitted byte gains WS_FIT_CHARGER_REGS (0x10): 0x3F (power telemetry design 6.1)."""
+    DEVICES = [(DEVK_INA228, 0x40), (DEVK_MAX17048, 0x36), (DEVK_BQ25798, 0x6B)]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.library = host_library(cls, 'modules-c', '-DWS_POWER_PROFILE=3', *wsmp_sources())._name
+
+    def test_the_build_is_profile_c_and_its_fitted_byte(self):
+        lib, _ = self.station(self.DEVICES)
+        self.assertEqual((lib.h_power_profile(), lib.h_power_fitted()), (3, 0x3F))
+
+    def test_the_charger_fills_the_rails_and_the_health_report(self):
+        # The model's defaults: VBUS 5.000 V, VSYS 3.600 V, no battery, die 30.0 degC, not charging.
+        lib, _ = self.station(self.DEVICES)
+        lib.h_run(MINUTE)
+        self.latch(lib, P_RAILS, 1)
+        lib.h_run(MINUTE)
+        s = self.slots(self.latch(lib, P_RAILS, 2), 7)
+        self.assertEqual(s[0], (3600, 12, GOOD))                   # load voltage: VSYS, a read every 5 s
+        self.assertEqual(s[2], (5000, 12, GOOD))                   # charger input: VBUS
+        self.assertEqual([s[i][2] for i in (1, 3, 4, 5, 6)], [NOT_FITTED] * 5)
+        h = self.health(lib)
+        self.assertEqual((h['chg_input_mv'], h['chg_input_ma'], h['chg_batt_mv'], h['chg_batt_ma'], h['chg_temp']),
+                         (5000, 0, 0, 0, 300))
+        self.assertEqual(h['pack_temp'], I16_NONE)                 # not fitted: TS is not a temperature yet
+        self.assertEqual(h['charger_status'], 0x01 | 6 << 3)       # power good, stage 6 not charging, input 0
 
 class Wind(Conformance, Harness):
     """The wind module (WSMP section 4.4, type 6): cup pulses, 3-s gust, vane vector sums."""

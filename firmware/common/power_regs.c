@@ -119,3 +119,45 @@ int32_t unscale_ppm(int32_t uv, uint32_t gain_ppm)
   if (gain_ppm == 0 || uv <= 0) return 0;
   return sat32(div_half_up((int64_t)uv * PPM, gain_ppm));
 }
+
+/* BQ25798 (TI SLUSDV2C section 7.5.1) */
+#define BQ25798_VREG_MASK 0x07FFU      /* REG01 bits 10:0 (table 7-15) */
+#define BQ25798_ICHG_MASK 0x01FFU      /* REG03 bits 8:0 (table 7-16) */
+#define BQ25798_CELL_SHIFT 6U          /* REG0A bits 7:6, 0 = 1s ... 3 = 4s (table 7-21) */
+#define BQ25798_PN_SHIFT 3U            /* REG48 bits 5:3 (table 7-70) */
+#define BQ25798_PN_MASK 0x07U
+#define BQ25798_PN 3U
+#define BQ25798_TS_PERMILLE_NUM 1000U  /* 0.0976563 % = 100/1024 % a count (table 7-65) */
+#define BQ25798_TS_DEN 1024U
+#define BQ25798_TDIE_DC 5              /* 0.5 degC a count (table 7-66) */
+
+uint16_t bq25798_vreg_mv(uint16_t raw16) { return (uint16_t)((raw16 & BQ25798_VREG_MASK) * BQ25798_VREG_MV_STEP); }
+uint16_t bq25798_ichg_ma(uint16_t raw16) { return (uint16_t)((raw16 & BQ25798_ICHG_MASK) * BQ25798_ICHG_MA_STEP); }
+
+uint16_t bq25798_vreg_raw(uint16_t mv)
+{
+  unsigned code = mv / BQ25798_VREG_MV_STEP;
+  return code > BQ25798_VREG_MASK ? 0U : (uint16_t)code;
+}
+
+uint16_t bq25798_ichg_raw(uint16_t ma)
+{
+  unsigned code = ma / BQ25798_ICHG_MA_STEP;
+  return code > BQ25798_ICHG_MASK ? 0U : (uint16_t)code;
+}
+
+unsigned bq25798_cells(uint8_t reg0a) { return (unsigned)(reg0a >> BQ25798_CELL_SHIFT) + 1U; }
+
+int bq25798_pn_match(uint8_t reg48) { return ((reg48 >> BQ25798_PN_SHIFT) & BQ25798_PN_MASK) == BQ25798_PN; }
+
+uint16_t bq25798_ts_permille(uint16_t raw16)
+{
+  return (uint16_t)div_half_up((int64_t)raw16 * BQ25798_TS_PERMILLE_NUM, BQ25798_TS_DEN);
+}
+
+/* Saturates at +-32767: the chip's range (-40 to 150 degC) is far inside, any count is defined. */
+int16_t bq25798_tdie_dc(uint16_t raw16)
+{
+  int32_t dc = (int32_t)(int16_t)raw16 * BQ25798_TDIE_DC;
+  return (int16_t)(dc > INT16_MAX ? INT16_MAX : dc < -INT16_MAX ? -INT16_MAX : dc);
+}

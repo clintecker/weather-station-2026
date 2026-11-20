@@ -15,7 +15,7 @@
 #include "sim_core.h"
 
 enum i2c_sim_kind { DEVK_TEST = 1, DEVK_SHT45, DEVK_SHTC3, DEVK_BMP581, DEVK_LTR390, DEVK_INA228, DEVK_MAX17048,
-                    DEVK_MUX, DEVK_EEPROM };
+                    DEVK_MUX, DEVK_EEPROM, DEVK_BQ25798 };
 enum i2c_sim_mode { DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY, DM_HANG_READ,
                     DM_BUS_ERROR };   /* a bus error (HAL_I2C_ERROR_BERR), as noise or a misplaced START gives */
 #define I2C_SIM_DEVICES 16
@@ -24,7 +24,7 @@ enum i2c_sim_mode { DM_OK, DM_NACK_ADDR, DM_NACK_DATA, DM_HANG, DM_BUSY, DM_HANG
 
 /* returns the device index, or -1. With the mux, a part of the probe table goes on its channel of the
    static map (0x44 channel 0, 0x53 channel 1, 0x46 and 0x47 channel 2), except the upstream kinds
-   (DEVK_SHTC3, DEVK_INA228, DEVK_MAX17048), which are upstream at any address, as is every other
+   (DEVK_SHTC3, DEVK_INA228, DEVK_MAX17048, DEVK_BQ25798), which are upstream at any address, as is every other
    address. On the hub every device is upstream. */
 int i2c_sim_add(int kind, uint8_t addr7);
 int i2c_sim_add_on(int kind, uint8_t addr7, int channel);   /* channel 0-7, or I2C_SIM_UPSTREAM */
@@ -103,4 +103,26 @@ void model_eeprom_fail_next(int dev, int n);      /* the next n reads NACK their
 void model_eeprom_fail_after(int dev, int skip, int n);   /* the next skip reads are served, then n NACK */
 void model_eeprom_corrupt_next(int dev, int n);   /* the next n reads that cover byte 0x20 flip a bit of it */
 void model_eeprom_corrupt_at(int dev, uint16_t at, int n);   /* the same for byte at */
+/* DEVK_BQ25798 (TI SLUSDV2C): the register file REG00-REG48 at power-on reset (CELL from the PROG
+   strap, model_bq25798_cells, default one cell: VREG 4.2 V; ICHG 1 A; REG0F 0xA2; REG10 0x85; REG48
+   0x19). Multi-byte reads and writes cross registers; a read past REG48 gives 0xFF, one that starts
+   past it NACKs. Any write enters host mode and starts the I2C watchdog (REG10 WATCHDOG, 40 s by
+   default); WD_RST restarts it and reads back 0. Its expiry resets ICHG, EN_CHG (to 1), EN_TERM and
+   ADC_EN and sets WD_STAT. Writing ADC_EN starts a conversion that ends 300 ms later (with VBUS or VBAT
+   up): the ADC registers take the physics below, ADC_DONE_STAT sets and, in one-shot mode, ADC_EN
+   clears. CHG_STAT is the set stage while EN_CHG is 1 and TS is neither COLD nor HOT, else 0. */
+void model_bq25798_power_cycle(int dev);
+void model_bq25798_cells(int dev, unsigned cells);   /* the PROG strap, applied at the next power cycle */
+/* The physics: VBUS, IBUS, VBAT, IBAT (+ charging), VSYS; TS in 0.1 % of REGN; the die in 0.1 degC. */
+void model_bq25798_set(int dev, int32_t vbus_mv, int32_t ibus_ma, int32_t vbat_mv, int32_t ibat_ma, int32_t vsys_mv);
+void model_bq25798_ts(int dev, unsigned permille, uint8_t ts_bits);   /* ts_bits: REG1F bits 3:0, COLD COOL WARM HOT */
+void model_bq25798_die(int dev, int32_t deci_c);
+/* REG1B's AC1/AC2 present bits (PG and VBUS present follow VBUS above 3.4 V), the stage CHG_STAT shows
+   while charge is on, and the REG20 and REG21 fault bits. */
+void model_bq25798_status(int dev, int ac1, int ac2, unsigned chg_stat, uint8_t fault0, uint8_t fault1);
+void model_bq25798_watchdog_expire(int dev);   /* the watchdog runs out now */
+void model_bq25798_ignore_limits(int dev, int ignore);   /* writes to REG01-REG04 are dropped */
+uint8_t model_bq25798_reg(int dev, uint8_t reg);   /* the register file, with no side effect */
+uint32_t model_bq25798_limit_writes(int dev);       /* writes that touched REG01-REG04 */
+uint32_t model_bq25798_kicks(int dev);              /* WD_RST writes */
 #endif

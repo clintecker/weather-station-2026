@@ -384,6 +384,153 @@ static int eeprom_read(int dev, uint16_t at, uint8_t *data, uint16_t n)
   return 0;
 }
 
+/* DEVK_BQ25798 (i2c_sim.h; TI SLUSDV2C section 7.5.1, the reset values and "Reset by" columns of
+   tables 7-15 to 7-70; section 7.4.1 host and default mode; section 7.3.10 the ADC). */
+#define BQ_REGS 0x49U
+#define BQ_WD_MS 40000U
+#define BQ_ADC_MS 300U
+typedef struct {
+  uint8_t r[BQ_REGS];
+  unsigned cells;
+  int32_t vbus_mv, ibus_ma, vbat_mv, ibat_ma, vsys_mv, die_dc;
+  unsigned ts_permille, chg_stat;
+  uint8_t ts_bits, fault0, fault1, ac;
+  int host, adc_running, ignore_limits;
+  uint64_t kicked_at, adc_at;
+  uint32_t limit_writes, kicks;
+} bq_t;
+static bq_t bq[I2C_SIM_DEVICES];
+
+static void bq_set16(bq_t *b, uint8_t reg, uint16_t v) { b->r[reg] = (uint8_t)(v >> 8); b->r[reg + 1U] = (uint8_t)v; }
+
+static void bq_por(bq_t *b)
+{
+  static const uint16_t vreg[4] = { 420, 840, 1260, 1680 };   /* table 7-15: 4.2 V a cell */
+  memset(b->r, 0, sizeof b->r);
+  unsigned c = b->cells >= 1U && b->cells <= 4U ? b->cells : 1U;
+  bq_set16(b, 0x01, vreg[c - 1U]);
+  bq_set16(b, 0x03, 100);                    /* ICHG 1 A (table 7-16) */
+  b->r[0x0A] = (uint8_t)((c - 1U) << 6 | 0x23U);   /* CELL, TRECHG 2, VRECHG 3 (table 7-21) */
+  b->r[0x0F] = 0xA2;                         /* EN_AUTO_IBATDIS, EN_CHG, EN_TERM (table 7-25) */
+  b->r[0x10] = 0x85;                         /* WATCHDOG 40 s (table 7-26) */
+  b->r[0x2E] = 0x30;                         /* ADC_SAMPLE 3 (table 7-55) */
+  b->r[0x48] = 0x19;                         /* PN 3, DEV_REV 1 (table 7-70) */
+  b->host = b->adc_running = 0;
+}
+
+void model_bq25798_power_cycle(int dev) { bq_por(&bq[dev]); }
+void model_bq25798_cells(int dev, unsigned cells) { bq[dev].cells = cells; }
+void model_bq25798_set(int dev, int32_t vbus_mv, int32_t ibus_ma, int32_t vbat_mv, int32_t ibat_ma, int32_t vsys_mv)
+{
+  bq_t *b = &bq[dev];
+  b->vbus_mv = vbus_mv; b->ibus_ma = ibus_ma; b->vbat_mv = vbat_mv; b->ibat_ma = ibat_ma; b->vsys_mv = vsys_mv;
+}
+void model_bq25798_ts(int dev, unsigned permille, uint8_t ts_bits) { bq[dev].ts_permille = permille; bq[dev].ts_bits = ts_bits & 0x0FU; }
+void model_bq25798_die(int dev, int32_t deci_c) { bq[dev].die_dc = deci_c; }
+void model_bq25798_status(int dev, int ac1, int ac2, unsigned chg_stat, uint8_t fault0, uint8_t fault1)
+{
+  bq_t *b = &bq[dev];
+  b->ac = (uint8_t)((ac1 ? 0x02U : 0U) | (ac2 ? 0x04U : 0U));
+  b->chg_stat = chg_stat & 7U; b->fault0 = fault0; b->fault1 = fault1;
+}
+void model_bq25798_ignore_limits(int dev, int ignore) { bq[dev].ignore_limits = ignore; }
+uint32_t model_bq25798_limit_writes(int dev) { return bq[dev].limit_writes; }
+uint32_t model_bq25798_kicks(int dev) { return bq[dev].kicks; }
+
+/* The watchdog's expiry: back to default mode, the WATCHDOG-reset fields to their reset values. */
+static void bq_expire(bq_t *b)
+{
+  bq_set16(b, 0x03, 100);
+  b->r[0x0A] = (uint8_t)((b->r[0x0A] & 0xC0U) | 0x23U);
+  b->r[0x0F] = (uint8_t)((b->r[0x0F] & 0xD4U) | 0x22U);   /* EN_CHG and EN_TERM 1; FORCE_ICO, EN_BACKUP 0 */
+  b->r[0x2E] &= 0x7FU;                                    /* ADC_EN */
+  b->adc_running = 0;
+  b->host = 0;
+}
+void model_bq25798_watchdog_expire(int dev) { bq_expire(&bq[dev]); }
+
+static int16_t clamp16(int32_t v) { return (int16_t)(v > INT16_MAX ? INT16_MAX : v < INT16_MIN ? INT16_MIN : v); }
+
+/* Time moves: the watchdog and the running conversion. */
+static void bq_advance(bq_t *b)
+{
+  static const uint32_t wd_s[8] = { 0, 1, 2, 10, 20, 40, 80, 160 };   /* REG10 WATCHDOG (table 7-26) */
+  uint32_t wd = wd_s[b->r[0x10] & 7U];
+  if (b->host && wd && sim_now() - b->kicked_at >= (uint64_t)wd * 1000U * SIM_UNITS_PER_MS) bq_expire(b);
+  if (b->adc_running && sim_now() - b->adc_at >= (uint64_t)BQ_ADC_MS * SIM_UNITS_PER_MS)
+  {
+    b->adc_running = 0;
+    if (b->vbus_mv <= 3400 && b->vbat_mv <= 2900) { b->adc_running = 1; b->adc_at = sim_now(); return; }   /* postponed */
+    bq_set16(b, 0x31, (uint16_t)clamp16(b->ibus_ma));
+    bq_set16(b, 0x33, (uint16_t)clamp16(b->ibat_ma));
+    bq_set16(b, 0x35, (uint16_t)clamp16(b->vbus_mv));
+    bq_set16(b, 0x3B, (uint16_t)clamp16(b->vbat_mv));
+    bq_set16(b, 0x3D, (uint16_t)clamp16(b->vsys_mv));
+    bq_set16(b, 0x3F, (uint16_t)(b->ts_permille * 1024U / 1000U));
+    bq_set16(b, 0x41, (uint16_t)clamp16(b->die_dc / 5));
+    b->r[0x1E] |= 0x20U;                          /* ADC_DONE_STAT */
+    if (b->r[0x2E] & 0x40U) b->r[0x2E] &= 0x7FU;  /* one-shot: ADC_EN clears */
+  }
+}
+
+/* The status registers from the physics and the controls. */
+static void bq_status(bq_t *b)
+{
+  int vbus = b->vbus_mv > 3400;
+  int ts_block = (b->ts_bits & 0x09U) != 0;   /* COLD or HOT */
+  b->r[0x1B] = (uint8_t)((vbus ? 0x09U : 0U) | b->ac | (b->host ? 0U : 0x20U));
+  b->r[0x1C] = (uint8_t)(((b->r[0x0F] & 0x20U) && !ts_block ? b->chg_stat : 0U) << 5);
+  b->r[0x1D] = b->vbat_mv > 2500 ? 0x01U : 0U;
+  b->r[0x1F] = b->ts_bits;
+  b->r[0x20] = b->fault0;
+  b->r[0x21] = b->fault1;
+}
+
+static int bq_write(int dev, const uint8_t *data, uint16_t n)
+{
+  bq_t *b = &bq[dev];
+  if (n < 1 || data[0] >= BQ_REGS) return -1;
+  bq_advance(b);
+  if (!b->host) { b->host = 1; b->kicked_at = sim_now(); }   /* any write: host mode (section 7.4.1) */
+  for (uint16_t i = 1; i < n; i++)
+  {
+    unsigned reg = data[0] + i - 1U;
+    uint8_t v = data[i];
+    if (reg >= BQ_REGS) return -1;
+    if (reg >= 0x01U && reg <= 0x04U)
+    {
+      b->limit_writes++;
+      if (b->ignore_limits) continue;
+      if (reg == 0x01U) v &= 0x07U;   /* reserved bits read 0 */
+      if (reg == 0x03U) v &= 0x01U;
+    }
+    if (reg >= 0x1BU && reg <= 0x27U) continue;   /* status and flags: read only */
+    if (reg >= 0x31U) continue;                    /* the ADC results and REG48 */
+    if (reg == 0x10U && (v & 0x08U)) { b->kicks++; b->kicked_at = sim_now(); v &= (uint8_t)~0x08U; }
+    if (reg == 0x2EU && (v & 0x80U)) { b->adc_running = 1; b->adc_at = sim_now(); b->r[0x1E] &= (uint8_t)~0x20U; }
+    b->r[reg] = v;
+  }
+  return 0;
+}
+
+static int bq_read(int dev, uint8_t reg, uint8_t *data, uint16_t n)
+{
+  bq_t *b = &bq[dev];
+  if (reg >= BQ_REGS) return -1;   /* an undefined register NACKs (section 7.3.14) */
+  bq_advance(b);
+  bq_status(b);
+  for (uint16_t i = 0; i < n; i++) data[i] = (unsigned)reg + i < BQ_REGS ? b->r[reg + i] : 0xFFU;
+  return 0;
+}
+
+uint8_t model_bq25798_reg(int dev, uint8_t reg)
+{
+  bq_t *b = &bq[dev];
+  bq_advance(b);
+  bq_status(b);
+  return reg < BQ_REGS ? b->r[reg] : 0xFFU;
+}
+
 int model_write(int kind, int dev, const uint8_t *data, uint16_t n)
 {
   switch (kind)
@@ -394,6 +541,7 @@ int model_write(int kind, int dev, const uint8_t *data, uint16_t n)
     case DEVK_SHT45: return sht45_write(dev, data, n);
     case DEVK_SHTC3: return shtc3_write(dev, data, n);
     case DEVK_BMP581: case DEVK_LTR390: return reg_write(kind, dev, data, n);
+    case DEVK_BQ25798: return bq_write(dev, data, n);
     default: return -1;
   }
 }
@@ -418,6 +566,7 @@ int model_mem_read(int kind, int dev, uint16_t reg, uint8_t *data, uint16_t n)
     case DEVK_INA228: return ina228_read(dev, (uint8_t)reg, data, n);
     case DEVK_MAX17048: return max17048_read(dev, (uint8_t)reg, data, n);
     case DEVK_EEPROM: return eeprom_read(dev, reg, data, n);
+    case DEVK_BQ25798: return bq_read(dev, (uint8_t)reg, data, n);
     case DEVK_TEST: for (uint16_t i = 0; i < n; i++) data[i] = (uint8_t)(reg + i); return 0;
     default: return -1;
   }
@@ -436,6 +585,11 @@ void model_reset(int kind, int dev)
     ina228_por(&ina[dev]);
   }
   if (kind == DEVK_MAX17048) gauge[dev] = (gauge_t){ .cell_uv = GAUGE_DEFAULT_CELL_UV };
+  if (kind == DEVK_BQ25798)
+  {
+    bq[dev] = (bq_t){ .cells = 1, .vbus_mv = 5000, .vsys_mv = 3600, .ts_permille = 520, .die_dc = 300 };
+    bq_por(&bq[dev]);
+  }
   if (kind == DEVK_EEPROM)
   {
     for (unsigned i = 0; i < EEPROM_LEN; i++) eeprom[dev][i] = (uint8_t)i;

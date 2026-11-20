@@ -263,12 +263,12 @@ transfer) ends with no channel selected, or with the bus refusing the upstream p
 #define NO_PATH 0xFEU                                              /* the hub: no record EEPROM */
 #define PORT(ch) ((uint8_t)(WS_I2C_MUX ? (ch) : UPSTREAM))
 #define RECORD(ch) ((uint8_t)(WS_I2C_MUX ? (ch) : NO_PATH))
-_Static_assert(I2C_C_COUNT == 12, "a new client needs its channel_of entry");
+_Static_assert(I2C_C_COUNT == 13, "a new client needs its channel_of entry");
 static const uint8_t channel_of[I2C_C_COUNT] = {
   [I2C_C_SHT45] = PORT(0), [I2C_C_LTR390] = PORT(1), [I2C_C_BMP581] = PORT(2), [I2C_C_SHTC3] = UPSTREAM,
   [I2C_C_INA228] = UPSTREAM, [I2C_C_INA_LOAD] = UPSTREAM, [I2C_C_INA_SOLAR] = UPSTREAM, [I2C_C_INA_USB] = UPSTREAM,
   [I2C_C_MAX17048] = UPSTREAM, [I2C_C_REC_AIR] = RECORD(0), [I2C_C_REC_UVA] = RECORD(1),
-  [I2C_C_REC_PRESSURE] = RECORD(2) };
+  [I2C_C_REC_PRESSURE] = RECORD(2), [I2C_C_CHARGER] = UPSTREAM };
 static const uint8_t phantom_addr[I2C_PHANTOM_COUNT] = { 0x44, 0x47, 0x53, 0x50 };
 
 typedef enum { OP_SELECT, OP_SELECT_CHECK, OP_XFER, OP_RECOVER, OP_DESELECT, OP_DESELECT_CHECK, OP_PROBE } op_kind;

@@ -2,11 +2,12 @@
 
 firmware/host/power_harness.c runs the driver on the shared I2C bus in the hub profile (WS_I2C_MUX=0),
 with the host bus model's INA228 and MAX17048 (firmware/host/i2c_models.c) and the board ADC and CHG edge
-seams of firmware/host/sim_core.c. One build for each power profile (App/power_config.h): phase A (1) and
-phase B (2, four INA228 rails). Expected values come from the design
-(docs/superpowers/specs/2026-10-29-power-telemetry-design.md sections 3, 6.3, 9.3 to 9.5) and the
-datasheets (TI SBOS904, Analog Devices MAX17048, ST DS13293, TI SLUS810), not from the code under test.
-Host-model results, not bench evidence."""
+seams of firmware/host/sim_core.c. One build for each power profile (App/power_config.h): phase A (1),
+phase B (2, four INA228 rails) and phase C (3, the BQ25798 of the TX stack, in the mux profile it ships
+with, WS_I2C_MUX=1). Expected values come from the design
+(docs/superpowers/specs/2026-10-29-power-telemetry-design.md sections 3, 6.1, 6.3, 9.3 to 9.5) and the
+datasheets (TI SBOS904, Analog Devices MAX17048, ST DS13293, TI SLUS810, TI SLUSDV2C), not from the code
+under test. Host-model results, not bench evidence."""
 import ctypes
 import unittest
 
@@ -15,7 +16,7 @@ try:
 except ImportError:
     from tests.toolchain import ROOT, fresh_station, host_library, load_tool, needs_cc    # python -m unittest tests.<module>
 
-DEVK_INA228, DEVK_MAX17048 = 6, 7
+DEVK_TEST, DEVK_INA228, DEVK_MAX17048, DEVK_BQ25798 = 1, 6, 7, 10
 DM_BUS_ERROR = 6
 # enum power_slot (App/power_config.h)
 (BATT_MV, BATT_MA, ENERGY_IN, ENERGY_OUT, CHARGE_IN, CHARGE_OUT, LOAD_MV, LOAD_MA, CHARGER_IN_MV, SOLAR_MV,
@@ -65,12 +66,12 @@ def iset_pin(v_iset):
     return v_iset * ISET_GAIN_PPM / 1e6
 
 
-def sources(profile):
+def sources(profile, mux=0):
     fw = ROOT/'firmware'
     a = fw/'stage0-node/App'
-    return ['-DWS_I2C_MUX=0', f'-DWS_POWER_PROFILE={profile}', '-I', fw/'host/include', '-I', fw/'host', '-I', a,
+    return [f'-DWS_I2C_MUX={mux}', f'-DWS_POWER_PROFILE={profile}', '-I', fw/'host/include', '-I', fw/'host', '-I', a,
             '-I', fw/'stage0-node/Core/Inc', '-I', fw, '-I', fw/'common', fw/'host/power_harness.c', fw/'host/sim_core.c',
-            fw/'host/i2c_sim.c', fw/'host/i2c_models.c', a/'i2c_bus.c', a/'busymon.c', a/'power_acq.c', fw/'stage0.c',
+            fw/'host/i2c_sim.c', fw/'host/i2c_models.c', a/'i2c_bus.c', a/'busymon.c', a/'power_acq.c', a/'charger.c', fw/'stage0.c',
             fw/'common/ws_check.c', fw/'common/power_regs.c']
 
 
@@ -159,6 +160,11 @@ class PhaseA(unittest.TestCase):
         return {'batt_ok': lib.h_live_batt_ok(), 'ma_x100': lib.h_live_batt_ma_x100(), 'out_mv': lib.h_live_out_mv(),
                 'gauge_ok': lib.h_live_gauge_ok(), 'vcell_mv': lib.h_live_vcell_mv(), 'soc_x10': lib.h_live_soc_x10(),
                 'charging': lib.h_live_charging()}
+
+    def test_the_charger_command_says_not_fitted(self):
+        b = self.bench()
+        b.lib.h_charger_line.restype = ctypes.c_char_p
+        self.assertEqual(b.lib.h_charger_line(400).decode(), '#charger not-fitted (WS_POWER_PROFILE 3 only)')
 
     def test_power_live_absent_parts(self):
         b = self.bench([])                                    # no INA228, no gauge answering
@@ -562,6 +568,211 @@ class PhaseB(unittest.TestCase):
         self.assertEqual(b.lib.h_monitor_temp(), 365)         # the hottest of the fitted rails
         self.assertEqual(b.lib.h_addr_transfers(SOLAR) > 0, True)
         self.assertEqual(b.quality(ENERGY_IN), GOOD)
+
+
+# The BQ25798 (TI SLUSDV2C section 7.5.1), from the datasheet: VREG REG01-02 in 10 mV (table 7-15), ICHG
+# REG03-04 in 10 mA (table 7-16), CELL REG0A bits 7:6 (table 7-21), EN_CHG REG0F bit 5 (table 7-25), the
+# watchdog REG10 (table 7-26: 40 s by default, WD_RST bit 3), TS REG1F bits 3:0 COLD COOL WARM HOT
+# (table 7-40), TS ADC 100/1024 % a count (table 7-65). App/power_config.h: one cell, 0.9 A, 4.2 V.
+CHARGER = 0x6B
+VREG_CODE, ICHG_CODE, ICHG_POR = 4200 // 10, 900 // 10, 1000 // 10
+EN_CHG = 0x20
+TS_COLD, TS_COOL, TS_WARM, TS_HOT = 0x08, 0x04, 0x02, 0x01
+(CH_NONE, CH_ABSENT, CH_PART, CH_CELLS, CH_READBACK, CH_TS_STALE, CH_TS_COLD, CH_TS_HOT) = range(8)   # charger.h
+CHG_PRESENT, CHG_OK, CHG_CONFIGURED, CHG_HOLD, CHG_APPLIES, CHG_RESETS, CHG_FAILURES = range(7)       # h_chg()
+POLL = 5_000                                  # CHARGER_PERIOD_MS
+STAGE_PRECHARGE, STAGE_CC, STAGE_CV, STAGE_NOT_CHARGING = 1, 2, 3, 6   # spec section 6.3, bits 3-5
+INPUT_SOLAR, INPUT_USB_C, INPUT_NONE = 1, 2, 3                       # bits 6-7
+PHASE_C = [(DEVK_INA228, BATTERY), (DEVK_MAX17048, GAUGE), (DEVK_BQ25798, CHARGER)]
+
+
+def status(pg=0, charging=0, fault=0, stage=0, inp=0):
+    return pg | charging << 1 | fault << 2 | stage << 3 | inp << 6
+
+
+@needs_cc
+class PhaseC(unittest.TestCase):
+    """The BQ25798 of the TX stack (hardware/tx-stack-r1, issue #34): the set-up at every start and after
+    every chip reset, the charge gate, the readings in the existing slots, the CHARGER console line."""
+    @classmethod
+    def setUpClass(cls):
+        cls.library = host_library(cls, 'power-c', *sources(3, mux=1))._name
+
+    def bench(self, devices=PHASE_C, **kw):
+        b = Bench(self, self.library, devices, **kw)
+        lib = b.lib
+        lib.h_bq_set.argtypes = [ctypes.c_int] + [ctypes.c_int32] * 5
+        lib.h_bq_ts.argtypes = [ctypes.c_int, ctypes.c_uint, ctypes.c_int]
+        lib.h_bq_cells.argtypes = [ctypes.c_int, ctypes.c_uint]
+        lib.h_bq_status.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_int, ctypes.c_int]
+        lib.h_bq_die.argtypes = [ctypes.c_int, ctypes.c_int32]
+        lib.h_bq_limit_writes.restype = lib.h_bq_kicks.restype = ctypes.c_uint32
+        lib.h_charger_line.restype = ctypes.c_char_p
+        lib.h_charger_line.argtypes = [ctypes.c_uint]
+        b.bq = b.dev.get(CHARGER)
+        return b
+
+    def reg16(self, b, reg):
+        return b.lib.h_bq_reg(b.bq, reg) << 8 | b.lib.h_bq_reg(b.bq, reg + 1)
+
+    def en_chg(self, b):
+        return bool(b.lib.h_bq_reg(b.bq, 0x0F) & EN_CHG)
+
+    def line(self, b, length=400):
+        return b.lib.h_charger_line(length).decode()
+
+    def fields(self, b):
+        return dict(kv.split('=', 1) for kv in self.line(b).split()[1:])
+
+    def test_the_rail_table_and_the_slots_the_charger_fills(self):
+        b = self.bench()
+        self.assertEqual((b.lib.h_rail_count(), b.lib.h_rail_addr(0), b.lib.h_rail_sign(0)), (1, BATTERY, -1))
+        fitted = {s for s in range(SLOTS) if b.lib.h_fitted(s)}
+        self.assertEqual(fitted, {BATT_MV, BATT_MA, ENERGY_IN, ENERGY_OUT, CHARGE_IN, CHARGE_OUT, LOAD_MV, CHARGER_IN_MV})
+
+    def test_the_boot_write_and_its_read_back(self):
+        b = self.bench()
+        self.assertEqual(self.reg16(b, 0x03), ICHG_POR)          # the 1 A default before the firmware runs
+        b.lib.h_run(TICK)                                        # the first poll
+        self.assertEqual(self.reg16(b, 0x01), VREG_CODE)
+        self.assertEqual(self.reg16(b, 0x03), ICHG_CODE)
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x0A) >> 6, 0)     # CELL: one cell, untouched
+        self.assertEqual(b.lib.h_bq_limit_writes(b.bq), 4)       # one 4-byte write, REG01 to REG04
+        self.assertEqual([b.lib.h_chg(k) for k in (CHG_PRESENT, CHG_OK, CHG_CONFIGURED, CHG_APPLIES, CHG_RESETS)],
+                         [1, 1, 1, 1, 0])
+        # No TS reading yet: charge stays off until the first conversion is in.
+        self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_TS_STALE)
+        self.assertFalse(self.en_chg(b))
+        b.lib.h_run(POLL)
+        self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_NONE)
+        self.assertTrue(self.en_chg(b))
+        self.assertEqual(b.lib.h_bq_limit_writes(b.bq), 4)       # held: never written again
+
+    def test_the_watchdog_is_kept_and_the_set_up_holds(self):
+        b = self.bench()
+        b.lib.h_run(120_000)                                     # three 40 s watchdog periods
+        self.assertGreaterEqual(b.lib.h_bq_kicks(b.bq), 120_000 // POLL - 1)
+        self.assertFalse(b.lib.h_bq_reg(b.bq, 0x1B) & 0x20)      # WD_STAT: still host mode
+        self.assertEqual(self.reg16(b, 0x03), ICHG_CODE)
+        self.assertEqual((b.lib.h_chg(CHG_APPLIES), b.lib.h_chg(CHG_RESETS)), (1, 0))
+
+    def test_a_chip_reset_is_seen_and_the_set_up_applied_again(self):
+        b = self.bench()
+        b.lib.h_run(20_000)
+        b.lib.h_bq_watchdog_expire(b.bq)                         # ICHG back to 1 A, EN_CHG to 1
+        self.assertEqual(self.reg16(b, 0x03), ICHG_POR)
+        b.lib.h_run(POLL)
+        self.assertEqual(self.reg16(b, 0x03), ICHG_CODE)
+        self.assertEqual((b.lib.h_chg(CHG_APPLIES), b.lib.h_chg(CHG_RESETS)), (2, 1))
+        b.lib.h_bq_power_cycle(b.bq)                             # a power-on reset: every register
+        b.lib.h_run(POLL)
+        self.assertEqual((self.reg16(b, 0x01), self.reg16(b, 0x03)), (VREG_CODE, ICHG_CODE))
+        self.assertEqual((b.lib.h_chg(CHG_APPLIES), b.lib.h_chg(CHG_RESETS)), (3, 2))
+        self.assertTrue(self.en_chg(b))                          # the TS reading from before is 5 s old: fresh
+
+    def test_ts_out_of_band_keeps_charge_disabled(self):
+        for bits, hold in ((TS_COLD, CH_TS_COLD), (TS_HOT, CH_TS_HOT)):
+            with self.subTest(bits=bits):
+                b = self.bench()
+                b.lib.h_bq_status(b.bq, 1, 0, 3, 0, 0)           # USB in, the chip would charge in CC
+                b.lib.h_bq_ts(b.bq, 800 if bits == TS_COLD else 150, bits)
+                b.lib.h_run(30_000)
+                self.assertEqual(b.lib.h_chg(CHG_HOLD), hold)
+                self.assertFalse(self.en_chg(b))
+                st = b.lib.h_chg_status_byte()
+                self.assertEqual(st & 0x3F, status(pg=1, stage=STAGE_NOT_CHARGING))   # no fault: a temperature
+                f = self.fields(b)
+                self.assertEqual((f['ts'], f['en_chg'], f['hold']), ('COLD' if bits == TS_COLD else 'HOT', '0',
+                                                                     'ts-cold' if bits == TS_COLD else 'ts-hot'))
+                b.lib.h_bq_ts(b.bq, 520, 0)                      # back to normal: charge on at the next poll
+                b.lib.h_run(2 * POLL)
+                self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_NONE)
+                self.assertTrue(self.en_chg(b))
+
+    def test_cool_and_warm_still_charge(self):
+        for bits in (TS_COOL, TS_WARM):
+            with self.subTest(bits=bits):
+                b = self.bench()
+                b.lib.h_bq_ts(b.bq, 600, bits)
+                b.lib.h_run(15_000)
+                self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_NONE)
+                self.assertTrue(self.en_chg(b))
+
+    def test_no_ts_reading_keeps_charge_disabled(self):
+        b = self.bench()
+        b.lib.h_bq_set(b.bq, 0, 0, 0, 0, 0)                      # no VBUS, no VBAT: the ADC never converts
+        b.lib.h_run(30_000)
+        self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_TS_STALE)
+        self.assertFalse(self.en_chg(b))
+        self.assertEqual(self.fields(b)['ts_pct'], 'none')
+
+    def test_another_cell_count_or_a_bad_read_back_is_a_fault_and_no_charge(self):
+        b = self.bench()
+        b.lib.h_bq_cells(b.bq, 2)
+        b.lib.h_bq_power_cycle(b.bq)                             # the PROG strap says two cells
+        b.lib.h_run(15_000)
+        self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_CELLS)
+        self.assertFalse(self.en_chg(b))
+        self.assertTrue(b.lib.h_chg_status_byte() & ST_FAULT)
+        b = self.bench()
+        b.lib.h_bq_ignore_limits(b.bq, 1)                        # the writes never land
+        b.lib.h_run(15_000)
+        self.assertEqual((b.lib.h_chg(CHG_HOLD), b.lib.h_chg(CHG_CONFIGURED)), (CH_READBACK, 0))
+        self.assertFalse(self.en_chg(b))
+        self.assertTrue(b.lib.h_chg_status_byte() & ST_FAULT)
+
+    def test_an_absent_charger_has_no_status(self):
+        b = self.bench(PHASE_A)
+        b.minute()
+        self.assertEqual(b.lib.h_status(), 0xFF)
+        self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_ABSENT)
+        self.assertEqual((b.lib.h_chg_input_mv(), b.lib.h_chg_batt_ma(), b.lib.h_chg_temp()), (NONE_U16, NONE_I16, NONE_I16))
+        self.assertEqual(b.quality(CHARGER_IN_MV), MISSING)
+        self.assertEqual(self.fields(b)['present'], '0')
+
+    def test_the_readings_fill_the_existing_slots(self):
+        b = self.bench()
+        b.lib.h_bq_set(b.bq, 5050, 640, 3950, 850, 4010)         # USB in, 850 mA into the pack
+        b.lib.h_bq_die(b.bq, 415)
+        b.lib.h_bq_status(b.bq, 1, 0, 3, 0, 0)                   # VAC1 (USB-C, J6), fast charge
+        b.minute()
+        b.minute()
+        self.assertEqual(b.slot(CHARGER_IN_MV), (5050, 12, GOOD))   # VBUS, one read a poll
+        self.assertEqual(b.slot(LOAD_MV), (4010, 12, GOOD))         # VSYS: the load rail
+        self.assertEqual((b.lib.h_chg_batt_ma(), b.lib.h_chg_input_mv(), b.lib.h_chg_input_ma(), b.lib.h_chg_batt_mv()),
+                         (850, 5050, 640, 3950))
+        self.assertEqual(b.lib.h_chg_temp(), 415)                   # 0.5 degC counts, in 0.1 degC
+        self.assertEqual(b.lib.h_status(), status(pg=1, charging=1, stage=STAGE_CC, inp=INPUT_USB_C))
+        b.lib.h_bq_status(b.bq, 0, 1, 4, 0, 0)                   # solar only, CV
+        b.minute()
+        self.assertEqual(b.lib.h_status(), status(pg=1, charging=1, stage=STAGE_CV, inp=INPUT_SOLAR))
+        b.lib.h_bq_status(b.bq, 1, 0, 3, 0x40, 0)                # VBUS_OVP (REG20 bit 6)
+        b.minute()
+        self.assertTrue(b.lib.h_status() & ST_FAULT)
+
+    def test_the_console_line(self):
+        b = self.bench()
+        b.lib.h_bq_status(b.bq, 1, 0, 3, 0, 0)
+        b.lib.h_run(2 * POLL + TICK)                             # charge on at the second poll, seen at the third
+        line = self.line(b)
+        self.assertTrue(line.startswith('#charger '))
+        f = self.fields(b)
+        want = {'present': '1', 'ok': '1', 'reg48': '0x19', 'reg0a': '0x23', 'cells': '1', 'reg01_02': '0x01a4',
+                'vreg_mv': '4200', 'reg03_04': '0x005a', 'ichg_ma': '900', 'ts': 'NORMAL', 'chg_stat': '3',
+                'stage': 'cc', 'en_chg': '1', 'hold': 'none', 'pg': '1', 'wd': '0', 'fault0': '0x00', 'fault1': '0x00',
+                'vbus_mv': '5000', 'vsys_mv': '3600', 'applies': '1', 'resets': '0', 'failures': '0'}
+        self.assertEqual({k: f.get(k) for k in want}, want)
+        # TS 52.0 %: the model's 520 permille is ADC count 532, which is 51.95 %, rounded to 0.1 %.
+        self.assertEqual(f['ts_pct'], '52.0')
+        self.assertLess(len(line), 400)
+        self.assertEqual(len(self.line(b, 20)), 19)              # truncated to the buffer, terminated
+
+    def test_the_charger_part_number_is_checked(self):
+        # Another part at 0x6B: the test device's REG48 reads 0x48, PN 1 (not 3).
+        b = self.bench([(DEVK_INA228, BATTERY), (DEVK_MAX17048, GAUGE), (DEVK_TEST, CHARGER)])
+        b.lib.h_run(15_000)
+        self.assertEqual((b.lib.h_chg(CHG_PRESENT), b.lib.h_chg(CHG_HOLD)), (0, CH_PART))
+        self.assertEqual(b.lib.h_chg_status_byte(), 0xFF)
 
 
 @needs_cc

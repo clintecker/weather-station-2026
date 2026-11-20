@@ -1,5 +1,6 @@
 /* Power acquisition (power_acq.h): the rail table's INA228s, the MAX17048, the board ADC and the
- * bq24074 pins, each on its own step machine. Register maps and conversions are firmware/common/
+ * bq24074 pins, each on its own step machine; in phase C the BQ25798 (App/charger.c) in place of the
+ * bq24074's pins, ISET and input divider. Register maps and conversions are firmware/common/
  * power_regs.h (TI SBOS904, Analog Devices MAX17048, ST DS13293, TI SLUS810), the constants
  * App/power_config.h, the design docs/superpowers/specs/2026-10-29-power-telemetry-design.md
  * sections 3.1, 3.2, 6.3, 9.4 and 9.5. */
@@ -7,6 +8,7 @@
 #include "power_acq.h"
 #include <string.h>
 #include "board_inputs.h"
+#include "charger.h"
 #include "mod_power.h"
 #include "power_regs.h"
 #include "ws_check.h"
@@ -292,8 +294,10 @@ static void adc_sample(void)
   if (s.seq == a->seq) return;            /* no new sequence since the last sample */
   a->seq = s.seq;
   a->vdda_mv += s.vdda_mv; a->vdda_n++;
+  if (POWER_HAS_BQ25798) return;   /* no input divider: the charger's VBUS is the charger input */
   if (adc_clipped(s.vin_raw)) a->vin_clipped = 1;
   else { a->vin_mv += divider_mv_ppm(adc_pin_uv(s.vin_raw, s.vdda_mv), POWER_VIN_DIVIDER_PPM); a->vin_n++; }
+  if (POWER_HAS_BQ25798) return;   /* phase C: the charger's own ADC gives its input and its current */
   if (!((unsigned)pa.pin.pins & POWER_PGOOD)) { a->iset_n += BOARD_CHARGER_PINS; return; }   /* no input: 0 mA; no pins: none */
   if (adc_clipped(s.iset_raw)) { a->iset_bad = 1; return; }
   int32_t v_iset_uv = unscale_ppm(adc_pin_uv(s.iset_raw, s.vdda_mv), POWER_ISET_GAIN_PPM);   /* the 10k/1M network */
@@ -318,6 +322,7 @@ static void pins_poll(void)
 
 static uint8_t charger_status(void)
 {
+  if (POWER_HAS_BQ25798) return charger_status_byte();
   unsigned pins = (unsigned)pa.pin.pins;
   uint8_t st = (pins & POWER_PGOOD) ? POWER_STATUS_POWER_GOOD : 0U;   /* CHG without PGOOD is kept */
   if (pa.pin.fault) st |= POWER_STATUS_FAULT;
@@ -341,6 +346,7 @@ void power_acq_init(uint32_t now_ms)
   pa.pin.last_edges = board_charger_edges();
   pa.pin.last_edge_ms = now_ms;
   for (unsigned i = 0; i < EDGE_POLLS; i++) pa.pin.ring[i] = pa.pin.last_edges;
+  if (POWER_HAS_BQ25798) charger_init(now_ms);
 }
 
 void power_acq_tick(uint32_t now_ms)
@@ -350,11 +356,13 @@ void power_acq_tick(uint32_t now_ms)
   if (due(&pa.adc.next_ms, ADC_PERIOD_MS)) adc_sample();
   for (unsigned i = 0; i < POWER_RAIL_COUNT; i++) rail_tick(i);
   if (pa.gauge.step == GS_IDLE && due(&pa.gauge.next_ms, GAUGE_PERIOD_MS)) gauge_read(GS_VERSION, &reg_version);
+  if (POWER_HAS_BQ25798) charger_tick(now_ms);
 }
 
 void power_acq_i2c_done(enum i2c_client c, int rc)
 {
   if (c == I2C_C_MAX17048) { gauge_done(rc); return; }
+  if (c == I2C_C_CHARGER && POWER_HAS_BQ25798) { charger_i2c_done(rc); return; }
   for (unsigned i = 0; i < POWER_RAIL_COUNT; i++)
     if (POWER_RAILS[i].client == c) { rail_done(i, rc); return; }
   (void)WS_CHECK(0);   /* a client this profile has no rail for never submits: ignore it */
@@ -369,6 +377,7 @@ void power_acq_live(power_live_t *p)
   p->batt_ma_x100 = b->live_step ? b->live_ma_x100 : 0;
   for (unsigned i = 0; i < POWER_RAIL_COUNT; i++)
     if (POWER_RAILS[i].vbus_slot == PS_LOAD_MV && pa.rail[i].live_vbus) p->out_mv = pa.rail[i].live_vbus_mv;
+  if (POWER_HAS_BQ25798 && charger_state()->adc_ok) p->out_mv = charger_state()->vsys;   /* SYS is the load rail */
   p->gauge_ok = g->ok;
   if (g->vcell_ok) p->vcell_mv = (uint16_t)ws_div_round(g->vcell_uv, UV_PER_MV);
   if (g->ok) p->soc_pct_x10 = (uint16_t)ws_div_round((int64_t)g->soc_256 * 10, 256);
@@ -390,7 +399,8 @@ void power_acq_live(power_live_t *p)
 
 int power_acq_fitted(enum power_slot s)
 {
-  if (s <= PS_CHARGE_OUT || s == PS_CHARGER_IN_MV) return 1;   /* the gauge, the battery rail, the ADC */
+  if (s <= PS_CHARGE_OUT || s == PS_CHARGER_IN_MV) return 1;   /* the gauge, the battery rail, the ADC or VBUS */
+  if (POWER_HAS_BQ25798 && s == PS_LOAD_MV) return 1;           /* the charger's VSYS */
   for (unsigned i = 0; i < POWER_RAIL_COUNT; i++)
     if (POWER_RAILS[i].current_slot == s || POWER_RAILS[i].vbus_slot == s) return 1;
   return 0;
@@ -439,12 +449,34 @@ static void battery_close(power_window_t *out)
                                           .quality = quality(g->n, filled(g->n, GAUGE_PERIOD_MS, out->window_ms), g->fault) };
 }
 
+/* Phase C: the charger's ADC, one read a poll, fills the charger input (VBUS) and the load voltage (VSYS),
+   and the health report's charger-reported values (spec section 6.1: the means, or the window's latest). */
+static void charger_window(const charger_win_t *w, power_window_t *out)
+{
+  uint8_t q = quality(w->n, filled(w->n, CHARGER_PERIOD_MS, out->window_ms), w->fault);
+  out->slot[PS_CHARGER_IN_MV] = (power_slot_t){ .value = mean(w->vbus_mv, w->n), .count = w->n, .quality = q };
+  out->slot[PS_LOAD_MV] = (power_slot_t){ .value = mean(w->vsys_mv, w->n), .count = w->n, .quality = q };
+  power_slow_t *s = &out->slow;
+  s->chg_batt_ma = w->n ? sat16(mean(w->ibat_ma, w->n)) : (int16_t)POWER_NONE_I16;
+  s->chg_input_mv = w->n ? w->vbus_last_mv : (uint16_t)POWER_NONE_U16;
+  s->chg_input_ma = w->n ? w->ibus_last_ma : (int16_t)POWER_NONE_I16;
+  s->chg_batt_mv = w->n ? w->vbat_last_mv : (uint16_t)POWER_NONE_U16;
+  s->chg_temp = w->n ? w->tdie_last_dc : (int16_t)POWER_NONE_I16;
+}
+
 static void adc_close(power_window_t *out)
 {
   const adc_win *a = &pa.adc;
+  out->slow.vdda_mv = a->vdda_n ? (uint16_t)mean(a->vdda_mv, a->vdda_n) : (uint16_t)POWER_NONE_U16;
+  if (POWER_HAS_BQ25798)
+  {
+    charger_win_t w;
+    charger_close(&w);
+    charger_window(&w, out);
+    return;
+  }
   uint8_t q = a->vin_clipped ? (uint8_t)WSMP_QUAL_MISSING : quality(a->vin_n, filled(a->vin_n, ADC_PERIOD_MS, out->window_ms), 0);
   out->slot[PS_CHARGER_IN_MV] = (power_slot_t){ .value = mean(a->vin_mv, a->vin_n), .count = a->vin_n, .quality = q };
-  out->slow.vdda_mv = a->vdda_n ? (uint16_t)mean(a->vdda_mv, a->vdda_n) : (uint16_t)POWER_NONE_U16;
   out->slow.chg_batt_ma = (a->iset_bad || !a->iset_n) ? (int16_t)POWER_NONE_I16 : sat16(mean(a->iset_ma, a->iset_n));
 }
 
@@ -471,6 +503,8 @@ void power_acq_latch(uint32_t now_ms, power_window_t *out)
   out->window_ms = now_ms - pa.start_ms;
   out->first = !pa.latched;
   for (unsigned s = 0; s < PS_COUNT; s++) out->slot[s].quality = WSMP_QUAL_NOT_FITTED;
+  out->slow.chg_input_mv = out->slow.chg_batt_mv = POWER_NONE_U16;   /* phase C fills them (charger_window) */
+  out->slow.chg_input_ma = out->slow.chg_temp = POWER_NONE_I16;
   for (unsigned i = 0; i < POWER_RAIL_COUNT; i++) rail_close(i, out);
   battery_close(out);
   adc_close(out);

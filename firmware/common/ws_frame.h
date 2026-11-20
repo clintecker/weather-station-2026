@@ -111,8 +111,8 @@ typedef struct {
 #define WS_CHG_INPUT_SHIFT 6
 #define WS_CHG_INPUT_MASK 0xC0U          /* bits 6-7: active input */
 #define WS_CHG_INPUT_NOT_REPORTED 0U     /* not reported (phases A and B: one VBUS input) */
-#define WS_CHG_INPUT_SOLAR 1U            /* VAC1 */
-#define WS_CHG_INPUT_USB_C 2U            /* VAC2 */
+#define WS_CHG_INPUT_SOLAR 1U            /* the solar input (TX stack: EVM VIN2, VAC2; App/charger.c maps) */
+#define WS_CHG_INPUT_USB_C 2U            /* the USB-C input (TX stack: EVM VIN1, VAC1) */
 #define WS_CHG_INPUT_NO_INPUT 3U         /* the charger reports no input: both source rails 0 mA */
 #define WS_CHG_STAGE(s) ((uint8_t)(((s) << WS_CHG_STAGE_SHIFT) & WS_CHG_STAGE_MASK))
 #define WS_CHG_INPUT(i) ((uint8_t)(((i) << WS_CHG_INPUT_SHIFT) & WS_CHG_INPUT_MASK))

@@ -21,7 +21,13 @@
  *   VDDA = VREF+ = 3.3 V (table 14), so VDDA = 3300 mV x VREFINT_CAL / VREFINT_raw; 12-bit full scale is
  *   VDDA at the pin.
  *   bq24074 (TI SLUS810): V_ISET = I_CHARGE / 400 x R_ISET (eq. 3), so I = 400 x V_ISET / R_ISET; the
- *   1/400 monitor ratio is +-10 % (section 9.3.5.1), plus R_ISET's own tolerance. */
+ *   1/400 monitor ratio is +-10 % (section 9.3.5.1), plus R_ISET's own tolerance.
+ *   BQ25798 (TI SLUSDV2C, rev. June 2026, section 7.5.1): a 16-bit register's high byte is at the lower
+ *   address. VREG REG01 bits 10:0, 10 mV a count (table 7-15); ICHG REG03 bits 8:0, 10 mA a count
+ *   (table 7-16); CELL REG0A bits 7:6, 0 = 1s (table 7-21); CHG_STAT REG1C bits 7:5 (table 7-37); IBUS
+ *   REG31, IBAT REG33 two's complement, 1 mA (+ charging); VBUS REG35, VBAT REG3B, VSYS REG3D, 1 mV
+ *   (tables 7-58 to 7-64); TS REG3F 0.0976563 % (= 100/1024 %) a count (table 7-65); TDIE REG41 two's
+ *   complement, 0.5 degC (table 7-66); PN REG48 bits 5:3 = 3 for the BQ25798 (table 7-70). */
 #ifndef POWER_REGS_H
 #define POWER_REGS_H
 
@@ -81,5 +87,18 @@ int32_t divider_uv_ppm(int32_t pin_uv, uint32_t ratio_ppm);
    10k/1M network back to V_ISET, gain 990099). Any int32 input and any uint32 gain (the product stays
    below 2^51); a result past INT32_MAX saturates. 0 for a gain of 0 or an input <= 0. */
 int32_t unscale_ppm(int32_t uv, uint32_t gain_ppm);
+
+/* BQ25798 */
+#define BQ25798_VREG_MV_STEP 10U       /* REG01 (table 7-15) */
+#define BQ25798_ICHG_MA_STEP 10U       /* REG03 (table 7-16) */
+uint16_t bq25798_vreg_mv(uint16_t raw16);    /* REG01 bits 10:0 x 10 mV */
+uint16_t bq25798_ichg_ma(uint16_t raw16);    /* REG03 bits 8:0 x 10 mA */
+uint16_t bq25798_vreg_raw(uint16_t mv);      /* the REG01 image for mv (truncated to 10 mV; 0 past the field) */
+uint16_t bq25798_ichg_raw(uint16_t ma);      /* the REG03 image for ma (truncated to 10 mA; 0 past the field) */
+unsigned bq25798_cells(uint8_t reg0a);       /* the cell count CELL selects, 1 to 4 */
+int bq25798_pn_match(uint8_t reg48);         /* PN (bits 5:3) is 3, the BQ25798 */
+/* TS in 0.1 % of REGN (the TS ADC count x 1000 / 1024, rounded half up): 0 to 999. */
+uint16_t bq25798_ts_permille(uint16_t raw16);
+int16_t bq25798_tdie_dc(uint16_t raw16);    /* the die temperature in 0.1 degC (count x 5, saturating at +-32767) */
 
 #endif

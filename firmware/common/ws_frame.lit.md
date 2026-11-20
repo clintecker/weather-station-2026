@@ -499,9 +499,10 @@ The charger status byte (`WS_CHG_*` in `ws_frame.h`, design section 6.3):
 | 3–5 | `WS_CHG_STAGE(s)`, `WS_CHG_STAGE_MASK` | 0 not reported, 1 pre-charge or trickle, 2 constant current, 3 constant voltage, 4 top-off, 5 terminated, 6 not charging, 7 reserved |
 | 6–7 | `WS_CHG_INPUT(i)`, `WS_CHG_INPUT_MASK` | active input: 0 not reported (`WS_CHG_INPUT_NOT_REPORTED`), 1 solar (`WS_CHG_INPUT_SOLAR`), 2 USB-C (`WS_CHG_INPUT_USB_C`), 3 no input (`WS_CHG_INPUT_NO_INPUT`: the charger reports that neither input powers it) |
 
-The input codes don't name the charger's VAC pins. Phase C firmware maps the pins to codes. On the
-current `hardware/tx-stack-r1` wiring, USB goes to VIN1 (VAC1) of the TI BQ25798EVM and solar goes to
-VIN2 (VAC2). The comments in `ws_frame.h` still say the reverse (solar on VAC1, USB-C on VAC2).
+The input codes don't name the charger's VAC pins. Phase C firmware (`App/charger.c`) maps the pins
+to codes. On the current `hardware/tx-stack-r1` wiring, USB goes to VIN1 (VAC1) of the TI BQ25798EVM
+and solar goes to VIN2 (VAC2): only VAC1 present is USB-C, only VAC2 present is solar, both present is
+"not reported" (the registers don't say which one powers it).
 
 **Canonical rules.** The node never sends a non-canonical report:
 

@@ -15,7 +15,13 @@
  *      load voltage, and the battery voltage stays the gauge's VCELL. Its sense lead moves from OUT to the
  *      CELL+ node (position 4) at step 1b, a host-side cross-check (spec section 17, build-progression
  *      record step 1b, P5 and M4).
- *   3  phase C (BQ25798): a later phase; the build stops.
+ *   3  phase C (BQ25798, the TX stack hardware/tx-stack-r1; docs/superpowers/specs/
+ *      2026-11-09-tx-protoboard-stack-design.md, Power): the BQ25798EVM at 0x6B replaces the bq24074 and
+ *      the load, solar and USB-C INA228s (App/charger.c). The battery INA228 (0x40) and the MAX17048 (0x36)
+ *      stay. The INA228's SJ1 is closed, so its VBUS is VIN+, the pack side of the shunt: the battery
+ *      voltage, not the load's, and it is not read (the gauge's VCELL is the battery voltage, as in
+ *      phase B). The charger's own ADC fills the load voltage (VSYS), the charger input voltage (VBUS)
+ *      and the charger registers of the health report; there are no charger pins.
  *
  * Calibration (spec section 8.6). Every constant is nominal until the build sheet's check measures or
  * verifies it (hardware/bench-breadboard-r0/build-sheet.md); a measured value replaces it here, with the
@@ -32,11 +38,11 @@
 #ifndef WS_POWER_PROFILE
 #define WS_POWER_PROFILE WS_POWER_PROFILE_A
 #endif
-#if WS_POWER_PROFILE == WS_POWER_PROFILE_C
-#error "WS_POWER_PROFILE 3 (phase C, BQ25798): BQ25798 driver: a later phase"
-#elif WS_POWER_PROFILE != WS_POWER_PROFILE_A && WS_POWER_PROFILE != WS_POWER_PROFILE_B
-#error "WS_POWER_PROFILE must be 1 (phase A) or 2 (phase B)"
+#if WS_POWER_PROFILE != WS_POWER_PROFILE_A && WS_POWER_PROFILE != WS_POWER_PROFILE_B && WS_POWER_PROFILE != WS_POWER_PROFILE_C
+#error "WS_POWER_PROFILE must be 1 (phase A), 2 (phase B) or 3 (phase C)"
 #endif
+/* 1 when the BQ25798 is the charger (App/charger.c), 0 for the bq24074 and its pins. */
+#define POWER_HAS_BQ25798 (WS_POWER_PROFILE == WS_POWER_PROFILE_C)
 
 /* The power slots, source-agnostic: what is measured, never which part measures it (spec section 3.2).
    The battery module (WSMP type 8) is PS_BATT_MV to PS_CHARGE_OUT, the rails module (type 9) the rest. */
@@ -63,6 +69,19 @@ _Static_assert(POWER_ADDR_BATTERY != POWER_ADDR_LOAD && POWER_ADDR_BATTERY != PO
                POWER_ADDR_LOAD != POWER_ADDR_USB && POWER_ADDR_SOLAR != POWER_ADDR_USB,
                "two INA228 rails share an address");
 #define POWER_ADDR_GAUGE 0x36U     /* MAX17048, fixed */
+#define POWER_ADDR_CHARGER 0x6BU   /* BQ25798, fixed (TI SLUSDV2C section 7.3.14) */
+_Static_assert(!POWER_ADDR_RESERVED(POWER_ADDR_CHARGER) && POWER_ADDR_CHARGER != POWER_ADDR_BATTERY &&
+               POWER_ADDR_CHARGER != POWER_ADDR_LOAD && POWER_ADDR_CHARGER != POWER_ADDR_SOLAR &&
+               POWER_ADDR_CHARGER != POWER_ADDR_USB, "the BQ25798 shares an address");
+
+/* BQ25798 set-up (phase C; tx-stack design, Power: electrical C1, M1, M2, issue #34). The PROG pin (EVM
+   JP22 on, JP24 off) selects one cell at power-on; the firmware only checks REG0A's CELL against
+   POWER_CHG_CELLS and never charges another count. ICHG and VREG are written at every start and again
+   whenever a read-back differs: a chip watchdog expiry resets ICHG to the 1 A default (SLUSDV2C table
+   7-16) and a power-on reset both. The Adafruit #353 1S3P 6600 mAh pack: 0.9 A, 4.2 V. */
+#define POWER_CHG_CELLS 1U
+#define POWER_CHG_ICHG_MA 900U
+#define POWER_CHG_VREG_MV 4200U
 
 /* Shunts, micro-ohm: the Adafruit #5832's 15 mOhm (1 %), nominal. Verified, not measured (spec section 8.6):
    build-sheet power check 3 (the battery rail) and phase B check B3 (load, solar, USB-C) compare each rail's
@@ -116,6 +135,12 @@ typedef struct {
 #define POWER_RAIL_COUNT 1U
 static const power_rail_t POWER_RAILS[POWER_RAIL_COUNT] = {
   { I2C_C_INA228, POWER_ADDR_BATTERY, POWER_SHUNT_UOHM_BATTERY, POWER_LSB_UA, -1, PS_BATT_MA, PS_LOAD_MV },
+};
+#elif WS_POWER_PROFILE == WS_POWER_PROFILE_C
+/* Pack + on the lug E1 into VIN+, VIN- to the EVM's J5 BAT: out of the cell, sign -1 (as phase A). */
+#define POWER_RAIL_COUNT 1U
+static const power_rail_t POWER_RAILS[POWER_RAIL_COUNT] = {
+  { I2C_C_INA228, POWER_ADDR_BATTERY, POWER_SHUNT_UOHM_BATTERY, POWER_LSB_UA, -1, PS_BATT_MA, PS_NONE },
 };
 #else
 #define POWER_RAIL_COUNT 4U

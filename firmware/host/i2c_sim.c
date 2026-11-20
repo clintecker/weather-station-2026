@@ -35,11 +35,12 @@ int i2c_sim_add_on(int kind, uint8_t addr7, int channel)
   return ndevs++;
 }
 /* The static channel map of the mux profile, for a part of the probe table. The upstream kinds (the
-   SHTC3, INA228, MAX17048 and the mux itself) never go behind a channel, whatever their address: an
+   SHTC3, INA228, MAX17048, BQ25798 and the mux itself) never go behind a channel, whatever their address: an
    INA228 strapped to 0x44, 0x46 or 0x47 stays upstream. */
 static int port_channel(int kind, uint8_t addr7)
 {
-  if (kind == DEVK_SHTC3 || kind == DEVK_INA228 || kind == DEVK_MAX17048 || kind == DEVK_MUX) return I2C_SIM_UPSTREAM;
+  if (kind == DEVK_SHTC3 || kind == DEVK_INA228 || kind == DEVK_MAX17048 || kind == DEVK_BQ25798 || kind == DEVK_MUX)
+    return I2C_SIM_UPSTREAM;
   return addr7 == 0x44 ? 0 : addr7 == 0x53 ? 1 : (addr7 == 0x47 || addr7 == 0x46) ? 2 : I2C_SIM_UPSTREAM;
 }
 int i2c_sim_add(int kind, uint8_t addr7)
