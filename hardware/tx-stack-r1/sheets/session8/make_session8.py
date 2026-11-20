@@ -572,9 +572,9 @@ def report(c, pg):
         c.rect(x + 330, yy - 8, 110, 24, stroke=1, fill=0)
         text(c, x + 448, yy, unit, 11, "HEAD", INK)
         text(c, x + 44, yy - 12, exp, 8.5, "MONO", GREY)
-    x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: the charger firmware (Session 7's WAITS ON FIRMWARE item)."])
-    for i, s_ in enumerate(["Once the firmware reads REG0x0A and sets ICHG, refit JP17 and plug the pack into PG1, last.",
-                            "Until then the box stays unpowered."]):
+    x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: the CHARGER check (Session 7 page 09). The firmware is ready."])
+    for i, s_ in enumerate(["Flash the TX built with WS_POWER_PROFILE=3 WS_I2C_MUX=1. USB in J6, no pack, JP17 out. Type CHARGER:",
+                            "cells=1 vreg_mv=4200 ichg_ma=900 ts=NORMAL hold=none. Then refit JP17 and plug the pack into PG1, last."]):
         text(c, x + 44, y + h - 22 - i * 16, "-  " + s_, 10, "ALT", INK)
 
 

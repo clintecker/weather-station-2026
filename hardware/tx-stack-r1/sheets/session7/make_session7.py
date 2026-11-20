@@ -57,7 +57,7 @@ def wait_box(c, x, y, w, lines):
     c.setFillColor(HexColor("#FFE6F1"))
     lw(c, 2)
     c.rect(x, y - h, w, h, stroke=1, fill=1)
-    text(c, x + 10, y - 13, "WAITS ON FIRMWARE: CHARGER SUPPORT", 10.5, "HEAD", NEON)
+    text(c, x + 10, y - 13, "THE CHARGER CHECK: AFTER SESSION 8, WITH THE CARDS IN", 10.5, "HEAD", NEON)
     for i, s_ in enumerate(lines):
         text(c, x + 10, y - 27 - 12 * i, s_, 8.8, "ALT", INK)
     LAB.block(x, y - h, x + w, y, "wait box")
@@ -386,15 +386,15 @@ def first_power(c, pg):
         "   nothing makes 3.3 V yet).",
         "6. USB out."], 9.3)
     x, y, w, h = panel(c, g.cell(0, 1, 2), 3, [
-        "JP17 stays OUT and the pack stays unplugged until the firmware item is done. Session 8 boxes it up that way."])
+        "JP17 stays OUT and the pack stays unplugged until the CHARGER check passes. Session 8 boxes it up that way."])
     wait_box(c, x + 44, y + h - 14, w - 60, [
-        "Over I2C: read REG0x0A (cell count: one) and REG0x01-0x02 (charge voltage 4.2 V).",
-        "Read the TS percentage (page 06). Set ICHG to about " + asmd.ICHG + " A (issue #34).",
-        "The JP22 note says 2 A; the datasheet default is 1 A. Until it's set, ICHG is that default.",
-        "ICHG goes back to its default on every power cycle: the firmware writes it at each start-up.",
-        "Then refit JP17 and connect the pack LAST. Until then: no pack, JP17 out.",
-        "Nothing in the repo talks to the charger yet: firmware/stage0-node/App/power_config.h",
-        "says charger support is a later phase."])
+        "The firmware does the I2C part (App/charger.c; build with WS_POWER_PROFILE=3 WS_I2C_MUX=1). At every",
+        "start it writes 4.2 V (REG0x01-0x02) and ICHG " + asmd.ICHG + " A (issue #34), reads them back, and checks REG0x0A",
+        "says one cell. ICHG goes back to its 1 A default on a power cycle, so it writes them again after any reset.",
+        "Charge stays off until a fresh TS reading (page 06) is neither COLD nor HOT.",
+        "It needs the cards, so check it after Session 8: USB in J6, no pack, JP17 out. Type CHARGER on the TX",
+        "console. Look for cells=1 vreg_mv=4200 ichg_ma=900 ts=NORMAL hold=none. Write down ts_pct.",
+        "Then refit JP17 and connect the pack LAST."])
 
 
 REPORT_ROWS = [("SYS, J3, USB IN, NO PACK", "V", "page 09 step 2"),
