@@ -290,7 +290,9 @@ for _ref, _card in [("J11", "B1"), ("J12", "B1"), ("J13", "B1"), ("J14", "B2"), 
         [(r, "B2") for r in ("R1", "R2", "R3", "R4", "R5", "R6", "C1", "C2", "C3", "D51", "D52", "D53")]:
     next(p for p in PARTS if p["ref"] == _ref)["card"] = _card
 
-PORTS = {1: ("J11", "MOD1", 0), 2: ("J12", "MOD2", 1), 3: ("J13", "MOD3", 2), 4: ("J14", None, 3)}
+# port -> (jack, pod, mux channel). Matches the firmware's channel map (firmware/stage0-node/App/i2c_bus.c
+# channel_of): SHT45 on channel 0, LTR390 on 1, BMP581 on 2. So S2 is the UV pod and S3 the baro pod.
+PORTS = {1: ("J11", "MOD1", 0), 2: ("J12", "MOD3", 1), 3: ("J13", "MOD2", 2), 4: ("J14", None, 3)}
 HEADERS = {c: f"XH{c[1]}" for c in CARDS}
 SOCKETS = {c: f"XB{c[1]}" for c in CARDS}
 
@@ -444,6 +446,9 @@ R1_ADDED = {
 R1_RENAMED = {("U1", "GND"): ("U1", "SYSN"), ("U1", "SDA"): ("U1", "J8.3"), ("U1", "SCL"): ("U1", "J8.2")}
 # pins in both revisions whose partners (among pins both revisions have) changed, or pins one revision lacks
 R1_MOVED = [
+    ([(r, "2") for r in ("J12", "J13", "MOD2", "MOD3", "F2", "F3")],
+     "the baro and UV pods swap ports (S2 = UV on mux channel 1, S3 = baro on channel 2) to match the firmware's "
+     "channel map"),
     ([("PG1", "L+"), ("U2", "X1.VIN+"), ("U1", "BATP"), ("U6", "JP2.VBAT")],
      "charger and gauge sense now leave the battery + junction (backplane lines 21-22) through 100 ohm resistors R7, R8 (review m11)"),
     ([("U1", "J8.1"), ("U1", "TS"), ("U1", "TSN")],

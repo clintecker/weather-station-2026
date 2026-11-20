@@ -582,7 +582,9 @@ CABLES = [(("BT1", "+"), ("PG1", "M+")), (("BT1", "-"), ("PG1", "M-")),
           (("PV1", "+"), ("U1", "VIN2")), (("PV1", "-"), ("U1", "PGND2")),
           (("A1", "ANT"), ("AD1", "P")), (("AD1", "J"), ("CX1", "P")), (("CX1", "J"), ("AE1", "RF")),
           (("U1", "J8.1"), ("XJ1", "GND")), (("U1", "J8.2"), ("XJ1", "SCL")), (("U1", "J8.3"), ("XJ1", "SDA"))]
-for k, mod in ((1, "MOD1"), (2, "MOD2"), (3, "MOD3")):
+for k, (_jack, mod, _ch) in model.PORTS.items():
+    if mod is None:
+        continue
     for n in "2345":
         CABLES.append(((f"J1{k}", n), (mod, n)))
 for n in "2345":

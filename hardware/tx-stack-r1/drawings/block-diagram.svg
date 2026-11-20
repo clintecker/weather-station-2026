@@ -116,8 +116,8 @@
 <text x="328" y="703" font-size="11" fill="#333">BOB-14021 + 87180-066LF</text>
 <path d="M450,592 L450,615 L450,615 L450,640" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
 <rect x="320" y="760" width="260" height="50" rx="6" fill="#f4f6f8" stroke="#555" stroke-width="1.5"/>
-<text x="328" y="778" font-size="13" font-weight="bold">MOD2 Baro module 0x50 0x47</text>
-<text x="328" y="795" font-size="11" fill="#333">BMP581 #6407 + 24LC32 EEPROM, Perma-Prot</text>
+<text x="328" y="778" font-size="13" font-weight="bold">MOD3 UV module 0x50 0x53</text>
+<text x="328" y="795" font-size="11" fill="#333">LTR390 #4831 + 24LC32 EEPROM, Perma-Prot</text>
 <path d="M450,716 L450,760" fill="none" stroke="#555" stroke-width="2" marker-end="url(#a)"/>
 <text x="456" y="742" font-size="11" text-anchor="start" fill="#555">6P cable</text>
 <rect x="610" y="640" width="260" height="76" rx="6" fill="#eef3fa" stroke="#1F5FBF" stroke-width="1.5"/>
@@ -128,8 +128,8 @@
 <text x="618" y="703" font-size="11" fill="#333">BOB-14021 + 87180-066LF</text>
 <path d="M520,592 L520,615 L740,615 L740,640" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
 <rect x="610" y="760" width="260" height="50" rx="6" fill="#f4f6f8" stroke="#555" stroke-width="1.5"/>
-<text x="618" y="778" font-size="13" font-weight="bold">MOD3 UV module 0x50 0x53</text>
-<text x="618" y="795" font-size="11" fill="#333">LTR390 #4831 + 24LC32 EEPROM, Perma-Prot</text>
+<text x="618" y="778" font-size="13" font-weight="bold">MOD2 Baro module 0x50 0x47</text>
+<text x="618" y="795" font-size="11" fill="#333">BMP581 #6407 + 24LC32 EEPROM, Perma-Prot</text>
 <path d="M740,716 L740,760" fill="none" stroke="#555" stroke-width="2" marker-end="url(#a)"/>
 <text x="746" y="742" font-size="11" text-anchor="start" fill="#555">6P cable</text>
 <rect x="900" y="640" width="260" height="76" rx="6" fill="#eef3fa" stroke="#1F5FBF" stroke-width="1.5"/>
