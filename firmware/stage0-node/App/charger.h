@@ -6,8 +6,9 @@
  *
  * Every CHARGER_PERIOD_MS the machine:
  *   1. identifies the part (REG48 PN = 3) until it has, and after any NACK;
- *   2. reads REG01-REG10 (VREG, ICHG, CELL, REG0F, REG10). VREG or ICHG other than POWER_CHG_VREG_MV and
- *      POWER_CHG_ICHG_MA is (re)written and read back. At the first poll that is the boot write; after a
+ *   2. reads REG01-REG10 (VREG, ICHG, ITERM, CELL, REG0F, REG10). VREG, ICHG or ITERM other than
+ *      POWER_CHG_VREG_MV, POWER_CHG_ICHG_MA and POWER_CHG_ITERM_MA's nearest code rewrites all three,
+ *      then reads them back. At the first poll that is the boot write; after a
  *      set-up that held, it is a chip reset (the I2C watchdog expired or the chip lost power: ICHG resets
  *      to 1 A on either, SLUSDV2C table 7-16), counted in resets;
  *   3. reads the status registers REG1B-REG21 and, once a one-shot conversion is done, the ADC
@@ -32,10 +33,10 @@ typedef struct {
   uint8_t present;      /* REG48 matched at the last identify, and no NACK since */
   uint8_t ok;           /* the last poll ran to its end */
   uint8_t fault;        /* the last failure was a bus fault, not an absent part */
-  uint8_t configured;   /* VREG and ICHG read back as set */
+  uint8_t configured;   /* VREG, ICHG and ITERM read back as set */
   uint8_t adc_ok;       /* an ADC read since boot */
   uint8_t hold;         /* enum charger_hold of the last REG0F write (CH_ABSENT before any) */
-  uint8_t reg48, reg0a, reg0f, reg10, reg2e;
+  uint8_t reg48, reg09, reg0a, reg0f, reg10, reg2e;
   uint16_t vreg_raw, ichg_raw;    /* REG01-02, REG03-04 */
   uint8_t st[7];                  /* REG1B to REG21 */
   uint16_t ibus, ibat, vbus, vbat, vsys, ts, tdie;   /* REG31 to REG41, raw */
@@ -66,6 +67,6 @@ const charger_t *charger_state(void);
 uint8_t charger_status_byte(void);
 void charger_close(charger_win_t *w);   /* the window's ADC values; starts the next window */
 /* "#charger ..." (no newline) into buf, truncated to len - 1 characters; returns its length. */
-#define CHARGER_LINE_MAX 400U   /* the longest line is 386 characters (every field at its widest) */
+#define CHARGER_LINE_MAX 416U   /* the longest line is 400 characters (every field at its widest) */
 unsigned charger_line(char *buf, unsigned len, uint32_t now_ms);
 #endif

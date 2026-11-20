@@ -125,4 +125,5 @@ void model_bq25798_ignore_limits(int dev, int ignore);   /* writes to REG01-REG0
 uint8_t model_bq25798_reg(int dev, uint8_t reg);   /* the register file, with no side effect */
 uint32_t model_bq25798_limit_writes(int dev);       /* writes that touched REG01-REG04 */
 uint32_t model_bq25798_kicks(int dev);              /* WD_RST writes */
+uint32_t model_bq25798_reg_resets(int dev);         /* writes with REG09 REG_RST set (each one a full reset) */
 #endif

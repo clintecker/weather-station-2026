@@ -77,11 +77,15 @@ _Static_assert(!POWER_ADDR_RESERVED(POWER_ADDR_CHARGER) && POWER_ADDR_CHARGER !=
 /* BQ25798 set-up (phase C; tx-stack design, Power: electrical C1, M1, M2, issue #34). The PROG pin (EVM
    JP22 on, JP24 off) selects one cell at power-on; the firmware only checks REG0A's CELL against
    POWER_CHG_CELLS and never charges another count. ICHG and VREG are written at every start and again
-   whenever a read-back differs: a chip watchdog expiry resets ICHG to the 1 A default (SLUSDV2C table
+   whenever a read-back differs (ITERM with them): a chip watchdog expiry resets ICHG to the 1 A default (SLUSDV2C table
    7-16) and a power-on reset both. The Adafruit #353 1S3P 6600 mAh pack: 0.9 A, 4.2 V. */
 #define POWER_CHG_CELLS 1U
 #define POWER_CHG_ICHG_MA 900U
 #define POWER_CHG_VREG_MV 4200U
+/* Termination current: about 10 % of ICHG (tx-stack design, Power: Pack). ITERM steps 40 mA (SLUSDV2C
+   table 7-20), so 90 mA is written as the nearest code, 2: 80 mA. Its default is 200 mA, and a watchdog
+   expiry resets it as it does ICHG. */
+#define POWER_CHG_ITERM_MA 90U
 
 /* Shunts, micro-ohm: the Adafruit #5832's 15 mOhm (1 %), nominal. Verified, not measured (spec section 8.6):
    build-sheet power check 3 (the battery rail) and phase B check B3 (load, solar, USB-C) compare each rail's

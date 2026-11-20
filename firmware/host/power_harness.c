@@ -95,6 +95,7 @@ void h_bq_ignore_limits(int dev, int ignore) { model_bq25798_ignore_limits(dev, 
 int h_bq_reg(int dev, int reg) { return model_bq25798_reg(dev, (uint8_t)reg); }
 uint32_t h_bq_limit_writes(int dev) { return model_bq25798_limit_writes(dev); }
 uint32_t h_bq_kicks(int dev) { return model_bq25798_kicks(dev); }
+uint32_t h_bq_reg_resets(int dev) { return model_bq25798_reg_resets(dev); }
 int h_chg(int what)   /* charger_t: 0 present, 1 ok, 2 configured, 3 hold, 4 applies, 5 resets, 6 failures */
 {
   const charger_t *c = charger_state();

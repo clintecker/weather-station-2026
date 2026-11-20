@@ -21,7 +21,10 @@
 #define CONFIG_LEN 16U          /* REG01 to REG10 */
 #define OFF_VREG 0U
 #define OFF_ICHG 2U             /* REG03-04 */
+#define OFF_09 8U               /* REG09 */
 #define OFF_0A 9U               /* REG0A */
+#define REG_TERM 0x09U          /* REG09: ITERM bits 4:0, STOP_WD_CHG bit 5, REG_RST bit 6 (table 7-20) */
+#define TERM_KEEP 0x20U         /* the bits a REG09 write keeps as read: STOP_WD_CHG. REG_RST is always 0 */
 #define OFF_0F 14U              /* REG0F */
 #define OFF_10 15U              /* REG10 */
 #define LIMITS_LEN 4U           /* VREG and ICHG, written as one burst from REG01 */
@@ -68,7 +71,7 @@
 #define VAC1_INPUT WS_CHG_INPUT_USB_C
 #define VAC2_INPUT WS_CHG_INPUT_SOLAR
 
-typedef enum { CS_IDLE, CS_ID, CS_CONFIG, CS_LIMITS, CS_VERIFY, CS_STATUS, CS_ADC, CS_CONTROL, CS_ADC_START } chg_step;
+typedef enum { CS_IDLE, CS_ID, CS_CONFIG, CS_LIMITS, CS_TERM, CS_VERIFY, CS_STATUS, CS_ADC, CS_CONTROL, CS_ADC_START } chg_step;
 
 typedef struct {
   charger_t s;
@@ -117,12 +120,19 @@ static void config_read(void)
   charger_t *s = &cg.s;
   s->vreg_raw = be16(cg.buf + OFF_VREG);
   s->ichg_raw = be16(cg.buf + OFF_ICHG);
+  s->reg09 = cg.buf[OFF_09];
   s->reg0a = cg.buf[OFF_0A];
   s->reg0f = cg.buf[OFF_0F];
   s->reg10 = cg.buf[OFF_10];
 }
 
-static int config_matches(void) { return cg.s.vreg_raw == vreg_want() && cg.s.ichg_raw == ichg_want(); }
+static uint8_t iterm_want(void) { return bq25798_iterm_code(POWER_CHG_ITERM_MA); }
+
+static int config_matches(void)
+{
+  return cg.s.vreg_raw == vreg_want() && cg.s.ichg_raw == ichg_want() &&
+         (cg.s.reg09 & BQ25798_ITERM_MASK) == iterm_want();
+}
 
 /* VREG and ICHG as one 4-byte write from REG01 (high bytes first; the reserved top bits written 0). */
 static void write_limits(void)
@@ -205,7 +215,11 @@ void charger_i2c_done(int rc)
       if (config_matches()) { s->configured = 1; cg.held = 1; read_regs(CS_STATUS, REG_STATUS, STATUS_LEN); }
       else { s->configured = 0; write_limits(); }
       break;
-    case CS_LIMITS: read_regs(CS_VERIFY, REG_VREG, CONFIG_LEN); break;
+    case CS_LIMITS:   /* then ITERM, the other bits of REG09 as read, REG_RST never set */
+      cg.tx[0] = REG_TERM; cg.tx[1] = (uint8_t)((s->reg09 & TERM_KEEP) | iterm_want());
+      submit(CS_TERM, 2, 0);
+      break;
+    case CS_TERM: read_regs(CS_VERIFY, REG_VREG, CONFIG_LEN); break;
     case CS_VERIFY:
       config_read();
       s->configured = (uint8_t)config_matches();
@@ -346,6 +360,7 @@ unsigned charger_line(char *buf, unsigned len, uint32_t now_ms)
   n = kv(buf, len, n, " vreg_mv=", bq25798_vreg_mv(s->vreg_raw));
   n = put_hex(buf, len, put(buf, len, n, " reg03_04="), s->ichg_raw, 4);
   n = kv(buf, len, n, " ichg_ma=", bq25798_ichg_ma(s->ichg_raw));
+  n = kv(buf, len, n, " iterm_ma=", bq25798_iterm_ma(s->reg09));
   n = put(buf, len, n, " ts_pct=");
   if (s->adc_ok)
   {

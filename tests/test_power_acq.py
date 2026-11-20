@@ -576,6 +576,7 @@ class PhaseB(unittest.TestCase):
 # (table 7-40), TS ADC 100/1024 % a count (table 7-65). App/power_config.h: one cell, 0.9 A, 4.2 V.
 CHARGER = 0x6B
 VREG_CODE, ICHG_CODE, ICHG_POR = 4200 // 10, 900 // 10, 1000 // 10
+ITERM_CODE, ITERM_POR = 2, 5          # REG09 bits 4:0 in 40 mA: 80 mA (nearest 90 mA) and the 200 mA default
 EN_CHG = 0x20
 TS_COLD, TS_COOL, TS_WARM, TS_HOT = 0x08, 0x04, 0x02, 0x01
 (CH_NONE, CH_ABSENT, CH_PART, CH_CELLS, CH_READBACK, CH_TS_STALE, CH_TS_COLD, CH_TS_HOT) = range(8)   # charger.h
@@ -606,7 +607,7 @@ class PhaseC(unittest.TestCase):
         lib.h_bq_cells.argtypes = [ctypes.c_int, ctypes.c_uint]
         lib.h_bq_status.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_int, ctypes.c_int]
         lib.h_bq_die.argtypes = [ctypes.c_int, ctypes.c_int32]
-        lib.h_bq_limit_writes.restype = lib.h_bq_kicks.restype = ctypes.c_uint32
+        lib.h_bq_limit_writes.restype = lib.h_bq_kicks.restype = lib.h_bq_reg_resets.restype = ctypes.c_uint32
         lib.h_charger_line.restype = ctypes.c_char_p
         lib.h_charger_line.argtypes = [ctypes.c_uint]
         b.bq = b.dev.get(CHARGER)
@@ -618,7 +619,7 @@ class PhaseC(unittest.TestCase):
     def en_chg(self, b):
         return bool(b.lib.h_bq_reg(b.bq, 0x0F) & EN_CHG)
 
-    def line(self, b, length=400):
+    def line(self, b, length=416):
         return b.lib.h_charger_line(length).decode()
 
     def fields(self, b):
@@ -647,6 +648,30 @@ class PhaseC(unittest.TestCase):
         self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_NONE)
         self.assertTrue(self.en_chg(b))
         self.assertEqual(b.lib.h_bq_limit_writes(b.bq), 4)       # held: never written again
+
+    def test_iterm_is_written_with_the_limits_and_read_back(self):
+        b = self.bench()
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x09) & 0x1F, ITERM_POR)
+        b.lib.h_run(TICK)
+        reg09 = b.lib.h_bq_reg(b.bq, 0x09)
+        self.assertEqual(reg09 & 0x1F, ITERM_CODE)
+        self.assertEqual(reg09 & 0x20, 0)                        # STOP_WD_CHG kept as read
+        self.assertEqual(b.lib.h_bq_reg_resets(b.bq), 0)         # REG_RST never written
+        self.assertEqual(b.lib.h_chg(CHG_CONFIGURED), 1)
+        self.assertEqual(self.fields(b)['iterm_ma'], '80')
+        b.lib.h_run(20_000)
+        b.lib.h_bq_watchdog_expire(b.bq)                         # ITERM back to 200 mA with ICHG
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x09) & 0x1F, ITERM_POR)
+        b.lib.h_run(POLL)
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x09) & 0x1F, ITERM_CODE)
+        self.assertEqual((b.lib.h_chg(CHG_APPLIES), b.lib.h_chg(CHG_RESETS)), (2, 1))
+        self.assertEqual(b.lib.h_bq_reg_resets(b.bq), 0)
+
+    def test_the_iterm_code_rounds_to_40_ma_steps_and_clamps(self):
+        b = self.bench()
+        code = b.lib.bq25798_iterm_code
+        code.argtypes, code.restype = [ctypes.c_uint16], ctypes.c_uint8
+        self.assertEqual([code(ma) for ma in (0, 40, 59, 60, 90, 99, 100, 1000, 5000)], [1, 1, 1, 2, 2, 2, 3, 25, 25])
 
     def test_the_watchdog_is_kept_and_the_set_up_holds(self):
         b = self.bench()

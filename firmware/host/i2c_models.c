@@ -397,7 +397,7 @@ typedef struct {
   uint8_t ts_bits, fault0, fault1, ac;
   int host, adc_running, ignore_limits;
   uint64_t kicked_at, adc_at;
-  uint32_t limit_writes, kicks;
+  uint32_t limit_writes, kicks, reg_resets;
 } bq_t;
 static bq_t bq[I2C_SIM_DEVICES];
 
@@ -410,6 +410,7 @@ static void bq_por(bq_t *b)
   unsigned c = b->cells >= 1U && b->cells <= 4U ? b->cells : 1U;
   bq_set16(b, 0x01, vreg[c - 1U]);
   bq_set16(b, 0x03, 100);                    /* ICHG 1 A (table 7-16) */
+  b->r[0x09] = 0x05;                         /* ITERM 200 mA (table 7-20) */
   b->r[0x0A] = (uint8_t)((c - 1U) << 6 | 0x23U);   /* CELL, TRECHG 2, VRECHG 3 (table 7-21) */
   b->r[0x0F] = 0xA2;                         /* EN_AUTO_IBATDIS, EN_CHG, EN_TERM (table 7-25) */
   b->r[0x10] = 0x85;                         /* WATCHDOG 40 s (table 7-26) */
@@ -436,11 +437,13 @@ void model_bq25798_status(int dev, int ac1, int ac2, unsigned chg_stat, uint8_t 
 void model_bq25798_ignore_limits(int dev, int ignore) { bq[dev].ignore_limits = ignore; }
 uint32_t model_bq25798_limit_writes(int dev) { return bq[dev].limit_writes; }
 uint32_t model_bq25798_kicks(int dev) { return bq[dev].kicks; }
+uint32_t model_bq25798_reg_resets(int dev) { return bq[dev].reg_resets; }
 
 /* The watchdog's expiry: back to default mode, the WATCHDOG-reset fields to their reset values. */
 static void bq_expire(bq_t *b)
 {
   bq_set16(b, 0x03, 100);
+  b->r[0x09] = (uint8_t)((b->r[0x09] & 0x20U) | 0x05U);   /* ITERM 200 mA */
   b->r[0x0A] = (uint8_t)((b->r[0x0A] & 0xC0U) | 0x23U);
   b->r[0x0F] = (uint8_t)((b->r[0x0F] & 0xD4U) | 0x22U);   /* EN_CHG and EN_TERM 1; FORCE_ICO, EN_BACKUP 0 */
   b->r[0x2E] &= 0x7FU;                                    /* ADC_EN */
@@ -503,6 +506,12 @@ static int bq_write(int dev, const uint8_t *data, uint16_t n)
       if (b->ignore_limits) continue;
       if (reg == 0x01U) v &= 0x07U;   /* reserved bits read 0 */
       if (reg == 0x03U) v &= 0x01U;
+    }
+    if (reg == 0x09U)   /* REG_RST (bit 6) resets every register; ITERM clamps low at 1 (table 7-20) */
+    {
+      if (v & 0x40U) { b->reg_resets++; bq_por(b); continue; }
+      v &= 0x3FU;
+      if ((v & 0x1FU) == 0U) v |= 0x01U;
     }
     if (reg >= 0x1BU && reg <= 0x27U) continue;   /* status and flags: read only */
     if (reg >= 0x31U) continue;                    /* the ADC results and REG48 */

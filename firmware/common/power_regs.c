@@ -123,6 +123,8 @@ int32_t unscale_ppm(int32_t uv, uint32_t gain_ppm)
 /* BQ25798 (TI SLUSDV2C section 7.5.1) */
 #define BQ25798_VREG_MASK 0x07FFU      /* REG01 bits 10:0 (table 7-15) */
 #define BQ25798_ICHG_MASK 0x01FFU      /* REG03 bits 8:0 (table 7-16) */
+#define BQ25798_ITERM_MIN 1U           /* 40 mA: the field clamps low */
+#define BQ25798_ITERM_MAX 25U          /* 1000 mA */
 #define BQ25798_CELL_SHIFT 6U          /* REG0A bits 7:6, 0 = 1s ... 3 = 4s (table 7-21) */
 #define BQ25798_PN_SHIFT 3U            /* REG48 bits 5:3 (table 7-70) */
 #define BQ25798_PN_MASK 0x07U
@@ -144,6 +146,14 @@ uint16_t bq25798_ichg_raw(uint16_t ma)
 {
   unsigned code = ma / BQ25798_ICHG_MA_STEP;
   return code > BQ25798_ICHG_MASK ? 0U : (uint16_t)code;
+}
+
+uint16_t bq25798_iterm_ma(uint8_t reg09) { return (uint16_t)((reg09 & BQ25798_ITERM_MASK) * BQ25798_ITERM_MA_STEP); }
+
+uint8_t bq25798_iterm_code(uint16_t ma)
+{
+  unsigned code = (ma + BQ25798_ITERM_MA_STEP / 2U) / BQ25798_ITERM_MA_STEP;
+  return (uint8_t)(code < BQ25798_ITERM_MIN ? BQ25798_ITERM_MIN : code > BQ25798_ITERM_MAX ? BQ25798_ITERM_MAX : code);
 }
 
 unsigned bq25798_cells(uint8_t reg0a) { return (unsigned)(reg0a >> BQ25798_CELL_SHIFT) + 1U; }
