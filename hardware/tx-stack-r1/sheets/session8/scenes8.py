@@ -6,8 +6,9 @@ drawing frame is (Xb, Zb, Yb), a true right-handed picture, and every map is dec
 (assembly.declare). The cards and the backplane come from assembly.py, the pack and the EVM from cage.contents() and
 Session 7's EVM model (scenes7.add_evm, carried into the box), the glands from cage.GLANDS.
 
-Not in the repo, so not drawn: the EVM's front clip (cage.py has only its two insert bores, CLIP_INS), the base's
-STL (gated, cage.stl_gate), the gland bodies' maker CAD (drawn as plain cylinders at the sizes in sources.py).
+The EVM's two front clips and the test coupon are cage.py's (clip_solid, coupon_solid); the solar lead follows
+cage.solar_route() and the gland map is cage.GLAND_USE. Not drawn: the base's STL (gated, cage.stl_gate), the gland
+bodies' maker CAD (drawn as plain cylinders at the sizes in sources.py).
 
 Run ONE scene per process: .venv-cad/bin/python -B scenes8.py NAME   (list: scenes8.py list)
 """
@@ -47,15 +48,9 @@ TAPE = "#F4F1E8"
 PACKBLUE = "#3C78C8"
 DOT = {"B1": "#2D6FD0", "B2": "#2E9E4F", "B3": "#F2C318", "B4": "#D7262E"}
 
-# which PG-7 takes which cable: cage.py and the docs say only "S1-S4 and the solar lead", so this split is the
-# sheet's choice (marked CHECK on the page); the PG-9s are cage.FLAT's
-GLAND_USE = {(26.0, 25.0): "S1 TH", (50.0, 25.0): "S2 UV", (74.0, 25.0): "S3 BARO", (26.0, 60.0): "S4 SPARE",
-             (50.0, 60.0): "SOLAR", (98.0, 25.0): "WIND", (98.0, 60.0): "RAIN"}
-assert sorted(GLAND_USE) == sorted((x, y) for x, y, _k in cage.GLANDS), cage.GLANDS
-assert all(GLAND_USE[k].lower().startswith(v.split()[0]) for k, v in cage.FLAT.items())
-# the jack each port cable plugs into (schematic/model.py: J11-J14 = RJ11 S1-S4, J21 WIND, J22 RAIN)
-JACK = {"S1 TH": ("B1", "J11"), "S2 UV": ("B1", "J12"), "S3 BARO": ("B1", "J13"), "S4 SPARE": ("B2", "J14"),
-        "WIND": ("B2", "J21"), "RAIN": ("B2", "J22")}
+# which gland takes which cable, and the jack each port cable plugs into: cage.py's (it gives the reasons)
+GLAND_USE = cage.GLAND_USE
+JACK = {n: j for n, j in cage.GLAND_JACK.items() if n != "SOLAR"}
 
 
 def R(name, s, d, up=(0, 1, 0), fit=(300, 300), keep=None, **kw):
@@ -150,7 +145,7 @@ def declare_evm(s):
 
 def evm(s, silk=True):
     declare_evm(s)
-    E.add_evm(Into(s), silk=silk)
+    E.add_evm(Into(s), silk=silk, jp_state="done")              # the jumpers as Session 7 leaves them
 
 
 def pack(s, strap=True, rt1=True):
@@ -321,10 +316,32 @@ def evm_in():
     A.backplane(s)
     pack(s, strap=True, rt1=False)
     evm(s)
+    clips(s)
+    R("evm_in", s, (0.45, 0.75, 1.0), fit=(330, 330), keep=["clip0", "clip1", "J2", "J8", "J6", "J3", "J5", "board"])
+
+
+def clips(s):
+    """The EVM's two front clips (cage.clip_solid) and their M3 socket caps."""
+    hd, hh, _ln = cage.CLIP_SCREW
     for k, (x, y) in enumerate(cage.CLIP_INS):
-        s.add(f"clip_ins{k}", zcyl(x, y, 4.6, cage.EVM_Z0 - 5.0, cage.EVM_Z0 + 0.2), BRASS, 0.8)
-        s.anchor(f"clip_ins{k}", P(x, y, cage.EVM_Z0 + 0.2), on=f"clip_ins{k}")
-    R("evm_in", s, (0.45, 0.75, 1.0), fit=(330, 330), keep=["clip_ins0", "clip_ins1", "J2", "J8", "J6", "J3", "J5", "board"])
+        s.add(f"clip{k}", V(cage.clip_solid(k).val()), "#E8E2D0", 0.9)
+        top = cage.EVM_Z0 + cage.CLIP_T
+        s.add(f"clip_scr{k}", zcyl(x, y, hd, top, top + hh), E.STEEL, 0.8)
+        b = cage.clip_boxes(k)[0]
+        s.anchor(f"clip{k}", P((b.x0 + b.x1) / 2, b.y1, top), on=f"clip{k}")
+
+
+# ------------------------------------------------------------------ 02 the test coupon
+@scene
+def coupon():
+    s = new()
+    s.add("coupon", V(cage.coupon_solid().val()), "#E8E2D0", 0.9)
+    x, z = [(x, z) for x, z in cage.SCREWS if x < 60 and z > 100][0]
+    s.anchor("bore", P(x, cage.SEAM, z))
+    zs = st.card_z("B3") - st.BT / 2
+    s.anchor("slot", P(cage.WALL, cage.COUPON[1] + 0.5, zs + 0.2))   # the slot's mouth on the cut face
+    s.anchor("lip", P(cage.COUPON[3] - 3.0, cage.SEAM + cage.LIP_H, cage.IN_Z1 + cage.LIP_W / 2))
+    R("coupon", s, (1.0, -0.7, 0.75), fit=(220, 230), keep=["bore", "slot", "lip"])
 
 
 # ------------------------------------------------------------------ 08 the cards and the bar
@@ -380,16 +397,9 @@ def cable_path(name, k):
 
 
 def solar_path():
-    """Solar gland -> right -> up the right column above the EVM -> across in front of it -> down the left side ->
-    into J2 (VIN2) on the EVM's left edge. The route is the sheet's choice (no spec)."""
-    gx, gy = [g for g, n in GLAND_USE.items() if n == "SOLAR"][0]
-    x0, x1, y0, y1, pos, out = E.block_geom("J2")
-    xe, ye = pos[0]
-    ent = Into.p((xe - 2.0, ye, 1.6 + 3.6))                     # drawing frame
-    exb, eyb, ezb = ent[0], ent[2], ent[1]                       # back to box (Xb, Yb, Zb)
-    col = 107.5
-    return [(gx, gy, cage.GLAND_IN), (gx, gy, ZRUN - 1.5), (col, gy, ZRUN - 1.5), (col, 112.0, ZRUN - 1.5),
-            (col, 112.0, 70.0), (4.0, 112.0, 70.0), (4.0, 112.0, ezb), (4.0, eyb, ezb), (exb, eyb, ezb)]
+    """The solar lead: cage.solar_route() (gland, forward under the EVM, up between the left clip and J8, back over
+    the clip along the left wall, into J2 VIN2), checked in cage.py."""
+    return cage.solar_route()
 
 
 def plug_box(s, nm, jx, jy, jz):
@@ -415,7 +425,7 @@ def cables():
         s.anchor(f"plug_{key}", P(jx, jy + 12.0, jz + 3.3), on=f"plug_{key}")
     pts = solar_path()
     s.add("c_SOLAR", tube([P(*p) for p in pts], 1.8), "#7A1E1E", 0.5)
-    s.anchor("c_SOLAR", P(30.0, pts[5][1] + 1.8, pts[5][2]), on="c_SOLAR")
+    s.anchor("c_SOLAR", P((pts[4][0] + pts[5][0]) / 2, pts[5][1] + 1.8, pts[5][2]), on="c_SOLAR")
     R("cables", s, (0, 0, 1), fit=(300, 400), keep=[a for a in s.anchors if a.startswith(("c_", "plug_"))])
 
 
@@ -466,7 +476,7 @@ def solar_j2():
                 r3d.jacobian(lambda x, y, z: cage.to_lid(cage.EVM_X0 + x, cage.EVM_Y1 - y, cage.EVM_Z0 + z)))
     E.add_evm(s)
     for k, colr in ((0, "red"), (1, "black")):
-        pts = E.into("J2", k, back=30.0)
+        pts = E.into("J2", E.term_k("J2", ("VIN2", "GND")[k]), back=30.0)
         E.lead(s, f"sol{k}", pts, colr, r=0.65)
         # a bootlace ferrule on the bare end
         a, b = np.asarray(pts[-2], float), np.asarray(pts[-1], float)

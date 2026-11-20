@@ -5,7 +5,7 @@ Source of truth: hardware/tx-stack-r1/build/ASSEMBLY.md sections 2-5 (parsed by 
 scenes8.py.
 
 Starting point: Sessions 1-7 are done. The four cards are built, the backplane is wired, the EVM is set for one cell
-with its leads on, the pack is unplugged and JP17 is out (Session 7 left the I2C set-up waiting on charger firmware).
+with its leads on, the pack is unplugged and JP17 is out until the CHARGER console check after this session.
 This session prints and fits the base, then loads it: backplane, pack, EVM, cards, cables, coax, lid. The pack stays
 unplugged and JP17 out to the end.
 
@@ -20,6 +20,19 @@ sys.path.insert(1, str(HERE.parent / "session7"))
 from sheetlib import *          # noqa: F401,F403,E402
 import sheetlib as SL           # noqa: E402
 import asmd                     # noqa: E402
+_TX = Path("/Users/clint/code/electronics/weather-station-2026/hardware/tx-stack-r1")
+for _p in (_TX / "layout", _TX / "cage", _TX):
+    sys.path.insert(2, str(_p))
+import cage                     # noqa: E402  (the gland map, the clips, the coupon, the solar route: no CadQuery needed)
+
+
+def in_model(c, x, y, s_, size=8.6, w=None):
+    """A grey 'IN THE MODEL' tag: a fact cage.py or the sources settle, no bench check needed."""
+    r = chip(c, x, y, "IN THE MODEL", 7.5, "HEAD", WHITE, "l", fill=GREY)
+    if w:
+        return para(c, r[2] + 6, y, w - (r[2] + 6 - x), s_, size, 11, "ALT", GREY)
+    text(c, r[2] + 6, y, s_, size, "ALT", GREY)
+    return y - 14
 
 SL.LEADER_INK = True
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE.parent / "out"
@@ -31,9 +44,9 @@ CARDS = [("B4", "POWER"), ("B2", "PORTS B + METERS"), ("B1", "PORTS A"), ("B3", 
 assert "B1 blue, B2 green, B3 yellow, B4 red" in asmd.plain(asmd.CARDS)
 assert "B4 POWER, B2 PORTS B + METERS, B1 PORTS A, B3 CORE" in asmd.TXT
 assert "Print the rim test ring first" in B[1] and "ring_fit" in B[1] and "refuses the full base" in B[1]
-assert "two M3 heat-set inserts" in B[3] and "Xb 4.5 and 100.25, Yb 106" in B[3]
-assert "Bumpon feet peeled off" in B[5] and "clip at the front" in B[5]
-assert "[TBD-MEASURE]" in B[7] and "lid-right corner" in B[7]
+assert "two M3 heat-set inserts" in B[3] and "Xb 4.5 and 100.25, Yb 106" in B[3] and "evm-clips.stl" in B[3]
+assert "Bumpon feet peeled off" in B[5] and "two front clips, one each side of J8" in B[5]
+assert "lid-right corner" in B[7] and "Figure 4-1" in B[7]
 assert "hose clamps" in B[8]
 
 SLOGANS8 = [
@@ -143,7 +156,7 @@ def cover(c, pg):
         Art(c, art, X0 + 12, y + 52, cw - 24, h - 64)
         chip(c, X0 + cw / 2, y + 30, name, 8.2, "ALT", INK, "c")
     x, y, w, h = panel(c, g.cell(0, 1), None, "ALSO ON THE BENCH.")
-    parts = ["4 x M3 HEAT-SET INSERTS (BAR 2, CLIP 2)", "2 x M3 SCREWS (RETENTION BAR)", "HOOK-AND-LOOP STRAP (PACK)",
+    parts = ["4 x M3 HEAT-SET INSERTS (BAR 2, CLIP 2)", "2 x M3 SCREWS (BAR), 2 x M3 x 8 SOCKET CAPS (CLIPS)", "HOOK-AND-LOOP STRAP (PACK)",
              "AD1 AMPHENOL 132172 (SMA R/A)", "CX1 135110-01-06.00 COAX", "VOLTAIC P110 6 V 10 W PANEL",
              "22 AWG RED + BLACK, FERRULES", "4 PRINTED LID BOLTS", "2 HOSE CLAMPS OR STRAPS", "SILICONE OR SPLIT GROMMETS"]
     for i, s in enumerate(parts):
@@ -157,7 +170,7 @@ def cover(c, pg):
     for i, s in enumerate(steps):
         text(c, x + 14, y + h - 16 - i * (h - 10) / len(steps), s, 11, "HEAD", INK)
     x, y, w, h = panel(c, g.cell(0, 2, 2), None, "STANDING ORDERS.", warn=True)
-    rules = ["THE PACK STAYS OFF PG1 AND JP17 STAYS OUT, ALL SESSION (SESSION 7: THE CHARGER WAITS ON FIRMWARE).",
+    rules = ["THE PACK STAYS OFF PG1 AND JP17 STAYS OUT ALL SESSION. THEY GO ON ONLY AFTER CHARGER SHOWS VREG 4200, ICHG 900.",
              "NO USB AND NO SUN ON THE PANEL WHILE YOU WIRE. COVER THE PANEL OR LEAVE IT FACE DOWN.",
              "A CARD THAT WON'T GO THE LAST FEW MM IS IN THE WRONG SLOT. NEVER FORCE IT."]
     for i, s in enumerate(rules):
@@ -221,15 +234,21 @@ def base_page(c, pg):
         "EVM clip: two M3 inserts straight down into the left keeper and the right lid-end block (Xb 4.5 and 100.25, "
         "Yb 106).",
         "No inserts in the four corner posts: the lid's printed bolts thread their bores."], 9)
-    check_item(c, x + 14, yy - 8, "The clip part itself isn't in cage.py yet: only its two insert bores are.", w=w - 24)
+    in_model(c, x + 14, yy - 8, "The two clips are cage.py --clip (cage/stl/evm-clips.stl): print them flat on their "
+             "top faces, with the base.", w=w - 24)
     x, y, w, h = panel(c, g.cell(0, 1, 2), 3, [
-        "From ASSEMBLY.md 2.2 and 2.3. The coupon's shape isn't in the repo yet: cage.py has no coupon mode."])
-    yy = steps_list(c, x + 44, y + h - 18, w / 2 - 50, [
-        "Test coupon: one card slot (tune slot_clear until a card slides with light friction), one lid bolt post "
-        "(try a printed bolt in it), one lid corner of land and tongue, and a 30 mm square of wall to leak-test.",
-        "Fit the lid on the coupon's corner: the lip presses the O-ring with the lid's walls down on the land."], 9)
-    check_item(c, x + 44, yy - 6, "Coupon shape: design it from the list above.", w=w / 2 - 50)
-    steps_list(c, x + w / 2 + 10, y + h - 18, w / 2 - 22, [
+        f"ASSEMBLY.md 2.2-2.3. Coupon: cage.py --coupon (cage/stl/coupon.stl), about "
+        f"{cage.RING_PRINT * cage.COUPON_CM3:.0f} min, cut face on the bed."])
+    a = Art(c, "coupon", x + 34, y + 24, w * 0.2, h - 56, align="l")
+    col_labels(c, a, [("lip", "LIP + LAND"), ("bore", "BOLT BORE"), ("slot", "B3 SLOT")], a.x + a.w + 4, size=8,
+               gap=14, lo=y + 22)
+    cx = x + w * 0.2 + 120
+    steps_list(c, cx, y + h - 18, x + w * 0.62 - cx, [
+        "The coupon is the base's top-left corner, cut from the model: B3's slot (tune slot_clear until a card "
+        "slides with light friction), the top-left bolt bore (try a printed bolt), the land and lip round the corner.",
+        "Fit the lid on its corner: the lip presses the O-ring with the lid's walls down on the land.",
+        "Its walls are over 30 mm square: leak-test them too."], 8.6, lead=11.4, gap=3)
+    steps_list(c, x + w * 0.64, y + h - 18, w * 0.36 - 14, [
         "Print the base in light PETG, floor on the bed (Yb up), not rim down. Solid walls: about 9-10 perimeters at "
         "a 0.42 mm line.",
         "Leak test: water in the bare base, or soapy water with the lid on and a little pressure through the vent "
@@ -249,10 +268,11 @@ def glands(c, pg):
                                              "boss before you fit it."])
     a = Art(c, "glands_out", x + 130, y + 10, w - 260, h - 46)
     g_ = lambda n: "g_" + n.replace(" ", "_")
-    col_labels(c, a, [(g_(n), n) for n in ("S4 SPARE", "SOLAR", "S1 TH", "S2 UV")], a.x - 6, side="r", font="HEAD",
-               lo=y + 16)
-    col_labels(c, a, [(g_(n), n) for n in ("S3 BARO", "RAIN", "WIND")] + [("vent", "M12 VENT"),
-                      ("sma_bh", "SMA BULKHEAD")], a.x + a.w + 6, font="HEAD", lo=y + 16)
+    names = list(cage.GLAND_USE.values())
+    left = [n for n in names if a.A(g_(n))[0] < a.x + a.w * 0.5]
+    col_labels(c, a, [(g_(n), n) for n in left], a.x - 6, side="r", font="HEAD", lo=y + 16)
+    col_labels(c, a, [(g_(n), n) for n in names if n not in left] + [("vent", "M12 VENT"), ("sma_bh", "SMA BULKHEAD")],
+               a.x + a.w + 6, font="HEAD", lo=y + 16)
     x, y, w, h = panel(c, g.cell(0, 1, 2), 2, ["Seven glands, no spare hole. The vent and", "the bulkhead go in now too."])
     yy = steps_list(c, x + 44, y + h - 18, w - 56, [
         "Five 13 mm holes take PG-7s (#762): the four port cables S1-S4 and the solar lead.",
@@ -263,8 +283,9 @@ def glands(c, pg):
         "The SMA bulkhead low in the right wall (Yb 94.14, Zb 60.38), nut inside."], 9)
     yy = para(c, x + 44, yy - 4, w - 56, "PG-7 bore 7.9 mm, PG-9 10.5 mm: no 6P plug passes either one, even with the "
               "seal out. Every cable goes in bare and gets its plug inside.", 9)
-    check_item(c, x + 14, yy - 10, "Which PG-7 takes which cable isn't in the docs. This sheet's split: back row "
-               "S1, S2, S3 left to right; lid row S4, then the solar lead.", w=w - 24)
+    in_model(c, x + 14, yy - 10, "Which gland takes which cable is cage.GLAND_USE: the cables in use get the "
+             "shortest runs from the right column, the spare S4 the longest, the solar lead the left front gland "
+             "nearest J2.", w=w - 24)
 
 
 # ------------------------------------------------------------------ 04 the wrong-card test
@@ -359,18 +380,19 @@ def evm_page(c, pg):
                                              "edge on the fin."])
     a = Art(c, "evm_in", x + 130, y + 10, w - 92, h - 46, align="l")
     col_labels(c, a, [("J2", "J2 (SOLAR)"), ("J8", "J8 TO XJ1"), ("J3", "J3 (SYS)"), ("J5", "J5 (BATT.)"),
-                      ("clip_ins1", "CLIP INSERT"), ("clip_ins0", "CLIP INSERT")], a.x + a.w + 6, lo=y + 16)
+                      ("clip1", "RIGHT CLIP"), ("clip0", "LEFT CLIP")], a.x + a.w + 6, lo=y + 16)
     x, y, w, h = panel(c, g.cell(0, 1, 2), 2, ["J6, the USB, is under the left edge. It's for", "the bench only: no gland, "
                                              "no cable in the box."])
     yy = steps_list(c, x + 44, y + h - 18, w - 56, [
         "Peel the four Bumpon feet off the EVM's underside.",
         "Top face up, J8 toward the lid, J3/J5 on the right. Lower it over the pack and slide it back on the "
         "ledges until it meets the stop. The ledges are notched under its edge tails.",
-        "Fit the front clip with two M3 screws into the inserts in front of the board.",
+        "The two front clips, one each side of J8: each clip's lip over the board's front edge, an M3 x 8 socket cap "
+        "through it into its insert. Snug, not tight: the lip only stops the board lifting.",
         "Every lead keeps a service loop: the EVM must slide out on them.",
         "JP17 stays out. Look for it before you move on."], 9)
-    check_item(c, x + 14, yy - 8, "The front clip isn't drawn anywhere in the repo (cage.py only has its insert bores). "
-               "Until it's designed, the EVM rests on its ledges with nothing in front.", w=w - 24)
+    in_model(c, x + 14, yy - 8, "cage.py checks the clips: the lips 0.2 above the board, 11 mm or more from J8 and "
+             "JP9, the screws 4 mm into the inserts.", w=w - 24)
 
 
 # ------------------------------------------------------------------ 08 the cards
@@ -421,8 +443,8 @@ def runs(c, pg):
         "Inside: a " + asmd.LOOP + " mm service loop in the space in front of the cards, then down the right column "
         "and left under the pack tray to the gland.",
         "Outside: a drip loop below each gland before the cable is tied to the pole."], 8.8, lead=11.6, gap=2)
-    check_item(c, x + 14, yy - 4, "No spec routes the solar lead. Drawn: up the right column, over the EVM, "
-               "down the left side to J2.", w=w - 24)
+    in_model(c, x + 14, yy - 4, "The solar lead's route is cage.solar_route(): forward under the EVM, up between "
+             "the left clip and J8, back over the clip along the left wall to J2.", w=w - 24)
 
 
 # ------------------------------------------------------------------ 10 round cables
@@ -481,14 +503,17 @@ def solar(c, pg):
     a = Art(c, "solar_j2", x + 30, y + 10, w * 0.5, h - 46, align="l")
     col_labels(c, a, [("J2", "J2: VIN2 (SOLAR +) AND GND"), ("sol0", "RED: PANEL +"), ("sol1", "BLACK: PANEL -")],
                a.x + a.w + 20, size=9, gap=18)
-    yy = check_item(c, a.x + a.w + 20, y + 56, "Which J2 position is VIN2: read the silk.", w=w - a.w - 70)
-    check_item(c, a.x + a.w + 20, yy - 4, "22 AWG red/black, bootlace ferrules.", w=w - a.w - 70)
+    yy = in_model(c, a.x + a.w + 20, y + 56, "VIN2 is J2's back position, GND its lid-side one (SLUUCB5E "
+                  "Figure 4-1).", w=w - a.w - 70)
+    in_model(c, a.x + a.w + 20, yy - 4, f"22 AWG red/black, {-(-(cage.solar_len() + 70) // 10) * 10:.0f} mm, "
+             "0.34 mm2 bootlace ferrules. The panel gives 1.67 A at full sun.", w=w - a.w - 70)
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Panel face down or covered while you wire. Meter BEFORE the ends go into J2."])
     yy = steps_list(c, x + 44, y + h - 18, w / 2 - 50, [
         "Cut the P110's barrel plug off, outside the box.",
-        "Slide cap, seal and body over the bare end; pull it through the SOLAR PG-7. Leave a " + asmd.LOOP +
-        " mm loop inside.",
-        "If the panel's own lead doesn't reach J2, splice 22 AWG red and black inside, under heat shrink.",
+        "Slide cap, seal and body over the bare end; pull it through the SOLAR PG-7 (left front) until a little "
+        "stands above the nut.",
+        "Splice the 22 AWG red and black pair to its cores there (solder, heat shrink), red on the panel's +.",
+        "Run the pair forward under the EVM, up between the left clip and J8, back over the clip to J2.",
         "Strip 6 mm, crimp a ferrule on each end."], 9)
     yy = note_box(c, x + w / 2 + 6, y + h - 14, w / 2 - 18, "POLARITY, BEFORE J2", [
         "Meter on DC volts. Ends apart, not in J2.",
@@ -509,7 +534,7 @@ def coax(c, pg):
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["From the lid side, a little from the right."])
     a = Art(c, "coax", x + 130, y + 10, w - 96, h - 46, align="l")
     col_labels(c, a, [("ad1", "AD1 132172"), ("plug", "135110 PLUG"), ("coax", "COAX"), ("bh_plug", "BULKHEAD PLUG"),
-                      ("evm_corner", "EVM CORNER", NEON)], a.x + a.w + 6, size=8.3, lo=y + 16)
+                      ("evm_corner", "EVM CORNER")], a.x + a.w + 6, size=8.3, lo=y + 16)
     x, y, w, h = panel(c, g.cell(0, 1, 2), 2, ["Clint checked the length on 2026-11-17: it fits", "the low bulkhead with "
                                              "no tight bend."])
     yy = steps_list(c, x + 44, y + h - 18, w - 56, [
@@ -518,8 +543,8 @@ def coax(c, pg):
         "Bend the cable right, in front of the cards, and run it down the right column.",
         "Screw the other plug onto the bulkhead's inner end. Clip the cable to the right corner post.",
         "To take B3 out later, this is its plug: unscrew it at AD1."], 9)
-    check_item(c, x + 14, yy - 8, "TBD-MEASURE: does the straight plug on the bulkhead's inner end clear the EVM's "
-               "lid-right corner? If not, use a right-angle plug.", w=w - 24)
+    in_model(c, x + 14, yy - 8, "The straight plug on the bulkhead's inner end passes about 6 mm over the EVM's "
+             "lid-right corner, where TI's layout has only silk; JP9 is 4 mm off (cage.py checks it).", w=w - 24)
 
 
 # ------------------------------------------------------------------ 14 before power, lid, mount
@@ -555,7 +580,7 @@ REPORT_ROWS = [("RIM RING FITS (RING_FIT)", "Y / N", "page 01: lip, 4 holes, flu
                ("LEAK TEST, BARE BASE", "Y / N", "page 02"),
                ("SOLAR, OPEN CIRCUIT IN SUN", "V", "page 12, before J2"),
                ("WIND / RAIN COLOURS", "WRITE", "page 11, before you cut"),
-               ("COAX PLUG CLEARS THE EVM", "Y / N", "page 13 (TBD-MEASURE)"),
+               ("COAX PLUG CLEARS THE EVM", "Y / N", "page 13 (the model says 6 mm over the corner)"),
                ("3.3 V TO GROUND, BACKPLANE", "kohm", "page 14: more than 1"),
                ("PHOTO, LID OFF, FROM THE LID", "SENT", "every label readable")]
 
@@ -573,8 +598,9 @@ def report(c, pg):
         text(c, x + 448, yy, unit, 11, "HEAD", INK)
         text(c, x + 44, yy - 12, exp, 8.5, "MONO", GREY)
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: the CHARGER check (Session 7 page 09). The firmware is ready."])
-    for i, s_ in enumerate(["Flash the TX built with WS_POWER_PROFILE=3 WS_I2C_MUX=1. USB in J6, no pack, JP17 out. Type CHARGER:",
-                            "cells=1 vreg_mv=4200 ichg_ma=900 ts=NORMAL hold=none. Then refit JP17 and plug the pack into PG1, last."]):
+    for i, s_ in enumerate(["Flash the TX: make ROLE=tx BOARD=wio-e5 WS_POWER_PROFILE=3 WS_I2C_MUX=1.",
+                            "USB in J6, no pack, JP17 out. Type CHARGER: cells=1 vreg_mv=4200 ichg_ma=900 ts=NORMAL hold=none.",
+                            "Only then refit JP17 and plug the pack into PG1, last."]):
         text(c, x + 44, y + h - 22 - i * 16, "-  " + s_, 10, "ALT", INK)
 
 

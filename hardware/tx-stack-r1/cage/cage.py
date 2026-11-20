@@ -115,6 +115,16 @@ BP_BOTTOM = st.BP_Z0 - 2 * st.P
 FLAT = {(98.0, 25.0): "wind (flat)", (98.0, 60.0): "rain (flat)"}
 GLANDS = [(x, y, "PG-9" if (x, y) in FLAT else "PG-7") for y in (25.0, 60.0) for x in (26.0, 50.0, 74.0, 98.0)
           if (x, y) != (74.0, 60.0)]             # enclosure 4: no spare (G7 gone); the PG-9s go back in (fix 2)
+# which gland takes which cable. The port cables run from their jacks (B1 J11-J13, B2 J14) forward, right, down the
+# right column (Xb about 101, Yb about 86 at its foot), back and left under the pack tray to their gland, so the
+# shortest runs go to the glands nearest that foot: S1 TH the PG-7 at (50, 60), S2 UV (74, 25), S3 BARO (50, 25); the
+# spare S4 the farthest, (26, 25). The solar lead goes to J2 on the EVM's left edge, so it takes the left front PG-7,
+# (26, 60), the only one in front of the left column. The flat meter cables keep the PG-9s (FLAT).
+GLAND_USE = {(50.0, 60.0): "S1 TH", (74.0, 25.0): "S2 UV", (50.0, 25.0): "S3 BARO", (26.0, 25.0): "S4 SPARE",
+             (26.0, 60.0): "SOLAR", (98.0, 25.0): "WIND", (98.0, 60.0): "RAIN"}
+GLAND_JACK = {"S1 TH": ("B1", "J11"), "S2 UV": ("B1", "J12"), "S3 BARO": ("B1", "J13"), "S4 SPARE": ("B2", "J14"),
+              "WIND": ("B2", "J21"), "RAIN": ("B2", "J22"), "SOLAR": ("EVM", "J2")}   # schematic/model.py
+COLUMN_FOOT = (101.0, 86.0)                             # Xb, Yb where the port cables leave the right column
 SMA = S.val("sma_bulkhead")                             # Yb, Zb of the bulkhead's axis, hole, nut seat (enclosure 4)
 GLAND_IN = max(g[1] for g in GLAND.values())            # thread length inside the wall (L1)
 VENT = (50.0, 85.0)                                     # Xb, Yb in the bottom wall
@@ -475,6 +485,297 @@ def contents():
               "BQ25798EVM underside (J6, tails)")]
 
 
+def gland_runs():
+    """Each gland's run under the tray from the right column's foot (Xb + Yb, the way the cables go), by gland."""
+    return {(x, y): abs(COLUMN_FOOT[0] - x) + abs(COLUMN_FOOT[1] - y) for x, y, _k in GLANDS}
+
+
+# ------------------------------------------------------------------ the EVM's layout (SLUUCB5E Figure 4-1)
+def evm_at(x, y, z=0.0):
+    """A point on the EVM (x from its left (J6) edge, y from its back edge, z above the board's top face) in the box."""
+    return EVM_X0 + x, EVM_Y0 + y, EVM_Z0 + 1.6 + z
+
+
+def evm_term(block, net):
+    """(Xb, Yb, Zb) of a terminal's wire entry on the EVM: the block's outer face, the screw's Yb, 3.6 above the board."""
+    order = dict((b[0], b[1:]) for b in S.val("evm_terms"))[block]
+    ys = dict((b[0], b[1:]) for b in S.val("evm_term_y"))[block]
+    y = ys[order.index(net)]
+    x = 2.4 if block in ("J1", "J2") else EVM[0] + EVM_OVR      # left blocks' outer face; right blocks past the edge
+    return evm_at(x, y, 3.6)
+
+
+def evm_part_boxes():
+    """The EVM's parts this build touches, as boxes in the box frame (Fig 4-1 places, heights assumed: a 2.54 header
+    with its pins 8.5, the J7 block 10)."""
+    out = []
+    for nm, x, y, n, ax in S.val("evm_jp"):
+        hx, hy = (1.27 * n, 1.27) if ax == "x" else (1.27, 1.27 * n)
+        a, b = evm_at(x - hx, y - hy), evm_at(x + hx, y + hy, 8.5)
+        out.append(B(*a, *b, f"EVM {nm}"))
+    x0, x1, y0, y1 = S.val("evm_j7")
+    out.append(B(*evm_at(x0, y0), *evm_at(x1, y1, 10.0), "EVM J7"))
+    j6 = S.val("evm_j6_y")
+    out.append(B(EVM_X0 - EVM_OVL, EVM_Y0 + j6[0], EVM_Z0 - S.val("evm_under"), EVM_X0 + 5.0, EVM_Y0 + j6[1],
+                 EVM_Z0 + 1.6 + 6.0, "EVM J6 (micro-B and its plug)"))
+    for blk, x0, x1 in (("J2", 2.4, 11.7), ("J1", 2.0, 10.0), ("J3", 78.0, EVM[0] + EVM_OVR), ("J5", 78.1, EVM[0] + EVM_OVR)):
+        ys = dict((b[0], b[1:]) for b in S.val("evm_term_y"))[blk]
+        out.append(B(*evm_at(x0, min(ys) - 2.6), *evm_at(x1, max(ys) + 2.6, 10.0), f"EVM {blk}"))
+    return out
+
+
+# ------------------------------------------------------------------ the EVM's front clips (two printed parts)
+# Each clip is an L: a plate on the keeper (left) or the lid-end block (right), its M3 screw into the insert there
+# (CLIP_INS), and a lip 2 mm over the board's front edge that stops it lifting; the plate's back face is the stop that
+# keeps the board from sliding forward. Two clips, not one bar: J8 (Xb 23-35) sits on the front edge between them.
+CLIP_T = 4.0                        # the plate's height above the keeper top (EVM_Z0)
+CLIP_LIP = 2.0                      # how far the lip reaches over the board
+CLIP_GAP = 0.3                      # the plate's back face off the board's front edge
+CLIP_ABOVE = 0.2                    # the lip's underside above the board's top face
+CLIP_HOLE = 3.4                     # M3 clearance
+CLIP_SCREW = (5.5, 3.0, 8.0)        # M3 x 8 socket cap: head diameter, head height, length (into the 5.7 insert)
+CLIP_X = ((IN_X0 + 0.5, EVM_X0 + 3.75), (EVM_X1 - 3.75, 106.0))   # left clip, right clip (Xb)
+
+
+def clip_boxes(k):
+    """Clip k (0 left, 1 right) as its plate and its lip (box frame)."""
+    x0, x1 = CLIP_X[k]
+    top = EVM_Z0 + CLIP_T
+    return [B(x0, EVM_Y1 + CLIP_GAP, EVM_Z0, x1, KEEP_Y1 + 0.5, top, f"EVM clip {'left right'.split()[k]}, plate"),
+            B(x0, EVM_Y1 - CLIP_LIP, EVM_Z0 + 1.6 + CLIP_ABOVE, x1, EVM_Y1 + CLIP_GAP, top,
+              f"EVM clip {'left right'.split()[k]}, lip over the board")]
+
+
+def clip_screw_box(k):
+    x, y = CLIP_INS[k]
+    r = CLIP_SCREW[0] / 2
+    top = EVM_Z0 + CLIP_T
+    return B(x - r, y - r, top, x + r, y + r, top + CLIP_SCREW[1], f"EVM clip {'left right'.split()[k]}, M3 head")
+
+
+def clip_solid(k):
+    """Clip k in the box frame: the L, its corners rounded off in plan, the M3 clearance hole."""
+    import cadquery as cq
+    shape = None
+    for b in clip_boxes(k):
+        s_ = cq.Workplane("XY").box(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0, centered=False).translate((b.x0, b.y0, b.z0))
+        shape = s_ if shape is None else shape.union(s_)
+    x, y = CLIP_INS[k]
+    return shape.cut(_cyl_z(x, y, CLIP_HOLE, EVM_Z0 - 1, EVM_Z0 + CLIP_T + 1))
+
+
+def true_frame(sh):
+    """The box frame is left-handed (Xb right, Yb toward the lid, Zb up, seen with the box on the pole), so a part's
+    box-frame solid is its mirror image: (Xb, Yb, Zb) -> (Xb, Zb, Yb) is the real part (sheets/session1/v2/assembly.V);
+    every print file goes through this."""
+    return sh.rotate((0, 0, 0), (1, 0, 0), 90).mirror("XZ")
+
+
+def clip_print():
+    """Both clips (real hand) turned onto their top faces (flat on the bed, the lip flush with it), side by side."""
+    out = None
+    for k in (0, 1):
+        sh = true_frame(clip_solid(k)).rotate((0, 0, 0), (1, 0, 0), -90)
+        bb = sh.val().BoundingBox()
+        sh = sh.translate((-bb.xmin + 16.0 * k, -bb.ymin, -bb.zmin))
+        out = sh if out is None else out.union(sh)
+    return out
+
+
+def clip_checks():
+    """Each clip on its seat round its insert, clear of the board's edge and top, of the EVM's parts, the walls and the
+    coax; the screw's thread reaches into the insert."""
+    lines, bad = [], []
+    seats = {0: B(IN_X0, KEEP_Y0, EVM_Z0 - LEDGE_H, KEEP_X1, KEEP_Y1, EVM_Z0, "the left keeper"),
+             1: B(FIN[0], LEND_Y0, EVM_Z0 - LEDGE_H, IN_X1, KEEP_Y1, EVM_Z0, "the fin and the lid-end block")}
+    board = B(EVM_X0, EVM_Y0, EVM_Z0, EVM_X1, EVM_Y1, EVM_Z0 + 1.6, "EVM board")
+    parts_ = evm_part_boxes() + [contents()[2]]                  # J8 too
+    keep = box_keepouts()
+    for k in (0, 1):
+        plate, lip = clip_boxes(k)
+        x, y = CLIP_INS[k]
+        sd = seats[k]
+        edge = min(x - sd.x0, sd.x1 - x, y - sd.y0, sd.y1 - y)
+        if edge < BP_BORE[0] / 2 + 1.0:
+            bad.append(f"clip {k}: its insert is {edge:.1f} from its seat's edge (needs {BP_BORE[0] / 2 + 1:g})")
+        hole_edge = min(x - plate.x0, plate.x1 - x, y - plate.y0, plate.y1 - y)
+        if hole_edge < CLIP_SCREW[0] / 2 - 0.01:
+            bad.append(f"clip {k}: the screw head overhangs the plate ({hole_edge:.1f} from the hole to its edge)")
+        if plate.y0 - board.y1 < CLIP_GAP - 0.01 or lip.z0 - board.z1 < CLIP_ABOVE - 0.01:
+            bad.append(f"clip {k}: meets the board")
+        over = min(lip.x1, board.x1) - max(lip.x0, board.x0)
+        if over < 2.0:
+            bad.append(f"clip {k}: its lip covers only {over:.1f} of the board's front edge")
+        thread = CLIP_SCREW[2] - CLIP_T
+        if not 3.0 <= thread <= BP_BORE[1] - 0.5:
+            bad.append(f"clip {k}: an M3 x {CLIP_SCREW[2]:g} leaves {thread:g} of thread in the {BP_BORE[1]:g} bore")
+        for c in (plate, lip, clip_screw_box(k)):
+            if c.x0 < IN_X0 - 0.01 or c.x1 > IN_X1 + 0.01:
+                bad.append(f"{c.what}: leaves the box inside")
+            for o in parts_ + keep:
+                gap = box_gap(c, o)
+                if gap < 1.0:
+                    bad.append(f"{c.what}: {gap:.1f} mm to the {o.what} (needs 1)")
+        gaps = sorted((box_gap(c, o), o.what) for c in (plate, lip, clip_screw_box(k)) for o in parts_)
+        lines.append(f"EVM clip {'left right'.split()[k]}: Xb {plate.x0:g}-{plate.x1:g}, Yb {lip.y0:g}-{plate.y1:g}, "
+                     f"Zb {plate.z0:g}-{plate.z1:g}, the lip {over:.2f} over the board and {CLIP_ABOVE:g} above it, "
+                     f"M3 x {CLIP_SCREW[2]:g} into the insert at ({x:g}, {y:g}) ({thread:g} of thread); nearest EVM "
+                     f"part {gaps[0][1]} {gaps[0][0]:.1f} away")
+    return lines, bad
+
+
+def box_gap(a, b):
+    """The clearance between two boxes (0 if they touch or overlap)."""
+    dx = max(b.x0 - a.x1, a.x0 - b.x1, 0.0)
+    dy = max(b.y0 - a.y1, a.y0 - b.y1, 0.0)
+    dz = max(b.z0 - a.z1, a.z0 - b.z1, 0.0)
+    return (dx * dx + dy * dy + dz * dz) ** 0.5
+
+
+def seg_gap(p, q, b):
+    """The clearance between the segment p-q and box b (sampled every 0.5 mm along the segment)."""
+    n = max(2, int(math.dist(p, q) / 0.5) + 1)
+    best = 1e9
+    for i in range(n):
+        t = i / (n - 1)
+        x, y, z = (p[j] + (q[j] - p[j]) * t for j in range(3))
+        dx = max(b.x0 - x, x - b.x1, 0.0)
+        dy = max(b.y0 - y, y - b.y1, 0.0)
+        dz = max(b.z0 - z, z - b.z1, 0.0)
+        best = min(best, (dx * dx + dy * dy + dz * dz) ** 0.5)
+    return best
+
+
+# ------------------------------------------------------------------ the solar lead
+# The panel's own cable ends at its gland: its 3.5 x 1.1 plug is cut off outside, the cable comes in through the
+# left front PG-7 and is joined just above the nut to a 22 AWG red/black pair (solder, heat-shrink), which runs to
+# J2 VIN2 / GND. 22 AWG: the panel gives 1.67 A at its maximum power point and about 1.9 A into a short (solar_p110);
+# 22 AWG drops about 0.05 V there over the pair's two legs (wire22). The route keeps clear of the cards, the pack, the EVM
+# and the clips: up out of the gland, forward under the EVM to the front strip, up between the left keeper's clip and
+# J8, left over the clip's screw head, back along the gap between the left wall and the EVM's left edge, into J2.
+SOLAR_R = 1.6                       # the twisted 22 AWG pair's radius
+SOLAR_Z = (18.5, 59.0)              # Zb of its run under the EVM (above the bottom-left corner block, below the tray) and
+#                                     of its run back over the clip (above the clip's screw head)
+SOLAR_XY = (19.5, 4.5, 113.0)       # Xb of its rise (between the left clip and J8), Xb of its run back (between the
+#                                     left wall and the board's edge), Yb of the front strip (in front of the keeper)
+
+
+def solar_route():
+    """The solar lead's centre line, gland to J2 VIN2 (box frame)."""
+    (gx, gy), = [g for g, n in GLAND_USE.items() if n == "SOLAR"]
+    ex, ey, ez = evm_term("J2", "VIN2")
+    zr, zt = SOLAR_Z
+    xr, xb, yf = SOLAR_XY
+    return [(gx, gy, GLAND_IN), (gx, gy, zr), (gx, yf, zr), (xr, yf, zr), (xr, yf, zt), (xb, yf, zt), (xb, ey, zt),
+            (xb, ey, ez), (ex + 3.0, ey, ez)]
+
+
+def solar_len():
+    pts = solar_route()
+    return sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))
+
+
+def solar_checks():
+    """Every segment of the solar route at least 1 mm (plus the pair's radius) clear of the base's keepouts, the moulded
+    parts, the pack, the EVM (its board, its underside, its parts), the clips and their screws and the cards (in fixed_boxes); the last segment is J2's entry."""
+    lines, bad = [], []
+    pts = solar_route()
+    (gx, gy), = [g for g, n in GLAND_USE.items() if n == "SOLAR"]
+    obst = [k for k in box_keepouts() if f"Xb {gx:g}, Yb {gy:g}" not in k.what]
+    obst += [b for _n, b in fixed_boxes()]
+    c = contents()
+    obst += [c[0], c[2], c[3], B(EVM_X0, EVM_Y0, EVM_Z0, EVM_X1, EVM_Y1, EVM_TOP, "EVM board and its parts")]
+    obst += [b for k in (0, 1) for b in clip_boxes(k) + [clip_screw_box(k)]]
+    j2 = [b for b in evm_part_boxes() if b.what == "EVM J2"][0]
+    worst = (1e9, "")
+    for i, (p, q) in enumerate(zip(pts, pts[1:])):
+        last = i == len(pts) - 2
+        for o in obst + ([] if last else [j2]):
+            if last and o.what == "EVM board and its parts":
+                continue
+            g = seg_gap(p, q, o) - SOLAR_R
+            worst = min(worst, (g, o.what))
+            if g < 1.0:
+                bad.append(f"solar lead, segment {i}: {g:.1f} mm to the {o.what} (needs 1)")
+    ln = solar_len()
+    lines.append(f"solar lead: gland ({gx:g}, {gy:g}) to J2 VIN2 at Yb {pts[-1][1]:.1f}, route {ln:.0f} mm, nearest "
+                 f"{worst[1]} {worst[0]:.1f} mm; cut the pair to {math.ceil((ln + 70.0) / 10.0) * 10:.0f} mm (route + "
+                 "a 60-80 mm service loop)")
+    return lines, bad
+
+
+def coax_corner_check():
+    """The straight plug on the bulkhead's inner end over the EVM's lid-right corner: what Fig 4-1 puts under it."""
+    yb, zb, _hole, _seat = SMA
+    r = S.val("sma_plug_d") / 2 if "sma_plug_d" in S.D else 4.0
+    plug = B(IN_X1 - 9.0 - S.val("sma_plug_len"), yb - r, zb - r, IN_X1, yb + r, zb + r, "the bulkhead's straight plug")
+    near = sorted((box_gap(plug, o), o.what) for o in evm_part_boxes() + [clip_screw_box(1)] + clip_boxes(1))
+    board_gap = plug.z0 - (EVM_Z0 + 1.6)
+    ok = near[0][0] >= 1.0
+    return (f"coax: the straight plug on the bulkhead (Xb {plug.x0:.1f}-{plug.x1:g}, Zb {plug.z0:.1f}-{plug.z1:.1f}) "
+            f"{board_gap:.1f} above the EVM's top face over its lid-right corner, where Fig 4-1 has only silk; nearest "
+            f"part {near[0][1]} {near[0][0]:.1f} away"), ([] if ok else [f"coax plug: {near[0][0]:.1f} to {near[0][1]}"])
+
+
+# ------------------------------------------------------------------ the test coupon (ASSEMBLY.md 2.2)
+# The base's top-left corner, cut out of the real model: the left wall with the top card's slot (B3) and the
+# backplane-side ribs, the top-left corner block with its lid-bolt bore, the wall top's land and its sealing lip round
+# that corner (the lid's corner fits it), and enough of the left and top walls for a 30 x 30 leak-test patch.
+COUPON = (-T - 1.0, 45.0, 130.0, 26.0, SEAM + LIP_H + 1.0, H + T + 1.0)   # Xb, Yb, Zb from / to (cut from the base)
+COUPON_CM3 = 35.1                   # its volume (cage.py --coupon checks it), for the print time without CadQuery
+
+
+def coupon_solid():
+    import cadquery as cq
+    x0, y0, z0, x1, y1, z1 = COUPON
+    region = cq.Workplane("XY").box(x1 - x0, y1 - y0, z1 - z0, centered=False).translate((x0, y0, z0))
+    shape = shell_solid()
+    for name, s_ in solids():
+        if name == "left wall":
+            shape = shape.union(s_)
+    return shape.intersect(region)
+
+
+def coupon_checks(sol=None):
+    """What the coupon must hold: a card slot, a lid-bolt bore, the lip round a corner, a 30 x 30 wall patch."""
+    x0, y0, z0, x1, y1, z1 = COUPON
+    lines, bad = [], []
+    slots = [b for b in st.ORDER if z0 < st.card_z(b) - st.BT - SLOT_CLEAR / 2 and st.card_z(b) + SLOT_CLEAR / 2 < z1]
+    slot_y = (st.BP_FRONT, CARD_FRONT + 1.0)
+    if not slots or slot_y[1] - max(slot_y[0], y0) < 15.0:
+        bad.append("coupon: no card slot (15 mm long at least) inside it")
+    bores = [(x, z) for x, z in SCREWS if x0 < x - BORE_D / 2 and x + BORE_D / 2 < x1 and z0 < z - BORE_D / 2
+             and z + BORE_D / 2 < z1]
+    if not bores or BORE_Y0 < y0:
+        bad.append("coupon: no whole lid-bolt bore inside it")
+    if x1 < CORNER_X + 2.0 or H - z0 < CORNER_Z + 2.0 or y1 < SEAM + LIP_H:
+        bad.append("coupon: it doesn't hold the lip's whole S round the corner")
+    if min(x1 - x0, z1 - z0) < 30.0 or (y1 - y0) < 30.0:
+        bad.append("coupon: no 30 x 30 wall patch")
+    vol = None
+    if sol is not None:
+        v = sol.val() if hasattr(sol, "val") else sol
+        vol = v.Volume() / 1000
+        if abs(vol - COUPON_CM3) > 0.5:
+            bad.append(f"the coupon is {vol:.1f} cm3: set COUPON_CM3")
+        if not v.isValid():
+            bad.append("the coupon is not a valid solid")
+    lines.append(f"coupon: Xb {x0:g}-{x1:g}, Yb {y0:g}-{y1:g}, Zb {z0:g}-{z1:g} (the base's top-left corner): "
+                 f"{', '.join(slots)} slot (slot_clear {SLOT_CLEAR:g}), the lid-bolt bore at "
+                 + ", ".join(f"({x:g}, {z:g})" for x, z in bores) + f", the lip round the corner, the left wall "
+                 f"{y1 - y0 - LIP_H - 1:.0f} x {z1 - z0 - 1:.0f} for the leak patch"
+                 + (f"; {vol:.1f} cm3, about {vol * RING_PRINT:.0f} min on the H2D" if vol else ""))
+    return lines, bad
+
+
+def write_stl(name, shape):
+    import cadquery as cq
+    out = HERE / "stl" / name
+    out.parent.mkdir(exist_ok=True)
+    cq.exporters.export(shape, str(out), tolerance=0.02, angularTolerance=0.1)
+    return out
+
+
 def shell():
     """The printed base's walls, corner blocks, lip and outside features as boxes (box frame), for the drawings and
     the renders; shell_solid() is the real shape."""
@@ -821,6 +1122,28 @@ def main():
             g = B(o.x0 - M, o.y0 - M, o.z0 - M, o.x1 + M, o.y1 + M, o.z1 + M, o.what)
             if c.x0 < g.x1 and g.x0 < c.x1 and c.y0 < g.y1 and g.y0 < c.y1 and c.z0 < g.z1 and g.z0 < c.z1:
                 bad.append(f"{c.what}: less than {M:g} mm to the {o.what}")
+    runs = gland_runs()
+    used = [g for g, n in GLAND_USE.items() if n in ("S1 TH", "S2 UV", "S3 BARO")]
+    pg7 = [(x, y) for x, y, k in GLANDS if k == "PG-7" and GLAND_USE[(x, y)] != "SOLAR"]
+    if sorted(GLAND_USE) != sorted((x, y) for x, y, _k in GLANDS) or \
+            any(GLAND_USE[g].split()[0].lower() != v.split()[0] for g, v in FLAT.items()):
+        bad.append("GLAND_USE does not cover the glands, or a flat cable isn't in its PG-9")
+    if max(runs[g] for g in used) > min(runs[g] for g in pg7 if g not in used):
+        bad.append("a port cable in use has a longer run than the spare's gland")
+    print("glands: " + "; ".join(f"{n} ({x:g}, {y:g}" + (f", run {runs[(x, y)]:.0f})" if n != "SOLAR" else ")")
+                                for (x, y), n in sorted(GLAND_USE.items(), key=lambda t: runs[t[0]])))
+    for fn in (clip_checks, solar_checks):
+        ln_, b_ = fn()
+        for ln in ln_:
+            print(ln)
+        bad += b_
+    ln, b_ = coax_corner_check()
+    print(ln)
+    bad += b_
+    ln_, b_ = coupon_checks()
+    for ln in ln_:
+        print(ln)
+    bad += b_
     blines, bbad = backplane_checks()
     for ln in blines:
         print(ln)
@@ -870,6 +1193,24 @@ def main():
         for ln in lines:
             print(ln)
         bad += rbad
+    if "--clip" in sys.argv:                                # the EVM's two front clips: not gated (no lid part)
+        sol = clip_print()
+        out = write_stl("evm-clips.stl", sol)
+        v = sol.val()
+        print(f"clip STL written: {out} (not gated; both clips on their top faces, {v.Volume() / 1000:.1f} cm3)")
+        if not v.isValid():
+            bad.append("the clips are not a valid solid")
+    if "--coupon" in sys.argv:                              # the test coupon: not gated (it is what settles the gate)
+        sol = coupon_solid()
+        pr = true_frame(sol)
+        bb = pr.val().BoundingBox()
+        out = write_stl("coupon.stl", pr.translate((-bb.xmin, -bb.ymin, -bb.zmin)))
+        print(f"coupon STL written: {out} (not gated; real hand, Yb up: the cut face at Yb {COUPON[1]:g} on the bed, "
+              f"{bb.xlen:.1f} x {bb.ylen:.1f} x {bb.zlen:.1f})")
+        ln_, b_ = coupon_checks(sol)
+        for ln in ln_:
+            print(ln)
+        bad += b_
     if "--stl" in sys.argv and stl_gate():
         print("STL REFUSED: the lid interface is not settled yet: " + ", ".join(stl_gate()))
         sys.exit(2)

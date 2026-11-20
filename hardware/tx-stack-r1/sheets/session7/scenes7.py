@@ -1,11 +1,11 @@
 """Session 7 (charger and pack) illustrations, same pipeline as Sessions 2-6 (r3d: hidden lines + flat colour).
 
-The BQ25798EVM: no maker CAD in the repo. What IS in the repo (sources.py, from Clint's photo IMG_8591 and the
-SLUUCB5E BOM) places it: 90 x 90 board; J1, J2 (On-Shore ED120/2DS) and J6 (micro-B, bottom-mounted) on the left
-edge; J3 (ED120/2DS) and J5 (ED120/3DS) on the right edge, 6 mm past it; J8 (Molex 0022053041, right-angle KK 4-pin)
-on the lid edge 15-27 mm from the left, 12 mm past it. evm_edge_tails gives the terminal blocks' spans along the
-edges. That is all this drawing shows of the board: the jumpers (JP7-JP32), J7 and the chips are not placed in the
-repo, so the pages send you to the silk for them and never draw them on the board.
+The BQ25798EVM: no maker CAD in the repo. What IS in the repo (sources.py) places it: the 90 x 90 outline (Clint);
+J8 (Molex 0022053041, right-angle KK 4-pin) on the lid edge 15-27 mm from the left, 12 mm past it, and the right
+blocks 6 mm past the right edge (Clint's photo IMG_8591); and from TI SLUUCB5E Figure 4-1 (the top-layer drawing,
+scaled): each terminal's order and screw position (evm_terms, evm_term_y), J6 along the left edge (evm_j6_y), J7
+(evm_j7) and the jumpers this build touches (evm_jp). J1, J2 (On-Shore ED120/2DS) on the left edge; J3 (ED120/2DS)
+and J5 (ED120/3DS) on the right. The chips and the other parts are not drawn.
 
 EVM frame (mm): x from the board's left (J6) edge to its right (J3/J5) edge, y from its lid edge (J8) to its back
 edge (toward the backplane), z up from the underside (top face at 1.6). Into the box: (EVM_X0 + x, EVM_Y1 - y,
@@ -66,13 +66,26 @@ def from_back(a, b):
     return EVM_D - b, EVM_D - a
 
 
-# terminal blocks: (name, edge, y0, y1 of the tails span (widened 1 each side in sources), positions, silk names)
-# the silk names are SLUUCB5's net names (schematic/model.py U1 pins); their ORDER along the block is not in the repo
-BLOCKS = {"J1": ("L", *from_back(T_L1, T_L2), 2, ("VIN1", "GND")),
-          "J2": ("L", *from_back(T_L3, T_L4), 2, ("VIN2", "GND")),
-          "J3": ("R", *from_back(T_R1, T_R2), 2, ("SYS", "GND")),
-          "J5": ("R", *from_back(T_R3, T_R4), 3, ("BATTERY", "SNS_BATP", "GND"))}
-J6_Y = (40.0, 47.0)                 # guessed: between J2 and J1 on the left edge (sources: "left edge (J1, J2 and J6)")
+# terminal blocks: (name, edge, screw y's in this frame (lid edge first), silk names in the same order), from
+# SLUUCB5E Figure 4-1 (sources: evm_terms, evm_term_y, which run from the back edge)
+_TERMS = {b[0]: b[1:] for b in S.val("evm_terms")}
+_TERM_Y = {b[0]: b[1:] for b in S.val("evm_term_y")}
+BLOCKS = {n: ("L" if n in ("J1", "J2") else "R", tuple(EVM_D - y for y in reversed(_TERM_Y[n])),
+              tuple(reversed(_TERMS[n]))) for n in ("J1", "J2", "J3", "J5")}
+J6_Y = tuple(EVM_D - y for y in reversed(S.val("evm_j6_y")))     # SLUUCB5E Figure 4-1, along the left edge
+J7_X0, J7_X1, _j7a, _j7b = S.val("evm_j7")
+J7_Y = (EVM_D - _j7b, EVM_D - _j7a)
+JPS = [(nm, x, EVM_D - y, n, ax) for nm, x, y, n, ax in S.val("evm_jp")]
+# the shunts as supplied (SLUUCB5E Table 1-3) and after Session 7 (ASSEMBLY.md 1.1-1.5)
+JP_ON = {"supplied": {"JP9", "JP12", "JP17", "JP18", "JP24", "JP30", "JP32"},
+         "done": {"JP12", "JP17", "JP22", "JP30", "JP32"}}
+
+
+def term_k(block, net):
+    """The position (lid edge first) of `net` on a terminal block."""
+    return BLOCKS[block][2].index(net)
+
+
 BLK_DEPTH, BLK_H = 7.6, 10.0
 
 
@@ -110,15 +123,13 @@ def comp(shapes):
 
 def block_geom(name):
     """(x0, x1, y0, y1, positions centres [(x_entry, y)], outward direction sign)."""
-    edge, a, b, n, _silk = BLOCKS[name]
-    yc = (a + b) / 2
-    span = n * PITCH5
-    y0, y1 = yc - span / 2, yc + span / 2
+    edge, ys, _silk = BLOCKS[name]
+    y0, y1 = min(ys) - PITCH5 / 2, max(ys) + PITCH5 / 2
     if edge == "R":
         x0, x1, out = EVM_W + OV_R - BLK_DEPTH, EVM_W + OV_R, 1
     else:
-        x0, x1, out = 0.4, 0.4 + BLK_DEPTH, -1
-    pos = [((x1 if out > 0 else x0), y0 + PITCH5 * (k + 0.5)) for k in range(n)]
+        x0, x1, out = 2.4, 2.4 + BLK_DEPTH, -1                # Figure 4-1: J1, J2 from 2.4 in from the left edge
+    pos = [((x1 if out > 0 else x0), y) for y in ys]
     return x0, x1, y0, y1, pos, out
 
 
@@ -138,7 +149,7 @@ def add_block(s, name, labels=True):
     s.anchor(name, (x0 + 1.0, (y0 + y1) / 2 + PITCH5 / 2, z0 + BLK_H), on=name)
 
 
-def add_evm(s, silk=True):
+def add_evm(s, silk=True, jp_state="supplied"):
     s.add("evm", M.box(0, 0, 0, EVM_W, EVM_D, 1.6).val(), EVM_PCB, 0.9)
     for n in BLOCKS:
         add_block(s, n)
@@ -153,10 +164,29 @@ def add_evm(s, silk=True):
         s.add(f"J8_p{k}", M.box(x - 0.32, 6.6 - J8_OUT - 0.6, 3.0, x + 0.32, 4.0, 3.64).val(), GOLD)
         s.anchor(f"J8_{k + 1}", (x, 6.6 - J8_OUT - 0.6, 3.3))
     s.anchor("J8", ((hx0 + hx1) / 2, 6.6, 9.5), on="J8")
+    # J7 (Molex 0393570002, 2 x 3.5 mm) and the jumpers this build touches, where Figure 4-1 puts them
+    s.add("J7", M.box(J7_X0, J7_Y[0], 1.6, J7_X1, J7_Y[1], 1.6 + 8.0).val(), BLOCK)
+    for k, xs in enumerate(((J7_X0 + J7_X1) / 2 - 1.75, (J7_X0 + J7_X1) / 2 + 1.75)):
+        s.add(f"J7_s{k}", cyl(1.1, (xs, sum(J7_Y) / 2, 9.4), (xs, sum(J7_Y) / 2, 9.8)), STEEL)
+    s.anchor("J7", (J7_X1, sum(J7_Y) / 2, 9.6), on="J7")
+    for nm, x, y, n, ax in JPS:
+        hx, hy = (1.27 * n, 1.27) if ax == "x" else (1.27, 1.27 * n)
+        s.add(f"{nm}_base", M.box(x - hx, y - hy, 1.6, x + hx, y + hy, 4.1).val(), BLACK)
+        for k in range(n):
+            px, py = (x - hx + 1.27 + 2.54 * k, y) if ax == "x" else (x, y - hy + 1.27 + 2.54 * k)
+            s.add(f"{nm}_p{k}", M.box(px - 0.32, py - 0.32, 4.1, px + 0.32, py + 0.32, 10.0).val(), GOLD)
+        if nm in JP_ON[jp_state]:                            # the shunt over two pins (JP9's on BATP-BATTERY)
+            sx, sy = (x + 1.27, y) if (ax == "x" and n == 3) else (x, y)
+            ex, ey = (2.54, 1.25) if ax == "x" else (1.25, 2.54)
+            s.add(f"{nm}_sh", M.box(sx - ex, sy - ey, 4.3, sx + ex, sy + ey, 10.3).val(), "#2A2A2A")
+        s.anchor(nm, (x, y, 10.3))
+        if silk:
+            s.text("evm", nm, (x + (hx + 0.8 if ax == "y" else -hx), y - (3.2 if ax == "x" else 0.9), 1.6),
+                   (1, 0, 0), (0, 1, 0), 2.0, colour="#FFFFFF")
     if silk:
-        for n, (edge, a, b, *_r) in BLOCKS.items():
+        for n, (edge, ys, _silk) in BLOCKS.items():
             x = EVM_W - 4.0 - BLK_DEPTH if edge == "R" else 4.0 + BLK_DEPTH
-            s.text("evm", n, (x, (a + b) / 2 - 1.2, 1.6), (1, 0, 0), (0, 1, 0), 3.0, colour="#FFFFFF")
+            s.text("evm", n, (x, sum(ys) / len(ys) - 1.2, 1.6), (1, 0, 0), (0, 1, 0), 3.0, colour="#FFFFFF")
         s.text("evm", "J8", ((J8_X0 + J8_X1) / 2, 10.0, 1.6), (1, 0, 0), (0, 1, 0), 3.0, colour="#FFFFFF")
         s.text("evm", "J6", (8.5, sum(J6_Y) / 2 - 1.2, 1.6), (1, 0, 0), (0, 1, 0), 3.0, colour="#FFFFFF")
         s.text("evm", "BQ25798EVM", (EVM_W / 2, EVM_D / 2, 1.6), (1, 0, 0), (0, 1, 0), 5.0, colour="#FFFFFF")
@@ -203,10 +233,11 @@ def evm_top():
     R("evm_top", s, (0, 0, 1), up=(0, 1, 0), fit=(330, 260), line=0.5)
 
 
-# lead colours and where they land (ASSEMBLY.md section 4 / BACKPLANE.md section 3): block, position (silk order
-# assumed BATTERY SNS_BATP GND on J5, SYS GND on J3, lid end first), body, band
-LEAD_AT = {"J5 BAT": ("J5", 0, "red", "black"), "J5 SNS": ("J5", 1, "white", "red"), "J5 GND": ("J5", 2, "black", None),
-           "J3 SYS": ("J3", 0, "red", "black"), "J3 GND": ("J3", 1, "black", None)}
+# lead colours and where they land (ASSEMBLY.md section 4 / BACKPLANE.md section 3): block, position (SLUUCB5E
+# Figure 4-1, lid end first), body, band
+LEAD_AT = {"J5 BAT": ("J5", term_k("J5", "BATTERY"), "red", "black"),
+           "J5 SNS": ("J5", term_k("J5", "SNS_BATP"), "white", "red"), "J5 GND": ("J5", term_k("J5", "GND"), "black", None),
+           "J3 SYS": ("J3", term_k("J3", "SYS"), "red", "black"), "J3 GND": ("J3", term_k("J3", "GND"), "black", None)}
 
 
 def add_leads(s, which=None):
@@ -230,7 +261,7 @@ def add_leads(s, which=None):
 @scene
 def evm_done():
     s = r3d.Scene()
-    add_evm(s)
+    add_evm(s, jp_state="done")
     add_leads(s)
     # the J8 lead plugged on, three wires toward the backplane (up the picture: they run back over the board)
     hx0 = J8_X0 + 0.9
@@ -287,14 +318,14 @@ def j5_sns():
     s = r3d.Scene()
     s.add("evm", M.box(EVM_W - 18, 12, 0, EVM_W, 48, 1.6).val(), EVM_PCB, 0.6)
     add_block(s, "J5")
-    pts = into("J5", 1, back=26.0)
+    pts = into("J5", term_k("J5", "SNS_BATP"), back=26.0)
     lead(s, "sns", pts, "white", "red")
     s.anchor("sns", pts[0], on="sns")
     R("j5_sns", s, (1, -0.45, 0.8), up=(0, 0, 1), fit=(250, 150), line=0.55)
 
 
 def j7_block(s, x=0.0, y=0.0):
-    """Molex 0393570002: a 2-position 3.50 mm terminal block (no place on the board in the repo: drawn on its own)."""
+    """Molex 0393570002: a 2-position 3.50 mm terminal block, drawn on its own (its place on the board: evm_j7)."""
     body = M.box(x - 3.5, y - 3.8, 0, x + 3.5, y + 3.8, 8.0).val()
     for k in (-1, 1):
         body = body.cut(M.box(x + k * 1.75 - 1.2, y + 2.0, 1.8, x + k * 1.75 + 1.2, y + 3.9, 4.2).val())

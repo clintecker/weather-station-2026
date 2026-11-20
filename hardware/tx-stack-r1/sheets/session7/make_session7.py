@@ -50,6 +50,12 @@ def check_item(c, x, y, s_, size=9):
     text(c, r[2] + 6, y, s_, size, "ALT", NEON)
 
 
+def from_doc(c, x, y, s_, size=9):
+    """A grey 'FROM TI' tag: a fact read off SLUUCB5E (the user's guide), no bench check needed."""
+    r = chip(c, x, y, "FROM TI", 7.5, "HEAD", WHITE, "l", fill=GREY)
+    text(c, r[2] + 6, y, s_, size, "ALT", GREY)
+
+
 def wait_box(c, x, y, w, lines):
     """The WAITS ON FIRMWARE item."""
     h = 24 + 12 * len(lines)
@@ -98,7 +104,7 @@ def cover(c, pg):
     x, y, w, h = panel(c, g.cell(0, 2, 2), None, "STANDING ORDERS.", warn=True)
     rules = ["THE PACK NEVER PLUGS INTO PG1 IN THIS SESSION. ITS PLUG STAYS APART FROM PG1'S SOCKET, TAPED.",
              "NOTHING IS POWERED UNTIL PAGE 09. EVERY SOLDER AND SCREW JOB HAPPENS WITH THE USB CABLE OUT.",
-             "JUMPERS AND J7: READ THEIR NAMES OFF THE EVM'S SILK. THIS SHEET DOESN'T KNOW WHERE THEY SIT.",
+             "JUMPERS AND J7 ARE DRAWN WHERE TI'S LAYOUT PUTS THEM. CHECK EACH NAME ON THE SILK BEFORE YOU PULL A SHUNT.",
              "SENSE LEAD INTO J5 BEFORE JP9 COMES OFF (ASSEMBLY.md 1.2): BATP MUST NEVER FLOAT."]
     for i, s in enumerate(rules):
         yy = y + h - 10 - i * (h - 6) / 4
@@ -114,7 +120,7 @@ def built(c, pg):
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "TOP FACE, the backplane edge at the top, the lid edge (J8) at the bottom: how it will sit in the box, seen from",
         "the lid. J3 and J5 take the leads from the backplane (up the page) and the pack - lead (down the page). The J8",
-        "lead goes to XJ1 on the backplane. RT1 on J7 is left out of the drawing: J7's place isn't in the repo."])
+        "lead goes to XJ1 on the backplane. RT1's leads into J7 are on page 04."])
     a = Art(c, "evm_done", x + 60, y + 30, w - 220, h - 80)
     names = {"J5 BAT": "J5 BAT (from line 19)", "J5 SNS": "J5 SNS (from R7, line 24)", "J3 SYS": "J3 SYS (from line 26)",
              "J3 GND": "J3 GND (from line 12)", "J5 GND": "J5 GND (PG1 - lead, from the pack)"}
@@ -140,15 +146,18 @@ def supplied(c, pg):
     page(c, "01", "THE EVM AS SUPPLIED", "TI BQ25798EVM (SLUUCB5). IT SHIPS SET FOR TWO CELLS. NOTHING CONNECTED.", pg,
          SLOGANS7[2])
     g = Grid(2, 1, heights=[1])
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["TOP FACE. Drawn: the board and the parts this",
-                                             "session uses whose place the repo knows.",
+    x, y, w, h = panel(c, g.cell(0, 0), 1, ["TOP FACE. Drawn: the board, the blocks, J7 and",
+                                             "the jumpers this session touches, as shipped.",
                                              "J1, J2: inputs (J2 = solar, Session 8). J3: SYS.",
-                                             "J5: the battery. J6: USB. J8: I2C."])
+                                             "J5: the battery. J6: USB. J7: RT1. J8: I2C."])
     a = Art(c, "evm_top", x + 10, y + 70, w - 20, h - 120)
-    check_item(c, x + 14, y + 52, "J6's place along the left edge is a guess.")
-    check_item(c, x + 14, y + 38, "Terminal order in J3 and J5: read the silk.")
-    x, y, w, h = panel(c, g.cell(1, 0), 2, ["The jumpers by name. Find each one by its",
-                                             "silk label: their places aren't in the repo.",
+    for k, nm in enumerate(("JP22", "JP24", "JP18", "JP9")):
+        px, py = a.A(nm)
+        label(c, x + w - 14 - 62 * (3 - k), y + h - 64, nm, px, py, 9, color=NEON)
+    from_doc(c, x + 14, y + 52, "Places and terminal order: SLUUCB5E Figure 4-1.")
+    from_doc(c, x + 14, y + 38, "J5 from the back: GND, SNS_BATP, BATTERY.")
+    x, y, w, h = panel(c, g.cell(1, 0), 2, ["The jumpers by name, each drawn on the left",
+                                             "with its silk label (SLUUCB5E Figure 4-1).",
                                              "Keep every pulled shunt in a bag."])
     yy = y + h - 44
     text(c, x + 14, yy, "JUMPER", 9.5, "HEAD", INK)
@@ -199,14 +208,14 @@ def sense(c, pg):
     a = Art(c, "j5_sns", x + 40, y + 10, w - 240, h - 50, align="l")
     label(c, a.x + a.w + 20, y + h - 30, "J5 SNS_BATP: LEAD IN", *a.A("J5_1"), 9.5, color=NEON)
     label(c, a.x + a.w + 20, y + 40, "WHITE, RED BAND: FROM R7", *a.A("sns"), 9)
-    check_item(c, a.x + a.w + 20, y + 22, "Which J5 position is SNS_BATP: the silk.")
+    from_doc(c, a.x + a.w + 20, y + 22, "SNS_BATP: J5's middle (Fig. 4-1).")
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Only now: JP9 shunt off.", "Into the bag with JP24's spare."])
     a = Art(c, "jp_pull", x + 30, y + 6, w - 60, h - 40)
     label(c, x + w - 10, y + h - 18, "JP9: SHUNT OFF", *a.A("shunt"), 10, color=NEON, anchor="r")
-    x, y, w, h = panel(c, g.cell(1, 1), 3, ["The doc says solder: J5 is a screw block."], warn=True)
-    bullets(c, x + 14, y + h - 42, ["ASSEMBLY.md says to solder the lead to", "J5 SNS_BATP. On the BOM, J5 is an",
-                                     "ED120/3DS screw block, so it's screwed.", "If your EVM has a SNS_BATP pad",
-                                     "instead, solder it there."], 9)
+    x, y, w, h = panel(c, g.cell(1, 1), 3, ["Screwed, not soldered."])
+    bullets(c, x + 14, y + h - 42, ["J5 is an ED120/3DS screw block (BOM).", "From the back edge: GND, SNS_BATP,",
+                                     "BATTERY. JP9 sits just in front of it,", "toward the lid: BAT, BATP, BATTERY",
+                                     "left to right."], 9)
 
 
 # ------------------------------------------------------------------ 04 thermistor
@@ -222,8 +231,8 @@ def therm(c, pg):
     label(c, x + w - 10, y + h - 20, "BEAD: TAPE IT TO THE PACK", *a.A("bead"), 9, anchor="r")
     label(c, x + 14, y + h * 0.5, "SPLICE + SHRINK", *a.A("splice"), 9)
     label(c, x + w - 10, y + 76, "J7 (2 x 3.5 mm)", *a.A("J7"), 9, anchor="r")
-    check_item(c, x + 14, y + 56, "J7's place on the board: read the silk.")
-    check_item(c, x + 14, y + 42, "No polarity: either leg in either J7 position.")
+    from_doc(c, x + 14, y + 56, "J7 sits by JP18 near the lid edge (Fig. 4-1).")
+    from_doc(c, x + 14, y + 42, "No polarity: either leg in either position.")
     x, y, w, h = panel(c, g.cell(1, 0), 2, ["Everything else stays as it came."])
     yy = bullets(c, x + 44, y + h - 24, [
         "JP12, JP17 and JP30 stay in. JP30 feeds the EVM's",
@@ -274,7 +283,7 @@ def power_leads(c, pg):
         "transmit peaks come back on that black lead.",
         "", "Leave a service loop on all three: the EVM",
         "slides out of its shelf on these leads."], 9.3)
-    check_item(c, x + 14, yy - 14, "J3: SYS and GND positions from the silk.")
+    from_doc(c, x + 14, yy - 14, "J3 from the back: GND, SYS (Figure 4-1).")
 
 
 # ------------------------------------------------------------------ 06 the pack leads
@@ -331,7 +340,8 @@ def j8(c, pg):
     LAB.block(x + 8, yy, x + w - 4, y + h - 10, "pin table")
     x, y, w, h = panel(c, g.cell(1, 1), 3, ["J8 is a right-angle KK header on the", "EVM's lid edge, about 12 mm proud."])
     yy = bullets(c, x + 44, y + h - 24, [
-        "Pin 1: find the silk's 1 next to J8.",
+        "Pin 1 is J8's left pin seen from the top",
+        "(its square pad, SLUUCB5E Figure 4-1).",
         "Match the housing's 1 to it, then the",
         "1 x 3 end: black on line 2 (nearest", "line 0), yellow 7, blue 10.",
         "", "J8 pin 1 is also tied to the EVM's",
@@ -402,14 +412,14 @@ REPORT_ROWS = [("SYS, J3, USB IN, NO PACK", "V", "page 09 step 2"),
                ("STAT LED (D13)", "ON/OFF/BLINK", "and JP32 kept or pulled"),
                ("RT1 ACROSS J7", "kohm", "about 10 at room temperature"),
                ("METER CHECKS 1-9 ALL PASS", "Y / N", "page 08"),
-               ("J3, J5 ORDER ON THE SILK", "WRITE", "e.g. J5: BAT SNS GND"),
+               ("J5 SILK MATCHES PAGE 03", "Y / N", "back edge first: GND, SNS_BATP, BATTERY"),
                ("PHOTO OF THE EVM, TOP", "SENT", "jumpers readable")]
 
 
 def report(c, pg):
     page(c, "10", "REPORT THE CHARGER.", "THE EVM IS SET FOR ONE CELL AND WIRED. SEND THE NUMBERS.", pg, SLOGANS7[4])
     g = Grid(1, 2, heights=[1.55, 0.45])
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["Send these to Claude. They fix the drawing's guesses (J6, J7, the silk order)."])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, ["Send these to Claude. The drawing is from TI's layout figure: say if your board differs."])
     for i, (lab, unit, exp) in enumerate(REPORT_ROWS):
         yy = y + h - 22 - i * (h - 16) / len(REPORT_ROWS)
         text(c, x + 44, yy, lab, 13, "HEAD", INK)
@@ -421,7 +431,8 @@ def report(c, pg):
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: Session 8, into the box."])
     for i, s_ in enumerate(["The pack on its tray (RT1 taped to it), the EVM on its shelf, the backplane, the cards.",
                             "The glands, the cables and their plugs, the solar lead into J2, the coax.",
-                            "The pack still stays unplugged and JP17 out until the firmware item is done."]):
+                            "After it: flash the TX (make ROLE=tx BOARD=wio-e5 WS_POWER_PROFILE=3 WS_I2C_MUX=1) and type CHARGER.",
+                            "The pack and JP17 go on only once CHARGER shows vreg 4200 and ichg 900."]):
         text(c, x + 44, y + h - 22 - i * 16, "-  " + s_, 10, "ALT", INK)
 
 

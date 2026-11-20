@@ -898,8 +898,10 @@ def assembly_sheet():
          "## 1. Charger (BQ25798EVM) before any power: jumper changes (TI SLUUCB5; issue #34)", "",
          "The EVM ships set for two cells. Do these in order, with nothing connected:", "",
          "1. **JP24 off, JP22 on** (PROG: one cell, 1.5 MHz). JP22 is the only PROG jumper fitted.",
-         "2. **Battery sense wire first, then JP9 off.** Solder the charger battery sense lead to J5 SNS_BATP. It comes "
-         "from R7 on the backplane (its free leg at line 24, hole 7). Only then remove JP9, so BATP never floats.",
+         "2. **Battery sense wire first, then JP9 off.** Screw the charger battery sense lead into J5 SNS_BATP, J5's "
+         "middle position (J5 is an ED120/3DS screw block: PGND, BATP, BATTERY from the back edge, SLUUCB5E Figure "
+         "4-1). It comes from R7 on the backplane (its free leg at line 24, hole 7). Only then remove JP9, so BATP never "
+         "floats.",
          "3. **JP18 off, thermistor on J7.** Fit the Adafruit #372 10 kohm NTC (B 3950) to J7 and tape it to the pack. "
          "The EVM's TS divider is set for a 103AT (B 3435), so the cold and hot thresholds move by a few degrees. "
          "Read the TS percentage over I2C at room temperature. Check that it sits in the normal band before you charge.",
@@ -929,31 +931,39 @@ def assembly_sheet():
          "   `cage.py --stl` refuses the full base until `ring_fit` and L2 (`l2_screw_pos`, the lid bolt positions) are "
          "sourced. L1 left that gate when Clint's printed bolts (option c) were chosen. Also settle the EVM's part "
          "heights and J6 under it (`evm`, `evm_under`).",
-         "2. Then print a second test coupon. `cage.py` has no coupon mode, so nothing in the repo defines its shape "
-         "yet. It should hold one card slot (tune `slot_clear` until a card slides with light friction), one lid bolt "
-         "post (try one of the printed bolts in it) and one lid corner of the land and tongue. Fit the lid on that "
-         "corner and check that the sealing lip presses the O-ring with the lid's walls down on the land. The squeeze "
-         "isn't settled: it follows from whichever lip height is right (README). Add a 30 mm square of the base wall "
-         "to leak-test.",
+         f"2. Then print the test coupon (`cage.py --coupon`, `cage/stl/coupon.stl`, not gated). It's the base's "
+         f"top-left corner cut out of the model: Xb {cage.COUPON[0]:g} to {cage.COUPON[3]:g}, Zb {cage.COUPON[2]:g} up, "
+         f"Yb {cage.COUPON[1]:g} to the lip, about {cage.RING_PRINT * cage.COUPON_CM3:.0f} minutes, printed Yb up with the cut "
+         "face on the bed. It holds B3's slot in the left wall (tune `slot_clear` until a card slides in with light "
+         "friction), the top-left lid bolt bore (try one of the printed bolts in it) and the land and sealing lip round "
+         "that corner. Fit the lid on that corner and check that the sealing lip presses the O-ring with the lid's "
+         "walls down on the land. The squeeze isn't settled: it follows from whichever lip height is right (README). "
+         "Its left and top walls are more than 30 mm square, so leak-test them too.",
          "3. Print the base in a light-coloured PETG (README, PETG in sun), with the floor on the bed (Yb up), not rim "
          "down. The 45-degree roofs over the groove and the backplane slot are drawn for that orientation. The floor is "
          "3 mm, the long walls 4.25 mm and the short walls 4.0 mm, printed solid (roughly 9-10 perimeters at a 0.42 mm "
          "line width). Don't put inserts in the four corner posts: the lid goes on with Clint's 3D-printed bolts in "
          "their bores. With the iron, set the retention bar's two M3 heat-set inserts in the left wall's front face. "
-         "Set the EVM clip's two down into the left keeper and the right lid-end block, at Xb 4.5 and 100.25, Yb 106.",
+         "Set the EVM clips' two down into the left keeper and the right lid-end block, at Xb 4.5 and 100.25, Yb 106. "
+         "Print the two clips (`cage.py --clip`, `cage/stl/evm-clips.stl`, not gated) flat on their top faces.",
          "",
          "   Leak-test the bare base: water in the base, or soapy water with the lid on and a little pressure through "
          "the vent hole. Coat the inside only if it leaks. Paint or clear-coat the outside against UV.",
          f"4. Fit the glands in the bottom wall's bosses. Five {S.val('gland')[0]:g} mm holes take PG-7s #762, for the "
          "four sensor-port cables S1-S4 and the solar lead. Two 15.5 mm holes take PG-9s #761, for the flat wind and "
-         "rain cables (right column). There's no spare. Fit the M12 vent, and the SMA bulkhead low in the right wall "
-         "(enclosure 4: Yb 94.14, Zb 60.38).",
+         "rain cables (right column). There's no spare. Which gland takes which cable (`cage.GLAND_USE`, Xb, Yb): "
+         + ", ".join(f"{n} ({x:g}, {y:g})" for (x, y), n in sorted(cage.GLAND_USE.items(), key=lambda t: (t[0][1], t[0][0])))
+         + ". The port cables in use get the shortest runs from the right column's foot (back and left under the tray), "
+         "the spare S4 the longest, and the solar lead the left front one, nearest J2. Fit the M12 vent, and the SMA "
+         "bulkhead low in the right wall (enclosure 4: Yb 94.14, Zb 60.38).",
          "",
          "   Then fit the backplane (its build sheet, section 6). Tilt its factory right edge into the right corner "
          "post's slot, lower it and slide it left into the left wall's groove. There are no screws, because the cards "
          "hold it, so fit them straight after. It comes off again only after every card is out.",
          "5. Shelves, bottom to top: the pack on its tray (strap) first. Next the EVM, with its Bumpon feet peeled off, "
-         "slid back on its ledges to the stop, clip at the front, leads with service loops. Then the cards.",
+         "slid back on its ledges to the stop. Then the two front clips, one each side of J8: each clip's lip over the "
+         f"board's front edge, an M3 x {cage.CLIP_SCREW[2]:g} socket cap through it into its insert. Leads with service "
+         "loops. Then the cards.",
          f"6. Cables. A 6P plug ({S.val('plug_6p')[0]:g} x {S.val('plug_6p')[1]:g} mm, "
          f"{math.hypot(S.val('plug_6p')[0], S.val('plug_6p')[1]):.1f} across its corners, "
          f"{math.hypot(S.val('plug_6p')[0], S.val('plug_6p')[2]):.1f} with the latch) passes no gland. The PG-7 bore is "
@@ -979,8 +989,9 @@ def assembly_sheet():
          "7. The coax: fit AD1 on the Wio-E5 mini's SMA, its arm toward the lid, and the 135110 plug on AD1. Bend the "
          "cable right in front of the cards and run it down the right column to the bulkhead low in the right wall. "
          "Clip it to the right corner post. The 6 in cable reaches. Clint checked it on 2026-11-17: it fits the low "
-         "bulkhead with no tight bend. [TBD-MEASURE] Check that the straight plug on the bulkhead's inner end clears "
-         "the EVM's lid-right corner (or use a right-angle plug).",
+         "bulkhead with no tight bend. The straight plug on the bulkhead's inner end passes about "
+         f"{cage.SMA[1] - 4.0 - cage.EVM_Z0 - 1.6:.1f} mm over the EVM's lid-right corner, where SLUUCB5E Figure 4-1 "
+         "has only silk (JP9, the nearest part, is about 4 mm off; `cage.py` checks it).",
          "8. Mount the box with hose clamps or straps through the two slots in each mounting flange (the short ends, "
          "in the floor plane). Put the lid on with its four printed bolts.", "",
          f"## 3. Cards, bottom to top: {order}", "",
@@ -1002,6 +1013,11 @@ def assembly_sheet():
         if ln:
             L.append(f"| {where(a)} | {where(c)} | {ln} | {note} |")
     L += ["| EVM J8 (KK 4-pin housing, pins 1-3) | backplane charger pins | 150 mm | charger I2C: ground, clock, data |",
+          f"| solar panel cable (Voltaic P110), cut at its gland ({', '.join(f'{x:g}, {y:g}' for (x, y), n in cage.GLAND_USE.items() if n == 'SOLAR')}) "
+          f"| EVM J2 VIN2 (red), J2 GND (black) | {math.ceil((cage.solar_len() + 70.0) / 10.0) * 10:.0f} mm | 22 AWG "
+          "stranded red/black pair, twisted, soldered and heat-shrunk to the panel cable's cores just above the gland "
+          "nut; 0.34 mm2 (22 AWG) bootlace ferrules into J2. Route: forward under the EVM, up in front of the left "
+          "keeper between its clip and J8, back over the clip along the left wall to J2 |",
           "",
           f"Battery leads are 24 AWG stranded (red +, black -), about {S.val('wire24')[2] * 0.1:.1f} mV drop per 0.1 m "
           f"at 1 A ({S.val('wire24')[2]:g} mohm/m). J5 BATTERY to line 19 is soldered at the backplane and screwed at "
@@ -1012,6 +1028,11 @@ def assembly_sheet():
           "ground lead. So they don't depend on the I2C lead's J8 pin 1. J8 pin 1 is tied to the same ground on the "
           "EVM and still carries a small parallel share. The battery current reaches B4 only on doubled header pins "
           "(19-20, 21-22, layout check L4). No lead goes to a card (L10).", "",
+          f"The solar pair is 22 AWG: the panel gives {S.val('solar_p110')[1]:g} A at its maximum power point and about "
+          f"{S.val('solar_p110')[3]:g} A into a short (solar_p110), and the pair's two legs drop about "
+          f"{2 * (cage.solar_len() + 70.0) / 1000 * S.val('wire22')[2] / 1000 * S.val('solar_p110')[1] * 1000:.0f} mV at "
+          f"{S.val('solar_p110')[1]:g} A. Its length is `cage.solar_route()` ({cage.solar_len():.0f} mm, checked clear "
+          "of the cards, the pack, the EVM and the clips) plus a 70 mm service loop.", "",
           "Inside the box, leave 60-80 mm service loops on the jack cables and the solar lead (no spec sets that length "
           "yet). Outside, leave a drip loop below each gland.", "",
           "## 5. Before the first power", "",
