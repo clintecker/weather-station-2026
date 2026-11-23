@@ -567,7 +567,7 @@ def close(c, pg):
     a = Art(c, "mount", x + 8, y + 10, w - 120, h - 46, align="l")
     label(c, x + w - 10, y + h - 26, "FLANGE, 2 SLOTS", *a.A("flange_top"), 8.6, anchor="r")
     label(c, x + w - 10, y + 24, "FLANGE, 2 SLOTS", *a.A("flange_bot"), 8.6, anchor="r")
-    x, y, w, h = panel(c, g.cell(1, 1), 3, ["Glands down, always."])
+    x, y, w, h = panel(c, g.cell(1, 1), 3, ["After Session 9. Glands down, always."])
     steps_list(c, x + 44, y + h - 18, w - 56, [
         "The lid on, with its four printed bolts.",
         "Hose clamps or straps through the two slots in each flange.",
@@ -597,10 +597,10 @@ def report(c, pg):
         c.rect(x + 330, yy - 8, 110, 24, stroke=1, fill=0)
         text(c, x + 448, yy, unit, 11, "HEAD", INK)
         text(c, x + 44, yy - 12, exp, 8.5, "MONO", GREY)
-    x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: the CHARGER check (Session 7 page 09). The firmware is ready."])
-    for i, s_ in enumerate(["Flash the TX: make ROLE=tx BOARD=wio-e5 WS_POWER_PROFILE=3 WS_I2C_MUX=1.",
-                            "USB in J6, no pack, JP17 out. Type CHARGER: cells=1 vreg_mv=4200 ichg_ma=900 ts=NORMAL hold=none.",
-                            "Only then refit JP17 and plug the pack into PG1, last."]):
+    x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: Session 9, COMMISSION (tx-session9-commission.pdf). Lid off again."])
+    for i, s_ in enumerate(["Unlock and flash the TX over J3: make ROLE=tx BOARD=wio-e5 WS_POWER_PROFILE=3 WS_I2C_MUX=1.",
+                            "Provision it, then the CHARGER check: USB in J6, no pack, JP17 out (Session 9 page 07).",
+                            "Only then refit JP17 and plug the pack into PG1, last (Session 9 page 08)."]):
         text(c, x + 44, y + h - 22 - i * 16, "-  " + s_, 10, "ALT", INK)
 
 
