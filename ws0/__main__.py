@@ -13,7 +13,7 @@ from gateway import open_read_only
 
 from gateway import MINUTE_S
 from .protocol import EPOCH_RESERVED, KCV_LEN, KEY_LEN, KIND_ACK, KIND_OBS, Nonces
-from .service import API_TOKEN_MIN, CounterRegression, Gateway, MQTT, Replay, http_server, load_config
+from .service import API_TOKEN_MIN, RECEIVER_SILENT_S, CounterRegression, Gateway, MQTT, Replay, http_server, load_config
 from .simulator import BACKLOG_PER_MINUTE, DemoReceiver, Node
 from .link import ReceiverLink, open_port
 from .clock import HostClock
@@ -22,7 +22,6 @@ from .web import SchemaDrift, line_fields, utc_stamp
 
 
 
-RECEIVER_SILENT_S = 180   # no RX #alive (every 60 s) for this long: the receiver is silent
 # The outer alarm. Inside it, ReceiverLink reopens an open but silent port in place after
 # ws0/link.py SILENT_REOPEN_S (90 s, doubling to 400 s); its '#gateway serial-reopen' line reaches
 # Services.note, so receiver.log and a warn row in gateway_events record each reopen.
@@ -295,6 +294,7 @@ class Services:
         self.receiver_log = RotatingLog(self.directory/'receiver.log')
         # Short read timeout: the node's ACK window is 2 s, so frames are answered immediately.
         self.link = ReceiverLink(serial,serial_number,self.note)
+        self.gateway.expects_receiver = True   # the receiver-silent alert counts from start until the first report
         self.gateway.clock = HostClock(cfg.get('ntp_server','pool.ntp.org'),log=self.note).start()
 
     def note(self, text):

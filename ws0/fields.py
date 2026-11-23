@@ -84,7 +84,7 @@ FIELDS = (
     Field(2, 'pressure_hpa', 2, 8000, scale=10, offset=-3000, unit='hPa', ha_class='atmospheric_pressure'),
     Field(3, 'wind_speed_ms', 2, 750, scale=10, unit='m/s', ha_class='wind_speed'),
     Field(4, 'wind_gust_ms', 2, 750, scale=10, unit='m/s', ha_class='wind_speed'),
-    Field(5, 'wind_dir_deg', 2, 359, unit='°'),
+    Field(5, 'wind_dir_deg', 2, 359, unit='°', ha_class='wind_direction'),
     Field(6, 'rain_tips', 3, code_top(3), counter=True),
     Field(7, 'uv_index', 1, 250, scale=10),
     Field(8, 'irradiance_wm2', 2, 2000, unit='W/m²', ha_class='irradiance'),
@@ -268,6 +268,33 @@ def dew_point(temperature_c, humidity_pct):
     return round(b * gamma / (a - gamma), 2)
 
 
+RAIN_MM_PER_TIP = 0.2794   # SparkFun SEN-15901 bucket: 0.011 in a tip (docs/current-system.md, SHOP:58)
+
+
+def rain_mm(rain_tips):
+    """Derived rain since the node booted, in mm: the since-boot tip count times the bucket size.
+    It restarts at 0 with the tip counter on each boot (Home Assistant total_increasing reads a drop
+    as a reset). Rain today and rain rate are left to Home Assistant (utility_meter, derivative)."""
+    return None if rain_tips is None else round(rain_tips * RAIN_MM_PER_TIP, 4)
+
+
+# LTR390 UV index (LTR-390UV-01 datasheet: UVI = UVS counts / UV sensitivity x Wfac). The sensitivity
+# is 2300 counts per UVI at gain 18 and 20-bit resolution and scales with gain and with the integration
+# time (2^resolution). The node leaves the LTR390 at its power-on GAIN (0x05 = 0x01, gain 3) and
+# MEAS_RATE (0x04 = 0x22, 18 bit, 100 ms) and only writes MAIN_CTRL (firmware/stage0-node/App/mod_reg.c).
+LTR390_UV_SENSITIVITY, LTR390_GAIN, LTR390_RESOLUTION_BITS = 2300, 3, 18
+# Window factor: 1.0 means no window. The PTFE window under the UV dome attenuates by an amount not yet
+# measured, so this UV index is uncalibrated until the window is measured against a reference meter.
+LTR390_WINDOW_FACTOR = 1.0
+LTR390_COUNTS_PER_UVI = LTR390_UV_SENSITIVITY * (LTR390_GAIN / 18) * 2 ** (LTR390_RESOLUTION_BITS - 20)
+
+
+def uv_index(uva_raw):
+    """Derived UV index from the LTR390's raw UVS counts, rounded to 0.01 (uncalibrated: see
+    LTR390_WINDOW_FACTOR). The raw counts stay published as the diagnostic uva_raw."""
+    return None if uva_raw is None else round(uva_raw / LTR390_COUNTS_PER_UVI * LTR390_WINDOW_FACTOR, 2)
+
+
 # Power and enclosure fields describe the station, not the weather: HA diagnostic entities.
 DIAGNOSTIC_FIELDS = frozenset({'batt_mv','batt_current_ma','energy_in_mwh','energy_out_mwh','charge_in_mah',
                                'charge_out_mah','soc_gauge_pct','charger_pins','enclosure_temp_c',
@@ -290,10 +317,15 @@ LABELS = {'temperature_c':'Temperature','humidity_pct':'Humidity','pressure_hpa'
           'load_mv':'Load voltage','load_current_ma':'Load current',
           'charger_input_mv':'Charger input voltage (source not identified)','solar_mv':'Solar input voltage',
           'solar_current_ma':'Solar input current','usb_mv':'USB-C input voltage','usb_current_ma':'USB-C input current',
-          'dew_point_c':'Dew point (derived)'}
+          'dew_point_c':'Dew point (derived)','rain_mm':'Rain since boot',
+          'uv_index_est':'UV index (LTR390, window uncalibrated)'}
 # Published with the weather but computed by the gateway, never sent by the node (fields.derived).
+# state_class is Home Assistant's (measurement unless given).
 DERIVED = {'dew_point_c': dict(unit='°C', ha_class='temperature', needs=('temperature_c','humidity_pct'),
-                              compute=dew_point)}
+                              compute=dew_point),
+           'rain_mm': dict(unit='mm', ha_class='precipitation', state_class='total_increasing', needs=('rain_tips',),
+                           compute=rain_mm),
+           'uv_index_est': dict(unit='UV index', ha_class=None, needs=('uva_raw',), compute=uv_index)}
 
 
 def derived(record):

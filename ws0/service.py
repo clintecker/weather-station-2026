@@ -14,7 +14,7 @@ from http import HTTPStatus
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
-from gateway import Store
+from gateway import CURRENT_MAX_AGE_S, Store
 from . import web
 from .descsets import ALARMS_SHOWN, DescriptorSets, module_discovery, modules_payload, station_key
 import sqlite3
@@ -149,6 +149,9 @@ class Replay(ValueError):
     back). Harmless: never answered or stored as data, counted, and no key-reuse alarm."""
 
 
+RECEIVER_SILENT_S = 180   # no RX #alive (every 60 s) for this long: the receiver is silent
+
+
 class Gateway:
     """The sole ACK authority is the host after durable database commit."""
     def __init__(self, cfg, directory):
@@ -171,6 +174,8 @@ class Gateway:
         self.node_counter = self.nonces.node_counter()  # cached for the HTTP/MQTT threads
         self.clock = None  # ws0.clock.HostClock when serving hardware; None = trust host
         self.receiver = None  # RX board liveness, set by the serial loop
+        self.expects_receiver = False  # a serial link to an RX board is configured (serve)
+        self.started = time.time()
         self.last_ingested = None  # the observation in the frame just ACKed, for the serve log
         self.last_outcome = None   # what receive() did with the last frame: ack, duplicate, nack, diag
         self.lock = threading.Lock()
@@ -271,6 +276,17 @@ class Gateway:
     def receiver_report(self, text, at):
         """An RX '#alive' or '#boot' line: the receiver is alive."""
         self.receiver = {'alive':True,'last_report':web.utc_stamp(at),'last_seen':at,**web.line_fields(text)}
+
+    def receiver_silent(self, now=None):
+        """The receiver-silent alert: True once no RX report came for RECEIVER_SILENT_S (or none at all
+        that long after start with a serial link configured), False while it reports, None when no
+        receiver is expected (e.g. the demo before its simulated receiver reports)."""
+        now = time.time() if now is None else now
+        if self.receiver:
+            return not self.receiver.get('alive', True) or now - self.receiver['last_seen'] > RECEIVER_SILENT_S
+        if self.expects_receiver:
+            return now - self.started > RECEIVER_SILENT_S
+        return None
 
     def counter_alarm(self):
         """Key-reuse alarm. It persists across restarts; the cure is a new key, i.e. a new
@@ -509,6 +525,59 @@ def health_fresh(report, now):
     return 0 <= now - report['received_at'] < HEALTH_MAX_AGE_S
 
 
+# Home Assistant alert entities (binary_sensor, device class problem: ON = something is wrong), computed
+# by the gateway each tick and published on …/alerts. They depend on the gateway only, so a stale station
+# shows as an alert that is on, never as an unavailable one. charger_cold_hold is advertised only once a
+# health report carries that key (the firmware does not report a TS cold hold as its own bit yet).
+ALERTS = {'station_stale':'Station stale','battery_low':'Battery low','charger_fault':'Charger fault (alert)',
+          'charger_cold_hold':'Charger cold hold','receiver_silent':'Receiver silent'}
+ALERTS_ALWAYS = ('station_stale','battery_low','charger_fault','receiver_silent')
+BATTERY_LOW_SOC_PCT = 20                      # gauge SOC below this: battery low
+LOW_ENERGY_STATES = ('conserve','critical')   # the node's own energy state says the same
+
+
+def alerts(latest, diag, receiver_silent, now):
+    """The alert values: True (problem), False (fine) or None (not known: the entity goes unavailable).
+    station_stale: the newest reading is not fresh (CURRENT_MAX_AGE_S) or there is none; a fresh reading
+    flagged sensor_fault is not stale. battery_low: gauge SOC < BATTERY_LOW_SOC_PCT in a fresh health
+    report, or an energy state of conserve/critical (the fresh reading's, else the fresh report's).
+    charger_fault and charger_cold_hold: from a fresh health report."""
+    age = latest.get('age_seconds')
+    fresh_reading = age is not None and 0 <= age < CURRENT_MAX_AGE_S and \
+        latest.get('reason') in ('fresh', 'sensor_fault')
+    report = diag if health_fresh(diag, now) else {}
+    soc = report.get('battery_soc_pct')
+    energy = (latest.get('observation') or {}).get('energy_state') if fresh_reading else None
+    energy = energy or report.get('energy_state')
+    known = [v for v in (None if soc is None else soc < BATTERY_LOW_SOC_PCT,
+                         None if energy is None else energy in LOW_ENERGY_STATES) if v is not None]
+    return {'station_stale':not fresh_reading,'battery_low':any(known) if known else None,
+            'charger_fault':report.get('charger_fault'),'charger_cold_hold':report.get('charger_cold_hold'),
+            'receiver_silent':receiver_silent}
+
+
+def alert_discovery(cfg, keys=ALERTS_ALWAYS):
+    """HA binary sensors for the alerts (unique_id <station>_alert_<key>), read from …/alerts. Available
+    while the gateway is online and the key is not null; never tied to the station's availability."""
+    root = f"weatherstation/v1/{cfg['station']}"
+    result = {}
+    for key in keys:
+        uid = f"{cfg['station']}_alert_{key}"
+        result[f'homeassistant/binary_sensor/{uid}/config'] = {
+            'name':ALERTS[key],'unique_id':uid,'state_topic':root+'/alerts','device_class':'problem',
+            'value_template':"{{ 'ON' if value_json."+key+" else 'OFF' }}",
+            'availability':[{'topic':root+'/gateway_availability'},
+                            {'topic':root+'/alerts','value_template':
+                             "{{ 'online' if value_json.get('"+key+"') is not none else 'offline' }}"}],
+            'availability_mode':'all','device':ha_device(cfg)}
+    return result
+
+
+# Station fields that are diagnostic in Home Assistant only (the dashboard keeps them with the weather):
+# the raw rain tip count, now that rain_mm carries the rain.
+HA_DIAGNOSTIC_FIELDS = DIAGNOSTIC_FIELDS | {'rain_tips'}
+
+
 def discovery(cfg, names=DEFAULT_DISCOVERY):
     """Stable HA identities, one sensor per catalog field the station sends (docs/protocol-design.md section 6).
     Availability needs all three: the reading is fresh, the gateway is up, and this field is not
@@ -521,12 +590,16 @@ def discovery(cfg, names=DEFAULT_DISCOVERY):
         uid = f"{cfg['station']}_{field}"
         f = BY_NAME.get(field)
         entry = {'name':LABELS[field],'unique_id':uid,'state_topic':root+'/weather',
-                 'value_template':'{{ value_json.'+field+' }}',
+                 'value_template':"{{ value_json.get('"+field+"') }}",
                  # Since-boot counters restart at 0 each boot; HA's total_increasing treats a decrease as a reset.
-                 'state_class':'total_increasing' if f and f.counter else 'measurement',
+                 'state_class':('total_increasing' if f.counter else 'measurement') if f else
+                                DERIVED[field].get('state_class','measurement'),
+                 # .get() here and in value_template: a field the payload lacks (a pod unplugged, a build
+                 # without it) is None, so the entity goes unavailable; value_json.<field> on a missing key
+                 # is an undefined-variable template error in HA.
                  'availability':[{'topic':root+'/availability'},{'topic':root+'/gateway_availability'},
                                  {'topic':root+'/weather','value_template':
-                                  "{{ 'online' if value_json."+field+" is not none else 'offline' }}"}],
+                                  "{{ 'online' if value_json.get('"+field+"') is not none else 'offline' }}"}],
                  'availability_mode':'all','device':ha_device(cfg)}
         unit = f.unit if f else DERIVED[field]['unit']
         ha_class = f.ha_class if f else DERIVED[field]['ha_class']
@@ -534,7 +607,9 @@ def discovery(cfg, names=DEFAULT_DISCOVERY):
             entry['unit_of_measurement'] = unit
         if ha_class:
             entry['device_class'] = ha_class
-        if field in DIAGNOSTIC_FIELDS:
+        if ha_class == 'wind_direction':   # a compass angle: HA must not average 350 and 10 into 180
+            entry['state_class'] = 'measurement_angle'
+        if field in HA_DIAGNOSTIC_FIELDS:
             entry['entity_category'] = 'diagnostic'
         result[f'homeassistant/sensor/{uid}/config'] = entry
     return result
@@ -578,11 +653,12 @@ class MQTT:
         if settings.get('tls'):
             self.client.tls_set()
         self.client.on_connect = self.on_connect
-        self.published = None   # (weather, availability, diagnostics, health availability) last sent; None forces a send
+        self.published = None   # (weather, availability, diagnostics, health availability, alerts) last sent; None forces a send
         self.published_at = 0.0
         self.advertised = set()  # catalog fields with an HA discovery entry on this connection
         self.advertised_types = set()   # module type ids with an HA discovery entry on this connection
         self.advertised_health = set()  # health report keys with an HA discovery entry on this connection
+        self.advertised_alerts = set()  # alert keys with an HA discovery entry on this connection
         self.published_modules = MODULES_UNPUBLISHED
         self.client.connect_async(settings['host'],settings.get('port',1883),keepalive=30)
         self.client.loop_start()
@@ -595,6 +671,7 @@ class MQTT:
         self.advertised = set()
         self.advertised_types = set()
         self.advertised_health = set()
+        self.advertised_alerts = set()
         self.published_modules = MODULES_UNPUBLISHED
         self.advertise(self.gateway.store.latest(self.gateway.cfg['station']).get('observation'))
         # Set availability from actual age before advertising a live gateway.
@@ -624,6 +701,13 @@ class MQTT:
             self.client.publish(topic,json.dumps(payload),qos=1,retain=True)
         self.advertised_health |= keys
 
+    def advertise_alerts(self, report):
+        """Discovery for the alerts, once a connection; charger_cold_hold once a health report carries it."""
+        keys = set(ALERTS_ALWAYS) | ({'charger_cold_hold'} if 'charger_cold_hold' in (report or {}) else set())
+        for topic,payload in alert_discovery(self.gateway.cfg,sorted(keys - self.advertised_alerts)).items():
+            self.client.publish(topic,json.dumps(payload),qos=1,retain=True)
+        self.advertised_alerts |= keys
+
     REFRESH_S = 300  # republish unchanged retained state this often (cheap keep-fresh)
 
     def tick(self):
@@ -636,7 +720,10 @@ class MQTT:
         weather = json.dumps(latest['observation'] | latest.get('derived', {})) if latest.get('observation') else None
         diag = self.gateway.store.latest_diagnostic(self.gateway.cfg['station'])
         self.advertise_health(diag)
-        health = 'online' if health_fresh(diag, time.time()) else 'offline'
+        self.advertise_alerts(diag)
+        now = time.time()
+        health = 'online' if health_fresh(diag, now) else 'offline'
+        alert = json.dumps(alerts(latest, diag, self.gateway.receiver_silent(now), now), sort_keys=True)
         alarm = self.gateway.counter_alarm()
         if diag or alarm['alarm']:
             diag = (diag or {}) | alarm  # key-reuse alarm rides on the diagnostics topic
@@ -644,7 +731,7 @@ class MQTT:
         if set_alarms:                   # so do descriptor-set conflicts and failed checks (WSMP-E6, E7)
             diag = (diag or {}) | {'descriptor_set_alarms': set_alarms}
         diagnostics = json.dumps(diag,sort_keys=True) if diag else None
-        state = (weather, 'online' if latest['available'] else 'offline', diagnostics, health)
+        state = (weather, 'online' if latest['available'] else 'offline', diagnostics, health, alert)
         if state == self.published and time.time() - self.published_at < self.REFRESH_S:
             self.publish_modules()   # on change only, independent of the weather's publish cadence
             return
@@ -654,6 +741,7 @@ class MQTT:
             self.client.publish(self.root+'/diagnostics',diagnostics,qos=1,retain=True)
         self.client.publish(self.root+'/availability',state[1],qos=1,retain=True)
         self.client.publish(self.root+'/diagnostics/availability',health,qos=1,retain=True)
+        self.client.publish(self.root+'/alerts',alert,qos=1,retain=True)
         self.published, self.published_at = state, time.time()
         self.publish_modules()
 

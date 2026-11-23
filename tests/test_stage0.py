@@ -29,7 +29,7 @@ def fake_mqtt(gateway):
  publisher=object.__new__(MQTT); publisher.gateway=gateway; publisher.client=Fake()
  publisher.root='weatherstation/v1/simulation-01'; publisher.published=None; publisher.published_at=0.0
  publisher.advertised={'temperature_c','humidity_pct','dew_point_c'}
- publisher.advertised_types=set(); publisher.advertised_health=set(); publisher.published_modules=None
+ publisher.advertised_types=set(); publisher.advertised_health=set(); publisher.advertised_alerts=set(); publisher.published_modules=None
  return publisher
 
 
@@ -240,7 +240,7 @@ class ServiceSmokeTests(unittest.TestCase):
                temperature_c=20.5,humidity_pct=40,pressure_hpa=1001.3,quality='valid')
    gateway.store.ingest(record,1001)
    publisher.tick()
-   configs=[m[0][0] for m in publisher.client.messages if m[0][0].startswith('homeassistant/')]
+   configs=[m[0][0] for m in publisher.client.messages if m[0][0].startswith('homeassistant/') and '_alert_' not in m[0][0]]
    self.assertEqual(configs,['homeassistant/sensor/simulation-01_pressure_hpa/config'])
    publisher.client.messages.clear(); publisher.published_at-=MQTT.REFRESH_S; publisher.tick()
    self.assertFalse([m for m in publisher.client.messages if m[0][0].startswith('homeassistant/')])
@@ -294,7 +294,7 @@ class ServiceSmokeTests(unittest.TestCase):
    self.assertEqual(len(publisher.client.messages),sent)
    publisher.published_at-=MQTT.REFRESH_S                                 # refresh interval elapsed
    with patch('gateway.time.time',return_value=1182): publisher.tick()
-   self.assertEqual(len(publisher.client.messages),sent+3)   # weather, availability, diagnostics/availability
+   self.assertEqual(len(publisher.client.messages),sent+4)   # weather, availability, diagnostics/availability, alerts
 
 
 class TimeReconstruction(StationTest):

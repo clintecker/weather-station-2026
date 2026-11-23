@@ -189,11 +189,12 @@ class HealthFreshness(unittest.TestCase):
             def latest(self, station): return {'available': False}
             def latest_diagnostic(self, station): return diag
         gateway = type('G', (), {'cfg': self.cfg, 'store': Store(), 'counter_alarm': lambda self: {'alarm': False},
-                                 'descriptor_set_alarms': lambda self: [], 'modules': lambda self: None})()
+                                 'descriptor_set_alarms': lambda self: [], 'modules': lambda self: None,
+                                 'receiver_silent': lambda self, now=None: None})()
         mqtt = object.__new__(MQTT)
         mqtt.gateway, mqtt.client, mqtt.root = gateway, Client(), self.root
         mqtt.published, mqtt.published_at, mqtt.published_modules = None, 0.0, None
-        mqtt.advertised, mqtt.advertised_types, mqtt.advertised_health = set(), set(), set()
+        mqtt.advertised, mqtt.advertised_types, mqtt.advertised_health, mqtt.advertised_alerts = set(), set(), set(), set()
         return mqtt, published
 
     def availability(self, published):
@@ -256,3 +257,169 @@ class HealthNoneReasons(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def render(template, payload):
+    """Evaluate the Jinja subset the discovery templates use ({{ a if b is not none else c }}) as Python,
+    with value_json the decoded payload: Jinja calls a dict's .get exactly as Python does. A missing key
+    read as value_json.key raises here (AttributeError), as it is an undefined-variable error in HA."""
+    expression = template.strip().removeprefix('{{').removesuffix('}}').replace('is not none', 'is not None')
+    class Json(dict):
+        def __getattr__(self, name):
+            if name not in self:
+                raise AttributeError(name)
+            return self[name]
+    return eval(expression, {}, {'value_json': Json(payload)})   # noqa: S307 - our own templates only
+
+
+class ObservationEntities(unittest.TestCase):
+    """Discovery for the weather topic: missing pods, rain in mm, the UV index, wind direction."""
+    cfg = {'station': 's1', 'mode': 'hardware', 'mqtt': {}}
+
+    def entry(self, field):
+        return discovery(self.cfg, [field])[f'homeassistant/sensor/s1_{field}/config']
+
+    def test_a_missing_field_key_makes_the_entity_unavailable(self):
+        """A pod unplugged (or a build without the sensor) leaves the key out of the weather payload: the
+        entity must go unavailable, not raise a template error. null (a faulted sensor) does the same."""
+        template = self.entry('pressure_hpa')['availability'][2]['value_template']
+        self.assertIn("value_json.get('pressure_hpa')", template)
+        self.assertEqual(render(template, {'temperature_c': 20.5}), 'offline')   # key absent
+        self.assertEqual(render(template, {'pressure_hpa': None}), 'offline')    # sensor fault
+        self.assertEqual(render(template, {'pressure_hpa': 1001.3}), 'online')
+        self.assertIsNone(render(self.entry('pressure_hpa')['value_template'], {'temperature_c': 20.5}))
+        from ws0.fields import DERIVED, MEASURED
+        for field in (*MEASURED, *DERIVED):
+            entry = self.entry(field)
+            self.assertEqual(render(entry['availability'][2]['value_template'], {}), 'offline', field)
+            self.assertIsNone(render(entry['value_template'], {}), field)
+
+    def test_rain_in_mm_from_the_sen15901_tip_size(self):
+        from ws0.fields import RAIN_MM_PER_TIP, derived, rain_mm
+        self.assertEqual(RAIN_MM_PER_TIP, 0.2794)               # 0.011 in, SparkFun SEN-15901
+        self.assertEqual((rain_mm(0), rain_mm(10), rain_mm(None)), (0.0, 2.794, None))
+        self.assertEqual(derived({'rain_tips': 3})['rain_mm'], 0.8382)
+        rain = self.entry('rain_mm')
+        self.assertEqual((rain['unit_of_measurement'], rain['device_class'], rain['state_class']),
+                         ('mm', 'precipitation', 'total_increasing'))
+        self.assertNotIn('entity_category', rain)
+        tips = self.entry('rain_tips')                           # the raw count stays, as a diagnostic
+        self.assertEqual((tips['entity_category'], tips['state_class']), ('diagnostic', 'total_increasing'))
+
+    def test_uv_index_from_ltr390_counts(self):
+        """Datasheet: 2300 counts per UVI at gain 18, 20 bit. The node runs gain 3, 18 bit: 95.83 per UVI."""
+        from ws0.fields import LTR390_COUNTS_PER_UVI, LTR390_WINDOW_FACTOR, derived, uv_index
+        self.assertAlmostEqual(LTR390_COUNTS_PER_UVI, 2300 * 3 / 18 / 4)
+        self.assertEqual(LTR390_WINDOW_FACTOR, 1.0)              # uncalibrated until the PTFE window is measured
+        self.assertEqual((uv_index(0), uv_index(958), uv_index(None)), (0.0, 10.0, None))
+        self.assertEqual(derived({'uva_raw': 479})['uv_index_est'], 5.0)
+        uv = self.entry('uv_index_est')
+        self.assertEqual((uv['unit_of_measurement'], uv['state_class']), ('UV index', 'measurement'))
+        self.assertNotIn('entity_category', uv)
+        self.assertEqual(self.entry('uva_raw')['entity_category'], 'diagnostic')   # raw counts stay diagnostic
+
+    def test_wind_direction_is_an_angle(self):
+        wind = self.entry('wind_dir_deg')
+        self.assertEqual((wind['unit_of_measurement'], wind['device_class'], wind['state_class']),
+                         ('°', 'wind_direction', 'measurement_angle'))
+
+
+class Alerts(unittest.TestCase):
+    """The gateway's alert binary sensors (…/alerts): on = problem, null = not known (unavailable)."""
+    cfg = {'station': 's1', 'mode': 'hardware', 'mqtt': {}}
+    now = 100_000.0
+
+    def latest(self, age=30, reason='fresh', energy='normal'):
+        return {'available': reason == 'fresh', 'reason': reason, 'age_seconds': age,
+                'observation': {'energy_state': energy}}
+
+    def report(self, **values):
+        return phase_a_report(**values) | {'received_at': self.now - 60}
+
+    def test_all_quiet(self):
+        from ws0.service import alerts
+        self.assertEqual(alerts(self.latest(), self.report(soc=80 * 256), False, self.now),
+                         {'station_stale': False, 'battery_low': False, 'charger_fault': False,
+                          'charger_cold_hold': None, 'receiver_silent': False})
+
+    def test_station_stale(self):
+        from ws0.service import alerts
+        self.assertTrue(alerts(self.latest(age=181, reason='stale_or_clock_step'), None, False, self.now)['station_stale'])
+        self.assertTrue(alerts({'available': False, 'reason': 'no_observation'}, None, False, self.now)['station_stale'])
+        self.assertTrue(alerts(self.latest(age=None, reason='unknown_clock'), None, False, self.now)['station_stale'])
+        # A fresh reading with a faulted sensor: the station is talking, so not stale.
+        self.assertFalse(alerts(self.latest(reason='sensor_fault'), None, False, self.now)['station_stale'])
+
+    def test_battery_low_from_soc_or_energy_state(self):
+        from ws0.service import BATTERY_LOW_SOC_PCT, alerts
+        low = lambda latest, report: alerts(latest, report, None, self.now)['battery_low']
+        self.assertEqual(BATTERY_LOW_SOC_PCT, 20)
+        self.assertTrue(low(self.latest(), self.report(soc=19 * 256)))
+        self.assertFalse(low(self.latest(), self.report(soc=20 * 256)))
+        self.assertTrue(low(self.latest(energy='conserve'), self.report(soc=60 * 256)))
+        self.assertTrue(low(self.latest(energy='critical'), None))
+        # Stale reading: its energy state no longer counts; the fresh health report's does.
+        self.assertTrue(low(self.latest(age=900, reason='stale_or_clock_step', energy='normal'),
+                            self.report(soc=0xFFFF, energy=3)))
+        self.assertIsNone(low(self.latest(age=900, reason='stale_or_clock_step'), None))
+        stale_report = phase_a_report(soc=5 * 256) | {'received_at': self.now - HEALTH_MAX_AGE_S - 1}
+        self.assertFalse(low(self.latest(), stale_report))       # an old report's SOC is not used
+
+    def test_charger_fault_and_cold_hold(self):
+        from ws0.protocol import CHG_FAULT
+        from ws0.service import alerts
+        report = self.report(charger_status=CHG_POWER_GOOD | CHG_FAULT)
+        self.assertTrue(alerts(self.latest(), report, False, self.now)['charger_fault'])
+        self.assertTrue(alerts(self.latest(), report | {'charger_cold_hold': True}, False, self.now)['charger_cold_hold'])
+        self.assertIsNone(alerts(self.latest(), self.report(charger_status=0xFF), False, self.now)['charger_fault'])
+
+    def test_discovery_is_independent_of_station_availability(self):
+        from ws0.service import ALERTS_ALWAYS, alert_discovery
+        entries = alert_discovery(self.cfg)
+        self.assertEqual(sorted(entries), sorted(f'homeassistant/binary_sensor/s1_alert_{k}/config' for k in ALERTS_ALWAYS))
+        for key in ALERTS_ALWAYS:
+            entry = entries[f'homeassistant/binary_sensor/s1_alert_{key}/config']
+            self.assertEqual((entry['device_class'], entry['state_topic']), ('problem', 'weatherstation/v1/s1/alerts'))
+            self.assertNotIn('entity_category', entry)
+            topics = [a['topic'] for a in entry['availability']]
+            self.assertEqual(topics, ['weatherstation/v1/s1/gateway_availability', 'weatherstation/v1/s1/alerts'])
+            self.assertEqual(render(entry['value_template'], {key: True}), 'ON')
+            self.assertEqual(render(entry['availability'][1]['value_template'], {key: None}), 'offline')
+            self.assertEqual(render(entry['availability'][1]['value_template'], {}), 'offline')
+
+    def test_cold_hold_is_advertised_once_a_report_carries_it(self):
+        mqtt, published = HealthFreshness.publisher(HealthFreshness(), None)
+        mqtt.advertise_alerts(self.report())
+        self.assertNotIn('charger_cold_hold', {t.split('/')[2].removeprefix('s1_alert_') for t, _p, _r in published})
+        published.clear()
+        mqtt.advertise_alerts(self.report() | {'charger_cold_hold': False})
+        self.assertEqual([t for t, _p, _r in published], ['homeassistant/binary_sensor/s1_alert_charger_cold_hold/config'])
+
+    def test_tick_publishes_retained_alerts(self):
+        import json
+        mqtt, published = HealthFreshness.publisher(HealthFreshness(), None)
+        mqtt.tick()
+        alert = [json.loads(p) for t, p, retain in published if t == 'weatherstation/v1/s1/alerts' and retain]
+        self.assertEqual(alert, [{'station_stale': True, 'battery_low': None, 'charger_fault': None,
+                                  'charger_cold_hold': None, 'receiver_silent': None}])
+
+
+class ReceiverSilent(unittest.TestCase):
+    def gateway(self):
+        from ws0.service import Gateway
+        gateway = object.__new__(Gateway)
+        gateway.receiver, gateway.expects_receiver, gateway.started = None, False, 1000.0
+        return gateway
+
+    def test_states(self):
+        from ws0.service import RECEIVER_SILENT_S
+        gateway = self.gateway()
+        self.assertIsNone(gateway.receiver_silent(5000))                       # demo or not serving: not known
+        gateway.expects_receiver = True
+        self.assertFalse(gateway.receiver_silent(1000 + RECEIVER_SILENT_S))     # grace after start
+        self.assertTrue(gateway.receiver_silent(1001 + RECEIVER_SILENT_S))      # never reported
+        gateway.receiver = {'alive': True, 'last_seen': 2000.0}
+        self.assertFalse(gateway.receiver_silent(2000 + RECEIVER_SILENT_S))
+        self.assertTrue(gateway.receiver_silent(2001 + RECEIVER_SILENT_S))      # before the serial loop marks it
+        gateway.receiver['alive'] = False
+        self.assertTrue(gateway.receiver_silent(2001))

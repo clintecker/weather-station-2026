@@ -633,7 +633,7 @@
           },
           "derived": {
             "type": "object",
-            "description": "Gateway-computed values (dew_point_c), never sent by the node.",
+            "description": "Gateway-computed values, never sent by the node: dew_point_c (from temperature and humidity), rain_mm (rain_tips x 0.2794 mm, since boot) and uv_index_est (from uva_raw, LTR390 gain 3, 18 bit; uncalibrated until the PTFE window is measured). Each is present when its inputs are.",
             "properties": {
               "dew_point_c": {
                 "type": [
@@ -641,6 +641,20 @@
                   "null"
                 ],
                 "x-unit": "°C"
+              },
+              "rain_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-unit": "mm"
+              },
+              "uv_index_est": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-unit": "UV index"
               }
             }
           },
