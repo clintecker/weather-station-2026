@@ -3,7 +3,7 @@
 Starting point: Session 8 is done. The box is loaded, the lid is off, the pack is unplugged from PG1 and JP17 is
 out. This session unlocks and flashes the Wio-E5 mini over J3 (SWD), provisions it over its own USB-C, checks it
 on USB power with no pack, puts the pack on, and checks the first frames on air. It ends with the box ready for
-its lid and the mount (Session 8 page 14).
+its lid and the mount (Session 8 step 14).
 
 Source of truth, read below and asserted so the sheet breaks when they drift:
   firmware/board/wio-e5/README.md (SWD wiring, unlock, console), firmware/stage0-node/Makefile and
@@ -68,13 +68,13 @@ assert "make BOARD=wio-e5 unlock SERIAL=<serial>" in WIO and "RDP = AA" in WIO
 assert "To be confirmed on the first board" in WIO and "To be confirmed on the hardware" in WIO
 assert "USART1 on PB6 (TX) and PB7 (RX)" in WIO and "115200 8N1" in WIO
 assert "The bus 3.3 V back-feeds the mini's AP2112" in rd("hardware/tx-stack-r1/README.md")
-# the brown-out target (page 04): stage0-node/Makefile `bor` and `bor-check`, level 4, FLASH_OPTR 0x20 bits 11:9
-assert re.search(r"^bor bor-check:", MAKEFILE, re.M), "the BOR targets moved: update page 04"
+# the brown-out target (step 04): stage0-node/Makefile `bor` and `bor-check`, level 4, FLASH_OPTR 0x20 bits 11:9
+assert re.search(r"^bor bor-check:", MAKEFILE, re.M), "the BOR targets moved: update step 04"
 assert "BOR_LEVEL ?= 4" in MAKEFILE and "BOR_OPTR_OFFSET = 0x20" in MAKEFILE and "BOR_LEV_MASK = 0xE00" in MAKEFILE
 assert '"stm32l4x option_write 0 $(BOR_OPTR_OFFSET) $(BOR_VALUE) $(BOR_LEV_MASK)" -c "stm32l4x option_load 0"' in MAKEFILE
 assert "dry run, nothing sent" in MAKEFILE and "| `bor` |" in NODE and "about 2.8 V" in NODE
 for mk in (RULES, BOARDMK):
-    assert not re.search(r"^(bor|brownout|option)\w*\s*:", mk, re.M | re.I), "a second BOR target: update page 04"
+    assert not re.search(r"^(bor|brownout|option)\w*\s*:", mk, re.M | re.I), "a second BOR target: update step 04"
 assert "Set the brown-out reset (BOR) level in the option bytes" in rd("docs/failure-modes.md")
 # J3 (B3.md): column a, rows 12-16
 J3 = [("1", "a12", "3.3 V", "VDD / VREF (TARGET SENSE)"), ("2", "a13", "SWDIO", "SWDIO"),
@@ -93,7 +93,7 @@ assert '#sensor rain=%s' in CONSOLE
 for k in (" present=", " ok=", " cells=", " vreg_mv=", " ichg_ma=", " iterm_ma=", " ts_pct=", " ts=", " stage=",
           " en_chg=", " hold=", " vbat_mv=", " ibat_ma=", " vbus_mv="):
     assert f'"{k}"' in CHARGER, k
-# The page 07 charger values, from power_config.h. hold=none on USB means config_matches() passed, and that
+# The step 07 charger values, from power_config.h. hold=none on USB means config_matches() passed, and that
 # compares every value below, so a wrong one reads hold=readback. pack_dc, mppt, vindpm_mv and mppt_sets aren't
 # listed: with no pack they depend on the chip (the TS ADC, VSYS_STAT, the power-on VINDPM), not the code.
 PCFG = rd("firmware/stage0-node/App/power_config.h")
@@ -102,7 +102,7 @@ PREGS = rd("firmware/common/power_regs.c")
 
 def pdef(name):
     m = re.search(rf"^#define {name} (0x[0-9A-Fa-f]+|\d+)U\b", PCFG, re.M)
-    assert m, f"{name} moved out of power_config.h: update page 07"
+    assert m, f"{name} moved out of power_config.h: update step 07"
     return int(m.group(1), 0)
 
 
@@ -111,7 +111,7 @@ CHG_OVP, CHG_VOC, CHG_R17, CHG_R18 = (pdef("POWER_CHG_VAC_OVP_CODE"), pdef("POWE
                                       pdef("POWER_CHG_REG17"), pdef("POWER_CHG_REG18"))
 assert "code = (ma + BQ25798_ITERM_MA_STEP / 2U) / BQ25798_ITERM_MA_STEP;" in PREGS
 CHG_ITERM_READ = (CHG_ITERM + 20) // 40 * 40           # REG09 rounds to the nearest 40 mA step
-assert (CHG_OVP, CHG_VOC) == (2, 4), "VAC_OVP or VOC_PCT changed: page 07's '12 V' and '0.8125' text"
+assert (CHG_OVP, CHG_VOC) == (2, 4), "VAC_OVP or VOC_PCT changed: step 07's '12 V' and '0.8125' text"
 assert "12 V" in PCFG and "0.8125" in PCFG and "41.8 degC" in PCFG and "JEITA_ISETH 0" in PCFG
 for k in (" vac_ovp=", " voc_pct=", " reg17=", " reg18=", " pack_dc=", " mppt=", " vindpm_mv=", " mppt_sets="):
     assert f'"{k}"' in CHARGER, k
@@ -146,12 +146,7 @@ OLD_TX = "003B00194142500E20353451"        # the NUCLEO that was the TX (runbook
 assert RX_SERIAL in NODE and OLD_TX in MOVING
 RUN = "run-stack1"                         # any NEW directory name; run*/ stays out of git
 
-SLOGANS9 = [
-    "THE PACK GOES ON LAST.",
-    "WS_I2C_MUX=1. EVERY TIME.",
-    "A NEW KEY IS NEVER WRONG.",
-    "READ THE LINE. WRITE THE NUMBER.",
-]
+FOOT9 = "SESSION 9: COMMISSION. FROM firmware/board/wio-e5/README.md AND THE stage0-node README."
 
 
 # ------------------------------------------------------------------ helpers (Session 8's, plus code blocks)
@@ -302,7 +297,7 @@ def stand(c, g, rules):
 # ------------------------------------------------------------------ 00 cover: what you need
 def cover(c, pg):
     page(c, "00", "SESSION 9: COMMISSION",
-         "FLASH, PROVISION AND CHECK THE TX. LID OFF. THE PACK GOES ON NEAR THE END, NOT BEFORE.", pg, SLOGANS9[0])
+         "FLASH, PROVISION AND CHECK THE TX. LID OFF. THE PACK GOES ON NEAR THE END, NOT BEFORE.", pg, FOOT9)
     g = Grid(2, 3, heights=[1.5, 1.0, 0.55])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["Where you start: Session 8's box, lid off,",
                                             "the pack apart from PG1, JP17 out."])
@@ -333,7 +328,7 @@ def cover(c, pg):
         col, row = divmod(i, half)
         text(c, x + 14 + col * w / 2, y + h - 18 - row * (h - 14) / half, s, 12, "HEAD", INK)
     stand(c, g.cell(0, 2, 2), [
-        "THE PACK STAYS OFF PG1 AND JP17 STAYS OUT UNTIL PAGE 08. CHARGER MUST SHOW VREG 4200, ICHG 900 FIRST.",
+        "THE PACK STAYS OFF PG1 AND JP17 STAYS OUT UNTIL STEP 08. CHARGER MUST READ AS ON STEP 07 FIRST.",
         "POWER THE STACK FROM EVM J6 FIRST, THEN THE MINI'S USB-C. NEVER THE MINI'S USB-C ALONE.",
         "EVERY BUILD AND FLASH LINE CARRIES WS_POWER_PROFILE=3 WS_I2C_MUX=1. NO EXCEPTIONS."])
 
@@ -341,11 +336,11 @@ def cover(c, pg):
 # ------------------------------------------------------------------ 01 SWD wiring
 def swd(c, pg):
     page(c, "01", "SWD: J3 TO THE PROBE", "B3.md: J3 IN COLUMN A, ROWS 12-16. PINS FLAT TOWARD THE FRONT EDGE. LID OFF.",
-         pg, SLOGANS9[3])
+         pg, FOOT9)
     g = Grid(2, 2, heights=[1.15, 1.0])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
         "B3 CORE, TOP FACE (Session 5's drawing). J3's five pins in A12-A16, at the front edge. The Dupont housings push",
-        "on past the edge with the lid off. The mini's USB-C is at its left end: that's the console (page 05)."])
+        "on past the edge with the lid off. The mini's USB-C is at its left end: that's the console (step 05)."])
     a = Art(c, "t_mini", x + 40, y + 6, w - 200, h - 12, align="l")
     for _, h_, _, _ in J3:
         ring(c, *a.A(h_.upper()))
@@ -395,17 +390,17 @@ def swd(c, pg):
 # ------------------------------------------------------------------ 02 unlock
 def unlock(c, pg):
     page(c, "02", "ONE-TIME UNLOCK: RDP 1 TO 0", "SEEED SHIPS THE MODULE LOCKED (RDP LEVEL 1). ONCE PER NEW BOARD.",
-         pg, SLOGANS9[3])
+         pg, FOOT9)
     g = Grid(1, 2, heights=[1.25, 0.75])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "From firmware/stage0-node on the gateway Mac. SERIAL is the probe's ST-LINK serial",
         "(.venv/bin/python -m serial.tools.list_ports -v lists it as SER=...)."])
     yy = note_box(c, x + 40, y + h - 10, w - 50, "NOT YET RUN ON A REAL BOARD", [
         "The wio-e5 README marks this 'to be confirmed on the first board'. It's written from the OpenOCD 0.12.0 manual.",
-        "Write down exactly what OpenOCD prints, good or bad. It goes on the report (page 10)."])
+        "Write down exactly what OpenOCD prints, good or bad. It goes on the report (step 10)."])
     yy = steps_list(c, x + 44, yy - 16, w - 56, [
         "Power: the 2 A adapter into EVM J6. No pack, JP17 out. The mini's USB-C can stay out for now.",
-        "Probe on J3 (page 01), probe's USB into the Mac."], 10.2, 13.4)
+        "Probe on J3 (step 01), probe's USB into the Mac."], 10.2, 13.4)
     yy = code(c, x + 44, yy - 4, w - 56, [
         "$ cd firmware/stage0-node",
         f"$ make BOARD=wio-e5 unlock SERIAL={OLD_TX}",
@@ -421,13 +416,13 @@ def unlock(c, pg):
     steps_list(c, x + 44, y + h - 18, sw - 50, [
         "STM32CubeProgrammer, connect over the same ST-LINK (mode: under reset, since NRST is wired).",
         "Option bytes, Read Out Protection: set RDP to AA, Apply. The chip mass-erases the same way.",
-        "Write down which way worked. Then go on to page 03: the build and flash don't change."], 10.2, 13.4)
+        "Write down which way worked. Then go on to step 03: the build and flash don't change."], 10.2, 13.4)
 
 
 # ------------------------------------------------------------------ 03 build and flash
 def flash(c, pg):
     page(c, "03", "BUILD AND FLASH: RX, THEN TX", "ONE TREE, ONE RELEASE, BOTH BOARDS (RUNBOOK-MOVING-BOARDS.MD). THEN THE TX.",
-         pg, SLOGANS9[1])
+         pg, FOOT9)
     g = Grid(1, 2, heights=[1.1, 0.9])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "Stop the gateway first: only one process can hold the RX port.", "Archive the old run directory: its key is retired."])
@@ -462,10 +457,10 @@ def flash(c, pg):
 # ------------------------------------------------------------------ 04 brown-out (BOR)
 def bor(c, pg):
     page(c, "04", "BROWN-OUT LEVEL: BOR 4, ONCE PER BOARD", "OPTION BYTES OVER J3, THE SAME LEADS. DRY RUN FIRST, THEN THE REAL ONE.",
-         pg, SLOGANS9[3])
+         pg, FOOT9)
     g = Grid(1, 2, heights=[1.15, 0.85])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
-        "The probe leads stay on J3 from page 03. Same serial as the flash.",
+        "The probe leads stay on J3 from step 03. Same serial as the flash.",
         "The last line resets the board: that's the option bytes loading."])
     yy = code(c, x + 10, y + h - 28, w - 20, [
         "$ cd firmware/stage0-node",
@@ -478,9 +473,9 @@ def bor(c, pg):
     steps_list(c, x + 44, yy - 16, w - 56, [
         "Run the dry run and read it: level 4, the value 0x800, the mask 0xE00. Nothing goes to the board.",
         "Then the real line. OpenOCD reads FLASH_OPTR, writes the three BOR bits, and reloads the option bytes. "
-        "The board resets and boots the image from page 03. It must end without an error.",
+        "The board resets and boots the image from step 03. It must end without an error.",
         "Then bor-check: it only reads. The last three hex digits are 8AA or 9AA: 8 or 9 is BOR level 4 "
-        "(bits 11:9), AA is RDP level 0 from page 02. Write the value down (page 10)."], 10.2, 13.4)
+        "(bits 11:9), AA is RDP level 0 from step 02. Write the value down (step 10)."], 10.2, 13.4)
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["What it does, and why level 4."])
     yy = steps_list(c, x + 44, y + h - 18, w - 56, [
         "BOR level 4 holds the MCU in reset while its 3.3 V rail is below about 2.8 V. The factory level is 0 "
@@ -488,7 +483,7 @@ def bor(c, pg):
         "It stops brown-out cycling at dawn (failure-modes.md section 6): weak sun no longer starts a board "
         "that the next radio burst drops again.",
         "Option bytes live in the chip, not in the image. A later flash keeps them. A new or swapped board needs "
-        "page 02, page 03, then this page again."], 10.2, 13.4)
+        "step 02, step 03, then this step again."], 10.2, 13.4)
     in_model(c, x + 14, yy - 10, "The firmware also stops the radio before the pack gets that low: CRITICAL below 8 % "
              "SOC or 3.45 V, one beacon an hour (radio-energy-policy.md section 3).", w=w - 28)
 
@@ -496,12 +491,12 @@ def bor(c, pg):
 # ------------------------------------------------------------------ 05 console
 def console(c, pg):
     page(c, "05", "THE CONSOLE ON THE MINI'S USB-C", "USART1 (PB6/PB7) TO THE MINI'S OWN USB-UART BRIDGE. 115200 8N1.",
-         pg, SLOGANS9[3])
+         pg, FOOT9)
     g = Grid(1, 2, heights=[0.8, 1.2])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["J6 first (the stack's power), then the USB-C cable from the Mac into the mini."])
     yy = steps_list(c, x + 44, y + h - 18, w - 56, [
         "Plug the 2 A adapter into EVM J6 if it isn't already. Then the USB-C cable into the mini's USB-C "
-        "(page 01 shows where).",
+        "(step 01 shows where).",
         "Find the port: run the list before and after you plug in. The new entry is the mini."], 10.2, 13.4)
     yy = code(c, x + 44, yy - 4, w - 56, [
         "$ .venv/bin/python -m serial.tools.list_ports -v",
@@ -511,7 +506,7 @@ def console(c, pg):
                "for the bench. Write the name down.", w=w - 28)
     x, y, w, h = panel(c, g.cell(0, 1), 2, [
         "Press RESET on the mini (or replug J6) to see the boot. A fresh board isn't provisioned yet, so it stops here:",
-        "no modules, no radio. That's right. Page 06 provisions it."])
+        "no modules, no radio. That's right. Step 06 provisions it."])
     yy = code(c, x + 10, y + h - 28, w - 20, [
         "#boot role=tx fw=<git describe> reset=pin kat=pass freq=915000000 bw=2 sf=7 power=0",
         "#status role=tx fw=... reset=pin provisioned=0 ... kat=pass epoch=... next_seq=...",
@@ -533,7 +528,7 @@ def console(c, pg):
 # ------------------------------------------------------------------ 06 provision
 def provision(c, pg):
     page(c, "06", "PROVISION: A NEW RUN DIRECTORY, A NEW KEY", "STAGE0-NODE README 'PROVISION AND RUN'. RUNBOOK-MOVING-BOARDS.MD.",
-         pg, SLOGANS9[2])
+         pg, FOOT9)
     g = Grid(1, 2, heights=[1.25, 0.75])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "Quit miniterm first: provision-node needs the port to itself. From the repo root on the gateway Mac."])
@@ -549,7 +544,8 @@ def provision(c, pg):
         ("kcv", "write it on the report. STATUS on the TX shows the same kcv=... from now on"),
         (RUN, "any NEW name. Never an old run directory, never an evidence directory")], kw=118)
     yy = steps_list(c, x + 44, yy - 10, w - 56, [
-        "Rain gauge: it can't be detected, so tell the board it's fitted. In miniterm type SENSOR rain on and "
+        "Rain gauge: it can't be detected, so tell the board it's fitted. Reopen miniterm on the mini's port once "
+        "it has rebooted, then type SENSOR rain on and "
         "look for '#sensor rain=on'. '#error busy ... retry' means a radio exchange was running: type it again.",
         f"{RUN}/ holds the key. Git ignores run*/. It moves only by a private route, never git, chat or email."], 10.2, 13.4)
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["The key rule (runbook-moving-boards.md): use a key only with a counter "
@@ -565,7 +561,7 @@ def provision(c, pg):
 # ------------------------------------------------------------------ 07 self-test
 def selftest(c, pg):
     page(c, "07", "SELF-TEST ON USB, NO PACK", "J6 AND THE MINI'S USB-C IN. NO PACK ON PG1. JP17 STILL OUT. CONSOLE OPEN.",
-         pg, SLOGANS9[3])
+         pg, FOOT9)
     g = Grid(2, 2, heights=[1.12, 0.88])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
         "Give it two minutes after the reboot: the modules go probing, identifying, admitted, active. Then type each",
@@ -574,7 +570,7 @@ def selftest(c, pg):
     lx, rx = x + 44, x + 54 + cw
     text(c, lx, y + h - 16, "STATUS  (THREE LINES: #status, #counts, #timing)", 10, "HEAD", INK)
     yy = expect(c, lx, y + h - 32, cw, [
-        ("provisioned=1", "station=1, kcv= your page 06 value"),
+        ("provisioned=1", "station=1, kcv= your step 06 value"),
         ("kat=pass", "KAT on its own prints '#kat pass'"),
         ("meter_link=ok", "worst of wind and rain (below)"),
         ("i2c_recoveries=0", "in #counts: no stuck-bus recovery"),
@@ -606,7 +602,8 @@ def selftest(c, pg):
         (f"voc_pct={CHG_VOC}", "MPPT at 0.8125 of the panel's Voc"),
         (f"reg17=0x{CHG_R17:02x}", "charge stops in WARM (41.8 degC)"),
         (f"reg18=0x{CHG_R18:02x}", "the TS thresholds"),
-        ("ts_pct=", "write it down (report)")], size=8.6, kw=96)
+        ("ts_pct=", "write it down (report)"),
+        ("pack_dc=", "RT1, in 0.1 C: write it down")], size=8.6, kw=96)
     in_model(c, x + 14, yy - 8, "The firmware reads vreg_mv to reg18 back after it writes them. If one's off, hold reads "
              "readback, not none, and charge stays off.", size=8.6, w=w - 28)
     x, y, w, h = panel(c, g.cell(1, 1), 3, ["A pod in the wrong port reads absent."])
@@ -620,8 +617,8 @@ def selftest(c, pg):
 
 # ------------------------------------------------------------------ 08 pack on
 def pack_on(c, pg):
-    page(c, "08", "PACK ON: JP17, THEN PG1, LAST", "ASSEMBLY.md 1.7. ONLY AFTER PAGE 07'S CHARGER LINE READ RIGHT.",
-         pg, SLOGANS9[0])
+    page(c, "08", "PACK ON: JP17, THEN PG1, LAST", "ASSEMBLY.md 1.7. ONLY AFTER STEP 07'S CHARGER LINE READ RIGHT.",
+         pg, FOOT9)
     g = Grid(2, 2, heights=[1.05, 0.95])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["EVM top face (Session 7's drawing).", "JP17 goes back on."])
     a = Art(c, "evm_done", x + 6, y + 6, w - 96, h - 12, align="l")
@@ -634,13 +631,15 @@ def pack_on(c, pg):
     yy = steps_list(c, x + 44, y + h - 18, w - 56, [
         "Everything off: the mini's USB-C out, then J6 out.",
         "Refit JP17 on the EVM.",
+        "Meter the pack's plug first, DC volts across its two contacts: the one that mates with PG1's red lead reads "
+        "about +3.7 V (red probe on it). Negative or near 0: stop, don't plug it in, tell Claude.",
         "Plug the pack into PG1. It's the last connection in the box. The TX starts on the pack.",
         "J6 back in, then the mini's USB-C, then miniterm. Type CHARGER."], 10.2, 13.4)
     yy = expect(c, x + 58, yy - 8, w - 70, [
         ("en_chg=1 hold=none", "charge allowed: the pack's thermistor reads NORMAL (ts=NORMAL)"),
         ("stage=cc", "or precharge, cv, topoff or terminated: all fine, depends how full the pack is"),
         ("ibat_ma=", "above 0 while it charges (write it down); vbat_mv= the pack's voltage"),
-        ("STATUS, MODULES", "same as page 07. battery= now reads real numbers")], size=8.6, kw=110)
+        ("STATUS, MODULES", "same as step 07. battery= now reads real numbers")], size=8.6, kw=110)
     check_item(c, x + 14, yy - 8, "Optional, if there's sun: J6 out, panel uncovered. CHARGER vbus_mv should read the "
                "panel's voltage and ibat_ma above 0. Write both down.",
                w=w - 28)
@@ -649,7 +648,7 @@ def pack_on(c, pg):
 # ------------------------------------------------------------------ 09 on air
 def on_air(c, pg):
     page(c, "09", "FIRST FRAMES ON AIR", "THE RX NUCLEO ON THE GATEWAY MAC, WS0 SERVE ON THE NEW DIRECTORY, HOME ASSISTANT.",
-         pg, SLOGANS9[3])
+         pg, FOOT9)
     g = Grid(1, 2, heights=[1.05, 0.95])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "MQTT: runbook-home-assistant.md steps 2-3 for the new directory. The password goes in the file, never in chat."])
@@ -676,29 +675,31 @@ def on_air(c, pg):
         "Vane: fan on the cups, hold the vane still for a minute, read wind_dir_deg. Turn it a quarter turn, "
         "repeat, four times. Each reading moves about 90 degrees the same way round.",
         "STATUS meter_link=ok through all of it. cups-open, rain-open, cups-suspect or vane-out-of-table: "
-        "check that meter's 6P plug (Session 8 page 11), then send the line."], 10.2, 13.4)
+        "check that meter's 6P plug (Session 8 step 11), then send the line."], 10.2, 13.4)
     check_item(c, x + 14, yy - 6, "Which vane position the firmware calls 0 degrees, against true north, is a mounting "
                "job, not today's. Today only the steps matter.", w=w - 28)
 
 
 # ------------------------------------------------------------------ 10 report
-REPORT_ROWS = [("PROBE USED, NUCLEO CONNECTOR", "WRITE", "page 01: what you plugged into, if the NUCLEO"),
-               ("UNLOCK: MAKE OR CUBEPROGRAMMER", "WRITE", "page 02, and what OpenOCD printed"),
-               ("TX IMAGE SHA-256 (FIRST 8)", "HEX", "page 03, and the budget line said profile 3, mux 1"),
-               ("BOR-CHECK: FLASH_OPTR", "HEX", "page 04: ends in 8AA or 9AA"),
-               ("CONSOLE PORT NAME", "WRITE", "page 05: /dev/cu.<...>"),
-               ("KCV", "HEX", "page 06, the same on STATUS"),
-               ("MODULES ALL ACTIVE / WRONG PORT ABSENT", "Y / Y", "page 07"),
-               ("CHARGER TS_PCT, NO PACK", "%", "page 07"),
-               ("IBAT_MA ON THE PACK", "mA", "page 08 (and solar vbus_mv, if sun)"),
-               ("TIME=SYNCHRONIZED, E2E ALL OK", "Y / N", "page 09"),
-               ("RAIN 5 TIPS, VANE 4 STEPS", "Y / N", "page 09")]
+REPORT_ROWS = [("PROBE USED, NUCLEO CONNECTOR", "WRITE", "step 01: what you plugged into, if the NUCLEO"),
+               ("UNLOCK: MAKE OR CUBEPROGRAMMER", "WRITE", "step 02, and what OpenOCD printed"),
+               ("TX IMAGE SHA-256 (FIRST 8)", "HEX", "step 03, and the budget line said profile 3, mux 1"),
+               ("BOR-CHECK: FLASH_OPTR", "HEX", "step 04: ends in 8AA or 9AA"),
+               ("CONSOLE PORT NAME", "WRITE", "step 05: /dev/cu.<...>"),
+               ("KCV", "HEX", "step 06, the same on STATUS"),
+               ("MODULES ALL ACTIVE / WRONG PORT ABSENT", "Y / Y", "step 07"),
+               ("CHARGER TS_PCT, NO PACK", "%", "step 07"),
+               ("CHARGER PACK_DC, NO PACK", "0.1 C", "step 07: RT1's temperature"),
+               ("PACK PLUG, BEFORE PG1", "V", "step 08: + on PG1's red-lead contact"),
+               ("IBAT_MA ON THE PACK", "mA", "step 08 (and solar vbus_mv, if sun)"),
+               ("TIME=SYNCHRONIZED, E2E ALL OK", "Y / N", "step 09"),
+               ("RAIN 5 TIPS, VANE 4 STEPS", "Y / N", "step 09")]
 
 
 def report(c, pg):
-    page(c, "10", "REPORT THE COMMISSION.", "SEND THE NUMBERS. THEN THE LID GOES ON.", pg, SLOGANS9[3])
+    page(c, "10", "REPORT THE COMMISSION.", "SEND THE NUMBERS. THEN THE LID GOES ON.", pg, FOOT9)
     g = Grid(1, 2, heights=[1.62, 0.38])
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["Send these to Claude. They close the CHECK items on pages 01-09."])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, ["Send these to Claude. They close the CHECK items on steps 01-09."])
     for i, (lab, unit, exp) in enumerate(REPORT_ROWS):
         yy = y + h - 22 - i * (h - 16) / len(REPORT_ROWS)
         text(c, x + 44, yy, lab, 12, "HEAD", INK)
@@ -707,10 +708,10 @@ def report(c, pg):
         c.rect(x + 330, yy - 8, 110, 22, stroke=1, fill=0)
         text(c, x + 448, yy, unit, 11, "HEAD", INK)
         text(c, x + 44, yy - 11, exp, 8.3, "MONO", GREY)
-    x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: close the box (Session 8 page 14, the lid and the mount)."])
+    x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: close the box (Session 8 step 14, the lid and the mount)."])
     for i, s_ in enumerate(["SWD leads off J3, USB-C off the mini, J6 out. The pack stays on PG1: the TX runs on it.",
                             "The lid on with its four printed bolts, then the mount, glands down.",
-                            "A new or swapped Wio-E5 later: pages 02, 03 and 04 again (the BOR level stays with the chip)."]):
+                            "A new or swapped Wio-E5 later: steps 02, 03 and 04 again (the BOR level stays with the chip)."]):
         text(c, x + 44, y + h - 22 - i * 15, "-  " + s_, 9.6, "ALT", INK)
 
 

@@ -7,7 +7,7 @@ scenes8.py.
 Starting point: Sessions 1-7 are done. The four cards are built, the backplane is wired, the EVM is set for one cell
 with its leads on, the pack is unplugged and JP17 is out until the CHARGER console check after this session.
 This session prints and fits the base, then loads it: backplane, pack, EVM, cards, cables, coax, lid. The pack stays
-unplugged and JP17 out to the end.
+unplugged and JP17 out to the end. The lid goes on after Session 9.
 
 Usage: .venv-pdf/bin/python make_session8.py [OUT_DIR]     (default: ../out; writes session8-all.pdf)
 """
@@ -49,13 +49,7 @@ assert "Bumpon feet peeled off" in B[5] and "two front clips, one each side of J
 assert "lid-right corner" in B[7] and "Figure 4-1" in B[7]
 assert "hose clamps" in B[8]
 
-SLOGANS8 = [
-    "THE PACK STAYS UNPLUGGED. JP17 STAYS OUT.",
-    "RING FIRST. THEN THE BASE.",
-    "MATCH THE DOTS. NEVER FORCE A CARD.",
-    "CABLE IN BARE. PLUG ON INSIDE.",
-    "METER THE SOLAR LEAD BEFORE J2.",
-]
+FOOT8 = "SESSION 8: INTO THE BOX. FROM build/ASSEMBLY.md SECTIONS 2-5 AND cage/cage.py."
 
 
 def para(c, x, y, w, s_, size=9.3, lead=12.4, font="ALT", color=INK):
@@ -144,7 +138,7 @@ def note_box(c, x, y, w, title, lines, colour=NEON, fill="#FFE6F1"):
 # ------------------------------------------------------------------ 00 cover
 def cover(c, pg):
     page(c, "00", "SESSION 8: INTO THE BOX",
-         "PRINT AND FIT THE BASE, LOAD IT, RUN THE CABLES, SHUT THE LID. NO POWER IN THIS SESSION.", pg, SLOGANS8[0])
+         "PRINT AND FIT THE BASE, LOAD IT, RUN THE CABLES. NO POWER IN THIS SESSION.", pg, FOOT8)
     g = Grid(2, 3, heights=[1.45, 1.05, 0.62])
     x, y, w, h = panel(c, g.cell(0, 0, 2), None, "PARTS (build/ASSEMBLY.md sections 2-4, cage/cage.py, schematic/model.py).")
     items = [("RIM TEST RING, THEN THE BASE\nprinted PETG (cage/cage.py)", "ring"),
@@ -158,7 +152,7 @@ def cover(c, pg):
     x, y, w, h = panel(c, g.cell(0, 1), None, "ALSO ON THE BENCH.")
     parts = ["4 x M3 HEAT-SET INSERTS (BAR 2, CLIP 2)", "2 x M3 SCREWS (BAR), 2 x M3 x 8 SOCKET CAPS (CLIPS)", "HOOK-AND-LOOP STRAP (PACK)",
              "AD1 AMPHENOL 132172 (SMA R/A)", "CX1 135110-01-06.00 COAX", "VOLTAIC P110 6 V 10 W PANEL",
-             "22 AWG RED + BLACK, FERRULES", "4 PRINTED LID BOLTS", "2 HOSE CLAMPS OR STRAPS", "SILICONE OR SPLIT GROMMETS"]
+             "22 AWG RED + BLACK, FERRULES", "HEAT SHRINK (THE SOLAR SPLICE)", "4 PRINTED LID BOLTS", "2 HOSE CLAMPS OR STRAPS", "SILICONE OR SPLIT GROMMETS"]
     for i, s in enumerate(parts):
         text(c, x + 14, y + h - 16 - i * (h - 12) / len(parts), "-  " + s, 9.6, "ALT", INK)
     x, y, w, h = panel(c, g.cell(1, 1), None, "THE STEPS. IN THIS ORDER.")
@@ -170,7 +164,7 @@ def cover(c, pg):
     for i, s in enumerate(steps):
         text(c, x + 14, y + h - 16 - i * (h - 10) / len(steps), s, 11, "HEAD", INK)
     x, y, w, h = panel(c, g.cell(0, 2, 2), None, "STANDING ORDERS.", warn=True)
-    rules = ["THE PACK STAYS OFF PG1 AND JP17 STAYS OUT ALL SESSION. THEY GO ON ONLY AFTER CHARGER SHOWS VREG 4200, ICHG 900.",
+    rules = ["THE PACK STAYS OFF PG1 AND JP17 STAYS OUT ALL SESSION. THEY GO ON ONLY ONCE CHARGER READS AS ON SESSION 9 STEP 07.",
              "NO USB AND NO SUN ON THE PANEL WHILE YOU WIRE. COVER THE PANEL OR LEAVE IT FACE DOWN.",
              "A CARD THAT WON'T GO THE LAST FEW MM IS IN THE WRONG SLOT. NEVER FORCE IT."]
     for i, s in enumerate(rules):
@@ -182,7 +176,7 @@ def cover(c, pg):
 # ------------------------------------------------------------------ 00 what you are building
 def built(c, pg):
     page(c, "00", "WHAT YOU ARE BUILDING", "THE BOX, LOADED. THIS IS WHERE THE SESSION ENDS (LID OFF IN THE PICTURE).", pg,
-         SLOGANS8[0])
+         FOOT8)
     g = Grid(1, 1)
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "Seen from the lid side, glands down, walls cut low so nothing hides. Bottom to top: the cable space over the",
@@ -199,7 +193,7 @@ def built(c, pg):
 # ------------------------------------------------------------------ 01 the rim ring
 def ring(c, pg):
     page(c, "01", "PRINT THE RIM TEST RING FIRST", "ASSEMBLY.md 2.1. CAGE.PY --RING: CAGE/STL/RIM-RING.STL. ABOUT AN HOUR.",
-         pg, SLOGANS8[1])
+         pg, FOOT8)
     g = Grid(1, 2, heights=[1.0, 1.0])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["The whole rim: 175.5 x 129.5 x 8 mm. Print it flat on its land."])
     a = Art(c, "ring", x + 40, y + 10, w - 180, h - 44, align="l")
@@ -222,37 +216,40 @@ def ring(c, pg):
 # ------------------------------------------------------------------ 02 the base
 def base_page(c, pg):
     page(c, "02", "THE BASE: COUPON, PRINT, INSERTS, LEAK TEST", "ASSEMBLY.md 2.2-2.3. ONLY AFTER THE RING FITS.", pg,
-         SLOGANS8[1])
-    g = Grid(2, 2, heights=[1.15, 0.85])
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["Iso from the lid side. The insert spots in brass."])
-    a = Art(c, "base_ins", x + 6, y + 10, w - 84, h - 46, align="l")
-    col_labels(c, a, [("bar_ins1", "BAR INSERT"), ("bar_ins0", "BAR INSERT"), ("clip_ins1", "CLIP INSERT"),
-                      ("clip_ins0", "CLIP INSERT")], a.x + a.w + 6, lo=y + 16)
-    x, y, w, h = panel(c, g.cell(1, 0), 2, ["The four inserts, with the iron."])
-    yy = steps_list(c, x + 44, y + h - 18, w - 56, [
-        "Retention bar: two M3 heat-set inserts in the left wall's front face (Xb 5, Zb 76.5 and 146.5).",
-        "EVM clip: two M3 inserts straight down into the left keeper and the right lid-end block (Xb 4.5 and 100.25, "
-        "Yb 106).",
-        "No inserts in the four corner posts: the lid's printed bolts thread their bores."], 9)
-    in_model(c, x + 14, yy - 8, "The two clips are cage.py --clip (cage/stl/evm-clips.stl): print them flat on their "
-             "top faces, with the base.", w=w - 24)
-    x, y, w, h = panel(c, g.cell(0, 1, 2), 3, [
-        f"ASSEMBLY.md 2.2-2.3. Coupon: cage.py --coupon (cage/stl/coupon.stl), about "
-        f"{cage.RING_PRINT * cage.COUPON_CM3:.0f} min, cut face on the bed."])
-    a = Art(c, "coupon", x + 34, y + 24, w * 0.2, h - 56, align="l")
+         FOOT8)
+    g = Grid(2, 3, heights=[0.78, 1.12, 0.5])
+    x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
+        f"Coupon first: cage.py --coupon (cage/stl/coupon.stl), about {cage.RING_PRINT * cage.COUPON_CM3:.0f} min, "
+        "cut face on the bed."])
+    a = Art(c, "coupon", x + 34, y + 10, w * 0.2, h - 44, align="l")
     col_labels(c, a, [("lip", "LIP + LAND"), ("bore", "BOLT BORE"), ("slot", "B3 SLOT")], a.x + a.w + 4, size=8,
-               gap=14, lo=y + 22)
+               gap=14, lo=y + 12)
     cx = x + w * 0.2 + 120
-    steps_list(c, cx, y + h - 18, x + w * 0.62 - cx, [
+    steps_list(c, cx, y + h - 18, x + w - 14 - cx, [
         "The coupon is the base's top-left corner, cut from the model: B3's slot (tune slot_clear until a card "
         "slides with light friction), the top-left bolt bore (try a printed bolt), the land and lip round the corner.",
         "Fit the lid on its corner: the lip presses the O-ring with the lid's walls down on the land.",
-        "Its walls are over 30 mm square: leak-test them too."], 8.6, lead=11.4, gap=3)
-    steps_list(c, x + w * 0.64, y + h - 18, w * 0.36 - 14, [
-        "Print the base in light PETG, floor on the bed (Yb up), not rim down. Solid walls: about 9-10 perimeters at "
-        "a 0.42 mm line.",
-        "Leak test: water in the bare base, or soapy water with the lid on and a little pressure through the vent "
-        "hole. Coat the inside only if it leaks.",
+        "Its walls are over 30 mm square: leak-test them too, the same way as the base (panel 4)."], 9)
+    x, y, w, h = panel(c, g.cell(0, 1), 2, ["Then print the base."])
+    yy = steps_list(c, x + 44, y + h - 18, w - 56, [
+        "Light PETG, floor on the bed (Yb up), not rim down.",
+        "Solid walls: about 9-10 perimeters at a 0.42 mm line.",
+        "The two EVM clips print with it: cage.py --clip (cage/stl/evm-clips.stl), flat on their top faces."], 9)
+    in_model(c, x + 14, yy - 8, "cage.py --stl refuses the base until ring_fit and the lid bolt positions are "
+             "sourced (step 01).", w=w - 24)
+    x, y, w, h = panel(c, g.cell(1, 1), 3, ["Then the four inserts, with the iron.", "Brass spots: where they go."])
+    a = Art(c, "base_ins", x + 6, y + h * 0.42, w - 84, h * 0.58 - 36, align="l")
+    col_labels(c, a, [("bar_ins1", "BAR INSERT"), ("bar_ins0", "BAR INSERT"), ("clip_ins1", "CLIP INSERT"),
+                      ("clip_ins0", "CLIP INSERT")], a.x + a.w + 6, lo=a.y)
+    steps_list(c, x + 30, y + h * 0.42 - 6, w - 40, [
+        "Retention bar: two M3 heat-set inserts in the left wall's front face (Xb 5, Zb 76.5 and 146.5).",
+        "EVM clip: two M3 inserts straight down into the left keeper and the right lid-end block (Xb 4.5 and 100.25, "
+        "Yb 106).",
+        "None in the four corner posts: the lid's printed bolts thread their bores."], 8.6, lead=11.2, gap=2)
+    x, y, w, h = panel(c, g.cell(0, 2, 2), 4, ["Last, the leak test on the bare base, inserts in."])
+    steps_list(c, x + 44, y + h - 18, w - 56, [
+        "Water in the bare base, or soapy water with the lid on and a little pressure through the vent hole.",
+        "Coat the inside only if it leaks.",
         "Paint or clear-coat the outside against UV."], 9)
 
 
@@ -262,7 +259,7 @@ GLAND_ORDER = ["S1 TH", "S2 UV", "S3 BARO", "S4 SPARE", "SOLAR", "WIND", "RAIN"]
 
 def glands(c, pg):
     page(c, "03", "GLANDS, VENT, SMA BULKHEAD", "ASSEMBLY.md 2.4. THE BOTTOM WALL'S BOSSES, AND THE RIGHT WALL.", pg,
-         SLOGANS8[3])
+         FOOT8)
     g = Grid(2, 2, heights=[1.2, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["Outside, from below and in front.", "Write each label on its gland's",
                                              "boss before you fit it."])
@@ -278,7 +275,8 @@ def glands(c, pg):
         "Five 13 mm holes take PG-7s (#762): the four port cables S1-S4 and the solar lead.",
         "Two 15.5 mm holes take PG-9s (#761), under the right column: the flat wind and rain cables.",
         "Body from outside, nut inside, tight. Leave each cap loose with its seal in: the cables go through later "
-        "(pages 10-12).",
+        "(steps 10-12).",
+        f"S4 SPARE has no cable yet: its PG-7 takes {cage.GLAND_BLANK['S4 SPARE']}.",
         "The M12 vent in its hole in the bottom wall.",
         "The SMA bulkhead low in the right wall (Yb 94.14, Zb 60.38), nut inside."], 9)
     yy = para(c, x + 44, yy - 4, w - 56, "PG-7 bore 7.9 mm, PG-9 10.5 mm: no 6P plug passes either one, even with the "
@@ -291,7 +289,7 @@ def glands(c, pg):
 # ------------------------------------------------------------------ 04 the wrong-card test
 def keytest(c, pg):
     page(c, "04", "THE WRONG-CARD TEST, OFF THE BASE", "BACKPLANE.md 2 KEY PLUGS. ON THE BENCH, BEFORE ANY CARD GOES IN.",
-         pg, SLOGANS8[2])
+         pg, FOOT8)
     g = Grid(1, 2, heights=[1.15, 0.85])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "The backplane flat on the bench, sockets up, the EVM resting beside it on its leads. Tick every box."])
@@ -318,14 +316,14 @@ def keytest(c, pg):
     LAB.block(x0 - 125, y0 - 30 * 4 - 10, x0 + cw * 4 + 10, y0 + 16, "table")
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["If a wrong card goes in: stop. The key plug on that socket is missing or loose."])
     steps_list(c, x + 44, y + h - 18, w - 70, [
-        "Look at the socket: one pin in one contact per socket (Session 6, page 01). Refit it, then redo that row.",
+        "Look at the socket: one pin in one contact per socket (Session 6 step 01). Refit it, then redo that row.",
         "Push gently. You're testing the plug, not the socket. A card that's stopped needs no force to come back out.",
         "No card into any socket at an angle: the pins bend."], 9.5)
 
 
 # ------------------------------------------------------------------ 05 dots and the backplane
 def dots_bp(c, pg):
-    page(c, "05", "DOTS BESIDE THE SLOTS, THEN THE BACKPLANE IN", "ASSEMBLY.md 3 (THE SLOT KEY) AND 2.4.", pg, SLOGANS8[2])
+    page(c, "05", "DOTS BESIDE THE SLOTS, THEN THE BACKPLANE IN", "ASSEMBLY.md 3 (THE SLOT KEY) AND 2.4.", pg, FOOT8)
     g = Grid(2, 2, heights=[1.3, 0.7])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["A dot of each card's colour on the left wall,", "beside its slot, in front of the cards."])
     a = Art(c, "dots", x + 8, y + 10, w - 110, h - 46, align="l")
@@ -343,15 +341,15 @@ def dots_bp(c, pg):
         "If a card's front edge has no dot yet (Session 1), add it now."], 9)
     x, y, w, h = panel(c, g.cell(1, 1), 4, ["It comes out again only after every card is out."])
     steps_list(c, x + 44, y + h - 18, w - 56, [
-        "No screws: the cards hold it. Fit them straight after (page 08).",
+        "No screws: the cards hold it. Fit them straight after (step 08).",
         "The EVM and the pack lead come along on their leads. Rest the EVM in front of the base meanwhile."], 9)
 
 
 # ------------------------------------------------------------------ 06 the pack
 def pack_page(c, pg):
     page(c, "06", "THE PACK ON ITS TRAY", "ASSEMBLY.md 2.5 AND 1.3. THE BOTTOM SHELF. THE PACK STAYS UNPLUGGED.", pg,
-         SLOGANS8[0])
-    g = Grid(2, 2, heights=[1.2, 0.8])
+         FOOT8)
+    g = Grid(2, 2, heights=[1.42, 0.58])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["Lid side, walls cut low. The pack lies flat,", "label up toward the lid."])
     a = Art(c, "pack_in", x + 150, y + 10, w - 96, h - 46, align="l")
     col_labels(c, a, [("strap", "STRAP"), ("pack", "#353 PACK"), ("rt1", "RT1, TAPED"), ("pg1", "PLUG: NOT IN PG1", NEON)],
@@ -364,8 +362,8 @@ def pack_page(c, pg):
         "Strap it down, snug.",
         "Tape RT1 (the #372 thermistor bead on its leads to J7) flat to the pack's face, with a square of tape over "
         "the bead.",
-        "The pack's plug stays apart from PG1's socket, taped. Its - lead goes up to J5 GND, its + lead (via PG1) "
-        "to backplane line 21: both from Session 7.",
+        "The pack's plug stays apart from PG1's socket, taped. PG1's - lead goes up to J5 GND, PG1's + lead to "
+        "the backplane's PACK + lead (line 21): both from Session 7.",
         "Leave slack on every lead: the EVM goes on the shelf above next."], 9)
     check_item(c, x + 14, yy - 8, "Where on the pack RT1 sits isn't set. This sheet puts it on the face toward the lid, "
                "middle.", w=w - 24)
@@ -374,7 +372,7 @@ def pack_page(c, pg):
 # ------------------------------------------------------------------ 07 the EVM
 def evm_page(c, pg):
     page(c, "07", "THE EVM ON ITS LEDGES", "ASSEMBLY.md 2.5. BUMPONS OFF, SLID BACK TO THE STOP, CLIP AT THE FRONT.", pg,
-         SLOGANS8[0])
+         FOOT8)
     g = Grid(2, 2, heights=[1.2, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["The EVM over the pack: its left edge on the", "left wall's ledge, its right "
                                              "edge on the fin."])
@@ -398,7 +396,7 @@ def evm_page(c, pg):
 # ------------------------------------------------------------------ 08 the cards
 def cards_page(c, pg):
     page(c, "08", "THE CARDS, THEN THE BAR", "ASSEMBLY.md 3. BOTTOM TO TOP: B4, B2, B1, B3. MATCH THE DOTS.", pg,
-         SLOGANS8[2])
+         FOOT8)
     g = Grid(2, 2, heights=[1.2, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["Each card in from the lid side, along its", "left-wall slot and right-post slot."])
     a = Art(c, "cards_in", x + 130, y + 10, w - 260, h - 46)
@@ -422,7 +420,7 @@ def cards_page(c, pg):
 # ------------------------------------------------------------------ 09 cable runs
 def runs(c, pg):
     page(c, "09", "CABLE RUNS AND LABELS", "ASSEMBLY.md 2.6. PLUG, RIGHT COLUMN, DOWN, LEFT UNDER THE TRAY, ITS GLAND.", pg,
-         SLOGANS8[3])
+         FOOT8)
     g = Grid(2, 2, heights=[1.25, 0.75])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["From the lid. Each cable from its jack's plug to its gland (drawn bundled)."])
     a = Art(c, "cables", x + 150, y + 10, w - 300, h - 46)
@@ -450,9 +448,9 @@ def runs(c, pg):
 # ------------------------------------------------------------------ 10 round cables
 def round_page(c, pg):
     page(c, "10", "ROUND PORT CABLES: PLUG ON INSIDE", "ASSEMBLY.md 2.6. S1-S4 THROUGH THEIR PG-7S, BARE END FIRST.", pg,
-         SLOGANS8[3])
+         FOOT8)
     g = Grid(2, 2, heights=[1.2, 0.8])
-    x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["A 6P plug, contacts up, cable toward you.", "Conductors in positions 2-5."])
+    x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["A 6P plug, contacts up, tip left, cable to the right.", "Pin 1 at the bottom, 6 at the top. Conductors in 2-5."])
     a = Art(c, "plug_round", x + 170, y + 20, w - 200, h - 56, align="l")
     col_labels(c, a, [(f"pin{pin}", f"{pin}  {what}") for pin, what in asmd.PORT_PINS] +
                [("pin1", "1  empty", GREY), ("pin6", "6  empty", GREY)], a.x - 50, side="r", gap=16, center=True)
@@ -473,7 +471,7 @@ def round_page(c, pg):
 # ------------------------------------------------------------------ 11 wind and rain
 def flat_page(c, pg):
     page(c, "11", "WIND AND RAIN: CUT, PASS, RE-CRIMP", "ASSEMBLY.md 2.6. SEN-15901 FLAT CABLES THROUGH THE PG-9S.", pg,
-         SLOGANS8[3])
+         FOOT8)
     g = Grid(2, 2, heights=[1.1, 0.9])
     for col, (art, nm, pins) in enumerate((("plug_wind", "WIND (M1): POSITIONS 2-5", (2, 3, 4, 5)),
                                            ("plug_rain", "RAIN (M2): POSITIONS 3-4", (3, 4)))):
@@ -497,7 +495,7 @@ def flat_page(c, pg):
 # ------------------------------------------------------------------ 12 solar
 def solar(c, pg):
     page(c, "12", "THE SOLAR LEAD TO J2 (VIN2)", "VOLTAIC P110, 6 V 10 W. ITS BARREL CUT AT THE GLAND. INTO EVM J2.", pg,
-         SLOGANS8[4])
+         FOOT8)
     g = Grid(1, 2, heights=[1.0, 1.0])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["EVM top face, lid edge down. J2 is on the left edge, below J1."])
     a = Art(c, "solar_j2", x + 30, y + 10, w * 0.5, h - 46, align="l")
@@ -529,7 +527,7 @@ def solar(c, pg):
 # ------------------------------------------------------------------ 13 coax
 def coax(c, pg):
     page(c, "13", "THE COAX TO THE BULKHEAD", "ASSEMBLY.md 2.7. AD1 ON THE WIO-E5 MINI, 135110 PLUG, RIGHT COLUMN.", pg,
-         SLOGANS8[3])
+         FOOT8)
     g = Grid(2, 2, heights=[1.2, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["From the lid side, a little from the right."])
     a = Art(c, "coax", x + 130, y + 10, w - 96, h - 46, align="l")
@@ -550,8 +548,8 @@ def coax(c, pg):
 # ------------------------------------------------------------------ 14 before power, lid, mount
 def close(c, pg):
     page(c, "14", "BEFORE POWER, THE LID, THE MOUNT", "ASSEMBLY.md 5 AND 2.8. STILL NO PACK, STILL NO USB.", pg,
-         SLOGANS8[0])
-    g = Grid(2, 2, heights=[1.1, 0.9])
+         FOOT8)
+    g = Grid(2, 2, heights=[0.6, 1.4])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, ["ASSEMBLY.md section 5 word for word (its section 1 is Session 7), then this session's own checks."])
     rows = asmd.BEFORE + ["Every gland cap tight; the wind and rain gaps sealed; the vent in.",
                           "The retention bar on, both screws. The EVM on its ledges, JP17 still out.",
@@ -564,9 +562,9 @@ def close(c, pg):
         text(c, x + 64, yy, s_, 9.5, "ALT", INK)
     LAB.block(x + 40, y + h - 24 - len(rows) * 19, x + w - 10, y + h - 10, "checklist")
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["From the back: a flange at each short end."])
-    a = Art(c, "mount", x + 8, y + 10, w - 120, h - 46, align="l")
+    a = Art(c, "mount", x + 8, y + 34, w - 40, h - 90, align="l")
     label(c, x + w - 10, y + h - 26, "FLANGE, 2 SLOTS", *a.A("flange_top"), 8.6, anchor="r")
-    label(c, x + w - 10, y + 24, "FLANGE, 2 SLOTS", *a.A("flange_bot"), 8.6, anchor="r")
+    label(c, x + w - 10, y + 22, "FLANGE, 2 SLOTS", *a.A("flange_bot"), 8.6, anchor="r")
     x, y, w, h = panel(c, g.cell(1, 1), 3, ["After Session 9. Glands down, always."])
     steps_list(c, x + 44, y + h - 18, w - 56, [
         "The lid on, with its four printed bolts.",
@@ -575,20 +573,22 @@ def close(c, pg):
         "J6 USB stays inside: to use it, the lid comes off."], 9)
 
 
-REPORT_ROWS = [("RIM RING FITS (RING_FIT)", "Y / N", "page 01: lip, 4 holes, flush"),
-               ("WRONG-CARD TEST: 12 STOPS", "Y / N", "page 04"),
-               ("LEAK TEST, BARE BASE", "Y / N", "page 02"),
-               ("SOLAR, OPEN CIRCUIT IN SUN", "V", "page 12, before J2"),
-               ("WIND / RAIN COLOURS", "WRITE", "page 11, before you cut"),
-               ("COAX PLUG CLEARS THE EVM", "Y / N", "page 13 (the model says 6 mm over the corner)"),
-               ("3.3 V TO GROUND, BACKPLANE", "kohm", "page 14: more than 1"),
+REPORT_ROWS = [("RIM RING FITS (RING_FIT)", "Y / N", "step 01: lip, 4 holes, flush"),
+               ("EVM, EVM_UNDER (PART HEIGHTS)", "mm", "step 01: tallest part on top, J6 underneath"),
+               ("WRONG-CARD TEST: 12 STOPS", "Y / N", "step 04"),
+               ("LEAK TEST, BARE BASE", "Y / N", "step 02"),
+               ("PORT CABLE DIAMETER", "mm", "step 10: the PG-7 takes 3.0-4.3"),
+               ("SOLAR, OPEN CIRCUIT IN SUN", "V", "step 12, before J2"),
+               ("WIND / RAIN COLOURS", "WRITE", "step 11, before you cut"),
+               ("COAX PLUG CLEARS THE EVM", "Y / N", "step 13 (the model says 6 mm over the corner)"),
+               ("3.3 V TO GROUND, BACKPLANE", "kohm", "step 14: more than 1"),
                ("PHOTO, LID OFF, FROM THE LID", "SENT", "every label readable")]
 
 
 def report(c, pg):
-    page(c, "15", "REPORT THE BOX.", "LOADED AND SHUT. SEND THE NUMBERS.", pg, SLOGANS8[0])
+    page(c, "15", "REPORT THE BOX.", "LOADED. SEND THE NUMBERS.", pg, FOOT8)
     g = Grid(1, 2, heights=[1.6, 0.4])
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["Send these to Claude. They close the CHECK items on pages 01-13."])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, ["Send these to Claude. They close the CHECK items in steps 01-13."])
     for i, (lab, unit, exp) in enumerate(REPORT_ROWS):
         yy = y + h - 22 - i * (h - 16) / len(REPORT_ROWS)
         text(c, x + 44, yy, lab, 13, "HEAD", INK)
@@ -598,10 +598,11 @@ def report(c, pg):
         text(c, x + 448, yy, unit, 11, "HEAD", INK)
         text(c, x + 44, yy - 12, exp, 8.5, "MONO", GREY)
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: Session 9, COMMISSION (tx-session9-commission.pdf). Lid off again."])
-    for i, s_ in enumerate(["Unlock and flash the TX over J3: make ROLE=tx BOARD=wio-e5 WS_POWER_PROFILE=3 WS_I2C_MUX=1.",
-                            "Provision it, then the CHARGER check: USB in J6, no pack, JP17 out (Session 9 page 07).",
-                            "Only then refit JP17 and plug the pack into PG1, last (Session 9 page 08)."]):
-        text(c, x + 44, y + h - 22 - i * 16, "-  " + s_, 10, "ALT", INK)
+    for i, s_ in enumerate(["Unlock and flash the TX over J3 with the full line (Session 9 step 03): make ROLE=tx BOARD=wio-e5",
+                            "WS_POWER_PROFILE=3 WS_I2C_MUX=1 flash SERIAL=<the probe's serial>. Nothing to flash today.",
+                            "Provision it, then the CHARGER check: USB in J6, no pack, JP17 out (Session 9 step 07).",
+                            "Only then refit JP17 and plug the pack into PG1, last (Session 9 step 08)."]):
+        text(c, x + 44, y + h - 22 - i * 16, ("    " if i == 1 else "-  ") + s_, 10, "ALT", INK)
 
 
 PAGES = [cover, built, ring, base_page, glands, keytest, dots_bp, pack_page, evm_page, cards_page, runs, round_page,
