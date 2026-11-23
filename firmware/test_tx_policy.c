@@ -169,6 +169,62 @@ static void strikes(void) {
  assert(ws_strike_note(t, 3, 1, 4, 10) == 1);         /* seq 4 started at 1 */
 }
 
+/* ws_energy_next: the thresholds are the D1 call (docs/radio-energy-policy.md section 3), written here
+   from the document, not read from ws_policy.c. SOC in 0.1 %, voltage in mV. */
+enum { S = WS_ENERGY_SURPLUS, N = WS_ENERGY_NORMAL, C = WS_ENERGY_CONSERVE, X = WS_ENERGY_CRITICAL };
+static int gauge(int last, unsigned soc_x10, unsigned mv) {
+ ws_energy_in in = { .soc_ok = 1, .v_ok = 1, .soc_x10 = (uint16_t)soc_x10, .v_mv = (uint16_t)mv };
+ return ws_energy_next(last, &in);
+}
+static int volts(int last, unsigned mv) {   /* the gauge missing: the charger's VBAT only */
+ ws_energy_in in = { .v_ok = 1, .v_mv = (uint16_t)mv };
+ return ws_energy_next(last, &in);
+}
+static int full(int last, unsigned soc_x10, unsigned mv) {
+ ws_energy_in in = { .soc_ok = 1, .v_ok = 1, .full = 1, .soc_x10 = (uint16_t)soc_x10, .v_mv = (uint16_t)mv };
+ return ws_energy_next(last, &in);
+}
+
+static void energy(void) {
+ const unsigned ok_mv = 3900;   /* a voltage that decides nothing below SURPLUS */
+ /* SOC down: NORMAL holds to 30.0 %, CONSERVE below it, CRITICAL below 8.0 %. */
+ assert(gauge(N, 300, ok_mv) == N && gauge(N, 299, ok_mv) == C);
+ assert(gauge(C, 80, ok_mv) == C && gauge(C, 79, ok_mv) == X);
+ assert(gauge(N, 79, ok_mv) == X);                     /* a fall past both goes straight to CRITICAL */
+ /* SOC up, with the 5-point hysteresis: CRITICAL holds below 13.0 %, CONSERVE below 35.0 %. */
+ assert(gauge(X, 129, ok_mv) == X && gauge(X, 130, ok_mv) == C);
+ assert(gauge(X, 349, ok_mv) == C && gauge(X, 350, ok_mv) == N);
+ assert(gauge(C, 349, ok_mv) == C && gauge(C, 350, ok_mv) == N);
+ for (unsigned soc = 300; soc < 350; soc++) assert(gauge(C, soc, ok_mv) == C && gauge(N, soc, ok_mv) == N);
+ for (unsigned soc = 80; soc < 130; soc++) assert(gauge(X, soc, ok_mv) == X && gauge(C, soc, ok_mv) == C);
+ /* Voltage, with 100 mV of hysteresis: CONSERVE below 3600 (out at 3700), CRITICAL below 3450 (out at 3550). */
+ assert(gauge(N, 800, 3600) == N && gauge(N, 800, 3599) == C);
+ assert(gauge(C, 800, 3699) == C && gauge(C, 800, 3700) == N);
+ assert(gauge(C, 800, 3450) == C && gauge(C, 800, 3449) == X && gauge(N, 800, 3449) == X);
+ assert(gauge(X, 800, 3549) == X && gauge(X, 800, 3550) == C && gauge(X, 800, 3700) == N);
+ /* The worse signal wins, so leaving a state needs both past their exits. */
+ assert(gauge(N, 800, 3500) == C && gauge(N, 200, 4100) == C && gauge(N, 50, 3700) == X);
+ assert(gauge(C, 400, 3650) == C && gauge(C, 340, 3800) == C && gauge(C, 400, 3800) == N);
+ assert(gauge(X, 400, 3500) == X && gauge(X, 100, 3800) == X);
+ /* The gauge missing (no SOC): never better than CONSERVE; the voltage still finds CRITICAL. */
+ assert(volts(N, 4200) == C && volts(S, 4200) == C && volts(C, 3600) == C);
+ assert(volts(C, 3449) == X && volts(X, 3549) == X && volts(X, 3550) == C && volts(X, 4200) == C);
+ /* No input at all: CONSERVE, or CRITICAL kept. */
+ ws_energy_in none = { 0 };
+ assert(ws_energy_next(N, &none) == C && ws_energy_next(S, &none) == C && ws_energy_next(C, &none) == C);
+ assert(ws_energy_next(X, &none) == X);
+ /* SURPLUS: full, 4000 mV and 95.0 % in; it holds to 90.0 % and ends with any condition. */
+ assert(full(N, 950, 4000) == S && full(N, 949, 4100) == N && full(N, 990, 3999) == N);
+ assert(gauge(N, 990, 4150) == N);                     /* not full: NORMAL */
+ assert(full(S, 900, 4100) == S && full(S, 899, 4100) == N);
+ assert(gauge(S, 990, 4150) == N && full(S, 990, 3999) == N);
+ ws_energy_in full_no_soc = { .v_ok = 1, .full = 1, .v_mv = 4150 };
+ assert(ws_energy_next(S, &full_no_soc) == C);         /* full but the gauge gone: fail closed */
+ assert(full(C, 990, 4150) == S);                       /* charged back from CONSERVE in one step */
+ /* A last state out of range counts as CONSERVE. */
+ assert(gauge(7, 320, ok_mv) == C && gauge(-1, 350, ok_mv) == N && ws_energy_next(9, &none) == C);
+}
+
 int main(void) {
  airtime();
  link();
@@ -176,6 +232,7 @@ int main(void) {
  health_reserve();
  strikes();
  strike_targets();
+ energy();
  assert(!strcmp(ws_energy_name(WS_ENERGY_NORMAL), "normal") && !strcmp(ws_energy_name(4), "?"));
  return 0;
 }

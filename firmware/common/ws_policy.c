@@ -14,6 +14,24 @@ static const uint16_t airtime_cap_ms[] = { 15000, 5000, 2000, 0 };
 #define ENERGY_STATES (sizeof energy_name / sizeof energy_name[0])
 _Static_assert(ENERGY_STATES == WS_ENERGY_CRITICAL + 1 && sizeof backlog_limit == ENERGY_STATES &&
                sizeof airtime_cap_ms / sizeof airtime_cap_ms[0] == ENERGY_STATES, "one entry per energy state");
+/* docs/radio-energy-policy.md section 3 (D1). SOC in 0.1 %, voltage in mV. */
+#define SOC_CRITICAL_IN 80U
+#define SOC_CRITICAL_OUT 130U
+#define SOC_CONSERVE_IN 300U
+#define SOC_CONSERVE_OUT 350U
+#define SOC_SURPLUS_IN 950U
+#define SOC_SURPLUS_OUT 900U
+#define MV_CRITICAL_IN 3450U
+#define MV_CRITICAL_OUT 3550U
+#define MV_CONSERVE_IN 3600U
+#define MV_CONSERVE_OUT 3700U
+#define MV_SURPLUS_MIN 4000U
+_Static_assert(SOC_CRITICAL_IN < SOC_CRITICAL_OUT && SOC_CRITICAL_OUT < SOC_CONSERVE_IN &&
+               SOC_CONSERVE_IN < SOC_CONSERVE_OUT && SOC_CONSERVE_OUT < SOC_SURPLUS_OUT &&
+               SOC_SURPLUS_OUT < SOC_SURPLUS_IN, "the SOC thresholds in order, each with its hysteresis");
+_Static_assert(MV_CRITICAL_IN < MV_CRITICAL_OUT && MV_CRITICAL_OUT < MV_CONSERVE_OUT &&
+               MV_CONSERVE_IN < MV_CONSERVE_OUT && MV_CONSERVE_OUT < MV_SURPLUS_MIN,
+               "the voltage thresholds in order, each with its hysteresis");
 #define CONSERVE_INTERVAL_S 300U   /* spec rule R02: CONSERVE reports every 5 minutes */
 static const uint16_t probe_interval_s[] = { 120, 240, 480, 900 };
 #define PROBE_STEPS (sizeof probe_interval_s / sizeof probe_interval_s[0])
@@ -21,6 +39,34 @@ static const uint16_t probe_interval_s[] = { 120, 240, 480, 900 };
 const char *ws_energy_name(int energy)
 {
  return energy >= 0 && energy < (int)ENERGY_STATES ? energy_name[energy] : "?";
+}
+
+/* One signal's state: NORMAL, CONSERVE or CRITICAL, with the hysteresis that last gives. */
+static int energy_level(int last, uint32_t x, uint32_t crit_in, uint32_t crit_out, uint32_t cons_in,
+                        uint32_t cons_out)
+{
+ if (x < crit_in || (last >= WS_ENERGY_CRITICAL && x < crit_out)) return WS_ENERGY_CRITICAL;
+ if (x < cons_in || (last >= WS_ENERGY_CONSERVE && x < cons_out)) return WS_ENERGY_CONSERVE;
+ return WS_ENERGY_NORMAL;
+}
+
+static int energy_worse(int a, int b) { return a > b ? a : b; }
+
+int ws_energy_next(int last, const ws_energy_in *in)
+{
+ int next = WS_ENERGY_NORMAL;
+ if (last < WS_ENERGY_SURPLUS || last > WS_ENERGY_CRITICAL) last = WS_ENERGY_CONSERVE;
+ if (!in->soc_ok && !in->v_ok) return last == WS_ENERGY_CRITICAL ? WS_ENERGY_CRITICAL : WS_ENERGY_CONSERVE;
+ if (in->v_ok)
+  next = energy_worse(next, energy_level(last, in->v_mv, MV_CRITICAL_IN, MV_CRITICAL_OUT, MV_CONSERVE_IN,
+                                         MV_CONSERVE_OUT));
+ if (!in->soc_ok) return energy_worse(next, WS_ENERGY_CONSERVE);   /* unknown estimate: fail closed */
+ next = energy_worse(next, energy_level(last, in->soc_x10, SOC_CRITICAL_IN, SOC_CRITICAL_OUT, SOC_CONSERVE_IN,
+                                        SOC_CONSERVE_OUT));
+ if (next == WS_ENERGY_NORMAL && in->full && in->v_ok && in->v_mv >= MV_SURPLUS_MIN &&
+     in->soc_x10 >= (last == WS_ENERGY_SURPLUS ? SOC_SURPLUS_OUT : SOC_SURPLUS_IN))
+  next = WS_ENERGY_SURPLUS;
+ return next;
 }
 
 /* Semtech time on air (SX1261/2 datasheet section 6.1.4, AN1200.13), explicit header, CRC on:

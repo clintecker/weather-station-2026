@@ -5,11 +5,12 @@
 /* The node's transmission policy state (docs/radio-energy-policy.md); the decisions themselves
  * are pure functions in firmware/common/ws_policy.c. */
 
-/* Energy state (WS_ENERGY_*): fixed at NORMAL. The node measures its battery and charger (power
-   telemetry design), but the thresholds are deferred to the energy-policy work (design 9.9, open
-   decision D1: measured loads and the pack reserve); that work feeds the pack, charger and solar
-   telemetry in here. Unknown energy must map to CONSERVE (fail closed). */
+/* Energy state (WS_ENERGY_*, docs/radio-energy-policy.md section 3). The TX stack build (profile 3)
+   decides it once a minute from the gauge (SOC, VCELL), the charger's VBAT when the gauge is gone, and
+   the charger's evidence of a full pack; unknown is CONSERVE (fail closed). A change prints "#energy"
+   and makes a health report due. The bench builds (profiles 1 and 2) stay at NORMAL. */
 int energy_state(void);
+void policy_energy_minute(void);   /* once a minute, before the reading is built */
 void policy_init(void);   /* at boot: the airtime of one answered exchange and of a health report */
 /* What this minute may send: -1 nothing (the reading stays journaled), else how many backlog
    frames may follow the live reading. A minute whose health report follows the exchange reserves

@@ -35,7 +35,7 @@ indentation. The root chunk (section 11) puts every chunk in file order.
 | Immutable identity | an exact repeat of (station, session, sequence) changes nothing. A different payload under the same identity is an error | `GatewayTests.test_replay_and_restart`, `GatewayTests.test_collision`, `NackTests.test_collision_is_nacked_recorded_and_dropped_by_node` |
 | Counters | a since-boot counter never decreases in sequence order within an epoch | `GatewayTests.test_counters_never_decrease_in_sequence_order` |
 | Reconstructed time | an untimed sample gets the time of the nearest trusted reference of its epoch, with an error bound. A bounded update gives the same result as a full rescan | `ReconstructionTests.test_bounded_update_matches_a_full_rescan`, `TimeReconstruction` (all four tests) |
-| Freshness | the latest reading is current only with a known, bounded, not-future time younger than 180 s | `LatestReasonTests.test_reasons`, `GatewayTests.test_backfill_does_not_replace_live`, `GatewayTests.test_unknown_clock_and_future` |
+| Freshness | the latest reading is current only with a known, bounded, not-future time younger than its report interval plus 120 s: 180 s, 420 s in CONSERVE, 3720 s in CRITICAL (the energy state the record carries) | `LatestReasonTests.test_reasons`, `GatewayTests.test_backfill_does_not_replace_live`, `GatewayTests.test_unknown_clock_and_future` |
 | Read-only access | a command-line read of the database of a stopped gateway creates no files | `ReadOnlyOpen.test_reading_a_stopped_gateways_database_leaves_no_files` |
 
 Test classes without a file name are in one of two files. `tests/test_gateway.py` holds the unit
@@ -71,7 +71,8 @@ Limits and units that the file uses:
 |---|---|---|
 | `MINUTE_S`, `HOUR_S`, `DAY_S` | 60, 3600, 86400 | `ws0/__main__.py` and `ws0/harness.py` import `MINUTE_S`. `ws0/web.py` imports all three (and `FAR_FUTURE`) |
 | `RECORD_VERSION` | 6 | the only accepted `version`. It equals `VERSION` in `ws0/protocol.py`. A run directory belongs to one record version. A version 5 database stays with the version 5 release, with no migration (`docs/protocol-design.md` section 5.7) |
-| `CURRENT_MAX_AGE_S` | 180 | a latest reading of this age or older is not current |
+| `CURRENT_MAX_AGE_S` | 180 | a latest reading of this age or older is not current, in `SURPLUS` and `NORMAL` |
+| `REPORT_INTERVAL_S`, `CURRENT_SLACK_S` | 60 s (`surplus`, `normal`), 300 s (`conserve`), 3600 s (`critical`); 120 s | `current_max_age`: the station's live interval by the energy state its record carries, plus the slack. `docs/radio-energy-policy.md` section 5 sets the intervals |
 | `FUTURE_SLACK_S` | 5 | a sample time more than this after its receipt shows a wrong clock |
 | `UTC_LIMIT` | 2^32 | the UTC field of the observation is a u32 |
 | `SQLITE_INT_MAX` | 2^63 - 1 | the open upper end of an uptime range in `reconstruct` |
@@ -80,7 +81,9 @@ Limits and units that the file uses:
 ```python {#limits}
 MINUTE_S, HOUR_S, DAY_S = 60, 3600, 86400
 RECORD_VERSION = 6          # the protocol version (VERSION in ws0/protocol.py)
-CURRENT_MAX_AGE_S = 180     # a latest reading older than this is not current
+CURRENT_MAX_AGE_S = 180     # a latest reading older than this is not current (SURPLUS, NORMAL)
+CURRENT_SLACK_S = 120       # past the station's live interval before its reading stops being current
+REPORT_INTERVAL_S = {'surplus': 60, 'normal': 60, 'conserve': 300, 'critical': 3600}   # the TX's live interval
 FUTURE_SLACK_S = 5          # a sample time this far after receipt is a wrong clock, not jitter
 UTC_LIMIT = 2**32           # the UTC field of the observation is u32
 SQLITE_INT_MAX = 2**63 - 1
@@ -831,7 +834,7 @@ or late traffic cannot reset the age.
 |---|---|
 | `future` | `effective_at > received_at + FUTURE_SLACK_S` (5 s) |
 | `vague` | `time_uncertainty_s > CURRENT_MAX_UNCERTAINTY_S` (10 s) |
-| `timely` | `0 <= age < CURRENT_MAX_AGE_S` (180 s), not `future`, not `vague` |
+| `timely` | `0 <= age < current_max_age(record)`, not `future`, not `vague` |
 
 The reason is the first one that applies, in this order:
 
@@ -859,16 +862,31 @@ flowchart TD
 | 3 | `time_uncertain` | `vague` |
 | 4 | `sensor_fault` | `quality == 'sensor_fault'` |
 | 5 | `fresh` | `timely` |
-| 6 | `stale_or_clock_step` | none of the above: age 180 s or more, or negative |
+| 6 | `stale_or_clock_step` | none of the above: age `current_max_age(record)` or more, or negative |
 
 `future` compares with the receipt time, not with `now`. A sample that was in the future when it
 arrived stays quarantined after the wall clock passes it. `sensor_fault` comes before `fresh`. So
 a timely reading with every field faulty reports the fault. `LatestReasonTests.test_reasons` pins
 each reason and its boundary values:
 
-- age: 179 s is fresh, 180 s is stale,
+- age: 179 s is fresh, 180 s is stale (in `NORMAL`; 419 and 420 s in `CONSERVE`, 3719 and 3720 s in `CRITICAL`),
 - uncertainty: 10 s is fresh, 11 s is uncertain,
 - clock: 5 s ahead is fresh, 6 s ahead is future.
+
+The age limit follows the station. A station reports its energy state in every reading (flags
+bits 1-2, `docs/protocol-design.md`), and the state sets how often a live reading comes: every
+minute in `SURPLUS` and `NORMAL`, every 5 minutes in `CONSERVE`, and an hourly beacon in
+`CRITICAL` (`docs/radio-energy-policy.md` section 5). A reading stays current for that interval
+plus 120 s, so a `CONSERVE` station is not shown as down between its reports (power design risk
+R9). A record without a known state gets the `NORMAL` limit. `LatestReasonTests.test_age_follows_the_energy_state`
+pins the limits.
+
+```python {#current-max-age}
+def current_max_age(record):
+    """The age (s) at which this station's latest reading stops being current: its live interval for
+    the energy state the record carries, plus CURRENT_SLACK_S. 180 s in SURPLUS and NORMAL."""
+    return REPORT_INTERVAL_S.get(record.get('energy_state'), MINUTE_S) + CURRENT_SLACK_S
+```
 
 ```python {#freshness}
 def _freshness(record, received_at, effective, age, uncertainty):
@@ -876,7 +894,7 @@ def _freshness(record, received_at, effective, age, uncertainty):
     stays quarantined. Waiting does not validate its clock. The reasons are checked in this order."""
     future = effective is not None and effective > received_at+FUTURE_SLACK_S
     vague = uncertainty is not None and uncertainty > CURRENT_MAX_UNCERTAINTY_S
-    timely = age is not None and 0 <= age < CURRENT_MAX_AGE_S and not future and not vague
+    timely = age is not None and 0 <= age < current_max_age(record) and not future and not vague
     for reason, applies in (('future_clock_at_receipt', future), ('unknown_clock', age is None),
                             ('time_uncertain', vague), ('sensor_fault', record['quality'] == 'sensor_fault'),
                             ('fresh', timely)):
@@ -1048,6 +1066,8 @@ indentation.
 
 <<open-read-only>>
 
+
+<<current-max-age>>
 
 <<freshness>>
 

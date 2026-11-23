@@ -146,6 +146,7 @@ static int minute_encode(minute_t *m, uint8_t *plain)
   /* static: only the sequencer runs this, and it never re-enters. It is on the deepest callback
      chain, which tools/stack_report.py counts four times (a 128-byte record would cost ~512 B). */
   static ws_obs_t o;
+  policy_energy_minute();   /* the minute's energy state: the reading carries it, the send obeys it */
   o = (ws_obs_t){ .epoch = node.boot_epoch, .seq = node.next_seq, .utc = m->utc, .uptime = m->uptime,
                   .energy = (uint8_t)energy_state() };
   wsmp_map_obs(&o, &sum);

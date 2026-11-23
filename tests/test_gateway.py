@@ -319,6 +319,31 @@ class LatestReasonTests(unittest.TestCase):
             finally:
                 store.db.close()
 
+    def test_age_follows_the_energy_state(self):
+        """Power design risk R9: a CONSERVE station reports every 300 s and a CRITICAL one beacons hourly
+        (docs/radio-energy-policy.md section 5), so its reading stays current for that interval plus 120 s.
+        Limits written from the policy, not read from gateway.py."""
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / 'e.db')
+            try:
+                #  energy state -> the first age that is no longer current
+                for i, (energy, limit) in enumerate((('surplus', 180), ('normal', 180), ('conserve', 420),
+                                                     ('critical', 3720), (None, 180))):
+                    record = reading() if energy is None else reading(energy_state=energy)
+                    if energy is None:
+                        del record['energy_state']
+                    with store.db:
+                        store.db.execute('DELETE FROM observations')
+                        store.db.execute('INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?,?)',
+                                         ('test', '1', i, 1000, 1001, json.dumps(record), 60, 1000, 'synchronized', 1))
+                    fresh, stale = store.latest('test', 1000 + limit - 1), store.latest('test', 1000 + limit)
+                    self.assertEqual((fresh['available'], fresh['reason']), (True, 'fresh'), energy)
+                    self.assertEqual((stale['available'], stale['reason']), (False, 'stale_or_clock_step'), energy)
+                    self.assertFalse(any(stale['fields_available'].values()), energy)
+            finally:
+                store.db.close()
+
 
 class ReadOnlyOpen(unittest.TestCase):
     def test_reading_a_stopped_gateways_database_leaves_no_files(self):

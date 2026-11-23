@@ -21,7 +21,10 @@
 (() => {
   const TOKEN_KEY = 'ws0.token';
   const THEME_KEY = 'ws0.theme';
-  const STALE_S = 180;          // gateway's freshness limit for a reading (gateway.py latest())
+  // The gateway's freshness limit for a reading (gateway.py current_max_age): the station's live interval
+  // for the energy state the reading carries, plus 120 s. 180 s in SURPLUS and NORMAL.
+  const REPORT_INTERVAL_S = { surplus: 60, normal: 60, conserve: 300, critical: 3600 };
+  const staleAfter = (obs) => (REPORT_INTERVAL_S[obs && obs.energy_state] || 60) + 120;
   const RX_SILENT_S = 180;      // three missed 60 s #alive reports
   const DIAG_OVERDUE_S = 1900;  // two 15-minute health reports plus slack
   const WATCHDOG_MS = 45000;    // no byte (heartbeats included) for this long: reconnect
@@ -383,7 +386,7 @@
     const l = st.latest;
     const age = l && l.effective_sampled_at !== null && l.effective_sampled_at !== undefined ? now() - l.effective_sampled_at : null;
     const rx = st.receiver;
-    return `${age === null || age >= STALE_S}|${!!rx && (!rx.alive || now() - rx.last_seen > RX_SILENT_S)}`;
+    return `${age === null || age >= staleAfter(l && l.observation)}|${!!rx && (!rx.alive || now() - rx.last_seen > RX_SILENT_S)}`;
   }
   let liveSignature = '';
 
@@ -410,7 +413,7 @@
     if (latest.reason === 'unknown_clock') return ['warning', 'Latest reading has no time yet'];
     if (latest.reason === 'future_clock_at_receipt') return ['critical', 'Latest reading is time-stamped in the future'];
     if (latest.reason === 'time_uncertain') return ['warning', 'Latest reading time is too uncertain'];
-    if (age !== null && age >= STALE_S) return ['warning', 'Reading stale', `(${fmtAge(age)})`];
+    if (age !== null && age >= staleAfter(latest.observation)) return ['warning', 'Reading stale', `(${fmtAge(age)})`];
     if (latest.reason === 'sensor_fault') return ['critical', 'Sensor fault: no valid field'];
     return ['good', 'Reading fresh', `(${fmtAge(age)})`];
   }
@@ -484,7 +487,7 @@
     const obs = latest.observation;
     const at = latest.effective_sampled_at;
     const age = at === null ? null : now() - at;
-    const stale = age === null || age >= STALE_S;
+    const stale = age === null || age >= staleAfter(obs);
     for (const name of Object.keys(latest.fields_available || {})) {   // catalog order (gateway)
       const isStation = !!S.diagnostic && S.diagnostic.has(name);
       (isStation ? station : box).append(readingTile(name, obs, latest.units || {}, at, stale));

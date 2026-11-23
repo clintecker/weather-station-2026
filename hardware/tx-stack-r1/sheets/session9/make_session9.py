@@ -68,9 +68,13 @@ assert "make BOARD=wio-e5 unlock SERIAL=<serial>" in WIO and "RDP = AA" in WIO
 assert "To be confirmed on the first board" in WIO and "To be confirmed on the hardware" in WIO
 assert "USART1 on PB6 (TX) and PB7 (RX)" in WIO and "115200 8N1" in WIO
 assert "The bus 3.3 V back-feeds the mini's AP2112" in rd("hardware/tx-stack-r1/README.md")
-# no option-byte (brown-out) target yet: when one lands, page 04 must change
-for mk in (MAKEFILE, RULES, BOARDMK):
-    assert not re.search(r"^(bor|brownout|option)\w*\s*:", mk, re.M | re.I), "a BOR target landed: update page 04"
+# the brown-out target (page 04): stage0-node/Makefile `bor` and `bor-check`, level 4, FLASH_OPTR 0x20 bits 11:9
+assert re.search(r"^bor bor-check:", MAKEFILE, re.M), "the BOR targets moved: update page 04"
+assert "BOR_LEVEL ?= 4" in MAKEFILE and "BOR_OPTR_OFFSET = 0x20" in MAKEFILE and "BOR_LEV_MASK = 0xE00" in MAKEFILE
+assert '"stm32l4x option_write 0 $(BOR_OPTR_OFFSET) $(BOR_VALUE) $(BOR_LEV_MASK)" -c "stm32l4x option_load 0"' in MAKEFILE
+assert "dry run, nothing sent" in MAKEFILE and "| `bor` |" in NODE and "about 2.8 V" in NODE
+for mk in (RULES, BOARDMK):
+    assert not re.search(r"^(bor|brownout|option)\w*\s*:", mk, re.M | re.I), "a second BOR target: update page 04"
 assert "Set the brown-out reset (BOR) level in the option bytes" in rd("docs/failure-modes.md")
 # J3 (B3.md): column a, rows 12-16
 J3 = [("1", "a12", "3.3 V", "VDD / VREF (TARGET SENSE)"), ("2", "a13", "SWDIO", "SWDIO"),
@@ -289,7 +293,7 @@ def cover(c, pg):
         yy -= 36 if l2 else 26
     x, y, w, h = panel(c, g.cell(0, 1, 2), None, "THE STEPS. IN THIS ORDER.")
     steps = ["01  SWD: J3 TO THE PROBE", "02  ONE-TIME UNLOCK (RDP 1 TO 0)", "03  BUILD AND FLASH (RX, THEN TX)",
-             "04  BROWN-OUT LEVEL (WAITS ON FIRMWARE)", "05  THE CONSOLE ON USB-C", "06  PROVISION: A NEW KEY",
+             "04  BROWN-OUT LEVEL (BOR 4)", "05  THE CONSOLE ON USB-C", "06  PROVISION: A NEW KEY",
              "07  SELF-TEST ON USB, NO PACK", "08  PACK ON: JP17, THEN PG1", "09  FIRST FRAMES ON AIR",
              "10  REPORT"]
     half = (len(steps) + 1) // 2
@@ -425,33 +429,36 @@ def flash(c, pg):
 
 # ------------------------------------------------------------------ 04 brown-out (BOR)
 def bor(c, pg):
-    page(c, "04", "BROWN-OUT LEVEL: WAITS ON FIRMWARE", "OPTION BYTES OVER J3. NO MAKE TARGET FOR IT YET (CHECKED 2026-11-22).",
+    page(c, "04", "BROWN-OUT LEVEL: BOR 4, ONCE PER BOARD", "OPTION BYTES OVER J3, THE SAME LEADS. DRY RUN FIRST, THEN THE REAL ONE.",
          pg, SLOGANS9[3])
-    g = Grid(1, 2, heights=[1.0, 1.0])
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["docs/failure-modes.md, 'No low-voltage inhibit'."], warn=True)
-    c.setFillColor(HexColor("#FFF6C8"))
-    c.setStrokeColor(INK)
-    lw(c, 2.4)
-    bx_, by_, bw_, bh_ = x + 30, y + 24, w - 60, h - 40
-    c.rect(bx_, by_, bw_, bh_, stroke=1, fill=1)
-    text(c, bx_ + bw_ / 2, by_ + bh_ - 44, "WAITS ON FIRMWARE", 40, "HEAD", INK, "c")
-    LAB.block(bx_, by_, bx_ + bw_, by_ + bh_, "waits box")
-    lines = ["Nothing in stage0-node/Makefile, board/stm32wl/rules.mk or wio-e5/gen/board.mk sets the",
-             "brown-out reset (BOR) level yet. failure-modes.md lists the fix: set the BOR level in the option",
-             "bytes, and don't start a journal write or a transmission below a measured voltage.",
-             "Skip this step today. When the target lands it's one make line with SERIAL=, over these same",
-             "J3 leads, and this page gets that line."]
-    for i, s_ in enumerate(lines):
-        text(c, bx_ + 20, by_ + bh_ - 70 - i * 14, s_, 9.6, "ALT", INK)
-    x, y, w, h = panel(c, g.cell(0, 1), 2, ["What it's for, so you know what you're missing until then."])
+    g = Grid(1, 2, heights=[1.15, 0.85])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, [
+        "The probe leads stay on J3 from page 03. Same serial as the flash.",
+        "The last line resets the board: that's the option bytes loading."])
+    yy = code(c, x + 10, y + h - 28, w - 20, [
+        "$ cd firmware/stage0-node",
+        "$ make bor DRY_RUN=1",
+        "#  bor: BOR_LEV 4 is FLASH_OPTR bits 11:9 = 0x800 (mask 0xE00)",
+        "#  dry run, nothing sent: openocd ... option_write 0 0x20 0x800 0xE00 ... option_load 0 ...",
+        f"$ make bor SERIAL={OLD_TX}",
+        f"$ make bor-check SERIAL={OLD_TX}",
+        "#  look for the FLASH_OPTR value OpenOCD prints: it ends in 8AA (or 9AA)"])
+    steps_list(c, x + 44, yy - 16, w - 56, [
+        "Run the dry run and read it: level 4, the value 0x800, the mask 0xE00. Nothing goes to the board.",
+        "Then the real line. OpenOCD reads FLASH_OPTR, writes the three BOR bits, and reloads the option bytes. "
+        "The board resets and boots the image from page 03. It must end without an error.",
+        "Then bor-check: it only reads. The last three hex digits are 8AA or 9AA: 8 or 9 is BOR level 4 "
+        "(bits 11:9), AA is RDP level 0 from page 02. Write the value down (page 10)."], 10.2, 13.4)
+    x, y, w, h = panel(c, g.cell(0, 1), 2, ["What it does, and why level 4."])
     yy = steps_list(c, x + 44, y + h - 18, w - 56, [
-        "At dawn, weak sun can start the board and a radio burst can drop it again: brown-out cycling "
-        "(failure-modes.md section 6). Each boot takes a new epoch; nothing is lost, but it can repeat many times.",
-        "A brown-out reads as reset=power today, not 'brownout' (App/watchdog.c). The boot count since power-up "
-        "stays at 1. So a cycling board looks like a string of power-ons.",
-        "Until the BOR target lands, the pack (1S3P, about 98 h at 0.25 W) is the margin. Keep it charged."], 10.2, 13.4)
-    check_item(c, x + 14, yy - 10, "Which BOR level to set isn't decided anywhere in the repo yet. That's for the firmware "
-               "change, not for the bench.", w=w - 28)
+        "BOR level 4 holds the MCU in reset while its 3.3 V rail is below about 2.8 V. The factory level is 0 "
+        "(about 1.7 V). The INA228s need 2.7 V, so level 4 stops the MCU before the bus goes out of spec.",
+        "It stops brown-out cycling at dawn (failure-modes.md section 6): weak sun no longer starts a board "
+        "that the next radio burst drops again.",
+        "Option bytes live in the chip, not in the image. A later flash keeps them. A new or swapped board needs "
+        "page 02, page 03, then this page again."], 10.2, 13.4)
+    in_model(c, x + 14, yy - 10, "The firmware also stops the radio before the pack gets that low: CRITICAL below 8 % "
+             "SOC or 3.45 V, one beacon an hour (radio-energy-policy.md section 3).", w=w - 28)
 
 
 # ------------------------------------------------------------------ 05 console
@@ -640,6 +647,7 @@ def on_air(c, pg):
 REPORT_ROWS = [("PROBE USED, NUCLEO CONNECTOR", "WRITE", "page 01: what you plugged into, if the NUCLEO"),
                ("UNLOCK: MAKE OR CUBEPROGRAMMER", "WRITE", "page 02, and what OpenOCD printed"),
                ("TX IMAGE SHA-256 (FIRST 8)", "HEX", "page 03, and the budget line said profile 3, mux 1"),
+               ("BOR-CHECK: FLASH_OPTR", "HEX", "page 04: ends in 8AA or 9AA"),
                ("CONSOLE PORT NAME", "WRITE", "page 05: /dev/cu.<...>"),
                ("KCV", "HEX", "page 06, the same on STATUS"),
                ("MODULES ALL ACTIVE / WRONG PORT ABSENT", "Y / Y", "page 07"),
@@ -664,7 +672,7 @@ def report(c, pg):
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: close the box (Session 8 page 14, the lid and the mount)."])
     for i, s_ in enumerate(["SWD leads off J3, USB-C off the mini, J6 out. The pack stays on PG1: the TX runs on it.",
                             "The lid on with its four printed bolts, then the mount, glands down.",
-                            "Brown-out level (page 04): when the firmware lands, lid off, J3, one make line."]):
+                            "A new or swapped Wio-E5 later: pages 02, 03 and 04 again (the BOR level stays with the chip)."]):
         text(c, x + 44, y + h - 22 - i * 15, "-  " + s_, 9.6, "ALT", INK)
 
 

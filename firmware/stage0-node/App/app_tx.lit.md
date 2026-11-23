@@ -414,6 +414,10 @@ deepest (1176 B). The sample task's chain (1004 B) is the third deepest, and its
 path goes through `wsmp_host_latch`. `stack_report.py` does count the deepest chain four times, so
 128 B on that chain costs about 512 B. Those comments need fixing in `app_tx.c` and here.
 
+Before it builds the record, `minute_encode` asks the policy for the minute's energy state
+(`policy_energy_minute`, `App/tx_policy.c`). The record carries that state, and the same minute's send
+obeys it.
+
 ```c {#minute-encode}
 /* The minute's observation, built from the modules' snapshots. */
 typedef struct { int valid, h_valid; int16_t t; uint16_t h; uint32_t utc, uptime; unsigned samples; } minute_t;
@@ -428,6 +432,7 @@ static int minute_encode(minute_t *m, uint8_t *plain)
   /* static: only the sequencer runs this, and it never re-enters. It is on the deepest callback
      chain, which tools/stack_report.py counts four times (a 128-byte record would cost ~512 B). */
   static ws_obs_t o;
+  policy_energy_minute();   /* the minute's energy state: the reading carries it, the send obeys it */
   o = (ws_obs_t){ .epoch = node.boot_epoch, .seq = node.next_seq, .utc = m->utc, .uptime = m->uptime,
                   .energy = (uint8_t)energy_state() };
   wsmp_map_obs(&o, &sum);

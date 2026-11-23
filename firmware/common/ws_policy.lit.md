@@ -29,15 +29,17 @@ numbers. Section 9 of that document lists six numbered decisions, and this file 
 "decision 1" to "decision 6". The node now measures its 1S3P pack (power telemetry design,
 `docs/superpowers/specs/2026-10-29-power-telemetry-design.md`).
 
-The energy-state thresholds aren't set yet. They wait for the energy-policy work, because they
-need measured loads and the owner's call on the pack reserve (design section 9.9 for the energy
-state, open decision D1 in design section 15). Until then `energy_state()` in `App/tx_policy.c` always returns `WS_ENERGY_NORMAL`.
+The energy state comes from the battery (section 2, `ws_energy_next`). The thresholds settle
+decision D1 for now (`docs/radio-energy-policy.md` section 3): they are sized for a planning load
+until H02 measures the real one. `App/tx_policy.c` feeds `ws_energy_next` once a minute in the TX
+stack build (`WS_POWER_PROFILE` 3). The bench builds (profiles 1 and 2) stay at `WS_ENERGY_NORMAL`.
 
 ## 1. Behaviour
 
 | Function | Result | Checked by (`firmware/test_tx_policy.c`) |
 |---|---|---|
 | `ws_energy_name` | `"surplus"`, `"normal"`, `"conserve"`, `"critical"`, or `"?"` out of range | `main` |
+| `ws_energy_next` | the next energy state from the last one and the battery: SOC, cell voltage and the charger's evidence of a full pack | `energy` |
 | `ws_lora_airtime_ms` | time on air in ms, rounded up, at most 1 ms above Semtech's formula | `airtime` |
 | `ws_link_minute` | the link change after one exchange (`WS_LINK_*`) | `link` |
 | `ws_link_probe_interval` | the current back-off step, s | `link` |
@@ -87,6 +89,87 @@ range gives `"?"`, so the function never reads past the end of the array.
 const char *ws_energy_name(int energy)
 {
  return energy >= 0 && energy < (int)ENERGY_STATES ? energy_name[energy] : "?";
+}
+```
+
+### Choosing the state
+
+`ws_energy_next` takes the last state and what the node knows about its battery, and returns the
+next state. `App/tx_policy.c` calls it once a minute. The numbers are the D1 call in
+`docs/radio-energy-policy.md` section 3, where the reasoning lives:
+
+| Signal | `CRITICAL` below | leaves `CRITICAL` at | `CONSERVE` below | leaves `CONSERVE` at |
+|---|---|---|---|---|
+| Gauge SOC (0.1 %) | 80 (8 %) | 130 (13 %) | 300 (30 %) | 350 (35 %) |
+| Cell voltage (mV) | 3450 | 3550 | 3600 | 3700 |
+
+The rules:
+
+- Each signal gives a state on its own. Below an entry threshold it enters that state. Once in a
+  state (or a worse one), it stays until it reaches that state's exit threshold. The gap between
+  the two is the hysteresis.
+- The worse of the two signals wins. So leaving a state needs both signals past their exit
+  thresholds.
+- No SOC (the gauge is missing or failed) means the estimate is unknown: at least `CONSERVE`, the
+  fail-closed rule (decision 6). The voltage (the charger's VBAT, `App/tx_policy.c`) can still
+  push the node to `CRITICAL`, and lets it back out of it.
+- No SOC and no voltage: `CONSERVE`, or `CRITICAL` if the node was already there. Losing both
+  inputs never makes the node more generous.
+- `SURPLUS` needs a `NORMAL` result, the charger's evidence of a full pack (`full`: power good, no
+  fault, top-off or terminated, the battery not discharging), a cell voltage of 4000 mV or more,
+  and SOC at 95 % or more. It stays until SOC falls below 90 % or any of the others fails.
+- A last state out of range counts as `CONSERVE`.
+
+```c {#energy-thresholds}
+/* docs/radio-energy-policy.md section 3 (D1). SOC in 0.1 %, voltage in mV. */
+#define SOC_CRITICAL_IN 80U
+#define SOC_CRITICAL_OUT 130U
+#define SOC_CONSERVE_IN 300U
+#define SOC_CONSERVE_OUT 350U
+#define SOC_SURPLUS_IN 950U
+#define SOC_SURPLUS_OUT 900U
+#define MV_CRITICAL_IN 3450U
+#define MV_CRITICAL_OUT 3550U
+#define MV_CONSERVE_IN 3600U
+#define MV_CONSERVE_OUT 3700U
+#define MV_SURPLUS_MIN 4000U
+_Static_assert(SOC_CRITICAL_IN < SOC_CRITICAL_OUT && SOC_CRITICAL_OUT < SOC_CONSERVE_IN &&
+               SOC_CONSERVE_IN < SOC_CONSERVE_OUT && SOC_CONSERVE_OUT < SOC_SURPLUS_OUT &&
+               SOC_SURPLUS_OUT < SOC_SURPLUS_IN, "the SOC thresholds in order, each with its hysteresis");
+_Static_assert(MV_CRITICAL_IN < MV_CRITICAL_OUT && MV_CRITICAL_OUT < MV_CONSERVE_OUT &&
+               MV_CONSERVE_IN < MV_CONSERVE_OUT && MV_CONSERVE_OUT < MV_SURPLUS_MIN,
+               "the voltage thresholds in order, each with its hysteresis");
+```
+
+`energy_level` applies one signal's thresholds. `ws_energy_next` combines them.
+
+```c {#energy-next}
+/* One signal's state: NORMAL, CONSERVE or CRITICAL, with the hysteresis that last gives. */
+static int energy_level(int last, uint32_t x, uint32_t crit_in, uint32_t crit_out, uint32_t cons_in,
+                        uint32_t cons_out)
+{
+ if (x < crit_in || (last >= WS_ENERGY_CRITICAL && x < crit_out)) return WS_ENERGY_CRITICAL;
+ if (x < cons_in || (last >= WS_ENERGY_CONSERVE && x < cons_out)) return WS_ENERGY_CONSERVE;
+ return WS_ENERGY_NORMAL;
+}
+
+static int energy_worse(int a, int b) { return a > b ? a : b; }
+
+int ws_energy_next(int last, const ws_energy_in *in)
+{
+ int next = WS_ENERGY_NORMAL;
+ if (last < WS_ENERGY_SURPLUS || last > WS_ENERGY_CRITICAL) last = WS_ENERGY_CONSERVE;
+ if (!in->soc_ok && !in->v_ok) return last == WS_ENERGY_CRITICAL ? WS_ENERGY_CRITICAL : WS_ENERGY_CONSERVE;
+ if (in->v_ok)
+  next = energy_worse(next, energy_level(last, in->v_mv, MV_CRITICAL_IN, MV_CRITICAL_OUT, MV_CONSERVE_IN,
+                                         MV_CONSERVE_OUT));
+ if (!in->soc_ok) return energy_worse(next, WS_ENERGY_CONSERVE);   /* unknown estimate: fail closed */
+ next = energy_worse(next, energy_level(last, in->soc_x10, SOC_CRITICAL_IN, SOC_CRITICAL_OUT, SOC_CONSERVE_IN,
+                                        SOC_CONSERVE_OUT));
+ if (next == WS_ENERGY_NORMAL && in->full && in->v_ok && in->v_mv >= MV_SURPLUS_MIN &&
+     in->soc_x10 >= (last == WS_ENERGY_SURPLUS ? SOC_SURPLUS_OUT : SOC_SURPLUS_IN))
+  next = WS_ENERGY_SURPLUS;
+ return next;
 }
 ```
 
@@ -571,10 +654,13 @@ function comes after the constants that it uses.
 #include <limits.h>
 
 <<energy-tables>>
+<<energy-thresholds>>
 <<conserve-interval>>
 <<probe-steps>>
 
 <<energy-name>>
+
+<<energy-next>>
 
 <<airtime-constants>>
 <<airtime>>
@@ -609,6 +695,7 @@ Semtech's formula, not from the code under test:
 | `health_reserve` | The health report's reserve with the section 3 airtimes: SF7 unchanged (5). SF12 `NORMAL` 3 exchanges, 2 in a health minute. SF12 `CONSERVE` the live reading only. A reserve at or above the cap the live reading only (no wrap) |
 | `strike_targets` | the three `replied` patterns of section 6, and an empty exchange |
 | `strikes` | The 10th strike returns 1 and restarts the count. Identity keys. Forget. A full table replaces the entry with the fewest strikes |
+| `energy` | Every transition of the section 2 table at its boundary values, the hysteresis both ways for SOC and for voltage, the worse signal winning, no SOC (voltage only: never better than `CONSERVE`), no inputs at all, `SURPLUS` in and out, an out-of-range last state |
 | `main` | `ws_energy_name` |
 
 `tests/test_stage0.py` (`test_tx_transmission_policy`) builds the test with `firmware/stage0.c`

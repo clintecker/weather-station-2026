@@ -11,9 +11,10 @@
   - the drain stop after a miss: one more frame, then stop (a second miss in a row, or a transmit failure, stops it at once),
   - the airtime cap from the configured spreading factor,
   - the health-report airtime reserve (section 6). Commit `66e5def` added it on 2026-10-30, from power design section 6.4 of 2026-10-29,
-  - an energy-state hook fixed at NORMAL.
+  - the energy state from the battery (section 3, D1 settled for now on 2026-11-22): the TX stack build (`WS_POWER_PROFILE=3`) only; the bench builds stay NORMAL,
+  - the CRITICAL hourly beacon, and gateway freshness that follows the station's energy state (R9).
 - **Amended 2026-10-29** by the [power telemetry design](superpowers/specs/2026-10-29-power-telemetry-design.md) ("the power design" below). The node now measures its power system in phase A: the 1S3P pack, the bq24074 charger, the battery INA228 and the MAX17048 gauge. It sends that data in protocol version 6.
-- **The energy state stays NORMAL** (`energy_state()`, `App/tx_policy.c:34`) until the thresholds exist. The thresholds need the measured loads (H02) and Clint's open decision D1 on the pack reserve (section 3). The energy-state inputs connect then (product specification sections 4 and 5, tests H02 and H03).
+- **The energy state is live in the TX stack build** (`energy_state()` and `policy_energy_minute()` in `App/tx_policy.c`, `ws_energy_next()` in `firmware/common/ws_policy.c`). The thresholds come from a planning load until H02 measures the real one (D1, section 3). H02 and H03 then confirm or move them.
 - *2026-11-02:* sections 8 (changes by stage) and 10 (adaptive spreading factor and power) left with the later build stages. Section 5 shrank to the energy states that the firmware implements. Commit `e2a56da` in git history has the old text. The other sections keep their numbers.
 
 > **Related:** [`failure-modes.md`](failure-modes.md) §1.1 and §1.2 (operating context and the energy cost of failure), §1.2 (link back-off), §6.1 (power measurement and charger failures), §10 open issues (backlog drain rate, low-voltage inhibit, blind ACK window). [Power telemetry design](superpowers/specs/2026-10-29-power-telemetry-design.md) §2 (phases), §3 (fill table), §6.4 (health airtime), §15 (D1).
@@ -109,7 +110,7 @@ Core budget: ≤ 0.25 W average = **6 Wh/day** (product specification section 4,
 | Pack against that reserve | about 48 %: the reserve is about twice the pack |
 | Core load whose reserve fits in the pack | ≤ 0.12 W (24.4 ÷ (1.2 × 168)). With the CONSERVE band (reserve + 20 %, section 9) also inside it: ≤ 0.10 W |
 
-**Open decision D1 (for Clint, power design section 15).** This is a real problem. The 1S3P pack (about 24.4 Wh) is smaller than the reserve that this policy uses (≥ 50.4 Wh). With a reserve larger than the pack, the energy above reserve is negative at every state of charge. The energy states would then pin the node in CRITICAL. The options:
+**Decision D1 (power design section 15; settled for now below, 2026-11-22).** This is a real problem. The 1S3P pack (about 24.4 Wh) is smaller than the reserve that this policy uses (≥ 50.4 Wh). With a reserve larger than the pack, the energy above reserve is negative at every state of charge. The energy states would then pin the node in CRITICAL. The options:
 
 | Option | What it means | Cost or risk |
 |---|---|---|
@@ -117,7 +118,43 @@ Core budget: ≤ 0.25 W average = **6 Wh/day** (product specification section 4,
 | b. A larger 1S pack | More cells in parallel. The reserve at 0.25 W alone needs about 13.6 Ah at 3.7 V (7 cells of 2,200 mAh), or about 16.3 Ah (8 cells) with the CONSERVE band | Pack, cradle and connector. Charge time: the bq24074 charges at most 1.5 A. Any change of pack is Clint's decision |
 | c. A PRD deviation | Shorter autonomy for this pack. At 0.25 W the reserve rule (1.2 × hours × load) fits in 24.4 Wh at about 81 h (3.4 days) instead of 168 h, with nothing above it | Weaker cold-weather autonomy. H03 (168 h at −35 °C) fails as written |
 
-**D1 stays open.** Unless Clint changes the pack (option b), options a and c remain the open choices. Until Clint decides D1, the energy state stays NORMAL (power design section 9.9), and the thresholds of section 9 stay unset. The node only reports the measurements (section 7).
+**D1, settled for now (2026-11-22): option a, with a planning load.** The pack stays. The reserve rule stays. What changes is the load we size it with: 0.25 W is the PRD's ceiling, not what this node draws. The TX stack's parts (MCU mostly in stop mode, SHT45, MAX17048, the INA228s converting, the BQ25798 with its ADC, one SF7 exchange a minute) add up to a few mA. We plan with **25 mW** (about 6.8 mA at 3.7 V), on the high side of that estimate. H02 measures the real load and replaces it. If H02 comes in above about 0.10 W, D1 reopens (options b and c).
+
+With 25 mW:
+
+| Quantity | Value |
+|---|---|
+| Reserve (1.2 × 168 h × 25 mW) | 5.04 Wh, 20.7 % of the 24.4 Wh pack |
+| Reserve + 20 % (decision 4) | 6.05 Wh, 24.8 % |
+| MAX17048 SOC error, allowed for on top | about 5 points (ModelGauge with the default cell model, no custom profile) |
+| **CONSERVE below** | **30 % SOC** (24.8 + 5, rounded up) |
+| CONSERVE exit (5-point hysteresis, decision 4) | 35 % |
+| CONSERVE run time to CRITICAL (30 % to 8 %, 5.4 Wh at 25 mW) | about 215 h, over the 168 h the reserve is for, with the 1.2 factor (5.4 ÷ 4.2 = 1.28) |
+| **CRITICAL below** | **8 % SOC**, exit at 13 % |
+| What 8 % buys | about 530 mAh (1.95 Wh). At the CRITICAL load (no radio but one beacon an hour, roughly half the core load) that is well over 100 h before the gauge reads 0 %, and the cell is still above the protection board's cut-off there |
+
+The reserve is what CONSERVE lives on: 168 h of reduced reporting with no sun. CRITICAL is the floor under it. It stops the radio so the node can keep sampling and journaling for days, and so the pack never reaches its protection board. That is how this document now reads "CRITICAL: at the protected reserve" in section 5: the protected part is the floor, not the whole 168 h reserve. Without that reading, CONSERVE would be a 4-point sliver and the station would go silent for a week with a usable pack.
+
+**Voltage, as a second signal.** The gauge's SOC can drift. A cell voltage catches a gauge that reads high. The thresholds sit below the SOC ones, so on a healthy gauge the SOC decides:
+
+| | Enter below | Leave at | Why |
+|---|---|---|---|
+| CONSERVE | 3.60 V | 3.70 V | about 10 to 15 % on a typical Li-ion OCV curve; a cold pack also lands here, and CONSERVE is right for a cold pack (section 5) |
+| CRITICAL | 3.45 V | 3.55 V | about 3 to 5 % at rest; still well above a 2.5 to 3.0 V protection cut-off |
+
+The 100 mV hysteresis covers the cold sag. The 3P pack's resistance at −20 °C is a few tenths of an ohm, so an SF7 burst at about 120 mA moves the cell a few tens of mV, and the slower polarisation of a cold cell under load adds about 50 to 100 mV more. It also covers the MAX17048's ±7.5 mV VCELL error many times over.
+
+**The rules** (`ws_energy_next`, `firmware/common/ws_policy.lit.md` section 2):
+
+- Each signal applies its own enter and leave thresholds. The worse signal wins, so leaving a state needs both past their leave thresholds.
+- **The gauge missing or failed** (no SOC): the estimate is unknown, so at least CONSERVE (decision 6). The cell voltage then comes from the BQ25798's VBAT ADC (no older than 30 s) and can still take the node to CRITICAL and back. The INA228 does not help here: in the TX stack (profile 3) its VBUS is not on the cell. It does supply the "not discharging" evidence for SURPLUS.
+- **No SOC and no voltage:** CONSERVE, or CRITICAL if the node was already there.
+- **SURPLUS** (phase C, the TX stack): a NORMAL result, and the charger shows power good, no fault, and top-off or terminated; the battery INA228 reads −0.5 mA or more (not discharging); the cell is at 4.00 V or more; SOC at 95 % or more. It ends below 90 % SOC or when any other condition fails.
+- The node boots in CONSERVE and moves at the first minute with a reading. It decides once a minute, before it builds the reading, so the reading and the send of that minute agree.
+
+**Visibility.** Every reading carries the energy state (flags bits 1 and 2), and so does the health report (byte `energy`). No new fields. A change prints `#energy <old> -> <new> …` on the console and makes a health report due at the next exchange. The bench builds (profiles 1 and 2) stay at NORMAL: their battery is a bench supply or a loose cell.
+
+**What H02 and H03 must confirm:** the real core load (the 25 mW plan), the CONSERVE run time on the real pack, and the cold sag at −20 °C and below against the 100 mV hysteresis. Change the numbers in `ws_policy.lit.md` section 2 and in this section together.
 
 **What the numbers tell us:**
 
@@ -157,27 +194,27 @@ flowchart LR
 
 ---
 
-## 5. Energy states: four defined, one in use
+## 5. Energy states
 
-The firmware defines four energy states and their limits (`firmware/common/ws_policy.c`). But `energy_state()` always returns NORMAL (`App/tx_policy.c:34`) until someone sets the thresholds. So for now only the NORMAL row is in use. *Trimmed 2026-11-02 to phases A and B, when the later build stages left this document.*
+The firmware defines four energy states and their limits (`firmware/common/ws_policy.c`). The TX stack build picks one each minute from the battery (section 3). The bench builds stay at NORMAL. *Trimmed 2026-11-02 to phases A and B, when the later build stages left this document.*
 
 | State | Meaning | Live reading | Backlog drain | Diagnostics | Radio time cap |
 |---|---|---|---|---|---|
 | **SURPLUS** | The sun is up and the battery is full or nearly full. The station would otherwise lose the energy. | Every 60 s | **Fast**: up to the airtime cap (current firmware: at most 20) | Full | 15 s per minute |
 | **NORMAL** | Healthy margin above reserve | Every 60 s | **Moderate**: up to 2 to 5 per minute (current firmware: 5, `backlog_limit` in `firmware/common/ws_policy.c`) | Normal rate | 5 s per minute |
 | **CONSERVE** | Near the reserve, estimate unknown, or pack cold | Every 300 s: the latest reading (requirement R02, conservation reports). The node still journals every reading. | **None** | The same as NORMAL: a health report every 15 minutes (`DIAG_PERIOD_S`, `App/tx_policy.c:19`) and after each link-state change, sent after a CONSERVE exchange. At SF12 this goes over the 2 s cap once per report (power design section 6.4) | 2 s per minute |
-| **CRITICAL** | At the protected reserve | **None** | None | None | 0 |
+| **CRITICAL** | At the protected floor under the reserve (8 % SOC or 3.45 V, section 3) | **None**, but for a beacon: the live reading once an hour (and at boot), sent as a CONSERVE minute (`policy_minute_backlog`, `App/tx_policy.c`) | None | A due health report rides on the beacon | 0, but for the beacon |
 
 **Notes:**
 
 - **Sampling continues in all four states.** In CONSERVE and CRITICAL, readings wait in the journal. They drain later, usually in SURPLUS.
-- The node publishes the **reporting mode** (60 s or 300 s), as requirement R02 requires. The gateway must not show a CONSERVE gap as a link failure. Not built yet: the gateway's freshness limit is a fixed 180 s, shorter than the 300 s CONSERVE interval (power design risk R9, deferred with the energy state).
+- The node publishes the **reporting mode** through the energy state in every reading, as requirement R02 requires. The gateway must not show a CONSERVE gap as a link failure. Built 2026-11-22 (power design risk R9): the gateway keeps a reading current for the station's live interval plus 120 s, by the state the reading carries: 180 s in SURPLUS and NORMAL, 420 s in CONSERVE, 3720 s in CRITICAL (`current_max_age`, `gateway.lit.md`; the dashboard does the same in `ws0/static/app.js`). Home Assistant's availability follows it. No wire change.
 - **CRITICAL is not a shutdown.** It removes the radio load first. The power system and the BMS protect the pack below that level.
-- The thresholds come from the measured reserve (product specification section 4: ≥ 1.2 × 168 h × measured core load). This document does not invent them. Approved provisional values: CONSERVE below reserve + 20 %, hysteresis 5 %.
+- The thresholds come from the reserve (product specification section 4: ≥ 1.2 × 168 h × core load), with a planning load until H02 measures it (section 3). Approved provisional values: CONSERVE below reserve + 20 %, hysteresis 5 %. Section 3 adds the gauge error on top.
 - **An unknown energy state means CONSERVE**, never NORMAL. This is the same fail-closed rule as product specification section 5 ("unknown estimate disables automatic export to auxiliary charging"). "Unknown" is a fitted input that fails, not an input that the phase does not measure.
-- **No threshold is set yet.** With the 1S3P pack, the reserve can exceed the pack (D1, section 3). The firmware stays at NORMAL until D1 and H02.
+- **The thresholds are set for now** (D1, section 3): SOC 30 / 35 % and 8 / 13 %, voltage 3.60 / 3.70 V and 3.45 / 3.55 V (enter / leave).
 
-**SURPLUS rule, per phase** (a proposal, and its thresholds come with the others, after D1). SURPLUS is the "free lunch" state, so it must prove the lunch is free. Every phase needs all of these:
+**SURPLUS rule, per phase** (phase C, the TX stack, is built: section 3; phases A and B stay NORMAL). SURPLUS is the "free lunch" state, so it must prove the lunch is free. Every phase needs all of these:
 
 - no charger fault,
 - the battery does not discharge over the minute (field 12 ≥ 0 within the INA228 offset),
@@ -215,14 +252,14 @@ While PROBING, the node sends only the live reading, with no backlog. How often 
 
 Clint made this change on 2026-10-13. A back-off in NORMAL could make up to 14 readings late in one outage, and that put H01 at risk. Probing every minute removes that risk and keeps live data flowing on a one-way link.
 
-Code: `ws_link_may_send()` in `firmware/stage0.c`, host-tested in `firmware/test_policy.c`, and used by `ws_minute_backlog()` in `firmware/common/ws_policy.c`. The node is always NORMAL in this phase (see the status note above). Thus PROBING now means "live reading only, every minute".
+Code: `ws_link_may_send()` in `firmware/stage0.c`, host-tested in `firmware/test_policy.c`, and used by `ws_minute_backlog()` in `firmware/common/ws_policy.c`. The bench builds are always NORMAL, so there PROBING means "live reading only, every minute". The TX stack backs off in CONSERVE.
 
 | Parameter | Value | Reason |
 |---|---|---|
 | *K*, silent minutes before PROBING | **3** | One lost minute costs **0** H01 intervals. Two in a row cost 1 (failure-modes §3.3). The office range walk saw a 121.6 s commit after a 2-minute dropout (`evidence/range-walk-office-2026-10-13/`). Do not back off for normal packet loss. |
 | Probe interval | SURPLUS, NORMAL: **every minute** (changed 2026-10-13). CONSERVE: 2, 4, 8, then **15 min** maximum. | With healthy energy, the node relinks within a minute. In CONSERVE, a long outage saves about 97 % of the futile radio energy against the old fixed rule of 3 frames per minute (about 93 % against 1 frame per minute). Probing every minute saves about 67 % against that rule (1 frame instead of 3). |
 | Probe content | **Live reading only**, 1 frame | A probe that succeeds also delivers data |
-| LINKED drain | Live reading, then backlog up to the energy-state limit (now always NORMAL) | n/a |
+| LINKED drain | Live reading, then backlog up to the energy-state limit | n/a |
 | Drain stop | After a missed reply, send one more frame, then stop the drain for this minute. A second miss in a row, or a transmit timeout, stops it at once (`App/tx_exchange.c`). | A failing link does not use up the drain allowance. The one more frame lets the strike rule tell a refused record from a lossy link (`protocol.md` section 9). |
 
 **Energy effect (SF12, one-day outage).** The old fixed rule sends 3 frames every minute, about 0.27 Wh/day. In SURPLUS and NORMAL, PROBING cuts that to 1 frame per minute: about 0.09 Wh/day, one third.
@@ -261,7 +298,7 @@ The live reading and a due health report always go. The earlier code clamped `by
 
 **The CONSERVE exception at SF12.** In CONSERVE at SF12, the live exchange and the health report take 1,534 + 740 = **2,274 ms**. The exact formula gives 2,272 ms (1,532.8 + 739.3). Both are more than the 2 s cap. The report still goes, because it carries the energy and link state.
 
-Thus the node goes over the cap by 274 ms **once per health report**: every 15 minutes, and once after each link-state change. CONSERVE sends only every 5th minute, so its average radio time stays far below the cap. This is a documented exception (power design risk R3), not a change to decision 3. The energy state is NORMAL in this phase, so the exception cannot occur yet.
+Thus the node goes over the cap by 274 ms **once per health report**: every 15 minutes, and once after each link-state change. CONSERVE sends only every 5th minute, so its average radio time stays far below the cap. This is a documented exception (power design risk R3), not a change to decision 3. It can occur in the TX stack build, which has the energy state (section 3).
 
 ---
 
@@ -287,7 +324,7 @@ Clint approved all six proposals below as written. The thresholds in item 4 stay
 | 1 | *K* before back-off | 3 minutes |
 | 2 | Maximum probe interval | 15 minutes |
 | 3 | Radio time cap: SURPLUS / NORMAL / CONSERVE | 15 / 5 / 2 s per minute |
-| 4 | CONSERVE threshold and hysteresis | reserve + 20 %, 5 % hysteresis (final values from the H02 and H03 measurements) |
+| 4 | CONSERVE threshold and hysteresis | reserve + 20 %, 5 % hysteresis (final values from the H02 and H03 measurements). Set 2026-11-22 with a 25 mW planning load: 30 % SOC, out at 35 % (section 3) |
 | 5 | CONSERVE live interval | 300 s (requirement R02) |
 | 6 | Unknown energy state | Act as CONSERVE (fail closed) |
 
@@ -296,4 +333,4 @@ Clint approved all six proposals below as written. The thresholds in item 4 stay
 - **Health-report airtime reserve.** In a minute whose health report follows the exchange, the report's airtime comes off the cap first, with the saturating form of section 6. Decisions 3 and 5 do not change.
 - **The CONSERVE exception at SF12.** The live exchange plus the health report (2,274 ms in firmware rounding) go over the 2 s CONSERVE cap once per health report: every 15 minutes and after each link-state change (section 6, power design risk R3).
 - **Decision 6, made precise.** "Unknown" is a fitted input that fails. An input that the phase does not measure is not unknown.
-- **Decision 4 waits for D1.** Its thresholds need a reserve that fits the pack (section 3).
+- **Decision 4 and D1** (2026-11-22): the thresholds use a 25 mW planning load, which fits the pack (section 3). H02 replaces the planning load.

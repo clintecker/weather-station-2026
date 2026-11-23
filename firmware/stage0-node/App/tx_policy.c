@@ -11,6 +11,11 @@
 #include "ws_frame.h"
 #include "ws_obs.h"
 #include "ws_policy.h"
+#include "power_config.h"
+#if POWER_HAS_BQ25798
+#include "charger.h"
+#include "power_acq.h"
+#endif
 
 _Static_assert(WS_BACKLOG_MAX <= MAX_QUEUE - 1U, "the send queue holds the live reading plus the largest backlog");
 #define TURNAROUND_MS 300U   /* gateway commit (fullfsync) + USB both ways, conservative */
@@ -18,6 +23,7 @@ _Static_assert(WS_BACKLOG_MAX <= MAX_QUEUE - 1U, "the send queue holds the live 
 #define STRIKE_SLOTS  6
 #define DIAG_PERIOD_S 900U
 #define MINUTE_S      60U
+#define BEACON_S      3600U   /* CRITICAL: the live reading (and a due health report) once an hour */
 _Static_assert(DIAG_PERIOD_S > MINUTE_S, "a health report period longer than a minute");
 
 static ws_link link;
@@ -28,10 +34,51 @@ static ws_strike strikes[STRIKE_SLOTS];
 static int diag_due = 1;       /* a health report right after boot */
 static uint32_t last_diag_s;
 
-/* NORMAL until the energy-policy work sets the thresholds (power telemetry design 9.9, open decision
-   D1): they need measured loads and the owner's call on the pack reserve, although the node now
-   measures its battery. */
+/* The energy state (docs/radio-energy-policy.md section 3, D1; ws_energy_next). The TX stack
+   (profile 3) decides it from the gauge, falling back to the charger's VBAT; it starts at CONSERVE
+   (fail closed) and the first minute with a reading moves it. The bench builds (profiles 1 and 2)
+   stay at NORMAL: their battery is a bench supply or a loose cell, not the field pack. */
+#if POWER_HAS_BQ25798
+#define VBAT_FRESH_MS 30000U  /* the oldest charger VBAT the energy state uses when the gauge is gone */
+#define BATT_IDLE_MA_X100 50  /* -0.5 mA: "not discharging" within the battery INA228's offset */
+static int energy = WS_ENERGY_CONSERVE;
+
+static void energy_inputs(ws_energy_in *in, const char **src)
+{
+  power_live_t p;
+  const charger_t *c = charger_state();
+  power_acq_live(&p);
+  *in = (ws_energy_in){ 0 };
+  *src = "none";
+  if (p.gauge_ok)
+  { in->soc_ok = 1; in->soc_x10 = p.soc_pct_x10; *src = "gauge"; }
+  if (p.gauge_ok && p.vcell_mv)
+  { in->v_ok = 1; in->v_mv = p.vcell_mv; }
+  else if (c->present && c->ok && c->adc_ok && clock_ms() - c->ts_ms < VBAT_FRESH_MS)
+  { in->v_ok = 1; in->v_mv = c->vbat; if (!p.gauge_ok) *src = "charger-vbat"; }   /* REG3B: 1 mV a count */
+  unsigned stage = (p.charger & WS_CHG_STAGE_MASK) >> WS_CHG_STAGE_SHIFT;
+  in->full = p.charger != POWER_NONE_U8 && (p.charger & POWER_STATUS_POWER_GOOD) &&
+             !(p.charger & POWER_STATUS_FAULT) && (stage == WS_CHG_STAGE_TOPOFF || stage == WS_CHG_STAGE_TERMINATED) &&
+             p.batt_ok && p.batt_ma_x100 >= -BATT_IDLE_MA_X100;
+}
+
+void policy_energy_minute(void)
+{
+  ws_energy_in in;
+  const char *src;
+  energy_inputs(&in, &src);
+  int next = ws_energy_next(energy, &in);
+  if (next == energy) return;
+  APP_PRINTF("#energy %s -> %s soc_x10=%d v_mv=%d full=%u src=%s\n", ws_energy_name(energy), ws_energy_name(next),
+             in.soc_ok ? (int)in.soc_x10 : -1, in.v_ok ? (int)in.v_mv : -1, (unsigned)in.full, src);
+  energy = next;
+  diag_due = 1;   /* the health report carries the energy state: send one at the next exchange */
+}
+int energy_state(void) { return energy; }
+#else
+void policy_energy_minute(void) {}
 int energy_state(void) { return WS_ENERGY_NORMAL; }
+#endif
 int policy_probing(void) { return link.probing; }
 uint32_t policy_silent_minutes(void) { return link.silent; }
 
@@ -43,6 +90,9 @@ void policy_init(void)
   exchange_ms = ws_lora_airtime_ms(OBS_FRAME_MAX, WS_LORA_SF, bw, WS_LORA_PREAMBLE, WS_LORA_CR) +
                 ws_lora_airtime_ms(WS_ACK_FRAME_LEN, WS_LORA_SF, bw, WS_LORA_PREAMBLE, WS_LORA_CR) + TURNAROUND_MS;
   diag_ms = ws_lora_airtime_ms(WS_DIAG_FRAME_LEN, WS_LORA_SF, bw, WS_LORA_PREAMBLE, WS_LORA_CR);
+  /* As if the last send were an hour ago: the first minute after boot may send in every energy
+     state but CRITICAL's quiet hours (CONSERVE's 5 minutes and the beacon count from it). */
+  last_send_s = clock_s() - BEACON_S;
 }
 
 /* Will a health report follow this minute's exchange? Due now, or due before the next minute
@@ -55,7 +105,11 @@ int policy_minute_backlog(void)
 {
   uint32_t now = clock_s();
   uint32_t reserve_ms = diag_follows(now) ? diag_ms : 0U;   /* power telemetry design 6.4 */
-  int backlog = ws_minute_backlog(energy_state(), &link, now, last_send_s, exchange_ms, reserve_ms, MAX_QUEUE - 1U);
+  int en = energy_state();
+  /* CRITICAL sends nothing, but for a beacon: once an hour (and right after boot, policy_init) the
+     minute goes as a CONSERVE minute, the live reading only, so the gateway still hears the station. */
+  if (en == WS_ENERGY_CRITICAL && now - last_send_s >= BEACON_S) en = WS_ENERGY_CONSERVE;
+  int backlog = ws_minute_backlog(en, &link, now, last_send_s, exchange_ms, reserve_ms, MAX_QUEUE - 1U);
   if (backlog >= 0) last_send_s = now;
   return backlog;
 }

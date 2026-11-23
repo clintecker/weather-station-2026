@@ -155,3 +155,34 @@ field-check:
 	@echo "field build: no display symbols"
 
 .PHONY: field-check
+
+# Brown-out reset (BOR) for the node's 3.3 V rail: option byte BOR_LEV = 4, so the MCU is held in reset
+# while VDD is below about 2.8 V (OB_BOR_LEVEL_4 in the HAL; FLASH_OPTR at flash register offset 0x20,
+# BOR_LEV in bits 11:9, RM0461). Level 4 is the highest: the INA228s need 2.7 V, and a sagging rail
+# then stops the MCU before it can write the journal or drive the bus out of spec. The factory level
+# is 0 (about 1.7 V). The option bytes live in the chip, not in the image, so a flash never changes
+# them: run this once per board, after `unlock`. "stm32l4x option_load" applies them at once (a system
+# reset). DRY_RUN=1 prints the openocd command and sends nothing; bor-check only reads FLASH_OPTR.
+#   make bor DRY_RUN=1                 show what would run
+#   make bor SERIAL=<ST-LINK serial>   write BOR_LEV and reload the option bytes
+#   make bor-check SERIAL=<...>        print FLASH_OPTR (BOR_LEV is bits 11:9: level 4 reads 0x8xx to 0x9xx)
+BOR_LEVEL ?= 4
+BOR_OPTR_OFFSET = 0x20
+BOR_LEV_MASK = 0xE00
+BOR_VALUE = $(if $(filter 0 1 2 3 4,$(BOR_LEVEL)),$(word $(words x $(wordlist 1,$(BOR_LEVEL),1 2 3 4)),0x0 0x200 0x400 0x600 0x800))
+BOR_OPENOCD = openocd -f interface/stlink.cfg -c "adapter serial $(or $(SERIAL),<serial>)" -f target/stm32wlx.cfg \
+  -c "reset_config srst_only srst_nogate connect_assert_srst" -c "init" -c "reset halt"
+BOR_WRITE = $(BOR_OPENOCD) -c "stm32l4x option_read 0 $(BOR_OPTR_OFFSET)" \
+  -c "stm32l4x option_write 0 $(BOR_OPTR_OFFSET) $(BOR_VALUE) $(BOR_LEV_MASK)" -c "stm32l4x option_load 0" -c "shutdown"
+BOR_READ = $(BOR_OPENOCD) -c "stm32l4x option_read 0 $(BOR_OPTR_OFFSET)" -c "shutdown"
+bor bor-check:
+	@test -n "$(filter 0 1 2 3 4,$(BOR_LEVEL))" || (echo "error: BOR_LEVEL must be 0 to 4 (4 for the 3.3 V rail)"; exit 1)
+	@test "$(DRY_RUN)" = 1 || test -n "$(SERIAL)" || (echo "usage: make $@ SERIAL=<ST-LINK serial>, or make $@ DRY_RUN=1"; exit 1)
+	@echo "$@: BOR_LEV $(BOR_LEVEL) is FLASH_OPTR bits 11:9 = $(BOR_VALUE) (mask $(BOR_LEV_MASK))"
+ifeq ($(DRY_RUN),1)
+	@echo 'dry run, nothing sent: $(if $(filter bor,$@),$(BOR_WRITE),$(BOR_READ))'
+else
+	$(if $(filter bor,$@),$(BOR_WRITE),$(BOR_READ))
+endif
+
+.PHONY: bor bor-check

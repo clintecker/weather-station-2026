@@ -9,6 +9,15 @@
 #define WS_BACKLOG_MAX 20U   /* the largest per-minute backlog (SURPLUS) */
 const char *ws_energy_name(int energy);   /* "surplus", "normal", "conserve", "critical"; "?" otherwise */
 
+/* What the node knows about its battery this minute (docs/radio-energy-policy.md section 3, D1).
+   soc_ok: the gauge answered, soc_x10 is its SOC in 0.1 %. v_ok: a cell voltage, v_mv (the gauge's
+   VCELL, else the charger's VBAT). full: the charger's evidence of a full pack (power good, no fault,
+   top-off or terminated, the battery not discharging). */
+typedef struct { uint8_t soc_ok, v_ok, full; uint16_t soc_x10, v_mv; } ws_energy_in;
+/* The next energy state from the last one, with hysteresis on SOC and on voltage; the worse signal
+   wins. No SOC: never better than CONSERVE (fail closed). A last state out of range counts as CONSERVE. */
+int ws_energy_next(int last, const ws_energy_in *in);
+
 /* LoRa time on air in ms, rounded up (Semtech formula, explicit header, CRC on): spreading factor
  * sf (7-12), bandwidth bw_hz, preamble symbols, coding rate cr 1-4 (4/5 .. 4/8). */
 uint32_t ws_lora_airtime_ms(uint32_t payload, uint32_t sf, uint32_t bw_hz, uint32_t preamble, uint32_t cr);

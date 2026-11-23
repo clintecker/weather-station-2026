@@ -24,7 +24,9 @@ QUANTIZATION_S = 2
 CURRENT_MAX_UNCERTAINTY_S = 10
 MINUTE_S, HOUR_S, DAY_S = 60, 3600, 86400
 RECORD_VERSION = 6          # the protocol version (VERSION in ws0/protocol.py)
-CURRENT_MAX_AGE_S = 180     # a latest reading older than this is not current
+CURRENT_MAX_AGE_S = 180     # a latest reading older than this is not current (SURPLUS, NORMAL)
+CURRENT_SLACK_S = 120       # past the station's live interval before its reading stops being current
+REPORT_INTERVAL_S = {'surplus': 60, 'normal': 60, 'conserve': 300, 'critical': 3600}   # the TX's live interval
 FUTURE_SLACK_S = 5          # a sample time this far after receipt is a wrong clock, not jitter
 UTC_LIMIT = 2**32           # the UTC field of the observation is u32
 SQLITE_INT_MAX = 2**63 - 1
@@ -142,12 +144,17 @@ def open_read_only(path):
     return sqlite3.connect(path.as_uri() + ('?mode=ro' if live else '?mode=ro&immutable=1'), uri=True)
 
 
+def current_max_age(record):
+    """The age (s) at which this station's latest reading stops being current: its live interval for
+    the energy state the record carries, plus CURRENT_SLACK_S. 180 s in SURPLUS and NORMAL."""
+    return REPORT_INTERVAL_S.get(record.get('energy_state'), MINUTE_S) + CURRENT_SLACK_S
+
 def _freshness(record, received_at, effective, age, uncertainty):
     """Return (timely, reason) for the latest record. A sample that was in the future at receipt
     stays quarantined. Waiting does not validate its clock. The reasons are checked in this order."""
     future = effective is not None and effective > received_at+FUTURE_SLACK_S
     vague = uncertainty is not None and uncertainty > CURRENT_MAX_UNCERTAINTY_S
-    timely = age is not None and 0 <= age < CURRENT_MAX_AGE_S and not future and not vague
+    timely = age is not None and 0 <= age < current_max_age(record) and not future and not vague
     for reason, applies in (('future_clock_at_receipt', future), ('unknown_clock', age is None),
                             ('time_uncertain', vague), ('sensor_fault', record['quality'] == 'sensor_fault'),
                             ('fresh', timely)):
