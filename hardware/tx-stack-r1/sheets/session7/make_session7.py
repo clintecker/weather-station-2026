@@ -6,12 +6,13 @@ Source of truth: hardware/tx-stack-r1/build/ASSEMBLY.md (sections 1 and 4, parse
 Starting point: Session 6 is done. The backplane is wired; five 24 AWG leads hang off it with their far ends flagged
 and taped (PACK +, J5 BAT, J3 SYS, J3 GND, J5 SNS). The EVM is as supplied (set for two cells).
 
-First power here is a meter-only check: USB into J6, no pack, JP17 out. Nothing in the repo can talk to the BQ25798
-yet (firmware/stage0-node/App/power_config.h: charger support is a later phase), so section 1's I2C reads, the TS
-check and the ICHG write are a WAITS ON FIRMWARE item, and the pack is never connected in this session.
+First power here is a meter-only check: USB into J6, no pack, JP17 out. The I2C half of ASSEMBLY.md section 1 (the
+TS reading, the VREG and ICHG writes) is the firmware's CHARGER command, which needs the cards in: Session 9 step 07
+runs it. The pack is never connected in this session; it goes on at Session 9 step 08.
 
 Usage: .venv-pdf/bin/python make_session7.py [OUT_DIR]     (default: ../out; writes session7-all.pdf)
 """
+import math
 import sys
 from pathlib import Path
 
@@ -26,14 +27,29 @@ OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE.parent / "out"
 WIRE = {"red": HexColor("#D7262E"), "black": HexColor("#1C1C1C"), "yellow": HexColor("#E0B000"),
         "blue": HexColor("#2D6FD0"), "white": HexColor("#F2F2F2")}
 
-SLOGANS7 = [
-    "THE PACK STAYS UNPLUGGED. ALL SESSION.",
-    "SENSE LEAD FIRST. THEN JP9 OFF.",
-    "READ THE SILK. TRUST THE SILK.",
-    "SYS AND ITS GROUND RUN TOGETHER.",
-    "METER FIRST. POWER LATER.",
-]
+FOOT7 = "SESSION 7: THE CHARGER AND THE PACK. FROM build/ASSEMBLY.md SECTIONS 1 AND 4."
 LEAD = asmd.LEAD
+
+
+# RT1 on the meter (step 04 alone, step 08 check 7 in J7). RT1 is a B 3950 10 kohm NTC:
+#   R(T) = 10k * exp(3950 * (1/T - 1/298.15)), T in kelvin: 12.5k at 20 C, 10.0k at 25 C, 8.0k at 30 C.
+# In J7 the meter also sees the EVM's TS divider: R18 5.23k REGN to TS, R24 30.1k TS to GND (JP18 off, so RT1 is
+# the only other part on TS). With the EVM unpowered REGN only has its cap to ground, so R18 goes nowhere at DC
+# once that cap charges (the reading creeps up for a second or two). What's left is RT1 || R24:
+#   10.0k || 30.1k = 10.0 * 30.1 / 40.1 = 7.5k at 25 C (8.9k at 20 C, 6.4k at 30 C).
+# If R18 did reach ground the reading would be RT1 || R24 || R18 = 2.9k at 25 C; that means REGN is loaded.
+def ntc(t_c, r25=10.0, b=3950.0):
+    return r25 * math.exp(b * (1 / (t_c + 273.15) - 1 / 298.15))
+
+
+def par(*rs):
+    return 1 / sum(1 / x for x in rs)
+
+
+R24 = 30.1
+RT_ALONE = {t: ntc(t) for t in (20, 25, 30)}
+RT_IN_J7 = {t: par(ntc(t), R24) for t in (20, 25, 30)}
+assert abs(RT_IN_J7[25] - 7.5) < 0.05 and abs(RT_ALONE[20] - 12.5) < 0.1
 C = asmd.C
 
 
@@ -74,15 +90,15 @@ def wait_box(c, x, y, w, lines):
 def cover(c, pg):
     page(c, "00", "SESSION 7: THE CHARGER AND THE PACK",
          "EVM JUMPERS FOR ONE CELL, THE LEADS' FAR ENDS, THE THERMISTOR, THE J8 LEAD. A METER-ONLY FIRST POWER.", pg,
-         SLOGANS7[0])
+         FOOT7)
     g = Grid(2, 3, heights=[1.3, 1.05, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0, 2), None,
                        "PARTS (build/ASSEMBLY.md sections 1 and 4). THE FIVE BACKPLANE LEADS ARE ALREADY ON (SESSION 6).")
     items = [("U1 BQ25798EVM (TI BMS034)\nas supplied: set for 2 cells", "p_evm"),
              ("RT1 10 KOHM NTC, B 3950\nAdafruit #372", "p_rt1"),
              ("Adafruit #353 PACK + PG1\nJST PH socket on leads", "p_pack"),
-             ("MOLEX KK 2695 4-WAY + 3 CRIMPS,\n1 x 3 0.1 in HOUSING (XJ1 END)", "p_kk"),
-             ("24 AWG STRANDED BLACK 150 mm,\n3 x 26 AWG 150 mm, HEAT SHRINK", "p_wires")]
+             ("J8 END: KK 2695 4-WAY + 3 CRIMPS\nXJ1 END: 3 x 1-WAY 0.1 in\nHOUSINGS + 3 CRIMPS", "p_kk"),
+             ("24 AWG BLACK 150 mm. 26 AWG:\n3 x 150 mm (J8 LEAD),\n2 x 150 mm (RT1 LEGS). SHRINK", "p_wires")]
     cw, rh = w / 3, h / 2
     for i, (name, art) in enumerate(items):
         col, row = i % 3, i // 3
@@ -103,7 +119,7 @@ def cover(c, pg):
         text(c, x + 14, y + h - 16 - i * (h - 10) / len(steps), s, 12.5, "HEAD", INK)
     x, y, w, h = panel(c, g.cell(0, 2, 2), None, "STANDING ORDERS.", warn=True)
     rules = ["THE PACK NEVER PLUGS INTO PG1 IN THIS SESSION. ITS PLUG STAYS APART FROM PG1'S SOCKET, TAPED.",
-             "NOTHING IS POWERED UNTIL PAGE 09. EVERY SOLDER AND SCREW JOB HAPPENS WITH THE USB CABLE OUT.",
+             "NOTHING IS POWERED UNTIL STEP 09. EVERY SOLDER AND SCREW JOB HAPPENS WITH THE USB CABLE OUT.",
              "JUMPERS AND J7 ARE DRAWN WHERE TI'S LAYOUT PUTS THEM. CHECK EACH NAME ON THE SILK BEFORE YOU PULL A SHUNT.",
              "SENSE LEAD INTO J5 BEFORE JP9 COMES OFF (ASSEMBLY.md 1.2): BATP MUST NEVER FLOAT."]
     for i, s in enumerate(rules):
@@ -115,12 +131,12 @@ def cover(c, pg):
 # ------------------------------------------------------------------ 00 what you are building
 def built(c, pg):
     page(c, "00", "WHAT YOU ARE BUILDING", "THE EVM, SET FOR ONE CELL, ITS LEADS ON. THIS IS WHERE THE SESSION ENDS.", pg,
-         SLOGANS7[0])
+         FOOT7)
     g = Grid(1, 1)
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "TOP FACE, the backplane edge at the top, the lid edge (J8) at the bottom: how it will sit in the box, seen from",
         "the lid. J3 and J5 take the leads from the backplane (up the page) and the pack - lead (down the page). The J8",
-        "lead goes to XJ1 on the backplane. RT1's leads into J7 are on page 04."])
+        "lead goes to XJ1 on the backplane. RT1's leads into J7 are step 04."])
     a = Art(c, "evm_done", x + 60, y + 30, w - 220, h - 80)
     names = {"J5 BAT": "J5 BAT (from line 19)", "J5 SNS": "J5 SNS (from R7, line 24)", "J3 SYS": "J3 SYS (from line 26)",
              "J3 GND": "J3 GND (from line 12)", "J5 GND": "J5 GND (PG1 - lead, from the pack)"}
@@ -136,7 +152,7 @@ def built(c, pg):
 # ------------------------------------------------------------------ 01 as supplied
 JP_TABLE = [("JP24", "OFF", "PROG: the two-cell setting"), ("JP22", "ON", "PROG: one cell, 1.5 MHz (the only PROG jumper)"),
             ("JP9", "OFF", "only AFTER the J5 SNS_BATP lead is in"), ("JP18", "OFF", "the thermistor RT1 goes on J7 instead"),
-            ("JP12", "STAYS IN", ""), ("JP17", "STAYS IN", "out only for first power (page 09)"),
+            ("JP12", "STAYS IN", ""), ("JP17", "STAYS IN", "out only for first power (step 09)"),
             ("JP30", "STAYS IN", "the 3.3 V PULLUP rail: I2C pull-ups R39, R40"),
             ("JP32", "AS SHIPPED", "D13, the STAT LED (0.6-0.7 mA lit): leave it, or pull it"),
             ("JP7", "AS SHIPPED", "VIN1 = J6, the micro-B USB")]
@@ -144,7 +160,7 @@ JP_TABLE = [("JP24", "OFF", "PROG: the two-cell setting"), ("JP22", "ON", "PROG:
 
 def supplied(c, pg):
     page(c, "01", "THE EVM AS SUPPLIED", "TI BQ25798EVM (SLUUCB5). IT SHIPS SET FOR TWO CELLS. NOTHING CONNECTED.", pg,
-         SLOGANS7[2])
+         FOOT7)
     g = Grid(2, 1, heights=[1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["TOP FACE. Drawn: the board, the blocks, J7 and",
                                              "the jumpers this session touches, as shipped.",
@@ -183,7 +199,7 @@ def supplied(c, pg):
 # ------------------------------------------------------------------ 02 JP24 off, JP22 on
 def jp1(c, pg):
     page(c, "02", "JP24 OFF, JP22 ON", "ASSEMBLY.md 1.1: PROG SET FOR ONE CELL, 1.5 MHZ. NOTHING CONNECTED TO THE EVM.", pg,
-         SLOGANS7[2])
+         FOOT7)
     g = Grid(2, 2, heights=[1.2, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["JP24: pull the shunt straight up with", "tweezers. Both pins bare."])
     a = Art(c, "jp_pull", x + 20, y + 10, w - 40, h - 50)
@@ -191,20 +207,28 @@ def jp1(c, pg):
     x, y, w, h = panel(c, g.cell(1, 0), 2, ["JP22: push a shunt (the one off JP24 will", "do) fully down over both pins."])
     a = Art(c, "jp_fit", x + 20, y + 10, w - 40, h - 50)
     label(c, x + w - 10, y + h - 18, "JP22: SHUNT ON", *a.A("shunt"), 10, color=NEON, anchor="r")
-    x, y, w, h = panel(c, g.cell(0, 1, 2), 3, ["JP22 is the only PROG jumper fitted when you're done."])
+    x, y, w, h = panel(c, g.cell(0, 1, 2), 3, ["TOP FACE. JP22 is the only PROG jumper fitted when you're done."])
     bullets(c, x + 44, y + h - 22, [
-        "The EVM ships set for two cells. Our pack (Adafruit #353) is one cell, 3.7 V, three cells in parallel.",
-        "PROG is read when the charger powers up, so set it now, with nothing connected.",
-        "Look along the PROG jumper row on the silk: after this step only JP22 has a shunt on it."], 9.5)
+        "The EVM ships set for two cells. Our pack",
+        "(Adafruit #353) is one cell, 3.7 V: three",
+        "cells in parallel.", "",
+        "PROG is read when the charger powers up,",
+        "so set it now, with nothing connected.", "",
+        "Look along the PROG jumper row on the silk:",
+        "after this step only JP22 has a shunt on it."], 9.5)
+    a = Art(c, "evm_top", x + w * 0.5, y + 6, w * 0.5 - 90, h - 34)
+    for k, nm in enumerate(("JP24", "JP22")):
+        label(c, x + w - 10, a.y + a.h * (0.75 - 0.4 * k), nm, *a.A(nm), 9, color=NEON, anchor="r")
 
 
 # ------------------------------------------------------------------ 03 sense lead, then JP9
 def sense(c, pg):
-    page(c, "03", "SENSE LEAD TO J5, THEN JP9 OFF", "ASSEMBLY.md 1.2. IN THIS ORDER, SO BATP NEVER FLOATS.", pg, SLOGANS7[1])
+    page(c, "03", "SENSE LEAD TO J5, THEN JP9 OFF", "ASSEMBLY.md 1.2. IN THIS ORDER, SO BATP NEVER FLOATS.", pg, FOOT7)
     g = Grid(2, 2, heights=[1.25, 0.75])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
         "J5, from outside the right edge. Untape the J5 SNS lead (white, red band) that runs from R7's free leg on the",
-        "backplane (line 24, hole 7). Trim it to reach J5 with a little slack, strip 6 mm, twist, in to the stop, screw down."])
+        "backplane (line 24, hole 7). Trim it to reach J5 with a little slack, strip 6 mm, twist, in to the stop,",
+        "screw down."])
     a = Art(c, "j5_sns", x + 40, y + 10, w - 240, h - 50, align="l")
     label(c, a.x + a.w + 20, y + h - 30, "J5 SNS_BATP: LEAD IN", *a.A("J5_1"), 9.5, color=NEON)
     label(c, a.x + a.w + 20, y + 40, "WHITE, RED BAND: FROM R7", *a.A("sns"), 9)
@@ -221,12 +245,14 @@ def sense(c, pg):
 # ------------------------------------------------------------------ 04 thermistor
 def therm(c, pg):
     page(c, "04", "JP18 OFF, THERMISTOR ON J7", "ASSEMBLY.md 1.3-1.6. THE PACK'S TEMPERATURE, AND WHAT STAYS AS SHIPPED.",
-         pg, SLOGANS7[2])
+         pg, FOOT7)
     g = Grid(2, 1)
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["RT1, Adafruit #372 (10 kohm, B 3950).",
-                                             "Splice 26 AWG to each leg to make 150 mm,",
-                                             "shrink over each joint. Into J7, screw down.",
-                                             "Then JP18's shunt off. Bead taped to the pack."])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, [
+        "RT1, Adafruit #372 (10 kohm, B 3950). Meter it alone:",
+        f"{RT_ALONE[25]:.1f} kohm at 25 C ({RT_ALONE[20]:.1f} at 20 C, {RT_ALONE[30]:.1f} at 30 C).",
+        "Write it down. Splice 26 AWG to each leg to make",
+        "150 mm, shrink over each joint. Into J7, screw down.",
+        "Then JP18's shunt off. Bead taped to the pack."])
     a = Art(c, "rt1_j7", x + 30, y + 70, w - 60, h - 130)
     label(c, x + w - 10, y + h - 20, "BEAD: TAPE IT TO THE PACK", *a.A("bead"), 9, anchor="r")
     label(c, x + 14, y + h * 0.5, "SPLICE + SHRINK", *a.A("splice"), 9)
@@ -240,7 +266,7 @@ def therm(c, pg):
         "R40 (SDA), 10 kohm each, plus R41, R42 on /INT, /CE.",
         "", "D13, the STAT LED, sits on JP32, fitted as shipped.",
         "It draws about 0.6-0.7 mA when lit. Leave it, or pull",
-        "JP32 to save that. Write down which on page 10.",
+        "JP32 to save that. Write down which on step 10.",
         "", "USB in is J6, micro-B (JP7 on VIN1). It's for the",
         "bench only: no gland is planned for a USB cable."], 9.3)
     wait_box(c, x + 12, yy - 14, w - 24, [
@@ -248,34 +274,37 @@ def therm(c, pg):
         "and check it sits in the normal band (ASSEMBLY.md 1.3).",
         "The EVM's TS divider is set for a 103AT (B 3435): with",
         "the B 3950 part the cold and hot limits move a few",
-        "degrees. Nothing in the repo reads it yet."])
+        "degrees. The firmware reads it: CHARGER's ts_pct, ts",
+        "and pack_dc, on Session 9 step 07."])
 
 
 # ------------------------------------------------------------------ 05 J5 BAT, J3 SYS + GND
 def power_leads(c, pg):
-    page(c, "05", "J5 BAT, J3 SYS AND J3 GND", "THE BACKPLANE LEADS' FAR ENDS. 24 AWG STRANDED, SCREWED.", pg, SLOGANS7[3])
-    g = Grid(2, 1, heights=[1])
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["TOP FACE, backplane edge up. Each lead comes",
-                                             "from the backplane: untape it, trim it, strip",
-                                             "6 mm, twist, in, screw down. Tug-test each."])
-    a = Art(c, "evm_done", x + 8, y + 40, w - 70, h - 90, align="l")
+    page(c, "05", "J5 BAT, J3 SYS AND J3 GND", "THE BACKPLANE LEADS' FAR ENDS. 24 AWG STRANDED, SCREWED.", pg, FOOT7)
+    g = Grid(2, 2, heights=[1.25, 0.75])
+    x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
+        "TOP FACE, backplane edge up. Each lead comes from the backplane: untape it, trim it, strip 6 mm, twist,",
+        "in, screw down. Tug-test each."])
+    a = Art(c, "evm_done", x + 20, y + 10, w - 200, h - 46)
     for k, nm in enumerate(("J3 SYS", "J3 GND", "J5 BAT")):
         px, py = a.A(f"lead_{nm}")
-        r = chip(c, a.x + a.w + 8, py - 3, nm, 8, "ALT", INK, "l")
+        r = chip(c, x + w - 150, a.y + a.h * (0.62 - 0.12 * k), nm, 9, "ALT", INK, "l")
         leader(c, r, px, py)
-    x, y, w, h = panel(c, g.cell(1, 0), 2, ["From ASSEMBLY.md section 4."])
+    x, y, w, h = panel(c, g.cell(0, 1), 2, ["From ASSEMBLY.md section 4."])
     rows = [(LEAD["U1 battery + (J5 BATTERY)"], "J5 BAT", "line 19, hole 6"),
             (LEAD["U1 system out (J3 SYS)"], "J3 SYS", "line 26, hole 6"),
             (LEAD["U1 system ground (J3 GND)"], "J3 GND", "line 12, hole 11")]
-    yy = y + h - 44
+    yy = y + h - 24
     for r_, nm, frm in rows:
-        text(c, x + 14, yy, nm, 12, "HEAD", INK)
-        text(c, x + 90, yy, f"from {frm}", 9, "ALT", INK)
-        text(c, x + 90, yy - 12, r_[3].split(", ")[-1], 8.5, "ALT", GREY)
-        text(c, x + 90, yy - 24, r_[2], 8.5, "ALT", GREY)
-        yy -= 44
-    LAB.block(x + 8, yy, x + w - 4, y + h - 10, "lead table")
-    yy = bullets(c, x + 14, yy - 6, [
+        text(c, x + 44, yy, nm, 12, "HEAD", INK)
+        text(c, x + 110, yy, f"from {frm}", 9, "ALT", INK)
+        text(c, x + 110, yy - 12, r_[3].split(", ")[-1], 8.5, "ALT", GREY)
+        text(c, x + 110, yy - 24, r_[2], 8.5, "ALT", GREY)
+        yy -= 40
+    LAB.block(x + 8, yy + 14, x + w - 4, y + h - 10, "lead table")
+    from_doc(c, x + 44, yy, "J3 from the back: GND, SYS (Figure 4-1).")
+    x, y, w, h = panel(c, g.cell(1, 1), 3, ["SYS and its ground run together."])
+    bullets(c, x + 44, y + h - 24, [
         "J3 SYS and J3 GND are a pair: trim them to",
         "the same length and run them side by side,",
         "twisted loosely, J3 to the backplane. The",
@@ -283,13 +312,12 @@ def power_leads(c, pg):
         "transmit peaks come back on that black lead.",
         "", "Leave a service loop on all three: the EVM",
         "slides out of its shelf on these leads."], 9.3)
-    from_doc(c, x + 14, yy - 14, "J3 from the back: GND, SYS (Figure 4-1).")
 
 
 # ------------------------------------------------------------------ 06 the pack leads
 def pack_leads(c, pg):
     page(c, "06", "THE PACK LEADS. PACK UNPLUGGED.", "PG1 IS THE PACK'S SOCKET ON ITS OWN LEADS. THE PACK ITSELF STAYS APART.",
-         pg, SLOGANS7[0])
+         pg, FOOT7)
     g = Grid(1, 2, heights=[1.0, 1.0])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "PG1 (a JST PH 2-pin socket with leads) and the pack's plug, apart. PG1's red lead joins the backplane's PACK +",
@@ -300,7 +328,7 @@ def pack_leads(c, pg):
     label(c, x + w - 10, y + h - 34, "TO J5 GND", *a.A("minus"), 9, anchor="r")
     label(c, x + w - 10, y + 30, "PACK + LEAD (FROM LINE 21)", *a.A("plus"), 9, anchor="r")
     label(c, x + w * 0.5, y + 30, "SPLICE + SHRINK", *a.A("splice"), 9, anchor="r")
-    x, y, w, h = panel(c, g.cell(0, 1), 2, ["The pack's plug and PG1 meet only at the very end of Session 8."], warn=True)
+    x, y, w, h = panel(c, g.cell(0, 1), 2, ["The pack's plug and PG1 meet only at Session 9 step 08."], warn=True)
     yy = bullets(c, x + 44, y + h - 24, [
         "1. Slide heat shrink onto the PACK + lead first. Untape its end, strip 8 mm.",
         "2. Strip 8 mm off PG1's red lead. Twist them in line, solder, shrink over the joint.",
@@ -308,23 +336,24 @@ def pack_leads(c, pg):
         "   into J5's GND position, screw down. It never touches the backplane.",
         "4. Put a strip of tape over PG1's socket mouth. The pack's plug stays loose beside it, taped too."], 9.5)
     check_item(c, x + 44, yy - 16, "PG1's own lead length isn't in the repo: splice only if you need the length.")
-    check_item(c, x + 44, yy - 32, "Red to red: PG1's red lead must sit on the pack's + pin. Meter it on page 08.")
+    check_item(c, x + 44, yy - 32, "Red to red: PG1's red lead must sit on the pack's + pin. Session 9 step 08 meters it.")
 
 
 # ------------------------------------------------------------------ 07 J8 lead
 def j8(c, pg):
-    page(c, "07", "THE J8 LEAD TO XJ1", "THE CHARGER'S I2C: GROUND, CLOCK, DATA. 150 MM.", pg, SLOGANS7[2])
+    page(c, "07", "THE J8 LEAD TO XJ1", "THE CHARGER'S I2C: GROUND, CLOCK, DATA. 150 MM.", pg, FOOT7)
     g = Grid(2, 2, heights=[0.9, 1.1])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
         "Three 26 AWG wires, 150 mm. EVM end: KK crimps in positions 1-3 of the 4-way KK 2695 housing, 4 empty.",
-        "Backplane end: crimps in a 1 x 3 0.1 in housing that pushes onto XJ1's three pins."])
+        "Backplane end: each wire gets its own 1-way 0.1 in housing and a tape flag (GND, SCL, SDA). XJ1's three pins",
+        "sit on lines 2, 7 and 10, too far apart for one 1 x 3 housing, so each housing pushes onto its own pin."])
     a = Art(c, "kk_lead", x + 30, y + 20, w - 60, h - 54)
     label(c, x + w - 10, y + h - 16, "KK HOUSING: TO EVM J8", *a.A("kk"), 9, anchor="r")
-    label(c, x + 30, y + h - 16, "1 x 3 HOUSING: TO XJ1", *a.A("du"), 9)
+    label(c, x + 30, y + h - 16, "3 x 1-WAY HOUSING: TO XJ1", *a.A("du0"), 9)
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Pin by pin (ASSEMBLY.md 4, BACKPLANE.md 3)."])
-    rows = [("J8-1", "ground", "black", "XJ1 ground: line 2, hole 11"),
-            ("J8-2", "clock", "yellow", "XJ1 clock: line 7, hole 11"),
-            ("J8-3", "data", "blue", "XJ1 data: line 10, hole 11"),
+    rows = [("J8-1", "ground", "black", "flag GND, onto XJ1 ground: line 2, hole 11"),
+            ("J8-2", "clock", "yellow", "flag SCL, onto XJ1 clock: line 7, hole 11"),
+            ("J8-3", "data", "blue", "flag SDA, onto XJ1 data: line 10, hole 11"),
             ("J8-4", "pull-up rail", None, "empty: not wired")]
     yy = y + h - 46
     for pin, what, colr, to in rows:
@@ -342,17 +371,17 @@ def j8(c, pg):
     yy = bullets(c, x + 44, y + h - 24, [
         "Pin 1 is J8's left pin seen from the top",
         "(its square pad, SLUUCB5E Figure 4-1).",
-        "Match the housing's 1 to it, then the",
-        "1 x 3 end: black on line 2 (nearest", "line 0), yellow 7, blue 10.",
+        "Match the housing's 1 to it. At XJ1, go",
+        "by the flags: GND on line 2 (nearest",
+        "line 0), SCL on 7, SDA on 10.",
         "", "J8 pin 1 is also tied to the EVM's",
         "ground, so it carries a small share", "of SYS's return. J3 GND carries most."], 9.3)
-    check_item(c, x + 14, yy - 14, "The XJ1-end housing isn't named in the repo.")
 
 
 # ------------------------------------------------------------------ 08 meter, no power
 def meter(c, pg):
     page(c, "08", "METER, NO POWER", "OHMS / CONTINUITY. NO USB, NO PACK. THE BACKPLANE AND THE EVM ON THE BENCH.", pg,
-         SLOGANS7[4])
+         FOOT7)
     g = Grid(1, 1)
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["Tick each box. Anything else: stop, take a photo, tell Claude."], warn=True)
     rows = [("1", "J5 BAT TO LINES 19, 20", "Its screw to line 19's wire: BEEP. Line 20 too (joined at hole 5)."),
@@ -361,8 +390,8 @@ def meter(c, pg):
             ("4", "J5 SNS TO THE JUNCTION", "J5's SNS screw to line 21: about 100 ohm (R7). Not 0, not open."),
             ("5", "PG1 + TO LINE 21", "A probe in PG1's + contact to line 21's wire: BEEP."),
             ("6", "PG1 - TO J5 GND", "PG1's - contact to J5's GND screw: BEEP."),
-            ("7", "J7: RT1", "Across J7's two screws: about 10 kohm at room temperature."),
-            ("8", "J8 LEAD", "Each XJ1 housing contact to its J8 pin: black 1, yellow 2, blue 3. BEEP each."),
+            ("7", "J7: RT1 IN CIRCUIT", f"Across J7's screws: about {RT_IN_J7[25]:.1f} kohm at 25 C: R24 (30.1k) sits across RT1."),
+            ("8", "J8 LEAD", "Each flagged 1-way housing to its J8 pin: GND 1, SCL 2, SDA 3. BEEP each."),
             ("9", "NO SHORTS", "J3 SYS to J3 GND: OPEN. J5 BAT to J5 GND: OPEN. Line 1 to line 2: OPEN.")]
     rh = (h - 40) / len(rows)
     for i, (n, t, s) in enumerate(rows):
@@ -378,7 +407,7 @@ def meter(c, pg):
 # ------------------------------------------------------------------ 09 first power
 def first_power(c, pg):
     page(c, "09", "FIRST POWER: USB, NO PACK", "ASSEMBLY.md 1.7, THE METER HALF. JP17 OUT: CHARGE DISABLED. NO CARDS.", pg,
-         SLOGANS7[4])
+         FOOT7)
     g = Grid(2, 2, heights=[1.1, 0.9])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["JP17's shunt off. The pack's plug is not in", "PG1. No card is in any socket."])
     a = Art(c, "jp_pull", x + 30, y + 10, w - 60, h - 46)
@@ -402,24 +431,23 @@ def first_power(c, pg):
         "start it writes 4.2 V (REG0x01-0x02) and ICHG " + asmd.ICHG + " A (issue #34), reads them back, and checks REG0x0A",
         "says one cell. ICHG goes back to its 1 A default on a power cycle, so it writes them again after any reset.",
         "It also sets the input limit to 12 V (7 V at power-up), MPPT at 0.81 of the panel's open voltage, and a",
-        "warm stop at about 42 C. Charge stays off until a fresh TS reading (page 06) isn't COLD, WARM or HOT.",
-        "It needs the cards, so check it after Session 8: USB in J6, no pack, JP17 out. Type CHARGER on the TX",
-        "console. Look for cells=1 vreg_mv=4200 ichg_ma=900 vac_ovp=2 voc_pct=4 ts=NORMAL hold=none.",
-        "Write down ts_pct and pack_dc (the pack temperature in 0.1 C).",
-        "Then refit JP17 and connect the pack LAST."])
+        "warm stop at about 42 C. Charge stays off until a fresh TS reading (RT1, step 04) isn't COLD, WARM or HOT.",
+        "It needs the cards, so it's Session 9 step 07: USB in J6, no pack, JP17 out, CHARGER on the TX console.",
+        "That step lists every value to look for. Write down ts_pct and pack_dc (the pack temperature in 0.1 C).",
+        "Session 9 step 08 refits JP17 and connects the pack, last."])
 
 
-REPORT_ROWS = [("SYS, J3, USB IN, NO PACK", "V", "page 09 step 2"),
-               ("SYS AT THE BACKPLANE (26 TO 12)", "V", "page 09 step 3"),
+REPORT_ROWS = [("SYS, J3, USB IN, NO PACK", "V", "step 09, item 2"),
+               ("SYS AT THE BACKPLANE (26 TO 12)", "V", "step 09, item 3"),
                ("STAT LED (D13)", "ON/OFF/BLINK", "and JP32 kept or pulled"),
-               ("RT1 ACROSS J7", "kohm", "about 10 at room temperature"),
-               ("METER CHECKS 1-9 ALL PASS", "Y / N", "page 08"),
-               ("J5 SILK MATCHES PAGE 03", "Y / N", "back edge first: GND, SNS_BATP, BATTERY"),
+               ("RT1 ALONE, THEN IN J7", "kohm", f"step 04 ~{RT_ALONE[25]:.0f}, step 08 ~{RT_IN_J7[25]:.1f} at 25 C; and the room temp"),
+               ("METER CHECKS 1-9 ALL PASS", "Y / N", "step 08"),
+               ("J5 SILK MATCHES STEP 03", "Y / N", "back edge first: GND, SNS_BATP, BATTERY"),
                ("PHOTO OF THE EVM, TOP", "SENT", "jumpers readable")]
 
 
 def report(c, pg):
-    page(c, "10", "REPORT THE CHARGER.", "THE EVM IS SET FOR ONE CELL AND WIRED. SEND THE NUMBERS.", pg, SLOGANS7[4])
+    page(c, "10", "REPORT THE CHARGER.", "THE EVM IS SET FOR ONE CELL AND WIRED. SEND THE NUMBERS.", pg, FOOT7)
     g = Grid(1, 2, heights=[1.55, 0.45])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["Send these to Claude. The drawing is from TI's layout figure: say if your board differs."])
     for i, (lab, unit, exp) in enumerate(REPORT_ROWS):
@@ -433,9 +461,10 @@ def report(c, pg):
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: Session 8, into the box."])
     for i, s_ in enumerate(["The pack on its tray (RT1 taped to it), the EVM on its shelf, the backplane, the cards.",
                             "The glands, the cables and their plugs, the solar lead into J2, the coax.",
-                            "After it: flash the TX (make ROLE=tx BOARD=wio-e5 WS_POWER_PROFILE=3 WS_I2C_MUX=1) and type CHARGER.",
-                            "The pack and JP17 go on only once CHARGER shows vreg 4200 and ichg 900."]):
-        text(c, x + 44, y + h - 22 - i * 16, "-  " + s_, 10, "ALT", INK)
+                            "Then Session 9 flashes the TX with the full line (step 03): make ROLE=tx BOARD=wio-e5",
+                            "   WS_POWER_PROFILE=3 WS_I2C_MUX=1 flash SERIAL=<the probe's serial>. Nothing to flash today.",
+                            "The pack and JP17 go on only once CHARGER reads as on Session 9 step 07."]):
+        text(c, x + 44, y + h - 22 - i * 16, s_ if s_.startswith(" ") else "-  " + s_, 10, "ALT", INK)
 
 
 PAGES = [cover, built, supplied, jp1, sense, therm, power_leads, pack_leads, j8, meter, first_power, report]

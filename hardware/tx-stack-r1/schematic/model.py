@@ -258,7 +258,7 @@ PARTS = [
     # ------------------------------------------------------------ the backplane (BusBoard ST2 stripboard strip)
     *[bp_socket(c) for c in ("B4", "B2", "B1", "B3")],
     dict(ref="XJ1", value="charger bus pins", block="bus", card="BP",
-         part="three 0.1 in male pins on the backplane; 3-wire lead to EVM J8 (Molex KK 2695 housing)",
+         part="three 0.1 in male pins on the backplane; 3-wire lead to EVM J8 (Molex KK 2695 housing at J8, three 1-way 0.1 in housings flagged GND, SCL, SDA at XJ1)",
          pins=[("GND", "ground", PAS, "header"), ("SCL", "clock", PAS, "header"), ("SDA", "data", PAS, "header")]),
     dict(ref="U4", value="PCA9548 0x71", part="Adafruit #5626 (A0 bridged, Vlogic SW1 = V+), foam pad on the backplane",
          block="ports", card="BP",

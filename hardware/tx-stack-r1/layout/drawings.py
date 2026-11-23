@@ -1024,7 +1024,7 @@ def assembly_sheet():
         ln = lead_len(a, c)
         if ln:
             L.append(f"| {where(a)} | {where(c)} | {ln} | {note} |")
-    L += ["| EVM J8 (KK 4-pin housing, pins 1-3) | backplane charger pins | 150 mm | charger I2C: ground, clock, data |",
+    L += ["| EVM J8 (KK 4-pin housing, pins 1-3) | XJ1 on the backplane (three 1-way 0.1 in housings, flagged GND, SCL, SDA) | 150 mm | charger I2C: ground, clock, data |",
           f"| solar panel cable (Voltaic P110), cut at its gland ({', '.join(f'{x:g}, {y:g}' for (x, y), n in cage.GLAND_USE.items() if n == 'SOLAR')}) "
           f"| EVM J2 VIN2 (red), J2 GND (black) | {math.ceil((cage.solar_len() + 70.0) / 10.0) * 10:.0f} mm | 22 AWG "
           "stranded red/black pair, twisted, soldered and heat-shrunk to the panel cable's cores just above the gland "

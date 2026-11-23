@@ -1265,7 +1265,7 @@
 (property "Value" "charger bus pins" (at 0 -7.62 0) (effects (font (size 1.27 1.27))))
 (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
 (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
-(property "Description" "three 0.1 in male pins on the backplane; 3-wire lead to EVM J8 (Molex KK 2695 housing)" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+(property "Description" "three 0.1 in male pins on the backplane; 3-wire lead to EVM J8 (Molex KK 2695 housing at J8, three 1-way 0.1 in housings flagged GND, SCL, SDA at XJ1)" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
 (symbol "XJ1_0_1" (rectangle (start -17.78 5.08) (end 17.78 -5.08) (stroke (width 0.254) (type default)) (fill (type background))))
 (symbol "XJ1_1_1"
 (pin passive line (at -22.86 2.54 0) (length 5.08) (name "ground" (effects (font (size 1.0 1.0)))) (number "GND" (effects (font (size 1.0 1.0)))))
@@ -3918,7 +3918,7 @@
 (property "Value" "charger bus pins" (at 726.44 608.66 0) (effects (font (size 1.27 1.27))))
 (property "Footprint" "" (at 726.44 601.98 0) (effects (font (size 1.27 1.27)) (hide yes)))
 (property "Datasheet" "" (at 726.44 601.98 0) (effects (font (size 1.27 1.27)) (hide yes)))
-(property "Description" "three 0.1 in male pins on the backplane; 3-wire lead to EVM J8 (Molex KK 2695 housing)" (at 726.44 601.98 0) (effects (font (size 1.27 1.27)) (hide yes)))
+(property "Description" "three 0.1 in male pins on the backplane; 3-wire lead to EVM J8 (Molex KK 2695 housing at J8, three 1-way 0.1 in housings flagged GND, SCL, SDA at XJ1)" (at 726.44 601.98 0) (effects (font (size 1.27 1.27)) (hide yes)))
 (pin "GND" (uuid "de5d24d6-087e-5894-88b8-da3e9334e838"))
 (pin "SCL" (uuid "dd2b58a9-3167-518e-adb8-962ece338be7"))
 (pin "SDA" (uuid "7fc21531-4b2c-5ecb-ada1-ac2624a71df8"))

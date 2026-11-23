@@ -355,7 +355,9 @@ def rt1_j7():
 
 @scene
 def kk_lead():
-    """The J8 lead: a Molex KK 2695 4-way housing (crimps in 1-3, 4 empty) and a 1 x 3 0.1 in housing for XJ1."""
+    """The J8 lead: a Molex KK 2695 4-way housing (crimps in 1-3, 4 empty) at the EVM end and three 1-way 0.1 in
+    housings at the backplane end, one per XJ1 pin, each with a tape flag (GND, SCL, SDA). XJ1's pins sit on lines 2,
+    7 and 10 of hole 11 (BACKPLANE.md section 3), 12.7 and 7.6 mm apart, so no 1 x 3 housing fits them."""
     s = r3d.Scene()
     s.add("kk", M.box(-5.1, 0, 0, 5.1, 12.7, 6.3).val(), KK)
     for k in range(4):
@@ -364,16 +366,19 @@ def kk_lead():
     s.text("kk", "1", (-3.81, 6.0, 6.3), (1, 0, 0), (0, 1, 0), 2.2, colour="#121212")
     s.text("kk", "4", (3.81, 6.0, 6.3), (1, 0, 0), (0, 1, 0), 2.2, colour="#121212")
     du_y = 70.0
-    s.add("du", M.box(-3.9, du_y, 0.9, 3.9, du_y + 14.0, 3.5).val(), BLACK)
-    for k, colr in enumerate(("black", "yellow", "blue")):
+    for k, (colr, flag) in enumerate((("black", "GND"), ("yellow", "SCL"), ("blue", "SDA"))):
         x = -3.81 + 2.54 * k
-        xd = -2.54 + 2.54 * k
+        xd = -9.0 + 9.0 * k                     # the three ends apart, each to its own pin
         s.add(f"w{k}", tube([(x, 12.7, 3.15), (x, 22, 3.15), (xd, 40, 2.2), (xd, du_y, 2.2)], 0.55), COL[colr])
         s.anchor(f"w{k}", (xd, 50, 2.75), on=f"w{k}")
+        s.add(f"du{k}", M.box(xd - 1.27, du_y, 0.93, xd + 1.27, du_y + 14.0, 3.47).val(), BLACK)
+        s.anchor(f"du{k}", (xd, du_y + 14.0, 3.47), on=f"du{k}")
+        s.add(f"fl{k}", M.box(xd - 3.2, du_y - 9.0, 2.75, xd + 3.2, du_y - 3.0, 3.05).val(), "#F4F1E6")
+        s.text(f"fl{k}", flag, (xd, du_y - 7.2, 3.05), (1, 0, 0), (0, 1, 0), 2.6, colour="#121212")
     s.anchor("kk", (0, 12.7, 6.3), on="kk")
     s.anchor("pos1", (-3.81, 0.0, 3.15))
     s.anchor("pos4", (3.81, 0.0, 3.15))
-    s.anchor("du", (0, du_y + 14.0, 3.5), on="du")
+    s.anchor("du", (0, du_y + 14.0, 3.47), on="du1")
     R("kk_lead", s, (0.25, -0.35, 1), up=(1, 0, 0), fit=(300, 110), line=0.55)
 
 
@@ -388,7 +393,7 @@ def pack(s, x0=0.0, y0=0.0):
 @scene
 def pack_pg1():
     """The pack (unplugged), its JST PH plug, PG1's socket on its two leads: + spliced to the backplane's PACK + lead,
-    - on to J5 GND. The plug and the socket are apart: they meet only at the very end of Session 8."""
+    - on to J5 GND. The plug and the socket are apart: they meet only in Session 9 step 08."""
     s = r3d.Scene()
     px, py, pz = pack(s)
     # the pack's own two leads and its JST PH plug
@@ -427,9 +432,10 @@ def p_rt1():
 def p_kk():
     s = r3d.Scene()
     s.add("kk", M.box(-5.1, 0, 0, 5.1, 12.7, 6.3).val(), KK)
-    s.add("du", M.box(30, 3.0, 0.9, 37.8, 17.0, 3.5).val(), BLACK)
-    for k in range(4):
-        s.add(f"c{k}", M.box(50 + 6 * k, 4, 0, 51.2 + 6 * k, 18, 1.2).val(), GOLD)
+    for k in range(3):                          # three 1-way 0.1 in housings (the XJ1 end)
+        s.add(f"du{k}", M.box(28 + 4.5 * k, 3.0, 0.9, 30.6 + 4.5 * k, 17.0, 3.5).val(), BLACK)
+    for k in range(6):                          # three KK crimps, three 0.1 in crimps
+        s.add(f"c{k}", M.box(46 + 5 * k, 4, 0, 47.2 + 5 * k, 18, 1.2).val(), GOLD)
     R("p_kk", s, (0.3, -0.5, 1), up=(0, 1, 0), fit=(150, 70), line=0.5)
 
 
