@@ -482,6 +482,28 @@ def solar_j2():
         a, b = np.asarray(pts[-2], float), np.asarray(pts[-1], float)
         s.add(f"fer{k}", cyl(0.85, a + (b - a) * 0.15, a + (b - a) * 0.6), E.STEEL)
         s.anchor(f"sol{k}", tuple(np.asarray(pts[0], float) + np.array([0, 0, 0.65])), on=f"sol{k}")
+    # D6, the P4KE15A (DO-41, sources do41), lying along J2's wire side over the two ferrules: each lead bends down
+    # into its twin ferrule beside the solar core; the band (cathode) at VIN2
+    body_l, body_d, lead_d = S.val("do41")
+    ends = []
+    for k in (0, 1):
+        q = E.into("J2", E.term_k("J2", ("VIN2", "GND")[k]), back=30.0)
+        a, b = np.asarray(q[-2], float), np.asarray(q[-1], float)
+        ends.append((a + (b - a) * 0.15, (b - a) / np.linalg.norm(b - a)))
+    (f0, inward), (f1, _i) = ends
+    out = -inward
+    lift = np.array([0.0, 0.0, body_d / 2 + 1.6])
+    mid = (f0 + f1) / 2 + out * 5.0 + lift
+    along = (f0 - f1) / np.linalg.norm(f0 - f1)                  # toward VIN2
+    c0, c1 = mid + along * body_l / 2, mid - along * body_l / 2
+    s.add("d6", cyl(body_d / 2, c1, c0 - along * 1.0), "#1C1C1C")
+    s.add("d6band", cyl(body_d / 2 + 0.02, c0 - along * 1.0, c0), "#BFBFBF")
+    for k, (cend, f) in enumerate(((c0, f0), (c1, f1))):
+        bend = f + out * 5.0 + lift
+        s.add(f"d6lead{k}", tube([cend, cend + along * 0.8, bend + along * (0.8 if k == 0 else -0.8), f + out * 0.2],
+                                 lead_d / 2), E.STEEL)
+    s.anchor("d6", tuple(mid + lift * 0.5), on="d6")
+    s.anchor("d6band", tuple(c0 - along * 0.5 + lift * 0.5), on="d6band")
     R7 = E.R
     E.OUT = OUT
     try:
@@ -541,7 +563,21 @@ def mount():
     s.anchor("flange_bot", P(fx0 + 4.0, -cage.T, -cage.T - reach * 0.5))
     s.anchor("seam", P(cage.W * 0.6, cage.SEAM, cage.IN_Z1 + 1.0))
     s.anchor("bolt", P(cage.IN_X0 + 6.0, cage.SEAM, cage.IN_Z1 - 6.0))
-    R("mount", s, (0.45, -0.35, -1.0), fit=(300, 330), keep=["flange_top", "flange_bot"])
+    # AE1 (Taoglas TI.96.A113, sources ant_len) on the bulkhead in the right wall, folded up at its hinge; the
+    # bonding lug under the bulkhead's outside nut and its green 14 AWG lead down and back to the pole
+    L, D = S.val("ant_len")
+    yb, zb = S.val("sma_bulkhead")[:2]
+    ox = cage.W + cage.T
+    s.add("ant_nut", cyl(4.5, P(ox, yb, zb), P(ox + 16.0, yb, zb)), "#1C1C1C")
+    s.add("ant_hinge", cyl(D / 2, P(ox + 16.0, yb, zb), P(ox + 16.0 + D, yb, zb)), "#1C1C1C")
+    s.add("ant_whip", cyl(D / 2, P(ox + 16.0 + D / 2, yb, zb + D / 2), P(ox + 16.0 + D / 2, yb, zb + L - 16.0 - D / 2)),
+          "#1C1C1C")
+    s.add("lug", cyl(5.0, P(ox, yb, zb), P(ox + 0.8, yb, zb)), "#B87333")
+    s.add("bond", tube([P(ox + 0.4, yb, zb - 5.0), P(ox + 0.4, yb, zb - 30.0), P(ox + 0.4, -cage.T - 25.0, zb - 60.0)],
+                       1.2), "#2E9E4F")
+    s.anchor("whip", P(ox + 16.0 + D / 2, yb - D / 2, zb + L * 0.6))
+    s.anchor("lug", P(ox + 0.4, yb, zb - 20.0))
+    R("mount", s, (0.45, -0.35, -1.0), fit=(300, 330), keep=["flange_top", "flange_bot", "whip", "lug"])
 
 
 if __name__ == "__main__":

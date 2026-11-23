@@ -8,7 +8,9 @@ Clint builds from them at the bench, and he liked the look enough to ask for a r
 
 ## The PDFs
 
-Ready-to-print copies are in [`pdf/`](pdf/). Sessions 1 to 5 were rebuilt and checked page by page on 2026-11-19, after the build docs switched to the board's own hole names (letter = column, number = row, so `E10` is column E, row 10). Sessions 6 to 9 were rebuilt and checked page by page on 2026-11-23, after the backplane's copper-side leads were re-laned. These four refer to their own and each other's pages by step number, such as "Session 9 step 07". Sessions 3, 4, 7, 8 and 9 were rebuilt again later on 2026-11-23 for the P4KE6.8A TVS clamps on B1 and B2, the pack fuse F5, the outdoor antenna, vent, S4 blanking pin and lid shade, and the pod ID records (Session P page W1) in Session 9 step 07.
+Ready-to-print copies are in [`pdf/`](pdf/). Sessions 1 to 5 were rebuilt and checked page by page on 2026-11-19, after the build docs switched to the board's own hole names (letter = column, number = row, so `E10` is column E, row 10). Sessions 6 to 9 were rebuilt and checked page by page on 2026-11-23, after the backplane's copper-side leads were re-laned. These four refer to their own and each other's pages by step number, such as "Session 9 step 07". Sessions 3, 4, 7, 8 and 9 were rebuilt again later on 2026-11-23 for the P4KE6.8A TVS clamps on B1 and B2, the pack fuse F5, the outdoor antenna, vent, S4 blanking pin and lid shade, and the pod ID records (Session P page W1) in Session 9 step 07. Sessions 7 and 8 were rebuilt once more that day for the solar TVS D6 on J2 (Session 8 step 12), the antenna AE1 straight on the bulkhead and the bond to the pole (Session 8 steps 03 and 14).
+
+Once the station is up, [`hardware/tx-stack-r1/MAINTENANCE.md`](../../hardware/tx-stack-r1/MAINTENANCE.md) has the maintenance plan: what to check, how often, and what each alert means.
 
 | PDF | What you build | Pages |
 |---|---|---|
@@ -19,7 +21,7 @@ Ready-to-print copies are in [`pdf/`](pdf/). Sessions 1 to 5 were rebuilt and ch
 | [tx-session5-b3-core.pdf](pdf/tx-session5-b3-core.pdf) | B3 CORE | 18 |
 | [tx-session6-backplane.pdf](pdf/tx-session6-backplane.pdf) | Wire the PAD3U backplane: key plugs, XJ1, R7, R8, the mux with its 5 header leads (over B4's socket to holes 14-18) and 4 QT cables, links, EVM and pack leads (board end), 24 bus wires | 13 |
 | [tx-session7-charger-pack.pdf](pdf/tx-session7-charger-pack.pdf) | Set the BQ25798EVM's jumpers, the J5 sense lead, thermistor RT1 at J7, the J5/J3 leads, the pack leads at PG1, the J8 lead to XJ1 (three 1-way housings at the XJ1 end), meter checks and a USB-only first power. The charger's I2C set-up is the firmware's CHARGER check in Session 9 step 07 | 12 |
-| [tx-session8-into-the-box.pdf](pdf/tx-session8-into-the-box.pdf) | Rim test ring, the base and its inserts, glands, the wrong-card test, colour dots, backplane, pack, EVM, cards, cable runs and 6P plugs, the solar lead to J2, the coax, the before-power list, lid and mount | 17 |
+| [tx-session8-into-the-box.pdf](pdf/tx-session8-into-the-box.pdf) | Rim test ring, the base and its inserts, glands, the wrong-card test, colour dots, backplane, pack, EVM, cards, cable runs and 6P plugs, the solar lead and its TVS D6 to J2, the coax, the before-power list, lid, mount, antenna and the bond to the pole | 17 |
 | [tx-session9-commission.pdf](pdf/tx-session9-commission.pdf) | SWD from J3 to the ST-LINK, the one-time unlock, build and flash (RX, then TX, with WS_POWER_PROFILE=3 WS_I2C_MUX=1), the brown-out level (`make bor`, BOR level 4, dry run first), the console on the mini's USB-C, provisioning with a new key, the self-test on USB, the pack on, the first frames on air | 11 |
 | [pods-session-p-boards.pdf](pdf/pods-session-p-boards.pdf) | The TH, BARO and UV pod boards and their leads | 34 |
 

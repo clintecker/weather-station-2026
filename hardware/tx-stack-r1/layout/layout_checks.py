@@ -1024,7 +1024,7 @@ def check_removal():
         return placed.get(e[0]) or part.get(e[0], {}).get("card")
     plugs = {pl["ref"] for _b, pl in st.placements() if pl["fp"] in ("BOB", "RAH", "RAS")}
     plug_pins = {("A1", "ANT")}                         # the mini's SMA-K, AD1 screwed on
-    off = {"U1", "BT1", "PG1", "F5", "RT1", "PS1", "PV1"}     # the charger, the pack and what hangs on them
+    off = {"U1", "BT1", "PG1", "F5", "RT1", "PS1", "PV1", "D6"}     # the charger, the pack and what hangs on them
     bad = []
     for kind, a, c, side, note in route.WIRES:
         wa, wc = where(a), where(c)

@@ -162,6 +162,14 @@ PARTS = [
          block="power", note="bench only: set-up and first power with the lid off; no gland, the station runs on PV1", pins=[("VBUS", "5 V", POUT, "usb"), ("GND", "ground", PAS, "usb")]),
     dict(ref="PV1", value="Solar P110", part="Voltaic P110 6 V 10 W (barrel cut at the gland)", block="power",
          pins=[("+", "+", POUT, "evm"), ("-", "-", PAS, "evm")]),
+    # D6 (2026-11-23, Clint): a 400 W TVS across the solar input, in J2's two clamps. The P110's cold Voc is about
+    # 8.7 V and the firmware's VAC cut-off 12 V (11.6-12.4 V, TI BQ25798 datasheet 7.5); the P4KE15A's 12.8 V
+    # stand-off is above both, so it never conducts in normal use. It breaks down at 14.3-15.8 V and clamps at about
+    # 21.2 V at its rated pulse current (about 19 A), under the BQ25798's 30 V absolute maximum on VAC1/VAC2 and VBUS (6.1).
+    dict(ref="D6", value="P4KE15A", block="power",
+         part="Littelfuse P4KE15A, 15 V 400 W unidirectional TVS, DO-41 (solar input clamp, across EVM J2: cathode to "
+              "VIN2, anode to GND, each lead in a twin ferrule with the solar lead's core)",
+         pins=[("1", "cathode", PAS, "evm"), ("2", "anode", PAS, "evm")]),
     dict(ref="U1", value="BQ25798EVM", block="power",
          part="TI BQ25798EVM (SLUUCB5): JP22 only on PROG (1S), JP24 out, JP9 out, JP18 out, JP12/JP17/JP30 in",
          pins=[("VIN1", "USB in (J6 micro-B, JP7 = VIN1)", PIN, "usb"), ("PGND1", "USB ground", PAS, "usb"),
@@ -238,7 +246,7 @@ PARTS = [
          block="radio", pins=[("P", "plug", PAS, "sma"), ("J", "jack", PAS, "sma")], ties=[["P", "J"]]),
     dict(ref="CX1", value="SMA cable 6in", part="Amphenol 135110-01-06.00 (RG-316, bulkhead jack)", block="radio",
          pins=[("P", "plug", PAS, "sma"), ("J", "bulkhead", PAS, "sma")], ties=[["P", "J"]]),
-    dict(ref="AE1", value="ANT-916-ID-2000", part="TE/Linx ANT-916-ID-2000-SMA (IP67, on the pole bracket, 2 m cable to the SMA bulkhead)", block="radio",
+    dict(ref="AE1", value="TI.96.A113", part="Taoglas TI.96.A113 (915 MHz dipole, IP67, hinged SMA(M), screwed straight onto the bulkhead outside, folded to point up)", block="radio",
          pins=[("RF", "RF", PAS, "sma")]),
     card_header("B3"),
     # ------------------------------------------------------------ B2 PORTS B + METERS
@@ -358,8 +366,8 @@ NETS = {
     "TS_RET": ([("RT1", "2"), ("U1", "TSN")], dict()),
     "VUSB": ([("PS1", "VBUS"), ("U1", "VIN1")], dict(force=True)),
     "VUSB_RET": ([("PS1", "GND"), ("U1", "PGND1")], dict(force=True)),
-    "SOLAR_P": ([("PV1", "+"), ("U1", "VIN2")], dict(force=True)),
-    "SOLAR_N": ([("PV1", "-"), ("U1", "PGND2")], dict(force=True)),
+    "SOLAR_P": ([("PV1", "+"), ("U1", "VIN2"), ("D6", "1")], dict(force=True)),
+    "SOLAR_N": ([("PV1", "-"), ("U1", "PGND2"), ("D6", "2")], dict(force=True)),
     "SYS": ([("U1", "SYS"), ("U7", "VIN")] + power("SYS"), dict(force=True)),
     "+3V3": ([("U7", "VOUT"), ("U2", "H.VIN"), ("U6", "H.VIN"), ("U5", "VIN"), ("U4", "H.VCC"), ("A1", "B2"),
               ("J3", "1"), ("R1", "1"), ("R2", "1"), ("R3", "1")]
@@ -454,6 +462,7 @@ R1_ADDED = {
     **{s: "backplane socket for one card" for s in ("XB1", "XB2", "XB3", "XB4")},
     "XJ1": "charger I2C lead lands on the backplane",
     "R7": "100 ohm at the tap end of the charger sense lead (electrical review m11)",
+    "D6": "solar input TVS, P4KE15A across EVM J2 (r3, 2026-11-23: a surge on the 2 m panel lead)",
     "F5": "pack fuse, 1.6 A, in PG1's + lead next to the pack (r3: the lead had no protection but the pack's own board)",
     "R8": "100 ohm at the tap end of the gauge sense lead (m11; 100 not 1k: the gauge may draw its supply here)",
     "RT1": "pack thermistor on EVM J7, JP18 removed (electrical review M2)",

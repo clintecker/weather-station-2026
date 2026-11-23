@@ -661,11 +661,12 @@ def extras(m, explode=0.0, whole=False):
         m.cyl(P(x, y, OZ - l2 + l3 * 0.4), P(x, y, OZ - l2), nut / 2 - 1.5, "#2B2B2B", 12)
     arm, (pe, yb, zb, ax) = bulkhead_at()
     m.cyl(P(XI - 9.0, yb, zb), P(OX + 8.5, yb, zb), 3.2, "#D4AF37", 12)  # bulkhead jack through the right wall
-    m.cyl(P(XI - 2.5, yb, zb), P(XI + 0.8, yb, zb), 5.5, "#D4AF37", 6)  # its nut inside, in its 1 mm seat
-    m.cyl(P(OX + 8.5, yb, zb), P(OX + 22.0, yb, zb), 4.0, "#D4AF37", 6)   # the antenna cable's SMA plug
-    m.cyl(P(OX + 22.0, yb, zb), P(OX + 30.0, yb, zb), 2.5, "#1A1A1A", 12)  # its boot
-    m.tube([P(OX + 30.0, yb, zb), P(OX + 36.0, yb, zb - 4.0), P(OX + 38.0, yb, zb - 40.0)], 1.4, "#1A1A1A", 8)
-    # the cable drops away to the antenna on the pole (ANT-916-ID-2000-SMA, 2 m): not drawn past here
+    m.cyl(P(XI - 2.5, yb, zb), P(XI + 0.8, yb, zb), 5.5, "#D4AF37", 6)  # its body hex inside, in its 1 mm seat (the nut and the bonding lug go on outside)
+    L, D = S.val("ant_len")                                            # AE1, Taoglas TI.96.A113, straight on the jack
+    m.cyl(P(OX + 8.5, yb, zb), P(OX + 16.0, yb, zb), 4.5, "#1A1A1A", 6)   # its SMA(M) coupling nut on the jack
+    m.cyl(P(OX + 16.0, yb, zb), P(OX + 16.0 + D, yb, zb), D / 2, "#1A1A1A", 12)  # the hinge knuckle
+    m.cyl(P(OX + 16.0 + D / 2, yb, zb + D / 2), P(OX + 16.0 + D / 2, yb, zb + L - 16.0 - D / 2), D / 2, "#1A1A1A", 12)
+    # the whip, folded 90 degrees at its hinge to stand vertical, tip up
     # coax: the straight plug on AD1's forward arm, the bend to the right, the run to the bulkhead
     az = (arm.z0 + arm.z1) / 2
     y0 = arm.y1
@@ -810,7 +811,7 @@ def render(jobs):
                   + ("" if fetch_models.path_of("MUX") else " (not fetched: a box)"),
                   "shelves bottom to top: the pack, the BQ25798EVM (90 x 90, Clint; heights [TBD-MEASURE]), B4, B2, "
                   "B1, B3; stand-ins (render/MODELS.md): the EVM, the pack, the sockets, the SMA bulkhead (135110 "
-                  "cable), the antenna cable's SMA plug (the antenna itself is on the pole); the PG-7 and PG-9 glands in the bottom wall "
+                  "cable), the AE1 antenna (TI.96.A113, 203 x 12.7, folded up on its hinge); the PG-7 and PG-9 glands in the bottom wall "
                   "from the Adafruit #761 drawing",
                   f"inside {'x'.join(f'{v:g}' for v in cage.BOX_IN)} mm; the lid interface (rim, O-ring, screws) "
                   "is from Clint's photos, L1 and the rim ring's fit [TBD-MEASURE]; the coax: AD1's arm toward the lid, the cable bending right in front of "

@@ -35,7 +35,7 @@ What the Status column means:
 | Bourns MF-R010 fuses | boxes | stand-in | Octopart lists 3D models for MF-R010 through partners such as SnapEDA. We couldn't load bourns.com (403), so we don't know if Bourns hosts its own |
 | Amphenol RF 132172 SMA adapter (AD1) | boxes | stand-in | amphenolrf.com refuses scripts (403) |
 | Amphenol RF 135110-01-06.00 cable and bulkhead | tubes and cylinders | stand-in | amphenolrf.com refuses scripts (403) |
-| TE / Linx ANT-916-CW-HWR-SMA antenna | cylinders, length `ant_len` [TBD-MEASURE] | stand-in | te.com refuses scripts (403) |
+| Taoglas TI.96.A113 antenna (AE1) | cylinders: coupling nut, hinge, the whip folded up, `ant_len` (203 x 12.7, from the datasheet) | stand-in | no STEP looked for |
 | Adafruit #761 PG-9 and #762 PG-7 glands | thread, locknut, flange, body and dome from https://cdn-shop.adafruit.com/product-files/761/761diagram.jpg (PG-7 scaled by 11.5 / 15.2, https://www.adafruit.com/product/762) | drawn | |
 | TI BQ25798EVM | box, outline `evm` [TBD-MEASURE] | stand-in | we found no published EVM design files. ti.com/tool/BQ25798EVM has only the user's guide SLUUCB5 and an EU DoC |
 | Printed cage, pack, box walls | boxes from `cage/cage.py` | stand-in | the cage is parametric boxes until it is printed |
@@ -59,5 +59,5 @@ these kinds yet. `PTC` is already a footprint kind in `layout/stack.py`, but it 
 | Amphenol 87180-066LF | https://www.amphenol-cs.com/product/87180066lf.html (not checked: 403), or DigiKey's listing https://www.digikey.com/en/products/detail/amphenol-cs-fci/87180-066LF/1001371 (EDA/CAD Models section). SnapEDA has no 3D model for this part. | `render/models/JACK/` |
 | Bourns MF-R010 | https://www.bourns.com/products/circuit-protection/resettable-fuses-pptc/product/MF-R (not checked: 403). Octopart's MF-R010 page lists 3D models through SnapEDA and other partners. | `render/models/PTC/` |
 | Amphenol RF 132172 and 135110-01-06.00 | https://www.amphenolrf.com/132172.html, https://www.amphenolrf.com/135110-01-06-00.html | `render/models/SMA/` |
-| TE / Linx ANT-916-CW-HWR-SMA | https://www.te.com/en/product-ANT-916-CW-HWR-SMA.html | `render/models/ANT/` |
+| Taoglas TI.96.A113 | https://www.taoglas.com/datasheets/TI.96.A113.pdf (datasheet; no model downloaded) | `render/models/ANT/` |
 | TI BQ25798EVM design files | None that we found. https://www.ti.com/tool/BQ25798EVM has no design-file download. The schematic, layout images and BOM are in the user's guide SLUUCB5 (https://ti.com/lit/pdf/SLUUCB5). People ask TI for the CAD files on E2E. | `render/models/EVM/` |

@@ -268,7 +268,8 @@ PDFs change.
   - the rest of the EVM dimensions (the outline is in, and the shelves spec lists what's still TBD-MEASURE)
   - the gland and SMA thread lengths
 - **Parts to get** (README "Not yet ordered"):
-  - from DigiKey: 20 x BAT85S-TR, 10 x P4KE6.8A, 15 x CF14JT100R, the F5 fuse holder (Schurter 8601.2000) with 3 x 021701.6HXP fuses, the ANT-916-ID-2000-SMA antenna and the VENT-PS1YBK-N8002 vent
+  - from DigiKey: 20 x BAT85S-TR, 10 x P4KE6.8A, 15 x CF14JT100R, the F5 fuse holder (Schurter 8601.2000) with 3 x 021701.6HXP fuses, 2 x P4KE15A (D6, the solar TVS) and the VENT-PS1YBK-N8002 vent
+  - the Taoglas TI.96.A113 antenna (AE1, straight on the bulkhead), Scotch 23 and Super 33+ tape, a Panduit PV14-14R-L lug, 14 AWG green THWN-2 and a SatelliteSale SS-GSG9-1 pole strap (the bond), 5 x Phoenix AI-TWIN 2 x 0.75-8 GY (3200807) twin ferrules
   - the 132172 SMA adapter
   - the glands
   - 2 hose clamps

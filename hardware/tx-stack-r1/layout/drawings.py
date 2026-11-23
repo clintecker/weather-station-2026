@@ -29,6 +29,7 @@ K = 9.0                       # px per mm in the card views
 M = 70                        # margin, px
 NAME = model.NET_NAME
 
+BOND_LUG = "Panduit PV14-14R-L, 16-14 AWG, 1/4 in stud"
 NET_COLOUR = {"+3V3": "#D62728", "GND": "#1A1A1A", "I2C_SDA": "#1F5FBF", "I2C_SCL": "#D4A017",
               "MUX_RST": "#8E44AD", "CUPS": "#2CA02C", "VANE": "#17A589", "RAIN": "#00A3D9", "SYS": "#E67E22",
               "SWDIO": "#7F8C8D", "SWCLK": "#7F8C8D", "NRST": "#7F8C8D", "BUS_SPARE": "#BBBBBB",
@@ -975,7 +976,9 @@ def assembly_sheet():
          "the spare S4 the longest, and the solar lead the left front one, nearest J2. S4 has no pod yet, and an "
          "empty PG-7 doesn't seal, so fit its gland with "
          + cage.GLAND_BLANK["S4 SPARE"] + " (`cage.GLAND_BLANK`). Take the pin out when a pod goes on S4. Fit the "
-         "M12 vent, and the SMA bulkhead low in the right wall (enclosure 4: Yb 94.14, Zb 60.38).",
+         "M12 vent, and the SMA bulkhead low in the right wall (enclosure 4: Yb 94.14, Zb 60.38). On the bulkhead's "
+         "outside thread, out from the wall: the sealing washer, the bonding lug (" + BOND_LUG + "), the lock washer, "
+         "the nut.",
          "",
          "   Then fit the backplane (its build sheet, section 6). Tilt its factory right edge into the right corner "
          "post's slot, lower it and slide it left into the left wall's groove. There are no screws, because the cards "
@@ -1013,7 +1016,17 @@ def assembly_sheet():
          f"{cage.SMA[1] - 4.0 - cage.EVM_Z0 - 1.6:.1f} mm over the EVM's lid-right corner, where SLUUCB5E Figure 4-1 "
          "has only silk (JP9, the nearest part, is about 4 mm off; `cage.py` checks it).",
          "8. Mount the box with hose clamps or straps through the two slots in each mounting flange (the short ends, "
-         "in the floor plane). Put the lid on with its four printed bolts.", "",
+         "in the floor plane). Put the lid on with its four printed bolts.",
+         "",
+         "   The antenna, AE1: " + next(p for p in model.PARTS if p["ref"] == "AE1")["part"] + ". Screw it onto the "
+         "bulkhead jack finger-tight plus a quarter turn, fold it at its hinge so it stands vertical, tip up, then wrap "
+         "the coupling nut, the hinge and the thread in 3M Scotch 23 self-amalgamating tape, with 3M Scotch Super 33+ "
+         "over it (the datasheet gives no UV rating).",
+         "",
+         "   The bond to the pole (required: the pole is metal and earthed). 14 AWG stranded copper, green THWN-2, "
+         "from the lug on the bulkhead to a SatelliteSale SS-GSG9-1 grounding strap on the pole (1/2-2 in pipe; the "
+         "SS-GSG12-1 for a bigger pole), on bare metal with Ideal Noalox under it. Short and straight, no coil. Check "
+         "it at 1 ohm or less from the bulkhead's body to the pole.", "",
          f"## 3. Cards, bottom to top: {order}", "",
          "**Labels (the slot key's colour code).** Each card gets a dot on its front edge. The same colour goes "
          "beside its slot on the base and beside its socket on the backplane: " + ", ".join(f"{b} {model.KEY_COLOUR[b]}" for b in st.BOARDS)
@@ -1036,8 +1049,15 @@ def assembly_sheet():
           f"| solar panel cable (Voltaic P110), cut at its gland ({', '.join(f'{x:g}, {y:g}' for (x, y), n in cage.GLAND_USE.items() if n == 'SOLAR')}) "
           f"| EVM J2 VIN2 (red), J2 GND (black) | {math.ceil((cage.solar_len() + 70.0) / 10.0) * 10:.0f} mm | 22 AWG "
           "stranded red/black pair, twisted, soldered and heat-shrunk to the panel cable's cores just above the gland "
-          "nut; 0.34 mm2 (22 AWG) bootlace ferrules into J2. Route: forward under the EVM, up in front of the left "
+          "nut; into J2 in twin ferrules with D6's leads (below). Route: forward under the EVM, up in front of the left "
           "keeper between its clip and J8, back over the clip along the left wall to J2 |",
+          "",
+          "**The solar TVS D6** sits in J2 itself: " + next(p for p in model.PARTS if p["ref"] == "D6")["part"]
+          + ". Crimp each solar core together with one D6 lead in a Phoenix Contact AI-TWIN 2 x 0.75-8 GY twin ferrule "
+          "(3200807): the red core with the banded (cathode) lead, the black core with the other. The body lies along "
+          "J2's wire side. VIN2 is J2's back position, GND its lid-side one. Its 12.8 V stand-off is above the panel's "
+          "cold 8.7 V and the charger's 12 V input cut-off, so it never conducts in normal use; it clamps a surge on "
+          "the panel lead to about 21 V, under the BQ25798's 30 V limit (README, Lightning and surge).",
           "",
           f"Battery leads are 24 AWG stranded (red +, black -), about {S.val('wire24')[2] * 0.1:.1f} mV drop per 0.1 m "
           f"at 1 A ({S.val('wire24')[2]:g} mohm/m). J5 BATTERY to line 19 is soldered at the backplane and screwed at "

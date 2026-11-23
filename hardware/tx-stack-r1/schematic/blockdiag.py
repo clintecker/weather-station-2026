@@ -69,7 +69,7 @@ def main():
     text(W / 2, 50, "Generated from schematic/model.py. Red: power. Blue: I2C. Green: meter lines. Purple: RF. "
          "Dashed: battery current (soldered leads, backplane lines and doubled B4 header pins).", 12, anchor="middle")
     # ---------------- power tree (left)
-    box(30, 80, 230, 62, P["PV1"]["value"], [P["PV1"]["part"][:36], "gland, off the stack"], "#fdf2e9", PW)
+    box(30, 80, 230, 62, P["PV1"]["value"], [P["PV1"]["part"][:36], "gland; D6 P4KE15A TVS on J2"], "#fdf2e9", PW)
     box(30, 154, 230, 62, P["PS1"]["value"], P["PS1"]["part"].split("; "), "#fdf2e9", PW)
     box(30, 250, 230, 62, P["BT1"]["value"] + " pack", [P["BT1"]["part"], "69 x 54 x 18 mm, beside the stack"], "#fdf2e9", PW)
     box(300, 90, 230, 110, "BQ25798EVM (U1) charger", ["TI SLUUCB5; MPPT from solar", "I2C " + addr("U1") + " on J8, interrupt not wired",
@@ -105,7 +105,7 @@ def main():
     # radio path
     box(1220, 90, 250, 50, "SMA on the mini + AD1", ["edge SMA-K, Amphenol RF 132172 elbow"], "#f5eef8", RF, "B3")
     box(1220, 160, 250, 50, "CX1 " + P["CX1"]["value"], ["Amphenol 135110-01-06.00, RG-316"], "#f5eef8", RF)
-    box(1220, 230, 250, 50, "AE1 " + P["AE1"]["value"], ["TE/Linx, IP67, on the pole, 2 m cable"], "#f5eef8", RF)
+    box(1220, 230, 250, 50, "AE1 " + P["AE1"]["value"], ["Taoglas, IP67 dipole, on the bulkhead, folded up"], "#f5eef8", RF)
     arrow([(1160, 115), (1220, 115)], "LoRa", RF)
     arrow([(1345, 140), (1345, 160)], "", RF)
     arrow([(1345, 210), (1345, 230)], "", RF)

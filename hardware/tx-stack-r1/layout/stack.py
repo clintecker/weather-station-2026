@@ -608,6 +608,7 @@ BP_USED = {(i, n) for i, ns in _used.items() for n in ns} | {tuple(int(v) for v 
 CABLES = [(("BT1", "+"), ("PG1", "M+")), (("BT1", "-"), ("PG1", "M-")),
           (("PS1", "VBUS"), ("U1", "VIN1")), (("PS1", "GND"), ("U1", "PGND1")),
           (("PV1", "+"), ("U1", "VIN2")), (("PV1", "-"), ("U1", "PGND2")),
+          (("D6", "1"), ("U1", "VIN2")), (("D6", "2"), ("U1", "PGND2")),
           (("A1", "ANT"), ("AD1", "P")), (("AD1", "J"), ("CX1", "P")), (("CX1", "J"), ("AE1", "RF")),
           (("U1", "J8.1"), ("XJ1", "GND")), (("U1", "J8.2"), ("XJ1", "SCL")), (("U1", "J8.3"), ("XJ1", "SDA"))]
 for k, (_jack, mod, _ch) in model.PORTS.items():

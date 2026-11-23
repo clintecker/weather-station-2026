@@ -5,6 +5,8 @@ back rails snapped off (81.3 x 41.91 mm `[TBD-MEASURE]`). They're all horizontal
 in a printed PETG base (enclosure 4) under the original Adafruit #905 clear lid and its O-ring. The base hangs on its
 pole by its back, long side vertical. Every shelf slides in toward the back.
 
+Once it's on the pole, [`MAINTENANCE.md`](MAINTENANCE.md) has what to check, how often, and what each alert means.
+
 The base is 120 mm deep outside. It has a 3 mm floor, long walls 4.25 mm thick and short walls 4.0 mm thick. Inside,
 it's 121 x 167.5, and 140 deep from the floor to the closed lid. (The drawings use 123.5 x 169.5, which is the lid
 frame. The 120 is the base's outside depth.)
@@ -257,12 +259,27 @@ Cards B1 and B2 aren't built yet, so these went straight into the design.
   shade on an arm because the lid faces away from the pole. Paint or foil on the lid was the third choice: it would
   stop you seeing in, and paint flakes. The plate's height over the bolt heads (`lid_head_proud`) and the rib grip
   (`shade_rib_fit`) are guesses until Clint measures the printed bolts and prints one.
-- **Antenna AE1: TE/Linx ANT-916-ID-2000-SMA** (DigiKey ANT-916-ID-2000-SMA-ND), in place of the ANT-916-CW-HWR whip.
-  The whip is an indoor part. The ID series is IP67, 915 MHz (the firmware's band, `radio_cfg.h`), comes with a
-  bracket and has a 2 m cable to an SMA plug. It goes at the pole's top and its cable comes down to the bulkhead
-  jack. The 2 m of thin coax costs something like 1-2 dB; the 1 m version (ANT-916-ID-1000-SMA) isn't stocked. The
-  inside pigtail stays CX1, the Amphenol 135110-01-06.00 (RG-316, SMA bulkhead jack to SMA plug on AD1, which sits
-  on the mini's SMA-K).
+- **Antenna AE1: Taoglas TI.96.A113**, screwed straight onto the SMA bulkhead jack in the box's right wall. There's
+  no cable (Clint, 2026-11-23). The ANT-916-ID-2000-SMA from the previous change was wrong: it's a remote-mount
+  antenna on a 2 m cable and a bracket. The TI.96.A113 is a 915 MHz half-wave dipole (900-940 MHz; the firmware runs
+  915.0 MHz, `radio_cfg.h`). It's 203 mm long and 12.7 mm across, with an SMA(M) plug on a hinge, IP67, -40 to +85 C,
+  PC+PBT inside a TPEE jacket. A dipole needs no ground plane, which suits a plastic box. The bulkhead end of CX1
+  (Amphenol 135110-01-06.00, "SMA Straight Bulkhead Jack to SMA Straight Plug") is a standard SMA jack, not RP-SMA,
+  so the SMA(M) plug mates with it. The inside pigtail is still CX1, from the bulkhead to AD1 on the mini's SMA-K.
+  - **Weather.** Taoglas says IP67 and "outdoors or indoors", but its datasheet gives no UV rating. So once it's
+    screwed on and folded, wrap the coupling nut, the hinge and the jack's thread in 3M Scotch 23 self-amalgamating
+    tape, then cover that with 3M Scotch Super 33+ vinyl tape, which takes the sun. Scotch 23 on its own isn't
+    UV-stable. Check the jacket for chalking or cracks once a year (`MAINTENANCE.md`).
+  - **The fallback** is the Abracon AANE-WH-0039-1 (868/915 MHz whip, SMA(M), IP65, UV-resistant ABS, swivels
+    straight, 45 or 90 degrees). It's the only one I found that states a UV rating, but I found no DigiKey or Mouser
+    stock for it.
+  - **Which way it points.** The box hangs long side vertical, and the bulkhead is in the right wall at Zb 60 (about a
+    third of the way up from the bottom wall, not near the top), with its axis horizontal. Screw the antenna on
+    straight, then fold it 90 degrees at the hinge so it stands vertical, tip up. Vertical is the right polarisation
+    for the gateway's antenna. The whip runs up beside the right wall, about 22 mm out from it, and its tip ends about
+    70 mm above the top wall. It's about 100 mm in front of the pole (the box hangs by its back and the bulkhead is at
+    Yb 94). That's about a third of a wavelength, so a metal pole will push the pattern a little away from itself.
+    That's fine for the PoC: watch the RSSI on the gateway.
 - **Vent: Amphenol LTW VENT-PS1YBK-N8002**, an M12 x 1.5 screw-in ePTFE vent (DigiKey
   1754-VENT-PS1YBK-N8002-ND). It goes in the hole the bottom wall already has (Xb 50, Yb 85, `cage.VENT`), so the
   base doesn't change. I haven't opened its own drawing yet: check its panel hole and nut against the 12.46 mm hole
@@ -273,28 +290,43 @@ Cards B1 and B2 aren't built yet, so these went straight into the design.
 
 ## Lightning and surge
 
-What the box can take, and what it can't. It's a plastic box on a pole with no earth of its own, so this is about
-induced surges and static, not about surviving a strike nearby.
+What the box can take, and what it can't. It's a plastic box on a metal, earthed pole, bonded to it at the SMA
+bulkhead. This is about induced surges and static, not about surviving a strike nearby.
 
 - **The RJ11 ports.** Each line has a series resistor (100 ohm on I2C, 1 k on the meters) and clamps behind it: BAT85S
   pairs to the port's 3.3 V and ground on I2C, a P4KE6.8A on each port's 3.3 V and on cups, vane and rain. That
   handles ESD from a hand on a plug (IEC 61000-4-2 class) and the small transients a few metres of cable pick up from
   a nearby switching load or a strike a long way off. It won't save anything from a strike on the pole or the mast
   next to it. The PTC on each port's 3.3 V (MF-R010) limits what a shorted or wet cable can draw.
-- **Solar input.** The Voltaic P110 is a 6 V panel: about 7.2 V open circuit at 25 C and roughly 8.7 V at -30 C
-  (`docs/failure-modes.md`). The firmware sets the BQ25798's VAC over-voltage cut-off to 12 V (`vac_ovp`), so a cold
-  panel never trips it. The BQ25798's VAC and VBUS pins are rated well above that (30 V absolute maximum in TI's
-  datasheet), so nothing the panel does on its own hurts it. A surge on the 2 m panel lead is the remaining risk. The
-  recommended fix is a Littelfuse **P4KE15A** across the EVM's J2 input (stand-off 12.8 V, so it never conducts at
-  8.7 V or at the 12 V cut-off; about 21 V clamping, under the charger's 30 V). It isn't in the model yet (open
-  question below).
-- **The antenna.** No gas-tube arrestor. An arrestor needs a low-impedance earth to dump into, and a plastic box on a
-  pole doesn't have one. It would also add loss and another connector. If the antenna ends up the highest point on
-  a metal mast, revisit this.
-- **Bonding point.** The SMA bulkhead's body is the one place where outside metal meets circuit ground (through the
-  coax shield). If the pole is metal and earthed, put a ring lug under the bulkhead's outside nut and run 14 AWG to
-  the pole's earth clamp, so the antenna cable's shield and the pole sit at the same potential. If the pole is wood
-  or plastic, leave it off: a long wire to nowhere just collects more.
+- **Solar input: D6, a Littelfuse P4KE15A across EVM J2** (Clint, 2026-11-23: no longer optional). The Voltaic P110
+  is a 6 V panel: about 7.2 V open circuit at 25 C and roughly 8.7 V at -30 C (`docs/failure-modes.md`). The
+  firmware sets the BQ25798's VAC over-voltage cut-off to 12 V (`vac_ovp`; 11.6-12.4 V, TI datasheet 7.5), so a cold
+  panel never trips it. The surge risk is the 2 m panel lead. The P4KE15A (400 W, DO-41, sources `solar_tvs`):
+  - its stand-off is 12.8 V, above the panel's 8.7 V and above the cut-off's 12.4 V worst case, so it never
+    conducts in normal use and the charger's own OVP acts first on a slow over-voltage;
+  - it breaks down at 14.3-15.8 V and clamps at about 21.2 V at its rated pulse current (about 19 A), under the
+    BQ25798's 30 V absolute maximum on VAC1, VAC2 and VBUS (datasheet 6.1). That leaves about 9 V of margin.
+  - It mounts in J2 itself: cathode (the banded end) to VIN2, anode to GND. Each lead shares a Phoenix Contact
+    AI-TWIN 2 x 0.75-8 GY twin ferrule (3200807) with the solar lead's core. The body lies along J2's wire side.
+    Session 8 step 12 has the steps.
+- **The antenna.** No gas-tube arrestor. The pole is earthed now, but the antenna screws straight onto the bulkhead,
+  so an arrestor would mean an extra adapter sticking out of the wall, more loss and another connector to seal. The
+  bond below does the main job. If the antenna ends up the highest point on the mast, revisit this.
+- **Bonding to the pole (required: the pole is metal and earthed, Clint 2026-11-23).** The SMA bulkhead's body is
+  the one place where outside metal meets circuit ground (through the coax shield). Bond it to the pole, so the
+  antenna's shield, the circuit ground and the pole sit at the same potential when something nearby lifts the
+  ground:
+  - **Lug:** a Panduit PV14-14R-L ring terminal (16-14 AWG, 1/4 in stud) on the jack's 1/4-36 outside thread. The
+    order out from the wall: the sealing washer, the lug, the lock washer, the nut. It has to be clamped metal to
+    metal under the nut. Check that the antenna's coupling nut still gets 4 mm of thread past that stack. If it
+    doesn't, leave the rubber washer out and seal the hole with a ring of silicone instead.
+  - **Wire:** 14 AWG stranded copper, green THWN-2 (rated for sun), as short and straight as you can, with no sharp
+    bends and no coil. Crimp the lug on, and heat-shrink the crimp.
+  - **Pole clamp:** a SatelliteSale SS-GSG9-1 grounding strap (adjustable, for 1/2-2 in pipe, set-screw stud for
+    10-14 AWG). For a pole over 2 in, use its 12 in version, SS-GSG12-1. It's galvanised steel: I found no
+    adjustable stainless earthing strap sold in hobby channels. Clean the pole to bare metal under it and smear the
+    contact with an antioxidant paste (Ideal Noalox) before you tighten it.
+  - Session 8 step 14 has the steps. `MAINTENANCE.md` has the yearly check.
 
 ## Not yet ordered
 
@@ -321,8 +353,13 @@ These are on hand, so they're not listed:
 | TVS clamp 6.8 V 400 W (D11-D41, D51-D53) | Littelfuse P4KE6.8A | not looked up | 7 | 10 | not checked | - | Screen each at 3.3 V before fitting (Session 3 step 08): under 1 uA. Three spare for the screen. |
 | Pack fuse (F5) | Littelfuse 021701.6HXP, 5 x 20 mm 1.6 A fast | not looked up | 1 | 3 | not checked | - | Two spares in the box's bag. |
 | In-line fuse holder (F5) | Schurter 8601.2000 | 486-3835-ND | 1 | 1 | in stock | - | Wire leads, 6.3 A. Spliced into PG1's red lead next to the pack. |
-| Solar input TVS (optional, not in the model) | Littelfuse P4KE15A | not looked up | 1 | 2 | not checked | - | Across EVM J2 if Clint agrees (Lightning and surge). |
-| Outdoor antenna (AE1) | TE/Linx ANT-916-ID-2000-SMA | ANT-916-ID-2000-SMA-ND | 1 | 1 | about 198 | - | IP67, 915 MHz, bracket and 2 m cable to an SMA plug. Replaces the indoor ANT-916-CW-HWR-SMA. |
+| Solar input TVS (D6) | Littelfuse P4KE15A | not looked up | 1 | 2 | not checked | - | Across EVM J2, cathode to VIN2 (Lightning and surge). |
+| Twin ferrules for D6 in J2 | Phoenix Contact AI-TWIN 2 x 0.75-8 GY (3200807) | not looked up | 2 | 5 | not checked | - | Each holds a D6 lead and a solar core. Crimp with the bootlace tool. |
+| Antenna (AE1) | Taoglas TI.96.A113 | not looked up | 1 | 1 | not checked | - | 915 MHz dipole, IP67, hinged SMA(M), screws straight onto the bulkhead. Fallback: Abracon AANE-WH-0039-1. |
+| Joint tapes for AE1 | 3M Scotch 23 (self-amalgamating) and 3M Scotch Super 33+ (vinyl, over it) | - | 1 roll each | 1 each | not checked | - | Over the coupling nut, the hinge and the thread. |
+| Bonding lug | Panduit PV14-14R-L (16-14 AWG, 1/4 in stud) | not looked up | 1 | 2 | not checked | - | On the bulkhead's outside thread, under its nut. |
+| Bonding wire | 14 AWG stranded copper, green THWN-2 | - | about 1 m | 1 m | - | - | Lug to the pole clamp. Cut to length. |
+| Pole earthing clamp | SatelliteSale SS-GSG9-1 (1/2-2 in pipe), or SS-GSG12-1 for a bigger pole | - | 1 | 1 | not checked | - | Galvanised strap with a set-screw stud. Antioxidant paste (Ideal Noalox) under it. |
 | Series and sense resistor 100 ohm | Stackpole CF14JT100R | CF14JT100RCT-ND | 10 | 15 | 308,663 | 0.16 | The Yageo kit has 5. `INVENTORY.md` also lists 30 Yageo MFR50SFTE52-100R (1/2 W): check whether they fit before you buy these. The cart's CF14JT1M00 (1 Mohm, 50) matches no part here, so check that line. |
 | SMA right-angle adapter (AD1) | Amphenol RF 132172 | ACX1249-ND | 1 | 1 | 10,603 | 20.40 | Pending Clint's measurement of the 135110 plug length. Its arm points toward the lid. |
 | Cable glands PG-7 (round port cables) and PG-9 (flat weather-meter cables, seal out, packed) | Adafruit #762 and #761 (Clint has one of each), or LAPP 53111000 (M12) for the PG-7s | 2181-53111000-ND | 5 PG-7 + 2 PG-9 | 5 PG-7 + 1 PG-9 | LAPP not stocked (2 weeks) | bulk only | Need is from `cage.py` `GLANDS` (enclosure 4). With one of each on hand, this buy leaves one spare PG-7 and no spare PG-9. Add silicone or split grommets for the two flat cables. |
@@ -384,10 +421,11 @@ apart first.
 
 ## Open questions
 
-- **Add the solar TVS?** A P4KE15A across EVM J2 (Lightning and surge). Recommended: yes, as D6 on J2's screws;
-  it's one part and never conducts in normal use. Until Clint says so it stays out of the model.
-- **Is the pole metal, and earthed?** That decides the bonding lug at the SMA bulkhead. Recommended: lug it only if
-  both are true.
+- **The bulkhead's outside thread length.** The sealing washer, the bonding lug, the lock washer and the nut all
+  go on the jack's outside thread, and the antenna's coupling nut needs about 4 mm after them. Measure the real
+  135110 jack before Session 8.
+- **AE1's UV life.** The TI.96.A113's datasheet says IP67 but nothing about UV. The tape covers the joint, not the
+  whip's jacket, so look at it every year.
 - **The lid shade's two guesses:** how far the printed lid bolts' heads stand proud of the lid (`lid_head_proud`, 7
   assumed; the plate clears them by 5) and how hard the crush ribs grip (`shade_rib_fit`, 0.3). Print one and try it.
 
@@ -586,7 +624,9 @@ text:
 | `align_tol` | 0.5 | header pin to socket misalignment the socket's lead-in takes | typical 0.1 in female header lead-in; check one card in the cage | [TBD-MEASURE] |
 | `finger` | 8 | vertical room needed over a plug to press its latch | a fingertip or a small screwdriver | [TBD-MEASURE] |
 | `rg316_bend` | 12.7 | RG-316 minimum static bend radius (the 135110-01 cable) | typical 5 x 2.5 mm OD; not in the Amphenol listing | [TBD-MEASURE] |
-| `ant_len` | 2000 | ANT-916-ID-2000-SMA cable length, antenna to SMA plug (the antenna sits on the pole bracket) | TE/Linx ANT-916-ID-2000-SMA: the -2000 in the part number is the cable length in mm (DigiKey listing ANT-916-ID-2000-SMA-ND) | sourced |
+| `ant_len` | 203 x 12.7 | AE1 antenna, Taoglas TI.96.A113: length (hinge included) x diameter. It screws straight onto the bulkhead jack outside and folds 90 degrees at its hinge to stand vertical, tip up | Taoglas TI.96.A113 datasheet rev B: 203 mm tall, 13 mm (12.7) across, SMA(M) on a hinge, IP67, 900-940 MHz, PC+PBT/TPEE, -40 to +85 C, no ground plane needed (a dipole) | sourced |
+| `solar_tvs` | 12.8 x 14.3 x 15.8 x 21.2 | D6, Littelfuse P4KE15A across EVM J2: stand-off, breakdown min, breakdown max, clamping at its rated pulse current (V) | Littelfuse P4KE series (P4KE15A: VR 12.8 V, VBR 14.3-15.8 V at 1 mA, VC 21.2 V at about 19 A, 400 W 10/1000 us); against the P110's cold Voc (about 8.7 V), the BQ25798's VAC OVP at the 12 V setting (11.6-12.4 V, datasheet 7.5) and its 30 V absolute maximum on VAC1/VAC2/VBUS (6.1) | sourced |
+| `bond_lug` | 6.6 x 14 | the bonding lug on the SMA bulkhead's outside thread: ring hole x wire (AWG). Panduit PV14-14R-L (16-14 AWG, 1/4 in stud) on the jack's 1/4-36 thread, 14 AWG stranded copper (green, THWN-2) to a pole clamp | Panduit PV14-14R ring terminal family (the -14R is the 1/4 in stud); the 1/4-36 SMA bulkhead thread (cage/external-openings-spec.md); the hole is the 1/4 in stud's nominal clearance: measure the lug | [TBD-MEASURE] |
 | `sma_plug_len` | 20 | straight SMA plug and its crimp ferrule on the 135110 cable | typical; measure the cable | [TBD-MEASURE] |
 | `sma_bulkhead` | 94.14 x 60.38 x 6.44 x 14.2 | SMA bulkhead in the right wall: Yb, Zb of its axis, the hole, the inner nut seat | enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4); moved from Yb 86.14, Zb 144.6 in enclosure 3 | sourced |
 | `coax_len` | 110 | 135110-01-06.00 coax: cable between the two plugs | the part number's 6.00 in (152.4) overall less two straight plugs (sma_plug_len); Clint, 2026-11-17: the 6 inch cable fits the bulkhead at Zb 60.38, better than the old high bulkhead (no tight bend to make) | sourced |

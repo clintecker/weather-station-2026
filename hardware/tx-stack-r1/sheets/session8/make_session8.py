@@ -153,7 +153,9 @@ def cover(c, pg):
     parts = ["4 x M3 HEAT-SET INSERTS (BAR 2, CLIP 2)", "2 x M3 SCREWS (BAR), 2 x M3 x 8 SOCKET CAPS (CLIPS)", "HOOK-AND-LOOP STRAP (PACK)",
              "AD1 AMPHENOL 132172 (SMA R/A)", "CX1 135110-01-06.00 COAX", "VOLTAIC P110 6 V 10 W PANEL",
              "22 AWG RED + BLACK, FERRULES", "HEAT SHRINK (THE SOLAR SPLICE)", "4 PRINTED LID BOLTS", "2 HOSE CLAMPS OR STRAPS", "SILICONE OR SPLIT GROMMETS",
-             "4 x 20 DOWEL PIN, ISO 8734 A1 (S4 BLANK)", "AE1 ANT-916-ID-2000-SMA + ITS BRACKET", "WHITE PETG LID SHADE (cage.py --shade)"]
+             "4 x 20 DOWEL PIN, ISO 8734 A1 (S4 BLANK)", "D6 P4KE15A + 2 x AI-TWIN 2 x 0.75-8 FERRULES",
+             "AE1 TAOGLAS TI.96.A113 + SCOTCH 23 AND 33+ TAPE", "PV14-14R-L LUG, 14 AWG GREEN, SS-GSG9-1 STRAP",
+             "WHITE PETG LID SHADE (cage.py --shade)"]
     for i, s in enumerate(parts):
         text(c, x + 14, y + h - 16 - i * (h - 12) / len(parts), "-  " + s, 9.6, "ALT", INK)
     x, y, w, h = panel(c, g.cell(1, 1), None, "THE STEPS. IN THIS ORDER.")
@@ -281,7 +283,9 @@ def glands(c, pg):
         "(steps 10-12).",
         f"S4 SPARE has no cable yet: its PG-7 takes {cage.GLAND_BLANK['S4 SPARE']}.",
         "The M12 vent in its hole in the bottom wall.",
-        "The SMA bulkhead low in the right wall (Yb 94.14, Zb 60.38), nut inside."], 9)
+        "The SMA bulkhead low in the right wall (Yb 94.14, Zb 60.38), from inside. On its outside thread: the "
+        "sealing washer, the PV14-14R-L lug (1 m of 14 AWG green crimped on, coiled and taped to the box until "
+        "step 14), the lock washer, the nut."], 9)
     yy = para(c, x + 44, yy - 4, w - 56, "PG-7 bore 7.9 mm, PG-9 10.5 mm: no 6P plug passes either one, even with the "
               "seal out. Every cable goes in bare and gets its plug inside.", 9)
     in_model(c, x + 14, yy - 10, "Which gland takes which cable is cage.GLAND_USE: the cables in use get the "
@@ -502,12 +506,13 @@ def solar(c, pg):
     g = Grid(1, 2, heights=[1.0, 1.0])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["EVM top face, lid edge down. J2 is on the left edge, below J1."])
     a = Art(c, "solar_j2", x + 30, y + 10, w * 0.5, h - 46, align="l")
-    col_labels(c, a, [("J2", "J2: VIN2 (SOLAR +) AND GND"), ("sol0", "RED: PANEL +"), ("sol1", "BLACK: PANEL -")],
-               a.x + a.w + 20, size=9, gap=18)
-    yy = in_model(c, a.x + a.w + 20, y + 56, "VIN2 is J2's back position, GND its lid-side one (SLUUCB5E "
+    col_labels(c, a, [("J2", "J2: VIN2 (SOLAR +) AND GND"), ("sol0", "RED: PANEL +"), ("sol1", "BLACK: PANEL -"),
+                      ("d6", "D6 P4KE15A TVS"), ("d6band", "BAND (CATHODE): VIN2")],
+               a.x + a.w + 20, size=9, gap=15)
+    yy = in_model(c, a.x + a.w + 20, y + 50, "VIN2 is J2's back position, GND its lid-side one (SLUUCB5E "
                   "Figure 4-1).", w=w - a.w - 70)
     in_model(c, a.x + a.w + 20, yy - 4, f"22 AWG red/black, {-(-(cage.solar_len() + 70) // 10) * 10:.0f} mm, "
-             "0.34 mm2 bootlace ferrules. The panel gives 1.67 A at full sun.", w=w - a.w - 70)
+             "each core in a twin ferrule with one D6 lead. D6 never conducts below 12.8 V.", w=w - a.w - 70)
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Panel face down or covered while you wire. Meter BEFORE the ends go into J2."])
     yy = steps_list(c, x + 44, y + h - 18, w / 2 - 50, [
         "Cut the P110's barrel plug off, outside the box.",
@@ -515,16 +520,19 @@ def solar(c, pg):
         "stands above the nut.",
         "Splice the 22 AWG red and black pair to its cores there (solder, heat shrink), red on the panel's +.",
         "Run the pair forward under the EVM, up between the left clip and J8, back over the clip to J2.",
-        "Strip 6 mm, crimp a ferrule on each end."], 9)
+        "Strip 6 mm. Check the polarity (the box) BEFORE D6 goes on.",
+        "D6, P4KE15A: the red core and D6's banded (cathode) lead in one AI-TWIN 2 x 0.75-8 twin ferrule, the black "
+        "core and its other lead in another. Crimp, tug each.",
+        "Red and the band into VIN2 (J2's back position), black into GND. D6 lies along J2's wire side."], 9)
     yy = note_box(c, x + w / 2 + 6, y + h - 14, w / 2 - 18, "POLARITY, BEFORE J2", [
-        "Meter on DC volts. Ends apart, not in J2.",
+        "Meter on DC volts. Bare ends, no D6 yet.",
         "Turn the panel to the light.",
         "Red probe on the red end, black on black:",
         "it reads positive, about 6-7 V in sun.",
         "Negative? The colours are swapped. Fix",
         "them before anything goes into J2.",
-        "Panel face down again, then screw the ends",
-        "into J2 and tighten the gland's cap."], colour=INK, fill="#FFF6D6")
+        "Panel face down again, then D6 and the",
+        "ferrules, J2, and tighten the gland's cap."], colour=INK, fill="#FFF6D6")
 
 
 # ------------------------------------------------------------------ 13 coax
@@ -568,19 +576,21 @@ def close(c, pg):
     a = Art(c, "mount", x + 8, y + 34, w - 40, h - 90, align="l")
     label(c, x + w - 10, y + h - 26, "FLANGE, 2 SLOTS", *a.A("flange_top"), 8.6, anchor="r")
     label(c, x + w - 10, y + 22, "FLANGE, 2 SLOTS", *a.A("flange_bot"), 8.6, anchor="r")
+    label(c, x + 44, y + h - 26, "AE1, FOLDED UP", *a.A("whip"), 8.6, anchor="l")
+    label(c, x + 14, y + 22, "BOND: LUG, 14 AWG", *a.A("lug"), 8.6, anchor="l")
     x, y, w, h = panel(c, g.cell(1, 1), 3, ["After Session 9, on the pole. Glands down, always."])
     yy = steps_list(c, x + 44, y + h - 18, w - 56, [
         "The lid on, with its four printed bolts, snug by hand.",
         "The white lid shade pressed on over the lid: its ribs grip the lid's sides. Keep the gap at its edge and "
         "its 14 windows clear, so air moves under it. It pulls off by hand before the bolts come out.",
         "Hose clamps or straps through the two slots in each flange, the box's back flat on the pole.",
-        "The antenna AE1 on its bracket at the pole's top, pointing straight up, at least 30 cm above the box and "
-        "clear of the panel's metal frame.",
-        "Its 2 m cable down the pole to the SMA bulkhead on the right wall, with a drip loop below the bulkhead "
-        "before it goes on. Finger-tight, then no more than an eighth of a turn with a wrench.",
+        "AE1, Taoglas TI.96.A113, straight onto the SMA bulkhead on the right wall, no cable: finger-tight plus a "
+        "quarter turn. Fold it at its hinge so it stands vertical, tip up, clear of the panel's metal frame.",
+        "Wrap the coupling nut, the hinge and the thread: 3M Scotch 23 stretched and half-lapped, then Scotch Super "
+        "33+ over it.",
+        "Bond (required, the pole is earthed): 14 AWG green from the PV14-14R-L lug on the bulkhead to an SS-GSG9-1 "
+        "strap on the pole, on bare metal with Noalox. Short and straight. 1 ohm or less, bulkhead to pole.",
         "Drip loops below each gland, then tie the cables to the pole every 30 cm.",
-        "A metal pole that is earthed: a ring lug under the bulkhead's outside nut, 14 AWG to the pole's earth "
-        "clamp. A wooden or plastic pole: leave it off (README, lightning and surge).",
         "J6 USB stays inside: to use it, the lid comes off."], 9)
 
 

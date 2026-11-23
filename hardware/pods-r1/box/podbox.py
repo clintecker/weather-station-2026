@@ -49,8 +49,8 @@ CHOICES (the brief left these to the builder; record of them):
                    outside to the BMP581 (checked by tests/test_pods_box.py with real segments).
   UV window        sources uv_window (material, disc d, t): a recess d + 0.3 across and t deep in the lid's top face,
                    so the disc sits flush (no pond on it), bedded in silicone, over an aperture d - 3.0 across; centred
-                   over the LTR390's chip (sources ltr390_sensor). The disc is Edmund #22-694 fused silica, so the
-                   recess is 1.0 deep (it was 1.5 for the PTFE disc).
+                   over the LTR390's chip (sources ltr390_sensor). The disc is a generic JGS1 fused quartz 20 x 1
+                   (Edmund #22-694 the fallback), so the recess is 1.0 deep (it was 1.5 for the PTFE disc).
   UV breather      (2026-11-23) the crown breathes, so its window doesn't fog: a sources uv_breather hole, level through
                    the drum wall at CROWN_BREATHER_A (across from the gland), half way up the drum, under a flat seat
                    (sources eptfe_seat) cut into the bore, where the same adhesive ePTFE vent as BARO's sticks on. TH stays

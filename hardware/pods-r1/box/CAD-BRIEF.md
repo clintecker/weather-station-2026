@@ -28,7 +28,7 @@ A cable comes in through a PG-7 cable gland. You crimp the plug onto it inside t
 
 - **TH: completely sealed.** It gets an opaque lid, with no window and no vent. The two glands are the only openings. The O-ring lid seals the rest.
 - **BARO: sealed against water, but it must keep its vent.** An airtight box stops tracking outside pressure, because trapped air changes pressure with temperature. That's about 3.5 hPa per °C, far more than the BMP581's ±0.5 hPa. So keep the Ø4 vent and the baffle. A Gore VE70510 adhesive ePTFE vent (Ø10.2 × 0.34, 5.5 effective) goes on the vent's inside seat. It lets air through and keeps water out. It's required, not optional. The lid is opaque.
-- **UV: the only box with a window.** The window is a Ø20 × 1 uncoated fused silica disc (Edmund Optics #22-694), set flush in the flat at the top of the dome and bedded in DOWSIL 3145 (neutral-cure silicone). It passes about 93 % of the LTR390's 280–430 nm band and doesn't age in sun. The rest of the lid is opaque. The lid seals on an O-ring round the body's spigot, not on a lid groove.
+- **UV: the only box with a window.** The window is a Ø20 × 1 uncoated JGS1 fused quartz disc (a generic listing; Edmund Optics #22-694 is the fallback), set flush in the flat at the top of the dome and bedded in DOWSIL 3145 (neutral-cure silicone). It passes about 93 % of the LTR390's 280–430 nm band and doesn't age in sun. The rest of the lid is opaque. The lid seals on an O-ring round the body's spigot, not on a lid groove.
 - **UV breathes (2026-11-23).** A Ø2 hole goes level through the drum wall, across from the gland, with the same Gore VE70510 vent stuck over it on a flat seat inside. The crown is the biggest box and has a dark dome over a window. Without a breather it pumps damp air in through the O-ring and the window bed as it heats and cools, and the window fogs from inside.
 - **Desiccant:** you don't need any. A small pocket for a 1 g silica pack is welcome in TH and UV, if it fits outside the cavity minimums below.
 
@@ -151,7 +151,7 @@ The UV pod isn't a box: it's a round crown, a drum with a dome lid that twists o
 | M3 heat-set insert | 5.7 long × 4.6 knurl, so bore Ø4.0 × 6.7 | calipers on the inserts on hand |
 | O-ring cord | Ø1.5 | the cord on hand |
 | Board screw pilot | Ø2.5 in PETG | a test print |
-| Window disc | Ø20 × 1.0 fused silica, Edmund #22-694 | the disc as bought |
+| Window disc | Ø20 × 1.0 JGS1 fused quartz (generic; Edmund #22-694 fallback). Generic discs vary more: the recess follows the measured disc | the disc as bought, calipers |
 | ePTFE vent | Gore VE70510, Ø10.2 × 0.34 | the vent as bought |
 | PG-7 nut | 16.6 across corners | the glands on hand |
 

@@ -104,11 +104,13 @@ nearest the right. In the lid-centre frame the columns are at Y +35.75, +11.75, 
     check gives 2.05). The corner blocks and the lip aren't near it any more.
 - **Seal (suggested):** put an O-ring or a flat rubber washer under the outside flange, or a ring of silicone when you
   fit it. No build step calls for a seal yet, so this is a suggestion, not a tested method.
-- **The antenna:** the 916 MHz tilting whip (Linx ANT-916-CW-HWR-SMA) screws on outside. It tilts to point **up**,
-  because the box hangs with this wall at its side.
-  - We suggest you keep the outside of the right wall clear in a **Ø40 × 20** zone round the hole axis, for the hinge
-    and the swing. That's an estimate. The model has no outside keep-out, and nobody has looked up or measured the
-    antenna's length yet.
+- **The antenna:** AE1, a Taoglas TI.96.A113 (915 MHz dipole, IP67, 203 x 12.7, hinged SMA(M)), screws straight
+  onto the jack outside. Its hinge folds it 90 degrees so it stands **vertical, tip up**, because the box hangs with
+  this wall at its side. The whip's axis then sits about 22 mm out from the right wall's outside face and its tip
+  about 70 mm above the box's top. No cable.
+  - Keep the outside of the right wall clear in a **Ø40 × 20** zone round the hole axis, for the coupling nut, the
+    hinge and the fold. The bonding lug (README, Lightning and surge) sits on the jack's thread under its nut, inside
+    that zone.
 - **Inside:** the coax runs from the radio's SMA on B3 (Zb about 140, through the right-angle adapter AD1) to this
   jack. It bends right in front of the cards and runs down the right column (Xb 88-121) to Zb 60.
   - **Cable length:** the run from AD1 to the low bulkhead is about 110 mm on the shortest path (model). Clint

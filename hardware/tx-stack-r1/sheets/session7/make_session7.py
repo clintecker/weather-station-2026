@@ -164,7 +164,7 @@ def supplied(c, pg):
     g = Grid(2, 1, heights=[1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["TOP FACE. Drawn: the board, the blocks, J7 and",
                                              "the jumpers this session touches, as shipped.",
-                                             "J1, J2: inputs (J2 = solar, Session 8). J3: SYS.",
+                                             "J1, J2: inputs (J2 = solar + D6, Session 8). J3: SYS.",
                                              "J5: the battery. J6: USB. J7: RT1. J8: I2C."])
     a = Art(c, "evm_top", x + 10, y + 70, w - 20, h - 120)
     for k, nm in enumerate(("JP22", "JP24", "JP18", "JP9")):
@@ -465,7 +465,7 @@ def report(c, pg):
         text(c, x + 44, yy - 12, exp, 8.5, "MONO", GREY)
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Next: Session 8, into the box."])
     for i, s_ in enumerate(["The pack on its tray (RT1 taped to it), the EVM on its shelf, the backplane, the cards.",
-                            "The glands, the cables and their plugs, the solar lead into J2, the coax.",
+                            "The glands, the cables and their plugs, the solar lead and its TVS D6 (P4KE15A) into J2, the coax.",
                             "Then Session 9 flashes the TX with the full line (step 03): make ROLE=tx BOARD=wio-e5",
                             "   WS_POWER_PROFILE=3 WS_I2C_MUX=1 flash SERIAL=<the probe's serial>. Nothing to flash today.",
                             "The pack and JP17 go on only once CHARGER reads as on Session 9 step 07."]):

@@ -155,7 +155,7 @@ def cover(c, pg):
              (f"O-RING CORD {CORD:g} MM NBR 70 (NOT 1.78)\n{cord_m:.1f} M + SPARE (3 BOXES)", "q_p_cord"),
              (f"{M8} PAN HEAD (14x)\n8 LID (TH + BARO) + 6 BOARD", "q_p_m3x8"),
              (f"{M10} PAN HEAD (12x)\n4 PER BOX, INTO THE SHIELD", "q_p_m3x10"),
-             (f"UV WINDOW: SILICA DISC {WIN_D:g} x {WIN_T:g}\n+ 2 GORE VE70510 VENTS (BARO, UV)", "q_p_window"),
+             (f"UV WINDOW: JGS1 QUARTZ DISC {WIN_D:g} x {WIN_T:g}\n+ 2 GORE VE70510 VENTS (BARO, UV)", "q_p_window"),
              ("UV-RESISTANT CABLE TIES\n2 FOR THE SHT45 + CABLE TIES", "q_p_tie"),
              (f"{M25} PAN HEAD (2x)\nTHE LTR390 INTO THE UV LID", "q_p_m25"),
              ("REMIXED TOP CAP (WHITE)\nSKIRT + 4 SCREW BOSSES", "q_p_cap"),
@@ -398,7 +398,7 @@ def gland_page(name, step):
 
 
 def window_page(c, pg):
-    page(c, "09", "UV LID: THE WINDOW", f"SILICA DISC {WIN_D:g} x {WIN_T:g} INTO THE RECESS IN THE DOME'S FLAT TOP, "
+    page(c, "09", "UV LID: THE WINDOW", f"JGS1 QUARTZ DISC {WIN_D:g} x {WIN_T:g} INTO THE RECESS IN THE DOME'S FLAT TOP, "
          "FLUSH, BEDDED IN SILICONE.", pg, SLOGANS_Q[3])
     guidance_note(c)
     g = Grid(2, 1)
@@ -408,11 +408,11 @@ def window_page(c, pg):
         "silicone round the recess's ledge (not on the aperture). 3  Press", "the disc in until FLUSH with the lid; "
         "wipe the squeeze-out off the", "top. 4  Lid flat, 24 h (guidance) to cure, then step 16.", width=48))
     a = Art(c, "q_win_iso", x + 6, y + 30, w - 12, h - 70)
-    L(c, a, [("SILICA DISC", "disc", "up"), ("RECESS + LEDGE", "recess", "up"), ("APERTURE", "aperture", "up")])
+    L(c, a, [("QUARTZ DISC", "disc", "up"), ("RECESS + LEDGE", "recess", "up"), ("APERTURE", "aperture", "up")])
     x, y, w, h = panel(c, g.cell(1, 0), 2, cap(
         "Done, from above. The disc sits flush: no lip for water to pond on. It is at the very top of the dome, right",
         "over the LTR390 once that is on its bosses (step 13). Hold the disc by its edge.",
-        "Disc: Edmund #22-694 fused silica, 20 x 1 (TBD: measure yours).", width=48),
+        "Disc: JGS1 fused quartz, 20 x 1, generic (Edmund #22-694 fallback). Measure yours.", width=48),
         warn=True)
     a = Art(c, "q_win_top", x + 30, y + 30, w - 60, h - 70)
     L(c, a, [("WINDOW, FLUSH", "disc", "up"), ("UV LID", "lid", "dn")])
