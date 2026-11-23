@@ -48,7 +48,9 @@ void oled_view_build(scr_view_t *v)
   v->bw_khz_div125 = (uint8_t)(1U << WS_LORA_BANDWIDTH);
   v->freq_khz = (uint32_t)(WS_RF_FREQUENCY_HZ / 1000UL);
   static const char fw[] = WS_FW_VERSION;   /* the view starts zeroed: the copy stays terminated */
-  for (unsigned i = 0; i + 1U < sizeof v->fw && i + 1U < sizeof fw; i++) v->fw[i] = fw[i];   /* bound: 12 characters */
+  /* the shorter of the version and the view's 12 characters; the view's last byte stays 0 */
+  const unsigned n = (unsigned)(sizeof fw < sizeof v->fw ? sizeof fw : sizeof v->fw) - 1U;
+  for (unsigned i = 0; i < n; i++) v->fw[i] = fw[i];   /* bound: 12 characters */
 }
 
 static void fill_node(scr_view_t *v)
