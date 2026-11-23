@@ -46,6 +46,7 @@
 #include "i2c_bus.h"
 #include "node_store.h"
 #include "oled_hooks.h"
+#include "power_config.h"
 #include "radio.h"
 #include "radio_cfg.h"
 #include "i2c_sim.h"
@@ -160,7 +161,7 @@ void console_init(void) {}
 /* ---- the local modules' devices: the phase A parts on the hub; no vane, cups or rain gauge ---- */
 #define INA228_BATTERY_ADDR 0x40U   /* the battery INA228 (App/power_config.h, phase A) */
 #define MAX17048_ADDR 0x36U
-static int sht45 = -1, ina228 = -1, gauge = -1, charger_pins;
+static int sht45 = -1, ina228 = -1, gauge = -1, charger = -1, charger_pins;
 /* The raw SHT45 words that read as 21.50 C and 45.00 %RH, found through the driver's own conversion. */
 static uint16_t raw_for(int want, int is_rh)
 {
@@ -173,6 +174,12 @@ static uint16_t raw_for(int want, int is_rh)
   }
   return 0;
 }
+/* The BQ25798 of a profile 3 build (the TX stack); none otherwise. Returns 0 if the bus model refused it. */
+static int charger_device(void)
+{
+  if (POWER_HAS_BQ25798 && charger < 0) charger = i2c_sim_add(DEVK_BQ25798, POWER_ADDR_CHARGER);
+  return !POWER_HAS_BQ25798 || charger >= 0;
+}
 static void sensor_device(void)
 {
   if (sht45 < 0) sht45 = i2c_sim_add(DEVK_SHT45, WS_SHT45_ADDR);
@@ -180,7 +187,8 @@ static void sensor_device(void)
   model_sht45_set(sht45, raw_for(2150, 0), raw_for(4500, 1), 0);
   if (ina228 < 0) ina228 = i2c_sim_add(DEVK_INA228, INA228_BATTERY_ADDR);
   if (gauge < 0) gauge = i2c_sim_add(DEVK_MAX17048, MAX17048_ADDR);
-  if (sht45 < 0 || ina228 < 0 || gauge < 0) { fprintf(stderr, "tx_harness: the bus model refused a part\n"); abort(); }
+  if (sht45 < 0 || ina228 < 0 || gauge < 0 || !charger_device())
+  { fprintf(stderr, "tx_harness: the bus model refused a part\n"); abort(); }
 }
 void board_inputs_init(void) {}
 int board_charger_pins(void) { return charger_pins; }
@@ -243,6 +251,13 @@ void h_link_low(int link, unsigned n) { meter[link].lows = n; meter[link].edge =
 void h_edge(int link) { meter[link].edge = 1; }
 void h_vane_mv(int mv) { vane_mv = mv; }
 void h_gauge_present(int on) { if (on) i2c_sim_restore(gauge); else i2c_sim_remove(gauge); }   /* unplugged: NACK */
+void h_gauge_cell(int32_t uv) { model_max17048_cell(uv); }
+/* The BQ25798 of a profile 3 build (-DWS_POWER_PROFILE=3; none otherwise: these then do nothing). */
+void h_bq_set(int32_t vbus, int32_t ibus, int32_t vbat, int32_t ibat, int32_t vsys)
+{ if (charger >= 0) model_bq25798_set(charger, vbus, ibus, vbat, ibat, vsys); }
+void h_bq_status(int ac1, int ac2, unsigned chg_stat, int f0, int f1)
+{ if (charger >= 0) model_bq25798_status(charger, ac1, ac2, chg_stat, (uint8_t)f0, (uint8_t)f1); }
+void h_bq_adc_stall(int on) { if (charger >= 0) model_bq25798_adc_stall(charger, on); }
 /* Preset the saturating TX-timeout total (tx_exchange.h), so a test reaches 0xFFFF without 65,535
    timed-out frames. tx_counts is a writable static that exchange_counts() hands out read-only. */
 void h_tx_timeouts_preset(uint16_t n) { ((tx_counts_t *)(uintptr_t)exchange_counts())->tx_timeouts = n; }

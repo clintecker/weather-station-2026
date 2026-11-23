@@ -1254,6 +1254,230 @@ class TxStateMachine(unittest.TestCase):
             self.assertGreaterEqual(n.log.count(what), least, what)   # the run did reach these paths
 
 
+# The energy states (docs/radio-energy-policy.md sections 3 and 5, D1), from the document: SOC enters
+# CONSERVE below 30 % and CRITICAL below 8 %, leaves at 35 % and 13 %; the cell voltage enters at 3.60 V
+# and 3.45 V. CONSERVE sends the live reading every 5 minutes, CRITICAL only a beacon once an hour (at
+# once on entering it, and once more the next minute when a beacon gets no answer), and every change makes
+# a health report due at the next exchange. The charger's VBAT stands in for the gauge's VCELL when the
+# gauge is gone, if it is no older than 30 s. SURPLUS: the charger in top-off or terminated with power
+# good and no fault, the battery not discharging (-0.5 mA or more), 4.00 V, 95 % in; held to 90 % while
+# the charger shows power good with no fault.
+CONSERVE_EVERY = 5
+BEACON_EVERY = 60
+CHG_STAT_CC, CHG_STAT_TOPOFF = 3, 6        # BQ25798 REG1C CHG_STAT (SLUSDV2C table 7-37)
+SOC = {'normal': 50, 'conserve': 25, 'critical': 5, 'critical_out': 15, 'surplus': 96, 'surplus_hold': 91, 'below_hold': 89}
+
+
+def soc_256(pct):
+    return pct * 256
+
+
+@needs_cc
+@needs_vendor
+class TxEnergyStates(unittest.TestCase):
+    """The energy-state wiring of App/tx_policy.c on the TX stack build (WS_POWER_PROFILE=3, the BQ25798
+    beside the gauge and the battery INA228, in the mux profile it ships with): what goes on air, and
+    when, as the state moves. Each obs frame and health report is opened as the gateway opens it."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not MBEDTLS.exists():
+            raise AssertionError(f'WS_REQUIRE_VENDOR=1 but {MBEDTLS} is missing; run tools/fetch-vendor.sh')
+        fw = ROOT/'firmware'
+        mbed = [MBEDTLS/'library'/f'{n}.c' for n in ('aes', 'ccm', 'block_cipher', 'platform_util', 'constant_time')]
+        san = [f.replace('address,', '') for f in SAN]
+        lib = host_library(cls, 'txenergy', *san, '-I', fw/'host/include', '-I', fw/'host', '-I', fw/'stage0-node/App',
+                           '-I', fw/'stage0-node/Core/Inc', '-I', fw, '-I', fw/'common', '-I', MBEDTLS/'include',
+                           '-DMBEDTLS_CONFIG_FILE="ws_mbedtls_config.h"', '-DWS_FW_VERSION="host"', '-DWS_FW_BUILD_ID=0UL',
+                           '-DWS_I2C_MUX=1', '-DWS_POWER_PROFILE=3', '-DWS_BENCH_OLED=0', *[fw/s for s in SOURCES], *mbed)
+        cls.library = lib._name
+
+    def node(self, soc=SOC['normal'], before_boot=None):
+        def board(lib):
+            lib.h_gauge_soc_256(soc_256(soc))
+            lib.h_gauge_cell(3_900_000)
+            lib.h_ina228_set.argtypes = [ctypes.c_int32, ctypes.c_int32]
+            lib.h_ina228_set(4_000_000, 0)                         # the pack neither charging nor discharging
+            if before_boot:
+                before_boot(lib)
+        n = Node(self.library, type(self), before_boot=board)
+        n.lib.h_bq_set.argtypes = [ctypes.c_int32] * 5
+        n.lib.h_bq_status.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_int, ctypes.c_int]
+        n.lib.h_gauge_cell.argtypes = [ctypes.c_int32]
+        n.frames = []                                              # (minute, 'obs' or 'diag', energy, answered)
+        self.addCleanup(lambda: self.assertEqual(n.lib.ws_check_count(), 0, 'a WS_CHECK failed'))
+        self.addCleanup(lambda: self.assertEqual(n.lib.h_flash_ops_during_radio(), 0))
+        return n
+
+    @staticmethod
+    def minute_of(t):
+        return (t - minute(0) + 30_000) // MINUTE_MS
+
+    def run_to(self, n, k, answer=True):
+        """Run as the gateway to 20 s before minute k (after minute k - 1's exchange, and before the gauge
+        poll that minute k reads), recording every frame: its minute, kind and energy state. answer(minute)
+        (or a bool) says whether an observation gets its ACK."""
+        seen, pending = n.sent(), None
+        end = minute(k) - 20_000
+        while n.now() < end:
+            n.advance(min(200 if n.radio() == R_SLEEP else 10, end - n.now()))
+            if n.sent() > seen + 1:
+                raise AssertionError('two frames inside one step: the recorder missed one')
+            if n.sent() != seen:
+                seen = n.sent()
+                frame, k_now = n.frame(), self.minute_of(n.now())
+                if frame_kind(frame) == KIND_OBS:
+                    pending = (k_now, decode(unseal(KEY, STATION, KIND_OBS, frame))[0]['energy_state'])
+                else:
+                    n.frames.append((k_now, 'diag', ENERGY[n.health_report()['energy']], None))
+            if pending and n.radio() == R_RX:
+                ack = answer(pending[0]) if callable(answer) else answer
+                n.frames.append((pending[0], 'obs', pending[1], ack))
+                if ack:
+                    n.reply()
+                pending = None
+
+    def obs(self, n, start=0, stop=10**9):
+        return [(k, e) for k, kind, e, _ in n.frames if kind == 'obs' and start <= k < stop]
+
+    def live(self, n, start=0, stop=10**9):
+        """The first observation of each minute's exchange: the live reading (backlog frames follow it)."""
+        first = {}
+        for k, e in self.obs(n, start, stop):
+            first.setdefault(k, e)
+        return sorted(first.items())
+
+    def diags(self, n, start=0, stop=10**9):
+        return [(k, e) for k, kind, e, _ in n.frames if kind == 'diag' and start <= k < stop]
+
+    def set_soc(self, n, pct):
+        n.lib.h_gauge_soc_256(soc_256(pct))
+
+    def test_normal_conserve_critical_and_back(self):
+        n = self.node()
+        self.run_to(n, 3)
+        # The first minute after boot sends (the node boots in CONSERVE and moves at its first reading).
+        self.assertIn('#energy conserve -> normal soc_x10=500 v_mv=3900 full=0 src=gauge', n.out())
+        self.assertEqual(self.obs(n), [(0, 'normal'), (1, 'normal'), (2, 'normal')])
+        self.assertEqual(self.diags(n), [(0, 'normal')])            # the boot's health report
+
+        self.set_soc(n, SOC['conserve'])                            # minute 3: CONSERVE
+        self.run_to(n, 13)
+        # The live reading every 5 minutes from the last send; the change's health report rides on the first.
+        self.assertEqual(self.obs(n, 3), [(2 + CONSERVE_EVERY, 'conserve'), (2 + 2 * CONSERVE_EVERY, 'conserve')])
+        self.assertEqual(self.diags(n, 3), [(2 + CONSERVE_EVERY, 'conserve')])
+
+        self.set_soc(n, SOC['critical'])                            # minute 13: CRITICAL
+        self.run_to(n, 16)
+        # Entering CRITICAL: the reading that says so goes at once, with the health report the change made
+        # due (the gateway's last reading, CONSERVE's, would otherwise go stale for an hour).
+        self.assertEqual(self.obs(n, 13), [(13, 'critical')])
+        self.assertEqual(self.diags(n, 13), [(13, 'critical')])
+        # Then only the hourly beacon. One that gets no answer goes again the next minute (once); after
+        # that, nothing until an hour after the retry.
+        beacon = 13 + BEACON_EVERY
+        self.run_to(n, beacon + 1 + BEACON_EVERY + 2, answer=lambda k: k > beacon + 1)
+        self.assertEqual(self.obs(n, 14), [(beacon, 'critical'), (beacon + 1, 'critical'),
+                                           (beacon + 1 + BEACON_EVERY, 'critical')])
+        self.assertEqual([a for k, kind, _, a in n.frames if kind == 'obs' and k >= beacon], [False, False, True])
+        last = beacon + 1 + BEACON_EVERY
+
+        self.set_soc(n, SOC['critical_out'])                        # 15 %: out of CRITICAL (13 %), into CONSERVE
+        self.run_to(n, last + CONSERVE_EVERY + 2)
+        self.assertEqual(self.obs(n, last + 1), [(last + CONSERVE_EVERY, 'conserve')])   # 5 minutes after the beacon
+        self.assertEqual(self.diags(n, last + 1), [(last + CONSERVE_EVERY, 'conserve')])
+        self.set_soc(n, SOC['normal'])
+        at = last + CONSERVE_EVERY + 2
+        self.run_to(n, at + 3)
+        self.assertEqual(self.live(n, at), [(at, 'normal'), (at + 1, 'normal'), (at + 2, 'normal')])   # every minute
+        self.assertGreater(len(self.obs(n, at)), 3)                 # and the journaled readings drain behind them
+        self.assertEqual(self.diags(n, at, at + 1), [(at, 'normal')])
+        out = n.log + n.out()
+        for change in ('normal -> conserve', 'conserve -> critical', 'critical -> conserve', 'conserve -> normal'):
+            self.assertIn(f'#energy {change} ', out)
+
+    def test_a_boot_in_critical_sends_its_first_minute_then_waits_an_hour(self):
+        n = self.node(soc=SOC['critical'])
+        self.run_to(n, BEACON_EVERY + 2)
+        self.assertIn('#energy conserve -> critical ', n.out())
+        self.assertEqual(self.obs(n), [(0, 'critical'), (BEACON_EVERY, 'critical')])
+        self.assertEqual(self.diags(n, 0, 1), [(0, 'critical')])
+
+    def test_the_charger_vbat_stands_in_for_the_gauge(self):
+        """No gauge: the charger's VBAT (REG3B) takes the node to CRITICAL and back out (to CONSERVE: no SOC)."""
+        n = self.node(before_boot=lambda lib: lib.h_gauge_present(0))
+        n.lib.h_bq_set(5000, 0, 3800, 0, 3800)
+        self.run_to(n, 3)
+        self.assertNotIn('#energy', n.out())                        # no SOC: CONSERVE, as it booted
+        self.assertEqual({e for _, e in self.obs(n)}, {'conserve'})
+        n.lib.h_bq_set(5000, 0, 3400, 0, 3800)
+        self.run_to(n, 5)
+        self.assertIn('#energy conserve -> critical soc_x10=-1 v_mv=3400 full=0 src=charger-vbat', n.out())
+        n.lib.h_bq_set(5000, 0, 3600, 0, 3800)                      # 3.60 V: out of CRITICAL (3.55 V)
+        self.run_to(n, 7)
+        self.assertIn('#energy critical -> conserve soc_x10=-1 v_mv=3600 full=0 src=charger-vbat', n.out())
+
+    def test_a_charger_vbat_older_than_30_s_is_not_used(self):
+        """The gauge goes 35 s before minute 3. The charger's last conversion (it reads 3.40 V) is from 10
+        to 15 s before the minute (used: CRITICAL), or 50 to 55 s before (too old: CONSERVE, no voltage)."""
+        for stall_s, want in ((10, 'critical'), (50, 'conserve')):
+            with self.subTest(stalled_for_s=stall_s):
+                n = self.node()
+                n.lib.h_bq_set(5000, 0, 3400, 0, 3800)              # the gauge's 3.9 V decides while it is there
+                self.run_to(n, 2)
+                n.advance_to(minute(2) + 10_000)                    # minute 2's exchange (unanswered) is over
+                for t, act in sorted([(minute(3) - stall_s * 1000, lambda n=n: n.lib.h_bq_adc_stall(1)),
+                                      (minute(3) - 35_000, lambda n=n: n.lib.h_gauge_present(0))], key=lambda e: e[0]):
+                    n.advance_to(t)
+                    act()
+                self.run_to(n, 4)
+                out = n.log + n.out()
+                self.assertNotIn('-> critical soc_x10=500', out)
+                self.assertIn(f'#energy normal -> {want} soc_x10=-1 v_mv={3400 if want == "critical" else -1} ', out)
+
+    def surplus_node(self):
+        n = self.node(soc=SOC['surplus'])
+        n.lib.h_gauge_cell(4_100_000)
+        n.lib.h_bq_status(1, 0, CHG_STAT_TOPOFF, 0, 0)
+        return n
+
+    def test_surplus_needs_full_evidence_to_enter(self):
+        cases = {'full': (lambda n: None, 'surplus'),
+                 'fault': (lambda n: n.lib.h_bq_status(1, 0, CHG_STAT_TOPOFF, 0x40, 0), 'normal'),
+                 'cc stage': (lambda n: n.lib.h_bq_status(1, 0, CHG_STAT_CC, 0, 0), 'normal'),
+                 'discharging': (lambda n: n.lib.h_ina228_set(4_000_000, 1_000), 'normal'),   # -1 mA from the pack
+                 'no input': (lambda n: n.lib.h_bq_set(0, 0, 4100, 0, 4000), 'normal'),
+                 'under 4.00 V': (lambda n: n.lib.h_gauge_cell(3_990_000), 'normal')}
+        for name, (spoil, want) in cases.items():
+            with self.subTest(name):
+                n = self.surplus_node()
+                spoil(n)
+                self.run_to(n, 2)
+                self.assertEqual(self.obs(n), [(0, want), (1, want)])
+                if want == 'surplus':
+                    self.assertIn('#energy conserve -> surplus soc_x10=960 v_mv=4100 full=1 src=gauge', n.out())
+
+    def test_surplus_holds_to_90_percent_while_the_input_is_good(self):
+        n = self.surplus_node()
+        self.run_to(n, 2)
+        self.assertEqual(self.obs(n), [(0, 'surplus'), (1, 'surplus')])
+        # Terminated, the pack carrying the load, a little under 4 V: still SURPLUS down to 90 %.
+        n.lib.h_bq_status(1, 0, 0, 0, 0)
+        n.lib.h_ina228_set(4_000_000, 50_000)
+        n.lib.h_gauge_cell(3_980_000)
+        self.set_soc(n, SOC['surplus_hold'])
+        self.run_to(n, 6)
+        self.assertEqual({e for _, e in self.obs(n, 2)}, {'surplus'})
+        self.set_soc(n, SOC['below_hold'])
+        self.run_to(n, 8)
+        self.assertEqual(self.obs(n, 6), [(6, 'normal'), (7, 'normal')])
+        n = self.surplus_node()
+        self.run_to(n, 2)
+        n.lib.h_bq_set(0, 0, 4100, 0, 4000)                         # the input goes: power good drops
+        self.run_to(n, 4)
+        self.assertEqual(self.obs(n, 2), [(2, 'normal'), (3, 'normal')])
+
+
 def asan_runtime():
     """The ASan runtime to preload into Python (it must be loaded first), or None."""
     name = {'darwin': 'libclang_rt.asan_osx_dynamic.dylib', 'linux': 'libasan.so'}.get(sys.platform)

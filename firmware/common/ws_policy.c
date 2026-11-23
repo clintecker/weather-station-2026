@@ -63,9 +63,9 @@ int ws_energy_next(int last, const ws_energy_in *in)
  if (!in->soc_ok) return energy_worse(next, WS_ENERGY_CONSERVE);   /* unknown estimate: fail closed */
  next = energy_worse(next, energy_level(last, in->soc_x10, SOC_CRITICAL_IN, SOC_CRITICAL_OUT, SOC_CONSERVE_IN,
                                         SOC_CONSERVE_OUT));
- if (next == WS_ENERGY_NORMAL && in->full && in->v_ok && in->v_mv >= MV_SURPLUS_MIN &&
-     in->soc_x10 >= (last == WS_ENERGY_SURPLUS ? SOC_SURPLUS_OUT : SOC_SURPLUS_IN))
-  next = WS_ENERGY_SURPLUS;
+ if (next != WS_ENERGY_NORMAL) return next;
+ if (last == WS_ENERGY_SURPLUS && in->powered && in->soc_x10 >= SOC_SURPLUS_OUT) return WS_ENERGY_SURPLUS;
+ if (in->full && in->v_ok && in->v_mv >= MV_SURPLUS_MIN && in->soc_x10 >= SOC_SURPLUS_IN) return WS_ENERGY_SURPLUS;
  return next;
 }
 

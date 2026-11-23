@@ -180,8 +180,12 @@ static int volts(int last, unsigned mv) {   /* the gauge missing: the charger's 
  ws_energy_in in = { .v_ok = 1, .v_mv = (uint16_t)mv };
  return ws_energy_next(last, &in);
 }
-static int full(int last, unsigned soc_x10, unsigned mv) {
- ws_energy_in in = { .soc_ok = 1, .v_ok = 1, .full = 1, .soc_x10 = (uint16_t)soc_x10, .v_mv = (uint16_t)mv };
+static int full(int last, unsigned soc_x10, unsigned mv) {   /* full implies power good with no fault */
+ ws_energy_in in = { .soc_ok = 1, .v_ok = 1, .full = 1, .powered = 1, .soc_x10 = (uint16_t)soc_x10, .v_mv = (uint16_t)mv };
+ return ws_energy_next(last, &in);
+}
+static int powered(int last, unsigned soc_x10, unsigned mv) {   /* power good, no fault, but not full */
+ ws_energy_in in = { .soc_ok = 1, .v_ok = 1, .powered = 1, .soc_x10 = (uint16_t)soc_x10, .v_mv = (uint16_t)mv };
  return ws_energy_next(last, &in);
 }
 
@@ -213,12 +217,16 @@ static void energy(void) {
  ws_energy_in none = { 0 };
  assert(ws_energy_next(N, &none) == C && ws_energy_next(S, &none) == C && ws_energy_next(C, &none) == C);
  assert(ws_energy_next(X, &none) == X);
- /* SURPLUS: full, 4000 mV and 95.0 % in; it holds to 90.0 % and ends with any condition. */
+ /* SURPLUS: full, 4000 mV and 95.0 % in. It holds while SOC stays at 90.0 % or more and the charger
+    shows power good with no fault, whatever the stage, the battery current and the voltage (the pack
+    carries the load at times; that is what the 90 % is for); NORMAL's own thresholds still apply. */
  assert(full(N, 950, 4000) == S && full(N, 949, 4100) == N && full(N, 990, 3999) == N);
- assert(gauge(N, 990, 4150) == N);                     /* not full: NORMAL */
+ assert(gauge(N, 990, 4150) == N && powered(N, 990, 4150) == N);   /* not full: NORMAL */
  assert(full(S, 900, 4100) == S && full(S, 899, 4100) == N);
- assert(gauge(S, 990, 4150) == N && full(S, 990, 3999) == N);
- ws_energy_in full_no_soc = { .v_ok = 1, .full = 1, .v_mv = 4150 };
+ assert(powered(S, 900, 3950) == S && powered(S, 990, 3800) == S && powered(S, 899, 4100) == N);
+ assert(gauge(S, 990, 4150) == N);                     /* no power good, or a fault: NORMAL */
+ assert(powered(S, 990, 3599) == C && powered(S, 200, 4100) == C);   /* NORMAL's thresholds still rule */
+ ws_energy_in full_no_soc = { .v_ok = 1, .full = 1, .powered = 1, .v_mv = 4150 };
  assert(ws_energy_next(S, &full_no_soc) == C);         /* full but the gauge gone: fail closed */
  assert(full(C, 990, 4150) == S);                       /* charged back from CONSERVE in one step */
  /* A last state out of range counts as CONSERVE. */

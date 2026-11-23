@@ -36,6 +36,9 @@ void i2c_sim_switched(int dev, int switched);
 void i2c_sim_remove(int dev);               /* unplugged: no answer at its address */
 void i2c_sim_restore(int dev);              /* plugged in again */
 void i2c_sim_mode(int dev, int mode, int sda_hold_edges, uint32_t latency_ms);
+/* One failed transfer: the n-th transfer to dev from now (1: the next) ends as mode (DM_NACK_ADDR or
+   DM_BUS_ERROR) once; the ones before and after it as the device's own mode. */
+void i2c_sim_fail_nth(int dev, uint32_t n, int mode);
 extern const sim_source i2c_sim_source;
 
 /* Counters and state for the tests. */
@@ -126,6 +129,7 @@ void model_bq25798_die(int dev, int32_t deci_c);
 void model_bq25798_status(int dev, int ac1, int ac2, unsigned chg_stat, uint8_t fault0, uint8_t fault1);
 void model_bq25798_watchdog_expire(int dev);   /* the watchdog runs out now */
 void model_bq25798_ignore_limits(int dev, int ignore);   /* writes to REG01-REG04 are dropped */
+void model_bq25798_adc_stall(int dev, int stall);       /* conversions never finish (as if postponed) */
 uint8_t model_bq25798_reg(int dev, uint8_t reg);   /* the register file, with no side effect */
 void model_bq25798_poke(int dev, uint8_t reg, uint8_t v);   /* set a register as if the chip had */
 uint32_t model_bq25798_limit_writes(int dev);       /* writes that touched REG01-REG04 */

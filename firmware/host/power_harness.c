@@ -74,6 +74,7 @@ int h_add_device(int kind, int addr7) { return i2c_sim_add(kind, (uint8_t)addr7)
 void h_remove_device(int dev) { i2c_sim_remove(dev); }
 void h_restore_device(int dev) { i2c_sim_restore(dev); }
 void h_device_mode(int dev, int mode, int sda_hold, uint32_t latency_ms) { i2c_sim_mode(dev, mode, sda_hold, latency_ms); }
+void h_device_fail_nth(int dev, uint32_t n, int mode) { i2c_sim_fail_nth(dev, n, mode); }
 int h_pin_errors(void) { return i2c_sim_pin_errors(); }
 uint32_t h_addr_transfers(int addr7) { return i2c_sim_addr_transfers(addr7); }
 void h_ina228_set(int dev, int32_t uv, int32_t ua) { model_ina228_set(dev, uv, ua); }

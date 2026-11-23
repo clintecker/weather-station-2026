@@ -395,7 +395,7 @@ typedef struct {
   int32_t vbus_mv, ibus_ma, vbat_mv, ibat_ma, vsys_mv, die_dc;
   unsigned ts_permille, chg_stat;
   uint8_t ts_bits, fault0, fault1, ac;
-  int host, adc_running, ignore_limits;
+  int host, adc_running, ignore_limits, adc_stall;
   uint64_t kicked_at, adc_at;
   uint32_t limit_writes, kicks, reg_resets;
 } bq_t;
@@ -440,17 +440,20 @@ void model_bq25798_status(int dev, int ac1, int ac2, unsigned chg_stat, uint8_t 
   b->chg_stat = chg_stat & 7U; b->fault0 = fault0; b->fault1 = fault1;
 }
 void model_bq25798_ignore_limits(int dev, int ignore) { bq[dev].ignore_limits = ignore; }
+void model_bq25798_adc_stall(int dev, int stall) { bq[dev].adc_stall = stall; }
 uint32_t model_bq25798_limit_writes(int dev) { return bq[dev].limit_writes; }
 uint32_t model_bq25798_kicks(int dev) { return bq[dev].kicks; }
 uint32_t model_bq25798_reg_resets(int dev) { return bq[dev].reg_resets; }
 
-/* The watchdog's expiry: back to default mode, the WATCHDOG-reset fields to their reset values. */
+/* The watchdog's expiry: back to default mode, the WATCHDOG-reset fields to their reset values.
+   STOP_WD_CHG itself is reset only by REG_RST and a power-on, so it survives. */
 static void bq_expire(bq_t *b)
 {
   bq_set16(b, 0x03, 100);
   b->r[0x09] = (uint8_t)((b->r[0x09] & 0x20U) | 0x05U);   /* ITERM 200 mA */
   b->r[0x0A] = (uint8_t)((b->r[0x0A] & 0xC0U) | 0x23U);
-  b->r[0x0F] = (uint8_t)((b->r[0x0F] & 0xD4U) | 0x22U);   /* EN_CHG and EN_TERM 1; FORCE_ICO, EN_BACKUP 0 */
+  /* EN_TERM 1, FORCE_ICO and EN_BACKUP 0; EN_CHG 1, or 0 with STOP_WD_CHG (REG09 bit 5, table 7-20) */
+  b->r[0x0F] = (uint8_t)((b->r[0x0F] & 0xD4U) | 0x02U | ((b->r[0x09] & 0x20U) ? 0U : 0x20U));
   b->r[0x17] = 0x7A;                                      /* the JEITA and TS fields (tables 7-33, 7-34); */
   b->r[0x18] = 0x54;                                      /* VAC_OVP and REG15 are REG_RST-only */
   b->r[0x2E] &= 0x7FU;                                    /* ADC_EN */
@@ -461,16 +464,25 @@ void model_bq25798_watchdog_expire(int dev) { bq_expire(&bq[dev]); }
 
 static int16_t clamp16(int32_t v) { return (int16_t)(v > INT16_MAX ? INT16_MAX : v < INT16_MIN ? INT16_MIN : v); }
 
+/* On the battery alone the ADC runs above VBAT 3.2 V with the TS channel on (REG2F TS_ADC_DIS 0), else
+   above 2.9 V (section 7.3.10); below, the conversion is postponed. So is a stalled one (a test's). */
+static int bq_adc_postponed(const bq_t *b)
+{
+  int32_t vbat_min = (b->r[0x2F] & 0x04U) ? 2900 : 3200;
+  return b->adc_stall || (b->vbus_mv <= 3400 && b->vbat_mv <= vbat_min);
+}
+
 /* Time moves: the watchdog and the running conversion. */
 static void bq_advance(bq_t *b)
 {
-  static const uint32_t wd_s[8] = { 0, 1, 2, 10, 20, 40, 80, 160 };   /* REG10 WATCHDOG (table 7-26) */
-  uint32_t wd = wd_s[b->r[0x10] & 7U];
-  if (b->host && wd && sim_now() - b->kicked_at >= (uint64_t)wd * 1000U * SIM_UNITS_PER_MS) bq_expire(b);
+  /* REG10 WATCHDOG (table 7-26): off, 0.5, 1, 2, 20, 40, 80, 160 s */
+  static const uint32_t wd_ms[8] = { 0, 500, 1000, 2000, 20000, 40000, 80000, 160000 };
+  uint32_t wd = wd_ms[b->r[0x10] & 7U];
+  if (b->host && wd && sim_now() - b->kicked_at >= (uint64_t)wd * SIM_UNITS_PER_MS) bq_expire(b);
   if (b->adc_running && sim_now() - b->adc_at >= (uint64_t)BQ_ADC_MS * SIM_UNITS_PER_MS)
   {
     b->adc_running = 0;
-    if (b->vbus_mv <= 3400 && b->vbat_mv <= 2900) { b->adc_running = 1; b->adc_at = sim_now(); return; }   /* postponed */
+    if (bq_adc_postponed(b)) { b->adc_running = 1; b->adc_at = sim_now(); return; }
     bq_set16(b, 0x31, (uint16_t)clamp16(b->ibus_ma));
     bq_set16(b, 0x33, (uint16_t)clamp16(b->ibat_ma));
     bq_set16(b, 0x35, (uint16_t)clamp16(b->vbus_mv));

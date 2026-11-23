@@ -33,6 +33,11 @@ static uint32_t diag_ms;       /* the health report's airtime: reserved in a min
 static ws_strike strikes[STRIKE_SLOTS];
 static int diag_due = 1;       /* a health report right after boot */
 static uint32_t last_diag_s;
+/* CRITICAL's beacon outside its hour: BEACON_NOW on entering CRITICAL (the reading that says so, and the
+   health report the change makes due, go at once), BEACON_RETRY the minute after an unanswered beacon
+   (once: one lost frame does not make a two-hour gap). beacon_out: the running exchange is a beacon. */
+enum { BEACON_NONE, BEACON_NOW, BEACON_RETRY };
+static uint8_t beacon_due, beacon_out;
 
 /* The energy state (docs/radio-energy-policy.md section 3, D1; ws_energy_next). The TX stack
    (profile 3) decides it from the gauge, falling back to the charger's VBAT; it starts at CONSERVE
@@ -57,8 +62,8 @@ static void energy_inputs(ws_energy_in *in, const char **src)
   else if (c->present && c->ok && c->adc_ok && clock_ms() - c->ts_ms < VBAT_FRESH_MS)
   { in->v_ok = 1; in->v_mv = c->vbat; if (!p.gauge_ok) *src = "charger-vbat"; }   /* REG3B: 1 mV a count */
   unsigned stage = (p.charger & WS_CHG_STAGE_MASK) >> WS_CHG_STAGE_SHIFT;
-  in->full = p.charger != POWER_NONE_U8 && (p.charger & POWER_STATUS_POWER_GOOD) &&
-             !(p.charger & POWER_STATUS_FAULT) && (stage == WS_CHG_STAGE_TOPOFF || stage == WS_CHG_STAGE_TERMINATED) &&
+  in->powered = p.charger != POWER_NONE_U8 && (p.charger & POWER_STATUS_POWER_GOOD) && !(p.charger & POWER_STATUS_FAULT);
+  in->full = in->powered && (stage == WS_CHG_STAGE_TOPOFF || stage == WS_CHG_STAGE_TERMINATED) &&
              p.batt_ok && p.batt_ma_x100 >= -BATT_IDLE_MA_X100;
 }
 
@@ -73,6 +78,7 @@ void policy_energy_minute(void)
              in.soc_ok ? (int)in.soc_x10 : -1, in.v_ok ? (int)in.v_mv : -1, (unsigned)in.full, src);
   energy = next;
   diag_due = 1;   /* the health report carries the energy state: send one at the next exchange */
+  beacon_due = next == WS_ENERGY_CRITICAL ? BEACON_NOW : BEACON_NONE;   /* a retry ends with CRITICAL */
 }
 int energy_state(void) { return energy; }
 #else
@@ -106,11 +112,23 @@ int policy_minute_backlog(void)
   uint32_t now = clock_s();
   uint32_t reserve_ms = diag_follows(now) ? diag_ms : 0U;   /* power telemetry design 6.4 */
   int en = energy_state();
-  /* CRITICAL sends nothing, but for a beacon: once an hour (and right after boot, policy_init) the
-     minute goes as a CONSERVE minute, the live reading only, so the gateway still hears the station. */
-  if (en == WS_ENERGY_CRITICAL && now - last_send_s >= BEACON_S) en = WS_ENERGY_CONSERVE;
-  int backlog = ws_minute_backlog(en, &link, now, last_send_s, exchange_ms, reserve_ms, MAX_QUEUE - 1U);
-  if (backlog >= 0) last_send_s = now;
+  /* CRITICAL sends nothing, but for a beacon: once an hour (and right after boot, policy_init), on
+     entering CRITICAL and once after an unanswered beacon, the minute goes as a CONSERVE minute (the live
+     reading only, CONSERVE's 5 minutes waived), so the gateway still hears the station. */
+  uint32_t since = last_send_s;
+  uint8_t out = BEACON_NONE;
+  /* cppcheck-suppress knownConditionTrueFalse ; the bench profiles (1, 2) stay NORMAL, profile 3 does not */
+  if (en == WS_ENERGY_CRITICAL && (beacon_due || now - last_send_s >= BEACON_S))
+  {
+    en = WS_ENERGY_CONSERVE;
+    since = now - BEACON_S;
+    out = beacon_due == BEACON_RETRY ? BEACON_RETRY : BEACON_NOW;
+  }
+  int backlog = ws_minute_backlog(en, &link, now, since, exchange_ms, reserve_ms, MAX_QUEUE - 1U);
+  if (backlog < 0) return backlog;
+  last_send_s = now;
+  beacon_out = out;
+  beacon_due = BEACON_NONE;
   return backlog;
 }
 
@@ -167,6 +185,8 @@ void policy_exchange_end(const jref_t *queue, const uint8_t *replied, unsigned n
     if (struck[i]) strike(queue[i]);
     else if (replied[i] && record_id(queue[i], &epoch, &seq)) policy_strike_forget(epoch, seq);
   }
+  if (beacon_out == BEACON_NOW && !any) beacon_due = BEACON_RETRY;   /* the first try only */
+  beacon_out = BEACON_NONE;
   uint32_t was_silent = link.silent;
   link_report(ws_link_minute(&link, any, last_send_s), was_silent);
 }

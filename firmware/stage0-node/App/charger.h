@@ -7,15 +7,16 @@
  * Every CHARGER_PERIOD_MS the machine:
  *   1. identifies the part (REG48 PN = 3) until it has, and after any NACK;
  *   2. reads REG01-REG18. The set-up is VREG, ICHG and ITERM (POWER_CHG_VREG_MV, POWER_CHG_ICHG_MA and
- *      POWER_CHG_ITERM_MA's nearest code), VAC_OVP (REG10), VOC_PCT (REG15) and the JEITA and TS
- *      settings (REG17, REG18). Any of them other than set rewrites all of them, then reads them back.
+ *      POWER_CHG_ITERM_MA's nearest code) with STOP_WD_CHG (REG09 bit 5: a watchdog expiry turns charge
+ *      off), VAC_OVP (REG10), VOC_PCT (REG15) and the JEITA and TS settings (REG17, REG18). Any of them other than set rewrites all of them, then reads them back.
  *      At the first poll that is the boot write; after a set-up that held, it is a chip reset (the I2C
  *      watchdog expired or the chip lost power: ICHG resets to 1 A on either, SLUSDV2C table 7-16),
  *      counted in resets. EN_MPPT is not part of it: the chip clears it whenever VBUS goes;
  *   3. reads the status registers REG1B-REG21 and, once a one-shot conversion is done, the ADC
  *      (REG2E-REG42);
  *   4. writes REG0F with EN_CHG set only when nothing holds charge off (enum charger_hold), and REG10
- *      with WD_RST, which keeps the chip in host mode (its 40 s watchdog, table 7-26);
+ *      with WD_RST, which keeps the chip in host mode (its 40 s watchdog, table 7-26; past it, the chip
+ *      resets EN_CHG and the set-up, and STOP_WD_CHG makes that charge off);
  *   5. writes REG15 with EN_MPPT when VBUS is present, VSYS_STAT is clear and EN_MPPT reads 0 (section
  *      7.3.6.3), counted in mppt_sets, not in resets;
  *   6. starts the next one-shot ADC conversion (REG2E = ADC_EN | ADC_RATE, 15-bit).
@@ -68,7 +69,9 @@ void charger_i2c_done(int rc);        /* I2C_C_CHARGER's completion */
 const charger_t *charger_state(void);
 /* The health report's charger status byte (power telemetry spec section 6.3): 0xFF without a complete
    poll, else power good (PG_STAT), charging (CHG_STAT 1-4 or 6), fault (a REG20/REG21 fault or a hold
-   for the part, the cell count or the read-back), the stage and the active input. A TS hold (cold, warm,
+   for the cell count or the read-back), the stage and the active input. Another part at the charger's
+   address (CH_PART) never completes a poll, and reads as the fault bit alone (0x04): stage and input not
+   reported. A TS hold (cold, warm,
    hot) is no fault: the health report's pack temperature carries it, and a stale TS reading leaves that
    slot none under its fitted bit, which the gateway reports as a sensor fault. */
 uint8_t charger_status_byte(void);

@@ -149,7 +149,7 @@ The 100 mV hysteresis covers the cold sag. The 3P pack's resistance at −20 °C
 - Each signal applies its own enter and leave thresholds. The worse signal wins, so leaving a state needs both past their leave thresholds.
 - **The gauge missing or failed** (no SOC): the estimate is unknown, so at least CONSERVE (decision 6). The cell voltage then comes from the BQ25798's VBAT ADC (no older than 30 s) and can still take the node to CRITICAL and back. The INA228 does not help here: in the TX stack (profile 3) its VBUS is not on the cell. It does supply the "not discharging" evidence for SURPLUS.
 - **No SOC and no voltage:** CONSERVE, or CRITICAL if the node was already there.
-- **SURPLUS** (phase C, the TX stack): a NORMAL result, and the charger shows power good, no fault, and top-off or terminated; the battery INA228 reads −0.5 mA or more (not discharging); the cell is at 4.00 V or more; SOC at 95 % or more. It ends below 90 % SOC or when any other condition fails.
+- **SURPLUS** (phase C, the TX stack): a NORMAL result, and the charger shows power good, no fault, and top-off or terminated; the battery INA228 reads −0.5 mA or more (not discharging); the cell is at 4.00 V or more; SOC at 95 % or more. Once in, it stays while SOC is at 90 % or more and the charger still shows power good with no fault (and the NORMAL thresholds hold). Top-off, the battery current and the 4.00 V are entry conditions only. After termination the pack carries the load until the charger recharges, so a SURPLUS that needed them the whole time would drop to NORMAL within minutes, and the 90 % hold would never come into play (changed 2026-11-23, review finding).
 - The node boots in CONSERVE and moves at the first minute with a reading. It decides once a minute, before it builds the reading, so the reading and the send of that minute agree.
 
 **Visibility.** Every reading carries the energy state (flags bits 1 and 2), and so does the health report (byte `energy`). No new fields. A change prints `#energy <old> -> <new> …` on the console and makes a health report due at the next exchange. The bench builds (profiles 1 and 2) stay at NORMAL: their battery is a bench supply or a loose cell.
@@ -203,7 +203,7 @@ The firmware defines four energy states and their limits (`firmware/common/ws_po
 | **SURPLUS** | The sun is up and the battery is full or nearly full. The station would otherwise lose the energy. | Every 60 s | **Fast**: up to the airtime cap (current firmware: at most 20) | Full | 15 s per minute |
 | **NORMAL** | Healthy margin above reserve | Every 60 s | **Moderate**: up to 2 to 5 per minute (current firmware: 5, `backlog_limit` in `firmware/common/ws_policy.c`) | Normal rate | 5 s per minute |
 | **CONSERVE** | Near the reserve, estimate unknown, or pack cold | Every 300 s: the latest reading (requirement R02, conservation reports). The node still journals every reading. | **None** | The same as NORMAL: a health report every 15 minutes (`DIAG_PERIOD_S`, `App/tx_policy.c:19`) and after each link-state change, sent after a CONSERVE exchange. At SF12 this goes over the 2 s cap once per report (power design section 6.4) | 2 s per minute |
-| **CRITICAL** | At the protected floor under the reserve (8 % SOC or 3.45 V, section 3) | **None**, but for a beacon: the live reading once an hour (and at boot), sent as a CONSERVE minute (`policy_minute_backlog`, `App/tx_policy.c`) | None | A due health report rides on the beacon | 0, but for the beacon |
+| **CRITICAL** | At the protected floor under the reserve (8 % SOC or 3.45 V, section 3) | **None**, but for a beacon: the live reading once an hour, at boot, at once on entering CRITICAL, and once more the next minute when a beacon gets no answer, sent as a CONSERVE minute (`policy_minute_backlog`, `App/tx_policy.c`) | None | A due health report rides on the beacon | 0, but for the beacon |
 
 **Notes:**
 
@@ -227,7 +227,7 @@ Then each phase needs its own evidence that an input carries the station and tha
 | A | PGOOD asserted, and `charger_input_mv` (field 28) above the threshold. Solar or USB-C: the source is not identified, and either one is energy that the pack does not pay | CHG off and steady: charge done, or a refresh charge (SLUS810 table 9-2). CHG on with about 0 mA is a suspended or throttled charge, not a full battery. The cause can be a TS (pack temperature) suspend (SLUS810 section 9.3.6), the die thermal loop (table 9-2, section 9.3.5.8), or DPPM/VIN-DPM when the load takes all of the input current (section 9.3.4.1.2) | not measured: no condition |
 | B | as A, and the solar power (fields 29 × 30) or the USB-C power (fields 32 × 33) above the threshold and above the load power (fields 26 × 27) | as A | not measured: no condition |
 
-SURPLUS ends when any condition fails: the input goes, the battery starts to discharge, or its voltage leaves the full band.
+SURPLUS ends when any condition fails: the input goes, the battery starts to discharge, or its voltage leaves the full band. Phase C (section 3) ends it only when the input goes, the charger faults, or SOC falls below 90 %.
 
 ## 6. Link state (implemented on the bench prototype)
 

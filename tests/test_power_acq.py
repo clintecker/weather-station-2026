@@ -17,7 +17,7 @@ except ImportError:
     from tests.toolchain import ROOT, fresh_station, host_library, load_tool, needs_cc    # python -m unittest tests.<module>
 
 DEVK_TEST, DEVK_INA228, DEVK_MAX17048, DEVK_BQ25798 = 1, 6, 7, 10
-DM_BUS_ERROR = 6
+DM_NACK_ADDR, DM_BUS_ERROR = 1, 6
 # enum power_slot (App/power_config.h)
 (BATT_MV, BATT_MA, ENERGY_IN, ENERGY_OUT, CHARGE_IN, CHARGE_OUT, LOAD_MV, LOAD_MA, CHARGER_IN_MV, SOLAR_MV,
  SOLAR_MA, USB_MV, USB_MA) = range(13)
@@ -577,6 +577,11 @@ class PhaseB(unittest.TestCase):
 CHARGER = 0x6B
 VREG_CODE, ICHG_CODE, ICHG_POR = 4200 // 10, 900 // 10, 1000 // 10
 ITERM_CODE, ITERM_POR = 2, 5          # REG09 bits 4:0 in 40 mA: 80 mA (nearest 90 mA) and the 200 mA default
+STOP_WD_CHG = 0x20                    # REG09 bit 5 (table 7-20): a watchdog expiry sets EN_CHG = 0
+WD_STAT = 0x20                        # REG1B bit 5 (table 7-36): the watchdog ran out, default mode
+WD_PERIOD_MS = {0: None, 1: 500, 2: 1000, 3: 2000, 4: 20_000, 5: 40_000, 6: 80_000, 7: 160_000}   # REG10 WATCHDOG (table 7-26)
+TS_ADC_DIS = 0x04                     # REG2F bit 2 (table 7-56)
+DEVK_BQ = DEVK_BQ25798
 EN_CHG = 0x20
 TS_COLD, TS_COOL, TS_WARM, TS_HOT = 0x08, 0x04, 0x02, 0x01
 (CH_NONE, CH_ABSENT, CH_PART, CH_CELLS, CH_READBACK, CH_TS_STALE, CH_TS_COLD, CH_TS_HOT, CH_TS_WARM) = range(9)   # charger.h
@@ -680,10 +685,10 @@ class PhaseC(unittest.TestCase):
         b.lib.h_run(TICK)
         reg09 = b.lib.h_bq_reg(b.bq, 0x09)
         self.assertEqual(reg09 & 0x1F, ITERM_CODE)
-        self.assertEqual(reg09 & 0x20, 0)                        # STOP_WD_CHG kept as read
+        self.assertEqual(reg09 & STOP_WD_CHG, STOP_WD_CHG)       # a watchdog expiry stops charge
         self.assertEqual(b.lib.h_bq_reg_resets(b.bq), 0)         # REG_RST never written
         self.assertEqual(b.lib.h_chg(CHG_CONFIGURED), 1)
-        self.assertEqual(self.fields(b)['iterm_ma'], '80')
+        self.assertEqual((self.fields(b)['iterm_ma'], self.fields(b)['stop_wd_chg']), ('80', '1'))
         b.lib.h_run(20_000)
         b.lib.h_bq_watchdog_expire(b.bq)                         # ITERM back to 200 mA with ICHG
         self.assertEqual(b.lib.h_bq_reg(b.bq, 0x09) & 0x1F, ITERM_POR)
@@ -709,8 +714,9 @@ class PhaseC(unittest.TestCase):
     def test_a_chip_reset_is_seen_and_the_set_up_applied_again(self):
         b = self.bench()
         b.lib.h_run(20_000)
-        b.lib.h_bq_watchdog_expire(b.bq)                         # ICHG back to 1 A, EN_CHG to 1
+        b.lib.h_bq_watchdog_expire(b.bq)                         # ICHG back to 1 A; STOP_WD_CHG: EN_CHG to 0
         self.assertEqual(self.reg16(b, 0x03), ICHG_POR)
+        self.assertFalse(self.en_chg(b))
         b.lib.h_run(POLL)
         self.assertEqual(self.reg16(b, 0x03), ICHG_CODE)
         self.assertEqual((b.lib.h_chg(CHG_APPLIES), b.lib.h_chg(CHG_RESETS)), (2, 1))
@@ -770,6 +776,99 @@ class PhaseC(unittest.TestCase):
         b.lib.h_run(2 * POLL)
         self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_NONE)
         self.assertTrue(self.en_chg(b))
+
+    def test_a_watchdog_expiry_while_warm_keeps_charge_off(self):
+        """WARM holds EN_CHG off. An I2C outage past the 40 s watchdog resets EN_CHG (to 1, table 7-25) and
+        REG17 (to 0x7A: JEITA_ISETH full current in WARM, table 7-33), so without STOP_WD_CHG the chip
+        would charge a warm pack on its own. With it (REG09 bit 5, table 7-20) the expiry sets EN_CHG 0."""
+        b = self.bench()
+        b.lib.h_bq_status(b.bq, 1, 0, 3, 0, 0)                   # USB in, the chip would charge in CC
+        b.lib.h_bq_ts(b.bq, 440, TS_WARM)
+        b.lib.h_run(3 * POLL)
+        self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_TS_WARM)
+        self.assertFalse(self.en_chg(b))
+        b.lib.h_device_mode(b.bq, DM_BUS_ERROR, 0, 1)           # the bus to the charger goes away
+        b.lib.h_run(45_000)                                      # past the 40 s watchdog
+        self.assertTrue(b.lib.h_bq_reg(b.bq, 0x1B) & WD_STAT)    # it ran out: default mode
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x17), REG17_POR)  # JEITA back to full current in WARM
+        self.assertFalse(self.en_chg(b))
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x1C) >> 5, 0)     # CHG_STAT: not charging
+        b.lib.h_run(5 * 60_000)                                  # and it stays that way
+        self.assertFalse(self.en_chg(b))
+        b.lib.h_device_mode(b.bq, 0, 0, 1)                       # the bus is back: set up again, still held
+        b.lib.h_run(3 * POLL)
+        self.assertEqual((b.lib.h_chg(CHG_CONFIGURED), b.lib.h_chg(CHG_HOLD)), (1, CH_TS_WARM))
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x17), REG17_WANT)
+        self.assertFalse(self.en_chg(b))
+
+    def test_the_watchdog_periods_are_table_7_26(self):
+        """The host model's watchdog: WATCHDOG codes 1 to 7 are 0.5, 1, 2, 20, 40, 80 and 160 s; 0 is off.
+        A WD_RST write kicks it; no firmware polls run here (h_advance only)."""
+        write = None
+        for code, ms in WD_PERIOD_MS.items():
+            with self.subTest(code=code):
+                b = self.bench()
+                write = b.lib.model_write
+                write.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint16]
+                b.lib.h_run(TICK)                                # set up: host mode
+                self.assertEqual(write(DEVK_BQ, b.bq, bytes([0x10, 0x20 | 0x08 | code]), 2), 0)   # VAC_OVP 12 V, WD_RST
+                if ms is None:
+                    b.lib.h_advance(600_000)
+                    self.assertFalse(b.lib.h_bq_reg(b.bq, 0x1B) & WD_STAT)
+                    continue
+                b.lib.h_advance(ms - 1)
+                self.assertFalse(b.lib.h_bq_reg(b.bq, 0x1B) & WD_STAT)
+                b.lib.h_advance(2)
+                self.assertTrue(b.lib.h_bq_reg(b.bq, 0x1B) & WD_STAT)
+
+    def test_battery_only_the_adc_needs_3_2_v_with_the_ts_channel_on(self):
+        """Section 7.3.10: on the battery alone, with the TS channel on (TS_ADC_DIS 0, its reset value), the ADC
+        runs only above VBAT 3.2 V; with TS off, above 2.9 V. No conversion: no TS reading, so no charge."""
+        for vbat, ts_off, converts in ((3100, 0, False), (3300, 0, True), (3100, 1, True), (2800, 1, False)):
+            with self.subTest(vbat=vbat, ts_off=ts_off):
+                b = self.bench()
+                b.lib.h_bq_set(b.bq, 0, 0, vbat, 0, 3500)            # no VBUS
+                if ts_off:
+                    b.lib.h_bq_poke(b.bq, 0x2F, TS_ADC_DIS)
+                b.lib.h_run(30_000)
+                self.assertEqual(b.lib.h_chg(CHG_HOLD) != CH_TS_STALE, converts)
+                self.assertEqual(self.fields(b)['ts_pct'] != 'none', converts)
+
+    def test_a_failed_transfer_at_any_set_up_step_is_put_right_at_the_next_poll(self):
+        """A chip reset makes the next poll write the whole set-up: CONFIG (the read), LIMITS, TERM, OVP,
+        MPPT_PCT, NTC, VERIFY, STATUS, CONTROL, MPPT, ADC_START, one transfer each (charger.h steps 2 to
+        6). Fail each in turn, as an absent part (a NACK) and as a bus fault: the poll ends there, and the
+        next one finishes the set-up with the hold right (WARM: charge off)."""
+        def settled():
+            b = self.bench()
+            b.lib.h_bq_ts(b.bq, 440, TS_WARM)
+            b.lib.h_run(2 * POLL)
+            self.assertEqual((b.lib.h_chg(CHG_CONFIGURED), b.lib.h_chg(CHG_HOLD)), (1, CH_TS_WARM))
+            b.lib.h_bq_power_cycle(b.bq)                         # every register to its POR value
+            return b
+        b = settled()
+        before = b.lib.h_addr_transfers(CHARGER)
+        b.lib.h_run(POLL)
+        steps = b.lib.h_addr_transfers(CHARGER) - before
+        self.assertEqual(steps, 11)
+        self.assertEqual((b.lib.h_chg(CHG_APPLIES), b.lib.h_chg(CHG_MPPT_SETS)), (2, 2))   # MPPT written again
+        for n in range(1, steps + 1):
+            for mode in (DM_NACK_ADDR, DM_BUS_ERROR):
+                with self.subTest(step=n, mode=mode):
+                    b = settled()
+                    b.lib.h_device_fail_nth(b.bq, n, mode)
+                    b.lib.h_run(POLL)
+                    self.assertEqual((b.lib.h_chg(CHG_OK), b.lib.h_chg(CHG_FAILURES)), (0, 1))
+                    b.lib.h_run(2 * POLL)
+                    self.assertEqual([b.lib.h_chg(k) for k in (CHG_PRESENT, CHG_OK, CHG_CONFIGURED, CHG_HOLD, CHG_FAILURES)],
+                                     [1, 1, 1, CH_TS_WARM, 1])
+                    self.assertFalse(self.en_chg(b))
+                    self.assertEqual((self.reg16(b, 0x01), self.reg16(b, 0x03)), (VREG_CODE, ICHG_CODE))
+                    self.assertEqual(b.lib.h_bq_reg(b.bq, 0x09), STOP_WD_CHG | ITERM_CODE)
+                    self.assertEqual((b.lib.h_bq_reg(b.bq, 0x10) >> 4) & 3, VAC_OVP_12V)
+                    self.assertEqual(b.lib.h_bq_reg(b.bq, 0x15), VOC_PCT_CODE << 5 | 0x0A | EN_MPPT)
+                    self.assertEqual((b.lib.h_bq_reg(b.bq, 0x17), b.lib.h_bq_reg(b.bq, 0x18)), (REG17_WANT, REG18_WANT))
+                    self.assertFalse(b.lib.h_bq_reg(b.bq, 0x1B) & WD_STAT)   # kicked: host mode
 
     def test_the_jeita_and_ts_settings_are_written_and_kept(self):
         b = self.bench()
@@ -957,7 +1056,11 @@ class PhaseC(unittest.TestCase):
         b = self.bench([(DEVK_INA228, BATTERY), (DEVK_MAX17048, GAUGE), (DEVK_TEST, CHARGER)])
         b.lib.h_run(15_000)
         self.assertEqual((b.lib.h_chg(CHG_PRESENT), b.lib.h_chg(CHG_HOLD)), (0, CH_PART))
-        self.assertEqual(b.lib.h_chg_status_byte(), 0xFF)
+        # Something answers at 0x6B but it is not a BQ25798: a fault (spec section 6.3, charger.h), with
+        # nothing else known: no power good, not charging, stage and input not reported.
+        self.assertEqual(b.lib.h_chg_status_byte(), status(fault=1))
+        b.minute()
+        self.assertEqual(b.lib.h_status(), status(fault=1))
 
 
 @needs_cc

@@ -117,7 +117,11 @@ The rules:
   inputs never makes the node more generous.
 - `SURPLUS` needs a `NORMAL` result, the charger's evidence of a full pack (`full`: power good, no
   fault, top-off or terminated, the battery not discharging), a cell voltage of 4000 mV or more,
-  and SOC at 95 % or more. It stays until SOC falls below 90 % or any of the others fails.
+  and SOC at 95 % or more. Once in, it stays while the result is still `NORMAL`, SOC is at 90 % or
+  more, and the charger shows power good with no fault (`powered`). Top-off, the battery current
+  and the 4000 mV are entry conditions only: after termination the pack carries the load until the
+  charger recharges, and if `SURPLUS` needed `full` the whole time, it would drop to `NORMAL` within
+  minutes and the 90 % hold would never matter.
 - A last state out of range counts as `CONSERVE`.
 
 ```c {#energy-thresholds}
@@ -166,9 +170,9 @@ int ws_energy_next(int last, const ws_energy_in *in)
  if (!in->soc_ok) return energy_worse(next, WS_ENERGY_CONSERVE);   /* unknown estimate: fail closed */
  next = energy_worse(next, energy_level(last, in->soc_x10, SOC_CRITICAL_IN, SOC_CRITICAL_OUT, SOC_CONSERVE_IN,
                                         SOC_CONSERVE_OUT));
- if (next == WS_ENERGY_NORMAL && in->full && in->v_ok && in->v_mv >= MV_SURPLUS_MIN &&
-     in->soc_x10 >= (last == WS_ENERGY_SURPLUS ? SOC_SURPLUS_OUT : SOC_SURPLUS_IN))
-  next = WS_ENERGY_SURPLUS;
+ if (next != WS_ENERGY_NORMAL) return next;
+ if (last == WS_ENERGY_SURPLUS && in->powered && in->soc_x10 >= SOC_SURPLUS_OUT) return WS_ENERGY_SURPLUS;
+ if (in->full && in->v_ok && in->v_mv >= MV_SURPLUS_MIN && in->soc_x10 >= SOC_SURPLUS_IN) return WS_ENERGY_SURPLUS;
  return next;
 }
 ```

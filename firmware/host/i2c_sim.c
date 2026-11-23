@@ -10,7 +10,7 @@
 #include "stm32wlxx_hal.h"
 
 enum { DONE_NONE, DONE_TX, DONE_RX, DONE_MEMRX, DONE_ERROR, DONE_BUS_ERROR };   /* DONE_ERROR: a NACK */
-typedef struct { int kind, mode, present, sda_hold, channel, switched; uint8_t addr7; uint32_t latency_ms, writes; } sim_dev;
+typedef struct { int kind, mode, present, sda_hold, channel, switched, fail_mode; uint8_t addr7; uint32_t latency_ms, writes, fail_in; } sim_dev;
 static sim_dev devs[I2C_SIM_DEVICES];
 static int ndevs, i2c_inited, irq_enabled, pending_kind, power_on, mux_dev = -1;
 static uint8_t mux_mask;
@@ -65,6 +65,18 @@ void i2c_sim_mode(int dev, int mode, int sda_hold_edges, uint32_t latency_ms)
 {
   if (dev < 0 || dev >= ndevs) return;
   devs[dev].mode = mode; devs[dev].sda_hold = sda_hold_edges; devs[dev].latency_ms = latency_ms;
+}
+void i2c_sim_fail_nth(int dev, uint32_t n, int mode)
+{
+  if (dev < 0 || dev >= ndevs) return;
+  devs[dev].fail_in = n; devs[dev].fail_mode = mode;
+}
+/* The device's mode for the transfer starting now: an armed one-shot failure (i2c_sim_fail_nth) when its
+   count runs out, else its own. */
+static int mode_now(sim_dev *d)
+{
+  if (d->fail_in && --d->fail_in == 0) return d->fail_mode;
+  return d->mode;
 }
 
 /* ---- NVIC, RCC and the peripheral ---- */
@@ -150,11 +162,12 @@ static void count(uint16_t addr, const sim_dev *d)
 static sim_dev *begin(uint16_t addr, int is_read)
 {
   sim_dev *d = find(addr);
+  int mode = d ? mode_now(d) : DM_NACK_ADDR;
   started_at = sim_now();
   count(addr, d);
   if (d && d->sda_hold && faulty(d, is_read)) sda_release_at = scl_edges + d->sda_hold;
-  if (!d || d->mode == DM_NACK_ADDR) { complete_in(DONE_ERROR, d); return NULL; }
-  if (d->mode == DM_BUS_ERROR) { complete_in(DONE_BUS_ERROR, d); return NULL; }
+  if (mode == DM_NACK_ADDR) { complete_in(DONE_ERROR, d); return NULL; }
+  if (mode == DM_BUS_ERROR) { complete_in(DONE_BUS_ERROR, d); return NULL; }
   if (d->mode == DM_HANG || (is_read && d->mode == DM_HANG_READ)) return NULL;
   return d;
 }

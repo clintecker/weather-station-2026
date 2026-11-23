@@ -8,7 +8,11 @@
  * or shorted thermistor (TS near 100 % or 0 % of REGN). WARM is held too: COLD and HOT are fixed in the
  * chip (about 3.9 and 54.9 degC with this NTC), so WARM, set by register to about 41.8 degC with JEITA
  * suspend there (App/power_config.h), is the real charge stop. COOL still charges at the chip's 20 %.
- * The chip enforces its TS limits on its own too; the gate adds the firmware's view and the report. */
+ * The chip enforces its TS limits on its own too; the gate adds the firmware's view and the report.
+ * STOP_WD_CHG (REG09 bit 5, table 7-20) is written 1 with the set-up and read back with it: a watchdog
+ * expiry (40 s without WD_RST, an I2C outage or a hung firmware) resets EN_CHG to 1 and REG17 to full
+ * current in WARM (tables 7-25, 7-33), so without it the chip would charge through every hold. With it
+ * the expiry sets EN_CHG 0, and charge stays off until a poll sets the chip up again. */
 #define WS_CHECK_FILE 19
 #include "charger.h"
 #include <string.h>
@@ -26,7 +30,7 @@
 #define OFF_09 8U               /* REG09 */
 #define OFF_0A 9U               /* REG0A */
 #define REG_TERM 0x09U          /* REG09: ITERM bits 4:0, STOP_WD_CHG bit 5, REG_RST bit 6 (table 7-20) */
-#define TERM_KEEP 0x20U         /* the bits a REG09 write keeps as read: STOP_WD_CHG. REG_RST is always 0 */
+#define STOP_WD_CHG 0x20U       /* REG09 bit 5: a watchdog expiry sets EN_CHG 0. Written 1, REG_RST always 0 */
 #define OFF_0F 14U              /* REG0F */
 #define OFF_10 15U              /* REG10 */
 #define OFF_15 20U              /* REG15 MPPT (table 7-31) */
@@ -120,7 +124,8 @@ static uint16_t ichg_want(void) { return bq25798_ichg_raw(POWER_CHG_ICHG_MA); }
 static uint16_t count_up(uint16_t n) { return n == UINT16_MAX ? n : (uint16_t)(n + 1U); }
 
 /* A NACK or another part is an absent charger (identified again at the next poll); anything else a bus
-   fault. The poll ends here; charge stays as the chip has it (its watchdog takes over if we stay away). */
+   fault. The poll ends here; charge stays as the chip has it, and if we stay away its watchdog turns it
+   off (STOP_WD_CHG). */
 static void failed(int rc)
 {
   charger_t *s = &cg.s;
@@ -152,7 +157,8 @@ static uint8_t iterm_want(void) { return bq25798_iterm_code(POWER_CHG_ITERM_MA);
 static int config_matches(void)
 {
   const charger_t *s = &cg.s;
-  return s->vreg_raw == vreg_want() && s->ichg_raw == ichg_want() && (s->reg09 & BQ25798_ITERM_MASK) == iterm_want() &&
+  return s->vreg_raw == vreg_want() && s->ichg_raw == ichg_want() &&
+         (s->reg09 & (STOP_WD_CHG | BQ25798_ITERM_MASK)) == (STOP_WD_CHG | iterm_want()) &&
          (s->reg10 & VAC_OVP_MASK) == POWER_CHG_VAC_OVP_CODE << VAC_OVP_SHIFT &&
          (s->reg15 & VOC_PCT_MASK) == POWER_CHG_VOC_PCT_CODE << VOC_PCT_SHIFT &&
          (s->reg17 & REG17_MASK) == (POWER_CHG_REG17 & REG17_MASK) && s->reg18 == POWER_CHG_REG18;
@@ -268,8 +274,8 @@ void charger_i2c_done(int rc)
       if (config_matches()) { s->configured = 1; cg.held = 1; read_regs(CS_STATUS, REG_STATUS, STATUS_LEN); }
       else { s->configured = 0; write_limits(); }
       break;
-    case CS_LIMITS:   /* then ITERM, the other bits of REG09 as read, REG_RST never set */
-      write2(CS_TERM, REG_TERM, (uint8_t)((s->reg09 & TERM_KEEP) | iterm_want()));
+    case CS_LIMITS:   /* then ITERM and STOP_WD_CHG; REG_RST never set */
+      write2(CS_TERM, REG_TERM, (uint8_t)(STOP_WD_CHG | iterm_want()));
       break;
     case CS_TERM: write2(CS_OVP, REG_CTRL1, reg10_want()); break;
     case CS_OVP: write2(CS_MPPT_PCT, REG_MPPT, reg15_with(s->reg15 & EN_MPPT)); break;
@@ -367,12 +373,12 @@ int16_t charger_pack_temp_dc(uint16_t ts_raw16)
 uint8_t charger_status_byte(void)
 {
   const charger_t *s = &cg.s;
-  if (!s->ok) return WS_CHARGER_NONE;
+  /* Another part at the charger's address: a fault, and nothing else known (stage and input not reported). */
+  if (!s->ok) return s->hold == CH_PART ? WS_CHG_FAULT : WS_CHARGER_NONE;
   unsigned chg = s->st[S_1C] >> CHG_STAT_SHIFT;
   uint8_t st = (s->st[S_1B] & PG_STAT) ? WS_CHG_POWER_GOOD : 0U;
   if ((chg >= 1U && chg <= 4U) || chg == 6U) st |= WS_CHG_CHARGING;
-  if ((s->st[S_20] & FAULT0_MASK) || (s->st[S_21] & FAULT1_MASK) || s->hold == CH_PART || s->hold == CH_CELLS ||
-      s->hold == CH_READBACK)
+  if ((s->st[S_20] & FAULT0_MASK) || (s->st[S_21] & FAULT1_MASK) || s->hold == CH_CELLS || s->hold == CH_READBACK)
     st |= WS_CHG_FAULT;
   return (uint8_t)(st | WS_CHG_STAGE(stage_of(chg)) | WS_CHG_INPUT(input_of(s->st[S_1B])));
 }
@@ -445,6 +451,7 @@ unsigned charger_line(char *buf, unsigned len, uint32_t now_ms)
   n = put_hex(buf, len, put(buf, len, n, " reg03_04="), s->ichg_raw, 4);
   n = kv(buf, len, n, " ichg_ma=", bq25798_ichg_ma(s->ichg_raw));
   n = kv(buf, len, n, " iterm_ma=", bq25798_iterm_ma(s->reg09));
+  n = kv(buf, len, n, " stop_wd_chg=", (s->reg09 & STOP_WD_CHG) != 0U);
   n = put(buf, len, n, " ts_pct=");
   if (s->adc_ok)
   {

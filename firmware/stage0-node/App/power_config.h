@@ -84,7 +84,10 @@ _Static_assert(!POWER_ADDR_RESERVED(POWER_ADDR_CHARGER) && POWER_ADDR_CHARGER !=
 #define POWER_CHG_VREG_MV 4200U
 /* Termination current: about 10 % of ICHG (tx-stack design, Power: Pack). ITERM steps 40 mA (SLUSDV2C
    table 7-20), so 90 mA is written as the nearest code, 2: 80 mA. Its default is 200 mA, and a watchdog
-   expiry resets it as it does ICHG. */
+   expiry resets it as it does ICHG. The same REG09 write sets STOP_WD_CHG (bit 5): a watchdog expiry
+   resets EN_CHG to 1 and REG17 to full current in WARM (tables 7-25, 7-33), so without it an I2C outage
+   of 40 s would turn charge back on through any hold; with it the expiry sets EN_CHG 0. STOP_WD_CHG is
+   reset only by REG_RST and a power-on, and the read-back checks it with ITERM. */
 #define POWER_CHG_ITERM_MA 90U
 /* Input over-voltage (REG10 VAC_OVP, table 7-26): 12 V. Its POR value is 7 V (the field's "POR: 11b" and
    figure 7-38's R/W-3h; the table's reset 85h decodes to 26 V, so the firmware never relies on either).
