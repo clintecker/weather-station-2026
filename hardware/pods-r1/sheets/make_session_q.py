@@ -152,7 +152,7 @@ def cover(c, pg):
              ("UV CROWN (PETG): BODY + DOME LID\nGLAND IN THE DRUM, WINDOW ON TOP", "q_p_box_uv"),
              (f"M3 HEAT-SET INSERT ({n_ins}x)\n{INS_L:g} LONG, {INS_D:g} KNURL (TBD)", "q_p_insert"),
              ("PG-7 #762 GLAND (4x): 1 PER BOX\n+ TH'S 2ND, FOR THE SHT45 LEAD", "q_p_gland"),
-             (f"O-RING CORD {CORD:g} MM, NBR/EPDM\n{cord_m:.1f} M + SPARE (3 BOXES)", "q_p_cord"),
+             (f"O-RING CORD {CORD:g} MM NBR 70 (NOT 1.78)\n{cord_m:.1f} M + SPARE (3 BOXES)", "q_p_cord"),
              (f"{M8} PAN HEAD (14x)\n8 LID (TH + BARO) + 6 BOARD", "q_p_m3x8"),
              (f"{M10} PAN HEAD (12x)\n4 PER BOX, INTO THE SHIELD", "q_p_m3x10"),
              (f"UV WINDOW: PTFE DISC {WIN_D:g} x {WIN_T:g}\n+ BARO ePTFE PATCH {EPTFE_D:g} (OPTIONAL)", "q_p_window"),
@@ -253,10 +253,16 @@ def uv_inserts_page(c, pg):
          what="insert method")
     x, y, w, h = panel(c, g.cell(1, 1), 4, ["Check every one: flush (a straight edge", "rocks on none), square, and an",
                                             "M3 screw turns in by hand."], warn=True)
-    para(c, x + 12, y + h - 52, wrap_px(
+    yy = para(c, x + 12, y + h - 52, wrap_px(
         f"No rim inserts in the crown: its lid twists on. A crooked insert: heat it, pull it with pliers, let the bore "
         f"cool, and put a new one in. The insert size ({INS_L:g} long, {INS_D:g} knurl) is TBD: measure yours.",
         w - 26, 8.2), 8.2, 10.5, color=GREY, w=w - 20, what="insert notes")
+    para(c, x + 12, yy - 8, wrap_px(
+        f"FIT TEST, now, while the crown is empty: a {CORD:g} mm cord ring (step 15's length; no glue yet) in the "
+        "spigot's groove, the dome lid on, its 3 lugs into the 3 slots, push down and turn clockwise. It should take a "
+        "firm hand push and click over the detent at the stop, about 25 degrees. Won't go down: check the cord is "
+        f"{CORD:g}, not 1.78. No click, or the lid rocks: reprint before going on. Then twist it off; the cord waits "
+        "for step 15.", w - 26, 8.2), 8.2, 10.5, w=w - 20, what="fit test")
 
 
 def inserts_page(name, step):

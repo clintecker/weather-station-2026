@@ -60,6 +60,7 @@ SLOGANS_P = [
     "THE WEATHER WILL READ THIS EEPROM FOR YEARS.",
     "METER FIRST. POWER NEVER. NOT TODAY.",
     "GLAND FIRST. PLUG LAST. THE PLUG DOES NOT FIT THROUGH.",
+    "FOUR CORES. FOUR PADS. RED TO VIN.",
 ]
 
 
@@ -177,7 +178,8 @@ def before(c, pg):
              "J1, U1, U2, JP1, R1 ARE PARTS. J5, J10 ... ARE HOLES IN ROW J. THE SHEET ALWAYS SAYS WHICH.",
              "EACH POD BOARD KEEPS ITS OWN 24LC32 FOR LIFE. ITS ID RECORD DESCRIBES THAT SENSOR: NEVER SWAP AN EEPROM OR A SENSOR "
              "BETWEEN PODS.",
-             "MARK EACH BOARD, ITS LEAD AND ITS PORT CABLE (BOTH ENDS) WITH ITS TX PORT: " + PORT_TAGS + ".",
+             "MARK EACH BOARD AND ITS PORT CABLE (BOTH ENDS) WITH ITS TX PORT, AND THE SENSOR LEAD TOO ON TH AND UV (BARO HAS NONE): "
+             + PORT_TAGS + ".",
              "NO POWER IN THIS SESSION. THE METER IS THE ONLY JUDGE. ANYTHING ODD: STOP, PHOTOGRAPH IT, REPORT TO CLAUDE."]
     for i, s in enumerate(rules):
         yy = y + h - 12 - i * (h - 8) / len(rules)
@@ -464,9 +466,11 @@ def jack_page(pod, step):
             text(c, tx + 28, yy, hole(hh), 10, "HEAD", NEON)
             text(c, tx + 62, yy, NET_WORD[net] if net else "NOT CONNECTED", 8.5, "ALT", INK if net else GREY)
         LAB.block(tx, y + h - 66 - 6 * 16, x + w - 4, y + h - 40, "pin table")
+        where = ("toward the drum's gland: the cable comes in level through the crown's wall" if pod.name == "UV" else
+                 "where the cable comes up from the box's gland")
         x, y, w, h = panel(c, g.cell(0, 1), 2, cap(
-            "From the front-left: the mouth over the bottom edge, where the cable comes up from the box's gland. Pins 1 and",
-            "6 still get soldered (they hold the breakout); nothing else connects to them.", width=100))
+            f"From the front-left: the mouth over the bottom edge, {where}.",
+            "Pins 1 and 6 still get soldered (they hold the breakout); nothing else connects to them.", width=100))
         b = Art(c, f"i{col}_jack", x + 30, y + 22, w - 60, h - 56)
         lanes(c, [("J1 MOUTH", *b.A("J1:mouth"), "rt", False)], art_box(b, -2), size=8.5)
     return f
@@ -569,7 +573,7 @@ def lead_sensor_page(pod, step):
 
     def f(c, pg):
         page(c, step, f"{pod.name} POD: THE LEAD, {kit['name'].split(' #')[0]} END",
-             f"ROUND JACKETED 4-CORE, STRANDED. SOLDERED TO THE {kit['name']}'S OWN HEADER PADS. NO HEADER.", pg, SLOGANS_P[5])
+             f"ROUND JACKETED 4-CORE, STRANDED. SOLDERED TO THE {kit['name']}'S OWN HEADER PADS. NO HEADER.", pg, SLOGANS_P[8])
         g = Grid(1, 2, heights=[1.35, 1])
         x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
             f"The {kit['name']}'s FRONT: {kit['front']}. Strip the jacket back 30 mm",
@@ -817,7 +821,8 @@ def cable_crimp(c, pg):
         "PG-7 #762 (Session Q) and, at the TX end, the PG-7 the TX box already has for that pod's port.",
         f"Each cable's round jacket must be {lo:g}-{hi:g} mm across for a PG-7 to seal (else that end gets a PG-9). 2  Cut it to",
         "length. 3  Push each BARE end in through its dome nut and gland body from OUTSIDE the box. No plug yet.",
-        f"4  Flag both ends with the pod's TX port: {PORT_TAGS}. The TX reads each port on its own mux channel.", width=100))
+        f"4  Flag both ends with the pod's TX port: {PORT_TAGS}. The TX reads each port on its own mux channel.",
+        "Not printed yet? Stop here; finish this page in Session Q.", width=100), warn=True)
     a = Art(c, "cab_glands", x + 20, y + 24, w - 40, h - 68)
     lanes(c, [("POD END: PG-7 #762, DOME OUT", *a.A("pod_gland"), "up", False),
               ("TX END: THE TX BOX'S PG-7", *a.A("tx_gland"), "up", False),

@@ -38,7 +38,7 @@ b = np.array((bl.center.x, bl.center.y, bl.zmin))            # the LTR390 jacket
 r = 0.62 * d["r_in"]
 th0 = np.arctan2(a[1] - cy, a[0] - cx)
 loop = [(cx + r * np.cos(th0 + k * 0.5), cy + r * np.sin(th0 + k * 0.5), z) for k, z in ((1, 14.0), (2, 22.0), (3, 30.0), (4, 38.0))]
-pts = [tuple(a), tuple(a + (0, 0, 6.0)), *loop, tuple(b - (0, 0, 6.0)), tuple(b)]
+pts = [tuple(a), tuple(a + (0, 0, 6.0)), *loop, tuple(b + (0, 0, 6.0)), tuple(b)]     # down into the jacket's end
 # drawn by the page (it follows the lid when the crown comes apart): send its path, not a mesh
 cable = dict(pts=[[float(q[0] - cx), float(q[1] - cy), float(q[2])] for q in pts], r=2.0, color=stub[2],
              follow=[0.0, 0.0, 0.25, 0.5, 0.7, 0.85, 1.0, 1.0])            # how far each point moves with the lid

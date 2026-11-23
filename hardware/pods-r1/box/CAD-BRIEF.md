@@ -22,7 +22,7 @@ A cable comes in through a PG-7 cable gland. You crimp the plug onto it inside t
 |---|---|---|---|
 | TH | the SHT45 board's port end; the SHT45 itself sits outside on the shield stand, on a 4-core lead | upright on the −x face of the remixed shield arm | 2 × PG-7 in the bottom wall (port cable and SHT45 lead) |
 | BARO | BMP581 | upright on the +x face of the remixed shield arm | 1 × PG-7 and a Ø4 vent with a baffle, both in the bottom wall |
-| UV | LTR390 (in the lid, on a 0.15 m lead) | a round crown, window up, on the remixed shield cap | 1 × PG-7, level, through the drum wall; a window at the top of the dome |
+| UV | LTR390 (in the lid, on a 0.30 m lead) | a round crown, window up, on the remixed shield cap | 1 × PG-7, level, through the drum wall; a window at the top of the dome |
 
 ## Sealing (Clint, 2026-11-18)
 
@@ -84,13 +84,16 @@ The UV pod isn't a box: it's a round crown, a drum with a dome lid that twists o
 (10.16, 13.375), which runs through the port plug's axis, so the gland points straight out of the drum.
 - **Drum:** outside Ø117.6 (r 58.8) from the floor at z −9.50 up to the ledge at z 20.84. Inside bore r 54.0 from
   z −6.50 (a 3.0 floor).
-- **Spigot:** r 56.4 outside (2.4 wall) from the ledge up to the joint at z 30.84. The lid's skirt slides over it
+- **Spigot:** r 56.4 outside, r 53.6 inside (2.8 wall: it steps 0.4 in from the drum's bore on a 45° chamfer),
+  from the ledge up to the joint at z 30.84; 1.5 is left behind the bayonet's channels and slots. The lid's skirt slides over it
   with 0.2 clearance, flush with the drum outside.
-- **O-ring:** a radial groove round the spigot at z 23.84, 0.93 deep × 2.03 wide, for the 1.5 cord (351 mm of it).
+- **O-ring:** a radial groove round the spigot at z 23.84, 0.93 deep × 2.03 wide, for the 1.5 cord (351 mm of it; or a stock metric 110 × 1.5 O-ring, NBR 70; not 1.78 / AS568, which squeezes 36 %).
   The lid's skirt squeezes it about 25 %. It sits below the bayonet, so no slot crosses it.
 - **Bayonet:** 3 lugs inside the lid's skirt (8 wide, 2.4 tall, 1.0 deep, centred 3.5 below the joint). The
   spigot has an entry slot down from its top at 90°, 210° and 330° (box frame, from +x) and a channel round from
   each. The lid locks 25° clockwise seen from above; the channel's end is the stop. No slot is over the gland (270°).
+  A detent in each channel (a Ø1.4 post on the channel floor, just behind the locked lug) catches the lug by 0.2, so
+  the lid clicks into the locked end and stays there.
 - **Dome lid:** a quarter-ellipse dome, 28 rise from the joint, 3.0 thick, apex z 58.84, cut flat at z 58.24 for
   the window. The overall crown is 67.7 tall from the floor.
 - **Port gland:** Ø13.0, level, through the drum wall at (10.16, y, 8.84), axis −y. Inside: a flat land (the nut's
@@ -99,9 +102,10 @@ The UV pod isn't a box: it's a round crown, a drum with a dome lid that twists o
   - a Ø20.3 × 1.5 deep recess in the flat at the top of the dome. The disc sits flush, so no water ponds on it.
   - a Ø17.0 aperture (a 1.5 ledge all round) at the top of a short tube down toward the LTR390.
   - the disc sits in a bed of neutral-cure silicone.
-- **LTR390:** in the lid, chip up, its board's top at z 51.34, on two bosses under the dome at (0.00, 7.03) and
-  (20.32, 19.73), two of its corner holes. 2 × M2.5 × 6 thread-forming into Ø2.1 pilots. The chip is 1.0 below the
-  aperture tube. Its 0.15 m lead runs to the board below.
+- **LTR390:** in the lid, chip up, its board's top at z 50.34, on two bosses under the dome at (0.00, 7.03) and
+  (20.32, 19.73), two of its corner holes. 2 × M2.5 × 6 thread-forming into Ø2.1 pilots, which stop 0.5 past the screw's
+  tip (at least 1.2 of plastic to the dome's outside and to the window recess). The aperture tube's bottom is 0.5
+  above the tops of the breakout's two factory STEMMA QT sockets (they reach past the tube's outside radius). Its 0.30 m lead runs to the board below.
 - **Board:** on the two standoffs from the floor under the Perma-Proto's mounting holes, (3.81, 25.4) and
   (39.37, 25.4), M3 × 8 thread-forming, as in TH and BARO.
 - **Mount face:** z −9.50, the floor. Four blind floor bosses take M3 inserts from below: bore Ø4.0 × 6.7, at

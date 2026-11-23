@@ -91,7 +91,9 @@ V1 = _HERE / "v1"           # v1: Clint's printed boxes (his CAD agent, from CAD
 UPS = {"TH": (0.0, 1.0, 0.0), "BARO": (0.0, 1.0, 0.0), "UV": (0.0, 0.0, 1.0)}
 # the UV crown (Clint 2026-11-19: "make it look cool"): a round drum and a smooth dome, centred on the shield's axis
 CROWN_SP_H = 10.0           # the body's spigot: height (the lid's skirt slides over it)
-CROWN_SP_T = 2.4            # spigot wall
+CROWN_SP_T = 2.4            # spigot: its outside radius beyond the drum's bore (sets the lid's skirt, the drum and the cap)
+CROWN_SP_IN = 0.4           # the spigot also steps inward of the drum's bore by this (a 45 deg chamfer under it), so its
+                            # wall is 2.8: 1.5 left behind the bayonet's channels and slots, 1.87 behind the groove
 CROWN_C = 0.2               # radial clearance, spigot to the lid's skirt bore
 CROWN_SKIRT_T = 2.2         # the lid's skirt wall (its outside is flush with the drum's)
 CROWN_RISE = 28.0           # the dome's rise above the spigot's top
@@ -105,7 +107,14 @@ CROWN_ORING_Z = 7.0         # the radial O-ring groove's centre below the spigot
 CROWN_BOSS_R = 31.0         # floor bosses for the mount inserts: radius about the crown's axis (inside the cap's flat top)
 CROWN_GLAND_FACE = 22.0     # the round spot face for the port gland's seal, outside (and the flat land inside)
 LTR_HOLES = (10.16, 6.35)   # LTR390 #4831 corner holes from its centre (x, y); 2.54 in from each edge (Adafruit's usual)
-LTR_GAP = 1.0               # chip top to the window's aperture tube
+LTR_GAP = 1.0               # chip top to the window's aperture tube (at least)
+LTR_QT_H = 2.95             # the LTR390's two factory STEMMA QT sockets (JST SH 4-pin horizontal): height off its top face
+LTR_QT_GAP = 0.5            # QT socket tops to the aperture tube's bottom (the tube sits over both sockets)
+LTR_DROP = 5.5              # the LTR390's top face below the dome's inner apex (sets the pilots' plastic, see LTR_PILOT_*)
+LTR_CU = 0.05               # a boss lands on the breakout's hole ring (copper 0.05 proud of its top face)
+LTR_PILOT_PAST = 0.5        # an M2.5 pilot runs this far past the screw's tip, and no further (plastic above it)
+CROWN_DETENT = (0.7, 0.2)   # the bayonet's detent: a round bump in each channel just behind the locked lug (radius,
+                            # interference with the lug's inner face); the lug clicks over it, so the lid stays locked
 
 
 def mount_boss_depth():
@@ -461,9 +470,14 @@ def _crown_dims(d, p, nut_r):
     d["y_land"] = y_land
     d["ops"].append(("gland", (d["px"], y_land - WALL, d["pz"]), (0.0, -1.0, 0.0)))
     # the LTR390, sensor up under the window's aperture tube, on two M2.5 screws into bosses under the dome
-    z_b = apex - CROWN_DOME_T - 4.5
+    z_b = apex - CROWN_DOME_T - LTR_DROP
     d["ltr"] = dict(c=(cx, cy), z=z_b, holes=[(cx - LTR_HOLES[0], cy - LTR_HOLES[1]), (cx + LTR_HOLES[0], cy + LTR_HOLES[1])],
                     size=S.val("ltr390"))
+    # the aperture tube's bottom: over the chip by LTR_GAP and over both factory QT sockets (whose tops reach past the
+    # tube's outside radius) by LTR_QT_GAP. The pilots stop LTR_PILOT_PAST past the M2.5 screw's tip (the screw passes
+    # breakout_t of board), so the plastic over them and beside the window recess stays thick
+    d["ltr"]["tube_bot"] = z_b + max(0.8 + LTR_GAP, LTR_QT_H + LTR_QT_GAP)
+    d["ltr"]["pilot_top"] = z_b + S.val("ltr_screw")[1] - S.val("breakout_t") + LTR_PILOT_PAST
     # four floor bosses for the mount inserts, on a circle of CROWN_BOSS_R, clear of the board and its copper side
     br = S.val("pod_insert_bore")[0] / 2 + LUG_WALL
     w, h = S.val("permaproto_q")
@@ -503,7 +517,11 @@ def _crown_body(d, standoffs=True):
     s = (cq.Workplane("XY").workplane(offset=d["z_bo"]).center(cx, cy).circle(d["r_out"]).extrude(d["z_ledge"] - d["z_bo"])
          .union(cq.Workplane("XY").workplane(offset=d["z_ledge"] - 0.5).center(cx, cy).circle(d["r_sp"])
                 .extrude(d["z_joint"] - d["z_ledge"] + 0.5)))
-    s = s.cut(cq.Workplane("XY").workplane(offset=d["z_bi"]).center(cx, cy).circle(d["r_in"]).extrude(d["z_joint"] - d["z_bi"] + 1))
+    ri, k, zl0 = d["r_in"], CROWN_SP_IN, d["z_ledge"]
+    bore = (cq.Workplane("XZ").polyline([(0, d["z_bi"]), (ri, d["z_bi"]), (ri, zl0 - k), (ri - k, zl0), (ri - k, d["z_joint"] + 1),
+                                         (0, d["z_joint"] + 1)]).close()
+            .revolve(360, (0, 0, 0), (0, 1, 0)).translate((cx, cy, 0)))
+    s = s.cut(bore)
     # the port gland: a flat land inside (the nut's seat, as the TH wall), a round spot face outside, the hole
     px, pz, F, yl = d["px"], d["pz"], CROWN_GLAND_FACE, d["y_land"]
     land = (cq.Workplane("XY").add(cq.Solid.makeBox(F, yl - (cy - d["r_out"]), d["z_ledge"] - d["z_bi"],
@@ -535,7 +553,26 @@ def _crown_body(d, standoffs=True):
         s = s.cut(_ring(d, rs - dep, rs + 1, zl - lh / 2 - 0.3, zj + 1, a - half, a + half))
         s = s.cut(_ring(d, rs - dep, rs + 1, zl - lh / 2 - 0.3, zl + lh / 2 + 0.3, min(a, a + CROWN_TURN) - half,
                          max(a, a + CROWN_TURN) + half))
+    for x, y in detents(d):                 # the detent bumps: round posts on the channel floor, the lug rides over them
+        s = s.union(cq.Workplane("XY").workplane(offset=zl - lh / 2 - 0.3).center(x, y).circle(CROWN_DETENT[0])
+                    .extrude(lh + 0.6))
     return s
+
+
+def detents(d):
+    """The bayonet detents (x, y): one per channel on its floor (r_sp - lug depth - 0.3), just behind the locked lug
+    (0.3 clear of its trailing end, toward the entry slot), so turning the lid to lock rides the lug over it."""
+    cx, cy = d["axis"]
+    lw, _lh, ld = CROWN_LUG
+    rf = d["r_sp"] - ld - 0.3
+    lug_half = math.degrees((lw / 2) / d["r_sp"])
+    step = math.degrees((0.3 + CROWN_DETENT[0]) / rf)
+    sgn = 1.0 if CROWN_TURN < 0 else -1.0                     # from the locked lug back toward the entry slot
+    out = []
+    for a in _bayonet_angles(d):
+        t = math.radians(a + CROWN_TURN + sgn * (lug_half + step))
+        out.append((cx + rf * math.cos(t), cy + rf * math.sin(t)))
+    return out
 
 
 def _crown_lid(d):
@@ -555,13 +592,14 @@ def _crown_lid(d):
     s = w.revolve(360, (0, 0, 0), (0, 1, 0)).translate((cx, cy, 0))
     s = s.cut(cq.Workplane("XY").workplane(offset=d["z_flat"]).center(cx, cy).circle(ro + 5).extrude(10))   # apex flat
     wdw, L = d["window"], d["ltr"]
-    tube_bot = L["z"] + 0.8 + LTR_GAP
+    tube_bot = L["tube_bot"]
     s = s.union(cq.Workplane("XY").workplane(offset=tube_bot).center(cx, cy).circle(wdw["aperture"] / 2 + 2.0)
                 .extrude(apex - tube_bot - 1.0))
     for x, y in L["holes"]:
-        s = s.union(cq.Workplane("XY").workplane(offset=L["z"]).center(x, y).circle(2.5).extrude(apex - L["z"] - 1.5))
+        s = s.union(cq.Workplane("XY").workplane(offset=L["z"] + LTR_CU).center(x, y).circle(2.5)
+                    .extrude(apex - L["z"] - LTR_CU - 1.5))
         s = s.cut(cq.Workplane("XY").workplane(offset=L["z"] - 1).center(x, y).circle(S.val("pod_pilot_m25") / 2)
-                  .extrude(S.val("ltr_screw")[1] + 1.0))
+                  .extrude(L["pilot_top"] - L["z"] + 1))
     s = s.cut(cq.Workplane("XY").workplane(offset=d["z_flat"] - wdw["depth"]).center(cx, cy)
               .circle(wdw["recess_d"] / 2).extrude(5))
     s = s.cut(cq.Workplane("XY").workplane(offset=tube_bot - 1).center(cx, cy).circle(wdw["aperture"] / 2)
@@ -604,10 +642,12 @@ def report():
         if n == "UV":
             lines.append(f"  crown    Ø{2 * d['r_out']:.1f} x {d['z_flat'] - d['z_bo']:.1f} tall (drum to the ledge "
                          f"{d['z_ledge'] - d['z_bo']:.1f}, lid skirt {CROWN_SP_H:g}, dome rise {CROWN_RISE:g}); bayonet "
-                         f"{CROWN_LUGS} lugs, {abs(CROWN_TURN):g} deg twist, clockwise from above to lock")
+                         f"{CROWN_LUGS} lugs, {abs(CROWN_TURN):g} deg twist, clockwise from above to lock, a detent "
+                         f"({CROWN_DETENT[1]:g} catch) at the locked end")
             lines.append(f"  seal     cord {g['cord']} in a {g['width']} x {g['depth']} groove round the spigot (radial, "
                          f"squeeze {g['squeeze']:.0%}), centreline {g['length']:.1f} long")
-            lines.append(f"  LTR390   on 2 M2.5 bosses under the window, board top Z {d['ltr']['z']:.2f}")
+            lines.append(f"  LTR390   on 2 M2.5 bosses under the window, board top Z {d['ltr']['z']:.2f}; aperture tube "
+                         f"from Z {d['ltr']['tube_bot']:.2f}; pilots to Z {d['ltr']['pilot_top']:.2f}")
         else:
             lines.append(f"  outside  {bb.xlen:.2f} x {bb.ylen:.2f} x {bb.zlen + d['lid_t']:.2f} with the lid "
                          f"(walls {WALL}, lid {d['lid_t']}, lugs included)")

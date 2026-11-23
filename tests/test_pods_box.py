@@ -381,6 +381,70 @@ class PodBox(unittest.TestCase):
         for n in ("TH", "BARO"):
             self.assertEqual(self.box.mount_face(n).keepouts, [])
 
+    def test_uv_ltr390_clears_lid(self):
+        """Every modelled LTR390 part (Session Q's ltr_in_lid: the board, its copper, chips, passives, LED and the two
+        factory STEMMA QT sockets) misses the lid. The two M2.5 screws only cut into their pilots: inside the thread's
+        radius round each hole and no higher than the pilot's top."""
+        sheets = str(PODS / "sheets")
+        if sheets not in sys.path:
+            sys.path.insert(0, sheets)
+        import scenes_q                 # noqa: E402  (it puts the TX sheets' r3d on the path)
+        import r3d
+        lid = self.built["UV"][1]
+        L = self.box.dims("UV")["ltr"]
+        s = r3d.Scene()
+        scenes_q.ltr_in_lid(s, lead=False, screws=True)
+        names = [p[0] for p in s.parts]
+        self.assertIn("ltr_qt", names)
+        thread = self.S.val("ltr_screw")[0] / 2
+        for nm, shp, *_ in s.parts:
+            shp = shp if isinstance(shp, cq.Shape) else cq.Shape.cast(shp)
+            common = lid.intersect(shp)
+            if nm.startswith("m25_"):
+                k = int(nm[4:])
+                x, y = L["holes"][k]
+                bb = common.BoundingBox()
+                self.assertLessEqual(bb.zmax, L["pilot_top"] + EPS, f"{nm} runs past its pilot")
+                for v in common.Vertices():
+                    self.assertLessEqual(math.hypot(v.X - x, v.Y - y), thread + 1e-3, f"{nm} cuts beyond its thread")
+            else:
+                self.assertLess(common.Volume(), 1e-6, f"{nm} overlaps the lid")
+
+    def test_uv_crown_walls(self):
+        """Printed plastic at least WALL_MIN: over and beside the LTR390's M2.5 pilots (the dome's outer face and the
+        window recess), and behind the bayonet's channels and entry slots in the spigot. The detent bumps catch each
+        lug by CROWN_DETENT's interference, and the locked lug clears its bump."""
+        WALL_MIN = 1.2
+        body, lid, _w = self.built["UV"]
+        d = self.box.dims("UV")
+        L = d["ltr"]
+        pr = self.S.val("pod_pilot_m25") / 2
+        for x, y in L["holes"]:
+            # a cylinder WALL_MIN round the pilot and WALL_MIN over its top: all lid plastic but the pilot itself
+            # (it starts on the boss's face, where the pilot opens)
+            z0 = L["z"] + self.box.LTR_CU + 0.01
+            shell = cq.Solid.makeCylinder(pr + WALL_MIN, L["pilot_top"] + WALL_MIN - z0, cq.Vector(x, y, z0))
+            pilot = cq.Solid.makeCylinder(pr, L["pilot_top"] - z0, cq.Vector(x, y, z0))
+            self.assertLess(shell.cut(pilot).cut(lid).Volume(), 1e-3, f"thin plastic round the pilot at {x, y}")
+            self.assertFalse(lid.isInside(cq.Vector(x, y, L["pilot_top"] - 0.2)), "no pilot")
+        ax, ay = d["axis"]
+        lw, lh, ld = self.box.CROWN_LUG
+        zl = d["z_joint"] - self.box.CROWN_LUG_Z
+        for a in self.box._bayonet_angles(d):
+            for ang, z in ((a, zl), (a, d["z_joint"] - 0.5), (a + self.box.CROWN_TURN / 2, zl)):   # slot, channel
+                t = math.radians(ang)
+                rs = [r / 50 for r in range(int(d["r_in"] * 50) - 50, int(d["r_sp"] * 50) + 50)
+                      if body.isInside(cq.Vector(ax + r / 50 * math.cos(t), ay + r / 50 * math.sin(t), z))]
+                self.assertGreaterEqual(max(rs) - min(rs) + 0.02, WALL_MIN, f"thin spigot at {ang:.1f} deg, z {z:.2f}")
+                self.assertLess(max(rs), d["r_sp"] - ld, "no channel")
+        # the detents: each bump reaches into the lug's path by the interference, and sits clear of the locked lug
+        r_lug = d["r_sp"] + self.box.CROWN_C - ld                    # the lug's inner face
+        for x, y in self.box.detents(d):
+            reach = math.hypot(x - ax, y - ay) + self.box.CROWN_DETENT[0]
+            self.assertAlmostEqual(reach - r_lug, self.box.CROWN_DETENT[1], places=6)
+            self.assertTrue(body.isInside(cq.Vector(x, y, zl)), "no detent bump")
+        self.assertLess(lid.intersect(body).Volume(), 1e-3)
+
     def test_stls_written(self):
         out = PODS / "box" / "stl"
         for n in self.names:
