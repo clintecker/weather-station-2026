@@ -96,7 +96,7 @@ class PodChecks(unittest.TestCase):
         r = self.c.cable_map("reversed")
         self.assertEqual({k: r[k] for k in (2, 5, 3, 4)}, {2: 5, 5: 2, 3: 4, 4: 3})
         self.assertEqual(self.c.cable_map("straight"), {i: i for i in range(1, 7)})
-        for n, p in self.pods.items():
+        for _n, p in self.pods.items():
             e = self.c.end_to_end(p, 2, "reversed")
             self.assertEqual(e[2], ("SCL", "3V3"))        # TX 3.3 V lands on the pod's SCL
             self.assertEqual(e[5], ("3V3", "SCL"))

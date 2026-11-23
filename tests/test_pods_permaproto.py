@@ -45,7 +45,7 @@ class Permaproto(unittest.TestCase):
         self.assertEqual(len(set(p.HOLES.values())), 210)
         xs = sorted({x for x, _ in p.HOLES.values()})
         self.assertEqual(len(xs), s.val("permaproto_q_cols")[0])
-        for a, b in zip(xs, xs[1:]):
+        for a, b in zip(xs, xs[1:], strict=False):
             self.assertAlmostEqual(b - a, 2.54, places=3)
         self.assertEqual((r(p.OUTLINE["width"]), r(p.OUTLINE["height"])), (w, h))
         # lower-left origin: the outline spans 0..w, 0..h and every hole is inside it

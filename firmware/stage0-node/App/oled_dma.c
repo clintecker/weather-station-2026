@@ -127,6 +127,15 @@ static void transfer_done(void)
   if (power_pending) start_power();
 }
 
+/* A transfer's DMA has finished: wait for the SPI FIFO to drain and the bus to go idle, DRAIN_TRIES at most. */
+static void drain_step(void)
+{
+  if (in_dma) { fault(); return; }   /* the DMA's timeout: its transfer-complete interrupt never came */
+  if (LL_SPI_GetTxFIFOLevel(SPI1) == LL_SPI_TX_FIFO_EMPTY && !LL_SPI_IsActiveFlag_BSY(SPI1)) { transfer_done(); return; }
+  if (++drain_tries >= DRAIN_TRIES) { fault(); return; }
+  arm(DRAIN_MS);
+}
+
 /* cppcheck-suppress constParameterCallback ; ST's UTIL_TIMER callback signature */
 static void on_step(void *ctx)
 {
@@ -142,10 +151,7 @@ static void on_step(void *ctx)
       commands(ST_SETUP, ssd1325_setup, SSD1325_SETUP_LEN);
       break;
     case ST_SETUP: case ST_WINDOW: case ST_PIXELS: case ST_POWER:   /* draining after the DMA */
-      if (in_dma) { fault(); break; }   /* the DMA's timeout: its transfer-complete interrupt never came */
-      if (LL_SPI_GetTxFIFOLevel(SPI1) == LL_SPI_TX_FIFO_EMPTY && !LL_SPI_IsActiveFlag_BSY(SPI1)) { transfer_done(); break; }
-      if (++drain_tries >= DRAIN_TRIES) { fault(); break; }
-      arm(DRAIN_MS);
+      drain_step();
       break;
     case ST_OFF: case ST_IDLE:
     default:
@@ -212,13 +218,16 @@ uint8_t *oled_dma_buffer(void) { return txbuf; }
 
 int oled_dma_busy(void) { oled_state s = state; return s != ST_IDLE && s != ST_OFF; }
 
+/* Whether `on` changes the enabled flag (called with interrupts off). */
+static int enable_changes(int on) { return on ? !enabled : enabled; }
+
 void oled_dma_enable(int on)
 {
   uint32_t primask = __get_PRIMASK();
   __disable_irq();
   int restart = on && state == ST_OFF;   /* after a fault */
   if (restart) state = ST_RESET_LOW;     /* claimed, as in oled_dma_send: start_up() runs with interrupts on */
-  int change = !restart && (on ? !enabled : enabled);
+  int change = !restart && enable_changes(on);
   if (change) enabled = (uint8_t)(on != 0);
   int now = change && state == ST_IDLE;
   if (now) state = ST_POWER;             /* claimed, as in oled_dma_send */

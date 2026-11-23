@@ -164,7 +164,7 @@ class PodLayout(unittest.TestCase):
             self.assertIn("J1.6", p.unconnected())
 
     def test_wp_strap(self):
-        for n, p in self.pods.items():
+        for _n, p in self.pods.items():
             u1, jp, r1 = p.part("U1"), p.part("JP1"), p.part("R1")
             wp = self.PP.strip_of(u1.pins["WP"])
             self.assertEqual(self.PP.strip_of(jp.pins["2"]), wp)
@@ -183,7 +183,7 @@ class PodLayout(unittest.TestCase):
         self.assertEqual(sig(th), sig(uv))
         self.assertEqual(sig(baro), sig(uv))
         self.assertEqual(wires(th), wires(uv))
-        diff = [(a, b) for a, b in zip(wires(baro), wires(uv)) if a != b]
+        diff = [(a, b) for a, b in zip(wires(baro), wires(uv), strict=True) if a != b]
         self.assertEqual(len(wires(baro)), len(wires(uv)))
         self.assertEqual({a[0] for a, _b in diff}, {"SDA"})            # only the SDA wires follow the sensor's SDA pad
         self.assertEqual(baro.part("U2").pins["VIN"], uv.lead.conductors[0].hole)
@@ -202,7 +202,7 @@ class PodLayout(unittest.TestCase):
         def nodes(wr):
             pts = [(round(x / g), round(y / g)) for x, y in wr.path]
             out = []
-            for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+            for (ax, ay), (bx, by) in zip(pts, pts[1:], strict=False):
                 self.assertTrue(ax == bx or ay == by, wr)
                 n = max(abs(bx - ax), abs(by - ay))
                 for k in range(n):

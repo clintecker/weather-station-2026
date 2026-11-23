@@ -54,10 +54,10 @@ static void cookie(const oled_surf *s, unsigned frame)
   if (d == 6) oled_line(s, 56, 47, 72, 47, 0);   /* the slip between them */
 }
 
-void scr_fortune(const oled_surf *s, unsigned frame, const scr_view_t *v)
+/* The slip: the fortune's rows, typed out up to `typed` characters. */
+static void fortune_slip(const oled_surf *s, const char *text, unsigned typed)
 {
-  const char *text = scr_fortunes[scr_fortune_pick(v)];
-  unsigned typed = frame * FORTUNE_CPF, shown = 0;
+  unsigned shown = 0;
   oled_box(s, 0, 0, OLED_W, 31);
   for (unsigned r = 0; r < FORTUNE_ROWS && *text; r++)
   {
@@ -70,11 +70,22 @@ void scr_fortune(const oled_surf *s, unsigned frame, const scr_view_t *v)
     text += n;
     if (*text == '\n') text++;
   }
+}
+
+/* LUCKY and three numbers from the last sequence number, the air temperature and the humidity. */
+static void fortune_lucky(const oled_surf *s, const scr_view_t *v)
+{
   oled_row lucky = { "LUCKY " };
-  uint32_t nums[3] = { v->last_seq % 100U, (v->air_c < 0 ? 0U - (uint32_t)v->air_c : (uint32_t)v->air_c) / 100U % 100U,
+  const uint32_t nums[3] = { v->last_seq % 100U, (v->air_c < 0 ? 0U - (uint32_t)v->air_c : (uint32_t)v->air_c) / 100U % 100U,
                        (uint32_t)(v->air_rh < 0 ? 0 : v->air_rh) / 100U % 100U };
   for (unsigned i = 0; i < 3U; i++) { oled_put_uint(&lucky, nums[i]); oled_put(&lucky, " "); }
   scr_label(s, 36, lucky.s, SCR_LEFT);
+}
+
+void scr_fortune(const oled_surf *s, unsigned frame, const scr_view_t *v)
+{
+  fortune_slip(s, scr_fortunes[scr_fortune_pick(v)], frame * FORTUNE_CPF);
+  fortune_lucky(s, v);
   cookie(s, frame);
 }
 
@@ -143,6 +154,34 @@ static void (*const weather[])(const oled_surf *, unsigned) = {
   [MOOD_SLEEPY] = sleepy, [MOOD_SOGGY] = soggy, [MOOD_BREEZY] = breezy, [MOOD_TOASTY] = toasty,
 };
 
+/* The eyes shut for a blink now and then, and all the time when sleepy. */
+static int eyes_shut(unsigned frame, enum scr_mood m)
+{
+  return frame == 20U || frame == 21U || frame == 52U || m == MOOD_SLEEPY;
+}
+
+/* The tongue out at the catch (on an ACK), and the fly until it is caught. */
+static void frog_catch(const oled_surf *s, unsigned frame, int acked, int caught, int fx, int fy)
+{
+  if (acked && (frame == FROG_CATCH || frame == FROG_CATCH + 1U))
+    oled_line(s, FROG_MOUTH_X, FROG_MOUTH_Y + 1, fx, fy, 0);   /* the tongue */
+  if (!caught) fly(s, fx, fy, frame);
+}
+
+/* The right-hand text: FROG, its mood, the air, and what it says. */
+static void frog_text(const oled_surf *s, unsigned frame, const scr_view_t *v, enum scr_mood m, int acked, int caught)
+{
+  oled_row line = { "is " };
+  oled_put(&line, scr_mood_names[m]);
+  (void)oled_text(s, FROG_TEXT_X, 4, "FROG", 1);
+  (void)oled_text(s, FROG_TEXT_X, 14, line.s, 1);
+  line.s[0] = '\0';
+  if (v->air_ok) { oled_put_dec(&line, v->air_c, 2, 1, 0); oled_put(&line, "C "); oled_put_dec(&line, v->air_rh, 2, 0, 0); oled_put(&line, "%"); }
+  (void)oled_text(s, FROG_TEXT_X, 28, line.s, 1);
+  const char *said = frame < FROG_CATCH ? "watching" : caught ? "ACK! yum" : acked ? "..." : "no ACK";
+  (void)oled_text(s, FROG_TEXT_X, 50, said, 1);
+}
+
 void scr_frog(const oled_surf *s, unsigned frame, const scr_view_t *v)
 {
   static const int8_t hop[8] = { 0, -2, -4, -5, -5, -4, -2, 0 };
@@ -154,22 +193,11 @@ void scr_frog(const oled_surf *s, unsigned frame, const scr_view_t *v)
   fly_at(frame, &fx, &fy);
   if (!acked && frame >= FROG_CATCH) fx += (int)(frame - FROG_CATCH) * 4;   /* away */
   oled_blit(s, scr_art_frog.x + dx, scr_art_frog.y + dy, &scr_art_frog.bits);
-  int blink = frame == 20U || frame == 21U || frame == 52U;
-  eyes(s, dx, dy, fx, fy, blink || m == MOOD_SLEEPY);
+  eyes(s, dx, dy, fx, fy, eyes_shut(frame, m));
   mouth(s, dx, dy, m);
-  if (acked && (frame == FROG_CATCH || frame == FROG_CATCH + 1U))
-    oled_line(s, FROG_MOUTH_X, FROG_MOUTH_Y + 1, fx, fy, 0);   /* the tongue */
-  if (!caught) fly(s, fx, fy, frame);
+  frog_catch(s, frame, acked, caught, fx, fy);
   if (weather[m]) weather[m](s, frame);
-  oled_row line = { "is " };
-  oled_put(&line, scr_mood_names[m]);
-  (void)oled_text(s, FROG_TEXT_X, 4, "FROG", 1);
-  (void)oled_text(s, FROG_TEXT_X, 14, line.s, 1);
-  line.s[0] = '\0';
-  if (v->air_ok) { oled_put_dec(&line, v->air_c, 2, 1, 0); oled_put(&line, "C "); oled_put_dec(&line, v->air_rh, 2, 0, 0); oled_put(&line, "%"); }
-  (void)oled_text(s, FROG_TEXT_X, 28, line.s, 1);
-  const char *said = frame < FROG_CATCH ? "watching" : caught ? "ACK! yum" : acked ? "..." : "no ACK";
-  (void)oled_text(s, FROG_TEXT_X, 50, said, 1);
+  frog_text(s, frame, v, m, acked, caught);
 }
 
 /* ---- the digital rain ---- */
@@ -246,7 +274,8 @@ static void flipper(const oled_surf *s, int side, int up)
   oled_line(s, x0, 59, x1, up ? 54 : 62, 0);
 }
 
-void scr_pinball(const oled_surf *s, unsigned frame, const scr_view_t *v)
+/* The score up to this frame (100 a fresh ACK-bumper hit, 10 a side one); *lit counts the ACK glow down. */
+static unsigned pinball_score(const scr_view_t *v, unsigned frame, unsigned *lit_out)
 {
   unsigned score = 0, prev = 0, lit = 0;
   for (unsigned t = 0; t <= frame; t++)   /* frame < 64: scr_draw caps it */
@@ -258,6 +287,26 @@ void scr_pinball(const oled_surf *s, unsigned frame, const scr_view_t *v)
     else if (lit) lit--;
     prev = h;
   }
+  *lit_out = lit;
+  return score;
+}
+
+/* The ACK bumper, lit up (filled, inverse text, rays) for a few frames after a hit. */
+static void ack_bumper(const oled_surf *s, unsigned lit)
+{
+  oled_circle(s, ACK_X, ACK_Y, ACK_R);
+  (void)oled_text(s, ACK_X - 8, ACK_Y - 3, "ACK", 1);
+  if (!lit) return;
+  oled_disc(s, ACK_X, ACK_Y, ACK_R - 1, 1);
+  (void)oled_text(s, ACK_X - 8, ACK_Y - 3, "ACK", 1);
+  oled_invert(s, ACK_X - 8, ACK_Y - 3, 17, 7);
+  for (int p = 0; p < 16; p += 2) scr_ray(s, ACK_X, ACK_Y, 13, 16, p, 0);
+}
+
+void scr_pinball(const oled_surf *s, unsigned frame, const scr_view_t *v)
+{
+  unsigned lit;
+  unsigned score = pinball_score(v, frame, &lit);
   oled_row line = { "" }, num = { "SCORE " };
   oled_put_uint(&num, score);
   (void)oled_put_lr(&line, "PINBALL", num.s, OLED_COLS);
@@ -265,15 +314,7 @@ void scr_pinball(const oled_surf *s, unsigned frame, const scr_view_t *v)
   oled_box(s, 0, 9, OLED_W, OLED_H - 9);
   oled_circle(s, 30, 24, SIDE_R);
   oled_circle(s, 98, 24, SIDE_R);
-  oled_circle(s, ACK_X, ACK_Y, ACK_R);
-  (void)oled_text(s, ACK_X - 8, ACK_Y - 3, "ACK", 1);
-  if (lit)
-  {
-    oled_disc(s, ACK_X, ACK_Y, ACK_R - 1, 1);
-    (void)oled_text(s, ACK_X - 8, ACK_Y - 3, "ACK", 1);
-    oled_invert(s, ACK_X - 8, ACK_Y - 3, 17, 7);
-    for (int p = 0; p < 16; p += 2) scr_ray(s, ACK_X, ACK_Y, 13, 16, p, 0);
-  }
+  ack_bumper(s, lit);
   int x, y;
   ball_at(v, frame, &x, &y);
   flipper(s, -1, y > 46 && x < 64);

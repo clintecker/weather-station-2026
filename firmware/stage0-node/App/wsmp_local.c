@@ -184,13 +184,18 @@ void local_snapshot(enum wsmp_port p, uint8_t snap[WSMP_SNAPSHOT_LEN])
   if (p == P_RAIN) mod_rain_snapshot(snap);
 }
 
+/* The power clients are one run in i2c_bus.h: the four INA228 rail monitors, then the gauge, and the
+   BQ25798 charger after the record clients. Every one goes to the power acquisition, which owns the
+   parts of both power modules. */
+static int power_client(enum i2c_client c)
+{
+  return (c >= I2C_C_INA228 && c <= I2C_C_MAX17048) || c == I2C_C_CHARGER;
+}
+
 /* The completion of a bus transfer (i2c_bus.h): to the module that owns the client. */
 void i2c_bus_done(enum i2c_client c, int rc)
 {
-  /* The power clients are one run in i2c_bus.h: the four INA228 rail monitors, then the gauge, and the
-     BQ25798 charger after the record clients. Every one goes to the power acquisition, which owns the
-     parts of both power modules. */
-  if ((c >= I2C_C_INA228 && c <= I2C_C_MAX17048) || c == I2C_C_CHARGER) { power_acq_i2c_done(c, rc); return; }
+  if (power_client(c)) { power_acq_i2c_done(c, rc); return; }
   switch (c)
   {
     case I2C_C_SHT45: mod_th_i2c_done(TH_AIR, rc); break;

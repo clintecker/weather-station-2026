@@ -38,7 +38,7 @@ def solid(b):
 
 def angle(a, b):
     na, nb = math.sqrt(sum(x * x for x in a)), math.sqrt(sum(x * x for x in b))
-    return math.degrees(math.acos(max(-1.0, min(1.0, sum(x * y for x, y in zip(a, b)) / (na * nb)))))
+    return math.degrees(math.acos(max(-1.0, min(1.0, sum(x * y for x, y in zip(a, b, strict=True)) / (na * nb)))))
 
 
 def blocked_length(shape, a, b):
@@ -130,7 +130,7 @@ class PodBox(unittest.TestCase):
                     nb = nut.BoundingBox()
                     r = max(nb.xlen, nb.ylen, nb.zlen) / 2 if axis[2] else max(nb.xlen, nb.zlen) / 2
                     r += 0.5
-                    mid = tuple(ci - (self.box.wall_t(n, kind) + 1.5) * ai for ci, ai in zip(c, axis))
+                    mid = tuple(ci - (self.box.wall_t(n, kind) + 1.5) * ai for ci, ai in zip(c, axis, strict=True))
                     for k in range(24):
                         a = k * math.pi / 12
                         if axis[2]:
@@ -173,9 +173,9 @@ class PodBox(unittest.TestCase):
                 body, lid, _w = self.built[n]
                 for kind, c, axis in ops:
                     shape = lid if kind == "window" else body
-                    a = tuple(ci + 1.0 * ai for ci, ai in zip(c, axis))           # 1 mm outside
+                    a = tuple(ci + 1.0 * ai for ci, ai in zip(c, axis, strict=True))           # 1 mm outside
                     depth = self.box.wall_t(n, kind) + 0.5                        # through the wall, 0.5 beyond
-                    b = tuple(ci - depth * ai for ci, ai in zip(c, axis))
+                    b = tuple(ci - depth * ai for ci, ai in zip(c, axis, strict=True))
                     self.assertLess(blocked_length(shape, a, b), 1e-6, f"{n} {kind} is not open")
 
     def test_baro_vent_baffled(self):
@@ -187,11 +187,11 @@ class PodBox(unittest.TestCase):
         r = self.box.vent_d() / 2 * 0.9
         u = (1.0, 0.0, 0.0)
         v = tuple(axis[(i + 1) % 3] * u[(i + 2) % 3] - axis[(i + 2) % 3] * u[(i + 1) % 3] for i in range(3))
-        starts = [tuple(ci + 0.05 * ai for ci, ai in zip(c, axis))]
+        starts = [tuple(ci + 0.05 * ai for ci, ai in zip(c, axis, strict=True))]
         for k in range(8):
             a = k * math.pi / 4
             starts.append(tuple(ci + 0.05 * ai + r * (math.cos(a) * ui + math.sin(a) * vi)
-                                for ci, ai, ui, vi in zip(c, axis, u, v)))
+                                for ci, ai, ui, vi in zip(c, axis, u, v, strict=True)))
         u2 = self.pods.pod(n).part("U2")
         pcb = next(b for b in u2.boxes if "PCB" in b.what)
         ends = [(x, y, z) for x in (pcb.x0, pcb.x1) for y in (pcb.y0, pcb.y1) for z in (pcb.z0, pcb.z1)]

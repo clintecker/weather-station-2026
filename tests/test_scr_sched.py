@@ -339,7 +339,7 @@ class Scheduler(unittest.TestCase):
             due = start + k * 120000
             self.assertGreaterEqual(t, due)
             self.assertLess(t - due, DWELL * STEP_MS + STEP_MS)
-        for i, (t, screen, n) in enumerate(runs):   # after each one HOME
+        for i, (t, screen, _n) in enumerate(runs):   # after each one HOME
             if (t, screen) in got:
                 self.assertEqual(runs[i + 1][1], 'HOME')
 

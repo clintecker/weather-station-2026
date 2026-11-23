@@ -48,19 +48,25 @@ static uint8_t beacon_due, beacon_out;
 #define BATT_IDLE_MA_X100 50  /* -0.5 mA: "not discharging" within the battery INA228's offset */
 static int energy = WS_ENERGY_CONSERVE;
 
+/* The cell voltage: the gauge's, else a fresh charger VBAT (then the source unless the gauge gave the SoC). */
+static void energy_voltage(ws_energy_in *in, const power_live_t *p, const char **src)
+{
+  const charger_t *c = charger_state();
+  if (p->gauge_ok && p->vcell_mv)
+  { in->v_ok = 1; in->v_mv = p->vcell_mv; }
+  else if (c->present && c->ok && c->adc_ok && clock_ms() - c->ts_ms < VBAT_FRESH_MS)
+  { in->v_ok = 1; in->v_mv = c->vbat; if (!p->gauge_ok) *src = "charger-vbat"; }   /* REG3B: 1 mV a count */
+}
+
 static void energy_inputs(ws_energy_in *in, const char **src)
 {
   power_live_t p;
-  const charger_t *c = charger_state();
   power_acq_live(&p);
   *in = (ws_energy_in){ 0 };
   *src = "none";
   if (p.gauge_ok)
   { in->soc_ok = 1; in->soc_x10 = p.soc_pct_x10; *src = "gauge"; }
-  if (p.gauge_ok && p.vcell_mv)
-  { in->v_ok = 1; in->v_mv = p.vcell_mv; }
-  else if (c->present && c->ok && c->adc_ok && clock_ms() - c->ts_ms < VBAT_FRESH_MS)
-  { in->v_ok = 1; in->v_mv = c->vbat; if (!p.gauge_ok) *src = "charger-vbat"; }   /* REG3B: 1 mV a count */
+  energy_voltage(in, &p, src);
   unsigned stage = (p.charger & WS_CHG_STAGE_MASK) >> WS_CHG_STAGE_SHIFT;
   in->powered = p.charger != POWER_NONE_U8 && (p.charger & POWER_STATUS_POWER_GOOD) && !(p.charger & POWER_STATUS_FAULT);
   in->full = in->powered && (stage == WS_CHG_STAGE_TOPOFF || stage == WS_CHG_STAGE_TERMINATED) &&

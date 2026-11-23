@@ -257,54 +257,74 @@ static void status_read(void)
   else write_control();
 }
 
-void charger_i2c_done(int rc)
+/* CS_ID: REG48 names a BQ25798, then the config burst; any other part is a fault (CH_PART). */
+static void id_read(charger_t *s)
 {
-  charger_t *s = &cg.s;
-  if (rc) { failed(rc); return; }
+  s->reg48 = cg.buf[0];
+  if (!bq25798_pn_match(s->reg48)) { failed(I2C_EID); return; }
+  s->present = 1;
+  read_regs(CS_CONFIG, REG_VREG, CONFIG_LEN);
+}
+
+/* CS_CONFIG: a matching chip goes straight to the status burst, else the limits are written. */
+static void config_done(charger_t *s)
+{
+  config_read();
+  if (config_matches()) { s->configured = 1; cg.held = 1; read_regs(CS_STATUS, REG_STATUS, STATUS_LEN); }
+  else { s->configured = 0; write_limits(); }
+}
+
+/* CS_CONTROL: the MPPT enable when it is due, else the ADC one-shot. */
+static void control_done(charger_t *s)
+{
+  if (mppt_due())
+  {
+    s->mppt_sets = count_up(s->mppt_sets);
+    s->reg15 = reg15_with(1);
+    write2(CS_MPPT, REG_MPPT, s->reg15);
+  }
+  else write2(CS_ADC_START, REG_ADC_CTRL, ADC_START);
+}
+
+/* The identify and set-up chain (CS_ID .. CS_VERIFY); 0 for any other step. */
+static int setup_done(charger_t *s)
+{
   switch (cg.step)
   {
-    case CS_ID:
-      s->reg48 = cg.buf[0];
-      if (!bq25798_pn_match(s->reg48)) { failed(I2C_EID); break; }
-      s->present = 1;
-      read_regs(CS_CONFIG, REG_VREG, CONFIG_LEN);
-      break;
-    case CS_CONFIG:
-      config_read();
-      if (config_matches()) { s->configured = 1; cg.held = 1; read_regs(CS_STATUS, REG_STATUS, STATUS_LEN); }
-      else { s->configured = 0; write_limits(); }
-      break;
+    case CS_ID: id_read(s); return 1;
+    case CS_CONFIG: config_done(s); return 1;
     case CS_LIMITS:   /* then ITERM and STOP_WD_CHG; REG_RST never set */
       write2(CS_TERM, REG_TERM, (uint8_t)(STOP_WD_CHG | iterm_want()));
-      break;
-    case CS_TERM: write2(CS_OVP, REG_CTRL1, reg10_want()); break;
-    case CS_OVP: write2(CS_MPPT_PCT, REG_MPPT, reg15_with(s->reg15 & EN_MPPT)); break;
+      return 1;
+    case CS_TERM: write2(CS_OVP, REG_CTRL1, reg10_want()); return 1;
+    case CS_OVP: write2(CS_MPPT_PCT, REG_MPPT, reg15_with(s->reg15 & EN_MPPT)); return 1;
     case CS_MPPT_PCT:   /* REG17 and REG18 as one burst */
       cg.tx[0] = REG_NTC; cg.tx[1] = POWER_CHG_REG17; cg.tx[2] = POWER_CHG_REG18;
       submit(CS_NTC, 3, 0);
-      break;
-    case CS_NTC: read_regs(CS_VERIFY, REG_VREG, CONFIG_LEN); break;
+      return 1;
+    case CS_NTC: read_regs(CS_VERIFY, REG_VREG, CONFIG_LEN); return 1;
     case CS_VERIFY:
       config_read();
       s->configured = (uint8_t)config_matches();
       cg.held = s->configured;
       read_regs(CS_STATUS, REG_STATUS, STATUS_LEN);
-      break;
+      return 1;
+    default: return 0;
+  }
+}
+
+/* The poll chain (CS_STATUS .. CS_ADC_START). */
+static void poll_done(charger_t *s)
+{
+  switch (cg.step)
+  {
     case CS_STATUS: status_read(); break;
     case CS_ADC:
       /* ADC_EN still set: a conversion is running after all (a second host?): skip this one. */
       if (!(cg.buf[0] & ADC_EN)) adc_read();
       write_control();
       break;
-    case CS_CONTROL:
-      if (mppt_due())
-      {
-        s->mppt_sets = count_up(s->mppt_sets);
-        s->reg15 = reg15_with(1);
-        write2(CS_MPPT, REG_MPPT, s->reg15);
-      }
-      else write2(CS_ADC_START, REG_ADC_CTRL, ADC_START);
-      break;
+    case CS_CONTROL: control_done(s); break;
     case CS_MPPT: write2(CS_ADC_START, REG_ADC_CTRL, ADC_START); break;
     case CS_ADC_START:
       cg.adc_started = 1;
@@ -313,6 +333,13 @@ void charger_i2c_done(int rc)
       break;
     default: (void)WS_CHECK(0); cg.step = CS_IDLE; break;   /* no transfer was out: a bug */
   }
+}
+
+void charger_i2c_done(int rc)
+{
+  charger_t *s = &cg.s;
+  if (rc) { failed(rc); return; }
+  if (!setup_done(s)) poll_done(s);
 }
 
 void charger_init(uint32_t now_ms)
@@ -370,6 +397,13 @@ int16_t charger_pack_temp_dc(uint16_t ts_raw16)
   return (int16_t)t;
 }
 
+/* A chip fault bit, or a hold that means the chip is not the one configured (wrong cells, failed read-back). */
+static int status_fault(const charger_t *s)
+{
+  if ((s->st[S_20] & FAULT0_MASK) || (s->st[S_21] & FAULT1_MASK)) return 1;
+  return s->hold == CH_CELLS || s->hold == CH_READBACK;
+}
+
 uint8_t charger_status_byte(void)
 {
   const charger_t *s = &cg.s;
@@ -378,8 +412,7 @@ uint8_t charger_status_byte(void)
   unsigned chg = s->st[S_1C] >> CHG_STAT_SHIFT;
   uint8_t st = (s->st[S_1B] & PG_STAT) ? WS_CHG_POWER_GOOD : 0U;
   if ((chg >= 1U && chg <= 4U) || chg == 6U) st |= WS_CHG_CHARGING;
-  if ((s->st[S_20] & FAULT0_MASK) || (s->st[S_21] & FAULT1_MASK) || s->hold == CH_CELLS || s->hold == CH_READBACK)
-    st |= WS_CHG_FAULT;
+  if (status_fault(s)) st |= WS_CHG_FAULT;
   return (uint8_t)(st | WS_CHG_STAGE(stage_of(chg)) | WS_CHG_INPUT(input_of(s->st[S_1B])));
 }
 

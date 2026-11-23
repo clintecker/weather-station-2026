@@ -522,6 +522,42 @@ static void bq_status(bq_t *b)
   b->r[0x21] = b->fault1;
 }
 
+/* REG01..REG04 (the limits): counted, dropped while the model ignores them, reserved bits read 0. 0: dropped. */
+static int bq_limit(bq_t *b, unsigned reg, uint8_t *v)
+{
+  b->limit_writes++;
+  if (b->ignore_limits) return 0;
+  if (reg == 0x01U) *v &= 0x07U;   /* reserved bits read 0 */
+  if (reg == 0x03U) *v &= 0x01U;
+  return 1;
+}
+
+/* REG09: REG_RST (bit 6) resets every register; ITERM clamps low at 1 (table 7-20). 0: nothing to store. */
+static int bq_term(bq_t *b, uint8_t *v)
+{
+  if (*v & 0x40U) { b->reg_resets++; bq_por(b); return 0; }
+  *v &= 0x3FU;
+  if ((*v & 0x1FU) == 0U) *v |= 0x01U;
+  return 1;
+}
+
+/* Whether a write to reg stores (v adjusted as the part does); status, flags, ADC results and REG48 are read only. */
+static int bq_writable(bq_t *b, unsigned reg, uint8_t *v)
+{
+  if (reg >= 0x01U && reg <= 0x04U) return bq_limit(b, reg, v);
+  if (reg == 0x09U) return bq_term(b, v);
+  return !(reg >= 0x1BU && reg <= 0x27U) && reg < 0x31U;
+}
+
+/* The control bits a write acts on: the watchdog kick, the EN_MPPT refusal, the ADC one-shot. */
+static void bq_controls(bq_t *b, unsigned reg, uint8_t *v)
+{
+  if (reg == 0x10U && (*v & 0x08U)) { b->kicks++; b->kicked_at = sim_now(); *v &= (uint8_t)~0x08U; }
+  /* EN_MPPT is refused without VBUS, with VSYS_STAT, or with EN_ICO set (section 7.3.6.3) */
+  if (reg == 0x15U && (b->vbus_mv <= 3400 || bq_vsys_stat(b) || (b->r[0x0F] & 0x10U))) *v &= 0xFEU;
+  if (reg == 0x2EU && (*v & 0x80U)) { b->adc_running = 1; b->adc_at = sim_now(); b->r[0x1E] &= (uint8_t)~0x20U; }
+}
+
 static int bq_write(int dev, const uint8_t *data, uint16_t n)
 {
   bq_t *b = &bq[dev];
@@ -533,25 +569,8 @@ static int bq_write(int dev, const uint8_t *data, uint16_t n)
     unsigned reg = data[0] + i - 1U;
     uint8_t v = data[i];
     if (reg >= BQ_REGS) return -1;
-    if (reg >= 0x01U && reg <= 0x04U)
-    {
-      b->limit_writes++;
-      if (b->ignore_limits) continue;
-      if (reg == 0x01U) v &= 0x07U;   /* reserved bits read 0 */
-      if (reg == 0x03U) v &= 0x01U;
-    }
-    if (reg == 0x09U)   /* REG_RST (bit 6) resets every register; ITERM clamps low at 1 (table 7-20) */
-    {
-      if (v & 0x40U) { b->reg_resets++; bq_por(b); continue; }
-      v &= 0x3FU;
-      if ((v & 0x1FU) == 0U) v |= 0x01U;
-    }
-    if (reg >= 0x1BU && reg <= 0x27U) continue;   /* status and flags: read only */
-    if (reg >= 0x31U) continue;                    /* the ADC results and REG48 */
-    if (reg == 0x10U && (v & 0x08U)) { b->kicks++; b->kicked_at = sim_now(); v &= (uint8_t)~0x08U; }
-    /* EN_MPPT is refused without VBUS, with VSYS_STAT, or with EN_ICO set (section 7.3.6.3) */
-    if (reg == 0x15U && (b->vbus_mv <= 3400 || bq_vsys_stat(b) || (b->r[0x0F] & 0x10U))) v &= 0xFEU;
-    if (reg == 0x2EU && (v & 0x80U)) { b->adc_running = 1; b->adc_at = sim_now(); b->r[0x1E] &= (uint8_t)~0x20U; }
+    if (!bq_writable(b, reg, &v)) continue;
+    bq_controls(b, reg, &v);
     b->r[reg] = v;
   }
   return 0;
@@ -618,27 +637,32 @@ int model_mem_read(int kind, int dev, uint16_t reg, uint8_t *data, uint16_t n)
   }
 }
 
+/* The EEPROM's power-on contents (each byte its address) and no injected faults. */
+static void eeprom_reset(int dev)
+{
+  for (unsigned i = 0; i < EEPROM_LEN; i++) eeprom[dev][i] = (uint8_t)i;
+  eeprom_fails[dev] = eeprom_corrupts[dev] = 0;
+}
+
 void model_reset(int kind, int dev)
 {
-  if (kind == DEVK_TEST) memset(test_written[dev], 0, sizeof test_written[dev]);
-  if (kind == DEVK_SHT45) sht45[dev] = (sht45_t){ .t_raw = 0x8000, .rh_raw = 0x8000 };
-  if (kind == DEVK_SHTC3) shtc3[dev] = (shtc3_t){ .t_raw = 0x8000, .rh_raw = 0x8000, .asleep = 1 };
-  if (kind == DEVK_BMP581) regdev[dev] = (regdev_t){ .id = 0x50 };
-  if (kind == DEVK_LTR390) regdev[dev] = (regdev_t){ .id = 0xB2 };
-  if (kind == DEVK_INA228)
+  switch (kind)
   {
-    ina[dev] = (ina228_t){ .shunt_uohm = INA_DEFAULT_SHUNT_UOHM, .die_mc = INA_DEFAULT_DIE_MC };
-    ina228_por(&ina[dev]);
-  }
-  if (kind == DEVK_MAX17048) gauge[dev] = (gauge_t){ .cell_uv = GAUGE_DEFAULT_CELL_UV };
-  if (kind == DEVK_BQ25798)
-  {
-    bq[dev] = (bq_t){ .cells = 1, .vbus_mv = 5000, .vbat_mv = 3800, .vsys_mv = 3600, .ts_permille = 520, .die_dc = 300 };
-    bq_por(&bq[dev]);
-  }
-  if (kind == DEVK_EEPROM)
-  {
-    for (unsigned i = 0; i < EEPROM_LEN; i++) eeprom[dev][i] = (uint8_t)i;
-    eeprom_fails[dev] = eeprom_corrupts[dev] = 0;
+    case DEVK_TEST: memset(test_written[dev], 0, sizeof test_written[dev]); break;
+    case DEVK_SHT45: sht45[dev] = (sht45_t){ .t_raw = 0x8000, .rh_raw = 0x8000 }; break;
+    case DEVK_SHTC3: shtc3[dev] = (shtc3_t){ .t_raw = 0x8000, .rh_raw = 0x8000, .asleep = 1 }; break;
+    case DEVK_BMP581: regdev[dev] = (regdev_t){ .id = 0x50 }; break;
+    case DEVK_LTR390: regdev[dev] = (regdev_t){ .id = 0xB2 }; break;
+    case DEVK_INA228:
+      ina[dev] = (ina228_t){ .shunt_uohm = INA_DEFAULT_SHUNT_UOHM, .die_mc = INA_DEFAULT_DIE_MC };
+      ina228_por(&ina[dev]);
+      break;
+    case DEVK_MAX17048: gauge[dev] = (gauge_t){ .cell_uv = GAUGE_DEFAULT_CELL_UV }; break;
+    case DEVK_BQ25798:
+      bq[dev] = (bq_t){ .cells = 1, .vbus_mv = 5000, .vbat_mv = 3800, .vsys_mv = 3600, .ts_permille = 520, .die_dc = 300 };
+      bq_por(&bq[dev]);
+      break;
+    case DEVK_EEPROM: eeprom_reset(dev); break;
+    default: break;
   }
 }

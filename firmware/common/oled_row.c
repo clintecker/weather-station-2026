@@ -15,13 +15,19 @@ void oled_put(oled_row *r, const char *s)
 
 /* m (the magnitude, minus: of a negative value) as oled_put_dec. m + div / 2 cannot wrap: m is at most 2^31
    with decimals to drop (oled_put_dec), and div is 1 without (oled_put_uint). */
+/* m with in_dec decimals rounded (half up) to out_dec decimals, out_dec <= in_dec <= DEC_MAX. */
+static uint32_t round_dec(uint32_t m, unsigned in_dec, unsigned out_dec)
+{
+  uint32_t div = 1;
+  for (unsigned i = out_dec; i < in_dec; i++) div *= 10U;
+  return (m + div / 2U) / div;
+}
+
 static void put_mag(oled_row *r, uint32_t m, int minus, unsigned in_dec, unsigned out_dec, unsigned flags)
 {
   if (in_dec > DEC_MAX) in_dec = DEC_MAX;
   if (out_dec > in_dec) out_dec = in_dec;
-  uint32_t div = 1;
-  for (unsigned i = out_dec; i < in_dec; i++) div *= 10U;
-  m = (m + div / 2U) / div;
+  m = round_dec(m, in_dec, out_dec);
   int negative = minus && m != 0;
   char num[DEC_DIGITS];
   unsigned at = DEC_DIGITS - 1, digits = 0;
@@ -49,7 +55,7 @@ void oled_put_uint(oled_row *r, uint32_t v) { put_mag(r, v, 0, 0, 0, 0); }
 void oled_put_hex2(oled_row *r, uint8_t b)
 {
   static const char hex[] = "0123456789ABCDEF";
-  char two[3] = { hex[b >> 4], hex[b & 0xFU], '\0' };
+  const char two[3] = { hex[b >> 4], hex[b & 0xFU], '\0' };
   oled_put(r, two);
 }
 

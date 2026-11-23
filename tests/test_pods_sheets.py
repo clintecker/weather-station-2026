@@ -16,7 +16,6 @@ Run from the repo root:
     .venv/bin/python -m unittest tests.test_pods_sheets -v
 """
 import json
-import os
 import re
 import subprocess
 import unittest

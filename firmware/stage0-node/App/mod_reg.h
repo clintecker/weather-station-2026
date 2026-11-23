@@ -20,7 +20,7 @@ void mod_reg_latch(enum reg_unit u, uint16_t token, uint32_t now_ms);
 void mod_reg_snapshot(enum reg_unit u, uint8_t snap[WSMP_SNAPSHOT_LEN]);
 /* The latest valid sample as the window takes it (calibrated, cropped): pressure in 0.1 hPa, UVA in
    raw counts. 1 if there was one in the last 30 s of module ticks, else 0. Read-only. */
-int mod_reg_live(enum reg_unit u, int32_t *value);
+int mod_reg_live(enum reg_unit u, int32_t *out);
 /* Binds the unit to a newly admitted module: a fresh window, its boot ID and the calibration of
    applied (NULL: none). */
 void mod_reg_bind(enum reg_unit u, const wsmp_record *applied, uint32_t boot_id, uint32_t now_ms);

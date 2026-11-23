@@ -154,11 +154,11 @@ void mod_reg_id_check(enum reg_unit u)
   reg[u].id_rc = 0;
 }
 
-int mod_reg_live(enum reg_unit u, int32_t *value)
+int mod_reg_live(enum reg_unit u, int32_t *out)
 {
   const reg_t *s = &reg[u];
   if (!s->live_ok || s->now_ms - s->live_ms > LIVE_MS) return 0;
-  *value = s->live;
+  *out = s->live;
   return 1;
 }
 

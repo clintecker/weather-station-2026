@@ -368,21 +368,19 @@ void power_acq_i2c_done(enum i2c_client c, int rc)
   (void)WS_CHECK(0);   /* a client this profile has no rail for never submits: ignore it */
 }
 
-void power_acq_live(power_live_t *p)
+/* The load rail's voltage: a rail monitor's bus voltage, or the charger's SYS reading when it has one. */
+static int32_t live_out_mv(void)
 {
-  const rail_t *b = &pa.rail[POWER_RAIL_BATTERY];
-  const gauge_t *g = &pa.gauge;
-  *p = (power_live_t){ 0 };
-  p->batt_ok = b->live_step;
-  p->batt_ma_x100 = b->live_step ? b->live_ma_x100 : 0;
+  int32_t mv = 0;
   for (unsigned i = 0; i < POWER_RAIL_COUNT; i++)
-    if (POWER_RAILS[i].vbus_slot == PS_LOAD_MV && pa.rail[i].live_vbus) p->out_mv = pa.rail[i].live_vbus_mv;
-  if (POWER_HAS_BQ25798 && charger_state()->adc_ok) p->out_mv = charger_state()->vsys;   /* SYS is the load rail */
-  p->gauge_ok = g->ok;
-  if (g->vcell_ok) p->vcell_mv = (uint16_t)ws_div_round(g->vcell_uv, UV_PER_MV);
-  if (g->ok) p->soc_pct_x10 = (uint16_t)ws_div_round((int64_t)g->soc_256 * 10, 256);
-  p->charger = charger_status();
-  p->charging = (p->charger & POWER_STATUS_CHARGING) != 0U;
+    if (POWER_RAILS[i].vbus_slot == PS_LOAD_MV && pa.rail[i].live_vbus) mv = pa.rail[i].live_vbus_mv;
+  if (POWER_HAS_BQ25798 && charger_state()->adc_ok) mv = charger_state()->vsys;   /* SYS is the load rail */
+  return mv;
+}
+
+/* The load, solar and USB rails' latest readings, each where the profile fits one. */
+static void live_rails(power_live_t *p)
+{
   static const uint8_t current[PL_RAILS] = { PS_LOAD_MA, PS_SOLAR_MA, PS_USB_MA };
   for (unsigned k = 0; k < PL_RAILS; k++)   /* bound: the 3 rails beside the battery */
     for (unsigned i = 0; i < POWER_RAIL_COUNT; i++)   /* bound: the profile's rails */
@@ -395,6 +393,22 @@ void power_acq_live(power_live_t *p)
       l->ma_x100 = r->live_step ? r->live_ma_x100 : 0;
       l->mv = r->live_step && r->live_vbus ? r->live_vbus_mv : 0;
     }
+}
+
+void power_acq_live(power_live_t *p)
+{
+  const rail_t *b = &pa.rail[POWER_RAIL_BATTERY];
+  const gauge_t *g = &pa.gauge;
+  *p = (power_live_t){ 0 };
+  p->batt_ok = b->live_step;
+  p->batt_ma_x100 = b->live_step ? b->live_ma_x100 : 0;
+  p->out_mv = live_out_mv();
+  p->gauge_ok = g->ok;
+  if (g->vcell_ok) p->vcell_mv = (uint16_t)ws_div_round(g->vcell_uv, UV_PER_MV);
+  if (g->ok) p->soc_pct_x10 = (uint16_t)ws_div_round((int64_t)g->soc_256 * 10, 256);
+  p->charger = charger_status();
+  p->charging = (p->charger & POWER_STATUS_CHARGING) != 0U;
+  live_rails(p);
 }
 
 int power_acq_fitted(enum power_slot s)

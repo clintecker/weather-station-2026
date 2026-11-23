@@ -177,19 +177,30 @@ const char *const scr_fortunes[SCR_FORTUNES] = {
   "A watched sensor\nnever drifts.",
 };
 
+/* The conditions on the air reading (temperature, humidity); -1 for any other condition. */
+static int air_holds(enum fortune_cond c, const scr_view_t *v)
+{
+  switch (c)
+  {
+  case F_FROST: return v->air_ok && v->air_c < 0;
+  case F_HOT: return v->air_ok && v->air_c >= SCR_HOT_CENTI_C;
+  case F_DAMP: return v->air_ok && v->air_rh >= SCR_CLOUDY_CENTI_RH;
+  case F_DRY: return v->air_ok && v->air_rh < DRY_CENTI_RH;
+  default: return -1;
+  }
+}
+
 static int fortune_holds(enum fortune_cond c, const scr_view_t *v)
 {
   int32_t delta;
+  int air = air_holds(c, v);
+  if (air >= 0) return air;
   switch (c)
   {
   case F_NO_ACK: return v->last_acked == SCR_TX_NO_ACK;
   case F_LOW_CELL: return v->power.gauge_ok && v->power.soc_pct_x10 < LOW_CELL_X10;
   case F_RAIN: return scr_rain_tips(v->rain.per_min, RAIN_HIST_MINUTES, SCR_RAIN_RECENT_MIN) != 0U;
-  case F_FROST: return v->air_ok && v->air_c < 0;
-  case F_HOT: return v->air_ok && v->air_c >= SCR_HOT_CENTI_C;
   case F_WIND: return v->wind.speed_cms > SCR_WINDY_CMS;
-  case F_DAMP: return v->air_ok && v->air_rh >= SCR_CLOUDY_CENTI_RH;
-  case F_DRY: return v->air_ok && v->air_rh < DRY_CENTI_RH;
   case F_FALLING: return scr_tendency(v, &delta) == TREND_FALLING;
   case F_RISING: return scr_tendency(v, &delta) == TREND_RISING;
   default: return 1;

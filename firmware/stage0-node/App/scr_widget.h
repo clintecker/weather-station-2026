@@ -29,9 +29,9 @@ unsigned scr_scale_steps(unsigned largest, unsigned floor, unsigned cap);
 /* The least and largest of the samples that are not gaps, widened about their middle to at least min_span.
    Returns how many samples are not gaps (0: lo and hi untouched). */
 unsigned scr_spark_range(const scr_series *d, int32_t min_span, int32_t *lo, int32_t *hi);
-/* v grown in over frames: its share after frame `frame` (counted from 0), all of it from frames - 1 on. */
-static inline unsigned scr_grow(unsigned v, unsigned frame, unsigned frames)
-{ return v * (frame + 1U < frames ? frame + 1U : frames) / frames; }
+/* v grown in over frames: its share after frame f (counted from 0), all of it from frames - 1 on. */
+static inline unsigned scr_grow(unsigned v, unsigned f, unsigned frames)
+{ return v * (f + 1U < frames ? f + 1U : frames) / frames; }
 
 /* A plot's frame from (x0, y0) to (x1, y1): solid sides, a dotted top (from x0) and a bottom dashed as oled_line
    (the sparkline's dotted, RAIN's solid axis). */

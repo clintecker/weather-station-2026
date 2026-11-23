@@ -134,7 +134,7 @@ static void wordmark(const oled_surf *s, unsigned f)
   if ((f - WORD_AT) % LETTER_EVERY == 0U && f < SYSTEMS_AT)
   {
     oled_surf fresh = inked(s, 7);
-    char one[2] = { word[n - 1U], '\0' };
+    const char one[2] = { word[n - 1U], '\0' };
     (void)oled_draw_text(&fresh, MARK_X + MARK_PITCH * (int)(n - 1U), MARK_Y, one, &scr_mark, &mark_style);
   }
 }
@@ -163,7 +163,7 @@ static void subtitle(const oled_surf *s, unsigned f)
 static unsigned text_len(const char *t)
 {
   unsigned n = 0;
-  while (t[n] != '\0' && n < OLED_ROW_CAP) n++;   /* bound: OLED_ROW_CAP characters */
+  while (n < OLED_ROW_CAP && t[n] != '\0') n++;   /* bound: OLED_ROW_CAP characters */
   return n;
 }
 
@@ -185,7 +185,7 @@ static void typed(const oled_surf *s, int y, const char *text, unsigned from, un
   oled_row part = { "" };
   for (unsigned c = from; c < to && c < n && text[c]; c++)   /* bound: OLED_ROW_CAP characters */
   {
-    char one[2] = { text[c], '\0' };
+    const char one[2] = { text[c], '\0' };
     oled_put(&part, one);
   }
   oled_surf g = inked(s, ink);

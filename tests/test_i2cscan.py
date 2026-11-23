@@ -418,7 +418,7 @@ class BenchScreen(unittest.TestCase):
         points = 'N NNE NE ENE E ESE SE SSE S SSW SW WSW W WNW NW NNW'.split()
         self.lib.bench_vane_point.restype = ctypes.c_char_p
         self.lib.bench_vane_point.argtypes = [ctypes.c_uint16]
-        for r, want in zip(ohms, points):
+        for r, want in zip(ohms, points, strict=True):
             mv = (3300*r + (r + 10000)//2) // (r + 10000)
             self.assertEqual(self.lib.bench_vane_point(mv).decode(), want, r)
         self.assertEqual(self.lib.bench_vane_point(3250), b'OPEN')

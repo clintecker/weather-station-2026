@@ -61,7 +61,7 @@ class PodsSources(unittest.TestCase):
             self.assertIn(row[3], ("sourced", "derived", "TBD"), k)
 
     def test_every_sourced_row_cites(self):
-        for k, (v, what, src, st) in self.s.D.items():
+        for k, (_v, _what, src, st) in self.s.D.items():
             if st == "sourced":
                 self.assertTrue(re.search(r"https?://|[\w.-]+/[\w./-]*\.[A-Za-z0-9]{2,4}\b", src), f"{k}: no URL or path in the source")
 

@@ -243,9 +243,9 @@ def rain(view, tips, age_s, per_min):
 def rain_views():
     """No rain since boot; a light shower easing off; a heavy burst under way."""
     shower = {i: t for i, t in zip(range(22, 52), [1, 0, 1, 1, 2, 1, 2, 3, 2, 2, 3, 4, 3, 2, 3, 2, 1, 2, 1, 1, 0, 1,
-                                                    1, 0, 0, 1, 0, 0, 0, 1])}
+                                                    1, 0, 0, 1, 0, 0, 0, 1], strict=True)}
     burst = {i: t for i, t in zip(range(38, 60), [1, 1, 2, 1, 2, 3, 2, 4, 5, 4, 6, 7, 9, 8, 11, 12, 10, 9, 13, 11,
-                                                   8, 6])}
+                                                   8, 6], strict=True)}
     return {'dry': rain(demo_view(), 0, RAIN_AGE_NONE, {}),
             'shower': rain(demo_view(), sum(shower.values()) + 3, 8 * 60 + 20, shower),
             'burst': rain(demo_view(), sum(burst.values()) + 61, 3, burst)}
@@ -313,7 +313,7 @@ def png(pixels, path, scale=4):
     img = Image.new('RGB', (W * scale, H * scale), bg)
     levels = pixels if isinstance(pixels, dict) else dict.fromkeys(pixels, 15)
     for (x, y), level in levels.items():
-        colour = tuple(round(b + (f - b) * level / 15) for b, f in zip(bg, lit))
+        colour = tuple(round(b + (f - b) * level / 15) for b, f in zip(bg, lit, strict=True))
         img.paste(colour, (x * scale, y * scale, x * scale + scale, y * scale + scale))
     img.save(path)
 
