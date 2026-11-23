@@ -58,8 +58,10 @@ The node builds with `WS_POWER_PROFILE` 1 (phase A, the default). That profile r
 - **Profile 3** is the TX stack (`hardware/tx-stack-r1`): the BQ25798EVM at 0x6B in place of the bq24074,
   plus the battery INA228 and the MAX17048. Build it with the mux:
   `make ROLE=tx BOARD=wio-e5 WS_POWER_PROFILE=3 WS_I2C_MUX=1`. The firmware (`App/charger.c`) writes
-  the charge current (0.9 A) and voltage (4.2 V) at every start and again after any chip reset, checks
-  the cell count (one), and keeps charge off until a fresh TS reading is neither cold nor hot. It needs
+  the charge current (0.9 A) and voltage (4.2 V), the input over-voltage limit (12 V), the solar MPPT
+  ratio (0.8125) and the warm stop (about 42 C with the pack NTC) at every start and again after any chip
+  reset, checks the cell count (one), and keeps charge off until a fresh TS reading is neither cold, warm
+  nor hot. It needs
   no charger pins. The console command `CHARGER` prints what it last read.
 
 Profiles 1 and 2 read the bq24074's PGOOD, CHG and ISET pins. Two of those pins aren't on the

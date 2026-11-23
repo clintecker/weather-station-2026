@@ -410,10 +410,15 @@ static void bq_por(bq_t *b)
   unsigned c = b->cells >= 1U && b->cells <= 4U ? b->cells : 1U;
   bq_set16(b, 0x01, vreg[c - 1U]);
   bq_set16(b, 0x03, 100);                    /* ICHG 1 A (table 7-16) */
+  b->r[0x05] = 0x24;                         /* VINDPM 3.6 V until an input is measured (table 7-17) */
   b->r[0x09] = 0x05;                         /* ITERM 200 mA (table 7-20) */
   b->r[0x0A] = (uint8_t)((c - 1U) << 6 | 0x23U);   /* CELL, TRECHG 2, VRECHG 3 (table 7-21) */
   b->r[0x0F] = 0xA2;                         /* EN_AUTO_IBATDIS, EN_CHG, EN_TERM (table 7-25) */
-  b->r[0x10] = 0x85;                         /* WATCHDOG 40 s (table 7-26) */
+  b->r[0x10] = 0xB5;                         /* VAC_OVP 7 V (the field's POR 11b, figure 7-38), WATCHDOG 40 s (table 7-26) */
+  b->r[0x15] = 0xAA;                         /* VOC_PCT 0.875, VOC_DLY 300 ms, VOC_RATE 2 min, EN_MPPT 0 (table 7-31) */
+  b->r[0x16] = 0xC0;                         /* table 7-32 */
+  b->r[0x17] = 0x7A;                         /* JEITA_VSET 3, ISETH 3 (unchanged), ISETC 1 (table 7-33) */
+  b->r[0x18] = 0x54;                         /* TS_COOL 1, TS_WARM 1, BHOT 1 (table 7-34) */
   b->r[0x2E] = 0x30;                         /* ADC_SAMPLE 3 (table 7-55) */
   b->r[0x48] = 0x19;                         /* PN 3, DEV_REV 1 (table 7-70) */
   b->host = b->adc_running = 0;
@@ -446,6 +451,8 @@ static void bq_expire(bq_t *b)
   b->r[0x09] = (uint8_t)((b->r[0x09] & 0x20U) | 0x05U);   /* ITERM 200 mA */
   b->r[0x0A] = (uint8_t)((b->r[0x0A] & 0xC0U) | 0x23U);
   b->r[0x0F] = (uint8_t)((b->r[0x0F] & 0xD4U) | 0x22U);   /* EN_CHG and EN_TERM 1; FORCE_ICO, EN_BACKUP 0 */
+  b->r[0x17] = 0x7A;                                      /* the JEITA and TS fields (tables 7-33, 7-34); */
+  b->r[0x18] = 0x54;                                      /* VAC_OVP and REG15 are REG_RST-only */
   b->r[0x2E] &= 0x7FU;                                    /* ADC_EN */
   b->adc_running = 0;
   b->host = 0;
@@ -476,14 +483,28 @@ static void bq_advance(bq_t *b)
   }
 }
 
+static int bq_vsys_stat(const bq_t *b) { return b->vbat_mv < 3500; }   /* VSYSMIN 3.5 V for one cell */
+
+/* MPPT (section 7.3.6.3): EN_MPPT is forced to 0 without VBUS; while it runs, VINDPM is VOC_PCT x VBUS
+   (the model's VBUS stands in for the open-circuit voltage), in 100 mV steps rounded down. */
+static void bq_mppt(bq_t *b)
+{
+  static const uint32_t pct_e4[8] = { 5625, 6250, 6875, 7500, 8125, 8750, 9375, 10000 };
+  if (b->vbus_mv <= 3400) { b->r[0x15] &= 0xFEU; return; }
+  if (b->r[0x15] & 0x01U) b->r[0x05] = (uint8_t)((uint32_t)b->vbus_mv * pct_e4[b->r[0x15] >> 5] / 10000U / 100U);
+}
+
 /* The status registers from the physics and the controls. */
 static void bq_status(bq_t *b)
 {
   int vbus = b->vbus_mv > 3400;
-  int ts_block = (b->ts_bits & 0x09U) != 0;   /* COLD or HOT */
+  /* COLD or HOT, or WARM with JEITA_ISETH 0 (charge suspend, table 7-33) */
+  int ts_block = (b->ts_bits & 0x09U) != 0 || ((b->ts_bits & 0x02U) && (b->r[0x17] & 0x18U) == 0U);
+  bq_mppt(b);
   b->r[0x1B] = (uint8_t)((vbus ? 0x09U : 0U) | b->ac | (b->host ? 0U : 0x20U));
   b->r[0x1C] = (uint8_t)(((b->r[0x0F] & 0x20U) && !ts_block ? b->chg_stat : 0U) << 5);
   b->r[0x1D] = b->vbat_mv > 2500 ? 0x01U : 0U;
+  b->r[0x1E] = (uint8_t)((b->r[0x1E] & 0x20U) | (bq_vsys_stat(b) ? 0x10U : 0U));   /* ADC_DONE kept, VSYS_STAT */
   b->r[0x1F] = b->ts_bits;
   b->r[0x20] = b->fault0;
   b->r[0x21] = b->fault1;
@@ -516,6 +537,8 @@ static int bq_write(int dev, const uint8_t *data, uint16_t n)
     if (reg >= 0x1BU && reg <= 0x27U) continue;   /* status and flags: read only */
     if (reg >= 0x31U) continue;                    /* the ADC results and REG48 */
     if (reg == 0x10U && (v & 0x08U)) { b->kicks++; b->kicked_at = sim_now(); v &= (uint8_t)~0x08U; }
+    /* EN_MPPT is refused without VBUS, with VSYS_STAT, or with EN_ICO set (section 7.3.6.3) */
+    if (reg == 0x15U && (b->vbus_mv <= 3400 || bq_vsys_stat(b) || (b->r[0x0F] & 0x10U))) v &= 0xFEU;
     if (reg == 0x2EU && (v & 0x80U)) { b->adc_running = 1; b->adc_at = sim_now(); b->r[0x1E] &= (uint8_t)~0x20U; }
     b->r[reg] = v;
   }
@@ -531,6 +554,8 @@ static int bq_read(int dev, uint8_t reg, uint8_t *data, uint16_t n)
   for (uint16_t i = 0; i < n; i++) data[i] = (unsigned)reg + i < BQ_REGS ? b->r[reg + i] : 0xFFU;
   return 0;
 }
+
+void model_bq25798_poke(int dev, uint8_t reg, uint8_t v) { if (reg < BQ_REGS) bq[dev].r[reg] = v; }
 
 uint8_t model_bq25798_reg(int dev, uint8_t reg)
 {
@@ -596,7 +621,7 @@ void model_reset(int kind, int dev)
   if (kind == DEVK_MAX17048) gauge[dev] = (gauge_t){ .cell_uv = GAUGE_DEFAULT_CELL_UV };
   if (kind == DEVK_BQ25798)
   {
-    bq[dev] = (bq_t){ .cells = 1, .vbus_mv = 5000, .vsys_mv = 3600, .ts_permille = 520, .die_dc = 300 };
+    bq[dev] = (bq_t){ .cells = 1, .vbus_mv = 5000, .vbat_mv = 3800, .vsys_mv = 3600, .ts_permille = 520, .die_dc = 300 };
     bq_por(&bq[dev]);
   }
   if (kind == DEVK_EEPROM)

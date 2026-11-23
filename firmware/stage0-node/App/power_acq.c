@@ -462,6 +462,7 @@ static void charger_window(const charger_win_t *w, power_window_t *out)
   s->chg_input_ma = w->n ? w->ibus_last_ma : (int16_t)POWER_NONE_I16;
   s->chg_batt_mv = w->n ? w->vbat_last_mv : (uint16_t)POWER_NONE_U16;
   s->chg_temp = w->n ? w->tdie_last_dc : (int16_t)POWER_NONE_I16;
+  s->pack_temp = w->n ? w->pack_last_dc : (int16_t)POWER_NONE_I16;
 }
 
 static void adc_close(power_window_t *out)
@@ -504,7 +505,7 @@ void power_acq_latch(uint32_t now_ms, power_window_t *out)
   out->first = !pa.latched;
   for (unsigned s = 0; s < PS_COUNT; s++) out->slot[s].quality = WSMP_QUAL_NOT_FITTED;
   out->slow.chg_input_mv = out->slow.chg_batt_mv = POWER_NONE_U16;   /* phase C fills them (charger_window) */
-  out->slow.chg_input_ma = out->slow.chg_temp = POWER_NONE_I16;
+  out->slow.chg_input_ma = out->slow.chg_temp = out->slow.pack_temp = POWER_NONE_I16;
   for (unsigned i = 0; i < POWER_RAIL_COUNT; i++) rail_close(i, out);
   battery_close(out);
   adc_close(out);

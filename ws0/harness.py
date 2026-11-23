@@ -181,7 +181,8 @@ ORACLE_FAILURES = ('missing','unexpected_rows','payload_mismatches','power_misma
 # Health report keys that phase A (and phase B) cannot fill (design section 3.3), and the station
 # counters the simulated node never raises: exact expected values.
 HEALTH_NOT_MEASURED = ('charger_reported_input_mv','charger_reported_input_ma','charger_reported_battery_mv',
-                       'charger_temp_c','pack_temp_c','charger_stage','charger_active_input','last_crash_pc')
+                       'charger_temp_c','pack_temp_c','charger_cold_hold','charger_stage','charger_active_input',
+                       'last_crash_pc')
 SOC_TOLERANCE_PCT = 1/256     # the report carries SOC at 1/256 %
 SOC_RATE_TOLERANCE = 0.05     # and its rate at 0.1 %/h
 

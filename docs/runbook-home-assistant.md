@@ -240,15 +240,15 @@ every-minute reading's 180 s freshness).
 | `charger_reported_battery_ma` | Charger-reported charge current | sensor, mA, current | yes (bq24074 ISET; 0 while PGOOD is off) | yes (IBAT ADC) |
 | `charger_reported_input_mv`, `charger_reported_input_ma` | Charger-reported input voltage, current | sensor, mV / mA | no entity | yes (VBUS, IBUS ADC) |
 | `charger_reported_battery_mv` | Charger-reported battery voltage | sensor, mV, voltage | no entity | yes (VBAT ADC) |
-| `charger_temp_c`, `pack_temp_c` | Charger temperature, Battery pack temperature | sensor, °C, temperature | no entity | charger die: yes (TDIE); pack: no entity (no fitted curve for the NTC divider yet) |
+| `charger_temp_c`, `pack_temp_c` | Charger temperature, Battery pack temperature | sensor, °C, temperature | no entity | yes (the die from TDIE; the pack from the TS pin through the B 3950 NTC's curve) |
 
 Every report carries every key. But the gateway advertises an entity only for a key the build
 measures. The report's fitted byte lists the other keys in `power_not_measured` (power design
 section 6.1). This works the same way as an observation field that the record doesn't carry: no
 entity.
 
-So phases A and B create **8** power entities (the "yes" rows) and phase C **14** (fitted byte
-0x3F: everything but the pack temperature). The other keys are in the report format, but that
+So phases A and B create **8** power entities (the "yes" rows) and phase C **15** (fitted byte
+0x7F: all of them). The other keys are in the report format, but that
 build doesn't measure them. Say the build measures a key but its
 source fails (a dead fuel gauge, listed in `power_sensor_faults`). The key keeps its entity and
 shows it unavailable.
@@ -295,7 +295,7 @@ unavailable: alert on that too (the last automation below).
 | `station_stale` | Station stale | the newest reading is older than 180 s, has an unknown or uncertain clock, or there is none. A fresh reading flagged `sensor_fault` is not stale | never |
 | `battery_low` | Battery low | gauge SOC below 20 % (`BATTERY_LOW_SOC_PCT`) in a fresh health report, or the node's energy state is `conserve` or `critical` (from the fresh reading, else from the fresh health report) | neither source is fresh |
 | `charger_fault` | Charger fault (alert) | `charger_fault` in a fresh health report ([Power entities](#power-entities)) | no fresh report, or no charger status |
-| `charger_cold_hold` | Charger cold hold | the health report's `charger_cold_hold` key is true | no fresh report. The entity is advertised only once a report carries the key: today's firmware holds charge on a cold thermistor but reports it through the pack temperature, not as its own bit |
+| `charger_cold_hold` | Charger cold hold | the health report's `charger_cold_hold` key is true | no fresh report, or no pack temperature. The gateway works it out from the report: power good, no fault, stage `not_charging` and `pack_temp_c` under 6.3 °C (the BQ25798 stops below about 3.9 °C and starts again above 6.3 °C with the pack's NTC). The entity is advertised once a report has a value for it, so phase C builds only |
 | `receiver_silent` | Receiver silent | no `#alive` from the RX board for 180 s (it sends one every 60 s), or none in the first 180 s after `serve` starts | no receiver expected (the demo before its first simulated report) |
 
 Example automations, in `automations.yaml` or pasted as YAML in the automation editor. Replace

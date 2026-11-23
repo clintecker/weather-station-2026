@@ -579,8 +579,31 @@ VREG_CODE, ICHG_CODE, ICHG_POR = 4200 // 10, 900 // 10, 1000 // 10
 ITERM_CODE, ITERM_POR = 2, 5          # REG09 bits 4:0 in 40 mA: 80 mA (nearest 90 mA) and the 200 mA default
 EN_CHG = 0x20
 TS_COLD, TS_COOL, TS_WARM, TS_HOT = 0x08, 0x04, 0x02, 0x01
-(CH_NONE, CH_ABSENT, CH_PART, CH_CELLS, CH_READBACK, CH_TS_STALE, CH_TS_COLD, CH_TS_HOT) = range(8)   # charger.h
-CHG_PRESENT, CHG_OK, CHG_CONFIGURED, CHG_HOLD, CHG_APPLIES, CHG_RESETS, CHG_FAILURES = range(7)       # h_chg()
+(CH_NONE, CH_ABSENT, CH_PART, CH_CELLS, CH_READBACK, CH_TS_STALE, CH_TS_COLD, CH_TS_HOT, CH_TS_WARM) = range(9)   # charger.h
+CHG_PRESENT, CHG_OK, CHG_CONFIGURED, CHG_HOLD, CHG_APPLIES, CHG_RESETS, CHG_FAILURES, CHG_MPPT_SETS = range(8)   # h_chg()
+# The rest of the set-up (App/power_config.h): VAC_OVP 12 V (REG10 bits 5:4, table 7-26; POR 7 V), VOC_PCT
+# 0.8125 (REG15 bits 7:5, table 7-31), JEITA_ISETH suspend (REG17, table 7-33), TS_WARM 41.8 degC with the
+# B 3950 NTC (REG18, table 7-34, its reset value).
+VAC_OVP_12V, VAC_OVP_7V, VOC_PCT_CODE, EN_MPPT, EN_ICO = 2, 3, 4, 0x01, 0x10
+REG17_WANT, REG17_POR, REG18_WANT = 0x62, 0x7A, 0x54
+# The pack NTC: the Adafruit #372 (10 kohm, B 3950) across the EVM's TS divider (SLUUCB5E R18 5.23 kohm
+# from REGN, R24 30.1 kohm to ground).
+NTC_R25, NTC_B, TS_R18, TS_R24 = 10e3, 3950, 5.23e3, 30.1e3
+
+
+def ts_pct(deg_c):
+    import math
+    r = NTC_R25 * math.exp(NTC_B * (1 / (deg_c + 273.15) - 1 / 298.15))
+    rb = r * TS_R24 / (r + TS_R24)
+    return 100 * rb / (TS_R18 + rb)
+
+
+def ts_deg_c(pct):
+    lo, hi = -60.0, 150.0
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if ts_pct(mid) > pct else (lo, mid)
+    return (lo + hi) / 2
 POLL = 5_000                                  # CHARGER_PERIOD_MS
 STAGE_PRECHARGE, STAGE_CC, STAGE_CV, STAGE_NOT_CHARGING = 1, 2, 3, 6   # spec section 6.3, bits 3-5
 INPUT_SOLAR, INPUT_USB_C, INPUT_NONE = 1, 2, 3                       # bits 6-7
@@ -610,6 +633,8 @@ class PhaseC(unittest.TestCase):
         lib.h_bq_limit_writes.restype = lib.h_bq_kicks.restype = lib.h_bq_reg_resets.restype = ctypes.c_uint32
         lib.h_charger_line.restype = ctypes.c_char_p
         lib.h_charger_line.argtypes = [ctypes.c_uint]
+        lib.h_bq_poke.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        lib.h_pack_temp_dc.argtypes = [ctypes.c_uint]
         b.bq = b.dev.get(CHARGER)
         return b
 
@@ -619,7 +644,7 @@ class PhaseC(unittest.TestCase):
     def en_chg(self, b):
         return bool(b.lib.h_bq_reg(b.bq, 0x0F) & EN_CHG)
 
-    def line(self, b, length=416):
+    def line(self, b, length=512):
         return b.lib.h_charger_line(length).decode()
 
     def fields(self, b):
@@ -714,14 +739,148 @@ class PhaseC(unittest.TestCase):
                 self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_NONE)
                 self.assertTrue(self.en_chg(b))
 
-    def test_cool_and_warm_still_charge(self):
-        for bits in (TS_COOL, TS_WARM):
-            with self.subTest(bits=bits):
-                b = self.bench()
-                b.lib.h_bq_ts(b.bq, 600, bits)
-                b.lib.h_run(15_000)
-                self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_NONE)
-                self.assertTrue(self.en_chg(b))
+    def test_cool_still_charges(self):
+        b = self.bench()
+        b.lib.h_bq_ts(b.bq, 690, TS_COOL)
+        b.lib.h_run(15_000)
+        self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_NONE)
+        self.assertTrue(self.en_chg(b))
+
+    def test_warm_holds_charge_off_and_the_chip_suspends_too(self):
+        """HOT and COLD are fixed in the chip (VT1, VT5), so WARM (about 41.8 degC with this NTC) is the
+        charge stop: the firmware holds EN_CHG off and JEITA_ISETH 0 makes the chip suspend on its own."""
+        b = self.bench()
+        b.lib.h_bq_status(b.bq, 1, 0, 3, 0, 0)
+        b.lib.h_run(2 * POLL)
+        self.assertTrue(self.en_chg(b))
+        b.lib.h_bq_ts(b.bq, 440, TS_WARM)                        # 44.0 %: about 42.6 degC
+        b.lib.h_run(2 * POLL)
+        self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_TS_WARM)
+        self.assertFalse(self.en_chg(b))
+        f = self.fields(b)
+        self.assertEqual((f['ts'], f['hold'], f['en_chg']), ('WARM', 'ts-warm', '0'))
+        st = b.lib.h_chg_status_byte()
+        self.assertEqual(st & 0x3F, status(pg=1, stage=STAGE_NOT_CHARGING))   # a temperature, no fault
+        # The chip by itself: EN_CHG forced on (a second host, or the firmware gone), still no charge in WARM.
+        b.lib.h_bq_poke(b.bq, 0x0F, b.lib.h_bq_reg(b.bq, 0x0F) | EN_CHG)
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x1C) >> 5, 0)
+        b.minute()
+        self.assertAlmostEqual(b.lib.h_pack_temp(), ts_deg_c(44.0) * 10, delta=8)   # the hold shows as the temperature
+        b.lib.h_bq_ts(b.bq, 520, 0)
+        b.lib.h_run(2 * POLL)
+        self.assertEqual(b.lib.h_chg(CHG_HOLD), CH_NONE)
+        self.assertTrue(self.en_chg(b))
+
+    def test_the_jeita_and_ts_settings_are_written_and_kept(self):
+        b = self.bench()
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x17), REG17_POR)
+        b.lib.h_run(TICK)
+        self.assertEqual((b.lib.h_bq_reg(b.bq, 0x17), b.lib.h_bq_reg(b.bq, 0x18)), (REG17_WANT, REG18_WANT))
+        self.assertEqual(b.lib.h_chg(CHG_CONFIGURED), 1)
+        b.lib.h_run(20_000)
+        b.lib.h_bq_watchdog_expire(b.bq)                         # REG17 and REG18 back to their reset values
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x17), REG17_POR)
+        b.lib.h_run(POLL)
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x17), REG17_WANT)
+        self.assertEqual((b.lib.h_chg(CHG_APPLIES), b.lib.h_chg(CHG_RESETS)), (2, 1))
+        b.lib.h_bq_poke(b.bq, 0x18, 0x55)                        # TS_IGNORE set behind our back: put right
+        b.lib.h_run(POLL)
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x18), REG18_WANT)
+        f = self.fields(b)
+        self.assertEqual((f['reg17'], f['reg18']), ('0x62', '0x54'))
+
+    def test_vac_ovp_is_12_v_and_the_rest_of_reg10_kept(self):
+        """VAC_OVP powers on at 7 V, inside the P110's cold open-circuit voltage: the firmware writes 12 V
+        at every set-up and in every control write, with VBUS_BACKUP and WATCHDOG as read."""
+        b = self.bench()
+        self.assertEqual((b.lib.h_bq_reg(b.bq, 0x10) >> 4) & 3, VAC_OVP_7V)
+        b.lib.h_bq_poke(b.bq, 0x10, 0x40 | VAC_OVP_7V << 4 | 6)  # VBUS_BACKUP 1, WATCHDOG 80 s
+        b.lib.h_run(TICK)
+        reg10 = b.lib.h_bq_reg(b.bq, 0x10)
+        self.assertEqual((reg10 >> 6, (reg10 >> 4) & 3, reg10 & 0x08, reg10 & 7), (1, VAC_OVP_12V, 0, 6))
+        self.assertEqual(b.lib.h_chg(CHG_CONFIGURED), 1)
+        self.assertEqual(self.fields(b)['vac_ovp'], str(VAC_OVP_12V))
+        b.lib.h_run(60_000)
+        self.assertEqual((b.lib.h_bq_reg(b.bq, 0x10) >> 4) & 3, VAC_OVP_12V)
+        self.assertEqual((b.lib.h_chg(CHG_APPLIES), b.lib.h_chg(CHG_RESETS)), (1, 0))
+        b.lib.h_bq_power_cycle(b.bq)                             # back to 7 V: a chip reset, put right
+        b.lib.h_run(POLL)
+        self.assertEqual((b.lib.h_bq_reg(b.bq, 0x10) >> 4) & 3, VAC_OVP_12V)
+        self.assertEqual((b.lib.h_chg(CHG_APPLIES), b.lib.h_chg(CHG_RESETS)), (2, 1))
+        self.assertEqual(b.lib.h_bq_reg_resets(b.bq), 0)         # never by REG_RST
+
+    def test_mppt_runs_with_voc_pct_0_8125_and_vindpm_under_vmp(self):
+        b = self.bench()
+        b.lib.h_bq_set(b.bq, 6940, 0, 3900, 0, 3900)            # the P110 at 25 degC, open circuit
+        b.lib.h_bq_status(b.bq, 0, 1, 3, 0, 0)                   # solar on VAC2
+        b.lib.h_run(TICK)
+        reg15 = b.lib.h_bq_reg(b.bq, 0x15)
+        self.assertEqual((reg15 >> 5, (reg15 >> 1) & 0x0F, reg15 & EN_MPPT), (VOC_PCT_CODE, 0x05, 1))   # DLY, RATE kept
+        vindpm = b.lib.h_bq_reg(b.bq, 0x05) * 100
+        self.assertLessEqual(vindpm, 5710)                       # the P110's Vmp
+        self.assertEqual(vindpm, 5600)                           # 0.8125 x 6.94 V = 5.64 V, in 100 mV steps
+        b.lib.h_run(POLL)                                        # the console shows the next poll's read
+        f = self.fields(b)
+        self.assertEqual((f['voc_pct'], f['mppt'], f['vindpm_mv'], f['mppt_sets']), ('4', '1', '5600', '1'))
+        b.lib.h_run(30_000)
+        self.assertEqual(b.lib.h_chg(CHG_MPPT_SETS), 1)          # set once: never written again while it holds
+
+    def test_mppt_comes_back_with_the_input_and_is_not_a_chip_reset(self):
+        b = self.bench()
+        b.lib.h_run(2 * POLL)
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x15) & EN_MPPT, 1)
+        b.lib.h_bq_set(b.bq, 0, 0, 3900, 0, 3900)                # night: VBUS goes, the chip clears EN_MPPT
+        b.lib.h_run(3 * POLL)
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x15) & EN_MPPT, 0)
+        self.assertEqual(b.lib.h_chg(CHG_MPPT_SETS), 1)          # no write while VBUS is away
+        b.lib.h_bq_set(b.bq, 6900, 0, 3900, 0, 3900)             # morning
+        b.lib.h_run(2 * POLL)
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x15) & EN_MPPT, 1)
+        self.assertEqual(b.lib.h_chg(CHG_MPPT_SETS), 2)
+        self.assertEqual((b.lib.h_chg(CHG_APPLIES), b.lib.h_chg(CHG_RESETS), b.lib.h_chg(CHG_CONFIGURED)), (1, 0, 1))
+
+    def test_mppt_waits_for_vsysmin_and_never_fights_ico(self):
+        b = self.bench()
+        b.lib.h_bq_set(b.bq, 6900, 0, 3300, 0, 3500)             # VBAT under VSYSMIN: VSYS_STAT
+        b.lib.h_run(3 * POLL)
+        self.assertEqual((b.lib.h_bq_reg(b.bq, 0x15) & EN_MPPT, b.lib.h_chg(CHG_MPPT_SETS)), (0, 0))
+        self.assertEqual(b.lib.h_chg(CHG_CONFIGURED), 1)         # VOC_PCT is still set
+        self.assertEqual(b.lib.h_bq_reg(b.bq, 0x15) >> 5, VOC_PCT_CODE)
+        b = self.bench()
+        b.lib.h_bq_poke(b.bq, 0x0F, b.lib.h_bq_reg(b.bq, 0x0F) | EN_ICO)   # ICO on: MPPT is not tried
+        b.lib.h_run(3 * POLL)
+        self.assertEqual((b.lib.h_bq_reg(b.bq, 0x15) & EN_MPPT, b.lib.h_chg(CHG_MPPT_SETS)), (0, 0))
+        self.assertTrue(b.lib.h_bq_reg(b.bq, 0x0F) & EN_ICO)     # left as read
+
+    def test_the_pack_temperature_from_ts(self):
+        """The table in charger.c against the B 3950 curve on the EVM divider: within 0.8 degC from -30 to
+        +80 degC (TS ADC counts, 100/1024 % each), none outside."""
+        b = self.bench()
+        worst = 0.0
+        for raw in range(190 * 1024 // 1000 + 1, 833 * 1024 // 1000):
+            got = b.lib.h_pack_temp_dc(raw)
+            want = ts_deg_c(raw * 100 / 1024)
+            if -30 <= want <= 80:
+                worst = max(worst, abs(got / 10 - want))
+        self.assertLess(worst, 0.85)
+        self.assertAlmostEqual(b.lib.h_pack_temp_dc(round(ts_pct(25.0) * 1024 / 100)), 250, delta=1)
+        self.assertEqual(b.lib.h_pack_temp_dc(900 * 1024 // 1000), NONE_I16)   # open thermistor: 85 % of REGN
+        self.assertEqual(b.lib.h_pack_temp_dc(50), NONE_I16)                   # shorted
+        # The thresholds the docs quote (App/power_config.h), from the datasheet percentages.
+        self.assertAlmostEqual(ts_deg_c(73.3), 3.9, delta=0.1)    # VT1 rising: COLD, fixed
+        self.assertAlmostEqual(ts_deg_c(44.8), 41.8, delta=0.1)   # VT3 falling, TS_WARM 1: the charge stop
+        self.assertAlmostEqual(ts_deg_c(46.1), 40.2, delta=0.1)   # VT3 rising: charge again
+        self.assertAlmostEqual(ts_deg_c(34.2), 54.9, delta=0.1)   # VT5 falling: HOT, fixed
+
+    def test_the_pack_temperature_reaches_the_health_report(self):
+        b = self.bench()
+        b.lib.h_bq_ts(b.bq, 589, 0)                              # 58.9 %: about 25 degC
+        b.minute()
+        b.minute()
+        self.assertAlmostEqual(b.lib.h_pack_temp(), 250, delta=3)
+        b.lib.h_bq_ts(b.bq, 900, TS_COLD)                        # an open thermistor
+        b.minute()
+        self.assertEqual(b.lib.h_pack_temp(), NONE_I16)
 
     def test_no_ts_reading_keeps_charge_disabled(self):
         b = self.bench()
@@ -789,7 +948,8 @@ class PhaseC(unittest.TestCase):
         self.assertEqual({k: f.get(k) for k in want}, want)
         # TS 52.0 %: the model's 520 permille is ADC count 532, which is 51.95 %, rounded to 0.1 %.
         self.assertEqual(f['ts_pct'], '52.0')
-        self.assertLess(len(line), 400)
+        self.assertLess(len(line), 495)
+        self.assertEqual((f['vac_ovp'], f['voc_pct'], f['mppt'], f['pack_dc']), ('2', '4', '1', '333'))   # 52.0 %: 33.3 degC
         self.assertEqual(len(self.line(b, 20)), 19)              # truncated to the buffer, terminated
 
     def test_the_charger_part_number_is_checked(self):

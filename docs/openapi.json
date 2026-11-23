@@ -724,6 +724,7 @@
           "charger_reported_battery_ma",
           "charger_temp_c",
           "pack_temp_c",
+          "charger_cold_hold",
           "charger_input_power_ok",
           "charger_charging",
           "charger_fault",
@@ -968,7 +969,14 @@
             "maximum": 3276.7,
             "x-unit": "°C",
             "x-resolution": 0.1,
-            "description": "Pack temperature. Not measured (null) in phases A and B (the NTC goes to the charger only)."
+            "description": "Pack temperature: the TX stack's pack NTC, read through the charger's TS pin. Not measured (null) in phases A and B (the NTC goes to the charger only); null in phase C outside -30 to +80 °C (an open or shorted thermistor)."
+          },
+          "charger_cold_hold": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "True while the charger holds charge off for a cold pack: input power good, no fault, stage not_charging and pack_temp_c under 6.3 °C (the BQ25798 stops below about 3.9 °C and starts again above 6.3 °C with the pack's NTC). Null when pack_temp_c or charger_stage is null (phases A and B)."
           },
           "charger_input_power_ok": {
             "type": [
@@ -1017,14 +1025,14 @@
             "items": {
               "type": "string"
             },
-            "description": "The power keys that are null because this build or phase has no source for them (their fitted bit is clear; design section 6.1), sorted. Phase A: charger_stage, charger_active_input, charger_reported_input_mv, charger_reported_input_ma, charger_reported_battery_mv, charger_temp_c, pack_temp_c. One of mcu_supply_mv, power_monitor_temp_c, battery_soc_pct, battery_soc_rate_pct_h, charger_input_power_ok, charger_charging, charger_fault, charger_stage, charger_active_input, charger_reported_input_mv, charger_reported_input_ma, charger_reported_battery_mv, charger_reported_battery_ma, charger_temp_c, pack_temp_c."
+            "description": "The power keys that are null because this build or phase has no source for them (their fitted bit is clear; design section 6.1), sorted. Phase A: charger_stage, charger_active_input, charger_reported_input_mv, charger_reported_input_ma, charger_reported_battery_mv, charger_temp_c, pack_temp_c, charger_cold_hold. One of mcu_supply_mv, power_monitor_temp_c, battery_soc_pct, battery_soc_rate_pct_h, charger_input_power_ok, charger_charging, charger_fault, charger_stage, charger_active_input, charger_reported_input_mv, charger_reported_input_ma, charger_reported_battery_mv, charger_reported_battery_ma, charger_temp_c, pack_temp_c, charger_cold_hold."
           },
           "power_sensor_faults": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "The power keys that are null although the build has a source for them (their fitted bit is set): a sensor fault, e.g. a dead fuel gauge gives battery_soc_pct and battery_soc_rate_pct_h. Sorted; empty when every fitted source answered. One of mcu_supply_mv, power_monitor_temp_c, battery_soc_pct, battery_soc_rate_pct_h, charger_input_power_ok, charger_charging, charger_fault, charger_stage, charger_active_input, charger_reported_input_mv, charger_reported_input_ma, charger_reported_battery_mv, charger_reported_battery_ma, charger_temp_c, pack_temp_c."
+            "description": "The power keys that are null although the build has a source for them (their fitted bit is set): a sensor fault, e.g. a dead fuel gauge gives battery_soc_pct and battery_soc_rate_pct_h. Sorted; empty when every fitted source answered. One of mcu_supply_mv, power_monitor_temp_c, battery_soc_pct, battery_soc_rate_pct_h, charger_input_power_ok, charger_charging, charger_fault, charger_stage, charger_active_input, charger_reported_input_mv, charger_reported_input_ma, charger_reported_battery_mv, charger_reported_battery_ma, charger_temp_c, pack_temp_c, charger_cold_hold."
           }
         }
       },

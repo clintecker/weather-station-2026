@@ -809,7 +809,8 @@ class Rails(PowerStation, Conformance, Harness):
 class PhaseCPower(PowerStation, Harness):
     """Phase C (WS_POWER_PROFILE=3, the TX stack's BQ25798 at 0x6B; App/charger.c): the charger's ADC fills
     the rails module's load voltage (VSYS) and charger input (VBUS), and the health report's charger
-    registers, so the fitted byte gains WS_FIT_CHARGER_REGS (0x10): 0x3F (power telemetry design 6.1)."""
+    registers and the pack temperature (TS through the NTC curve), so the fitted byte gains
+    WS_FIT_CHARGER_REGS (0x10) and WS_FIT_PACK_TEMP (0x40): 0x7F (power telemetry design 6.1)."""
     DEVICES = [(DEVK_INA228, 0x40), (DEVK_MAX17048, 0x36), (DEVK_BQ25798, 0x6B)]
 
     @classmethod
@@ -818,10 +819,10 @@ class PhaseCPower(PowerStation, Harness):
 
     def test_the_build_is_profile_c_and_its_fitted_byte(self):
         lib, _ = self.station(self.DEVICES)
-        self.assertEqual((lib.h_power_profile(), lib.h_power_fitted()), (3, 0x3F))
+        self.assertEqual((lib.h_power_profile(), lib.h_power_fitted()), (3, 0x7F))
 
     def test_the_charger_fills_the_rails_and_the_health_report(self):
-        # The model's defaults: VBUS 5.000 V, VSYS 3.600 V, no battery, die 30.0 degC, not charging.
+        # The model's defaults: VBUS 5.000 V, VBAT 3.800 V, VSYS 3.600 V, TS 52.0 %, die 30.0 degC, not charging.
         lib, _ = self.station(self.DEVICES)
         lib.h_run(MINUTE)
         self.latch(lib, P_RAILS, 1)
@@ -832,8 +833,8 @@ class PhaseCPower(PowerStation, Harness):
         self.assertEqual([s[i][2] for i in (1, 3, 4, 5, 6)], [NOT_FITTED] * 5)
         h = self.health(lib)
         self.assertEqual((h['chg_input_mv'], h['chg_input_ma'], h['chg_batt_mv'], h['chg_batt_ma'], h['chg_temp']),
-                         (5000, 0, 0, 0, 300))
-        self.assertEqual(h['pack_temp'], I16_NONE)                 # not fitted: TS is not a temperature yet
+                         (5000, 0, 3800, 0, 300))
+        self.assertEqual(h['pack_temp'], 333)                      # TS 52.0 %: 33.3 degC on the B 3950 curve
         self.assertEqual(h['charger_status'], 0x01 | 6 << 3)       # power good, stage 6 not charging, input 0
 
 class Wind(Conformance, Harness):

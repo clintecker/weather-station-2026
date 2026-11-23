@@ -235,7 +235,7 @@ class HealthNoneReasons(unittest.TestCase):
         self.assertEqual(r['power_not_measured'], sorted(['charger_stage', 'charger_active_input',
                                                           'charger_reported_input_mv', 'charger_reported_input_ma',
                                                           'charger_reported_battery_mv', 'charger_temp_c',
-                                                          'pack_temp_c']))
+                                                          'pack_temp_c', 'charger_cold_hold']))
 
     def test_a_healthy_phase_a_report_has_no_fault(self):
         r = phase_a_report()
@@ -251,8 +251,9 @@ class HealthNoneReasons(unittest.TestCase):
         r = health_report(pack_diag(epoch=1, uptime=1, pending=0, lost=0, torn=0, abandoned=0, no_ack=0, rejects=0,
                                     reset_cause=1, link=0, build=0, rssi=-60, snr=7, crashes=0, energy=1))[0]
         self.assertEqual(r['power_sensor_faults'], [])
-        self.assertEqual(len(r['power_not_measured']), 15)
-        self.assertEqual(set(r['power_not_measured']), set(HEALTH_ENTITIES))
+        self.assertEqual(len(r['power_not_measured']), 16)
+        # Every entity key, and charger_cold_hold (an alert, from the pack temperature).
+        self.assertEqual(set(r['power_not_measured']), set(HEALTH_ENTITIES) | {'charger_cold_hold'})
 
 
 if __name__ == '__main__':
@@ -372,6 +373,42 @@ class Alerts(unittest.TestCase):
         self.assertTrue(alerts(self.latest(), report, False, self.now)['charger_fault'])
         self.assertTrue(alerts(self.latest(), report | {'charger_cold_hold': True}, False, self.now)['charger_cold_hold'])
         self.assertIsNone(alerts(self.latest(), self.report(charger_status=0xFF), False, self.now)['charger_fault'])
+
+    def phase_c_report(self, pack_dc, stage=6, status=CHG_POWER_GOOD):
+        """A phase C (TX stack) report: fitted 0x7F, the pack temperature from the charger's TS pin."""
+        from ws0.protocol import CHG_STAGE_SHIFT
+        return self.report(fitted=0x7F, pack_temp=pack_dc, charger_status=status | stage << CHG_STAGE_SHIFT,
+                           chg_input_mv=6900, chg_input_ma=0, chg_batt_mv=3800, chg_temp=250)
+
+    def test_cold_hold_end_to_end_from_a_phase_c_report(self):
+        """The node reports a TS cold hold as power good, no fault, stage not_charging (6) with the pack
+        temperature (App/charger.c): the gateway decodes it to charger_cold_hold, the alert goes on and
+        its entity is advertised."""
+        from ws0.protocol import CHG_FAULT
+        from ws0.service import COLD_HOLD_BELOW_C, alerts
+        self.assertEqual(COLD_HOLD_BELOW_C, 6.3)                   # VT1 falling, B 3950 on the EVM divider
+        cold = self.phase_c_report(20)                               # 2.0 degC, not charging
+        self.assertIs(cold['charger_cold_hold'], True)
+        self.assertNotIn('charger_cold_hold', cold['power_not_measured'] + cold['power_sensor_faults'])
+        self.assertTrue(alerts(self.latest(), cold, False, self.now)['charger_cold_hold'])
+        self.assertIs(self.phase_c_report(250)['charger_cold_hold'], False)        # warm enough
+        self.assertIs(self.phase_c_report(20, stage=2, status=CHG_POWER_GOOD | CHG_CHARGING)['charger_cold_hold'],
+                      False)                                         # still charging: no hold
+        self.assertIs(self.phase_c_report(20, stage=5)['charger_cold_hold'], False)  # terminated: a full pack
+        self.assertIs(self.phase_c_report(20, status=CHG_POWER_GOOD | CHG_FAULT)['charger_cold_hold'], False)
+        self.assertIs(self.phase_c_report(20, status=0)['charger_cold_hold'], False)  # no input: nothing to hold
+        # An open thermistor: no pack temperature, so not known, and a sensor fault under the fitted bit.
+        open_ntc = self.phase_c_report(-32768)
+        self.assertIsNone(open_ntc['charger_cold_hold'])
+        self.assertIn('charger_cold_hold', open_ntc['power_sensor_faults'])
+        # Phase A has no pack temperature: not measured, and the alert is never advertised.
+        self.assertIsNone(self.report()['charger_cold_hold'])
+        self.assertIn('charger_cold_hold', self.report()['power_not_measured'])
+        mqtt, published = HealthFreshness.publisher(HealthFreshness(), None)
+        mqtt.advertise_alerts(self.report())
+        self.assertNotIn('homeassistant/binary_sensor/s1_alert_charger_cold_hold/config', [t for t, _p, _r in published])
+        mqtt.advertise_alerts(cold)
+        self.assertIn('homeassistant/binary_sensor/s1_alert_charger_cold_hold/config', [t for t, _p, _r in published])
 
     def test_discovery_is_independent_of_station_availability(self):
         from ws0.service import ALERTS_ALWAYS, alert_discovery

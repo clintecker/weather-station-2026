@@ -903,7 +903,9 @@ def assembly_sheet():
          "4-1). It comes from R7 on the backplane (its free leg at line 24, hole 7). Only then remove JP9, so BATP never "
          "floats.",
          "3. **JP18 off, thermistor on J7.** Fit the Adafruit #372 10 kohm NTC (B 3950) to J7 and tape it to the pack. "
-         "The EVM's TS divider is set for a 103AT (B 3435), so the cold and hot thresholds move by a few degrees. "
+         "The EVM's TS divider is set for a 103AT (B 3435), so with this NTC the chip's fixed cold stop sits at "
+         "about 4 C and its fixed hot stop at about 55 C. The firmware moves the warm point to about 42 C and stops "
+         "charging there (`App/power_config.h`). "
          "Read the TS percentage over I2C at room temperature. Check that it sits in the normal band before you charge.",
          "4. **JP12, JP17 and JP30 stay in.** JP30 powers the EVM's 3.3 V PULLUP rail. That rail holds the I2C "
          "pull-ups R39 (SCL) and R40 (SDA), 10 kohm each. R41 and R42 on the same rail pull up /INT and /CE. Only the SCL/SDA "
@@ -916,10 +918,13 @@ def assembly_sheet():
          "writes the charge voltage (4.2 V, REG0x01-0x02) and the charge current (ICHG about 0.9 A; spec charger "
          "set-up, electrical C1/M1/M2, and issue #34), reads both back and checks that REG0x0A says one cell. It "
          "writes them again after any chip reset, because ICHG goes back to its 1 A default on a power cycle or a "
-         "chip watchdog timeout. It keeps charge off until a fresh TS reading is neither cold nor hot. The JP22 note "
+         "chip watchdog timeout. It also sets the input over-voltage limit to 12 V (the chip powers up at 7 V, "
+         "which the P110 can pass on a cold morning), the panel's MPPT at 0.81 of its open-circuit voltage, and "
+         "the warm stop above. It keeps charge off until a fresh TS reading is neither cold, warm nor hot. The JP22 note "
          "says 2 A, and the datasheet default is 1 A. The firmware runs on the cards, so do this check once they're "
          "in (Session 8): USB in J6, no pack, JP17 out, then type `CHARGER` on the TX console. Look for `cells=1`, "
-         "`vreg_mv=4200`, `ichg_ma=900`, `ts=NORMAL` and `hold=none`, and write down `ts_pct`. Then refit JP17 and "
+         "`vreg_mv=4200`, `ichg_ma=900`, `vac_ovp=2`, `voc_pct=4`, `ts=NORMAL` and `hold=none`, and write down "
+         "`ts_pct` and `pack_dc` (the pack temperature in 0.1 C). Then refit JP17 and "
          "connect the pack, last.", "",
          "## 2. Print the base (`cage/cage.py`)", "",
          "1. Print the rim test ring first (`cage.py --ring`, `cage/stl/rim-ring.stl`). It's the whole rim, 175.5 x "

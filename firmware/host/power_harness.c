@@ -93,15 +93,18 @@ void h_bq_status(int dev, int ac1, int ac2, unsigned chg_stat, int f0, int f1) {
 void h_bq_watchdog_expire(int dev) { model_bq25798_watchdog_expire(dev); }
 void h_bq_ignore_limits(int dev, int ignore) { model_bq25798_ignore_limits(dev, ignore); }
 int h_bq_reg(int dev, int reg) { return model_bq25798_reg(dev, (uint8_t)reg); }
+void h_bq_poke(int dev, int reg, int v) { model_bq25798_poke(dev, (uint8_t)reg, (uint8_t)v); }
 uint32_t h_bq_limit_writes(int dev) { return model_bq25798_limit_writes(dev); }
 uint32_t h_bq_kicks(int dev) { return model_bq25798_kicks(dev); }
 uint32_t h_bq_reg_resets(int dev) { return model_bq25798_reg_resets(dev); }
-int h_chg(int what)   /* charger_t: 0 present, 1 ok, 2 configured, 3 hold, 4 applies, 5 resets, 6 failures */
+int h_chg(int what)   /* charger_t: 0 present, 1 ok, 2 configured, 3 hold, 4 applies, 5 resets, 6 failures, 7 mppt_sets */
 {
   const charger_t *c = charger_state();
-  const int v[7] = { c->present, c->ok, c->configured, c->hold, c->applies, c->resets, c->failures };
-  return what >= 0 && what < 7 ? v[what] : -1;
+  const int v[8] = { c->present, c->ok, c->configured, c->hold, c->applies, c->resets, c->failures, c->mppt_sets };
+  return what >= 0 && what < 8 ? v[what] : -1;
 }
+int h_pack_temp(void) { return win.slow.pack_temp; }
+int h_pack_temp_dc(unsigned ts_raw) { return charger_pack_temp_dc((uint16_t)ts_raw); }
 int h_chg_status_byte(void) { return charger_status_byte(); }
 static char line[CHARGER_LINE_MAX];
 const char *h_charger_line(unsigned len) { (void)charger_line(line, len < sizeof line ? len : sizeof line, now_ms()); return line; }

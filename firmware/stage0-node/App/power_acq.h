@@ -71,6 +71,7 @@ typedef struct {
   /* Phase C only (the BQ25798's ADC, the window's latest read), else none: */
   uint16_t chg_input_mv, chg_batt_mv;   /* VBUS, VBAT */
   int16_t chg_input_ma, chg_temp;       /* IBUS (+ into the charger), the die, 0.1 degC */
+  int16_t pack_temp;                    /* the pack NTC from TS (charger_pack_temp_dc), 0.1 degC */
 } power_slow_t;
 
 typedef struct {

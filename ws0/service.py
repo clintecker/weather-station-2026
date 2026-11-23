@@ -81,8 +81,23 @@ FIT_KEYS = {
     FIT_CHARGER_REGS: ('charger_stage', 'charger_active_input', 'charger_reported_input_mv',
                        'charger_reported_input_ma', 'charger_reported_battery_mv', 'charger_temp_c'),
     FIT_CHARGE_CURRENT: ('charger_reported_battery_ma',),
-    FIT_PACK_TEMP: ('pack_temp_c',),
+    FIT_PACK_TEMP: ('pack_temp_c', 'charger_cold_hold'),
 }
+
+# The TX stack's charger stops charging below about 3.9 degC and starts again above about 6.3 degC
+# (BQ25798 VT1 with the pack's B 3950 NTC on the EVM divider, App/power_config.h). The node reports the
+# hold as no fault, power good, stage not_charging, with the pack temperature beside it.
+COLD_HOLD_BELOW_C = 6.3
+
+
+def cold_hold(values):
+    """charger_cold_hold: True while the charger holds charge off for a cold pack (power good, no fault,
+    not charging, the pack under COLD_HOLD_BELOW_C); None without a pack temperature or a charger stage."""
+    temp, stage = values['pack_temp_c'], values['charger_stage']
+    if temp is None or stage is None:
+        return None
+    return bool(values['charger_input_power_ok'] and not values['charger_fault'] and stage == 'not_charging'
+                and temp < COLD_HOLD_BELOW_C)
 
 
 def why_null(values, fitted):
@@ -122,6 +137,7 @@ def power_keys(d):
             'charger_reported_battery_ma':_plain(d['chg_batt_ma'],I16_NONE),
             'charger_temp_c':_scaled(d['chg_temp'],I16_NONE,10),'pack_temp_c':_scaled(d['pack_temp'],I16_NONE,10),
             **charger_keys(d['charger_status'])}
+    values['charger_cold_hold'] = cold_hold(values)
     unmeasured, faults = why_null(values, d['fitted'])
     return values | {'power_not_measured':unmeasured,'power_sensor_faults':faults}
 
@@ -528,7 +544,7 @@ def health_fresh(report, now):
 # Home Assistant alert entities (binary_sensor, device class problem: ON = something is wrong), computed
 # by the gateway each tick and published on …/alerts. They depend on the gateway only, so a stale station
 # shows as an alert that is on, never as an unavailable one. charger_cold_hold is advertised only once a
-# health report carries that key (the firmware does not report a TS cold hold as its own bit yet).
+# health report carries a value for it (a build with a pack temperature, cold_hold).
 ALERTS = {'station_stale':'Station stale','battery_low':'Battery low','charger_fault':'Charger fault (alert)',
           'charger_cold_hold':'Charger cold hold','receiver_silent':'Receiver silent'}
 ALERTS_ALWAYS = ('station_stale','battery_low','charger_fault','receiver_silent')
@@ -702,8 +718,8 @@ class MQTT:
         self.advertised_health |= keys
 
     def advertise_alerts(self, report):
-        """Discovery for the alerts, once a connection; charger_cold_hold once a health report carries it."""
-        keys = set(ALERTS_ALWAYS) | ({'charger_cold_hold'} if 'charger_cold_hold' in (report or {}) else set())
+        """Discovery for the alerts, once a connection; charger_cold_hold once a health report has a value for it."""
+        keys = set(ALERTS_ALWAYS) | ({'charger_cold_hold'} if (report or {}).get('charger_cold_hold') is not None else set())
         for topic,payload in alert_discovery(self.gateway.cfg,sorted(keys - self.advertised_alerts)).items():
             self.client.publish(topic,json.dumps(payload),qos=1,retain=True)
         self.advertised_alerts |= keys

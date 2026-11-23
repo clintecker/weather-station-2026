@@ -4,10 +4,11 @@
  *
  * The charge gate (EN_CHG, REG0F bit 5, table 7-25). Charge stays off until the part is a BQ25798, CELL
  * says one cell, VREG and ICHG read back as set, and a TS reading no older than CHARGER_TS_FRESH_MS
- * exists with the TS comparators not COLD or HOT (REG1F, table 7-40). COLD and HOT also catch an open or
- * shorted thermistor (TS near 100 % or 0 % of REGN). COOL and WARM still charge: the chip's own JEITA
- * profile lowers the current or the voltage there (REG16-REG18). The chip enforces its TS limits on
- * its own too; the gate adds the firmware's view and the report. */
+ * exists with the TS comparators not COLD, HOT or WARM (REG1F, table 7-40). COLD and HOT also catch an open
+ * or shorted thermistor (TS near 100 % or 0 % of REGN). WARM is held too: COLD and HOT are fixed in the
+ * chip (about 3.9 and 54.9 degC with this NTC), so WARM, set by register to about 41.8 degC with JEITA
+ * suspend there (App/power_config.h), is the real charge stop. COOL still charges at the chip's 20 %.
+ * The chip enforces its TS limits on its own too; the gate adds the firmware's view and the report. */
 #define WS_CHECK_FILE 19
 #include "charger.h"
 #include <string.h>
@@ -17,16 +18,30 @@
 #include "ws_frame.h"
 
 /* Registers (SLUSDV2C table 7-13, the register map) and the bursts the poll reads. */
-#define REG_VREG 0x01U          /* REG01-02 VREG; the burst runs to REG10 */
-#define CONFIG_LEN 16U          /* REG01 to REG10 */
+#define REG_VREG 0x01U          /* REG01-02 VREG; the burst runs to REG18 */
+#define CONFIG_LEN 24U          /* REG01 to REG18 */
 #define OFF_VREG 0U
 #define OFF_ICHG 2U             /* REG03-04 */
+#define OFF_05 4U               /* REG05 VINDPM (table 7-17), reported only */
 #define OFF_09 8U               /* REG09 */
 #define OFF_0A 9U               /* REG0A */
 #define REG_TERM 0x09U          /* REG09: ITERM bits 4:0, STOP_WD_CHG bit 5, REG_RST bit 6 (table 7-20) */
 #define TERM_KEEP 0x20U         /* the bits a REG09 write keeps as read: STOP_WD_CHG. REG_RST is always 0 */
 #define OFF_0F 14U              /* REG0F */
 #define OFF_10 15U              /* REG10 */
+#define OFF_15 20U              /* REG15 MPPT (table 7-31) */
+#define OFF_17 22U              /* REG17 JEITA (table 7-33) */
+#define OFF_18 23U              /* REG18 TS thresholds (table 7-34) */
+#define REG_CTRL1 0x10U         /* REG10: VBUS_BACKUP bits 7:6, VAC_OVP 5:4, WD_RST 3, WATCHDOG 2:0 */
+#define REG_MPPT 0x15U
+#define REG_NTC 0x17U           /* REG17, then REG18 */
+#define VAC_OVP_MASK 0x30U
+#define VAC_OVP_SHIFT 4U
+#define VOC_PCT_MASK 0xE0U      /* REG15 bits 7:5; VOC_DLY and VOC_RATE (bits 4:1) kept as read */
+#define VOC_PCT_SHIFT 5U
+#define EN_MPPT 0x01U           /* REG15 bit 0 */
+#define REG17_MASK 0xFEU        /* bit 0 reserved */
+#define EN_ICO 0x10U            /* REG0F bit 4: with it set the chip refuses EN_MPPT (section 7.3.6.3) */
 #define LIMITS_LEN 4U           /* VREG and ICHG, written as one burst from REG01 */
 #define REG_CTRL0 0x0FU         /* REG0F, then REG10 */
 #define REG_STATUS 0x1BU        /* REG1B to REG21 */
@@ -60,6 +75,7 @@
 #define WD_STAT 0x20U           /* REG1B bit 5 */
 #define CHG_STAT_SHIFT 5U       /* REG1C bits 7:5 (table 7-37) */
 #define ADC_DONE 0x20U          /* REG1E bit 5 (table 7-39) */
+#define VSYS_STAT 0x10U         /* REG1E bit 4: VBAT under VSYSMIN, where EN_MPPT cannot be set */
 #define TS_HOT 0x01U            /* REG1F bits 0-3 (table 7-40) */
 #define TS_WARM 0x02U
 #define TS_COOL 0x04U
@@ -71,7 +87,8 @@
 #define VAC1_INPUT WS_CHG_INPUT_USB_C
 #define VAC2_INPUT WS_CHG_INPUT_SOLAR
 
-typedef enum { CS_IDLE, CS_ID, CS_CONFIG, CS_LIMITS, CS_TERM, CS_VERIFY, CS_STATUS, CS_ADC, CS_CONTROL, CS_ADC_START } chg_step;
+typedef enum { CS_IDLE, CS_ID, CS_CONFIG, CS_LIMITS, CS_TERM, CS_OVP, CS_MPPT_PCT, CS_NTC, CS_VERIFY, CS_STATUS, CS_ADC,
+               CS_CONTROL, CS_MPPT, CS_ADC_START } chg_step;
 
 typedef struct {
   charger_t s;
@@ -80,7 +97,7 @@ typedef struct {
   uint8_t held;          /* the set-up read back as set at least once since boot */
   uint8_t adc_started;   /* a one-shot conversion was started since the last reset seen */
   uint32_t now, next_ms;
-  uint8_t buf[ADC_LEN], tx[LIMITS_LEN + 1U];
+  uint8_t buf[CONFIG_LEN], tx[LIMITS_LEN + 1U];
 } chg_t;
 
 static chg_t cg;
@@ -120,18 +137,52 @@ static void config_read(void)
   charger_t *s = &cg.s;
   s->vreg_raw = be16(cg.buf + OFF_VREG);
   s->ichg_raw = be16(cg.buf + OFF_ICHG);
+  s->reg05 = cg.buf[OFF_05];
   s->reg09 = cg.buf[OFF_09];
   s->reg0a = cg.buf[OFF_0A];
   s->reg0f = cg.buf[OFF_0F];
   s->reg10 = cg.buf[OFF_10];
+  s->reg15 = cg.buf[OFF_15];
+  s->reg17 = cg.buf[OFF_17];
+  s->reg18 = cg.buf[OFF_18];
 }
 
 static uint8_t iterm_want(void) { return bq25798_iterm_code(POWER_CHG_ITERM_MA); }
 
 static int config_matches(void)
 {
-  return cg.s.vreg_raw == vreg_want() && cg.s.ichg_raw == ichg_want() &&
-         (cg.s.reg09 & BQ25798_ITERM_MASK) == iterm_want();
+  const charger_t *s = &cg.s;
+  return s->vreg_raw == vreg_want() && s->ichg_raw == ichg_want() && (s->reg09 & BQ25798_ITERM_MASK) == iterm_want() &&
+         (s->reg10 & VAC_OVP_MASK) == POWER_CHG_VAC_OVP_CODE << VAC_OVP_SHIFT &&
+         (s->reg15 & VOC_PCT_MASK) == POWER_CHG_VOC_PCT_CODE << VOC_PCT_SHIFT &&
+         (s->reg17 & REG17_MASK) == (POWER_CHG_REG17 & REG17_MASK) && s->reg18 == POWER_CHG_REG18;
+}
+
+static void write2(chg_step step, uint8_t reg, uint8_t v)
+{
+  cg.tx[0] = reg; cg.tx[1] = v;
+  submit(step, 2, 0);
+}
+
+/* REG10: VAC_OVP as set, WD_RST; VBUS_BACKUP and WATCHDOG as read. */
+static uint8_t reg10_want(void)
+{
+  return (uint8_t)((cg.s.reg10 & (uint8_t)~(VAC_OVP_MASK | WD_RST)) | POWER_CHG_VAC_OVP_CODE << VAC_OVP_SHIFT | WD_RST);
+}
+
+/* REG15: VOC_PCT as set; VOC_DLY, VOC_RATE and EN_MPPT as read, EN_MPPT set when en. */
+static uint8_t reg15_with(int en)
+{
+  return (uint8_t)((cg.s.reg15 & (uint8_t)~VOC_PCT_MASK) | POWER_CHG_VOC_PCT_CODE << VOC_PCT_SHIFT | (en ? EN_MPPT : 0U));
+}
+
+/* EN_MPPT to write now: VBUS present, VBAT above VSYSMIN, ICO off, and the chip has it clear (section
+   7.3.6.3: the chip clears it whenever VBUS goes, and refuses it with VSYS_STAT or EN_ICO set). */
+static int mppt_due(void)
+{
+  const charger_t *s = &cg.s;
+  return s->configured && (s->st[S_1B] & VBUS_PRESENT) && !(s->st[S_1E] & VSYS_STAT) && !(s->reg0f & EN_ICO) &&
+         !(s->reg15 & EN_MPPT);
 }
 
 /* VREG and ICHG as one 4-byte write from REG01 (high bytes first; the reserved top bits written 0). */
@@ -158,17 +209,18 @@ static enum charger_hold hold_now(void)
   if (!s->adc_ok || cg.now - s->ts_ms > CHARGER_TS_FRESH_MS) return CH_TS_STALE;
   if (s->st[S_1F] & TS_COLD) return CH_TS_COLD;
   if (s->st[S_1F] & TS_HOT) return CH_TS_HOT;
+  if (s->st[S_1F] & TS_WARM) return CH_TS_WARM;
   return CH_NONE;
 }
 
-/* REG0F with EN_CHG by the gate, REG10 with WD_RST; every other bit as read. */
+/* REG0F with EN_CHG by the gate, REG10 with WD_RST and VAC_OVP as set; every other bit as read. */
 static void write_control(void)
 {
   charger_t *s = &cg.s;
   s->hold = (uint8_t)hold_now();
   cg.tx[0] = REG_CTRL0;
   cg.tx[1] = (uint8_t)(s->hold == CH_NONE ? (s->reg0f | EN_CHG) : (s->reg0f & (uint8_t)~EN_CHG));
-  cg.tx[2] = (uint8_t)(s->reg10 | WD_RST);
+  cg.tx[2] = reg10_want();
   s->reg0f = cg.tx[1];
   submit(CS_CONTROL, 3, 0);
 }
@@ -187,6 +239,7 @@ static void adc_read(void)
   w->n = count_up(w->n);
   w->vbus_last_mv = s->vbus; w->vbat_last_mv = s->vbat;
   w->ibus_last_ma = (int16_t)s->ibus; w->tdie_last_dc = bq25798_tdie_dc(s->tdie);
+  w->pack_last_dc = charger_pack_temp_dc(s->ts);
 }
 
 /* After the status burst: the ADC when the last one-shot conversion has finished (ADC_DONE set, so the
@@ -216,10 +269,15 @@ void charger_i2c_done(int rc)
       else { s->configured = 0; write_limits(); }
       break;
     case CS_LIMITS:   /* then ITERM, the other bits of REG09 as read, REG_RST never set */
-      cg.tx[0] = REG_TERM; cg.tx[1] = (uint8_t)((s->reg09 & TERM_KEEP) | iterm_want());
-      submit(CS_TERM, 2, 0);
+      write2(CS_TERM, REG_TERM, (uint8_t)((s->reg09 & TERM_KEEP) | iterm_want()));
       break;
-    case CS_TERM: read_regs(CS_VERIFY, REG_VREG, CONFIG_LEN); break;
+    case CS_TERM: write2(CS_OVP, REG_CTRL1, reg10_want()); break;
+    case CS_OVP: write2(CS_MPPT_PCT, REG_MPPT, reg15_with(s->reg15 & EN_MPPT)); break;
+    case CS_MPPT_PCT:   /* REG17 and REG18 as one burst */
+      cg.tx[0] = REG_NTC; cg.tx[1] = POWER_CHG_REG17; cg.tx[2] = POWER_CHG_REG18;
+      submit(CS_NTC, 3, 0);
+      break;
+    case CS_NTC: read_regs(CS_VERIFY, REG_VREG, CONFIG_LEN); break;
     case CS_VERIFY:
       config_read();
       s->configured = (uint8_t)config_matches();
@@ -233,9 +291,15 @@ void charger_i2c_done(int rc)
       write_control();
       break;
     case CS_CONTROL:
-      cg.tx[0] = REG_ADC_CTRL; cg.tx[1] = ADC_START;
-      submit(CS_ADC_START, 2, 0);
+      if (mppt_due())
+      {
+        s->mppt_sets = count_up(s->mppt_sets);
+        s->reg15 = reg15_with(1);
+        write2(CS_MPPT, REG_MPPT, s->reg15);
+      }
+      else write2(CS_ADC_START, REG_ADC_CTRL, ADC_START);
       break;
+    case CS_MPPT: write2(CS_ADC_START, REG_ADC_CTRL, ADC_START); break;
     case CS_ADC_START:
       cg.adc_started = 1;
       s->ok = 1; s->fault = 0; s->poll_ms = cg.now;
@@ -278,6 +342,26 @@ static uint8_t input_of(uint8_t st1b)
   if (ac == AC1_PRESENT) return VAC1_INPUT;
   if (ac == AC2_PRESENT) return VAC2_INPUT;
   return WS_CHG_INPUT_NOT_REPORTED;   /* both present: the register map does not say which one powers it */
+}
+
+/* TS in permille of REGN at -30, -25, ... +80 degC: 1000 x Rb / (R18 + Rb), Rb = R24 || R_NTC, R_NTC =
+   10 kohm x exp(3950 x (1/T - 1/298.15 K)) (App/power_config.h). Linear between the rows, the result is
+   within 0.8 degC of the curve (tests/test_power_acq.py checks it). */
+#define PACK_T0_DC (-300)
+#define PACK_STEP_DC 50
+static const uint16_t pack_ts_pm[] = { 833, 826, 817, 806, 791, 774, 752, 727, 698, 665, 629, 589,
+                                       548, 506, 463, 421, 380, 341, 305, 272, 241, 214, 189 };
+#define PACK_ROWS (sizeof pack_ts_pm / sizeof pack_ts_pm[0])
+
+int16_t charger_pack_temp_dc(uint16_t ts_raw16)
+{
+  uint16_t pm = bq25798_ts_permille(ts_raw16);
+  if (pm > pack_ts_pm[0] || pm < pack_ts_pm[PACK_ROWS - 1U]) return WS_I16_NONE;
+  unsigned i = 0;
+  while (i + 2U < PACK_ROWS && pm < pack_ts_pm[i + 1U]) i++;   /* bound: PACK_ROWS rows */
+  int32_t span = pack_ts_pm[i] - pack_ts_pm[i + 1U];
+  int32_t t = PACK_T0_DC + (int32_t)i * PACK_STEP_DC + ((int32_t)(pack_ts_pm[i] - pm) * PACK_STEP_DC + span / 2) / span;
+  return (int16_t)t;
 }
 
 uint8_t charger_status_byte(void)
@@ -345,7 +429,7 @@ static const char *ts_band(uint8_t st1f)
 unsigned charger_line(char *buf, unsigned len, uint32_t now_ms)
 {
   static const char *const hold[CH_COUNT] = { "none", "absent", "not-bq25798", "cells", "readback", "ts-stale",
-                                              "ts-cold", "ts-hot" };
+                                              "ts-cold", "ts-hot", "ts-warm" };
   static const char *const stage[8] = { "none", "precharge", "cc", "cv", "topoff", "terminated", "not-charging", "?" };
   const charger_t *s = &cg.s;
   if (len == 0) return 0;
@@ -370,6 +454,9 @@ unsigned charger_line(char *buf, unsigned len, uint32_t now_ms)
   }
   else n = put(buf, len, n, "none");
   n = put(buf, len, put(buf, len, n, " ts="), ts_band(s->st[S_1F]));
+  int16_t pack = s->adc_ok ? charger_pack_temp_dc(s->ts) : (int16_t)WS_I16_NONE;
+  n = put(buf, len, n, " pack_dc=");
+  n = pack == WS_I16_NONE ? put(buf, len, n, "none") : put_dec(buf, len, n, pack);
   n = kv(buf, len, n, " ts_age_ms=", s->adc_ok ? (int32_t)(now_ms - s->ts_ms) : -1);
   unsigned chg = s->st[S_1C] >> CHG_STAT_SHIFT;
   n = kv(buf, len, n, " chg_stat=", (int32_t)chg);
@@ -385,8 +472,15 @@ unsigned charger_line(char *buf, unsigned len, uint32_t now_ms)
   n = kv(buf, len, n, " vbat_mv=", s->vbat);
   n = kv(buf, len, n, " ibat_ma=", (int16_t)s->ibat);
   n = kv(buf, len, n, " vsys_mv=", s->vsys);
+  n = kv(buf, len, n, " vac_ovp=", (s->reg10 & VAC_OVP_MASK) >> VAC_OVP_SHIFT);
+  n = kv(buf, len, n, " voc_pct=", (s->reg15 & VOC_PCT_MASK) >> VOC_PCT_SHIFT);
+  n = kv(buf, len, n, " mppt=", s->reg15 & EN_MPPT);
+  n = kv(buf, len, n, " vindpm_mv=", (int32_t)s->reg05 * 100);
+  n = put_hex(buf, len, put(buf, len, n, " reg17="), s->reg17, 2);
+  n = put_hex(buf, len, put(buf, len, n, " reg18="), s->reg18, 2);
   n = kv(buf, len, n, " applies=", s->applies);
   n = kv(buf, len, n, " resets=", s->resets);
   n = kv(buf, len, n, " failures=", s->failures);
+  n = kv(buf, len, n, " mppt_sets=", s->mppt_sets);
   return kv(buf, len, n, " poll_age_ms=", s->ok ? (int32_t)(now_ms - s->poll_ms) : -1);
 }

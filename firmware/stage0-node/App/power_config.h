@@ -86,6 +86,28 @@ _Static_assert(!POWER_ADDR_RESERVED(POWER_ADDR_CHARGER) && POWER_ADDR_CHARGER !=
    table 7-20), so 90 mA is written as the nearest code, 2: 80 mA. Its default is 200 mA, and a watchdog
    expiry resets it as it does ICHG. */
 #define POWER_CHG_ITERM_MA 90U
+/* Input over-voltage (REG10 VAC_OVP, table 7-26): 12 V. Its POR value is 7 V (the field's "POR: 11b" and
+   figure 7-38's R/W-3h; the table's reset 85h decodes to 26 V, so the firmware never relies on either).
+   The Voltaic P110's open-circuit voltage is 6.94 V at 25 degC and about 7.6 V in the cold, inside the 7 V
+   setting's 6.7-7.3 V rising band, so 7 V can lock the panel out; 12 V (11.6-12.4 V) clears it with room
+   and still trips by 12.4 V. Reset only by REG_RST and a power-on, so a read-back that differs is a
+   chip reset. */
+#define POWER_CHG_VAC_OVP_CODE 2U
+/* Solar MPPT (REG15, table 7-31; section 7.3.6.3): VINDPM = VOC_PCT x the measured open-circuit voltage.
+   The P110: Vmp / Voc = 5.71 V / 6.94 V = 0.823; the nearest code is 4, 0.8125, which puts VINDPM at
+   5.64 V at 25 degC, under Vmp. EN_MPPT is written 1 whenever VBUS is present and VBAT is above VSYSMIN
+   (VSYS_STAT 0); the chip clears it when VBUS goes, and the next poll after VBUS returns sets it again. */
+#define POWER_CHG_VOC_PCT_CODE 4U
+/* The pack NTC: the Adafruit #372 (10 kohm at 25 degC, B 3950) on EVM J7, across the EVM's TS divider
+   (SLUUCB5E: R18 5.23 kohm REGN to TS, R24 30.1 kohm TS to ground; JP18 off). The chip's COLD and HOT
+   thresholds are fixed (SLUSDV2C section 6.5: VT1 73.3 % and VT5 34.2 % of REGN), so with this NTC
+   charge stops below about 3.9 degC and above about 54.9 degC whatever the firmware writes. TS_WARM
+   (REG18 bits 5:4, table 7-34) can move: code 1 (VT3 falling 44.8 %) is 41.8 degC with this NTC (code 0
+   would be 37.5, 2 46.1, 3 50.4), the nearest to 40 that stays under 45. JEITA_ISETH 0 (REG17, table 7-33)
+   suspends charge in WARM, so 41.8 degC is the charge stop, with the chip's own hysteresis back to 40.2
+   degC (VT3 rising 46.1 %). TS_COOL keeps code 1: 68.4 % is 12.2 degC, with charge at 20 % below it. */
+#define POWER_CHG_REG17 0x62U   /* JEITA_VSET 3 (VREG - 400 mV, unused while suspended), ISETH 0 suspend, ISETC 1 (20 %) */
+#define POWER_CHG_REG18 0x54U   /* TS_COOL 1, TS_WARM 1, BHOT 1, BCOLD 0, TS_IGNORE 0: the reset value, verified */
 
 /* Shunts, micro-ohm: the Adafruit #5832's 15 mOhm (1 %), nominal. Verified, not measured (spec section 8.6):
    build-sheet power check 3 (the battery rail) and phase B check B3 (load, solar, USB-C) compare each rail's
