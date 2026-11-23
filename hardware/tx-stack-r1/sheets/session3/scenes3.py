@@ -244,22 +244,27 @@ def add_resistor(s, ref):
     mark(s, f"@{ref}", (q[0], q[1], zc + r), f"{ref}_body")
 
 
-DO35 = S.val("do35")                                   # (4.56 long, 2.0 diameter)
-GLASS = "#E58A3A"
+GLASS = "#E58A3A"                                      # BAT85S glass
+TVS_BODY = "#2A2A2A"                                   # P4KE6.8A: black moulded DO-41 body, its band light grey
 
 
 def add_diode(s, ref):
-    """Standing DO-35: body on lead 1's hole, the other lead looped over. The band sits at the cathode end."""
+    """Standing diode (stack.diode_dims: DO-35 BAT85S, DO-41 P4KE6.8A): body on its body lead's hole (stack.body_pin,
+    lead 1 unless the layout says 2), raised if the layout lifts it, the other lead looped over. The band sits at the
+    cathode end."""
     pl = PL[ref]
-    (x1, y1), (x2, y2) = pl["pins"]["1"], pl["pins"]["2"]
+    bp, _lift = st.body_pin(pl)
+    (x1, y1), (x2, y2) = pl["pins"][bp], pl["pins"]["2" if bp == "1" else "1"]
     bodyb = next(b for b in pl["boxes"] if "diode body" in b.what)
     loop = next(b for b in pl["boxes"] if "lead loop" in b.what)
-    dl, dd = DO35
+    dl, dd, _sh = st.diode_dims(ref)
+    tvs = PART[ref]["value"].startswith("P4KE")
     z0, z1 = T + bodyb.z0, T + bodyb.z1
     zl = T + (loop.z0 + loop.z1) / 2
-    s.add(f"{ref}_body", cq.Workplane().add(zcyl(dd / 2, z0, z1, x1, y1)).edges().fillet(0.35).val(), GLASS, 0.8)
+    s.add(f"{ref}_body", cq.Workplane().add(zcyl(dd / 2, z0, z1, x1, y1)).edges().fillet(0.35).val(),
+          TVS_BODY if tvs else GLASS, 0.8)
     bz = band_z(ref)
-    s.add(f"{ref}_band", zcyl(dd / 2 + 0.03, bz[0], bz[1], x1, y1), "#1C1C1C", 0.4)
+    s.add(f"{ref}_band", zcyl(dd / 2 + 0.03, bz[0], bz[1], x1, y1), "#BDBDBD" if tvs else "#1C1C1C", 0.4)
     lead = tube([(x1, y1, T - 1.6), (x1, y1, z0 + 0.2)], 0.25)
     lead = lead.fuse(tube([(x1, y1, z1 - 0.2), (x1, y1, zl), (x2, y2, zl), (x2, y2, T - 1.6)], 0.25))
     s.add(f"{ref}_leads", lead, M.TIN, 0.4)
@@ -274,7 +279,7 @@ def band_z(ref):
     bodyb = next(b for b in pl["boxes"] if "diode body" in b.what)
     z0, z1 = T + bodyb.z0, T + bodyb.z1
     pins = {p[0]: p[1] for p in PART[ref]["pins"]}
-    band_low = pins["1"] == "cathode"                   # lead 1 under the body: its end is the body's bottom
+    band_low = pins[st.body_pin(pl)[0]] == "cathode"    # the body's own lead is the cathode: the band at the bottom
     return (z0 + 0.35, z0 + 1.15) if band_low else (z1 - 1.15, z1 - 0.35)
 
 
@@ -298,8 +303,8 @@ def band_side(ref, present):
     """Which side of a standing diode its band is seen from in the iso close-up: 'p' (from the front, ISO_F) unless
     a part already fitted stands in the way (a ray from the band toward the viewer through its body box), then 'q'
     (from behind, ISO_B). Thin lead loops do not count (the render checks the real view anyway)."""
-    x1, y1 = PL[ref]["pins"]["1"]
-    dd = DO35[1]
+    x1, y1 = PL[ref]["pins"][st.body_pin(PL[ref])[0]]
+    dd = st.diode_dims(ref)[1]
     zb = (band_z(ref)[0] + band_z(ref)[1]) / 2 - T
     boxes = [bx for o in present if o != ref for bx in PL[o]["boxes"]
              if not bx.keepout and "lead" not in bx.what]

@@ -98,4 +98,4 @@ BEFORE = [ln[2:] for ln in section("Before power").splitlines() if ln.startswith
 assert len(BEFORE) == 5, BEFORE
 MUX_PADS_PARA = re.search(r"^VIN, GND, SCL, SDA and RST are 22 AWG.*$", S5, re.M).group(0)
 assert "#4209" in MUX_PARA and "red (V+)" in MUX_PADS_PARA, MUX_PADS_PARA
-EVM_LEN = {frm: length for frm, to, length, net, what in LEADS if frm.startswith(("PG1 lead +", "U1 ")) or frm == "R7 2"}
+EVM_LEN = {frm: length for frm, to, length, net, what in LEADS if frm.startswith(("F5 lead +", "U1 ")) or frm == "R7 2"}

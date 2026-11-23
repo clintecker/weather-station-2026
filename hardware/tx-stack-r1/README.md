@@ -43,7 +43,7 @@ card strip except those pins' own.
 |---|---|---|
 | B4 | POWER | The battery monitor INA228 (0x40), the fuel gauge MAX17048 (0x36), the S7V8F3 3.3 V regulator B4's power pins: pins 19-23 and 26 power, 24-25 its 3.3 V and ground (isolated pads on the backplane); no lead leaves it. |
 | B2 | PORTS B + METERS | Sensor port 4 and the wind and rain jacks, with the meter pull-ups, filters, clamps and 1 k series resistors. |
-| B1 | PORTS A | Sensor ports 1-3: each a jack breakout, an MF-R010 fuse, 100 ohm series resistors and BAT85S / 1N5232B clamps. |
+| B1 | PORTS A | Sensor ports 1-3: each a jack breakout, an MF-R010 fuse, 100 ohm series resistors, BAT85S clamps on data and clock and a P4KE6.8A TVS on its 3.3 V. |
 | B3 | CORE | The Wio-E5 mini on its header, the enclosure air sensor SHTC3 (0x70) and a right-angle SWD header at the front edge. |
 | backplane | bus | BusBoard PAD3U padboard (a pad per hole, no strips) its plated end, 31 rows (lines 0-30) x 38 holes, factory edges right, top and bottom; a bare bus wire on the copper side carries each of the 18 lines and B4's six power lines; the battery + junction (lines 21-22) with R7 and R8, short leads to the EVM and the pack, and the charger's own ground lead (J3 GND to line 12); four generic female sockets, every one 1x30 with a key plug in its card's pulled position (on lines 19-30 only B4's power contacts meet a bus wire; the rest, the key plugs' contacts included, sit on isolated pads), the PCA9548 mux (0x71) behind it on foam, wired by five header leads and four QT cables (#4209, pin ends cut off) whose SDA and SCL wires carry sensor ports 1-4, and the charger I2C pins. |
 | shelves below the cards | power | The battery pack (lowest, the heaviest part) on a moulded tray, then the BQ25798EVM (90 x 90, J8 toward the lid) on two moulded ledges; on short leads to the backplane's lower end, never to a card. |
@@ -165,13 +165,14 @@ card cage. These are the connection changes (check 10):
   - 100 ohm resistors R7 and R8 at the tap end of the charger battery sense (BATP) and the fuel gauge cell sense leads (electrical m11)
   - the pack thermistor RT1 on EVM J7, with JP18 removed (M2)
   - the right-angle SMA adapter AD1
-  - on every outdoor line, a series resistor and clamps (M5): 100 ohm and BAT85S Schottky clamps (to the port 3.3 V and from ground) on each sensor port's data and clock, and a 1N5232B zener on each port's 3.3 V
-  - on cups, vane and rain, a 1N5232B zener and a 1 k series resistor to the MCU, with a new 100 nF filter on the vane (C3)
+  - on every outdoor line, a series resistor and clamps (M5): 100 ohm and BAT85S Schottky clamps (to the port 3.3 V and from ground) on each sensor port's data and clock, and a TVS on each port's 3.3 V (a 1N5232B zener until r3; now a P4KE6.8A, see below)
+  - on cups, vane and rain, a clamp (now a P4KE6.8A TVS) and a 1 k series resistor to the MCU, with a new 100 nF filter on the vane (C3)
 - Moved: the charger and gauge sense now leave the battery + junction through R7 and R8 on the backplane. EVM J8 pin 1 is the I2C lead's ground. Each port's data and clock pass their series resistors between jack and mux. Each meter line passes its 1 k between the jack side and the MCU pin. AD1 sits between the radio and the coax.
 - Renamed: EVM pins are named by terminal (J3 GND as SYSN, J8.2 clock, J8.3 data).
 
 The clamps on the sensor-port data and clock are BAT85S (at most 10 pF at 1 V, 1 MHz, Vishay doc 85513), not zeners.
-A DO-35 zener adds 100 pF or more, which would eat the 236 pF budget.
+A DO-35 zener adds 100 pF or more, which would eat the 236 pF budget. Schematic check 9 now adds up the clamp
+capacitance on each I2C line and fails over 20 pF (two BAT85S).
 
 ## What changed in r3, and why
 
@@ -181,7 +182,7 @@ A DO-35 zener adds 100 pF or more, which would eat the 236 pF budget.
 - RJ11 jacks face the lid (2026-11-16). On B1 and B2, every BOB-14021 stands on a soldered 1x6 male header in row a
   (pin n in its own column and strip). It overhangs the front edge with its mouth toward the lid. The plugs and their
   cable bends sit in front of the cards. The printed spacers, the back jack's tongue, the right post's cut and the
-  flying leads are gone. Each port's clamps stand in its jack's strips, with its fuse and zener in a block beside it.
+  flying leads are gone. Each port's clamps stand in its jack's strips, with its fuse and supply TVS in a block beside it.
 - Backplane on a BusBoard PAD3U padboard (a pad per hole). It's the PAD3U's plated end, 31 lines (0-30) x 38 holes, a
   rectangle with only its left edge cut. It carries 18 bare bus wires, each soldered at every pin of its line, plus
   B4's power lines. The cut step and the hole-by-hole table are in `build/BACKPLANE.md`.
@@ -225,6 +226,76 @@ A DO-35 zener adds 100 pF or more, which would eat the 236 pF budget.
 - Renders: imported BOB-14021 and Wio-E5 mini boards and the Adafruit PCA9548 STEP. The header is drawn with its pins
   bent. There are routed wire tubes, bottom views, an exploded cage and a section. See `render/MODELS.md`.
 
+## Protection, sun and outdoor parts (2026-11-23)
+
+Cards B1 and B2 aren't built yet, so these went straight into the design.
+
+- **Supply and meter-line clamps: Littelfuse P4KE6.8A TVS** (D11, D21, D31, D41 on the port 3.3 V; D51, D52, D53 on
+  cups, vane and rain), in place of the 1N5232B 5.6 V zener. The zener has a soft knee, leaks 5 uA at 3 V and has no
+  surge rating. The P4KE6.8A is a 400 W TVS (10/1000 us) in DO-41: stand-off 5.8 V, breakdown 6.45-7.14 V, about
+  10.5 V clamping at its rated pulse current. Nobody makes a through-hole TVS below about 6.8 V, and the SMD ones on
+  breakouts (a USBLC6-2SC6 on a SOT-23 adapter, say) would need a DIP carrier across the card's centre channel,
+  which bridges strips. Its datasheet only promises leakage at 5.8 V (1 mA max), so every one gets screened at 3.3 V
+  before it goes in (Session 3 step 08: under 1 uA, which is under 8 mV of error at the vane's divider). The lowest
+  one goes on the vane, D52. The I2C data and clock keep their BAT85S pairs: a TVS is hundreds of pF.
+  - DO-41 is 2.7 mm across, so on B2 D51 and D52 stand on their ground-strip holes (d4, d7) with the banded lead
+    looped over, the wind jack's cups and vane wires moved to c5 and c6, and D53 stands 5.5 mm up on its lead, over
+    J22's header and C2 (layout check L6 caught all of these).
+- **Pack fuse F5: Littelfuse 021701.6HXP** (5 x 20 mm glass, 1.6 A fast-acting, 35 A breaking at 250 V) in a
+  **Schurter 8601.2000** in-line holder (wire leads, 6.3 A, DigiKey 486-3835-ND), spliced into PG1's red lead within
+  30 mm of the socket. The #353 pack can give 3.3 A continuous and its leads and the JST PH are rated 2 A; nothing
+  protected the pack + run to the junction. The most the path carries is the 0.9 A charge (56 % of 1.6 A), the
+  system's own draw and radio bursts are far below that. A PTC was the other choice, but its 0.3 ohm or so would
+  sit between the cell and the sense junction and skew the fuel gauge. A blown fuse looks like a missing pack on the
+  console (`vbat_mv` from the EVM, no INA228 bus volts). Two spare fuses go in the box's bag.
+- **Lid shade** (`cage.py --shade`, `cage/stl/lid-shade.stl`, white PETG). The #905 lid is clear polycarbonate. Sun
+  on it puts something like 14 W into the dark boards inside. Spread over the box's 0.13 m2 of skin, that's 17-26 K
+  over the outside air (`cage.shade_estimate()`: 800 W/m2, 85 % through the lid, 90 % absorbed, 4-6 W/m2K out; none
+  of it measured). On a 25 C day that passes the charger's 41.8 C WARM stop. The shade is a cap over the lid: a plate
+  12 mm above it on four feet, a skirt down the lid's sides with a 3 mm air gap, and 14 windows in the skirt above the
+  lid's top so the air moves through. Crush ribs hold it on the lid's sides, and it pulls off by hand. A cap beats a
+  shade on an arm because the lid faces away from the pole. Paint or foil on the lid was the third choice: it would
+  stop you seeing in, and paint flakes. The plate's height over the bolt heads (`lid_head_proud`) and the rib grip
+  (`shade_rib_fit`) are guesses until Clint measures the printed bolts and prints one.
+- **Antenna AE1: TE/Linx ANT-916-ID-2000-SMA** (DigiKey ANT-916-ID-2000-SMA-ND), in place of the ANT-916-CW-HWR whip.
+  The whip is an indoor part. The ID series is IP67, 915 MHz (the firmware's band, `radio_cfg.h`), comes with a
+  bracket and has a 2 m cable to an SMA plug. It goes at the pole's top and its cable comes down to the bulkhead
+  jack. The 2 m of thin coax costs something like 1-2 dB; the 1 m version (ANT-916-ID-1000-SMA) isn't stocked. The
+  inside pigtail stays CX1, the Amphenol 135110-01-06.00 (RG-316, SMA bulkhead jack to SMA plug on AD1, which sits
+  on the mini's SMA-K).
+- **Vent: Amphenol LTW VENT-PS1YBK-N8002**, an M12 x 1.5 screw-in ePTFE vent (DigiKey
+  1754-VENT-PS1YBK-N8002-ND). It goes in the hole the bottom wall already has (Xb 50, Yb 85, `cage.VENT`), so the
+  base doesn't change. I haven't opened its own drawing yet: check its panel hole and nut against the 12.46 mm hole
+  before printing the base.
+- **S4 blanking plug: a 4 x 20 mm ISO 8734 dowel pin, A1 stainless.** No maker sells a blanking plug for a PG-7's
+  seal, and "any nylon rod" isn't a part. A ground dowel pin is round, smooth, 4 mm (inside the seal's 3.0-4.3 mm)
+  and won't creep.
+
+## Lightning and surge
+
+What the box can take, and what it can't. It's a plastic box on a pole with no earth of its own, so this is about
+induced surges and static, not about surviving a strike nearby.
+
+- **The RJ11 ports.** Each line has a series resistor (100 ohm on I2C, 1 k on the meters) and clamps behind it: BAT85S
+  pairs to the port's 3.3 V and ground on I2C, a P4KE6.8A on each port's 3.3 V and on cups, vane and rain. That
+  handles ESD from a hand on a plug (IEC 61000-4-2 class) and the small transients a few metres of cable pick up from
+  a nearby switching load or a strike a long way off. It won't save anything from a strike on the pole or the mast
+  next to it. The PTC on each port's 3.3 V (MF-R010) limits what a shorted or wet cable can draw.
+- **Solar input.** The Voltaic P110 is a 6 V panel: about 7.2 V open circuit at 25 C and roughly 8.7 V at -30 C
+  (`docs/failure-modes.md`). The firmware sets the BQ25798's VAC over-voltage cut-off to 12 V (`vac_ovp`), so a cold
+  panel never trips it. The BQ25798's VAC and VBUS pins are rated well above that (30 V absolute maximum in TI's
+  datasheet), so nothing the panel does on its own hurts it. A surge on the 2 m panel lead is the remaining risk. The
+  recommended fix is a Littelfuse **P4KE15A** across the EVM's J2 input (stand-off 12.8 V, so it never conducts at
+  8.7 V or at the 12 V cut-off; about 21 V clamping, under the charger's 30 V). It isn't in the model yet (open
+  question below).
+- **The antenna.** No gas-tube arrestor. An arrestor needs a low-impedance earth to dump into, and a plastic box on a
+  pole doesn't have one. It would also add loss and another connector. If the antenna ends up the highest point on
+  a metal mast, revisit this.
+- **Bonding point.** The SMA bulkhead's body is the one place where outside metal meets circuit ground (through the
+  coax shield). If the pole is metal and earthed, put a ring lug under the bulkhead's outside nut and run 14 AWG to
+  the pole's earth clamp, so the antenna cable's shield and the pole sit at the same potential. If the pole is wood
+  or plastic, leave it off: a long wire to nowhere just collects more.
+
 ## Not yet ordered
 
 This is everything the build needs that's in neither the DigiKey cart (2026-11-09) nor `INVENTORY.md`. Quantities
@@ -247,13 +318,18 @@ These are on hand, so they're not listed:
 | Part | Maker part | DigiKey | Need | Buy | Stock | Price (CAD, 1 off) | Note |
 |---|---|---|---|---|---|---|---|
 | Signal clamp diode | Vishay BAT85S-TR | BAT85SCT-ND | 16 | 20 | 44,459 | 0.74 | |
-| Zener clamp 5.6 V | onsemi 1N5232BTR | 1N5232BFSCT-ND | 7 | 10 | 86,084 | 0.25 | |
+| TVS clamp 6.8 V 400 W (D11-D41, D51-D53) | Littelfuse P4KE6.8A | not looked up | 7 | 10 | not checked | - | Screen each at 3.3 V before fitting (Session 3 step 08): under 1 uA. Three spare for the screen. |
+| Pack fuse (F5) | Littelfuse 021701.6HXP, 5 x 20 mm 1.6 A fast | not looked up | 1 | 3 | not checked | - | Two spares in the box's bag. |
+| In-line fuse holder (F5) | Schurter 8601.2000 | 486-3835-ND | 1 | 1 | in stock | - | Wire leads, 6.3 A. Spliced into PG1's red lead next to the pack. |
+| Solar input TVS (optional, not in the model) | Littelfuse P4KE15A | not looked up | 1 | 2 | not checked | - | Across EVM J2 if Clint agrees (Lightning and surge). |
+| Outdoor antenna (AE1) | TE/Linx ANT-916-ID-2000-SMA | ANT-916-ID-2000-SMA-ND | 1 | 1 | about 198 | - | IP67, 915 MHz, bracket and 2 m cable to an SMA plug. Replaces the indoor ANT-916-CW-HWR-SMA. |
 | Series and sense resistor 100 ohm | Stackpole CF14JT100R | CF14JT100RCT-ND | 10 | 15 | 308,663 | 0.16 | The Yageo kit has 5. `INVENTORY.md` also lists 30 Yageo MFR50SFTE52-100R (1/2 W): check whether they fit before you buy these. The cart's CF14JT1M00 (1 Mohm, 50) matches no part here, so check that line. |
 | SMA right-angle adapter (AD1) | Amphenol RF 132172 | ACX1249-ND | 1 | 1 | 10,603 | 20.40 | Pending Clint's measurement of the 135110 plug length. Its arm points toward the lid. |
 | Cable glands PG-7 (round port cables) and PG-9 (flat weather-meter cables, seal out, packed) | Adafruit #762 and #761 (Clint has one of each), or LAPP 53111000 (M12) for the PG-7s | 2181-53111000-ND | 5 PG-7 + 2 PG-9 | 5 PG-7 + 1 PG-9 | LAPP not stocked (2 weeks) | bulk only | Need is from `cage.py` `GLANDS` (enclosure 4). With one of each on hand, this buy leaves one spare PG-7 and no spare PG-9. Add silicone or split grommets for the two flat cables. |
-| Blanking rod for the spare S4 PG-7 | 4 mm round nylon rod (any), cut to 20 mm | - | 1 | 1 | not checked | - | S4 has no pod yet, and an empty PG-7 doesn't seal. The rod sits in the gland's seal (3.0-4.3 mm) with the cap tightened until a pod is added (`cage.GLAND_BLANK`, sources `gland_blank`). |
+| Blanking pin for the spare S4 PG-7 | dowel pin ISO 8734 4 x 20, A1 stainless | - | 1 | 1 | not checked | - | S4 has no pod yet, and an empty PG-7 doesn't seal. The pin sits in the gland's seal (3.0-4.3 mm) with the cap tightened until a pod is added (`cage.GLAND_BLANK`, sources `gland_blank`). |
 | Hose clamps for the mounting flanges' slots | stainless, to suit the pole | - | 2 | 2 | - | - | The two on hand are for the shield arm. |
-| Pressure-equalising vent | M12 x 1.5 vent plug | - | 1 | 1 | not checked | - | DigiKey number not found in this pass. |
+| Pressure-equalising vent | Amphenol LTW VENT-PS1YBK-N8002 (M12 x 1.5, ePTFE) | 1754-VENT-PS1YBK-N8002-ND | 1 | 1 | 0 on the 2026-11-23 check (more were due 2026-11-20) | 7.31 | In the bottom wall's existing hole (`cage.VENT`). Check its panel hole against 12.46 mm. |
+| Lid shade | printed, white PETG (`cage/stl/lid-shade.stl`) | - | 1 | - | - | - | Print plate down. Clint's own PETG. |
 | USB-C to micro-B cable (EVM J6) | any | - | 1 | 1 | not checked | - | |
 | Hook-and-loop strap (pack), foam tape (mux) | any | - | 1 each | 1 each | not checked | - | |
 
@@ -307,6 +383,13 @@ apart first.
 - Firmware README profile and pin notes (m10). They're outside this directory, so they wait for a firmware change.
 
 ## Open questions
+
+- **Add the solar TVS?** A P4KE15A across EVM J2 (Lightning and surge). Recommended: yes, as D6 on J2's screws;
+  it's one part and never conducts in normal use. Until Clint says so it stays out of the model.
+- **Is the pole metal, and earthed?** That decides the bonding lug at the SMA bulkhead. Recommended: lug it only if
+  both are true.
+- **The lid shade's two guesses:** how far the printed lid bolts' heads stand proud of the lid (`lid_head_proud`, 7
+  assumed; the plate clears them by 5) and how hard the crush ribs grip (`shade_rib_fit`, 0.3). Print one and try it.
 
 - **The lid interface isn't fully settled.** The rim, the corner bosses, the screw positions (L2) and the O-ring's
   inset (L4) are from Clint. The channel depth doesn't matter (Clint). Here's what's still open:
@@ -503,7 +586,7 @@ text:
 | `align_tol` | 0.5 | header pin to socket misalignment the socket's lead-in takes | typical 0.1 in female header lead-in; check one card in the cage | [TBD-MEASURE] |
 | `finger` | 8 | vertical room needed over a plug to press its latch | a fingertip or a small screwdriver | [TBD-MEASURE] |
 | `rg316_bend` | 12.7 | RG-316 minimum static bend radius (the 135110-01 cable) | typical 5 x 2.5 mm OD; not in the Amphenol listing | [TBD-MEASURE] |
-| `ant_len` | 100 | ANT-916-CW-HWR length, hinge to tip (render only) | not looked up: TE page refuses scripts; measure | [TBD-MEASURE] |
+| `ant_len` | 2000 | ANT-916-ID-2000-SMA cable length, antenna to SMA plug (the antenna sits on the pole bracket) | TE/Linx ANT-916-ID-2000-SMA: the -2000 in the part number is the cable length in mm (DigiKey listing ANT-916-ID-2000-SMA-ND) | sourced |
 | `sma_plug_len` | 20 | straight SMA plug and its crimp ferrule on the 135110 cable | typical; measure the cable | [TBD-MEASURE] |
 | `sma_bulkhead` | 94.14 x 60.38 x 6.44 x 14.2 | SMA bulkhead in the right wall: Yb, Zb of its axis, the hole, the inner nut seat | enclosure 4 STL (as printed, audited 2026-11-17, sheets/audit-enc4); moved from Yb 86.14, Zb 144.6 in enclosure 3 | sourced |
 | `coax_len` | 110 | 135110-01-06.00 coax: cable between the two plugs | the part number's 6.00 in (152.4) overall less two straight plugs (sma_plug_len); Clint, 2026-11-17: the 6 inch cable fits the bulkhead at Zb 60.38, better than the old high bulkhead (no tight bend to make) | sourced |
@@ -528,8 +611,10 @@ text:
 | `bar` | 2.5 | retention bar thickness in front of the card front edges | layout choice | derived |
 | `tails` | 1.5 | solder tails and bottom-side wires below a card | typical; measure after the first card | [TBD-MEASURE] |
 | `clear` | 0.5 | minimum clearance kept between parts | layout rule | derived |
-| `do35` | 4.56 x 2 | DO-35 body length x diameter (1N5232B, BAT85S) | onsemi 1N5221B series and Vishay BAT85 (doc 88146) outline DO-35/DO-204AH | sourced |
+| `do35` | 4.56 x 2 | DO-35 body length x diameter (BAT85S) | Vishay BAT85S (doc 85513) outline DO-35/DO-204AH | sourced |
 | `diode_stand_h` | 7 | standing DO-35 height (body on one lead, the other looped over) | 4.56 body + 1 lead + loop; check on the part | [TBD-MEASURE] |
+| `do41` | 5.2 x 2.7 x 0.86 | DO-41 body length x diameter x lead diameter, all max (the P4KE6.8A TVS clamps D11-D41, D51-D53) | Vishay P4KE6.8A thru P4KE540A datasheet (vishay.com/en/product/88365), DO-204AL (DO-41) outline: body 4.1-5.2 long, 2.0-2.7 across, leads 0.86 max (into the SolderFul's 1.0 holes) | sourced |
+| `tvs_stand_h` | 8.6 | standing DO-41 height (body on one lead, the other looped over) | 5.2 body + 0.8 lead below it + a 2.6 loop over the top; check on the part | [TBD-MEASURE] |
 | `wire24` | 0.511 x 1.45 x 84.2 | 24 AWG insulated hook-up wire (card wires solid, flying leads stranded): conductor diameter, insulation OD, resistance mohm/m | AWG 24 = 0.511 mm, 84.2 mohm/m at 20 C (0.205 mm2 copper); OD about 1.3-1.6 for PVC hook-up wire: measure Clint's | [TBD-MEASURE] |
 | `r_lying_h` | 2.5 | lying DIN0207 resistor height (body diameter) | KiCad R_Axial_DIN0207_L6.3mm_D2.5mm model | derived |
 | `evm` | 90 x 90 x 15 | BQ25798EVM (BMS034) board outline x tallest part above it; no mounting holes; feet H1-H4 3M Bumpon SJ-5303 (11.2 x 5.1) peeled off for the rails | outline: Clint, by hand, 2026-11-10: 90 x 90; parts (SLUUCB5E BOM): J1-J4 On-Shore ED120/2DS, J5 ED120/3DS (5.08 mm terminal blocks), J7 Molex 0393570002, J9 3M N2510-6002-RB, J8 Molex 0022053041, J6 Molex 47346-0001, about 33 jumpers with shunts; 15 covers a 5.08 mm rising-clamp block (about 10-12, makers' drawings not reached) | [TBD-MEASURE] |
@@ -547,6 +632,9 @@ text:
 | `lid_boss` | 22 x 21 x 3 | #905 lid corner screw boss: along the long side x along the short side (from the outside edges), wall outside the screw hole | Clint's photo and sketch of the lid, 2026-11-10 (photo-8525 lid-up.jpg) | sourced |
 | `rim_tongue` | 2 x 4.5 x 3 x 3.25 | the base's sealing lip: width, height above the land, centre-line offset from the lid's outside edge on the short sides, and on the long sides; it follows the lid channel's S-curve round each corner boss; the land ends at its inner face | cage/lid-rim-spec.md: Clint's 300 dpi lid scans with a steel ruler, 2026-11-11 (11.953 px/mm; the lip path +-0.3, the spans +-0.4): lip 2 x 4.5 on the land; the straights 169.5 x 123.0 apart centre to centre in the 175.5 x 129.5 outline (was 4.0 / 3.5 from the coupon fits r1-r8) | sourced |
 | `l1_lid_screw` | 8 x 0 x 0 | L1: the original lid screw: thread diameter, pitch, length (option a, a printed thread to match) | Clint, 2026-11-10 (photo-8528 rim.jpg and notes, via the coordinator): the original base's corner holes are large moulded threads, about 8 mm (coarse plastic thread in the photo); pitch and length not measured | [TBD-MEASURE] |
+| `lid_head_proud` | 7 | Clint's printed lid bolt: its head's top above the lid's top face (the lid shade's plate clears it) | lid_bolt: the head is 11 tall on a seat no more than 20.7 above the wall top, and the lid is 25 deep (lid_depth), so up to 6.7 above the lid top; rounded up; measure with the lid on | [TBD-MEASURE] |
+| `shade` | 3 x 2.4 x 12 x 15 x 8 | the lid shade (cage.py --shade): the skirt's gap to the lid's sides, plate and skirt thickness, the plate's underside above the lid's top face, how far the skirt reaches down the lid's sides, the feet's diameter | layout choice: a 12 mm air gap over the lid (the bolt heads plus 5), a 3 mm chimney gap round its sides; 2.4 is six 0.42 mm perimeters | derived |
+| `shade_rib_fit` | 0.3 | the lid shade's crush ribs: how far each reaches past the skirt gap into the lid's side (what holds the shade on) | a first guess for PETG ribs on the #905 lid's polycarbonate sides; tune on the first print until it pushes on by hand and doesn't lift in a gust | [TBD-MEASURE] |
 | `lid_screw_opt` | c | lid fastening: (a) a printed thread matching the original screw; (b) M4 stainless screws into M4 heat-set inserts (superseded); (c) Clint's 3D-printed bolts in the corner posts' lid bores (enc_lid_bores), no inserts | Clint, 2026-11-17: the four corner posts take his 3D-printed bolts; there are no heat-set inserts in them | sourced |
 | `lid_bolt` | 11 x 11 x 6.5 x 23 x 10 x 7 x 1.5 x 11 x 45 | Clint's printed lid bolt (option c), from the head's top: head diameter x height (a 4-lobe drive recess 4 deep, r 1.27 to 3.13), plain shank diameter x length, then the thread: major, minor, pitch (right hand), length; overall length. Into enc_lid_bores' shallow printed thread (a 10.0 circle orbiting the axis 0.26 off-centre, 1.5 pitch, right hand): about 0.26 radial engagement. Full thread engagement needs the head's seat no more than 20.7 above the wall top (Yb 117); the tip reaches the bore's floor (Yb 80.75) only below the wall top | lid_bolt.stl from Clint, 2026-11-17 (sliced: scratchpad bolttools/prof.py, hand.py; the bore by bore2.py on enclosure 4) | sourced |
 | `seal_curve_r` | 3.5 x 7.15 | radii of the S-curve's bends round each corner boss, on the lip's centre line: the two outer bends (where it leaves the straight legs), the middle bend (round the boss's inner corner); tangent, axis-aligned exits | cage/lid-rim-spec.md: Clint's 300 dpi lid scans with a steel ruler, 2026-11-11 (11.953 px/mm; the lip path +-0.3, the spans +-0.4): middle R7.15 (7.14-7.16 at all four corners), outer R3.5 (3.0-4.0) (was 3 / 5.5 from the coupon fits) | sourced |
@@ -568,11 +656,11 @@ text:
 | `solar_p110` | 5.71 x 1.67 x 6.94 x 1.9 | Voltaic P110 10 W panel: Vmp, Imp (A), Voc, Isc (A, estimated) | voltaicsystems.com P110 page and Adafruit #5369: Vmp 5.71 V, Imp 1.67 A, Voc 6.94 V; Isc not published, taken as about 1.15 x Imp | derived |
 | `wire22` | 0.644 x 1.6 x 53 | 22 AWG stranded hook-up wire (the solar lead): conductor diameter, insulation OD, resistance mohm/m | AWG 22 = 0.644 mm, 52.96 mohm/m at 20 C (0.326 mm2 copper); OD about 1.5-1.7 for PVC hook-up wire | derived |
 | `evm_under` | 4 | BQ25798EVM underside: J6 micro-USB (bottom-mounted) and solder tails below the board | J6 Molex 47346-0001 (SLUUCB5E BOM), right-angle bottom mount; height not reached | [TBD-MEASURE] |
-| `vent` | 12.5 | M12 pressure-equalising vent: panel hole | typical M12 x 1.5 vent plug; not chosen yet | [TBD-MEASURE] |
+| `vent` | 12.5 | M12 pressure-equalising vent: panel hole | Amphenol LTW VENT-PS1YBK-N8002, M12 x 1.5 screw-in ePTFE vent (DigiKey 1754-VENT-PS1YBK-N8002-ND); hole from the M12 thread, the series datasheet not opened: check its panel hole and nut | [TBD-MEASURE] |
 | `power_zone` | 82 | box bottom to the lowest card's socket row (the EVM shelf in front of the backplane's lower end) | layout choice: low enough that B3's top clears the lid's upper corner lands by 2 mm | derived |
 | `gland` | 13 x 16.6 | PG-7 (#762) gland: panel hole x nut across corners | hole: enclosure 4 STL as printed (13.0, audited 2026-11-17, sheets/audit-enc4; the 11.5 mm screw end (Adafruit #762 PG-7 gland, adafruit.com/product/762) goes in without reaming); nut: the PG-9's 22 scaled by 11.5 / 15.2 | derived |
 | `gland_pg7` | 11.5 x 6 x 16.6 x 11.4 x 3 x 4.3 | PG-7 (#762): thread, thread length inside (L1), body outside (L2), cap (L3), cable min, max | Adafruit #762 PG-7 gland, adafruit.com/product/762: 11.5 mm screw end, cable 0.118-0.169 in; L1, L2, L3 the PG-9's scaled by 11.5 / 15.2 | derived |
-| `gland_blank` | 4 x 20 | blanking rod in the spare S4 PG-7 (no pod on S4 yet; an empty PG-7 doesn't seal): diameter, length | any 4 mm round nylon rod, inside the PG-7 seal's 3.0-4.3 mm range (gland_pg7); 20 mm leaves a grip past the cap | derived |
+| `gland_blank` | 4 x 20 | blanking rod in the spare S4 PG-7 (no pod on S4 yet; an empty PG-7 doesn't seal): diameter, length | ISO 8734 dowel pin 4 x 20, A1 stainless (h6, ground smooth): a stock part, inside the PG-7 seal's 3.0-4.3 mm range (gland_pg7); 20 mm leaves a grip past the cap | derived |
 | `gland_pg9` | 15.2 x 7.9 x 22 x 15.1 x 4 x 6.4 | PG-9 (#761): thread D1, thread length inside L1, body outside L2, cap L3, cable min, max | Adafruit #761 PG-9 gland drawing, cdn-shop.adafruit.com/product-files/761/761diagram.jpg; cable 0.158-0.252 in from adafruit.com/product/761 | sourced |
 | `gland_bore` | 7.9 x 10.5 | gland bore with the seal out: PG-7, PG-9 (D2) | Adafruit #761 PG-9 gland drawing, cdn-shop.adafruit.com/product-files/761/761diagram.jpg: D2 10.5; PG-7 scaled by 11.5 / 15.2 | derived |
 | `flat_cable` | 2.3 x 6.6 | weather-meter flat cable, thickness x width (Clint: the meter cables are flat) | TE 5-555042-3 flat-cable plug's cable entry, commscope.com/globalassets/digizuite/67464-p360-5-555042-3-external.pdf (not downloaded) | derived |

@@ -268,11 +268,11 @@ PDFs change.
   - the rest of the EVM dimensions (the outline is in, and the shelves spec lists what's still TBD-MEASURE)
   - the gland and SMA thread lengths
 - **Parts to get** (README "Not yet ordered"):
-  - from DigiKey: 20 x BAT85S-TR, 10 x 1N5232BTR and 15 x CF14JT100R
+  - from DigiKey: 20 x BAT85S-TR, 10 x P4KE6.8A, 15 x CF14JT100R, the F5 fuse holder (Schurter 8601.2000) with 3 x 021701.6HXP fuses, the ANT-916-ID-2000-SMA antenna and the VENT-PS1YBK-N8002 vent
   - the 132172 SMA adapter
   - the glands
   - 2 hose clamps
-  - an M12 vent
+  - a 4 x 20 ISO 8734 A1 dowel pin (the S4 blank)
   - a JST PH pigtail
   - a USB-C to micro-B cable
   - a strap and foam tape

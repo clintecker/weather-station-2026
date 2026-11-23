@@ -392,7 +392,7 @@ def pack(s, x0=0.0, y0=0.0):
 
 @scene
 def pack_pg1():
-    """The pack (unplugged), its JST PH plug, PG1's socket on its two leads: + spliced to the backplane's PACK + lead,
+    """The pack (unplugged), its JST PH plug, PG1's socket on its two leads: + through the fuse F5 to the backplane's PACK + lead,
     - on to J5 GND. The plug and the socket are apart: they meet only in Session 9 step 08."""
     s = r3d.Scene()
     px, py, pz = pack(s)
@@ -407,14 +407,22 @@ def pack_pg1():
     s.add("pg1", M.box(sx, py / 2 - 3.2, pz / 2 - 2.6, sx + 7, py / 2 + 3.2, pz / 2 + 2.6).val(), KK)
     s.anchor("pg1", (sx + 3.5, py / 2 + 3.2, pz / 2 + 2.6), on="pg1")
     yr, yb = py / 2 - 1.0, py / 2 + 1.0
-    s.add("pg_r", tube([(sx + 7, yr, pz / 2), (sx + 26, yr - 10, pz / 2), (sx + 40, yr - 14, pz / 2)], 0.5), COL["red"])
-    s.add("splice", cyl(1.25, (sx + 36, yr - 14, pz / 2), (sx + 48, yr - 14, pz / 2)), SHRINK)
-    s.add("plus", tube([(sx + 44, yr - 14, pz / 2), (sx + 80, yr - 14, pz / 2)], 0.75), COL["red"])
-    s.add("plus_band", cyl(0.81, (sx + 52, yr - 14, pz / 2), (sx + 55, yr - 14, pz / 2)), COL["black"])
-    s.anchor("splice", (sx + 42, yr - 14, pz / 2 + 1.25), on="splice")
-    s.anchor("plus", (sx + 70, yr - 14, pz / 2 + 0.75), on="plus")
-    s.add("pg_b", tube([(sx + 7, yb, pz / 2), (sx + 26, yb + 10, pz / 2), (sx + 80, yb + 16, pz / 2)], 0.5), COL["black"])
-    s.anchor("minus", (sx + 53, yb + 13.0, pz / 2 + 0.5), on="pg_b")
+    # PG1's red lead, cut to 30 mm, spliced to the fuse holder F5 (Schurter 8601.2000, a stand-in: a 9 x 40 tube with
+    # the 5 x 20 fuse inside), whose other lead is spliced to the backplane's PACK + lead
+    s.add("pg_r", tube([(sx + 7, yr, pz / 2), (sx + 18, yr - 10, pz / 2), (sx + 24, yr - 14, pz / 2)], 0.5), COL["red"])
+    s.add("splice1", cyl(1.25, (sx + 20, yr - 14, pz / 2), (sx + 30, yr - 14, pz / 2)), SHRINK)
+    s.anchor("splice1", (sx + 25, yr - 14, pz / 2 + 1.25), on="splice1")
+    s.add("f5_la", tube([(sx + 26, yr - 14, pz / 2), (sx + 36, yr - 14, pz / 2)], 0.5), COL["red"])
+    s.add("f5", cyl(4.5, (sx + 36, yr - 14, pz / 2), (sx + 76, yr - 14, pz / 2)), KK)
+    s.anchor("f5", (sx + 56, yr - 14, pz / 2 + 4.5), on="f5")
+    s.add("f5_lb", tube([(sx + 76, yr - 14, pz / 2), (sx + 92, yr - 14, pz / 2)], 0.5), COL["red"])
+    s.add("splice", cyl(1.25, (sx + 88, yr - 14, pz / 2), (sx + 100, yr - 14, pz / 2)), SHRINK)
+    s.add("plus", tube([(sx + 96, yr - 14, pz / 2), (sx + 132, yr - 14, pz / 2)], 0.75), COL["red"])
+    s.add("plus_band", cyl(0.81, (sx + 104, yr - 14, pz / 2), (sx + 107, yr - 14, pz / 2)), COL["black"])
+    s.anchor("splice", (sx + 94, yr - 14, pz / 2 + 1.25), on="splice")
+    s.anchor("plus", (sx + 122, yr - 14, pz / 2 + 0.75), on="plus")
+    s.add("pg_b", tube([(sx + 7, yb, pz / 2), (sx + 26, yb + 10, pz / 2), (sx + 132, yb + 16, pz / 2)], 0.5), COL["black"])
+    s.anchor("minus", (sx + 79, yb + 10 + 6 * 53 / 106, pz / 2 + 0.5), on="pg_b")
     R("pack_pg1", s, (0.3, -0.5, 1), up=(0, 1, 0), fit=(330, 150), line=0.5)
 
 

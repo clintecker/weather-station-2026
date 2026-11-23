@@ -96,7 +96,7 @@ def cover(c, pg):
                        "PARTS (build/ASSEMBLY.md sections 1 and 4). THE FIVE BACKPLANE LEADS ARE ALREADY ON (SESSION 6).")
     items = [("U1 BQ25798EVM (TI BMS034)\nas supplied: set for 2 cells", "p_evm"),
              ("RT1 10 KOHM NTC, B 3950\nAdafruit #372", "p_rt1"),
-             ("Adafruit #353 PACK + PG1\nJST PH socket on leads", "p_pack"),
+             ("Adafruit #353 PACK + PG1 (JST PH\nsocket on leads), F5: 8601.2000\nHOLDER + 3 x 1.6 A FUSES", "p_pack"),
              ("J8 END: KK 2695 4-WAY + 3 CRIMPS\nXJ1 END: 3 x 1-WAY 0.1 in\nHOUSINGS + 3 CRIMPS", "p_kk"),
              ("24 AWG BLACK 150 mm. 26 AWG:\n3 x 150 mm (J8 LEAD),\n2 x 150 mm (RT1 LEGS). SHRINK", "p_wires")]
     cw, rh = w / 3, h / 2
@@ -320,18 +320,23 @@ def pack_leads(c, pg):
          pg, FOOT7)
     g = Grid(1, 2, heights=[1.0, 1.0])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
-        "PG1 (a JST PH 2-pin socket with leads) and the pack's plug, apart. PG1's red lead joins the backplane's PACK +",
-        "lead (red, black band, soldered at line 21, hole 6). PG1's black lead goes to J5 GND, 150 mm, trim to fit."])
+        "PG1 (a JST PH 2-pin socket with leads) and the pack's plug, apart. PG1's red lead goes through the pack fuse F5",
+        "(1.6 A in its in-line holder) to the backplane's PACK + lead (red, black band, from line 21, hole 6).",
+        "PG1's black lead goes to J5 GND, 150 mm, trim to fit."])
     a = Art(c, "pack_pg1", x + 20, y + 20, w - 40, h - 60)
-    label(c, x + w * 0.42, y + h - 18, "PACK PLUG: NOT IN PG1", *a.A("ph_plug"), 9, color=NEON, anchor="r")
-    label(c, x + w * 0.5, y + h - 18, "PG1 SOCKET", *a.A("pg1"), 9)
+    label(c, x + w * 0.3, y + h - 18, "PACK PLUG: NOT IN PG1", *a.A("ph_plug"), 9, color=NEON, anchor="r")
+    label(c, x + w * 0.45, y + h - 18, "PG1 SOCKET", *a.A("pg1"), 9, anchor="r")
     label(c, x + w - 10, y + h - 34, "TO J5 GND", *a.A("minus"), 9, anchor="r")
     label(c, x + w - 10, y + 30, "PACK + LEAD (FROM LINE 21)", *a.A("plus"), 9, anchor="r")
-    label(c, x + w * 0.5, y + 30, "SPLICE + SHRINK", *a.A("splice"), 9, anchor="r")
+    label(c, x + w * 0.62, y + 30, "SPLICE + SHRINK", *a.A("splice"), 9, anchor="r")
+    label(c, x + w * 0.3, y + 30, "SPLICE (PG1 RED CUT TO 30 MM)", *a.A("splice1"), 9, anchor="r")
+    label(c, x + w * 0.75, y + h - 34, "F5: 1.6 A FUSE IN ITS HOLDER", *a.A("f5"), 9, anchor="r")
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["The pack's plug and PG1 meet only at Session 9 step 08."], warn=True)
     yy = bullets(c, x + 44, y + h - 24, [
-        "1. Slide heat shrink onto the PACK + lead first. Untape its end, strip 8 mm.",
-        "2. Strip 8 mm off PG1's red lead. Twist them in line, solder, shrink over the joint.",
+        "1. Cut PG1's red lead to 30 mm from the socket. Shrink on it, strip 8 mm; strip one lead of the F5 holder 8 mm.",
+        "   Twist in line, solder, shrink. The fuse sits that close to the pack so a short anywhere after it is covered.",
+        "2. Shrink onto the PACK + lead, untape its end, strip 8 mm. Join it to the holder's other lead the same way.",
+        "   Put the 1.6 A fuse (Littelfuse 021701.6HXP) in the holder and close it. The two spares go in the box's bag.",
         "3. PG1's black lead to J5 GND: extend it with 24 AWG black to 150 mm if it's short (same splice), strip 6 mm,",
         "   into J5's GND position, screw down. It never touches the backplane.",
         "4. Put a strip of tape over PG1's socket mouth. The pack's plug stays loose beside it, taped too."], 9.5)
@@ -388,7 +393,7 @@ def meter(c, pg):
             ("2", "J3 SYS TO LINE 26", "Its screw to line 26's wire: BEEP."),
             ("3", "J3 GND TO LINES 12, 2", "BEEP to both (2 and 12 are joined at hole 38)."),
             ("4", "J5 SNS TO THE JUNCTION", "J5's SNS screw to line 21: about 100 ohm (R7). Not 0, not open."),
-            ("5", "PG1 + TO LINE 21", "A probe in PG1's + contact to line 21's wire: BEEP."),
+            ("5", "PG1 + TO LINE 21", "A probe in PG1's + contact to line 21's wire: BEEP (through the fuse F5)."),
             ("6", "PG1 - TO J5 GND", "PG1's - contact to J5's GND screw: BEEP."),
             ("7", "J7: RT1 IN CIRCUIT", f"Across J7's screws: about {RT_IN_J7[25]:.1f} kohm at 25 C: R24 (30.1k) sits across RT1."),
             ("8", "J8 LEAD", "Each flagged 1-way housing to its J8 pin: GND 1, SCL 2, SDA 3. BEEP each."),

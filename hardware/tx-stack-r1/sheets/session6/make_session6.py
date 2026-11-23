@@ -434,7 +434,7 @@ def links(c, pg):
 
 
 # ------------------------------------------------------------------ 06 EVM and pack leads
-EVM_TXT = {"PG1 lead +": ("PACK +", "red", "black"), "U1 battery + (J5 BATTERY)": ("J5 BAT", "red", "black"),
+EVM_TXT = {"F5 lead +": ("PACK +", "red", "black"), "U1 battery + (J5 BATTERY)": ("J5 BAT", "red", "black"),
            "U1 system out (J3 SYS)": ("J3 SYS", "red", "black"), "U1 system ground (J3 GND)": ("J3 GND", "black", None),
            "U1 battery sense (J5 SNS_BATP)": ("J5 SNS", "white", "red")}
 

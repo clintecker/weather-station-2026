@@ -47,7 +47,13 @@ def two(ref, value, part, block, names=("1", "2")):
                 pins=[("1", names[0], PAS, "header"), ("2", names[1], PAS, "header")])
 
 
-ZENER = "onsemi 1N5232B, 5.6 V 500 mW zener, DO-35 (port supply clamp)"
+# The supply and meter-line clamp (r3, 2026-11-23): a 400 W TVS, not the 1N5232B zener. The 5.6 V zener has a soft knee,
+# so it already conducts a few uA at 3.3 V (onsemi: 5 uA max at 3 V) and it's rated for no surge at all. The P4KE6.8A
+# breaks down at 6.45-7.14 V with a sharp avalanche knee and takes 38 A (10/1000 us) at 10.5 V. Its datasheet leakage
+# (1 mA at its 5.8 V standoff) says nothing about 3.3 V, so every one is screened on the bench at 3.3 V before it goes
+# in (Sessions 3 and 4: 1 uA or less). Its capacitance (nF) is fine on a supply and on a meter line (100 nF there
+# already), and it never sits on an I2C line: those keep their BAT85S pairs.
+TVS = "Littelfuse P4KE6.8A, 6.8 V 400 W unidirectional TVS, DO-41 (port supply clamp)"
 SCHOTTKY = "Vishay BAT85S, 30 V 200 mA Schottky, DO-35, <= 10 pF (signal clamp)"
 R100 = "Stackpole CF14JT100R, 100 ohm 1/4 W"
 R1K = "Stackpole CF14JT1K00, 1 kohm 1/4 W"
@@ -179,6 +185,17 @@ PARTS = [
          block="battery", pins=[("M+", "plug +", PAS, "jst"), ("M-", "plug -", PAS, "jst"),
                                 ("L+", "lead +", PAS, "solder"), ("L-", "lead -", PAS, "solder")],
          ties=[["M+", "L+"], ["M-", "L-"]]),
+    # The pack fuse (r3, 2026-11-23), in PG1's + lead within 30 mm of its socket, so a short anywhere downstream (the
+    # lead to the backplane, the junction, B4, the EVM's BAT path) opens here. The #353's own protection board limits
+    # its continuous discharge to 3.3 A, but its leads are rated 2 A (Adafruit #353 page), and that board is the only
+    # protection the lead had. The path carries at most the 0.9 A charge (the firmware's ICHG) or the system draw in
+    # supplement mode (about 0.15 A at a LoRa TX burst), so 1.6 A fast-acting carries the worst case at 56 % of its
+    # rating and opens well before the 2 A leads or the JST PH contacts (2 A) cook. A glass fuse, not a PTC: a
+    # MF-R135-class PTC would drop about 0.3 V at 0.9 A between the cell and the junction the charger senses.
+    dict(ref="F5", value="1.6 A F", block="battery",
+         part="Littelfuse 021701.6HXP (5 x 20 mm, 1.6 A fast-acting, glass) in a Schurter 8601.2000 in-line holder "
+              "(wire leads), spliced into PG1's red lead next to the pack",
+         pins=[("1", "lead from PG1", PAS, "solder"), ("2", "lead +", PAS, "solder")]),
     dict(two("R7", "100", R100 + " (charger sense, on the backplane at the battery + junction)", "battery"), card="BP",
          pins=[("1", "1", PAS, "solder"), ("2", "2", PAS, "solder")]),
     dict(two("R8", "100", R100 + " (gauge sense, on the backplane at the battery + junction)", "battery"), card="BP",
@@ -221,7 +238,7 @@ PARTS = [
          block="radio", pins=[("P", "plug", PAS, "sma"), ("J", "jack", PAS, "sma")], ties=[["P", "J"]]),
     dict(ref="CX1", value="SMA cable 6in", part="Amphenol 135110-01-06.00 (RG-316, bulkhead jack)", block="radio",
          pins=[("P", "plug", PAS, "sma"), ("J", "bulkhead", PAS, "sma")], ties=[["P", "J"]]),
-    dict(ref="AE1", value="ANT-916-CW-HWR", part="Linx ANT-916-CW-HWR-SMA (outside, tilted up)", block="radio",
+    dict(ref="AE1", value="ANT-916-ID-2000", part="TE/Linx ANT-916-ID-2000-SMA (IP67, on the pole bracket, 2 m cable to the SMA bulkhead)", block="radio",
          pins=[("RF", "RF", PAS, "sma")]),
     card_header("B3"),
     # ------------------------------------------------------------ B2 PORTS B + METERS
@@ -237,7 +254,7 @@ PARTS = [
     two("C1", "100nF", C100N + " (cups filter)", "meters"),
     two("C2", "100nF", C100N + " (rain filter)", "meters"),
     two("C3", "100nF", C100N + " (vane filter)", "meters"),
-    *[two(f"D5{i}", "1N5232B", ZENER.replace("port supply", w), "meters", ("cathode", "anode"))
+    *[two(f"D5{i}", "P4KE6.8A", TVS.replace("port supply clamp", w), "meters", ("cathode", "anode"))
       for i, w in ((1, "cups clamp"), (2, "vane clamp"), (3, "rain clamp"))],
     card_header("B2"),
     # ------------------------------------------------------------ B1 PORTS A
@@ -250,7 +267,7 @@ PARTS = [
         dict(two(f"F{k}", "MF-R010", "Bourns MF-R010 100 mA PTC", "ports"), note=f"port S{k} 3.3 V"),
         two(f"R{k}1", "100", R100 + f" (port S{k} data series)", "ports"),
         two(f"R{k}2", "100", R100 + f" (port S{k} clock series)", "ports"),
-        two(f"D{k}1", "1N5232B", ZENER + f" (port S{k} 3.3 V)", "ports", ("cathode", "anode")),
+        two(f"D{k}1", "P4KE6.8A", TVS.replace("port supply clamp", f"port S{k} 3.3 V clamp"), "ports", ("cathode", "anode")),
         two(f"D{k}2", "BAT85S", SCHOTTKY + f" (port S{k} data to its 3.3 V)", "ports", ("anode", "cathode")),
         two(f"D{k}3", "BAT85S", SCHOTTKY + f" (port S{k} ground to data)", "ports", ("anode", "cathode")),
         two(f"D{k}4", "BAT85S", SCHOTTKY + f" (port S{k} clock to its 3.3 V)", "ports", ("anode", "cathode")),
@@ -331,7 +348,8 @@ def port_nets():
 NETS = {
     "PACK_P": ([("BT1", "+"), ("PG1", "M+")], dict(battery=True)),
     "PACK_N": ([("BT1", "-"), ("PG1", "M-")], dict(battery=True)),
-    "CELL_P": ([("PG1", "L+"), ("U2", "X1.VIN+"), ("R7", "1"), ("R8", "1")] + power("CELL_P"), dict(battery=True)),
+    "PACK_L": ([("PG1", "L+"), ("F5", "1")], dict(battery=True)),
+    "CELL_P": ([("F5", "2"), ("U2", "X1.VIN+"), ("R7", "1"), ("R8", "1")] + power("CELL_P"), dict(battery=True)),
     "BAT_P": ([("U2", "X1.VIN-"), ("U1", "BAT")] + power("BAT_P"), dict(battery=True)),
     "BAT_N": ([("PG1", "L-"), ("U1", "BATN")], dict(battery=True)),
     "BATP_S": ([("R7", "2"), ("U1", "BATP")], dict(sense=True)),
@@ -380,7 +398,7 @@ for _c, _pins in CARD_LOCAL.items():
         NETS[_n][0].extend([(HEADERS[_c], str(_i)), (SOCKETS[_c], str(_i))])
 
 NET_NAME = {
-    "PACK_P": "pack + (at its plug)", "PACK_N": "pack - (at its plug)", "CELL_P": "battery + junction (backplane lines 21-22)",
+    "PACK_P": "pack + (at its plug)", "PACK_N": "pack - (at its plug)", "PACK_L": "pack + lead (before the fuse)", "CELL_P": "battery + junction (backplane lines 21-22)",
     "BAT_P": "charger battery + (after the shunt)", "BAT_N": "battery - (charger ground)",
     "BATP_S": "charger battery sense (BATP)", "GAUGE_S": "fuel gauge cell sense (VBAT)",
     "TS": "battery temperature (TS)", "TS_RET": "thermistor return", "VUSB": "USB 5 V in", "VUSB_RET": "USB ground",
@@ -409,7 +427,8 @@ PIN_MAPS = {**{f"J1{k}": {"1": None, "2": f"P{k}_3V3", "3": f"P{k}_JSDA", "4": "
 # Every outdoor line: (jack-side net, series resistor, clamp). checks.py rule 9 holds the design to it.
 # Every outdoor line: jack-side net -> (series part, [clamp diodes]). checks.py rule 9 holds the design to it:
 # an I2C line has a series resistor and a Schottky to its port supply and one from ground (low capacitance);
-# a meter line (100 nF on it already) and a port supply have a 5.6 V zener to ground.
+# a meter line (100 nF on it already) and a port supply have a P4KE6.8A TVS to ground (it clamps both ways: forward
+# below ground, avalanche above 6.45 V).
 OUTDOOR_LINES = {**{f"P{k}_JSDA": (f"R{k}1", [f"D{k}2", f"D{k}3"]) for k in range(1, 5)},
                  **{f"P{k}_JSCL": (f"R{k}2", [f"D{k}4", f"D{k}5"]) for k in range(1, 5)},
                  **{f"P{k}_3V3": (f"F{k}", [f"D{k}1"]) for k in range(1, 5)},
@@ -435,6 +454,7 @@ R1_ADDED = {
     **{s: "backplane socket for one card" for s in ("XB1", "XB2", "XB3", "XB4")},
     "XJ1": "charger I2C lead lands on the backplane",
     "R7": "100 ohm at the tap end of the charger sense lead (electrical review m11)",
+    "F5": "pack fuse, 1.6 A, in PG1's + lead next to the pack (r3: the lead had no protection but the pack's own board)",
     "R8": "100 ohm at the tap end of the gauge sense lead (m11; 100 not 1k: the gauge may draw its supply here)",
     "RT1": "pack thermistor on EVM J7, JP18 removed (electrical review M2)",
     "AD1": "SMA right-angle adapter so the coax turns up at the card edge",

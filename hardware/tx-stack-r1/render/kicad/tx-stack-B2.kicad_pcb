@@ -469,14 +469,14 @@
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
 		(model "${KICAD10_3DMODEL_DIR}/Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
-	(footprint "stack:D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp"
+	(footprint "stack:D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp"
 		(layer "F.Cu")
 		(uuid "61c2cee1-1f05-5e72-a704-a680803bcfaf")
 		(at 57.1600 27.9400 180)
 		(property "Reference" "D41_0" (at 0 -1.5 180) (layer "F.Fab") (uuid "0e52debb-eb4e-579e-a641-20ddadb4b03c") (effects (font (size 1 1) (thickness 0.15))))
-		(property "Value" "D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp" (at 0 0 180) (layer "F.Fab") (uuid "ba062eda-3f17-5647-8026-88c6e8fdb755") (effects (font (size 1 1) (thickness 0.15))))
+		(property "Value" "D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp" (at 0 0 180) (layer "F.Fab") (uuid "ba062eda-3f17-5647-8026-88c6e8fdb755") (effects (font (size 1 1) (thickness 0.15))))
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
-		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
+		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
 	(footprint "stack:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"
 		(layer "F.Cu")
@@ -496,14 +496,14 @@
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
 		(model "${KICAD10_3DMODEL_DIR}/Capacitor_THT.3dshapes/C_Disc_D3.8mm_W2.6mm_P2.50mm.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
-	(footprint "stack:D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp"
+	(footprint "stack:D_DO-41_SOD81_P2.54mm_Vertical_CathodeUp"
 		(layer "F.Cu")
-		(uuid "3de5369a-03de-5d17-b3bb-a742aaae5c9f")
-		(at 13.9800 25.4000 180)
-		(property "Reference" "D51_0" (at 0 -1.5 180) (layer "F.Fab") (uuid "9c8749ae-cd5a-5213-9e4b-aa77356573a2") (effects (font (size 1 1) (thickness 0.15))))
-		(property "Value" "D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp" (at 0 0 180) (layer "F.Fab") (uuid "24e0e1c3-a127-5978-b319-bcf579e7dbf8") (effects (font (size 1 1) (thickness 0.15))))
+		(uuid "742df9bb-6d8d-587b-bd7d-45c8004588a8")
+		(at 13.9800 22.8600 180)
+		(property "Reference" "D51_0" (at 0 -1.5 180) (layer "F.Fab") (uuid "1f9c2729-b093-55c4-96eb-c9e866318c15") (effects (font (size 1 1) (thickness 0.15))))
+		(property "Value" "D_DO-41_SOD81_P2.54mm_Vertical_CathodeUp" (at 0 0 180) (layer "F.Fab") (uuid "cf7c5c69-bc23-582b-9d6a-46336561a501") (effects (font (size 1 1) (thickness 0.15))))
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
-		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
+		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-41_SOD81_P2.54mm_Vertical_CathodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
 	(footprint "stack:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"
 		(layer "F.Cu")
@@ -532,14 +532,14 @@
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
 		(model "${KICAD10_3DMODEL_DIR}/Capacitor_THT.3dshapes/C_Disc_D3.8mm_W2.6mm_P2.50mm.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
-	(footprint "stack:D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp"
+	(footprint "stack:D_DO-41_SOD81_P2.54mm_Vertical_CathodeUp"
 		(layer "F.Cu")
-		(uuid "7ebcf2eb-5c33-5f04-9d22-6083add1d577")
-		(at 16.5200 25.4000 0)
-		(property "Reference" "D52_0" (at 0 -1.5 0) (layer "F.Fab") (uuid "4141d9bf-0776-5498-a8b3-c5649a4d4a08") (effects (font (size 1 1) (thickness 0.15))))
-		(property "Value" "D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp" (at 0 0 0) (layer "F.Fab") (uuid "fd1ec304-20f3-5fba-b540-201a5e326a63") (effects (font (size 1 1) (thickness 0.15))))
+		(uuid "38d09c47-03a9-5a1e-ad51-5f2b68b1f2ad")
+		(at 16.5200 22.8600 0)
+		(property "Reference" "D52_0" (at 0 -1.5 0) (layer "F.Fab") (uuid "4ebf59ac-21bc-5bb0-b5c4-56eed163725a") (effects (font (size 1 1) (thickness 0.15))))
+		(property "Value" "D_DO-41_SOD81_P2.54mm_Vertical_CathodeUp" (at 0 0 0) (layer "F.Fab") (uuid "3904e82d-f9ad-53ec-a0dd-c8fc19c9f8d0") (effects (font (size 1 1) (thickness 0.15))))
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
-		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
+		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-41_SOD81_P2.54mm_Vertical_CathodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
 	(footprint "stack:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"
 		(layer "F.Cu")
@@ -586,14 +586,14 @@
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
 		(model "${KICAD10_3DMODEL_DIR}/Capacitor_THT.3dshapes/C_Disc_D3.8mm_W2.6mm_P2.50mm.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
-	(footprint "stack:D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp"
+	(footprint "stack:D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp"
 		(layer "F.Cu")
 		(uuid "2abd9015-2412-5d7d-a0b4-51742a0c3c9e")
 		(at 29.2200 27.9400 180)
 		(property "Reference" "D53_0" (at 0 -1.5 180) (layer "F.Fab") (uuid "abbd8d94-0e59-5e16-bc8d-2a1830d064fb") (effects (font (size 1 1) (thickness 0.15))))
-		(property "Value" "D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp" (at 0 0 180) (layer "F.Fab") (uuid "052ac7b5-9f54-562b-8897-22d3e9c7a5b8") (effects (font (size 1 1) (thickness 0.15))))
+		(property "Value" "D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp" (at 0 0 180) (layer "F.Fab") (uuid "052ac7b5-9f54-562b-8897-22d3e9c7a5b8") (effects (font (size 1 1) (thickness 0.15))))
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
-		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
+		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 5.5000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
 	(footprint "stack:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"
 		(layer "F.Cu")

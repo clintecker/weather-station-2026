@@ -52,7 +52,7 @@ assert "#372" in C[3] and "J7" in C[3] and "JP12, JP17 and JP30 stay in" in C[4]
 assert "J6, micro-B" in C[6] and "JP17 out" in C[7] and "REG0x0A" in C[7] and "0.9 A" in C[7]
 ICHG = re.search(r"about ([\d.]+) A", C[7]).group(1)
 LEAD = {r[0]: r for r in LEADS}
-for k in ("PG1 lead -", "RT1 1", "RT1 2", "PG1 lead +", "U1 battery + (J5 BATTERY)", "U1 system out (J3 SYS)",
+for k in ("PG1 lead -", "RT1 1", "RT1 2", "F5 lead +", "U1 battery + (J5 BATTERY)", "U1 system out (J3 SYS)",
           "U1 system ground (J3 GND)", "R7 2", "EVM J8 (KK 4-pin housing, pins 1-3)"):
     assert k in LEAD, (k, list(LEAD))
 B = {n: plain(t) for n, t in BOX}

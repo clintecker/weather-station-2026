@@ -469,14 +469,14 @@
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
 		(model "${KICAD10_3DMODEL_DIR}/Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
-	(footprint "stack:D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp"
+	(footprint "stack:D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp"
 		(layer "F.Cu")
 		(uuid "bf3673ba-41f8-5398-9d21-3a501377083c")
 		(at 52.0800 27.9400 180)
 		(property "Reference" "D21_0" (at 0 -1.5 180) (layer "F.Fab") (uuid "e5bf752d-c08a-51c6-9d0f-bbbdbbdeda18") (effects (font (size 1 1) (thickness 0.15))))
-		(property "Value" "D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp" (at 0 0 180) (layer "F.Fab") (uuid "eb96409c-059f-59a1-95cf-35dbb2305c5a") (effects (font (size 1 1) (thickness 0.15))))
+		(property "Value" "D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp" (at 0 0 180) (layer "F.Fab") (uuid "eb96409c-059f-59a1-95cf-35dbb2305c5a") (effects (font (size 1 1) (thickness 0.15))))
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
-		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
+		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
 	(footprint "stack:PinHeader_1x06_P2.54mm_Vertical"
 		(layer "F.Cu")
@@ -550,14 +550,14 @@
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
 		(model "${KICAD10_3DMODEL_DIR}/Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
-	(footprint "stack:D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp"
+	(footprint "stack:D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp"
 		(layer "F.Cu")
 		(uuid "a4f9f1fd-0daa-5407-9085-76f7d3edc913")
 		(at 47.0000 27.9400 180)
 		(property "Reference" "D31_0" (at 0 -1.5 180) (layer "F.Fab") (uuid "36af0f07-1cf0-5a70-a75a-2cc2106f47c9") (effects (font (size 1 1) (thickness 0.15))))
-		(property "Value" "D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp" (at 0 0 180) (layer "F.Fab") (uuid "e4a49b7c-626a-5e59-bc2e-38a21e907ec4") (effects (font (size 1 1) (thickness 0.15))))
+		(property "Value" "D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp" (at 0 0 180) (layer "F.Fab") (uuid "e4a49b7c-626a-5e59-bc2e-38a21e907ec4") (effects (font (size 1 1) (thickness 0.15))))
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
-		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
+		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
 	(footprint "stack:PinHeader_1x06_P2.54mm_Vertical"
 		(layer "F.Cu")
@@ -631,14 +631,14 @@
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
 		(model "${KICAD10_3DMODEL_DIR}/Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
-	(footprint "stack:D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp"
+	(footprint "stack:D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp"
 		(layer "F.Cu")
 		(uuid "285d430d-69e0-557e-a405-723301dbca2d")
 		(at 57.1600 27.9400 180)
 		(property "Reference" "D11_0" (at 0 -1.5 180) (layer "F.Fab") (uuid "5a6cdcac-4064-5ae8-a0a5-794c16752400") (effects (font (size 1 1) (thickness 0.15))))
-		(property "Value" "D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp" (at 0 0 180) (layer "F.Fab") (uuid "325f3897-f658-5209-8dd3-91e2ed09e1c3") (effects (font (size 1 1) (thickness 0.15))))
+		(property "Value" "D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp" (at 0 0 180) (layer "F.Fab") (uuid "325f3897-f658-5209-8dd3-91e2ed09e1c3") (effects (font (size 1 1) (thickness 0.15))))
 		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
-		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-35_SOD27_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
+		(model "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-41_SOD81_P2.54mm_Vertical_AnodeUp.step" (offset (xyz 0.0000 0.0000 0.0000)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 	)
 	(footprint "stack:B1_parts"
 		(layer "F.Cu")

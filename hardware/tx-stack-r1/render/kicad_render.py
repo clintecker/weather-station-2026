@@ -194,6 +194,7 @@ def lib(name):
 
 
 PART_VALUE = {p["ref"]: p["value"] for p in st.model.PARTS}
+PART_PINS = {p["ref"]: p["pins"] for p in st.model.PARTS}
 MAKER_SKIP = ("PCB", "QT socket", "JST PH", "inductor", "header plastic")   # boxes a maker's STEP replaces
 STAND_IN = {
     "MINI": "Wio-E5 mini: its board imported from Seeed's Eagle file; the LoRa-E5 module, SMA, USB-C and buttons are "
@@ -242,13 +243,16 @@ def step_models(pl):
                  _rot(pins["1"], pins["2"]), 0.0)], True, ()
     if kind == "DSTAND":
         span = "2.54" if math.dist(pins["1"], pins["2"]) < 3 else "5.08"
-        pkg = "D_DO-35_SOD27"
-        # the body stands on lead 1. KiCad's pin 1 is the cathode: AnodeUp has its body on pin 1, CathodeUp on pin 2
-        if PART_VALUE[pl["ref"]].startswith("BAT85"):        # lead 1 is the anode
-            return [(lib(f"Diode_THT.3dshapes/{pkg}_P{span}mm_Vertical_CathodeUp.step"), pins["2"],
-                     _rot(pins["2"], pins["1"]), 0.0)], True, ()
-        return [(lib(f"Diode_THT.3dshapes/{pkg}_P{span}mm_Vertical_AnodeUp.step"), pins["1"],
-                 _rot(pins["1"], pins["2"]), 0.0)], True, ()
+        pkg = "D_DO-41_SOD81" if PART_VALUE[pl["ref"]].startswith("P4KE") else "D_DO-35_SOD27"
+        # KiCad's pin 1 is the cathode: AnodeUp has its body on pin 1, CathodeUp on pin 2. The model's origin goes on
+        # our cathode hole, turned toward the anode hole; the body follows stack.body_pin (and its lift)
+        names = {pn: nm for pn, nm, *_r in PART_PINS[pl["ref"]]}
+        cat = next(pn for pn, nm in names.items() if nm == "cathode")
+        ano = "2" if cat == "1" else "1"
+        bp, lift = st.body_pin(pl)
+        up = "AnodeUp" if bp == cat else "CathodeUp"
+        return [(lib(f"Diode_THT.3dshapes/{pkg}_P{span}mm_Vertical_{up}.step"), pins[cat],
+                 _rot(pins[cat], pins[ano]), lift)], True, ()
     if kind == "CAP":
         return [(lib("Capacitor_THT.3dshapes/C_Disc_D3.8mm_W2.6mm_P2.50mm.step"), pins["1"],
                  _rot(pins["1"], pins["2"]), 0.0)], True, ()
@@ -658,10 +662,10 @@ def extras(m, explode=0.0, whole=False):
     arm, (pe, yb, zb, ax) = bulkhead_at()
     m.cyl(P(XI - 9.0, yb, zb), P(OX + 8.5, yb, zb), 3.2, "#D4AF37", 12)  # bulkhead jack through the right wall
     m.cyl(P(XI - 2.5, yb, zb), P(XI + 0.8, yb, zb), 5.5, "#D4AF37", 6)  # its nut inside, in its 1 mm seat
-    m.cyl(P(OX + 8.5, yb, zb), P(OX + 18.5, yb, zb), 4.5, "#1A1A1A", 12)  # antenna hinge
-    L = S.val("ant_len")
-    tip = (OX + 18.5 + L * math.cos(math.radians(70)), yb, zb + L * math.sin(math.radians(70)))
-    m.cyl(P(OX + 18.5, yb, zb), P(*tip), 4.0, "#1A1A1A", 12)            # whip, tilted 70 degrees up
+    m.cyl(P(OX + 8.5, yb, zb), P(OX + 22.0, yb, zb), 4.0, "#D4AF37", 6)   # the antenna cable's SMA plug
+    m.cyl(P(OX + 22.0, yb, zb), P(OX + 30.0, yb, zb), 2.5, "#1A1A1A", 12)  # its boot
+    m.tube([P(OX + 30.0, yb, zb), P(OX + 36.0, yb, zb - 4.0), P(OX + 38.0, yb, zb - 40.0)], 1.4, "#1A1A1A", 8)
+    # the cable drops away to the antenna on the pole (ANT-916-ID-2000-SMA, 2 m): not drawn past here
     # coax: the straight plug on AD1's forward arm, the bend to the right, the run to the bulkhead
     az = (arm.z0 + arm.z1) / 2
     y0 = arm.y1
@@ -806,7 +810,7 @@ def render(jobs):
                   + ("" if fetch_models.path_of("MUX") else " (not fetched: a box)"),
                   "shelves bottom to top: the pack, the BQ25798EVM (90 x 90, Clint; heights [TBD-MEASURE]), B4, B2, "
                   "B1, B3; stand-ins (render/MODELS.md): the EVM, the pack, the sockets, the SMA bulkhead (135110 "
-                  "cable), the ANT-916 antenna (length [TBD-MEASURE]); the PG-7 and PG-9 glands in the bottom wall "
+                  "cable), the antenna cable's SMA plug (the antenna itself is on the pole); the PG-7 and PG-9 glands in the bottom wall "
                   "from the Adafruit #761 drawing",
                   f"inside {'x'.join(f'{v:g}' for v in cage.BOX_IN)} mm; the lid interface (rim, O-ring, screws) "
                   "is from Clint's photos, L1 and the rim ring's fit [TBD-MEASURE]; the coax: AD1's arm toward the lid, the cable bending right in front of "

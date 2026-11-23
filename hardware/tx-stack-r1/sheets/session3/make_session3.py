@@ -337,7 +337,7 @@ def cover(c, pg):
         chip(c, X + cw / 2, Y + 6 + 10 * (nl - 1), name, 7.5, "ALT", INK, "c")
     x, y, w, h = panel(c, g.cell(0, 1), None, "TOOLS.")
     tools = ["SOLDERING IRON + SOLDER", "FLUSH CUTTERS", "WIRE STRIPPER (24 AWG)", "MULTIMETER (CONTINUITY)",
-             f"PLIERS (F4'S LEADS, PULL PIN {KEY})", f"{DOT_COLOUR.upper()} PAINT PEN OR DOT STICKER", "STEEL RULER (WIRE LENGTHS)", "VICE OR CLAMP (SNAP THE TABS)", "SMALL FILE"]
+             f"PLIERS (F4'S LEADS, PULL PIN {KEY})", f"{DOT_COLOUR.upper()} PAINT PEN OR DOT STICKER", "STEEL RULER (WIRE LENGTHS)", "VICE OR CLAMP (SNAP THE TABS)", "SMALL FILE", "3.3 V SUPPLY + 100 K (TVS SCREEN)"]
     for i, s in enumerate(tools):
         text(c, x + 14, y + h - 16 - i * (h - 12) / len(tools), "-  " + s, 10, "ALT", INK)
     x, y, w, h = panel(c, g.cell(1, 1), None, "THE STEPS. IN THIS ORDER.")
@@ -644,7 +644,7 @@ def band_word(ref):
     return "BAND DOWN (BODY ON CATHODE)" if pin_rows(ref)[0][0] == "cathode" else "BAND UP (BODY ON ANODE)"
 
 
-def diode_page(c, pg, step, key, title, sub, slogan):
+def diode_page(c, pg, step, key, title, sub, slogan, extra=""):
     refs = G[key]
     page(c, step, title, sub, pg, slogan)
     g = Grid(2, 2, heights=[1.15, 1])
@@ -652,7 +652,7 @@ def diode_page(c, pg, step, key, title, sub, slogan):
         "B2, TOP FACE. Each diode stands with its BODY on its FIRST hole and the other lead looped over into the",
         "second. The band is the cathode: " + "; ".join(f"{r} body on {hole_name(pin_rows(r)[0][1])}, "
                                                        f"{band_word(r).split(' (')[0].lower()}" for r in refs) + ".",
-        "Solder on the UNDERSIDE, trim."))
+        "Solder on the UNDERSIDE, trim." + extra))
     face_tag(c, x + 30, y + h - 22, "top")
     a = Art(c, f"t_{key.lower()}", x + 14, y + 26, 340, h - 52, align="l", valign="c")
     holes = holes_of(refs)
@@ -684,12 +684,17 @@ def diode_page(c, pg, step, key, title, sub, slogan):
 
 def s4diodes(c, pg):
     diode_page(c, pg, "08", "S4D", "PORT S4 DIODES " + " ".join(G["S4D"]),
-               "ONE ZENER (SUPPLY CLAMP), FOUR SCHOTTKY CLAMPS. STANDING. WATCH EVERY BAND.", SLOGANS3[4])
+               "ONE TVS (SUPPLY CLAMP), FOUR SCHOTTKY CLAMPS. STANDING. WATCH EVERY BAND.", SLOGANS3[4],
+               " First screen all seven P4KE6.8As (D41 here, D51-D53 next, four on B1 in Session 4): 3.3 V, then a "
+               "100 k resistor, then the TVS's band end, its other end to 0 V. Under 0.10 V across the 100 k (1 µA) is "
+               "good; more, set it aside. Keep the lowest for D52.")
 
 
 def zeners(c, pg):
-    diode_page(c, pg, "09", "ZEN", "METER ZENERS " + " ".join(G["ZEN"]),
-               "1N5232B, 5.6 V. STANDING. BAND (CATHODE) DOWN, ON THE JACK LINE.", SLOGANS3[4])
+    diode_page(c, pg, "09", "ZEN", "METER TVS CLAMPS " + " ".join(G["ZEN"]),
+               "P4KE6.8A, SCREENED AT STEP 08. THE LOWEST ON D52. D53 5.5 MM UP.", SLOGANS3[4],
+               " D53's body sits 5.5 mm up on its lead, over J22's header and C2: rest it on a 5.5 mm offcut "
+               "while you solder.")
 
 
 def fuse(c, pg):
@@ -889,7 +894,7 @@ STEP_TITLES = [("01", "KNOW THE TWO FACES"), ("02", f"{len(B.WIRES)} WIRES ON TH
                ("03", f"{len(B.JUMPERS)} BARE JUMPERS"), ("04", f"BUS HEADER XH2 (PIN {KEY} OUT), {DOT_COLOUR.upper()} DOT"),
                ("05", "PULL-UPS " + " ".join(G["RPULL"])), ("06", "SERIES " + " ".join(G["RSER"])),
                ("07", "DISCS " + " ".join(G["CAPS"])), ("08", "PORT S4 DIODES " + G["S4D"][0] + "-" + G["S4D"][-1]),
-               ("09", "ZENERS " + " ".join(G["ZEN"])), ("10", "FUSE " + " ".join(G["F4"])),
+               ("09", "TVS " + " ".join(G["ZEN"])), ("10", "FUSE " + " ".join(G["F4"])),
                ("11", f"BUILD THE {len(JACKS)} JACK BREAKOUTS"), ("12", "FIT THE JACKS IN COLUMN A"),
                ("13", "THE JACKS, FITTED"), ("14", "STRIP MAP"), ("15", "METER BEFORE POWER")]
 

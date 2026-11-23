@@ -29,7 +29,7 @@ def _ends():
     for kind, a, c, side, note in st.WIRES:
         if kind != "lead" or side != "copper":
             continue
-        if isinstance(a, tuple) and a[0] in ("PG1", "U1") and isinstance(c, str) and c.startswith("BP:s"):
+        if isinstance(a, tuple) and a[0] in ("PG1", "U1", "F5") and isinstance(c, str) and c.startswith("BP:s"):
             out.append(tuple(int(v) for v in c[4:].split(".")))
         elif isinstance(a, tuple) and a[0] == "R7":
             out.append(SENSE)

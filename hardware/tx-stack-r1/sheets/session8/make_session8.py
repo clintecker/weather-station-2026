@@ -142,7 +142,7 @@ def cover(c, pg):
     g = Grid(2, 3, heights=[1.45, 1.05, 0.62])
     x, y, w, h = panel(c, g.cell(0, 0, 2), None, "PARTS (build/ASSEMBLY.md sections 2-4, cage/cage.py, schematic/model.py).")
     items = [("RIM TEST RING, THEN THE BASE\nprinted PETG (cage/cage.py)", "ring"),
-             ("5 x PG-7 #762, 2 x PG-9 #761,\nM12 VENT, SMA BULKHEAD", "glands_out"),
+             ("5 x PG-7 #762, 2 x PG-9 #761, M12 VENT\n(LTW VENT-PS1YBK-N8002), SMA BULKHEAD", "glands_out"),
              ("6P CRIMP PLUGS + 6P CRIMP TOOL\n(RJ11/RJ12)", "plug_round")]
     cw = w / 3
     for i, (name, art) in enumerate(items):
@@ -152,7 +152,8 @@ def cover(c, pg):
     x, y, w, h = panel(c, g.cell(0, 1), None, "ALSO ON THE BENCH.")
     parts = ["4 x M3 HEAT-SET INSERTS (BAR 2, CLIP 2)", "2 x M3 SCREWS (BAR), 2 x M3 x 8 SOCKET CAPS (CLIPS)", "HOOK-AND-LOOP STRAP (PACK)",
              "AD1 AMPHENOL 132172 (SMA R/A)", "CX1 135110-01-06.00 COAX", "VOLTAIC P110 6 V 10 W PANEL",
-             "22 AWG RED + BLACK, FERRULES", "HEAT SHRINK (THE SOLAR SPLICE)", "4 PRINTED LID BOLTS", "2 HOSE CLAMPS OR STRAPS", "SILICONE OR SPLIT GROMMETS"]
+             "22 AWG RED + BLACK, FERRULES", "HEAT SHRINK (THE SOLAR SPLICE)", "4 PRINTED LID BOLTS", "2 HOSE CLAMPS OR STRAPS", "SILICONE OR SPLIT GROMMETS",
+             "4 x 20 DOWEL PIN, ISO 8734 A1 (S4 BLANK)", "AE1 ANT-916-ID-2000-SMA + ITS BRACKET", "WHITE PETG LID SHADE (cage.py --shade)"]
     for i, s in enumerate(parts):
         text(c, x + 14, y + h - 16 - i * (h - 12) / len(parts), "-  " + s, 9.6, "ALT", INK)
     x, y, w, h = panel(c, g.cell(1, 1), None, "THE STEPS. IN THIS ORDER.")
@@ -234,7 +235,9 @@ def base_page(c, pg):
     yy = steps_list(c, x + 44, y + h - 18, w - 56, [
         "Light PETG, floor on the bed (Yb up), not rim down.",
         "Solid walls: about 9-10 perimeters at a 0.42 mm line.",
-        "The two EVM clips print with it: cage.py --clip (cage/stl/evm-clips.stl), flat on their top faces."], 9)
+        "The two EVM clips print with it: cage.py --clip (cage/stl/evm-clips.stl), flat on their top faces.",
+        "The lid shade, in white PETG: cage.py --shade (cage/stl/lid-shade.stl), its plate on the bed. It goes on "
+        "at step 14."], 9)
     in_model(c, x + 14, yy - 8, "cage.py --stl refuses the base until ring_fit and the lid bolt positions are "
              "sourced (step 01).", w=w - 24)
     x, y, w, h = panel(c, g.cell(1, 1), 3, ["Then the four inserts, with the iron.", "Brass spots: where they go."])
@@ -565,11 +568,19 @@ def close(c, pg):
     a = Art(c, "mount", x + 8, y + 34, w - 40, h - 90, align="l")
     label(c, x + w - 10, y + h - 26, "FLANGE, 2 SLOTS", *a.A("flange_top"), 8.6, anchor="r")
     label(c, x + w - 10, y + 22, "FLANGE, 2 SLOTS", *a.A("flange_bot"), 8.6, anchor="r")
-    x, y, w, h = panel(c, g.cell(1, 1), 3, ["After Session 9. Glands down, always."])
-    steps_list(c, x + 44, y + h - 18, w - 56, [
-        "The lid on, with its four printed bolts.",
-        "Hose clamps or straps through the two slots in each flange.",
-        "Drip loops below each gland, then tie the cables to the pole.",
+    x, y, w, h = panel(c, g.cell(1, 1), 3, ["After Session 9, on the pole. Glands down, always."])
+    yy = steps_list(c, x + 44, y + h - 18, w - 56, [
+        "The lid on, with its four printed bolts, snug by hand.",
+        "The white lid shade pressed on over the lid: its ribs grip the lid's sides. Keep the gap at its edge and "
+        "its 14 windows clear, so air moves under it. It pulls off by hand before the bolts come out.",
+        "Hose clamps or straps through the two slots in each flange, the box's back flat on the pole.",
+        "The antenna AE1 on its bracket at the pole's top, pointing straight up, at least 30 cm above the box and "
+        "clear of the panel's metal frame.",
+        "Its 2 m cable down the pole to the SMA bulkhead on the right wall, with a drip loop below the bulkhead "
+        "before it goes on. Finger-tight, then no more than an eighth of a turn with a wrench.",
+        "Drip loops below each gland, then tie the cables to the pole every 30 cm.",
+        "A metal pole that is earthed: a ring lug under the bulkhead's outside nut, 14 AWG to the pole's earth "
+        "clamp. A wooden or plastic pole: leave it off (README, lightning and surge).",
         "J6 USB stays inside: to use it, the lid comes off."], 9)
 
 

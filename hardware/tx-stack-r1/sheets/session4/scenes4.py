@@ -58,7 +58,7 @@ BOB_RED = st.KIND["BOB"][0]
 SPACER = "#E6E2D3"
 JACK = "#2A2A2A"
 WIRE_COL = {"red": "#D7262E", "black": "#1C1C1C", "yellow": "#F2C318", "blue": "#2D6FD0", "green": "#2E9B4A"}
-ZENER_GLASS = "#E07A1F"                 # 1N5232B
+TVS_BODY = "#2A2A2A"                    # P4KE6.8A: black moulded DO-41, light grey band
 SCHOTTKY_GLASS = "#D8B27A"              # BAT85S
 PTC_YELLOW = st.KIND["PTC"][0]
 R_BODY = "#D9C59A"
@@ -247,7 +247,7 @@ def add_resistor(s, ref):
 
 
 def diode_value(ref):
-    return "1N5232B" if b1md.part(ref)["head"].split(" ")[0] == "1N5232B" else "BAT85S"
+    return "P4KE6.8A" if b1md.part(ref)["head"].split(" ")[0] == "P4KE6.8A" else "BAT85S"
 
 
 def band_end(ref):
@@ -257,17 +257,18 @@ def band_end(ref):
 
 
 def add_diode(s, ref):
-    """Standing DO-35 (sources do35, diode_stand_h): body on lead 1's hole, the other lead looped over to lead 2."""
+    """Standing diode (stack.diode_dims: DO-35 BAT85S, DO-41 P4KE6.8A): body on lead 1's hole, the other lead looped
+    over to lead 2."""
     p1, p2 = PL[ref]["pins"]["1"], PL[ref]["pins"]["2"]
-    dl, dd = S.val("do35")
-    sh = S.val("diode_stand_h")
+    dl, dd, sh = st.diode_dims(ref)
     z0 = T + 0.8
-    glass = ZENER_GLASS if diode_value(ref) == "1N5232B" else SCHOTTKY_GLASS
+    tvs = diode_value(ref) == "P4KE6.8A"
+    glass = TVS_BODY if tvs else SCHOTTKY_GLASS
     body = cq.Solid.makeCylinder(dd / 2, dl, cq.Vector(p1[0], p1[1], z0), cq.Vector(0, 0, 1))
     s.add(f"{ref}_body", body, glass, 0.8)
     zb = z0 + 0.25 if band_end(ref) == "bottom" else z0 + dl - 0.95
     s.add(f"{ref}_band", cq.Solid.makeCylinder(dd / 2 + 0.03, 0.7, cq.Vector(p1[0], p1[1], zb), cq.Vector(0, 0, 1)),
-          "#151515", 0.4)
+          "#BDBDBD" if tvs else "#151515", 0.4)
     zt = T + sh - 0.3
     lead = tube([_p3(p1, T - 1.6), _p3(p1, z0 + 0.1)], 0.25).fuse(
         tube([_p3(p1, z0 + dl - 0.1), _p3(p1, zt), _p3(p2, zt), _p3(p2, T - 1.6)], 0.25))

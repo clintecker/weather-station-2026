@@ -60,7 +60,7 @@ R7 and R8 lie flat on the front, with R8 on a slant and its legs bent to the spa
 
 | From | To the backplane | What |
 |---|---|---|
-| PG1 lead + | line 21, hole 6 | pack + (pigtail) to the junction, 24 AWG stranded, red with a black band |
+| F5 lead + | line 21, hole 6 | pack + (after the fuse F5) to the junction, 24 AWG stranded, red with a black band |
 | U1 battery + (J5 BATTERY) | line 19, hole 6 | charger battery + (J5 BATTERY) to lines 19-20, 24 AWG stranded, red with a black band |
 | U1 system out (J3 SYS) | line 26, hole 6 | charger system output (J3 SYS) to line 26 (B4 pin 26, the regulator in), 24 AWG stranded, red with a black band |
 | U1 system ground (J3 GND) | line 12, hole 11 | charger system ground (J3 GND) to line 12 (the bus ground, SYS's return), 24 AWG stranded, black |
@@ -124,7 +124,8 @@ Most of those holes already hold a socket pin, an XJ1 pin, a resistor leg or a s
 | backplane line 2 hole 38 | backplane line 12 hole 38 | 40 mm | ground | the two bus ground lines joined |
 | backplane line 19 hole 5 | backplane line 20 hole 5 | 20 mm | charger battery + (after the shunt) | lines 19 and 20 joined (charger battery +, two pins) |
 | backplane line 21 hole 5 | backplane line 22 hole 5 | 20 mm | battery + junction (backplane lines 21-22) | lines 21 and 22 joined (battery + junction, two pins) |
-| PG1 lead + | backplane line 21 hole 6 | 100 mm, trim to fit | battery + junction (backplane lines 21-22) | pack + (pigtail) to the junction, 24 AWG stranded, red with a black band |
+| PG1 lead + | F5 lead from PG1 | PG1's red lead cut to 30 mm, then F5's own holder lead | pack + lead (before the fuse) | PG1's red lead spliced to the pack fuse F5's holder lead, within 30 mm of PG1's socket |
+| F5 lead + | backplane line 21 hole 6 | 100 mm, trim to fit | battery + junction (backplane lines 21-22) | pack + (after the fuse F5) to the junction, 24 AWG stranded, red with a black band |
 | U1 battery + (J5 BATTERY) | backplane line 19 hole 6 | 100 mm, trim to fit | charger battery + (after the shunt) | charger battery + (J5 BATTERY) to lines 19-20, 24 AWG stranded, red with a black band |
 | U1 system out (J3 SYS) | backplane line 26 hole 6 | 100 mm, trim to fit | charger system output (SYS) | charger system output (J3 SYS) to line 26 (B4 pin 26, the regulator in), 24 AWG stranded, red with a black band |
 | U1 system ground (J3 GND) | backplane line 12 hole 11 | 100 mm, trim to fit | ground | charger system ground (J3 GND) to line 12 (the bus ground, SYS's return), 24 AWG stranded, black |
@@ -249,7 +250,7 @@ This table has every pad with anything soldered in it. Every other pad stays bar
 | 20 | 27 | XB1 spare 20 | - (isolated pad) |
 | 20 | 35 | XB3 local 20 (+3V3) | - (isolated pad) |
 | 21 | 5 | lead to backplane line 22 hole 5 | line 21 |
-| 21 | 6 | lead to PG1 lead + | line 21 |
+| 21 | 6 | lead to F5 lead + | line 21 |
 | 21 | 7 | R7 1 | line 21 |
 | 21 | 13 | XB4 power 21 | line 21 |
 | 21 | 19 | XB2 spare 21 | - (isolated pad) |

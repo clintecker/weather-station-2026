@@ -8,7 +8,7 @@ Clint builds from them at the bench, and he liked the look enough to ask for a r
 
 ## The PDFs
 
-Ready-to-print copies are in [`pdf/`](pdf/). Sessions 1 to 5 were rebuilt and checked page by page on 2026-11-19, after the build docs switched to the board's own hole names (letter = column, number = row, so `E10` is column E, row 10). Sessions 6 to 9 were rebuilt and checked page by page on 2026-11-23, after the backplane's copper-side leads were re-laned. These four refer to their own and each other's pages by step number, such as "Session 9 step 07".
+Ready-to-print copies are in [`pdf/`](pdf/). Sessions 1 to 5 were rebuilt and checked page by page on 2026-11-19, after the build docs switched to the board's own hole names (letter = column, number = row, so `E10` is column E, row 10). Sessions 6 to 9 were rebuilt and checked page by page on 2026-11-23, after the backplane's copper-side leads were re-laned. These four refer to their own and each other's pages by step number, such as "Session 9 step 07". Sessions 3, 4, 7, 8 and 9 were rebuilt again later on 2026-11-23 for the P4KE6.8A TVS clamps on B1 and B2, the pack fuse F5, the outdoor antenna, vent, S4 blanking pin and lid shade, and the pod ID records (Session P page W1) in Session 9 step 07.
 
 | PDF | What you build | Pages |
 |---|---|---|
@@ -64,7 +64,7 @@ Run every command from the repo root. Each build only lays out pages from SVGs t
 |---|---|---|---|
 | 1, prep | Snap the card rails, label and photograph, measure the insert, cut the PAD3U backplane, test-fit the base | 11 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session1/v2/make_session1_v2.py OUT` |
 | 2, B4 POWER | 13 underside wires, 2 jumpers, the bus header, regulator U7, INA228 U2, MAX17048 U6, 3 leads, meter checks | 12 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session2/make_session2.py OUT` |
-| 3, B2 PORTS B + METERS | 8 wires, 6 jumpers, header XH2, pull-ups, filters, diodes, zeners, fuse F4, 3 jack breakouts, strip map, meter checks | 18 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session3/make_session3.py OUT` |
+| 3, B2 PORTS B + METERS | 8 wires, 6 jumpers, header XH2, pull-ups, filters, diodes, TVS clamps, fuse F4, 3 jack breakouts, strip map, meter checks | 18 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session3/make_session3.py OUT` |
 | 4, B1 PORTS A | 11 wires, 3 jumpers, header XH1, 6 resistors, 15 diodes, fuses F1 to F3, 3 jack breakouts, strip map, meter checks | 17 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session4/make_session4.py OUT` |
 | 5, B3 CORE | Snap the back rails, 21 wires, SWD header J3, header XH3, SHTC3 U5, Wio-E5 mini A1, strip map, meter checks | 18 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session5/make_session5.py OUT` |
 | 6, backplane | Key plugs and colour dots, XJ1, R7, R8, mux U4 on foam with 5 leads and 4 QT cables, 3 links, 5 EVM and pack leads (backplane end only), 24 bus wires, meter checks | 13 | `.venv-pdf/bin/python -B hardware/tx-stack-r1/sheets/session6/make_session6.py OUT` |

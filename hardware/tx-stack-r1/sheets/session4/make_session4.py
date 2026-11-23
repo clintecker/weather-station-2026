@@ -166,7 +166,7 @@ def col_of(h):
 
 
 N_R = cnt(lambda p: p["ref"].startswith("R"))
-N_Z = cnt(lambda p: p["head"].startswith("1N5232B"))
+N_Z = cnt(lambda p: p["head"].startswith("P4KE6.8A"))
 N_S = cnt(lambda p: p["head"].startswith("BAT85S"))
 N_F = cnt(lambda p: p["ref"].startswith("F"))
 JACKS = [p["ref"] for p in PARTS if p["ref"].startswith("J1")]
@@ -237,7 +237,7 @@ def cover(c, pg):
     items = [("B1 PORTS A CARD\n(rails snapped, Session 1)", "p_card"),
              (f"XH1 RIGHT-ANGLE HEADER\n1x30, pin {KEY} pulled (slot key)", "p_header"),
              (f"{N_R}x 100 OHM 1/4 W\nStackpole CF14JT100R", "p_res"),
-             (f"{N_Z}x 1N5232B ZENER (left)\n{N_S}x BAT85S SCHOTTKY (right)", "p_diodes"),
+             (f"{N_Z}x P4KE6.8A TVS (left)\n{N_S}x BAT85S SCHOTTKY (right)", "p_diodes"),
              (f"{N_F}x MF-R010 PTC FUSE\nBourns, 100 mA", "p_ptc"),
              (f"{N_J}x SPARKFUN BOB-14021\nbare board, snap-off tab on", "p_bob"),
              (f"{N_J}x AMPHENOL 87180-066LF\nRJ11 6P6C jack", "p_jack"),
@@ -518,15 +518,15 @@ def diodes(c, pg, k):
     rows = [diode_row(r) for r in refs]
     cs = sorted({col_of(r[w]) for r in rows for w in ("body", "loop")})
     cr = f"{cs[0]}-{cs[-1]}"
-    nz = sum(r["value"] == "1N5232B" for r in rows)
+    nz = sum(r["value"] == "P4KE6.8A" for r in rows)
     page(c, "06", f"PORT S{k} DIODES: D{k}1-D{k}5  ({k}/3)",
-         f"STANDING DO-35. ROWS {cr}, COLUMNS B-D. BODY ON THE FIRST HOLE, OTHER LEAD LOOPED OVER.",
+         f"STANDING DO-41 AND DO-35. ROWS {cr}, COLUMNS B-D. BODY ON THE FIRST HOLE, OTHER LEAD LOOPED OVER.",
          pg, SLOGANS4[4])
     g = Grid(2, 2, heights=[1.0, 1.05])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
         f"B1 PORTS A, TOP FACE, rows {cr}. Where each diode goes: ● = the body's hole (it stands on it),",
         "○ = the hole its looped lead goes to. The BAND marks the cathode: BAND DOWN = against the card, BAND UP =",
-        f"at the top, where the loop leaves. {nz} zener (1N5232B) and {len(rows) - nz} BAT85S Schottkys for port S{k}."])
+        f"at the top, where the loop leaves. {nz} TVS (P4KE6.8A, the fat black one) and {len(rows) - nz} BAT85S Schottkys for port S{k}."])
     face_tag(c, x + 4, y + h - 40, "top")
     a = Art(c, f"t_d{k}_before", x + 92, y + 22, 290, h - 50, align="l")
     tx = a.x + a.w + 12
@@ -570,8 +570,9 @@ def diodes(c, pg, k):
     LAB.block(tx, y + h - 40 - 4 * 24 - 14, x + w, y + h - 12, "diode table")
     x, y, w, h = panel(c, g.cell(0, 1, 2), 2, [
         "Fitted, from the front-left. Each body stands on its ● hole, 0.8 mm off the card; the other lead goes up,",
-        "over (about 7 mm above the card) and down into its ○ hole. Solder on the UNDERSIDE, trim. Check every band",
-        "against the table before you solder: a zener in backwards clamps the port's 3.3 V to 0.7 V."])
+        "over (7-9 mm above the card) and down into its ○ hole. Solder on the UNDERSIDE, trim. Check every band",
+        "against the table before you solder: a TVS in backwards clamps the port's 3.3 V to 0.7 V.",
+        "Use the P4KE6.8As you screened in Session 3 step 08 (under 1 µA at 3.3 V); not one you set aside."])
     a = Art(c, f"t_d{k}_iso", x + 30, y + 26, w - 60, h - 52)
     front = [r for r in rows if r["body"][0] == "b"]          # bodies in column B: nearest you, chips below
     back = [r for r in rows if r["body"][0] != "b"]
@@ -601,7 +602,7 @@ def fuses(c, pg):
                yb=a.y + a.h + 6)
     x, y, w, h = panel(c, g.cell(0, 1), 2, [
         "Fitted, from the front-left. The yellow discs stand 13.7 mm tall, broad faces toward the card's ends,",
-        "between the + RAIL and column A. Their kinked leads keep the body off the card. The zeners stand behind."])
+        "between the + RAIL and column A. Their kinked leads keep the body off the card. The TVS clamps stand behind."])
     a = Art(c, "t_fuse_iso", x + 20, y + 4, w - 40, h - 8)
     lane_chips(c, [(f"{p['ref']}: {hole(p['pins'][0]['Hole'])} TO {hole(p['pins'][1]['Hole'])}", a.A(f"{p['ref']}_top"))
                    for p in fs], a, "up", color=INK, dot=True, yb=a.y + a.h - 4)
@@ -771,7 +772,7 @@ def checks(c, pg):
     fcols = ", ".join(str(col_of(p["pins"][1]["Hole"])) for p in fs)
     checks = [("1", "NEIGHBOURS", "Each used strip (step 10) against the strips beside it: NO BEEP.\n"
                                   "Column E to column F through a 100 ohm resistor: some meters beep. That is fine."),
-              ("2", "3.3 V vs GROUND", "+ RAIL against − RAIL: NO BEEP (the zeners read as diodes, not a short).\n"
+              ("2", "3.3 V vs GROUND", "+ RAIL against − RAIL: NO BEEP (the TVS clamps read as diodes, not a short).\n"
                                        f"+ RAIL to column A, rows {fcols}: a few ohms (the fuses)."),
               ("3", "HEADER PINS", "Each pin Jn beeps to Fn (column F, same row: its own strip) and to NO\n"
                                    f"other header pin, except: {gtxt} (all ground)."),

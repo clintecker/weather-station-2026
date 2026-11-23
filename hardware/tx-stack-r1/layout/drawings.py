@@ -150,6 +150,8 @@ def lead_len(a, c):
     off = [e for e in (a, c) if isinstance(e, tuple) and board_of_end(e) is None and e[0] != "U4"]
     if not off:
         return None
+    if {x[0] for x in (a, c) if isinstance(x, tuple)} == {"PG1", "F5"}:
+        return "PG1's red lead cut to 30 mm, then F5's own holder lead"
     to_bp = any((isinstance(x, str) and x.startswith("BP:")) or x[0] == "R7" for x in (a, c))
     return "100 mm, trim to fit" if to_bp else "150 mm, trim to fit"
 
@@ -499,7 +501,7 @@ def cage_views():
 
 
 # ------------------------------------------------------------------ build sheets
-ORIENT = {"DSTAND": "standing: body on the first hole, the other lead looped over",
+ORIENT = {"DSTAND": "standing: body on the first hole in the table, the other lead looped over",
           "RLY": "lying flat, leads bent at the body",
           "PTC": "standing, leads formed out to the span", "CAP": "standing disc"}
 
@@ -512,6 +514,9 @@ def part_line(pl):
         names = {x[0]: x[1] for x in part["pins"]}
         band = next((n for n, v in names.items() if v == "cathode"), "2")
         o += f"; cathode band toward {lc.hole_at(pins[band])}"
+        _bp, lift = st.body_pin(pl)
+        if lift:
+            o += f"; body raised {lift:g} mm off the card on its lead (rest it on a {lift:g} mm offcut while you solder)"
     return part, o
 
 
@@ -579,7 +584,10 @@ def build_list(b, ph):
             if ref == pl["ref"]:
                 L += [f"Before you fit {ref}, solder {sj} closed ({sj_at}): {why}. Then meter {pad.split('.')[-1]} to VIN+. It should beep.", ""]
         rows = []
-        for pin, xy in st.pins_of(pl).items():
+        pin_xy = list(st.pins_of(pl).items())
+        if pl["fp"] == "DSTAND" and st.body_pin(pl)[0] == "2":        # the body's own lead first ("first hole")
+            pin_xy.reverse()
+        for pin, xy in pin_xy:
             rows.append(f"| {lc.PIN[(pl['ref'], pin)][1]} ({pin}) | {lc.hole_at(xy)} | {plain(lc.NET_OF.get((pl['ref'], pin)))} |")
         for pad in st.pads_of(pl):
             how = (f"pad: left bare ({st.PAD_BRIDGED[(pl['ref'], pad)][0]} closed joins it)" if (pl["ref"], pad) in st.PAD_BRIDGED
@@ -805,7 +813,7 @@ def backplane_sheet(ph):
           "### Leads to the charger and the pack (copper side, short)", "",
           "| From | To the backplane | What |", "|---|---|---|"]
     for kind, a, c, side, note in route.WIRES:
-        if kind == "lead" and isinstance(a, tuple) and a[0] in ("PG1", "U1") and isinstance(c, str) and c.startswith("BP:"):
+        if kind == "lead" and isinstance(a, tuple) and a[0] in ("PG1", "U1", "F5") and isinstance(c, str) and c.startswith("BP:"):
             i, n = c[len("BP:s"):].split(".")
             L.append(f"| {where(a)} | line {i}, hole {n} | {note} |")
         elif kind == "lead" and isinstance(a, tuple) and a[0] == "R7":
@@ -966,7 +974,7 @@ def assembly_sheet():
          + ". The port cables in use get the shortest runs from the right column's foot (back and left under the tray), "
          "the spare S4 the longest, and the solar lead the left front one, nearest J2. S4 has no pod yet, and an "
          "empty PG-7 doesn't seal, so fit its gland with "
-         + cage.GLAND_BLANK["S4 SPARE"] + " (`cage.GLAND_BLANK`). Take the rod out when a pod goes on S4. Fit the "
+         + cage.GLAND_BLANK["S4 SPARE"] + " (`cage.GLAND_BLANK`). Take the pin out when a pod goes on S4. Fit the "
          "M12 vent, and the SMA bulkhead low in the right wall (enclosure 4: Yb 94.14, Zb 60.38).",
          "",
          "   Then fit the backplane (its build sheet, section 6). Tilt its factory right edge into the right corner "
@@ -1033,8 +1041,16 @@ def assembly_sheet():
           "",
           f"Battery leads are 24 AWG stranded (red +, black -), about {S.val('wire24')[2] * 0.1:.1f} mV drop per 0.1 m "
           f"at 1 A ({S.val('wire24')[2]:g} mohm/m). J5 BATTERY to line 19 is soldered at the backplane and screwed at "
-          "J5. The pack + pigtail is soldered at line 21. The pack - lead runs straight from the pack to J5 GND "
+          "J5. The pack + lead is soldered at line 21. The pack - lead runs straight from the pack to J5 GND "
           "(screwed) and doesn't touch the backplane. The charger sense lead from R7 is 24 AWG stranded too.", "",
+          "**The pack fuse F5** sits in the pack + lead, as close to the pack as the leads allow: "
+          + next(p for p in model.PARTS if p["ref"] == "F5")["part"] + ". Cut PG1's red lead 30 mm from its socket, "
+          "splice and heat-shrink it to one of the holder's leads, and splice the holder's other lead to the "
+          "backplane's pack + lead (line 21, hole 6). The holder lies on the pack tray beside the pack, under the "
+          "strap. A short anywhere past it (the lead, the junction on the backplane, B4, the EVM's battery path) now "
+          "opens the fuse instead of leaning on the pack's own protection board alone. The path carries at most the "
+          "0.9 A charge, so the 1.6 A fuse runs at 56 % of its rating. A blown fuse looks like a missing pack: the "
+          "station keeps running only while USB or the panel feeds SYS. The README's parts list has two spare fuses.", "",
           "SYS (J3 SYS to line 26) and its return (J3 GND to line 12, black) are a same-length pair of 24 AWG stranded "
           "leads, run side by side. The 3.3 V regulator's load and the radio's transmit peaks return mainly on that "
           "ground lead. So they don't depend on the I2C lead's J8 pin 1. J8 pin 1 is tied to the same ground on the "

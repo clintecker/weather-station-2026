@@ -19,7 +19,7 @@ Reads model.py and KiCad's netlist export of tx-stack-r1.kicad_sch, then checks:
   7 the Wio-E5 mini pins match the firmware's (firmware/board/wio-e5/board.toml, or board_pins.h before it);
   8 KiCad's ERC reports nothing beyond model.ERC_WAIVERS;
   9 every outdoor line is protected: a signal line has a series resistor, a Schottky clamp to its supply and
-    one from ground; a port supply has its PTC and a zener to ground (model.OUTDOOR_LINES); the port pull-up
+    one from ground; a port supply has its PTC and a TVS to ground (model.OUTDOOR_LINES); the port pull-up
     totals and the cable-capacitance limit are computed;
  10 r2 differs from r1 (r1-connections.json, model.py at d24bd41) only by the changes model.py lists: parts
     added and removed (R1_ADDED, R1_REMOVED) and pins whose partners among the parts both revisions share
@@ -40,6 +40,9 @@ PART = {p["ref"]: p for p in PARTS}
 PIN = {(p["ref"], pin[0]): pin for p in PARTS for pin in p["pins"]}
 NET_OF = {m: n for n, (ms, _a) in NETS.items() for m in ms}
 FAILS, NOTES = [], []
+# the most a clamp adds to the line it sits on, pF: BAT85S 10 pF max at 1 V, 1 MHz (Vishay doc 85513); anything not
+# listed counts as too much for an I2C line
+CLAMP_PF = {"BAT85S": 10.0}
 
 
 def fail(check, msg):
@@ -237,7 +240,7 @@ def check_battery():
         for ref, k in contacts.items():
             if k < 2:
                 fail(5, f"battery net {net} crosses {ref} on {k} pin: the battery current needs two")
-    chain = [("PACK_P", [("BT1", "+"), ("PG1", "M+")]), ("CELL_P", [("PG1", "L+"), ("U2", "X1.VIN+")]),
+    chain = [("PACK_P", [("BT1", "+"), ("PG1", "M+")]), ("PACK_L", [("PG1", "L+"), ("F5", "1")]), ("CELL_P", [("F5", "2"), ("U2", "X1.VIN+")]),
              ("BAT_P", [("U2", "X1.VIN-"), ("U1", "BAT")]), ("PACK_N", [("BT1", "-"), ("PG1", "M-")]),
              ("BAT_N", [("PG1", "L-"), ("U1", "BATN")])]
     for net, need in chain:
@@ -345,7 +348,7 @@ def check_outdoor():
         to_gnd = to_sup = False
         for d in clamps:
             pins = {p[1]: NET_OF.get((d, p[0])) for p in PART[d]["pins"]}
-            if PART[d]["value"].startswith("1N52"):        # a zener clamps both ways on its own
+            if PART[d]["value"].startswith("P4KE"):        # a unidirectional TVS clamps both ways on its own
                 ok = pins["cathode"] == net and pins["anode"] == "GND"
                 to_gnd |= ok
                 to_sup |= ok
@@ -354,6 +357,11 @@ def check_outdoor():
                 to_sup |= pins["anode"] == net and pins["cathode"] in ("+3V3", net.split("_")[0] + "_3V3")
         if not (to_gnd and to_sup):
             fail(9, f"{NET_NAME[net]}: clamps {clamps} do not clamp both ways (ground {to_gnd}, supply {to_sup})")
+        if net.endswith(("_JSDA", "_JSCL")):           # an I2C line: only low-capacitance clamps (the 60 pF allowance)
+            pf = sum(CLAMP_PF.get(PART[d]["value"], 1e9) for d in clamps)
+            if pf > 20:
+                fail(9, f"{NET_NAME[net]}: clamps {clamps} add {pf:g} pF, over the 20 pF the port budget allows "
+                        f"(a TVS or zener has hundreds of pF or more: keep it off the I2C lines)")
     jack_lines = {n for n in OUTDOOR_LINES}
     for jack, pins in PIN_MAPS.items():
         for pin, net in pins.items():

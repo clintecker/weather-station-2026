@@ -30,6 +30,7 @@ Run:  python3 cage.py           print the parts and check them against the box i
       ../../../.venv-cad/bin/python cage.py --solid   also build the solids in CadQuery and check them
       ../../../.venv-cad/bin/python cage.py --stl     export STL: refused until the lid gate is sourced
       ../../../.venv-cad/bin/python cage.py --ring    the rim test ring from lid-rim-spec.md, checked against it: not gated
+      ../../../.venv-cad/bin/python cage.py --shade   the white lid shade (cage/stl/lid-shade.stl): not gated
 """
 import math
 import sys
@@ -125,7 +126,7 @@ GLAND_USE = {(50.0, 60.0): "S1 TH", (74.0, 25.0): "S2 UV", (50.0, 25.0): "S3 BAR
 # S4 has no pod yet (schematic/model.py PORTS: J14 takes none), and a PG-7 with nothing in it doesn't seal: its seal
 # closes on a 3.0-4.3 mm cable. So the S4 PG-7 holds a blanking rod (sources gland_blank, README buying list) in its
 # seal, cap tightened, until a pod is added; then the rod comes out and the pod's cable goes in.
-GLAND_BLANK = {"S4 SPARE": "a 20 mm length of 4 mm round nylon rod in its seal, cap tightened"}
+GLAND_BLANK = {"S4 SPARE": "a 4 x 20 mm stainless dowel pin (ISO 8734, A1) in its seal, cap tightened"}
 GLAND_JACK = {"S1 TH": ("B1", "J11"), "S2 UV": ("B1", "J12"), "S3 BARO": ("B1", "J13"), "S4 SPARE": ("B2", "J14"),
               "WIND": ("B2", "J21"), "RAIN": ("B2", "J22"), "SOLAR": ("EVM", "J2")}   # schematic/model.py
 COLUMN_FOOT = (101.0, 86.0)                             # Xb, Yb where the port cables leave the right column
@@ -650,6 +651,165 @@ def seg_gap(p, q, b):
     return best
 
 
+# ------------------------------------------------------------------ the lid shade (a printed part over the clear lid)
+# The #905 lid is clear. Sun through it lands on the dark cards, the EVM and the pack inside, and that heat has nowhere
+# to go but out through the walls: shade_estimate() puts it at 15-25 K over the air on a clear day, enough to reach the
+# charger's 41.8 C WARM charge stop and on hot days its 55 C HOT cut-off. The shade is a white PETG cap over the lid:
+# a plate 12 mm above the lid's top face (over the printed bolt heads), standing on four feet, and a skirt down the
+# lid's sides with a 3 mm gap. Air comes in at the skirt's open bottom, rises past the lid's sides and leaves through
+# windows in the skirt above the lid's top, so the plate's own heat goes into moving air, not into the lid. Crush ribs
+# on the skirt's inside hold it on the lid's sides; it pulls off by hand before the lid bolts come out. It's a cap,
+# not a pole sunshade, because the lid faces away from the pole (the box hangs by its back) and a cap needs no arm.
+SHADE_GAP, SHADE_T, SHADE_AIR, SHADE_SKIRT, SHADE_FOOT = S.val("shade")
+SHADE_RIB = S.val("shade_rib_fit")
+LID_TOP = SEAM + S.val("lid_depth")                     # Yb of the lid's top face (outside)
+LID_R = S.val("corner_r_out")                           # the lid's corner radius in plan
+LID_BOX = (-T, -T, W + T, H + T)                        # the lid's outline (Xb, Zb from / to)
+SHADE_WIN = (20.0, 12.0)                                # window width, the post between windows (min)
+SHADE_RIBS = {"long": 3, "short": 2}                    # ribs per side: the long sides run along Zb
+SHADE_FEET = [(W / 2 + dx, H / 2 + dz) for dx in (-35.0, 35.0) for dz in (-50.0, 50.0)]
+SHADE_HEAD_R = S.val("lid_bolt")[0] / 2                 # the printed bolt's head radius
+
+
+def shade_outline():
+    """(x0, z0, x1, z1, corner radius) of the skirt's inside and outside, box frame."""
+    x0, z0, x1, z1 = LID_BOX
+    g, t = SHADE_GAP, SHADE_T
+    return (x0 - g, z0 - g, x1 + g, z1 + g, LID_R + g), (x0 - g - t, z0 - g - t, x1 + g + t, z1 + g + t, LID_R + g + t)
+
+
+def shade_windows():
+    """[(side, centre along the side, width)] of the vent windows in the skirt's band above the lid's top."""
+    (ix0, iz0, ix1, iz1, ir), _o = shade_outline()
+    out = []
+    for side, a0, a1 in (("left", iz0, iz1), ("right", iz0, iz1), ("bottom", ix0, ix1), ("top", ix0, ix1)):
+        usable = (a1 - a0) - 2 * (ir + SHADE_WIN[1])
+        n = int((usable + SHADE_WIN[1]) // (SHADE_WIN[0] + SHADE_WIN[1]))
+        pitch = SHADE_WIN[0] + SHADE_WIN[1]
+        c0 = (a0 + a1) / 2 - (n - 1) * pitch / 2
+        out += [(side, c0 + i * pitch, SHADE_WIN[0]) for i in range(n)]
+    return out
+
+
+def shade_ribs():
+    """[(side, centre along the side)] of the crush ribs on the skirt's inside."""
+    (ix0, iz0, ix1, iz1, _r), _o = shade_outline()
+    out = []
+    for side, a0, a1, n in (("left", iz0, iz1, SHADE_RIBS["long"]), ("right", iz0, iz1, SHADE_RIBS["long"]),
+                            ("bottom", ix0, ix1, SHADE_RIBS["short"]), ("top", ix0, ix1, SHADE_RIBS["short"])):
+        out += [(side, a0 + (a1 - a0) * (i + 1) / (n + 1)) for i in range(n)]
+    return out
+
+
+def shade_estimate():
+    """The sun's heat through the clear lid, roughly, and what the shade leaves. Assumptions, none measured:
+    800 W/m2 of clear-sky sun square onto the lid (the lid faces sideways as the box hangs, so this is a low morning
+    or evening sun, or winter; at summer noon a sideways face gets less); the lid's top face only (its 25 mm sides
+    take the sun at a slant and are ignored); 85 % through clear polycarbonate and 90 % of that absorbed by the dark
+    boards inside; 4-6 W/m2K from the inside air out through the PETG walls to moving outside air, over the box's
+    whole outside skin. With the shade: its white plate absorbs about 25 % on its own face and gives roughly a
+    tenth of that to the lid by radiation across the 12 mm gap and the four feet; the rest leaves in the air."""
+    area = (LID_BOX[2] - LID_BOX[0]) * (LID_BOX[3] - LID_BOX[1]) / 1e6           # m2
+    sun = 800.0
+    q_clear = area * sun * 0.85 * 0.90
+    _i, (ox0, oz0, ox1, oz1, _r) = shade_outline()
+    q_shade = (ox1 - ox0) * (oz1 - oz0) / 1e6 * sun * 0.25 * 0.10
+    out_w, out_h, out_d = W_OUT, L_OUT, BASE_D + S.val("lid_depth")
+    skin = (2 * out_w * out_h + 2 * (out_w + out_h) * out_d) / 1e6
+    rise = [(q / (skin * u)) for q in (q_clear, q_shade) for u in (6.0, 4.0)]
+    return dict(area=area, q_clear=q_clear, q_shade=q_shade, skin=skin, clear=(rise[0], rise[1]),
+                shaded=(rise[2], rise[3]))
+
+
+def shade_checks():
+    lines, bad = [], []
+    (ix0, iz0, ix1, iz1, ir), (ox0, oz0, ox1, oz1, orr) = shade_outline()
+    under = LID_TOP + SHADE_AIR
+    head = LID_TOP + S.val("lid_head_proud")
+    if under - head < 2.0:
+        bad.append(f"lid shade: its plate is {under - head:.1f} over the bolt heads (needs 2)")
+    for fx, fz in SHADE_FEET:
+        for sx, sz in SCREWS:
+            d = math.hypot(fx - sx, fz - sz) - SHADE_FOOT / 2 - SHADE_HEAD_R
+            if d < 2.0:
+                bad.append(f"lid shade: the foot at ({fx:g}, {fz:g}) is {d:.1f} from a bolt head (needs 2)")
+        if not (LID_BOX[0] + 10 < fx < LID_BOX[2] - 10 and LID_BOX[1] + 10 < fz < LID_BOX[3] - 10):
+            bad.append(f"lid shade: the foot at ({fx:g}, {fz:g}) is off the lid's flat top")
+    skirt_y0 = LID_TOP - SHADE_SKIRT
+    if skirt_y0 - (SEAM + LIP_H) < 5.0:
+        bad.append(f"lid shade: its skirt ends {skirt_y0 - SEAM:.1f} above the seam (needs 5 over the lip)")
+    if SMA[0] + BULKHEAD_NUT / 2 + 2.0 > skirt_y0:
+        bad.append("lid shade: its skirt reaches down to the SMA bulkhead")
+    if not 0.0 < SHADE_RIB <= 0.6:
+        bad.append(f"lid shade: rib interference {SHADE_RIB:g} (0-0.6)")
+    if SHADE_T < 1.6:
+        bad.append(f"lid shade: {SHADE_T:g} walls are under four perimeters")
+    inlet = 2 * ((ix1 - ix0) + (iz1 - iz0)) * SHADE_GAP
+    wins = shade_windows()
+    outlet = sum(w for _s, _c, w in wins) * (SHADE_AIR - 4.0)
+    if outlet < inlet:
+        bad.append(f"lid shade: windows {outlet:.0f} mm2, less than the {inlet:.0f} mm2 the skirt's gap lets in")
+    e = shade_estimate()
+    lines.append(f"lid shade: white PETG cap {ox1 - ox0:.1f} x {oz1 - oz0:.1f}, plate {SHADE_T:g} thick at Yb "
+                 f"{under:g}-{under + SHADE_T:g} ({SHADE_AIR:g} over the lid, {under - head:.0f} over the bolt heads "
+                 f"[TBD-MEASURE]), skirt {SHADE_GAP:g} off the lid's sides down to Yb {skirt_y0:g} "
+                 f"({skirt_y0 - SEAM:g} above the seam), {len(shade_ribs())} crush ribs ({SHADE_RIB:g} into the lid "
+                 f"[TBD-MEASURE]), {len(wins)} windows {SHADE_WIN[0]:g} x {SHADE_AIR - 4:g} ({outlet:.0f} mm2 out, "
+                 f"{inlet:.0f} mm2 in at the skirt), 4 feet \u00d8{SHADE_FOOT:g} clear of the bolt heads")
+    lines.append(f"lid shade, sun: about {e['q_clear']:.0f} W in through the clear lid ({e['area']:.4f} m2 at 800 W/m2) "
+                 f"over {e['skin']:.3f} m2 of skin is {e['clear'][0]:.0f}-{e['clear'][1]:.0f} K over the air; "
+                 f"shaded about {e['q_shade']:.1f} W, {e['shaded'][0]:.1f}-{e['shaded'][1]:.1f} K (assumptions in "
+                 "shade_estimate)")
+    return lines, bad
+
+
+def shade_solid():
+    """The shade in the real hand (X = Xb, Y = Zb, Z = Yb), plate up as it sits on the box."""
+    import cadquery as cq
+    (ix0, iz0, ix1, iz1, ir), (ox0, oz0, ox1, oz1, orr) = shade_outline()
+    under = LID_TOP + SHADE_AIR
+    y0 = LID_TOP - SHADE_SKIRT
+
+    def rrect(x0, z0, x1, z1, r, za, zb):
+        return (cq.Workplane("XY").workplane(offset=za).center((x0 + x1) / 2, (z0 + z1) / 2)
+                .rect(x1 - x0, z1 - z0).extrude(zb - za).edges("|Z").fillet(r))
+    shade = rrect(ox0, oz0, ox1, oz1, orr, y0, under + SHADE_T).cut(rrect(ix0, iz0, ix1, iz1, ir, y0 - 1, under))
+    wz0, wz1 = LID_TOP + 2.0, under - 2.0
+    for side, c, w in shade_windows():
+        if side in ("left", "right"):
+            x = ox0 - 1 if side == "left" else ix1 - 1
+            cut = cq.Workplane("XY").box(SHADE_T + 2 + SHADE_GAP, w, wz1 - wz0, centered=False).translate(
+                (x if side == "right" else x, c - w / 2, wz0))
+        else:
+            z = oz0 - 1 if side == "bottom" else iz1 - 1
+            cut = cq.Workplane("XY").box(w, SHADE_T + 2 + SHADE_GAP, wz1 - wz0, centered=False).translate(
+                (c - w / 2, z, wz0))
+        shade = shade.cut(cut)
+    rz0, rz1 = y0 + 2.0, LID_TOP - 2.0
+    reach = SHADE_GAP + SHADE_RIB
+    for side, c in shade_ribs():
+        if side == "left":
+            rib = cq.Workplane("XY").box(reach + 0.5, 3.0, rz1 - rz0, centered=False).translate((ix0 - 0.5, c - 1.5, rz0))
+        elif side == "right":
+            rib = cq.Workplane("XY").box(reach + 0.5, 3.0, rz1 - rz0, centered=False).translate((ix1 - reach, c - 1.5, rz0))
+        elif side == "bottom":
+            rib = cq.Workplane("XY").box(3.0, reach + 0.5, rz1 - rz0, centered=False).translate((c - 1.5, iz0 - 0.5, rz0))
+        else:
+            rib = cq.Workplane("XY").box(3.0, reach + 0.5, rz1 - rz0, centered=False).translate((c - 1.5, iz1 - reach, rz0))
+        shade = shade.union(rib)
+    for fx, fz in SHADE_FEET:
+        shade = shade.union(cq.Workplane("XY").workplane(offset=LID_TOP).center(fx, fz).circle(SHADE_FOOT / 2)
+                            .extrude(SHADE_AIR + 0.5))
+    return shade
+
+
+def shade_print():
+    """Plate down on the bed, skirt and feet up."""
+    sh = shade_solid().rotate((0, 0, 0), (1, 0, 0), 180)
+    bb = sh.val().BoundingBox()
+    return sh.translate((-bb.xmin, -bb.ymin, -bb.zmin))
+
+
 # ------------------------------------------------------------------ the solar lead
 # The panel's own cable ends at its gland: its 3.5 x 1.1 plug is cut off outside, the cable comes in through the
 # left front PG-7 and is joined just above the nut to a 22 AWG red/black pair (solder, heat-shrink), which runs to
@@ -1136,7 +1296,7 @@ def main():
         bad.append("a port cable in use has a longer run than the spare's gland")
     print("glands: " + "; ".join(f"{n} ({x:g}, {y:g}" + (f", run {runs[(x, y)]:.0f})" if n != "SOLAR" else ")")
                                 for (x, y), n in sorted(GLAND_USE.items(), key=lambda t: runs[t[0]])))
-    for fn in (clip_checks, solar_checks):
+    for fn in (clip_checks, solar_checks, shade_checks):
         ln_, b_ = fn()
         for ln in ln_:
             print(ln)
@@ -1204,6 +1364,15 @@ def main():
         print(f"clip STL written: {out} (not gated; both clips on their top faces, {v.Volume() / 1000:.1f} cm3)")
         if not v.isValid():
             bad.append("the clips are not a valid solid")
+    if "--shade" in sys.argv:                               # the lid shade: not gated (it sits on the lid, not the rim)
+        sol = shade_print()
+        out = write_stl("lid-shade.stl", sol)
+        v = sol.val()
+        bb = v.BoundingBox()
+        print(f"shade STL written: {out} (not gated; plate on the bed, {bb.xlen:.1f} x {bb.ylen:.1f} x {bb.zlen:.1f}, "
+              f"{v.Volume() / 1000:.1f} cm3)")
+        if not v.isValid():
+            bad.append("the lid shade is not a valid solid")
     if "--coupon" in sys.argv:                              # the test coupon: not gated (it is what settles the gate)
         sol = coupon_solid()
         pr = true_frame(sol)

@@ -58,7 +58,7 @@ MUX_COL = {"VIN": "red", "GND": "black", "SCL": "yellow", "SDA": "blue", "RESET"
            **{f"CH{k}.SDA": "blue" for k in range(4)}, **{f"CH{k}.SCL": "yellow" for k in range(4)}}
 LINK_COL = {(2, 38): "black", (19, 5): "red", (21, 5): "red"}
 # the EVM and pack leads (BACKPLANE.md: 24 AWG stranded): body colour, band colour or None, flag text
-EVM_COL = {"PG1 lead +": ("red", "black", "PACK +"), "U1 battery + (J5 BATTERY)": ("red", "black", "J5 BAT"),
+EVM_COL = {"F5 lead +": ("red", "black", "PACK +"), "U1 battery + (J5 BATTERY)": ("red", "black", "J5 BAT"),
            "U1 system out (J3 SYS)": ("red", "black", "J3 SYS"), "U1 system ground (J3 GND)": ("black", None, "J3 GND"),
            "U1 battery sense (J5 SNS_BATP)": ("white", "red", "J5 SNS")}
 

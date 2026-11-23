@@ -108,10 +108,21 @@ def placed(ref, kind, pins, boxes, note="", pads=None, step=None):
     return dict(ref=ref, fp=kind, pins=pins, pads=pads or {}, boxes=boxes, note=note, step=step or [])
 
 
-def two_pin(ref, kind, h1, h2, note=""):
+def diode_dims(ref):
+    """(body length, body diameter, standing height) of a standing diode: DO-41 for the P4KE6.8A TVS clamps, DO-35
+    for the BAT85S Schottkys."""
+    if next(p for p in model.PARTS if p["ref"] == ref)["value"].startswith("P4KE"):
+        dl, dd, _lead = S.val("do41")
+        return dl, dd, S.val("tvs_stand_h")
+    dl, dd = S.val("do35")
+    return dl, dd, S.val("diode_stand_h")
+
+
+def two_pin(ref, kind, h1, h2, note="", body_on="1", lift=0.0):
     """A two-lead part with lead 1 in hole h1 and lead 2 in h2 (model pins '1', '2').
-    RLY lying resistor (DIN0207, 7.62 or more), DSTAND standing DO-35 (body on lead 1's hole),
-    PTC standing radial (leads formed to the span), CAP disc."""
+    RLY lying resistor (DIN0207, 7.62 or more), DSTAND standing diode (DO-35 or DO-41, body on lead `body_on`'s
+    hole, raised `lift` mm on its lead so it clears a lower part beside it), PTC standing radial (leads formed to the
+    span), CAP disc."""
     (xa, ya), (xb, yb) = hole_xy(h1), hole_xy(h2)
     xm, ym = (xa + xb) / 2, (ya + yb) / 2
     along_x = abs(xb - xa) > abs(yb - ya)
@@ -138,10 +149,10 @@ def two_pin(ref, kind, h1, h2, note=""):
         boxes = [body(6.3, 2.5, 0.1, 0.1 + S.val("r_lying_h"), "resistor body"),
                  body(span, 0.6, 0, 1.0, "resistor leads")]
     elif kind == "DSTAND":
-        dl, dd = S.val("do35")
-        sh = S.val("diode_stand_h")
-        boxes = [Box(xa - dd / 2, ya - dd / 2, xa + dd / 2, ya + dd / 2, 0.8, 0.8 + dl, f"{ref} diode body"),
-                 body(span, 0.6, sh - 1.2, sh, "diode lead loop")]
+        dl, dd, sh = diode_dims(ref)
+        xc, yc = (xa, ya) if body_on == "1" else (xb, yb)
+        boxes = [Box(xc - dd / 2, yc - dd / 2, xc + dd / 2, yc + dd / 2, 0.8 + lift, 0.8 + lift + dl, f"{ref} diode body"),
+                 body(span, 0.6, sh + lift - 1.2, sh + lift, "diode lead loop")]
     elif kind == "PTC":
         w, t, h = S.val("ptc")
         boxes = [body(w, t, 1.0, 1.0 + h, "MF-R010 body")]
@@ -149,7 +160,15 @@ def two_pin(ref, kind, h1, h2, note=""):
         boxes = [body(3.8, 2.6, 0.5, S.val("cap_h"), "disc capacitor")]
     else:
         raise ValueError(kind)
-    return placed(ref, kind, {"1": (xa, ya), "2": (xb, yb)}, boxes, note)
+    out = placed(ref, kind, {"1": (xa, ya), "2": (xb, yb)}, boxes, note)
+    if kind == "DSTAND":
+        out.update(body_on=body_on, lift=lift)
+    return out
+
+
+def body_pin(pl):
+    """The lead ('1' or '2') a standing diode's body sits on, and how far its body is raised off the card."""
+    return pl.get("body_on", "1"), pl.get("lift", 0.0)
 
 
 def bob(ref, col, note):
@@ -277,7 +296,7 @@ def port(card, k, c, p, junction=None, gnd=None):
     four signal clamps stand in those strips (rows b-d); the series resistors cross the channel from row e to the
     bus strips of the port's data and clock lines (straight, or one column over on a slant). `p`: the port's fuse
     block, a ground strip p on the ground rail, the fuse standing from the 3.3 V rail into strip p+1 (the port's
-    3.3 V) and the zener from p+1 to p; one underside wire each brings the jack's 3.3 V and ground strips to the
+    3.3 V) and the TVS from p+1 to p; one underside wire each brings the jack's 3.3 V and ground strips to the
     block (ground to the inner column, so the two wires nest and never cross)
     `junction` (cols n, n+1): the bus strips are out of reach (under the retention bar), so the resistors stand in
     junction strips there and the jack's data and clock strips reach them by underside wires."""
@@ -306,7 +325,7 @@ def port(card, k, c, p, junction=None, gnd=None):
         pl.append(two_pin(f"R{k}2", "RLY", f"e{sc}", f"f{m}", f"port S{k} clock series 100, across the channel"
                           + ("" if sc == m else ", on a slant one row over")))
     pl.append(two_pin(f"F{k}", "PTC", f"F+{p + 1}", f"a{p + 1}", f"port S{k} 3.3 V fuse, standing, leads formed to 7.62"))
-    pl.append(two_pin(f"D{k}1", "DSTAND", f"b{p + 1}", f"b{p}", f"port S{k} 3.3 V zener, cathode band to row {p + 1}"))
+    pl.append(two_pin(f"D{k}1", "DSTAND", f"b{p + 1}", f"b{p}", f"port S{k} 3.3 V TVS, cathode band to row {p + 1}"))
     w("jumper", f"{card}:a{p}", f"{card}:F-{p}", "top", f"port S{k} block ground strip to the ground rail")
     w("wire", f"{card}:e{v}", f"{card}:e{p + 1}", note=f"S{k} jack 3.3 V (contact 2) from its fuse F{k}")
     w("wire", f"{card}:e{g}", f"{card}:{gnd or f'e{p}'}", note=f"S{k} jack ground (contact 4) to "
@@ -326,7 +345,8 @@ for name, jack_net, r_pull, cap, zen, r_ser, gnd_row, line in (
     m = bus_row(line)
     PLACE["B2"] += [two_pin(r_pull, "RLY", f"F+{m}", f"a{m}", f"{name} pull-up 10k, lying over the ground rail"),
                     two_pin(cap, "CAP", f"b{m}", f"b{gnd_row}", f"{name} filter 100 nF"),
-                    two_pin(zen, "DSTAND", f"c{m}", f"c{gnd_row}", f"{name} clamp zener, band to row {m}"),
+                    two_pin(zen, "DSTAND", f"d{m}", f"d{gnd_row}", f"{name} clamp TVS, body on the ground strip (row "
+                            f"{gnd_row}), its banded (cathode) lead looped over to row {m}", body_on="2"),
                     two_pin(r_ser, "RLY", f"e{m}", f"f{m}", f"{name} series 1k, across the channel")]
 for g in (4, 7):
     w("jumper", f"B2:a{g}", f"B2:F-{g}", "top", "meter ground strip to the ground rail")
@@ -335,11 +355,13 @@ J22_C = bus_row("RAIN") - 3
 PLACE["B2"].append(bob("J22", J22_C, f"rain jack on its 1x6 header in column a, rows {J22_C}-{J22_C + 5}; mouth "
                                      "toward the front edge"))
 _r, _g = J22_C + 3, J22_C + 2
+D53_LIFT = 5.5      # the DO-41 (2.7 across) beside J22's header (column a) and C2 (column c) collides at card level
 PLACE["B2"] += [two_pin("R3", "RLY", f"d{_r + 3}", f"d{_r}", "rain pull-up 10k, lying along column d over the jack's "
                         "unused strips"),
                 two_pin("C2", "CAP", f"c{_r}", f"c{_g}", "rain filter 100 nF (column c: in column b the disc would touch "
                         "the jack's header)"),
-                two_pin("D53", "DSTAND", f"b{_r}", f"b{_g}", f"rain clamp zener, band to row {_r}"),
+                two_pin("D53", "DSTAND", f"b{_r}", f"b{_g}", f"rain clamp TVS, band to row {_r}, its body raised "
+                        f"{D53_LIFT:g} mm on its lead (over the jack's header and C2)", lift=D53_LIFT),
                 two_pin("R6", "RLY", f"e{_r}", f"f{_r}", "rain series 1k, across the channel")]
 w("jumper", f"B2:a{_r + 3}", f"B2:F+{_r + 3}", "top", "rain pull-up's 3.3 V strip to the 3.3 V rail")
 w("jumper", f"B2:e{_g}", "B2:e7", "top", "rain jack ground strip to the vane meter's ground strip")
@@ -348,8 +370,8 @@ PLACE["B2"].append(bob("J21", J21_C, f"wind jack on its 1x6 header in column a, 
                                      "toward the front edge"))
 w("jumper", f"B2:d{J21_C + 1}", f"B2:d{J21_C + 2}", "top", "wind jack's two ground strips (contacts 2 and 3) joined")
 w("wire", f"B2:e{J21_C + 1}", "B2:d21", note="wind jack ground (contacts 2-3) to S4's block ground strip")
-w("wire", f"B2:e{J21_C + 3}", f"B2:d{bus_row('CUPS')}", note="wind jack cups (contact 4) to the cups meter strip")
-w("wire", f"B2:e{J21_C + 4}", f"B2:d{bus_row('VANE')}", note="wind jack vane (contact 5) to the vane meter strip")
+w("wire", f"B2:e{J21_C + 3}", f"B2:c{bus_row('CUPS')}", note="wind jack cups (contact 4) to the cups meter strip")
+w("wire", f"B2:e{J21_C + 4}", f"B2:c{bus_row('VANE')}", note="wind jack vane (contact 5) to the vane meter strip")
 
 # B3: CORE
 PLACE["B3"].append(mini("A1", 19, "on its own header; its D pins in column C, its B pins in column H, rows 19-30; SMA past the right edge"))
@@ -527,7 +549,8 @@ BP_PARTS.append(("R7", {"1": "s21.7", "2": "s24.7"}, "charger sense 100 ohm, lyi
 BP_PARTS.append(("R8", {"1": "s22.8", "2": "s23.11"}, "gauge sense 100 ohm, lying on the front (on a slant), junction to line 23"))
 w("wire", "BP:s19.5", "BP:s20.5", "copper", "lines 19 and 20 joined (charger battery +, two pins)")
 w("wire", "BP:s21.5", "BP:s22.5", "copper", "lines 21 and 22 joined (battery + junction, two pins)")
-w("lead", ("PG1", "L+"), "BP:s21.6", "copper", "pack + (pigtail) to the junction, 24 AWG stranded, red with a black band")
+w("lead", ("PG1", "L+"), ("F5", "1"), "copper", "PG1's red lead spliced to the pack fuse F5's holder lead, within 30 mm of PG1's socket")
+w("lead", ("F5", "2"), "BP:s21.6", "copper", "pack + (after the fuse F5) to the junction, 24 AWG stranded, red with a black band")
 w("lead", ("U1", "BAT"), "BP:s19.6", "copper", "charger battery + (J5 BATTERY) to lines 19-20, 24 AWG stranded, red with a black band")
 w("lead", ("U1", "SYS"), "BP:s26.6", "copper", "charger system output (J3 SYS) to line 26 (B4 pin 26, the regulator in), 24 AWG stranded, red with a black band")
 #   SYS's return: its own lead from J3 GND to the bus ground (line 12, the nearer ground line to line 26; hole 11, just

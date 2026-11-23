@@ -82,14 +82,16 @@ def main():
     arrow([(260, 110), (300, 120)], "solar", PW)
     arrow([(260, 185), (280, 185), (280, 170), (300, 170)], "USB 5 V", PW, lx=282, ly=200, anchor="start")
     arrow([(145, 312), (145, 380), (300, 380)], "", PW, dash=True)
-    text(150, 344, "pack + via JST PH pigtail (PG1)", 11, PW)
-    text(150, 358, "junction: backplane lines 21-22, R7 and R8 there", 11, PW)
+    text(30, 398, "pack + via JST PH pigtail (PG1)", 11, PW)
+    text(30, 412, "and the 1.6 A pack fuse (F5) next to it;", 11, PW)
+    text(30, 426, "junction: backplane lines 21-22,", 11, PW)
+    text(30, 440, "R7 and R8 there", 11, PW)
     arrow([(260, 285), (300, 285)], "", PW, dash=True)
     text(262, 272, "battery +", 10, PW)
     arrow([(415, 240), (415, 200)], "charger battery +", PW, dash=True, lx=420, ly=225, anchor="start")
     arrow([(530, 120), (570, 120)], "system out", PW)
-    text(150, 432, "Battery current runs only in", 11, PW, weight="bold")
-    text(150, 446, "soldered or screwed leads: checks 5 and L4", 11, PW)
+    text(30, 466, "Battery current runs only in soldered", 11, PW, weight="bold")
+    text(30, 480, "or screwed leads: checks 5 and L4", 11, PW, weight="bold")
     # 3V3 rail
     line([(770, 120), (820, 120), (820, 470)], PW, 3)
     text(826, 330, "3.3 V supply", 12, PW, weight="bold")
@@ -103,7 +105,7 @@ def main():
     # radio path
     box(1220, 90, 250, 50, "SMA on the mini + AD1", ["edge SMA-K, Amphenol RF 132172 elbow"], "#f5eef8", RF, "B3")
     box(1220, 160, 250, 50, "CX1 " + P["CX1"]["value"], ["Amphenol 135110-01-06.00, RG-316"], "#f5eef8", RF)
-    box(1220, 230, 250, 50, "AE1 " + P["AE1"]["value"], [P["AE1"]["part"]], "#f5eef8", RF)
+    box(1220, 230, 250, 50, "AE1 " + P["AE1"]["value"], ["TE/Linx, IP67, on the pole, 2 m cable"], "#f5eef8", RF)
     arrow([(1160, 115), (1220, 115)], "LoRa", RF)
     arrow([(1345, 140), (1345, 160)], "", RF)
     arrow([(1345, 210), (1345, 230)], "", RF)
@@ -139,7 +141,7 @@ def main():
     line([(820, 470), (820, 628), (30, 628)], PW, 1.5, True)
     text(30, 624, "3.3 V supply to each PTC from the card's front rail", 11, PW)
     # meters
-    box(1200, 500, 270, 92, "Meters (B2): J21 wind, J22 rain", ["10k pull-ups, 5.6 V clamps, 1k series,",
+    box(1200, 500, 270, 92, "Meters (B2): J21 wind, J22 rain", ["10k pull-ups, P4KE6.8A TVS clamps, 1k series,",
         "100 nF on cups, vane and rain", f"cups {F['CUPS']}, vane {F['VANE']}, rain {F['RAIN']}"], "#eefaf0", MT, "B2")
     box(1200, 640, 270, 50, "SEN-15901 (M1, M2)", ["wind vane + cups, rain gauge, 6P cables"], "#f4f6f8", "#555")
     arrow([(1335, 640), (1335, 592)], "", MT)
