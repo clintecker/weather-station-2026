@@ -55,6 +55,12 @@ E2E = rd("tools/e2e_check.py")
 B3 = rd("hardware/tx-stack-r1/build/B3.md")
 ASM = rd("hardware/tx-stack-r1/build/ASSEMBLY.md")
 API = json.loads(rd("docs/openapi.json"))
+PODW = rd("firmware/stage0-node/App/pod_write.h")
+# the pod ID-record command (Session P page W1 runs it through tools/podwrite.py) and what #ident shows before it
+PODWRITE_CMD = re.search(r'"(PODWRITE) "', CONSOLE).group(1)
+PODWRITE_OK = re.search(r'#define POD_WRITE_CONFIRM "([A-Z-]+)"', PODW).group(1)
+assert f"{PODWRITE_CMD} <port> <type> <16 hex serial> \" POD_WRITE_CONFIRM" in CONSOLE, "PODWRITE usage moved: update step 07"
+assert '"BLANK"' in WSMP and '? "none"' in WSMP, "the #ident status names moved: update step 07"
 
 BUILD = "make ROLE=tx BOARD=wio-e5 WS_POWER_PROFILE=3 WS_I2C_MUX=1"
 assert BUILD in MAKEFILE and BUILD in WIO
@@ -587,8 +593,11 @@ def selftest(c, pg):
         ("rain=active", "J22, after SENSOR rain on"),
         ("battery= rails=", "base-board modules: always present")], size=8.8, kw=104)
     yy = min(yy, yy2)
-    check_item(c, x + 12, yy - 8, "mux_ok isn't printed anywhere on the console. Three pods active and mux_resets=1 "
-               "is the mux check. The 'resets = 1 after boot' reading comes from i2c_bus.h's comment.", w=w - 24)
+    yy = check_item(c, x + 12, yy - 8, "mux_ok isn't printed anywhere on the console. Three pods active and mux_resets=1 "
+                    "is the mux check. The 'resets = 1 after boot' reading comes from i2c_bus.h's comment.", w=w - 24)
+    in_model(c, x + 12, yy - 14, f"A pod's #ident line reads status=BLANK or none until its ID record is written. Run "
+               f"Session P page W1 first ({PODWRITE_CMD} <port> <type> <16-hex serial> {PODWRITE_OK}, through "
+               "tools/podwrite.py), then MODULES.", w=w - 24)
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["CHARGER (one #charger line). No pack yet."])
     yy = expect(c, x + 40, y + h - 16, w - 46, [
         ("present=1 ok=1", "it answers at 0x6B"),
