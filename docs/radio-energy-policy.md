@@ -133,7 +133,7 @@ With 25 mW:
 | **CRITICAL below** | **8 % SOC**, exit at 13 % |
 | What 8 % buys | about 530 mAh (1.95 Wh). At the CRITICAL load (no radio but one beacon an hour, roughly half the core load) that is well over 100 h before the gauge reads 0 %, and the cell is still above the protection board's cut-off there |
 
-The reserve is what CONSERVE lives on: 168 h of reduced reporting with no sun. CRITICAL is the floor under it. It stops the radio so the node can keep sampling and journaling for days, and so the pack never reaches its protection board. That is how this document now reads "CRITICAL: at the protected reserve" in section 5: the protected part is the floor, not the whole 168 h reserve. Without that reading, CONSERVE would be a 4-point sliver and the station would go silent for a week with a usable pack.
+The reserve is what CONSERVE lives on: 168 h of reduced reporting with no sun. CRITICAL is the floor under it. It stops the radio so the node can keep sampling and journaling for days, and so the pack never reaches its protection board. That is how this document now reads "CRITICAL: at the protected reserve" in section 5: the protected part is the floor, not the whole 168 h reserve. Without that reading, CONSERVE would be a 4-point sliver and the station would go silent for a week with a usable pack. Clint confirmed this reading (30 % / 8 %) on 2026-11-22. Charging stops below about +4 °C (the 103AT divider sets the COLD trip; no register changes it). Clint accepted that for the PoC on the same day: CONSERVE and the cold-hold alert cover a cold spell.
 
 **Voltage, as a second signal.** The gauge's SOC can drift. A cell voltage catches a gauge that reads high. The thresholds sit below the SOC ones, so on a healthy gauge the SOC decides:
 
