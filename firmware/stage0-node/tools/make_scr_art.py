@@ -22,6 +22,21 @@ ROSE_CX, ROSE_CY, ROSE_R = 32, 33, 26
 FROG_CX, FROG_CY = 32, 44      # App/scr_silly.c draws the pupils at (FROG_CX -+ 10, FROG_CY - 12)
 
 
+def cosd(a):
+    """cos of a in degrees, to 12 places: libm's last bit differs between macOS and Linux, and a value like
+    30 x cos(60) must land on 15, not either side of it, for the file to come out the same on both."""
+    return round(math.cos(math.radians(a)), 12)
+
+
+def sind(a):
+    return round(math.sin(math.radians(a)), 12)
+
+
+def snap(v):
+    """A coordinate to 9 places before it is truncated or rounded (see cosd)."""
+    return round(v, 9)
+
+
 class Canvas:
     """The mockups' canvas (oledmock/canvas.py): float coordinates truncate, lines round."""
     def __init__(self):
@@ -29,19 +44,19 @@ class Canvas:
 
     def px(self, x, y):
         if 0 <= x < 128 and 0 <= y < 64:
-            self.p.add((int(x), int(y)))
+            self.p.add((int(snap(x)), int(snap(y))))
 
     def line(self, x0, y0, x1, y1):
         n = int(max(abs(x1 - x0), abs(y1 - y0))) or 1
         for k in range(n + 1):
-            self.px(round(x0 + (x1 - x0) * k / n), round(y0 + (y1 - y0) * k / n))
+            self.px(round(snap(x0 + (x1 - x0) * k / n)), round(snap(y0 + (y1 - y0) * k / n)))
 
 
 def face():
     c, cx, cy, r = Canvas(), FACE_CX, FACE_CY, 30
     for a in range(0, 360, 2):                         # the double ring
         for rr in (r, r - 1):
-            c.px(cx + rr * math.cos(math.radians(a)), cy + rr * math.sin(math.radians(a)))
+            c.px(cx + rr * cosd(a), cy + rr * sind(a))
     for x in range(cx + 3, cx + 19):                   # the patch over the right eye
         for y in range(cy - 14, cy - 1):
             if ((x - (cx + 11)) / 8.5) ** 2 + ((y - (cy - 8)) / 6.0) ** 2 <= 1:
@@ -50,17 +65,17 @@ def face():
     c.line(cx + 17, cy - 13, cx + 26, cy - 15); c.line(cx + 17, cy - 12, cx + 26, cy - 14)
     for a in range(25, 156, 2):                        # the smile
         for rr in (17, 18):
-            c.px(cx + rr * math.cos(math.radians(a)), cy + 1 + rr * math.sin(math.radians(a)) * 0.75)
+            c.px(cx + rr * cosd(a), cy + 1 + rr * sind(a) * 0.75)
     return c.p
 
 
 def rose():
     c, cx, cy, r = Canvas(), ROSE_CX, ROSE_CY, ROSE_R
     for a in range(0, 360, 4):
-        c.px(cx + r * math.sin(math.radians(a)), cy - r * math.cos(math.radians(a)))
+        c.px(cx + r * sind(a), cy - r * cosd(a))
     for a in range(0, 360, 45):
-        c.line(cx + (r - 4) * math.sin(math.radians(a)), cy - (r - 4) * math.cos(math.radians(a)),
-               cx + r * math.sin(math.radians(a)), cy - r * math.cos(math.radians(a)))
+        c.line(cx + (r - 4) * sind(a), cy - (r - 4) * cosd(a),
+               cx + r * sind(a), cy - r * cosd(a))
     return c.p
 
 
@@ -70,19 +85,19 @@ def frog():
     inside = lambda x, y: any((x - ex) ** 2 + (y - (cy - 12)) ** 2 < 6.5 ** 2 for ex in eyes)
     for a in range(0, 360, 2):                         # the body, a double outline, behind the eyes
         for rx, ry in ((20, 11), (19, 10)):
-            x, y = round(cx + rx * math.cos(math.radians(a))), round(cy + ry * math.sin(math.radians(a)))
+            x, y = round(snap(cx + rx * cosd(a))), round(snap(cy + ry * sind(a)))
             if not inside(x, y):
                 c.px(x, y)
     for ex in eyes:                                    # the eyes' rims, sitting on the head
         for a in range(0, 360, 3):
-            c.px(round(ex + 6 * math.cos(math.radians(a))), round(cy - 12 + 6 * math.sin(math.radians(a))))
+            c.px(round(snap(ex + 6 * cosd(a))), round(snap(cy - 12 + 6 * sind(a))))
     for sx in (-1, 1):                                 # the front feet, three toes each
         c.line(cx + sx * 8, cy + 8, cx + sx * 9, cy + 12)
         for t in (-2, 0, 2):
             c.line(cx + sx * 9, cy + 12, cx + sx * 9 + t, cy + 13)
     for a in range(0, 360, 2):                         # the lily pad, a notch at the front
         if not 80 <= a <= 100:
-            c.px(round(cx + 30 * math.cos(math.radians(a))), round(cy + 15 + 2.5 * math.sin(math.radians(a))))
+            c.px(round(snap(cx + 30 * cosd(a))), round(snap(cy + 15 + 2.5 * sind(a))))
     c.line(cx, cy + 15, cx - 4, cy + 17); c.line(cx, cy + 15, cx + 4, cy + 17)
     return c.p
 
