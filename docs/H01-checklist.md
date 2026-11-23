@@ -141,7 +141,7 @@ Record the exact test interval and denominator. If you inject faults in the same
 - Reboot the transmitter, the receiver and the gateway independently.
 - Confirm that sample identities never collide and transmission nonces never repeat.
 - Drop the link. Confirm that sampling and journaling continue.
-- At 180 s without a fresh valid reading, HA and the API show unavailable.
+- At 180 s without a fresh valid reading, HA and the API show unavailable (180 s is the NORMAL limit; H01 runs on USB in NORMAL. CONSERVE would be 420 s and CRITICAL 3,720 s).
 - Restore the link. Live observations go before backfill.
 - Recover every journaled observation without duplicate database rows.
 - Lose an ACK after the commit. The retry must produce a new ACK and only one stored record.

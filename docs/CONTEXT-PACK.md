@@ -434,9 +434,11 @@ found so far.
 **Deliberately open:**
 
 - Flash read-out protection.
-- Brown-out reset level.
-- Clint's open power decisions D1 (the 1S3P pack against the PRD reserve) and D2 (H01 on a version 6
-  release): power telemetry design section 15.
+- Clint's open power decision D2 (H01 on a version 6 release): power telemetry design section 15.
+  D1 (the 1S3P pack against the PRD reserve) is settled for now (2026-11-22): a 25 mW planning load gives
+  CONSERVE 30 / 35 % and 3.60 / 3.70 V, CRITICAL 8 / 13 % and 3.45 / 3.55 V (`docs/radio-energy-policy.md`
+  section 3). The energy state is live in the TX stack build (profile 3); bench profiles 1 and 2 stay NORMAL.
+  The brown-out reset level is set by `make bor` (level 4, about 2.8 V, once per board).
 - H11, the 30-day storage test. It needs external SPI NOR flash.
 - A timed ACK receive slot.
 - Code space (`docs/firmware-budget.md`). Keep the STM32WL55JC. Plan flash

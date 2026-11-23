@@ -545,9 +545,9 @@ or above 31, so EXT is clear and no extension word follows.
 | 2 | CONSERVE | `conserve` |
 | 3 | CRITICAL | `critical` |
 
-This is the firmware's `energy_t` numbering. We've put off the energy-state thresholds (power
-design section 9.9), so the firmware always sends 1 (NORMAL, `energy_state()` in
-`App/tx_policy.c`).
+This is the firmware's `energy_t` numbering. The TX stack build (`WS_POWER_PROFILE=3`) sends the
+live state (`energy_state()` in `App/tx_policy.c`, thresholds in `docs/radio-energy-policy.md`
+section 3). The bench builds (profiles 1 and 2) always send 1 (NORMAL).
 
 ### 5.3 Field catalog, version 2
 

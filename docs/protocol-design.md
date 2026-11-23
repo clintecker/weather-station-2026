@@ -99,7 +99,8 @@ In CONSERVE at SF12, the live exchange plus the health report is 2,272 ms. With 
 whole-millisecond rounding it's 2,274 ms (1,534 + 740). That's over the 2 s cap **once per health
 report**: every 15 minutes, plus once after each link-state change. CONSERVE sends only every 5th
 minute, so its average stays far below the cap. This is a documented exception (power design risk
-R3). The energy state is NORMAL in this phase.
+R3). The energy state is live in the TX stack build (power profile 3); the bench builds (profiles 1 and 2)
+stay NORMAL. In CRITICAL the node sends only an hourly beacon, sent as a CONSERVE minute.
 
 ## 3. Envelope
 

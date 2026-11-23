@@ -57,7 +57,7 @@ The phases are named once here and used everywhere else (plans, docs, code comme
 | **A** (current) | bq24074 (#4755), one VBUS input | battery INA228 0x40 (shunt in the battery path, VBUS jumper on OUT), MAX17048 0x36 Kelvin on the cell. *Amended 2026-10-30 (record P4, M4):* the gauge senses the CELL+ node by its red lead; its minus is unconnected and its ground comes over STEMMA QT (section 11.1) | ISET → PB1, VBUS divider → PA10, CHG → PB10, PGOOD → PB8, VREFINT | proven on the bench with `firmware/benchlink` on 2026-10-28/29 **except the shunt in the battery path**: the cell sat in the charger's LIPO socket, so the shunt carried no current. Exit criteria 3 and 4 prove that part. The node firmware reads phase A from this design on |
 | **B** (four rails) | bq24074 | phase A plus a load INA228 (OUT), a solar INA228 and a USB-C INA228, each upstream of the point where the sources join (section 11.3). The firmware no longer reads the battery INA228's VBUS (the load INA228 owns the load voltage); its sense lead may stay on OUT or move to the CELL+ node as a host-side cross-check (section 17, record P5 and M4). *Amended 2026-10-30 (record step 1b, P5, M4; section 17's P5/M4 row):* it moves from OUT to CELL+ position 4 at step 1b, a host-side cross-check only | as phase A | later; the firmware table and the host tests cover it now |
 
-The pack is 1S3P in both phases; the reserve question stays open (section 15, D1).
+The pack is 1S3P in both phases; the reserve question stays open (section 15, D1). *Amended 2026-11-22:* settled for now with a 25 mW planning load (section 15).
 
 **Exit criteria of phase A** (all must hold before phase A counts as done):
 1. The node firmware, not only benchlink, reads ISET, the charger input voltage, CHG, PGOOD, the
@@ -798,6 +798,13 @@ PC 0, the boot count saturates at 0xFFFF and resets on a power-on.
 Clint's call on the pack reserve (section 15, D1). `tx_policy.h` and the node README say "deferred"
 instead of "USB-powered bench".
 
+*Amended 2026-11-23:* built. D1 is settled for now (section 15). The TX stack build (`WS_POWER_PROFILE=3`) picks
+the state each minute (`policy_energy_minute()` in `App/tx_policy.c`, `ws_energy_next()` in
+`firmware/common/ws_policy.c`): CONSERVE 30 / 35 % SOC and 3.60 / 3.70 V, CRITICAL 8 / 13 % and 3.45 / 3.55 V
+(enter / leave); SURPLUS holds while SOC stays at or above 90 % with power good and no charger fault. On
+entering CRITICAL the node sends a beacon at once, and an unanswered beacon goes once more the next minute.
+Phases A and B stay NORMAL.
+
 ### 9.10 Budgets
 
 The TX build was 83,792 B of 112,640 (74.4 %) at c7e8860 in a scratch build. The new code (ADC
@@ -1103,9 +1110,9 @@ empty expected-red set, and the Gates stage then runs `tools/gates.sh`.
 | R4 | ISET is ±10 % (monitor ratio) plus R_ISET, the divider ±2 % with 1 % resistors, the shunt nominal until measured | build-sheet measurements; constants in `power_config.h` |
 | R5 | CHG flashing is detected by edges; a missed EXTI or a slow flash could miss a fault | host test. With TMR at GND the bq24074 cannot flash CHG (section 6.3), so a phase A fault cannot be provoked on the #4755 without changing TMR; the host test is the check |
 | R6 | A field build with more than 80 B of fields does not compile | the rule is deliberate; more pages or SPI NOR is the later answer |
-| R7 | Brown-out resets read as power-on | known limitation (section 9.8) |
+| R7 | Brown-out resets read as power-on | known limitation (section 9.8). *Amended 2026-11-22:* `make bor` sets BOR level 4 (about 2.8 V) once per board; the reset still reads as power-on |
 | R8 | Wiring plausibility checks (gauge on OUT, VBUS jumper on the wrong net, early termination) are not in firmware | the build-sheet checks and the acceptance drill cover them; firmware checks are deferred |
-| R9 | The gateway's 180 s freshness is shorter than CONSERVE's 300 s interval | deferred with the energy state (NORMAL in this phase) |
+| R9 | The gateway's 180 s freshness is shorter than CONSERVE's 300 s interval | deferred with the energy state (NORMAL in this phase). *Amended 2026-11-22:* built. The gateway keeps a reading current for the live interval + 120 s by the energy state it carries: 180 s in SURPLUS and NORMAL, 420 s in CONSERVE, 3,720 s in CRITICAL (`current_max_age` in `gateway.py`); a health report for max(1,900 s, that) (`health_max_age` in `ws0/service.py`). The dashboard and Home Assistant follow it |
 | R10 | "Not fitted" reaches the radio as "missing" in a WSMP reading (section 8.3) | **sub-project 7 requirement**: a set-level not-fitted marker before WSMP readings travel |
 | R11 | The bq24074's default safety timer (4–6 h) is shorter than a 1 A charge of 6.6 Ah from empty; the 2026-10-28 "early end" may have been a timer fault rather than a termination | **closed 2026-10-29**: TMR is tied to GND on the #4755 (timers disabled), so the early end was the battery path (record P9); confirm TMR on the board in hand (build-sheet check 10) |
 | R12 | An INA228 rail measures ±5.24 A at 10 µA a count | enough for phases A and B; a larger rail raises `current_lsb_ua` (section 9.4) |

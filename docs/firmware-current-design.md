@@ -595,7 +595,7 @@ stable). None of it is built yet. The right-hand column shows what the firmware 
 
 | Port numbers | What | Today |
 |---|---|---|
-| 1–8 | I2C ports on mux channels 0–7, labelled SENSOR 1–8 | proposed v1 numbering, not built. Ports 1–3 are the SHT45, BMP581 and LTR390 on the static mux channel map (section 4.1: ch0, ch2, ch1). No SENSOR 1–8 labels exist |
+| 1–8 | I2C ports on mux channels 0–7, labelled SENSOR 1–8 | proposed v1 numbering, not built. Ports 1–3 are the SHT45, LTR390 and BMP581 on the static mux channel map (section 4.1: ch0, ch1, ch2), the TX stack's S1 TH, S2 UV and S3 BARO (`PORTS` in `hardware/tx-stack-r1/schematic/model.py`, `channel_of` in `App/i2c_bus.c`). No SENSOR 1–8 labels exist |
 | 9 | battery and charger (on the base). *Amended 2026-10-29: **battery** (module type 8: cell voltage, battery current, energy and charge counters)* | port 5 (`P_BATTERY`) |
 | 10 | enclosure T/RH, SHTC3 (on the base) | port 4 (`P_ENCL_TH`) |
 | 11 | air pressure, BMP581, if it goes on the base (OQ-3) | port 2 (`P_PRESSURE`), a mux port module |

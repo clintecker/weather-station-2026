@@ -197,7 +197,7 @@ You must configure the broker in Home Assistant first. This repository changed n
 Its sensors are available only while the gateway health and the measurement freshness are both online:
 
 - The gateway uses an MQTT last will to report its disconnection.
-- A measurement goes offline when it is 180 seconds old.
+- A measurement goes offline when it is older than the station's live interval plus 120 seconds, by the energy state it carries: 180 s in SURPLUS and NORMAL, 420 s in CONSERVE, 3,720 s in CRITICAL (`current_max_age` in `gateway.py`). A health report goes offline after 1,900 s, or 3,720 s in CRITICAL.
 - The gateway publishes discovery again when the broker reconnects.
 
 The temperature and humidity sensors meet the weather-data integration requirement of the bench prototype. The gateway does not make a forecast or composite weather entity, because no data supports one. (No crystal ball yet.)
@@ -260,7 +260,7 @@ Power phase A exit criteria 1 and 2 (node firmware and gateway) gate H01 (build-
 - Measure the phase A constants (R_ISET, the divider ratio, the TMR strap). Check the INA228 shunt against a series reference. Cut a version 6 release.
 - The node-against-benchlink acceptance drill with the cell through the shunt.
 - A 1 A charge with the shunt in the battery path that ends in a normal termination.
-- Clint's open decision D1: the 1S3P pack (about 24.4 Wh) against the PRD's energy reserve (about 50.4 Wh).
+- Decision D1 (the 1S3P pack, about 24.4 Wh, against the PRD's energy reserve) is settled for now: Clint confirmed a 25 mW planning load on 2026-11-22, which sets CONSERVE at 30 / 35 % SOC and 3.60 / 3.70 V and CRITICAL at 8 / 13 % and 3.45 / 3.55 V ([`docs/radio-energy-policy.md`](docs/radio-energy-policy.md) section 3). H02 replaces the planning load. The energy state is live in the TX stack build (power profile 3); the bench profiles 1 and 2 stay NORMAL.
 
 Open bench checks of the DATAVANE5K bench station (GitHub issues #2, #3 and #4, label `needs-bench`):
 

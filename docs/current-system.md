@@ -683,11 +683,12 @@ Key `#status` fields: `fw`, `reset`, `provisioned`, `station`, `kcv`, `kat`, `ep
 |---|---|---|
 | **1, phase A (default; the bench build)** | bq24074 + battery INA228 0x40 (VBUS on OUT fills `load_mv`) + MAX17048 0x36 | load current, solar, USB-C "not fitted" |
 | 2, phase B | adds load 0x41, solar 0x45, USB-C 0x48 INA228s; battery VBUS not read | all |
-| 3, phase C | `#error` | — |
+| 3, phase C (the TX stack) | BQ25798 0x6B (`App/charger.c`) + battery INA228 0x40 (VBUS not read) + MAX17048 0x36; the charger's ADC fills the load voltage and the charger input. The energy state is live | load current, solar, USB-C "not fitted" |
 
 Other build constants: `WS_I2C_MUX` is 0 (hub, default) or 1 (mux variant). `WS_NODE_FIELDS` defaults to
-`WS_F_WSMP_BENCH` (77 B) (NR:83-84). The energy state is always NORMAL, because the thresholds are
-deferred (NR:207). Time: the TX sets its clock only from the ACK of the frame it just sent (UTC >=
+`WS_F_WSMP_BENCH` (77 B) (NR:83-84). The energy state is live only in profile 3 (the TX stack): CONSERVE 30 / 35 % SOC and
+3.60 / 3.70 V, CRITICAL 8 / 13 % and 3.45 / 3.55 V (decision D1, settled 2026-11-22 with a 25 mW planning load,
+`docs/radio-energy-policy.md` section 3, `firmware/common/ws_policy.c`). Profiles 1 and 2 stay NORMAL. Time: the TX sets its clock only from the ACK of the frame it just sent (UTC >=
 2026-01-01). It trusts that time for 6 h and keeps it across a warm reset in RTC DR3/DR4 (tx_time.c:8-13,
 PROTO:199-202, NR:460-461).
 
@@ -708,7 +709,7 @@ A dirty-tree build reports firmware build ID 0. So commit a measured constant be
 | Toolchain | xPack arm-none-eabi-gcc 15.2.1-1.1; `tools/fetch-vendor.sh` pins STM32CubeWL v1.6.0 and Mbed TLS 3.6.6 | NR:37-42, NR:67 |
 | Outputs | `build/<role>/stage0-<role>.{elf,bin,map}`; prints size, flash budget and `.bin` SHA-256 | NR:64, NR:72 |
 | Targets | `all`, `flash` (OpenOCD, connect under reset, verify), `stack` (worst-case vs 8 KB reservation), `waits` (no reachable busy-wait), `clean` | NR:72-76 |
-| Budget | link fails above 90 % of 194,560 B; v6 build (default profile, 2026-11-04) TX 90,264 B (46.4 %), RX 34,904 B (17.9 %) | NR:69, NR:384 |
+| Budget | link fails above 90 % of 194,560 B; v6 build (default profile, 2026-11-04) TX 90,264 B (46.4 %), RX 34,904 B (17.9 %); field build `make ROLE=tx BOARD=wio-e5 WS_POWER_PROFILE=3 WS_I2C_MUX=1` TX 94,808 B (48.7 %) at `ee8e008` | NR:69, NR:384 |
 | Release | clean tree, fetch-vendor, two clean builds with identical `.bin` hashes, flash RX then TX, check `fw=` on both `#boot`, record in RELEASES.md | REL:6-14 |
 | Format change | drain journal (`pending=0`), WIPE, flash both from the same release, `init` a new run directory, provision with a new key, start a matching gateway, record | REL:16-27 |
 
@@ -977,7 +978,7 @@ drivers present the same blocks that a remote Modbus module would (WSMP:10-13, W
 | Reply | ACK sealed only after commit; NACK only for an authentic, permanently invalid record, stored in `rejections` first | PROTO:192-195 |
 | Health reports | stored in `diagnostics`, ordered by (epoch, uptime); none codes -> null; derived lists `power_not_measured`, `power_sensor_faults` | PROTO:212-214, PROTO:316-320 |
 | Time | samples without UTC get reconstructed time from the nearest synchronized sample of the same boot epoch. Error bound: 2 s of quantisation (1 s on each of the two whole-second fields, the sample uptime and the reference) plus 150 ppm of the time span to the reference | gateway.py:16-22, GW:598-648 |
-| Freshness | latest reading current only if known, bounded, not future and < 180 s old | GW:39, GW:83 |
+| Freshness | latest reading current only if known, bounded, not future and younger than the live interval + 120 s for the energy state it carries (180 s SURPLUS/NORMAL, 420 s CONSERVE, 3,720 s CRITICAL); a health report fresh for max(1,900 s, that) | `gateway.py` `current_max_age`, `ws0/service.py` `health_max_age` |
 | Files (run directory, git-ignored) | `gateway.json` (config incl. radio key and API token: secrets), `observations.sqlite3`, `gateway-nonces.sqlite3`, `receiver.log`, optional `mqtt-password` | NR:168, PROTO:143, HA:25-28 |
 | HTTP | 127.0.0.1:8088 by default; dashboard at `/`, API `/v1/status`, `/v1/history`, `/v1/events` (SSE), `/v1/radio`, `/v1/diagnostics`, `/v1/receiver/alive`, `/v1/gateway/events`; bearer token required | ws0/__main__.py:39, WEB:22-27, WEB:221-223, WEB:242-258 |
 | Dashboard | readings, power view (absent = "not measured in this build", null = "sensor fault"), node health, RX `#alive`, bad receptions, recent frames | WEB:29-40, WEB:71-92 |
