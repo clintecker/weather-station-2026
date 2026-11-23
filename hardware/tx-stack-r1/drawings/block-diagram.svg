@@ -4,9 +4,10 @@
 <text x="38" y="98" font-size="13" font-weight="bold">Solar P110</text>
 <text x="38" y="115" font-size="11" fill="#333">Voltaic P110 6 V 10 W (barrel cut at</text>
 <text x="38" y="129" font-size="11" fill="#333">gland, off the stack</text>
-<rect x="30" y="160" width="230" height="50" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
-<text x="38" y="178" font-size="13" font-weight="bold">USB 5 V adapter</text>
-<text x="38" y="195" font-size="11" fill="#333">wall adapter &gt;= 2 A, USB-C to micro-B cable into EVM J6</text>
+<rect x="30" y="154" width="230" height="62" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
+<text x="38" y="172" font-size="13" font-weight="bold">USB 5 V adapter</text>
+<text x="38" y="189" font-size="11" fill="#333">wall adapter &gt;= 2 A into EVM J6 (micro-B)</text>
+<text x="38" y="203" font-size="11" fill="#333">bench only, no gland</text>
 <rect x="30" y="250" width="230" height="62" rx="6" fill="#fdf2e9" stroke="#C0392B" stroke-width="1.5"/>
 <text x="38" y="268" font-size="13" font-weight="bold">1S3P 6600mAh pack</text>
 <text x="38" y="285" font-size="11" fill="#333">Adafruit #353 (own protection board)</text>
@@ -93,7 +94,7 @@
 <text x="694" y="518" font-size="11" text-anchor="end" fill="#8a1c24" font-weight="bold">backplane</text>
 <text x="308" y="535" font-size="11" fill="#333">Adafruit #5626 (A0 bridged, Vlogic SW1 = V+), foam pad on the backplane, behind the backplane on foam</text>
 <text x="308" y="549" font-size="11" fill="#333">RESET from PB14; ch0-3 on the QT sockets</text>
-<text x="308" y="563" font-size="11" fill="#333">channel QT V+ is not 3.3 V: folded back on the leads</text>
+<text x="308" y="563" font-size="11" fill="#333">channel QT V+ and GND cut and taped: SDA, SCL only</text>
 <path d="M650,470 L650,500" fill="none" stroke="#1F5FBF" stroke-width="2" marker-end="url(#a)"/>
 <text x="656" y="490" font-size="11" fill="#1F5FBF" text-anchor="start" font-weight="normal">upstream</text>
 <rect x="30" y="640" width="260" height="76" rx="6" fill="#eef3fa" stroke="#1F5FBF" stroke-width="1.5"/>

@@ -51,14 +51,14 @@ left, and out from the floor's inside face toward the lid. Seen from the lid, G1
 nearest the right. In the lid-centre frame the columns are at Y +35.75, +11.75, −12.25 and −36.25. The rows are at Z
 28.0 and 63.0, and the vent is at (Y +11.75, Z 88.0).
 
-| # | Xb | Yb | Gland | Hole | Cable (suggested; the model doesn't fix the order) |
+| # | Xb | Yb | Gland | Hole | Cable (`cage.py` `GLAND_USE`) |
 |---|---|---|---|---|---|
-| G1 | 26.0 | 25.0 | PG-7 (Adafruit #762) | Ø13.0 (enclosure 4) | Solar panel (Voltaic P110), plug cut off |
-| G2 | 50.0 | 25.0 | PG-7 | Ø13.0 | Sensor port S1 |
-| G3 | 74.0 | 25.0 | PG-7 | Ø13.0 | Sensor port S2 |
+| G1 | 26.0 | 25.0 | PG-7 (Adafruit #762) | Ø13.0 (enclosure 4) | Sensor port S4 (spare: no pod yet, a 4 mm blanking rod in the seal, `cage.GLAND_BLANK`) |
+| G2 | 50.0 | 25.0 | PG-7 | Ø13.0 | Sensor port S3 (baro) |
+| G3 | 74.0 | 25.0 | PG-7 | Ø13.0 | Sensor port S2 (UV) |
 | G4 | 98.0 | 25.0 | **PG-9** (Adafruit #761) | **Ø15.5** (fix 2: missing in enclosure 4) | Wind meter (flat cable) |
-| G5 | 26.0 | 60.0 | PG-7 | Ø13.0 | Sensor port S3 |
-| G6 | 50.0 | 60.0 | PG-7 | Ø13.0 | Sensor port S4 |
+| G5 | 26.0 | 60.0 | PG-7 | Ø13.0 | Solar panel (Voltaic P110), plug cut off |
+| G6 | 50.0 | 60.0 | PG-7 | Ø13.0 | Sensor port S1 (TH) |
 | ~~G7~~ | 74.0 | 60.0 | - | none (enclosure 4) | Removed: no spare |
 | G8 | 98.0 | 60.0 | **PG-9** | **Ø15.5** (fix 2: missing in enclosure 4) | Rain gauge (flat cable) |
 | V1 | 50.0 | 85.0 | M12 × 1.5 vent | Ø12.5 | Pressure-equalising vent (part not chosen yet) |

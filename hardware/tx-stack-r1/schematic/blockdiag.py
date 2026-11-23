@@ -70,7 +70,7 @@ def main():
          "Dashed: battery current (soldered leads, backplane lines and doubled B4 header pins).", 12, anchor="middle")
     # ---------------- power tree (left)
     box(30, 80, 230, 62, P["PV1"]["value"], [P["PV1"]["part"][:36], "gland, off the stack"], "#fdf2e9", PW)
-    box(30, 160, 230, 50, P["PS1"]["value"], [P["PS1"]["part"]], "#fdf2e9", PW)
+    box(30, 154, 230, 62, P["PS1"]["value"], P["PS1"]["part"].split("; "), "#fdf2e9", PW)
     box(30, 250, 230, 62, P["BT1"]["value"] + " pack", [P["BT1"]["part"], "69 x 54 x 18 mm, beside the stack"], "#fdf2e9", PW)
     box(300, 90, 230, 110, "BQ25798EVM (U1) charger", ["TI SLUUCB5; MPPT from solar", "I2C " + addr("U1") + " on J8, interrupt not wired",
         "1 cell: JP22 only, JP24/JP9/JP18 out", "own slot below the cards"], "#fdf2e9", PW)
@@ -118,7 +118,7 @@ def main():
         "#eef3fa", I2, "B3")
     arrow([(1010, 470), (1010, 500)], "", I2)
     box(300, 500, 400, 92, "PCA9548 (U4) mux " + addr("U4"), [P["U4"]["part"] + ", behind the backplane on foam",
-        f"RESET from {F['MUX_RST']}; ch0-3 on the QT sockets", "channel QT V+ is not 3.3 V: folded back on the leads"],
+        f"RESET from {F['MUX_RST']}; ch0-3 on the QT sockets", "channel QT V+ and GND cut and taped: SDA, SCL only"],
         "#eef3fa", I2, "backplane")
     arrow([(650, 470), (650, 500)], "", I2)
     text(656, 490, "upstream", 11, I2)

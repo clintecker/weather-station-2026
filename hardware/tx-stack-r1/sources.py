@@ -34,6 +34,11 @@ BOXD = "Adafruit #905 diagram (not to scale), cdn-shop.adafruit.com/datasheets/1
 GEN = "Clint's generic 2.54 mm right-angle male header (cut to 18), 2026-11-13; drawn as the Sullins PRPC drawing (" + SUL + ")"
 GENF = "Clint's generic 2.54 mm female header strip (cut to 18), 2026-11-13; drawn as the Sullins PPPC drawing (" + SULF + ")"
 
+# EVM terminal blocks (evm_term_y): the middle of each block as scaled off SLUUCB5E Figure 4-1, and its positions,
+# which sit at the On-Shore ED120's 5.08 mm pitch either side of it (scaling each screw on its own gave 5.1-5.4)
+_EVM_BLOCK_MID = (("J1", 36.65, 2), ("J2", 61.35, 2), ("J3", 43.10, 2), ("J5", 60.33, 3))
+EVM_TERM_Y = tuple((ref, *(round(mid + (i - (n - 1) / 2) * 5.08, 2) for i in range(n))) for ref, mid, n in _EVM_BLOCK_MID)
+
 D = {
     # ---------------------------------------------------------------- SolderFul BreadBoard SOLDERBREAD#02
     "sb_w": (81.3, "SolderFul board length", SB + " p.2", "sourced"),
@@ -174,7 +179,7 @@ D = {
     "l6_body_rib": ((3.0, 1.5), "L6: the original base's sealing lip: height, and its offset in from the base's outer edge (rough)", "Clint, 2026-11-10 (via the coordinator): 3 mm tall; 1-2 mm in from the base's outer edge, an eyeball estimate (a rough check that disagrees with the channel line)", "sourced"),
     "box_in": ((121.0, 167.5, 140.0), "printed base inside: width x length (up the pole) x depth floor to closed lid (base 117 inside + lid 24 less the gasket allowance)", "enc_inside, base_out_depth less the floor, lid_depth (its top about 1 mm) and gasket", "derived"),
     "evm_terms": ((("J1", "GND", "VIN1"), ("J2", "VIN2", "GND"), ("J3", "GND", "SYS"), ("J5", "GND", "SNS_BATP", "BATTERY")), "EVM terminal blocks: each block's positions in order from the board's back edge (backplane side) toward the lid edge (J8)", "TI SLUUCB5E Figure 4-1 silk (J2: VIN2 on the square pad, PGND; J5: PGND, BATP, BATTERY; J1, J3: PGND first) and Table 1-2", "sourced"),
-    "evm_term_y": ((("J1", 34.0, 39.3), ("J2", 58.8, 63.9), ("J3", 40.5, 45.7), ("J5", 55.0, 60.3, 65.7)), "EVM terminal blocks: each position's screw centre, from the board's back edge, in evm_terms' order", "TI SLUUCB5E (BQ25798EVM user's guide), Figure 4-1 top layer, scaled at 16.74 px/mm on the 90 x 90 outline (300 dpi render); +-1 mm", "derived"),
+    "evm_term_y": (EVM_TERM_Y, "EVM terminal blocks: each position's screw centre, from the board's back edge, in evm_terms' order", "TI SLUUCB5E (BQ25798EVM user's guide), Figure 4-1 top layer, scaled at 16.74 px/mm on the 90 x 90 outline (300 dpi render), one centre per block (J1 36.65, J2 61.35, J3 43.10, J5 60.33; +-1 mm); the positions step 5.08 mm from it (On-Shore ED120 pitch)", "derived"),
     "evm_j6_y": ((44.5, 52.9), "EVM J6 (micro-B, bottom-mounted, left edge): from, to, from the board's back edge", "TI SLUUCB5E (BQ25798EVM user's guide), Figure 4-1 top layer, scaled at 16.74 px/mm on the 90 x 90 outline (300 dpi render); +-1 mm", "derived"),
     "evm_j7": ((61.8, 70.5, 79.8, 87.2), "EVM J7 (Molex 0393570002, 2-position 3.5 mm block, the external thermistor): x from-to from the left (J6) edge, y from-to from the back edge; EXT THERM on the left, AGND on the right", "TI SLUUCB5E (BQ25798EVM user's guide), Figure 4-1 top layer, scaled at 16.74 px/mm on the 90 x 90 outline (300 dpi render); +-1 mm; Table 1-2", "derived"),
     "evm_jp": ((("JP9", 83.2, 73.3, 3, "x"), ("JP12", 39.6, 77.2, 2, "y"), ("JP17", 55.1, 64.1, 2, "y"), ("JP18", 51.2, 77.2, 2, "y"), ("JP22", 47.1, 6.4, 2, "y"), ("JP24", 54.8, 6.4, 2, "y"), ("JP30", 3.8, 73.8, 2, "y"), ("JP32", 59.3, 22.0, 2, "y")), "EVM jumpers this build touches: name, centre x from the left edge, y from the back edge, pins, the axis the pins run along (JP9 left to right: BAT, BATP, BATTERY)", "TI SLUUCB5E (BQ25798EVM user's guide), Figure 4-1 top layer, scaled at 16.74 px/mm on the 90 x 90 outline (300 dpi render); +-1 mm; Table 1-3", "derived"),
@@ -185,6 +190,7 @@ D = {
     "power_zone": (82.0, "box bottom to the lowest card's socket row (the EVM shelf in front of the backplane's lower end)", "layout choice: low enough that B3's top clears the lid's upper corner lands by 2 mm", "derived"),
     "gland": ((13.0, 16.6), "PG-7 (#762) gland: panel hole x nut across corners", "hole: enclosure 4 STL as printed (13.0, audited 2026-11-17, sheets/audit-enc4; the 11.5 mm screw end (" + G7 + ") goes in without reaming); nut: the PG-9's 22 scaled by 11.5 / 15.2", "derived"),
     "gland_pg7": ((11.5, 6.0, 16.6, 11.4, 3.0, 4.3), "PG-7 (#762): thread, thread length inside (L1), body outside (L2), cap (L3), cable min, max", G7 + ": 11.5 mm screw end, cable 0.118-0.169 in; L1, L2, L3 the PG-9's scaled by 11.5 / 15.2", "derived"),
+    "gland_blank": ((4.0, 20.0), "blanking rod in the spare S4 PG-7 (no pod on S4 yet; an empty PG-7 doesn't seal): diameter, length", "any 4 mm round nylon rod, inside the PG-7 seal's 3.0-4.3 mm range (gland_pg7); 20 mm leaves a grip past the cap", "derived"),
     "gland_pg9": ((15.2, 7.9, 22.0, 15.1, 4.0, 6.4), "PG-9 (#761): thread D1, thread length inside L1, body outside L2, cap L3, cable min, max", G9 + "; cable 0.158-0.252 in from adafruit.com/product/761", "sourced"),
     "gland_bore": ((7.9, 10.5), "gland bore with the seal out: PG-7, PG-9 (D2)", G9 + ": D2 10.5; PG-7 scaled by 11.5 / 15.2", "derived"),
     "flat_cable": ((2.3, 6.6), "weather-meter flat cable, thickness x width (Clint: the meter cables are flat)", "TE 5-555042-3 flat-cable plug's cable entry, commscope.com/globalassets/digizuite/67464-p360-5-555042-3-external.pdf (not downloaded)", "derived"),

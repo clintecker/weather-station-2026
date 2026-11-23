@@ -19,7 +19,10 @@
      no part of one card enters another card's slab, the backplane's front items, the left wall slot, the
      right corner post or the retention bar; each card slides out toward the lid alone; the cage, the
      power zone (pack and charger) and every card fit the box inside; the slot width; the backplane length; every
-     screw post and support pad under the backplane keeps 1.5 from each copper-face joint and bus wire;
+     screw post and support pad under the backplane keeps 1.5 from each copper-face joint and bus wire; on the
+     copper side in 3D, every routed lead, channel cable wire and link keeps CU_GAP (0.2 mm) from every other
+     route and from every joint, pin tail and bus wire it isn't soldered to (the two wires of one QT cable and
+     two routes meeting at a shared end aside);
   L8 every routed wire, jumper and lead (layout/route.py) lies on its side of the card in straight runs with
      right-angle bends, never crosses a part's footprint (a pad lead only crosses its own breakout), never
      passes over a used hole that is not its own end, and shares no grid edge with another wire except an
@@ -520,6 +523,132 @@ def check_copper_face():
                 fail("L7", f"the lead from line {ln}, hole {hl} passes over the mux at line {p[0]}, hole {p[1]}")
     NOTES.append(f"copper face: the support pads at least {worst:.2f} from every joint (fillet {r_j:g} round its "
                  f"hole) and bus wire, {lworst:.2f} from every routed lead (>= {cl:g})")
+
+
+# ------------------------------------------------------------------ L7: the copper side in 3D
+CU_GAP = 0.2            # mm: the least gap between two copper-side conductors (insulation to insulation), or between
+                        # one and a solder joint, a pin tail or a bare bus wire it is not soldered to
+CU_JOINT_R = 0.95       # a solder joint on a used pad: the cone the Session 6 sheet draws (0.95 across the pad, 0.7
+                        # tall) fits inside a ball of this radius on the copper face
+CU_TAIL_R = 0.32        # a pin or leg standing proud of the copper (0.64 square header pin, 0.6 resistor leg)
+
+
+def _seg_seg(p1, q1, p2, q2):
+    """Least distance between 3D segments p1-q1 and p2-q2."""
+    d1 = [q1[k] - p1[k] for k in range(3)]
+    d2 = [q2[k] - p2[k] for k in range(3)]
+    r = [p1[k] - p2[k] for k in range(3)]
+    a = sum(v * v for v in d1)
+    e = sum(v * v for v in d2)
+    f = sum(d2[k] * r[k] for k in range(3))
+    if a < 1e-12 and e < 1e-12:
+        return math.dist(p1, p2)
+    if a < 1e-12:
+        s, u = 0.0, max(0.0, min(1.0, f / e))
+    else:
+        c = sum(d1[k] * r[k] for k in range(3))
+        if e < 1e-12:
+            u, s = 0.0, max(0.0, min(1.0, -c / a))
+        else:
+            b = sum(d1[k] * d2[k] for k in range(3))
+            den = a * e - b * b
+            s = max(0.0, min(1.0, (b * f - c * e) / den)) if den > 1e-12 else 0.0
+            u = (b * s + f) / e
+            if u < 0.0:
+                u, s = 0.0, max(0.0, min(1.0, -c / a))
+            elif u > 1.0:
+                u, s = 1.0, max(0.0, min(1.0, (b - c) / a))
+    return math.dist([p1[k] + s * d1[k] for k in range(3)], [p2[k] + u * d2[k] for k in range(3)])
+
+
+def copper_side_model():
+    """The copper side as capsules, in mm (x along the lines, y along the holes, z = d behind the copper face).
+    routes: (name, [points], radius, own (line, hole), cable) for every mux lead, channel cable wire, EVM / pack lead
+    and copper-side link; solids: (name, a, b, radius, (line, hole) or None, line or None) for every joint, pin tail
+    and bus wire."""
+    import muxleads
+    import evmleads
+
+    def mm(q):
+        return (q[0] * st.P, q[1] * st.P, q[2])
+
+    routes = []
+    for pad, own in muxleads.target().items():
+        r = muxleads.CABLE_R if pad.startswith("CH") else muxleads.WIRE_R
+        routes.append((f"mux {pad}", [mm(q) for q in muxleads.path(pad)], r, own, pad[:3] if pad.startswith("CH") else None))
+    for ln, hl in evmleads.ENDS:
+        name = {evmleads.SENSE: "J5 SNS lead"}.get((ln, hl), f"EVM / pack lead at line {ln}, hole {hl}")
+        routes.append((name, [mm(q) for q in evmleads.path(ln, hl)], evmleads.LEAD_R, (ln, hl), None))
+    for a, b in evmleads.links():
+        routes.append((f"link {a[0]}.{a[1]}-{b[0]}.{b[1]}", [mm(q) for q in evmleads.link_path(a, b)], evmleads.LINK_R,
+                       (a, b), None))
+    tails = {}
+    for ref, pins, _n in st.BP_PARTS:
+        for pin, h in pins.items():
+            hole = tuple(int(v) for v in h[1:].split("."))
+            if ref.startswith("XB"):
+                tails[hole] = (S.val("socket_tail"), f"{ref} tail")
+            elif ref == "XJ1":
+                tails[hole] = (2.6, f"XJ1 {pin} pin tail")
+            elif ref in ("R7", "R8"):
+                tails[hole] = (6.0 if (ref, pin) == ("R7", "2") else 1.6, f"{ref} leg {pin}")
+    solids = []
+    for hole in sorted(st.BP_USED):
+        c = mm((*hole, 0.0))
+        solids.append((f"joint at s{hole[0]}.{hole[1]}", c, c, CU_JOINT_R, hole, None))
+        if hole in tails:
+            h, what = tails[hole]
+            solids.append((f"{what} at s{hole[0]}.{hole[1]}", c, mm((*hole, h)), CU_TAIL_R, hole, None))
+    rb = S.val("bus_wire") / 2
+    for li, holes in st.BP_BUS:
+        if len(holes) > 1:
+            solids.append((f"line {li}'s bus wire", mm((li, min(holes), rb)), mm((li, max(holes), rb)), rb, None, li))
+    return routes, solids
+
+
+def copper_side_gaps():
+    """[(gap mm, what, what)] for every copper-side route against every other route and every solid, worst first.
+    Not counted: the two wires of one QT cable (bonded side by side), a route and the joint, tail and bus wire it is
+    soldered to (its own hole and its own line), and two routes where both meet at a shared end."""
+    routes, solids = copper_side_model()
+    out = []
+
+    def owns(own, hole, line):
+        ends = own if isinstance(own[0], tuple) else (own,)
+        return (hole is not None and hole in ends) or (line is not None and line in {e[0] for e in ends})
+
+    for name, pts, r, own, _c in routes:
+        for sname, a, b, sr, hole, line in solids:
+            if owns(own, hole, line):
+                continue
+            g = min(_seg_seg(pts[i], pts[i + 1], a, b) for i in range(len(pts) - 1)) - r - sr
+            out.append((g, name, sname))
+    for (na, pa, ra, _oa, ca), (nb, pb, rb, _ob, cb) in combinations(routes, 2):
+        if ca is not None and ca == cb:
+            continue
+        shared = [(i, j) for i in (0, len(pa) - 1) for j in (0, len(pb) - 1)
+                  if math.dist(pa[i], pb[j]) < ra + rb + CU_GAP]
+        g = 99.0
+        for i in range(len(pa) - 1):
+            for j in range(len(pb) - 1):
+                if any(si in (i, i + 1) and sj in (j, j + 1) for si, sj in shared):
+                    continue
+                g = min(g, _seg_seg(pa[i], pa[i + 1], pb[j], pb[j + 1]))
+        out.append((g - ra - rb, na, nb))
+    return sorted(out)
+
+
+def check_copper_side_3d():
+    """L7: the copper-side routes (layout/muxleads.py, layout/evmleads.py) as drawn on the Session 6 sheet, in 3D:
+    every route keeps CU_GAP from every other route and from every joint, pin tail and bus wire but its own."""
+    gaps = copper_side_gaps()
+    for g, a, b in gaps:
+        if g < CU_GAP:
+            fail("L7", f"copper side: the {a} is {g:.2f} mm from the {b} (< {CU_GAP:g})")
+    rr = [x for x in gaps if not (x[2].startswith(("joint", "line ")) or " tail" in x[2] or " leg " in x[2])]
+    rs = [x for x in gaps if x not in rr]
+    NOTES.append(f"copper side in 3D: least gap route to route {rr[0][0]:.2f} mm ({rr[0][1]} / {rr[0][2]}), route to "
+                 f"joint, tail or bus wire {rs[0][0]:.2f} mm ({rs[0][1]} / {rs[0][2]}) (>= {CU_GAP:g})")
 
 
 def _jac(f, p, h=1.0):
@@ -1149,6 +1278,7 @@ def run():
     check_3d()
     check_cage(ph)
     check_copper_face()
+    check_copper_side_3d()
     check_routes()
     check_removal()
     check_mech()

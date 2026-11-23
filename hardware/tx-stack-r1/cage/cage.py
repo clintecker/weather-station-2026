@@ -122,6 +122,10 @@ GLANDS = [(x, y, "PG-9" if (x, y) in FLAT else "PG-7") for y in (25.0, 60.0) for
 # (26, 60), the only one in front of the left column. The flat meter cables keep the PG-9s (FLAT).
 GLAND_USE = {(50.0, 60.0): "S1 TH", (74.0, 25.0): "S2 UV", (50.0, 25.0): "S3 BARO", (26.0, 25.0): "S4 SPARE",
              (26.0, 60.0): "SOLAR", (98.0, 25.0): "WIND", (98.0, 60.0): "RAIN"}
+# S4 has no pod yet (schematic/model.py PORTS: J14 takes none), and a PG-7 with nothing in it doesn't seal: its seal
+# closes on a 3.0-4.3 mm cable. So the S4 PG-7 holds a blanking rod (sources gland_blank, README buying list) in its
+# seal, cap tightened, until a pod is added; then the rod comes out and the pod's cable goes in.
+GLAND_BLANK = {"S4 SPARE": "a 20 mm length of 4 mm round nylon rod in its seal, cap tightened"}
 GLAND_JACK = {"S1 TH": ("B1", "J11"), "S2 UV": ("B1", "J12"), "S3 BARO": ("B1", "J13"), "S4 SPARE": ("B2", "J14"),
               "WIND": ("B2", "J21"), "RAIN": ("B2", "J22"), "SOLAR": ("EVM", "J2")}   # schematic/model.py
 COLUMN_FOOT = (101.0, 86.0)                             # Xb, Yb where the port cables leave the right column

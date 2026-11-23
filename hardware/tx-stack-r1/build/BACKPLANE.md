@@ -74,25 +74,25 @@ The ground lead (J3 GND to line 12) is SYS's return. The regulator's load and th
 
 Use bare 22 AWG solid copper: the Adafruit 1311 hook-up wire on hand, stripped (0.64 mm). Lay each wire straight along its line over the pads and tack it at the first and last hole. Then solder it at every hole listed. Cut length: the span plus 10 mm.
 
-Most of those holes already hold a socket pin, an XJ1 pin, a resistor leg or a section-3 lead. The others take the section-5 leads: hole 5 on lines 19, 20, 21 and 22, hole 10 on lines 1, 2, 3, 4, 7, 8, 9, 10, 13, 14, 15, 17 and 18 and hole 38 on lines 2 and 12. Fit those leads before the bus wires, or leave those holes open and solder them in section 5.
+Most of those holes already hold a socket pin, an XJ1 pin, a resistor leg or a section-3 lead. The others take the section-5 leads: hole 5 on lines 19, 20, 21 and 22, hole 10 on lines 3, 4, 8, 9, 13, 14, 17 and 18, hole 14 on line 15, hole 15 on line 1, hole 16 on line 2, hole 17 on line 7, hole 18 on line 10 and hole 38 on lines 2 and 12. Fit those leads before the bus wires, or leave those holes open and solder them in section 5.
 
 | Line | Bus line | From hole | To hole | Cut | Soldered at holes |
 |---|---|---|---|---|---|
-| 1 | 3.3 V supply | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
-| 2 | ground | 10 | 38 | 85 mm | 10, 11, 13, 19, 27, 35, 38 |
+| 1 | 3.3 V supply | 13 | 35 | 70 mm | 13, 15, 19, 27, 35 |
+| 2 | ground | 11 | 38 | 80 mm | 11, 13, 16, 19, 27, 35, 38 |
 | 3 | sensor port 1 data (SDA) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
 | 4 | sensor port 1 clock (SCL) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
 | 5 | cups (wind speed) pulse | 13 | 35 | 70 mm | 13, 19, 27, 35 |
 | 6 | vane (wind direction) voltage | 13 | 35 | 70 mm | 13, 19, 27, 35 |
-| 7 | I2C clock (SCL) | 10 | 35 | 75 mm | 10, 11, 13, 19, 27, 35 |
+| 7 | I2C clock (SCL) | 11 | 35 | 75 mm | 11, 13, 17, 19, 27, 35 |
 | 8 | sensor port 2 data (SDA) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
 | 9 | sensor port 2 clock (SCL) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
-| 10 | I2C data (SDA) | 10 | 35 | 75 mm | 10, 11, 13, 19, 27, 35 |
+| 10 | I2C data (SDA) | 11 | 35 | 75 mm | 11, 13, 18, 19, 27, 35 |
 | 11 | rain gauge pulse | 13 | 35 | 70 mm | 13, 19, 27, 35 |
 | 12 | ground | 11 | 38 | 80 mm | 11, 13, 19, 27, 35, 38 |
 | 13 | sensor port 3 data (SDA) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
 | 14 | sensor port 3 clock (SCL) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
-| 15 | mux reset | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
+| 15 | mux reset | 13 | 35 | 70 mm | 13, 14, 19, 27, 35 |
 | 16 | spare bus line (for the charger interrupt) | 13 | 35 | 70 mm | 13, 19, 27, 35 |
 | 17 | sensor port 4 data (SDA) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
 | 18 | sensor port 4 clock (SCL) | 10 | 35 | 75 mm | 10, 13, 19, 27, 35 |
@@ -108,11 +108,11 @@ Most of those holes already hold a socket pin, an XJ1 pin, a resistor leg or a s
 | From | To | Length | Line | What |
 |---|---|---|---|---|
 | PG1 lead - | U1 battery - (J5 GND) | 150 mm, trim to fit | battery - (charger ground) | pack - to charger battery - (J5 GND), 24 AWG stranded, black |
-| U4 VIN | backplane line 1 hole 10 | 80 mm | 3.3 V supply | mux VCC header lead to its line's bus wire |
-| U4 GND | backplane line 2 hole 10 | 85 mm | ground | mux GND header lead to its line's bus wire |
-| U4 SCL | backplane line 7 hole 10 | 75 mm | I2C clock (SCL) | mux SCL header lead to its line's bus wire |
-| U4 SDA | backplane line 10 hole 10 | 75 mm | I2C data (SDA) | mux SDA header lead to its line's bus wire |
-| U4 RESET | backplane line 15 hole 10 | 65 mm | mux reset | mux RST header lead to its line's bus wire |
+| U4 VIN | backplane line 1 hole 15 | 80 mm | 3.3 V supply | mux VCC header lead to its line's bus wire |
+| U4 GND | backplane line 2 hole 16 | 90 mm | ground | mux GND header lead to its line's bus wire |
+| U4 SCL | backplane line 7 hole 17 | 85 mm | I2C clock (SCL) | mux SCL header lead to its line's bus wire |
+| U4 SDA | backplane line 10 hole 18 | 85 mm | I2C data (SDA) | mux SDA header lead to its line's bus wire |
+| U4 RESET | backplane line 15 hole 14 | 55 mm | mux reset | mux RST header lead to its line's bus wire |
 | U4 CH0 SDA | backplane line 3 hole 10 | 30 mm of cable | sensor port 1 data (SDA) | QT cable #4209 in mux channel 0, pin end cut off: its blue SDA into hole 10 |
 | U4 CH0 SCL | backplane line 4 hole 10 | 30 mm of cable | sensor port 1 clock (SCL) | QT cable #4209 in mux channel 0, pin end cut off: its yellow SCL into hole 10 |
 | U4 CH1 SDA | backplane line 8 hole 10 | 25 mm of cable | sensor port 2 data (SDA) | QT cable #4209 in mux channel 1, pin end cut off: its blue SDA into hole 10 |
@@ -130,9 +130,9 @@ Most of those holes already hold a socket pin, an XJ1 pin, a resistor leg or a s
 | U1 system ground (J3 GND) | backplane line 12 hole 11 | 100 mm, trim to fit | ground | charger system ground (J3 GND) to line 12 (the bus ground, SYS's return), 24 AWG stranded, black |
 | R7 2 | U1 battery sense (J5 SNS_BATP) | 100 mm, trim to fit | charger battery sense (BATP) | charger battery sense (J5 SNS_BATP) from R7's free leg, 24 AWG stranded, white with a red band |
 
-The mux is an Adafruit #5626. Bridge A0 for address 0x71 and set its Vlogic switch SW1 to V+. It sits on a foam pad on the copper side over holes 2-9, below the B4 socket. That keeps it clear of the bus wires, which start at hole 10. Its 5-hole header (VIN, GND, SCL, SDA, RST, at the far end from its upstream QT port) takes five leads to the main bus lines. Channels 0-3 reach sensor ports 1-4 through four Adafruit #4209 QT cables, one plugged into each channel's QT port. Its upstream port and channels 4-7 stay empty, and the sensors take power from their own card ports.
+The mux is an Adafruit #5626. Bridge A0 for address 0x71 and set its Vlogic switch SW1 to V+. It sits on a foam pad on the copper side over holes 2-9, below the B4 socket. That keeps it clear of the bus wires, which start at hole 10 or above. Its 5-hole header (VIN, GND, SCL, SDA, RST, at the far end from its upstream QT port) takes five leads to the main bus lines. Channels 0-3 reach sensor ports 1-4 through four Adafruit #4209 QT cables, one plugged into each channel's QT port. Its upstream port and channels 4-7 stay empty, and the sensors take power from their own card ports.
 
-VIN, GND, SCL, SDA and RST are 22 AWG solid insulated hook-up (Adafruit 1311), stripped 3 mm, soldered in from the top face with the tails trimmed flush on the back. Channels 0-3 are the QT ports along the long edge on the same side as the header's VIN end (CONN1, CONN2, CONN5, CONN6; Adafruit's board file, `layout/muxleads.py`). Cut each #4209 cable's male-pin end off at the length in the table, measured from the back of the plug. Strip 3 mm off its blue (SDA) and yellow (SCL) wires. Cut its red (V+) and black (GND) wires off about 3 mm from the plug and tape them; the mux's ground comes through its header lead. Nothing else is soldered to the mux. Stick the back face to the foam, the channel 0-3 edge toward hole 10, and plug the four cables in. The foam goes in the middle, no thicker than 1 mm, so the mux clears the floor. Each lead and cable wire goes into its hole 10 from the copper side and is soldered on the front; the bus wire's joint on the copper side takes it too.
+VIN, GND, SCL, SDA and RST are 22 AWG solid insulated hook-up (Adafruit 1311), stripped 3 mm, soldered in from the top face with the tails trimmed flush on the back. Channels 0-3 are the QT ports along the long edge on the same side as the header's VIN end (CONN1, CONN2, CONN5, CONN6; Adafruit's board file, `layout/muxleads.py`). Cut each #4209 cable's male-pin end off at the length in the table, measured from the back of the plug. Strip 3 mm off its blue (SDA) and yellow (SCL) wires. Cut its red (V+) and black (GND) wires off about 3 mm from the plug and tape them; the mux's ground comes through its header lead. Nothing else is soldered to the mux. Stick the back face to the foam, the channel 0-3 edge toward hole 10, and plug the four cables in. The foam goes in the middle, no thicker than 1 mm, so the mux clears the floor. Each cable wire goes into its hole 10. Each header lead rises off the header, runs up past hole 13 on its own line (RST over the mux's top, left of the header; VIN straight up; GND, SCL and SDA past the mux's end), drops onto its own row between the B4 and B2 sockets (holes 14-18, the table) and runs along it to its line, so no lead crosses another (`layout/muxleads.py`, layout check L7). Every one goes in from the copper side and is soldered on the front; the bus wire's joint on the copper side takes it too.
 
 ## 6. Fit it in the base (`cage/backplane-mount-spec.md`)
 
@@ -146,14 +146,14 @@ This table has every pad with anything soldered in it. Every other pad stays bar
 
 | Line | Hole | What is in it | Bus wire |
 |---|---|---|---|
-| 1 | 10 | lead to U4 VIN | line 1 |
 | 1 | 13 | XB4 bus 1 | line 1 |
+| 1 | 15 | lead to U4 VIN | line 1 |
 | 1 | 19 | XB2 bus 1 | line 1 |
 | 1 | 27 | XB1 bus 1 | line 1 |
 | 1 | 35 | XB3 bus 1 | line 1 |
-| 2 | 10 | lead to U4 GND | line 2 |
 | 2 | 11 | XJ1 ground | line 2 |
 | 2 | 13 | XB4 bus 2 | line 2 |
+| 2 | 16 | lead to U4 GND | line 2 |
 | 2 | 19 | XB2 bus 2 | line 2 |
 | 2 | 27 | XB1 bus 2 | line 2 |
 | 2 | 35 | XB3 bus 2 | line 2 |
@@ -176,9 +176,9 @@ This table has every pad with anything soldered in it. Every other pad stays bar
 | 6 | 19 | XB2 bus 6 | line 6 |
 | 6 | 27 | XB1 bus 6 | line 6 |
 | 6 | 35 | XB3 bus 6 | line 6 |
-| 7 | 10 | lead to U4 SCL | line 7 |
 | 7 | 11 | XJ1 clock | line 7 |
 | 7 | 13 | XB4 bus 7 | line 7 |
+| 7 | 17 | lead to U4 SCL | line 7 |
 | 7 | 19 | XB2 bus 7 | line 7 |
 | 7 | 27 | XB1 bus 7 | line 7 |
 | 7 | 35 | XB3 bus 7 | line 7 |
@@ -192,9 +192,9 @@ This table has every pad with anything soldered in it. Every other pad stays bar
 | 9 | 19 | XB2 bus 9 | line 9 |
 | 9 | 27 | XB1 bus 9 | line 9 |
 | 9 | 35 | XB3 bus 9 | line 9 |
-| 10 | 10 | lead to U4 SDA | line 10 |
 | 10 | 11 | XJ1 data | line 10 |
 | 10 | 13 | XB4 bus 10 | line 10 |
+| 10 | 18 | lead to U4 SDA | line 10 |
 | 10 | 19 | XB2 bus 10 | line 10 |
 | 10 | 27 | XB1 bus 10 | line 10 |
 | 10 | 35 | XB3 bus 10 | line 10 |
@@ -218,8 +218,8 @@ This table has every pad with anything soldered in it. Every other pad stays bar
 | 14 | 19 | XB2 bus 14 | line 14 |
 | 14 | 27 | XB1 bus 14 | line 14 |
 | 14 | 35 | XB3 bus 14 | line 14 |
-| 15 | 10 | lead to U4 RESET | line 15 |
 | 15 | 13 | XB4 bus 15 | line 15 |
+| 15 | 14 | lead to U4 RESET | line 15 |
 | 15 | 19 | XB2 bus 15 | line 15 |
 | 15 | 27 | XB1 bus 15 | line 15 |
 | 15 | 35 | XB3 bus 15 | line 15 |

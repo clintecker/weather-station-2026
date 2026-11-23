@@ -120,7 +120,7 @@ padboard backplane with its bus wires.
 | B2 | PORTS B + METERS | Sensor port 4; wind and rain jacks with the 10 k pull-ups, 100 nF filters (now also on the vane), 1N5232B clamps and 1 k series resistors to the MCU |
 | B1 | PORTS A | Sensor ports 1-3 |
 | B3 | CORE | Wio-E5 mini, SHTC3 enclosure sensor (upstream of the mux), right-angle SWD header at the front edge |
-| backplane | bus | Four sockets; the PCA9548 #5626 (A0 bridged, 0x71) on foam behind it, wired by its pads; four QT leads from the bus strips to the ports' mux channels; the charger I2C pins |
+| backplane | bus | Four sockets; the PCA9548 #5626 (A0 bridged, 0x71) on foam behind it, its five header leads to the bus lines; four Adafruit #4209 QT cables, pin ends cut off, from mux channels 0-3 to hole 10 of lines 3/4, 8/9, 13/14 and 17/18 (SDA and SCL only); the charger I2C pins |
 
 Each sensor port is a SparkFun BOB-14021 + Amphenol 87180-066LF jack (on a printed spacer, mouth flush with
 the card's right edge, wired to the card by flying leads), an MF-R010 fuse in its 3.3 V, 100 ohm in series on

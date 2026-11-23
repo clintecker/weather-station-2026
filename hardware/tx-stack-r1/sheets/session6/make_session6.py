@@ -28,14 +28,7 @@ WIRE = {"red": HexColor("#D7262E"), "black": HexColor("#1C1C1C"), "yellow": HexC
         "blue": HexColor("#2D6FD0"), "green": HexColor("#2E9E48"), "white": HexColor("#F2F2F2")}
 DOT_RGB = {"blue": "#2D6FD0", "green": "#2E9E4F", "yellow": "#FFD400", "red": "#E8202A"}
 
-SLOGANS6 = [
-    "LINES 1 TO 18 CARRY THE BUS TO ALL FOUR CARDS.",
-    "THE KEY PLUG IS HELD BY THE CONTACT. NO SOLDER ON IT.",
-    "EVERY LEAD GOES IN FROM THE COPPER SIDE.",
-    "THE MUX SITS ON 1 MM OF FOAM. NO THICKER.",
-    "THE PACK STAYS UNPLUGGED TODAY.",
-    "METER EVERY LINE BEFORE ANY CARD GOES IN.",
-]
+FOOT6 = "SESSION 6: WIRE THE BACKPLANE. FROM build/BACKPLANE.md AND layout/stack.py."   # plain footer, every page
 
 ORDER = ["XB4", "XB2", "XB1", "XB3"]                       # bottom to top: holes 13, 19, 27, 35
 SOCK = bpmd.SOCKETS
@@ -114,7 +107,7 @@ def table(c, x, y, cols, rows, size=8.6, lead=11.2, head=True, colours=None):
 # ------------------------------------------------------------------ 00 cover
 def cover(c, pg):
     page(c, "00", "SESSION 6: WIRE THE BACKPLANE",
-         "SOCKETS ARE ON. NOW KEY PLUGS, PARTS, THE MUX, LINKS, LEADS AND 24 BUS WIRES. NO POWER TODAY.", pg, SLOGANS6[0])
+         "SOCKETS ARE ON. NOW KEY PLUGS, PARTS, THE MUX, LINKS, LEADS AND 24 BUS WIRES. NO POWER TODAY.", pg, FOOT6)
     g = Grid(2, 3, heights=[1.3, 1.05, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0, 2), None,
                        "PARTS (build/BACKPLANE.md sections 2-5). LAY THEM OUT BEFORE YOU HEAT THE IRON.")
@@ -141,7 +134,7 @@ def cover(c, pg):
         text(c, x + 14, y + h - 16 - i * (h - 12) / len(tools), "-  " + s, 10.5, "ALT", INK)
     x, y, w, h = panel(c, g.cell(1, 1), None, "THE STEPS. IN THIS ORDER.")
     steps = ["01  KEY PLUGS AND COLOUR DOTS", "02  XJ1, R7 AND R8 ON THE FRONT", "03  THE MUX: A0, SW1, 5 LEADS, 4 CABLES",
-             "04  THE MUX ON FOAM, LEADS TO HOLE 10", "05  THREE LINKS ON THE COPPER SIDE",
+             "04  THE MUX ON FOAM, ITS LEADS IN", "05  THREE LINKS ON THE COPPER SIDE",
              "06  EVM AND PACK LEADS (BOARD END)", "07  BUS WIRES, LINES 1-18", "08  BUS WIRES, LINES 19-23, 26",
              "09  METER CHECKS", "10  REPORT"]
     for i, s in enumerate(steps):
@@ -165,7 +158,7 @@ def top_lines(a):
 
 def built(c, pg):
     page(c, "00", "WHAT YOU ARE BUILDING", "THE BACKPLANE, DONE: BOTH FACES. THIS IS WHERE THE SESSION ENDS.", pg,
-         SLOGANS6[0])
+         FOOT6)
     g = Grid(2, 1)
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["FRONT (the socket face). Key plugs,",
                                              "colour dots, XJ1, R7 and R8."])
@@ -185,7 +178,7 @@ def built(c, pg):
 # ------------------------------------------------------------------ 01 key plugs and dots
 def keys(c, pg):
     page(c, "01", "KEY PLUGS AND COLOUR DOTS", "BACKPLANE.md SECTION 2. ONE PIN IN ONE CONTACT PER SOCKET. NO SOLDER.",
-         pg, SLOGANS6[1])
+         pg, FOOT6)
     g = Grid(3, 3, heights=[1.55, 0.95, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0, 3), 1, [
         "FRONT. Each socket gets a key plug in the contact its own card is missing. Contact n is on line n.",
@@ -232,7 +225,7 @@ def keys(c, pg):
 # ------------------------------------------------------------------ 02 front parts
 def front_parts(c, pg):
     page(c, "02", "XJ1, R7 AND R8 ON THE FRONT", "BACKPLANE.md SECTION 3. PARTS ON THE FRONT, SOLDERED ON THE COPPER SIDE.",
-         pg, SLOGANS6[2])
+         pg, FOOT6)
     g = Grid(2, 2, heights=[1.3, 1.0])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
         "FRONT, lines 0-26, holes 4-14 (XB4 along hole 13). Ringed: every hole that gets a part today. XJ1 is three",
@@ -266,10 +259,12 @@ def front_parts(c, pg):
 # ------------------------------------------------------------------ 03 the mux on the bench
 CH_PADS = [f"CH{k}.{s}" for k in range(4) for s in ("SDA", "SCL")]
 HDR_PADS = ["VIN", "GND", "SCL", "SDA", "RESET"]
+HDR_TOP = max(MUXL[p][1] for p in HDR_PADS)            # the header leads' rows (BACKPLANE.md section 5): 14-18
+HDR_ROWS = f"holes {min(MUXL[p][1] for p in HDR_PADS)}-{HDR_TOP}"
 
 
 def mux1(c, pg):
-    page(c, "03", "THE MUX  1/2: AS SUPPLIED", "ADAFRUIT #5626, PCA9548. BRIDGE A0 (ADDRESS 0x71). SW1 TO V+.", pg, SLOGANS6[3])
+    page(c, "03", "THE MUX  1/2: AS SUPPLIED", "ADAFRUIT #5626, PCA9548. BRIDGE A0 (ADDRESS 0x71). SW1 TO V+.", pg, FOOT6)
     g = Grid(2, 2, heights=[1, 1])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["TOP FACE, as it comes. Set SW1 to the V+",
                                              "side (read the silk beside it). The",
@@ -306,7 +301,7 @@ def mux1(c, pg):
 
 def mux2(c, pg):
     page(c, "03", "THE MUX  2/2: 5 LEADS, 4 CABLES", "HEADER: 22 AWG SOLID (ADAFRUIT 1311). CHANNELS 0-3: QT CABLES #4209. STRIP 3 MM.",
-         pg, SLOGANS6[3])
+         pg, FOOT6)
     g = Grid(2, 2, heights=[1.35, 0.65])
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["ONE CABLE. Cut the pin end off at the length",
                                              "in the table, from the plug's back. Strip",
@@ -328,7 +323,7 @@ def mux2(c, pg):
             ("CH1 CABLE", "sensor port 2 (S2): blue to line 8, yellow to line 9"),
             ("CH2 CABLE", "sensor port 3 (S3): blue to line 13, yellow to line 14"),
             ("CH3 CABLE", "sensor port 4 (S4): blue to line 17, yellow to line 18"),
-            ("VIN GND SCL SDA RST", "the main bus: lines 1, 2, 7, 10, 15")]
+            ("VIN GND SCL SDA RST", "the main bus (line, hole): " + ", ".join(f"{MUXL[p][0]},{MUXL[p][1]}" for p in HDR_PADS))]
     for k in range(4):
         assert (MUXL[f"CH{k}.SDA"][0], MUXL[f"CH{k}.SCL"][0]) == ((3, 4), (8, 9), (13, 14), (17, 18))[k]
     for i, (k, v) in enumerate(rows):
@@ -338,43 +333,86 @@ def mux2(c, pg):
 
 
 # ------------------------------------------------------------------ 04 mux on foam
+
+def stack_chips(labs, rows=4, gap=2.0):
+    """Rows and anchors for chips over a row of leaders. labs: (leader x, chip width). Returns one
+    (row, anchor) per label so no chip overlaps another and no leader runs through a chip below it."""
+    span = {"c": lambda x, w: (x - w / 2, x + w / 2), "l": lambda x, w: (x - 4 - 2.6, x - 4 - 2.6 + w),
+            "r": lambda x, w: (x + 4 + 2.6 - w, x + 4 + 2.6)}
+    out = []
+
+    def ok(row, x0, x1, px):
+        for (rw, anc), (q, w) in zip(out, labs):
+            a0, a1 = span[anc](q, w)
+            if rw == row and a0 - gap < x1 and x0 < a1 + gap:
+                return False
+            if rw < row and a0 - gap < px < a1 + gap:
+                return False
+            if rw > row and x0 - gap < q < x1 + gap:
+                return False
+        return True
+
+    def go(k):
+        if k == len(labs):
+            return True
+        px, w = labs[k]
+        for row in range(rows):
+            for anc in "clr":
+                x0, x1 = span[anc](px, w)
+                if ok(row, x0, x1, px):
+                    out.append((row, anc))
+                    if go(k + 1):
+                        return True
+                    out.pop()
+        return False
+
+    if not go(0):
+        raise SystemExit("stack_chips: no layout fits")
+    return out
+
 def mux_mount(c, pg):
-    page(c, "04", "THE MUX ON FOAM. LEADS TO HOLE 10", "COPPER SIDE. BACKPLANE.md SECTION 5. LEADS IN FROM THE COPPER SIDE.",
-         pg, SLOGANS6[3])
+    page(c, "04", "THE MUX ON FOAM. ITS LEADS AND CABLES IN", "COPPER SIDE. BACKPLANE.md SECTION 5. LEADS IN FROM THE COPPER SIDE.",
+         pg, FOOT6)
     g = Grid(2, 2, heights=[1.45, 0.8])
     x, y, w, h = panel(c, g.cell(0, 0, 2), 1, [
-        "COPPER SIDE, lines 0-20, holes 1-13 (line 0 on the right). The mux over holes 2-9, back face down on the foam,",
-        "the channel 0-3 edge toward hole 10. Each lead and cable wire (SDA0 = channel 0's blue) into its ringed hole 10",
-        "from this side. Solder it on the front, clip."])
+        f"COPPER SIDE, lines 0-20, holes 1-{HDR_TOP} (line 0 on the right). The mux over holes 2-9, back face down on the",
+        "foam, the channel 0-3 edge toward hole 10. Each cable wire (SDA0 = channel 0's blue) into its ringed hole 10.",
+        f"Each header lead up its own line over XB4's tails, then along its own row ({HDR_ROWS}) to its ringed hole.",
+        "Solder on the front. Chips name the line."])
     a = Art(c, "m_mounted", x + 26, y + 18, w - 50, h - 60, valign="b")
-    axis(c, a, range(0, 21), range(1, 14), side="r")
+    axis(c, a, range(0, 21), range(1, HDR_TOP + 1), side="r")
     items = sorted(((a.A(f"h{ln}_{hl}")[0], p, ln, hl) for p, (ln, hl, cut) in MUXL.items()), reverse=True)
     top = a.y + a.h + 6
-    for k, (px, p, ln, hl) in enumerate(items):
+    labs = []
+    for px, p, ln, hl in items:
         py = a.A(f"h{ln}_{hl}")[1]
         ring(c, px, py, 3.4, 1.3)
         tag = f"{p[4:]}{p[2]}" if p.startswith("CH") else SILK.get(p, p)
-        r = chip(c, px, top + (k % 2) * 13, f"{tag} {ln}", 7.6, "ALT", INK, "c")
-        leader(c, r, px, py + 3.4, dot=False)
+        s = f"{tag} {ln}"
+        labs.append((px, py, s, pdfmetrics.stringWidth(s, "ALT", 7.6) + 5.2))
+    for (px, py, s, wd), (row, anc) in zip(labs, stack_chips([(l[0], l[3]) for l in labs])):
+        tx = {"c": px, "l": px - 4, "r": px + 4}[anc]
+        r = chip(c, tx, top + row * 12, s, 7.6, "ALT", INK, anc)
+        leader(c, (px - 0.01, r[1], px + 0.01, r[3]), px, py + 3.4, dot=False)   # straight down from the chip
     x, y, w, h = panel(c, g.cell(0, 1), 2, ["Foam in the middle of the back face, clear of",
                                              "the header holes. 1 mm, no thicker: the mux",
                                              "and its plugs must clear the floor."])
     a = Art(c, "m_iso", x + 40, y + 4, w - 46, h - 8)
     label(c, x + 8, y + 16, "FOAM", *a.A("foam"), 9)
     x, y, w, h = panel(c, g.cell(1, 1), 3, ["Order: stick it down, plug the cables in,",
-                                             "route each wire, push it through hole 10,",
-                                             "solder on the front, clip. Bus wires later."])
-    rows = [[SILK.get(p, p), str(MUXL[p][0])] for p in CH_PADS + HDR_PADS]
+                                             "route each wire as drawn, push it through",
+                                             "its hole, solder on the front, clip."])
+    rows = [[SILK.get(p, p), f"{MUXL[p][0]}, {MUXL[p][1]}"] for p in CH_PADS + HDR_PADS]
     half = (len(rows) + 1) // 2
     for col in range(2):
         rs = rows[col * half:(col + 1) * half]
-        table(c, x + 44 + col * 120, y + h - 14, [("WIRE", 0, "l"), ("LINE", 62, "l")], rs, 9, 11.5)
+        table(c, x + 44 + col * 120, y + h - 14, [("WIRE", 0, "l"), ("LINE, HOLE", 50, "l")], rs, 9, 11.5)
 
 
 # ------------------------------------------------------------------ 05 links
 def links(c, pg):
     page(c, "05", "THREE LINKS ON THE COPPER SIDE", "22 AWG SOLID, INSULATED. IN FROM THE COPPER SIDE, SOLDERED ON THE FRONT.",
-         pg, SLOGANS6[2])
+         pg, FOOT6)
     g = Grid(2, 2, heights=[1.3, 0.9])
     J = {a: (b, what, cut) for a, b, what, cut in bpmd.JUMPERS}
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["COPPER SIDE, lines 17-24, holes 2-9.",
@@ -403,13 +441,14 @@ EVM_TXT = {"PG1 lead +": ("PACK +", "red", "black"), "U1 battery + (J5 BATTERY)"
 
 def evm(c, pg):
     page(c, "06", "EVM AND PACK LEADS: BOARD END ONLY", "24 AWG STRANDED, 100 MM EACH. THE FAR ENDS STAY LOOSE, FLAGGED AND TAPED.",
-         pg, SLOGANS6[4])
+         pg, FOOT6)
     g = Grid(3, 2, heights=[1.2, 1.0])
     x, y, w, h = panel(c, g.cell(0, 0, 3), 1, [
-        "COPPER SIDE, lines 0-30, holes 1-15. Four leads in from this side, soldered on the front (ringed). J5 SNS has",
-        "no hole of its own: lap it onto R7's long leg at line 24, hole 7, and solder. The leads hang off the hole-1 edge."])
+        f"COPPER SIDE, lines 0-30, holes 1-{HDR_TOP}. Four leads in from this side, soldered on the front (ringed). J5 SNS",
+        "has no hole of its own: lap it onto R7's long leg at line 24, hole 7, and solder. The leads hang off the",
+        "hole-1 edge."])
     a = Art(c, "e_leads", x + 40, y + 6, w - 120, h - 22, valign="t")
-    axis(c, a, range(0, 31, 2), range(1, 16, 2), side="r", ly=a.A("H15")[1] + 8)
+    axis(c, a, range(0, 31, 2), range(1, HDR_TOP + 1, 2), side="r", ly=a.A(f"H{HDR_TOP}")[1] + 8)
     for frm, ln, hl, what, to in bpmd.EVM:
         if hl != 7:
             ring(c, *a.A(f"h{ln}_{hl}"))
@@ -432,26 +471,32 @@ def evm(c, pg):
         yy -= (h - 40) / 5
     x, y, w, h = panel(c, g.cell(1, 1), 3, ["Each far end: a tape flag with its",
                                              "name, the bare end taped over.",
-                                             "The EVM session cuts and fits them."])
+                                             "Session 7 cuts and fits them."])
     a = Art(c, "e_flag", x + 6, y + 6, w - 12, h - 40, valign="b")
     label(c, x + w - 8, y + h - 18, "TAPE OVER THE END", *a.A("tape"), 8.5, anchor="r")
     x, y, w, h = panel(c, g.cell(2, 1), 4, ["The pack is never connected", "today. Nothing goes to the", "EVM yet either."],
                        warn=True)
     for i, s_ in enumerate(["Cut each lead 100 mm.", "Strip 3 mm at the board end.",
                             "Leave the far end in its", "insulation, taped over.", "",
-                            "Keep each lead in its own lane", "as drawn. The board sits on a", "pad at line 20, hole 2:",
-                            "nothing runs over it."]):
+                            "Keep each lead in its own lane", "as drawn. The backplane sits on", "the base's support pad under",
+                            "line 20, hole 2: no lead", "runs over it."]):
         text(c, x + 14, y + h - 46 - i * 13, s_, 9.5, "ALT", INK)
 
 
 # ------------------------------------------------------------------ 07-08 bus wires
 def bus1(c, pg):
     page(c, "07", "BUS WIRES  1/2: LINES 1-18", "BARE 22 AWG SOLID (ADAFRUIT 1311, STRIPPED). COPPER SIDE. SOLDER AT EVERY LISTED HOLE.",
-         pg, SLOGANS6[0])
+         pg, FOOT6)
     g = Grid(2, 1)
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["COPPER SIDE, all done. Each wire",
-                                             "straight along its line, over the pads."])
-    a = Art(c, "b_all", x + 12, y + 6, w - 34, h - 50)
+    x, y, w, h = panel(c, g.cell(0, 0), 1, ["COPPER SIDE. Top: lines 0-20, holes 8-20,",
+                                             "each wire's first hole ringed. Bottom:",
+                                             "all done, each wire straight along its line."])
+    a = Art(c, "b_start", x + 12, y + h - 196, w - 34, 176)
+    axis(c, a, range(0, 21, 2), range(8, 21, 2), side="r")
+    for ln, _n, a_, _b, _c, _h in bpmd.BUS:
+        if ln <= 18:
+            ring(c, *a.A(f"bot{ln}"), 2.6, 1.1)
+    a = Art(c, "b_all", x + 12, y + 6, w - 34, h - 236)
     axis(c, a, range(0, 31, 5), range(5, 39, 5), side="r", ly=top_lines(a))
     x, y, w, h = panel(c, g.cell(1, 0), 2, ["Cut = span + 10 mm. Lay, tack the first",
                                              "and last hole, then every hole listed."])
@@ -460,9 +505,11 @@ def bus1(c, pg):
     yy = table(c, x + 10, y + h - 44, [("LINE", 0, "l"), ("BUS", 24, "l"), ("HOLES", 84, "l"), ("MM", 128, "r"),
                                        ("SOLDER AT", 136, "l")], rows, 7.6, 11.6)
     yy -= 16
+    at13 = [ln for ln, _n, a_, _b, _c, _h in bpmd.BUS if ln <= 18 and a_ == 13]
     for s_ in ["Strip the 1311 wire bare. Pull it straight", "with pliers before you cut it.",
-               "Lines 5, 6, 11, 16 start at hole 13.", "The rest start at hole 10 or 11, where",
-               "the mux wires and XJ1 pins already sit:", "the wire's joint takes them too.",
+               f"Lines {', '.join(map(str, at13[:-1]))} and {at13[-1]} start at hole 13.",
+               "The rest start at hole 10 or 11, where", "the mux cables and XJ1 pins already sit.",
+               "Where a mux wire or XJ1 pin is in a listed", "hole, the wire's joint takes it too.",
                "No wire touches its neighbour."]:
         text(c, x + 10, yy, s_, 9, "ALT", INK)
         yy -= 12
@@ -470,7 +517,7 @@ def bus1(c, pg):
 
 def bus2(c, pg):
     page(c, "08", "BUS WIRES  2/2: LINES 19-23 AND 26", "B4'S POWER LINES. EVERY OTHER CONTACT ON LINES 19-30 IS AN ISOLATED PAD.",
-         pg, SLOGANS6[0])
+         pg, FOOT6)
     g = Grid(2, 1)
     x, y, w, h = panel(c, g.cell(0, 0), 1, ["COPPER SIDE, lines 17-30. Short wires",
                                              "from hole 5 or 6 (11 on line 23) to XB4",
@@ -506,9 +553,9 @@ def bus2(c, pg):
 # ------------------------------------------------------------------ 09 meter checks, 10 report
 def checks(c, pg):
     page(c, "09", "METER BEFORE ANY CARD", "CONTINUITY MODE. THE BACKPLANE ALONE ON THE BENCH. NO CARD, NO EVM, NO PACK.",
-         pg, SLOGANS6[5])
+         pg, FOOT6)
     g = Grid(1, 2, heights=[0.3, 1.7])
-    x, y, w, h = panel(c, g.cell(0, 0), 1, ["Probe the solder joints on the copper side. Hole numbers as on pages 10-11."])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, ["Probe the solder joints on the copper side. Hole numbers as in steps 07-08."])
     text(c, x + 44, y + h - 20, "From build/BACKPLANE.md, \"Before power\".", 10, "ALT", INK)
     text(c, x + 44, y + h - 34, "A beep where it says OPEN, or silence where it says BEEP: stop, take a photo, tell Claude.",
          10, "ALT", NEON)
@@ -534,16 +581,16 @@ def checks(c, pg):
         c.rect(x + w - 26, yy - 4, 14, 14, stroke=1, fill=0)
 
 
-REPORT_ROWS = [("KEY PLUGS IN, FLUSH, NO SOLDER", "Y / N", "the wrong-card test is in Session 8"),
+REPORT_ROWS = [("KEY PLUGS IN, FLUSH, NO SOLDER", "Y / N", "the wrong-card test is Session 8 step 04"),
                ("FOUR QT CABLES SEATED", "Y / N", "red and black taped, nothing bare near the mux"),
                ("FOAM THICKNESS UNDER THE MUX", "mm", "1 mm or less"),
-               ("METER CHECKS 1-6 ALL PASS", "Y / N", "page 12"),
+               ("METER CHECKS 1-6 ALL PASS", "Y / N", "step 09"),
                ("ANY LEAD CUT TOO LONG OR SHORT", "mm", "which one, and the length that fit"),
                ("PHOTO OF EACH FACE", "SENT", "front and copper side")]
 
 
 def report(c, pg):
-    page(c, "10", "REPORT THE BACKPLANE.", "THE BACKPLANE IS WIRED. SEND THE NUMBERS.", pg, SLOGANS6[5])
+    page(c, "10", "REPORT THE BACKPLANE.", "THE BACKPLANE IS WIRED. SEND THE NUMBERS.", pg, FOOT6)
     g = Grid(1, 2, heights=[1.5, 0.5])
     x, y, w, h = panel(c, g.cell(0, 0), 1, [
         "Send these to Claude. The backplane goes back in the base (BACKPLANE.md section 6) when the cards are ready."])

@@ -350,15 +350,15 @@ def add_mux_leads(s, pads=None, colour=True):
         s.add(f"mlj_{pad}", joint(ln, hl, "front"), SOLDER, 0.6)
 
 
-def link_pts(a, b, lift=1.4):
-    return [pt(*a, -T - 1.0), pt(*a, 0), pt(*a, lift), pt(*b, lift), pt(*b, 0), pt(*b, -T - 1.0)]
+def link_pts(a, b):
+    return [pt(*q) for q in EL.link_path(a, b, T)]
 
 
 def add_links(s, only=None):
     for a, b, _w, _c in bpmd.JUMPERS:
         if only is not None and a not in only:
             continue
-        body, bare = insulated_lead(link_pts(a, b), ML.WIRE_R, 2, 2)
+        body, bare = insulated_lead(link_pts(a, b), EL.LINK_R, 2, 2)
         s.add(f"lk_{a[0]}_{a[1]}", body, COL[LINK_COL[a]])
         s.add(f"lkb_{a[0]}_{a[1]}", bare, SOLDER, 0.6)
         s.add(f"lkj_{a[0]}_{a[1]}", comp([joint(*a, "front"), joint(*b, "front")]), SOLDER, 0.6)
@@ -663,20 +663,27 @@ def m_top_done():
 
 
 MZ_X0, MZ_X1 = SX, X(20) + P / 2
-MZ_Y0, MZ_Y1 = 0.0, Y(13) + P / 2
+MZ_Y0, MZ_Y1 = 0.0, Y(max(st.MUX_HDR_ROW.values())) + P / 2     # up to the header leads' rows (holes 14-18)
+
+
+def add_b4_socket(s):
+    """XB4 along hole 13 (Session 1): its tails and joints are what the header leads pass over on the copper side."""
+    body, tails, joints = socket(13)
+    s.add("sock_XB4", body, BLACK).add("tail_XB4", tails, GOLD, 0.5).add("sj_XB4", joints, SOLDER, 0.5)
 
 
 @scene
 def m_mounted():
     s = r3d.Scene()
     add_board(s, MZ_X0, MZ_X1, MZ_Y0, MZ_Y1, 0.3)
+    add_b4_socket(s)
     add_mux_placed(s)
     add_mux_leads(s)
     hole_anchors(s, 0.0, [(ln, hl) for _p, ln, hl, _c in bpmd.MUX_LEADS], drawn=False)
     for pad in ML.target():
         p0 = ML.path(pad)[0]
         s.anchor(f"pad_{pad}", pt(p0[0], p0[1], p0[2] + 0.4 if pad in ML.JP1 else 0.0))
-    axis_anchors(s, -6, range(0, 21), range(1, 14))
+    axis_anchors(s, -6, range(0, 21), range(1, max(st.MUX_HDR_ROW.values()) + 1))
     s.anchor("foam", pt(9.0, 4.0, ML.FOAM / 2))
     s.anchor("mux", pt(6.0, 5.0, ML.FOAM + 4.6))
     R("m_mounted", s, *BACK_V, fit=(520, 300), line=0.4, outline=1.1,
@@ -729,7 +736,8 @@ EV_X0, EV_X1 = X(9) - P / 2, X(30) + P / 2
 @scene
 def e_leads():
     s = r3d.Scene()
-    add_board(s, SX, M.B_L, 0.0, Y(15) + P / 2, 0.3)
+    add_board(s, SX, M.B_L, 0.0, Y(max(st.MUX_HDR_ROW.values())) + P / 2, 0.3)
+    add_b4_socket(s)
     add_front_parts(s, xj=False)
     add_mux_placed(s)
     add_mux_leads(s)
@@ -737,7 +745,7 @@ def e_leads():
     add_evm_leads(s)
     hole_anchors(s, 0.0, [(ln, hl) for _f, ln, hl, _w, _t in bpmd.EVM if hl != 7], drawn=False)
     s.anchor("r7_free", pt(24, 7, 4.6))
-    axis_anchors(s, -6, range(0, 31), range(1, 16))
+    axis_anchors(s, -6, range(0, 31), range(1, max(st.MUX_HDR_ROW.values()) + 1))
     R("e_leads", s, *BACK_V, fit=(520, 300), line=0.4, outline=1.1)
 
 
@@ -767,6 +775,21 @@ def b_all():
         s.anchor(f"top{ln}", (X(ln), Y(b) + 0.4, -0.7))
         s.anchor(f"bot{ln}", (X(ln), Y(a) - 0.4, -0.7))
     R("b_all", s, *BACK_V, fit=(330, 420), line=0.3, outline=1.0)
+
+
+BS_Y0, BS_Y1 = Y(8) - P / 2, Y(20) + P / 2     # b_start: holes 8-20, where the bus wires begin
+
+
+@scene
+def b_start():
+    s = r3d.Scene()
+    everything(s)
+    for ln, net, a, b, cut, holes in bpmd.BUS:
+        if ln <= 20:
+            s.anchor(f"bot{ln}", (X(ln), Y(a), 0.0))
+    axis_anchors(s, -2, range(0, 21), range(8, 21))
+    R("b_start", s, *BACK_V, fit=(330, 240), line=0.4, outline=1.0,
+      crop=(((MZ_X0 + MZ_X1) / 2, (BS_Y0 + BS_Y1) / 2, 0), (MZ_X1 - MZ_X0) / 2 + 1, (BS_Y1 - BS_Y0) / 2))
 
 
 B2_X0 = X(17) - P / 2

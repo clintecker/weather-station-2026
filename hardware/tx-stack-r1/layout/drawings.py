@@ -688,7 +688,7 @@ def s5_holes():
     def ands(xs):
         xs = [str(x) for x in sorted(xs)]
         return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
-    parts = [f"hole {n} on lines {ands(by[n])}" for n in sorted(by)]
+    parts = [f"hole {n} on line{'s' if len(by[n]) > 1 else ''} {ands(by[n])}" for n in sorted(by)]
     return ", ".join(parts[:-1]) + " and " + parts[-1] if len(parts) > 1 else parts[0]
 
 
@@ -838,7 +838,7 @@ def backplane_sheet(ph):
             L.append(f"| {where(a)} | {where(c)} | {lead_len(a, c) or mux_len(a) or link_len(a, c) or '40 mm'} | {plain(net_of_end(c, ph) or net_of_end(a, ph))} | {note} |")
     L += ["", "The mux is an Adafruit #5626. Bridge A0 for address 0x71 and set its Vlogic switch SW1 to V+. It sits "
           "on a foam pad on the copper side over holes 2-9, below the B4 socket. That keeps it clear of the bus wires, "
-          "which start at hole 10. Its 5-hole header (VIN, GND, SCL, SDA, RST, at the far end from its upstream QT "
+          "which start at hole 10 or above. Its 5-hole header (VIN, GND, SCL, SDA, RST, at the far end from its upstream QT "
           "port) takes five leads to the main bus lines. Channels 0-3 reach sensor ports 1-4 through four Adafruit "
           "#4209 QT cables, one plugged into each channel's QT port. Its upstream port and channels 4-7 stay empty, "
           "and the sensors take power from their own card ports.", "",
@@ -850,8 +850,11 @@ def backplane_sheet(ph):
           "(GND) wires off about 3 mm from the plug and tape them; the mux's ground comes through its header lead. "
           "Nothing else is soldered to the mux. Stick the back face to the foam, the channel 0-3 edge toward hole 10, "
           "and plug the four cables in. The foam goes in the middle, no thicker than 1 mm, so the mux clears the "
-          "floor. Each lead and cable wire goes into its hole 10 from the copper side and is soldered on the front; "
-          "the bus wire's joint on the copper side takes it too.", "",
+          "floor. Each cable wire goes into its hole 10. Each header lead rises off the header, runs up past hole 13 "
+          "on its own line (RST over the mux's top, left of the header; VIN straight up; GND, SCL and SDA past the mux's "
+          "end), drops onto its own row between the B4 and B2 sockets (holes 14-18, the table) and runs along it to "
+          "its line, so no lead crosses another (`layout/muxleads.py`, layout check L7). Every one goes in from the "
+          "copper side and is soldered on the front; the bus wire's joint on the copper side takes it too.", "",
           "## 6. Fit it in the base (`cage/backplane-mount-spec.md`)", "",
           f"1. With the copper side back and the mux behind it, tilt the board. Push its factory right edge into the "
           f"right corner post's slot, to the slot's end (Xb {cage_slot_end():.2f}). Its left edge is then clear of the "
@@ -912,7 +915,9 @@ def assembly_sheet():
          "pair counts toward the bus total (1.40 kohm, schematic check 3).",
          "5. There's one status LED, D13 (the STAT LED). It sits on JP32, which is fitted as shipped, and draws about "
          "0.6-0.7 mA when lit. Leave it, or pull JP32 to remove it.",
-         "6. USB in is J6, micro-B (JP7 on VIN1). Use a USB-C to micro-B cable from the 2 A adapter.",
+         "6. USB in is J6, micro-B (JP7 on VIN1). Use a USB-C to micro-B cable from the 2 A adapter (PS1). PS1 is for "
+         "the bench only: set-up, first power and charger checks with the lid off. It has no gland, and the station "
+         "runs on the solar panel once the lid is on.",
          "7. **First power without the pack and with JP17 out** (charge disabled). The firmware does the I2C part "
          "(`firmware/stage0-node/App/charger.c`, built with `WS_POWER_PROFILE=3 WS_I2C_MUX=1`). At every start it "
          "writes the charge voltage (4.2 V, REG0x01-0x02) and the charge current (ICHG about 0.9 A; spec charger "
@@ -959,8 +964,10 @@ def assembly_sheet():
          "rain cables (right column). There's no spare. Which gland takes which cable (`cage.GLAND_USE`, Xb, Yb): "
          + ", ".join(f"{n} ({x:g}, {y:g})" for (x, y), n in sorted(cage.GLAND_USE.items(), key=lambda t: (t[0][1], t[0][0])))
          + ". The port cables in use get the shortest runs from the right column's foot (back and left under the tray), "
-         "the spare S4 the longest, and the solar lead the left front one, nearest J2. Fit the M12 vent, and the SMA "
-         "bulkhead low in the right wall (enclosure 4: Yb 94.14, Zb 60.38).",
+         "the spare S4 the longest, and the solar lead the left front one, nearest J2. S4 has no pod yet, and an "
+         "empty PG-7 doesn't seal, so fit its gland with "
+         + cage.GLAND_BLANK["S4 SPARE"] + " (`cage.GLAND_BLANK`). Take the rod out when a pod goes on S4. Fit the "
+         "M12 vent, and the SMA bulkhead low in the right wall (enclosure 4: Yb 94.14, Zb 60.38).",
          "",
          "   Then fit the backplane (its build sheet, section 6). Tilt its factory right edge into the right corner "
          "post's slot, lower it and slide it left into the left wall's groove. There are no screws, because the cards "

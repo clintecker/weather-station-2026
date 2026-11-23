@@ -40,7 +40,6 @@ QT_WIRE = {"GND": (-1.5, "black"), "V+": (-0.5, "red"), "SDA": (0.5, "blue"), "S
 TP_Y = 2.286                 # the channel 0-3 SMD test points on the bottom layer, as supplied (drawn only, never wired)
 TP = {"SD0": 7.62, "SC0": 10.16, "SD1": 15.24, "SC1": 17.78, "SD2": 22.86, "SC2": 25.40, "SD3": 30.48, "SC3": 33.02}
 CABLE_R = 0.45               # one #4209 wire (about 0.9 mm over the insulation)
-RISE = 7.2                   # the header leads fan out at this hole (above J5 BAT's joint at hole 6)
 STUB = 3.0                   # red and black are cut this far out of the plug and taped
 A0 = (17.526, 6.35)
 SILK = {"RESET": "RST"}
@@ -74,6 +73,17 @@ def wire_exit(k, sig):
     return l0, h0, plug_z()
 
 
+# The five header leads leave JP1 on the top face, rise to HIGH and run toward hole 13 side by side, each on its own
+# line (VERT): RST to the left over the mux's top (clear of the channel 3 socket and SW1), VIN straight up from its pad,
+# GND, SCL and SDA to the right past the mux's end. HIGH clears the B4 socket's tails at hole 13, the XJ1 pin tails,
+# the channel cables and the EVM / pack leads below. Each then drops to LOW on its own row (stack.MUX_HDR_ROW, holes
+# 14-18, between the B4 and B2 sockets' rows) and runs along it to its line. A pad lower on JP1 goes further right and
+# lands on a higher row, so no two leads cross on the copper face (layout check L7, copper side in 3D).
+HIGH = 4.4
+LOW = 1.8
+VERT = {"RESET": 15.72, "VIN": 16.5, "GND": 17.25, "SCL": 18.0, "SDA": 18.75}
+
+
 def path(pad):
     """The lead's centreline, mux end first: [(line, hole, d)]. pad: a header pin (VIN GND SCL SDA RESET) or a
     channel wire 'CHk.SDA' / 'CHk.SCL' (from the cable plug's back)."""
@@ -81,19 +91,18 @@ def path(pad):
     if pad.startswith("CH"):             # out of the plug, down off the plug's end, back to hole 10 on its line
         k, sig = int(pad[2]), pad.split(".")[1]
         l0, h0, z = wire_exit(k, sig)
+        if k == 2:                       # over the J3 GND lead's rise from line 12, hole 11, then down to hole 10
+            return [(l0, h0, z), (l0, h0 + 0.35, z - 0.45), (12.6, h0 + 0.35, 3.0), (tl, h0 + 0.1, 1.2),
+                    (tl, th + 0.4, 0.7), (tl, th, 0.0), (tl, th, -PCB - 1.0)]
         return [(l0, h0, z), (l0, h0 + 0.3, z), (l0, h0 + 0.45, z - 1.2), (tl, h0 + 0.25, 1.2), (tl, th + 0.4, 0.7),
                 (tl, th, 0.0), (tl, th, -PCB - 1.0)]
-    k = list(JP1).index(pad)             # header: in from the top face, over the end, up to hole 11.5, along
-    l0, h0 = lh(JP1_X, JP1[pad])
+    l0, h0 = lh(JP1_X, JP1[pad])         # header: up out of the top face, along to its line, up to its row
     top = FOAM + PCB
-    lane = WIRE_R + 1.6 * k * 0.5        # the five lie side by side, a little stacked
-    end = MUX_LINE0 + 40.64 / P + 0.35   # just past the mux's JP1 end
-    xo = end + 0.25 + 0.45 * k          # side by side up the copper face past the mux's end
-    # all five rise together hugging the mux's end (line end + 0.25) to hole RISE, then fan out: a lead fanned out
-    # low would pass over the support pad under s20.2 (layout check L7) or the J5 BAT lead's joint at line 19, hole 6
-    pts = [(l0, h0, top), (l0, h0, top + 1.0), (end, h0, top + 1.0), (end + 0.25, h0, lane), (end + 0.25, max(RISE, h0), lane),
-           (xo, max(RISE, h0), lane), (xo, 11.5, lane), (tl + 0.3, 11.5, lane), (tl, th + 0.5, 0.9), (tl, th, 0.0),
-           (tl, th, -PCB - 1.0)]
+    x = VERT[pad]
+    pts = [(l0, h0, top), (l0, h0, HIGH), (x, h0, HIGH), (x, th, HIGH), (x - 0.45, th, LOW)]
+    if tl + 0.3 < x - 0.45:
+        pts.append((tl + 0.3, th, LOW))
+    pts += [(tl, th, 0.0), (tl, th, -PCB - 1.0)]
     return [q for i, q in enumerate(pts) if i == 0 or q != pts[i - 1]]
 
 

@@ -152,8 +152,8 @@ def bp_socket(card):
 
 PARTS = [
     # ------------------------------------------------------------ sources and the charger (beside the cards)
-    dict(ref="PS1", value="USB 5 V adapter", part="wall adapter >= 2 A, USB-C to micro-B cable into EVM J6",
-         block="power", pins=[("VBUS", "5 V", POUT, "usb"), ("GND", "ground", PAS, "usb")]),
+    dict(ref="PS1", value="USB 5 V adapter", part="wall adapter >= 2 A into EVM J6 (micro-B); bench only, no gland",
+         block="power", note="bench only: set-up and first power with the lid off; no gland, the station runs on PV1", pins=[("VBUS", "5 V", POUT, "usb"), ("GND", "ground", PAS, "usb")]),
     dict(ref="PV1", value="Solar P110", part="Voltaic P110 6 V 10 W (barrel cut at the gland)", block="power",
          pins=[("+", "+", POUT, "evm"), ("-", "-", PAS, "evm")]),
     dict(ref="U1", value="BQ25798EVM", block="power",
@@ -264,7 +264,8 @@ PARTS = [
          block="ports", card="BP",
          pins=[("H.VCC", "VIN", PIN, "solder"), ("H.GND", "GND", PAS, "solder"), ("H.SCL", "SCL", BI, "solder"),
                ("H.SDA", "SDA", BI, "solder"), ("H.RST", "RESET", IN, "solder")]
-         + qt("UP", "nc") + sum(([(p, n, t, "nc" if n == "V+" else c) for p, n, t, c in qt(f"CH{k}")] for k in range(4)), []),
+         + qt("UP", "nc") + sum(([(p, n, t, "nc" if n in ("V+", "GND") else c) for p, n, t, c in qt(f"CH{k}")]
+                                    for k in range(4)), []),
          ties=[["H.GND", "UP.GND"] + [f"CH{k}.GND" for k in range(4)], ["H.VCC", "UP.V+"],
                ["H.SDA", "UP.SDA"], ["H.SCL", "UP.SCL"]],
          i2c=[0x71], pullups_k=10.0,
@@ -352,7 +353,7 @@ NETS = {
              ("D51", "2"), ("D52", "2"), ("D53", "2")]
             + [(f"J1{k}", "4") for k in range(1, 5)] + [(f"MOD{k}", "4") for k in range(1, 4)]
             + [(f"D{k}{s}", p) for k in range(1, 5) for s, p in (("1", "2"), ("3", "1"), ("5", "1"))]
-            + [("U4", f"CH{k}.GND") for k in range(4)] + bus("GND"), dict()),
+            + bus("GND"), dict()),
     "I2C_SCL": ([("A1", "D11"), ("U2", "H.SCL"), ("U6", "H.SCL"), ("U5", "SCL"), ("U4", "H.SCL"), ("U1", "J8.2"),
                  ("XJ1", "SCL")] + bus("I2C_SCL"), dict(vmax=3.6)),
     "I2C_SDA": ([("A1", "D10"), ("U2", "H.SDA"), ("U6", "H.SDA"), ("U5", "SDA"), ("U4", "H.SDA"), ("U1", "J8.3"),
@@ -456,9 +457,10 @@ R1_MOVED = [
     ([(f"J1{k}", p) for k in range(1, 5) for p in "35"] + [(f"MOD{k}", p) for k in range(1, 4) for p in "35"]
      + [("U4", f"CH{k}.{s}") for k in range(4) for s in ("SDA", "SCL")],
      "each port's data and clock now pass a 100 ohm series resistor between the jack and the mux (review M5)"),
-    ([("U4", f"CH{k}.V+") for k in range(4)],
-     "the channel QT V+ (VCCIO) is no longer used: each channel's cut QT cable carries only SDA and SCL to the "
-     "backplane, and the sensors take power from their own card ports"),
+    ([("U4", f"CH{k}.{s}") for k in range(4) for s in ("V+", "GND")],
+     "the channel QT V+ (VCCIO) and GND are no longer used: each channel's cut QT cable carries only SDA and SCL to "
+     "the backplane (its red and black wires cut back and taped), the mux's ground comes through its header lead, "
+     "and the sensors take power from their own card ports"),
     ([("J21", "4"), ("J21", "5"), ("J22", "4"), ("M1", "4"), ("M1", "5"), ("M2", "4"), ("R1", "2"), ("R2", "2"),
       ("R3", "2"), ("C1", "1"), ("C2", "1"), ("A1", "D4"), ("A1", "D8"), ("A1", "D9")],
      "each meter line now passes a 1 kohm series resistor between the jack side (pull-up, filter, clamps) and "

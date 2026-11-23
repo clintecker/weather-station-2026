@@ -448,7 +448,7 @@ BP_FRONT = BP_BACK + S.val("strip_size")[2]        # component face (sockets), Y
 CARD_DY = BP_FRONT - Y_BP                          # Yb = CARD_DY + (Y_BP - Y) ... see card_to_box
 PITCH = {("B4", "B2"): 6, ("B2", "B1"): 8, ("B1", "B3"): 8}   # in backplane holes (2.54 mm); B4-B2 6 again (8 was for a WAGO junction on B4, since
 #   moved to the backplane; enclosure 3, as printed, has its card slots at these heights: audited 2026-11-16, sheets/audit-enc3)
-SOCKET_HOLE = {"B4": 13}                           # the mux sits behind holes 1-10, below the cards
+SOCKET_HOLE = {"B4": 13}                           # the mux sits behind holes 1-9, below the cards
 BP_Z0 = S.val("power_zone") - (SOCKET_HOLE["B4"] - 1) * P   # first backplane hole, Zb
 for lo, hi in PITCH:
     SOCKET_HOLE[hi] = SOCKET_HOLE[lo] + PITCH[(lo, hi)]
@@ -505,8 +505,13 @@ for b in BOARDS:
                      f"socket for {b} ({ROLE[b]}); key plug in contact {model.KEY[b]}"))
 BP_PARTS.append(("XJ1", {"GND": f"s{bus_row('GND')}.11", "SCL": f"s{bus_row('I2C_SCL')}.11",
                          "SDA": f"s{bus_row('I2C_SDA')}.11"}, "charger I2C pins (lead to EVM J8)"))
-MUX_HOLES = {"H.VCC": f"s{bus_row('+3V3')}.10", "H.GND": f"s{bus_row('GND')}.10", "H.SCL": f"s{bus_row('I2C_SCL')}.10",
-             "H.SDA": f"s{bus_row('I2C_SDA')}.10", "H.RST": f"s{bus_row('MUX_RST')}.10"}
+# the five mux header leads land between the B4 socket's row (hole 13) and the next (hole 19), one row each, so no
+# lead crosses another on the copper face (layout/muxleads.py); hole 10 stays for the channel cables, hole 11 for XJ1
+MUX_HDR_ROW = {"H.RST": 14, "H.VCC": 15, "H.GND": 16, "H.SCL": 17, "H.SDA": 18}
+MUX_HOLES = {"H.VCC": f"s{bus_row('+3V3')}.{MUX_HDR_ROW['H.VCC']}", "H.GND": f"s{bus_row('GND')}.{MUX_HDR_ROW['H.GND']}",
+             "H.SCL": f"s{bus_row('I2C_SCL')}.{MUX_HDR_ROW['H.SCL']}",
+             "H.SDA": f"s{bus_row('I2C_SDA')}.{MUX_HDR_ROW['H.SDA']}",
+             "H.RST": f"s{bus_row('MUX_RST')}.{MUX_HDR_ROW['H.RST']}"}
 for pad, h in list(MUX_HOLES.items()):
     w("wire", ("U4", pad), f"BP:{h}", "copper", f"mux {pad.split('.')[-1]} header lead to its line's bus wire")
 for _k in range(1, 5):          # sensor ports 1-4 = mux channels 0-3: a cut QT cable in each channel's port
