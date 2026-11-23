@@ -93,6 +93,38 @@ assert '#sensor rain=%s' in CONSOLE
 for k in (" present=", " ok=", " cells=", " vreg_mv=", " ichg_ma=", " iterm_ma=", " ts_pct=", " ts=", " stage=",
           " en_chg=", " hold=", " vbat_mv=", " ibat_ma=", " vbus_mv="):
     assert f'"{k}"' in CHARGER, k
+# The page 07 charger values, from power_config.h. hold=none on USB means config_matches() passed, and that
+# compares every value below, so a wrong one reads hold=readback. pack_dc, mppt, vindpm_mv and mppt_sets aren't
+# listed: with no pack they depend on the chip (the TS ADC, VSYS_STAT, the power-on VINDPM), not the code.
+PCFG = rd("firmware/stage0-node/App/power_config.h")
+PREGS = rd("firmware/common/power_regs.c")
+
+
+def pdef(name):
+    m = re.search(rf"^#define {name} (0x[0-9A-Fa-f]+|\d+)U\b", PCFG, re.M)
+    assert m, f"{name} moved out of power_config.h: update page 07"
+    return int(m.group(1), 0)
+
+
+CHG_VREG, CHG_ICHG, CHG_ITERM = pdef("POWER_CHG_VREG_MV"), pdef("POWER_CHG_ICHG_MA"), pdef("POWER_CHG_ITERM_MA")
+CHG_OVP, CHG_VOC, CHG_R17, CHG_R18 = (pdef("POWER_CHG_VAC_OVP_CODE"), pdef("POWER_CHG_VOC_PCT_CODE"),
+                                      pdef("POWER_CHG_REG17"), pdef("POWER_CHG_REG18"))
+assert "code = (ma + BQ25798_ITERM_MA_STEP / 2U) / BQ25798_ITERM_MA_STEP;" in PREGS
+CHG_ITERM_READ = (CHG_ITERM + 20) // 40 * 40           # REG09 rounds to the nearest 40 mA step
+assert (CHG_OVP, CHG_VOC) == (2, 4), "VAC_OVP or VOC_PCT changed: page 07's '12 V' and '0.8125' text"
+assert "12 V" in PCFG and "0.8125" in PCFG and "41.8 degC" in PCFG and "JEITA_ISETH 0" in PCFG
+for k in (" vac_ovp=", " voc_pct=", " reg17=", " reg18=", " pack_dc=", " mppt=", " vindpm_mv=", " mppt_sets="):
+    assert f'"{k}"' in CHARGER, k
+assert "(s->reg10 & VAC_OVP_MASK) >> VAC_OVP_SHIFT" in CHARGER and "#define VAC_OVP_MASK 0x30U" in CHARGER
+assert "(s->reg15 & VOC_PCT_MASK) >> VOC_PCT_SHIFT" in CHARGER and "#define VOC_PCT_MASK 0xE0U" in CHARGER
+assert 'put(buf, len, n, " reg17="), s->reg17, 2)' in CHARGER and 'put(buf, len, n, " reg18="), s->reg18, 2)' in CHARGER
+assert "cg.tx[1] = POWER_CHG_REG17; cg.tx[2] = POWER_CHG_REG18;" in CHARGER    # written whole
+assert "#define REG17_MASK 0xFEU" in CHARGER and not CHG_R17 & 1   # bit 0 reserved, written 0, so 0x62 reads back
+for t in ("(s->reg10 & VAC_OVP_MASK) == POWER_CHG_VAC_OVP_CODE << VAC_OVP_SHIFT",
+          "(s->reg15 & VOC_PCT_MASK) == POWER_CHG_VOC_PCT_CODE << VOC_PCT_SHIFT",
+          "(s->reg17 & REG17_MASK) == (POWER_CHG_REG17 & REG17_MASK) && s->reg18 == POWER_CHG_REG18",
+          "if (!s->configured) return CH_READBACK;", '"readback"'):
+    assert t in CHARGER, t
 assert '" air_th=", " pressure=", " uva=", " encl_th=", " battery=",' in WSMP
 assert "#define WS_RF_FREQUENCY_HZ   915000000UL" in RADIO and "#define WS_TX_POWER_DBM      0" in RADIO
 # provisioning, the key rule, the gateway
@@ -565,12 +597,18 @@ def selftest(c, pg):
     yy = expect(c, x + 40, y + h - 16, w - 46, [
         ("present=1 ok=1", "it answers at 0x6B"),
         ("cells=1", "REG0x0A: one cell"),
-        ("vreg_mv=4200", "charge voltage set"),
-        ("ichg_ma=900", "charge current set"),
-        ("iterm_ma=80", "termination, 40 mA steps"),
+        (f"vreg_mv={CHG_VREG}", "charge voltage set"),
+        (f"ichg_ma={CHG_ICHG}", "charge current set"),
+        (f"iterm_ma={CHG_ITERM_READ}", "termination, 40 mA steps"),
         ("ts=NORMAL", "thermistor band"),
         ("hold=none", "nothing holding charge off"),
-        ("ts_pct=", "write it down (report)")], size=9.4, kw=100)
+        (f"vac_ovp={CHG_OVP}", "input limit 12 V, not the 7 V default"),
+        (f"voc_pct={CHG_VOC}", "MPPT at 0.8125 of the panel's Voc"),
+        (f"reg17=0x{CHG_R17:02x}", "charge stops in WARM (41.8 degC)"),
+        (f"reg18=0x{CHG_R18:02x}", "the TS thresholds"),
+        ("ts_pct=", "write it down (report)")], size=8.6, kw=96)
+    in_model(c, x + 14, yy - 8, "The firmware reads vreg_mv to reg18 back after it writes them. If one's off, hold reads "
+             "readback, not none, and charge stays off.", size=8.6, w=w - 28)
     x, y, w, h = panel(c, g.cell(1, 1), 3, ["A pod in the wrong port reads absent."])
     yy = steps_list(c, x + 44, y + h - 18, w - 56, [
         "J6 and USB-C out. Swap the S1 and S2 plugs at J11 and J12.",
