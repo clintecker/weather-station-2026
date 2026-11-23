@@ -6,8 +6,8 @@
     python3 tools/board_matrix.py --no-checks  build only (no analyzer, stack bound or blocking-wait report)
 
 The boards are firmware/board/*/board.toml (issue #36), each with the roles its board.toml allows. A TX is
-built in each power telemetry profile CI covers (the default, phase B's WS_POWER_PROFILE=2 and the mux bus
-WS_I2C_MUX=1) and, where the board can drive it, with the bench OLED (WS_BENCH_OLED=1); an RX once. Each
+built in each power telemetry profile CI covers (the default, phase B's WS_POWER_PROFILE=2, the mux bus
+WS_I2C_MUX=1, and the field build WS_POWER_PROFILE=3 WS_I2C_MUX=1) and, where the board can drive it, with the bench OLED (WS_BENCH_OLED=1); an RX once. Each
 cell builds in firmware/stage0-node/build/matrix/<cell> with GCC's analyzer (ANALYZE=1), then runs
 `make stack` (tools/stack_report.py) and `make waits` (tools/blocking_report.py). The link prints the
 cell's flash and RAM budget lines (firmware/board/stm32wl/rules.mk); the summary lists them, and goes to
@@ -23,7 +23,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 NODE = ROOT / 'firmware' / 'stage0-node'
-PROFILES = (('default', ()), ('profile-2', ('WS_POWER_PROFILE=2',)), ('mux', ('OPT=-Os -DWS_I2C_MUX=1',)))
+PROFILES = (('default', ()), ('profile-2', ('WS_POWER_PROFILE=2',)), ('mux', ('OPT=-Os -DWS_I2C_MUX=1',)),
+            # The field build, as Session 9 flashes it: the BQ25798 charger and the sensor-port mux together.
+            ('field', ('WS_POWER_PROFILE=3', 'WS_I2C_MUX=1')))
 
 
 def cells():

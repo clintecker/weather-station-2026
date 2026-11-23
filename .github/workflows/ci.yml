@@ -170,7 +170,8 @@ jobs:
       # Every board x role x power profile (tools/board_matrix.py, from each firmware/board/*/board.toml;
       # issue #36): the NUCLEO TX in the default profile, phase B's four INA228 rails (WS_POWER_PROFILE=2),
       # the ports board's mux bus (WS_I2C_MUX=1) and the bench OLED (WS_BENCH_OLED=1); the NUCLEO RX; the
-      # Wio-E5 mini TX in the three profiles. Each gets our strict set with -Werror plus GCC's analyzer
+      # Wio-E5 mini TX in the same profiles. Both TXs also build the field image (WS_POWER_PROFILE=3
+      # WS_I2C_MUX=1), the one Session 9 flashes. Each gets our strict set with -Werror plus GCC's analyzer
       # (ANALYZE=1, any finding fails), the flash budget and no-heap checks, the stack bound
       # (tools/stack_report.py) and the blocking-wait report (tools/blocking_report.py), and prints its flash
       # and RAM budget lines (also in the job summary). Separate build directories (build/matrix/<cell>),
