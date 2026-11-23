@@ -339,7 +339,7 @@ class ObservationEntities(unittest.TestCase):
         """Datasheet: 2300 counts per UVI at gain 18, 20 bit. The node runs gain 3, 18 bit: 95.83 per UVI."""
         from ws0.fields import LTR390_COUNTS_PER_UVI, LTR390_WINDOW_FACTOR, derived, uv_index
         self.assertAlmostEqual(LTR390_COUNTS_PER_UVI, 2300 * 3 / 18 / 4)
-        self.assertEqual(LTR390_WINDOW_FACTOR, 1.0)              # uncalibrated until the PTFE window is measured
+        self.assertEqual(LTR390_WINDOW_FACTOR, 1.0)              # the window's correction goes in the UV pod's record
         self.assertEqual((uv_index(0), uv_index(958), uv_index(None)), (0.0, 10.0, None))
         self.assertEqual(derived({'uva_raw': 479})['uv_index_est'], 5.0)
         uv = self.entry('uv_index_est')

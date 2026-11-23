@@ -206,6 +206,55 @@ class PodBox(unittest.TestCase):
         # the air path stays open: the baffle is clear of the side walls and the lid
         self.assertGreaterEqual(self.box.baffle_gaps(n), 2.0)
 
+    def test_eptfe_seats(self):
+        """Both adhesive ePTFE vents (BARO's vent, the UV crown's breather) sit on a seat at least Gore's target area
+        across and at least the vent's thickness deep, measured on the built bodies."""
+        S = self.S
+        vd, vt = S.val("baro_eptfe")
+        _sd, _st, margin = S.val("eptfe_seat")
+        d = self.box.dims("BARO")
+        body = self.built["BARO"][0]
+        (_k, (vx, vy, vz), _a), = [o for o in self.box.openings("BARO") if o[0] == "vent"]
+        y_in = d["y0"]                                                   # the bottom wall's inner face
+        r = (vd + margin) / 2 - 0.05
+        for k in range(8):                                               # the seat's floor, round its edge
+            a = k * math.pi / 4
+            p = cq.Vector(vx + r * math.cos(a), y_in - vt + 0.01, vz + r * math.sin(a))
+            self.assertFalse(body.isInside(p), f"BARO seat too small at {k * 45} deg")
+        self.assertTrue(body.isInside(cq.Vector(vx + r, y_in - d["seat"][1] - 0.2, vz)), "BARO seat runs through")
+
+    def test_uv_breather(self):
+        """The crown's breather: a level hole through the drum wall, behind a flat ePTFE seat inside, across the crown
+        from the gland, under the ledge, and the drum wall left round it at least WALL thick."""
+        S, d = self.S, self.box.dims("UV")
+        body = self.built["UV"][0]
+        (_k, c, u), = [o for o in self.box.openings("UV") if o[0] == "breather"]
+        self.assertAlmostEqual(u[2], 0.0)
+        (_g, gc, ga), = [o for o in self.box.openings("UV") if o[0] == "gland"]
+        self.assertGreater(angle(u, ga), 150.0, "the breather is not across from the gland")
+        vd, vt = S.val("baro_eptfe")
+        margin = S.val("eptfe_seat")[2]
+        b = d["breather"]
+        r_flat = b["r_flat"]
+        self.assertGreaterEqual(d["r_out"] - r_flat, self.box.WALL, "too little drum wall behind the seat")
+        zb = c[2]
+        half = (vd + margin) / 2
+        self.assertGreater(zb - half, d["z_bi"], "the seat runs into the floor")
+        self.assertLess(zb + half, d["z_ledge"], "the seat runs over the ledge")
+        # the seat's floor is flat: open just inside r_flat across Gore's target area, plastic just beyond it
+        v = (-u[1], u[0], 0.0)
+        for s in (-1.0, 1.0):
+            for w in ((s * (half - 0.05), 0.0), (0.0, s * (half - 0.05))):
+                q = [d["axis"][i] + (r_flat - vt + 0.01) * u[i] + w[0] * v[i] for i in range(2)]
+                self.assertFalse(body.isInside(cq.Vector(q[0], q[1], zb + w[1])), "the breather seat is not flat")
+                q = [d["axis"][i] + (r_flat + 0.3) * u[i] + w[0] * v[i] for i in range(2)]
+                self.assertTrue(body.isInside(cq.Vector(q[0], q[1], zb + w[1])), "the seat runs into the wall")
+        # the hole: open all the way out, and narrower than the vent's effective 5.5
+        a = tuple(d["axis"][i] + (d["r_in"] - 0.5) * u[i] for i in range(2)) + (zb,)
+        e = tuple(c[i] + 1.0 * u[i] for i in range(3))
+        self.assertLess(blocked_length(body, a, e), 1e-6, "the breather hole is blocked")
+        self.assertLessEqual(b["d"], 5.5)
+
     def test_lid_not_glued(self):
         S = self.S
         cord = S.val("pod_oring")

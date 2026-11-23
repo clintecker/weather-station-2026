@@ -155,7 +155,7 @@ def cover(c, pg):
              (f"O-RING CORD {CORD:g} MM NBR 70 (NOT 1.78)\n{cord_m:.1f} M + SPARE (3 BOXES)", "q_p_cord"),
              (f"{M8} PAN HEAD (14x)\n8 LID (TH + BARO) + 6 BOARD", "q_p_m3x8"),
              (f"{M10} PAN HEAD (12x)\n4 PER BOX, INTO THE SHIELD", "q_p_m3x10"),
-             (f"UV WINDOW: PTFE DISC {WIN_D:g} x {WIN_T:g}\n+ BARO ePTFE PATCH {EPTFE_D:g} (OPTIONAL)", "q_p_window"),
+             (f"UV WINDOW: SILICA DISC {WIN_D:g} x {WIN_T:g}\n+ 2 GORE VE70510 VENTS (BARO, UV)", "q_p_window"),
              ("UV-RESISTANT CABLE TIES\n2 FOR THE SHT45 + CABLE TIES", "q_p_tie"),
              (f"{M25} PAN HEAD (2x)\nTHE LTR390 INTO THE UV LID", "q_p_m25"),
              ("REMIXED TOP CAP (WHITE)\nSKIRT + 4 SCREW BOSSES", "q_p_cap"),
@@ -177,7 +177,7 @@ def before(c, pg):
     tools = ["SOLDERING IRON + AN M3 HEAT-SET INSERT TIP", "  (OR AN OLD CONICAL TIP YOU DON'T NEED)",
              "PH1 CROSS SCREWDRIVER (GUIDANCE)", "SPANNER OR PLIERS FOR THE PG-7 NUTS",
              "SHARP KNIFE + STEEL RULER (THE CORD)", "INSTANT GLUE: CORD JOINT (GUIDANCE)",
-             "NEUTRAL-CURE SILICONE (UV WINDOW)", "MULTIMETER: CONTINUITY (SHUNT CHECK)",
+             "DOWSIL 3145 SILICONE (UV WINDOW)", "MULTIMETER: CONTINUITY (SHUNT CHECK)",
              "FLUSH CUTTERS (CABLE TIE TAILS)", "ISOPROPYL ALCOHOL + CLOTH"]
     for i, s in enumerate(tools):
         text(c, x + 12, y + h - 16 - i * 14.5, ("-  " if not s.startswith(" ") else "   ") + s.strip(), 8.6, "ALT", INK)
@@ -352,7 +352,7 @@ def gland_page(name, step):
                   "a print teardrop: the seal covers it."]
         else:
             cp = ["The drum from outside: the gland hole in", "its round, flat spot face. The pointed top",
-                  "is a print teardrop: the seal covers it."]
+                  "is a print teardrop: the seal covers it.", "The 2 mm breather is round the back."]
         x, y, w, h = panel(c, g.cell(0, 0), 1, cp)
         a = Art(c, f"q_gl_{p}_holes", x + 10, y + 22, w - 20, h - 50)
         its = [("PORT-CABLE GLAND HOLE", "op:gland", "up")]
@@ -369,7 +369,7 @@ def gland_page(name, step):
         if name == "TH":
             its.append(("LEAD GLAND'S LOCKNUT", "lock:lead_gland", "up"))
         if name == "BARO":
-            its += [("ePTFE PATCH (OPTIONAL)", "eptfe", "dn"), ("BAFFLE FIN", "baffle", "dn")]
+            its += [("GORE VE70510 VENT", "eptfe", "dn"), ("BAFFLE FIN", "baffle", "dn")]
         L(c, a, its)
         if name == "TH":
             cp3 = cap("Done, from outside. The PORT CABLE goes through the PORT-CABLE gland (the higher one, under J1's mouth);",
@@ -377,12 +377,13 @@ def gland_page(name, step):
                       width=100)
         elif name == "BARO":
             cp3 = cap("Done, from outside. Inside, a fin (the BAFFLE) stands over the vent: no straight line in to the BMP581.",
-                      f"OPTIONAL: an adhesive ePTFE vent patch ({EPTFE_D:g} across) goes in the round seat on the INSIDE face,",
-                      "over the vent, before the board goes in. No patch on hand: leave the seat empty. Never tape the vent.",
+                      f"A Gore VE70510 ePTFE vent ({EPTFE_D:g} across) sticks in the round seat on the INSIDE face, over the",
+                      "vent, before the board goes in: wipe the seat with alcohol, press it down, 24 h before load. Never tape it.",
                       width=100)
         else:
             cp3 = cap("Done, from outside. On the cap this gland points out over the louvers (step 20); the cable comes in",
                       "level, straight to J1's plug. Inside, the locknut sits on a flat land. Dome nut loose until the cable is in.",
+                      "Across the drum, a Gore VE70510 vent sticks on the flat seat inside, over the 2 mm breather (wipe first).",
                       width=100)
         x, y, w, h = panel(c, g.cell(0, 1, 2), 3, cp3)
         a = Art(c, f"q_gl_{p}_out", x + 60, y + 24, w - 120, h - 52)
@@ -397,20 +398,21 @@ def gland_page(name, step):
 
 
 def window_page(c, pg):
-    page(c, "09", "UV LID: THE WINDOW", f"PTFE DISC {WIN_D:g} x {WIN_T:g} INTO THE RECESS IN THE DOME'S FLAT TOP, "
+    page(c, "09", "UV LID: THE WINDOW", f"SILICA DISC {WIN_D:g} x {WIN_T:g} INTO THE RECESS IN THE DOME'S FLAT TOP, "
          "FLUSH, BEDDED IN SILICONE.", pg, SLOGANS_Q[3])
     guidance_note(c)
     g = Grid(2, 1)
     x, y, w, h = panel(c, g.cell(0, 0), 1, cap(
         "The UV LID (the dome), right way up: the flat at its top. The recess is", f"{WIN_D + 0.3:g} across, {WIN_T:g} deep, over a "
-        f"{WIN_D - 3:g} aperture. 1  Wipe the", "recess and the disc with alcohol. 2  A thin bead of neutral-cure",
+        f"{WIN_D - 3:g} aperture. 1  Wipe the", "recess and the disc with alcohol. 2  A thin bead of DOWSIL 3145",
         "silicone round the recess's ledge (not on the aperture). 3  Press", "the disc in until FLUSH with the lid; "
         "wipe the squeeze-out off the", "top. 4  Lid flat, 24 h (guidance) to cure, then step 16.", width=48))
     a = Art(c, "q_win_iso", x + 6, y + 30, w - 12, h - 70)
-    L(c, a, [("PTFE DISC", "disc", "up"), ("RECESS + LEDGE", "recess", "up"), ("APERTURE", "aperture", "up")])
+    L(c, a, [("SILICA DISC", "disc", "up"), ("RECESS + LEDGE", "recess", "up"), ("APERTURE", "aperture", "up")])
     x, y, w, h = panel(c, g.cell(1, 0), 2, cap(
         "Done, from above. The disc sits flush: no lip for water to pond on. It is at the very top of the dome, right",
-        "over the LTR390 once that is on its bosses (step 13).", f"Disc: {WIN_MAT}; TBD, measure yours.", width=48),
+        "over the LTR390 once that is on its bosses (step 13). Hold the disc by its edge.",
+        "Disc: Edmund #22-694 fused silica, 20 x 1 (TBD: measure yours).", width=48),
         warn=True)
     a = Art(c, "q_win_top", x + 30, y + 30, w - 60, h - 70)
     L(c, a, [("WINDOW, FLUSH", "disc", "up"), ("UV LID", "lid", "dn")])

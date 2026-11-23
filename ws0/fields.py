@@ -283,8 +283,10 @@ def rain_mm(rain_tips):
 # time (2^resolution). The node leaves the LTR390 at its power-on GAIN (0x05 = 0x01, gain 3) and
 # MEAS_RATE (0x04 = 0x22, 18 bit, 100 ms) and only writes MAIN_CTRL (firmware/stage0-node/App/mod_reg.c).
 LTR390_UV_SENSITIVITY, LTR390_GAIN, LTR390_RESOLUTION_BITS = 2300, 3, 18
-# Window factor: 1.0 means no window. The PTFE window under the UV dome attenuates by an amount not yet
-# measured, so this UV index is uncalibrated until the window is measured against a reference meter.
+# Window factor: stays 1.0. The UV pod's window is uncoated fused silica (hardware/pods-r1/sources.py
+# uv_window, uv_window_t): it passes about 93 % of the UVS band, so this estimate reads about 7 % low.
+# The measured correction belongs in the UV pod's ID record as a UVA gain entry (quantity 8), which the
+# node applies before it sends uva_raw; setting it here as well would apply it twice.
 LTR390_WINDOW_FACTOR = 1.0
 LTR390_COUNTS_PER_UVI = LTR390_UV_SENSITIVITY * (LTR390_GAIN / 18) * 2 ** (LTR390_RESOLUTION_BITS - 20)
 

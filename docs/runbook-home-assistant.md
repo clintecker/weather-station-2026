@@ -152,9 +152,11 @@ never stored. A derived entity exists when its input field does.
 sensitivity of 2300 counts per UVI at gain 18 and 20-bit resolution. It scales with the gain and with
 the integration time. The node leaves the LTR390 at its power-on gain 3 and 18-bit resolution (100 ms;
 `mod_reg.c` writes only MAIN_CTRL), so the gateway divides by 2300 × 3/18 × 1/4 = 95.8 counts per UVI.
-The window factor is 1.0 (`LTR390_WINDOW_FACTOR` in `ws0/fields.py`). That means no window: the PTFE
-window under the UV dome attenuates by an amount nobody has measured yet. **Treat the UV index as
-uncalibrated** until it is compared with a reference UV meter in sun and the factor is set from that.
+The window factor is 1.0 (`LTR390_WINDOW_FACTOR` in `ws0/fields.py`) and stays there. The UV pod's
+window is uncoated fused silica (`hardware/pods-r1/sources.py`, `uv_window`), which passes about 93 %
+of the band, so the estimate reads about 7 % low. **Treat the UV index as uncalibrated** until it is
+compared with a reference UV meter in sun. The correction from that goes in the UV pod's ID record as a
+UVA gain entry, which the node applies to the counts, not in `ws0/fields.py`.
 The raw counts stay as the diagnostic `uva_raw`.
 
 **Rain today and rain rate.** The node's tip counter restarts at each boot, so a daily total needs

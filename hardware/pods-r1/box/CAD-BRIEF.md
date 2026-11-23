@@ -3,7 +3,7 @@
 This brief is for a CAD agent that will model and print the three sensor pod boxes. Units are millimetres.
 
 Here's where the numbers come from:
-- Every box dimension comes from `box/podbox.py` and `sources.py` as of 2026-11-18 (the UV crown: 2026-11-19).
+- Every box dimension comes from `box/podbox.py` and `sources.py` as of 2026-11-18 (the UV crown: 2026-11-19; the window, the vents and the UV breather: 2026-11-23).
 - The cap and arm mount details come from `shield/remix.py`.
 - The pressure figures and the 1 g silica pack size don't come from those files. The 3.5 hPa/°C is plain gas-law physics. The BMP581's ±0.5 hPa is Bosch's figure.
 
@@ -22,13 +22,14 @@ A cable comes in through a PG-7 cable gland. You crimp the plug onto it inside t
 |---|---|---|---|
 | TH | the SHT45 board's port end; the SHT45 itself sits outside on the shield stand, on a 4-core lead | upright on the −x face of the remixed shield arm | 2 × PG-7 in the bottom wall (port cable and SHT45 lead) |
 | BARO | BMP581 | upright on the +x face of the remixed shield arm | 1 × PG-7 and a Ø4 vent with a baffle, both in the bottom wall |
-| UV | LTR390 (in the lid, on a 0.30 m lead) | a round crown, window up, on the remixed shield cap | 1 × PG-7, level, through the drum wall; a window at the top of the dome |
+| UV | LTR390 (in the lid, on a 0.30 m lead) | a round crown, window up, on the remixed shield cap | 1 × PG-7, level, through the drum wall; a Ø2 breather across from it; a window at the top of the dome |
 
 ## Sealing (Clint, 2026-11-18)
 
 - **TH: completely sealed.** It gets an opaque lid, with no window and no vent. The two glands are the only openings. The O-ring lid seals the rest.
-- **BARO: sealed against water, but it must keep its vent.** An airtight box stops tracking outside pressure, because trapped air changes pressure with temperature. That's about 3.5 hPa per °C, far more than the BMP581's ±0.5 hPa. So keep the Ø4 vent and the baffle. Put the adhesive ePTFE membrane on the vent's inside seat, since it lets air through and keeps water out. The lid is opaque.
-- **UV: the only box with a window.** The window is a 20 × 1.5 PTFE diffuser disc, set flush in the flat at the top of the dome. UV-grade acrylic or quartz is the alternative. The rest of the lid is opaque. The lid seals on an O-ring round the body's spigot, not on a lid groove.
+- **BARO: sealed against water, but it must keep its vent.** An airtight box stops tracking outside pressure, because trapped air changes pressure with temperature. That's about 3.5 hPa per °C, far more than the BMP581's ±0.5 hPa. So keep the Ø4 vent and the baffle. A Gore VE70510 adhesive ePTFE vent (Ø10.2 × 0.34, 5.5 effective) goes on the vent's inside seat. It lets air through and keeps water out. It's required, not optional. The lid is opaque.
+- **UV: the only box with a window.** The window is a Ø20 × 1 uncoated fused silica disc (Edmund Optics #22-694), set flush in the flat at the top of the dome and bedded in DOWSIL 3145 (neutral-cure silicone). It passes about 93 % of the LTR390's 280–430 nm band and doesn't age in sun. The rest of the lid is opaque. The lid seals on an O-ring round the body's spigot, not on a lid groove.
+- **UV breathes (2026-11-23).** A Ø2 hole goes level through the drum wall, across from the gland, with the same Gore VE70510 vent stuck over it on a flat seat inside. The crown is the biggest box and has a dark dome over a window. Without a breather it pumps damp air in through the O-ring and the window bed as it heats and cools, and the window fogs from inside.
 - **Desiccant:** you don't need any. A small pocket for a 1 g silica pack is welcome in TH and UV, if it fits outside the cavity minimums below.
 
 ## Frame
@@ -75,7 +76,7 @@ All coordinates use the **pod board frame**:
 - **Lugs:** (−6.00, −42.42), (−6.00, 60.61), (54.26, −42.42), (54.26, 60.61).
 - **Port gland:** as TH, at x 10.16, z 8.84, axis −y: **fixed**.
 - **Vent:** Ø4.0 through the bottom wall at x 34.36, z 0.70, axis −y.
-- **ePTFE seat:** a Ø12.4 × 0.4 recess in the bottom wall's inner face, concentric with the vent, for a Ø12 adhesive membrane.
+- **ePTFE seat:** a Ø12.4 × 0.4 recess in the bottom wall's inner face, concentric with the vent, for the Gore VE70510 (Ø10.2 × 0.34). Gore wants the flat area at least the vent's diameter plus 1.5, so 11.7; 12.4 clears it.
 - **Baffle:** a fin 1.6 thick at x 26.36..42.36, y −35.92..−34.32 (2.5 above the bottom wall's inner face). It stands from the back wall at z −6.5 up to z 8.7. It overhangs the vent hole by 6.0 on its three open sides, so there's no straight line from outside to the BMP581. Keep at least 2.5 of free gap round it so air can move.
 - **Mount face:** as TH, inserts in all four lugs.
 
@@ -98,10 +99,13 @@ The UV pod isn't a box: it's a round crown, a drum with a dome lid that twists o
   the window. The overall crown is 67.7 tall from the floor.
 - **Port gland:** Ø13.0, level, through the drum wall at (10.16, y, 8.84), axis −y. Inside: a flat land (the nut's
   seat) at y −38.42. Outside: a Ø22 flat spot face. Both **fixed**.
+- **Breather:** Ø2.0, level, through the drum wall at 90° (axis +y, straight across from the gland), at z 7.17 (half
+  way from the floor's inner face to the ledge). Inside, a flat seat Ø12.4 cut into the bore, its floor 0.4 beyond the
+  bore's radius (r 54.4), for the Gore VE70510. 4.4 of drum wall stays behind it.
 - **Window**, on the axis (**fixed**):
-  - a Ø20.3 × 1.5 deep recess in the flat at the top of the dome. The disc sits flush, so no water ponds on it.
+  - a Ø20.3 × 1.0 deep recess in the flat at the top of the dome. The disc sits flush, so no water ponds on it.
   - a Ø17.0 aperture (a 1.5 ledge all round) at the top of a short tube down toward the LTR390.
-  - the disc sits in a bed of neutral-cure silicone.
+  - the disc sits in a bed of DOWSIL 3145 RTV, a neutral-cure silicone. Acetoxy (vinegar-smelling) silicone gives off acid while it cures, inside a closed crown with the LTR390 in it.
 - **LTR390:** in the lid, chip up, its board's top at z 50.34, on two bosses under the dome at (0.00, 7.03) and
   (20.32, 19.73), two of its corner holes. 2 × M2.5 × 6 thread-forming into Ø2.1 pilots, which stop 0.5 past the screw's
   tip (at least 1.2 of plastic to the dome's outside and to the window recess). The aperture tube's bottom is 0.5
@@ -135,7 +139,7 @@ The UV pod isn't a box: it's a round crown, a drum with a dome lid that twists o
 - **Free:** thicker walls outward only, as long as the mount faces and lug centres stay put.
 - **Fixed:**
   - the inside cavity (minimum), the standoff positions and heights.
-  - the gland positions and axes, the vent, ePTFE seat and baffle.
+  - the gland positions and axes, the vent, ePTFE seat and baffle, the UV breather and its seat.
   - the window position and recess.
   - the mount face plane (z −9.5), the lug centres and floor-boss centres.
   - the seal groove geometry.
@@ -147,8 +151,8 @@ The UV pod isn't a box: it's a round crown, a drum with a dome lid that twists o
 | M3 heat-set insert | 5.7 long × 4.6 knurl, so bore Ø4.0 × 6.7 | calipers on the inserts on hand |
 | O-ring cord | Ø1.5 | the cord on hand |
 | Board screw pilot | Ø2.5 in PETG | a test print |
-| Window disc | Ø20 × 1.5 PTFE | the disc as bought |
-| ePTFE patch | Ø12 × 0.4 | the patch as bought |
+| Window disc | Ø20 × 1.0 fused silica, Edmund #22-694 | the disc as bought |
+| ePTFE vent | Gore VE70510, Ø10.2 × 0.34 | the vent as bought |
 | PG-7 nut | 16.6 across corners | the glands on hand |
 
 ## Checks before printing
@@ -158,5 +162,6 @@ The UV pod isn't a box: it's a round crown, a drum with a dome lid that twists o
 3. The board (x 0..43.18, y 0..50.8, z −1.6..0) sits on the standoff tops, and every wall is at least 2.0 from it.
 4. Every gland nut (16.6 across corners, behind its hole) is at least 1.0 clear of every wall and the lid.
 5. BARO: no straight line from outside through the vent reaches the BMP581 board without hitting the baffle.
+   Both ePTFE seats (BARO's vent, the UV breather) are flat across at least Ø11.7 and at least 0.34 deep.
 6. UV: the floor is flat (nothing stands proud of it), and the lid twists on and off by hand with the cord in its groove.
 7. Each insert bore stays blind: none of them breaks into the sealed cavity.

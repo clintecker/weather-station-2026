@@ -43,13 +43,18 @@ CHOICES (the brief left these to the builder; record of them):
                    mount_keep (the screw head's circle the layout keeps clear, so they miss every bottom wire and
                    joint); M3 x 8 thread-forming into a pod_pilot_m3 pilot. Standoff height = the copper side's
                    depth (max(tails, two crossing wire24)) + CLEAR.
-  BARO vent        a VENT_D hole through the bottom wall (axis down), an optional ePTFE membrane seat recessed in the
-                   inner face (sources baro_eptfe), and a baffle: a fin standing off the back wall BAFFLE_GAP above
+  BARO vent        a VENT_D hole through the bottom wall (axis down), an adhesive ePTFE vent (sources baro_eptfe, Gore
+                   VE70510) in a seat recessed in the inner face (sources eptfe_seat, v1's 12.4 x 0.4), and a baffle: a fin standing off the back wall BAFFLE_GAP above
                    the hole, overhanging it by BAFFLE_OVER on the three open sides, so there is no straight line from
                    outside to the BMP581 (checked by tests/test_pods_box.py with real segments).
   UV window        sources uv_window (material, disc d, t): a recess d + 0.3 across and t deep in the lid's top face,
                    so the disc sits flush (no pond on it), bedded in silicone, over an aperture d - 3.0 across; centred
-                   over the LTR390's chip (sources ltr390_sensor).
+                   over the LTR390's chip (sources ltr390_sensor). The disc is Edmund #22-694 fused silica, so the
+                   recess is 1.0 deep (it was 1.5 for the PTFE disc).
+  UV breather      (2026-11-23) the crown breathes, so its window doesn't fog: a sources uv_breather hole, level through
+                   the drum wall at CROWN_BREATHER_A (across from the gland), half way up the drum, under a flat seat
+                   (sources eptfe_seat) cut into the bore, where the same adhesive ePTFE vent as BARO's sticks on. TH stays
+                   sealed (Clint, 2026-11-18): it holds no sensor and nothing optical.
 Every TBD value comes from sources.val, so a measurement regenerates the boxes.
 """
 import math
@@ -113,6 +118,7 @@ LTR_QT_GAP = 0.5            # QT socket tops to the aperture tube's bottom (the 
 LTR_DROP = 5.5              # the LTR390's top face below the dome's inner apex (sets the pilots' plastic, see LTR_PILOT_*)
 LTR_CU = 0.05               # a boss lands on the breakout's hole ring (copper 0.05 proud of its top face)
 LTR_PILOT_PAST = 0.5        # an M2.5 pilot runs this far past the screw's tip, and no further (plastic above it)
+CROWN_BREATHER_A = 90.0     # the breather's direction about the crown's axis, degrees from +x (the gland is at 270)
 CROWN_DETENT = (0.7, 0.2)   # the bayonet's detent: a round bump in each channel just behind the locked lug (radius,
                             # interference with the lug's inner face); the lug clicks over it, so the lid stays locked
 
@@ -133,6 +139,16 @@ def up(name):
 
 def vent_d():
     return VENT_D
+
+
+def eptfe_seat():
+    """(diameter, depth) of the recess an adhesive ePTFE vent (sources baro_eptfe) sits in: sources eptfe_seat, held to
+    Gore's target area (the vent's outer diameter plus the margin) and the vent's thickness."""
+    sd, st, margin = S.val("eptfe_seat")
+    vd, vt = S.val("baro_eptfe")
+    assert sd >= vd + margin - 1e-9, f"the ePTFE seat ({sd}) is smaller than the vent ({vd}) plus Gore's margin ({margin})"
+    assert st >= vt - 1e-9, f"the ePTFE seat ({st} deep) is shallower than the vent ({vt})"
+    return sd, st
 
 
 # ------------------------------------------------------------------ the numbers
@@ -186,11 +202,11 @@ def dims(name):
             lx = (right + d["x1"]) / 2
             d["ops"].append(("lead_gland", (lx, d["y0"] - WALL, (z_bi + z_rim) / 2), (0.0, -1.0, 0.0)))
         if name == "BARO":
-            seat_d = S.val("baro_eptfe")[0] + 0.4
+            seat_d, seat_t = eptfe_seat()
             vx = (right + d["x1"]) / 2
             vz = z_bi + seat_d / 2 + 1.0
             d["ops"].append(("vent", (vx, d["y0"] - WALL, vz), (0.0, -1.0, 0.0)))
-            d["seat"] = (seat_d, S.val("baro_eptfe")[1])
+            d["seat"] = (seat_d, seat_t)
     if name != "UV":
         d["lugs"] = [(x, y) for x in (d["x0"] - WALL - LUG_DIAG, d["x1"] + WALL + LUG_DIAG)
                      for y in (d["y0"] - WALL - LUG_DIAG, d["y1"] + WALL + LUG_DIAG)]
@@ -241,7 +257,10 @@ def screws(name):
 
 def wall_t(name, kind):
     """Plastic an opening passes through."""
-    return dims(name)["lid_t"] if kind == "window" else WALL
+    d = dims(name)
+    if kind == "breather":                      # the drum wall, less the breather's seat
+        return d["r_out"] - d["breather"]["r_flat"]
+    return d["lid_t"] if kind == "window" else WALL
 
 
 def _groove_path(d, n=24):
@@ -469,6 +488,11 @@ def _crown_dims(d, p, nut_r):
     y_land = d["y0"]                                            # the nut's flat land inside (as the TH box's wall)
     d["y_land"] = y_land
     d["ops"].append(("gland", (d["px"], y_land - WALL, d["pz"]), (0.0, -1.0, 0.0)))
+    a = math.radians(CROWN_BREATHER_A)
+    u = (math.cos(a), math.sin(a), 0.0)
+    zb = (d["z_bi"] + z_ledge) / 2
+    d["breather"] = dict(axis=u, z=zb, d=S.val("uv_breather"), seat=eptfe_seat(), r_flat=r_in + eptfe_seat()[1])
+    d["ops"].append(("breather", (cx + r_out * u[0], cy + r_out * u[1], zb), u))
     # the LTR390, sensor up under the window's aperture tube, on two M2.5 screws into bosses under the dome
     z_b = apex - CROWN_DOME_T - LTR_DROP
     d["ltr"] = dict(c=(cx, cy), z=z_b, holes=[(cx - LTR_HOLES[0], cy - LTR_HOLES[1]), (cx + LTR_HOLES[0], cy + LTR_HOLES[1])],
@@ -530,6 +554,7 @@ def _crown_body(d, standoffs=True):
     s = s.union(land)
     s = s.cut(cq.Workplane("XY").add(cq.Solid.makeCylinder(F / 2, 20.0, cq.Vector(px, yl - WALL, pz), cq.Vector(0, -1, 0))))
     s = s.cut(_teardrop_y(px, pz, S.val("gland")[0] / 2, yl + 1.0, WALL + 2.0))
+    s = s.cut(_breather_cut(d))
     # floor bosses: blind M3 mount inserts from below
     for x, y in d["floor_bosses"]:
         s = s.union(cq.Workplane("XY").workplane(offset=d["z_bi"] - 0.5).center(x, y).circle(bd / 2 + LUG_WALL)
@@ -557,6 +582,18 @@ def _crown_body(d, standoffs=True):
         s = s.union(cq.Workplane("XY").workplane(offset=zl - lh / 2 - 0.3).center(x, y).circle(CROWN_DETENT[0])
                     .extrude(lh + 0.6))
     return s
+
+
+def _breather_cut(d):
+    """The breather: a flat-bottomed seat cut from the bore out to r_flat, and the hole on through the drum wall."""
+    cx, cy = d["axis"]
+    b = d["breather"]
+    u, zb = b["axis"], b["z"]
+    sd, r0 = b["seat"][0], d["r_in"] - 1.0             # from just inside the bore, so nothing else inside is cut
+    at = cq.Vector(cx + r0 * u[0], cy + r0 * u[1], zb)
+    seat = cq.Solid.makeCylinder(sd / 2, b["r_flat"] - r0, at, cq.Vector(*u))
+    hole = cq.Solid.makeCylinder(b["d"] / 2, d["r_out"] - r0 + 1.0, at, cq.Vector(*u))
+    return cq.Workplane("XY").add(seat).union(cq.Workplane("XY").add(hole))
 
 
 def detents(d):
