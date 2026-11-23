@@ -33,7 +33,7 @@ From another machine (a phone, a laptop), an SSH tunnel to the gateway is the be
 
 | Part | Content |
 |---|---|
-| Status chips | Key-reuse alarm, reading fresh/stale (180 s, as the API), sensor quality, receiver alive/silent (180 s), host clock state (`ok` / `unverified` / `bad`, "not checked" in demo), node link and energy state, overdue node health report |
+| Status chips | Key-reuse alarm, reading fresh/stale (180, 420 or 3,720 s by energy state, as the API), sensor quality, receiver alive/silent (180 s), host clock state (`ok` / `unverified` / `bad`, "not checked" in demo), node link and energy state, overdue node health report (1,900 s, or 3,720 s in CRITICAL, as the gateway's `health_max_age`) |
 | Readings | Latest value of every catalog field the node sends, with unit and age. A null field shows "sensor fault". Wind calm shows "calm". Qualifiers (icing …) show too. The station and power fields (`DIAGNOSTIC_FIELDS` in `ws0/fields.py`: battery, load, charger input, solar, USB-C, enclosure) get their own "Station and power" tiles below the weather. A field the record doesn't carry has no tile (not measured in this build, see [Power view](#power-view)) |
 | Node (TX) health | Latest 15-minute health report: firmware build, epoch, uptime, reset cause, link and energy state, journal pending/lost/torn, abandoned, missed ACKs, rejected replies, crashes, ACK signal strength and signal-to-noise ratio (RSSI/SNR) as the node heard the gateway. Protocol version 6 adds: last crash PC (`0x` + 8 hex digits, "none", or "crash, frame not trusted (no PC)" for `ffffffff`), boots since power-up, radio TX timeouts, I2C bus recoveries, MCU supply (VDDA), power-monitor die temperature, battery state of charge and its rate (fuel gauge), charger status (input power, charging, fault, stage), charger active input, charger-reported input and battery voltage and current, charger and pack temperature. A key the report sends as its none code shows "sensor fault" when the report lists it in `power_sensor_faults`. That means its source is fitted but failed (a dead fuel gauge, a failed ADC). It shows "not measured in this build" when the report lists it in `power_not_measured` (the fitted byte, design section 6.1). Without those lists, a none code shows "not measured" ("none" for the crash PC, "not reported" for charger status and charger active input). A report from older firmware without the key shows "—" (`healthRows` in `ws0/static/app.js`) |
 | Receiver (RX) | Latest `#alive` report: forwarded, dropped, ACKs, re-listens, UART errors, stack peak, CRC/header errors since boot, overrun, longest task and interrupt (µs, with the name of the one that set the peak), trace drops, uptime. Overrun counts bad receptions the RX counted but didn't print. Either one arrived while the previous capture was still queued, or the 20-lines-a-minute failure-line budget was used up. Also **bad receptions in the last hour** (CRC vs header), from the gateway's `rx_faults` table. A few an hour from other 915 MHz devices and noise is normal, and the page shows them plainly. The page marks a warning above 30 in the trailing hour, or when the rate limit dropped any in that hour ("n more dropped by the rate limit in the last hour"). The count stays current with no new bad reception: the gateway publishes it again (at most once a minute) when old ones leave the hour |
@@ -146,16 +146,14 @@ per rail (step 1b of the breadboard build).
 - The page redraws the every-minute rails with the sensor charts. It redraws the health-report
   values (one every 15 minutes) with the node charts.
 
-**Known limitation: freshness vs the CONSERVE interval** (design section 15, R9). The gateway calls
-a reading current for 180 s (`CURRENT_MAX_AGE_S`, `gateway.py:27`). The page uses the same limit
-(`STALE_S`, `ws0/static/app.js:24`). In the CONSERVE energy state the node sends at most every 5
-minutes (`firmware/common/ws_policy.h:31`). So in CONSERVE, the status chip, the tiles and the Home
-Assistant availability would flip to "stale" between sends, although nothing is wrong.
-
-This waits on the energy state. `energy_state()` stays NORMAL in this phase
-(`firmware/stage0-node/App/tx_policy.c:34`), so a NORMAL node sends every minute and never hits
-the limit. When the energy thresholds are set, the freshness limit must follow the interval of the
-reported energy state.
+**Freshness follows the energy state** (design section 15, R9). The gateway calls a reading current
+for its live interval plus 120 s, by the energy state the reading carries (`current_max_age` in
+`gateway.py`): 180 s in SURPLUS and NORMAL, 420 s in CONSERVE (a reading every 5 minutes), 3,720 s
+in CRITICAL (an hourly beacon). The page uses the same limit (`staleAfter` in `ws0/static/app.js`),
+and so do the Home Assistant availability and the `station_stale` alert. The "health report overdue"
+chip uses `healthOverdueAfter`, the same as the gateway's `health_max_age`: 1,900 s, or 3,720 s when
+the report says CRITICAL, where a due report goes with the hourly beacon.
+`tests/test_dashboard_js.py` (`EnergyStateLimits`) checks that the page and the gateway agree.
 
 ## How live updates work
 

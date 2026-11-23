@@ -21,6 +21,7 @@ flowchart LR
 
 | Item | Where it goes |
 |---|---|
+| Home Assistant 2025.4 or later | The wind direction entity uses device class `wind_direction` (added in 2025.3) and state class `measurement_angle` (added in 2025.4). An older HA rejects that discovery message, so the wind direction entity doesn't appear |
 | Broker host name or IP, port (1883 plain, usually 8883 for TLS) | `gateway.json` → `mqtt.host`, `mqtt.port` |
 | TLS on or off | `gateway.json` → `mqtt.tls` (`true` uses the system's trusted CA certificates: `paho` `tls_set()`) |
 | MQTT user name | `gateway.json` → `mqtt.username` |
@@ -102,7 +103,7 @@ Root topic `weatherstation/v1/<station>`. The gateway sends every message retain
 |---|---|
 | `homeassistant/sensor/<station>_<field>/config` (for example `…_temperature_c/config`) | HA discovery. The gateway publishes it again on every broker connect, and when a new field appears |
 | `…/weather` | Latest observation and the derived values (JSON), on change and every 300 s |
-| `…/availability` | `online` when the latest reading is available: younger than 180 s, with a known and bounded clock, and not a `sensor_fault` record. Else `offline` |
+| `…/availability` | `online` when the latest reading is available: younger than its freshness limit, with a known and bounded clock, and not a `sensor_fault` record. Else `offline`. The limit follows the energy state the reading carries (`current_max_age` in `gateway.py`): 180 s in SURPLUS and NORMAL (a reading every minute), 420 s in CONSERVE (every 5 minutes), 3,720 s in CRITICAL (an hourly beacon) |
 | `…/gateway_availability` | `online` after connect. `offline` at a clean stop, and as the last will, so HA marks the station unavailable if the gateway dies |
 | `…/diagnostics` | Node health report, the key-reuse alarm and the newest descriptor-set alarms (`descriptor_set_alarms`: a different set under a held generation, WSMP-E6, or a set that failed its check, WSMP-E7; also on stderr). The gateway publishes this topic only when it has a health report or an alarm |
 | `…/modules` | The modules of the station's current descriptor set (WSMP section 11.1): the set of the generation that the station's newest frame carries (by its authenticated counter). By module type id (`air_th`, `pressure`, …): port, type, serial (16 hex digits; the top byte is its namespace), serial source, record status (`applied`, a `NO_RECORD` reason, `CAL_REJECTED`, `SENSOR_CHANGED`, or `none` for a module that never has a record) and record CRC. On change only; `{}` when the current set has no module; an empty retained message, which clears the topic, when there is no current set (also once after each broker connect, so a stale payload never stays). Not yet sent by a station: readings carry the generation, and the radio the set, from WSMP-E9 on |
@@ -122,7 +123,8 @@ A sensor shows as available only when all three conditions hold:
 
 Since-boot counters (rain, energy and charge) have the state class `total_increasing`: HA reads the
 drop to 0 at a node reboot as a counter reset. Wind direction has `measurement_angle` (device class
-`wind_direction`), so HA's statistics treat 350° and 10° as neighbours. The other sensors have
+`wind_direction`), so HA's statistics treat 350° and 10° as neighbours. Both need Home Assistant
+2025.4 or later. The other sensors have
 `measurement`. The power, enclosure, UVA raw, rain tip and sample-count sensors are diagnostic
 entities (`DIAGNOSTIC_FIELDS` in `ws0/fields.py`, plus `rain_tips` for HA only). So are the
 health-report entities ([Power entities](#power-entities)). The gateway publishes `…/weather` and
@@ -172,6 +174,20 @@ sensor:
     time_window: "00:15:00"
 ```
 
+The derivative helper goes negative for up to its 15-minute window when the node reboots: the counter drops to 0, and
+that reads as rain running backwards. To hide that, add a template sensor that clamps the rate at 0 and
+use it instead of `sensor.rain_rate` (in `configuration.yaml`, next to the helpers above):
+
+```yaml
+template:
+  - sensor:
+      - name: Rain rate (clamped)
+        unit_of_measurement: mm/h
+        state_class: measurement
+        availability: "{{ has_value('sensor.rain_rate') }}"
+        state: "{{ [states('sensor.rain_rate') | float(0), 0] | max }}"
+```
+
 The entity IDs here and below assume the station is `station-01`. Check yours under the device.
 
 ## Power entities
@@ -218,13 +234,15 @@ battery INA228 and the MAX17048 stay.
 topic `homeassistant/<component>/<station>_diag_<key>/config`). An entity is available while
 `…/gateway_availability` is `online`, `…/diagnostics/availability` is `online` and its key is not
 `null` in the newest report. The gateway sets `…/diagnostics/availability` (retained) to `offline`
-once the newest health report is older than 1,900 s (`HEALTH_MAX_AGE_S` in `ws0/service.py`: two
-15-minute reports plus slack, the dashboard's "overdue" limit).
+once the newest health report is older than its limit (`health_max_age` in `ws0/service.py`, the same
+as the dashboard's "overdue" limit). The limit follows the energy state in the report: 1,900 s in
+SURPLUS, NORMAL and CONSERVE (two 15-minute reports plus slack), 3,720 s in CRITICAL, where a due
+report goes with the hourly beacon.
 
 Say a node browns out or its radio
 dies. Its last SOC and charger state don't stay on screen as live values. They go unavailable about
-32 minutes after the last report. This availability doesn't follow `…/availability` (the
-every-minute reading's 180 s freshness).
+32 minutes after the last report (62 minutes in CRITICAL). This availability doesn't follow
+`…/availability` (the reading's own freshness limit).
 
 | Key | Entity name | Component, unit, class | Phases A and B | Phase C (BQ25798) |
 |---|---|---|---|---|
@@ -292,7 +310,7 @@ unavailable: alert on that too (the last automation below).
 
 | Key | Entity name | On when | `null` (unavailable) when |
 |---|---|---|---|
-| `station_stale` | Station stale | the newest reading is older than 180 s, has an unknown or uncertain clock, or there is none. A fresh reading flagged `sensor_fault` is not stale | never |
+| `station_stale` | Station stale | the newest reading is older than its freshness limit (180 s in SURPLUS and NORMAL, 420 s in CONSERVE, 3,720 s in CRITICAL, by the energy state the reading carries), has an unknown or uncertain clock, or there is none. A fresh reading flagged `sensor_fault` is not stale | never |
 | `battery_low` | Battery low | gauge SOC below 20 % (`BATTERY_LOW_SOC_PCT`) in a fresh health report, or the node's energy state is `conserve` or `critical` (from the fresh reading, else from the fresh health report) | neither source is fresh |
 | `charger_fault` | Charger fault (alert) | `charger_fault` in a fresh health report ([Power entities](#power-entities)) | no fresh report, or no charger status |
 | `charger_cold_hold` | Charger cold hold | the health report's `charger_cold_hold` key is true | no fresh report, or no pack temperature. The gateway works it out from the report: power good, no fault, stage `not_charging` and `pack_temp_c` under 6.3 °C (the BQ25798 stops below about 3.9 °C and starts again above 6.3 °C with the pack's NTC). The entity is advertised once a report has a value for it, so phase C builds only |
@@ -313,7 +331,7 @@ Example automations, in `automations.yaml` or pasted as YAML in the automation e
     - action: notify.mobile_app_phone
       data:
         title: Weather station
-        message: No fresh reading from the station for 8 minutes.
+        message: No fresh reading from the station for 5 minutes past its limit.
 
 - alias: Weather station battery low
   triggers:
@@ -379,11 +397,16 @@ Example automations, in `automations.yaml` or pasted as YAML in the automation e
 | OS | How |
 |---|---|
 | macOS, at login | `tools/deploy/macos/install.sh install <run dir> <RX ST-LINK serial>` (LaunchAgent in `~/Library/LaunchAgents`. It starts when you log in and restarts the gateway on exit. No sudo) |
-| macOS, at boot | `tools/deploy/macos/install.sh --daemon install <run dir> <RX ST-LINK serial>` (LaunchDaemon in `/Library/LaunchDaemons`. It starts at boot with nobody logged in, so it comes back by itself after a power cut. It runs as you, not root (`UserName` in the plist), so the run directory and `mqtt-password` keep their owner. It asks for sudo. It removes the LaunchAgent, since two gateways can't share the RX serial port. `--daemon status` and `--daemon uninstall` work the same way) |
+| macOS, at boot | `tools/deploy/macos/install.sh --daemon install <run dir> <RX ST-LINK serial>` (LaunchDaemon in `/Library/LaunchDaemons`. It starts at boot with nobody logged in, so it comes back by itself after a power cut. It runs as you, not root (`UserName` in the plist), so the run directory and `mqtt-password` keep their owner. It asks for sudo. It removes the LaunchAgent, since two gateways can't share the RX serial port. Run it as yourself, not with sudo: it refuses to install the daemon as root. `--daemon uninstall` works the same way. `status` shows both the agent and the daemon) |
 | Linux | `tools/deploy/linux/ws0-gateway.service` (systemd unit. See the comments in the file) |
 
 For a boot start on macOS, also turn on System Settings → Energy → "Start up automatically after a
 power failure". The repository and run directory must not sit in a folder macOS protects for
 background processes (Desktop, Documents, Downloads): a daemon can't answer the privacy prompt.
+
+With FileVault on, a Mac that restarts after a power cut stops at the unlock screen. Nothing on the
+encrypted disk runs until someone logs in there, so the LaunchDaemon doesn't start either. The
+gateway stays down until someone unlocks the Mac. To have it come back by itself, turn FileVault off
+on the gateway Mac.
 
 Both read the password from the run directory, so you don't need an OS-specific secret store.

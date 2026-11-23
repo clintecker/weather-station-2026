@@ -27,6 +27,9 @@
   const staleAfter = (obs) => (REPORT_INTERVAL_S[obs && obs.energy_state] || 60) + 120;
   const RX_SILENT_S = 180;      // three missed 60 s #alive reports
   const DIAG_OVERDUE_S = 1900;  // two 15-minute health reports plus slack
+  // The gateway's health-report limit (ws0/service.py health_max_age), by the energy state the report
+  // carries: 1900 s, or 3720 s in CRITICAL, where a due report rides the hourly beacon.
+  const healthOverdueAfter = (dg) => Math.max(DIAG_OVERDUE_S, staleAfter(dg));
   const WATCHDOG_MS = 45000;    // no byte (heartbeats included) for this long: reconnect
   const MAX_FRAMES = 40;
   const MAX_EVENTS = 60;
@@ -443,7 +446,7 @@
       c.link = [dg.link === 'linked' ? 'good' : 'warning', `Node link ${dg.link}`];
       c.energy = [dg.energy_state === 'critical' ? 'critical' : dg.energy_state === 'conserve' ? 'warning' : 'good', `Energy ${dg.energy_state}`];
       const age = now() - dg.received_at;
-      if (age > DIAG_OVERDUE_S) c.overdue = ['warning', 'Node health report overdue', `(${fmtAge(age)})`];
+      if (age >= healthOverdueAfter(dg)) c.overdue = ['warning', 'Node health report overdue', `(${fmtAge(age)})`];
     }
     return c;
   }

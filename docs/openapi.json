@@ -592,7 +592,7 @@
       },
       "LatestObservation": {
         "type": "object",
-        "description": "The latest record by epoch and sequence. Without one: {available: false, reason: \"no_observation\"} only. available needs a fresh reading (younger than 180 s, a known and bounded clock) that is not a sensor_fault record.",
+        "description": "The latest record by epoch and sequence. Without one: {available: false, reason: \"no_observation\"} only. available needs a fresh reading (younger than its freshness limit, by the energy state it carries: 180 s in surplus and normal, 420 s in conserve, 3720 s in critical; a known and bounded clock) that is not a sensor_fault record.",
         "required": [
           "available",
           "reason"

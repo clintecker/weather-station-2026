@@ -531,6 +531,58 @@ main().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
 '''
 
 
+# Pulls the freshness limits out of app.js (its own source lines, run in a fresh VM context) and prints
+# them for each energy state. Usage: node limits.js <path to app.js>
+LIMITS = r'''
+'use strict';
+const fs = require('fs');
+const vm = require('vm');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const grab = (name) => {
+  const m = src.match(new RegExp(`^\\s*const ${name} = [^\\n]*`, 'm'));
+  if (!m) throw new Error(`app.js has no const ${name}`);
+  return m[0];
+};
+const code = ['REPORT_INTERVAL_S', 'staleAfter', 'DIAG_OVERDUE_S', 'healthOverdueAfter'].map(grab).join('\n');
+const f = vm.runInNewContext(`${code}\n({ staleAfter, healthOverdueAfter })`);
+const out = {};
+for (const state of ['surplus', 'normal', 'conserve', 'critical', 'unknown']) {
+  const rec = { energy_state: state };
+  out[state] = [f.staleAfter(rec), f.healthOverdueAfter(rec)];
+}
+out.none = [f.staleAfter(null), f.healthOverdueAfter(null)];
+console.log(JSON.stringify(out));
+'''
+
+
+class EnergyStateLimits(unittest.TestCase):
+    """The dashboard's reading-stale and health-overdue limits match the gateway's for every energy state:
+    gateway.current_max_age and service.health_max_age."""
+
+    def test_limits_match_the_gateway(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('node not installed')
+        app = ROOT / 'ws0' / 'static' / 'app.js'
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / 'limits.js'
+            script.write_text(LIMITS, encoding='utf-8')
+            result = subprocess.run([node, str(script), str(app)], capture_output=True, text=True,
+                                    encoding='utf-8', timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        js = json.loads(result.stdout)
+        self.assertEqual(js, {'surplus': [180, 1900], 'normal': [180, 1900], 'conserve': [420, 1900],
+                              'critical': [3720, 3720], 'unknown': [180, 1900], 'none': [180, 1900]})
+        from gateway import current_max_age
+        from ws0.service import health_max_age
+        for state in ('surplus', 'normal', 'conserve', 'critical', 'unknown'):
+            rec = {'energy_state': state}
+            self.assertEqual(js[state], [current_max_age(rec), health_max_age(rec)], state)
+        self.assertEqual(js['none'], [current_max_age({}), health_max_age(None)])
+        # The chip goes on at the limit, as the gateway's health_fresh goes false there.
+        self.assertIn('age >= healthOverdueAfter(dg)', app.read_text(encoding='utf-8'))
+
+
 class DashboardScript(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

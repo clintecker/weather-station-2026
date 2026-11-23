@@ -14,7 +14,7 @@ from http import HTTPStatus
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
-from gateway import CURRENT_MAX_AGE_S, Store
+from gateway import Store, current_max_age
 from . import web
 from .descsets import ALARMS_SHOWN, DescriptorSets, module_discovery, modules_payload, station_key
 import sqlite3
@@ -88,6 +88,8 @@ FIT_KEYS = {
 # (BQ25798 VT1 with the pack's B 3950 NTC on the EVM divider, App/power_config.h). The node reports the
 # hold as no fault, power good, stage not_charging, with the pack temperature beside it.
 COLD_HOLD_BELOW_C = 6.3
+# A derived key and the input under whose fitted bit it sits. charger_cold_hold also needs charger_stage.
+DERIVED_FROM = {'charger_cold_hold': 'pack_temp_c'}
 
 
 def cold_hold(values):
@@ -103,11 +105,12 @@ def cold_hold(values):
 def why_null(values, fitted):
     """The power keys that are None, split by the fitted byte: (not measured in this build, sensor
     fault). A key with a value is in neither; a None key whose bit is set is a fitted source that
-    failed (design section 6.1)."""
+    failed (design section 6.1). A derived key (DERIVED_FROM) is listed only when its fitted input is
+    None too: when only its other input is missing, that input's own key carries the reason."""
     unmeasured, faults = [], []
     for bit, keys in FIT_KEYS.items():
         for key in keys:
-            if values[key] is None:
+            if values[key] is None and values[DERIVED_FROM.get(key, key)] is None:
                 (faults if fitted & bit else unmeasured).append(key)
     return sorted(unmeasured), sorted(faults)
 
@@ -495,9 +498,11 @@ HEALTH_ENTITIES = {
     'charger_reported_input_ma':('sensor','Charger-reported input current','mA','current'),
     'charger_reported_battery_ma':('sensor','Charger-reported charge current','mA','current'),
 }
-# A health report is due every 15 minutes (and after boot and each link-state change). Its Home
-# Assistant entities go unavailable once the newest one is older than two periods plus slack, the
-# same limit as the dashboard's "health report overdue" chip (static/app.js DIAG_OVERDUE_S).
+# A health report is due every 15 minutes (and after boot, each link-state change and each energy-state
+# change). Its Home Assistant entities go unavailable once the newest one is older than health_max_age:
+# two periods plus slack, or in CRITICAL, where a due report rides the hourly beacon, the beacon interval
+# plus the reading's slack (gateway.current_max_age, 3720 s). The dashboard's "health report overdue" chip
+# uses the same limit (static/app.js healthOverdueAfter).
 HEALTH_PERIOD_S = 900
 HEALTH_MAX_AGE_S = 2 * HEALTH_PERIOD_S + 100
 HEALTH_OPTIONS = {'charger_stage':[s for s in CHARGER_STAGES if s],'charger_active_input':[s for s in CHARGER_INPUTS if s]}
@@ -507,7 +512,7 @@ def health_discovery(cfg, keys=tuple(HEALTH_ENTITIES)):
     """HA entities for health report keys, read from the …/diagnostics topic. Their own namespace:
     unique_id <station>_diag_<key> and config topic homeassistant/<component>/<station>_diag_<key>/config,
     so they never overwrite an observation entity <station>_<field>. Available while the gateway is
-    online, the newest report is fresh (…/diagnostics/availability, HEALTH_MAX_AGE_S) and the key is
+    online, the newest report is fresh (…/diagnostics/availability, health_max_age) and the key is
     not null in it (an older report without the key: unavailable)."""
     root = f"weatherstation/v1/{cfg['station']}"
     result = {}
@@ -533,12 +538,19 @@ def health_discovery(cfg, keys=tuple(HEALTH_ENTITIES)):
     return result
 
 
+def health_max_age(report):
+    """The age (s) at which a health report stops being fresh, by the energy state it carries: 1900 s
+    (HEALTH_MAX_AGE_S) in SURPLUS, NORMAL and CONSERVE, which all report every 15 minutes; 3720 s in
+    CRITICAL, where reports come with the hourly beacon (gateway.current_max_age)."""
+    return max(HEALTH_MAX_AGE_S, current_max_age(report or {}))
+
+
 def health_fresh(report, now):
     """True while the newest health report (latest_diagnostic, with its gateway receipt time) is younger
-    than HEALTH_MAX_AGE_S, so a node that stops sending does not leave its SOC and charger state live."""
+    than health_max_age, so a node that stops sending does not leave its SOC and charger state live."""
     if not report or report.get('received_at') is None:
         return False
-    return 0 <= now - report['received_at'] < HEALTH_MAX_AGE_S
+    return 0 <= now - report['received_at'] < health_max_age(report)
 
 
 # Home Assistant alert entities (binary_sensor, device class problem: ON = something is wrong), computed
@@ -554,12 +566,12 @@ LOW_ENERGY_STATES = ('conserve','critical')   # the node's own energy state says
 
 def alerts(latest, diag, receiver_silent, now):
     """The alert values: True (problem), False (fine) or None (not known: the entity goes unavailable).
-    station_stale: the newest reading is not fresh (CURRENT_MAX_AGE_S) or there is none; a fresh reading
-    flagged sensor_fault is not stale. battery_low: gauge SOC < BATTERY_LOW_SOC_PCT in a fresh health
-    report, or an energy state of conserve/critical (the fresh reading's, else the fresh report's).
-    charger_fault and charger_cold_hold: from a fresh health report."""
+    station_stale: the newest reading is not fresh (gateway.current_max_age: 180, 420 or 3720 s by the
+    energy state the reading carries) or there is none; a fresh reading flagged sensor_fault is not
+    stale. battery_low: gauge SOC < BATTERY_LOW_SOC_PCT in a fresh health report, or an energy state of
+    conserve/critical (the fresh reading's, else the fresh report's). charger_fault and charger_cold_hold: from a fresh health report."""
     age = latest.get('age_seconds')
-    fresh_reading = age is not None and 0 <= age < CURRENT_MAX_AGE_S and \
+    fresh_reading = age is not None and 0 <= age < current_max_age(latest.get('observation') or {}) and \
         latest.get('reason') in ('fresh', 'sensor_fault')
     report = diag if health_fresh(diag, now) else {}
     soc = report.get('battery_soc_pct')

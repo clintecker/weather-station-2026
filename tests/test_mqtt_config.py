@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from ws0.protocol import CHG_CHARGING, CHG_POWER_GOOD, pack_diag
 from ws0.service import (HEALTH_ENTITIES, HEALTH_KEYS, HEALTH_MAX_AGE_S, MQTT, discovery, health_discovery, health_fresh,
-                         health_report, mqtt_password)
+                         health_max_age, health_report, mqtt_password)
 
 
 class PasswordSource(unittest.TestCase):
@@ -180,6 +180,20 @@ class HealthFreshness(unittest.TestCase):
         self.assertFalse(health_fresh(None, 10_000.0))
         self.assertFalse(health_fresh({'epoch': 1}, 10_000.0))
 
+    def test_limit_follows_the_energy_state(self):
+        """In CRITICAL a due health report rides the hourly beacon, so reports come up to an hour apart:
+        the limit is the beacon interval plus the reading's 120 s slack (gateway.current_max_age). The
+        other states keep two 15-minute periods plus slack; CONSERVE still reports every 15 minutes."""
+        limits = {state: health_max_age({'energy_state': state})
+                  for state in ('surplus', 'normal', 'conserve', 'critical', None)}
+        self.assertEqual(limits, {'surplus': 1900, 'normal': 1900, 'conserve': 1900, 'critical': 3720, None: 1900})
+        self.assertEqual(health_max_age(None), 1900)
+        critical = {'received_at': 10_000.0, 'energy_state': 'critical'}
+        self.assertTrue(health_fresh(critical, 10_000.0 + 2000))
+        self.assertTrue(health_fresh(critical, 10_000.0 + 3719))
+        self.assertFalse(health_fresh(critical, 10_000.0 + 3720))
+        self.assertFalse(health_fresh({'received_at': 10_000.0, 'energy_state': 'normal'}, 10_000.0 + 2000))
+
     def publisher(self, diag):
         published = []
         class Client:
@@ -254,6 +268,20 @@ class HealthNoneReasons(unittest.TestCase):
         self.assertEqual(len(r['power_not_measured']), 16)
         # Every entity key, and charger_cold_hold (an alert, from the pack temperature).
         self.assertEqual(set(r['power_not_measured']), set(HEALTH_ENTITIES) | {'charger_cold_hold'})
+
+    def test_cold_hold_is_not_a_fault_when_only_the_charger_stage_is_missing(self):
+        """charger_cold_hold is derived from the pack temperature and the charger stage. With the pack
+        temperature read but no charger status, the stage carries the fault; the derived key does not."""
+        r = phase_a_report(fitted=0x7F, pack_temp=20, charger_status=0xFF, chg_input_mv=6900, chg_input_ma=0,
+                           chg_batt_mv=3800, chg_temp=250)
+        self.assertIsNone(r['charger_cold_hold'])
+        self.assertIn('charger_stage', r['power_sensor_faults'])
+        self.assertNotIn('charger_cold_hold', r['power_sensor_faults'] + r['power_not_measured'])
+        # Charger registers not fitted (bit 4 clear), pack temperature read: the stage is not measured,
+        # and again the derived key is in neither list.
+        r = phase_a_report(fitted=0x6F, pack_temp=20, charger_status=0xFF)
+        self.assertIn('charger_stage', r['power_not_measured'])
+        self.assertNotIn('charger_cold_hold', r['power_sensor_faults'] + r['power_not_measured'])
 
 
 if __name__ == '__main__':
@@ -350,6 +378,24 @@ class Alerts(unittest.TestCase):
         self.assertTrue(alerts(self.latest(age=None, reason='unknown_clock'), None, False, self.now)['station_stale'])
         # A fresh reading with a faulted sensor: the station is talking, so not stale.
         self.assertFalse(alerts(self.latest(reason='sensor_fault'), None, False, self.now)['station_stale'])
+
+    def test_station_stale_follows_the_energy_state(self):
+        """The freshness limit is gateway.current_max_age: 180 s in NORMAL, 420 s in CONSERVE (a reading
+        every 5 minutes), 3720 s in CRITICAL (the hourly beacon)."""
+        from ws0.service import alerts
+        stale = lambda age, energy, reason='fresh': alerts(self.latest(age=age, reason=reason, energy=energy),
+                                                            None, False, self.now)['station_stale']
+        self.assertFalse(stale(200, 'conserve'))
+        self.assertFalse(stale(2000, 'critical'))
+        self.assertTrue(stale(181, 'normal'))
+        self.assertTrue(stale(181, 'surplus'))
+        self.assertTrue(stale(420, 'conserve'))
+        self.assertTrue(stale(3720, 'critical'))
+        self.assertFalse(stale(2000, 'critical', reason='sensor_fault'))
+        self.assertTrue(stale(2000, 'normal', reason='sensor_fault'))
+        # battery_low reads the same fresh reading's energy state.
+        self.assertTrue(alerts(self.latest(age=200, energy='conserve'), None, False, self.now)['battery_low'])
+        self.assertTrue(alerts(self.latest(age=2000, energy='critical'), None, False, self.now)['battery_low'])
 
     def test_battery_low_from_soc_or_energy_state(self):
         from ws0.service import BATTERY_LOW_SOC_PCT, alerts
